@@ -1,54 +1,80 @@
 "use client";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 /**
- * I1 页面文案对比测试 — design_handoff_i_domain/I1 转化文案AB.html port。
- * 统一来源:后端 /content/copy-ab/overview;空库时以后端初始化结果为准。
- * 操作确认 显式 edit 契约:编辑文案 / 回滚到历史版 / 调整框架参数 = 调参传 edit;
- *   下架 / 停止实验 / 采纳获胜变体 = 处置不传 edit。
- * amplifies = false(I1 不碰 B1 红线 —— 只改措辞,不动费率/奖励/价格)。
- * 框架参数 = 运营设定(仍需操作确认 + 必填原因留痕)→ 走 openConfirm + input(ConfirmReq.input 已支持)。
+ * I1 页面文案对比测试（改版）。三层：位置 → 这个位置的文案和版本 → 版本上的实验。
+ * 统一来源：后端 /content/copy-ab/overview。17 个写操作都直接执行、不走审批。
+ * 请求、校验和提交沿用原来的处理函数：编辑文案、新增文案、创建实验先在抽屉里填（字段和初始值同 copy-edit、copy-create、
+ * copy-experiment-create），点按钮后进操作确认填理由；位置、版本目录、启动实验用 multi-field，字段名和原来相同。
+ * amplifies = false（只改措辞，不动费率、奖励、价格）。
  */
-import { useRef, useState } from "react";
-import { PaginationExemptionList } from "../design-kit";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { BookOpen, CheckCircle2, CircleSlash, Eye, FileText, FlaskConical, History, Layers, ListChecks, MapPin, Plus, Settings2, ShieldAlert, TriangleAlert } from "lucide-react";
+import { BlockState, Button, Cell, ConfigList, ConfigRow, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IrreversibleTag, JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useTabIds, type MoreMenuItem, type JudgmentRow } from "@/app/components/rd";
+import { PaginationExemptionList, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { ICtx } from "./types";
+import { useReach } from "@/lib/nav/use-reach";
+import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
+import { mapSingleContentText } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { fetchI1CopyOverview, type CopyAbOverview, type CopyAudienceTarget, pendingI1Commands, queryI1Command, retryI1Command, type I1Command } from "@/lib/admin/i-client";
+import { fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
+import { useIConflictReview } from "@/lib/admin/i-conflict-review";
+import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import {
+  CompareTexts, CopyEditorDrawer, ExperimentCard, ExperimentDrawer, LangBlocks, PositionCard,
+  audienceText, copyStatus, experimentAudience, experimentState, LANGUAGE_OPTIONS, missingLangs, moduleLabel, versionStatus,
+  type CopyCreateSpec, type CopyEditSpec, type ExperimentCopyOption, type PositionCopy, type SaveMode, type Texts,
+} from "./i1-parts";
 
 const COPY_MODULES = ["home", "store", "earn", "me"] as const;
 type CopyModule = (typeof COPY_MODULES)[number];
 type Surf = "all" | CopyModule;
 type ExpFlt = "all" | "running" | "concluded";
 type VersionStatusFlt = "all" | "draft" | "published" | "archived";
+type Tab = "positions" | "experiments" | "history" | "catalog";
 type CopyRow = {
   key: string; desc: string; surface: string;
   version: string; status: string; i18nKey: string; expId: string; lastChange: string;
-  draftVersion?: string; draftZh?: string; draftEn?: string; draftVi?: string; copyPosition?: string; draftCopyPosition?: string; draftSurface?: string; draftAudience?: string; draftAudienceTarget?: AudienceTarget | null; draftTrafficSplit?: string; draftNote?: string;
+  draftVersion?: string; draftZh?: string; draftEn?: string; draftVi?: string; copyPosition?: string; draftCopyPosition?: string; draftSurface?: string; draftAudience?: string; draftAudienceTarget?: CopyAudienceTarget | null; draftTrafficSplit?: string; draftNote?: string;
   revision?: number; usedVersionKeys?: string[];
 };
-type AudienceTarget = { locales?: string[]; tiers?: string[]; registrationDaysMin?: number | null; registrationDaysMax?: number | null };
 type VersionRow = {
   copyKey: string; v: string; st: string; chain: string; ts: string;
   zh: string; en: string; vi: string; copyPosition?: string; surface: string;
-  audience: string; audienceTarget?: AudienceTarget | null; estimatedAudience?: number; trafficSplit: string; versionNote: string;
+  audience: string; audienceTarget?: CopyAudienceTarget | null; estimatedAudience?: number; trafficSplit: string; versionNote: string;
 };
 type VersionOptionRow = {
-  versionKey: string; name: string; description: string; status: string;
+  versionKey: string; name: string; description: string | null; status: string;
   sortOrder: number; revision: number; usageCount: number;
 };
 type ExpRow = {
-  id: string; copyKey: string; variants: [name: string, split: number, cvr: number][];
+  id: string; copyKey: string; variants: { name: string; split: number; cvr: number | null; version: string; impressions?: number; conversions?: number }[];
   audience: string; estimatedAudience?: number; impressions: string; conversions: string; state: string; note: string;
 };
+type Editor =
+  | { kind: "edit"; spec: CopyEditSpec; copy: CopyRow; base?: VersionRow; forceNew: boolean }
+  | { kind: "create"; spec: CopyCreateSpec };
 
 const COPY_MODULE_LABELS: Record<CopyModule, string> = { home: "首页", store: "商城", earn: "收益", me: "我的" };
 const COPY_MODULE_OPTIONS = COPY_MODULES.map((value) => ({ value, label: COPY_MODULE_LABELS[value] }));
 const LEGACY_MODULES: Record<string, CopyModule> = { Home: "home", Store: "store", Earn: "earn", Me: "me", 商城: "store" };
 const SURF_FLT: [Surf, string][] = [["all", "全部"], ...COPY_MODULES.map((value) => [value, COPY_MODULE_LABELS[value]] as [Surf, string])];
-const EXP_FLT: [ExpFlt, string][] = [["all", "全部"], ["running", "进行中"], ["concluded", "已结"]];
+const EXP_FLT: [ExpFlt, string][] = [["all", "全部"], ["running", "进行中"], ["concluded", "已结束"]];
+const VERSION_STATUS_FLT: [VersionStatusFlt, string][] = [["all", "全部"], ["draft", "草稿"], ["published", "已发布"], ["archived", "已归档"]];
 const VERSION_PAGE_SIZE = 20;
+const ZONE = "北京时间";
 
-const VAR_COLORS = ["var(--i-ac)", "var(--admin-cat-5)", "var(--admin-cat-3)"];
+const LIVE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
+const OFFLINE = (text: string) => <StatusTag tone="neutral" filled>{text}</StatusTag>;
+/** 2b04a8fb：这四项已停用，新后端不再返回，新保存会被拒；旧后端还返回时只读显示以前存的值。 */
+const RETIRED_FRAMEWORK_KEYS = new Set(["split", "aud", "sample", "maxrun"]);
 
 // 占位符是数据槽,任一语言漏掉就会渲染出半截句子。
 // 取三语**交集**而不是并集:并集会把「历史数据本来就少一种语言」变成一道死锁 ——
@@ -90,7 +116,7 @@ function composeAudienceTarget(form?: Record<string, string>) {
   const start = Number(phaseMin.replace("P", ""));
   const end = Number(phaseMax.replace("P", ""));
   return {
-    mode: "structured",
+    mode: "structured" as const,
     tiers: Array.from({ length: Math.max(0, end - start + 1) }, (_, index) => `P${start + index}`),
     locales: language === "all" ? [] : [language],
     registrationDaysMin: registrationDaysGt + 1,
@@ -98,7 +124,7 @@ function composeAudienceTarget(form?: Record<string, string>) {
   };
 }
 
-function audienceTargetFields(target?: AudienceTarget | null) {
+function audienceTargetFields(target?: CopyAudienceTarget | null) {
   if (!target) return {};
   const tiers = (target.tiers ?? []).map((tier) => Number(tier.replace(/^P/i, ""))).filter(Number.isFinite).sort((a, b) => a - b);
   return {
@@ -109,13 +135,36 @@ function audienceTargetFields(target?: AudienceTarget | null) {
   };
 }
 
-export function I1CopyAb({ ctx }: { ctx: ICtx }) {
-  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+const textsOf = (row?: { zh?: string; en?: string; vi?: string }): Texts | null => row ? { zh: row.zh ?? "", vi: row.vi ?? "", en: row.en ?? "" } : null;
+const textsOfForm = (form: BusinessFormValue): Texts => ({ zh: form.zh ?? "", vi: form.vi ?? "", en: form.en ?? "" });
+async function submittedCopyText(form: BusinessFormValue) {
+  const texts = mapSingleContentText(textsOfForm(form), await getRequiredContentLanguages(), "submit");
+  if (Object.values(texts).some(text => !text.trim())) throw new Error("COPY_FIELDS_REQUIRED");
+  return texts;
+}
+/** 后端给的是累计数的字符串；读不成整数就当没有。 */
+const countOf = (value: string) => (/^\d+$/.test(value.trim()) ? Number(value.trim()) : null);
+/** 后端记的「操作人 / 动作」摘要，动作写成中文；认不出的原样显示。 */
+function chainText(chain: string): string {
+  const m = /^(.+?) \/ (content|rollback|archived|deleted|experiment (.+) adopted)$/.exec(chain.trim());
+  if (!m) return chain || "—";
+  const act = m[2] === "content" ? "改内容" : m[2] === "rollback" ? "回滚" : m[2] === "archived" ? "下架" : m[2] === "deleted" ? "删除草稿" : `采纳实验 ${m[3]}`;
+  return `${m[1]} ${act}`;
+}
+
+/** 直接到用户面前的操作：「已处理」也不代表用户已经看到。 */
+const USER_FACING = new Set(["发布内容版本", "回滚", "下架当前发布版", "采纳获胜变体"]);
+
+export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | null }) {
+  const { toast, actions, content, contentLoading } = ctx;
   const session = useAdminAuth((state) => state.session);
+  const reach = useReach();
   const isSuperadmin = session?.role === "superadmin";
   const canWrite = isSuperadmin || !!session?.authorities.includes("content_i1_write");
   const canManageExperiments = isSuperadmin || !!session?.authorities.includes("content_i1_experiment_manage");
   const canCreateCopy = isSuperadmin || !!session?.authorities.includes("content_i1_copy_create");
+  const [tab, setTab] = useState<Tab>("positions");
+  const tabIds = useTabIds();
   const [surf, setSurf] = useState<Surf>("all");
   const [expFlt, setExpFlt] = useState<ExpFlt>("all");
   const [versionCopyFlt, setVersionCopyFlt] = useState("all");
@@ -123,8 +172,234 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   const [versionPage, setVersionPage] = useState(1);
   const [deletingDraftKey, setDeletingDraftKey] = useState<string | null>(null);
   const deleteInFlightRef = useRef(false);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [creatingExperiment, setCreatingExperiment] = useState(false);
+  const [copyDetail, setCopyDetail] = useState<string | null>(null);
+  const [versionDetail, setVersionDetail] = useState<string | null>(null);
+  const [focusExp, setFocusExp] = useState<string | null>(null);
+  const [reloading, setReloading] = useState(false);
   const data = content.copyAb;
+  const conflictReview = useIConflictReview<CopyAbOverview, { reason: string; value?: string; form?: Record<string, string> }, I1Command>();
+  const reviewConflict = (error: unknown, reason: string, value?: string, form?: Record<string, string>) =>
+    conflictReview.reject(error, { reason, value, form }, async () => {
+      const latest = await fetchI1CopyOverview();
+      await actions.reloadIContent();
+      return latest;
+    });
+  const conflictView = useIConflictView(conflictReview.review);
+  /** 核对冲突后重开确认框时带回的理由和表单，只给紧接着打开的那一个框用。 */
+  const prefill = useRef<{ reason: string; value?: string; business?: BusinessFormValue } | null>(null);
+  const [pending, setPending] = useState<I1Command[]>([]);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const retryInFlight = useRef(false);
+  const [requiresReload, setRequiresReload] = useState(false);
+  const readBarrier = useRef(data);
+  const latestRead = useRef(data);
+  latestRead.current = data;
+  const newMutationReason = conflictReview.blockedReason() ?? (!data ? "数据还没读到" : errorText || requiresReload || contentLoading ? "数据没有读到最新，请重新加载" : undefined);
+  const newMutationBlocked = useRef(newMutationReason);
+  newMutationBlocked.current = newMutationReason;
+  const syncPending = () => setPending(pendingI1Commands());
+  useEffect(() => { setPending(pendingI1Commands()); }, [session?.adminId]);
+  useEffect(() => {
+    if (requiresReload && data && data !== readBarrier.current && !contentLoading && !errorText) setRequiresReload(false);
+  }, [requiresReload, data, contentLoading, errorText]);
+
+  const recoveryConfirm = useRef<{ key: () => string | undefined; close: () => void } | null>(null);
+  const refreshAfterMutation = async (record?: I1Command) => {
+    // A replay returns a historical receipt. Retire only its own confirmation and require a fresh overview.
+    readBarrier.current = latestRead.current;
+    newMutationBlocked.current = "数据没有读到最新，请重新加载";
+    setRequiresReload(true);
+    if (record) {
+      const confirmation = recoveryConfirm.current;
+      if (confirmation?.key() === record.commandKey) confirmation.close();
+    } else {
+      ctx.closeActionConfirm();
+      ctx.closeConfirm?.();
+      setEditor(null);
+      setCreatingExperiment(false);
+    }
+    syncPending();
+    await actions.reloadIContent();
+  };
+  /** 按原请求查到的结论只用来给运营看；解除与否由 queryI1Command 按后端结论决定。 */
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [checking, setChecking] = useState<string | null>(null);
+  const [closing, setClosing] = useState<I1Command | null>(null);
+  const [settledRows, setSettledRows] = useState<FundSettled[]>([]);
+  const recordLabel = (record: I1Command) => `${record.label} · ${record.target.slice(record.target.indexOf(":") + 1)}`;
+  const settle = (record: I1Command, receipt: NonNullable<Awaited<ReturnType<typeof queryI1Command>>>) =>
+    setSettledRows((current) => [...current.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: recordLabel(record), status: receipt.originalStatus }]);
+  const queryOriginal = async (record: I1Command) => {
+    let settled = false;
+    setChecking(record.commandKey);
+    try {
+      const receipt = await queryI1Command(record);
+      if (record.original) setOutcomes((current) => ({ ...current, [record.commandKey]: { receipt } }));
+      settled = fundCommandSettled(receipt);
+      if (settled) settle(record, receipt!);
+    } catch (error) {
+      /* Receipt failure must not prevent the existing content read. */
+      setOutcomes((current) => ({ ...current, [record.commandKey]: { error: displayAdminError(error) } }));
+    } finally { setChecking(null); }
+    if (settled) { await refreshAfterMutation(record); return; }
+    await actions.reloadIContent();
+    toast("已重新读取；现在的内容不能证明原操作的结果，记录继续保留。");
+  };
+  /** 结果未知不是失败，不加「操作失败」（同 I2）。 */
+  const failText = (error: unknown) => isOutcomeUnknownError(error) ? displayAdminError(error) : `操作失败：${displayAdminError(error)}`;
+  const replay = async (record: I1Command) => {
+    try {
+      await retryI1Command(record);
+    } catch (error) {
+      syncPending();
+      if (!pendingI1Commands().some((row) => row.commandKey === record.commandKey)) {
+        await refreshAfterMutation(record);
+        toast(failText(error));
+        return false;
+      }
+      throw new Error(failText(error));
+    }
+    await refreshAfterMutation(record);
+    toast(`${record.label} · ${record.target.slice(record.target.indexOf(":") + 1)}`);
+  };
+  const openActionConfirm = (req: ActionConfirmReq) => {
+    if (newMutationBlocked.current) { toast(newMutationBlocked.current); return; }
+    const openedData = data;
+    let pendingKey: string | undefined;
+    let savedBusiness: BusinessFormValue | undefined;
+    const original = () => pendingI1Commands().find((row) => row.commandKey === pendingKey);
+    const carried = prefill.current;
+    prefill.current = null;
+    const confirmation: ActionConfirmReq = { ...req,
+      initialReason: carried?.reason,
+      getPendingReason: () => original()?.reason,
+      getPendingBusinessValue: () => original() ? savedBusiness : carried?.business,
+      run: async (reason, value, form) => {
+        if (pendingKey) {
+          const record = original();
+          if (!record) { ctx.closeActionConfirm(); return false; }
+          return replay(record);
+        }
+        if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
+        if (newMutationBlocked.current || latestRead.current !== openedData) {
+          ctx.closeActionConfirm();
+          throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
+        }
+        try { return await req.run(reason, value, form); }
+        catch (error) {
+          if (isOutcomeUnknownError(error)) {
+            pendingKey = (error as { commandKey?: string }).commandKey;
+            savedBusiness = form;
+            setEditor(null);
+            setCreatingExperiment(false);
+          }
+          if (await reviewConflict(error, reason, value, form)) ctx.closeActionConfirm();
+          syncPending();
+          // The domain owns first-attempt rejection: keep the confirmation and its input even for business 403.
+          throw new Error(failText(error));
+        }
+      },
+    };
+    recoveryConfirm.current = { key: () => pendingKey, close: () => ctx.closeActionConfirm(confirmation) };
+    ctx.openActionConfirm(confirmation);
+  };
+  const openConfirm = (req: ConfirmReq) => {
+    if (newMutationBlocked.current) { toast(newMutationBlocked.current); return; }
+    const openedData = data;
+    let pendingKey: string | undefined;
+    let savedValue: string | undefined;
+    const original = () => pendingI1Commands().find((row) => row.commandKey === pendingKey);
+    const carried = prefill.current;
+    prefill.current = null;
+    const confirmation: ConfirmReq = { ...req, initialReason: carried?.reason, initialInputValue: carried?.value, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason, getPendingValue: () => original() ? savedValue : undefined,
+      run: async (reason, value) => {
+        if (pendingKey) {
+          const record = original();
+          if (!record) { ctx.closeConfirm?.(); return false; }
+          return replay(record);
+        }
+        if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
+        if (newMutationBlocked.current || latestRead.current !== openedData) {
+          ctx.closeConfirm?.();
+          throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
+        }
+        try { return await req.run(reason, value); }
+        catch (error) {
+          if (isOutcomeUnknownError(error)) { pendingKey = (error as { commandKey?: string }).commandKey; savedValue = value; }
+          if (await reviewConflict(error, reason, value)) ctx.closeConfirm?.();
+          syncPending();
+          throw new Error(failText(error));
+        }
+      },
+    };
+    recoveryConfirm.current = { key: () => pendingKey, close: () => ctx.closeConfirm(confirmation) };
+    ctx.openConfirm(confirmation);
+  };
+  const restore = async (record: I1Command) => {
+    if (retryInFlight.current) return;
+    retryInFlight.current = true;
+    setRetrying(record.commandKey);
+    try { await replay(record); }
+    catch (error) { toast(displayAdminError(error)); }
+    finally { retryInFlight.current = false; setRetrying(null); }
+  };
+  /** 没存出处的记录按原请求和原操作人查，和 queryI1Command 一致。 */
+  const investigationRecord = (record: I1Command): FundCommandRecord | undefined => record.original && { ...record, commandOrigin: record.original.commandOrigin
+    ?? { originalMethod: record.original.method as "POST", originalPath: `/api/admin/content${record.original.path}`, readAuthority: "content_i1_read", originalAdminId: String(record.original.owner) } };
+  const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
+    const expired = isRetryExpired(record);
+    const label = recordLabel(record);
+    const outcome = outcomes[record.commandKey];
+    const processed = outcome && "receipt" in outcome && !!outcome.receipt && fundCommandResult(outcome.receipt) === "BUSINESS_RESULT_UNAVAILABLE";
+    const retryBlocked = !record.original ? "原操作记录不完整，只能查询核对，不能重试。"
+      : !(isSuperadmin || session?.authorities.includes(record.permission)) ? "当前账号没有这项操作权限，请查询原结果。" : undefined;
+    const target = investigationRecord(record);
+    return {
+      key: record.commandKey, title: <span title={label}>{label}</span>, record: target, outcome, createdAt: record.createdAt, expired,
+      canRetry: !expired && !retryBlocked, canQuery: true,
+      status: target ? undefined : { tone: "warn", label: expired ? "已过期" : "结果未知", line: "这条记录不完整，查不了原结果，只能重读现在的内容核对。" },
+      actions: <>
+        {target ? <FundCheckButtons record={target} outcome={outcome} expired={expired} busy={!!checking || !!retrying} checking={checking === record.commandKey}
+          onCheck={() => { void queryOriginal(record).catch((error) => toast(displayAdminError(error))); }} onClose={() => setClosing(record)} />
+          : <Button size="sm" loading={checking === record.commandKey} disabled={!!checking || !!retrying} onClick={() => { void queryOriginal(record).catch((error) => toast(displayAdminError(error))); }}>查询原结果</Button>}
+        {!expired && <Button size="sm" disabled={!!checking} disabledReason={retrying ? "提交中…" : retryBlocked} onClick={() => restore(record)}>按原请求重试</Button>}
+      </>,
+      detail: <>
+        {record.change && <p>{record.change}</p>}
+        {processed && USER_FACING.has(record.label) && <p>「已处理」不代表用户已经看到改动；用户现在看到的以文案表里的线上版本为准。</p>}
+      </>,
+    };
+  });
+  const pendingNotice = <>
+    <FundRecoveryPanel rows={recoveryRows} settled={settledRows} onDismissSettled={(key) => setSettledRows((current) => current.filter((item) => item.key !== key))} />
+    {closing && <FundClosureModal label={recordLabel(closing)} createdAt={closing.createdAt} offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
+      facts={closing.change ? <Fact k="改动">{closing.change}</Fact> : undefined}
+      onClose={() => setClosing(null)} onSubmit={async (evidence: FundCommandEvidence) => {
+        const record = closing;
+        const next = await queryI1Command(record, evidence);
+        setOutcomes((current) => ({ ...current, [record.commandKey]: { receipt: next } }));
+        setClosing(null);
+        if (fundCommandSettled(next)) { settle(record, next!); await refreshAfterMutation(record); }
+      }} />}
+  </>;
+  const lockReason = (target: string): string | undefined => {
+    if (newMutationReason) return newMutationReason;
+    const related = target.startsWith("copy:")
+      ? (data?.experiments ?? []).filter((row) => row.copyKey === target.slice(5)).map((row) => `exp:${row.id}`)
+      : target.startsWith("exp:") ? [`copy:${data?.experiments.find((row) => row.id === target.slice(4))?.copyKey}`] : [];
+    return pending.some((row) => !row.original || row.target === target || related.includes(row.target))
+      ? "此对象有结果未知的原操作，请先到页面上方核对。" : undefined;
+  };
   const I1_STATS = data?.stats ?? { managedCopies: 0, runningExps: 0, weeklyExposures: "—", topLift: "—" };
+  const highestVariantCvr = data?.stats.highestVariantCvrPct;
+  // 每组都有人数、却没有一组有人看到时，后端的最高值是 0 分母算出的 0%，页面写「—」。
+  const nobodySeen = (data?.experiments ?? []).every((row) => row.variants.every((variant) => variant.impressions === 0));
+  const highestVariantCvrText = highestVariantCvr === undefined
+    ? String(I1_STATS.topLift).replace(/^\+/, "")
+    : highestVariantCvr === null || nobodySeen ? "—" : `${highestVariantCvr.toFixed(2)}%`;
+  const exactImpressions = data?.stats.cumulativeExperimentImpressions;
   const COPY_POOL: CopyRow[] = (data?.copies ?? []).map((row) => ({
     key: row.key,
     desc: row.desc,
@@ -153,7 +428,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     v: row.version,
     st: row.status,
     chain: row.chain,
-    ts: row.ts,
+    // The existing caption is storage-local Beijing time. Keep legacy labels unparsed;
+    // a new explicit null must not invent a last-operation time from creation or today.
+    ts: row.updatedAt === undefined ? row.ts : row.updatedAt?.replace("T", " ").slice(0, 16) ?? "",
     zh: row.zh,
     en: row.en,
     vi: row.vi,
@@ -192,11 +469,12 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         estimatedAudience: version.estimatedAudience,
       })),
   })).filter((copy) => copy.versions.length >= 2);
-  const EXPERIMENT_COPY_OPTIONS = EXPERIMENT_COPY_CANDIDATES
-    .filter((copy) => !ACTIVE_EXPERIMENT_COPY_KEYS.has(copy.value));
+  const EXPERIMENT_COPY_OPTIONS: ExperimentCopyOption[] = EXPERIMENT_COPY_CANDIDATES
+    .filter((copy) => !ACTIVE_EXPERIMENT_COPY_KEYS.has(copy.value) && !lockReason(`copy:${copy.value}`));
   const experimentUnavailableReason = EXPERIMENT_COPY_CANDIDATES.length === 0
     ? "至少需要同一文案下存在 2 个非草稿内容版本"
-    : "符合条件的文案已有待启动或进行中的实验，请先完成或停止现有实验";
+    : EXPERIMENT_COPY_CANDIDATES.map((copy) => lockReason(`copy:${copy.value}`)).find(Boolean)
+      ?? "符合条件的文案已有待启动或进行中的实验，请先完成或停止现有实验";
   const usedVersionsForCopy = (copy: CopyRow) => new Set(
     copy.usedVersionKeys ?? COPY_VERSIONS.filter((row) => row.copyKey === copy.key).map((row) => row.v),
   );
@@ -205,11 +483,13 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     name: row.name,
     cur: row.current,
     sub: row.description,
+    retired: RETIRED_FRAMEWORK_KEYS.has(row.key.trim().toLowerCase()),
   }));
+  const retiredFrameworkCount = EXP_FRAMEWORK.filter((p) => p.retired).length;
   const EXPS: ExpRow[] = (data?.experiments ?? []).map((row) => ({
     id: row.id,
     copyKey: row.copyKey,
-    variants: row.variants.map((v) => [v.name, v.split, Number(v.cvr)]),
+    variants: row.variants.map((v) => ({ name: v.name, split: v.split, cvr: v.cvr ?? null, version: v.version ?? "", impressions: v.impressions, conversions: v.conversions })),
     audience: row.audience,
     estimatedAudience: row.estimatedAudience,
     impressions: row.impressions,
@@ -231,18 +511,45 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   })).filter((position) => position.status.toUpperCase() === "ACTIVE");
   const COPY_POSITION_OPTIONS = COPY_POSITIONS;
 
+  const findVersion = (copyKey: string, version?: string) => (version ? COPY_VERSIONS.find((row) => row.copyKey === copyKey && row.v === version) : undefined);
+  const findCopy = (key: string) => COPY_POOL.find((copy) => copy.key === key);
+  const optionName = (versionKey?: string) => VERSION_OPTIONS.find((option) => option.versionKey === versionKey)?.name;
+  const positionName = (positionKey?: string) => COPY_POSITION_ROWS.find((position) => position.positionKey === positionKey)?.name ?? positionKey ?? "—";
+  // c090ae36 uses the public reader's predicate, including legacy saved drafts.
+  // The current version, not draftVersion/draftCopyPosition, determines delivery.
+  const isPublished = (copy: CopyRow) => ["published", "draft-saved"].includes(copy.status.toLowerCase())
+    && findVersion(copy.key, copy.version)?.st.toLowerCase() === "published";
+  /** 同一个位置上另外可供公开读取的文案；不把未发布草稿算占位。 */
+  const othersPublishedAt = (positionKey: string | undefined, exceptKey: string) => positionKey
+    ? COPY_POOL.filter((copy) => copy.key !== exceptKey && isPublished(copy) && copy.copyPosition === positionKey)
+    : [];
+  /** 位置被别的已发布文案占着时的禁用原因：点名占着的那条；能换位置的入口（编辑、新增）多一句「或换个位置」。 */
+  const publishBlockedReason = (positionKey: string | undefined, exceptKey: string, canMove = true) => {
+    const others = othersPublishedAt(positionKey?.trim(), exceptKey.trim());
+    return others.length > 0 ? `位置被「${others.map((copy) => copy.desc).join("、")}」占用，先下架它${canMove ? "或换个位置" : ""}` : undefined;
+  };
+  const crowdNotice = (positionKey: string | undefined, exceptKey: string, canMove = true) => {
+    const others = othersPublishedAt(positionKey, exceptKey);
+    if (others.length === 0) return null;
+    return <Notice tone="warn" title={`${positionName(positionKey)}已被占用`}>一个位置只能有一条已发布的文案。「{others.map((copy) => copy.desc).join("、")}」正在这里发布，先下架它{canMove ? "，或换个位置" : "再来"}。</Notice>;
+  };
+  // I6-BE-03（ad32f4ca）：同名词条有内容不同的未发布草稿时，发布、新建、回滚、采纳整笔被拒（I18N_DRAFT_OVERWRITE_CONFLICT）；这页读不到那份草稿。
+  const i18nFact = (key: string) => (<>
+    <Fact k="同时更新">词条 <span data-mono="">{key}</span>（{reach("/content/i18n") ? <Link className="rd-link" href="/content/i18n" prefetch={false}>多语言与课程</Link> : "多语言与课程"}）</Fact>
+    <Fact k="有草稿时" tone="warn">词条若有内容不同的未发布草稿，这次不执行</Fact>
+  </>);
+  const variantsText = (exp: ExpRow) => exp.variants.map((variant) => `${variant.name} ${variant.version || "—"} ${variant.split}%`).join(" · ");
+
   const runBackend = (task: Promise<void>, ok: string) => {
-    task
-      .then(() => actions.reloadIContent())
-      .then(() => toast(ok))
-      .catch((error) => toast(`操作失败:${displayAdminError(error)}`));
+    return task
+      .then(() => refreshAfterMutation())
+      .then(() => { toast(ok); return true; });
   };
 
-  const liveCopyStatus = (c: CopyRow): string => c.status;
+  const liveCopyStatus = (c: CopyRow): string => isPublished(c) ? "published" : c.status;
   const liveExpState = (e: ExpRow): string => e.state;
   const liveFw = (_key: string, cur: string): string => cur;
 
-  const filteredPool = COPY_POOL.filter((c) => surf === "all" || c.surface === surf);
   const filteredVersions = COPY_VERSIONS.filter((row) =>
     (versionCopyFlt === "all" || row.copyKey === versionCopyFlt)
     && (versionStatusFlt === "all" || row.st.toLowerCase() === versionStatusFlt));
@@ -256,8 +563,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     return st === "concluded" || st === "adopted" || st === "discarded" || st === "stopped";
   });
 
-  // 编辑文案(文案池每行通用) —— 默认存草稿,运营也可明确选择发布生效。
-  const editCopy = (c: CopyRow, targetVersion?: VersionRow, forceNew = false) => {
+  // 编辑文案 —— 先在抽屉里填，存草稿或发布再进操作确认。
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
+  const editCopy = async (c: CopyRow, targetVersion?: VersionRow, forceNew = false) => {
     const editableVersion = targetVersion
       ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.draftVersion)
       ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.version);
@@ -268,104 +576,155 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       toast("请先在文案版本列表中新增或启用一个未被该文案使用的版本");
       return;
     }
-    openActionConfirm({
-      action: <>{forceNew ? "新增版本" : "编辑文案"} · {c.key}</>,
-      detail: <>基于 <b>{editableVersion?.v || c.version}</b> 编辑。{editingExistingDraft ? "保存会更新这个草稿。" : "请从启用的文案版本配置中选择一个尚未被该文案使用的版本。"}只有明确选择“发布生效”才会对用户生效。</>,
+    const spec: CopyEditSpec = {
+      kind: "copy-edit",
+      keyName: c.key,
+      version: editingExistingDraft ? editableVersion?.v || "" : "",
+      versionOptions: selectableVersions,
+      surface: editableVersion?.surface || c.surface,
+      copyPosition: editableVersion?.copyPosition || c.copyPosition,
+      audience: editableVersion?.audience,
+      ...audienceTargetFields(editableVersion?.audienceTarget),
+      trafficSplit: editableVersion?.trafficSplit,
+      trafficSplits: COPY_TRAFFIC_SPLITS,
+      modules: COPY_MODULE_OPTIONS,
+      positions: COPY_POSITION_OPTIONS,
+      zh: editableVersion?.zh || "",
+      en: editableVersion?.en || "",
+      vi: editableVersion?.vi || "",
+      versionNote: editableVersion?.versionNote || "后台编辑文案",
+      placeholders: requiredPlaceholders(editableVersion?.zh, editableVersion?.en, editableVersion?.vi),
+      saveModeChoice: true,
+    };
+    setRequiredLanguages(await getRequiredContentLanguages());
+    setCopyDetail(null);
+    setVersionDetail(null);
+    setEditor({ kind: "edit", spec, copy: c, base: editableVersion, forceNew });
+  };
+
+  const submitCopyEdit = (c: CopyRow, editableVersion: VersionRow | undefined, form: BusinessFormValue, mode: SaveMode) => {
+    const draft = mode === "存草稿";
+    const target = form.version || editableVersion?.v || "";
+    const current = findVersion(c.key, c.version);
+    const live = isPublished(c);
+    openActionConfirm({ briefKind: "config",
+      action: <>{draft ? "存草稿" : "发布内容版本"} · {c.key} {target}</>,
+      title: `${draft ? "存草稿" : "发布"} ${target}`,
+      detail: <>{draft ? "保存这个草稿。" : "发布这个版本。"}</>,
       amplifies: false,
-      businessForm: {
-        kind: "copy-edit",
-        keyName: c.key,
-        version: editingExistingDraft ? editableVersion?.v || "" : "",
-        versionOptions: selectableVersions,
-        surface: editableVersion?.surface || c.surface,
-        copyPosition: editableVersion?.copyPosition || c.copyPosition,
-        audience: editableVersion?.audience,
-        ...audienceTargetFields(editableVersion?.audienceTarget),
-        trafficSplit: editableVersion?.trafficSplit,
-        trafficSplits: COPY_TRAFFIC_SPLITS,
-        modules: COPY_MODULE_OPTIONS,
-        positions: COPY_POSITION_OPTIONS,
-        zh: editableVersion?.zh || "",
-        en: editableVersion?.en || "",
-        vi: editableVersion?.vi || "",
-        versionNote: editableVersion?.versionNote || "后台编辑文案",
-        placeholders: requiredPlaceholders(editableVersion?.zh, editableVersion?.en, editableVersion?.vi),
-        saveModeChoice: true,
-      },
-      run: (reason, _value, form) => {
+      effect: draft ? OFFLINE("保存草稿，线上不变") : LIVE,
+      confirmLabel: draft ? "确认存草稿" : "确认发布",
+      blockedReason: draft ? undefined : publishBlockedReason(form.copyPosition, c.key),
+      statedBrief: draft
+        ? { impact: live ? `用户继续看到线上的 ${c.version}；草稿 ${target} 发布后才替换它。` : "这条文案已下架，存了草稿也不对外；发布草稿才上线。", check: "核对三种语言和位置；存草稿不更新多语言与课程的词条。" }
+        : { impact: `${target} 替换现在发布的 ${c.version}，同时更新多语言与课程里的同名词条。`, check: "核对三种语言、位置和占位符。" },
+      facts: <Facts>
+        <Fact k="文案">{c.desc} · <span data-mono="">{c.key}</span></Fact>
+        <Fact k="位置">{positionName(form.copyPosition)} · {moduleLabel(form.surface)}</Fact>
+        {!draft && i18nFact(c.i18nKey)}
+      </Facts>,
+      content: <>
+        {!draft && crowdNotice(form.copyPosition, c.key)}
+        <CompareTexts beforeLabel={live ? `线上 ${c.version}` : `已下架 ${c.version}`} afterLabel={draft ? `草稿 ${target}` : `发布后 ${target}`} before={textsOf(current)} after={mapSingleContentText(textsOfForm(form), requiredLanguages, "submit")} />
+      </>,
+      run: async (reason) => {
         const payload = {
           version: form?.version || editableVersion?.v,
           surface: form?.surface || editableVersion?.surface || c.surface,
           copyPosition: form?.copyPosition || editableVersion?.copyPosition || c.copyPosition || "",
-          audience: composeAudience(form),
-          audienceTarget: composeAudienceTarget(form),
-          phaseMin: form?.phaseMin,
-          phaseMax: form?.phaseMax,
-          language: form?.language,
-          registrationDaysGt: Number(form?.registrationDaysGt || 0),
-          trafficSplit: form?.trafficSplit || editableVersion?.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "",
           versionNote: form?.versionNote || "后台编辑文案",
-          zh: form?.zh || editableVersion?.zh || "",
-          en: form?.en || editableVersion?.en || "",
-          vi: form?.vi || editableVersion?.vi || "",
+          ...await submittedCopyText(form),
           expectedRevision: c.revision,
         };
-        if (form?.saveMode === "存草稿") {
-          runBackend(actions.saveI1CopyDraft(c.key, payload, reason), `${c.key} 草稿已保存 · 尚未对用户生效`);
-        } else {
-          runBackend(actions.publishI1CopyVersion(c.key, payload, reason), `${c.key} 新版本已发布生效`);
+        const done = (result: unknown) => { if (result !== false) setEditor(null); return result; };
+        if (draft) {
+          return runBackend(actions.saveI1CopyDraft(c.key, {
+            ...payload,
+            audience: composeAudience(form),
+            audienceTarget: composeAudienceTarget(form),
+            phaseMin: form?.phaseMin,
+            phaseMax: form?.phaseMax,
+            language: form?.language,
+            registrationDaysGt: Number(form?.registrationDaysGt || 0),
+            trafficSplit: form?.trafficSplit || editableVersion?.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "",
+          }, reason), `${c.key} 草稿 ${target} 已保存，线上不变`).then(done);
         }
+        return runBackend(actions.publishI1CopyVersion(c.key, payload, reason), `${c.key} 新版本已发布生效`).then(done);
       },
     });
   };
 
-  const createCopy = () => {
+  const createCopy = async (preset?: { surface: string; copyPosition: string }) => {
     if (ACTIVE_VERSION_OPTIONS.length === 0) {
       toast("请先在文案版本列表中新增或启用文案版本");
       return;
     }
-    openActionConfirm({
-    action: <>新增文案</>,
-    detail: <>在文案池中新建一条受管文案。文案版本必须从上方“文案版本列表”的启用项中选择，文案标识必须全局唯一。</>,
-    amplifies: false,
-    businessForm: {
+    setRequiredLanguages(await getRequiredContentLanguages());
+    setEditor({ kind: "create", spec: {
       kind: "copy-create",
       modules: COPY_MODULE_OPTIONS,
       positions: COPY_POSITIONS,
       versionOptions: ACTIVE_VERSION_OPTIONS,
       trafficSplits: COPY_TRAFFIC_SPLITS,
-    },
-    run: (reason, _value, form) => {
-      if (!form?.copyKey?.trim()) return;
+      ...preset,
+    } });
+  };
+
+  const submitCreateCopy = (form: BusinessFormValue) => openActionConfirm({ briefKind: "config",
+    action: <>新增文案</>,
+    title: "新增文案并发布",
+    detail: <>新建文案并发布第一个版本。</>,
+    amplifies: false,
+    effect: LIVE,
+    confirmLabel: "确认新增",
+    blockedReason: publishBlockedReason(form.copyPosition, form.copyKey ?? ""),
+    statedBrief: { impact: "新建这条文案并直接发布第一个版本，同时在多语言与课程里建同名词条。", check: "核对文案标识、位置和三种语言；文案标识建好后不能改。" },
+    facts: <Facts>
+      <Fact k="文案">{form.description?.trim() || "—"} · <span data-mono="">{form.copyKey?.trim() || "—"}</span></Fact>
+      <Fact k="位置">{positionName(form.copyPosition)} · {moduleLabel(form.surface)}</Fact>
+      <Fact k="版本">{form.version}</Fact>
+      {i18nFact(form.copyKey?.trim() || "—")}
+    </Facts>,
+    content: <>
+      {crowdNotice(form.copyPosition, "")}
+      <div className="rd-impact"><div className="rd-impact-title">发布的内容</div><LangBlocks texts={mapSingleContentText(textsOfForm(form), requiredLanguages, "submit")} /></div>
+    </>,
+    run: async (reason) => {
+      if (!form?.copyKey?.trim()) return false;
       const copyKey = form.copyKey.trim();
-      runBackend(actions.createI1Copy({
+      return runBackend(actions.createI1Copy({
         copyKey,
         version: form.version,
         description: form.description?.trim() || copyKey,
         surface: form.surface || "home",
         copyPosition: form.copyPosition || "",
         i18nKey: copyKey,
-        audience: composeAudience(form),
-        audienceTarget: composeAudienceTarget(form),
-        phaseMin: form?.phaseMin,
-        phaseMax: form?.phaseMax,
-        language: form?.language,
-        registrationDaysGt: Number(form?.registrationDaysGt || 0),
-        trafficSplit: form.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "50",
         versionNote: form.versionNote || "新增文案初始内容",
-        zh: form.zh || "",
-        en: form.en || "",
-        vi: form.vi || "",
-      }, reason), `文案 ${copyKey} 已新增 · 初始内容已发布`);
+        ...await submittedCopyText(form),
+      }, reason), `文案 ${copyKey} 已新增 · 初始内容已发布`).then((result) => { if (result !== false) setEditor(null); return result; });
     },
-    });
-  };
+  });
 
-  const createCopyVersionOption = () => openActionConfirm({
+  const versionOptionForm = (option?: VersionOptionRow): BusinessFormSpec => ({
+    kind: "multi-field",
+    fields: [
+      ...(option ? [] : [{ key: "versionKey", label: "版本标识", placeholder: "v3", pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$", patternMessage: "字母或数字开头，最多 32 位，可用点、下划线、短横线", explain: "建好后不能改。" }]),
+      { key: "name", label: "版本名称", placeholder: "转化优化版", current: option?.name ?? "" },
+      { key: "status", label: "状态", inputKind: "select" as const, options: ["ACTIVE", "INACTIVE"], optionLabels: { ACTIVE: "启用", INACTIVE: "停用" }, current: option?.status ?? "ACTIVE", explain: "停用后新增文案和新增版本时不能选它，已有内容不受影响。" },
+      { key: "sortOrder", label: "排序", inputKind: "number" as const, min: 0, step: 1, current: String(option?.sortOrder ?? 0), help: "数字小的排前面" },
+      { key: "description", label: "版本说明", placeholder: "这个版本用在哪、想改什么", required: false, maxLength: 255, current: option?.description ?? "", wide: true },
+    ],
+  });
+
+  const createCopyVersionOption = () => openActionConfirm({ briefKind: "config",
     action: <>新增文案版本</>,
-    detail: <>新增后会出现在“新增文案”和“新增内容版本”的版本下拉框中；只有启用状态可被选择。</>,
+    title: "新增版本",
+    detail: <>新增一个可选的版本。</>,
     amplifies: false,
-    businessForm: { kind: "copy-version-option", mode: "create" },
+    effect: OFFLINE("只加目录，线上不变"),
+    confirmLabel: "确认新增",
+    statedBrief: { impact: "新增后，新增文案和新增版本时可以选它；不会给已有文案建内容。", check: "核对版本标识，建好后不能改。" },
+    businessForm: versionOptionForm(),
     run: (reason, _value, form) => runBackend(actions.createI1CopyVersionOption({
       versionKey: form?.versionKey?.trim(),
       name: form?.name?.trim(),
@@ -375,20 +734,16 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     }, reason), `文案版本 ${form?.versionKey} 已新增`),
   });
 
-  const editCopyVersionOption = (option: VersionOptionRow) => openActionConfirm({
+  const editCopyVersionOption = (option: VersionOptionRow) => openActionConfirm({ briefKind: "config",
     action: <>编辑文案版本 · {option.versionKey}</>,
-    detail: <>版本标识创建后不可修改；可调整名称、说明、排序和启停状态。停用后不会再出现在新建文案的下拉框中。</>,
+    title: `编辑版本 ${option.versionKey}`,
+    detail: <>修改版本的名称、说明、排序和状态。</>,
     amplifies: false,
-    businessForm: {
-      kind: "copy-version-option",
-      mode: "edit",
-      versionKey: option.versionKey,
-      name: option.name,
-      description: option.description,
-      status: option.status,
-      sortOrder: option.sortOrder,
-      revision: option.revision,
-    },
+    effect: OFFLINE("只改目录，线上不变"),
+    confirmLabel: "确认保存",
+    statedBrief: { impact: "已有内容和发布历史不受影响；停用后新增文案和新增版本时不能选它。", check: "版本标识不能改；核对状态。" },
+    facts: <Facts><Fact k="版本标识"><span data-mono="">{option.versionKey}</span></Fact><Fact k="被用过">{option.usageCount} 次</Fact></Facts>,
+    businessForm: versionOptionForm(option),
     run: (reason, _value, form) => runBackend(actions.updateI1CopyVersionOption(option.versionKey, {
       name: form?.name?.trim(),
       description: form?.description?.trim() || "",
@@ -398,21 +753,35 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     }, reason), `文案版本 ${option.versionKey} 已更新`),
   });
 
-  const deleteCopyVersionOption = (option: VersionOptionRow) => openActionConfirm({
+  const deleteCopyVersionOption = (option: VersionOptionRow) => openActionConfirm({ briefKind: "record",
     action: <>删除文案版本 · {option.versionKey}</>,
-    detail: <>只有未被任何文案内容历史引用的版本配置可以删除；已引用版本必须保留，避免破坏发布历史和审计链。</>,
+    title: `删除版本 ${option.versionKey}`,
+    detail: <>删除一个从没被用过的版本。</>,
     amplifies: false,
+    effect: <IrreversibleTag>不能恢复</IrreversibleTag>,
+    confirmTone: "danger",
+    confirmLabel: "确认删除",
+    statedBrief: { impact: "这个版本从目录里删掉，不能恢复；用过的版本删不掉。", check: "核对版本标识；不想再用可以改成停用。" },
+    facts: <Facts><Fact k="版本">{option.versionKey} · {option.name}</Fact><Fact k="被用过">{option.usageCount} 次</Fact></Facts>,
     run: (reason) => runBackend(actions.deleteI1CopyVersionOption(option.versionKey, option.revision, reason), `文案版本 ${option.versionKey} 已删除`),
   });
 
-  const createCopyPosition = () => openActionConfirm({
+  const createCopyPosition = () => openActionConfirm({ briefKind: "config",
     action: <>新增文案位置</>,
-    detail: <>新增可复用的文案位置。位置标识全局唯一，并固定绑定一个 App 顶级模块。</>,
+    title: "新增文案位置",
+    detail: <>新增一个可以放文案的位置。</>,
     amplifies: false,
-    businessForm: { kind: "copy-position-create", modules: COPY_MODULE_OPTIONS },
+    effect: OFFLINE("只加位置，线上不变"),
+    confirmLabel: "确认新增",
+    statedBrief: { impact: "新增一个可以放文案的位置；不会自动建文案，App 也不会因此多出控件。", check: "核对标识和模块，这页建好后不能改。" },
+    businessForm: { kind: "multi-field", fields: [
+      { key: "positionKey", label: "位置标识", placeholder: "home.hero.banner", explain: "小写字母开头，可用小写字母、数字、点、下划线、短横线，2–96 位。" },
+      { key: "positionName", label: "位置名称", placeholder: "首页主横幅" },
+      { key: "surface", label: "投放模块", inputKind: "select", options: COPY_MODULE_OPTIONS.map((item) => item.value), optionLabels: COPY_MODULE_LABELS },
+    ] },
     run: (reason, _value, form) => {
-      if (!form?.positionKey?.trim()) return;
-      runBackend(actions.createI1CopyPosition({
+      if (!form?.positionKey?.trim()) return false;
+      return runBackend(actions.createI1CopyPosition({
         positionKey: form.positionKey.trim(),
         name: form.positionName?.trim() || form.positionKey.trim(),
         surface: form.surface || "home",
@@ -421,84 +790,265 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  const deleteCopyPosition = (positionKey: string) => openActionConfirm({
-    action: <>删除文案位置 · {positionKey}</>,
-    detail: <>仅未被任何文案版本引用的位置可删除；后端会执行引用完整性校验。</>,
-    amplifies: false,
-    run: (reason) => runBackend(actions.deleteI1CopyPosition(positionKey, reason), `文案位置 ${positionKey} 已删除`),
-  });
+  const deleteCopyPosition = (positionKey: string) => {
+    const users = new Set([
+      ...COPY_POOL.filter((copy) => copy.copyPosition === positionKey || copy.draftCopyPosition === positionKey).map((copy) => copy.key),
+      ...COPY_VERSIONS.filter((version) => version.copyPosition === positionKey).map((version) => version.copyKey),
+    ]);
+    const position = COPY_POSITION_ROWS.find((item) => item.positionKey === positionKey);
+    openActionConfirm({ briefKind: "config",
+      action: <>删除文案位置 · {positionKey}</>,
+      title: "删除文案位置",
+      detail: <>删除一个没被用过的位置。</>,
+      amplifies: false,
+      effect: <IrreversibleTag>不能恢复</IrreversibleTag>,
+      confirmTone: "danger",
+      confirmLabel: "确认删除",
+      statedBrief: { impact: "这个位置从目录里删掉，不能恢复；有文案或版本用到它时删不掉。", check: "核对位置标识。" },
+      facts: <Facts>
+        <Fact k="位置">{position?.name ?? "—"} · <span data-mono="">{positionKey}</span></Fact>
+        <Fact k="模块">{moduleLabel(normalizeCopyModule(position?.surface))}</Fact>
+        <Fact k="在用" tone={users.size > 0 ? "warn" : undefined}>{users.size > 0 ? `${users.size} 条文案用到它，删除会被拒绝` : "没有文案用到它"}</Fact>
+      </Facts>,
+      run: (reason) => runBackend(actions.deleteI1CopyPosition(positionKey, reason), `文案位置 ${positionKey} 已删除`),
+    });
+  };
 
-  const rollbackTo = (copy: CopyRow, v: string) => openActionConfirm({
-    action: <>回滚 · {copy.key} → 重新发布 {v}</>,
-    detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对符合该版本受众和投放位置的用户生效),所以同样走操作确认。仅完整满足中英越、受众和投放位置要求的归档版允许恢复。</>,
-    amplifies: false,
-    run: (reason) => {
-      if (copy.revision == null) {
-        toast("当前文案修订号缺失，请刷新后重试");
-        return;
-      }
-      runBackend(actions.rollbackI1CopyVersion(copy.key, v, copy.version, copy.revision, reason), `${copy.key} 已回滚到 ${v}`);
-    },
-  });
+  const rollbackTo = (copy: CopyRow, v: string) => {
+    const target = findVersion(copy.key, v);
+    openActionConfirm({ briefKind: "content",
+      action: <>回滚 · {copy.key} → 重新发布 {v}</>,
+      title: `回滚到 ${v}`,
+      detail: <>把历史版本 {v} 重新发布。</>,
+      amplifies: false,
+      effect: LIVE,
+      confirmLabel: "确认回滚",
+      blockedReason: publishBlockedReason(target?.copyPosition, copy.key, false),
+      statedBrief: { impact: `${v} 重新发布，现在的 ${copy.version} 转为已归档，位置和模块按 ${v} 的；草稿和实验记录保留，同名词条一起更新。`, check: "核对内容对比；历史版本缺位置或受众时会被拒绝。" },
+      facts: <Facts>
+        <Fact k="文案">{copy.desc} · <span data-mono="">{copy.key}</span></Fact>
+        <Fact k="位置">{positionName(target?.copyPosition)} · {moduleLabel(target?.surface)}</Fact>
+        {i18nFact(copy.i18nKey)}
+      </Facts>,
+      content: <>
+        {crowdNotice(target?.copyPosition, copy.key, false)}
+        {target && <CompareTexts beforeLabel={`现在 ${copy.version}`} afterLabel={`回滚后 ${v}`} before={textsOf(findVersion(copy.key, copy.version))} after={textsOf(target)!} />}
+      </>,
+      run: (reason) => {
+        if (copy.revision == null) {
+          toast("读不到这份文案的当前版本，请刷新后重试");
+          return false;
+        }
+        return runBackend(actions.rollbackI1CopyVersion(copy.key, v, copy.version, copy.revision, reason), `${copy.key} 已回滚到 ${v}`);
+      },
+    });
+  };
 
-  const archiveCurrentVersion = (copy: CopyRow, version: string) => openActionConfirm({
+  const archiveCurrentVersion = (copy: CopyRow, version: string) => openActionConfirm({ briefKind: "content",
     action: <>下架当前发布版 · {copy.key} {version}</>,
-    detail: <>下架后该文案位<b>没有生效版本</b>,App 端会退回内置备用文案——一般只在文案出合规问题时才这么做;常规换版直接发新版即可。下架立即生效。</>,
+    title: `下架 ${version}`,
+    detail: <>下架现在发布的版本。</>,
     amplifies: false,
+    effect: LIVE,
+    confirmLabel: "确认下架",
+    statedBrief: { impact: "下架后这条文案没有发布中的内容，按位置取不到它，同名词条一起下架；App 上已经拿到的内容，要等它重新读取才变。", check: "常规换内容直接发新版本，不用先下架。" },
+    facts: <Facts>
+      <Fact k="文案">{copy.desc} · <span data-mono="">{copy.key}</span></Fact>
+      <Fact k="下架的版本">{version}{optionName(version) ? ` · ${optionName(version)}` : ""}</Fact>
+      <Fact k="位置">{positionName(copy.copyPosition)}</Fact>
+    </Facts>,
     run: (reason) => {
       if (copy.revision == null) {
-        toast("当前文案修订号缺失，请刷新后重试");
-        return;
+        toast("读不到这份文案的当前版本，请刷新后重试");
+        return false;
       }
-      runBackend(actions.archiveI1Copy(copy.key, version, copy.revision, reason), `${copy.key} ${version} 已下架`);
+      return runBackend(actions.archiveI1Copy(copy.key, version, copy.revision, reason), `${copy.key} ${version} 已下架`);
     },
   });
 
-  const deleteDraftVersion = (copyKey: string, version: string, revision: number) => openActionConfirm({
-    action: <>删除草稿 · {copyKey} {version}</>,
-    detail: <>只有草稿版本可以删除；删除后不可恢复，但操作理由和删除结果会保留审计。已发布或已归档版本必须保留完整历史，不能物理删除。</>,
-    amplifies: false,
-    run: (reason) => {
-      const mutationKey = `${copyKey}:${version}`;
-      if (deleteInFlightRef.current) return;
-      deleteInFlightRef.current = true;
-      setDeletingDraftKey(mutationKey);
-      actions.deleteI1CopyDraft(copyKey, version, revision, reason)
-        .then(() => actions.reloadIContent())
-        .then(() => toast(`${copyKey} ${version} 草稿已删除`))
-        .catch((error) => toast(`操作失败:${displayAdminError(error)}`))
-        .finally(() => {
-          deleteInFlightRef.current = false;
-          setDeletingDraftKey(null);
-        });
-    },
-  });
+  const deleteDraftVersion = (copyKey: string, version: string, revision: number) => {
+    const copy = findCopy(copyKey);
+    const back = copy && findVersion(copyKey, copy.version)?.st.toLowerCase() === "published";
+    openActionConfirm({ briefKind: "record",
+      action: <>删除草稿 · {copyKey} {version}</>,
+      title: `删除草稿 ${version}`,
+      detail: <>删除这个草稿。</>,
+      amplifies: false,
+      effect: <IrreversibleTag>不能恢复</IrreversibleTag>,
+      confirmTone: "danger",
+      confirmLabel: "确认删除",
+      statedBrief: { impact: back ? `只删掉草稿，不能恢复；线上的 ${copy?.version} 不变。` : "只删掉草稿，不能恢复；这条文案仍是下架。", check: "这个版本号以后不能再给这条文案用。" },
+      facts: <Facts>
+        <Fact k="文案">{copy?.desc ?? copyKey} · <span data-mono="">{copyKey}</span></Fact>
+        <Fact k="草稿">{version}</Fact>
+        <Fact k="线上">{back ? `${copy?.version} 不变` : "没有，仍是下架"}</Fact>
+      </Facts>,
+      run: (reason) => {
+        const mutationKey = `${copyKey}:${version}`;
+        if (deleteInFlightRef.current) return false;
+        deleteInFlightRef.current = true;
+        setDeletingDraftKey(mutationKey);
+        return runBackend(actions.deleteI1CopyDraft(copyKey, version, revision, reason), `${copyKey} ${version} 草稿已删除`)
+          .finally(() => {
+            deleteInFlightRef.current = false;
+            setDeletingDraftKey(null);
+          });
+      },
+    });
+  };
 
-  const adjustFramework = (key: string, name: string, cur: string) => openConfirm({
-    action: <>实验框架参数 · {name}</>,
-    detail: <>当前默认:<b>{cur}</b> · 只影响<b>之后新建</b>的实验的默认值;已启动实验按启动时锁定的快照跑,不回溯。</>,
-    chips: [["运营设定 · 仍需操作确认", "done"], ["改动留审计记录", "ready"]],
-    input: { label: "新默认值", placeholder: cur },
+  const adjustFramework = (key: string, name: string, cur: string) => openConfirm({ briefKind: "config",
+    action: <>实验全局设置 · {name}</>,
+    title: `调整 ${name}`,
+    detail: <>当前值：<b>{cur}</b>。</>,
+    effect: OFFLINE("目前不影响实验运行"),
+    reasonPlaceholder: "例如：工单号、调整依据",
+    statedBrief: { impact: "创建、启动和运行实验都不读这一项。", check: "核对新值，最多 80 字。" },
+    input: { label: "新的值", placeholder: cur },
     reason: true,
     okLabel: "保存",
     run: (reason, v) => {
-      if (!v) return;
-      runBackend(actions.updateI1Framework(key, v, cur, reason), `${name} 默认值已更新为 ${v} · 留审计`);
+      if (!v) return false;
+      return runBackend(actions.updateI1Framework(key, v, cur, reason), `${name} 默认值已更新为 ${v}`);
     },
   });
+
+  /* ---------- 刚被别人改过：看最新的和自己填的，确认后按最新的重建编辑器或确认框 ---------- */
+  const conflictUi = (() => {
+    const conflict = conflictReview.review;
+    if (!conflict) return null;
+    const original = conflict.rejectedCommand?.original;
+    const path = original?.path ?? "";
+    let body: Record<string, unknown> = {};
+    try { body = original ? JSON.parse(original.body) as Record<string, unknown> : {}; } catch { body = {}; }
+    const part = (index: number) => decodeURIComponent(path.split("/")[index] ?? "");
+    const ready = !!conflict.latest;
+    const findCopy = (key: string): CopyRow | undefined => {
+      const row = conflict.latest?.copies.find(copy => copy.key === key);
+      return row && { ...row, surface: normalizeCopyModule(row.surface), draftSurface: row.draftSurface ? normalizeCopyModule(row.draftSurface) : undefined };
+    };
+    const findVersion = (key: string, version?: string): VersionRow | undefined => {
+      const row = conflict.latest?.versions.find(item => item.copyKey === key && item.version === version);
+      return row && { ...row, v: row.version, st: row.status, surface: normalizeCopyModule(row.surface) };
+    };
+    let subject: ReactNode = "这一项";
+    let rows: IConflictRow[] = [];
+    let columns: [string, string] = ["你打开时", "现在"];
+    let gone: string | undefined;
+    let note: ReactNode;
+    let rebuildLabel = "按最新的重新确认";
+    let rebuild: (() => void) | undefined;
+    let lead: string | undefined;
+    const optionState = (value: unknown) => !value ? undefined : String(value).toUpperCase() === "ACTIVE" ? "启用" : "停用";
+    const reopen = (task: () => void) => () => { prefill.current = { reason: conflict.requested.reason, business: conflict.requested.form }; task(); prefill.current = null; };
+    if (path.startsWith("/copy-ab/copies/")) {
+      const key = part(3);
+      const copy = findCopy(key);
+      subject = <>文案 <span data-mono="">{key}</span></>;
+      if (ready && !copy) gone = "这条文案在最新读取里没有了，不能按最新的重做。";
+      const live = copy && ["published", "draft-saved"].includes(copy.status.toLowerCase())
+        && findVersion(copy.key, copy.version)?.st.toLowerCase() === "published";
+      const state = copy ? `${copy.version} · ${copyStatus(live ? "published" : copy.status).text}${copy.draftVersion ? ` · 草稿 ${copy.draftVersion}` : ""}` : "—";
+      const editing = (original?.method === "PATCH" && path.endsWith("/draft")) || (original?.method === "POST" && /\/versions$/.test(path));
+      if (editing) {
+        columns = ["现在", "你填的"];
+        rebuildLabel = "按最新的重新填写";
+        const latestText = findVersion(key, copy?.draftVersion) ?? findVersion(key, copy?.version);
+        const audienceNow = audienceTargetFields(latestText?.audienceTarget);
+        const languageName = (value: unknown) => typeof value !== "string" || !value ? undefined : LANGUAGE_OPTIONS.find((option) => option.value === value)?.label ?? value;
+        rows = [...inGroup("版本", [conflictRow("这条文案", state, `存成 ${String(body.version ?? "—")}`), conflictRow("版本说明", latestText?.versionNote, body.versionNote)]),
+          ...inGroup("三语内容", [conflictRow("中文", latestText?.zh, body.zh), conflictRow("英语", latestText?.en, body.en), conflictRow("越南语", latestText?.vi, body.vi)]),
+          ...inGroup("投放", [conflictRow("投放模块", latestText?.surface && moduleLabel(latestText.surface), typeof body.surface === "string" && body.surface ? moduleLabel(body.surface) : undefined),
+            conflictRow("文案位置", latestText?.copyPosition && positionName(latestText.copyPosition), typeof body.copyPosition === "string" && body.copyPosition ? positionName(body.copyPosition) : undefined), conflictRow("分流比例", latestText?.trafficSplit && `${latestText.trafficSplit}%`, body.trafficSplit == null || body.trafficSplit === "" ? undefined : `${String(body.trafficSplit)}%`)]),
+          ...inGroup("受众", [conflictRow("受众", latestText?.audience, body.audience),
+            conflictRow("最低阶段", audienceNow.phaseMin, body.phaseMin), conflictRow("最高阶段", audienceNow.phaseMax, body.phaseMax),
+            conflictRow("语言", languageName(audienceNow.language), languageName(body.language)),
+            conflictRow("注册超过", audienceNow.registrationDaysGt && `${audienceNow.registrationDaysGt} 天`, body.registrationDaysGt == null ? undefined : `${String(body.registrationDaysGt)} 天`)])];
+        note = original?.method === "PATCH" ? "保存会用你填的整份内容替换现在的草稿；别人改的要留，先在编辑框里补上。" : "你填的内容留在编辑框里，提交时按最新的版本。";
+        rebuild = copy ? () => (prefill.current = { reason: conflict.requested.reason }) && setEditor((current) => current?.kind === "edit" && current.copy.key === key
+          ? { ...current, copy, base: findVersion(key, current.base?.v) ?? current.base } : current) : undefined;
+      } else {
+        const version = part(5);
+        lead = path.endsWith("/rollback") ? "别人先改了，这次没回滚。" : path.endsWith("/archive") ? "别人先改了，这次没下架。" : "别人先改了，这次没删除。";
+        rows = [conflictRow("这条文案", String(body.expectedVersion ?? "—"), state)];
+        const target = version ? findVersion(key, version) : undefined;
+        if (version) rows.push(conflictRow(`版本 ${version}`, "—", target ? versionStatus(target.st).text : "没有了"));
+        if (ready && version && !target) gone = `${version} 在最新读取里没有了。`;
+        rebuild = !copy ? undefined
+          : path.endsWith("/rollback") ? target && reopen(() => rollbackTo(copy, version))
+            : path.endsWith("/archive") ? reopen(() => archiveCurrentVersion(copy, copy.version))
+              : original?.method === "DELETE" && target ? reopen(() => deleteDraftVersion(key, version, copy.revision ?? 0)) : undefined;
+      }
+    } else if (path.startsWith("/copy-ab/version-options/")) {
+      const key = part(3);
+      const latestOption = conflict.latest?.versionOptions.find((row) => row.versionKey === key);
+      const option = latestOption && { ...latestOption, usageCount: latestOption.usageCount ?? conflict.latest!.versions.filter(row => row.version === key).length };
+      subject = <>版本 <span data-mono="">{key}</span></>;
+      if (ready && !option) gone = "这个版本在最新读取里没有了，不能按最新的重做。";
+      if (original?.method === "PUT") {
+        columns = ["现在", "你填的"];
+        rebuildLabel = "按最新的重新填写";
+        rows = [conflictRow("名称", option?.name, body.name), conflictRow("说明", option?.description, body.description), conflictRow("状态", optionState(option?.status), optionState(body.status)), conflictRow("排序", option?.sortOrder, body.sortOrder)];
+        rebuild = option && reopen(() => editCopyVersionOption(option));
+      } else {
+        lead = "别人先改了，这次没删除。";
+        rows = [conflictRow("用到它的文案", "—", option ? `${option.usageCount} 条` : "—"), conflictRow("状态", "—", optionState(option?.status))];
+        rebuild = option && reopen(() => deleteCopyVersionOption(option));
+      }
+    } else if (path.startsWith("/copy-ab/framework/")) {
+      const key = part(3);
+      const latestParam = conflict.latest?.frameworkParams.find((row) => row.key === key);
+      const param = latestParam && { ...latestParam, cur: latestParam.current };
+      subject = <>{param?.name ?? key}</>;
+      if (ready && !param) gone = "这个参数在最新读取里没有了。";
+      rows = [conflictRow("值", body.expectedValue, param?.cur)];
+      note = <>你填的新值 {String(body.value ?? "—")} 和理由会带回确认框。</>;
+      rebuild = param && (() => { prefill.current = { reason: conflict.requested.reason, value: conflict.requested.value }; adjustFramework(param.key, param.name, param.cur); });
+    }
+    if (!rebuild && !gone) { rebuildLabel = "知道了"; note = "最新的已经读到页面上，关掉后重新打开要做的操作。"; }
+    const finish = (task?: () => void) => {
+      if (!conflictReview.confirm(conflict, () => undefined)) return;
+      conflictView.show();
+      if (task) window.setTimeout(task, 0);
+    };
+    return conflictView.open
+      ? <IConflictModal review={conflict} subject={subject} lead={lead} rows={rows} columns={columns} gone={gone} note={note} rebuildLabel={rebuildLabel}
+          onReread={() => void conflictReview.reread()} onClose={conflictView.hide} onRebuild={() => finish(rebuild)}
+          onDiscard={() => finish(() => setEditor(null))} />
+      : <IConflictPending subject={subject} onOpen={conflictView.show} />;
+  })();
 
   const createExperiment = () => {
     if (EXPERIMENT_COPY_OPTIONS.length === 0) {
       toast(`暂无可创建实验的文案：${experimentUnavailableReason}`);
       return;
     }
-    openActionConfirm({
+    setCreatingExperiment(true);
+  };
+
+  const submitExperiment = (form: BusinessFormValue) => {
+    const count = Number(form?.variantCount || 0);
+    const copy = findCopy(form.copyKey);
+    const { version: audienceVersion } = experimentAudience(
+      EXPERIMENT_COPY_OPTIONS.find((item) => item.value === form.copyKey),
+      Array.from({ length: count }, (_, index) => form[`variantVersion.${index}`] ?? ""),
+    );
+    openActionConfirm({ briefKind: "config",
       action: <>创建 A/B 实验</>,
-      detail: <>选择同一文案下至少两个已有内容版本并配置分流。受众直接继承所选文案版本，只读展示，不在实验中重复编辑。</>,
+      title: "创建对比实验",
+      detail: <>创建一个待启动的实验。</>,
       amplifies: false,
-      businessForm: { kind: "copy-experiment-create", copies: EXPERIMENT_COPY_OPTIONS },
-      run: (reason, _value, form) => {
-        const count = Number(form?.variantCount || 0);
+      effect: OFFLINE("创建后待启动，线上不变"),
+      confirmLabel: "确认创建",
+      statedBrief: { impact: "创建后是待启动，不分组、不改用户看到的内容；要人点「启动」才开始。", check: "核对各组版本和分流，启动后不能改。" },
+      facts: <Facts>
+        <Fact k="文案">{copy?.desc ?? form.copyKey} · <span data-mono="">{form.copyKey}</span></Fact>
+        {Array.from({ length: count }, (_, index) => (
+          <Fact key={index} k={`${String.fromCharCode(65 + index)} 组`}>{form[`variantVersion.${index}`]} · 分流 {form[`variantSplit.${index}`]}%</Fact>
+        ))}
+        <Fact k="受众">{audienceText(audienceVersion)}</Fact>
+      </Facts>,
+      run: (reason) => {
         const variants = Array.from({ length: count }, (_, index) => ({
           version: form?.[`variantVersion.${index}`]?.trim() || "",
           splitPct: Number(form?.[`variantSplit.${index}`] || 0),
@@ -511,473 +1061,626 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           && variants.reduce((sum, variant) => sum + variant.splitPct, 0) === 100;
         if (!valid) {
           toast("实验版本或分流比例无效，请确认至少 2 个不同版本且分流合计为 100%");
-          return;
+          return false;
         }
         const note = form?.note?.trim();
-        runBackend(actions.createI1Experiment({
+        return runBackend(actions.createI1Experiment({
           copyKey: form!.copyKey,
           variants,
           ...(note ? { note } : {}),
-        }, reason), "A/B 实验已创建 · 等待启动");
+        }, reason), "A/B 实验已创建 · 等待启动").then((result) => { if (result !== false) setCreatingExperiment(false); return result; });
       },
     });
   };
 
-  const startExp = (id: string) => openActionConfirm({
-    action: <>启动实验 · {id}</>,
-    detail: <>启动后会按当前版本、分流比例和继承受众生成不可变快照。请先完成确认勾选，并填写 8-200 字操作理由。</>,
-    amplifies: false,
-    businessForm: { kind: "copy-experiment-start", experimentId: id },
-    run: (reason) => runBackend(actions.startI1Experiment(id, reason), `${id} 已启动`),
-  });
-
-  const discardExp = (id: string) => openActionConfirm({
-    action: <>弃用实验 · {id}</>,
-    detail: <>仅待启动或已结算实验可以弃用。弃用后不能再次启动或采纳，已产生的数据与审计记录仍会保留。</>,
-    amplifies: false,
-    businessForm: { kind: "copy-experiment-discard", experimentId: id },
-    run: (reason) => runBackend(actions.discardI1Experiment(id, reason), `${id} 已弃用`),
-  });
-
-  const stopExp = (id: string) => openActionConfirm({
-    action: <>停止实验 · {id}</>,
-    detail: <>停止后<b>全部用户回到当前发布版</b>,实验转已结(可再选择采纳或弃用)。停止会改变用户所见文案分布,所以要操作确认。已收集的曝光/转化数据保留,结算页可查。</>,
-    amplifies: false,
-    run: (reason) => {
-      runBackend(actions.stopI1Experiment(id, reason), `${id} 停止已确认生效`);
-    },
-  });
-
-  const adoptExp = (id: string) => openActionConfirm({
-    action: <>采纳获胜变体 · {id}</>,
-    detail: <>把获胜变体<b>采纳为该文案位的发布版</b>——这等价于一次正式发布(对符合该版本受众和投放位置的用户生效),审计会记采纳来源实验号。采纳前确认:数据量达标、提升显著。</>,
-    amplifies: false,
-    run: (reason) => {
-      runBackend(actions.adoptI1Experiment(id, reason), `${id} 获胜变体采纳已确认生效`);
-    },
-  });
-
-  const renderCopyStatus = (c: CopyRow) => {
-    const st = liveCopyStatus(c);
-    // 已发布 → ok;已归档/下架 → dim。
-    if (st.includes("archived")) return <span className="bdg dim">已下架</span>;
-    if (st.includes("published") || st === "published") return <span className="bdg ok">已发布</span>;
-    return <span className="bdg dim">{st}</span>;
+  const experimentFacts = (exp: ExpRow) => {
+    const copy = findCopy(exp.copyKey);
+    return <>
+      <Fact k="文案">{copy?.desc ?? exp.copyKey} · <span data-mono="">{exp.copyKey}</span></Fact>
+      <Fact k="实验"><span data-mono="">{exp.id}</span></Fact>
+      <Fact k="各组">{variantsText(exp)}</Fact>
+    </>;
   };
 
-  const renderVerStatus = (st: string) => {
-    if (st === "draft") return <span className="bdg warn">草稿</span>;
-    if (st === "published") return <span className="bdg ok">已发布</span>;
-    return <span className="bdg dim">已归档</span>;
+  const startExp = (id: string) => {
+    const exp = EXPS.find((item) => item.id === id);
+    openActionConfirm({ briefKind: "config",
+      action: <>启动实验 · {id}</>,
+      title: "启动实验",
+      detail: <>启动这个实验。</>,
+      amplifies: false,
+      effect: LIVE,
+      confirmLabel: "确认启动",
+      statedBrief: { impact: "启动后，用户第一次请求这个位置时按分流分组，实验进行中一直在这组；版本、分流和受众不能再改。", check: "核对各组版本、分流和受众。" },
+      facts: exp && <Facts>
+        {experimentFacts(exp)}
+        <Fact k="受众">{exp.audience || "—"}</Fact>
+        <Fact k="估算人数">{exp.estimatedAudience == null ? "—" : `约 ${exp.estimatedAudience.toLocaleString()} 人（按现在的条件）`}</Fact>
+      </Facts>,
+      businessForm: { kind: "multi-field", fields: [{ key: "ack", label: "我已核对各组版本、分流和受众", inputKind: "checkbox" }] },
+      run: (reason) => runBackend(actions.startI1Experiment(id, reason), `${id} 已启动`),
+    });
   };
 
-  const renderExpState = (e: ExpRow) => {
-    const st = liveExpState(e);
-    if (st === "scheduled") return <span className="bdg warn">待启动</span>;
-    if (st === "running") return <span className="bdg ok">进行中</span>;
-    if (st === "stopped") return <span className="bdg dim">已停止</span>;
-    if (st === "adopted") return <span className="bdg cyan">已采纳</span>;
-    if (st === "concluded") return <span className="bdg warn">已结算</span>;
-    return <span className="bdg dim">已弃用</span>;
+  const discardExp = (id: string) => {
+    const exp = EXPS.find((item) => item.id === id);
+    openActionConfirm({ briefKind: "config",
+      action: <>弃用实验 · {id}</>,
+      title: "弃用实验",
+      detail: <>弃用这个实验。</>,
+      amplifies: false,
+      effect: <IrreversibleTag>不能撤回</IrreversibleTag>,
+      confirmTone: "danger",
+      confirmLabel: "确认弃用",
+      statedBrief: { impact: "弃用后不能再启动或采纳；已收集的数据和操作记录保留，用户看到的内容不变。", check: "要用实验结果，先采纳再说。" },
+      facts: exp && <Facts>{experimentFacts(exp)}<Fact k="状态">{experimentState(exp.state).text}</Fact></Facts>,
+      run: (reason) => runBackend(actions.discardI1Experiment(id, reason), `${id} 已弃用`),
+    });
   };
 
-  const surfaceSummary = COPY_POOL.length
-    ? Object.entries(COPY_POOL.reduce<Record<string, number>>((acc, copy) => {
-        const key = copy.surface || "未设置";
-        acc[key] = (acc[key] ?? 0) + 1;
-        return acc;
-      }, {})).map(([surface, count]) => `${COPY_MODULE_LABELS[surface as CopyModule] ?? "其他页面"} ${count}`).join(" · ")
-    : "暂无后端文案位";
-  const topExperimentId = EXPS.find((exp) => exp.state === "running" || exp.state === "adopted")?.id ?? "";
+  const stopExp = (id: string) => {
+    const exp = EXPS.find((item) => item.id === id);
+    openActionConfirm({ briefKind: "content",
+      action: <>停止实验 · {id}</>,
+      title: "停止实验",
+      detail: <>停止这个实验。</>,
+      amplifies: false,
+      effect: LIVE,
+      confirmLabel: "确认停止",
+      statedBrief: { impact: "停止后不再分组，按位置取文案回到线上的版本。数据保留，之后可以采纳或弃用。", check: "App 上已经拿到的内容，要等它重新读取才变。" },
+      facts: exp && <Facts>
+        {experimentFacts(exp)}
+        <Fact k="合计看到">{countOf(exp.impressions) === null ? "—" : `${countOf(exp.impressions)!.toLocaleString()} 人`}</Fact>
+        <Fact k="转化">{countOf(exp.conversions) === null ? "—" : `${countOf(exp.conversions)!.toLocaleString()} 人`}</Fact>
+      </Facts>,
+      run: (reason) => {
+        return runBackend(actions.stopI1Experiment(id, reason), `${id} 已停止`);
+      },
+    });
+  };
 
-  if (contentLoading && !data) {
-    return <section className="l-card"><div className="l-b"><div className="itint">I1 数据加载中...</div></div></section>;
+  const adoptExp = (id: string) => {
+    const exp = EXPS.find((item) => item.id === id);
+    const copy = exp ? findCopy(exp.copyKey) : undefined;
+    const lead = exp ? leaderOf(exp) : undefined;
+    const winner = exp?.variants.find((variant) => variant.name === lead);
+    const winnerVersion = copy && winner ? findVersion(copy.key, winner.version) : undefined;
+    openActionConfirm({ briefKind: "content",
+      action: <>采纳获胜变体 · {id}</>,
+      title: "采纳实验结果",
+      detail: <>把转化率最高的那组发布为现在的版本。</>,
+      amplifies: false,
+      effect: LIVE,
+      confirmLabel: "确认采纳",
+      blockedReason: exp ? adoptBlockedReason(exp) : displayAdminError(new Error("COPY_EXPERIMENT_NOT_FOUND")),
+      statedBrief: { impact: "按真实转化率选唯一最高的一组，把它的版本发布为现在的版本；同名词条一起更新。", check: "每组满 100 人看到、转化率唯一最高才能采纳，内容和位置按发布的要求检查；不做显著性检验。" },
+      facts: exp && <Facts>
+        {experimentFacts(exp)}
+        <Fact k="按页面的数" tone={winner?.cvr != null ? "ok" : "warn"}>{winner?.cvr != null ? `${winner.name} 组 ${winner.version} 最高（${winner.impressions != null && winner.conversions != null ? `看到 ${winner.impressions.toLocaleString()}、转化 ${winner.conversions.toLocaleString()} 人，` : ""}${winner.cvr.toFixed(2)}%）` : "没有唯一最高的一组，不能采纳"}</Fact>
+        {copy && i18nFact(copy.i18nKey)}
+      </Facts>,
+      content: <>
+        {copy && crowdNotice(winnerVersion?.copyPosition ?? copy.copyPosition, copy.key, false)}
+        {copy && winnerVersion && <CompareTexts beforeLabel={isPublished(copy) ? `线上 ${copy.version}` : `已下架 ${copy.version}`} afterLabel={`采纳后 ${winnerVersion.v}`} before={textsOf(findVersion(copy.key, copy.version))} after={textsOf(winnerVersion)!} />}
+      </>,
+      run: (reason) => {
+        return runBackend(actions.adoptI1Experiment(id, reason), `${id} 获胜版本已发布`);
+      },
+    });
+  };
+
+  /** New group counters allow the same integer ratio comparison as the backend; older responses retain their rounded-rate hint. */
+  function leaderOf(exp: ExpRow): string | undefined {
+    const seen = countOf(exp.impressions);
+    if (!seen || exp.state === "scheduled" || exp.variants.length < 2) return undefined;
+    if (exp.variants.every((variant) => variant.impressions !== undefined && variant.impressions > 0 && variant.conversions !== undefined)) {
+      let best = exp.variants[0];
+      let tied = false;
+      for (const candidate of exp.variants.slice(1)) {
+        const comparison = BigInt(candidate.conversions!) * BigInt(best.impressions!)
+          - BigInt(best.conversions!) * BigInt(candidate.impressions!);
+        if (comparison > BigInt(0)) { best = candidate; tied = false; }
+        else if (comparison === BigInt(0)) tied = true;
+      }
+      return tied ? undefined : best.name;
+    }
+    const rates = exp.variants.flatMap((variant) => variant.cvr === null ? [] : [variant.cvr]);
+    if (rates.length !== exp.variants.length) return undefined;
+    const max = Math.max(...rates);
+    const top = exp.variants.filter((variant) => variant.cvr === max);
+    return top.length === 1 ? top[0].name : undefined;
   }
+
+  /** Preflight only facts the overview proves; missing legacy counters leave the decision to the server. */
+  const adoptionErrorCode = (exp: ExpRow): string | undefined => {
+    if (!["concluded", "stopped"].includes(exp.state)) return "INVALID_STATE_TRANSITION";
+    const copy = findCopy(exp.copyKey);
+    if (copy?.draftVersion?.trim() && !["published", "draft-saved"].includes(copy.status.trim().toLowerCase())) return "COPY_ADOPT_DRAFT_PENDING";
+    if (exp.variants.length < 2) return "COPY_EXPERIMENT_WINNER_NOT_UNIQUE";
+    if (exp.variants.some((variant) => variant.impressions === undefined || variant.conversions === undefined)) return;
+    if (exp.variants.every((variant) => variant.impressions === 0)) return "COPY_EXPERIMENT_NO_EXPOSURE";
+    if (exp.variants.some((variant) => variant.impressions! < 100)) return "COPY_EXPERIMENT_MIN_SAMPLE_NOT_MET";
+    const winner = exp.variants.find((variant) => variant.name === leaderOf(exp));
+    if (!winner) return "COPY_EXPERIMENT_WINNER_NOT_UNIQUE";
+    const version = findVersion(exp.copyKey, winner.version);
+    if (!version) return "COPY_EXPERIMENT_WINNER_VERSION_INVALID";
+    if (version.st.toLowerCase() === "draft") return "INVALID_STATE_TRANSITION";
+    if (publishBlockedReason(version.copyPosition, exp.copyKey)) return "COPY_POSITION_ALREADY_PUBLISHED";
+  };
+  const adoptBlockedReason = (exp: ExpRow) => {
+    const code = adoptionErrorCode(exp);
+    // 位置被占时点名占着的那条，和发布、回滚的禁用原因一样。
+    if (code === "COPY_POSITION_ALREADY_PUBLISHED") {
+      const winner = exp.variants.find((variant) => variant.name === leaderOf(exp));
+      return publishBlockedReason(findVersion(exp.copyKey, winner?.version)?.copyPosition, exp.copyKey, false);
+    }
+    return code ? displayAdminError(new Error(code)) : undefined;
+  };
+
+  const sampleOf = (exp: ExpRow): { text: ReactNode; tone: "warn" | null } => {
+    if (exp.state === "scheduled") return { text: "还没开始", tone: null };
+    const short = exp.variants.filter((variant) => variant.impressions !== undefined && variant.impressions < 100);
+    if (short.length > 0) {
+      if (exp.variants.every((variant) => variant.impressions === 0)) return { text: "还没有人看到", tone: null };
+      return { text: `${short.map((variant) => variant.name).join("、")} 组不到 100 人`, tone: exp.state === "adopted" || exp.state === "discarded" ? null : "warn" };
+    }
+    if (exp.variants.length < 2 || exp.variants.some((variant) => variant.impressions === undefined)) return { text: "—", tone: null };
+    return { text: "每组都满 100 人", tone: null };
+  };
+
+  const openExperiment = (id: string) => {
+    setCopyDetail(null);
+    setExpFlt("all");
+    setTab("experiments");
+    setFocusExp(id);
+  };
+  useEffect(() => {
+    if (tab !== "experiments" || !focusExp) return;
+    document.getElementById(`i1-exp-${focusExp}`)?.scrollIntoView({ behavior: "instant" as ScrollBehavior, block: "start" });
+  }, [tab, focusExp]);
+
+  const reload = async () => {
+    setReloading(true);
+    await actions.reloadIContent();
+    setReloading(false);
+  };
+
+  const header = (
+    <PageHeader pageId="I1" title="页面文案对比测试" summary="管 App 各位置的文案版本和对比实验。"
+      readOnly={!canWrite && !canCreateCopy && !canManageExperiments ? "这个账号只能查看这页" : undefined}
+      actions={canCreateCopy ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason ?? (data && ACTIVE_VERSION_OPTIONS.length === 0 ? "先在「版本目录」新增或启用一个版本" : undefined)} onClick={() => createCopy()}>新增文案</Button> : undefined} />
+  );
+
   if (!data) {
-    return <section className="l-card"><div className="l-b"><div className="itint danger">I1 暂无真实接口数据</div></div></section>;
+    return (
+      <>
+        {header}
+        {pendingNotice}
+        {conflictUi}
+        {contentLoading && !errorText
+          ? <BlockState state="loading" title="文案数据加载中…" />
+          : errorText
+            ? <BlockState state="error" title="文案数据读取失败" detail={errorText} onRetry={() => void reload()} retrying={reloading} retryLabel="重新加载" />
+            : <BlockState state="empty" title="暂无文案数据" detail="没有读到文案位置和文案。" />}
+      </>
+    );
   }
+
+  // ---- 位置卡 ----
+  const versionsOf = (copyKey: string) => COPY_VERSIONS.filter((row) => row.copyKey === copyKey);
+  const experimentOf = (copyKey: string) => EXPS.find((exp) => exp.copyKey === copyKey && ["scheduled", "running", "concluded", "stopped"].includes(exp.state));
+  const experimentSummary = (copyKey: string): PositionCopy["experiment"] => {
+    const exp = experimentOf(copyKey);
+    if (!exp) return undefined;
+    const st = experimentState(exp.state);
+    const lead = leaderOf(exp);
+    return { id: exp.id, tone: st.tone, text: exp.state === "running" ? (lead ? `实验进行中 · ${lead} 组领先` : "实验进行中") : `实验${st.text}` };
+  };
+  const toCard = (copy: CopyRow): PositionCopy => ({
+    key: copy.key,
+    name: copy.desc,
+    status: liveCopyStatus(copy),
+    version: copy.version,
+    versionName: optionName(copy.version),
+    texts: textsOf(findVersion(copy.key, copy.version)),
+    versionCount: versionsOf(copy.key).length,
+    draftVersion: copy.draftVersion,
+    lastChange: copy.lastChange,
+    experiment: experimentSummary(copy.key),
+  });
+  const positionKeys = new Set(COPY_POSITION_ROWS.map((position) => position.positionKey));
+  const visiblePositions = COPY_POSITION_ROWS.filter((position) => surf === "all" || normalizeCopyModule(position.surface) === surf);
+  const orphanCopies = COPY_POOL.filter((copy) => !copy.copyPosition || !positionKeys.has(copy.copyPosition)).filter((copy) => surf === "all" || copy.surface === surf);
+  const surfCount = (value: Surf) => value === "all" ? COPY_POSITION_ROWS.length : COPY_POSITION_ROWS.filter((position) => normalizeCopyModule(position.surface) === value).length;
+  const crowded = COPY_POSITION_ROWS.filter((position) => COPY_POOL.filter((copy) => isPublished(copy) && copy.copyPosition === position.positionKey).length > 1);
+  const awaiting = EXPS.filter((exp) => exp.state === "concluded" || exp.state === "stopped");
+  const scheduled = EXPS.filter((exp) => exp.state === "scheduled");
+  const publishedCount = COPY_POOL.filter(isPublished).length;
+  const activePositions = COPY_POSITION_ROWS.filter((position) => position.status.toUpperCase() === "ACTIVE").length;
+  const createBlocked = newMutationReason ?? (ACTIVE_VERSION_OPTIONS.length === 0 ? "先在「版本目录」新增或启用一个版本" : undefined);
+
+  const conclusion = errorText
+    ? <Conclusion state="unknown" icon={ShieldAlert}>文案暂时不能改，先重新加载</Conclusion>
+    : crowded.length > 0
+      ? <Conclusion state="danger" icon={TriangleAlert} hint="下架多出来的一条。">{crowded[0].name}有 <b>{COPY_POOL.filter((copy) => isPublished(copy) && copy.copyPosition === crowded[0].positionKey).length}</b> 条在投放，App 取不到这个位置的内容</Conclusion>
+      : awaiting.length + scheduled.length > 0
+          ? <Conclusion state="neutral" icon={ListChecks} hint={[awaiting.length ? `${awaiting.length} 个已结束，去采纳或弃用` : "", scheduled.length ? `${scheduled.length} 个待启动` : ""].filter(Boolean).join("，")}>有 {awaiting.length + scheduled.length} 个实验等你处理</Conclusion>
+          : COPY_POOL.length === 0
+            ? <Conclusion state="neutral" icon={ListChecks} hint={canCreateCopy ? "在一个位置上点「在这里新增文案」。" : undefined}>还没有文案，{COPY_POSITION_ROWS.length} 个位置都空着</Conclusion>
+            : <Conclusion state="ok" icon={CheckCircle2}>{publishedCount} 条文案已发布，{I1_STATS.runningExps} 个实验进行中</Conclusion>;
+
+  const positionsPane = (
+    <div {...tabIds.panel("positions")} className="rd-tab-pane i1-pane">
+      <FilterBar scope={<Segments label="投放模块" value={surf} onChange={setSurf} items={SURF_FLT.map(([value, label]) => ({ value, label, count: surfCount(value) }))} />}
+        sort={canWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason} onClick={createCopyPosition}>新增位置</Button> : undefined} />
+      {visiblePositions.length === 0 && orphanCopies.length === 0 && (
+        <BlockState state="empty" title={COPY_POSITION_ROWS.length === 0 ? "还没有文案位置" : "这个模块没有文案位置"} detail={COPY_POSITION_ROWS.length === 0 && canWrite ? "先点「新增位置」。" : undefined} />
+      )}
+      <div className="i1-cards" data-proof="copy-position-list">
+        {visiblePositions.map((position) => {
+          const surface = normalizeCopyModule(position.surface);
+          const copies = COPY_POOL.filter((copy) => copy.copyPosition === position.positionKey);
+          const live = copies.filter(isPublished);
+          const inactive = position.status.toUpperCase() !== "ACTIVE";
+          const menu: MoreMenuItem[] = [
+            ...(canCreateCopy && !inactive ? [{ key: "create", label: "在这里新增文案", disabledReason: createBlocked, onSelect: () => createCopy({ surface, copyPosition: position.positionKey }) }] : []),
+            ...(canWrite ? [{ key: "delete", label: "删除位置", danger: true, disabledReason: lockReason(`position:${position.positionKey}`), onSelect: () => deleteCopyPosition(position.positionKey) }] : []),
+          ];
+          return (
+            <PositionCard key={position.positionKey}
+              title={position.name}
+              sub={<>{moduleLabel(surface)} · <span data-mono="">{position.positionKey}</span></>}
+              statusTag={inactive ? <StatusTag tone="done">已停用</StatusTag> : undefined}
+              surface={surface}
+              copies={copies.map(toCard)}
+              problem={live.length > 1 ? <Notice tone="danger" title={`有 ${live.length} 条在投放`}>App 按位置取文案时取不到内容，下架多出来的一条。</Notice> : undefined}
+              empty={<>
+                <span className="i1-weak">{inactive ? "位置已停用，不能放文案" : "还没有文案"}</span>
+                {canCreateCopy && !inactive && <Button size="sm" disabledReason={createBlocked} onClick={() => createCopy({ surface, copyPosition: position.positionKey })}>在这里新增文案</Button>}
+              </>}
+              menu={menu}
+              openLabel={canWrite ? "查看和编辑" : "查看"}
+              onOpenCopy={setCopyDetail}
+              onOpenExperiment={openExperiment} />
+          );
+        })}
+        {orphanCopies.length > 0 && (
+          <PositionCard title="没放到现有位置的文案" sub={`${orphanCopies.length} 条 · 位置已删除或没填`}
+            copies={orphanCopies.map(toCard)} openLabel={canWrite ? "查看和编辑" : "查看"} onOpenCopy={setCopyDetail} onOpenExperiment={openExperiment} />
+        )}
+      </div>
+    </div>
+  );
+
+  const expCount = (value: ExpFlt) => value === "all" ? EXPS.length : value === "running" ? EXPS.filter((exp) => exp.state === "running").length : EXPS.filter((exp) => ["concluded", "adopted", "discarded", "stopped"].includes(exp.state)).length;
+  const experimentsPane = (
+    <div {...tabIds.panel("experiments")} className="rd-tab-pane i1-pane">
+      <FilterBar scope={<Segments label="实验状态" value={expFlt} onChange={setExpFlt} items={EXP_FLT.map(([value, label]) => ({ value, label, count: expCount(value) }))} />}
+        sort={<>
+          <span className="rd-filter-result">最高转化率 {highestVariantCvrText}<Explain label="最高转化率怎么算" content={highestVariantCvrText === "—" ? "还没有哪一组有人看到，没有转化率可比。算的是所有实验里单独一组的最高转化率。" : "所有实验里单独一组的最高转化率，不是相对原版的提升。"} /></span>
+          {canManageExperiments && <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason ?? (EXPERIMENT_COPY_OPTIONS.length === 0 ? experimentUnavailableReason : undefined)} onClick={createExperiment}>创建实验</Button>}
+        </>} />
+      {filteredExps.length === 0 && <BlockState state="empty" title={EXPS.length === 0 ? "还没有实验" : "这个状态下没有实验"} />}
+      <div className="i1-cards">
+        {filteredExps.map((e) => {
+          const st = liveExpState(e);
+          const isRunning = st === "running";
+          const canDiscard = st === "scheduled" || st === "concluded";
+          const copy = findCopy(e.copyKey);
+          const locked = lockReason(`exp:${e.id}`);
+          const buttons = canManageExperiments && st === "scheduled" ? (
+            <>
+              <Button size="sm" variant="danger-outline" disabledReason={locked} onClick={() => discardExp(e.id)}>弃用</Button>
+              <Button size="sm" variant="primary" disabledReason={locked} onClick={() => startExp(e.id)}>启动</Button>
+            </>
+          ) : canManageExperiments && isRunning ? (
+            <Button size="sm" disabledReason={locked} onClick={() => stopExp(e.id)}>停止实验</Button>
+          ) : canManageExperiments && (st === "concluded" || st === "stopped") ? (
+            <>
+              {canDiscard && <Button size="sm" variant="danger-outline" disabledReason={locked} onClick={() => discardExp(e.id)}>弃用</Button>}
+              <Button size="sm" variant="primary" disabledReason={locked ?? adoptBlockedReason(e)} onClick={() => adoptExp(e.id)}>采纳结果</Button>
+            </>
+          ) : null;
+          return (
+            <ExperimentCard key={e.id} id={e.id} selected={focusExp === e.id}
+              title={copy?.desc ?? e.copyKey}
+              sub={<>{positionName(copy?.copyPosition)} · <span data-mono="">{e.id}</span></>}
+              state={st}
+              variants={e.variants.map((variant) => ({ ...variant, versionName: optionName(variant.version), text: findVersion(e.copyKey, variant.version)?.zh }))}
+              impressions={countOf(e.impressions)}
+              conversions={countOf(e.conversions)}
+              leader={leaderOf(e)}
+              sample={sampleOf(e)}
+              audience={<>{e.audience || "—"}<span className="i1-weak">{e.estimatedAudience == null ? "" : ` · 按现在的条件约 ${e.estimatedAudience.toLocaleString()} 人`}</span></>}
+              note={e.note}
+              actions={buttons} />
+          );
+        })}
+      </div>
+      {EXP_FRAMEWORK.length > 0 && <Fold title="实验全局设置" icon={Settings2} tone="role-other"
+        summary={retiredFrameworkCount === EXP_FRAMEWORK.length ? `${retiredFrameworkCount} 项 · 已停用`
+          : retiredFrameworkCount > 0 ? `${retiredFrameworkCount} 项已停用 · ${EXP_FRAMEWORK.length - retiredFrameworkCount} 项目前不影响实验运行`
+            : `${EXP_FRAMEWORK.length} 项 · 目前不影响实验运行`}
+        explain={retiredFrameworkCount > 0
+          ? "这几项已停用，不影响实验，也不能再改，这里只留以前存的值。采纳看的是每组至少 100 人，不是这里的样本量。"
+          : "创建、启动和运行实验都不读这些值；采纳要求每组至少 100 人是固定规则，不在这里。"}>
+        <ConfigList label="实验全局设置">
+          {EXP_FRAMEWORK.map((p) => {
+            const cur = liveFw(p.key, p.cur);
+            return p.retired
+              ? <ConfigRow key={p.key} name={p.name} when="已停用，不能再改" note="不影响实验：分组和受众看每个实验自己的设置。"
+                  value={<span className="i1-retired-value">{cur}<StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag></span>} />
+              : <ConfigRow key={p.key} name={p.name} what={p.sub || "—"} when="保存后只记下新值" effect="目前不影响实验运行。" value={cur}
+                  action={canManageExperiments ? <Button size="sm" disabledReason={lockReason(`framework:${p.key}`)} onClick={() => adjustFramework(p.key, p.name, cur)}>调整</Button> : undefined} />;
+          })}
+        </ConfigList>
+      </Fold>}
+    </div>
+  );
+
+  const historyAction = (row: VersionRow): MoreMenuItem[] => {
+    const copy = COPY_POOL.find((item) => item.key === row.copyKey);
+    if (!canWrite || !copy) return [];
+    const status = row.st.toLowerCase();
+    const existingDraft = copy.draftVersion
+      ? COPY_VERSIONS.find((item) => item.copyKey === copy.key && item.v === copy.draftVersion && item.st.toLowerCase() === "draft")
+      : undefined;
+    const usedVersionKeys = usedVersionsForCopy(copy);
+    const hasUnusedActiveVersion = ACTIVE_VERSION_OPTIONS.some((option) => !usedVersionKeys.has(option.value));
+    const locked = lockReason(`copy:${copy.key}`);
+    const items: MoreMenuItem[] = [];
+    if (status === "archived") items.push({ key: "rollback", label: `回滚到 ${row.v}`, disabledReason: locked ?? publishBlockedReason(row.copyPosition, copy.key, false), onSelect: () => rollbackTo(copy, row.v) });
+    if (status === "published") {
+      items.push(existingDraft
+        ? { key: "draft", label: `继续草稿 ${existingDraft.v}`, disabledReason: locked, onSelect: () => editCopy(copy, existingDraft) }
+        : { key: "new", label: "新增版本", disabledReason: locked ?? (!hasUnusedActiveVersion ? "先在「版本目录」新增或启用一个这条文案没用过的版本" : undefined), onSelect: () => editCopy(copy, row, true) });
+      if (copy.version === row.v) items.push({ key: "archive", label: "下架", danger: true, disabledReason: locked, onSelect: () => archiveCurrentVersion(copy, row.v) });
+    }
+    if (status === "draft" && copy.draftVersion === row.v) {
+      items.push({ key: "edit", label: "编辑或发布", disabledReason: locked, onSelect: () => editCopy(copy, row) });
+      if (copy.revision != null) items.push({ key: "delete", label: deletingDraftKey === `${row.copyKey}:${row.v}` ? "删除中…" : "删除草稿", danger: true, disabledReason: locked ?? (deletingDraftKey !== null ? "有草稿正在删除" : undefined), onSelect: () => deleteDraftVersion(row.copyKey, row.v, copy.revision!) });
+    }
+    return items;
+  };
+
+  const historyPane = (
+    <div {...tabIds.panel("history")} className="rd-tab-pane i1-pane">
+      <FilterBar scope={<Segments label="版本状态" value={versionStatusFlt} onChange={(next) => { setVersionStatusFlt(next); setVersionPage(1); }} items={VERSION_STATUS_FLT.map(([value, label]) => ({ value, label }))} />}
+        onClear={() => { setVersionCopyFlt("all"); setVersionStatusFlt("all"); setVersionPage(1); }} canClear={versionCopyFlt !== "all" || versionStatusFlt !== "all"}>
+        <FilterField grow>
+          <Select aria-label="按文案筛选" value={versionCopyFlt} onChange={(next) => { setVersionCopyFlt(next); setVersionPage(1); }}
+            options={[{ value: "all", label: "全部文案" }, ...COPY_POOL.map((copy) => ({ value: copy.key, label: `${copy.desc} · ${copy.key}` }))]} />
+        </FilterField>
+      </FilterBar>
+      <Panel title="内容历史" icon={History} tone="role-3" flush sub={`${filteredVersions.length} 条 · ${ZONE}`} explain="每条文案各个版本的内容、状态和最近一次操作。「最后变动」是这条记录最后一次变化的时间，被新版本换下也算，不一定是旁边那次操作的时间。" data-proof="copy-version-list">
+        <Table label="内容历史" className="i1-history">
+          <thead><tr><Th>文案</Th><Th>版本</Th><Th>中文内容</Th><Th>位置</Th><Th>最近操作</Th><Th align="right">操作</Th></tr></thead>
+          <tbody>
+            {pagedVersions.map((row) => {
+              const copy = COPY_POOL.find((item) => item.key === row.copyKey);
+              const st = versionStatus(row.st);
+              const lack = missingLangs(textsOf(row)!).filter((label) => label !== "中文");
+              const items = historyAction(row);
+              const id = `${row.copyKey}:${row.v}`;
+              return (
+                <Tr key={id} selected={versionDetail === id} onOpen={() => setVersionDetail(id)}>
+                  <Td><Cell main={copy?.desc || row.copyKey} sub={<span data-mono="">{row.copyKey}</span>} title={`${copy?.desc || row.copyKey} · ${row.copyKey}`} /></Td>
+                  <Td><Cell main={<span data-mono="">{row.v}</span>} sub={<StatusTag tone={st.tone}>{st.text}</StatusTag>} /></Td>
+                  <Td grow><Cell main={row.zh ? nexGridBrandText(row.zh) : <StatusTag tone="warn">中文缺失</StatusTag>} title={row.zh ? nexGridBrandText(row.zh) : undefined}
+                    sub={lack.length ? <span className="i1-warn-text">缺{lack.join("、")}</span> : undefined} /></Td>
+                  <Td><Cell main={positionName(row.copyPosition)} sub={moduleLabel(row.surface)} /></Td>
+                  <Td><Cell main={chainText(row.chain)} sub={row.ts ? `最后变动 ${row.ts}` : "—"} title={row.chain ? chainText(row.chain) : undefined} /></Td>
+                  <Td align="right" data-fit="">{items.length > 0 ? <MoreMenu label={`${row.copyKey} ${row.v} 的操作`} items={items} /> : <span className="i1-weak">—</span>}</Td>
+                </Tr>
+              );
+            })}
+            {filteredVersions.length === 0 && <TableMessage columns={6}>{COPY_VERSIONS.length === 0 ? "还没有版本记录" : "这个筛选下没有版本记录"}</TableMessage>}
+          </tbody>
+        </Table>
+        {filteredVersions.length > 0 && <Pager label="内容历史" total={filteredVersions.length} page={safeVersionPage} pageSize={VERSION_PAGE_SIZE} sizes={[VERSION_PAGE_SIZE]}
+          onPage={(page) => setVersionPage(Math.min(versionPages, Math.max(1, page)))} onPageSize={() => undefined} />}
+      </Panel>
+    </div>
+  );
+
+  const catalogPane = (
+    <div {...tabIds.panel("catalog")} className="rd-tab-pane i1-pane">
+      <Panel title="版本目录" icon={Layers} tone="role-4" flush sub={`${VERSION_OPTIONS.length} 个 · 启用 ${ACTIVE_VERSION_OPTIONS.length} 个`}
+        explain="新增文案和新增版本时从启用的版本里选；一条文案每个版本只能用一次。用过的版本不能删除，可以停用。"
+        actions={canWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason} onClick={createCopyVersionOption}>新增版本</Button> : undefined} data-proof="copy-version-catalog">
+        <Table label="版本目录" className="i1-catalog">
+          <thead><tr><Th>版本</Th><Th>说明</Th><Th>状态</Th><Th align="right">排序</Th><Th align="right">被用过</Th>{canWrite && <Th align="right">操作</Th>}</tr></thead>
+          <tbody>
+            {VERSION_OPTIONS.map((option) => {
+              const referenced = option.usageCount > 0;
+              const active = option.status.toUpperCase() === "ACTIVE";
+              return (
+                <tr key={option.versionKey}>
+                  <Td><Cell main={<b data-mono="">{option.versionKey}</b>} sub={option.name} title={`${option.versionKey} · ${option.name}`} /></Td>
+                  <Td grow><Cell main={option.description || <span className="i1-weak">—</span>} title={option.description || undefined} /></Td>
+                  <Td><StatusTag tone={active ? "ok" : "done"}>{active ? "已启用" : "已停用"}</StatusTag></Td>
+                  <Td align="right">{option.sortOrder}</Td>
+                  <Td align="right">{option.usageCount} 次</Td>
+                  {canWrite && <Td align="right" data-fit="">
+                    <span className="i1-row-actions">
+                      <Button size="sm" variant="ghost" disabledReason={lockReason(`version:${option.versionKey}`)} onClick={() => editCopyVersionOption(option)}>编辑</Button>
+                      <Button size="sm" variant="ghost" disabledReason={lockReason(`version:${option.versionKey}`) ?? (referenced ? "已有内容用过这个版本，不能删除；可以停用" : undefined)} onClick={() => deleteCopyVersionOption(option)}>删除</Button>
+                    </span>
+                  </Td>}
+                </tr>
+              );
+            })}
+            {VERSION_OPTIONS.length === 0 && <TableMessage columns={canWrite ? 6 : 5}>还没有版本，先新增一个再建文案</TableMessage>}
+          </tbody>
+        </Table>
+      </Panel>
+    </div>
+  );
+
+  // ---- 文案详情抽屉 ----
+  const detailCopy = copyDetail ? findCopy(copyDetail) : undefined;
+  const detailCurrent = detailCopy ? findVersion(detailCopy.key, detailCopy.version) : undefined;
+  const detailDraft = detailCopy?.draftVersion ? findVersion(detailCopy.key, detailCopy.draftVersion) : undefined;
+  const detailExp = detailCopy ? experimentOf(detailCopy.key) : undefined;
+  const copyDrawer = detailCopy && (() => {
+    const st = copyStatus(liveCopyStatus(detailCopy));
+    const locked = lockReason(`copy:${detailCopy.key}`);
+    const live = isPublished(detailCopy);
+    const versionText = `${detailCopy.version}${optionName(detailCopy.version) ? ` · ${optionName(detailCopy.version)}` : ""}`;
+    const rows: JudgmentRow[] = [
+      { label: "状态", value: <StatusTag tone={st.tone} explain={st.explain}>{st.text}</StatusTag> },
+      { label: "位置", value: `${positionName(detailCopy.copyPosition)} · ${moduleLabel(detailCopy.surface)}` },
+      { label: "线上版本", value: live ? versionText : `没有（${detailCopy.version} 已下架）` },
+      { label: "草稿", value: detailCopy.draftVersion ? `${detailCopy.draftVersion} · 还没发布` : "没有" },
+      { label: "实验", value: detailExp ? <button type="button" className="rd-link i1-exp-link" onClick={() => openExperiment(detailExp.id)}>{experimentState(detailExp.state).text} · {detailExp.id}</button> : "没有" },
+    ];
+    const others = othersPublishedAt(detailCopy.copyPosition, detailCopy.key);
+    const vers = versionsOf(detailCopy.key);
+    return (
+      <Drawer open onClose={() => setCopyDetail(null)} title="文案详情" sub={<>{detailCopy.desc} · <span data-mono="">{detailCopy.key}</span></>} icon={FileText} tone="role-2"
+        footer={canWrite ? <Decision
+          danger={isPublished(detailCopy) ? <Button variant="danger-outline" disabledReason={locked} onClick={() => archiveCurrentVersion(detailCopy, detailCopy.version)}>下架</Button> : undefined}
+          others={detailCopy.draftVersion && detailCopy.revision != null && detailDraft
+            ? <Button disabledReason={locked ?? (deletingDraftKey !== null ? "有草稿正在删除" : undefined)} onClick={() => deleteDraftVersion(detailCopy.key, detailCopy.draftVersion!, detailCopy.revision!)}>删除草稿</Button>
+            : undefined}
+          primary={<Button variant="primary" disabledReason={locked} onClick={() => editCopy(detailCopy)}>{detailCopy.draftVersion ? "编辑草稿" : "编辑文案"}</Button>} /> : undefined}>
+        <JudgmentPoints rows={rows} />
+        {isPublished(detailCopy) && others.length > 0 && <Notice tone="danger" title="这个位置不止一条在投放">「{others.map((copy) => copy.desc).join("、")}」也在这里发布，App 按位置取文案时取不到内容。</Notice>}
+        <Panel plain headingLevel={3} title={live ? `线上内容 ${detailCopy.version}` : `已下架的内容 ${detailCopy.version}`}>
+          {detailCurrent ? <LangBlocks texts={textsOf(detailCurrent)!} /> : <p className="i1-weak">读不到这个版本的内容</p>}
+        </Panel>
+        {detailCopy.draftVersion && (
+          <Fold inset title={`草稿 ${detailCopy.draftVersion}`} summary="还没发布，用户看不到" defaultOpen>
+            <LangBlocks texts={{ zh: detailCopy.draftZh ?? detailDraft?.zh ?? "", vi: detailCopy.draftVi ?? detailDraft?.vi ?? "", en: detailCopy.draftEn ?? detailDraft?.en ?? "" }} />
+          </Fold>
+        )}
+        <Fold inset title="全部版本" summary={`${vers.length} 个`}>
+          <ul className="i1-vlist">
+            {vers.map((row) => {
+              const vst = versionStatus(row.st);
+              const items = historyAction(row);
+              return (
+                <li key={row.v}>
+                  <span className="i1-vlist-main"><b data-mono="">{row.v}</b><StatusTag tone={vst.tone}>{vst.text}</StatusTag></span>
+                  <span className="i1-weak">{chainText(row.chain)} · 最后变动 {row.ts || "—"}</span>
+                  {items.length > 0 && <MoreMenu label={`${row.v} 的操作`} items={items} />}
+                </li>
+              );
+            })}
+          </ul>
+        </Fold>
+        <Fold inset title="受众和分流" summary="只对实验起作用" explain="创建实验时沿用这里的受众；普通发布不按受众和分流筛选用户。">
+          <Facts>
+            <Fact k="受众">{detailCurrent?.audience || "—"}</Fact>
+            <Fact k="分流比例">{detailCurrent?.trafficSplit ? `${detailCurrent.trafficSplit}%` : "—"}</Fact>
+            <Fact k="估算人数">{detailCurrent?.estimatedAudience == null ? "—" : `约 ${detailCurrent.estimatedAudience.toLocaleString()} 人（按现在的条件）`}</Fact>
+            <Fact k="词条"><span data-mono="">{detailCopy.i18nKey}</span></Fact>
+          </Facts>
+        </Fold>
+      </Drawer>
+    );
+  })();
+
+  // ---- 版本详情抽屉 ----
+  const detailRow = versionDetail ? pagedVersions.find((row) => `${row.copyKey}:${row.v}` === versionDetail) ?? COPY_VERSIONS.find((row) => `${row.copyKey}:${row.v}` === versionDetail) : undefined;
+  const rowIndex = detailRow ? pagedVersions.indexOf(detailRow) : -1;
+  const versionDrawer = detailRow && (() => {
+    const copy = findCopy(detailRow.copyKey);
+    const st = versionStatus(detailRow.st);
+    const items = historyAction(detailRow);
+    const primary = items.find((item) => !item.danger);
+    const dangers = items.filter((item) => item.danger);
+    const go = (offset: number) => { const next = pagedVersions[rowIndex + offset]; if (next) setVersionDetail(`${next.copyKey}:${next.v}`); };
+    return (
+      <Drawer open onClose={() => setVersionDetail(null)} title="内容版本" sub={<><span data-mono="">{detailRow.copyKey}</span> · {detailRow.v}</>} icon={History} tone="role-3"
+        nav={{ onPrev: () => go(-1), onNext: () => go(1), hasPrev: rowIndex > 0, hasNext: rowIndex >= 0 && rowIndex < pagedVersions.length - 1 }}
+        footer={items.length > 0 ? <Decision
+          danger={dangers.length > 0 ? <>{dangers.map((item) => <Button key={item.key} variant="danger-outline" disabledReason={item.disabledReason} onClick={item.onSelect}>{item.label}</Button>)}</> : undefined}
+          primary={primary ? <Button variant="primary" disabledReason={primary.disabledReason} onClick={primary.onSelect}>{primary.label}</Button> : undefined} /> : undefined}>
+        <JudgmentPoints rows={[
+          { label: "状态", value: <StatusTag tone={st.tone}>{st.text}</StatusTag> },
+          { label: "文案", value: copy?.desc ?? detailRow.copyKey },
+          { label: "位置", value: `${positionName(detailRow.copyPosition)} · ${moduleLabel(detailRow.surface)}` },
+          { label: "最近操作", value: chainText(detailRow.chain) },
+          { label: "最后变动", value: detailRow.ts ? `${detailRow.ts}（${ZONE}）` : "—" },
+        ]} />
+        <Panel plain headingLevel={3} title="三种语言">
+          <LangBlocks texts={textsOf(detailRow)!} />
+        </Panel>
+        <Fold inset title="版本说明、受众和分流" summary={detailRow.versionNote || "没写版本说明"}>
+          <Facts>
+            <Fact k="版本说明">{detailRow.versionNote || "—"}</Fact>
+            <Fact k="受众">{detailRow.audience || "—"}</Fact>
+            <Fact k="分流比例">{detailRow.trafficSplit ? `${detailRow.trafficSplit}%` : "—"}</Fact>
+            <Fact k="估算人数">{detailRow.estimatedAudience == null ? "—" : `约 ${detailRow.estimatedAudience.toLocaleString()} 人（按现在的条件）`}</Fact>
+          </Facts>
+        </Fold>
+      </Drawer>
+    );
+  })();
+
+  // 编辑框挡着页面上的「重新加载」：读取失败时在编辑框里也给一个，填的内容不用丢。
+  const editorStale = errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={reloading} onClick={() => void reload()}>重新加载</Button>}>重新加载后再保存，你填的不会丢。</Notice>;
+  const expNeed = EXPS.filter((exp) => ["scheduled", "running", "concluded", "stopped"].includes(exp.state)).length;
 
   return (
     <>
-      <div className="f-stats">
-        <div className="f-stat">
-          <div className="k">受管文案位</div>
-          <div className="v">{I1_STATS.managedCopies} 个</div>
-          <div className="sub">{surfaceSummary}</div>
-        </div>
-        <div className="f-stat cyan">
-          <div className="k">进行中实验</div>
-          <div className="v">{I1_STATS.runningExps} 个</div>
-          <div className="sub">分组固定 · 服务器掷签</div>
-        </div>
-        <div className="f-stat">
-          <div className="k">本周变体曝光</div>
-          <div className="v">{I1_STATS.weeklyExposures}</div>
-          <div className="sub">曝光/转化事件喂漏斗(B3/L2)</div>
-        </div>
-        <div className="f-stat ok">
-          <div className="k">最佳实验提升</div>
-          <div className="v">{I1_STATS.topLift}</div>
-          <div className="sub">{topExperimentId ? `${topExperimentId} · 来自后端实验记录` : "暂无后端实验记录"}</div>
-        </div>
-      </div>
-
-      <section className="l-card" data-proof="copy-position-list">
-        <div className="l-h">
-          <span className="ttl">文案位置配置</span>
-          <span className="sub">· 位置由后端统一管理，文案只能选择所属投放模块下的启用位置</span>
-          {canWrite && <div className="r"><button type="button" className="l-btn sm mc" onClick={createCopyPosition}>+ 新增位置</button></div>}
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 660 }}>
-            <thead><tr><th>位置名称</th><th>位置标识</th><th>投放模块</th><th>状态</th><th style={{ textAlign: "right" }}></th></tr></thead>
-            <tbody>
-              {COPY_POSITION_ROWS.map((position) => {
-                const module = normalizeCopyModule(position.surface) as CopyModule;
-                return (
-                  <tr key={position.positionKey}>
-                    <td style={{ fontWeight: 600 }}>{position.name}</td>
-                    <td className="mono">{position.positionKey}</td>
-                    <td><span className="bdg dim">{COPY_MODULE_LABELS[module] ?? "页面待核实"}</span></td>
-                    <td>{position.status.toUpperCase() === "ACTIVE"
-                      ? <span className="bdg ok">启用</span>
-                      : <span className="bdg dim">停用</span>}</td>
-                    <td style={{ textAlign: "right" }}>{canWrite && <button type="button" className="l-btn sm" aria-label={`删除位置 ${position.positionKey}`} onClick={() => deleteCopyPosition(position.positionKey)}>删除</button>}</td>
-                  </tr>
-                );
-              })}
-              {COPY_POSITION_ROWS.length === 0 && <tr><td colSpan={5}><div className="itint warn">暂无可用文案位置，请先新增位置。</div></td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="l-card i-version-config" data-proof="copy-version-catalog">
-        <div className="l-h">
-          <span className="ttl">文案版本列表</span>
-          <span className="sub">· 独立版本配置目录；新增文案和新增内容版本只能从启用项中选择</span>
-          {canWrite && <div className="r"><button type="button" className="l-btn sm mc" onClick={createCopyVersionOption}>+ 新增版本</button></div>}
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 760 }}>
-            <thead><tr><th>版本标识</th><th>版本名称</th><th>版本说明</th><th>状态</th><th className="num">排序</th><th className="num">引用数</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
-            <tbody>
-              {VERSION_OPTIONS.map((option) => {
-                const referenced = option.usageCount > 0;
-                return (
-                  <tr key={option.versionKey}>
-                    <td className="mono version-key">{option.versionKey}</td>
-                    <td style={{ fontWeight: 600 }}>{option.name}</td>
-                    <td className="version-description">{option.description || "—"}</td>
-                    <td>{option.status.toUpperCase() === "ACTIVE" ? <span className="bdg ok">启用</span> : <span className="bdg dim">停用</span>}</td>
-                    <td className="num mono">{option.sortOrder}</td>
-                    <td className="num mono">{option.usageCount}</td>
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {canWrite && <button type="button" className="l-btn sm mc" aria-label={`编辑版本 ${option.versionKey}`} onClick={() => editCopyVersionOption(option)}>编辑</button>}
-                      {canWrite && <button type="button" className="l-btn sm dgr" style={{ marginLeft: 6 }} disabled={referenced} aria-label={`删除版本 ${option.versionKey}`} title={referenced ? "已有文案历史引用，不能删除" : "删除未使用版本"} onClick={() => deleteCopyVersionOption(option)}>删除</button>}
-                    </td>
-                  </tr>
-                );
-              })}
-              {VERSION_OPTIONS.length === 0 && <tr><td colSpan={7}><div className="itint warn">暂无文案版本配置，请先新增版本后再创建文案。</div></td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* (a) 文案池 */}
-      <section className="l-card" data-proof="copy-pool">
-        <div className="l-h">
-          <span className="ttl">文案池(a)</span>
-          <span className="sub">· 每个文案位 = 一条受管内容线:当前发布版 + 版本历史 + 是否有进行中实验</span>
-          <div className="r chips">
-            <span className="lb">投放模块</span>
-            {SURF_FLT.map(([k, l]) => (
-              <button type="button" key={k} className={`chip${surf === k ? " sel" : ""}`} aria-pressed={surf === k} onClick={() => setSurf(k)}>{l}</button>
-            ))}
-            {canCreateCopy && <button type="button" className="l-btn sm mc" disabled={ACTIVE_VERSION_OPTIONS.length === 0} title={ACTIVE_VERSION_OPTIONS.length === 0 ? "请先新增或启用文案版本" : "新增文案"} onClick={createCopy}>+ 新增文案</button>}
-          </div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 860 }}>
-            <thead>
-              <tr>
-                <th>文案位</th>
-                <th>投放模块</th>
-                <th>文案位置</th>
-                <th>发布版</th>
-                <th>状态</th>
-                <th>中英越词条</th>
-                <th>进行中实验</th>
-                <th>最近改版</th>
-                <th style={{ textAlign: "right" }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPool.map((c) => (
-                <tr key={c.key}>
-                  <td>
-                    <div style={{ fontWeight: 600, color: "var(--ink)" }}>{c.desc}</div>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{c.key}</span>
-                  </td>
-                  <td><span className="bdg dim">{COPY_MODULE_LABELS[c.surface as CopyModule] ?? "页面待核实"}</span></td>
-                  <td className="mono" style={{ fontSize: 11.5 }}>{c.copyPosition || "—"}</td>
-                  <td className="mono" style={{ fontWeight: 700 }}>{c.version}</td>
-                  <td>{renderCopyStatus(c)}</td>
-                  <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{c.i18nKey}</td>
-                  <td>{c.expId === "—" ? <span style={{ color: "var(--ink-4)" }}>—</span> : <span className="bdg cyan">{c.expId}</span>}</td>
-                  <td className="mono" style={{ fontSize: 11.5 }}>{c.lastChange}</td>
-                  <td style={{ textAlign: "right" }}>
-                    {canWrite && <button type="button" className="l-btn sm mc" onClick={() => editCopy(c)}>编辑文案</button>}
-                  </td>
-                </tr>
-              ))}
-              {filteredPool.length === 0 && (
-                <tr><td colSpan={9}><div className="itint warn">当前投放模块下没有文案记录。</div></td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="l-b" style={{ paddingTop: 10 }}>
-          <div className="ab-sm">
-            <span style={{ fontSize: 12, color: "var(--ink-4)", marginRight: 6 }}>版本处理流程:</span>
-            <span className="st">草稿</span>
-            <span className="ar">发布(操作确认)→</span>
-            <span className="st ok">生效中</span>
-            <span className="ar">下架/被新版取代 →</span>
-            <span className="st">已归档</span>
-            <span className="ar" style={{ marginLeft: 10 }}>回滚 = 把历史版重新发布,同样走操作确认</span>
-          </div>
-        </div>
-      </section>
-
-      {/* (b) 覆盖所有文案位的内容历史 */}
-      <section className="l-card" data-proof="copy-version-list">
-        <div className="l-h">
-          <span className="ttl">文案内容历史(b)</span>
-          <span className="sub">· 展示每条文案在各配置版本下的内容、发布状态与审计留痕</span>
-          <div className="r chips">
-            <label className="lb" htmlFor="copy-version-filter">文案</label>
-            <select id="copy-version-filter" className="fld" style={{ width: 190, height: 32 }} value={versionCopyFlt} onChange={(event) => { setVersionCopyFlt(event.target.value); setVersionPage(1); }}>
-              <option value="all">全部文案</option>
-              {COPY_POOL.map((copy) => <option key={copy.key} value={copy.key}>{copy.desc} · {copy.key}</option>)}
-            </select>
-            <span className="lb">版本状态</span>
-            {([['all', '全部'], ['draft', '草稿'], ['published', '已发布'], ['archived', '已归档']] as [VersionStatusFlt, string][]).map(([key, label]) => (
-              <button type="button" key={key} className={`chip${versionStatusFlt === key ? " sel" : ""}`} aria-pressed={versionStatusFlt === key} onClick={() => { setVersionStatusFlt(key); setVersionPage(1); }}>{label}</button>
-            ))}
-          </div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 1280 }}>
-            <thead><tr><th>文案标识</th><th>文案位置</th><th>版本</th><th>中英越文案</th><th>受众</th><th>状态</th><th>操作 / 留痕</th><th>时间</th><th style={{ textAlign: "right" }}></th></tr></thead>
-            <tbody>
-              {pagedVersions.map((row) => {
-                const copy = COPY_POOL.find((item) => item.key === row.copyKey);
-                const status = row.st.toLowerCase();
-                const existingDraft = copy?.draftVersion
-                  ? COPY_VERSIONS.find((item) => item.copyKey === copy.key && item.v === copy.draftVersion && item.st.toLowerCase() === "draft")
-                  : undefined;
-                const usedVersionKeys = copy ? usedVersionsForCopy(copy) : new Set<string>();
-                const hasUnusedActiveVersion = ACTIVE_VERSION_OPTIONS.some((option) => !usedVersionKeys.has(option.value));
-                return (
-                  <tr key={`${row.copyKey}:${row.v}`}>
-                    <td><div style={{ fontWeight: 600 }}>{copy?.desc || row.copyKey}</div><span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{row.copyKey}</span></td>
-                    <td><div className="mono" style={{ fontSize: 11.5 }}>{row.copyPosition || "—"}</div><span className="bdg dim">{COPY_MODULE_LABELS[row.surface as CopyModule] ?? "页面待核实"}</span></td>
-                    <td className="mono" style={{ fontWeight: 700 }}>{row.v}</td>
-                    <td style={{ minWidth: 300 }}>
-                      <div className="tiny" title={nexGridBrandText(row.zh)} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>中文</b> · {nexGridBrandText(row.zh || "—")}</div>
-                      <div className="tiny" title={nexGridBrandText(row.vi)} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>越南语</b> · {nexGridBrandText(row.vi || "—")}</div>
-                      <div className="tiny" title={nexGridBrandText(row.en)} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>英语</b> · {nexGridBrandText(row.en || "—")}</div>
-                    </td>
-                    <td style={{ minWidth: 170 }}><div className="tiny">{row.audience || "全量"}</div></td>
-                    <td>{renderVerStatus(status)}</td>
-                    <td><div className="tiny">{row.chain || "—"}</div>{row.versionNote && <div className="tiny" style={{ color: "var(--ink-4)" }}>{row.versionNote}</div>}</td>
-                    <td className="mono" style={{ fontSize: 11.5 }}>{row.ts}</td>
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {canWrite && status === "archived" && copy && <button type="button" className="l-btn sm mc" onClick={() => rollbackTo(copy, row.v)}>回滚</button>}
-                      {canWrite && status === "published" && copy && (existingDraft
-                        ? <button type="button" className="l-btn sm" onClick={() => editCopy(copy, existingDraft)}>继续草稿 {existingDraft.v}</button>
-                        : <button type="button" className="l-btn sm" disabled={!hasUnusedActiveVersion} title={!hasUnusedActiveVersion ? "请先新增或启用一个未被该文案使用的版本" : "新增内容版本"} onClick={() => editCopy(copy, row, true)}>新增版本</button>)}
-                      {canWrite && status === "published" && copy?.version === row.v && <button type="button" className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => archiveCurrentVersion(copy, row.v)}>下架</button>}
-                      {canWrite && status === "draft" && copy?.draftVersion === row.v && <button type="button" className="l-btn sm mc" onClick={() => editCopy(copy, row)}>编辑 / 发布</button>}
-                      {canWrite && status === "draft" && copy?.draftVersion === row.v && copy.revision != null && <button type="button" className="l-btn sm dgr" disabled={deletingDraftKey !== null} style={{ marginLeft: 6 }} onClick={() => deleteDraftVersion(row.copyKey, row.v, copy.revision!)}>{deletingDraftKey === `${row.copyKey}:${row.v}` ? "删除中…" : "删除草稿"}</button>}
-                    </td>
-                  </tr>
-                );
-              })}
-              {filteredVersions.length === 0 && <tr><td colSpan={9}><div className="itint warn">当前筛选条件下没有版本记录。</div></td></tr>}
-            </tbody>
-          </table>
-        </div>
-        <div className="l-b" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, paddingTop: 10 }}>
-          <span className="tiny">共 {filteredVersions.length} 条 · 第 {safeVersionPage}/{versionPages} 页</span>
-          <button type="button" className="chip" disabled={safeVersionPage <= 1} onClick={() => setVersionPage(Math.max(1, safeVersionPage - 1))}>上一页</button>
-          <button type="button" className="chip" disabled={safeVersionPage >= versionPages} onClick={() => setVersionPage(Math.min(versionPages, safeVersionPage + 1))}>下一页</button>
-        </div>
-      </section>
-
-      {/* 实验框架默认参数 */}
-      <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">实验框架默认参数</span>
-            <span className="sub">· 每个实验启动时按这套默认值锁定,启动后不再变</span>
-          </div>
-          <div className="l-b" style={{ paddingTop: 4 }}>
-            {EXP_FRAMEWORK.map((p) => {
-              const cur = liveFw(p.key, p.cur);
-              return (
-                <div className="p-row" key={p.key}>
-                  <div className="txt">
-                    <div className="k">{p.name}</div>
-                    <div className="s">{p.sub}</div>
-                  </div>
-                  <span className="v">{cur}</span>
-                  {canManageExperiments && <button type="button" className="l-btn sm" onClick={() => adjustFramework(p.key, p.name, cur)}>调整</button>}
-                </div>
-              );
-            })}
-            <div className="itint" style={{ marginTop: 10 }}>
-              <b>分组怎么发的</b> · 用户首次命中实验时由服务器随机分组,之后固定不变(换设备也不变);曝光和转化都按服务器记的组归因。用户在本地改自己的组,服务器照旧按原组算,不会污染结论。
-            </div>
-            <div className="itint cyan" style={{ marginTop: 8 }}>
-              <b>不碰钱</b> · 这页只改措辞,费率 / 奖励 / 价格一个都改不了——那些归各业务域,改之前要过备付金红线;文案发布没有这道约束。
-            </div>
-          </div>
-      </section>
-
-      {/* (c) A/B 实验面板 */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">A/B 实验面板(c)</span>
-          <span className="sub">· 曝光 / 转化 / 转化率 全部由系统业务记录统计(服务器统计规则),不是页面临时拼的数</span>
-          <div className="r chips">
-            {canManageExperiments && <button type="button" className="l-btn sm mc" title={EXPERIMENT_COPY_OPTIONS.length === 0 ? experimentUnavailableReason : "创建 A/B 实验"} onClick={createExperiment}>+ 创建 A/B 实验</button>}
-            {EXP_FLT.map(([k, l]) => (
-              <button type="button" key={k} className={`chip${expFlt === k ? " sel" : ""}`} aria-pressed={expFlt === k} onClick={() => setExpFlt(k)}>{l}</button>
-            ))}
-          </div>
-        </div>
-        <div className="itint cyan" style={{ margin: "0 14px 12px" }}>
-          <b>转化统计规则</b> · 仅统计服务端已支付/已完成订单事件；点击、加购、客户端自报不计入转化。
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 980 }}>
-            <thead>
-              <tr>
-                <th>实验</th>
-                <th>文案位</th>
-                <th>变体 × 分流</th>
-                <th>继承文案受众</th>
-                <th className="num">曝光</th>
-                <th className="num">转化</th>
-                <th className="num">转化率</th>
-                <th>状态</th>
-                <th style={{ textAlign: "right" }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredExps.map((e) => {
-                const st = liveExpState(e);
-                const isRunning = st === "running";
-                const canDiscard = st === "scheduled" || st === "concluded";
-                const maxCvr = e.variants.reduce((m, v) => Math.max(m, v[2]), 0);
-                return (
-                  <tr key={e.id}>
-                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{e.id}</td>
-                    <td className="mono" style={{ fontSize: 11.5 }}>{e.copyKey}</td>
-                    <td style={{ minWidth: 230 }}>
-                      {e.variants.map((v, j) => (
-                        <div key={j} style={{ display: "flex", alignItems: "center", gap: 7, margin: "2px 0" }}>
-                          <span style={{ fontSize: 11.5, color: "var(--ink-3)", minWidth: 104 }}>{v[0]} · {v[1]}%</span>
-                          <span className="ab-bar" style={{ flex: 1 }}>
-                            <i style={{ width: `${Math.min(100, v[2] * 16)}%`, background: VAR_COLORS[j % VAR_COLORS.length] }} />
-                          </span>
-                          <span
-                            className="mono"
-                            style={{
-                              fontSize: 11.5,
-                              fontWeight: 700,
-                              minWidth: 38,
-                              textAlign: "right",
-                              color: v[2] === maxCvr ? "var(--success)" : undefined,
-                            }}
-                          >
-                            {v[2]}%
-                          </span>
-                        </div>
-                      ))}
-                    </td>
-                    <td style={{ fontSize: 12 }}>
-                      {e.audience}
-                      <div className="tiny" style={{ color: "var(--ink-4)" }}>实验启动快照 · 预计覆盖 {e.estimatedAudience == null ? "待估算" : `${e.estimatedAudience.toLocaleString()} 人`}</div>
-                    </td>
-                    <td className="num mono">{e.impressions}</td>
-                    <td className="num mono">{e.conversions}</td>
-                    <td className="num mono" style={{ fontWeight: 700 }}>{maxCvr}%</td>
-                    <td>
-                      {renderExpState(e)}
-                      <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 2 }}>{e.note}</div>
-                    </td>
-                    <td style={{ textAlign: "right" }}>
-                      {canManageExperiments && st === "scheduled" ? (
-                        <>
-                          <button type="button" className="l-btn sm mc" onClick={() => startExp(e.id)}>启动实验</button>
-                          <button type="button" className="l-btn sm dgr" style={{ marginLeft: 6 }} onClick={() => discardExp(e.id)}>弃用实验</button>
-                        </>
-                      ) : canManageExperiments && isRunning ? (
-                        <button type="button" className="l-btn sm mc" onClick={() => stopExp(e.id)}>停止</button>
-                      ) : canManageExperiments && (st === "concluded" || st === "stopped") ? (
-                        <>
-                          <button type="button" className="l-btn sm mc" onClick={() => adoptExp(e.id)}>采纳获胜</button>
-                          {canDiscard && <button type="button" className="l-btn sm dgr" style={{ marginLeft: 6 }} onClick={() => discardExp(e.id)}>弃用实验</button>}
-                        </>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-              {filteredExps.length === 0 && <tr><td colSpan={9}><div className="itint warn">当前筛选条件下没有实验记录。</div></td></tr>}
-            </tbody>
-          </table>
-        </div>
-        <div className="l-b" style={{ paddingTop: 10 }}>
-          <div className="ab-sm">
-            <span style={{ fontSize: 12, color: "var(--ink-4)", marginRight: 6 }}>实验处理流程:</span>
-            <span className="st">待启动</span>
-            <span className="ar">到点开跑 →</span>
-            <span className="st ok">进行中</span>
-            <span className="ar">手动结算 / 到期 →</span>
-            <span className="st warn">已结算</span>
-            <span className="ar">→ 采纳获胜版(等于发布,走操作确认)或弃用</span>
-          </div>
-        </div>
-      </section>
-
-      <p className="f-foot">
-        <b>执行门槛</b>:普通文案新增、编辑、发布、下架与回滚使用 <span className="mono">content_i1_write</span>；实验框架、创建、启停、弃用与采纳使用独立权限 <span className="mono">content_i1_experiment_manage</span>，无该权限不渲染实验写按钮。<b>事件去向</b>:变体曝光喂实时转化分析与 数据分析；转化仅统计服务端确认的已支付/已完成订单事件，点击、加购和客户端自报不计入 转化率。
-        <b>边界</b>:活动卡里能独立做 A/B 的通用文案归这页;活动本身的玩法 / 奖励 / 时窗归活动页(H4),互不越界。
-      </p>
+      {header}
+      {errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={reloading} onClick={() => void reload()}>重新加载</Button>}>{errorText} 下面是上次读到的内容。</Notice>}
+      <Notice tone="neutral" title="App 还没接上位置文案">
+        App 目前只显示普通文案键能覆盖的内容，位置文案还没有接上。
+        <Explain label="现在 App 能看到什么" content={<><p>发布、回滚、采纳会同步「多语言与课程」里的同名词条，App 用到这个词条的地方会跟着变。</p><p>App 还没接上按位置取文案和实验分组，所以实验分组现在不会真正发生在 App 上。</p></>} />
+      </Notice>
+      {pendingNotice}
+      {conflictUi}
+      {conclusion}
+      <StatBand label="文案对比测试关键数字">
+        <Stat icon={MapPin} tone="role-2" label="文案位置" value={String(COPY_POSITION_ROWS.length)} unit="个" sub={`启用 ${activePositions}`} />
+        <Stat icon={BookOpen} tone="role-2" label="文案" value={String(I1_STATS.managedCopies)} unit="条" sub={`已发布 ${publishedCount}`} explain="所有没删除的文案，不是位置数。" />
+        <Stat icon={FlaskConical} tone="role-3" label="进行中实验" value={String(I1_STATS.runningExps)} unit="个" sub={scheduled.length ? `待启动 ${scheduled.length}` : undefined} />
+        {exactImpressions === undefined
+          ? <Stat icon={Eye} tone="role-3" label="累计看到" value={String(I1_STATS.weeklyExposures)} unit="人" explain="所有实验累计看到的人数之和，不限本周；这是约数。" />
+          : <Stat icon={Eye} tone="role-3" label="累计看到" value={exactImpressions.toLocaleString()} unit="人次" sub="各实验相加"
+            explain="各实验看到的人数相加，同一人参加几个实验就算几次。看到是用户被分进某一组、并记下已给他展示，不是点击或打开次数。" />}
+      </StatBand>
+      <PageTabs ids={tabIds} label="页面文案对比测试内容" value={tab} onChange={setTab} items={[
+        { value: "positions", label: "文案位置" },
+        { value: "experiments", label: "对比实验", count: expNeed },
+        { value: "history", label: "内容历史" },
+        { value: "catalog", label: "版本目录" },
+      ]} />
+      {tab === "positions" && positionsPane}
+      {tab === "experiments" && experimentsPane}
+      {tab === "history" && historyPane}
+      {tab === "catalog" && catalogPane}
+      {copyDrawer}
+      {versionDrawer}
+      {editor?.kind === "edit" && (
+        <CopyEditorDrawer spec={editor.spec} requiredLanguages={requiredLanguages}
+          title={editor.spec.version ? "编辑草稿" : editor.forceNew ? "新增版本" : "编辑文案"}
+          sub={<>{editor.copy.desc} · <span data-mono="">{editor.copy.key}</span></>}
+          basedOn={<Fact k="基于">{editor.base ? `${editor.base.v} · ${versionStatus(editor.base.st).text}` : editor.copy.version}</Fact>}
+          stale={editorStale}
+          liveVersion={isPublished(editor.copy) ? editor.copy.version : undefined}
+          publishBlockedReason={(form) => publishBlockedReason(form.copyPosition, editor.copy.key)}
+          onClose={() => setEditor(null)}
+          onSubmit={(form, mode) => submitCopyEdit(editor.copy, editor.base, { ...form, saveMode: mode }, mode)} />
+      )}
+      {editor?.kind === "create" && (
+        <CopyEditorDrawer spec={editor.spec} requiredLanguages={requiredLanguages} title="新增文案" stale={editorStale} publishBlockedReason={(form) => publishBlockedReason(form.copyPosition, form.copyKey ?? "")} onClose={() => setEditor(null)} onSubmit={(form) => submitCreateCopy(form)} />
+      )}
+      {creatingExperiment && (
+        <ExperimentDrawer copies={EXPERIMENT_COPY_OPTIONS} versionText={(copyKey, version) => findVersion(copyKey, version)?.zh}
+          onClose={() => setCreatingExperiment(false)} onSubmit={submitExperiment} />
+      )}
       <PaginationExemptionList
         items={[
-          {
-            label: "文案池(a)",
-            kind: "reference-catalog",
-            maxRows: COPY_POOL.length,
-            reason: "文案池为后端返回的当前文案位列表,通过界面/状态字段定位后编辑",
-          },
-          {
-            label: "文案内容历史(b)",
-            maxRows: VERSION_PAGE_SIZE,
-            reason: "版本列表按 20 条分页展示后端版本，并可按文案和状态筛选",
-          },
-          {
-            label: "A/B 实验面板(c)",
-            maxRows: EXPS.length,
-            reason: "实验面板展示后端返回的实验记录,完整实验归埋点统计",
-          },
+          { label: "文案位置", kind: "reference-catalog", maxRows: COPY_POSITION_ROWS.length, reason: "按模块筛选后查看和编辑" },
+          { label: "内容历史", maxRows: VERSION_PAGE_SIZE, reason: "每页 20 条，可按文案和状态筛选" },
+          { label: "对比实验", maxRows: EXPS.length, reason: "这里只显示实验摘要" },
         ]}
       />
     </>
   );
 }
+

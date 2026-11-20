@@ -1,4 +1,73 @@
 /* Scoped additions follow the console's existing surfaces and type scale. */
+/* A2 details and confirmation share these styles through their own .dkpage wrappers. */
+/* A2 只在改版外壳里渲染，取 --rd-*，两套主题各自取值。 */
+/* 完整变更内容：一块底，里面是「现在 → 改后」、只列改了的项、成组记录的小表（必须改 3）。块里的表和滚动影子跟着块的底色。 */
+.dkpage .a2-change-review { --rd-panel: var(--rd-panel-inner); display: grid; gap: var(--rd-space-2); min-width: 0; margin: 0; padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); }
+.dkpage .a2-change-title { display: flex; align-items: center; gap: var(--rd-space-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.dkpage .a2-change-group, .dkpage .a2-change-rows { display: grid; gap: var(--rd-space-1); min-width: 0; }
+.dkpage .a2-change-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+/* 确认框标题下的动作名：和标题同一档，一行放不下省略，悬停看全文；生效标签换到下一行。 */
+.dkpage .rd-modal-sub > .a2-confirm-subject { flex-basis: 100%; min-width: 0; overflow: hidden; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); white-space: nowrap; text-overflow: ellipsis; }
+/* 读不到覆盖率时，多付钱这一行橙黄带图标，不是一句白字（必须改 12）。 */
+.dkpage .a2-coverage-unknown { display: inline-flex; align-items: flex-start; gap: var(--rd-space-1); color: var(--rd-warn); font-weight: 500; }
+.dkpage .a2-coverage-unknown > svg { flex: none; margin-top: 2px; }
+/* 编号整段不拆，放不下整段换行（必须改 14）。 */
+.dkpage .a2-code { overflow-wrap: normal; word-break: keep-all; white-space: nowrap; }
+.dkpage .a2-amount { font-weight: 600; font-variant-numeric: tabular-nums; }
+.dkpage .a2-warn-text { color: var(--rd-warn); }
+.dkpage .rd-table th.a2-col-delta { min-width: 160px; }
+.dkpage .a2-confirm-note { margin-bottom: var(--rd-space-4); }
+.dkpage .a2-locked { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+.dkpage .a2-locked > svg { flex: none; color: var(--rd-text-3); }
+
+.dkpage .amb-applications { container: ambassador-list / inline-size; display: grid; gap: 8px; margin-bottom: 14px; }
+.dkpage .amb-application { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 10px 14px; padding: 12px; border-radius: 9px; background: var(--surface-2); font-size: 12px; }
+.dkpage .amb-application > div { min-width: 0; overflow-wrap: anywhere; }
+.dkpage .amb-application b { font-weight: 600; color: var(--ink-2); }
+.dkpage .amb-application p { margin: 5px 0 0; color: var(--ink-3); font-size: 12px; }
+.dkpage .amb-application .btn { justify-self: end; }
+.dkpage .amb-category { color: var(--admin-domain-f); font-size: 12px; font-weight: 600; }
+@container ambassador-list (min-width: 560px) { .dkpage .amb-application { grid-template-columns: minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) auto; } }
+.dkpage .amb-materials, .dkpage .amb-material-summary { min-width: 0; font-size: 12.5px; line-height: 1.65; color: var(--ink-2); }
+.dkpage .amb-materials p { margin: 8px 0; overflow-wrap: anywhere; }
+.dkpage .amb-material-heading, .dkpage .amb-material-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.dkpage .amb-material-heading { justify-content: space-between; color: var(--ink-3); font-size: 12px; margin-bottom: 14px; }
+.dkpage .amb-material-actions { padding: 14px 18px; justify-content: flex-end; }
+.dkpage .amb-facts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; padding: 14px; margin: 0 0 14px; border-radius: 10px; background: var(--surface-2); }
+.dkpage .amb-facts > div { min-width: 0; }
+.dkpage .amb-facts dt { color: var(--ink-3); font-size: 12px; margin-bottom: 5px; }
+.dkpage .amb-facts dd { margin: 0; color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+.dkpage .amb-review-record { background: var(--surface-2); border-radius: 9px; padding: 12px 14px; margin: 8px 0; font-size: 12px; }
+.dkpage .amb-review-record > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dkpage .amb-review-record b { font-weight: 600; }
+.dkpage .amb-review-record p { margin: 5px 0 0; color: var(--ink-3); overflow-wrap: anywhere; }
+.dkpage .amb-section { margin: 16px 0 0; padding: 14px; background: var(--surface-2); border-radius: 10px; }
+.dkpage .amb-section h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.dkpage .amb-section summary { font-size: 13px; font-weight: 600; cursor: pointer; }
+.dkpage .amb-file-group + .amb-file-group { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
+.dkpage .amb-file-heading, .dkpage .amb-file { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dkpage .amb-file-heading b { font-weight: 500; }
+.dkpage .amb-file-heading > span { font-size: 12px; }
+.dkpage .amb-file { padding: 9px 0; color: var(--admin-domain-f); text-decoration: none; }
+.dkpage .amb-file > span { min-width: 0; overflow-wrap: anywhere; }
+.dkpage .amb-file small { flex-shrink: 0; color: var(--ink-3); font-size: 12px; }
+.dkpage .amb-missing { color: var(--warning); }
+.dkpage .amb-statement { white-space: pre-wrap; }
+.dkpage .amb-note { margin-top: 14px; padding: 11px 13px; border-radius: 9px; background: color-mix(in srgb,var(--admin-domain-f) 12%,var(--surface-2)); color: var(--ink-2); font-size: 12px; }
+.dkpage .amb-alert { margin-top: 14px; padding: 12px 14px; border-radius: 9px; background: var(--warning-soft); color: var(--warning); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.dkpage .amb-alert ul { padding-left: 18px; margin: 8px 0 0; }
+.dkpage .amb-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-bottom: 14px; }
+.dkpage .amb-form-grid > label { display: flex; flex-direction: column; gap: 6px; color: var(--ink-3); min-width: 0; font-size: 12px; }
+.dkpage .amb-form-grid .fld { width: 100%; min-width: 0; }
+.dkpage .amb-missing-fields { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.dkpage .amb-missing-fields legend { padding: 0 6px; color: var(--ink-3); font-size: 12px; }
+.dkpage .amb-missing-fields > label { display: inline-flex; align-items: center; gap: 6px; margin: 5px 12px 5px 0; }
+.dkpage .amb-permission-summary { margin-top: 14px; padding: 12px 14px; background: var(--surface-2); border-radius: 9px; font-size: 12px; }
+.dkpage .amb-permission-summary > b { display: block; font-size: 13px; margin-bottom: 8px; font-weight: 600; }
+.dkpage .amb-permission-summary > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 0; }
+.dkpage .amb-permission-summary > p { color: var(--ink-3); margin: 8px 0 0; }
+.dkpage :is(.amb-file,.amb-section summary):focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+@media (max-width: 480px) { .dkpage .amb-facts, .dkpage .amb-form-grid { grid-template-columns: minmax(0,1fr); } .dkpage .amb-file { align-items: flex-start; flex-direction: column; gap: 2px; } }
 .ui-support-workflow { color: var(--ink); font-size: 12px; line-height: 1.7; }
 .ui-support-workflow .ui-workflow-steps { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); list-style: none; padding: 0; margin: 0 0 18px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .ui-support-workflow .ui-workflow-steps li { display: flex; align-items: center; gap: 8px; padding: 12px 10px; background: var(--surface-2); color: var(--ink-3); font-size: 12px; }
@@ -22,6 +91,18 @@
 .ui-support-workflow details p { padding: 10px 0; margin: 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .ui-support-workflow details > button { display: block; max-width: 100%; margin: 8px 0; white-space: normal; text-align: left; overflow-wrap: anywhere; }
 .ui-random-assignment > p:first-child { padding: 12px 14px; background: var(--surface-2); border-radius: 8px; }
+.ui-support-contact-picker .ui-contact-count { font-size: 12px; }
+.ui-support-contact-picker .ui-contact-list { list-style: none; margin: 12px 0; padding: 0; max-height: min(55vh,640px); overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+.ui-support-contact-picker .ui-contact-list li + li { border-top: 1px solid var(--border); }
+.ui-support-contact-picker .ui-contact-list button { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 12px 14px; border: 0; background: var(--surface); color: var(--ink); text-align: left; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) {
+  .ui-support-contact-picker .ui-contact-list button:hover:not(:disabled) { background: var(--brand-soft); }
+}
+.ui-support-contact-picker .ui-contact-list button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.ui-support-contact-picker .ui-contact-list button:disabled { opacity: .5; cursor: not-allowed; }
+.ui-support-contact-picker .ui-contact-identity { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.ui-support-contact-picker .ui-contact-identity small { color: var(--ink-3); }
+.ui-support-contact-picker .ui-contact-pagination { justify-content: space-between; margin-bottom: 0; font-size: 12px; }
 .k6c2 .ui-target-version .k6-form-row { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,200px),1fr)); gap: 14px; }
 .ui-target-version h4 { font-size: 14px; font-weight: 600; margin: 0 0 14px; }
 .ui-target-version .k6-ovr-field { min-width: 0; margin-bottom: 14px; }
@@ -109,6 +190,9 @@
 .phone-calibration-review .ui-review-facts > div { min-width: 0; overflow-wrap: anywhere; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
 .phone-calibration-review .ui-review-facts small { display: block; color: var(--ink-3); margin-bottom: 6px; }
 .phone-calibration-review .ui-table-scroll { overflow-x: auto; }
+/* 变化小节的标题和说明和上面的事实块同样留 16px 边距，不贴边。 */
+.phone-calibration-review > h5 { margin: 0; padding: 12px 16px 4px; font-size: 13px; font-weight: 600; }
+.phone-calibration-review > p { padding: 0 16px 12px; }
 .phone-calibration-review table { min-width: 650px; width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
 .phone-calibration-review :is(th,td) { padding: 10px 14px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
 .phone-calibration-review th { color: var(--ink-3); font-weight: 500; background: var(--surface-2); }
@@ -127,3 +211,31 @@
 @media (max-width: 640px) { .dkpage.edom .phone-policy-panel [aria-label="手机策略确认"] > .phone-grid { grid-template-columns: 1fr; } }
 
 .k6c2 .ui-target-version textarea.k6-field { min-height: 90px; resize: vertical; }
+
+.ui-support-contact-picker .ui-bulk-contact-list label:has(> input[type="checkbox"]) { display: flex; align-items: center; gap: 12px; margin: 0; padding: 12px 14px; border: 0; border-radius: 0; background: var(--surface); cursor: pointer; }
+.ui-support-contact-picker .ui-bulk-contact-list label:has(> input:disabled) { opacity: .5; cursor: not-allowed; }
+.ui-support-contact-picker .ui-bulk-contact-list label:focus-within { outline: 2px solid var(--brand); outline-offset: -2px; }
+
+/* 结果未知的恢复面板：一个 Notice，里面每条一行，列对齐；同 A6 的恢复列表。 */
+.fund-rows { list-style: none; margin: var(--rd-space-2) 0 0; padding: 0; display: flex; flex-direction: column; }
+.fund-row + .fund-row { border-top: 1px solid var(--rd-line); }
+.fund-row-line { display: grid; grid-template-columns: minmax(200px, 280px) 104px minmax(0, 1fr) auto; align-items: center; gap: var(--rd-space-3); min-height: 40px; padding: 4px 0; }
+.fund-row-toggle { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: var(--rd-weight-semibold); text-align: left; cursor: pointer; }
+.fund-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 标题列放不下被截断时，展开后第一行写全（例如「提交调整申请 · U00000006 · +120.00 USDT」的币种）；没截断不重复。 */
+.fund-row-full { display: none; color: var(--rd-text); overflow-wrap: anywhere; }
+.fund-row:has(.fund-row-title[data-truncated]) .fund-row-full { display: block; }
+.fund-row-chevron { flex: none; color: var(--rd-text-3); transition: transform .15s; }
+.fund-row-toggle[aria-expanded="true"] .fund-row-chevron { transform: rotate(90deg); }
+.fund-row-line > .rd-tag { justify-self: start; }
+.fund-row-text { min-width: 0; color: var(--rd-text-2); }
+.fund-row-actions { display: inline-flex; justify-content: flex-end; gap: var(--rd-space-2); }
+.fund-row-detail { display: grid; gap: 4px; margin: 0 0 var(--rd-space-2) 18px; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.fund-row-detail p { margin: 0; }
+.fund-row-detail [role="status"] { color: var(--rd-text); }
+.fund-rows-foot { display: flex; align-items: center; gap: var(--rd-space-3); margin-top: var(--rd-space-1); }
+.fund-settled { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; color: var(--rd-ok, var(--rd-text-2)); font-size: var(--rd-text-aux); }
+.fund-settled span { color: var(--rd-text-2); }
+/* 提示行末尾的去处（如「查看逐笔结果」）：文字链接，不把这一行撑高。 */
+.fund-settled > button.rd-link { flex: none; padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.fund-check-audit { width: 200px; max-width: 100%; font-variant-numeric: tabular-nums; }

@@ -1,11 +1,13 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { isIdempotencyOutcomeOpen, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import {
   l6UnavailableStateFromError,
   l6UnavailableStateFromFailures,
 } from "@/lib/admin/l6-runtime-state";
 import { assertL3FinanceContract, assertL3TreasurySnapshot } from "@/lib/admin/l3-finance-contract";
-import { assertL5OverviewContract, CURRENT_L5_REPORT_TYPES } from "@/lib/admin/l5-overview-contract";
+import { assertL5OverviewContract, assertL5ReportContract, assertL5TaskPageContract, CURRENT_L5_REPORT_TYPES } from "@/lib/admin/l5-overview-contract";
+import type { L3DetailRequest } from "./l3-detail-export";
 
 type ApiResult<T> = {
   code?: number;
@@ -34,6 +36,8 @@ export type LReportView = {
   status: string;
   note?: string;
   lastAction?: string;
+  lastActionAt?: string | null;
+  requestedAt?: string | null;
   reason?: string;
   snapshotAvailable: boolean;
 };
@@ -52,7 +56,13 @@ export type LExportTask = {
   st: string;
   chain: string;
   acts: ("approve" | "download" | "retry")[];
+  approvalEligibility?: "ELIGIBLE" | "SELF" | "MAKER_UNVERIFIED";
+  requesterDisplayName?: string | null;
+  requestedAt?: string | null;
+  lastActionAt?: string | null;
 };
+
+export type L5TaskActionRequest = { includeSensitive: boolean; includeDecrypted: false; reason: string; operator: string };
 
 export type LBiData = {
   currentPhase?: Record<string, unknown>;
@@ -84,6 +94,8 @@ export type LReportCreateInput = {
   phase?: string;
   locale?: string;
   ref?: string;
+  granularity?: L1Granularity;
+  asOf?: string;
 };
 
 export type LRegulatoryReportInput = {
@@ -97,7 +109,7 @@ export type LRegulatoryReportInput = {
 
 export type LNetworkTreeExportResult = {
   reportId: string;
-  status: string;
+  status: "PENDING_CONFIRM" | "READY";
   rowCount: number;
   maskingPolicy: string;
   containsPii: boolean;
@@ -111,7 +123,7 @@ export type LRegulatoryDisclosureOption = {
   disclosureVersion: string;
   disclosureStatus: string;
   chapterCount: number;
-  publishedAt: string;
+  publishedAt: string | null;
 };
 
 export type LRegulatoryOptions = {
@@ -134,7 +146,7 @@ export type LExportAuditRow = {
 };
 
 export type LBiActions = {
-  createReport: (input: LReportCreateInput, reason: string, idempotencyKey?: string) => Promise<void>;
+  createReport: (input: LReportCreateInput, reason: string, idempotencyKey?: string, operator?: string) => Promise<void>;
   createRegulatoryReport: (input: LRegulatoryReportInput, reason: string, idempotencyKey?: string) => Promise<void>;
   createNetworkTreeExport: (
     query: { period: "day" | "week" | "month"; depth: number },
@@ -153,10 +165,30 @@ function idempotencyKey() {
   return `l-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+export class LOutcomeUnknownError extends Error {
+  constructor(message = "结果未知：可能已经生效。请按页面上方的提示先核对，再决定是否重试。") {
+    super(message);
+    this.name = "LOutcomeUnknownError";
+  }
+}
+
+export function isLOutcomeUnknownError(error: unknown): error is LOutcomeUnknownError {
+  return error instanceof LOutcomeUnknownError
+    || (error instanceof Error && error.name === "LOutcomeUnknownError");
+}
+
 function networkFailure(isReportCreation: boolean) {
-  return new Error(isReportCreation
-    ? "网络连接已中断，未收到任务创建成功确认；请恢复网络后重试，同一请求会自动防重。"
-    : "网络连接已中断，请恢复网络后重试；本次操作没有成功确认。");
+  return isReportCreation
+    ? new LOutcomeUnknownError()
+    : Object.assign(new Error("网络连接已中断，结果未知。请先核对原操作，再决定要不要重试。"), { name: "LNetworkInterruptedError" });
+}
+
+/** A report write has a result only when the transport and business response establish one. */
+function reportCreationStatus(response: Response, payload: ApiResult<unknown>): number {
+  if (isIdempotencyOutcomeOpen(payload.message)) throw new LOutcomeUnknownError();
+  if (!response.ok || payload.code === 0) return response.status;
+  if (typeof payload.code === "number" && Number.isInteger(payload.code) && payload.code >= 400 && payload.code < 500) return payload.code;
+  throw new LOutcomeUnknownError();
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -166,27 +198,33 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const execute = () => guardedFetch(`/api/admin/bi${path}`, { ...init, headers, cache: "no-store" });
   const isReportCreation = (path === "/reports" && init?.method === "POST")
     || (path.startsWith("/export/network?") && init?.method === "GET");
+  const isNetworkGrant = /^\/exports\/L4TREE-[A-Z0-9]{8}\/download-token$/.test(path);
+  const needsWriteReceipt = isReportCreation || isNetworkGrant;
   let res: Response;
   try {
     res = await execute();
   } catch {
-    // A lost response after report creation is safe to retry only because this
-    // request reuses the same Idempotency-Key and the backend durably replays it.
-    if (!isReportCreation) throw networkFailure(false);
-    try {
-      res = await execute();
-    } catch {
-      throw networkFailure(true);
-    }
+    // A lost response does not settle creation; the operator chooses recovery.
+    throw networkFailure(needsWriteReceipt);
   }
-  // The BFF converts an upstream lost response into 503. Retrying this one
-  // operation with the unchanged durable key replays the committed result.
-  if (isReportCreation && res.status === 503) res = await execute();
-  const text = await res.text();
-  const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
+  if (needsWriteReceipt && (res.status >= 500 || res.headers.get("X-Nexion-Upstream-Outcome") === "unknown")) throw networkFailure(true);
+  let payload: ApiResult<T> = {};
+  try {
+    const raw = await res.text();
+    // This coverage amount is displayed as its decimal text, before any JSON number conversion.
+    const text = path === "/finance/treasury-snapshot"
+      ? raw.replace(/("valuedNetExposureUsdt"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"') : raw;
+    if (text) payload = (JSON.parse(text) ?? {}) as ApiResult<T>;
+  } catch (cause) {
+    if (!needsWriteReceipt) throw cause;
+    if (res.ok) throw new LOutcomeUnknownError();
+  }
+  const status = needsWriteReceipt ? reportCreationStatus(res, payload) : res.status;
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string };
+    const error = new Error(formatAdminApiError(payload.message, `BI_API_${status}`)) as Error & { code?: string; status: number; reasonCode?: string };
     error.code = payload.message;
+    error.status = status;
+    error.reasonCode = payload.message;
     throw error;
   }
   return payload.data as T;
@@ -243,6 +281,8 @@ function normalizeReport(row: Record<string, unknown>): LReportView {
     status: str(row.status, "GENERATING").toUpperCase(),
     note: str(row.note),
     lastAction: str(row.lastAction),
+    lastActionAt: row.lastActionAt as string | null | undefined,
+    requestedAt: row.requestedAt as string | null | undefined,
     reason: str(row.reason),
     snapshotAvailable: bool(row.snapshotAvailable),
   };
@@ -250,7 +290,7 @@ function normalizeReport(row: Record<string, unknown>): LReportView {
 
 function formatRows(value: number) {
   if (value >= 10000) return value.toLocaleString("en-US");
-  return String(value || "—");
+  return String(value);
 }
 
 const REPORT_TYPE_LABELS: Record<string, string> = {
@@ -258,8 +298,8 @@ const REPORT_TYPE_LABELS: Record<string, string> = {
   FUNNEL_COHORT: "漏斗聚合",
   FINANCE_AGG: "财务聚合",
   OPERATIONS_AGG: "运营聚合",
-  NETWORK_TREE: "团队树明细",
-  REGULATORY: "监管报告",
+  NETWORK_TREE: "团队关系明细",
+  REGULATORY: "当前披露快照",
 };
 
 function reportToTask(report: LReportView): LExportTask {
@@ -268,9 +308,9 @@ function reportToTask(report: LReportView): LExportTask {
   const normalizedType = report.type.trim().toUpperCase();
   const supported = CURRENT_L5_REPORT_TYPES.includes(normalizedType as typeof CURRENT_L5_REPORT_TYPES[number]);
   const acts: LExportTask["acts"] = !supported ? []
-    : status === "PENDING_CONFIRM" || status === "PENDING_SPLIT_CONFIRM" ? ["approve"]
+    : status === "PENDING_CONFIRM" || status === "PENDING_SPLIT_CONFIRM" && normalizedType !== "NETWORK_TREE" ? ["approve"]
       : status === "READY" && report.snapshotAvailable ? ["download"]
-        : (status === "EXPIRED" || status === "FAILED") && report.snapshotAvailable ? ["retry"]
+        : normalizedType !== "NETWORK_TREE" && (status === "EXPIRED" || status === "FAILED") && report.snapshotAvailable ? ["retry"]
           : [];
   return {
     id: report.reportId,
@@ -286,6 +326,8 @@ function reportToTask(report: LReportView): LExportTask {
     st: status,
     chain: report.note || report.reason || "后台生成",
     acts,
+    lastActionAt: report.lastActionAt,
+    requestedAt: report.requestedAt,
   };
 }
 
@@ -297,24 +339,6 @@ function normalizeL5(raw: unknown) {
     reports,
     exportTasks: reports.records.map(reportToTask),
   };
-}
-
-function normalizeOverviews(raw: unknown): LBiData {
-  const data = rec(raw);
-  return {
-    currentPhase: rec(data.currentPhase),
-    phases: rows<Record<string, unknown>>(data.phases),
-    l1: rec(data.l1),
-    l2: rec(data.l2),
-    l3: rec(data.l3),
-    l4: rec(data.l4),
-    l5: normalizeL5(data.l5),
-    l6: rec(data.l6),
-  };
-}
-
-export async function fetchLBiOverviews(): Promise<LBiData> {
-  return apiRequest("/overview").then(normalizeOverviews);
 }
 
 export type LModuleCode = "L1" | "L2" | "L3" | "L4" | "L5" | "L6";
@@ -341,6 +365,60 @@ export type L2FunnelQuery = {
   ref?: string;
 };
 
+export type L2TrialStep = {
+  e: "trial.started" | "trial.redeemed";
+  n: number | null;
+  available: boolean;
+  includedInFunnel: true;
+  arr: string | null;
+  arrLb: string | null;
+  suppressed?: true;
+  reason?: string;
+};
+export type L2TrialFunnel = {
+  available: boolean;
+  reason: string | null;
+  stages: ["trial.started", "trial.redeemed"];
+  association: "USER_ID_AND_TRIAL_AGGREGATE_ID";
+  deduplication: "DISTINCT_ACTOR_PER_STAGE";
+  conversion: "REDEEMED_STRICTLY_AFTER_SAME_TRIAL_START";
+  window: "LEGACY_DAY_START_MINUS_400_DAYS";
+  cohort: "SELECTED_REGISTRATION_ACTORS";
+  exposureAvailable: false;
+  legacyExposureRowIncludedInFunnel: false;
+  steps: L2TrialStep[];
+};
+
+/** Only the new authoritative basis enables trial facts; old exposure chains stay unsupported. */
+function normalizeL2Trial(raw: unknown): Record<string, unknown> & { trialFunnel?: L2TrialFunnel } {
+  const data = rec(raw);
+  const basisValue = rec(data.quality).trialBasis;
+  if (basisValue === undefined) return data;
+  const invalid = () => { throw new Error(formatAdminApiError("L2_TRIAL_RESPONSE_INVALID", "L2_TRIAL_RESPONSE_INVALID")); };
+  const basis = rec(basisValue);
+  if (typeof basis.available !== "boolean" || basis.reason !== null && typeof basis.reason !== "string"
+    || !Array.isArray(basis.stages) || basis.stages.length !== 2 || basis.stages[0] !== "trial.started" || basis.stages[1] !== "trial.redeemed"
+    || basis.association !== "USER_ID_AND_TRIAL_AGGREGATE_ID" || basis.deduplication !== "DISTINCT_ACTOR_PER_STAGE"
+    || basis.conversion !== "REDEEMED_STRICTLY_AFTER_SAME_TRIAL_START" || basis.window !== "LEGACY_DAY_START_MINUS_400_DAYS"
+    || basis.cohort !== "SELECTED_REGISTRATION_ACTORS" || basis.exposureAvailable !== false
+    || basis.legacyExposureRowIncludedInFunnel !== false || !Array.isArray(data.trialSteps) || data.trialSteps.length !== 3) return invalid();
+  const exposure = rec(data.trialSteps[0]);
+  if (exposure.e !== "trial.claim_sheet_shown" || exposure.n !== null || exposure.available !== false
+    || exposure.includedInFunnel !== false || exposure.reason !== "EVENT_NOT_PRODUCED") return invalid();
+  const stages = basis.stages;
+  const steps = data.trialSteps.slice(1).map((value, index) => {
+    const step = rec(value);
+    if (step.e !== stages[index] || step.available !== basis.available || step.includedInFunnel !== true
+      || step.suppressed !== undefined && step.suppressed !== true
+      || step.reason !== undefined && typeof step.reason !== "string"
+      || step.n !== null && !(typeof step.n === "number" && Number.isSafeInteger(step.n) && step.n >= 0)
+      || [step.arr, step.arrLb].some(cell => cell !== null && typeof cell !== "string")
+      || (!basis.available || step.suppressed) && [step.n, step.arr, step.arrLb].some(cell => cell !== null)) return invalid();
+    return step as unknown as L2TrialStep;
+  });
+  return { ...data, trialFunnel: { ...basis, steps } as L2TrialFunnel };
+}
+
 function l2FunnelQuery(input: L2FunnelQuery = {}) {
   const query = new URLSearchParams();
   if (input.stage) query.set("stage", input.stage);
@@ -353,7 +431,7 @@ function l2FunnelQuery(input: L2FunnelQuery = {}) {
 
 export async function fetchL2FunnelDrilldown(input: L2FunnelQuery = {}): Promise<Record<string, unknown>> {
   const query = l2FunnelQuery(input);
-  return apiRequest<Record<string, unknown>>(`/funnel/drilldown?${query.toString()}`);
+  return normalizeL2Trial(await apiRequest<unknown>(`/funnel/drilldown?${query.toString()}`));
 }
 
 export async function fetchL2RetentionMatrix(
@@ -458,18 +536,26 @@ export async function fetchL6ClickHeat(route: string, input: L6BehaviorQuery = {
   return apiRequest<unknown>(`/behavior/click-heat?${query.toString()}`).then(rec);
 }
 
-export async function downloadL6Behavior(input: L6BehaviorQuery = {}) {
-  const res = await guardedFetch(`/api/admin/bi/export/behavior?${l6Query(input).toString()}`, { cache: "no-store" });
+export async function downloadL6Behavior(input: L6BehaviorQuery & { reason: string; sortDir?: "asc" | "desc" }) {
+  const query = l6Query(input);
+  if (input.sortDir) query.set("sortDir", input.sortDir);
+  query.set("reason", input.reason.trim());
+  const res = await guardedFetch(`/api/admin/bi/export/behavior?${query.toString()}`, { cache: "no-store" });
   const contentType = res.headers.get("Content-Type") || "";
   if (!res.ok || contentType.includes("application/json")) {
     const payload = (await res.json().catch(() => null)) as ApiResult<unknown> | null;
     throw new Error(formatAdminApiError(payload?.message, `BI_L6_EXPORT_${res.status}`));
+  }
+  if (!contentType.toLowerCase().includes("text/csv")) {
+    throw new Error(formatAdminApiError("L6_EXPORT_FILE_INVALID", "L6_EXPORT_FILE_INVALID"));
   }
   return {
     blob: await res.blob(),
     fileName: filenameFromDisposition(res.headers.get("Content-Disposition"), "l6-behavior.csv"),
   };
 }
+
+export type L1Granularity = "registration_week" | "registration_month";
 
 export type L1KpiQuery = {
   window?: "1d" | "7d" | "30d" | "custom";
@@ -479,6 +565,8 @@ export type L1KpiQuery = {
   phase?: string;
   locale?: string;
   ref?: string;
+  granularity?: L1Granularity;
+  asOf?: string;
 };
 
 function l1Query(input: L1KpiQuery = {}) {
@@ -491,6 +579,8 @@ function l1Query(input: L1KpiQuery = {}) {
   if (input.phase?.trim()) query.set("phase", input.phase.trim());
   if (input.locale?.trim()) query.set("locale", input.locale.trim());
   if (input.ref?.trim()) query.set("ref", input.ref.trim());
+  if (input.granularity) query.set("granularity", input.granularity);
+  if (input.asOf) query.set("asOf", input.asOf);
   return query;
 }
 
@@ -498,8 +588,10 @@ export async function fetchL1Kpi(input: L1KpiQuery = {}): Promise<Record<string,
   return apiRequest<unknown>(`/kpi?${l1Query(input).toString()}`).then(rec);
 }
 
-export async function fetchL1KpiDrilldown(kpiId: number, input: L1KpiQuery = {}): Promise<Record<string, unknown>> {
-  return apiRequest<unknown>(`/kpi/${encodeURIComponent(String(kpiId))}/drilldown?${l1Query(input).toString()}`).then(rec);
+export async function fetchL1KpiDrilldown(kpiId: number, input: L1KpiQuery & { bucketKey?: string } = {}): Promise<Record<string, unknown>> {
+  const query = l1Query(input);
+  if (input.bucketKey) query.set("bucketKey", input.bucketKey);
+  return apiRequest<unknown>(`/kpi/${encodeURIComponent(String(kpiId))}/drilldown?${query.toString()}`).then(rec);
 }
 
 export async function fetchL1KpiTrend(kpiId: number, input: L1KpiQuery = {}): Promise<Record<string, unknown>> {
@@ -520,6 +612,7 @@ export async function fetchLBiOverview(
   const key = moduleCode.toLowerCase() as Lowercase<LModuleCode>;
   if (moduleCode === "L1") return { l1: rec(raw), currentPhase: rec(rec(raw).currentPhase) };
   if (moduleCode === "L5") return { [key]: normalizeL5(raw) } as LBiData;
+  if (moduleCode === "L2") return { l2: normalizeL2Trial(raw) };
   return { [key]: rec(raw) } as LBiData;
 }
 
@@ -587,11 +680,17 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
       reserveUsd: num(coverage.reserveTotalUsdt),
       liabilitiesUsd: num(coverage.liabilityTotalUsdt),
     },
+    valuationReliable: liabilities.valuationReliable,
+    valuedLiabilitiesUsd: liabilities.valuedTotalUsdt,
     treasury: {
       coverageRatio: num(coverage.coverageRatio),
       redLine: num(coverage.redLine),
       yellowLine: num(coverage.yellowLine),
       netExposure: num(coverage.netExposureUsdt),
+      valuationReliable: coverage.valuationReliable,
+      valuationStatus: coverage.valuationStatus,
+      valuedCoverageRatio: coverage.valuedCoverageRatio,
+      valuedNetExposureUsdt: coverage.valuedNetExposureUsdt,
     },
     revenueExt: rows<Record<string, unknown>>(revenue.streams).map((row, index) => {
       const delta = row.momDelta === null || row.momDelta === undefined ? undefined : num(row.momDelta);
@@ -617,24 +716,25 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
       prevRate: redemption.previousRate === null ? null : num(redemption.previousRate),
       prevLabel: str(redemption.previousLabel, "上期"),
     },
-    coverage12w: coverageSeries.map((row) => num(row.coverageRatio)),
-    coverageWeeks: coverageSeries.map((row) => {
+    coverage12w: coverage.series === undefined ? null : coverageSeries.map((row) => num(row.coverageRatio)),
+    coverageWeeks: coverage.series === undefined ? null : coverageSeries.map((row) => {
       const value = str(row.period);
       return value.includes("T") ? value.slice(5, 16).replace("T", " ") : value;
     }),
-    coverageBreaches: rows<Record<string, unknown>>(coverage.breaches).flatMap((row) => {
+    coverageBreaches: coverage.breaches === undefined ? null : rows<Record<string, unknown>>(coverage.breaches).flatMap((row) => {
       const index = coverageSeries.findIndex((point) => str(point.period) === str(row.period));
       return index < 0 ? [] : [{ i: index, type: str(row.type), label: str(row.label) }];
     }),
     liabilities: liabilityRows.map((row, index) => ({
       id: index + 1,
+      category: str(row.category),
       name: str(row.label),
-      amount: num(row.amountUsdt),
+      amount: row.valuedAmountUsdt as number | null,
       color: liabilityColors[index] ?? "var(--ink-4)",
     })),
     maturityWindow: {
-      "7d": maturityTotals(maturity7Days),
-      "30d": maturityTotals(maturity30Days),
+      "7d": { ...maturityTotals(maturity7Days), trialStressIncluded: maturity7.trialStressIncluded, cumulativeUsdt: maturity7.cumulativeUsdt, daily: maturity7Days },
+      "30d": { ...maturityTotals(maturity30Days), trialStressIncluded: maturity30.trialStressIncluded, cumulativeUsdt: maturity30.cumulativeUsdt, daily: maturity30Days },
     },
     maturitySchedule: {
       weeks: maturityGroups.map(labelGroup),
@@ -661,14 +761,109 @@ export async function fetchL5ExportTasks(status = "", pageNum = 1, pageSize = 8)
     pageSize: String(pageSize),
   });
   if (status.trim()) query.set("status", status.trim());
-  return apiRequest<AdminPage<LReportView>>(`/reports?${query.toString()}`).then((page) => ({
-    ...page,
-    records: page.records.map(reportToTask),
-  }));
+  const result = await apiRequest<unknown>(`/reports?${query.toString()}`);
+  let raw: Record<string, unknown>;
+  try { raw = assertL5TaskPageContract(result); }
+  catch { throw new Error(formatAdminApiError("L5_TASK_RESPONSE_INVALID", "L5_TASK_RESPONSE_INVALID")); }
+  const page = raw as unknown as AdminPage<LReportView> & {
+    approvalEligibility: Record<string, LExportTask["approvalEligibility"]>;
+    requesterDisplayNames: Record<string, string | null>;
+  };
+  return {
+    total: page.total,
+    pageNum: page.pageNum,
+    pageSize: page.pageSize,
+    records: page.records.map((report) => ({
+      ...reportToTask(report),
+      approvalEligibility: page.approvalEligibility[report.reportId],
+      requesterDisplayName: page.requesterDisplayNames[report.reportId],
+    })),
+  };
+}
+
+/** Current task data is for comparison, never a receipt for an earlier action. */
+export async function fetchL5ExportTask(reportId: string): Promise<LExportTask> {
+  const result = await apiRequest<unknown>(`/export/${encodeURIComponent(reportId)}`);
+  let raw: Record<string, unknown>;
+  try { raw = assertL5ReportContract(result); }
+  catch { throw new Error(formatAdminApiError("L5_TASK_RESPONSE_INVALID", "L5_TASK_RESPONSE_INVALID")); }
+  if (raw.reportId !== reportId) throw new Error(formatAdminApiError("L5_TASK_RESPONSE_INVALID", "L5_TASK_RESPONSE_INVALID"));
+  return reportToTask(normalizeReport(raw));
+}
+
+/** L5 sends the stored body once; retries belong to its persisted recovery path. */
+export async function submitL5TaskAction(reportId: string, action: "approve" | "rerun", request: L5TaskActionRequest, commandKey: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await guardedFetch(`/api/admin/bi/reports/${encodeURIComponent(reportId)}/${action}`, {
+      method: "POST", cache: "no-store",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
+      body: JSON.stringify(request),
+    });
+  } catch {
+    throw new OutcomeUnknownError(formatAdminApiError("L5_TASK_OUTCOME_UNKNOWN", "L5_TASK_OUTCOME_UNKNOWN"));
+  }
+  const raw: unknown = await response.json().catch(() => null);
+  const payload = rec(raw);
+  const apiCode = typeof payload.code === "number" ? payload.code : undefined;
+  const reasonCode = typeof payload.message === "string" ? payload.message : undefined;
+  if (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+    throw new OutcomeUnknownError(formatAdminApiError("L5_TASK_OUTCOME_UNKNOWN", "L5_TASK_OUTCOME_UNKNOWN"));
+  }
+  if (!response.ok || (apiCode !== undefined && apiCode !== 0)) {
+    throw Object.assign(new Error(formatAdminApiError(reasonCode, `BI_API_${response.status}`)), {
+      status: response.ok && apiCode !== undefined ? apiCode : response.status,
+      httpStatus: response.status, apiCode, reasonCode,
+    });
+  }
+  const receipt = rec(payload.data);
+  if (payload.code !== 0 || receipt.reportId !== reportId || receipt.action !== action.toUpperCase()
+    || !["READY", "PENDING_CONFIRM"].includes(String(receipt.status))
+    || action === "approve" && receipt.status !== "READY"
+    || typeof receipt.containsPii !== "boolean" || !["NONE", "MASKED", "PARTIAL", "DECRYPTED"].includes(String(receipt.maskingPolicy))
+    || action === "rerun" && receipt.status !== (receipt.containsPii ? "PENDING_CONFIRM" : "READY")
+    || reportId.startsWith("L4TREE-") && (receipt.containsPii !== true || receipt.maskingPolicy !== "PARTIAL")) {
+    throw new OutcomeUnknownError(formatAdminApiError("L5_TASK_OUTCOME_UNKNOWN", "L5_TASK_OUTCOME_UNKNOWN"));
+  }
 }
 
 export async function fetchL5ExportAudits(limit = 50): Promise<LExportAuditRow[]> {
   return apiRequest<LExportAuditRow[]>(`/export/audit?limit=${Math.max(1, Math.min(limit, 100))}`);
+}
+
+export type L3DetailReceipt = { reportId: string; status: string; replayed?: boolean };
+
+function l3DetailReceipt(value: unknown, request: L3DetailRequest): L3DetailReceipt {
+  const report = rec(value);
+  if (typeof report.reportId !== "string" || !/^EXP-[A-Z0-9]{8}$/.test(report.reportId)
+    || report.type !== "FINANCE_AGG" || report.containsPii !== true || report.maskingPolicy !== "MASKED"
+    || report.cycle !== request.timeRange || report.fields !== request.fields
+    || typeof report.status !== "string"
+    || !["PENDING_CONFIRM", "PENDING_SPLIT_CONFIRM", "PENDING", "GENERATING", "READY", "EXPIRED", "FAILED"].includes(report.status)) {
+    throw new Error(formatAdminApiError("L3_DETAIL_RECEIPT_INVALID", "L3_DETAIL_RECEIPT_INVALID"));
+  }
+  return { reportId: report.reportId, status: report.status };
+}
+
+/** L3 detail submits the retained request, including its original operator and reason. */
+export async function submitL3FinanceDetail(request: L3DetailRequest, commandKey: string): Promise<L3DetailReceipt> {
+  const data = await apiRequest<Record<string, unknown>>("/reports", {
+    method: "POST",
+    headers: { "Idempotency-Key": commandKey },
+    body: JSON.stringify(request),
+  });
+  try {
+    return l3DetailReceipt(data?.created, request);
+  } catch {
+    // A malformed success receipt cannot settle a command which may have committed.
+    throw new LOutcomeUnknownError(formatAdminApiError("L3_DETAIL_RECEIPT_INVALID", "L3_DETAIL_RECEIPT_INVALID"));
+  }
+}
+
+export async function fetchL3FinanceDetail(reportId: string, request: L3DetailRequest): Promise<L3DetailReceipt> {
+  const report = l3DetailReceipt(await apiRequest<unknown>(`/export/${encodeURIComponent(reportId)}`), request);
+  if (report.reportId !== reportId) throw new Error(formatAdminApiError("L3_DETAIL_RECEIPT_INVALID", "L3_DETAIL_RECEIPT_INVALID"));
+  return report;
 }
 
 async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -676,20 +871,47 @@ async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
   const execute = () => guardedFetch(`/api/admin/regulatory${path}`, { ...init, headers, cache: "no-store" });
+  const creating = path === "/report" && init?.method === "POST";
   let response: Response;
   try {
     response = await execute();
   } catch {
-    if (path !== "/report" || init?.method !== "POST") throw networkFailure(false);
-    response = await execute().catch(() => { throw networkFailure(true); });
+    throw networkFailure(creating);
   }
-  if (path === "/report" && init?.method === "POST" && response.status === 503) response = await execute();
-  const text = await response.text();
-  const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
-  if (!response.ok || (payload.code !== undefined && payload.code >= 400)) {
-    throw new Error(formatAdminApiError(payload.message, `REGULATORY_API_${response.status}`));
+  if (creating && response.status >= 500) throw networkFailure(true);
+  let raw: unknown;
+  try {
+    raw = await response.json();
+  } catch {
+    if (creating && response.ok) throw new LOutcomeUnknownError();
+    throw Object.assign(new Error(formatAdminApiError(undefined, `REGULATORY_API_${response.status}`)), {
+      status: response.status,
+    });
   }
-  return payload.data as T;
+  const payload = rec(raw) as ApiResult<T>;
+  const status = creating ? reportCreationStatus(response, payload) : response.status;
+  if (!response.ok || (payload?.code !== undefined && payload.code !== 0)) {
+    throw Object.assign(new Error(formatAdminApiError(payload?.message, `REGULATORY_API_${status}`)), {
+      status, reasonCode: payload?.message,
+    });
+  }
+  return payload?.data as T;
+}
+
+/** Only L5 calls this wrapper; the other L pages keep their existing export contract. */
+export async function createL5SummaryReport(input: LReportCreateInput, reason: string): Promise<void> {
+  const data = await apiRequest<Record<string, unknown>>("/reports", {
+    method: "POST", body: JSON.stringify(withReason(input, reason)),
+  });
+  try {
+    const created = assertL5ReportContract(data?.created);
+    if (!/^EXP-[A-Z0-9]{8}$/.test(String(created.reportId)) || created.status !== "READY"
+      || created.containsPii !== false || created.maskingPolicy !== "NONE" || created.format !== "CSV") {
+      throw new Error("Invalid summary receipt");
+    }
+  } catch {
+    throw new LOutcomeUnknownError();
+  }
 }
 
 export async function fetchL5RegulatoryOptions(): Promise<LRegulatoryOptions> {
@@ -704,9 +926,9 @@ function filenameFromDisposition(disposition: string | null, fallback: string) {
   return ascii?.[1] ? ascii[1] : fallback;
 }
 
-async function downloadReportFile(reportId: string) {
-  const issued = await apiRequest<Record<string, unknown>>(`/exports/${encodeURIComponent(reportId)}/download-token`);
-  const token = typeof issued.downloadToken === "string" ? issued.downloadToken : "";
+async function downloadReportFile(reportId: string, savedToken?: string) {
+  const issued = savedToken ? undefined : await apiRequest<Record<string, unknown>>(`/exports/${encodeURIComponent(reportId)}/download-token`);
+  const token = savedToken ?? (typeof issued?.downloadToken === "string" ? issued.downloadToken : "");
   if (!token) throw new Error("下载链接签发失败 · 请重新尝试");
   const query = new URLSearchParams({ token });
   const res = await guardedFetch(`/api/admin/bi/exports/${encodeURIComponent(reportId)}/download?${query.toString()}`, { cache: "no-store" });
@@ -721,33 +943,84 @@ async function downloadReportFile(reportId: string) {
   };
 }
 
-function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
-  return { ...body, reason, operator: currentAdminOperator() };
+/** A recovered L4 file read reuses its received token; it never issues another grant. */
+export const downloadL4NetworkFile = (reportId: string, token: string) => downloadReportFile(reportId, token);
+
+export async function fetchL4NetworkReport(reportId: string, request: { period: string; depth: number }): Promise<LNetworkTreeExportResult> {
+  const report = rec(await apiRequest<unknown>(`/export/${encodeURIComponent(reportId)}`));
+  if (report.reportId !== reportId || report.type !== "NETWORK_TREE" || report.format !== "CSV"
+    || report.scope !== `period=${request.period};depth=${request.depth}`
+    || (report.status !== "PENDING_CONFIRM" && report.status !== "READY")
+    || report.containsPii !== true || report.maskingPolicy !== "PARTIAL" || report.snapshotAvailable !== true
+    || typeof report.rowCount !== "number" || !Number.isSafeInteger(report.rowCount) || report.rowCount <= 0 || report.rowCount > 100_000) {
+    throw new Error(formatAdminApiError("L4_TREE_RECEIPT_INVALID", "L4_TREE_RECEIPT_INVALID"));
+  }
+  return { reportId, status: report.status, rowCount: report.rowCount, containsPii: true, maskingPolicy: "PARTIAL", downloadTtlHours: 24 };
+}
+
+function withReason<T extends Record<string, unknown>>(body: T, reason: string, operator = currentAdminOperator()) {
+  return { ...body, reason, operator };
 }
 
 export const lBiActions: LBiActions = {
-  createReport: (input, reason, stableIdempotencyKey) => apiRequest("/reports", {
-    method: "POST",
-    headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
-    body: JSON.stringify(withReason(input, reason)),
-  }).then(() => undefined),
-  createRegulatoryReport: (input, reason, stableIdempotencyKey) => regulatoryRequest("/report", {
-    method: "POST",
-    headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
-    body: JSON.stringify(withReason(input, reason)),
-  }).then(() => undefined),
+  createReport: async (input, reason, stableIdempotencyKey, operator) => {
+    const data = await apiRequest<{ created?: unknown }>("/reports", {
+      method: "POST",
+      headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
+      body: JSON.stringify(withReason(input, reason, operator)),
+    });
+    const created = rec(data?.created);
+    if (typeof created.reportId !== "string" || !/^EXP-[A-Z0-9]{8}$/.test(created.reportId)
+      || typeof created.type !== "string" || !["KPI_SERIES", "FUNNEL_COHORT", "FINANCE_AGG", "OPERATIONS_AGG"].includes(created.type)) {
+      throw new LOutcomeUnknownError();
+    }
+  },
+  createRegulatoryReport: async (input, reason, stableIdempotencyKey) => {
+    const data = await regulatoryRequest<Record<string, unknown>>("/report", {
+      method: "POST",
+      headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
+      body: JSON.stringify(withReason(input, reason)),
+    });
+    try {
+      const created = assertL5ReportContract(data?.created);
+      const disclosure = rec(data.disclosure);
+      if (!/^REG-[A-Z0-9]{8}$/.test(String(created.reportId)) || created.type !== "REGULATORY"
+        || created.status !== "READY" || created.containsPii !== false || created.maskingPolicy !== "MASKED"
+        || created.cycle !== input.period.trim() || data.taskStatus !== "READY"
+        || disclosure.jurisdictionCode !== input.jurisdictionCode.trim().toUpperCase()
+        || String(disclosure.disclosureVersion).toUpperCase() !== input.disclosureVersion.trim().toUpperCase()
+        || disclosure.chapterCount !== 7
+        || data.downloadPath !== `/api/admin/bi/exports/${created.reportId}/download-token`) {
+        throw new Error("Invalid regulatory receipt");
+      }
+    } catch {
+      throw new LOutcomeUnknownError();
+    }
+  },
   createNetworkTreeExport: (query, reason, stableIdempotencyKey) => {
     const params = new URLSearchParams({
       period: query.period,
       detail: "tree",
       depth: String(query.depth),
     });
-    return apiRequest<LNetworkTreeExportResult>(`/export/network?${params.toString()}`, {
+    return apiRequest<unknown>(`/export/network?${params.toString()}`, {
       method: "GET",
       headers: {
         "Idempotency-Key": stableIdempotencyKey,
         "X-Operation-Reason": encodeURIComponent(reason),
       },
+    }).then((value) => {
+      const result = rec(value);
+      // exportNetworkTreeOnce returns these fields, not an A2 proposal envelope.
+      if (typeof result.reportId !== "string" || !/^L4TREE-[A-Z0-9]{8}$/.test(result.reportId)
+        || (result.status !== "READY" && (result.status !== "PENDING_CONFIRM" || result.approvalRequired !== true))
+        || result.scope !== `period=${query.period};depth=${query.depth}`
+        || typeof result.rowCount !== "number" || !Number.isSafeInteger(result.rowCount) || result.rowCount <= 0 || result.rowCount > 100_000
+        || result.maskingPolicy !== "PARTIAL" || result.containsPii !== true || result.downloadTtlHours !== 24) {
+        throw new LOutcomeUnknownError(formatAdminApiError("L4_TREE_RECEIPT_INVALID", "L4_TREE_RECEIPT_INVALID"));
+      }
+      return { reportId: result.reportId, status: result.status, rowCount: result.rowCount,
+        maskingPolicy: result.maskingPolicy, containsPii: result.containsPii, downloadTtlHours: result.downloadTtlHours };
     });
   },
   reportAction: (reportId, action, reason, includeSensitive = true) => apiRequest(`/reports/${encodeURIComponent(reportId)}/${encodeURIComponent(action)}`, {

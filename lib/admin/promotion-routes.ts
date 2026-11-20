@@ -20,6 +20,6 @@ export function allowedPromotionRoute(parts: string[], method: string): boolean 
   if (head !== 'promotions') return false;
   if (n === 1) return method === 'GET' || method === 'POST';
   if (n === 2) return method === 'GET';
-  if (n === 3) return method === 'GET' ? ['versions','metrics'].includes(tail) : method === 'PUT' ? tail === 'draft' : method === 'POST' && ['draft-versions','copies','simulate','audience-preview','submit','withdraw','approve','reject','publish','pause','resume','end','archive'].includes(tail);
+  if (n === 3) return method === 'GET' ? ['versions','metrics'].includes(tail) : method === 'PUT' ? tail === 'draft' : method === 'POST' && ['draft-versions','copies','simulate','audience-preview','submit','withdraw','approve','reject','publish','pause','resume','end','archive','delete'].includes(tail);
   return n === 4 && ((method === 'GET' && tail === 'versions' && /^[1-9]\d*$/.test(last)) || (method === 'POST' && tail === 'metrics' && last === 'exports'));
 }

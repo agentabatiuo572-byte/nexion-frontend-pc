@@ -1,84 +1,323 @@
-type JsonRecord = Record<string, unknown>;
+import type { L1Granularity, L1KpiQuery } from "@/lib/admin/l-client";
 
-const KPI_IDS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+type JsonRecord = Record<string, unknown>;
+export const L1_KPI_IDS = [1, 2, 3, 4, 5, 7, 8] as const;
+const COHORT_KPI_COUNT = L1_KPI_IDS.length - 1;
+export const L1_COHORT_CONTRACT = "L1_REGISTRATION_COHORT_V1";
+const COUNTS = ["cohortSize", "eligibleUsers", "sampleSize", "numerator", "denominator"] as const;
+const BOUNDARIES = ["bucketKey", "startDate", "endDateExclusive", "registrationFrom", "registrationToExclusive", "selectedFrom", "selectedToExclusive", "partial", "observationAsOf"] as const;
+const METRIC_FIELDS = [...COUNTS, "value", "available", "unavailableReason", "suppressed", "sampleBasis", "mature", "maturityStatus"] as const;
+
+export type L1CohortPoint = JsonRecord & {
+  bucketKey: string;
+  value: number | null;
+  suppressed: boolean;
+  available: boolean;
+  unavailableReason: string | null;
+  maturityStatus: string;
+};
+export type L1KpiRow = {
+  n: number;
+  kpiId: string;
+  name: string;
+  value: number | null;
+  target: number;
+  unit: string;
+  dir: "gte" | "lte" | "band";
+  band: number[];
+  vis: string;
+  spark: (number | null)[];
+  sparkSuppressed?: boolean[];
+  sparkUnavailableReasons?: (string | null)[];
+  suppressed?: boolean;
+  previousSuppressed?: boolean;
+  available: boolean;
+  unavailableReason: string | null;
+  momDelta: number | null;
+  numerator: number | null;
+  denominator: number | null;
+  scope?: "REGISTRATION_COHORT" | "NOT_APPLICABLE_TO_COHORT";
+  maturityStatus?: string;
+  points?: L1CohortPoint[];
+};
+export type L1Dashboard = JsonRecord & {
+  kpis: L1KpiRow[];
+  weeks: string[];
+  query?: L1KpiQuery;
+  granularity?: L1Granularity;
+  observationAsOf?: string;
+  applicableKpiCount?: number;
+};
 
 function record(value: unknown): JsonRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("L1_DATA_PROTOCOL_INVALID");
-  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("L1_DATA_PROTOCOL_INVALID");
   return value as JsonRecord;
 }
-
-function finite(value: unknown) {
+function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
+function count(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+function date(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+}
+function instant(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)
+    && date(value.slice(0, 10)) && Number.isFinite(Date.parse(value));
+}
+function sameInstant(a: unknown, b: unknown) {
+  const canonical = (value: string) => value.replace(/(\.\d*?)0+Z$/, "$1Z").replace(".Z", "Z");
+  return instant(a) && instant(b) && canonical(a) === canonical(b);
+}
+const LEGACY_TREND_LENGTH = 6;
+const LEGACY_REASONS: Readonly<Record<number, readonly string[]>> = {
+  1: ["NO_REGISTRATION_DENOMINATOR"],
+  2: ["NO_MATURE_DAY7_COHORT", "DAU_NOT_COLLECTED"],
+  3: ["NO_REGISTRATION_DENOMINATOR"],
+  4: ["NO_STORE_VIEW_DENOMINATOR"],
+  5: ["NO_DEVICE_HOLDER_DENOMINATOR"],
+  7: ["NO_DIRECT_REFERRAL_DENOMINATOR"],
+  8: ["NO_GENESIS_PURCHASES", "GENESIS_NOT_SOLD_OUT"],
+};
 
-function validateKpi(value: unknown, expectedId: number) {
+function validLegacyPoint(id: number, value: unknown, suppressed: unknown, reason: unknown) {
+  const allowedReasons = LEGACY_REASONS[id];
+  if (!allowedReasons || typeof suppressed !== "boolean") return false;
+  if (suppressed) return value === null && reason === null;
+  if (value === null) return typeof reason === "string" && allowedReasons.includes(reason);
+  return reason === null && finite(value) && (id === 8 ? value > 0 : value >= 0 && value <= 100);
+}
+
+function validTrend(id: number, values: unknown, markers: unknown, reasons: unknown) {
+  return Array.isArray(values) && values.length === LEGACY_TREND_LENGTH
+    && Array.isArray(markers) && markers.length === LEGACY_TREND_LENGTH
+    && Array.isArray(reasons) && reasons.length === LEGACY_TREND_LENGTH
+    && values.every((point, index) => validLegacyPoint(id, point, markers[index], reasons[index]));
+}
+
+function metadata(value: unknown, expectedId: number) {
   const row = record(value);
-  if (row.n !== expectedId || String(row.kpiId) !== String(expectedId)) {
-    throw new Error("L1_KPI_ID_SEQUENCE_INVALID");
-  }
-  if (typeof row.name !== "string" || !row.name.trim()
-      || !finite(row.target)
-      || !["gte", "lte", "band"].includes(String(row.dir))
-      || !["%", "d"].includes(String(row.unit))
-      || typeof row.available !== "boolean"
-      || typeof row.numerator !== "number" || !Number.isInteger(row.numerator) || row.numerator < 0
-      || typeof row.denominator !== "number" || !Number.isInteger(row.denominator) || row.denominator < 0
-      || !Array.isArray(row.spark)
-      || (row.spark.length !== 0 && row.spark.length !== 6)
-      || !row.spark.every(finite)) {
+  if (row.n !== expectedId || row.kpiId !== String(expectedId)) throw new Error("L1_KPI_ID_SEQUENCE_INVALID");
+  if (typeof row.name !== "string" || !row.name.trim() || !finite(row.target)
+      || !["gte", "lte", "band"].includes(String(row.dir)) || !["%", "d"].includes(String(row.unit))
+      || !Array.isArray(row.band) || !row.band.every(finite)
+      || (row.dir === "band" && (row.band.length !== 2 || row.band[0] > row.band[1]))
+      || typeof row.vis !== "string" || typeof row.available !== "boolean"
+      || (row.available ? !finite(row.value) || (row.unit === "%" ? row.value < 0 || row.value > 100 : row.value <= 0) : row.value !== null)) {
     throw new Error("L1_KPI_ROW_INVALID");
-  }
-  if (row.available) {
-    if (!finite(row.value)
-        || (row.unit === "%" && (Number(row.value) < 0 || Number(row.value) > 100))
-        || (row.unit === "d" && Number(row.value) <= 0)) {
-      throw new Error("L1_KPI_VALUE_INVALID");
-    }
-  } else if (row.value !== null) {
-    throw new Error("L1_KPI_UNAVAILABLE_VALUE_INVALID");
   }
   return row;
 }
+function legacyKpi(value: unknown, expectedId: number): L1KpiRow {
+  const row = metadata(value, expectedId);
+  const hiddenCounts = row.suppressed === true || row.unavailableReason === "DAU_NOT_COLLECTED";
+  if (!validLegacyPoint(expectedId, row.value, row.suppressed, row.unavailableReason)
+      || !validTrend(expectedId, row.spark, row.sparkSuppressed, row.sparkUnavailableReasons)
+      || (hiddenCounts
+        ? row.numerator !== null || row.denominator !== null || row.momDelta !== null
+        : !count(row.numerator) || !count(row.denominator))) throw new Error("L1_KPI_ROW_INVALID");
+  return row as L1KpiRow;
+}
 
-export function validateL1Dashboard(value: unknown): JsonRecord {
-  const data = record(value);
-  if (data.module !== "L1" || !Array.isArray(data.kpis) || data.kpis.length !== KPI_IDS.length) {
-    throw new Error("L1_DASHBOARD_SHAPE_INVALID");
+function cohortHeader(data: JsonRecord, expected?: L1KpiQuery) {
+  if (expected?.granularity && data.contractVersion === undefined) throw new Error("L1_COHORT_NOT_SUPPORTED");
+  if (data.contractVersion !== L1_COHORT_CONTRACT) throw new Error("L1_DATA_PROTOCOL_INVALID");
+  const query = record(data.query);
+  const range = record(data.range);
+  const calendar = record(data.calendar);
+  const coverage = record(data.coverage);
+  const capabilities = record(data.capabilities);
+  if (data.module !== "L1" || !["registration_week", "registration_month"].includes(String(data.granularity))
+      || !instant(data.observationAsOf) || query.granularity !== data.granularity || !sameInstant(query.asOf, data.observationAsOf)
+      || query.window !== data.window || !["1d", "7d", "30d", "custom"].includes(String(query.window))
+      || !["from", "to", "cohort", "phase", "locale", "ref"].every(key => typeof query[key] === "string")
+      || !instant(range.registrationFrom) || !instant(range.registrationToExclusive)
+      || Date.parse(range.registrationFrom) > Date.parse(range.registrationToExclusive)
+      || Date.parse(range.registrationToExclusive) > Date.parse(data.observationAsOf)
+      || (range.selectedFrom === null && range.selectedToExclusive === null ? false
+        : !instant(range.selectedFrom) || !instant(range.selectedToExclusive)
+          || Date.parse(range.selectedFrom) >= Date.parse(range.selectedToExclusive)
+          || Date.parse(range.selectedFrom) < Date.parse(range.registrationFrom)
+          || Date.parse(range.selectedToExclusive) > Date.parse(range.registrationToExclusive))
+      || calendar.track !== "LEGACY" || calendar.weekStartsOn !== "MONDAY" || calendar.weekNumbering !== "ISO"
+      || !Array.isArray(calendar.versions) || !calendar.versions.length
+      || !calendar.versions.every(value => { const version = record(value); return date(version.effectiveDate) && typeof version.zoneId === "string" && version.zoneId.length > 0; })
+      || coverage.registrationTimeSource !== "nx_user.created_at" || typeof coverage.historyComplete !== "boolean"
+      || !["COMPLETE", "INCOMPLETE"].includes(String(coverage.registrationEventCoverage))
+      || capabilities.sevenKpis !== true || capabilities.registrationCohorts !== true || capabilities.minimumSampleSize !== 5
+      || capabilities.maxPoints !== 60 || capabilities.phaseMarkers !== false || data.phaseSwitchIndex !== null
+      || data.applicableKpiCount !== COHORT_KPI_COUNT || !count(data.onTargetKpiCount) || data.onTargetKpiCount > COHORT_KPI_COUNT) {
+    throw new Error("L1_COHORT_METADATA_INVALID");
   }
-  data.kpis.forEach((row, index) => validateKpi(row, KPI_IDS[index]));
-  const weeks = data.weeks;
-  if (!Array.isArray(weeks) || weeks.length !== 6
-      || !weeks.every((item) => typeof item === "string" && item.length > 0)) {
-    throw new Error("L1_TREND_LABELS_INVALID");
+  const filters = record(data.filters);
+  for (const key of ["cohort", "phase", "locale", "ref"] as const) {
+    if (filters[key] !== (query[key] || null)) throw new Error("L1_COHORT_QUERY_MISMATCH");
   }
-  for (const key of ["kpiPlain", "kpiExt"]) {
-    const keyed = record(data[key]);
-    if (!KPI_IDS.every((id) => Object.prototype.hasOwnProperty.call(keyed, String(id)))) {
+  if (expected) {
+    const normalized: L1KpiQuery = { ...expected, window: expected.window ?? "7d", phase: expected.phase?.trim().toUpperCase(), locale: expected.locale?.trim().toLowerCase() };
+    if (expected.granularity !== data.granularity
+        || expected.asOf && !sameInstant(expected.asOf, data.observationAsOf)
+        || ["window", "from", "to", "cohort", "phase", "locale", "ref"].some(key =>
+          String(normalized[key as keyof L1KpiQuery] ?? "").trim() !== query[key])) throw new Error("L1_COHORT_QUERY_MISMATCH");
+  }
+  return { range, granularity: data.granularity as L1Granularity, asOf: data.observationAsOf };
+}
+
+function cohortMetric(row: JsonRecord, id: number) {
+  const reason = row.unavailableReason;
+  const applicable = id !== 8;
+  const basis = id === 1 || id === 3 ? "NUMERATOR_USERS" : "DENOMINATOR_USERS";
+  const noDenominator: Record<number, string> = {
+    1: "NO_REGISTRATION_DENOMINATOR",
+    2: "NO_MATURE_DAY7_COHORT",
+    3: "NO_REGISTRATION_DENOMINATOR",
+    4: "NO_STORE_VIEW_DENOMINATOR",
+    5: "NO_DEVICE_HOLDER_DENOMINATOR",
+    7: "NO_DIRECT_REFERRAL_DENOMINATOR",
+  };
+  const notCollected = id === 2 && reason === "DAU_NOT_COLLECTED";
+  if (typeof row.suppressed !== "boolean" || typeof row.available !== "boolean"
+      || row.sampleBasis !== (applicable ? basis : null)
+      || (row.available
+        ? row.suppressed || reason !== null || !finite(row.value) || row.value < 0 || row.value > 100
+          || !COUNTS.every(key => count(row[key])) || Number(row.denominator) === 0
+          || Number(row.numerator) > Number(row.denominator) || row.eligibleUsers !== row.denominator
+          || Number(row.cohortSize) < Number(row.denominator)
+          || row.sampleSize !== row[id === 1 || id === 3 ? "numerator" : "denominator"] || Number(row.sampleSize) < 5
+        : row.value !== null || !COUNTS.every(key => row[key] === null)
+          || !["SOURCE_INCOMPLETE", "COHORT_NOT_APPLICABLE", "BELOW_MINIMUM", noDenominator[id], ...(id === 1 ? ["NO_MATURE_DAY0_COHORT"] : [])].includes(String(reason)) && !notCollected)
+      || (!applicable ? row.available || row.suppressed || reason !== "COHORT_NOT_APPLICABLE"
+        : reason === "COHORT_NOT_APPLICABLE" || (reason === "SOURCE_INCOMPLETE" || notCollected ? row.suppressed : !row.available && !row.suppressed))
+      || (id >= 3 ? row.mature !== null || row.maturityStatus !== (applicable ? "OPEN_ENDED" : "NOT_APPLICABLE")
+        : !["UNKNOWN", "IMMATURE", "PARTIAL", "MATURE"].includes(String(row.maturityStatus))
+          || row.mature !== (row.maturityStatus === "UNKNOWN" ? null : row.maturityStatus === "MATURE")
+          || row.available && !["PARTIAL", "MATURE"].includes(String(row.maturityStatus)))) {
+    throw new Error("L1_COHORT_METRIC_INVALID");
+  }
+}
+
+function cohortKpi(value: unknown, id: number, header: ReturnType<typeof cohortHeader>, axis?: L1CohortPoint[]): L1KpiRow {
+  const row = metadata(value, id);
+  cohortMetric(row, id);
+  if (row.scope !== (id === 8 ? "NOT_APPLICABLE_TO_COHORT" : "REGISTRATION_COHORT")
+      || row.momDelta !== null || row.comparisonUnavailableReason !== "COHORT_COMPARISON_UNDEFINED"
+      || !Array.isArray(row.points) || row.points.length > 60
+      || (header.range.selectedFrom === null ? row.points.length !== 0 : row.points.length === 0)
+      || axis && row.points.length !== axis.length) throw new Error("L1_COHORT_POINTS_INVALID");
+  const keys = new Set<string>();
+  const points = row.points.map((value, index) => {
+    const point = record(value);
+    cohortMetric(point, id);
+    if (typeof point.bucketKey !== "string" || keys.has(point.bucketKey)
+        || !(header.granularity === "registration_week" ? /^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$/ : /^\d{4}-(?:0[1-9]|1[0-2])$/).test(point.bucketKey)
+        || !date(point.startDate) || !date(point.endDateExclusive) || point.startDate >= point.endDateExclusive
+        || !["registrationFrom", "registrationToExclusive", "selectedFrom", "selectedToExclusive"].every(key => instant(point[key]))
+        || Date.parse(String(point.registrationFrom)) >= Date.parse(String(point.registrationToExclusive))
+        || Date.parse(String(point.selectedFrom)) >= Date.parse(String(point.selectedToExclusive))
+        || Date.parse(String(point.selectedFrom)) < Date.parse(String(point.registrationFrom))
+        || Date.parse(String(point.selectedToExclusive)) > Date.parse(String(point.registrationToExclusive))
+        || !sameInstant(point.observationAsOf, header.asOf)
+        || point.partial !== (!sameInstant(point.registrationFrom, point.selectedFrom) || !sameInstant(point.registrationToExclusive, point.selectedToExclusive))
+        || !sameInstant(point.selectedFrom, index === 0 ? header.range.selectedFrom : record((row.points as unknown[])[index - 1]).selectedToExclusive)
+        || index === (row.points as unknown[]).length - 1 && !sameInstant(point.selectedToExclusive, header.range.selectedToExclusive)
+        || axis && BOUNDARIES.some(key => point[key] !== axis[index][key])) throw new Error("L1_COHORT_POINTS_INVALID");
+    keys.add(point.bucketKey);
+    const start = new Date(point.startDate);
+    const end = new Date(start);
+    if (header.granularity === "registration_week") {
+      const thursday = new Date(start);
+      thursday.setUTCDate(start.getUTCDate() + 3);
+      const year = thursday.getUTCFullYear();
+      const january4 = new Date(Date.UTC(year, 0, 4));
+      const firstMonday = january4.getTime() - ((january4.getUTCDay() + 6) % 7) * 86_400_000;
+      const week = 1 + Math.round((start.getTime() - firstMonday) / (7 * 86_400_000));
+      if (start.getUTCDay() !== 1 || point.bucketKey !== `${year}-W${String(week).padStart(2, "0")}`) throw new Error("L1_COHORT_POINTS_INVALID");
+      end.setUTCDate(start.getUTCDate() + 7);
+    } else {
+      if (start.getUTCDate() !== 1 || point.bucketKey !== point.startDate.slice(0, 7)) throw new Error("L1_COHORT_POINTS_INVALID");
+      end.setUTCMonth(start.getUTCMonth() + 1);
+    }
+    if (end.toISOString().slice(0, 10) !== point.endDateExclusive) throw new Error("L1_COHORT_POINTS_INVALID");
+    return point as L1CohortPoint;
+  });
+  return { ...row, points, spark: points.map(point => point.value), sparkSuppressed: points.map(point => point.suppressed), sparkUnavailableReasons: points.map(point => point.unavailableReason) } as L1KpiRow;
+}
+
+function definitions(data: JsonRecord, kpis: L1KpiRow[]) {
+  const plain = record(data.kpiPlain);
+  const ext = record(data.kpiExt);
+  for (const row of kpis) {
+    const definition = record(ext[row.kpiId]);
+    if (typeof plain[row.kpiId] !== "string" || typeof definition.fx !== "string"
+        || !Array.isArray(definition.fxBold) || !definition.fxBold.every(item => typeof item === "string")
+        || typeof definition.note !== "string" || typeof definition.delta !== "string"
+        || !["num", "den"].every(key => definition[key] === null || typeof definition[key] === "string")
+        || !Array.isArray(definition.jump) || !definition.jump.every(value => {
+          const link = record(value); return typeof link.label === "string" && (link.href === undefined || typeof link.href === "string");
+        })
+        || (row.suppressed || row.scope && !row.available) && (definition.num !== null || definition.den !== null)) {
       throw new Error("L1_KPI_DEFINITION_SET_INVALID");
     }
   }
-  return data;
 }
 
-export function validateL1Drilldown(value: unknown, expectedId: number): JsonRecord {
+export function validateL1Dashboard(value: unknown, expected?: L1KpiQuery): L1Dashboard {
   const data = record(value);
-  if (data.module !== "L1" || data.kpiId !== expectedId) {
-    throw new Error("L1_DRILLDOWN_ID_INVALID");
+  if (expected?.granularity && data.contractVersion === undefined) throw new Error("L1_COHORT_NOT_SUPPORTED");
+  if (data.module !== "L1" || !Array.isArray(data.kpis) || data.kpis.length !== L1_KPI_IDS.length
+      || record(data.capabilities).sevenKpis !== true) throw new Error("L1_DASHBOARD_SHAPE_INVALID");
+  let kpis: L1KpiRow[];
+  let weeks: string[];
+  if (data.contractVersion !== undefined) {
+    const header = cohortHeader(data, expected);
+    const axis = cohortKpi(data.kpis[0], L1_KPI_IDS[0], header);
+    kpis = [axis, ...data.kpis.slice(1).map((row, index) => cohortKpi(row, L1_KPI_IDS[index + 1], header, axis.points))];
+    weeks = kpis[0].points!.map(point => point.bucketKey);
+  } else {
+    kpis = data.kpis.map((row, index) => legacyKpi(row, L1_KPI_IDS[index]));
+    if (!Array.isArray(data.weeks) || data.weeks.length !== LEGACY_TREND_LENGTH || !data.weeks.every(item => typeof item === "string" && item.length > 0)) throw new Error("L1_TREND_LABELS_INVALID");
+    weeks = data.weeks;
   }
-  validateKpi(data.selected, expectedId);
-  return data;
+  definitions(data, kpis);
+  return { ...data, kpis, weeks } as L1Dashboard;
 }
 
-export function validateL1Trend(value: unknown, expectedId: number): JsonRecord {
+export function validateL1Drilldown(value: unknown, expectedId: number, expected?: L1KpiQuery & { bucketKey?: string }, axis?: string[]) {
   const data = record(value);
-  if (data.module !== "L1" || data.kpiId !== expectedId
-      || !Array.isArray(data.labels) || data.labels.length !== 6
-      || !data.labels.every((item) => typeof item === "string" && item.length > 0)
-      || !Array.isArray(data.values) || !data.values.every(finite)
-      || (data.values.length !== 0 && data.values.length !== data.labels.length)) {
-    throw new Error("L1_TREND_PROTOCOL_INVALID");
+  if (expected?.granularity && data.contractVersion === undefined) throw new Error("L1_COHORT_NOT_SUPPORTED");
+  if (data.module !== "L1" || data.kpiId !== expectedId) throw new Error("L1_DRILLDOWN_ID_INVALID");
+  if (data.contractVersion !== undefined) {
+    const header = cohortHeader(data, expected);
+    const selected = cohortKpi(data.selected, expectedId, header);
+    const points = selected.points!;
+    if (!Array.isArray(data.points) || data.points.length !== points.length
+        || data.points.some((value, index) => {
+          const point = record(value);
+          return [...BOUNDARIES, ...METRIC_FIELDS].some(key => point[key] !== points[index][key]);
+        }) || axis && (axis.length !== points.length || points.some((point, index) => point.bucketKey !== axis[index]))) throw new Error("L1_COHORT_POINTS_INVALID");
+    if (expected?.bucketKey !== undefined && data.bucketKey !== expected.bucketKey) throw new Error("L1_COHORT_POINTS_INVALID");
+    if (data.bucketKey !== undefined) {
+      const selectedPoint = record(data.selectedPoint);
+      const point = points.find(point => point.bucketKey === data.bucketKey);
+      if (!point || [...BOUNDARIES, ...METRIC_FIELDS].some(key => selectedPoint[key] !== point[key])) throw new Error("L1_COHORT_POINTS_INVALID");
+    }
+    definitions(data, [selected]);
+    return { ...data, selected, points, weeks: points.map(point => point.bucketKey) };
   }
-  return data;
+  return { ...data, selected: legacyKpi(data.selected, expectedId), points: undefined, weeks: data.weeks };
+}
+
+export function validateL1Trend(value: unknown, expectedId: number, expected?: L1KpiQuery, axis?: string[]) {
+  const data = record(value);
+  if (expected?.granularity && data.contractVersion === undefined) throw new Error("L1_COHORT_NOT_SUPPORTED");
+  if (data.contractVersion !== undefined) {
+    const checked = validateL1Drilldown(data, expectedId, expected, axis);
+    return { ...checked, labels: checked.weeks as string[], values: checked.selected.spark, suppressedPoints: checked.selected.sparkSuppressed, unavailableReasons: checked.selected.sparkUnavailableReasons };
+  }
+  if (data.module !== "L1" || data.kpiId !== expectedId || !Array.isArray(data.labels) || data.labels.length !== LEGACY_TREND_LENGTH
+      || !data.labels.every(item => typeof item === "string" && item.length > 0)
+      || !validTrend(expectedId, data.values, data.suppressedPoints, data.unavailableReasons)) throw new Error("L1_TREND_PROTOCOL_INVALID");
+  return { ...data, labels: data.labels as string[], values: data.values as (number | null)[], suppressedPoints: data.suppressedPoints as boolean[] | undefined, unavailableReasons: data.unavailableReasons as (string | null)[] };
 }

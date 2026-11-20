@@ -14,20 +14,32 @@ export interface F4SettlementConfigIssue {
 }
 
 const REQUIRED = [
-  ["configVersion", "配置版本"],
+  ["configVersion", "设置版本"],
   ["ratio", "奖池比例"],
-  ["monthlyCap", "月度 cap"],
-  ["unlockVRank", "解锁等级"],
-  ["settleCron", "结算周期"],
+  ["monthlyCap", "每月上限"],
+  ["unlockVRank", "参与等级"],
+  ["settleCron", "结算时间"],
 ] as const;
 
 const BACKEND_KEY_TO_INPUT: Record<string, F4SettlementConfigIssue> = {
-  "F.pool.configVersion": { key: "configVersion", label: "配置版本" },
+  "F.pool.configVersion": { key: "configVersion", label: "设置版本" },
   "F.pool.ratio": { key: "ratio", label: "奖池比例" },
-  "F.pool.monthlyCap": { key: "monthlyCap", label: "月度 cap" },
-  "F.pool.unlockVRank": { key: "unlockVRank", label: "解锁等级" },
-  "F.pool.settleCron": { key: "settleCron", label: "结算周期" },
+  "F.pool.monthlyCap": { key: "monthlyCap", label: "每月上限" },
+  "F.pool.unlockVRank": { key: "unlockVRank", label: "参与等级" },
+  "F.pool.settleCron": { key: "settleCron", label: "结算时间" },
 };
+
+/** 920c2c19 restricts new saves; existing schedule reads retain their original semantics. */
+export function f4WeeklyCronIssue(configured: string): string | undefined {
+  const fields = configured.trim().split(/\s+/);
+  if (fields.length === 5) fields.unshift("0");
+  if (fields.length !== 6) return "F4_SETTLE_CRON_INVALID";
+  const weekly = fields.slice(0, 3).every(value => /^\d+$/.test(value))
+    && ["*", "?"].includes(fields[3]) && fields[4] === "*"
+    && /^(?:[0-7]|MON|TUE|WED|THU|FRI|SAT|SUN)$/i.test(fields[5]);
+  if (!weekly) return "F4_SETTLE_CRON_WEEKLY_REQUIRED";
+  if (Number(fields[0]) > 59 || Number(fields[1]) > 59 || Number(fields[2]) > 23) return "F4_SETTLE_CRON_INVALID";
+}
 
 /**
  * Settlement readiness is server-authoritative. The browser deliberately does not reimplement
@@ -47,6 +59,6 @@ export function validateF4SettlementConfig(input: F4SettlementConfigInput): {
   if (authoritativeIssue && !issues.some((issue) => issue.key === authoritativeIssue.key)) {
     issues.push(authoritativeIssue);
   }
-  if (!issues.length) issues.push({ key: "unknown", label: "权威配置" });
+  if (!issues.length) issues.push({ key: "unknown", label: "其他设置" });
   return { ready: false, issues };
 }

@@ -1,454 +1,77 @@
-import { operatorCopyText } from "@/lib/admin/operator-copy";
-/**
- * E6 · 算力与设备配置(server-canonical 聚合视图)。
- * 手机绑定换机 / 电脑算力入口开关 / App 在线加成系数 / 显卡映射表(G1-G6) / 客户端下载配置。
- * 所有写入经 OperationConfirmModal,由 shell(e-view)统一落 A2 审计 + Idempotency-Key。
- *
- * 数据源:ctx.e6Config(后端 GET /api/admin/devices/compute-config 聚合视图),
- * 已含元数据 + 当前值,前端直接渲染,不再依赖本地 mock / pget 派生。
- * 写入:paramKey 由 e6-client 生成函数产出(与后端 ComputeConfigRegistry 1:1),
- * 值规则权威校验在后端 validateComputeValue。
- */
+"use client";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Clock3, FileClock, Settings2, SlidersHorizontal } from "lucide-react";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { e6YieldKey } from "@/lib/admin/e6-client";
+import { E6ConfirmModal } from "./e6-confirm-modal";
+import { compareEditDecimals } from "../design-kit";
+import { BlockState, Button, ConfigList, ConfigRow, Fact, Facts, Fold, Notice, PageHeader, PageTabs, Panel, SectionNav, useSectionNav, useTabIds } from "@/app/components/rd";
+import { PhoneTasksSection, PhoneTiersSection } from "./phone-tasks-section";
+import { E6PhoneDevices } from "./e6-phone-devices";
 import { PhoneReplacementPolicyPanel } from "./phone-replacement-policy-panel";
 import { PhoneCalibrationPanel } from "./phone-calibration-panel";
-import { CodeTag } from "../design-kit";
-import { AutoGloss } from "@/app/components/kit/gloss";
+import { PhoneRiskSection } from "./phone-risk-section";
+import { E6MutationProvider, E6PendingNotice, useE6Mutations, type E6Section } from "./e6-mutations";
 import type { EViewCtx } from "./types";
-import { EStats } from "./stats";
-import {
-  e6FlagKey,
-  e6CoeffKey,
-  e6YieldKey,
-  e6GpuTierKey,
-  e6DownloadKey,
-  E6_DOWNLOAD_COPY_MAX_LENGTH,
-  E6_DOWNLOAD_COPY_PATTERN,
-  E6_DOWNLOAD_COPY_PATTERN_MESSAGE,
-  type E6YieldView,
-  type E6GpuTierView,
-} from "@/lib/admin/e6-client";
-// 安装包地址判定是 E6/A5 共用的单一来源(zentao #156:两页曾各自判定,于是 A5 把 E6
-// 已判为无效的值当成「当前服务端值」展示)。规则住在 installer-url.ts,这里只引用。
-import { isSafeInstallerUrl } from "@/lib/admin/installer-url";
-
-const numberFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
-
-// 显卡关键词固定 6 槽(keyword1..6),与后端 ComputeConfigRegistry.KEYWORD_SLOTS 一致。
-const KEYWORD_SLOT_COUNT = 6;
-const keywordField = (slotIndex: number): string => `keyword${slotIndex}`;
-
-// 收益估算只使用服务端返回的正数；缺失或非法时显式展示不可用。
-function yieldValue(yields: E6YieldView[], key: string): number | null {
-  const next = Number(yields.find((y) => y.key === key)?.value);
-  return Number.isFinite(next) && next > 0 ? next : null;
+const TABS:readonly {value:E6Section;label:string}[]=[{value:"tasks",label:"手机任务"},{value:"tiers",label:"档位与收益"},{value:"phones",label:"用户手机"},{value:"calibration",label:"校准与风控"}];
+const SECTIONS=[{id:"rules",label:"档位分界"},{id:"hardware",label:"硬件规则"},{id:"pending",label:"待核验硬件"},{id:"trial",label:"试算与发布"},{id:"risk",label:"机型风控"},{id:"replacement",label:"换机规则"},{id:"estimate",label:"高级参数"},{id:"records",label:"记录与生效"}];
+export function E6ComputeConfig({ctx}:{ctx:EViewCtx}) {
+  const session=useAdminAuth(s=>s.session),epoch=useAdminAuth(s=>s.authEpoch);
+  if(!session)return <BlockState state="denied" title="请重新登录后查看手机算力配置"/>;
+  const refreshYieldBinding = async () => { await Promise.all([ctx.refreshE2(), ctx.refreshE6SkuCandidates()]); };
+  return <E6MutationProvider key={`${session.adminId}:${epoch}`} refreshYieldBinding={refreshYieldBinding}><E6Content ctx={ctx}/></E6MutationProvider>;
 }
-// tops → 日 USDT = (tops / 基准算力) × 基准日产。
-function dailyUsdt(tops: number | null, yields: E6YieldView[]): number | null {
-  const baseline = yieldValue(yields, "topsBaseline");
-  const daily = yieldValue(yields, "dailyUsdtPerBaseline");
-  if (tops == null || !(tops > 0) || baseline == null || daily == null) return null;
-  return +((tops / baseline) * daily).toFixed(2);
+function E6Content({ctx}:{ctx:EViewCtx}) {
+  const m=useE6Mutations(),ids=useTabIds();
+  const visible=TABS.filter(t=>t.value==="tasks"||t.value==="tiers"?ctx.canReadE2:t.value==="phones"?ctx.canReadE5:ctx.canReadE6);
+  const [tab,setTab]=useState<E6Section>(visible[0]?.value??"tasks"),[denied,setDenied]=useState(false);
+  const [pendingCount,setPendingCount]=useState<number|null>(null);
+  const sections=SECTIONS.map(s=>({...s,alert:s.id==="pending"&&!!pendingCount}));
+  const [advanced,setAdvanced]=useState(false),[records,setRecords]=useState(false);
+  const nav=useSectionNav(sections,{ready:tab==="calibration",onReveal:id=>{if(id==="estimate")setAdvanced(true);if(id==="records")setRecords(true);}});
+  useEffect(()=>{
+    const apply=()=>{const u=new URL(window.location.href),wanted=u.hash==="#phone-calibration"?"calibration":u.searchParams.get("tab"),known=TABS.some(t=>t.value===wanted),allowed=visible.some(t=>t.value===wanted);setDenied(known&&!allowed);const next=(allowed?wanted:visible[0]?.value) as E6Section;if(next){setTab(next);u.searchParams.set("tab",next);window.history.replaceState(window.history.state,"",`${u.pathname}${u.search}${u.hash}`);}};
+    apply();window.addEventListener("popstate",apply);return()=>window.removeEventListener("popstate",apply);
+  },[ctx.canReadE2,ctx.canReadE5,ctx.canReadE6]);
+  const change=(next:E6Section)=>{setTab(next);setDenied(false);const u=new URL(window.location.href);u.searchParams.set("tab",next);if(u.hash==="#phone-calibration")u.hash="";window.history.replaceState(window.history.state,"",`${u.pathname}${u.search}${u.hash}`);};
+  return <div className="e6-page">
+    <PageHeader pageId="E6" title="手机算力配置" summary="管理手机任务、收益、设备与校准规则。"/>
+    {!visible.length?<BlockState state="denied" title="你无权查看这个页面" detail={<Link href="/">返回首页</Link>}/>:<>
+      {visible.length>1&&<PageTabs ids={ids} label="手机算力配置分区" value={tab} items={visible.map(t=>({...t,count:m.pending.filter(r=>r.section===t.value).length||undefined}))} onChange={change}/>}
+      {denied&&<Notice tone="warn">你无权查看这个分区，已显示第一个可查看分区。</Notice>}
+      {ctx.canReadE2&&<><div {...ids.panel("tasks")} hidden={tab!=="tasks"} className="e6-tab"><PhoneTasksSection ctx={ctx}/></div><div {...ids.panel("tiers")} hidden={tab!=="tiers"} className="e6-tab"><PhoneTiersSection ctx={ctx}/></div></>}
+      {ctx.canReadE5&&<div {...ids.panel("phones")} hidden={tab!=="phones"} className="e6-tab"><E6PhoneDevices ctx={ctx}/></div>}
+      {ctx.canReadE6&&<div {...ids.panel("calibration")} hidden={tab!=="calibration"} className="e6-tab">
+        {ctx.e6Error&&<BlockState state="error" title="设备配置读取失败" detail={ctx.e6Error} retryLabel="重试" onRetry={()=>void ctx.refreshE6()}/>}
+        <div className="rd-config-layout"><div className="rd-config-grid"><div className="rd-config-rail"><SectionNav label="校准与风控主题" items={sections} nav={nav}/></div><div className="rd-config-groups e6-config-groups">
+          <div id="phone-calibration"><PhoneCalibrationPanel ctx={ctx} onPendingCount={setPendingCount}/></div>
+          <div id="section-risk"><PhoneRiskSection canWrite={ctx.canWriteE6} toast={ctx.toast}/></div>
+          <div id="section-replacement"><PhoneReplacementPolicyPanel configReadFailed={!!ctx.e6Error}/></div>
+          <div id="section-estimate"><Fold title="高级参数" icon={SlidersHorizontal} tone="role-4" summary={ctx.e6Config?`${ctx.e6Config.yieldEstimate.length} 项估算参数 · 在线兼容值只读`:ctx.e6Loading?"正在读取配置":"等设备配置读取成功后可用"} open={advanced} onOpenChange={setAdvanced}><div className="e6-fold-content"><E6Estimates ctx={ctx}/></div></Fold></div>
+          <div id="section-records"><Fold title="记录与生效" icon={FileClock} tone="role-other" summary="按各自发布方式生效，可查原记录" open={records} onOpenChange={setRecords}>
+            <div className="e6-fold-content"><Panel plain title="修改记录与回滚" icon={FileClock} data-proof="e6-version-rollback"><div className="e6-fold-content"><p>每次修改记录改前、改后值和操作人。回滚时核对原值，再按最新版本提案。退役参数只读。</p>{m.canAudit?<Link href="/platform/audit?domain=E&object=E.compute">查看修改记录</Link>:<p>查看修改记录需要操作记录与审批读取权限。</p>}</div></Panel>
+            <Panel plain title="什么时候生效" icon={Clock3} data-proof="e6-effective-boundary"><ConfigList label="生效边界"><ConfigRow name="手机任务" value="批准后对新派任务生效" note="已派任务保留原版本。"/><ConfigRow name="手机校准规则" value="批准后用于后续校准" note="预约还须到所选时间；批准时已过预约时间则批准后生效。"/><ConfigRow name="机型风控" value="保存后立即用于之后校准" note="已激活手机和历史结算不受影响。"/><ConfigRow name="手机换机策略" value="四项批准后同时生效" note="只约束后续换机。"/><ConfigRow name="收益估算参数" value="批准后发布公共配置" note="未证明直接参与现行手机结算。"/></ConfigList></Panel></div>
+          </Fold></div>
+        </div></div></div>
+      </div>}
+    </>}
+  </div>;
 }
-// 日 USDT → 日 NEX = USDT × NEX 折算系数。
-function dailyNex(usdt: number | null, yields: E6YieldView[]): number | null {
-  const rate = yieldValue(yields, "nexPerUsdt");
-  return usdt == null || rate == null ? null : +(usdt * rate).toFixed(1);
-}
-
-function firstFreeKeywordSlot(keywords: E6GpuTierView["keywords"]): string | null {
-  const occupied = new Set(keywords.map((keyword) => keyword.slot));
-  for (let index = 1; index <= KEYWORD_SLOT_COUNT; index += 1) {
-    const slot = keywordField(index);
-    if (!occupied.has(slot)) return slot;
-  }
-  return null;
-}
-
-export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
-  const {
-    canWriteE6, canToggleE6, e6Config, e6Loading, e6Error, refreshE6, openActionConfirm,
-  } = ctx;
-  const flags = e6Config?.flags ?? [];
-  const coefficients = (e6Config?.coefficients ?? []).filter((c) => c.key !== "h5BaseFactor");
-  const yields = e6Config?.yieldEstimate ?? [];
-  const gpuTiers = e6Config?.gpuTiers ?? [];
-  const download = e6Config?.download;
-  const downloadUrl = (download?.url ?? "").trim();
-  const downloadReady = isSafeInstallerUrl(downloadUrl);
-  const ready = !!e6Config; // 后端聚合视图已加载
-
-  // 入口开关切换 → param-fixed on/off。
-  const requestToggle = (key: string, label: string, current: boolean) => {
-    const next = !current;
-    if (next && !downloadReady) return;
-    openActionConfirm({
-      name: `${next ? "开启" : "关闭"}${operatorCopyText(label)}`,
-      op: "param-fixed",
-      paramKey: e6FlagKey(key),
-      fixedVal: next ? "on" : "off",
-      detail: `${next ? "开启" : "关闭"}「${operatorCopyText(label)}」。批准后保存服务端开关并同步用户端配置缓存；开启前必须先配置有效的 HTTPS 安装包地址，App 才会开放下载和配对入口。`,
-    });
-  };
-
-  // 在线系数调整 → param(number edit)。
-  const editCoefficient = (c: (typeof coefficients)[number]) => {
-    openActionConfirm({
-      name: `${operatorCopyText(c.label)}调整`,
-      op: "param",
-      paramKey: e6CoeffKey(c.key),
-      edit: {
-        kind: "number", current: c.value, unit: operatorCopyText(c.unit),
-        min: Number.MIN_VALUE,
-        disallowCurrent: true,
-      },
-      detail: `${operatorCopyText(c.label)}: ${operatorCopyText(c.desc)} 调整后对后续结算生效,不回溯已结算收益。${operatorCopyText(c.frontendEffect)}`,
-    });
-  };
-
-  // 收益估算系数调整 → param(number edit)。
-  const editYield = (p: (typeof yields)[number]) => {
-    openActionConfirm({
-      name: `${operatorCopyText(p.label)}调整`,
-      op: "param",
-      paramKey: e6YieldKey(p.key),
-      edit: { kind: "number", current: p.value, unit: operatorCopyText(p.unit), min: Number.MIN_VALUE, disallowCurrent: true },
-      detail: `${operatorCopyText(p.label)}用于本页电脑显卡收益预览,并供后续 电脑客户端 读取;不回溯已结算收益。`,
-    });
-  };
-
-  // 显卡档位(label + tops)→ param-multi。
-  const editTier = (tier: E6GpuTierView) => {
-    openActionConfirm({
-      name: `${tier.label}档位设置`,
-      op: "param-multi",
-      paramKeys: [
-        { key: "label", paramKey: e6GpuTierKey(tier.id, "label") },
-        { key: "tops", paramKey: e6GpuTierKey(tier.id, "tops") },
-      ],
-      businessForm: {
-        kind: "multi-field",
-        title: "编辑显卡档位",
-        hint: "档位名称与 TOPS 用于本页预览,并为后续 电脑客户端 提供服务端配置。关键词在表格中逐个新增、修改或删除。",
-        fields: [
-          { key: "label", label: "档位展示名称", current: tier.label, inputKind: "text", wide: true, required: true },
-          { key: "tops", label: "算力 TOPS", current: tier.tops, inputKind: "number", min: Number.MIN_VALUE, step: 1, required: true },
-        ],
-      },
-      detail: `调整「${tier.label}」的展示名称与算力标尺。批准后本页按新 TOPS 预览;后续 电脑客户端 可读取同一配置。`,
-    });
-  };
-
-  // 关键词编辑/新增按后端返回的真实 slot 定位，不用压缩后的显示下标回写。
-  const editKeyword = (tier: E6GpuTierView, slot: string, current = "") => {
-    openActionConfirm({
-      name: current ? `修改${tier.label}识别词` : `新增${tier.label}识别词`,
-      op: "param",
-      paramKey: e6GpuTierKey(tier.id, slot),
-      edit: { kind: "text", current, unit: "单个显卡型号关键词", disallowCurrent: true },
-      detail: `每次只编辑一个识别词,不要把多个型号塞进同一输入框。该映射供后续 电脑客户端 使用,当前用户端没有显卡识别入口。`,
-    });
-  };
-
-  // 关键词删除 → param-fixed 空串。
-  const deleteKeyword = (tier: E6GpuTierView, slot: string, current: string) => {
-    openActionConfirm({
-      name: `删除${tier.label}识别词`,
-      op: "param-fixed",
-      paramKey: e6GpuTierKey(tier.id, slot),
-      fixedVal: "",
-      detail: `删除识别词「${current}」。删除后该词不再把电脑显卡映射到「${tier.label}」;本操作写入审计。`,
-    });
-  };
-
-  // 下载地址编辑/清空。
-  const editDownloadUrl = () => {
-    const current = (download?.url ?? "").trim();
-    openActionConfirm({
-      name: current ? "修改客户端下载地址" : "填写客户端下载地址",
-      op: "param",
-      paramKey: e6DownloadKey("url"),
-      edit: { kind: "text", current, unit: "HTTPS 下载地址", disallowCurrent: true },
-      detail: "仅接受受控 HTTPS 安装包地址。留空或校验失败都会保持未配置；开关和地址同时有效后，App 才会开放下载和配对入口。",
-    });
-  };
-  const clearDownloadUrl = () => {
-    openActionConfirm({
-      name: "清空客户端下载地址",
-      op: "param-fixed",
-      paramKey: e6DownloadKey("url"),
-      fixedVal: "",
-      detail: "清空后服务端保持未配置状态,不会向当前用户端或后续载体提供假下载链接。",
-    });
-  };
-
-  // 下载页双语文案 → param-multi(中英标题/说明 4 字段)。
-  const editDownloadCopy = () => {
-    const dl = download ?? { url: "", zhTitle: "", zhGuide: "", enTitle: "", enGuide: "" };
-    openActionConfirm({
-      name: "编辑下载页双语文案",
-      op: "param-multi",
-      paramKeys: [
-        { key: "zhTitle", paramKey: e6DownloadKey("zhTitle") },
-        { key: "zhGuide", paramKey: e6DownloadKey("zhGuide") },
-        { key: "enTitle", paramKey: e6DownloadKey("enTitle") },
-        { key: "enGuide", paramKey: e6DownloadKey("enGuide") },
-      ],
-      businessForm: {
-        kind: "multi-field",
-        title: "下载页双语内容",
-        hint: "四个字段分别编辑,禁止把中英文或多段内容塞进同一个输入框。保存前会校验长度(≤320 字符)并拦截测试标点(如「！！！」「？？？」);未通过校验的文案不会写成当前正式配置。",
-        fields: [
-          { key: "zhTitle", label: "中文标题", current: dl.zhTitle, inputKind: "text", wide: true, maxLength: E6_DOWNLOAD_COPY_MAX_LENGTH, pattern: E6_DOWNLOAD_COPY_PATTERN, patternMessage: E6_DOWNLOAD_COPY_PATTERN_MESSAGE },
-          { key: "zhGuide", label: "中文说明", current: dl.zhGuide, inputKind: "text", wide: true, maxLength: E6_DOWNLOAD_COPY_MAX_LENGTH, pattern: E6_DOWNLOAD_COPY_PATTERN, patternMessage: E6_DOWNLOAD_COPY_PATTERN_MESSAGE },
-          { key: "enTitle", label: "英文标题", current: dl.enTitle, inputKind: "text", wide: true, maxLength: E6_DOWNLOAD_COPY_MAX_LENGTH, pattern: E6_DOWNLOAD_COPY_PATTERN, patternMessage: E6_DOWNLOAD_COPY_PATTERN_MESSAGE },
-          { key: "enGuide", label: "英文说明", current: dl.enGuide, inputKind: "text", wide: true, maxLength: E6_DOWNLOAD_COPY_MAX_LENGTH, pattern: E6_DOWNLOAD_COPY_PATTERN, patternMessage: E6_DOWNLOAD_COPY_PATTERN_MESSAGE },
-        ],
-      },
-      detail: "编辑客户端下载页的中文与英文内容。确认后写入配置审计,前台按语言分别读取。",
-    });
-  };
-
-  if (e6Loading && !e6Config) {
-    return <section className="pane"><div className="empty">正在读取服务端 E6 配置...</div></section>;
-  }
-  if (e6Error) {
-    return (
-      <section className="pane" data-proof="e6-load-error">
-        <div className="empty">E6 配置读取失败:{e6Error}</div>
-        <div className="row" style={{ justifyContent: "center", paddingBottom: 16 }}>
-          <button type="button" className="adj" onClick={() => void refreshE6()}>重新加载</button>
-        </div>
-      </section>
-    );
-  }
-  if (!e6Config) {
-    return <section className="pane"><div className="empty">服务端尚未返回 E6 配置，当前不显示可操作控件。</div></section>;
-  }
-
-  const onCount = flags.filter((f) => f.enabled).length;
-  const keywordCount = gpuTiers.reduce((sum, t) => sum + t.keywords.length, 0);
-  // 双语文案质量门:后端只拦长度,测试标点必须由运营面在提交前拦住。
-  // 判定用与弹窗同一组常量,避免两处规则漂移。
-  const copyPattern = new RegExp(E6_DOWNLOAD_COPY_PATTERN);
-  const copyFields = [
-    { label: "中文标题", value: download?.zhTitle ?? "" },
-    { label: "中文说明", value: download?.zhGuide ?? "" },
-    { label: "英文标题", value: download?.enTitle ?? "" },
-    { label: "英文说明", value: download?.enGuide ?? "" },
-  ];
-  const copyIssues = copyFields
-    .filter((field) => !copyPattern.test(field.value))
-    .map((field) => field.label);
-
-  return (
-    <div>
-      <div id="phone-calibration"><PhoneCalibrationPanel ctx={ctx} /></div>
-      <EStats items={[
-        { k: "入口开关", v: flags.length, sub: e6Loading ? "加载中" : `${onCount} 个开启`, tone: "cyan" },
-        { k: "显卡档位", v: gpuTiers.length, sub: `${keywordCount} 个识别词`, tone: "ok" },
-        { k: "下载地址", v: downloadReady ? "已配置" : "未配置", sub: downloadReady ? "App 下载与配对入口具备开放条件" : "入口保持关闭", tone: downloadReady ? "ok" : "" },
-        { k: "在线系数", v: coefficients.length, sub: "App 稳定性", tone: "cyan" },
-      ]} />
-
-      <PhoneReplacementPolicyPanel />
-
-      <section className="pane" style={{ marginTop: 14 }}>
-        <div className="pane-h">
-          <span className="ttl">电脑算力入口开关</span>
-          <span className="sub">切换需理由 + A2 审计</span>
-          <span className="r"><CodeTag tone="electric">服务端配置</CodeTag></span>
-        </div>
-        {flags.map((f) => {
-          const on = f.enabled;
-          return (
-            <div className="e6-flag-row" key={f.key}>
-              <div className="e6-flag-meta">
-                <span className="e6-flag-name">{operatorCopyText(f.label)}</span>
-                <span className="e6-flag-desc"><AutoGloss>{operatorCopyText(f.desc)}</AutoGloss></span>
-              </div>
-              <div className="e6-flag-ctl">
-                <span className="e6-flag-state" style={{ color: on ? "var(--success)" : "var(--ink-4)" }}>
-                  {ready ? (on ? "已开启" : "已关闭") : "—"}
-                </span>
-                {canToggleE6 && <button
-                  type="button"
-                  role="switch"
-                  aria-checked={on}
-                  aria-label={`${operatorCopyText(f.label)}:${on ? "已开启,点击关闭" : "已关闭,点击开启"}`}
-                  className="e6-switch"
-                  data-on={on}
-                  data-proof="e6-flag-toggle"
-                  disabled={!on && !downloadReady}
-                  onClick={() => requestToggle(f.key, f.label, on)}
-                >
-                  <span className="e6-switch-knob" aria-hidden />
-                </button>}
-              </div>
-            </div>
-          );
-        })}
-        <div className="tint cyan tiny" style={{ margin: "0 16px 14px" }}>
-          <AutoGloss>此处保存服务端开关并同步用户端配置缓存。只有开关开启且安装包地址通过 HTTPS 校验时，App 才会开放下载与配对入口；历史设备不会因切换开关而被隐藏或删除。</AutoGloss>
-        </div>
-      </section>
-
-      <section className="pane" style={{ marginTop: 14 }}>
-        <div className="pane-h">
-          <span className="ttl">在线加成系数</span>
-          <span className="sub">调整后只影响后续结算</span>
-          <span className="r"><CodeTag>可审计调参</CodeTag></span>
-        </div>
-        {coefficients.map((c) => (
-          <div className="pkv" key={c.key}>
-            <div className="lhs">
-              <span className="zh">{operatorCopyText(c.label)}</span>
-              <span className="desc"><AutoGloss>{operatorCopyText(c.desc)}</AutoGloss></span>
-            </div>
-            <span className="v">{ready ? c.value : "—"}<span className="u">{operatorCopyText(c.unit)}</span></span>
-            {canWriteE6 && <button type="button" className="adj" data-proof={`e6-coeff-${c.key}`} onClick={() => editCoefficient(c)}>调整</button>}
-          </div>
-        ))}
-        <div className="tint cyan tiny" style={{ margin: "12px 16px 14px" }}>
-          <AutoGloss>连续在线满额时长决定 App 稳定性加成爬满需要多久。缩短满额时长属于资金放大方向,B1 覆盖率低于红线时服务器会拒绝本次调整;收紧与回滚方向保持可用。调整不回溯已结算收益，不恢复 H5 手机算力奖励。</AutoGloss>
-        </div>
-      </section>
-
-      <section className="pane" style={{ marginTop: 14 }} data-proof="e6-gpu-tier-table">
-        <div className="pane-h">
-          <span className="ttl">电脑显卡映射表</span>
-          <span className="sub">档位可改;识别词可新增、修改、删除</span>
-          <span className="r"><CodeTag>六档显卡</CodeTag><CodeTag>单词一格</CodeTag></span>
-        </div>
-        <div className="tint cyan tiny" style={{ margin: "12px 16px 0" }}>
-          <AutoGloss>以下参数用于把显卡算力换算成每日 USDT / UVEL 估算,全部后台可调。</AutoGloss>
-        </div>
-        <div data-proof="e6-yield-estimate-params" style={{ margin: "0 16px 14px" }}>
-          {yields.map((p) => (
-            <div className="pkv" key={p.key}>
-              <div className="lhs">
-                <span className="zh">{operatorCopyText(p.label)}</span>
-              </div>
-              <span className="v">{ready ? p.value : "—"}<span className="u">{operatorCopyText(p.unit)}</span></span>
-              {canWriteE6 && <button type="button" className="adj" onClick={() => editYield(p)}>调整</button>}
-            </div>
-          ))}
-        </div>
-        <div className="e6-gpu-table">
-          {gpuTiers.map((tier, index) => {
-            const nextSlot = firstFreeKeywordSlot(tier.keywords);
-            const topsCandidate = Number(tier.tops);
-            const topsNum = Number.isFinite(topsCandidate) && topsCandidate > 0 ? topsCandidate : null;
-            const dailyUsdtValue = dailyUsdt(topsNum, yields);
-            const dailyNexValue = dailyNex(dailyUsdtValue, yields);
-            return (
-              <div className="e6-gpu-row" key={tier.id}>
-                <div className="e6-tier-main">
-                  <div className="e6-tier-head">
-                    <span className="e6-tier-badge">第 {numberFmt.format(index + 1)} 档</span>
-                    <span className="e6-tier-name">{tier.label}</span>
-                  </div>
-                  <span className="e6-tier-desc"><AutoGloss>{operatorCopyText(tier.desc)}</AutoGloss></span>
-                  <span className="e6-tier-model">默认型号: {tier.defaultModel}</span>
-                </div>
-                <div className="e6-tier-yield">
-                  <span><b>{topsNum == null ? "—" : numberFmt.format(topsNum)}</b> TOPS</span>
-                  <span>{dailyUsdtValue == null ? "收益参数不可用" : `约 $${dailyUsdtValue.toFixed(2)} / 日`}</span>
-                  <span>{dailyNexValue == null ? "UVEL 折算不可用" : `约 ${numberFmt.format(dailyNexValue)} UVEL / 日`}</span>
-                </div>
-                <div className="e6-keyword-wrap">
-                  {tier.keywords.map((kw) => (
-                    <span className="e6-keyword-chip" key={`${tier.id}-${kw.slot}`}>
-                      <span>{kw.value}</span>
-                      {canWriteE6 && <button type="button" aria-label={`修改 ${kw.value}（${tier.label} · 第 ${index + 1} 档）`} onClick={() => editKeyword(tier, kw.slot, kw.value)}>改</button>}
-                      {canWriteE6 && <button type="button" className="danger" aria-label={`删除 ${kw.value}（${tier.label} · 第 ${index + 1} 档）`} onClick={() => deleteKeyword(tier, kw.slot, kw.value)}>删</button>}
-                    </span>
-                  ))}
-                  {canWriteE6 && nextSlot ? (
-                    <button type="button" className="e6-inline-add" aria-label={`为 ${tier.label}（第 ${index + 1} 档）新增识别词`} onClick={() => editKeyword(tier, nextSlot)}>新增识别词</button>
-                  ) : canWriteE6 ? (
-                    <span className="e6-slot-full">识别词槽位已满</span>
-                  ) : null}
-                </div>
-                <div className="e6-row-actions">
-                  {canWriteE6 && <button type="button" className="adj" aria-label={`编辑档位 ${tier.label}（第 ${index + 1} 档）`} onClick={() => editTier(tier)}>编辑档位</button>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="pane" style={{ marginTop: 14 }} data-proof="e6-download-config">
-        <div className="pane-h">
-          <span className="ttl">客户端下载配置</span>
-          <span className="sub">地址与双语内容分别编辑</span>
-          <span className="r"><CodeTag>入口开关与 HTTPS 地址共同生效</CodeTag></span>
-        </div>
-        <div className="e6-download-box">
-          <div className="e6-download-url">
-            <span className="k">客户端下载地址</span>
-            <span className={downloadUrl ? "v" : "v muted"}>{downloadUrl || "未配置 · 当前无用户下载入口"}</span>
-            {canWriteE6 && <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-              <button type="button" className="adj" onClick={editDownloadUrl}>{downloadUrl ? "修改地址" : "填写地址"}</button>
-              <button type="button" className="adj" onClick={clearDownloadUrl} disabled={!downloadUrl || flags.some((flag) => flag.key === "computeShareEnabled" && flag.enabled)}>清空地址</button>
-            </div>}
-          </div>
-          <div className="e6-copy-grid">
-            <div>
-              <span className="k">中文标题</span>
-              <span className="v">{download?.zhTitle ?? ""}</span>
-            </div>
-            <div>
-              <span className="k">英文标题</span>
-              <span className="v">{download?.enTitle ?? ""}</span>
-            </div>
-            <div>
-              <span className="k">中文说明</span>
-              <span className="v">{download?.zhGuide ?? ""}</span>
-            </div>
-            <div>
-              <span className="k">英文说明</span>
-              <span className="v">{download?.enGuide ?? ""}</span>
-            </div>
-          </div>
-          {copyIssues.length > 0 && (
-            <div className="tint warn tiny" role="alert" data-proof="e6-copy-quality-gate" style={{ margin: "0 16px 12px" }}>
-              当前双语文案含测试标点({copyIssues.join(" / ")}),不会作为正式文案下发;请点「编辑双语文案」清理后再保存。
-            </div>
-          )}
-          {canWriteE6 && <button type="button" className="adj" onClick={editDownloadCopy}>编辑双语文案</button>}
-        </div>
-      </section>
-
-      <section className="pane" style={{ marginTop: 14 }} data-proof="e6-version-rollback">
-        <div className="pane-h">
-          <span className="ttl">版本记录与回滚</span>
-          <span className="sub">A2 操作单 + A4 事件构成不可变版本链</span>
-          <span className="r"><CodeTag tone="electric">可追溯</CodeTag><CodeTag>可回滚</CodeTag></span>
-        </div>
-        <div className="tint cyan tiny" style={{ margin: "12px 16px" }}>
-          <AutoGloss>每次批准都记录参数键、变更前值、变更后值、理由、操作人、防重复提交编号和时间,同一防重复提交编号重复提交不会产生第二个版本。需要回滚时,在 A2 审计中找到目标版本的变更前值,回到本页填入该值并重新提交理由与审批;回滚本身会生成新版本,不会删除或篡改旧记录。</AutoGloss>
-        </div>
-        <div className="row" style={{ margin: "0 16px 14px", gap: 10, flexWrap: "wrap" }}>
-          <Link className="adj" href="/platform/audit?domain=E&object=E.compute">查看 E6 版本记录</Link>
-          <span className="sub">并发写由 A2 目标锁、配置行锁和防重复提交编号串行化;批量修改要么全部成功,要么全部不写。</span>
-        </div>
-      </section>
-
-      <section className="pane" style={{ marginTop: 14 }} data-proof="e6-effective-boundary">
-        <div className="pane-h">
-          <span className="ttl">生效阶段与调用链边界</span>
-          <span className="sub">全局配置,不跟随 H1 阶段切换</span>
-        </div>
-        <div className="tint cyan tiny" style={{ margin: "12px 16px 14px" }}>
-          <AutoGloss>A2 批准并写入后立即成为服务端当前版本,不等待 H1 的阶段/月度切换。App/H5 在启动、返回前台或用户下拉刷新时重拉配置后读取新值;E1 目录、E2 任务、E3 生命周期与 E5 运维状态仍各自按本域规则运行,E6 不绕过它们的上架、路由、容量或设备状态保护。新值只参与后续算力展示与收益计算,不重算历史已结算记录。</AutoGloss>
-        </div>
-      </section>
-
-      <p className="f-foot">
-        <b>配置边界</b>:<AutoGloss>本页维护服务端入口开关、在线系数、显卡映射和下载内容,所有改动都进入 A2 待确认并留审计。App/H5 在启动、返回前台或用户下拉刷新时重拉公共配置；只有开关开启且安装包地址通过 HTTPS 校验时，才开放电脑共享算力的下载与配对入口。实际接入仍需桌面客户端完成配对。</AutoGloss>
-      </p>
-    </div>
-  );
+function E6Estimates({ctx}:{ctx:EViewCtx}) {
+  const m=useE6Mutations();
+  const [edit,setEdit]=useState<{key:string;label:string;unit:string;value:string}|null>(null);
+  const scope=edit?`param:${edit.key}`:"";
+  const amplifiesWhen=edit?.key===e6YieldKey("topsBaseline")?"decrease":"increase";
+  return <>
+    {ctx.e6Loading?<BlockState state="loading" title="正在读取设备配置…"/>:ctx.e6Error||!ctx.e6Config?<BlockState state="empty" title="等设备配置读取成功后可用"/>:<>
+      <Panel plain title="收益估算参数" icon={Settings2} tone="role-4" data-proof="e6-yield-estimate"><div data-proof="e6-yield-estimate-params"><ConfigList label="收益估算参数">{ctx.e6Config.yieldEstimate.map(p=><ConfigRow key={p.key} name={operatorCopyText(p.label)} what="公共收益估算使用的参数" when="批准后发布公共配置" note="未证明参与现行结算；App 具体位置待确认。" effect="不追溯历史已结收益。" value={`${p.value} ${operatorCopyText(p.unit)}`} action={ctx.canWriteE6&&m.canPropose?<Button size="sm" disabledReason={m.locked(`param:${e6YieldKey(p.key)}`)?"这个参数有结果未知的原提案":undefined} onClick={()=>setEdit({key:e6YieldKey(p.key),label:operatorCopyText(p.label),unit:operatorCopyText(p.unit),value:p.value})}>调整</Button>:undefined}/>)}</ConfigList></div></Panel>
+      <Fold title="在线系数与兼容项" summary="历史兼容值 · 只读" inset><ConfigList label="在线历史兼容值">{ctx.e6Config.coefficients.filter(c=>c.key!=="h5BaseFactor").map(c=><ConfigRow key={c.key} name={operatorCopyText(c.label)} value={`${c.value} ${operatorCopyText(c.unit)}`} what="退役的在线历史兼容值" when="只读，不参与任务收益" note={operatorCopyText(c.desc)} action={<span>已退役 · 只读</span>}/>)}</ConfigList><p>连续在线满额时长保留历史兼容值，不可修改，不参与任务收益计算。</p></Fold>
+    </>}
+    {edit&&<E6ConfirmModal scope={scope} amplificationBasis={value=>`${edit.label}由 ${edit.value} ${edit.unit} ${amplifiesWhen==="decrease"?"降低":"增加"}至 ${value} ${edit.unit}，相同算力下的估算收益增加。`} briefKind="config" statedBrief={{impact:"批准后发布公共配置，不承诺参与现行手机结算。",check:"核对参数、原值、单位和理由；批准时执行业务与资金保护。"}} action={`调整${edit.label}`} reasonMin={8} reasonMax={200} detail="批准后发布到公共配置，不改变历史已结收益；本页不承诺实际手机结算采用。" completionCopy="请另一位有批准权和手机配置读权的管理员批准。" edit={{kind:"number",current:edit.value,unit:edit.unit,min:Number.MIN_VALUE,disallowCurrent:true,amplifiesWhen}} facts={<Facts><Fact k="参数">{edit.label}</Fact></Facts>} getPendingReason={()=>m.pendingReason(scope)} onClose={()=>setEdit(null)} onConfirm={async(reason,value)=>{
+      const original=m.pending.find(r=>r.scope===scope);if(original)await m.send(original,true);else {const direction=compareEditDecimals(value??"",edit.value);if(!value||compareEditDecimals(value,"0")!==1||direction===undefined||direction===0)throw new Error("新值须大于 0 且不同于当前值。");const def=findHighOp("e6_compute_config")!,params={paramKey:edit.key,value};await m.proposal(scope,"calibration",{action:`调整${edit.label}`,obj:edit.key,beforeValue:`${edit.value} ${edit.unit}`,afterValue:`${value} ${edit.unit}`,type:def.type,amplifies:amplifiesWhen==="decrease"?direction<0:direction>0,reason,sourceDomain:"E6",command:def.buildCommand(params),target:def.buildTarget(params)});}setEdit(null);ctx.toast("已提交，等待审批后执行");await ctx.refreshE6();
+    }}/>}
+  </>;
 }

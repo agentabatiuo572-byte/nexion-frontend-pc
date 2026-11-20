@@ -1,4 +1,4 @@
-import { financeAdminRequest } from "./d-client";
+import { DOutcomeUnknownError, financeAdminRequest } from "./d-client";
 import {
   normalizePayoutVndConfig,
   type PayoutVndConfig,
@@ -21,16 +21,24 @@ export async function loadPayoutVndConfig(): Promise<PayoutVndConfig> {
   return normalizeServerConfig(await financeAdminRequest<unknown>("/payout-vnd/config"));
 }
 
+/** commandKey 由页面持有：结果未知时页面保留原命令号和原内容，只能原样重试（OP-92、OP-94）。 */
 export async function updatePayoutVndConfig(
   values: PayoutVndValues,
   expectedVersion: number,
   reason: string,
-  forceInverted = false,
+  forceInverted: boolean,
+  commandKey: string,
 ): Promise<PayoutVndConfig> {
   const payload = { ...values, expectedVersion, reason, forceInverted };
-  return normalizeServerConfig(await financeAdminRequest<unknown>("/payout-vnd/config", {
+  const data = await financeAdminRequest<unknown>("/payout-vnd/config", {
     method: "PATCH",
     body: JSON.stringify(payload),
-    idempotencyPrefix: "d7-payout-config",
-  }));
+    idempotencyKey: commandKey,
+  });
+  // 写请求已经成功返回，回执却读不懂：命令可能已经执行，按结果未知保号（OP-91），不当明确失败。
+  try {
+    return normalizePayoutVndConfig(data);
+  } catch {
+    throw new DOutcomeUnknownError(commandKey);
+  }
 }

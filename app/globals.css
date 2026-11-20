@@ -3,135 +3,12 @@
 
 /* ============================================================================
    Nexion 运营控制后台 — 设计 token
-   V5 调色板自 H5 prototype 完整移植(双主题)+ 后台扩展色板(12 域 / 8 图表 / 状态)。
-   :root                    = 浅色(默认,可切换)
-   html[data-theme="dark"]  = 黑曜石暗色(首版主推)
-   柠檬绿 = #9EDC1D(暗色 brand)。所有 --v5-* 与 --admin-* 在两主题各有取值。
+   V5 调色板自 H5 prototype 移植 + 后台扩展色板(12 域 / 8 图表 / 状态)。
+   后台只有一套配色:黑曜石 + 柠檬绿(brand #9EDC1D),全部取值在 :root。
    ============================================================================ */
 
-:root {
-  /* ---- V5 light · 表面阶梯 ---- */
-  --v5-bg: #F4F1E9;
-  --v5-surface: #FFFFFF;
-  --v5-surface-2: #FAF7F0;
-  --v5-surface-3: #F0EBE0;
-  --v5-border: #E5DFD0;
-  --v5-border-strong: #D5CDB8;
-
-  /* ---- V5 light · 文字阶梯 ---- */
-  --v5-ink: #13141A;
-  --v5-ink-2: #3C3F47;
-  --v5-ink-3: #6A6F78;
-  --v5-ink-4: #A4A8B0;
-
-  /* ---- V5 light · 品牌 ---- */
-  --v5-brand: #0E48E6;
-  --v5-brand-deep: #0833B8;
-  --v5-brand-soft: #E8EDFB;
-  --v5-brand-border: #C8D5F7;
-  --v5-on-brand: #FFFFFF;
-  --v5-on-brand-soft: rgba(255, 255, 255, 0.78);
-  --v5-on-brand-mute: rgba(255, 255, 255, 0.22);
-
-  --v5-brand-2: #FF5A1F;
-  --v5-brand-2-soft: #FFEEDC;
-  --v5-brand-2-border: #FFD0A8;
-  --v5-on-brand-2: #0A0A0A;
-
-  /* ---- V5 light · 语义 ---- */
-  --v5-success: #0E8E4A;
-  --v5-success-soft: #DFF5E8;
-  --v5-warning: #C68316;
-  --v5-warning-soft: #FBF1D9;
-  --v5-danger: #B9554A;
-  --v5-danger-soft: #F8E1DC;
-  --v5-negative: #B9554A;
-
-  --v5-tech-cyan: #0CC4D6;
-  --v5-tech-cyan-soft: #E0F6F9;
-  --v5-tech-cyan-border: #9FE0E8;
-
-  /* ---- V5 light · 浮起阴影 / 辉光(浅色无 glow,留空保引用安全) ---- */
-  --v5-card-shadow-lift: 0 1px 2px rgba(20, 16, 8, 0.04), 0 4px 12px rgba(20, 16, 8, 0.06);
-  --v5-card-shadow-lift-strong: 0 2px 4px rgba(20, 16, 8, 0.06), 0 8px 24px rgba(20, 16, 8, 0.10);
-  --v5-spotlight-brand: none;
-  --v5-spotlight-brand-strong: none;
-
-  /* ---- 后台扩展 · 基础色(light:加深一档以在米白底保对比度) ---- */
-  --admin-cyan: #0891B2;
-  --admin-blue: #2563EB;
-  --admin-teal: #0D9488;
-  --admin-emerald: #059669;
-  --admin-violet: #7C3AED;
-  --admin-indigo: #4F46E5;
-  --admin-pink: #DB2777;
-  --admin-rose: #E11D48;
-
-  /* ---- 后台扩展 · 13 域强调色(light) ---- */
-  --admin-domain-a: #4F46E5;
-  --admin-domain-b: #0E8E4A;
-  --admin-domain-c: #0891B2;
-  --admin-domain-d: #059669;
-  --admin-domain-e: #2563EB;
-  --admin-domain-f: #7C3AED;
-  --admin-domain-g: #6D28D9;
-  --admin-domain-h: #EA580C;
-  --admin-domain-i: #DB2777;
-  --admin-domain-j: #DC2626;
-  --admin-domain-k: #B45309;
-  --admin-domain-l: #0D9488;
-  --admin-domain-m: #0284C7; /* M 客服中心 — 天蓝/helpdesk */
-
-  /* ---- 后台扩展 · 8 色数据可视化序列(light) ---- */
-  --admin-cat-1: #0E8E4A;
-  --admin-cat-2: #6D28D9;
-  --admin-cat-3: #0891B2;
-  --admin-cat-4: #EA580C;
-  --admin-cat-5: #DB2777;
-  --admin-cat-6: #2563EB;
-  --admin-cat-7: #B45309;
-  --admin-cat-8: #6A6F78;
-
-  /* ---- 后台扩展 · 状态机色(light) ---- */
-  --admin-state-pending: #6A6F78;
-  --admin-state-review: #2563EB;
-  --admin-state-approved: #0E8E4A;
-  --admin-state-delayed: #B45309;
-  --admin-state-frozen: #DC2626;
-
-  /* ---- 桌面密度 token(主题无关) ---- */
-  --admin-sidebar-w: 252px;
-  --admin-sidebar-w-collapsed: 64px;
-  --admin-topbar-h: 56px;
-  --admin-row-h: 44px;
-  --admin-row-h-dense: 36px;
-  --admin-gutter: 22px;
-  --admin-radius: 14px;
-  --admin-radius-sm: 9px;
-  --admin-z-sidebar: 40;
-  --admin-z-topbar: 50;
-  --admin-z-drawer: 60;
-  --admin-z-toast: 80;
-
-  /* ---- 字体链(本地系统字体优先,避免构建期外网字体下载依赖) ---- */
-  --font-display: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-jet-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --mono: var(--font-jet-mono);
-  --font-v5: var(--font-display), "Manrope", -apple-system,
-    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-}
-
-@media (max-width: 640px) {
-  :root {
-    --admin-sidebar-w: var(--admin-sidebar-w-collapsed);
-    --admin-gutter: 12px;
-  }
-}
-
-/* ============================================================================
-   暗色(html[data-theme="dark"])— 黑曜石 + 柠檬绿。首版主推。
-   ============================================================================ */
-html[data-theme="dark"] {
+:root,
+.rd-legacy {
   /* 表面阶梯 — 真黑微提升底 #0A0A0A + tone 分层(对齐设计稿 V5 Dark) */
   --v5-bg: #0A0A0A;
   --v5-surface: #121214;
@@ -155,6 +32,10 @@ html[data-theme="dark"] {
   --v5-on-brand-soft: rgba(10, 10, 10, 0.74);
   --v5-on-brand-mute: rgba(10, 10, 10, 0.18);
 
+  --admin-confirm-brand: #9EDC1D;
+  --admin-confirm-brand-hover: #8BC30F;
+  --admin-confirm-on-brand: #0A0A0A;
+
   /* 品牌2 · 橙红(漏斗钩子 / FOMO / 破坏性,对齐设计稿 #FF6B35,实底配白字) */
   --v5-brand-2: #FF6B35;
   --v5-brand-2-soft: rgba(255, 107, 53, 0.13);
@@ -165,6 +46,8 @@ html[data-theme="dark"] {
   --v5-success: #29D27F;
   --v5-success-soft: rgba(41, 210, 127, 0.13);
   --v5-warning: #FFBE3D;
+  --admin-confirm-focus: var(--admin-confirm-brand);
+  --admin-confirm-warning: var(--v5-warning);
   --v5-warning-soft: rgba(255, 190, 61, 0.13);
   --v5-danger: #FF6B35;
   --v5-danger-soft: rgba(255, 107, 53, 0.13);
@@ -181,7 +64,7 @@ html[data-theme="dark"] {
   --v5-spotlight-brand: 0 0 32px rgba(158, 220, 29, 0.30), 0 0 12px rgba(158, 220, 29, 0.18);
   --v5-spotlight-brand-strong: 0 0 40px rgba(158, 220, 29, 0.45), 0 0 16px rgba(158, 220, 29, 0.28);
 
-  /* ---- 后台扩展 · 基础色(dark:亮色相,纯黑底最大可辨) ---- */
+  /* ---- 后台扩展 · 基础色(亮色相,纯黑底最大可辨) ---- */
   --admin-cyan: #22D3EE;
   --admin-blue: #4D9FFF;
   --admin-teal: #2DD4BF;
@@ -191,7 +74,7 @@ html[data-theme="dark"] {
   --admin-pink: #F472B6;
   --admin-rose: #FB7185;
 
-  /* ---- 后台扩展 · 13 域强调色(dark,语义锚定) ---- */
+  /* ---- 后台扩展 · 13 域强调色(语义锚定) ---- */
   --admin-domain-a: #818CF8; /* A 平台基础 — 靛蓝/地基 */
   --admin-domain-b: #9EDC1D; /* B 驾驶舱 — 柠檬绿/brand 旗舰 */
   --admin-domain-c: #22D3EE; /* C 用户 — 真青 */
@@ -206,7 +89,7 @@ html[data-theme="dark"] {
   --admin-domain-l: #2DD4BF; /* L 数据 — 水鸭青 */
   --admin-domain-m: #38BDF8; /* M 客服中心 — 天蓝/helpdesk */
 
-  /* ---- 后台扩展 · 8 色数据可视化序列(dark) ---- */
+  /* ---- 后台扩展 · 8 色数据可视化序列 ---- */
   --admin-cat-1: #9EDC1D;
   --admin-cat-2: #8E72FF;
   --admin-cat-3: #22D3EE;
@@ -216,12 +99,44 @@ html[data-theme="dark"] {
   --admin-cat-7: #FFCB4D;
   --admin-cat-8: #6B7385;
 
-  /* ---- 后台扩展 · 状态机色(dark) ---- */
+  /* ---- 后台扩展 · 状态机色 ---- */
   --admin-state-pending: #9BA3B5;
   --admin-state-review: #4D9FFF;
   --admin-state-approved: #9EDC1D;
   --admin-state-delayed: #FFCB4D;
   --admin-state-frozen: #FF5C5C;
+
+  /* ---- 桌面密度 token ---- */
+  --admin-sidebar-w: 252px;
+  --admin-sidebar-w-collapsed: 64px;
+  --admin-topbar-h: 56px;
+  --admin-row-h: 44px;
+  --admin-row-h-dense: 36px;
+  --admin-gutter: 22px;
+  --admin-radius: 14px;
+  --admin-radius-sm: 9px;
+  /* 浮层只用这张表：页面内容 < 侧栏 < 顶栏 < 抽屉 < 弹窗 < 确认框 < 提示条 < 悬停说明 */
+  --admin-z-sidebar: 40;
+  --admin-z-topbar: 50;
+  --admin-z-drawer: 90;
+  --admin-z-modal: 100;
+  --admin-z-confirm: 110;
+  --admin-z-toast: 200;
+  --admin-z-tooltip: 9999;
+
+  /* ---- 字体链(本地系统字体优先,避免构建期外网字体下载依赖) ---- */
+  --font-display: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-jet-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --mono: var(--font-jet-mono);
+  --font-v5: var(--font-display), "Manrope", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --admin-sidebar-w: var(--admin-sidebar-w-collapsed);
+    --admin-gutter: 12px;
+  }
 }
 
 /* Tailwind v4 主题桥 — 让 bg-background / text-foreground / font-sans 解析到活 token */
@@ -251,7 +166,6 @@ body {
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  transition: background-color 200ms ease, color 200ms ease;
 }
 
 /* 字重铁律:正文/标题 ≤ 600(>700 读起来像广告) */
@@ -357,9 +271,8 @@ body {
   }
 }
 
-/* 原生下拉和日期控件按页面主题绘制弹层与图标。 */
-select, input[type="date"], input[type="datetime-local"] { color-scheme: light; }
-html[data-theme="dark"] :is(select, input[type="date"], input[type="datetime-local"]) { color-scheme: dark; }
+/* 原生下拉和日期控件的弹层与图标按深色绘制。 */
+select, input[type="date"], input[type="datetime-local"] { color-scheme: dark; }
 select option,
 select optgroup {
   background-color: var(--v5-surface);
@@ -386,10 +299,11 @@ select option:disabled { color: var(--v5-ink-3); }
 
 /* ============================================================================
    设计稿内容层(.dkpage 作用域)— 移植设计稿 admin-styles.css 组件类。
-   token 经别名映射到本项目 --v5-*(主题切换)。作用域化避免与 Tailwind 工具类冲突。
+   token 经别名映射到本项目 --v5-*。作用域化避免与 Tailwind 工具类冲突。
    仅用于「内容页」复刻设计稿富布局;导航/外壳沿用本项目 shell。
    ============================================================================ */
-:root {
+:root,
+.rd-legacy {
   --brand: var(--v5-brand);
   --brand-deep: var(--v5-brand-deep);
   --brand-soft: var(--v5-brand-soft);
@@ -553,7 +467,7 @@ select option:disabled { color: var(--v5-ink-3); }
 .gloss { border-bottom: 1px dashed var(--v5-ink-3, #8a8a8a); cursor: help; position: relative; }
 /* 浮层改用全局 [data-tip] 层(app/components/kit/tooltip-layer.tsx):position:fixed + portal 到 body,
    逃出 .tbl-wrap / .card.pad-0 / .modal / .drawer 等 overflow 祖先的裁切(遮挡根治)。.gloss 与 .has-tip 共用此浮层。 */
-.gloss-tip { position: fixed; z-index: 9999; max-width: 264px; padding: 8px 11px; border-radius: 8px; background: var(--v5-surface-3, #1e1e1e); color: var(--v5-ink, #f5f5f5); border: 1px solid var(--v5-border-strong, #3a3a3a); font-size: 12px; font-weight: 400; line-height: 1.55; white-space: normal; text-align: left; box-shadow: 0 10px 28px rgba(0, 0, 0, .45); pointer-events: none; animation: glossTipIn .12s ease-out; }
+.gloss-tip { position: fixed; z-index: var(--admin-z-tooltip); max-width: 264px; padding: 8px 11px; border-radius: 8px; background: var(--v5-surface-3, #1e1e1e); color: var(--v5-ink, #f5f5f5); border: 1px solid var(--v5-border-strong, #3a3a3a); font-size: 12px; font-weight: 400; line-height: 1.55; white-space: normal; text-align: left; box-shadow: 0 10px 28px rgba(0, 0, 0, .45); pointer-events: none; animation: glossTipIn .12s ease-out; }
 @keyframes glossTipIn { from { opacity: 0; } to { opacity: 1; } }
 .dkpage .wrap { flex-wrap: wrap; }
 .dkpage .spacer { flex: 1; }
@@ -599,7 +513,7 @@ select option:disabled { color: var(--v5-ink-3); }
 .dkpage .ph-img { background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 9px, var(--surface-3) 9px, var(--surface-3) 18px); border: 1px solid var(--border); border-radius: var(--r-sm); display: grid; place-items: center; color: var(--ink-3); font-family: var(--font-jet-mono), monospace; font-size: 11px; }
 
 /* overlays (fixed, viewport-relative even inside .dkpage) */
-.dkpage .modal-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); backdrop-filter: blur(3px); z-index: 100; display: grid; place-items: center; padding: 24px; }
+.dkpage .modal-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); backdrop-filter: blur(3px); z-index: var(--admin-z-modal); display: grid; place-items: center; padding: 24px; }
 .dkpage .modal { background: var(--surface); border-radius: 16px; border: 1px solid var(--border); width: 100%; max-width: 520px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); overflow: hidden; max-height: 88vh; display: flex; flex-direction: column; }
 .dkpage .modal-h { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
 .dkpage .modal-h .ttl { font-size: 16px; font-weight: 600; color: var(--ink); }
@@ -613,8 +527,8 @@ select option:disabled { color: var(--v5-ink-3); }
 /* 勾选/单选框不套用全宽输入样式:原生小方框 + 与文案同行左对齐(ack/确认/多选类弹窗) */
 .dkpage .field input[type="checkbox"], .dkpage .field input[type="radio"] { width: auto; padding: 0; margin: 0; border: 0; border-radius: 0; vertical-align: middle; flex-shrink: 0; accent-color: var(--brand); cursor: pointer; }
 .dkpage .field label.row { display: flex; align-items: center; gap: 8px; margin-bottom: 0; font-weight: 400; cursor: pointer; }
-.dkpage .drawer-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 90; }
-.dkpage .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 460px; max-width: 94vw; background: var(--surface); border-left: 1px solid var(--border); z-index: 91; display: flex; flex-direction: column; box-shadow: -12px 0 40px rgba(0, 0, 0, .4); animation: slidein .2s ease; }
+.dkpage .drawer-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: var(--admin-z-drawer); }
+.dkpage .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 460px; max-width: 94vw; background: var(--surface); border-left: 1px solid var(--border); z-index: calc(var(--admin-z-drawer) + 1); display: flex; flex-direction: column; box-shadow: -12px 0 40px rgba(0, 0, 0, .4); animation: slidein .2s ease; }
 @keyframes slidein { from { transform: translateX(30px); opacity: .5; } to { transform: none; opacity: 1; } }
 .dkpage .drawer-h { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
 .dkpage .drawer-b { padding: 20px; overflow-y: auto; flex: 1; }
@@ -623,9 +537,6 @@ select option:disabled { color: var(--v5-ink-3); }
 .uvel-logo-mark { display: inline-flex; width: 30px; height: 30px; flex-shrink: 0; }
 .uvel-logo-mark img { width: 30px; height: 30px; object-fit: contain; }
 .uvel-logo-mark--login, .uvel-logo-mark--login img { width: 36px; height: 36px; }
-.uvel-logo-mark__light { display: none; }
-html:not([data-theme="dark"]) .uvel-logo-mark__dark { display: none; }
-html:not([data-theme="dark"]) .uvel-logo-mark__light { display: block; }
 
 /* Keyboard focus remains visible, including forced-colors mode. */
 .login-field:focus-visible,
@@ -644,3 +555,115 @@ html:not([data-theme="dark"]) .uvel-logo-mark__light { display: block; }
 .dkpage .operator-brief .brief-open,
 .dkpage .operator-brief[open] .brief-closed { display: none; }
 .dkpage .operator-brief[open] .brief-open { display: inline; }
+
+/* ============================================================================
+   各域共用的外观类。各域 CSS 里相同的规则上提到这里，只留一份。
+   必须放在本文件末尾：要压过上面的 .dkpage .chip、.dkpage .kv、.dkpage .mc，
+   又要被后加载的域 CSS 覆盖。不能拆成单独文件，Next 按路径给 layout 的 CSS 排序，
+   app/components/ 会排到 globals.css 前面。
+   域文件里还留着的同名规则是不同变体，靠相同优先级和后加载覆盖这里，所以这里不能加高优先级。
+   .dkpage 和 :is(.xdom) 都算一个类，:where() 不算，优先级和原来的 .xdom 选择器相同。
+   ============================================================================ */
+
+/* 统计卡。F 的 .k、.v 属性少，排除 F，否则会多出 flex 和字距。 */
+.dkpage .f-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
+.dkpage .f-stat { background:var(--surface); border-radius:var(--r-card); padding:14px 16px; }
+.dkpage:where(:not(.fdom, .fdom *)) .f-stat .k { font-size:12px; color:var(--ink-3); display:flex; align-items:center; gap:6px; }
+.dkpage:where(:not(.fdom, .fdom *)) .f-stat .v { font-size:22px; font-weight:600; letter-spacing:-.01em; margin-top:4px; font-variant-numeric:tabular-nums; color:var(--ink); }
+.dkpage .f-stat .sub { font-size:12px; color:var(--ink-4); margin-top:3px; }
+.dkpage .f-stat.warn .v { color:var(--warning); }
+.dkpage .f-stat.ok .v { color:var(--success); }
+.dkpage .f-stat.cyan .v { color:var(--cyan); }
+.dkpage .f-stat.danger .v { color:var(--danger); }
+
+/* 脚注和状态标签 */
+.dkpage .f-foot { margin-top:18px; font-size:12.5px; line-height:1.6; color:var(--ink-4); }
+.dkpage .f-foot b { color:var(--ink-3); font-weight:600; }
+:is(.edom, .fdom) .f-foot { margin-top:16px; font-size:11.5px; color:var(--ink-3); line-height:1.6; }
+:is(.edom, .fdom) .f-foot b { color:var(--ink-2); font-weight:600; }
+.dkpage .f-ro { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:var(--surface-2); color:var(--ink-3); font-size:12px; font-weight:600; white-space:nowrap; }
+.dkpage .f-ro .d { width:6px; height:6px; border-radius:50%; background:var(--ink-4); }
+.dkpage .f-live { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border-radius:999px; background:var(--success-soft); color:var(--success); font-size:12px; font-weight:600; white-space:nowrap; }
+.dkpage .f-live .dot { width:7px; height:7px; border-radius:50%; background:var(--success); }
+
+/* 域强调色按钮。--dom-ac 在各域根取本域的 --x-ac，其余域的 .f-cta 是不同变体，留在域文件。 */
+:is(.adom, .cdom, .hdom, .idom, .mdom) .f-cta { display:inline-flex; align-items:center; gap:7px; padding:8px 15px; border-radius:9px; border:1px solid var(--dom-ac-strong); background:var(--dom-ac-soft); color:var(--dom-ac); font-size:13px; font-weight:600; white-space:nowrap; cursor:pointer; font-family:inherit; }
+@media (hover: hover) and (pointer: fine) { :is(.adom, .cdom, .idom, .mdom) .f-cta:hover { background:var(--dom-ac); color:#0A0A0A; } }
+
+/* 卡片 */
+.dkpage .l-card { background:var(--surface); border-radius:var(--r-card); margin-bottom:16px; overflow:hidden; }
+.dkpage .l-card .l-h { display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.dkpage .l-card .l-h .ttl { font-size:14px; font-weight:600; color:var(--ink); }
+.dkpage .l-card .l-h .sub { font-size:12px; color:var(--ink-4); }
+.dkpage .l-card .l-h .r { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.dkpage .l-card .l-b { padding:16px 20px 20px; }
+
+/* 按钮。F 有 2 个 .l-btn 一直靠浏览器默认样式，排除 F。.primary 各域取色不同，留在域文件。 */
+.dkpage:where(:not(.fdom, .fdom *)) .l-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 13px; border-radius:8px; border:1px solid var(--border-strong); background:var(--surface-2); color:var(--ink-2); font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; white-space:nowrap; text-decoration:none; }
+@media (hover: hover) and (pointer: fine) { .dkpage:where(:not(.fdom, .fdom *)) .l-btn:hover { background:var(--surface-3); color:var(--ink); } }
+.dkpage:where(:not(.fdom, .fdom *)) .l-btn.mc { color:var(--warning); border-color:var(--warning-border); background:color-mix(in srgb,var(--warning) 8%,transparent); font-weight:600; }
+@media (hover: hover) and (pointer: fine) { .dkpage:where(:not(.fdom, .fdom *)) .l-btn.mc:hover { background:color-mix(in srgb,var(--warning) 18%,transparent); } }
+.dkpage:where(:not(.fdom, .fdom *)) .l-btn.sm { padding:4px 9px; font-size:11.5px; border-radius:6px; min-height:24px; }
+@media (hover: hover) and (pointer: fine) { .dkpage:where(:not(.fdom, .fdom *)) .l-btn.primary:hover { filter:brightness(1.07); } }
+
+/* 表格 */
+.dkpage .l-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+.dkpage .l-tbl th { font-family:var(--mono); font-size:11.5px; font-weight:700; color:var(--ink-4); letter-spacing:.06em; text-transform:uppercase; text-align:left; padding:10px 12px; background:var(--surface-2); border-bottom:1px solid var(--border-strong); white-space:nowrap; }
+.dkpage .l-tbl td { padding:11px 12px; border-bottom:1px solid var(--border); color:var(--ink-2); vertical-align:middle; }
+.dkpage .l-tbl tr:last-child td { border-bottom:none; }
+.dkpage .l-tbl .num { text-align:right; font-variant-numeric:tabular-nums; }
+.dkpage .l-tbl th.num { text-align:right; font-variant-numeric:tabular-nums; }
+.dkpage .l-tbl .mono { font-family:var(--mono); font-size:12px; }
+.dkpage .l-tbl tr.click { cursor:pointer; }
+@media (hover: hover) and (pointer: fine) { .dkpage .l-tbl tr.click:hover td { background:var(--surface-2); } }
+
+/* 数字输入 */
+.dkpage .l-inp { width:128px; flex-shrink:0; padding:7px 10px; border-radius:8px; border:1px solid var(--border-strong); background:var(--surface-2); color:var(--ink); font-family:var(--mono); font-size:13px; outline:none; }
+.dkpage .l-inp:disabled { color:var(--ink-4); cursor:not-allowed; }
+
+/* 状态标签。.cyan 在 A、C、H、I、M 取本域色，留在域文件。 */
+.dkpage .bdg { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:5px; font-size:11.5px; font-weight:700; font-family:var(--mono); letter-spacing:.02em; white-space:nowrap; }
+.dkpage .bdg.ok { background:var(--success-soft); color:var(--success); }
+.dkpage .bdg.warn { background:var(--warning-soft); color:var(--warning); }
+.dkpage .bdg.bad { background:var(--danger-soft); color:var(--danger); }
+.dkpage .bdg.dim { background:var(--surface-3); color:var(--ink-2); }
+.dkpage .bdg.cyan { background:var(--cyan-soft); color:var(--cyan); }
+
+/* 筛选胶囊。globals 的 .dkpage .chip 是另一套外观，E、F、G、J 和 B 用它，所以这里按域列出。.sel 各域取色不同，留在域文件。 */
+:is(.adom, .cdom, .ddom, .hdom, .idom, .kdom, .ldom, .mdom) .chips { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+:is(.adom, .cdom, .hdom, .idom, .ldom, .mdom) .chips .lb { font-size:12px; color:var(--ink-4); margin-right:2px; white-space:nowrap; }
+:is(.adom, .cdom, .ddom, .hdom, .idom, .kdom, .ldom, .mdom) .chip { padding:5px 11px; border-radius:999px; background:var(--surface-2); color:var(--ink-3); font-size:12px; font-weight:500; cursor:pointer; white-space:nowrap; border:none; font-family:inherit; transition:background .12s,color .12s; }
+@media (hover: hover) and (pointer: fine) { :is(.adom, .cdom, .ddom, .hdom, .idom, .kdom, .ldom, .mdom) .chip:hover { background:var(--surface-3); color:var(--ink); } }
+
+/* 键值行。globals 的 .dkpage .kv 是另一套外观，理由同上。 */
+:is(.adom, .cdom, .ddom, .idom, .mdom) .kv { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px dashed var(--border); font-size:12.5px; }
+:is(.adom, .cdom, .ddom, .idom, .mdom) .kv:last-child { border-bottom:none; }
+:is(.adom, .cdom, .ddom, .idom, .mdom) .kv .k { color:var(--ink-4); }
+:is(.adom, .cdom, .ddom, .idom, .mdom) .kv .v { color:var(--ink-2); font-weight:600; text-align:right; }
+
+/* 两栏。比例各域不同，只收完全相同的那几份。 */
+:is(.adom, .hdom, .ldom) .two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+:is(.adom, .cdom, .ddom, .hdom, .idom, .kdom, .mdom) .two-col .l-card { margin-bottom:0; display:flex; flex-direction:column; }
+:is(.gdom, .ldom) .two-col .l-card { margin-bottom:0; }
+:is(.adom, .cdom, .ddom, .hdom, .idom) .two-col .l-card .l-b { flex:1; }
+
+/* 面板 */
+.dkpage .pane { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card); }
+.dkpage .pane-h { padding:16px 18px 12px; display:flex; align-items:center; gap:10px; }
+
+/* 说明块。类名本来就按域分（.dtint、.itint），K、J 等页面借用别域类名时现在没有样式，所以按域绑定。M 用 .itint。 */
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .gdom .gtint, .hdom .htint, :is(.idom, .mdom) .itint, .kdom .ktint, .ldom .ltint) { padding:11px 14px; border-radius:9px; background:var(--surface-2); font-size:12px; line-height:1.55; color:var(--ink-3); }
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .gdom .gtint, .hdom .htint, :is(.idom, .mdom) .itint, .kdom .ktint, .ldom .ltint) b { color:var(--ink-2); font-weight:600; }
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .hdom .htint, :is(.idom, .mdom) .itint, .kdom .ktint, .ldom .ltint).warn { background:var(--warning-soft); color:var(--ink-2); }
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .hdom .htint, :is(.idom, .mdom) .itint, .kdom .ktint, .ldom .ltint).warn b { color:var(--warning); }
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .hdom .htint, :is(.idom, .mdom) .itint).ok { background:var(--success-soft); color:var(--ink-2); }
+:is(.adom .atint, .cdom .ctint, .ddom .dtint, .hdom .htint, :is(.idom, .mdom) .itint).ok b { color:var(--success); }
+:is(.adom .atint, .hdom .htint, :is(.idom, .mdom) .itint).danger { background:var(--danger-soft); color:var(--ink-2); }
+:is(.adom .atint, .hdom .htint, :is(.idom, .mdom) .itint).danger b { color:var(--danger); }
+
+/* 域强调色的统一入口，只服务上面的 .f-cta。 */
+.adom { --dom-ac: var(--a-ac); --dom-ac-soft: var(--a-ac-soft); --dom-ac-strong: var(--a-ac-strong); }
+.cdom { --dom-ac: var(--c-ac); --dom-ac-soft: var(--c-ac-soft); --dom-ac-strong: var(--c-ac-strong); }
+.hdom { --dom-ac: var(--h-ac); --dom-ac-soft: var(--h-ac-soft); --dom-ac-strong: var(--h-ac-strong); }
+.idom { --dom-ac: var(--i-ac); --dom-ac-soft: var(--i-ac-soft); --dom-ac-strong: var(--i-ac-strong); }
+.mdom { --dom-ac: var(--m-ac); --dom-ac-soft: var(--m-ac-soft); --dom-ac-strong: var(--m-ac-strong); }

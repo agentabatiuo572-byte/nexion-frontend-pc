@@ -1,7 +1,6 @@
-import { orderSkuBrandText, nexGridBrandText, operatorNicknameText } from "./brand-copy.ts";
+import { nexGridBrandText, operatorNicknameText } from "./brand-copy.ts";
 const INTERNAL_FIXTURE_PATTERN = /(?:TRIALDEV|DEVTI|E3ACC|TIO|DEVICETRIALSTANDARD|INTERNAL|FIXTURE|QA(?:TEST)?|TEST(?:DEVICE|TASK)?)/i;
 const SAFE_DEVICE_IDENTIFIER = /^[A-Za-z0-9._:-]{3,64}$/;
-const SAFE_DATACENTER_IDENTIFIER = /^[A-Z]{2,6}-\d{1,3}$/;
 const SAFE_SKU_DISPLAY = /^[\p{L}\p{N}][\p{L}\p{N} ._+()/-]{1,79}$/u;
 const SAFE_DEVICE_NAME = /^[\p{L}\p{N}][\p{L}\p{N} ._+()/:·~\-]{1,79}$/u;
 const TRUSTED_SKU_SOURCES = new Set(["ORDER_ITEM", "PRODUCT_CATALOG"]);
@@ -46,9 +45,7 @@ export function operatorDeviceStatus(value: string | null | undefined) {
 }
 
 export function operatorDatacenterLabel(value: string | null | undefined) {
-  const normalized = text(value);
-  if (normalized.toUpperCase() === "UNASSIGNED") return "未分配";
-  return SAFE_DATACENTER_IDENTIFIER.test(normalized) && !hasInternalFixtureMarker(normalized) ? normalized : "数据中心待核验";
+  return value || "—";
 }
 
 // 原子换机 tx 监控按后端三条独立事务分列(recycle / replace / deactivate)。
@@ -77,7 +74,7 @@ export function operatorE3OperationState(value: string | null | undefined) {
 }
 
 export function operatorE3Reason(value: string | null | undefined) {
-  return text(value) ? "处理备注已记录；请在审计轨迹核验。" : "暂无最新样本";
+  return text(value) ? "处理备注已记录，可在操作记录里查看。" : "暂无数据";
 }
 
 export function operatorProductLabel(value: string | null | undefined) {
@@ -110,7 +107,7 @@ export function operatorRate(dailyUsdt: number | null | undefined, dailyNex: num
   const usdt = typeof dailyUsdt === "number" && Number.isFinite(dailyUsdt) && dailyUsdt >= 0 ? dailyUsdt : null;
   const nex = typeof dailyNex === "number" && Number.isFinite(dailyNex) && dailyNex >= 0 ? dailyNex : null;
   if (usdt == null && nex == null) return "收益待核验";
-  return [usdt == null ? null : format(usdt, "USDT"), nex == null ? null : format(nex, "UVEL")]
+  return [usdt == null ? null : format(usdt, "USDT"), nex == null ? null : format(nex, "UVT")]
     .filter((value): value is string => value != null).join(" · ");
 }
 
@@ -164,7 +161,7 @@ export function operatorSkuLabel(input: { orderNo: string; skuName?: string | nu
         operatorSkuLabel({ ...input, skuName: name, skuId: skuIds[index] }) === "商品信息待补"))) {
     return "商品信息待补";
   }
-  return orderSkuBrandText(skuId, skuName);
+  return (skuName);
 }
 
 export function operatorSkuTier(value: string | undefined): string { return ({ Entry: "入门档", Pro: "专业档", Flagship: "旗舰档", Share: "共享份额" } as Record<string,string>)[value ?? ""] ?? "其他档位"; }
@@ -182,12 +179,12 @@ export function operatorOrderHistoryReason(value: string, paymentMethod: string)
 
 export function operatorOrderFact(kind: "type" | "payment" | "paymentStatus" | "source" | "direction" | "fundingStatus", value: string): string {
   const labels: Record<string, Record<string, string>> = {
-    type: { SINGLE: "单品购买", BUNDLE: "组合购买", TRADE_IN: "以旧换新", CAPACITY_KEEP: "保留算力", TRIAL_CONVERT: "试用转购买" },
-    payment: { USDT_WALLET: "USDT 钱包", WALLET: "钱包", NEXGRID_WALLET: "UVEL 钱包", VOUCHER: "优惠券抵扣", BANK: "银行付款", BANK_TRANSFER: "银行转账", VIETQR: "VietQR 扫码付款", HDPAY: "支付商付款", CREGIS: "链上付款" },
+    type: { SINGLE: "单品购买", BUNDLE: "组合购买", TRADE_IN: "升级置换", CAPACITY_KEEP: "保留算力", TRIAL_CONVERT: "试用转购买" },
+    payment: { USDT_WALLET: "USDT 钱包", WALLET: "钱包", UVEL_WALLET: "UVEL 钱包", VOUCHER: "优惠券抵扣", BANK: "银行付款", BANK_TRANSFER: "银行转账", VIETQR: "VietQR 扫码付款", HDPAY: "支付商付款", CREGIS: "链上付款" },
     paymentStatus: { PENDING: "待付款", UNPAID: "未付款", PROCESSING: "支付处理中", PAID: "已支付", CONFIRMED: "已确认付款", SUCCESS: "支付成功", REFUNDED: "已退款", CHARGEBACK: "拒付", DISPUTED: "存在争议", PAYMENT_FAILED: "支付失败", FAILED: "支付失败", EXPIRED: "已过期", CANCELLED: "已取消" },
     source: { D1_PAYMENT: "付款记录", D4_LEDGER: "资金流水", D4_BILL: "账单记录" },
     direction: { IN: "收入", OUT: "支出" },
     fundingStatus: { PAID: "已支付", POSTED: "已入账", COMPLETED: "已完成", SUCCESS: "已完成", PENDING: "处理中", FAILED: "失败", CANCELLED: "已取消", REVERSED: "已撤回", REFUNDED: "已退款", CHARGEBACK: "拒付" },
   };
-  return labels[kind][value.toUpperCase()] ?? ({ type: "订单类型待核实", payment: "支付方式待核实", paymentStatus: "支付状态待核实", source: "其他资金记录", direction: "方向待核实", fundingStatus: "资金状态待核实" })[kind];
+  return labels[kind][value.toUpperCase()] ?? ({ type: "订单类型未知", payment: "支付方式未知", paymentStatus: "支付状态未知", source: "其他资金记录", direction: "方向未知", fundingStatus: "资金状态未知" })[kind];
 }

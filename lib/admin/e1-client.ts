@@ -1,5 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsSku } from "@/lib/admin/platform-types";
+import { skuBaseRateText } from "@/lib/admin/operator-copy";
+import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
 import { fromPurchaseGate, toPurchaseGate, type BackendPurchaseGate } from "@/lib/admin/e1-purchase-gate";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import {
@@ -25,6 +27,11 @@ interface PageResult<T> {
 }
 
 interface BackendSku {
+  seriesCode?: string | null;
+  seriesLocked?: boolean;
+  allowedPoolCodes: string[];
+  productTaskPolicyVersion?: number;
+  productTaskPolicyEffectiveAt?: string;
   skuId: string;
   name: string;
   tier?: string | null;
@@ -40,12 +47,23 @@ interface BackendSku {
   phoneDailyEarn?: number | string | null;
   phoneDailyEarnNex?: number | string | null;
   price?: number | string | null;
+  computePoints?: number | string | null;
   dailyEarn?: number | string | null;
   dailyEarnNex?: number | string | null;
+  monthlyTargetUsdt?: number | string | null;
+  monthlyTargetBandPct?: number | string | null;
+  derivedDailyEarnUsdt?: number | string | null;
+  derivedShareYieldMinPct?: number | string | null;
+  derivedShareYieldMaxPct?: number | string | null;
   shareYieldMin?: number | string | null;
   shareYieldMax?: number | string | null;
   baseRate?: string | null;
   sold?: number | null;
+  rating?: number | string | null;
+  reviews?: number | null;
+  generation?: number | null;
+  supersededBy?: string | null;
+  tradeinDiscount?: number | string | null;
   productType: "SERVER" | "DEVICE" | "SHARE";
   inventoryMode: "FINITE" | "UNLIMITED";
   trialEligible: boolean;
@@ -62,6 +80,8 @@ interface BackendSku {
   aiVideoMinPerHour?: number | null;
   aiFineTuneMins?: number | null;
   aiUnlocks?: string | null;
+  specDocumentTitle?: string | null;
+  specDocumentUrl?: string | null;
   features?: string[] | null;
   lifecycle?: string | null;
   unlockPhase?: string | null;
@@ -110,6 +130,15 @@ export interface E1GenerationGateData {
   phases: E1Phase[];
   platformMonth: number;
   phaseCurrent: string;
+  phaseComparison?: {
+    e1CurrentPhase: string;
+    h1CurrentPhase?: string | null;
+    same: boolean;
+    gateSource: "E1_CONFIGURED_RELEASE_PHASE";
+    h1PhaseCatalog?: Record<string, string>;
+    mappingStatus?: "EXACT_ID_PRESENT" | "UNMAPPED";
+    mappedH1Phase?: string | null;
+  };
   releases: E1GenerationRelease[];
   configValues: Record<string, string>;
   allowedFields: string[];
@@ -195,7 +224,8 @@ async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(formatAdminApiError(result?.message, `E1_REQUEST_FAILED_${response.status}`));
+    throw new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
+      ?? formatAdminApiError(result?.message, `E1_REQUEST_FAILED_${response.status}`, "write", result?.data));
   }
 
   return result.data as T;
@@ -210,10 +240,15 @@ async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPref
 function fromSku(sku: BackendSku): OpsSku {
   const inventoryMode = sku.inventoryMode;
   const stock = inventoryMode === "UNLIMITED" ? undefined : sku.stock as string;
-  return {
+  const mapped: OpsSku = {
+    allowedPoolCodes: sku.allowedPoolCodes,
+    productTaskPolicyVersion: sku.productTaskPolicyVersion,
+    productTaskPolicyEffectiveAt: sku.productTaskPolicyEffectiveAt,
     id: sku.skuId,
     name: sku.name,
     tier: sku.tier ?? "Entry",
+    seriesCode: sku.seriesCode,
+    seriesLocked: sku.seriesLocked,
     tagline: sku.tagline ?? undefined,
     badge: sku.badge ?? undefined,
     gpu: sku.gpu ?? undefined,
@@ -226,12 +261,23 @@ function fromSku(sku: BackendSku): OpsSku {
     phoneDailyEarn: toOptionalNumber(sku.phoneDailyEarn),
     phoneDailyEarnNEX: toOptionalNumber(sku.phoneDailyEarnNex),
     price: toNumber(sku.price),
-    dailyEarn: toNumber(sku.dailyEarn),
-    dailyEarnNEX: toNumber(sku.dailyEarnNex),
-    shareYieldMin: toOptionalNumber(sku.shareYieldMin),
-    shareYieldMax: toOptionalNumber(sku.shareYieldMax),
+    computePoints: toOptionalNumber(sku.computePoints),
+    dailyEarn: toNumber(sku.derivedDailyEarnUsdt ?? sku.dailyEarn),
+    dailyEarnNEX: toOptionalNumber(sku.dailyEarnNex) ?? null,
+    monthlyTargetUsdt: toOptionalNumber(sku.monthlyTargetUsdt),
+    monthlyTargetBandPct: toOptionalNumber(sku.monthlyTargetBandPct),
+    derivedDailyEarnUsdt: toOptionalNumber(sku.derivedDailyEarnUsdt),
+    derivedShareYieldMinPct: toOptionalNumber(sku.derivedShareYieldMinPct),
+    derivedShareYieldMaxPct: toOptionalNumber(sku.derivedShareYieldMaxPct),
+    shareYieldMin: toOptionalNumber(sku.derivedShareYieldMinPct ?? sku.shareYieldMin),
+    shareYieldMax: toOptionalNumber(sku.derivedShareYieldMaxPct ?? sku.shareYieldMax),
     baseRate: sku.baseRate ?? undefined,
     sold: sku.sold ?? undefined,
+    rating: toOptionalNumber(sku.rating),
+    reviews: sku.reviews ?? undefined,
+    generation: sku.generation ?? undefined,
+    supersededBy: sku.supersededBy ?? undefined,
+    tradeinDiscount: toOptionalNumber(sku.tradeinDiscount),
     productType: sku.productType,
     inventoryMode,
     stock,
@@ -243,6 +289,8 @@ function fromSku(sku: BackendSku): OpsSku {
     aiVideoMinPerHour: sku.aiVideoMinPerHour ?? undefined,
     aiFineTuneMins: sku.aiFineTuneMins ?? undefined,
     aiUnlocks: sku.aiUnlocks ?? undefined,
+    specDocumentTitle: sku.specDocumentTitle ?? undefined,
+    specDocumentUrl: sku.specDocumentUrl ?? undefined,
     features: sku.features ?? undefined,
     lifecycle: sku.lifecycle ?? undefined,
     unlock: sku.unlockPhase ?? "",
@@ -254,18 +302,22 @@ function fromSku(sku: BackendSku): OpsSku {
     status: sku.status ?? "pending",
     updatedAt: sku.updatedAt ?? undefined,
   };
+  return { ...mapped, baseRate: skuBaseRateText(mapped) };
 }
 
 function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
+  const hasTarget = sku.monthlyTargetUsdt != null;
   const inventoryMode = sku.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
   const productType = sku.productType ?? (sku.tier === "Share" ? "SHARE" : "DEVICE");
   if (inventoryMode === "UNLIMITED" && productType !== "SHARE") {
     throw new Error("E1_SKU_INVENTORY_CONTRACT_INVALID");
   }
   return {
+    allowedPoolCodes: sku.allowedPoolCodes,
     skuId: sku.id || undefined,
     name: sku.name,
     tier: sku.tier,
+    seriesCode: sku.seriesCode,
     tagline: sku.tagline ?? null,
     badge: sku.badge ?? null,
     gpu: sku.gpu ?? null,
@@ -278,12 +330,20 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     phoneDailyEarn: sku.phoneDailyEarn ?? null,
     phoneDailyEarnNex: sku.phoneDailyEarnNEX ?? null,
     price: sku.price,
-    dailyEarn: sku.dailyEarn,
+    computePoints: sku.computePoints ?? null,
+    monthlyTargetUsdt: sku.monthlyTargetUsdt,
+    monthlyTargetBandPct: sku.monthlyTargetBandPct,
+    clearMonthlyTarget: sku.clearMonthlyTarget === true ? true : undefined,
+    dailyEarn: hasTarget ? undefined : sku.dailyEarn,
     dailyEarnNex: sku.dailyEarnNEX,
-    shareYieldMin: sku.shareYieldMin ?? null,
-    shareYieldMax: sku.shareYieldMax ?? null,
+    shareYieldMin: hasTarget ? undefined : sku.shareYieldMin ?? null,
+    shareYieldMax: hasTarget ? undefined : sku.shareYieldMax ?? null,
     baseRate: sku.baseRate ?? null,
-    sold: sku.sold ?? null,
+    rating: sku.rating ?? null,
+    reviews: sku.reviews ?? null,
+    generation: sku.generation ?? 1,
+    supersededBy: sku.supersededBy ?? null,
+    tradeinDiscount: sku.tradeinDiscount ?? null,
     inventoryMode,
     stock: inventoryMode === "UNLIMITED" ? null : String(sku.stock ?? "0"),
     trialEligible: sku.trialEligible === true,
@@ -292,6 +352,8 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     aiVideoMinPerHour: sku.aiVideoMinPerHour ?? null,
     aiFineTuneMins: sku.aiFineTuneMins ?? null,
     aiUnlocks: sku.aiUnlocks ?? null,
+    specDocumentTitle: sku.specDocumentTitle ?? null,
+    specDocumentUrl: sku.specDocumentUrl ?? null,
     features: sku.features ?? [],
     lifecycle: sku.lifecycle ?? "active",
     unlockPhase: sku.unlock || "",
@@ -325,16 +387,10 @@ async function withFreshSkuMediaPreview(sku: OpsSku): Promise<OpsSku> {
   }
 }
 
-export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
-  const [rawSkuPage, rawGates, rawBundleDiscount] = await Promise.all([
-    e1Request<unknown>("/skus?pageNum=1&pageSize=100"),
-    e1Request<unknown>("/generation-gates"),
-    e1Request<unknown>("/bundle-discount"),
-  ]);
+export async function fetchE1Products(): Promise<Pick<E1CatalogSnapshot, "skus" | "invalidSkus">> {
+  const rawSkuPage = await e1Request<unknown>("/skus?pageNum=1&pageSize=100");
   const firstSkuPage = parseE1SkuPage<BackendSku>(rawSkuPage);
   if (firstSkuPage.pageNum !== 1) throw new Error("E1_SKU_PAGINATION_CONTRACT_INVALID");
-  const gates = parseE1GenerationGateData<E1GenerationGateData>(rawGates);
-  const bundleDiscount = parseE1BundleDiscount(rawBundleDiscount);
   const skuRows = [...firstSkuPage.records];
   const seenSkuIds = new Set(skuRows.map((row) => row.skuId));
   if (seenSkuIds.size !== skuRows.length) throw new Error("E1_SKU_PAGINATION_DUPLICATE");
@@ -359,7 +415,28 @@ export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
   // E1 与 App 读同一张 nx_product;一行历史取值不该把运营后台的商品目录清成 0。
   const { valid, invalid } = inspectE1SkuPage<BackendSku>({ ...firstSkuPage, records: skuRows });
   const skus = await Promise.all(valid.map(fromSku).map(withFreshSkuMediaPreview));
-  return { skus, gates, bundleDiscount, invalidSkus: invalid };
+  return { skus, invalidSkus: invalid };
+}
+
+export async function fetchE6OnboardingSkuCandidates(): Promise<OpsSku[]> {
+  const { skus } = await fetchE1Products();
+  // E1 does not expose store visibility. The A2 backend rechecks eligibility.
+  return skus.filter(sku => sku.status === "on" && sku.publishBlocked === false
+    && (sku.productType === "DEVICE" || sku.productType === "SERVER")
+    && sku.dailyEarn > 0 && sku.dailyEarnNEX != null && sku.dailyEarnNEX > 0);
+}
+
+export async function fetchE1GenerationGates(): Promise<E1GenerationGateData> {
+  return parseE1GenerationGateData<E1GenerationGateData>(await e1Request<unknown>("/generation-gates"));
+}
+
+export async function fetchE1Discount(): Promise<E1BundleDiscount> {
+  return parseE1BundleDiscount(await e1Request<unknown>("/bundle-discount"));
+}
+
+export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
+  const [products, gates, bundleDiscount] = await Promise.all([fetchE1Products(), fetchE1GenerationGates(), fetchE1Discount()]);
+  return { ...products, gates, bundleDiscount };
 }
 
 export function parseE1BundleDiscount(value: unknown): E1BundleDiscount {

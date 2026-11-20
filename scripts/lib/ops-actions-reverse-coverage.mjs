@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
@@ -282,7 +282,6 @@ function leafFromSource(file, action, leaves) {
     ["app/components/domain-views/a-tabs/a6-roles.tsx", "A6"],
     ["app/components/domain-views/a-tabs/a7-menus.tsx", "A7"],
     ["app/components/domain-views/a-tabs/a8-permissions.tsx", "A8"],
-    ["lib/store/admin/janus-c2-store.ts", "K6"],
   ]);
   if (exact.has(normalized)) return exact.get(normalized);
   return undefined;
@@ -297,8 +296,7 @@ function deriveLeafSurfaces(leaves, files) {
   const fileSet = new Set(files);
   const overrides = new Map([
     ["A5", ["app/_console/platform/params-registry/params-registry-client.tsx"]],
-    ["H4", ["app/components/domain-views/h-tabs/h3-quest-events.tsx"]],
-    ["I5", ["app/components/domain-views/i-tabs/i4-trust.tsx"]],
+    ["I5", ["app/components/domain-views/i-tabs/i5-disclosures.tsx"]],
   ]);
   const result = new Map();
   for (const leaf of leaves) {
@@ -336,7 +334,9 @@ export function auditRepositoryReverseCoverage({ root, manifest }) {
   writeSymbols.delete("createA2OperationProposal");
   for (const symbol of Object.keys(CLIENT_WRITE_EXCEPTIONS)) writeSymbols.delete(symbol);
 
-  const sourceRoots = ["app", "lib/store/admin"];
+  // REST-backed consoles no longer have the legacy store directory. The App
+  // surfaces and lib/admin clients remain required; present legacy stores still participate.
+  const sourceRoots = ["app", ...(existsSync(join(root, "lib/store/admin")) ? ["lib/store/admin"] : [])];
   const files = sourceRoots.flatMap((sourceRoot) => sourceFiles(root, sourceRoot));
   const leafSurfaces = deriveLeafSurfaces(leaves, files);
   const writePoints = [];
@@ -430,7 +430,6 @@ const RUNTIME_EVIDENCE_TYPES = new Set([
   "pc-navigation",
   "backend-runtime",
   "uniapp-runtime",
-  "janus-runtime",
 ]);
 
 /**
@@ -518,13 +517,10 @@ const CONSUMER_RUNTIME_TYPES = new Set([
   "pc-runtime",
   "backend-runtime",
   "uniapp-runtime",
-  "janus-runtime",
 ]);
 const CONSUMER_TEST_TYPES = new Set([
-  "test-runtime",
   "backend-test",
   "uniapp-test",
-  "janus-test",
 ]);
 
 function containsAssertionCall(node) {

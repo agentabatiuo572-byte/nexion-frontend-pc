@@ -10,22 +10,24 @@
  * amplifies 仅放大流出方向(放松 dial / 升奖励 / 升概率 / 升 NEX 奖励 / 降门槛 / 真实奖)。
  * 统一来源:后端 /api/admin/growth/* 读模型。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import "./h-domain.css";
+import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import H1Phase from "./h-tabs/h1-phase";
 import H2Trial from "./h-tabs/h2-trial";
-import H3QuestEvents, { H4ActivityCenter } from "./h-tabs/h3-quest-events";
+import H3QuestTasks from "./h-tabs/h3-quest-tasks";
+import H4LegacyCenter from "./h-tabs/h4-legacy-center";
 import H5DailyMilestones from "./h-tabs/h5-daily-milestones";
 import H7VoucherConfig from "./h-tabs/h7-voucher-config";
 import H8ReferralRewards from "./h-tabs/h8-referral-rewards";
 import H9PublicStats from "./h-tabs/h9-public-stats";
 import H4Promotions from "./h-tabs/h4-promotions";
 import type { ConfirmReq, HCtx, ActionConfirmReq } from "./h-tabs/types";
-import { fetchH1Rhythm, describeH1Schedule, type H1RhythmOverview } from "@/lib/admin/h-client";
+import { describeH1Schedule, type H1RhythmOverview } from "@/lib/admin/h-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -34,16 +36,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 // H5 页面内用明确分区承载里程碑，旧 /growth/milestones 地址只做兼容迁移。
 const FOLD: Record<string, string> = { H1: "H1", H2: "H2", H3: "H3", H4: "H4", H5: "H5", H6: "H5", H7: "H7", H8: "H8", H9: "H9" };
 
-const RO_COPY: Record<string, [ro: string, live: string]> = {
-  H1: ["阶段流转只能服务器推进 · 客户端不能改", ""],
-  H2: ["扣款失败概率只在服务器 · 永不下发前端", "自动推送 1.5 秒即时急停 · 进行中的按开始时锁定值结算"],
-  H3: ["任务完成态和奖励结算由服务器裁决", "进行中的按入窗/入周/跨档快照结算 · 不追溯"],
-  H4: ["同时只能有一个进行中的主推活动", "配置活动、奖池与领取限制"],
-  H5: ["签到/转盘的结果由服务器定 · 客户端只显示", "幸运两档概率之和 ≤100% · 里程碑阈值严格从低到高"],
-  H7: ["代金券领取/核销在服务器裁决 · 客户端只展示与跳转", "改参即时对前端领券弹窗 + 提示条 生效 · 促销折扣非负债不走 B1"],
-  H8: ["邀请关系和是否已结算由服务器裁决", "真实钱包 + 资金台账 · 同一新人唯一结算"],
-  H9: ["正式 App 对外事实读取服务端实测聚合", "本页仅保存历史数据展示设置 · 不派生对外已付金额"],
-};
+
 
 export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -51,6 +44,9 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "H1", [meta.l2Id]);
   const [rhythm, setRhythm] = useState<H1RhythmOverview | null>(null);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
+  // 页签自己关框时记下来：框关了才需要轻提示，框开着错误就写在框里。
+  const openConfirm = useRef<ActionConfirmReq | null>(null);
+  openConfirm.current = mc;
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const can = useCallback((authority: string) => {
     return access[1] === "superadmin" || access[1] === "super" || access.slice(2).includes(authority);
@@ -58,71 +54,73 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const ctx: HCtx = {
     toast: setToast,
-    openActionConfirm: setActionConfirm,
+    openActionConfirm: (req) => { openConfirm.current = req; setActionConfirm(req); },
+    confirmOpen: !!mc,
     openConfirm: setCf,
+    closeConfirm: (req) => setCf(current => !req || current === req ? null : current),
     can,
   };
 
-  useEffect(() => {
-    if (tab !== "H1") return;
-    let cancelled = false;
-    fetchH1Rhythm()
-      .then((next) => {
-        if (!cancelled) setRhythm(next);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [tab]);
+  const right = tab === "H1" && rhythm
+    ? <span className="f-live"><span className="dot" />{`${rhythm.currentPhase} · 第 ${rhythm.currentMonth}/${rhythm.totalMonths} 月 · ${describeH1Schedule(rhythm.schedule)}`}</span>
+    : null;
 
-  const [ro, liveSeed] = RO_COPY[tab];
-  const live = tab === "H1"
-    ? rhythm
-      ? `${rhythm.currentPhase} · 月 ${rhythm.currentMonth}/${rhythm.totalMonths} · ${describeH1Schedule(rhythm.schedule)}`
-      : "0"
-    : liveSeed;
-  const right = (
+  const page = (
     <>
-      <span className="f-ro"><span className="d" />{ro}</span>
-      <span className="f-live"><span className="dot" />{live}</span>
-    </>
-  );
+      {tab !== "H4" && tab !== "H2" && tab !== "H1" && tab !== "H3" && tab !== "H5" && tab !== "H7" && tab !== "H8" && tab !== "H9" && <DomainHeader {...meta} right={right} />}
 
-  return (
-    <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>
-      {tab !== "H4" && <DomainHeader {...meta} right={right} />}
 
-      {tab === "H1" && <H1Phase ctx={ctx} />}
+      {tab === "H1" && <H1Phase ctx={ctx} onRhythmChange={setRhythm} />}
       {tab === "H2" && <H2Trial ctx={ctx} />}
-      {tab === "H3" && <H3QuestEvents ctx={ctx} />}
-      {tab === "H4" && <H4Promotions ctx={ctx} legacy={<><DomainHeader {...meta} right={right} /><H4ActivityCenter ctx={ctx} /></>} />}
+      {tab === "H3" && <H3QuestTasks ctx={ctx} />}
+      {tab === "H4" && <H4Promotions ctx={ctx} legacy={(section, go) => <H4LegacyCenter ctx={ctx} section={section} onSection={go} />} />}
       {tab === "H5" && <H5DailyMilestones ctx={ctx} />}
       {tab === "H7" && <H7VoucherConfig ctx={ctx} />}
       {tab === "H8" && <H8ReferralRewards ctx={ctx} />}
       {tab === "H9" && <H9PublicStats ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal
+        <OperationConfirmModal key={mc.formKey} initialReason={mc.initialReason} briefKind={mc.briefKind}
           action={mc.action}
+          title={mc.title}
           detail={mc.detail}
           amplifies={mc.amplifies}
           edit={mc.edit}
           businessForm={mc.businessForm}
-          onClose={() => setActionConfirm(null)}
+          facts={mc.facts}
+          content={mc.content}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          confirmTone={mc.confirmTone}
+          statedBrief={mc.statedBrief}
+          coverageLead={mc.coverageLead}
+          reasonPlaceholder={mc.reasonPlaceholder}
+          reasonPolicyOptional={mc.reasonPolicyOptional}
+          inlineApproval={mc.inlineApproval}
+          reasonMin={mc.inlineApproval ? mc.reasonMin : undefined}
+          reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}
+          getPendingReason={mc.inlineApproval || tab === "H4" || tab === "H9" ? mc.getPendingReason : undefined}
+          blockedReason={tab === "H4" || tab === "H9" ? mc.blockedReason : undefined}
+          getPendingBusinessValue={tab === "H4" ? mc.getPendingBusinessValue : undefined}
+          completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
+          onClose={() => setActionConfirm(current => current === mc ? null : current)}
           onConfirm={async (reason, newValue, businessValue) => {
             try {
               await mc.run(reason, newValue, businessValue);
-              setActionConfirm(null);
+              setActionConfirm(current => current === mc ? null : current);
             } catch (error) {
-              setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
+              // 错误只写在框里，不再弹同一句（S01）；页签自己把框关了时才用轻提示告诉运营。
+              if (tab !== "H2" && openConfirm.current !== mc) setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
               throw error;
             }
           }}
         />
       )}
-      {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
+      {cf && <KConfirmModal key={cf.formKey} req={cf} onClose={() => setCf(current => current === cf ? null : current)} />}
       {toastNode}
-    </div>
+    </>
   );
+  if (tab === "H2" || tab === "H1" || tab === "H3" || tab === "H4" || tab === "H5" || tab === "H7" || tab === "H8" || tab === "H9") return <RdPage className="hdom">{page}</RdPage>;
+
+  return <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>{page}</div>;
 }

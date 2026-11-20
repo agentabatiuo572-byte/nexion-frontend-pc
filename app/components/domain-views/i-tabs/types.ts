@@ -6,15 +6,21 @@
  *  - 真写统一走后端 /content/* 接口,概览为空时由后端写入 MySQL 种子后再查出。
  * I 域唯一 amplifies 流出方向 = 课程奖励上调(其余 I 域动作不碰 B1)。
  */
+import type { ActionConfirmReq, ConfirmReq } from "../k-tabs/types";
 import type { DCtx } from "../d-tabs/types";
 import type { IContentActions, IContentData } from "@/lib/admin/i-client";
+import type { ToastKind } from "@/lib/store/ui";
 
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
 /** I 域 ctx:后端 content client 是业务权威,前端仅承载弹窗和页面数据。 */
-export type ICtx = DCtx & {
+export type ICtx = Omit<DCtx, "toast"> & {
+  toast: (s: string, kind?: ToastKind) => void;
   content: IContentData;
   actions: IContentActions;
   contentLoading: boolean;
   contentError: string | null;
+  activeActionConfirm: ActionConfirmReq | null;
+  closeActionConfirm: (request?: ActionConfirmReq) => void;
+  closeConfirm: (request?: ConfirmReq) => void;
 };

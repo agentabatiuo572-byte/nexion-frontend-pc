@@ -27,14 +27,14 @@ export function H4SampleAccountSelect({ value, onChange, allowed, disabled }: {
         setInputError(null);
         const keyword = text.trim(), digits = keyword.replace(/\D/g, '');
         if (mode === 'keyword' && /^[+0-9()\s-]+$/.test(keyword) && digits.length >= 10 && digits.length <= 15) {
-            setInputError(new Error('含 10–15 位数字的号码样式输入会按 C1 隐私规则拦截；请用用户编码末几位（少于 10 位）或昵称查找，已知内部账户 ID 可切换精确查找。')); return;
+            setInputError(new Error('为保护隐私，不能输入 10–15 位的号码。请用用户编码末几位（少于 10 位）或昵称查找；知道账户 ID 可切换为精确查找。')); return;
         }
         setQuery({ [mode]: keyword, pageNum: 1 }); accounts.reload();
     };
     const page = accounts.data, changing = disabled || accounts.loading || !allowed;
     return <fieldset className="form-section" disabled={disabled || !allowed}>
         <legend>选择授权账户样本（可选）</legend>
-        <div className="grid2"><Field label="查找方式"><select value={mode} onChange={event => setMode(event.target.value as typeof mode)}><option value="keyword">编码末几位 / 昵称</option><option value="accountId">账户 ID（精确）</option></select></Field><Field label={mode === 'keyword' ? '编码末几位 / 昵称' : '账户 ID'} hint={mode === 'keyword' ? '输入用户编码末几位（少于 10 位）或昵称；含 10–15 位数字的号码样式输入按 C1 隐私规则拦截。' : '填写已知的内部账户 ID（精确匹配）；用户编码末几位请使用另一查找方式。'}><input value={text} maxLength={200} onChange={event => setText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); search(); } }}/></Field></div>
+        <div className="grid2"><Field label="查找方式"><select value={mode} onChange={event => setMode(event.target.value as typeof mode)}><option value="keyword">编码末几位 / 昵称</option><option value="accountId">账户 ID（精确）</option></select></Field><Field label={mode === 'keyword' ? '编码末几位 / 昵称' : '账户 ID'} hint={mode === 'keyword' ? '输入用户编码末几位（少于 10 位）或昵称；含 10–15 位数字、像号码的输入会被隐私规则拦下。' : '填写已知的内部账户 ID（精确匹配）；用户编码末几位请使用另一查找方式。'}><input value={text} maxLength={200} onChange={event => setText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); search(); } }}/></Field></div>
         <Button onClick={search} disabled={changing}>{accounts.loading ? '正在查找…' : '查找账户'}</Button>
         {!!inputError && <ReadError target="账户搜索条件" error={inputError} retry={search}/>}
         {!!accounts.error && <ReadError target="授权账户搜索" error={accounts.error} retry={accounts.reload}/>}
@@ -45,6 +45,6 @@ export function H4SampleAccountSelect({ value, onChange, allowed, disabled }: {
             {!page.items.length && !accounts.loading && !accounts.error && <p className="help">没有符合条件的可读账户，可调整搜索内容后重试。</p>}
             <div className="actions"><span>共 {page.total} 个可读账户 · 第 {page.pageNum} 页</span><Button disabled={changing || !!accounts.error || page.pageNum <= 1} onClick={() => setQuery({ ...query!, pageNum: page.pageNum - 1 })}>上一页</Button><Button disabled={changing || !!accounts.error || page.pageNum * page.pageSize >= page.total} onClick={() => setQuery({ ...query!, pageNum: page.pageNum + 1 })}>下一页</Button></div>
         </>}
-        {value && <Button kind="link" onClick={() => { onChange(''); setSelectedLabel(''); }}>取消账户选择，资格标未知</Button>}
+        {value && <Button kind="link" onClick={() => { onChange(''); setSelectedLabel(''); }}>取消选择</Button>}
     </fieldset>;
 }

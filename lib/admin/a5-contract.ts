@@ -1,7 +1,13 @@
+import { eventBacklogMetric } from "@/lib/admin/event-backlog-metric";
+
+const USAGE_STATUSES = ["VERIFIED_USAGE", "READ_OR_METADATA_ONLY", "RETIRED", "UNCONFIRMED", "REDACTED"] as const;
+
 export type A5RegistryRow = {
   canonicalKey: string;
   displayName: string;
   description: string;
+  usageDescriptionAvailable?: boolean;
+  usageStatus?: (typeof USAGE_STATUSES)[number];
   domain: string;
   domainLabel: string;
   ownerCode: string;
@@ -116,12 +122,15 @@ export function normalizeA5Overview(raw: unknown): A5RegistryOverview {
       canonicalKey,
       displayName: text(row.displayName, `rows[${index}].displayName`),
       description: text(row.description, `rows[${index}].description`),
+      usageDescriptionAvailable: row.usageDescriptionAvailable == null ? undefined : flag(row.usageDescriptionAvailable, `rows[${index}].usageDescriptionAvailable`),
+      usageStatus: row.usageStatus == null ? undefined : status(row.usageStatus, `rows[${index}].usageStatus`, USAGE_STATUSES),
       domain: text(row.domain, `rows[${index}].domain`),
       domainLabel: text(row.domainLabel, `rows[${index}].domainLabel`),
       ownerCode: text(row.ownerCode, `rows[${index}].ownerCode`),
       ownerLabel: text(row.ownerLabel, `rows[${index}].ownerLabel`),
       ownerRoute,
-      currentValue: healthSnapshot ? "实时状态不可用" : currentValue,
+      currentValue: healthSnapshot ? "实时状态不可用" : canonicalKey === "admin.health.event_pipeline"
+        ? eventBacklogMetric(currentValue, { backlogCount: row.backlogCount, oldestSeconds: row.oldestSeconds, auditLinkUnresolvedCount: row.auditLinkUnresolvedCount }) : currentValue,
       valueType: text(row.valueType, `rows[${index}].valueType`),
       unit: text(row.unit, `rows[${index}].unit`, true),
       source: text(row.source, `rows[${index}].source`),

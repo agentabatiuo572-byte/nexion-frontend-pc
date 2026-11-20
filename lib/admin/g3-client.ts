@@ -1,6 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { createStableMutationExecutor, StableMutationFailure, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { createPendingMutationStore } from "./pending-mutation-store";
 
 interface ApiResult<T> {
   code: number;
@@ -29,6 +30,7 @@ interface BackendControl {
 }
 
 interface BackendCoverage {
+  reliable?: boolean;
   coverageRatio?: RawNumber;
   redlinePct?: RawNumber;
   redlineBreached?: boolean | string | null;
@@ -45,6 +47,9 @@ interface BackendOverrides {
 }
 
 interface BackendOverview {
+  objectStates?: unknown;
+  environmentWriteState?: unknown;
+  priceAvailable?: boolean;
   currentPrice?: RawNumber;
   activeDayIndex?: RawNumber;
   activeFrame?: BackendFrame | null;
@@ -55,6 +60,11 @@ interface BackendOverview {
   coverage?: BackendCoverage | null;
   serverCanonical?: boolean | null;
   sources?: string[] | null;
+  curveRevision?: string;
+  priceRevision?: string;
+  scheduleRevision?: string;
+  pinRevision?: string;
+  pausedRevision?: string;
 }
 
 interface BackendHistoryPoint {
@@ -92,6 +102,7 @@ export interface G3Control {
 }
 
 export interface G3Coverage {
+  reliable?: boolean;
   coverageRatio: number;
   redlinePct: number;
   redlineBreached: boolean;
@@ -100,7 +111,7 @@ export interface G3Coverage {
 
 export interface G3Overrides {
   currentPrice: number;
-  volatilityPct: number;
+  volatilityPct: number | null;
   oracle: string;
   deviationPct: number | null;
   costBasis: number | null;
@@ -108,6 +119,9 @@ export interface G3Overrides {
 }
 
 export interface G3Overview {
+  objectStates?: G3ObjectReadState[];
+  environmentWriteState?: G3EnvironmentWriteState;
+  priceAvailable?: boolean;
   currentPrice: number;
   activeDayIndex: number;
   activeFrame: G3CurveFrame;
@@ -118,6 +132,121 @@ export interface G3Overview {
   coverage: G3Coverage;
   serverCanonical: boolean;
   sources: string[];
+  curveRevision?: string;
+  priceRevision?: string;
+  scheduleRevision?: string;
+  pinRevision?: string;
+  pausedRevision?: string;
+}
+
+export interface G3ObjectReadState {
+  target: { domain: "G"; type: "nex_market_curve" | "nex_market_control" | "nex_market_override"; id: string };
+  locked: boolean;
+  pendingApproval: boolean;
+  pendingOperationId: string | null;
+  pendingOperator: string | null;
+  pendingCreatedAt: string | null;
+}
+
+export interface G3EnvironmentWriteState {
+  manualTuningAllowedByEnvironment: boolean;
+  entries: Array<{ operation: string; field?: string; condition?: string; overrideKey?: string; action?: string;
+    environmentDisabled: boolean; reasonCode: string | null }>;
+}
+
+/** The read contract includes legitimate unknowns; the existing editor requires complete baselines. */
+export type G3ReadOverview = Omit<G3Overview, "currentPrice" | "overrides" | "coverage"> & {
+  scheduleExecutionRead?: G3ScheduleExecutionRead;
+  currentPrice: number | null;
+  overrides: Omit<G3Overrides, "currentPrice"> & { currentPrice: number | null };
+  coverage: Omit<G3Coverage, "coverageRatio" | "redlinePct" | "redlineBreached"> & {
+    coverageRatio: number | null; redlinePct: number | null; redlineBreached: boolean | null;
+  };
+};
+
+export type G3ScheduleAttempt = {
+  auditId: number | string;
+  attemptedAt: string;
+  completedAt: string;
+  recordedAt: string;
+  runDate: string | null;
+  outcome: "ADVANCED" | "PRICE_CHANGED" | "NO_CHANGE" | "SKIPPED" | "COMPLETED" | "FAILED";
+  reasonCode: string | null;
+  claimed: boolean | null;
+  frameApplied: boolean | null;
+  frameAdvanced: boolean | null;
+  priceChanged: boolean | null;
+  beforeDayIndex: number | null;
+  afterDayIndex: number | null;
+  beforePrice: string | null;
+  afterPrice: string | null;
+  storage: "nx_audit_log" | "nx_audit_log_archive";
+};
+
+export type G3ScheduleExecution = {
+  available: boolean;
+  execution: { runDate: string; status: string; createdAt: string; updatedAt: string } | null;
+  lastAttempt: G3ScheduleAttempt | null;
+  lastAdvance: G3ScheduleAttempt | null;
+  executionOutcomeKnown: boolean;
+  priceChangeKnown: boolean;
+  lastAttemptKnown: boolean;
+  attemptSelection: "LATEST_PERSISTED_COMPLETION_BY_AUDIT_ID";
+  attemptTimestampBasis: "UTC_APPLICATION_CLOCK";
+  executionTimestampBasis: "DB_SESSION_TIME";
+  runDateBasis: "UTC_CLAIM_DAY";
+  reason: string | null;
+  sources: string[];
+};
+export type G3ScheduleExecutionRead = { state: "ready"; data: G3ScheduleExecution }
+  | { state: "unsupported" } | { state: "unavailable"; error: string };
+
+function normalizeScheduleExecution(value: unknown): G3ScheduleExecution {
+  const invalid = () => { throw new Error("G3_SCHEDULE_EXECUTION_RESPONSE_INVALID"); };
+  const object = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
+    return value as Record<string, unknown>;
+  };
+  const text = (value: unknown) => typeof value === "string" && value.length > 0;
+  const date = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const stamp = (value: unknown) => text(value) && Number.isFinite(Date.parse(value as string));
+  const instant = (value: unknown) => stamp(value) && /Z$/.test(value as string);
+  const attempt = (value: unknown): G3ScheduleAttempt | null => {
+    if (value === null) return null;
+    const row = object(value);
+    if (!(typeof row.auditId === "number" && Number.isSafeInteger(row.auditId) && row.auditId > 0
+        || typeof row.auditId === "string" && /^[1-9]\d*$/.test(row.auditId))
+      || !instant(row.attemptedAt) || !instant(row.completedAt) || !stamp(row.recordedAt)
+      || row.runDate !== null && !date(row.runDate)
+      || !["ADVANCED", "PRICE_CHANGED", "NO_CHANGE", "SKIPPED", "COMPLETED", "FAILED"].includes(row.outcome as string)
+      || row.reasonCode !== null && !text(row.reasonCode)
+      || [row.claimed, row.frameApplied, row.frameAdvanced, row.priceChanged].some(cell => cell !== null && typeof cell !== "boolean")
+      || [row.beforeDayIndex, row.afterDayIndex].some(cell => cell !== null && !(typeof cell === "number" && Number.isInteger(cell) && cell >= 0 && cell <= 6))
+      || [row.beforePrice, row.afterPrice].some(cell => cell !== null && !(typeof cell === "string" && /^\d+(?:\.\d+)?$/.test(cell) && /[1-9]/.test(cell)))
+      || !["nx_audit_log", "nx_audit_log_archive"].includes(row.storage as string)) return invalid();
+    return row as unknown as G3ScheduleAttempt;
+  };
+  const row = object(value);
+  if ([row.available, row.executionOutcomeKnown, row.priceChangeKnown, row.lastAttemptKnown].some(cell => typeof cell !== "boolean")
+    || row.attemptSelection !== "LATEST_PERSISTED_COMPLETION_BY_AUDIT_ID" || row.attemptTimestampBasis !== "UTC_APPLICATION_CLOCK"
+    || row.executionTimestampBasis !== "DB_SESSION_TIME" || row.runDateBasis !== "UTC_CLAIM_DAY"
+    || row.reason !== null && !text(row.reason) || !Array.isArray(row.sources) || !row.sources.every(text)) return invalid();
+  if (row.execution !== null) {
+    const execution = object(row.execution);
+    if (!date(execution.runDate) || !text(execution.status) || !stamp(execution.createdAt) || !stamp(execution.updatedAt)) return invalid();
+  }
+  return { ...row, lastAttempt: attempt(row.lastAttempt), lastAdvance: attempt(row.lastAdvance) } as G3ScheduleExecution;
+}
+export class G3MarketReadUnavailableError extends Error {
+  readonly reason: "PRICE_UNAVAILABLE" | "COVERAGE_UNAVAILABLE" | "PRICE_AND_COVERAGE_UNAVAILABLE";
+  constructor(readonly overview: G3ReadOverview) {
+    const priceUnavailable = overview.priceAvailable === false || overview.currentPrice === null || overview.overrides.currentPrice === null;
+    const coverageUnavailable = overview.coverage.reliable === false || overview.coverage.coverageRatio === null
+      || overview.coverage.redlinePct === null || overview.coverage.redlineBreached === null;
+    super(priceUnavailable ? "UVT 价格暂时读不到" : "UVT 价格数据加载失败，请刷新重试");
+    this.name = "G3MarketReadUnavailableError";
+    this.reason = priceUnavailable ? coverageUnavailable ? "PRICE_AND_COVERAGE_UNAVAILABLE" : "PRICE_UNAVAILABLE" : "COVERAGE_UNAVAILABLE";
+  }
 }
 
 export interface G3HistoryPoint {
@@ -149,12 +278,17 @@ function parseNumber(value: RawNumber) {
   return null;
 }
 
-const executeG3Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g3-market-commands-v1");
+// The G3 editor also reads these legacy fingerprints to recover their exact bodies.
+// Share this instance so reading another G page cannot expire or resurrect evidence.
+export const g3LegacyCommands = createPendingMutationStore({
+  storageKey: "nexion-admin-g3-market-commands-v1", retainExpiredRecords: true,
+});
+const executeG3Mutation = createStableMutationExecutor(idempotencyKey, g3LegacyCommands);
 
 function requireNumber(value: RawNumber, field: string) {
   const parsed = parseNumber(value);
   if (parsed == null) {
-    throw new Error(`G3 后端数据缺少字段:${field}`);
+    throw new Error(`UVT 价格数据不完整（缺少 ${field}），请刷新重试`);
   }
   return parsed;
 }
@@ -176,11 +310,11 @@ function asText(value: unknown, fallback = "—") {
 function requireText(value: unknown, field: string) {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  throw new Error(`G3 后端数据缺少字段:${field}`);
+  throw new Error(`UVT 价格数据不完整（缺少 ${field}），请刷新重试`);
 }
 
 function normalizeFrame(frame: BackendFrame | null | undefined, index: number): G3CurveFrame {
-  if (!frame) throw new Error(`G3 后端数据缺少字段:frames[${index}]`);
+  if (!frame) throw new Error(`UVT 价格计划不完整（缺少第 ${index + 1} 天），请刷新重试`);
   return {
     dayIndex: requireNumber(frame.dayIndex, `frames[${index}].dayIndex`),
     targetPrice: requireNumber(frame.targetPrice, `frames[${index}].targetPrice`),
@@ -189,20 +323,30 @@ function normalizeFrame(frame: BackendFrame | null | undefined, index: number): 
   };
 }
 
-function normalizeOverview(data: BackendOverview | null | undefined): G3Overview {
-  if (!data) throw new Error("G3 后端未返回行情总览数据");
+function normalizeReadOverview(data: BackendOverview | null | undefined): G3ReadOverview {
+  if (!data) throw new Error("UVT 价格数据加载失败，请刷新重试");
   const frames = (data?.frames ?? []).map(normalizeFrame);
-  const activeDayIndex = Math.max(0, requireNumber(data.activeDayIndex, "activeDayIndex"));
+  const activeDayIndex = requireNumber(data.activeDayIndex, "activeDayIndex");
+  if (frames.length !== 7 || new Set(frames.map(frame => frame.dayIndex)).size !== 7
+      || frames.some(frame => !Number.isInteger(frame.dayIndex) || frame.dayIndex < 0 || frame.dayIndex > 6)
+      || !Number.isInteger(activeDayIndex) || activeDayIndex < 0 || activeDayIndex > 6) {
+    throw new Error("UVT 价格计划不完整，请刷新核对七天计划。");
+  }
+  frames.sort((a, b) => a.dayIndex - b.dayIndex);
   const activeFrame = data?.activeFrame
     ? normalizeFrame(data.activeFrame, activeDayIndex)
     : frames.find((frame) => frame.dayIndex === activeDayIndex);
-  if (!activeFrame) throw new Error("G3 后端数据缺少字段:activeFrame");
-  if (!data.coverage) throw new Error("G3 后端数据缺少字段:coverage");
-  if (!data.overrides) throw new Error("G3 后端数据缺少字段:overrides");
+  if (!activeFrame) throw new Error("UVT 价格数据不完整（缺少当天计划），请刷新重试");
+  if (!data.coverage) throw new Error("UVT 价格数据不完整（缺少覆盖率），请刷新重试");
+  if (!data.overrides) throw new Error("UVT 价格数据不完整（缺少手动设置），请刷新重试");
   const coverage = data.coverage;
   const overrides = data.overrides;
+  if (data.priceAvailable !== undefined && typeof data.priceAvailable !== "boolean"
+    || coverage.reliable !== undefined && typeof coverage.reliable !== "boolean") throw new Error("UVT 价格数据加载失败，请刷新重试");
   return {
-    currentPrice: requireNumber(data.currentPrice, "currentPrice"),
+    ...normalizeG3WriteStates(data),
+    priceAvailable: data.priceAvailable,
+    currentPrice: data.currentPrice === null ? null : requireNumber(data.currentPrice, "currentPrice"),
     activeDayIndex,
     activeFrame,
     weekPeakPrice: requireNumber(data.weekPeakPrice, "weekPeakPrice"),
@@ -211,33 +355,99 @@ function normalizeOverview(data: BackendOverview | null | undefined): G3Overview
       key: requireText(control.key, "controls.key"),
       name: requireText(control.name, "controls.name"),
       description: asText(control.description),
-      value: requireText(control.value, "controls.value"),
+      value: control.key === "schedule" && control.value === "" ? "" : requireText(control.value, "controls.value"),
       rawValue: typeof control.rawValue === "string" ? control.rawValue : undefined,
       cronExpression: typeof control.cronExpression === "string" ? control.cronExpression : undefined,
       zone: typeof control.zone === "string" ? control.zone : undefined,
       fallback: typeof control.fallback === "undefined" ? undefined : toBool(control.fallback, false),
     })),
     overrides: {
-      currentPrice: requireNumber(overrides.currentPrice, "overrides.currentPrice"),
-      volatilityPct: requireNumber(overrides.volatilityPct, "overrides.volatilityPct"),
+      currentPrice: overrides.currentPrice === null ? null : requireNumber(overrides.currentPrice, "overrides.currentPrice"),
+      volatilityPct: overrides.volatilityPct == null ? null : requireNumber(overrides.volatilityPct, "overrides.volatilityPct"),
       oracle: asText(overrides.oracle),
       deviationPct: parseNumber(overrides.deviationPct),
       costBasis: parseNumber(overrides.costBasis),
       paused: toBool(overrides.paused, false),
     },
     coverage: {
-      coverageRatio: requireNumber(coverage.coverageRatio, "coverage.coverageRatio"),
-      redlinePct: requireNumber(coverage.redlinePct, "coverage.redlinePct"),
-      redlineBreached: toBool(coverage.redlineBreached, false),
+      reliable: coverage.reliable,
+      coverageRatio: coverage.coverageRatio === null ? null : requireNumber(coverage.coverageRatio, "coverage.coverageRatio"),
+      redlinePct: coverage.redlinePct === null ? null : requireNumber(coverage.redlinePct, "coverage.redlinePct"),
+      redlineBreached: coverage.redlineBreached === null ? null : toBool(coverage.redlineBreached, false),
       precheck: asText(coverage.precheck),
     },
     serverCanonical: data?.serverCanonical === true,
     sources: data?.sources ?? [],
+    curveRevision: data.curveRevision,
+    priceRevision: data.priceRevision,
+    scheduleRevision: data.scheduleRevision,
+    pinRevision: data.pinRevision,
+    pausedRevision: data.pausedRevision,
   };
 }
 
+/** GET-only projections are optional on old servers and on mutation receipts. */
+function normalizeG3WriteStates(data: BackendOverview): Pick<G3Overview, "objectStates" | "environmentWriteState"> {
+  const invalid = () => { throw new Error("UVT 价格数据加载失败，请刷新重试"); };
+  const object = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
+    return value as Record<string, unknown>;
+  };
+  const result: Pick<G3Overview, "objectStates" | "environmentWriteState"> = {};
+  if (data.objectStates !== undefined) {
+    if (!Array.isArray(data.objectStates)) return invalid();
+    const seen = new Set<string>();
+    result.objectStates = data.objectStates.map(value => {
+      const row = object(value), target = object(row.target);
+      const keys = target.type === "nex_market_curve" ? ["weekly"] : target.type === "nex_market_control" ? ["schedule", "pin", "loop"]
+        : target.type === "nex_market_override" ? ["currentPrice", "volatilityPct", "oracle", "deviationPct", "costBasis", "paused"] : [];
+      const key = `${target.type}:${target.id}`;
+      if (target.domain !== "G" || typeof target.id !== "string" || !keys.includes(target.id) || seen.has(key)
+        || typeof row.locked !== "boolean" || typeof row.pendingApproval !== "boolean"
+        || [row.pendingOperationId, row.pendingOperator, row.pendingCreatedAt].some(cell => cell !== null && typeof cell !== "string")
+        || row.pendingApproval && (!row.locked || !row.pendingOperationId)) return invalid();
+      seen.add(key);
+      return row as unknown as G3ObjectReadState;
+    });
+    // New overviews omit the three retired targets; old saved replies still include them.
+    if (["nex_market_curve:weekly", "nex_market_control:schedule", "nex_market_control:pin", "nex_market_control:loop",
+      "nex_market_override:currentPrice", "nex_market_override:costBasis", "nex_market_override:paused"].some(key => !seen.has(key))) return invalid();
+  }
+  if (data.environmentWriteState !== undefined) {
+    const state = object(data.environmentWriteState);
+    if (typeof state.manualTuningAllowedByEnvironment !== "boolean" || !Array.isArray(state.entries)) return invalid();
+    const entries = new Set<string>();
+    for (const value of state.entries) {
+      const entry = object(value);
+      const key = `${entry.operation}:${entry.action ?? ""}:${entry.field ?? ""}:${entry.overrideKey ?? ""}`;
+      if (typeof entry.operation !== "string" || typeof entry.environmentDisabled !== "boolean"
+        || entry.reasonCode !== null && typeof entry.reasonCode !== "string"
+        || entry.environmentDisabled && !entry.reasonCode
+        || ["field", "condition", "overrideKey", "action"].some(key => entry[key] !== undefined && typeof entry[key] !== "string")
+        || !["g3_curve_update::pumpProbability:", "g3_override:::currentPrice", "g3_market_policy_change:curve-cell:pumpProbability:", "g3_market_policy_change:current-price::"].includes(key)
+        || entries.has(key)) return invalid();
+      entries.add(key);
+    }
+    if (entries.size !== 4) return invalid();
+    result.environmentWriteState = state as unknown as G3EnvironmentWriteState;
+  }
+  return result;
+}
+
+/** Preserve the existing editor contract without substituting numeric values for unavailable reads. */
+function normalizeOverview(data: BackendOverview | null | undefined): G3Overview {
+  const read = normalizeReadOverview(data);
+  if (read.priceAvailable === false || read.currentPrice === null || read.overrides.currentPrice === null
+    || read.coverage.reliable === false || read.coverage.coverageRatio === null
+    || read.coverage.redlinePct === null || read.coverage.redlineBreached === null) throw new G3MarketReadUnavailableError(read);
+  return { ...read, currentPrice: read.currentPrice,
+    overrides: { ...read.overrides, currentPrice: read.overrides.currentPrice },
+    coverage: { ...read.coverage, coverageRatio: read.coverage.coverageRatio,
+      redlinePct: read.coverage.redlinePct, redlineBreached: read.coverage.redlineBreached } };
+}
+
 function normalizeHistory(data: BackendHistory | null | undefined): G3History {
-  if (!data) throw new Error("G3 后端未返回行情历史数据");
+  if (!data) throw new Error("UVT 价格走势加载失败，请刷新重试");
   return {
     points: (data.points ?? []).map((point, index) => ({
       sampledAt: asText(point.sampledAt, ""),
@@ -250,7 +460,7 @@ function normalizeHistory(data: BackendHistory | null | undefined): G3History {
   };
 }
 
-async function g3Request<T>(path: string, init?: RequestInit) {
+async function g3Request<T>(path: string, init?: RequestInit, strictOutcome = false) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -262,15 +472,25 @@ async function g3Request<T>(path: string, init?: RequestInit) {
   });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
+  if (strictOutcome && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+      || !result || !Number.isInteger(result.code) || result.code >= 500 || result.code !== 0 && result.code < 400)) {
+    throw Object.assign(new StableMutationFailure("outcome-unknown", "提交结果未知，请保留原操作，查询原结果或按原请求重试。"), {
+      unknownOutcome: true, status: response.status, backendMessage: result?.message,
+    });
+  }
+
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw stableMutationHttpFailure(
+    throw Object.assign(stableMutationHttpFailure(
       formatAdminApiError(result?.message, `G3_REQUEST_FAILED_${response.status}`),
       response.status,
       result?.code,
-    );
+    ), {
+      status: response.ok && result && result.code >= 400 ? result.code : response.status,
+      backendMessage: result?.message,
+    });
   }
 
   return result.data as T;
@@ -291,17 +511,39 @@ function g3OverviewMutation(
       headers: { "Idempotency-Key": commandKey },
       body: serialized,
     }),
-    normalizeOverview,
+    normalizeReadOverview,
   );
 }
 
-function serializeFrames(frames: G3CurveFrame[]) {
+export function g3NumberText(value: number, scale = 8) {
+  return value.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: scale });
+}
+
+export function serializeG3Frames(frames: G3CurveFrame[]) {
   return frames.map((frame) => ({
     dayIndex: frame.dayIndex,
-    targetPrice: String(frame.targetPrice),
-    pumpProbability: String(frame.pumpProbability),
-    volatilityPct: String(frame.volatilityPct),
+    targetPrice: g3NumberText(frame.targetPrice),
+    pumpProbability: g3NumberText(frame.pumpProbability, 6),
+    volatilityPct: g3NumberText(frame.volatilityPct),
   }));
+}
+
+/** Read-only consumers can display available facts and each unknown independently. */
+export async function fetchG3MarketReadOverview(): Promise<G3ReadOverview> {
+  const [overview, scheduleExecutionRead] = await Promise.all([
+    g3Request<BackendOverview>("/nex/curve"), fetchG3MarketScheduleExecution(),
+  ]);
+  return { ...normalizeReadOverview(overview), scheduleExecutionRead };
+}
+
+/** Independent read: old servers keep their overview, and failures never become no execution. */
+export async function fetchG3MarketScheduleExecution(): Promise<G3ScheduleExecutionRead> {
+  try {
+    return { state: "ready", data: normalizeScheduleExecution(await g3Request<unknown>("/nex/curve/schedule-execution")) };
+  } catch (error) {
+    if ((error as { status?: number }).status === 404) return { state: "unsupported" };
+    return { state: "unavailable", error: formatAdminApiError(error instanceof Error ? error.message : undefined, "G3_SCHEDULE_EXECUTION_READ_FAILED") };
+  }
 }
 
 export async function fetchG3MarketOverview() {
@@ -320,10 +562,10 @@ export async function updateG3CurveFrame(
   reason: string,
   operator: string,
 ) {
-  const expectedFrames = serializeFrames(overview.frames);
+  const expectedFrames = serializeG3Frames(overview.frames);
   const frames = expectedFrames.map((frame) => ({ ...frame }));
   const target = frames.find((frame) => frame.dayIndex === dayIndex);
-  if (!target) throw new Error("G3 曲线日不存在,请刷新页面后重试。");
+  if (!target) throw new Error("这一天的价格计划不存在，请刷新页面后重试。");
   target[field] = value;
   return g3OverviewMutation(
     "/nex/curve",
@@ -331,6 +573,15 @@ export async function updateG3CurveFrame(
     { frames, expectedFrames, reason, operator },
     `g3-curve-d${dayIndex + 1}-${field}`,
   );
+}
+
+/** Every G3 confirmation persists this exact request before sending it. */
+export async function submitG3MarketCommand(path: string, method: "PUT" | "PATCH", body: string, commandKey: string) {
+  return normalizeReadOverview(await g3Request<BackendOverview>(path, {
+    method,
+    headers: { "Idempotency-Key": commandKey },
+    body,
+  }, true));
 }
 
 export async function updateG3Control(
@@ -348,6 +599,11 @@ export async function updateG3Control(
   );
 }
 
+/** Refusal for new standalone override writes. */
+export function g3OverrideWriteRefusal(key: G3OverrideKey): "RETIRED_FEATURE" | undefined {
+  return ["oracle", "deviationPct", "volatilityPct"].includes(key) ? "RETIRED_FEATURE" : undefined;
+}
+
 export async function updateG3Override(
   overrideKey: G3OverrideKey,
   value: string,
@@ -355,6 +611,11 @@ export async function updateG3Override(
   reason: string,
   operator: string,
 ) {
+  const refusal = g3OverrideWriteRefusal(overrideKey);
+  // Existing legacy commands must use the stored bytes and key, including successful old receipts.
+  const fingerprint = stableMutationFingerprint("PATCH", `/nex/overrides/${encodeURIComponent(overrideKey)}`,
+    JSON.stringify({ value, expectedValue, reason, operator }));
+  if (refusal && !g3LegacyCommands.get(`g3-override-${overrideKey}:${fingerprint}`)) throw new Error(refusal);
   return g3OverviewMutation(
     `/nex/overrides/${encodeURIComponent(overrideKey)}`,
     "PATCH",

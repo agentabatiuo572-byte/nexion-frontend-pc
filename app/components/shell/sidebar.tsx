@@ -1,24 +1,32 @@
 "use client";
 
 /**
- * 侧边栏 — 品牌标 + 12 域(按角色过滤)分组导航 + 折叠开关。
+ * 侧边栏 — 品牌标 + 今日概览 + 授权域分组导航 + 计数和折叠开关。
  * 折叠/展开、分组展开态由 ConsoleShell 经 props 下传(mounted 门控,避免 hydration 抖动)。
  */
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen, LayoutDashboard } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, LayoutGrid } from "lucide-react";
 import type { AdminRole, NavDomain } from "@/lib/nav/console-nav";
+import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useAdminUi } from "@/lib/store/admin-ui";
+import { IconTile } from "@/app/components/rd/icon-tile";
 import { SidebarGroup } from "./sidebar-group";
 
+/* 两套 Logo 都提前加载：隐藏的那套不能等切换主题时再去取，否则切换后 Logo 会空一下。 */
 function LogoMark() {
   return (
-    <span className="uvel-logo-mark" aria-hidden>
-      <Image className="uvel-logo-mark__dark" src="/uvel-mark-dark.png" width={30} height={30} alt="" />
-      <Image className="uvel-logo-mark__light" src="/uvel-mark-light.png" width={30} height={30} alt="" />
-    </span>
+    <>
+      <span className="uvel-logo-mark rd-logo-dark" aria-hidden>
+        <Image src="/uvel-mark-dark.png" width={30} height={30} alt="" loading="eager" />
+      </span>
+      <span className="uvel-logo-mark rd-logo-symbol" aria-hidden>
+        <Image src="/uvel-symbol.png" width={30} height={22} alt="" loading="eager" />
+      </span>
+    </>
   );
 }
 
@@ -83,12 +91,13 @@ export function Sidebar({
       clearTimeout(t2);
     };
   }, [pathname]);
+  const authorities = useAdminAuth((s) => s.session?.authorities) ?? [];
   const toggleGroup = useAdminUi((s) => s.toggleGroup);
   const setExpanded = useAdminUi((s) => s.setExpanded);
   const setSidebar = useAdminUi((s) => s.setSidebar);
   const toggleSidebar = useAdminUi((s) => s.toggleSidebar);
   const visibleL2Count = domains.reduce((total, domain) => total + domain.l2.length, 0);
-  const showHomeEntry = role !== "support";
+  const showHomeEntry = b0HasAnyBlock(b0Blocks(authorities));
   const badges: Record<string, number> = servicePending > 0 ? { "/service/sessions": servicePending } : {};
 
   const onCollapsedOpen = (code: string) => {
@@ -98,32 +107,22 @@ export function Sidebar({
   };
 
   return (
-    <aside
-      className="flex h-full flex-col"
-      style={{
-        background: "var(--v5-surface)",
-        borderRight: "1px solid var(--v5-border)",
-      }}
-    >
+    <aside className="rd-side flex h-full flex-col">
       {/* 品牌标 */}
       <Link
         href="/"
         prefetch={false}
         onClick={() => setExpanded([])}
         aria-label="UVEL 运营控制台"
-        className="flex items-center gap-2.5 px-3.5"
-        style={{ height: "var(--admin-topbar-h)", borderBottom: "1px solid var(--v5-border)" }}
+        className="rd-side-brand"
       >
         <LogoMark />
         {!collapsed && (
           <>
+            <Image className="rd-logo-lockup" src="/uvel-lockup-on-light.png" width={86} height={30} alt="" aria-hidden loading="eager" />
             <span className="flex flex-col leading-tight">
-              <span className="font-display text-[13.5px]" style={{ color: "var(--v5-ink)" }}>
-                UVEL
-              </span>
-              <span className="text-[10px]" style={{ color: "var(--v5-ink-3)" }}>
-                运营控制台
-              </span>
+              <span className="font-display rd-side-name">UVEL</span>
+              <span className="text-[10px] rd-side-role">运营控制台</span>
             </span>
           </>
         )}
@@ -134,9 +133,9 @@ export function Sidebar({
         ref={navRef}
         onWheel={persistSidebarScroll}
         onTouchMove={persistSidebarScroll}
-        className={`flex-1 overflow-y-auto py-3 ${collapsed ? "px-2" : "px-2.5"} flex flex-col gap-0.5`}
+        className={`rd-side-nav flex-1 overflow-y-auto ${collapsed ? "px-2" : "px-2.5"} flex flex-col gap-0.5`}
       >
-        {/* 运营总览 入口(首页 · 指挥台)— 标准 Dashboard 首项 */}
+        {/* 今日概览入口(首页) */}
         {showHomeEntry && (() => {
           const homeActive = pathname === "/";
           if (collapsed) {
@@ -145,12 +144,12 @@ export function Sidebar({
                 href="/"
                 prefetch={false}
                 onClick={() => setExpanded([])}
-                title="运营总览 · 指挥台"
-                aria-label="运营总览"
-                className="mx-auto flex h-10 w-10 items-center justify-center rounded-[10px] transition-colors hover:bg-[var(--v5-surface-2)]"
-                style={{ background: homeActive ? "var(--v5-surface-2)" : "transparent" }}
+                title="今日概览"
+                aria-label="今日概览"
+                className="rd-nav-rail"
+                data-active={homeActive ? "" : undefined}
               >
-                <LayoutDashboard size={18} style={{ color: homeActive ? "var(--v5-brand)" : "var(--v5-ink-3)" }} />
+                <IconTile tone="system" icon={LayoutGrid} size={22} />
               </Link>
             );
           }
@@ -159,21 +158,18 @@ export function Sidebar({
               href="/"
               prefetch={false}
               onClick={() => setExpanded([])}
-              className="relative flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 transition-colors hover:bg-[var(--v5-surface-2)]"
-              style={{ background: homeActive ? "var(--v5-surface-2)" : "transparent" }}
+              className="rd-nav-item"
+              aria-current={homeActive ? "page" : undefined}
+              data-active={homeActive ? "" : undefined}
             >
-              {homeActive && (
-                <span className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full" style={{ background: "var(--v5-brand)" }} />
-              )}
-              <LayoutDashboard size={17} style={{ color: "var(--v5-brand)" }} />
-              <span className="flex-1 text-[13px]" style={{ color: homeActive ? "var(--v5-ink)" : "var(--v5-ink-2)", fontWeight: homeActive ? 600 : 400 }}>
-                运营总览
+              <IconTile tone="system" icon={LayoutGrid} size={22} />
+              <span className="rd-nav-name">
+                <span>今日概览</span>
+                {homeActive && <span className="rd-nav-dot" data-current="" aria-hidden />}
               </span>
-              <span className="font-mono-tabular text-[9px] uppercase tracking-wide" style={{ color: "var(--v5-brand)" }}>指挥台</span>
             </Link>
           );
         })()}
-        {showHomeEntry && <div className="my-1.5" style={{ height: 1, background: "var(--v5-border)" }} />}
         {domains.map((d) => {
           const isOpen = !collapsed && expanded[0] === d.code;
           return (
@@ -190,13 +186,10 @@ export function Sidebar({
       </nav>
 
       {/* 底部:统计 + 折叠开关 */}
-      <div
-        className="flex items-center justify-between px-3 py-2.5"
-        style={{ borderTop: "1px solid var(--v5-border)" }}
-      >
+      <div className="rd-side-foot">
         {!collapsed && (
-          <span className="font-mono-tabular text-[10px]" style={{ color: "var(--v5-ink-4)" }}>
-            {domains.length} 域 · {visibleL2Count} 模块
+          <span className="font-mono-tabular rd-side-count">
+            {domains.length} 个模块 · {visibleL2Count} 个页面
           </span>
         )}
         <button
@@ -204,8 +197,7 @@ export function Sidebar({
           onClick={mobile ? () => onMobileOpenChange?.(collapsed) : toggleSidebar}
           title={collapsed ? "展开侧栏" : "收起侧栏"}
           aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
-          className={`flex h-8 items-center justify-center rounded-[8px] transition-colors hover:bg-[var(--v5-surface-2)] ${collapsed ? "mx-auto w-8" : "w-8"}`}
-          style={{ color: "var(--v5-ink-3)" }}
+          className={`rd-iconbtn ${collapsed ? "mx-auto" : ""}`}
         >
           {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
         </button>

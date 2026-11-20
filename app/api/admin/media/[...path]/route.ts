@@ -120,7 +120,13 @@ async function proxy(request: Request, context: RouteContext) {
       const result = await upstream.json() as { code?: number; data?: { assetId?: string; previewUrl?: string } };
       return publicAssetResponse(result);
     }
-    return jsonError(upstream.status, "MEDIA_REQUEST_FAILED");
+    const failure: unknown = await upstream.json().catch(() => null);
+    const message = failure && typeof failure === "object" && "message" in failure && typeof failure.message === "string" && failure.message
+      ? failure.message : "MEDIA_REQUEST_FAILED";
+    return Response.json({
+      code: upstream.status, message, data: null,
+      unknownOutcome: message === "MEDIA_REQUEST_FAILED" || message.startsWith("IDEMPOTENCY_") || upstream.status >= 500,
+    }, { status: upstream.status, headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return jsonError(503, "MEDIA_BACKEND_UNAVAILABLE");
   }

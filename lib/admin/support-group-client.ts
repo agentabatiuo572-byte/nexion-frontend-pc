@@ -1,5 +1,6 @@
-import { supportRequest, supportJson, supportObject, parseSupportId, parseSupportCount, parseSupportPage, supportWireId } from "./m-support-client.ts";
+import { supportRequest, supportJson, supportObject, parseSupportId, parseSupportCount, parseSupportPage, parseSupportTime, supportWireId, SupportClientError, isIndeterminateSupportError } from "./m-support-client.ts";
 import { createPendingMutationStore, PENDING_MUTATION_TTL_MS, type PendingMutationRecord } from "./pending-mutation-store.ts";
+import { isExplicitRejection } from "./explicit-rejection";
 
 const BASE = "/support-agents/groups";
 const GROUP_STATES = ["ENABLED", "DISABLED", "ARCHIVED"] as const;
@@ -19,7 +20,21 @@ function id(value: unknown): string { const result = parseSupportId(value, "grou
 function nullableId(value: unknown): string | null { return value === null ? null : id(value); }
 function array<T>(value: unknown, parse: (value: unknown) => T): T[] { if (!Array.isArray(value)) bad("array"); return value.map(parse); }
 function unique<T>(rows: T[], key: (row: T) => string): T[] { if (new Set(rows.map(key)).size !== rows.length) bad("duplicate"); return rows; }
-function reason(value: unknown): string { const result = text(value).trim(); if (Array.from(result).length < 8 || result.length > 200 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(result)) bad("reason"); return result; }
+const invalidReasonControl = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/;
+export function inviteRevokeReason(value: string) {
+  // B8 uses Java String.trim(), which preserves Unicode spaces above U+0020.
+  const normalized = value.replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, "");
+  const length = Array.from(normalized).length;
+  const error = length < 8 ? "作废原因至少需要 8 个字" : length > 200 ? "作废原因最多可填 200 个字" : invalidReasonControl.test(normalized) ? "作废原因含有不支持的控制字符" : "";
+  return { normalized, length, error };
+}
+/** SupportGroupService uses Java String.trim(), then counts Unicode code points. */
+export function supportGroupReason(value: string) {
+  const normalized = value.replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, "");
+  const length = Array.from(normalized).length;
+  return { normalized, length, valid: length >= 8 && length <= 200 };
+}
+function reason(value: unknown): string { const result = supportGroupReason(text(value)); if (!result.valid) bad("reason"); return result.normalized; }
 function name(value: unknown): string { const result = nonempty(value).trim(); if (result.length > 120) bad("name"); return result; }
 export function accountVersion(value: unknown): number { const s = text(value); if (!/^(0|[1-9]\d*)$/.test(s) || BigInt(s) > BigInt(Number.MAX_SAFE_INTEGER)) bad("accountVersion"); return Number(s); }
 export function parseSupportGroup(value: unknown) { const r = object(value, "id name supervisorAdminId status version"); return { id: id(r.id), name: name(r.name), supervisorAdminId: id(r.supervisorAdminId), status: enumeration(r.status, GROUP_STATES), version: positive(r.version) }; }
@@ -38,11 +53,21 @@ export function parseGroupDetail(value: unknown) {
   if (result.memberCount !== members.length || result.blockers.members !== result.memberCount || result.blockers.routedCustomers !== result.routedCustomers || result.blockers.pendingOperations !== result.pendingOperations || result.blockers.canExit !== (result.memberCount === 0 && result.routedCustomers === 0 && result.pendingOperations === 0)) bad("blockers"); return result;
 }
 export type SupportGroupDetail = ReturnType<typeof parseGroupDetail>;
+// B8: code null = no valid code; link is share.baseUrl + code and null when sharing is unconfigured.
+// Codes are case-insensitive (shown upper-case); version and issuedAt may be null, and the write that needs a version checks it.
+function inviteCodeView(value: unknown, withLink: boolean) {
+  const r = object(value, withLink ? "code link version issuedAt" : "code version issuedAt"), code = r.code === null ? null : text(r.code).toUpperCase(), version = r.version === null ? null : positive(r.version), issuedAt = r.issuedAt === null ? null : parseSupportTime(r.issuedAt, "group.inviteCode.issuedAt"), link = !withLink || r.link === null ? null : nonempty(r.link);
+  if (code !== null && !/^CS[A-Z0-9]{6}$/.test(code) || link !== null && (code === null || !link.toUpperCase().includes(code))) bad("inviteCode");
+  return { code, link, version, issuedAt };
+}
+export type InviteCodeView = ReturnType<typeof inviteCodeView>;
 export function parseGroupMember(value: unknown) {
-  const r = object(value, "adminId name accountStatus currentMember boundCustomers"), m = object(r.currentMember, "state id groupId version");
+  const r = object(value, "adminId name accountStatus currentMember boundCustomers inviteCode"), m = object(r.currentMember, "state id groupId version");
   const state = enumeration(m.state, ["AVAILABLE", "ABSENT", "UNKNOWN"] as const), memberId = nullableId(m.id), groupId = nullableId(m.groupId), version = m.version === null ? null : positive(m.version);
   if (state === "AVAILABLE" ? memberId === null || version === null : memberId !== null || groupId !== null || version !== null) bad("memberObservation");
-  return { adminId: id(r.adminId), name: nonempty(r.name), accountStatus: count(r.accountStatus), currentMember: { state, id: memberId, groupId, version }, boundCustomers: count(r.boundCustomers) };
+  // inviteCode stays undefined until the backend ships B8, so the member list keeps loading.
+  const invite = r.inviteCode === undefined ? undefined : inviteCodeView(r.inviteCode, false);
+  return { adminId: id(r.adminId), name: nonempty(r.name), accountStatus: count(r.accountStatus), currentMember: { state, id: memberId, groupId, version }, boundCustomers: count(r.boundCustomers), inviteCode: invite && { code: invite.code, version: invite.version, issuedAt: invite.issuedAt } };
 }
 export type SupportGroupMember = ReturnType<typeof parseGroupMember>;
 export function parseQualifications(value: unknown) {
@@ -61,9 +86,17 @@ export type MoveGroupInput = { targetGroupId: string | null; expectedMemberVersi
 export type QualificationInput = { qualificationKind: QualificationKind; state: QualificationStatus; expectedQualificationVersion: number; expectedAccountVersion: number; reason: string };
 type GroupIntent = { kind: "CREATE"; payload: CreateGroupInput } | { kind: "RENAME"; targetId: string; payload: RenameGroupInput } | { kind: "STATUS"; targetId: string; payload: StatusGroupInput } | { kind: "OWNER"; targetId: string; payload: OwnerGroupInput } | { kind: "MEMBER"; targetId: string; payload: MoveGroupInput } | { kind: "QUALIFICATION"; targetId: string; payload: QualificationInput };
 export type GroupPendingRecord = PendingMutationRecord & { actorId: number; intent: GroupIntent; label: string };
+// B8 invite-code writes share the group command store: frozen payload plus key until the original command is settled.
+type InviteIntent = { kind: "INVITE_ISSUE"; payload: { expectedVersion: number | null } } | { kind: "INVITE_REVOKE"; targetId: string; payload: { expectedVersion: number; reason: string; code: string; name: string } };
+export type InvitePendingRecord = PendingMutationRecord & { actorId: number; intent: InviteIntent; label: string };
+export type InviteIssueRecord = InvitePendingRecord & { intent: Extract<InviteIntent, { kind: "INVITE_ISSUE" }> };
+export type InviteRevokeRecord = InvitePendingRecord & { intent: Extract<InviteIntent, { kind: "INVITE_REVOKE" }> };
+export function isInvitePending(record: GroupPendingRecord | InvitePendingRecord): record is InvitePendingRecord { return record.intent.kind === "INVITE_ISSUE" || record.intent.kind === "INVITE_REVOKE"; }
+/** Only a coded, explicit command rejection can release unresolved evidence. */
+export function commandRejected(error: unknown): boolean { return isExplicitRejection(error); }
 // Unresolved evidence outlives the server's 24h replay window; session storage ends with the tab.
-export const groupPendingCommands = createPendingMutationStore<GroupPendingRecord>({ storageKey: "nexion-admin-support-group-commands-v1", ttlMs: Math.floor(Number.MAX_SAFE_INTEGER / 2), isValidRecord: r => Number.isSafeInteger(r.actorId) && r.actorId > 0 && !!r.intent && ["CREATE", "RENAME", "STATUS", "OWNER", "MEMBER", "QUALIFICATION"].includes(r.intent.kind) && !!r.intent.payload && typeof r.intent.payload.reason === "string" && typeof r.label === "string" });
-export function canReplayGroupCommand(record: GroupPendingRecord, now = Date.now()): boolean { return now >= record.createdAt && now < record.createdAt + PENDING_MUTATION_TTL_MS; }
+export const groupPendingCommands = createPendingMutationStore<GroupPendingRecord | InvitePendingRecord>({ storageKey: "nexion-admin-support-group-commands-v1", ttlMs: Math.floor(Number.MAX_SAFE_INTEGER / 2), isValidRecord: r => Number.isSafeInteger(r.actorId) && r.actorId > 0 && !!r.intent && ["CREATE", "RENAME", "STATUS", "OWNER", "MEMBER", "QUALIFICATION", "INVITE_ISSUE", "INVITE_REVOKE"].includes(r.intent.kind) && !!r.intent.payload && (r.intent.kind === "INVITE_ISSUE" ? r.intent.payload.expectedVersion === null || Number.isSafeInteger(r.intent.payload.expectedVersion) : typeof r.intent.payload.reason === "string") && typeof r.label === "string" });
+export function canReplayGroupCommand(record: Pick<PendingMutationRecord, "createdAt">, now = Date.now()): boolean { return now >= record.createdAt && now < record.createdAt + PENDING_MUTATION_TTL_MS; }
 function key(value: string): string { if (!value || value.length > 96 || /[\x00-\x20\x7f]/.test(value)) bad("key"); return value; }
 function groupNameInput(input: RenameGroupInput) { object(input, "name expectedVersion reason"); return { name: name(input.name), expectedVersion: positive(input.expectedVersion), reason: reason(input.reason) }; }
 function changedGroup(value: unknown, target: string, expectedVersion: number, matches: (group: SupportGroup) => boolean) { const result = parseSupportGroup(value); if (result.id !== target || result.version <= expectedVersion || !matches(result)) bad("writeAcknowledgement"); return result; }
@@ -75,11 +108,23 @@ export const supportGroupClient = {
   qualifications(adminId: string, signal?: AbortSignal): Promise<SupportQualifications> { const target = id(adminId); return supportRequest(`/support-agents/${target}/qualifications`, value => { const result = parseQualifications(value); if (result.adminId !== target) bad("qualificationIdentity"); return result; }, { signal }); },
   supervisors(signal?: AbortSignal) { return supportRequest(`${BASE}/supervisors`, value => { const r = object(value, "items supervisorCount memberCount peopleCount"); const items = unique(array(r.items, value => { const s = object(value, "adminId name state version accountStatus groupCount"); return { adminId: id(s.adminId), name: nonempty(s.name), state: enumeration(s.state, QUAL_STATES), version: positive(s.version), accountStatus: count(s.accountStatus), groupCount: count(s.groupCount) }; }), s => s.adminId); const result = { items, supervisorCount: count(r.supervisorCount), memberCount: count(r.memberCount), peopleCount: count(r.peopleCount) }; if (result.supervisorCount !== items.length || result.peopleCount < result.supervisorCount || result.peopleCount < result.memberCount || result.peopleCount > result.supervisorCount + result.memberCount) bad("supervisorCounts"); return result; }, { signal }); },
   candidates(options: { groupId?: string; pageNum: number; pageSize: number }, signal?: AbortSignal) { object(options, "groupId pageNum pageSize"); const params = new URLSearchParams({ pageNum: String(positive(options.pageNum)), pageSize: String(positive(options.pageSize)) }); if (options.pageSize > 100) bad("pageSize"); if (options.groupId !== undefined) params.set("groupId", id(options.groupId)); return supportRequest(`/support-agents/page?${params}`, value => { const result = parseSupportPage(value, entry => { const r = supportObject(entry, "group.candidate"); return { adminId: id(r.adminId), name: nonempty(r.name) }; }); if (result.pageNum !== options.pageNum || result.pageSize !== options.pageSize) bad("pageIdentity"); return result; }, { signal }); },
-  command(commandKey: string, signal?: AbortSignal) { return supportRequest(`/support-workbench/commands/${encodeURIComponent(key(commandKey))}`, value => { const r = object(value, "status"); return { status: nonempty(r.status) }; }, { signal }); },
+  command(commandKey: string, signal?: AbortSignal) { return supportRequest(`/support-workbench/commands/${encodeURIComponent(key(commandKey))}`, value => { const r = object(value, "status resultType result"); return { status: nonempty(r.status) }; }, { signal }); },
   createSupportGroup(input: CreateGroupInput, commandKey: string, signal?: AbortSignal) { object(input, "name supervisorAdminId reason"); const ownerId = id(input.supervisorAdminId), body = { name: name(input.name), supervisorAdminId: supportWireId(ownerId, "group.owner"), reason: reason(input.reason) }; return supportRequest(BASE, value => { const result = parseSupportGroup(value); if (result.name !== body.name || result.supervisorAdminId !== ownerId || result.status !== "ENABLED") bad("createAcknowledgement"); return result; }, supportJson("POST", body, key(commandKey), signal)); },
   renameSupportGroup(groupId: string, input: RenameGroupInput, commandKey: string, signal?: AbortSignal) { const target = id(groupId), body = groupNameInput(input); return supportRequest(`${BASE}/${target}/name`, value => changedGroup(value, target, body.expectedVersion, g => g.name === body.name), supportJson("PATCH", body, key(commandKey), signal)); },
   setSupportGroupStatus(groupId: string, input: StatusGroupInput, commandKey: string, signal?: AbortSignal) { const target = id(groupId); object(input, "status expectedVersion reason"); const body = { status: enumeration(input.status, GROUP_STATES), expectedVersion: positive(input.expectedVersion), reason: reason(input.reason) }; return supportRequest(`${BASE}/${target}/status`, value => changedGroup(value, target, body.expectedVersion, g => g.status === body.status), supportJson("PATCH", body, key(commandKey), signal)); },
   transferSupportGroupOwner(groupId: string, input: OwnerGroupInput, commandKey: string, signal?: AbortSignal) { const target = id(groupId), ownerId = id(input.supervisorAdminId); object(input, "supervisorAdminId expectedVersion reason"); const body = { supervisorAdminId: supportWireId(ownerId, "group.owner"), expectedVersion: positive(input.expectedVersion), reason: reason(input.reason) }; return supportRequest(`${BASE}/${target}/owner`, value => changedGroup(value, target, body.expectedVersion, g => g.supervisorAdminId === ownerId), supportJson("PATCH", body, key(commandKey), signal)); },
   moveSupportGroupMember(adminId: string, input: MoveGroupInput, commandKey: string, signal?: AbortSignal) { const target = id(adminId); object(input, "targetGroupId expectedMemberVersion sourceGroupVersion targetGroupVersion reason"); const targetGroupId = input.targetGroupId === null ? null : id(input.targetGroupId), body = { targetGroupId: targetGroupId === null ? null : supportWireId(targetGroupId, "group.target"), expectedMemberVersion: count(input.expectedMemberVersion), sourceGroupVersion: input.sourceGroupVersion === null ? null : positive(input.sourceGroupVersion), targetGroupVersion: input.targetGroupVersion === null ? null : positive(input.targetGroupVersion), reason: reason(input.reason) }; if (body.targetGroupId !== null && body.targetGroupVersion === null || body.targetGroupId === null && body.targetGroupVersion !== null) bad("targetVersion"); return supportRequest(`${BASE}/members/${target}`, value => { const r = object(value, "member boundCustomers"), m = object(r.member, "id agentAdminId groupId version startsAt"); if (id(m.agentAdminId) !== target || nullableId(m.groupId) !== targetGroupId || positive(m.version) <= body.expectedMemberVersion) bad("moveIdentity"); return { member: { id: id(m.id), adminId: target, groupId: nullableId(m.groupId), version: positive(m.version), startsAt: text(m.startsAt) }, boundCustomers: count(r.boundCustomers) }; }, supportJson("PATCH", body, key(commandKey), signal)); },
-  setSupportQualification(adminId: string, input: QualificationInput, commandKey: string, signal?: AbortSignal) { const target = id(adminId); object(input, "qualificationKind state expectedQualificationVersion expectedAccountVersion reason"); const body = { qualificationKind: enumeration(input.qualificationKind, ["SERVICE", "SUPERVISOR"] as const), state: enumeration(input.state, QUAL_STATES), expectedQualificationVersion: count(input.expectedQualificationVersion), expectedAccountVersion: count(input.expectedAccountVersion), reason: reason(input.reason) }; return supportRequest(`/support-agents/${target}/qualification`, value => { const rows = parseQualificationWrites(value, target), changed = rows.find(q => q.kind === body.qualificationKind); if (!changed || changed.state !== body.state || changed.version <= body.expectedQualificationVersion) bad("qualificationAcknowledgement"); return rows; }, supportJson("PATCH", body, key(commandKey), signal)); },
+  inviteCode(adminId: string, signal?: AbortSignal): Promise<InviteCodeView> { return supportRequest(`/support-agents/${id(adminId)}/invite-code`, value => inviteCodeView(value, true), { signal }); },
+  selfInviteCode(signal?: AbortSignal): Promise<InviteCodeView> { return supportRequest("/support-agents/self/invite-code", value => inviteCodeView(value, true), { signal }); },
+  /** expectedVersion null generates the first code; the current version resets it (old code revoked). */
+  issueSelfInviteCode(expectedVersion: number | null, commandKey: string, signal?: AbortSignal): Promise<InviteCodeView> { const body = { expectedVersion: expectedVersion === null ? null : positive(expectedVersion) }; return supportRequest("/support-agents/self/invite-code", value => { const result = inviteCodeView(value, true); if (result.code === null) bad("inviteAcknowledgement"); return result; }, supportJson("POST", body, key(commandKey), signal)); },
+  revokeInviteCode(adminId: string, input: { expectedVersion: number; reason: string }, commandKey: string, signal?: AbortSignal): Promise<InviteCodeView> {
+    const target = id(adminId);
+    object(input, "expectedVersion reason");
+    const detail = inviteRevokeReason(text(input.reason));
+    if (detail.error) bad("reason");
+    const body = { expectedVersion: positive(input.expectedVersion), reason: detail.normalized };
+    return supportRequest(`/support-agents/${target}/invite-code/revoke`, value => { const result = inviteCodeView(value, true); if (result.code !== null) bad("revokeAcknowledgement"); return result; }, supportJson("POST", body, key(commandKey), signal));
+  },
+  setSupportQualification(adminId: string, input: QualificationInput, commandKey: string, signal?: AbortSignal) { const target = id(adminId); object(input, "qualificationKind state expectedQualificationVersion expectedAccountVersion reason"); const body = { qualificationKind: enumeration(input.qualificationKind, ["SERVICE", "SUPERVISOR"] as const), state: enumeration(input.state, QUAL_STATES), expectedQualificationVersion: count(input.expectedQualificationVersion), expectedAccountVersion: count(input.expectedAccountVersion), reason: reason(input.reason) }; return supportRequest(`/support-agents/${target}/qualification`, value => { const rows = parseQualificationWrites(value, target), changed = rows.find(q => q.kind === body.qualificationKind); if (!changed || changed.state !== body.state || changed.version <= body.expectedQualificationVersion) bad("qualificationAcknowledgement"); return rows; }, { ...supportJson("PATCH", body, key(commandKey), signal), preserveUnknownOutcome: true }); },
 };

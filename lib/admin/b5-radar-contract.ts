@@ -1,6 +1,7 @@
 import { parseStrictFiniteNumber } from "./strict-number.ts";
 import { isConsecutiveDayLabels } from "./time-series-contract.ts";
 import { requiredReadAuthority } from "./cross-domain-authority.ts";
+import { readB5Amount } from "./b5-money.ts";
 
 export const PRESSURE_RED_LINE = 0.7;
 const GATE_KEYS = ["withdraw", "staking", "genesis", "exchange", "trial"] as const;
@@ -8,6 +9,21 @@ const BACKLOG_STATES = ["submitted", "review-passed", "processing"] as const;
 const ABNORMAL_CATEGORIES = ["multi-account", "arbitrage", "trial-cycle", "withdraw-held"] as const;
 
 type Light = "green" | "yellow" | "red";
+
+/** Partial projections from the backend's identified producers, never raw evidence. */
+export type B5SignalFacts = {
+  tamperPath?: string;
+  attackEffect?: string;
+  rowId?: string;
+  cycleCount?: number;
+  windowDays?: number;
+  view?: string;
+  action?: string;
+  source?: string;
+  caseNo?: string;
+  walletShortfallUsdt?: string;
+  feeBufferShortfallUsdt?: string;
+};
 
 export type B5Radar = {
   generatedAt: string;
@@ -32,9 +48,9 @@ export type B5Radar = {
     byCategory: Array<{ category: string; label: string; count: number }>;
   };
   withdrawBacklog: {
-    byState: Array<{ state: typeof BACKLOG_STATES[number]; count: number; amountUsdt: number; overSlaCount: number; slaHours: number }>;
+    byState: Array<{ state: typeof BACKLOG_STATES[number]; count: number; amountUsdt: string; overSlaCount: number; slaHours: number }>;
     totalCount: number;
-    totalAmountUsdt: number;
+    totalAmountUsdt: string;
     slaHours: number;
     overSlaCount: number;
     light: Light;
@@ -44,15 +60,21 @@ export type B5Radar = {
     ratio: number | null;
     light: Light | "unavailable";
     redlinePct: number;
+    healthyPct: number;
     reserveUsdt: number;
     liabilitiesUsdt: number;
     ratioReserveUsdt: number;
     ratioLiabilitiesUsdt: number;
+    unit?: string;
+    ratioReserveUsdtText?: string;
+    ratioLiabilitiesUsdtText?: string;
   };
   pressureHistory: Array<{ label: string; ratio: number | null }>;
   alertSeverity: Array<{ level: "P0" | "P1" | "P2" | "P3"; count: number }>;
   alertVolume: Array<{ label: string; count: number }>;
-  recentAlerts: Array<{ signalNo: string; level: "P0" | "P1" | "P2" | "P3"; message: string; userId: number; createdAt: string; target: string; handlingStatusAvailable: true; handlingStatus: "open" | "handled" | "resolved"; handlingVersion: number; deliveryStatus: string }>;
+  recentAlerts: Array<{ signalNo: string; level: "P0" | "P1" | "P2" | "P3"; message: string; userId: number; createdAt: string; target: string; handlingStatusAvailable: true; handlingStatus: "open" | "handled" | "resolved"; handlingVersion: number; deliveryStatus: string;
+    // Optional for snapshots saved before f7fec2da; missing fields remain unknown.
+    signalType?: string | null; userNo?: string | null; facts?: B5SignalFacts | null; handledBy?: string | null; handledAt?: string | null }>;
   sources: string[];
 };
 
@@ -73,6 +95,26 @@ function arr(value: unknown, field: string): unknown[] {
 function text(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) invalid(field);
   return value.trim();
+}
+
+function optionalText(value: unknown, field: string): string | null {
+  return value == null ? null : text(value, field);
+}
+
+function signalFacts(value: unknown, field: string): B5SignalFacts | null {
+  if (value == null) return null;
+  const source = row(value, field);
+  const facts: B5SignalFacts = {};
+  for (const key of ["tamperPath", "attackEffect", "rowId", "view", "action", "source", "caseNo"] as const) {
+    if (source[key] !== undefined) facts[key] = text(source[key], `${field}.${key}`);
+  }
+  for (const key of ["cycleCount", "windowDays"] as const) {
+    if (source[key] !== undefined) facts[key] = whole(source[key], `${field}.${key}`);
+  }
+  for (const key of ["walletShortfallUsdt", "feeBufferShortfallUsdt"] as const) {
+    if (source[key] !== undefined) facts[key] = readB5Amount(source[key], `${field}.${key}`, true);
+  }
+  return facts;
 }
 
 function num(value: unknown, field: string): number {
@@ -113,7 +155,8 @@ function roundedMoneyMatches(display: number, raw: number, field: string) {
 
 function authoritativeRatio(numerator: number, denominator: number): number {
   if (denominator === 0) return numerator === 0 ? 0 : 1;
-  return Math.round((numerator / denominator) * 10_000) / 10_000;
+  // J1 rounds the percentage to four places before B5 converts it to a ratio.
+  return Math.round((numerator / denominator) * 1_000_000) / 1_000_000;
 }
 
 function authoritativePercentage(numerator: number, denominator: number): number {
@@ -130,6 +173,14 @@ function isoLocalDateTime(value: unknown, field: string): string {
   if (date.getUTCFullYear() !== +year || date.getUTCMonth() !== +month - 1 || date.getUTCDate() !== +day
       || date.getUTCHours() !== +hour || date.getUTCMinutes() !== +minute || date.getUTCSeconds() !== +second) invalid(field);
   return parsed;
+}
+
+function radarGeneratedAt(value: unknown): string {
+  const raw = text(value, "generatedAt");
+  const offset = /(?:Z|[+-](?:0\d|1[0-7]):[0-5]\d|[+-]18:00)$/.exec(raw)?.[0] ?? "";
+  // The old backend emitted this field using the fixed Asia/Shanghai clock.
+  const local = isoLocalDateTime(offset ? raw.slice(0, -offset.length) : raw, "generatedAt");
+  return local + (offset || "+08:00");
 }
 
 export function normalizeB5Radar(value: unknown): B5Radar {
@@ -161,7 +212,7 @@ export function normalizeB5Radar(value: unknown): B5Radar {
     return {
       state: text(item.state, `withdrawBacklog.byState.${index}.state`) as typeof BACKLOG_STATES[number],
       count: whole(item.count, `withdrawBacklog.byState.${index}.count`),
-      amountUsdt: num(item.amountUsdt, `withdrawBacklog.byState.${index}.amountUsdt`),
+      amountUsdt: readB5Amount(item.amountUsdt, `withdrawBacklog.byState.${index}.amountUsdt`),
       overSlaCount: whole(item.overSlaCount, `withdrawBacklog.byState.${index}.overSlaCount`),
       slaHours: whole(item.slaHours, `withdrawBacklog.byState.${index}.slaHours`),
     };
@@ -225,12 +276,17 @@ export function normalizeB5Radar(value: unknown): B5Radar {
       signalNo: text(item.signalNo, `recentAlerts.${index}.signalNo`),
       level: level as "P0" | "P1" | "P2" | "P3",
       message: text(item.message, `recentAlerts.${index}.message`),
+      signalType: optionalText(item.signalType, `recentAlerts.${index}.signalType`),
       userId: whole(item.userId, `recentAlerts.${index}.userId`),
+      userNo: optionalText(item.userNo, `recentAlerts.${index}.userNo`),
+      facts: signalFacts(item.facts, `recentAlerts.${index}.facts`),
       createdAt: isoLocalDateTime(item.createdAt, `recentAlerts.${index}.createdAt`),
       target,
       handlingStatusAvailable: true as const,
       handlingStatus: handlingStatus as "open" | "handled" | "resolved",
       handlingVersion: whole(item.handlingVersion, `recentAlerts.${index}.handlingVersion`),
+      handledBy: optionalText(item.handledBy, `recentAlerts.${index}.handledBy`),
+      handledAt: item.handledAt == null ? null : isoLocalDateTime(item.handledAt, `recentAlerts.${index}.handledAt`),
       deliveryStatus: text(item.deliveryStatus, `recentAlerts.${index}.deliveryStatus`),
     };
   });
@@ -256,13 +312,15 @@ export function normalizeB5Radar(value: unknown): B5Radar {
   const ratioReserveUsdt = num(bankrun.ratioReserveUsdt, "bankrun.ratioReserveUsdt");
   roundedMoneyMatches(withdraw24hUsdt, ratioWithdraw24hUsdt, "bankrun.withdraw24hUsdt");
   roundedMoneyMatches(reserveUsdt, ratioReserveUsdt, "bankrun.reserveUsdt");
-  if (ratioReserveUsdt === 0) {
-    if (ratioCalculable || ratio24h !== null) invalid("bankrun.ratio24h");
+  if (!ratioCalculable) {
+    // Pre-J1 responses used null for zero reserves; retain the server's value.
+    if (ratioReserveUsdt !== 0 || ratio24h !== null) invalid("bankrun.ratio24h");
     const expectedBankrunLight = ratioWithdraw24hUsdt > 0 ? "red" : "unavailable";
     if (bankrunLight !== expectedBankrunLight) invalid("bankrun.light");
   } else {
-    if (!ratioCalculable || ratio24h === null || bankrunLight === "unavailable") invalid("bankrun.ratio24h");
-    close(ratio24h, authoritativeRatio(ratioWithdraw24hUsdt, ratioReserveUsdt), 0.00001, "bankrun.ratio24h");
+    if (ratio24h === null || bankrunLight === "unavailable") invalid("bankrun.ratio24h");
+    // Legacy ratios rounded to four places; allow that half-unit plus J1's finer rounding.
+    close(ratio24h, authoritativeRatio(ratioWithdraw24hUsdt, ratioReserveUsdt), ratioReserveUsdt > 0 ? 0.000051 : 0.00000001, "bankrun.ratio24h");
     const expectedBankrunLight = ratio24h * 100 >= redPct ? "red" : ratio24h * 100 >= yellowPct ? "yellow" : "green";
     if (bankrunLight !== expectedBankrunLight) invalid("bankrun.light");
   }
@@ -279,12 +337,14 @@ export function normalizeB5Radar(value: unknown): B5Radar {
   if (abnormalCount < abnormalCategoryMax || abnormalCount > abnormalCategorySum) invalid("abnormalAccounts.count");
 
   const totalCount = whole(backlog.totalCount, "withdrawBacklog.totalCount");
-  const totalAmountUsdt = num(backlog.totalAmountUsdt, "withdrawBacklog.totalAmountUsdt");
+  const totalAmountUsdt = readB5Amount(backlog.totalAmountUsdt, "withdrawBacklog.totalAmountUsdt");
   const slaHours = whole(backlog.slaHours, "withdrawBacklog.slaHours");
   const overSlaCount = whole(backlog.overSlaCount, "withdrawBacklog.overSlaCount");
   const backlogLight = light(backlog.light, "withdrawBacklog.light");
   if (totalCount !== byState.reduce((sum, item) => sum + item.count, 0)) invalid("withdrawBacklog.totalCount");
-  close(totalAmountUsdt, byState.reduce((sum, item) => sum + item.amountUsdt, 0), 0.01, "withdrawBacklog.totalAmountUsdt");
+  const amountScale = Math.max(...[totalAmountUsdt, ...byState.map(item => item.amountUsdt)].map(value => value.split(".")[1]?.length ?? 0));
+  const scaledAmount = (value: string) => { const [whole, fraction = ""] = value.split("."); return BigInt(whole + fraction.padEnd(amountScale, "0")); };
+  if (scaledAmount(totalAmountUsdt) !== byState.reduce((sum, item) => sum + scaledAmount(item.amountUsdt), BigInt(0))) invalid("withdrawBacklog.totalAmountUsdt");
   if (overSlaCount !== byState.reduce((sum, item) => sum + item.overSlaCount, 0)) invalid("withdrawBacklog.overSlaCount");
   if (byState.some((item) => item.overSlaCount > item.count)) invalid("withdrawBacklog.byState.overSlaCount");
   if (byState.some((item) => item.slaHours !== slaHours)) invalid("withdrawBacklog.slaHours");
@@ -294,6 +354,9 @@ export function normalizeB5Radar(value: unknown): B5Radar {
 
   const coverageRatio = nullableNum(coverage.ratio, "coverage.ratio");
   const coverageRedlinePct = num(coverage.redlinePct, "coverage.redlinePct");
+  const coverageHealthyPct = coverage.healthyPct === undefined
+    ? coverageRedlinePct + 10
+    : num(coverage.healthyPct, "coverage.healthyPct");
   const coverageReserveUsdt = num(coverage.reserveUsdt, "coverage.reserveUsdt");
   const coverageLiabilitiesUsdt = num(coverage.liabilitiesUsdt, "coverage.liabilitiesUsdt");
   const coverageRatioReserveUsdt = num(coverage.ratioReserveUsdt, "coverage.ratioReserveUsdt");
@@ -303,15 +366,13 @@ export function normalizeB5Radar(value: unknown): B5Radar {
   const coverageLight = rawCoverageLight as Light | "unavailable";
   roundedMoneyMatches(coverageReserveUsdt, coverageRatioReserveUsdt, "coverage.reserveUsdt");
   roundedMoneyMatches(coverageLiabilitiesUsdt, coverageRatioLiabilitiesUsdt, "coverage.liabilitiesUsdt");
-  if (coverageRedlinePct > 100) invalid("coverage.redlinePct");
+  if (coverageRedlinePct < 80 || coverageRedlinePct > 150) invalid("coverage.redlinePct");
   if (coverageRatioLiabilitiesUsdt === 0) {
     if (coverageRatio !== null || coverageLight !== "unavailable") invalid("coverage.ratio");
   } else {
     if (coverageRatio === null || coverageLight === "unavailable") invalid("coverage.ratio");
-    const expectedCoverageLight = coverageRatio < coverageRedlinePct
-      ? "red"
-      : coverageRatio < coverageRedlinePct + 10 ? "yellow" : "green";
-    if (coverageLight !== expectedCoverageLight) invalid("coverage.light");
+    // Red is B1's exact redlineBreached decision, independent of display rounding.
+    if (coverageLight !== "red" && coverageLight !== (coverageRatio < coverageHealthyPct ? "yellow" : "green")) invalid("coverage.light");
     close(
       coverageRatio,
       authoritativePercentage(coverageRatioReserveUsdt, coverageRatioLiabilitiesUsdt),
@@ -321,7 +382,7 @@ export function normalizeB5Radar(value: unknown): B5Radar {
   }
 
   return {
-    generatedAt: isoLocalDateTime(source.generatedAt, "generatedAt"),
+    generatedAt: radarGeneratedAt(source.generatedAt),
     bankrun: { ratio24h, ratioCalculable, light: bankrunLight, withdraw24hUsdt, reserveUsdt, ratioWithdraw24hUsdt, ratioReserveUsdt, pressureRatio, pressureCalculable, pressureRedLine, pressureLight, yellowPct, redPct, version: whole(bankrun.version, "bankrun.version") },
     abnormalAccounts: { count: abnormalCount, byCategory },
     withdrawBacklog: { byState, totalCount, totalAmountUsdt, slaHours, overSlaCount, light: backlogLight },
@@ -330,10 +391,14 @@ export function normalizeB5Radar(value: unknown): B5Radar {
       ratio: coverageRatio,
       light: coverageLight,
       redlinePct: coverageRedlinePct,
+      healthyPct: coverageHealthyPct,
       reserveUsdt: coverageReserveUsdt,
       liabilitiesUsdt: coverageLiabilitiesUsdt,
       ratioReserveUsdt: coverageRatioReserveUsdt,
       ratioLiabilitiesUsdt: coverageRatioLiabilitiesUsdt,
+      unit: coverage.unit == null ? undefined : text(coverage.unit, "coverage.unit"),
+      ratioReserveUsdtText: readB5Amount(String(coverage.ratioReserveUsdt), "coverage.ratioReserveUsdt"),
+      ratioLiabilitiesUsdtText: readB5Amount(String(coverage.ratioLiabilitiesUsdt), "coverage.ratioLiabilitiesUsdt"),
     },
     pressureHistory,
     alertSeverity,

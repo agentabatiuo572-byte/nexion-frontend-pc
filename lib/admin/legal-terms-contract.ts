@@ -1,3 +1,5 @@
+import { businessZone } from "./business-time";
+
 const DATE_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?$/;
 
 /** Serialize the structured editor's local datetime to the backend's configured LocalDateTime format. */
@@ -20,8 +22,9 @@ export function normalizeLegalTermsDateTime(value: string): string {
 }
 
 export function currentLegalTermsDateTime(now = new Date()): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return normalizeLegalTermsDateTime(
-    `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
-  );
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: businessZone().zoneId, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(now).map((part) => [part.type, part.value]));
+  return normalizeLegalTermsDateTime(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`);
 }

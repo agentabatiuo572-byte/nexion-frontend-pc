@@ -1,428 +1,261 @@
 "use client";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
-/** F4 · 池/配额/大使/榜 —— 数据源为后端 /api/admin/teams/leadership-pool。 */
-import { useState } from "react";
-import { formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
-import type { FViewCtx } from "./types";
+/**
+ * F4 奖励池、名额与排行榜（改版）。数据源为后端 /api/admin/teams/leadership-pool 和 ambassador-policy，由 f-view 读取。
+ * 这页管三件事：团队激励池、购机名额与大使申请、排行榜。首屏三张卡回答「现在有什么在等我」，也是三块内容的页签。
+ * 读取、提交和原请求恢复由 f-view 接线；保留已搭建的界面和确认内容。
+ */
+import { useState, type KeyboardEvent } from "react";
+import { AlertTriangle, ArrowRight, CircleHelp, Clock3, Hourglass, ListChecks, RefreshCw } from "lucide-react";
+import { BlockState, Button, Conclusion, PageHeader, RatioBar, Stat, StatBand, StatusTag, useTabIds } from "@/app/components/rd";
+import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import type { F4AmbassadorApplication } from "@/lib/admin/f1-client";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
-import { formatBusinessTime } from "@/lib/admin/business-time";
-import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { f4Confirmation } from "./f4-confirmations";
+import { F4AmbassadorMaterials, materialReviewAttempts } from "./f4-ambassador-materials";
+import { applicationStage } from "./f4-quota";
+import { F4Pool } from "./f4-pool";
+import { F4Quota } from "./f4-quota";
+import { F4Leaderboard, leaderboardState } from "./f4-leaderboard";
+import { FReleaseButton } from "./f-release";
+import { F4RecoveryNotice, count, decimalText, settleCadenceNote, unknownTag, usdt, stamp, type F4RecoveryRow } from "./f4-shared";
+import type { FViewCtx } from "./types";
+import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 
-function voteH(count: number, maxVote: number): number {
-  const max = Math.max(1, Math.log2(maxVote + 1));
-  return (Math.log2(count + 1) / max) * 130;
+type Section = "pool" | "quota" | "board";
+const SECTIONS: readonly Section[] = ["pool", "quota", "board"];
+
+/** 改动列的值补上单位（比例 %、金额 USDT），只给纯数字补，读到的已带单位或「未配置」原样写。 */
+function withUnit(key: string | undefined, value: string) {
+  const unit = key === "F.pool.ratio" ? "%" : key === "F.pool.monthlyCap" || key === "F.leaderboard.poolUsd" ? " USDT" : "";
+  return unit && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? `${unit === "%" ? value.trim() : decimalText(value)}${unit}` : value;
 }
 
-function voteTier(index: number): string {
-  return index < 3 ? "t-low" : index < 7 ? "t-mid" : "t-hi";
+/**
+ * 没有确认快照的旧申请：原记录存的是「动作 · 配置键」和「键=值」。显示时换成本页确认框里这一项的名字（nameOf），
+ * 配置键不上屏；记录里存的值不改。整批改动按「名字 原值 → 新值」逐项写。
+ */
+function legacyF4(spec: ProposeSpec, nameOf: (key: string) => string | undefined) {
+  const keys = spec.obj.split(",");
+  const names = keys.map(nameOf);
+  if (keys.length === 1) return { name: names[0] ?? spec.action.replace(/ · F\.[\w.]+$/, ""), change: `${withUnit(keys[0], spec.before)} → ${withUnit(keys[0], spec.after)}` };
+  const items = names.map((name) => name?.replace(/^调整/, ""));
+  const pairs = (text: string) => new Map(text.split(" / ").flatMap((part) => { const m = /^(F\.[\w.]+)=(.*)$/.exec(part.trim()); return m ? [[m[1], m[2]] as const] : []; }));
+  const before = pairs(spec.before), after = pairs(spec.after);
+  return {
+    name: items.every(Boolean) ? `调整${items.join("、")}` : `调整 ${keys.length} 项设置`,
+    change: keys.map((key, index) => `${items[index] ?? "其他设置"} ${withUnit(key, before.get(key) ?? "—")} → ${withUnit(key, after.get(key) ?? "—")}`).join("；"),
+  };
 }
 
-function statTone(tone: string) {
-  if (tone === "err" || tone === "danger") return "danger";
-  return tone;
-}
-
-function usd(value: number) {
-  return "$" + Math.round(value).toLocaleString("en-US");
-}
-
-function usdM(value: number) {
-  return "$" + (value / 1_000_000).toFixed(2) + "M";
-}
-
-function statusResolved(status: string) {
-  return status === "approved" || status === "rejected";
-}
-
-function presentText(value: string, fallback = "未配置") {
-  return value.trim() ? value : fallback;
-}
-
-function quotaPrerequisites(row: { directRefs: number; monthVolumeUsdText: string | null; unlockMode: "ALL" | "EITHER"; criteriaKnown: boolean }) {
-  if (!row.criteriaKnown || row.monthVolumeUsdText === null) return "资格条件暂不可用";
-  const parts: string[] = [];
-  if (row.directRefs > 0) parts.push(`有效直推 ≥ ${row.directRefs}`);
-  if (/[1-9]/.test(row.monthVolumeUsdText)) {
-    const [integer, fraction = ""] = row.monthVolumeUsdText.split(".");
-    const decimals = fraction.replace(/0+$/, "");
-    const amount = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (decimals ? `.${decimals}` : "");
-    parts.push(`团队业绩 ≥ $${amount}`);
-  }
-  if (!parts.length) return "无额外资格门槛";
-  return parts.join(row.unlockMode === "EITHER" ? " 或 " : " 且 ");
-}
-
-// 领导奖池参与门槛枚举(V0 为新人,无奖池资格 → 从 V1 起)。
-const POOL_UNLOCK_OPTIONS = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10", "V11", "V12"];
-
-export function F4Ops({ ctx }: { ctx: FViewCtx }) {
-  const [leaderboardPeriod, setLeaderboardPeriod] = useState<"today" | "week" | "month" | "all">("week");
+export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommissions: () => void }) {
+  const [section, setSection] = useState<Section>("pool");
+  const [materialApplication, setMaterialApplication] = useState<F4AmbassadorApplication | null>(null);
+  const actorId = useAdminAuth((state) => state.session?.adminId);
+  const ids = useTabIds();
   const data = ctx.f4Overview;
   const canWrite = ctx.can("network_f4_write");
   const canFund = ctx.can("network_f4_pool_fund");
-  const canApproveAmbassador = ctx.can("network_f4_ambassador_approve");
-  const canControlLeaderboard = ctx.can("network_f4_leaderboard_control");
-  const ambassadorPolicy = ctx.f4AmbassadorPolicy;
+  const canControl = ctx.can("network_f4_leaderboard_control");
+  const canApprove = ctx.can("network_f4_ambassador_approve");
+  const canReview = ctx.can("network_f4_ambassador_material_review") || ctx.can("network_f4_ambassador_finance_review");
+  const readOnly = !canWrite && !canFund && !canControl && !canApprove && !canReview && !ctx.canSubmitTeamApproval("F4");
+  // 旧申请的名字取本页确认框的标题（页面打开调整框时也这样取）；本页没有这一项的确认框时不猜。
+  const legacyName = (key: string) => {
+    if (!data) return undefined;
+    try { return f4Confirmation(ctx, { action: key, overview: data, policy: ctx.f4AmbassadorPolicy }).name; } catch { return undefined; }
+  };
+  const recoveries: NonNullable<Parameters<typeof ctx.openActionConfirm>[0]["f4Recovery"]>[] = [
+    ...ctx.f4Proposals.map(original => ({ kind: "proposal" as const, original })),
+    ...ctx.f4PolicyWrites.map(original => ({ kind: "policy" as const, original })),
+  ];
+  const recoveryRows: F4RecoveryRow[] = recoveries.map(record => {
+    const original = record.original;
+    const spec = record.kind === "proposal" ? record.original.spec : undefined;
+    const confirm = original.f4Snapshot ? f4Confirmation(ctx, original.f4Snapshot) : undefined;
+    const legacy = spec && legacyF4(spec, legacyName);
+    const snapshot = original.f4Snapshot;
+    const form = confirm?.businessForm;
+    const amount = (key: string, value: string) => snapshot?.action === "F.pool.periodPrize" || key === "defaultBudgetUsdt" || /\.(min|max)$/.test(key) ? `${decimalText(value)} USDT` : value;
+    const change = form?.kind === "multi-field" && snapshot?.businessValue
+      ? form.fields.filter(field => snapshot.businessValue![field.key] !== field.current).map(field => `${field.label} ${amount(field.key, field.current ?? "")} → ${amount(field.key, snapshot.businessValue![field.key])}`).join("；")
+      : confirm?.edit ? `${withUnit(confirm.paramKey, confirm.edit.current ?? "—")} → ${withUnit(confirm.paramKey, snapshot?.value ?? spec?.after ?? "—")}`
+        : confirm?.statedBrief?.impact ?? legacy?.change ?? "—";
+    return {
+      key: original.commandKey,
+      line: ctx.f4QueryNotes[original.commandKey],
+      name: confirm?.name ?? legacy?.name ?? "调整区域大使申请规则",
+      change,
+      submittedAt: original.createdAt,
+      pending: record.kind === "proposal" && record.original.ticket?.status === "pending",
+      expired: isRetryExpired(original),
+      tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>
+        : record.kind === "proposal" && record.original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
+          : isRetryExpired(original) ? <StatusTag tone="neutral" icon={Hourglass} explain={record.kind === "proposal"
+            ? "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除这条记录。"
+            : "原请求超过 24 小时，不能再重试。查询只读取现在的规则，证明不了原操作有没有执行。"}>已过期</StatusTag>
+            : unknownTag(record.kind === "proposal" ? "approval" : "direct"),
+      actions: <>
+        <Button size="sm" onClick={() => {
+          if (confirm && original.f4Snapshot) {
+            ctx.openActionConfirm({ ...confirm, edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
+          } else void ctx.recoverF4(record, "query").catch(() => undefined); // 查询失败的原因已写在这一行
+        }}>查询原结果</Button>
+        {record.kind === "proposal" && isRetryExpired(record.original) && record.original.absent && !record.original.ticket && !record.original.received
+          && <FReleaseButton label={confirm?.name ?? legacy?.name ?? "原申请"} toast={ctx.toast} onRelease={() => ctx.recoverF4(record, "release")} />}
+      </>,
+    };
+  });
+  if (actorId !== undefined) recoveryRows.push(...materialReviewAttempts(actorId).map((record) => {
+    const application = record.application ?? data?.ambassadorApplications.find((item) => item.id === record.applicationId);
+    return {
+      key: record.commandKey,
+      name: `${record.input.stage === "BUSINESS" ? "业务" : "财务"}核验 · 申请 #${record.applicationId}`,
+      change: `材料第 ${record.input.expectedMaterialRevision} 版 · ${record.input.decision === "PASSED" ? "通过" : "需补材料"}`,
+      submittedAt: record.createdAt,
+      expired: isRetryExpired(record),
+      tag: isRetryExpired(record) ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，只能查询，不能再重试。">已过期</StatusTag> : unknownTag("direct"),
+      actions: application
+        ? <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>
+        : <span className="f4-muted">申请不在最近 30 份里</span>,
+    };
+  }));
+  const recoveryNotice = <F4RecoveryNotice rows={recoveryRows} />;
+  const materialDrawer = materialApplication && <F4AmbassadorMaterials application={materialApplication} ctx={ctx} onClose={() => setMaterialApplication(null)} />;
 
-  if (ctx.f4Loading && !data) {
-    return <section className="sect"><div className="empty">F4 数据加载中...</div></section>;
-  }
-
-  if (ctx.f4Error && !data) {
-    return (
-      <section className="sect">
-        <div className="empty">F4 数据加载失败 · {ctx.f4Error}</div>
-        <div className="sect-foot"><button onClick={() => void ctx.refreshF4()}>重新加载</button></div>
-      </section>
-    );
-  }
+  const header = (
+    <PageHeader pageId="F4" title="奖励池、名额与排行榜" summary="看团队激励池怎么分、购机名额和大使申请、排行榜。"
+      readOnly={readOnly ? "当前账号只能查看这页" : undefined}
+      actions={<>
+        <Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="读取中…" onClick={() => void ctx.refreshF4()}>刷新</Button>
+        <Button icon={<ArrowRight size={14} aria-hidden />} onClick={onOpenCommissions}>奖励记录核对</Button>
+      </>} />
+  );
 
   if (!data) {
-    return <section className="sect"><div className="empty">F4 暂无数据</div></section>;
+    return <div className="f4-page">
+      {header}
+      {ctx.f4Loading ? <>
+        <Conclusion state="unknown">正在读取奖励池、名额和排行榜…</Conclusion>
+        {recoveryNotice}
+        <BlockState state="loading" title="正在读取团队激励池、名额、大使申请和排行榜…" />
+      </> : ctx.f4Error ? <>
+        <Conclusion state="unknown" hint="点「重新读取」再试；读到之前不显示旧数字，也不能发起新修改。">读不到这页的数据，暂时无法判断</Conclusion>
+        {recoveryNotice}
+        <BlockState state="error" title="团队激励池、名额和排行榜读取失败" detail={ctx.f4Error} onRetry={() => void ctx.refreshF4()} retryLabel="重新读取" />
+      </> : <>
+        <Conclusion state="unknown">还没有读到数据</Conclusion>
+        {recoveryNotice}
+        <BlockState state="empty" title="暂无团队激励池数据" />
+      </>}
+      {materialDrawer}
+    </div>;
   }
 
-  const proEff = presentText(data.proUnlock);
-  const rackEff = presentText(data.rackUnlock);
-  const stockEff = presentText(data.quotaMonthlyStockLabel);
-  const periodLeaderboard = data.leaderboardPeriods?.[leaderboardPeriod];
-  const lbPool = periodLeaderboard ? `$${periodLeaderboard.poolUsd.toLocaleString("en-US", { maximumFractionDigits: 6 })}` : "—";
-  const nextSettlement = data.settlementConfigStatus === "READY"
-    ? formatBusinessTime(data.nextSettlementAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }, "")
-    : "";
-  const settlementEff = nextSettlement ? `下次计划结算：${nextSettlement}` : "自动结算时间待确认";
-  const topLabel = data.topN > 0 ? `顶部 ${data.topN} 名占比(派生)` : "顶部占比(派生)";
-  const topShareLabel = data.topSharePct > 0 ? `≈ ${data.topSharePct}%` : "暂无样本";
-  const ambassadorBudgetLabel = data.ambassadorBudgetApprovedLabel || data.ambassadorBudgetCapLabel
-    ? `${presentText(data.ambassadorBudgetApprovedLabel)} / ${presentText(data.ambassadorBudgetCapLabel)}`
-    : "暂无预算数据";
-  const nextQuotaReviewDate = presentText(data.ambassadorNextQuotaReviewDate);
-  const voteSummary = data.topN > 0 && data.topSharePct > 0
-    ? `顶部 ${data.topN} 名领袖 ≈${data.topSharePct}%`
-    : "暂无头部占比样本";
-  const lbDq = data.leaderboardDisqualified;
-  const maxVote = Math.max(1, ...data.voteWeights.map((row) => row.votes));
-  const monthPoolUsd = data.currentWeekPoolUsd === null ? null : Math.round(data.currentWeekPoolUsd * 4.33);
-  const settleCron = data.configValues["F.pool.settleCron"] ?? "";
-  const unlockVRank = data.configValues["F.pool.unlockVRank"] ?? "";
-  const settlementConfig = validateF4SettlementConfig({
+  // 首屏三张卡要回答的事：等结算的池、等核验或等批准的大使申请、暂停着的榜单。
+  const settlement = validateF4SettlementConfig({
     status: data.settlementConfigStatus,
     unavailableKey: data.settlementConfigUnavailableKey,
     configVersion: data.configVersion,
     ratio: data.configValues["F.pool.ratio"],
     monthlyCap: data.configValues["F.pool.monthlyCap"],
-    unlockVRank,
-    settleCron,
+    unlockVRank: data.configValues["F.pool.unlockVRank"],
+    settleCron: data.configValues["F.pool.settleCron"],
   });
-  const invalidSettlementKeys = new Set(settlementConfig.issues.map((issue) => issue.key));
-  const invalidConfigLabel = "未配置或格式错误";
-  const ratioEff = invalidSettlementKeys.has("ratio") ? invalidConfigLabel : presentText(data.poolRatio);
-  const capEff = invalidSettlementKeys.has("monthlyCap") ? invalidConfigLabel : presentText(data.monthlyCapLabel);
-  const unlockLabel = invalidSettlementKeys.has("unlockVRank")
-    ? invalidConfigLabel
-    : data.unlockRank > 0 ? `V${data.unlockRank}+` : "未配置";
-  const settleCronEff = invalidSettlementKeys.has("settleCron") ? invalidConfigLabel : settleCron;
-  const unlockVRankEff = invalidSettlementKeys.has("unlockVRank") ? invalidConfigLabel : unlockVRank;
-  const configVersionEff = invalidSettlementKeys.has("configVersion") ? invalidConfigLabel : data.configVersion;
-  const settlementOperable = settlementConfig.ready && !ctx.f4Loading && !ctx.f4Error;
-  const settlementBlockedCopy = ctx.f4Loading
-    ? "正在重新读取权威配置，完成前不会开放提前结算。"
-    : ctx.f4Error
-      ? "权威配置刷新失败，为避免使用旧配置，提前结算保持禁用。请重新读取配置；恢复后会按最新配置自动开放。"
-      : `领导奖池结算配置不可用：${settlementConfig.issues.map((issue) => issue.label).join("、")} 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。`;
-  const lbMinUsd = data.configValues["F.leaderboard.minUsd"] ?? "1";
-  const lbPaused = data.leaderboardPaused ?? (data.configValues["F.leaderboard.paused"] ?? "off") === "on";
-  const lbDataAvailable = !!periodLeaderboard && (!lbPaused || (data.leaderboardSnapshotState === "FROZEN" && data.leaderboardDataAvailable === true));
-  const top1MaxPct = data.configValues["F.pool.top1MaxPct"] ?? "25";
-  const top5MaxPct = data.configValues["F.pool.top5MaxPct"] ?? "60";
-  // 4 周期榜单奖池(JSON today/week/month/allTime)回填解析 · 无记录用默认 5K/50K/250K/1M。
-  const periodPrizeRaw = data.configValues["F.pool.periodPrize"] ?? "";
-  let ppToday = "5000";
-  let ppWeek = "50000";
-  let ppMonth = "250000";
-  let ppAllTime = "1000000";
-  if (periodPrizeRaw) {
-    try {
-      const parsed = JSON.parse(periodPrizeRaw);
-      if (typeof parsed.today === "number") ppToday = String(parsed.today);
-      if (typeof parsed.week === "number") ppWeek = String(parsed.week);
-      if (typeof parsed.month === "number") ppMonth = String(parsed.month);
-      if (typeof parsed.allTime === "number") ppAllTime = String(parsed.allTime);
-    } catch { /* schema 异常用默认,提交时后端 validatePeriodPrize 兜底 */ }
-  }
+  const settled = data.weeklyInjectedUsd > 0;
+  const stages = data.ambassadorApplications.map(applicationStage);
+  const waitBusiness = stages.filter((stage) => stage.key === "business").length;
+  const waitFinance = stages.filter((stage) => stage.key === "finance").length;
+  const waitApproval = stages.filter((stage) => stage.key === "approve").length;
+  const board = leaderboardState(data);
+  const week = data.leaderboardComputePointPeriods?.week;
+  const tightQuota = data.quotaRows.filter((row) => row.tight).length;
+
+  const cadence = settlement.ready ? settleCadenceNote(data.configValues["F.pool.settleCron"] ?? "") : null;
+  const cadenceWarn = cadence?.tone === "warn" ? cadence : null;
+  const todos = [
+    !settlement.ready && "团队激励池设置不完整，提前结算已暂停",
+    cadenceWarn?.short,
+    data.ambassadorPendingCount > 0 && `${count(data.ambassadorPendingCount)} 份大使申请待处理`,
+    board.paused && "排行榜已暂停",
+    tightQuota > 0 && `${tightQuota} 个商品本月名额已用到 85% 以上`,
+  ].filter((item): item is string => typeof item === "string");
+
+  const select = (next: Section) => setSection(next);
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const next = nextTabValue(SECTIONS, section, event.key);
+    if (next === null) return;
+    event.preventDefault();
+    select(next);
+    document.getElementById(ids.tab(next))?.focus();
+  };
+  const tabProps = (value: Section) => ({
+    id: ids.tab(value), role: "tab" as const, tabIndex: section === value ? 0 : -1, onKeyDown,
+    "aria-selected": section === value, "aria-controls": ids.panelId(value),
+    onOpen: () => select(value), selected: section === value, selectedText: "正在看",
+  });
+
+  const quotaTotal = data.quotaMonthlyStockTotal;
+  const quotaUsed = data.quotaMonthlyStockUsed;
 
   return (
-    <>
-      {ctx.f4Error && (
-        <section className="sect">
-          <div className="empty">F4 数据刷新失败 · {ctx.f4Error}</div>
-          <div className="sect-foot"><button onClick={() => void ctx.refreshF4()}>重新加载</button></div>
-        </section>
-      )}
+    <div className="f4-page">
+      {header}
+      {todos.length === 0
+        ? <Conclusion state="ok" hint={cadence ? `${cadence.short}。` : undefined}>这页没有发现要处理的事</Conclusion>
+        : <Conclusion state={settlement.ready && !cadenceWarn ? "neutral" : "warn"} icon={settlement.ready && !cadenceWarn ? ListChecks : AlertTriangle}
+            hint={todos.length > 2 ? `另外：${todos.slice(2).join("；")}。` : "点下面的卡片进入对应的一块处理。"}>
+            {todos.slice(0, 2).join("，")}
+          </Conclusion>}
+      {recoveryNotice}
 
-      <div className="f-stats">
-        {data.metrics.map((metric) => (
-          <div key={metric.id} className={`f-stat ${statTone(metric.tone)}`}>
-            <div className="k">{operatorCopyText(metric.name)}</div>
-            <div className="v">{operatorCopyText(metric.value)}</div>
-            <div className="sub">{operatorCopyText(metric.sub)}</div>
-          </div>
-        ))}
+      {/* 外面包 .rd-tabs：三张卡就是页签，版面量尺按 .rd-tabs 里的页签逐个切换去量。 */}
+      <div className="rd-tabs f4-section-cards">
+      <StatBand cards role="tablist" label="这页的三块内容">
+        <Stat {...tabProps("pool")} openLabel="团队激励池"
+          head={<span className="f4-card-head">团队激励池</span>}
+          surface={settlement.ready ? undefined : "warn"}
+          label={settled ? "本周已结算（实发）" : "本周池（估算）"}
+          value={data.currentWeekPoolUsd === null ? "—" : usdt(data.currentWeekPoolAmount ?? data.currentWeekPoolUsd)} unit={data.currentWeekPoolUsd === null ? undefined : "USDT"}
+          tone="role-1">
+          <span className="f4-card-line">
+            {settlement.ready
+              ? <>下次自动结算 {stamp(data.nextSettlementAt)}</>
+              : <StatusTag tone="warn">设置不完整，不能结算</StatusTag>}
+          </span>
+        </Stat>
+        <Stat {...tabProps("quota")} openLabel="名额与大使"
+          head={<span className="f4-card-head">名额与大使</span>}
+          label="待处理的大使申请" value={count(data.ambassadorPendingCount)} unit="份" tone="role-3"
+          sub={data.ambassadorPendingCount > 0 ? [waitBusiness && `业务核验 ${waitBusiness}`, waitFinance && `财务核验 ${waitFinance}`, waitApproval && `核验已通过 ${waitApproval}`].filter(Boolean).join(" · ") || undefined : undefined}>
+          {quotaTotal > 0
+            ? <span className="f4-card-meter">
+              <RatioBar label="本月购机名额已用" value={Math.min(quotaUsed, quotaTotal)} total={quotaTotal} valueText={`已用 ${count(quotaUsed)} 台，总量 ${count(quotaTotal)} 台`} tone="role-2" quiet />
+              <span className="f4-card-line">名额剩余 {count(data.quotaMonthlyStockRemaining)} 台 · 总量 {count(quotaTotal)} 台</span>
+            </span>
+            : <span className="f4-card-line">本月购机名额总数为 0</span>}
+        </Stat>
+        <Stat {...tabProps("board")} openLabel="排行榜"
+          head={<span className="f4-card-head">排行榜</span>}
+          surface={board.paused ? "warn" : undefined}
+          label={board.paused ? "本周奖池（暂停时）" : "本周奖池"}
+          value={board.available && week ? usdt(week.poolUsdText ?? week.poolUsd) : "—"} unit={board.available && week ? "USDT" : undefined} tone="role-1">
+          <span className="f4-card-line">
+            {board.paused ? <StatusTag tone="warn">已暂停</StatusTag> : <StatusTag tone="ok">实时更新</StatusTag>}
+            {board.available && week?.podium[0] ? <span>第 1 名 {week.podium[0].userId}</span> : <span className="f4-muted">{board.available && week ? "本周还没有上榜的人" : "名次读不出来"}</span>}
+          </span>
+        </Stat>
+      </StatBand>
       </div>
 
-      <div className="f4-grid">
-        <section className="sect">
-          <div className="sect-h">
-            <span className="ic pool"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v12c0 1.66 3.13 3 7 3s7-1.34 7-3V6" /><path d="M5 12c0 1.66 3.13 3 7 3s7-1.34 7-3" /></svg></span>
-            <div className="t"><div className="nm">领导奖池</div><div className="s">{data.poolRatio ? `${ratioEff} 周 已支付成交额 / 会员等级票数 加权分配` : "奖池比例未配置"}</div></div>
-            <span className="tag">F4 · F.pool.*</span>
-          </div>
-          <div className="pool-hero">
-            <div><div className="lbl">本周池 · 已结算取实付，未结算按周 已支付成交额 × 比例并受月剩余额度约束</div><div className="v">{data.currentWeekPoolUsd === null ? "暂不可计算" : usd(data.currentWeekPoolUsd)}</div></div>
-            <div className="meta">{settlementEff}<br />参与 {unlockLabel} 领袖 <b>{data.participantCount}</b></div>
-          </div>
-          {!settlementOperable && <div className="f4-warn" role="alert">
-            <b>提前结算已暂停</b> · {settlementBlockedCopy}
-            <button disabled={ctx.f4Loading} onClick={() => void ctx.refreshF4()}>重新读取配置</button>
-          </div>}
-          <div className="kv-row"><span className="k">奖池比例(周 已支付成交额)</span><span className="v brand">{ratioEff}</span></div>
-          <div className="kv-row"><span className="k">月度预留上限</span><span className="v">{capEff}</span></div>
-          <div className="kv-row"><span className="k">结算配置版本</span><span className="v dim">{configVersionEff}</span></div>
-          <div className="kv-row"><span className="k">{topLabel}</span><span className="v warn">{topShareLabel}</span></div>
-          <div className="kv-row"><span className="k">分配统计规则</span><span className="v dim">按 会员等级票数 权重</span></div>
-          <div className="sect-foot">
-            {canFund && <button className="primary amp" disabled={!settlementOperable} title={!settlementOperable ? settlementBlockedCopy : undefined} onClick={() => ctx.openActionConfirm({
-              name: "提前结算本周领导奖池",
-              amplify: true,
-              detail: "按服务端当前周已支付成交额、F.pool.ratio、月度上限、解锁等级与 会员等级票数 生成 F5 佣金事件和 D4 台账。资金动作先提交 A2 审批；按版本检查，防止同周重复派发。",
-              run: async (reason) => {
-                await ctx.proposeF4Settlement(reason);
-              },
-            })}>提前结算本周池</button>}
-            {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "领导池比例调整(周 已支付成交额)", amplify: true, op: "param", paramKey: "F.pool.ratio", edit: { kind: "text", current: data.poolRatio, unit: "%" }, detail: `每周 已支付成交额 注入领导池的比例 · 当前 ${ratioEff} · 放大池子流出,受 B1 约束。` })}>调整池比例</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "领导池月度上限 调整", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: data.monthlyCapLabel }, detail: `领导池月度预留护栏 · 当前 ${capEff} · 按本周外推月池约 ${monthPoolUsd === null ? "暂不可计算" : usdM(monthPoolUsd)}（仅估算）。` })}>调整月度上限</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "池结算周期调整", op: "param", paramKey: "F.pool.settleCron", edit: { kind: "text", current: settleCron, unit: "自动结算时间表达式" }, detail: `领导奖池自动结算的 自动结算周期 · 当前 ${settleCronEff} · 改后对下一周期派发生效。` })}>结算周期</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "池解锁等级调整", op: "param", paramKey: "F.pool.unlockVRank", edit: { kind: "select", current: unlockVRank, options: POOL_UNLOCK_OPTIONS }, detail: `领导奖池参与门槛 · 当前 ${unlockVRankEff} · 调高收紧参与人数,调低放大分润人数。` })}>解锁等级</button>}
-            {canFund && <button onClick={() => ctx.openActionConfirm({ name: "头部集中度·第1名 上限调整", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct", edit: { kind: "number", current: top1MaxPct, unit: "%" }, detail: `领导池 第1名 头部集中度上限 · 当前 ${top1MaxPct}% · 范围 0-100 · 调低抑制高等级用户的分配占比,受 B1 约束。` })}>第1名 集中度</button>}
-            {canFund && <button onClick={() => ctx.openActionConfirm({ name: "头部集中度·前5名 上限调整", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct", edit: { kind: "number", current: top5MaxPct, unit: "%" }, detail: `领导池 前5名 头部集中度上限 · 当前 ${top5MaxPct}% · 范围 0-100 · 调低抑制高等级用户的分配占比,受 B1 约束。` })}>前5名 集中度</button>}
-          </div>
-        </section>
-
-        <section className="sect">
-          <div className="sect-h">
-            <span className="ic quota"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9z" /><path d="M12 11l8-4.5M12 11v9M12 11L4 6.5" /></svg></span>
-            <div className="t"><div className="nm">硬件配额</div><div className="s">销售前置门 · 月度库存上限</div></div>
-            <span className="tag">F4b · F.quota.*</span>
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            {data.quotaRows.length ? data.quotaRows.map((quota) => (
-              <div key={quota.name} className="stock-meter">
-                <span className="nm">{nexGridBrandText(quota.name)}</span>
-                <span className={`bar${quota.tight ? " tight" : ""}`}><span className="f" style={{ width: `${Math.min(100, (quota.current / Math.max(1, quota.cap)) * 100)}%` }} /></span>
-                <span className="ct">{quota.current} / {quota.cap}</span>
-                {canWrite && <button onClick={() => ctx.openActionConfirm({
-                  name: `${nexGridBrandText(quota.name)} 月额度调整`, op: "param",
-                  paramKey: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`,
-                  expectedVersion: quota.cap,
-                  edit: { kind: "number", current: String(quota.cap), unit: "台" },
-                  detail: `更新配额档位前检查修改版本： ${quota.quotaCode || quota.id}，当前已用 ${quota.current} / ${quota.cap}；若其他管理员先改，返回 409 并回读最新值。`,
-                })}>调额度</button>}
-                <span className="ct" style={{ gridColumn: "1 / -1", whiteSpace: "normal", textAlign: "left", overflowWrap: "anywhere" }}>商品编号 {quota.productNo || quota.quotaCode} · {quotaPrerequisites(quota)}</span>
-              </div>
-            )) : <div className="empty">暂无硬件配额样本</div>}
-            <div className="stock-note">月库存上限 {stockEff} · 已出 {data.quotaMonthlyStockUsed} 台 · 剩余 {data.quotaMonthlyStockRemaining} 台</div>
-          </div>
-          <div className="kv-row"><span className="k">专业设备解锁门槛</span><span className="v dim">{proEff}</span></div>
-          <div className="kv-row"><span className="k">机柜设备解锁门槛</span><span className="v dim">{rackEff}</span></div>
-          <div className="kv-row"><span className="k">月库存上限</span><span className="v">{stockEff}</span></div>
-          {data.quotaUsages.length > 0 && <div style={{ marginTop: 12 }}>
-            {data.quotaUsages.map((usage) => <div key={usage.id} className="kv-row">
-              <span className="k">#{usage.id} · U{usage.userId} · {usage.productNo}</span>
-              <span className="v">{usage.quantity} 台 · {usage.orderNo || "无订单号"}</span>
-              {canWrite && <button className="danger" onClick={() => ctx.openActionConfirm({
-                name: `回收配额 #${usage.id}`, op: "dispose",
-                paramKey: `F.quota.usage.${usage.id}.status`, fixedVal: "recycled",
-                detail: "服务器仅允许将已使用的配额回收，并检查修改版本；并发重复回收返回冲突，成功后权威配额立即回读。",
-              })}>回收</button>}
-            </div>)}
-          </div>}
-        </section>
-
-        <section className="sect">
-          <div className="sect-h">
-            <span className="ic amb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><circle cx="17" cy="9" r="2.2" /><path d="M21 20c0-2.6-1.8-4.8-4.2-5.4" /></svg></span>
-            <div className="t"><div className="nm">区域大使确认</div><div className="s">V5+ · 4 类预算 · 待确认 {data.ambassadorPendingCount} 单</div></div>
-            <span className="tag">F4c · F.ambassador.*</span>
-          </div>
-          <div className="amb-bands">
-            {data.ambassadorApplications.length ? data.ambassadorApplications.map((application) => (
-              <div key={application.id} className="amb-band">
-                <div className="nm">#{application.id} · {operatorNicknameText(application.applicantName)} · {application.region}{application.city ? `/${application.city}` : ""}</div>
-                <div className="ct">{application.currentRank} · ${application.requestedBudgetUsd.toLocaleString("en-US")} · {({PENDING:"待审核",APPROVED:"已通过",REJECTED:"已驳回",pending:"待审核",approved:"已通过",rejected:"已驳回"} as Record<string,string>)[application.status] ?? "申请状态待核实"}</div>
-                {canApproveAmbassador && application.status.toUpperCase() === "PENDING" && <>
-                  <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: `批准大使申请 #${application.id}`, amplify: true, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "approved", detail: "按申请 ID 精确批准；同事务生成 推广、活动、差旅、宣传 四类预算权益证明。" })}>批准</button>
-                  <button className="danger" onClick={() => ctx.openActionConfirm({ name: `驳回大使申请 #${application.id}`, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "rejected", detail: "按申请 ID 精确驳回，不再回退处置任意最新待审记录。" })}>驳回</button>
-                </>}
-              </div>
-            )) : <div className="empty">暂无大使申请样本</div>}
-          </div>
-          <div className="kv-row"><span className="k">本月已批准预算</span><span className="v ok">{ambassadorBudgetLabel}</span></div>
-          <div className="kv-row"><span className="k">达人推广 预算占比</span><span className="v">{data.ambassadorKolBudgetPct}%</span></div>
-          <div className="kv-row"><span className="k">下季度配额评估</span><span className="v dim">{nextQuotaReviewDate}</span></div>
-          {ambassadorPolicy && <>
-            <div className="kv-row"><span className="k">申请政策版本</span><span className="v dim">{ambassadorPolicy.policyVersion} · 版本 {ambassadorPolicy.revision}</span></div>
-            <div className="kv-row"><span className="k">默认申请预算</span><span className="v">${ambassadorPolicy.defaultBudgetUsdt.toLocaleString("en-US")}</span></div>
-            <div className="amb-bands">
-              {ambassadorPolicy.buckets.map((bucket) => <div key={bucket.id} className="amb-band">
-                <div className="nm">{formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} · {bucket.id}</div>
-                <div className="ct">${bucket.minBudgetUsdt.toLocaleString("en-US")} - ${bucket.maxBudgetUsdt.toLocaleString("en-US")} · {bucket.range}</div>
-                <div className="ct">{formatF4AmbassadorBucketRule(bucket.id, bucket.rule)}</div>
-              </div>)}
-            </div>
-            {canFund && <div className="sect-foot"><button className="primary amp" onClick={() => ctx.openActionConfirm({
-              name: "区域大使申请政策调整",
-              amplify: true,
-              businessForm: {
-                kind: "multi-field",
-                title: "区域大使申请政策",
-                hint: `当前 版本 ${ambassadorPolicy.revision}。保存使用版本冲突保护；扩大预算受 B1 覆盖率红线约束。`,
-                fields: [
-                  { key: "policyVersion", label: "政策版本", current: ambassadorPolicy.policyVersion, inputKind: "text" },
-                  { key: "defaultBudgetUsdt", label: "默认预算(USDT)", current: String(ambassadorPolicy.defaultBudgetUsdt), inputKind: "number", min: 100 },
-                  ...ambassadorPolicy.buckets.flatMap((bucket) => [
-                    { key: `${bucket.id}.title`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 名称`, current: bucket.title, inputKind: "text" as const },
-                    { key: `${bucket.id}.range`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 展示范围`, current: bucket.range, inputKind: "text" as const },
-                    { key: `${bucket.id}.rule`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 资格规则`, current: bucket.rule, inputKind: "text" as const },
-                    { key: `${bucket.id}.min`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 最低预算`, current: String(bucket.minBudgetUsdt), inputKind: "number" as const, min: 100 },
-                    { key: `${bucket.id}.max`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 最高预算`, current: String(bucket.maxBudgetUsdt), inputKind: "number" as const, min: 100 },
-                  ]),
-                ],
-              },
-              detail: "此处直接维护正式 App 提交时强制校验的 区域大使申请政策；不是展示镜像。",
-              completionCopy: "政策成功更新后，App 下一次打开/刷新申请页读取新政策。",
-              run: async (reason, values) => {
-                if (!values) throw new Error("请填写完整政策");
-                const defaultBudgetUsdt = Number(values.defaultBudgetUsdt);
-                const buckets = ambassadorPolicy.buckets.map((bucket) => ({
-                  id: bucket.id,
-                  title: String(values[`${bucket.id}.title`] ?? "").trim(),
-                  range: String(values[`${bucket.id}.range`] ?? "").trim(),
-                  rule: String(values[`${bucket.id}.rule`] ?? "").trim(),
-                  minBudgetUsdt: Number(values[`${bucket.id}.min`]),
-                  maxBudgetUsdt: Number(values[`${bucket.id}.max`]),
-                }));
-                if (!String(values.policyVersion ?? "").trim() || !Number.isFinite(defaultBudgetUsdt)
-                  || buckets.some((bucket) => !bucket.title || !bucket.range || !bucket.rule
-                    || !Number.isFinite(bucket.minBudgetUsdt) || !Number.isFinite(bucket.maxBudgetUsdt)
-                    || bucket.minBudgetUsdt < 100 || bucket.maxBudgetUsdt < bucket.minBudgetUsdt || bucket.maxBudgetUsdt > 10_000)) {
-                  throw new Error("政策字段不完整或预算范围无效");
-                }
-                await ctx.updateF4AmbassadorPolicy({
-                  policyVersion: String(values.policyVersion).trim(),
-                  revision: ambassadorPolicy.revision,
-                  defaultBudgetUsdt,
-                  buckets,
-                }, reason);
-                ctx.toast("区域大使申请政策已更新并回读");
-              },
-            })}>调整申请政策</button></div>}
-          </>}
-        </section>
-
-        <section className="sect">
-          <div className="sect-h">
-            <span className="ic lb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16" /><rect x="5" y="11" width="3.5" height="7" /><rect x="10.2" y="7" width="3.5" height="11" /><rect x="15.4" y="13" width="3.5" height="5" /></svg></span>
-            <div className="t"><div className="nm">排行榜 · 反欺诈</div><div className="s">4 周期奖池 · 前三名展示 · K2 联动</div></div>
-            <span className="tag">F4d · F.leaderboard.*</span>
-          </div>
-          {lbPaused && <div className="f4-warn" role="status"><b>排行榜已暂停</b> · {lbDataAvailable ? `快照已冻结 · ${data.leaderboardSnapshotAt}` : "冻结快照未确认；名次及金额暂不显示。"} · 派奖已挂起。</div>}
-          <div className="sect-foot" aria-label="排行榜周期">
-            {([['today', '今日'], ['week', '本周'], ['month', '本月'], ['all', '总榜']] as const).map(([period, title]) =>
-              <button key={period} aria-pressed={leaderboardPeriod === period} onClick={() => setLeaderboardPeriod(period)}>{title}</button>)}
-          </div>
-          <p className="muted">本期已解锁 USDT 佣金 · 上海时间 UTC+8 · {periodLeaderboard ? `快照 ${periodLeaderboard.snapshotAt} · 奖励名额 ${periodLeaderboard.topN}` : "周期榜单暂不可用"}</p>
-          <div className="podium">
-            {!lbDataAvailable ? <div className="empty">{lbPaused ? "冻结快照未确认" : "周期榜单暂不可用"}</div> : periodLeaderboard!.podium.length ? periodLeaderboard!.podium.map((row) => (
-              <div key={row.userId} className={`pod ${row.className}`}><span className="rank">{row.rank}</span><div className="uid">{row.userId}</div><div className="gv">{row.gmvLabel}<small>{operatorCopyText(row.tip)}</small></div>
-                {canControlLeaderboard && leaderboardPeriod === "week" && row.memberUserId > 0 && !row.className.includes("dq") && <button className="danger" aria-label={`取消 ${row.userId} 的榜单资格`} onClick={() => ctx.openActionConfirm({
-                  name: `取消 ${row.userId} 本周榜单资格`, op: "dispose",
-                  paramKey: `F.leaderboard.week.user.${row.memberUserId}.status`, fixedVal: "disqualified",
-                  detail: `按 成员编号=${row.memberUserId} 精确排除；写入榜单动作后排名查询与奖池结算共同过滤该用户。`,
-                })}>取消资格</button>}
-              </div>
-            )) : <div className="empty">暂无榜单样本</div>}
-          </div>
-          <div className="kv-row"><span className="k">{lbPaused ? "冻结时奖池" : "本期奖池"}</span><span className="v">{lbDataAvailable ? lbPool : "—"}</span></div>
-          <div className="kv-row"><span className="k">{lbPaused ? "冻结时参赛人数" : "参赛人数"}</span><span className="v">{lbDataAvailable ? periodLeaderboard!.participantCount.toLocaleString("en-US") : "—"}</span></div>
-          <div className="kv-row"><span className="k">刷榜命中 · K2</span><span className="v" style={{ color: "var(--danger)" }}>{`${data.leaderboardFraudHitCount} 账户${lbDq ? " · 含已处置" : ""}`}</span></div>
-          <div className="sect-foot">
-            {canFund && leaderboardPeriod === "week" && <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "本周榜单奖池调整", amplify: true, op: "param", paramKey: "F.leaderboard.poolUsd", edit: { kind: "text", current: data.leaderboardPoolLabel }, detail: `本周榜单奖池总额 · 当前 ${lbPool} · 放大奖池流出,受 B1 约束。` })}>调整奖池</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "榜单最小额调整", op: "param", paramKey: "F.leaderboard.minUsd", edit: { kind: "number", current: lbMinUsd, unit: "USD" }, detail: `上榜最低佣金门槛 · 当前 $${lbMinUsd} · 低于此额不计入榜单排名。` })}>榜单最小额</button>}
-            {canControlLeaderboard && <button className={lbPaused ? "primary" : "danger"} onClick={() => ctx.openActionConfirm({ name: lbPaused ? "恢复排行榜展示" : "暂停排行榜派发", op: "dispose", paramKey: "F.leaderboard.paused", fixedVal: lbPaused ? "off" : "on", detail: lbPaused ? "恢复当前榜单展示，继续读取有效配置；写 A2 审计。" : "暂停排行榜 · 保存当前榜单快照，派奖挂起，写 A2 审计。" })}>{lbPaused ? "恢复榜单" : "暂停榜单"}</button>}
-            {canFund && <button className="primary amp" disabled={lbPaused} onClick={() => ctx.openActionConfirm({
-              name: "派发总榜奖池",
-              amplify: true,
-              detail: `总榜不会自动重置；按真实累计佣金、前100名 与当前 $${ppAllTime} 配置发放，A2 审批且 全周期防止重复发放。`,
-              run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),
-            })}>派发总榜</button>}
-            {canFund && lbPaused && <span className="muted">排行榜已暂停，派奖已挂起。</span>}
-            {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({
-              name: "4 周期榜单奖池调整", amplify: true,
-              businessForm: {
-                kind: "multi-field",
-                title: "4 周期榜单奖池(USD)",
-                hint: "日榜/周榜/月榜/总榜 四周期榜单奖池 · 各须为非负数字 · 放大池子流出受 B1 约束。",
-                fields: [
-                  { key: "today", label: "日榜奖池(USD)", current: ppToday, inputKind: "number", min: 0 },
-                  { key: "week", label: "周榜奖池(USD)", current: ppWeek, inputKind: "number", min: 0 },
-                  { key: "month", label: "月榜奖池(USD)", current: ppMonth, inputKind: "number", min: 0 },
-                  { key: "allTime", label: "总榜奖池(USD)", current: ppAllTime, inputKind: "number", min: 0 },
-                ],
-              },
-              detail: `4 周期榜单奖池 · 当前 日${ppToday}/周${ppWeek}/月${ppMonth}/总${ppAllTime} · 放大池子流出,受 B1 覆盖率约束。`,
-              run: async (reason, bv) => {
-                if (!bv) throw new Error("请填写全部 4 个周期");
-                const today = Number(bv.today);
-                const week = Number(bv.week);
-                const month = Number(bv.month);
-                const allTime = Number(bv.allTime);
-                if (![today, week, month, allTime].every(Number.isFinite) || [today, week, month, allTime].some((n) => n < 0)) {
-                  throw new Error("四个周期奖池均须为非负数字");
-                }
-                await ctx.updateF4Config("F.pool.periodPrize", JSON.stringify({ today, week, month, allTime }), reason);
-                ctx.toast(`4 周期榜单奖池已确认生效 · 日${today}/周${week}/月${month}/总${allTime}`);
-              },
-            })}>4 周期奖池</button>}
-          </div>
-        </section>
+      <div {...ids.panel(section)} className="f4-section">
+        {section === "pool" && <F4Pool ctx={ctx} data={data} settlement={settlement} />}
+        {section === "quota" && <F4Quota ctx={ctx} data={data} onOpenMaterials={setMaterialApplication} />}
+        {section === "board" && <F4Leaderboard ctx={ctx} data={data} />}
       </div>
-
-      <section className="sect votes-card">
-        <div className="sect-h">
-          <span className="ic pool"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3-7 4 14 3-7h4" /></svg></span>
-          <div className="t"><div className="nm">V 级票数权重 · 领导池分配依据</div><div className="s">后端配置权重 · {voteSummary}</div></div>
-
-        </div>
-        <div className="votes-grid">
-          {data.voteWeights.length ? data.voteWeights.map((row, index) => (
-            <div key={row.v} className="vote-col"><span className="v">{row.votes}</span><span className={`b ${voteTier(index)}`} style={{ height: voteH(row.votes, maxVote) }} /><span className="l">{row.v}</span></div>
-          )) : <div className="empty">暂无票数权重配置</div>}
-        </div>
-        <div className="vote-table">
-          {data.voteWeights.map((row) => {
-            const paramKey = row.configKey || `F.pool.votes.${row.v}`;
-            return (
-              <div key={row.v} className="vote-cell" onClick={canFund ? () => ctx.openActionConfirm({ name: `领导池 ${row.v} 票数权重调整`, amplify: true, op: "param", paramKey, edit: { kind: "number", current: String(row.votes), unit: "票" }, detail: `${row.v} 当前 ${row.votes} 票 · 改变领导池分配权重 · 调高放大高等级用户的分配占比 · 受 B1 覆盖率约束。` }) : undefined}>
-                <div className="vlb">{row.v} 权重</div><div className="vct">{row.votes} 票</div>
-              </div>
-            );
-          })}
-        </div>
-        <div className="f4-warn"><b>权重一动则分配占比增加</b> · 调高高 V 级权重会进一步放大头部分润,{voteSummary}。<b>每一项调整均视为「放大资金流出」</b>,须先核验 B1 兑付覆盖率(§1.8)。</div>
-      </section>
-
-      <p className="f-foot">领导奖池闭环：<b>{settlementEff}</b>。结算时按真实已支付订单金额、月度上限、解锁等级和 会员等级票数 计算并派发；提前结算先进入 A2，成功后同步写 F5 佣金事件、D4 台账与 A4 佣金发放事件。系统检查版本，防止同周重复派发；补发、冲正、冻结在 F5 按佣金事件处置。配额、大使、排行榜各自按其配置和状态独立生效，放大流出项前置 B1 覆盖率核验。</p>
-    </>
+      {materialDrawer}
+    </div>
   );
 }

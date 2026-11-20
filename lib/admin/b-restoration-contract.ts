@@ -25,6 +25,8 @@ export type B4GrowthFlowHistory = {
   }>;
   budget: {
     available: boolean;
+    usageAvailable?: boolean;
+    usageReason?: string;
     totalUsdt?: number;
     reason?: string;
     missingKeys: string[];
@@ -156,6 +158,8 @@ export function normalizeB4GrowthFlowHistory(value: unknown): B4GrowthFlowHistor
 
   const budgetSource = row(source.budget, "B4.budget");
   const available = boolean(budgetSource.available, "B4.budget.available");
+  const usageAvailable = budgetSource.usageAvailable === undefined ? undefined : boolean(budgetSource.usageAvailable, "B4.budget.usageAvailable");
+  const usageReason = budgetSource.usageReason === undefined ? undefined : text(budgetSource.usageReason, "B4.budget.usageReason");
   const budgetRows = array(budgetSource.rows, "B4.budget.rows").map((value, index) => {
     const item = row(value, `B4.budget.rows.${index}`);
     const key = text(item.key, `B4.budget.rows.${index}.key`);
@@ -190,7 +194,7 @@ export function normalizeB4GrowthFlowHistory(value: unknown): B4GrowthFlowHistor
     currentRatio,
     suggestion,
     ratioSeries,
-    budget: { available, totalUsdt, reason, missingKeys, rows: budgetRows },
+    budget: { available, usageAvailable, usageReason, totalUsdt, reason, missingKeys, rows: budgetRows },
     sources: strings(source.sources, "B4.sources"),
   };
 }

@@ -1,8 +1,21 @@
 import type { L1KpiQuery, LReportCreateInput } from "@/lib/admin/l-client";
-import { validateL1Dashboard } from "./l1-kpi-contract.ts";
+import type { FundCommandOrigin } from "@/lib/admin/fund-command-investigation";
+import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { L1_KPI_IDS, validateL1Dashboard } from "./l1-kpi-contract.ts";
 import { readL1LiveTotals } from "./l1-l2-live-data.ts";
 
 export type L1ExportMode = "series" | "snapshot" | "totals";
+
+export type L1PendingExport = PendingMutationRecord & {
+  label: string;
+  mode: L1ExportMode;
+  input: LReportCreateInput;
+  reason: string;
+  operator?: string;
+  commandOrigin?: FundCommandOrigin;
+};
+
+export const L1_EXPORT_ORIGINAL_INCOMPLETE = "保存的原请求不完整，不能重发。请查询原结果，到「操作记录与审批」核对。";
 
 export type L1ExportSource = {
   parentData: unknown;
@@ -10,8 +23,6 @@ export type L1ExportSource = {
   query: L1KpiQuery;
   status: "ready" | "loading" | "error";
 };
-
-type CreateReport = (input: LReportCreateInput, reason: string) => Promise<void>;
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -30,10 +41,12 @@ export function resolveL1ExportMode(raw: unknown, sourceUnavailable: boolean): L
   if (record(raw).available === false) return null;
   if (hasDetailedL1Attempt(raw)) {
     try {
-      validateL1Dashboard(raw);
-      const kpis = record(raw).kpis as Array<Record<string, unknown>>;
-      if (!kpis.some((row) => row.available === true)) return null;
-      return kpis.every((row) => Array.isArray(row.spark) && row.spark.length === 6)
+      const dashboard = validateL1Dashboard(raw);
+      const kpis = dashboard.kpis;
+      if (dashboard.granularity) return kpis[0].points?.length ? "series" : null;
+      if (!kpis.some((row) => row.available === true || row.suppressed === true)) return null;
+      return kpis.every((row) => Array.isArray(row.spark) && row.spark.length === 6
+        && row.spark.every((point) => point !== null))
         ? "series"
         : "snapshot";
     } catch {
@@ -47,32 +60,27 @@ export function resolveL1ExportUnavailableReason(
   raw: unknown,
   sourceState: "ready" | "loading" | "error" = "ready",
 ): string | undefined {
-  if (sourceState === "loading") return "正在读取关键指标数据，请稍候";
-  if (sourceState === "error") return "关键指标数据读取失败，请重试";
+  if (sourceState === "loading") return "关键指标加载中，请稍候";
+  if (sourceState === "error") return "关键指标加载失败，请重试";
   if (resolveL1ExportMode(raw, false)) return undefined;
-  if (record(raw).available === false) return "关键指标数据暂不可用，请重新读取后再试";
+  if (record(raw).available === false) return "关键指标暂时不能用，请刷新后再试";
   if (hasDetailedL1Attempt(raw)) {
     try {
       validateL1Dashboard(raw);
-      return "当前时间窗没有可用关键指标，暂不能导出";
+      return "当前时间范围没有可用的关键指标，暂时不能导出";
     } catch {
-      return "关键指标数据格式异常，请重新读取后再试";
+      return "关键指标数据有误，请刷新后再试";
     }
   }
-  return "尚未读取到可导出的关键指标数据";
+  return "暂无可导出的关键指标";
 }
 
-export async function submitL1Export(
-  raw: unknown,
-  sourceUnavailable: boolean,
-  createReport: CreateReport | undefined,
-  query: L1KpiQuery = { window: "7d" },
-): Promise<L1ExportMode | null> {
-  const mode = resolveL1ExportMode(raw, sourceUnavailable);
-  if (!mode || !createReport) return null;
+/** 请求里固定的接收人，确认框要写给操作者看（OP-47）。 */
+export const L1_EXPORT_RECIPIENT = "BI 管理员";
+
+export function l1ReportInput(mode: L1ExportMode, query: L1KpiQuery): LReportCreateInput {
   const complete = mode === "series";
-  const detailedSnapshot = mode === "snapshot";
-  await createReport({
+  return {
     window: query.window ?? "7d",
     from: query.from,
     to: query.to,
@@ -80,21 +88,17 @@ export async function submitL1Export(
     phase: query.phase,
     locale: query.locale,
     ref: query.ref,
+    ...(query.granularity ? { granularity: query.granularity, asOf: query.asOf } : {}),
     exportType: complete ? "KPI 序列" : "KPI 当前汇总",
-    timeRange: complete ? "当前时间窗" : "当前快照",
+    timeRange: complete ? "当前时间范围" : "当前数据",
     fields: complete
-      ? "8关键指标当前值/目标/环比序列"
-      : detailedSnapshot
-        ? "8关键指标当前值/目标/可用性"
+      ? `${L1_KPI_IDS.length}关键指标当前值/目标/环比序列`
+      : mode === "snapshot"
+        ? `${L1_KPI_IDS.length}关键指标当前值/目标/可用性`
         : "用户/订单/提现/兑换/质押/钱包流水/工单/审计聚合计数",
     piiLevel: "NONE",
     maskPolicy: "NONE",
-    recipient: "BI 管理员",
+    recipient: L1_EXPORT_RECIPIENT,
     ticket: "L1-KPI",
-  }, complete
-    ? "导出关键指标聚合序列用于经营复盘"
-    : detailedSnapshot
-      ? "趋势数据不足时导出可用关键指标当前快照用于经营核对"
-      : "导出 L1 当前累计事实用于经营核对");
-  return mode;
+  };
 }

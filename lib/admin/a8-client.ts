@@ -12,6 +12,7 @@ interface ApiResult<T> {
 export type A8Permission = {
   permissionCode: string;
   permissionName: string;
+  description?: string;
   permType: string; // READ / WRITE / HIGH
   menuId: number | null;
   menuCodePath: string; // "域 / 页"，无菜单→"—"

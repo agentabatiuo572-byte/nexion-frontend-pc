@@ -15,6 +15,8 @@ function jsonError(status: number, message: string) {
 function backendPath(parts: string[]) {
   const isOverview = parts[0] === "overview" && parts.length === 1;
   const isObservability = parts[0] === "observability" && parts.length === 1;
+  const isLegacyUnknown = parts[0] === "legacy-unknown-resolutions" && /^[1-9]\d*$/.test(parts[1] ?? "")
+    && (parts.length === 2 || (parts.length === 3 && parts[2] === "proposals"));
   const isSkuCollection = parts[0] === "skus" && parts.length === 1;
   const isSku = parts[0] === "skus" && parts.length === 2 && !!parts[1];
   const isSkuStatus = parts[0] === "skus" && parts.length === 3 && !!parts[1] && parts[2] === "status";
@@ -32,14 +34,19 @@ function backendPath(parts: string[]) {
   const isE3Config = parts[0] === "e3" && parts[1] === "config" && parts.length === 2;
   const isE3TradeinOverview = parts[0] === "e3" && parts[1] === "tradein" && parts[2] === "overview" && parts.length === 3;
   const isE3TradeinAction = parts[0] === "e3" && parts[1] === "tradein" && parts.length === 3 && ["recycle", "replace", "deactivate"].includes(parts[2]);
+  const isUserTradeinAction = parts.length === 4 && parts[0] === "users" && /^[1-9]\d*$/.test(parts[1])
+    && parts[2] === "tradein" && (parts[3] === "replace" || parts[3] === "recycle");
   const isDeviceRestore = parts.length === 2 && /^[1-9]\d*$/.test(parts[0]) && parts[1] === "restore";
   const isE5DeviceAction = parts.length === 2 && /^[1-9]\d*$/.test(parts[0])
     && ["activate", "force-activate", "deactivate", "unbind"].includes(parts[1]);
   const isE5BatchAction = parts[0] === "batch" && parts.length === 2
     && (parts[1] === "pause" || parts[1] === "resume");
-  const isDatacenterCollection = parts[0] === "datacenters" && parts.length === 1;
-  const isDatacenterItem = parts[0] === "datacenters" && parts.length === 2 && !!parts[1];
-  const isDatacenterAction = parts[0] === "datacenters" && parts.length === 3 && !!parts[1] && (parts[2] === "pause" || parts[2] === "resume");
+  const isTaskPool = parts[0] === "task-pools" && (
+    parts.length === 1
+    || parts.length === 3 && !!parts[1] && ["tasks", "random-tasks", "disable-impact"].includes(parts[2])
+    || parts.length === 4 && !!parts[1] && parts[2] === "tasks" && parts[3] === "status");
+  const isHostingLabels = parts.length === 1 && parts[0] === "sku-datacenter-labels";
+  const isPhones = parts.length === 1 && parts[0] === "phones";
   // E6 算力与设备配置:GET 聚合视图 + PATCH 原子批量参数 + 兼容单参数入口。
   const isComputeConfig = parts[0] === "compute-config" && parts.length === 1;
   const isComputeConfigParamsBatch = parts[0] === "compute-config" && parts[1] === "params" && parts.length === 2;
@@ -47,6 +54,7 @@ function backendPath(parts: string[]) {
   if (
     !isOverview
     && !isObservability
+    && !isLegacyUnknown
     && !isSkuCollection
     && !isSku
     && !isSkuStatus
@@ -64,12 +72,13 @@ function backendPath(parts: string[]) {
     && !isE3Config
     && !isE3TradeinOverview
     && !isE3TradeinAction
+    && !isUserTradeinAction
     && !isDeviceRestore
     && !isE5DeviceAction
     && !isE5BatchAction
-    && !isDatacenterCollection
-    && !isDatacenterItem
-    && !isDatacenterAction
+    && !isTaskPool
+    && !isHostingLabels
+    && !isPhones
     && !isComputeConfig
     && !isComputeConfigParamsBatch
     && !isComputeConfigParam
@@ -86,7 +95,17 @@ function backendPath(parts: string[]) {
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   const targetPath = backendPath(path);
+  if (targetPath && path[0] === "task-pools") {
+    const expectedMethod = path[2] === "random-tasks" || path[3] === "status" ? "POST" : "GET";
+    if (request.method !== expectedMethod) return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
   if (targetPath && path[0] === "compute-config" && request.method !== (path.length === 1 ? "GET" : "PATCH")) {
+    return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
+  if (targetPath && path[0] === "legacy-unknown-resolutions" && request.method !== (path.length === 2 ? "GET" : "POST")) {
+    return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
+  if (targetPath && path[0] === "users" && request.method !== "POST") {
     return jsonError(405, "METHOD_NOT_ALLOWED");
   }
 
@@ -135,7 +154,7 @@ async function proxy(request: Request, context: RouteContext) {
       headers: responseHeaders,
     });
   } catch {
-    return jsonError(503, "DEVICES_BACKEND_UNAVAILABLE");
+    return jsonError(503, request.method === "GET" || request.method === "HEAD" ? "DEVICES_BACKEND_READ_UNAVAILABLE" : "DEVICES_BACKEND_UNAVAILABLE");
   }
 }
 

@@ -5,6 +5,9 @@ import { guardedFetch } from "@/lib/admin/error-messages";
 import { avatarProxyRoute } from "@/lib/admin/account-avatar-contract";
 export const advisorAvatarPath = (adminId: number, customerId?: string) => `/api/admin/content/support-agents/${adminId}/avatar${customerId ? "?customerId="+encodeURIComponent(customerId) : ""}`;
 export const customerAvatarPath = (customerId: string) => `/api/admin/content/support-workbench/customers/${encodeURIComponent(customerId)}/avatar`;
+// M-5: a 404 means "no avatar"; remember it for a while so every list render doesn't ask again.
+const MISSING_TTL_MS = 10 * 60 * 1000;
+const missing = new Map<string, number>();
 export function SupportAvatar({ name, path, version, size = 34 }: { name: string; path?: string; version?: number; size?: number }) {
   const epoch = useAdminAuth(s=>s.authEpoch);
   const [url, setUrl] = useState(""), [failed, setFailed] = useState(false), [retry, setRetry] = useState(0);
@@ -13,8 +16,10 @@ export function SupportAvatar({ name, path, version, size = 34 }: { name: string
     if (!path) return;
     const platform = path.startsWith("/api/admin/platform/") && !/[?#]/.test(path) ? avatarProxyRoute(path.slice("/api/admin/platform/".length).split("/"), "GET") : null;
     if (!platform?.read && !/^\/api\/admin\/content\/(support-agents\/\d+\/avatar(?:\?customerId=\d+)?|support-workbench\/customers\/\d+\/avatar)$/.test(path)) { setFailed(true); return; }
+    const missKey = `${epoch}:${version ?? ""}:${path}`;
+    if ((missing.get(missKey) ?? 0) > Date.now()) return;
     guardedFetch(path, { credentials:"same-origin", cache:"no-store", signal:controller.signal }).then(async r=>{
-      if(r.status===404)return;
+      if(r.status===404){missing.set(missKey,Date.now()+MISSING_TTL_MS);return;}
       if(!r.ok||!(path.includes("/support-workbench/customers/")?["image/jpeg","image/png","image/webp"]:["image/jpeg","image/png"]).includes((r.headers.get("Content-Type")??"").split(";")[0].toLowerCase()))throw new Error("avatar unavailable");
       const blob=await r.blob(); if(controller.signal.aborted)return;
       objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);

@@ -15,79 +15,68 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import "./a-domain.css";
+import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { A1Accounts } from "./a-tabs/a1-accounts";
 import { A2Audit } from "./a-tabs/a2-audit";
-import { A3Config } from "./a-tabs/a3-config";
+import { A3Page } from "./a-tabs/a3-page";
 import { A4Events } from "./a-tabs/a4-events";
 import { A9DeveloperAccess } from "./a-tabs/a9-developer-access";
 import type { ACtx, ConfirmReq, ActionConfirmReq } from "./a-tabs/types";
 import { fetchA1Overview } from "@/lib/admin/a1-client";
-import { fetchA2Overview } from "@/lib/admin/a2-client";
 import { fetchA3Overview } from "@/lib/admin/a3-client";
 import { fetchA4Overview } from "@/lib/admin/a4-client";
 
 const FOLD: Record<string, string> = { A1: "A1", A2: "A2", A3: "A3", A4: "A4", A9: "A9" };
+/** 已改版的页：包 RdPage，页头和统计由页面自己写，这里不再另读一次（A2-H06）。 */
+const REDESIGNED = ["A1", "A2", "A3", "A4", "A9"];
 
-const RO_COPY: Record<string, string> = {
-  A1: "每点一个功能,服务器都会重新核对你有没有权限",
-  A2: "操作记录不能修改或单独删除；到期记录须先完成归档，再从在线列表移出",
-  A3: "查看紧急停止开关与功能分批开放的当前设置",
-  A4: "资金和 关键指标 按服务器正式记录的事件统计",
-  A9: "审批状态、操作权限和结果以服务器记录为准",
-};
 
 export function ADomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "A1", [meta.l2Id]);
-  const [live, setLive] = useState("0");
+  const [live, setLive] = useState("");
   const [actionConfirmReq, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
 
   const ctx: ACtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
+    closeActionConfirm: () => setActionConfirm(null),
     openConfirm: setCf,
   };
 
   useEffect(() => {
     let cancelled = false;
-    setLive("0");
+    setLive("");
     const loadLive = async () => {
       try {
+        if (REDESIGNED.includes(tab)) return;
         if (tab === "A1") {
           const overview = await fetchA1Overview();
           if (!cancelled) {
-            setLive(`有效超级管理员 ${overview.stats?.effectiveSupers ?? 0} · 启用账号 ${overview.stats?.activeAccounts ?? 0}`);
-          }
-          return;
-        }
-        if (tab === "A2") {
-          const overview = await fetchA2Overview();
-          if (!cancelled) {
-            setLive(`待确认 ${overview.stats?.pendingTickets ?? 0} · 今日审计 ${overview.stats?.todayAuditEvents ?? 0}`);
+            setLive(`超级管理员 ${overview.stats?.effectiveSupers ?? 0} 人 · 启用账号 ${overview.stats?.activeAccounts ?? 0} 个`);
           }
           return;
         }
         if (tab === "A3") {
           const overview = await fetchA3Overview();
           if (!cancelled) {
-            setLive(`应急状态正常 ${overview.stats?.killGatesUp ?? 0}/${overview.stats?.killGates ?? 0} · 平台开关开启 ${overview.stats?.flagOnCount ?? 0}`);
+            setLive(`紧急开关正常 ${overview.stats?.killGatesUp ?? 0}/${overview.stats?.killGates ?? 0} · 已开启功能 ${overview.stats?.flagOnCount ?? 0}`);
           }
           return;
         }
         if (tab === "A9") {
-          if (!cancelled) setLive("审批列表 · 提交时检查状态是否已变化");
           return;
         }
         const overview = await fetchA4Overview();
         if (!cancelled) {
-          setLive(`今日事件 ${overview.stats?.todayEvents ?? "0"} · 注册域 ${overview.stats?.registeredDomains ?? 0}`);
+          setLive(`今日事件 ${overview.stats?.todayEvents ?? "0"} · 已接入模块 ${overview.stats?.registeredDomains ?? 0}`);
         }
       } catch {
-        if (!cancelled) setLive("0");
+        if (!cancelled) setLive("");
       }
     };
     void loadLive();
@@ -96,42 +85,56 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
     };
   }, [tab]);
 
-  const ro = RO_COPY[tab];
-  const right = (
-    <>
-      <span className="f-ro"><span className="d" />{ro}</span>
-      <span className="f-live"><span className="dot" />{live}</span>
-    </>
-  );
+  const right = live ? <span className="f-live"><span className="dot" />{live}</span> : null;
 
-  return (
-    <div className="dkpage adom">
-      <DomainHeader {...meta} right={right} />
+  const page = (
+    <>
+      {!REDESIGNED.includes(tab) && <DomainHeader {...meta} right={right} />}
 
       {tab === "A1" && <A1Accounts ctx={ctx} />}
       {tab === "A2" && <A2Audit ctx={ctx} />}
-      {tab === "A3" && <A3Config ctx={ctx} />}
+      {tab === "A3" && <A3Page ctx={ctx} />}
       {tab === "A4" && <A4Events ctx={ctx} />}
       {tab === "A9" && <A9DeveloperAccess />}
 
+      {/* A1、A3、A4、A9 不传后面这几个属性，外观和原来一样。 */}
       {actionConfirmReq && (
-        <OperationConfirmModal
+        <OperationConfirmModal key={actionConfirmReq.formKey} briefKind={actionConfirmReq.briefKind}
+          completionCopy={actionConfirmReq.completionCopy}
           action={actionConfirmReq.action}
+          title={actionConfirmReq.title}
           detail={actionConfirmReq.detail}
+          content={actionConfirmReq.content}
           amplifies={actionConfirmReq.amplifies}
+          coverage={actionConfirmReq.coverage}
+          coverageLead={actionConfirmReq.coverageLead}
+          coverageCheck={actionConfirmReq.coverageCheck}
           edit={actionConfirmReq.edit}
           businessForm={actionConfirmReq.businessForm}
           reasonMin={actionConfirmReq.reasonMin}
           reasonMax={actionConfirmReq.reasonMax}
+          effect={actionConfirmReq.effect}
+          confirmLabel={actionConfirmReq.confirmLabel}
+          confirmTone={actionConfirmReq.confirmTone}
+          statedBrief={actionConfirmReq.statedBrief}
+          facts={actionConfirmReq.facts}
+          blockedReason={actionConfirmReq.blockedReason}
+          initialReason={actionConfirmReq.initialReason}
+          getPendingReason={actionConfirmReq.getPendingReason}
+          getPendingBusinessValue={actionConfirmReq.getPendingBusinessValue}
+          approval={actionConfirmReq.approval}
+          inlineApproval={actionConfirmReq.inlineApproval}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
-            await actionConfirmReq.run(reason, newValue, businessValue);
-            setActionConfirm(null);
+            const result = await actionConfirmReq.run(reason, newValue, businessValue);
+            if (result !== false) setActionConfirm(null);
           }}
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
       {toastNode}
-    </div>
+    </>
   );
+
+  return REDESIGNED.includes(tab) ? <RdPage className="adom">{page}</RdPage> : <div className="dkpage adom">{page}</div>;
 }

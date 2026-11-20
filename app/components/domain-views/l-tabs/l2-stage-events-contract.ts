@@ -53,9 +53,8 @@ export function validateL2LifecycleContract(raw: unknown): boolean {
     const stage = item as Record<string, unknown>;
     return typeof stage.key === "string"
       && typeof stage.source === "string"
-      && typeof stage.count === "number"
-      && Number.isSafeInteger(stage.count)
-      && stage.count >= 0;
+      && (stage.suppressed === true ? stage.count == null
+        : typeof stage.count === "number" && Number.isSafeInteger(stage.count) && stage.count >= 0);
   });
   return strictTypes
     && readL2LiveStages(data).length === 4

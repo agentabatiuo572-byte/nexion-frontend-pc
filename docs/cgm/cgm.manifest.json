@@ -284,7 +284,7 @@
         "content_compliance",
         "network_growth"
       ],
-      "querySurface": "活动中心全表(flash sale / refer-5 / lucky wheel / regional PK / boost / seasonal / holding / onboarding)+ 状态(ongoing/upcoming/ended)+ 文案/奖励/倒计时/进度;运营看在投活动与季度排期",
+      "querySurface": "活动中心全表(flash sale / refer-5 / lucky wheel / regional PK / boost / seasonal / onboarding)+ 状态(ongoing/upcoming/ended)+ 文案/奖励/倒计时/进度;运营看在投活动与季度排期",
       "crudActions": "运营增删/上下线活动、改状态、改奖励文案/折扣/倒计时/featured、按区域投放",
       "operationConfirm": true,
       "serverCanonical": "PRODUCTION: GET /api/events?status=ongoing&region= — 季度活动滚动 server 单源",

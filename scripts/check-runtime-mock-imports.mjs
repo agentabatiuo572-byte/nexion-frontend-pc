@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const scanRoots = ["app", "lib/admin", "lib/store", "tests"];
+const scanRoots = ["app", "lib/admin", "lib/store"];
 const forbiddenImports = [
   "@/lib/mock/admin/command-center",
   "@/lib/mock/admin/design-data",

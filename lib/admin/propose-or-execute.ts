@@ -4,9 +4,8 @@
  * 由 A2 审批接口在服务端执行目标域动作与审计落库。
  */
 import { roleLabel } from "@/lib/nav/console-nav";
-import { displayAdminError } from "@/lib/admin/error-messages";
 import type { AuthPrincipal, ExecGate } from "@/lib/admin/ops-authority";
-import { isA2OutcomeUncertainError, type A2OperationType } from "@/lib/admin/a2-client";
+import type { A2OperationType } from "@/lib/admin/a2-client";
 import type { ReplayCommand, LockTarget } from "@/lib/admin/high-ops-registry";
 
 export type ProposalType = "fund" | "param" | "acct" | "sos";
@@ -73,14 +72,10 @@ export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Pr
       target: spec.target,
       targets: spec.targets,
     }, spec.commandKey);
-    toast(`已写入 A2 后端待确认队列,待 ${spec.gateLabel} 执行`);
+    toast("已提交，等待审批后执行");
     return "proposed";
   } catch (error) {
-    if (isA2OutcomeUncertainError(error)) {
-      toast(`A2 提案结果暂不确定；当前弹窗与输入已保留，请使用同一命令号重试并核对 A2 审计 · ${error.commandKey}`);
-    } else {
-      toast(`A2 提案提交失败:${displayAdminError(error)}`);
-    }
+    // 调用方都在确认框里：错误交回框里显示，不再另弹同一句轻提示。
     throw error;
   }
 }

@@ -1,34 +1,64 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Drawer, OperationConfirmModal } from "@/app/components/domain-views/design-kit";
-import { correctNotificationTime, fetchNotificationTimeEvidence, UsersRequestError, type NotificationTimeEvidence } from "@/lib/admin/user360-client";
+import { Clock3 } from "lucide-react";
+import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
+import { BlockState, Button, Change, Decision, Drawer, Explain, Fact, Facts, JudgmentPoints, KeepText, Notice, ReleaseModal, StatusTag, Timeline } from "@/app/components/rd";
+import { correctNotificationTime, fetchNotificationTimeEvidence, UsersOutcomeUnknownError, UsersRequestError, type NotificationTimeEvidence } from "@/lib/admin/user360-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
-type CorrectionCommand = PendingMutationRecord & { preview: NotificationTimeEvidence; reason: string };
+type CorrectionCommand = PendingMutationRecord & {
+  preview: NotificationTimeEvidence;
+  reason: string;
+  rejection?: { status: number; reasonCode?: string; backendMessage?: string };
+};
+export type PendingCorrection = CorrectionCommand;
 const corrections = createPendingMutationStore<CorrectionCommand>({
   storageKey: "nexion-admin-notification-time-corrections-v1",
+  // 过期不能重试，记录也不删（OP-96）。
+  retainExpiredRecords: true,
   isValidRecord: command => typeof command.reason === "string" && command.reason.trim().length > 0 && command.reason.length <= 500
     && !!command.preview && command.preview.status === "MATCHED" && Number.isSafeInteger(command.preview.notificationId)
     && command.preview.notificationId > 0 && typeof command.preview.storedCreatedAt === "string"
     && typeof command.preview.deliveryFactTime === "string" && Array.isArray(command.preview.facts) && command.preview.facts.length === 3,
 });
+/** 证据或快照已经变了：原校正不会再生效，清掉待确认，回读最新证据。 */
+const SETTLED_CODES = ["NOTIFICATION_TIME_SNAPSHOT_CHANGED", "NOTIFICATION_TIME_EVIDENCE_CHANGED", "NOTIFICATION_TIME_ALREADY_CORRECT", "NOTIFICATION_TIME_CORRECTION_INVALID"];
+const FACT_NAME: Record<string, string> = { "auth.register_completed": "注册完成", "nova.push_sent": "推送已发出", "notification.delivered": "通知已送达" };
+const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
+/** 页面上方常显用：这个操作人、这个用户的未确认校正。槽位是 [操作人, 用户, 通知编号]。 */
+export function pendingCorrections(actorKey: string, userKeys: readonly string[]) {
+  return corrections.list().filter((command) => {
+    const [actor, user] = JSON.parse(command.fingerprint) as [string, string];
+    return actor === actorKey && userKeys.includes(user);
+  });
+}
+const outcomeUnknown = (cause: unknown) => cause instanceof UsersOutcomeUnknownError || cause instanceof UsersRequestError && cause.code === "IDEMPOTENCY_RESULT_UNKNOWN";
 
-export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorKey, canCorrect = false, onCorrected, onClose }: {
-  userKey: string; notificationId: number; actorKey?: string; canCorrect?: boolean; onCorrected?: () => void; onClose: () => void;
+export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorKey, canCorrect = false, onCorrected, onPendingChange, onClose }: {
+  userKey: string; notificationId: number; actorKey?: string; canCorrect?: boolean; onCorrected?: () => void; onPendingChange?: () => void; onClose: () => void;
 }) {
   const [data, setData] = useState<NotificationTimeEvidence | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [confirmation, setConfirmation] = useState<NotificationTimeEvidence | null>(null);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
   const [pending, setPending] = useState<CorrectionCommand | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const slot = JSON.stringify([actorKey, userKey, notificationId]);
+  const [releasing, setReleasing] = useState(false);
+  // 页面可能用编码或用户号打开，槽位用记录里的原值，查得到才算同一条。
+  const saved = corrections.list().find((command) => {
+    const [actor, , id] = JSON.parse(command.fingerprint) as [string, string, number];
+    return actor === actorKey && id === notificationId;
+  });
+  const slot = saved?.fingerprint ?? JSON.stringify([actorKey, userKey, notificationId]);
   const generation = useRef(0);
   const busy = useRef(false);
-  useEffect(() => { setNotice(""); setPending(corrections.list().find(command => command.fingerprint === slot) ?? null); }, [slot]);
+  const refreshPending = () => { setPending(corrections.list().find(command => command.fingerprint === slot) ?? null); onPendingChange?.(); };
+  useEffect(() => { setNotice(null); setPending(corrections.list().find(command => command.fingerprint === slot) ?? null); }, [slot]);
   useEffect(() => {
     generation.current += 1;
     const controller = new AbortController();
@@ -46,69 +76,115 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
   const submit = async (reason: string) => {
     if (!canCorrect || !actorKey || busy.current) return;
     let command = corrections.list().find(value => value.fingerprint === slot);
+    const retained = !!command;
+    if (command && command.expiresAt <= Date.now()) return;
     if (!command) {
       if (!confirmation) return;
       corrections.remember(slot, `notification-time-${crypto.randomUUID()}`, { preview: confirmation, reason: reason.trim() });
       command = corrections.list().find(value => value.fingerprint === slot);
     }
     if (!command) throw new Error("无法保留原校正请求，请重试");
-    setPending(command);
+    // 先落盘再发（OP-92）：存不下时刷新就丢命令号，结果未知后没法恢复。
+    if (!corrections.isDurablyStored(slot, command.commandKey)) {
+      if (retained) { setNotice({ tone: "warn", text: "本机存储里查不到原校正，这次没有发送。到操作记录与审批核对，记录继续保留。" }); return; }
+      corrections.forget(slot, command.commandKey);
+      throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+    }
+    corrections.remember(slot, command.commandKey, { preview: command.preview, reason: command.reason, rejection: undefined });
+    refreshPending();
     busy.current = true;
     setSubmitting(true);
     const ownedGeneration = generation.current;
+    const reread = () => { setConfirmation(null); setData(null); setAttempt(value => value + 1); };
     try {
       await correctNotificationTime(userKey, command.preview, command.reason, command.commandKey);
       if (ownedGeneration !== generation.current) return;
       corrections.forget(slot);
-      setPending(null);
-      setNotice("已按投递事实校正通知时间，已读状态保持不变。");
+      refreshPending();
+      setNotice({ tone: "ok", text: "已按投递事实校正通知时间，已读状态保持不变。" });
+      reread();
       onCorrected?.();
     } catch (cause) {
       if (ownedGeneration !== generation.current) return;
-      if (cause instanceof UsersRequestError && ["NOTIFICATION_TIME_SNAPSHOT_CHANGED", "NOTIFICATION_TIME_EVIDENCE_CHANGED", "NOTIFICATION_TIME_ALREADY_CORRECT", "NOTIFICATION_TIME_CORRECTION_INVALID"].includes(cause.code ?? "")) {
-        corrections.forget(slot); setPending(null);
+      const refusal = isExplicitRejection(cause) ? cause as { status: number; reasonCode?: string; backendMessage?: string } : undefined;
+      const settled = !!refusal && cause instanceof UsersRequestError && SETTLED_CODES.includes(cause.code ?? "");
+      if (outcomeUnknown(cause)) { reread(); return; }
+      if (settled) {
+        corrections.forget(slot);
+        refreshPending();
+        setNotice({ tone: "warn", text: displayAdminError(cause) });
+        reread();
+        return;
       }
-      setNotice(displayAdminError(cause));
+      if (retained) {
+        // 重试被拒说明不了原操作的结果：原命令继续保留，人核实后才解除（OP-93 第 8 条）。
+        setNotice({ tone: "warn", text: `重试没有成功：${displayAdminError(cause)} 这说明不了原校正的结果，原记录继续保留。` });
+        corrections.remember(slot, command.commandKey, { preview: command.preview, reason: command.reason,
+          rejection: refusal && { status: refusal.status, reasonCode: refusal.reasonCode, backendMessage: refusal.backendMessage } });
+        refreshPending();
+        return;
+      }
+      // 首次提交沿用新命令的失败清理规则，确认框和理由保留。
+      corrections.forget(slot);
+      refreshPending();
+      if (isPermissionDenied(cause)) throw cause;
+      throw new Error(displayAdminError(cause));
     } finally {
       busy.current = false;
       setSubmitting(false);
-      if (ownedGeneration === generation.current) {
-        setConfirmation(null); setData(null); setAttempt(value => value + 1);
-      }
     }
   };
-  return <Drawer title={`通知时间证据 · ${notificationId}`} onClose={onClose}>
-    <div style={{ padding: 16, display: "grid", gap: 14 }}>
-      <p>读取证据不会修改通知。校正时间需要单独确认，已读状态保持不变。</p>
-      {notice && <p role="status">{notice}</p>}
-      {pending && canCorrect && actorKey && <div role="status">
-        <p>原校正请求结果尚未确认。重试将保留原证据、理由和请求号。</p>
-        <p>原理由：{pending.reason}</p><p>请求号：{pending.commandKey}</p>
-        <button type="button" disabled={submitting} onClick={() => void submit(pending.reason)}>重试原校正</button>
-      </div>}
-      {!data && !error && <p role="status">正在读取关联证据…</p>}
-      {error && <div role="alert"><p>{error}</p><button type="button" onClick={() => setAttempt(value => value + 1)}>重试</button></div>}
-      {data && <>
-        <p role="status">{data.status === "MATCHED"
-          ? data.storedCreatedAt === data.deliveryFactTime
-            ? "当前记录时间与投递事实时间一致，无需校正。"
-            : "关联证据一致；记录时间与投递事实时间不一致，尚未校正。"
-          : data.reason}</p>
-        <dl>
-          <dt>当前记录时间（北京时间）</dt><dd>{data.storedCreatedAt}</dd>
-          <dt>投递事实时间（北京时间）</dt><dd>{data.deliveryFactTime ?? "尚不可确认"}</dd>
-        </dl>
-        {data.facts.length > 0 && <ul>{data.facts.map(fact => <li key={fact.eventId}>
-          <strong>{fact.eventName}</strong><br />事件编号：{fact.eventId}<br />
-          UTC：{new Date(fact.timestampMillis).toISOString()}
-        </li>)}</ul>}
-        <p>此处展示当前回读证据；是否曾执行校正请查审计记录。</p>
-        {!pending && canCorrect && actorKey && data.status === "MATCHED" && data.storedCreatedAt !== data.deliveryFactTime
-          && <button type="button" onClick={() => setConfirmation(data)}>按投递事实校正时间</button>}
-      </>}
-    </div>
-    {confirmation && canCorrect && actorKey && <OperationConfirmModal action={`校正通知 ${notificationId} 的时间`}
+  const release = () => {
+    corrections.forget(slot);
+    refreshPending();
+    setReleasing(false);
+    setNotice({ tone: "ok", text: "已解除本页这条原操作记录，原操作的结果和锁定不变。" });
+  };
+  const expired = !!pending && pending.expiresAt <= Date.now();
+  const correctable = !pending && canCorrect && !!actorKey && data?.status === "MATCHED" && data.storedCreatedAt !== data.deliveryFactTime;
+  const conclusion = data && (data.status === "MATCHED"
+    ? data.storedCreatedAt === data.deliveryFactTime
+      ? "当前记录时间与投递事实时间一致，无需校正。"
+      : "关联证据一致；记录时间与投递事实时间不一致，尚未校正。"
+    : data.reason);
+  return <Drawer open onClose={onClose} busy={submitting} icon={Clock3} tone="role-3" title="通知时间证据" sub={`通知 ${notificationId}`}
+    explain={<><p>读取证据不会修改通知。校正时间需要单独确认，已读状态保持不变。</p><p>此处展示当前回读证据；是否曾执行校正请查审计记录。</p></>}
+    footer={correctable ? <Decision primary={<Button variant="primary" onClick={() => setConfirmation(data)}>按投递事实校正时间</Button>} /> : undefined}>
+    {notice && <Notice tone={notice.tone}><KeepText text={notice.text} /></Notice>}
+    {pending && canCorrect && actorKey && <Notice tone="warn" title="原校正结果未知"
+      action={<>
+        <Button size="sm" loading={submitting} disabledReason={expired ? EXPIRED_TEXT : undefined} onClick={() => void submit(pending.reason)}>重试原校正</Button>
+        {isExplicitRejection(pending.rejection) && <Button size="sm" disabled={submitting} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
+      </>}>
+      {expired ? `${EXPIRED_TEXT}。` : "按原请求重试会用原证据和理由。"}原理由：{pending.reason}
+      <Explain label="技术信息" content={`原请求编号 ${pending.commandKey}`} />
+    </Notice>}
+    {!data && !error && <BlockState state="loading" title="正在读取关联证据…" />}
+    {error && <BlockState state="error" title={error} onRetry={() => setAttempt(value => value + 1)} />}
+    {data && <>
+      <Notice tone={data.status === "MATCHED" ? "neutral" : "warn"}>{conclusion}</Notice>
+      <JudgmentPoints title="判断要点" rows={[
+        { label: "当前记录时间", value: `${data.storedCreatedAt}（北京时间）` },
+        { label: "投递事实时间", value: data.deliveryFactTime ?? "尚不可确认" },
+      ]} />
+      <Timeline label="通知投递证据" precision="second" entries={data.facts.map(fact => ({
+        id: fact.eventId,
+        action: FACT_NAME[fact.eventName] ?? fact.eventName,
+        actor: "系统",
+        at: new Date(fact.timestampMillis).toISOString(),
+        detail: <><span data-mono>事件编号：{fact.eventId}</span> <Explain label="原始事件和 UTC 时间" content={`${fact.eventName} · UTC：${new Date(fact.timestampMillis).toISOString()}`} /></>,
+      }))} />
+    </>}
+    {confirmation && canCorrect && actorKey && <OperationConfirmModal briefKind={"content"} action={`校正通知 ${notificationId} 的时间`} title="校正通知时间"
       detail={`仅此通知：${confirmation.storedCreatedAt} → ${confirmation.deliveryFactTime}（北京时间）。根据实际投递事实校正展示时间，不会重新发送通知或改变已读状态。`}
+      facts={<Facts>
+        <Fact k="通知编号">{notificationId}</Fact>
+        <Fact k="展示时间"><Change from={confirmation.storedCreatedAt} to={confirmation.deliveryFactTime} /></Fact>
+      </Facts>}
+      effect={<StatusTag tone="progress" filled>立即生效</StatusTag>} confirmLabel="确认校正，立即生效"
+      statedBrief={{ impact: "只改这条通知显示的时间，不重新发送，已读状态不变。", check: "核对当前记录时间和投递事实时间，理由写明依据。" }}
       reasonMax={500} onClose={() => { if (!busy.current) setConfirmation(null); }} onConfirm={submit} />}
+    {releasing && pending && <ReleaseModal label={`校正通知 ${notificationId} 的时间`} onCancel={() => setReleasing(false)} onConfirm={release}
+      explain="重试被明确拒绝也说明不了原校正的结果，先到操作记录核实。解除只移除本页这条原操作记录，原操作的结果和锁定不变。" />}
   </Drawer>;
 }

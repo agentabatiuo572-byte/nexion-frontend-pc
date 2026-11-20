@@ -22,9 +22,16 @@ export type A7MenuNode = {
   sortOrder: number;
   status: number;
   version: string;
+  legacyNavigationNode?: boolean;
 };
 
-export type A7MenuTreeNode = A7MenuNode & { children: A7MenuTreeNode[] };
+export type A7MenuTreeNode = A7MenuNode & {
+  children: A7MenuTreeNode[];
+  /** Undeleted role-menu binding rows, including disabled roles; absent on older backends. */
+  roleBindingCount?: number;
+  /** Enabled, undeleted permission rows of all resource types; absent on older backends. */
+  activePermissionCount?: number;
+};
 
 export type A7MenuOverview = {
   tree: A7MenuTreeNode[];
@@ -75,7 +82,7 @@ async function a7Request<T>(path: string, init?: RequestInit & { idempotencyPref
   else if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
 
   const uncertain = () => new Error(
-    "请求结果尚未确认，当前输入已保留；请直接重试，系统会沿用同一幂等键核对结果。");
+    "结果未知，已填写的内容还在；请直接重试，不会重复执行。");
   // 传输层失败(断网 / 超时)必须归结果未知,不能抛裸错误让调用方当成确定失败。
   let response: Response;
   try {

@@ -1,4 +1,6 @@
+import { fConfigBatchTargetType } from "./f-config-batch";
 import { accountAvatarFields } from "./account-avatar-contract.ts";
+import type { E2YieldComparison } from "./e2-onboarding-yield-contract";
 export type DomainCode = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M";
 
 export interface ReplayCommand {
@@ -26,7 +28,8 @@ export interface HighOpDef {
 
 function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unknown> {
   const {
-    dailyEarnNEX, unlock, generation: _generation, supersededBy: _supersededBy, tradeinDiscount: _tradeinDiscount,
+    dailyEarnNEX, phoneDailyEarnNEX, unlock, sold: _sold, seriesLocked: _seriesLocked,
+    seriesCode,
     updatedAt,
     // 媒体预览链接是带时效的预签名 URL,每次拉目录都会重新续签 —— 它既不是运营编辑的商品属性
     // (后端认 assetId / objectKey,展示时按 assetId 重新签发),又会让「业务输入一字未改的重试」
@@ -34,15 +37,57 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
     // ⚠ 待后端仓到位后确认:A2 replay 的 SKU upsert 对「缺该列」是跳过还是置 null —— 若是后者
     //   且前台直读该列,需改为由后端按 assetId 回填(见 docs/changes 记档)。
     imagePreviewUrl: _imagePreviewUrl,
+    monthlyTargetUsdt, monthlyTargetBandPct, clearMonthlyTarget,
+    derivedDailyEarnUsdt: _derivedDailyEarnUsdt,
+    derivedShareYieldMinPct: _derivedShareYieldMinPct,
+    derivedShareYieldMaxPct: _derivedShareYieldMaxPct,
     ...rest
   } = ctx;
+  const hasTarget = monthlyTargetUsdt != null;
   return {
     ...rest,
+    seriesCode,
+    monthlyTargetUsdt, monthlyTargetBandPct, clearMonthlyTarget: clearMonthlyTarget === true ? true : undefined,
+    dailyEarn: hasTarget ? undefined : ctx.dailyEarn,
+    shareYieldMin: hasTarget ? undefined : ctx.shareYieldMin,
+    shareYieldMax: hasTarget ? undefined : ctx.shareYieldMax,
     dailyEarnNex: dailyEarnNEX,
+    phoneDailyEarnNex: phoneDailyEarnNEX,
     unlockPhase: unlock,
     expectedUpdatedAt: updatedAt,
-    // 数据库仍保留内部兼容列，但该值不再是运营可编辑的商品属性。
-    generation: 1,
+    // 内部兼容列不能通过库存编辑重置；新建仍沿用既有默认值。
+    generation: ctx.generation ?? 1,
+  };
+}
+
+const E6_ONBOARDING_YIELD_SKU: HighOpDef = {
+  op: "e6_onboarding_yield_sku",
+  domain: "E",
+  action: "更换引导对比商品",
+  amplifies: false,
+  type: "param",
+  gateLabel: "另一位有批准权限和手机算力配置查看权限的管理员",
+  targetType: "onboarding_yield_comparison",
+  buildCommand: ({ configKey, productNo, expectedRevision }) => ({
+    domain: "E", op: "e6_onboarding_yield_sku", params: { configKey, productNo, expectedRevision },
+  }),
+  buildTarget: ({ configKey }) => ({ domain: "E", type: "onboarding_yield_comparison", id: String(configKey) }),
+};
+
+export function buildE6OnboardingYieldSkuProposal(
+  row: Pick<E2YieldComparison, "configKey" | "bindingRevision">,
+  productNo: string,
+) {
+  const { configKey, bindingRevision } = row;
+  if (bindingRevision == null || !["s1", "pro", "rack"].includes(configKey)) return null;
+  const params = { configKey, productNo, expectedRevision: bindingRevision };
+  return {
+    obj: configKey,
+    sourceDomain: "E6",
+    type: E6_ONBOARDING_YIELD_SKU.type,
+    amplifies: E6_ONBOARDING_YIELD_SKU.amplifies,
+    command: E6_ONBOARDING_YIELD_SKU.buildCommand(params),
+    target: E6_ONBOARDING_YIELD_SKU.buildTarget(params),
   };
 }
 
@@ -149,7 +194,7 @@ export const HIGH_OPS: HighOpDef[] = [
         email: ctx.email ?? null,
         ...accountAvatarFields(ctx, true),
         role: ctx.role,
-        initialPassword: ctx.initialPassword,
+        // B-3: the server always issues a one-time temporary password; operators never choose another person's password.
       },
     }),
     buildTarget: (ctx) => ({ domain: "A", type: "account", id: String(ctx.username) }),
@@ -379,7 +424,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "c2_impersonate_terminate",
     domain: "C",
-    action: "终止模拟登录",
+    action: "终止用户数据只读视图",
     amplifies: false,
     type: "acct",
     gateLabel: "门槛者",
@@ -394,7 +439,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "c2_impersonate_start",
     domain: "C",
-    action: "发起模拟登录",
+    action: "发起用户数据只读视图",
     amplifies: false,
     type: "acct",
     gateLabel: "门槛者",
@@ -493,6 +538,30 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: (ctx) => ({ domain: "C", type: "accountlist", id: String(ctx.userId) }),
   },
   // —— K 域风控(批 3) ——
+  {
+    op: "k1_release_param",
+    domain: "K",
+    action: "放宽收益审核规则",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "超管",
+    targetType: "release_param",
+    buildCommand: (ctx) => ({ domain: "K", op: "k1_release_param", params: { values: {
+      key: String(ctx.key), value: String(ctx.value), expectedVersion: Number(ctx.expectedVersion),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "K", type: "release_param", id: String(ctx.key) }),
+  },
+  {
+    op: "k1_earnings_release",
+    domain: "K",
+    action: "人工放行收益",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "超管",
+    targetType: "earnings_release",
+    buildCommand: (ctx) => ({ domain: "K", op: "k1_earnings_release", params: { values: { entryNo: String(ctx.entryNo) } } }),
+    buildTarget: (ctx) => ({ domain: "K", type: "earnings_release", id: String(ctx.entryNo) }),
+  },
   {
     op: "k1_cluster_freeze",
     domain: "K",
@@ -601,7 +670,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "k2_row_freeze",
     domain: "K",
-    action: "联动 K1 批量冻结",
+    action: "冻结关联账户",
     amplifies: false,
     type: "acct",
     gateLabel: "门槛者",
@@ -616,6 +685,19 @@ export const HIGH_OPS: HighOpDef[] = [
       },
     }),
     buildTarget: (ctx) => ({ domain: "K", type: "arbitrage_row", id: String(ctx.rowId) }),
+  },
+  {
+    op: "k2_otp_initial_config",
+    domain: "K",
+    action: "首次配置验证码设置",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "超管",
+    targetType: "k2_otp_param",
+    buildCommand: (ctx) => ({ domain: "K", op: "k2_otp_initial_config", params: {
+      values: { key: String(ctx.key), value: String(ctx.value), expectedVersion: Number(ctx.expectedVersion) },
+    } }),
+    buildTarget: (ctx) => ({ domain: "K", type: "k2_otp_param", id: String(ctx.key) }),
   },
   {
     op: "k3_rule_create",
@@ -826,7 +908,8 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "exchange_param",
     buildCommand: (ctx) => ({ domain: "G", op: "g2_exchange_param",
-      params: { paramKey: String(ctx.paramKey), value: String(ctx.value) } }),
+      params: { paramKey: String(ctx.paramKey), value: String(ctx.value),
+        ...(ctx.expectedValue === undefined ? {} : { expectedValue: String(ctx.expectedValue) }) } }),
     buildTarget: (ctx) => ({ domain: "G", type: "exchange_param", id: String(ctx.paramKey) }),
   },
   {
@@ -909,7 +992,10 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "genesis_param",
     buildCommand: (ctx) => ({ domain: "G", op: "g4_genesis_param",
-      params: { paramKey: String(ctx.paramKey), value: String(ctx.value) } }),
+      params: { paramKey: String(ctx.paramKey), value: String(ctx.value),
+        ...(ctx.expectedValue === undefined ? {} : { expectedValue: String(ctx.expectedValue) }),
+        ...(ctx.expectedRevision === undefined ? {} : { expectedRevision: String(ctx.expectedRevision) }),
+        ...(ctx.decisionRef === undefined ? {} : { decisionRef: String(ctx.decisionRef) }) } }),
     buildTarget: (ctx) => ({ domain: "G", type: "genesis_param", id: String(ctx.paramKey) }),
   },
   {
@@ -927,13 +1013,15 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "g4_genesis_rerun_dividend",
     domain: "G",
-    action: "重跑创世排放批次",
+    action: "重跑创世节点收益释放批次",
     amplifies: true, // 硬=true,直接资金 postLedgerEntry
     type: "fund",
     gateLabel: "门槛者",
     targetType: "genesis_dividend_batch",
     buildCommand: (ctx) => ({ domain: "G", op: "g4_genesis_rerun_dividend",
-      params: { batchNo: String(ctx.batchNo) } }),
+      params: { batchNo: String(ctx.batchNo),
+        ...(ctx.decisionRef === undefined ? {} : { decisionRef: String(ctx.decisionRef) }),
+        ...(ctx.expectedRevision === undefined ? {} : { expectedRevision: String(ctx.expectedRevision) }) } }),
     buildTarget: (ctx) => ({ domain: "G", type: "genesis_dividend_batch", id: String(ctx.batchNo) }),
   },
   {
@@ -945,7 +1033,8 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "repurchase_param",
     buildCommand: (ctx) => ({ domain: "G", op: "g7_repurchase_param",
-      params: { paramKey: String(ctx.paramKey), value: String(ctx.value) } }),
+      params: { paramKey: String(ctx.paramKey), value: String(ctx.value),
+        ...(ctx.expectedValue === undefined ? {} : { expectedValue: String(ctx.expectedValue) }) } }),
     buildTarget: (ctx) => ({ domain: "G", type: "repurchase_param", id: String(ctx.paramKey) }),
   },
   // —— E 域设备(批 6) ——
@@ -976,9 +1065,10 @@ export const HIGH_OPS: HighOpDef[] = [
     action: "新建设备 SKU",
     amplifies: false,
     type: "param",
-    gateLabel: "门槛者",
+    gateLabel: "另一位有批准权限和商品业务权限的管理员",
     targetType: "device_sku",
-    // 全 DeviceSkuUpsertRequest 透传:后端 buildSkuUpsertRequest 按 key 从 params 读取(37 字段)
+    // A2 derives amplification from approved before/after target bounds; client metadata is not a decision.
+    // Response-only estimates are omitted; explicit clearing retains the manual earnings in this request.
     buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_create", params: canonicalE1SkuParams(ctx) }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_sku", id: String(ctx.skuId) }),
   },
@@ -988,9 +1078,9 @@ export const HIGH_OPS: HighOpDef[] = [
     action: "更新设备 SKU",
     amplifies: false,
     type: "param",
-    gateLabel: "门槛者",
+    gateLabel: "另一位有批准权限和商品业务权限的管理员",
     targetType: "device_sku",
-    // 全 DeviceSkuUpsertRequest 透传:后端 buildSkuUpsertRequest 按 key 从 params 读取(37 字段)
+    // A2 derives amplification from approved before/after target bounds; client metadata is not a decision.
     buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_update", params: canonicalE1SkuParams(ctx) }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_sku", id: String(ctx.skuId) }),
   },
@@ -1000,7 +1090,7 @@ export const HIGH_OPS: HighOpDef[] = [
     action: "调整 SKU 上下架",
     amplifies: false,
     type: "param",
-    gateLabel: "门槛者",
+    gateLabel: "另一位有批准权限和商品业务权限的管理员",
     targetType: "device_sku",
     buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_status",
       params: { skuId: String(ctx.skuId), status: String(ctx.status), expectedUpdatedAt: String(ctx.updatedAt ?? "") } }),
@@ -1012,7 +1102,7 @@ export const HIGH_OPS: HighOpDef[] = [
     action: "删除设备 SKU",
     amplifies: false,
     type: "sos",
-    gateLabel: "门槛者",
+    gateLabel: "另一位有批准权限和商品业务权限的管理员",
     targetType: "device_sku",
     buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_delete",
       params: { skuId: String(ctx.skuId), expectedUpdatedAt: String(ctx.updatedAt ?? "") } }),
@@ -1123,6 +1213,7 @@ export const HIGH_OPS: HighOpDef[] = [
     } }),
     buildTarget: () => ({ domain: "E", type: "device_release_early_access", id: "trade-in" }),
   },
+  E6_ONBOARDING_YIELD_SKU,
   // E2 收益(e2 phone_tier/task)
   {
     op: "e2_phone_tier",
@@ -1150,11 +1241,7 @@ export const HIGH_OPS: HighOpDef[] = [
     type: "param",
     gateLabel: "门槛者",
     targetType: "device_task",
-    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_create",
-      params: { name: String(ctx.name), price: ctx.price, unit: String(ctx.unit),
-        requirement: String(ctx.requirement), saturation: ctx.saturation, status: String(ctx.status),
-        taskClass: String(ctx.taskClass), model: String(ctx.model), minReward: ctx.minReward,
-        maxReward: ctx.maxReward, minVram: String(ctx.minVram), killInit: String(ctx.killInit) } }),
+    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_create", params: { poolCode: "PHONE", name: String(ctx.name), taskClass: String(ctx.taskClass), simulation: ctx.simulation } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {
@@ -1165,11 +1252,7 @@ export const HIGH_OPS: HighOpDef[] = [
     type: "param",
     gateLabel: "门槛者",
     targetType: "device_task",
-    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_update",
-      params: { taskId: String(ctx.taskId), name: String(ctx.name), price: ctx.price, unit: String(ctx.unit),
-        requirement: String(ctx.requirement), saturation: ctx.saturation, status: String(ctx.status),
-        taskClass: String(ctx.taskClass), model: String(ctx.model), minReward: ctx.minReward,
-        maxReward: ctx.maxReward, minVram: String(ctx.minVram), killInit: String(ctx.killInit) } }),
+    buildCommand: (ctx) => ({ domain: "E", op: "e2_task_update", params: { poolCode: "PHONE", taskId: String(ctx.taskId), name: String(ctx.name), taskClass: String(ctx.taskClass), simulation: ctx.simulation } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {
@@ -1193,7 +1276,7 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "device_task",
     buildCommand: (ctx) => ({ domain: "E", op: "e2_task_status",
-      params: { taskId: String(ctx.taskId), status: String(ctx.status) } }),
+      params: { poolCode: "PHONE", taskId: String(ctx.taskId), status: String(ctx.status) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_task", id: String(ctx.taskId) }),
   },
   {
@@ -1212,7 +1295,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "e3_config",
     domain: "E",
-    action: "更新 E3 生命周期配置",
+    action: "更新升级置换设置",
     amplifies: false,
     type: "param",
     gateLabel: "门槛者",
@@ -1228,7 +1311,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "e3_config_batch",
     domain: "E",
-    action: "批量更新 E3 生命周期配置",
+    action: "批量更新升级置换设置",
     amplifies: false,
     type: "param",
     gateLabel: "门槛者",
@@ -1253,7 +1336,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "e3_tradein",
     domain: "E",
-    action: "以旧换新/处置设备",
+    action: "升级置换/处置设备",
     amplifies: true, // 默认 recycle/replace 补偿放大;前端按 operation=deactivate 覆盖为 false(收缩方向)
     type: "fund",
     gateLabel: "门槛者",
@@ -1284,7 +1367,9 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "device_order",
     buildCommand: (ctx) => ({ domain: "E", op: "e4_order_refund",
-      params: { orderNo: String(ctx.orderNo), refundChannel: String(ctx.refundChannel ?? "WALLET") } }),
+      params: { orderNo: String(ctx.orderNo), refundChannel: String(ctx.refundChannel ?? "WALLET"),
+        ...(ctx.refundAmountUsdt === undefined ? {} : { refundAmountUsdt: String(ctx.refundAmountUsdt) }),
+        ...(ctx.refundReasonCode ? { refundReasonCode: String(ctx.refundReasonCode) } : {}) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_order", id: String(ctx.orderNo) }),
   },
   {
@@ -1296,7 +1381,8 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "device_order",
     buildCommand: (ctx) => ({ domain: "E", op: "e4_order_cancel",
-      params: { orderNo: String(ctx.orderNo) } }),
+      params: { orderNo: String(ctx.orderNo),
+        ...(ctx.closeReasonCode ? { closeReasonCode: String(ctx.closeReasonCode) } : {}) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_order", id: String(ctx.orderNo) }),
   },
   {
@@ -1308,7 +1394,8 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "device_order",
     buildCommand: (ctx) => ({ domain: "E", op: "e4_order_terminal",
-      params: { orderNo: String(ctx.orderNo), terminalState: String(ctx.terminalState) } }),
+      params: { orderNo: String(ctx.orderNo), terminalState: String(ctx.terminalState),
+        ...(ctx.closeReasonCode ? { closeReasonCode: String(ctx.closeReasonCode) } : {}) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_order", id: String(ctx.orderNo) }),
   },
   {
@@ -1323,7 +1410,7 @@ export const HIGH_OPS: HighOpDef[] = [
       params: { orderNo: String(ctx.orderNo), state: String(ctx.state) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_order", id: String(ctx.orderNo) }),
   },
-  // E5 设备与数据中心运维
+  // E5 设备管理
   {
     op: "e5_device_activate",
     domain: "E",
@@ -1396,71 +1483,6 @@ export const HIGH_OPS: HighOpDef[] = [
       params: { userId: Number(ctx.userId) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "user_device_batch", id: String(ctx.userId) }),
   },
-  {
-    op: "e5_datacenter_create",
-    domain: "E",
-    action: "新建数据中心",
-    amplifies: false,
-    type: "param",
-    gateLabel: "门槛者",
-    targetType: "device_datacenter",
-    buildCommand: (ctx) => ({ domain: "E", op: "e5_datacenter_create",
-      params: { dcLocation: String(ctx.dcLocation), regionLabel: String(ctx.regionLabel),
-        location: String(ctx.location), displayName: String(ctx.displayName),
-        status: String(ctx.status), sortOrder: ctx.sortOrder } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_datacenter", id: String(ctx.dcLocation) }),
-  },
-  {
-    op: "e5_datacenter_update",
-    domain: "E",
-    action: "更新数据中心",
-    amplifies: false,
-    type: "param",
-    gateLabel: "门槛者",
-    targetType: "device_datacenter",
-    buildCommand: (ctx) => ({ domain: "E", op: "e5_datacenter_update",
-      params: { dcLocation: String(ctx.dcLocation), regionLabel: String(ctx.regionLabel),
-        oldDcLocation: String(ctx.oldDcLocation ?? ctx.dcLocation),
-        location: String(ctx.location), displayName: String(ctx.displayName),
-        status: String(ctx.status), sortOrder: ctx.sortOrder } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_datacenter", id: String(ctx.dcLocation) }),
-  },
-  {
-    op: "e5_datacenter_delete",
-    domain: "E",
-    action: "删除数据中心",
-    amplifies: false,
-    type: "sos",
-    gateLabel: "门槛者",
-    targetType: "device_datacenter",
-    buildCommand: (ctx) => ({ domain: "E", op: "e5_datacenter_delete",
-      params: { dcLocation: String(ctx.dcLocation) } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_datacenter", id: String(ctx.dcLocation) }),
-  },
-  {
-    op: "e5_datacenter_pause",
-    domain: "E",
-    action: "暂停数据中心派单",
-    amplifies: false, // 暂停=收缩(resume 见 e5_datacenter_resume)
-    type: "sos",
-    gateLabel: "门槛者",
-    targetType: "device_datacenter",
-    buildCommand: (ctx) => ({ domain: "E", op: "e5_datacenter_pause",
-      params: { dcLocation: String(ctx.dcLocation) } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_datacenter", id: String(ctx.dcLocation) }),
-  },
-  {
-    op: "e5_datacenter_resume",
-    domain: "E",
-    action: "恢复数据中心派单",
-    amplifies: true, // 恢复派单放大
-    type: "fund",
-    gateLabel: "门槛者",
-    targetType: "device_datacenter",
-    buildCommand: (ctx) => ({ domain: "E", op: "e5_datacenter_resume",
-      params: { dcLocation: String(ctx.dcLocation) } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_datacenter", id: String(ctx.dcLocation) }),
-  },
   // E6 算力(e6 compute_config)
   {
     op: "e6_phone_calibration", domain: "E", action: "发布手机校准规则", amplifies: true,
@@ -1501,12 +1523,29 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // —— H 域增长(批 7) ——
   {
+    op: "h3_quest_config", domain: "H", action: "放大用户任务奖励配置", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h3_quest_config",
+    buildCommand: (ctx) => ({ domain: "H", op: "h3_quest_config", params: { values: {
+      configKey: String(ctx.configKey), value: String(ctx.value), expectedValue: String(ctx.expectedValue),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h3_quest_config", id: String(ctx.configKey) }),
+  },
+  {
+    op: "h3_mission_create", domain: "H", action: "新建带奖励的任务", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h3_mission",
+    buildCommand: (ctx) => ({ domain: "H", op: "h3_mission_create", params: { values: {
+      missionCode: String(ctx.missionCode), missionName: String(ctx.missionName), missionType: String(ctx.missionType),
+      rewardPoints: Number(ctx.rewardPoints), category: String(ctx.category), actionRoute: String(ctx.actionRoute),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h3_mission", id: String(ctx.missionCode) }),
+  },
+  {
     op: "h3_weekly_region_policy",
     domain: "H",
     action: "调整每周任务地区映射",
     amplifies: true,
     type: "acct",
-    gateLabel: "A2 审批（发起与审批分人）",
+    gateLabel: "需要审批（发起人和审批人不能是同一人）",
     targetType: "config",
     buildCommand: (ctx) => ({ domain: "H", op: "h3_weekly_region_policy", params: {
       expectedRevision: ctx.expectedRevision, mappings: ctx.mappings,
@@ -1594,6 +1633,44 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: (ctx) => ({ domain: "H", type: "checkin_rule", id: String(ctx.ruleKey) }),
   },
   {
+    op: "h5_streak_milestone", domain: "H", action: "放宽连签里程碑奖励", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h5_streak_milestone",
+    buildCommand: (ctx) => ({ domain: "H", op: "h5_streak_milestone", params: { values: {
+      milestoneId: Number(ctx.milestoneId), reward: String(ctx.reward), expectedReward: String(ctx.expectedReward),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h5_streak_milestone", id: String(ctx.milestoneId) }),
+  },
+  {
+    op: "h5_power_up_config", domain: "H", action: "放宽连签权益", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h5_power_up",
+    buildCommand: (ctx) => ({ domain: "H", op: "h5_power_up_config", params: { values: {
+      powerUpId: Number(ctx.powerUpId), day: Number(ctx.day), note: String(ctx.note), expectedDay: Number(ctx.expectedDay), expectedNote: String(ctx.expectedNote),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h5_power_up", id: String(ctx.powerUpId) }),
+  },
+  {
+    op: "h5_earn_milestone", domain: "H", action: "放宽收益里程碑", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h5_earn_milestone",
+    buildCommand: (ctx) => ({ domain: "H", op: "h5_earn_milestone", params: { values: {
+      milestoneKey: String(ctx.milestoneKey), thresholdUsd: String(ctx.thresholdUsd), rewardNex: String(ctx.rewardNex),
+      expectedThresholdUsd: String(ctx.expectedThresholdUsd), expectedRewardNex: String(ctx.expectedRewardNex),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h5_earn_milestone", id: String(ctx.milestoneKey) }),
+  },
+  {
+    op: "h8_reward_param_change",
+    domain: "H",
+    action: "放宽新人礼与邀请奖励",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "另一位具备 A2 审批权限的超管",
+    targetType: "h8_reward_policy",
+    buildCommand: (ctx) => ({ domain: "H", op: "h8_reward_param_change", params: { values: {
+      key: String(ctx.key), value: String(ctx.value), expectedVersion: ctx.expectedVersion,
+    } } }),
+    buildTarget: () => ({ domain: "H", type: "h8_reward_policy", id: "current" }),
+  },
+  {
     op: "h8_referral_settlement",
     domain: "H",
     action: "执行邀请奖励真实结算",
@@ -1635,7 +1712,7 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // —— I 域内容(批 8) ——
   // buildCommand params 严格对齐后端 OpsTrustDisclosureService.replay(委托架构:I3/I7 委托另 2 service)。
-  // I3 通知优先级 CAP(updateCapRule · tier 锁 · amplifies false)
+  // I3 CAP: only A2 replay calls updateApprovedCapRule (0e301ad5); direct PATCH is rejected.
   {
     op: "i3_cap_adjust",
     domain: "I",
@@ -1775,6 +1852,83 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // I7 课程奖励调整(updateCourseReward · courseId 锁 · amplifies 放大未来 NEX 流出,B1 红线前置)
   {
+    op: "i7_course_first_publish", domain: "I", action: "首次发布奖励课程", amplifies: true, type: "fund", gateLabel: "超管", targetType: "learning_course_activation",
+    buildCommand: (ctx) => ({ domain: "I", op: "i7_course_first_publish", params: {
+      courseId: ctx.courseId, version: ctx.version, expectedRevision: ctx.expectedRevision,
+      expectedCurrentVersion: ctx.expectedCurrentVersion, expectedCurrentRevision: ctx.expectedCurrentRevision,
+      expectedCurrentStatus: ctx.expectedCurrentStatus,
+    } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "learning_course_activation", id: String(ctx.courseId) }),
+  },
+  {
+    op: "i7_course_version_publish", domain: "I", action: "发布奖励课程版本", amplifies: true, type: "fund", gateLabel: "超管", targetType: "learning_course_activation",
+    buildCommand: (ctx) => ({ domain: "I", op: "i7_course_version_publish", params: {
+      courseId: ctx.courseId, version: ctx.version, expectedRevision: ctx.expectedRevision,
+      expectedCurrentVersion: ctx.expectedCurrentVersion, expectedCurrentRevision: ctx.expectedCurrentRevision,
+      expectedCurrentStatus: ctx.expectedCurrentStatus,
+    } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "learning_course_activation", id: String(ctx.courseId) }),
+  },
+  {
+    op: "i7_course_version_rollback", domain: "I", action: "回滚至有奖励的课程版本", amplifies: true, type: "fund", gateLabel: "超管", targetType: "learning_course_activation",
+    buildCommand: (ctx) => ({ domain: "I", op: "i7_course_version_rollback", params: {
+      courseId: ctx.courseId, version: ctx.version, expectedRevision: ctx.expectedRevision,
+      expectedCurrentVersion: ctx.expectedCurrentVersion, expectedCurrentRevision: ctx.expectedCurrentRevision,
+      expectedCurrentStatus: ctx.expectedCurrentStatus,
+    } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "learning_course_activation", id: String(ctx.courseId) }),
+  },
+  {
+    op: "h4_event_rule_enable", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_event_rule",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_event_rule_enable", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_event_rule", id: String(ctx.eventCode) }),
+  },
+  {
+    op: "h4_genesis_raffle_open", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_genesis_raffle",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_genesis_raffle_open", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_genesis_raffle", id: String(ctx.id) }),
+  },
+  {
+    op: "h4_wheel_guard_create", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_guard",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_guard_create", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_guard", id: String(ctx.guardKey) }),
+  },
+  {
+    op: "h4_wheel_guard_update", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_guard",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_guard_update", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_guard", id: String(ctx.guardKey) }),
+  },
+  {
+    op: "h4_legacy_event_open", domain: "H", action: "开放旧活动资金奖励", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_legacy_event",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_legacy_event_open", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_legacy_event", id: String(ctx.eventCode) }),
+  },
+  {
+    op: "h4_legacy_event_reward_update", domain: "H", action: "提高旧活动奖励", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_legacy_event",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_legacy_event_reward_update", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_legacy_event", id: String(ctx.eventCode) }),
+  },
+  {
+    op: "h4_wheel_tier_create", domain: "H", action: "新增转盘奖项", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_pool",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_tier_create", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_pool", id: "ACTIVE_POOL" }),
+  },
+  {
+    op: "h4_wheel_tier_update", domain: "H", action: "放宽转盘奖项配置", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_pool",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_tier_update", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_pool", id: "ACTIVE_POOL" }),
+  },
+  {
+    op: "h4_wheel_tier_delete", domain: "H", action: "删除转盘奖项并提高安慰奖", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_pool",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_tier_delete", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_pool", id: "ACTIVE_POOL" }),
+  },
+  {
+    op: "h4_wheel_probabilities_update", domain: "H", action: "提高转盘奖项概率", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_pool",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_probabilities_update", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_pool", id: "ACTIVE_POOL" }),
+  },
+  {
     op: "i7_course_reward_adjust",
     domain: "I",
     action: "课程奖励调整",
@@ -1790,7 +1944,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f_seven_layer_activation",
     domain: "F",
-    action: "七层结算状态调整",
+    action: "团队购买奖励结算状态调整",
     amplifies: true,
     type: "fund",
     gateLabel: "另一位审批管理员",
@@ -1803,7 +1957,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f_direct_referral_policy",
     domain: "F",
-    action: "直属分成政策整组调整",
+    action: "好友奖励设置整组调整",
     amplifies: true,
     type: "fund",
     gateLabel: "门槛者",
@@ -1822,7 +1976,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f_config",
     domain: "F",
-    action: "网络佣金政策参数调整",
+    action: "团队奖励参数调整",
     amplifies: true, // 资金类政策放大(royalty/match/pool)
     type: "fund",
     gateLabel: "门槛者",
@@ -1844,7 +1998,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: (ctx) => ({ domain: "F", type: "ui_config", id: `batch:${String(ctx.sourceDomain ?? "F")}` }),
     buildTargets: (ctx) => (Array.isArray(ctx.changes) ? ctx.changes : []).map((item) => {
       const change = item as { key?: unknown };
-      return { domain: "F", type: "ui_config", id: String(change.key ?? "") };
+      return { domain: "F", type: fConfigBatchTargetType(String(change.key ?? "")), id: String(change.key ?? "") };
     }),
   },
   // f_ui_config: UI keys toggle/文案(F.vrank.permanent/F.binary.paused/F.leaderboard.paused 等)。amplifies false。
@@ -1858,15 +2012,32 @@ export const HIGH_OPS: HighOpDef[] = [
     targetType: "ui_config",
     buildCommand: (ctx) => ({ domain: "F", op: "f_ui_config",
       params: { key: String(ctx.key), value: String(ctx.value),
-        ...(ctx.expectedVersion === undefined ? {} : { expectedMonthlyQuota: Number(ctx.expectedVersion) }) } }),
-    // 后端查锁 countActiveByTarget("F","ui_config",key) → id = key
-    buildTarget: (ctx) => ({ domain: "F", type: "ui_config", id: String(ctx.key) }),
+        ...(ctx.expectedVersion === undefined ? {} : { expectedMonthlyQuota: Number(ctx.expectedVersion) }),
+        ...(ctx.expectedMaterialRevision === undefined ? {} : { expectedMaterialRevision: Number(ctx.expectedMaterialRevision) }) } }),
+    // 大使处置锁原申请；其他参数继续锁 ui_config/key，与后端特化目标保持一致。
+    buildTarget: (ctx) => {
+      const applicationId = String(ctx.key).match(/^F\.ambassador\.(\d+)\.status$/)?.[1];
+      return { domain: "F", type: applicationId ? "ambassador_application" : "ui_config", id: applicationId ?? String(ctx.key) };
+    },
+  },
+  // 6cda1e99: bootstrap is one approved command, never fourteen single-field updates.
+  {
+    op: "f_unilevel_bootstrap",
+    domain: "F",
+    action: "首次配置 L1–L7 团队购买奖励",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "unilevel_rule",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_unilevel_bootstrap",
+      params: { expectedVersion: 0, layers: ctx.layers } }),
+    buildTarget: () => ({ domain: "F", type: "unilevel_rule", id: "bootstrap" }),
   },
   // f_unilevel_rule: F.unilevel.L{n}(usdtRate) / F.unilevel.nex.L{n}(nexPerUsd)。amplifies true(费率放大佣金流出)。
   {
     op: "f_unilevel_rule",
     domain: "F",
-    action: "层级费率调整",
+    action: "L1–L7 奖励比例调整",
     amplifies: true, // 费率放大佣金流出
     type: "fund",
     gateLabel: "门槛者",
@@ -1884,7 +2055,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f_commission_status",
     domain: "F",
-    action: "佣金事件处置",
+    action: "奖励记录处置",
     amplifies: true, // 硬=true,动资金 postLedgerEntry(解锁方向 IN/PENDING 放大可提余额)
     type: "fund",
     gateLabel: "门槛者",
@@ -1907,7 +2078,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f5_commission_reverse",
     domain: "F",
-    action: "冲正佣金事件",
+    action: "冲正奖励记录",
     amplifies: false,
     type: "fund",
     gateLabel: "门槛者",
@@ -1920,7 +2091,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f5_commission_reissue",
     domain: "F",
-    action: "批量补发佣金",
+    action: "批量补发奖励",
     amplifies: true,
     type: "fund",
     gateLabel: "门槛者",
@@ -1935,7 +2106,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "f5_commission_suspension",
     domain: "F",
-    action: "暂停或恢复用户佣金",
+    action: "暂停或恢复用户奖励",
     amplifies: false,
     type: "acct",
     gateLabel: "门槛者",
@@ -1947,6 +2118,28 @@ export const HIGH_OPS: HighOpDef[] = [
       domain: "F", type: "commission_user_kind",
       id: `${String(ctx.userId)}:${[...(ctx.kinds as string[])].map(String).sort().join(",")}`,
     }),
+  },
+  {
+    op: "f_vrank_bootstrap",
+    domain: "F",
+    action: "首次配置 V0–V8 会员等级",
+    amplifies: true,
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "vrank_bootstrap",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_vrank_bootstrap", params: { ranks: ctx.ranks } }),
+    buildTarget: () => ({ domain: "F", type: "vrank_bootstrap", id: "current" }),
+  },
+  {
+    op: "f1_rank_policy_change",
+    domain: "F",
+    action: "放宽晋升条件或增加资金奖励",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "超管",
+    targetType: "vrank_policy",
+    buildCommand: (ctx) => ({ domain: "F", op: "f1_rank_policy_change", params: { values: ctx.values } }),
+    buildTarget: (ctx) => ({ domain: "F", type: "vrank_policy", id: String(ctx.rank) }),
   },
   {
     op: "f_vrank_override",
@@ -1974,13 +2167,14 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({ domain: "F", op: "f_reward_payout_action", params: {
       payoutId: String(ctx.payoutId),
       action: String(ctx.action),
+      ...(ctx.action === "reverse" && typeof ctx.usedVoucherClawback === "boolean" ? { usedVoucherClawback: ctx.usedVoucherClawback } : {}),
     } }),
     buildTarget: (ctx) => ({ domain: "F", type: "vrank_reward_payout", id: String(ctx.payoutId) }),
   },
   {
     op: "f4_pool_settle",
     domain: "F",
-    action: "领导奖池提前结算",
+    action: "团队激励池提前结算",
     amplifies: true,
     type: "fund",
     gateLabel: "门槛者",

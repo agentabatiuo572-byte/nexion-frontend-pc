@@ -18,6 +18,13 @@ function isText(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
+  if (parts.length === 1 && ["purchase-payment-policy", "purchase-payment-records"].includes(parts[0])) {
+    return `/api/admin/finance/${parts[0]}`;
+  }
+  if (parts[0] === "purchase-payment-records" && /^[A-Za-z0-9_-]{1,100}$/.test(parts[1] ?? "")
+    && (parts.length === 2 || parts.length === 3 && parts[2] === "revalidate-deliver")) {
+    return `/api/admin/finance/purchase-payment-records/${parts[1]}${parts.length === 3 ? "/revalidate-deliver" : ""}`;
+  }
   const exceptionRoute = cregisExceptionRoute(parts);
   if (exceptionRoute) return exceptionRoute.path;
   if (parts.length === 2 && parts[0] === "cregis" && parts[1] === "exceptions") {
@@ -52,23 +59,18 @@ function backendPath(parts: string[]) {
       return `/api/admin/finance/cregis/${parts[1]}/${parts[2]}/decision`;
     }
   }
-  if (parts.length === 2 && parts[0] === "vietqr" && ["overview", "orders", "accounts", "config", "receipts", "receipt-evidence"].includes(parts[1])) {
+  if (parts.length === 2 && parts[0] === "vietqr" && ["overview", "orders", "config", "receipt-evidence"].includes(parts[1])) {
     return `/api/admin/finance/vietqr/${parts[1]}`;
   }
   if (parts.length === 4 && parts[0] === "vietqr" && parts[1] === "orders"
       && /^VQR-[A-Za-z0-9]+$/.test(parts[2]) && parts[3] === "manual-credit") {
     return `/api/admin/finance/vietqr/orders/${parts[2]}/manual-credit`;
   }
-  if (parts.length === 3 && parts[0] === "vietqr" && parts[1] === "accounts" && /^\d+$/.test(parts[2])) {
-    return `/api/admin/finance/vietqr/accounts/${parts[2]}`;
-  }
-  if (parts.length === 5 && parts[0] === "vietqr" && parts[1] === "reconciliations"
-      && /^\d+$/.test(parts[2]) && parts[3] === "actions"
-      && ["match-credit", "write-off", "return"].includes(parts[4])) {
-    return `/api/admin/finance/vietqr/reconciliations/${parts[2]}/actions/${parts[4]}`;
-  }
   if (parts.length === 1 && parts[0] === "fx-quote") {
     return "/api/admin/finance/fx-quote";
+  }
+  if (parts.length === 2 && parts[0] === "fx-quote" && parts[1] === "preflight") {
+    return "/api/admin/finance/fx-quote/preflight";
   }
   if (parts.length === 2 && parts[0] === "payout-vnd" && ["config", "channel"].includes(parts[1])) {
     return `/api/admin/finance/payout-vnd/${parts[1]}`;
@@ -76,26 +78,11 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "topup" && ["overview", "flows"].includes(parts[1])) {
     return `/api/admin/finance/topup/${parts[1]}`;
   }
-  if (parts.length === 4 && parts[0] === "topup" && parts[1] === "channels" && isText(parts[2]) && ["enabled", "fee", "min-amount", "max-amount"].includes(parts[3])) {
+  if (parts.length === 4 && parts[0] === "topup" && parts[1] === "channels" && isText(parts[2]) && ["enabled", "fee", "max-amount"].includes(parts[3])) {
     return `/api/admin/finance/topup/channels/${encodeURIComponent(parts[2])}/${parts[3]}`;
-  }
-  if (parts.length === 3 && parts[0] === "topup" && parts[1] === "psp" && parts[2] === "primary") {
-    return "/api/admin/finance/topup/psp/primary";
-  }
-  if (parts.length === 3 && parts[0] === "topup" && parts[1] === "card-risk" && isText(parts[2])) {
-    return `/api/admin/finance/topup/card-risk/${encodeURIComponent(parts[2])}`;
   }
   if (parts.length === 4 && parts[0] === "topup" && parts[1] === "reconciliation" && isText(parts[2]) && parts[3] === "writeoff") {
     return `/api/admin/finance/topup/reconciliation/${encodeURIComponent(parts[2])}/writeoff`;
-  }
-  if (parts.length === 2 && parts[0] === "topup" && parts[1] === "bin-locks") {
-    return "/api/admin/finance/topup/bin-locks";
-  }
-  if (parts.length === 3 && parts[0] === "topup" && parts[1] === "bin-locks" && isText(parts[2])) {
-    return `/api/admin/finance/topup/bin-locks/${encodeURIComponent(parts[2])}`;
-  }
-  if (parts.length === 4 && parts[0] === "topup" && parts[1] === "chargebacks" && isText(parts[2]) && parts[3] === "refund") {
-    return `/api/admin/finance/topup/chargebacks/${encodeURIComponent(parts[2])}/refund`;
   }
   if (parts.length === 1 && parts[0] === "withdrawal-params") {
     return "/api/admin/finance/withdrawal-params";
@@ -135,6 +122,12 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
+  const fxPreflight = path.length === 2 && path[0] === "fx-quote" && path[1] === "preflight";
+  if (fxPreflight && request.method !== "POST") return jsonError(405, "FX_PREFLIGHT_METHOD_NOT_ALLOWED");
+  if ((path[0] === "purchase-payment-policy" && !["GET", "PATCH"].includes(request.method))
+    || (path[0] === "purchase-payment-records" && !(path.length === 3 ? request.method === "POST" : request.method === "GET"))) {
+    return jsonError(405, "PURCHASE_PAYMENT_METHOD_NOT_ALLOWED");
+  }
   const exceptionRoute = cregisExceptionRoute(path);
   if (exceptionRoute && !exceptionRoute.methods.includes(request.method)) {
     return jsonError(405, "CREGIS_EXCEPTION_METHOD_NOT_ALLOWED");
@@ -191,7 +184,7 @@ async function proxy(request: Request, context: RouteContext) {
     });
   } catch {
     const response = jsonError(503, "FINANCE_BACKEND_UNAVAILABLE");
-    if (hasBody) response.headers.set("X-Nexion-Upstream-Outcome", "unknown");
+    if (hasBody && !fxPreflight) response.headers.set("X-Nexion-Upstream-Outcome", "unknown");
     return response;
   }
 }

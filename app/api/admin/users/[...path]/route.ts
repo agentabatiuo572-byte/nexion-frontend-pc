@@ -1,10 +1,13 @@
+import { preserveUserFundAmounts } from "@/lib/admin/user-latest-funds-contract";
 import { cookies } from "next/headers";
 import { phoneUserRoute } from "@/lib/admin/phone-replacement-routes";
+import { paymentPasswordRoute } from "@/lib/admin/payment-password-routes";
 import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 const MASKED_PHONE_PATTERN = /^[0-9]{3}\*{4}[0-9]{4}$/;
+const ACTIVE_SUMMARY_PATH = "/api/admin/users/active-summary";
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -36,6 +39,8 @@ function sanitizePhoneMasked(value: unknown): unknown {
 }
 
 function backendPath(parts: string[]) {
+  const paymentPassword = paymentPasswordRoute(parts);
+  if (paymentPassword) return paymentPassword.path;
   const phone = phoneUserRoute(parts);
   if (phone) return phone.path;
   if (parts.length === 5 && parts[0] === "profiles" && isNonEmpty(parts[1])
@@ -45,8 +50,14 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "overview") {
     return "/api/admin/users/overview";
   }
+  if (parts.length === 1 && parts[0] === "active-summary") {
+    return ACTIVE_SUMMARY_PATH;
+  }
   if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "overview") {
     return "/api/admin/users/account-actions/overview";
+  }
+  if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "accounts") {
+    return "/api/admin/users/account-actions/accounts";
   }
   if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "alerts") {
     return "/api/admin/users/account-actions/alerts";
@@ -106,7 +117,7 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "asset-adjustments" && isNonEmpty(parts[1])) {
     return `/api/admin/users/asset-adjustments/${encodeURIComponent(parts[1])}`;
   }
-  if (parts.length === 3 && parts[0] === "asset-adjustments" && isNonEmpty(parts[1]) && (parts[2] === "approve" || parts[2] === "reject" || parts[2] === "reverse")) {
+  if (parts.length === 3 && parts[0] === "asset-adjustments" && isNonEmpty(parts[1]) && ["approve", "reject", "reverse", "withdraw"].includes(parts[2])) {
     return `/api/admin/users/asset-adjustments/${encodeURIComponent(parts[1])}/${parts[2]}`;
   }
   if (parts.length === 3 && parts[0] === "account-lists" && isNonEmpty(parts[1]) && parts[2] === "remove") {
@@ -174,13 +185,15 @@ async function proxy(request: Request, context: RouteContext) {
   const targetPath = backendPath(path);
   const phone = phoneUserRoute(path);
   if (phone && request.method !== phone.method) return jsonError(405, "METHOD_NOT_ALLOWED");
+  const paymentPassword = paymentPasswordRoute(path);
+  if (paymentPassword && !paymentPassword.methods.includes(request.method)) return jsonError(405, "METHOD_NOT_ALLOWED");
 
   if (!targetPath) {
     return jsonError(404, "USERS_ROUTE_NOT_FOUND");
   }
 
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());
-  if (targetPath.endsWith("/time-evidence") && request.method !== "GET") {
+  if ((targetPath === ACTIVE_SUMMARY_PATH || targetPath.endsWith("/time-evidence")) && request.method !== "GET") {
     return jsonError(405, "METHOD_NOT_ALLOWED");
   }
   if (targetPath.endsWith("/time-correction") && request.method !== "POST") {
@@ -232,7 +245,12 @@ async function proxy(request: Request, context: RouteContext) {
       targetPath.startsWith("/api/admin/users/")
     ) {
       try {
-        const sanitized = sanitizePhoneMasked(JSON.parse(new TextDecoder().decode(body)));
+        const text = new TextDecoder().decode(body);
+        const detail360 = request.method === "GET" && /^\/api\/admin\/users\/profiles\/[^/]+\/360$/.test(targetPath);
+        const exact = detail360 ? preserveUserFundAmounts(text)
+          : request.method === "GET" && targetPath === "/api/admin/users/profiles"
+            ? text.replace(/("(?:walletUsdt|walletNex)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"') : text;
+        const sanitized = sanitizePhoneMasked(JSON.parse(exact));
         return new Response(JSON.stringify(sanitized), {
           status: upstream.status,
           headers: responseHeaders,

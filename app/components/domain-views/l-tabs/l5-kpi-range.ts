@@ -1,3 +1,4 @@
+import { businessZone } from "@/lib/admin/business-time";
 export const L5_KPI_WINDOWS = { "1d": "最近 1 天", "7d": "最近 7 天", "30d": "最近 30 天", custom: "自选日期" } as const;
 type Window = keyof typeof L5_KPI_WINDOWS;
 
@@ -6,7 +7,7 @@ export function isL5KpiExport(exportType: string): boolean {
 }
 
 export function l5BusinessToday(now = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: businessZone().zoneId, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
 function dateMillis(value: string): number {
@@ -26,7 +27,7 @@ export function l5KpiRange(value: Record<string, string>, today = l5BusinessToda
   const first = dateMillis(from), last = dateMillis(to);
   if (!Number.isFinite(first) || !Number.isFinite(last)) throw new Error("请填写有效的开始和结束日期");
   if (first > last) throw new Error("开始日期不能晚于结束日期");
-  if (to > today) throw new Error("结束日期不能晚于今天（北京时间）");
+  if (to > today) throw new Error(`结束日期不能晚于今天（${businessZone().label}）`);
   if ((last - first) / 86_400_000 > 400) throw new Error("日期跨度不能超过 400 天");
   return { window: "custom", from, to, timeRange: `${from} / ${to}` };
 }

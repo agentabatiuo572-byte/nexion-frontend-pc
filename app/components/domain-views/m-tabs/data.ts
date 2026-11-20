@@ -65,7 +65,8 @@ export type SupportFaq = {
   answer: string;
   status: "published" | "draft";
   surface: "Help Center" | "Ticket Create" | "Nova";
-  language: "zh-CN" | "en-US" | "vi-VN";
+  language: "zh-CN" | "en-US" | "vi-VN" | "id" | "ms" | "fil" | "ru" | "kk" | "uz";
+  translations?: Record<string, { question: string; answer: string }>;
   sortOrder: number;
   version: number;
   updatedAt: string;
@@ -146,7 +147,7 @@ export type SegCond = { field: string; op: string; value: string };
 export type SessionStatus = "open" | "resolved" | "closed" | "transferred";
 /** 坐席消息回执:sent=已送达用户未读,read=用户已读(仅 sender==="agent" 有意义;镜像前端 ConvMessageStatus) */
 export type SessionMsgStatus = "sent" | "read";
-export type SessionMsg = { id?: number; ts: number; sender: "user" | "agent"; sourceSenderType?: "USER" | "AGENT" | "SYSTEM" | "INTERNAL"; senderId?: number; authorConfidence?: "VERIFIED" | "UNKNOWN"; senderAvatar?: { assetId: string; version: number }; agentName?: string; status?: SessionMsgStatus; text: string; ctaHref?: string; kind?: "TEXT" | "IMAGE" | "SKU" | "LINK"; skuId?: string; skuName?: string; linkTarget?: { type: "HOME" | "WALLET" | "SUPPORT"; params: Record<string, never> }; targetAvailability?: "AVAILABLE" | "UNAVAILABLE"; attachmentId?: string; intent?: "SERVICE" | "MAINTENANCE"; clientMessageId?: string; replyTargets?: Array<{ conversationNo: string; throughMessageId: number }> };
+export type SessionMsg = { id?: number; sourceConversationNo?: string; sourceCreatedAt?: string; ts: number; sender: "user" | "agent"; sourceSenderType?: "USER" | "AGENT" | "SYSTEM" | "INTERNAL"; senderId?: number; authorConfidence?: "VERIFIED" | "UNKNOWN"; senderAvatar?: { assetId: string; version: number }; agentName?: string; status?: SessionMsgStatus; text: string; ctaHref?: string; kind?: "TEXT" | "IMAGE" | "SKU" | "LINK" | "AGENT_SWITCH"; senderRole?: "ADVISOR" | "SUPERVISOR" | "ADMIN"; skuId?: string; skuName?: string; linkTarget?: { type: "HOME" | "WALLET" | "SUPPORT"; params: Record<string, never> }; targetAvailability?: "AVAILABLE" | "UNAVAILABLE"; attachmentId?: string; intent?: "SERVICE" | "MAINTENANCE"; clientMessageId?: string; replyTargets?: Array<{ conversationNo: string; throughMessageId: number }>; origin?: "WELCOME" };
 
 /* 完整客户档案(设计稿 CustomerProfile 合并）—— 坐席接待时一眼看清价值 / 风险。只读快照,
  * 客户侧真实账户操作回 C/D 域;systemTags 派生只读,customTags / notes 持久化于后端(nx_customer_tag / nx_customer_note)。 */
@@ -197,6 +198,16 @@ export function transferTargetLabel(t: TransferTarget): string {
   return t.kind === "agent" ? t.name : t.kind === "queue" ? t.queue : STANDBY_POOL_LABEL;
 }
 
+export type ConversationWriteState = {
+  threadOwnerAgentId: string | null;
+  threadOwnerAgentName: string | null;
+  currentAssignmentAgentId: string | null;
+  currentAssignmentAgentName: string | null;
+  writableConversationNo: string | null;
+  // Current-thread identity only; existing account/permission checks still apply.
+  canReply: boolean;
+};
+
 export type SessionConvo = {
   id: string;          // 镜像前端 Conversation.id
   version: number;     // 后端会话头版本,所有核心写入必须携带 CAS
@@ -204,17 +215,21 @@ export type SessionConvo = {
   agentName: string;   // 镜像前端 agentName
   roleKey: string;     // 镜像前端 roleKey
   unread: number;      // 镜像前端 unread
+  pendingReplySince?: number | null;
   pendingReplyCount?: number | null; // 本会话回复游标之后的客户消息数；缺失表示未知。
+  lastHumanTs?: number; // 最后一条客户或客服消息时间（不含系统消息），用于排序。
   lastTs: number;      // 镜像前端 lastTs
   status: SessionStatus; // 后台坐席态
   ownerAgentId?: string; // 后台分配坐席的唯一身份，用于排除自转交
   ownerUnbound?: boolean; // 后端明确返回 ownerAgentId=null，缺字段不视为待分配
   customerId?: string;
+  customerAvatarRef?: string | null; // Set only when the customer uploaded an avatar; otherwise no request is made.
   assignmentId?: string | null;
   ownerAdminId?: number | null;
   owner: string;       // 后台分配坐席
   messages: SessionMsg[]; // 镜像前端 messages{sender,text,ctaHref,ts}
   detailReady?: boolean; // True means detail loaded; history completeness is separate.
+  writeState?: ConversationWriteState | null;
   historyTruncated?: boolean; // Only false confirms a loaded detail covers the complete history.
   lastPreview?: string;
   lastPublicMessageId?: number | null; // Positive = public message exists; zero = empty; missing/null = unknown.
@@ -225,6 +240,7 @@ export type SessionConvo = {
   origin?: "user" | "support" | "advisor"; // 未采集发起来源时保留未知，不由接待身份推断。
   batchInfo?: { audienceDesc: string; identity: string; script: string }; // 人群群发会话上下文(无单一客户档案,右栏显批次信息)
   transfer?: SessionTransfer; // 跨坐席转交态;存在即「转入待处理」(挂目标坐席 B/队列/备勤池,待接收/退回)
+  holder?: { adminId: number; name: string; role: "ADVISOR" | "SUPERVISOR" | "ADMIN" } | null; // B15 当前接待人;undefined = 后端尚未下发
 };
 
 /* M3 会话、客户档案运行态必须从后端 content/conversations 与客服工作台接口读取。 */

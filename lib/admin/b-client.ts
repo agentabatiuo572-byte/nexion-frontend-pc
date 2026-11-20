@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
+import { f4Decimal } from "@/lib/admin/f4-money";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 interface ApiResult<T> {
@@ -24,9 +25,12 @@ export interface BLedgerAccount {
 export interface BLedger {
   reserveUsd: number;
   liabilitiesUsd: number;
+  valuationReliable: boolean;
+  redlineBreached: boolean;
   coverageRatio: number;
   redlinePct: number;
   healthyPct: number;
+  thresholdVersion: number | null;
   runRiskPct: number;
   pressureRatio: number;
   netFlow24hUsd: number;
@@ -34,12 +38,14 @@ export interface BLedger {
   queueBacklogUsd: number;
   avgRiskScore: number;
   coverageSeries: number[];
+  coverageSeriesPoints?: Array<{ at: string; coverageRatio: string; backcast: boolean }>;
+  coverageSeriesIntervalHours: number | null;
   accounts: BLedgerAccount[];
   prev: {
     reserveUsd: number;
     netFlow24hUsd: number;
-    queueBacklogCount: number;
-    avgRiskScore: number;
+    queueBacklogCount: number | null;
+    avgRiskScore: number | null;
   };
 }
 
@@ -90,7 +96,7 @@ export interface BRhythm {
 }
 
 export interface BRiskRadar {
-  gates: Array<{ nm: string; dom: string; on: boolean; state?: "on" | "off" | "missing"; configKey?: string }>;
+  gates: Array<{ nm: string; dom: string; on: boolean; state?: "on" | "off" | "missing"; configKey?: string; unset?: boolean }>;
   trippedGateCount: number;
   feed: Array<{ sev: "p0" | "p1" | "p2" | "p3"; t: string; m: string; href: string }>;
   pressureSeries: number[];
@@ -130,8 +136,11 @@ const CAT_VARS = [
 const EMPTY_LEDGER: BLedger = {
   reserveUsd: 0,
   liabilitiesUsd: 0,
+  valuationReliable: false,
+  redlineBreached: false,
   coverageRatio: 0,
   redlinePct: 0,
+  thresholdVersion: null,
   healthyPct: 0,
   runRiskPct: 0,
   pressureRatio: 0,
@@ -140,12 +149,13 @@ const EMPTY_LEDGER: BLedger = {
   queueBacklogUsd: 0,
   avgRiskScore: 0,
   coverageSeries: [],
+  coverageSeriesIntervalHours: null,
   accounts: [],
   prev: {
     reserveUsd: 0,
     netFlow24hUsd: 0,
-    queueBacklogCount: 0,
-    avgRiskScore: 0,
+    queueBacklogCount: null,
+    avgRiskScore: null,
   },
 };
 
@@ -279,6 +289,12 @@ function nextId(prefix: string) {
 
 function normalizeLedger(raw: Record<string, unknown>): BLedger {
   const snapshot = requiredRow(raw.snapshot, "dualLedger.snapshot");
+  const thresholdVersion = snapshot.thresholdVersion == null
+    ? null
+    : requiredNum(snapshot.thresholdVersion, "dualLedger.snapshot.thresholdVersion");
+  if (thresholdVersion !== null && (!Number.isSafeInteger(thresholdVersion) || thresholdVersion < 0)) {
+    throw new Error("B_DOMAIN_FIELD_REQUIRED:dualLedger.snapshot.thresholdVersion");
+  }
   const reserveUsd = requiredNum(snapshot.reserveUsd, "dualLedger.snapshot.reserveUsd");
   const liabilitiesUsd = requiredNum(snapshot.liabilitiesUsd, "dualLedger.snapshot.liabilitiesUsd");
   const queueBacklogUsd = requiredNum(snapshot.queueBacklogUsd, "dualLedger.snapshot.queueBacklogUsd");
@@ -296,12 +312,25 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
   const prev = requiredRow(raw.prev, "dualLedger.prev");
   const coverageSeries = requiredArr<unknown>(snapshot.coverageSeries, "dualLedger.snapshot.coverageSeries")
     .map((item, index) => requiredNum(item, `dualLedger.snapshot.coverageSeries.${index}`));
+  const coverageSeriesPoints = snapshot.coverageSeriesPoints === undefined ? undefined
+    : requiredArr<unknown>(snapshot.coverageSeriesPoints, "dualLedger.snapshot.coverageSeriesPoints").map((item, index) => {
+      const field = `dualLedger.snapshot.coverageSeriesPoints.${index}`;
+      const point = requiredRow(item, field);
+      const coverageRatio = requiredText(point.coverageRatio, `${field}.coverageRatio`);
+      if (typeof point.at !== "string" || !point.at.trim() || typeof point.backcast !== "boolean"
+        || !/^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(coverageRatio)) throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}`);
+      return { at: point.at, coverageRatio, backcast: point.backcast };
+    });
+  const intervalHours = snapshot.coverageSeriesIntervalHours;
   return {
     reserveUsd,
     liabilitiesUsd,
+    valuationReliable: requiredBool(snapshot.valuationReliable, "dualLedger.snapshot.valuationReliable"),
+    redlineBreached: requiredBool(snapshot.redlineBreached, "dualLedger.snapshot.redlineBreached"),
     coverageRatio: requiredNum(snapshot.coverageRatio, "dualLedger.snapshot.coverageRatio"),
     redlinePct: requiredNum(snapshot.redlinePct, "dualLedger.snapshot.redlinePct"),
     healthyPct: requiredNum(snapshot.healthyPct, "dualLedger.snapshot.healthyPct"),
+    thresholdVersion,
     runRiskPct: requiredNum(snapshot.runRiskPct, "dualLedger.snapshot.runRiskPct"),
     pressureRatio: reserveUsd > 0 ? queueBacklogUsd / reserveUsd : 0,
     netFlow24hUsd: requiredNum(snapshot.netFlow24hUsd, "dualLedger.snapshot.netFlow24hUsd"),
@@ -309,12 +338,15 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
     queueBacklogUsd,
     avgRiskScore: requiredNum(snapshot.avgRiskScore, "dualLedger.snapshot.avgRiskScore"),
     coverageSeries,
+    coverageSeriesPoints,
+    coverageSeriesIntervalHours: typeof intervalHours === "number" && Number.isSafeInteger(intervalHours) && intervalHours > 0
+      ? intervalHours : null,
     accounts,
     prev: {
       reserveUsd: requiredNum(prev.reserveUsd, "dualLedger.prev.reserveUsd"),
       netFlow24hUsd: requiredNum(prev.netFlow24hUsd, "dualLedger.prev.netFlow24hUsd"),
-      queueBacklogCount: requiredNum(prev.queueBacklogCount, "dualLedger.prev.queueBacklogCount"),
-      avgRiskScore: requiredNum(prev.avgRiskScore, "dualLedger.prev.avgRiskScore"),
+      queueBacklogCount: prev.queueBacklogCount == null ? null : requiredNum(prev.queueBacklogCount, "dualLedger.prev.queueBacklogCount"),
+      avgRiskScore: prev.avgRiskScore == null ? null : requiredNum(prev.avgRiskScore, "dualLedger.prev.avgRiskScore"),
     },
   };
 }
@@ -388,7 +420,8 @@ function normalizeRhythm(raw: Record<string, unknown>): BRhythm {
   const h1 = requiredRow(raw.h1, "rhythm.h1");
   return {
     h1: {
-      currentPhase: requiredText(h1.currentPhase, "rhythm.h1.currentPhase"),
+      // B-1: an unconfigured H1 rhythm reports "" with phase name 未配置; show that instead of failing the board.
+      currentPhase: h1.currentPhase === "" ? "" : requiredText(h1.currentPhase, "rhythm.h1.currentPhase"),
       currentPhaseName: requiredText(h1.currentPhaseName, "rhythm.h1.currentPhaseName"),
       currentMonth: requiredNum(h1.currentMonth, "rhythm.h1.currentMonth"),
       totalMonths: requiredNum(h1.totalMonths, "rhythm.h1.totalMonths"),
@@ -425,6 +458,8 @@ function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
         on: state === "missing" ? true : state === "on",
         state,
         configKey: text(item.configKey, ""),
+        // 没有配置行时后端发 default_off，业务按关闭处理（KillSwitchState 失败关闭），页面写「已关停」，原因放问号。
+        unset: rawState === "default_off",
       };
     }),
     trippedGateCount: requiredNum(raw.trippedGateCount, "riskRadar.trippedGateCount"),
@@ -528,9 +563,14 @@ function publishDashboard(sessionKey: string, dashboard: BDomainDashboard) {
   dashboardSubscribers.get(sessionKey)?.forEach((subscriber) => subscriber(dashboard));
 }
 
+function readBDomainResponse(response: Response) {
+  return response.text().then(raw => JSON.parse(raw.replace(/("coverageRatio"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+    (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`))).catch(() => null) as Promise<ApiResult<Record<string, unknown>> | null>;
+}
+
 export async function fetchBDomainDashboard(sessionKey = currentSessionKey()) {
   const response = await guardedFetch("/api/admin/treasury/b-domain", { cache: "no-store" });
-  const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
+  const result = await readBDomainResponse(response);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
@@ -561,7 +601,7 @@ export async function acknowledgeBDomainAlert(
     body: JSON.stringify({ reason, operator }),
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
+  const result = await readBDomainResponse(response);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
@@ -591,7 +631,7 @@ export async function updateB5BankRunThresholds(
     body: JSON.stringify({ ...values, reason, operator }),
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
+  const result = await readBDomainResponse(response);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
     throw new Error(formatAdminApiError(result?.message, `B5_BANKRUN_${response.status}`));
@@ -630,6 +670,7 @@ export function useBDomainDashboard(enabled = true) {
       inflightDashboards.set(sessionKey, task);
       const next = await task;
       setSnapshot({ sessionKey, data: next });
+      return next;
     } catch (err) {
       setError(displayAdminError(err));
     } finally {

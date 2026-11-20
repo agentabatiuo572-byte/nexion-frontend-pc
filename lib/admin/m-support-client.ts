@@ -1,6 +1,7 @@
 import { MContentReadError, parseMContentApiEnvelope } from "./m-support-read-contract.ts";
 import { parseBusinessTime } from "./business-time.ts";
 import { guardedFetch } from "./error-messages.ts";
+import { isExplicitRejection } from "./explicit-rejection";
 
 const BASE = "/api/admin/content";
 const FILTERS = ["ALL", "WINDOW_ACTIVE", "ACTIVE", "DORMANT", "UNKNOWN", "TODO", "DUE", "WAITING_REPLY", "FIRST_CONTACT", "STOPPED"] as const;
@@ -30,8 +31,11 @@ export type SupportOverview = {
   knownActiveCount: number;
   unknownWindowCount: number;
   activityWindowDays?: number | null;
-  performance: { executionCount: number; successfulCycleCount: number; successfulCustomerCount: number; from: string; to: string; timeZone: string; trend: Array<{ day: string; executionCount: number; successfulCycleCount: number }> };
+  performance: { executionCount: number; successfulCycleCount: number; successfulCustomerCount: number; from: string; to: string; timeZone: string; scopeVersion: string | null; trend: Array<{ day: string; executionCount: number; successfulCycleCount: number }> };
 };
+export type PerformanceMetric = "EXECUTION" | "SUCCESSFUL_CYCLE";
+export type PerformanceFact = { id: string; customerId: string; agentId: string; assignmentId: string; cycleId: string; sourceId: string | null; eventAt: string };
+export type PerformanceDetails = SupportPage<PerformanceFact> & { visibleCount: number; restrictedCount: number; windowFrom: string; windowTo: string; timeZone: string; queryVersion: string };
 export type SupportWorkbenchSnapshot = { overview: SupportOverview; customers: SupportPage<SupportCustomer>; completeness: { unknownCount: number; unknownWindowCount: number; coverageStartAt: string; observedThroughAt: string; observationLagMillis: number; activitySource: "INTERACTIVE_LOGIN" } };
 export type SupportCustomer = {
   customerId: string;
@@ -43,6 +47,7 @@ export type SupportCustomer = {
   displayName?: string;
   agentName?: string;
   advisorAvatar?: {assetId:string;version:number};
+  customerAvatarRef: string | null;
   accountState: "ACTIVE" | "DORMANT" | "UNKNOWN";
   windowStatus: "ACTIVE" | "INACTIVE" | "UNKNOWN";
   maintenanceEnabled: boolean;
@@ -56,8 +61,8 @@ export type SupportCustomer = {
   pendingConversationNo: string | null;
   pendingThroughMessageId: number | null;
 };
-export type SupportCustomerDetail = SupportCustomer & { agentAdminId: number; maintenanceEnabled: boolean; maintenanceVersion: number };
-export type SupportMaintenanceRecord = { id: string; kind: string; occurredAt: string; state?: string };
+export type SupportCustomerDetail = SupportCustomer & { effectiveLanguage: string; agentAdminId: number; maintenanceEnabled: boolean; maintenanceVersion: number };
+export type SupportMaintenanceRecord = { id: string; agentAdminId: string | null; kind: string; occurredAt: string; state?: string };
 export type SupportMaintenanceHistory = { customerId: string; cycles: SupportMaintenanceRecord[]; executions: SupportMaintenanceRecord[]; totalCycles: number; totalExecutions: number; pageNum: number; pageSize: number };
 export type SupportBindingPoolItem = {
   customerId: string;
@@ -70,9 +75,12 @@ export type SupportBindingPoolItem = {
   routeVersion: number | null;
   customerNo?: string;
   displayName?: string;
+  phoneMasked?: string | null;
   inviterCustomerId?: string | null;
   pendingMessageCount?: number;
   lastMessageAt?: string | null;
+  waitingSince?: string | null;
+  lastMessagePreview?: string | null;
   autoEligible?: boolean;
   autoAttemptState?: string;
   attempts?: number;
@@ -122,8 +130,27 @@ export type SupportAttachment = {
   expiresAt: string;
 };
 export type SupportAttachmentPolicy = { available: boolean; allowedMimeTypes: Array<"image/png" | "image/jpeg">; maxBytes: number | null; maxPixels: number | null; ttlSeconds: number | null; unavailableReason: string | null };
-export type SupportMessageResult = { conversationNo: string };
-export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown };
+export type SupportMessageResult = { conversationNo: string; conversation?: unknown };
+/** B15: who currently holds the customer session. Absent fields mean the backend has not shipped B15. */
+export type SupportSessionRole = "ADVISOR" | "SUPERVISOR" | "ADMIN";
+export type SupportSessionHolder = { adminId: number; name: string; role: SupportSessionRole };
+export type SupportSessionHold = { state: "FREE" | "MINE" | "OTHER"; holder: SupportSessionHolder | null; sessionRef: string | null; lastSentAt: string | null; autoEndAt: string | null; endMinutes: number | null };
+export const SUPPORT_SESSION_ROLE_LABEL: Record<SupportSessionRole, string> = { ADVISOR: "专属客服", SUPERVISOR: "客服主管", ADMIN: "超级管理员" };
+/** Operator wording of an AGENT_SWITCH row; App/H5 show the name only. */
+export function agentSwitchText(name: string | undefined, role: SupportSessionRole | undefined): string {
+  return name ? `客服已切换为 ${name}${role ? `（${SUPPORT_SESSION_ROLE_LABEL[role]}）` : ""}` : "客服已切换";
+}
+export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown; messageOperation?: "M3_CONVERSATION_INITIATE" | "M3_CONVERSATION_REPLY"; businessCode?: number | null; businessReason?: "M3_TIMEOUT_POLICY_STALE" | "M3_TIMEOUT_POLICY_UNCHANGED" | null } | {
+  status: "REJECTED";
+  sent: false;
+  customerId: string;
+  operation: "M3_CONVERSATION_INITIATE" | "M3_CONVERSATION_REPLY";
+  idempotencyKey: string;
+  clientMessageId: string;
+  businessCode: number;
+  businessReason: string;
+  result?: never;
+};
 export type SupportReplyTarget = { conversationNo: string; throughMessageId: number };
 export type SupportMessageInput = {
   kind: "TEXT" | "IMAGE" | "SKU" | "LINK";
@@ -135,6 +162,7 @@ export type SupportMessageInput = {
   clientMessageId: string;
   replyTargets?: SupportReplyTarget[];
   expectedAssignmentId: string;
+  expectedStatus?: string;
   expectedVersion: number;
 };
 export type SupportStartConversationInput = {
@@ -151,17 +179,40 @@ export class SupportClientError extends Error {
   readonly status: number;
   readonly apiCode: number | undefined;
   readonly backendMessage: string | undefined;
-  constructor(status: number, apiCode: number | undefined, backendMessage: string | undefined) {
+  readonly data: unknown;
+  constructor(status: number, apiCode: number | undefined, backendMessage: string | undefined, data?: unknown) {
     super(`SUPPORT_API_${status}`);
     this.name = "SupportClientError";
     this.status = status;
     this.apiCode = apiCode;
     this.backendMessage = backendMessage;
+    this.data = data;
   }
 }
+/** Only use a denial from a read or write directed at the original customer or thread. */
+export function isSupportScopeDenial(error: unknown): boolean {
+  if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return false;
+  const status = error.status === 200 ? error.apiCode : error.status;
+  return status === 403 || status === 404;
+}
+
+export function supportAssignmentChanged(error: unknown): boolean {
+  return error instanceof SupportClientError && (error.status === 409 || error.status === 200 && error.apiCode === 409)
+    && error.backendMessage === "SUPPORT_ASSIGNMENT_CHANGED";
+}
+
 export function isIndeterminateSupportError(error: unknown): boolean {
   return error instanceof SupportClientError && error.status === 409
     && (error.backendMessage ?? "").startsWith("IDEMPOTENCY_");
+}
+
+/** Authorization, throttling and indeterminate outcomes are not command verdicts. */
+export function isDefiniteSupportRefusal(error: unknown): error is SupportClientError {
+  return error instanceof SupportClientError && isExplicitRejection(error);
+}
+/** BUG-121: the policy endpoint names why images are off; operators get that reason, not a storage guess. */
+export function supportAttachmentUnavailableText(reason: string | null): string {
+  return reason === "ATTACHMENT_POLICY_UNCONFIGURED" ? "图片发送规则还没配置，请联系管理员配置后再发图片" : "图片功能暂不可用，请稍后重试";
 }
 
 function malformed(field: string): never { throw new Error(`SUPPORT_CONTRACT_MALFORMED:${field}`); }
@@ -242,6 +293,7 @@ function customer(value: unknown): SupportCustomer {
     customerNo: optionalString(row.customerNo, "customer.customerNo"),
     displayName: nullableString(row.nickname, "customer.nickname") ?? undefined,
     agentName: row.agentName==null?undefined:nonempty(row.agentName,"customer.agentName"),
+    customerAvatarRef: row.customerAvatarRef==null?null:row.customerAvatarRef===`/api/admin/content/support-workbench/customers/${id(row.customerId, "customer.customerId")}/avatar`?row.customerAvatarRef:malformed("customer.customerAvatarRef"),
     advisorAvatar: row.advisorAvatar==null?undefined:(()=>{const avatar=object(row.advisorAvatar,"customer.avatar");return {assetId:nonempty(avatar.assetId,"avatar.assetId"),version:count(avatar.version,"avatar.version")};})(),
     accountState: enumValue(row.activityStatus, ["ACTIVE", "DORMANT", "UNKNOWN"] as const, "customer.activityStatus"),
     windowStatus: enumValue(row.windowStatus, ["ACTIVE", "INACTIVE", "UNKNOWN"] as const, "customer.windowStatus"),
@@ -257,10 +309,21 @@ function customer(value: unknown): SupportCustomer {
     pendingThroughMessageId: row.pendingThroughMessageId === null ? null : positive(row.pendingThroughMessageId, "customer.pendingThroughMessageId"),
   };
 }
+const EFFECTIVE_SUPPORT_LANGUAGES = new Set(["en-US", "zh-CN", "vi-VN", "id-ID", "ms-MY", "fil-PH", "ru-RU", "kk-KZ", "uz-UZ"]);
+export function parseSupportEffectiveLanguage(value: unknown): string {
+  return typeof value === "string" && EFFECTIVE_SUPPORT_LANGUAGES.has(value) ? value : "en-US";
+}
+
 function detail(value: unknown): SupportCustomerDetail {
   const row = object(value, "detail");
-  const parsed = customer(row.customer);
-  return { ...parsed, agentAdminId: positive(parsed.agentAdminId, "detail.agentAdminId"), maintenanceVersion: parsed.version };
+  const rawCustomer = object(row.customer, "customer");
+  const parsed = customer(rawCustomer);
+  return {
+    ...parsed,
+    effectiveLanguage: parseSupportEffectiveLanguage(rawCustomer.effectiveLanguage),
+    agentAdminId: positive(parsed.agentAdminId, "detail.agentAdminId"),
+    maintenanceVersion: parsed.version,
+  };
 }
 function workbenchSnapshot(value: unknown): SupportWorkbenchSnapshot {
   const row = object(value, "workbench");
@@ -301,7 +364,7 @@ function workbenchSnapshot(value: unknown): SupportWorkbenchSnapshot {
     knownActiveCount: count(totals.knownActiveCount, "workbench.knownActiveCount"),
     unknownWindowCount,
     activityWindowDays: nullablePositive(rules.activityWindowDays, "workbench.rules.activityWindowDays"),
-    performance: { executionCount: count(performance.executionCount, "workbench.performance.executionCount"), successfulCycleCount: count(performance.successfulCycleCount, "workbench.performance.successfulCycleCount"), successfulCustomerCount: count(performance.successfulCustomerCount, "workbench.performance.successfulCustomerCount"), from: timestamp(performance.from, "workbench.performance.from"), to: timestamp(performance.to, "workbench.performance.to"), timeZone: nonempty(performance.timeZone, "workbench.performance.timeZone"), trend },
+    performance: { executionCount: count(performance.executionCount, "workbench.performance.executionCount"), successfulCycleCount: count(performance.successfulCycleCount, "workbench.performance.successfulCycleCount"), successfulCustomerCount: count(performance.successfulCustomerCount, "workbench.performance.successfulCustomerCount"), from: timestamp(performance.from, "workbench.performance.from"), to: timestamp(performance.to, "workbench.performance.to"), timeZone: nonempty(performance.timeZone, "workbench.performance.timeZone"), scopeVersion: performance.scopeVersion == null ? null : nonempty(performance.scopeVersion, "workbench.performance.scopeVersion"), trend },
   };
   const customers = { ...page(rawPage, customer), available: bool(rawPage.available, "workbench.customers.available"), filter: enumValue(rawPage.filter, FILTERS, "workbench.customers.filter") };
   if (!customers.available && customers.records.length) malformed("workbench.customers.records");
@@ -346,14 +409,18 @@ function keyHeader(key: string): HeadersInit {
   if (key.length < 8 || key.length > 128) throw new Error("SUPPORT_IDEMPOTENCY_KEY_INVALID");
   return { "Idempotency-Key": key };
 }
-async function request<T>(path: string, parse: (value: unknown) => T, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, parse: (value: unknown) => T, init: RequestInit & { preserveUnknownOutcome?: boolean; transformResponseText?: (text: string) => string } = {}): Promise<T> {
+  const { transformResponseText, ...requestInit } = init;
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
-  const response = await guardedFetch(`${BASE}${path}`, { ...init, headers, cache: "no-store", credentials: "same-origin" });
+  const response = await guardedFetch(`${BASE}${path}`, { ...requestInit, headers, cache: "no-store", credentials: "same-origin" });
+  if (init.preserveUnknownOutcome && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") {
+    throw new SupportClientError(503, undefined, "UPSTREAM_OUTCOME_UNKNOWN");
+  }
   const text = await response.text();
-  try { return parse(parseMContentApiEnvelope<unknown>(response.status, text, true)); }
+  try { return parse(parseMContentApiEnvelope<unknown>(response.status, transformResponseText ? transformResponseText(text) : text, true)); }
   catch (error) {
-    if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage);
+    if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage, error.data);
     throw error;
   }
 }
@@ -375,7 +442,8 @@ function parsePoolRoute(row: Record<string, unknown>): Pick<SupportBindingPoolIt
 
 export type SupportRouteInput = { targetGroupId: string | null; expectedRouteVersion: number; sourceGroupVersion: number | null; targetGroupVersion: number | null; reason: string };
 export function setSupportPoolRoute(customerId: string, input: SupportRouteInput, key: string, signal?: AbortSignal) {
-  if (input.reason.trim().length < 8 || input.reason.trim().length > 200) malformed("route.reason");
+  const reasonLength = Array.from(input.reason.trim()).length;
+  if (reasonLength < 8 || reasonLength > 200) malformed("route.reason");
   const targetGroupId = input.targetGroupId === null ? null : wireId(input.targetGroupId, "route.targetGroupId");
   if (targetGroupId === null ? input.targetGroupVersion !== null : input.targetGroupVersion === null) malformed("route.targetVersion");
   const body = { ...input, targetGroupId, expectedRouteVersion: count(input.expectedRouteVersion, "route.expectedVersion"), sourceGroupVersion: nullablePositive(input.sourceGroupVersion, "route.sourceVersion"), targetGroupVersion: nullablePositive(input.targetGroupVersion, "route.targetVersion") };
@@ -388,6 +456,28 @@ export function setSupportPoolRoute(customerId: string, input: SupportRouteInput
   }, json("PATCH", body, key, signal));
 }
 
+export function parseSupportSessionHolder(value: unknown, field: string): SupportSessionHolder | null {
+  if (value === null) return null;
+  const row = object(value, field);
+  return { adminId: positive(row.adminId, `${field}.adminId`), name: nonempty(row.name, `${field}.name`), role: enumValue(row.role, ["ADVISOR", "SUPERVISOR", "ADMIN"] as const, `${field}.role`) };
+}
+function sessionHold(value: unknown): SupportSessionHold {
+  const row = object(value, "sessionHold");
+  const state = enumValue(row.state, ["FREE", "MINE", "OTHER"] as const, "sessionHold.state");
+  const holder = parseSupportSessionHolder(row.holder ?? null, "sessionHold.holder");
+  if (state === "OTHER" && !holder) malformed("sessionHold.holder");
+  return { state, holder, sessionRef: row.sessionRef == null ? null : nonempty(row.sessionRef, "sessionHold.sessionRef"), lastSentAt: nullableTimestamp(row.lastSentAt, "sessionHold.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionHold.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionHold.endMinutes") };
+}
+/** A send or start refused because someone else holds the session; carries that holder for the locked composer. */
+export function supportSessionBusy(error: unknown): SupportSessionHold | null {
+  if (!(error instanceof SupportClientError) || error.status !== 409 || error.backendMessage !== "SUPPORT_SESSION_BUSY") return null;
+  try {
+    const row = object(error.data, "sessionBusy");
+    const holder = parseSupportSessionHolder(row.holder, "sessionBusy.holder");
+    return holder ? { state: "OTHER", holder, sessionRef: row.sessionRef == null ? null : nonempty(row.sessionRef, "sessionBusy.sessionRef"), lastSentAt: nullableTimestamp(row.lastSentAt, "sessionBusy.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionBusy.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionBusy.endMinutes") } : null;
+  } catch { return null; }
+}
+
 export const supportClient = {
   snapshot: (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; agentId?: number; mode?: SupportReadMode; groupId?: number; from?: string; to?: string; signal?: AbortSignal }) =>
     request(`/support-workbench/customers${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, filter: options.filter, agentId: options.agentId, mode: options.mode === undefined ? undefined : enumValue(options.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "mode"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId"), from: options.from, to: options.to })}`, value => {
@@ -397,9 +487,34 @@ export const supportClient = {
     }, { signal: options.signal }),
   overview: async (options: { from?: string; to?: string; mode?: SupportReadMode; groupId?: number; agentId?: number; signal?: AbortSignal } = {}) =>
     (await supportClient.snapshot({ pageNum: 1, pageSize: 1, filter: "ALL", ...options })).overview,
+  performanceDetails: (overview: SupportOverview, metric: PerformanceMetric, day: string | undefined, options: { pageNum: number; pageSize: number; expectedQueryVersion?: string; signal?: AbortSignal }): Promise<PerformanceDetails> => {
+    const { scope, performance, evaluatedAt } = overview;
+    if (!performance.scopeVersion) malformed("performance.scopeVersion");
+    const point = day === undefined ? performance : performance.trend.find(row => row.day === day);
+    if (!point) malformed("performance.day");
+    const expectedTotal = metric === "EXECUTION" ? point.executionCount : point.successfulCycleCount;
+    const { pageNum, pageSize, expectedQueryVersion, signal } = options;
+    return request(`/support-workbench/performance/details${query({ mode: scope.mode, groupId: scope.groupId ?? undefined, agentId: scope.agentAdminId ?? undefined, from: performance.from, to: performance.to, evaluatedAt, scopeVersion: performance.scopeVersion, expectedTotal, metric, day, pageNum, pageSize, expectedQueryVersion })}`, value => {
+      const r = object(value, "performance.details");
+      const result = page(r, entry => {
+        const fact = object(entry, "performance.fact");
+        const sourceId = metric === "EXECUTION" ? fact.messageId : fact.successEventId;
+        return { id: id(fact.id, "fact.id"), customerId: id(fact.customerId, "fact.customerId"), agentId: id(fact.agentAdminId, "fact.agentAdminId"), assignmentId: id(fact.assignmentId, "fact.assignmentId"), cycleId: id(fact.cycleId, "fact.cycleId"), sourceId: sourceId == null ? null : id(sourceId, "fact.sourceId"), eventAt: timestamp(metric === "EXECUTION" ? fact.executedAt : fact.closedAt, "fact.eventAt") };
+      });
+      const visibleCount = count(r.visibleCount, "performance.visibleCount"), restrictedCount = count(r.restrictedCount, "performance.restrictedCount");
+      const queryVersion = nonempty(r.queryVersion, "performance.queryVersion");
+      const receiptScope = object(r.scope, "performance.scope");
+      if (receiptScope.mode !== scope.mode || receiptScope.actorId !== scope.actorId || (receiptScope.agentAdminId ?? null) !== scope.agentAdminId || (receiptScope.groupId ?? null) !== scope.groupId) malformed("performance.scope");
+      if (r.metric !== metric || (r.day ?? undefined) !== day || r.scopeVersion !== performance.scopeVersion || r.from !== performance.from || r.to !== performance.to || r.evaluatedAt !== evaluatedAt || result.total !== expectedTotal || visibleCount + restrictedCount !== result.total || result.pageNum !== pageNum || result.pageSize !== pageSize || (expectedQueryVersion && expectedQueryVersion !== queryVersion)) malformed("performance.receipt");
+      if (result.records.length !== Math.min(pageSize, Math.max(0, visibleCount - (pageNum - 1) * pageSize))) malformed("performance.records");
+      return { ...result, visibleCount, restrictedCount, queryVersion, windowFrom: timestamp(r.windowFrom, "performance.windowFrom"), windowTo: timestamp(r.windowTo, "performance.windowTo"), timeZone: nonempty(r.timeZone, "performance.timeZone") };
+    }, { signal });
+  },
   customers: async (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; mode?: SupportReadMode; groupId?: number; agentId?: number; signal?: AbortSignal }) =>
     (await supportClient.snapshot(options)).customers,
   customerDetail: (customerId: string, signal?: AbortSignal) => request(customerPath(customerId), detail, { signal }),
+  sessionHold: (customerId: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold`, sessionHold, { signal }),
+  endSessionHold: (customerId: string, idempotencyKey: string, sessionRef: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold/end`, () => undefined, json("POST", { sessionRef }, idempotencyKey, signal)),
   conversationState: (conversationNo: string, signal?: AbortSignal) => request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}`, (value) => {
     const row = object(object(value, "conversation.detail").conversation, "conversation");
     return { status: enumValue(row.status, ["OPEN", "TRANSFERRED", "RESOLVED", "CLOSED"] as const, "conversation.status"), version: count(row.version, "conversation.version") };
@@ -411,8 +526,8 @@ export const supportClient = {
       return {
         customerId: id(row.customerId, "maintenance.customerId"), pageNum: positive(row.pageNum, "maintenance.pageNum"), pageSize: positive(row.pageSize, "maintenance.pageSize"),
         totalCycles: count(row.totalCycles, "maintenance.totalCycles"), totalExecutions: count(row.totalExecutions, "maintenance.totalExecutions"),
-        cycles: row.cycles.map((entry) => { const cycle = object(entry, "maintenance.cycle"); return { id: id(cycle.id, "maintenance.cycle.id"), kind: "CYCLE", occurredAt: timestamp(cycle.openedAt, "maintenance.cycle.openedAt"), state: nonempty(cycle.status, "maintenance.cycle.status") }; }),
-        executions: row.executions.map((entry) => { const execution = object(entry, "maintenance.execution"); return { id: id(execution.id, "maintenance.execution.id"), kind: "EXECUTION", occurredAt: timestamp(execution.executedAt, "maintenance.execution.executedAt") }; }),
+        cycles: row.cycles.map((entry) => { const cycle = object(entry, "maintenance.cycle"); return { id: id(cycle.id, "maintenance.cycle.id"), agentAdminId: cycle.agentAdminId == null ? null : id(cycle.agentAdminId, "maintenance.cycle.agentAdminId"), kind: "CYCLE", occurredAt: timestamp(cycle.openedAt, "maintenance.cycle.openedAt"), state: nonempty(cycle.status, "maintenance.cycle.status") }; }),
+        executions: row.executions.map((entry) => { const execution = object(entry, "maintenance.execution"); return { id: id(execution.id, "maintenance.execution.id"), agentAdminId: execution.agentAdminId == null ? null : id(execution.agentAdminId, "maintenance.execution.agentAdminId"), kind: "EXECUTION", occurredAt: timestamp(execution.executedAt, "maintenance.execution.executedAt") }; }),
       };
     }, { signal: options.signal }),
   setMaintenance: (customerId: string, input: { enabled: boolean; reason: string; expectedVersion: number; expectedAssignmentId: string }, idempotencyKey: string, signal?: AbortSignal) =>
@@ -420,7 +535,7 @@ export const supportClient = {
   bindingPool: (options: { pageNum: number; pageSize: number; keyword?: string; reason?: SupportPoolReason; groupId?: number; signal?: AbortSignal }) =>
     request(`/support-agents/binding-pool${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, reason: options.reason, groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId") })}`, (value) => page(value, (entry): SupportBindingPoolItem => {
       const row = object(entry, "bindingPool.item");
-      return { ...parsePoolRoute(row), customerId: id(row.customerId, "bindingPool.customerId"), reason: enumValue(row.reason, POOL_REASONS, "bindingPool.reason"), enteredAt: timestamp(row.enteredAt, "bindingPool.enteredAt"), version: count(row.version, "bindingPool.version"), customerNo: optionalString(row.customerNo, "bindingPool.customerNo"), displayName: optionalString(row.displayName, "bindingPool.displayName"), inviterCustomerId: row.inviterCustomerId === null ? null : row.inviterCustomerId === undefined ? undefined : id(row.inviterCustomerId, "bindingPool.inviterCustomerId"), pendingMessageCount: row.pendingMessageCount === undefined ? undefined : count(row.pendingMessageCount, "bindingPool.pendingMessageCount"), autoEligible: row.autoEligible==null?undefined:row.autoEligible===0?false:row.autoEligible===1?true:bool(row.autoEligible,"pool.autoEligible"), autoAttemptState: optionalString(row.autoAttemptState,"pool.autoAttemptState"), attempts: row.attempts==null?undefined:count(row.attempts,"pool.attempts"), lastAttemptAt: nullableTimestamp(row.lastAttemptAt,"pool.lastAttemptAt"), lastOutcome: row.lastOutcome==null?row.lastOutcome:nullableString(row.lastOutcome,"pool.lastOutcome"), lastMessageAt: nullableTimestamp(row.lastMessageAt, "bindingPool.lastMessageAt") };
+      return { ...parsePoolRoute(row), customerId: id(row.customerId, "bindingPool.customerId"), reason: enumValue(row.reason, POOL_REASONS, "bindingPool.reason"), enteredAt: timestamp(row.enteredAt, "bindingPool.enteredAt"), version: count(row.version, "bindingPool.version"), customerNo: optionalString(row.customerNo, "bindingPool.customerNo"), displayName: optionalString(row.displayName ?? row.nickname ?? undefined, "bindingPool.displayName"), phoneMasked: row.phoneMasked === undefined ? undefined : nullableString(row.phoneMasked, "bindingPool.phoneMasked"), inviterCustomerId: row.inviterCustomerId === null ? null : row.inviterCustomerId === undefined ? undefined : id(row.inviterCustomerId, "bindingPool.inviterCustomerId"), pendingMessageCount: row.pendingMessageCount === undefined ? undefined : count(row.pendingMessageCount, "bindingPool.pendingMessageCount"), autoEligible: row.autoEligible==null?undefined:row.autoEligible===0?false:row.autoEligible===1?true:bool(row.autoEligible,"pool.autoEligible"), autoAttemptState: optionalString(row.autoAttemptState,"pool.autoAttemptState"), attempts: row.attempts==null?undefined:count(row.attempts,"pool.attempts"), lastAttemptAt: nullableTimestamp(row.lastAttemptAt,"pool.lastAttemptAt"), lastOutcome: row.lastOutcome==null?row.lastOutcome:nullableString(row.lastOutcome,"pool.lastOutcome"), lastMessageAt: nullableTimestamp(row.lastMessageAt, "bindingPool.lastMessageAt"), waitingSince: nullableTimestamp(row.waitingSince, "bindingPool.waitingSince"), lastMessagePreview: row.lastMessagePreview == null ? null : nullableString(row.lastMessagePreview, "bindingPool.lastMessagePreview") };
     }), { signal: options.signal }),
   agents: (options: { pageNum: number; pageSize: number; groupId?: number; signal?: AbortSignal }) =>
     request(`/support-agents/page${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId") })}`, (value) => page(value, (entry): SupportAgentCandidate => {
@@ -444,14 +559,35 @@ export const supportClient = {
     request("/support-agents/rules", rules, json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "rules.expectedVersion") }, idempotencyKey, signal)),
   command: (key: string, signal?: AbortSignal) => request(`/support-workbench/commands/${encodeURIComponent(key)}`, (value): SupportCommandResult => {
     const row = object(value, "command");
+    if (row.status === "REJECTED") {
+      if (row.sent !== false || row.idempotencyKey !== key.trim()
+        || !Number.isInteger(row.businessCode) || Number(row.businessCode) < 400 || Number(row.businessCode) >= 500) malformed("command.rejection");
+      const clientMessageId = nonempty(row.clientMessageId, "command.clientMessageId");
+      if (!/^[A-Za-z0-9_-]{8,128}$/.test(clientMessageId)) malformed("command.clientMessageId");
+      return {
+        status: "REJECTED", sent: false,
+        customerId: id(row.customerId, "command.customerId"),
+        operation: enumValue(row.operation, ["M3_CONVERSATION_INITIATE", "M3_CONVERSATION_REPLY"] as const, "command.operation"),
+        idempotencyKey: key.trim(), clientMessageId,
+        businessCode: row.businessCode as number,
+        businessReason: nonempty(row.businessReason, "command.businessReason"),
+      };
+    }
     const result = row.result === undefined ? undefined : object(row.result, "command.result");
     if (typeof row.operationId === "string" && typeof row.previewId === "string" && Array.isArray(row.customers) && ["RUNNING", "COMPLETED"].includes(String(row.status))) return { status: row.status === "COMPLETED" ? "SUCCEEDED" : "PENDING", result: row };
     const status = enumValue(row.status, ["PROCESSING", "UNKNOWN", "PENDING", "SUCCEEDED", "FAILED"] as const, "command.status");
-    if (result && result.code === 0) return { status, result: result.data };
+    if (result && result.code === 0) {
+      if (row.resultType === "M3_CONVERSATION_REPLY" || row.resultType === "M3_CONVERSATION_INITIATE") return { status, result: result.data, messageOperation: row.resultType };
+      return { status, result: result.data };
+    }
     if (result && typeof result.batchId === "string" && result.counts) return { status, result };
     if (typeof row.operationId === "string" && Array.isArray(row.customers)) return { status, result: row };
     if (result) malformed("command.result.code");
-    return { status };
+    const businessCode = row.businessCode;
+    if (businessCode != null && (!Number.isInteger(businessCode) || Number(businessCode) < -2147483648 || Number(businessCode) > 2147483647)) malformed("command.businessCode");
+    const businessReason = row.businessReason == null ? row.businessReason as null | undefined
+      : enumValue(row.businessReason, ["M3_TIMEOUT_POLICY_STALE", "M3_TIMEOUT_POLICY_UNCHANGED"] as const, "command.businessReason");
+    return { status, businessCode: businessCode as number | null | undefined, businessReason };
   }, { signal }),
   attachmentPolicy: (signal?: AbortSignal) => request("/conversations/attachments/policy", (value): SupportAttachmentPolicy => {
     const row = object(value, "attachment.policy");
@@ -486,20 +622,139 @@ export const supportClient = {
   cancelAttachment: (attachmentId: string, idempotencyKey: string, signal?: AbortSignal) =>
     request(attachmentPath(attachmentId), () => undefined, { method: "DELETE", headers: keyHeader(idempotencyKey), signal }),
   sendConversationReply: (conversationNo: string, input: SupportMessageInput, idempotencyKey: string, signal?: AbortSignal) =>
-    request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}/replies`, messageResult, json("POST", { body: input.content ?? "", kind: input.kind, skuId: input.skuId, linkTarget: input.linkTarget, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), expectedStatus: "OPEN", expectedVersion: count(input.expectedVersion, "conversation.expectedVersion"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })), reason: "专属客服回复客户消息" }, idempotencyKey, signal)),
+    request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}/replies`, value => ({ ...messageResult(value), conversation: value }), json("POST", { body: input.content ?? "", kind: input.kind, skuId: input.skuId, linkTarget: input.linkTarget, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), expectedStatus: input.expectedStatus ?? "OPEN", expectedVersion: count(input.expectedVersion, "conversation.expectedVersion"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })), reason: "专属客服回复客户消息" }, idempotencyKey, signal)),
   createConversation: (input: SupportMessageInput & { customerId: string }, idempotencyKey: string, signal?: AbortSignal) =>
     request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.content ?? "", kind: input.kind, skuId: input.skuId, linkTarget: input.linkTarget, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
   startConversation: (input: SupportStartConversationInput, idempotencyKey: string, signal?: AbortSignal) =>
     request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.openingText, kind: "TEXT", intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
 };
 
-export async function readSupportPoolCustomer(customerId: string, groupId?: number): Promise<SupportBindingPoolItem> {
+/** A completed idempotency entry can contain a business refusal with no conversation data. */
+export async function querySupportMessage(key: string, customerId?: string, conversationNo?: string): Promise<SupportCommandResult> {
+  const receipt = await supportClient.command(key);
+  if (receipt.status !== "SUCCEEDED") return receipt;
+  const expectedOperation = conversationNo ? "M3_CONVERSATION_REPLY" : "M3_CONVERSATION_INITIATE";
+  if (receipt.messageOperation !== expectedOperation || (!customerId && !conversationNo)) return { status: "UNKNOWN" };
+  const data = object(receipt.result, "command.message");
+  const target = id(data.userId, "command.message.userId");
+  const conversation = nonempty(data.conversationNo, "command.message.conversationNo");
+  if ((customerId && customerId !== target) || (conversationNo && conversationNo !== conversation)) return { status: "UNKNOWN" };
+  return receipt;
+}
+
+export type SupportUnboundPolicy = { alertMinutes: number; fallbackMinutes: number; defaultGroupId: number | null; defaultGroupName: string | null; version: number; updatedBy: string; reason: string; updatedAt: string };
+export type SupportUnboundPolicyUpdate = Pick<SupportUnboundPolicy, "alertMinutes" | "fallbackMinutes" | "defaultGroupId" | "reason"> & { expectedVersion: number };
+const unboundPolicy = (value: unknown): SupportUnboundPolicy => {
+  const row = object(value, "unboundPolicy");
+  return { alertMinutes: positive(row.alertMinutes, "unboundPolicy.alertMinutes"), fallbackMinutes: positive(row.fallbackMinutes, "unboundPolicy.fallbackMinutes"), defaultGroupId: row.defaultGroupId == null ? null : positive(row.defaultGroupId, "unboundPolicy.defaultGroupId"), defaultGroupName: row.defaultGroupName == null ? null : nonempty(row.defaultGroupName, "unboundPolicy.defaultGroupName"), version: positive(row.version, "unboundPolicy.version"), updatedBy: nonempty(row.updatedBy, "unboundPolicy.updatedBy"), reason: nonempty(row.reason, "unboundPolicy.reason"), updatedAt: timestamp(row.updatedAt, "unboundPolicy.updatedAt") };
+};
+function savedPolicy(value: unknown, input: SupportUnboundPolicyUpdate): SupportUnboundPolicy {
+  const row = unboundPolicy(value);
+  if (row.version !== input.expectedVersion + 1 || row.alertMinutes !== input.alertMinutes || row.fallbackMinutes !== input.fallbackMinutes
+    || row.defaultGroupId !== input.defaultGroupId || row.reason !== input.reason) malformed("unboundPolicy.receipt");
+  return row;
+}
+/** D-3 / M-18: how long an unassigned inquiry may wait before an alert / automatic fallback, and the default receiving group. */
+export const supportUnboundPolicyClient = {
+  read: (signal?: AbortSignal) => request("/support-agents/unbound-policy", unboundPolicy, { signal }),
+  update: (input: SupportUnboundPolicyUpdate, key: string) =>
+    request("/support-agents/unbound-policy", value => savedPolicy(value, input), json("PUT", input, key)),
+  command: (key: string, input: SupportUnboundPolicyUpdate) => readManagementCommand(key, "SUPPORT_UNBOUND_POLICY", value => savedPolicy(value, input)),
+};
+
+/** A successful management receipt contains the original API envelope, not the current entity. */
+function readManagementCommand<T>(key: string, resultType: string, parse: (value: unknown) => T) {
+  return request(`/support-workbench/commands/${encodeURIComponent(key)}`, (value) => {
+    const row = object(value, "command");
+    const status = enumValue(row.status, ["PROCESSING", "UNKNOWN", "PENDING", "SUCCEEDED", "FAILED"] as const, "command.status");
+    if (status !== "SUCCEEDED") return { status } as const;
+    const result = object(row.result, "command.result");
+    if (row.resultType !== resultType || result.code !== 0) malformed("command.resultType");
+    return { status, result: parse(result.data) } as const;
+  });
+}
+
+export function readFirstAssignmentCommand(key: string, customerId: string, targetAgentAdminId: number) {
+  return readManagementCommand(key, "SUPPORT_TRANSFER", (value) => {
+    if (!Array.isArray(value) || value.length !== 1) malformed("transfer.assignments");
+    const row = object(value[0], "transfer.assignment");
+    if (id(row.customerId, "transfer.customerId") !== customerId || row.agentAdminId !== targetAgentAdminId) malformed("transfer.assignment");
+    return id(row.id, "transfer.id");
+  });
+}
+
+export type SupportWelcomeLanguage = "zh" | "en" | "vi";
+export type SupportWelcomeTexts = Record<SupportWelcomeLanguage, string>;
+export type SupportWelcomeMessage = { version: number; texts: SupportWelcomeTexts; updatedAt: string | null; updatedBy: string | null; reason: string | null };
+type SupportWelcomeUpdate = { expectedVersion: number; texts: SupportWelcomeTexts; reason: string };
+const welcomeMessage = (value: unknown): SupportWelcomeMessage => {
+  const row = object(value, "welcome");
+  const texts = object(row.texts, "welcome.texts");
+  // B16 always returns these three; null means never edited, a missing field means the response is incomplete.
+  if (row.updatedAt === undefined || row.updatedBy === undefined || row.reason === undefined) malformed("welcome.audit");
+  return {
+    version: positive(row.version, "welcome.version"),
+    texts: { zh: nonempty(texts.zh, "welcome.texts.zh"), en: nonempty(texts.en, "welcome.texts.en"), vi: nonempty(texts.vi, "welcome.texts.vi") },
+    updatedAt: nullableTimestamp(row.updatedAt, "welcome.updatedAt") ?? null,
+    updatedBy: row.updatedBy === null ? null : nonempty(row.updatedBy, "welcome.updatedBy"),
+    reason: row.reason === null ? null : nonempty(row.reason, "welcome.reason"),
+  };
+};
+function savedWelcome(value: unknown, input: SupportWelcomeUpdate) {
+  const result = welcomeMessage(value);
+  if (result.version !== input.expectedVersion + 1 || result.reason !== input.reason
+    || (["zh", "en", "vi"] as const).some(language => result.texts[language] !== input.texts[language])) malformed("welcome.receipt");
+  return result;
+}
+/** B16: the one welcome copy every new user receives in their support conversation right after registration. */
+export const supportWelcomeMessageClient = {
+  read: (signal?: AbortSignal) => request("/support-agents/welcome-message", welcomeMessage, { signal }),
+  update: (input: SupportWelcomeUpdate, idempotencyKey: string, signal?: AbortSignal) =>
+    request("/support-agents/welcome-message", (value) => savedWelcome(value, input), json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "welcome.expectedVersion") }, idempotencyKey, signal)),
+};
+
+type M5RulesInput = Parameters<typeof supportClient.updateRules>[0];
+type M5WelcomeInput = Parameters<typeof supportWelcomeMessageClient.update>[0];
+function savedM5Rules(value: unknown, input: M5RulesInput) {
+  const result = rules(value);
+  if (result.version !== input.expectedVersion + 1
+    || (["dormantDays", "maintenanceDays", "activityWindowDays", "inheritanceMode", "maxInheritanceDepth", "unboundAssignmentMode"] as const)
+      .some(field => result[field] !== input[field])) malformed("rules.receipt");
+  return result;
+}
+/** M5-only receipt validation; other support pages keep their existing contracts. */
+export const m5ManagementClient = {
+  rules: (input: M5RulesInput, key: string) => request("/support-agents/rules", value => savedM5Rules(value, input), json("PUT", input, key)),
+  rulesCommand: (key: string, input: M5RulesInput) => readManagementCommand(key, "SUPPORT_RULES", value => savedM5Rules(value, input)),
+  welcome: (input: M5WelcomeInput, key: string) => request("/support-agents/welcome-message", value => savedWelcome(value, input), json("PUT", input, key)),
+  welcomeCommand: (key: string, input: M5WelcomeInput) => readManagementCommand(key, "SUPPORT_WELCOME", value => savedWelcome(value, input)),
+};
+
+export type SupportPersonalPhrase = { id: string; content: string };
+const phraseList = (value: unknown): SupportPersonalPhrase[] => {
+  if (!Array.isArray(value)) malformed("phrases");
+  return value.map((entry) => { const row = object(entry, "phrase"); return { id: id(row.id, "phrase.id"), content: nonempty(row.content, "phrase.content") }; });
+};
+/** D-9: advisor-private quick replies; nothing is shared, so no review or idempotency ledger is involved. */
+export const supportPhraseClient = {
+  list: (signal?: AbortSignal) => request("/support-workbench/phrases", phraseList, { signal }),
+  add: (content: string) => request("/support-workbench/phrases", phraseList, { method: "POST", body: JSON.stringify({ content }) }),
+  remove: (phraseId: string) => request(`/support-workbench/phrases/${encodeURIComponent(id(phraseId, "phrase.id"))}`, phraseList, { method: "DELETE" }),
+};
+
+export async function findSupportPoolCustomer(customerId: string, groupId?: number): Promise<SupportBindingPoolItem | null> {
   for (let pageNum = 1; ; pageNum++) {
     const result = await supportClient.bindingPool({ pageNum, pageSize: 100, keyword: customerId, groupId });
     const found = result.records.find(row => row.customerId === customerId);
     if (found) return found;
-    if (!result.records.length || pageNum * result.pageSize >= result.total) throw new Error("SUPPORT_RECOVERY_FACTS_UNAVAILABLE");
+    if (!result.records.length || pageNum * result.pageSize >= result.total) return null;
   }
+}
+
+export async function readSupportPoolCustomer(customerId: string, groupId?: number): Promise<SupportBindingPoolItem> {
+  const current = await findSupportPoolCustomer(customerId, groupId);
+  if (!current) throw new Error("SUPPORT_RECOVERY_FACTS_UNAVAILABLE");
+  return current;
 }
 
 export async function verifySupportTransfer(input: Parameters<typeof supportClient.transfer>[0], status: "SUCCEEDED" | "FAILED", groupId?: number): Promise<void> {

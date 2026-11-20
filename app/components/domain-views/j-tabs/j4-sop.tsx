@@ -1,27 +1,67 @@
 "use client";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
- * J4 · 监管要求应急处理 — 8 剧本库(actionSequence timeline)+ 应急快速轨 SLA + 执行追溯历史。
- * 每步原子动作落各域确认门；J4 先收集整体原因，再逐项确认目标域、动作与规范引用。
- * 剧本编辑 / 演练 / 执行 / 新增均走 OperationConfirmModal，正式执行另经逐步确认 → 后端 /emergency/sop/* 接口。
+ * J4 监管要求应急处理（应急控制页）。出事时按事先写好的应急预案一步步止损；平时维护预案、做演练。
+ * 首屏：结论、四个数、正在执行的执行（有才出现）、预案库（左边按场景挑预案，右边看这个预案按下去会依次发生什么）、执行记录。
+ * 第二层：预案能用的动作和规则、通知活动候选（折叠）；追溯在抽屉里。
+ * 写入口和改版前一样：新增、编辑、演练、取消、恢复核对、恢复开关直接写 /emergency/sop/*；正式执行（常规、应急）提交 A2 审批申请。
+ * 新增、编辑和发起正式执行先在页面自己的框里填（PlaybookEditor、ExecutePrepare），再进共用确认框写理由提交；
+ * 请求方法和业务内容沿用原合同；原请求和确认事实先存入 J 域共享存储，未知后只恢复原操作。
  */
-import { useEffect, useRef, useState } from "react";
-import { CodeTag, Modal } from "../design-kit";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { BookOpen, Clock3, FlaskConical, History, ListChecks, Megaphone, MinusCircle, Pencil, Plus, RefreshCw, RotateCcw, ScanSearch, ShieldCheck, Siren, Square, TriangleAlert, Undo2, Workflow } from "lucide-react";
+import { BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import type { JCtx } from "./types";
-import { createJEmergencyCommandKey, type J4PlaybookCreateInput, type Playbook, type SopExecution } from "@/lib/admin/j-client";
-import { createA2OperationProposal } from "@/lib/admin/a2-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
+import {
+  createJEmergencyCommandKey, getJ4PendingProposal, isEmergencyOutcomeUncertain,
+  j4ProposalSlot, listJ4LegacyCommands, listJ4PendingCommands, listJ4PendingProposals,
+  queryJ4Command, queryJ4Proposal, releaseExpiredJ4Proposal, releaseExpiredJLegacyCommand, retryJ4Command, retryJ4Proposal, submitJ4Proposal,
+  type J4CommandContext, type J4PendingCommand, type J4PendingProposal, type J4PlaybookCreateInput, type Playbook, type SopExecution,
+} from "@/lib/admin/j-client";
+import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { CommandClosureModal, RECOVERY_LINE } from "../e-tabs/e-command-check";
+import { processedStatus } from "./j-recovery-copy";
+import { receiptFact } from "../recovery-panel";
+import { eCommandCanRequestResumeRollback } from "@/lib/admin/e-command-investigation";
+import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import {
+  DOMAIN_PAGE, ExecutePrepare, PlaybookEditor, StepDots, StepTimeline, TraceDrawer, UndoTag,
+  count, draftChanges, executionModeLabel, initialDraft, isActiveExecution, j4Time, lineStep, notifyLabelText, reversibleGates, rollbackStatusText, roleText, stepInfo, tierText, undoSummary,
+  type EditorSpec, type ExecuteDraft, type PlaybookDraft,
+} from "./j4-parts";
+import type { ActionConfirmReq, JCtx } from "./types";
 
-/* 域 badge → 色族(danger=J 域 / warning=D2 / brand=I5 / cyan=I3,I2 / brand-2=C2,K1 / success=B1) */
-const DOM_CLS: Record<string, string> = { J1: "dj", J2: "dj", D2: "dd", I5: "di5", I3: "di", I2: "di", C2: "dc", K1: "dc", B1: "db" };
-
-/** ax 内 **…** 强调标记 → <b> 渲染。 */
-function axRender(s: string) {
-  return s.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? <b key={i}>{part}</b> : <span key={i}>{part}</span>));
-}
+const READING = "正在读取最新状态，读完再操作";
+const NOT_READY = "应急执行服务尚未就绪，请联系技术人员检查";
+const REASON_HINT = "例如：监管来函编号、事件编号、工单号";
+const NO_REAL = <StatusTag tone="neutral" icon={FlaskConical}>不动真实业务</StatusTag>;
+const IMMEDIATE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
+const APPROVER = "另一位管理员在「操作记录与审批」批准；需有审批权和应急预案执行权，你不能批自己的申请";
+/** 查询原结果查到执行申请已经结束：轻提示写结论（和 F2、J1 同一组说法）。批准回放只有执行完才成功（中途失败回 J4_EXECUTION_PARTIAL，单子留在待审批），执行完也可能有跳过的步骤。 */
+const J4_PROPOSAL_END = {
+  approved: "原执行申请已批准：预案已按顺序执行完；每一步是做了还是跳过，到「执行记录」看。",
+  rejected: "原执行申请已驳回：预案没有执行；需要时重新发起。",
+  withdrawn: "原执行申请已撤回：预案没有执行。",
+  expired: "原执行申请已过期：没人处理，预案没有执行；需要时重新发起。",
+} as const;
+/** 执行每一步要有对应页面的处置权限（J4-P02），后端提交时再按预案快照核一次。 */
+const TARGET_AUTHORITY: Record<string, string> = {
+  J1: "emergency_j1_gate_kill",
+  J2: "emergency_j2_emergency_block",
+  C2: "user_c2_account_freeze",
+  K1: "risk_k1_cluster_freeze",
+  I3: "content_i3_write",
+  I5: "content_i5_disclosure_publish",
+};
 
 function playbookFormBody(bv: Record<string, string> | undefined, fallbackName: string): J4PlaybookCreateInput {
   return {
@@ -38,92 +78,42 @@ function playbookFormBody(bv: Record<string, string> | undefined, fallbackName: 
   };
 }
 
+/** 页面框里填好的预案，换成改版前共用表单交给 run 的那组值（键和取值一样）。 */
+function draftValue(draft: PlaybookDraft): Record<string, string> {
+  return {
+    name: draft.name,
+    scene: draft.scene,
+    owner: draft.owner,
+    sla: draft.sla,
+    emergencyTrack: draft.emergencyTrack,
+    actionSeq: draft.lines.join("\n"),
+    notifyCampaignNo: draft.notifyCampaignNo,
+    notifyTemplate: draft.notifyTemplate,
+    rollback: draft.rollback,
+    drillRequired: draft.drillRequired,
+  };
+}
+
 function actionSeqText(p: Playbook) {
   return p.seq.map((s) => `${s.dom}·${s.ax.replace(/\*\*/g, "")}${s.ref ? `·${s.ref}` : ""}`).join("\n");
 }
 
-function executionStepLabel(status: string) {
-  const labels: Record<string, string> = { pending: "待执行", ready: "准备就绪", validated: "校验通过", done: "成功", failed: "失败", skipped: "已跳过", rolled_back: "已恢复", running: "执行中", recovering: "恢复核对中" };
-  return labels[status.toLowerCase()] ?? "执行状态待核实";
-}
-function notificationStatusText(value: unknown) {
-  return ({ SKIPPED: "已跳过", DISPATCHED: "已下发", FAILED: "下发失败", PENDING: "待下发", VALIDATED: "校验通过" } as Record<string, string>)[String(value)] ?? "通知状态待核实";
-}
-function auditStatusText(value: unknown) {
-  return ({ PENDING: "待记录", AUDITED: "已记录审计" } as Record<string, string>)[String(value)] ?? "审计状态待核实";
-}
-function rollbackStatusText(value: unknown) {
-  if (!value) return "尚无恢复记录";
-  return ({ NOT_REQUIRED: "无需恢复（演练未执行生产操作）", ROLLED_BACK: "已恢复可逆操作", PENDING: "待恢复", RUNNING: "恢复中", FAILED: "恢复失败" } as Record<string, string>)[String(value)] ?? "恢复状态待核实";
-}
-function roleText(value: string) {
-  return ({ superadmin: "超级管理员", risk: "风控", finance: "财务", compliance: "合规审计", "超管": "超级管理员" } as Record<string, string>)[value] ?? (/^[\u3400-\u9fff、与 ]+$/.test(value) ? value : "执行权限待核实");
-}
-
-function executionModeLabel(mode: string) {
-  if (mode === "drill") return "演练";
-  if (mode === "emergency") return "应急实战";
-  if (mode === "regular") return "常规实战";
-  return "未知模式";
-}
-
-/** J4 页头 CTA(挂 DomainHeader 右槽):+ 新增剧本。 */
-export function J4HeaderActions({ ctx }: { ctx: JCtx }) {
-  const { toast, openActionConfirm, actions, emergency } = ctx;
-  const canWrite = useAdminAuth((state) => state.session?.authorities.includes("emergency_j4_write") ?? false);
-  const contractReady = emergency.sop?.contractVersion === "J4_REAL_EXECUTION_V5";
-  const runBackend = async (task: Promise<void>, ok: string) => {
-    try {
-      await task;
-    } catch (error) {
-      // 判定与展示同源:裸机器码(J4_EXECUTION_PARTIAL 等)只有过咽喉译成中文后才命中下面的关键词。
-      const message = displayAdminError(error);
-      if (/中途失败|未收到执行结果|结果暂未确认/.test(message)) {
-        await actions.reloadJEmergency().catch(() => undefined);
-      }
-      toast(`操作失败 · ${message}`);
-      throw error;
-    }
-    try {
-      await actions.reloadJEmergency();
-      toast(ok);
-    } catch {
-      toast(`${ok}，但页面刷新失败，请点击当前页签重新读取`);
-    }
-  };
-  const newPb = () => {
-    const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
-    action: "新增应急预案",
-    detail: <><b>应急预案步骤设置</b>:配置名称 / 触发场景 / 责任角色 / 响应时限 / 应急轨 / 可执行动作 / 通知活动 / 回滚方案 / 演练要求。提交后进入预案库并保留变更记录。</>,
-    businessForm: {
-      kind: "sop-authoring",
-      nameHint: "如 监管点名快速止血",
-      scenes: (emergency.sop?.scenes ?? []).filter((item) => item !== "全部"),
-      notifyTemplates: emergency.notifyTemplates ?? [],
-      notifyTemplatesError: emergency.notifyTemplatesError,
-      actionOptions: emergency.sop?.actionOptions ?? [],
-      rollbackOptions: emergency.sop?.rollbackOptions ?? [],
-    },
-    run: (reason, _v, bv) => {
-      const name = bv?.name || "未命名应急预案";
-      return runBackend(actions.createJ4Playbook(playbookFormBody(bv, name), reason, commandKey), `新预案「${name}」已创建${bv?.drillRequired === "true" ? "，请先完成演练" : "并可执行"}`);
-    },
-  });
-  };
-  return canWrite ? <button className="f-cta" disabled={!contractReady} title={!contractReady ? "应急执行服务尚未就绪，请联系技术人员检查" : undefined} onClick={newPb}>+ 新增预案</button> : null;
-}
-
 export function J4Sop({ ctx }: { ctx: JCtx }) {
-  const { toast, openActionConfirm, actions, emergency, contentLoading } = ctx;
+  const { toast, openActionConfirm, actions, emergency, contentLoading, contentError } = ctx;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const canWrite = authorities.includes("emergency_j4_write");
   const canRun = authorities.includes("emergency_j4_playbook_execute");
   const canPropose = authorities.includes("platform_a2_write")
     || authorities.includes("platform_a2_proposal_create");
+  const canRestore = authorities.includes("emergency_j1_gate_resume");
+  const reach = useReach();
   const [scene, setScene] = useState("全部");
+  const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [traceExecution, setTraceExecution] = useState<SopExecution | null>(null);
+  const [editor, setEditor] = useState<EditorSpec | null>(null);
+  const [prepare, setPrepare] = useState<{ playbook: Playbook; emergency: boolean; draft: ExecuteDraft } | null>(null);
+  const [readAt, setReadAt] = useState("");
   const sceneLocationReady = useRef(false);
   useEffect(() => {
     if (!sceneLocationReady.current) {
@@ -138,52 +128,467 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     window.history.replaceState(window.history.state, "", url);
   }, [scene]);
   const data = emergency.sop;
-  if (contentLoading && !data) {
-    return <section className="pb-grid"><div className="pb-card"><div className="pb-top"><span className="pb-code">J4</span><div className="nm">应急预案数据加载中</div></div></div></section>;
+  useEffect(() => {
+    if (data) setReadAt(businessClock(Date.now()));
+  }, [data]);
+
+  const [pending, setPending] = useState<J4PendingCommand[]>([]);
+  const [proposals, setProposals] = useState<J4PendingProposal[]>([]);
+  const [legacy, setLegacy] = useState<ReturnType<typeof listJ4LegacyCommands>>([]);
+  const [releasingLegacy, setReleasingLegacy] = useState<ReturnType<typeof listJ4LegacyCommands>[number] | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [verifiedProposals, setVerifiedProposals] = useState<Record<string, A2OperationRow>>({});
+  const [queue, setQueue] = useState<A2OperationRow[]>([]);
+  const [queueFailed, setQueueFailed] = useState(false);
+  /** 按原请求查过、后端明确没有这张申请的记录（过期后可以确认解除）。 */
+  const [absent, setAbsent] = useState<Record<string, true>>({});
+  const [releasing, setReleasing] = useState<J4PendingProposal | null>(null);
+  /** 按原请求查到的结论只用来给运营看；解除与否由 queryJ4Command 按后端结论决定。 */
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [checking, setChecking] = useState<string | null>(null);
+  const [closing, setClosing] = useState<{ record: SlotAttemptRecord; label: string; kind: J4CommandContext["kind"]; change: ReactNode } | null>(null);
+  const [settled, setSettled] = useState<FundSettled[]>([]);
+  /** 按原请求重试后后端回了「中途失败」的记录：前面的步骤可能已生效，记录保留。 */
+  const [partial, setPartial] = useState<Record<string, true>>({});
+  const current = useRef({ data, contentLoading, contentError, authorities });
+  current.current = { data, contentLoading, contentError, authorities };
+  const activeConfirmation = useRef<{ slot: string; restored: boolean } | null>(null);
+  const formSequence = useRef(0);
+  const syncPending = () => {
+    setPending(listJ4PendingCommands());
+    setProposals(listJ4PendingProposals());
+    setLegacy(listJ4LegacyCommands());
+  };
+  const noteError = (key: string, error: unknown) => setNotes((previous) => ({ ...previous, [key]: displayAdminError(error) }));
+  const forgetObservation = (key: string) => setVerifiedProposals((previous) => {
+    const next = { ...previous };
+    delete next[key];
+    return next;
+  });
+  const queryProposal = async (record: J4PendingProposal) => {
+    forgetObservation(record.commandKey);
+    setAbsent(({ [record.commandKey]: _found, ...rest }) => rest);
+    try {
+      const row = await queryJ4Proposal(record);
+      if (row) {
+        setAbsent(({ [record.commandKey]: _found, ...rest }) => rest);
+        setVerifiedProposals((previous) => ({ ...previous, [record.commandKey]: row }));
+        if (row.status !== "pending") {
+          toast(J4_PROPOSAL_END[row.status], row.status === "approved" ? "success" : "warn");
+          openActionConfirm(null);
+          activeConfirmation.current = null;
+          await actions.reloadJEmergency();
+        }
+      } else {
+        setAbsent((previous) => ({ ...previous, [record.commandKey]: true }));
+        noteError(record.commandKey, new Error("A2_PROPOSAL_NOT_FOUND"));
+      }
+      syncPending();
+      return row;
+    } catch (error) {
+      noteError(record.commandKey, error);
+      syncPending();
+      return null;
+    }
+  };
+  useEffect(() => {
+    syncPending();
+    // Exact maker queries also work without the A2 menu; the backend checks read eligibility.
+    for (const record of listJ4PendingProposals()) void queryProposal(record);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.adminId]);
+  useEffect(() => {
+    setQueue([]);
+    setQueueFailed(false);
+    if (!data || contentLoading || contentError) return;
+    setVerifiedProposals({});
+    let active = true;
+    for (const record of listJ4PendingProposals()) void queryProposal(record);
+    if (authorities.includes("platform_a2_read")) {
+      void fetchA2Overview({ domain: "J" }).then((overview) => {
+        if (active) setQueue(overview.operationQueue.filter((row) => row.rawStatus === "pending" && row.operationCode === "j4_playbook_execute"));
+      }).catch(() => { if (active) { setQueue([]); setQueueFailed(true); } });
+    }
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, contentLoading, contentError, session?.authorities]);
+  useEffect(() => {
+    if (!contentLoading) return;
+    setEditor(null);
+    setPrepare(null);
+    const confirmation = activeConfirmation.current;
+    if (confirmation && !confirmation.restored && !listJ4PendingCommands().some((row) => row.fingerprint === confirmation.slot)
+      && !listJ4PendingProposals().some((row) => row.fingerprint === confirmation.slot)) {
+      openActionConfirm(null);
+      activeConfirmation.current = null;
+    }
+  }, [contentLoading, openActionConfirm]);
+  useEffect(() => {
+    const expiry = Math.min(...[...pending, ...proposals, ...legacy].filter((record) => !isRetryExpired(record)).map((record) => record.expiresAt));
+    if (!Number.isFinite(expiry)) return;
+    const timer = window.setTimeout(() => {
+      const confirmation = activeConfirmation.current;
+      const saved = [...listJ4PendingCommands(), ...listJ4PendingProposals(), ...listJ4LegacyCommands()].find((record) => record.fingerprint === confirmation?.slot);
+      if (saved && isRetryExpired(saved)) {
+        openActionConfirm(null);
+        activeConfirmation.current = null;
+      }
+      syncPending();
+    }, Math.max(0, expiry - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [pending, proposals, legacy, openActionConfirm]);
+
+  function canRetry(context: J4CommandContext) {
+    const grants = current.current.authorities;
+    if (context.kind === "create" || context.kind === "update" || context.kind === "drill") return grants.includes("emergency_j4_write");
+    if (!grants.includes("emergency_j4_playbook_execute")) return false;
+    if (context.kind === "rollback") return grants.includes("emergency_j1_gate_resume");
+    if (context.kind === "execute") return (grants.includes("platform_a2_write") || grants.includes("platform_a2_proposal_create"))
+      && context.playbook.seq.every((step) => !!TARGET_AUTHORITY[step.dom] && grants.includes(TARGET_AUTHORITY[step.dom]));
+    return true;
   }
-  if (!data) {
-    return <section className="pb-grid"><div className="pb-card"><div className="pb-top"><span className="pb-code">J4</span><div className="nm">暂无 应急预案数据</div></div></div></section>;
-  }
-  const PLAYBOOKS = data.playbooks;
-  const isSupportedStep = (step: Playbook["seq"][number]) => (data.actionOptions ?? []).some((option) => {
+  /** 查询、结案都按原记录的出处定位；没存出处的旧记录按原槽位和当前账号查，和 queryJ4Command 一致。 */
+  const investigationRecord = (record: SlotAttemptRecord & { sop?: J4PendingCommand["sop"] }): FundCommandRecord => {
+    const [method, path] = record.fingerprint.split(" ");
+    return { ...record, commandOrigin: record.sop?.commandOrigin
+      ?? { originalMethod: method as "PUT" | "POST", originalPath: `/api/admin/emergency${path}`, readAuthority: "emergency_j4_read", originalAdminId: String(session?.adminId ?? "") } };
+  };
+  /** 查到确定结论（核查确认已执行／未执行）：关掉这条原操作的框，重读页面。 */
+  const finishSettled = async (saved: SlotAttemptRecord, label: string, receipt: NonNullable<Awaited<ReturnType<typeof queryJ4Command>>>) => {
+    setSettled((previous) => [...previous.filter((item) => item.key !== saved.commandKey), { key: saved.commandKey, label, status: receipt.originalStatus }]);
+    if (activeConfirmation.current?.slot === saved.fingerprint) {
+      activeConfirmation.current = null;
+      openActionConfirm(null);
+    }
+    setEditor(null);
+    setPrepare(null);
+    syncPending();
+    await actions.reloadJEmergency().catch(() => undefined);
+  };
+  const queryOriginal = async (record: { commandKey: string }, label: string) => {
+    const saved = [...listJ4PendingCommands(), ...listJ4LegacyCommands()].find(row => row.commandKey === record.commandKey);
+    // 查到回执时行内已写结论，「只能核对当前预案」那句附注就不再显示。
+    let receiptFound = false;
+    if (saved) {
+      setChecking(saved.commandKey);
+      try {
+        const receipt = await queryJ4Command(saved);
+        setOutcomes((previous) => ({ ...previous, [saved.commandKey]: { receipt } }));
+        if (fundCommandSettled(receipt)) {
+          await finishSettled(saved, label, receipt!);
+          return;
+        }
+        receiptFound = !!receipt;
+      } catch (error) {
+        // No receipt conclusion: retain the original and continue the current-state read.
+        setOutcomes((previous) => ({ ...previous, [saved.commandKey]: { error: displayAdminError(error) } }));
+      } finally { setChecking(null); }
+    }
+    try {
+      await actions.reloadJEmergency();
+      if (receiptFound) setNotes((previous) => ({ ...previous, [record.commandKey]: "" }));
+      else noteError(record.commandKey, new Error("J4_CURRENT_STATE_ONLY"));
+    } catch (error) { noteError(record.commandKey, error); }
+    syncPending();
+  };
+  const contextName = (context: J4CommandContext) => context.kind === "create" ? context.fields.name
+    : "playbook" in context ? `${context.playbook.code} ${context.playbook.name}` : `${context.execution.code} ${context.execution.executionId}`;
+  const operationNames = { create: "新增预案", update: "保存预案修改", drill: "演练预案", execute: "提交执行申请", cancel: "登记取消", resume: "恢复核对", rollback: "恢复本次关停的开关" };
+  const legacyKind = (fingerprint: string) => fingerprint.endsWith("/drills") ? "drill" as const : fingerprint.endsWith("/cancel") ? "cancel" as const
+    : fingerprint.endsWith("/resume") ? "resume" as const : fingerprint.endsWith("/rollback") ? "rollback" as const : fingerprint.startsWith("PUT") ? "update" as const : "create" as const;
+  const busy = !!checking;
+  /** 查询原结果、核查结案（共用按钮）；结案框按这类操作后端能给的结论选。 */
+  const checkButtons = (record: SlotAttemptRecord & { sop?: J4PendingCommand["sop"] }, label: string, kind: J4CommandContext["kind"], change: ReactNode) => {
+    const outcome = outcomes[record.commandKey];
+    const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
+    return <FundCheckButtons record={investigationRecord(record)} outcome={kind === "resume" && receipt?.originalStatus === "FAILED" && !eCommandCanRequestResumeRollback(receipt) ? undefined : outcome} expired={isRetryExpired(record)} busy={busy} checking={checking === record.commandKey}
+      onCheck={() => void queryOriginal(record, label)} onClose={() => setClosing({ record, label, kind, change })} />;
+  };
+  const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
+    const context = record.sop.context;
+    const label = `${operationNames[context.kind]} · ${contextName(context)}`;
+    const change = context.kind === "create" || context.kind === "update"
+      ? `${context.fields.scene} · ${context.fields.owner} · ${context.fields.actionSeq.split("\n").filter(Boolean).length} 步`
+      : context.kind === "drill" ? `${context.playbook.seq.length} 步` : "execution" in context ? <span data-mono="">{context.execution.executionId}</span> : "";
+    const expired = isRetryExpired(record);
+    const retry = !expired && canRetry(context);
+    return {
+      key: record.commandKey, title: <span title={label}>{label}</span>, record: investigationRecord(record), outcome: outcomes[record.commandKey],
+      createdAt: record.createdAt, expired, canRetry: retry, canQuery: true,
+      // 记为失败、仍未知的那句由共用面板按结案框能选的结论说（含恢复核对结不了案、可按「未执行」结案）。
+      status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" } : undefined,
+      actions: <>
+        {checkButtons(record, label, context.kind, change)}
+        {retry && <Button size="sm" disabled={busy} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+      </>,
+      detail: <>
+        {change && <p>{"execution" in context ? <>执行 {change}</> : change}</p>}
+        {(context.kind === "resume" || context.kind === "rollback") && <p>{context.kind === "resume" ? "恢复核对" : "恢复开关"}可能只做了一部分，以执行追溯里每一步的状态为准。</p>}
+        {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
+      </>,
+    };
+  });
+  recoveryRows.push(...proposals.filter((record) => verifiedProposals[record.commandKey]?.status !== "pending").map((record): FundRecoveryRow => {
+    const label = `${operationNames.execute} · ${contextName(record.sopProposal.context)}`;
+    const expired = isRetryExpired(record);
+    const missing = absent[record.commandKey] && !record.sopProposal.accepted;
+    const retry = !expired && !record.sopProposal.accepted && canRetry(record.sopProposal.context);
+    return {
+      key: record.commandKey, title: <span title={label}>{label}</span>, createdAt: record.createdAt, expired, canRetry: retry,
+      status: record.sopProposal.accepted ? { tone: "warn", label: "进度没读到", line: RECOVERY_LINE.created }
+        : missing ? expired ? { tone: "warn", label: "没有建成", line: RECOVERY_LINE.missing } : { tone: "warn", label: "结果未知", line: RECOVERY_LINE.absent }
+          : expired ? { tone: "warn", label: "结果未知", line: RECOVERY_LINE.expired } : { tone: "warn", label: "结果未知", line: RECOVERY_LINE.unknown },
+      actions: <>
+        <Button size="sm" disabled={busy} onClick={() => void queryProposal(record)}>查询原结果</Button>
+        {retry && <Button size="sm" disabled={busy} onClick={() => restoreProposal(record)}>按原请求重试</Button>}
+        {missing && expired && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>确认解除</Button>}
+      </>,
+      detail: <>
+        <p>{`${record.sopProposal.context.emergency ? "应急通道" : "常规通道"} · ${record.sopProposal.context.fields.triggerBasis} · ${record.sopProposal.context.playbook.seq.length} 步`}</p>
+        {!missing && notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
+      </>,
+    };
+  }));
+  recoveryRows.push(...legacy.map((record): FundRecoveryRow => {
+    const kind = legacyKind(record.fingerprint);
+    const code = record.fingerprint.split("/")[3];
+    const label = `${operationNames[kind]}${code ? ` · ${decodeURIComponent(code)}` : ""}`;
+    const expired = isRetryExpired(record);
+    const outcome = outcomes[record.commandKey];
+    const processed = outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "SUCCEEDED" && !fundCommandSettled(outcome.receipt);
+    return {
+      key: record.commandKey, title: <span title={`${label} · 改版前的旧记录`}>{label} · 改版前的旧记录</span>, record: investigationRecord(record), outcome,
+      createdAt: record.createdAt, expired, canRetry: false, canQuery: true,
+      status: processed ? processedStatus({ expired, canRetry: false, canClose: fundInvestigationAccess(investigationRecord(record)).canSubmit, legacy: true, receipt: outcome.receipt })
+        : outcome ? undefined : expired
+          ? { tone: "neutral", label: "已过期", line: "旧记录不能重试，先查询原结果；查不出结论的，核对后可以确认解除。" }
+          : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原请求，不能重试，先查询原结果。" },
+      actions: <>
+        {checkButtons(record, label, kind, "改版前的旧记录，没存原请求")}
+        {expired && <Button size="sm" disabled={busy} onClick={() => setReleasingLegacy(record)}>确认解除</Button>}
+      </>,
+      detail: notes[record.commandKey] ? <p>{notes[record.commandKey]}</p> : undefined,
+    };
+  }));
+  const releaseOriginal = async (record: J4PendingProposal) => {
+    setReleasing(null);
+    try {
+      if (await releaseExpiredJ4Proposal(record)) toast("已解除这条记录；需要的话可以重新发起执行申请", "success");
+      else toast("现在查到了这张申请，记录保留，请按申请状态处理", "warn");
+    } catch (error) {
+      noteError(record.commandKey, error);
+    }
+    syncPending();
+  };
+  const closingOutcome = closing ? outcomes[closing.record.commandKey] : undefined;
+  const closingLast = closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt?.investigation : null;
+  const closingBasis = closureKnown(closingOutcome);
+  const closingResumeCanClose = closing?.kind === "resume" && eCommandCanRequestResumeRollback(closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null);
+  const submitClosure = async (evidence: FundCommandEvidence) => {
+    if (!closing) return;
+    const { record, label } = closing;
+    const next = await queryJ4Command(record, evidence);
+    setOutcomes((previous) => ({ ...previous, [record.commandKey]: { receipt: next } }));
+    setClosing(null);
+    if (fundCommandSettled(next)) await finishSettled(record, label, next!);
+  };
+  const closureFacts = closing && <>
+    {closing.change && <Fact k={closing.kind === "cancel" || closing.kind === "resume" || closing.kind === "rollback" ? "执行" : "内容"}>{closing.change}</Fact>}
+    <Fact k="系统记录">{receiptFact(closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null, "原操作还锁着")}</Fact>
+    {closingBasis && !closingBasis.rejected && closingBasis.success === "never" && !closingResumeCanClose && <Fact k="原请求编号"><span data-mono="">{closing.record.commandKey}</span></Fact>}
+    {closingLast && <Fact k="上次核查">{formatBusinessTimeCompact(closingLast.investigatedAt, "—")}，记为「{closingLast.conclusion === "SUCCEEDED" ? "已执行" : closingLast.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>}
+  </>;
+  const recovery = <>
+    <FundRecoveryPanel rows={recoveryRows} settled={settled} onDismissSettled={(key) => setSettled((previous) => previous.filter((item) => item.key !== key))} />
+    {/* 恢复核对只核本地持久事实；后端核 rollback_confirmed 才收未执行。恢复开关仍会动外部业务。 */}
+    {closing && (closing.kind === "rollback" || closing.kind === "resume" && !eCommandCanRequestResumeRollback(closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null)
+      ? <FundClosureModal label={closing.label} createdAt={closing.record.createdAt} offer={eCommandClosureOffer(closingOutcome, isRetryExpired(closing.record))} facts={closureFacts}
+        onClose={() => setClosing(null)} onSubmit={submitClosure} />
+      : <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} offer={eCommandClosureOffer(closingOutcome, isRetryExpired(closing.record))} facts={closureFacts}
+        onClose={() => setClosing(null)} onSubmit={submitClosure} />)}
+    {releasing && <ReleaseModal label={`${operationNames.execute} · ${contextName(releasing.sopProposal.context)}`}
+      explain="原申请超过 24 小时，按原请求查不到这张申请，说明它没建成。确认时会再查一次，仍查不到才解除。"
+      onCancel={() => setReleasing(null)} onConfirm={() => void releaseOriginal(releasing)} />}
+    {releasingLegacy && <ReleaseModal label={`${operationNames[legacyKind(releasingLegacy.fingerprint)]} · 改版前的旧记录`}
+      explain={<><p>改版前的旧记录没存原请求，不能重试；核查结案是另一回事，要按证据。</p><p>先到「操作记录与审批」核对原操作有没有生效。</p></>}
+      onCancel={() => setReleasingLegacy(null)} onConfirm={() => {
+        releaseExpiredJLegacyCommand(releasingLegacy);
+        setReleasingLegacy(null);
+        syncPending();
+      }} />}
+  </>;
+  const proposalRows = new Map([...queue, ...Object.values(verifiedProposals).filter((row) => row.status === "pending")].map((row) => [row.id, row]));
+  const pendingProposals = [...proposalRows.values()].map((row) => {
+    const record = proposals.find((record) => verifiedProposals[record.commandKey]?.id === row.id);
+    return { key: row.id, name: record ? contextName(record.sopProposal.context) : row.obj, meta: <>{row.operator} · {j4Time(row.rawTs)} · {row.id}</>,
+      onQuery: record ? () => void queryProposal(record) : undefined };
+  });
+  const reload = () => void actions.reloadJEmergency().catch(() => undefined);
+  const readOnly = !canWrite && !canRun;
+  const contractReady = data?.contractVersion === "J4_REAL_EXECUTION_V5";
+
+  const newPb = () => {
+    if (!data || newBlockedReason("POST /sop/playbooks", { kind: "create", fields: {} })) return;
+    setEditor({
+      mode: "create",
+      scenes: (data.scenes ?? []).filter((item) => item !== "全部"),
+      nameHint: "例如：监管点名快速止血",
+      notifyTemplates: emergency.notifyTemplates ?? [],
+      notifyTemplatesError: emergency.notifyTemplatesError,
+      actionOptions: data?.actionOptions ?? [],
+      rollbackOptions: data?.rollbackOptions ?? [],
+      onNext: (draft) => { setEditor(null); confirmCreate(draft); },
+    });
+  };
+
+  const header = (actionsSlot?: ReactNode) => (
+    <PageHeader pageId="J4" title="监管要求应急处理"
+      summary={<AutoGloss>出事时按预案一步步止损；平时维护预案和演练。</AutoGloss>}
+      actions={actionsSlot}
+      meta={<span className="rd-toolbar">
+        {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动更新；操作成功后自动重读一次。审批通过后这页不会自己变，要点「刷新」。" /></span>}
+        {!contentError && <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={contentLoading} onClick={reload}>刷新</Button>}
+      </span>}
+      readOnly={readOnly ? <>你只能查看 <Explain label="只读说明" content="新增、编辑和演练要预案维护权限；发起正式执行、取消和恢复核对要应急预案执行权限，请联系超级管理员。" /></> : undefined}
+      guideExtra={<p>这个账号：{canWrite ? "能新增、编辑预案和演练" : "不能维护预案和演练"}，{canRun && canPropose ? "能发起正式执行（还要有每一步对应页面的处置权限）" : "不能发起正式执行"}，{canRun ? "能取消和恢复核对" : "不能取消和恢复核对"}，{canRun && canRestore ? "能恢复执行关停的开关" : "不能恢复执行关停的开关"}。</p>} />
+  );
+  const createAction = canWrite
+    ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={contentLoading ? READING : !contractReady ? NOT_READY : pending.some((row) => row.fingerprint === "POST /sop/playbooks") || legacy.some((row) => row.fingerprint === "POST /sop/playbooks") ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : undefined} onClick={newPb}>新增预案</Button>
+    : undefined;
+
+  const PLAYBOOKS = data?.playbooks ?? [];
+  const EXECS = data?.executions ?? [];
+  const isSupportedStep = (step: Playbook["seq"][number]) => (data?.actionOptions ?? []).some((option) => {
     if (option.domain !== step.dom || !option.ref || !step.ref) return false;
     if (!option.ref.includes("{target}")) return option.ref === step.ref;
     const [prefix] = option.ref.split("{target}");
     return step.ref.startsWith(prefix) && step.ref.length > prefix.length;
   });
   const unsupportedStepCount = (playbook: Playbook) => playbook.seq.filter((step) => !isSupportedStep(step)).length;
-  const contractReady = data.contractVersion === "J4_REAL_EXECUTION_V5";
-  const PB_SCENES = data.scenes;
-  const EXECS = data.executions;
   const statNumber = (...keys: string[]) => {
     for (const key of keys) {
-      const parsed = Number(data.stats[key]);
-      if (Number.isFinite(parsed)) return parsed;
+      const value = data?.stats[key];
+      if (value == null || value === "" || typeof value === "string" && !value.trim()) continue;
+      const parsed = typeof value === "number" || typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN;
+      if (Number.isSafeInteger(parsed) && parsed >= 0) return parsed;
     }
     return null;
   };
-  // 近 90d 统计只取后端汇总；字段未返回时明确显示“未返回”。
+  // 近 90 天统计只取后端汇总；读不到时写「—」和原因，不当 0。
   const liveExecs = statNumber("liveExec90d");
   const drillExecs = statNumber("drill90d");
   const drillExecRows = statNumber("drillExecutionRows90d");
 
-  const runBackend = async (task: Promise<void>, ok: string) => {
-    try {
-      await task;
-    } catch (error) {
-      // 判定与展示同源:裸机器码(J4_EXECUTION_PARTIAL 等)只有过咽喉译成中文后才命中下面的关键词。
-      const message = displayAdminError(error);
-      if (/中途失败|未收到执行结果|结果暂未确认/.test(message)) {
-        await actions.reloadJEmergency().catch(() => undefined);
+  const hasUnknown = (slot: string) => [...listJ4PendingCommands(), ...listJ4PendingProposals(), ...listJ4LegacyCommands()].some((record) => record.fingerprint === slot);
+  const contextCode = (context: J4CommandContext) => "playbook" in context ? context.playbook.code : "execution" in context ? context.execution.code : undefined;
+  const newBlockedReason = (slot: string, context: J4CommandContext) => {
+    const state = current.current;
+    if (!state.data || state.contentLoading || state.contentError) return READING;
+    if (state.data.contractVersion !== "J4_REAL_EXECUTION_V5") return NOT_READY;
+    if (!canRetry(context)) return formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED");
+    if (hasUnknown(slot)) return formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING");
+    const code = contextCode(context);
+    if (code && listJ4PendingCommands().some((record) => {
+      const saved = record.sop.context;
+      if ("playbook" in saved) return saved.playbook.code === code;
+      return "execution" in saved && "execution" in context && saved.execution.executionId === context.execution.executionId;
+    })) return formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING");
+    if ("playbook" in context) {
+      const latest = state.data.playbooks.find((row) => row.code === context.playbook.code);
+      if (!latest || latest.version !== context.playbook.version) return READING;
+      if (context.kind === "update" && !latest.version) return READING;
+      if (context.kind === "execute" && (latest.executionReady !== true || latest.drillEvidence !== true || latest.state !== "active" || latest.draft)) return latest.readinessReason || "先完成演练";
+      if (context.kind === "drill" || context.kind === "execute") {
+        const supported = latest.seq.every((step) => state.data!.actionOptions.some((option) => option.domain === step.dom && !!step.ref && !!option.ref
+          && (option.ref.includes("{target}") ? step.ref.startsWith(option.ref.split("{target}")[0]) && step.ref.length > option.ref.split("{target}")[0].length : option.ref === step.ref)));
+        if (!supported) return "历史预案包含尚未接通的动作，请先编辑并替换后重新演练";
       }
-      toast(`操作失败 · ${message}`);
-      throw error;
+    }
+    if ("execution" in context) {
+      const latest = state.data.executions.find((row) => row.executionId === context.execution.executionId && row.code === context.execution.code);
+      if (!latest || latest.mode === "drill") return READING;
+      const live = latest.steps.some((step) => step === "pending" || step === "running");
+      if (context.kind === "rollback" ? live || latest.steps.includes("recovering") || !latest.reversible || latest.rollbackStatus === "ROLLED_BACK" : !live) return READING;
+    }
+    if (code && listJ4PendingProposals().some((record) => record.sopProposal.context.playbook.code === code && (context.kind === "execute" || !record.sopProposal.accepted))) return formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING");
+    if (context.kind === "execute" && [...proposalRows.values()].some((row) => row.obj === context.playbook.code)) return formatAdminApiError("OBJECT_ALREADY_PENDING", "OBJECT_ALREADY_PENDING");
+    return undefined;
+  };
+  const commandOptions = (slot: string, context: J4CommandContext, retained?: J4PendingCommand | J4PendingProposal): Partial<ActionConfirmReq> => {
+    activeConfirmation.current = { slot, restored: !!retained };
+    return {
+      formKey: ++formSequence.current,
+      getPendingReason: () => {
+        const record = listJ4PendingCommands().find((row) => row.fingerprint === slot);
+        const proposal = listJ4PendingProposals().find((row) => row.fingerprint === slot);
+        return record ? JSON.parse(record.sop.body).reason : proposal ? JSON.parse(proposal.sopProposal.body).reason : undefined;
+      },
+      blockedReason: retained && (!canRetry(context) || isRetryExpired(retained)) ? isRetryExpired(retained) ? RETRY_EXPIRED_TEXT : formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined,
+    };
+  };
+  const runBackend = async (task: () => Promise<unknown>, ok: string, slot: string, context: J4CommandContext, retained?: J4PendingCommand | J4PendingProposal) => {
+    const original = listJ4PendingCommands().find((row) => row.fingerprint === slot) ?? listJ4PendingProposals().find((row) => row.fingerprint === slot);
+    if (retained && (!original || original.commandKey !== retained.commandKey)) {
+      openActionConfirm(null);
+      return;
+    }
+    if (original && isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
+    if (original && !canRetry(context)) throw new Error("ACCESS_DENIED");
+    if (!original) {
+      const blocked = newBlockedReason(slot, context);
+      if (blocked) throw new Error(blocked);
     }
     try {
+      if (original && "sop" in original) await retryJ4Command(original);
+      else if (original && "sopProposal" in original) {
+        setAbsent(({ [original.commandKey]: _found, ...rest }) => rest);
+        const row = await retryJ4Proposal(original);
+        if (row) setVerifiedProposals((previous) => ({ ...previous, [original.commandKey]: row }));
+        else throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");
+      } else {
+        const row = await task();
+        if (context.kind === "execute" && row) {
+          const saved = getJ4PendingProposal(context.playbook.code);
+          if (saved) setVerifiedProposals((previous) => ({ ...previous, [saved.commandKey]: row as A2OperationRow }));
+        }
+      }
+    } catch (error) {
+      syncPending();
+      const accepted = context.kind === "execute" && getJ4PendingProposal(context.playbook.code)?.sopProposal.accepted;
+      if (accepted) {
+        openActionConfirm(null);
+        activeConfirmation.current = null;
+        toast(formatAdminApiError("J4_PROPOSAL_STATUS_UNAVAILABLE", "J4_PROPOSAL_STATUS_UNAVAILABLE"), "warn");
+        return;
+      }
+      if (original && isExplicitRejection(error)) {
+        openActionConfirm(null);
+        activeConfirmation.current = null;
+        toast(displayAdminError(error), "error");
+        await actions.reloadJEmergency().catch(() => undefined);
+      } else if (isEmergencyOutcomeUncertain(error) || isA2OutcomeUncertainError(error)) {
+        // The original modal freezes through getPendingReason; no current data replaces its facts.
+        const key = original?.commandKey ?? listJ4PendingCommands().find((row) => row.fingerprint === slot)?.commandKey ?? getJ4PendingProposal(contextCode(context) ?? "")?.commandKey ?? slot;
+        noteError(key, error);
+        if ((error as { reasonCode?: string }).reasonCode?.startsWith("J4_EXECUTION_PARTIAL:")) {
+          setPartial((previous) => ({ ...previous, [key]: true }));
+          await actions.reloadJEmergency().catch(() => undefined);
+        }
+      } else if (error instanceof Error && /J4_EXECUTION_PARTIAL/.test((error as { reasonCode?: string }).reasonCode ?? "")) {
+        await actions.reloadJEmergency().catch(() => undefined);
+      }
+      throw error;
+    }
+    syncPending();
+    activeConfirmation.current = null;
+    setEditor(null);
+    setPrepare(null);
+    if (original || retained) openActionConfirm(null);
+    try {
       await actions.reloadJEmergency();
-      toast(ok);
+      toast(ok, "success");
     } catch {
-      toast(`${ok}，但页面刷新失败，请点击当前页签重新读取`);
+      toast(`${ok}，但页面刷新失败，请手动刷新`, "warn");
     }
   };
   const effDrillState = (p: Playbook): "active" | "todo" | string => contractReady && unsupportedStepCount(p) === 0 && p.executionReady === true && p.drillEvidence === true && p.state === "active" && !p.draft ? "active" : "todo";
@@ -192,401 +597,645 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const todo = PLAYBOOKS.length - ready;
   const missingDrillLedger = PLAYBOOKS.filter((p) => p.drillFresh === true && p.drillEvidence === false).length;
   const emerCount = PLAYBOOKS.filter((p) => p.emer).length;
+  const active = EXECS.filter(isActiveExecution);
+  const selected = shown.find((p) => p.code === selectedCode) ?? shown[0];
+  const closeConfirm = () => openActionConfirm(null);
 
-  const editPb = (p: Playbook) => {
-    if (!p.version) return;
-    const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
-    action: `编辑应急预案 · ${p.code} ${p.name}`,
-    detail: <><b>应急预案步骤设置 · 预案库维护</b>:重排 {p.name} 的动作序列(当前 {p.seq.length} 步)、触发场景、责任角色、响应时限、应急轨、通知活动和回滚方案；保存后保留前后版本记录。</>,
-    businessForm: {
-      kind: "sop-authoring",
-      nameHint: p.name,
-      scenes: data.scenes.filter((item) => item !== "全部"),
-      owners: Array.from(new Set([p.owner, "风控", "合规审计", "超管"])),
-      notifyTemplates: emergency.notifyTemplates ?? [],
-      notifyTemplatesError: emergency.notifyTemplatesError,
-      actionOptions: data.actionOptions ?? [],
-      rollbackOptions: data.rollbackOptions ?? [],
-      currentName: p.name,
-      currentScene: p.scene,
-      currentOwner: p.owner,
-      currentSla: p.sla,
-      currentEmergencyTrack: p.emer,
-      currentActionSeq: actionSeqText(p),
-      currentNotifyCampaignNo: p.notifyCampaignNo,
-      currentNotifyTemplate: p.notifyTemplate,
-      currentRollback: p.rollback,
-      currentDrillRequired: p.drillRequired,
-    },
-    run: (reason, _v, bv) => {
-      const steps = (bv?.actionSeq || "").split("\n").map((s) => s.trim()).filter(Boolean);
-      const summary = steps.length ? steps.join(" | ") : `${bv?.name || p.name} · ${bv?.scene || p.scene} · ${bv?.owner || p.owner}`;
-      return runBackend(actions.updateJ4Playbook(p.code, { ...playbookFormBody(bv, p.name), summary, version: p.version! }, reason, commandKey), `${p.code} 预案变更已保存${bv?.drillRequired === "true" ? "，需重新演练" : ""}(${steps.length} 步)`);
-    },
-  });
+  const executionGate = (p: Playbook) => {
+    const legacyStepCount = unsupportedStepCount(p);
+    const hasTargetAuthorities = p.seq.every((step) => Boolean(TARGET_AUTHORITY[step.dom])
+      && authorities.includes(TARGET_AUTHORITY[step.dom]));
+    const missingPages = Array.from(new Set(p.seq.filter((step) => !TARGET_AUTHORITY[step.dom] || !authorities.includes(TARGET_AUTHORITY[step.dom])).map((step) => DOMAIN_PAGE[step.dom] ?? step.dom)));
+    const state = effDrillState(p);
+    const hasProposal = [...proposalRows.values()].some((row) => row.obj === p.code) || proposals.some((row) => row.sopProposal.context.playbook.code === p.code);
+    const originalBlocked = newBlockedReason(j4ProposalSlot(p.code), { kind: "execute", playbook: p, emergency: p.emer, fields: {} });
+    const canExecute = !originalBlocked && !hasProposal && contractReady && !contentLoading && canRun && canPropose && legacyStepCount === 0 && state === "active" && p.executionReady === true && hasTargetAuthorities;
+    const hint = hasProposal ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : !contractReady ? NOT_READY : contentLoading ? READING : legacyStepCount > 0 ? "历史预案包含尚未接通的动作，请先编辑并替换后重新演练" : p.executionReady !== true || state !== "active" ? (p.readinessReason || "先完成演练") : !canRun ? "缺少应急预案执行权限" : !canPropose ? "缺少提交审批申请的权限" : !hasTargetAuthorities ? `缺少这些页面的处置权限：${missingPages.join("、")}` : originalBlocked;
+    return { canExecute, hint, legacyStepCount, state };
   };
 
-  const drillPb = (p: Playbook) => {
-    if (unsupportedStepCount(p) > 0) {
-      toast("历史预案包含尚未接通的动作，请先编辑并替换后再演练");
-      return;
-    }
-    const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
-    action: `启动演练 · ${p.code} ${p.name}`,
-    detail: <><b>演练校验</b>(非实战):逐项校验 {p.seq.length} 步动作是否有可用处置入口、通知活动是否可下发；不触发生产动作。全部通过后保存每步结果并将预案发布为「演练就绪」。</>,
-    run: (reason) => {
-      return runBackend(actions.drillJ4Playbook(p.code, reason, commandKey), `${p.code} 演练校验已通过 · 预案现已就绪`);
-    },
-  });
-  };
-
-  // 注:执行剧本不传 amplifies —— B1 前置只挂「恢复放大流出」方向;应急执行是止血方向(熔断/封锁/暂停),
-  // 覆盖率低于红线时恰恰最需要执行(SOP-02 对账缺口/SOP-03 挤兑),不可被 B1 禁放行锁死(对齐 J1「熔断方向不前置 B1」)。
-  const execPb = (p: Playbook, isEmer: boolean) => {
-    const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
-    action: `执行应急预案 · ${p.code}${isEmer ? "(应急轨)" : "(常规轨)"}`,
-    detail: (
-      <>
-        {isEmer
-          ? <><b style={{ color: "var(--danger)" }}>应急轨</b> — 仅允许关停/暂停等止血方向，仍需填写原因并保留完整执行记录。</>
-          : <><b>常规轨</b> — 按动作序列调用每个已接通的处置入口。</>}
-        <br />本次原因将作为触发上下文；提交后先进入 A2 确认队列，批准时调用以下已接通动作
-        <span style={{ display: "block", marginTop: 4 }}>
-          <b>动作序列({p.seq.length} 步)</b>:
-          {p.seq.map((s, i) => (
-            <span key={i} style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--ink-3)", display: "block", marginTop: 2 }}>
-              {i + 1}. {s.dom} · {operatorCopyText(s.ax.replace(/\*\*/g, ""))}{s.approve ? "(操作确认)" : ""}
-            </span>
-          ))}
-        </span>
-        <b>责任</b>:{p.owner} · <b>处理时限</b>:{p.sla}
-      </>
-    ),
-    businessForm: {
-      kind: "j4-execution-confirmation",
-      triggerBases: ["监管点名", "挤兑风险", "安全事件", "其他"],
-      defaultTriggerBasis: p.scene === "监管点名"
-        ? "监管点名"
-        : (p.scene === "舆情挤兑" || p.scene === "资金异常" ? "挤兑风险" : "安全事件"),
-      steps: p.seq.map((step) => ({
-        domain: step.dom,
-        action: step.ax.replace(/\*\*/g, ""),
-        ref: step.ref || "",
-        approve: step.approve,
-      })),
-    },
-    run: async (reason, _value, businessValue) => {
-      if (!businessValue || p.seq.some((_, index) => businessValue[`stepConfirm.${index}`] !== "true")) {
-        throw new Error("请逐项确认全部动作后再提交执行");
-      }
-      const stepConfirmations = p.seq.map((step, index) => ({
-        step: index + 1,
-        domain: step.dom,
-        ref: step.ref || "",
-        confirmed: true as const,
-      }));
-      const triggerBasis = businessValue?.triggerBasis ?? "";
-      const triggerContext = businessValue?.triggerContext ?? "";
-      return runBackend(createA2OperationProposal({
-        action: `执行应急预案 · ${p.code}`,
-        obj: p.code,
-        beforeValue: "演练就绪",
-        afterValue: "批准后逐步执行",
-        operator: session?.operator ?? session?.username ?? "",
-        operatorRole: session?.role ?? "superadmin",
-        type: "sos",
-        amplifies: false,
-        sos: true,
-        roleGate: "A2 确认",
-        reason,
-        sourceDomain: "J4",
-        command: {
-          domain: "J",
-          op: "j4_playbook_execute",
-          params: {
-            code: p.code,
-            emergency: isEmer,
-            triggerBasis,
-            triggerContext,
-            stepConfirmations,
-          },
-        },
-        target: { domain: "J", type: "playbook", id: p.code },
-      }, commandKey).then(() => undefined), `${p.code} 已提交 A2 确认队列；批准后才会逐步执行`);
-    },
-  });
-  };
-
-  // 回滚单次剧本执行:跨域写入(配置恢复 / 通知停发)· 恒走常规轨 · 不可应急加速。
-  const rollbackPb = (exec: { executionId: string; code: string; name?: string }) => {
-    const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
-      action: `回滚预案执行 · ${exec.executionId}`,
-      detail: (
-        <><b>{exec.code}</b>(<span className="mono">{exec.executionId}</span>)将按本次执行快照逐项恢复可逆的 J1 关停动作。已发送通知无法撤回，如需更正请另建通知活动。</>
-      ),
+  // ---------- 写操作：新增、编辑（第二步：共用确认框） ----------
+  const confirmCreate = (draft: PlaybookDraft, retained?: J4PendingCommand) => {
+    const bv = draftValue(draft);
+    const context: J4CommandContext = { kind: "create", fields: bv };
+    const slot = "POST /sop/playbooks";
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "config",
+      action: "新增应急预案",
+      title: "新增预案",
+      effect: <StatusTag tone="neutral" icon={FlaskConical}>保存后待演练</StatusTag>,
+      facts: () => <div className="rd-stack">
+        <Facts>
+          <Fact k="预案">{draft.name.trim()}</Fact>
+          <Fact k="场景和责任">{draft.scene} · {draft.owner} · 响应时限 {draft.sla}</Fact>
+          <Fact k="通道">{draft.emergencyTrack === "true" ? "应急通道" : "常规"}</Fact>
+          <Fact k="保存后" tone="warn">待演练：演练通过前不能正式执行，不动任何线上业务</Fact>
+        </Facts>
+        <StepTimeline steps={draft.lines.map(lineStep)} notify={{ campaignNo: draft.notifyCampaignNo, template: draft.notifyTemplate }} label="预案的步骤" />
+        <div className="j4-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={retained || hasUnknown(slot) ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : undefined} onClick={() => { if (hasUnknown(slot)) return; closeConfirm(); setEditor({ ...editorBase(), mode: "create", draft, onNext: (next) => { setEditor(null); confirmCreate(next); } }); }}>返回修改</Button></div>
+      </div>,
+      detail: <><b>设置应急预案</b>：名称、触发场景、负责角色、响应时限、是否走应急通道、执行动作、通知、回滚方案和演练要求。保存后进入预案库。</>,
+      statedBrief: { impact: "保存后进入预案库，状态是待演练；演练通过前不能正式执行。", check: "核对步骤顺序和对象，理由写清依据或工单号。" },
+      confirmLabel: "保存预案",
+      reasonPlaceholder: REASON_HINT,
       run: (reason) => {
-        return runBackend(actions.rollbackJ4Playbook(exec.code, exec.executionId, reason, commandKey), `${exec.executionId} 已按执行快照完成回滚`);
+        const name = bv?.name || "未命名应急预案";
+        return runBackend(() => actions.createJ4Playbook(playbookFormBody(bv, name), reason, createJEmergencyCommandKey(), context), `新预案「${name}」已创建${bv?.drillRequired === "true" ? "，请先完成演练" : "并可执行"}`, slot, context, retained);
+      },
+    });
+  };
+  const editorBase = (): Omit<EditorSpec, "mode" | "onNext"> => ({
+    scenes: (data?.scenes ?? []).filter((item) => item !== "全部"),
+    nameHint: "例如：监管点名快速止血",
+    notifyTemplates: emergency.notifyTemplates ?? [],
+    notifyTemplatesError: emergency.notifyTemplatesError,
+    actionOptions: data?.actionOptions ?? [],
+    rollbackOptions: data?.rollbackOptions ?? [],
+  });
+  const editSpec = (p: Playbook): EditorSpec => ({
+    ...editorBase(),
+    mode: "edit",
+    playbook: p,
+    nameHint: p.name,
+    owners: Array.from(new Set([p.owner, "风控", "合规审计", "超管"])),
+    current: { name: p.name, scene: p.scene, owner: p.owner, sla: p.sla, emergencyTrack: p.emer, actionSeq: actionSeqText(p), notifyCampaignNo: p.notifyCampaignNo, notifyTemplate: p.notifyTemplate, rollback: p.rollback, drillRequired: p.drillRequired },
+    onNext: (draft) => { setEditor(null); confirmEdit(p, draft); },
+  });
+  const editPb = (p: Playbook) => {
+    if (!p.version || newBlockedReason(`PUT /sop/playbooks/${encodeURIComponent(p.code)}`, { kind: "update", playbook: p, fields: {} })) return;
+    setEditor(editSpec(p));
+  };
+  const confirmEdit = (p: Playbook, draft: PlaybookDraft, retained?: J4PendingCommand) => {
+    const bv = draftValue(draft);
+    const context: J4CommandContext = { kind: "update", playbook: p, fields: bv };
+    const slot = `PUT /sop/playbooks/${encodeURIComponent(p.code)}`;
+    const before = initialDraft(editSpec(p));
+    const changes = draftChanges(before, draft);
+    const stepsChanged = before.lines.join("\n") !== draft.lines.join("\n");
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "config",
+      action: `编辑应急预案 · ${p.code} ${p.name}`,
+      title: "保存预案修改",
+      effect: <StatusTag tone="neutral" icon={FlaskConical}>保存后要重新演练</StatusTag>,
+      facts: () => <div className="rd-stack">
+        <Facts>
+          <Fact k="预案">{p.name}<span className="j4-muted"> · <span data-mono="">{p.code}</span></span></Fact>
+          {changes.map((row) => <Fact key={row.k} k={row.k}><Change from={row.from} to={row.to} /></Fact>)}
+          {stepsChanged && <Fact k="步骤"><Change from={`${count(before.lines.length)} 步`} to={`${count(draft.lines.length)} 步`} /></Fact>}
+          {changes.length === 0 && !stepsChanged && <Fact k="改动">没有改动；保存后仍会回到待演练</Fact>}
+          <Fact k="保存后" tone="warn">回到待演练，要重新演练才能正式执行；已有的执行记录不变，等批准的申请批准时会因预案已改而被拒</Fact>
+        </Facts>
+        {stepsChanged && <StepTimeline steps={draft.lines.map(lineStep)} notify={{ campaignNo: draft.notifyCampaignNo, template: draft.notifyTemplate }} label="改后的步骤" />}
+        <div className="j4-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={retained || hasUnknown(slot) ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : undefined} onClick={() => { if (hasUnknown(slot)) return; closeConfirm(); setEditor({ ...editSpec(p), draft }); }}>返回修改</Button></div>
+      </div>,
+      detail: <><b>编辑预案</b>：调整 {p.name} 的执行步骤（当前 {p.seq.length} 步）、触发场景、负责角色、响应时限、是否走应急通道、通知和回滚方案。保存后会保留修改记录。</>,
+      statedBrief: { impact: "只改以后用的预案定义；保存后回到待演练。", check: "核对改动，理由写清依据或工单号。" },
+      confirmLabel: "保存修改",
+      reasonPlaceholder: REASON_HINT,
+      run: (reason) => {
+        const steps = (bv?.actionSeq || "").split("\n").map((s) => s.trim()).filter(Boolean);
+        const summary = steps.length ? steps.join(" | ") : `${bv?.name || p.name} · ${bv?.scene || p.scene} · ${bv?.owner || p.owner}`;
+        return runBackend(() => actions.updateJ4Playbook(p.code, { ...playbookFormBody(bv, p.name), summary, version: p.version! }, reason, createJEmergencyCommandKey(), context), `${p.code} 预案变更已保存${bv?.drillRequired === "true" ? "，需重新演练" : ""}(${steps.length} 步)`, slot, context, retained);
       },
     });
   };
 
-  const cancelExecution = (exec: { executionId: string; code: string }) => {
-    const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+  const drillPb = (p: Playbook, retained?: J4PendingCommand) => {
+    if (!retained && unsupportedStepCount(p) > 0) {
+      toast("历史预案包含尚未接通的动作，请先编辑并替换后再演练");
+      return;
+    }
+    const context: J4CommandContext = { kind: "drill", playbook: p };
+    const slot = `POST /sop/playbooks/${encodeURIComponent(p.code)}/drills`;
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "record",
+      action: `启动演练 · ${p.code} ${p.name}`,
+      title: "演练预案",
+      effect: NO_REAL,
+      facts: <Facts>
+        <Fact k="预案">{p.name}<span className="j4-muted"> · <span data-mono="">{p.code}</span></span></Fact>
+        <Fact k="会检查">{count(p.seq.length)} 步的对象还在不在、能不能执行；{p.seq.some((step) => step.dom === "I3") ? "通知活动是不是已排期" : "没有通知步骤"}</Fact>
+        <Fact k="不会做">不关停业务、不封锁国家、不冻结账户、不发通知、不发布披露</Fact>
+        <Fact k="通过后">预案变成可执行，90 天内有效；不保证到时候对象还能执行</Fact>
+      </Facts>,
+      detail: <><b>演练</b>（不是真的执行）：逐步检查这 {p.seq.length} 步能不能执行、通知能不能发出，不会影响线上。全部通过后，预案变为「演练就绪」。</>,
+      statedBrief: { impact: "只检查、写一条演练记录，不动任何真实业务。", check: "理由写清演练原因或工单号。" },
+      confirmLabel: "开始演练",
+      reasonPlaceholder: "例如：季度演练、预案修改后重新演练",
+      run: (reason) => {
+        return runBackend(() => actions.drillJ4Playbook(p.code, reason, createJEmergencyCommandKey(), context), `${p.code} 演练通过，预案已就绪`, slot, context, retained);
+      },
+    });
+  };
+
+  // ---------- 发起正式执行：第一步页面框，第二步共用确认框 ----------
+  // 注:执行剧本不传 amplifies —— B1 前置只挂「恢复放大流出」方向;应急执行是止血方向(熔断/封锁/暂停),
+  // 覆盖率低于红线时恰恰最需要执行(SOP-02 对账缺口/SOP-03 挤兑),不可被 B1 禁放行锁死(对齐 J1「熔断方向不前置 B1」)。
+  const openExecute = (p: Playbook, isEmer: boolean, draft?: ExecuteDraft) => {
+    if (!executionGate(p).canExecute) return;
+    setPrepare({
+      playbook: p,
+      emergency: isEmer,
+      draft: draft ?? {
+        triggerBasis: p.scene === "监管点名" ? "监管点名" : (p.scene === "舆情挤兑" || p.scene === "资金异常" ? "挤兑风险" : "安全事件"),
+        triggerContext: "",
+        confirmed: p.seq.map(() => false),
+      },
+    });
+  };
+  const execPb = (p: Playbook, isEmer: boolean, draft: ExecuteDraft, retained?: J4PendingProposal) => {
+    const businessValue: Record<string, string> = {
+      triggerBasis: draft.triggerBasis,
+      triggerContext: draft.triggerContext,
+      ...Object.fromEntries(p.seq.map((_, index) => [`stepConfirm.${index}`, draft.confirmed[index] ? "true" : "false"])),
+    };
+    const context: Extract<J4CommandContext, { kind: "execute" }> = { kind: "execute", playbook: p, emergency: isEmer, fields: businessValue };
+    const slot = j4ProposalSlot(p.code);
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "emergency",
+      action: `执行应急预案 · ${p.code}${isEmer ? "（应急通道）" : "（常规通道）"}`,
+      title: "提交执行申请",
+      effect: <>
+        <StatusTag tone="warn" icon={Clock3}>批准后才执行</StatusTag>
+        {isEmer ? <StatusTag tone="danger" icon={Siren}>应急通道</StatusTag> : <StatusTag tone="neutral" icon={Workflow}>常规通道</StatusTag>}
+      </>,
+      facts: () => <div className="rd-stack">
+        <Facts>
+          <Fact k="预案">{p.name}<span className="j4-muted"> · <span data-mono="">{p.code}</span></span></Fact>
+          <Fact k="谁来批">{APPROVER}</Fact>
+          <Fact k="批准前">什么都不会发生</Fact>
+          <Fact k="批准后">自动按顺序执行 {count(p.seq.length)} 步，不再逐步等人确认；某一步失败就停下，前面做完的保持生效</Fact>
+          <Fact k="收得回吗" tone="warn">{undoSummary(p.seq)}</Fact>
+          {p.seq.some((step) => step.impact) && <Fact k="影响人数" tone="warn">系统算不出，不代表没有影响</Fact>}
+          <Fact k="触发依据">{draft.triggerBasis}</Fact>
+          <Fact k="触发说明">{draft.triggerContext.trim()}</Fact>
+        </Facts>
+        <div className="j4-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={retained || hasUnknown(slot) ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : undefined} onClick={() => { if (hasUnknown(slot)) return; closeConfirm(); openExecute(p, isEmer, draft); }}>返回修改</Button></div>
+      </div>,
+      detail: (
+        <>
+          {isEmer
+            ? <><b>应急通道</b>：执行记为应急执行，审批人、批准要求和执行顺序都和常规一样，不会加急；仍要填写原因，每一步都会记录。</>
+            : <><b>常规通道</b>：按步骤依次执行。</>}
+          <br />提交后需在「操作记录与审批」批准，批准后依次执行以下步骤
+          <span className="j4-detail-steps">
+            {p.seq.map((s, i) => <span key={i}>{i + 1}. {stepInfo(s).title}{stepInfo(s).target ? ` ${stepInfo(s).target}` : ""}</span>)}
+          </span>
+          <b>责任</b>：{p.owner} · <b>处理时限</b>：{p.sla}
+        </>
+      ),
+      statedBrief: { impact: `提交后只建一张审批申请，批准前任何业务都不变；批准后自动按顺序执行 ${p.seq.length} 步。`, check: "核对预案、每一步和触发说明，理由写清监管来函、事件或工单编号。" },
+      confirmTone: "danger",
+      confirmLabel: "提交执行申请",
+      reasonPlaceholder: REASON_HINT,
+      run: async (reason) => {
+        if (p.seq.some((_, index) => businessValue[`stepConfirm.${index}`] !== "true")) {
+          throw new Error("请逐项确认全部动作后再提交执行");
+        }
+        const stepConfirmations = p.seq.map((step, index) => ({
+          step: index + 1,
+          domain: step.dom,
+          ref: step.ref || "",
+          confirmed: true as const,
+        }));
+        const triggerBasis = businessValue?.triggerBasis ?? "";
+        const triggerContext = businessValue?.triggerContext ?? "";
+        return runBackend(() => submitJ4Proposal({
+          action: `执行应急预案 · ${p.code}`,
+          obj: p.code,
+          beforeValue: "演练就绪",
+          afterValue: "批准后逐步执行",
+          operator: session?.operator ?? session?.username ?? "",
+          operatorRole: session?.role ?? "superadmin",
+          type: "sos",
+          amplifies: false,
+          sos: true,
+          roleGate: "审批确认",
+          reason,
+          sourceDomain: "J4",
+          command: {
+            domain: "J",
+            op: "j4_playbook_execute",
+            params: {
+              code: p.code,
+              emergency: isEmer,
+              triggerBasis,
+              triggerContext,
+              stepConfirmations,
+            },
+          },
+          target: { domain: "J", type: "playbook", id: p.code },
+        }, createJEmergencyCommandKey(), context), `${p.code} 已提交，批准后才会依次执行`, slot, context, retained);
+      },
+    });
+  };
+
+  // ---------- 执行记录上的写操作 ----------
+  // 回滚单次剧本执行:只恢复本次执行关停的 J1 开关 · 直接生效 · 不可应急加速。
+  const rollbackPb = (exec: SopExecution, retained?: J4PendingCommand) => {
+    const context: J4CommandContext = { kind: "rollback", execution: exec };
+    const slot = `POST /sop/playbooks/${encodeURIComponent(exec.code)}/executions/${encodeURIComponent(exec.executionId!)}/rollback`;
+    const gates = reversibleGates(exec);
+    const others = exec.domainActions.filter((action) => String(action.domain ?? "").toUpperCase() !== "J1" && ["DONE", "RUNNING"].includes(String(action.status ?? "").toUpperCase())).map((action) => stepInfo({ dom: String(action.domain ?? ""), ax: String(action.action ?? ""), ref: action.ref ? String(action.ref) : String(action.domain) === "I3" ? "campaign-notify" : null }).title);
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "emergency",
+      action: `回滚预案执行 · ${exec.executionId}`,
+      title: "恢复本次关停的开关",
+      effect: IMMEDIATE,
+      facts: <Facts>
+        <Fact k="执行">{exec.name}<span className="j4-muted"> · <span data-mono="">{exec.executionId}</span></span></Fact>
+        <Fact k="会恢复">{gates.length ? `${gates.join("、")}开关，恢复后用户马上能用` : "这次执行关停的开关"}</Fact>
+        <Fact k="不会恢复" tone="warn">{others.length ? `${Array.from(new Set(others)).join("、")}：这页收不回，到对应页面处理；已发出的通知撤不回` : "记录里没有其他做完的步骤；失败的步骤也可能已生效，到对应页面核对。已发出的通知撤不回"}</Fact>
+        <Fact k="前提">开关后来被别人改过的不恢复；系统先查兑付覆盖率和估值，不达标整次不执行</Fact>
+        <Fact k="和「紧急停用开关」">这里直接恢复、不走审批；在「紧急停用开关」页恢复要提交审批</Fact>
+      </Facts>,
+      detail: <><b>{exec.code}</b>(<span data-mono="">{exec.executionId}</span>)会把这次执行中关停的业务开关逐个恢复。已发出的通知撤不回，需要更正请另发通知。</>,
+      statedBrief: { impact: "这次执行关停的开关马上恢复，其他步骤不受影响。", check: "确认风险已经解除，理由写清复核结论或工单号。" },
+      confirmTone: "danger",
+      confirmLabel: "确认恢复，立即生效",
+      reasonPlaceholder: "例如：风险已解除的复核结论、工单号",
+      run: (reason) => {
+        return runBackend(() => actions.rollbackJ4Playbook(exec.code, exec.executionId!, reason, createJEmergencyCommandKey(), context), `${exec.executionId} 已回滚`, slot, context, retained);
+      },
+    });
+  };
+
+  const cancelExecution = (exec: SopExecution, retained?: J4PendingCommand) => {
+    const context: J4CommandContext = { kind: "cancel", execution: exec };
+    const slot = `POST /sop/playbooks/${encodeURIComponent(exec.code)}/executions/${encodeURIComponent(exec.executionId!)}/cancel`;
+    const runningAt = exec.steps.findIndex((step) => step === "running" || step === "recovering");
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "record",
       action: `取消执行 · ${exec.executionId}`,
-      detail: <>取消请求会在下一个步骤边界生效：已经完成的止血动作保持生效，尚未开始的步骤标记为跳过，整次执行以「部分完成」终止并保留审计。正在调用中的目标域动作不会被伪装成已取消。</>,
+      title: "登记取消",
+      effect: IMMEDIATE,
+      facts: <Facts>
+        <Fact k="执行">{exec.name}<span className="j4-muted"> · <span data-mono="">{exec.executionId}</span></span></Fact>
+        <Fact k="现在">{runningAt >= 0 ? `第 ${runningAt + 1} 步${exec.steps[runningAt] === "running" ? "执行中" : "恢复核对中"}` : "还没开始执行"}，共 {count(exec.steps.length)} 步</Fact>
+        <Fact k="会怎样">正在做的这一步做完才停；后面没开始的跳过；做完的保持生效，不撤回</Fact>
+        <Fact k="之后">登记后刷新看最终逐步状态；如果已经做到最后一步，可能照常全部完成</Fact>
+      </Facts>,
+      detail: <>取消只是登记，正在执行的那一步不会被中断；最终结果以刷新后的逐步状态为准。</>,
+      statedBrief: { impact: "只登记取消请求，下一步开始前生效。", check: "理由写清为什么要停。" },
+      confirmLabel: "登记取消",
+      reasonPlaceholder: "例如：监管要求变化、误发起",
       run: (reason) => runBackend(
-        actions.cancelJ4Playbook(exec.code, exec.executionId, reason, commandKey),
-        `${exec.executionId} 已登记取消请求，请刷新核对最终逐步状态`,
+        () => actions.cancelJ4Playbook(exec.code, exec.executionId!, reason, createJEmergencyCommandKey(), context),
+        `${exec.executionId} 已登记取消请求，请刷新核对最终逐步状态`, slot, context, retained,
       ),
     });
   };
 
-  const resumeExecution = (exec: { executionId: string; code: string }) => {
-    const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({
+  const resumeExecution = (exec: SopExecution, retained?: J4PendingCommand) => {
+    const context: J4CommandContext = { kind: "resume", execution: exec };
+    const slot = `POST /sop/playbooks/${encodeURIComponent(exec.code)}/executions/${encodeURIComponent(exec.executionId!)}/resume`;
+    const stuck = exec.steps.map((status, index) => ({ status, index, action: exec.domainActions.find((row) => Number(row.step) === index + 1) }))
+      .filter((row) => row.status === "pending" || row.status === "running");
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "record",
       action: `恢复核对 · ${exec.executionId}`,
-      detail: <>仅对超过处理超时保护期、仍停在待执行/执行中的记录生效。服务端只核对目标域持久化事实：已确认的动作记成功，未知结果记失败并终止剩余步骤；不会盲目重复跨域副作用。</>,
+      title: "恢复核对",
+      effect: <StatusTag tone="neutral" icon={ScanSearch}>不重新执行</StatusTag>,
+      facts: <Facts>
+        <Fact k="执行">{exec.name}<span className="j4-muted"> · <span data-mono="">{exec.executionId}</span></span></Fact>
+        <Fact k="什么时候能核对">这次执行最后一次更新超过 2 分钟；没到时间会被拒绝，稍后再试</Fact>
+        {stuck.map((row) => {
+          const dom = String(row.action?.domain ?? "").toUpperCase();
+          const outcome = row.status === "pending" ? "还没开始，记为跳过"
+            : dom === "J1" || dom === "I3" ? "按系统记录核对：能证明做成的记成功，否则记失败"
+            : "系统没有这一步的完成记录，会记为失败；实际可能已经生效，到对应页面核对";
+          const title = row.action ? stepInfo({ dom, ax: String(row.action.action ?? ""), ref: row.action.ref ? String(row.action.ref) : dom === "J1" ? String(row.action.configKey ?? "").replace("killswitch.", "") : dom === "I3" ? "campaign-notify" : null }).title : "";
+          return <Fact key={row.index} k={`第 ${row.index + 1} 步`} tone={row.status === "running" && dom !== "J1" && dom !== "I3" ? "warn" : undefined}>{title ? `${title}：` : ""}{outcome}</Fact>;
+        })}
+        <Fact k="之后">不会自动执行剩下的步骤；有失败或跳过时这次执行记为部分完成</Fact>
+      </Facts>,
+      detail: <>只对超时后仍卡在「待执行 / 执行中」的记录有效。系统会逐步核对：确认做成的记成功，无法确认的记失败并停止后续步骤，不会重复执行。</>,
+      statedBrief: { impact: "只核对卡住的步骤并结束这次执行，不重新执行任何一步。", check: "理由写清为什么核对。" },
+      confirmLabel: "开始核对",
+      reasonPlaceholder: "例如：执行超过 2 分钟没有进展",
       run: (reason) => runBackend(
-        actions.resumeJ4Playbook(exec.code, exec.executionId, reason, commandKey),
-        `${exec.executionId} 已完成恢复核对`,
+        () => actions.resumeJ4Playbook(exec.code, exec.executionId!, reason, createJEmergencyCommandKey(), context),
+        `${exec.executionId} 已完成恢复核对`, slot, context, retained,
       ),
     });
   };
+
+  function restoreOriginal(record: J4PendingCommand) {
+    const context = record.sop.context;
+    if (isRetryExpired(record) || !canRetry(context)) return;
+    if (context.kind === "create" || context.kind === "update") {
+      const fields = context.fields;
+      const draft: PlaybookDraft = {
+        name: fields.name, scene: fields.scene, owner: fields.owner, sla: fields.sla, slaLegacyValue: fields.sla,
+        emergencyTrack: fields.emergencyTrack, lines: fields.actionSeq.split("\n"),
+        notifyCampaignNo: fields.notifyCampaignNo, notifyTemplate: fields.notifyTemplate, notifySearch: fields.notifyTemplate,
+        rollback: fields.rollback, rollbackTemplate: "", rollbackSearch: "", drillRequired: fields.drillRequired,
+      };
+      if (context.kind === "create") confirmCreate(draft, record);
+      else confirmEdit(context.playbook, draft, record);
+    } else if (context.kind === "drill") drillPb(context.playbook, record);
+    else if (context.kind === "cancel") cancelExecution(context.execution, record);
+    else if (context.kind === "resume") resumeExecution(context.execution, record);
+    else if (context.kind === "rollback") rollbackPb(context.execution, record);
+  }
+  function restoreProposal(record: J4PendingProposal) {
+    const context = record.sopProposal.context;
+    if (isRetryExpired(record) || record.sopProposal.accepted || !canRetry(context)) return;
+    execPb(context.playbook, context.emergency, {
+      triggerBasis: context.fields.triggerBasis, triggerContext: context.fields.triggerContext,
+      confirmed: context.playbook.seq.map((_, index) => context.fields[`stepConfirm.${index}`] === "true"),
+    }, record);
+  }
+
+  const executionActions = (e: SopExecution, compact = false) => {
+    const live = contractReady && canRun && Boolean(e.executionId) && e.mode !== "drill" && e.steps.some((step) => step === "pending" || step === "running");
+    const restorable = contractReady && canRun && canRestore && Boolean(e.executionId) && e.reversible && !e.steps.some((step) => step === "pending" || step === "running" || step === "recovering") && e.mode !== "drill" && e.rollbackStatus !== "ROLLED_BACK";
+    return <span className="j4-row-acts">
+      {compact && <Button size="sm" icon={<ScanSearch size={14} aria-hidden />} onClick={() => setTraceExecution(e)}>追溯</Button>}
+      {live && <Button size="sm" icon={<Square size={14} aria-hidden />} disabledReason={newBlockedReason(`POST /sop/playbooks/${encodeURIComponent(e.code)}/executions/${encodeURIComponent(e.executionId!)}/cancel`, { kind: "cancel", execution: e })} onClick={() => cancelExecution(e)}>取消</Button>}
+      {live && <Button size="sm" disabledReason={newBlockedReason(`POST /sop/playbooks/${encodeURIComponent(e.code)}/executions/${encodeURIComponent(e.executionId!)}/resume`, { kind: "resume", execution: e })} onClick={() => resumeExecution(e)}>恢复核对</Button>}
+      {restorable && <Button size="sm" variant="danger-outline" icon={<RotateCcw size={14} aria-hidden />} disabledReason={newBlockedReason(`POST /sop/playbooks/${encodeURIComponent(e.code)}/executions/${encodeURIComponent(e.executionId!)}/rollback`, { kind: "rollback", execution: e })} onClick={() => rollbackPb(e)}>恢复开关</Button>}
+    </span>;
+  };
+
+  // ---------- 正在执行 ----------
+  const overviewUnavailable = Boolean(contentError || contentLoading || !data);
+  const visibleActive = overviewUnavailable ? [] : active;
+  // 审批来源读不到时，等批准的申请不能显示成 0 张。
+  const queueNotice = queueFailed && <Notice tone="warn" title="等批准的执行申请没读到">
+    「操作记录与审批」暂时读不到，这里先不显示等批准的申请，不代表没有。{reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J" prefetch={false}>去操作记录与审批查看</Link></>}
+  </Notice>;
+  const activePanel = (visibleActive.length > 0 || pendingProposals.length > 0) && (
+    <Panel title={overviewUnavailable ? "等批准的执行申请" : "正在执行"} icon={Workflow} tone="role-3"
+      sub={overviewUnavailable ? `${count(pendingProposals.length)} 张 · 执行进度暂时读不到` : `${count(visibleActive.length)} 次${pendingProposals.length ? ` · ${count(pendingProposals.length)} 张申请等批准` : ""}`}
+      explain={<>
+        <p>批准后系统按顺序自动执行；每一步的状态在这里看。</p>
+        <p>取消：正在做的这一步做完才停，后面跳过，做完的不撤回。</p>
+        <p>恢复核对：最后一次更新超过 2 分钟还卡着时用，系统只核对、不重新执行；证明不了做成的记为失败。</p>
+      </>}>
+      <ul className="j4-live" aria-label="正在执行">
+        {visibleActive.map((e) => {
+          return (
+            <li key={e.executionId || `${e.ts}-${e.code}`} className="j4-live-item" data-testid={e.executionId ? `j4-live-${e.executionId}` : undefined}>
+              <div className="j4-live-head">
+                <span className="j4-live-name">{e.name || e.code}</span>
+                <StatusTag tone={e.mode === "emergency" ? "danger" : "neutral"} icon={e.mode === "emergency" ? Siren : Workflow}>{executionModeLabel(e.mode)}</StatusTag>
+                {e.notificationDispatch.cancelRequested === true && <StatusTag tone="warn" icon={Square}>已登记取消</StatusTag>}
+                <span className="j4-muted">{j4Time(e.ts)} 开始 · {e.operator || "—"} · <span data-mono="">{e.executionId || "执行编号缺失"}</span></span>
+                {executionActions(e, true)}
+              </div>
+              <ol className="j4-live-steps" aria-label="逐步进度">
+                {e.steps.map((status, index) => {
+                  const action = e.domainActions.find((row) => row.step === index + 1);
+                  const step = action ? { dom: String(action.domain ?? ""), ax: String(action.action ?? ""),
+                    ref: action.ref ? String(action.ref) : action.domain === "J1" ? String(action.configKey ?? "").replace("killswitch.", "") : action.domain === "I3" ? "campaign-notify" : null } : undefined;
+                  const info = step ? stepInfo(step, { campaignNo: action?.campaignNo ? String(action.campaignNo) : undefined }) : undefined;
+                  return <li key={index} data-state={status}>
+                    <span className="j4-live-n">{index + 1}</span>
+                    <span className="j4-live-label">{info ? info.title : `第 ${index + 1} 步`}{info?.target && <span className="j4-step-target" data-mono="">{info.target}</span>}</span>
+                    <span className="j4-live-state">{({ pending: "待执行", running: "执行中", recovering: "恢复核对中", done: "成功", failed: "失败", skipped: "已跳过", rolled_back: "已恢复" } as Record<string, string>)[status] ?? "状态未知"}</span>
+                  </li>;
+                })}
+              </ol>
+            </li>
+          );
+        })}
+        {pendingProposals.map((row) => <li key={row.key} className="j4-live-item"><div className="j4-live-head"><span className="j4-live-name">{row.name}</span><StatusTag tone="warn" icon={Clock3}>等批准</StatusTag><span className="j4-muted">{row.meta}</span>{overviewUnavailable && row.onQuery && <Button size="sm" onClick={row.onQuery}>查询原结果</Button>}</div></li>)}
+      </ul>
+      <p className="j4-note">时间为{businessZone().label}</p>
+    </Panel>
+  );
+
+  if (contentError) {
+    return <div className="j4-page">
+      {header()}
+      {recovery}
+      {activePanel}
+      <BlockState state="error" title="当前无法确认最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} retryLabel="刷新" />
+    </div>;
+  }
+  if (!data) {
+    return <div className="j4-page">
+      {header()}
+      {recovery}
+      {activePanel}
+      {contentLoading
+        ? <BlockState state="loading" title="应急预案数据加载中" detail="正在读取预案、执行记录和通知活动" />
+        : <BlockState state="empty" title="暂无 应急预案数据" detail="点右上角「刷新」重新读取。" />}
+    </div>;
+  }
+
+  // ---------- 结论 ----------
+  const conclusion = !contractReady ? (
+    <Conclusion state="danger" hint="请联系技术人员检查后再进行操作。">应急执行服务尚未就绪，当前仅可查看</Conclusion>
+  ) : active.length > 0 ? (
+    <Conclusion state="warn" lead hint={canRun ? "在下面「正在执行」看做到哪一步；卡住时可以恢复核对，能不能核对由系统按最后一次更新判断。" : "在下面「正在执行」看做到哪一步；取消和恢复核对请找有执行权限的同事。"}>{count(active.length)} 次正式执行进行中</Conclusion>
+  ) : PLAYBOOKS.length === 0 ? (
+    <Conclusion state="warn" hint={canWrite ? "点右上角「新增预案」，保存后演练通过才能用。" : "请有预案维护权限的同事新增。"}>还没有应急预案，出事时没有可用的预案</Conclusion>
+  ) : ready === 0 ? (
+    <Conclusion state="warn" hint={canWrite ? "在「预案库」选预案点「演练」，演练通过才能正式执行。" : "请有预案维护权限的同事演练。"}>{count(PLAYBOOKS.length)} 个预案都还不能正式执行</Conclusion>
+  ) : (
+    <Conclusion state="ok" hint="出事时在「预案库」按场景选预案，看清步骤后点「发起正式执行」。">{count(ready)} 个预案可执行，没有进行中的执行</Conclusion>
+  );
+
+  // ---------- 预案库 ----------
+  const sceneCounts = (s: string) => s === "全部" ? PLAYBOOKS.length : PLAYBOOKS.filter((p) => p.scene === s).length;
+  const statusTag = (p: Playbook) => {
+    const gate = executionGate(p);
+    if (gate.legacyStepCount > 0) return <StatusTag tone="warn" icon={TriangleAlert} explain={`历史预案：${gate.hint}`}>需迁移</StatusTag>;
+    if (gate.state === "active") return <StatusTag tone="ok" icon={ShieldCheck}>可执行</StatusTag>;
+    if (!contractReady) return <StatusTag tone="neutral" icon={TriangleAlert} explain={NOT_READY}>服务未就绪</StatusTag>;
+    return <StatusTag tone="warn" explain={p.readinessReason || undefined}>{p.readinessReason ? (p.readinessReason.length > 12 ? "待演练" : p.readinessReason) : "草稿 · 待演练"}</StatusTag>;
+  };
+  const libraryPanel = (
+    <Panel title="预案库" icon={BookOpen} tone="role-3" flush sub={`${count(PLAYBOOKS.length)} 个`}
+      explain="按场景挑预案，点一行在右边看它会依次做什么。演练通过、90 天内有效的才能正式执行。">
+      <div className="j4-lib-filter">
+        <Segments label="按触发场景筛预案" value={scene} onChange={setScene}
+          items={(data.scenes.includes(scene) ? data.scenes : [...data.scenes, scene]).map((s) => ({ value: s, label: s, count: sceneCounts(s) }))} />
+      </div>
+      <Table label="预案库" className="j4-lib-table" rowFocus>
+        <thead><tr><Th>预案</Th><Th>场景</Th><Th align="right">步骤</Th><Th>状态</Th></tr></thead>
+        <tbody>
+          {shown.length === 0
+            ? <TableMessage columns={4}>{PLAYBOOKS.length === 0
+              ? (canWrite ? "还没有预案。点右上角「新增预案」。" : "还没有预案。如需新增，请联系有预案维护权限的同事。")
+              : (canWrite ? "这个场景没有预案。可以切到「全部」看其他预案，或点右上角「新增预案」。" : "这个场景没有预案。可以切到「全部」看其他预案；如需新增，请联系有预案维护权限的同事。")}</TableMessage>
+            : shown.map((p) => (
+              <Tr key={p.code} selected={selected?.code === p.code} onOpen={() => { setSelectedCode(p.code); window.requestAnimationFrame(() => document.getElementById("j4-detail")?.scrollIntoView({ block: "nearest" })); }}
+                data-testid={`j4-playbook-${p.code}`} aria-label={`${p.code} ${p.name}`}>
+                <Td><Cell main={<>{p.name}{p.emer && <> <StatusTag tone="danger" icon={Siren}>应急通道</StatusTag></>}</>} sub={<span data-mono="">{p.code}</span>} title={p.name} /></Td>
+                <Td>{p.scene || "—"}</Td>
+                <Td align="right"><span className="j4-num">{count(p.seq.length)}</span></Td>
+                <Td>{statusTag(p)}</Td>
+              </Tr>
+            ))}
+        </tbody>
+      </Table>
+    </Panel>
+  );
+
+  const detailPanel = selected ? (() => {
+    const p = selected;
+    const gate = executionGate(p);
+    const supported = p.seq.filter(isSupportedStep);
+    return (
+      <Panel id="j4-detail" title={p.name} icon={ListChecks} tone="role-3" sub={<span data-mono="">{p.code}</span>}
+        explain={`批准后系统按下面的顺序自动执行；每一步写着做什么、对象、影响和收不收得回。${p.seq.some((step) => step.impact) ? "影响人数系统算不出，不代表没有影响。" : ""}`}
+        actions={<>{p.emer ? <StatusTag tone="danger" icon={Siren} explain="执行记为「应急执行」。审批人、批准要求和执行顺序都和常规一样，不会加急。">应急通道</StatusTag> : <StatusTag tone="neutral" icon={Workflow}>常规</StatusTag>}{statusTag(p)}</>}
+        data-testid={`j4-playbook-detail-${p.code}`}>
+        <KeyValues rows={[
+          { key: "scene", label: "触发场景", value: <AutoGloss>{p.scene || "—"}</AutoGloss> },
+          { key: "owner", label: "责任", value: <AutoGloss>{p.owner || "—"}</AutoGloss> },
+          { key: "sla", label: "响应时限", value: p.sla || "—" },
+          { key: "drill", label: "最近演练", value: p.lastDrill ? (p.lastDrill === "未演练" ? "未演练" : j4Time(p.lastDrill, p.lastDrill)) : "—" },
+        ]} />
+        {gate.state !== "active" && (gate.legacyStepCount > 0
+          ? <Notice tone="warn">{gate.legacyStepCount} 个动作已经不能执行，先编辑预案换掉，再重新演练。</Notice>
+          : !contractReady ? <Notice tone="danger">{NOT_READY}。</Notice>
+          : <Notice tone="warn">{p.readinessReason || "待演练"}。演练通过才能正式执行。</Notice>)}
+        <h3 className="j4-sub-title">按下去会依次发生 <span className="j4-muted">{count(p.seq.length)} 步 · {undoSummary(supported)}</span></h3>
+        {p.seq.length === 0 ? <p className="j4-muted">这个预案没有步骤。</p> : <StepTimeline steps={p.seq} notify={{ campaignNo: p.notifyCampaignNo, template: p.notifyTemplate }} />}
+        <KeyValues rows={[
+          { key: "notify", label: "通知活动", value: (p.notifyTemplate && notifyLabelText(p.notifyTemplate)) || p.notifyCampaignNo || "未绑定" },
+          { key: "rollback", label: "回滚方案", value: p.rollback || "—" },
+        ]} />
+        <div className="j4-detail-foot">
+          {canWrite && <div className="j4-routine" role="group" aria-label="平时：维护和演练">
+            <Button icon={<FlaskConical size={14} aria-hidden />} disabledReason={!contractReady ? NOT_READY : contentLoading ? READING : gate.legacyStepCount > 0 ? "历史预案包含尚未接通的动作，请先编辑并替换" : newBlockedReason(`POST /sop/playbooks/${encodeURIComponent(p.code)}/drills`, { kind: "drill", playbook: p })} onClick={() => drillPb(p)}>演练</Button>
+            <Button variant="ghost" icon={<Pencil size={14} aria-hidden />} disabledReason={!contractReady || !p.version ? "系统版本较旧，升级后才能编辑" : contentLoading ? READING : newBlockedReason(`PUT /sop/playbooks/${encodeURIComponent(p.code)}`, { kind: "update", playbook: p, fields: {} })} onClick={() => editPb(p)}>编辑</Button>
+            <span className="j4-routine-note"><FlaskConical size={14} aria-hidden />演练只检查，不动真实业务</span>
+          </div>}
+          <div className="j4-real" role="group" aria-label="出事时：正式执行">
+            <Button variant="danger-outline" icon={<Siren size={14} aria-hidden />} disabledReason={gate.canExecute ? undefined : gate.hint} onClick={() => openExecute(p, p.emer)}>
+              {p.emer ? "发起应急执行" : "发起正式执行"}
+            </Button>
+          </div>
+        </div>
+      </Panel>
+    );
+  })() : (
+    <Panel id="j4-detail" title="预案详情" icon={ListChecks} tone="role-3">
+      <BlockState state="empty" compact title={PLAYBOOKS.length === 0 ? "还没有预案" : "这个场景没有预案"} detail={PLAYBOOKS.length === 0 ? "新增预案并演练通过后，在这里看它会依次做什么。" : "切到「全部」看其他预案。"} />
+    </Panel>
+  );
+
+  // ---------- 执行记录 ----------
+  const historyPanel = (
+    <Panel title="执行记录" icon={History} tone="role-other" flush sub={EXECS.length >= 20 ? "最近 20 次" : `${count(EXECS.length)} 次`}
+      explain="正式执行和演练都在这里，最近的在上，最多列 20 次；点一行看逐步追溯。更早的到「操作记录与审批」查。等批准的申请批准前不在这里。失败前已完成的步骤保持生效。"
+      actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=J" prefetch={false}>查看操作记录与审批</Link> : undefined}>
+      <Table label="执行记录" className="j4-exec-table" rowFocus>
+        <thead><tr><Th>开始时间</Th><Th>预案</Th><Th>方式</Th><Th>进度</Th><Th>执行人</Th><Th>恢复情况</Th><Th align="right">操作</Th></tr></thead>
+        <tbody>
+          {EXECS.length === 0
+            ? <TableMessage columns={7}>尚无执行记录。{canRun ? "请先完成预案演练，再从可执行的预案发起执行。" : "如需执行，请联系有预案执行权限的同事。"}</TableMessage>
+            : EXECS.map((e) => {
+              const live = isActiveExecution(e);
+              return (
+                <Tr key={e.executionId || `${e.ts}-${e.code}-${e.trig}`} data-testid={e.executionId ? `j4-execution-${e.executionId}` : undefined} mark={live ? "hit" : undefined}
+                  selected={traceExecution === e} onOpen={() => setTraceExecution(e)} aria-label={`查看追溯：${e.name || e.code} ${e.executionId || ""}`}>
+                  <Td><Cell num main={j4Time(e.ts)} /></Td>
+                  <Td><Cell main={e.name || "—"} sub={<span data-mono="">{e.executionId || e.code}</span>} title={e.trig ? `业务原因：${e.trig}` : undefined} /></Td>
+                  <Td>{e.mode === "drill"
+                    ? <StatusTag tone="neutral" icon={FlaskConical} explain="演练只检查，没动真实业务。">演练</StatusTag>
+                    : <StatusTag tone={e.mode === "emergency" ? "danger" : "neutral"} icon={e.mode === "emergency" ? Siren : Workflow}>{executionModeLabel(e.mode)}</StatusTag>}</Td>
+                  <Td><StepDots steps={e.steps} drill={e.mode === "drill"} />{e.notificationDispatch.cancelRequested === true && <span className="j4-muted"> · 已登记取消</span>}</Td>
+                  <Td><Cell main={e.operator || "—"} sub={`责任 ${roleText(e.roleGate)}`} /></Td>
+                  <Td>{e.rollbackStatus === "NOT_REQUIRED"
+                    ? <StatusTag tone="neutral" icon={MinusCircle} explain="演练仅校验，未执行生产动作，无需回滚">无需恢复</StatusTag>
+                    : e.rollbackStatus === "ROLLED_BACK"
+                      ? <StatusTag tone="done" icon={RotateCcw} explain="只恢复了这次执行关停的业务开关；已发的通知不受影响">已恢复开关</StatusTag>
+                      : e.reversible ? <StatusTag tone="neutral" icon={Undo2} explain={`可以恢复：${reversibleGates(e).join("、")}开关`}>开关可恢复</StatusTag>
+                        : <span className="j4-muted">{e.rollbackStatus ? rollbackStatusText(e.rollbackStatus) : "—"}</span>}</Td>
+                  <Td align="right" data-fit="">{executionActions(e)}</Td>
+                </Tr>
+              );
+            })}
+        </tbody>
+      </Table>
+      {EXECS.length > 0 && <p className="j4-note j4-note-pad">时间为{businessZone().label}</p>}
+    </Panel>
+  );
+
+  // ---------- 第二层：能用的动作和规则、通知活动候选 ----------
+  const rulesFold = (
+    <Fold title="预案能用的动作和规则" icon={ListChecks} tone="role-other"
+      summary={`${count((data?.actionOptions ?? []).length)} 种动作 · 只能关停、暂停、冻结、封锁和发布，不能恢复`}
+      explain="新增和编辑预案时只能从这些动作里选；保存和执行时还会再检查一次。">
+      {(data?.actionOptions ?? []).length === 0
+        ? <BlockState state="empty" compact title="没有可用的动作" detail="请刷新；仍然没有请联系值班人员。" />
+        : <Table label="预案能用的动作" className="j4-action-table">
+          <thead><tr><Th>动作</Th><Th>在哪个页面</Th><Th>对象</Th><Th align="right">收得回吗</Th></tr></thead>
+          <tbody>
+            {(data?.actionOptions ?? []).map((item) => {
+              const info = stepInfo({ dom: item.domain, ax: item.action, ref: item.ref?.replace("{target}", "") ?? null });
+              return <Tr key={item.value}>
+                <Td><Cell main={info.title} sub={info.impact} title={info.impact} /></Td>
+                <Td>{info.page}</Td>
+                <Td>{item.parameterLabel ? item.parameterLabel.replace("ISO 两位国家码", "两位国家代码").replace("用户数字 ID", "用户数字编号").replace("账户簇 ID", "账户组编号") : item.domain === "I3" ? "预案绑定的通知活动" : "整个业务"}</Td>
+                <Td align="right"><UndoTag info={info} /></Td>
+              </Tr>;
+            })}
+          </tbody>
+        </Table>}
+      <KeyValues rows={[
+        { key: "dir", label: "不能放的动作", value: "恢复、解封、放行、开启、启用这类动作，所有预案都不能放；风险解除后到对应页面操作" },
+        { key: "pre", label: "正式执行前提", value: "预案已保存、90 天内演练通过且有演练记录；绑定了通知活动的，活动还要是已排期" },
+        { key: "approve", label: "审批", value: "常规和应急通道都要另一位管理员批准；应急通道不会加急" },
+        { key: "reason", label: "操作理由", value: "必填；字数要求以提交时理由框的提示为准" },
+        { key: "record", label: "执行记录", value: "每一步都记录；失败如实显示，前面做完的保持生效" },
+      ]} />
+    </Fold>
+  );
+  const notify = emergency.notifyTemplates ?? [];
+  const notifyFold = (
+    <Fold title="通知活动候选" icon={Megaphone} tone="role-other"
+      summary={emergency.notifyTemplatesError ? "读不到" : notify.length === 0 ? "没有已排期的通知活动" : `${count(notify.length)} 个已排期`}
+      alert={Boolean(emergency.notifyTemplatesError)}
+      explain="预案的「发送通知活动」这一步只能选已排期的通知活动。这里只列候选，不能新建通知；新建和排期在「通知活动」页。">
+      {emergency.notifyTemplatesError
+        ? <BlockState state="error" compact title="通知活动读不到" detail="可能没有查看权限或服务暂时不可用；预案和执行记录不受影响。" onRetry={reload} retrying={contentLoading} retryLabel="刷新" />
+        : notify.length === 0
+          ? <BlockState state="empty" compact title="没有已排期的通知活动" detail="要在预案里发通知，先到「通知活动」安排。" />
+          : <Table label="通知活动候选" className="j4-notify-table">
+            <thead><tr><Th>名称</Th><Th>优先级</Th><Th>受众</Th><Th>排期</Th></tr></thead>
+            <tbody>
+              {notify.map((item) => <Tr key={item.value}>
+                <Td><Cell main={item.name} sub={<span data-mono="">{item.campaignNo}</span>} title={item.name} /></Td>
+                <Td>{item.tier ? tierText(item.tier) : "—"}</Td>
+                <Td><Cell main={item.audience || "—"} title={item.audience || undefined} /></Td>
+                <Td>{item.meta.split(" · ").slice(2).join(" · ") || "—"}</Td>
+              </Tr>)}
+            </tbody>
+          </Table>}
+    </Fold>
+  );
 
   return (
-    <div>
-      {!contractReady && (
-        <div className="tint" role="alert" style={{ marginBottom: 12 }}>
-          应急执行服务尚未就绪，当前仅可查看。请联系技术人员检查后再进行操作。
-        </div>
-      )}
-      {/* stat strip */}
-      <div className="f-stats">
-        <div className="f-stat"><div className="k">预案库</div><div className="v">{PLAYBOOKS.length}</div><div className="sub">已发布 + 草稿</div></div>
-        <div className="f-stat ok"><div className="k">演练就绪</div><div className="v">{ready}</div><div className="sub">近 90 天成功演练且台账可追溯</div></div>
-        <div className="f-stat warn"><div className="k">待演练</div><div className="v">{todo}</div><div className="sub">超期或证据缺失 · 阻断就绪</div></div>
-        <div className="f-stat danger"><div className="k">应急轨预案</div><div className="v">{emerCount}</div><div className="sub">可走应急加急通道</div></div>
+    <div className="j4-page">
+      {header(createAction)}
+      {recovery}
+      {conclusion}
+      {missingDrillLedger > 0 && <Notice tone="warn">{count(missingDrillLedger)} 个预案有演练时间，但找不到演练成功的记录，已暂停执行，请重新演练。</Notice>}
+      <StatBand label="应急预案摘要">
+        <Stat icon={ShieldCheck} tone="role-3" label="可执行预案" value={count(ready)} unit="个" sub={`共 ${count(PLAYBOOKS.length)} 个`}
+          explain="演练通过（90 天内、有演练记录）、绑定的通知活动可用、步骤都能执行的预案。" />
+        <Stat icon={FlaskConical} tone="role-3" label="待演练" value={count(todo)} unit="个"
+          explain="演练过期或缺记录、编辑后没重新演练、通知活动不可用或有历史动作的预案，暂不能执行。" />
+        <Stat icon={Siren} tone="role-3" label="应急通道预案" value={count(emerCount)} unit="个"
+          explain="标了应急通道的预案数，不管能不能执行；也不是执行次数。应急通道只影响记录，审批和执行速度和常规一样。" />
+        <Stat icon={History} tone="role-other" label="近 90 天正式执行" value={liveExecs == null ? "—" : count(liveExecs)} unit={liveExecs == null ? undefined : "次"}
+          sub={liveExecs == null ? "未提供" : `演练记录 ${drillExecRows == null ? "未提供" : `${count(drillExecRows)} 条`} · 演练就绪 ${!contractReady ? "暂无法统计" : drillExecs == null ? "未提供" : `${count(drillExecs)} 个`}`}
+          explain="正式执行按开始时间算，部分失败、已取消和还在执行的都算；演练记录是近 90 天演练的条数，同一个预案可以有多条；演练就绪是现在能执行的预案数。不受场景筛选影响。" />
+      </StatBand>
+      {queueNotice}
+      {activePanel}
+      <div className="rd-split j4-lib" data-detail="">
+        {libraryPanel}
+        {detailPanel}
       </div>
-      {missingDrillLedger > 0 && <div className="tint" role="alert" style={{ marginTop: 12 }}>
-        {missingDrillLedger} 个预案有最近演练时间，但缺少对应成功台账；已阻断执行，请重新演练并核对历史记录。
-      </div>}
-
-      {/* SLA + 执行框架 */}
-      <div className="top-side">
-        <section className="sla-card">
-          <div className="h">
-            <span className="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg></span>
-            <div><div className="t">应急轨约束</div><div className="s">· <AutoGloss>只用于关停、暂停等止血动作</AutoGloss></div></div>
-          </div>
-          <div className="sla-kv"><span className="k">允许方向</span><span className="v danger">关停 / 暂停</span></div>
-          <div className="sla-kv"><span className="k">禁止方向</span><span className="v ok">恢复 / 解封 / 放行</span></div>
-          <div className="sla-kv"><span className="k">执行前提</span><span className="v">预案已发布且演练通过</span></div>
-          <div className="sla-kv"><span className="k">操作原因</span><span className="v">8–200 字，必填</span></div>
-          <div className="sla-kv"><span className="k">执行记录</span><span className="v danger">逐步留痕</span></div>
-        </section>
-
-        <section className="sla-card">
-          <div className="h">
-            <span className="ic b"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></span>
-            <div><div className="t">当前可执行范围</div><div className="s">· <AutoGloss>只展示已经接通真实处置入口的动作</AutoGloss></div></div>
-          </div>
-          <div className="sla-kv"><span className="k">J1 / D2</span><span className="v">提现 / 创世节点 关停</span></div>
-          <div className="sla-kv"><span className="k">J2 / C2 / K1</span><span className="v">地域、用户与账户簇止血</span></div>
-          <div className="sla-kv"><span className="k">I3 / I5</span><span className="v">通知下发 / 披露发布</span></div>
-          <div className="sla-kv"><span className="k">执行审批</span><span className="v warn">A2 批准后执行</span></div>
-          <div className="sla-kv"><span className="k">演练失败</span><span className="v">保持待演练，不可执行</span></div>
-          <div className="sla-kv"><span className="k">步骤失败</span><span className="v danger">明确失败，不伪报成功</span></div>
-        </section>
-      </div>
-
-      {/* 过滤 + 统计 */}
-      <div className="pb-bar">
-        <div className="seg">
-          {PB_SCENES.map((s) => <button key={s} className={scene === s ? "on" : ""} onClick={() => setScene(s)}>{s}</button>)}
-        </div>
-        <div className="stats">
-          <span>近90天 实战执行 <b>{liveExecs == null ? "未返回" : `${liveExecs} 次`}</b></span>
-          <span>近90天 演练就绪预案 <b>{!contractReady ? "后端未升级" : drillExecs == null ? "未返回" : `${drillExecs} 个`}</b></span>
-          <span>近90天 演练台账 <b>{drillExecRows == null ? "未返回" : `${drillExecRows} 条`}</b></span>
-        </div>
-      </div>
-
-      {/* 剧本库 grid */}
-      <div className="pb-grid">
-        {shown.length === 0 && (
-          <div className="pb-card">
-            <div className="pb-top"><span className="pb-code">J4</span><div className="nm">当前场景暂无预案</div></div>
-            <div className="scene">{canWrite ? "可切换到「全部」查看其他预案；如需新增，请使用页面右上角「+ 新增预案」。" : "可切换到「全部」查看其他预案；如需新增，请联系具备 J4 维护权限的管理员。"}</div>
-          </div>
-        )}
-        {shown.map((p) => {
-          const state = effDrillState(p);
-          const legacyStepCount = unsupportedStepCount(p);
-          const supportedSteps = p.seq.filter(isSupportedStep);
-          const targetAuthority: Record<string, string> = {
-            J1: "emergency_j1_gate_kill",
-            J2: "emergency_j2_emergency_block",
-            C2: "user_c2_account_freeze",
-            K1: "risk_k1_cluster_freeze",
-            I3: "content_i3_write",
-            I5: "content_i5_disclosure_publish",
-          };
-          const hasTargetAuthorities = p.seq.every((step) => Boolean(targetAuthority[step.dom])
-            && authorities.includes(targetAuthority[step.dom]));
-          const canExecute = contractReady && !contentLoading && canRun && canPropose && legacyStepCount === 0 && state === "active" && p.executionReady === true && hasTargetAuthorities;
-          const executionHint = !contractReady ? "应急执行服务尚未就绪，请联系技术人员检查" : contentLoading ? "正在重新读取" : legacyStepCount > 0 ? "历史预案包含尚未接通的动作，请先编辑并替换后重新演练" : p.executionReady !== true || state !== "active" ? (p.readinessReason || "先完成演练") : !canRun ? "缺少 J4 执行权限" : !canPropose ? "缺少 A2 提案权限" : !hasTargetAuthorities ? "缺少对应处置权限" : undefined;
-          return (
-          <div key={p.code} className={"pb-card" + (p.emer ? " emer" : "")} role="article" aria-label={`${p.code} ${p.name}`} data-testid={`j4-playbook-${p.code}`}>
-            <div className="pb-top">
-              <span className="pb-code">{p.code}</span>
-              <div style={{ flex: 1 }}>
-                <div className="nm"><AutoGloss>{p.name}</AutoGloss></div>
-                <div className="scene">触发场景:<b><AutoGloss>{p.scene}</AutoGloss></b> · {legacyStepCount > 0 ? `${supportedSteps.length} 个已接通动作 · ${legacyStepCount} 个历史动作需迁移` : `${p.seq.length} 步分步操作`}</div>
-              </div>
-              <div className="r">
-                {p.emer && <span className="emer-tag">应急</span>}
-                {state === "active" ? <span className="state active">演练就绪</span> : <span className="state todo" title={legacyStepCount > 0 ? executionHint : p.readinessReason}>{legacyStepCount > 0 ? "历史预案 · 需迁移" : (p.readinessReason || "草稿 · 待演练")}</span>}
-              </div>
-            </div>
-            <div className="pb-seq">
-              {supportedSteps.map((s, i) => (
-                <div key={i} className={"step " + (DOM_CLS[s.dom] ?? "di")}>
-                  <span className="dom">{s.dom}</span>
-                  <div className="ax">{axRender(operatorCopyText(s.ax))}</div>
-                  {s.approve ? <span className="approve req">操作确认</span> : <span className="approve">普通确认</span>}
-                  {s.ref && <span className="approve ref">{s.ref}</span>}
-                </div>
-              ))}
-              {legacyStepCount > 0 && (
-                <div className="step di">
-                  <span className="dom">历史</span>
-                  <div className="ax">{legacyStepCount} 个动作尚未接通，请编辑并替换</div>
-                  <span className="approve req">禁止演练</span>
-                </div>
-              )}
-            </div>
-            <div className="pb-ft">
-              <div className="meta">
-                <div className="it"><span className="k">处理时限</span><span className="v">{p.sla}</span></div>
-                <div className="it"><span className="k">责任</span><span className="v"><AutoGloss>{p.owner}</AutoGloss></span></div>
-                <div className="it"><span className="k">最近演练</span><span className={"v" + (state === "todo" ? " warn" : "")}>{p.lastDrill}</span></div>
-              </div>
-              <div className="acts">
-                {canWrite && <button className="edit" disabled={!contractReady || contentLoading || !p.version} title={!contractReady || !p.version ? "服务端版本较旧，升级后才能安全编辑" : undefined} onClick={() => editPb(p)}>编辑</button>}
-                {canWrite && <button className="drill" disabled={!contractReady || contentLoading || legacyStepCount > 0} title={!contractReady ? "应急执行服务尚未就绪，请联系技术人员检查" : legacyStepCount > 0 ? "历史预案包含尚未接通的动作，请先编辑并替换" : undefined} onClick={() => drillPb(p)}>演练</button>}
-                {p.emer
-                  ? <button className="exec emer" disabled={!canExecute} title={executionHint} onClick={() => execPb(p, true)}>提交应急复核</button>
-                  : <button className="exec" disabled={!canExecute} title={executionHint} onClick={() => execPb(p, false)}>提交执行复核</button>}
-              </div>
-            </div>
-          </div>
-        ); })}
-      </div>
-
-      {/* 执行追溯历史 */}
-      <section className="exec-card">
-        <div className="exec-h">
-          <span className="ttl">执行追溯历史 · 合规取证</span>
-          <span className="sub">· <AutoGloss>每条记录每步的最终状态 · 失败前已完成的止血动作保持生效</AutoGloss></span>
-          <div className="r"><CodeTag tone="electric">审计记录</CodeTag><CodeTag>逐步结果已留痕</CodeTag></div>
-        </div>
-        <div className="exec-tblwrap"><div className="exec-tbl">
-          <div className="hd">
-            <div className="c">时间</div><div className="c">预案</div><div className="c">触发上下文</div><div className="c">模式</div>
-            <div className="c">步骤状态</div><div className="c">操作员 / 执行门槛</div>
-            <div className="c" style={{ justifyContent: "flex-end" }}>动作</div>
-          </div>
-          {EXECS.length === 0 && (
-            <div className="rw empty" role="status">
-              <div className="c" style={{ gridColumn: "1 / -1" }}>
-                尚无执行记录。{canRun ? "请先完成预案演练，再从就绪预案发起执行。" : "如需发起执行，请联系具备 J4 执行权限的管理员。"}
-              </div>
-            </div>
-          )}
-          {EXECS.map((e) => (
-            <div className="rw" key={e.executionId || `${e.ts}-${e.code}-${e.trig}`} data-testid={e.executionId ? `j4-execution-${e.executionId}` : undefined}>
-              <div className="c ts">{e.ts}</div>
-              <div className="c pb"><span className="code">{e.code}</span><span className="nm"><AutoGloss>{e.name}</AutoGloss></span></div>
-              <div className="c trig"><AutoGloss>{e.trig}</AutoGloss></div>
-               <div className="c"><span className={"mode " + e.mode}>{executionModeLabel(e.mode)}</span>{e.rollbackStatus === "ROLLED_BACK" && <span className="mode drill" title="仅已完成且仍由本次执行持有的 J1 动作被恢复；通知等不可逆动作不受影响">已回滚可逆动作</span>}{e.rollbackStatus === "NOT_REQUIRED" && <span className="mode drill" title="演练仅校验，未执行生产动作，无需回滚">无需回滚</span>}</div>
-               <div className="c"><div className="steps">{e.steps.map((s, i) => <span key={i} className={"sdot " + s} title={executionStepLabel(s)}>{i + 1}:{executionStepLabel(s)}</span>)}</div></div>
-              <div className="c confirm-pair">
-                <span><span className="role">操作员</span> {e.operator}</span>
-                <span><span className="role">门槛</span> {roleText(e.roleGate)}</span>
-              </div>
-              <div className="c acts">
-                 <button onClick={() => setTraceExecution(e)}>查看追溯</button>
-                {contractReady && canRun && Boolean(e.executionId) && e.mode !== "drill" && e.steps.some((step) => step === "pending" || step === "running") && (
-                  <>
-                    <button className="rollback" disabled={contentLoading} onClick={() => cancelExecution({ executionId: e.executionId!, code: e.code })}>取消</button>
-                    <button disabled={contentLoading} title="仅超过 2 分钟处理超时保护期的执行可核对" onClick={() => resumeExecution({ executionId: e.executionId!, code: e.code })}>恢复核对</button>
-                  </>
-                )}
-                {contractReady && canRun && authorities.includes("emergency_j1_gate_resume") && Boolean(e.executionId) && e.reversible && !e.steps.some((step) => step === "pending" || step === "running" || step === "recovering") && e.mode !== "drill" && e.rollbackStatus !== "ROLLED_BACK" && (
-                  <button
-                    className="rollback"
-                    disabled={contentLoading}
-                    onClick={() => rollbackPb({ executionId: e.executionId!, code: e.code, name: e.name })}
-                  >
-                    回滚
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div></div>
-      </section>
-
-      {traceExecution && (
-        <Modal title={`执行追溯 · ${traceExecution.executionId || "执行编号缺失"}`} icon="shield" wide onClose={() => setTraceExecution(null)}>
-          <div className="tint" style={{ marginBottom: 12 }}>
-            <b>{traceExecution.code} · {traceExecution.name}</b><br />
-            {traceExecution.ts} · {executionModeLabel(traceExecution.mode)} · 操作员 {traceExecution.operator} · 门槛 {roleText(traceExecution.roleGate)}
-          </div>
-          <div className="field">
-            <span className="bf-legend">触发与确认依据</span>
-            <div className="tiny">业务原因: {traceExecution.trig || "未记录"}</div>
-            <div className="tiny">触发依据: {String(traceExecution.notificationDispatch.triggerBasis || "未记录")}</div>
-            <div className="tiny">触发上下文: {String(traceExecution.notificationDispatch.triggerContext || "未记录")}</div>
-            {Array.isArray(traceExecution.notificationDispatch.stepConfirmations)
-              ? (traceExecution.notificationDispatch.stepConfirmations as Array<Record<string, unknown>>).map((confirmation, index) => (
-                <div className="tint tiny" data-proof={`j4-trace-confirmation-${index + 1}`} key={`${String(confirmation.domain)}-${String(confirmation.step || index)}`} style={{ marginTop: 6 }}>
-                  第 {String(confirmation.step ?? index + 1)} 步 · {String(confirmation.domain || "未知域")} · 操作依据编号 {String(confirmation.ref || "未记录")} · {confirmation.confirmed === true ? "已确认" : "未确认"}
-                </div>
-              ))
-              : <div className="tiny" data-proof="j4-trace-confirmation-legacy" style={{ marginTop: 6 }}>历史记录未保存逐步确认。</div>}
-          </div>
-          <div className="field">
-            <span className="bf-legend">逐步执行结果</span>
-            {traceExecution.domainActions.length === 0 ? <div className="tiny">没有可核对的分步操作记录。</div> : traceExecution.domainActions.map((action, index) => (
-              <div className="tint tiny" key={`${String(action.domain)}-${String(action.stepIndex || index)}`} style={{ marginBottom: 7 }}>
-                <b>{index + 1}. {String(action.domain || "未知域")} · {operatorCopyText(String(action.action || "未记录动作"))}</b><br />
-                状态 {executionStepLabel(String(action.status || traceExecution.steps[index] || ""))}
-                {action.ref ? ` · 操作依据编号 ${String(action.ref)}` : ""}
-                {action.failure ? ` · 失败 ${String(action.failure)}` : ""}
-                {action.ownershipToken ? ` · 执行归属编号 ${String(action.ownershipToken)}` : ""}
-              </div>
-            ))}
-          </div>
-          <div className="field">
-            <span className="bf-legend">通知与审计</span>
-            <div className="tiny">通知状态 {notificationStatusText(traceExecution.notificationDispatch.status)} · 审计状态 {auditStatusText(traceExecution.notificationDispatch.auditStatus)} · 下发数 {String(traceExecution.notificationDispatch.notificationCount ?? "未返回")}</div>
-            {traceExecution.notificationDispatch.failure ? <div className="tiny" style={{ color: "var(--danger)" }}>失败原因 {String(traceExecution.notificationDispatch.failure)}</div> : null}
-          </div>
-          <div className="field">
-            <span className="bf-legend">回滚事实</span>
-            <div className="tiny">状态 {rollbackStatusText(traceExecution.rollbackStatus)} · 时间 {traceExecution.rollbackAt || "—"} · 原因 {traceExecution.rollbackReason || "—"}</div>
-            {traceExecution.rollbackActions.map((action, index) => <div className="tiny" key={index}>{index + 1}. {String(action.domain || "J1")} · {action.status ? executionStepLabel(String(action.status)) : "恢复记录已保存"}</div>)}
-          </div>
-        </Modal>
-      )}
-
-      <p className="f-foot"><b>页面只允许编排已经接通的动作</b>。演练只校验动作和通知活动，不改变生产状态；实战先进入 A2 确认队列，批准后再按顺序调用 J1/J2/C2/K1/I3/I5 真实入口并保存每步结果。J1 提现关停会直接阻断 D2 新提现，C2/K1 还会联动冻结相关 D2 待处理提现。任何未接通、未演练、并发失效或恢复方向的动作都会被服务端拒绝，不会以“已完成”掩盖失败。</p>
+      {historyPanel}
+      {rulesFold}
+      {notifyFold}
+      {editor && <PlaybookEditor spec={editor} onClose={() => setEditor(null)} />}
+      {prepare && <ExecutePrepare playbook={prepare.playbook} emergency={prepare.emergency} draft={prepare.draft}
+        onClose={() => setPrepare(null)}
+        onNext={(draft) => { const { playbook, emergency: isEmer } = prepare; setPrepare(null); execPb(playbook, isEmer, draft); }} />}
+      <TraceDrawer execution={traceExecution} onClose={() => setTraceExecution(null)} />
     </div>
   );
 }

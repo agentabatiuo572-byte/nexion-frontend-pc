@@ -1,6 +1,41 @@
-import type { Catalog, Draft, DraftPurchaseRule, DraftRewardSpec, Limit, Policy, PolicyRef, Template } from './promotion-types.ts';
+import type { Catalog, Draft, DraftLocalizedText, DraftPurchaseRule, DraftRewardSpec, Limit, LocalizedText, Policy, PolicyContent, PolicyRef, Template } from './promotion-types.ts';
 import { parseStrictFiniteNumber } from './strict-number.ts';
-import { catalogSkuBrandText, nexGridBrandText } from './brand-copy.ts';
+import { nexGridBrandText } from './brand-copy.ts';
+import { blankCopiedContentLanguage, fillBlankContentLanguage } from './content-language-rules.ts';
+import { OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from './platform-experience-client.ts';
+
+export const PROMOTION_LANGUAGE_LABELS = { en: '英文', zh: '中文', vi: '越南语' } as const;
+export const PROMOTION_POLICY_TEXT_FIELDS = { DEVICE_RIGHTS: 'rightsDescription', ASSET: 'availabilityDescription', REFUND: 'terms' } as const satisfies Partial<Record<PolicyContent['kind'], string>>;
+
+export function promotionPublicText(draft: Pick<Draft, 'title' | 'terms'>, required: readonly OperatingLanguageCode[], mode: 'edit' | 'submit'): { title: LocalizedText; terms: LocalizedText } {
+  const title: LocalizedText = { ...draft.title, zh: '', en: draft.title?.en ?? '', vi: '' };
+  const terms: LocalizedText = { ...draft.terms, zh: '', en: draft.terms?.en ?? '', vi: '' };
+  const english = { title: title.en, terms: terms.en };
+  const transform = mode === 'edit' ? blankCopiedContentLanguage : fillBlankContentLanguage;
+  for (const locale of ['zh', 'vi'] as const) {
+    const value = { title: draft.title?.[locale] ?? '', terms: draft.terms?.[locale] ?? '' };
+    const localized = transform(required, locale, english, value);
+    title[locale] = localized.title;
+    terms[locale] = localized.terms;
+  }
+  return { title, terms };
+}
+
+export function promotionPublicMissing(draft: Pick<Draft, 'title' | 'terms'> | undefined, required: readonly OperatingLanguageCode[], checkPartial = false): OperatingLanguageCode[] {
+  return OPERATING_LANGUAGE_CODES.filter(locale => {
+    const title = !!draft?.title?.[locale]?.trim(), terms = !!draft?.terms?.[locale]?.trim();
+    return required.includes(locale) ? !title || !terms : checkPartial && title !== terms;
+  });
+}
+
+export function promotionPolicyText(field: DraftLocalizedText | undefined, required: readonly OperatingLanguageCode[]): LocalizedText {
+  const en = field?.en ?? '';
+  const english = { value: en };
+  return { en,
+    zh: fillBlankContentLanguage(required, 'zh', english, { value: field?.zh ?? '' }).value,
+    vi: fillBlankContentLanguage(required, 'vi', english, { value: field?.vi ?? '' }).value,
+  };
+}
 
 export type PromotionNumericKind = 'quantity' | 'limit' | 'priority' | 'device-budget' | 'amount';
 export const promotionInputText = (value: string | number | null | undefined) => value == null ? '' : String(value);
@@ -47,10 +82,10 @@ export const policyKey=(p:PolicyRef|null|undefined)=>p?`${p.policyId}:${p.versio
 /** Main labels describe the approved content; opaque identity stays in supplementary detail. */
 export function policyLabel(policy:Policy,catalog:Catalog):string {
   const c=policy.content, local=(v:{zh?:string;en?:string;vi?:string})=>v.zh||v.en||v.vi||'未提供说明';
-  const native=(resourceId:string)=>{const n=catalog.nativeContracts.find(n=>n.resourceId===resourceId);return n?catalogSkuBrandText(n.resourceId,local(n.title)):'已绑定原合同';};
+  const native=(resourceId:string)=>{const n=catalog.nativeContracts.find(n=>n.resourceId===resourceId);return n?(local(n.title)):'已绑定原合同';};
   switch(c.kind){
     case 'ASSET':return `${nexGridBrandText(c.asset)} · ${local(c.availabilityDescription)}`;
-    case 'DEVICE_RIGHTS':return `${catalogSkuBrandText(c.productNo,local(catalog.skus.find(s=>s.productNo===c.productNo)?.name||{}))} · ${local(c.rightsDescription)}`;
+    case 'DEVICE_RIGHTS':return `${(local(catalog.skus.find(s=>s.productNo===c.productNo)?.name||{}))} · ${local(c.rightsDescription)}`;
     case 'FIRST_PURCHASE':return `${c.mode==='FIRST_ELIGIBLE_ORDER'?'首笔合格订单':'首台合格设备'} · 退款后${c.restoreAfterRefund?'恢复':'不恢复'}资格`;
     case 'DEVICE_AUDIENCE':return `${c.sources.includes('PROMOTION_GIFT')?'购买及促销赠送设备':'购买设备'} · ${c.states.map(s=>s==='ACTIVE'?'有效':'在线').join(' / ')}`;
     case 'QUOTE':return `报价有效 ${c.ttlSeconds} 秒 · 不晚于订单及活动截止`;
@@ -62,14 +97,25 @@ export function policyLabel(policy:Policy,catalog:Catalog):string {
 }
 export const limitText=(value:Limit|null|undefined)=>!value?'未配置':value.mode==='UNLIMITED'?'无限制':String(value.value);
 export const emptyDraft=(template:Template):Draft=>({category:template==='DIRECT_REFERRAL'?'REFERRAL':'PROMOTION',template,placement:null,inviterAudience:null,combinationMatch:template==='MULTI_PRODUCT'?null:'ANY'});
+/** Draft writes replace a supplied language map as a whole. An empty map clears it. */
+export function promotionDraftForRequest(draft: Draft): Draft {
+  const sparse = (map: DraftLocalizedText | null | undefined) => map == null ? map
+    : Object.fromEntries(Object.entries(map).filter(([, value]) => value.trim() !== ''));
+  return { ...draft, title: sparse(draft.title), terms: sparse(draft.terms) };
+}
 export const newPurchaseRule=():DraftPurchaseRule=>({ruleId:`rule-${crypto.randomUUID()}`});
 export function changeTemplate(draft:Draft,template:Template):Draft {
   return {...draft,...emptyDraft(template),rules:null,buyerAudience:null,inviterAudience:null,combinationMatch:template==='MULTI_PRODUCT'?null:'ANY',perPersonLimit:null,maxRewardUnitsPerOrder:null,budgets:null,shortagePolicy:null,policies:null,activityLimit:null};
 }
 export function changeRewardType(previous:DraftRewardSpec|null|undefined,type:DraftRewardSpec['type'],role:'BUYER'|'DIRECT_INVITER'):DraftRewardSpec {
   const base={rewardRuleId:previous?.rewardRuleId||`reward-${crypto.randomUUID()}`,beneficiaryRole:role};
+  if(type==='DISCOUNT_USDT') {
+    if(role!=='BUYER')throw new Error('订单立减仅适用于购买者。');
+    return {...base,beneficiaryRole:'BUYER',type,calculation:'FIXED',amount:null};
+  }
   return type==='DEVICE'?{...base,type,giftProductNo:null,quantity:null,deviceRightsProfile:null}:{...base,type,calculation:'FIXED',amount:null,assetPolicy:null};
 }
+export const promotionRewardTypes=(role:'BUYER'|'DIRECT_INVITER')=>role==='BUYER'?['DEVICE','USDT','UVT','DISCOUNT_USDT']:['DEVICE','USDT','UVT'];
 export function dateInput(iso:string|null|undefined,zone:string):string {
   if(!iso)return '';
   const parts=new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(iso));

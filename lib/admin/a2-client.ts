@@ -1,6 +1,16 @@
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
-import { phoneProposalError, type PhonePolicyProposal } from "@/lib/admin/phone-calibration-client";
+import { ADMIN_ERROR_MESSAGES, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
+import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
+import { ambassadorApprovalBlocker } from "@/lib/admin/f4-ambassador-display";
+import { parsePhoneProposalView, type PhoneProposalView } from "@/lib/admin/phone-calibration-client";
+import { readE4Money } from "./e4-refund-amount";
+import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client";
+import { fetchA8Permissions, type A8Permission } from "@/lib/admin/a8-client";
+import { permLabel, menuLabel } from "@/lib/admin/rbac-labels";
+import type { DisclosureVersionItemView } from "@/lib/admin/i-client";
+import { INTERFACE_LANGUAGES } from "@/lib/admin/platform-experience-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   buildA2FilterQuery,
   resolveA2AuditObject,
@@ -10,6 +20,16 @@ import {
 } from "@/lib/admin/a2-policy";
 
 export type { A2AuditDomain, A2AuditFilter } from "@/lib/admin/a2-policy";
+
+/**
+ * Backend 111e00cd returns the persisted command op for tickets and history.
+ * Retain action-name fallbacks for old records without a command (and E4 refunds without an order number).
+ */
+export const REVIEW_OPERATION_BY_ACTION: Record<string, string> = {
+  提高旧活动奖励: "h4_legacy_event_reward_update", 新增转盘奖项: "h4_wheel_tier_create", 放宽转盘奖项配置: "h4_wheel_tier_update",
+  删除转盘奖项并提高安慰奖: "h4_wheel_tier_delete", 提高转盘奖项概率: "h4_wheel_probabilities_update",
+  首次发布奖励课程: "i7_course_first_publish", 发布奖励课程版本: "i7_course_version_publish", 回滚至有奖励的课程版本: "i7_course_version_rollback",
+};
 
 export type A2OperationType = "fund" | "param" | "acct" | "sos";
 
@@ -21,11 +41,12 @@ interface ApiResult<T> {
 
 export class A2OutcomeUncertainError extends Error {
   constructor(message: string, public readonly commandKey: string) {
-    const detail = message.trim();
-    super(
-      `A2 提案结果暂不确定，可能已经生效；请保留当前弹窗与输入，使用同一命令号重试并核对 A2 审计。`
-      + `同一命令号：${commandKey}${detail ? `（${detail}）` : ""}`,
-    );
+    // 命令号只留在 commandKey 上，不进句子（全站-标识外露）；机器码细节换成表里的中文，表里没有就不显示；
+    // 网络、服务不可用这类说明本身就在说「结果未知／未确认」，不再重复一遍。
+    const raw = message.trim();
+    const shown = /[一-鿿]/.test(raw) ? raw : ADMIN_ERROR_MESSAGES[raw] ?? "";
+    const detail = /结果未知|未确认|是否已生效/.test(shown) ? "" : shown;
+    super(`结果未知，可能已经提交。不要重新填写；查询原结果或按原请求重试，都不会重复提交。${detail ? `（${detail}）` : ""}`);
     this.name = "A2OutcomeUncertainError";
   }
 }
@@ -52,13 +73,34 @@ interface BackendStats {
   weeklyWithdrawn?: number | string | null;
 }
 
+type A2FundEffect = "REWARD_SUSPENSION" | "REWARD_RESUMPTION" | "ORDER_REFUND";
+export type A2RuleTaskAction = "CREATE" | "UPDATE" | "ENABLE" | "DISABLE";
+
 interface BackendTicket {
+  roleGrantsDiff?: unknown;
+  disclosureReview?: unknown;
+  ruleTaskAction?: A2RuleTaskAction | null;
+  approveDeniedCode?: number | null;
+  approveDeniedMessage?: string | null;
+  rejectDeniedCode?: number | null;
+  rejectDeniedMessage?: string | null;
+  canApprove?: boolean | null;
+  canReject?: boolean | null;
+  ambassadorMaterialProposal?: F4AmbassadorMaterialProposal | null;
   id: string;
   action: string;
   obj: string;
+  objDisplayName?: string | null;
   beforeValue?: string | null;
   afterValue?: string | null;
   phoneCalibrationProposal?: string | null;
+  coverageCheckOnApproval?: boolean | null;
+  operationCode?: string | null;
+  retiredOperation?: boolean | null;
+  fundEffect?: A2FundEffect | null;
+  refundOrderNo?: string | null;
+  originalAmountUsdt?: string | null;
+  refundAmountUsdt?: string | null;
   operator?: string | null;
   operatorRole?: string | null;
   type?: string | null;
@@ -72,6 +114,8 @@ interface BackendTicket {
 }
 
 interface BackendHistory {
+  ruleTaskAction?: A2RuleTaskAction | null;
+  operationCode?: string | null;
   id: string;
   action: string;
   st: string;
@@ -143,12 +187,61 @@ export interface A2Stats {
   weeklyWithdrawn: number;
 }
 
+export interface A2RoleGrantsDiff {
+  permissionCodesAdded: string[];
+  permissionCodesRemoved: string[];
+  menuIdsAdded: number[];
+  menuIdsRemoved: number[];
+}
+
+/** Missing means a readable catalogue has no entry; unavailable means it could not be read. */
+type A2CatalogueStatus = "found" | "missing" | "unavailable";
+
+export interface A2RoleGrantsReview {
+  permissionsAdded: { code: string; name: string | null; catalogueStatus: A2CatalogueStatus }[];
+  permissionsRemoved: { code: string; name: string | null; catalogueStatus: A2CatalogueStatus }[];
+  menusAdded: { id: number; name: string | null; catalogueStatus: A2CatalogueStatus }[];
+  menusRemoved: { id: number; name: string | null; catalogueStatus: A2CatalogueStatus }[];
+}
+
+type I5DisclosureReview = { jurisdiction: string; version: string } & (
+  | {
+    kind: "PUBLISH";
+    draft?: DisclosureVersionItemView;
+    previousVersion?: string | null;
+    previousVersionSummary?: DisclosureVersionItemView | null;
+    draftMatchesFrozenEvidence?: boolean | null;
+  }
+  | { kind: "MATRIX"; expectedVersion: string; originalCountryCodes?: string[] | null; targetCountryCodes?: string[] | null }
+);
+
 export interface A2OperationRow {
-  phoneCalibrationProposal?: PhonePolicyProposal;
+  /** Persisted backend review only; null is unavailable, four empty arrays are a known empty diff. */
+  roleGrantsDiff: A2RoleGrantsDiff | null;
+  roleGrantsReview: A2RoleGrantsReview | null;
+  disclosureReview?: I5DisclosureReview;
+  ruleTaskAction?: A2RuleTaskAction;
+  approveDeniedMessage?: string;
+  rejectDeniedMessage?: string;
+  canApprove?: boolean;
+  canReject?: boolean;
+  ambassadorMaterialProposal?: F4AmbassadorMaterialProposal;
+  ambassadorMaterialError?: string;
+  phoneCalibrationProposal?: PhoneProposalView;
   phoneCalibrationError?: string;
+  coverageCheckOnApproval?: boolean;
+  operationCode?: string;
+  retiredOperation?: boolean;
+  fundEffect?: A2FundEffect;
+  refundOrderNo?: string;
+  refundAmountUsdt?: number;
+  originalAmountUsdt?: string | null;
+  refundAmountUsdtText?: string | null;
+  refundReason?: string | null;
   id: string;
   action: string;
   obj: string;
+  objDisplayName?: string;
   before: string;
   after: string;
   operator: string;
@@ -157,6 +250,10 @@ export interface A2OperationRow {
   amplifies: boolean;
   sos: boolean;
   ts: string;
+  /** 后端原始时间，要按业务时区显示时用。ts 是按浏览器时区格式化好的。 */
+  rawTs?: string;
+  /** Original status for domain-specific recovery receipt validation. */
+  rawStatus?: string;
   mine: boolean;
   roleGate: string;
   reason: string;
@@ -164,6 +261,8 @@ export interface A2OperationRow {
 }
 
 export interface A2OperationHistory {
+  ruleTaskAction?: A2RuleTaskAction | null;
+  operationCode?: string | null;
   id: string;
   action: string;
   st: string;
@@ -208,6 +307,8 @@ export interface A2AuditLogRow {
 }
 
 export interface A2Overview {
+  /** Strict queue reads retain valid tickets and report malformed rows separately. */
+  operationQueueInvalidCount?: number;
   stats: A2Stats;
   operationQueue: A2OperationRow[];
   operationHistory: A2OperationHistory[];
@@ -288,22 +389,264 @@ function formatTime(value: string | null | undefined) {
   return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+function readRoleGrantsDiff(value: unknown): A2RoleGrantsDiff | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const codes = (items: unknown): items is string[] => Array.isArray(items)
+    && items.every(code => typeof code === "string" && !!code.trim());
+  const ids = (items: unknown): items is number[] => Array.isArray(items)
+    && items.every(id => typeof id === "number" && Number.isSafeInteger(id) && id > 0);
+  if (!codes(row.permissionCodesAdded) || !codes(row.permissionCodesRemoved)
+    || !ids(row.menuIdsAdded) || !ids(row.menuIdsRemoved)) return null;
+  return {
+    permissionCodesAdded: row.permissionCodesAdded, permissionCodesRemoved: row.permissionCodesRemoved,
+    menuIdsAdded: row.menuIdsAdded, menuIdsRemoved: row.menuIdsRemoved,
+  };
+}
+
+function isDisclosureLanguageScope(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const scope = value.trim();
+  if (scope === "en" || scope === "zh+vi" || scope === "zh+vi+en") return true;
+  const codes = scope.split("+");
+  return scope.startsWith("zh+vi+en+") && new Set(codes).size === codes.length
+    && codes.slice(3).every(code => INTERFACE_LANGUAGES.some(language => language.code === code));
+}
+
+export function readA2DisclosureVersion(value: unknown, jurisdiction: string, version: string): DisclosureVersionItemView | undefined {
+  const row = value as Partial<DisclosureVersionItemView> | null | undefined;
+  if (row?.jurisdiction !== jurisdiction || row.version !== version || typeof row.status !== "string"
+    || !isDisclosureLanguageScope(row.languageScope)
+    || typeof row.effectiveDate !== "string" || typeof row.requiresReack !== "boolean"
+    || typeof row.zh !== "string" || typeof row.vi !== "string" || typeof row.en !== "string"
+    || !Array.isArray(row.chapters) || row.chapters.length !== 7
+    || !row.chapters.every((chapter) => chapter?.jurisdiction === jurisdiction && chapter.version === version
+      && typeof chapter.no === "string" && /^0[1-7]$/.test(chapter.no)
+      && typeof chapter.zh === "string" && typeof chapter.vi === "string" && typeof chapter.en === "string"
+      && typeof chapter.zhBody === "string" && typeof chapter.viBody === "string" && typeof chapter.enBody === "string")
+    || new Set(row.chapters.map((chapter) => chapter.no)).size !== 7) return undefined;
+  return { ...row, languageScope: row.languageScope.trim() } as DisclosureVersionItemView;
+}
+
+function readDisclosureCountryCodes(value: unknown): string[] | null | undefined {
+  if (value === null) return null;
+  return Array.isArray(value) && value.every(code => typeof code === "string" && code.trim()) ? value : undefined;
+}
+
+function readI5DisclosureReview(value: unknown, operation: BackendTicket["operationCode"]): I5DisclosureReview | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const {
+    kind, jurisdiction, version, expectedVersion, revision, contentHash, draft, chapters,
+    previousVersion, previousVersionSummary, draftMatchesFrozenEvidence, originalCountryCodes, targetCountryCodes,
+  } = value as Record<string, unknown>;
+  if (typeof jurisdiction !== "string" || !jurisdiction.trim() || typeof version !== "string" || !version.trim()) return undefined;
+  if (kind === "MATRIX" && operation === "i5_matrix_configure" && typeof expectedVersion === "string") {
+    return { kind, jurisdiction, version, expectedVersion,
+      originalCountryCodes: readDisclosureCountryCodes(originalCountryCodes),
+      targetCountryCodes: readDisclosureCountryCodes(targetCountryCodes) };
+  }
+  if (kind !== "PUBLISH" || (operation !== "i4_disclosure_publish" && operation !== "i5_disclosure_publish")) return undefined;
+  const frozen = draft && typeof draft === "object" ? readA2DisclosureVersion({ ...draft, chapters }, jurisdiction, version) : undefined;
+  const previous = typeof previousVersion === "string" && previousVersion.trim() ? previousVersion : undefined;
+  // The frozen previous summary omits the jurisdiction on the version and both identifiers on each chapter.
+  const summary = previousVersionSummary as { chapters?: unknown } | null | undefined;
+  const previousRow = previous && previous !== version && Array.isArray(summary?.chapters)
+    ? readA2DisclosureVersion({ ...summary, jurisdiction,
+      chapters: summary.chapters.map(chapter => ({ ...chapter, jurisdiction, version: previous })) }, jurisdiction, previous)
+    : undefined;
+  return {
+    kind, jurisdiction, version,
+    draft: frozen?.status.toLowerCase() === "draft"
+      && typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0 && frozen.revision === revision
+      && typeof contentHash === "string" && /^[a-f0-9]{64}$/.test(contentHash) && frozen.contentHash === contentHash ? frozen : undefined,
+    previousVersion: previousVersion === null ? null : previous,
+    previousVersionSummary: previousVersionSummary === null ? null
+      : previousRow && ["published", "archived"].includes(previousRow.status.toLowerCase()) ? previousRow : undefined,
+    draftMatchesFrozenEvidence: typeof draftMatchesFrozenEvidence === "boolean" || draftMatchesFrozenEvidence === null
+      ? draftMatchesFrozenEvidence : undefined,
+  };
+}
+
+export function isFirstA2DisclosurePublish(review: Extract<I5DisclosureReview, { kind: "PUBLISH" }>): boolean {
+  return !!review.draft && review.previousVersion === null && review.previousVersionSummary === null;
+}
+
+type A2DisclosureSide =
+  | { state: "available"; version: string; languageScope: string[] }
+  | { state: "first_publish" }
+  | { state: "missing_evidence"; version?: string };
+
+type A2DisclosureText =
+  | { state: "available"; text: string }
+  | { state: "out_of_scope" | "first_publish" | "missing_evidence" };
+
+function disclosureText(side: A2DisclosureSide, code: string, text: unknown): A2DisclosureText {
+  if (side.state !== "available") return { state: side.state };
+  if (!side.languageScope.includes(code)) return { state: "out_of_scope" };
+  return typeof text === "string" && text.trim() ? { state: "available", text } : { state: "missing_evidence" };
+}
+
+/** Project the additional-language comparison from the publish ticket's frozen versions. */
+export function a2DisclosureTranslationDiff(review: A2OperationRow["disclosureReview"]) {
+  if (review?.kind !== "PUBLISH") return undefined;
+  const previous = review.previousVersionSummary;
+  const draft = review.draft;
+  const before: A2DisclosureSide = previous
+    ? { state: "available", version: previous.version, languageScope: previous.languageScope.split("+") }
+    : isFirstA2DisclosurePublish(review) ? { state: "first_publish" }
+      : { state: "missing_evidence", version: review.previousVersion ?? undefined };
+  const after: A2DisclosureSide = draft
+    ? { state: "available", version: draft.version, languageScope: draft.languageScope.split("+") }
+    : { state: "missing_evidence", version: review.version };
+  const beforeScope = before.state === "available" ? before.languageScope : undefined;
+  const afterScope = after.state === "available" ? after.languageScope : undefined;
+  const scopeChanged = beforeScope && afterScope
+    ? beforeScope.length !== afterScope.length || beforeScope.some(code => !afterScope.includes(code))
+    : null;
+  const codes = [...new Set([...(beforeScope ?? []), ...(afterScope ?? [])])]
+    .filter(code => !["zh", "vi", "en"].includes(code));
+  const chapterNumbers = ["01", "02", "03", "04", "05", "06", "07"];
+  const languages = codes.map(code => {
+    const compare = (oldText: unknown, newText: unknown) => {
+      const oldValue = disclosureText(before, code, oldText);
+      const newValue = disclosureText(after, code, newText);
+      const changed = oldValue.state === "available" && newValue.state === "available"
+        ? oldValue.text !== newValue.text : null;
+      return { before: oldValue, after: newValue, changed };
+    };
+    return {
+      code,
+      summary: compare(previous?.translations?.[code], draft?.translations?.[code]),
+      chapters: chapterNumbers.map(no => {
+        const oldChapter = previous?.chapters.find(chapter => chapter.no === no);
+        const newChapter = draft?.chapters.find(chapter => chapter.no === no);
+        return {
+          no,
+          title: compare(oldChapter?.titleTranslations?.[code], newChapter?.titleTranslations?.[code]),
+          body: compare(oldChapter?.bodyTranslations?.[code], newChapter?.bodyTranslations?.[code]),
+        };
+      }),
+    };
+  });
+  return {
+    before, after, scopeChanged, languages,
+    changedSummaryLanguages: languages.filter(language => language.summary.changed === true).map(language => language.code),
+    changedChapterNumbers: chapterNumbers.filter(no => languages.some(language => language.chapters
+      .some(chapter => chapter.no === no && (chapter.title.changed === true || chapter.body.changed === true)))),
+  };
+}
+
+function roleGrantsReview(diff: A2RoleGrantsDiff, permissions?: ReadonlyMap<string, A8Permission>, menus?: ReadonlyMap<number, A7MenuTreeNode>): A2RoleGrantsReview {
+  const permission = (code: string) => {
+    const entry = permissions?.get(code);
+    return { code, name: entry ? permLabel(code, entry) : null,
+      catalogueStatus: (entry ? "found" : permissions ? "missing" : "unavailable") as A2CatalogueStatus };
+  };
+  const menu = (id: number) => {
+    const entry = menus?.get(id);
+    return { id, name: entry ? menuLabel(entry) : null,
+      catalogueStatus: (entry ? "found" : menus ? "missing" : "unavailable") as A2CatalogueStatus };
+  };
+  return {
+    permissionsAdded: diff.permissionCodesAdded.map(permission), permissionsRemoved: diff.permissionCodesRemoved.map(permission),
+    menusAdded: diff.menuIdsAdded.map(menu), menusRemoved: diff.menuIdsRemoved.map(menu),
+  };
+}
+
+/** Optional names never add an A2 read/approval permission requirement or invalidate a ticket receipt. */
+async function withRoleGrantsNames(rows: A2OperationRow[]): Promise<A2OperationRow[]> {
+  const diffs = rows.flatMap(row => row.roleGrantsDiff ? [row.roleGrantsDiff] : []);
+  if (!diffs.length) return rows;
+  const authorities = useAdminAuth.getState().session?.authorities ?? [];
+  const [permissions, menus] = await Promise.allSettled([
+    (async () => {
+      if (!authorities.includes("platform_a8_read") || !diffs.some(diff => diff.permissionCodesAdded.length || diff.permissionCodesRemoved.length)) return undefined;
+      const catalogue = new Map<string, A8Permission>();
+      let total = Infinity;
+      for (let pageNum = 1; catalogue.size < total; pageNum++) {
+        const page = await fetchA8Permissions({ pageNum, pageSize: 100 });
+        total = page.total;
+        if (!page.records.length && catalogue.size < total) throw new Error("A8_CATALOG_TRUNCATED");
+        for (const permission of page.records) {
+          if (catalogue.has(permission.permissionCode)) throw new Error("A8_CATALOG_DUPLICATE_PAGE");
+          catalogue.set(permission.permissionCode, permission);
+        }
+        if (pageNum >= 1000 || catalogue.size > total) throw new Error("A8_CATALOG_INCOMPLETE");
+      }
+      return catalogue;
+    })(),
+    (async () => {
+      if (!authorities.includes("platform_a7_read") || !diffs.some(diff => diff.menuIdsAdded.length || diff.menuIdsRemoved.length)) return undefined;
+      const catalogue = new Map<number, A7MenuTreeNode>();
+      const walk = (node: A7MenuTreeNode) => { catalogue.set(node.id, node); node.children.forEach(walk); };
+      (await fetchA7MenusOverview()).tree.forEach(walk);
+      return catalogue;
+    })(),
+  ]);
+  return rows.map(row => row.roleGrantsDiff ? { ...row, roleGrantsReview: roleGrantsReview(row.roleGrantsDiff,
+    permissions.status === "fulfilled" ? permissions.value : undefined,
+    menus.status === "fulfilled" ? menus.value : undefined) } : row);
+}
+
 function fromTicket(ticket: BackendTicket): A2OperationRow {
-  let phoneCalibrationProposal: PhonePolicyProposal | undefined;
+  if (typeof ticket.canApprove !== "boolean" || typeof ticket.canReject !== "boolean") throw new Error("A2_TICKET_DECISION_CAPABILITY_INVALID");
+  if (ticket.objDisplayName != null && typeof ticket.objDisplayName !== "string") throw new Error("A2_TICKET_OBJECT_DISPLAY_NAME_INVALID");
+  const ambassadorTicket = !!ticket.ambassadorMaterialProposal || /F\.ambassador\.\d+\.status|(?:批准|驳回)大使申请/.test(`${ticket.obj} ${ticket.action}`);
+  let ambassadorMaterialProposal: F4AmbassadorMaterialProposal | undefined;
+  let ambassadorMaterialError: string | undefined;
+  if (ambassadorTicket) {
+    const packet = ticket.ambassadorMaterialProposal;
+    const approval = packet?.applicationDecision === "APPROVE";
+    const pending = normalizeStatus(ticket.status) === "pending";
+    if (!packet || !Number.isSafeInteger(packet.applicationId) || !Number.isSafeInteger(packet.materialRevision)
+      || !packet.businessReview || !packet.financeReview || !Array.isArray(packet.approvalBlockers)) {
+      if (pending) ambassadorMaterialError = "大使材料摘要未能读取，不能执行。请核对材料读取权限、刷新原工单；旧提案须补齐后重新发起。";
+    } else {
+      ambassadorMaterialProposal = packet;
+      if (pending && !["APPROVE", "REJECT"].includes(packet.applicationDecision ?? "")) {
+        ambassadorMaterialError = "原申请的批准或驳回意图未能核实，不能执行，请刷新原工单。";
+      } else if (pending && approval && (packet.expectedMaterialRevision == null || packet.expectedMaterialRevision !== packet.materialRevision)) {
+        ambassadorMaterialError = ambassadorApprovalBlocker("MATERIAL_REVISION_STALE");
+      } else if (pending && packet.canApprove !== true) {
+        ambassadorMaterialError = packet.approvalBlockers.map(ambassadorApprovalBlocker).join("；") || "本申请尚未满足执行条件，请刷新材料核对。";
+      }
+    }
+  }
+  let phoneCalibrationProposal: PhoneProposalView | undefined;
   let phoneCalibrationError: string | undefined;
   if (ticket.obj === "phone-calibration") {
     try {
-      const value = JSON.parse(ticket.phoneCalibrationProposal ?? "null");
-      if (!value || phoneProposalError(value)) throw new Error();
-      phoneCalibrationProposal = value;
-    } catch { phoneCalibrationError = "手机规则提案详情不可读取，禁止批准；可驳回后重新提交。"; }
+      phoneCalibrationProposal = parsePhoneProposalView(JSON.parse(ticket.phoneCalibrationProposal ?? "null"));
+    } catch { phoneCalibrationError = "手机规则申请的详情加载失败，不能执行；可取消后重新提交。"; }
   }
+  const roleGrantsDiff = readRoleGrantsDiff(ticket.roleGrantsDiff);
   return {
+    roleGrantsDiff,
+    roleGrantsReview: roleGrantsDiff ? roleGrantsReview(roleGrantsDiff) : null,
+    disclosureReview: readI5DisclosureReview(ticket.disclosureReview, ticket.operationCode),
+    ruleTaskAction: ticket.ruleTaskAction ?? undefined,
+    approveDeniedMessage: ticket.approveDeniedMessage ? formatAdminApiError(ticket.approveDeniedMessage, "这个账号没有批准这张单的权限") : undefined,
+    rejectDeniedMessage: ticket.rejectDeniedMessage ? formatAdminApiError(ticket.rejectDeniedMessage, "这个账号没有驳回这张单的权限") : undefined,
+    ...(ambassadorMaterialProposal ? { ambassadorMaterialProposal } : {}),
+    ...(ambassadorMaterialError ? { ambassadorMaterialError } : {}),
     ...(phoneCalibrationProposal ? { phoneCalibrationProposal } : {}),
     ...(phoneCalibrationError ? { phoneCalibrationError } : {}),
+    canApprove: ticket.canApprove,
+    canReject: ticket.canReject,
+    ...(ticket.coverageCheckOnApproval === true ? { coverageCheckOnApproval: true } : {}),
+    ...(ticket.operationCode ? { operationCode: ticket.operationCode } : {}),
+    ...(ticket.retiredOperation === true ? { retiredOperation: true } : {}),
+    fundEffect: ticket.fundEffect ?? undefined,
+    refundOrderNo: ticket.refundOrderNo ?? undefined,
+    ...(ticket.refundAmountUsdt != null && Number(ticket.refundAmountUsdt) > 0
+      ? { refundAmountUsdt: Number(ticket.refundAmountUsdt) } : {}),
+    originalAmountUsdt: readE4Money(ticket.originalAmountUsdt),
+    refundAmountUsdtText: readE4Money(ticket.refundAmountUsdt),
+    refundReason: ticket.reason ?? null,
     id: ticket.id,
     action: ticket.action,
     obj: ticket.obj,
+    objDisplayName: ticket.objDisplayName?.trim() || undefined,
     before: ticket.beforeValue?.trim() || "—",
     after: ticket.afterValue?.trim() || "—",
     operator: ticket.operator?.trim() || "系统",
@@ -312,11 +655,39 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     amplifies: !!ticket.amplifies,
     sos: !!ticket.sos,
     ts: formatTime(ticket.ts),
+    rawTs: ticket.ts ?? undefined,
     mine: !!ticket.mine,
     roleGate: ticket.roleGate?.trim() || "超管",
     reason: ticket.reason?.trim() || "—",
     status: normalizeStatus(ticket.status),
+    rawStatus: ticket.status ?? undefined,
   };
+}
+
+type A2VoucherReversalResult =
+  | { state: "available"; disposition?: string; skippedReason?: string; amountUsdt?: string }
+  | { state: "missing_receipt" };
+
+const F1_VOUCHER_REVERSAL_ACTION = "奖励发放 · 冲正 · 券";
+const F1_VOUCHER_REVERSAL_RECEIPT = /^已冲正(?: · 券处置: ([A-Z][A-Z0-9_]*))?(?: · 未扣回原因: ([A-Z][A-Z0-9_]*))?(?: · 已扣回: (\d+(?:\.\d{1,6})?) USDT)?$/;
+
+/** The history row identifies the decision; only the visible approved ticket carries the executed result. */
+export function a2VoucherReversalResult(
+  history: A2OperationHistory | null | undefined,
+  operationQueue: readonly A2OperationRow[],
+): A2VoucherReversalResult | undefined {
+  if (!history || history.st !== "approved" || history.action !== F1_VOUCHER_REVERSAL_ACTION
+    || (history.operationCode != null && history.operationCode !== "f_reward_payout_action")) return undefined;
+  const ticket = operationQueue.find(item => item.id === history.id);
+  if (ticket?.status !== "approved" || ticket.operationCode !== "f_reward_payout_action"
+    || ticket.action !== F1_VOUCHER_REVERSAL_ACTION) return { state: "missing_receipt" };
+  const match = F1_VOUCHER_REVERSAL_RECEIPT.exec(ticket.after);
+  if (!match) return { state: "missing_receipt" };
+  const [, disposition, skippedReason, amountUsdt] = match;
+  if ((!disposition && !skippedReason && !amountUsdt) || (amountUsdt && !/[1-9]/.test(amountUsdt))) {
+    return { state: "missing_receipt" };
+  }
+  return { state: "available", disposition, skippedReason, amountUsdt };
 }
 
 function fromLog(log: BackendAuditLog): A2AuditLogRow {
@@ -349,7 +720,7 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
   };
 }
 
-function normalizeOverview(data: BackendOverview | null | undefined): A2Overview {
+async function normalizeOverview(data: BackendOverview | null | undefined): Promise<A2Overview> {
   const stats = data?.stats ?? {};
   return {
     stats: {
@@ -362,7 +733,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): A2Overview
       weeklyExpired: toNumber(stats.weeklyExpired),
       weeklyWithdrawn: toNumber(stats.weeklyWithdrawn),
     },
-    operationQueue: (data?.operationQueue ?? []).map(fromTicket),
+    operationQueue: await withRoleGrantsNames((data?.operationQueue ?? []).map(fromTicket)),
     operationHistory: (data?.operationHistory ?? []).map((row) => ({ ...row })),
     mechanismParams: (data?.mechanismParams ?? []).map((row) => ({ ...row, locked: !!row.locked })),
     confirmCategories: (data?.confirmCategories ?? []).map((row) => ({ ...row })),
@@ -370,7 +741,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): A2Overview
   };
 }
 
-async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean }) {
+async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean | "proposal"; f5Status?: boolean; f4Payout?: boolean }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -394,11 +765,14 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     }
     throw error;
   }
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(text => JSON.parse(text.replace(/("(?:originalAmountUsdt|refundAmountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"'))).catch(() => null)) as ApiResult<T> | null;
+  // 41a552fa checks coverage before the first F4 payout write. Other 503s remain unknown.
+  const f4PayoutCoverageRefusal = init?.f4Payout === true && response.status === 503
+    && result?.code === 503 && result.message === "COVERAGE_SNAPSHOT_UNAVAILABLE";
   // classification-ok: Strict recovery rejects malformed envelopes and wrapped business 5xx even under HTTP 200; HTTP failure classification below remains shared.
   if (init?.commandKey && init.strictOutcome && (!result || !Number.isInteger(result.code)
-      || result.code >= 500 || result.code !== 0 && result.code < 400)) {
-    throw new A2OutcomeUncertainError("审批提交结果待核实，请查询原提案。", init.commandKey);
+      || result.code >= 500 && !f4PayoutCoverageRefusal || init.strictOutcome === true && result.code !== 0 && result.code < 400)) {
+    throw new A2OutcomeUncertainError("提交结果未知，请到操作记录里核对。", init.commandKey);
   }
 
   if (init?.commandKey && !result) {
@@ -407,25 +781,42 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
   const upstreamOutcomeUnknown =
     response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
-    || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true;
+    || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true
+    || isIdempotencyOutcomeOpen(result?.message)
+    // ba3befba: current maker authority can hide an already-created K1 ticket.
+    // This refusal to expose the old receipt is not a verdict on its execution.
+    || result?.message === "OPERATION_RESULT_UNKNOWN";
   if (init?.commandKey && upstreamOutcomeUnknown) {
     throw new A2OutcomeUncertainError(
       formatAdminApiError(result?.message, "A2_REQUEST_OUTCOME_UNKNOWN"), init.commandKey);
   }
 
+  // F5 unlock and unfreeze guards refuse these exact commands before state, ledger or ticket writes.
+  // A transport/unknown-outcome response still takes precedence above.
+  const f5StatusRejected = init?.f5Status === true && /^\/operations\/[^/]+\/approve$/.test(path)
+    && response.status === result?.code && (
+      response.status === 409 && (result.message === "COMMISSION_USER_SUSPENDED" || result.message === "F5_COOLDOWN_DEADLINE_UNRECOVERABLE")
+      || response.status === 422 && result.message === "COVERAGE_BELOW_REDLINE"
+      || response.status === 503 && result.message === "COVERAGE_SNAPSHOT_UNAVAILABLE");
   if (!response.ok || !result || result.code !== 0) {
     // 🔴 带在途命令号时,只有**确定性拒绝**(4xx / 2xx 但业务码非 0)才算「这次没生效」。
     //   5xx 归确定失败 = 调用方 forget 命令号 = 下次重试铸新号 = 后端去重失效 = 资金动作双发。
     //   口径单源见 outcome-classification.ts(2026-08-06 全家族统一)。
-    if (init?.commandKey && outcomeStaysUnknown(response.status, result?.code)) {
+    if (init?.commandKey && !f5StatusRejected && !f4PayoutCoverageRefusal && outcomeStaysUnknown(response.status, result?.code)) {
       throw new A2OutcomeUncertainError(
         formatAdminApiError(result?.message, `A2_REQUEST_OUTCOME_UNKNOWN_${response.status}`),
         init.commandKey,
       );
     }
-    throw Object.assign(new Error(formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`)), {
+    throw Object.assign(new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
+      ?? formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read", result?.data)), {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status,
+      httpStatus: response.status,
+      apiCode: result?.code,
       details: result?.data,
+      backendMessage: result?.message,
+      f5StatusRejected,
+      ...(f4PayoutCoverageRefusal ? { f4PayoutCoverageRefusal: true } : {}),
     });
   }
   if (init?.commandKey && response.ok && result.code === 0 && result.data == null) {
@@ -460,18 +851,34 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function fetchA2Overview(filter: A2AuditFilter = {}) {
+export async function fetchA2Overview(filter: A2AuditFilter = {}, requireQueue = false): Promise<A2Overview> {
   const query = buildA2FilterQuery(filter).toString();
-  return normalizeOverview(await a2Request<BackendOverview>(`/overview${query ? `?${query}` : ""}`));
+  const data = await a2Request<BackendOverview>(`/overview${query ? `?${query}` : ""}`);
+  if (!requireQueue) return normalizeOverview(data);
+  if (!data || !Array.isArray(data.operationQueue)) throw new Error("F2_APPROVAL_RESPONSE_INVALID");
+  const operationQueue: A2OperationRow[] = [];
+  let operationQueueInvalidCount = 0;
+  for (const row of data.operationQueue) {
+    if (!row || typeof row.id !== "string" || !row.id || typeof row.obj !== "string" || typeof row.action !== "string"
+      || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "")) {
+      operationQueueInvalidCount += 1;
+      continue;
+    }
+    try { operationQueue.push(fromTicket(row)); }
+    catch { operationQueueInvalidCount += 1; }
+  }
+  return { ...await normalizeOverview({ ...data, operationQueue: [] }), operationQueue: await withRoleGrantsNames(operationQueue), operationQueueInvalidCount };
 }
 
-export async function approveA2Operation(operationId: string, reason: string, commandKey?: string) {
+export async function approveA2Operation(operationId: string, reason: string, commandKey?: string, operationCode?: string) {
   const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/approve`, {
     method: "POST",
     body: JSON.stringify({ reason }),
+    f5Status: operationCode === "f_commission_status",
+    f4Payout: operationCode === "f4_pool_settle" || operationCode === "f4_leaderboard_period_payout",
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-approve" }),
   });
-  return fromTicket(row);
+  return (await withRoleGrantsNames([fromTicket(row)]))[0];
 }
 
 export async function rejectA2Operation(operationId: string, reason: string, commandKey?: string) {
@@ -480,11 +887,12 @@ export async function rejectA2Operation(operationId: string, reason: string, com
     body: JSON.stringify({ reason }),
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-reject" }),
   });
-  return fromTicket(row);
+  return (await withRoleGrantsNames([fromTicket(row)]))[0];
 }
 
 export type RetentionExecution = {
   retentionMonths: number;
+  /** Execution time; the expiry cutoff is stored separately in the backend audit, not in this view. */
   evaluatedAt: string;
   lockAcquired: boolean;
   archivedRows: number;
@@ -533,6 +941,11 @@ export async function fetchA2RetentionPreview(): Promise<RetentionPreview> {
   return normalizeRetentionPreview(await a2Request<RetentionPreview>("/retention-preview"));
 }
 
+/** 理由的可见字符数（OP-21）：去掉空白、控制符、格式符和组合符号后再数，和后端一致。 */
+export function visibleReasonLength(reason: string) {
+  return Array.from(reason.normalize("NFC")).filter((char) => !/[\s\p{Cc}\p{Cf}\p{Mn}\p{Mc}\p{Me}]/u.test(char)).length;
+}
+
 export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
   const policy = await a2Request<BackendA2ReasonPolicy>("/reason-policy");
   const minChars = Number(policy?.minChars);
@@ -546,15 +959,37 @@ export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
 }
 
 /** Exact original-maker lookup includes archived audit evidence; never resubmit a lost proposal. */
-export async function fetchA2ProposalByKey(commandKey: string): Promise<A2OperationRow | null> {
+function hasProposalTicketFacts(row: BackendTicket) {
+  return row && typeof row.id === "string" && !!row.id && typeof row.mine === "boolean"
+    && typeof row.action === "string" && typeof row.obj === "string"
+    && ["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "");
+}
+
+export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: false | "a" | "f" | "metadata" | "h8" = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
-    if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("原审批提案回执不完整，请继续查询。");
-    return fromTicket(row);
+    if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("提交结果不完整，请稍后再查。");
+    // A requires raw action; F does not. B5 additionally requires operation metadata and normalizes status.
+    if (strictTicket && strictTicket !== "h8" && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
+      || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(strictTicket === "metadata" ? row.status.trim().toLowerCase() : row.status)
+      || strictTicket !== "f" && typeof row.action !== "string"
+      || strictTicket === "metadata" && typeof row.operationCode !== "string")) {
+      throw new Error("提交结果不完整，请稍后再查。");
+    }
+    if (strictTicket === "h8" && !validH8CommandTicket(row)) throw new Error("H8_PROPOSAL_RECEIPT_INVALID");
+    return (await withRoleGrantsNames([fromTicket(row)]))[0];
   } catch (failure) {
-    if (failure && typeof failure === "object" && "status" in failure && failure.status === 404) return null;
+    if (failure && typeof failure === "object" && "status" in failure && failure.status === 404
+        && (!strictNotFound || "backendMessage" in failure && failure.backendMessage === "A2_PROPOSAL_NOT_FOUND")) return null;
     throw failure;
   }
+}
+
+/** H8 consumes command metadata added in backend 111e00cd, before display normalization. */
+function validH8CommandTicket(row: BackendTicket) {
+  return typeof row.status === "string" && ["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status.trim().toLowerCase())
+    && typeof row.mine === "boolean" && typeof row.obj === "string" && !!row.obj
+    && typeof row.operationCode === "string" && !!row.operationCode;
 }
 
 export async function withdrawA2Operation(operationId: string, reason: string, operator: string, commandKey?: string) {
@@ -563,7 +998,7 @@ export async function withdrawA2Operation(operationId: string, reason: string, o
     body: JSON.stringify({ reason, expectedStatus: "pending", operator }),
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-withdraw" }),
   });
-  return fromTicket(row);
+  return (await withRoleGrantsNames([fromTicket(row)]))[0];
 }
 
 export async function createA2OperationProposal(input: {
@@ -582,37 +1017,63 @@ export async function createA2OperationProposal(input: {
   command: { domain: string; op: string; params: Record<string, unknown> };
   target?: { domain: string; type: string; id: string };
   targets?: { domain: string; type: string; id: string }[];
-}, commandKey?: string, strictOutcome = false) {
+}, commandKey?: string, strictOutcome: boolean | "proposal" = false, strictTicket = false) {
   const row = await a2Request<BackendTicket>("/operations", {
     method: "POST",
     strictOutcome,
     body: JSON.stringify(input),
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-proposal" }),
   });
-  if (strictOutcome && (!row || typeof row.id !== "string" || !row.id)) {
-    throw new A2OutcomeUncertainError("审批回执不完整，请查询原提案。", commandKey!);
+  if (strictOutcome && (!row || typeof row.id !== "string" || !row.id
+      || strictOutcome === "proposal" && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
+        || typeof row.operationCode !== "string" || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "")))) {
+    throw new A2OutcomeUncertainError("提交结果不完整，请到操作记录里核对。", commandKey!);
   }
-  return fromTicket(row);
+  if (strictOutcome && input.sourceDomain === "H8" && !validH8CommandTicket(row)) {
+    throw new A2OutcomeUncertainError("H8_PROPOSAL_RECEIPT_INVALID", commandKey!);
+  }
+  if (strictTicket && !hasProposalTicketFacts(row)) throw new A2OutcomeUncertainError("提交结果不完整，请到操作记录里核对。", commandKey!);
+  return (await withRoleGrantsNames([fromTicket(row)]))[0];
 }
 
+/**
+ * 导出也是带命令号的写操作（后端按命令号存导出结果和这次导出的记录）。传了 commandKey 时失败按和其他写操作同一口径分：
+ * 没发出去或没读到回复、5xx、幂等处理中算结果未知（A2OutcomeUncertainError，原号保留）；带原因码的 4xx 是明确拒绝。
+ */
 export async function exportA2Audit(reason: string, filter: Record<string, unknown>, commandKey?: string) {
-  const response = await guardedFetch("/api/admin/platform/audit/exports", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Idempotency-Key": commandKey ?? idempotencyKey("a2-audit-export"),
-    },
-    body: JSON.stringify({ reason, filter }),
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
-    throw new Error(formatAdminApiError(result?.message, `A2_AUDIT_EXPORT_FAILED_${response.status}`));
+  const key = commandKey ?? idempotencyKey("a2-audit-export");
+  let response: Response;
+  try {
+    response = await guardedFetch("/api/admin/platform/audit/exports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+      body: JSON.stringify({ reason, filter }),
+      cache: "no-store",
+    });
+  } catch (error) {
+    if (commandKey) throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "A2_REQUEST_OUTCOME_UNKNOWN", commandKey);
+    throw error;
   }
-  const blob = await response.blob();
+  const contentType = response.headers.get("Content-Type")?.split(";")[0]?.trim();
+  if (!response.ok || (contentType !== "text/csv" && contentType !== "application/vnd.ms-excel")) {
+    const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
+    if (commandKey && (!result || isIdempotencyOutcomeOpen(result.message) || outcomeStaysUnknown(response.status, result.code)
+      || response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown")) {
+      throw new A2OutcomeUncertainError(formatAdminApiError(result?.message, `A2_REQUEST_OUTCOME_UNKNOWN_${response.status}`), commandKey);
+    }
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `A2_AUDIT_EXPORT_FAILED_${response.status}`)), {
+      status: response.ok && typeof result?.code === "number" ? result.code : response.status,
+      backendMessage: result?.message,
+    });
+  }
+  const blob = await response.blob().catch((error: unknown) => {
+    if (commandKey) throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "A2_RESPONSE_UNREADABLE", commandKey);
+    throw error;
+  });
+  const extension = contentType === "text/csv" ? "csv" : "xls";
   const fileName = fileNameFromContentDisposition(
     response.headers.get("Content-Disposition"),
-    `a2-audit-${Date.now()}.xls`,
+    `a2-audit-${Date.now()}.${extension}`,
   );
   downloadBlob(blob, fileName);
   return { fileName, size: blob.size };
@@ -641,12 +1102,13 @@ function normalizeRetentionExecution(value: unknown): RetentionExecution {
 }
 
 export async function fetchA2RetentionLatest(): Promise<RetentionExecution | null> {
-  const response = await a2Request<RetentionExecution | null>("/retention-runs/latest");
+  // Only an empty successful read means no manual run; unreadable stored rows reject the request.
+  const response = await a2Request<unknown>("/retention-runs/latest");
   return response == null ? null : normalizeRetentionExecution(response);
 }
 
-export async function runA2RetentionNow(reason: string, commandKey: string): Promise<RetentionExecution> {
-  return normalizeRetentionExecution(await a2Request<RetentionExecution>("/retention-runs", {
-    method: "POST", body: JSON.stringify({ reason }), commandKey,
+export async function runA2RetentionNow(reason: string, commandKey: string, expectedRetentionMonths?: number): Promise<RetentionExecution> {
+  return normalizeRetentionExecution(await a2Request<unknown>("/retention-runs", {
+    method: "POST", body: JSON.stringify({ reason, ...(expectedRetentionMonths === undefined ? {} : { expectedRetentionMonths }) }), commandKey,
   }));
 }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import "./d-domain.css";
+import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
@@ -15,23 +16,16 @@ import { D7PayoutVnd } from "./d-tabs/d7-payout-vnd";
 import type { ConfirmReq, DCtx, ActionConfirmReq } from "./d-tabs/types";
 
 const FOLD: Record<string, string> = { D1: "D1", D2: "D2", D3: "D3", D4: "D4", D5: "D5", D6: "D6", D7: "D7" };
+/** 已改版的页：包 RdPage，页头由页面自己写。 */
+const REDESIGNED = ["D1", "D2", "D4", "D5", "D6", "D7"];
 
-// 每页两枚签名 chip(设计稿 f-bar):f-ro = server-canonical 不变量,f-live = 节奏/SLA(K 域同款先例)。
-const RO_LIVE: Record<string, [ro: string, live: string]> = {
-  D1: ["到账以系统核实的支付结果为准", "对账实时比对"],
-  D2: ["提现状态由系统更新，本页显示最新处理进度", "到账时限以当前生效参数为准"],
-  D3: ["储备的底账在这里 · 覆盖率由总账(B1)裁定", "每天 UTC 00:00 批量对账"],
-  D4: ["账单与余额以系统记录为准", "每笔资金变动均可追溯"],
-  D5: ["节奏类参数由 H1 统一派发 · 这页只是生效的地方", "本页可调整提现参数；运营阶段设置仅可查看"],
-  D6: ["锁价快照以服务器记录为准 · 只影响新付款单", "越南盾牌价实时读取 · 调整全量审计"],
-  D7: ["倒挂默认拒绝 · D6 牌价保持单一来源", "参数统一保存，提交时检查是否已变化 · 写入 A2 审计 · 代收代付共用 HDPay 配置"],
-};
 
 export function DDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "D2", [meta.l2Id]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
+  const recoverApproval = mc?.approval?.recover;
 
   const ctx = {
     toast: setToast,
@@ -39,38 +33,54 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   } as DCtx;
 
-  const [ro, liveSeed] = RO_LIVE[tab];
-  const right = (
-    <>
-      <span className="f-ro"><span className="d" />{ro}</span>
-      <span className="f-live"><span className="dot" />{liveSeed}</span>
-    </>
-  );
+  if (tab === "D3") return <D3Treasury />;
+  // 已改版的页包 RdPage，页头在页面里，不再渲染旧的域页头。
 
-  return (
-    <div className="dkpage ddom">
-      <DomainHeader {...meta} right={right} />
+  const page = (
+    <>
+      {!REDESIGNED.includes(tab) && <DomainHeader {...meta} />}
 
       {tab === "D1" && <D1Recon ctx={ctx} />}
       {tab === "D2" && <D2Withdrawals ctx={ctx} />}
-      {tab === "D3" && <D3Treasury ctx={ctx} />}
       {tab === "D4" && <D4Ledger ctx={ctx} />}
       {tab === "D5" && <D5Params ctx={ctx} />}
       {tab === "D6" && <D6Fx ctx={ctx} />}
       {tab === "D7" && <D7PayoutVnd ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal
+        <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
+          title={mc.title}
           detail={mc.detail}
+          content={mc.content}
+          reasonPolicyOptional={mc.reasonPolicyOptional}
           amplifies={mc.amplifies}
           coverage={mc.coverage}
+          coverageCheck={mc.coverageCheck}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          getPendingReason={mc.getPendingReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
           completionCopy={mc.completionCopy}
+          approval={mc.approval && {
+            ...mc.approval,
+            recover: recoverApproval && (async (reason) => {
+              const found = await recoverApproval(reason);
+              if (found) setActionConfirm(null);
+              return found;
+            }),
+          }}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           auditSink={mc.auditSink}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          blockedReason={mc.blockedReason}
+          statedBrief={mc.statedBrief}
+          facts={mc.facts}
+          confirmTone={mc.confirmTone}
+          coverageLead={mc.coverageLead}
+          reasonPlaceholder={mc.reasonPlaceholder}
           onBusinessSelectionChange={mc.onBusinessSelectionChange}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
@@ -81,6 +91,8 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
       {toastNode}
-    </div>
+    </>
   );
+
+  return REDESIGNED.includes(tab) ? <RdPage className="ddom">{page}</RdPage> : <div className="dkpage ddom">{page}</div>;
 }

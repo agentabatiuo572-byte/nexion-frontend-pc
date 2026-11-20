@@ -1,0 +1,254 @@
+"use client";
+
+/** 充值与收款对账四个区共用的小件：网址参数、要处理的数、金额写法、结果未知的提醒条。 */
+import { useState, type ReactNode } from "react";
+import Link from "next/link";
+import { Copy, PowerOff } from "lucide-react";
+import { Button, Explain, IconButton, KeepText, Notice, ReleaseModal, StatusTag } from "@/app/components/rd";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { isDOutcomeUnknownError } from "@/lib/admin/d-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { useReach } from "@/lib/nav/use-reach";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundRecoveryStatus, type FundSettled } from "../fund-command-check";
+import { checkFundCommand, fundCommandSettled, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+
+export type D1Section = "payments" | "bank" | "usdt" | "ledger";
+export const D1_SECTIONS: readonly D1Section[] = ["payments", "bank", "usdt", "ledger"];
+export const D1_SECTION_NAME: Record<D1Section, string> = { payments: "订单付款", bank: "银行卡充值", usdt: "USDT 充值", ledger: "充值流水与对账" };
+const RETURN_LABEL: Record<D1Section, string> = { payments: "返回订单付款", bank: "返回银行卡充值", usdt: "返回 USDT 充值", ledger: "返回充值流水与对账" };
+
+/** 网址里的参数，不在允许值里的不认。 */
+export function readParam(name: string, allowed?: readonly string[]): string | null {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get(name);
+  if (value === null) return null;
+  return !allowed || allowed.includes(value) ? value : null;
+}
+
+export function readPage(name: string, fallback = 1): number {
+  const value = Number(readParam(name));
+  return Number.isSafeInteger(value) && value >= 1 ? value : fallback;
+}
+
+/** 替换写入，不增加浏览器历史；别的参数（比如临时的 theme）原样留着（SPM-12、X19）。 */
+export function writeParams(values: Record<string, string | number | null>) {
+  const url = new URL(window.location.href);
+  Object.entries(values).forEach(([name, value]) => {
+    if (value === null || value === "") url.searchParams.delete(name);
+    else url.searchParams.set(name, String(value));
+  });
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+/** 一个区里要人处理的数：读到的数（capped 是数到了上限）、读不到；undefined 是还在读。 */
+export type D1Count = { n: number; capped?: boolean } | "failed" | undefined;
+export const countText = (count: D1Count): number | string | undefined =>
+  count === undefined ? undefined : count === "failed" ? "—" : count.capped ? `${count.n}+` : count.n;
+
+/** 这个区有哪些别的区该知道的事：没保存的修改、结果未知、待审批。 */
+export type D1Activity = readonly string[];
+
+/** USDT 金额：千分位，至少两位小数，后端给的精度照写，不舍入。 */
+export function usdt(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return "—";
+    return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+  }
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
+  if (!match) return value;
+  const [, sign, whole, fraction = ""] = match;
+  return `${sign}${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.padEnd(2, "0")}`;
+}
+
+/** 越南盾整数金额。 */
+export function vnd(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const text = typeof value === "number" ? String(Math.trunc(value)) : value.trim();
+  return /^\d+$/.test(text) ? text.replace(/\B(?=(\d{3})+(?!\d))/g, ",") : text;
+}
+
+export const zoneLabel = () => businessZone().label;
+
+/** 哈希、地址这类长值：写前后几位，完整值在提示里，旁边能复制；不在值列折行掉一位（VS-52、DT-09）。 */
+export function LongValue({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState("");
+  if (value.length <= 22) return <>{value}</>;
+  return (
+    <span className="rd-record-reference">
+      <span title={value}>{`${value.slice(0, 10)}…${value.slice(-8)}`}</span>
+      <IconButton aria-label={copied || `复制${label}`} onClick={() => {
+        if (!navigator.clipboard) { setCopied("复制失败，请从提示里手动选择"); return; }
+        void navigator.clipboard.writeText(value).then(() => setCopied(`已复制${label}`), () => setCopied("复制失败，请从提示里手动选择"));
+      }}><Copy size={14} aria-hidden /></IconButton>
+    </span>
+  );
+}
+
+/** 开关现在开还是关：开绿，关灰，紧急停用后红（D1 颜色表）。 */
+export function SwitchTag({ on, stopped, children }: { on: boolean; stopped?: boolean; children: ReactNode }) {
+  if (stopped) return <StatusTag tone="danger" icon={PowerOff}>{children}</StatusTag>;
+  return on ? <StatusTag tone="ok">{children}</StatusTag> : <StatusTag tone="neutral" icon={PowerOff}>{children}</StatusTag>;
+}
+
+export type D1PendingItem = {
+  /** 命令号。 */
+  key: string;
+  /** 原操作的名字，写进标题和解除框。 */
+  label: string;
+  createdAt: number;
+  /** 还能重试时写在发出时间后面的话；过了重试时限写 blocked。 */
+  hint: ReactNode;
+  /** 现在不能重试的原因：过了时限、没有权限。 */
+  blocked?: string;
+  /** 过了 24 小时重试时限：标签写「已过期」，和别的页同一个说法。 */
+  expired?: boolean;
+  /** 首次发送时保存的可信来源；旧记录不按当前登录人补造。 */
+  record?: FundCommandRecord;
+  auditHref?: string;
+  /** 读回这条对象的现状，返回写给人看的一句话。 */
+  verify?: () => Promise<ReactNode>;
+  /** 按原请求重发。后端不按命令号去重的操作不给：再发可能再执行一次，只能读回核对（OP-94）。 */
+  retry?: () => Promise<unknown>;
+  /** 原样重试被明确拒绝后，人核实过原操作再放开本页的锁，不发请求。 */
+  release: () => void;
+  after: () => void;
+};
+
+const unknownOutcome = (error: unknown) => isDOutcomeUnknownError(error)
+  || (typeof error === "object" && error !== null && (error as { unknownOutcome?: unknown }).unknownOutcome === true);
+
+/**
+ * 面板问号里的说明：带原请求出处的记录先查询原结果、过了时限核查结案；
+ * 没有出处的（升级前留下的、这类操作查不了的）只能读现在的值参考，不能据此认定原操作的结果。
+ */
+function recoveryExplain(items: readonly D1PendingItem[]) {
+  const queryable = items.some(item => item.record);
+  const legacy = items.some(item => !item.record);
+  return <>
+    <p>这些操作发出后没收到明确结果，可能已经生效。有结果前，相关对象不能再操作。</p>
+    {queryable && <p>先查询原结果；按原请求重试只发原内容，不会重复执行。不能再重试时，按查到的结果核查结案。</p>}
+    {legacy && <p>查不了原结果的记录：现在的值只能参考，不能据此认定原操作成没成；按原请求重试，或到操作记录与审批核对。</p>}
+  </>;
+}
+
+/**
+ * 结果未知的写操作，所在页签顶部常显（OP-93）。只能按原请求重试（OP-94）；重试被后端明确拒绝后才出现「解除待确认」，
+ * 后端不按命令号去重的操作只读回事实，不给重试或解除，记录保留到关标签页（决定 03）。解除只清本地记录，不发请求（OP-153）。
+ */
+export function PendingNotices({ items, disabled }: { items: readonly D1PendingItem[]; disabled?: boolean }) {
+  const reach = useReach();
+  const [running, setRunning] = useState("");
+  const [releasable, setReleasable] = useState<readonly string[]>([]);
+  const [notes, setNotes] = useState<Record<string, ReactNode>>({});
+  const [releasing, setReleasing] = useState<D1PendingItem | null>(null);
+  const [closing, setClosing] = useState<D1PendingItem | null>(null);
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [settled, setSettled] = useState<FundSettled[]>([]);
+  if (!items.length && !releasing && !settled.length) return null;
+  const note = (key: string, text: ReactNode) => setNotes((current) => ({ ...current, [key]: text }));
+  const check = async (item: D1PendingItem, evidence?: FundCommandEvidence) => {
+    if (!item.record) return;
+    setRunning(item.key);
+    try {
+      const receipt = await checkFundCommand(item.record, evidence);
+      setOutcomes(current => ({ ...current, [item.key]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        item.release();
+        setSettled(current => [...current.filter(row => row.key !== item.key), { key: item.key, label: item.label, status: receipt!.originalStatus }]);
+        item.after();
+      }
+    } catch (error) {
+      setOutcomes(current => ({ ...current, [item.key]: { error: displayAdminError(error) } }));
+      if (evidence) throw error;
+    } finally { setRunning(""); }
+  };
+  const retry = async (item: D1PendingItem) => {
+    if (!item.retry) return;
+    setRunning(item.key);
+    setReleasable((current) => current.filter((key) => key !== item.key));
+    try {
+      await item.retry();
+      note(item.key, "");
+    } catch (error) {
+      if (isPermissionDenied(error)) announcePermissionDenied();
+      if (item.record) note(item.key, displayAdminError(error));
+      else if (isExplicitRejection(error)) {
+        note(item.key, `重试被拒：${displayAdminError(error)} 这说明不了原操作的结果，先核实原操作，再决定要不要解除。`);
+        setReleasable((current) => [...current, item.key]);
+      } else if (unknownOutcome(error)) note(item.key, "重试结果仍未知，原操作继续保留。");
+      else note(item.key, `这次没查到结果：${displayAdminError(error)} 原操作记录继续保留。`);
+    } finally {
+      setRunning("");
+      item.after();
+    }
+  };
+  const verify = async (item: D1PendingItem) => {
+    if (!item.verify) return;
+    setRunning(item.key);
+    try {
+      note(item.key, await item.verify());
+    } catch (error) { note(item.key, `读取失败：${displayAdminError(error)} 记录继续保留。`); }
+    finally { setRunning(""); }
+  };
+  // 「到操作记录与审批核对」放在面板底栏，不用展开就看得到；同一个去处只放一次。
+  const auditLinks = [...new Set(items.map((item) => item.auditHref).filter((href): href is string => !!href && reach(href, "platform_a2_read")))]
+    .map((href) => <Link key={href} className="rd-link" href={href}>到操作记录与审批核对</Link>);
+  return (
+    <>
+      <FundRecoveryPanel rows={[]} settled={settled} onDismissSettled={key => setSettled(current => current.filter(row => row.key !== key))} />
+      <RecoveryPanel title={recoveryTitle(items.length)} explainLabel="结果未知怎么处理"
+        explain={recoveryExplain(items)}
+        foot={auditLinks.length ? auditLinks : undefined}
+        items={items.map((item): RecoveryItem => {
+          const hint = item.retry ? item.blocked ?? item.hint : item.hint;
+          const refused = item.retry && releasable.includes(item.key);
+          const expired = item.expired ?? (!!item.record && isRetryExpired(item.record));
+          const status = item.record ? fundRecoveryStatus({ record: item.record, outcome: outcomes[item.key], expired, canRetry: !!item.retry && !item.blocked }) : undefined;
+          return {
+            key: item.key, object: item.label, createdAt: item.createdAt,
+            tag: <StatusTag tone={status?.tone ?? (refused ? "danger" : "warn")}>{status?.label ?? (refused ? "重试被拒绝" : item.expired ? "已过期" : "结果未知")}</StatusTag>,
+            line: status?.line ?? (refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，到操作记录与审批核对。" : item.blocked ? `${item.blocked}。` : "查不了原结果，先读取现在的值参考。" : "查不了原结果，也不能重试；现在的值只能参考。"),
+            note: notes[item.key],
+            actions: <>
+              {item.record && <FundCheckButtons record={item.record} outcome={outcomes[item.key]} expired={expired} busy={disabled || !!running} checking={running === item.key}
+                onCheck={() => void check(item)} onClose={() => setClosing(item)} />}
+              {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读取现在的值</Button>}
+              {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原请求重试</Button>}
+              {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除原操作记录</Button>}
+            </>,
+            detail: <p>{businessStamp(item.createdAt)}（{zoneLabel()}）<KeepText text="发出，可能已经生效。" />{typeof hint === "string" ? <KeepText text={/[。；]$/.test(hint) ? hint : `${hint}。`} /> : hint}</p>,
+            tech: <p><Explain label="技术信息" content={`原请求编号 ${item.key}`}>技术信息</Explain></p>,
+          };
+        })} />
+      {releasing && (
+        <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)}
+          explain="重试被明确拒绝后，先到操作记录核实原操作。解除只移除本页这条原操作记录，原操作的结果和锁定不变。"
+          onConfirm={() => { releasing.release(); setReleasing(null); releasing.after(); }} />
+      )}
+      {closing?.record && <FundClosureModal label={closing.label} createdAt={closing.createdAt}
+        offer={eCommandClosureOffer(outcomes[closing.key], isRetryExpired(closing.record))}
+        onClose={() => setClosing(null)} onSubmit={async evidence => { await check(closing, evidence); setClosing(null); }} />}
+    </>
+  );
+}
+
+/** 跨区提醒：别的区有没保存的修改、结果未知、待审批时，在页签上方说一声，带「返回…」。 */
+export function CrossAreaNotice({ rows, onGo }: { rows: readonly { section: D1Section; lines: D1Activity }[]; onGo: (section: D1Section) => void }) {
+  if (!rows.length) return null;
+  return (
+    <Notice tone="warn" title="别的页签有事没做完">
+      {rows.map((row) => (
+        <div key={row.section} className="rd-toolbar">
+          <span>{D1_SECTION_NAME[row.section]}：{row.lines.join("；")}</span>
+          <Button size="sm" variant="ghost" onClick={() => onGo(row.section)}>{RETURN_LABEL[row.section]}</Button>
+        </div>
+      ))}
+    </Notice>
+  );
+}

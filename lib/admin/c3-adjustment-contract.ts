@@ -1,6 +1,6 @@
 import { parseStrictFiniteNumber } from "./strict-number.ts";
 
-const ASSETS = ["USDT", "NEX"] as const;
+const ASSETS = ["USDT", "UVT"] as const;
 const DIRECTIONS = ["CREDIT", "DEBIT"] as const;
 const STATUSES = ["PENDING", "PENDING_REVIEW", "APPROVED", "REJECTED", "WITHDRAWN", "SUSPENDED"] as const;
 

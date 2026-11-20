@@ -5,7 +5,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchHowContentAdmin, updateHowContentAdmin, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 
-const PAGE_LABELS: Record<string, string> = { "genesis-how": "创世节点说明", "wallet-exchange-how": "兑换说明", "wallet-repurchase-how": "回购说明", "team-binary-how": "左右团队结算说明", "team-commissions-how": "团队分成说明", "team-unilevel-how": "多层团队说明" };
+const PAGE_LABELS: Record<string, string> = { "genesis-how": "创世节点说明", "wallet-exchange-how": "兑换说明", "wallet-repurchase-how": "锁定计划说明", "team-binary-how": "团队平衡奖励说明", "team-commissions-how": "奖励明细说明", "team-unilevel-how": "团队奖励说明" };
 const LANGUAGE_LABELS: Record<string, string> = { zh: "中文", "zh-cn": "简体中文", en: "英语", vi: "越南语" };
 const KEYS = ["genesis-how", "wallet-exchange-how", "wallet-repurchase-how", "team-binary-how", "team-commissions-how", "team-unilevel-how"] as const;
 type Row = Record<string, unknown>;
@@ -123,11 +123,11 @@ export function PublishedHowContentEditor() {
   };
   return <section className="l-card" data-testid="published-content-how">
     <div className="l-h"><div><div className="ttl">业务规则说明内容</div><div className="sub">各页面分别设置发布版本；规则块只引用系统规则标识，不在此复制业务数值</div></div>
-      <div className="r"><span className="bdg cyan">{({ DRAFT: "草稿", PUBLISHED: "已发布", UNPUBLISHED: "已撤下公开版本" } as Record<string,string>)[document?.status ?? ""] ?? "状态待核实"} · 版本 {document?.revision ?? 0}</span><button className="l-btn sm" onClick={() => void refresh()} disabled={loading || saving}>刷新</button></div></div>
+      <div className="r"><span className="bdg cyan">{({ DRAFT: "草稿", PUBLISHED: "已发布", UNPUBLISHED: "已撤下公开版本" } as Record<string,string>)[document?.status ?? ""] ?? "状态待核实"} · 版本 {document?.revision ?? "—"}</span><button className="l-btn sm" onClick={() => void refresh()} disabled={loading || saving}>刷新</button></div></div>
     <div className="l-b">
       {document && <div className="tiny">{document.hasPublishedVersion ? "当前有公开版本；保存草稿不会替换公开内容。" : "当前没有公开版本；保存草稿不会发布内容。"}</div>}
       {error && <div className="atint warn" role="alert">{error}</div>}
-      {loading && !document ? <div className="tiny">读取说明内容中…</div> : !document ? <div className="atint warn">暂无内容；应用暂不展示未发布的内容。</div> : <>
+      {loading && !document ? <div className="tiny">读取说明内容中…</div> : !document ? (!error && <div className="atint warn">暂无内容；应用暂不展示未发布的内容。</div>) : <>
         <div className="two-col">
           <label className="tiny">版本<input value={document.version} maxLength={64} disabled={locked} onChange={e => setDocument({ ...document, version: e.target.value })} /></label>
           <label className="tiny">发布状态<select value={document.status === "UNPUBLISHED" ? "DRAFT" : document.status} disabled={locked} onChange={e => setDocument({ ...document, status: e.target.value as PublishedHowContentDocument["status"] })}><option value="DRAFT">草稿</option><option value="PUBLISHED">已发布</option></select></label>

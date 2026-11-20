@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertB4PhaseOverview } from "@/lib/admin/b34-overview-contract";
 
 interface ApiResult<T> {
@@ -16,6 +16,7 @@ export type B4Filters = { granularity: B4Granularity; month: string; phase: stri
 
 export interface B4DistributionRow {
   phase: string;
+  phaseName?: string | null;
   month?: number;
   userCount: number;
   inScope: boolean;
@@ -29,6 +30,7 @@ export interface B4Dial {
   source: string;
   v1Status: string;
   v1Active: boolean;
+  executionStatus?: "ACTIVE" | "RETIRED";
   adjustHref: string;
 }
 
@@ -39,11 +41,14 @@ export interface B4PhaseOverview {
     granularity: B4Granularity;
     month: number;
     phase: string;
+    phaseName?: string | null;
+    phaseNames?: Record<string, string | null>;
     monthOptions: number[];
     phaseOptions: string[];
   };
   rhythm: {
     currentPhase: string;
+    currentPhaseName?: string | null;
     currentMonth: number;
     totalMonths: number;
     phaseProgressPct: number;
@@ -134,7 +139,7 @@ export function useB4PhaseOverview(filters: B4Filters) {
     } catch (value) {
       if (controller.signal.aborted || requestId !== requestSeq.current) return;
       setData(null);
-      setError(displayAdminError(value));
+      setError(displayAdminReadError(value));
     } finally {
       if (requestId === requestSeq.current) setLoading(false);
     }

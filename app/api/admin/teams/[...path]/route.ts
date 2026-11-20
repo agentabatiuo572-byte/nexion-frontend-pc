@@ -16,7 +16,10 @@ function isNonEmpty(value: string | undefined) {
   return !!value && value.trim().length > 0;
 }
 
-function backendPath(parts: string[]) {
+function backendPath(parts: string[], method: string) {
+  if (method === "GET" && parts.length === 2 && parts[0] === "leadership-pool" && ["vote-projection", "payout-preview", "disqualification-readiness"].includes(parts[1])) {
+    return `/api/admin/teams/leadership-pool/${parts[1]}`;
+  }
   if (parts.length === 1 && parts[0] === "direct-referral-policy") {
     return "/api/admin/teams/direct-referral-policy";
   }
@@ -32,6 +35,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "binary") {
     return "/api/admin/teams/binary";
   }
+  if (method === "GET" && parts.length === 2 && parts[0] === "binary" && parts[1] === "current-period") {
+    return "/api/admin/teams/binary/current-period";
+  }
   if (
     parts.length === 2
     && parts[0] === "binary"
@@ -45,8 +51,16 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "ambassador-policy") {
     return "/api/admin/teams/ambassador-policy";
   }
+  if (parts[0] === "ambassador-applications" && /^\d+$/.test(parts[1] ?? "") && parts[2] === "materials"
+    && (parts.length === 3 || parts.length === 4 && parts[3] === "review"
+      || parts.length === 5 && parts[3] === "files" && isNonEmpty(parts[4]))) {
+    return `/api/admin/teams/${parts.map(encodeURIComponent).join("/")}`;
+  }
   if (parts.length === 2 && parts[0] === "leadership-pool" && parts[1] === "settle") {
     return "/api/admin/teams/leadership-pool/settle";
+  }
+  if (method === "GET" && parts.length === 2 && parts[0] === "commissions" && /^CM-\d+$/i.test(parts[1])) {
+    return `/api/admin/commissions/${encodeURIComponent(parts[1])}`;
   }
   if (parts.length === 1 && parts[0] === "commissions") {
     return "/api/admin/commissions";
@@ -139,7 +153,7 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
-  const targetPath = backendPath(path);
+  const targetPath = backendPath(path, request.method);
 
   if (!targetPath) {
     return jsonError(404, "TEAMS_ROUTE_NOT_FOUND");
@@ -170,6 +184,15 @@ async function proxy(request: Request, context: RouteContext) {
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
     });
+    if (path[0] === "ambassador-applications" && path[3] === "files" && upstream.ok) {
+      const responseHeaders = new Headers({
+        "Content-Type": upstream.headers.get("Content-Type") || "application/octet-stream",
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+      });
+      const disposition = upstream.headers.get("Content-Disposition");
+      if (disposition) responseHeaders.set("Content-Disposition", disposition);
+      return new Response(await upstream.arrayBuffer(), { status: upstream.status, headers: responseHeaders });
+    }
     if (path.length === 2 && path[0] === "commissions" && path[1] === "export" && upstream.ok) {
       const responseHeaders = new Headers({
         "Content-Type": upstream.headers.get("Content-Type") || "text/csv;charset=UTF-8",

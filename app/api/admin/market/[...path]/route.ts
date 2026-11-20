@@ -23,6 +23,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "staking") {
     return "/api/admin/market/staking";
   }
+  if (parts.length === 3 && parts[0] === "staking" && parts[1] === "positions" && isNonEmpty(parts[2])) {
+    return `/api/admin/market/staking/positions/${encodeURIComponent(parts[2])}`;
+  }
   if (parts.length === 2 && parts[0] === "staking" && parts[1] === "visibility") {
     return "/api/admin/market/staking/visibility";
   }
@@ -34,6 +37,9 @@ function backendPath(parts: string[]) {
   }
   if (parts.length === 3 && parts[0] === "nex" && parts[1] === "curve" && parts[2] === "history") {
     return "/api/admin/market/nex/curve/history";
+  }
+  if (parts.length === 3 && parts[0] === "nex" && parts[1] === "curve" && parts[2] === "schedule-execution") {
+    return "/api/admin/market/nex/curve/schedule-execution";
   }
   if (parts.length === 2 && parts[0] === "nex" && parts[1] === "repurchase") {
     return "/api/admin/market/nex/repurchase";
@@ -61,6 +67,9 @@ function backendPath(parts: string[]) {
   }
   if (parts.length === 2 && parts[0] === "nex" && parts[1] === "genesis") {
     return "/api/admin/market/nex/genesis";
+  }
+  if (parts.length === 3 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "dividend-approval-state") {
+    return "/api/admin/market/nex/genesis/dividend-approval-state";
   }
   if (parts.length === 3 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "operations") {
     return "/api/admin/market/nex/genesis/operations";
@@ -207,6 +216,9 @@ async function proxy(request: Request, context: RouteContext) {
   if (!targetPath) {
     return jsonError(404, "MARKET_ROUTE_NOT_FOUND");
   }
+  if (path.length === 3 && path[0] === "staking" && path[1] === "positions" && request.method !== "GET") {
+    return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
 
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());
   if (passwordChangeBlocked) return passwordChangeBlocked;
@@ -216,6 +228,14 @@ async function proxy(request: Request, context: RouteContext) {
   }
 
   const sourceUrl = new URL(request.url);
+  if (targetPath === "/api/admin/market/nex/genesis/dividend-approval-state") {
+    if (request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
+    if ([...sourceUrl.searchParams.keys()].some(key => key !== "batchNo")
+      || sourceUrl.searchParams.getAll("batchNo").length > 1
+      || sourceUrl.searchParams.has("batchNo") && !/^[A-Za-z0-9-]{3,32}$/.test(sourceUrl.searchParams.get("batchNo")!)) {
+      return jsonError(400, "G4_DIVIDEND_APPROVAL_STATE_QUERY_UNSUPPORTED");
+    }
+  }
   const targetUrl = `${BACKEND_BASE_URL}${targetPath}${sourceUrl.search}`;
   const g4OverviewRead = request.method === "GET" && targetPath === "/api/admin/market/nex/genesis";
   const headers = new Headers({

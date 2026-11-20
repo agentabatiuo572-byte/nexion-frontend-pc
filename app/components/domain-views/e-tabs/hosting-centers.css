@@ -1,0 +1,18 @@
+/* E1 托管机房：返回入口、机房表、编辑抽屉。颜色只用 --rd-* 令牌。 */
+.hc-back { display: inline-flex; align-items: center; gap: var(--rd-space-1); background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }
+.hc-page { container-type: inline-size; }
+
+.hc-table td:first-child { min-width: 280px; }
+.hc-table td:first-child .rd-cell { max-width: 360px; }
+.hc-table td:first-child .rd-cell-main { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
+.hc-share { display: flex; align-items: center; gap: var(--rd-space-3); }
+.hc-share > :first-child { flex: 1 1 auto; min-width: 120px; max-width: none; }
+.hc-share-num { flex: none; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--rd-text); }
+.hc-muted { color: var(--rd-text-3); }
+
+.hc-edit-table td { vertical-align: top; }
+.hc-edit-table td[data-grow] { min-width: 260px; }
+.hc-edit-table td[data-num] { padding-top: 14px; }
+.hc-edit-table .rd-check-item, .hc-edit-table label { padding-top: 6px; }
+.hc-field-error { display: block; margin-top: 4px; color: var(--rd-warn); font-size: var(--rd-text-aux); line-height: 1.5; }
+.hc-help { margin: 0; padding-left: 18px; display: grid; gap: 4px; color: var(--rd-text-2); }

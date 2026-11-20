@@ -7,15 +7,21 @@
  * mounted 门控:后台权限不从 localStorage 恢复,每次挂载先向服务端 session 端点校验。
  * 服务端会话确认前只渲染校验壳,避免登录框或默认角色后台闪现。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { toast, useUI } from "@/lib/store/ui";
 import { usePathname, useRouter } from "next/navigation";
+import { ShieldOff } from "lucide-react";
 import { currentAdminSession, recordAdminActivity, AdminActivityIdentityChangedError } from "@/lib/admin/auth-client";
 import { createAdminActivityTracker } from "@/lib/admin/admin-activity";
 import { fetchA3RuntimeFlags } from "@/lib/admin/a3-client";
-import { installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
+import { AdminAuthEpochChangedError, adminAuthLifecycleEpoch, installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
+import { PERMISSION_DENIED_EVENT, PERMISSION_DENIED_TEXT } from "@/lib/admin/operation-confirm-error";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
-import { canAccessResolvedPath, defaultConsolePath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
+import { ALL_L2, canAccessResolvedPath, defaultConsolePath, isRedesignedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { useAdminTheme } from "@/app/components/rd/theme-switch";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { DEFAULT_EXPANDED_GROUPS, useAdminUi } from "@/lib/store/admin-ui";
 import { Sidebar } from "./sidebar";
@@ -23,6 +29,10 @@ import { TopBar } from "./topbar";
 import { PageTransition } from "./page-transition";
 import { LoginGate } from "./login-gate";
 import { useServicePendingCount } from "./use-service-badges";
+import { Button } from "@/app/components/rd/button";
+import { RdPage } from "@/app/components/rd/surface";
+import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
+import { businessZone, subscribeBusinessZone } from "@/lib/admin/business-time";
 
 const SESSION_REFRESH_MS = 60_000;
 type AdminBootstrapState = "checking" | "authenticated" | "anonymous" | "error";
@@ -33,8 +43,7 @@ function AdminLogoutGate() {
   return (
     <div
       aria-busy="true"
-      className="flex h-screen w-screen items-center justify-center"
-      style={{ background: "var(--v5-bg)", color: "var(--v5-ink-3)" }}
+      className="rd-gate"
     >
       正在安全退出…
     </div>
@@ -45,8 +54,7 @@ function AdminRouteRedirectGate() {
   return (
     <div
       aria-busy="true"
-      className="flex h-screen w-screen items-center justify-center"
-      style={{ background: "var(--v5-bg)", color: "var(--v5-ink-3)" }}
+      className="rd-gate"
     >
       正在进入有权限的页面…
     </div>
@@ -57,8 +65,7 @@ function AdminSessionBootstrapGate() {
   return (
     <div
       aria-busy="true"
-      className="flex h-screen w-screen items-center justify-center"
-      style={{ background: "var(--v5-bg)", color: "var(--v5-ink-3)" }}
+      className="rd-gate"
     >
       正在验证登录状态…
     </div>
@@ -69,22 +76,44 @@ function AdminSessionRecoveryGate({ onRetry, onLogout, noAccess = false, error }
   return (
     <div
       role="alert"
-      className="flex h-screen w-screen flex-col items-center justify-center gap-4"
-      style={{ background: "var(--v5-bg)", color: "var(--v5-ink-3)" }}
+      className="rd-gate rd-gate-recovery"
     >
-      <strong style={{ color: "var(--v5-ink)" }}>{noAccess ? "当前账号没有可访问的后台页面" : "登录状态校验失败"}</strong>
-      <span className="text-[13px]">{error || (noAccess ? "请重新读取权限，或退出后切换账号。" : "暂时无法确认登录状态，请重试。")}</span>
-      <button
-        type="button"
-        className="rounded-[8px] px-4 py-2 text-[13px] font-medium"
-        style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}
-        onClick={onRetry}
-      >
-        {noAccess ? "重新读取权限" : "重新校验"}
-      </button>
-      {onLogout && <button type="button" className="rounded-[8px] px-4 py-2 text-[13px] font-medium" style={{ color: "var(--v5-ink)" }} onClick={onLogout}>退出登录</button>}
+      <strong>{noAccess ? "当前账号没有可访问的后台页面" : "登录状态校验失败"}</strong>
+      <span>{error || (noAccess ? "请重新读取权限，或退出后切换账号。" : "暂时无法确认登录状态，请重试。")}</span>
+      <Button variant="primary" onClick={onRetry}>{noAccess ? "重新读取权限" : "重新校验"}</Button>
+      {onLogout && <Button variant="ghost" onClick={onLogout}>退出登录</Button>}
     </div>
   );
+}
+
+/** 直接打开无权页面时主区显示这个，外壳和菜单都还在（PG-22、CP-73）。业务内容不挂载，也就不发请求。 */
+function AdminNoAccessPage({ pathname, landingPath }: { pathname: string; landingPath: string }) {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => titleRef.current?.focus(), [pathname]);
+  const page = ALL_L2.find((item) => pathname === item.path || pathname.startsWith(`${item.path}/`));
+  return (
+    <RdPage>
+      <div className="rd-no-access">
+        <span className="rd-no-access-icon"><ShieldOff size={20} aria-hidden /></span>
+        <h1 ref={titleRef} tabIndex={-1}>没有这个页面的查看权限</h1>
+        <p>你的账号没有开通{page ? `「${page.name}」` : "这个页面"}，要用这页请联系超级管理员。</p>
+        <Link className="rd-btn" data-variant="primary" data-size="md" href={landingPath} prefetch={false}><span className="rd-btn-face">返回有权限的页面</span></Link>
+      </div>
+    </RdPage>
+  );
+}
+
+/** 确认框收到 403 后框已关，权限读回一变外壳里面还会重挂，所以提示单独放（OP-81、OP-132）。 */
+function PermissionDeniedToast() {
+  useEffect(() => {
+    const onDenied = () => {
+      useUI.getState().dismissTimedToasts();
+      toast.warn(PERMISSION_DENIED_TEXT);
+    };
+    window.addEventListener(PERMISSION_DENIED_EVENT, onDenied);
+    return () => window.removeEventListener(PERMISSION_DENIED_EVENT, onDenied);
+  }, []);
+  return null;
 }
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
@@ -94,6 +123,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [narrow, setNarrow] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const bootstrapAttemptRef = useRef(0);
+  const bootstrapReadRef = useRef<{ epoch: number } | null>(null);
   useEffect(() => setMounted(true), []);
   useEffect(() => {
     const media = window.matchMedia("(max-width: 640px)");
@@ -122,15 +152,28 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const canReadA3 = authorities.includes("platform_a3_read");
   const canReadMContent = authorities.includes("service_m1_read") || authRole === "superadmin" || authRole === "super";
   const sessionKey = adminShellSessionKey(session, authEpoch);
+  // 登录后按这个账号记住的主题切换；登录前用本机最近一次的选择。
+  useAdminTheme(session?.adminId);
+  // 还没迁移的页面内容区保持深色，侧栏和顶栏跟主题走（06 VS-95）。
+  const legacyPage = !isRedesignedPath(pathname);
   const servicePending = useServicePendingCount(canReadMContent, sessionKey);
   const observedAuthEpochRef = useRef(authEpoch);
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
+  const enterAfterLogin = () => {
+    setJustLoggedIn(true);
+    setBootstrapState("authenticated");
+  };
 
   const restoreAdminSession = useCallback(async (signal?: AbortSignal) => {
     const attempt = ++bootstrapAttemptRef.current;
+    const read = { epoch: adminAuthLifecycleEpoch() };
+    bootstrapReadRef.current = read;
     setBootstrapState("checking");
     try {
       const auth = await currentAdminSession({ signal });
       if (signal?.aborted || attempt !== bootstrapAttemptRef.current) return;
+      if (read.epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
+      bootstrapReadRef.current = null;
       if (auth) {
         signIn(auth);
         setBootstrapState("authenticated");
@@ -143,6 +186,8 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       // Do not turn transport failures or malformed 200s into an anonymous
       // session. Protected content and the login form both stay closed.
       setBootstrapState("error");
+    } finally {
+      if (bootstrapReadRef.current === read) bootstrapReadRef.current = null;
     }
   }, [signIn, signOut]);
 
@@ -174,9 +219,15 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (observedAuthEpochRef.current === authEpoch) return;
     observedAuthEpochRef.current = authEpoch;
-    bootstrapAttemptRef.current += 1;
-    if (sessionResolution === "anonymous") setBootstrapState("anonymous");
-  }, [authEpoch, sessionResolution]);
+    if (sessionResolution === "anonymous") {
+      bootstrapAttemptRef.current += 1;
+      bootstrapReadRef.current = null;
+      setBootstrapState("anonymous");
+      return;
+    }
+    const read = bootstrapReadRef.current;
+    if (read && read.epoch !== adminAuthLifecycleEpoch()) void restoreAdminSession();
+  }, [authEpoch, restoreAdminSession, sessionResolution]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -197,13 +248,29 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     const onPageShow = (event: PageTransitionEvent) => {
       if (event.persisted) revalidate();
     };
+    // 草稿保护先在同一路径内恢复历史记录；此时切到登录检查会卸载编辑器。
+    const onPopState = () => {
+      if (window.location.pathname !== pathname) revalidate();
+    };
     window.addEventListener("pageshow", onPageShow);
-    window.addEventListener("popstate", revalidate);
+    window.addEventListener("popstate", onPopState);
     return () => {
       window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener("popstate", revalidate);
+      window.removeEventListener("popstate", onPopState);
     };
-  }, [mounted, restoreAdminSession]);
+  }, [mounted, pathname, restoreAdminSession]);
+
+  // R-1: every time label follows the business time zone set in A3; refreshed on focus so a zone that just took effect shows up.
+  useEffect(() => {
+    if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated) return;
+    const load = () => { void fetchBusinessCalendar().catch(() => undefined); };
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
+  }, [mounted, bootstrapState, isAuthenticated]);
+  // Time labels and day / month cuts are computed during render (some once at mount): remount the page when the zone changes.
+  const [zoneKey, setZoneKey] = useState(() => businessZone().zoneId);
+  useEffect(() => subscribeBusinessZone(() => setZoneKey(businessZone().zoneId)), []);
 
   // A6/A7 changes must reach an already-open console without requiring a full reload.
   // Focus refresh handles operators returning to the tab; the interval closes the long-open-tab gap.
@@ -230,10 +297,12 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     };
     const onFocus = () => void refreshSession();
     window.addEventListener("focus", onFocus);
+    window.addEventListener(PERMISSION_DENIED_EVENT, onFocus);
     const timer = window.setInterval(() => void refreshSession(), SESSION_REFRESH_MS);
     return () => {
       disposed = true;
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener(PERMISSION_DENIED_EVENT, onFocus);
       window.clearInterval(timer);
     };
   }, [bootstrapState, isAuthenticated, mounted, signIn, signOut]);
@@ -308,14 +377,17 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     authorities: session?.authorities ?? [],
     supportReadModes: session?.supportReadModes,
   }), [role, session?.authorities, session?.menuCodes, session?.menuNodes, session?.supportReadModes]);
-  const landingPath = defaultConsolePath(role, domains);
-  const shouldRedirectHome = pathname === "/" && landingPath !== null && landingPath !== "/";
-  const shouldRedirectForbidden = !canAccessResolvedPath(domains, pathname);
-  const redirecting = isAuthenticated && landingPath !== null && (shouldRedirectHome || shouldRedirectForbidden);
+  const landingPath = defaultConsolePath(role, domains, authorities);
+  // 落地规则只在登录后用一次（Q-20）。刷新、书签直达、点侧栏都留在 /，一块都看不到的账号除外（PG-22）。
+  const canStayHome = !justLoggedIn && b0HasAnyBlock(b0Blocks(authorities));
+  const shouldRedirectHome = pathname === "/" && landingPath !== null && landingPath !== "/" && !canStayHome;
+  const denied = !canAccessResolvedPath(domains, pathname);
+  const redirecting = isAuthenticated && landingPath !== null && shouldRedirectHome;
 
   useEffect(() => {
     if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated || landingPath === null) return;
-    if (shouldRedirectHome || shouldRedirectForbidden) router.replace(landingPath);
+    if (shouldRedirectHome) router.replace(landingPath);
+    else setJustLoggedIn(false);
   }, [
     isAuthenticated,
     mounted,
@@ -323,21 +395,21 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     domains,
     landingPath,
     router,
-    shouldRedirectForbidden,
     shouldRedirectHome,
   ]);
 
   if (logoutPending) return <AdminLogoutGate />;
   if (logoutUnknown) return <AdminSessionRecoveryGate onRetry={() => void restoreAdminSession()} />;
-  if (sessionResolution === "anonymous") return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
+  if (sessionResolution === "anonymous") return <LoginGate onAuthenticated={enterAfterLogin} />;
   if (!mounted || bootstrapState === "checking") return <AdminSessionBootstrapGate />;
   if (bootstrapState === "error") return <AdminSessionRecoveryGate error={logoutError ?? undefined} onRetry={() => void restoreAdminSession()} onLogout={() => void logoutWithoutAccess()} />;
-  if (bootstrapState === "anonymous") return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
-  if (!isAuthenticated) return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
+  if (bootstrapState === "anonymous") return <LoginGate onAuthenticated={enterAfterLogin} />;
+  if (!isAuthenticated) return <LoginGate onAuthenticated={enterAfterLogin} />;
   if (landingPath === null) return <AdminSessionRecoveryGate noAccess error={logoutError ?? undefined} onRetry={() => void restoreAdminSession()} onLogout={() => void logoutWithoutAccess()} />;
   if (redirecting) return <AdminRouteRedirectGate />;
 
   return (
+    <>
     <div
       key={sessionKey}
       className="grid h-screen w-screen overflow-clip"
@@ -345,11 +417,11 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       style={{
         gridTemplateColumns: `${narrow ? "var(--admin-sidebar-w-collapsed)" : collapsed ? "var(--admin-sidebar-w-collapsed)" : "var(--admin-sidebar-w)"} 1fr`,
         gridTemplateRows: "var(--admin-topbar-h) 1fr",
-        background: "var(--v5-bg)",
+        background: "var(--rd-bg)",
         transition: "grid-template-columns 200ms ease",
       }}
     >
-      {narrow && mobileNavOpen && <button type="button" aria-label="关闭侧栏" onClick={() => setMobileNavOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 39, border: 0, background: "rgba(0,0,0,.55)" }} />}
+      {narrow && mobileNavOpen && <button type="button" aria-label="关闭侧栏" onClick={() => setMobileNavOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 39, border: 0, background: "var(--rd-scrim)" }} />}
       <div style={{ gridColumn: 1, gridRow: "1 / span 2", minWidth: 0, ...(narrow && mobileNavOpen ? { position: "fixed" as const, inset: "0 auto 0 0", width: 252, zIndex: 40 } : {}) }}>
         <Sidebar
           role={role}
@@ -371,34 +443,28 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         />
       </div>
       <main
+        className={legacyPage && !denied ? "rd-legacy" : undefined}
+        data-theme={legacyPage && !denied ? "dark" : undefined}
         style={{
           gridColumn: 2,
           gridRow: 2,
           minWidth: 0,
           overflowY: "auto",
-          padding: pathname === "/service/leaderboard" ? 0 : "var(--admin-gutter)",
+          padding: "var(--admin-gutter)",
         }}
       >
         <div className="content-shell">
           {maintenanceBanner && (
-            <div
-              role="status"
-              style={{
-                marginBottom: 12,
-                padding: "10px 14px",
-                border: "1px solid color-mix(in srgb, var(--warning) 52%, transparent)",
-                borderRadius: 8,
-                background: "color-mix(in srgb, var(--warning) 10%, var(--surface))",
-                color: "var(--ink)",
-                fontSize: 12.5,
-              }}
-            >
+            <div role="status" className="rd-maintenance">
               <b>平台维护提示已开启</b> · 当前后台可能正在进行维护操作，请谨慎提交高风险变更。
             </div>
           )}
-          <PageTransition>{children}</PageTransition>
+          <PageTransition><Fragment key={zoneKey}>{denied ? <AdminNoAccessPage pathname={pathname} landingPath={landingPath} /> : children}</Fragment></PageTransition>
         </div>
       </main>
     </div>
+    {/* 放在 key 外面：权限一变上面整棵重挂，提示要留着。 */}
+    <PermissionDeniedToast />
+    </>
   );
 }

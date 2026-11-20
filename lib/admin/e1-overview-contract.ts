@@ -60,7 +60,7 @@ function validPurchaseGate(value: unknown) {
   if (value.quotaCap != null && value.quotaSold != null
     && isFiniteNumberLike(value.quotaCap) && isFiniteNumberLike(value.quotaSold)
     && Number(value.quotaSold) > Number(value.quotaCap)) return false;
-  return ["rankMin", "activeDirectMin", "teamVolumeMin", "quotaCap", "quotaSold"]
+  return ["rankMin", "activeDirectMin", "teamComputePointsMin", "quotaCap", "quotaSold"]
     .every((key) => isOptionalNonNegativeNumberLike(value[key]));
 }
 
@@ -77,6 +77,8 @@ export function e1SkuInvalidFields(value: unknown): string[] {
   const invalid: string[] = [];
   if (typeof value.skuId !== "string" || value.skuId.trim() === "") invalid.push("skuId");
   if (typeof value.name !== "string" || value.name.trim() === "") invalid.push("name");
+  if (!isFiniteNumberLike(value.price) || Number(value.price) <= 0) invalid.push("price");
+  if (!["on", "off", "pending"].includes(value.status as never)) invalid.push("status");
   if (!["SERVER", "DEVICE", "SHARE"].includes(value.productType as never)) invalid.push("productType");
   if (!["FINITE", "UNLIMITED"].includes(value.inventoryMode as never)) invalid.push("inventoryMode");
   if (value.inventoryMode === "UNLIMITED" && (value.productType !== "SHARE" || value.stock != null)) {
@@ -84,7 +86,7 @@ export function e1SkuInvalidFields(value: unknown): string[] {
   }
   if (value.inventoryMode === "FINITE" && !isCanonicalFiniteStock(value.stock)) invalid.push("stock");
   for (const key of ["tier", "tagline", "badge", "gpu", "vram", "hashRate", "power", "datacenter", "uptime", "warranty",
-    "baseRate", "stock", "aiUnlocks", "lifecycle", "unlockPhase", "imageAssetId",
+    "specDocumentTitle", "specDocumentUrl", "baseRate", "stock", "aiUnlocks", "lifecycle", "unlockPhase", "imageAssetId",
     "imageObjectKey", "imagePreviewUrl", "tag", "status"]) {
     if (!isOptionalString(value[key])) invalid.push(key);
   }
@@ -92,6 +94,25 @@ export function e1SkuInvalidFields(value: unknown): string[] {
     "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"]) {
     if (!isOptionalNonNegativeNumberLike(value[key])) invalid.push(key);
   }
+  for (const [key, maximum, precision] of [["monthlyTargetUsdt", 1_000_000, 2], ["monthlyTargetBandPct", 50, 1]] as const) {
+    const field = value[key];
+    if (field == null) continue;
+    if (!isFiniteNumberLike(field) || Number(field) < 1 || Number(field) > maximum
+        || Number(Number(field).toFixed(precision)) !== Number(field)) invalid.push(key);
+  }
+  for (const key of ["derivedDailyEarnUsdt", "derivedShareYieldMinPct", "derivedShareYieldMaxPct"]) {
+    if (!isOptionalNonNegativeNumberLike(value[key])) invalid.push(key);
+  }
+  if (value.monthlyTargetUsdt != null) {
+    if (value.monthlyTargetBandPct == null) invalid.push("monthlyTargetBandPct");
+    if (value.derivedDailyEarnUsdt == null) invalid.push("derivedDailyEarnUsdt");
+    if (value.productType === "SHARE" || value.tier === "Share") {
+      if (value.derivedShareYieldMinPct == null) invalid.push("derivedShareYieldMinPct");
+      if (value.derivedShareYieldMaxPct == null) invalid.push("derivedShareYieldMaxPct");
+    }
+  }
+  if (!isStringArray(value.allowedPoolCodes) || (value.allowedPoolCodes as string[]).some(code => !["L1", "L2", "L3", "L4"].includes(code))) invalid.push("allowedPoolCodes");
+  if (typeof value.datacenter === "string" && value.datacenter.length > 128) invalid.push("datacenter");
   if (value.features !== undefined && value.features !== null && !isStringArray(value.features)) invalid.push("features");
   if (!validPurchaseGate(value.purchaseGate)) invalid.push("purchaseGate");
   if (typeof value.trialEligible !== "boolean") invalid.push("trialEligible");

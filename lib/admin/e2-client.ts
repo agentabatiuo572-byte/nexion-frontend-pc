@@ -1,5 +1,9 @@
+import { parseE6DecimalJson } from "./e6-decimal";
+import { fetchPoolTasks, type PhonePoolTask } from "./task-pool-client";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsTask } from "@/lib/admin/platform-types";
+import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
+import { TASK_DURATION_DEFAULTS, validateComputeTaskConfig, type ComputeTaskConfig } from "@/lib/admin/e2-compute-config";
 import { parseE2OnboardingYieldConfig } from "@/lib/admin/e2-onboarding-yield-contract";
 import type {
   E2OnboardingYieldConfig,
@@ -26,7 +30,8 @@ interface PageResult<T> {
   records: T[];
 }
 
-interface BackendTask {
+interface BackendTask extends ComputeTaskConfig {
+  simulation?: OpsTask["simulation"];
   taskId: string;
   name: string;
   price?: number | string | null;
@@ -75,6 +80,7 @@ export interface E2TaskPricingClass {
   minReward: number;
   maxReward: number;
   minVRAM: number;
+  pricingRevision?: string;
   enabled: boolean;
   activeAssignments: number;
   avgSec: number;
@@ -91,6 +97,7 @@ export interface E2TeaserRow {
 export interface E2TaskPricingSnapshot {
   taskClasses: E2TaskPricingClass[];
   queueSaturation: number;
+  queueSaturationRevision?: string;
   teaser: E2TeaserRow[];
   effectiveAt?: string;
 }
@@ -127,12 +134,17 @@ function finiteValue(value: unknown): number | null {
   return isFiniteValue(value) ? Number(value) : null;
 }
 
+function isOptionalPricingRevision(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && /^[a-f0-9]{64}$/i.test(value));
+}
+
 function assertE2TaskPricingSnapshot(raw: unknown): asserts raw is E2TaskPricingSnapshot {
   pricingProtocol(isRecord(raw), "taskPricing protocol requires a data object");
   pricingProtocol(Array.isArray(raw.taskClasses), "taskClasses must be an array");
   pricingProtocol(Array.isArray(raw.teaser), "teaser must be an array");
   const queueSaturation = finiteValue(raw.queueSaturation);
   pricingProtocol(queueSaturation != null && queueSaturation >= 0 && queueSaturation <= 1, "queueSaturation must be between 0 and 1");
+  pricingProtocol(isOptionalPricingRevision(raw.queueSaturationRevision), "queueSaturationRevision must be a pricing revision");
   pricingProtocol(raw.taskClasses.length === E2_TASK_CLASSES.length, "taskClasses must contain the exact six canonical classes");
   pricingProtocol(raw.teaser.length >= 2 && raw.teaser.length <= E2_TEASER_DEVICE_CLASSES.length, "teaser must contain available device classes");
 
@@ -144,6 +156,7 @@ function assertE2TaskPricingSnapshot(raw: unknown): asserts raw is E2TaskPricing
     pricingProtocol(typeof row.taskName === "string" && row.taskName.trim() !== "", "taskClasses row requires taskName");
     pricingProtocol(Array.isArray(row.models) && row.models.every((model) => typeof model === "string"), "taskClasses row requires models");
     pricingProtocol(typeof row.enabled === "boolean", "taskClasses row requires enabled");
+    pricingProtocol(isOptionalPricingRevision(row.pricingRevision), "pricingRevision must be a pricing revision");
     for (const field of ["minReward", "maxReward", "minVRAM", "activeAssignments", "avgSec", "dailyPotential"]) {
       pricingProtocol(isFiniteValue(row[field]), `taskClasses row requires finite ${field}`);
     }
@@ -185,10 +198,11 @@ async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers,
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(parseE6DecimalJson).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(formatAdminApiError(result?.message, `E2_REQUEST_FAILED_${response.status}`));
+    throw new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
+      ?? formatAdminApiError(result?.message, `E2_REQUEST_FAILED_${response.status}`, "write", result?.data));
   }
 
   return result.data as T;
@@ -196,6 +210,7 @@ async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
 function fromTask(task: BackendTask): OpsTask {
   return {
+    simulation: task.simulation,
     id: task.taskId,
     n: task.name,
     price: toNumber(task.price),
@@ -209,6 +224,13 @@ function fromTask(task: BackendTask): OpsTask {
     maxReward: toNumber(task.maxReward),
     minVRAM: text(task.minVram),
     killInit: text(task.killInit),
+    selectionWeight: task.selectionWeight ?? 1,
+    expectedDurationMinSec: task.expectedDurationMinSec ?? TASK_DURATION_DEFAULTS[text(task.taskClass)],
+    expectedDurationMaxSec: task.expectedDurationMaxSec ?? TASK_DURATION_DEFAULTS[text(task.taskClass)],
+    executionTimeoutSec: task.executionTimeoutSec,
+    runtimeKey: task.runtimeKey,
+    validatorKey: task.validatorKey,
+    workloadConfigJson: task.workloadConfigJson,
   };
 }
 
@@ -217,7 +239,7 @@ async function e2ConfigRequest<T>(path: string, init?: RequestInit & { idempoten
   if (init?.body) headers.set("Content-Type", "application/json");
   if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   const response = await guardedFetch(`/api/admin/config/${path}`, { ...init, headers, cache: "no-store" });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(parseE6DecimalJson).catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(formatAdminApiError(result?.message, `E2_CONFIG_REQUEST_FAILED_${response.status}`));
   }
@@ -242,20 +264,12 @@ export async function fetchE2TaskPricing(): Promise<E2TaskPricingSnapshot> {
   };
 }
 
-export async function updateE2TaskPricing(
-  patch: Partial<Pick<E2TaskPricingClass, "taskClass" | "minReward" | "maxReward" | "minVRAM" | "enabled">> & { queueSaturation?: number },
-  reason: string,
-  operator: string,
-) {
-  return e2ConfigRequest<{ effectiveAt: string; taskPricing: E2TaskPricingSnapshot }>("task-pricing", {
-    method: "PUT",
-    body: JSON.stringify({ ...patch, minVram: patch.minVRAM, minVRAM: undefined, reason, operator }),
-    idempotencyPrefix: "e2-task-pricing",
-  });
-}
-
 function toTaskPayload(task: OpsTask, reason: string, operator: string) {
+  const error = task.simulation ? null : validateComputeTaskConfig(task);
+  if (error) throw new Error(error);
   return {
+    poolCode: "PHONE" as const,
+    simulation: task.simulation ? { ...task.simulation, expectedVersion: task.simulation.version } : undefined,
     name: task.n,
     price: task.price,
     unit: task.unit,
@@ -268,6 +282,13 @@ function toTaskPayload(task: OpsTask, reason: string, operator: string) {
     maxReward: task.maxReward ?? 0,
     minVram: task.minVRAM || "",
     killInit: task.killInit || "",
+    selectionWeight: task.selectionWeight,
+    expectedDurationMinSec: task.expectedDurationMinSec,
+    expectedDurationMaxSec: task.expectedDurationMaxSec,
+    executionTimeoutSec: task.executionTimeoutSec,
+    runtimeKey: task.runtimeKey,
+    validatorKey: task.validatorKey,
+    workloadConfigJson: task.workloadConfigJson,
     reason,
     operator,
   };
@@ -280,20 +301,19 @@ function positiveDecimal18x6(value: number | string): boolean {
   return Number.isFinite(parsed) && parsed > 0 && parsed <= 999_999_999_999.999999;
 }
 
-export async function fetchE2Tasks() {
-  const pageSize = 100;
+/** E6 reads only PHONE types; DEVICE tasks have separate pool routes. */
+export async function fetchE2Tasks(): Promise<OpsTask[]> {
+  const records: PhonePoolTask[] = [];
   let pageNum = 1;
-  let total = Number.POSITIVE_INFINITY;
-  const records: BackendTask[] = [];
-  while (records.length < total) {
-    const page = await e2Request<PageResult<BackendTask>>(`/tasks?pageNum=${pageNum}&pageSize=${pageSize}`);
-    const current = page.records ?? [];
-    records.push(...current);
-    total = Math.max(0, Number(page.total ?? records.length));
-    if (current.length === 0 || current.length < pageSize) break;
+  while (true) {
+    const page = await fetchPoolTasks("PHONE", { pageNum, pageSize: 100 });
+    records.push(...page.records);
+    if (records.length >= page.total || !page.records.length) break;
     pageNum += 1;
   }
-  return records.map(fromTask);
+  return records.map(row => ({ id: row.taskTypeId, n: row.name, taskClass: row.taskClass, price: Number(row.baseReward),
+    unit: "/job", req: "手机", sat: null, status: row.enabled ? "active" : "inactive",
+    simulation: { durationMinutes: row.durationMinutes, baseReward: row.baseReward, asset: row.asset, enabled: row.enabled, version: row.version, effectiveAt: row.effectiveAt } }));
 }
 
 export async function createE2Task(task: OpsTask, reason: string, operator: string) {
@@ -374,7 +394,7 @@ export async function updateE2YieldComparison(
   if (!row) throw new Error("E2_ONBOARDING_YIELD_NOT_FOUND");
   const dailyUsdt = patch.dailyUsdt ?? row.dailyUsdt;
   const dailyNex = patch.dailyNex ?? row.dailyNex;
-  if (!positiveDecimal18x6(dailyUsdt) || !positiveDecimal18x6(dailyNex)) {
+  if (dailyUsdt == null || dailyNex == null || !positiveDecimal18x6(dailyUsdt) || !positiveDecimal18x6(dailyNex)) {
     throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
   }
   await e2ConfigRequest<unknown>("phone-tiers/comparison", {

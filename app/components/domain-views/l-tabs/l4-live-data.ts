@@ -29,11 +29,11 @@ const FACT_META: ReadonlyArray<Omit<L4LiveFact, "value">> = [
   { key: "completedComputeTasks", group: "task", label: "已完成算力任务", description: "当前状态为已完成的算力任务累计记录数。", sourceLabel: "算力任务" },
   { key: "taskCatalogItems", group: "task", label: "任务目录条目", description: "当前任务目录中的有效配置条目数。", sourceLabel: "任务目录" },
   { key: "teamRelationships", group: "network", label: "团队关系记录", description: "当前未删除的团队成员关系累计记录数。", sourceLabel: "团队关系" },
-  { key: "commissionEvents", group: "network", label: "佣金事件", description: "当前未删除的佣金业务事件累计记录数。", sourceLabel: "佣金事件记录" },
+  { key: "commissionEvents", group: "network", label: "团队奖励记录", description: "当前未删除的团队奖励记录累计数。", sourceLabel: "团队奖励记录" },
   { key: "configuredPhases", group: "phase", label: "启用的阶段配置", description: "当前启用的阶段配置条目数，不代表阶段效果。", sourceLabel: "阶段配置" },
-  { key: "e3ConfigChanges", group: "tradein", label: "E3 配置变更", description: "已进入 A4 的 E3 配置变更事件累计数。", sourceLabel: "A4 事件中心" },
-  { key: "tradeinApplications", group: "tradein", label: "置换申请", description: "当前真实置换申请累计记录数。", sourceLabel: "置换申请" },
-  { key: "completedTradeins", group: "tradein", label: "已完成置换", description: "状态为已完成的真实置换申请累计数。", sourceLabel: "置换申请" },
+  { key: "e3ConfigChanges", group: "tradein", label: "升级置换设置修改", description: "升级置换设置被修改的累计次数。", sourceLabel: "用户行为事件" },
+  { key: "tradeinApplications", group: "tradein", label: "置换申请", description: "升级置换申请的累计数。", sourceLabel: "置换申请" },
+  { key: "completedTradeins", group: "tradein", label: "已完成置换", description: "已完成的升级置换累计数。", sourceLabel: "置换申请" },
 ];
 
 function record(value: unknown): Record<string, unknown> {
@@ -76,6 +76,17 @@ export type L4HistoryRow = {
   commissionPaidUsdt: number;
 };
 
+export type L4OperationsComparison = {
+  available: boolean;
+  reason: string | null;
+  previousPeriod: { from: string; to: string; fromAt: string; toAt: string };
+  device: { summary: Record<string, number | null> } | null;
+  tasks: { summary: Record<string, number | null> } | null;
+  network: { summary: Record<string, number | null> } | null;
+  quality: { sameActorRates: boolean; actorCoveragePct: number; incompleteRatesAreNull: boolean } | null;
+  excludedSnapshots: { field: string; reason: string }[];
+};
+
 export type L4OperationsData = {
   available: boolean;
   period: { key: L4Period; label: string; from: string; to: string };
@@ -95,6 +106,7 @@ export type L4OperationsData = {
   };
   phaseEffect: L4PhaseRow[];
   history: L4HistoryRow[];
+  comparison?: L4OperationsComparison;
   quality: {
     serverCanonical: boolean;
     sameActorRates: boolean;
@@ -197,7 +209,9 @@ export function readL4Operations(value: unknown): L4OperationsData | null {
   const taskSummary = exactNumberSummary(tasks.summary, [
     ["dispatched", { integer: true }],
     ["completed", { integer: true }],
-    ["acceptanceRate", { percent: true, nullable: true }],
+    // Completed instances are counted per bucket; dispatches are deduplicated
+    // across the whole window. Their ratio can legitimately exceed 100%.
+    ["acceptanceRate", { nullable: true }],
     ["queueSaturation", { percent: true, nullable: true }],
     ["checkinActive", { integer: true }],
   ]);
@@ -278,7 +292,7 @@ export function readL4Operations(value: unknown): L4OperationsData | null {
   const businessTimeZone = text(quality.businessTimeZone);
   if (quality.serverCanonical !== true || typeof quality.sameActorRates !== "boolean"
       || quality.incompleteRatesAreNull !== true || actorCoveragePct === null || eventCount === null
-      || duplicateEventsIgnored === null || businessTimeZone !== "UTC+08:00"
+      || duplicateEventsIgnored === null || !/^UTC[+-]\d{2}:\d{2}$/.test(businessTimeZone)
       || root.available !== (eventCount > 0)) return null;
   const rateValues = [
     taskSummary.acceptanceRate,
@@ -302,6 +316,52 @@ export function readL4Operations(value: unknown): L4OperationsData | null {
   if ((!root.available && (!degradedValue?.code || !degradedValue.message))
       || (root.available && degradedValue)) return null;
 
+  let comparison: L4OperationsComparison | undefined;
+  if (root.comparison !== undefined) {
+    const block = record(root.comparison);
+    const previous = record(block.previousPeriod);
+    const from = isoDate(previous.from), to = isoDate(previous.to);
+    const fromAt = text(previous.fromAt), toAt = text(previous.toAt);
+    const localTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/;
+    if (typeof block.available !== "boolean" || !from || !to || from > to
+      || !localTime.test(fromAt) || !localTime.test(toAt) || !Array.isArray(block.excludedSnapshots)) return null;
+    const excludedSnapshots = list(block.excludedSnapshots).map(row => ({ field: text(row.field), reason: text(row.reason) }));
+    if (excludedSnapshots.length !== block.excludedSnapshots.length || excludedSnapshots.some(row => !row.field || !row.reason)) return null;
+    comparison = { available: block.available, reason: null, previousPeriod: { from, to, fromAt, toAt },
+      device: null, tasks: null, network: null, quality: null, excludedSnapshots };
+    if (!block.available) {
+      const reason = text(block.reason);
+      if (!reason || [block.device, block.tasks, block.network, block.quality].some(value => value !== null)) return null;
+      comparison.reason = reason;
+    } else {
+      if (block.reason !== null) return null;
+      const previousDevice = exactNumberSummary(record(block.device).summary, [
+        ["periodPurchasedDevices", { integer: true }], ["periodRetiredDevices", { integer: true }],
+        ["periodLockedDevices", { integer: true }], ["periodFirstYieldDevices", { integer: true }],
+        ["dailyYieldUsdt", {}], ["dailyYieldNex", {}], ["degradationLossUsdt", {}],
+      ]);
+      const previousTasks = exactNumberSummary(record(block.tasks).summary, [
+        ["dispatched", { integer: true }], ["completed", { integer: true }],
+        ["acceptanceRate", { nullable: true }], ["checkinActive", { integer: true }],
+      ]);
+      const previousNetwork = exactNumberSummary(record(block.network).summary, [
+        ["directRefs", { integer: true }], ["commissionEvents", { integer: true }], ["commissionPaidUsdt", {}],
+        ["teamGmvUsdt", {}], ["promotionRate", { percent: true, nullable: true }],
+        ["commissionTriggerRate", { percent: true, nullable: true }],
+      ]);
+      const previousQuality = record(block.quality);
+      const actorCoveragePct = number(previousQuality.actorCoveragePct, { percent: true });
+      if (!previousDevice || !previousTasks || !previousNetwork || typeof previousQuality.sameActorRates !== "boolean"
+        || actorCoveragePct === null || previousQuality.incompleteRatesAreNull !== true
+        || !previousQuality.sameActorRates && [previousTasks.acceptanceRate, previousNetwork.promotionRate,
+          previousNetwork.commissionTriggerRate].some(value => value !== null)) return null;
+      comparison.device = { summary: previousDevice };
+      comparison.tasks = { summary: previousTasks };
+      comparison.network = { summary: previousNetwork };
+      comparison.quality = { sameActorRates: previousQuality.sameActorRates, actorCoveragePct, incompleteRatesAreNull: true };
+    }
+  }
+
   return {
     available: root.available,
     period: { key: periodKey as L4Period, label: periodLabel, from: periodFrom, to: periodTo },
@@ -316,6 +376,7 @@ export function readL4Operations(value: unknown): L4OperationsData | null {
     network: { summary: networkSummary, teamSizeDist, vRankDist, commissionStructure },
     phaseEffect: phaseEffect as L4PhaseRow[],
     history: history as L4HistoryRow[],
+    comparison,
     quality: {
       serverCanonical: true,
       sameActorRates: quality.sameActorRates,

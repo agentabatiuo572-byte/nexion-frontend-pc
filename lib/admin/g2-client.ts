@@ -1,8 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertG2OverviewContract } from "@/lib/admin/g-overview-contract";
-import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
-import { normalizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
+import { stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -28,6 +27,8 @@ interface BackendCap {
   note?: string | null;
   loosen?: boolean | string | null;
   meterPct?: number | string | null;
+  pendingApproval?: boolean;
+  pendingOperationId?: string | null;
 }
 
 interface BackendOrder {
@@ -74,6 +75,7 @@ interface BackendSwap {
   status?: string | null;
   configKey?: string | null;
   linkedDomain?: string | null;
+  blockedBy: "I5_DISCLOSURE_GATE" | null;
 }
 
 interface BackendGeoBlocked {
@@ -83,7 +85,22 @@ interface BackendGeoBlocked {
   reason?: string | null;
 }
 
-interface BackendOverview {
+export interface G2EmergencyExchangeSwitch {
+  available: boolean;
+  enabled: boolean | null;
+  sourceKey: "killswitch.exchange" | "emergency.killswitch.exchange" | null;
+  unavailableReason: "MISSING" | "INVALID" | null;
+}
+
+export interface G2QueueEstimate {
+  /** Raw queue estimate configuration. Orders carry their own rendered ETA. */
+  hours?: string | null;
+  copy?: string | null;
+  copyZh?: string | null;
+  copyVi?: string | null;
+}
+
+export interface BackendOverview {
   domain?: string | null;
   asset?: string | null;
   currency?: string | null;
@@ -91,8 +108,11 @@ interface BackendOverview {
   stats?: BackendStats | null;
   caps?: BackendCap[] | null;
   queue?: BackendOrder[] | null;
+  queueEstimate?: G2QueueEstimate | null;
   gateDetails?: Record<string, BackendGateDetail | null> | null;
   swap?: BackendSwap | null;
+  disclosureGate: { exchange: boolean };
+  emergencySwitch?: { exchange: G2EmergencyExchangeSwitch };
   geoBlocked?: BackendGeoBlocked[] | null;
   coverage?: BackendCoverage | null;
   serverCanonical?: boolean | null;
@@ -118,6 +138,8 @@ export interface G2Cap {
   note: string;
   loosen: boolean;
   meterPct?: number;
+  pendingApproval?: boolean;
+  pendingOperationId?: string | null;
 }
 
 export interface G2ExchangeOrder {
@@ -131,12 +153,15 @@ export interface G2ExchangeOrder {
   toAsset: string;
   fromAmount: number;
   toAmount: number;
+  fromAmountText?: string;
+  toAmountText?: string;
   rate: number;
   status: string;
   statusLabel: string;
   statusTone: string;
   directionLabel: string;
   amountUsdt: number;
+  amountUsdtText?: string;
   amountUsdtDisplay: string;
   exchangeAmountDisplay: string;
   gateType: string;
@@ -163,9 +188,12 @@ export interface G2Coverage {
 
 export interface G2Swap {
   enabled: boolean;
+  /** Only the independent J1 fact can confirm a pause; unavailable or older responses stay unknown. */
+  emergencyPaused: boolean | null;
   status: string;
   configKey: string;
   linkedDomain: string;
+  blockedBy: "I5_DISCLOSURE_GATE" | null;
 }
 
 export interface G2GeoBlocked {
@@ -179,22 +207,24 @@ export interface G2Overview {
   stats: G2Stats;
   caps: G2Cap[];
   queue: G2ExchangeOrder[];
+  queueEstimate?: G2QueueEstimate | null;
   gateDetails: Record<string, G2GateDetail>;
   swap: G2Swap;
+  disclosureGate: { exchange: boolean };
+  emergencySwitch: { exchange: G2EmergencyExchangeSwitch } | null;
   geoBlocked: G2GeoBlocked[];
   coverage: G2Coverage;
   serverCanonical: boolean;
   sources: string[];
 }
 
-let requestSeq = 0;
+const BATCH_PATH = "/exchange/queue/process";
 
-function idempotencyKey(prefix: string) {
-  requestSeq = (requestSeq + 1) % 1_000_000;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
+export class G2BatchReceiptNotFound extends Error {
+  constructor() {
+    super("没有查到原结果。请先查看操作记录。");
+  }
 }
-
-const executeG2Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g2-exchange-commands-v1");
 
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
@@ -228,7 +258,7 @@ function fmtUsd(value: number) {
 }
 
 function normalizeOrder(row: BackendOrder): G2ExchangeOrder {
-  const fromAsset = asText(row.fromAsset, "NEX");
+  const fromAsset = asText(row.fromAsset, "UVT");
   const toAsset = asText(row.toAsset, "USDT");
   const fromAmount = toNumber(row.fromAmount);
   const toAmount = toNumber(row.toAmount);
@@ -244,12 +274,15 @@ function normalizeOrder(row: BackendOrder): G2ExchangeOrder {
     toAsset,
     fromAmount,
     toAmount,
+    fromAmountText: String(row.fromAmount),
+    toAmountText: String(row.toAmount),
     rate: toNumber(row.rate),
     status: asText(row.status, "UNKNOWN"),
     statusLabel: asText(row.statusLabel, asText(row.status, "UNKNOWN")),
     statusTone: asText(row.statusTone, "dim"),
     directionLabel: asText(row.directionLabel, `${fromAsset}->${toAsset}`),
     amountUsdt,
+    amountUsdtText: String(row.amountUsdt),
     amountUsdtDisplay: fmtUsd(amountUsdt),
     exchangeAmountDisplay: `${fmtNumber(fromAmount)} ${fromAsset} -> ${fmtNumber(toAmount)} ${toAsset}`,
     gateType: asText(row.gateType, ""),
@@ -272,6 +305,8 @@ function normalizeCap(row: BackendCap): G2Cap {
     note: asText(row.note),
     loosen: toBool(row.loosen, false),
     meterPct: row.meterPct == null ? undefined : toNumber(row.meterPct),
+    pendingApproval: row.pendingApproval,
+    pendingOperationId: row.pendingOperationId,
   };
 }
 
@@ -286,11 +321,13 @@ function normalizeGate(key: string, detail: BackendGateDetail | null | undefined
   };
 }
 
-function normalizeOverview(data: BackendOverview | null | undefined): G2Overview {
+export function normalizeG2ExchangeOverview(data: BackendOverview | null | undefined): G2Overview {
   assertG2OverviewContract(data);
   const stats = data?.stats ?? {};
   const coverage = data?.coverage ?? {};
-  const swap = data?.swap ?? {};
+  const swap = data!.swap!;
+  const swapEnabled = toBool(swap.enabled, true);
+  const emergencySwitch = data!.emergencySwitch ?? null;
   const gateDetails = data?.gateDetails ?? {};
   return {
     stats: {
@@ -303,17 +340,22 @@ function normalizeOverview(data: BackendOverview | null | undefined): G2Overview
     },
     caps: (data?.caps ?? []).map(normalizeCap),
     queue: (data?.queue ?? []).map(normalizeOrder),
+    queueEstimate: data?.queueEstimate,
     gateDetails: {
       user: normalizeGate("user", gateDetails.user),
       platform: normalizeGate("platform", gateDetails.platform),
       geo: normalizeGate("geo", gateDetails.geo),
     },
     swap: {
-      enabled: toBool(swap.enabled, true),
+      enabled: swapEnabled,
+      emergencyPaused: emergencySwitch?.exchange.available === true ? !emergencySwitch.exchange.enabled : null,
       status: asText(swap.status, "enabled"),
       configKey: asText(swap.configKey, "killswitch.exchange"),
       linkedDomain: asText(swap.linkedDomain, "J1"),
+      blockedBy: data!.swap!.blockedBy,
     },
+    disclosureGate: { exchange: data!.disclosureGate.exchange },
+    emergencySwitch,
     geoBlocked: (data?.geoBlocked ?? []).map((row) => ({
       cc: asText(row.cc),
       name: asText(row.name),
@@ -331,7 +373,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): G2Overview
   };
 }
 
-async function g2Request<T>(path: string, init?: RequestInit) {
+export async function g2Request<T>(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -341,102 +383,37 @@ async function g2Request<T>(path: string, init?: RequestInit) {
     headers,
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(text => JSON.parse(text.replace(
+    /("(?:fromAmount|toAmount|amountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"',
+  ))).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw stableMutationHttpFailure(
+    if (path === BATCH_PATH && init?.method === "GET" && response.status === 404
+        && result?.message === "G2_BATCH_RECEIPT_NOT_FOUND") {
+      throw new G2BatchReceiptNotFound();
+    }
+    const batchStillUnknown = path === BATCH_PATH && init?.method === "POST" && response.status === 409
+      && result?.message?.startsWith("IDEMPOTENCY_");
+    throw Object.assign(stableMutationHttpFailure(
       formatAdminApiError(result?.message, `G2_REQUEST_FAILED_${response.status}`),
-      response.status,
+      batchStillUnknown ? 0 : response.status,
       result?.code,
-    );
+    ), { status: response.status, backendMessage: result?.message });
   }
 
   return result.data as T;
 }
 
-function g2OverviewMutation(
-  path: string,
-  method: "PATCH" | "POST",
-  body: Record<string, unknown>,
-  prefix: string,
-) {
-  const serialized = JSON.stringify(body);
-  // 指纹带 path:exchangeNo 只在 path 里,不带就会让「不同兑换单、同理由」的取消/复核共用命令号。
-  return executeG2Mutation(
-    prefix,
-    stableMutationFingerprint(method, path, serialized),
-    (commandKey) => g2Request<BackendOverview>(path, {
-      method,
-      headers: { "Idempotency-Key": commandKey },
-      body: serialized,
-    }),
-    normalizeOverview,
-  );
-}
-
 export async function fetchG2ExchangeOverview() {
-  return normalizeOverview(await g2Request<BackendOverview>("/exchange"));
+  return normalizeG2ExchangeOverview(await g2Request<BackendOverview>("/exchange"));
 }
 
-export async function updateG2ExchangeParam(paramKey: string, value: string, reason: string, operator: string) {
-  return g2OverviewMutation(
-    `/exchange/params/${encodeURIComponent(paramKey)}`,
-    "PATCH",
-    { value, reason, operator },
-    `g2-param-${paramKey}`,
-  );
-}
-
-export async function updateG2ExchangeSwapStatus(
-  enabled: boolean,
-  reason: string,
-  operator: string,
-  context: { geoBlock?: string[]; triggerBasis?: string } = {},
-) {
-  return g2OverviewMutation(
-    "/exchange/swap",
-    "PATCH",
-    { enabled, reason, operator, geoBlock: context.geoBlock ?? [], triggerBasis: context.triggerBasis ?? "OTHER" },
-    "g2-swap",
-  );
-}
-
-export async function processG2ExchangeQueue(limit: number, reason: string, operator: string) {
-  const path = "/exchange/queue/process";
-  const body = JSON.stringify({ limit, reason, operator });
-  return executeG2Mutation(
-    "g2-queue-batch",
-    stableMutationFingerprint("POST", path, body),
-    async (commandKey) => {
-      const response = await g2Request<BackendOverview>(path, {
-        method: "POST",
-        headers: { "Idempotency-Key": commandKey },
-        body,
-      });
-      const batch = normalizeG2BatchResult(response?.batch);
-      // POST 已被后端接受后仍显式 GET 权威投影。若 GET 失败，执行器保留同一命令号；
-      // 运营重试时后端回放原批次回执，再次 GET，不会把未知结果变成第二次批处理。
-      let authoritative: G2Overview;
-      try {
-        authoritative = await fetchG2ExchangeOverview();
-      } catch (error) {
-        const message = displayAdminError(error);
-        throw stableMutationHttpFailure(message, 0);
-      }
-      return { overview: authoritative, batch };
-    },
-    (result): { overview: G2Overview; batch: G2BatchResult } => result,
-  );
-}
-
-export async function cancelG2ExchangeQueueOrder(exchangeNo: string, reason: string, operator: string) {
-  return g2OverviewMutation(
-    `/exchange/queue/${encodeURIComponent(exchangeNo)}/cancel`,
-    "POST",
-    { reason, operator },
-    "g2-cancel-queue",
-  );
-}
+// Keep the public action names; G2 owns its R1 commands without changing the legacy executor.
+export {
+  cancelG2ExchangeQueueOrder, pendingG2QueueBatch, processG2ExchangeQueue,
+  recoverG2ExchangeQueue, updateG2ExchangeParam, updateG2ExchangeSwapStatus,
+  G2_QUEUE_ESTIMATE_FIELDS, type G2QueueEstimateParamKey, type G2PendingBatch,
+} from "./g2-exchange-command";

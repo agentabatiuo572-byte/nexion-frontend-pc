@@ -1,4 +1,6 @@
 import type { OpsSku } from "./platform-types";
+import { shareBaseRateText } from "./operator-copy.ts";
+import { skuSeriesText } from "./device-monthly-target.ts";
 
 export interface SkuProposalSummary {
   before: string;
@@ -10,6 +12,8 @@ export interface SkuProposalSummary {
 
 interface FieldDescriptor {
   label: string;
+  derived?: boolean;
+  targetDerived?: boolean;
   read: (sku: OpsSku) => unknown;
   format: (value: unknown, sku: OpsSku) => string;
   equal?: (before: unknown, after: unknown) => boolean;
@@ -55,8 +59,12 @@ const mediaIdentityText = (value: unknown): string => {
 
 // 高风险审核首先回答“改了哪个字段、从什么改成什么”。库存放在首位，避免长配置挤掉核心变更。
 const SKU_FIELDS: FieldDescriptor[] = [
+  { label: "任务等级", read: (sku) => (sku.allowedPoolCodes ?? []).join("、") || "未选择", format: text },
   { label: "库存", read: (sku) => sku.stock, format: stock, equal: numberEqual },
   { label: "价格", read: (sku) => sku.price, format: money, equal: numberEqual },
+  { label: "月收益目标（USDT）", read: (sku) => sku.monthlyTargetUsdt, format: money, equal: numberEqual },
+  { label: "允许波动", read: (sku) => sku.monthlyTargetBandPct, format: (value) => value == null ? "未设置" : `±${number(value)}%`, equal: numberEqual },
+  { label: "每件算力点", read: (sku) => sku.computePoints, format: number, equal: numberEqual },
   { label: "允许试用", read: (sku) => sku.trialEligible, format: yesNo, equal: (a, b) => Boolean(a) === Boolean(b) },
   { label: "商品 ID", read: (sku) => sku.id, format: text, equal: stringEqual },
   { label: "商品名称", read: (sku) => sku.name, format: text, equal: stringEqual },
@@ -64,14 +72,15 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "商城状态", read: (sku) => sku.status, format: text, equal: stringEqual },
   { label: "商品类型", read: (sku) => sku.productType, format: productType },
   { label: "商品档位", read: (sku) => sku.tier, format: text, equal: stringEqual },
-  { label: "日产收益", read: (sku) => sku.dailyEarn, format: money, equal: numberEqual },
-  { label: "日产 NEX", read: (sku) => sku.dailyEarnNEX, format: number, equal: numberEqual },
+  { label: "所属系列", read: (sku) => sku.seriesCode, format: skuSeriesText, equal: stringEqual },
+  { label: "日产收益", targetDerived: true, read: (sku) => sku.dailyEarn, format: money, equal: numberEqual },
+  { label: "日产 UVT", read: (sku) => sku.dailyEarnNEX, format: number, equal: numberEqual },
   { label: "手机日产收益", read: (sku) => sku.phoneDailyEarn, format: money, equal: numberEqual },
-  { label: "手机日产 NEX", read: (sku) => sku.phoneDailyEarnNEX, format: number, equal: numberEqual },
+  { label: "手机日产 UVT", read: (sku) => sku.phoneDailyEarnNEX, format: number, equal: numberEqual },
   { label: "生命周期", read: (sku) => sku.lifecycle, format: text, equal: stringEqual },
   { label: "解锁条件", read: (sku) => sku.unlock, format: text, equal: stringEqual },
   { label: "商品标签", read: (sku) => sku.tag, format: text, equal: stringEqual },
-  { label: "数据中心", read: (sku) => sku.datacenter, format: text, equal: stringEqual },
+  { label: "托管机房", read: (sku) => sku.datacenter, format: text, equal: stringEqual },
   { label: "GPU", read: (sku) => sku.gpu, format: text, equal: stringEqual },
   { label: "显存", read: (sku) => sku.vram, format: text, equal: stringEqual },
   { label: "算力", read: (sku) => sku.hashRate, format: text, equal: stringEqual },
@@ -80,13 +89,15 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "保修", read: (sku) => sku.warranty, format: text, equal: stringEqual },
   { label: "角标", read: (sku) => sku.badge, format: text, equal: stringEqual },
   { label: "卖点", read: (sku) => sku.tagline, format: text, equal: stringEqual },
-  { label: "份额收益下限", read: (sku) => sku.shareYieldMin, format: number, equal: numberEqual },
-  { label: "份额收益上限", read: (sku) => sku.shareYieldMax, format: number, equal: numberEqual },
-  { label: "收益展示串", read: (sku) => sku.baseRate, format: text, equal: stringEqual },
+  { label: "份额收益下限", targetDerived: true, read: (sku) => sku.shareYieldMin, format: number, equal: numberEqual },
+  { label: "份额收益上限", targetDerived: true, read: (sku) => sku.shareYieldMax, format: number, equal: numberEqual },
+  { label: "收益展示串", derived: true, read: (sku) => sku.baseRate, format: (value) => shareBaseRateText(text(value)), equal: stringEqual },
   { label: "图像生成性能", read: (sku) => sku.aiImageGenPerMin, format: number, equal: numberEqual },
   { label: "LLM 推理性能", read: (sku) => sku.aiLlmTokensPerSec, format: number, equal: numberEqual },
   { label: "视频渲染性能", read: (sku) => sku.aiVideoMinPerHour, format: number, equal: numberEqual },
   { label: "LoRA 微调性能", read: (sku) => sku.aiFineTuneMins, format: number, equal: numberEqual },
+  { label: "资料名称", read: (sku) => sku.specDocumentTitle, format: text, equal: stringEqual },
+  { label: "资料链接", read: (sku) => sku.specDocumentUrl, format: text, equal: stringEqual },
   { label: "解锁算力池", read: (sku) => sku.aiUnlocks, format: text, equal: stringEqual },
   { label: "产品特性", read: (sku) => sku.features, format: features, equal: (a, b) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []) },
   { label: "购买限制", read: (sku) => sku.purchaseGate, format: structured, equal: (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null) },
@@ -94,9 +105,14 @@ const SKU_FIELDS: FieldDescriptor[] = [
     equal: (a, b) => JSON.stringify(a) === JSON.stringify(b) },
 ];
 
-/** 生成可直接写入 A2 before_value/after_value 的字段级摘要。 */
-export function summarizeSkuProposal(beforeSku: OpsSku, afterSku: OpsSku): SkuProposalSummary | null {
+/** A2 默认保留全部差异；判断运营是否修改时用 includeDerived: false 排除派生字段。 */
+export function summarizeSkuProposal(
+  beforeSku: OpsSku,
+  afterSku: OpsSku,
+  { includeDerived = true }: { includeDerived?: boolean } = {},
+): SkuProposalSummary | null {
   const changes = SKU_FIELDS.flatMap((field) => {
+    if (!includeDerived && (field.derived || field.targetDerived && (beforeSku.monthlyTargetUsdt != null || afterSku.monthlyTargetUsdt != null))) return [];
     const before = field.read(beforeSku);
     const after = field.read(afterSku);
     const equal = field.equal ? field.equal(before, after) : Object.is(before, after);

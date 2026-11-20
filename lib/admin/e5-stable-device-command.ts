@@ -1,5 +1,5 @@
 // Explicit extension keeps this helper directly executable by node --test.
-import { createSlotAttemptStore } from "./pending-mutation-store.ts";
+import { e5LegacyCommandAttempts as commandAttempts } from "./e-domain-commands.ts";
 
 export class E5OutcomeUncertainError extends Error {
   readonly commandKey: string;
@@ -18,7 +18,6 @@ export function isE5OutcomeUncertainError(error: unknown): error is E5OutcomeUnc
       && typeof (error as Error & { commandKey?: unknown }).commandKey === "string");
 }
 
-const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e5-device-commands-v1" });
 
 function mintCommandKey(slot: string): string {
   const prefix = slot.replace(/[^A-Za-z0-9]+/g, "-").slice(0, 48) || "e5-device";

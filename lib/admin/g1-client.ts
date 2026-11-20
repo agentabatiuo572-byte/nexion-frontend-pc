@@ -1,7 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { assertG1OverviewContract } from "@/lib/admin/g-overview-contract";
-import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { assertG1OverviewContract, assertG1PositionContract } from "@/lib/admin/g-overview-contract";
+import { stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -65,12 +65,15 @@ interface BackendPositionRow {
   nickname?: string | null;
   tier?: string | null;
   amount?: string | null;
+  amountMissing?: boolean;
   lockedApy?: string | null;
   earlyPenalty?: string | null;
   lockedAt?: string | null;
   unlockAt?: string | null;
   estimatedInterest?: string | null;
+  estimatedInterestMissing?: boolean;
   status?: string | null;
+  storedStatus?: string;
   statusLabel?: string | null;
   statusTone?: string | null;
   note?: string | null;
@@ -135,8 +138,8 @@ export interface G1Pool {
   apyDisplay: string;
   penalty: string;
   penaltyDisplay: string;
-  minStake: string;
-  minDisplayValue: string;
+  minStake: string | null;
+  minDisplayValue: string | null;
   lockedUsd: number;
   lockedDisplay: string;
   enabled: boolean;
@@ -162,13 +165,16 @@ export interface G1PositionRow {
   userNo: string;
   nickname: string;
   tier: string;
-  amount: string;
+  amount: string | null;
+  amountMissing?: boolean;
   lockedApy: string;
   earlyPenalty: string;
   lockedAt: string;
   unlockAt: string;
-  estimatedInterest: string;
+  estimatedInterest: string | null;
+  estimatedInterestMissing?: boolean;
   status: string;
+  storedStatus?: string;
   statusLabel: string;
   statusTone: string;
   note: string;
@@ -193,15 +199,6 @@ export interface G1Overview {
   appVisible: boolean;
   sources: string[];
 }
-
-let requestSeq = 0;
-
-function idempotencyKey(prefix: string) {
-  requestSeq = (requestSeq + 1) % 1_000_000;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
-}
-
-const executeG1Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g1-staking-commands-v1");
 
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
@@ -254,8 +251,8 @@ function normalizePool(row: BackendPool): G1Pool {
     apyDisplay: asText(row.apyDisplay, `${row.apy ?? ""}%`),
     penalty: String(row.penalty ?? ""),
     penaltyDisplay: asText(row.penaltyDisplay, `${row.penalty ?? ""}% principal + forfeit interest`),
-    minStake: String(row.minStake ?? ""),
-    minDisplayValue: asText(row.minDisplayValue, String(row.minStake ?? "")),
+    minStake: row.minStake === null ? null : String(row.minStake ?? ""),
+    minDisplayValue: row.minDisplayValue === null ? null : asText(row.minDisplayValue, String(row.minStake ?? "")),
     lockedUsd,
     lockedDisplay: asText(row.lockedDisplay, moneyMillions(lockedUsd)),
     enabled: toBool(row.enabled, true),
@@ -279,13 +276,16 @@ function normalizePositionRow(row: BackendPositionRow): G1PositionRow {
     userNo: asText(row.userNo),
     nickname: asText(row.nickname, "—"),
     tier: asText(row.tier),
-    amount: asText(row.amount),
+    amount: row.amountMissing === true ? null : asText(row.amount),
+    amountMissing: row.amountMissing,
     lockedApy: asText(row.lockedApy),
     earlyPenalty: asText(row.earlyPenalty),
     lockedAt: asText(row.lockedAt),
     unlockAt: asText(row.unlockAt),
-    estimatedInterest: asText(row.estimatedInterest),
+    estimatedInterest: row.estimatedInterestMissing === true ? null : asText(row.estimatedInterest),
+    estimatedInterestMissing: row.estimatedInterestMissing,
     status: asText(row.status),
+    ...(row.storedStatus !== undefined ? { storedStatus: row.storedStatus } : {}),
     statusLabel: asText(row.statusLabel),
     statusTone: asText(row.statusTone, "dim"),
     note: asText(row.note),
@@ -360,77 +360,39 @@ async function g1Request<T>(path: string, init?: RequestInit) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw stableMutationHttpFailure(
+    throw Object.assign(stableMutationHttpFailure(
       formatAdminApiError(result?.message, `G1_REQUEST_FAILED_${response.status}`),
       response.status,
       result?.code,
-    );
+    ), { httpStatus: response.status, apiCode: result?.code, reasonCode: result?.message });
   }
 
   return result.data as T;
-}
-
-function g1OverviewMutation(
-  path: string,
-  method: "PATCH" | "POST",
-  body: Record<string, unknown>,
-  prefix: string,
-) {
-  const serialized = JSON.stringify(body);
-  // 指纹带 path:tierKey 只在 path 里,不带就会让「不同质押档、恰好同值同理由」的两次调参共用命令号。
-  return executeG1Mutation(
-    prefix,
-    stableMutationFingerprint(method, path, serialized),
-    (commandKey) => g1Request<BackendOverview>(path, {
-      method,
-      headers: { "Idempotency-Key": commandKey },
-      body: serialized,
-    }),
-    normalizeOverview,
-  );
 }
 
 export async function fetchG1StakingOverview() {
   return normalizeOverview(await g1Request<BackendOverview>("/staking"));
 }
 
-export async function updateG1StakingVisibility(visible: boolean, reason: string, operator: string) {
-  return g1OverviewMutation("/staking/visibility", "PATCH", { value: String(visible), reason, operator }, "g1-visibility");
-}
+export type G1PositionRead = { status: "found"; record: G1PositionRow } | { status: "not-found" };
 
-export async function updateG1StakingPoolParam(tierKey: string, paramKey: "apy" | "penalty" | "min", value: string, reason: string, operator: string) {
-  return g1OverviewMutation(
-    `/staking/pools/${encodeURIComponent(tierKey)}/params/${encodeURIComponent(paramKey)}`,
-    "PATCH",
-    { value, reason, operator },
-    `g1-${paramKey}`,
-  );
-}
-
-export async function updateG1StakingPoolSaleStatus(tierKey: string, enabled: boolean, reason: string, operator: string) {
-  return g1OverviewMutation(
-    `/staking/pools/${encodeURIComponent(tierKey)}/sale-status`,
-    "PATCH",
-    { value: String(enabled), reason, operator },
-    "g1-sale",
-  );
-}
-
-export async function updateG1StakingPoolKillStatus(
-  tierKey: string,
-  killed: boolean,
-  reason: string,
-  operator: string,
-  triggerBasis: string,
-  dispositionPlan: string,
-) {
-  const path = killed
-    ? `/staking/pools/${encodeURIComponent(tierKey)}/kill-status`
-    : `/staking/pools/${encodeURIComponent(tierKey)}/restore`;
-  return g1OverviewMutation(
-    path,
-    "PATCH",
-    { value: String(killed), reason, operator, triggerBasis, dispositionPlan },
-    killed ? "g1-kill" : "g1-restore",
-  );
+/** Exact stored key, independent of the overview's 50-row limits and monthly early-withdrawal window. */
+export async function fetchG1StakingPosition(positionNo: string): Promise<G1PositionRead> {
+  const key = positionNo.trim();
+  if (!/^STK-[A-Za-z0-9-]{1,80}$/.test(key)) {
+    throw new Error(formatAdminApiError("STAKING_POSITION_NO_INVALID", "STAKING_POSITION_NO_INVALID"));
+  }
+  let data: BackendPositionRow;
+  try {
+    data = await g1Request<BackendPositionRow>(`/staking/positions/${encodeURIComponent(key)}`);
+  } catch (error) {
+    const failure = error as { httpStatus?: number; apiCode?: number; reasonCode?: string };
+    if (failure.httpStatus === 404 && failure.apiCode === 404 && failure.reasonCode === "STAKING_POSITION_NOT_FOUND") {
+      return { status: "not-found" };
+    }
+    throw error;
+  }
+  assertG1PositionContract(data);
+  if (data.positionNo !== key) throw new Error("G1_RESPONSE_INVALID:data.position.positionNo");
+  return { status: "found", record: normalizePositionRow(data) };
 }

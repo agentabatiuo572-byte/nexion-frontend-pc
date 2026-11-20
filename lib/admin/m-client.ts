@@ -1,9 +1,15 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { parseBusinessTime } from "@/lib/admin/business-time";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
+import type { M4FaqCommand } from "./m4-faq-command";
+import { m4FaqCommandOrigin } from "./m4-faq-command";
+import type { M5Command } from "./m5-command";
+import { formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
+import { compareM3Messages } from "./m3-message-order";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient } from "@/lib/admin/m-support-client";
+import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient, parseSupportSessionHolder, parseSupportEffectiveLanguage } from "@/lib/admin/m-support-client";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
+import { skuBaseRateText } from "@/lib/admin/operator-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { User360Profile, UserProfileQuery } from "@/lib/admin/user360-client";
 import {
@@ -18,9 +24,11 @@ import {
   type MTicketAssigneeCandidate,
 } from "@/lib/admin/m-support-read-contract";
 export type { MTicketAssigneeCandidate } from "@/lib/admin/m-support-read-contract";
+
 import type {
   AdvisorScript,
   CustomerProfile,
+  ConversationWriteState,
   SessionCategory,
   SessionConvo,
   SessionMsg,
@@ -69,6 +77,8 @@ export type ConversationTimeoutPolicy = {
   policyKey: string;
   warnMinutes: number;
   closeMinutes: number;
+  /** B15 无人发言自动结束；null = the backend does not return the field yet. */
+  sessionEndMinutes: number | null;
   version: number;
   updatedBy?: string;
   reason?: string;
@@ -143,6 +153,10 @@ type ContentConversationView = {
   ownerAgentName?: string;
   unreadCount?: number;
   pendingReplyCount?: number | null;
+  pendingReplySince?: string | null;
+  lastHumanMessageAt?: string | null;
+  customerNickname?: string | null;
+  customerAvatarRef?: string | null;
   lastMessage?: string;
   lastPublicMessageId?: number | null;
   lastMessageKind?: string | null;
@@ -156,6 +170,7 @@ type ContentConversationView = {
   transferredAt?: string;
   updatedAt?: string;
   version?: number;
+  holder?: unknown;
 };
 
 type ContentConversationMessageView = {
@@ -177,6 +192,8 @@ type ContentConversationMessageView = {
   replyTargets?: Array<{ conversationNo: string; throughMessageId: number }>;
   receiptStatus?: string;
   createdAt?: string;
+  senderRole?: string | null;
+  origin?: string | null;
 };
 
 // 后端 ConversationCustomerProfile record 的镜像(跨域聚合客户档案,只读快照)。
@@ -207,6 +224,7 @@ type ContentConversationDetail = {
   messages?: ContentConversationMessageView[];
   historyTruncated?: boolean;
   customerProfile?: ConversationCustomerProfile;
+  writeState?: ConversationWriteState | null;
 };
 
 type SupportFaqView = {
@@ -220,6 +238,7 @@ type SupportFaqView = {
   sortOrder?: number;
   version?: number;
   updatedAt?: string;
+  translations?: Record<string, { question: string; answer: string }>;
 };
 
 type SupportSlaView = {
@@ -241,9 +260,31 @@ type SupportKnowledgeOverview = {
   queues?: string[];
   escalations?: string[];
   sources?: string[];
+  faqLastModifiedBy?: Record<string, string | null> | null;
 };
 
 const SLA_CATEGORIES = ["account", "withdrawal", "deposit", "hardware", "earnings", "genesis", "technical", "other"] as const;
+
+function assertSupportFaq(value: unknown): asserts value is SupportFaqView {
+  const faq = value as SupportFaqView | null;
+  if (!faq || typeof faq !== "object" || Array.isArray(faq)
+    || typeof faq.id !== "string" || !faq.id.trim()
+    || typeof faq.question !== "string" || !faq.question.trim()
+    || typeof faq.answer !== "string" || !faq.answer.trim()
+    || typeof faq.category !== "string" || typeof faq.surface !== "string"
+    || !["zh-CN", "en-US", "vi-VN", "id", "ms", "fil", "ru", "kk", "uz"].includes(faq.language ?? "")
+    || !["PUBLISHED", "DRAFT"].includes(faq.status?.toUpperCase() ?? "")
+    || !Number.isSafeInteger(faq.sortOrder) || Number(faq.sortOrder) < 0 || Number(faq.sortOrder) > 999999
+    || !Number.isSafeInteger(faq.version) || Number(faq.version) < 1
+    || typeof faq.updatedAt !== "string" || !Number.isFinite(parseBusinessTime(faq.updatedAt))) {
+    throw new Error("M4_KNOWLEDGE_OVERVIEW_MALFORMED");
+  }
+  if (faq.translations !== undefined && (!faq.translations || typeof faq.translations !== "object" || Array.isArray(faq.translations)
+    || Object.entries(faq.translations).some(([code, text]) => !["id", "ms", "fil", "ru", "kk", "uz"].includes(code)
+      || !text || typeof text.question !== "string" || !text.question.trim() || typeof text.answer !== "string" || !text.answer.trim()))) {
+    throw new Error("M4_KNOWLEDGE_OVERVIEW_MALFORMED");
+  }
+}
 
 function assertSupportKnowledgeOverview(value: unknown): SupportKnowledgeOverview {
   const malformed = () => {
@@ -251,6 +292,9 @@ function assertSupportKnowledgeOverview(value: unknown): SupportKnowledgeOvervie
   };
   if (!value || typeof value !== "object" || Array.isArray(value)) malformed();
   const overview = value as SupportKnowledgeOverview;
+  if (overview.faqLastModifiedBy != null && (typeof overview.faqLastModifiedBy !== "object"
+    || Array.isArray(overview.faqLastModifiedBy)
+    || Object.values(overview.faqLastModifiedBy).some(name => name !== null && typeof name !== "string"))) malformed();
   const arrays = [
     overview.faqs,
     overview.sla,
@@ -264,18 +308,7 @@ function assertSupportKnowledgeOverview(value: unknown): SupportKnowledgeOvervie
   if (!arrays.every(Array.isArray)) malformed();
   const faqs = overview.faqs as SupportFaqView[];
   const sla = overview.sla as SupportSlaView[];
-  if (!faqs.every((faq) =>
-    typeof faq.id === "string" && faq.id.trim().length > 0
-    && typeof faq.question === "string" && faq.question.trim().length > 0
-    && typeof faq.answer === "string" && faq.answer.trim().length > 0
-    && typeof faq.category === "string"
-    && typeof faq.surface === "string"
-    && typeof faq.language === "string"
-    && typeof faq.status === "string"
-    && Number.isSafeInteger(faq.sortOrder)
-    && Number.isSafeInteger(faq.version) && Number(faq.version) >= 1
-    && typeof faq.updatedAt === "string" && !Number.isNaN(Date.parse(faq.updatedAt))
-  )) malformed();
+  faqs.forEach(assertSupportFaq);
   if (new Set(faqs.map((faq) => faq.id)).size !== faqs.length) {
     throw new Error("M4_KNOWLEDGE_FAQ_ID_COLLISION");
   }
@@ -355,7 +388,7 @@ type SupportAgentPageView = {
 type SupportWorkbenchPurchaseGate = {
   rankMin?: number | null;
   activeDirectMin?: number | null;
-  teamVolumeMin?: number | null;
+  teamComputePointsMin?: number | null;
   mode?: "all" | "either" | null;
   quotaCap?: number | null;
   quotaSold?: number | null;
@@ -377,6 +410,11 @@ type SupportWorkbenchSkuView = {
   price?: number | string | null;
   dailyEarn?: number | string | null;
   dailyEarnNex?: number | string | null;
+  monthlyTargetUsdt?: number | string | null;
+  monthlyTargetBandPct?: number | string | null;
+  derivedDailyEarnUsdt?: number | string | null;
+  derivedShareYieldMinPct?: number | string | null;
+  derivedShareYieldMaxPct?: number | string | null;
   shareYieldMin?: number | string | null;
   shareYieldMax?: number | string | null;
   baseRate?: string | null;
@@ -460,6 +498,7 @@ export type MContentData = {
   tickets: SupportTicket[];
   conversations: SessionConvo[];
   faqs: SupportFaq[];
+  faqLastModifiedBy?: Record<string, string | null> | null;
   sla: SupportSla[];
   loadConfig: MLoadConfig;
   agentState: MAgentState;
@@ -502,13 +541,13 @@ export type MLoadConfigWrite = Omit<MLoadConfig, "version"> & {
 const CATEGORY_LABEL: Record<string, string> = {
   advisor: "专属客服服务",
   support: "普通客服",
-  ai: "Nova AI 顾问",
+  ai: "Nova 智能问答（已下线）",
 };
 
 const MANAGED_BY: Record<string, string> = {
   advisor: "增长 / 客服坐席",
   support: "客服坐席",
-  ai: "Nova 自动(配置见 I2)",
+  ai: "已下线，用户看不到；只剩历史会话",
 };
 
 function idempotencyKey() {
@@ -526,6 +565,12 @@ function supportWorkbenchQueryString(query: Record<string, string | number | und
 }
 
 const CONTENT_API_TIMEOUT_MS = 8_000;
+
+export function explicitMContentRejectionCode(error: unknown): string | undefined {
+  if (!(error instanceof MContentReadError)) return;
+  // Some content responses carry the business status in an HTTP 200 envelope.
+  return explicitRejectionCode(error.status === 200 ? { ...error, status: error.apiCode } : error);
+}
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -583,8 +628,9 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function parseMConversationTimeoutPolicy(value: unknown): ConversationTimeoutPolicy {
   const row = supportObject(value, "timeout.policy"), warnMinutes = parseSupportCount(row.warnMinutes, "warn"), closeMinutes = parseSupportCount(row.closeMinutes, "close");
-  if (typeof row.policyKey !== "string" || !row.policyKey.trim() || warnMinutes < 1 || warnMinutes > 30 || closeMinutes <= warnMinutes || closeMinutes > 120) throw new Error("SUPPORT_CONTRACT_MALFORMED");
-  return { policyKey: row.policyKey, warnMinutes, closeMinutes, version: parseSupportCount(row.version, "version"), updatedBy: typeof row.updatedBy === "string" ? row.updatedBy : undefined, reason: typeof row.reason === "string" ? row.reason : undefined, updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : undefined };
+  const sessionEndMinutes = row.sessionEndMinutes == null ? null : parseSupportCount(row.sessionEndMinutes, "sessionEnd");
+  if (typeof row.policyKey !== "string" || !row.policyKey.trim() || warnMinutes < 1 || warnMinutes > 30 || closeMinutes <= warnMinutes || closeMinutes > 120 || sessionEndMinutes !== null && (sessionEndMinutes < 2 || sessionEndMinutes > 120)) throw new Error("SUPPORT_CONTRACT_MALFORMED");
+  return { policyKey: row.policyKey, warnMinutes, closeMinutes, sessionEndMinutes, version: parseSupportCount(row.version, "version"), updatedBy: typeof row.updatedBy === "string" ? row.updatedBy : undefined, reason: typeof row.reason === "string" ? row.reason : undefined, updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : undefined };
 }
 
 export function fetchMConversationTimeoutPolicy() {
@@ -593,7 +639,7 @@ export function fetchMConversationTimeoutPolicy() {
 
 export function updateMConversationTimeoutPolicy(
   policy: ConversationTimeoutPolicy,
-  input: { warnMinutes: number; closeMinutes: number; reason: string },
+  input: { warnMinutes: number; closeMinutes: number; sessionEndMinutes?: number; reason: string },
   stableIdempotencyKey?: string,
   operator = currentAdminOperator(),
 ) {
@@ -603,6 +649,7 @@ export function updateMConversationTimeoutPolicy(
     body: JSON.stringify({
       warnMinutes: input.warnMinutes,
       closeMinutes: input.closeMinutes,
+      sessionEndMinutes: input.sessionEndMinutes,
       expectedVersion: policy.version,
       operator,
       reason: input.reason,
@@ -644,9 +691,9 @@ function optionalNum(value: unknown) {
 function adaptPurchaseGate(gate: SupportWorkbenchPurchaseGate | null | undefined): PurchaseGate | undefined {
   if (!gate) return undefined;
   const purchaseGate: PurchaseGate = {
-    rankMin: gate.rankMin ?? undefined,
-    activeDirectMin: gate.activeDirectMin ?? undefined,
-    teamVolumeMin: gate.teamVolumeMin ?? undefined,
+    rankMin: gate.rankMin ?? 0,
+    activeDirectMin: gate.activeDirectMin ?? 0,
+    teamComputePointsMin: gate.teamComputePointsMin ?? 0,
     mode: gate.mode === "either" ? "either" : "all",
     quotaCap: gate.quotaCap ?? undefined,
     quotaSold: gate.quotaSold ?? undefined,
@@ -654,15 +701,15 @@ function adaptPurchaseGate(gate: SupportWorkbenchPurchaseGate | null | undefined
     enforce: gate.enforce !== false,
   };
   const hasValue =
-    purchaseGate.rankMin != null ||
-    purchaseGate.activeDirectMin != null ||
-    purchaseGate.teamVolumeMin != null ||
+    (purchaseGate.rankMin ?? 0) > 0 ||
+    (purchaseGate.activeDirectMin ?? 0) > 0 ||
+    (purchaseGate.teamComputePointsMin ?? 0) > 0 ||
     purchaseGate.quotaCap != null;
   return hasValue ? purchaseGate : undefined;
 }
 
 function adaptSupportWorkbenchSku(sku: SupportWorkbenchSkuView): OpsSku {
-  return {
+  const mapped: OpsSku = {
     id: str(sku.skuId),
     name: str(sku.name, str(sku.skuId, "未命名 SKU")),
     tier: str(sku.tier, "Entry"),
@@ -674,10 +721,15 @@ function adaptSupportWorkbenchSku(sku: SupportWorkbenchSkuView): OpsSku {
     power: sku.power ?? undefined,
     datacenter: sku.datacenter ?? undefined,
     price: num(sku.price),
-    dailyEarn: num(sku.dailyEarn),
+    dailyEarn: num(sku.derivedDailyEarnUsdt ?? sku.dailyEarn),
     dailyEarnNEX: num(sku.dailyEarnNex),
-    shareYieldMin: optionalNum(sku.shareYieldMin),
-    shareYieldMax: optionalNum(sku.shareYieldMax),
+    monthlyTargetUsdt: optionalNum(sku.monthlyTargetUsdt),
+    monthlyTargetBandPct: optionalNum(sku.monthlyTargetBandPct),
+    derivedDailyEarnUsdt: optionalNum(sku.derivedDailyEarnUsdt),
+    derivedShareYieldMinPct: optionalNum(sku.derivedShareYieldMinPct),
+    derivedShareYieldMaxPct: optionalNum(sku.derivedShareYieldMaxPct),
+    shareYieldMin: optionalNum(sku.derivedShareYieldMinPct ?? sku.shareYieldMin),
+    shareYieldMax: optionalNum(sku.derivedShareYieldMaxPct ?? sku.shareYieldMax),
     baseRate: sku.baseRate ?? undefined,
     sold: sku.sold ?? undefined,
     stock: sku.stock ?? "0",
@@ -699,6 +751,7 @@ function adaptSupportWorkbenchSku(sku: SupportWorkbenchSkuView): OpsSku {
     tag: str(sku.tag),
     status: str(sku.status, "pending"),
   };
+  return { ...mapped, baseRate: skuBaseRateText(mapped) };
 }
 
 function requireLoadRaw(raw: Record<string, unknown> | undefined): Record<string, unknown> {
@@ -915,13 +968,14 @@ function adaptCustomerProfile(
     // 列表场景 / 会话未关联用户:占位档案(只读辅助,真实数据在打开 detail 时由后端聚合返回)
     return {
       uid: fallbackUid,
-      nickname: fallbackUid === "—" ? "未关联用户" : `用户 ${fallbackUid}`,
+      // List rows carry the customer's nickname, so the same person reads the same everywhere (M-2 / M-38).
+      nickname: base.customerNickname?.trim() || (fallbackUid === "—" ? "未关联用户" : `用户 ${fallbackUid}`),
       phone: "—",
       vlevel: "—",
       systemTags: [type === "advisor" ? "顾问会话" : "客服会话"],
       customTags: [],
       risk: "中",
-      riskNote: "打开会话后由后端聚合客户资金 / 风险 / 设备档案。",
+      riskNote: "打开会话后显示客户的资金、风险和设备资料。",
       recharge: "—",
       withdraw: "—",
       balance: "—",
@@ -1160,12 +1214,19 @@ function assertConversationDetail(value: unknown): ContentConversationDetail {
   if (!value || typeof value !== "object") throw new Error("M3_CONVERSATION_DETAIL_INVALID");
   const detail = value as ContentConversationDetail;
   assertConversationRow(detail.conversation);
+  const state = detail.writeState;
+  if (state != null && (typeof state !== "object" || Array.isArray(state)
+    || typeof state.canReply !== "boolean"
+    || (["threadOwnerAgentId", "threadOwnerAgentName", "currentAssignmentAgentId", "currentAssignmentAgentName", "writableConversationNo"] as const)
+      .some(key => state[key] !== null && typeof state[key] !== "string"))) {
+    throw new Error("M3_CONVERSATION_DETAIL_INVALID");
+  }
   if ((detail.historyTruncated !== undefined && typeof detail.historyTruncated !== "boolean")
     || !Array.isArray(detail.messages) || !detail.messages.every((message) =>
     message
     && typeof message === "object"
     && Number.isSafeInteger(message.id)
-    && ["USER", "AGENT", "SYSTEM"].includes(upper(message.senderType, ""))
+    && ["USER", "AGENT", "SYSTEM", "INTERNAL"].includes(upper(message.senderType, ""))
     && typeof message.content === "string"
     && typeof message.createdAt === "string"
     && !Number.isNaN(Date.parse(message.createdAt)))) {
@@ -1238,6 +1299,8 @@ async function fetchAllSupportConversations(signal?: AbortSignal): Promise<Admin
 
 function parseSupportMessageKind(message: ContentConversationMessageView, payloadRequired = true): NonNullable<SessionMsg["kind"]> {
   const kind = message.kind ?? "TEXT";
+  // B15: 「客服已切换」 is the only system row with its own kind.
+  if (kind === "AGENT_SWITCH" && upper(message.senderType, "") === "SYSTEM") return kind;
   if (!["TEXT", "IMAGE", "SKU", "LINK"].includes(kind)
       || payloadRequired && kind === "IMAGE" && !message.attachmentId
       || payloadRequired && kind === "SKU" && (!message.skuId || !message.skuName)
@@ -1255,12 +1318,14 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
   const messages = asArray<ContentConversationMessageView>("messages" in detail ? detail.messages : []).map((m) => {
     const sourceSenderType = upper(m.senderType, "USER") as "USER" | "AGENT" | "SYSTEM" | "INTERNAL";
     const agent = sourceSenderType !== "USER";
+    // B16: a welcome sent while the user had no advisor has no author; it is the system's, never the current owner's.
+    const ownerlessWelcome = m.origin === "WELCOME" && m.senderId == null;
     return {
       id: m.id,
       ts: asTs(m.createdAt, updated),
       sender: agent ? ("agent" as const) : ("user" as const),
       sourceSenderType,
-      agentName: agent ? sourceSenderType === "SYSTEM" ? "系统" : str(m.senderName, base.ownerAgentName || "客服台") : undefined,
+      agentName: agent ? sourceSenderType === "SYSTEM" ? m.kind === "AGENT_SWITCH" ? str(m.senderName) : "系统" : ownerlessWelcome ? "系统" : str(m.senderName, base.ownerAgentName || "客服台") : undefined,
       status: str(m.receiptStatus, "sent").toLowerCase() === "read" ? ("read" as const) : ("sent" as const),
       text: str(m.content, ""),
       kind: parseSupportMessageKind(m),
@@ -1274,6 +1339,8 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
       intent: m.intent === "MAINTENANCE" ? "MAINTENANCE" as const : "SERVICE" as const,
       replyTargets: m.replyTargets,
       attachmentId: typeof m.attachmentId === "string" ? m.attachmentId : undefined,
+      senderRole: m.senderRole === "ADVISOR" || m.senderRole === "SUPERVISOR" || m.senderRole === "ADMIN" ? m.senderRole as SessionMsg["senderRole"] : undefined,
+      origin: m.origin === "WELCOME" ? "WELCOME" as const : undefined,
     };
   });
   const transferType = base.transferToType?.toLowerCase();
@@ -1298,12 +1365,15 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     agentName: str(base.ownerAgentName, type === "advisor" ? "Mia" : "客服台"),
     roleKey: roleKey(type),
     unread: num(base.unreadCount, 0),
+    pendingReplySince: base.pendingReplySince ? parseBusinessTime(base.pendingReplySince) : null,
     pendingReplyCount: typeof base.pendingReplyCount === "number" && Number.isSafeInteger(base.pendingReplyCount) && base.pendingReplyCount >= 0 ? base.pendingReplyCount : null,
     lastTs: asTs(base.lastMessageAt, updated),
+    lastHumanTs: base.lastHumanMessageAt ? asTs(base.lastHumanMessageAt) : undefined,
     status: conversationStatus(base.status),
     ownerAgentId: str(base.ownerAgentId),
     ownerUnbound: base.ownerAgentId === null,
     customerId: Number.isSafeInteger(base.customerId ?? base.userId) && Number(base.customerId ?? base.userId) > 0 ? String(base.customerId ?? base.userId) : undefined,
+    customerAvatarRef: typeof base.customerAvatarRef === "string" && /^\/api\/admin\/content\/support-workbench\/customers\/\d+\/avatar$/.test(base.customerAvatarRef) ? base.customerAvatarRef : null,
     assignmentId: base.assignmentId == null ? null : String(base.assignmentId),
     ownerAdminId: Number.isSafeInteger(Number(base.ownerAgentId)) && Number(base.ownerAgentId) > 0
       ? Number(base.ownerAgentId)
@@ -1311,6 +1381,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     owner: str(base.ownerAgentName, "Unassigned"),
     messages,
     detailReady,
+    writeState: "writeState" in detail ? detail.writeState : undefined,
     historyTruncated: "historyTruncated" in detail ? detail.historyTruncated : undefined,
     lastPreview: str(base.lastMessage),
     lastPublicMessageId: base.lastPublicMessageId,
@@ -1320,6 +1391,8 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     archived: base.archived === true,
     origin: undefined,
     transfer,
+    // B15 inbox holder: undefined while the backend does not send the field.
+    holder: base.holder === undefined ? undefined : parseSupportSessionHolder(base.holder, "conversation.holder"),
   };
 }
 
@@ -1331,10 +1404,11 @@ function adaptFaq(row: SupportFaqView): SupportFaq {
     answer: str(row.answer, ""),
     status: status(row.status),
     surface: surface(row.surface),
-    language: (["zh-CN", "en-US", "vi-VN"].includes(str(row.language)) ? row.language : "zh-CN") as SupportFaq["language"],
+    language: row.language as SupportFaq["language"],
+    ...(row.translations ? { translations: row.translations } : {}),
     sortOrder: num(row.sortOrder, 0),
     version: num(row.version, 1),
-    updatedAt: asDate(row.updatedAt),
+    updatedAt: formatBusinessTimeFull(row.updatedAt),
   };
 }
 
@@ -1353,11 +1427,17 @@ function adaptCategory(row: SessionCategoryView): SessionCategory {
   const type = (["advisor", "support", "ai"].includes(str(row.type)) ? row.type : "support") as SessionType;
   return {
     type,
-    name: str(row.name, CATEGORY_LABEL[type] || type),
+    // ai 是已下线的 Nova 智能问答（决定表「全站-Nova」）：不管后端种子叫什么，显示统一名字；类别值不变。
+    name: type === "ai" ? CATEGORY_LABEL.ai : str(row.name, CATEGORY_LABEL[type] || type),
     roleKey: str(row.roleKey, type === "advisor" ? "conversations.roleAdvisor" : type === "ai" ? "conversations.roleAi" : "conversations.roleSupport"),
     enabled: bool(row.enabled, true),
-    managedBy: str(row.managedBy, MANAGED_BY[type] || "客服坐席"),
+    managedBy: type === "ai" ? MANAGED_BY.ai : str(row.managedBy, MANAGED_BY[type] || "客服坐席"),
   };
+}
+
+/** 后端话术分组「复投」的运营显示名；存取仍用原值。 */
+export function scriptGroupLabel(group: string): string {
+  return group === "复投" ? "锁定计划" : group;
 }
 
 function scriptGroup(value: string | undefined): AdvisorScript["group"] {
@@ -1568,7 +1648,121 @@ function isMContentSessionCurrent(sessionKey: string): boolean {
   return sessionKey === currentMContentSessionKey();
 }
 
-export async function fetchMContentData(onProgress?: (data: MContentData) => void): Promise<MContentData> {
+/** One read of the knowledge base, shared by the full M load and the FAQ picker's retry. */
+/** Materialize once, before persistence; replay never re-derives operator, reason or CAS values. */
+export function buildM4FaqCommand(kind: M4FaqCommand["kind"], row: SupportFaq, before: SupportFaq | null, reason: string, actorId: number): M4FaqCommand {
+  const path = `/knowledge/faqs${before ? `/${encodeURIComponent(before.id)}` : ""}`;
+  const payload = { category: row.category, question: row.question, answer: row.answer, status: row.status, surface: row.surface, language: row.language, sortOrder: row.sortOrder };
+  const statusOnly = !!before && row.status !== before.status && row.category === before.category && row.question === before.question
+    && row.answer === before.answer && row.surface === before.surface && row.language === before.language && row.sortOrder === before.sortOrder;
+  const expectation = before ? { expectedStatus: before.status, expectedVersion: before.version } : {};
+  const body = kind === "delete" ? expectation : statusOnly ? { status: row.status, ...expectation } : { ...payload, ...expectation };
+  const request: M4FaqCommand["request"] = { method: kind === "create" ? "POST" : kind === "delete" ? "DELETE" : "PATCH", path: statusOnly && kind !== "delete" ? `${path}/status` : path, body: JSON.stringify(withReason(body, reason)) };
+  return { actorId, kind, row, before, request, commandOrigin: m4FaqCommandOrigin(request) };
+}
+
+export async function sendM4FaqCommand(command: M4FaqCommand, commandKey: string): Promise<void> {
+  const result = await apiRequest<unknown>(command.request.path, { method: command.request.method, body: command.request.body, headers: { "Idempotency-Key": commandKey } });
+  if (command.kind === "delete") {
+    if (result !== null) throw new Error("CONTENT_API_MALFORMED_RESPONSE");
+    return;
+  }
+  assertSupportFaq(result);
+  if (command.kind !== "create" && result.id !== command.row.id || result.version !== (command.before ? command.before.version + 1 : 1)
+    || result.status?.toLowerCase() !== command.row.status) throw new Error("CONTENT_API_MALFORMED_RESPONSE");
+}
+
+/** M5 materializes its existing REST adapter before saving the original request. */
+export function buildM5Command(key: string, value: string, params: Record<string, string>, meta: { reason: string; action: string }, actorId: number, successMessage: string, profile?: MSupportAgent): M5Command {
+  let path: string, body: Record<string, unknown>, method: "POST" | "PATCH" = "PATCH";
+  let beforeValue = params[key] ?? "", text = "", audience = "";
+  if (key === "I.support.agentProfile.__update") {
+    body = JSON.parse(value);
+    path = `/support-agents/${body.adminId}/profile`;
+    beforeValue = JSON.stringify(profile);
+  } else if (key === "I.session.script.__create") {
+    const row = JSON.parse(value);
+    body = { scriptGroup: row.scriptGroup || "开场", text: row.text, ctaPath: row.ctaPath || "—", audience: row.audience.trim(), status: row.status || "draft" };
+    path = "/session-templates/scripts"; method = "POST"; text = row.text; audience = row.audience;
+  } else if (key === "I.session.replyTemplates") {
+    const previous = JSON.parse(params[key] ?? "[]") as SessionReplyTpl[];
+    const row = (JSON.parse(value) as SessionReplyTpl[]).find(item => !previous.some(before => before.id === item.id));
+    if (!row) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+    body = { type: row.type, text: row.text, status: row.status };
+    path = "/session-templates/reply-templates"; method = "POST"; text = row.text; beforeValue = "";
+  } else {
+    const category = /^I\.session\.cat\.(advisor)\.enabled$/.exec(key);
+    const policy = /^I\.session\.advisor\.policy\.(enabled|delayMs|cooldownHours|maxPerSession|audience)$/.exec(key);
+    const status = /^I\.session\.(script|tpl)\.(.+)\.status$/.exec(key);
+    if (category) {
+      body = { enabled: value === "on", expectedEnabled: beforeValue === "on" };
+      path = `/session-templates/categories/${category[1]}`;
+      text = (JSON.parse(params["I.session.categories"] ?? "[]") as SessionCategory[]).find(row => row.type === "advisor")?.name ?? "";
+    } else if (policy) {
+      body = { value, expectedValue: beforeValue };
+      path = `/session-templates/advisor-policy/${policy[1]}`;
+    } else if (status) {
+      body = { status: templateStatus(value), expectedStatus: templateStatus(beforeValue) };
+      path = `/session-templates/${status[1] === "script" ? "scripts" : "reply-templates"}/${encodeURIComponent(status[2])}/status`;
+      const rows = JSON.parse(params[status[1] === "script" ? "I.session.scripts" : "I.session.replyTemplates"] ?? "[]") as (AdvisorScript | SessionReplyTpl)[];
+      text = rows.find(row => row.id === status[2])?.text ?? "";
+    } else throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  }
+  return { actorId, key, value: key === "I.session.replyTemplates" ? JSON.stringify(body) : value, reason: meta.reason, action: meta.action, successMessage,
+    resource: key === "I.support.agentProfile.__update" ? `profile:${profile?.adminId}` : key,
+    beforeValue, text, audience, profile, request: { path, method, body: JSON.stringify(withReason(body, meta.reason)) } };
+}
+
+export async function sendM5Command(command: M5Command, commandKey: string): Promise<void> {
+  const value = await apiRequest<unknown>(command.request.path, { method: command.request.method, body: command.request.body, headers: { "Idempotency-Key": commandKey } });
+  const result = supportObject(value, "m5.receipt"), input = JSON.parse(command.request.body);
+  if (command.profile) {
+    if (result.adminId !== command.profile.adminId || result.version !== command.profile.version + 1
+      || result.maxConcurrent !== input.maxConcurrent || result.enabled !== input.enabled || result.transferable !== input.transferable || result.busy !== input.busy
+      || JSON.stringify(result.tags) !== JSON.stringify(input.tags)) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  } else if (command.request.path.includes("/categories/")) {
+    if (result.type !== "advisor" || result.enabled !== input.enabled) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  } else if (command.request.path.includes("/advisor-policy/")) {
+    const field = command.request.path.split("/").at(-1)!;
+    const expected = field === "enabled" ? input.value === "on" : field === "audience" ? input.value : Number(input.value);
+    if (result[field] !== expected) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  } else {
+    if (typeof result.id !== "string" || !result.id || typeof result.text !== "string" || result.status !== input.status
+      || command.request.method === "POST" && result.text !== input.text
+      || command.request.method === "PATCH" && result.id !== decodeURIComponent(command.request.path.split("/").at(-2)!)) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  }
+}
+
+export async function readSupportKnowledge() {
+  const knowledge = assertSupportKnowledgeOverview(await apiRequest<unknown>("/knowledge/overview"));
+  return { faqs: knowledge.faqs!.map(adaptFaq), faqLastModifiedBy: knowledge.faqLastModifiedBy, sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true };
+}
+
+export async function readSupportTemplates() {
+  const templates = requireSessionTemplateOverview(await apiRequest<unknown>("/session-templates/overview"));
+  const scripts = templates.scripts!.map(adaptScript);
+  return {
+        categories: templates.categories!.map(adaptCategory),
+        advisorPolicy: {
+          enabled: bool(templates.advisorPolicy?.enabled, true) ? "on" : "off",
+          delayMs: num(templates.advisorPolicy?.delayMs, 1500),
+          cooldownHours: num(templates.advisorPolicy?.cooldownHours, 24),
+          maxPerSession: num(templates.advisorPolicy?.maxPerSession, 1),
+          audience: str(templates.advisorPolicy?.audience),
+        },
+        workbenchPolicy: {
+          timeoutFallback: bool(templates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
+        },
+        audienceOptions: templates.audienceOptions!.map((item) => str(item)).filter(Boolean),
+        segmentFields: [...templates.segmentFields!],
+        scripts,
+        scriptAudience: Object.fromEntries(templates.scripts!.map((row) => [str(row.id), str(row.audience)])),
+        replyTemplates: templates.replyTemplates!.map(adaptReplyTemplate),
+        sessionTemplatesAvailable: true,
+      };
+}
+
+export async function fetchMContentData(onProgress?: (data: MContentData) => void, page?: string): Promise<MContentData> {
   const mContentSessionKey = currentMContentSessionKey();
   let snapshot = initialMContentData();
   const authorities = useAdminAuth.getState().session?.authorities ?? [];
@@ -1581,18 +1775,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     onProgress?.(snapshot);
   };
 
-  const ticketsTask = (async () => {
-    if (!authorities.includes("service_m2_read")) {
-      publish({ tickets: [], ticketsAvailable: false });
-      return;
-    }
-    try {
-      const page = await fetchAllSupportTickets();
-      publish({ tickets: page.records.map(adaptTicket), ticketsAvailable: true });
-    } catch {
-      publish({ tickets: [], ticketsAvailable: false }, "工单数据");
-    }
-  })();
+  const ticketsTask = Promise.resolve();
 
   const conversationsTask = (async () => {
     if (!authorities.includes("service_m3_read")) {
@@ -1623,7 +1806,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     // The M3 transfer dialog depends only on the validated support-agent
     // overview.  Start the unrelated load-config read concurrently, but never
     // make a usable transfer target wait for it to settle.
-    const loadConfigTask: Promise<PromiseSettledResult<Record<string, unknown>>> = apiRequest<Record<string, unknown>>("/tickets/load-config")
+    const loadConfigTask: Promise<PromiseSettledResult<Record<string, unknown>>> | null = page === "M1" ? null : apiRequest<Record<string, unknown>>("/tickets/load-config")
       .then((value) => ({ status: "fulfilled", value }) as const)
       .catch((reason: unknown) => ({ status: "rejected", reason }) as const);
     const agentResult: PromiseSettledResult<SupportAgentOverview> = await fetchSharedM1SupportAgentOverview()
@@ -1648,6 +1831,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     if (!overview) publish({}, supportAgentsError === "permission" ? "坐席名单权限" : "坐席名单数据不可用");
 
     // M_FINAL13_TRANSFER_CANDIDATES_PROGRESS: load-config is independent.
+    if (!loadConfigTask) return;
     let loadConfigAvailable = false;
     const loadResult = await loadConfigTask;
     if (loadResult.status === "fulfilled") {
@@ -1675,20 +1859,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     }
   })();
 
-  const m2CandidatesTask = (async () => {
-    if (!authorities.includes("service_m2_read")) {
-      publish({ ticketAssigneeCandidates: [], ticketAssigneeCandidatesAvailable: false });
-      return;
-    }
-    try {
-      const candidates = parseTicketAssigneeCandidates(
-        await apiRequest<unknown>("/tickets/assignee-candidates"),
-      );
-      publish({ ticketAssigneeCandidates: candidates, ticketAssigneeCandidatesAvailable: true });
-    } catch {
-      publish({ ticketAssigneeCandidates: [], ticketAssigneeCandidatesAvailable: false }, "工单坐席候选数据");
-    }
-  })();
+  const m2CandidatesTask = Promise.resolve();
 
   const knowledgeTask = (async () => {
     if (!authorities.includes("service_m4_read")) {
@@ -1696,12 +1867,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
       return;
     }
     try {
-      const knowledge = assertSupportKnowledgeOverview(await apiRequest<unknown>("/knowledge/overview"));
-      publish({
-        faqs: knowledge.faqs!.map(adaptFaq),
-        sla: knowledge.sla!.map(adaptSla),
-        knowledgeAvailable: true,
-      });
+      publish(await readSupportKnowledge());
     } catch {
       publish({ faqs: [], sla: [], knowledgeAvailable: false }, "响应时限");
     }
@@ -1713,27 +1879,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
       return;
     }
     try {
-      const templates = requireSessionTemplateOverview(await apiRequest<unknown>("/session-templates/overview"));
-      const scripts = templates.scripts!.map(adaptScript);
-      publish({
-        categories: templates.categories!.map(adaptCategory),
-        advisorPolicy: {
-          enabled: bool(templates.advisorPolicy?.enabled, true) ? "on" : "off",
-          delayMs: num(templates.advisorPolicy?.delayMs, 1500),
-          cooldownHours: num(templates.advisorPolicy?.cooldownHours, 24),
-          maxPerSession: num(templates.advisorPolicy?.maxPerSession, 1),
-          audience: str(templates.advisorPolicy?.audience),
-        },
-        workbenchPolicy: {
-          timeoutFallback: bool(templates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
-        },
-        audienceOptions: templates.audienceOptions!.map((item) => str(item)).filter(Boolean),
-        segmentFields: [...templates.segmentFields!],
-        scripts,
-        scriptAudience: Object.fromEntries(templates.scripts!.map((row) => [str(row.id), str(row.audience)])),
-        replyTemplates: templates.replyTemplates!.map(adaptReplyTemplate),
-        sessionTemplatesAvailable: true,
-      });
+      publish(await readSupportTemplates());
     } catch {
       publish({
         categories: [],
@@ -1789,12 +1935,12 @@ export async function fetchMRecentAdvisorConversations(ownerAdminId: number, sig
     if (!["ADVISOR", "SUPPORT"].includes(upper(row.conversationType, ""))) return [];
     const customerId = row.customerId ?? row.userId;
     if (!Number.isSafeInteger(customerId) || Number(customerId) <= 0 || !row.conversationNo) return [];
-    return [{ conversationNo: row.conversationNo, customerId: String(customerId), lastMessage: str(row.lastMessage), lastMessageKind: str(row.lastMessageKind), lastTs: asTs(row.lastMessageAt ?? row.updatedAt), unreadCount: num(row.unreadCount, 0) }];
+    return [{ conversationNo: row.conversationNo, customerId: String(customerId), lastMessage: str(row.lastMessage), lastMessageKind: str(row.lastMessageKind), lastTs: asTs(row.lastMessageAt ?? row.updatedAt), unreadCount: num(row.unreadCount, 0), customerName: row.customerNickname?.trim() || undefined }];
   });
 }
 
 export async function markMConversationRead(no:string,lastSeenMessageId:number,signal:AbortSignal){
-  const detail=await apiRequest<{conversation:{status:string;version:number};messages:Array<{id:number;receiptStatus?:string}>}>(`/conversations/${encodeURIComponent(no)}`,{signal});
+  const detail=await apiRequest<{conversation:{status:string;version:number};messages:Array<{id:number;receiptStatus?:string}>}>(`/conversations/${encodeURIComponent(no)}?includeCustomerProfile=false`,{signal});
   if(signal.aborted || detail.messages.find(m=>m.id===lastSeenMessageId)?.receiptStatus==='read')return;
   await apiRequest(`/conversations/${encodeURIComponent(no)}/read`,{method:'POST',signal,body:JSON.stringify({lastSeenMessageId,expectedStatus:detail.conversation.status,expectedVersion:detail.conversation.version})});
 }
@@ -1816,11 +1962,84 @@ export async function fetchMConversationSnapshot(signal?: AbortSignal): Promise<
   throw new Error("M3_CONVERSATION_SNAPSHOT_UNSTABLE");
 }
 
-export async function fetchMConversationDetail(no: string, signal?: AbortSignal): Promise<SessionConvo> {
-  const detail = assertConversationDetail(await apiRequest<unknown>(`/conversations/${encodeURIComponent(no)}`, { signal }));
+export async function fetchM3CustomerConversations(customerId: string, signal?: AbortSignal): Promise<SessionConvo[] | null> {
+  const page = assertConversationPage(await apiRequest<unknown>(
+    `/conversations?userId=${supportWireId(customerId, "conversation.customerId")}&pageNum=1&pageSize=100`, { signal },
+  ));
+  const rows = page.records.map(adaptConversation);
+  return page.total === rows.length && rows.every(row => row.customerId === customerId) ? rows : null;
+}
+
+export function parseM3ReplySnapshot(value: unknown): SessionConvo | undefined {
+  try { return adaptConversation(assertConversationRow(value)); }
+  catch { /* Older reply receipts may only identify the conversation. */ }
+}
+
+export async function fetchMConversationDetail(no: string, signal?: AbortSignal, includeCustomerProfile = true): Promise<SessionConvo> {
+  const detail = assertConversationDetail(await apiRequest<unknown>(`/conversations/${encodeURIComponent(no)}${includeCustomerProfile ? "" : "?includeCustomerProfile=false"}`, { signal }));
   const conversation = adaptConversation(detail);
   if (conversation.id !== no || !conversation.detailReady) throw new Error("M3_CONVERSATION_DETAIL_INVALID");
   return conversation;
+}
+
+export type M3ReadContext = { conversationNo: string; status: string; version: number; lastSeenMessageId: number; alreadyRead: boolean };
+export type M3MessagePage = {
+  conversation: SessionConvo; messages: SessionMsg[]; hasMore: boolean; nextBeforeMessageId: number | null;
+  customerIdentity: { customerId: number; userNo: string; nickname: string | null; phoneMasked: string | null; effectiveLanguage: string };
+  replyContext: { ready: boolean; targets: Array<{ conversationNo: string; throughMessageId: number }> };
+  readContexts: M3ReadContext[];
+};
+export function parseM3MessagePage(value: unknown, no: string): M3MessagePage {
+  const invalid = (): never => { throw new Error("M3_MESSAGE_PAGE_INVALID"); };
+  const obj = (item: unknown): Record<string, unknown> => item && typeof item === "object" && !Array.isArray(item) ? item as Record<string, unknown> : invalid();
+  const positive = (item: unknown): number => Number.isSafeInteger(item) && Number(item) > 0 ? Number(item) : invalid();
+  const nonempty = (item: unknown): string => typeof item === "string" && item.trim() ? item : invalid();
+  const nullable = (item: unknown): string | null => item === null || typeof item === "string" ? item : invalid();
+  const row = obj(value), identity = obj(row.customerIdentity), reply = obj(row.replyContext);
+  const customerIdentity = {
+    customerId: positive(identity.customerId),
+    userNo: nonempty(identity.userNo),
+    nickname: nullable(identity.nickname),
+    phoneMasked: nullable(identity.phoneMasked),
+    effectiveLanguage: parseSupportEffectiveLanguage(identity.effectiveLanguage),
+  };
+  if (!Array.isArray(row.messages) || row.messages.length > 10 || typeof row.hasMore !== "boolean" || !Array.isArray(reply.targets) || typeof reply.ready !== "boolean" || !Array.isArray(row.readContexts)) invalid();
+  const detail = assertConversationDetail({ conversation: row.conversation, messages: row.messages, historyTruncated: row.hasMore });
+  const conversation = adaptConversation({ ...detail, customerProfile: { uid: customerIdentity.userNo, nickname: customerIdentity.nickname ?? undefined, phone: customerIdentity.phoneMasked ?? undefined } });
+  if (conversation.id !== no || conversation.customerId !== String(customerIdentity.customerId)) invalid();
+  const rawMessages = row.messages as Array<Record<string, unknown>>;
+  const messages = conversation.messages.map((message, index) => ({ ...message, id: positive(message.id), sourceConversationNo: nonempty(rawMessages[index].conversationNo), sourceCreatedAt: String(rawMessages[index].createdAt) }));
+  if (new Set(messages.map(message => message.id)).size !== messages.length || messages.some((message, index) => index > 0 && compareM3Messages(messages[index - 1], message) >= 0)) invalid();
+  const nextBeforeMessageId = row.nextBeforeMessageId === null ? null : positive(row.nextBeforeMessageId);
+  if (row.hasMore ? messages.length !== 10 || nextBeforeMessageId !== messages[0]?.id : nextBeforeMessageId !== null) invalid();
+  const targets = (reply.targets as unknown[]).map(item => { const target = obj(item); return { conversationNo: nonempty(target.conversationNo), throughMessageId: positive(target.throughMessageId) }; });
+  if (new Set(targets.map(target => target.conversationNo)).size !== targets.length || !reply.ready && targets.length) invalid();
+  const readContexts = (row.readContexts as unknown[]).map(item => {
+    const context = obj(item), conversationNo = nonempty(context.conversationNo), lastSeenMessageId = positive(context.lastSeenMessageId);
+    if (typeof context.alreadyRead !== "boolean" || !["OPEN", "CLOSED", "RESOLVED", "TRANSFERRED"].includes(String(context.status)) || !Number.isSafeInteger(context.version) || Number(context.version) < 0 || !messages.some(message => message.sourceConversationNo === conversationNo && message.id === lastSeenMessageId && message.sourceSenderType === "USER")) invalid();
+    return { conversationNo, status: String(context.status), version: Number(context.version), lastSeenMessageId, alreadyRead: context.alreadyRead as boolean };
+  });
+  if (new Set(readContexts.map(context => context.conversationNo)).size !== readContexts.length) invalid();
+  return { conversation, messages, hasMore: row.hasMore as boolean, nextBeforeMessageId, customerIdentity, replyContext: { ready: reply.ready as boolean, targets }, readContexts };
+}
+/** Resolves the current assignment's thread without changing the historical thread owner. */
+export async function resolveMConversationContinuation(no: string, actorId: number) {
+  const detail = await fetchMConversationDetail(no);
+  const customerId = String(detail.customerId);
+  const customer = await supportClient.customerDetail(customerId);
+  if (customer.agentAdminId !== actorId || !customer.assignmentId) throw new Error("CONVERSATION_PEER_CHANGED");
+  const state = detail.writeState;
+  if (!state || state.currentAssignmentAgentId !== String(actorId)) throw new Error("M3_CONVERSATION_DETAIL_INVALID");
+  return { customerId, conversationNo: state.writableConversationNo };
+}
+
+export async function fetchM3MessagePage(no: string, beforeMessageId?: number, signal?: AbortSignal): Promise<M3MessagePage> {
+  const cursor = beforeMessageId === undefined ? "" : `?beforeMessageId=${supportWireId(beforeMessageId, "beforeMessageId")}`;
+  return parseM3MessagePage(await apiRequest<unknown>(`/conversations/${encodeURIComponent(no)}/messages${cursor}`, { signal }), no);
+}
+export async function markM3MessagePageRead(context: M3ReadContext, signal: AbortSignal) {
+  if (context.alreadyRead || signal.aborted) return;
+  await apiRequest(`/conversations/${encodeURIComponent(context.conversationNo)}/read`, { method: "POST", signal, body: JSON.stringify({ lastSeenMessageId: context.lastSeenMessageId, expectedStatus: context.status, expectedVersion: context.version }) });
 }
 
 export async function fetchMSupportAgentsPage(pageNum = 1, pageSize = 5): Promise<MSupportAgentPage> {
@@ -1879,6 +2098,7 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     "I.support.tickets": JSON.stringify(data.tickets),
     "I.support.sla": JSON.stringify(data.sla),
     "I.support.faqs": JSON.stringify(data.faqs),
+    "I.support.faqLastModifiedBy": data.faqLastModifiedBy == null ? "" : JSON.stringify(data.faqLastModifiedBy),
     "I.support.agents": JSON.stringify(data.supportAgents),
     "I.support.agentsAvailable": data.supportAgentsAvailable ? "1" : "0",
     "I.support.agentsError": data.supportAgentsError,

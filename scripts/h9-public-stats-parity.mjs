@@ -31,7 +31,7 @@
  *       (旧 `H9_BAND_MAX = 8`)也红 —— 后台比权威侧更严时,一张合法的表会把整页锁成不可保存。
  *   C3. 分位表**单档 tops 下限**随前端:前端 `network-rank.ts` 判非法的门槛 = `H9_BAND_TOPS_MIN`,
  *       且面板必须真的用共享常量与共享校验(判据打在**剥掉 import 后的用途位**,一行悬空
- *       import 不算接上;行为级等价另由 tests/h9-public-stats-contract.test.mjs 钉死)。
+ *       import 不算接上)。
  *   F. **默认(种子)值三处一致**(规格 ⑦):规格 ③「默认」列 ↔ 前端 `mock/platform-config.ts` 种子。
  *      fleetDevices 在种子里是锚常量,故经 `lib/platform-stats.ts` 间接取值——种子里写字面量本身
  *      就是把单源变双源(前端另有 platform_stats_anchor 哨兵守那条)。
@@ -40,9 +40,12 @@
  * 另:任一侧解析出 0 个字段即红 —— 空集全过是哨兵最常见的假绿。
  *
  * 用法:node scripts/h9-public-stats-parity.mjs
+ * NEXION_APP_REF=origin/test 可核对已发布 App，避免把共享 clone 当前检出的旧分支当作目标版本。
+ * 不设时仍检查 App 工作树；旧分支真的缺字段时继续报错。
  */
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "./lib/strip-comments.mjs";
 import { resolveNexionAppRoot, resolveNexionBackendRoot } from "./lib/nexion-workspace-paths.mjs";
@@ -50,6 +53,7 @@ import { resolveNexionAppRoot, resolveNexionBackendRoot } from "./lib/nexion-wor
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SPEC = path.join(ROOT, "docs", "PRD", "specs-snapshot-20260807", "FEAT-HOME02-network-pulse-configurable.md");
 const APP_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
+const APP_REF = process.env.NEXION_APP_REF;
 const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
 const UNI_TYPES = path.join(APP_ROOT, "src", "store", "config-types.ts");
 const UNI_RANK = path.join(APP_ROOT, "src", "lib", "network-rank.ts");
@@ -59,11 +63,18 @@ const ADMIN_CLIENT = path.join(ROOT, "lib", "admin", "h9-client.ts");
 const ADMIN_RULES = path.join(ROOT, "lib", "admin", "h9-validation.ts");
 
 /** 派生锚点由服务端在改基数时重置,不给运营手填;分位表是表不是标量。 */
-const NON_SCALAR = new Set(["registeredUsersAnchorAt", "hashratePercentileTable"]);
+const NON_SCALAR = new Set(["registeredUsersAnchorAt", "hashratePercentileTable", "homeDisplayEnabled", "globeDisplay"]);
 
 const failures = [];
 
 function read(file, label) {
+  if (APP_REF && file.startsWith(APP_ROOT + path.sep)) {
+    const relative = path.relative(APP_ROOT, file).split(path.sep).join("/");
+    const result = spawnSync("git", ["-C", APP_ROOT, "show", `${APP_REF}:${relative}`], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+    if (result.status === 0) return result.stdout;
+    failures.push(`${label} 在 App ${APP_REF} 读取失败:${relative}`);
+    return "";
+  }
   if (!fs.existsSync(file)) {
     failures.push(`${label} 不存在:${file}(判据失效,不能当通过)`);
     return "";
@@ -112,6 +123,15 @@ const specSource = read(SPEC, "FEAT-HOME02 规格");
 
 const uniKeys = uniSource ? interfaceKeys(uniSource, "PublicStatsConfig", "前端") : new Set();
 const adminKeys = adminSource ? interfaceKeys(adminSource, "H9PublicStatsValues", "后台") : new Set();
+// Home display settings are consumed by the server batch endpoint, not the legacy publicStats object.
+const HOME_DISPLAY_KEYS = new Set(["homeOnlineCurrent", "homeOnlineStepMin", "homeOnlineStepMax", "homePaidCurrent", "homePaidStepMin", "homePaidStepMax", "homeDisplayEnabled"]);
+for (const key of HOME_DISPLAY_KEYS) {
+  if (!adminKeys.has(key)) failures.push(`A 首页展示控制项缺失: ${key}`);
+}
+const homeService = read(path.join(BACKEND_ROOT, "src/main/java/ffdd/opsconsole/growth/application/HomeDisplayService.java"), "首页批次服务");
+for (const key of HOME_DISPLAY_KEYS) if (!homeService.includes(`"${key}"`)) failures.push(`A 首页批次服务未消费 ${key}`);
+const homeComponent = read(path.join(APP_ROOT, "src/components/home/home-display-stats.vue"), "首页数字组件");
+if (!homeComponent.includes("/api/config/home-display")) failures.push("A 首页未接入共享批次接口");
 const SERVER_PROJECTION_ONLY = new Set(["realUserCount"]);
 // 🔴 常量 / 字段的比对一律用剥掉注释的正文:注释里写「曾经有过 H9_BAND_MAX = 8」不等于代码里还有它。
 //    (子串哨兵不剥注释 = 假阳性,同族坑见 feedback_cards_audit_round_lessons)
@@ -125,7 +145,7 @@ for (const key of uniKeys) {
   if (!adminKeys.has(key)) failures.push(`A 前端有、后台没有:${key} —— 运营改不到这个配置(死配置)`);
 }
 for (const key of adminKeys) {
-  if (!uniKeys.has(key)) failures.push(`A 后台有、前端没有:${key} —— 后台在配一个客户端不消费的字段`);
+  if (!uniKeys.has(key) && !HOME_DISPLAY_KEYS.has(key)) failures.push(`A 后台有、前端没有:${key} —— 后台在配一个客户端不消费的字段`);
 }
 // A2 的循环在 specRows 解析之后(见下),这里只留坑位说明:A 是两侧互比,对「两端一起删、
 // 规格还在」这个形态是盲的 —— 删除向必须锚在规格 ③ 的字段表上反查代码。
@@ -145,7 +165,9 @@ for (const key of fieldKeys) {
 
 // ── C. 值域与规格 ③ 表逐字段相等 ─────────────────────────────────────────
 const specRanges = new Map();
-for (const match of specSource.matchAll(/`H\.publicStats\.([\w$]+)`[^\n]*?\[\s*(-?[\d_]+)\s*,\s*(-?[\d_]+)\s*\]/g)) {
+const homeSpec = read(path.join(ROOT, "docs/h9-home-display.md"), "H9 首页展示规格");
+const memberTickSpec = read(path.join(ROOT, "docs/h9-network-pulse-members.md"), "H9 网络脉搏注册用户跳动规格");
+for (const match of (specSource + "\n" + homeSpec + "\n" + memberTickSpec).matchAll(/`H\.publicStats\.([\w$]+)`[^\n]*?\[\s*(-?[\d_]+)\s*,\s*(-?[\d_]+)\s*\]/g)) {
   specRanges.set(match[1], [Number(match[2].replace(/_/g, "")), Number(match[3].replace(/_/g, ""))]);
 }
 if (specSource && specRanges.size === 0) failures.push("C 规格 ③ 表解析出 0 条值域(表结构变了?同步更新本哨兵)");
@@ -236,17 +258,13 @@ if (navSource && !new RegExp(`id:\\s*"H9"[^\\n]*path:\\s*"${H9_PATH}"`).test(nav
 if (registrySource && !registrySource.includes(`"${H9_PATH}"`)) {
   failures.push(`D registry/h.ts 缺 ${H9_PATH} 的 summary(页头口径副标会是空的)`);
 }
-// FOLD 每个值都必须在 RO 表里有键 —— 少一个,切到那个 Tab 就是解构 undefined 直接白屏。
+// The header no longer destructures a per-tab copy table (static header slogans were removed), so only FOLD is checked.
 const foldBlock = viewSource.match(/const FOLD[^=]*=\s*\{([^}]*)\}/);
-const roBlock = viewSource.match(/const RO_COPY[^=]*=\s*\{([\s\S]*?)\n\};/);
-if (!foldBlock || !roBlock) failures.push("D h-view.tsx 的 FOLD / RO_COPY 表解析不到(结构变了?同步更新本哨兵)");
+if (!foldBlock) failures.push("D h-view.tsx 的 FOLD 表解析不到(结构变了?同步更新本哨兵)");
 else {
   const foldValues = [...new Set([...foldBlock[1].matchAll(/:\s*"([^"]+)"/g)].map((m) => m[1]))];
-  const roKeys = [...roBlock[1].matchAll(/^\s*([A-Za-z0-9_]+):/gm)].map((m) => m[1]);
   if (foldValues.length === 0) failures.push("D FOLD 解析出 0 个 Tab(判据失效)");
-  for (const tab of foldValues) {
-    if (!roKeys.includes(tab)) failures.push(`D FOLD 有 ${tab} 但 RO_COPY 没有对应键 —— 切到该 Tab 会解构 undefined(白屏)`);
-  }
+  if (/RO_COPY\[tab\]/.test(viewSource)) failures.push("D h-view.tsx 又按 tab 解构 RO_COPY —— 缺键会白屏");
   if (!foldValues.includes("H9")) failures.push("D FOLD 里没有 H9(路由能进,页面会回落到 H1)");
 }
 if (viewSource && !/\{tab === "H9" && <H9PublicStats/.test(viewSource)) {
@@ -373,6 +391,7 @@ for (const matched of (interfaceBody(uniSource, "PublicStatsConfig") ?? "").matc
 }
 if (uniSource && uniDocs.size === 0) failures.push("G 前端 PublicStatsConfig 解析出 0 条字段注释(判据失效)");
 for (const key of fieldKeys) {
+  if (HOME_DISPLAY_KEYS.has(key)) continue; // Home values are validated and consumed by the server batch service.
   const spec = specRanges.get(key);
   if (!spec || uniDocs.size === 0) continue; // 规格缺值域已在 C 报过,不重复刷屏
   const doc = uniDocs.get(key);
@@ -392,7 +411,7 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(
-  `✓ H9 对外公布数据 — 前端/后台字段 ${adminKeys.size} 键双向相等 · 规格 ③ ${specRows.size} 字段在代码两侧均存在(删除向)· `
+  `✓ H9 对外公布数据 (App ${APP_REF ?? "工作树"}) — 前端/后台字段 ${adminKeys.size} 键双向相等 · 规格 ③ ${specRows.size} 字段在代码两侧均存在(删除向)· `
   + `运营控制项 ${fieldKeys.size} 个全覆盖 · 值域与规格 ③ 逐字段相等(后台 ${specRanges.size} 条 + 前端注释 ${uniDocs.size} 字段)· `
   + `分位表档数与 tops 下限随权威侧 · 共享校验/常量在面板用途位接线 ${PANEL_WIRING.length} 处 · `
   + `默认种子与规格 ③ 逐键相等(${specRows.size} 行)· 位置栈接线齐(nav/registry/FOLD↔RO/分支/代理白名单)· `

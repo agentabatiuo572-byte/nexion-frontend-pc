@@ -1,15 +1,25 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { parseE4OrderPage } from "@/lib/admin/e456-overview-contract";
 import { operatorSkuLabel } from "@/lib/admin/e-operator-display";
+import { parseE4MoneyJson, readE4Money } from "./e4-refund-amount";
+
+export interface E4PendingApproval {
+  action: string | null;
+  submittedBy: string | null;
+  submittedAt: string | null;
+}
 
 export interface E4Order {
   id: string;
   user: string;
   sku: string;
-  amt: number;
+  amt: string | null;
+  refundAmountUsdt: string | null;
   state: string;
   dc: string;
   age: string;
+  orderedAt: string;
+  pendingApproval?: E4PendingApproval | null;
 }
 
 interface ApiResult<T> {
@@ -32,11 +42,13 @@ interface BackendOrder {
   skuName?: string | null;
   skuSource?: "ORDER_ITEM" | "PRODUCT_CATALOG" | "UNAVAILABLE" | string | null;
   amount?: number | string | null;
+  refundAmountUsdt?: string | null;
   state?: string | null;
   dcLocation?: string | null;
   ageText?: string | null;
   orderedAt?: string | null;
   updatedAt?: string | null;
+  pendingApproval?: E4PendingApproval | null;
 }
 
 export interface E4OrderQuery {
@@ -70,6 +82,33 @@ export interface E4OrderFunding {
   occurredAt: string;
 }
 
+export interface E4OrderDevice {
+  deviceId: number;
+  deviceInstanceNo: string | null;
+  dcLocation?: string | null;
+  kind: "PURCHASE" | "PROMOTION_GIFT";
+  sourceChannel: string | null;
+  status: string | null;
+  ownershipStatus: string | null;
+}
+
+export interface E4TaskEarnings {
+  taskCount: number;
+  usdtAmount: number;
+  uvtAmount: number;
+}
+
+export interface E4RefundImpact {
+  scope: "ORDINARY_PURCHASE";
+  asOf: string;
+  completedPending: E4TaskEarnings | null;
+  unfinishedTaskCount: number | null;
+  stoppedTaskCount: number;
+  creditedRetained: E4TaskEarnings;
+  runtimeComplete: boolean;
+  runtimeUnavailableReason: string | null;
+}
+
 /** Ledger references may be claim-based (trial conversion), not the order number. */
 export function e4FundingLedgerHref(item: E4OrderFunding): string | null {
   return item.source === "D4_LEDGER" && item.bizNo.trim()
@@ -78,6 +117,8 @@ export function e4FundingLedgerHref(item: E4OrderFunding): string | null {
 
 export interface E4OrderDetail {
   order: E4Order;
+  refundReason: string | null;
+  pendingApproval?: E4PendingApproval | null;
   userId: number;
   quantity: number;
   orderType: string;
@@ -91,6 +132,7 @@ export interface E4OrderDetail {
   deviceId?: number | null;
   deviceInstanceNo?: string | null;
   deviceActivatedAt?: string | null;
+  devices?: E4OrderDevice[] | null;
   history: E4OrderHistory[];
   funding: E4OrderFunding[];
   coverageCurrent?: number | null;
@@ -98,12 +140,41 @@ export interface E4OrderDetail {
   coverageProjected?: number | null;
   refundAllowed: boolean;
   refundChannels: string[];
+  refundImpact: E4RefundImpact | null;
 }
 
-interface BackendOrderDetail extends Omit<E4OrderDetail, "order" | "funding"> {
+interface BackendOrderDetail extends Omit<E4OrderDetail, "order" | "funding" | "refundImpact" | "refundReason"> {
   order: BackendOrder;
   funding?: Array<Omit<E4OrderFunding, "amount"> & { amount?: number | string | null }>;
+  refundImpact?: unknown;
 }
+
+/** User-visible refund reasons (backend OrderRefundReason); the App shows the matching localized label. */
+export const E4_REFUND_REASONS = ["USER_REQUEST", "DUPLICATE_PAYMENT", "DELIVERY_UNAVAILABLE", "ORDER_EXCEPTION", "OTHER"] as const;
+export const E4_REFUND_REASON_LABELS: Record<(typeof E4_REFUND_REASONS)[number], string> = {
+  USER_REQUEST: "用户申请退款",
+  DUPLICATE_PAYMENT: "重复支付",
+  DELIVERY_UNAVAILABLE: "设备无法交付",
+  ORDER_EXCEPTION: "订单异常",
+  OTHER: "其他原因",
+};
+
+/**
+ * User-visible close reasons an operator chooses per target state (backend OrderCloseReason).
+ * Expired and chargeback have a single reason the backend records on its own.
+ */
+export const E4_CLOSE_REASONS: Record<string, readonly string[]> = {
+  cancelled: ["ORDER_EXCEPTION", "DELIVERY_UNAVAILABLE", "OTHER"],
+  payment_failed: ["PAYMENT_NOT_RECEIVED", "PAYMENT_AMOUNT_MISMATCH", "ORDER_EXCEPTION", "OTHER"],
+  provisioning_failed: ["DELIVERY_UNAVAILABLE", "ORDER_EXCEPTION", "OTHER"],
+};
+export const E4_CLOSE_REASON_LABELS: Record<string, string> = {
+  PAYMENT_NOT_RECEIVED: "未收到付款",
+  PAYMENT_AMOUNT_MISMATCH: "付款金额不符",
+  DELIVERY_UNAVAILABLE: "设备无法交付",
+  ORDER_EXCEPTION: "订单异常",
+  OTHER: "其他原因",
+};
 
 let requestSeq = 0;
 
@@ -141,7 +212,7 @@ async function e4Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers,
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(parseE4MoneyJson).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(formatAdminApiError(result?.message, `E4_REQUEST_FAILED_${response.status}`));
@@ -164,11 +235,14 @@ function fromOrder(order: BackendOrder): E4Order {
   return {
     id: order.orderNo,
     user: order.userNo,
-    sku: operatorSkuLabel(order),
-    amt: toNumber(order.amount),
+    sku: operatorSkuLabel(order).replace(/×(\d+)/gu, " × $1"),
+    amt: readE4Money(order.amount),
+    refundAmountUsdt: readE4Money(order.refundAmountUsdt),
     state: normalizeState(order.state),
     dc: order.dcLocation?.trim() || "—",
     age: order.ageText?.trim() || "—",
+    orderedAt: order.orderedAt ?? "",
+    pendingApproval: order.pendingApproval,
   };
 }
 
@@ -184,6 +258,26 @@ export async function fetchE4OrderPage(query: E4OrderQuery = {}): Promise<E4Orde
   };
 }
 
+/** 接口的 state 只收一个值。看整组时按状态分别取到当前页为止，按下单时间合并后切出这一页，总数相加（ST-68）。 */
+export async function fetchE4OrderGroupPage(states: readonly string[], query: Required<Pick<E4OrderQuery, "pageNum" | "pageSize">> & { keyword: string }): Promise<E4OrderPage> {
+  const needed = query.pageNum * query.pageSize;
+  const parts = await Promise.all(states.map(async (state) => {
+    const records: E4Order[] = [];
+    for (let pageNum = 1; ; pageNum += 1) {
+      const result = await fetchE4OrderPage({ state, keyword: query.keyword, pageNum, pageSize: Math.min(needed, 100) });
+      records.push(...result.records);
+      if (result.records.length === 0 || records.length >= Math.min(needed, result.total)) return { total: result.total, records };
+    }
+  }));
+  const merged = parts.flatMap((part) => part.records).sort((left, right) => right.orderedAt.localeCompare(left.orderedAt));
+  return {
+    total: parts.reduce((sum, part) => sum + part.total, 0),
+    pageNum: query.pageNum,
+    pageSize: query.pageSize,
+    records: merged.slice(needed - query.pageSize, needed),
+  };
+}
+
 export async function fetchE4Orders(query: E4OrderQuery = {}) {
   const page = await fetchE4OrderPage(query);
   return page.records;
@@ -191,9 +285,38 @@ export async function fetchE4Orders(query: E4OrderQuery = {}) {
 
 export async function fetchE4OrderDetail(orderId: string): Promise<E4OrderDetail> {
   const detail = await e4Request<BackendOrderDetail>(`/orders/${encodeURIComponent(orderId)}`);
+  // 成功响应中的运行态也可能未知，不能用金额解析的旧默认值 0 掩盖它。
+  let refundImpact: E4RefundImpact | null = null;
+  if (detail.refundImpact != null) {
+    const invalid = () => { throw new Error("退款任务影响数据不完整，请重新读取订单详情。"); };
+    const object = (value: unknown): Record<string, unknown> => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
+      return value as Record<string, unknown>;
+    };
+    const number = (value: unknown, integer = false): number => {
+      const result = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
+      if (!Number.isFinite(result) || result < 0 || integer && !Number.isSafeInteger(result)) return invalid();
+      return result;
+    };
+    const earnings = (value: unknown): E4TaskEarnings => {
+      const row = object(value);
+      return { taskCount: number(row.taskCount, true), usdtAmount: number(row.usdtAmount), uvtAmount: number(row.uvtAmount) };
+    };
+    const row = object(detail.refundImpact);
+    if (row.scope !== "ORDINARY_PURCHASE" || typeof row.asOf !== "string" || !row.asOf
+      || typeof row.runtimeComplete !== "boolean" || row.runtimeUnavailableReason != null && typeof row.runtimeUnavailableReason !== "string") invalid();
+    refundImpact = {
+      scope: "ORDINARY_PURCHASE", asOf: row.asOf as string, runtimeComplete: row.runtimeComplete as boolean,
+      runtimeUnavailableReason: row.runtimeUnavailableReason as string | null ?? null,
+      completedPending: row.completedPending == null ? null : earnings(row.completedPending),
+      unfinishedTaskCount: row.unfinishedTaskCount == null ? null : number(row.unfinishedTaskCount, true),
+      stoppedTaskCount: number(row.stoppedTaskCount, true), creditedRetained: earnings(row.creditedRetained),
+    };
+  }
   return {
     ...detail,
     order: fromOrder(detail.order),
+    refundReason: detail.history?.findLast(row => row.toState.toLowerCase() === "refunded")?.reason ?? null,
     userId: toNumber(detail.userId),
     quantity: toNumber(detail.quantity, 1),
     subtotalUsdt: toNumber(detail.subtotalUsdt),
@@ -204,16 +327,8 @@ export async function fetchE4OrderDetail(orderId: string): Promise<E4OrderDetail
     history: detail.history ?? [],
     funding: (detail.funding ?? []).map((row) => ({ ...row, amount: toNumber(row.amount) })),
     refundChannels: detail.refundChannels ?? [],
+    refundImpact,
   };
-}
-
-export async function refundE4Order(orderId: string, refundChannel: string, reason: string, operator: string) {
-  const saved = await e4Request<BackendOrder>(`/orders/${encodeURIComponent(orderId)}/refund`, {
-    method: "PATCH",
-    body: JSON.stringify({ refundChannel, reason, operator }),
-    idempotencyPrefix: "e4-order-refund",
-  });
-  return fromOrder(saved);
 }
 
 export async function cancelE4Order(orderId: string, reason: string, operator: string) {

@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { ThemeProvider } from "./components/theme-provider";
+import "./components/rd/tokens.css";
+import "./components/rd/rd.css";
+import "./components/shell/shell.css";
 import { ToastHost } from "./components/kit/toast-host";
 import { ConfirmDialog } from "./components/kit/confirm-dialog";
+import { ThemeScript } from "./components/rd/theme-switch";
 
 export const metadata: Metadata = {
   title: "UVEL 运营控制台",
@@ -16,12 +19,14 @@ export default function RootLayout({
   return (
     <html
       lang="zh"
-      data-theme="dark"
       className="h-full antialiased"
+      data-theme="dark"
       suppressHydrationWarning
     >
+      <head>
+        <ThemeScript />
+      </head>
       <body className="min-h-full">
-        <ThemeProvider />
         {children}
         <ToastHost />
         <ConfirmDialog />

@@ -1,309 +1,1299 @@
 "use client";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
+/**
+ * USDT 提现参数（配置页，PG-46）。默认只显示名称、值和「调整」，点「调整」打开抽屉整组填写，抽屉提交后才开最终确认（闸门 2 第 37 条）。
+ * 命令边界照旧：额度和时效四项一条命令；提现网络、网络确认费、UVT 抵扣率各一条命令。一条命令里有一项放宽，整条走审批。
+ * 写权按字段判，没有就不显示「调整」（OP-124）；判断看权限码，不看角色名。
+ * 结果未知常显在页面上方：收紧按原操作重试，放宽先查原审批单（OP-92～96）。放宽结果未知只锁放宽，收紧照常（闸门 2 第 04 条）。
+ */
+import { useReach } from "@/lib/nav/use-reach";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { fmtConfigPct } from "@/lib/format";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AlertTriangle, CalendarClock, CalendarRange, CircleDot, CircleMinus, Gauge, Lock, LockOpen, Network, RefreshCw, ShieldCheck, Zap, type LucideIcon } from "lucide-react";
 import {
+  BlockState,
+  Button,
+  Conclusion,
+  ConfigList,
+  ConfigRow,
+  Decision,
+  DiffList,
+  Drawer,
+  Explain,
+  Fact,
+  Field,
+  Fold,
+  KeepText,
+  Modal,
+  Notice,
+  NumberInput,
+  PageHeader,
+  Panel,
+  ReleaseModal,
+  SectionNav,
+  Segments,
+  StatusTag,
+  useSectionNav,
+  type DiffRow,
+  type SectionNavItem,
+} from "@/app/components/rd";
+import {
+  d5WithdrawalLimitsValues,
+  DRequestError,
   fetchD5WithdrawalParams,
   updateD5WithdrawalLimits,
   D5_NETWORK_CONFIRM_FEE_DEFAULT,
-  D5_NETWORK_CONFIRM_FEE_MAX,
-  D5_SMALL_AMOUNT_THRESHOLD_MAX,
-  D5_PAYOUT_SLA_HOURS_MIN,
-  D5_PAYOUT_SLA_HOURS_MAX,
   type D5OwnedChanges,
   type D5Params as D5ParamData,
 } from "@/lib/admin/d-client";
+import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
+import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
+import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { CommandClosureModal } from "../e-tabs/e-command-check";
+import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import {
+  configApprovalOriginalInput,
+  pendingConfigApproval,
+  releaseConfigApproval,
+  submitWithdrawalConfigApproval,
+  withdrawalApprovalDisabledReason,
+} from "@/lib/admin/withdrawal-config-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { DCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
 
-function pctRatio(value: number) {
-  return `${(Number(value) * 100).toFixed(2)}%`;
-}
+// 按后端原因码补充这项放宽未生效，不依赖可变的中文译文。
+/** 两句中文接在一起：前一句没有句末标点就补「。」，中间不留空格。 */
+const sentence = (text: string) => /[。！？.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}。`;
 
-function pct(value: number) {
-  return `${Number(value).toFixed(2)}%`;
-}
-
-function asNumber(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-}
-
-// 这三个码都只来自服务端,到这里之前 client 已过咽喉翻成中文,按机器码 includes 判的两条
-// (CONFIG_VERSION_CONFLICT / REASON_REQUIRED)从来没命中过——已挂表由咽喉出文案。
-// 覆盖率红线那条留着:它判的是**中文**译文,是活的,且 D5 要在通用文案上再点明「放大资金流出」。
 function errorText(err: unknown) {
-  const message = err instanceof Error ? err.message : "";
-  if (message.includes("覆盖率低于红线")) return "覆盖率低于红线，放大资金流出的调整已被服务器拒绝";
+  const code = err instanceof DRequestError ? err.reasonCode : rejectionCode(err);
+  if (code === "COVERAGE_BELOW_REDLINE") return "兑付覆盖率低于红线，这项放宽调整未生效";
   return displayAdminError(err);
 }
 
-type Drafts = {
-  daily: string;
-  balancePct: string;
-  /** FEAT-WD02 三网络确认费(USD,每笔固定) */
-  feeTrc: string;
-  feeBep: string;
-  feeErc: string;
-  nex: string;
-  smallAmount: string;
-  payoutSla: string;
+/** 后端拒绝码。D 域请求的 code 运行时是码字符串；审批接口的码在 backendMessage。 */
+function rejectionCode(err: unknown) {
+  if (err instanceof DRequestError) return String(err.code ?? "");
+  if (err instanceof Error && "backendMessage" in err) return String((err as Error & { backendMessage?: unknown }).backendMessage ?? "");
+  return "";
+}
+
+const NETWORKS = ["trc20", "bep20", "erc20"] as const;
+type Net = (typeof NETWORKS)[number];
+const NET_LABEL: Record<Net, string> = { trc20: "TRC20", bep20: "BEP20", erc20: "ERC20" };
+
+/** 不舍入，只去掉浮点尾巴：0.57 写 57%，不写 56.99999999999999%。 */
+const clean = (value: number) => Number(value.toPrecision(12));
+const num = (value: number) => clean(value).toLocaleString("en-US", { maximumFractionDigits: 12 });
+const usd = (value: number) => `${num(value)} USDT`;
+const pct = (value: number) => `${value.toFixed(1)}%`;
+
+type Group = "limits" | "network" | "fee" | "nex";
+type NumKey = "dailyLimitCount" | "maxBalanceRatio" | "smallAmountThresholdUsd" | "payoutSlaHours" | "nexFeeOffsetRate" | `fee.${Net}`;
+
+interface NumSpec {
+  key: NumKey;
+  label: string;
+  unit: string;
+  min: number;
+  max: number;
+  step: number | "any";
+  /** 填错时写在字段下的话；范围写全，它会顶替怎么填。 */
+  invalid: string;
+  /** 空着时错误里写的范围。 */
+  range: string;
+  valid: (value: number) => boolean;
+  /** 调高算放宽传 up，调低算放宽传 down。 */
+  loosen: "up" | "down";
+  /** 收紧的尽头。 */
+  tightest: number;
+  /** 页面单位的当前值：余额比例写成百分数。 */
+  current: (p: D5ParamData) => number;
+  show: (value: number) => string;
+  how?: string;
+  whatIf?: (value: number) => string;
+  authority: string;
+}
+
+const DAILY_WRITE = "finance_d5_daily_limit_write";
+const BALANCE_WRITE = "finance_d5_balance_max_write";
+const FEE_WRITE = "finance_d5_fee_write";
+
+const feeSpec = (net: Net): NumSpec => ({
+  key: `fee.${net}`,
+  label: NET_LABEL[net],
+  unit: "USDT",
+  min: 0,
+  max: 25,
+  step: 0.5,
+  invalid: `${NET_LABEL[net]} 须在 0–25 之间，每档 0.5，例如 1 或 1.5`,
+  range: "0–25 USDT，每档 0.5",
+  valid: (value) => value >= 0 && value <= 25 && Number.isInteger(value * 2),
+  loosen: "down",
+  tightest: 25,
+  current: (p) => p.networkConfirmFeeUsd[net],
+  show: usd,
+  how: `0–25 USDT，每档 0.5，默认 ${D5_NETWORK_CONFIRM_FEE_DEFAULT[net]} USDT`,
+  authority: FEE_WRITE,
+});
+
+const SPECS: Record<NumKey, NumSpec> = {
+  dailyLimitCount: {
+    key: "dailyLimitCount",
+    label: D5_PARAM_HELP.dailyLimitCount.label,
+    unit: "次",
+    min: 1,
+    max: 10,
+    step: 1,
+    invalid: "每日提现次数要填 1–10 的整数。",
+    range: "1–10 的整数",
+    valid: (value) => Number.isInteger(value) && value >= 1 && value <= 10,
+    loosen: "up",
+    tightest: 1,
+    current: (p) => p.dailyLimitCount,
+    show: (value) => `${value} 次`,
+    how: D5_PARAM_HELP.dailyLimitCount.how,
+    whatIf: (value) => `改成 ${value}：用户每天最多发起 ${value} 笔提现。`,
+    authority: DAILY_WRITE,
+  },
+  maxBalanceRatio: {
+    key: "maxBalanceRatio",
+    label: D5_PARAM_HELP.maxBalanceRatio.label,
+    unit: "%",
+    min: 50,
+    max: 100,
+    step: "any",
+    invalid: "余额可提上限要在 50%–100% 之间。",
+    range: "50%–100%",
+    valid: (value) => value >= 50 && value <= 100,
+    loosen: "up",
+    tightest: 50,
+    current: (p) => clean(p.maxBalanceRatio * 100),
+    show: (value) => `${num(value)}%`,
+    how: D5_PARAM_HELP.maxBalanceRatio.how,
+    whatIf: (value) => `改成 ${num(value)}%：可提余额 1,000 USDT 时，一笔最多提 ${num(value * 10)} USDT。`,
+    authority: BALANCE_WRITE,
+  },
+  smallAmountThresholdUsd: {
+    key: "smallAmountThresholdUsd",
+    label: D5_PARAM_HELP.smallAmountThresholdUsd.label,
+    unit: "USDT",
+    min: 0,
+    max: 500,
+    step: "any",
+    invalid: "小额免审线要在 0–500 USDT 之间。",
+    range: "0–500 USDT，0 表示关闭",
+    valid: (value) => value >= 0 && value <= 500,
+    loosen: "up",
+    tightest: 0,
+    current: (p) => p.smallAmountThresholdUsd,
+    show: usd,
+    how: D5_PARAM_HELP.smallAmountThresholdUsd.how,
+    whatIf: (value) => value === 0
+      ? "改成 0：关闭小额自动过审。"
+      : `改成 ${num(value)}：${num(value)} USD 及以下、满足其他风控条件的 USDT 提现自动过审，超过的进人工审核。`,
+    authority: DAILY_WRITE,
+  },
+  payoutSlaHours: {
+    key: "payoutSlaHours",
+    label: D5_PARAM_HELP.payoutSlaHours.label,
+    unit: "小时",
+    min: 1,
+    max: 168,
+    step: 1,
+    invalid: "到账时效要填 1–168 的整数小时。",
+    range: "1–168 的整数小时",
+    valid: (value) => Number.isInteger(value) && value >= 1 && value <= 168,
+    loosen: "down",
+    tightest: 168,
+    current: (p) => p.payoutSlaHours,
+    show: (value) => `${value} 小时`,
+    how: D5_PARAM_HELP.payoutSlaHours.how,
+    whatIf: (value) => `改成 ${value}：新提现的截止时间是审查窗口结束后 ${value} 小时。`,
+    authority: DAILY_WRITE,
+  },
+  nexFeeOffsetRate: {
+    key: "nexFeeOffsetRate",
+    label: D5_PARAM_HELP.nexFeeOffsetRate.label,
+    unit: "USDT / UVT",
+    min: 0.000001,
+    max: 999999999999.999999,
+    step: "any",
+    invalid: "UVT 抵扣率超出允许范围，最小 0.000001。",
+    range: "最小 0.000001",
+    valid: (value) => value >= 0.000001 && value <= 999999999999.999999,
+    loosen: "up",
+    tightest: 0.000001,
+    current: (p) => p.nexFeeOffsetRate,
+    show: (value) => `${num(value)} USDT / UVT`,
+    how: D5_PARAM_HELP.nexFeeOffsetRate.how,
+    // 后端按整数 UVT 向上取整（AppWithdrawalService.submitOnce）。
+    whatIf: (value) => `改成 ${num(value)}：1 USDT 手续费要 ${Math.ceil(clean(1 / value))} UVT 抵满。`,
+    authority: FEE_WRITE,
+  },
+  "fee.trc20": feeSpec("trc20"),
+  "fee.bep20": feeSpec("bep20"),
+  "fee.erc20": feeSpec("erc20"),
 };
 
-const EMPTY_DRAFTS: Drafts = {
-  daily: "", balancePct: "", feeTrc: "", feeBep: "", feeErc: "", nex: "", smallAmount: "", payoutSla: "",
+const GROUP_FIELDS: Record<Exclude<Group, "network">, readonly NumKey[]> = {
+  limits: ["dailyLimitCount", "maxBalanceRatio", "smallAmountThresholdUsd", "payoutSlaHours"],
+  fee: ["fee.trc20", "fee.bep20", "fee.erc20"],
+  nex: ["nexFeeOffsetRate"],
+};
+const GROUP_TITLE: Record<Group, string> = { limits: "额度和时效", network: "提现网络", fee: "网络确认费", nex: "UVT 抵扣率" };
+const GROUP_IMPACT: Record<Group, string> = {
+  limits: "下一笔提现起按新值；调低每日次数时，当天超过新次数、还没放行的单放行时也被拦",
+  network: "关掉的网络用户不能再发起提现；接打款服务时，这个网络上还没交给打款服务的提现也会暂停打款",
+  fee: "之后的新提现按新费用收，已提交的提现不变",
+  nex: "之后的新提现按新抵扣率算，已提交的提现不变",
 };
 
-function draftsFrom(params: D5ParamData): Drafts {
+const netKey = (net: Net) => `net.${net}`;
+/** 关完之后一个网络都不开：抽屉和最终确认说同一句（DP-03）。 */
+const NET_LAST_OPEN = "这是最后一条开着的网络，关掉后用户不能发起 USDT 提现。";
+const NET_ALL_CLOSED = "提交后三个网络都关着，用户不能发起 USDT 提现。";
+const NET_PAUSE = "接打款服务时，关掉的网络上还没交给打款服务的提现也会暂停打款。";
+const NET_CLOSE_EFFECT = "关掉后用户不能再用这个网络发起提现。接打款服务时，这个网络上已提交、还没交给打款服务的提现也会暂停打款；已交给打款服务的继续查询核对。";
+/** 直接使用后端同一次读取的三态，已包含提现总闸；未知不等于关闭。 */
+function networkView(p: D5ParamData) {
+  const known = p.networkStatusReliable === true && p.effectiveNetworks != null;
+  const states = NETWORKS.map((net) => {
+    const row = p.networkStatus?.find((item) => item.network === `USDT-${NET_LABEL[net]}`);
+    const configured = row?.configured ?? p.networkEnabled[net];
+    const usable = row?.state === "AVAILABLE" ? true : row?.state === "UNAVAILABLE" ? false : undefined;
+    return { net, configured, usable, code: row?.disabledReason ?? null };
+  });
+  const open = states.filter((item) => item.configured);
+  const blocked = open.filter((item) => item.usable === false);
+  const unknown = open.filter((item) => item.usable === undefined);
+  const reasonOf = (code: string | null) => (code && D5_NETWORK_BLOCK_REASON[code]?.text) || D5_NETWORK_BLOCK_UNKNOWN;
+  const shared = blocked.length > 0 && blocked.length === open.length && blocked.every((item) => item.code === blocked[0].code) ? blocked[0].code : undefined;
+  const names = (list: typeof states) => list.map((item) => NET_LABEL[item.net]).join("、");
+  const byConfig = open.length === 0;
+  const outage = byConfig ? "三个网络都在这页关着"
+    : known && p.effectiveNetworks!.length === 0
+      ? shared ? `开着的 ${names(open)} 都用不了：${reasonOf(shared)}` : `开着的 ${names(open)} 都用不了，原因写在各网络那一行`
+      : undefined;
+  return { known, states, blocked, unknown, shared, outage, byConfig, reasonOf };
+}
+
+/** 「调整」和组名之间，组名是英文开头时空一格（TX：中英文之间加空格）。和样板页 H2 一样叫「调整」。 */
+const editTitle = (name: string) => `调整${/^[A-Za-z]/.test(name) ? " " : ""}${name}`;
+
+type Draft = Record<string, string>;
+type Editing = {
+  group: Group;
+  draft: Draft;
+  /** 数字框里填了浏览器认不出的内容：值是空串，但不算没填（CP-54）。 */
+  bad: Record<string, boolean>;
+  touched: Record<string, boolean>;
+  attempted: boolean;
+  /** 打开时读到的值，用来判断哪些项是自己改的。 */
+  base: D5ParamData;
+  /** 提交时发现别人先改过：写在抽屉顶部。 */
+  conflict?: ReactNode;
+};
+
+function draftOf(group: Group, p: D5ParamData): Draft {
+  if (group === "network") return Object.fromEntries(NETWORKS.map((net) => [netKey(net), p.networkEnabled[net] ? "on" : "off"]));
+  return Object.fromEntries(GROUP_FIELDS[group].map((key) => [key, String(SPECS[key].current(p))]));
+}
+
+type NumEval = { spec: NumSpec; text: string; now: number; value?: number; error?: string; changed: boolean; loosens: boolean; writable: boolean };
+
+/** 一条命令的草稿算出来的东西：每项的对错和方向、要提交的改动、前后值。 */
+function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => boolean) {
+  const { group, draft, bad } = editing;
+  if (group === "network") {
+    const next = Object.fromEntries(NETWORKS.map((net) => [net, draft[netKey(net)] === "on"])) as Record<Net, boolean>;
+    const changedNets = NETWORKS.filter((net) => next[net] !== p.networkEnabled[net]);
+    const allClosed = NETWORKS.every((net) => !next[net]);
+    const closing = changedNets.filter((net) => !next[net]);
+    const lastClosed = closing[closing.length - 1];
+    const rows: DiffRow[] = NETWORKS.map((net) => ({
+      key: net,
+      label: `${NET_LABEL[net]} 提现`,
+      before: p.networkEnabled[net] ? "开启" : "关闭",
+      after: next[net] ? "开启" : "关闭",
+      // 关网络的后果写在最后一个关掉的网络下面，确认框里看得到（DP-03、VS-103）：关完一个不剩时先说这句，再说没打出的单会暂停。
+      note: net === lastClosed ? `${allClosed ? `${changedNets.length === 1 ? NET_LAST_OPEN : NET_ALL_CLOSED}` : ""}${NET_PAUSE}` : undefined,
+    }));
+    return {
+      numbers: [] as NumEval[],
+      next,
+      changedCount: changedNets.length,
+      issues: 0,
+      loosens: changedNets.some((net) => next[net]),
+      closesOnly: changedNets.length > 0 && changedNets.every((net) => !next[net]),
+      allClosed,
+      rows,
+      changes: changedNets.length ? { networkEnabled: next } as D5OwnedChanges : null,
+    };
+  }
+  const numbers = GROUP_FIELDS[group].map((key): NumEval => {
+    const spec = SPECS[key];
+    const text = draft[key] ?? "";
+    const writable = can(spec.authority);
+    const now = spec.current(p);
+    if (!writable) return { spec, text, now, value: now, changed: false, loosens: false, writable };
+    if (bad[key]) return { spec, text, now, error: spec.invalid, changed: true, loosens: false, writable };
+    if (text.trim() === "") return { spec, text, now, error: `填写${spec.label}：${spec.range}，空着不算 0。`, changed: true, loosens: false, writable };
+    const value = Number(text);
+    if (!Number.isFinite(value) || !spec.valid(value)) return { spec, text, now, error: spec.invalid, changed: true, loosens: false, writable };
+    const changed = clean(value) !== clean(now);
+    const loosens = changed && (spec.loosen === "up" ? value > now : value < now);
+    return { spec, text, now, value, changed, loosens, writable };
+  });
+  const changed = numbers.filter((item) => item.changed);
+  const issues = numbers.filter((item) => item.error).length;
+  const rows: DiffRow[] = numbers.map((item) => ({
+    key: item.spec.key,
+    label: group === "fee" ? `${item.spec.label} 网络确认费` : item.spec.label,
+    before: item.spec.show(item.now),
+    after: item.value === undefined ? "—" : item.spec.show(item.value),
+    note: group === "fee" && item.value === 0 && item.changed ? "设为 0 的网络将不收手续费，请确认。" : undefined,
+  }));
+  let changes: D5OwnedChanges | null = null;
+  if (!issues && changed.length) {
+    const valueOf = (key: NumKey) => numbers.find((item) => item.spec.key === key)?.value;
+    if (group === "fee") {
+      changes = { networkConfirmFeeUsd: { trc20: valueOf("fee.trc20")!, bep20: valueOf("fee.bep20")!, erc20: valueOf("fee.erc20")! } };
+    } else if (group === "nex") {
+      changes = { nexFeeOffsetRate: valueOf("nexFeeOffsetRate")! };
+    } else {
+      changes = {};
+      for (const item of changed) {
+        if (item.spec.key === "maxBalanceRatio") changes.maxBalanceRatio = clean(item.value! / 100);
+        else if (item.spec.key === "dailyLimitCount") changes.dailyLimitCount = item.value!;
+        else if (item.spec.key === "smallAmountThresholdUsd") changes.smallAmountThresholdUsd = item.value!;
+        else if (item.spec.key === "payoutSlaHours") changes.payoutSlaHours = item.value!;
+      }
+    }
+  }
   return {
-    daily: String(params.dailyLimitCount),
-    balancePct: String(params.maxBalanceRatio * 100),
-    feeTrc: String(params.networkConfirmFeeUsd.trc20),
-    feeBep: String(params.networkConfirmFeeUsd.bep20),
-    feeErc: String(params.networkConfirmFeeUsd.erc20),
-    nex: String(params.nexFeeOffsetRate),
-    smallAmount: String(params.smallAmountThresholdUsd),
-    payoutSla: String(params.payoutSlaHours),
+    numbers,
+    next: undefined,
+    changedCount: changed.length,
+    issues,
+    loosens: numbers.some((item) => item.loosens),
+    closesOnly: false,
+    allClosed: false,
+    rows,
+    changes,
   };
 }
 
-/** 单网络费值域校验([0,25],有限数)。 */
-function confirmFeeValid(value: number) {
-  return Number.isFinite(value) && value >= 0 && value <= D5_NETWORK_CONFIRM_FEE_MAX;
+/** 一组改动写成一句话：待确认条上看得懂发出去的是什么。 */
+function describeChanges(changes: Record<string, unknown>) {
+  const parts: string[] = [];
+  const n = (value: unknown) => Number(value);
+  if (changes.dailyLimitCount !== undefined) parts.push(`每日提现次数 ${n(changes.dailyLimitCount)} 次`);
+  const ratio = changes.maxBalanceRatio ?? changes.balanceMaxRatio;
+  if (ratio !== undefined) parts.push(`余额可提上限 ${num(n(ratio) * 100)}%`);
+  if (changes.smallAmountThresholdUsd !== undefined) parts.push(`小额免审线 ${usd(n(changes.smallAmountThresholdUsd))}`);
+  if (changes.payoutSlaHours !== undefined) parts.push(`到账时效 ${n(changes.payoutSlaHours)} 小时`);
+  const fees = changes.networkConfirmFeeUsd as Record<Net, unknown> | undefined;
+  if (fees) parts.push(`网络确认费 ${NETWORKS.map((net) => `${NET_LABEL[net]} ${usd(n(fees[net]))}`).join("、")}`);
+  const enabled = changes.networkEnabled as Record<Net, unknown> | undefined;
+  if (enabled) parts.push(`提现网络 ${NETWORKS.map((net) => `${NET_LABEL[net]} ${enabled[net] ? "开启" : "关闭"}`).join("、")}`);
+  if (changes.nexFeeOffsetRate !== undefined) parts.push(`UVT 抵扣率 ${num(n(changes.nexFeeOffsetRate))} USDT / UVT`);
+  return parts.join("；") || "提现参数";
 }
 
+/** 收紧（直接生效）的原操作。结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。版本可能已变，确认前整页不能再改。 */
+type TightenRecord = PendingMutationRecord & { label: string; changes: D5OwnedChanges; expectedVersion: number; reason: string; operator: string; commandOrigin?: FundCommandOrigin };
+const TIGHTEN_SCOPE = "d5|limits";
+const tightenCommands = createPendingMutationStore<TightenRecord>({
+  storageKey: "nexion-admin-d5-withdrawal-commands-v1",
+  // 过了 24 小时不能再用原号重试，记录和锁都留着，到操作记录核对（OP-96）。
+  retainExpiredRecords: true,
+  isValidRecord: (record) => typeof record.label === "string" && record.label.length > 0
+    && typeof record.reason === "string" && record.reason.length > 0
+    && typeof record.operator === "string"
+    && Number.isSafeInteger(record.expectedVersion)
+    && !!record.changes && typeof record.changes === "object" && !Array.isArray(record.changes)
+    && isDConfigCommandOrigin(record.commandOrigin, "D5"),
+});
+
+export async function queryD5DirectCommand(record: TightenRecord, evidence?: FundCommandEvidence) {
+  const saved = tightenCommands.list().find(row => row.commandKey === record.commandKey);
+  if (!saved) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
+  const result = await queryDConfigCommand(saved, "D5", evidence);
+  if (result.settled) tightenCommands.forget(saved.fingerprint, saved.commandKey);
+  return result;
+}
+
+function tightenKey() {
+  const uuid = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return `d5-limits-${uuid.replaceAll("-", "").slice(0, 16)}`;
+}
+
+/**
+ * 抽屉里的一个数字项。放在组件外面：在页面里现定义的话每次渲染都换新组件，输入框会被卸掉、丢焦点。
+ * 刚打开不报错，离开这一项或点过提交才在下面写原因（OP-141）；空、填坏、超范围分开说（CP-54、PCM-25）。
+ */
+function D5NumberField({ item, value, showError, onChange, onBadInput, onLeave, "aria-label": ariaLabel }: {
+  item: NumEval | undefined;
+  value: string;
+  showError: boolean;
+  onChange: (value: string) => void;
+  onBadInput: (bad: boolean) => void;
+  onLeave: () => void;
+  "aria-label": string;
+}) {
+  if (!item) return null;
+  const { spec } = item;
+  const now = `现在 ${spec.show(item.now)}`;
+  if (!item.writable) {
+    return <div data-d5-field={spec.key}><Field label={spec.label} help={`${now} · 这个账号没有这一项的修改权限，只能看。`}>{null}</Field></div>;
+  }
+  const tag = item.changed && !item.error && <DirectionTag loosens={item.loosens} />;
+  const zeroFee = spec.key.startsWith("fee.") && item.value === 0 && item.changed;
+  // 框下两行：第一行现在值和范围一直在，填错时错误顶替范围；第二行改了才有，写改了会怎样（VS-103、VS-104）。
+  const erring = showError && !!item.error;
+  const effect = !item.error && item.changed && item.value !== undefined
+    ? zeroFee ? "设为 0 的网络将不收手续费，请确认。" : spec.whatIf?.(item.value)
+    : undefined;
+  const help = <>
+    <div>{erring || !spec.how ? now : `${now} · ${spec.how}`}</div>
+    {effect && <div>{effect}</div>}
+  </>;
+  return (
+    <div data-d5-field={spec.key}>
+      <Field label={<>{spec.label}{tag && <> {tag}</>}</>} help={help} error={erring ? item.error : undefined}>
+        {(control) => <NumberInput {...control} aria-label={ariaLabel} unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onInput={(event) => onBadInput(event.currentTarget.validity.badInput)}
+          onBlur={onLeave} />}
+      </Field>
+    </div>
+  );
+}
+
+/** 放宽是开锁、收紧是锁（VS-103，同 K1）。收紧不用蓝：蓝在框里说的是「待生效」。 */
+function DirectionTag({ loosens }: { loosens: boolean }) {
+  return loosens ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="neutral" icon={Lock}>收紧</StatusTag>;
+}
+
+/** 原命令要的写权：按原命令里的字段算，和后端 D5WithdrawalAuthorization 一样每个字段都要有（F10）。 */
+function commandAuthorities(changes: Record<string, unknown>) {
+  const need = new Set<string>();
+  for (const key of Object.keys(changes)) {
+    if (["dailyLimitCount", "smallAmountThresholdUsd", "payoutSlaHours"].includes(key)) need.add(DAILY_WRITE);
+    else if (["maxBalanceRatio", "balanceMaxRatio"].includes(key)) need.add(BALANCE_WRITE);
+    else if (["networkConfirmFeeUsd", "networkEnabled", "nexFeeOffsetRate"].includes(key)) need.add(FEE_WRITE);
+  }
+  return [...need];
+}
+
+/** 解除框要解除的是哪一条：只是弹窗的对象，原命令还在各自的持久记录里。 */
+type ReleaseTarget = { label: string; slot: string; commandKey: string; loosen: boolean };
+
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果。";
+const TIGHTEN_LOCK = "这页有修改的结果未知，先到上方查询原结果";
+const NO_WRITE = "这个账号已没有这项权限，请有权限的同事处理";
+/** 过期、还没查询时展开后的出路：行内已经说了不能重试、先查询，这里只说查到以后谁来核查结案。 */
+const EXPIRED_CLOSE_HERE = "查到原结果后，可以在这一行核查结案。";
+const EXPIRED_CLOSE_OTHER = "查到原结果后，请有调查权限的超级管理员核查结案。";
+const EXPIRED_NO_QUERY = "这个账号查不了原审批单，请有调查权限的超级管理员查询并核查结案。";
+/** 过期、还没查询的行展开后说一次出路；查不了原结果的旧记录不说。 */
+function expiredNext(record: FundCommandRecord) {
+  const access = fundInvestigationAccess(record);
+  return access.unavailableReason ? "" : access.canSubmit ? EXPIRED_CLOSE_HERE : EXPIRED_CLOSE_OTHER;
+}
+const NETWORK_RULE = "用户能不能用和 App 提现是同一个判断：「紧急停用开关」的提现开关和这页的开关都开着，出款服务接通；接打款服务时还要全局出款总闸开着、打款服务开通了这个网络、最近完成过完整对账、没有没处理的资金风险。";
+const COVERAGE_RULE = "放宽在提交和批准时各查一次兑付覆盖率，低于红线或读不到可靠结果都会被拒。收紧不查。";
+const APPROVAL_NOTE = "另一位超级管理员批准后才生效，批准前当前值不变。发起人不能批自己提交的单。";
+
 export function D5Params({ ctx }: { ctx: DCtx }) {
+  const reach = useReach();
   const { toast, openActionConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
-  const authorities = session?.authorities ?? [];
-  const canDailyWrite = authorities.includes("finance_d5_daily_limit_write");
-  const canBalanceWrite = authorities.includes("finance_d5_balance_max_write");
-  const canFeeWrite = authorities.includes("finance_d5_fee_write");
+  const authorities = useMemo(() => session?.authorities ?? [], [session]);
+  const can = useCallback((authority: string) => authorities.includes(authority), [authorities]);
+  const canDailyWrite = can("finance_d5_daily_limit_write");
+  const canBalanceWrite = can("finance_d5_balance_max_write");
+  const canFeeWrite = can("finance_d5_fee_write");
   const canWriteAny = canDailyWrite || canBalanceWrite || canFeeWrite;
+  // 待批总览要 A2 读权；按命令号查自己发起的原单，发起审批权也行（后端 A2AccessPolicy、WithdrawalConfigApproval.canReadOwnProposal）。
+  const canQuery = can("platform_a2_read");
+  const canLookupOwn = canQuery || can("platform_a2_proposal_create");
+  const proposeBlock = withdrawalApprovalDisabledReason(authorities);
+
   const [params, setParams] = useState<D5ParamData | null>(null);
-  const [drafts, setDrafts] = useState<Drafts>(EMPTY_DRAFTS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [readAt, setReadAt] = useState("");
   const requestId = useRef(0);
+  const [approvals, setApprovals] = useState<{ state: "loading" | "ready" | "failed"; rows: A2OperationRow[] }>({ state: "loading", rows: [] });
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [leaveAsk, setLeaveAsk] = useState<false | "close" | "refresh">(false);
+  const [phaseOpen, setPhaseOpen] = useState(false);
+  const [tightenPending, setTightenPending] = useState<TightenRecord[]>([]);
+  const [loosenPending, setLoosenPending] = useState<ReturnType<typeof pendingConfigApproval>>(undefined);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [retryRejected, setRetryRejected] = useState<string[]>([]);
+  const [queryMissing, setQueryMissing] = useState<string[]>([]);
+  const [recovering, setRecovering] = useState("");
+  const [releasing, setReleasing] = useState<ReleaseTarget | null>(null);
+
+  const syncPending = useCallback(() => {
+    setTightenPending(tightenCommands.list());
+    setLoosenPending(session ? pendingConfigApproval("D5", session.adminId) : undefined);
+  }, [session]);
+  const note = (key: string, text: string) => setNotes((current) => ({ ...current, [key]: text }));
 
   const applySnapshot = useCallback((next: D5ParamData) => {
+    requestId.current += 1;
     setParams(next);
-    setDrafts(draftsFrom(next));
+    setReadAt(businessClock(Date.now()));
     setError("");
+    setLoading(false);
   }, []);
 
+  // 刷新时清空并显示加载，失败不留旧值（D5-S04，失败关闭）。
   const load = useCallback(async () => {
     const id = ++requestId.current;
     setLoading(true);
     setParams(null);
-    setDrafts(EMPTY_DRAFTS);
     setError("");
     try {
       const next = await fetchD5WithdrawalParams();
-      if (id === requestId.current) applySnapshot(next);
+      if (id === requestId.current) {
+        setParams(next);
+        setReadAt(businessClock(Date.now()));
+      }
     } catch (err) {
       if (id === requestId.current) setError(errorText(err));
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [applySnapshot]);
+  }, []);
+
+  /** 有没有放宽在等批准。读不到时不说「没有」（决定 5）。审批单的 operationCode 是空的，按动作名认。 */
+  const loadApprovals = useCallback(async () => {
+    if (!canQuery) return;
+    setApprovals((current) => ({ ...current, state: "loading" }));
+    try {
+      const overview = await fetchA2Overview({ domain: "D" });
+      setApprovals({ state: "ready", rows: overview.operationQueue.filter((row) => row.status === "pending" && row.action === "放宽提现参数") });
+    } catch {
+      setApprovals({ state: "failed", rows: [] });
+    }
+  }, [canQuery]);
 
   useEffect(() => {
     void load();
     return () => { requestId.current += 1; };
   }, [load]);
+  useEffect(() => { void loadApprovals(); }, [loadApprovals]);
+  useEffect(() => syncPending(), [syncPending]);
 
-  const updateDraft = (key: keyof Drafts, value: string) => setDrafts((current) => ({ ...current, [key]: value }));
+  const reloadAll = () => {
+    void load();
+    void loadApprovals();
+  };
 
-  const submit = (label: string, changes: D5OwnedChanges, amplifies: boolean, beforeAfter: string) => {
+  const coverageBlock = params && (!params.coverageReliable
+    ? "放宽已暂停：兑付覆盖率暂时读不到可靠结果"
+    : params.coverageRatio < params.redlinePct
+      ? `放宽已暂停：兑付覆盖率 ${pct(params.coverageRatio)}，低于红线 ${fmtConfigPct(params.redlinePct)}`
+      : undefined);
+  const pendingApproval = approvals.state === "ready" ? approvals.rows : [];
+  /** 放宽现在为什么提交不了，从上往下取第一条。 */
+  const loosenBlock = proposeBlock
+    ?? (loosenPending ? "上一次放宽的结果未知，先到上方查询原结果" : undefined)
+    ?? (pendingApproval.length ? "已有放宽等批准，批准、驳回或撤回后才能再提交" : undefined)
+    ?? coverageBlock
+    ?? undefined;
+
+  const groupWritable = (group: Group) => group === "limits" ? canDailyWrite || canBalanceWrite : canFeeWrite;
+  /** 这一组已经收到最紧：放宽被挡时打开也改不了，入口直接禁用（OP-126）。 */
+  const atTightest = (group: Group, p: D5ParamData) => {
+    if (group === "network") return NETWORKS.every((net) => !p.networkEnabled[net]);
+    return GROUP_FIELDS[group].filter((key) => can(SPECS[key].authority)).every((key) => clean(SPECS[key].current(p)) === clean(SPECS[key].tightest));
+  };
+  const entryBlock = (group: Group, p: D5ParamData) => tightenPending.length ? TIGHTEN_LOCK
+    : loosenBlock && atTightest(group, p) ? `${loosenBlock}。这一组已经是最紧的值，现在没有能改的` : undefined;
+
+  const openDrawer = (group: Group, focus?: string) => {
     if (!params) return;
-    openActionConfirm({
-      action: `提现参数变更 · ${label}`,
-      detail: <>
-        <div>{beforeAfter}</div>
-        <div>{amplifies ? "方向：放大资金流出，服务器将强制校验 B1 红线。" : "方向：收紧资金流出，不受覆盖率红线阻断。"}</div>
-        <div>提交基于配置版本 v{params.version}；并发变化会返回 409，任何字段失败均不会部分生效。</div>
-      </>,
-      amplifies,
-      coverage: { coverageRatio: params.coverageRatio, redlinePct: params.redlinePct },
-      reasonMin: 8,
-      reasonMax: 200,
-      completionCopy: "提交成功后生效并写入审计",
-      run: async (reason) => {
-        try {
-          const next = await updateD5WithdrawalLimits(changes, params.version, reason, OPERATOR());
-          requestId.current += 1;
-          applySnapshot(next);
-          toast(`${label} 已生效 · 已记审计`);
-        } catch (err) {
-          requestId.current += 1;
-          setParams(null);
-          setDrafts(EMPTY_DRAFTS);
-          const message = errorText(err);
-          setError(message);
-          toast(message);
-          throw err;
-        }
-      },
+    setEditing({ group, draft: draftOf(group, params), bad: {}, touched: {}, attempted: false, base: params });
+    if (focus) window.requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-d5-field="${focus}"] :is(input, [role="radio"][tabindex="0"])`)?.focus());
+  };
+  const closeDrawer = () => { setEditing(null); setLeaveAsk(false); };
+  const evaluation = editing && params ? evaluate(editing, params, can) : null;
+  const dirty = !!editing && JSON.stringify(editing.draft) !== JSON.stringify(draftOf(editing.group, editing.base));
+  const askClose = () => { if (dirty) setLeaveAsk("close"); else closeDrawer(); };
+  // 刷新拿到的是新版本，抽屉里的草稿按旧值填的，不能带过去：有改动先问，再关抽屉重读（F06、D5-S04）。
+  const refresh = () => {
+    if (editing && dirty) { setLeaveAsk("refresh"); return; }
+    closeDrawer();
+    reloadAll();
+  };
+
+  // 权限被收回时抽屉里的输入也没用了。
+  useEffect(() => {
+    if (editing && !groupWritable(editing.group)) closeDrawer();
+  });
+
+  /** 版本冲突：最新值换进来，自己改过的项留着，其余跟最新值走，抽屉顶部写别人改了什么（OP-97）。 */
+  const takeLatest = (latest: D5ParamData) => {
+    setEditing((current) => {
+      if (!current) return current;
+      const before = draftOf(current.group, current.base);
+      const after = draftOf(current.group, latest);
+      const draft = Object.fromEntries(Object.entries(current.draft).map(([key, value]) => [key, value === before[key] ? after[key] : value]));
+      const moved = evaluate({ ...current, draft: after }, current.base, () => true).rows.filter((row) => row.before !== row.after);
+      return {
+        ...current,
+        draft,
+        base: latest,
+        conflict: moved.length
+          ? <>别人刚改过：{moved.map((row) => `${row.label} ${row.before} → ${row.after}`).join("；")}。你改的项还在，其余已换成最新值，核对后重新提交。</>
+          : <>别人刚改过提现参数的其他项，核对后重新提交。</>,
+      };
     });
   };
 
-  const daily = asNumber(drafts.daily);
-  const balancePct = asNumber(drafts.balancePct);
-  const feeTrc = asNumber(drafts.feeTrc);
-  const feeBep = asNumber(drafts.feeBep);
-  const feeErc = asNumber(drafts.feeErc);
-  const nex = asNumber(drafts.nex);
-  const smallAmount = asNumber(drafts.smallAmount);
-  const payoutSla = asNumber(drafts.payoutSla);
-  const dailyValid = Number.isInteger(daily) && daily >= 1 && daily <= 10;
-  const balanceValid = balancePct >= 50 && balancePct <= 100;
-  // FEAT-WD02:三网络确认费逐字段校验(字段级越界红字),整组同过才可提交(原子)。
-  const feeTrcValid = confirmFeeValid(feeTrc);
-  const feeBepValid = confirmFeeValid(feeBep);
-  const feeErcValid = confirmFeeValid(feeErc);
-  const feeValid = feeTrcValid && feeBepValid && feeErcValid;
-  const feeUnchanged = params !== null
-    && feeTrc === params.networkConfirmFeeUsd.trc20
-    && feeBep === params.networkConfirmFeeUsd.bep20
-    && feeErc === params.networkConfirmFeeUsd.erc20;
-  // 放大方向判定:任一网络调低 = 放大流出(费降 → 用户提现成本降,与旧 networkFee 调低同向)。
-  const feeAmplifies = params !== null
-    && (feeTrc < params.networkConfirmFeeUsd.trc20
-      || feeBep < params.networkConfirmFeeUsd.bep20
-      || feeErc < params.networkConfirmFeeUsd.erc20);
-  const feeIsDefault = feeTrc === D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20
-    && feeBep === D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20
-    && feeErc === D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20;
-  const nexValid = nex > 0;
-  const smallAmountValid = Number.isFinite(smallAmount)
-    && smallAmount >= 0 && smallAmount <= D5_SMALL_AMOUNT_THRESHOLD_MAX;
-  const payoutSlaValid = Number.isInteger(payoutSla)
-    && payoutSla >= D5_PAYOUT_SLA_HOURS_MIN && payoutSla <= D5_PAYOUT_SLA_HOURS_MAX;
+  /** 收紧走这里：先存原操作再发（OP-92）。明确失败丢号留在框里；结果未知保号，转成页面上方的待确认（OP-93）。 */
+  const sendTighten = async (record: Omit<TightenRecord, keyof PendingMutationRecord>, retry = false) => {
+    const retained = tightenCommands.get(TIGHTEN_SCOPE);
+    if (retained && !retry) throw new Error(TIGHTEN_LOCK);
+    const key = retained ?? tightenKey();
+    tightenCommands.remember(TIGHTEN_SCOPE, key, { ...record, commandOrigin: retained ? record.commandOrigin : dConfigCommandOrigin("D5") });
+    if (!tightenCommands.isDurablyStored(TIGHTEN_SCOPE, key)) {
+      if (!retained) tightenCommands.forget(TIGHTEN_SCOPE, key);
+      throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+    }
+    try {
+      const next = await updateD5WithdrawalLimits(record.changes, record.expectedVersion, record.reason, record.operator, key);
+      tightenCommands.forget(TIGHTEN_SCOPE);
+      syncPending();
+      applySnapshot(next);
+      return "done" as const;
+    } catch (cause) {
+      // 只有后端明确拒绝才丢号；读不懂、断开、本地出错都按结果未知留着（F03）。
+      const rejected = isExplicitRejection(cause);
+      if (rejected && !retained) tightenCommands.forget(TIGHTEN_SCOPE, key);
+      syncPending();
+      if (rejected || isPermissionDenied(cause)) throw cause;
+      return "unknown" as const;
+    }
+  };
+
+  /** 抽屉「提交修改」：方向已经定了，最终确认只填理由。 */
+  const confirmEdit = () => {
+    if (!editing || !params || !session || !evaluation?.changes) return;
+    const { group } = editing;
+    const changes = evaluation.changes;
+    const loosens = evaluation.loosens;
+    const restoreDefault = group === "fee" && NETWORKS.every((net) => Number(editing.draft[`fee.${net}`]) === D5_NETWORK_CONFIRM_FEE_DEFAULT[net]);
+    const label = restoreDefault ? "网络确认费恢复默认" : GROUP_TITLE[group];
+    const open = (p: D5ParamData, blockedReason?: ReactNode) => openActionConfirm({
+      briefKind: "config",
+      action: `调整提现参数 · ${label}`,
+      title: editTitle(GROUP_TITLE[group]),
+      detail: <>提交前别人改过提现参数时，这次不会生效。</>,
+      // 等批准的提醒跟在前后值后面，同一块里看（有放宽在等时才有）。
+      facts: <>
+        <DiffList rows={evaluation.rows} restTitle="没改的项" />
+        {!loosens && pendingApproval.length > 0 && <Notice tone="warn">有放宽在等批准，收紧后那张审批单要重新发起。</Notice>}
+      </>,
+      amplifies: loosens,
+      coverage: p.coverageReliable ? { coverageRatio: p.coverageRatio, redlinePct: p.redlinePct } : undefined,
+      coverageLead: "放宽让用户更容易提现，平台付出去的钱可能变多",
+      coverageCheck: COVERAGE_RULE,
+      // 走审批的生效方式写在标题下的标签上，谁批、批准前什么不变进标签的提示图标（README 写操作确认）。
+      effect: loosens
+        ? <StatusTag tone="progress" filled explain={APPROVAL_NOTE}>批准后生效</StatusTag>
+        : <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      confirmLabel: loosens ? "提交审批" : evaluation.closesOnly ? "确认关闭，立即生效" : "确认修改，立即生效",
+      reasonMin: 8,
+      reasonMax: 200,
+      reasonPlaceholder: "例如：资金会议决定、工单号",
+      completionCopy: loosens ? "另一位超级管理员批准前，当前值不变。" : "提交后立即生效。",
+      statedBrief: { impact: GROUP_IMPACT[group], check: "核对改了哪几项和方向，理由写清调整原因和依据。" },
+      blockedReason: blockedReason ?? (loosens ? proposeBlock : undefined),
+      run: async (reason) => {
+        try {
+          if (loosens) {
+            const result = await submitWithdrawalConfigApproval("D5", session, d5WithdrawalLimitsValues(changes, p.version), reason, fetchD5WithdrawalParams);
+            syncPending();
+            if (result) {
+              applySnapshot(result.active);
+              toast(result.acknowledgement, "success");
+            }
+            closeDrawer();
+            void loadApprovals();
+            return;
+          }
+          const outcome = await sendTighten({ label: `调整提现参数 · ${label}`, changes, expectedVersion: p.version, reason, operator: OPERATOR() });
+          closeDrawer();
+          if (outcome === "unknown") toast(UNKNOWN_TOAST, "warn");
+          else toast(`${GROUP_TITLE[group]}已生效`, "success");
+        } catch (cause) {
+          syncPending();
+          if (loosens && isA2OutcomeUncertainError(cause)) {
+            closeDrawer();
+            toast(UNKNOWN_TOAST, "warn");
+            return;
+          }
+          const code = rejectionCode(cause);
+          if (code === "CONFIG_VERSION_CONFLICT") {
+            const latest = await fetchD5WithdrawalParams().catch(() => null);
+            if (latest) {
+              applySnapshot(latest);
+              takeLatest(latest);
+            }
+            open(latest ?? p, latest
+              ? "别人刚改过提现参数，这次没有提交。取消回到抽屉，核对最新值后重新提交。"
+              : "别人刚改过提现参数，最新值读不到，这次不能提交。取消后刷新页面再改。");
+          } else if (/COVERAGE/.test(code) || errorText(cause).includes("覆盖率")) {
+            // 放宽被覆盖率拒绝：页面重读，结论句和框里的数一起更新。
+            const latest = await fetchD5WithdrawalParams().catch(() => null);
+            if (latest) applySnapshot(latest);
+            open(latest ?? p, errorText(cause));
+          } else if (code === "OBJECT_ALREADY_PENDING") {
+            void loadApprovals();
+          }
+          // 原样抛回：共用确认框要按它认出权限层的 403（关框、重读权限）。
+          throw cause;
+        }
+      },
+    });
+    open(params);
+  };
+
+  /** 按原操作重试：同命令号、同内容、同理由（OP-94）。只有成功才解除待确认。 */
+  const retryTighten = async (record: TightenRecord) => {
+    if (record.expiresAt <= Date.now()) { syncPending(); return; }
+    if (!commandAuthorities(record.changes).every(can)) { note(record.commandKey, NO_WRITE); return; }
+    // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
+    if (!tightenCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
+      note(record.commandKey, "浏览器里查不到这条记录，本次没有发送。记录继续保留，请到操作记录与审批核对。");
+      return;
+    }
+    setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
+    note(record.commandKey, "");
+    setRecovering(record.commandKey);
+    try {
+      const { label, changes, expectedVersion, reason, operator, commandOrigin } = record;
+      const outcome = await sendTighten({ label, changes, expectedVersion, reason, operator, commandOrigin }, true);
+      if (outcome === "unknown") note(record.commandKey, "重试结果仍未知，原操作继续保留，稍后再试。");
+      else toast(`${record.label.replace(/^调整提现参数 · /, "")}已生效`, "success");
+    } catch (cause) {
+      if (isPermissionDenied(cause)) announcePermissionDenied();
+      // 后端明确拒绝了这次重试才给「解除待确认」；本地出错、登录、权限、限流不算（F03、OP-153）。
+      if (isExplicitRejection(cause)) {
+        note(record.commandKey, `重试被拒绝：${sentence(errorText(cause))}这说明不了原操作的结果，原操作继续保留。`);
+        setRetryRejected((current) => [...current, record.commandKey]);
+      } else {
+        note(record.commandKey, `重试没有完成：${sentence(errorText(cause))}结果还是未知，记录继续保留。`);
+      }
+    } finally {
+      setRecovering("");
+    }
+  };
+
+  /** 放宽的原审批单：查询或原样重试都走同一个命令号。查到就回读并清掉记录（OP-95）。 */
+  const recoverLoosen = async (mode: "lookup" | "retry") => {
+    if (!session || !loosenPending) return;
+    const key = loosenPending.commandKey;
+    note(key, "");
+    setRecovering(key);
+    try {
+      const result = await submitWithdrawalConfigApproval("D5", session, null, "", fetchD5WithdrawalParams, mode === "lookup" ? true : "retry-original");
+      syncPending();
+      if (!result) {
+        setQueryMissing((current) => [...current, key]);
+        note(key, "暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
+        return;
+      }
+      applySnapshot(result.active);
+      toast(result.acknowledgement, "success");
+      void loadApprovals();
+    } catch (cause) {
+      syncPending();
+      if (mode === "retry" && isExplicitRejection(cause)) {
+        toast(errorText(cause), "warn");
+      } else if (isA2OutcomeUncertainError(cause)) {
+        // 原因写在括号里；只取中文说明，码不上屏。
+        const detail = cause.message.match(/（([^（）]*[\u4e00-\u9fa5][^（）]*)）$/)?.[1];
+        note(key, `${detail ? sentence(detail) : ""}结果还是未知，记录继续保留。`);
+      } else {
+        note(key, `${mode === "retry" ? "重试" : "查询"}没有完成：${sentence(errorText(cause))}结果还是未知，记录继续保留。`);
+      }
+    } finally {
+      setRecovering("");
+    }
+  };
+
+  const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [closing, setClosing] = useState(false);
+  const [settled, setSettled] = useState<FundSettled[]>([]);
+  const checkProposalInvestigation = async (record: NonNullable<ReturnType<typeof pendingConfigApproval>>, evidence?: FundCommandEvidence) => {
+    setRecovering(record.commandKey);
+    try {
+      const receipt = await checkFundCommand(record, evidence);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        if (session) releaseConfigApproval("D5", session.adminId, record.commandKey);
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: "放宽提现参数", status: receipt!.originalStatus, proposal: true }]);
+        syncPending(); await load();
+      }
+      return receipt;
+    } catch (cause) {
+      const error = displayAdminError(cause);
+      // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
+      if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      throw cause;
+    } finally { setRecovering(""); }
+  };
+  /** 查询原结果：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
+  const lookupLoosen = async () => {
+    await recoverLoosen("lookup");
+    const original = session ? pendingConfigApproval("D5", session.adminId) : undefined;
+    if (!original || fundInvestigationAccess(original).unavailableReason) return;
+    // 查到原请求的执行记录后，这一行按它写结论；审批单查询留下的「没找到、还是未知」会和结论打架，清掉。
+    if (await checkProposalInvestigation(original).catch(() => undefined)) note(original.commandKey, "");
+  };
+  /** 收紧（直接保存）：按原请求查原结果，业务上确认成功或核查确认才解除；查到的结论写在这一行。 */
+  const [directClosing, setDirectClosing] = useState<TightenRecord | null>(null);
+  const settleDirect = async (record: TightenRecord, status: FundSettled["status"]) => {
+    setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: editTitle(record.label.replace(/^调整提现参数 · /, "")), status }]);
+    syncPending();
+    await load();
+  };
+  const lookupTighten = async (record: TightenRecord) => {
+    setRecovering(record.commandKey);
+    try {
+      const { receipt, settled: done } = await queryD5DirectCommand(record);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
+    } catch (cause) {
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
+    } finally { setRecovering(""); }
+  };
+  const releasePending = (record: ReleaseTarget) => {
+    setReleasing(null);
+    // Local release only; evidence-based closure is the separate 核查结案 entry.
+    tightenCommands.forget(record.slot, record.commandKey);
+    syncPending();
+    toast("已解除本页这条原操作记录；系统里原操作的结果和锁定不变", "success");
+  };
+
+  const auditHref = "/platform/audit";
+  const auditLink = reach(auditHref, "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批核对</Link>;
+  const zone = businessZone().label;
+
+  // 待确认常显，读取失败时也在（OP-93）。
+  const loosenRecord = (() => {
+    if (!loosenPending) return null;
+    try {
+      const [values, reason] = configApprovalOriginalInput("D5", loosenPending.input);
+      return { ...loosenPending, values: values as Record<string, unknown>, reason };
+    } catch {
+      return { ...loosenPending, values: null, reason: "" };
+    }
+  })();
+  const pendingRows: FundRecoveryRow[] = [
+    ...(loosenRecord ? [(() => {
+      const key = loosenRecord.commandKey;
+      const expired = loosenRecord.expiresAt <= Date.now();
+      const needQuery = canLookupOwn && !queryMissing.includes(key);
+      const canRetry = !!loosenRecord.values && commandAuthorities(loosenRecord.values).every(can) && !proposeBlock;
+      const expiredNote = expired && !investigationResults[key] ? canLookupOwn ? expiredNext(loosenRecord) : EXPIRED_NO_QUERY : "";
+      return { key, title: "放宽提现参数", record: loosenRecord, outcome: investigationResults[key], createdAt: loosenRecord.createdAt, expired, canRetry: !expired && canRetry,
+        canQuery: canLookupOwn, copy: { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
+        status: !canLookupOwn && !expired ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
+        actions: <>
+          {canLookupOwn && <FundCheckButtons record={loosenRecord} lookupWithoutOrigin outcome={investigationResults[key]} expired={expired} busy={!!recovering} checking={recovering === key}
+            onCheck={() => void lookupLoosen()} onClose={() => setClosing(true)} />}
+          {!expired && <Button size="sm" disabled={!!recovering}
+            disabledReason={!canRetry ? NO_WRITE : needQuery ? "先查询原结果，明确查不到审批单才能重试" : undefined}
+            onClick={() => void recoverLoosen("retry")}>按原请求重试</Button>}
+        </>,
+        detail: <>
+          <p>{`改动：${loosenRecord.values ? describeChanges(loosenRecord.values) : "原内容读不到"}。审批单可能已经提交，批准前现在的值不变。有结果前不能再提交放宽，收紧照常。`}</p>
+          {expiredNote && <p>{expiredNote}</p>}
+          {notes[key] && <p>{notes[key]}</p>}
+        </>,
+        tech: loosenRecord.reason ? `理由 ${loosenRecord.reason}` : undefined };
+    })()] : []),
+    ...tightenPending.map((record): FundRecoveryRow => {
+      const expired = record.expiresAt <= Date.now();
+      // 改版前没存出处的记录按当前账号查，queryD5DirectCommand 再核原操作人。
+      const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D5") };
+      // 查到记为失败时，「可能已经生效」不再写。
+      const outcome = investigationResults[record.commandKey];
+      const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
+      return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), record: target, outcome: investigationResults[record.commandKey],
+        createdAt: record.createdAt, expired, canRetry: !expired && commandAuthorities(record.changes).every(can),
+        actions: <>
+          <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
+            onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
+          {!expired && <Button size="sm" disabled={!!recovering} disabledReason={commandAuthorities(record.changes).every(can) ? undefined : NO_WRITE} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
+          {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
+        </>,
+        detail: <>
+          <p>{`改动：${describeChanges(record.changes)}。${failed ? "" : "可能已经生效，"}有结果前这页不能再修改。`}{expired && !outcome && expiredNext(target)}</p>
+          {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
+        </>,
+        tech: `版本 v${record.expectedVersion} ｜ 理由 ${record.reason}` };
+    }),
+  ];
+  const pendingNotices = <>
+    <FundRecoveryPanel rows={pendingRows} link={auditLink || undefined} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
+    {closing && loosenRecord && <FundClosureModal label="放宽提现参数" createdAt={loosenRecord.createdAt} offer={eCommandClosureOffer(investigationResults[loosenRecord.commandKey], isRetryExpired(loosenRecord))} facts={loosenRecord.values ? <Fact k="改动">{describeChanges(loosenRecord.values)}</Fact> : undefined}
+      onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(loosenRecord, evidence); setClosing(false); }} />}
+    {directClosing && <CommandClosureModal label={editTitle(directClosing.label.replace(/^调整提现参数 · /, ""))} commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
+      offer={eCommandClosureOffer(investigationResults[directClosing.commandKey], isRetryExpired(directClosing))} facts={<Fact k="改动">{describeChanges(directClosing.changes)}</Fact>}
+      onClose={() => setDirectClosing(null)} onSubmit={async evidence => {
+        const record = directClosing;
+        const { receipt, settled: done } = await queryD5DirectCommand(record, evidence);
+        setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+        setDirectClosing(null);
+        if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
+      }} />}
+  </>;
+
+  const writableNames = [
+    canDailyWrite && "每日提现次数、小额免审线、到账时效",
+    canBalanceWrite && "余额可提上限",
+    canFeeWrite && "提现网络、网络确认费、UVT 抵扣率",
+  ].filter(Boolean).join("、");
+  const guideExtra = (
+    <section className="rd-guide-section">
+      <h3>这个账号能做什么</h3>
+      {canWriteAny ? (
+        <ul>
+          <li>能改：{writableNames}。</li>
+          <li>{proposeBlock ? "只能收紧。放宽要提交审批，这个账号缺少发起审批的权限。" : "收紧提交后立即生效；放宽提交审批，另一位超级管理员批准后生效。"}</li>
+          <li>{canQuery ? "能看到有没有放宽在等批准。" : "看不到放宽有没有在等批准，提交时被拒才知道，进度到操作记录与审批问有权限的同事。"}{!canQuery && canLookupOwn && "自己发起的放宽结果未知时，能查询原结果。"}</li>
+        </ul>
+      ) : <p>你只能查看，修改要有这页的修改权限。</p>}
+      <h3>以前页头的说明</h3>
+      <p><KeepText text="「设置每日提现次数、可提比例、网络费、UVT 抵扣、小额免审和到账时限。放宽限制前先看兑付覆盖率；随运营阶段变化的设置在「运营阶段设置」修改。」" phrases={["在「运营阶段设置」修改。」"]} /></p>
+    </section>
+  );
+
+  const header = (
+    <PageHeader
+      pageId="D5"
+      title="USDT 提现参数"
+      summary="设置提现次数、比例、网络费和到账时效。"
+      guideExtra={guideExtra}
+      meta={<span className="rd-toolbar">
+        <span>
+          {readAt && params && `${readAt} 读取（${zone}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" />
+        </span>
+        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button>
+      </span>}
+      readOnly={!canWriteAny ? "你只能查看；修改提现参数要有这页的修改权限。" : undefined}
+    />
+  );
+
+  const releaseModal = releasing && (
+    <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
+      explain="重试被拒说明不了原操作的结果，先到操作记录核对它有没有生效。解除只清本页这条记录，不算核查结案；系统仍可能阻止再次提交。" />
+  );
+
+  const sections: SectionNavItem[] = [
+    { id: "limits", label: "额度和时效" },
+    { id: "network", label: "网络和费用", alert: !!params && (networkView(params).blocked.length > 0 || networkView(params).unknown.length > 0) },
+    { id: "phase", label: "运营阶段" },
+  ];
+  const nav = useSectionNav(sections, { ready: !!params, onReveal: (id) => { if (id === "phase") setPhaseOpen(true); } });
 
   if (loading && !params) {
-    return <section className="l-card"><div className="l-b">D5 当前系统配置加载中，写操作已冻结...</div></section>;
+    return <>{header}{pendingNotices}<BlockState state="loading" title="提现参数加载中…" />{releaseModal}</>;
   }
 
   if (!params) {
-    return <section className="l-card" data-module-health-state="error">
-      <div className="l-h"><span className="ttl">D5 当前系统配置不可用</span></div>
-      <div className="l-b">
-        <div className="dtint warn">{error || "未能读取当前配置"}。旧值已清空，全部写操作保持冻结。</div>
-        <button className="l-btn" onClick={() => void load()}>重试获取当前系统配置</button>
-      </div>
-    </section>;
+    return <>
+      {header}
+      {pendingNotices}
+      <BlockState state="error" title="提现参数加载失败" detail={<>提现参数加载失败，旧值已清空，修改已暂停。{error && <> {error.replace(/^提现参数/, "")}</>}</>} onRetry={refresh} />
+      {releaseModal}
+    </>;
   }
 
-  return <>
-    {error && <div className="dtint warn" style={{ marginBottom: 12 }}>{error}</div>}
+  const p = params;
 
-    <div className="f-stats">
-      <div className="f-stat"><div className="k">每日提现次数</div><div className="v">{params.dailyLimitCount}</div><div className="sub">按此限制后续提现申请</div></div>
-      <div className="f-stat cyan"><div className="k">余额可提上限</div><div className="v">{pctRatio(params.maxBalanceRatio)}</div><div className="sub">当前生效配置</div></div>
-      <div className="f-stat warn"><div className="k">网络确认费</div><div className="v">${params.networkConfirmFeeUsd.trc20} / ${params.networkConfirmFeeUsd.bep20} / ${params.networkConfirmFeeUsd.erc20}</div><div className="sub">TRC20 / BEP20 / ERC20 · 每笔固定</div></div>
-      <div className="f-stat"><div className="k">提现网络</div><div className="v">{params.networkEnabled.trc20 ? "TRC20 开" : "TRC20 关"} / {params.networkEnabled.bep20 ? "BEP20 开" : "BEP20 关"} / {params.networkEnabled.erc20 ? "ERC20 开" : "ERC20 关"}</div><div className="sub">当前生效配置 · 应用将按此隐藏不可用通道</div></div>
-      <div className="f-stat cyan"><div className="k">UVEL 抵扣率</div><div className="v">${params.nexFeeOffsetRate.toFixed(2)}/UVEL</div><div className="sub">当前生效配置</div></div>
-      <div className="f-stat"><div className="k">小额免审线</div><div className="v">${params.smallAmountThresholdUsd}</div><div className="sub">提交时小额自动审核结果</div></div>
-      <div className="f-stat"><div className="k">预计到账时限</div><div className="v">{params.payoutSlaHours} 小时</div><div className="sub">写入提现到期时间</div></div>
-      <div className={`f-stat ${params.coverageReliable && params.coverageRatio >= params.redlinePct ? "ok" : "danger"}`}><div className="k">B1 覆盖率</div><div className="v">{pct(params.coverageRatio)}</div><div className="sub">红线 {pct(params.redlinePct)} · {params.coverageReliable ? "可信" : "不可用"}</div></div>
-    </div>
-
-    <div className="two-col r11">
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">D5 已接通参数</span>
-          <span className="sub">· 配置版本 v{params.version} · {canWriteAny ? "财务主管/超级管理员可改" : "当前角色只读"}</span>
-          <div className="r"><button className="l-btn sm" onClick={() => void load()}>刷新</button></div>
-        </div>
-        <div className="l-b">
-          <div className="p-row">
-            <div className="txt"><div className="k">每日提现次数</div><div className="s">1–10；上调放大、下调收紧</div></div>
-            <input aria-label="每日提现次数目标值" className="l-inp" type="text" inputMode="numeric" maxLength={2} value={drafts.daily} disabled={!canDailyWrite} onChange={(event) => updateDraft("daily", event.target.value)} />
-            {canDailyWrite && <button className="l-btn sm mc" disabled={!dailyValid || daily === params.dailyLimitCount} onClick={() => submit("每日提现次数", { dailyLimitCount: daily }, daily > params.dailyLimitCount, `${params.dailyLimitCount} 次 → ${daily} 次`)}>预览并提交</button>}
-          </div>
-          <div className="dtint ok" style={{ marginBottom: 12 }}>
-            小额免审与到账时效已进入真实提现处理流程：新提现会保存小额自动审核结果和到账截止时间；没有链上最终到账证明时保留资金，不会提前记为已到账。
-          </div>
-          <div className="p-row">
-            <div className="txt"><div className="k">小额免审线</div><div className="s">0–{D5_SMALL_AMOUNT_THRESHOLD_MAX} USD；上调会放大小额自动审核范围</div></div>
-            <input aria-label="小额免审线目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.smallAmount} disabled={!canDailyWrite} onChange={(event) => updateDraft("smallAmount", event.target.value)} />
-            <span>USD</span>
-            {canDailyWrite && <button className="l-btn sm mc" disabled={!smallAmountValid || smallAmount === params.smallAmountThresholdUsd} onClick={() => submit("小额免审线", { smallAmountThresholdUsd: smallAmount }, smallAmount > params.smallAmountThresholdUsd, `$${params.smallAmountThresholdUsd} → $${smallAmount}`)}>预览并提交</button>}
-          </div>
-          <div className="p-row">
-            <div className="txt"><div className="k">提现通道（三网络 · 统一保存）</div><div className="s">关闭会收紧资金流出；开启会放大可提现范围，服务器将校验 B1 覆盖率。应用读取同一当前系统配置。</div></div>
-            {(["trc20", "bep20", "erc20"] as const).map((network) => {
-              const enabled = params.networkEnabled[network];
-              const label = network.toUpperCase();
-              const next = { ...params.networkEnabled, [network]: !enabled };
-              return <button key={network} aria-label={`${label} 提现通道${enabled ? "关闭" : "开启"}`} className={`l-btn sm ${enabled ? "mc" : ""}`} disabled={!canFeeWrite} onClick={() => submit(`${label} 提现通道`, { networkEnabled: next }, !enabled, `${label} ${enabled ? "开启" : "关闭"} → ${enabled ? "关闭" : "开启"}`)}>{label} {enabled ? "已开启" : "已关闭"}</button>;
-            })}
-          </div>
-          <div className="p-row">
-            <div className="txt"><div className="k">到账时效</div><div className="s">{D5_PAYOUT_SLA_HOURS_MIN}–{D5_PAYOUT_SLA_HOURS_MAX} 小时；缩短时效会放大资金执行压力</div></div>
-            <input aria-label="到账时效目标值" className="l-inp" type="text" inputMode="numeric" value={drafts.payoutSla} disabled={!canDailyWrite} onChange={(event) => updateDraft("payoutSla", event.target.value)} />
-            <span>小时</span>
-            {canDailyWrite && <button className="l-btn sm mc" disabled={!payoutSlaValid || payoutSla === params.payoutSlaHours} onClick={() => submit("到账时效", { payoutSlaHours: payoutSla }, payoutSla < params.payoutSlaHours, `${params.payoutSlaHours} 小时 → ${payoutSla} 小时`)}>预览并提交</button>}
-          </div>
-          <div className="p-row">
-            <div className="txt"><div className="k">余额可提上限</div><div className="s">50%–100%；上调放大、下调收紧</div></div>
-            <input aria-label="余额可提上限目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.balancePct} disabled={!canBalanceWrite} onChange={(event) => updateDraft("balancePct", event.target.value)} />
-            <span>%</span>
-            {canBalanceWrite && <button className="l-btn sm mc" disabled={!balanceValid || balancePct / 100 === params.maxBalanceRatio} onClick={() => submit("余额可提上限", { maxBalanceRatio: balancePct / 100 }, balancePct / 100 > params.maxBalanceRatio, `${pctRatio(params.maxBalanceRatio)} → ${balancePct.toFixed(2)}%`)}>预览并提交</button>}
-          </div>
-          {/* FEAT-WD02:三网络固定确认费(每笔 USD)。三值一次 PUT 原子提交,任一失败全回滚;
-              任一网络调低 = 放大流出。0 = 该网络免手续费(合法值,给显著警示防误配)。 */}
-          <div className="p-row ui-network-fees">
-            <div className="txt">
-              <div className="k">网络确认费（三网络 · 统一保存）</div>
-              <div className="s">每笔固定收取,按提现网络计,0–{D5_NETWORK_CONFIRM_FEE_MAX} USD、步进 0.5;三值一次提交,任一失败全回滚。任一网络<b>调低即放大流出</b>。默认 TRC20 $1 / BEP20 $1 / ERC20 $5</div>
-              {canFeeWrite && !feeTrcValid && drafts.feeTrc !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>TRC20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 值域</div>}
-              {canFeeWrite && !feeBepValid && drafts.feeBep !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>BEP20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 值域</div>}
-              {canFeeWrite && !feeErcValid && drafts.feeErc !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>ERC20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 值域</div>}
-              {feeValid && (feeTrc === 0 || feeBep === 0 || feeErc === 0) && <div className="s" style={{ color: "var(--admin-warning, #f5a623)" }}>配置为 0 的网络将免手续费,请确认这是有意为之</div>}
-            </div>
-            <label className="ui-network-field">TRC20（美元 / 笔）<input aria-label="TRC20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeTrc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeTrc", event.target.value)} /></label>
-            <label className="ui-network-field">BEP20（美元 / 笔）<input aria-label="BEP20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeBep} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeBep", event.target.value)} /></label>
-            <label className="ui-network-field">ERC20（美元 / 笔）<input aria-label="ERC20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeErc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeErc", event.target.value)} /></label>
-            {canFeeWrite && <button className="l-btn sm mc" disabled={!feeValid || feeUnchanged} onClick={() => submit("网络确认费", { networkConfirmFeeUsd: { trc20: feeTrc, bep20: feeBep, erc20: feeErc } }, feeAmplifies, `TRC20 $${params.networkConfirmFeeUsd.trc20} / BEP20 $${params.networkConfirmFeeUsd.bep20} / ERC20 $${params.networkConfirmFeeUsd.erc20} → $${feeTrc} / $${feeBep} / $${feeErc}`)}>预览并提交</button>}
-            {canFeeWrite && <button className="l-btn sm" disabled={feeIsDefault && feeUnchanged} onClick={() => submit("网络确认费恢复默认", { networkConfirmFeeUsd: { ...D5_NETWORK_CONFIRM_FEE_DEFAULT } }, D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20 < params.networkConfirmFeeUsd.trc20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20 < params.networkConfirmFeeUsd.bep20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20 < params.networkConfirmFeeUsd.erc20, `TRC20 $${params.networkConfirmFeeUsd.trc20} / BEP20 $${params.networkConfirmFeeUsd.bep20} / ERC20 $${params.networkConfirmFeeUsd.erc20} → 默认 $${D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20}`)}>恢复默认</button>}
-          </div>
-          <div className="p-row">
-            <div className="txt"><div className="k">UVEL 抵扣率</div><div className="s">必须大于 0；上调放大、下调收紧</div></div>
-            <input aria-label="UVEL 抵扣率目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.nex} disabled={!canFeeWrite} onChange={(event) => updateDraft("nex", event.target.value)} />
-            {canFeeWrite && <button className="l-btn sm mc" disabled={!nexValid || nex === params.nexFeeOffsetRate} onClick={() => submit("UVEL 抵扣率", { nexFeeOffsetRate: nex }, nex > params.nexFeeOffsetRate, `$${params.nexFeeOffsetRate}/UVEL → $${nex}/UVEL`)}>预览并提交</button>}
-          </div>
-        </div>
-      </section>
-
-      <section className="l-card">
-        <div className="l-h"><span className="ttl">运营阶段设置（仅查看）</span><span className="sub">· D5 不缓存、不写入</span></div>
-        <div className="l-b">
-          <div className="p-row"><div className="txt"><div className="k">当前运营阶段</div><div className="s">H1 月 {params.currentMonth}</div></div><span className="v">{params.currentPhase}</span></div>
-          {/* FEAT-WD01 改名:「提现冷却」易被读成「两笔提现要隔 N 天」,实际是「大额提现要等 N 天才到账」,
-              与上面的「每日提现次数」概念直接打架。只改显示名,字段键 cooldownDays 不动(改键会破坏后端契约与既有审计)。 */}
-          <div className="p-row"><div className="txt"><div className="k">到账审查窗口</div><div className="s">来源：运营阶段设置 · 大额提现(&gt; $1,000)在后期阶段的到账等待天数,非提现间隔</div></div><span className="v">{params.cooldownDays} 天</span></div>
-          {/* FEAT-WD02:「提现惩罚费率」行已删 —— 费用模型换为按网络固定确认费(上方 D5 自有可写),
-              H1 旋钮同步下线;历史审计记录不删账。 */}
-          <div className="p-row"><div className="txt"><div className="k">增强合规审查</div><div className="s">来源：运营阶段设置</div></div><span className={`bdg ${params.complianceHoldEnabled ? "warn" : "ok"}`}>{params.complianceHoldEnabled ? "开启" : "关闭"}</span></div>
-          {authorities.includes("growth_h1_read") && <Link href="/growth/phase" className="l-btn">在 H1 调整 →</Link>}
-        </div>
-      </section>
-    </div>
-
-    <section className="l-card" style={{ marginTop: 12 }}>
-      <div className="l-h"><span className="ttl">联动核验入口</span><span className="sub">· 参数、判定、审计、事件均可追溯</span></div>
-      <div className="l-b" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {authorities.includes("overview_b1_read") && <Link className="l-btn" href="/overview/dual-ledger">B1 覆盖率</Link>}
-        {authorities.includes("finance_d2_read") && <Link className="l-btn" href="/finance/withdrawals">D2 提现审核</Link>}
-        {authorities.includes("platform_a2_read") && <Link className="l-btn" href="/platform/audit">A2 操作审计</Link>}
-        {authorities.includes("platform_a4_read") && <Link className="l-btn" href="/platform/events">A4 事件中心</Link>}
-      </div>
-    </section>
+  // 一句话结论：从上往下取第一条成立的（重构说明 3.2）。比较用接口原值。
+  const coverageText = `兑付覆盖率 ${pct(p.coverageRatio)}，红线 ${fmtConfigPct(p.redlinePct)}`;
+  // 覆盖率、红线和可不可靠每个状态都留一处读数（D5-V10，F05）：结论句没写的，写在第二行。
+  const coverageLine = <KeepText text={p.coverageReliable ? `${coverageText}。` : `读到的兑付覆盖率 ${pct(p.coverageRatio)} 不可靠，红线 ${fmtConfigPct(p.redlinePct)}。`} />;
+  const poolHint = reach("/finance/pool") ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款核对</Link> : "去资金储备与应付款核对";
+  const coverageExplain = COVERAGE_RULE;
+  const approvalLine = (row: A2OperationRow) => `审批单 ${row.id} · ${row.operator} · ${row.rawTs ? `${formatBusinessTimeFull(row.rawTs, row.ts)}（${zone}）` : row.ts}提交`;
+  const networks = networkView(p);
+  const reconLink = reach("/finance/recon") && <Link className="rd-link" href="/finance/recon" prefetch={false}>去充值与收款对账核对</Link>;
+  const j1Link = reach("/emergency/kill-switch", "emergency_j1_read") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关</Link>;
+  const networkSection = <Link className="rd-link" href="?section=network" prefetch={false} onClick={(event) => { event.preventDefault(); nav.select("network"); }}>网络和费用</Link>;
+  // 都用不了的下一步按原因走：这页关的回这页开，提现开关去紧急停用开关，出款侧的去对账页（DP-42）。
+  const outageNext = networks.byConfig
+    ? (loosenBlock
+      ? <>开启算放宽，现在提交不了：{loosenBlock}。</>
+      : canFeeWrite ? <>要恢复，在{networkSection}里点那个网络的「调整」开启，开启要审批。</> : <>开启要有提现网络修改权限的同事提交审批。</>)
+    : networks.shared === "WITHDRAWAL_KILL_SWITCH_DISABLED" ? j1Link || "请有紧急停用开关权限的同事核对。"
+      : reconLink;
+  const pendingCount = tightenPending.length + (loosenRecord ? 1 : 0);
+  const conclusion = tightenPending.length || loosenRecord
+    // 大字留给答案：有待确认时结论只说后果，不放大、不再指路（DT-12、DT-21）。
+    ? <Conclusion state="warn" hint={coverageLine}>{tightenPending.length ? `${pendingCount} 项修改结果未知，有结果前这页暂停修改` : "1 项放宽结果未知，有结果前暂停放宽，收紧照常"}</Conclusion>
+    : coverageBlock
+      ? <Conclusion state="danger" lead hint={<>{p.coverageReliable ? "" : `读到 ${pct(p.coverageRatio)}，红线 ${fmtConfigPct(p.redlinePct)}。`}收紧不受影响。{poolHint}</>} explain={coverageExplain}>{coverageBlock}</Conclusion>
+      : networks.outage
+      ? <Conclusion state="warn" lead hint={<>{networks.outage}。{outageNext} {coverageLine}</>} explain={NETWORK_RULE}>用户现在不能发起 USDT 提现</Conclusion>
+      : pendingApproval.length
+        ? <Conclusion state="warn" hint={<>{pendingApproval.map(approvalLine).join("；")}。{reach(auditHref, "platform_a2_read") && <><Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批查看</Link> </>}{coverageLine}</>} explain={APPROVAL_NOTE}>
+          有 {pendingApproval.length} 项放宽等批准，批准前当前值不变
+        </Conclusion>
+        : networks.unknown.length > 0
+          ? <Conclusion state="warn" hint={<>配置照常显示，实际状态未知的网络请到「网络和费用」核对原因。{coverageLine}</>} explain={NETWORK_RULE}>部分提现网络的实际状态暂未知</Conclusion>
+        : <Conclusion state="ok" explain={coverageExplain}>
+          {canWriteAny ? `${approvals.state === "ready" && networks.known && networks.blocked.length === 0 ? "没有要处理的事，" : ""}${proposeBlock ? "" : "放宽可以提交。"}${coverageText}` : coverageText}
+        </Conclusion>;
+  // 结论句没说到的都用不了、等批准和读不到审批，单独一条（DT-12：同一件事只说一处）。
+  const secondary = <>
+    {networks.outage && (tightenPending.length || loosenRecord || coverageBlock) && (
+      <Notice tone="warn" title="用户现在不能发起 USDT 提现">{networks.outage}。{outageNext}</Notice>
+    )}
+    {pendingApproval.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || networks.outage) && (
+      <Notice tone="warn" title={`有 ${pendingApproval.length} 项放宽等批准`}>{pendingApproval.map(approvalLine).join("；")}。批准前当前值不变。{auditLink && <> {auditLink}</>}</Notice>
+    )}
+    {networks.unknown.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || pendingApproval.length > 0) && (
+      <Notice tone="warn" title="部分提现网络的实际状态暂未知">配置照常显示，请到「网络和费用」核对原因。</Notice>
+    )}
+    {canQuery && approvals.state === "failed" && (
+      <Notice tone="neutral" title="审批状态暂时读不到">有没有放宽在等批准现在不知道，到操作记录与审批核对。{auditLink && <> {auditLink}</>}</Notice>
+    )}
   </>;
+
+  const action = (group: Group, label: string, focus?: string) => groupWritable(group)
+    ? (describedBy: string | undefined) => <Button size="sm" aria-label={editTitle(label)} aria-describedby={describedBy} disabledReason={entryBlock(group, p)} onClick={() => openDrawer(group, focus)}>调整</Button>
+    : undefined;
+  const H = D5_PARAM_HELP;
+  const numRow = (key: "dailyLimitCount" | "maxBalanceRatio" | "smallAmountThresholdUsd" | "payoutSlaHours") => {
+    const help = H[key];
+    const spec = SPECS[key];
+    const value = spec.current(p);
+    return <ConfigRow key={key} name={help.label} what={help.what} when={help.when} where={help.where} effect={help.effect} note={"note" in help ? help.note : undefined}
+      value={key === "smallAmountThresholdUsd" && value === 0 ? "0 USDT（已关闭）" : spec.show(value)}
+      action={can(spec.authority) ? action("limits", help.label, key) : undefined} />;
+  };
+  // 一个网络一行：配置和用户能不能用写在一个标签里；用不了的原因跟在后面，整体原因已在结论句说过的不再写（DT-12）。
+  const netRow = ({ net, configured, usable, code }: ReturnType<typeof networkView>["states"][number]) => {
+    const help = H.networkEnabled;
+    // 只有确实读到「用户能用」才给绿对勾；读不到的是中性，不给「正常」的信号（DP-65、VS-20）。
+    const tag = !configured ? <StatusTag tone="neutral" icon={CircleMinus}>关闭</StatusTag>
+      : usable === undefined ? <StatusTag tone="neutral" icon={CircleDot}>配置开启，实际状态暂未知</StatusTag>
+        : usable ? <StatusTag tone="ok">开启 · 用户能用</StatusTag>
+          : <StatusTag tone="warn" icon={AlertTriangle}>开启 · 用户现在用不了</StatusTag>;
+    const reason = !configured ? undefined
+      : usable === false ? (networks.outage && networks.shared ? undefined : networks.reasonOf(code))
+        : usable === undefined ? networks.reasonOf(code) : undefined;
+    return <ConfigRow key={net} name={`${NET_LABEL[net]} 提现`} explainLabel={`${NET_LABEL[net]} 提现`} what={help.what} when={help.when} where={help.where}
+      effect={help.effect} note={help.note} value={tag} sub={reason} action={action("network", `${NET_LABEL[net]} 提现`, netKey(net))} />;
+  };
+  const phaseSummary = `${p.currentPhase} · 第 ${p.currentMonth} 月 · 到账审查窗口 ${p.cooldownDays} 天 · 加强合规审查${p.complianceHoldEnabled ? "开启" : "关闭"}`;
+  // 三个网络共用后端合规规则；大额门槛未读到时不猜。
+  const threshold = p.complianceReviewThresholdUsdt == null ? null : `${p.complianceReviewThresholdUsdt.toLocaleString("en-US", { maximumFractionDigits: 6 })} USDT`;
+  const networkRule = threshold === null ? "待核实"
+    : !p.complianceHoldEnabled ? "按小额免审和风控审核，不额外等待"
+      : p.cooldownDays > 0 ? `全部人工复核，超过 ${threshold} 等 ${p.cooldownDays} 天` : "全部人工复核，不额外等待";
+
+  const drawerIcon: Record<Group, LucideIcon> = { limits: Gauge, network: Network, fee: Network, nex: Network };
+  const fieldProps = (key: NumKey) => ({
+    item: evaluation?.numbers.find((entry) => entry.spec.key === key),
+    value: editing?.draft[key] ?? "",
+    showError: !!editing && (editing.attempted || !!editing.touched[key]),
+    onChange: (value: string) => setEditing((current) => current && { ...current, draft: { ...current.draft, [key]: value } }),
+    onBadInput: (bad: boolean) => setEditing((current) => current && { ...current, bad: { ...current.bad, [key]: bad } }),
+    onLeave: () => setEditing((current) => current && { ...current, touched: { ...current.touched, [key]: true } }),
+  });
+
+  const drawerBody = editing && evaluation && (() => {
+    const { group } = editing;
+    if (group === "network") {
+      const next = evaluation.next!;
+      const view = networks;
+      // 几个网络因为同一个原因都用不了时，原因在抽屉顶上说一次，各网络下面只写状态（DT-12）。
+      const sharedReason = view.shared && view.blocked.length > 1 ? view.reasonOf(view.shared) : undefined;
+      const fields = NETWORKS.map((net) => {
+        const changed = next[net] !== p.networkEnabled[net];
+        const state = view.states.find((item) => item.net === net)!;
+        const now = !p.networkEnabled[net] ? "现在关闭"
+          : state.usable === undefined ? `配置开启，实际状态暂未知：${view.reasonOf(state.code)}`
+            : state.usable ? "现在开启 · 用户能用"
+              : sharedReason ? "现在开启 · 用户现在用不了" : `现在开启 · 用户现在用不了：${view.reasonOf(state.code)}`;
+        const help = !changed ? undefined
+          : next[net] ? "开启要提交审批。打款方没开通的网络，这里开着 App 也不显示。"
+            : NET_CLOSE_EFFECT;
+        return (
+          <div key={net} data-d5-field={netKey(net)}>
+            <Field label={<>{NET_LABEL[net]} 提现{changed && <> <DirectionTag loosens={next[net]} /></>}</>}
+              help={<><div>{now}</div>{help && <div>{help}</div>}</>}>
+              {() => <Segments label={`${NET_LABEL[net]} 提现通道`} value={editing.draft[netKey(net)] ?? "off"}
+                items={[{ value: "on", label: "开启" }, { value: "off", label: "关闭" }]}
+                onChange={(value) => setEditing((current) => current && { ...current, draft: { ...current.draft, [netKey(net)]: value } })} />}
+            </Field>
+          </div>
+        );
+      });
+      // 关完一个都不剩是能提交的，只提醒一次后果。
+      return <>{sharedReason && <Notice tone="neutral">{`${view.blocked.map((item) => NET_LABEL[item.net]).join("、")} 现在用不了：${sharedReason}。`}</Notice>}{fields}{evaluation.allClosed && evaluation.changedCount > 0 && (
+        <Notice tone="warn">{evaluation.changedCount === 1 ? NET_LAST_OPEN : NET_ALL_CLOSED}</Notice>
+      )}</>;
+    }
+    if (group === "limits") return <>
+      <D5NumberField {...fieldProps("dailyLimitCount")} aria-label="每日提现次数目标值" />
+      <D5NumberField {...fieldProps("maxBalanceRatio")} aria-label="余额可提上限目标值" />
+      <D5NumberField {...fieldProps("smallAmountThresholdUsd")} aria-label="小额免审线目标值" />
+      <D5NumberField {...fieldProps("payoutSlaHours")} aria-label="到账时效目标值" />
+    </>;
+    if (group === "fee") return <>
+      <D5NumberField {...fieldProps("fee.trc20")} aria-label="TRC20 网络确认费目标值" />
+      <D5NumberField {...fieldProps("fee.bep20")} aria-label="BEP20 网络确认费目标值" />
+      <D5NumberField {...fieldProps("fee.erc20")} aria-label="ERC20 网络确认费目标值" />
+    </>;
+    return <D5NumberField {...fieldProps("nexFeeOffsetRate")} aria-label="UVT 抵扣率目标值" />;
+  })();
+
+  const submitBlock = editing && evaluation && (
+    tightenPending.length ? TIGHTEN_LOCK
+      : evaluation.changedCount === 0 ? "没有改动"
+        : evaluation.issues ? `有 ${evaluation.issues} 项要修改`
+          : evaluation.loosens && loosenBlock ? loosenBlock
+            : undefined);
+  const feeDefaultBlock = editing?.group === "fee" ? (
+    NETWORKS.every((net) => Number(editing.draft[`fee.${net}`]) === D5_NETWORK_CONFIRM_FEE_DEFAULT[net]) && !editing.bad["fee.trc20"] && !editing.bad["fee.bep20"] && !editing.bad["fee.erc20"]
+      ? "已经是默认值"
+      : loosenBlock && NETWORKS.some((net) => D5_NETWORK_CONFIRM_FEE_DEFAULT[net] < p.networkConfirmFeeUsd[net]) ? `默认值比现在低，算放宽。${loosenBlock}` : undefined
+  ) : undefined;
+  // 底部：方向和生效方式分开两个标签，放宽和字段旁一样是橙色开锁，生效方式是蓝色（VS-103、DT-13）。
+  // 说明图标放进同一行的标签后面，窄屏不单独掉到下一行。
+  const directionMark = <Explain label="这些操作会怎样" side="top"
+    content="放宽在提交和批准时各查一次兑付覆盖率，低于红线或读不到可靠结果都会被拒。收紧不查，提交后立即生效。" />;
+  const directionNote = evaluation && evaluation.changedCount > 0 && !evaluation.issues && (
+    evaluation.loosens && loosenBlock
+      ? <>{loosenBlock}{directionMark}</>
+      : <span className="rd-toolbar">已改 {evaluation.changedCount} 项{evaluation.loosens
+        ? <><StatusTag tone="warn" icon={LockOpen}>含放宽</StatusTag><StatusTag tone="progress" filled icon={CalendarClock}>批准后生效</StatusTag></>
+        : <StatusTag tone="progress" filled icon={Zap}>立即生效</StatusTag>}{directionMark}</span>
+  );
+
+  return (
+    <>
+      {header}
+      {pendingNotices}
+      {conclusion}
+      {secondary}
+
+      <div className="rd-config-layout">
+        <div className="rd-config-grid">
+          <div className="rd-config-rail">
+            <SectionNav label="本页分组" items={sections} nav={nav} />
+          </div>
+
+          <div className="rd-config-groups">
+            <div id={nav.anchor("limits")}>
+              <Panel title={<span tabIndex={-1} data-section-focus="">额度和时效</span>} explainLabel="额度和时效" icon={Gauge} tone="role-4"
+                explain="四项一起修改、一起提交。只要有一项放宽，整组提交审批；全部收紧时提交后立即生效。">
+                <ConfigList label="额度和时效">
+                  {numRow("dailyLimitCount")}
+                  {numRow("maxBalanceRatio")}
+                  {numRow("smallAmountThresholdUsd")}
+                  {numRow("payoutSlaHours")}
+                </ConfigList>
+              </Panel>
+            </div>
+
+            <div id={nav.anchor("network")}>
+              <Panel title={<span tabIndex={-1} data-section-focus="">网络和费用</span>} explainLabel="网络和费用" icon={Network} tone="role-2"
+                explain="这一组管用户能用哪些网络、每笔收多少费。三个网络一起改。"
+                actions={networks.known && networks.blocked.length > 0 && !networks.outage ? reconLink : undefined}>
+                {/* 提现开关关着时用户能不能用已经确定（都用不了），网络都关着时也没有「开启」可说，这两种不再提示读不到。 */}
+                <ConfigList label="网络和费用">
+                  {networks.states.map(netRow)}
+                  <ConfigRow name={H.networkConfirmFeeUsd.label} what={H.networkConfirmFeeUsd.what} when={H.networkConfirmFeeUsd.when} where={H.networkConfirmFeeUsd.where}
+                    effect={H.networkConfirmFeeUsd.effect} note={`默认 ${NETWORKS.map((net) => `${NET_LABEL[net]} ${usd(D5_NETWORK_CONFIRM_FEE_DEFAULT[net])}`).join("、")}，在调整抽屉里可以恢复默认`}
+                    value={NETWORKS.map((net) => `${NET_LABEL[net]}\u00a0${usd(p.networkConfirmFeeUsd[net]).replace(" ", "\u00a0")}`).join("、")} action={action("fee", "网络确认费")} />
+                  <ConfigRow name={H.nexFeeOffsetRate.label} what={H.nexFeeOffsetRate.what} when={H.nexFeeOffsetRate.when} where={H.nexFeeOffsetRate.where}
+                    effect={H.nexFeeOffsetRate.effect} value={SPECS.nexFeeOffsetRate.show(p.nexFeeOffsetRate)} action={action("nex", "UVT 抵扣率")} />
+                </ConfigList>
+              </Panel>
+            </div>
+
+            <div id={nav.anchor("phase")}>
+              <Fold title="随运营阶段变化的设置" icon={CalendarRange} tone="role-other" summary={phaseSummary}
+                explain="只能查看，修改请到「运营阶段设置」"
+                actions={reach("/growth/phase") ? <Link className="rd-link" href="/growth/phase" prefetch={false}>去运营阶段设置</Link> : undefined}
+                open={phaseOpen} onOpenChange={setPhaseOpen}>
+                <ConfigList label="随运营阶段变化的设置">
+                  <ConfigRow name={H.currentPhase.label} what={H.currentPhase.what} when={H.currentPhase.when} value={`${p.currentPhase} · 第 ${p.currentMonth} 月`} />
+                  <ConfigRow name={H.cooldownDays.label} what={H.cooldownDays.what} when={H.cooldownDays.when} where={H.cooldownDays.where} note={H.cooldownDays.note} value={`${p.cooldownDays} 天`} />
+                  <ConfigRow name={H.complianceHoldEnabled.label} what={H.complianceHoldEnabled.what} when={H.complianceHoldEnabled.when} where={H.complianceHoldEnabled.where} note={H.complianceHoldEnabled.note}
+                    value={<StatusTag tone={p.complianceHoldEnabled ? "progress" : "neutral"} icon={p.complianceHoldEnabled ? undefined : CircleMinus}>{p.complianceHoldEnabled ? "开启" : "关闭"}</StatusTag>} />
+                  <ConfigRow name={H.complianceReviewThresholdUsdt.label} what={H.complianceReviewThresholdUsdt.what} when={H.complianceReviewThresholdUsdt.when} note={threshold === null ? `现在读不到，请刷新或到运营阶段设置核对。${H.complianceReviewThresholdUsdt.note}` : H.complianceReviewThresholdUsdt.note}
+                    value={threshold ?? "待核实"} />
+                  <ConfigRow name={`BEP20、ERC20 ${H.networkRules.label}`} explainLabel="BEP20、ERC20 现在怎么审" what={H.networkRules.what} when={H.networkRules.when} note={H.networkRules.note} value={networkRule} />
+                  <ConfigRow name={`TRC20 ${H.networkRules.label}`} explainLabel="TRC20 现在怎么审" what={H.networkRules.what} when={H.networkRules.when}
+                    note={H.networkRules.note} value={networkRule} />
+                </ConfigList>
+              </Fold>
+            </div>
+
+            <nav className="rd-links" aria-label="相关页面">
+              <span>相关页面</span>
+              {reach("/finance/pool") && <Link className="rd-link" href="/finance/pool" prefetch={false}>资金储备与应付款</Link>}
+              {reach("/overview/dual-ledger") && <Link className="rd-link" href="/overview/dual-ledger" prefetch={false}>资金与应付款总览</Link>}
+              {reach("/finance/withdrawals") && <Link className="rd-link" href="/finance/withdrawals" prefetch={false}>提现审核</Link>}
+              {reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit" prefetch={false}>操作记录与审批</Link>}
+              {reach("/platform/events") && <Link className="rd-link" href="/platform/events" prefetch={false}>用户行为事件</Link>}
+            </nav>
+          </div>
+        </div>
+      </div>
+
+      <Drawer open={!!editing} onClose={askClose} title={editing ? editTitle(GROUP_TITLE[editing.group]) : ""} icon={editing ? drawerIcon[editing.group] : undefined}
+        tone={editing?.group === "limits" ? "role-4" : "role-2"} 
+        explain={editing && (editing.group === "limits"
+          ? "四项一起提交。只要有一项放宽，整组提交审批，另一位超级管理员批准前当前值不变；全部收紧时提交后立即生效。"
+          : editing.group === "network" ? "三个网络一起提交。开启算放宽，要提交审批；只关不开时提交后立即生效。"
+            : editing.group === "fee" ? "三个网络一起保存。任一网络调低，三个一起走审批。"
+              : "调高算放宽，要提交审批；调低提交后立即生效。")}
+        footer={editing && <Decision note={directionNote || undefined}
+          others={editing.group === "fee" && <Button disabledReason={feeDefaultBlock}
+            onClick={() => setEditing((current) => current && { ...current, bad: {}, draft: { ...current.draft, ...Object.fromEntries(NETWORKS.map((net) => [`fee.${net}`, String(D5_NETWORK_CONFIRM_FEE_DEFAULT[net])])) } })}>恢复默认</Button>}
+          primary={<Button variant="primary" disabledReason={submitBlock || undefined}
+            onBlockedClick={() => setEditing((current) => current && { ...current, attempted: true })} onClick={confirmEdit}>提交修改</Button>} />}>
+        {editing?.conflict && <Notice tone="warn">{editing.conflict}</Notice>}
+        {drawerBody}
+      </Drawer>
+
+      {leaveAsk && (
+        <Modal title="有未保存的修改" icon={ShieldCheck} onClose={() => setLeaveAsk(false)} footer={<>
+          <Button onClick={() => setLeaveAsk(false)}>继续编辑</Button>
+          <Button variant="danger-outline" onClick={() => { const then = leaveAsk; closeDrawer(); if (then === "refresh") reloadAll(); }}>{leaveAsk === "refresh" ? "放弃改动并刷新" : "放弃改动"}</Button>
+        </>}><p>{leaveAsk === "refresh" ? "刷新会读最新的值，这次填的内容不会保留。" : "关掉后这次填的内容不会保留。"}</p></Modal>
+      )}
+      {releaseModal}
+    </>
+  );
 }

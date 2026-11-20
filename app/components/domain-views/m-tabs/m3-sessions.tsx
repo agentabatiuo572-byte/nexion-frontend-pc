@@ -11,8 +11,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { subscribeAdminRealtime,getAdminRealtimeSnapshot,watchAdminConversation,sendAdminTyping } from '@/lib/admin/admin-conversation-realtime';
 import { useRouter } from "next/navigation";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { catalogSkuBrandText, supportMessageBrandText, userNicknameText } from "@/lib/admin/brand-copy";
+import { userNicknameText } from "@/lib/admin/brand-copy";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
+import { Select } from "@/app/components/rd";
 import {
   STANDBY_POOL_LABEL,
   TRANSFER_TIMEOUT_MINS,
@@ -36,6 +37,7 @@ import {
   fetchMSupportWorkbenchSkus,
   fetchMSupportWorkbenchUsers,
   updateMConversationTimeoutPolicy,
+  scriptGroupLabel,
   type ConversationTimeoutPolicy,
   type MSupportAgent,
 } from "@/lib/admin/m-client";
@@ -122,7 +124,7 @@ function toPushSku(sku: PushSkuSource): PushSku {
   const subtitle = [sku.tier, sku.tagline, sku.gpu || sku.vram].filter(Boolean).slice(0, 2).join(" · ");
   return {
     id: sku.id || sku.name,
-    title: catalogSkuBrandText(sku.id, sku.name || sku.id || "未命名 SKU"),
+    title: (sku.name || sku.id || "未命名 SKU"),
     subtitle: subtitle || "客服工作台商品",
     to: "/store",
   };
@@ -133,7 +135,7 @@ function toPushSku(sku: PushSkuSource): PushSku {
  * 这里提供直达路由,避免只靠 toast + 手工导航。uid 为用户编码,留空跳域首页队列。
  */
 const ACCOUNT_ACTION_ROUTES: Array<{ label: string; domain: string; path: (uid: string) => string }> = [
-  { label: "临时冻结账户", domain: "C2 账户操作", path: () => "/users/actions" },
+  { label: "临时冻结账户", domain: "账户操作", path: () => "/users/actions" },
   { label: "提现限额下调", domain: "D 域提现", path: (uid) => `/users/search/${encodeURIComponent(uid)}#hub-withdrawal` },
   { label: "解绑并重装设备", domain: "E 域设备", path: (uid) => `/users/search/${encodeURIComponent(uid)}#hub-devices` },
 ];
@@ -166,7 +168,7 @@ function workbenchUserToCustomerProfile(user: User360Profile): CustomerProfile {
     .filter(Boolean);
   const balances = [
     user.walletUsdt == null ? "" : `${textOf(user.walletUsdt)} USDT`,
-    user.walletNex == null ? "" : `${textOf(user.walletNex)} UVEL`,
+    user.walletNex == null ? "" : `${textOf(user.walletNex)} UVT`,
   ].filter(Boolean);
   const deviceCount = textOf(user.deviceCount).trim();
   const activeDeviceCount = textOf(user.activeDeviceCount).trim();
@@ -178,7 +180,7 @@ function workbenchUserToCustomerProfile(user: User360Profile): CustomerProfile {
     systemTags,
     customTags: [],
     risk,
-    riskNote: user.riskScore == null ? "来自真实用户风险档案" : `风险评分 ${textOf(user.riskScore)}`,
+    riskNote: user.riskScore == null ? "来自用户风险档案" : `风险评分 ${textOf(user.riskScore)}`,
     recharge: "—",
     withdraw: "—",
     balance: balances.join(" / ") || "—",
@@ -275,7 +277,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const [profilePeek, setProfilePeek] = useState(false); // 窄屏右栏抽屉开关
   const openFullProfile = () => {
     setProfilePeek(true);
-    toast("客户信息已在右侧客服档案面板展示");
+    toast("客户信息已在右侧客服档案面板展示", "info");
   };
   const [pushSkus, setPushSkus] = useState<PushSku[]>([]);
   const [pushSkuLoading, setPushSkuLoading] = useState(true);
@@ -309,7 +311,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     if (loaded) {
       setShowIdlePolicy(true);
     } else {
-      toast("超时策略加载失败,未使用本地默认值;请检查后端后重试");
+      toast("超时策略加载失败，请稍后重试", "error");
     }
   };
 
@@ -325,7 +327,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     try {
       const updated = await updateMConversationTimeoutPolicy(idlePolicy, input, commandKey);
       setIdlePolicy(updated);
-      toast("会话超时策略已更新，仅之后新建会话段生效；待回复不会自动结束，专属归属保持不变。");
+      toast("会话超时策略已更新，仅之后新建会话段生效；待回复不会自动结束，专属归属保持不变。", "success");
       return true;
     } catch (error) {
       setIdlePolicyError(displayAdminError(error));
@@ -488,7 +490,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
 
   const commitM3Write = async (write: () => Promise<boolean>, successMessage: string): Promise<boolean> => {
     if (writeInFlight.current) {
-      toast("操作正在提交,请稍候");
+      toast("操作正在提交,请稍候", "info");
       return false;
     }
     if (!canWriteM3 || !conversationsAvailable) return false;
@@ -496,7 +498,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     setWritePending(true);
     try {
       const succeeded = await write();
-      if (succeeded) toast(successMessage);
+      if (succeeded) toast(successMessage, "success");
       return succeeded;
     } finally {
       writeInFlight.current = false;
@@ -512,7 +514,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const fallbackOn = pget(FALLBACK_KEY) === "on";
   const setFallback = async (on: boolean) => {
     await commitM3Write(
-      () => setParam(FALLBACK_KEY, on ? "on" : "off", { action: "工作台·转入待处理超时回落备勤池开关", reason: "调整 M3 会话转入待处理超时回落策略", commandKey: `m3:fallback-policy:${on}` }),
+      () => setParam(FALLBACK_KEY, on ? "on" : "off", { action: "工作台·转入待处理超时回落备勤池开关", reason: "调整会话超时转回待处理的设置", commandKey: `m3:fallback-policy:${on}` }),
       on ? "已启用超时回落备勤池" : "已停用超时回落备勤池",
     );
   };
@@ -521,7 +523,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     if (!selected) return;
     const submission=m3ReplySubmission(replyDraft,selected.id);
     if (!submission) {
-      toast("回复需要正文");
+      toast("回复需要正文", "warn");
       return;
     }
     const { recipient, body }=submission;
@@ -537,7 +539,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
           messages: [...c.messages, { ts: now, sender: "agent", agentName: c.owner === "Unassigned" ? "客服台" : c.owner, status: "sent", text: body }],
         }),
         "坐席回复(正文已留档)",
-        `坐席回复会话 ${recipient} · admin.conversation_replied`,
+        `坐席回复会话 ${recipient}`,
         `m3:reply:${recipient}:${body}`,
       ),
       `${recipient} 已回复`,
@@ -560,8 +562,8 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         transfer: { from: fromOwner, to: p.to, reason: p.reason, ts: now },
         messages: [...c.messages, { ts: now, sender: "agent", agentName: "系统", text: `${fromOwner} 转交给 ${toLabel} · 原因:${p.reason}` }],
       }),
-      "跨坐席转交(例行,自动留档 · 不触发审计弹窗)",
-      `会话转交 ${selected.id} → ${toLabel} · admin.conversation_transfer`,
+      "跨坐席转交",
+      `会话转交 ${selected.id} → ${toLabel}`,
       `m3:transfer:${selected.id}:${JSON.stringify(p.to)}:${p.reason}`,
     ), `${selected.id} 已转交 ${toLabel} · 转入待处理`);
     if (succeeded) setShowTransfer(false);
@@ -582,8 +584,8 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         lastTs: now,
         messages: [...c.messages, { ts: now, sender: "agent", agentName: "系统", text: `${newOwner} 接收接入 · 开始接待(来自 ${t.from})` }],
       }),
-      "接收转入会话(例行,自动留档)",
-      `会话接收接入 ${selected.id} · admin.conversation_transfer_accept`,
+      "接收转入会话",
+      `会话接收接入 ${selected.id}`,
       `m3:transfer-accept:${selected.id}`,
     ), `${selected.id} 已接入 · ${newOwner} 接待`);
   };
@@ -598,8 +600,8 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         lastTs: now,
         messages: [...c.messages, { ts: now, sender: "agent", agentName: "系统", text: `保持转入待处理 · 继续等待 ${transferTargetLabel(t.to)} 接入(来自 ${t.from})` }],
       }),
-      "转入待处理继续等待(例行,自动留档)",
-      `会话等待处理 ${selected.id} · admin.conversation_transfer_wait`,
+      "转入待处理继续等待",
+      `会话等待处理 ${selected.id}`,
       `m3:transfer-wait:${selected.id}`,
     ), `${selected.id} 保持转入待处理 · 继续等待接入`);
   };
@@ -618,14 +620,14 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         messages: [...c.messages, { ts: now, sender: "agent", agentName: "系统", text: `已退回${p.target === "from" ? `原坐席 ${back}` : back} · 退回原因:${p.reason}` }],
       }),
       p.reason,
-      `会话退回 ${selected.id} → ${back} · admin.conversation_transfer_return`,
+      `会话退回 ${selected.id} → ${back}`,
       `m3:transfer-return:${selected.id}:${p.target}:${p.reason}`,
     ), `${selected.id} 已退回 ${back}`);
     if (succeeded) setShowReturn(false);
   };
   const setStatusDirect = async (id: string, status: SessionStatus) => {
     await commitM3Write(
-      () => updateConvo(id, (c) => ({ ...c, status, lastTs: Date.now() }), `会话状态「${statusLabel(status)}」(例行,自动留档)`, `会话状态 ${id} · admin.conversation_status`, `m3:status:${id}:${status}`),
+      () => updateConvo(id, (c) => ({ ...c, status, lastTs: Date.now() }), `会话状态「${statusLabel(status)}」`, `会话状态 ${id}`, `m3:status:${id}:${status}`),
       `${id} → ${statusLabel(status)}`,
     );
   };
@@ -659,7 +661,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       () => writeConvos(
         [...existing, newConvo],
         "主动发起会话(单用户 · 例行)",
-        `主动发起会话 ${cid} · admin.conversation_initiated`,
+        `主动发起会话 ${cid}`,
         `m3:initiate:${p.identity.id}:${p.profile?.uid ?? p.targetLabel}:${p.text}:${p.ctaHref ?? ""}`,
         (result) => {
           const row = result && typeof result === "object" ? result as Record<string, unknown> : null;
@@ -671,7 +673,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     if (succeeded) {
       setShowInitiate(false);
       if (!conversationNo) {
-        toast("会话已提交但后端未返回会话编号,请刷新后从会话列表进入");
+        toast("会话已发起，但暂时拿不到会话编号，请刷新后从会话列表进入", "warn");
         return;
       }
       selectConvo(conversationNo);
@@ -683,6 +685,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const convo = selected;
     openActionConfirm({
       action: <>转工单 · {convo.id}</>,
+      briefKind: "record",
       detail: <>把会话 <b>{convo.agentName}</b>(<span className="mono">{convo.id}</span>)转为可追踪工单并进入 处理时限 队列。适用于需要跨班次跟进的提现或设备问题。</>,
       amplifies: false,
       reasonMin: 8,
@@ -697,7 +700,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
           assignedAdminName: supportAgents.some((agent) => agent.name === convo.owner) ? convo.owner : "Unassigned",
           expectedStatus: convo.status,
           expectedVersion: convo.version,
-        }), { action: `会话转工单 ${convo.id} · admin.support_ticket_from_conversation`, reason, commandKey: `m3:convert-ticket:${convo.id}` }),
+        }), { action: `会话转工单 ${convo.id}`, reason, commandKey: `m3:convert-ticket:${convo.id}` }),
         `${convo.id} 已转工单`,
       ),
     });
@@ -717,28 +720,28 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         messages: [...c.messages, { ts: now, sender: "agent", agentName: c.owner === "Unassigned" ? "客服台" : c.owner, status: "sent", text, ctaHref: sku.to }],
       }),
       "坐席推送商品卡(正文已留档)",
-      `坐席推送商品卡 ${sku.id} → ${selected.id} · admin.conversation_sku_pushed`,
+      `坐席推送商品卡 ${sku.id} → ${selected.id}`,
       `m3:push-sku:${selected.id}:${sku.id}`,
     ), `已推送「${sku.title}」`);
   };
 
   const archiveConvo = async (id: string, on: boolean) => {
     await commitM3Write(
-      () => updateConvo(id, (c) => ({ ...c, archived: on }), on ? "会话归档(例行)" : "撤销归档(例行)", `${on ? "会话归档" : "撤销归档"} ${id} · admin.conversation_archive`, `m3:archive:${id}:${on}`),
+      () => updateConvo(id, (c) => ({ ...c, archived: on }), on ? "会话归档" : "撤销归档", `${on ? "会话归档" : "撤销归档"} ${id}`, `m3:archive:${id}:${on}`),
       on ? `${id} 已归档` : `${id} 已撤销归档`,
     );
   };
   const archiveAllResolved = async () => {
     const targets = convos.filter((c) => c.status === "resolved" && !c.archived);
     if (targets.length === 0) {
-      toast("没有可归档的已解决会话");
+      toast("没有可归档的已解决会话", "info");
       return;
     }
     await commitM3Write(
       () => setParam("I.session.archiveBatch.__create", JSON.stringify({
         conversationNos: targets.map((c) => c.id),
         expectedVersions: Object.fromEntries(targets.map((c) => [c.id, c.version])),
-      }), { action: `批量归档已解决会话 ${targets.length} 个 · admin.conversation_archive_batch`, reason: "批量归档已解决会话", commandKey: `m3:archive-batch:${targets.map((c) => c.id).sort().join(",")}` }),
+      }), { action: `批量归档已解决会话 ${targets.length} 个`, reason: "批量归档已解决会话", commandKey: `m3:archive-batch:${targets.map((c) => c.id).sort().join(",")}` }),
       `已批量归档 ${targets.length} 个已解决会话`,
     );
   };
@@ -746,13 +749,13 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const addNote = async (text: string): Promise<boolean> => {
     if (!selected?.profile || !text.trim() || !canWriteM3 || !conversationsAvailable) return false;
     const succeeded = await ctx.addCustomerNote(selected.id, text.trim());
-    if (succeeded) toast("客户备注已保存");
+    if (succeeded) toast("客户备注已保存", "success");
     return succeeded;
   };
   const removeNote = async (noteId: string): Promise<boolean> => {
     if (!selected?.profile || !canWriteM3 || !conversationsAvailable) return false;
     const succeeded = await ctx.removeCustomerNote(selected.id, noteId);
-    if (succeeded) toast("客户备注已删除");
+    if (succeeded) toast("客户备注已删除", "success");
     return succeeded;
   };
   const addCustomerTag = async (tag: string): Promise<boolean> => {
@@ -760,7 +763,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const t = tag.trim();
     if (selected.profile.customTags.includes(t)) return false;
     const succeeded = await ctx.addCustomerTag(selected.id, t);
-    if (succeeded) toast(`已加标签「${t}」`);
+    if (succeeded) toast(`已加标签「${t}」`, "success");
     return succeeded;
   };
   const removeCustomerTag = async (tag: string): Promise<boolean> => {
@@ -774,9 +777,9 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const path = accountActionPath(label, selected.profile.uid);
     if (path) {
       router.push(path);
-      toast(`已跳转「${label}」处置页 · M3 不代为提交`);
+      toast(`已跳转到「${label}」页面，请在那里处理`, "info");
     } else {
-      toast(`请前往 C/D 域完成「${label}」;M3 不会代为提交`);
+      toast(`请到对应页面完成「${label}」，这里不代为提交`, "info");
     }
     setQuick(null);
   };
@@ -801,9 +804,9 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
             const adminPath = ctaHrefToAdminPath(m.ctaHref!);
             if (adminPath) {
               router.push(adminPath);
-              toast(`已跳转「${hrefLabel(m.ctaHref!)}」对应管理页核对`);
+              toast(`已跳转「${hrefLabel(m.ctaHref!)}」对应管理页核对`, "info");
             } else {
-              toast(`请在对应业务页面核对「${hrefLabel(m.ctaHref!)}」`);
+              toast(`请在对应业务页面核对「${hrefLabel(m.ctaHref!)}」`, "info");
             }
           },
         }
@@ -817,7 +820,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       agentName: m.agentName,
       senderName: isAgent ? m.agentName : selected?.profile?.nickname ?? selected?.customer ?? "用户",
       vlevel: !isAgent ? selected?.profile?.vlevel : undefined,
-      body: supportMessageBrandText(m),
+      body: (m).text,
       cta,
       receipt,
     };
@@ -826,12 +829,12 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     <div className="m3-stage">
       {!conversationsAvailable && (
         <div className="itint" role="alert" style={{ gridColumn: "1 / -1", margin: 10 }}>
-          会话数据暂时无法同步,当前不会把空列表当作真实结果,写操作也已关闭。
+          会话数据同步失败，列表为空不代表没有会话，暂时不能操作。
         </div>
       )}
       {conversationsAvailable && !canWriteM3 && (
         <div className="itint" role="status" style={{ gridColumn: "1 / -1", margin: 10 }}>
-          当前账号为只读模式;查看与筛选可用,回复、转交、发起、归档及客户资料修改需要 M3 写权限。
+          你只能查看和筛选；回复、转交、发起、归档和修改客户资料需要会话操作权限。
         </div>
       )}
       {/* 左:会话收件箱 */}
@@ -854,11 +857,11 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
                 disabled={idlePolicyLoading}
                 title={idlePolicy
                   ? `超时策略:静默 ${idlePolicy.warnMinutes} 分钟提醒 · ${idlePolicy.closeMinutes} 分钟自动结束`
-                  : idlePolicyError || "正在读取真实超时策略"}
+                  : idlePolicyError || "正在加载超时策略"}
                 onClick={() => void openIdlePolicy()}
               >
                 <Icon name="clock" size={16} />
-                {idlePolicyLoading ? "策略读取中" : "超时策略"}
+                {idlePolicyLoading ? "加载中" : "超时策略"}
               </button>
               {canWriteM3 && conversationsAvailable && <button type="button" data-proof="session-initiate" className="btn btn-pri btn-sm" disabled={writePending} onClick={() => setShowInitiate(true)}>
                 <Icon name="plus" size={16} />
@@ -878,11 +881,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
               </button>
             ))}
           </div>
-          <select className="inp" aria-label="会话类别" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as ConvCategory)}>
-            <option value="all">全部类别</option>
-            <option value="advisor">专属顾问</option>
-            <option value="support">客服会话</option>
-          </select>
+          <Select aria-label="会话类别" value={typeFilter} onChange={(value) => setTypeFilter(value as ConvCategory)} options={[{ value: "all", label: "全部类别" }, { value: "advisor", label: "专属顾问" }, { value: "support", label: "客服会话" }]} />
           <div className="m3-fallback-bar">
             <span className="m3-fallback-lab"><Icon name="clock" size={13} />转入超时回落备勤池</span>
             <span className="dim2" style={{ fontSize: 11, marginLeft: "auto", marginRight: 8 }}>{fallbackOn ? "超时自动回落" : "关 · 持续等待"}</span>
@@ -1272,7 +1271,7 @@ function TemplatePicker({ title, items, onClose, onPick }: { title: string; item
     };
   }, [onClose]);
   const ql = q.trim().toLowerCase();
-  const list = ql ? items.filter((t) => (t.id + t.group + t.text).toLowerCase().includes(ql)) : items;
+  const list = ql ? items.filter((t) => (t.id + t.group + scriptGroupLabel(t.group) + t.text).toLowerCase().includes(ql)) : items;
   return (
     <div ref={ref} className="sku-pop">
       <div className="sku-pop-h">
@@ -1300,7 +1299,7 @@ function TemplatePicker({ title, items, onClose, onPick }: { title: string; item
               <span className="sku-pop-info">
                 <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <span className="idtag" style={{ fontSize: 11 }}>{t.id}</span>
-                  <span className="dim2" style={{ fontSize: 11 }}>{t.group}</span>
+                  <span className="dim2" style={{ fontSize: 11 }}>{scriptGroupLabel(t.group)}</span>
                 </span>
                 <span style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.5, whiteSpace: "normal", marginTop: 3 }}>{t.text}</span>
               </span>
@@ -1356,12 +1355,12 @@ function SkuPicker({ skus, loading, error, onClose, onPick }: { skus: PushSku[];
         {loading ? (
           <div className="sku-pop-empty">
             <Icon name="box" size={16} />
-            正在读取客服工作台商品
+            正在加载可推荐的商品
           </div>
         ) : error ? (
           <div className="sku-pop-empty">
             <Icon name="box" size={16} />
-            客服工作台商品读取失败:{error}
+            可推荐的商品加载失败：{error}
           </div>
         ) : list.length === 0 ? (
           <div className="sku-pop-empty">
@@ -1536,7 +1535,7 @@ function TagEditor({ systemTags, customTags, onAdd, onRemove }: { systemTags: st
   return (
     <div className="cvp-tags" style={{ marginTop: 4 }}>
       {systemTags.map((t) => (
-        <span key={t} className="chip" title="系统标签 · 只读(随状态派生)" style={{ cursor: "default", opacity: 0.8 }}>
+        <span key={t} className="chip" title="系统标签 · 自动生成，不能修改" style={{ cursor: "default", opacity: 0.8 }}>
           <Icon name="lock" size={11} />
           {t}
         </span>

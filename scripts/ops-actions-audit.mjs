@@ -20,6 +20,7 @@ import {
   resolveNexionAppRoot,
   resolveNexionBackendRoot,
 } from "./lib/nexion-workspace-paths.mjs";
+import { validateRetiredTicketAction } from "./admin-support-surface-audit.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return ""; } };
@@ -46,15 +47,13 @@ const m = JSON.parse(read(MANIFEST) || "{}");
 const rows = m.rows || [];
 const baseline = m.deadControlBaseline || {};
 const problems = [];
+problems.push(...validateRetiredTicketAction(m).map(problem => `[工单退役] ${problem}`));
 const warnings = [];
 const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
 const UNIAPP_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
-const JANUS_ROOT = process.env.NEXION_JANUS_ROOT?.trim()
-  ? path.resolve(process.env.NEXION_JANUS_ROOT.trim())
-  : path.resolve(ROOT, "..", "NX1.0-Janus");
 const evidenceRoot = (type) => type.startsWith("backend-") ? BACKEND_ROOT
   : type.startsWith("uniapp-") ? UNIAPP_ROOT
-    : type.startsWith("janus-") ? JANUS_ROOT : ROOT;
+    : ROOT;
 problems.push(...validateRuntimeEvidence(m, (type, file) => {
   const absolute = path.resolve(evidenceRoot(type), file);
   return absolute.startsWith(`${evidenceRoot(type)}${path.sep}`) ? read(absolute) || undefined : undefined;
@@ -69,8 +68,7 @@ problems.push(...validateServiceDelegations(m, (file) => read(path.resolve(BACKE
 function resolveConsumerEvidencePath(type, file) {
   const root = type === "backend-runtime" || type === "backend-test" ? BACKEND_ROOT
     : type === "uniapp-runtime" || type === "uniapp-test" ? UNIAPP_ROOT
-      : type === "janus-runtime" || type === "janus-test" ? JANUS_ROOT
-        : type === "pc-runtime" || type === "test-runtime" ? ROOT : undefined;
+        : type === "pc-runtime" ? ROOT : undefined;
   if (!root || typeof file !== "string" || !file.trim()) return undefined;
   const absolute = path.resolve(root, file);
   const relative = path.relative(root, absolute);

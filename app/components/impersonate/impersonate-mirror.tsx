@@ -16,7 +16,7 @@ export interface ImpersonateUser {
   id: string;
   name: string;
   lc: string;       // 生命周期 L0–L5
-  vrank: string;    // V0–V12
+  vrank: string;    // V0–V8
   devices: number;  // 设备数
   risk: number;
   balance: number;  // USDT
@@ -32,7 +32,7 @@ const DEVICE_MODELS = ["UVELBox S1", "UVELBox Pro", "UVELBox Pro v2", "UVELRack 
 const DEVICE_RATE = [7, 13, 14, 45, 75, 0.19];
 
 const fmtUsd = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
-const fmtNex = (n: number) => n.toLocaleString("en-US") + " UVEL";
+const fmtNex = (n: number) => n.toLocaleString("en-US") + " UVT";
 const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
 type Tab = "home" | "devices" | "me";

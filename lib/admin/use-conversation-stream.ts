@@ -3,18 +3,18 @@ import { useEffect,useRef,useState } from 'react';
 import { ConversationRealtime, type RealtimeSocket } from './conversation-realtime';
 import { installAdminRealtime,updateAdminRealtime,receiveAdminPresence } from './admin-conversation-realtime';
 import { useAdminAuth } from '@/lib/store/admin-auth';
-export type ConversationEventType='MESSAGE'|'TRANSFER'|'STATUS'|'INITIATE'|'RECEIPT';
-export interface ConversationStreamEvent {conversationNo:string;messageId?:number;eventType:ConversationEventType;senderType:string;senderName?:string;body?:string;ts?:string;ownerAgentId?:string;ownerAgentName?:string}
 export interface UseConversationStreamOptions {
-  onEvent:(event:ConversationStreamEvent,signal:AbortSignal)=>void|Promise<void>;
+  onEvent:(conversationNo:string,signal:AbortSignal)=>Promise<true|void>;
   onReconnectSnapshot:(signal:AbortSignal)=>Promise<void>;enabled?:boolean;lifecycleSignal?:AbortSignal;
   onScopeInvalidated?:(conversationNo?:string,customerId?:string)=>void;
 }
 /** Every connection first reconciles a full authorized snapshot, then consumes invalidations. */
-export function useConversationStream({onReconnectSnapshot,onScopeInvalidated,enabled=true,lifecycleSignal}:UseConversationStreamOptions){
+export function useConversationStream({onEvent,onReconnectSnapshot,onScopeInvalidated,enabled=true,lifecycleSignal}:UseConversationStreamOptions){
+  const onConversation=useRef(onEvent);onConversation.current=onEvent;
   const reconcile=useRef(onReconnectSnapshot);reconcile.current=onReconnectSnapshot;
   const invalidate=useRef(onScopeInvalidated);invalidate.current=onScopeInvalidated;
   const [ready,setReady]=useState(false);const [reconnectExhausted,setExhausted]=useState(false);
+  const [reconnecting,setReconnecting]=useState(false);
   const [reconnectReason,setReconnectReason]=useState("");
   const [nonce,setNonce]=useState(0);
   const clientRef=useRef<ConversationRealtime|null>(null);
@@ -31,7 +31,8 @@ export function useConversationStream({onReconnectSnapshot,onScopeInvalidated,en
         return result.data;
       },
       reconcile:signal=>reconcile.current(signal),
-      state:(value,terminal,reason)=>{setReady(value);setExhausted(terminal||!!reason);setReconnectReason(reason??"");updateAdminRealtime(value);},
+      onEvent:(no,signal)=>onConversation.current(no,signal),
+      state:(value,terminal,reason,interrupted)=>{setReady(value);setReconnecting(interrupted);setExhausted(terminal||!!reason);setReconnectReason(reason??"");updateAdminRealtime(value);},
       presence:receiveAdminPresence,
       scopeInvalidated:(conversationNo,customerId)=>invalidate.current?.(conversationNo,customerId),
     });
@@ -42,7 +43,7 @@ export function useConversationStream({onReconnectSnapshot,onScopeInvalidated,en
     lifecycleSignal?.addEventListener('abort',stop,{once:true});document.addEventListener('visibilitychange',visibility);visibility();
     return()=>{stop();lifecycleSignal?.removeEventListener('abort',stop);document.removeEventListener('visibilitychange',visibility);};
   },[enabled,authorized,authEpoch,lifecycleSignal,nonce]);
-  return {ready,reconnectExhausted,reconnectReason,retry:()=>{
+  return {ready,reconnecting,reconnectExhausted,reconnectReason,retry:()=>{
     // 手动重试优先走同一实例的即时重连(不重建 socket 对象,保留快照轮询);
     // 实例已销毁(生命周期/可见性停表)时才用 nonce 重建。
     const client=clientRef.current;

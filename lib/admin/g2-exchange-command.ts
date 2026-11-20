@@ -1,0 +1,230 @@
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
+import { displayAdminError } from "./error-messages";
+import { isExplicitRejection } from "./explicit-rejection";
+import { normalizeG2BatchResult } from "./g2-batch-result";
+import {
+  fetchG2ExchangeOverview, g2Request, normalizeG2ExchangeOverview, type BackendOverview, type G2Cap, type G2ExchangeOrder, type G2Overview, type G2QueueEstimate,
+} from "./g2-client";
+import {
+  createPendingMutationStore, hasPersistedPendingCommandOwner, RETRY_EXPIRED_TEXT, type PendingMutationRecord,
+} from "./pending-mutation-store";
+import { validateG2Order } from "./g-overview-contract";
+import { stableMutationFingerprint } from "./stable-mutation";
+
+type CommandBody = { reason: string; operator: string; value?: string; enabled?: false; geoBlock?: string[]; triggerBasis?: string; limit?: number };
+type G2CommandContext = { cap?: G2Cap; order?: G2ExchangeOrder; queueDepth?: number };
+export type G2PendingCommand = PendingMutationRecord & {
+  adminId: number; path: string; method: "PATCH" | "POST"; body: string; input: CommandBody; context?: G2CommandContext;
+};
+export type G2PendingBatch = G2PendingCommand & { limit: number; reason: string };
+export type G2CommandQueryResult =
+  | { confirmed: true; overview: G2Overview; batch: ReturnType<typeof normalizeG2BatchResult> }
+  | { confirmed: false; overview: G2Overview; message: string };
+export const G2_QUEUE_ESTIMATE_FIELDS = {
+  queueEtaHours: "hours",
+  queueEtaCopy: "copy",
+  queueEtaCopyZh: "copyZh",
+  queueEtaCopyVi: "copyVi",
+} as const satisfies Record<string, keyof G2QueueEstimate>;
+export type G2QueueEstimateParamKey = keyof typeof G2_QUEUE_ESTIMATE_FIELDS;
+const PARAM_PATH = "/exchange/params/";
+const PARAM_KEYS = new Set(["userDailyCap", "platformDailyCap", "fee", "feeMin", "queueMode", ...Object.keys(G2_QUEUE_ESTIMATE_FIELDS)]);
+const BATCH_PATH = "/exchange/queue/process";
+const commands = createPendingMutationStore<PendingMutationRecord & { adminId?: number; context?: G2CommandContext }>({
+  storageKey: "nexion-admin-g2-exchange-commands-v1",
+  retainExpiredRecords: true,
+});
+let requestSeq = 0;
+
+/** 括号里只写原因（第一小句），不再把「结果未知、可能已经生效」说第二遍。 */
+const g2Cause = (text: string) => text.split(/[，；;,。]/)[0];
+
+export class G2OutcomeUnknownError extends Error {
+  constructor(readonly commandKey: string, message = "结果未知，可能已经生效。原请求已保留：有效期内可以按原请求重试，过期后只能查询。") {
+    super(message);
+    this.name = "G2OutcomeUnknownError";
+  }
+}
+
+/** One owner for the original G2 storage key, including its historical fingerprints. */
+export function listG2ExchangeCommands(adminId: number): G2PendingCommand[] {
+  return commands.list().filter(record => record.adminId === undefined
+    ? hasPersistedPendingCommandOwner(String(adminId)) : record.adminId === adminId).map(record => {
+    const match = /^(g2-param-[A-Za-z]+|g2-swap|g2-cancel-queue|g2-queue-batch):(PATCH|POST) (\/exchange\/[^\n]+)\n([\s\S]+)$/.exec(record.fingerprint);
+    if (!match) throw new Error("原操作内容不完整，请到操作记录核对，勿重复提交。");
+    const [, prefix, method, path, body] = match;
+    const input = JSON.parse(body) as CommandBody;
+    const paramKey = path.startsWith(PARAM_PATH) ? path.slice(PARAM_PATH.length) : undefined;
+    // The ETA contract uses an explicit empty string to clear a field. Check the type, not truthiness.
+    const validTarget = paramKey !== undefined ? method === "PATCH" && PARAM_KEYS.has(paramKey) && prefix === `g2-param-${paramKey}` && typeof input?.value === "string"
+      : path === "/exchange/swap" ? method === "PATCH" && prefix === "g2-swap" && input?.enabled === false
+        && Array.isArray(input.geoBlock) && input.geoBlock.every(country => typeof country === "string") && typeof input.triggerBasis === "string"
+      : path === BATCH_PATH ? method === "POST" && prefix === "g2-queue-batch" && Number.isSafeInteger(input?.limit) && input.limit! >= 1 && input.limit! <= 100
+      : /^\/exchange\/queue\/[^/]+\/cancel$/.test(path) && method === "POST" && prefix === "g2-cancel-queue";
+    if (!validTarget || typeof input?.reason !== "string" || !input.reason.trim() || typeof input.operator !== "string") {
+      throw new Error("原操作内容不完整，请到操作记录核对，勿重复提交。");
+    }
+    const context = record.context;
+    if (context !== undefined) {
+      if (!context || typeof context !== "object" || Array.isArray(context)) throw new Error("原操作内容不完整，请到操作记录核对，勿重复提交。");
+      if (context.cap !== undefined && (paramKey === undefined || !context.cap || context.cap.key !== paramKey
+        || !["name", "sub", "value", "displayValue", "note"].every(key => typeof context.cap![key as keyof G2Cap] === "string")
+        || typeof context.cap.loosen !== "boolean")) throw new Error("原操作内容不完整，请到操作记录核对，勿重复提交。");
+      if (context.order !== undefined) {
+        validateG2Order("G2", context.order, "pending.order");
+        if (path !== `/exchange/queue/${encodeURIComponent(context.order.exchangeNo)}/cancel`) throw new Error("原操作内容不完整，请到操作记录核对，勿重复提交。");
+      }
+      if (context.queueDepth !== undefined && (!Number.isSafeInteger(context.queueDepth) || context.queueDepth < 0)) throw new Error("原操作内容不完整，请到操作记录核对，勿重复提交。");
+    }
+    return { ...record, adminId, method: method as "PATCH" | "POST", path, body, input };
+  });
+}
+
+export function pendingG2ExchangeCommand(adminId: number, path: string) {
+  return listG2ExchangeCommands(adminId).find(record => record.path === path);
+}
+
+export function pendingG2QueueBatch(adminId: number): G2PendingBatch | undefined {
+  const original = pendingG2ExchangeCommand(adminId, BATCH_PATH);
+  return original ? { ...original, limit: original.input.limit!, reason: original.input.reason } : undefined;
+}
+
+export function g2ExchangeCommandExpired(command: PendingMutationRecord) {
+  return Date.now() < command.createdAt || Date.now() >= command.expiresAt;
+}
+
+function requireActor(adminId: number, path: string, write: boolean) {
+  const auth = useAdminAuth.getState();
+  const param = path.startsWith("/exchange/params/") ? path.slice("/exchange/params/".length) : undefined;
+  const authority = param === "userDailyCap" ? "finprod_g2_cap_user_write"
+    : param === "platformDailyCap" ? "finprod_g2_cap_platform_write"
+    : param === "fee" || param === "feeMin" ? "finprod_g2_fee_rate_write"
+    : path === "/exchange/swap" ? "finprod_g2_swap_toggle"
+    : path.endsWith("/cancel") ? "finprod_g2_queue_cancel" : "finprod_g2_write";
+  if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== adminId
+    || write && !auth.session.authorities.includes(authority)
+    || !write && path === BATCH_PATH && !auth.session.authorities.includes("finprod_g2_read")) {
+    throw new Error("登录身份或兑换处理权限已变化，请关闭后重新打开。");
+  }
+  return auth.authEpoch;
+}
+
+async function confirmBatch(response: BackendOverview, original: G2PendingCommand) {
+  const batch = normalizeG2BatchResult(response?.batch);
+  const overview = await fetchG2ExchangeOverview();
+  requireActor(original.adminId, original.path, false);
+  commands.forget(original.fingerprint, original.commandKey);
+  return { overview, batch };
+}
+
+export async function recoverG2ExchangeQueue(adminId: number, commandKey: string) {
+  requireActor(adminId, BATCH_PATH, false);
+  const original = listG2ExchangeCommands(adminId).find(record => record.commandKey === commandKey && record.path === BATCH_PATH);
+  if (!original) throw new Error("原处理记录已变化，请重新打开核对入口。");
+  // Only this endpoint returns a receipt by command number. A 404 never releases evidence.
+  const response = await g2Request<BackendOverview>(BATCH_PATH, { method: "GET", headers: { "Idempotency-Key": commandKey } });
+  return confirmBatch(response, original);
+}
+
+export async function queryG2ExchangeParamReceipt(adminId: number, commandKey: string) {
+  requireActor(adminId, "/exchange", false);
+  const original = listG2ExchangeCommands(adminId).find(record => record.commandKey === commandKey && record.path.startsWith(PARAM_PATH));
+  if (!original) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
+  const scope = `ADMIN:G2:PARAM:${original.path.slice(PARAM_PATH.length)}`;
+  const state = await fetchDirectCommandReceipt(scope, original.commandKey, original.adminId).catch((error: unknown) => {
+    const status = (error as { status?: number } | null)?.status;
+    if ((status && status < 500) || (error instanceof Error && error.message === "COMMAND_INVESTIGATION_FORBIDDEN")) throw error;
+    throw new Error("暂时查询不了原结果，请稍后再查。");
+  });
+  requireActor(original.adminId, original.path, false);
+  if (state === "SUCCEEDED" || state === "REJECTED") commands.forget(original.fingerprint, original.commandKey);
+  return state;
+}
+
+export async function queryG2ExchangeCommand(adminId: number, commandKey: string): Promise<G2CommandQueryResult> {
+  requireActor(adminId, "/exchange", false);
+  const original = listG2ExchangeCommands(adminId).find(record => record.commandKey === commandKey);
+  if (!original) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
+  if (original.path === BATCH_PATH) {
+    return { confirmed: true, ...await recoverG2ExchangeQueue(adminId, commandKey) };
+  }
+  const overview = await fetchG2ExchangeOverview();
+  requireActor(adminId, original.path, false);
+  return { confirmed: false, overview, message: new G2OutcomeUnknownError(commandKey,
+    "已读到现在的配置，但不能据此确认原操作的结果。原记录继续保留，可以到「操作记录与审批」核对。").message };
+}
+
+async function send(original: G2PendingCommand, recovering = false) {
+  if (g2ExchangeCommandExpired(original)) {
+    throw new G2OutcomeUnknownError(original.commandKey, RETRY_EXPIRED_TEXT);
+  }
+  const epoch = requireActor(original.adminId, original.path, true);
+  if (!commands.isDurablyStored(original.fingerprint, original.commandKey)) {
+    throw new Error(recovering ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+  }
+  try {
+    const response = await g2Request<BackendOverview>(original.path, {
+      method: original.method, headers: { "Idempotency-Key": original.commandKey }, body: original.body,
+    });
+    if (requireActor(original.adminId, original.path, false) !== epoch) throw new Error("登录身份或权限已变化，请关闭弹窗后重新操作。");
+    if (original.path === BATCH_PATH) return await confirmBatch(response, original);
+    const accepted = normalizeG2ExchangeOverview(response);
+    const overview = recovering ? await fetchG2ExchangeOverview() : accepted;
+    requireActor(original.adminId, original.path, false);
+    commands.forget(original.fingerprint, original.commandKey);
+    return overview;
+  } catch (error) {
+    if (isExplicitRejection(error)) {
+      commands.forget(original.fingerprint, original.commandKey);
+      throw error;
+    }
+    throw new G2OutcomeUnknownError(original.commandKey, `结果未知，可能已经生效（${g2Cause(displayAdminError(error))}）。原请求已保留，可以查询原结果或按原请求重试。`);
+  }
+}
+
+export async function retryG2ExchangeCommand(adminId: number, commandKey: string) {
+  const original = listG2ExchangeCommands(adminId).find(record => record.commandKey === commandKey);
+  if (!original) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
+  return send(original, true);
+}
+
+async function execute(path: string, method: "PATCH" | "POST", input: CommandBody, prefix: string, context?: G2CommandContext) {
+  const adminId = useAdminAuth.getState().session?.adminId;
+  if (!adminId) throw new Error("登录身份或兑换处理权限已变化，请关闭后重新打开。");
+  requireActor(adminId, path, true);
+  const previous = pendingG2ExchangeCommand(adminId, path);
+  const body = JSON.stringify(input);
+  if (previous) {
+    if (previous.body !== body) throw new G2OutcomeUnknownError(previous.commandKey, "请查询原操作，或使用原配置和原理由重试。");
+    return send(previous, true);
+  }
+  requestSeq = (requestSeq + 1) % 1_000_000;
+  const key = `${prefix}-${Date.now()}-${requestSeq}`;
+  const fingerprint = `${prefix}:${stableMutationFingerprint(method, path, body)}`;
+  commands.remember(fingerprint, key, { adminId, context });
+  if (!commands.isDurablyStored(fingerprint, key)) {
+    commands.forget(fingerprint, key);
+    throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+  }
+  return send(pendingG2ExchangeCommand(adminId, path)!);
+}
+
+export async function updateG2ExchangeParam(paramKey: string, value: string, reason: string, operator: string, cap?: G2Cap) {
+  if (!PARAM_KEYS.has(paramKey)) throw new Error(displayAdminError("G2_EXCHANGE_PARAM_KEY_INVALID"));
+  return execute(`${PARAM_PATH}${paramKey}`, "PATCH", { value, reason, operator }, `g2-param-${paramKey}`, cap ? { cap } : undefined) as Promise<G2Overview>;
+}
+
+export async function updateG2ExchangeSwapStatus(enabled: boolean, reason: string, operator: string, context: { geoBlock?: string[]; triggerBasis?: string; queueDepth?: number } = {}) {
+  if (enabled) throw new Error("这页只能暂停兑换，本次没有执行。恢复兑换请到「紧急停用开关」页面操作。");
+  return execute("/exchange/swap", "PATCH", { enabled: false, reason, operator, geoBlock: context.geoBlock ?? [], triggerBasis: context.triggerBasis ?? "OTHER" }, "g2-swap", { queueDepth: context.queueDepth }) as Promise<import("./g2-client").G2Overview>;
+}
+
+export async function cancelG2ExchangeQueueOrder(exchangeNo: string, reason: string, operator: string, order?: G2ExchangeOrder) {
+  return execute(`/exchange/queue/${encodeURIComponent(exchangeNo)}/cancel`, "POST", { reason, operator }, "g2-cancel-queue", order ? { order } : undefined) as Promise<import("./g2-client").G2Overview>;
+}
+
+export async function processG2ExchangeQueue(adminId: number, limit: number, reason: string, operator: string) {
+  requireActor(adminId, BATCH_PATH, false);
+  return execute(BATCH_PATH, "POST", { limit, reason, operator }, "g2-queue-batch") as Promise<{ overview: import("./g2-client").G2Overview; batch: ReturnType<typeof normalizeG2BatchResult> }>;
+}

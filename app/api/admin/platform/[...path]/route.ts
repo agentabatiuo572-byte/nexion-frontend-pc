@@ -31,6 +31,16 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "config" && parts[1] === "experience") {
     return "/api/admin/platform/config/experience";
   }
+  if (parts.length === 2 && parts[0] === "config" && parts[1] === "operating-languages") {
+    return "/api/admin/platform/config/operating-languages";
+  }
+  // R-1: A3 业务时区 (GET for every console; PUT and POST cancel are super-admin only on the backend).
+  if (parts.length === 1 && parts[0] === "business-calendar") {
+    return "/api/admin/platform/business-calendar";
+  }
+  if (parts.length === 2 && parts[0] === "business-calendar" && parts[1] === "cancel") {
+    return "/api/admin/platform/business-calendar/cancel";
+  }
   if (parts.length === 1 && parts[0] === "params-registry") {
     return "/api/admin/platform/params-registry";
   }
@@ -181,10 +191,11 @@ function backendPath(parts: string[]) {
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   if (path.join("/") === "audit/operations/proposals/by-idempotency-key" && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
-  const diagnostics = path.length === 2 && path[0] === "events" && path[1] === "outbox-diagnostics";
+  if (path.join("/") === "config/operating-languages" && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
+  const diagnostics = path.length === 2 && path[0] === "events" && ["outbox-diagnostics", "outbox-dead-letters"].includes(path[1]);
   if (diagnostics && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
   const avatarRoute = avatarProxyRoute(path, request.method);
-  const targetPath = diagnostics ? "/api/admin/platform/events/outbox-diagnostics" : avatarRoute?.targetPath ?? backendPath(path);
+  const targetPath = diagnostics ? `/api/admin/platform/events/${path[1]}` : avatarRoute?.targetPath ?? backendPath(path);
 
   if (!targetPath) {
     return jsonError(404, "PLATFORM_ROUTE_NOT_FOUND");

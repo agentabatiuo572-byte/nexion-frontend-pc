@@ -10,6 +10,7 @@
  */
 import type { LucideIcon } from "lucide-react";
 import {
+  Settings,
   ShieldCheck,
   Gauge,
   Users,
@@ -20,10 +21,11 @@ import {
   TrendingUp,
   Megaphone,
   Siren,
-  Radar,
   BarChart3,
   Headset,
 } from "lucide-react";
+
+import { B0_BANK_REVIEW_PATH, b0Blocks, b0HasDailyWork } from "@/lib/admin/b0-access";
 
 export type BuiltinAdminRole =
   | "superadmin"
@@ -49,8 +51,11 @@ export const ROLE_LABEL: Record<BuiltinAdminRole, string> = {
   auditor: "审计",
 };
 
+/** 后端按岗位给的角色码，不是内置角色，顶栏也要写人话（D2 大额放行按 FINANCE_LEAD 判断）。 */
+const LEAD_ROLE_LABEL: Record<string, string> = { FINANCE_LEAD: "财务主管", RISK_LEAD: "风控主管" };
+
 export function roleLabel(role: AdminRole): string {
-  return ROLE_LABEL[role as BuiltinAdminRole] ?? role;
+  return ROLE_LABEL[role as BuiltinAdminRole] ?? LEAD_ROLE_LABEL[role] ?? role;
 }
 
 export const SUPPORT_ADMIN_ROLES: BuiltinAdminRole[] = ["support"];
@@ -74,14 +79,17 @@ export interface NavDomain {
   accentVar: string; // "--admin-domain-d"
   roles?: BuiltinAdminRole[]; // 仅作为真实授权数据不可用时的静态 IA fallback
   l2: NavL2[];
+  landingSortOrder?: number;
 }
+
+const PLATFORM_NAV_ORDER = 14;
 
 export const CONSOLE_NAV: NavDomain[] = [
   {
     code: "A",
     name: "平台基础",
     slug: "platform",
-    icon: ShieldCheck,
+    icon: Settings,
     accentVar: "--admin-domain-a",
     roles: ["config"],
     l2: [
@@ -89,7 +97,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "A2", name: "操作记录与审批", path: "/platform/audit", prdAnchor: "A2", batch: "V1", status: "flagship" },
       { id: "A3", name: "系统配置", path: "/platform/config", prdAnchor: "A3", batch: "V1", status: "flagship" },
       { id: "A4", name: "用户行为事件", path: "/platform/events", prdAnchor: "A4", batch: "V1", status: "flagship" },
-      { id: "A5", name: "平台参数管理", path: "/platform/params-registry", prdAnchor: "A5", batch: "V1", status: "flagship" },
+      { id: "A5", name: "平台参数目录", path: "/platform/params-registry", prdAnchor: "A5", batch: "V1", status: "flagship" },
       { id: "A6", name: "角色管理", path: "/platform/roles", prdAnchor: "A6", batch: "V1", status: "flagship" },
       { id: "A7", name: "菜单管理", path: "/platform/menus", prdAnchor: "A7", batch: "V1", status: "flagship" },
       { id: "A8", name: "权限清单", path: "/platform/permissions", prdAnchor: "A8", batch: "V1", status: "flagship" },
@@ -104,8 +112,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     accentVar: "--admin-domain-b",
     l2: [
       { id: "B1", name: "资金与应付款总览", path: "/overview/dual-ledger", prdAnchor: "B1", batch: "V1", status: "flagship" },
-      { id: "B2", name: "可用资金与应付款", path: "/overview/liquidity", prdAnchor: "B2", batch: "V1", status: "flagship" },
-      { id: "B3", name: "用户转化分析", path: "/overview/funnel", prdAnchor: "B3", batch: "V1", status: "flagship" },
+      { id: "B3", name: "用户转化概览", path: "/overview/funnel", prdAnchor: "B3", batch: "V1", status: "flagship" },
       { id: "B4", name: "运营阶段状态", path: "/overview/rhythm", prdAnchor: "B4", batch: "V1", status: "flagship" },
       { id: "B5", name: "风险提醒", path: "/overview/risk-radar", prdAnchor: "B5", batch: "V1", status: "flagship" },
     ],
@@ -133,13 +140,13 @@ export const CONSOLE_NAV: NavDomain[] = [
     accentVar: "--admin-domain-d",
     roles: ["finance", "risk", "config"],
     l2: [
-      { id: "D1", name: "充值对账中心", path: "/finance/recon", prdAnchor: "D1", batch: "V1", status: "flagship" },
-      { id: "D2", name: "待审核提现", path: "/finance/withdrawals", prdAnchor: "D2", batch: "V1", status: "flagship" },
+      { id: "D1", name: "充值与收款对账", path: "/finance/recon", prdAnchor: "D1", batch: "V1", status: "flagship" },
+      { id: "D2", name: "提现审核", path: "/finance/withdrawals", prdAnchor: "D2", batch: "V1", status: "flagship" },
       { id: "D3", name: "资金储备与应付款", path: "/finance/pool", prdAnchor: "D3", batch: "V1", status: "flagship" },
       { id: "D4", name: "账本与账单核对", path: "/finance/ledger", prdAnchor: "D4", batch: "V1", status: "flagship" },
-      { id: "D5", name: "提现参数配置", path: "/finance/params", prdAnchor: "D5", batch: "V1", status: "flagship" },
+      { id: "D5", name: "USDT 提现参数", path: "/finance/params", prdAnchor: "D5", batch: "V1", status: "flagship" },
       { id: "D6", name: "汇率设置", path: "/finance/fx-rate", prdAnchor: "D6", batch: "V1", status: "flagship" },
-      { id: "D7", name: "法币提现参数", path: "/finance/payout-vnd", prdAnchor: "D7", batch: "V1", status: "flagship" },
+      { id: "D7", name: "越南盾提现参数", path: "/finance/payout-vnd", prdAnchor: "D7", batch: "V1", status: "flagship" },
     ],
   },
   {
@@ -153,11 +160,11 @@ export const CONSOLE_NAV: NavDomain[] = [
     // 设备生命周期(原 E4)并入 E5→现 E3。同 F 域 F1-F8→F1-F5。nav id == prdAnchor == PRD §10 章节(PRD 已同步重编号)。
     l2: [
       { id: "E1", name: "商品管理与上架条件", path: "/devices/pricing", prdAnchor: "E1", batch: "V2", status: "flagship" },
-      { id: "E2", name: "设备收益与任务", path: "/devices/tasks", prdAnchor: "E2", batch: "V2", status: "flagship" },
-      { id: "E3", name: "设备使用与以旧换新", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
+      { id: "E2", name: "任务池", path: "/devices/tasks", prdAnchor: "E2", batch: "V2", status: "flagship" },
+      { id: "E3", name: "设备使用与升级置换", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
       { id: "E4", name: "订单进度", path: "/devices/orders", prdAnchor: "E4", batch: "V2", status: "flagship" },
-      { id: "E5", name: "设备运行管理", path: "/devices/ops", prdAnchor: "E5", batch: "V2", status: "flagship" },
-      { id: "E6", name: "算力与设备配置", path: "/devices/compute-config", prdAnchor: "E6", batch: "V2", status: "flagship" },
+      { id: "E5", name: "设备管理", path: "/devices/ops", prdAnchor: "E5", batch: "V2", status: "flagship" },
+      { id: "E6", name: "手机算力配置", path: "/devices/compute-config", prdAnchor: "E6", batch: "V2", status: "flagship" },
     ],
   },
   {
@@ -169,10 +176,10 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["growth"],
     l2: [
       { id: "F1", name: "团队等级晋升", path: "/network/v-rank", prdAnchor: "F1", batch: "V2", status: "flagship" },
-      { id: "F2", name: "团队分成", path: "/network/royalty", prdAnchor: "F2", batch: "V2", status: "flagship" },
-      { id: "F3", name: "左右团队业绩结算", path: "/network/binary", prdAnchor: "F3", batch: "V2", status: "flagship" },
+      { id: "F2", name: "团队奖励设置", path: "/network/royalty", prdAnchor: "F2", batch: "V2", status: "flagship" },
+      { id: "F3", name: "团队平衡奖励", path: "/network/binary", prdAnchor: "F3", batch: "V2", status: "flagship" },
       { id: "F4", name: "奖励池、名额与排行榜", path: "/network/leadership-pool", prdAnchor: "F4", batch: "V2", status: "flagship" },
-      { id: "F5", name: "佣金记录核对", path: "/network/commissions", prdAnchor: "F5", batch: "V2", status: "flagship" },
+      { id: "F5", name: "奖励记录核对", path: "/network/commissions", prdAnchor: "F5", batch: "V2", status: "flagship" },
     ],
   },
   {
@@ -184,10 +191,10 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["finance", "growth"],
     l2: [
       { id: "G1", name: "质押产品配置", path: "/finance-products/staking", prdAnchor: "G1", batch: "V3", status: "flagship" },
-      { id: "G2", name: "兑换风险规则", path: "/finance-products/exchange", prdAnchor: "G2", batch: "V3", status: "flagship" },
-      { id: "G3", name: "UVEL价格管理", path: "/finance-products/market", prdAnchor: "G3", batch: "V3", status: "flagship" },
+      { id: "G2", name: "兑换额度与规则", path: "/finance-products/exchange", prdAnchor: "G2", batch: "V3", status: "flagship" },
+      { id: "G3", name: "UVT价格管理", path: "/finance-products/market", prdAnchor: "G3", batch: "V3", status: "flagship" },
       { id: "G4", name: "创世节点销售与收益", path: "/finance-products/genesis", prdAnchor: "G4", batch: "V3", status: "flagship" },
-      { id: "G7", name: "复投激励", path: "/finance-products/repurchase", prdAnchor: "G7", batch: "V3", status: "flagship" },
+      { id: "G7", name: "锁定计划", path: "/finance-products/repurchase", prdAnchor: "G7", batch: "V3", status: "flagship" },
     ],
   },
   {
@@ -202,11 +209,11 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "H2", name: "免费试用设置", path: "/growth/trial", prdAnchor: "H2", batch: "V1", status: "flagship" },
       { id: "H3", name: "用户任务管理", path: "/growth/quest", prdAnchor: "H3", batch: "V3", status: "flagship" },
       { id: "H4", name: "活动中心", path: "/growth/events", prdAnchor: "H4", batch: "V3", status: "flagship" },
-      { id: "H5", name: "签到与UVEL奖励", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
+      { id: "H5", name: "签到与UVT奖励", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
       // H6 已折入 H5 同页，里程碑在 H5 页面内明确分区展示；不再声明一个后端未登记的独立菜单。
       { id: "H7", name: "代金券", path: "/growth/vouchers", prdAnchor: "H7", batch: "V3", status: "flagship" },
       { id: "H8", name: "新人礼与邀请奖励", path: "/growth/referral-rewards", prdAnchor: "H8", batch: "V3", status: "flagship" },
-      { id: "H9", name: "历史数据展示设置", path: "/growth/public-stats", prdAnchor: "H9", batch: "V3", status: "flagship" },
+      { id: "H9", name: "首页与网络展示设置", path: "/growth/public-stats", prdAnchor: "H9", batch: "V3", status: "flagship" },
     ],
   },
   {
@@ -218,11 +225,11 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["content"],
     l2: [
       { id: "I1", name: "页面文案对比测试", path: "/content/copy-ab", prdAnchor: "I1", batch: "V4", status: "flagship" },
-      { id: "I2", name: "Nova 消息推送", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
+      { id: "I2", name: "消息推送", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
       { id: "I3", name: "通知活动", path: "/content/notifications", prdAnchor: "I3", batch: "V4", status: "flagship" },
       { id: "I4", name: "信任中心", path: "/content/trust", prdAnchor: "I4", batch: "V4", status: "flagship" },
-      { id: "I5", name: "风险披露", path: "/content/disclosures", prdAnchor: "I5", batch: "V4", status: "flagship" },
-      { id: "I6", name: "多语言文案", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
+      { id: "I5", name: "法律条款与风险披露", path: "/content/disclosures", prdAnchor: "I5", batch: "V4", status: "flagship" },
+      { id: "I6", name: "多语言与课程", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
     ],
   },
   {
@@ -243,7 +250,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     code: "K",
     name: "风控与反作弊",
     slug: "risk",
-    icon: Radar,
+    icon: ShieldCheck,
     accentVar: "--admin-domain-k",
     roles: ["risk"],
     l2: [
@@ -251,7 +258,6 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "K2", name: "异常套利与刷量排查", path: "/risk/abuse", prdAnchor: "K2", batch: "V1", status: "flagship" },
       { id: "K3", name: "提现风险规则", path: "/risk/withdrawal-rules", prdAnchor: "K3", batch: "V1", status: "flagship" },
       { id: "K4", name: "风险评分规则", path: "/risk/scoring", prdAnchor: "K4", batch: "V1", status: "flagship" },
-      { id: "K6", name: "设备风险处置", path: "/risk/janus-c2", prdAnchor: "K6", batch: "V1", status: "flagship" },
     ],
   },
   {
@@ -264,7 +270,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "L1", name: "关键指标", path: "/analytics/kpi", prdAnchor: "L1", batch: "V4", status: "flagship" },
       { id: "L2", name: "用户转化与留存", path: "/analytics/funnel-cohort", prdAnchor: "L2", batch: "V4", status: "flagship" },
       { id: "L3", name: "财务报表", path: "/analytics/financial", prdAnchor: "L3", batch: "V4", status: "flagship" },
-      { id: "L4", name: "设备/任务/网络报表", path: "/analytics/operations", prdAnchor: "L4", batch: "V4", status: "flagship" },
+      { id: "L4", name: "设备、任务与团队报表", path: "/analytics/operations", prdAnchor: "L4", batch: "V4", status: "flagship" },
       { id: "L5", name: "数据导出与监管报告", path: "/analytics/export", prdAnchor: "L5", batch: "V4", status: "flagship" },
       { id: "L6", name: "用户行为热力图", path: "/analytics/behavior-heatmap", prdAnchor: "L6", batch: "V4", status: "flagship" },
     ],
@@ -279,10 +285,9 @@ export const CONSOLE_NAV: NavDomain[] = [
     // 客服中心 = 抽 I8(工单)+ I9(即时会话)重组的独立域;真写键沿用 I.support.*/I.session.* 保 persist 兼容。
     l2: [
       { id: "M1", name: "客服工作台", path: "/service/overview", prdAnchor: "M1", batch: "V4", status: "flagship" },
-      { id: "M2", name: "客服工单", path: "/service/tickets", prdAnchor: "M2", batch: "V4", status: "flagship" },
       { id: "M3", name: "专属会话", path: "/service/sessions", prdAnchor: "M3", batch: "V4", status: "flagship" },
       { id: "M6", name: "业绩榜", path: "/service/leaderboard", prdAnchor: "M6", batch: "V4", status: "flagship" },
-      { id: "M4", name: "知识库与处理时限", path: "/service/kb-sla", prdAnchor: "M4", batch: "V4", status: "flagship" },
+      { id: "M4", name: "知识库", path: "/service/kb-sla", prdAnchor: "M4", batch: "V4", status: "flagship" },
       { id: "M5", name: "服务规则与话术", path: "/service/scripts", prdAnchor: "M5", batch: "V4", status: "flagship" },
     ],
   },
@@ -307,10 +312,10 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "D4": "账本/账单审计",
   "D6": "汇率牌价",
   "E1": "商品目录 & 上架门",
-  "E2": "收益 & 任务引擎",
+  "E2": "任务池",
   "E3": "生命周期 & Trade-in",
   "E4": "订单状态机",
-  "E5": "设备运维",
+  "E5": "设备管理",
   "F1": "V-Rank 晋升",
   "F2": "网络版税与分成",
   "F3": "双轨结算引擎",
@@ -318,14 +323,13 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "F5": "佣金事件审计",
   "G1": "Staking 池配置",
   "G2": "兑换风控",
-  "G3": "NEX 行情引擎",
   "G4": "Genesis 经济",
   "H1": "Phase 调度器",
   "H2": "免费试用引擎",
   "H3": "任务引擎",
   "H9": "历史估算配置",
   "I1": "转化文案 A/B",
-  "I2": "Nova 推送运营",
+  "I2": "消息推送运营",
   "I3": "通知 Campaign",
   "I6": "i18n 文案",
   "J1": "Kill-Switch 矩阵",
@@ -335,7 +339,6 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "K2": "套利 & 刷量检测",
   "K3": "提现风控规则引擎",
   "K4": "风险评分模型",
-  "K6": "Janus C2 控制台",
   "L1": "KPI 看板",
   "L2": "漏斗/cohort/留存",
   "L5": "导出 & 监管报告",
@@ -343,7 +346,32 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "M4": "知识库与 SLA",
 };
 const STOCK_MENU_ALIASES: Record<string, string[]> = {
-  M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], H5: ["签到 & NEX"], G3: ["NEX 价格管理"], I4: ["信任中心 CMS"], I6: ["i18n 文案与教程", "i18n 文案与课程"]
+  A5: ["平台参数管理"],
+  B3: ["用户转化分析"],
+  C3: ["余额 & 资产调整"],
+  C5: ["安全 & 会话"],
+  D1: ["充值对账中心"],
+  D2: ["待审核提现"],
+  D5: ["提现参数配置"],
+  D7: ["法币提现参数"],
+  E2: ["收益 & 任务引擎", "设备收益与任务"],
+  E5: ["设备运维", "设备运行管理"],
+  E6: ["算力与设备配置"],
+  F2: ["网络版税费率"],
+  G2: ["兑换风险规则"],
+  G3: ["NEX 行情引擎", "UVT 行情引擎"],
+  G7: ["复投激励"],
+  H3: ["Quest 引擎"],
+  H4: ["活动中心 CMS"],
+  H5: ["签到 & NEX", "签到 & UVT"],
+  H9: ["对外公布数据"],
+  I4: ["信任中心 CMS"],
+  I5: ["风险披露", "风险披露版本"],
+  I6: ["i18n 文案与教程", "i18n 文案与课程", "多语言文案"],
+  L4: ["设备/任务/网络报表"],
+  M1: ["客服总览"],
+  M3: ["即时会话台"],
+  M5: ["话术与模板配置"],
 };
 const LEGACY_DOMAIN_NAMES: Record<string, string> = {
   B: "总览驾驶舱",
@@ -411,6 +439,8 @@ export function menuCodesFromAuthorities(authorities: string[]): string[] {
       found.add(match[1] === "I7" ? "I6" : match[1]);
     }
   }
+  // PHONE tools moved to E6; DB menu grants remain authoritative when supplied.
+  if (authorities.some(code => /^device_e[25]_/.test(code))) found.add("E6");
   return [...found].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
 }
 
@@ -428,6 +458,16 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
 
   if (effectiveCodes === undefined) return [];
   const supportScopeUnknown = snapshot.role === "support" && !snapshot.supportReadModes?.length;
+  // M-48: an advisor who can only read the knowledge base (M4) or service rules (M5) uses that content inside
+  // the conversation; the read-only configuration pages only add menu noise. This narrows, never widens, access.
+  // M5 also hosts managed agent profiles, whose writes use M1 authority rather than M5 authority.
+  // While the support qualification is unknown those pages are all the advisor has, so they stay.
+  const supportWrites = (code: string) => (code === "M5" && snapshot.supportReadModes?.includes("MANAGED")
+    && snapshot.authorities?.includes("service_m1_write")) || (snapshot.authorities ?? []).some((authority) => {
+    const upper = authority.toUpperCase();
+    return upper.includes(`_${code}_`) && /_(WRITE|MANAGE|PUBLISH|EDIT)(_|$)/.test(upper);
+  });
+  const readOnlyConfig = new Set(snapshot.role === "support" && !supportScopeUnknown ? ["M4", "M5"].filter((code) => !supportWrites(code)) : []);
   const allowed = new Set(effectiveCodes
     .map((code) => code.trim().toUpperCase())
     .filter(Boolean)
@@ -456,14 +496,14 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
   return CONSOLE_NAV.flatMap((domain, domainIndex) => {
     const staticOrder = new Map(domain.l2.map((item, index) => [item.id, index]));
     const l2 = domain.l2
-      .filter((item) => item.id !== "M6" && allowed.has(item.id.toUpperCase()) && (!supportScopeUnknown || !["M1", "M2", "M3"].includes(item.id)))
+      .filter((item) => item.id !== "M6" && allowed.has(item.id.toUpperCase()) && !readOnlyConfig.has(item.id) && (!supportScopeUnknown || !["M1", "M2", "M3"].includes(item.id)))
       .flatMap((item) => {
         const node = findNode(item.id.toUpperCase(), (candidate) =>
           candidate.routePath === item.path
           && candidate.parentCode?.trim().toUpperCase() === domain.code);
         if (hasMenuMetadata && !node) return [];
         return [{
-          item: node ? { ...item, name: !node.menuName?.trim() || node.menuName.trim() === LEGACY_MENU_NAMES[item.id] || STOCK_MENU_ALIASES[item.id]?.includes(node.menuName.trim()) || (item.id === "I6" && node.menuName.trim() === "i18n 文案与课程") ? item.name : node.menuName.trim() } : item,
+          item: node ? { ...item, name: !node.menuName?.trim() || node.menuName.trim() === LEGACY_MENU_NAMES[item.id] || STOCK_MENU_ALIASES[item.id]?.includes(node.menuName.trim()) ? item.name : node.menuName.trim() } : item,
           node,
         }];
       })
@@ -478,16 +518,19 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
     const domainNode = findNode(domain.code, (node) =>
       !node.parentCode && node.routePath === `/${domain.slug}`)
       ?? findNode(domain.code, (node) => !node.parentCode);
+    const platform = domain.code === "A";
+    const sortOrder = order(domainNode, platform ? PLATFORM_NAV_ORDER : domainIndex);
     return [{
       ...domain,
       name: !domainNode?.menuName?.trim() || domainNode.menuName.trim() === LEGACY_DOMAIN_NAMES[domain.code]
         ? domain.name : domainNode.menuName.trim(),
       l2,
-      __sortOrder: order(domainNode, domainIndex),
+      landingSortOrder: platform && domainNode?.sortOrder === PLATFORM_NAV_ORDER ? 1 : order(domainNode, domainIndex),
+      sortOrder,
     }];
   })
-    .sort((a, b) => a.__sortOrder - b.__sortOrder)
-    .map(({ __sortOrder: _ignored, ...domain }) => domain);
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map(({ sortOrder: _ignored, ...domain }) => domain);
 }
 
 /** Enforce the resolved menu grant on every known console-domain URL. */
@@ -501,8 +544,67 @@ export function canAccessResolvedPath(domains: NavDomain[], pathname: string | n
   return grantedDomain?.l2.some((item) => path === item.path || path.startsWith(`${item.path}/`)) ?? false;
 }
 
-export function defaultConsolePath(role: AdminRole, domains: NavDomain[]): string | null {
-  const first = domains.find(domain => domain.l2.length > 0)?.l2[0]?.path;
+/** 已按改版规范迁移的页面。浅色主题只对这些页的内容区生效，其余页的内容区保持深色，等迁移批次（06 VS-95）。 */
+export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals", "/finance/pool", "/devices/orders", "/growth/trial", "/analytics/kpi", "/analytics/financial", "/analytics/operations", "/analytics/behavior-heatmap", "/risk/multi-account", "/emergency/kill-switch", "/emergency/tamper", "/service/sessions", "/content/disclosures", "/finance/fx-rate", "/finance/payout-vnd", "/finance/recon", "/finance/params", "/finance/ledger", "/users/assets", "/users/search", "/users/actions", "/platform/audit", "/content/copy-ab", "/content/i18n", "/network/commissions", "/platform/rbac",
+  "/growth/phase",
+  "/content/notifications",
+  "/content/trust",
+  "/growth/public-stats",
+  "/growth/referral-rewards",
+  "/growth/quest",
+  "/growth/events",
+  "/finance-products/genesis",
+  "/finance-products/repurchase",
+  "/risk/withdrawal-rules",
+  "/risk/abuse",
+  "/risk/scoring",
+  "/devices/tasks",
+  "/devices/ops",
+  "/devices/compute-config",
+  "/devices/pricing",
+  "/users/security",
+  "/users/reg-risk",
+  "/service/overview",
+  "/service/kb-sla",
+  "/service/scripts",
+  "/service/leaderboard",
+  "/finance-products/exchange",
+  "/finance-products/market",
+  "/finance-products/staking",
+  "/growth/vouchers",
+  "/growth/daily",
+  "/platform/config",
+  "/platform/events",
+  "/platform/params-registry",
+  "/platform/permissions",
+  "/platform/developer-access",
+  "/platform/roles",
+  "/platform/menus",
+  "/network/v-rank",
+  "/network/royalty",
+  "/network/binary",
+  "/network/leadership-pool",
+  "/analytics/funnel-cohort",
+  "/analytics/export",
+  "/emergency/geo-block",
+  "/emergency/sop",
+  "/content/nova",
+  "/devices/trade-in",
+  "/overview/dual-ledger",
+  "/overview/funnel",
+  "/overview/risk-radar",
+  "/overview/rhythm",
+];
+/** 不在菜单里的详情页，路径带对象编号，按前缀认。 */
+export const REDESIGNED_DETAIL_PREFIXES: readonly string[] = ["/users/search/", "/service/customers/"];
+export const isRedesignedPath = (pathname: string) => {
+  const path = pathname.split(/[?#]/, 1)[0];
+  return REDESIGNED_PATHS.includes(path) || REDESIGNED_DETAIL_PREFIXES.some((prefix) => path.startsWith(prefix));
+};
+
+/** 登录后落在哪（Q-20）：看得到待处理或经营数的落今日概览，客服落客服工作台，其余落第一个有权限的页。 */
+export function defaultConsolePath(role: AdminRole, domains: NavDomain[], authorities: readonly string[] = []): string | null {
+  const first = domains.find(domain => domain.l2.length > 0);
   if (!first) return null;
   if (role === "superadmin") return "/";
   if (role === "support") {
@@ -512,7 +614,16 @@ export function defaultConsolePath(role: AdminRole, domains: NavDomain[]): strin
       if (page) return page.path;
     }
   }
-  return first;
+  if (b0HasDailyWork(b0Blocks(authorities), canAccessResolvedPath(domains, B0_BANK_REVIEW_PATH))) return "/";
+  const platform = domains.find(domain => domain.code === "A");
+  // Keep the previous landing priority for the shipped platform order.
+  if (platform?.landingSortOrder !== undefined
+    && first.landingSortOrder !== undefined
+    && platform.landingSortOrder <= first.landingSortOrder
+    && platform.l2.length > 0) {
+    return platform.l2[0].path;
+  }
+  return first.l2[0].path;
 }
 
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13

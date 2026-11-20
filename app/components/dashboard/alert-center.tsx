@@ -41,7 +41,7 @@ export function AlertCenter({ alerts }: { alerts: AlertItem[] }) {
         <span className="inline-flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 6, height: 6, background: "var(--v5-ink-4)" }} />正常</span>
       </div>
       {alerts.length === 0 && (
-        <p className="mt-3 py-3 text-center text-[12.5px]" style={{ color: "var(--v5-ink-4)" }}>无活跃告警 ✓</p>
+        <p className="mt-3 py-3 text-center text-[12.5px]" style={{ color: "var(--v5-ink-4)" }}>暂无告警 ✓</p>
       )}
       <ul className="mt-3 flex flex-col gap-0.5">
         {alerts.map((a) => (

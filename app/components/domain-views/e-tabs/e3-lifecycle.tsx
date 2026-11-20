@@ -1,31 +1,32 @@
+"use client";
+/**
+ * E3 设备使用与升级置换（改版）。配置页：结论、四个数、产能曲线和最近 24 小时，再往下是两套规则和「已停用的设置」（后端还返回旧值时才显示）。
+ * 两套规则就是旧页的「任务产能节奏」（产能随月龄下降、参与任务递减的商品）和「升级置换阶梯」（分档界线、各档抵扣比例）。
+ * 读数、写入口和请求都走壳（e-view.tsx）原来的 ctx：openActionConfirm 的 name、op、paramKey(s)、edit、businessForm、amplify 与旧页一致，
+ * 只加了显示用的 title、effect、facts、statedBrief、hint、preview、explain、warning。
+ */
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { CodeTag } from "../design-kit";
-import { AutoGloss } from "@/app/components/kit/gloss";
-import type { EViewCtx } from "./types";
-import { effCurve } from "./data";
-import { EStats } from "./stats";
+import { ArrowLeftRight, BookOpen, CircleSlash, Clock3, Gauge, Hourglass, Info, RefreshCw, SearchCheck, ShieldCheck, Wallet } from "lucide-react";
+import { useReach } from "@/lib/nav/use-reach";
+import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { e3ConfigAmplifies } from "@/lib/admin/e3-outflow";
+import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Explain, Fact, Facts, Fold, PageHeader, Panel,
+  Modal, ReleaseBody, ScaleBar, SegmentBar, Stat, StatBand, StatusTag, StepBar, Table, TableMessage, Td, Th, Tr, TrendLines } from "@/app/components/rd";
+import type { EViewCtx, McSpec } from "./types";
+import { E3Manual } from "./e3-manual";
+import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
 
-const LifeIcon = () => <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 12h4l3-7 4 14 3-7h4" /></svg>;
-const TradeIcon = () => <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3" /></svg>;
-const AlertIcon = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 4l9 16H3z" /><path d="M12 10v5M12 18h.01" /></svg>;
-const ShieldIcon = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" /></svg>;
+/** 批准资格的真实路径（后端 A2：不同于发起人、有批准权、能访问 E 域；单项另要 E3 读权）。 */
+export const E3_APPROVER_SINGLE = "另一位有批准权限、能查看这页的管理员在「操作记录与审批」批准后生效，发起人不能自批；批准前规则不变。";
+export const E3_APPROVER_BATCH = "另一位有批准权限的管理员在「操作记录与审批」批准后整组一起生效，发起人不能自批；批准前规则不变。";
+/** 覆盖率和任务奖励上限在批准执行时检查，提交时不查。 */
+export const E3_COVERAGE_CHECK = "提交时不查；批准时再查兑付覆盖率，产能类修改还查各商品的任务奖励上限，不通过就不执行。";
 
-// 参数行标签:中文主标(运营可读)+ 可选英文代号(降 mono 副标,保后台契约可读)+ 可选「高敏」标(把琥珀高亮的语义从"选中态"明示为"高敏参数");
-// desc 接 AutoGloss,给词典里的术语(套利/残值/折抵/衰减…)加虚线下划线 + hover 通俗注释。
-function Lbl({ zh, code, desc, hot }: { zh: string; code?: string; desc: string; hot?: boolean }) {
-  return (
-    <div className="lhs">
-      <span className="zh">
-        {zh}
-        {code ? <span title={`技术字段：${code}`} aria-label={`技术字段：${code}`} /> : null}
-        {hot ? <span className="hot" title="敏感参数:本页风险最高的杠杆,改动影响资金流出 / 套利风险,请重点关注">敏感</span> : null}
-      </span>
-      <div className="desc"><AutoGloss>{desc}</AutoGloss></div>
-    </div>
-  );
-}
-
-const REQUIRED_E3_KEYS = [
+export const REQUIRED_E3_KEYS = [
   "E.device.capacity.band1DeltaPct",
   "E.device.capacity.band2DeltaPct",
   "E.device.capacity.band3DeltaPct",
@@ -42,9 +43,6 @@ const REQUIRED_E3_KEYS = [
   "E.device.capacity.applyTo.stellarbox-pro-v2",
   "E.device.capacity.applyTo.stellarrack-p1",
   "E.device.capacity.applyTo.stellarrack-p2",
-  "E.device.taskLock.s1",
-  "E.device.taskLock.pro",
-  "E.device.taskLock.rack",
   "E.tradein.enabled",
   "E.tradein.ladder.cut1",
   "E.tradein.ladder.cut2",
@@ -60,8 +58,11 @@ const REQUIRED_E3_KEYS = [
   "E.tradein.eligibility",
 ];
 
-// FEAT-DEV01: 参与任务递减(每 SKU 开关)· 值=参与递减/免递减 · 与 uniapp CAPACITY_EXEMPT_KINDS 镜像(canon 哨兵对账)
-const APPLY_TO_SKUS: { kind: string; label: string }[] = [
+/** 提示升级的月损失金额：已停用（89c76193）。新后端不再返回；旧后端还返回时只读显示。 */
+const TASK_LOCK_KEYS = ["E.device.taskLock.s1", "E.device.taskLock.pro", "E.device.taskLock.rack"];
+
+/** FEAT-DEV01 参与任务递减（每个商品一个开关）：值是「参与递减」或「免递减」。与 App 的 CAPACITY_EXEMPT_KINDS 对账（canon 哨兵）。 */
+export const APPLY_TO_SKUS: { kind: string; label: string }[] = [
   { kind: "phone", label: "手机" },
   { kind: "cloud-share", label: "云端共享份额" },
   { kind: "pc-gpu", label: "电脑共享" },
@@ -72,240 +73,499 @@ const APPLY_TO_SKUS: { kind: string; label: string }[] = [
   { kind: "stellarrack-p2", label: "UVELRack P2" },
 ];
 
-const num = (value: string, fallback: number) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+/** 本页名字：配置键 → 运营看到的名字。确认框、待批准条、说明手册都用这一份。 */
+const NAMES: Record<string, string> = {
+  "E.device.capacity.band1DeltaPct": "前期每月变化",
+  "E.device.capacity.band2DeltaPct": "中期每月变化",
+  "E.device.capacity.band3DeltaPct": "后期每月变化",
+  "E.device.capacity.floorPct": "产能下限",
+  "E.device.capacity.subsidyDays": "新机任务补贴天数",
+  "E.device.stageEarlyEnd": "前期到第几月",
+  "E.device.stageMidEnd": "中期到第几月",
+  "E.device.cycleMonths": "曲线画几个月",
+  "E.tradein.enabled": "升级置换开关",
+  "E.tradein.requireHigherPrice": "只能换更贵的新设备",
+  "E.tradein.maxDevicesPerOrder": "每单最多抵扣台数",
+  "E.tradein.eligibility": "谁能升级置换",
 };
+/** 缺项提示用：每个必需键都有中文名。 */
+const keyName = (key: string) => NAMES[key]
+  ?? (key.match(/ladder\.cut(\d)$/) ? `分档界线 ${key.slice(-1)}`
+  : key.match(/ladder\.credit(\d)$/) ? `第 ${key.slice(-1)} 档抵扣比例`
+  : key.startsWith("E.device.capacity.applyTo.") ? `${APPLY_TO_SKUS.find((s) => key.endsWith(`.${s.kind}`))?.label ?? key}是否逐月下降`
+  : key.startsWith("E.device.taskLock.") ? "提示升级的月损失金额"
+  : key);
+/** 一项的值带单位，开关写开启、关闭。待批准、结果未知的说明共用。 */
+const unitOf = (key: string) => /Pct$|ladder\./.test(key) ? "%" : key.startsWith("E.device.taskLock.") ? " USDT" : key.endsWith("subsidyDays") ? " 天"
+  : /stageEarlyEnd|stageMidEnd|cycleMonths/.test(key) ? " 月" : key.endsWith("maxDevicesPerOrder") ? " 台" : "";
+const shown = (key: string, value: string | undefined) => value === undefined ? "—" : value === "开" ? "开启" : value === "关" ? "关闭" : `${value}${unitOf(key)}`;
+/** 一次提交改了什么：只列改动的项，「名字 现在 → 改后」。 */
+const changeText = (p: { keys: string[]; before: Record<string, string>; after: Record<string, string> }) => {
+  const changed = p.keys.filter((key) => p.before[key] !== p.after[key]);
+  return (changed.length ? changed : p.keys).map((key) => `${keyName(key)} ${shown(key, p.before[key])} → ${shown(key, p.after[key])}`).join("；");
+};
+const ELIGIBILITY = ["全部用户", "L2+ 持有者", "L3+ 持有者", "L4+ 持有者", "L5+ 持有者", "L6+ 持有者"];
 
-const countText = (value: number) => new Intl.NumberFormat("zh-CN").format(Math.max(0, Math.round(value)));
-const moneyText = (value: number) => `$${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.max(0, value))}`;
+const num = (value: string) => Number(value);
+const signed = (value: string) => `${num(value) > 0 ? "+" : ""}${value}%`;
+const countText = (value: number) => value.toLocaleString("zh-CN");
+const usdtText = (value: string) => {
+  const [whole, fraction = ""] = value.split(".");
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(2, "0")} USDT`;
+};
+const capText = (value: number) => `${Number(value.toFixed(2))}%`;
+
+/** 产能（%）：分段连乘再取下限，和后端 E3CapacityCurve 同一个算法。只用来画图和写预览，不参与提交。 */
+function capacityAt(policy: Record<string, string>, month: number) {
+  const early = num(policy["E.device.stageEarlyEnd"]), mid = num(policy["E.device.stageMidEnd"]);
+  const factor = (band: number) => 1 + num(policy[`E.device.capacity.band${band}DeltaPct`]) / 100;
+  return Math.max(num(policy["E.device.capacity.floorPct"]), 100
+    * factor(1) ** Math.min(month, early)
+    * factor(2) ** Math.max(Math.min(month, mid) - early, 0)
+    * factor(3) ** Math.max(month - mid, 0));
+}
+const curveOf = (policy: Record<string, string>, months: number) => Array.from({ length: months + 1 }, (_, month) => capacityAt(policy, month));
+/** 第一个超过 100% 的月份；App 目前拒绝显示这种产能（E3-DEC-03）。 */
+function overHundred(policy: Record<string, string>, months: number) {
+  const curve = curveOf(policy, Math.max(months, num(policy["E.device.stageMidEnd"]) + 12));
+  const month = curve.findIndex((value) => value > 100.000001);
+  return month < 0 ? null : { month, value: curve[month] };
+}
+const OVER_HUNDRED = "App 目前不接受超过 100% 的产能";
 
 export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
-  const { pE, e3Loading, e3Error, e3Ready, e3Stats, e3Operations } = ctx;
-  const hasRequiredConfig = REQUIRED_E3_KEYS.every((key) => pE(key) !== "—");
-  if (!e3Ready || !hasRequiredConfig) {
-    return (
-      <section className="param-card">
-        <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">E3 配置不完整</div><div className="s">{e3Loading ? "正在读取设备运营配置" : e3Error || "设备运营配置未完整返回"}</div></div></div>
-        <div className="param-foot"><span className="ic"><AlertIcon /></span><span>{e3Error ? `配置读取失败：${e3Error}` : "正在获取设备生命周期和升级置换配置。"}</span></div>
-        <button className="adj" onClick={() => void ctx.refreshE3()}>刷新</button>
-      </section>
-    );
+  const reach = useReach();
+  const [manualOpen, setManualOpen] = useState(false);
+  const { pE, e3Loading, e3Error, e3Ready, e3Stats, e3Operations, e3Proposals } = ctx;
+  const E3_PROPOSALS = e3Proposals.records.map(p => ({ ...p, original: p, id: p.commandKey, reason: p.input.reason,
+    state: p.state === "unknown" && isRetryExpired(p) ? "expired" as const : p.state,
+    at: businessStamp(p.createdAt) }));
+  type Shown = typeof E3_PROPOSALS[number];
+  const [releasing, setReleasing] = useState<Shown | null>(null);
+  const endText = (status: string) => `审批${PROPOSAL_END[status]?.tag ?? "状态待核实"}：${PROPOSAL_END[status]?.text ?? "请到操作记录与审批核对。"}`;
+  const lookupError = (error: unknown, created: boolean) => {
+    const code = error instanceof Error ? error.message : "";
+    return created ? "这次没查到审批进度；审批单已经建了，稍后再查，不会再建一张。"
+      : code === "A2_BUSINESS_CONTEXT_MISMATCH" ? "查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。"
+        : code === "A2_PROPOSAL_READ_FORBIDDEN" ? "当前账号不能查审批单，请把这条记录交给能查看操作记录与审批的管理员核对。" : eReadError(error);
+  };
+  const E3_RECOVERY = {
+    lookup: e3Proposals.canQuery ? async (p: Shown) => {
+      try {
+        const ticket = await e3Proposals.lookup(p.original);
+        if (!ticket) { ctx.toast(isRetryExpired(p.original) ? "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "按原请求查不到这张审批单，现在还没建成；可以按原请求重试，不会重复建单。"); return; }
+        ctx.toast(ticket.status === "pending" ? "查到了审批单，还在等批准；批准或驳回后这条自动更新。" : endText(ticket.status));
+        await ctx.refreshE3();
+      } catch (error) { ctx.toast(lookupError(error, !!p.original.ticketId)); }
+    } : undefined,
+    retry: async (p: Shown) => {
+      try { await e3Proposals.send(p.original); await ctx.refreshE3(); }
+      catch (error) { if (isExplicitRejection(error)) await ctx.refreshE3(); ctx.toast(displayAdminError(error)); }
+    },
+    legacy: e3Proposals.canQuery ? async (r: typeof e3Proposals.legacy[number]) => {
+      try {
+        const ticket = await e3Proposals.lookupLegacy(r);
+        if (!ticket) { ctx.toast("按原请求没有查到审批单，记录继续保留；请到操作记录与审批核对。"); return; }
+        ctx.toast(ticket.status === "pending" ? "查到了审批单，还在等批准；批准或驳回后这条自动收起。" : endText(ticket.status));
+        await ctx.refreshE3();
+      } catch (error) { ctx.toast(lookupError(error, false)); }
+    } : undefined,
+    release: async (p: Shown) => {
+      let released: boolean;
+      try { released = await e3Proposals.releaseMissing(p.original); }
+      catch (error) { throw new Error(lookupError(error, false)); }
+      setReleasing(null);
+      ctx.toast(released ? "已解除这条记录，这几项可以重新提交。" : "这次查到了审批单或没有确认查不到，记录继续保留。", released ? "success" : "warn");
+    },
+  };
+  const zone = businessZone().label;
+  const what = (p: Shown) => `修改「${p.label.replace(/ 调整$/, "")}」`;
+  const busy = !!e3Proposals.busy;
+  const query = (p: Shown, label = "查询原结果") => E3_RECOVERY.lookup && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={busy} onClick={() => void E3_RECOVERY.lookup!(p)}>{label}</Button>;
+  const changed = (p: Shown) => <p>{changeText(p)} · {p.at} 提交（{zone}）<br /><span className="e3p-sub">理由：{p.reason}</span></p>;
+  const pendingList = E3_PROPOSALS.filter(p => p.state === "pending");
+  const items: RecoveryItem[] = [
+    ...E3_PROPOSALS.map(p => {
+      const state = p.state === "pending" ? { tag: "待审批", tone: "warn" as const, line: "等另一位管理员批准，批准前按现在的规则执行。" }
+        : p.state === "unknown" ? { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.unknown }
+          : p.state === "submitted" ? { tag: "进度没读到", tone: "warn" as const, line: RECOVERY_LINE.created }
+            : p.state === "expired" ? e3Proposals.missing.includes(p.commandKey) ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing }
+              : { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.expired }
+              : { tag: "已驳回", tone: "neutral" as const, line: "规则没有变化，要改请重新提交。" };
+      return { key: p.state === "pending" ? `waiting:${p.id}` : p.id, object: what(p), createdAt: p.createdAt, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line,
+        actions: p.state === "rejected" ? undefined : <>
+          {query(p, p.state === "pending" ? "查询审批结果" : "查询原结果")}
+          {p.state === "unknown" && e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={busy} onClick={() => void E3_RECOVERY.retry(p)}>按原请求重试</Button>}
+          {p.state === "expired" && e3Proposals.missing.includes(p.commandKey) && <Button size="sm" disabled={busy} onClick={() => setReleasing(p)}>解除原操作记录</Button>}
+        </>,
+        detail: changed(p) };
+    }),
+    ...e3Proposals.legacy.map(r => {
+      const names = [...new Set(r.fingerprint.split("|")[1].split(",").map(keyName))];
+      return { key: r.commandKey, object: `${names.slice(0, 3).join("、")}${names.length > 3 ? ` 等 ${names.length} 项` : ""}`, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
+        line: "早期提交缺原请求，只能查询，不能重试。",
+        actions: E3_RECOVERY.legacy && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={e3Loading} onClick={() => void E3_RECOVERY.legacy!(r)}>查询原结果</Button>,
+        detail: <p>{businessStamp(r.createdAt)} 提交（{zone}）</p> };
+    }),
+  ];
+  const recovery = <>
+    <RecoveryPanel title={recoveryTitle(items.length - E3_PROPOSALS.filter(p => p.state === "pending" || p.state === "rejected").length, E3_PROPOSALS.filter(p => p.state === "pending").length, E3_PROPOSALS.filter(p => p.state === "rejected").length)} tone="warn"
+      explain={`有结论前，这几项不能再改。点行首的箭头看改了什么、提交时间（${zone}）和理由。`} items={items} />
+    {releasing && <MissingProposalReleaseModal label={changeText(releasing)} createdAt={releasing.createdAt} onCancel={() => setReleasing(null)} onConfirm={() => E3_RECOVERY.release(releasing)} />}
+  </>;
+  const missing = REQUIRED_E3_KEYS.filter((key) => pE(key) === "—");
+  const ready = e3Ready && missing.length === 0;
+
+  const header = (
+    <PageHeader pageId="E3" title="设备使用与升级置换"
+      summary="看设备老化和升级置换，维护产能和抵扣规则。"
+      actions={<Button icon={<BookOpen size={15} aria-hidden />} onClick={() => setManualOpen(true)}>操作说明手册</Button>}
+      meta={<Button variant="ghost" size="sm" loading={e3Loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.refreshE3()}>刷新</Button>}
+      readOnly={ready && !ctx.canWriteE3 ? "你只能查看；修改规则要有这页的修改权限。" : undefined} />
+  );
+  const manual = manualOpen && <E3Manual ctx={ctx} onClose={() => setManualOpen(false)} />;
+
+  if (!ready) {
+    return <div className="e3p">
+      {header}
+      {recovery}
+      {e3Loading && !e3Ready ? <BlockState state="loading" title="正在读取规则和统计…" />
+        : e3Error ? <BlockState state="error" title="规则和统计没有读到" detail={e3Error} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
+        : e3Ready ? <BlockState state="error" title={`规则没有读全：缺 ${missing.length} 项`} detail={`缺 ${[...new Set(missing.map(keyName))].slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。读全之前不显示规则，也不能修改，请稍后重新读取或联系技术同事核对配置。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
+        : <BlockState state="loading" title="正在读取规则和统计…" />}
+      {manual}
+    </div>;
   }
 
-  const early = num(pE("E.device.capacity.band1DeltaPct"), -4);
-  const mid = num(pE("E.device.capacity.band2DeltaPct"), -6);
-  const late = num(pE("E.device.capacity.band3DeltaPct"), -23.7);
-  const s1 = Math.max(1, Math.round(num(pE("E.device.stageEarlyEnd"), 3)));
-  const s2 = Math.max(s1 + 1, Math.round(num(pE("E.device.stageMidEnd"), 8)));
-  const cyc = Math.max(s2 + 1, Math.round(num(pE("E.device.cycleMonths"), 12)));
-  const floorPct = Math.max(0, Math.min(99, num(pE("E.device.capacity.floorPct"), 22)));
-  const exemptCount = APPLY_TO_SKUS.filter((s) => pE(`E.device.capacity.applyTo.${s.kind}`) === "免递减").length;
-  // FEAT-DEV02 置换阶梯:界点 4 + 抵扣率 5(区间左闭右开,连续性由构造保证)。
-  const ladderCuts = [1, 2, 3, 4].map((i) => pE(`E.tradein.ladder.cut${i}`));
-  const ladderCredits = [1, 2, 3, 4, 5].map((i) => pE(`E.tradein.ladder.credit${i}`));
-  const curve = effCurve(early, mid, late, s1, s2, cyc, floorPct);
-  const stats = e3Stats ?? { averageAgeMonths: 0, cliffDeviceCount: 0, tradeinMonthCount: 0, tradeinDiscountUsdt: 0, k2ArbitrageHits: 0 };
-  const totalTxSuccess = e3Operations.reduce((sum, item) => sum + item.ok, 0);
-  const totalTxFailure = e3Operations.reduce((sum, item) => sum + item.fail, 0);
-  // 分母为 0 时成功率不可计算,不是 0%。此前把「24h 内一次事务都没有」渲染成
-  // 「成功率 0.0%」,读起来就是「事务全部失败」——与旁边三列全 0 的事实互相矛盾。
-  const txSampleSize = totalTxSuccess + totalTxFailure;
-  const txSuccessRate = txSampleSize > 0 ? (totalTxSuccess / txSampleSize) * 100 : null;
+  const policy = Object.fromEntries(REQUIRED_E3_KEYS.map((key) => [key, pE(key)]));
+  const s1 = num(pE("E.device.stageEarlyEnd")), s2 = num(pE("E.device.stageMidEnd")), cyc = num(pE("E.device.cycleMonths"));
+  const floor = pE("E.device.capacity.floorPct");
+  const declining = APPLY_TO_SKUS.filter((s) => pE(`E.device.capacity.applyTo.${s.kind}`) === "参与递减");
+  const exempt = APPLY_TO_SKUS.filter((s) => pE(`E.device.capacity.applyTo.${s.kind}`) !== "参与递减");
+  const cuts = [1, 2, 3, 4].map((i) => pE(`E.tradein.ladder.cut${i}`));
+  const credits = [1, 2, 3, 4, 5].map((i) => pE(`E.tradein.ladder.credit${i}`));
+  const tradeinOn = pE("E.tradein.enabled") === "开";
+  const stats = e3Stats;
+  const averageAgeMonths = stats?.averageAgeMonths ?? null;
+  const lateFrom = s2 + 1;
+  const pendingFor = (keys: readonly string[]) => {
+    const proposals = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k)));
+    return proposals.length ? { ...proposals[0], after: Object.assign({}, ...proposals.map(p => p.after)) } : undefined;
+  };
+  const devicesStored = pE("E.tradein.maxDevicesPerOrder");
+  const devicesOff = devicesStored !== "—" && num(devicesStored) !== 1;
+  const LEGACY_LOCKED = "这一项有一次早期版本的提交结果未知，先在页面上方查询原结果";
 
-  const px = (i: number) => (i / cyc) * 700;
-  const py = (v: number) => 4 + ((100 - v) / (100 - floorPct)) * 183;
-  const pathOf = (from: number, to: number) =>
-    curve.slice(from, to + 1).map((v, j) => `${j ? "L" : "M"}${px(from + j).toFixed(1)} ${py(v).toFixed(1)}`).join(" ");
-  const emphasized = [0, s1, s2, cyc];
-  const dotColor = (i: number) => (i <= s1 ? "var(--success)" : i <= s2 ? "var(--warning)" : "var(--brand-2)");
+  const effect = (batch: boolean) => <StatusTag tone="progress" filled explain={batch ? E3_APPROVER_BATCH : E3_APPROVER_SINGLE}>批准后生效</StatusTag>;
+  const open = (spec: McSpec) => { if (!e3Loading && !e3Error) ctx.openActionConfirm(spec); };
 
-  // 调参按钮:走 操作确认 param(显式 edit 契约),真写后端 E3 配置接口 → 曲线/估值器据 pE 重算
+  // ── 单项（9 个里的 7 个数值/开关、2 个选项）：name、op、paramKey、edit 的校验参数和旧页一样 ──
   const numericBounds = (key: string): { min?: number; max?: number; step?: number } => {
     if (/capacity\.band\dDeltaPct$/.test(key)) return { min: -100, max: 100, step: 0.01 };
     if (/capacity\.floorPct$|ladder\.(cut|credit)\d$/.test(key)) return { min: 0, max: 100, step: 0.01 };
-    if (/stageEarlyEnd|stageMidEnd|cycleMonths|maxDevicesPerOrder/.test(key)) return { min: 1, max: 1000000, step: 1 };
+    if (key === "E.tradein.maxDevicesPerOrder") return { min: 1, max: 1, step: 1 };
+    if (/stageEarlyEnd|stageMidEnd|cycleMonths/.test(key)) return { min: 1, max: 1000000, step: 1 };
     return { min: 0, max: 1000000, step: 1 };
   };
-  const adj = (label: string, key: string, unit: string, amplify: boolean, editKind: "number" | "text" | "select" = "number", detail?: string, options?: string[]) =>
-    ctx.openActionConfirm({
-      name: `${label} 调整`, op: "param", paramKey: key, amplify,
-      edit: { kind: editKind, current: pE(key), unit, options, disallowCurrent: true, ...(editKind === "number" ? numericBounds(key) : {}) },
-      detail: detail ?? `${label} · 以当前运营配置为准，改后对全网任务产能曲线 / 估值器生效，不回溯已生效报价`,
-    });
-  // editKind="select" 时传 options → 弹窗渲染勾选 chips(能枚举的值不让手输,最高设计铁律)
-  const Adj = ({ label, k, unit, amplify = false, editKind = "number", detail, options }: { label: string; k: string; unit: string; amplify?: boolean; editKind?: "number" | "text" | "select"; detail?: string; options?: string[] }) =>
-    ctx.canWriteE3
-      ? <button className={`adj${amplify ? " amp" : ""}`} onClick={() => adj(label, k, unit, amplify, editKind, detail, options)}>调整</button>
-      : null;
+  type Single = { label: string; key: string; unit: string; amplify?: boolean; editKind?: "number" | "select"; options?: string[]; optionLabels?: Record<string, string>;
+    title: string; detail: string; impact: string; hint?: string; preview?: (value: string) => ReactNode; coverageLead?: string; facts: ReactNode };
+  const single = (s: Single) => open({
+    briefKind: "config", name: `${s.label} 调整`, title: s.title, op: "param", paramKey: s.key, amplify: s.amplify ?? false,
+    edit: { kind: s.editKind ?? "number", label: "改后", current: pE(s.key), unit: s.unit, options: s.options, optionLabels: s.optionLabels, disallowCurrent: true,
+      amplifiesWhen: (value) => e3ConfigAmplifies(policy, { [s.key]: value }), hint: s.hint, preview: s.preview, ...(s.editKind === "select" ? {} : numericBounds(s.key)) },
+    detail: `批准后生效。${s.detail}`, effect: effect(false), facts: s.facts, coverageLead: s.coverageLead,
+    statedBrief: { impact: s.impact, check: "核对改的是哪一项、现在和改后的值，理由写清依据或工单号。" },
+  });
+  // ── 成组（5 个）：一个按钮改一组，整组一起提交、一起批准 ──
+  type MFField = { key: string; paramKey: string; label: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string; explain?: ReactNode; warning?: (value: Record<string, string>) => string | undefined };
+  type Multi = { name: string; title: string; fields: MFField[]; ascending?: boolean; hint: string; amplify?: boolean; detail: string; impact: string; coverageLead?: string; facts: ReactNode };
+  const multi = (m: Multi) => open({
+    briefKind: "config", name: `${m.name} 调整`, title: m.title, op: "param-multi", amplify: m.amplify,
+    businessForm: {
+      kind: "multi-field", amplifies: (values) => e3ConfigAmplifies(policy, Object.fromEntries(m.fields.map((field) => [field.paramKey, values[field.key]]))), ascending: m.ascending, hint: m.hint, requireAnyChange: true,
+      fields: m.fields.map((f) => {
+        const bounds = f.inputKind === "number" ? numericBounds(f.paramKey) : {};
+        return { key: f.key, label: f.label, current: pE(f.paramKey), placeholder: f.placeholder, inputKind: f.inputKind, options: f.options, min: f.min ?? bounds.min, max: f.max ?? bounds.max, step: f.step ?? bounds.step, wide: f.wide, warnAbove: f.warnAbove, warnText: f.warnText, explain: f.explain, warning: f.warning };
+      }),
+    },
+    paramKeys: m.fields.map((f) => ({ key: f.key, paramKey: f.paramKey })),
+    detail: `批准后生效。${m.detail}`, effect: effect(true), facts: m.facts, coverageLead: m.coverageLead,
+    statedBrief: { impact: m.impact, check: "核对这一组每一项的现在和改后，理由写清依据或工单号。这一组所有值都会发送，没改的按现在的值。" },
+  });
+  const unsettledFor = (keys: readonly string[]) => E3_PROPOSALS.find((p) => (p.state === "unknown" || p.state === "submitted" || p.state === "expired") && p.keys.some((key) => keys.includes(key)));
+  const pendingTag = (keys: readonly string[]) => {
+    const p = pendingFor(keys), u = unsettledFor(keys);
+    const pendingDetail = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k))).map(p =>
+      `${changeText(p)}。等另一位管理员批准，批准前按现在的值执行。`).join("\n");
+    if (u) return <StatusTag tone="warn" explain={u.state === "submitted" ? "审批单已建成，现在批没批还没查到，先在页面上方查询原结果。" : "这一项有一次提交结果未知，先在页面上方查询原结果。"}>结果未知</StatusTag>;
+    if (p) return <StatusTag tone="warn" icon={Clock3} explain={pendingDetail}>待批准</StatusTag>;
+    return e3Proposals.locked(keys) && <StatusTag tone="warn" explain={`${LEGACY_LOCKED}。`}>结果未知</StatusTag>;
+  };
+  const adjust = (keys: readonly string[], onClick: () => void, batch = false, label = "调整") => ctx.canWriteE3
+    ? (describedBy: string | undefined) => <Button size="sm" aria-describedby={describedBy} onClick={onClick}
+        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : LEGACY_LOCKED : !e3Proposals.allowed(batch) ? "没有发起审批的权限，修改要先提交审批" : undefined}>{label}</Button>
+    : undefined;
 
-  // 多字段调参:一个「调整」按钮 → 操作确认弹窗里 N 个带标签输入,每字段写各自的 param key
-  // (各值独立 backend-replaceable,不挤一个框)。current 实时从 pE(paramKey) 预填。
-  type MFField = { key: string; paramKey: string; label: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string };
-  const adjMulti = (title: string, fields: MFField[], opts: { ascending?: boolean; hint?: string; amplify?: boolean; detail?: string } = {}) =>
-    ctx.openActionConfirm({
-      name: `${title} 调整`, op: "param-multi", amplify: opts.amplify,
-      businessForm: {
-        kind: "multi-field", title: `目标新值 · ${title}`, ascending: opts.ascending, hint: opts.hint, requireAnyChange: true,
-        fields: fields.map((f) => {
-          const bounds = f.inputKind === "number" ? numericBounds(f.paramKey) : {};
-          return { key: f.key, label: f.label, current: pE(f.paramKey), placeholder: f.placeholder, inputKind: f.inputKind, options: f.options, min: f.min ?? bounds.min, max: f.max ?? bounds.max, step: f.step ?? bounds.step, wide: f.wide, warnAbove: f.warnAbove, warnText: f.warnText };
-        }),
-      },
-      paramKeys: fields.map((f) => ({ key: f.key, paramKey: f.paramKey })),
-      detail: opts.detail ?? `${title} · 以当前运营配置为准，改后对全网生效，不回溯已生效报价`,
-    });
-  const AdjMulti = ({ title, fields, ascending, hint, amplify = false, detail }: { title: string; fields: MFField[]; ascending?: boolean; hint?: string; amplify?: boolean; detail?: string }) =>
-    ctx.canWriteE3
-      ? <button className={`adj${amplify ? " amp" : ""}`} onClick={() => adjMulti(title, fields, { ascending, hint, amplify, detail })}>调整</button>
-      : null;
+  // ── 产能的预览：改后第几个月是多少，超过 100% 时写 App 现状 ──
+  const keyMonths = [...new Set([s1, s2, cyc])];
+  const capPreview = (key: string) => (value: string) => {
+    const next = { ...policy, [key]: value };
+    const over = overHundred(next, cyc);
+    return <>
+      <span>改后第 {keyMonths.join("、")} 月：{keyMonths.map((m) => capText(capacityAt(next, m))).join("、")}（现在 {keyMonths.map((m) => capText(capacityAt(policy, m))).join("、")}）。只对参与下降的 {declining.length} 类商品生效。</span>
+      {over && <span className="e3p-warn" role="status">{OVER_HUNDRED}：按这个值，第 {over.month} 月起超过 100%（{capText(over.value)}）。</span>}
+    </>;
+  };
+  const capFacts = (key: string, stage: string) => <Facts><Fact k="改的是">{stage}</Fact><Fact k="影响谁">参与逐月下降的 {declining.length} 类商品的设备；免递减的始终 100%</Fact></Facts>;
+  const bandSingle = (band: 1 | 2 | 3) => {
+    const key = `E.device.capacity.band${band}DeltaPct`;
+    const stage = band === 1 ? `前期（第 1–${s1} 月）` : band === 2 ? `中期（第 ${s1 + 1}–${s2} 月）` : `后期（第 ${lateFrom} 月起）`;
+    single({ label: NAMES[key], key, unit: "%", amplify: band === 3, title: `调整${stage.replace(/（.*/, "")}每月变化`,
+      detail: "之后的产能按新值算，已发的任务和已结算的收益不变。",
+      impact: `改${stage}每个月产能变化多少。调高（往正数方向）会让产能更高，平台按产能多付任务收益。`,
+      hint: "−100 到 100，最多两位小数；负数是下降，正数是上升", preview: capPreview(key), coverageLead: "调高每月变化会让设备产能更高，平台多付任务收益", facts: capFacts(key, `${stage}每月变化`) });
+  };
 
-  return (
-    <>
-      <EStats items={[
-        { k: "当前在网设备平均使用时长", v: `${num(String(stats.averageAgeMonths), 0).toFixed(1)} 月`, sub: "按当前在网设备汇总" },
-        { k: `m${s2 + 1}+ 晚段低产能设备`, v: countText(stats.cliffDeviceCount), sub: "进入深降段", tone: "danger" },
-        { k: "以旧换新 本月", v: `${countText(stats.tradeinMonthCount)} 次`, sub: `折抵 ${moneyText(stats.tradeinDiscountUsdt)}`, tone: "cyan" },
-        { k: "K2 套利簇命中", v: `${countText(stats.k2ArbitrageHits)} 账户`, sub: "风险簇拦截", tone: "warn" },
-      ]} />
+  // ── 数据 ──
+  const ops = e3Operations;
+  const okSum = ops.reduce((sum, item) => sum + item.ok, 0), failSum = ops.reduce((sum, item) => sum + item.fail, 0);
+  const rate = okSum + failSum > 0 ? `${Number(((okSum / (okSum + failSum)) * 100).toFixed(1))}%` : null;
+  const curve = curveOf(policy, cyc);
+  const pendingCurve = pendingFor(["E.device.capacity.band1DeltaPct", "E.device.capacity.band2DeltaPct", "E.device.capacity.band3DeltaPct", "E.device.capacity.floorPct", "E.device.stageEarlyEnd", "E.device.stageMidEnd"]);
+  const afterCurve = pendingCurve && curveOf({ ...policy, ...pendingCurve.after }, cyc);
+  // 纵轴：TrendLines 把「最大值 + 四分之一跨度」取到 0.5 档，100% 的曲线会画到 150%，上半张图空着。
+  // 这里按「最大值 + 四分之一跨度」取整到 5% 当显示上限，把值缩到上限 = 100 再交给它画，刻度和悬停都换算回百分比。只改比例，不改数。
+  const plotted = [...curve, ...(afterCurve ?? []), num(floor)];
+  const hi = Math.max(...plotted), lo = Math.min(...plotted);
+  const scale = 100 / (Math.ceil((hi + ((hi - lo) * 0.25 || hi * 0.1)) / 5) * 5);
+  const stages = stats && [
+    { key: "early", slot: 1 as const, name: `前期（到第 ${s1} 月）`, value: stats.earlyDeviceCount },
+    { key: "mid", slot: 2 as const, name: `中期（第 ${s1 + 1}–${s2} 月）`, value: stats.midDeviceCount },
+    { key: "late", slot: 3 as const, name: `后期（第 ${lateFrom} 月起）`, value: stats.cliffDeviceCount },
+  ];
+  const inUse = stages ? stages.reduce((sum, stage) => sum + stage.value, 0) : null;
+  const ledgerHref = "/finance/ledger?keyword=tradein&status=FAILED";
 
-      {/* 三段衰减曲线 hero */}
-      <section className="curve-card">
-        <div className="curve-h">
-          <span className="ttl">任务产能曲线</span>
-          <span className="sub">AI 任务池升级 · 低阶任务量随月龄递减 · {cyc} 月视窗 · 以当前运营配置为准</span>
-          <span className="r"><CodeTag tone="electric">E.device.capacity.*</CodeTag></span>
+  return <div className="e3p">
+    {header}
+    <Conclusion state={tradeinOn ? "neutral" : "warn"} icon={tradeinOn ? Gauge : undefined}
+      explain={<><p>平均月龄和三段台数只算在用设备，已回收、已停用、未激活、已退役的不算。月龄按购买时间算整月，没有时依次用激活时间、创建时间。</p><p>后期从第 {lateFrom} 月起，由「中期到第几月」决定。</p></>}>
+      {tradeinOn ? "升级置换开启中" : "升级置换已关闭"}：平均月龄 {averageAgeMonths !== null ? `${Number(averageAgeMonths.toFixed(2))} 个月` : "—"}，{stats ? countText(stats.cliffDeviceCount) : "—"} 台已进入后期
+    </Conclusion>
+
+    {recovery}
+
+    <StatBand label="设备和升级置换">
+      <Stat label="在用设备平均月龄" icon={Hourglass} tone="role-3" value={averageAgeMonths !== null ? String(Number(averageAgeMonths.toFixed(2))) : "—"} unit={averageAgeMonths !== null ? "个月" : undefined}
+        sub={`第 ${lateFrom} 月起进入后期`} explain="在用设备从购买时间（没有时依次用激活、创建时间）到现在的整月数取平均，已回收、已停用、未激活、已退役的不算。没有在用设备时显示「—」。" />
+      <Stat label="已进入后期的设备" icon={Gauge} tone="role-3" value={stats ? countText(stats.cliffDeviceCount) : "—"} unit="台"
+        sub={`月龄满 ${lateFrom} 个月`} explain="只按月龄数，不看设备的实际产能，也不看它的商品是否参与逐月下降，所以不一定都低于 100%。" />
+      <Stat label="本月升级置换申请" icon={ArrowLeftRight} tone="role-2" value={stats ? countText(stats.tradeinMonthCount) : "—"} unit="笔"
+        explain="本月（按业务日历的月初起）创建的升级置换申请，包括还没完成和被拒绝的。" />
+      <Stat label="本月折抵金额" icon={Wallet} tone="role-1" value={stats ? usdtText(stats.tradeinDiscountUsdt).replace(/ USDT$/, "") : "—"} unit="USDT"
+        explain="本月申请里的折抵金额合计，包括还没完成的申请。折抵只抵新设备货款，不进用户余额。" />
+    </StatBand>
+
+    <div className="rd-split" data-detail="">
+      <Panel title="产能随月龄变化" icon={Gauge} tone="role-4" sub={`画到第 ${cyc} 个月`} data-proof="e3-capacity-curve"
+        explain={<><p>参与逐月下降的商品，产能从 100% 起每月乘以（1 + 这一段的每月变化 ÷ 100），不低于下限 {floor}%。图上显示两位小数，实际按六位算。</p><p>「曲线画几个月」只决定图画多长，不截断用户的产能。</p></>}
+        actions={pendingCurve && <StatusTag tone="warn" icon={Clock3}>有待批准的修改</StatusTag>}>
+        <div className="e3p-curve">
+          <TrendLines label={`产能随月龄变化：第 0 月 100%，第 ${s1} 月 ${capText(curve[s1] ?? 0)}，第 ${s2} 月 ${capText(curve[s2] ?? 0)}，第 ${cyc} 月 ${capText(curve[cyc] ?? 0)}，下限 ${floor}%`}
+            ticks={curve.map((_, m) => `${m} 月`)} format={(v) => capText(v / scale)} axisFormat={(v) => `${Number((v / scale).toFixed(1))}%`} height={300}
+            series={[{ key: "now", label: "现在", slot: 4, values: curve.map((v) => v * scale) },
+              ...(afterCurve ? [{ key: "pending", label: "批准后", slot: "other" as const, values: afterCurve.map((v) => v * scale) }] : [])]}
+            marks={[{ key: "floor", text: `下限 ${floor}%`, value: num(floor) * scale, tone: "neutral" }]}
+            event={{ index: Math.min(s2, cyc), text: `第 ${lateFrom} 月起后期` }} />
         </div>
-        <div className="curve-wrap">
-          <div className="curve-y">{[100, 80, 60, 40, floorPct].map((y) => <span key={y}>{y}%</span>)}</div>
-          <div className="canvas">
-            <svg viewBox="0 0 700 240" preserveAspectRatio="none">
-              <rect className="zone-early" x="0" y="0" width={px(s1)} height="240" />
-              <rect className="zone-mid" x={px(s1)} y="0" width={px(s2) - px(s1)} height="240" />
-              <rect className="zone-late" x={px(s2)} y="0" width={700 - px(s2)} height="240" />
-              {[48, 96, 144, 192].map((y) => <line key={y} x1="0" y1={y} x2="700" y2={y} stroke="rgba(255,255,255,.05)" strokeWidth="1" />)}
-              <line x1="0" y1={py(floorPct)} x2="700" y2={py(floorPct)} stroke="var(--brand-2)" strokeWidth="1" strokeDasharray="4 4" opacity="0.5" />
-              <line x1={px(s1)} y1="0" x2={px(s1)} y2="240" stroke="rgba(255,255,255,.08)" strokeWidth="1" strokeDasharray="3 3" />
-              <line x1={px(s2)} y1="0" x2={px(s2)} y2="240" stroke="rgba(255,255,255,.08)" strokeWidth="1" strokeDasharray="3 3" />
-              <defs>
-                <linearGradient id="eCurveGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--brand)" stopOpacity="0.5" />
-                  <stop offset="100%" stopColor="var(--brand)" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path d={`${pathOf(0, cyc)} L700 240 L0 240 Z`} fill="url(#eCurveGrad)" opacity="0.22" />
-              <path d={pathOf(0, s2 + 1)} fill="none" stroke="var(--brand)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d={pathOf(s2 + 1, cyc)} fill="none" stroke="var(--brand-2)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            {/* 数据点用 HTML overlay 正圆(SVG preserveAspectRatio=none 会把 <circle> 拉成椭圆,故移出 SVG)*/}
-            {curve.map((v, i) => {
-              const emp = emphasized.includes(i);
-              const d = emp ? 12 : 6;
-              return <div key={i} className="curve-dot" style={{ left: `${(px(i) / 700) * 100}%`, top: `${(py(v) / 240) * 100}%`, width: d, height: d, background: dotColor(i), border: `${emp ? 2 : 1}px solid var(--bg)` }} />;
-            })}
-            {emphasized.map((i) => {
-              const cls = i === 0 ? "left" : i === cyc ? "right" : "";
-              return <div key={i} className={`curve-label ${cls}`} style={{ left: `${(px(i) / 700) * 100}%`, top: `${(py(curve[i]) / 240) * 100}%`, color: dotColor(i) }}>m{i} · {curve[i].toFixed(1)}%</div>;
-            })}
-          </div>
-          <div className="curve-floor" style={{ top: `${(py(floorPct) / 240) * 100}%` }}>最低产能 {floorPct}%</div>
-          <div className="curve-x">{Array.from({ length: Math.floor(cyc / 2) + 1 }, (_, j) => <span key={j}>m{j * 2}</span>)}</div>
-        </div>
-        <div className="stage-lbl">
-          <div className="stage-tag early"><div className="nm">段1 · m1–{s1}</div><div className="ct">{early}% / 月 · 平缓</div></div>
-          <div className="stage-tag mid"><div className="nm">段2 · m{s1 + 1}–{s2}</div><div className="ct">{mid}% / 月 · 中速递减</div></div>
-          <div className="stage-tag late"><div className="nm">段3 · m{s2 + 1}+</div><div className="ct">{late}% / 月 · 深降 · 驱动升级置换</div></div>
-        </div>
-      </section>
+      </Panel>
 
-      {/* 双列参数卡 */}
-      <div className="params-grid">
-        {/* 左:任务产能节奏(FEAT-DEV01 · 等效换皮:数值=原三段曲线,叙事改任务产能) */}
-        <section className="param-card">
-          <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">任务产能节奏</div><div className="s">AI 任务池升级 · 三段产能递减 · 以当前运营配置为准</div></div><span className="tag">设备产能设置</span></div>
-          <div className="pkv"><Lbl zh={`段1 产能变化(m1–${s1})`} code="band1DeltaPct" desc="平缓段 · 每月可接任务量变化幅度 · 不刺激置换" /><span className="v ok">{pE("E.device.capacity.band1DeltaPct")}%</span><Adj label="段1 产能变化" k="E.device.capacity.band1DeltaPct" unit="%" /></div>
-          <div className="pkv"><Lbl zh={`段2 产能变化(m${s1 + 1}–${s2})`} code="band2DeltaPct" desc="中速段 · 可接任务量边际下降" /><span className="v warn">{pE("E.device.capacity.band2DeltaPct")}%</span><Adj label="段2 产能变化" k="E.device.capacity.band2DeltaPct" unit="%" /></div>
-          <div className="pkv"><Lbl zh={`段3 产能变化(m${s2 + 1} 起)`} code="band3DeltaPct" desc="深降段 · 驱动升级置换 · 加深幅度=加快换机现金流(放大资金流出)" hot /><span className="v danger">{pE("E.device.capacity.band3DeltaPct")}%</span><Adj label="段3 产能变化" k="E.device.capacity.band3DeltaPct" unit="%" amplify detail="段3 深降产能变化 · 加深幅度加快置换节奏(更多 以旧换新 现金流),晚段收益下挫 · 放大资金流出须操作确认 + B1 覆盖率" /></div>
-          <div className="pkv"><Lbl zh="产能下限" code="floorPct" desc="设备可接任务产能降至此值即不再下降(地板线)" /><span className="v">{pE("E.device.capacity.floorPct")}%</span><Adj label="产能下限" k="E.device.capacity.floorPct" unit="%" /></div>
-          <div className="pkv"><Lbl zh="新机任务补贴天数" code="subsidyDays" desc="新激活设备的任务补贴期 · 补贴期内前端只显示补贴标注、不显示产能百分比 · 纯展示层,不进结算" /><span className="v cyan">{pE("E.device.capacity.subsidyDays")} 天</span><Adj label="新机任务补贴天数" k="E.device.capacity.subsidyDays" unit="天" detail="新机任务补贴天数 · 纯展示层参数(前端标注窗口),不进入结算公式 · 改后对新渲染生效" /></div>
-          <div className="pkv"><Lbl zh="产能分段周期" code="stageEarlyEnd / stageMidEnd / cycleMonths" desc={`三段分界月份与曲线视窗 · 段1[1–${s1}] 段2[${s1 + 1}–${s2}] 段3[${s2 + 1}+ 开区间] · 一处调齐,改后曲线重算`} /><span className="v" style={{ fontSize: 13 }}>段1末 m{s1} · 段2末 m{s2} · 视窗 {cyc}月</span><AdjMulti title="产能分段周期" ascending hint="三段产能节奏的分界:段1[1–段1末]、段2[段1末+1–段2末]、段3[段2末+1 起,开区间到产能下限触底];视窗月数只决定曲线图表范围。须 段1末 < 段2末 < 视窗月数。改后全曲线 / 估值器重算。" detail="产能三段周期(段1末 / 段2末 / 视窗月数)· 以当前运营配置为准 · 改后对全网任务产能曲线 / 估值器生效,不回溯已生效报价" fields={[
-            { key: "early", paramKey: "E.device.stageEarlyEnd", label: "段1 末月(m)", inputKind: "number", placeholder: "3" },
-            { key: "mid", paramKey: "E.device.stageMidEnd", label: "段2 末月(m)", inputKind: "number", placeholder: "8" },
-            { key: "total", paramKey: "E.device.cycleMonths", label: "曲线视窗月数(m)", inputKind: "number", placeholder: "12" },
-          ]} /></div>
-          <div className="pkv"><Lbl zh="任务锁定月度损失阈" code="taskLock.s1 / .pro / .rack" desc="§6.7 提示条 触发依据 · 入门设备 / 专业设备 / 机柜设备 三阶月度损失阈(USDT)" /><span className="v" style={{ fontSize: 13 }}>${pE("E.device.taskLock.s1")} / ${pE("E.device.taskLock.pro")} / ${pE("E.device.taskLock.rack")}</span><AdjMulti title="任务锁定月度损失阈" hint="三档设备(入门设备 / 专业设备 / 机柜设备)各自的月度损失阈(USDT),达阈触发 §6.7 任务锁定 提示条。" detail="任务锁定月度损失阈(入门设备 / 专业设备 / 机柜设备)· 以当前运营配置为准 · 改后对新触发判定生效" fields={[
-            { key: "s1", paramKey: "E.device.taskLock.s1", label: "S1 阈(USDT)", inputKind: "number", placeholder: "40" },
-            { key: "pro", paramKey: "E.device.taskLock.pro", label: "UVELBox Pro 升级门槛（USDT）", inputKind: "number", placeholder: "140" },
-            { key: "rack", paramKey: "E.device.taskLock.rack", label: "UVELRack 升级门槛（USDT）", inputKind: "number", placeholder: "450" },
-          ]} /></div>
-          <div className="pkv"><Lbl zh="参与任务递减(商品规格)" code="applyTo.*" desc="逐 商品规格 控制是否参与产能递减 · 免递减 = 恒 100% 产能(入门引流设备默认免)" /><span className="v" style={{ fontSize: 13 }}>{exemptCount} 免 / {APPLY_TO_SKUS.length - exemptCount} 参与</span><AdjMulti title="参与任务递减(商品规格)" hint="逐 商品规格 勾选:参与递减 = 按产能节奏逐月递减;免递减 = 恒 100% 产能(手机 / 云端共享份额 / 电脑共享默认免,保护入门体验)。改后对该 商品规格 全网设备生效。" detail="参与任务递减(每 商品规格 开关)· 以当前运营配置为准 · 改后对该 商品规格 全网设备生效" fields={APPLY_TO_SKUS.map((s) => ({ key: s.kind, paramKey: `E.device.capacity.applyTo.${s.kind}`, label: s.label, inputKind: "select" as const, options: ["参与递减", "免递减"] }))} /></div>
-          <div className="param-foot"><span className="ic"><AlertIcon /></span><span><b>「段3 产能变化」是敏感参数</b>:加深幅度加快置换节奏(更多 以旧换新 现金流),但晚段收益预期下挫会触发用户负面信号;放缓则延后置换、减少现金流。<b>各段月份在「产能分段周期」一行一次调齐</b>;各段行只改每月变化幅度%。<b>「新机任务补贴」是纯展示层</b>——只控制前端补贴标注窗口,结算数学始终按产能曲线连续计算。</span></div>
-        </section>
+      <div className="e3p-side">
+        <Panel title="在用设备在哪一段" icon={Hourglass} tone="role-3" sub={inUse ? `共 ${countText(inUse)} 台` : undefined} data-proof="e3-age-stages"
+          explain={`按月龄分段：前期到第 ${s1} 月（含刚买的第 0 月），中期到第 ${s2} 月，后期从第 ${lateFrom} 月起。只算在用设备，口径同平均月龄。`}>
+          {stages && inUse ? <SegmentBar label="在用设备按月龄分段" segments={stages.map((stage) => ({ key: stage.key, slot: stage.slot, value: stage.value,
+              label: stage.name, text: `${stage.name} ${countText(stage.value)} 台` }))} />
+            : <p className="e3p-sub">{stages ? "没有在用设备" : "—"}</p>}
+        </Panel>
 
-        {/* 右:升级置换阶梯(FEAT-DEV02 · 随时下架,产出阶梯抵扣) */}
-        <section className="param-card">
-          <div className="param-h"><span className="ic trade"><TradeIcon /></span><div className="t"><div className="nm">升级置换阶梯</div><div className="s">产出阶梯折抵 · 随时置换</div></div><span className="tag">E.tradein.*</span></div>
-          <div className="pkv"><Lbl zh="置换总开关" code="enabled" desc="关闭后前端全部置换入口隐藏(设备列表/结算拦截同步失效)" hot /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.enabled")}</span><Adj label="置换总开关" k="E.tradein.enabled" unit="" editKind="select" options={["开", "关"]} detail="置换总开关 · 关闭=前端全部置换入口隐藏 · 改后对新渲染生效" /></div>
-          <div className="pkv"><Lbl zh="当前阶梯一览" desc="抵扣率 = 实付价 × 档位比例;档位按「累计产出 ÷ 实付价」落档,产出越多抵扣越小" /><span className="v" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{ladderCredits.join(" / ")}%(界点 {ladderCuts.join("/")}%)</span><span /></div>
-          <div className="pkv"><Lbl zh="阶梯分档界点(4)" code="ladder.cut1–4" desc="产出比的 4 个分档界点(%)· 区间左闭右开、由构造连续无重叠" /><span className="v" style={{ fontSize: 13 }}>{ladderCuts.map((c) => `${c}%`).join(" · ")}</span><AdjMulti title="阶梯分档界点" ascending hint="按「该设备累计产出 ÷ 实付价」的百分比分 5 档:第1档 [0,界点1),第2档 [界点1,界点2)……第5档 [界点4,∞)。须严格递增。改后对新报价生效。" detail="阶梯分档界点(4 值)· 以当前运营配置为准 · 改后对新报价生效" fields={[
-            { key: "cut1", paramKey: "E.tradein.ladder.cut1", label: "界点1(%)", inputKind: "number", placeholder: "25" },
-            { key: "cut2", paramKey: "E.tradein.ladder.cut2", label: "界点2(%)", inputKind: "number", placeholder: "50" },
-            { key: "cut3", paramKey: "E.tradein.ladder.cut3", label: "界点3(%)", inputKind: "number", placeholder: "75" },
-            { key: "cut4", paramKey: "E.tradein.ladder.cut4", label: "界点4(%)", inputKind: "number", placeholder: "100" },
-          ]} /></div>
-          <div className="pkv"><Lbl zh="各档抵扣率(5)" code="ladder.credit1–5" desc="5 档抵扣比例(按实付价的 %)· 须逐档递减(产出越多抵扣越小)" hot /><span className="v danger">{ladderCredits.map((c) => `${c}%`).join(" · ")}</span><AdjMulti title="各档抵扣率" amplify hint="第1档(产出比最低)抵扣最高,逐档递减到第5档(已回本)。上调任一档=放大资金流出。哨兵校验:递减、(0,100]。" detail="各档抵扣率(5 值)· 放大资金流出须操作确认 + B1 覆盖率 · 与前端阶梯字面量三端对账 · 改后对新报价生效" fields={[
-            { key: "credit1", paramKey: "E.tradein.ladder.credit1", label: "第1档 <界点1(%)", inputKind: "number", placeholder: "75", warnAbove: 75, warnText: "超过 75%:显著提高置换让利,确认前请核 B1 覆盖率" },
-            { key: "credit2", paramKey: "E.tradein.ladder.credit2", label: "第2档(%)", inputKind: "number", placeholder: "60", warnAbove: 75, warnText: "超过 75%:显著提高置换让利,确认前请核 B1 覆盖率" },
-            { key: "credit3", paramKey: "E.tradein.ladder.credit3", label: "第3档(%)", inputKind: "number", placeholder: "45", warnAbove: 75, warnText: "超过 75%:显著提高置换让利,确认前请核 B1 覆盖率" },
-            { key: "credit4", paramKey: "E.tradein.ladder.credit4", label: "第4档(%)", inputKind: "number", placeholder: "30", warnAbove: 75, warnText: "超过 75%:显著提高置换让利,确认前请核 B1 覆盖率" },
-            { key: "credit5", paramKey: "E.tradein.ladder.credit5", label: "第5档 ≥界点4(%)", inputKind: "number", placeholder: "15", warnAbove: 75, warnText: "超过 75%:显著提高置换让利,确认前请核 B1 覆盖率" },
-          ]} /></div>
-          <div className="pkv"><Lbl zh="仅限升级更高价设备" code="requireHigherPrice" desc="开=置换目标必须严格高于本机实付价(抵扣只服务升级,不做平换/降换)" /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.requireHigherPrice")}</span><Adj label="仅限升级更高价设备" k="E.tradein.requireHigherPrice" unit="" editKind="select" options={["开", "关"]} detail="仅限升级更高价设备 · 关闭后允许平换(抵扣可能逼近应付款,请先核 B1 覆盖率) · 改后对新置换请求生效" /></div>
-          <div className="pkv"><Lbl zh="单笔最多抵扣台数" code="maxDevicesPerOrder" desc="一笔升级订单最多可用几台旧机抵扣" /><span className="v">{pE("E.tradein.maxDevicesPerOrder")} 台</span><Adj label="单笔最多抵扣台数" k="E.tradein.maxDevicesPerOrder" unit="台" detail="单笔最多抵扣台数 · 改后对新置换请求生效" /></div>
-          <div className="pkv"><Lbl zh="置换购买资格槛" code="eligibility" desc="谁可发起置换(持有等级门槛)· 运营可调" /><span className="v" style={{ fontSize: 13, fontFamily: "var(--font-v5)", fontWeight: 500 }}>{pE("E.tradein.eligibility")}</span><Adj label="置换购买资格槛" k="E.tradein.eligibility" unit="" editKind="select" options={["全部用户", "L2+ 持有者", "L3+ 持有者", "L4+ 持有者", "L5+ 持有者", "L6+ 持有者"]} detail="置换购买资格槛 · 谁可发起置换(持有等级)· 勾选目标等级 · 改后对新置换请求生效" /></div>
-          <div className="pkv"><Lbl zh="本月置换笔数" desc={`折抵总额 ${moneyText(stats.tradeinDiscountUsdt)}`} /><span className="v cyan">{countText(stats.tradeinMonthCount)}</span><span /></div>
-          <div className="pkv"><Lbl zh="K2 套利簇命中" desc="风险簇拦截" /><span className="v warn">{countText(stats.k2ArbitrageHits)}</span><span /></div>
-          <div className="param-foot cyan"><span className="ic"><ShieldIcon /></span><span><b>阶梯天然抗套利</b>:抵扣仅在结算时抵减升级应付款、<b>永不进入余额</b>,且默认仅限升级更高价设备 — 每笔置换平台都净收新款,「随时下架」无需最短持有闸门。高抵扣档(新设备早升级)正是运营期望的行为。「各档抵扣率」为<b>放大资金流出</b>动作(带 ⚡),须操作确认 + B1 覆盖率核验;K2 风险簇监控保留(异常批量置换仍会命中)。</span></div>
-        </section>
+        <Panel title="最近 24 小时" icon={Clock3} tone="role-2" sub={rate ? `成功率 ${rate}` : "24 小时内没有处理"}
+          explain={<><p>从现在往前 24 小时统计。成功率 = 成功 ÷（成功 + 失败），恢复不算进去；三类来源不同，同一台设备可能被算进多类。</p><p>恢复：回收、停用是之后被恢复的次数；置换是 24 小时内回退的申请数。</p><p>这页不代用户换机，也不处理单台设备；单台设备在「设备管理」里看。</p></>}
+          actions={reach(ledgerHref, "finance_d4_read") && <Link className="rd-link" href="/finance/ledger?keyword=tradein&status=FAILED">查看失败的置换账单</Link>}>
+          <Table label="最近 24 小时的回收、置换、停用">
+            <thead><tr><Th>类别</Th><Th align="right">成功</Th><Th align="right">失败</Th><Th align="right">恢复</Th><Th>最近记录（{zone}）</Th></tr></thead>
+            <tbody>
+              {ops.length === 0 ? <TableMessage columns={5}>24 小时内没有记录</TableMessage> : ops.map((t) => (
+                <Tr key={t.nm}>
+                  <Td>{t.nm}</Td>
+                  <Td align="right"><span className="e3p-num" data-zero={t.ok === 0 ? "" : undefined}>{countText(t.ok)}</span></Td>
+                  <Td align="right"><span className="e3p-num" data-zero={t.fail === 0 ? "" : undefined} data-tone={t.fail > 0 ? "danger" : undefined}>{countText(t.fail)}</span></Td>
+                  <Td align="right"><span className="e3p-num" data-zero={t.roll === 0 ? "" : undefined}>{countText(t.roll)}</span></Td>
+                  <Td><span className="e3p-latest">{t.ts}<Explain label={`${t.nm}最近记录的说明`} content="24 小时内这一类最后一条记录的时间，不分成功失败；没有记录时写「—」。每条的结果到「操作记录与审批」查。" /></span></Td>
+                </Tr>))}
+            </tbody>
+          </Table>
+        </Panel>
+      </div>
+    </div>
+
+    {/* 任务产能节奏：产能随月龄下降（参与任务递减的商品） */}
+    <Panel title="产能规则" icon={Gauge} tone="role-4" sub="7 项" data-proof="e3-capacity-rules"
+      explain="产能按月龄分三段，每段每月按设定的比例变化。修改都先提交审批，另一位管理员批准后才生效。">
+      <ConfigList label="产能规则">
+        {([1, 2, 3] as const).map((band) => {
+          const key = `E.device.capacity.band${band}DeltaPct`;
+          const name = band === 1 ? `前期 · 第 1–${s1} 月` : band === 2 ? `中期 · 第 ${s1 + 1}–${s2} 月` : `后期 · 第 ${lateFrom} 月起`;
+          return <ConfigRow key={key} name={name} value={`每月 ${signed(pE(key))}`} sub={pendingTag([key])}
+            what="这一段每个月产能变化多少" when="批准后，之后的产能按新值算" effect="调高（往正数方向）产能更高，平台多付任务收益；调低产能更低。"
+            note={band === 3 ? "后期变化最直接影响老设备的收益。" : undefined}
+            action={adjust([key], () => bandSingle(band))} />;
+        })}
+        <ConfigRow name="三段的分界月份" value={`前期到第 ${s1} 月 · 中期到第 ${s2} 月`} sub={<>{pendingTag(["E.device.stageEarlyEnd", "E.device.stageMidEnd", "E.device.cycleMonths"])}<span className="e3p-sub">图上画 {cyc} 个月</span></>}
+          what="三段各从第几个月到第几个月，和曲线画几个月" when="三个数一起提交，批准后一起生效" effect="跨过分界的月份改按另一段的比例算，有月份产能因此变高就算多付钱。「曲线画几个月」只影响图。"
+          action={adjust(["E.device.stageEarlyEnd", "E.device.stageMidEnd", "E.device.cycleMonths"], () => multi({
+            name: "产能分段周期", title: "调整三段的分界月份", ascending: true,
+            hint: "要满足：前期截止月 < 中期截止月 < 曲线显示月数。",
+            detail: "三个数一起提交、一起批准。前两项决定产能分段；曲线画几个月只影响这页图的长度，不截断用户的产能。",
+            impact: "改产能三段的分界月份。分界改动让某个月的产能变高时，平台多付任务收益。",
+            coverageLead: "这次改动会让某些月份的产能变高，平台多付任务收益",
+            facts: <Facts><Fact k="现在">前期到第 {s1} 月，中期到第 {s2} 月，图上画 {cyc} 个月</Fact><Fact k="影响谁">参与逐月下降的 {declining.length} 类商品的设备</Fact></Facts>,
+            fields: [
+              { key: "early", paramKey: "E.device.stageEarlyEnd", label: "前期截止月", inputKind: "number", placeholder: "3", explain: "前期从第 1 月到这个月。",
+                warning: (v) => { const over = overHundred({ ...policy, "E.device.stageEarlyEnd": v.early, "E.device.stageMidEnd": v.mid }, num(v.total)); return over ? `${OVER_HUNDRED}：第 ${over.month} 月起超过 100%。` : undefined; } },
+              { key: "mid", paramKey: "E.device.stageMidEnd", label: "中期截止月", inputKind: "number", placeholder: "8", explain: "中期从前期之后到这个月；后期从下一个月开始。" },
+              { key: "total", paramKey: "E.device.cycleMonths", label: "曲线显示月数", inputKind: "number", placeholder: "12", explain: "这页的产能图画多少个月，不影响用户的产能。" },
+            ],
+          }), true)} />
+        <ConfigRow name="产能下限" value={`${floor}%`} sub={pendingTag(["E.device.capacity.floorPct"])}
+          what="产能降到这里就不再下降" when="批准后，之后的产能按新值算" effect="调高后老设备产能更高，平台多付任务收益。下限只保证产能，不保证一直有任务或收益。"
+          action={adjust(["E.device.capacity.floorPct"], () => single({ label: NAMES["E.device.capacity.floorPct"], key: "E.device.capacity.floorPct", unit: "%", title: "调整产能下限",
+            detail: "参与下降的设备产能不低于这个值，免递减的始终 100%。下限只保证产能，不保证一直有任务或收益。",
+            impact: "改产能最低降到多少。调高后老设备产能更高，平台多付任务收益。", hint: "0 到 100，最多两位小数",
+            preview: capPreview("E.device.capacity.floorPct"), coverageLead: "调高下限会让老设备产能更高，平台多付任务收益",
+            facts: capFacts("E.device.capacity.floorPct", "产能下限") }))} />
+        <ConfigRow name="新机任务补贴天数" value={`${pE("E.device.capacity.subsidyDays")} 天`} sub={pendingTag(["E.device.capacity.subsidyDays"])}
+          what="参与逐月下降的新设备在这些天里，App 显示「补贴中」，不显示产能百分比" where="App 设备卡片" when="批准后，已有设备下次显示也按新天数算"
+          effect="只改 App 上的显示，不改产能和收益的计算。从购买时间算起，没有购买时间才从激活时间算。"
+          action={adjust(["E.device.capacity.subsidyDays"], () => single({ label: NAMES["E.device.capacity.subsidyDays"], key: "E.device.capacity.subsidyDays", unit: "天", title: "调整新机任务补贴天数",
+            detail: "参与逐月下降的新设备从购买时间（没有时从激活时间）算起这些天，App 显示「补贴中」。只改显示，不改产能和收益。已有设备下次显示也按新天数算。",
+            impact: "改 App 显示「补贴中」的天数，不改产能和收益的计算。", hint: "0 到 1,000,000 的整数，0 表示不显示补贴",
+            facts: <Facts><Fact k="改的是">新机任务补贴天数</Fact><Fact k="影响谁">参与逐月下降的设备在 App 上的显示</Fact></Facts> }))} />
+        <ConfigRow name="哪些商品逐月下降" value={`${declining.length} 类下降 · ${exempt.length} 类始终 100%`}
+          sub={<>{pendingTag(APPLY_TO_SKUS.map((s) => `E.device.capacity.applyTo.${s.kind}`))}<span className="e3p-sub">始终 100%：{exempt.map((s) => s.label).join("、") || "无"}<Explain label="逐月下降的商品" content={`按曲线下降：${declining.map((s) => s.label).join("、") || "无"}。`} /></span></>}
+          what="每类商品是按上面的曲线下降，还是始终 100%（参与任务递减）" when="八项一起提交，批准后对这类商品的所有设备生效"
+          effect="改成始终 100% 后，曲线低于 100% 的月份产能变高，平台多付任务收益；曲线高于 100% 时相反。"
+          action={adjust(APPLY_TO_SKUS.map((s) => `E.device.capacity.applyTo.${s.kind}`), () => multi({
+            name: "产能是否逐月下降（按商品）", title: "调整哪些商品逐月下降",
+            hint: "参与递减：按产能曲线逐月下降；免递减：始终 100%。",
+            detail: "八类一起提交、一起批准，批准后对这类商品的所有设备生效，不改已结算的收益。",
+            impact: "改每类商品的产能是否逐月下降。改成免递减时，曲线低于 100% 的月份产能变高，平台多付任务收益。",
+            coverageLead: "这次改动会让某类设备产能更高，平台多付任务收益",
+            facts: <Facts><Fact k="现在下降">{declining.map((s) => s.label).join("、") || "—"}</Fact><Fact k="现在始终 100%">{exempt.map((s) => s.label).join("、") || "—"}</Fact></Facts>,
+            fields: APPLY_TO_SKUS.map((s) => ({ key: s.kind, paramKey: `E.device.capacity.applyTo.${s.kind}`, label: s.label, inputKind: "select" as const, options: ["参与递减", "免递减"] })),
+          }), true)} />
+      </ConfigList>
+    </Panel>
+
+    {/* 升级置换阶梯：旧设备按已赚回比例分 5 档抵扣 */}
+    <Panel title="升级置换规则" icon={ArrowLeftRight} tone="role-2" sub={tradeinOn ? "开启中" : "已关闭"} data-proof="e3-tradein-rules"
+      explain={<><p>用户用旧设备抵扣新设备货款：按旧设备已赚回占实付价的比例分档，按那档比例抵扣实付价，不进余额，最多抵到新设备价格。</p><p>规则批准后，用户已拿到、没提交的报价金额变了要重新报价；已完成的置换不变。</p></>}>
+      <ConfigList label="升级置换开关">
+        <ConfigRow name="升级置换" value={<StatusTag tone={tradeinOn ? "ok" : "done"}>{tradeinOn ? "开启" : "关闭"}</StatusTag>} sub={pendingTag(["E.tradein.enabled"])}
+          what="App 能不能发起升级置换" when="批准后，之后的报价和提交按新开关判断，已完成的不回溯"
+          effect="关闭后 App 不再给出报价；开启后用户仍要满足设备、等级和商品的条件。开启算多付钱。"
+          action={adjust(["E.tradein.enabled"], () => single({ label: NAMES["E.tradein.enabled"], key: "E.tradein.enabled", unit: "", editKind: "select", options: ["开", "关"], optionLabels: { 开: "开启", 关: "关闭" },
+            title: tradeinOn ? "关闭升级置换" : "开启升级置换",
+            detail: "开启后用户仍要满足设备、等级和商品条件；关闭后报价和提交都被拒绝。已完成的置换不回溯。",
+            impact: "改 App 能不能升级置换。开启后会产生新的折抵，平台少收货款。",
+            coverageLead: "开启升级置换会产生新的折抵，平台少收新设备货款",
+            facts: <Facts><Fact k="改的是">升级置换开关</Fact><Fact k="本月申请">{stats ? `${countText(stats.tradeinMonthCount)} 笔` : "—"}</Fact></Facts> }))} />
+      </ConfigList>
+
+      <div className="e3p-ladder" data-proof="e3-tradein-ladder">
+        <div className="e3p-ladder-head">
+          <h3>各档抵扣比例<Explain label="分档怎么算" content={<><p>已赚回 ÷ 旧设备实付价，小于界线 1 是第 1 档；等于某条界线就算下一档；不小于界线 4 是第 5 档。</p><p>折抵 = 实付价 × 档位比例，最多抵到新设备价格。</p></>} /></h3>
+          {pendingTag([...cuts.map((_, i) => `E.tradein.ladder.cut${i + 1}`), ...credits.map((_, i) => `E.tradein.ladder.credit${i + 1}`)])}
+          {ctx.canWriteE3 && <span className="e3p-ladder-actions">
+            {adjust(cuts.map((_, i) => `E.tradein.ladder.cut${i + 1}`), () => multi({
+              name: "分档界线", title: "调整分档界线", ascending: true,
+              hint: "已赚回 ÷ 实付价小于界线 1 是第 1 档，等于界线算下一档，不小于界线 4 是第 5 档。四条要从小到大。",
+              detail: "四条界线一起批准。之后的报价和提交按新界线；没提交的报价金额变了要重新报价，已完成的置换不变。",
+              impact: "改旧设备按已赚回比例分到哪一档。界线往后挪，高抵扣档持续更久，平台多让利。",
+              coverageLead: "这次改动会让某些旧设备落进抵扣更多的档，平台多让利",
+              facts: <Facts><Fact k="现在">{cuts.map((c) => `${c}%`).join("、")}</Fact><Fact k="各档比例">{credits.map((c) => `${c}%`).join("、")}（这次不改）</Fact></Facts>,
+              fields: [
+                { key: "cut1", paramKey: "E.tradein.ladder.cut1", label: "界线 1（%）", inputKind: "number", placeholder: "25" },
+                { key: "cut2", paramKey: "E.tradein.ladder.cut2", label: "界线 2（%）", inputKind: "number", placeholder: "50" },
+                { key: "cut3", paramKey: "E.tradein.ladder.cut3", label: "界线 3（%）", inputKind: "number", placeholder: "75" },
+                { key: "cut4", paramKey: "E.tradein.ladder.cut4", label: "界线 4（%）", inputKind: "number", placeholder: "100" },
+              ],
+            }), true, "调整分档界线")?.(undefined)}
+            {adjust(credits.map((_, i) => `E.tradein.ladder.credit${i + 1}`), () => multi({
+              name: "各档抵扣比例", title: "调整各档抵扣比例", amplify: true,
+              hint: "第 1 档抵扣最多，往后逐档减少；不逐档递减会在批准时被拒绝。",
+              detail: "五档一起批准。之后的报价和提交按新比例；没提交的报价金额变了要重新报价，已完成的置换不变。超过 75% 只是提醒。",
+              impact: "改每一档抵扣实付价的百分之几。调高任一档，平台多让利。",
+              coverageLead: "调高抵扣比例，平台多让利",
+              facts: <Facts><Fact k="现在">{credits.map((c) => `${c}%`).join("、")}</Fact><Fact k="分档界线">{cuts.map((c) => `${c}%`).join("、")}（这次不改）</Fact></Facts>,
+              fields: [
+                { key: "credit1", paramKey: "E.tradein.ladder.credit1", label: "第 1 档（低于界线 1，%）", inputKind: "number", placeholder: "75", warnAbove: 75, warnText: "超过 75% 让利很大，提交前请看一下兑付覆盖率",
+                  warning: (v) => [v.credit1, v.credit2, v.credit3, v.credit4, v.credit5].map(Number).some((c, i, all) => i > 0 && !(c < all[i - 1])) ? "五档要逐档递减，不然批准时会被拒绝。" : undefined },
+                { key: "credit2", paramKey: "E.tradein.ladder.credit2", label: "第 2 档（%）", inputKind: "number", placeholder: "60", warnAbove: 75, warnText: "超过 75% 让利很大，提交前请看一下兑付覆盖率" },
+                { key: "credit3", paramKey: "E.tradein.ladder.credit3", label: "第 3 档（%）", inputKind: "number", placeholder: "45", warnAbove: 75, warnText: "超过 75% 让利很大，提交前请看一下兑付覆盖率" },
+                { key: "credit4", paramKey: "E.tradein.ladder.credit4", label: "第 4 档（%）", inputKind: "number", placeholder: "30", warnAbove: 75, warnText: "超过 75% 让利很大，提交前请看一下兑付覆盖率" },
+                { key: "credit5", paramKey: "E.tradein.ladder.credit5", label: "第 5 档（不低于界线 4，%）", inputKind: "number", placeholder: "15", warnAbove: 75, warnText: "超过 75% 让利很大，提交前请看一下兑付覆盖率" },
+              ],
+            }), true, "调整抵扣比例")?.(undefined)}
+          </span>}
+        </div>
+        <StepBar label="各档抵扣比例" unit="抵扣" max={100} items={credits.map((credit, i) => ({
+          key: `credit${i + 1}`, label: `第 ${i + 1} 档`, value: num(credit), valueText: `${credit}%`,
+          name: i === 0 ? `赚回不到 ${cuts[0]}%` : i === 4 ? `赚回 ${cuts[3]}% 及以上` : `赚回 ${cuts[i - 1]}%–${cuts[i]}%`,
+        }))} />
+        <div className="e3p-cuts">
+          <span className="e3p-sub">分档界线（已赚回 ÷ 实付价）</span>
+          <ScaleBar label="分档界线" valueText={`第 1 档低于 ${cuts[0]}%；第 2 档 ${cuts[0]}% 到 ${cuts[1]}%；第 3 档 ${cuts[1]}% 到 ${cuts[2]}%；第 4 档 ${cuts[2]}% 到 ${cuts[3]}%；第 5 档 ${cuts[3]}% 及以上`}
+            max={Math.max(100, num(cuts[3])) * 1.25} bands={{ labels: ["第 1 档", "第 2 档", "第 3 档", "第 4 档", "第 5 档"], openEnd: true, marks: cuts.map((c) => ({ value: num(c), text: `${c}%` })) }} />
+        </div>
       </div>
 
-      {/* 原子换机 tx 监控 */}
-      <section className="tx-card">
-        <div className="tx-h">
-          <span className="ttl">换机处理 监控</span>
-          <span className="sub">· 三类事务分列:设备回收 / 设备置换 / 设备停用;所有步骤一起完成，失败时不会留下半成品</span>
-          <span className="r"><CodeTag tone="electric">A2 审计</CodeTag><span>24 小时 · 成功率 <span style={{ color: txSuccessRate === null ? "var(--ink-3)" : "var(--success)" }}>{txSuccessRate === null ? "不可计算（24 小时 内无事务）" : `${txSuccessRate.toFixed(1)}%`}</span></span></span>
-        </div>
-        <div className="tx-grid">
-          {e3Operations.length === 0 ? (
-            <div className="tx-col">
-              <div className="nm">暂无升级置换运行记录</div>
-              <div className="latest"><div className="k">后端暂无记录</div><div className="vrow"><span className="dot ok" /><span className="reason">等待业务表产生 以旧换新 操作样本</span></div></div>
-            </div>
-          ) : e3Operations.map((t) => (
-            <div className="tx-col" key={t.nm}>
-              <div className="nm">{t.nm}</div>
-              <div className="stats">
-                <div className="s ok"><div className="k">24 小时 成功</div><div className="v">{t.ok}</div></div>
-                <div className="s fail"><div className="k">失败</div><div className="v">{t.fail}</div></div>
-                <div className="s roll"><div className="k">回滚</div><div className="v">{t.roll}</div></div>
-              </div>
-              <div className="latest">
-                <div className="k">{t.k}</div>
-                <div className="vrow"><span className={`dot ${t.dot}`} /><span className="ts">{t.ts}</span><span className="reason">{t.reason}</span></div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="tx-foot">
-          <span><b>完整处理</b> · 任一步失败都会恢复到操作前状态</span>
-          <span className="sep">·</span>
-          <span>设备换机关系由系统自动记录，运营人员无需手工维护</span>
-          <span className="sep">·</span>
-          <span>失败样本 → <Link href="/finance/ledger?keyword=tradein&status=FAILED" style={{ color: "var(--cyan)", cursor: "pointer" }}>查 D4 资金流水 · 轨迹</Link></span>
-        </div>
-      </section>
-      <p className="f-foot">任务产能节奏 + 以旧换新 折抵定价<b>共同构成用户升级节奏</b>:段3 深降把用户推向置换决策点,折抵力度决定置换吸引力。两者改动会影响:① 硬件 成交额(置换新单)② D4 资金应付(置换补差)③ K2 套利风险。任一参数调整后<b>立即对前端 / 估值器生效</b>(不回溯已生效报价)。</p>
-    </>
-  );
+      <ConfigList label="谁能换、怎么换">
+        <ConfigRow name="谁能升级置换" value={pE("E.tradein.eligibility")} sub={pendingTag(["E.tradein.eligibility"])}
+          what="用户等级达到多少才能升级置换" when="批准后，之后的资格判断按新等级" effect="门槛降低，能换的人更多，算多付钱。「全部用户」也仍要满足设备和商品条件。"
+          action={adjust(["E.tradein.eligibility"], () => single({ label: NAMES["E.tradein.eligibility"], key: "E.tradein.eligibility", unit: "", editKind: "select", options: ELIGIBILITY, title: "调整谁能升级置换",
+            detail: "用用户当前等级和门槛比；选「全部用户」也仍要满足设备、商品库存和上架条件。只影响之后的资格判断。",
+            impact: "改升级置换的等级门槛。门槛降低，能换的人更多，平台多让利。",
+            coverageLead: "降低等级门槛，能换的人更多，平台多让利",
+            facts: <Facts><Fact k="改的是">谁能升级置换</Fact></Facts> }))} />
+        <ConfigRow name="只能换更贵的新设备" value={<StatusTag tone={pE("E.tradein.requireHigherPrice") === "开" ? "ok" : "done"}>{pE("E.tradein.requireHigherPrice") === "开" ? "开启" : "关闭"}</StatusTag>} sub={pendingTag(["E.tradein.requireHigherPrice"])}
+          what="新设备价格要高于旧设备实付价" when="批准后，之后的报价和提交按新规则" effect="关闭后可以换同价或更便宜的设备，应付可能是 0，算多付钱。"
+          action={adjust(["E.tradein.requireHigherPrice"], () => single({ label: "仅限升级更高价设备", key: "E.tradein.requireHigherPrice", unit: "", editKind: "select", options: ["开", "关"], optionLabels: { 开: "开启", 关: "关闭" },
+            title: pE("E.tradein.requireHigherPrice") === "开" ? "关闭「只能换更贵的新设备」" : "开启「只能换更贵的新设备」",
+            detail: "开启时新设备价格要高于旧设备实付价；关闭后不比价格，可以换同价或更便宜的设备，折抵最多抵到新设备价格，应付可能是 0。仍要换成不同的商品。只影响之后的置换。",
+            impact: "改升级置换要不要比价格。关闭后应付可能是 0，平台多让利。",
+            coverageLead: "关闭后可以换同价或更便宜的设备，应付可能是 0",
+            facts: <Facts><Fact k="改的是">只能换更贵的新设备</Fact></Facts> }))} />
+        <ConfigRow name="每单最多抵扣台数" value={`${pE("E.tradein.maxDevicesPerOrder")} 台`}
+          sub={<>{pendingTag(["E.tradein.maxDevicesPerOrder"])}{devicesOff && <StatusTag tone="warn" icon={Info} explain="现在每单只能用 1 台旧设备抵扣。这里存的是以前的值，实际按 1 台处理；要改只能改成 1。">只支持 1 台</StatusTag>}{!devicesOff && devicesStored !== "—" && <StatusTag tone="neutral">固定</StatusTag>}</>}
+          what="一笔升级置换用几台旧设备抵扣" when={devicesOff ? "只能改成 1，批准后生效" : "固定 1 台，不能再改"} effect="每单只能用 1 台旧设备抵扣。"
+          action={devicesOff ? adjust(["E.tradein.maxDevicesPerOrder"], () => single({ label: "单笔最多抵扣台数", key: "E.tradein.maxDevicesPerOrder", unit: "台", title: "把每单抵扣台数改成 1",
+            detail: "现在每单只能用 1 台旧设备抵扣，只能改成 1。只影响之后的置换。",
+            impact: "把以前存的台数改成 1，和实际一致。", hint: "只能填 1",
+            facts: <Facts><Fact k="改的是">每单最多抵扣台数</Fact><Fact k="现在实际">每单只按 1 台处理</Fact></Facts> }), false, "改成 1 台") : undefined} />
+        <ConfigRow name="近 30 天高频置换账户" value={stats ? `${countText(stats.k2ArbitrageHits)} 个` : "—"}
+          what="近 30 天完成升级置换 3 次及以上，同期又有佣金或礼品入账的账户数" effect="只是参考计数，不代表这些账户被拦截，也不会自动处理；要核查到「异常套利与刷量排查」。" />
+      </ConfigList>
+    </Panel>
+
+    {TASK_LOCK_KEYS.some((key) => pE(key) !== "—") && <Fold title="已停用的设置" icon={CircleSlash} tone="role-other" summary="1 组 · 不能再改"
+      explain="这组已经停用，不再提示用户升级，也不能再改。这里只显示以前存的值。">
+      <ConfigList label="已停用的设置">
+        <ConfigRow name="提示升级的月损失金额" value={`入门 ${pE("E.device.taskLock.s1")} · Pro ${pE("E.device.taskLock.pro")} · 机柜 ${pE("E.device.taskLock.rack")} USDT`}
+          sub={<>{pendingTag(TASK_LOCK_KEYS)}<StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag></>}
+          what="原来设计成设备每月少赚超过这个金额时提示用户升级" when="已停用，不能再改"
+          note="不影响派单、任务和收益。" />
+      </ConfigList>
+    </Fold>}
+    {manual}
+  </div>;
 }

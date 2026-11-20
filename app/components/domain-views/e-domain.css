@@ -14,28 +14,74 @@
 .edom .f-cta.manual { border-color: var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-weight: 500; }
 @media (hover: hover) and (pointer: fine) { .edom .f-cta.manual:hover { background: var(--surface-3); color: var(--ink); border-color: var(--ink-4); } }
 
-/* ===== 页面级业务提示收尾段(对齐设计稿 f-chrome .f-foot · 与 F 域港口同款值)===== */
-.edom .f-foot { margin-top: 16px; font-size: 11.5px; color: var(--ink-3); line-height: 1.6; }
-.edom .f-foot b { color: var(--ink-2); font-weight: 600; }
-
 /* ===== 列表/表格行内动作按钮 .l-btn(E 域 port 时漏建,补齐 · 与 A–M 各域同款)=====
    E5「设备库存 & 激活」动作列(激活/强制激活/取消激活/解绑)用 .l-btn;此前 .edom 无定义 →
    fallthrough 到全局 .dkpage .mc(chip 样式)→ 按钮无边框误成 chip。按钮类必须保留 border。 */
-.edom .l-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
-  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2);
-  font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; text-decoration: none; }
-@media (hover: hover) and (pointer: fine) { .edom .l-btn:hover { background: var(--surface-3); color: var(--ink); } }
 .edom .l-btn.primary { background: var(--brand); border-color: var(--brand); color: var(--v5-on-brand); font-weight: 600; }
-@media (hover: hover) and (pointer: fine) { .edom .l-btn.primary:hover { filter: brightness(1.07); } }
-.edom .l-btn.mc { color: var(--warning); border-color: var(--warning-border); background: color-mix(in srgb, var(--warning) 8%, transparent); font-weight: 600; }
-@media (hover: hover) and (pointer: fine) { .edom .l-btn.mc:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); } }
 .edom .l-btn.dgr { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: transparent; }
 @media (hover: hover) and (pointer: fine) { .edom .l-btn.dgr:hover { background: var(--danger-soft); color: var(--danger); } }
 .edom .l-btn.okk { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); background: transparent; }
 @media (hover: hover) and (pointer: fine) { .edom .l-btn.okk:hover { background: var(--success-soft); color: var(--success); } }
-.edom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; min-height: 24px; }
 
 /* ##################### E1 商品目录 & 代际门 ##################### */
+.edom .e1-phone-task-policy {
+  container: e1-phone-tasks / inline-size;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+.edom .e1-phone-task-policy > header,
+.edom .e1-phone-task-policy > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.edom .e1-phone-task-policy > header { margin-bottom: 16px; }
+.edom .e1-phone-task-policy > header .row { flex-wrap: wrap; }
+.edom .e1-phone-task-policy > header strong { font-size: 16px; font-weight: 650; }
+.edom .e1-phone-task-policy > .col { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+:is(.edom .e1-phone-task-policy, .dkpage .e1-sku-task-policy) > .col > label {
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+:is(.edom .e1-phone-task-policy, .dkpage .e1-sku-task-policy) > .col > label:has(:checked) { background: var(--brand-soft); border-color: var(--brand-border); color: var(--brand); }
+:is(.edom .e1-phone-task-policy, .dkpage .e1-sku-task-policy) > .col > label:has(:focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }
+:is(.edom .e1-phone-task-policy, .dkpage .e1-sku-task-policy) > .col > label:has(:disabled) { cursor: default; }
+:is(.edom .e1-phone-task-policy, .dkpage .e1-sku-task-policy) > .col input[type="checkbox"] { width: 15px; height: 15px; margin: 0; flex: none; accent-color: var(--brand); }
+:is(.e1-phone-task-policy, .e1-sku-task-policy) > .col input[type="checkbox"] { color-scheme: dark; }
+.edom .e1-phone-task-policy > footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.edom .e1-phone-task-policy > footer p { flex: 1 1 16rem; margin: 0; }
+.edom .e1-phone-task-policy > footer .btn { margin-inline-start: auto; }
+@container e1-phone-tasks (max-width: 55rem) {
+  .edom .e1-phone-task-policy > .col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container e1-phone-tasks (max-width: 32rem) {
+  .edom .e1-phone-task-policy > .col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container e1-phone-tasks (max-width: 15rem) {
+  .edom .e1-phone-task-policy > .col { grid-template-columns: minmax(0, 1fr); }
+}
+
+.dkpage .e1-sku-task-policy { container: e1-sku-tasks / inline-size; gap: 10px; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--border); }
+.dkpage .e1-sku-task-policy > header { align-items: center; gap: 9px; }
+.dkpage .e1-sku-task-policy h3 { margin: 0; color: var(--ink); font-size: 14.5px; font-weight: 600; }
+.dkpage .e1-sku-task-icon { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 7px; color: var(--brand); background: var(--brand-soft); }
+.dkpage .e1-sku-task-policy output { margin-inline-start: auto; color: var(--ink-3); font-size: 11.5px; white-space: nowrap; }
+.dkpage .e1-sku-task-policy output b { color: var(--ink-2); font-family: var(--mono); font-weight: 500; }
+.dkpage .e1-sku-task-policy > .col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dkpage .e1-sku-task-policy > p { margin: 0; line-height: 1.6; }
+@container e1-sku-tasks (max-width: 17rem) {
+  .dkpage .e1-sku-task-policy > .col { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ===== Phase timeline(代际门 · E2)— 动态列 track + 渐变连接线 + 当前节点光晕 ===== */
 .edom .phase-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 18px 22px 14px; margin-bottom: 16px; }
 .edom .phase-bar .lbl { font-size: 12px; color: var(--ink-3); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
@@ -84,7 +130,7 @@
 .edom .genrel-table .elg { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 5px; font-size: 10.5px; font-weight: 500; }
 .edom .genrel-table .elg.ok   { background: var(--success-soft); color: var(--success); }
 .edom .genrel-table .elg.miss { background: rgba(255,107,53,.12); color: var(--danger); }
-.edom .genrel-table .elg .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.edom :is(.genrel-table .elg, .phasecfg-table .phaseNow) .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .edom .genrel-table .acts { display: flex; gap: 5px; justify-content: flex-end; flex-wrap: wrap; }
 .edom .genrel-table .acts button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; white-space: nowrap; }
 .edom .genrel-table .acts button.warn { color: var(--warning); border-color: rgba(255,190,61,.32); background: rgba(255,190,61,.08); }
@@ -102,7 +148,6 @@
 .edom .phasecfg-table .phase-name { font-weight: 700; color: var(--ink-1); }
 .edom .phasecfg-table .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
 .edom .phasecfg-table .phaseNow { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 5px; background: var(--brand-soft); color: var(--brand); font-size: 10.5px; font-weight: 700; white-space: nowrap; }
-.edom .phasecfg-table .phaseNow .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .edom .phasecfg-table .acts { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
 .edom .phasecfg-table .acts button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; white-space: nowrap; }
 .edom .phasecfg-table .acts button.brand { color: var(--brand); border-color: var(--brand-border); background: var(--brand-soft); font-weight: 600; }
@@ -176,97 +221,13 @@
 .edom .rv-pager .ind { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .edom .rv-pager .ind b { color: var(--ink); font-weight: 600; font-family: var(--mono); }
 
-/* ##################### E2 收益 & 任务引擎 ##################### */
+/* Shared E page panels */
 .edom .e3-main { display: grid; grid-template-columns: 1fr 320px; gap: 16px; margin-bottom: 16px; align-items: start; }
 @media (max-width: 1100px) { .edom .e3-main { grid-template-columns: 1fr; } }
-.edom .pane { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
-.edom .pane-h { padding: 16px 18px 12px; display: flex; align-items: center; gap: 10px; }
 .edom .pane-h .ttl { font-size: 14.5px; font-weight: 600; white-space: nowrap; }
 .edom .pane-h .sub { font-size: 12px; color: var(--ink-3); }
 .edom .pane-h .tcount { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--ink-3); padding: 2px 8px; border-radius: 6px; background: var(--surface-2); white-space: nowrap; }
 .edom .pane-h .r { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-
-/* ===== Task card row(6 列 grid)===== */
-.edom .task-list { padding: 4px 0 16px; }
-.edom .task { display: grid; grid-template-columns: 36px 1fr 110px 160px 220px 170px; align-items: center; gap: 14px; padding: 14px 18px; border-top: 1px solid var(--border); transition: background .14s; }
-@media (hover: hover) and (pointer: fine) { .edom .task:hover { background: var(--surface-2); } }
-.edom .task .ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; }
-.edom .task .ic.llm { background: rgba(155,137,224,.13); color: var(--cyan); }
-.edom .task .ic.img { background: var(--brand-soft); color: var(--brand); }
-.edom .task .ic.vid { background: rgba(255,190,61,.13); color: var(--warning); }
-.edom .task .ic.ft  { background: rgba(255,107,53,.13); color: var(--brand-2); }
-.edom .task .ic.em  { background: var(--success-soft); color: var(--success); }
-.edom .task .nm { font-size: 13.5px; font-weight: 600; color: var(--ink); line-height: 1.3; }
-.edom .task .nm .pid { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); font-weight: 400; margin-top: 2px; display: block; }
-.edom .task .price { font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
-.edom .task .price small { font-size: 10.5px; color: var(--ink-4); margin-left: 3px; font-weight: 400; }
-.edom .task .req { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 6px; font-family: var(--mono); font-size: 10.5px; font-weight: 600; }
-.edom .task .req.lock { background: var(--brand-2-soft); color: var(--brand-2); }
-.edom .task .req.open { background: var(--surface-3); color: var(--ink-3); }
-.edom .task .sat { display: flex; align-items: center; gap: 10px; }
-.edom .task .sat .bar { flex: 1; height: 8px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
-.edom .task .sat .bar .f { height: 100%; border-radius: 999px; }
-.edom .task .sat .pct { font-family: var(--mono); font-size: 11.5px; font-weight: 600; min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
-.edom .task .acts { display: flex; gap: 5px; justify-content: flex-end; }
-.edom .task .acts button { padding: 5px 10px; border-radius: 7px; font-size: 11.5px; font-weight: 500; cursor: pointer; white-space: nowrap; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); }
-@media (hover: hover) and (pointer: fine) { .edom .task .acts button:hover { background: var(--surface-3); color: var(--ink); } }
-.edom .task .acts button.primary { border-color: var(--brand-border); background: var(--brand-soft); color: var(--brand); font-weight: 600; }
-@media (hover: hover) and (pointer: fine) { .edom .task .acts button.primary:hover { background: var(--brand); color: #0A0A0A; } }
-
-/* ===== Saturation donut(right rail)===== */
-.edom .rail { display: flex; flex-direction: column; gap: 14px; }
-.edom .donut-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 18px 18px 16px; text-align: center; }
-.edom .donut-card .h { font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
-.edom .donut-card .s { font-size: 11.5px; color: var(--ink-4); margin-bottom: 14px; }
-.edom .donut-wrap { position: relative; width: 180px; height: 180px; margin: 0 auto 12px; }
-.edom .donut-wrap svg { transform: rotate(-90deg); }
-.edom .donut-wrap .ring-bg { stroke: var(--surface-3); }
-.edom .donut-wrap .ring-f { stroke: var(--warning); stroke-linecap: round; transition: stroke-dashoffset 1.2s; }
-.edom .donut-wrap .ctr { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.edom .donut-wrap .ctr .num { font-family: var(--mono); font-size: 38px; font-weight: 600; letter-spacing: -.02em; color: var(--warning); font-variant-numeric: tabular-nums; line-height: 1; }
-.edom .donut-wrap .ctr .num small { font-size: 18px; font-weight: 500; }
-.edom .donut-wrap .ctr .lb { font-size: 11px; color: var(--ink-4); margin-top: 4px; }
-.edom .donut-card .legend { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px dashed var(--border); }
-.edom .donut-card .legend .row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.edom .donut-card .legend .row .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.edom .donut-card .legend .row .nm { flex: 1; text-align: left; color: var(--ink-2); }
-.edom .donut-card .legend .row .pct { font-family: var(--mono); font-weight: 600; color: var(--ink); }
-
-/* ===== Hooks card ===== */
-.edom .hook-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 16px 18px; }
-.edom .hook-card .h { font-size: 13.5px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-.edom .hook-card .h .tag { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--ink-4); border: 1px solid var(--border); padding: 1px 6px; border-radius: 5px; }
-.edom .hook-row { display: flex; align-items: center; gap: 9px; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 12px; }
-.edom .hook-row:last-child { border-bottom: 0; }
-.edom .hook-row .ic { color: var(--brand-2); flex-shrink: 0; display: inline-flex; }
-.edom .hook-row.up .ic { color: var(--success); }
-.edom .hook-row .nm { flex: 1; color: var(--ink-2); }
-.edom .hook-row .ct { font-family: var(--mono); font-size: 11px; color: var(--brand-2); font-weight: 600; }
-.edom .hook-row.up .ct { color: var(--success); }
-
-/* ===== 24h heatmap ===== */
-.edom .heat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 16px 18px 14px; }
-.edom .heat-h { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.edom .heat-h .ttl { font-size: 14px; font-weight: 600; }
-.edom .heat-h .sub { font-size: 11.5px; color: var(--ink-3); }
-.edom .heat-h .r { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); }
-/* 多区域热力图:每区域 ≤6 任务,区域用 auto-fill minmax 网格每行 2-3 个,随页面缩放自适应。
-   cell 用 aspect-ratio + 1fr,跟随区域宽度等比缩放(不再固定 18px)。 */
-.edom .heat-zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 18px 16px; }
-.edom .heat-zone { min-width: 0; }
-.edom .heat-zone .zone-h { display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px; }
-.edom .heat-zone .zone-h .z-ttl { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
-.edom .heat-zone .zone-h .z-sub { font-size: 10.5px; color: var(--ink-4); }
-.edom .heat-grid { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 2px; align-items: center; }
-.edom .heat-grid .lbl { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); padding-right: 10px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.edom .heat-row { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; }
-.edom .heat-cell { width: 100%; aspect-ratio: 1 / 1; border-radius: 2px; background: var(--surface-3); position: relative; cursor: help; transition: transform .12s; }
-@media (hover: hover) and (pointer: fine) { .edom .heat-cell:hover { transform: scale(1.6); z-index: 2; box-shadow: 0 4px 12px rgba(0,0,0,.4); } }
-.edom .heat-axis-wrap { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 2px; margin-top: 5px; }
-.edom .heat-axis { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; font-family: var(--mono); font-size: 9px; color: var(--ink-4); text-align: center; }
-.edom .heat-legend { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 11px; color: var(--ink-4); }
-.edom .heat-legend .scale { display: flex; gap: 2px; }
-.edom .heat-legend .scale span { width: 14px; height: 11px; border-radius: 2px; }
 
 /* ##################### E3 生命周期 & Trade-in ##################### */
 /* ===== Hero 衰减曲线卡 ===== */
@@ -365,151 +326,11 @@
 .edom .tx-foot b { color: var(--ink-2); font-weight: 600; }
 .edom .tx-foot .sep { color: var(--ink-4); }
 
-/* ##################### E4 订单状态机 ##################### */
-.edom .sm-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 22px 24px 24px; margin-bottom: 16px; position: relative; overflow: hidden; }
-.edom .sm-h { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
-.edom .sm-h .ttl { font-size: 14.5px; font-weight: 600; }
-.edom .sm-h .sub { font-size: 12px; color: var(--ink-3); }
-.edom .sm-h .r { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.edom .sm-diagram { position: relative; padding: 12px 0 8px; }
-.edom .sm-path-main { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 32px; padding: 0 6px; }
-.edom .sm-connect { flex: 1; display: flex; align-items: center; gap: 0; min-width: 60px; }
-.edom .sm-connect .ln { flex: 1; height: 2px; }
-.edom .sm-connect .ln.a { background: var(--success); }
-.edom .sm-connect .ln.b { background: linear-gradient(90deg, var(--success), #4FBE45); }
-.edom .sm-connect .ln.c { background: linear-gradient(90deg, #4FBE45, var(--brand)); }
-.edom .sm-connect .arr { color: var(--brand); display: inline-flex; align-items: center; margin-left: -1px; }
-.edom .sm-connect.start .arr { color: #4FBE45; }
-.edom .sm-connect.mid .arr { color: #6FCE2C; }
-.edom .sm-node { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }
-.edom .sm-node .box { background: var(--surface-2); border: 2px solid var(--border-strong); border-radius: 11px; padding: 12px 16px; min-width: 130px; text-align: center; }
-.edom .sm-node .box .nm { font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.edom .sm-node .box .ct { font-family: var(--mono); font-size: 11px; color: var(--ink-4); margin-top: 3px; }
-.edom .sm-node.start .box { background: var(--surface-3); border-color: var(--border-strong); }
-.edom .sm-node.start .nm { color: var(--ink-2); }
-.edom .sm-node.start .ct { color: var(--ink-3); }
-.edom .sm-node.flow .box { background: var(--cyan-soft); border-color: var(--cyan-border); }
-.edom .sm-node.flow .nm { color: var(--cyan); }
-.edom .sm-node.flow .ct { color: var(--cyan); }
-.edom .sm-node.end .box { background: var(--success-soft); border-color: var(--success-border); box-shadow: 0 0 16px rgba(41,210,127,.15); }
-.edom .sm-node.end .nm { color: var(--success); }
-.edom .sm-node.end .ct { color: var(--success); }
-.edom .sm-branches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; padding-top: 10px; border-top: 1px dashed var(--border); }
-@media (max-width: 980px) { .edom .sm-branches { grid-template-columns: repeat(3, 1fr); } }
-.edom .sm-branches > .lbl { grid-column: 1 / -1; font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-.edom .sm-branches > .lbl::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-.edom .sm-branch { background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 9px; padding: 11px 13px; text-align: center; position: relative; }
-.edom .sm-branch .nm { font-family: var(--mono); font-size: 11.5px; font-weight: 700; letter-spacing: .04em; }
-.edom .sm-branch .ct { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); margin-top: 3px; }
-.edom .sm-branch .desc { font-size: 10.5px; color: var(--ink-3); margin-top: 4px; line-height: 1.4; }
-.edom .sm-branch.err     { border-color: var(--danger-border); background: var(--danger-soft); }
-.edom .sm-branch.err .nm { color: var(--danger); }
-.edom .sm-branch.warn    { border-color: var(--warning-border); background: var(--warning-soft); }
-.edom .sm-branch.warn .nm { color: var(--warning); }
-.edom .sm-branch.neutral .nm { color: var(--ink-2); }
-
-/* ===== Order queue table ===== */
-.edom .q-card { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
-.edom .q-h { padding: 16px 18px 12px; display: flex; align-items: center; gap: 10px; }
-.edom .q-h .ttl { font-size: 14.5px; font-weight: 600; }
-.edom .q-h .sub { font-size: 12px; color: var(--ink-3); }
-.edom .q-h .r { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .edom .filter-bar { padding: 0 18px 12px; display: flex; gap: 6px; flex-wrap: wrap; }
 .edom .fchip { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 7px; background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-3); cursor: pointer; user-select: none; }
 @media (hover: hover) and (pointer: fine) { .edom .fchip:hover { background: var(--surface-3); color: var(--ink); } }
 .edom .fchip.on { background: var(--brand); color: #0A0A0A; border-color: var(--brand); font-weight: 600; }
 .edom .filter-bar .fdiv { width: 1px; align-self: stretch; min-height: 18px; background: var(--border); margin: 0 5px; }
-.edom .q-scroll { overflow-x: auto; overscroll-behavior-inline: contain; }
-.edom .q-row { display: grid; grid-template-columns: 110px 110px minmax(160px, 1fr) 110px 130px 110px 70px 60px; min-width: 984px; align-items: center; gap: 12px; padding: 13px 20px; border-top: 1px solid var(--border); font-size: 13px; cursor: pointer; transition: background .12s; }
-.edom .q-row.head { padding: 11px 20px; background: var(--surface-2); border-top: 0; cursor: default; font-size: 10.5px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
-@media (hover: hover) and (pointer: fine) { .edom .q-row:hover:not(.head) { background: var(--surface-2); } }
-.edom .q-row .oid { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
-.edom .q-row .uid { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
-.edom .q-row .oid, .edom .q-row .uid { overflow-wrap: anywhere; }
-.edom .q-row .sku { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.edom .q-row .amt { font-family: var(--mono); font-size: 14px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
-.edom .q-row .dc { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
-.edom .q-row .age { font-family: var(--mono); font-size: 11px; color: var(--ink-4); text-align: right; }
-.edom .q-row .chev { color: var(--ink-4); text-align: right; display: flex; justify-content: flex-end; }
-.edom .q-empty { padding: 26px; text-align: center; color: var(--ink-4); font-size: 12.5px; border-top: 1px solid var(--border); }
-
-/* 订单详情抽屉内的状态轨迹(走仓库 <Drawer>,故用 .edrawer 全局类,不挂 .edom) */
-.edrawer-trail { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
-.edrawer-trail .it { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
-.edrawer-trail .it .d { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-.edrawer-trail .it .d.done { background: var(--success); }
-.edrawer-trail .it .d.grey { background: var(--ink-4); }
-.edrawer-trail .it .d.red  { background: var(--danger); }
-.edrawer-trail .it .d.warn { background: var(--warning); }
-.edrawer-trail .it.grey .nm { color: var(--ink-4); }
-.edrawer-trail .it.red .nm  { color: var(--danger); font-weight: 600; }
-.edrawer-trail .it.warn .nm { color: var(--warning); font-weight: 600; }
-
-/* ##################### E5 设备运维 ##################### */
-.edom .heartbeat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 18px 22px; margin-bottom: 16px; display: grid; grid-template-columns: 1fr 1fr 220px; align-items: center; gap: 22px; }
-@media (max-width: 1100px) { .edom .heartbeat { grid-template-columns: 1fr; } }
-.edom .hb-num { font-family: var(--mono); font-size: 36px; font-weight: 600; letter-spacing: -.02em; line-height: 1; color: var(--success); }
-.edom .hb-lbl { font-size: 12px; color: var(--ink-3); margin-top: 6px; line-height: 1.5; }
-.edom .hb-lbl b { color: var(--success); font-weight: 600; }
-.edom .ecg-wrap { position: relative; height: 60px; }
-.edom .ecg-wrap svg { width: 100%; height: 100%; }
-.edom .ecg-base { stroke: var(--surface-3); stroke-width: 1.5; fill: none; }
-.edom .ecg-line { stroke: var(--success); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.edom .ecg-pulse { stroke-dasharray: 800; stroke-dashoffset: 800; animation: edomEcg 3.6s linear infinite; }
-@keyframes edomEcg { 0%, 100% { stroke-dashoffset: 800; } 50% { stroke-dashoffset: 0; } }
-.edom .hb-ctrl { display: flex; flex-direction: column; gap: 8px; }
-.edom .hb-ctrl .row { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-3); }
-.edom .hb-ctrl .row .v { font-family: var(--mono); font-weight: 600; color: var(--ink); }
-.edom .hb-ctrl .row .v.warn { color: var(--warning); }
-.edom .dc-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 2px 0 10px; }
-.edom .dc-toolbar .ttl { font-size: 13px; font-weight: 700; color: var(--ink); }
-.edom .dc-toolbar .sub { margin-top: 2px; font-size: 11.5px; color: var(--ink-4); }
-.edom .dc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
-@media (max-width: 1100px) { .edom .dc-grid { grid-template-columns: 1fr; } }
-.edom .dc-empty { grid-column: 1 / -1; padding: 18px; color: var(--ink-3); font-size: 12.5px; }
-.edom .dc-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 0; overflow: hidden; position: relative; }
-.edom .dc-card.paused { opacity: .68; }
-.edom .dc-h { padding: 16px 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); }
-.edom .dc-h .ic { width: 38px; height: 38px; border-radius: 10px; background: var(--surface-2); display: grid; place-items: center; color: var(--ink-3); flex-shrink: 0; }
-.edom .dc-card.online .dc-h .ic { background: var(--success-soft); color: var(--success); }
-.edom .dc-card.warn   .dc-h .ic { background: var(--warning-soft); color: var(--warning); }
-.edom .dc-card.paused .dc-h .ic { background: var(--surface-3); color: var(--ink-4); }
-.edom .dc-h .t { flex: 1; min-width: 0; }
-.edom .dc-h .nm { font-family: var(--mono); font-size: 13.5px; font-weight: 700; letter-spacing: .02em; }
-.edom .dc-h .reg { font-size: 11px; color: var(--ink-4); margin-top: 1px; }
-.edom .dc-h .state { padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.edom .dc-h .state .d { width: 6px; height: 6px; border-radius: 50%; }
-.edom .dc-card.online .dc-h .state { background: var(--success-soft); color: var(--success); }
-.edom .dc-card.online .dc-h .state .d { background: var(--success); animation: edomBlink 1.8s infinite; }
-.edom .dc-card.warn   .dc-h .state { background: var(--warning-soft); color: var(--warning); }
-.edom .dc-card.warn   .dc-h .state .d { background: var(--warning); animation: edomBlink 1.8s infinite; }
-.edom .dc-card.paused .dc-h .state { background: var(--surface-3); color: var(--ink-3); }
-.edom .dc-card.paused .dc-h .state .d { background: var(--ink-4); }
-@keyframes edomBlink { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
-.edom .dc-body { padding: 16px 18px; }
-.edom .dc-num { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
-.edom .dc-num .v { font-family: var(--mono); font-size: 32px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; }
-.edom .dc-num .v.warn { color: var(--warning); }
-.edom .dc-num .delta { font-family: var(--mono); font-size: 11.5px; font-weight: 600; }
-.edom .dc-num .delta.up { color: var(--success); }
-.edom .dc-num .delta.down { color: var(--danger); }
-.edom .dc-body .lbl { font-size: 11.5px; color: var(--ink-3); margin-bottom: 12px; }
-.edom .dc-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
-.edom .dc-sub .stat { font-size: 11px; }
-.edom .dc-sub .stat .k { color: var(--ink-4); font-size: 10.5px; margin-bottom: 2px; }
-.edom .dc-sub .stat .v { font-family: var(--mono); font-weight: 600; font-size: 12.5px; color: var(--ink-2); }
-.edom .dc-sub .stat .v.warn { color: var(--warning); }
-.edom .dc-sub .stat .v.ok { color: var(--success); }
-.edom .dc-spark { height: 36px; margin-top: 10px; }
-.edom .dc-foot { padding: 12px 18px 14px; display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--border); }
-.edom .dc-foot button { flex: 1 1 calc(50% - 8px); min-width: 112px; padding: 9px 12px; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-@media (hover: hover) and (pointer: fine) { .edom .dc-foot button:hover { background: var(--surface-3); color: var(--ink); } }
-.edom .dc-foot button.dgr { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); }
-@media (hover: hover) and (pointer: fine) { .edom .dc-foot button.dgr:hover { background: var(--danger); color: #fff; } }
-.edom .dc-foot button.pause { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning); font-weight: 600; }
-@media (hover: hover) and (pointer: fine) { .edom .dc-foot button.pause:hover { background: var(--warning); color: #2A1505; } }
-.edom .dc-foot button.resume { border-color: var(--success-border); background: var(--success-soft); color: var(--success); font-weight: 600; }
-@media (hover: hover) and (pointer: fine) { .edom .dc-foot button.resume:hover { background: var(--success); color: #0A0A0A; } }
 
 /* ===== Activity feed ===== */
 .edom .feed-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
@@ -617,3 +438,613 @@
   .edom .e6-flag-ctl { width: 100%; justify-content: space-between; }
   .edom .e6-copy-grid { grid-template-columns: 1fr; }
 }
+.e-field { gap: 5px; }
+
+/* ===== 订单进度：退款框里促销奖励的后果句。给人读的句子，14px 次文字，不和金额同档（VS-105） ===== */
+.e4-refund-outcome { margin: 8px 0 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
+/* 退款框要一屏放下（DP-06）：一条奖励一行，金额、对象、结果从左到右。RecordList 没有紧凑写法，这里顶着，缺口写在 REVIEW。 */
+.e4-refund-rewards .rd-record { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 0 var(--rd-space-3); padding-block: var(--rd-space-1); }
+.e4-refund-rewards .rd-record-main { display: contents; }
+.e4-refund-rewards .rd-record-meta { order: 1; margin-top: 0; }
+.e4-refund-rewards .rd-record-status { order: 2; }
+/* 1024 时六列放得下：组合商品最长，单行省略，全文在悬停里（ST-04）。 */
+@media (max-width: 1100px) { .e4-sku .rd-cell { max-width: 200px; } }
+/* 退款框常显四类任务和两币金额，紧凑行高给退款原因与操作理由留出首屏空间。 */
+/* 宽度沿用 rd Modal 的 wide 档；订单和任务影响并排，促销资金去向仍常显。 */
+.rd-modal:has(.e4-refund-impact-compact) { width: min(680px, calc(100vw - 48px)); }
+.rd-modal:has(.e4-refund-impact-compact) .rd-confirm-facts { padding-inline: var(--rd-space-2); }
+.rd-modal:has(.e4-refund-impact-compact) .rd-confirm-facts [data-mono] { word-break: break-all; }  /* 长单号均匀折行，不在「ORD-」后断开 */
+.rd-modal:has(.e4-refund-impact-compact) .rd-confirm-alert .rd-notice-text { text-wrap: balance; }
+.e4-refund-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-4); }
+.e4-refund-grid .rd-fact-unit { white-space: nowrap; }  /* 「红线 100%」整段换行，不拆成「红线 / 100%」 */
+.e4-refund-impact { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--rd-space-2); min-width: 0; }  /* 标题、提示、事实、表格逐块排，不贴在一起；左栏展开变高时不把提示和表格撑开 */
+.e4-refund-impact > .rd-form-group-title { margin: 0; }
+.e4-refund-impact-compact .rd-table { --rd-cell-pad-y: var(--rd-space-1); --rd-cell-pad: var(--rd-space-2); }
+
+/* E1 月收益字段沿用商品编辑的间距与提示层级。 */
+.sku-earn-grid { gap: 12px; }
+.sku-field-hint { color: var(--ink-4); }
+
+/* Task pool and device operations: names, values, then actions. */
+.dkpage .ops-hint { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; padding:0; width:20px; height:20px; font-size:var(--rd-text-body); vertical-align:middle; color:var(--ink-3); border:0; background:none; border-radius:50%; cursor:pointer; }
+.ops-hint-popover { position:fixed; z-index:5000; width:300px; max-width:calc(100vw - 24px); box-sizing:border-box; padding:14px; font-size:var(--rd-text-aux); line-height:1.7; font-weight:400; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--rd-shadow-float); white-space:normal; overflow-wrap:anywhere; }
+.dkpage .e1-sku-task-policy { gap:14px; }
+.dkpage .e1-sku-task-policy header { gap:var(--rd-space-2); }
+.dkpage .e1-sku-task-policy h3 { margin:0; }
+.dkpage .sku-task-count { display:block; margin-top:var(--rd-space-1); color:var(--ink-3); }
+.dkpage .sku-task-preview { display:flex; flex-direction:column; gap:6px; padding:12px 14px; }
+.dkpage .sku-task-preview output { font-size:var(--rd-text-body); }
+.dkpage .sku-field-error { color:var(--danger); }
+.dkpage .e-confirm-details { gap:10px; }
+.dkpage .sku-hosting-field, .dkpage .phone-task-toggle { gap:var(--rd-space-2); }
+.dkpage .phone-task-fields { gap:var(--rd-space-4); }
+.edom .tp-levels { gap:10px; flex-wrap:wrap; margin-bottom:20px; }
+.edom .tp-level { display:flex; gap:16px; align-items:center; padding:14px 18px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--ink-3); cursor:pointer; font-size:14px; }
+.edom .tp-level span { font-variant-numeric:tabular-nums; }
+.edom .tp-level.on { background:var(--brand-soft); color:var(--brand); border-color:var(--brand); }
+.edom .tp-pool-head { display:flex; align-items:center; flex-wrap:wrap; gap:24px; padding:24px; border-bottom:1px solid var(--border); }
+.edom .tp-pool-head h2 { margin:0; font-size:23px; }
+.edom .tp-load { display:flex; flex-direction:column; gap:6px; margin-left:auto; font-size:14px; }
+.edom .tp-load strong { font-size:18px; color:var(--brand); }
+.edom .tp-load span { color:var(--ink-3); }
+.edom .tp-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:18px 24px; }
+.edom .tp-toolbar .fld { width:auto; min-width:130px; }
+.edom .tp-table-wrap { overflow-x:auto; }
+.edom .tp-table { width:100%; border-collapse:collapse; font-size:14px; }
+.edom .tp-table th { text-align:left; font-size:12px; color:var(--ink-3); font-weight:500; padding:12px 16px; background:var(--surface-2); }
+.edom .tp-table td { padding:18px 16px; border-top:1px solid var(--border); vertical-align:middle; }
+.edom .tp-table td strong { font-weight:600; }
+.edom .tp-table td small { display:block; margin-top:6px; color:var(--ink-3); font-size:12px; }
+.edom .tp-dialog { display:flex; flex-direction:column; gap:24px; }
+.edom .tp-dialog label.col { gap:9px; font-size:14px; }
+.edom .tp-key-info { padding:18px; border-radius:10px; background:var(--brand-soft); color:var(--brand); font-size:18px; font-weight:600; }
+.edom .tp-dialog fieldset { border:1px solid var(--border); padding:16px; border-radius:10px; }
+.edom .tp-choices { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; padding-top:10px; }
+.edom .tp-choices label { display:flex; align-items:center; gap:9px; }
+.edom .device-menu { position:relative; }
+.edom .device-menu > summary { list-style:none; cursor:pointer; padding:6px 12px; font-size:20px; border-radius:8px; border:1px solid var(--border); }
+.edom .device-menu > summary::-webkit-details-marker { display:none; }
+.edom .device-menu[open] > div { position:absolute; z-index:50; right:0; top:38px; min-width:150px; padding:6px; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 24px #0002; }
+.edom .device-menu button { display:block; width:100%; background:none; color:var(--ink); border:0; border-radius:6px; padding:10px 12px; text-align:left; cursor:pointer; white-space:nowrap; }
+.edom .device-menu button:hover { background:var(--brand-soft); }
+.edom .device-menu button:disabled { color:var(--ink-4); cursor:default; }
+.edom .device-activity { margin-top:24px; }
+.edom .device-activity > summary { cursor:pointer; padding:18px 22px; font-weight:600; }
+.edom .phone-sections { display:flex; flex-direction:column; gap:24px; margin-bottom:24px; }
+
+/* E2 complete lists expand inside the modal body; product popovers have their own bounded viewport. */
+/* 请求编号整串不折行（连字符处断开像两个编号）；放不下时「复制编号」换到下一行。 */
+.e2-request-key { white-space: nowrap; }
+.e2-command-tasks { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+/* 停用影响块：商品名之间、名单和「影响设备」、数字框和后果句之间用同一档间距，不再一处松一处贴。 */
+.rd-notice .e2-command-tasks { gap: var(--rd-space-1); margin-top: var(--rd-space-1); }
+.rd-notice .e2-command-tasks + .rd-facts { margin-block: var(--rd-space-2); }
+
+/* E2 follows the panel gutter; each wrapped filter row keeps the shared control baseline. */
+.e2-task-panel .rd-filter { padding-inline: var(--rd-panel-pad-x); }
+.e2-task-panel .rd-filter-row > [data-cp="filter"] { display: flex; align-items: center; }
+.e2-duration { display: flex; align-items: center; justify-content: flex-end; gap: var(--rd-space-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.e2-duration-value { min-inline-size: 8ch; text-align: right; }
+
+/* Reserve the selection control column so headings, filters and task-name text share one edge. */
+.e2-task-panel .rd-panel[data-flush] > :is(.rd-panel-head, .rd-pager), .e2-task-panel :is(.rd-filter, .rd-batch) { padding-inline-start: calc(var(--rd-panel-pad-x) + var(--rd-space-4) + var(--rd-space-4)); }
+
+/* Equal card slots preserve comparison lines for loading, no enabled tasks and full pools. */
+.e2-levels .rd-stat-main { min-block-size: 57.5px; }
+.e2-card-ratio { display: flex; align-items: center; min-block-size: var(--rd-lh-body); }
+.e2-card-metrics { grid-template-rows: var(--rd-lh-aux) 42px var(--rd-lh-aux); }
+.e2-card-scale { min-block-size: 42px; padding-top: var(--rd-space-1); }
+.e2-product-counts { display: flex; align-content: start; flex-wrap: wrap; gap: 0 var(--rd-space-1); min-block-size: calc(var(--rd-lh-aux) * 2); }
+.e2-product-counts > span { white-space: nowrap; }
+.e2-product-counts [data-empty] { color: var(--rd-text-3); }
+.e2-product-list { max-block-size: min(360px, calc(var(--radix-popover-content-available-height, 70vh) - 32px)); overflow-y: auto; }
+.e2-task-table { table-layout: fixed; }
+.e2-task-table .e2-control-column { width: 44px; }
+.e2-task-table .e2-name-column { width: 58ch; }
+.e2-task-table th:nth-child(2) { padding-inline-start: var(--rd-cell-pad); }
+/* 右对齐的时长和左对齐的状态之间多留一档，表头不读成「时长状态」。 */
+.e2-task-table :is(th, td):nth-child(5) { padding-inline-start: var(--rd-space-6); }
+@container (max-width: 900px) { .e2-levels .rd-stat[data-selected]::after { display: none; } }
+.e2-task-table .rd-cell-main { white-space: normal; overflow-wrap: break-word; }
+.e2-task-table col:nth-child(4) { width: 24%; }
+@media (max-width: 1279px) {
+  .e2-duration > .rd-scale { width: 64px; }
+  .e2-task-table .e2-name-column { width: calc(100% - 432px); }
+  .e2-task-table col:nth-child(3) { width: 112px; }
+  .e2-task-table col:nth-child(4) { width: 168px; }
+  .e2-task-table col:nth-child(5) { width: 108px; }
+}
+@media (max-width: 1100px) {
+  .e2-duration > .rd-scale { display: none; }
+  .e2-task-table .e2-name-column { width: calc(100% - 348px); }
+  .e2-task-table col:nth-child(4) { width: 84px; }
+}
+
+/* E5: device operations. Shared graphics retain their rd styling. */
+.e5-task-head, .e5-slots { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.e5-income, .e5-task, .e5-state { display: flex; flex-direction: column; gap: 5px; }
+.e5-income { align-items: flex-end; }
+.e5-amount { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.e5-amount .rd-explain { margin-left: 4px; }
+.e5-sub { display: block; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: 1.5; }
+.e5-task .e5-sub { max-width: 160px; }
+.e5-group-choices { display: grid; gap: 12px; }
+.e5-group-choices > button { justify-content: flex-start; }
+.e5-table-host { container: e5-devices / inline-size; --e5-product-width: 0px; --e5-source-width: 0px; }
+.e5-table-host[data-product] { --e5-product-width: 176px; }
+.e5-table-host[data-source] { --e5-source-width: 80px; }
+.e5-table { width: 100%; table-layout: fixed; --e5-column-space: calc(100cqw - 60px - var(--e5-product-width) - var(--e5-source-width)); }
+.e5-table :is(th, td) { padding-left: 6px; padding-right: 6px; }
+.e5-table .e5-col-device { width: clamp(126px, calc(var(--e5-column-space) * .27), 340px); }
+.e5-table .e5-col-user { width: clamp(190px, calc(var(--e5-column-space) * .165), 224px); }
+.e5-table .e5-col-product { width: var(--e5-product-width); }
+.e5-table .e5-col-source { width: var(--e5-source-width); }
+.e5-table .e5-col-status { width: clamp(152px, calc(var(--e5-column-space) * .135), 176px); }
+.e5-table .e5-col-income { width: clamp(262px, calc(var(--e5-column-space) * .24), 310px); }
+.e5-table .e5-col-action { width: 60px; }
+.e5-table-host[data-extra] .e5-table { min-width: calc(1146px + var(--e5-product-width) + var(--e5-source-width)); --e5-column-space: max(1086px, calc(100cqw - 60px - var(--e5-product-width) - var(--e5-source-width))); }
+.e5-table-host[data-extra] .rd-table-scroll { scroll-padding-inline: clamp(126px, 27cqw, 340px) 60px; }
+.e5-table :is(.e5-device-col, .e5-user-col) .rd-cell { max-width: none; }
+.e5-table .e5-device-col .rd-cell-main { white-space: nowrap; overflow: hidden; }
+.e5-device-name { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.e5-device-name > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e5-pending-mark { flex: none; color: var(--rd-warn); font-size: var(--rd-text-aux); }
+.e5-table .e5-device-col .rd-cell-sub { overflow: visible; }
+.e5-serial { display: flex; max-width: 100%; }
+.e5-serial-prefix { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e5-serial-suffix { flex: none; }
+.e5-serial-tip { overflow-wrap: anywhere; }
+.e5-serial:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.e5-table .e5-status-col { right: 60px; text-align: left; }
+.e5-table .e5-status-col .rd-th-inner { justify-content: flex-start; }
+.e5-table .e5-action-col { white-space: nowrap; }
+.e5-table .e5-task-head { gap: 4px; }
+@container e5-devices (max-width: 1129px) {
+  .e5-table .e5-col-device { width: clamp(126px, calc(var(--e5-column-space) * .183), 236px); }
+  .e5-table .e5-col-user { width: clamp(144px, calc(var(--e5-column-space) * .209), 184px); }
+  .e5-table .e5-col-status { width: 146px; }
+  .e5-table .e5-col-income { width: clamp(150px, calc(var(--e5-column-space) * .218), 200px); }
+  .e5-table-host[data-extra] .e5-table { min-width: calc(749px + var(--e5-product-width) + var(--e5-source-width)); --e5-column-space: max(689px, calc(100cqw - 60px - var(--e5-product-width) - var(--e5-source-width))); }
+  .e5-table :is(th, td) { padding-left: 4px; padding-right: 4px; }
+  .e5-table .e5-task-head { gap: 2px; }
+  .e5-table .e5-income-range > .rd-scale, .e5-table .e5-task-time > .rd-ratio, .e5-table .e5-slot-prefix { display: none; }
+}
+.e5-empty-value { white-space: nowrap; }
+
+.e5-list-panel > .rd-filter { padding: 0 var(--rd-panel-pad-x) 12px; }
+.e5-list-panel .e5-table th:first-child, .e5-list-panel .e5-table td:first-child { padding-left: var(--rd-panel-pad-x); }
+.e5-list-panel .e5-table th:last-child, .e5-list-panel .e5-table td:last-child { padding-right: var(--rd-panel-pad-x); }
+.e5-phone-search { flex: 1; min-width: 220px; }
+
+.e5-summary { display: grid; gap: 16px; }
+
+
+.e5-income-range, .e5-task-time { display: flex; align-items: center; gap: 8px; }
+.e5-income-range { white-space: nowrap; }
+.e5-task-time { min-width: 0; }
+.e5-task-time > .e5-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e5-income-range { justify-content: flex-end; }
+.e5-income-range .rd-scale { flex: none; }
+.e5-task-time .e5-sub { max-width: none; }
+.e5-distribution button.rd-dist-item { box-shadow: inset 0 0 0 1px var(--rd-line); }
+.e5-distribution button.rd-dist-item::after { content: "↗"; color: var(--rd-text-3); }
+.e5-summary .rd-stat-label > svg { flex: none; color: var(--rd-text-3); }
+.e5-distribution [data-tone="done"] { --tone: var(--rd-chart-other); }
+.e5-distribution [data-slot="other"] { --slot: var(--rd-done); }
+:root[data-theme="light"] .e5-distribution [data-tone="done"] { --tone: var(--rd-done); }
+:root[data-theme="light"] .e5-distribution [data-slot="other"] { --slot: var(--rd-chart-other); }
+.e5-distribution button.rd-dist-item[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
+/* Effective-state counts that need someone to look; zero states are omitted. */
+.e5-attention { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--rd-line); }
+.e5-attention-label { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.e5-attention .e5-attention-item { gap: 8px; box-shadow: inset 0 0 0 1px var(--rd-line); }
+.e5-attention .e5-attention-item[data-selected] { box-shadow: inset 0 0 0 1px var(--rd-line-strong); background: var(--rd-selected); }
+.e5-attention-count { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--rd-text); }
+.e5-attention-item > svg, .e5-attention-on { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+
+.e5-user-meta { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.e5-user-meta > a { color: var(--rd-text-2); text-decoration: underline; text-underline-offset: 2px; }
+.e5-user-slots.rd-btn { height: 20px; padding: 0 4px; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-2); border-radius: var(--rd-radius-tag); }
+.e5-user-slots.rd-btn { box-shadow: inset 0 0 0 1px var(--rd-line); }
+.e5-user-slots.rd-btn:hover, .e5-user-slots.rd-btn:focus-visible { background: var(--rd-hover); }
+.e5-table .e5-task-head { flex-wrap: nowrap; }
+
+/* E5 repair: keep table breathing room and the drawer's decision facts on one line. */
+.e5-table :is(th, td).e5-income-col { padding-right: 16px; }
+.e5-table :is(th, td).e5-task-col { padding-left: 12px; }
+.e5-raw-amount { font-variant-numeric: tabular-nums; }
+.e5-raw-amount:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.e5-list-panel .rd-filter-more { padding: 0; background: none; grid-template-columns: minmax(200px, 320px); }
+.e5-group-choices > button { justify-content: space-between; }
+.rd-drawer[data-e5-detail] .rd-points-title { color: var(--rd-text); font-size: var(--rd-text-section); font-weight: 600; }
+.rd-drawer[data-e5-detail] .e5-income, .rd-drawer[data-e5-detail] .e5-income-range { align-items: flex-start; justify-content: flex-start; }
+.rd-drawer[data-e5-detail] .e5-amount { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); }
+.rd-drawer[data-e5-detail] .e5-amount .rd-muted { font-size: var(--rd-text-body); font-weight: 400; }
+.rd-drawer[data-e5-detail] .rd-point { grid-template-columns: 112px minmax(0, 1fr); }
+.rd-drawer[data-e5-detail] .e5-income-range { flex-direction: column; }
+.e5-status-detail { color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
+.e5-status-detail p { margin: 0; }
+.e5-instance { word-break: break-all; }
+.rd-drawer[data-e5-detail] .rd-fact:has(.e5-instance) dd { display: flex; align-items: flex-start; gap: 4px; }
+.rd-drawer[data-e5-detail] .e5-instance { flex: 1; min-width: 0; }
+.e5-activity .rd-record { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.e5-activity .rd-record-main { flex: none; }
+.e5-activity .rd-record-meta { min-width: 0; flex-wrap: wrap; justify-content: flex-end; margin-top: 0; }
+.e5-activity .rd-record-meta > span { overflow-wrap: anywhere; }
+@container e5-devices (max-width: 1129px) {
+  .e5-table .e5-col-income { width: clamp(158px, calc(var(--e5-column-space) * .23), 210px); }
+  .e5-table .e5-col-device { width: clamp(126px, calc(var(--e5-column-space) * .183), 236px); }
+  .e5-table :is(th, td).e5-income-col { padding-right: 12px; }
+  .e5-table :is(th, td).e5-task-col { padding-left: 8px; }
+  .e5-table .e5-task-time > .e5-sub { max-width: 100%; }
+}
+
+.e5-slots[data-phones][data-full] { color: var(--rd-warn); }
+/* 确认框里名额点阵跟在「2/6 → 3/6」后面，不单独夹在两行事实中间。 */
+.e5-slot-change { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.e5-amount[data-zero] { color: var(--rd-text-3); font-weight: 400; }
+.rd-drawer[data-e5-detail] .e5-amount[data-zero] { font-size: var(--rd-text-body); }
+
+/* 第一次读完前排法未定：表头文字先不画，免得按常规列宽画出来再挪位置。 */
+.e5-table-host[data-layout-pending] .e5-table thead th > * { visibility: hidden; }
+/* 同时骨架行不按列画：每行一条通栏的占位，读完再按定下来的排法出列。 */
+.e5-table-host[data-layout-pending] .e5-table tbody tr { position: relative; }
+.e5-table-host[data-layout-pending] .e5-table tbody td > .rd-skeleton { visibility: hidden; }
+.e5-table-host[data-layout-pending] .e5-table tbody td:first-child::after { content: ""; position: absolute; left: var(--rd-panel-pad-x); right: var(--rd-panel-pad-x); top: 50%; height: 12px; margin-top: -6px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); animation: rd-pulse 1.4s ease-in-out infinite; }
+/* 本页没有一行带预估区间时，收益列只放金额或「—」；也没有当前任务时任务列同样收窄。
+   省下的宽度给设备、用户、状态，1440 下实例号不再省略，中间不留一片空。 */
+.e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-income { width: 152px; }
+.e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-device { width: clamp(126px, calc(var(--e5-column-space) * .36), 430px); }
+.e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-user { width: clamp(190px, calc(var(--e5-column-space) * .18), 240px); }
+.e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-status { width: clamp(152px, calc(var(--e5-column-space) * .15), 200px); }
+.e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-device { width: auto; }
+.e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-user { width: clamp(190px, calc(var(--e5-column-space) * .19), 240px); }
+.e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-status { width: clamp(152px, calc(var(--e5-column-space) * .17), 200px); }
+.e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-task { width: 120px; }
+.e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table td.e5-task-col { text-align: center; }
+@container e5-devices (max-width: 1129px) {
+  /* 1024：状态列让出一点给设备列，常见商品名「NexGridBox Pro」不再截掉型号。 */
+  .e5-table .e5-col-device { width: clamp(132px, calc(var(--e5-column-space) * .19), 236px); }
+  .e5-table .e5-col-status { width: 128px; }
+  .e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-income { width: 136px; }
+  .e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-device { width: clamp(144px, calc(var(--e5-column-space) * .27), 236px); }
+  .e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-user { width: clamp(144px, calc(var(--e5-column-space) * .209), 184px); }
+  .e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-status { width: 128px; }
+  .e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-device { width: auto; }
+  .e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-user { width: clamp(144px, calc(var(--e5-column-space) * .22), 184px); }
+  .e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-status { width: 150px; }
+  .e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-task { width: 96px; }
+}
+
+/* E6 · 手机算力配置：页面专用排版，图形复用 rd。 */
+.e6-page { display: grid; gap: var(--rd-section-gap); min-width: 0; }
+.e6-tab:not([hidden]) { display: grid; gap: 16px; min-width: 0; }
+.e6-tab[hidden] { display: none; }
+.e6-actions { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.e6-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.e6-json { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--rd-font-mono); color: var(--rd-text-3); }
+.e6-config-groups { display: grid; gap: var(--rd-section-gap); min-width: 0; }
+.e6-page [id^="section-"] { scroll-margin-top: var(--rd-section-gap); min-width: 0; }
+.e6-axis-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--rd-section-gap); }
+.e6-axis { display: grid; gap: 12px; min-width: 0; }
+.e6-axis p { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
+.e6-page .e6-hardware { display: grid; gap: 16px; }
+.e6-legacy-fields { display: grid; gap: 16px; min-width: 0; }
+.e6-legacy-fields fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.e6-legacy-fields legend { font-size: var(--rd-text-body); font-weight: 500; padding: 0; margin-bottom: 12px; }
+.e6-legacy-fields label { display: flex; flex-direction: column; gap: 8px; font-size: var(--rd-text-aux); }
+.e6-legacy-fields label.ios-check { flex-direction: row; align-items: flex-start; }
+.e6-legacy-fields :is(input:not([type="checkbox"]),select,textarea) { background: var(--rd-control); color: var(--rd-text); border: 1px solid var(--rd-control-line); border-radius: var(--rd-radius-control); padding: 8px 12px; font: inherit; min-width: 0; max-width: 100%; }
+.e6-legacy-fields input[type="checkbox"] { accent-color: var(--rd-brand); }
+.e6-legacy-fields :is(input,textarea,select):focus-visible { outline: 2px solid var(--rd-brand); outline-offset: 2px; }
+.e6-legacy-fields .ios-field.invalid :is(input,textarea) { border-color: var(--rd-warn); }
+.e6-legacy-fields :is(.ios-actions,.ios-row-actions,.phone-actions) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.e6-legacy-fields :is(.ios-table,.ui-table-scroll) { overflow: auto; max-height: 560px; }
+.e6-legacy-fields :is(.ios-head,.ios-import,.ios-form) { padding: 0; background: none; border: 0; }
+.e6-legacy-fields p { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
+.e6-legacy-fields .f-foot { color: var(--rd-text-3); }
+.e6-legacy-fields .ios-preset-list { max-height: 340px; overflow: auto; display: grid; gap: 8px; }
+.e6-legacy-fields .ios-stats { display: flex; flex-wrap: wrap; gap: var(--rd-section-gap); padding-block: 12px; }
+.e6-legacy-fields .ios-stats > div { display: grid; gap: 4px; }
+.e6-legacy-fields details { padding-block: 12px; border-top: 1px solid var(--rd-line); }
+.e6-legacy-fields summary { cursor: pointer; margin-bottom: 12px; }
+.e6-page .rd-table [data-num] { font-variant-numeric: tabular-nums; white-space: nowrap; }
+@container (max-width: 900px) { .e6-axis-grid { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 900px) { .e6-form-grid { grid-template-columns: minmax(0,1fr); } }
+
+@container (max-width: 860px) { .e6-config-groups { display: contents; } }
+
+.e6-phone-tools { padding: 0 var(--rd-panel-pad-x) 12px; }
+.e6-hardware-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+.e6-hardware-tools > label { flex: 1 1 140px; min-width: 140px; }
+.e6-hardware-tools > label:first-child { flex: 2 1 220px; }
+.e6-legacy-fields .ios-clear { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.e6-legacy-fields :is(input:not([type="checkbox"]),select) { height: var(--rd-control-h); padding-block: 0; font-size: var(--rd-text-body); }
+
+.e6-axis-grid:has(> :only-child) { grid-template-columns: minmax(0,1fr); }
+.e6-axis p { text-wrap: balance; }
+
+.e6-page .rd-table .rd-cell[data-full] { max-width: none; }
+.e6-page .rd-table .rd-cell[data-full] :is(.rd-cell-main,.rd-cell-sub) { white-space: normal; overflow-wrap: anywhere; }
+.e6-page :is(.e6-tasks-table,.e6-phones-table) tbody td:first-child { min-width: 180px; }
+.e6-page .e6-phones-table .e6-phone-user { min-width: 124px; width: 22%; }
+
+.e6-page .e6-tier-long .rd-stepbar-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
+
+.e6-original, .e6-original-group { border-radius: var(--rd-radius-control); }
+.e6-original:focus-visible, .e6-original-group:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.e6-original [data-zero] { color: var(--rd-text-3); }
+.e6-original-tip { max-width: min(640px, calc(100vw - 24px)); overflow-wrap: anywhere; }
+.e6-original-tiers { margin-top: 8px; border-collapse: collapse; font: inherit; font-variant-numeric: tabular-nums; }
+.e6-original-tiers :is(th,td) { padding: 4px 0 4px 16px; white-space: nowrap; text-align: right; }
+.e6-original-tiers :is(th,td):first-child { padding-left: 0; text-align: left; }
+.e6-original-tiers th { color: var(--rd-text-3); font-weight: 500; }
+.e6-page .e6-phones-table .e6-phone-device { width: 42%; }
+.e6-phone-device .rd-cell { max-width: none; }
+.e6-page .e6-phones-table :is(.rd-cell-main,.rd-cell-sub) { white-space: nowrap; }
+/* 编号省略中间、留末 8 位。两段都是行内块和行内文字，复制和读屏仍是一整串，不在中间断开；空格不丢。 */
+.e6-middle-text { display: inline-block; max-width: 100%; white-space: pre; vertical-align: bottom; }
+.e6-middle-text > :first-child { display: inline-block; max-width: calc(100% - 8ch); overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+/* 设备名、任务名不拆开：整串一行，放不下在末尾省略，悬停看后端原值。 */
+.e6-end-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e6-phone-device .rd-cell-sub > .e6-original, .e6-tasks-table .rd-cell-main > .e6-original { display: block; }
+.e6-phone-panel { min-width: 0; }
+.e6-page .e6-phones-table .e6-phone-task { min-width: 240px; width: 240px; }
+.e6-phone-task > .e6-original { display: block; }
+.e6-phone-telemetry, .e6-phone-status { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.e6-phone-telemetry { justify-content: flex-end; }
+.e6-threshold-block { display: grid; gap: var(--rd-section-gap); }
+.e6-axis .rd-scale { width: 100%; max-width: none; }
+.e6-threshold-inputs { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; }
+.e6-threshold-inputs :is(.rd-number,.rd-input) { width: 100%; }
+.e6-legacy-fields .ios-model-rules { display: grid; gap: 16px; }
+.e6-legacy-fields :is(input,select,textarea):disabled { background: var(--rd-disabled-bg); color: var(--rd-text-disabled); }
+:root[data-theme="light"] .e6-legacy-fields :is(input,select,textarea):not(:disabled):not([readonly]) { background: var(--rd-panel); }
+.e6-hardware-summary { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.e6-trial-form, .e6-trial-result { display: grid; gap: 16px; }
+.e6-section-link { margin-top: 16px; }
+@container (max-width: 860px) {
+  .e6-threshold-inputs { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .e6-trial-form .e6-form-grid { grid-template-columns: minmax(0,1fr); }
+}
+
+/* E6 review: stable columns, compact actions and readable recovery details. */
+.e6-page .e6-tasks-table { table-layout: fixed; }
+.e6-page .e6-tasks-table th:first-child { width: clamp(180px, calc(56% - max(220px, 20%)), 460px); }
+.e6-page .e6-tasks-table th:nth-child(2) { width: 16%; }
+.e6-page .e6-tasks-table th:nth-child(3) { width: 11%; }
+.e6-page .e6-tasks-table th:nth-child(4) { width: max(220px, 20%); }
+.e6-page .e6-tasks-table th:nth-child(5) { width: 11%; }
+.e6-page .e6-tasks-table th:nth-child(6) { width: 6%; }
+.e6-page .e6-tasks-table td[data-grow] { width: auto; max-width: none; }
+.e6-page .e6-tasks-table .rd-cell { max-width: none; }
+.e6-page .e6-tasks-table .rd-cell-main { overflow: hidden; }
+.e6-page .e6-phones-table .e6-phone-device .rd-cell-main > .e6-original { display: block; }
+.e6-confirm-facts, .e6-fold-content { display: grid; gap: 16px; min-width: 0; }
+.e6-fold-content > :is(p, pre), .e6-confirm-facts p { margin: 0; }
+.e6-page .rd-fold-body > .e6-fold-content { padding-top: 12px; }
+.e6-confirm-facts .e6-fold-content { gap: 8px; }
+.e6-fold-content > .rd-btn { justify-self: start; }  /* 折叠里的查询按钮按内容宽，不拉成一整条灰带 */
+.e6-json { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
+.e6-device-slots { display: inline-flex; align-items: center; gap: 12px; }
+.e6-serial { font-size: var(--rd-text-aux); overflow-wrap: anywhere; word-break: break-all; }  /* 长实例号均匀折行，不在「PHONE-」后断开 */
+.e6-no-action, .e6-help { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
+.e6-no-action { display: block; width: 72px; min-width: 72px; max-width: 72px; line-height: var(--rd-lh-aux); }
+.e6-task-reward { display: inline-grid; grid-template-columns: auto 4ch; align-items: baseline; gap: 4px; }
+.e6-task-reward > :last-child { text-align: left; }
+.e6-pending-list { display: grid; gap: 12px; }
+.e6-pending-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
+/* 右对齐的数字列后面紧跟左对齐的文字列时多留一档，「每任务奖励」和「状态」、「UVT/天」和「来源」不连读。 */
+.e6-page .e6-tasks-table :is(th, td):nth-child(5), .e6-page .e6-compare-table :is(th, td):nth-child(4) { padding-inline-start: var(--rd-space-6); }
+/* 引导对比：名称列不独占余宽，数字离名字近一些，余下的给来源。 */
+.e6-page .e6-compare-table { table-layout: fixed; }
+.e6-page .e6-compare-table th:first-child { width: 32%; }
+.e6-page .e6-compare-table th:nth-child(2), .e6-page .e6-compare-table th:nth-child(3) { width: 17%; }
+@container (max-width: 860px) {
+  .e6-page .rd-config-rail > .rd-section-nav { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 4px; }
+  .e6-page .rd-config-rail > .rd-section-nav a { flex: none; white-space: nowrap; }
+}
+/* E1 catalogue: page-local composition of rd graphics and form primitives. */
+.e1-page { container-type: inline-size; gap: var(--rd-space-3); }
+.e1-page > .rd-conclusion:not([data-alarm]) { --rd-panel-pad-y: 0; --rd-panel-pad-x: 0; background: none; }
+.e1-page > .rd-stats { --rd-panel-pad-y: var(--rd-space-3); }
+.e1-page > .rd-filter .e1-search { flex: 1 1 240px; min-width: 160px; width: auto; }
+.e1-page .rd-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.e1-page .rd-filter-row { align-items: flex-end; }
+.e1-page .rd-toolbar { justify-content: space-between; }
+.e1-product-actions > .rd-iconbtn, .e1-table-actions > .rd-iconbtn { width: var(--rd-control-h-sm); height: var(--rd-control-h-sm); }
+.e1-page :is(.e1-plan-table, .e1-phase-table) { table-layout: fixed; width: 100%; min-width: 0; }
+.e1-page :is(.e1-plan-table, .e1-phase-table) :is(th, td) { min-width: 0; white-space: normal; }
+.e1-plan-table :is(th, td):first-child { width: 30%; }
+.e1-plan-table :is(th, td):nth-child(2) { width: 14%; }
+.e1-plan-table :is(th, td):nth-child(3) { width: 22%; }
+.e1-plan-table :is(th, td):nth-child(4) { width: 12%; }
+.e1-plan-table :is(th, td):nth-child(5) { width: 12%; }
+.e1-plan-table :is(th, td):last-child { width: 10%; }
+.e1-plan-table td:nth-child(2) .e1-table-stack { align-items: flex-end; }
+.e1-plan-table :is(th, td):nth-child(3) { padding-inline-start: var(--rd-space-6); }  /* 右对齐的「计划开放」和左对齐的「当前状态」之间多留一档 */
+.e1-plan-table td:nth-child(2) .e1-table-stack > * { white-space: nowrap; }
+.e1-phase-table :is(th, td):first-child { width: 18%; }
+.e1-phase-table :is(th, td):nth-child(2) { width: 30%; }
+.e1-phase-table :is(th, td):nth-child(3) { width: 18%; }
+.e1-phase-table :is(th, td):nth-child(4) { width: 14%; }
+.e1-phase-table :is(th, td):last-child { width: 20%; }
+.e1-phase-table .e1-table-actions { justify-content: flex-end; flex-wrap: nowrap; }
+.e1-phase-table .e1-action-reason { margin-top: var(--rd-space-1); }
+.e1-phase-code { display: flex; align-items: center; gap: var(--rd-space-2); }
+.e1-table-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-align: left; }
+@container (max-width: 900px) {
+  .e1-plan-table :is(th, td):first-child { width: 28%; }
+  .e1-plan-table :is(th, td):nth-child(2) { width: 13%; }
+  .e1-plan-table :is(th, td):nth-child(3) { width: 21%; }
+  .e1-plan-table :is(th, td):nth-child(4) { width: 11%; }
+  .e1-plan-table :is(th, td):nth-child(5) { width: 13%; }
+  .e1-plan-table :is(th, td):last-child { width: 14%; }
+  .e1-phase-table :is(th, td):first-child { width: 16%; }
+  .e1-phase-table :is(th, td):nth-child(2) { width: 27%; }
+  .e1-phase-table :is(th, td):nth-child(3) { width: 16%; }
+  .e1-phase-table :is(th, td):nth-child(4) { width: 14%; }
+  .e1-phase-table :is(th, td):last-child { width: 27%; }
+}
+.e1-catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: var(--rd-space-4); }
+.e1-product { --rd-track-w: 100%; display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-3); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); color: var(--rd-text); }
+.e1-product[data-hit] { border-color: var(--rd-progress); }
+.e1-product-identity { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: var(--rd-space-3); }
+.e1-product-media { position: relative; width: 64px; height: 64px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.e1-product-media img, .e1-product-media video { display: block; width: 64px; height: 64px; border-radius: var(--rd-radius-control); object-fit: contain; }
+.e1-media-placeholder { display: grid; place-items: center; width: 100%; height: 100%; color: var(--rd-text-3); }
+.e1-product-title { min-width: 0; }
+.e1-product-name { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
+.e1-product-name h2 { min-width: 0; color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; }
+.e1-middle-text { display: flex; min-width: 0; max-width: 100%; white-space: nowrap; }
+.e1-middle-text > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.e1-middle-text > :last-child, .e1-product-name .rd-tag { flex: none; }
+.e1-middle-text > :first-child, .e1-middle-text > :last-child { white-space: pre; }  /* 断点落在空格上时空格不丢（「Pro v2」不读成「Prov2」） */
+.e1-product-id { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e1-product-id > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e1-product-id > :not(:first-child) { flex: none; }
+.e1-tagline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e1-badge { position: absolute; top: var(--rd-space-1); left: var(--rd-space-1); max-width: none; white-space: nowrap; padding-inline: var(--rd-space-1); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e1-stage-summary { display: flex; align-items: center; flex-wrap: wrap; gap: var(--rd-space-4); padding: var(--rd-space-2) var(--rd-panel-pad-x); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); }
+.e1-stage-summary > .rd-stageline-scroll { flex: 1; min-width: 0; }
+.e1-stage-identity { display: flex; flex-direction: column; gap: var(--rd-space-1); }
+.e1-muted { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e1-tags, .e1-table-actions, .e1-product-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--rd-space-2); }
+.e1-tags { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e1-product-price { display: flex; align-items: baseline; min-width: 0; }
+.e1-product-price strong { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.e1-decimal { font-variant-numeric: tabular-nums; }
+.e1-product small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-weight: 400; }
+.e1-product-levels, .e1-product-target, .e1-product-stock { display: flex; flex-direction: column; justify-content: flex-start; gap: var(--rd-space-1); min-width: 0; }
+.e1-product-target > .e1-value-line strong { font-size: var(--rd-text-body); font-weight: 500; }
+.e1-value-line, .e1-range-labels { display: flex; align-items: baseline; justify-content: space-between; gap: var(--rd-space-2); min-width: 0; font-variant-numeric: tabular-nums; }
+.e1-value-line strong { font-weight: 600; color: var(--rd-text); overflow-wrap: anywhere; }
+.e1-range-labels { flex-wrap: wrap; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e1-product-conditions { min-width: 0; }
+.e1-product-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); min-width: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.e1-product-meta > :not(.e1-meta-room) { flex: none; }
+.e1-meta-room { margin-top: var(--rd-space-1); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: normal; overflow-wrap: anywhere; }
+.e1-card-warning, .e1-card-note { color: var(--rd-warn); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); overflow-wrap: anywhere; }
+.e1-card-note { color: var(--rd-text-3); }
+:is(.e1-card-warning, .e1-card-note) .rd-btn { margin-inline-start: var(--rd-space-2); }
+.e1-product-actions { margin-top: auto; align-self: stretch; flex-wrap: nowrap; align-items: flex-start; padding-top: var(--rd-space-2); border-top: 1px solid var(--rd-line); }
+.e1-product-actions > .rd-btn, .e1-product-actions > .rd-iconbtn { flex: none; }
+.e1-product-actions > .rd-iconbtn { margin-inline-start: auto; }
+.e1-status-action { display: flex; align-items: baseline; gap: var(--rd-space-2); min-width: 0; flex: 1; }
+.e1-status-action > .rd-btn { flex: none; }
+.e1-action-reason { display: block; max-width: 24em; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: normal; }
+.e1-table-stack { display: flex; flex-direction: column; align-items: flex-start; gap: var(--rd-space-1); white-space: normal; }
+.e1-table-stack > :is(strong, [data-mono]) { width: 100%; min-width: 0; }
+.e1-table-stack [data-mono] { font-family: var(--rd-font-mono); overflow-wrap: anywhere; }
+.e1-raw { max-height: 240px; overflow: auto; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--rd-text-2); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e1-editor-shell { container-type: inline-size; }
+.e1-editor-layout { display: grid; grid-template-columns: minmax(140px, 0.28fr) minmax(0, 1fr); gap: var(--rd-space-6); }
+.e1-editor-content { display: flex; flex-direction: column; gap: var(--rd-space-7); min-width: 0; }
+.e1-editor-section { display: flex; flex-direction: column; gap: var(--rd-space-4); min-width: 0; scroll-margin-top: var(--rd-space-4); }
+.e1-editor-section h3 { margin: 0; color: var(--rd-text); font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; }
+.e1-editor-layout .rd-section-nav { align-self: start; position: sticky; top: 0; }
+.e1-upload { display: flex; align-items: center; justify-content: center; position: relative; gap: var(--rd-space-3); padding: var(--rd-space-6); border: 1px dashed var(--rd-line-strong); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); cursor: pointer; min-height: 96px; }
+.e1-upload[data-drag] { border-color: var(--rd-progress); }
+.e1-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.e1-upload:focus-within { outline: 2px solid var(--rd-progress); outline-offset: 2px; }
+.e1-editor-media { display: flex; flex-direction: column; gap: var(--rd-space-3); }
+.e1-editor-media img, .e1-editor-media video { display: block; width: 100%; max-height: 180px; object-fit: contain; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.e1-draft-preview { display: flex; flex-direction: column; gap: var(--rd-space-3); padding: var(--rd-space-4); background: var(--rd-panel-inner); border-radius: var(--rd-radius-control); min-width: 0; }
+@container (max-width: 900px) {
+  .e1-editor-layout { display: flex; flex-direction: column; }
+  .e1-editor-layout .rd-section-nav { position: sticky; top: -12px; z-index: 2; display: flex; flex-wrap: nowrap; overflow-x: auto; width: 100%; background: var(--rd-panel); padding: 12px 0 var(--rd-space-2); margin-top: -12px; border-bottom: 1px solid var(--rd-line); }
+  .e1-editor-layout .rd-section-nav a { flex-shrink: 0; }
+  .e1-editor-content .rd-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.e1-product-id > :first-child { font-family: var(--rd-font-mono); }
+.e1-detail-link { max-width: 100%; font: inherit; text-align: left; }
+.e1-product-conditions > :is(.e1-card-warning, .e1-card-note):empty { display: none; }
+/* 卡片细节：带标签的小标题行和不带的等高；「售罄」和剩余数分开；购买条件图标和字同一行；受阻原因不折出孤字。 */
+.e1-product-levels > .e1-value-line { align-items: center; min-height: var(--rd-lh-body); }
+.e1-product-stock > .e1-value-line > .e1-muted { display: inline-flex; align-items: center; gap: var(--rd-space-2); white-space: nowrap; }
+.e1-gate-trigger { display: inline-flex; align-items: center; gap: var(--rd-space-1); white-space: nowrap; }
+.e1-gate-trigger > svg { flex: none; }
+/* 审批状态抽屉底栏：两个按钮和链接靠左成一组，留间距。 */
+.e1-receipt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-3); }
+:is(.e1-card-warning, .e1-card-note) { text-wrap: pretty; }
+.e1-stage-summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
+.e1-stage-summary > .rd-btn { justify-self: end; }
+.e1-stage-summary .rd-stageline { min-width: 0; }
+.e1-stage-summary .rd-stage, .e1-stage-summary .rd-stage:last-child { flex: 1 1 0; min-width: 0; }
+.e1-stage-summary .rd-stage-label { flex-wrap: wrap; }
+.e1-stage-summary .rd-stageline-scroll { margin: 0; padding: 4px; background: none; overflow: visible; }
+.e1-stage-label { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+.e1-phase-name { white-space: nowrap; }
+.e1-plan-table.e1-readonly-table :is(th, td):first-child { width: 34%; }
+.e1-plan-table.e1-readonly-table :is(th, td):nth-child(2) { width: 16%; }
+.e1-plan-table.e1-readonly-table :is(th, td):nth-child(3) { width: 24%; }
+.e1-plan-table.e1-readonly-table :is(th, td):nth-child(4) { width: 13%; }
+.e1-plan-table.e1-readonly-table :is(th, td):last-child { width: 13%; }
+.e1-phase-table.e1-readonly-table :is(th, td):first-child { width: 20%; }
+.e1-phase-table.e1-readonly-table :is(th, td):nth-child(2) { width: 34%; }
+.e1-phase-table.e1-readonly-table :is(th, td):nth-child(3) { width: 28%; }
+.e1-phase-table.e1-readonly-table :is(th, td):last-child { width: 18%; }
+.e1-section-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--rd-space-5) var(--rd-space-4); }
+.e1-section-fields > :not(.rd-form-field):not(.rd-check-item) { grid-column: 1 / -1; }
+.e1-section-fields > .rd-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-5) var(--rd-space-4); }
+.e1-section-fields > .rd-form-field:has(.e1-upload, textarea, input[list], input[aria-label="资料链接"]) { grid-column: 1 / -1; }
+.e1-section-fields .rd-number { width: min(100%, 240px); }
+.e1-section-fields .rd-number .rd-input { width: 100%; }
+.e1-section-fields .rd-number:has(.e1-price-input) { width: min(100%, 280px); }
+.e1-section-fields .rd-check-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.e1-section-fields input[readonly] { max-width: 240px; }
+.e1-upload-progress { width: 100%; accent-color: var(--rd-progress); }
+@container (max-width: 900px) {
+  .e1-stage-summary > .rd-stageline-scroll { grid-column: 1 / -1; grid-row: 2; }
+  .e1-stage-summary > .rd-btn { grid-column: 3; grid-row: 1; }
+  .e1-plan-table:not(.e1-readonly-table) :is(th, td):first-child { width: 24%; }
+  .e1-plan-table:not(.e1-readonly-table) :is(th, td):nth-child(2) { width: 13%; }
+  .e1-plan-table:not(.e1-readonly-table) :is(th, td):nth-child(3) { width: 20%; }
+  .e1-plan-table:not(.e1-readonly-table) :is(th, td):nth-child(4) { width: 15%; }
+  .e1-plan-table:not(.e1-readonly-table) :is(th, td):nth-child(5) { width: 13%; }
+  .e1-plan-table:not(.e1-readonly-table) :is(th, td):last-child { width: 15%; }
+  .e1-editor-section { scroll-margin-top: 64px; }
+}
+
+/* E2/E5/E6 shared result line for an original command looked up by command key. */
+.e-check-outcome { display: grid; justify-items: start; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rd-line); }
+.e-check-outcome p { margin: 0; }
+.e-check-last { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e-check-contact { margin: 4px 0 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e6-ticket-verdict { display: block; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e6-pending-ticket { display: grid; gap: 2px; min-width: 0; }
+.e-check-audit { width: 200px; max-width: 100%; font-variant-numeric: tabular-nums; }
+
+/* ── E3 设备使用与升级置换（改版）：只用 --rd-* 令牌 ── */
+.e3p { display: grid; gap: var(--rd-section-gap); min-width: 0; }
+.e3p .e3p-curve { display: grid; gap: var(--rd-space-4); min-width: 0; }
+.e3p .e3p-curve .rd-chart { max-width: none; }
+/* 下限的字写在参考线左头的下方：曲线从 100% 起、不会低于下限，下限是 100% 时字也不压住曲线起点。 */
+.e3p .e3p-curve .rd-chart-ref span { right: auto; left: 0; padding-left: 0; bottom: auto; top: 3px; }
+/* 图是主、右栏是辅（data-detail）。右栏两块叠起来拉到和图一样高：分段条按内容高，最近 24 小时占满剩下的。 */
+.e3p .rd-split[data-detail] > * { align-self: stretch; }
+.e3p .e3p-side { display: grid; grid-template-rows: auto 1fr; gap: var(--rd-section-gap); min-width: 0; }
+.e3p .e3p-pending { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--rd-space-2); }
+.e3p .e3p-pending li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-2) var(--rd-space-3); }
+.e3p .rd-config-value small > .e3p-sub:not(:first-child) { margin-left: var(--rd-space-2); }
+.e3p .e3p-sub { display: inline-flex; align-items: center; gap: var(--rd-space-1); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e3p .e3p-num { font-variant-numeric: tabular-nums; }
+.e3p .e3p-num[data-zero] { color: var(--rd-text-3); }
+.e3p .e3p-num[data-tone="danger"] { color: var(--rd-danger); font-weight: var(--rd-weight-semibold); }
+.e3p .e3p-latest { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.e3p .e3p-ladder { display: grid; gap: var(--rd-space-4); padding-block: var(--rd-space-5); border-block: 1px solid var(--rd-line); min-width: 0; }
+.e3p .e3p-ladder-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-3); }
+.e3p .e3p-ladder-head h3 { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
+.e3p .e3p-ladder-actions { display: inline-flex; flex-wrap: wrap; gap: var(--rd-space-2); margin-inline-start: auto; }
+.e3p .e3p-cuts { display: grid; gap: var(--rd-space-2); --rd-track-w: 100%; }
+.e3p-warn { display: block; margin-top: var(--rd-space-1); color: var(--rd-warn); }
+.e3p-manual { display: grid; gap: var(--rd-space-5); }
+.e3p-manual p { margin: 0; }
+.e3p-manual section { display: grid; gap: var(--rd-space-2); }
+.e3p-manual h3 { margin: 0; font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
+.e3p-manual dl { margin: 0; display: grid; gap: var(--rd-space-2); }
+.e3p-manual dl > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--rd-space-3); }
+.e3p-manual dt { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.e3p-manual dd { margin: 0; color: var(--rd-text-2); }

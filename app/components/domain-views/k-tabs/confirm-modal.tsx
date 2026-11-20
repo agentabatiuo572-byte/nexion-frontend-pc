@@ -5,53 +5,120 @@
  * 标记类 / 拦截未发放新人礼(预防性阻断) / 手动补触发 / 白名单 —— 不动已入账资产,
  * 强制留痕(业务服务必达审计);reason=true 时原因必填,input 为可选输入框。
  */
-import { useId, useState } from "react";
+import { displayAdminError } from "@/lib/admin/error-messages";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
+import { useEffect, useId, useState } from "react";
+import { Notice } from "@/app/components/rd/block-state";
+import { Button as RdButton } from "@/app/components/rd/button";
+import { useRdSurface } from "@/app/components/rd/surface";
+import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
 import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
-  const [reason, setReason] = useState("");
-  const [value, setValue] = useState("");
+  const [pendingReason, setPendingReason] = useState(() => req.freezePendingInput ? req.getPendingReason?.() : undefined);
+  const [draftReason, setReason] = useState(pendingReason ?? req.initialReason ?? "");
+  const reason = pendingReason ?? draftReason;
+  const [value, setValue] = useState(() => (req.freezePendingInput ? req.getPendingValue?.() : undefined) ?? req.initialInputValue ?? "");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // 刚打开不报错：字数不够等失焦或点过提交才用警告色（DP-06）。
+  const [attempted, setAttempted] = useState(false);
+  const [reasonLeft, setReasonLeft] = useState(false);
+  const [valueLeft, setValueLeft] = useState(false);
   const fieldId = useId();
-  const reasonMin = 8;
-  const reasonMax = 200;
-  const reasonLength = reason.trim().length;
+  // 改版页面里和 OperationConfirmModal 同一个样子；旧页面不变。
+  const surface = useRdSurface();
+  // 理由规则读得到就按它，读不到按默认 8–200 继续，紧急关停不能被规则服务挡住（Q-06）。
+  const [policy, setPolicy] = useState<{ minChars: number; maxChars: number } | null>(null);
+  // 读取中还不知道规则，不放行；读失败才按默认继续。
+  const [policySettled, setPolicySettled] = useState(!req.reason);
+  useEffect(() => {
+    if (!req.reason) return;
+    let active = true;
+    void fetchA2ReasonPolicy().then((next) => { if (active) setPolicy(next); }, () => { if (active) setPolicy(null); }).finally(() => { if (active) setPolicySettled(true); });
+    return () => { active = false; };
+  }, [req.reason]);
+  const reasonMin = policy?.minChars ?? 8;
+  const reasonMax = policy?.maxChars ?? 200;
+  const reasonLength = visibleReasonLength(reason);
   const reasonOk = !req.reason || (reasonLength >= reasonMin && reasonLength <= reasonMax);
   // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
-  const inputOk = !req.input || (req.input.options ? value !== "" : value.trim().length >= 1);
-  const can = reasonOk && inputOk;
+  const inputOk = !req.input || req.input.required === false || (req.input.options ? value !== "" : value.trim().length >= 1);
+  const valueProblem = req.input?.validate?.(value);
+  const pendingBlockReason = req.freezePendingInput ? req.getPendingBlockReason?.() : undefined;
+  const can = !pendingBlockReason && (req.replayPendingInput && pendingReason !== undefined || reasonOk && inputOk && !valueProblem && policySettled);
+  const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
+  const submit = async () => {
+    if (!can || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const succeeded = await req.run(reason.trim(), req.input ? value.trim() : undefined);
+      if (succeeded !== false) onClose();
+    } catch (cause) {
+      // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
+      if (isPermissionDenied(cause)) {
+        announcePermissionDenied();
+        onClose();
+        return;
+      }
+      const handled = typeof req.errorHandled === "function" ? req.errorHandled(cause) : req.errorHandled;
+      if (!handled) setError(displayAdminError(cause));
+    } finally {
+      if (req.freezePendingInput) {
+        const retained = req.getPendingReason?.();
+        setPendingReason(retained);
+        if (pendingReason !== undefined && retained === undefined) onClose();
+      }
+      setSubmitting(false);
+    }
+  };
   return (
     <Modal
-      title={req.action}
-      icon="check"
+      title={req.title ?? req.action}
+      icon={req.confirmTone === "danger" ? "alert" : surface ? "shield" : "check"}
+      tone={req.confirmTone === "danger" ? "danger" : "neutral"}
+      sub={req.effect}
+      className={surface ? "rd-confirm" : undefined}
+      busy={submitting}
+      dirty={value !== ""}
       onClose={() => { if (!submitting) onClose(); }}
       footer={
         <>
           <Btn disabled={submitting} onClick={onClose}>取消</Btn>
-          <Btn
-            variant="primary"
-            disabled={!can || submitting}
-            style={!can ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
-            onClick={async () => {
-              if (!can || submitting) return;
-              setSubmitting(true);
-              try {
-                const succeeded = await req.run(reason.trim(), req.input ? value.trim() : undefined);
-                if (succeeded !== false) onClose();
-              } catch {
-                // 请求实现负责展示面向用户的错误；弹窗只需保留输入并消费已处理的拒绝。
-              } finally {
-                setSubmitting(false);
-              }
-            }}
-          >
-            {submitting ? "提交中…" : (req.okLabel ?? "确认")}
-          </Btn>
+          {surface ? (
+            <RdButton
+              variant={req.confirmTone ?? "primary"}
+              loading={submitting}
+              loadingText="提交中…"
+              disabledReason={can || submitting ? undefined : pendingBlockReason ?? [!policySettled && "正在读取理由规则", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
+              onBlockedClick={() => setAttempted(true)}
+              onClick={() => void submit()}
+            >
+              {req.okLabel ?? "确认"}
+            </RdButton>
+          ) : (
+            <Btn
+              variant={req.confirmTone ?? "primary"}
+              disabled={!can || submitting}
+              style={!can ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
+              onClick={() => void submit()}
+            >
+              {submitting ? "提交中…" : (req.okLabel ?? "确认")}
+            </Btn>
+          )}
         </>
       }
     >
-      <OperatorBriefBlock action={req.action} detail={req.detail} hasEdit={!!req.input} />
+      {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
+      <fieldset disabled={submitting || pendingReason !== undefined} className="rd-contents">
+      {error && (surface
+        ? <div className="rd-confirm-alert"><Notice tone="danger">{error}</Notice></div>
+        : <div role="alert" className="tint danger">{error}</div>)}
+      <OperatorBriefBlock kind={req.briefKind} action={req.action} detail={req.detail} hasEdit={!!req.input} stated={req.statedBrief} />
+      {req.content}
       {req.chips && req.chips.length > 0 && (
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>
           {req.chips.map(([t, tone]) => (
@@ -69,13 +136,13 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         </div>
       )}
       {req.input && (
-        <div style={{ marginTop: 13 }}>
-          <label htmlFor={`${fieldId}-value`} style={{ display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>{req.input.label}</label>
+        <div className={surface ? "field" : "k-confirm-field"}>
+          <label htmlFor={`${fieldId}-value`} className={surface ? undefined : "k-confirm-label"}>{req.input.label}</label>
           {req.input.options && req.input.options.length > 0 ? (
             // 枚举值:勾选 chips 不让手输(能勾选的不要手输铁律);value=所选项,inputOk 同文本框(选中即非空、确认按钮才启用)。
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {req.input.options.map((o) => (
-                <Chip key={o} tab sel={value === o} onClick={() => setValue(o)}>{o}</Chip>
+                <Chip key={o} tab sel={value === o} onClick={() => setValue(o)}>{req.input?.optionLabels?.[o] ?? o}</Chip>
               ))}
             </div>
           ) : (
@@ -87,32 +154,45 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               step={req.input.step}
               value={value}
               onChange={(e) => setValue(e.target.value)}
+              onBlur={() => setValueLeft(true)}
+              aria-invalid={valueProblem && (valueLeft || attempted) ? true : undefined}
+              aria-describedby={valueProblem && (valueLeft || attempted) ? `${fieldId}-value-error` : undefined}
               placeholder={req.input.placeholder}
-              style={{
-                width: "100%", background: "var(--surface-2)", border: "1px solid var(--border-strong)", borderRadius: 8,
-                padding: "8px 12px", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13, outline: "none",
-              }}
+              className={surface ? undefined : "k-confirm-input"}
             />
           )}
+          {valueProblem && (valueLeft || attempted) && <div id={`${fieldId}-value-error`} className="rd-form-error" role="alert">{valueProblem}</div>}
         </div>
       )}
-      <div style={{ marginTop: 13 }}>
-        <label htmlFor={`${fieldId}-reason`} style={{ display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>
-          {req.reason ? "操作理由（必填 · 8-200 字 · 写入后端审计）" : "备注（可选 · 最多 200 字 · 写入后端审计）"}
-        </label>
-        <textarea
-          id={`${fieldId}-reason`}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          rows={2}
-          maxLength={200}
-          placeholder={req.reason ? "写清场景与依据,如:合租办公网 / 已知合作账户 / 客服举报线索…" : "可补充处置依据"}
-          style={{
-            width: "100%", background: "var(--surface-2)", border: "1px solid var(--border-strong)", borderRadius: 8,
-            padding: "8px 12px", color: "var(--ink)", fontSize: 12.5, outline: "none", resize: "vertical", fontFamily: "inherit",
-          }}
-        />
+      <div className={surface ? "field rd-reason-field" : "k-confirm-field"}>
+        {surface ? (
+          // 字段名强，下限跟在后面，上限在框角的字数里，各写一处（VS-104、VS-105）。
+          <label htmlFor={`${fieldId}-reason`}>
+            {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></> : <>备注<span className="rd-form-hint">{req.remarkHint ?? "选填，最多 200 字"}</span></>}
+          </label>
+        ) : (
+          <label htmlFor={`${fieldId}-reason`} style={{ display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>
+            {req.reason ? `操作理由（必填，${reasonMin}–${reasonMax} 字）` : "备注（可选，最多 200 字）"}
+          </label>
+        )}
+        <div className={surface ? "rd-reason-box" : undefined}>
+          <textarea
+            id={`${fieldId}-reason`}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            onBlur={() => setReasonLeft(true)}
+            rows={2}
+            maxLength={req.reason ? reasonMax : 200}
+            placeholder={req.reasonPlaceholder ?? (req.reason ? "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索" : "可以补充处理依据")}
+            className={surface ? undefined : "k-confirm-textarea"}
+          />
+          {surface && req.reason && <span className="rd-reason-count">{reasonLength}/{reasonMax}</span>}
+        </div>
+        {req.reason && (surface ? !reasonOk && (attempted || reasonLeft) : true) && (
+          <div className={surface ? "rd-form-error" : "tiny k-confirm-count"} data-ok={reasonOk ? "" : undefined}>{reasonShort}</div>
+        )}
       </div>
+      </fieldset>
     </Modal>
   );
 }

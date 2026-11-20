@@ -1,12 +1,23 @@
+import { AUDIT_ACTION_NAMES } from "./audit-action-names";
 import { nexGridBrandText } from "./brand-copy.ts";
+import type { OpsSku } from "./platform-types";
+
+/** G4 收益计算基数的后端英文公式（默认值和运营照写的同一格式）：数字照原文带过来，只换成中文读法。 */
+export const DIV_BASE_FORMULA = /platform daily volume \* (\d+(?:\.\d+)?)% \/ (\d+) slots/g;
+export const DIV_BASE_TEXT = "平台每日交易量 × $1% ÷ $2 节点";
+export const divBaseFormulaText = (text: string) => text.replace(DIV_BASE_FORMULA, DIV_BASE_TEXT);
 
 /** Only for system-owned display labels. Never use for request values or authored content. */
 export function operatorCopyText(value: string): string {
   return nexGridBrandText(value)
-    .replace(/Team volume\s*>=\s*/gi, "团队业绩不少于 ")
+    .replace(/Team volume\s*>=\s*/gi, "团队订单额不少于 ")
+    .replace(/USDT staking 本金/g, "USDT 质押锁定金额")
+    .replace(/staking 应付利息/g, "应付质押奖励")
+    .replace(/佣金冷却未解锁/g, "冷却期内未发放的奖励")
+    .replace(/锁仓本息其他/g, "其他锁定金额及奖励")
     .replace(/Tier\s*(\d+)/g, "第 $1 档")
     .replace(/TGE 10% · halve every 6 months/g, "初始发放 10%，每 6 个月减半")
-    .replace(/platform daily volume \* 0\.1% \/ 1000 slots/g, "平台每日成交额 × 0.1% ÷ 1000 个节点")
+    .replace(DIV_BASE_FORMULA, DIV_BASE_TEXT)
     .replace(/Pro \/ Rack 月度库存/g, "专业设备 / 机柜设备月度库存")
     .replace(/Lucky Spin/g, "幸运转盘")
     .replace(/Lucky最高倍率/g, "幸运奖励最高倍率")
@@ -18,7 +29,7 @@ export function operatorCopyText(value: string): string {
     .replace(/H1 Phase/g, "H1 运营阶段")
     .replace(/节奏 \/ admin/g, "运营阶段与后台操作")
     .replace(/Model A 购前抵扣封顶/g, "购前抵扣设上限")
-    .replace(/\(server only\)/g, "（仅服务端可见）")
+    .replace(/\(server only\)/g, "（不公开）")
     .replace(/quest 配置 key/g, "任务配置项")
     .replace(/system kind/g, "系统通知类型")
     .replace(/\bTTL\b/g, "保留时长")
@@ -30,9 +41,10 @@ export function operatorCopyText(value: string): string {
     .replace(/\bdial\b/g, "运营调节项")
     .replace(/\bcadence\b/g, "发送频率")
     .replace(/referral\.bound/g, "邀请关系绑定")
-    .replace(/commission\.paid/g, "佣金发放")
+    .replace(/commission\.paid/g, "奖励发放")
     .replace(/market\.curve_advanced/g, "行情曲线推进")
     .replace(/\bOG\b/g, "早期持有人")
+    .replace(/已成熟注册 cohort/g, "注册满 7 天的人数")
     .replace(/\bcohort\b/gi, "同批用户")
     .replace(/\bPII\b/g, "个人敏感信息")
     .replace(/\bBI\b/g, "数据分析")
@@ -43,8 +55,8 @@ export function operatorCopyText(value: string): string {
     .replace(/\buserId\b/g, "用户编号")
     .replace(/落审计/g, "记录操作日志")
     .replace(/注册→进 store/g, "注册后浏览商城")
-    .replace(/Day7 app\.dau ÷ 注册 同批用户/g, "注册后第8天活跃人数 ÷ 同批注册人数")
-    .replace(/\bBalance Match\b/g, "左右团队业绩匹配")
+    .replace(/Day7 app\.dau ÷ 注册 同批用户/g, "注册后第 7 天活跃人数 ÷ 同批注册人数")
+    .replace(/\bBalance Match\b/g, "团队平衡奖励")
     .replace(/Cloud Share/g, "云端共享份额")
     .replace(/server cron/g, "服务器定时任务")
     .replace(/HH:mm \[ZoneId\]/g, "小时:分钟 时区")
@@ -59,44 +71,46 @@ export function operatorCopyText(value: string): string {
     .replace(/Complete a qualified referral/g, "完成一次符合条件的邀请")
     .replace(/Complete a learning course/g, "完成一门课程")
     .replace(/Activate a device/g, "激活一台设备")
-    .replace(/\bROI\b/g, "预计回报")
+    .replace(/\bROI\b/g, "预计收益")
     .replace(/\bfleet\b/g, "设备规模")
     .replace(/\bslots\b/g, "个节点")
-    .replace(/Lifetime dividend/g, "累计分红")
-    .replace(/Current daily dividend/g, "当前每日分红")
+    .replace(/Lifetime dividend/g, "累计收益")
+    .replace(/Current daily dividend/g, "当前每日收益")
     .replace(/Guaranteed accrual basis/g, "保底收益计算基准")
-    .replace(/Primary holder, no secondary transfer/g, "首次认购持有人，暂无二级转让")
-    .replace(/secondary trade acquired by /g, "二级市场购入，买方 ")
-    .replace(/ listed on secondary market /g, " 在二级市场挂售 ")
+    .replace(/Primary holder, no secondary transfer/g, "首次认购持有人，暂无转让")
+    .replace(/secondary trade acquired by /g, "转让市场购入，买方 ")
+    .replace(/ listed on secondary market /g, " 在转让市场挂售 ")
     .replace(/\bprimary\b/gi, "首次认购")
-    .replace(/\bsecondary\b/gi, "二级市场")
+    .replace(/\bsecondary\b/gi, "转让市场")
     .replace(/\bdeducted\b/g, "已扣除")
     .replace(/\bpending\b/g, "待处理")
     .replace(/waiting payment confirmation/g, "等待付款确认")
-    .replace(/principal \+ forfeit interest/g, "本金，另取消未领取利息")
-    .replace(/interest forfeited/g, "未领取利息已取消")
-    .replace(/penalty /g, "提前赎回扣罚 ")
-    .replace(/accrued /g, "累计利息 ")
+    .replace(/principal \+ forfeit interest/g, "锁定金额，另取消未领取的奖励")
+    .replace(/interest forfeited/g, "未领取的奖励已取消")
+    .replace(/penalty /g, "提前解锁扣款 ")
+    .replace(/accrued /g, "累计奖励 ")
     .replace(/matured /g, "到期日 ")
     .replace(/claimed /g, "领取日期 ")
     .replace(/\bdays\b/g, "天")
     .replace(/\bday\b/g, "天")
     .replace(/V-Rank/g, "会员等级")
     .replace(/\bGMV\b/g, "已支付成交额")
-    .replace(/\bGV\b/g, "团队业绩")
+    .replace(/\bGV\b/g, "团队订单额")
     .replace(/冷却计提中/g, "奖励等待发放")
+    .replace(/每次对碰清零/g, "每次匹配后清零")
     .replace(/\bStandard\b/g, "基础档")
     .replace(/\bVerified\b/g, "认证档")
     .replace(/\bPremium\b/g, "高级档")
     .replace(/\bDiamond\b/g, "钻石档")
     .replace(/\bstaking\b/gi, "质押")
     .replace(/\bGenesis\b/g, "创世节点")
+    .replace(/创世节点 售罄速度/g, "创世节点售罄速度")
     .replace(/\bTrial\b/g, "试用业务")
     .replace(/\bqueue\b/gi, "待处理队列")
     .replace(/\bKPI\b/g, "关键指标")
     .replace(/\bSLA\b/g, "处理时限")
     .replace(/\bRBAC\b/g, "角色权限")
-    .replace(/\bAPY\b/g, "年化收益率")
+    .replace(/\bAPY\b/g, "参考年奖励率")
     .replace(/\bv2\b/g, "第二版")
     .replace(/schema_registered=1/g, "已完成事件字段登记")
     .replace(/schema_registered=0/g, "尚未完成事件字段登记")
@@ -105,7 +119,9 @@ export function operatorCopyText(value: string): string {
     .replace(/\bfamily\b/g, "事件类别")
     .replace(/OTHER\s*\/\s*UNREGISTERED/g, "其他及未登记类型")
     .replace(/Day0 接入/g, "首笔收益到账")
-    .replace(/Day7 留存/g, "注册后第8天的活跃率")
+    .replace(/Day7 留存/g, "注册后第 7 天的活跃率")
+    .replace(/L4→L5 推广(?!率)/g, "设备持有者邀请好友的比例")
+    .replace(/Nova 推送点击/g, "站内通知点击率")
     .replace(/幂等键/g, "防重复提交编号")
     .replace(/冷归档/g, "长期归档")
     .replace(/用户画像/g, "用户资料")
@@ -122,5 +138,50 @@ export function operatorCopyText(value: string): string {
     .replace(/Day0 接入窗口/g, "首笔收益到账时限")
     .replace(/幂等/g, "防止重复执行")
     .replace(/落库/g, "保存记录")
-    .replace(/创世节点\s*排放承诺/g, "创世节点应付分红");
+    .replace(/创世节点\s*排放承诺/g, "创世节点应付收益");
+}
+
+/** E1 为 Share 商品生成的收益展示串（`baseRate`，原值写回后端不变）在审批里的显示。 */
+export function shareBaseRateText(value: string): string {
+  return value.replace(/^参考年化 /, "参考年奖励率 ").replace(/^年化区间暂不可用/, "参考年奖励率区间暂不可用");
+}
+
+/** Exact monthly value stays separate from the rounded daily display. */
+export function monthlyTargetEstimateText(sku: Pick<OpsSku, "monthlyTargetUsdt" | "monthlyTargetBandPct" | "derivedDailyEarnUsdt" | "tier" | "productType">): string {
+  const target = sku.monthlyTargetUsdt!;
+  const amount = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 6 });
+  const daily = sku.derivedDailyEarnUsdt ?? target / 30;
+  const isShare = sku.productType === "SHARE" || sku.tier === "Share";
+  const dailyText = isShare
+    ? `$${amount(target * (1 - sku.monthlyTargetBandPct! / 100) / 30)}–$${amount(target * (1 + sku.monthlyTargetBandPct! / 100) / 30)}`
+    : `$${amount(daily)}`;
+  return `约 ${dailyText}/天 · $${amount(target)}/月`;
+}
+
+export function skuBaseRateText(sku: OpsSku): string | undefined {
+  return sku.monthlyTargetUsdt != null
+    ? `${monthlyTargetEstimateText(sku)} · ${sku.dailyEarnNEX == null ? "— · 未填写" : sku.dailyEarnNEX.toLocaleString()} UVT/天`
+    : sku.baseRate;
+}
+
+/** Only the server supplies account names. Keep the original object alongside it for display. */
+export function a2ObjectText(row: { obj: string; objDisplayName?: string }): string {
+  return row.objDisplayName && row.objDisplayName !== row.obj ? `${row.objDisplayName}（${row.obj}）` : row.obj;
+}
+
+/** A2 动作名的运营显示名。原值仍用于查找待审批申请（f-view F2 启用状态），这里只换显示。 */
+export function a2ActionText(action: string): string {
+  return action.replace("A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED", "服务器恢复超级管理员")
+    // 有些申请的动作名存的是操作记录的代码（例如 A6 启停角色），显示成和操作记录一样的中文。
+    .replace(/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+(?= · |$)/, code => AUDIT_ACTION_NAMES[code] ?? code)
+    // A1 建单时动作名带「(A1)」，名称和 A1 页面上的按钮叫法统一。
+    .replace(/\s*\(A1\)$/, "")
+    .replace(/^禁用账号(?= · |$)/, "停用账号")
+    .replace(/^强制登出(?= · |$)/, "撤销全部登录")
+    .replace(/^变更角色(?= · |$)/, "改角色")
+    .replace(/^编辑账号(?= · |$)/, "编辑资料")
+    .replace(/^运营账号重置密码$/, "重置密码")
+    .replace(/^RBAC 授权调整$/, "调整角色授权")
+    .replace(/^RBAC 动作登记$/, "登记动作权限")
+    .replace(/七层结算(启用|暂停|恢复)/g, "团队购买奖励结算$1");
 }

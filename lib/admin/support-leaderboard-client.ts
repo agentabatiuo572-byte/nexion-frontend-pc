@@ -1,5 +1,7 @@
-import { supportRequest } from "./m-support-client.ts";
+import { MContentReadError, parseMContentApiEnvelope } from "./m-support-read-contract";
+import { SupportClientError, supportRequest } from "./m-support-client.ts";
 import { guardedFetch } from "./error-messages.ts";
+import { businessStamp, businessZone } from "./business-time.ts";
 import type { SupportBoardRow } from "../../app/components/domain-views/m-tabs/support-leaderboard";
 
 const BOARDS = ["netContribution", "firstPayment", "customers"] as const;
@@ -8,7 +10,7 @@ const COVERAGE = ["COMPLETE", "PARTIAL", "UNKNOWN", "FAILED"] as const;
 const REASONS = ["NONE", "SOURCE_INCOMPLETE", "HISTORY_UNKNOWN", "ATTRIBUTION_UNKNOWN", "REFUNDS_UNKNOWN", "SOURCE_FAILED", "CANDIDATES_INCOMPLETE", "METRIC_INCOMPLETE", "HISTORICAL_MONTH", "MONTH_START", "NO_BASELINE", "DEFINITION_CHANGED", "SCOPE_CHANGED", "MEMBERS_CHANGED", "NOT_A_CANDIDATE", "LEADER"] as const;
 const PARAMETERS = "board month currency scope groupId keyword pageNum pageSize expectedVersion";
 const BASE = "/api/admin/content/support-workbench/leaderboard";
-export type LeaderboardQuery = { board: typeof BOARDS[number]; month?: string; currency?: "USDT" | "NEX"; scope: typeof SCOPES[number]; groupId?: string; keyword?: string; pageNum?: number; pageSize?: number; expectedVersion?: string };
+export type LeaderboardQuery = { board: typeof BOARDS[number]; month?: string; currency?: "USDT" | "UVT"; scope: typeof SCOPES[number]; groupId?: string; keyword?: string; pageNum?: number; pageSize?: number; expectedVersion?: string };
 export type LeaderboardScope = { scope: typeof SCOPES[number]; groups: { id: string; name: string }[] };
 function invalid(field: string): never { throw new Error(`SUPPORT_CONTRACT_MALFORMED:leaderboard.${field}`); }
 function object(value: unknown, fields: string): Record<string, unknown> {
@@ -29,7 +31,7 @@ function version(value: unknown): string { const result = text(value); if (!/^sl
 function instant(value: unknown): string { const result = text(value); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(result) || !Number.isFinite(Date.parse(result)) || new Date(result).toISOString().slice(0, 19) !== result.slice(0, 19)) invalid("instant"); return result; }
 function decimal(value: unknown, signed = false): string | null { if (value === null) return null; const result = text(value); if (!(signed ? /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/ : /^(?:0|[1-9]\d*)(?:\.\d+)?$/).test(result)) invalid("decimal"); return result; }
 const REASON_TEXT: Record<typeof REASONS[number], string> = {
-  NONE: "", SOURCE_INCOMPLETE: "部分数据暂不可用", HISTORY_UNKNOWN: "历史记录待核实", ATTRIBUTION_UNKNOWN: "贡献归属待核实", REFUNDS_UNKNOWN: "退款记录待核实", SOURCE_FAILED: "数据暂不可用，请重试", CANDIDATES_INCOMPLETE: "参榜资料待核实", METRIC_INCOMPLETE: "成绩待核实", HISTORICAL_MONTH: "历史月份不比较每日变化", MONTH_START: "月初暂无同月可比名次", NO_BASELINE: "暂无昨日可比名次", DEFINITION_CHANGED: "统计口径已变化", SCOPE_CHANGED: "统计范围已变化", MEMBERS_CHANGED: "参榜人员已变化", NOT_A_CANDIDATE: "当前账号未参榜", LEADER: "已达到榜首成绩",
+  NONE: "", SOURCE_INCOMPLETE: "部分数据暂不可用", HISTORY_UNKNOWN: "历史记录未同步", ATTRIBUTION_UNKNOWN: "贡献归属未同步", REFUNDS_UNKNOWN: "退款记录未同步", SOURCE_FAILED: "数据暂不可用，请重试", CANDIDATES_INCOMPLETE: "参榜资料还在汇总", METRIC_INCOMPLETE: "成绩还在汇总", HISTORICAL_MONTH: "历史月份不比较每日变化", MONTH_START: "月初暂无同月可比名次", NO_BASELINE: "暂无昨日可比名次", DEFINITION_CHANGED: "统计口径已变化", SCOPE_CHANGED: "统计范围已变化", MEMBERS_CHANGED: "参榜人员已变化", NOT_A_CANDIDATE: "当前账号未参榜", LEADER: "已达到榜首成绩",
 };
 function reason(value: unknown): string { return REASON_TEXT[enumeration(value, REASONS)]; }
 function coverage(value: unknown) { return enumeration(value, COVERAGE); }
@@ -41,12 +43,22 @@ function count(value: unknown) {
   return { value: amount, coverage: displayCoverage(state), reason: reason(r.reason) };
 }
 const META_FIELDS = "viewVersion queryVersion sourceVersion definitionVersion board rankMonth referenceMonth currency scope businessZone asOf publishedAt state candidateCoverage stale refreshFailed selectableMonths currencies scopeOptions";
+function businessZoneId(value: unknown): string {
+  const zone = text(value);
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: zone });
+  } catch {
+    invalid("businessZone");
+  }
+  return zone;
+}
+
 function metadata(r: Record<string, unknown>) {
   const result = {
     viewVersion: version(r.viewVersion), queryVersion: version(r.queryVersion), sourceVersion: text(r.sourceVersion), definitionVersion: text(r.definitionVersion),
-    board: enumeration(r.board, BOARDS), rankMonth: r.rankMonth === null ? null : month(r.rankMonth), referenceMonth: month(r.referenceMonth), currency: enumeration(r.currency, ["USDT", "NEX"] as const), scope: enumeration(r.scope, SCOPES),
-    businessZone: enumeration(r.businessZone, ["Asia/Shanghai"] as const), asOf: instant(r.asOf), publishedAt: instant(r.publishedAt), state: enumeration(r.state, ["COMPLETE", "PROVISIONAL"] as const), candidateCoverage: coverage(r.candidateCoverage), stale: bool(r.stale), refreshFailed: bool(r.refreshFailed),
-    selectableMonths: unique(array(r.selectableMonths, month), x => x), currencies: unique(array(r.currencies, v => enumeration(v, ["USDT", "NEX"] as const)), x => x),
+    board: enumeration(r.board, BOARDS), rankMonth: r.rankMonth === null ? null : month(r.rankMonth), referenceMonth: month(r.referenceMonth), currency: enumeration(r.currency, ["USDT", "UVT"] as const), scope: enumeration(r.scope, SCOPES),
+    businessZone: businessZoneId(r.businessZone), asOf: instant(r.asOf), publishedAt: instant(r.publishedAt), state: enumeration(r.state, ["COMPLETE", "PROVISIONAL"] as const), candidateCoverage: coverage(r.candidateCoverage), stale: bool(r.stale), refreshFailed: bool(r.refreshFailed),
+    selectableMonths: unique(array(r.selectableMonths, month), x => x), currencies: unique(array(r.currencies, v => enumeration(v, ["USDT", "UVT"] as const)), x => x),
     scopeOptions: unique(array(r.scopeOptions, value => { const s = object(value, "scope groups"); return { scope: enumeration(s.scope, SCOPES), groups: unique(array(s.groups, value => { const g = object(value, "id name"); return { id: id(g.id), name: text(g.name) }; }), g => g.id) }; }), s => s.scope),
   };
   if (result.queryVersion !== result.viewVersion || !result.sourceVersion || !result.definitionVersion || Date.parse(result.publishedAt) < Date.parse(result.asOf)
@@ -59,9 +71,9 @@ function metadata(r: Record<string, unknown>) {
 export type LeaderboardMetadata = ReturnType<typeof metadata>;
 function row(value: unknown, meta: LeaderboardMetadata): SupportBoardRow {
   const r = object(value, "agentId name avatarUrl groupName qualification rank isTied rankMetricCoverage firstPayment customers amount movement canViewCustomers");
-  enumeration(r.qualification, ["ACTIVE", "DISABLED", "REMOVED", "HANDOVER_REQUIRED", "UNKNOWN"] as const);
+  const qualification = enumeration(r.qualification, ["ACTIVE", "DISABLED", "REMOVED", "HANDOVER_REQUIRED", "UNKNOWN"] as const);
   const a = object(r.amount, "value currency month kind coverage reason"), state = coverage(a.coverage);
-  const amount = { value: decimal(a.value, true), currency: enumeration(a.currency, ["USDT", "NEX"] as const), periodLabel: month(a.month), sourceVersion: meta.sourceVersion, coverage: displayCoverage(state), reason: reason(a.reason) };
+  const amount = { value: decimal(a.value, true), currency: enumeration(a.currency, ["USDT", "UVT"] as const), periodLabel: month(a.month), sourceVersion: meta.sourceVersion, coverage: displayCoverage(state), reason: reason(a.reason) };
   enumeration(a.kind, ["NET_CONTRIBUTION"] as const);
   if (amount.currency !== meta.currency || amount.periodLabel !== meta.referenceMonth || (state === "UNKNOWN" || state === "FAILED") && amount.value !== null || state === "COMPLETE" && (amount.value === null || a.reason !== "NONE") || state !== "COMPLETE" && a.reason === "NONE") invalid("amount");
   const firstPayment = count(r.firstPayment), customers = count(r.customers), main = meta.board === "firstPayment" ? firstPayment : meta.board === "customers" ? customers : amount;
@@ -76,18 +88,18 @@ function row(value: unknown, meta: LeaderboardMetadata): SupportBoardRow {
     : !confirmed || m.reason !== "NONE" || baselineAt === null || baselineVersion === null || Date.parse(baselineAt) >= Date.parse(meta.asOf)
       || (kind === "NEW" ? places !== null || previousRank !== null : previousRank === null || places === null
         || (kind === "SAME" ? places !== 0 || previousRank !== rank : places < 1 || (kind === "UP" ? previousRank - rank! !== places : rank! - previousRank !== places)))) invalid("movement");
-  const explanation = [reason(m.reason), baselineAt ? `对比截至 ${baselineAt} 的名次` : "", previousRank ? `原名次 ${previousRank}` : ""].filter(Boolean).join("；");
+  const explanation = [reason(m.reason), baselineAt ? `对比截至 ${businessStamp(Date.parse(baselineAt))}（${businessZone().label}）的名次` : "", previousRank ? `原名次 ${previousRank}` : ""].filter(Boolean).join("；");
   const movement: SupportBoardRow["movement"] = kind === "UP" || kind === "DOWN" ? { kind: kind === "UP" ? "up" : "down", places: places!, explanation } : { kind: kind === "SAME" ? "same" : kind === "NEW" ? "new" : "unavailable", explanation };
   const agentId = id(r.agentId), name = text(r.name);
   if (!name.trim()) invalid("name");
   const avatarUrl = r.avatarUrl === null ? undefined : text(r.avatarUrl);
-  return { id: agentId, name, groupName: text(r.groupName), avatarUrl, rank, isTied: tied, rankStatus: confirmed ? "confirmed" : main.coverage === "unavailable" ? "unavailable" : "provisional", amount, firstPayment, customers, movement, unavailableReason: confirmed ? undefined : "当前名次待核实", canViewCustomers: bool(r.canViewCustomers) };
+  return { id: agentId, name, groupName: text(r.groupName), avatarUrl, qualification, rank, isTied: tied, rankStatus: confirmed ? "confirmed" : main.coverage === "unavailable" ? "unavailable" : "provisional", amount, firstPayment, customers, movement, unavailableReason: confirmed ? undefined : "名次未确定", canViewCustomers: bool(r.canViewCustomers) };
 }
 export function leaderboardQueryString(input: LeaderboardQuery): string {
   const q = object(input, PARAMETERS), params = new URLSearchParams();
   params.set("board", enumeration(q.board, BOARDS)); params.set("scope", enumeration(q.scope, SCOPES));
   if (q.month !== undefined) { if (q.board === "customers") invalid("customersMonth"); params.set("month", month(q.month)); }
-  if (q.currency !== undefined) params.set("currency", enumeration(q.currency, ["USDT", "NEX"] as const));
+  if (q.currency !== undefined) params.set("currency", enumeration(q.currency, ["USDT", "UVT"] as const));
   if (q.groupId !== undefined) { if (q.scope === "all") invalid("allGroup"); params.set("groupId", id(q.groupId)); }
   if (q.keyword !== undefined) { const keyword = text(q.keyword); if (keyword.length > 200 || /[\x00-\x1f\x7f-\x9f]/.test(keyword)) invalid("keyword"); if (keyword.trim()) params.set("keyword", keyword.trim()); }
   if (q.pageNum !== undefined) params.set("pageNum", String(integer(q.pageNum, 1)));
@@ -152,8 +164,14 @@ export function publicLeaderboardAvatar(url: string, agentId: string, q: Leaderb
 }
 export async function fetchLeaderboardAvatar(url: string, agentId: string, q: LeaderboardQuery, expectedVersion: string, signal: AbortSignal): Promise<Blob> {
   const response = await guardedFetch(publicLeaderboardAvatar(url, agentId, q, expectedVersion), { signal, credentials: "same-origin", cache: "no-store" });
-  if (!response.ok) { const error = new Error("公开头像暂不可用") as Error & { status: number }; error.status = response.status; throw error; }
-  if (!["image/jpeg", "image/png"].includes((response.headers.get("Content-Type") ?? "").split(";")[0].toLowerCase())) invalid("avatarType");
+  if (!response.ok || !["image/jpeg", "image/png"].includes((response.headers.get("Content-Type") ?? "").split(";")[0].toLowerCase())) {
+    try { parseMContentApiEnvelope(response.status, await response.text(), false); }
+    catch (error) {
+      if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage);
+      throw error;
+    }
+    invalid("avatarType");
+  }
   const blob = await response.blob(); if (!blob.size) invalid("avatarEmpty"); return blob;
 }
 export function locateLeaderboardSelf(page: LeaderboardPage, q: LeaderboardQuery): LeaderboardQuery | null { return page.self.pageNum === null ? null : { ...q, keyword: undefined, pageNum: page.self.pageNum, expectedVersion: page.viewVersion }; }

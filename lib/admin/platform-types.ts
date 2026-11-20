@@ -1,4 +1,16 @@
-export interface OpsTask {
+import type { ComputeTaskConfig } from "./e2-compute-config";
+
+export interface TaskSimulation {
+  durationMinutes: number;
+  baseReward: number | string;
+  asset: "USDT" | "UVT";
+  enabled: boolean;
+  version: number;
+  effectiveAt?: string;
+}
+
+export interface OpsTask extends ComputeTaskConfig {
+  simulation?: TaskSimulation | null;
   id: string;
   n: string;
   price: number;
@@ -17,7 +29,7 @@ export interface OpsTask {
 export interface PurchaseGate {
   rankMin?: number;
   activeDirectMin?: number;
-  teamVolumeMin?: number;
+  teamComputePointsMin?: number;
   mode: "all" | "either";
   quotaCap?: number;
   quotaSold?: number;
@@ -27,12 +39,19 @@ export interface PurchaseGate {
 }
 
 export interface OpsSku {
+  seriesCode?: string | null;
+  readonly seriesLocked?: boolean;
+  allowedPoolCodes?: string[];
+  productTaskPolicyVersion?: number;
+  productTaskPolicyEffectiveAt?: string;
   name: string;
   id: string;
   tier?: string;
   tagline?: string;
   badge?: string;
   gpu?: string;
+  specDocumentTitle?: string;
+  specDocumentUrl?: string;
   vram?: string;
   hashRate?: string;
   power?: string;
@@ -42,12 +61,24 @@ export interface OpsSku {
   phoneDailyEarn?: number;
   phoneDailyEarnNEX?: number;
   price: number;
+  /** 每件算力点：计入团队等级与配额，下单时记入订单。 */
+  computePoints?: number;
   dailyEarn: number;
-  dailyEarnNEX: number;
+  dailyEarnNEX: number | null;
+  monthlyTargetUsdt?: number;
+  monthlyTargetBandPct?: number;
+  /** Explicit write intent; absence of the target fields preserves the approved target. */
+  clearMonthlyTarget?: boolean;
+  derivedDailyEarnUsdt?: number;
+  derivedShareYieldMinPct?: number;
+  derivedShareYieldMaxPct?: number;
   shareYieldMin?: number;
   shareYieldMax?: number;
   baseRate?: string;
   sold?: number;
+  /** 服务端已有商品属性；编辑表单不开放修改，但全量保存须保留。 */
+  rating?: number;
+  reviews?: number;
   /** 服务端权威商品形态；仅用于展示/约束，不能由库存模式反推。 */
   productType?: "SERVER" | "DEVICE" | "SHARE";
   /** FINITE 扣减实际库存；UNLIMITED 不扣库存且仅允许 SHARE。 */
@@ -78,12 +109,6 @@ export interface OpsSku {
   updatedAt?: string;
 }
 
-export interface OpsDataCenter {
-  id: string;
-  location: string;
-  displayName: string;
-}
-
 export interface OpsVoucher {
   id: string;
   name: string;
@@ -104,12 +129,14 @@ export interface OpsVoucher {
   status: "active" | "paused";
 }
 
-export type VRankRewardType = "usdt" | "nex" | "voucher" | "sku" | "custom";
+export type VRankRewardType = "usdt" | "uvt" | "voucher" | "sku" | "custom";
 
 export interface OpsVRankRewardItem {
   id: string;
   type: VRankRewardType;
   amount?: number;
+  /** Exact server amount used by the F1 reward editor and policy comparison. */
+  amountText?: string;
   voucherId?: string;
   skuId?: string;
   custom?: string;

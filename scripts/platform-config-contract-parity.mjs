@@ -37,10 +37,14 @@ const pcK = read("lib/admin/k-client.ts");
 
 // App public platform-config contract: server response is parsed strictly, including
 // the currently projected H3 flags, online bonus and share/download structures.
+const platformConfigPath = /\bpath\s*:\s*(["'`])\/api\/config\/platform(?:\?[^\s"'`#]+)?\1\s*[,}]/;
+if (!platformConfigPath.test(appApi.text)) {
+  throw new Error(`${appApi.file} missing /api/config/platform request path`);
+}
 for (const token of [
   "PlatformComputeConfigSnapshot",
   "parsePlatformComputeConfig",
-  '"/api/config/platform"',
+  "computeShareEnabled",
   "homeNewcomerTasksEnabled",
   "homeWeeklyPromoEnabled",
   "h5BaseFactor",
@@ -51,19 +55,18 @@ for (const token of ["interface FeatureFlags", "interface OnlineBonus", "interfa
   includes(appTypes, token);
 }
 
-// PC E6 no longer edits the retired h5BaseFactor phone multiplier; the App
-// still parses it from the server platform snapshot for existing devices.
-// Keep the current E6 key registry and endpoint checks instead of requiring
-// the removed admin write key.
+// The platform snapshot keeps compatibility fields for existing clients.
+// PC E6 has retired writes to computeShareEnabled and h5BaseFactor.
 for (const token of [
   "fetchE6ComputeConfig",
   "parseE6ComputeConfig",
   '"/compute-config"',
-  'e6FlagKey("computeShareEnabled")',
   'e6CoeffKey("continuityFullHours")',
 ]) includes(pcE6, token);
-if (pcE6.text.includes('e6CoeffKey("h5BaseFactor")')) {
-  throw new Error(`${pcE6.file} still exposes retired h5BaseFactor as an E6 write key`);
+for (const token of ['e6FlagKey("computeShareEnabled")', 'e6CoeffKey("h5BaseFactor")']) {
+  if (pcE6.text.includes(token)) {
+    throw new Error(`${pcE6.file} still exposes retired E6 write key ${token}`);
+  }
 }
 for (const token of ["compute-config", "params"]) includes(pcE6Route, token);
 

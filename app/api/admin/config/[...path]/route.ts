@@ -3,11 +3,17 @@ import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/re
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ROUTE_METHODS: readonly (readonly [string, readonly string[]])[] = [
-  ["task-pricing", ["GET", "HEAD", "PUT"]],
+  ["hosting-centers", ["GET"]],
+  ["task-pricing", ["GET", "HEAD"]],
   ["phone-tiers", ["GET", "HEAD", "PUT"]],
   ["phone-tiers/comparison", ["GET", "HEAD", "PUT"]],
   ["phone-calibration", ["GET"]],
   ["phone-calibration/preview", ["POST"]],
+  ["phone-calibration/direction", ["POST"]],
+  ["phone-calibration/ios-model-presets", ["GET"]],
+  ["phone-calibration/android-soc-presets", ["GET"]],
+  ["phone-calibration/risk", ["GET", "PUT"]],
+  ["phone-calibration/risk/receipts/by-key", ["GET"]],
 ];
 
 type RouteContext = { params: Promise<{ path?: string[] }> };
@@ -37,7 +43,7 @@ async function proxy(request: Request, context: RouteContext) {
   if (contentType) headers.set("Content-Type", contentType);
   if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
   try {
-    const upstream = await fetch(`${BACKEND_BASE_URL}/api/admin/config/${route}`, {
+    const upstream = await fetch(`${BACKEND_BASE_URL}/api/admin/config/${route}${new URL(request.url).search}`, {
       method: request.method,
       headers,
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),

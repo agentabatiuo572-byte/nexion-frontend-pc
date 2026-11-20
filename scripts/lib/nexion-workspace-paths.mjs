@@ -13,7 +13,12 @@ function resolveCheckoutRoot({ adminRoot, env, exists, envKey, candidates, label
     return resolved;
   }
 
-  const matched = candidates.map((candidate) => path.resolve(adminRoot, candidate)).find((candidate) => exists(candidate));
+  // Managed candidates live in workspace/.worktrees/<task>. A sibling junction there
+  // can belong to an older task; prefer the declared projects in the workspace.
+  const ordered = path.basename(path.dirname(path.resolve(adminRoot))).toLowerCase() === ".worktrees"
+    ? [...candidates.filter(candidate => candidate.startsWith("../../")), ...candidates.filter(candidate => !candidate.startsWith("../../"))]
+    : candidates;
+  const matched = ordered.map((candidate) => path.resolve(adminRoot, candidate)).find((candidate) => exists(candidate));
   if (matched) return matched;
 
   const checked = candidates.map((candidate) => path.resolve(adminRoot, candidate));
@@ -53,6 +58,7 @@ export function resolveNexionBackendRoot({
     candidates: ["../nexion-backend", "../../nexion-backend"],
   });
 }
+
 
 /**
  * 权威 PRD 位于真实 PC 仓的 docs/PRD。高保真仓只用于原型，不能反向成为

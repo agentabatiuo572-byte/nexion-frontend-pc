@@ -70,6 +70,8 @@
 4. 事件 schema 变更通过 A4 管理动作并写 A2 审计；破坏性变化必须双写/双读迁移。
 5. 未知事件/版本进入隔离队列并告警，不能静默丢弃或用空字段灌入 BI。
 6. 开发/验收/生产数据以 `environment + RunID` 隔离；测试事件不得计入正式 KPI。
+7. A4 登记表单的所属业务域只提供符合小写域名格式的已注册域或可登记扩展域，不将 `risk.tamper_detected` 等完整事件名作为域发送；归属域必须等于事件名第一个点之前的前缀。应急批次仍展示其事件和登记状态，不因过滤表单选项而隐藏。
+8. 浏览、会话采样允许 0%–100%；资金、风控、转化类固定 100%。本地校验与系统返回的范围错误提示必须一致，0% 不得被描述为非法下界（2026-11-04，BUG-135、BUG-144）。
 
 ## 4. 核心事件目录
 
@@ -110,7 +112,7 @@
 | EVT-031 | E | `order.refunded` | 退款账本提交 | `order_no,refund_no,asset,amount` | 退款率/对账 | 后端已见同名 |
 | EVT-032 | E | `device.status_changed` | 设备状态提交 | `device_id,from,to,reason_code` | 在线/解绑漏斗 | E5 动态 alias 待映射 |
 | EVT-033 | E | `device.capability_calibrated` | 服务端接受校准结论 | `tier,score_band,signal_quality` | 设备分层/反作弊 | 不上传原始 GPU 字符串到 BI |
-| EVT-034 | E | `tradein.status_changed` | 以旧换新状态提交 | `tradein_no,from,to` | 转化/履约 | E3 family alias |
+| EVT-034 | E | `tradein.status_changed` | 升级置换状态提交 | `tradein_no,from,to` | 转化/履约 | E3 family alias |
 | EVT-035 | F | `referral.bound` | 推荐关系首次提交 | `referral_type,channel` | 邀请漏斗/防环 | 用户 ID 用内部聚合键 |
 | EVT-036 | F | `rank.changed` | V Rank 提升/降级提交 | `from,to,reason_code` | 等级漏斗/奖励 | 一次只升一级规则 |
 | EVT-037 | F | `commission.posted` | 佣金账本提交 | `commission_type,asset,amount,depth` | 分销对账 | 与 ledger 关联 |
@@ -197,7 +199,7 @@ App 行为事件默认 consent/政策策略待法务确认；安全、反欺诈�
 
 `screen.viewed(store)` → `screen.viewed(sku_detail)` → `checkout.submit_clicked` → `order.created` → `order.paid` → 履约终态。
 
-- 代金券、试用转化、以旧换新、campaign 作为归因维度；归因规则（first/last touch、窗口）固定版本。
+- 代金券、试用转化、升级置换、campaign 作为归因维度；归因规则（first/last touch、窗口）固定版本。
 - 支付超时不落 `failed`，直到服务端明确终态。
 
 ### 7.3 充值/提现

@@ -12,7 +12,7 @@ import { GLOSSARY, GLOSSARY_TERMS, GLOSSARY_GUARD } from "@/lib/admin/glossary";
 import { createGlossaryMatcher } from "@/lib/admin/glossary-match";
 
 const PLAIN_LABELS: Record<string, string> = {
-  "NEX": "UVEL",
+  "UVT": "UVT",
   "Genesis": "创世节点",
   "RBAC": "角色权限",
   "CAS": "版本校验",
@@ -41,21 +41,22 @@ const PLAIN_LABELS: Record<string, string> = {
   "2FA": "两步验证",
   "TVL": "质押资产总额",
   "GMV": "成交总额",
-  "GV": "团队业绩",
-  "直推": "直接邀请",
+  "GV": "团队订单额",
+  "直推": "直接邀请的好友",
   "树位": "团队位置",
   "置信度": "判断把握度",
   "净敞口": "储备与应付款差额",
   "日切": "每日结算",
-  "网络版税": "团队分成",
-  "双轨": "左右团队",
+  "网络版税": "团队奖励",
+  "双轨": "团队平衡奖励",
 };
 
 export function Gloss({ children }: { children: string }) {
-  const tip = GLOSSARY[children];
+  // 词条里有半角逗号，显示时换成全角；数字里的千分位不动。
+  const tip = GLOSSARY[children]?.replace(/,(?!\d)/g, "，");
   if (!tip) return <>{children}</>;
   const label = PLAIN_LABELS[children] ?? children;
-  return <span className="gloss" data-tip={`${children}：${tip}`} role="note" aria-label={`${label}：${tip}`}>{label}</span>;
+  return <span className="gloss" data-tip={`${label}：${tip}`} role="note" aria-label={`${label}：${tip}`}>{label}</span>;
 }
 
 // 匹配边界规则(守护词 / 拉丁词边界 / 长词优先)见 lib/admin/glossary-match.ts。

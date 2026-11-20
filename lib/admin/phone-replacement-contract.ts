@@ -150,7 +150,7 @@ export function parsePhoneReceipt(value: unknown): PhoneReceipt {
         || !["PENDING", "SUCCEEDED", "FAILED"].includes(String(value.status)) || !safeInteger(value.submittedAt)
         || !(value.completedAt === null || safeInteger(value.completedAt))
         || !(value.originalResult === null || record(value.originalResult)) || !(value.currentResource === null || record(value.currentResource)))
-        throw new Error("操作回执不完整，请继续查询原操作。");
+        throw new Error("操作结果未知，请继续查询原结果。");
     return value as unknown as PhoneReceipt;
 }
 export function parsePhoneOverview(value: unknown): PhoneOverview {
@@ -183,7 +183,7 @@ export function parsePhonePage<T>(value: unknown): PhonePage<T> {
 }
 export const phoneLabels: Record<string, string> = {
     PENDING: "待处理", GRANTED: "已授权", CLOSED: "已关闭", ACTIVE: "有效", CONSUMED: "已使用", REVOKED: "已撤销",
-    EXPIRED: "已到期", STALE: "绑定已变化", SUCCEEDED: "已成功", FAILED: "已确定失败", LINKED: "已关联", UNLINKED: "未关联",
+    EXPIRED: "已到期", SUPERSEDED: "已被新申请替代", INVALIDATED: "已失效", STALE: "绑定已变化", SUCCEEDED: "已成功", FAILED: "已确定失败", LINKED: "已关联", UNLINKED: "未关联",
     PHONE_GRANT_ISSUE: "授予一次特批", PHONE_REQUEST_CLOSE: "关闭申请", PHONE_GRANT_REVOKE: "撤销特批", PHONE_VERIFY: "核实申请",
     PHONE_POLICY_PUBLISH: "发布手机策略", PHONE_POLICY_PARAM_PUBLISH: "调整手机策略", PHONE_ACTIVATE: "手机激活",
     PHONE_REPLACEMENT_LIMIT_REACHED: "窗口内换机次数已达上限", PHONE_BINDING_TIME_UNKNOWN: "原绑定时间待核实",
@@ -201,11 +201,16 @@ export const phoneLabels: Record<string, string> = {
     ACTIVE_GRANT_EXISTS: "已有有效特批，请先核对现有授权", IDEMPOTENCY_MISMATCH: "该操作标识已用于另一份内容，请查询原结果",
     PERMISSION_DENIED: "当前账号无权执行此操作", ADMIN_AUTH_REQUIRED: "管理会话已失效，请重新登录",
     OPERATION_RESULT_UNKNOWN: "暂未查到原操作，结果仍待核实。请勿重新提交。",
+    PHONE_INSTALLATION_NOT_FOUND: "没有找到这台手机的校准记录，请刷新", PHONE_MODEL_LOCK_RELEASE_CONFLICT: "机型锁状态已变化，请刷新后核对",
+    ONBOARDING_DEVICE_INVALID: "手机安装编号无效", PHONE_REPLACEMENT_REASON_INVALID: "请填写 8 到 200 字的处理理由",
+    PHONE_REPLACEMENT_CONFIRMATION_REQUIRED: "请先确认本次操作", IDEMPOTENCY_KEY_REQUIRED: "缺少操作标识，请刷新后重试",
 };
+/** iPhone / Android for a reported phone platform. */
+export const phonePlatformLabel = (platform: string | null) => platform === "ios" ? "iPhone" : platform === "android" ? "Android" : "未知";
 export function phoneLabel(value: unknown): string {
     if (value == null || value === "")
         return "—";
-    return phoneLabels[String(value)] ?? "状态待核实，请刷新或联系有处置权限的主管。";
+    return phoneLabels[String(value)] ?? "状态未知，请刷新或联系有处理权限的主管。";
 }
 export function phoneConflictMessage(details: unknown): string | null {
     if (!record(details))

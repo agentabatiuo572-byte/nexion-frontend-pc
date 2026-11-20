@@ -6,16 +6,38 @@
  * 适配:Modal/Drawer 补 ESC+聚焦+点遮罩关闭(a11y 铁律);OperationConfirmModal 负责高敏操作确认 + 理由留痕;
  * 跨域跳转用 next/navigation。导航/外壳仍沿用本项目 shell。
  */
-import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { businessZone } from "@/lib/admin/business-time";
+import { Fragment, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type CSSProperties, type FocusEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { useUI, type ToastKind } from "@/lib/store/ui";
+import { useDialogFeedback } from "@/app/components/kit/dialog-feedback";
+import { ToastHost } from "@/app/components/kit/toast-host";
+import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
+import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
+import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
+import type { H4UploadTarget } from "@/lib/admin/h4-mutations";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
+import { Check as RdCheck, CheckGroup as RdCheckGroup, Field as RdField } from "@/app/components/rd/field";
+import { Fold as RdFold } from "@/app/components/rd/fold";
+import { Button as RdButton, type ButtonVariant } from "@/app/components/rd/button";
+import { Select as RdSelect } from "@/app/components/rd/select";
+import { Segments } from "@/app/components/rd/tabs";
+import { DiffField } from "@/app/components/rd/diff-list";
+import { Explain } from "@/app/components/rd/explain";
+import { Notice as RdNotice } from "@/app/components/rd/block-state";
+import { StatusTag as RdStatusTag } from "@/app/components/rd/status-tag";
+import { Modal as RdModal } from "@/app/components/rd/overlay";
+import { NumberInput as RdNumberInput } from "@/app/components/rd/number-input";
+import { useRdSurface } from "@/app/components/rd/surface";
+import { KeepText } from "@/app/components/rd/keep-text";
+import { Input as RdInput } from "@/app/components/rd/filter-bar";
+import { Fact as RdFact, Facts as RdFacts } from "@/app/components/rd/facts";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
 export const DOMAIN_HOME: Record<string, string> = {
@@ -30,7 +52,7 @@ export type IconName =
   | "gauge" | "shield" | "users" | "wallet" | "radar" | "rhythm" | "box" | "tree"
   | "coin" | "doc" | "power" | "chart" | "search" | "bell" | "menu" | "chevron"
   | "check" | "x" | "alert" | "download" | "plus" | "filter" | "eye" | "lock"
-  | "arrow" | "flame" | "geo" | "clock" | "image";
+  | "arrow" | "flame" | "geo" | "clock" | "image" | "sliders";
 
 export function Icon({ name, size = 18, sw = 1.7 }: { name: IconName; size?: number; sw?: number }) {
   const paths: Record<IconName, ReactNode> = {
@@ -63,6 +85,7 @@ export function Icon({ name, size = 18, sw = 1.7 }: { name: IconName; size?: num
     geo: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" /></>,
     clock: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3 2" /></>,
     image: <><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.6" /><path d="M21 16l-5-5-7 7" /></>,
+    sliders: <><path d="M21 5h-7M10 5H3M21 12h-9M8 12H3M21 19h-5M12 19H3" /><path d="M14 3v4M8 10v4M16 17v4" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -103,9 +126,13 @@ export const Badge = ({ tone = "neutral", children }: { tone?: string; children:
   <span className={"badge-s " + tone}>{children}</span>
 );
 
-export const Btn = ({ variant, sm, children, ...rest }: { variant?: string; sm?: boolean; children: ReactNode } & AnyProps) => (
-  <button className={"btn " + (variant || "") + (sm ? " sm" : "")} {...rest}>{children}</button>
-);
+/* 改版页面里就是 rd 按钮，弹窗底栏和页面只有一套样子（DT-22）；旧页面不变。 */
+export const Btn = ({ variant, sm, children, ...rest }: { variant?: string; sm?: boolean; children: ReactNode } & AnyProps) => {
+  const surface = useRdSurface();
+  return surface
+    ? <RdButton variant={(variant || "secondary") as ButtonVariant} size={sm ? "sm" : "md"} {...rest}>{children}</RdButton>
+    : <button className={"btn " + (variant || "") + (sm ? " sm" : "")} {...rest}>{children}</button>;
+};
 
 export const Toggle = ({ on, danger, onClick }: { on?: boolean; danger?: boolean; onClick?: () => void }) => (
   <div className={"sw " + (on ? "on " : "") + (danger && on ? "danger-on" : "")} onClick={onClick} role="switch" aria-checked={!!on} />
@@ -280,6 +307,8 @@ export function PaginationExemption({
       data-pagination-max-rows={maxRows}
       data-pagination-kind={kind}
       className="pagination-exempt"
+      // Developer note for the list-pagination audit only; operators don't need to see why a short list isn't paged.
+      hidden
       style={{
         borderTop: "1px solid var(--border)",
         background: "var(--surface-2)",
@@ -333,7 +362,22 @@ export const KV = ({ k, v }: { k: ReactNode; v: ReactNode }) => (
 );
 
 /* Modal — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
-export function Modal({ title, icon, onClose, children, footer, wide, busy = false }: { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean }) {
+type ModalProps = { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; dirty?: boolean; className?: string; style?: CSSProperties;
+  /** 只在改版页面起作用：标题下的后果标签，和标题前图标底的颜色（VS-101、VS-106）。 */
+  sub?: ReactNode; tone?: "danger" | "neutral" };
+
+const legacy = ({ sub: _sub, tone: _tone, ...rest }: Omit<ModalProps, "icon">) => rest;
+
+/* 改版页面(RdPage 里)走 Radix 弹窗和新外观,能叠在新抽屉上;旧页面走原来的实现,行为不变。 */
+export function Modal({ icon, ...props }: ModalProps) {
+  const surface = useRdSurface();
+  return surface
+    ? <RdModal {...props} icon={icon && <Icon name={icon} size={16} />} />
+    : <LegacyModal {...legacy(props)} icon={icon} />;
+}
+
+function LegacyModal({ title, icon, onClose, children, footer, wide, busy = false, className }: Omit<ModalProps, "sub" | "tone">) {
+  const feedbackId = useDialogFeedback();
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -350,7 +394,7 @@ export function Modal({ title, icon, onClose, children, footer, wide, busy = fal
   return (
     <div className="dkpage">
     <div className="modal-scrim" onClick={() => { if (!busy) onClose(); }}>
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-busy={busy} aria-labelledby={titleId} className="modal" style={wide ? { maxWidth: 680, outline: "none" } : { outline: "none" }} onClick={(e) => e.stopPropagation()} onKeyDown={(event) => {
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-busy={busy} aria-labelledby={titleId} className={className ? `modal ${className}` : "modal"} style={wide ? { maxWidth: 680, outline: "none" } : { outline: "none" }} onClick={(e) => e.stopPropagation()} onKeyDown={(event) => {
         if (event.key !== "Tab" || !ref.current) return;
         const controls = [...ref.current.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], summary, [tabindex="0"]')].filter(element => !element.matches(":disabled") && element.getClientRects().length > 0);
         if (!controls.length) { event.preventDefault(); return; }
@@ -363,6 +407,7 @@ export function Modal({ title, icon, onClose, children, footer, wide, busy = fal
           <div className="spacer" />
           <button className="icon-btn" disabled={busy} onClick={onClose} aria-label="关闭"><Icon name="x" size={16} /></button>
         </div>
+        <ToastHost dialogId={feedbackId} />
         <div className="modal-b">{children}</div>
         {footer && <div className="modal-f">{footer}</div>}
       </div>
@@ -540,7 +585,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; /** current 不是现在读到的值时（比如恢复原操作时带的是提交那一刻的值）写它是什么，只改显示的名字。 */ currentLabel?: string; /** Display-only current value; comparisons and requests use current. */ displayCurrent?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; /** Keyboard increment when it differs from the accepted numeric precision. */ inputStep?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -570,14 +615,61 @@ type CopyExperimentVersionOption = {
 type CopyExperimentCopyOption = { value: string; label: string; versions: CopyExperimentVersionOption[] };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
+/** 提示末尾的「命令号：xxx」「请求号：xxx」不常显：收进句尾的「技术信息」问号，写成「原请求编号」（全站-结果未知叫法）。前面的话不变。 */
+function keepCommandKey(text: ReactNode): ReactNode {
+  if (typeof text !== "string") return text;
+  const at = Math.max(text.lastIndexOf("命令号："), text.lastIndexOf("请求号："));
+  const key = at < 0 ? null : text.slice(at + 4).match(/^[\w.:-]+/)?.[0];
+  if (!key) return text;
+  return <>{text.slice(0, at).replace(/[\s·]+$/, "")}{text.slice(at + 4 + key.length)}<Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{key}</span></>} /></>;
+}
+
 function initEditValue(spec?: EditSpec | null): string {
   if (!spec) return "";
   const kind = spec.kind ?? "text";
-  if (kind !== "select" && kind !== "toggle") return "";
-  const current = spec.current?.trim();
+  if (kind !== "select" && kind !== "toggle") return spec.initialValue ?? "";
+  const current = (spec.initialValue ?? spec.current)?.trim();
   if (!current) return "";
   const options = spec.options ?? ["开启", "关闭"];
   return options.includes(current) ? current : "";
+}
+
+// Plain decimal inputs stay exact even beyond the precision of a JavaScript number.
+export function normalizeEditDecimal(raw: string): string | null {
+  const value = raw.trim();
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) return null;
+  const [whole, fraction = ""] = value.replace(/^[+-]/, "").split(".");
+  const integer = whole.replace(/^0+/, "") || "0";
+  const decimal = fraction.replace(/0+$/, "");
+  return `${value.startsWith("-") && (integer !== "0" || decimal) ? "-" : ""}${integer}${decimal ? "." + decimal : ""}`;
+}
+
+export function compareEditDecimals(left: string, right: string): number | undefined {
+  const a = normalizeEditDecimal(left), b = normalizeEditDecimal(right);
+  if (a === null || b === null) return undefined;
+  if (a === b) return 0;
+  const negative = a.startsWith("-");
+  if (negative !== b.startsWith("-")) return negative ? -1 : 1;
+  const [ai, af = ""] = a.replace(/^-/, "").split(".");
+  const [bi, bf = ""] = b.replace(/^-/, "").split(".");
+  const places = Math.max(af.length, bf.length);
+  const order = ai.length !== bi.length ? ai.length > bi.length : ai !== bi ? ai > bi : af.padEnd(places, "0") > bf.padEnd(places, "0");
+  return (order ? 1 : -1) * (negative ? -1 : 1);
+}
+
+// 用十进制整数校验步长，避免合法小数被浮点除法误拒；不舍入输入。
+function isDecimalStepAligned(value: string, base: number, step: number): boolean {
+  const parts = [value, String(base), String(step)].map((raw) => {
+    const [mantissa, exponent = "0"] = raw.toLowerCase().split("e");
+    return {
+      coefficient: BigInt(mantissa.replace(".", "")),
+      scale: (mantissa.split(".")[1]?.length ?? 0) - Number(exponent),
+    };
+  });
+  const scale = Math.max(0, ...parts.map((part) => part.scale));
+  const [numeric, origin, increment] = parts.map((part) =>
+    part.coefficient * BigInt(10) ** BigInt(scale - part.scale));
+  return (numeric - origin) % increment === BigInt(0);
 }
 
 function isEditValueValid(spec: EditSpec | null, value: string): boolean {
@@ -588,16 +680,68 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if ((spec.kind ?? "text") !== "number") return true;
   const normalized = value.trim();
   if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(normalized)) return false;
+  if (spec.maxDecimals !== undefined && (normalized.split(".")[1]?.length ?? 0) > spec.maxDecimals) return false;
   const numeric = Number(normalized);
   if (!Number.isFinite(numeric)) return false;
   if (spec.min !== undefined && numeric < spec.min) return false;
   if (spec.max !== undefined && numeric > spec.max) return false;
-  if (spec.step !== undefined && spec.step > 0) {
-    const base = spec.min ?? 0;
-    const steps = (numeric - base) / spec.step;
-    if (Math.abs(steps - Math.round(steps)) > 1e-9) return false;
-  }
+  if (spec.disallowCurrent && compareEditDecimals(normalized, spec.current ?? "") === 0) return false;
+  if (spec.step !== undefined && spec.step > 0
+    && !isDecimalStepAligned(normalized, spec.min ?? 0, spec.step)) return false;
   return true;
+}
+
+/** 修改框里「现在」的值：选项写名字，数字加千分位；是数字时才带单位（「不设上限」后面不跟 USDT）。 */
+function editCurrent(spec: EditSpec, kind: string): { text: ReactNode; unit?: string } {
+  const current = spec.current ?? "";
+  if (spec.displayCurrent !== undefined) return { text: spec.displayCurrent, unit: spec.unit };
+  const label = spec.optionLabels?.[current];
+  if (label !== undefined) return { text: label };
+  if (kind !== "number" || !/^-?\d+(\.\d+)?$/.test(current.trim())) return { text: current };
+  const [whole, fraction] = current.trim().split(".");
+  return { text: `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${fraction ? `.${fraction}` : ""}`, unit: spec.unit };
+}
+
+/** 数字框填错时写什么。范围全站写「1–90」「0–1,000,000」，不写开发词（TX-05）。 */
+function numberRangeText({ min, max, step, maxDecimals }: { min?: number; max?: number; step?: number; maxDecimals?: number }): string {
+  const num = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 20 });
+  const range = min != null && max != null ? `${num(min)}–${num(max)} 的`
+    : min != null ? `不小于 ${num(min)} 的`
+    : max != null ? `不大于 ${num(max)} 的`
+    : "有效的";
+  const decimals = maxDecimals != null ? `，最多 ${maxDecimals} 位小数` : step != null && step < 1 ? `，最多 ${String(step).split(".")[1]?.length} 位小数` : "";
+  return `${range}${step === 1 ? "整数" : "数字"}${decimals}`;
+}
+
+function editNumberError(spec: EditSpec): string {
+  return `请输入 ${numberRangeText(spec)}`.replace("请输入 不", "请输入不").replace("请输入 有效", "请输入有效");
+}
+
+type MultiFieldSpec = Extract<BusinessFormSpec, { kind: "multi-field" }>;
+
+/** 每个字段自己填得对不对，字段下和灰按钮的提示用同一句（VS-107）。跨字段的 feedback 已报错时不再报范围，同一件事只写一处（VS-105）。 */
+function multiFieldIssues(spec: MultiFieldSpec, state: BusinessFormValue): Record<string, string> {
+  const issues: Record<string, string> = {};
+  const feedback = spec.feedback?.(state);
+  spec.fields.filter((f) => !f.visibleWhen || (state[f.visibleWhen.key] ?? "") === f.visibleWhen.equals).forEach((f) => {
+    const raw = (state[f.key] ?? "").trim();
+    if (raw && f.minLength != null && raw.length < f.minLength) issues[f.key] = `${f.label}至少 ${f.minLength} 位`;
+    else if (raw && f.maxLength != null && raw.length > f.maxLength) issues[f.key] = `${f.label}最多 ${f.maxLength} 位`;
+    else if (raw && f.pattern) {
+      try {
+        if (!new RegExp(f.pattern).test(raw)) issues[f.key] = f.patternMessage ?? `${f.label}格式不对`;
+      } catch {
+        issues[f.key] = `${f.label}校验规则不可用`;
+      }
+    } else if (f.inputKind === "number" && !feedback?.invalid && raw) {
+      const n = Number(state[f.key]);
+      const off = raw && normalizeEditDecimal(raw) === null ? true : !Number.isFinite(n) ? true
+        : (f.min != null && n < f.min) || (f.max != null && n > f.max)
+          || (f.step != null && f.step > 0 && f.min != null && !isDecimalStepAligned(String(state[f.key]).trim(), f.min, f.step));
+      if (off) issues[f.key] = `${f.label}要填 ${numberRangeText(f)}`;
+    }
+  });
+  return issues;
 }
 
 export type BusinessFormSpec =
@@ -609,6 +753,8 @@ export type BusinessFormSpec =
       subject: string;
       channels?: string[];
       ticketHint?: string;
+      /** 只展示本次操作的授权事实，另由操作人声明已核实本人；不改变表单值或校验。 */
+      presentation?: "authorization-and-declaration";
       serverVerification?: {
         channel: string;
         ticket: string;
@@ -644,8 +790,8 @@ export type BusinessFormSpec =
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
   | { kind: "disclosure-jurisdiction"; mode: "create" | "edit"; code?: string; name?: string; revision?: number }
   | { kind: "version-authoring"; mode?: "create" | "edit"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScope?: string; languageScopes?: string[]; jurisdictionOptions?: { value: string; label: string }[]; effectiveDate?: string; requiresReack?: boolean; versionReadonly?: boolean; jurisdictionReadonly?: boolean }
-  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]> }
-  | { kind: "disclosure-publish-review"; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; zhBody: string; viBody: string }[]; targetChapters: { no: string; zh: string; vi: string; zhBody: string; viBody: string }[] }
+  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]>; unchanged?: { version: string; countryCodes: string[] }; affected?: number }
+  | { kind: "disclosure-publish-review"; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; targetChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[] }
   | { kind: "trust-section-authoring"; mode: "create" | "edit"; sectionKey: string; version?: string; description?: string; structure?: string; revision?: number;
       fields?: { key: string; label: string; value: string }[] }
   | { kind: "trust-section-publish"; currentVersion: string; targetVersion: string; requireDataSource?: boolean;
@@ -658,10 +804,10 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; /** 跨字段校验。传 field 时写在那一项下面，不传写在表单最后。 */ feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean; field?: string; /** 写在那一项下，不等失焦或点提交（App 可见文字含中文）。 */ live?: boolean }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "date" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; mustChoose?: boolean; /** 二选一、三选一的 select：改版页面画成分段，选项常显，不收进下拉。 */ segments?: boolean; optionLabels?: Record<string, string>; /** 仅普通下拉支持，分段控件不支持。禁用的选项照常列出但置灰，原因写进 optionLabels。 */ disabledOptions?: string[]; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; /** 这一项是什么、怎么填：收进字段名旁的提示图标（DP-06），只在 RdPage 里显示。 */ explain?: ReactNode; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; uploadTarget?: H4UploadTarget; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
-  | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
+  | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; typeLocked?: boolean; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
   | { kind: "promo-banner-edit"; currentBaseReward?: string; currentMultiplier?: string; currentCountdownDays?: string; currentCountdownHours?: string; currentTargetDevice?: string; currentTargetDaily?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "vrank-reward-edit"; subject?: string; voucherOptions?: string[]; voucherLabels?: Record<string, string>; skuOptions?: string[]; skuLabels?: Record<string, string>; currentType?: string; currentAmount?: string; currentVoucherId?: string; currentSkuId?: string; currentCustom?: string }
   | { kind: "mission-create"; subject?: string }
@@ -671,6 +817,18 @@ export type BusinessFormSpec =
   | { kind: "quest-event-config"; subject?: string };
 
 type BriefRow = { label: string; text: string };
+
+/**
+ * What the action really is, stated by the caller. Every caller supplies a kind, so words in a note, title or FAQ question cannot change the summary.
+ */
+export type OperatorBriefKind = "export" | "funds" | "security" | "emergency" | "note" | "judgment" | "config" | "content" | "record" | "self-avatar" | "conversation" | "note-delete" | "faq-delete" | "session-category";
+const STATED_BRIEF: Partial<Record<OperatorBriefKind, { impact: string; check: string }>> = {
+  "self-avatar": { impact: "只更换本人头像，账号、角色和接待资格不变。", check: "确认这张图片可以作为本人头像，理由写清依据或工单号。" },
+  conversation: { impact: "只改变客户对话的处理状态或列表位置，不改变账号、资金和专属客服归属。", check: "核对客户和会话，理由写清依据或工单号。" },
+  "note-delete": { impact: "删除这条内部备注，不改变账户状态或风险结论。", check: "核对要删除的备注和客户，理由写清依据或工单号。" },
+  "faq-delete": { impact: "这条问答会从帮助中心移除，不影响账号和资金。", check: "核对问答内容，确认不再需要，理由写清依据或工单号。" },
+  "session-category": { impact: "只决定用户能否在会话中心选择这个类别，进行中的会话不受影响。", check: "核对类别和启用或禁用方向，理由写清依据或工单号。" },
+};
 
 function plainText(node: ReactNode): string {
   if (node == null || typeof node === "boolean") return "";
@@ -684,82 +842,124 @@ function compactText(s: string): string {
   return s.replace(/\s+/g, " ").replace(/\s+([,，.。:：;；])/g, "$1").trim();
 }
 
-function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boolean, hasEdit: boolean, localHistory?: boolean): BriefRow[] {
+function buildOperatorBrief(action: ReactNode, amplifies: boolean, hasEdit: boolean, localHistory: boolean, kind: OperatorBriefKind, statedBrief?: { impact: string; check: string }): BriefRow[] {
   const actionText = compactText(plainText(action));
-  const detailText = compactText(plainText(detail));
-  const all = `${actionText} ${detailText}`;
-  const includes = (terms: string[]) => terms.some((term) => all.includes(term));
+  const stated = statedBrief ?? STATED_BRIEF[kind];
+  if (stated) return [{ label: "要做什么", text: actionText }, { label: "影响", text: stated.impact }, { label: "提交前", text: stated.check }];
   const defaultCheck = hasEdit
-    ? "先核对目标新值、影响范围和回滚预案。操作理由写清业务依据或工单号。"
-    : "先核对操作对象、影响范围和凭证。操作理由写清业务依据或工单号。";
+    ? "核对新值和影响范围，理由写清依据或工单号。"
+    : "核对操作对象和凭证，理由写清依据或工单号。";
 
-  if (includes(["解密导出", "数据出境", "导出", "报表", "report_exported", "PII"])) {
+  if (kind === "export") {
     return [
-      { label: "要做什么", text: actionText || "生成或放行一份导出文件。" },
-      { label: "影响", text: "系统会按本次范围生成下载文件。涉及用户明细时按 L5 脱敏规则处理,下载链接限时 24 小时。" },
-      { label: "提交前", text: "确认导出范围、字段、行数、脱敏方式和接收人。操作理由写导出依据、工单号或调证编号。" },
+      { label: "要做什么", text: actionText || "生成一份导出文件。" },
+      { label: "影响", text: "按所选范围生成下载文件，用户明细会隐藏敏感信息，下载链接 24 小时内有效。" },
+      { label: "提交前", text: "确认导出范围、字段和接收人，理由写明导出依据或工单号。" },
     ];
   }
 
-  if (hasEdit || includes(["调整", "配置", "改值", "改旋钮", "参数", "阈值", "权重", "比例", "排程", "新增", "创建", "设置"])) {
+  if (kind === "config") {
     return [
-      { label: "要做什么", text: actionText || "修改一个后台参数或规则。" },
-      { label: "影响", text: "新值会按页面说明生效,可能影响后续订单、风控、报表或用户可见状态。" },
-      { label: "提交前", text: `${defaultCheck}${amplifies ? "该改动会放大资金流出,系统会先检查备付金覆盖率。" : ""}` },
+      { label: "要做什么", text: actionText || "修改后台参数或规则。" },
+      { label: "影响", text: "按页面说明生效，可能影响之后的订单、风控、报表或用户看到的内容。" },
+      { label: "提交前", text: `${defaultCheck}${amplifies ? "这项改动会让平台多付钱，提交时会先检查兑付覆盖率。" : ""}` },
     ];
   }
 
-  if (includes(["提现", "放行", "退款", "退回", "解冻", "冻结资金", "余额", "资金", "兑付", "储备", "账本"])) {
+  if (kind === "funds") {
     return [
-      { label: "要做什么", text: actionText || "处理一笔资金或提现状态。" },
-      { label: "影响", text: "会改变用户资金、提现单或平台账本状态。放行、解冻、提高额度会消耗备付金。" },
-      { label: "提交前", text: `确认用户、金额、风控命中、覆盖率和凭证。${amplifies ? "当前操作还要通过 B1 备付金覆盖率检查。" : "操作理由要说明处理依据。"}` },
+      { label: "要做什么", text: actionText || "处理一笔资金或提现。" },
+      { label: "影响", text: "会改变用户资金、提现单或平台账目。放行、解冻和提额都会占用平台储备。" },
+      { label: "提交前", text: `核对用户、金额、触发的风险规则和凭证。${amplifies ? "提交时会先检查兑付覆盖率。" : "理由写清处理依据。"}` },
     ];
   }
 
-  if (includes(["账号", "权限", "2FA", "两步", "会话", "密码", "登录", "名单", "模拟登录", "RBAC"])) {
+  if (kind === "security") {
     return [
-      { label: "要做什么", text: actionText || "处理账号、安全或权限状态。" },
-      { label: "影响", text: "会影响后台账号、用户登录、会话、权限或风控名单。部分动作会立即踢线或降低安全门槛。" },
-      { label: "提交前", text: "确认对象账号、授权来源、是否已做双人/主管校验。操作理由写清工单号和处理依据。" },
+      { label: "要做什么", text: actionText || "处理账号、安全或权限。" },
+      { label: "影响", text: "会影响后台账号、用户登录、权限或风控名单，部分操作会让对方立即下线或降低账号安全。" },
+      { label: "提交前", text: "确认对象账号和授权来源，理由写清工单号和处理依据。" },
     ];
   }
 
-  if (includes(["熔断", "恢复", "Kill-Switch", "封锁", "geo", "国家", "黑名单", "应急"])) {
+  if (kind === "emergency") {
     return [
-      { label: "要做什么", text: actionText || "切换一个应急或地区管控状态。" },
-      { label: "影响", text: "会立即影响对应业务入口、地区访问或资金能力。恢复类动作会重新放开用户操作。" },
-      { label: "提交前", text: "确认触发来源、影响国家/业务、响应时限和通知内容。操作理由写监管、风控或应急依据。" },
+      { label: "要做什么", text: actionText || "切换紧急开关或地区限制。" },
+      { label: "影响", text: "立即影响对应业务、地区访问或资金功能；恢复会重新放开用户操作。" },
+      { label: "提交前", text: "确认影响的国家或业务和是否需要通知用户，理由写明监管、风控或应急依据。" },
     ];
   }
 
-  if (includes(["发布", "下架", "回滚", "披露", "文案", "模板", "通知", "课程", "CMS", "重确认"])) {
+  if (kind === "content") {
     return [
-      { label: "要做什么", text: actionText || "发布、回滚或下架一项内容。" },
-      { label: "影响", text: "用户端看到的内容、通知或披露版本会变化。披露更新可能要求用户重新确认。" },
-      { label: "提交前", text: "确认所需语言内容、占位符、适用地区、接收人群和发布时间。操作理由写版本依据和回滚方案。" },
+      { label: "要做什么", text: actionText || "发布、回滚或下架内容。" },
+      { label: "影响", text: "用户看到的内容、通知或披露会随之变化，披露更新可能要求用户重新确认。" },
+      { label: "提交前", text: "检查各语言内容、适用地区、接收人群和发布时间，理由写明版本依据。" },
     ];
   }
 
-  if (includes(["备注", "标记", "判正常", "解除误判"])) {
+  if (kind === "note" || kind === "judgment") {
     return [
       { label: "要做什么", text: actionText || "记录或更新一条人工判定。" },
-      { label: "影响", text: includes(["备注"]) ? "只新增复审说明和审计记录,不改变账户状态或风险结论。" : "会更新风控判定结果,影响后续是否继续拦截、冻结或放行。" },
-      { label: "提交前", text: "确认对象、证据链和处理结论。操作理由写清场景、依据或客服/风控工单号。" },
+      { label: "影响", text: kind === "note" ? "只添加备注，不改变账户状态或风险结论。" : "会更新风控判定，影响之后是否继续拦截、冻结或放行。" },
+      { label: "提交前", text: "确认对象、证据和结论，理由写清依据或工单号。" },
     ];
   }
 
   return [
     { label: "要做什么", text: actionText || "执行这项后台操作。" },
-    { label: "影响", text: amplifies ? (localHistory ? "提交后以系统处理结果为准,并会放大资金流出;本地配置面请人工确认资金方向影响。" : "提交后以系统处理结果为准,并会放大资金流出;系统会先检查备付金覆盖率。") : (localHistory ? "提交后以系统处理结果为准,并记录在本页修改历史。" : "提交后以系统处理结果为准,并写入 A2 审计记录。") },
+    { label: "影响", text: amplifies ? (localHistory ? "这项操作会让平台多付钱，请确认资金影响。" : "这项操作会让平台多付钱，提交时会先检查兑付覆盖率。") : (localHistory ? "结果会记录在本页修改历史。" : "结果会记录在操作记录中。") },
     { label: "提交前", text: defaultCheck },
   ];
 }
 
-export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history" }) {
-  const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit, auditSink === "local-history")
-    .map((row) => row.label === "影响" && completionCopy ? { ...row, text: completionCopy } : row);
+export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink, kind, stated }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history"; kind: OperatorBriefKind; stated?: { impact: string; check: string } }) {
+  const surface = useRdSurface();
+  const businessBrief = stated ?? STATED_BRIEF[kind];
+  const brief = buildOperatorBrief(action, !!amplifies, !!hasEdit, auditSink === "local-history", kind, stated)
+    .map((row) => row.label === "影响" && completionCopy && !businessBrief ? { ...row, text: completionCopy } : row);
+  if (!surface && businessBrief && completionCopy && completionCopy !== businessBrief.impact) brief.push({ label: "生效与复核", text: completionCopy });
   const detailText = compactText(plainText(detail));
+  // 业务后果与生效／批准资格分别常显；默认套话只留在详情，不占关键信息层。
+  if (surface) {
+    const impact = businessBrief?.impact;
+    return (
+      <div className="rd-operation-brief">
+        {impact && <p className="rd-operation-impact"><KeepText text={impact} /></p>}
+        {completionCopy && completionCopy !== impact && <p className="rd-operation-completion"><KeepText text={completionCopy} /></p>}
+        <details className="operator-brief rd-brief">
+          <summary>
+            <span className="rd-brief-head"><b>执行摘要</b></span>
+            <span className="rd-brief-toggle"><span className="brief-closed">查看详情</span><span className="brief-open">收起</span></span>
+          </summary>
+          <dl className="rd-brief-rows">
+            {brief.filter((row) => row.label !== "要做什么" && !(row.label === "影响" && (impact || completionCopy))).map((row) => <div key={row.label}><dt>{row.label}</dt><dd><KeepText text={row.text}>{(part) => <AutoGloss>{part}</AutoGloss>}</KeepText></dd></div>)}
+            {detailText && detailText !== compactText(impact ?? "") && detailText !== compactText(completionCopy ?? "") && <div><dt>说明</dt><dd>{typeof detail === "string" ? <KeepText text={detail}>{(part) => <AutoGloss>{part}</AutoGloss>}</KeepText> : <AutoGloss>{detail}</AutoGloss>}</dd></div>}
+          </dl>
+        </details>
+      </div>
+    );
+  }
+  const rows = (
+    <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+      {brief.map((row) => (
+        <div key={row.label} style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
+          <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{row.label}</span>
+          <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>
+            <AutoGloss>{row.text}</AutoGloss>
+          </span>
+        </div>
+      ))}
+      {detailText && (
+        <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
+          <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>说明</span>
+          <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.7 }}>
+            <AutoGloss>{detail}</AutoGloss>
+          </span>
+        </div>
+      )}
+    </div>
+  );
   return (
     <details className="tint brand operator-brief" style={{ marginBottom: 16, border: 0 }}>
       <summary
@@ -771,26 +971,7 @@ export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, complet
           <span className="brief-open">收起 <span aria-hidden="true">▲</span></span>
         </span>
       </summary>
-      <div>
-        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-          {brief.map((row) => (
-            <div key={row.label} style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
-              <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{row.label}</span>
-              <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>
-                <AutoGloss>{row.text}</AutoGloss>
-              </span>
-            </div>
-          ))}
-          {detailText && (
-            <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
-              <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>业务规则</span>
-              <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.7 }}>
-                <AutoGloss>{detail}</AutoGloss>
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
+      <div>{rows}</div>
     </details>
   );
 }
@@ -1009,7 +1190,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       jurisdiction: spec.jurisdiction ?? "",
       languageScope: spec.languageScope ?? spec.languageScopes?.[0] ?? DEFAULT_LANGUAGE_SCOPES[0],
       effectiveDate: spec.effectiveDate ?? "",
-      // I5 新版本发布必定触发重新确认；旧草稿即使曾保存 false，编辑时也强制纠正。
+      // I5 切换生效版本时要求重新确认；发布只封存内容。旧草稿也统一保存该要求。
       requiresReack: "true",
       zh: spec.zh ?? "",
       vi: spec.vi ?? "",
@@ -1135,7 +1316,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return { active: spec.currentActive ?? "500", grace: spec.currentGrace ?? "200", expired: spec.currentExpired ?? "0" };
   }
   if (spec.kind === "multi-field") {
-    return Object.fromEntries(spec.fields.map((f) => [f.key, f.current ?? f.options?.[0] ?? ""]));
+    return Object.fromEntries(spec.fields.map((f) => [f.key, f.mustChoose ? "" : f.current ?? f.options?.[0] ?? ""]));
   }
   if (spec.kind === "weekly-task-edit") {
     return { cond: spec.currentCond ?? "", reward: spec.currentReward ?? "", status: spec.currentStatus ?? "active", completionType: spec.currentCompletionType ?? "event", completionEvent: spec.currentCompletionEvent ?? "" };
@@ -1173,7 +1354,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   }
   if (spec.kind === "vrank-reward-edit") {
     return {
-      rtype: spec.currentType ?? "nex",
+      rtype: spec.currentType ?? "uvt",
       amount: spec.currentAmount ?? "",
       voucherId: spec.currentVoucherId ?? (spec.voucherOptions?.[0] ?? ""),
       skuId: spec.currentSkuId ?? (spec.skuOptions?.[0] ?? ""),
@@ -1182,6 +1363,9 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   }
   return { rollback: "", ack: "false" };
 }
+
+const DISCLOSURE_JURISDICTION_CODE = /^[A-Z][A-Z0-9_-]{1,15}$/;
+const DISCLOSURE_JURISDICTION_CODE_HELP = "以字母开头，2–16 位字母、数字、下划线或短横线";
 
 function missingBusinessFields(spec: BusinessFormSpec | undefined, state: BusinessFormValue): string[] {
   if (!spec) return [];
@@ -1210,8 +1394,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("version", "文案版本");
     needs("surface", "投放模块");
     needs("copyPosition", "文案位置");
-    needs("phaseMin", "最低 P 阶段");
-    needs("phaseMax", "最高 P 阶段");
+    needs("phaseMin", "最低阶段");
+    needs("phaseMax", "最高阶段");
     needs("language", "语言");
     needs("registrationDaysGt", "注册天数");
     needs("trafficSplit", "分流比例");
@@ -1219,7 +1403,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("zh", "中文草稿");
     needs("en", "英文草稿");
     needs("vi", "越南语文案");
-    if (Number(state.phaseMin?.replace("P", "")) > Number(state.phaseMax?.replace("P", ""))) missing.push("P 阶段范围");
+    if (Number(state.phaseMin?.replace("P", "")) > Number(state.phaseMax?.replace("P", ""))) missing.push("阶段范围");
     if (!Number.isInteger(Number(state.registrationDaysGt)) || Number(state.registrationDaysGt) < 0) missing.push("注册天数非负整数");
     const split = Number(state.trafficSplit);
     if (!Number.isFinite(split) || split <= 0 || split > 100) missing.push("分流比例 1-100");
@@ -1232,8 +1416,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("description", "文案名称");
     needs("surface", "投放模块");
     needs("copyPosition", "文案位置");
-    needs("phaseMin", "最低 P 阶段");
-    needs("phaseMax", "最高 P 阶段");
+    needs("phaseMin", "最低阶段");
+    needs("phaseMax", "最高阶段");
     needs("language", "语言");
     needs("registrationDaysGt", "注册天数");
     needs("trafficSplit", "分流比例");
@@ -1242,7 +1426,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("zh", "中文文案");
     needs("en", "英文文案");
     needs("vi", "越南语文案");
-    if (Number(state.phaseMin?.replace("P", "")) > Number(state.phaseMax?.replace("P", ""))) missing.push("P 阶段范围");
+    if (Number(state.phaseMin?.replace("P", "")) > Number(state.phaseMax?.replace("P", ""))) missing.push("阶段范围");
     if (!Number.isInteger(Number(state.registrationDaysGt)) || Number(state.registrationDaysGt) < 0) missing.push("注册天数非负整数");
     const split = Number(state.trafficSplit);
     if (!Number.isFinite(split) || split <= 0 || split > 100) missing.push("分流比例 1-100");
@@ -1271,12 +1455,12 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const audienceSignatures = versions
       .map((version) => copyExperimentAudienceSignature(copy?.versions.find((item) => item.value === version)))
       .filter(Boolean);
-    if (audienceSignatures.length === versions.length && new Set(audienceSignatures).size > 1) missing.push("所选版本的继承受众必须完全一致");
+    if (audienceSignatures.length === versions.length && new Set(audienceSignatures).size > 1) missing.push("所选版本的投放对象须一致");
     if (splits.some((split) => !Number.isInteger(split) || split <= 0 || split >= 100)) missing.push("每个分流比例必须为 1-99 的整数");
     if (splits.reduce((sum, split) => sum + split, 0) !== 100) missing.push("分流比例合计必须为 100%");
-    if (state.note?.length > 255) missing.push("实验备注不能超过 255 字");
+    if (state.note?.length > 255) missing.push("测试备注不能超过 255 字");
   } else if (spec.kind === "copy-experiment-start") {
-    if (state.ack !== "true") missing.push("启动实验确认");
+    if (state.ack !== "true") missing.push("勾选启动确认");
   } else if (spec.kind === "course-authoring") {
     ["slug", "category", "format", "difficulty", "duration", "reward", "titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"].forEach((key) => needs(key, ({ slug: "课程标识", category: "分类", format: "形式", difficulty: "难度", duration: "预计时长", reward: "完成奖励", titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文" } as Record<string, string>)[key] ?? "课程字段"));
     for (const key of ["titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]) {
@@ -1312,7 +1496,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isInteger(passScore) || passScore < 1 || passScore > 100) missing.push("通过分数 1-100");
     if (!Number.isInteger(retries) || retries < 0 || retries > 10) missing.push("重试次数 0-10");
     needs("completionCond", "完成条件");
-    needs("rewardEvent", "发奖触发事件");
+    needs("rewardEvent", "何时发奖");
   } else if (spec.kind === "campaign-edit") {
     ["title", "body", "tier", "audience", "schedule", "budget"].forEach((key) => needs(key, key));
     if (!Number.isFinite(Number(state.budget)) || Number(state.budget) < 0) missing.push("预算数值");
@@ -1340,16 +1524,22 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       if (state.languageScope?.includes("en")) ["enTitle", "enBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
     });
   } else if (spec.kind === "disclosure-jurisdiction") {
-    needs("code", "适用地区代码");
-    needs("name", "适用地区名称");
-    if (!/^[A-Z][A-Z0-9_-]{1,15}$/.test((state.code ?? "").trim().toUpperCase())) missing.push("适用地区代码格式（2-16 位大写字母、数字、下划线或短横线）");
+    needs("code", "适用范围代码");
+    needs("name", "适用范围名称");
+    const nameError = appVisibleTextError(state.name, "适用范围名称");
+    if (nameError) missing.push(nameError);
+    if (spec.mode === "edit" && state.name?.trim() === spec.name) missing.push("名称没有改动");
+    if (!DISCLOSURE_JURISDICTION_CODE.test((state.code ?? "").trim().toUpperCase())) missing.push(DISCLOSURE_JURISDICTION_CODE_HELP);
   } else if (spec.kind === "disclosure-publish-review") {
     if (spec.targetChapters.length !== 7) missing.push("完整 7 章节");
     if (spec.targetChapters.some((chapter) => !chapter.zh.trim() || !chapter.vi.trim() || !chapter.zhBody.trim() || !chapter.viBody.trim())) missing.push("七章中越双语完整内容");
     if (state.jurisdictionConfirmed !== "true") missing.push("受众适用地区确认");
-    if (state.bilingualConfirmed !== "true") missing.push("七章中越双语核对");
+    if (state.bilingualConfirmed !== "true") missing.push("七章中越英内容核对");
   } else if (spec.kind === "disclosure-matrix") {
-    ["jurisdictionCode", "jurisdictionName", "countryCodes", "version"].forEach((key) => needs(key, key));
+    needs("jurisdictionCode", "适用范围");
+    needs("version", "已发布版本");
+    needs("countryCodes", "适用国家/地区");
+    if (spec.unchanged && state.version === spec.unchanged.version && (state.countryCodes ?? "") === [...spec.unchanged.countryCodes].sort().join(",")) missing.push("版本或适用国家没有改动");
   } else if (spec.kind === "trust-section-authoring") {
     ["version", "description", "structure"].forEach((key) => needs(key, key));
     if (!/^v[1-9][0-9]{0,8}$/.test(state.version ?? "")) missing.push("版本号格式（如 v6）");
@@ -1367,7 +1557,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const normalizedFieldKeys = fieldKeys.filter(Boolean).map((key) => key.toLowerCase());
     if (normalizedFieldKeys.length !== new Set(normalizedFieldKeys).size) missing.push("字段标识不能重复（不区分大小写）");
   } else if (spec.kind === "trust-section-publish") {
-    if (spec.requireDataSource) needs("dataSource", "财务/UVEL数据来源");
+    if (spec.requireDataSource) needs("dataSource", "财务/UVT数据来源");
     const trilingual = validateTrustSectionTrilingualFields(spec.targetFields);
     if (!trilingual.valid) missing.push(`中越英字段不完整：${trilingual.missing.join("、")}`);
     if (state.bilingualConfirmed !== "true") missing.push("中越英三语确认");
@@ -1416,7 +1606,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     ["exportType", "fields", "piiLevel", "maskPolicy", "recipient", "ticket"].forEach((k) => needs(k, k));
     if (spec.kpiStructuredRange && isL5KpiExport(state.exportType ?? "")) {
       try { l5KpiRange(state); } catch (error) { missing.push((error as Error).message); }
-    } else needs("timeRange", "timeRange");
+    } else needs("timeRange", "时间范围");
   } else if (spec.kind === "task-edit") {
     needs("name", "任务名称");
     needs("path", "跳转路径");
@@ -1439,22 +1629,12 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (![a, g, e].every((n) => Number.isFinite(n) && n >= 0)) missing.push("三档须为非负数");
     else if (a < g || g < e) missing.push("须满额 ≥ 宽限 ≥ 过期");
   } else if (spec.kind === "multi-field") {
+    const feedback = spec.feedback?.(state);
+    if (feedback?.invalid) missing.push(feedback.message);
     const isVisible = (field: (typeof spec.fields)[number]) =>
       !field.visibleWhen || (state[field.visibleWhen.key] ?? "") === field.visibleWhen.equals;
     spec.fields.filter((f) => isVisible(f) && f.required !== false).forEach((f) => needs(f.key, f.label));
-    spec.fields.filter(isVisible).forEach((field) => {
-      const raw = (state[field.key] ?? "").trim();
-      if (!raw) return;
-      if (field.minLength != null && raw.length < field.minLength) missing.push(`${field.label} 至少 ${field.minLength} 位`);
-      if (field.maxLength != null && raw.length > field.maxLength) missing.push(`${field.label} 最多 ${field.maxLength} 位`);
-      if (field.pattern) {
-        try {
-          if (!new RegExp(field.pattern).test(raw)) missing.push(field.patternMessage ?? `${field.label} 格式不正确`);
-        } catch {
-          missing.push(`${field.label} 校验规则不可用`);
-        }
-      }
-    });
+    missing.push(...Object.values(multiFieldIssues(spec, state)));
     spec.fields.filter((f) => f.requiredWhenAddedTo).forEach((f) => {
       const target = spec.fields.find((candidate) => candidate.key === f.requiredWhenAddedTo);
       if (!target) return;
@@ -1465,7 +1645,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (spec.requireAnyChange) {
       const normalize = (field: (typeof spec.fields)[number], raw: string | undefined) => {
         const value = (raw ?? "").trim();
-        if (field.inputKind === "number" && value && Number.isFinite(Number(value))) return String(Number(value));
+        if (field.inputKind === "number" && value && Number.isFinite(Number(value))) return normalizeEditDecimal(value) ?? value;
         return value;
       };
       const changed = spec.fields.filter(isVisible).some((field) =>
@@ -1474,18 +1654,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     }
     const nums = spec.fields.filter((f) => isVisible(f) && f.inputKind === "number").map((f) => ({ f, n: Number(state[f.key]) }));
     const hasInvalidNumber = nums.some(({ n }) => !Number.isFinite(n));
-    if (hasInvalidNumber) {
-      missing.push("数值字段须为有效数字");
-    } else {
-      nums.forEach(({ f, n }) => {
-        if (f.min != null && n < f.min) missing.push(`${f.label} 须 ≥ ${f.min}`);
-        if (f.max != null && n > f.max) missing.push(`${f.label} 须 ≤ ${f.max}`);
-        if (f.step != null && f.step > 0 && f.min != null) {
-          const quotient = (n - f.min) / f.step;
-          if (Math.abs(quotient - Math.round(quotient)) > 1e-9) missing.push(`${f.label} 须按 ${f.step} 递增`);
-        }
-      });
-    }
+    if (hasInvalidNumber) missing.push("数值字段须为有效数字");
     if (!hasInvalidNumber && spec.ascending) {
       for (let i = 1; i < nums.length; i++) {
         if (nums[i].n <= nums[i - 1].n) { missing.push(`${nums[i].f.label} 须大于 ${nums[i - 1].f.label}`); break; }
@@ -1524,14 +1693,13 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("status", "状态");
     if (state.type === "fixed") {
       const a = Number(state.amountUSD);
-      if (!Number.isFinite(a) || a <= 0) missing.push("满减面值(正数)");
+      if (!Number.isFinite(a) || a < 1 || a > 1_000_000) missing.push("满减面值(1–1,000,000 USDT)");
     } else if (state.type === "percent") {
       const p = Number(state.percent);
-      if (!Number.isFinite(p) || p <= 0 || p >= 100) missing.push("折扣率 1-99");
+      if (!Number.isInteger(p) || p < 1 || p > 99) missing.push("折扣率须为 1–99 的整数");
     }
     const surfs = (state.claimSurfaces ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-    if (surfs.length === 0) missing.push("领取入口页面(至少一个)");
-    else if (surfs.some((s) => !["home", "store", "me", "earn"].includes(s))) missing.push("领取入口仅限 home/store/me/earn");
+    if (surfs.some((s) => !["home", "store", "me", "earn"].includes(s))) missing.push("领取入口仅限 home/store/me/earn");
     const issuanceLimit = Number(state.issuanceLimit);
     if (!Number.isSafeInteger(issuanceLimit) || issuanceLimit < 0 || issuanceLimit > 10_000_000) {
       missing.push("发行上限须为 0-10000000 的整数");
@@ -1542,9 +1710,14 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isSafeInteger(delay) || delay < 0 || delay > 60000) missing.push("弹窗延迟须为 0-60000 毫秒");
     if (!Number.isSafeInteger(cooldown) || cooldown < 0 || cooldown > 720) missing.push("弹窗冷却须为 0-720 小时");
     if (!Number.isSafeInteger(cap) || cap < 1 || cap > 10) missing.push("单会话上限须为 1-10 次");
+  } else if (spec.kind === "quest-event-config") {
+    const target = state.targetValue?.trim();
+    if (target && (!Number.isInteger(Number(target)) || Number(target) < 1 || Number(target) > 1_000_000_000)) {
+      missing.push("目标值须为 1–1,000,000,000 的整数");
+    }
   } else if (spec.kind === "vrank-reward-edit") {
     needs("rtype", "奖励类型");
-    if (state.rtype === "usdt" || state.rtype === "nex") {
+    if (state.rtype === "usdt" || state.rtype === "uvt") {
       const a = Number(state.amount);
       if (!Number.isFinite(a) || a <= 0) missing.push("奖励金额(正数)");
     } else if (state.rtype === "voucher") {
@@ -1557,11 +1730,11 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   } else if (spec.kind === "mission-create") {
     needs("missionCode", "任务编号");
     needs("missionName", "任务名称");
-    needs("rewardPoints", "奖励 UVEL 数");
+    needs("rewardPoints", "奖励 UVT 数");
     needs("category", "任务类别");
     needs("actionRoute", "去完成页面");
     if (!Number.isSafeInteger(Number(state.rewardPoints)) || Number(state.rewardPoints) < 0) {
-      missing.push("奖励 UVEL 数须为非负整数");
+      missing.push("奖励 UVT 数须为非负整数");
     }
   }
   return missing;
@@ -1599,12 +1772,12 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "voucher-config") return state.name || undefined;
   if (spec.kind === "promo-banner-edit") {
     const f = Number(state.baseReward) * Number(state.multiplier);
-    return Number.isFinite(f) ? `${Math.round(f)} NEX(${state.baseReward}×${state.multiplier})` : undefined;
+    return Number.isFinite(f) ? `${Math.round(f)} UVT(${state.baseReward}×${state.multiplier})` : undefined;
   }
   if (spec.kind === "vrank-reward-edit") {
     const t = state.rtype;
     if (t === "usdt") return state.amount ? `USDT $${state.amount}` : undefined;
-    if (t === "nex") return state.amount ? `${Number(state.amount).toLocaleString()} UVEL` : undefined;
+    if (t === "uvt") return state.amount ? `${Number(state.amount).toLocaleString()} UVT` : undefined;
     if (t === "voucher") return state.voucherId ? `代金券 ${spec.voucherLabels?.[state.voucherId] ?? state.voucherId}` : undefined;
     if (t === "sku") return state.skuId ? `SKU ${spec.skuLabels?.[state.skuId] ?? state.skuId}` : undefined;
     if (t === "custom") return state.custom || undefined;
@@ -1613,7 +1786,12 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   return undefined;
 }
 
-export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadStateChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void; onUploadStateChange: (key: string, state: "uploading" | "failed" | undefined) => void }) {
+export function BusinessFormBlock({ spec, value, attempted = false, onChange, onSelectionChange, onUploadStateChange }: { spec: BusinessFormSpec; value: BusinessFormValue; /** 点过提交：multi-field 的校验提示刚打开不报，失焦或点过提交才报（VS-107）。 */ attempted?: boolean; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void; onUploadStateChange: (key: string, state: "uploading" | "failed" | undefined) => void }) {
+  // 改版页面里必填写星号（CP-52），不写红色的「· 必填」。
+  const surface = useRdSurface();
+  const formId = useId();
+  const [formLeft, setFormLeft] = useState(false);
+  const [leftFields, setLeftFields] = useState<Record<string, boolean>>({});
   const [multiSelectSearch, setMultiSelectSearch] = useState<Record<string, string>>({});
   const [assetUploading, setAssetUploading] = useState<Record<string, boolean>>({});
   const [assetNames, setAssetNames] = useState<Record<string, string>>({});
@@ -1622,17 +1800,24 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   const latestValueRef = useRef(value);
   useEffect(() => { latestValueRef.current = value; }, [value]);
   const set = (key: string, v: string) => {
-    const next = { ...latestValueRef.current, [key]: v };
+    const changed = { ...latestValueRef.current, [key]: v };
+    const next = spec.kind === "multi-field" && spec.onFieldChange ? spec.onFieldChange(key, changed) : changed;
     latestValueRef.current = next;
     onChange(next);
   };
+  // 改版页面用 rd 下拉，和框里别的控件同高同样子；旧页面仍是原生下拉（CP-57）。
+  const choice = ({ label, proof, current, disabled, onValue, options }: { label: string; proof?: string; current: string; disabled?: boolean; onValue: (next: string) => void; options: readonly { value: string; label: ReactNode; disabled?: boolean }[] }) => surface
+    ? <RdSelect aria-label={label} data-proof={proof} value={current} disabled={disabled} onChange={onValue} options={options} />
+    : <select className="fld" aria-label={label} data-proof={proof} value={current} disabled={disabled} onChange={(event) => onValue(event.target.value)}>{options.map((o) => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}</select>;
   const textArea = (key: string, label: string, placeholder: string, rows = 3, maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
       <textarea rows={rows} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
-  const input = (key: string, label: string, placeholder: string, type = "text", maxLength?: number) => (
+  const input = (key: string, label: ReactNode, placeholder: string, type = "text", maxLength?: number) => surface ? (
+    <RdField label={label}>{(control) => <RdInput {...control} type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />}</RdField>
+  ) : (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
       <input className="fld" type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
@@ -1642,14 +1827,17 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const proof = typeof proofOrLabels === "string" ? proofOrLabels : undefined;
     const labels = typeof proofOrLabels === "string" ? optionLabels : proofOrLabels;
     const current = value[key] ?? options[0] ?? "";
-    const displayOption = (option: string) => ({ NEX: "UVEL", nex: "UVEL", server: "服务器", client: "客户端", "server+client": "服务器与客户端", string: "文本", number: "数值", boolean: "是或否", enum: "固定选项", timestamp: "时间", id: "编号", "无 PII": "无个人隐私信息", "低(脱敏 ID)": "仅部分隐藏的编号", "默认脱敏": "默认隐藏敏感信息", "上架中 active": "上架中", "已下架 paused": "已下架", "超管": "超级管理员" } as Record<string, string>)[option] ?? option.replace(/^KPI/, "关键指标").replace(/\bStaking\b/g, "质押").replace(/\bGenesis\b/g, "创世节点").replace(/([\u3400-\u9fff])\s+(?:active|paused|fixed|percent|new|all|true|false)\b/g, "$1");
+    const displayOption = (option: string) => ({ UVT: "UVT", uvt: "UVT", server: "服务器", client: "客户端", "server+client": "服务器与客户端", string: "文本", number: "数值", boolean: "是或否", enum: "固定选项", timestamp: "时间", id: "编号", "无 PII": "无个人隐私信息", "低(脱敏 ID)": "仅部分隐藏的编号", "默认脱敏": "默认隐藏敏感信息", "上架中 active": "上架中", "已下架 paused": "已下架", "超管": "超级管理员" } as Record<string, string>)[option] ?? option.replace(/^KPI/, "关键指标").replace(/\bStaking\b/g, "质押").replace(/\bGenesis\b/g, "创世节点").replace(/([\u3400-\u9fff])\s+(?:active|paused|fixed|percent|new|all|true|false)\b/g, "$1");
+    const choiceOptions = [
+      ...(unavailableLabel && !options.includes(current) ? [{ value: current, label: unavailableLabel, disabled: true }] : []),
+      ...(options.length === 0 ? [{ value: "", label: "暂无可选项" }] : options.map((o) => ({ value: o, label: typeof labels?.[o] === "string" ? displayOption(String(labels[o])) : labels?.[o] ?? displayOption(o) }))),
+    ];
+    const onValue = (next: string) => onValueChange ? onValueChange(next) : set(key, next);
+    if (surface) return <RdField label={label}>{(control) => <RdSelect {...control} aria-label={label} data-proof={proof} value={current} disabled={options.length === 0} onChange={onValue} options={choiceOptions} />}</RdField>;
     return (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
-      <select className="fld" data-proof={proof} value={current} disabled={options.length === 0} onChange={(e) => onValueChange ? onValueChange(e.target.value) : set(key, e.target.value)}>
-        {unavailableLabel && !options.includes(current) && <option value={current} disabled>{unavailableLabel}</option>}
-        {options.length === 0 ? <option value="">无后端返回选项</option> : options.map((o) => <option key={o} value={o}>{typeof labels?.[o] === "string" ? displayOption(String(labels[o])) : labels?.[o] ?? displayOption(o)}</option>)}
-      </select>
+      {choice({ label, proof, current, disabled: options.length === 0, onValue, options: choiceOptions })}
     </label>
     );
   };
@@ -1747,17 +1935,154 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       const next = (value[target.key] ?? "").split(",").map((item) => item.trim()).filter(Boolean);
       return next.some((item) => !initial.includes(item));
     });
+    // 改版页面不写「填写设置」：框的标题已经说了，小标题和字段名叠在一起（VS-104）。
+    const legend = spec.title ?? (surface ? undefined : "填写设置");
+    const feedback = spec.feedback?.(value);
+    const issues = surface ? multiFieldIssues(spec, value) : {};
+    const fieldError = (key: string) => (attempted || leftFields[key] ? issues[key] : undefined) ?? (feedback?.invalid && feedback.field === key && (attempted || formLeft || feedback.live) ? feedback.message : undefined);
+    // 只有一项时占满一行，不留半边空。
+    const alone = surface && visibleFields.length === 1;
+    const fieldName = (f: (typeof spec.fields)[number]) => <>
+      {f.label}{surface ? f.required !== false ? <span className="rd-form-required" aria-hidden="true">*</span> : <span className="rd-form-hint">选填</span> : f.required !== false && <> <b style={{ color: "var(--v5-danger)" }}>· 必填</b></>}
+      {surface && f.explain && <Explain label={`${f.label}的说明`} content={f.explain} />}
+    </>;
+    const onFormBlur = (event: FocusEvent<HTMLDivElement>) => {
+      setFormLeft(true);
+      const key = event.target.id.startsWith(`${formId}-`) ? event.target.id.slice(formId.length + 1) : "";
+      if (key) setLeftFields((current) => current[key] ? current : { ...current, [key]: true });
+    };
+    // 改版页面：字段用 rd 的 Field 和控件画，名字、取值、校验和 id 与旧画法相同（VS-104、CP-52）。
+    if (surface) return (
+      <div className="rd-business-form" data-business-form="multi-field" onBlur={onFormBlur}>
+        {legend && <div className="rd-form-group-title">{legend}</div>}
+        <div className="rd-form-grid" data-cols={alone ? undefined : "2"} data-dense="">
+          {visibleFields.map((f) => {
+            const span = f.wide || alone ? { gridColumn: "1 / -1" } : undefined;
+            const id = `${formId}-${f.key}`;
+            const error = fieldError(f.key);
+            const help = f.help && !error ? (f.inputKind === "date" && value[f.key] ? `已选 ${value[f.key]}，${f.help}` : f.help) : undefined;
+            const warning = f.warning?.(value) ?? (f.warnAbove != null && Number(value[f.key]) > f.warnAbove ? f.warnText ?? `已超过 ${f.warnAbove} 的建议上限` : undefined);
+            if (f.inputKind === "multi-select") return <div key={f.key} style={f.wide ? { gridColumn: "1 / -1" } : undefined}>{multiSelect(f.key, f.label, f.options ?? [], `multi-select-${f.key}`, f.optionLabels, f.searchable, f.current, f.showDiff)}</div>;
+            if (f.inputKind === "checkbox") return (
+              <div key={f.key} className="rd-form-field" style={span}>
+                <RdCheck id={id} label={<>{f.label}{f.required === false && <span className="rd-form-hint">选填</span>}</>} explain={f.explain} help={help} required={f.required !== false} aria-required={f.required !== false} aria-invalid={error ? true : undefined} checked={value[f.key] === "true"} onChange={(e) => set(f.key, e.target.checked ? "true" : "")} />
+                {warning && <div role="status" className="rd-form-warning">{warning}</div>}
+                {error && <div role="alert" className="rd-form-error">{error}</div>}
+              </div>
+            );
+            if (f.inputKind === "asset-upload") return (
+              <div key={f.key} className="rd-form-field" style={span}>
+                <label className="rd-form-label" htmlFor={id}>{f.label}{f.required !== false ? <span className="rd-form-required" aria-hidden="true">*</span> : <span className="rd-form-hint">选填</span>}{f.explain && <Explain label={`${f.label}的说明`} content={f.explain} />}</label>
+                <input
+                  id={id}
+                  className="rd-input rd-file-input"
+                  type="file"
+                  accept={f.accept ?? "image/jpeg,image/png,image/webp"}
+                  aria-label={f.label}
+                  required={f.required !== false}
+                  aria-required={f.required !== false}
+                  disabled={assetUploading[f.key]}
+                  ref={(input) => { assetInputs.current[f.key] = input; }}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    setAssetErrors((current) => ({ ...current, [f.key]: "" }));
+                    if (!file) {
+                      onUploadStateChange(f.key, undefined);
+                      return;
+                    }
+                    if (!(f.accept ?? "image/jpeg,image/png,image/webp").split(",").includes(file.type) || file.size > 10 * 1024 * 1024) {
+                      onUploadStateChange(f.key, "failed");
+                      setAssetErrors((current) => ({ ...current, [f.key]: "请选择允许的图片格式，大小不超过 10 MB。" }));
+                      return;
+                    }
+                    onUploadStateChange(f.key, "uploading");
+                    setAssetUploading((current) => ({ ...current, [f.key]: true }));
+                    const upload = f.uploadPurpose === "vietqr-receipt"
+                      ? uploadD1VietQrReceiptEvidence(file)
+                      : uploadAdminMedia(file, {
+                          domain: f.uploadDomain ?? "shared",
+                          usage: f.uploadUsage ?? "general",
+                          entityType: "MEDIA_ASSET",
+                          operator: f.uploadOperator,
+                          uploadTarget: f.uploadTarget,
+                        });
+                    void upload.then((asset) => {
+                      set(f.key, asset.assetId);
+                      setAssetNames((current) => ({ ...current, [f.key]: file.name }));
+                      onUploadStateChange(f.key, undefined);
+                    }).catch((error) => {
+                      onUploadStateChange(f.key, "failed");
+                      setAssetErrors((current) => ({
+                        ...current,
+                        [f.key]: displayAdminError(error),
+                      }));
+                    }).finally(() => {
+                      setAssetUploading((current) => ({ ...current, [f.key]: false }));
+                    });
+                  }}
+                />
+                <div className="rd-form-help">
+                  {assetUploading[f.key] ? "正在上传并校验图片…" : assetNames[f.key] ? `已上传：${assetNames[f.key]}` : (f.help ?? "请上传清晰的银行回单截图")}
+                </div>
+                {assetErrors[f.key] && <div role="alert" className="rd-form-error">{assetErrors[f.key]}</div>}
+                {!assetUploading[f.key] && (value[f.key] || assetNames[f.key] || assetErrors[f.key]) && (
+                  <div><RdButton size="sm" onClick={(event) => {
+                    event.preventDefault();
+                    set(f.key, "");
+                    setAssetNames((current) => ({ ...current, [f.key]: "" }));
+                    setAssetErrors((current) => ({ ...current, [f.key]: "" }));
+                    if (assetInputs.current[f.key]) assetInputs.current[f.key]!.value = "";
+                    onUploadStateChange(f.key, undefined);
+                  }}>{f.required === false ? "移除图片" : "清除图片并重新上传"}</RdButton></div>
+                )}
+              </div>
+            );
+            return (
+              <div key={f.key} style={span}>
+                <RdField id={id} label={f.label} required={f.required !== false} hint={f.required === false ? "选填" : undefined} explain={f.explain} help={help} error={error}>
+                  {(control) => <>
+                    {f.inputKind === "select" && f.segments ? (
+                      <Segments label={f.label} value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(next) => set(f.key, next)}
+                        items={(f.options ?? []).map((o) => ({ value: o, label: f.optionLabels?.[o] ?? o }))} />
+                    ) : f.inputKind === "select" ? (
+                      <RdSelect {...control} aria-label={f.label} required={f.required !== false} placeholder={f.mustChoose ? "请选择" : undefined}
+                        value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(next) => set(f.key, next)}
+                        options={(f.options ?? []).map((o) => ({ value: o, label: f.optionLabels?.[o] ?? o, disabled: f.disabledOptions?.includes(o) }))} />
+                    ) : f.inputKind === "number" ? (
+                      <RdNumberInput {...control} min={f.min} max={f.max} step={f.step} required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                    ) : (
+                      <RdInput {...control} type={f.inputKind === "datetime-local" || f.inputKind === "date" ? f.inputKind : "text"} minLength={f.minLength} maxLength={f.maxLength} required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                    )}
+                    {warning && <div role="status" className="rd-form-warning">{warning}</div>}
+                  </>}
+                </RdField>
+              </div>
+            );
+          })}
+        </div>
+        {feedback?.message && (!feedback.invalid
+          ? <div role="status" className="rd-form-help">{feedback.message}</div>
+          // 填错是「要你处理」：橙黄，刚打开不报，失焦或点过提交才报（VS-107）。
+          : !feedback.field && (attempted || formLeft) && <div role="alert" className="rd-form-error">{feedback.message}</div>)}
+        {spec.hint && <div className="rd-form-help">{spec.hint}</div>}
+      </div>
+    );
     return (
-      <div className="field" data-business-form="multi-field">
-        <span className="bf-legend">{spec.title ?? "业务表单 · 多字段配置"}</span>
+      <div className="field" data-business-form="multi-field" onBlur={(event) => {
+        setFormLeft(true);
+        const key = event.target.id.startsWith(`${formId}-`) ? event.target.id.slice(formId.length + 1) : "";
+        if (key) setLeftFields((current) => current[key] ? current : { ...current, [key]: true });
+      }}>
+        {legend && <span className="bf-legend">{legend}</span>}
         <div className="grid g-2" style={{ gap: 10 }}>
           {visibleFields.map((f) => f.inputKind === "multi-select" ? (
             <div key={f.key} style={f.wide ? { gridColumn: "1 / -1" } : undefined}>
               {multiSelect(f.key, f.label, f.options ?? [], `multi-select-${f.key}`, f.optionLabels, f.searchable, f.current, f.showDiff)}
             </div>
           ) : f.inputKind === "asset-upload" ? (
-            <label className="field" style={{ marginBottom: 0, ...(f.wide ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
-              <span>{f.label} {f.required !== false && <b style={{ color: "var(--v5-danger)" }}>· 必填</b>}</span>
+            <label className="field" style={{ marginBottom: 0, ...(f.wide || alone ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
+              <span>{fieldName(f)}</span>
               <input
                 className="fld"
                 type="file"
@@ -1789,6 +2114,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                         usage: f.uploadUsage ?? "general",
                         entityType: "MEDIA_ASSET",
                         operator: f.uploadOperator,
+                          uploadTarget: f.uploadTarget,
                       });
                   void upload.then((asset) => {
                     set(f.key, asset.assetId);
@@ -1821,17 +2147,28 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               )}
             </label>
           ) : (
-            <label className="field" style={{ marginBottom: 0, ...(f.wide ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
-              <span>{f.label} {f.required !== false && <b style={{ color: "var(--v5-danger)" }}>· 必填</b>}</span>
-              {f.inputKind === "select" ? (
+            // htmlFor 写明：字段名里的提示图标也是按钮，不写的话 label 会连到它而不是输入框。
+            <label className="field" htmlFor={`${formId}-${f.key}`} style={{ marginBottom: 0, ...(f.wide || alone ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
+              <span>{fieldName(f)}</span>
+              {f.inputKind === "select" && surface ? (
+                <RdSelect id={`${formId}-${f.key}`} aria-label={f.label} required={f.required !== false} aria-invalid={fieldError(f.key) ? true : undefined} placeholder={f.mustChoose ? "请选择" : undefined}
+                  value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(next) => set(f.key, next)}
+                  options={(f.options ?? []).map((o) => ({ value: o, label: f.optionLabels?.[o] ?? o, disabled: f.disabledOptions?.includes(o) }))} />
+              ) : f.inputKind === "select" ? (
                 // 能枚举的值用下拉,不让运营手输(最高设计铁律:能勾选的不要输入)
-                <select className="fld" required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? f.options?.[0] ?? ""} onChange={(e) => set(f.key, e.target.value)}>
-                  {(f.options ?? []).map((o) => <option key={o} value={o}>{f.optionLabels?.[o] ?? o}</option>)}
+                <select id={`${formId}-${f.key}`} className="fld" required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(e) => set(f.key, e.target.value)}>
+                  {f.mustChoose && <option value="" disabled>请选择</option>}
+                  {(f.options ?? []).map((o) => <option key={o} value={o} disabled={f.disabledOptions?.includes(o)}>{f.optionLabels?.[o] ?? o}</option>)}
                 </select>
+              ) : f.inputKind === "checkbox" ? (
+                <input id={`${formId}-${f.key}`} type="checkbox" required={f.required !== false} aria-required={f.required !== false} checked={value[f.key] === "true"} onChange={(e) => set(f.key, e.target.checked ? "true" : "")} />
               ) : (
-                <input className="fld" type={f.inputKind === "number" ? "number" : f.inputKind === "datetime-local" ? "datetime-local" : "text"} min={f.min} max={f.max} step={f.step} minLength={f.minLength} maxLength={f.maxLength} required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                <input id={`${formId}-${f.key}`} className="fld" type={f.inputKind === "number" ? "number" : f.inputKind === "datetime-local" || f.inputKind === "date" ? f.inputKind : "text"} min={f.min} max={f.max} step={f.step} minLength={f.minLength} maxLength={f.maxLength} required={f.required !== false} aria-required={f.required !== false} aria-invalid={surface && fieldError(f.key) ? true : undefined} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
               )}
-              {f.help && <span className="tiny muted">{f.help}</span>}
+              {/* 填错时错误顶替说明那一行（VS-103）；日期框的显示格式跟浏览器走，选好后用全站的 YYYY-MM-DD 回显一次（DT-14）。 */}
+              {f.help && !(surface && fieldError(f.key)) && <span className="tiny muted">{surface && f.inputKind === "date" && value[f.key] ? `已选 ${value[f.key]}，${f.help}` : f.help}</span>}
+              {surface && fieldError(f.key) && <span role="alert" className="rd-form-error">{fieldError(f.key)}</span>}
+              {f.warning?.(value) && <span role="status" className="tiny" style={{ color: "var(--v5-warning)" }}>{f.warning(value)}</span>}
               {f.warnAbove != null && Number(value[f.key]) > f.warnAbove && (
                 <span className="tiny" style={{ display: "block", marginTop: 4, color: "var(--v5-warning)", fontWeight: 600 }}>
                   ⚠ {f.warnText ?? `已超过 ${f.warnAbove} 的建议上限`}
@@ -1840,14 +2177,20 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             </label>
           ))}
         </div>
-        {spec.hint && <div className="tint tiny" style={{ marginTop: 10 }}>{spec.hint}</div>}
+        {feedback?.message && (!surface
+          ? <div role="status" className={`tint ${feedback.invalid ? "danger" : ""}`} style={{ marginTop: 10 }}>{feedback.message}</div>
+          : !feedback.invalid
+            ? <div role="status" className="rd-form-help" style={{ marginTop: 8 }}>{feedback.message}</div>
+            // 填错是「要你处理」：橙黄，刚打开不报，失焦或点过提交才报（VS-107）。
+            : !feedback.field && (attempted || formLeft) && <div role="alert" className="rd-form-error" style={{ marginTop: 8 }}>{feedback.message}</div>)}
+        {spec.hint && <div className={surface ? "rd-form-help" : "tint tiny"} style={{ marginTop: surface ? 8 : 10 }}>{spec.hint}</div>}
       </div>
     );
   }
   if (spec.kind === "role-select") {
     return (
       <div className="field" data-business-form="role-select">
-        <span className="bf-legend">业务表单 · 改角色</span>
+        <span className="bf-legend">改角色</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("role", "目标角色", spec.roles.map((r) => r.key), "role-select-target", Object.fromEntries(spec.roles.map((r) => [r.key, r.label])))}
         </div>
@@ -1877,11 +2220,11 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             (rankOf(n) > rankOf(c) ? gained : lost).push(`${a.label}:${c}→${n}`);
           });
           if (value.role === spec.currentRole) {
-            return <div className="tint tiny" data-proof="role-perm-diff" style={{ marginTop: 8 }}>权限影响预览 · 尚未变更角色,确认按钮保持禁用。</div>;
+            return <div className="tint tiny" data-proof="role-perm-diff" style={{ marginTop: 8 }}>选择新角色后可预览权限变化。</div>;
           }
           return (
             <div className="tint tiny" data-proof="role-perm-diff" style={{ marginTop: 8 }}>
-              <div><b>权限影响预览</b> · 受影响域:<span className="mono">{[...domains].join(" / ") || "无"}</span></div>
+              <div><b>权限变化</b> · 涉及：<span className="mono">{[...domains].join(" / ") || "无"}</span></div>
               <div style={{ color: "var(--success)", marginTop: 3 }}>新增/提升 {gained.length} 项{gained.length ? ":" + gained.slice(0, 6).join("; ") + (gained.length > 6 ? "…" : "") : ""}</div>
               <div style={{ color: "var(--danger)", marginTop: 3 }}>移除/降低 {lost.length} 项{lost.length ? ":" + lost.slice(0, 6).join("; ") + (lost.length > 6 ? "…" : "") : ""}</div>
             </div>
@@ -1896,24 +2239,22 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const diffs = spec.roles.filter((r) => (value[`grant.${r.key}`] ?? r.current) !== r.current);
     return (
       <div className="field" data-business-form="permission-matrix">
-        <span className="bf-legend">业务表单 · 权限矩阵{spec.actionLabel ? <> · {spec.actionLabel}</> : null}</span>
+        <span className="bf-legend">权限设置{spec.actionLabel ? <> · {spec.actionLabel}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {spec.roles.map((r) => (
             <label key={r.key} className="field" style={{ marginBottom: 0 }}>
               <span>{r.label} 授权 · 当前 <span className="mono">{r.current}</span></span>
-              <select className="fld" data-proof={`permission-grant-${r.key}`} value={value[`grant.${r.key}`] ?? r.current} onChange={(e) => set(`grant.${r.key}`, e.target.value)}>
-                {grants.map((g) => <option key={g} value={g}>{g}</option>)}
-              </select>
+              {choice({ label: `${r.label} 授权`, proof: `permission-grant-${r.key}`, current: value[`grant.${r.key}`] ?? r.current, onValue: (next) => set(`grant.${r.key}`, next), options: grants.map((g) => ({ value: g, label: g })) })}
             </label>
           ))}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          目标授权串 <span className="mono">{businessNewValue(spec, value)}</span>{spec.guardHint ? <> · {spec.guardHint}</> : null}
+          新权限 <span className="mono">{businessNewValue(spec, value)}</span>{spec.guardHint ? <> · {spec.guardHint}</> : null}
         </div>
         <div className="tint tiny" data-proof="permission-diff-preview" style={{ marginTop: 10 }}>
           {diffs.length
-            ? <>变更预览: {diffs.map((r) => <span key={r.key} className="mono" style={{ marginRight: 8 }}>{r.label}:{r.current}→{value[`grant.${r.key}`]}</span>)}</>
-            : <>变更预览: 尚未修改任何授权项,确认按钮保持禁用。</>}
+            ? <>变化：{diffs.map((r) => <span key={r.key} className="mono" style={{ marginRight: 8 }}>{r.label}:{r.current}→{value[`grant.${r.key}`]}</span>)}</>
+            : <>还没有修改任何权限。</>}
         </div>
       </div>
     );
@@ -1935,7 +2276,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     };
     return (
       <div className="field" data-business-form={spec.kind}>
-        <span className="bf-legend">业务表单 · 中英越文案{"keyName" in spec && spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</span>
+        <span className="bf-legend">中英越文案{"keyName" in spec && spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</span>
         {spec.kind === "localized-copy" && spec.mode === "create" && (
           <div style={{ marginBottom: 10 }}>{input("messageKey", "词条", "如 home.hero.title")}</div>
         )}
@@ -1962,8 +2303,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         )}
         {isManagedCopy && (
           <div className="grid g-2" data-proof="copy-audience-builder" style={{ gap: 10, marginBottom: 10 }}>
-            {select("phaseMin", "最低 P 阶段", ["P1", "P2", "P3", "P4", "P5", "P6"])}
-            {select("phaseMax", "最高 P 阶段", ["P1", "P2", "P3", "P4", "P5", "P6"])}
+            {select("phaseMin", "最低阶段", ["P1", "P2", "P3", "P4", "P5", "P6"])}
+            {select("phaseMax", "最高阶段", ["P1", "P2", "P3", "P4", "P5", "P6"])}
             {select("language", "语言", ["all", "zh", "en", "vi"], { all: "全部语言", zh: "中文 zh", en: "英文 en", vi: "越南语 vi" })}
             {input("registrationDaysGt", "注册时长大于(天)", "0", "number")}
           </div>
@@ -1976,11 +2317,11 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         </div>
         {(spec.kind === "copy-edit" || spec.kind === "copy-create") && (
           <div style={{ marginTop: 10 }}>
-            {textArea("versionNote", "版本说明", "本次草稿变更原因、预期指标和回滚口径", 2)}
+            {textArea("versionNote", "版本说明", "本次修改的原因和预期效果", 2)}
           </div>
         )}
         {(spec.placeholders ?? []).length > 0 && (
-          <div className="tint tiny" style={{ marginTop: 10 }}>必含占位符: {(spec.placeholders ?? []).map((ph, i) => <span key={ph}><span className="mono">{ph}</span>{i < (spec.placeholders ?? []).length - 1 ? "、" : ""}</span>)}</div>
+          <div className="tint tiny" style={{ marginTop: 10 }}>必须包含的占位符：{(spec.placeholders ?? []).map((ph, i) => <span key={ph}><span className="mono">{ph}</span>{i < (spec.placeholders ?? []).length - 1 ? "、" : ""}</span>)}</div>
         )}
       </div>
     );
@@ -1990,7 +2331,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const labels = Object.fromEntries(spec.modules.map((item) => [item.value, item.label]));
     return (
       <div className="field" data-business-form="copy-position-create">
-        <span className="bf-legend">业务表单 · 新增文案位置</span>
+        <span className="bf-legend">新增文案位置</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("positionKey", "位置标识", "home.hero.banner")}
           {input("positionName", "位置名称", "首页主横幅")}
@@ -2003,7 +2344,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "copy-version-option") {
     return (
       <div className="field" data-business-form={`copy-version-option-${spec.mode}`}>
-        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新增文案版本" : "编辑文案版本"}</span>
+        <span className="bf-legend">{spec.mode === "create" ? "新增文案版本" : "编辑文案版本"}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {spec.mode === "create"
             ? input("versionKey", "版本标识", "v3")
@@ -2080,15 +2421,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     };
     return (
       <div className="field" data-business-form="copy-experiment-create">
-        <span className="bf-legend">业务表单 · 创建文案对比测试</span>
+        <span className="bf-legend">创建文案对比测试</span>
         <label className="field" style={{ marginBottom: 10 }}>
           <span>选择文案</span>
-          <select className="fld" aria-label="选择文案" value={copy?.value ?? ""} onChange={(event) => changeCopy(event.target.value)}>
-            {spec.copies.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
+          {choice({ label: "选择文案", current: copy?.value ?? "", onValue: changeCopy, options: spec.copies })}
         </label>
         <div className="itint" style={{ marginBottom: 10 }}>
-          只能选择同一文案下已有的非草稿内容版本；至少 2 个变体，分流比例合计必须为 100%。
+          从同一文案的非草稿版本中至少选 2 个，分流比例加起来须为 100%。
         </div>
         <div style={{ display: "grid", gap: 10 }}>
           {Array.from({ length: count }, (_, index) => {
@@ -2100,9 +2439,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               <div key={index} className="tint" data-proof={`experiment-variant-${index}`} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10, alignItems: "end" }}>
                 <label className="field" style={{ marginBottom: 0 }}>
                   <span>变体 {String.fromCharCode(65 + index)} · 内容版本</span>
-                  <select className="fld" aria-label={`变体 ${String.fromCharCode(65 + index)} 内容版本`} value={currentVersion} onChange={(event) => set(`variantVersion.${index}`, event.target.value)}>
-                    {options.map((item) => <option key={item.value} value={item.value} disabled={item.value !== currentVersion && unavailable.has(item.value)}>{item.label}</option>)}
-                  </select>
+                  {choice({ label: `变体 ${String.fromCharCode(65 + index)} 内容版本`, current: currentVersion, onValue: (next) => set(`variantVersion.${index}`, next), options: options.map((item) => ({ value: item.value, label: item.label, disabled: item.value !== currentVersion && unavailable.has(item.value) })) })}
                 </label>
                 <label className="field" style={{ marginBottom: 0 }}>
                   <span>分流比例 · {split || 0}%</span>
@@ -2121,12 +2458,12 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           <span className="tiny" style={{ color: splitTotal === 100 ? "var(--success)" : "var(--warning)", fontWeight: 700 }}>分流合计 {splitTotal}% / 100%</span>
         </div>
         <div className="itint cyan" data-proof="experiment-inherited-audience" style={{ marginTop: 10 }}>
-          <b>继承的文案受众 · 只读继承</b>
-          <div style={{ marginTop: 5 }}>P 阶段 {tiers} · 语言 {languages} · 注册时长大于 {registrationDays} 天</div>
+          <b>测试对象（沿用文案设置）</b>
+          <div style={{ marginTop: 5 }}>阶段 {tiers} · 语言 {languages} · 注册时长大于 {registrationDays} 天</div>
           <div className="tiny" style={{ marginTop: 3 }}>预计覆盖 {selectedVersion?.estimatedAudience == null ? "待估算" : `${selectedVersion.estimatedAudience.toLocaleString()} 人`}</div>
-          {!audienceConsistent && <div className="tiny" style={{ marginTop: 5, color: "var(--danger)" }}>所选版本的继承受众不一致，请改选受众完全一致的版本。</div>}
+          {!audienceConsistent && <div className="tiny" style={{ marginTop: 5, color: "var(--danger)" }}>所选版本的投放对象不一致，请改选对象相同的版本。</div>}
         </div>
-        <div style={{ marginTop: 10 }}>{textArea("note", "实验备注（可选）", "实验假设、观察指标或停止条件", 2, 255)}</div>
+        <div style={{ marginTop: 10 }}>{textArea("note", "测试备注（可选）", "想验证什么、看哪个指标", 2, 255)}</div>
       </div>
     );
   }
@@ -2134,10 +2471,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "copy-experiment-start") {
     return (
       <div className="field" data-business-form="copy-experiment-start">
-        <span className="bf-legend">业务表单 · 启动实验 {spec.experimentId}</span>
+        <span className="bf-legend">启动测试 {spec.experimentId}</span>
         <label className="row" style={{ alignItems: "flex-start", gap: 8, marginBottom: 0 }}>
           <input type="checkbox" checked={value.ack === "true"} onChange={(event) => set("ack", event.target.checked ? "true" : "false")} />
-          <span>我已确认实验版本、分流比例和继承受众；启动后按当前快照分流并写入审计。</span>
+          <span>我已确认测试版本、分流比例和测试对象。</span>
         </label>
       </div>
     );
@@ -2146,8 +2483,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "copy-experiment-discard") {
     return (
       <div className="field" data-business-form="copy-experiment-discard">
-        <span className="bf-legend">业务表单 · 弃用实验 {spec.experimentId}</span>
-        <div className="itint warn">弃用后实验不会再启动或被采纳；已产生的实验数据和审计记录继续保留。</div>
+        <span className="bf-legend">弃用测试 {spec.experimentId}</span>
+        <div className="itint warn">弃用后该测试不能再启动或采纳，已有数据保留。</div>
       </div>
     );
   }
@@ -2174,7 +2511,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     };
     return (
       <div className="field" data-business-form="course-authoring">
-        <span className="bf-legend">业务表单 · 课程新建 / 编辑</span>
+        <span className="bf-legend">新建 / 编辑课程</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("slug", "课程标识", "learn-earn-basics")}
           {(spec.mode === "version-create" || spec.mode === "version-edit") && input("version", "版本号", "v2")}
@@ -2182,8 +2519,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {select("format", "课程形式", spec.formats ?? ["Article", "Video", "Hands-on"], COURSE_FORMAT_LABELS)}
           {select("difficulty", "课程难度", spec.levels ?? ["Beginner", "Intermediate", "Advanced"], COURSE_LEVEL_LABELS)}
           {select("duration", "预计时长", spec.durations ?? DEFAULT_COURSE_DURATIONS)}
-          {input("reward", `完成奖励(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} NEX)`, "5", "number")}
-          <div className="itint ok"><b>保存状态</b> · {COURSE_STATUS_LABELS.draft}；发布必须回到课程列表单独确认。</div>
+          {input("reward", `完成奖励(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} UVT)`, "5", "number")}
+          <div className="itint ok">保存为{COURSE_STATUS_LABELS.draft}，发布请回到课程列表操作。</div>
           {input("titleZh", "中文标题（最多 1024 字）", "课程标题", "text", 1024)}
           {input("titleVi", "越南语标题（最多 1024 字）", "Tiêu đề khóa học", "text", 1024)}
           {input("titleEn", "英语标题（最多 1024 字）", "Course title", "text", 1024)}
@@ -2194,7 +2531,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {textArea("bodyEn", "英语正文（最多 1024 字）", "Course body and completion criteria", 4, 1024)}
         </div>
         <div data-proof="course-quiz" style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--ink-2)" }}>结构化测验与发奖触发（发布前必须完整）</div>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--ink-2)" }}>测验与发奖（发布前须填写完整）</div>
           {Array.from({ length: questionCount }, (_, questionIndex) => {
             const optionCount = Math.max(2, Number(value[`quiz.${questionIndex}.optionCount`] || 2));
             const addOption = () => onChange({ ...value,
@@ -2239,9 +2576,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             {input("passScore", "通过分数（1-100）", "60", "number")}
             {input("retries", "最多重试次数（0-10）", "3", "number")}
             {select("completionCond", "完成条件", ["quiz_passed", "all_questions_correct"], { quiz_passed: "达到通过分数", all_questions_correct: "全部答对" })}
-            {select("rewardEvent", "发奖触发事件", ["quiz.passed", "course.completed"], { "quiz.passed": "测验通过", "course.completed": "课程完成" })}
+            {select("rewardEvent", "何时发奖", ["quiz.passed", "course.completed"], { "quiz.passed": "测验通过", "course.completed": "课程完成" })}
           </div>
-          <div className="tint tiny" style={{ marginTop: 8 }}>服务端按课程、用户和版本生成防重复提交编号；发奖失败自动重试，耗尽后转人工工单。</div>
+          <div className="tint tiny" style={{ marginTop: 8 }}>同一用户在同一课程版本只发一次奖励；发奖失败会自动重试，仍失败则转人工处理。</div>
         </div>
       </div>
     );
@@ -2250,16 +2587,16 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "campaign-edit") {
     return (
       <div className="field" data-business-form="campaign-edit">
-        <span className="bf-legend">业务表单 · 通知活动编辑</span>
+        <span className="bf-legend">编辑通知</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("title", "通知标题", "Campaign title")}
+          {input("title", "通知标题", "填写通知标题")}
           {select("tier", "优先级", spec.tiers ?? DEFAULT_CAMPAIGN_TIERS)}
           {select("audience", "受众", spec.audiences ?? [])}
           {select("schedule", "排期", ["保存为草稿", "排期下发", "立即下发"])}
           {input("budget", "预算 (美元)", "0", "number")}
         </div>
         <div style={{ marginTop: 10 }}>
-          {textArea("body", "通知正文", "填写通知正文与跳转口径", 4)}
+          {textArea("body", "通知正文", "填写通知内容和跳转说明", 4)}
         </div>
       </div>
     );
@@ -2268,12 +2605,12 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "generation-gate") {
     return (
       <div className="field" data-business-form="generation-gate">
-        <span className="bf-legend">业务表单 · E1 上架节奏门</span>
+        <span className="bf-legend">机型开放时间</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {spec.mode === "create"
             ? select("skuId", "目标 商品", spec.skuOptions)
             : input("skuId", "目标 商品", "sku-id")}
-          {input("name", "展示名称", "留空则使用 商品 名称")}
+          {input("name", "展示名称", "留空则使用商品名称")}
           {input("releaseMonth", "计划发布月", "1-12", "number")}
           {select("phase", "发布阶段", spec.phaseOptions, spec.phaseLabels)}
           {input("phaseOffset", "发布偏移（月）", "0", "number")}
@@ -2290,11 +2627,11 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "phase-config") {
     return (
       <div className="field" data-business-form="phase-config">
-        <span className="bf-legend">业务表单 · E1 阶段配置</span>
+        <span className="bf-legend">开放阶段设置</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("label", "阶段名称", "如 P3 Pro v2 首发")}
           {input("meta", "门槛说明", "如 L0+ / 账户正常")}
-          {input("skus", "商品 标签", "如 入门档 / Pro v2")}
+          {input("skus", "商品标签", "如 入门档 / Pro v2")}
           {input("sortOrder", "排序", "10", "number")}
           {select("status", "状态", ["active", "archived"], { active: "启用", archived: "已归档" })}
         </div>
@@ -2307,12 +2644,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
 
   if (spec.kind === "version-authoring") {
     const jurisdictionLabels = Object.fromEntries((spec.jurisdictionOptions ?? []).map((item) => [item.value, item.label]));
+    const englishRequirement = value.languageScope?.includes("en") ? "必填" : "选填";
     return (
       <div className="field" data-business-form="version-authoring">
-        <span className="bf-legend">业务表单 · 新建 / 编辑披露草稿</span>
+        <span className="bf-legend">新建 / 编辑披露草稿</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           <label className="field" style={{ marginBottom: 0 }}>
-            <span>披露版本（后端原子分配）</span>
+            <span>披露版本（系统自动编号）</span>
             <input className="fld" value={value.version ?? ""} readOnly aria-readonly="true" />
           </label>
           {select("jurisdiction", "适用地区", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
@@ -2321,25 +2659,25 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             onSelectionChange?.(updated);
           })}
           {select("languageScope", "语言范围", spec.languageScopes ?? DEFAULT_LANGUAGE_SCOPES, { "zh+vi": "中文 + 越南语", "zh+vi+en": "中文 + 越南语 + 英语" })}
-          {input("effectiveDate", "生效日 effective date", "YYYY-MM-DD", "date")}
-          {select("requiresReack", "是否要求重新确认", ["true"], { true: "是（新版本发布后强制重新确认）" })}
+          {input("effectiveDate", "生效日期", "YYYY-MM-DD", "date")}
+          {select("requiresReack", "是否要求重新确认", ["true"], { true: "是（切换生效版本后用户须重新确认）" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {textArea("zh", "中文版本正文", "填写中文条款/披露正文", 4)}
           {textArea("vi", "越南语版本正文", "Nhập nội dung công bố bằng tiếng Việt", 4)}
-          {textArea("en", "英语版本正文（选择三语时必填）", "Fill English disclosure body", 4)}
+          {textArea("en", `英语版本正文（${englishRequirement}）`, "Fill English disclosure body", 4)}
         </div>
         <div style={{ marginTop: 12 }}>
-          <span className="bf-legend">结构化章节（固定 7 章）</span>
+          <span className="bf-legend">章节内容（共 7 章）</span>
           {(spec.chapters ?? []).map((chapter, index) => <div className="card" key={`${chapter.no}-${index}`} style={{ padding: 10, marginTop: 8 }}>
             <b>第 {chapter.no} 章</b>
             <div className="grid g-3" style={{ gap: 8, marginTop: 8 }}>
               {input(`chapter.${index}.zhTitle`, "中文标题", "请输入中文标题")}
               {input(`chapter.${index}.viTitle`, "越南语标题", "Nhập tiêu đề tiếng Việt")}
-              {input(`chapter.${index}.enTitle`, "英语标题（可选）", "English title")}
+              {input(`chapter.${index}.enTitle`, `英语标题（${englishRequirement}）`, "English title")}
               {textArea(`chapter.${index}.zhBody`, "中文正文", "请输入中文正文", 3)}
               {textArea(`chapter.${index}.viBody`, "越南语正文", "Nhập nội dung tiếng Việt", 3)}
-              {textArea(`chapter.${index}.enBody`, "英语正文（可选）", "English body", 3)}
+              {textArea(`chapter.${index}.enBody`, `英语正文（${englishRequirement}）`, "English body", 3)}
             </div>
           </div>)}
         </div>
@@ -2348,66 +2686,65 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   }
 
   if (spec.kind === "disclosure-jurisdiction") {
+    const codeError = spec.mode === "create" && (attempted || leftFields.code) && !DISCLOSURE_JURISDICTION_CODE.test((value.code ?? "").trim().toUpperCase()) ? DISCLOSURE_JURISDICTION_CODE_HELP : undefined;
     return (
-      <div className="field" data-business-form="disclosure-jurisdiction">
-        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新增适用地区" : "编辑适用地区"}</span>
-        <div className="grid g-2" style={{ gap: 10 }}>
-          <label className="field" style={{ marginBottom: 0 }}>
-            <span>适用地区代码</span>
-            <input
-              className="fld"
+      <div className={surface ? "rd-business-form" : "field"} data-business-form="disclosure-jurisdiction">
+        <div className={surface ? "rd-form-grid" : "grid g-2"} data-cols={surface ? "2" : undefined} data-dense={surface ? "" : undefined} style={surface ? undefined : { gap: 10 }}>
+          <RdField label="适用范围代码" required={spec.mode === "create"} help={surface ? "创建后不能修改" : undefined} error={codeError}>
+            {(control) => <input
+              {...control}
+              className={surface ? "rd-input" : "fld"}
               value={value.code ?? ""}
               readOnly={spec.mode === "edit"}
               aria-readonly={spec.mode === "edit"}
               maxLength={16}
               placeholder="如 VN、US-FINCEN"
               onChange={(event) => set("code", event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))}
-            />
-          </label>
-          {input("name", "适用地区名称", "如 越南司法辖区")}
+              onBlur={() => setLeftFields((current) => ({ ...current, code: true }))}
+            />}
+          </RdField>
+          {surface ? <RdField label="适用范围名称" required help={APP_VISIBLE_TEXT_HINT} error={appVisibleTextError(value.name, "名称")}>
+            {(control) => <RdInput {...control} value={value.name ?? ""} onChange={(e) => set("name", e.target.value)} placeholder="State Bank of Vietnam" />}
+          </RdField> : input("name", <>适用范围名称<span className="rd-form-required" aria-hidden="true">*</span></>, "State Bank of Vietnam")}
         </div>
-        <div className="tint tiny" style={{ marginTop: 10 }}>
-          适用地区代码创建后不可修改；启用、停用、归档和删除在列表中单独执行并保留审计记录。
-        </div>
+        {!surface && <div className="rd-form-help" style={{ marginTop: 8 }}>适用范围名称：{APP_VISIBLE_TEXT_HINT}。代码创建后不能修改。</div>}
       </div>
     );
   }
 
   if (spec.kind === "disclosure-publish-review") {
-    const changed = spec.targetChapters.filter((target) => {
-      const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
-      return !current || current.zh !== target.zh || current.vi !== target.vi || current.zhBody !== target.zhBody || current.viBody !== target.viBody;
-    });
+    const LANGUAGES = [["zh", "中文"], ["vi", "越南语"], ["en", "英语"]] as const;
+    const currentOf = (no: string) => spec.currentChapters.find((chapter) => chapter.no === no);
+    const fieldChanged = (target: typeof spec.targetChapters[number], lang: "zh" | "vi" | "en") => {
+      const current = currentOf(target.no);
+      return !current || current[lang] !== target[lang] || current[`${lang}Body`] !== target[`${lang}Body`];
+    };
+    const isChanged = (target: typeof spec.targetChapters[number]) => LANGUAGES.some(([lang]) => fieldChanged(target, lang));
+    const changed = spec.targetChapters.filter(isChanged);
+    // 改过的章排前面并展开，没改的收起（CP-48）。
+    const ordered = [...changed, ...spec.targetChapters.filter((target) => !isChanged(target))];
     return (
       <div className="field" data-business-form="disclosure-publish-review">
         <span className="bf-legend">发布前合规核对</span>
-        <div className="itint danger">
-          <b>{spec.jurisdiction} · {spec.currentVersion || "无生效版"} → {spec.targetVersion}</b>
-          <div style={{ marginTop: 6 }}>当前映射统计：用户 {spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 {spec.pendingAck.toLocaleString("zh-CN")} 人 · 当前拦截 {spec.blocked.toLocaleString("zh-CN")} 次</div>
-          <div style={{ marginTop: 4 }}>本次仅审批不可变版本，不改变 App 投放；后续切换映射时才触发重确认与受限动作：{spec.gatedActions.join("、") || "暂无"}</div>
+        <div className="rd-form-help">{spec.affected > 0 && spec.affected < 5 ? "涉及用户样本过小" : `涉及用户 ${spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 ${spec.pendingAck.toLocaleString("zh-CN")} 人`} · 已拦截 {spec.blocked.toLocaleString("zh-CN")} 次 <Explain label="这次审批会怎样" content={`本次只审批版本内容，App 上暂不变化。该版本正式用于地区后，用户须重新确认，期间受限的操作：${spec.gatedActions.join("、") || "无"}`} /></div>
+        <div className="rd-form-group-title">版本差异 · 共 {changed.length} / 7 章发生变化</div>
+        {ordered.map((target) => {
+          const current = currentOf(target.no);
+          const open = isChanged(target);
+          return <RdFold key={target.no} inset defaultOpen={open} title={`第 ${target.no} 章 · ${open ? "有修改" : "无变化"}`} summary={target.zh}>
+            <div className="rd-doc">
+              {LANGUAGES.map(([lang, name]) => <section key={lang}>
+                <h3>{name}{open && fieldChanged(target, lang) ? " · 已改" : ""} · {target[lang] || "未提供英语标题"}</h3>
+                <p>{target[`${lang}Body`] || "未提供英语正文"}</p>
+                {current && fieldChanged(target, lang) && <p className="rd-weak">现在：{current[lang]} {current[`${lang}Body`]}</p>}
+              </section>)}
+            </div>
+          </RdFold>;
+        })}
+        <div className="rd-form-stack" style={{ marginTop: 12 }}>
+          <RdCheck label={`确认发布适用地区为 ${spec.jurisdiction}`} checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} />
+          <RdCheck label="已核对七章中文、越南语和英语内容，与监管要求一致" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} />
         </div>
-        <div className="itint" style={{ marginTop: 10 }}>
-          <b>版本差异</b> · 共 {changed.length} / 7 章发生变化
-        </div>
-        <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
-          {spec.targetChapters.map((target) => {
-            const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
-            const isChanged = !current || current.zh !== target.zh || current.vi !== target.vi || current.zhBody !== target.zhBody || current.viBody !== target.viBody;
-            return <div className="card" key={target.no} style={{ padding: 10, marginTop: 8, borderColor: isChanged ? "var(--warning)" : undefined }}>
-              <b>第 {target.no} 章 · {isChanged ? "有修改" : "无变化"}</b>
-              <div className="grid g-2" style={{ gap: 8, marginTop: 6 }}>
-                <div><span className="tiny">中文</span><div>{target.zh}</div><div className="tiny">{target.zhBody}</div></div>
-                <div><span className="tiny">越南语</span><div>{target.vi}</div><div className="tiny">{target.viBody}</div></div>
-              </div>
-            </div>;
-          })}
-        </div>
-        <label className="field" style={{ marginTop: 12 }}>
-          <span><input type="checkbox" checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} /> 确认发布适用地区为 {spec.jurisdiction}</span>
-        </label>
-        <label className="field" style={{ marginTop: 6 }}>
-          <span><input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} /> 七章中越双语核对完成，确认与监管口径一致</span>
-        </label>
       </div>
     );
   }
@@ -2421,10 +2758,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       onChange({ ...value, countryCodes: Array.from(next).sort().join(",") });
     };
     return (
-      <div className="field" data-business-form="disclosure-matrix">
-        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新增适用地区版本映射" : "编辑适用地区版本映射"}</span>
-        <div className="grid g-2" style={{ gap: 10 }}>
-          {select("jurisdictionCode", "适用地区", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
+      <div className={surface ? "rd-business-form" : "field"} data-business-form="disclosure-matrix">
+        {!surface && <span className="bf-legend">{spec.mode === "create" ? "为适用范围指定披露版本" : "修改适用范围的披露版本"}</span>}
+        <div className={surface ? "rd-form-grid" : spec.mode === "create" ? "grid g-2" : undefined} data-cols={surface && spec.mode === "create" ? "2" : undefined} data-dense={surface ? "" : undefined} style={surface ? undefined : { gap: 10 }}>
+          {spec.mode === "create" && select("jurisdictionCode", "适用范围", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
             const selected = spec.jurisdictionOptions?.find((item) => item.value === next);
             const nextVersions = spec.publishedVersionsByJurisdiction?.[next] ?? [];
             onChange({
@@ -2436,19 +2773,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           })}
           {select("version", "已发布版本", spec.publishedVersionsByJurisdiction?.[value.jurisdictionCode ?? ""] ?? [])}
         </div>
-        <div style={{ marginTop: 10 }}>
-          <span className="bf-legend">适用国家/地区（可多选）</span>
-          <div className="seg-chips" style={{ marginTop: 6 }}>
-            {(spec.countryOptions ?? []).map((option) => <button
-              type="button"
-              key={option.value}
-              className={`seg-chip ${selectedCountries.has(option.value) ? "on" : ""}`}
-              onClick={() => toggleCountry(option.value)}
-            >{option.label}</button>)}
-          </div>
-          {(spec.countryOptions ?? []).length === 0 && <div className="tint tiny">暂无后端国家/地区目录</div>}
+        <div style={surface ? undefined : { marginTop: 10 }}>
+          <RdCheckGroup legend="适用国家/地区（可多选）" summary={`已选 ${selectedCountries.size} 个`}>
+            {(spec.countryOptions ?? []).map((option) => <RdCheck key={option.value} label={option.label} checked={selectedCountries.has(option.value)} onChange={() => toggleCountry(option.value)} />)}
+          </RdCheckGroup>
+          {(spec.countryOptions ?? []).length === 0 && <div className="rd-form-help">暂无可选国家/地区</div>}
         </div>
-          <div className="tint tiny" style={{ marginTop: 10 }}>矩阵变更提交后进入 A2 审批，审批执行前不会修改当前生效映射。</div>
+          {spec.unchanged && (value.version !== spec.unchanged.version || (value.countryCodes ?? "") !== [...spec.unchanged.countryCodes].sort().join(",")) && <div className="rd-form-help" style={surface ? undefined : { marginTop: 8 }}>{value.version !== spec.unchanged.version ? `版本 ${spec.unchanged.version} → ${value.version}。` : "适用国家有变化。"}批准后新旧国家的用户要重新确认，并收到通知{spec.affected && spec.affected >= 5 ? `，这个地区现有 ${spec.affected.toLocaleString("en-US")} 位用户` : ""}。</div>}
       </div>
     );
   }
@@ -2457,9 +2788,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const fieldCount = Math.max(0, Number(value.fieldCount || 0));
     return (
       <div className="field" data-business-form="trust-section-authoring">
-        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新建信任版块草稿" : "编辑信任版块草稿"}</span>
+        <span className="bf-legend">{spec.mode === "create" ? "新建信任版块草稿" : "编辑信任版块草稿"}</span>
         <div className="itint" style={{ marginBottom: 10 }}>
-          版块 <span className="mono">{spec.sectionKey}</span> · 草稿保存后才能单独发布；已发布版本不可直接编辑或删除。
+          版块 <span className="mono">{spec.sectionKey}</span> · 先存草稿再发布；已发布的版本不能直接修改。
         </div>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("version", "版本号", "如 v6")}
@@ -2471,14 +2802,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             <b>结构化内容字段</b>
             <span className="tiny">当前 {fieldCount} 项</span>
           </div>
-          <div className="tint tiny" style={{ marginBottom: 10 }}>字段标识由当前发布版固定，不可新增、删除或改名。</div>
-          {fieldCount === 0 && <div className="itint warn">当前发布版缺少字段模板，不能保存草稿。</div>}
+          <div className="tint tiny" style={{ marginBottom: 10 }}>字段由当前版本固定，不能增删或改名。</div>
+          {fieldCount === 0 && <div className="itint warn">当前版本没有字段模板，无法保存草稿。</div>}
           {Array.from({ length: fieldCount }, (_, index) => (
             <div key={index} className="itint" style={{ marginBottom: 10 }}>
               <div className="tiny" style={{ marginBottom: 6 }}>字段 {index + 1}</div>
               <div className="grid g-2" style={{ gap: 10 }}>
                 <label className="field" style={{ marginBottom: 0 }}>
-                  <span>字段标识（系统固定）</span>
+                  <span>字段标识</span>
                   <div className="itint mono" data-trust-field-key="fixed">锁定 · {value[`field.${index}.key`] ?? ""}</div>
                 </label>
                 {input(`field.${index}.label`, "中文名称", "如 年内收入")}
@@ -2510,13 +2841,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                 <span className="v"><span className="tiny">旧值</span> {current?.value ?? "—"} <span className="mono">→</span> <span className="tiny">新值</span> {target?.value ?? "—"}</span>
               </div>;
             })}
-            {fieldKeys.length === 0 && <div className="tiny">当前版与待发布版均无结构化字段。</div>}
+            {fieldKeys.length === 0 && <div className="tiny">两个版本都没有字段内容。</div>}
           </div>
         </div>
-        {spec.requireDataSource && input("dataSource", "财务/UVEL数据来源", "必填：报表、账本快照或市场数据编号")}
+        {spec.requireDataSource && input("dataSource", "财务/UVT数据来源", "必填：报表、账本快照或市场数据编号")}
         <label className="row" style={{ gap: 8, marginTop: 10 }}>
           <input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} />
-          三语确认：中文、越南语、英文已逐项核对，关键数字和 UVEL 口径一致
+          已逐项核对中、越、英三语，关键数字一致
         </label>
       </div>
     );
@@ -2524,29 +2855,67 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
 
   if (spec.kind === "identity-verify") {
     const verified = spec.serverVerification;
+    if (spec.presentation === "authorization-and-declaration") return (
+      <div className="rd-business-form" data-business-form="identity-verify">
+        <div data-proof="sensitive-action-authorization">
+          <div className="rd-form-group-title">本次操作的授权</div>
+          <RdFacts>
+            <RdFact k="授权管理员">{verified?.verifiedBy || "—"}</RdFact>
+            <RdFact k="授权依据">{verified?.ticket || "—"}</RdFact>
+            <RdFact k="授权检查时间">{verified?.verifiedAt || "—"}</RdFact>
+          </RdFacts>
+        </div>
+        <RdCheckGroup legend="本人声明">
+          <div style={{ gridColumn: "1 / -1" }}>
+            <RdCheck data-proof="identity-ack" checked={value.ack === "true"} onChange={(event) => set("ack", event.target.checked ? "true" : "false")}
+              label="我已另行核实是用户本人，不是他人冒充" help="核实方式和依据请写在操作理由中。" />
+          </div>
+        </RdCheckGroup>
+      </div>
+    );
+    if (surface) return (
+      <div className="rd-business-form" data-business-form="identity-verify">
+        <div className="rd-form-group-title">先核实用户身份</div>
+        <RdNotice tone="warn" title={spec.subject}>完成全部核验后才能提交。</RdNotice>
+        {verified && <div data-proof="server-sensitive-action-verification">
+          <RdNotice tone="progress" title="已有核验记录，提交时会再次检查" />
+          <RdFacts><RdFact k="依据"><span data-mono="">{verified.ticket}</span></RdFact><RdFact k="核验人">{verified.verifiedBy || "—"}</RdFact><RdFact k="核验时间">{verified.verifiedAt}</RdFact><RdFact k="有效期至">{verified.expiresAt || "—"}</RdFact></RdFacts>
+        </div>}
+        {verified ? <div className="rd-form-grid" data-cols="2" data-dense="">
+          <RdField label="核验方式">{(control) => <RdInput {...control} value={value.channel ?? ""} readOnly aria-readonly="true" />}</RdField>
+          <RdField label="核验时间">{(control) => <RdInput {...control} value={value.verifiedAt ?? ""} readOnly aria-readonly="true" />}</RdField>
+          <div style={{ gridColumn: "1 / -1" }}><RdField label="核验依据">{(control) => <RdInput {...control} value={value.ticket ?? ""} readOnly aria-readonly="true" />}</RdField></div>
+        </div> : <div className="rd-form-grid" data-cols="2" data-dense="">
+          {select("channel", "核验方式", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel")}
+          {input("verifiedAt", "核验时间", "2026-06-18 14:30", "datetime-local")}
+          <div style={{ gridColumn: "1 / -1" }}>{input("ticket", "来源工单号", spec.ticketHint ?? "如 SEC-20260618-001")}</div>
+        </div>}
+        <RdCheck data-proof="identity-ack" label="我已通过上述方式核实是用户本人，不是他人冒充" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
+      </div>
+    );
     return (
       <div className="field" data-business-form="identity-verify">
-        <span className="bf-legend">业务表单 · 身份核验(高风险安全动作前置)</span>
+        <span className="bf-legend">先核实用户身份</span>
         <div className="tint danger tiny" style={{ marginBottom: 10 }}>
-          目标 <span className="mono">{spec.subject}</span> · 未完成全部核验项前,确认按钮保持禁用。
+          用户 <span className="mono">{spec.subject}</span> · 完成全部核验后才能提交。
         </div>
         {verified ? (
           <div className="tint tiny" style={{ marginBottom: 10 }} data-proof="server-sensitive-action-verification">
-            <b>本次操作的服务端校验将在提交时执行</b> · 校验上下文 <span className="mono">{verified.ticket}</span><br />
-            操作人 {verified.verifiedBy || "—"} · 校验时点 {verified.verifiedAt} · 适用范围 {verified.expiresAt || "—"}
+            <b>已有核验记录，提交时会再次检查</b> · 依据 <span className="mono">{verified.ticket}</span><br />
+            核验人 {verified.verifiedBy || "—"} · 核验时间 {verified.verifiedAt} · 有效期至 {verified.expiresAt || "—"}
           </div>
         ) : null}
         {verified ? <>
           <div className="grid g-2" style={{ gap: 10 }}>
-            <label className="field"><span>校验方式</span><input className="fld" value={value.channel ?? ""} readOnly aria-readonly="true" /></label>
-            <label className="field"><span>校验时点</span><input className="fld" value={value.verifiedAt ?? ""} readOnly aria-readonly="true" /></label>
+            <label className="field"><span>核验方式</span><input className="fld" value={value.channel ?? ""} readOnly aria-readonly="true" /></label>
+            <label className="field"><span>核验时间</span><input className="fld" value={value.verifiedAt ?? ""} readOnly aria-readonly="true" /></label>
           </div>
           <div style={{ marginTop: 10 }}>
-            <label className="field"><span>校验上下文</span><input className="fld" value={value.ticket ?? ""} readOnly aria-readonly="true" /></label>
+            <label className="field"><span>核验依据</span><input className="fld" value={value.ticket ?? ""} readOnly aria-readonly="true" /></label>
           </div>
         </> : <>
           <div className="grid g-2" style={{ gap: 10 }}>
-            {select("channel", "核验渠道", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel")}
+            {select("channel", "核验方式", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel")}
             {input("verifiedAt", "核验时间", "2026-06-18 14:30", "datetime-local")}
           </div>
           <div style={{ marginTop: 10 }}>
@@ -2555,7 +2924,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         </>}
         <label className="row" style={{ gap: 8, marginTop: 10, color: "var(--ink-2)", fontSize: 12.5 }}>
           <input data-proof="identity-ack" type="checkbox" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
-          我已通过上述渠道核实本人身份,确认这不是社工冒名请求
+          我已通过上述方式核实是用户本人，不是他人冒充
         </label>
       </div>
     );
@@ -2564,18 +2933,18 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "task-edit") {
     return (
       <div className="field" data-business-form="task-edit">
-        <span className="bf-legend">业务表单 · 任务编辑{spec.subject ? <> · {spec.subject}</> : null}</span>
+        <span className="bf-legend">编辑任务{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("name", "任务名称", "如 逛收益页")}
-          {input("path", "跳转路径 path", "如 /earn")}
-          {input("reward", "奖励说明", "如 50 UVEL(可双币:200 UVEL + $1)")}
-          {select("status", "状态", spec.statusOptions ?? ["active", "paused", "archived"], "task-edit-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
-          {select("completionType", "完成判定方式 completion", spec.completionTypeOptions ?? ["visit", "event", "manual"], "task-edit-completion", { visit: "访问路径自动 visit", event: "业务事件触发 event", manual: "手动核验 manual" })}
-          {input("completionEvent", "完成触发条件 / 事件", "visit 可空;event 填 order.paid;manual 填核验说明")}
+          {input("path", "跳转页面", "如 /earn")}
+          {input("reward", "奖励说明", "如 50 UVT(可双币:200 UVT + $1)")}
+          {select("status", "状态", spec.statusOptions ?? ["active", "paused", "archived"], "task-edit-status", { active: "生效中", paused: "已停用", archived: "已归档" })}
+          {select("completionType", "完成方式", spec.completionTypeOptions ?? ["visit", "event", "manual"], "task-edit-completion", { visit: "打开页面即完成", event: "完成指定业务", manual: "人工核验" })}
+          {input("completionEvent", "完成触发条件 / 事件", "打开页面类可不填；业务类填事件名，如 order.paid；人工类填核验说明")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          完成判定:<b>访问路径自动</b> = 用户进入「跳转路径」即判完成(浏览类);<b>业务事件触发</b> = 系统确认对应业务已完成后，才计入任务完成记录;<b>手动核验</b> = 运营人工确认。
-          升奖励 = 放大 UVEL 流出,过 B1 红线;停用后 = 用户端不再展示,已派发不回收。
+          <b>打开页面即完成</b>：用户打开跳转页面就算完成；<b>完成指定业务</b>：系统确认业务完成后才算；<b>人工核验</b>：由运营手动确认。
+          调高奖励需通过兑付覆盖率检查；停用后用户看不到该任务，已发奖励不收回。
         </div>
       </div>
     );
@@ -2584,95 +2953,100 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "voucher-config") {
     return (
       <div className="field" data-business-form="voucher-config">
-        <span className="bf-legend">业务表单 · 代金券配置{spec.subject ? <> · {spec.subject}</> : null}</span>
+        <span className="bf-legend">代金券设置{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("name", "名称", "如 新人专享券")}
-          {select("type", "类型", ["fixed", "percent"], "voucher-type", { fixed: "满减 fixed", percent: "折扣 percent" })}
+          {spec.typeLocked ? (
+            <label className="field" style={{ marginBottom: 0 }}>
+              <span>类型（已发券，不可修改）</span>
+              {choice({ label: "类型", proof: "voucher-type", current: spec.currentType ?? "", disabled: true, onValue: () => undefined, options: [{ value: spec.currentType ?? "", label: spec.currentType === "percent" ? "折扣" : "满减" }] })}
+            </label>
+          ) : select("type", "类型", ["fixed", "percent"], "voucher-type", { fixed: "满减", percent: "折扣" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {input("amountUSD", "满减面值 (美元)", "type=fixed 填;如 50", "number")}
-          {input("percent", "折扣率 (%)", "type=percent 填;如 8", "number")}
+          {input("amountUSD", "满减面值 (1–1,000,000 USDT)", "满减券填写，可含小数；如 1.01", "number")}
+          {input("percent", "折扣率 (%)", "折扣券填写 1–99 的整数，如 8", "number")}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {input("minPurchaseUSD", "满减门槛 (美元)", "满 X 可用;0=无门槛", "number")}
-          {input("maxDiscountUSD", "折扣封顶 (美元)", "0=不封顶", "number")}
+          {input("minPurchaseUSD", "满减门槛 (美元)", "满多少可用，0 为无门槛", "number")}
+          {input("maxDiscountUSD", "折扣封顶 (美元)", "0 为不封顶", "number")}
         </div>
         <div style={{ marginTop: 10 }}>
-          {input("issuanceLimit", "发行上限 (张)", "0=不限量;正整数=总发行上限", "number")}
+          {input("issuanceLimit", "发行上限 (张)", "0 为不限量", "number")}
         </div>
         <div style={{ marginTop: 10 }}>
-          {multiSelect("applicableSkus", "适用商品(点选;不选=全设备)", spec.applicableSkuOptions ?? [], "voucher-skus", spec.applicableSkuLabels)}
+          {multiSelect("applicableSkus", "适用商品（不选则全部设备可用）", spec.applicableSkuOptions ?? [], "voucher-skus", spec.applicableSkuLabels)}
         </div>
         <div style={{ marginTop: 10 }}>
-          {multiSelect("claimSurfaces", "领取入口页面(点选)", ["home", "store", "me", "earn"], "voucher-surfaces", { home: "首页", store: "商城", me: "我的", earn: "收益" })}
+          {multiSelect("claimSurfaces", "领取入口（不选则不限）", ["home", "store", "me", "earn"], "voucher-surfaces", { home: "首页", store: "商城", me: "我的", earn: "收益" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {select("audience", "受众", ["new", "all"], "voucher-audience", { new: "新人 new", all: "全部 all" })}
-          {select("status", "状态", ["active", "paused"], "voucher-status", { active: "投放中 active", paused: "已暂停 paused" })}
+          {select("audience", "受众", ["new", "all"], "voucher-audience", { new: "新用户", all: "全部用户" })}
+          {select("status", "状态", ["active", "paused"], "voucher-status", { active: "投放中", paused: "已暂停" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {input("startDate", "生效起", "留空=即时", "date")}
-          {input("endDate", "有效止", "留空=长期有效", "date")}
+          {input("startDate", "生效起", "留空则立即生效", "date")}
+          {input("endDate", "有效止", "留空则长期有效", "date")}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {select("popupEnabled", "首页弹窗", ["true", "false"], "voucher-popup", { true: "参与弹窗 true", false: "不弹窗 false" })}
-          {select("popupCadenceEnabled", "弹窗总开关", ["true", "false"], "voucher-cadence-enabled", { true: "启用 true", false: "关闭 false" })}
+          {select("popupEnabled", "首页弹窗", ["true", "false"], "voucher-popup", { true: "参与弹窗", false: "不弹窗" })}
+          {select("popupCadenceEnabled", "弹窗总开关", ["true", "false"], "voucher-cadence-enabled", { true: "开启", false: "关闭" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {input("popupDelayMs", "弹窗延迟 (ms)", "0-60000;服务端单位毫秒", "number")}
-          {input("popupCooldownHours", "账号冷却 (h)", "0-720;服务端账号级", "number")}
+          {input("popupDelayMs", "进入后多久弹出（毫秒）", "0–60000", "number")}
+          {input("popupCooldownHours", "同一用户再次弹出间隔（小时）", "0–720", "number")}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {input("popupMaxPerSession", "单会话上限", "1-10;当前登录会话", "number")}
-          {select("splittable", "可拆分", ["false", "true"], "voucher-splittable", { false: "不可拆分 false", true: "可拆分 true" })}
+          {input("popupMaxPerSession", "每次登录最多弹出次数", "1–10", "number")}
+          {select("splittable", "可拆分", ["false", "true"], "voucher-splittable", { false: "不可拆分", true: "可拆分" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {select("stackWithTrial", "可叠加试用收益", ["false", "true"], "voucher-stack-trial", { false: "不可叠加 false", true: "可叠加 true" })}
-          {select("stackWithOthers", "可叠加其它优惠", ["false", "true"], "voucher-stack-others", { false: "不可叠加 false", true: "可叠加 true" })}
+          {select("stackWithTrial", "可叠加试用收益", ["false", "true"], "voucher-stack-trial", { false: "不可叠加", true: "可叠加" })}
+          {select("stackWithOthers", "可叠加其它优惠", ["false", "true"], "voucher-stack-others", { false: "不可叠加", true: "可叠加" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          <b>满减</b> = 满「门槛」减「面值」;<b>折扣</b> = 百分比折扣,封顶可选。发行上限 0 = 不限量,正整数 = 所有来源合计发券上限。适用商品 不选 = 全设备(领券跳商城),单选 = 跳该 商品 详情页。领取入口 = 关闭弹窗后展示领券提示条 的前端页面。<b>叠加策略</b>:默认不与试用收益 / 其它优惠叠加(二选一取最优)。<b>不可提现</b>(固有性质:折扣只在结算抵扣价格、永不入可提现余额)。代金券是促销折扣、非 UVEL 负债,不挂 B1 红线。
+          <b>满减</b>：满「门槛」减「面值」；<b>折扣</b>：按百分比打折，可设封顶。不选适用商品则全部设备可用（领券后跳商城），只选一个则跳该商品页。领取入口是用户关掉弹窗后仍能看到领券条的页面。默认不与试用收益或其他优惠叠加，自动取最优。代金券只抵扣购机款，不能提现，不计入平台应付款。
         </div>
       </div>
     );
   }
 
   if (spec.kind === "vrank-reward-edit") {
-    const rtype = value.rtype ?? "nex";
+    const rtype = value.rtype ?? "uvt";
     const voucherOpts = spec.voucherOptions ?? [];
     const skuOpts = spec.skuOptions ?? [];
     return (
       <div className="field" data-business-form="vrank-reward-edit">
-        <span className="bf-legend">业务表单 · 等级奖励{spec.subject ? <> · {spec.subject}</> : null}</span>
+        <span className="bf-legend">等级奖励{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div style={{ marginBottom: 10 }}>
-          {select("rtype", "奖励类型", ["usdt", "nex", "voucher", "sku", "custom"], "vrank-reward-type", { usdt: "USDT 现金", nex: "UVEL 代币", voucher: "代金券", sku: "系统 商品", custom: "自定义" })}
+          {select("rtype", "奖励类型", ["usdt", "uvt", "voucher", "sku", "custom"], "vrank-reward-type", { usdt: "USDT 现金", uvt: "UVT 代币", voucher: "代金券", sku: "商品", custom: "自定义" })}
         </div>
-        {(rtype === "usdt" || rtype === "nex") && (
+        {(rtype === "usdt" || rtype === "uvt") && (
           <div data-proof="vrank-reward-amount">
-            {input("amount", rtype === "usdt" ? "金额(USDT)" : "数量(UVEL)", rtype === "usdt" ? "如 50" : "如 10000", "number")}
+            {input("amount", rtype === "usdt" ? "金额(USDT)" : "数量(UVT)", rtype === "usdt" ? "如 50" : "如 10000", "number")}
           </div>
         )}
         {rtype === "voucher" && (
           <div data-proof="vrank-reward-voucher">
             {voucherOpts.length === 0
-              ? <div className="tiny" style={{ color: "var(--ink-4)" }}>暂无可选代金券(先到 H7 代金券配置 新建并投放)。</div>
-              : select("voucherId", "选择代金券 voucher", voucherOpts, "vrank-reward-voucher-sel", spec.voucherLabels, undefined, "当前代金券不可用，请重新选择")}
+              ? <div className="tiny" style={{ color: "var(--ink-4)" }}>暂无可选代金券，请先到「代金券」新建并投放。</div>
+              : select("voucherId", "选择代金券", voucherOpts, "vrank-reward-voucher-sel", spec.voucherLabels, undefined, "当前代金券不可用，请重新选择")}
           </div>
         )}
         {rtype === "sku" && (
           <div data-proof="vrank-reward-sku">
             {skuOpts.length === 0
-              ? <div className="tiny" style={{ color: "var(--ink-4)" }}>暂无在售 商品(先到 E1 商品上架)。</div>
-              : select("skuId", "选择商品", skuOpts, "vrank-reward-sku-sel", spec.skuLabels, undefined, "当前 商品 不可用，请重新选择")}
+              ? <div className="tiny" style={{ color: "var(--ink-4)" }}>暂无在售商品，请先到「商品管理与上架条件」上架。</div>
+              : select("skuId", "选择商品", skuOpts, "vrank-reward-sku-sel", spec.skuLabels, undefined, "当前商品不可用，请重新选择")}
           </div>
         )}
         {rtype === "custom" && (
           <div data-proof="vrank-reward-custom">
-            {input("custom", "自定义奖励内容 custom", "如 限量徽章 / 线下活动名额")}
+            {input("custom", "自定义奖励内容", "如 限量徽章 / 线下活动名额")}
           </div>
         )}
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          <b>USDT / UVEL</b> = 直接发放金额(会放大资金流出,过 B1 备付金覆盖率检查);<b>代金券 / 商品</b> = 从现有代金券 / 在售 商品 中选;<b>自定义</b> = 自由文本(线下兑付,不入资金账)。
+          <b>USDT / UVT</b>：直接发放，需通过兑付覆盖率检查；<b>代金券 / 商品</b>：从现有代金券或在售商品中选；<b>自定义</b>：填写文字说明，线下兑现，不计入资金账。
         </div>
       </div>
     );
@@ -2681,13 +3055,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "day-one-window") {
     return (
       <div className="field" data-business-form="day-one-window">
-        <span className="bf-legend">业务表单 · 首日任务完成期限</span>
+        <span className="bf-legend">新手任务完成期限</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("activeHours", "全额奖励期限（小时）", "24", "number")}
           {input("graceHours", "宽限期限（小时）", "72", "number")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          在全额奖励期限内完成 6 项任务可领全额奖励；超过该期限、仍在宽限期内完成可领宽限期奖励；超过宽限期不再发放。<b>宽限窗须 ≥ 满额窗</b>。改后只对新进窗用户生效(A 方案快照不追溯);放宽窗 = 放大流出走 B1 红线核验。
+          在全额奖励期限内完成 6 项任务可领全额奖励；超过该期限、仍在宽限期内完成可领宽限期奖励；超过宽限期不再发放。宽限期限不能短于全额奖励期限。修改只对之后开始任务的用户生效；放宽期限需通过兑付覆盖率检查。
         </div>
       </div>
     );
@@ -2696,14 +3070,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "day-one-tri-reward") {
     return (
       <div className="field" data-business-form="day-one-tri-reward">
-        <span className="bf-legend">业务表单 · 首日任务分档奖励</span>
+        <span className="bf-legend">新手任务分档奖励</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("active", "按时完成奖励(UVEL)", "500", "number")}
-          {input("grace", "宽限期奖励(UVEL)", "200", "number")}
-          {input("expired", "逾期奖励(UVEL)", "0", "number")}
+          {input("active", "按时完成奖励(UVT)", "500", "number")}
+          {input("grace", "宽限期奖励(UVT)", "200", "number")}
+          {input("expired", "逾期奖励(UVT)", "0", "number")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          按时完成、宽限期内完成和逾期共三档奖励，<b>须满额 ≥ 宽限 ≥ 过期</b>。升任一档 = 放大 UVEL 流出,提交即过 B1 备付金红线。
+          按时、宽限期内和逾期三档奖励，须满足 按时 ≥ 宽限 ≥ 逾期。调高任一档需通过兑付覆盖率检查。
         </div>
       </div>
     );
@@ -2712,16 +3086,16 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "weekly-task-edit") {
     return (
       <div className="field" data-business-form="weekly-task-edit">
-        <span className="bf-legend">业务表单 · 每周任务编辑{spec.subject ? <> · {spec.subject}</> : null}</span>
+        <span className="bf-legend">编辑每周任务{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("cond", "条件 / 任务 cond", "如 USDT 长期质押")}
+          {input("cond", "任务条件", "如 USDT 长期质押")}
           {input("reward", "奖励说明", "如 3,000(可双币:200 + $2)")}
-          {select("status", "状态", spec.statusOptions ?? ["active", "paused", "archived"], "weekly-task-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
-          {select("completionType", "完成判定方式 completion", spec.completionTypeOptions ?? ["visit", "event", "manual"], "weekly-task-completion", { visit: "访问路径自动 visit", event: "业务事件触发 event", manual: "手动核验 manual" })}
+          {select("status", "状态", spec.statusOptions ?? ["active", "paused", "archived"], "weekly-task-status", { active: "生效中", paused: "已停用", archived: "已归档" })}
+          {select("completionType", "完成方式", spec.completionTypeOptions ?? ["visit", "event", "manual"], "weekly-task-completion", { visit: "打开页面即完成", event: "完成指定业务", manual: "人工核验" })}
           {input("completionEvent", "完成触发条件 / 事件", "如 stake.locked / referral.sent")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          一档按优先级命中第一条派发、二档完成池每条独立派发;完成判定多为业务事件(行为归因,谎报无效)。升奖励 = 放大 UVEL 流出过 B1 红线;同周锁定、下周生效;停用后 = 该条本周起不派发。
+          第一档按优先级只发第一条符合条件的任务，第二档每条单独发放。调高奖励需通过兑付覆盖率检查；修改下周生效，停用后本周起不再发放。
         </div>
       </div>
     );
@@ -2730,18 +3104,18 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "monthly-task-edit") {
     return (
       <div className="field" data-business-form="monthly-task-edit">
-        <span className="bf-legend">业务表单 · 月度挑战编辑{spec.subject ? <> · {spec.subject}</> : null}</span>
+        <span className="bf-legend">编辑月度挑战{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("theme", "主题 theme", "如 地基建设者")}
-          {input("age", "账龄段 age", "如 0–2 月")}
-          {input("reward", "奖励说明", "如 1,500 UVEL")}
-          {select("status", "状态", spec.statusOptions ?? ["active", "paused", "archived"], "monthly-task-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
+          {input("theme", "主题", "如 地基建设者")}
+          {input("age", "注册时长", "如 0–2 月")}
+          {input("reward", "奖励说明", "如 1,500 UVT")}
+          {select("status", "状态", spec.statusOptions ?? ["active", "paused", "archived"], "monthly-task-status", { active: "生效中", paused: "已停用", archived: "已归档" })}
         </div>
         <div style={{ marginTop: 10 }}>
-          {textArea("goals", "子目标 goals(3 个子目标全达成才可领)", "如 累计赚 200 · 绑卡 · 邀 1 人", 2)}
+          {textArea("goals", "子目标（3 个全部达成才能领奖）", "如 累计赚 200 · 绑卡 · 邀 1 人", 2)}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          按账龄段派发,3 个子目标全达成才可领,跨月清空重派;升奖励 = 放大 UVEL 流出过 B1 红线;改动只对本月新派生效。
+          按注册时长发给对应用户，3 个子目标全部达成才能领奖，每月重置。调高奖励需通过兑付覆盖率检查；修改只对本月新发的挑战生效。
         </div>
       </div>
     );
@@ -2750,11 +3124,11 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "mission-create") {
     return (
       <div className="field" data-business-form="mission-create">
-        <span className="bf-legend">业务表单 · 新建任务{spec.subject ? <> · {spec.subject}</> : null}</span>
+        <span className="bf-legend">新建任务{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("missionCode", "任务编号 code(英文唯一)", "如 dayOne-visit-earn")}
+          {input("missionCode", "任务编号（英文，不能重复）", "如 dayOne-visit-earn")}
           {input("missionName", "任务名称", "如 逛收益页")}
-          {input("rewardPoints", "奖励 UVEL 数", "如 50", "number")}
+          {input("rewardPoints", "奖励 UVT 数", "如 50", "number")}
           {select("category", "任务类别", ["wallet", "explore", "recommend", "identity", "social"], {
             wallet: "钱包", explore: "探索", recommend: "推荐", identity: "身份", social: "社交",
           })}
@@ -2772,30 +3146,28 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             "/pages/team/team",
             "/pages/team/commissions",
             "/pages/learn/courses",
-            "/pages/staking/staking",
-            "/pages/genesis/genesis",
             "/pages/genesis/marketplace",
           ], {
             "/pages/missions/missions": "任务中心",
             "/pages/me/profile": "个人资料",
             "/pages/me/wallet-cards-new": "绑定银行卡",
             "/pages/me/wallet-topup": "钱包充值",
-            "/pages/me/wallet-exchange": "UVEL / USDT 兑换",
-            "/pages/me/wallet-repurchase": "复投",
+            "/pages/me/wallet-exchange": "UVT / USDT 兑换",
+            "/pages/me/wallet-repurchase": "锁定计划",
             "/pages/me/devices": "我的设备",
             "/pages/earn/earn": "收益",
             "/pages/store/store": "商城",
             "/pages/store/detail?id=stellarbox-s1": "UVELBox S1 详情",
             "/pages/team/team": "团队",
-            "/pages/team/commissions": "佣金",
+            "/pages/team/commissions": "奖励明细",
             "/pages/learn/courses": "学习中心",
             "/pages/staking/staking": "Staking",
             "/pages/genesis/genesis": "Genesis",
-            "/pages/genesis/marketplace": "创世节点 二级市场",
+            "/pages/genesis/marketplace": "创世节点 转让市场",
           })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          类别和“去完成”页面由 PC 保存并下发 App；任务编号需英文/数字唯一(作为完成事件标识)。
+          任务编号只能用英文和数字，且不能重复。
         </div>
       </div>
     );
@@ -2804,21 +3176,21 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "monthly-mission-create") {
     return (
       <div className="field" data-business-form="monthly-mission-create">
-        <span className="bf-legend">业务表单 · 新建月度挑战{spec.subject ? <> · {spec.subject}</> : null}</span>
+        <span className="bf-legend">新建月度挑战{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("challengeCode", "编号 code(英文唯一)", "如 mc-foundation")}
+          {input("challengeCode", "编号（英文，不能重复）", "如 mc-foundation")}
           {input("challengeName", "主题名", "如 地基建设者")}
           {input("theme", "主题标签", "如 地基")}
-          {input("monthsFrom", "账龄起(月)", "0", "number")}
-          {input("monthsTo", "账龄止(月)", "2", "number")}
+          {input("monthsFrom", "注册时长从（月）", "0", "number")}
+          {input("monthsTo", "注册时长到（月）", "2", "number")}
           {input("targetType", "目标类型", "如 earn")}
           {input("targetValue", "目标值", "200", "number")}
-          {select("rewardType", "奖励类型", ["NEX", "USDT"], "monthly-reward-type", { NEX: "UVEL 代币", USDT: "USDT 现金" })}
+          {select("rewardType", "奖励类型", ["UVT", "USDT"], "monthly-reward-type", { UVT: "UVT 代币", USDT: "USDT 现金" })}
           {input("rewardAmount", "奖励量", "1500", "number")}
-          {input("rewardName", "奖励展示", "如 1500 UVEL")}
+          {input("rewardName", "奖励展示", "如 1500 UVT")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          按账龄段派发;奖励 &gt; 0 会放大资金流出,过 B1 备付金红线。
+          按注册时长发给对应用户；设置奖励需通过兑付覆盖率检查。
         </div>
       </div>
     );
@@ -2827,19 +3199,19 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "wheel-tier-config") {
     return (
       <div className="field" data-business-form="wheel-tier-config">
-        <span className="bf-legend">业务表单 · 新建轮盘档位{spec.subject ? <> · {spec.subject}</> : null}</span>
+        <span className="bf-legend">新建转盘奖项{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("tierName", "档位名", "如 小额奖")}
-          {input("rewardName", "奖励展示", "如 100 UVEL")}
-          {input("probabilityPct", "概率%", "如 5(0-100)", "number")}
-          {select("realOutflow", "真实出金", ["0", "1"], "tier-real-outflow", { "0": "否(体验分/无流出)", "1": "是(真实出金)" })}
-          {select("rewardKind", "奖励类型", ["nex", "points", "usdt", "coupon"], "tier-reward-kind", { nex: "NEX", points: "积分", usdt: "USDT", coupon: "代金券" })}
-          {input("rewardAmount", "实际派奖数量", "如 100", "number")}
-          {input("voucherId", "代金券 (仅 )", "如 WHEEL-50")}
-          {input("dailyStock", "每日全局库存(0=不限)", "如 50", "number")}
+          {input("tierName", "奖项名称", "如 小额奖")}
+          {input("rewardName", "奖励展示", "如 100 UVT")}
+          {input("probabilityPct", "中奖概率（%）", "0–100，如 5", "number")}
+          {select("realOutflow", "是否发真钱", ["0", "1"], "tier-real-outflow", { "0": "否", "1": "是" })}
+          {select("rewardKind", "奖励类型", ["uvt", "usdt", "coupon"], "tier-reward-kind", { uvt: "UVT", usdt: "USDT", coupon: "代金券" })}
+          {input("rewardAmount", "实际发放数量", "如 100", "number")}
+          {input("voucherId", "代金券编号（奖励为代金券时填）", "如 WHEEL-50")}
+          {input("dailyStock", "每日总数量（0 为不限）", "如 50", "number")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          所有档位概率之和应 = 100;实际派奖数量由服务端账本使用,不能只改展示名;USDT 必须标记真实出金并过 B1 红线。
+          所有奖项概率加起来须等于 100。用户实际拿到的是「实际发放数量」，改展示名称不影响发放。USDT 奖项须选「发真钱」，并通过兑付覆盖率检查。
         </div>
       </div>
     );
@@ -2848,15 +3220,15 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "wheel-guard-config") {
     return (
       <div className="field" data-business-form="wheel-guard-config">
-        <span className="bf-legend">业务表单 · 新建转盘安全限制{spec.subject ? <> · {spec.subject}</> : null}</span>
+        <span className="bf-legend">新建转盘限制{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {select("guardKey", "安全限制", ["budget", "kill"], "wheel-guard-key", { budget: "每日真实派奖预算", kill: "真实奖总开关" })}
+          {select("guardKey", "限制类型", ["budget", "kill"], "wheel-guard-key", { budget: "每日真钱奖预算", kill: "真钱奖总开关" })}
           {input("guardLabel", "限制名称", "如 奖池预算")}
           {input("guardValue", "默认值", "如 1000")}
           {input("note", "说明", "如 单次抽奖预算上限")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          预算和暂停开关直接决定转盘是否可参与；每档每日奖励上限由奖池库存统一控制。
+          预算用完或总开关关闭后，用户无法参与转盘。每个奖项的每日数量由库存控制。
         </div>
       </div>
     );
@@ -2865,24 +3237,27 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "quest-event-config") {
     return (
       <div className="field" data-business-form="quest-event-config">
-        <span className="bf-legend">业务表单 · 新建活动{spec.subject ? <> · {spec.subject}</> : null}</span>
+        <span className="bf-legend">新建活动{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("id", "活动 id(英文唯一)", "如 evt-summer")}
+          {input("id", "活动编号（英文，不能重复）", "如 evt-summer")}
           {input("name", "活动名", "如 夏日狂欢")}
-          {select("kind", "类型", ["discount", "referral", "regional", "boost", "seasonal", "holding", "onboarding"], "event-kind", { discount: "限时折扣", referral: "邀请挑战", regional: "区域活动", boost: "加成活动", seasonal: "季节活动", holding: "持币活动", onboarding: "新手活动" })}
+          {select("kind", "类型", ["discount", "referral", "regional", "boost", "seasonal", "onboarding"], "event-kind", { discount: "限时折扣", referral: "邀请挑战", regional: "区域活动", boost: "加成活动", seasonal: "季节活动", onboarding: "新手活动" })}
           {select("state", "状态", ["ongoing", "upcoming", "ended"], "event-state", { ongoing: "进行中", upcoming: "待开始", ended: "已结束" })}
-          {input("reward", "奖励", "如 100 UVEL")}
+          {input("reward", "奖励", "如 100 UVT")}
           {input("condition", "完成条件", "如 order.paid")}
-          {input("targetValue", "目标值", "如 5", "number")}
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span>目标值</span>
+            <input className="fld" type="number" min={1} max={1_000_000_000} step={1} value={value.targetValue ?? ""} onChange={(event) => set("targetValue", event.target.value)} placeholder="至少 1，留空按 1" />
+          </label>
           {input("geo", "地域范围", "如 VN / GLOBAL")}
           {input("href", "App 跳转", "如 /pages/store/store")}
           {input("startsAt", "开始时间(UTC)", "", "datetime-local")}
           {input("endsAt", "结束时间(UTC)", "", "datetime-local")}
-          {select("featured", "主推", ["false", "true"], "event-featured", { "false": "否", "true": "是(唯一)" })}
-          {select("trackable", "可追踪", ["false", "true"], "event-trackable", { "false": "否", "true": "是" })}
+          {select("featured", "设为主推", ["false", "true"], "event-featured", { "false": "否", "true": "是（同时只能有一个）" })}
+          {select("trackable", "统计效果", ["false", "true"], "event-trackable", { "false": "否", "true": "是" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          活动标识须使用英文且不能重复；协调世界时结束时间必须晚于开始时间；应用跳转仅允许 /pages/*；主推活动须在进行中且全局唯一；提高奖励须通过 B1 资金覆盖率校验。
+          结束时间须晚于开始时间；App 跳转只能填 /pages/ 开头的页面；主推活动须正在进行。调高奖励需通过兑付覆盖率检查。
         </div>
       </div>
     );
@@ -2892,18 +3267,18 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const final = Number(value.baseReward) * Number(value.multiplier);
     return (
       <div className="field" data-business-form="promo-banner-edit">
-        <span className="bf-legend">业务表单 · 本周转化卡</span>
+        <span className="bf-legend">本周促销卡</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("baseReward", "基础奖励(UVEL)", "800", "number")}
+          {input("baseReward", "基础奖励(UVT)", "800", "number")}
           {input("multiplier", "促销倍率 ×", "1.5", "number")}
           {input("countdownDays", "倒计时 · 天", "4", "number")}
           {input("countdownHours", "倒计时 · 时", "12", "number")}
-          {input("targetDevice", "目标设备 target", "自动(用户最高设备)")}
-          {input("targetDaily", "日产展示 $/d", "7.00")}
-          {select("status", "上下架", spec.statusOptions ?? ["active", "paused"], "promo-banner-status", { active: "上架中 active", paused: "已下架 paused" })}
+          {input("targetDevice", "目标设备", "留空则取用户最高档设备")}
+          {input("targetDaily", "展示日收益（$/天）", "7.00")}
+          {select("status", "上下架", spec.statusOptions ?? ["active", "paused"], "promo-banner-status", { active: "上架中", paused: "已下架" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          最终奖励 = 基础 × 倍率 = <b>{Number.isFinite(final) ? Math.round(final) : "—"} UVEL</b>(对应前端首页「激活设备领 UVEL」促销卡)。升奖励 / 倍率 = 放大 UVEL 流出,过 B1 红线;文案归 I 域,本块只配奖励 / 倍率 / 倒计时 / 目标设备 / 日产 / 上下架。
+          最终奖励 = 基础 × 倍率 = <b>{Number.isFinite(final) ? Math.round(final) : "—"} UVT</b>，显示在 App 首页「激活设备领 UVT」促销卡上。调高奖励或倍率需通过兑付覆盖率检查；卡片文案在「页面文案对比测试」修改。
         </div>
       </div>
     );
@@ -2912,12 +3287,12 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "schema-authoring") {
     return (
       <div className="field" data-business-form="schema-authoring">
-        <span className="bf-legend">业务表单 · 事件字段登记</span>
+        <span className="bf-legend">登记事件</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("eventName", "事件名称（业务域.对象_动作）", "device.order_paid")}
+          {input("eventName", "事件名称", "如 device.order_paid")}
           {select("ownerDomain", "所属业务域", spec.ownerDomains ?? ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"])}
           {select("producer", "发送方", ["server", "client", "server+client"])}
-          {input("consumer", "使用方", "B3 / L 域 BI / 风控 K")}
+          {input("consumer", "使用方", "如 转化分析、报表、风控")}
           {input("propName", "字段名称", "order_id")}
           {select("propType", "字段类型", spec.propertyTypes ?? ["string", "number", "boolean", "enum", "timestamp", "id"])}
           {select("samplingPolicy", "采集比例", spec.samplingPolicies ?? ["100%(资金/风控/转化)", "浏览 10%", "会话 25%"])}
@@ -2926,11 +3301,11 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="row wrap" style={{ gap: 16, marginTop: 10 }}>
           <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
             <input data-proof="schema-server-auth" type="checkbox" checked={value.isServerAuthoritative === "true"} onChange={(e) => set("isServerAuthoritative", e.target.checked ? "true" : "false")} />
-            由服务器确认（资金和状态事件必选）
+            由服务器上报（资金和状态类事件必选）
           </label>
           <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
             <input data-proof="schema-pii" type="checkbox" checked={value.isPII === "true"} onChange={(e) => set("isPII", e.target.checked ? "true" : "false")} />
-            包含个人隐私明文（不能登记）
+            包含个人隐私信息（不能登记）
           </label>
         </div>
       </div>
@@ -2940,14 +3315,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "disposition-lifecycle") {
     return (
       <div className="field" data-business-form="disposition-lifecycle">
-        <span className="bf-legend">业务表单 · 处置生命周期(期限 / 责任人 / 复查)</span>
-        <div className="tint tiny" style={{ marginBottom: 10 }}>目标 <span className="mono">{spec.subject}</span> · 到期进入「待复查」队列,展示剩余复查时间与责任人。</div>
+        <span className="bf-legend">处理期限与复查</span>
+        <div className="tint tiny" style={{ marginBottom: 10 }}>对象 <span className="mono">{spec.subject}</span> · 到期后进入待复查列表。</div>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {select("period", "期限 period", spec.periods ?? ["1 天", "7 天", "14 天", "30 天", "45 天"], "lifecycle-period")}
-          {input("reviewAt", "复查时间 review at", "2026-06-25", "date")}
+          {select("period", "期限", spec.periods ?? ["1 天", "7 天", "14 天", "30 天", "45 天"], "lifecycle-period")}
+          {input("reviewAt", "复查日期", "2026-06-25", "date")}
         </div>
         <div style={{ marginTop: 10 }}>
-          {input("owner", "责任人 owner", spec.ownerHint ?? "如 风控值班人员 / 风控-张三")}
+          {input("owner", "责任人", spec.ownerHint ?? "如 风控值班人员 / 风控-张三")}
         </div>
       </div>
     );
@@ -2957,7 +3332,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const contextLength = (value.triggerContext ?? "").trim().length;
     return (
       <div className="field" data-business-form="j4-execution-confirmation">
-        <span className="bf-legend">业务表单 · J4 触发依据与逐步确认</span>
+        <span className="bf-legend">启动原因与逐步确认</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("triggerBasis", "触发依据", spec.triggerBases, "j4-trigger-basis")}
           <label className="field" style={{ marginBottom: 0 }}>
@@ -2991,7 +3366,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                   <span>
                     <b>第 {index + 1} 步 · {step.domain}</b> · {step.action}
                     <span style={{ display: "block", marginTop: 2 }}>
-                      契约 <span className="mono">{step.ref || "未提供"}</span>{step.approve ? " · 需要操作确认" : ""}
+                      编号 <span className="mono">{step.ref || "—"}</span>{step.approve ? " · 需确认" : ""}
                     </span>
                   </span>
                 </label>
@@ -3093,7 +3468,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           </label>
         </div>
         <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
-          <span>I3 通知活动（仅当动作包含 I3 时必选）</span>
+          <span>通知（步骤含「发送通知」时必选）</span>
           <input
             className="fld"
             value={value.notifySearch ?? ""}
@@ -3102,11 +3477,11 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           />
           <div data-proof="sop-i3-notify-template-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
             {spec.notifyTemplatesError ? (
-              <div className="tint tiny" role="alert" style={{ marginTop: 0 }}>通知活动列表读取失败或缺少 I3 查看权限（{spec.notifyTemplatesError}）。J4 仍可使用 J1 动作；如需 I3 通知，请联系管理员后重试。</div>
+              <div className="tint tiny" role="alert" style={{ marginTop: 0 }}>通知列表加载失败或没有查看权限（{spec.notifyTemplatesError}）。其他步骤不受影响；需要发通知请联系管理员。</div>
             ) : notifyTemplates.length === 0 ? (
-              <div className="tint tiny" style={{ marginTop: 0 }}>暂无可下发的通知活动。请先到 I3 将活动排期；如无 I3 查看权限，请联系管理员，或移除 I3 动作。</div>
+              <div className="tint tiny" style={{ marginTop: 0 }}>暂无可发送的通知，请先到「通知活动」安排，或移除发送通知的步骤。</div>
             ) : shownNotifyTemplates.length === 0 ? (
-              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的通知模板,请换个关键词。</div>
+              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的通知，换个关键词试试。</div>
             ) : shownNotifyTemplates.map((item) => {
               const active = item.value === value.notifyCampaignNo;
               return (
@@ -3142,12 +3517,12 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           )}
         </div>
         <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
-          <span>动作序列 · 仅展示已接通动作</span>
+          <span>执行步骤</span>
           <input
             className="fld"
             value={value.actionSearch ?? ""}
             onChange={(e) => onChange({ ...value, actionSearch: e.target.value })}
-            placeholder="搜索域 / 动作 / 参数 / 说明"
+            placeholder="搜索步骤"
           />
           {shownActionOptions.some((item) => item.ref?.includes("{target}")) && (
             <input
@@ -3155,15 +3530,15 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               aria-label="目标域动作参数"
               value={value.actionTarget ?? ""}
               onChange={(e) => onChange({ ...value, actionTarget: e.target.value })}
-              placeholder="选择带参数动作前填写目标，例如 US / 123 / cluster-001 / VN:v1.2"
+              placeholder="部分步骤需先填写对象，如 US、123、cluster-001"
               style={{ marginTop: 8 }}
             />
           )}
           <div data-proof="sop-action-option-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
             {actionOptions.length === 0 ? (
-              <div className="tint tiny" style={{ marginTop: 0 }}>当前没有可编排动作，请重新读取；如仍为空请联系值班人员。</div>
+              <div className="tint tiny" style={{ marginTop: 0 }}>暂无可用步骤，请刷新；仍为空请联系值班人员。</div>
             ) : shownActionOptions.length === 0 ? (
-              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的原子动作,请换个关键词。</div>
+              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的步骤，换个关键词试试。</div>
             ) : shownActionOptions.map((item) => {
               const parameterReady = !item.ref?.includes("{target}") || Boolean(normalizedActionTarget(item));
               const selected = parameterReady && actionLines.includes(actionLine(item));
@@ -3202,9 +3577,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             })}
           </div>
           <div data-proof="sop-action-sequence" style={{ display: "grid", gap: 6, marginTop: 10 }}>
-            <span className="tiny" style={{ color: "var(--ink-3)" }}>已编排步骤</span>
+            <span className="tiny" style={{ color: "var(--ink-3)" }}>已添加的步骤</span>
             {actionLines.length === 0 ? (
-              <div className="tint tiny" style={{ marginTop: 0 }}>请从上方动作模板添加至少 1 个步骤。</div>
+              <div className="tint tiny" style={{ marginTop: 0 }}>请从上方至少添加 1 个步骤。</div>
             ) : actionLines.map((line, idx) => {
               const step = splitAction(line);
               return (
@@ -3246,9 +3621,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           />
           <div data-proof="sop-rollback-template-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
             {rollbackOptions.length === 0 ? (
-              <div className="tint tiny" style={{ marginTop: 0 }}>当前没有可用回滚方案，请重新读取后再试。</div>
+              <div className="tint tiny" style={{ marginTop: 0 }}>暂无可用的回滚方案，请刷新后重试。</div>
             ) : shownRollbackOptions.length === 0 ? (
-              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的回滚模板,请换个关键词。</div>
+              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的回滚方案，换个关键词试试。</div>
             ) : shownRollbackOptions.map((item) => {
               const active = item.plan === value.rollback || item.value === value.rollbackTemplate;
               return (
@@ -3288,11 +3663,11 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="row wrap" style={{ gap: 16, marginTop: 10 }}>
           <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
             <input data-proof="sop-emergency" type="checkbox" checked={value.emergencyTrack === "true"} onChange={(e) => set("emergencyTrack", e.target.checked ? "true" : "false")} />
-            应急轨(仅允许关停、暂停等止血方向)
+            应急模式（只允许关停、暂停类步骤）
           </label>
           <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
             <input data-proof="sop-drill" type="checkbox" checked readOnly disabled />
-            发布前要求动作与依赖预检通过
+            发布前先检查各步骤能否执行
           </label>
         </div>
       </div>
@@ -3308,31 +3683,31 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const estRows = !value.timeRange.trim()
       ? "填时间范围后按范围估算"
       : detail
-        ? "明细级 · 行数随时间范围 × 字段数增长(可能超 100 万 → 自动拆分)"
-        : "聚合级 · 数千行量级";
+        ? "明细数据 · 行数随时间范围增长，超过 100 万行会自动拆分"
+        : "汇总数据 · 约数千行";
     return (
       <div className="field" data-business-form="export-wizard">
-        <span className="bf-legend">业务表单 · 导出任务向导</span>
+        <span className="bf-legend">导出设置</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("exportType", "导出类型", spec.exportTypes ?? ["账单 CSV", "漏斗序列", "财务报表", "运营报表", "监管报告"])}
           {kpiRange ? select("window", "关键指标时间范围", Object.keys(L5_KPI_WINDOWS), L5_KPI_WINDOWS)
             : input("timeRange", "时间范围", "如 2026-W17 ~ W22 / 2026-05")}
           {kpiRange && value.window === "custom" && <>
-            <label className="field"><span>开始日期（北京时间）</span><input className="fld" type="date" value={value.from ?? ""} max={value.to || l5BusinessToday()} onChange={(event) => set("from", event.target.value)} /></label>
-            <label className="field"><span>结束日期（北京时间）</span><input className="fld" type="date" value={value.to ?? ""} min={value.from || undefined} max={l5BusinessToday()} onChange={(event) => set("to", event.target.value)} /></label>
+            <label className="field"><span>开始日期（{businessZone().label}）</span><input className="fld" type="date" value={value.from ?? ""} max={value.to || l5BusinessToday()} onChange={(event) => set("from", event.target.value)} /></label>
+            <label className="field"><span>结束日期（{businessZone().label}）</span><input className="fld" type="date" value={value.to ?? ""} min={value.from || undefined} max={l5BusinessToday()} onChange={(event) => set("to", event.target.value)} /></label>
           </>}
-          {input("fields", aggregateOnly ? "聚合字段" : "字段范围", aggregateOnly ? "如 用户数、订单数、完成率" : "如 user_id, amount, ts(留空=全字段)")}
+          {input("fields", aggregateOnly ? "汇总字段" : "导出字段", aggregateOnly ? "如 用户数、订单数、完成率" : "如 user_id, amount（留空则导出全部字段）")}
           {select("piiLevel", aggregateOnly ? "数据范围" : "个人隐私信息范围", spec.piiLevels ?? ["无 PII", "低(脱敏 ID)", "高(含手机 / 地址)"])}
-          {select("maskPolicy", aggregateOnly ? "保护策略" : "脱敏策略", spec.maskPolicies ?? ["默认脱敏", "字段掩码", "解密(强操作确认)"])}
-          {input("recipient", "接收人 / 用途", aggregateOnly ? "如 BI 周报分析" : "如 合规-王 / 监管报送")}
+          {select("maskPolicy", "隐私保护方式", spec.maskPolicies ?? ["默认脱敏", "字段掩码", "解密(强操作确认)"])}
+          {input("recipient", "接收人 / 用途", aggregateOnly ? "如 周报分析" : "如 合规-王 / 监管报送")}
         </div>
         <div style={{ marginTop: 10 }}>
-          {input("ticket", aggregateOnly ? "业务依据 / 工单" : "工单依据 ticket", aggregateOnly ? "如 BI-WEEKLY-202607" : "如 REG-20260618-001")}
+          {input("ticket", aggregateOnly ? "业务依据 / 工单" : "关联工单", aggregateOnly ? "如 BI-WEEKLY-202607" : "如 REG-20260618-001")}
         </div>
         <div className="tint tiny" data-proof="export-est" style={{ marginTop: 8 }}>
           {aggregateOnly
-            ? <>仅导出服务端聚合快照，不包含用户明细；确认后直接生成可下载任务，创建理由和快照范围会进入统一审计。</>
-            : <>预估行数(占位估算,以服务端任务实际为准):{estRows} · 超 100 万行需由服务端拒绝或拆分 · 含敏感字段({hasPII ? "是" : "否"})需额外确认。最终状态与下载有效期以服务端返回为准。</>}
+            ? <>只导出汇总数据，不含用户明细。确认后即可下载。</>
+            : <>预计行数：{estRows} · 含敏感字段：{hasPII ? "是（需额外确认）" : "否"}</>}
         </div>
       </div>
     );
@@ -3341,33 +3716,39 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "balance-adjust") {
     const amtN = Number(value.amount);
     const dir = value.direction ?? "增加";
-    const signed = !Number.isFinite(amtN) || amtN <= 0 ? "—" : `${dir === "扣减" ? "−" : dir === "冲正" ? "∓" : "+"}${amtN} ${value.currency === "NEX" ? "UVEL" : value.currency ?? "USDT"}`;
+    const signed = !Number.isFinite(amtN) || amtN <= 0 ? "—" : `${dir === "扣减" ? "−" : dir === "冲正" ? "∓" : "+"}${amtN} ${value.currency === "UVT" ? "UVT" : value.currency ?? "USDT"}`;
     return (
       <div className="field" data-business-form="balance-adjust">
-        <span className="bf-legend">业务表单 · 结构化调账(方向 / 金额 / 凭证)</span>
-        <div className="tint tiny" style={{ marginBottom: 10 }}>目标 <span className="mono">{spec.subject}</span> · 金额输入的是「调整额」非「调整后余额」,方向由下拉显式表达,避免增减误填。</div>
+        <span className="bf-legend">调整余额</span>
+        <div className="tint tiny" style={{ marginBottom: 10 }}>用户 <span className="mono">{spec.subject}</span> · 金额填本次增减的数额，不是调整后的余额。</div>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("direction", "调整方向", spec.directions ?? ["增加", "扣减", "冲正"], "adjust-direction")}
           {input("amount", "调整金额(正数)", "100", "number")}
-          {select("currency", "币种", spec.currencies ?? ["USDT", "NEX"], "adjust-currency")}
+          {select("currency", "币种", spec.currencies ?? ["USDT", "UVT"], "adjust-currency")}
           {input("voucher", "关联凭证", "工单号 / 链上 txid / 银行流水号")}
         </div>
         <div className="tint tiny" data-proof="adjust-entry-preview" style={{ marginTop: 10 }}>
-          分录预览:<span className="mono" style={{ color: dir === "扣减" ? "var(--danger)" : "var(--success)" }}>{signed}</span> · 方向 {dir} · 凭证 {value.voucher || "(待填)"}
+          预览：<span className="mono" style={{ color: dir === "扣减" ? "var(--danger)" : "var(--success)" }}>{signed}</span> · 方向 {dir} · 凭证 {value.voucher || "(待填)"}
         </div>
       </div>
     );
   }
 
+  if (surface) return (
+    <div className="rd-business-form" data-business-form="destructive-reason">
+      <RdNotice tone="danger" title={spec.target}>{spec.impact}</RdNotice>
+      <RdCheck data-proof="destructive-ack" label="我已确认影响范围" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
+    </div>
+  );
   return (
     <div className="field" data-business-form="destructive-reason">
-      <span className="bf-legend">业务表单 · 删除 / 下架影响确认</span>
-      <div className="tint danger tiny" style={{ marginBottom: 10 }}>
+      <span className="bf-legend">确认影响</span>
+      <div className="tint danger tiny rd-destructive-impact" style={{ marginBottom: 10 }}>
         目标 <span className="mono">{spec.target}</span> · {spec.impact}
       </div>
       <label className="row" style={{ gap: 8, marginTop: 10, color: "var(--ink-2)", fontSize: 12.5 }}>
         <input data-proof="destructive-ack" type="checkbox" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
-        我已确认影响范围,本操作将写入审计留痕
+        我已确认影响范围
       </label>
     </div>
   );
@@ -3377,43 +3758,122 @@ export type CoverageSnapshot = {
   coverageRatio: number;
   redlinePct: number;
   healthyPct?: number;
+  coverageRatioText?: string;
+  redlinePctText?: string;
+  redlineBreached?: boolean;
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
-  const [reason, setReason] = useState("");
+export type OperationApproval = {
+  heading?: string;
+  comparison?: ReactNode;
+  disabledReason?: string;
+  recover?: (reason: string) => Promise<boolean>;
+  coverageCheckCopy?: string;
+  completionCopy?: string;
+};
+
+export type InlineOperationApproval = {
+  resolve: (value: BusinessFormValue, editValue: string) => OperationApproval | undefined;
+  renderForm?: (value: BusinessFormValue, onChange: (value: BusinessFormValue) => void, locked: boolean, approval: boolean) => ReactNode;
+  recover: (reason: string, value: BusinessFormValue, editValue: string) => Promise<boolean>;
+  recoverLabel?: string;
+  retry?: () => Promise<void>;
+  pending?: boolean;
+  /** Saved direct commands can expose the existing query and retry actions together. */
+  initialRecovery?: "lookup" | "retry";
+  expired?: boolean;
+  /** Set only when the retained request has passed its retry deadline. */
+  expiredRequestRecovery?: "query" | "reload";
+  disabledReason?: string;
+  compareEdit?: { rangeLabel?: string };
+  dialogClassName?: string;
+  fieldLayout?: "compact";
+};
+
+export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, requireReason = true, initialReason, measureReason, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; confirmLabelForValue?: (value?: string) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; requireReason?: boolean; initialReason?: string; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+  const surface = useRdSurface();
+  const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
+  const [draftReason, setReason] = useState(pendingReason ?? initialReason ?? "");
+  const reason = pendingReason ?? draftReason;
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
+  // 原生数字框填坏时 value 是空串，只有 validity 分得清；有意清空是另一个状态（CP-54）。
+  const [numberBad, setNumberBad] = useState(false);
+  const [emptyChosen, setEmptyChosen] = useState(false);
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
-  const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => initBusinessForm(businessForm));
+  useEffect(() => {
+    if (businessFormRevision !== undefined) setActiveBusinessForm(businessForm);
+  }, [businessForm, businessFormRevision]);
+  const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => getPendingBusinessValue?.() ?? initBusinessForm(businessForm));
   const [uploadStates, setUploadStates] = useState<Record<string, "uploading" | "failed" | undefined>>({});
   const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // 结果未知（原操作可能已生效）用警示色，红只给明确失败（VS-107）。
+  const [submitUnknown, setSubmitUnknown] = useState(false);
+  // 刚打开不报错：字段错误等失焦或点过提交才显示（DP-06）。
+  const [attempted, setAttempted] = useState(false);
+  const [reasonLeft, setReasonLeft] = useState(false);
+  const [editLeft, setEditLeft] = useState(false);
+  const [openedForm] = useState(() => JSON.stringify([newVal, businessValue]));
+  const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(inlineApproval?.pending ? inlineApproval.initialRecovery ?? "lookup" : null);
   const [authoritativeReasonMin, setAuthoritativeReasonMin] = useState<number | null>(null);
   const [authoritativeReasonMax, setAuthoritativeReasonMax] = useState<number | null>(null);
   const [reasonPolicyError, setReasonPolicyError] = useState<string | null>(null);
   const reasonFieldId = useId();
+  const comparisonValueId = useId();
+  const comparisonUnitId = useId();
   const selectionRequestRef = useRef(0);
+  // 提交失败的提示在正文最上方：长表单点完底栏按钮后它可能已滚出视野，出现时滚到看得见（已在视野里不动）。
+  const submitAlertRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (submitError) submitAlertRef.current?.scrollIntoView({ block: "nearest" }); }, [submitError]);
+  const effectiveBriefKind = typeof briefKind === "function" ? briefKind(businessValue) : briefKind;
+  // 影响随业务字段变（比如名单有效期选长期还是指定日期），传函数时按现在填的值算。
+  const effectiveStatedBrief = typeof statedBrief === "function" ? statedBrief(businessValue) : statedBrief;
+  const approval = approvalSpec ?? inlineApproval?.resolve(businessValue, newVal);
+  const compareEdit = approval ? inlineApproval?.compareEdit : undefined;
+  const compactFields = !!approval && inlineApproval?.fieldLayout === "compact";
+  const completionCopy = approval?.completionCopy ?? directCompletionCopy;
+  const recoverApproval = inlineApproval ? (reason: string) => inlineApproval.recover(reason, businessValue, newVal) : approval?.recover;
+  const retryApproval = approvalRecovery === "retry" ? inlineApproval?.retry : undefined;
+  const approvalOnlyLookup = approvalRecovery === "lookup" || !!(approvalRecovery && inlineApproval?.expired);
+  const formLocked = submitting || !!approvalRecovery || pendingReason !== undefined;
   // 配置型调整:仅当调用方显式传 edit 才提供「目标新值」编辑控件并要求 newVal;纯动作 / 处置(放行 / 冻结 / 驳回 / pause)不传 edit → 仅确认。
   // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。
   const spec: EditSpec | null = edit ?? null;
+  const comparisonUnit = compareEdit?.rangeLabel ?? spec?.unit;
+  const unitDescriptionId = comparisonUnit && (compareEdit || compactFields) ? comparisonUnitId : undefined;
+  const editDescribedBy = compareEdit ? [comparisonValueId, unitDescriptionId].filter(Boolean).join(" ") : unitDescriptionId;
   const actionText = typeof action === "string" ? action : "";
   const isJ4Command = businessForm?.kind === "sop-authoring" || /应急剧本|应急预案|启动演练|回滚剧本|回滚预案/.test(actionText);
   const kind = spec?.kind ?? "text";
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
-  const currentNumber = Number(spec?.current);
-  const newNumber = Number(newVal);
-  const directionalAmplifies = spec?.amplifiesWhen && Number.isFinite(currentNumber) && Number.isFinite(newNumber)
-    ? spec.amplifiesWhen === "increase" ? newNumber > currentNumber : newNumber < currentNumber
+  const decimalDirection = compareEditDecimals(newVal, spec?.current ?? "");
+  const directionalAmplifies = typeof spec?.amplifiesWhen === "function"
+    ? spec.amplifiesWhen(newVal)
+    : typeof spec?.amplifiesWhen === "object"
+    ? spec.current === spec.amplifiesWhen.from && newVal === spec.amplifiesWhen.to
+    : spec?.amplifiesWhen && decimalDirection !== undefined
+    ? spec.amplifiesWhen === "increase" ? decimalDirection > 0 : decimalDirection < 0
+    : spec?.amplifiesWhen && !spec.current?.trim() && normalizeEditDecimal(newVal) === "0"
+    ? false
     : undefined;
-  const effectiveAmplifies = directionalAmplifies ?? Boolean(amplifies);
+  const effectiveAmplifies = (activeBusinessForm?.kind === "multi-field" ? activeBusinessForm.amplifies?.(businessValue) : undefined) ?? directionalAmplifies ?? Boolean(amplifies);
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
-  const covBlocked = Boolean(effectiveAmplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
+  // F4 preserves the backend's raw ratio gate; ambassador budget checks also require reliability.
+  const coverageUnknown = coverageReliable === false;
+  const covBlocked = Boolean(effectiveAmplifies && ((coverage && (coverage.redlineBreached ?? coverage.coverageRatio < coverage.redlinePct)) || (coverageUnknown && coverageUnavailableBlocks)));
+  const coverageBlockText = coverageUnknown ? "兑付覆盖率暂时读不到，读到之前不能提交" : "兑付覆盖率低于红线，暂时无法提交";
+  const coverageRatioText = coverageUnknown || !coverage ? "—" : coverage.coverageRatioText !== undefined ? `${coverage.coverageRatioText}%` : fmtPct(coverage.coverageRatio);
+  const coverageRedlineText = coverageUnknown || !coverage ? "—" : coverage.redlinePctText !== undefined ? `${coverage.redlinePctText}%` : fmtConfigPct(coverage.redlinePct);
+  // 改版页面里的整组审批（不带自定标题、不是内嵌审批）和直接生效的框一个样子：生效方式是标题下的标签，
+  // 业务后果与谁来批分别常显，放大资金提示用同一套警示样式。
+  const rdApproval = surface && !!approvalSpec && !approvalSpec.heading && !inlineApproval;
   const requestedMinimum = Number.isFinite(requestedReasonMin)
     ? Math.max(1, Math.min(200, Math.floor(requestedReasonMin!)))
     : 8;
-  const reasonPolicyReady = authoritativeReasonMin !== null;
-  const reasonMin = reasonPolicyReady ? Math.max(requestedMinimum, authoritativeReasonMin) : requestedMinimum;
+  const reasonPolicyReady = !requireReason || authoritativeReasonMin !== null;
+  const reasonMin = Math.max(requestedMinimum, authoritativeReasonMin ?? requestedMinimum);
   const requestedMaximum = requestedReasonMax ?? (isJ4Command
     ? 200
     : activeBusinessForm?.kind === "multi-field"
@@ -3427,16 +3887,43 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   // Mirror the server's Unicode policy for immediate UX feedback. The backend remains
   // authoritative; whitespace, controls, zero-width formatting and standalone marks
   // cannot be used to pad an operation reason to the configured minimum.
-  const reasonLength = Array.from(reason.normalize("NFC")).filter((char) =>
-    !/[\s\p{Cc}\p{Cf}\p{Mn}\p{Mc}\p{Me}]/u.test(char),
-  ).length;
-  const reasonOk = reasonLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
+  const visibleLength = visibleReasonLength(reason);
+  const reasonLength = measureReason ? measureReason(reason) : visibleLength;
+  const reasonOk = !requireReason || (visibleLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax));
   const businessMissing = missingBusinessFields(activeBusinessForm, businessValue);
-  const derivedNewVal = businessNewValue(activeBusinessForm, businessValue);
-  const editValueOk = isEditValueValid(spec, newVal);
+  // 表单自己写了校验提示的，理由下面的清单不再写一遍（VS-105）。
+  const formFeedback = surface && activeBusinessForm?.kind === "multi-field" ? activeBusinessForm.feedback?.(businessValue) : undefined;
+  // 已经写在字段下的不再列一遍。
+  const shownInFields = surface && activeBusinessForm?.kind === "multi-field" ? [...Object.values(multiFieldIssues(activeBusinessForm, businessValue)), ...(formFeedback?.invalid ? [formFeedback.message] : [])]
+    : surface && activeBusinessForm?.kind === "disclosure-jurisdiction" ? [appVisibleTextError(businessValue.name, "适用范围名称") ?? ""] : [];
+  const listedMissing = businessMissing.filter((message) => !shownInFields.includes(message));
+  const submittedValue = spec?.submitEditValue
+    ? newVal
+    : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
+  const editIssue = !emptyChosen && !numberBad && isEditValueValid(spec, newVal) ? spec?.validate?.(newVal) : undefined;
+  const editValueOk = !editIssue && (emptyChosen || (!numberBad && isEditValueValid(spec, newVal)));
+  const sameAsCurrent = !!spec?.disallowCurrent && !!newVal.trim() && (newVal.trim() === spec.current?.trim() || (kind === "number" && compareEditDecimals(newVal, spec.current ?? "") === 0));
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
-  const canConfirm = reasonPolicyReady && !covBlocked && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked;
+  const canConfirm = !blockedReason && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason
+    : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
+      && (!inlineApproval || !approvalRecovery || !!approval));
+  const showReasonError = !reasonOk && !retryApproval && (!surface || attempted || reasonLeft);
+  const showEditError = !surface || attempted || editLeft;
+  const reasonShort = visibleLength < reasonMin ? `还差 ${reasonMin - visibleLength} 字` : `操作理由不能超过 ${reasonMax} 字。`;
+  // 按钮灰着时缺什么写在按钮的提示里（OP-126）。
+  const missing: ReactNode[] = canConfirm || submitting ? [] : blockedReason ? [blockedReason] : [
+    !reasonPolicyReady && (reasonPolicyError ?? "正在加载"),
+    covBlocked && coverageBlockText,
+    approval?.disabledReason,
+    inlineApproval?.disabledReason,
+    businessSelectionLoading && "正在加载",
+    uploadBlocked && "图片还没上传好",
+    !editValueOk && (editIssue ? editIssue : sameAsCurrent ? "和当前值一样，没有改动" : kind === "number" && (newVal.trim() || numberBad) ? editNumberError(spec!) : `填写${spec?.label ?? "新值"}`),
+    ...businessMissing.map((message) => message.replace(/。+$/, "")),
+    !reasonOk && (visibleLength < reasonMin ? `操作理由${reasonShort}` : reasonShort.replace(/。$/, "")),
+  ].filter(Boolean);
   useEffect(() => {
+    if (!requireReason) return;
     let active = true;
     setAuthoritativeReasonMin(null);
     setAuthoritativeReasonMax(null);
@@ -3447,20 +3934,58 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         setAuthoritativeReasonMax(policy.maxChars);
       }
     }).catch(() => {
-      if (active) setReasonPolicyError("操作理由策略加载失败，系统已停止提交。请恢复 A2 配置后重开弹窗。");
+      if (!active) return;
+      if (reasonPolicyOptional) {
+        setAuthoritativeReasonMin(8);
+        setAuthoritativeReasonMax(200);
+      } else {
+        setReasonPolicyError("理由规则加载失败，暂时无法提交。请关闭弹窗后重试。");
+      }
     });
     return () => { active = false; };
-  }, []);
+  }, [reasonPolicyOptional, requireReason]);
   const handleConfirm = async () => {
     if (!canConfirm) return;
     setSubmitting(true);
     setSubmitError(null);
+    setSubmitUnknown(false);
     try {
-      await onConfirm(reason.trim(), (derivedNewVal ?? newVal) || undefined, activeBusinessForm ? businessValue : undefined);
+      if (retryApproval) await retryApproval();
+      else await onConfirm(requireReason ? reason.trim() : "", submittedValue || (emptyChosen && spec?.emptyOption ? "" : undefined), activeBusinessForm ? businessValue : undefined);
     } catch (error) {
+      // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
+      if (isPermissionDenied(error)) {
+        announcePermissionDenied();
+        onClose();
+        return;
+      }
       // The domain callback owns the detailed toast. Keep the form open and
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
-      setSubmitError(operationConfirmErrorMessage(error));
+      if ((approval || retryApproval) && isA2OutcomeUncertainError(error)) {
+        setApprovalRecovery(recoverApproval ? "lookup" : "retry");
+        setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原结果；查不到再按原请求重试，" : "按原请求重试，"}不会建第二张。命令号：${error.commandKey}`);
+      } else {
+        setApprovalRecovery(inlineApproval?.initialRecovery && getPendingReason?.() !== undefined ? inlineApproval.initialRecovery : null);
+        setSubmitUnknown(error instanceof Error && /Outcome(Uncertain|Unknown)Error$/.test(error.name) || getPendingReason?.() !== undefined);
+        setSubmitError(operationConfirmErrorMessage(error));
+      }
+    } finally {
+      setPendingReason(getPendingReason?.());
+      setSubmitting(false);
+    }
+  };
+  const handleApprovalLookup = async () => {
+    if (!recoverApproval || submitting) return;
+    setSubmitting(true);
+    try {
+      if (!await recoverApproval(reason.trim())) {
+        setApprovalRecovery("retry");
+        setSubmitError(inlineApproval?.expired ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。");
+      } else if (inlineApproval?.recoverLabel) {
+        setSubmitError(null);
+      }
+    } catch (error) {
+      setSubmitError(isA2OutcomeUncertainError(error) ? error.message : operationConfirmErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
@@ -3486,133 +4011,261 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
     }
   };
+  const pendingReasonHelp = inlineApproval?.expiredRequestRecovery === "reload"
+    ? surface ? "原操作已过期，不能重发；请刷新页面核对当前值。" : "原操作已过期，不能重发，请刷新页面核对当前值。"
+    : inlineApproval?.expiredRequestRecovery === "query"
+      ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
+      : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。";
+  const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined) ?? confirmLabel;
+  // 放大提示固定在关键信息层，先于所有填写项。
+  const coverageFirst = surface && (!approval || rdApproval);
+  // 事实区随输入变（比如改基准价时买入价写「现在 → 改后」）：新值填好才交给页面。
+  const shownFacts = typeof facts === "function" ? facts(editValueOk ? newVal : undefined) : facts;
+  const coverageInFacts = coverageFirst && !!shownFacts;
+  const checkCopy = rdApproval ? approvalSpec?.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。" : coverageCheck;
+  const coverageNotice = effectiveAmplifies && (
+    surface ? <div className="rd-confirm-funding">
+      <RdNotice tone={covBlocked ? "danger" : "warn"} title={<>{coverageLead}{!coverage && auditSink !== "local-history" && <Explain label="什么时候检查" content={checkCopy} />}</>}>
+        {(coverage || coverageUnknown) && <div className="rd-funding-coverage">
+          兑付覆盖率 <b>{coverageRatioText}</b>，红线 <b>{coverageRedlineText}</b>{coverageUnknown && "，暂时读不到"}
+          <Explain label="这项操作对资金的影响" content={<><p>{checkCopy}</p>{coverage?.healthyPct !== undefined && !coverageUnknown && <p>健康线 {fmtConfigPct(coverage.healthyPct)}。</p>}</>} />
+        </div>}
+        {covBlocked && <p>{coverageUnknown ? "读到之前不能提交。" : "低于红线，暂时不能提交。"}</p>}
+        {!coverage && auditSink === "local-history" && <p>{checkCopy}本页暂不自动检查覆盖率，请自行确认资金影响。</p>}
+      </RdNotice>
+    </div> : <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
+      <span className="ico"><Icon name="alert" size={16} /></span>
+      <div className="tiny">
+        <b>{coverageLead}</b> · {checkCopy}
+        {coverage || coverageUnknown ? (
+          <>
+            兑付覆盖率 <b className="mono">{coverageRatioText}</b>
+            {coverageUnknown ? null : coverage && (coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
+              ? `，高于健康线 ${fmtConfigPct(coverage.healthyPct)}`
+              : coverage.coverageRatio > coverage.redlinePct
+                ? `，高于红线 ${coverageRedlineText}，请谨慎提交`
+                : coverage.coverageRatio === coverage.redlinePct
+                  ? `，正好在红线 ${coverageRedlineText}，请谨慎提交`
+                  : `，低于红线 ${coverageRedlineText}，提交会被拒绝`)}
+          </>
+        ) : auditSink === "local-history" ? (
+          <>本页暂不自动检查覆盖率，请自行确认资金影响。</>
+        ) : null}
+      </div>
+    </div>
+  );
   return (
-    <Modal title={action} icon="shield" onClose={handleClose}
+    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : spec ? "sliders" : "shield"} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={rdApproval ? effect ?? <RdStatusTag tone="progress" filled explain={completionCopy}>批准后生效</RdStatusTag> : effect} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
-        <Btn variant="primary" disabled={!canConfirm} onClick={() => void handleConfirm()}>
-          <Icon name="check" size={15} /> {submitting ? "提交中…" : "确认提交"}
-        </Btn>
+        {approvalRecovery && recoverApproval && (
+          <Btn variant={approvalRecovery === "lookup" ? "primary" : undefined} disabled={submitting} onClick={() => void handleApprovalLookup()}>
+            {submitting ? inlineApproval?.recoverLabel ? "读取中…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原结果"}
+          </Btn>
+        )}
+        {!approvalOnlyLookup && (surface ? (
+          <RdButton variant={confirmTone} loading={submitting} loadingText="提交中…"
+            disabledReason={canConfirm || submitting ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
+            onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>
+            {submitLabel}
+          </RdButton>
+        ) : (
+          <Btn variant={confirmTone} disabled={!canConfirm} onClick={() => void handleConfirm()}>
+            <Icon name="check" size={15} /> {submitting ? "提交中…" : submitLabel}
+          </Btn>
+        ))}
       </>}>
-      <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} />
-      {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
-      {!reasonPolicyReady && (
-        <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>
-          {reasonPolicyError ?? "正在加载 A2 操作理由策略，加载完成前不能提交。"}
+      {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
+      <fieldset disabled={submitting} className="rd-contents" style={{ display: "contents" }}>
+      {(!approval || rdApproval) && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
+      {!surface && content}
+      {surface ? (blockedReason || submitError) && (
+        // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。
+        <div className="rd-confirm-alert" ref={submitAlertRef}><RdNotice tone={blockedReason || approvalRecovery || submitUnknown ? "warn" : "danger"}>{keepCommandKey(blockedReason || submitError)}</RdNotice></div>
+      ) : blockedReason
+        ? <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{blockedReason}</div>
+        : submitError && <div className="alertbar warn" role="alert" ref={submitAlertRef} style={{ marginBottom: 16 }}>{submitError}</div>}
+      {inlineApproval?.disabledReason && (surface
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">{inlineApproval.disabledReason}</RdNotice></div>
+        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>)}
+      {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (surface
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">上次提交结果未知，可能已经建了审批单，先查询原结果。</RdNotice></div>
+        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上次提交结果未知，可能已经建了审批单，先查询原结果。</div>
+      )}
+      {!reasonPolicyReady && !retryApproval && (!surface || reasonPolicyError) && (surface
+        ? <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><RdNotice tone="warn">{reasonPolicyError ?? "正在加载，稍候即可提交。"}</RdNotice></div>
+        : <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>
+          {reasonPolicyError ?? "正在加载，稍候即可提交。"}
         </div>
       )}
-      {effectiveAmplifies && (
-        <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
-          <span className="ico"><Icon name="alert" size={16} /></span>
-          <div className="tiny">
-            <b>会增加资金流出</b> · 系统会先检查 B1 备付金覆盖率。
-            {coverage ? (
-              <>
-                当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b>
-                {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
-                  ? `，高于健康线 ${coverage.healthyPct}%`
-                  : coverage.coverageRatio > coverage.redlinePct
-                    ? `，高于红线 ${coverage.redlinePct}%，请审慎提交`
-                    : coverage.coverageRatio === coverage.redlinePct
-                      ? `，等于红线 ${coverage.redlinePct}%，缓冲为 0 个百分点，请审慎提交`
-                      : `，低于红线 ${coverage.redlinePct}%，系统会拒绝提交`}
-              </>
-            ) : (
-              <>{auditSink === "local-history" ? "本页为本地配置面,覆盖率预检待接入后端后生效;请人工确认资金方向影响。" : "提交时由后端实时校验覆盖率，当前弹窗不使用前端备用值。"}</>
-            )}
+      {rdApproval && approvalSpec?.disabledReason && <div className="rd-confirm-alert"><RdNotice tone="warn">{approvalSpec.disabledReason}</RdNotice></div>}
+      {rdApproval && approvalSpec?.comparison}
+      {approval && !rdApproval && <>
+        {!approval.heading && approval.comparison && <div className="tint" style={{ marginBottom: 14 }}>{approval.comparison}</div>}
+        <div className="alertbar warn" style={{ marginBottom: 14 }}>
+          <span className="ico" style={{ color: "var(--operation-approval-icon, var(--warning))" }}><Icon name="alert" size={16} /></span>
+          <div style={{ fontSize: 14, lineHeight: 1.5 }}>
+            <b style={{ color: "var(--warning)" }}>{approval.heading ?? "放宽配置 · 批准后生效"}</b>
+            {!approval.heading && <>
+              <div>{completionCopy}</div>
+              <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && `${coverageBlockText}。`}</div>
+              {(coverage || coverageUnknown) && <div>兑付覆盖率 <b className="mono">{coverageRatioText}</b> · 红线 <span className="mono">{coverageRedlineText}</span>{coverageUnknown && !covBlocked && " · 暂时读不到"}</div>}
+            </>}
+            {approval.disabledReason && <div role="status">{approval.disabledReason}</div>}
           </div>
         </div>
-      )}
-      <div className="row" style={{ gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-        <span className="mc"><Icon name="check" size={12} /> 操作者确认</span>
-        <Icon name="arrow" size={14} />
-        <span className="mc" style={{ background: "var(--brand-soft)", color: "var(--brand)" }}>
-          操作理由必填 · {auditSink === "local-history" ? "记录在本页修改历史" : isJ4Command ? "写入审计记录" : "写入 A2 审计"}
-        </span>
-        <span className="mc" style={{ background: "var(--surface-3)", color: "var(--ink-3)" }}>{completionCopy ?? (isJ4Command ? "提交后等待服务端确认" : "提交后以系统处理结果为准")}</span>
-      </div>
+        {approval.heading ? <>
+          <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
+          {(coverage || coverageUnknown) && <p className="operation-approval-coverage">兑付覆盖率 <b>{coverageRatioText}</b> · 红线 <b>{coverageRedlineText}</b>{coverageUnknown && (covBlocked ? " · 暂时读不到，读到之前不能提交" : " · 暂时读不到")}</p>}
+          {approval.comparison}
+        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
+        {(approval.heading || compareEdit) && effectiveStatedBrief && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
+      </>}
+      {!surface && !approval && coverageNotice}
+      {!surface && !approval && completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
+      {shownFacts && <div className="rd-confirm-facts">{shownFacts}{coverageInFacts && coverageNotice}</div>}
+      {coverageFirst && !shownFacts && coverageNotice}
+      {surface && content}
       {activeBusinessForm && (
-        <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
+        <fieldset disabled={formLocked} style={{ border: 0, padding: 0, marginInline: 0, minWidth: 0 }}>
+        {inlineApproval?.renderForm ? inlineApproval.renderForm(businessValue, setBusinessValue, formLocked, !!approval) : (
+          <BusinessFormBlock spec={activeBusinessForm} value={businessValue} attempted={attempted} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
+        )}
+        </fieldset>
       )}
-      {uploadBlocked && <div role="alert" className="itint" style={{ marginTop: 8 }}>
+      {uploadBlocked && (surface
+        ? <div role="alert" className="rd-confirm-alert"><RdNotice tone="warn">{Object.values(uploadStates).includes("uploading") ? "图片正在上传，请完成后再提交。" : "图片上传失败，请重新上传或明确清除图片后再提交。"}</RdNotice></div>
+        : <div role="alert" className="itint" style={{ marginTop: 8 }}>
         {Object.values(uploadStates).includes("uploading") ? "图片正在上传，请完成后再提交。" : "图片上传失败，请重新上传或明确清除图片后再提交。"}
-      </div>}
-      {businessSelectionLoading && <div className="itint" style={{ marginTop: 8 }}>正在加载目标适用地区版本快照…</div>}
-      {spec && (
-        <div className="field">
-          <span className="bf-legend">目标新值{spec.current ? <> · 当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span></> : null}</span>
+      </div>)}
+      {businessSelectionLoading && (surface
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="progress">正在加载该地区的版本内容…</RdNotice></div>
+        : <div className="itint" style={{ marginTop: 8 }}>正在加载该地区的版本内容…</div>)}
+      {spec && surface && !compareEdit && (
+        // 现在值、新值输入合成一块（VS-103）：范围只写在 hint，没改时不多写一句，确认按钮禁用并写原因。
+        <div className="rd-confirm-edit">
+          <DiffField
+            before={spec.current ? editCurrent(spec, kind).text : undefined}
+            beforeLabel={spec.currentLabel}
+            unit={editCurrent(spec, kind).unit}
+            label={spec.label ?? "改后"}
+            size={kind === "number" ? "key" : "body"}
+            stack={kind === "text" ? (spec.current?.length ?? 0) > 14 : kind !== "number" && opts.some((o) => { const text = spec.optionLabels?.[o] ?? o; return typeof text !== "string" || text.length > 10; })}
+            hint={spec.hint}
+            note={spec.preview && editValueOk ? spec.preview(newVal) : undefined}
+            error={retryApproval ? undefined
+              : showEditError && sameAsCurrent ? "新值和当前值一样，改了才能保存。"
+              : showEditError && editIssue ? editIssue
+              : showEditError && !editValueOk && kind === "number" && (newVal || numberBad) ? `${editNumberError(spec)}。`
+              : attempted && !editValueOk && !newVal.trim() && !numberBad ? `填写${spec.label ?? "新值"}。`
+              : undefined}
+          >
+            {(control) => kind === "select" || kind === "toggle" ? (
+              <div id={control.id} className="row wrap" role="group" aria-label="目标新值" aria-describedby={control["aria-describedby"]} style={{ gap: 8 }}>
+                {opts.map((o) => <Chip key={o} tab sel={newVal === o} disabled={formLocked || spec.disabledOptions?.includes(o)} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
+              </div>
+            ) : <>
+              {kind === "number" ? (
+                <RdNumberInput {...control} key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.inputStep ?? spec.step} value={newVal} disabled={formLocked || emptyChosen} aria-invalid={showEditError && !editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} onBlur={() => setEditLeft(true)} />
+              ) : (
+                <input {...control} className="rd-input" aria-label="目标新值" type="text" disabled={formLocked} value={newVal} onChange={(e) => setNewVal(e.target.value)} onBlur={() => setEditLeft(true)} placeholder="输入新值" />
+              )}
+              {spec.emptyOption && <Chip tab sel={emptyChosen} onClick={() => { setEmptyChosen(!emptyChosen); setNewVal(""); setNumberBad(false); }}>{spec.emptyOption}</Chip>}
+            </>}
+          </DiffField>
+        </div>
+      )}
+      {spec && !(surface && !compareEdit) && (
+        <div className={compareEdit ? "field tint" : "field"}>
+          {!compareEdit && <span className="bf-legend">{spec.label ?? "新值"}{spec.current ? <> · 当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span></> : null}</span>}
           {kind === "select" || kind === "toggle" ? (
             <div className="row wrap" style={{ gap: 8 }}>
-              {opts.map((o) => <Chip key={o} tab sel={newVal === o} disabled={spec.disabledOptions?.includes(o)} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
+              {opts.map((o) => <Chip key={o} tab sel={newVal === o} disabled={formLocked || spec.disabledOptions?.includes(o)} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
             </div>
           ) : (
-            <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <div className={compareEdit ? "row wrap" : "row"} style={{ gap: 8, alignItems: "center" }}>
+              {compareEdit && <span id={comparisonValueId} className="muted">当前{" "}
+                <strong className="tnum" style={{ color: "var(--ink)", fontSize: 14 }}>
+                  {spec.current}{compareEdit.rangeLabel ? "" : ` ${spec.unit ?? ""}`}
+                </strong>
+              </span>}
+              {compareEdit && <span aria-hidden>→</span>}
+              {compareEdit && <span className="muted">拟调整</span>}
               <input
                 className="fld"
                 aria-label="目标新值"
+                aria-describedby={editDescribedBy}
                 type={kind === "number" ? "number" : "text"}
                 min={kind === "number" ? spec.min : undefined}
                 max={kind === "number" ? spec.max : undefined}
                 step={kind === "number" ? spec.step : undefined}
+                disabled={formLocked}
                 value={newVal}
                 onChange={(e) => setNewVal(e.target.value)}
-                placeholder={spec.current ? `输入新值(当前 ${spec.current})` : "输入目标新值"}
-                style={{ maxWidth: 240 }}
+                onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)}
+                onBlur={() => setEditLeft(true)}
+                placeholder={spec.current ? `输入新值（当前 ${spec.current}）` : "输入新值"}
+                style={{ maxWidth: compareEdit ? 140 : 240 }}
               />
-              {spec.unit && <span className="muted tiny">{spec.unit}</span>}
+              {comparisonUnit && <span className="muted tiny" id={unitDescriptionId}>{comparisonUnit}</span>}
+              {spec.emptyOption && <Chip tab sel={emptyChosen} onClick={() => { setEmptyChosen(!emptyChosen); setNewVal(""); setNumberBad(false); }}>{spec.emptyOption}</Chip>}
             </div>
           )}
-          {!editValueOk && kind === "number" && newVal && (
-            <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-              请输入 {spec.min ?? "允许范围"}～{spec.max ?? "允许上限"} 的有效数字{spec.step ? `（步长 ${spec.step}）` : ""}。
-            </div>
+          {showEditError && !editValueOk && !retryApproval && kind === "number" && (newVal || numberBad) && !(surface && sameAsCurrent) && (
+            <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>{editNumberError(spec)}。</div>
           )}
-          {newVal && spec.current && (
+          {surface && attempted && !editValueOk && !newVal.trim() && !numberBad && <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>填写{spec.label ?? "新值"}。</div>}
+          {surface && showEditError && sameAsCurrent && <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>新值和当前值一样，改了才能保存。</div>}
+          {surface && spec.hint && <div className="rd-form-help">{spec.hint}</div>}
+          {surface && spec.preview && editValueOk && <div className="rd-confirm-preview">{spec.preview(newVal)}</div>}
+          {!compareEdit && (newVal || emptyChosen) && spec.current && !sameAsCurrent && (!surface || editValueOk) && (
             <div className="tiny" style={{ marginTop: 8, color: "var(--ink-3)" }}>
-              当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span> → 新 <span className="mono" style={{ color: "var(--brand)" }}>{spec.optionLabels?.[newVal] ?? newVal}{spec.unit ? ` ${spec.unit}` : ""}</span>
+              {surface ? "现在" : "当前"} <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span> → {surface ? "改后" : "新"} <span className="mono" style={{ color: "var(--brand)" }}>{emptyChosen ? spec.emptyOption : <>{spec.optionLabels?.[newVal] ?? newVal}{spec.unit ? ` ${spec.unit}` : ""}</>}</span>
             </div>
           )}
         </div>
       )}
-      <div className="field">
-        <label htmlFor={reasonFieldId}>操作理由(必填 · {reasonMax ? `${reasonMin}-${reasonMax} 字` : `${reasonMin} 字以上`} · {auditSink === "local-history" ? "记录在本页修改历史" : isJ4Command ? "写入不可修改的审计记录" : "记录到 A2 操作日志（不能修改）"})</label>
-        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例: 工单号 / 业务依据 / 影响面 / 回滚预案" />
-        {!reasonOk && (
-          <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-            {reasonLength < reasonMin
-              ? `还需补充 ${reasonMin - reasonLength} 字，确认按钮才会启用。`
-              : `操作理由不能超过 ${reasonMax} 字。`}
+      {surface && !approval && !coverageFirst && coverageNotice}
+      {requireReason && <div className={surface ? "field rd-reason-field" : "field"}>
+        {surface
+          ? <label htmlFor={reasonFieldId}>{approval && !compactFields && !rdApproval ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span></label>
+          : <label htmlFor={reasonFieldId}>{approval && !compactFields ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}{compactFields ? <span className="muted"> 至少 {reasonMin} 字</span> : `（必填，${reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）`}</label>}
+        {/* 字数写在框内角落，够不够看按钮的提示，失焦或点过提交才用警告色（DP-06）。 */}
+        <div className={surface ? "rd-reason-box" : compactFields ? "g3-reason-box" : undefined}>
+          <textarea id={reasonFieldId} className={surface ? "rd-input rd-textarea" : undefined} rows={3} maxLength={measureReason ? undefined : reasonMax} value={reason} aria-invalid={surface && showReasonError ? true : undefined} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={surface ? `${reasonFieldId}-range ${reasonFieldId}-count${showReasonError ? ` ${reasonFieldId}-length` : ""}` : inlineApproval?.dialogClassName && (compactFields || showReasonError || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} onBlur={() => setReasonLeft(true)} placeholder={compactFields ? "填写调整依据或工单号" : reasonPlaceholder} />
+          {surface && <span id={`${reasonFieldId}-count`} className="rd-reason-count">{reasonMax ? `${reasonLength}/${reasonMax}` : `${reasonLength} 字`}</span>}
+        </div>
+        {surface && <div id={`${reasonFieldId}-range`} className="rd-form-help">{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}</div>}
+        {pendingReason !== undefined && <div className={surface ? "rd-form-help" : "tiny"} style={surface ? undefined : { marginTop: 7 }}>
+          {pendingReasonHelp}
+        </div>}
+        {!surface && compactFields && <div id={`${reasonFieldId}-length`} className="tiny reason-count-inset">
+          {reasonMax && <span>{reasonLength}/{reasonMax}</span>}
+          {showReasonError && <span style={{ color: "var(--warning)" }}>{reasonShort}</span>}
+        </div>}
+        {showReasonError && (surface || !compactFields) && (
+          <div id={`${reasonFieldId}-length`} className={surface ? "rd-form-error" : "tiny"} role={surface ? "alert" : undefined} style={surface ? undefined : { marginTop: 7, color: "var(--warning)" }}>{reasonShort}</div>
+        )}
+        {!surface && !compactFields && reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
+        {listedMissing.length > 0 && (!surface || attempted) && (
+          <div className={surface ? "rd-form-error" : "tiny"} style={surface ? undefined : { marginTop: 7, color: "var(--warning)" }}>
+            请检查以下内容： {listedMissing.slice(0, 4).map((message) => message.replace(/。+$/, "")).join(" / ")}{listedMissing.length > 4 ? "…" : ""}。
           </div>
         )}
-        {reasonMax && reasonOk && <div className="tiny" style={{ marginTop: 7, color: "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
-        {businessMissing.length > 0 && (
-          <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-            请检查以下内容： {businessMissing.slice(0, 4).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。
-          </div>
-        )}
-      </div>
+      </div>}
+      </fieldset>
     </Modal>
   );
 }
 
-/* toast — 自包含顶部居中浮层(对应设计稿 ctx.setToast);hover 暂停自动消失,移开 2s 后再消失。 */
-export function useToast(): [ReactNode, (s: string) => void] {
-  const [toast, setToast] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!toast) return;
-    timerRef.current = setTimeout(() => setToast(null), 2800);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [toast]);
-  const node = toast ? (
-    <div
-      onMouseEnter={() => { if (timerRef.current) clearTimeout(timerRef.current); }}
-      onMouseLeave={() => { if (timerRef.current) clearTimeout(timerRef.current); timerRef.current = setTimeout(() => setToast(null), 2000); }}
-      style={{ position: "fixed", top: "calc(var(--admin-topbar-h) + 32px)", left: "50%", transform: "translateX(-50%)", zIndex: 200, width: "min(420px, calc(100vw - 40px))", justifyContent: "center", background: "var(--v5-surface-2)", color: "var(--v5-ink)", padding: "12px 20px", borderRadius: 11, fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 9, boxShadow: "0 12px 36px rgba(0,0,0,.4)", border: "1px solid var(--v5-border-strong)" }}>
-      <span aria-hidden="true" style={{ flexShrink: 0 }}>ⓘ</span> {toast}
-    </div>
-  ) : null;
-  return [node, setToast];
+/* 页面没传提示类型时按这几种明确的说法判断，别的还是信息。页面都传 kind 后删掉。 */
+const TOAST_KIND_BY_WORDS: readonly (readonly [RegExp, ToastKind])[] = [[/结果未知/, "warn"], [/^已(?!.*但)/, "success"], [/失败|错误/, "error"], [/未确认|待确认|未完成|不能|无法|没有提交/, "warn"]];
+
+/* 保留旧调用契约，反馈交给根布局，页面/抽屉卸载后仍可见。第二个参数写提示类型（CP-70）：成功 success、失败 error、要人注意或结果未知 warn，其余 info。 */
+export function useToast(): [ReactNode, (s: string, kind?: ToastKind) => void] {
+  const key = useId();
+  const show = useCallback((title: string, kind?: ToastKind) => { useUI.getState().pushToast({ kind: kind ?? TOAST_KIND_BY_WORDS.find(([words]) => words.test(title))?.[1] ?? "info", title, key }); }, [key]);
+  return [null, show];
 }
 
 /* 跨域跳转 hook(对应设计稿 ctx.setActive(domainLetter)) */

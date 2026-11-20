@@ -1,8 +1,32 @@
 # Nexion 运营控制后台 — 开发落地规格(Dev-Ready Spec)
 
-**最后更新：2026-10-09**
+> **2026-11-19 I5 版本语言范围（BUG-463）**：版本列表和版本详情按服务端保存的顺序逐项显示语言中文名，包括中、越、英之后的附加语。
+
+> **2026-11-19 I5 生效版本诊断（BUG-474）**：总览读取检查版本的语言范围。缺失或类型错误时保留版本引用，由已生效地区矩阵在对应行提示核对七章正文和语言范围。
+
+> **2026-11-01 Compute V2 后发合同**：[随机派单、独立运行态与分钟结算](specs/FEAT-COMPUTE-V2-random-dispatch-minute-settlement.md) 规定 E2 新配置、冻结任务、6000 权益槽与真实六路执行边界、分钟结算和 App/H5 展示。本文旧任务时长及即时入账描述以该合同为准；部署与业务验收状态分别留证，不以规格同步视为已通过。
+
+**最后更新：2026-11-01**
+
+> **2026-11-01 付款/目录/充值现行增量**：[付款截止、页面目录、充值线路与H4兼容](specs/FEAT-B2-L6-TOPUP-H4-CLOSURE-20261101.md)。统一30分钟截止、仅确认宽限、失败/退款/未知资金恢复；银行卡新充值仅HDPAY，旧card与人工回退停止新受理；L6有效目录与历史统计分别保留。H4只在专门受控批次安装，不因其他功能交付自动启用。
+
+> **2026-11-01 数据与新库等级现行增量**：[UVT 历史资产迁移与 V0–V8 首次配置](specs/FEAT-DATA-UVT-VRANK-BOOTSTRAP-20261101.md)。结构化资产代码现统一 UVT；旧 NEX 不可变证明先核原始完整性再按改名语义读取，金额与原 hash 不变。此条取代旧“协议资产码保持 NEX”的冲突摘要；既有字段名、配置键及业务引用不改。新库无已批准的财务默认值，使用 F1 完整录入九级后由 A2 另一管理员审批，不覆盖已有配置。
+
+> **任务稳定性与异常对账现行增量**：[TEST 任务稳定性合同](specs/UVEL_任务稳定性与异常对账_TEST_20261031.md)。保留已激活设备真实并行、每台最多一个任务；模型计算置于数据库事务外，持久化请求结果、原请求幂等对账、代际隔离和一次受控恢复共同约束结算。新增激活与构建受资源预算约束。TEST后端435已发布、原五台已逐笔恢复；六路3601.08807秒内核对2609笔唯一结算，连接获取超时与新增OOM为0，App/H5实景及独立金融/资源验收通过，701已关闭。[扩容预算](specs/UVEL_任务稳定性扩容预算_TEST_20261101.md)仅按当前短文本负载外推，不代表已支持万人；通知列表死锁702与局部内存近限单列保留。
+
+> **支付密码后台现行增量**：[支付密码运营与真实客户资料原位接入](specs/FEAT-PAYPIN-ADMIN-OPERATIONS-20261031.md)。C5 规则/支付异常及人工解除，与C1/M1/M3客户资料共用服务合同；后端权限、归属、CAS、幂等与审计已经实现并有分层TEST证据，BUG-014原接口缺失已关闭。仅钱包需要PIN，外部USDT/银行卡不读取PIN；未签场景及iOS不因接口完成自动通过。
 
 > **2026-08-07 后发裁定**：全项目已取消 KYC 与钱包配对。C4、K5、相关 API、字段、参数、菜单、权限和资金门禁均退出当前规格；提现改为用户按网络直管收款地址。历史 PRD 中的相关描述仅作归档，不得实现或恢复。具体以 `specs-snapshot-20260807/FEAT-KYC-RM01-remove-kyc-and-pairing.md` 为准。
+
+> **2026-10-29 原生业务推送**：[第一批合同](specs/FEAT-NATIVE-PUSH-BATCH1-20261029.md)规定试用设备到期、持续异常、资金结果、账号安全及客服回复。站内消息、供应商受理与用户打开分开记录；用户确认尚未开通UniPush，代码交付不表示Android/iOS真机送达通过。
+
+> **PC 代币展示规格**：[平台代币名称统一 UVT](specs/FEAT-PC-UVT-TERMINOLOGY-20261026.md)。PC 中的平台代币显示为 UVT；结构化资产代码以后发 2026-11-01 数据规格为准，UVEL 平台品牌及其他币种不变。
+
+> **2026-11-04 H4 产品决定**：移除 `holding` 持币活动及前端创建、规则配置入口；后端同步删除该类型与钱包触发。旧类型在 PC 显示为其他活动，玩法不可选择。
+
+> **首页与活动现行规格**：[FEAT-HOME-EVENTS-20261025](specs/FEAT-HOME-EVENTS-20261025.md)：I3 推荐课程、H9 网络脉搏、I4 信任资料、H4 九项活动与独立创世抽奖，含默认关闭、配置校验、开奖与奖励恢复。
+
+> **V8 与首页规格**：[FEAT-APP-20261025：V8、H9 与 App 体验联动](specs/FEAT-APP-20261025-experience-alignment.md)。F1 有效等级 V0–V8，H9 独立首页数字增长板块及开关；资产代码以后发 2026-11-01 数据规格为准。旧原型阈值不得覆盖已发布配置。
 
 > **本文件是什么**:从 4 卷需求 PRD(`Nexion_运营控制后台PRD_v1~v4.md`,共 17 章 70 个核心子模块 7000+ 行)提炼，并持续吸收已验收高保真增量的**开发落地契约速查**。需求 PRD 回答「为什么做、业务背景」;本文件回答「建什么表、实现什么接口、配什么参数、状态怎么流转、谁能操作」——开发按本文件即可落地,业务背景再查原 PRD 对应 §锚点。
 >
@@ -62,7 +86,13 @@
 所有状态机、资金值、风控值、闸状态 **server 权威**,client 仅 UI cache、**绝不本地推进**(§9.11d.2 / §9.11f)。client 上报的资金/状态不作权威口径。
 
 ### 0.3 操作确认(Confirm-with-Reason)
-余额/资产调整、大额提现放行、参数批改、kill-switch、geo-block、impersonate、数据导出(含敏感)等高敏写 **一律经业务专属确认弹窗 + 理由必填后由单人即时执行**(2026-06 操作确认决议):`reason` 由 server 强制非空(空值返 **400 `REASON_REQUIRED`**,8–200 字);动作连同 `operator / before / after / reason / IP / ts` 即时落 A2 审计(append-only);资金/资产类写携 `Idempotency-Key`;**放大资金流出方向提交前 server 前置核 B1 兑付覆盖率红线,低于红线拒绝 422 `COVERAGE_BELOW_REDLINE`**;高敏动作执行后实时告警超管 / 域 lead。执行门槛(lead / 仅超管)见第 6 章;弹窗规格详见第 9 章总表 + 各卷 PRD ④a 段。
+确认框说明实际操作、影响和提交前核对项。全域调用方必须显式声明 `briefKind`，普通确认框和操作确认框都按声明生成摘要；不从动作名、说明、客户内容或表单文字里的「恢复」「会话」「资金」等词推断类别。配置、导出、资金、账号安全、应急、内容、备注、人工判定与普通记录分别声明，客服专属类别继续沿用；同一确认入口按实际处理分支声明，不能按显示文字分类。正确类别的既有摘要保持原句，业务详情与专属完成说明仍按原契约展示。（BUG-161）
+
+生效时点以各动作的现行契约为准：需要审批的提交后写「批准后生效」，由另一位有权限的超级管理员批准，发起人不得自批；直接执行的紧急关停、案件级收紧及普通资料修改写「立即生效」。不再一概承诺单人即时执行。`reason` 由系统校验，具体长度沿各动作合同；动作连同 `operator / before / after / reason / IP / ts` 记录在操作记录中，资金/资产类写携 `Idempotency-Key`。仅放大资金流出方向按既有规则检查兑付覆盖率，摘要分类不改变审批、权限、校验或提交行为。弹窗规格详见第 9 章总表及各卷 PRD ④a 段。
+
+资金摘要类别按操作的最终业务效果判断：移动、入账、退回、冲正或冻结资金，以及批准后执行上述效果的申请，都使用 `funds`，不能因为当前只提交申请或查询原单就归为普通记录。A2 执行按工单声明的业务类别选择，资金工单即使不放大支出也保留用户、金额、风险规则及凭证核对项。Cregis 共用入口由各调用方声明类别；费用配置、账户解冻、紧急资金开关分别使用配置、安全和应急类别。人工晋升按所选目标等级的 USDT/UVT 奖励选择资金摘要，降级保留配置摘要；表单变化只更新摘要，不更改审批、覆盖率规则或执行路径。银行打款查询可完成提现或退回余额，使用资金摘要，同时保留「不会重新打款」。（BUG-161 Follow-up 1）
+
+A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽归账号类，批准后会冻结奖励，仍须资金摘要。审批列表应提供明确的操作类别或资金效果字段供展示使用，不从动作名称猜测，也不为摘要改动审批权限分类。（BUG-161 Follow-up 1，接口元数据缺口见本轮报告）
 
 ### 0.3a 业务弹窗契约
 
@@ -82,6 +112,8 @@
 
 ### 0.4 Idempotency-Key
 所有资金/资产/状态写操作携 `Idempotency-Key` header,server 24h dedup(**固定 24h 后端不变量,运营不可调**),网络抖动 retry 返 200 + 原结果,**不重复生效**。
+
+2026-11-17 原记录归属（hd-owner，follow-up 2 收简）：所有共用待确认表沿用 `createPendingMutationStore` / `createSlotAttemptStore`，每次写入一律从已认证会话盖上 `commandOwnerId`，存储只认这个合法提交人标记，不读页面自有旧字段。缺少或无效标记的旧记录一律没有提交人，原样保留但对所有账号隐藏、不锁人、不能重发/查询/解除；登录、换人、退出和读表都不清掉或认领。产品未上线，线上没有这种sessionStorage旧记录，不保留逐键旧字段表、路径解析或L4特例。actorId、adminId、commandOrigin.originalAdminId等仍照旧写入，由页面查询/重试逻辑核原操作人和定位。有效标记的记录只由本人读取、加锁、原号重试、查询和解除；换账号后别人不可见，原人回来仍有原记录及原对象锁。原方法、地址、请求体、理由、命令号、首次时间以及服务端原操作人/读权核验保持不变。关闭标签仍受sessionStorage生命周期限制。H2旧强制扣款继续退役、只核对原申请；其它既有人工解除例外和页面文字不在本次调整。
 
 ### 0.5 接口硬校验(server 强制)
 - 业务规则前置失败 → **400 / 422**;状态机非法转移 → **409**。
@@ -127,38 +159,38 @@
 | 模块ID | 名称 | 一句话职责 | 所属域 | 卷·章 | 前端§锚点 |
 |---|---|---|---|---|---|
 | A1 | 运营账号 & RBAC | 运营账号、强制 MFA、登录锁定、会话与角色分配；角色/权限权威分别在 A6/A8 | A 平台基础 | V1·Ch2 | §9.11d / §1.2 |
-| A2 | 审计 & 操作确认 | 高敏写 append-only 审计留痕 + 高敏动作确认契约权威(确认弹窗 + 理由必填) | A 平台基础 | V1·Ch2 | §9.11d / §9.11e |
+| A2 | 操作记录与审批 | 高敏写 append-only 审计留痕 + 高敏动作确认契约权威(确认弹窗 + 理由必填) | A 平台基础 | V1·Ch2 | §9.11d / §9.11e |
 | A3 | 系统配置 | feature flag / kill-switch config store / 系统健康(server time / Idempotency 为固定后端不变量,运营无配置面) | A 平台基础 | V1·Ch2 | §9.11a.4 / §9.11d.1 / §9.11e |
 | B1 | 双账本总览 | 真实储备 vs 应付负债并列 + 兑付覆盖率(资金安全最高水位) | B 总览 | V1·Ch4 | §5.14 / §9.6.3 |
-| B2 | 资金池水位 | 应付负债 8 类科目 + 到期负债预测概览(口径同 D3) | B 总览 | V1·Ch4 | §9.2/§9.3/§9.6/§10 |
-| B3 | 转化漏斗 | 注册→绑卡→首购→复投→提现五级漏斗 + L2–L5 + Day7 留存 | B 总览 | V1·Ch4 | §1.6 / §2.4.7 |
+| B2 | 资金池水位 | 应付款 9 类科目 + 到期负债预测概览(口径同 D3) | B 总览 | V1·Ch4 | §9.2/§9.3/§9.6/§10 |
+| B3 | 转化漏斗 | 注册→首购→锁定计划→提现四步漏斗 + L1–L5 + Day7 留存 | B 总览 | V1·Ch4 | §1.6 / §2.4.7 |
 | B4 | 节奏状态 | 各 Phase 用户分布 + 10-dial 现值 + 距拐点(dial 只读) | B 总览 | V1·Ch4 | §13.4 / 节奏表§6.4 |
 | B5 | 风险雷达 | 挤兑/异常账户/提现积压/kill-switch/覆盖率五维只读雷达 + 跳转 | B 总览 | V1·Ch4 | §9.11d.1 |
-| C1 | 检索 & 画像 | 多维检索 + 聚合各域权威的单用户全景(聚合视图,不持权威) | C 用户 | V1·Ch5 | §2.1/§2.2/§2.4/§12.1 |
-| C2 | 账户操作 | 冻结/解冻、强制登出、加白/拉黑、impersonate | C 用户 | V1·Ch5 | §4.5 / §4.5.2 |
-| C3 | 余额 & 资产调整 | 人工增减 USDT/NEX/积分(确认弹窗 + 理由必填,USDT/NEX 入 D4) | C 用户 | V1·Ch5 | §9.7 / §12.1 / §12.12 |
+| C1 | 查找用户与查看资料 | 多条件查询、独立统计、权限裁列及带理由脱敏导出，进入用户详情 | C 用户 | V1·Ch5 | §2.1/§2.2/§2.4/§12.1 |
+| C2 | 账户操作 | 账户处置、注销申请、限时用户数据只读视图、账户名单；全设备退出须审批 | C 用户 | V1·Ch5 | §4.5 / §4.5.2 |
+| C3 | 余额与资产调整 | 人工增减 USDT/UVT，原调整全部待另一人批准；单次直接反向冲正不查覆盖率 | C 用户 | V1·Ch5 | §9.7 / §12.1 / §12.12 |
 | C5 | 安全 & 会话 | 2FA / session / 密码重置 / 锁定解除 | C 用户 | V1·Ch5 | §4.5 / §4.6 / §4.2.3 |
 | C6 | 注册/登录风控配置 | OTP / 登录锁定 / CAPTCHA(与 K1 去重互补) | C 用户 | V1·Ch5 | §4.1 / §4.2 / §4.6.2 |
-| D1 | 充值对账中心 | 流水确认 / PSP 差异核销 / 备付金 / 卡渠道反欺诈 | D 资金 | V1·Ch6 | §9.2 / §9.2.4 / §9.11c.1 |
+| D1 | 充值与收款对账 | 订单付款 / 银行卡充值 / USDT 充值 / 充值流水与对账 | D 资金 | V1·Ch6 | §9.2 / §9.2.4 / §9.11c.1 |
 | D2 | 提现审核队列 | 逐笔/批量审核提现,server 状态机放行/拒绝/延迟/冻结 | D 资金 | V1·Ch6 | §9.3 / §9.3.6 / §9.11f |
 | D3 | 资金池水位仪表盘 | 储备/负债/到期底层账本权威(储备明细+8科目+净敞口) | D 资金 | V1·Ch6 | §9.6 / §9.6.3 / §9.2 / §10 |
-| D4 | 账本 / 账单审计 | server 唯一账本审计面:账单流水/Running Balance/对账导出 | D 资金 | V1·Ch6 | §9.7 / §12 |
-| D5 | 提现参数配置 | 日限额/余额上限/网络费(cooldown/积分门由 H1 派发只读) | D 资金 | V1·Ch6 | §9.3.2 / §13.4.1 / §9.11c.1 |
-| D7 | 银行法币提现配置 | 出金参数、服务商就绪态和通道开关；D6 牌价只读 | D 资金 | V1·Ch6 | §9.3 |
-| D6 | 汇率与锁价参数 | VND/USDT 基础汇率、点差、锁价时长与不可变变更历史；报价由服务端单源计算 | D 资金 | 2026-07 高保真增量 | 高保真 `finance/fx-rate` |
+| D4 | 账本与账单核对 | server 唯一账本审计面:全平台账单/按用户逐笔核对与钱包核对/脱敏导出 | D 资金 | V1·Ch6 | §9.7 / §12 |
+| D5 | USDT 提现参数 | 每日次数/余额可提上限/小额免审线/到账时效/提现网络/网络费/UVT 抵扣率(到账审查窗口、加强合规审查由 H1 派发只读) | D 资金 | V1·Ch6 | §9.3.2 / §13.4.1 / §9.11c.1 |
+| D7 | 越南盾提现参数 | 卖出点差、提现报价有效期、手续费与单笔限额，HDPay 设置可用状态；D6 基准价与买入点差只读 | D 资金 | V1·Ch6 | §9.3 |
+| D6 | 汇率设置 | VND/USDT 基准价、买入点差、报价有效期与调整历史；买入价由服务端单源计算 | D 资金 | 2026-07 高保真增量 | §4.4 D6 |
 | E1 | 商品目录 & 定价 | 设备 SKU 目录/定价/上下架/库存 + 设备规格唯一权威 | E 设备 | V2·Ch10 | §7.1 / §9.11c.1 |
 | E1 | 代际发布门 | 控制 Gen-2 发布时点 + trade-in 折扣 | E 设备 | V2·Ch10 | §7.1 / 节奏表§6.2 |
 | E2 | 收益 & 任务引擎 | AI 任务定价与路由门槛(设备每日产出"任务侧") | E 设备 | V2·Ch10 | §6.3 / §6.5 / §9.11c.1 |
 | E3 | 设备生命周期 | 三段复利任务产能曲线 + 产能下限 + SKU 开关；`cycleMonths` 仅为图表视窗，段 3 开区间持续至下限 | E 设备 | V2·Ch10 | FEAT-DEV01 / §6.8 / §9.11c.1 |
 | E3 | Trade-in 配置 | 累计产出/实付比例阶梯 + 购买资格/promo/原子换机 tx；不再运行 `salvagePct/minHoldingMonths` | E 设备 | V2·Ch10 | FEAT-DEV02 / §7.5 / §9.11c.1 |
-| E4 | 订单状态机 | 设备订单全生命周期:列表/状态推进/DC 分配/退款 | E 设备 | V2·Ch10 | §7.4 / §9.11f |
+| E4 | 订单进度 | 订单事实与审批、退款授权来源、普通购买设备任务影响 | E 设备 | V2·Ch10 | §7.4 / §9.11f |
 | E5 | 设备运维 | fleet heartbeat 监控/批量操作/库存激活/强制激活解绑 | E 设备 | V2·Ch10 | §6.1 / §11.1 / §9.11d.2 |
 | E6 | 算力与设备配置 | PC 算力备用模块入口开关、在线系数、显卡档位映射、下载内容配置 | E 设备 | V2·Ch10 | 三端改造 SPEC-0~2 |
-| F1 | V-Rank 晋升管理 | 13 阶 V 级门槛/server 晋升判定/实物奖发货/培育奖 | F 分销 | V2·Ch11 | §8.2 / §13.2 / 节奏表§6.3 |
-| F2 | 网络版税与分成 | 现行七层配置、原 L1 预算与冷却只读引用的购买拆分、独立设备总比例/拆分/冷却整组审批；Partner Status 独立；空配置不补默认 | F 分销 | V2·Ch11 | v2 F2 / F5 / A2 / B1 |
-| F3 | 双轨结算引擎 | 较小侧匹配比例/两轨门槛/自动分配/月度 GV 归零(日封顶只读) | F 分销 | V2·Ch11 | §8.4 / §13.4.1 / 节奏表§6.4 |
+| F1 | V-Rank 晋升管理 | V0–V8 有效门槛/server 晋升判定/等级奖励/培育奖 | F 分销 | V2·Ch11 | §8.2 / §13.2 / 节奏表§6.3 |
+| F2 | 团队奖励设置 | 现行团队购买奖励（L1–L7）配置、原 L1 预算与冷却只读引用的好友购买奖励拆分、独立好友设备收益奖励总比例/拆分/冷却整组审批；Partner Status 独立；空配置不补默认 | F 分销 | V2·Ch11 | v2 F2 / F5 / A2 / B1 |
+| F3 | 团队平衡奖励 | 较小一组匹配比例/A 组 B 组门槛/自动分组/月度订单额归零(日上限只读) | F 分销 | V2·Ch11 | §8.4 / §13.4.1 / 节奏表§6.4 |
 | F4 | 领导奖池 | 周注入比例/V_VOTES 票数权重/周结算(V3+ 头部分享) | F 分销 | V2·Ch11 | §8.5 |
-| F5 | 佣金事件审计 | 六类佣金统一流水/异常预警/冷却/撤销补发(资金出口审计中枢) | F 分销 | V2·Ch11 | §8.6 |
+| F5 | 奖励记录核对 | 八类奖励统一流水/异常预警/冷却/撤销补发(资金出口审计中枢) | F 分销 | V2·Ch11 | §8.6 |
 | F4b | 硬件配额 | Pro/Rack 配额解锁门(直推/月业绩)+ 月库存上限 | F 分销 | V2·Ch11 | §8.9 |
 | F4c | 区域大使审批 | 区域大使(V5+)4 类预算申请审批工作流 | F 分销 | V2·Ch11 | §8.10 |
 | F4d | 排行榜 & 反欺诈 | 邀请榜 4 周期奖池派奖/Podium 履约/取消刷榜资格 | F 分销 | V2·Ch11 | §8.11 / §16.2 |
@@ -168,24 +200,24 @@
 | G4 | Genesis 经济 | 节点总量/单价/日排放率/二级版税/pause/geo；认购资格三项新配置 `enabled/maxPerUser/minAccountAgeDays` | G 金融 | V3·Ch12 | §10 / §9.11d.1 / FEAT-GEN02 |
 | G5 | Premium 订阅 | 月费/首月折扣/权益(gate 由 H1 派发) | G 金融 | V3·Ch12 | §9.5a / §13.4 / §9.11d.1 |
 | G6 | NEX v2 Founders Vault | NEX v2 锁仓(250% APY/24 月/min 1,000 NEX) | G 金融 | V3·Ch12 | §9.5b / §9.11d.1 |
-| G7 | 复投激励 | 复投锁仓 APY/期限/积分倍率/培育倍率/Genesis 抽奖券 | G 金融 | V3·Ch12 | §9.5 |
+| G7 | 锁定计划 | 锁定计划参考年奖励率/期限/积分倍率/好友升级奖励倍率/Genesis 抽奖券 | G 金融 | V3·Ch12 | §9.5 |
 | H1 | 12 月节奏 Phase 调度器 | 12 月节奏唯一操作面 + 全平台 10-dial 权威源 | H 增长 | V1·Ch7 | §13.4 / 节奏表§6.4 / §9.11c.1 |
-| H2 | 免费试用引擎 | 试用漏斗(绑卡→shadow→自动扣款/提前购)控制面 | H 增长 | V1·Ch7 | §9.11a / §9.11b / §9.11.1 |
+| H2 | 免费试用引擎 | 试用配置与记录、用户主动购买、强制取消审批 | H 增长 | V1·Ch7 | §9.11a / §9.11b / §9.11.1 |
 | H3 | Quest 任务引擎 | 三层任务(首日/每周/每月)清单/NEX 奖励/3-phase 时窗 | H 增长 | V3·Ch13 | §5.15 / §11.13 / §9.11c.1 |
-| H4 | 活动中心 CMS | 限时活动上下架/featured/奖励/追踪/8 种 EventKind | H 增长 | V3·Ch13 | §11.10 / §9.11c.2 |
+| H4 | 活动中心 CMS | 限时活动上下架/featured/奖励/追踪/7 种 EventKind | H 增长 | V3·Ch13 | §11.10 / §9.11c.2 |
 | H5 | 签到 & 积分 | 签到积分/Lucky 倍率/30 天里程碑/Streak Saver/Power-Ups | H 增长 | V3·Ch13 | §9.8 / §9.11c.1 / §9.11d.3 |
 | H6 | 里程碑庆祝 | 收益累计里程碑 5 档阈值与 NEX 奖励(被动触发) | H 增长 | V3·Ch13 | §11.3a / §9.11c.1 |
 | I1 | 转化文案 A/B | 转化文案池版本管理/A/B 实验框架/上下架 | I 内容 | V4·Ch14 | §9.11c.2 / §6.6 |
-| I2 | Nova 推送运营 | 推送模板池/每 channel 节奏/per-channel kill(10 channel) | I 内容 | V4·Ch14 | §11.0A / §9.11c.1 / §9.11c.2 |
+| I2 | 消息推送 | 频道启停/扫描和个人间隔/三语模板/真实事件与整组概率（16 直写） | I 内容 | V4·Ch14 | §11.0A / §9.11c.1 / §9.11c.2 |
 | I3 | 通知 Campaign | 系统通知批量下发 + 优先级 CAP 限频(critical 永不被淹) | I 内容 | V4·Ch14 | §11.2 |
 | I4 | 信任中心 CMS | /trust 展示内容生命周期(财务数字/leadership/NEX 叙事/徽章) | I 内容 | V4·Ch14 | §11.3 |
-| I5 | 风险披露版本管理 | 披露文案 version×法域双维 + 改版触发 re-ack(合规关键件) | I 内容 | V4·Ch14 | §11.4a / §9.11d.1 / §9.11d.2 / §9.11c.2 |
+| I5 | 风险披露版本管理 | 披露文案 version×法域双维；映射切换使旧确认失效，App 不强制确认、不阻断操作 | I 内容 | V4·Ch14 | §11.4a / §9.11d.1 / §9.11d.2 / §9.11c.2 |
 | I6 | i18n 文案管理 | en/zh 双语镜像 + marketing 多版(~770 key,两语言同步) | I 内容 | V4·Ch14 | §14 / §9.11c.2 |
 | I7 | 教程中心 | /learn 课程内容/featured/完成 NEX 奖励(Learn-to-Earn) | I 内容 | V4·Ch14 | §11.11 |
 | J1 | Kill-Switch 矩阵 | 5 功能闸 kill 统一权威矩阵 + kill/恢复 + 联动 + 应急通道 | J 应急 | V4·Ch15 | §9.11d.1 / §9.11d.2 |
 | J2 | Geo-block | 国家码级地域屏蔽 + per-endpoint geo_block + 边缘 IP 判定 | J 应急 | V4·Ch15 | §9.11d.1 |
-| J3 | 篡改防御监控 | 只读监控看板:client 篡改尝试被 server 拦截的计数与告警 | J 应急 | V4·Ch15 | §9.11d.2 / §9.11d.3 |
-| J4 | 监管点名应急 SOP | 应急组合处置剧本编排(串联 J1/J2/I5/C2/K1/D2/I3) | J 应急 | V4·Ch15 | §9.11d |
+| J3 | 篡改防御监控 | 服务端权威拦截事件看板、脱敏报表与告警配置；账户处置跳 C2/K1 | J 应急 | V4·Ch15 | §9.11d.2 / §9.11d.3 |
+| J4 | 监管点名应急 SOP | 预案维护、验证演练及审批后自动逐步处置（J1/J2/C2/K1/I3/I5） | J 应急 | V4·Ch15 | §9.11d |
 | K1 | 反多账户引擎 | IP/设备/支付三维多账户聚集识别 + 注册/sponsor-bind 阻断 | K 风控 | V1·Ch8 | §9.11e.1 / §16.2 / §9.11d.2 |
 | K2 | 套利与刷量检测 | trial 循环/trade-in 套利/gift 刷取/刷榜检测(基于 K1 信号) | K 风控 | V1·Ch8 | §9.11e.1 / §7.5 / §8.11 |
 | K3 | 提现风控规则引擎 | 金额/速度/新账户/地址信誉四维规则路由,喂 D2 | K 风控 | V1·Ch8 | §9.3 / §9.11f |
@@ -196,6 +228,8 @@
 | L3 | 财务报表 | 只读财务聚合(收入/兑付/敞口/到期),引用 B1+D3+B2 不重算 | L 数据 | V4·Ch16 | §9.6 / §1.4 |
 | L4 | 设备/任务/网络报表 | 只读运营指标(设备产出衰减/任务/网络结构/Phase 效果) | L 数据 | V4·Ch16 | §5.4 / §5.5 / §6.8 / §9.11c.1 |
 | L5 | 导出 & 监管报告 | 数据导出/监管报告统一管控(脱敏+审计+操作确认) | L 数据 | V4·Ch16 | §9.7 |
+
+I2 名称同步（2026-11-15）：本页现名「消息推送」，管发到 App「消息通知」的业务推送；Nova 智能问答已下线。路由 `/content/nova`、页面编号 I2、`/api/admin/content/nova/*` 接口、`content_i2_read` / `content_i2_write` 权限码和全部通道 key 均不变。
 
 > 原四卷核心功能规格仍为 **70**；2026-07-25 已验收增量新增 **D6**，因此本索引当前为 **70 个核心模块 + 1 个增量模块**。D 域现为 D1–D6；K6 Janus C2 控制台出处 Janus C2 PRD v1.0。
 
@@ -266,13 +300,13 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **V_RANKS**(F1 13阶) | v:enum{V0…V12} · 头衔 · 晋升条件{selfBuyUSD?,directRefs?,teamVolumeUSD?,vDownlines?}(AND 复合,各阶组合不一) · unilevelDepth(旧扩展版税历史，不作用于新直属) · peerBonus[V](V0–V2=0/V3+=5%) · leadershipVotes · prizeName(全局唯一) · cultivationBonus(NEX) · 可见性解锁 · vRankPermanent=true；本人权益、培育与领导票权保持原规则 | SC | §17.1 / Ch11 F1 |
+| **V_RANKS**(F1 有效9级) | v:有效配置{V0…V8}，V9–V12历史停用记录保留 · 头衔 · 晋升条件{selfBuyUSD?,directRefs?,teamVolumeUSD?,vDownlines?}(AND 复合,各阶组合不一) · unilevelDepth(旧扩展版税历史，不作用于新直属) · peerBonus[V](V0–V2=0/V3+=5%) · leadershipVotes · prizeName(全局唯一) · cultivationBonus(NEX) · 可见性解锁 · vRankPermanent=true；本人权益、培育与领导票权保持原规则 | SC | §17.1 / Ch11 F1 |
 | **直属分成政策**(F2) | schemaVersion=2 · policyVersion/expectedVersion 与 sevenLayerRevision/expectedSevenLayerRevision 双版本；settlementMode/sevenLayerEnabled/cutoverAt 标记代际 · effectiveAt 为批准时间 · purchaseSplit{enabled,usdtSharePct}，原 L1 固定 10% 基础预算/冷却/旧系数只读 sevenLayerReference 引用 · deviceEarning{enabled,totalRatePct,usdtSharePct,coolingDays} 独立 · nexUsdtPrice 只读；整组审批，缺配置不补默认，拆分 NEX 替代旧 L1 额外 NEX | SC | Ch11 F2 |
 | **独立权益与冷却**(F2) | `F.partner.tiers`{standard,verified,premium,diamond} 非负保序，只决定非现金权益；`F.cooldown` 整数 0–90 天，仅用于其他奖励；当前值取服务端，缺值不填默认 | SC | Ch11 F2 |
 | **旧网络版税历史**(F2) | 当前 PC historicalOnly：unilevelRates 为空或完整 L1–L7 实值快照；NEX 系数按每 1 USDT 版税计，不按订单额；旧出口合并上限只读实值、缺值未配置；新购 checkout.completed 不再调用旧结算。后端 Unilevel 引擎及旧参数写入/A2重放仍保留，并非全局禁用；旧账查询、释放及处置保留 | SC | Ch11 F2 / F5 |
 | **双轨**(F3) | binaryDailyCap(月1-6=$5000/月7+=$2000,权威 H1) · balanceMatchRate(10%) · binaryTrackMinUsd($1000) · spillover · gvResetCron | SC | §17.1 / Ch11 F3 |
 | **Commission Event**(F5,§12.5) | commissionId · userId · kind:enum{network\|binary\|peer\|cultivation\|leadership\|genesis} · currency:enum{USDT\|NEX} · amount · sourceUserId · layer(L1–L7,仅network) · settledAt:ms-epoch · coolingDaysLeft · status:enum{cooling\|unlocked\|withdrawn\|reversed};**F5 仅审计消费,落 D4 commission bill** | SC | §17.1 / Ch11 F5 |
-| 领导池(F4) | leadershipPoolInjectRate(5%,3–10%) · V_VOTES{V3:1…V12:512} · poolSettleCron(周日23:59 UTC) · poolUnlockVRank(V3+) | SC | Ch11 F4 |
+| 领导池(F4) | leadershipPoolInjectRate(5%,3–10%) · V_VOTES{有效等级的已发布票权} · poolSettleCron(周日23:59 UTC) · poolUnlockVRank(V3+) | SC | Ch11 F4 |
 
 ### 域 G — 金融产品
 
@@ -291,10 +325,10 @@
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
 | **PhaseConfig 10-dial**(H1) | 逐月(1–12)×10 dial(见第0章 §0.10);每 dial 生效范围:enum{实时全量\|仅新用户};cohortOverrides[]{cohortId(YYYY-Www),monthOffset,区间};**默认值权威=12月§6.4+complianceHoldEnabled** | SC | §9.1 / Ch7 H1 |
-| **TrialConfig**(H2,20参数) | trialDays/graceDays/extensionDays/discountRate/discountCapUSD/autoChargeAtEnd/highQualityThresholdUSD/**chargeFailRate(server-only)**/trialProductId(仅可选 E1 `trialEligible=true` 的在售有库存实物有限库存商品)/trialPriceUSD/shadowDailyUSD/shadowDailyNEX/cooldownDays(30,≠withdrawCooldownDays)/phaseOpen(只读)/autoPush{Enabled,DelayMs,CooldownHours,MaxPerSession}/**trialOffsetCapUSD(=50)**/**seatsLeftToday(每日上限=47,实时；当日剩余由 Java+日额度表计算)** | SC | §9.1 / Ch7 H2 |
-| **TrialSession 7态**(H2) | userId · status:enum{idle\|active\|grace\|extended\|redeemed\|failed\|cancelled} · shadowUSD · shadowNEX · 时间线 · 绑卡 token · cohort · phase;**Model A computeTrialOffset** | SC | §9.1 / Ch7 H2 / §9.11.1 |
+| **TrialConfig**(H2,PC口径14参数) | trialDays/graceDays/discountRate/discountCapUSD/earlyPurchaseDiscountUSD/**chargeFailRate(server-only)**/trialProductId(仅可选 E1 `trialEligible=true` 的在售有库存实物有限库存商品)/trialPriceUSD/shadowDailyUSD/shadowDailyNEX/cooldownDays(30,≠withdrawCooldownDays)/phaseOpen(只读)/**trialOffsetCapUSD(=50)**/**seatsLeftToday(每日上限=47,实时；当日剩余由 Java+日额度表计算)** | SC | §9.1 / Ch7 H2 |
+| **TrialSession 7态**(H2) | sid · userId · state:enum{idle\|active\|grace\|extended\|redeemed\|failed\|cancelled} · shadow · claimedAt · expiresAt · cancelledAt · chargedAt · pendingApproval{action,submittedBy,submittedAt};当前列表没有完整状态轨迹或绑卡前置要求，**Model A computeTrialOffset** | SC | §9.1 / Ch7 H2 / §9.11.1 |
 | **Quest 配置**(H3) | Day-One{WINDOW_MS=24h,GRACE_END=72h,phase 奖励 500/200/0,6任务} · Weekly{Tier1 9条/Tier2 8条,base+phase mult 曲线 P1 1.0→P6 1.5,Champion +500×mult} · Monthly{5主题,reward 1.5k–10k,3 subGoals};questBonusMultiplier 由 H1 下发 | SC | §17.1 / Ch13 H3 |
-| **活动/Event**(H4) | id · kind:enum{discount\|referral\|wheel\|regional\|boost\|seasonal\|holding\|onboarding} · status:enum{ongoing\|upcoming\|ended} · reward(USDT/NEX) · featured(同时仅1) · trackable · href;**Lucky Spin 8档 EV≈$0.78,Genesis 不进转盘,3护栏+B1红线** | SC(RNG) | §17.1 / Ch13 H4 |
+| **活动/Event**(H4) | id · kind:enum{discount\|referral\|wheel\|regional\|boost\|seasonal\|onboarding} · status:enum{ongoing\|upcoming\|ended} · reward(USDT/NEX) · featured(同时仅1) · trackable · href;**Lucky Spin 8档 EV≈$0.78,Genesis 不进转盘,3护栏+B1红线** | SC(RNG) | §17.1 / Ch13 H4 |
 | **签到/Lucky/Power-Ups**(H5) | baseline(+1/日) · 7天 bonus(+5) · Lucky 1.5×(15%)/2×(5%)(和≤100%,server RNG) · 断签(>48h) · Streak Saver(默认1,恢复至 min(longest,30)) · 里程碑7阶 · Power-Ups 4档(→F2/G5/G1/G4) | SC(RNG) | §17.1 / Ch13 H5 |
 | **里程碑 H6** | 5档{阈值/USD,NEX 奖励}(100/+100·500/+250·1000/+500·5000/+1500·10000/+3000) · firedIds(不重触发) · tick 4s;**阈值保序 422,一次 fire 一档** | SC | §17.1 / Ch13 H6 |
 
@@ -302,21 +336,21 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **Content version**(I1) | key · version · status:enum{draft\|published\|archived} · body{en,zh} · activeExperimentId?;A/B state:enum{scheduled\|running\|concluded(adopted\|discarded)} | SC | §17.1 / Ch14 I1 |
+| **Content version**(I1) | key · version · status:enum{draft\|published\|archived} · body{zh,en,vi} · activeExperimentId?;A/B state:enum{scheduled\|running\|concluded(adopted\|discarded)} | SC | §17.1 / Ch14 I1 |
 | **Nova cadence**(I2) | 10 channel × {enabled,tickMs,cooldownMs};phase-keyed(tradein/task-lock 随 H1);per-channel kill(不入 J1) | SC | §17.1 / Ch14 I2 |
-| **Notification Campaign**(I3) | campaignId · 优先级:enum{critical\|high\|normal\|low} · NotifKind · 受众 · state:enum{draft\|scheduled\|sending\|sent\|cancelled};CAP{CRITICAL ∞/HIGH 50/NORMAL 200/LOW 30} | SC | Ch14 I3 |
-| **Disclosure version × jurisdiction**(I5) | jurisdiction × version(单调递增) · 7章节体 · locale{en,zh} · acceptedVersion · acceptedJurisdiction;版本 state:enum{draft\|published\|superseded};用户 ack:enum{not_acked\|acked\|stale};**server 边缘按 IP 判法域** | SC | §17.1 / Ch14 I5 |
-| **i18n**(I6) | namespace(30+) × locale{en,zh} · key 数 · 覆盖率;**镜像同步 gate + 占位符一致性 + 禁词扫描** | SC | Ch14 I6 |
-| **教程课程**(I7) | slug · 分类:enum{Basics\|Earn\|Team\|Wealth\|Security} · format:enum{Article\|Video\|Hands-on} · level · NEX 奖励(10–50) · featured(单) · quiz;state:enum{draft\|published\|archived} | SC | §17.1 / Ch14 I7 |
+| **Notification Campaign**(I3) | campaignId · 优先级:enum{critical\|high\|normal\|low} · NotifKind · 受众 · state:enum{draft\|scheduled\|sending\|sent\|failed\|cancelled};CAP{CRITICAL ∞/HIGH 50/NORMAL 200/LOW 30} | SC | Ch14 I3 |
+| **Disclosure version × jurisdiction**(I5) | jurisdiction × version(单调递增) · 7章节体 · locale{zh,en,vi} · acceptedVersion · acceptedJurisdiction;版本 state:enum{draft\|published\|superseded};用户 ack:enum{not_acked\|acked\|stale};**以系统解析的适用地区为准；账号读取默认用保存的国家/地区，可信边缘来源由服务端处理** | SC | §17.1 / Ch14 I5 |
+| **i18n**(I6) | namespace × 基础 locale{zh,en,vi} · key 数 · 覆盖率;**三语完整与变量一致性、占位文字/退役品牌发布检查；完整性扫描单独触发** | SC | Ch14 I6 |
+| **教程课程**(I7) | slug · 分类:enum{Basics\|Earn\|Team\|Wealth\|Security} · format:enum{Article\|Video\|Hands-on} · level · UVT 奖励(10–50) · featured(单) · quiz;state:enum{draft\|published\|archived} | SC | §17.1 / Ch14 I7 |
 
 ### 域 J — 紧急合规
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
 | **Kill-Switch 矩阵**(J1) | 5 功能闸{withdraw〔应急新增〕,staking,genesis,exchange,trial}:enabled:bool · operator · reason · coveragePrecheckRequired(恢复方向前置 B1 的闸标记) · autoTrigger{rule:R1\|R2,补录窗 30min};复用 admin.killswitch_toggled(原提案状态机已随 2026-06 操作确认决议废除) | SC | §17.1 / Ch15 J1 |
-| **Geo-block**(J2) | activeCountries(ISO alpha-2) · limitedCountries(受限只读档,ISO alpha-2) · enabled(=length>0) · perEndpoint[{endpoint,geoBlock,derivationStatus}] · edgeJudgeHealth · operator · reason;**server 边缘判 IP,财务不参与执行;limited→blocked 为监管升级路径** | SC | §17.1 / Ch15 J2 |
-| **篡改监控**(J3) | tamper_path:enum(§9.11d.2 10类+chargeFailRate) · 拦截计数 · 涉及账户;告警 state:enum{normal\|flagged\|escalated};**纯只读,处置跳 K** | 派生视图 | §17.1 / Ch15 J3 |
-| **应急 SOP**(J4) | 剧本=kill+geo-block+披露+提现暂停+通知组合(串联 J1/J2/I5/C2/K1/D2/I3) · 演练态(lastDrill/演练就绪,沙箱不下发生产) | SC(编排) | Ch15 J4 |
+| **Geo-block**(J2) | activeCountries(ISO alpha-2) · limitedCountries(受限资金/奖励变更档,ISO alpha-2) · enabled(=length>0) · perEndpoint[{endpoint,geoBlock,derivationStatus}] · edgeJudgeHealth · operator · reason;**服务端验证可信边缘代理并读取国家请求头，不按账户国家执法；名单、入口、来源、应急各按独立权限码；limited→blocked 为升级路径** | SC | §17.1 / Ch15 J2 |
+| **篡改监控**(J3) | 10 类登记接口 · 拦截计数 · 涉及账户；告警 state:enum{flagged\|escalated}；最近一次完整北京时间；K4/B5 实际接受回执；处置跳 C2/K1 | 派生视图 | §17.1 / Ch15 J3 |
+| **应急 SOP**(J4) | 预案定义 + 只校验的演练台账 + A2 批准后顺序执行 J1/J2/C2/K1/I3/I5；失败保留前步，取消/超时核对/恢复本次 J1 开关各独立确认 | SC(编排) | Ch15 J4 |
 
 ### 域 K — 风控
 
@@ -336,7 +370,7 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| KPI/漏斗口径 | KPI 比率(§2.4.6)+ 五级漏斗(§2.4.7);**L 域只读引用,不重定义** | 派生视图 | §17.1 / §2.4.6 / §2.4.7 |
+| KPI/漏斗口径 | KPI 比率(§2.4.6)+ 四步漏斗(§2.4.7);**L 域只读引用,不重定义** | 派生视图 | §17.1 / §2.4.6 / §2.4.7 |
 | BI 导出/报表(L5) | 运营/cohort/财务报表(读引用 /api/admin/treasury/*);**只认 is_server_authoritative=true 事件** | 派生视图 | §17.1 / Ch16 |
 
 ## 第 3 章 API 契约总表(后端实现接口)
@@ -350,11 +384,16 @@
 |---|---|---|---|---|
 | `/api/admin/auth/login` / `/api/admin/auth/mfa/verify` / `/api/admin/auth/logout` | POST | 密码阶段只发 MFA challenge；challenge 与 TOTP 时间步均防并发/跨 challenge 重放；TOTP 通过后发 JWT/session；登出确认撤销服务端 session 后才清 cookie，撤销不可用则保留凭据并失败重试 | — | A1 |
 | `/api/admin/platform/accounts/overview` / `/api/admin/platform/accounts` | GET / POST | 账号、安全基线与会话总览 / 创建(默认专属客服；显式空角色仍不分配；客服个人资格与档案原子创建) | A1-MD1(POST) | A1 |
-| `/api/admin/platform/accounts/:id/profile\|role\|status` | PATCH | 资料/角色/启停；角色来自 A6 | A1-MD2~MD4 | A1 |
-| `/api/admin/platform/accounts/:id/reset-2fa\|password/reset` | POST | 重置 MFA/密码并吊销旧会话；MFA 重置先校验有效超管下限 | A1-MD5 | A1 |
-| `/api/admin/platform/accounts/:id/sessions/revoke` / `.../sessions/:sessionId/revoke` | POST | 吊销全部/单条运营 session(仅超管、非自己、非超管目标) | A1-MD6 | A1 |
+| `/api/admin/platform/accounts/:id/profile\|role\|status` | PATCH | 资料/角色/启停只在A2批准回放实际写入，直写409 A2_CONFIRMATION_REQUIRED；无变化资料原值返回。降级/停用只扣减super+enabled+已绑MFA的有效目标，最低两人（e83c9ce7） | A1-MD2~MD4 | A1 |
+| `/api/admin/platform/accounts/:id/reset-2fa` | POST | A2批准回放重置MFA并吊销旧会话，直写409；未绑定仍拒绝，仅有效super扣减人数，最低两人（e83c9ce7） | A1-MD5 | A1 |
+| `/api/admin/platform/accounts/:id/password/reset` | POST | 直接重置密码并吊销旧会话；此次A2回放守卫不覆盖密码重置 | A1-MD5 | A1 |
+| `/api/admin/platform/accounts/:id/sessions/revoke` / `.../sessions/:sessionId/revoke` | POST | 全部撤销只在A2批准回放执行，单条仍直写；仅超管、非自己、非超管目标（e83c9ce7） | A1-MD6 | A1 |
 | `/api/admin/platform/roles` / `/api/admin/platform/permissions` | GET | A6 角色授权 / A8 权限码字典权威视图 | — | A6/A8 |
-| `/api/admin/audit?filter=` | GET | 审计日志查询(append-only,server 强制可见性;含高敏动作流水监控面) | — | A2 |
+| `/api/admin/platform/audit/overview` | GET | 主总览无筛选、操作记录按六条件另读；真实范围由后端裁剪，列表最近200条 | — | A2 |
+| `/api/admin/platform/audit/operations/:id/{approve\|reject\|withdraw}` | POST | 批准／驳回按已知业务规则，本人仅撤回；未知类型保留入口并提示后端批准时检查，待B44 | A2-MD2/MD3及撤回框 | A2 |
+| `/api/admin/platform/audit/exports` | POST | 原筛选、理由、幂等号导出最多5,000条，未知也入原命令恢复 | 导出确认 | A2 |
+| `/api/admin/platform/audit/mechanism-params/:key` | POST | 理由字数8–200、保留期13–36、字段版本逐版；理由必填及分类说明只读 | A2-MD1 | A2 |
+| `/api/admin/platform/audit/retention-preview` · `/retention-runs/latest` · `/retention-runs` | GET / POST(run) | 预览、上次手动结果、先归档再清理；最多2,000条，0条不可执行 | 清理确认 | A2 |
 | `/api/admin/system/config` | GET | 系统健康(health;server time / idempotency 为固定后端不变量,不在配置面) | — | A3 |
 | `/api/admin/feature-flags` | GET / PUT | feature flag 查询/切换 | A3-MD1(PUT) | A3 |
 | `/api/admin/killswitch` | GET / PUT | kill-switch 6 闸查询/切换(携 Key;熔断=风控/财务/超管,恢复=仅超管+B1;**V1 临时,V4 写迁 J1/J2,读保留别名**) | A3-MD2~MD4(PUT) | A3 |
@@ -362,15 +401,19 @@
 
 ### 域 B — 驾驶舱(treasury 系列实现权威在 D3)
 
+**2026-11-15 B1/B5写入结论与冲突恢复**：B1写入已确认成功即显示成功，随后重读失败单独说明，当前数据成功读回之前不可发起新修改。B1/B5按原命令号查明审批单待审批后，不因随后当前数据读取失败改成结果未知或重发申请；仅这两个专用审批函数接收读取失败，其他域共用函数不变。B1/B5阈值首次明确拒绝后重读并更新开框基线，保留输入及理由；B5预览使用新版本。订阅框未保存判断只看渠道变化，保存条件仍同时比较渠道和接收人。
+
+**2026-11-15 B5订阅冲突补充**：重读最新订阅后，草稿仍保留。渠道与接收人都和最新一致时才提示不用再保存；当前接收人不是本人时，显示最新接收人，并说明再次保存将由本人接收。保存资格继续同时比较渠道和接收人，后端以认证账号写共享 subscriber。
+
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
 | `/api/admin/treasury/coverage` | GET | 兑付覆盖率+双账本汇总(**B1 红线裁决唯一口径源**) | — | B1 |
 | `/api/admin/treasury/ledger` | GET | 双账本明细+净敞口序列 | — | B1 |
 | `/api/admin/treasury/thresholds` | PUT | 覆盖率红/黄线(校验 yellow>red,违反 400) | B1-MD1 | B1 |
 | `/api/admin/treasury/reserve-injection` | POST | 储备注入登记(实现权威 D3,携 Key) | B1-MD2 | B1→D3 |
-| `/api/admin/treasury/liabilities?breakdown=true` | GET | 8 类负债科目分解(实现 D3) | — | B2→D3 |
+| `/api/admin/treasury/liabilities?breakdown=true` | GET | 9 类应付款科目分解(实现 D3) | — | B2→D3 |
 | `/api/admin/treasury/maturity-forecast?window=` | GET | 到期负债预测(提现/利息/Genesis 三类叠加;实现 D3) | — | B2→D3 |
-| `/api/admin/funnel?cohort=&phase=&ref=` | GET | 五级漏斗(A4 事件预聚合) | — | B3 |
+| `/api/admin/funnel?cohort=&phase=&ref=` | GET | 四步漏斗(A4 事件预聚合) | — | B3 |
 | `/api/admin/funnel/cohort-trend` · `/funnel/export` · `/funnel/view` | GET/POST | cohort 序列/导出/保存视图 | — | B3 |
 | `/api/admin/phase/overview` · `/phase/distribution/export` | GET | Phase 分布+10 dial 现值(只读) | — | B4 |
 | `/api/admin/risk/radar` | GET | 五维风险态势 | — | B5 |
@@ -382,13 +425,13 @@
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
-| `/api/admin/users?filter=` · `/users/:id/profile` · `/users/export` | GET | 检索列表/单用户画像/脱敏导出 | — | C1 |
-| `/api/admin/users/:userId/freeze` · `/unfreeze` | POST | 冻结/解冻(原子+联动 D2 frozen;携 Key) | C2-MD1/MD2 | C2 |
-| `/api/admin/users/:userId/logout` | POST | 强制登出(scope=current\|all) | C2-MD3 | C2 |
-| `/api/admin/users/:userId/impersonate` | POST | 只读模拟登录(≤30min;写请求 403) | C2-MD4 | C2 |
-| `/api/admin/users/:userId/{allowlist\|blocklist}` | POST | 账户级名单(userId 维度) | C2-MD5/MD6 | C2 |
-| `/api/admin/users/:userId/adjust` | POST | 人工资产调整(usdt/nex 落 D4;points 走字段+audit;加余额过 B1;携 Key;server 按金额校验执行资质) | C3-MD1/MD2 | C3 |
-| `/api/admin/users/:userId/adjust/:requestId` | DELETE | 发起人撤回未处理的调整请求单(客服超额发起场景) | — | C3 |
+| `/api/admin/users/profiles` · `/users/overview` · `/users/profiles/:userKey/360` · `/users/profiles/export` | GET / POST(export) | 查询／独立统计／用户详情／带理由脱敏 CSV；导出独立授权及原号恢复 | 导出确认 | C1 |
+| `/api/admin/users/profiles/:userId/status` | PATCH | 直接冻结／恢复；携理由和原号，恢复不查覆盖率；财务兼容路径走 A2 | C2-MD1/MD2 | C2 |
+| `/api/admin/platform/audit/operations`（C2/C5） | POST | 退出全部设备、财务冻结／恢复提交审批，另一位有权超管批准后生效 | C2-MD1/MD2/MD3 | C2 |
+| `/api/admin/users/profiles/:userId/impersonations` · `/users/impersonations/:sessionNo/terminate` | POST | 开始／结束用户数据只读视图（5/10/15/30 分钟，默认15），不复现 App 页面 | C2-MD4 | C2 |
+| `/api/admin/users/account-lists` · `/users/account-lists/:userId/remove` | POST | 账户级信任／禁入名单；每用户一条，替换先核对；信任仅记录 | C2-MD5/MD6 | C2 |
+| `/api/admin/users/profiles/:userId/asset-adjustments` | POST | 原申请全部待另一人批准，余额不变；唯一键冲突 `C3_ADJUSTMENT_CREATE_CONFLICT`。旧 `/asset-adjustment-requests` 已退役，有权返回 410 `C3_LARGE_REQUEST_RETIRED`，无页面入口 | C3-MD1 | C3 |
+| `/api/admin/users/asset-adjustments/:adjustmentNo/{approve\|reject\|withdraw\|reverse}` | POST | 另一人批准／驳回、本人撤回、一次直接反向冲正；普通增加余额检查覆盖率，冲正不查 | C3-MD2(reverse) | C3 |
 | `/api/admin/users/:userId/sessions` · `/revoke-session` | GET/POST | 多载体 session 列表 / 指定会话下线（不因异端登录自动强踢） | C5-MD1(POST) | C5 / 三端 SPEC-4 |
 | `/api/admin/users/:userId/invalidate-password` · `/disable-2fa` | POST | 密码重置/disable 2FA(理由必填+账户归属核实;携 Key) | C5-MD2/MD3 | C5 |
 | `/api/admin/users/:userId/unlock` | POST | 解除账户锁定(24h 长锁执行=风控 lead/超管;15min 短锁即时) | C5-MD4 | C5 |
@@ -404,12 +447,13 @@
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
 | `/api/admin/finance/topup/overview` · `/topup/flows` | GET | 独立源对账概览 / 服务端分页充值流水 | — | D1 |
-| `/api/admin/finance/topup/channels/:channel/{enabled\|fee\|min-amount}` · `/topup/psp/primary` · `/topup/card-risk/:key` | PATCH | 渠道结构化参数 / 主备 PSP / Card 风控配置(PSP 切换执行=仅超管) | D1-MD1/MD2 | D1 |
-| `/api/admin/finance/topup/chargebacks/:caseNo/refund` · `/topup/reconciliation/:channel/writeoff` · `/topup/bin-locks/**` | POST/PATCH | chargeback 原子追回 / 差异凭证挂账 / 真实定时风控锁(均携 Key) | D1-MD3/MD4 | D1 |
-| `/openapi/v1/topups/card/{admission\|settlements\|failures\|chargebacks}` · `/openapi/v1/topups/provider-statements` | POST | 原始请求体 HMAC-SHA256 签名的 Card 生命周期 / 独立 PSP 或链上账单接入；5 分钟防重放窗口，渠道-provider 白名单 | — | D1 |
-| `/api/admin/finance/vietqr/overview?view=&pageNum=&pageSize=` | GET | 银行流水、实时到账、人工匹配、异常复核、手动退款五视图；无数据返回真实空态，不生成演示行 | — | D1 |
-| `/api/admin/finance/vietqr/reconciliations/:id/actions/{match\|writeoff\|return}` | POST | match/writeoff/return 对账处置；携 Key、CAS、理由与证据，前两者原子联动钱包、累计入金、D4、D3，return 不入钱包 | 是 | D1 |
-| `/api/admin/finance/vietqr/accounts` · `/vietqr/accounts/:id` · `/vietqr/config` | POST/PATCH | 银行账户池新增/轮转/熔断与额度参数；账号密文落库、前端只见尾号；携 Key + CAS | 是 | D1 |
+| `/api/admin/finance/topup/channels/:channel/{enabled\|fee\|max-amount}` | PATCH | 渠道启停与结构化参数 | D1-MD1 | D1 |
+| `/api/admin/finance/topup/reconciliation/:channel/writeoff` | POST | 差异凭证挂账(携 Key) | D1-MD4 | D1 |
+| `/openapi/v1/topups/provider-statements` | POST | 原始请求体 HMAC-SHA256 签名的独立支付商或链上账单接入；5 分钟防重放窗口，渠道-provider 白名单 | — | D1 |
+| `/api/admin/finance/vietqr/overview?view=inflight&pageNum=1&pageSize=20` | GET | 页面取单笔上限所在的 `config` 和 `asOf`；账户和队列字段暂按契约保留，不再展示 | — | D1 |
+| `/api/admin/finance/vietqr/orders?paymentRail=HDPAY&status=&keyword=&pageNum=&pageSize=` | GET | 银行卡支付（HDPay）充值订单列表 | — | D1 |
+| `/api/admin/finance/vietqr/orders/:intentNo/manual-credit` · `/vietqr/receipt-evidence` | POST | HDPay 人工确认入账及回单图片上传；携 Key、CAS、理由与证据 | 是 | D1 |
+| `/api/admin/finance/vietqr/config` | PATCH | 单笔上限；后端要求整组配置提交，其他字段按读回值原样提交；携 Key + CAS | 是 | D1 |
 | `/api/admin/withdrawals?status=&cursor=` · `/withdrawals/:id` | GET | 提现队列 / 单笔详情 | — | D2 |
 | `/api/admin/withdrawals/:id/{approve\|reject\|delay\|freeze\|unfreeze\|refund}` | POST | 单笔状态推进(单一 URL 覆盖所有金额,server 按金额校验执行资质——大额 ≥$1,000 放行=财务 lead/超管;非法 409;携 Key) | D2-MD1~MD6 | D2 |
 | `/api/admin/withdrawals/batch` | POST | 批量(含大额单自动分拣转人工逐笔确认,不整体失败) | D2-MD7 | D2 |
@@ -421,13 +465,15 @@
 | `/api/admin/bills/:id/adjust` | POST | 手动 refund/调整(**账本唯一合法写入**;携 Key) | D4-MD1 | D4 |
 | `/api/admin/bills/export?type=&userId=` | GET | 账单 CSV 导出(单源;L5 引用) | —(含明细经 L5 导出确认门) | D4 |
 | `/api/admin/withdraw/limits` | GET / PUT | 提现参数现值 / 非 Phase 参数配置(携 Phase 参数返 422) | D5-MD1(PUT) | D5 |
-| `/api/admin/finance/fx-quote` | GET / PATCH | VND/USDT 基础汇率、点差、锁价时长、服务端派生报价与不可变历史；PATCH 携 Key + expectedVersion | 是 | D6 |
+| `/api/admin/finance/fx-quote` · `/fx-quote/preflight` | GET / PATCH / POST(preflight) | 当前配置／最近审批／历史，敏感方向预检后走 A2；非敏感直接保存，均版本校验 | 是 | D6 |
 
 **D1 落地约束**：
-- settlement 的支付记录、钱包、D4、`cumulativeDepositUsdt`、D3、`fee_buffer`、审计和 Outbox 必须在同一事务；chargeback 追回同样原子反向写入。持久幂等查询必须先于终态校验，使超时后的相同恢复请求可回放第一次成功且不产生第二组分录。
+- 旧充值通道已退役（2026-11-04）：人工银行转账回单、国际卡（含 PSP 主备、卡风控参数、BIN/IP/设备锁、拒付追回）和收款账户池已从 PC 删除。PC 代理不再转发 `/topup/psp/primary`、`/topup/card-risk/:key`、`/topup/bin-locks/**`、`/topup/chargebacks/:caseNo/refund`、`/topup/channels/:channel/min-amount`、`/vietqr/accounts/**`、`/vietqr/receipts`、`/vietqr/reconciliations/:id/actions/*`。后端接口和 `/openapi/v1/topups/card/*` 的关闭由后端单独处理；`topup/overview`、`vietqr/overview` 的响应字段暂保持不变，PC 仍做严格校验。
+- `nx_topup_fee_buffer_*` 继续承接 G2 兑换费用分配，`nx_vietqr_reconciliation` 继续承接 HDPay 在途投影和 D3 待核实入金，都不能随旧通道删除。
+- 入账的支付记录、钱包、D4、`cumulativeDepositUsdt`、D3、审计和 Outbox 必须在同一事务。持久幂等查询必须先于终态校验，使超时后的相同恢复请求可回放第一次成功且不产生第二组分录。
 - provider statement 是独立事实表，只参与对账，不允许通过接入接口直接改钱包。无差异聚合允许 `diff=null`；PC 只把 null 规范化为空文案，其他缺字段、错误类型、未知单位或畸形成功响应继续 fail-closed。
 - MyBatis 注解动态 SQL 必须由启动解析测试逐条解析，禁止原始 `<` / `<=` 破坏 XML language driver；生产连接创建时执行 `SET time_zone='+08:00'`，与业务 `Asia/Shanghai` 时间比较一致。
-- D1 增量迁移先把历史展示格式配置规范成数值+单位，再仅按精确 D4 业务类型和业务号回填累计充值、D3 与费率缓冲；不确定来源写异常表。迁移必须可连续执行且第二次不新增、不重复、不改余额。
+- D1 增量迁移先把历史展示格式配置规范成数值+单位，再仅按精确 D4 业务类型和业务号回填累计充值、D3 与费率缓冲；不确定来源写异常表。迁移必须可连续执行且第二次不新增、不重复、不改余额。`topup/overview` 仍用异常表数量提示历史未核对完。
 
 ### 域 E — 设备商城
 
@@ -440,14 +486,14 @@
 | `/api/store/purchase-eligibility?productNo=` | GET | **COMPLETE**：读取当前登录用户的 V-rank、有效直推、团队业绩与 E1 `purchaseGate`，返回 `eligible/decisionCode/evaluatedAt`；畸形门或事实缺失失败关闭。该端点供提交前提示，普通/组合下单、Trade-in 与容量替换入口均执行最终服务端复验 | 用户令牌 | E1 / E3 |
 | `/api/withdrawals/attempts/:idempotencyKey/abandon` | POST | **COMPLETE**：对结果未知的提现尝试做服务端核验与放弃：与 submit 共用用户行锁；已提交返回 canonical withdrawal，未提交写 ABANDONED tombstone；同 key 异 body 拒绝 | 用户令牌 + 原冻结请求体 | D2 / App 钱包 |
 | `/api/config/cart/bundle-discount` | PUT | 套餐折扣 ladder(4件12%/3件8%/2件5%) | E1a-MD3 | E1 |
-| `/api/admin/config/task-pricing` | GET / PUT | 6 类任务定价(热更,仅新派发生效) | E2-MD1~MD4(PUT) | E2 |
+| `/api/admin/config/task-pricing` | GET / HEAD（PC 只读兼容） | 旧六类任务定价写入口按 E2-A07/A08/A09/A12 退役；当前 E2 页面没有 GET 调用，保留的 fetchE2TaskPricing 仅为只读兼容；PC BFF 拒绝 PUT，后端60305188已移除PUT映射，通过原安全过滤后HTTP/code 405、METHOD_NOT_ALLOWED，GET和device_e2_read保留；E2-BE-01已交付 | 无 PC 写入口 | E2 |
 | `/api/admin/devices/e3/config` | GET / PATCH | E3 产能曲线 + 换新阶梯统一配置；拒绝退役键、未知键、无变化与非法保序 | E3-MD1(高敏字段) | E3 |
 | `/api/app/trade-in/config` | GET | 用户端换新开关、资格和 4/5 阶梯只读投影 | — | E3 |
 | `/api/app/trade-in/{config\|quote\|submit}` | GET / POST | 用户换新配置、报价与原子提交；submit 携 Idempotency-Key，折抵不入余额 | — | E3 |
-| `/api/admin/orders?status=&failState=` · `/orders/:id` | GET | 订单列表 / 详情 | — | E4 |
-| `/api/admin/orders/:id` · `/orders/:id/cancel` | PUT/POST | 手动推进回滚改派 DC / 取消(携 Key)；placed 进入 payment_failed/expired/cancelled 时与状态更新同事务复库，软删除商品仍承接历史订单复库 | 是(④a,运维/可取消态) | E4 |
+| `/api/admin/devices/orders?state=&keyword=&pageNum=&pageSize=` · `/orders/:orderNo` | GET | 订单列表／详情，含退款条件及可空任务影响 | — | E4 |
+| `/api/admin/platform/audit/operations`（E4） | POST | 推进、取消、标记失败、退款均提交原 A2 命令；PC 不提供手动回滚或 DC 改派 | 是 | E4 |
 | `/api/orders` | POST | (用户)下单(relatedOrderId server 强校原单 payment_failed+userId 一致否则 400) | — | E4 |
-| `/api/admin/orders/:id/refund` | POST | 退款(联动 D1 退款+D4 冲正+cumulativeDepositUsdt 核减;携 Key) | E4-MD1 | E4 |
+| `/api/admin/devices/orders/:orderNo/refund` | PATCH/POST（受限） | 直接调用不绕过审批，须真实 A2 回放及原工单，否则 E4_REFUND_APPROVAL_REQUIRED；PC 无直退 helper | E4-MD1 | E4 |
 | `/api/admin/devices?userId=&kind=&status=` | GET | 设备 fleet 运维列表 | — | E5 |
 | `/api/device/:id/{heartbeat\|activate\|deactivate}` | POST | 心跳上报 / 激活进槽(enforce MAX_DEVICES=6,force 不绕)/ 出槽 | E5-MD1/MD2(force/强制解绑) | E5 |
 | `/api/admin/config/devices/max-slots` | PUT | **TBD建议**:调 MAX_DEVICES(V2 写死,V4 参数化后补,权威 E5) | 是(④a) | E5 |
@@ -463,7 +509,7 @@
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
-| `/api/admin/config/v-ranks` · `/v-ranks` | GET / PUT | 13 阶 V 级配置(门槛保序 Vn≥Vn-1 违反 400) | F1-MD2(高敏) | F1 |
+| `/api/admin/config/v-ranks` · `/v-ranks` | GET / PUT | V0–V8 有效等级配置(门槛保序 Vn≥Vn-1 违反 400) | F1-MD2(高敏) | F1 |
 | `/api/admin/users/:userId/vrank/override` | POST | 手动晋升/回滚 V 级(携 Key;执行=增长 lead/超管) | F1-MD1 | F1 |
 | `/api/admin/team/prize-queue` · `/prize-queue/:id/ship` | GET/POST | 实物奖发货队列 / 标发货(须 kycAddressVerified 否则 409) | F1-MD3(ship) | F1 |
 | `/api/admin/teams/direct-referral-policy` · `/api/config/commission/direct-referral` | GET；admin PUT | GET 显式 ?schemaVersion=2；PUT 携 schemaVersion=2、expectedVersion、expectedSevenLayerRevision、完整 purchaseSplit/deviceEarning、reason、Idempotency-Key，仅 A2 批准后生效；拒绝旧 purchase 和第二购买总比例；T 前只读，T 后 Team 旧版明确升级提示 | f_direct_referral_policy，target=direct_referral_policy/current | F2 |
@@ -476,7 +522,7 @@
 | `/api/admin/commissions?kind=&status=&cursor=` · `/commissions/anomalies` | GET | 六类佣金流水(by commission.paid)/ 异常预警 | — | F5 |
 | `/api/admin/commissions/:id/reverse` · `/commissions/reissue` · `/users/:userId/commission/suspend` | POST | 撤销/补发/暂停(携 Key;原子+D4 冲正) | F5-MD1~MD3 | F5 |
 | `/api/admin/config/quota` · `/users/:userId/quota/override` · `/config/quota/:tier/pause` | GET/PUT/POST | 配额解锁配置 / 单用户覆盖 / 断货暂停 | F4b-MD1~MD4(写) | F4b |
-| `/api/admin/agent/applications?type=&status=` · `/applications/:id/review` · `/agent/budget` | GET/POST/PUT | 大使预算申请队列 / 审批 / 调区域预算(携 Key) | F4c-MD1~MD3(review/budget) | F4c |
+| `/api/admin/teams/leadership-pool` · `/ambassador-applications/:id/materials` · `/materials/review` · `/materials/files/:fileId` | GET/POST | 原大使申请队列／材料与独立业务、费用核验／私有附件；批准走原A2命令并携独立材料版本 | [BE-27材料核验](BE-27-大使材料核验-20261107.md) | F4c |
 | `/api/admin/leaderboard?period=&cursor=` | GET | 4 周期奖池+榜单快照(每 5min) | — | F4d |
 | `/api/admin/leaderboard/:period/{payout\|pause\|topup}` | POST | 补发纠错派发 / 暂停 / 追加奖池(携 Key;topup+B1) | F4d-MD1/MD3/MD4 | F4d |
 | `/api/admin/risk/leaderboard/:userId/disqualify` | POST | **F4d owns 取消刷榜资格**(剔除名单+标 disqualified;携 Key) | F4d-MD2 | F4d |
@@ -506,9 +552,9 @@
 |---|---|---|---|---|
 | `/api/admin/phase/dials` | GET / PUT | 逐月 10 dial 矩阵+定时切换(**全 dial 读写唯一路径**;放大流出方向 dial 执行=仅超管+B1;携 Key) | H1-MD1/MD3(PUT) | H1 |
 | `/api/admin/platform/phase-config/cohort-overrides` · `/:cohortId` | GET/POST/DELETE | cohort 月偏移 override 列/增/撤 | H1-MD4/MD5(写) | H1 |
-| `/api/admin/trial/config` | GET / PUT | TrialConfig 20 参数(含今日剩余免费名额；仅敏感项经确认弹窗;携 Key) | H2-MD1(敏感项) | H2 |
-| `/api/admin/trial/sessions[?status=]` · `/sessions/:userId` | GET | 试用会话监控 / 单会话详情(7 态轨迹) | — | H2 |
-| `/api/admin/trial/sessions/:userId/{cancel\|charge}` | POST | 强制取消 / 强制扣款(高敏,经 PSP;携 Key;共用 computeTrialOffset) | H2-MD2/MD3 | H2 |
+| `/api/admin/growth/trials?pageNum=&pageSize=` | GET | 现行配置、统计、商品及分页试用记录；PC 参数目录 14 项，另读实际剩余派生值。旧邀请、延长及自动扣款字段不提供新保存入口 | — | H2 |
+| `/api/admin/growth/trials/params/{key}` | PATCH | 可写参数逐项保存，带目标值、理由和原命令号；系统只读项、旧邀请及延长字段不提供新入口，历史结果未知仍可按原命令恢复 | H2-MD1 | H2 |
+| A2 `h2_trial_cancel` 命令／原键查询 | POST / GET | 强制取消审批与原结果核查；历史 `h2_trial_charge` 仅查询，不重发 | H2-MD2/MD3 | H2 |
 | `/api/admin/trial/kpi` | GET | 试用 KPI 看板(喂 B3) | — | H2 |
 | `/api/trial/eligibility` | GET | (用户)试用资格单源(server-canonical,拒重领) | — | H2 |
 | `/api/trial/redeem-early` · `/trial/charge` · `/trial/cancel` | POST | (用户)早购重算 / (cron)auto-charge / 取消(reason 枚举) | — | H2 |
@@ -533,9 +579,10 @@
 | `/api/admin/notifications/campaigns` | GET / POST | campaign 列表 / 下发(携 Key 防重复) | I3-MD1(POST) | I3 |
 | `/api/notifications?cursor=&priority=` · `/:id/read` · `/stream`(SSE) | GET/POST/SSE | (用户)分页拉取 / 标读 / 推优先级升级 | — | I3 |
 | `/api/admin/trust/sections` · `/:sectionKey/versions` · `/:sectionKey` | GET/PUT | 信任 section 列表 / 历史 / 发布回滚(携 Key;财务数字/NEX 叙事类执行=风控 lead/超管) | I4-MD1~MD3(PUT) | I4 |
-| `/api/legal/risk-disclosure/current?jurisdiction=` | GET | (用户)当前 IP 辖区披露版本(server 权威判辖区) | — | I5 |
-| `/api/admin/legal/risk-disclosure` | PUT | 发布披露新版(per jurisdiction×locale;携 Key;发布标 ack stale 触发 re-ack;执行=风控 lead/超管) | I5-MD1~MD3 | I5 |
+| `/api/legal/risk-disclosure/current?jurisdiction=` | GET | (用户)当前适用地区的披露版本（账号国家/地区由服务端解析，不能由客户端任意改写） | — | I5 |
+| `/api/admin/content/trust-disclosure/disclosures/{jurisdiction}/publish` · `/api/admin/content/trust-disclosure/disclosures/matrix/{jurisdiction}` | POST / PUT | 发布批准后仅封存 / 生效版本或适用国家另行批准切换后使新旧国家用户原确认失效，并生成紧急级通知；App 不强制确认、不阻断操作(携 Key;执行=风控 lead/超管) | I5-MD1~MD3 | I5 |
 | `/api/admin/i18n/namespaces` · `/:namespace/keys` · `/:namespace` · `/i18n/integrity` | GET/PUT | namespace 矩阵 / key 列表 / 发布(校验镜像+占位符;携 Key)/ 完整性扫描 | I6-MD1~MD3(发布) | I6 |
+| `/api/admin/content/i18n-learning/integrity/{issueCode}/fix` | POST | 保存选中词条的三语草稿，重扫返回该类剩余数和本次实际修复数。仍在发布版上的问题继续计入剩余。 | I6 完整性修复 | I6 |
 | `/api/admin/learn/courses` · `/:slug/versions` · `/:slug` | GET/PUT | 课程列表 / 历史 / 发布回滚+改奖励(改奖励核 B1;携 Key) | I7-MD1~MD4(PUT) | I7 |
 
 ### 域 J — 紧急合规(J1/J2 V4 接管 A3 写路径,读保留别名)
@@ -544,17 +591,68 @@
 |---|---|---|---|---|
 | `/api/admin/emergency/kill-switches` | GET | 5 功能闸矩阵(server-canonical,client 仅读灯) | — | J1 |
 | `/api/admin/emergency/kill-switches/alerts` | GET | 已登录运营账号可读的五闸最小状态/待补录快照，不泄露阈值、配置与控制能力 | — | J1 |
-| `/api/admin/emergency/kill-switches/:key` | PUT | 单闸熔断/恢复(熔断=风控/财务/超管单人确认+持久广播事件;恢复=仅超管,前置 B1 闸 `coverageRatio ≥ recoverGate` 未达 422 `COVERAGE_BELOW_REDLINE`;携 Key) | J1-MD1/MD2 | J1 |
+| `/api/admin/emergency/kill-switches/:key` | PUT | 单闸关停按 `emergency_j1_gate_kill` 确认后立即执行；恢复按 `emergency_j1_gate_resume` 及 A2 提案权限提交 `j1_gate_resume` 审批，另一位超级管理员批准后回放；批准前保持关停，资金业务重查服务端覆盖率资格，试用免查；携原 Key | J1-MD1/MD2 | J1 |
 | `/api/admin/emergency/kill-switches/emergency-disable` | POST | 批量应急熔断(可多闸;触发事由空 422 / reason 空 400;风控/超管单人确认;全量预校验后同事务原子关停+持久广播事件;携 Key) | J1-MD3 | J1 |
-| 服务端定时任务（无外部 endpoint） | — | R1/R2 自动熔断评估命中后走 J1 原子写边界(`trigger=auto`,30min 内值班补录 J1-MD5) | 自动+J1-MD5 补录 | J1 |
-| `/api/admin/killswitch/geo` | GET / PUT | geo-block 配置(server-canonical)/ 黑名单+受限名单(limitedCountries)+per-endpoint(拒绝财务执行 403;携 Key) | J2-MD1~MD3(PUT) | J2 |
-| `/api/admin/killswitch/geo/emergency` | POST | geo 应急即时封锁(仅加封锁,移除 403;事由空 422;单人确认即时生效+广播;携 Key) | 是(④a) | J2 |
-| `/api/admin/tamper/{overview,paths,accounts}?window=` | GET | 篡改拦截总览/路径分布/账户告警(window∈{24h,7d,30d} 非法 400) | — | J3 |
-| `/api/admin/tamper/alert-config` | PUT | 配置告警频次/喂 K4 开关(携 Key) | J3-MD1 | J3 |
-| `/api/admin/emergency/playbooks` · `/:name` | GET/PUT | 应急剧本库 / 编辑(携 Key) | J4-MD1(PUT) | J4 |
-| `/api/admin/emergency/playbooks/:name/drill` | POST | 剧本演练(沙箱走查动作序列,不下发生产;通过更新 lastDrill→演练就绪;携 Key) | J4-MD2 | J4 |
-| `/api/admin/emergency/playbooks/:name/execute` | POST | 执行剧本(逐步推进,各止血步由该步目标域授权角色经该域确认弹窗单人确认执行,J4 不绕过各域确认门;前向只进不回滚;携 Key+执行锁;编排 J1/J2/I5/C2/K1/I3) | J4-MD3(各步各域确认门) | J4 |
-| `/api/admin/emergency/executions?filter=` | GET | 历史执行追溯(合规取证;partial 终态不回写) | — | J4 |
+| 服务端定时任务（无外部 endpoint） | — | R1/R2 自动熔断评估命中后走 J1 原子写边界(`trigger=auto`,补录时限默认 30 分钟,J1 可调 10–120 分钟,值班补录 J1-MD5;补录不恢复业务) | 自动+J1-MD5 补录 | J1 |
+| `/api/admin/emergency/geo-block` | GET | J2 两份名单、完整 ISO 目录及账户国家影响、入口策略、识别源、近 24 小时前 20 国合计、最近 8 条成功修改 | — | J2 |
+| `/api/admin/emergency/geo-block/country-lists/{blocked,limited}` | PUT | 整份替换；携 expectedCountries、理由和 Key；封锁新增必须带触发依据。新增、移除国家存在审批锁时整份拒绝 | J2-MD1/MD2 | J2 |
+| `/api/admin/emergency/geo-block/endpoints/{key}` | PUT | ACTIVE 目录入口的 derived/explicit 规则；携 mode、countries、expectedMode、expectedCountries、理由和 Key | J2-MD3 | J2 |
+| `/api/admin/emergency/geo-block/edge-judge` | PUT | 健康识别源切换，携 source、expectedSource、理由和 Key；旧源同样健康时仅为主源无有效国家的请求保留五分钟兜底 | J2-MD4 | J2 |
+| `/api/admin/emergency/geo-block/emergency-blocks` | POST | 只加封锁；携 countries、triggerBasis、理由和 Key，任一已封锁或审批锁冲突时整批拒绝；本页五写全部直写，无 A2 提案 | 两步选择与确认 | J2 |
+| `/api/admin/emergency/tamper/overview?window=&accountPage=&accountPageSize=` | GET | 滚动 24h/7d/30d 拦截总览、路径分布、达到阈值账户；非法窗口 422，页长最多 50 | — | J3 |
+| `/api/admin/emergency/tamper/alert-config` | PUT | 直接保存 threshold/feedK4，必带 expectedThreshold/expectedFeedK4、理由和 Key；先去重再在执行回调核对原值 | J3-MD1 | J3 |
+| `/api/admin/emergency/tamper/reports` | POST | 脱敏 CSV：完整窗口的接口汇总和达到阈值账户；理由、Key 必填；无下载链接 | 理由确认 | J3 |
+| `/api/admin/emergency/sop/playbooks` · `/{code}` | GET/POST/PUT | 概览含当前定义/最多20条执行；新增/编辑直接保存定义，编辑携原 version，保存后待演练，不执行生产 | J4-MD1 | J4 |
+| `/api/admin/emergency/sop/playbooks/{code}/drills` | POST | 验证目标/通知并写演练台账，NOT_REQUIRED/validationOnly；不调用生产步骤 | J4-MD2 | J4 |
+| `/api/admin/platform/audit/operations` | POST | 正式执行两个入口均提案：J/j4_playbook_execute，sourceDomain=J4，obj=code，target=J/playbook/code，含触发依据/说明和全部步骤确认；常规/应急仅 emergency 布尔不同 | J4-MD3 | J4 |
+| `/api/admin/emergency/sop/playbooks/{code}/executions` | POST（仅 A2 回放） | 批准后自动按顺序执行；直接调用拒 J4_A2_CONFIRMATION_REQUIRED，不是页面独立直写入口 | A2 批准 | J4 |
+| `/api/admin/emergency/sop/playbooks/{code}/executions/{id}/cancel` · `/resume` · `/rollback` | POST | 分别只登记取消、按后端最后更新时间超2分钟核持久事实、直接恢复本次 DONE+凭证的J1开关；均含理由和Key | 独立确认 | J4 |
+| `/api/admin/platform/audit/operations/proposals/by-idempotency-key` | GET | 本人原申请权威当前状态；读权限后端再核，J4 直写无按号回执接口 | 查询原结果 | J4 |
+
+**J2 地区访问限制当前合同（2026-11-14，后端 `111e00cd`）：**
+
+- 名单替换、入口规则和应急封锁沿用国家选择器 → 共用确认框，确认发送的国家逐项等于所选；关闭、取消后不保留未发送的选择。封锁优先于入口独立规则，再判断受限资金/奖励路由；移出封锁名单改 allowed，不自动转 limited，也不删除入口规则。J2 不撤销已有会话或既有订单；地区过滤器有后台、代看、支付回调等豁免。
+- 五个写入口发前在 J 域唯一共用 sessionStorage 实例中保存原方法、地址、请求正文（含完整目标、原值、理由与操作者）、Key 和原确认事实。保存失败不发；结果未知后原字段冻结，刷新或概览失败仍可从提示恢复。首次提交按 `isDeterministicRejection` 判断被拒，幂等未收敛码和 unknown 头继续留证据；首次明确被拒丢号并留在确认框显示原因。已未知的原请求仅按原正文与原 Key 重试，成功或 `isExplicitRejection` 明确拒绝才解除；重试时 401/403/408/425/429、IDEMPOTENCY_*、5xx 及无法识别回包保持未知。超过首次提交 24 小时只查询，证据保留。后端不提供 J2 原命令回执，查询只读当前总览，不能以当前值或最近 8 条记录给原命令结案。
+- 恢复标题、差异、影响、理由与成功提示都来自保存的原操作。重试成功回包不当当前数据；关闭原框后必须重读总览，读成功前不允许新修改。查询只要求读取资格，原样重试另检查该写入口权限。J1/J3/J4 原调用语义保持。
+- 钱包是后端原始十进制字符串，USDT 按字符串转整数求和、完整显示有效小数，不经 Number 或 toFixed 舍入；必填金额缺失不能当 0。国家拦截仅滚动 24 小时前 20 名；缺失国家或识别源计数显示未知，不能推算全量或逐条事件。后端无逐条拦截记录和 J2 原命令核查接口的缺口交后端处理。
+- 页面现有的绝对访问承诺、主源失败时未说明五分钟兜底、以及未知记录只会在重试成功后消失的说法存在事实边界；详见 J2 重构说明「需视觉修正的说法」，由视觉 worker 修文案，本轮仅接逻辑。
+
+**J3 篡改防御监控当前合同（2026-11-14，后端 `111e00cd`）：**
+
+- 页面范围、URL 窗口/页码、稀疏小时/日期桶、路径排行、账户分页、告警配置两项和报表入口保持。只统计已经投影的权威拒绝事件；静态登记 10/10 不证明实时投递健康。账户门槛是 24h 基准 threshold 的 1/7/30 倍；每次读取重新筛，不保存名单。J3 不冻结账户或建立关联组；去 C2/K1 必须同时有目标菜单和原有业务权限，用户详情继续按菜单和读权判定。
+- 告警配置直接 PUT，不走 A2，也没有审批锁或环境禁用分支；不能从旧 high-ops 登记推造审批。新修改要求最新概览可用、没有原修改结果未知、阈值 1–100、近七天预览可用、理由 trim 后 8–200 字且至少一项变化。expected 值取开框时的权威配置。
+- 发前在 J 域现有唯一存储实例保存方法、地址、原始 JSON 正文（含 expectedThreshold/expectedFeedK4、operator、reason）、Key 和当时的告警配置/预览事实；存不下不发。结果未知后输入冻结，刷新及概览失败仍保留提醒和恢复入口。恢复只用保存的正文、Key 和确认事实，不用后来读到的配置重新组装。首次提交按 isDeterministicRejection 判断拒绝；原请求重试仅成功或 isExplicitRejection 明确拒绝才结案，401/403/408/425/429、所有 IDEMPOTENCY_*、5xx、断网和不可读响应保留记录。超过首次提交 24 小时、缺原请求的旧记录仅只读核对。
+- 恢复成功或明确拒绝即关闭原框；成功回放的旧 overview 不设为当前数据，必须重新读取，读取成功前不能新改。查询与重试分别判断读权/配置权；没有配置权仍可读回。后端无 J3 按 Key 查询回执，当前值相同或不同都不能证明原命令结果，读回不自动解锁。
+- `lastOccurredAt` 已由 f71b72ff 交付：与 last 相同事件 MAX 的完整 `YYYY-MM-DD HH:mm:ss`，在现有「最近」位置原样显示，北京时间，不经浏览器时区转换。K4/B5 两布尔是当前窗口至少一条事件实际接受的聚合，均必填且不可空；K4 分数是窗口实际增分之和（允许 +0），不是当前总分。B5 接受指 nx_risk_signal 插入，不是 App 推送或已读。缺回执时整份读取失败并显示具体原因，不当作 false/0。B5=false 和 partial 覆盖为兼容分支，当前正常投影无法产生，不用作真实业务验收夹具。
+- 报表依 B4-PD02 保持带审计只读导出：完整原 body/Key 发前持久化，未拿到文件允许重新发起新导出，不锁业务配置或套长期 R1。已收到的文件只在内存保留，本地重下不再 POST；放弃不删服务端记录。范围以生成时服务端 now 和当前阈值为准，不是冻结页面快照；空事件或超过 10,000 个达到阈值账户拒绝。CSV 返回 base64，无下载 URL。
+- 现有「更多/更少账户」的严格增减、风险评分 0 分上限边界、旧指南「只有时分秒」等说法待视觉 worker 校正，详见 J3 重构说明「需视觉修正的说法」；本轮未改布局、样式或现有页面文案。
+
+**J1 紧急停用开关页面行为（2026-11-06 补修）：**
+
+- 第一层：一句话结论、统计、五张业务卡、批量关停。质押卡及总表写「暂不可用」，新关停、恢复和批量勾选隐藏，在线统计仅计其余四项；历史审批、未知结果及补录继续核对和按原命令恢复。业务卡是控制区，只显示名称、状态和动作，关停、恢复、补录入口不收进折叠组；控制范围、资金影响、最近变更和操作后果在名称旁的提示图标里。待补录有内容时展开在批量关停下面，逾期的排前面，结论条写逾期项和截止时间，最多 3 条。
+- 折叠组：备付金检查（有业务已关停或覆盖率低于红线时展开）、功能开关总表、应急处置参数、应急判定与自动关停规则。备付金检查使用包住当前覆盖率和恢复红线的阈值尺，不把超过量程的标记贴末端。健康线按服务端实际值显示，不用固定「红线加 25」替代；恢复资格不由前端比较覆盖率自行推算。红线数值只在统计条和确认框。R1 的挤兑红线与备付金恢复红线分开解释；R2 的条件文字用当前阈值。没有待补录时规则组摘要写「当前没有待补录事项」。
+- 不能操作时入口禁用：资金恢复只采信服务端估值可靠性和恢复许可，估值不可靠时写「暂时无法判断」并隐藏数值图；未允许时按钮仍写「提交恢复审批」并禁用，卡片标签写「恢复受阻」，悬停及结论说明系统尚未许可，到资金页核对覆盖率与估值；全部业务已关停时批量按钮禁用并写明。
+- 确认框的业务、状态变化、触发值和阈值常显，执行摘要默认收起；事件触发值与阈值按规则带 % 或 USDT 和千分位，不用现在的阈值替代事件值。可用业务全部开启但有结果未知时结论写「可用业务全部开启，N 项操作或审批结果未确认」，橙黄并指向待确认条。已有恢复申请待审批时写数量并指向业务卡原审批，历史质押申请也计入，不写没有要处理的事。
+- 关停和批量关停写「立即生效」，确认按钮红色。规则服务读不到时用默认 8–200 字继续（Q-06），恢复和补录不走这条例外。
+- 恢复写蓝色「批准后生效」，按钮「提交恢复审批」。新申请须估值可靠且服务端允许恢复，试用免查；提交后业务仍关停，另一位有 A2 审批及 J1 恢复权限的超级管理员批准后执行，发起人不能自审。资金检查失败保留待批。批量关停只选一项时直接写业务名，多项清单默认收起，列业务、控制能力和状态变化。
+- 提现关停暂停新申请、审核放行及尚未提交通道的派发，已提交通道的继续核对结算，不因关停退款。链上打款尚未派发的继续暂停；已交给打款渠道的单照常处理，不保证撤回。审核放行不等于已经派发。试用开关控制新领取和试用转购；关停后已在试用的用户仍可取消，到期结算也被挡住，到期的试用要等恢复后才结束。
+- 补录写「业务继续关停」。没补录的业务不能恢复。调参冲突留框给「读取最新」，读取成功写明别人改了什么、新值保留、理由清空；失败保留原草稿和再读入口。
+- 写操作先在浏览器存原操作再发。结果未知（含 `IDEMPOTENCY_REQUEST_IN_PROGRESS`、`IDEMPOTENCY_RESULT_UNKNOWN`）时关框，转成页面上方的待确认条，这项的入口锁住，只能原样重试。原样重试只有 `isExplicitRejection` 判定的带原因码4xx才可人工核实后解除；401／403／408／425／429、全部 `IDEMPOTENCY_*`、未知／不可读响应及本地错误不算，读回不授予资格。解除只清本地，不发请求、不记操作记录、不办后端结案。超过 24 小时不能再用原号重试，记录和入口锁保留，写明到操作记录与审批核对，到期和读不到记录都不算解除。读取失败时待确认条仍显示；重试按该命令当前的写权限判断。
+- 恢复结果未知时先查原恢复申请，明确未查到、未过期且当前服务端仍许可才按原内容重发；被拒仍保号，过期只查询。读取失败时也保留核查入口。结论解释使用「恢复业务怎么操作」标题。
+- 刷新中所有写入口禁用并写原因。首次读取失败写「业务开关读取失败」，只留「重试」；刷新失败保留上次读到的状态及时间，注明可能已过期，不给操作入口和勾选。页头不留读取时间和刷新。页面打开和点「刷新」时读取，不自动更新。
+
+
+**J4 监管要求应急处理当前合同（2026-11-14，后端 `111e00cd`）：**
+
+- 保留八个写入口：新增、编辑、演练、常规执行申请、应急执行申请、取消、恢复核对和恢复开关。新增/编辑及执行申请仍由页面第一步填写，再进原共用确认框核对写理由；请求字段与步骤顺序逐项延续。直接写由 `emergency_j4_write`（维护/演练）或 `emergency_j4_playbook_execute`（取消/核对）控制；恢复另需 `emergency_j1_gate_resume`。
+- 发起正式执行需 J4 执行权、A2 提案权及所有步骤对应域权。后端绑定当前 code/version/步骤权限/hash；另一位活跃管理员有 A2 批准权、J4 执行权和单据访问范围方可批准，无须重复具备每步域直接写权。本人不能批自己的；预案之后被编辑则原单因快照不符拒绝。常规与应急都须审批、近90天演练及对应台账、当前通知和目标可执行，不因 SLA 或应急标签加速。
+- 批准后自动顺序执行；失败停止后续并保留已完成步骤。取消只登记请求，在下个步骤边界跳过后续，不打断当前步骤；若已到最后一步可正常全部完成。恢复核对的2分钟由后端点击时按 updatedAt 判断，不由开始时间推算；pending跳过，running仅核持久证据，不重执行业务，J1/I3有完成核对分支，J2/C2/K1/I5记失败仍可能实际已生效。
+- 恢复开关直接执行，不走审批；仅本次 DONE 且带归属凭证的 J1 开关，在终态/审计齐全、原归属未变且资金覆盖率/估值合格时恢复。不会解封国家、解冻账户/组、撤披露或撤通知；回滚方案文本是保存说明，不是补偿脚本。
+- 六个直接写与两个提案共用 J 域唯一持久存储，发前保存完整原 body（含对象、原 version、理由、操作者）、方法、路径、Key、首次时间及确认事实；持久化失败不发。未知后理由和返回修改锁住，刷新/概览503仍能恢复；24小时内只按原 body+原 Key重试，过期仅查询。首次被拒按 `isDeterministicRejection` 丢号；未知原请求重试只有 `isExplicitRejection` 明确结论才能解除，401/403/408/425/429及 IDEMPOTENCY_* 不作为结案证据。首次明确被拒后再次新提交使用新Key。
+- J4 直写没有按号回执查询；“查询原结果”只读当前概览和最近20条，不能凭值相同或列表没找到结案。提案按原号读当前票据，核对 mine/obj/type/operationCode/原始 status（`111e00cd` 给出 `j4_playbook_execute`）；历史建单回执不能当仍待审批。原号回放成功但当前查询失败保留 accepted 记录，只能再查，不能再POST。精确 `A2_PROPOSAL_NOT_FOUND` + 已过24h 的人工确认解除逻辑已备，界面尚缺确认入口，待视觉接入；直接写不适用。
+- 恢复了结后关闭原确认框并重新读取；重放概览不设为当前数据，读成功前禁止新修改，新操作重新检查全部权限、契约、版本、就绪与未决状态。执行中步骤名称取 execution 保存快照，不随之后编辑的预案变动。统计空值/空串不当0，合法0保留；必填读模型保持校验，历史可空字段保留未知。
+- 本轮只接逻辑；原有绝对地区拦截、回滚按方案执行、取消一定部分完成、固定8字下限、过期申请查不到永不解除等说法交视觉修正。后端直接写回执查询/核对证据和恢复更新时间能力仍按 J4-BE-01/02 及 A3-BE-03 跟踪，不扩展接口。
+
 
 ### 域 K — 风控
 
@@ -588,10 +686,12 @@
 | `/api/admin/bi/{devices,tasks,network,phase-effect}` | GET | 设备/任务/网络/Phase 效果报表(只读聚合) | — | L4 |
 | `/api/admin/bi/export/{kpi,funnel,finance,network,operations}` | GET | 各类 CSV 导出(落 admin.report_exported;含 PII/资金明细 MC) | 是(含敏感) | L1-L4 |
 | `/api/admin/bills/export?type=&userId=` | GET | 账单导出**复用 D4 endpoint**(L5 叠加管控/脱敏) | 是(含明细) | L5→D4 |
-| `/api/admin/bi/export/request` · `/:exportId` | POST/GET | 发起导出(经确认弹窗+理由必填;含敏感 OR row>rowCap 执行权升仅超管;携 Key)/ 状态+限时下载(TTL 24h) | 条件 | L5 |
+| `/api/admin/bi/export/request` · `/:exportId` | POST/GET | 发起导出(经确认弹窗+理由必填;含敏感 OR row>rowCap 执行权升仅超管;携 Key)/ 状态+下载(每次签发的下载令牌 24h 有效,不是任务或快照的期限) | 条件 | L5 |
 | `/api/admin/regulatory/report` · `/bi/export/audit` | POST/GET | 生成监管报告(关联 I5)/ 导出审计台 | 是(report) | L5 |
 
 ### 域 M — 客服中心
+
+2026-11-11 M1 改版沿现有端点分层：本人四格去重待办、六位客户卡，管理实时四格与唯一角色页签；经营、维护和最近会话折叠保留，所有原数字仍可下钻。默认六列表与互斥组目录保留完整原操作；角色页签及非姓名筛选可恢复，关键词只记当前操作者标签页。原命令结果未知、严格拒绝判据、24 小时禁重发及 D02 新预览边界以现行 M 功能契约为准。
 
 功能口径、三资格范围、四榜及原 M3 能力见 [M 专属客服中心功能契约](M-专属客服中心功能契约.md)。
 
@@ -610,10 +710,12 @@
 | `/api/admin/content/support-workbench/customers` · `/customers/{id}` | GET | 同一 `snapshotId` 返回本人或主管当前负责组范围的统计、客户页、绩效、完整性与规则；详情携当前归属和维护版本。活跃、沉睡、到期不可判定时为 `null`，待办按客户去重 | — | M1 |
 | `/api/admin/content/support-workbench/customers/{id}/maintenance` · `/maintenance/history` | PATCH / GET | 当前专属客服按归属 ID、偏好版本、理由和 Key 暂停或恢复主动维护；周期和人工执行分别分页，成功周期由后续真实活动确认 | 是 | M1 |
 | `/api/admin/content/support-agents/assignments/transfer` · `/rules` | POST / GET / PUT | 主管正式转绑；超管配置可空沉睡、维护、活跃天数及继承模式，`LIMITED` 深度 0 合法；写入均用版本、理由和 Key | 是 | M1/M5 |
-| `/api/admin/content/conversations` · `/{no}/replies` · `/attachments/policy` · `/attachments` | GET / POST | 本人当前归属下发起/回复专属客服会话，明确指定 `replyTargets`；图片按服务端策略上传，经授权读取并在撤权时清理 | 按动作 | M3 |
+| `/api/admin/content/conversations` · `/{no}/replies` · `/{no}/messages` · `/attachments/policy` · `/attachments` | GET / POST | 本人当前归属下发起/回复专属客服会话，明确指定 `replyTargets`；图片按服务端策略上传，经授权读取并在撤权时清理。会话详情和消息分页的消息带可选 `origin`（新用户欢迎语为 `"WELCOME"`，其余 `null`/缺省，B16） | 按动作 | M3 |
 | `/api/admin/content/support-workbench/commands/{key}` | GET | 结果未知时查询原命令；`PROCESSING`/`UNKNOWN` 不铸新 Key，成功或明确失败后才解除锁定 | — | M1/M3/M5 |
 | `/api/admin/content/tickets` · `/{no}` | GET | 私聊转工单副本正文、摘要、搜索只供当前专属客服、负责组审阅主管及获准总管理员；其他工单角色仍可协作指派、状态和内部备注 | — | M2 |
-| `/api/admin/content/conversations/timeout-policy` | GET / PUT | 读取/更新全局会话空闲提醒与自动关闭时长；PUT 携 Key + expectedVersion，定时器先提醒后自动关闭，并写审计 | 是(写仅超管) | M3 |
+| `/api/admin/content/conversations/timeout-policy` | GET / PUT | 读取/更新待回复提醒、严重超时（只标记待处理，不结束会话、不解绑）和无人发言自动结束接待时长；PUT 携 Key + expectedVersion + 理由，并写审计 | 是(写仅超管) | M3 |
+| `/api/admin/content/support-agents/unbound-policy` | GET / PUT | 待分配客户提醒主管与自动兜底分配时长、默认接收组；PUT 携 expectedVersion 与理由 | 是(写仅超管) | M5 |
+| `/api/admin/content/support-agents/welcome-message` | GET / PUT | 新用户欢迎语三语文案 `{version, texts:{zh,en,vi}, updatedAt, updatedBy, reason}`；PUT 携 Key + `expectedVersion` + `texts` + 理由，每种语言去空格后 1–500 字，版本不符 409，结果未知经 `/support-workbench/commands/{key}` 查询后同号重试；读权同 `/rules`，写仅超管。后端 B16 | 是(写仅超管) | M5 |
 
 ### 域 C6/K1 用户侧 server-enforce 端点(配置阈值,写权非 admin)
 
@@ -643,11 +745,11 @@
 |---|---|---|---|---|---|
 | 运营账号角色集 | A6 启用角色；内置 8 角色(SUPER_ADMIN/CONFIG_ADMIN/FINANCE/RISK/CONTENT/GROWTH/SUPPORT/AUDITOR) | A6 可扩展；A1 默认不分配 | 角色分配实时 | A6 | A1/A6 |
 | 后台强制 2FA | 强制开启(全角色) | 不可关 | 实时 | A1 | A1 |
-| 运营 session 时限 | 滑动 30min / 绝对 8h | 滑动 15–60min / 绝对 4–12h | 每次请求实时校验 | A1 | A1 |
-| 后台登录短锁/长锁 | 5 次→15min / 24h 累计 15 次→锁 24h | 固定安全基线 | 密码/MFA 失败实时计数 | A1 | A1 |
+| 运营 session 时限 | 无有效操作 60min / 无绝对时限 | 只读基线,不可调 | 每次请求实时校验 | A1 | A1 |
+| 后台登录短锁/长锁 | 5 次→15min / 累计 10 次→24h(C6 默认值) | 只读展示;阈值由 C6 `auth.risk.*` 派生 | 密码/MFA 失败实时计数 | C6 | A1 |
 | 最少有效超管数 | ≥ 2(启用+超管角色+MFA 已绑定) | 固定下限 2 | 每次账号治理写操作前 | A1 | A1 |
 | 审计日志保留期 | ≥ 13 个月 | 13–36 月 | 仅新对象 | A2 | A2 |
-| 理由最小长度 | 8 字 | 0–50 字 | 实时 | A2 | A2 |
+| 理由最小长度（ttl） | 8个可见字符 | 8–200整数 | 保存后新打开的确认框；不是审批期限 | A2 | A2 |
 | kill-switch 闸清单/默认态(6闸) | 5 功能闸 enabled=true + geo-block 空 | 各 enabled/disabled | 实时(熔断即 enforce) | A3(V1)→J1/J2(V4) | A3 |
 | 事件采样率 | view/session 10% / 资金风控转化 100% | — | 配置即生效 | A4 | A4 |
 
@@ -667,9 +769,8 @@
 
 | 参数(key) | 默认值 | 范围 | 生效时机 | 权威源 | 模块 |
 |---|---|---|---|---|---|
-| 单次调整上限(USDT) | $500/笔(超额升级审批) | $0–$10,000 | 实时 | C3 | C3 |
-| 单次调整上限(积分) | 1,000 积分/笔 | 可配 | 实时 | C3 | C3 |
-| impersonate 时限 | ≤ 30min(强制只读) | 5–30min | 实时(发起授时) | C2 | C2 |
+| 单次调整上限（USDT 等值） | 财务最多500；财务主管／超管最多10,000 | 大于0，最多6位小数 | 原调整全部待另一人批准；客服默认无C3权 | C3 | C3 |
+| 用户数据只读视图时限 | 默认15分钟，强制只读 | 5/10/15/30分钟 | 发起授时，切页不延长 | C2 | C2 |
 | access/refresh token | 4h / 30 天滑动 | 1–24h / 7–90d | 仅新签发 | C5 | C5 |
 | step-up auth 阈值 | V1 只读(现状硬编码 7d) | 目标 1–30d(须可配化,见第7章) | 实时 | C5 | C5 |
 | OTP TTL / 重发冷却 / 24h 上限 | 5min / 60s / 3 次(超触发 CAPTCHA) | 1–15min / 30–300s / 1–10 次 | 实时 | C6 | C6 |
@@ -678,20 +779,34 @@
 
 ### 4.4 域 D — 资金与财务
 
-BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以 D7③–⑦ 为单源；D6 的基准牌价和买入点差在 D7 只读。新报价锁定 D5/D7 与收款账户版本；配置变化不改写已提交原单。通道开启仍须满足真实服务商配置、运行环境及储备覆盖率，不再检查外部账户核验能力；真实供应商契约和授权出款验收边界仍保留。
+**D6 汇率设置（页面现状，B38 第二组）**：页面名「汇率设置」，路由 `/finance/fx-rate`；打开和点刷新时读取。以下按 PC `2d30284f` 与后端本地只读 `origin/test@8e48596d` 的实现对齐，不代表真实资金执行已验收。
+
+- **页面结构**：结论、两格汇总（当前买入价、最近调整）、报价参数、折叠调整历史及相关页面。买入价为基准价 ×（1 + 买入点差）按既有规则取整到十位，单位 ₫/USDT；汇总和当前参数始终来自已生效配置。历史最近 50 条，三列时间／改动·理由／操作者，点行抽屉查看完整三项改前改后及当时报价；未变项标「没改」，操作者按既有规则打码。
+- **编辑与确认**：每项「调整」先开只改这一项的抽屉，仍随完整三项和共用 `expectedVersion` 提交；正在编辑时其他调整入口禁用。基准价 20,000–35,000 整数，买入点差 0–3% 最多两位小数，报价有效期 5–120 分钟整数。范围贴字段；相同值或非法值不能继续。数字框按 v1 §3.2.1 整次拒收非法输入并保留前值，合法千分位不改数值。确认框静态列当前→改后及对应生效方式，不再把全部修改标「立即生效」。会话续期不因身份刷新自动丢编辑草稿。
+- **整组方向**：比较完整三项，**基准价上调，或按最终取整规则算出的充值买入价下降**，任一成立都须审批；不是只看正在改的字段或正负号。其余方向直接 PATCH。只降买入价也须另一位有权超管批准，但不触发“基准价上调”的资金检查；不能把所有审批都写成双查覆盖率。
+- **敏感方向提交**：先 `POST /api/admin/finance/fx-quote/preflight`，携三项、`expectedVersion` 和理由；预检只读，不改配置，只接受审批方向，非审批方向返回 `D6_FX_QUOTE_NOT_APPROVAL_DIRECTION`。基准价上调在此检查可靠兑付覆盖率，低于红线或读不到返回 `D6_TREASURY_COVERAGE_BLOCKED`。预检通过再持久保存完整原提案并提交 A2：来源 D6、命令 `D / d6_fx_quote / {values:{三项,expectedVersion}}`、目标 `D / fx_quote / current`。批准前当前买入价和旧单锁价不变。
+- **执行与权限**：页面调整只认 `finance_d6_manage`，没有超管角色绕过；敏感提案还须 `platform_a2_proposal_create` 或 `platform_a2_write`。后端直接 PATCH 拒绝敏感方向（`D6_FX_QUOTE_APPROVAL_REQUIRED`），必须实际 A2 回放并绑定原工单。批准由另一位真实超管，须 `platform_a2_operation_approve` 及 `finance_d6_manage`；批准执行时重核发起人仍活跃且有管理权、当前版本，基准价上调再查可靠覆盖率。驳回不因发起人已撤权而被同一执行检查阻塞。
+- **当前值与审批**：GET 返回最近审批的编号、状态、提交／决定时间、预期版本和 `applied`。待批时结论「有汇率调整等待批准，当前买入价不变」，当前值与待批新值分开。待批三项从有权读到的 A2 原单解析；无 A2 读权或原单缺失写原因，不猜新值。`applied` 仅表示该单已批准，之后可能已有其他修改，不能把原单新值当当前配置。已有待批时敏感提案入口阻断；允许的直接保存仍会更新版本，并警示旧提案批准时须重核 CAS。
+- **冲突**：预检或提交发生版本冲突，保留原输入，点「读取最新」取得最新完整三项再重新比较方向，写清别人改了什么；理由清空后须重填。新输入已等于最新值则不能提交；服务端要求转审批或确认非审批方向时按返回提示重核，不绕过预检与版本。
+- **生效范围（闸门 2 决定 39）**：基准价影响生效后新付款单和新提现报价；买入点差只影响新充值付款单；报价有效期只影响充值页「银行卡支付」新付款单，不影响买设备银行卡报价（最长 15 分钟）或提现报价，提现时长在「越南盾提现参数」改。原单使用自身锁定版本，不回写历史。D6 基准价及买入价沿既有精度，D7 卖出价按实际报价、不按十位取整。
+- **结果未确认**：直存和审批都先按完整原配置、版本、理由、操作员、编号及时间持久保存，存不下不发；未知时三项整体锁住新调整。八种明确幂等未定结果按 v1 §3.2.1 保留原号。原样重试校验未满 24 小时、当前管理权及持久原记录；记录读不到就停发，保留待确认。重试敏感提案发送原提案，不重新组装新配置。审批可由 `platform_a2_read` 或 `platform_a2_proposal_create` 查询原号，严格查无单或查询失败都保留记录；找到原单只结束“提交结果未知”，再读当前配置与审批进度，不报已生效。
+- **本地解除与核查边界**：原重试被带原因码的明确业务拒绝且未过期，人工核实后才可本地解除；401／403／408／425／429、`IDEMPOTENCY_*`、未知响应或本地错误不算。超过 24 小时只核对，不重试或解除。解除不发请求、不撤销原单、不办理后端结案。**已知文案 N1**：当前成功提示仍写“后端原操作未结案时仍会阻止新提交”，对直接 PATCH 保证过度；`D6_FX_QUOTE_UPDATE` 不在后端对象调查锁支持范围，不能据此承诺一定阻止新提交，新操作仍以服务端实际校验为准。本轮只记录，不改代码。
+- **读取失败与角色**：首次或再次读取失败都清旧值，显示「汇率设置加载失败」并可重读，不叫写结果未知；待确认条继续保留。内置可读为超管、财务、财务主管、风控、审计，默认增长不可读；只读账号不显示调整入口。跨页链接仍须目标菜单和读权。
+
+APP-40 待实施：App／H5 牌价说明改为「牌价由平台调整」，过期说明使用原订单自己的锁定与截止时间，不套当前报价有效期；当前 App 尚未修改。
+
+BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以 D7③–⑦ 为单源；D6 的基准价和买入点差在 D7 只读。新报价锁定 D5/D7 与收款账户版本；配置变化不改写已提交原单。D7 页面没有通道开关，`channelEnabled` 跟随 `providerReady`，不再检查外部账户核验能力；真实供应商契约和授权出款验收边界仍保留。
 
 | 参数(key) | 默认值 | 范围 | 生效时机 | 权威源 | 模块 |
 |---|---|---|---|---|---|
-| 充值费 TRC20/ERC20/BTC·ETH/Card | 1 USDT / 5 USDT / 0.5% / 3.5%(进 fee_buffer) | ≥0 / 0–10% | 仅新对象 | D1 | D1 |
-| 3DS 强制阈值 | $50 | $0–$500 | 实时 | D1 | D1 |
-| Card 同卡 24h 重试/锁卡 | 5 次→锁 24h | 3–10 次 / 1–72h | 实时 | D1 | D1 |
-| 最小充值额 | TRC20/ERC20 $10·BTC/ETH $20·Card $10 | per-channel ≥0 | 仅新对象 | D1 | D1 |
-| 主备 PSP | Checkout.com(主)+ Stripe(备) | 主/备切换 | 实时 | D1 | D1 |
+| 银行卡支付费率 | 实际充值为 0 | 遗留配置值，PC 无入口 | 不改变实际收费；无效入口已下线 | D1 | D1 |
+| 银行卡支付单笔上限 | $5,000 | $100–$10,000 整数 | 仅新对象 | D1 | D1 |
+| Card 充值费、3DS 阈值、同卡重试/锁卡、按渠道最小充值额、主备 PSP | 已退役(2026-11-04) | — | — | — | D1 |
 | 大额人工审核阈值(D2 后台) | $1,000(≥强制人工+MC) | $0–$5,000 | 实时 | D2(独立于 K3) | D2 |
-| review SLA / 整体到账 SLA | ≤2 工作日 / 48h | 1–5 工作日 / 24–72h | 实时 | D2 | D2 |
+| review SLA / 到账时效（打款排队截止时间；App 提现进度页写成「预计处理时刻」，见 v1 D5 现行参数口径） | ≤2 工作日 / 48h | 1–5 工作日 / 1–168 小时(`payoutSlaHours`,D5 配置) | 实时 | D2 / D5 | D2 |
 | 提现日限额(次数) | 1 次/日 | 1–10 次/日 | 实时(新申请) | D5 | D5 |
 | 余额上限(可提比例) | 80% | 50%–100% | 实时 | D5 | D5 |
-| 网络费 | 2%(min $1/max $20) | 0%–5% | 仅新对象 | D5 | D5 |
+| 网络确认费(`networkConfirmFeeUsd`,每笔固定) | TRC20 $1 / BEP20 $1 / ERC20 $5 | 各 0–25 USD,步进 0.5 | 仅新对象(在途不变) | D5 | D5 |
 | `withdrawCooldownDays` | 月1–7=30 / 月8=35 / 月9+=45 | 7–90d | Phase 派发 | **H1**(D5 只读) | D5 |
 | `withdrawPointsRatio` | 月1–8=10 / 月9–12=20(每$100) | 0–100 | Phase 派发 | **H1**(D5 只读) | D5 |
 | `complianceHoldEnabled` | 月8+=true | 是/否 | Phase 派发 | **H1**(D5 只读) | D5 |
@@ -703,7 +818,7 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 |---|---|---|---|---|
 | `newUserBonusMultiplier` | 月1–2=2 / 月3–4=1.5 / 月5+=1 | 1–4 | 仅新用户 | 新注册加成 |
 | `inviteRewardMultiplier` | 月1–2=2 / 月3–4=1.5 / 月5+=1 | 1–4 | 仅新用户 | 新邀请计酬 |
-| `reinvestMultiplier` | 月5–6=2 / 其余=1 | 1–4 | 实时全量 | G7 复投激励 |
+| `reinvestMultiplier` | 月5–6=2 / 其余=1 | 1–4 | 实时全量 | G7 锁定计划 |
 | `withdrawPointsRatio` | 月1–8=10 / 月9–12=20 | 0–100 | 实时全量 | D5 提现积分门 |
 | `withdrawCooldownDays` | 月1–7=30 / 月8=35 / 月9+=45 | 7–90 天 | 实时全量 | D5 提现冷却 |
 | `binaryDailyCap` | 月1–6=5000 / 月7+=2000 | 0–50000 USD | 实时全量 | F3 双轨封顶 |
@@ -712,22 +827,22 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `questBonusMultiplier` | 月1–2=4 / 其余=1(前端未实装) | 1–4 | 实时全量 | H3 quest 乘数 |
 | `complianceHoldEnabled` | 月8+=是 | 是/否 | 实时全量 | D5/D2 合规留存 |
 
-### 4.6 域 H2 — 免费试用引擎(TrialConfig 20 项)
+### 4.6 域 H2 — 免费试用引擎(TrialConfig PC 口径 14 项)
+
+App 不展示试用邀请弹窗，也没有申请或接受延长的入口。PC 已移除四项邀请配置、紧急关闭邀请入口，以及延长天数和高质量阈值。后端保留旧字段，六项在页面分区前过滤，不展示、不计数、不分组、不提供说明或保存入口；原参数结果未知记录仍可恢复。参数目录由 16 项减为 14 项，包含提前购买立减；隐藏旧字段 `autoChargeAtEnd` 和派生值 `actualSeatsLeftToday` 不计入目录。历史已延长记录按系统返回的结束时间展示。名额耗尽或上限为 0 只关闭新领取，已有进度或抵扣卡仍显示；冷却期内不能重新领取，App 展示结束说明，不显示冷却倒计时。现行 App 定位及领取快照、购买时配置的区别见 v1 H2④。
 
 | 参数(key) | 默认值 | 生效时机 | 权威源 |
 |---|---|---|---|
-| `trialDays` / `graceDays` / `extensionDays` | 3 / 7 / 3 | 仅新 trial | H2 |
-| `discountRate` / `discountCapUSD` | 0.15 / 20 | 实时全量 | H2 |
-| `trialOffsetCapUSD`(试用收益抵购机款上限) | 50 | 实时全量 | H2 |
-| `autoChargeAtEnd` | true(实时性待 PM,见第7章 #1) | 暂仅新 trial | H2 |
-| `highQualityThresholdUSD` | 100 | 实时全量 | H2 |
+| `trialDays` / `graceDays` | 3 / 7 | 仅新 trial | H2 |
+| `discountRate` / `discountCapUSD` | 按当前值显示；0–100 的百分点，0.5 是 0.5%，1 是 1% / 金额上限 | 购买时按最新值 | H2；不再猜比例单位，详见 v1 H2④ |
+| `trialOffsetCapUSD`(试用收益抵购机款上限) | 以当前值为准，空为不设上限，0 为零上限 | 领取快照，已领取的不随修改变化 | H2 |
+| `earlyPurchaseDiscountUSD` | 以当前值为准；0–100 USDT，0 为关闭 | 购买时按最新值及提前购买条件 | H2 |
 | `chargeFailRate` | 0.01(**server-only,前端永不可知**) | 实时全量 | H2 |
 | `trialProductId` | stellarbox-s1(从 E1 明确开启 `trialEligible` 的商品中选择) | 仅新 trial | E1 商品目录 + H2 选择 |
 | `trialPriceUSD` | 1299(随目标商品读取 E1 售价) | 仅新 trial | E1 商品目录 |
 | `shadowDailyUSD` / `shadowDailyNEX` | 38.52 / 65 | 仅新 trial | H2 |
-| `cooldownDays`(再次试用冷却) | 30(**≠ D5 withdrawCooldownDays**) | 实时全量 | H2 |
+| `cooldownDays`(再次试用冷却) | 以当前值为准，**≠ D5 withdrawCooldownDays** | 之后结束的试用使用新值，已有冷却截止不重算 | H2 |
 | `phaseOpen` | true(Phase 派发只读) | 实时全量 | H1 调度 |
-| `autoPush{Enabled,DelayMs,CooldownHours,MaxPerSession}` | true / 1500 / 24 / 1 | 实时全量 | H2 |
 | `seatsLeftToday`(每日免费名额上限；APP 接收当日剩余) | 47 | 实时全量 | H2 |
 
 ### 4.7 域 K — 风控与反作弊
@@ -747,11 +862,13 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `velocity24h` | 笔数>3 或 >$5,000/24h | 笔数 1–20 / $500–$50,000 | K3 | K3 |
 | `newAccountProtectDays` | 7 天 | 0–30 天 | K3 | K3 |
 | `ruleActionMap` | 大额→manual / 高速→delay / 新账户→delay / 低信誉→freeze | delay/freeze/manual | K3 | K3 |
-| `weight.{6维}` | multiAccount 0.25/arbitrage 0.2/kycStatus 0.2/withdrawVelocity 0.15/accountAge 0.1/anomalyBehavior 0.1 | 各 0–1(**和=1 强制**) | **K4** | K4 |
-| `scoreBand.{low,mid,high}` | <40 / 40–69 / ≥70 | 0–100(low<mid<high) | K4 | K4 |
-| `autoEscalateScore` | ≥ 85 | 70–100 | K4 | K4 |
-| `riskScore.dimensionWeights.{7维}`(SPEC-7 聚簇) | serverDeviceId 0.9 / ipBucket 0.8 / withdrawAddress 0.9 / paymentInstrument 0.5 / sponsor 0.4 / uaFingerprint 0.2 / signupTiming 0.3 + `weakSignalClusterThreshold` 0.6 | 各 0–1 | **K4**(聚簇维度权重面板;区别于上 6 维评分权重) | K4 |
-| SPEC-7 收益释放 / 提现前置全参数 | 见 SPEC-7 | — | `releaseMode` / `freeSlotRequiresBinding` / `appAttestationReleaseHours` / `firstWithdrawalManual` / `newAddressHoldHours` / `sameAddressRoute` 等全表在 `PRD/三端架构改造/specs/SPEC-7-H5风险簇与收益释放.md` §5,K1/K3 面板可调 | K1/K3 |
+| `weights.{multiAccount,arbitrage,withdrawVelocity,accountAge,anomalyBehavior}` | 0.30 / 0.25 / 0.20 / 0.10 / 0.15（五维，旧 KYC 维度已退役） | 各 0–1(**和=1 强制**)，页面以百分比编辑 | **K4** | K4 |
+| `bandLowMax` / `bandHighMin` | 40 / 70，即低 <40 / 中 40–69 / 高 ≥70 | 整数 0–100，中风险起始分小于高风险起始分 | K4 | K4 |
+| `autoEscalateScore` | 85 | 70–100，且不低于高风险起始分 | K4 | K4 |
+| `riskScore.dimensionWeights.{7维}`(SPEC-7 聚簇) | serverDeviceId 0.9 / ipBucket 0.8 / withdrawAddress 0.9 / paymentInstrument 0.5 / sponsor 0.4 / uaFingerprint 0.2 / signupTiming 0.3 + `weakSignalClusterThreshold` 0.6 | 各 0–1 | **K4**(聚簇维度权重面板;区别于上 5 维评分权重) | K4 |
+| SPEC-7 收益释放 / 提现前置全参数 | 见 SPEC-7 | — | K1 `releaseMode` 固定 `manual_only`，仅人工放行；旧 `attest_or_manual` 模式及 `appAttestationReleaseHours` 写入返回 410，不可调。`freeSlotRequiresBinding` / `firstWithdrawalManual` / `newAddressHoldHours` / `sameAddressRoute` 等其余参数参见 `PRD/三端架构改造/specs/SPEC-7-H5风险簇与收益释放.md` §5,K1/K3 面板可调 | K1/K3 |
+
+**K4 页头与权限口径（2026-11-04，BUG-127）**：权重、打分细则、风险分档和自动升级线均可配置；表内数值只是默认值，当前分档取生效模型，不把默认 40 / 70 / 85 写成固定规则。评分规则区可能显示未发布草稿，全平台分布按生效模型展示。有 `risk_k4_write` 可编辑、保存草稿和将历史版本恢复为草稿，草稿不生效；发布同时要求该权限和超级管理员身份。单用户手动改分要求 `risk_k4_user_override`，单用户及批量恢复系统评分要求 `risk_k4_user_recompute`，不以“只有超级管理员能改”概括这些操作。
 
 ### 4.8 域 E — 设备与商城(出处 v2 §10 各 ③)
 
@@ -765,8 +882,9 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `stock` | 现状,<50 橙告警 | 0–2147483647 整数 | 实时；0 仅售罄，不自动下架 | E1 |
 | `trialEligible`(允许试用) | false | 显式开关；仅 `DEVICE/SERVER + FINITE` 可用于 H2，默认关闭 | 实时；H2 只列出已开启商品，领取仍复验在售/正价/库存 | E1 |
 | 套餐折扣 ladder | 4 件 12% / 3 件 8% / 2 件 5% | 各 0–30% | 仅新结算 | E1 |
-| 6 类任务 minReward/maxReward | IG $0.0001–0.045 / VG $0.45–1.80 / LL $0.00005–0.85 / FT $0.06–0.42 / EM $0.00001–0.09 / SP $0.00005–0.072 | ≥0,min≤max | 实时(仅新派发) | E2 |
-| `QUEUE_SATURATION` | 0.35 | 0–1 | 实时 | E2 |
+| 6 类任务 minReward/maxReward | IG $0.0001–0.045 / VG $0.45–1.80 / LL $0.00005–0.85 / FT $0.06–0.42 / EM $0.00001–0.09 / SP $0.00005–0.072 | ≥0，min≤max，最多六位小数 | 上调经 A2 批准，降低即时，仅新派发 | E2 |
+| 6 类任务 minVRAM | 各类现行值 | 0–9999 GB，整数 | 降低经 A2 批准，提高即时 | E2 |
+| `QUEUE_SATURATION` | 0.35 | 0–1 | 提高经 A2 批准，降低即时 | E2 |
 | `GENERATION_RELEASES.releaseMonth` | Pro v2 月5 / Rack P2 月10(绝对月) | 月1–12 | 仅新对象(月龄门) | E1 |
 | `tradeinDiscount` | Pro v2 $300 / Rack P2 $800 | ≥ 0 | 仅新置换单 | E1 |
 | `capacityBand1/2/3DeltaPct` | −3% / −6% / −23.7% /月 | −100%–100%；按月复利 | 新投影即时生效 | **E3** |
@@ -794,10 +912,12 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 
 ### 4.9 域 F — 分销与团队(出处 v2 §11 各 ③)
 
+**票数确认提示（BUG-280，T11）**：在「奖励池、名额与排行榜」按当前等级票数与拟改值比较；调高才显示多付钱提示并检查兑付覆盖率，调低或不变不提示。沿用系统现行“调高票权为放大方向”的规则，不改变奖池分配公式及审批流程。
+
 | 参数(key) | 默认值 | 范围 | 生效时机 | 权威源 |
 |---|---|---|---|---|
-| V_RANKS 各阶门槛 | V1 自买≥$299 AND 直推≥3 / V2 团队≥$5K / V3 ≥$20K AND vDownlines … V12 $500M(AND 复合) | 各≥0 保序 | 仅新判定(不回溯) | F1 |
-| 培育奖 NEX `cultivationBonus[V]` | V1 500 / V2 2,000 / V3 10,000 / V4 50,000 / V5 200,000 / V6 800,000 / V7 320万 / V8 1000万 / V9+ 0 | 各 ≥ 0 | 实时(下次跨阶) | F1 |
+| V_RANKS 各阶门槛 | V0–V8 发布配置；不照搬旧原型固定金额 | 各≥0 保序，等级引用须有效 | 仅新判定(不回溯) | F1 |
+| 培育奖 UVT `cultivationBonus[V]` | 有效等级的发布值，协议资产仍为 NEX | 各 ≥ 0 | 实时(下次跨阶) | F1 |
 | 平级奖 `peerBonus[V]` | V0–V2=0 / V3+=5%，仅保留参数 | 0–100% | 能力位尚未开放、无发奖程序；本轮不启用 | F1 |
 | `vRankPermanent` | true(不降级) | true/false | 实时 | F1 |
 | `purchase` / `deviceEarning` | 未配置均禁用；totalRatePct=0、usdtSharePct=50、coolingDays=0 仅占位 | enabled boolean；总比例0–100，启用大于0；USDT占比0–100，启用严格介于0与100；NEX占比自动为100减USDT；冷却整数0–365 | A2 批准后立即用于新来源；同一 policyVersion，不回算旧账 | F2 |
@@ -811,12 +931,12 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `unmatchedSurplusDisposition` | **裁定前冻结**(见第7章 #3) | 待裁定 | — | F3 |
 | `gvResetCron` | 每月1日 00:00 UTC 归零;月底 23:59 锁定 | 固定 | 配置即生效 | F3 |
 | `leadershipPoolInjectRate` | 5% 平台周总交易额 | 3%–10% | 仅新结算周 | F4 |
-| V_VOTES 票数权重 | {V3:1…V12:512}(逐级翻倍) | 各≥0 | 仅新结算周 | F4 |
+| V_VOTES 票数权重 | 有效等级的已发布票权，不写死旧 V12 表 | 各≥0 | 仅新结算周 | F4 |
 | `poolSettleCron` | 周日 23:59 UTC 快照 / 周一 00:00 开新池 | 固定 | 配置即生效 | F4 |
 | `top1MaxPct/top5MaxPct`(头部集中度) | top1≤25% / top5≤60%(超阈告警非阻断) | 各 0–100%(见第7章 #18) | 实时 | F4 |
 | `proUnlockDirects` / `rackP1UnlockDirects/UnlockVolumeUsd` | ≥5 直推 / ≥15 直推 OR 月业绩≥$20,000 | 各 ≥ 0 | 实时 | F4b |
 | `proMonthlyStock` / `rackP1MonthlyStock` | 1,000 / 100 台 | ≥ 0 | 仅新月度周期 | F4b |
-| `agentEligibilityVRank`(大使资格) | V5 Wing Leader+ | V0–V12 | 实时 | F4c |
+| `agentEligibilityVRank`(大使资格) | V5 Wing Leader+ | 有效等级 V0–V8 | 实时 | F4c |
 | 线下活动预算 / KOL 补贴 | $1,000–$10,000 / 50% | ≥0 / 0–100% | 仅新申请 | F4c |
 | `PERIOD_PRIZE`(4 周期奖池) | today $5,000/Top20 · week $50,000/Top50 · month $250,000/Top100 · all-time $1,000,000/Top100 | 奖池≥0/TopN≥1 | 仅新周期 | F4d |
 | `leaderboardMinUsd` / `snapshotIntervalMin` | ≥$1 / 5 分钟 | ≥0 / 1–60min | 实时 | F4d |
@@ -859,7 +979,7 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | Weekly Tier1 phase mult 曲线 | P1 1.0/P2 1.0/P3 1.1/P4 1.2/P5 1.3/P6 1.5 | ≥0 | 仅新 weekKey | H3(独立于 questBonusMult) |
 | Monthly 5 主题奖励 | foundation 1,500 / network 2,500 / premium 4,000 / diamond 6,000 / founders 10,000 NEX | ≥0 | 仅新月派发 | H3 |
 | `questBonusMultiplier` | 月1–2=4 / 其余=1(前端未实装) | 1–4 H1 dial | Phase 派发 | **H1**(H3 只读) |
-| 活动 `kind`(8 枚举) | discount/referral/wheel/regional/boost/seasonal/holding/onboarding | 8 枚举闭集 | 仅新建/改 | H4 |
+| 活动 `kind`(7 枚举) | discount/referral/wheel/regional/boost/seasonal/onboarding | 7 枚举闭集 | 仅新建/改 | H4 |
 | `featured`(主推位) | evt-pro-upgrade-7d | **同时仅 1 个 true** | 实时 | H4 |
 | Lucky Spin 奖池(8 档) | 5NEX 38% / 50积分 24% / 30NEX 18% / 150NEX 11% / $1 5% / $50券 3% / $20 0.9% / $500 0.1%(EV≈$0.78/spin) | 档位 2–12;weight 和=100 | 实时(server RNG) | H4 |
 | `wheelDailyPayoutBudgetUSD` | $2,000(达上限关真实奖) | — | 实时 | H4 |
@@ -882,10 +1002,10 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | Nova 各 channel `enabled`(kill) | 全 enabled | per channel | 实时(SSE) | I2(不入 J1) |
 | Nova `tickMs`/`cooldownMs` | 10 key 现状 cadence | per cohort/phase/risk | 实时(下一 tick) | I2 |
 | phase-keyed cadence | tradein 15min/P3-4 60min/P5-6 24h;task-lock 30min/P1-2 30d/P3-4 7d/P5-6 3.5d | 随 Phase | 随 Phase 切换 | I2(H1 联动) |
-| `CAP_{CRITICAL,HIGH,NORMAL,LOW}` | ∞(不可降)/ 50 / 200 / 30 | 运营设定 | 实时 | I3 |
+| `CAP_{CRITICAL,HIGH,NORMAL,LOW}` | 以实际规则为准；critical不按数量清理 | CAP+A2双权限发起，另一位具批准及CAP业务权的管理员批准 | 批准执行时立即清理全用户超额通知（含未读），low另按48小时清理 | I3 |
 | campaign 优先级 | 按 NotifKind(system/监管→critical/high) | critical/high/normal/low | 下发时锁定 | I3 |
-| 披露 `acceptedVersion` 模型 | 前端现状纯布尔→升级为 version×jurisdiction 矩阵(见第8章 #11) | 单调递增 | 发布即生效+re-ack | I5 |
-| jurisdiction 判定来源 | user IP(server 边缘判) | — | 实时 | I5 |
+| 披露 `acceptedVersion` 模型 | version×jurisdiction 矩阵 | 单调递增 | 发布批准后仅封存；生效映射的版本或适用国家改变后原确认失效并生成紧急级通知；不确认不影响操作 | I5 |
+| jurisdiction 判定来源 | 账号保存的国家/地区；可信边缘国家由服务端处理，公开文本可按所选国家只读查询 | — | 读取时由服务端解析 | I5 |
 | 双 gate 阅读约束 | scroll-to-bottom + checkbox | 不可弱化 | 配置即生效 | I5 |
 | i18n 镜像/占位符强制 | 强制(缺镜像/不匹配→发布拦截) | — | 发布时校验 | I6 |
 | 课程完成 NEX 奖励 | 10–50 NEX/课(featured 第1课 +20) | 放大流出受 B1 约束 | 实时(对新完成) | I7 |
@@ -901,22 +1021,58 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | R2 对账缺口自动熔断 | 缺口 > $50K(经确认弹窗 J1-MD4 调,仅超管) | — | 每对账周期 | J1(信号源 D1/D4) |
 | R3 篡改告警转人工 | 单账户 >10 次/24h 或全域突增 | — | 滑动 24h | J1/J3 |
 | geo-block `activeCountries` | 空(无封锁) | ISO 3166-1 alpha-2 | 实时(确认执行后 enforce) | **J2** |
-| geo-block `limitedCountries`(受限只读档) | 空(无受限) | ISO 3166-1 alpha-2 | 实时(确认执行后生效;禁新增资金操作,登录浏览保留) | **J2** |
-| 边缘 IP 判定源 | server 边缘 IP(纯 IP) | 判定源切换 | 实时 | J2 |
+| geo-block `limitedCountries`(受限资金/奖励变更档) | 空(无受限) | ISO 3166-1 alpha-2 | 后续请求按资金/奖励注册路由拒绝，登录浏览不因受限名单被拒 | **J2** |
+| 地区识别源 | 可信代理的登记国家请求头；账户国家仅用于影响统计 | 只能切到健康识别源，健康旧源五分钟兜底 | 后续纳入地区过滤的请求 | J2 |
 | 账户级篡改告警频次 | 10 次/24h(跨所有 path 合计) | 1–100 次/窗口 | 实时 | J3 |
 | 监控时间窗 | {24h, 7d, 30d} | 固定窗集 | 实时 | J3 |
 
 ### 4.14 域 L — 数据 BI(出处 v4 §16;均只读视图参数,无业务杠杆)
 
+**L5接逻辑（2026-11-14，后端111e00cd）**：放行/重新发起在发送前持久保存完整原请求、操作者、理由、原号及当时确认事实，存不下不发；未知冻结输入、刷新恢复，24小时内同号同内容重试，过期只查。首次拒绝和保留命令重试分别按共用判据处理；自批403说明准确，不误报缺权。只读核对为单数`/bi/export/{exportId}`，当前状态不自动结案；恢复结束关旧框并重读，新操作重新核对权限和有效概览。汇总/披露按B4-PD02不建业务锁，但必须验证创建回执后才报成功；下载先验CSV。三种出口去向、另一位管理员的放行权、按人签发令牌24h与重复下载遵守后端；姓名接到原位置，申请时间（created_at，换成业务时区到分钟）显示在待放行卡和放行确认框。合法0行保留0，可空元数据不冒充0。另修L3原任务查询误用复数地址。详见[L5合同](L5高敏导出任务双人批准-20261106.md)。
+
+**L4/L6 报表逻辑（2026-11-14，后端111e00cd）**：L4承接率允许大于100%而不钳值，其余必填/质量检查不放宽；无上窗数据不造比较。有原H1读权时阶段名取参考目录，读不到只保留代码。运营汇总与L6两种聚合导出按B4-PD02保持普通重新导出，不建R1业务锁。L4敏感团队导出发送前完整落盘原请求，未知仅原号原内容重试，24小时后只查；收到报表号后持久保留下载阶段，不因下载失败再建快照。授权签发不去重，丢回包不自动重签，有token只读原快照。原报表只读查询为单数`/bi/export/{reportId}`并按L5读权开放。团队理由暂按后端现行编码头长度计数和拦截，不截短输入；后端修复后撤去该适配。L6两个出口现带实际reason query，按Unicode码点上限和A2可见字符下限；局部读取用读错误语义，L1/L2保留目录子页对应的合法父组并不重算UV。日和ISO周桶已共用业务时区，首尾桶可能被滚动窗口截断；页面写明点击位置只来自移动网页、采样在后端入库时做。详细合同：[L4/L6运营与行为报表逻辑](L4-L6-运营与行为报表逻辑-20261114.md)。
+
+**L2/L3 接逻辑现行合同（2026-11-14）**：后端固定111e00cd。L2第3步取首购之后复投与第二笔购买里更早的事件；L2与B3共用从上一步转化率最小的计算，不以掉人数最多替代。app.dau和trial.claim_sheet_shown仍未接生产者，留存和试用显示来源未接上。L3使用同一次权威资金快照的估值限定；缺价时UVT应付及全部合计、占比、覆盖率、差额显示共用“暂时无法估值”，其余八类保留。覆盖走势为8个间隔3小时的重建点、当前应付款分母，非12周真实历史；质押到期只含利息；覆盖天数采用含可选试用压力的后端30日累计，三类0不再冒充没有预测到期。逐日数据已保留模型，界面继续用现有四段图。
+
+**L3 本期确认 / 本期申请（S38 / BUG-356）**：统计卡、兑付报表及降级说明统一使用「本期确认 / 本期申请」，名称不附加「(本期)」。分子为本期确认数，分母为本期申请数；本期确认可含前期申请，因此可以超过 100%，不称为本期申请的完成比例。在途余额衡量尚未完成的应付款，两者同源但含义不同。仅修正文案，统计、告警、导出及权限沿用现有规则。
+
 | 参数(key) | 默认值 | 权威源 | 模块 |
 |---|---|---|---|
 | 八项 KPI 口径/目标 | 锁定 §2.4.6 + §18.2 | A4/§18.2(L1 不重设) | L1 |
+| KPI 黄灯偏移 | 默认 10%，5%–20% 整数；应用与本机保存使用同一值域，不接受小数、不取整 | 仅视图阈值 | L1 |
 | KPI/留存 cohort 粒度 | 注册周 YYYY-Www | A4 | L1/L2 |
-| 留存口径 | Day1/7/30(app.dau) | A4 | L2 |
+| 留存口径 | Day1/7/14/30/60(app.dau)，按所选窗口展示 | A4 | L2 |
 | 财务口径(储备/负债/覆盖率/到期) | 锁定 B1/D3/B2 | B1/D3/B2(L3 不重算) | L3 |
-| 含敏感数据导出 MC | 强制开启 | L5 | L5 |
-| 数据脱敏策略 | 手机号 hash/卡 token 掩码/地址行政区级;解密须 MC+事由 | L5 | L5 |
-| 导出下载链接 TTL / 行数上限 | 24h / ≤100 万行(超走 split_approval) | L5 | L5 |
+| 脱敏资金明细审批 | 必须先申请再审批；审批不解密 | L5 | L3/L5 |
+| 数据脱敏策略 | 沿用既有脱敏字段；明文敏感导出禁止，审批不解密 | L5 | L5 |
+| 导出下载链接 TTL / 行数上限 | 24h(每次签发的令牌有效期,快照继续复用) / 财务明细、团队树、账单各最多 10 万行；无新拆分入口，历史拆分任务只读 | L5（T12） | L5 |
+
+**L6 跳出率颜色（BUG-251，T16 / L-D18）**：红线严格为大于 50%；恰好 50% 属于橙色档，超过 50% 才显示红色。保留现有「>50%」图例、其他色阶和原始比率，不改统计或导出数据。
+
+**L5 / L6 加载状态（BUG-240、BUG-250，T09）**：L6 页头分别显示初次加载、请求或协议解析失败、成功无活动；加载及失败时继续禁用导出，不断言没有生产事件。L5 导出记录按独立加载结果显示加载中、失败或成功无记录，不用概览数据回退冒充本次结果；失败保留重新加载入口，重试成功后展示真实操作记录，不改变记录本身。
+
+**L2/L3 导出与恢复（2026-11-14）**：L2聚合与L3当前汇总仍经理由确认并留审计，不改业务数据，按B4-PD02不建立R1业务锁，失败或结果未知可重新导出。L3脱敏资金明细不适用聚合例外：发送前保存原日期、字段顺序、使用人、工单、理由、操作者、完整请求和命令号；存储不可用不发送，结果未知冻结原输入，同标签页刷新可恢复，24小时内仅同号同内容重试，超过24小时保留记录、只核对。尚无结果不确定的尝试时，首次4xx业务拒绝（含403）丢号，保留确认框和原输入；幂等未决码保留。一旦网络失败或普通503触发同号自动重发，后续拒绝与显式恢复均按isExplicitRejection判定，401/403/408/425/429与所有IDEMPOTENCY_*不解除，只有明确业务拒绝可解除。L4团队创建同样区分首次与自动重发，首次401/408/425/429仍保守保留。恢复结束关闭旧确认框，新申请重新检查权限与当前已读周期。L3自动重发或显式恢复取得的创建回执不能证明当前仍待放行；有bi_l5_read且已知reportId时查原任务，查失败保留记录。没有L5读权不显示不可达L5链接，不增加权限；没有原reportId时后端无按命令号只读查询口，只能按可达L5或有权限同事核对。L5放行与重新发起的理由确认及原命令恢复已接入，遵守本节L5合同；其动作请求没有自动重发。详细合同：[L2/L3报表读取与导出恢复](L2-L3-报表读取与导出恢复-20261114.md)。
+
+**团队明细导出修正（BUG-298，Jason）**：创建团队树报表被明确拒绝时释放本次操作编号，保留理由和追溯次数供修正；修正后重新提交使用新编号。结果尚未确认继续保留原编号；已创建报表的下载失败不按创建拒绝清号。
+
+**无表单动作的失败提示（BUG-298，Jason）**：报表状态变化的共享提示只说明状态变化及重新加载任务列表的下一步；行内「重新发起」没有表单，不承诺「当前输入已保留」。
+
+**L3 非法范围恢复（BUG-249）**：自定义日期超过后端一年上限仍被拒绝，不调整或截断日期。加载、失败和降级展示均保留周期与日期筛选栏；操作员可直接修正日期再应用，或选择有效的日、周、月、季查询，无需刷新或离开页面。报表值和周期计算不变。
+
+**L3 / L5 导出权限（BUG-233、BUG-243、BUG-244，T01）**：财务汇总入口与提示依据 `bi_l3_write`；脱敏资金明细依据 `bi_l3_export_detail`。只有两项都没有时才称仅可查看。八类账单下载单独要求 `finance_d4_export`，同时满足后端 GET 闸门的账单读取权（`finance_d4_read` 或 `finance_d4_user_read`），无权不显示可提交入口。L5 财务任务下载和重新发起依据实际 `containsPii`：含隐私用明细权限，普通汇总用汇总权限；审批仍独立要求 `bi_l5_task_approve`。后端检查、明文禁令和文件内容不变。
+
+**L5 能力与必填提示（BUG-229、BUG-245）**：副标题说明按授权提供四类汇总、八类账单脱敏明细和当前披露报告，不再称账单和监管入口未开放。当前披露报告沿用现有生成内容，不承诺按填写期间过滤数据（S23 / L-D13）。汇总导出中非关键指标类型的时间范围仍必填，缺失提示使用可见标签「时间范围」。
+
+**L1 达标状态（BUG-242，S41 / L-D24）**：单侧目标使用严格比较：第 1/2/3/5/6/7 项分别须大于 95%/60%/30%/40%/25%/80%，第 8 项须小于 14 天才为绿灯；等于目标不达标，进入原黄灯判断。第 4 项购买转化的 5%–10% 健康带仍包含两端，带外仍为黄灯。黄灯偏移保留原规则：较高越好时黄线为目标 × (1 − 偏移)，较低越好时为目标 × (1 + 偏移)，黄线本身包含在黄灯内。空值仍不可计算。L1 卡片、趋势颜色、规则表与绿/黄/红汇总共用此状态；首页验收墙、详情和域速览的达标判断同样严格，首页不展示黄灯。保留 L1 原有 > / < 目标文字，不改变指标数值、分子分母或图表序列；仅相应灯色与状态总数变化。前端不采用后端下发的旧 status/pass 作为达标依据；KPI CSV 仍输出既有当前值、目标值等固定列，不含达标状态列。
+
+**L2 聚合导出简单确认（BUG-248）**：保留现有简单确认；打开后焦点进入弹窗，Tab 与 Shift+Tab 在弹窗内循环，Esc 或取消关闭并将焦点还给打开按钮。取消及 Esc 均不创建导出任务。导出确认的范围和任务内容保持既有合同。
+
+**L2 注册分组与查询状态（BUG-230、BUG-232、BUG-238、BUG-239）**：概览按最后返回的注册组显示组名，不能将历史组称为本周或本月。只有漏斗首级称「漏斗顶」；后续级上一步人数为 0 时转化率保持空值，明确不可计算，不显示 0%。筛选在途显示「查询中」，筛选查询结果 HTTP 200 且 `available=false`、`reason=NO_REGISTRATION_COHORT` 为合法空结果，保留筛选栏并说明转化率、留存率不可计算且不能导出；网络或响应协议错误仍显示查询失败。只有筛选查询使用整页查询中状态；留存窗口、留存曲线和交叉分析的局部查询保留原页面内容与滚动位置，查询期间沿用控件禁用状态。未筛选概览没有注册事件时，沿用各阶段独立累计人数的降级页，允许「导出用户各阶段人数」，不计算转化率或留存率。筛选结果为空、查询中或失败时，页头必须禁用所有导出，包括阶段人数降级导出。清空或调整筛选后可重新查询，人数、转化公式与图表数据不变。
+
+**L1 不可计算与加载失败（BUG-236、BUG-246）**：创世节点没有购买记录（`NO_GENESIS_PURCHASES`）与已有购买但累计未达 1,000（`GENESIS_NOT_SOLD_OUT`）分别说明实际原因；两者均保留已售分子、固定分母 1,000 与空的售罄天数，不称分母缺失，不补 0%。初次加载中与加载已失败分别提示，失败时页头导出提示与正文一致，导出保持禁用。
+
+**L1 本机视图（BUG-237、BUG-247）**：刷新恢复这台电脑同一浏览器最后保存的设置；没有保存视图时回到默认偏移 10%。新的调整只有点击「保存为视图」后，才会在刷新时保留；例如已保存 15%，再应用未保存的 20%，刷新仍恢复 15%。仅保存呈现参数，不改变指标值、业务规则或统计方式。
+
 
 ### 4.15 平台参数寄存器 owner-link
 
@@ -954,10 +1110,15 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 - **守卫**:approve 经确认弹窗 D2-MD1(理由必填+B1 红线预检);小额(<$1,000)执行=财务,大额(≥$1,000)执行=财务(lead)/超管;freeze/unfreeze/manual-refund-override 经确认弹窗(理由必填),执行=财务(lead)/风控(lead)/超管。K4 风险分档路由 + K3 路由结论(delay/freeze/manual)优先于小额快速通道(仅 K3=pass 才放小额)。
 - **事件**:`withdraw.{submitted,approved,rejected,delayed,frozen,sent,confirmed}`。
 
-### 5.2 A2 高敏操作执行约束(Ch2 A2;原复核工单状态机已随 2026-06 操作确认决议废除)
-- **执行契约**:高敏动作由操作者经业务专属确认弹窗直接调用目标域 endpoint,body 必携 `{reason}`(server 校验非空,缺失 400 `REASON_REQUIRED`,默认下限 8 字);放大资金流出方向前置 B1 覆盖率红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`)。
-- **原子性**:写入与审计记录同事务落库,即时生效;资金/资产类携 `Idempotency-Key`(24h dedup);写入失败则目标域无副作用。
-- **监督补偿**:审计 append-only;高敏动作落审计同时进入 A2②b 高敏操作流水(资金/大额置顶)并实时告警超管与对应域角色 lead。
+### 5.2 A2 操作记录与审批（现行页面与执行约束）
+
+- 三页签为待审批、操作记录（全部记录／审批结果）、机制设置；无筛选主总览与有筛选记录分开读，错误不以0或旧数据替代。队列应急在前、资金类其次；本页只决定已有审批，业务新提案仍从所属域发起，直接执行和审批执行按各域合同。
+- 处理先认 `platform_a2_operation_approve`，再按已识别后端规则分别判断批准、驳回；本人不可自批。第五轮规则：认不出类型、旧单／摘要不足时，已知条件仍须满足，保留入口并提示「批准时系统再核对业务权限，没有权限会被拒绝并写明原因」。后端权威的当前查看者可批／可驳字段待B44，不增加业务权。E5强制激活／解绑的增长委托例外及其他专项权限见v1[A2]④。
+- 读不到退款金额时批准及原号批准重试禁用，驳回不受金额读取限制。当前仍取订单原整单金额，工单B37实退金额尚未消费（B4-01），不能把关键金额当已核实的实退数。G3／手机规则按工单时点，J4逐步执行可能部分成功，不概括成失败无副作用。
+- BUG-503。I5 发布待批单核准提案冻结的草稿、修订号和哈希，设置、切换及切回生效版本使用持久化命令绑定的法域和版本。A2 复用 I5 的总文与七章对照。配对所需版本读不出或证据不完整时，保留版本号和已有读取提示。审批执行按原有资格和检查处理。见 [本次同步合同](后台后端同步-20261119b.md#a2-审批证据)。
+- 批准／驳回／撤回、参数、清理、导出都先存原命令再发，未知锁原对象；原重试仅明确拒绝可人工核实后本地解除，403等非命令结论保留原记录，读回不授予解除。退款重试仍受金额门槛；旧记录按队列原单补信息，不在队列则按已有字段及后端检查规则处理，原号、理由及首次时间不变。
+- A2不提供单条审计编辑或任意删历史；保留期是新记录期限，受控到期清理先归档再移出在线列表，旧无到期时间记录不动。机制清理不是业务未知结果核查；后端核查能力已有但A2本页尚无结案UI。完整现行字段与范围见v1[A2]。
+- 2026-11-17 A2-BE-04（f0497f79/528b8c92/d0bcc4eb）：清理POST及latest仍给原七字段，evaluatedAt是执行/判定时刻；cutoff只存手动审计，含义是显式expire_at的到期检查边界，与同次now相同，不能再减月数。真无记录为null，有记录但不可读统一500 A2_RETENTION_RUN_UNREADABLE，既有失败状态与空状态分开；旧evaluatedAt本来也是now，不修正历史。命令回放、摘要及确认月数合同不变，详见v1[A2]③hd-sync30补充。
 
 ### 5.4 K3 提现风控规则(Ch8 K3)
 - **状态集(规则对象)**:`draft / active / paused / archived`;命中路由动作(非状态):`pass / delay / freeze / manual`
@@ -977,8 +1138,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 - **约束**:订单 ID server mint;`/refund` MC+Key,单事务联动 D1 退款+D4 冲正+`cumulativeDepositUsdt` 核减。**GMV 以 order.paid 去重为权威,payment_failed 不计**。
 - **注**:E3 设备效率为连续值(100%→0.22 floor),非状态机;曲线变更仅影响下次快照,不追溯历史收益。
 
-### 5.7 F1 V-Rank 晋升(Ch11 F1,13 阶 V0–V12)
-- **状态集**:`V0 … V12`
+### 5.7 F1 V-Rank 晋升(Ch11 F1,9 级 V0–V8)
+- **当前有效状态集**:`V0 … V8`；停用 V9–V12 不作新晋升目标，不自动降低存量等级
 - **合法转移**:晋升 `V(n) → V(n+1)`(server 在被动评估触发点 re-check;条件 **AND 复合**,各阶组合不一)/ 手动晋升回滚 `V(x) → V(y)`(确认弹窗 F1-MD1,理由必填;执行=增长运营(lead)/超管)/ **不降级**(vRankPermanent=true,唯一例外账户注销)
 - **约束**:`/vrank/override` 携 Key + MC 两步,server 原子置 V 级并联动本人权益/平级奖/票数/可见性；旧扩展版税覆盖仅历史说明，不作用于新直属;client 显示对但 server 可 reject(anti-abuse/race)是产品契约;改门槛不回溯已晋升者。
 
@@ -998,29 +1159,39 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 5.10 H2 Trial 7 态(Ch7 H2,§9.11.1 权威)
 - **状态集(7)**:`idle / active / grace / extended / redeemed(终)/ failed(终)/ cancelled(终)`
-- **合法转移**:`idle → active`(server canStart() 前置:冷却内/phaseOpen=false 拒)/ `active → grace`(shadow 冻结)/ `active,grace → extended`(highQualityThresholdUSD)/ `active,grace,extended → redeemed`(redeem-early 主动 + auto-charge 自动两路径;shadow 经 computeTrialOffset 拆分)/ `→ failed`(扣款失败,shadow 归零不入账)/ `→ cancelled`(取消,强制取消=MC)
-- **约束**:扣款(含强制 charge)经 PSP 携 Key;`chargeFailRate` server-only;shadow active/grace/extended 仅 UI display 不写账本;循环养号联动 K2 阻断。
+- **合法转移**:`idle → active`(server canStart() 前置:冷却内/phaseOpen=false 拒)/ `active → grace`(shadow 冻结)/ `extended`(历史延长记录，按系统结束时间展示；App/H5 无申请入口，PC 无延长配置)/ `active,grace,extended → redeemed`（用户明确确认购买，服务端重算优惠、抵扣和入账；到期不自动购买）/ `failed`（历史失败终态保留核对）/ `→ cancelled`（用户取消、到期结束或强制取消审批获批）
+- **约束**:强制扣款退役，只保留历史审批核查，不重发；`chargeFailRate` 系统只读且不公开;shadow active/grace/extended 仅 UI display 不写账本;循环养号联动 K2 阻断。
 
 ### 5.11 H3 Quest / H4 活动 / H5 签到 / H6 里程碑(Ch13)
 - **H3 Day-One**:`active(0–24h·500NEX)→ grace(24–72h·200NEX)→ expired(72h+·0)` / `{active,grace} → claimed`(全 6 任务,creditNex+badge)。Weekly 按 weekKey reset;Monthly 跨月清。
-- **H4 活动**:`upcoming → ongoing → ended`(时窗);trackable 用户 `(未join)→ joined → done → claimed`。Lucky Spin server RNG+NODE_ENV guard;日上限 `eventId×userId×spinDate` 超额 409;B1 红线自动降级(只发 NEX/积分/券)。
+- **H4 活动**:`upcoming → ongoing → ended`(时窗);下架只停新参与,已形成的结算义务继续;trackable 用户 `(未join)→ joined → done → claimed`。Lucky Spin server RNG+NODE_ENV guard;日上限 `eventId×userId×spinDate` 超额 409;B1 红线自动降级(只发 NEX/积分/券)。
 - **H5 签到**:`signed_today →(次日)pending → signed` / `signed → broken`(>48h 归 0)/ `broken → restored`(耗 1 Saver,恢复 min(longest,30));里程碑 `locked → claimable → claimed`。
 - **H6 累计里程碑**:`unfired → fired`(跨阈自动 creditNex+overlay);一次 fire 一档(watcher 4s 串行);firedIds server 记录不重触发;自动派 NEX 携 Key(milestoneId×userId 去重)。
 
+### 5.11a H9 首页数字增长
+
+独立板块收纳在线设备与累计已发放当前值、各自增量区间及开启/暂停按钮；默认暂停，普通保存不开启，暂停保留当前值。采用服务端共享随机批次、数据库持久化和 Redis 缓存，客户端可见时逐秒显示、约每60秒拉取，隐藏停止、恢复重取。当前值/区间、权限、版本冲突、迁移和异常恢复详见 [本轮规格](specs/FEAT-APP-20261025-experience-alignment.md)。该展示不写业务账本。
+
 ### 5.12 I 内容 / J 应急(Ch14 / Ch15)
 - **I1 文案 A/B**:版本 `draft → published(MC)→ archived`(回滚=重发历史版,MC);实验 `scheduled → running → concluded(adopted|discarded)`。分组 assignment server 权威,已分组 sticky。
-- **I5 风险披露**:版本 `draft → published(per jurisdiction,MC,改版强制 re-ack)→ superseded`;用户 ack `not_acked → acked → stale`(发布新版/jurisdiction 变更触发)。client 检测 acceptedVersion 落后或 jurisdiction 变 → 强制 re-prompt,不可本地置 accepted。
+- **I5 风险披露**:版本 `draft → published(per jurisdiction,批准后封存)→ superseded`；发布不切换 App 当前版本。生效版本或适用国家另行批准切换后，新旧国家用户原确认失效，并生成紧急级通知；用户可在 App 主动阅读、确认，不能在客户端直接置 accepted。App 不强制确认；提现、质押不再前置拦截，也不支持重新纳入，不确认不影响这些操作。兑换可纳入受限动作，纳入后全平台的新兑换和处理排队都被拒绝，和用户确认无关，获批移出后解除这道限制。
+- **I5 页面**:页名「法律条款与风险披露」，分风险披露、法律条款、隐私政策三个页签，按权限给：`content_i5_read` 看风险披露，`content_legal_terms_read` 看法律条款和隐私政策，两边读取互不影响，都没有时显示无权限。风险披露首屏是一句话结论、两个统计（当前版本未确认用户、生效的适用范围）、草稿和待审批、各适用范围生效版本（含确认进度，不含拦截数）；披露版本列表、适用范围目录、受限动作收起。版本的查看和编辑在抽屉里，语言分页签。披露的发布、切换生效、地区启停归档删除、受限动作都提交审批，批准后生效；账号没有 `platform_a2_write` 或 `platform_a2_proposal_create` 时这些入口隐藏。法律条款和隐私政策填理由后立即生效，理由在确认框里填；发布只发已保存的草稿；法律新草稿带入当前范围已发布版本全部节，没有时按本范围最近版本、用户端回退顺序带入并写来源；节数少于现行版时，列表、详情、编辑器发布入口都禁用并写明去补全，后端接口尚未拦截。撤回 en/GLOBAL 影响依赖它回退的范围，有自己已发布版本的范围不受影响。调整映射时版本或适用国家变了，新旧国家的用户都要重新确认并收到通知，确认框写明。法律范围没读取完时不显示旧地区的内容和写入口。少于 5 人的地区写「样本过小」。待审批随 10 秒轮询更新，看不到或没读到时不算没有。写入结果未知时页面上方常显「结果未知」提醒，对象和新建入口都锁定，只能查询原结果或按原请求重试；超过 24 小时不能再重试，记录保留，到「操作记录与审批」核对；重试被后端明确拒绝后才能「解除原操作记录」。法律条款发布不要求用户重新同意（App 只在注册时同意），App 只按 GLOBAL 读条款；隐私政策发布整份覆盖旧公开版。改动冲突时写「这项刚被别人改过。」，点「读取最新」后自己改过的字段保留，其余取最新。
+- **I5原命令恢复（B38审查后）**：原重试解除只认 `isExplicitRejection` 的状态及原因，旧 `rejected=true` 不能作证据；401／403／408／425／429、全部 `IDEMPOTENCY_*`、未知响应与本地错误不授予资格。有效拒绝保存status及reasonCode/backendMessage，可跨刷新；下一次重试先撤去旧资格，非明确拒绝后继续保号与对象锁。披露、法律条款、隐私路径同一门槛，读回仅事实；法律／隐私原客户端没有因此新增幂等请求头，不把保留本地编号说成所有接口已有后端去重。本地解除不替后端核查结案。
+- **I5 草稿与原操作**：披露、法律、隐私三个编辑器在浏览器后退、站内离页时询问继续编辑、放弃或保存后继续。保存拒绝、冲突、无权限或结果未知时不当作保存成功离页。法律与隐私过期记录引导核对原操作，保留对象锁，不按过期解锁或继续重发。
+- **I5 版本与技术信息**：映射确认逐条列出已发布／历史版本、生效日期与回退提醒；法律章节标识逐项保留。技术信息默认收起，隐私原文用带标签的只读文本框，可选择复制。隐私另存草稿不替换公开版，发布后公开接口按请求语言、基础语言、英语回退，撤下后公开接口不可读，不承诺未经核实的注册页或邀请页位置。
+- **I5 补修**：三个编辑器换稿、新建、看别的版本及行内发布撤回均走未保存保护；版本冲突按段落标识三方合并，两边都改同一处时保留自己的并提示核对，读取最新失败不丢稿且读到前不能保存。读回核对切到原操作语言、地区，待确认和审批时间按业务时区。归档映射写「无，vN 已归档」，历史版不标生效中；只有映射已发布、版本可读且没有引用异常时才标生效中，引用草稿或归档版本保留真实状态及异常；兑换以外的操作都不在受限范围时，待确认人数只做记录（兑换受限是全平台阻断，不按确认拦人）。近 7 天拦截总数只放「受限动作」折叠，注明历史记录及可能包含已确认用户；分地区拦截数只在地区抽屉。发布差异只比两边共有语言，范围变化列事实，核对勾选紧贴理由区；九语新增录入暂禁用，已有版本仍可保存。新版本日期默认今天，过去日期及相同内容只提示；地区归档不能撤销，不能再启用或改名。隐私另存草稿不改公开版，删除语言先确认，技术信息默认收起。
 - **I2 Nova**:channel `enabled ⇄ disabled`(kill);模板 `draft → published → archived`(MC)。
-- **I3 通知 campaign**:`draft → scheduled → sending → sent`;任一态 `→ cancelled`;调度下发=MC;优先级 in-place 升级 server emit canonical。
-- **I4 信任 / I6 i18n / I7 课程**:内容版本 `draft → published → archived`(I4 财务/NEX 叙事须合规审查,发布经确认弹窗;I6 发布前镜像+占位符 gate;I7 featured set⇄unset 单位互斥)。
-- **J1 功能闸**:闸 `enabled ⇄ disabled`;提案 `pending_approval → approved|rejected`;应急 `pending_approval[emergency] → escalating`(N min 未放行自动升级,工单维持 pending 不自动放行)`→ approved|rejected`,升级耗尽 → `escalation_exhausted`(终态,永不自动放行);恢复(前置 B1 闸)未达覆盖率 → `blocked_by_coverage`(409+快照)。批量熔断逐闸独立生效(非原子),返 status[]。
-- **J3 篡改告警**:`normal → flagged`(超频次)→ `escalated`(喂 K4+B5);纯只读监控,处置跳 K 域。
+- **I3 通知 campaign**:`draft → scheduled → sending → sent`;仅 `scheduled → cancelled`;紧急取消另核紧急执行权;`cancelled` 不能编辑或重新排期,只能删除,要改就新建;`draft` 和 `cancelled` 可删,`sent` 不可删;调度下发=MC;优先级 in-place 升级 server emit canonical。
+- **I4 信任 / I6 i18n / I7 课程**:内容与课程 `draft → published → archived`；I7 课程版本 `DRAFT → PUBLISHED → SUPERSEDED`，回滚重新选定历史版本为当前版。I4 财务/NEX 叙事须合规审查，I6 发布前镜像+占位符 gate；I7 初次发布、版本发布和回滚均须课程写与奖励调整双权限，featured set⇄unset 单位互斥。
+- **J1 功能闸**：关停确认后立即执行，恢复提交 A2 应急审批、另一位超级管理员批准后执行。资金恢复须服务端估值可靠且允许恢复，批准时重查覆盖率；试用免查。批量关停同一事务，有一项不符合则整批不执行；补录不恢复。结果未知保原申请、先查原键，重试被拒仍保留，过期只查询。提现关停的通道边界见域 J 页面行为。
+- **J3 篡改告警**：只列窗口内达到阈值的账户；K4/B5 两路都至少接受一次为 `escalated`，否则 `flagged`，不是人工处置状态；处置跳 C2/K1。
+- **运营区域语言**：I1 文案 A/B 的单条文案、I4 信任版块的全部同语言字段、I5 风险披露总文及七章标题/正文、I6 单条词条、I7 课程标题/正文及全部题干和有序选项，分别按英文及已勾选的运营区域语言校验必填；配置读取失败按三语必填。选填语言整组留空，保存时从英文补齐；仅当已存整组与英文相同，编辑载入才清空整组；部分填写仍须满足原有完整性规则。已存的英文副本算作必填语言有值。M5 坐席话术与快捷回复以英文为原文，I1 和 I6 的 `conversation.script.*`、`conversation.template.*` 遵循同一规则，中文无单独必填要求。PC test 编辑器按英文、中文、越南语排列。已勾选的中文或越南语整组与英文相同时（即存的是英文副本），该语言栏下常显「这是英文副本，App ×× 下会显示英文。请改成××」；规则不变，副本仍算已填，I6 覆盖率照常计数并注明其中英文副本条数。带奖励的课程首次发布、版本发布和回滚在 PC test 旧页面不提供审批入口：确认按钮禁用并显示「需审批，暂不能在此提交」，原因常显在理由框上方。M5 新增时填写英文原文；发布前须先在 I6 发布对应词条，词条英文与正文一致、已填译文的变量与英文相同，否则分别提示 `SESSION_TEMPLATE_I18N_ENGLISH_PUBLICATION_REQUIRED`、`SESSION_TEMPLATE_I18N_MISMATCH` 的中文原因。I4 只在同字段族内补值，无英文字段的族不适用，共享字段不变。I7 最终中文主标题不得超过 128 个 Unicode 码点，中文整组留空时同样检查补入的英文；有独立中文主标题时，英文标题沿用原有上限。选项不删除或重排。I4–I7 发布与审批使用已存草稿，不重新补值；I1 沿用原有存草稿或直接发布流程。直接调用相关后端写入接口时，也按英文和运营区域语言校验必填，在创建、更新或保存时用英文补齐整体留空的选填语言。部分填写仍须按原规则校验完整性。历史内容保留原值。
 
 ### 5.13 状态机 — PRD 未完整定义 / 已声明偏差(开发须知)
 - **D2 `review-pending`**:§1.9 仅列正常 5 态,review-pending 为后台扩展;`withdraw.approved`↔`review-passed` 命名映射须 A4 registry 确认。
 - **E4 订单过期时窗**(placed→expired):**未定义**(建议 15–30min,V2 PM 确认)。`order` domain 未注册,过渡用 `checkout.order_*`。
 - **E4 `cumulativeDepositUsdt` 退款逆向写权归属**:**未定义**(拟 D4 recordDeposit(-amount),V2 与 D1/D4 对齐)。
-- **H2 `autoChargeAtEnd` 实时性**:**未定义**(暂按仅新 trial,待 PM)。
+- **H2 `autoChargeAtEnd`**：系统只读旧标记，页面隐藏；现行到期结束试用，购买必须由用户确认，参数与结算以 v1 H2 为准。
 - **里程碑事务边界**:§9.11e 表未含 milestone 行,V4 收口补。
 - **连续值非状态机**:K4 风险分 / E3 设备效率 / G3 行情(分档阈值是路由守卫,非状态转移)。
 
@@ -1034,27 +1205,26 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 分配/变更账号角色 / 变更 RBAC 授予 | ✅(仅超管) | — | — | — | — | — | 是(权限边界=最高敏,理由必填) | A1 |
 | 重置运营账号 MFA | ✅(仅超管) | — | — | — | — | — | 是(理由必填；既有安全工单号写入 reason) | A1 |
 | 强制登出运营 session | ✅(仅超管；非自己/非超管目标) | — | — | — | — | — | 是(理由必填,止血即时) | A1 |
-| 审计/埋点 schema 变更 | ✅(仅超管) | — | — | — | — | — | 是(A2-MD1,理由必填) | A2 |
-| 审计日志查询/导出 | ✅(全) | 读(风控/账户) | 读(资金) | 读(增长) | 读(单用户) | ✅(全量脱敏) | 否(只读) | A2 |
+| A2机制参数／到期清理 | 按platform_a2_write | — | — | — | — | — | 是（理由、原号、回读；事件登记在A4） | A2 |
+| 操作记录查询／导出 | 按read/export | C/K域 | D域 | E/H域 | 本人记录 | 全量脱敏 | 查询只读；导出另须export及理由，未知保原号 | A2 |
 | feature flag 切换 | ✅(全部 flag) | — | — | ✅(限增长/AB 类) | — | — | 是(理由必填;server 按 flag 分类校验资质) | A3 |
 | **kill-switch 熔断(止血方向)** | ✅ | ✅ | ✅(资金止血) | — | — | — | 是(理由必填+触发依据;即时生效+广播) | A3→J1 |
 | **kill-switch 恢复(放大方向)** | ✅(仅超管) | — | — | — | — | — | 是(理由必填+B1 红线预检 422) | A3→J1 |
 | **geo-block 国家级屏蔽** | ✅ | ✅ | —(财务不参与) | — | — | — | 是(理由必填) | A3→J2 |
 | 覆盖率红黄线 / 挤兑阈值 | ✅ | ✅(lead,挤兑阈值) | ✅(lead,覆盖率阈值) | — | — | — | 是(理由必填;放松方向警示) | B1/B5 |
 | 储备注入 / 对账核销 | ✅ | — | ✅(lead) | — | — | — | 是(理由必填+Idempotency-Key) | B1/D3/D1 |
-| **充值 PSP 退款 / chargeback / 渠道启停** | ✅ | — | ✅(lead) | — | — | — | 是(理由必填) | D1 |
-| **VietQR 银行账户池/参数/人工匹配核销** | ✅ | — | ✅(lead) | — | — | 读(仅尾号) | 是(理由+证据+Key+CAS；账号密文不回传) | D1 |
+| **充值渠道启停 / 费率** | ✅ | — | ✅(lead) | — | — | — | 是(理由必填) | D1 |
+| **银行卡支付单笔上限 / HDPay 人工确认入账** | ✅ | — | ✅(lead) | — | — | 读 | 是(理由+证据+Key+CAS) | D1 |
 | **提现放行(小额 <$1,000)** | ✅ | — | ✅ | — | 读(受限) | 读 | 是(D2-MD1,理由必填+B1 红线预检) | D2 |
 | **提现放行(大额 ≥$1,000)** | ✅ | — | ✅(lead) | — | — | — | 是(D2-MD1+大额确认勾选;超阈不可批量自动放行) | D2 |
 | 提现 reject / delay | ✅ | ✅ | ✅ | — | — | — | 是(理由必填) | D2 |
 | 提现 freeze / unfreeze / manual-refund-override | ✅ | ✅(lead) | ✅(lead) | — | — | — | 是(理由必填) | D2 |
 | 提现参数(日限/上限/网络费) | ✅ | — | ✅(lead) | — | — | — | 是(理由必填;放宽方向 B1 预检) | D5 |
-| VND/USDT 汇率、点差、锁价时长 | ✅ | 读 | ✅(lead) | — | — | 读 | 是(理由必填+Key+CAS) | D6 |
-| **余额调整 ≤$500 / >$500** | ✅ | — | ✅(>$500 用 lead) | — | ✅(≤$500) | — | 是(理由必填;加余额方向 B1 预检) | C3 |
-| 积分调整 | ✅ | — | ✅(lead) | ✅ | ✅ | — | 是(理由必填;走 points 字段,不入 D4) | C3 |
-| **账户冻结/解冻(单用户)** | ✅ | ✅(lead) | ✅ | — | — | — | 是(理由必填;联动 D2 frozen) | C2 |
-| **impersonate(模拟登录)** | ✅ | ✅(lead) | — | — | ✅ | — | 是(理由必填;只读+≤30min+全审计) | C2 |
-| 账户加白/拉黑(userId 级) | ✅ | ✅(lead) | — | — | — | — | 是(理由必填) | C2 |
+| VND/USDT 汇率、点差、锁价时长 | ✅（须manage） | 读 | 按manage | — | — | 读 | 是（整组方向；敏感审批；仅基准上调两次资金检查） | D6 |
+| **余额调整申请 ≤500 / >500 USDT等值** | ✅ | — | ✅（>500须财务主管） | — | — | — | 是（全部待另一人批准，普通增加余额查覆盖率；冲正另走一次直接反向执行） | C3 |
+| **账户冻结／恢复（单用户）** | 按精确码 | 按精确码 | 内置无入口；兼容授权走提案 | — | — | — | 是（理由、来源阻断、D2联动；恢复不查覆盖率） | C2 |
+| **用户数据只读视图** | 按起止精确码 | 按起止精确码 | — | — | — | 读 | 是（限时、只读、全审计） | C2 |
+| 账户信任／禁入名单（userId级） | 按名单码 | 按名单码 | — | — | — | 读 | 是（理由、期限、替换确认；信任仅记录） | C2 |
 | disable 2FA / 密码重置 / 解除锁定 | ✅ | ✅(lead) | — | — | ✅(部分) | — | 是(理由必填+账户归属核实) | C5 |
 | 注册/登录风控参数 | ✅ | ✅(lead) | — | — | — | — | 是(理由必填) | C6 |
 | **批量冻结关联账户簇** | ✅ | ✅(lead) | — | — | — | — | 是(K1-MD1,理由必填+Key;冻结态落 C2) | K1 |
@@ -1070,8 +1240,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | Genesis 经济(单价/排放率/pause/geo) | ✅(排放率仅超管) | ✅(lead,pause/geo) | ✅(lead,其余参数) | — | — | — | 是(理由必填;排放率放大负债前置 B1) | G4 |
 | 佣金事件撤销/补发/暂停 | ✅ | ✅(lead) | ✅(lead,联动 D 退回) | — | — | — | 是(理由必填;补发方向 B1 预检) | F5 |
 | 直属分成 / Partner Status / 其他奖励冷却 | ✅ | ✅(lead) | ✅(lead) | ✅(增长侧) | — | — | 是(A2、理由、24h幂等；资金放大 B1；具体权威权限沿用 v2 F2⑥；旧层级只读) | F2 |
-| 风险披露版本切换 + 强制 re-ack | ✅ | ✅(lead,合规) | — | — | — | — | 是(I5-MD1,理由必填;合规关键,非熔断闸) | I5 |
-| 监管点名应急 SOP 编排执行 | ✅ | ✅(lead) | — | — | — | — | 是(J4-MD3,理由必填+触发事由;逐步经各域弹窗,串联 J1/J2/I5/C2/K1/D2/I3) | J4 |
+| 风险披露版本切换 + 旧确认失效（不阻断操作） | ✅ | ✅(lead,合规) | — | — | — | — | 是(I5-MD1,理由必填;合规关键,非熔断闸) | I5 |
+| 监管点名应急 SOP 编排执行 | ✅ | ✅(lead) | — | — | — | — | 是(J4-MD3；A2提案+理由/触发事由/逐步确认，批准后自动执行J1/J2/C2/K1/I3/I5；取消/核对/恢复独立确认) | J4 |
 | **数据导出/监管报告(含敏感)** | ✅(超限/解密仅超管) | ✅(lead,风控域) | ✅(lead,资金域) | — | — | ✅(全量脱敏) | 是(理由必填;数据出境=敏感,脱敏+审计) | L5 |
 
 ## 第 7 章 未决项清单(开发/上线阻塞点)
@@ -1087,7 +1257,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 5 | `commission/cooling-days` 佣金冷却权威归属未定(F2 自持 / D5 共享 / commission 引擎) | F2 / D5 | V2:直接影响 F2⑤ 写接口(归 D5 则退化只读)+ B2 冷却负债取数 | 对齐 D5/D2 + PM | v2 §F2③④⑤ |
 | 6 | `commission.paid` 的 `kind` 命名 `network` vs `unilevel` 二选一未定(前端 §12.5 用 unilevel) | F2/F3/F4/F5/F4d | **V2 A4 注册 blocking**:F5⑧/F4d⑧ 不能定稿 | 对齐前端 + A4 | v2 §F5⑧ |
 | 7 | 排行榜派奖事件 `leaderboard.prize_paid` vs 复用 `commission.paid(kind=leaderboard_prize)` 未定 | F5 / F4d | V2:避免非佣金派发混入 commission 语义 | 对齐前端 + A4 | v2 §F5⑧/F4d⑧ |
-| 8 | `cumulativeDepositUsdt` 退款逆向核减写权归属未确认(E4 拟 D4 recordDeposit(-amount),D1⑦ 仅定义正向) | E4 / D1 / D4 | **V2 落地阻断**:E4 不可单方声明 D4 写行为 | 对齐 D1/D4 | v2 §E4⑤⑦ |
+| 8 | E4退款资金与累计充值已有财务结算facade实现 | E4 / D1 / D4 | 当前按实退金额核减、最低0；旧recordDeposit拟议归属不作为现状，真实资金验收另记 | 真实批准、钱包／账本终点验证 | v2 §E4⑤⑦ |
 | 9 | ✅ Gen-2 当前购买资格已以 E1 `purchaseGate` 闭环；E3 九类 eligibility 仅作未来扩展 | E3 / E1 | 已闭环：Pro v2 V≥2、Rack P2 V≥4；查询、普通/组合下单、Trade-in 与容量替换均服务端复验 | 2026-08-16 已决；Sandbox 下单于 2026-08-28 退役 | v2 §E3③④ / §E1⑤ |
 | 10 | Cloud Share Premium(§3.3 月 10 新品)SKU 治理(独立 SKU vs 原地 tier 升级)未定 | E1 / E1 | 阻塞:当前 7 管理对象未涵盖,落地路径分叉 | PM | v2 §E1① |
 | 11 | Day-One quest 改窗对在窗用户相位语义二选一未落地(方案 A per-instance 快照 vs 方案 B 全局即时重算) | H3 | 开发:须二选一定接口契约(是否持久化窗快照) | PM / 开发 | v3 §H3⑦ |
@@ -1115,8 +1285,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 7 | 前端文档编号/计数瑕疵簇 | §14 误编 §15.x;§11.3「14 section」vs 13 行;§11.0A 缺 wrapped 行 | 后台按逻辑号/正确计数落地(I2/I4/I6 已对齐) | I2/I4/I6 | v1 附录 A.1 #6 |
 | 8 | Pro 设备旧 salvage 基价冲突 | 历史原型曾用 `DEVICE_PRICE_USDT["stellarbox-pro"]=2639` | **已随 salvage 模型退役关闭**；当前换新按旧机真实实付价 + 累计已结算产出计算，目标商品价仍以 E1 权威价为准 | E3 / E1 | FEAT-DEV02 |
 | 9 | SKU 数量口径 | V1 §3.2 E1「6 SKU」 | **7 个管理对象**(补 Pro v2 / Genesis 目录位) | E1 | v2 §E1① |
-| 10 | 风险披露 ack 数据模型 | 前端纯布尔 `{accepted,acceptedAt}` | version × jurisdiction 双维矩阵,发布触发 re-ack | I5 | v4 §I5③ |
-| 11 | 披露页 gated action 拦截范围 | /me/wallet/withdraw 已实装;staking/nex-v2-lock 为规划集成点 | 三类 gated action 全部前置守卫接线 | I5 / G1 / G6 | v4 §I5③ |
+| 10 | 风险披露 ack 数据模型 | version × jurisdiction 双维矩阵 | 发布批准后仅封存；生效映射的版本或适用国家改变后原确认失效并生成紧急级通知；不确认不影响操作 | I5 | v4 §I5③ |
+| 11 | 披露页 gated action 拦截范围 | 提现与质押已移出 | 不恢复退役前置门槛；范围为空与历史拦截分开说明 | I5 / G1 / G6 | v4 §I5③ |
 | 12 | 低优先级通知 `CAP_LOW` | 前端保留 30 条 | 真后台对接后改 24–48h TTL 自动淘汰 | I3 | v4 §I3 |
 | 13 | B1 兑付覆盖率红线拒绝码 | V1 卷 B1 原用 **403** | **✅ 全卷统一 422**(PM 2026-06-02;auth/authz 类 403 保持) | B1 / 全 G 域写 | v1 附录 A.2 #11 |
 | 14 | `binaryDailyCap` 技术字段名 | §6.4/前端 = `binaryDailyCap`(无后缀) | admin 引用写 `binaryDailyCapUSD`(指同一 dial,不另立) | F3 / H1 | v1 §6.4 字段名注 |
@@ -1150,7 +1320,9 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | A1-MD4 | 变更角色 | — | v1 A1④a |
 | A1-MD5 | 重置运营账号 2FA | — | v1 A1④a |
 | A1-MD6 | 强制登出 session | — | v1 A1④a |
-| A2-MD1 | 审计/埋点 schema 变更确认 | 是 | v1 A2④a |
+| A2-MD1 | 机制参数／记录字段版本确认（A4事件登记另见用户行为事件） | 是 | v1 A2④a |
+| A2-MD2 | 批准审批单 | 按资金方向及工单 | v1 A2④a |
+| A2-MD3 | 驳回审批单（普通确认） | 否 | v1 A2④a |
 | A3-MD1 | feature flag 切换确认 | — | v1 A3④a |
 | A3-MD2 | kill-switch 功能闸熔断确认 | — | v1 A3④a |
 | A3-MD3 | kill-switch 功能闸恢复确认 | 是 | v1 A3④a |
@@ -1167,16 +1339,18 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 9.3 C 用户与账户
 
+**2026-11-16 C6 管理读取元数据（hd-sync10，后端 6015e7e4）**：`UserRegistrationRiskStats` 接入可选 `otpIncludesRegistration`、`otpCountsSuccessfulSends`、`captchaTriggeredProducerFound`、`countsUseBusinessDay`、`stuffingClusters7dIsCredentialStuffing`、`stuffingClusters7dCountsMultiAccountThresholdHits`、`stuffingClusters7dCountsFirstInsertedOnly`、`stuffingClusters7dIncludesAllDispositions`；当前值依次为 false/false/false/true/false/true/true/true。概览接入 `captchaAlwaysScenes`（REGISTER/LOGIN/RESET 子集）、`h5RegisterCaptcha` 和 `h5RegisterMissingDeviceCaptcha`。在现有接收边界校验非空值类型，旧响应缺字段/null 保持未知。只补只读合同，不修改统计、认证、关闭窗口或权限。页面（hd-vbe）：四个统计问号按标志写口径（今日验证码记录写含不含注册、发送失败算不算；人机验证记录在没有记录来源时注明 0 不代表没人拖；七日关联组写新出现、达阈值、按共用注册 IP/设备/支付方式关联、不是试密码的检测、已处理也算），「统计口径与数据来源」按 `countsUseBusinessDay` 写业务日；人机验证开启时多一行「每次都要拖滑块」列出 `captchaAlwaysScenes`；「关闭期间仍会验证」按 `h5RegisterCaptcha`/`h5RegisterMissingDeviceCaptcha` 写「H5 注册」或「缺设备信息的 H5 注册」。标志缺失时保留原写法。
+
 | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
 |---|---|---|---|
-| C2-MD1 | 冻结账户确认 | — | v1 C2④a |
-| C2-MD2 | 解冻账户确认 | — | v1 C2④a |
-| C2-MD3 | 强制登出确认 | — | v1 C2④a |
-| C2-MD4 | 发起 impersonate(代入会话) | — | v1 C2④a |
-| C2-MD5 | 加白(信任名单) | — | v1 C2④a |
-| C2-MD6 | 拉黑(禁入名单) | — | v1 C2④a |
-| C3-MD1 | 余额调整确认(USDT / NEX) | 是 | v1 C3④a |
-| C3-MD2 | 积分调整确认 | 是 | v1 C3④a |
+| C2-MD1 | 冻结账户确认 | — | v1 C2④ |
+| C2-MD2 | 解冻账户确认 | — | v1 C2④ |
+| C2-MD3 | 退出全部设备（操作记录沿原“强制登出”） | — | v1 C2④ |
+| C2-MD4 | 用户数据只读视图 | — | v1 C2④ |
+| C2-MD5 | 加入信任名单／移出名单 | — | v1 C2④ |
+| C2-MD6 | 加入禁入名单 | — | v1 C2④ |
+| C3-MD1 | 余额调整申请确认（USDT / UVT） | 是 | v1 C3③④ |
+| C3-MD2 | 调整冲正确认（不查覆盖率） | 是 | v1 C3④ |
 | C5-MD1 | 指定会话下线确认 | 多载体 session;理由必填 + A2 审计 | v1 C5④a / 三端 SPEC-4 |
 | C5-MD2 | 人工 disable 2FA | — | v1 C5④a |
 | C5-MD3 | 密码重置确认 | — | v1 C5④a |
@@ -1187,17 +1361,19 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 9.4 D 资金与财务
 
+> **D1 现行版本**：订单直付以 [D1 订单直付费用与异常核验](specs/FEAT-PURCHASE-PAYMENT-OPERATIONS-20261031.md) 为准，旧 HDPay 直付草案已废止。USDT 共同充值规则走 A2 提案，由另一位有权限管理员批准，不属于本表的单次确认。
+
 | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
 |---|---|---|---|
 | D1-MD1 | 充值渠道启停确认 | — | v1 D1④a |
-| D1-MD2 | 主备 PSP 切换确认 | — | v1 D1④a |
-| D1-MD3 | chargeback 退款确认 | — | v1 D1④a |
+| D1-MD2 | 主备 PSP 切换确认(已退役) | — | v1 D1④a |
+| D1-MD3 | chargeback 退款确认(已退役) | — | v1 D1④a |
 | D1-MD4 | 对账差异核销确认 | — | v1 D1④a |
 | D2-MD1 | 提现放行确认 | 是 | v1 D2④a |
 | D2-MD2 | 提现拒绝确认 | — | v1 D2④a |
 | D2-MD3 | 提现延迟(extended-hold)确认 | — | v1 D2④a |
 | D2-MD4 | 提现资金冻结确认 | — | v1 D2④a |
-| D2-MD5 | 提现解冻确认 | 是 | v1 D2④a |
+| D2-MD5 | 提现解冻确认 | — | v1 D2④a |
 | D2-MD6 | 手动退款覆盖确认 | — | v1 D2④a |
 | D2-MD7 | 批量操作确认 | 是 | v1 D2④a |
 | D3-MD1 | 口径配置确认 | — | v1 D3④a |
@@ -1228,7 +1404,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | E3b-MD3 | 调单笔置换数量/目标高价限制确认 | — | FEAT-DEV02 |
 | E3b-MD4 | 调 eligibility 规则确认 | — | FEAT-DEV02 |
 | E3b-MD5 | 调 promo 节奏确认 | — | FEAT-DEV02 |
-| E4-MD1 | 取消并退款确认 | 是 | v2 E4④a |
+| E4-MD1 | 退款确认（提交审批） | 是 | v2 E4④a |
 | E5-MD1 | 强制激活设备确认 | — | v2 E5④a |
 | E5-MD2 | 强制解绑设备确认 | 是 | v2 E5④a |
 | E6-MD1 | 电脑共享算力入口开关确认 | — | v2 E6④a |
@@ -1239,6 +1415,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | E6-MD6 | 下载页双语文案编辑 | — | v2 E6④a |
 
 ### 9.6 F 分销与团队
+
+**2026-11-16 六页事实登记同步（hd-sync10）**：F2/548c8078、H4/451dd37e、M3/b22edbe3、M4/a7a1fd26、I4/bcf0125b、C6/6015e7e4 的合同及剩余边界分别写入重构事实说明。F2 现有百分号输入与确认方向兼容新旧后端；H4 只改 App 奖型投影，管理原始资产和名称不迁移。I4 公开规则方法抽出后逐句重新核实，不把新增接口当页面已经显示了真实快照；M3 群发既有提示登记同步，不改显示。各项真实后端复验和视觉待接清单见 worker hd-sync10 报告，不能以类型/构建/静态关卡替代业务验收。
 
 | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
 |---|---|---|---|
@@ -1305,6 +1483,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 9.8 H 增长与节奏
 
+2026-11-16 原操作收尾隔离：H3/H5 按原 commandKey、H4 促销按带 commandKey 的结案事件、H8 按原记录确认身份收尾；H1 列表恢复与 H7 过期解除保留后来打开的操作。共享确认的异步完成只关闭自身 request。重读继续进行，H4 未保存草稿不因 revision key 重挂丢失；新确认遇事实改变沿用已有冲突核对，不自动提交。请求、金额原文、原号恢复/重试和审批规则不变。真实页面及后端验收另行执行。
+
 | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
 |---|---|---|---|
 | H1-MD1 | dial 改动确认 | 是 | v1 H1④a |
@@ -1314,7 +1494,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | H1-MD5 | 撤销 cohort override 确认 | 是 | v1 H1④a |
 | H2-MD1 | TrialConfig 敏感参数变更确认 | — | v1 H2④a |
 | H2-MD2 | 强制取消试用确认 | — | v1 H2④a |
-| H2-MD3 | 强制触发扣款确认 | — | v1 H2④a |
+| H2-MD3 | 历史强制扣款核查（无新确认入口） | — | v1 H2④a |
 | H3-MD1 | Day-One Quest 配置变更 | 是 | v3 H3④a |
 | H3-MD2 | Weekly Quests 配置变更 | 是 | v3 H3④a |
 | H3-MD3 | Monthly Challenge 配置变更 | 是 | v3 H3④a |
@@ -1332,6 +1512,110 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | H6-MD2 | watcher tick 间隔变更 | 是 | v3 H6④a |
 
 ### 9.9 I 内容与合规 CMS
+
+**2026-11-17 I2 变量拒绝（hd-sync35，42295ac0/5f776655）**：真实业务adapter频道保存模板时拒绝基础三语变量；更新省略translations时检查实际保留译文，发布旧草稿同时检查三语及扩展译文标题/正文。既有NOVA_TEMPLATE_PLACEHOLDER_UNSUPPORTED业务422（HTTP200封装）在模板/频道状态/成功审计前返回；前端已有中文和首次/重试明确拒绝收尾。overview没有占位符或逐频道策略目录，按brief不复制业务规则，现有编辑器警告及后端拒绝沿用；不为了通过保存补translations={}，也不把本规则套到I1/I3。I2-BE-03累计已交付，已发布旧模板不自动治理。
+**内容写入与版本核对（BUG-467 至 BUG-472，2026-11-18）**：I1 文案、I4 版块草稿、I5 披露草稿、I6 词条和 I7 课程的内容保存按实际提交值核对回执的目标、版本和正文。回执只含摘要时，按已确认的目标版本读回正文。原命令处理中或写入结果未确认时，原样重试在重放期限内沿用同一操作编号。I1、I4、I5、I7 写入回执已确定后，同一操作只读回目标或查询原结果。超过 24 小时仍可查询原结果。I4、I5、I7 删除草稿须收到成功回执并读回确认该目标已消失。I4 的版块版本、状态与编辑草稿修订号在打开抽屉时取值，同一抽屉保存及重试都沿用这份快照。I5 新建使用服务端分配的版本，和预览号不同时以实际版本核对并提示。
+I6 修复只处理该问题所列的已注册词条，当前目录选择不属于该问题时用该问题的首个可修复键。修复回执核对问题和重扫统计，带已存键及版本时也核对这两个值。编辑和修复以本次英文的占位符集合核对所有非空译文，每个填写语言按服务端裁剪后的值检查 1024 个 Unicode 码点上限，超长提示指出语言。I7 新课省略已退役的完成条件和奖励事件，两项不参与必填校验。保存已有课程或为其新建版本时回送主课程自身的旧值，编辑已有版本时回送该版本自身的旧值，空值照原样回送。新课不显示这两项；已有课程或版本存有历史值时只读显示该记录的值，不能修改。编辑已有版本时版本号只读显示，新建版本时仍可填写新版本号。编辑版本时请求路径、提交值和回执须对应同一行版本。更换推荐位时回执须确认选中的课程已设为推荐。
+
+**2026-11-17 I4 下架后果按 App 新行为改写（hd-vis-tail1，App test@0306001c、H5 Lite h5-lite@f82bb4db，BUG-441）**：App 和 H5 Lite 接受 0–6 个公开版块，没公开（下架或没发布）的版块整块收起，不再让信任中心整页读不出来。页面按版块写清后果：核心团队收起信任中心的「管理团队」；UVT 介绍收起「服务保障」里托管、保修、账户安全三行和「规则与资料」里的「UVT 使用说明」入口，直接打开 UVT 说明页显示「暂无 UVT 说明」；审计与储备收起「服务保障」里的「审计与储备证明」一行，商品详情资料区显示「暂无相关资料」；财务数字、合规徽章、上市信息 App 不读，下架后 App 上没有变化。下架确认框不再按危险操作：确认按钮恢复常规色，提示改为「用户会少看到」加具体收起什么，写明 App 下次读取时才变。首屏结论分三种：六块都在公开、N 块在公开 N 块收起、六块都没公开（信任中心只显示公司资质、白皮书、平台运行数据和规则与资料）；「文字公开时被清掉」只数公开中的版块。卡片的「已下架」和未发布状态改为中性色，问号写收起什么。公开的版块当前版缺语言、没有说明或结构、超过 80 项时仍然整页读不出来（App 已读到过的继续显示旧内容），这部分说法、回滚确认和「批准后 App 信任中心仍打不开」提醒不变。错误说明 TRUST_SECTION_PUBLISHED_SNAPSHOT_INVALID 改为「有公开的信任版块当前版不完整…」。
+
+**2026-11-17 I4 部分公开（hd-sync35，f88495da）**：服务端public current与管理published-snapshot跳过未发布/缺块，允许成功空数组，已发布坏版本/重复键仍拒绝；原公开清空和sandbox保持。PC现有parser接受子集，预览仅取成功正式快照列出的未cleared字段，缺块不回填后台正文，管理卡及版本入口保留。App@4ce72560当时仍要求六键；App 和 H5 Lite 已在 0306001c／f82bb4db 兼容（BUG-441），页面说法按上一条改写。
+
+**2026-11-16 I4 实际公开状态读取（hd-sync10，后端 bcf0125b）**：新增 `fetchI4PublishedSnapshot(signal?)` 读取 `GET /api/admin/content/trust-disclosure/published-snapshot`，复用内容代理的 trust-disclosure 白名单、会话令牌和错误处理，此精确路径只允许 GET，后端仅授予 `content_i4_read`。返回 `sampledAt/available/reason/source/sourceEnvironment/runId/sections`；每节为 `sectionKey/version/available/reason/fields`，每项为 `key/cleared/reason`。可空字符串保留 null；失效快照仍返回成功管理响应及六节不可用占位，不能将 available=false 当请求失败。`cleared` 只表示非空原值被清空，reason 可以非空但 cleared=false；不包含被扣下的值，也不是语言派生后 App 的完整文字。页面（hd-vbe）：打开、点「刷新」、任一版块版本或状态变化时读取；结论下一行写核对结果（已核对 / 版本对不上 / 整页打不开 / 测试环境演示内容）和取样时间（北京时间），整块没公开的个数沿用结论句，这一行只补零散被清空的项数和版本不一致的块数。卡片标「App 实际给出」「N 项被清空」「App 给的是 vX」；详情多一行「App 实际给出」，字段旁写「App 没公开：原因」；原因码、来源、环境、运行号只在详情的技术信息里。读取失败（含旧后端没有此接口）不挡整页，结论下一行给重试，卡片退回页面推断并标「预计 App 显示」。
+
+**I4 删除草稿冲突理由（2026-11-15）**：删除确认的首次修订冲突将本次确认的理由和原 sectionKey 直接交给冲突核对，不再误取未打开的草稿编辑器保存说明。核对后仍删除原栏目/原版本，带回原理由，重新确认才以最新 revision 和新命令号提交。保存草稿继续保留完整 draftEditor 及保存说明；共用确认框无需为此重置表单。
+
+**H/I 共用确认框合并（2026-11-15）**：普通确认统一使用 `freezePendingInput`，结果未知时由原记录的理由锁住全部现有输入；原请求仍由各页持久化记录恢复，不从锁住的表单重新组装。H 域与 C6 沿已推送实现保留校验、原记录消失后关框及 `formKey` 重建时机；I 域以 `replayPendingInput` 保留原请求重试不受当前表单规则拦截的行为。`initialReason` 和 `initialInputValue` 只初始化已明确核对后的新表单；后者承接 I 域原 `initialValue`，与 H 域保存固定操作意图的 `rebaseValue` 分开，不能互换。I1 框架的新值与理由、I2 五项概率与理由、I3 删除/取消的理由、I4 栏目/目标版本及理由、I6 词条/课程/目标版本和全部原输入仍绑定原对象，只有明确冲突核对后才采用最新 CAS；结果未知不换号、不换请求。课程审批继续使用完整目标快照及权威当前票，HI 共用存储沿 H 域单实例，保留 I6 的回执和待批证据。
+
+**I 域独立通读补修（三，2026-11-15）**：PDF 冲突待核对时冻结文件、元数据和理由，恢复默认理由同样冻结，明确继续后才可再改，保证所见文件、核对文件和最终上传同源。恢复默认收到 `TRUST_DOCUMENT_ALREADY_DEFAULT` 直接复用既有默认文件说明；传输失败/坏回包按上传和恢复分开取说明，恢复写「App 可能已经改回随系统发布的默认文件。」。I6 词条发布、归档、回滚按原拒绝 scope 从核对最新值显式传对象和预期版本，不依赖后来选中的词条；没有独立草稿的首次发布按主课事实核对和重建。I1 核对事实取独立重读结果，不以旧页面数据替代。
+
+I4 申请结案仅关闭同栏目编辑器和确认，保留其他栏目的未保存输入。I3/I4/I6 的过期无单解除只允许从未取得建单回执或权威待批证据的记录；已有证据却查无票视为查询异常，记录及查询保留，不再显示可解除/没建成。I3 已提交记录即使过期仍计入已提交。I6 版本草稿删除后端不校验修订号（`04d11022 OpsI18nLearningService.deleteCourseVersion:472–481`），版本列表重读变化则关闭旧删除确认，提交前也比较打开时版本列表。奖励指数展开在读取边界限制绝对指数不超过 1000，超出按既有无效数据处理，不舍入，不把 null 当零。本轮不改页面构成、布局或新写文字，页面检查与隔离库真实写入验收仍待域验收项执行。
+
+**I 域异常恢复补修（2026-11-15）**：I6 无独立 DRAFT 的首次发布以主课作为目标，expectedRevision=null，确认、审批和原快照同源；提交前重读主课与版本，主课任何字段改变或出现独立 DRAFT 均停止提交。I3/I4/I6 查询失败不撤销已确认待审批；已有建单证据时查无此单视为查询异常，仅权威终态收敛。I6 后台结案只关闭同课程确认与编辑器，其余未保存输入保留；课程删除后冲突重读不再读版本。I2 HTTP 200/业务码≥500 保留未知命令。I4/I5 共用一次原始读取、分别校验，I5 仅约束自身字段。课程奖励读取保留精度并把科学计数展开为普通十进制文本，金额请求不变。PDF IndexedDB 与标签页命令记录的归属不一致，遗留文件清理尚未实施，须协调确定跨标签页方案。
+
+**首次冲突复核（2026-11-15 逻辑修补）**：I1 原值/版本目录/文案修订、I2 整组概率、I3 草稿/排期/处置及 CAP、I4 栏目草稿/公开快照、I6 词条/主稿/独立版本/激活快照被明确以冲突拒绝后，立即读取最新域基线，保留被拒原请求、输入和理由。旧闭包不再发送；重读失败不得继续；不得只换修订号覆盖他人改动。`useIConflictReview` 提供 latest/requested/rejectedCommand、重读及显式确认后重建接口；页面在「刚被别人改过」核对框里并排给出最新值和运营填的值；读取成功后运营点「按最新的重新填写／重新确认」，页面按最新基线重建编辑器或确认框并保留输入和理由，再由运营点原来的提交；读取失败时不能继续。结果未知继续按原请求原命令号恢复，不进入新基线流程。PDF 首次明确冲突保留原文件/元数据/理由，并提供完整最新文档（上传人、时间、SHA、来源、文件名）；抽屉里先给「这次没有上传／恢复」和「核对」入口，核对框并排列现在用的文件（来源、文件名、指纹、换上的人和时间、版本号或登记号）和运营要传的文件；只有运营点「在最新的基础上继续」后才换基准、放行提交，下一次提交用新命令号和最新指纹；重读失败时「放弃」「继续」都不可用；最新已是默认文件时恢复默认不能继续。未知上传仍只读核对、不重传。
+
+
+
+**I4 信任中心（2026-11-15 逻辑接入）**：保留六版块、完整版本列表和四个资料槽，八个写合同仍为草稿新建/编辑/删除、发布/回滚/下架提案、PDF上传/恢复默认。读概览和资料为`content_i4_read`；草稿为`content_i4_write`；发布按敏感性要求标准发布或信任中心管理，再要`platform_a2_write`或`platform_a2_proposal_create`，与 OpsAuditController.createOperation 的建单权限一致；其余业务鉴权由后端决定。白皮书PDF标准发布或信任中心管理即可，其他三槽要求信任中心管理；PDF直写，成功改变服务端当前公开文件，不走审批；不承诺已打开App瞬间更新。
+
+草稿三直写在I域唯一`nexion-admin-i-content-uncertain-commands-v1`实例保存完整原JSON/方法/path/理由/认证归属/当前版本状态/修订号和命令号；三个提案替换原I4槽存储实例，沿用`nexion-admin-i4-trust-commands-v1`，保留完整原封套、快照和时间。写前无法持久化则不发送。首次明确拒绝按4xx或2xx非零业务码（5xx/幂等未收敛/未知头/坏回包仍未知）弃号保留输入；未知冻结、跨刷新保留、同对象禁止新写。恢复只发送保存的原请求原号，重试仅`isExplicitRejection`认可的拒绝解除。超过首次24小时保留证据只查，不能重发。概览失败仍可查询/恢复，写权限变化不遮只读入口。回放或明确结论后退出原恢复、关闭旧框；成功重读当前概览前不开放新修改，不能拿历史回执当当前版本。
+
+发布/回滚/下架封套为`sourceDomain=I4`、`obj=sectionKey`、`command=I/i4_trust_section_manage`、锁`I/trust_section/sectionKey`，原九项params包含不用时的null/空串/false。建单或原号回放后再按原号读取当前票；核mine/obj/action/before/after/operationCode/rawStatus，只有权威pending才标待审批。查询失败保留receiptKnown、已权威核实的pending和查询入口；此前从未查到状态的回执不冒充pending。另一位有效管理员且具A2批准和对应业务权处理，不能自己批准。终态查询解除本地待批观察并强制重读，不因一次其他写成功擦掉观察。从未取得建单证据的过期提案严格查到`A2_PROPOSAL_NOT_FOUND`后，恢复行出现「确认解除」，确认时再查一次仍查不到才解除。I4+A2write而无A2read/proposal_create的部分自定义账号可建单却被原号查询鉴权挡住，列后端问题，不擅自扩权。
+
+PDF发前保存完整表单、原SHA、理由/号/归属；上传File完整字节先存IndexedDB（避免20MiB合法文件超sessionStorage配额），元信息和SHA存原操作记录。上传未知只读回当前SHA、大小、时间、元信息，明确提示可能已经对外公开；禁止原上传重发，`TRUST_DOCUMENT_STALE`不能证明首次没执行。恢复默认的SHA校验在去重内，可按保存的原JSON/号恢复；24小时后同样只查。当前文件相同不证明原命令结论，不自动清未知锁。成功写回执不直接当当前资料，重新读取后才开放新写；PDF理由用服务端可见字数规则，策略不可读不能新提交。已决上传清掉本次IndexedDB文件，未知原文件作为恢复证据保留。
+
+App与后端字段合同尚未统一（I4-BE-04/05）：保存/发布前拦超过80字段、App不接受的连续/结尾分隔符键名/重复键，以及会省略当前六语译文的整份字段替换；不悄悄截字段、合并译文或改历史内容。三语检查包括额外语族的基础中越英。回滚保留后端允许的不完整目标并说明整页不可用，不擅自删入口。单语升三语和新增六语仍缺编辑入口，旧画面固定键规则不由逻辑worker改。
+
+“App不显示”规则集中于`i4-trust-contract.ts`，注明`OpsTrustDisclosureService.publishedSections`在`24972948`的正常运行投影：三种不支持声明整块、迁移团队/审计整块、缺安全document1Url的审计整块、homepageProof.*、activeAiClients、受禁subhero和明确六种additional后缀。安全链接按后端内部路径/HTTPS和编码规则推断，修掉原简单前缀正则；后台overview没有真实公开结果（I4-BE-06未交付），不把推断当公开回执。字段/版本和资料必填结构在读边界校验，合法空字段列表/空时间/可空delta/资料元信息保留，财务文字原样显示，不补0或舍入。后端单节下架令公开全六节503、上传前置SHA、label写delta等I4-BE-01–06仍按现状登记。这些说法已在视觉复审改成现行行为（见下文「I 域视觉复审（二）」）。类型检查、目标构建及关卡3/6在本项执行；真实八写/异常/九项旧缺口检查按共用brief集中交域末项，清单见I4重构说明与hd-logic-i4报告。
+
+**I3 通知活动（2026-11-15 逻辑接入）**：读取 `/api/admin/content/campaigns/overview`；受众估算 POST 只读，不纳入写操作恢复。保留新建/编辑草稿、排期、已排期立即发送、取消排期、删除草稿或已取消活动、保留上限提案七个写合同（新建/编辑分别含估算共九项请求验收）。普通活动写要求 `content_i3_write`，紧急排期/立即发送/取消再要 `content_i3_critical_send`；CAP入口必须同时有 `content_i3_cap_adjust` 和 `platform_a2_write` 或 `platform_a2_proposal_create`，缺项由 `i3CapPermission()`返回原因，未获权不发请求。CAP不从PC直接PATCH，提案固定 `sourceDomain=I3`、`obj=tier`、`command={domain:I,op:i3_cap_adjust,params:{tier,cap,expectedCap}}` 和 `target=I/notification_cap/tier`；批准者为另一位有效管理员，另需A2批准权限及CAP/replay权，不能自己批准。
+
+七写发送前保存完整原JSON、对象/内容/理由/版本/认证归属及命令号；存不下不发。六个直写沿I域同一存储实例，CAP沿原专用键，不新建重复镜像。未知结果冻结原输入；原活动行、表单目录和估算时刻/人数一起保存，概览503时提示和原操作恢复仍可用。只按原请求原号重试；首次明确拒绝弃号留输入，原号重试仅共用 `isExplicitRejection` 认定的拒绝解除；网络、5xx、幂等未收敛、坏回包继续保留。24小时后证据保留、禁止重发，只读回核对。读回同值或相同状态不能解除直写未知记录。历史回执只解决原命令，结束恢复后关闭旧输入并成功重读才开放新修改；立即发送回执版本是原版本+2（claim和complete各增1）。
+
+CAP原号回放后必须再按号读当前票，不把历史pending当当前待审批；只按mine、obj、后端重建action/after和返回的operationCode核对（`24972948`已有I3 operationCode）。本人权威pending观察锁同tier新提案，终态权威查询解除；查询失败保留证据，不假报pending。过期并严格查到 `A2_PROPOSAL_NOT_FOUND` 才可经确认解除，页面在查询原结果明确查无此单、且已过期时给出「确认解除」，确认框再查一次仍查不到才解除。只有CAP+A2write而无A2read/proposal_create的自定义账号，后端允许建单但查询鉴权不覆盖；按真实拒绝保留记录，待后端处理，不扩权绕过。
+
+详情按编号显示最近一次成功读取的同一行，并显示读取时刻；删除/读不到时保留旧内容仅供核对，不给旧行写入口。后端未返回实际发送时间，不拿排期时间冒充。受众目录支持all加九语言；英文允许缺省但已有扩展译文优先。预算为可空USD记录，空值传null、显示「—」；按现有E6/G7方式在I3 JSON边界保留原十进制字面量，输入亦按合法JSON数字原样序列化，PC不舍入；实际预算列为DECIMAL(18,2)，服务和仓储把原BigDecimal交给数据库，按两位小数四舍五入保存；预算输入的现成说明补「系统按两位小数保存（四舍五入）。」。PC仍发送输入原文本，不先舍入，读回以后端存值为准；I3-BE-05精度合同待办保留。人数、版本、六态/四档、目录和必填字段在读边界校验，合法null不使整页失败。受众变更忽略旧估算异步回包。
+
+2026-11-17后端交付接续：I3-BE-01已由f0a25fa4交付本月创建cohort、真实发送/已读完整性与发送窗口，PC保留basis并接既有数槽；统计口径标签与旧值标识交视觉，详见《I3-通知统计与发送事实-20261117》。I3-BE-02/05长度与预算已交付61f08c82/d3025546，I3-BE-04审批及本人查询已交付0e301ad5/0a7ecc1e，I3-BE-03跳转目录仍开放。历史全量/存储已读/推算文字仅适用于旧后端，不得继续当新合同；真实业务复验仍集中交升级后任务。
+
+2026-11-19 · I3 奖励到账通知按钮改去钱包（BUG-518，后端 `c822ec33` / I3-BE-09）：新建通知选「奖励通知」时，未设置的按钮去向默认选「我的 · 钱包」（`/pages/me/wallet`），可改选或清空。奖励到账通知没有按钮时，左滑仍按类型去钱包。新建、编辑、排期和立即发送使用后端现行目的地。存有旧锁定计划去向的活动详情标为「已退役的链接」。旧草稿可编辑换去向后再排期。旧排期到点不会发出，运营可取消排期；这类记录留在「已排期」筛选，排期时间线和待发计数排除退役链接。概览未给出每条活动的创建时间，因此存在退役排期时，本月已排期或发送中仍显示后端的状态合计。
+
+**I2 消息推送（2026-11-15 逻辑接入）**：读取频道/模板/概率概览和后端分页真实事件。16 个动作、12 组方法/路径全部直接写、要求 `content_i2_write`，不走审批；读取/抽样要求 `content_i2_read`。新增/编辑频道、启停/删除频道、新建/保存/发布/归档/删除模板、整组概率、同步以及事件停用/恢复/立即过期/删除均保留。后端 `24972948` 各 scope 的命令去重已核实，原 JSON、方法、路径、操作者、理由和命令号发送前落在同一 I 域存储；不可持久化不发送。首次确定性拒绝丢号并保留原输入；未知原输入冻结、恢复列表跨刷新；原样重试按原字节原号、`isExplicitRejection` 判终态，24 小时到期记录保留且只查。查询只读回当前概览，不将相同状态视为原命令结论；后端原号权威查询/受控结案未接 I2，记录不会被查询自动解除。概览 503 不遮恢复；写权、读权独立检查。回放和明确拒绝终结后关旧确认/抽屉，成功重读前不能新写。
+
+频道 key 生成规则保持原请求不变：中文名通常为 `untitled-xxxxxx`；后端只要求 2–64 位字母/数字/下划线/横线，不要求从名称反推。PC 代理只对 I2 已存在的频道/模板资源路径放行合法 key 中的 sandbox/acceptance，不影响退役路径门禁。统计照现行口径：今日仅真实动态通知；近7天是近期被投递事件的累计批数；点击率为存储值均值，无每频道真实发送量。业务模板变量不替换；英语未填时 Java 通用英文兜底先传给 SQL，因此「收到空白标题正文」不成立。三处 App 去向缺页、sourceNote 内部状态、旧品牌预置内容仍按已有后端待办 I2-BE-01–07 登记。模板/事件必填读字段严格校验，可空核验/最近投递时间保留 null，不把空量当0。
+
+本次只接现有显示位置，不改布局或原话。频道抽屉明确被拒时在抽屉顶部常显原因、保留输入；结果未知时顶部写「结果未知」，主按钮改叫「按原请求重试」。过时的代理警示和「英文空白」说法已删改。类型检查、目标构建、关卡3/6在本项执行，16个入口的真实页面检查集中交域末项，详见 I2 重构说明与 hd-logic-i2 报告。
+
+**I1 页面文案对比测试（2026-11-15 逻辑接入）**：读取 `/api/admin/content/copy-ab/overview`。17个写合同全部直接执行、后端24小时去重，不走A2：位置增删、版本目录增改删、文案新增/草稿/发布/回滚/下架/删除草稿、框架保存、实验创建/启动/弃用/停止/采纳。`content_i1_write`、`content_i1_copy_create`、`content_i1_experiment_manage` 三权独立，查询为 `content_i1_read`。发送前持久化完整原 method/path/body（含版本、operator、理由）、认证归属与命令号；保存失败不发。首次确定性拒绝丢号并在原确认显示原因；结果未知冻结原输入，记录与同对象锁跨刷新保留，原样重试只发原字节/号，按 `isExplicitRejection` 判结论。超过24小时保留只查；I1无原号权威查询/受控结案，概览读回或同值不清记录。概览失败仍可从现成未知列表恢复；写权与查询权分别判断。回放成功及明确拒绝结束原恢复模式、关闭旧确认和编辑抽屉，强制重读成功后才可新写，不把回放当当前数据。
+
+2026-11-15 域内页面复验补充：I1 恢复请求收到 HTTP 200／业务 4xx 时，按业务状态交给共用明确拒绝判据；普通 401/403 与幂等未收敛不解除，上游结果未知标记优先保留原记录。
+
+实验每组可返回 `impressions/conversions`（后端 `90c26959`，纳入核对版 `24972948`），累计且按用户去重，不是订单/事件数；旧服务缺字段保留未知，真实0显示0。每组曝光各≥100才够采纳，不能以合计推测；完整正曝光计数用整数交叉乘积判断唯一最高转化率，后端仍执行最终状态、样本与版本校验。实验卡每组写「看到 / 转化」两个原始人数，转化率四舍五入相同但原始数比能分出高低时照样标「领先」，问号说明比较口径。版本目录 active/inactive 在读边界归一为 ACTIVE/INACTIVE，编辑显示和提交同值，说明允许null。内容历史 `MM-dd HH:mm` 北京时间原样显示，不自行补年份。
+
+后端现行边界（03e0bba2）：存草稿不改线上版本（I1-BE-01已交付）；同位置已有另一条已发布文案时发布、新建即发布、回滚、采纳都被拒（I1-BE-03），历史重复仍会让位置读取拒绝；普通受众/分流只用于实验；框架值只保存不影响运行；采纳前按发布的要求检查胜出版本的内容和位置（I1-BE-04），已下架又存了草稿的文案采纳后仍是下架（待后端定）；统计口径是累计/最大CVR/实时估算；App位置消费尚未接上。这些说法已在视觉复审改成现行行为（见下文「I 域视觉复审」）。本项仅类型检查、目标构建、关卡3/6，真实页面的17写与故障恢复清单交本域最后一项执行。依据：I1重构说明「逻辑接入现状/后端事实/App事实」及对应代码提交。
+
+**I 域视觉复审（2026-11-15）**：I1 编辑抽屉底栏写「存草稿不影响线上的 vN，发布后才替换」，存草稿确认框写用户继续看到线上版本（已下架的写存了也不对外）；位置卡、文案详情分开写「线上 vN」和「草稿 vM 还没发布」，删除草稿确认框写线上版本不变。样本按每组判断，写出哪一组不到 100 人；采纳确认框写胜出组的看到、转化人数，内容和位置按发布的要求检查，已下架又存了草稿的文案提示采纳后仍是下架、用户看不到（2026-11-16 hd-vi1 改，见「后台后端交付同步」I1 页面文字节）；启动、停止、回滚的影响句按后端现行行为限定。I2 删除失效的 sandbox/acceptance 警示，英语未填写成「收到通用英文提示，有译文的语言用译文」，素材判断、恢复事件、「还没有频道」等说法限定为本次读到的范围，「近 7 天投递」改名「投递批次（累计）」。I3 已查到在等批准的保留上限申请单独列在页面上方（概览读取失败时也显示，可查询原结果），保留上限卡标「等批准 → 新值」；过期且查无此单的申请可确认解除；保留上限确认框分写批准人和提交人要有的权限；排期写「到点后自动发出，排队多时会晚」，低优先级「超过 48 小时的也删」，系统通知左滑不跳，预算不填就不记；恢复中的保存和排期按钮改叫「按原请求重试」。I5 结果未确认、命令号、按原操作重试等叫法统一成结果未知、请求编号、按原请求重试、查询原结果，条款生效时间显示到分钟。
+
+**I6 多语言与课程（2026-11-15 逻辑接入，后端24972948／App44b55db8）**：I6改版已合入I域，18个业务写入口保留。词条重扫/草稿/发布/归档/回滚/完整性修复直接写；课程新建/主稿编辑/删除/新版本/版本编辑/版本删除/下架/换推荐八类直接写；三种正奖励激活及调奖四类审批。三激活在881ae4c1已走专用审批，旧“PC尚未接”说明更正。激活六params及I/learning_course_activation/id目标保持；调奖params恰courseId/rewardNex、sourceDomain=I7、I/learning_course/id目标，后端绑定原版本/revision/旧金额。两个锁类型独立，不假定一个调奖票会锁住另一种激活。调奖另要A2 write/proposal_create；激活保留双业务权委托。另一位有A2批准权的有效超级管理员批准，调奖批准者另有调奖权。推荐课下架在现有入口和提交前说明须先换推荐课。
+
+普通写在I域唯一uncertain store保存原method/path/body、理由、操作者/归属、命令号及原确认事实快照（词条/目标历史、课程/目标版本、问题、推荐、统计），四审批沿原HI store；持久化失败不发。首次拒绝按isDeterministicRejection弃号留框；原号恢复只以isExplicitRejection解除，认证/限流/幂等未收敛等保留；24h后保留只查。当前确认冻结；恢复结论后退出旧闭包、关旧确认和编辑抽屉，并成功重读前禁止新修改。POST或回放审批回执必须再按原号查询当前票，核mine/obj/operationCode/rawStatus；权威pending才标待批，查询失败保持“批没批准未查到”的数据，不拿历史pending当现状。查询与写权限独立，后端拒绝查询时保留原记录。审批队列按真实operationCode和课程obj，包括reward_adjust，接现成卡片待审批位置。
+
+2026-11-15 域内页面复验补充：重新检查文案首次被拒后保留原确认，利用既有框内错误位置显示原因；不交给共用权限错误分支关框，原请求恢复仍保留完整命令并冻结。课程调奖按后端10–50 UVT范围校验，不额外要求整数，完整十进制文本进入确认和审批请求。
+
+普通直写的独立恢复列表/查询核对位、有效期内审批未知记录的独立只读查询、过期提案明确NOT_FOUND后的解除确认尚缺视觉位置。本次准备pendingI6Commands/retryI6Command/queryI6Command及queryI6CourseProposal/releaseExpiredI6CourseProposal，不自行加面板或新对话框。直接读回当前值不能解除未知记录；过期提案仅可在运营确认后再次权威查无解除。课程已有恢复行在概览失败时仍可用，保存的原封套决定恢复事实。
+
+课程rewardNex在JSON解析前保留BigDecimal词法；显示、编辑、确认、差额、请求用十进制文本，空值不作0。后端保存6位HALF_UP；滚动7天发放统计按原精度返回，页面原文显示、不舍入。可空评分、重试、译文和版本时间合法接收；必填结构仍严格校验。后端管理读取对未配置奖励返回null，页面写「未设奖励」（课程卡、详情、版本表、确认框），与读取失败分开，不写成0；App仍把null当0，课程卡显示「0.00 UVT」，「App 里的样子」预览照 App 课程卡的两位小数显示（第三位 ≥5 进一，空为 0.00，如 12.345678 显示 12.35）；后台自己的列表、详情、确认框和审批单仍按原精度。完整性检查标题旁写「上次检查」时间（最近一次重新检查的审计时间），没有记录写「还没有检查记录」，不拿页头读取时间顶替；文案详情「这一版」写当前版本的创建和更新时间，历史版本表加「更新时间」列。
+
+词条发布要求三语齐全、变量一致、当前草稿版本及内容相符且质量通过；单词条发布不要求全站报告清零。可上线统计优先合格公开版，当前缺译数包含草稿，二者口径不同。完整性六类由重扫和修复更新，不扫描App硬编码源码。I1按i18nKey同步到此页，但saveMessagePair会复用并覆盖I6已有未发布草稿，缺跨页expectedVersion；已列协调人后端问题，PC不禁用同键维护来规避。I6-BE-01无效完成/发奖设置、课程奖励的直接修改接口后端一律拒绝（LEARNING_COURSE_REWARD_APPROVAL_REQUIRED），调奖只能提交审批。App成功拉取后才换远程文案，普通ready缓存可24h、回前台force；归档仅撤远程覆盖，有本地同键才回退。原文字中过强的时机/版本/报告更新等已在视觉复审改写（见下文「I 域视觉复审（二）」）。本项运行类型检查、生产构建及关卡3/6；真实18入口和异常恢复由I域最后一项集中验证，清单见I6重构说明与hd-logic-i6报告。
+
+**有奖励课程发布与回滚（2026-11-12 后端同步）**：目标版本奖励大于 0 的首次发布、版本发布、历史版本回滚均走专用 A2 提案；回滚的等额、降额同样需要审批。独立命令分别为 `i7_course_first_publish / i7_course_version_publish / i7_course_version_rollback`，`sourceDomain=I`、对象课程编号、锁 `I/learning_course_activation/<课程编号>`。严格携课程和目标版本、目标修订号（旧草稿无独立版本时为 null）、当前版本/修订号/状态。目标奖励为 0 时保留原直接入口。提案成功仅表示申请收录，批准前不生效；另一位具 A2 批准权限的超级管理员处理，发起人的课程写与奖励调整双权限在后端复核。发送前保存完整原请求和命令号，未知后冻结原理由和内容，只有明确拒绝才解除；超过 24 小时保留且不重发。旧确认说明和结果待确认的常显恢复入口由视觉 worker 后续接入，见 [本次同步合同](H3-H4-I6-奖励审批同步-20261112.md)。 首次发布打开确认前必须成功读取实际独立 DRAFT；确认框奖励、版本、题数、及格分与六参数及保存的目标快照引用同一份版本。点确认时重读当前课程及目标，目标版本/修订号/状态或内容改变、目标消失或读取失败均不发新申请，须重新核对。版本发布/回滚复用此核对；调奖核对当前课程版本/修订号/状态/原奖励，保留新旧金额文本。无独立目标时本页不发首次发布，不能用主课旧值替代目标。
+
+**通知取消与课程发布权限（2026-11-04，BUG-189、BUG-190）**：通知排期的取消与实际执行路由一致，普通通知须 `content_i3_write`，紧急通知还须 `content_i3_critical_send`；I3改版保留原取消位置但禁用并说明缺少紧急执行权限。无写权限只读。课程初次发布、版本草稿发布和历史版本回滚，均须同时具备 `content_i7_write` 与 `content_i7_course_reward_adjust`；单权限和只读账号不显示这些入口。读取课程仍只需真实合并路由允许的任一读权并有菜单，不额外要求词条读取权。原状态、测验、理由、版本和兑付覆盖率门不变。超级管理员沿用系统全权身份。
+
+**课程与词条历史读取隔离（BUG-298，Jason）**：仅有 `content_i7_read` 的账号可正常查看课程和课程版本，不发起需要 `content_i6_read` 的词条历史请求；词条历史只在有词条读权的多语言文案视图加载，不出现由无关读取造成的权限失败提示。
+
+**消息推送模板状态入口（2026-11-04，BUG-187）**：具有 `content_i2_write` 的账号仅可发布草稿、归档已发布模板；已归档模板不提供再次发布，草稿不提供归档。只读账号不显示这些写入口。菜单与读取权仍按实际路由要求，确认理由及系统的三语、变量和内容质量检查保持有效。
+
+**推送模板及站内信草稿（I2／I3，2026-11-18）**：英文标题和正文始终必填，中文和越南语由运营区域语言决定；读设置失败时三语必填。任一选填语言的标题、正文全空时按对应英文字段提交；只填一项则不补，仍须补齐另一项并满足后端原有占位符校验。重新打开草稿时，只有选填语言的标题和正文一起与英文相同（忽略首尾空白），才清空该组；语言改为必填后，已有非空英文副本也算已填写。写入回执以实际提交值核对；发布或排期使用已保存的草稿，不重新补齐或改写旧草稿。I3 字数校验针对补齐后的提交内容；目录跳转保留后台中文选项，写入 App 现有英文按钮文字（最多 64 字），无跳转时不提交按钮文字。直接调用 I2／I3 创建或更新草稿接口时，后端也只要求英文和运营区域语言必填，并在写入时用英文补齐整体留空的选填语言。旧草稿和历史快照保留原值。
+
+I2／I3 草稿新建和编辑只有核对回执成功或明确被拒绝时才释放操作编号；超时、无法解析或回执内容不匹配时，原样重试使用同一编号。I3 保存草稿时同步既有的英文按钮译文覆盖（有跳转按目标路由更新、无跳转清掉），不改其它译文；排期和发送不重写草稿。
+
+**披露发布核对与生效（2026-11-04，BUG-180、BUG-182）**：改版页的发布确认框按同一已存草稿对照总文和七章（BUG-473）：「改动」一行写明改了什么，只改了总文时写「只改了总文，七章没变」（改了哪几种语言写在折叠摘要里），第一次发布写「没有旧版本可对照」；「版本差异」里总文和改过的章按语言先写改后、再写现在，改过的字加下划线、删掉的字加删除线，没改的总文和章收进「无变化的内容」；勾选确认「已核对总文和七章」。「草稿和待审批」里的发布审批单可点「看改动」看同一份对照；「操作记录与审批」在证据和语言范围足够时复用这份对照，发布单的目标为核准修订号和内容哈希的冻结草稿（BUG-503，见 §5.2）。核对框预览已存内容，未提供的译文保持原样。核对内容仍来自已保存草稿，提案绑定同一 revision / contentHash，原审批门不变。草稿保存立即生效于草稿；发布提交审批，批准后封存总文和七章，不改变 App 当前版本、不触发重新确认。生效版本映射另行提交审批，批准切换后才要求用户重新确认。提现和质押已移出前置确认范围，只读说明不再纳入，不提供恢复纳入入口；受限范围为空时明确告知，历史拦截记录继续保留。
+
+**信任中心回滚对照（2026-11-04，BUG-186）**：确认框的当前版始终取所选版块真实版本，历史候选只作为目标版。切换目标不改变当前版说明及当前→目标对比的起点。回滚仍提交至「操作记录与审批」，审批执行时按真实当前版本、状态及所选目标核对后生效；确认提交不代表立即回滚。
+
+**披露映射摘要（BUG-298，Jason）**：映射更新批准后生效，只有地区生效版本实际变化才要求适用用户重新确认；保持原版本的国家范围等映射维护不承诺切版或重新确认。
+
+**I5 适用范围目录名称（2026-11-18）**：新增或改名时检查 App 可见名称。名称框下写「App 用户可见，请填英文」，含汉字时马上提示「名称不能包含中文，请改成英文」并拦截；代码框下写「创建后不能修改」。生效版本矩阵从目录读取名称。目录启停、删除、归档及矩阵维护沿用原流程。
+
+**披露草稿语言**：英文始终必填，中文和越南语是否必填取决于运营区域语言；保存沿用已有语言范围及附加语言后缀，没有已有范围时默认 `zh+vi+en`。从发布版新建时继承对应法域源版本的总文附加译文，并按章号继承各章的标题、正文附加译文；后台表单不开放这些译文的编辑。
+
+**已生效地区诊断（BUG-459，Jason）**：地区映射引用的版本，语言范围按 App 能读取的已存范围判断：`zh+vi`、`zh+vi+en`，以及 `zh+vi+en` 后接不重复的附加界面语言（id、ms、fil、ru、kk、uz）。七章须有中文、越南语标题和正文，范围含英语时还须有英语标题和正文；附加语言不另作诊断。草稿输入的 `en` 保存后为 `zh+vi+en`（编辑已有草稿时保留原有附加语言）；早期发布、只存 `en` 的版本 App 无法读取，与其余写法一样仍提示语言范围无效。
+
+**词条发布检查（2026-11-04，BUG-183）**：页头、已发布词条统计和命名空间覆盖率基于合并总览的有效发布版本（`publishedMessages`），按必填语言校验；没有有效发布版的词条不计入覆盖，草稿不会替代已发布内容。编辑目录仍用最新版本（`messages`）。发布前按已保存草稿检查必填语言非空，并核查实际提交内容的变量集合、占位文字及退役品牌。不通过时显示具体原因，发布入口置灰；合格草稿的确认框回显已执行的检查与实际变量，不显示未执行的禁词扫描通过标记。理由门和系统提交时的质量、权限及版本校验继续保留。六种新增语言输入仍按 B26 留待后续客户端工作。
+
+**提交结果（2026-11-04，BUG-181）**：页面文案对比测试的文案、版本、位置与实验操作，通知活动的新建/编辑草稿、排期、发送与取消，信任中心删除草稿，风险披露草稿及适用地区维护，以及教程的课程、版本、推荐位与奖励操作，均等待实际请求结果。提交期间锁定重复提交和关窗；明确拒绝、版本冲突或网络失败时保留窗口、业务输入和理由并显示原因；只有确认成功才关闭，随后更新列表。课程版本写入成功后关闭确认框并单独提示成功；列表由同一加载流程在打开课程、概览更新或点击重试时加载，提交回调不另发版本列表请求。列表加载中显示进度；失败在版本区显示原因及重试，不覆盖写入成功反馈，不显示暂无历史版本，也不提供基于未加载版本的写操作。只有成功返回空列表才显示暂无历史版本。重复适用地区代码被拒时说明代码已存在并引导改用编辑已有地区。奖励调整成功表示已提交审批，仍须审批后执行，不代表奖励已生效。原有权限、理由规则和后端版本校验保持有效。
 
 | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
 |---|---|---|---|
@@ -1356,18 +1640,38 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | I6-MD1 | i18n key 发布确认 | — | v4 I6④a |
 | I6-MD2 | i18n key 下架 / 回滚确认 | — | v4 I6④a |
 | I6-MD3 | marketing 多版 A/B 启停确认 | — | v4 I6④a |
-| I7-MD1 | 课程发布确认 | — | v4 I7④a |
+| I7-MD1 | 课程发布确认 | 版本发布时 | v4 I7④a |
 | I7-MD2 | featured 位设置确认 | — | v4 I7④a |
-| I7-MD3 | 完成 NEX 奖励额调整确认 | 是 | v4 I7④a |
-| I7-MD4 | 课程下架 / 回滚确认 | 是 | v4 I7④a |
+| I7-MD3 | 完成 UVT 奖励额调整确认 | 是 | v4 I7④a |
+| I7-MD4 | 课程下架 / 回滚确认 | 回滚时 | v4 I7④a |
+
+**I 域视觉复审（二）（2026-11-15）**：I1、I2、I3、I4、I6 第一次提交被后端以「别人先改过」明确拒绝后，弹出「刚被别人改过」核对框：编辑类并排列「现在」和「你填的」，确认类列「你打开时」和「现在」，只列两边不一样的项（见下文「复审（五）」）；读取最新失败时只能重新读取；「按最新的重新填写／重新确认」按最新值重建编辑器或确认框（保留输入和理由，I1 框架参数、I2 概率、I3 取消和删除也把理由带回），之后运营再点原来的提交，页面不自动重发；「稍后」收起后页面留一条提醒，核对前不能发起新修改；I3 排期重建后「已核对」要重新勾；I4 内容模板变了时不删运营填的内容和译文。I6 普通写（文案草稿、发布、归档、回滚、修复、新课、编辑、删除、下架、换推荐等）结果未知时，刷新后仍在「结果未知的文案操作」或课程区「等批准和结果未知」里逐条列出，读不到概览时也显示，每条可「查询原结果」和 24 小时内「按原请求重试」；课程审批恢复行查询和重试分成两个按钮，已建单但状态没查到的写「已提交，状态未查到」，过期且后端按原请求查不到时给「确认解除」。I6 首次发布确认框按要发布的版本写奖励、版本和题数，课程卡上的主课程奖励不同时另起一行说明；打开后目标变了不提交，提示「刚变了或读不到，这次没有提交；关掉后重新打开核对」。I6 文字改成后端和 App 的现行行为：修复一条也会重算问题报告；新建课程会自动登记课程文案键；归档和发布要等 App 成功拉到新文案包才变；调奖批准后还没发到账的奖励都按新数发；发布回滚和调奖是两张不同的审批，互不拦；调奖提交时不查覆盖率；页面文案对比测试发布时会盖掉这里没发布的草稿（编辑框里提示）。I4 恢复提示的标题分「结果未知」「已提交，状态未查到」「等另一位批准」；草稿和恢复默认的恢复按钮叫「按原请求重试」；PDF 上传结果未知用警示色，恢复行和抽屉写原文件名、大小和指纹，并说明上传为什么不能重发、去哪核对；明确被拒（资料刚被换过）不再说「可能已经成功」；「对所有用户立即生效」改为「成功后立即公开，App 下次读取时换上」，「没上传过／没有上传记录」不再用于恢复默认之后；结论改为「按后台的版本看，App 信任中心整页打不开」「N 个的文字公开时被清掉」；待审批锁写全「批准、驳回、撤回或过期」；三语要求写成「提交发布前要齐，草稿可以先存」。
+
+**I 域视觉复审（三）（2026-11-15）**：I4 合规 PDF 的「别人先换过」接上核对框（见上文首次冲突复核），被拒和结果未知分两种说法：被拒写「这次没有上传／恢复」，结果未知写「文件可能已经对外公开」并给读回的文件、指纹、上传时间和人。I3、I6 把「等另一位批准」和「已提交，状态未查到」分开：I3 恢复提示标题按两种分别计数，调整按钮的锁定原因分别写；I6 课程申请行和课程卡的待批准标签统一叫「等另一位批准」，申请行写课程名而不是课程编号，新写被拦时「已提交，状态未查到」单独写一句。I4 页面上的「字段」按决定表「I4-字段叫法」改掉：编辑器每项叫「名称」「内容」，数量写「N 项内容」，「内容模板」「中越英三语不完整」，非要名词时用「内容项」；「财务字段」叫「财务指标」。I6 课程版本表去掉「修订号」一列，收进表下折叠的「技术信息」（运营选发布或回滚看版本、状态、标题、奖励和更新时间，用不到修订号）。I3、I6 草稿冲突核对框按正文列出不一样的那一段，并写明保存会用运营填的整份内容替换现在的草稿；I3 核对框用通知名称而不是编号，排期时间写成「YYYY-MM-DD HH:mm」，立即发送、取消、删除列出打开时的状态。I4 委托提案账号的「提交会被后端拒绝」提示删除（后端已接受 platform_a2_proposal_create）。I3「点了去哪」对系统通知写「系统通知左滑不跳」，折叠「点了和左滑去哪」里的「后端目录」改叫「系统登记的说明」。常驻文字和确认框去掉「后端」「接口」「缓存」「去重」等说法，冲突类错误提示统一为「刚被别人改过，请核对后再操作」。提交 0d99490e、48795a6e、6edc86a0、8168a3f5、85bb6e56、a4291f28、78f6d333。
+
+**I 域验收补修（四）（2026-11-15）**：I2 侧栏「Nova 推送运营」来自有效菜单节点 menuName，后端 nx_admin_menu.menu_name_zh（为空时取 menu_name；MENU_CONTENT_I2，AdminRoleRelationMapper.java:98/129），脚本 sync_admin_menu_to_pc_left_nav.sql:67；PC 静态导航已为「消息推送」，不做覆盖，由后端统一菜单数据。I6 版本草稿删除确认因列表变化关闭时，现有 toast 提示「这份草稿刚被别人改过，请重新打开再删。」；确认前的版本检查同步提示，不发送删除。I4 PDF 恢复默认被 TRUST_DOCUMENT_ALREADY_DEFAULT 拒绝时立即废弃旧事实并重读；成功同步抽屉和卡片，当前默认不允许重复恢复；失败关闭过期编辑器并进入既有资料读取错误态。逐入口核对补齐 I1 投放/受众/分流/说明、目录排序及框架初始值/理由，I3 取消/删除理由，I4 删除/发布的草稿说明与结构，I6 草稿/激活的课程设置和每题三语题干/选项/正确答案；零奖励直接发布/回滚沿用同一核对与重建。I4 栏目草稿对比包括版本号、说明、结构及各内容项的键存在性、名称和值（含全部语言），增删即使值为空也可核对，不截断差异。I2 概率首次冲突核对后重建保留五项概率与原理由，核对动作本身不发送写请求。I3 草稿核对列出保存体全部业务值（含三语标题、跳转、类型、优先级、四项受众、预算），定时在独立排期入口核对；本入口无独立频控参数。预算保留后端读回文本与输入原文各自精度，空值不当零。
+
+**I 域视觉复审（四）（2026-11-15）**：I4 PDF 核对期间文件、各项资料和理由锁住时，抽屉提示写「这份资料刚被别人换过；核对完之前，下面的内容都改不了。」；恢复默认结果未知（传输失败、坏回包、成功回包对不上）写「App 可能已经改回随系统发布的默认文件。」，上传仍写文件可能已经对外公开。I4 结果未知的各行共用一套列；I4、I6 过期查无此单的查询提示改为「没查到这张审批单。」，说明留在行内。I3 已拿到回执的过期保留上限申请标「已提交，状态未查到」。I6 发布、归档、回滚和课程审批冲突核对的首句写「这次没发布／没归档／没回滚／没提交审批」，草稿类仍写「这次没保存，你填的都还在」；课程恢复行、等批准行和解除框的课程名只写一次。I1 草稿冲突核对写明保存会用填的整份内容替换现在的草稿，页面读不到最新时结论写「文案暂时不能改，先重新加载」。提交 90bac73b、fa8d9021、79d2a207、2fffce70、66a4eff2、2cc27cd8、201d5a35。
+
+**I 域视觉复审（五）（2026-11-15）**：「刚被别人改过」核对框只列两边不一样的项，开头一句写「N 项不一样，另有 M 项相同没列出」；项多时按内容分组（I1 版本／三语内容／投放／受众，I3 基本信息／发给谁／三语内容，I4 版块／中文·越南语·英语内容，I6 三语内容／课程设置／奖励和测验规则／第 N 题），表在框里自己滚，表头和结论一直可见；「现在」一列标「别人改后」并带底色；超过三行的长文本先露三行，点「展开全文」看全；值用运营的说法（按钮去向、语言、天数、百分比、分类、时长、选项编号，不写路径和代码）；一边没有的内容项或整题标「没有这一项／没有这一题」，和空值「—」分开；金额两边带币种，I3 预算照后端读回显示（存两位小数）。确认类冲突的首句按动作写「这次没删除／没回滚／没下架／没取消排期／没发送／没排期／没提交审批」；I1 框架参数、I3 取消和删除写「…会带回确认框」，I2 概率写「理由会带进确认框；核对后再点保存概率」。I1 发布、回滚、采纳的确认框在「同时更新」下加一行「会盖掉：这个词条还没发布的草稿」（发布把同名词条最新的草稿直接改成这版并发布，I6-BE-03）；I1 编辑框在页面读不到最新时给「重新加载」，填的内容不丢。I1、I2、I3、I4、I6（App 文案、学习课程两个页签）的结果未知／待审批列表超过三条时默认露三条，「显示全部 N 条」看其余，每条的查询和重试入口不变；I3 新建／编辑草稿的结果未知行不再显示优先级代码和受众原文，删除已取消的通知叫「删除已取消的通知」；I6 课程结果未知行写课程名。I4 恢复默认被告知已经是默认文件、重读成功后，抽屉只留一条中性的「已经是默认文件」说明。请求和判断不变。
+
+**I 域原申请收尾隔离（2026-11-15，hd-patch-i5）**：I6 课程后台查到终态、手工查询与原请求重试按原 commandKey 关联确认，且只关闭该确认打开时的编辑器；同课/别课后来打开的新确认、抽屉及输入保留。课程重读继续执行，不因数据引用变化卸载新表单；新确认事实改变时提交前复用既有核对提示并留框。I1/I2/I3 原请求恢复和 I4 栏目终态收尾同样按 commandKey 区分新操作；共享确认的关闭及异步成功回调按 request 身份匹配。保留成功重读屏障、原请求/理由/金额原文及审批权限，不改界面构成或句子。真实双账号复验另由域验收执行。
+
+**I 域恢复列表收起与 I2 恢复行（2026-11-16，hd-vfix-i7）**：I1、I2、I6 的恢复列表和 I3、I4 一样默认露三条。I2 结果未知行写提交时间（列表下标一次时区）、频道名字（不写频道键），新增／编辑频道写「扫描间隔 N 分钟 · 个人间隔 N 分钟」。I6 确认框打开后页面重读过、提交被挡下时提示「页面刚重新读取过，这次没有提交；关掉后重新打开核对。」，确认框和输入保留。请求、恢复和收尾判断不变。
+
+**I4 审批结论提示与 I2 冻结确认按钮（2026-11-16，hd-vfix-i8）**：I4 栏目申请按原请求查到审批单终态（或提交时就拿到终态）时，提示写「审批单已批准／已驳回／已撤回／已过期」，和 I3 同一套叫法；原来借用内容版本的状态译名，四种结论都显示成「原申请未知状态」。I2 用普通确认框的操作（删除频道、删除模板、保存模板草稿、保存概率、同步事件、停用／恢复／过期／删除事件）结果未知后，留在框里的主按钮从原动作名改为「按原请求重试」，和恢复列表、频道抽屉一致。查询、重试和收尾判断不变。
 
 ### 9.9a 客服后台(/service/* · 域 M;原 /content/support 已退役)
 
 - M1 的统计、列表、绩效及完整性来自同一服务端快照；筛选不可用应明确提示，未知数量不填 0。主管只看当前负责组并在该范围正式转绑，总管理员看全部获准客服域；当前专属客服可暂停或恢复主动维护；停用不解除归属、私聊或求助。
-- M3 只由当前专属客服发送服务或维护消息；主管可审阅，不能代发。维护执行与服务回复分开计数；已读不清待回复，新到消息不被旧 `replyTargets` 清除。图片仅接受服务端允许的 PNG/JPEG、大小和像素范围，撤权后旧字节与本地预览不可继续访问。
+- M3 当前专属客服可发送服务或维护消息；负责组主管与总管理员可在当前获准范围内以本人身份发送服务回复，不冒名代发、不记维护，须遵守同客接待互斥，详见 M 合同第 6 节。维护执行与服务回复分开计数；已读不清待回复，新到消息不被旧 `replyTargets` 清除。图片仅接受服务端允许的 PNG/JPEG、大小和像素范围，撤权后旧字节与本地预览不可继续访问。
 - M2 工单支持分页、搜索、状态、负责人及优先级操作；私聊来源正文受当前专属客服/负责组主管权限约束，受限者仍能协作工单指派、状态和内部备注。FAQ、分类和 SLA 按既有功能契约管理。
 - M1/M6 数据与验收见 [M 专属客服中心功能契约](M-专属客服中心功能契约.md)；公开榜与私有对象授权分离，当前资产、期间事件、邀请聚合和原单有效额各保持口径。
 - M5 新配置继承默认无限，可显式有限；既有配置及绑定不追溯，未知配置不自动兜底。沉睡 D、维护 M、活跃窗口 W 独立可空；写规则须有理由、版本和原命令号，冲突须读回比较。所有高敏写入以服务端结果及刷新后状态为准；结果未知时保留原输入、范围和 Key，查询或同键重试。
+
+- M3 处置确认框逐项写标记已解决、归档、批量归档和撤销归档的真实后果；客户再发消息会回到收件箱。403 提示保留页顶直至关闭。无权快捷入口禁用并写原因和谁办，账户操作只列能办的；快捷回复区分没有与没匹配，超时策略错误跟字段。
+- 客户资料按入口展开对应组，读失败的组自动展开，风险和设备口径与右栏一致；已入选关键数字的团队规模、设备数不重复。群发用共用组件，名单写「已确定」，等级、币种可手输、标签填完整名称；下拉仅作当前页建议。结果写姓名和编号，失败红、待确认橙黄，一层滚动，翻页与批次操作分开，日期按业务时区。
+- 用户详情保留旧待确认记录，缺理由不能重试但可核对或解除；客服入口只给核对及到用户详情，重试和支付解除按当前独立权限判断。登录安全信息为空算读失败，服务端会话列表失败仍无法区分。设备回收、置换不动资金、不发新设备、不发通知，置换单只是已完成记录；有任务在跑拒绝。小窗图片到专属会话查看，商品不写旧编号。
 
 ### 9.10 J 紧急与合规控制
 
@@ -1383,9 +1687,9 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | J2-MD3 | per-endpoint geo_block 派生配置确认 | — | v4 J2④a |
 | J2-MD4 | 边缘 IP 判定源配置确认 | — | v4 J2④a |
 | J3-MD1 | 篡改告警配置确认 | — | v4 J3④a |
-| J4-MD1 | 应急剧本编辑确认 | — | v4 J4④a |
+| J4-MD1 | 应急预案新增/编辑核对及理由确认 | — | v4 J4④a |
 | J4-MD2 | 剧本演练确认 | — | v4 J4④a |
-| J4-MD3 | 应急剧本执行确认 | 是 | v4 J4④a |
+| J4-MD3 | 正式执行申请核对（依据、说明、逐步确认） | 是 | v4 J4④a |
 
 ### 9.11 K 风控与反作弊
 
@@ -1426,3 +1730,24 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 - **冲突裁决**:一般冲突以原 PRD 正文为准；编号 `specs/FEAT-*.md` 是对应功能的后发实现裁定，优先于旧 PRD/CGM 的同功能口径；PM 已裁定项(✅ 标注)以裁定为准。
 - **维护**:原 PRD 改动后,对应契约项同步更新本文件;新增模块/接口/参数时本文件对应章追加 + 更新第 1 章索引。
 - **A.x 收口台账**:v1 附录 A 是全库已成形的收口登记(A.1 前端矛盾、A.2 跨批次待补),与本文件第 7/8 章互为补充。
+
+
+## 2026-10-26 D1 USDT 专属地址自动供给
+
+- 每个充值用户拥有独立地址，首次打开 App/H5 链上充值页时从核验通过的备用池唯一分配，后续永久复用。注册不预建地址，不与其他用户共用。
+- D1 独立配置自动补充开关、备用目标（默认 1,000）、触发阈值（默认 300）、每批数量（默认 50）、建址并发上限（默认 2）。目标范围 10～100,000，阈值至少 1 且低于目标，每批 1～100，并发 1～10 且不超过每批数量。保存需渠道管理权限、10～255 字理由、必达审计和版本 CAS；只读管理员可查看。
+- 后台每 10 秒检查，低于阈值后持续分批补至目标；已分配地址不计备用，排队/创建/核验中数量计入在途，数据库协调跨实例建址并发，不在用户请求内创建。App/H5 准备中每 5～10 秒、就绪后每 30～45 秒随机错峰刷新，失败指数退避加随机延迟；隐藏停止，恢复立即读取，同页不重叠请求。
+- D1 地址池展示可分配、已分配、核验中、待核查、总量及自动补充目标。取消 60 个地址总量限制；接口 limit=0 表示无总量上限，不显示“总计 x/0”。手动补充仍可用于维护，但不得绕过未决建址和风险暂停。
+- 建址先持久化 QUEUED，再按并发上限领取为 PROVISIONING 调用供应商，核验通过才进入备用池。明确额度等拒绝冷却 15 分钟，明确限流冷却 1 分钟；PC 展示原因，现有地址正常通道下仍可使用。结果不明或超时中断进入待核查并暂停风险通道，核实后恢复，禁止盲目重建。既有地址及用户余额保留。所有来源/余额/链上确认及到账幂等核验继续生效。
+
+2026-10-26 TEST 验收：库存目标 1,000 / 低水位 300 / 批量 50 / 并发 2 经 PC 保存并刷新回读，服务端版本为 1。后端 360、PC 243、App/H5 290 已发布；新账号及已有账号各完成 100 请求、16 并发验证，每个账号均只返回自己的同一地址。真机二维码首次查看及重进与接口一致，余额及既有账本条数不变，50 个实际供应商地址无重复。自动建址实际新增并核验 46 个备用，测试首次分配后剩 46 个；供应商额度不足时显示原因并冷却，风险闸保持正常。未签为“已补满 1,000”；供应商扩额恢复、大量不同账号同时首次分配和真实链上充值不属于本次已通过证据。
+- 扫描按主键分页，每批最多 60 个地址，整轮成功才推进区块游标；这是单批性能边界，不是用户数量上限。
+### 2026-11-17 I3、I4、I6原命令接续（hd-sync24a）
+
+I3：0a7ecc1e补齐CAP调整权加A2发起权按原键读本人I/i3_cap_adjust票，PC现有查询不要求A2read，无需加字段或放宽；不扩大到其它I票/他人票/队列。
+
+I4：a8f8d47f/a9437c76的稳定ADMIN和独立指纹域支持精确成功PDF回放；legacy人工核查409与actor403均不证明原命令未执行，恢复重试保留原记录，上传仍不提供重发。98a1aad7保存草稿会从公开版/当前草稿保留遗漏的合法附加语种（同family有en、草稿优先），保存前仅拦后端仍会丢的情形，成功回包允许合法追加，发布前防丢检查保持。c8a1569f接原号/content_i4_read，草稿和PDF现有查询优先原回执，辅助失败仍观察；仅精确I4_TRUST_DOCUMENT的raw成功可结案（全部业务拒绝throw），版块六scope只在受控确定结论后结案。公开三动作原A2查票保持。
+
+I6：63432b1e接十一I7_COURSE直写scope，实际读权content_i7_read，不按I6类名混用content_i6_read。新原记录存commandOrigin，旧记录由服务端原来源证明；queryI6Command先查原号，所有课程callback可正常fail，raw SUCCEEDED仍保留，受控终态才finishRecovery并独立重读。消息/课程版本读取及课程奖励A2保持；没有origin的旧后端继续现状观察、不报成成功。
+
+上述调查资格、证据/回滚可用范围、待视觉的旧文字/受控表单，以及真实后端复验步骤见《后台后端交付同步》第十六批及hd-sync24a报告。本轮没有新增界面或真实写入验收。

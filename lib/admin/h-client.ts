@@ -1,8 +1,15 @@
+import { h3QuestConfigWriteRefusal } from "./h3-contract";
+import { h5RuleWriteRefusal } from "./h5-contract";
+import { parseH4StatisticsJson, readH4Statistics } from "./h4-statistics";
+import { h4CommandRequest, markH4Read } from "./h4-mutations";
+import { validEventCopyReadiness, type EventCopyReadiness } from "./event-rule-form";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateH1DialValue } from "@/lib/admin/h1-dial-validation";
+import { depositPolicyUnits } from "@/lib/admin/cregis-deposit-policy";
+import { validateH7VoucherMoneyPrecision } from "./h7-voucher-money";
 
 interface ApiResult<T> {
   code: number;
@@ -12,13 +19,24 @@ interface ApiResult<T> {
 
 export type H1RhythmParamKey = "totalMonths" | "currentMonth" | "phaseProgressPct";
 
-export interface H1RhythmOverview {
+export interface H1RhythmState {
+  available: boolean;
+  missing: string[];
+  invalid: { key: string; reason: string }[];
+  zero: string[];
   totalMonths: number;
   currentMonth: number;
-  currentPhase: string;
   phaseProgressPct: number;
+}
+
+export interface H1RhythmOverview {
+  totalMonths: number | null;
+  currentMonth: number | null;
+  currentPhase: string;
+  phaseProgressPct: number | null;
   options: number[];
   sources: string[];
+  rhythmState?: H1RhythmState;
   /**
    * 服务端权威排程事实。
    *
@@ -81,34 +99,40 @@ function numberValue(value: unknown) {
   return Number.isFinite(n) ? n : null;
 }
 
-function requiredNumber(value: unknown, field: string) {
-  const n = numberValue(value);
-  if (n == null) throw new Error(`H1_RESPONSE_INVALID:${field}`);
-  return n;
-}
-
-function clampInt(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, Math.round(value)));
-}
-
 function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview {
   if (!raw) throw new Error("H1_RESPONSE_INVALID:rhythm");
   const rawOptions = Array.isArray(raw?.options) ? raw.options : [];
   const options = rawOptions.map((item) => Number(item)).filter((item) => Number.isFinite(item));
-  const totalMonths = Math.max(1, Math.round(requiredNumber(raw.totalMonths, "totalMonths")));
-  const rawCurrentMonth = requiredNumber(raw.currentMonth, "currentMonth");
-  const rawPhaseProgress = requiredNumber(raw.phaseProgressPct, "phaseProgressPct");
+  const readNumber = (value: unknown) => value == null || value === "" ? null : numberValue(value);
+  const totalMonths = readNumber(raw.totalMonths);
+  const rawCurrentMonth = readNumber(raw.currentMonth);
+  const rawPhaseProgress = readNumber(raw.phaseProgressPct);
   const currentPhase = typeof raw.currentPhase === "string" && raw.currentPhase.trim()
     ? raw.currentPhase.trim()
-    : null;
-  if (!currentPhase) throw new Error("H1_RESPONSE_INVALID:currentPhase");
+    : "";
+  let rhythmState: H1RhythmState | undefined;
+  if (raw.rhythmState !== undefined) {
+    const value = raw.rhythmState;
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("H1_RESPONSE_INVALID:rhythmState");
+    const state = value as Record<string, unknown>;
+    if (typeof state.available !== "boolean"
+      || !Array.isArray(state.missing) || !state.missing.every(key => typeof key === "string" && key.trim())
+      || !Array.isArray(state.zero) || !state.zero.every(key => typeof key === "string" && key.trim())
+      || !Array.isArray(state.invalid) || !state.invalid.every(issue => issue && typeof issue === "object"
+        && typeof issue.key === "string" && issue.key.trim() && typeof issue.reason === "string" && issue.reason.trim())
+      || ![state.totalMonths, state.currentMonth, state.phaseProgressPct].every(Number.isSafeInteger)) {
+      throw new Error("H1_RESPONSE_INVALID:rhythmState");
+    }
+    rhythmState = state as unknown as H1RhythmState;
+  }
   return {
     totalMonths,
-    currentMonth: clampInt(rawCurrentMonth, 1, totalMonths),
+    currentMonth: rawCurrentMonth,
     currentPhase,
-    phaseProgressPct: rawPhaseProgress == null ? 0 : clampInt(rawPhaseProgress, 0, 100),
+    phaseProgressPct: rawPhaseProgress,
     options,
     sources: Array.isArray(raw?.sources) ? raw.sources.map(String) : [],
+    rhythmState,
     schedule: normalizeSchedule(raw.schedule),
   };
 }
@@ -139,10 +163,10 @@ function normalizeSchedule(raw: unknown): H1Schedule | null {
  * 时间按运营本地时区展示,避免把 UTC 时刻当成运营所在时区。
  */
 export function describeH1Schedule(schedule: H1Schedule | null | undefined): string {
-  if (!schedule) return "排程状态不可用";
-  if (!schedule.configured) return "排程未设置";
-  if (!schedule.automatic) return "排程配置已保存 · 服务端未启用自动推进";
-  const parts = [`排程 ${schedule.expression ?? "已配置"}`];
+  if (!schedule) return "自动切换状态未知";
+  if (!schedule.configured) return "未设置自动切换";
+  if (!schedule.automatic) return "未开启自动切换";
+  const parts = [`自动切换 ${schedule.expression ?? "已开启"}`];
   if (schedule.timezone) parts.push(schedule.timezone);
   if (schedule.nextAdvanceAt) {
     const next = new Date(schedule.nextAdvanceAt);
@@ -151,7 +175,7 @@ export function describeH1Schedule(schedule: H1Schedule | null | undefined): str
   return parts.join(" · ");
 }
 
-export async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPrefix?: string): Promise<T> {
+export async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPrefix?: string, strictOutcome = false): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -167,13 +191,16 @@ export async function growthRequest<T>(path: string, init?: RequestInit, idempot
   });
   // 与兄弟 client(e1/f1/a4…)同款:2xx 但响应体不是 JSON(网关 HTML 错误页)时
   // 原写法会抛英文 SyntaxError,绕过下面这条已备中文的归因分支。
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
-  if (!response.ok || !result || result.code !== 0) {
-    const error = new Error(formatAdminApiError(result?.message, `GROWTH_REQUEST_FAILED_${response.status}`));
+  const result = (await (path === "/quest-events/tasks"
+    ? response.text().then(raw => JSON.parse(raw.replace(/("(?:weeklyNex|amount)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')))
+    : (path === "/quest-events/events-overview" || path === "/quest-events/wheel-daily-usage") ? response.text().then(parseH4StatisticsJson) : response.json()).catch(() => null)) as ApiResult<T> | null;
+  const unknownOutcome = strictOutcome && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown";
+  if (!response.ok || !result || result.code !== 0 || unknownOutcome) {
+    const error = new Error(formatAdminApiError(result?.message, `GROWTH_REQUEST_FAILED_${response.status}`, "write", result?.data));
     // 带上 HTTP 状态码 + 回执是否读得出:H8 的稳定命令号靠它们区分「后端明确拒绝(4xx)」与
     // 「结果未知(5xx / 回执读不出)」。growth proxy 后端不可达时返回的是**带 JSON body 的 503**,
     // 只认解析异常会把它误判成确定性失败。网络层异常已由 guardedFetch 接管(抛出的 Error 没有 status)。
-    Object.assign(error, { status: response.status, apiCode: result?.code, bodyUnreadable: result === null });
+    Object.assign(error, { status: response.status, reasonCode: result?.message, apiCode: result?.code, apiMessage: result?.message, bodyUnreadable: result === null, unknownOutcome });
     throw error;
   }
   return result.data as T;
@@ -199,9 +226,60 @@ export async function fetchH1Rhythm(): Promise<H1RhythmOverview> {
   return normalizeRhythm(await growthRequest<Record<string, unknown>>("/rhythm"));
 }
 
-export async function fetchH1Phases(): Promise<Record<string, any>> {
-  const data = await growthRequest<Record<string, any>>("/phases");
-  return { ...data, rhythm: normalizeRhythm(data.rhythm) };
+export interface H1Phases {
+  rhythm: H1RhythmOverview;
+  monthlyDials: { month: number; phase: string; current?: boolean; dials: Record<string, string | number | null> }[];
+  controls: { key: string; label: string; description?: string; value: string }[];
+  overrides: { id: string; cohort: string; description?: string; disabled: boolean }[];
+  attribution: { phase: string; name: string; driver: string; paramKey: string; value: string; owner: string }[];
+  coverage: { coverageRatio: number | string | null; redlinePct: number | string | null; reliable: boolean; redlineBreached: boolean };
+}
+
+function normalizeH1Phases(data: Record<string, unknown>): H1Phases {
+  const record = (value: unknown, name: string): Record<string, unknown> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`H1_RESPONSE_INVALID:${name}`);
+    return value as Record<string, unknown>;
+  };
+  const rows = (name: string) => {
+    if (!Array.isArray(data[name])) throw new Error(`H1_RESPONSE_INVALID:${name}`);
+    return data[name].map((row: unknown) => record(row, name));
+  };
+  const text = (value: unknown) => value == null ? "" : String(value);
+  const decimal = (value: unknown): string | number | null => {
+    if (value == null || value === "") return null;
+    if (typeof value !== "string" && typeof value !== "number") throw new Error("H1_RESPONSE_INVALID:dial");
+    return value;
+  };
+  const coverage = record(data.coverage, "coverage");
+  return {
+    rhythm: normalizeRhythm(record(data.rhythm, "rhythm")),
+    monthlyDials: rows("monthlyDials").map((row) => ({ month: Number(row.month), phase: text(row.phase), current: row.current === true,
+      dials: Object.fromEntries(Object.entries(record(row.dials, "dials")).map(([key, value]) => [key, decimal(value)])) })),
+    controls: rows("controls").map((row) => ({ key: text(row.key), label: text(row.label), description: text(row.description), value: text(row.value) })),
+    overrides: rows("overrides").map((row) => ({ id: text(row.id), cohort: text(row.cohort), description: text(row.description), disabled: row.disabled === true })),
+    attribution: rows("attribution").map((row) => ({ phase: text(row.phase), name: text(row.name), driver: text(row.driver), paramKey: text(row.paramKey), value: text(row.value), owner: text(row.owner) })),
+    coverage: { coverageRatio: decimal(coverage.coverageRatio), redlinePct: decimal(coverage.redlinePct), reliable: coverage.reliable === true, redlineBreached: coverage.redlineBreached !== false },
+  };
+}
+
+export async function fetchH1Phases(): Promise<H1Phases> {
+  return normalizeH1Phases(await growthRequest<Record<string, unknown>>("/phases"));
+}
+
+/** Replays the persisted body and key; never reads the current operator when recovering. */
+export async function sendH1StoredPatch(path: string, body: string, commandKey: string): Promise<Partial<H1Phases> & { rhythm: H1RhythmOverview }> {
+  const data = await growthRequest<Record<string, unknown>>(path, { method: "PATCH", body, headers: { "Idempotency-Key": commandKey } });
+  if (path.startsWith("/rhythm/")) {
+    // Read projections may be unavailable; a write needs a complete, parseable receipt.
+    if (!data || ![data.totalMonths, data.currentMonth, data.phaseProgressPct].every((value) => value !== null && value !== "" && Number.isInteger(Number(value)))
+      || typeof data.currentPhase !== "string" || !Array.isArray(data.options)) throw new Error("H1_RESPONSE_INVALID:rhythmReceipt");
+    return { rhythm: normalizeRhythm(data) };
+  }
+  const next = normalizeH1Phases(data);
+  const month = Number(path.match(/\/months\/(\d+)\//)?.[1]);
+  const key = decodeURIComponent(path.split("/").at(-1)!);
+  if (!next.monthlyDials.some((row) => row.month === month && row.dials[key] != null)) throw new Error("H1_RESPONSE_INVALID:monthDialReceipt");
+  return next;
 }
 
 export async function updateH1RhythmParam(
@@ -209,17 +287,19 @@ export async function updateH1RhythmParam(
   value: string | number,
   reason: string,
   operator = currentAdminOperator(),
+  commandKey?: string,
 ): Promise<H1RhythmOverview> {
   return normalizeRhythm(
     await growthRequest<Record<string, unknown>>(
       `/rhythm/${key}`,
-      { method: "PATCH", body: commandBody(key, value, reason, operator) },
+      { method: "PATCH", body: commandBody(key, value, reason, operator), ...(commandKey ? { headers: { "Idempotency-Key": commandKey } } : {}) },
       "h1-rhythm",
     ),
   );
 }
 
-export async function updateH1MonthDial(month: number, key: string, value: string | number, reason: string) {
+export async function updateH1MonthDial(month: number, key: string, value: string | number, reason: string, commandKey?: string, operator = currentAdminOperator()) {
+  if (commandKey) return sendH1StoredPatch(`/phases/months/${month}/dials/${encodeURIComponent(key)}`, commandBody(key, value, reason, operator), commandKey);
   validateH1DialValue(key, value);
   return fetchH1PhaseMutation(`/phases/months/${month}/dials/${encodeURIComponent(key)}`, key, value, reason, "h1-month-dial");
 }
@@ -245,11 +325,20 @@ export async function fetchH2Trials(pageNum = 1, pageSize = 20): Promise<Record<
   return growthRequest<Record<string, any>>(`/trials?pageNum=${pageNum}&pageSize=${pageSize}`);
 }
 
-export async function updateH2TrialParam(key: string, value: string, reason: string) {
+export function createH2CommandKey(prefix: "h2-param") {
+  return nextIdempotencyKey(prefix);
+}
+
+/** 试用参数的结果未知：断网、回执读不出、5xx，或幂等处理中。4xx 是后端明确拒绝。口径同 H8。 */
+export function isH2OutcomeUnknown(error: unknown) {
+  const { status, apiCode, apiMessage, bodyUnreadable } = error as Error & { status?: number; apiCode?: number; apiMessage?: string; bodyUnreadable?: boolean };
+  return typeof status !== "number" || !!bodyUnreadable || isIdempotencyOutcomeOpen(apiMessage) || outcomeStaysUnknown(status, apiCode);
+}
+
+export async function updateH2TrialParam(key: string, value: string, reason: string, commandKey: string) {
   return growthRequest<Record<string, any>>(
     `/trials/params/${encodeURIComponent(key)}`,
-    { method: "PATCH", body: commandBody(key, value, reason) },
-    "h2-param",
+    { method: "PATCH", body: commandBody(key, value, reason), headers: { "Idempotency-Key": commandKey } },
   );
 }
 
@@ -269,20 +358,81 @@ export async function chargeH2TrialSession(sessionId: string, reason: string) {
   );
 }
 
-export async function killH2AutoPush(reason: string) {
-  return growthRequest<Record<string, any>>(
-    "/trials/auto-push/kill",
-    { method: "POST", body: commandBody("autoPushKilled", "true", reason) },
-    "h2-auto-push",
-  );
+export type H4AppRewardPresentation = {
+  appUsesAuthoredRewardName?: boolean;
+  appRewardNames?: Record<"en" | "zh" | "vi", string>;
+};
+
+export function validH4AppRewardPresentation({ appUsesAuthoredRewardName, appRewardNames }: H4AppRewardPresentation) {
+  return (appUsesAuthoredRewardName === undefined || typeof appUsesAuthoredRewardName === "boolean")
+    && (appRewardNames === undefined || !!appRewardNames
+      && typeof appRewardNames.en === "string" && typeof appRewardNames.zh === "string" && typeof appRewardNames.vi === "string");
+}
+
+export type H4EventCapabilities = H4AppRewardPresentation & {
+  supported?: boolean | null;
+  rewardCopyOnly?: boolean | null;
+  hasRule?: boolean;
+  copyReadiness?: EventCopyReadiness;
+};
+
+export function validateH4OverviewEvents(events: unknown) {
+  if (!Array.isArray(events)) throw new Error("活动规则读取失败，请刷新后重试。");
+    for (const event of events) {
+      if (!event || typeof event !== "object" || Array.isArray(event)
+        || [event.supported, event.rewardCopyOnly].some(value => value !== undefined && value !== null && typeof value !== "boolean")
+        || event.hasRule !== undefined && typeof event.hasRule !== "boolean"
+        || event.copyReadiness !== undefined && !validEventCopyReadiness(event.copyReadiness)
+        || !validH4AppRewardPresentation(event)) throw new Error("活动规则读取失败，请刷新后重试。");
+    }
 }
 
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
-  return growthRequest<Record<string, any>>(section === "events" ? "/quest-events/events-overview" : "/quest-events/tasks");
+  if (section === "tasks") return growthRequest<Record<string, any>>("/quest-events/tasks");
+  markH4Read("overview", false);
+  const result = await growthRequest<Record<string, any>>("/quest-events/events-overview");
+  validateH4OverviewEvents(result.events);
+  Object.assign(result, readH4Statistics(result));
+  markH4Read("overview", true);
+  return result;
 }
 
 export type H3WeeklyRegionMapping = { callingCode: string; zoneId: string };
 export type H3WeeklyRegionActivation = { effectiveFrom: string; lastLegacyInstanceKey: string };
+export type H3WeeklyAllocationState = "ACTIVE" | "UNASSIGNED" | "HEADER_MISSING" | "HEADER_INVALID" | "FUTURE_ASSIGNMENT" | "EXPIRED_ASSIGNMENT";
+export type H3AssignedWeeklyWindow = {
+  callingCode: string | null;
+  callingCodeKnown: boolean;
+  mappingVersion: number | null;
+  instanceKey: string | null;
+  assignedWeekStart: string | null;
+  calendarVersion: string | null;
+  timeZone: string | null;
+  frozenWeekStart: string | null;
+  assignedFrom: string | null;
+  assignedUntil: string | null;
+  state: H3WeeklyAllocationState;
+  users: number;
+  boundaryShape: "UNDETERMINED" | "LEGACY_FROZEN" | "STANDARD_WEEK_BOUNDARIES" | "NONSTANDARD_WEEK_BOUNDARIES";
+};
+export type H3ActualWeeklyAssignments = {
+  readAvailable: true;
+  asOf: string;
+  source: "LATEST_ACCOUNT_ASSIGNMENT_JOIN_FROZEN_WEEKLY_DEFINITION";
+  scope: "ACTIVE_NON_SANDBOX_ACCOUNTS";
+  callingCodeSource: "ASSIGNMENT_SNAPSHOT";
+  storageTimeZone: "Asia/Shanghai";
+  scopeUsers: number;
+  knownCurrentAssignedUsers: number;
+  allocationStateCounts: Partial<Record<H3WeeklyAllocationState, number>>;
+  unknownCallingCodeUsers: number;
+  currentWindowsSourceComplete: boolean;
+  currentWindowCoverageComplete: boolean;
+  currentWindows: H3AssignedWeeklyWindow[];
+  otherAllocationStates: H3AssignedWeeklyWindow[];
+  transitionCauseAvailable: false;
+  transitionCauseReason: "EXPLICIT_TRANSITION_CAUSE_NOT_STORED";
+};
 export type H3WeeklyRegionPolicy = {
   revision: number;
   defaultZoneId: "Asia/Ho_Chi_Minh";
@@ -292,6 +442,7 @@ export type H3WeeklyRegionPolicy = {
   activation: "NEXT_ACCOUNT_WEEK";
   source: "DEFAULT" | "PUBLISHED";
   nextActivation: H3WeeklyRegionActivation | null;
+  actualAssignments?: H3ActualWeeklyAssignments;
 };
 
 export function validateH3WeeklyRegionMappings(mappings: H3WeeklyRegionMapping[]): string | null {
@@ -323,6 +474,38 @@ export function parseH3WeeklyRegionPolicy(value: unknown): H3WeeklyRegionPolicy 
       || (row.revision > 0 && row.nextActivation !== null)) {
     throw new Error("每周任务地区规则暂不可用，请刷新后重试。");
   }
+  if (row.actualAssignments !== undefined) {
+    const invalid = () => { throw new Error(formatAdminApiError("H3_ACTUAL_ASSIGNMENTS_RESPONSE_INVALID", "H3_ACTUAL_ASSIGNMENTS_RESPONSE_INVALID")); };
+    const object = (value: unknown): Record<string, unknown> => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
+      return value as Record<string, unknown>;
+    };
+    const count = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+    const states = ["ACTIVE", "UNASSIGNED", "HEADER_MISSING", "HEADER_INVALID", "FUTURE_ASSIGNMENT", "EXPIRED_ASSIGNMENT"];
+    const actual = object(row.actualAssignments);
+    if (actual.readAvailable !== true || !absolute(actual.asOf)
+      || actual.source !== "LATEST_ACCOUNT_ASSIGNMENT_JOIN_FROZEN_WEEKLY_DEFINITION"
+      || actual.scope !== "ACTIVE_NON_SANDBOX_ACCOUNTS" || actual.callingCodeSource !== "ASSIGNMENT_SNAPSHOT"
+      || actual.storageTimeZone !== "Asia/Shanghai"
+      || ![actual.scopeUsers, actual.knownCurrentAssignedUsers, actual.unknownCallingCodeUsers].every(count)
+      || typeof actual.currentWindowsSourceComplete !== "boolean" || typeof actual.currentWindowCoverageComplete !== "boolean"
+      || actual.transitionCauseAvailable !== false || actual.transitionCauseReason !== "EXPLICIT_TRANSITION_CAUSE_NOT_STORED"
+      || Object.entries(object(actual.allocationStateCounts)).some(([state, users]) => !states.includes(state) || !count(users))) invalid();
+    for (const key of ["currentWindows", "otherAllocationStates"]) {
+      const windows = actual[key];
+      if (!Array.isArray(windows)) return invalid();
+      for (const value of windows) {
+        const window = object(value);
+        if ([window.callingCode, window.instanceKey, window.calendarVersion, window.timeZone].some(cell => cell !== null && typeof cell !== "string")
+          || typeof window.callingCodeKnown !== "boolean" || window.mappingVersion !== null && !count(window.mappingVersion)
+          || [window.assignedWeekStart, window.frozenWeekStart].some(cell => cell !== null && !(typeof cell === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cell)))
+          || [window.assignedFrom, window.assignedUntil].some(cell => cell !== null && !absolute(cell))
+          || !states.includes(window.state as string) || !count(window.users)
+          || (key === "currentWindows") !== (window.state === "ACTIVE")
+          || !["UNDETERMINED", "LEGACY_FROZEN", "STANDARD_WEEK_BOUNDARIES", "NONSTANDARD_WEEK_BOUNDARIES"].includes(window.boundaryShape as string)) invalid();
+      }
+    }
+  }
   return row;
 }
 
@@ -341,7 +524,7 @@ export function h3WeeklyRegionPolicyParams(policy: H3WeeklyRegionPolicy, mapping
   };
 }
 
-const h3WeeklyRegionProposals = createPendingMutationStore({ storageKey: "nexion-admin-h3-weekly-region-proposals-v1" });
+const h3WeeklyRegionProposals = createPendingMutationStore({ storageKey: "nexion-admin-h3-weekly-region-proposals-v1", retainExpiredRecords: true });
 export async function withH3WeeklyRegionProposalKey(
   params: ReturnType<typeof h3WeeklyRegionPolicyParams>, reason: string, submit: (commandKey: string) => Promise<unknown>,
 ) {
@@ -353,11 +536,24 @@ export async function withH3WeeklyRegionProposalKey(
 }
 
 export async function updateH3QuestConfig(key: string, value: string, reason: string, expectedValue: string) {
+  const refusal = h3QuestConfigWriteRefusal(key);
+  if (refusal) throw new Error(refusal);
   return growthRequest<Record<string, any>>(
     `/quest-events/config/${encodeURIComponent(key)}`,
     { method: "PATCH", body: commandBody(key, value, reason, currentAdminOperator(), expectedValue) },
     "h3-config",
   );
+}
+
+/** Backend owns rule presence, asset comparison, status and the reward window. This endpoint does not mutate. */
+export async function previewH4EventReward(eventId: string, value: string, expectedValue: string, reason: string) {
+  const result = await growthRequest<{ approvalRequired: boolean; current: string; proposed: string }>(
+    `/quest-events/events/${encodeURIComponent(eventId)}/reward/preview`,
+    { method: "POST", body: commandBody("reward", value, reason, currentAdminOperator(), expectedValue) },
+  );
+  if (!result || typeof result.approvalRequired !== "boolean" || typeof result.current !== "string" || typeof result.proposed !== "string")
+    throw new Error("活动奖励预览不完整，本次未提交；请重新读取活动后核对。");
+  return result;
 }
 
 export async function updateH4EventReward(eventId: string, value: string, expectedValue: string, reason: string) {
@@ -379,10 +575,10 @@ async function h4EventMutation(
   expectedValue: string | boolean,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/events/${encodeURIComponent(eventId)}/${field}`,
     { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
-    `h4-${field}`,
+    `活动${field === "reward" ? "奖励" : field === "status" ? "状态" : "主推"} · ${eventId}`,
   );
 }
 
@@ -391,6 +587,8 @@ export async function fetchH5CheckIn(): Promise<Record<string, any>> {
 }
 
 export async function updateH5CheckInRule(key: string, value: string, expectedValue: string, reason: string) {
+  const refusal = h5RuleWriteRefusal(key);
+  if (refusal) throw new Error(refusal);
   return growthRequest<Record<string, any>>(
     `/check-in/rules/${encodeURIComponent(key)}`,
     { method: "PATCH", body: commandBody(key, value, reason, currentAdminOperator(), expectedValue) },
@@ -450,11 +648,108 @@ export async function updateH5EarnTickInterval(value: string | number, reason: s
   );
 }
 
-export async function fetchH7Vouchers(): Promise<Record<string, any>> {
-  return growthRequest<Record<string, any>>("/vouchers");
+export type H7PendingApproval = {
+  action: string | null; ticketId: string | null; submittedBy: string | null; submittedAt: string | null;
+};
+
+export type H7Voucher = {
+  id: string; name: string; type: "fixed" | "percent";
+  amountUSD?: number; percent?: number; minPurchaseUSD?: number; maxDiscountUSD?: number;
+  applicableSkus: string[]; audience: "new" | "all"; startAt: number; endAt: number; claimSurfaces: string[];
+  wheelOnly?: boolean;
+  popupEnabled: boolean; popupDelayMs: number; popupCooldownHours: number; popupMaxPerSession: number;
+  popupCadenceEnabled: boolean; stackWithTrial: boolean; stackWithOthers: boolean; splittable: boolean;
+  splittableConfigurable?: boolean; splittableRetired?: boolean; splittableWriteBlockedReason?: string;
+  issuanceLimit: number; version: number; issuedCount: number; availableCount: number;
+  redeemedCount: number; revokedCount: number; batchCount: number; status: "active" | "paused";
+  /** GET is authoritative. Write receipts deliberately do not project locks. */
+  pendingApproval?: H7PendingApproval | null;
+};
+export type H7Overview = {
+  vouchers: H7Voucher[];
+  skus: { id: string; name: string; status: "on" | "off" }[];
+  stats: { total: number; active: number; paused: number; popup: number };
+};
+
+/** Decode the GET boundary once; null is never a numeric zero or an unlocked object. */
+export function parseH7Voucher(raw: unknown): H7Voucher {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+  const row = raw as Record<string, unknown>;
+  const number = (key: string, integer = true, min = 0, max = Number.MAX_SAFE_INTEGER) => {
+    const value = row[key];
+    if (typeof value !== "number" || !Number.isFinite(value) || integer && !Number.isSafeInteger(value)
+      || value < min || value > max) throw new Error(`H7_VOUCHER_RESPONSE_INVALID:${key}`);
+    return value;
+  };
+  const boolean = (key: string) => {
+    if (typeof row[key] !== "boolean") throw new Error(`H7_VOUCHER_RESPONSE_INVALID:${key}`);
+    return row[key];
+  };
+  const strings = (key: string) => {
+    const value = row[key];
+    if (!Array.isArray(value) || value.some(v => typeof v !== "string")) throw new Error(`H7_VOUCHER_RESPONSE_INVALID:${key}`);
+    return value as string[];
+  };
+  if (typeof row.id !== "string" || !row.id.trim() || typeof row.name !== "string" || !row.name.trim()
+    || row.type !== "fixed" && row.type !== "percent" || row.audience !== "new" && row.audience !== "all"
+    || row.status !== "active" && row.status !== "paused") throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+  let pendingApproval: H7PendingApproval | null | undefined;
+  if (row.pendingApproval === null) pendingApproval = null;
+  else if (row.pendingApproval !== undefined) {
+    if (!row.pendingApproval || typeof row.pendingApproval !== "object" || Array.isArray(row.pendingApproval)) throw new Error("H7_VOUCHER_RESPONSE_INVALID:pendingApproval");
+    const pending = row.pendingApproval as Record<string, unknown>;
+    for (const key of ["action", "ticketId", "submittedBy", "submittedAt"]) {
+      if (pending[key] !== null && typeof pending[key] !== "string") throw new Error("H7_VOUCHER_RESPONSE_INVALID:pendingApproval");
+    }
+    pendingApproval = pending as H7PendingApproval;
+  }
+  if (row.splittableWriteBlockedReason !== undefined && typeof row.splittableWriteBlockedReason !== "string") {
+    throw new Error("H7_VOUCHER_RESPONSE_INVALID:splittableWriteBlockedReason");
+  }
+  return {
+    id: row.id, name: row.name, type: row.type, audience: row.audience, status: row.status,
+    amountUSD: number("amountUSD", false), percent: number("percent", false),
+    minPurchaseUSD: number("minPurchaseUSD", false), maxDiscountUSD: number("maxDiscountUSD", false),
+    applicableSkus: strings("applicableSkus"), claimSurfaces: strings("claimSurfaces"),
+    wheelOnly: row.wheelOnly === undefined ? false : boolean("wheelOnly"),
+    startAt: number("startAt"), endAt: number("endAt"), issuanceLimit: number("issuanceLimit"), version: number("version", true, 1),
+    issuedCount: number("issuedCount"), availableCount: number("availableCount"), redeemedCount: number("redeemedCount"),
+    revokedCount: number("revokedCount"), batchCount: number("batchCount"),
+    popupEnabled: boolean("popupEnabled"), popupCadenceEnabled: boolean("popupCadenceEnabled"),
+    popupDelayMs: number("popupDelayMs", true, 0, 60000), popupCooldownHours: number("popupCooldownHours", true, 0, 720),
+    popupMaxPerSession: number("popupMaxPerSession", true, 1, 10),
+    stackWithTrial: boolean("stackWithTrial"), stackWithOthers: boolean("stackWithOthers"), splittable: boolean("splittable"),
+    splittableConfigurable: row.splittableConfigurable === undefined ? undefined : boolean("splittableConfigurable"),
+    splittableRetired: row.splittableRetired === undefined ? undefined : boolean("splittableRetired"),
+    splittableWriteBlockedReason: row.splittableWriteBlockedReason,
+    pendingApproval,
+  };
+}
+
+export async function fetchH7Vouchers(): Promise<H7Overview> {
+  const payload = await growthRequest<Record<string, unknown>>("/vouchers");
+  if (!payload || !Array.isArray(payload.vouchers) || !Array.isArray(payload.skus)
+    || !payload.stats || typeof payload.stats !== "object") throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+  const vouchers = payload.vouchers.map(parseH7Voucher);
+  if (vouchers.some(v => v.pendingApproval === undefined)) throw new Error("H7_VOUCHER_RESPONSE_INVALID:pendingApproval");
+  const skus = payload.skus.map<H7Overview["skus"][number]>((raw: unknown) => {
+    if (!raw || typeof raw !== "object") throw new Error("H7_VOUCHER_RESPONSE_INVALID:skus");
+    const sku = raw as Record<string, unknown>;
+    if (typeof sku.id !== "string" || typeof sku.name !== "string" || sku.status !== "on" && sku.status !== "off") throw new Error("H7_VOUCHER_RESPONSE_INVALID:skus");
+    return { id: sku.id, name: sku.name, status: sku.status };
+  });
+  const stats = payload.stats as H7Overview["stats"];
+  if (![stats.total, stats.active, stats.paused, stats.popup].every(n => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)) throw new Error("H7_VOUCHER_RESPONSE_INVALID:stats");
+  return { vouchers, skus, stats };
+}
+
+export function validateH7VoucherWrite(voucher: { splittable?: boolean; type?: string; amountUSD?: number | string | null; minPurchaseUSD?: number | string | null; maxDiscountUSD?: number | string | null }) {
+  if (voucher.splittable === true) throw new Error("H7_VOUCHER_SPLITTABLE_RETIRED");
+  validateH7VoucherMoneyPrecision(voucher);
 }
 
 export async function createH7Voucher(voucher: Record<string, any>, reason: string) {
+  validateH7VoucherWrite(voucher);
   return growthRequest<Record<string, any>>(
     "/vouchers",
     { method: "POST", body: JSON.stringify({ ...voucher, reason, operator: currentAdminOperator() }) },
@@ -468,6 +763,7 @@ export async function updateH7Voucher(
   reason: string,
   expectedVersion: number,
 ) {
+  validateH7VoucherWrite(voucher);
   return growthRequest<Record<string, any>>(
     `/vouchers/${encodeURIComponent(id)}`,
     { method: "PATCH", body: JSON.stringify({ ...voucher, id, expectedVersion, reason, operator: currentAdminOperator() }) },
@@ -488,22 +784,6 @@ export async function updateH7VoucherStatus(
   );
 }
 
-export async function deleteH7Voucher(id: string, reason: string, expectedVersion: number) {
-  return growthRequest<Record<string, any>>(
-    `/vouchers/${encodeURIComponent(id)}`,
-    { method: "DELETE", body: commandBody("delete", "delete", reason, currentAdminOperator(), expectedVersion) },
-    "h7-delete",
-  );
-}
-
-export async function revokeH7VoucherAvailableGrants(id: string, reason: string, expectedVersion: number) {
-  return growthRequest<Record<string, any>>(
-    `/vouchers/${encodeURIComponent(id)}/grants/revoke-available`,
-    { method: "PATCH", body: commandBody("grants", "revoke-available", reason, currentAdminOperator(), expectedVersion) },
-    "h7-revoke-available",
-  );
-}
-
 export interface H8SettlementRow {
   settlementNo?: string;
   invitedUserId?: number;
@@ -513,6 +793,58 @@ export interface H8SettlementRow {
   inviterNex?: number | string;
   status?: string;
   createdAt?: string;
+  frozenCount?: number | null;
+  proposerName?: string | null;
+  approverName?: string | null;
+}
+
+export interface H8SettlementEligibility {
+  invitedUserId: number;
+  effectiveAt: string;
+  configReady: boolean;
+  registeredAt: string | null;
+  walletPresent: boolean | null;
+  settled: boolean | null;
+  freezeGift: boolean | null;
+  frozenGiftCount: number | null;
+  firstPaidOrder: boolean | null;
+  riskBlocked: boolean | null;
+  eligible: boolean;
+  willFreeze: boolean;
+  releasePossible: boolean;
+  reason: string;
+}
+
+export type H8RewardParamKey = "newcomer.usdt" | "newcomer.nex" | "inviter.nex" | "newcomer.lockMode" | "enabled";
+
+const H8_AMOUNT_MAX = {
+  "newcomer.usdt": "50",
+  "newcomer.nex": "500",
+  "inviter.nex": "249999999.75",
+} as const;
+
+export function h8RewardParamValid(key: H8RewardParamKey, value: string): boolean {
+  if (key === "enabled") return value === "true" || value === "false";
+  if (key === "newcomer.lockMode") return value === "risk_bucket" || value === "direct";
+  const units = depositPolicyUnits(value);
+  return units !== null && units <= depositPolicyUnits(H8_AMOUNT_MAX[key])!;
+}
+
+export function h8RewardParamAmplifies(key: H8RewardParamKey, before: string, after: string): boolean {
+  if (!h8RewardParamValid(key, before) || !h8RewardParamValid(key, after)) return false;
+  if (key === "enabled") return before === "false" && after === "true";
+  if (key === "newcomer.lockMode") return before === "risk_bucket" && after === "direct";
+  return depositPolicyUnits(after)! > depositPolicyUnits(before)!;
+}
+
+/** H1 is a proposal-time reference; the server recalculates it at approval. */
+export function h8EffectiveRewardReference(base: string, multiplier: string | number): string | null {
+  const amount = depositPolicyUnits(base), factor = depositPolicyUnits(String(multiplier));
+  if (amount === null || factor === null) return null;
+  const scale = BigInt(1000000);
+  const effective = (amount * factor + scale / BigInt(2)) / scale;
+  if (effective > depositPolicyUnits("999999999")!) return null;
+  return `${effective / scale}.${String(effective % scale).padStart(6, "0")}`;
 }
 
 export interface H8ReferralRewardOverview {
@@ -553,13 +885,13 @@ export async function updateH4LocalizedContent(
   field: "name" | "description" | "rewardName",
   locale: "en" | "zh" | "vi",
   value: string,
-  expectedValue: string,
+  expectedValue: string | null | undefined,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/events/${encodeURIComponent(eventCode)}/content/${field}/${locale}`,
-    { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
-    `h4-content-${field}`,
+    { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue ?? "__MISSING__") },
+    `编辑 ${locale.toUpperCase()} 内容 · ${eventCode}`,
   );
 }
 
@@ -573,6 +905,7 @@ function h8Record(value: unknown, field: string): Record<string, unknown> {
 }
 
 function h8NonNegativeCount(value: unknown, field: string): number {
+  if (typeof value !== "number" && (typeof value !== "string" || !/^\d+$/.test(value))) h8Invalid(field);
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) h8Invalid(field);
   return parsed;
@@ -605,7 +938,8 @@ function h8String(value: unknown, field: string): string {
 
 function h8IsoInstant(value: unknown, field: string): string {
   const text = h8String(value, field);
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(text)
+  // OffsetDateTime.toString() drops the seconds when they are zero (e.g. 1970-01-01T08:00+08:00).
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(text)
       || Number.isNaN(Date.parse(text))) {
     h8Invalid(field);
   }
@@ -630,12 +964,15 @@ export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardO
         return {
           settlementNo: h8String(row.settlementNo, `recentSettlements.${index}.settlementNo`),
           invitedUserId: h8PositiveCount(row.invitedUserId, `recentSettlements.${index}.invitedUserId`),
-          inviterUserId: h8PositiveCount(row.inviterUserId, `recentSettlements.${index}.inviterUserId`),
+          inviterUserId: row.inviterUserId == null ? undefined : h8PositiveCount(row.inviterUserId, `recentSettlements.${index}.inviterUserId`),
           newcomerUsdt: h8Decimal(row.newcomerUsdt, `recentSettlements.${index}.newcomerUsdt`),
           newcomerNex: h8Decimal(row.newcomerNex, `recentSettlements.${index}.newcomerNex`),
           inviterNex: h8Decimal(row.inviterNex, `recentSettlements.${index}.inviterNex`),
           status,
           createdAt: row.createdAt == null ? undefined : h8String(row.createdAt, `recentSettlements.${index}.createdAt`),
+          frozenCount: row.frozenCount == null ? row.frozenCount : h8NonNegativeCount(row.frozenCount, `recentSettlements.${index}.frozenCount`),
+          proposerName: row.proposerName == null ? row.proposerName : h8String(row.proposerName, `recentSettlements.${index}.proposerName`),
+          approverName: row.approverName == null ? row.approverName : h8String(row.approverName, `recentSettlements.${index}.approverName`),
         };
       })
     : h8Invalid("recentSettlements");
@@ -691,6 +1028,28 @@ export async function fetchH8ReferralRewards(cursor = ""): Promise<H8ReferralRew
   return parseH8ReferralRewardOverview(await growthRequest<unknown>(`/referral-rewards${query}`));
 }
 
+/** Eligibility is a point-in-time read, not a promise of release or sufficient coverage. */
+export async function fetchH8SettlementEligibility(invitedUserId: number): Promise<H8SettlementEligibility> {
+  const row = h8Record(await growthRequest<unknown>(`/referral-rewards/settlements/eligibility?invitedUserId=${encodeURIComponent(invitedUserId)}`), "eligibility");
+  const boolean = (key: string, nullable = false): boolean | null => {
+    if (nullable && row[key] === null) return null;
+    if (typeof row[key] !== "boolean") h8Invalid(`eligibility.${key}`);
+    return row[key];
+  };
+  return {
+    invitedUserId: h8PositiveCount(row.invitedUserId, "eligibility.invitedUserId"),
+    effectiveAt: h8IsoInstant(row.effectiveAt, "eligibility.effectiveAt"),
+    configReady: boolean("configReady")!,
+    registeredAt: row.registeredAt === null ? null : h8IsoInstant(row.registeredAt, "eligibility.registeredAt"),
+    walletPresent: boolean("walletPresent", true), settled: boolean("settled", true),
+    freezeGift: boolean("freezeGift", true), firstPaidOrder: boolean("firstPaidOrder", true),
+    riskBlocked: boolean("riskBlocked", true),
+    frozenGiftCount: row.frozenGiftCount === null ? null : h8NonNegativeCount(row.frozenGiftCount, "eligibility.frozenGiftCount"),
+    eligible: boolean("eligible")!, willFreeze: boolean("willFreeze")!, releasePossible: boolean("releasePossible")!,
+    reason: h8String(row.reason, "eligibility.reason"),
+  };
+}
+
 export async function updateH8ReferralRewardParam(
   key: string,
   value: string,
@@ -734,6 +1093,7 @@ export async function updateH8ReferralRewardParam(
 
 const h3MissionCommands = createPendingMutationStore({
   storageKey: "nexion-admin-h3-mission-commands-v1",
+  retainExpiredRecords: true,
 });
 
 export class H3MissionOutcomeUncertainError extends Error {
@@ -806,6 +1166,9 @@ export type H3QuestEventBinding = {
   questCode: string;
   userIdField: "user_id" | "inviter_user_id";
   status: number;
+  targetInTaskCatalog?: boolean | null;
+  targetActiveInTaskCatalog?: boolean | null;
+  liveTargetState?: "TARGET_MISSING" | "TARGET_INACTIVE" | "BINDING_DISABLED" | "TARGET_READY" | null;
 };
 
 export type H3QuestEventBindingCommand = {
@@ -828,7 +1191,20 @@ export type H3QuestEventBindingCommand = {
  */
 const h3BindingCommands = createPendingMutationStore({
   storageKey: "nexion-admin-h3-binding-commands-v1",
+  retainExpiredRecords: true,
 });
+
+// H3's redesigned view shares the existing instances with the legacy client.
+// Metadata is validated at the recovery reader, before it can authorize a replay.
+const h3ConfigCommands = createPendingMutationStore({ storageKey: "nexion-admin-h3-config-commands-v1", retainExpiredRecords: true });
+const h3Stores = { config: h3ConfigCommands, mission: h3MissionCommands, binding: h3BindingCommands, region: h3WeeklyRegionProposals };
+export type H3CommandStore = keyof typeof h3Stores;
+export const h3CommandStorage = {
+  list: () => Object.entries(h3Stores).flatMap(([store, commands]) => commands.list().map(record => ({ store: store as H3CommandStore, record }))),
+  remember: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].remember(record.fingerprint, record.commandKey, record),
+  forget: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].forget(record.fingerprint, record.commandKey),
+  durable: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].isDurablyStored(record.fingerprint, record.commandKey),
+};
 
 export class H3BindingOutcomeUncertainError extends Error {
   constructor(message: string, readonly commandKey: string, readonly readback?: Record<string, any>) {
@@ -948,19 +1324,46 @@ export function deleteH3Mission(taskCode: string, taskKind: H3MissionKind, reaso
     { taskKind, targetStatus: "deleted", expectedStatus: "archived", reason });
 }
 
+export { pendingH4EventDeletes } from "./h4-mutations";
+export async function deleteH4QuestEvent(eventId: string, expectedVersion: string, reason: string) {
+  return h4CommandRequest(`/quest-events/events/${encodeURIComponent(eventId)}`, {
+    method: "DELETE", body: JSON.stringify({ expectedVersion, reason }),
+  }, `删除既有活动 · ${eventId}`);
+}
+
+// 5676c145: supported IDs, independent of the seven existing legal gameplay kinds.
+const H4_SUPPORTED_EVENT_CODES = new Set([
+  "evt-pro-upgrade-7d", "evt-refer-5-get-pro", "evt-weekend-double-nex", "evt-regional-pk",
+  "evt-spring-spin", "evt-reinvest-bonus", "evt-onboarding-7d", "evt-black-friday", "evt-anniversary-spin",
+]);
+
+type H4EventCreateCandidate = { id: string; occupied: boolean };
+
+export async function fetchH4EventCreateCandidates(): Promise<H4EventCreateCandidate[]> {
+  const result = await growthRequest<{ candidates: H4EventCreateCandidate[] }>("/quest-events/events/create-candidates");
+  const candidates = result?.candidates;
+  if (!Array.isArray(candidates) || candidates.length !== H4_SUPPORTED_EVENT_CODES.size
+    || candidates.some(row => !row || !H4_SUPPORTED_EVENT_CODES.has(row.id) || typeof row.occupied !== "boolean")
+    || new Set(candidates.map(row => row.id)).size !== candidates.length) {
+    throw new Error("活动编号读取失败");
+  }
+  return candidates;
+}
+
 export async function createH4QuestEvent(event: Record<string, any>, reason: string) {
-  return growthRequest<Record<string, any>>(
+  if (!H4_SUPPORTED_EVENT_CODES.has(String(event.id ?? "").trim())) throw new Error("EVENT_CODE_UNSUPPORTED");
+  return h4CommandRequest(
     "/quest-events/events",
     { method: "POST", body: JSON.stringify({ ...event, reason, operator: currentAdminOperator() }) },
-    "h4-event-create",
+    `新建既有活动 · ${event.id}`,
   );
 }
 
 export async function createH4WheelTier(tier: Record<string, any>, expectedSignature: string, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     "/quest-events/wheel-tiers",
     { method: "POST", body: JSON.stringify({ ...tier, expectedSignature, reason, operator: currentAdminOperator() }) },
-    "h4-tier-create",
+    `新建转盘奖项 · ${tier.tierName}`,
   );
 }
 
@@ -969,10 +1372,10 @@ export async function updateH4WheelProbabilities(
   expectedSignature: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     "/quest-events/wheel-tiers/probabilities",
     { method: "PATCH", body: JSON.stringify({ probabilities, expectedSignature, reason, operator: currentAdminOperator() }) },
-    "h4-tier-probabilities",
+    "调整转盘奖项概率",
   );
 }
 
@@ -982,29 +1385,29 @@ export async function updateH4WheelTier(
   expectedSignature: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
     { method: "PATCH", body: JSON.stringify({ ...tier, expectedSignature, reason, operator: currentAdminOperator() }) },
-    "h4-tier-update",
+    `编辑转盘奖项 · ${tierName}`,
   );
 }
 
 export async function deleteH4WheelTier(tierName: string, expectedSignature: string, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
     {
       method: "DELETE",
       body: commandBody("delete", "delete", reason, currentAdminOperator(), expectedSignature),
     },
-    "h4-tier-delete",
+    `删除转盘奖项 · ${tierName}`,
   );
 }
 
 export async function createH4WheelGuard(guard: Record<string, any>, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     "/quest-events/wheel-guards",
     { method: "POST", body: JSON.stringify({ ...guard, reason, operator: currentAdminOperator() }) },
-    "h4-guard-create",
+    `新建转盘护栏 · ${guard.guardLabel}`,
   );
 }
 
@@ -1014,12 +1417,12 @@ export async function updateH4WheelGuard(
   expectedValue: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/wheel-guards/${encodeURIComponent(guardKey)}`,
     {
       method: "PATCH",
       body: commandBody(guardKey, value, reason, currentAdminOperator(), expectedValue),
     },
-    "h4-guard-update",
+    `转盘安全限制 · ${guardKey}`,
   );
 }

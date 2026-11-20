@@ -21,13 +21,27 @@ export const H9_BAND_MIN = 2;
 /** 单档算力档位下限,与前端 `network-rank.ts` 的 `band.tops < 0` 判据同值(0 合法)。 */
 export const H9_BAND_TOPS_MIN = 0;
 
+/** Backend validHomeDisplay strips trailing zeros and permits at most two decimal places. */
+export function h9MoneyPrecisionValid(value: number | string): boolean {
+  const [mantissa, exponent = "0"] = String(value).trim().toLowerCase().split("e");
+  const digits = mantissa.replace(/[.+-]/g, "");
+  if (/^0+$/.test(digits)) return true;
+  const trailingZeros = digits.length - digits.replace(/0+$/, "").length;
+  return Math.max(0, (mantissa.split(".")[1]?.length ?? 0) - Number(exponent) - trailingZeros) <= 2;
+}
+
 /** 分位表单行的表单草稿(输入框原文,未解析)。 */
 export type H9BandDraft = { tops: string; cumPct: string };
+
+/** 文本控件保留服务端实际精度；step 是输入步长，不能用于舍入已保存配置。 */
+export function h9DraftText(value: number | null | undefined): string {
+  return value !== undefined && Number.isFinite(value) ? String(value) : "";
+}
 
 /** 表单草稿 → 数字:空串 / 非纯数字一律 NaN(不让 `Number("")===0` 把空输入当合法值)。 */
 export function h9DraftNumber(value: string): number {
   const text = value.trim();
-  if (!text || !/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(text)) return Number.NaN;
+  if (!text || !/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text)) return Number.NaN;
   return Number(text);
 }
 
@@ -78,6 +92,6 @@ export function h9BandMeaning(tops: string, cumPct: string): string {
  * 这里统一收敛成**恰好一个**句号衔接。契约测试钉双向(有句号不叠、没句号补上)。
  */
 export function h9PlaceholderCopy(error: string | null): string {
-  const lead = (error || "没拿到服务端权威快照").replace(/。$/u, "");
-  return `${lead}。为免拿旧值当真值,这里不显示任何数字,写操作也一并冻结。`;
+  const lead = (error || "数据加载失败").replace(/。$/u, "");
+  return `${lead}。为避免把旧数据当成当前数据，这里不显示数字，也暂时不能修改。`;
 }

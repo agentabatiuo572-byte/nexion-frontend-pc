@@ -1,369 +1,970 @@
 "use client";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+/**
+ * 资金储备与应付款：看平台的钱够不够付，要不要补储备。四个页签，当前页签和时间窗写进网址（PG-33、ST-23）。
+ * 读取按接口原授权分开判断，不合成一个权限（X05）：
+ *   储备、应付款、到期预测、预测配置：B2 或 D3 读权限，一起读，任一失败全部清掉，不留旧水位（D3-S01）。
+ *   差额曲线：B1 或 D3 读权限，单独读。资金流历史：只认 B2 读权限，单独读。两块失败都不影响别的内容。
+ * 四个动作互不替代：应付款导出认 B2 或 D3 导出权限，对账导出只认 D3 导出权限，
+ * 预测保存认 B2 或 D3 写权限，储备注入只认注入权限。
+ */
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Download, Landmark, RefreshCw, ShieldCheck } from "lucide-react";
+import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
+import { ForecastConfigImpact } from "@/app/components/forecast-config-preview";
+import { KeepText, BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Fold, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag, useTabIds } from "@/app/components/rd";
+import { B2RequestError, previewB2ForecastConfig, type ForecastConfigPreview } from "@/lib/admin/b2-client";
+import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
+import { businessClock, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   createD3Injection,
+  DRequestError,
   downloadD3Csv,
-  fetchD3Dashboard,
-  updateD3ForecastConfig,
-  type D3Dashboard,
-  type D3ForecastConfig,
-  type D3WaterLevel,
+  fetchD3Main,
+  fetchD3Maturity,
+  fetchD3NetExposure,
   isDOutcomeUnknownError,
+  updateD3ForecastConfig,
+  type D3ForecastConfig,
+  type D3Main,
+  type D3MaturityForecast,
+  type D3NetExposure,
 } from "@/lib/admin/d-client";
-import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
-import { formatReserveCoverDays } from "@/lib/admin/treasury-cover-days";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandRecord, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { exportScope, treasuryCommandKey, treasuryCommands, type TreasuryExportKind } from "@/lib/admin/treasury-commands";
+import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { DCtx } from "./types";
+import { useReach } from "@/lib/nav/use-reach";
+import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, amountText, categoryText, effectiveText, forecastDiffRows, money, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
 
 const OPERATOR = currentAdminOperator;
-const categoryText = (key: string) => ({ usdt: "USDT 储备", otherLiquid: "其他可用资产", withdrawable_balance: "可提现余额", usdt_staking_principal: "USDT 质押本金", staking_interest: "待付质押利息", genesis_daily_emission: "创世节点每日分红", nex_v2_future: "UVEL 第二版远期权益", withdrawal_queue: "待处理提现", commission_cooling: "待解锁佣金", lock_other: "其他锁仓本息", unverified_deposit: "待核实充值" } as Record<string,string>)[key] ?? "其他科目";
-const WATER_LABEL: Record<D3WaterLevel["tier"], string> = {
-  NORMAL: "正常",
-  WATCH: "关注",
-  WARNING: "预警",
-  DANGER: "危险",
-};
-const TREASURY_SOURCE_LABELS: Record<string, string> = {
-  "nx_treasury_reserve_ledger": "储备资金账本",
-  "nx_staking_position.amount_usdt": "生效中的质押本金",
-  "nx_user_wallet": "用户钱包余额",
-  "nx_user_wallet.usdt_available": "用户可提余额",
-  "nx_staking_position": "质押本金与利息",
-  "nx_staking_position.estimated_interest_usdt": "待付质押利息",
-  "nx_genesis_holding": "创世节点 持仓承诺",
-  "nx_genesis_holding × nx_genesis_series.daily_dividend_rate_pct": "创世节点 持仓与每日排放规则",
-  "nx_nex_lock_order": "UVEL 锁仓订单",
-  "nx_nex_lock_order active maturity": "生效中的 UVEL 锁仓到期额",
-  "nx_withdrawal_order": "提现订单",
-  "nx_withdrawal_order active queue": "待处理提现订单",
-  "nx_wallet_ledger": "钱包资金流水",
-  "nx_wallet_ledger pending commission": "待解锁佣金流水",
-  "nx_treasury_legacy_lock_liability": "存量锁仓本息",
-  "nx_treasury_legacy_lock_liability active principal + accrued interest": "生效中的存量锁仓本息",
-  "nx_vietqr_reconciliation": "VietQR 银行回单",
-  "nx_vietqr_reconciliation open suspense rows": "待处置 VietQR 银行回单",
-};
 
-function treasurySourceLabel(source: string) {
-  const value = source.trim();
-  return TREASURY_SOURCE_LABELS[value] ?? (value.startsWith("nx_") ? "服务端业务账本" : value || "服务端业务账本");
-}
-
-function money(value: number) {
-  return `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
-}
-
-/** 储备注入命令号跨刷新存活:注资是真金白银入账,重铸命令号 = 后端无法去重 = 重复入账。
- *  fingerprint 已编码动作类型(injection)与目标对象(凭证号,后端唯一去重位)+ 金额。 */
-const pendingKeys = createPendingMutationStore({
-  storageKey: "nexion-admin-d3-treasury-commands-v1",
-});
+type ExportKind = TreasuryExportKind;
+const pendingKeys = treasuryCommands;
 const injectionScope = (voucherNo: string, amount: string) => `injection|${voucherNo}|${amount}`;
-const exportScope = (kind: "reconciliation" | "liabilities") => `sensitive-export|${kind}`;
+const EXPORT_LABEL: Record<ExportKind, string> = { reconciliation: "对账 CSV", liabilities: "应付款明细 CSV" };
+const EXPORT_TITLE: Record<ExportKind, string> = { reconciliation: "导出对账 CSV", liabilities: "导出应付款 CSV" };
+const EXPORT_RANGE: Record<ExportKind, string> = { reconciliation: "储备、应付款、差额三行", liabilities: "全部 9 类的当前数据，不随页面窗口变" };
+const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
+const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
 
-function reasonValid(reason: string, toast: (message: string) => void) {
-  const length = reason.trim().length;
-  if (length < 8 || length > 200) {
-    toast("操作原因需为 8-200 个字符");
-    return false;
-  }
-  return true;
+/** 预测保存只有一个槽位:草稿 / 期望版本 / 理由 / 操作人没变就复用命令号。和旧「可用资金与应付款」共用这张表,
+ *  那边留下的未决记录在这里接着恢复(B2-H02)。 */
+const forecastCommand = createSlotAttemptStore({ storageKey: "nexion-admin-b2-liquidity-commands-v1", retainExpiredRecords: true });
+const FORECAST_SLOT = "forecast-config";
+
+type TabValue = "overview" | "due" | "flow" | "settings";
+type MaturityWindow = D3MaturityForecast["window"];
+
+const TABS: readonly { value: TabValue; label: string }[] = [
+  { value: "overview", label: "资金概况" },
+  { value: "due", label: "应付款与到期" },
+  { value: "flow", label: "资金流" },
+  { value: "settings", label: "预测设置" },
+];
+
+const VOUCHER_TYPES = [{ value: "CHAIN", label: "链上交易哈希" }, { value: "BANK", label: "银行流水号" }];
+
+interface ConfirmRequest {
+  /** 进操作记录的名字，不改。框上写的短标题传 title。 */
+  action: string;
+  title?: string;
+  detail: ReactNode;
+  briefKind: OperatorBriefKind;
+  /** 这个操作自己的影响说明，和这类操作的通用说明不一样时才传。 */
+  statedBrief?: { impact: string; check: string };
+  /** 金额、对象、前后值，常显。执行摘要默认收起，这些不能只写在 detail 里（OP-48）。 */
+  facts?: ReactNode;
+  reasonMax?: number;
+  effect?: string;
+  /** 提交后收不回来：标题下再加「不能撤销」（VS-106）。 */
+  irreversible?: boolean;
+  confirmLabel: string;
+  /** 不能撤销的操作传 danger。 */
+  confirmTone?: "primary" | "danger";
+  /** 这次不能提交的原因，写在框里，确认按钮禁用。 */
+  blocked?: ReactNode;
+  /** 变了就重开确认框，理由清空（OP-97）。 */
+  revision?: number;
+  run: (reason: string) => Promise<void>;
 }
 
-export function D3Treasury({ ctx }: { ctx: DCtx }) {
-  const { toast, openConfirm } = ctx;
-  const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
-  const canConfig = authorities.includes("finance_d3_write");
-  const canInject = authorities.includes("finance_d3_injection_create");
-  const canExport = authorities.includes("finance_d3_export");
-  const [data, setData] = useState<D3Dashboard | null>(null);
-  const [draft, setDraft] = useState<D3ForecastConfig | null>(null);
-  const [maturityWindow, setMaturityWindow] = useState<"7d" | "30d">("7d");
-  const [exposureWindow, setExposureWindow] = useState<"7d" | "30d" | "90d">("30d");
-  const [amount, setAmount] = useState("");
-  const [voucherNo, setVoucherNo] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  // merge 2026-08-06:pendingKeys 用分支侧 store 化版本(稳定命令号,声明在下方);
-  // loadGeneration 是 main 侧独立功能(请求代际防过期响应),消费在 load() 内,保留。
+/** 页面上方一条结果未知的操作。重试只发存下来的内容，这里没有能改的东西（OP-94）。 */
+interface PendingItem {
+  investigationRecord: FundCommandRecord;
+  /** 结论条和核查结案框里的「原操作」。 */
+  label: string;
+  commandKey: string;
+  /** 完整原记录供核对和复制；不从当前表单重建。 */
+  record: unknown;
+  title: string;
+  body?: ReactNode;
+  /** 还能重试时写在 body 后面；过期后换成 RETRY_EXPIRED。 */
+  hint: string;
+  expiresAt: number;
+  /** 这个账号现在还有没有这项写权限，重试和原入口一样判断（OP-124）。 */
+  allowed: boolean;
+  auditHref: string;
+  retryTitle: string;
+  /** 重试框标题下的生效方式，和原操作一样。 */
+  retryEffect: string;
+  /** lead 是这次的关键数字，放第一行，单位传 unit（VS-102）。 */
+  rows: Array<{ key: string; label: string; value: ReactNode; lead?: boolean; unit?: string }>;
+  stored: () => boolean;
+  resend: () => Promise<void>;
+  forget: () => void;
+}
+
+function queryValue<T extends string>(name: string, allowed: readonly T[]): T | null {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get(name);
+  return allowed.find((item) => item === value) ?? null;
+}
+
+/** 替换写入,不增加浏览器历史;别的参数(比如临时的 theme)原样留着。 */
+function writeQuery(name: string, value: string | null) {
+  const url = new URL(window.location.href);
+  if (value === null) url.searchParams.delete(name);
+  else url.searchParams.set(name, value);
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+function forecastValues(config: D3ForecastConfig): ForecastValues {
+  const source = config.pendingConfig ?? config;
+  return {
+    reserveCategories: source.reserveCategories,
+    liabilityCategories: source.liabilityCategories,
+    forecastWindow: source.forecastWindow,
+    genesisIncluded: source.genesisIncluded,
+    includeFarLiabilities: source.includeFarLiabilities,
+    stakingInterestMode: source.stakingInterestMode,
+    trialStressEnabled: source.trialStressEnabled,
+  };
+}
+
+/** 读取最新后合并：自己改过的字段留着，其余取最新（OP-97）。 */
+function mergeForecast(base: ForecastValues, mine: ForecastValues, latest: ForecastValues): ForecastValues {
+  const pick = <K extends keyof ForecastValues>(key: K) => (mine[key] !== base[key] ? mine[key] : latest[key]);
+  const pickAll = (from: Record<string, boolean>, to: Record<string, boolean>, theirs: Record<string, boolean>) =>
+    Object.fromEntries(Object.keys(theirs).map((key) => [key, to[key] !== from[key] ? to[key] : theirs[key]]));
+  return {
+    reserveCategories: pickAll(base.reserveCategories, mine.reserveCategories, latest.reserveCategories),
+    liabilityCategories: pickAll(base.liabilityCategories, mine.liabilityCategories, latest.liabilityCategories),
+    forecastWindow: pick("forecastWindow"),
+    genesisIncluded: pick("genesisIncluded"),
+    includeFarLiabilities: pick("includeFarLiabilities"),
+    stakingInterestMode: pick("stakingInterestMode"),
+    trialStressEnabled: pick("trialStressEnabled"),
+  };
+}
+
+const errorText = (error: unknown, fallback: string) => (error instanceof Error ? displayAdminError(error) : fallback);
+
+export function D3Treasury() {
+  const [toastNode, toast] = useToast();
+  const reach = useReach();
+  const session = useAdminAuth((state) => state.session);
+  const authorities = useMemo(() => session?.authorities ?? [], [session?.authorities]);
+  const has = (code: string) => authorities.includes(code);
+  const canReadMain = has("finance_d3_read") || has("overview_b2_read");
+  const canReadExposure = has("finance_d3_read") || has("overview_b1_read");
+  const canReadFlow = has("overview_b2_read");
+  const canConfig = has("finance_d3_write") || has("overview_b2_write");
+  const canInject = has("finance_d3_injection_create");
+  const canExportLiabilities = has("overview_b2_export") || has("finance_d3_export");
+  const canExportReconciliation = has("finance_d3_export");
+
+  const visibleTabs = TABS.filter((item) => (item.value === "flow" ? canReadFlow : item.value === "due" ? canReadMain || canReadExposure : canReadMain));
+  const tabIds = useTabIds();
+  const [requestedTab, setRequestedTab] = useState<TabValue | null>(() => queryValue("tab", TABS.map((item) => item.value)));
+  const tab = visibleTabs.find((item) => item.value === requestedTab)?.value ?? visibleTabs[0]?.value ?? null;
+
+  const [main, setMain] = useState<D3Main | null>(null);
+  const [draft, setDraft] = useState<ForecastValues | null>(null);
+  const [loading, setLoading] = useState(canReadMain);
+  const [mainError, setMainError] = useState("");
   const loadGeneration = useRef(0);
 
-  const operationKey = (scope: string) => {
-    const existing = pendingKeys.get(scope);
-    if (existing) return existing;
-    const uuid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-    const key = `d3-${scope.replace(/[^A-Za-z0-9_-]/g, "-")}-${uuid.replaceAll("-", "").replace(".", "").slice(0, 18)}`;
-    pendingKeys.remember(scope, key);
-    return key;
-  };
+  const [maturityChoice, setMaturityChoice] = useState<MaturityWindow | null>(() => queryValue("maturity", ["7d", "30d"] as const));
+  const maturityWindow: MaturityWindow = maturityChoice ?? (main?.config.forecastWindow === "30d" ? "30d" : "7d");
 
-  const load = async (nextMaturity?: "7d" | "30d", nextExposure?: "7d" | "30d" | "90d") => {
+  const [maturity30, setMaturity30] = useState<Loadable<D3MaturityForecast>>({ data: null, loading: false, error: "" });
+  const [exposure, setExposure] = useState<Loadable<D3NetExposure>>({ data: null, loading: false, error: "" });
+  const maturityGeneration = useRef(0);
+  const exposureGeneration = useRef(0);
+  const maturityLoadedFor = useRef<D3Main | null>(null);
+  const exposureLoadedFor = useRef<D3Main | null | undefined>(undefined);
+
+  const [flowVisited, setFlowVisited] = useState(tab === "flow");
+  const history = useB2LiquidityHistory(canReadFlow && flowVisited);
+
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [injectOpen, setInjectOpen] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [voucherType, setVoucherType] = useState("CHAIN");
+  const [voucherNo, setVoucherNo] = useState("");
+  /** 刚打开不报错：失焦或点过下一步才显示这个字段的错（DP-06）。 */
+  const [injectShown, setInjectShown] = useState<{ amount?: boolean; voucher?: boolean }>({});
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  /** 保存前的影响预览。只对这份草稿和这个版本有效，草稿或版本变了就作废（D3-MD1）。 */
+  const [preview, setPreview] = useState<{ key: string; value: ForecastConfigPreview } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [configNote, setConfigNote] = useState<{ tone: "warn" | "danger"; text: string } | null>(null);
+  const previewGeneration = useRef(0);
+  const [retry, setRetry] = useState<PendingItem | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  /** 待确认条上最近一次重试的结果，只是当下的事实，不影响待确认本身。 */
+  const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
+  const [retryRejected, setRetryRejected] = useState<string[]>([]);
+  const [releasing, setReleasing] = useState<PendingItem | null>(null);
+  const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [closing, setClosing] = useState<PendingItem | null>(null);
+  const [settled, setSettled] = useState<FundSettled[]>([]);
+  const [refreshAsk, setRefreshAsk] = useState(false);
+  const [unknownTick, setUnknownTick] = useState(0);
+
+  const load = useCallback(async ({ keepDraft = false }: { keepDraft?: boolean } = {}) => {
     const generation = ++loadGeneration.current;
     setLoading(true);
-    setError("");
+    setMainError("");
     try {
-      const next = await fetchD3Dashboard(nextMaturity, nextExposure);
+      const next = await fetchD3Main();
       if (generation !== loadGeneration.current) return;
-      setData(next);
-      setMaturityWindow(next.maturity.window);
-      setExposureWindow(next.exposure.window);
-      setDraft(next.config.pendingConfig ? { ...next.config, ...next.config.pendingConfig } : next.config);
+      setMain(next);
+      if (!keepDraft) setDraft(forecastValues(next.config));
     } catch (err) {
       if (generation !== loadGeneration.current) return;
-      setData(null);
+      setMain(null);
       setDraft(null);
-      setError(err instanceof Error ? displayAdminError(err) : "D3 数据加载失败");
+      setMainError(displayAdminReadError(err));
     } finally {
       if (generation === loadGeneration.current) setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    void load();
-    // The window controls explicitly invoke load with their selected value.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const exposureMax = useMemo(
-    () => Math.max(1, ...(data?.exposure.series.map((row) => Math.abs(row.netExposureUsdt)) ?? [1])),
-    [data?.exposure.series],
-  );
+  const loadMaturity30 = useCallback(async () => {
+    const generation = ++maturityGeneration.current;
+    setMaturity30({ data: null, loading: true, error: "" });
+    try {
+      const data = await fetchD3Maturity("30d");
+      if (generation === maturityGeneration.current) setMaturity30({ data, loading: false, error: "" });
+    } catch (err) {
+      if (generation === maturityGeneration.current) setMaturity30({ data: null, loading: false, error: displayAdminReadError(err) });
+    }
+  }, []);
 
-  const selectMaturity = (value: "7d" | "30d") => {
-    setMaturityWindow(value);
-    void load(value, exposureWindow);
+  // 只取当前差额。序列不是真实历史，不画图（DP-63），窗口用最短的。
+  const loadExposure = useCallback(async () => {
+    const generation = ++exposureGeneration.current;
+    setExposure((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      const data = await fetchD3NetExposure("7d");
+      if (generation === exposureGeneration.current) setExposure({ data, loading: false, error: "" });
+    } catch (err) {
+      if (generation === exposureGeneration.current) setExposure({ data: null, loading: false, error: displayAdminReadError(err) });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (canReadMain) void load();
+  }, [canReadMain, load]);
+
+  useEffect(() => {
+    if (tab !== "due" || !main || maturityWindow !== "30d" || maturityLoadedFor.current === main) return;
+    maturityLoadedFor.current = main;
+    void loadMaturity30();
+  }, [tab, main, maturityWindow, loadMaturity30]);
+
+  useEffect(() => {
+    if (tab !== "due" || !canReadExposure || exposureLoadedFor.current === main) return;
+    exposureLoadedFor.current = main;
+    void loadExposure();
+  }, [tab, main, canReadExposure, loadExposure]);
+
+  const selectTab = (next: TabValue) => {
+    setRequestedTab(next);
+    writeQuery("tab", next === visibleTabs[0]?.value ? null : next);
+    if (next === "flow") setFlowVisited(true);
+    setSelectedCategory(null);
   };
 
-  const selectExposure = (value: "7d" | "30d" | "90d") => {
-    setExposureWindow(value);
-    void load(maturityWindow, value);
+  const selectMaturity = (next: MaturityWindow) => {
+    setMaturityChoice(next);
+    writeQuery("maturity", next);
+  };
+
+  const baseValues = useMemo(() => (main ? forecastValues(main.config) : null), [main]);
+  const dirty = Boolean(draft && baseValues && JSON.stringify(draft) !== JSON.stringify(baseValues));
+  const previewKey = JSON.stringify([draft, main?.config.version]);
+  const currentPreview = preview?.key === previewKey ? preview.value : null;
+
+  useEffect(() => {
+    setPreview(null);
+    ++previewGeneration.current;
+    return () => { ++previewGeneration.current; };
+  }, [previewKey, canConfig]);
+
+  // 配置改了没保存时，离开这页先问（OP-29）。结果未知时设置已锁，草稿等核对完再说，不拦。
+  const leaveSwitcher = useRef<EditorSwitch | null>(null);
+  const leave = useLeaveGuard(dirty && !forecastCommand.list().some((record) => record.fingerprint === FORECAST_SLOT), () => { if (baseValues) setDraft(baseValues); }, leaveSwitcher);
+
+  // 预测保存结果未知时草稿留着，解除待确认后可以接着改了重新提交。
+  const reloadAll = () => {
+    if (canReadMain) void load({ keepDraft: Boolean(unknownCommands.forecast) });
+    else if (tab === "due") void loadExposure();
+    if (flowVisited && canReadFlow) void history.reload();
+  };
+
+  const refresh = () => {
+    if (dirty && !unknownCommands.forecast) setRefreshAsk(true);
+    else reloadAll();
+  };
+
+  /**
+   * 写操作共用一条路，做法同提现审核：先把原操作存好再发，存不了就不发（OP-92）。
+   * 首次提交明确被拒时丢号，留在确认框修改。其余结果保号，转成页面上方的待确认（OP-93）。
+   * 原号重试被明确拒绝后，记录保留到操作员确认解除。
+   */
+  const sendCommand = async ({ retained, stored, forget, send, onUnknown, done }: {
+    retained: boolean;
+    stored: () => boolean;
+    forget: () => void;
+    send: () => Promise<unknown>;
+    onUnknown?: () => void;
+    done: () => Promise<void>;
+  }) => {
+    if (!stored()) {
+      if (!retained) forget();
+      throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+    }
+    try {
+      await send();
+    } catch (err) {
+      const rejected = isExplicitRejection(err);
+      if (rejected && !retained) forget();
+      setUnknownTick((tick) => tick + 1);
+      if (rejected || isPermissionDenied(err) || retained && !isDOutcomeUnknownError(err)) throw err;
+      onUnknown?.();
+      toast("结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。", "warn");
+      return;
+    }
+    forget();
+    setUnknownTick((tick) => tick + 1);
+    await done();
+  };
+
+  const submitInjection = async (nextAmount: string, nextVoucher: string, reason: string, operator = OPERATOR(), originalKey?: string) => {
+    const scope = injectionScope(nextVoucher, nextAmount);
+    if (!originalKey && pendingKeys.get(scope)) throw new Error("这个凭证号的登记结果未知，先在页面上方核对");
+    const key = originalKey ?? treasuryCommandKey(scope, { amount: nextAmount, voucherNo: nextVoucher, reason, operator, ownerAdminId: session?.adminId,
+      commandOrigin: fundCommandOrigin("POST", "/api/admin/treasury/reserve-injection", "finance_d3_read") });
+    const clearForm = () => {
+      setAmount("");
+      setVoucherNo("");
+      setInjectShown({});
+      setInjectOpen(false);
+    };
+    await sendCommand({
+      retained: !!originalKey,
+      stored: () => pendingKeys.isDurablyStored(scope, key),
+      forget: () => pendingKeys.forget(scope, key),
+      send: () => createD3Injection(nextAmount, nextVoucher, reason, operator, key),
+      onUnknown: clearForm,
+      done: async () => {
+        clearForm();
+        toast("储备注入已登记", "success");
+        await load({ keepDraft: true });
+      },
+    });
   };
 
   const saveInjection = () => {
     const nextAmount = amount.trim();
     const nextVoucher = voucherNo.trim();
-    if (!nextAmount || !Number.isFinite(Number(nextAmount)) || Number(nextAmount) <= 0) {
-      toast("请输入有效注资金额");
-      return;
-    }
-    if (!nextVoucher) {
-      toast("请输入真实到账凭证号");
-      return;
-    }
-    openConfirm({
+    // 凭证号原样提交，后端按原值判重。类型只有说明作用，写进理由，理由随注入记录和操作记录保存。
+    const typeLabel = VOUCHER_TYPES.find((item) => item.value === voucherType)?.label;
+    const reasonPrefix = `凭证类型：${typeLabel}。`;
+    setConfirm({
       action: "储备注入登记",
-      detail: `登记 ${money(Number(nextAmount))}，凭证号 ${nextVoucher}。凭证号不可重复。`,
-      reason: true,
-      okLabel: "确认登记",
+      title: "登记储备注入",
+      detail: "这里只登记已经到账的资金，不会转账。",
+      facts: <Facts><Fact k="注入金额" lead tone="role-1" unit="USDT">{amountText(Number(nextAmount))}</Fact><Fact k="凭证类型">{typeLabel}</Fact><Fact k="凭证号"><span data-mono>{nextVoucher}</span></Fact></Facts>,
+      briefKind: "funds",
+      statedBrief: { impact: "登记后计入可用储备。", check: "核对金额和凭证号，理由写清到账依据或工单号。" },
+      effect: "立即生效",
+      irreversible: true,
+      confirmLabel: "确认登记",
+      confirmTone: "danger",
+      reasonMax: 200 - reasonPrefix.length,
       run: async (reason) => {
-        if (!reasonValid(reason, toast)) return false;
-        const scope = injectionScope(nextVoucher, nextAmount);
         try {
-          await createD3Injection(nextAmount, nextVoucher, reason.trim(), OPERATOR(), operationKey(scope));
-          pendingKeys.forget(scope);
-          setAmount("");
-          setVoucherNo("");
-          toast("储备注入已登记");
-          await load();
-          return true;
+          await submitInjection(nextAmount, nextVoucher, `${reasonPrefix}${reason}`);
         } catch (err) {
-          // 确定性拒绝必须丢号(同 D2:留着旧号会让运营改完输入重提时撞载荷不符,
-          // 这笔注资 24h 内做不了);结果未知必须保号,丢了重试就是第二笔注资。
-          if (!isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
-          setError(err instanceof Error ? displayAdminError(err) : "储备注入失败");
+          // 确认框由共用层提示并关掉，下面的抽屉这里关，草稿留着。
+          if (isPermissionDenied(err)) setInjectOpen(false);
           throw err;
         }
       },
     });
   };
 
-  const saveConfig = () => {
-    if (!draft) return;
-    openConfirm({
-      action: "资金预测配置调整",
-      detail: `预测窗口 ${draft.forecastWindow.replace("d", " 天")}，创世节点分红 ${draft.genesisIncluded ? "纳入" : "不纳入"}；配置于下一 UTC 日 00:00 生效，不追溯历史。`,
-      reason: true,
-      okLabel: "保存配置",
+  const submitForecast = (values: ForecastValues, version: number, reason: string, operator: string, commandKey: string, inputFingerprint: string, retained: boolean) => sendCommand({
+    retained,
+    stored: () => forecastCommand.isDurablyStored(FORECAST_SLOT, inputFingerprint, commandKey),
+    forget: () => forecastCommand.forget(FORECAST_SLOT, commandKey),
+    send: () => updateD3ForecastConfig(values, version, reason, operator, commandKey),
+    done: async () => {
+      toast(`已保存，${effectiveText()}`, "success");
+      await load();
+      leave.saved();
+    },
+  });
+
+  /** 别人先保存了：框内读最新，显示别人改了什么，留下自己改的字段，理由清空，在最新版本上重新核对（OP-97）。 */
+  const forecastConflict = (read: () => void, busy = false, failed = "") => (
+    <span className="rd-toolbar">
+      <span>这项刚被别人改过。{failed}</span>
+      <Button size="sm" loading={busy} onClick={read}>读取最新</Button>
+    </span>
+  );
+
+  const readLatestForecast = async (sent: D3Main, values: ForecastValues, revision: number) => {
+    const read = () => void readLatestForecast(sent, values, revision);
+    setConfirm((current) => current && { ...current, blocked: forecastConflict(read, true) });
+    let latest: D3Main;
+    try {
+      latest = await fetchD3Main();
+    } catch (err) {
+      setConfirm((current) => current && { ...current, blocked: forecastConflict(read, false, errorText(err, "读取失败，请重试。")) });
+      return;
+    }
+    const before = forecastValues(sent.config);
+    const after = forecastValues(latest.config);
+    const merged = mergeForecast(before, values, after);
+    setMain(latest);
+    setDraft(merged);
+    if (JSON.stringify(merged) === JSON.stringify(after)) {
+      setConfirm(null);
+      toast("你改的内容和最新设置一样，不用再保存。", "info");
+      return;
+    }
+    // 版本变了，原来的影响作废，要看到最新版本的影响才能确认。
+    let impact: ForecastConfigPreview;
+    try {
+      impact = await previewB2ForecastConfig(merged, latest.config.version);
+    } catch (err) {
+      setConfirm((current) => current && { ...current, blocked: forecastConflict(read, false, errorText(err, "影响预览读取失败，请重试。")) });
+      return;
+    }
+    if (impact.forecastDeltaPreview.afterCoverageStatus === "VALUATION_UNAVAILABLE") {
+      setConfirm(null);
+      setPreview({ key: JSON.stringify([merged, latest.config.version]), value: impact });
+      return;
+    }
+    setConfirm(forecastRequest(latest, merged, impact, forecastDiffRows(before, after).filter((row) => row.before !== row.after), revision + 1));
+  };
+
+  const forecastRequest = (latest: D3Main, values: ForecastValues, impact: ForecastConfigPreview, others: ReturnType<typeof forecastDiffRows> = [], revision = 0): ConfirmRequest => {
+    const base = forecastValues(latest.config);
+    const version = latest.config.version;
+    const dropped = latest.liabilities.breakdown.filter((row) => base.liabilityCategories[row.category] && !values.liabilityCategories[row.category]);
+    // 某一项改了有风险，写在这一行下面，不另铺横幅（VS-103）。
+    const notes: Record<string, { tone: "warn" | "danger"; note: string }> = Object.fromEntries(dropped.map((row) => [`liability-${row.category}`, { tone: "warn", note: `这类现在是 ${money(row.amountUsdt)}。` }]));
+    if (base.reserveCategories.usdt && !values.reserveCategories.usdt) notes["reserve-usdt"] = { tone: "danger", note: "资金安全等级会按储备 0 算。" };
+    return {
+      action: "调整应付款预测设置",
+      title: "保存预测设置",
+      revision,
+      detail: `预测 ${values.forecastWindow.replace("d", " 天")}，创世节点收益${values.genesisIncluded ? "计入" : "不计入"}。不改历史数据，也不改兑付覆盖率；今日概览的可覆盖天数会跟着变。`,
+      facts: (
+        <div className="rd-stack">
+          {/* 这次没动、但 USDT 储备本来就不计入时，照旧提醒一句。 */}
+          {!base.reserveCategories.usdt && !values.reserveCategories.usdt && <Notice tone="danger">不计入 USDT 储备后，资金安全等级会按储备 0 算。</Notice>}
+          {others.length > 0 && <Notice tone="warn" title="别人改了这些，已按最新读取">{others.map((row) => <div key={row.key}>{row.label}：{row.before} → {row.after}</div>)}</Notice>}
+          <DiffList rows={forecastDiffRows(base, values).map((row) => ({ ...row, ...notes[row.key] }))} />
+          <ForecastConfigImpact preview={impact} categoryLabel={categoryText} />
+        </div>
+      ),
+      briefKind: "config",
+      statedBrief: { impact: "影响这页的到期、差额和资金安全等级，用户看不到。", check: "核对改动项和生效时间，理由写清依据或工单号。" },
+      effect: effectiveText(),
+      confirmLabel: "确认保存",
       run: async (reason) => {
-        if (!reasonValid(reason, toast)) return false;
-        const values = {
-          reserveCategories: draft.reserveCategories,
-          liabilityCategories: draft.liabilityCategories,
-          forecastWindow: draft.forecastWindow,
-          genesisIncluded: draft.genesisIncluded,
-          includeFarLiabilities: draft.includeFarLiabilities,
-          stakingInterestMode: draft.stakingInterestMode,
-          trialStressEnabled: draft.trialStressEnabled,
-        };
+        if (forecastCommand.peek(FORECAST_SLOT)) throw new Error("上次保存结果未知，先在页面上方核对。核对完之前这里只能查看。");
+        const operator = OPERATOR();
+        const fingerprint = JSON.stringify({ draft: values, expectedVersion: version, reason, operator, ownerAdminId: session?.adminId,
+          commandOrigin: fundCommandOrigin("PUT", "/api/admin/treasury/forecast-config", "finance_d3_read") });
+        const commandKey = forecastCommand.resolve(FORECAST_SLOT, fingerprint, () => `b2-forecast-config-${crypto.randomUUID()}`);
         try {
-          await updateD3ForecastConfig(values, draft.version, reason.trim(), OPERATOR());
-          toast("预测配置已保存，将于下一 UTC 日 00:00 生效");
-          await load();
-          return true;
+          await submitForecast(values, version, reason, operator, commandKey, fingerprint, false);
         } catch (err) {
-          setError(err instanceof Error ? displayAdminError(err) : "预测配置保存失败");
+          if (err instanceof DRequestError && err.reasonCode === "D3_FORECAST_CONFIG_VERSION_CONFLICT") {
+            setConfirm((current) => current && { ...current, blocked: forecastConflict(() => void readLatestForecast(latest, values, revision)) });
+          }
           throw err;
         }
       },
+    };
+  };
+
+  /** 保存前先看系统算的影响：失败和改后无法估值都不开确认框，写在按钮旁，再点重试（D3-MD1）。 */
+  const saveConfig = async () => {
+    if (!main || !draft || !canConfig || loading || previewLoading || draft.forecastWindow === "90d") return;
+    const generation = ++previewGeneration.current;
+    const sent = main;
+    const values = draft;
+    setPreviewLoading(true);
+    setPreview(null);
+    setConfigNote(null);
+    let impact: ForecastConfigPreview;
+    try {
+      impact = await previewB2ForecastConfig(values, sent.config.version);
+    } catch (caught) {
+      if (generation !== previewGeneration.current) return;
+      if (isPermissionDenied(caught)) { announcePermissionDenied(); return; }
+      const conflict = caught instanceof B2RequestError && caught.status === 409;
+      setConfigNote({ tone: conflict ? "warn" : "danger", text: errorText(caught, "影响预览读取失败，请重试。") });
+      if (conflict) {
+        // 别人先保存了：读最新，自己改的字段留着，再点保存时看新版本的影响（OP-97）。
+        const latest = await fetchD3Main();
+        setMain(latest);
+        setDraft(mergeForecast(forecastValues(sent.config), values, forecastValues(latest.config)));
+      }
+      return;
+    } finally {
+      setPreviewLoading(false);
+    }
+    if (generation !== previewGeneration.current) return;
+    if (impact.forecastDeltaPreview.afterCoverageStatus === "VALUATION_UNAVAILABLE") {
+      setPreview({ key: previewKey, value: impact });
+      return;
+    }
+    setConfirm(forecastRequest(sent, values, impact));
+  };
+
+  const submitExport = async (kind: ExportKind, reason: string, operator = OPERATOR(), originalKey?: string) => {
+    if (!main || loading) throw new Error("资金数据没读到或正在刷新，读完再导出。");
+    const scope = exportScope(kind);
+    if (!originalKey && pendingKeys.get(scope)) throw new Error("上次导出结果未知，先到页面上方查询原结果");
+    const key = originalKey ?? treasuryCommandKey(scope, { exportKind: kind, reason, operator, ownerAdminId: session?.adminId,
+      commandOrigin: fundCommandOrigin("POST", `/api/admin/treasury/${kind === "reconciliation" ? "reconciliation" : "liabilities"}/export`, "finance_d3_read") });
+    await sendCommand({
+      retained: !!originalKey,
+      stored: () => pendingKeys.isDurablyStored(scope, key),
+      forget: () => pendingKeys.forget(scope, key),
+      send: () => downloadD3Csv(kind, reason, operator, key),
+      done: async () => toast(`${EXPORT_LABEL[kind]} 已导出`, "success"),
     });
   };
 
-  const exportCsv = (kind: "reconciliation" | "liabilities") => {
-    openConfirm({
-      action: "敏感导出",
-      detail: kind === "reconciliation" ? "导出储备与负债对账数据，并写入 A2 敏感审计。" : "导出负债科目明细，并写入 A2 敏感审计。",
-      reason: true,
-      okLabel: "确认导出",
-      run: async (reason) => {
-        if (!reasonValid(reason, toast)) return false;
-        const scope = exportScope(kind);
-        const pendingKeyBeforeRequest = pendingKeys.get(scope);
-        const commandKey = operationKey(scope);
-        try {
-          await downloadD3Csv(kind, reason.trim(), OPERATOR(), commandKey);
-          pendingKeys.forget(scope);
-          toast(kind === "reconciliation" ? "储备负债对账 CSV 已导出" : "负债明细 CSV 已导出");
-          return true;
-        } catch (err) {
-          if (!pendingKeyBeforeRequest && !isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
-          setError(err instanceof Error ? displayAdminError(err) : "CSV 导出失败");
-          return false;
-        }
-      },
+  const exportCsv = (kind: ExportKind) => {
+    setConfirm({
+      action: "导出",
+      title: EXPORT_TITLE[kind],
+      detail: "",
+      facts: <Facts><Fact k="范围">{EXPORT_RANGE[kind]}</Fact>{main?.liabilities.totalUsdt === null && <Fact k="估值">{kind === "liabilities" ? "暂时无法估值，UVT 那一类的金额和各类占比留空" : "暂时无法估值，应付款和差额两行金额留空"}</Fact>}<Fact k="去向">浏览器直接下载</Fact></Facts>,
+      briefKind: "export",
+      statedBrief: { impact: "这次导出记入操作记录。", check: "核对导出内容，理由写明导出依据或工单号。" },
+      effect: "立即生效",
+      confirmLabel: "确认导出",
+      run: (reason) => submitExport(kind, reason),
     });
   };
 
-  if (loading && !data) {
-    return <section className="l-card"><div className="l-b">D3 数据加载中...</div></section>;
+  // 结果未知的提交写在页面最上面,刷新后还在(OP-93)。unknownTick 在每次提交收尾时变,让这里重读。
+  const unknownCommands = useMemo(() => {
+    void unknownTick;
+    const records = pendingKeys.list();
+    return {
+      injections: records.flatMap((record) => (record.fingerprint.startsWith("injection|") && record.amount && record.voucherNo && record.reason
+        ? [{ ...record, amount: record.amount, voucherNo: record.voucherNo, reason: record.reason }] : [])),
+      exports: records.flatMap((record) => (record.exportKind && record.reason ? [{ ...record, exportKind: record.exportKind, reason: record.reason }] : [])),
+      forecast: forecastCommand.list().find((record) => record.fingerprint === FORECAST_SLOT) ?? null,
+    };
+  }, [unknownTick]);
+
+  const injectAmount = amount.trim();
+  const injectVoucher = voucherNo.trim();
+  const amountIssue = !injectAmount || !Number.isFinite(Number(injectAmount)) || Number(injectAmount) <= 0 ? "请输入有效的注入金额"
+    : !/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(injectAmount) ? "最多两位小数，不会自动四舍五入" : undefined;
+  const voucherIssue = !injectVoucher ? "请输入到账凭证号"
+    : !/^[A-Za-z0-9][A-Za-z0-9:_./-]{5,95}$/.test(injectVoucher) ? "6–96 位，字母或数字开头，只能用字母、数字和 : _ . / -"
+      : unknownCommands.injections.some((record) => record.voucherNo === injectVoucher) ? "这个凭证号的登记结果未知，先在页面上方核对" : undefined;
+
+  /** 按原操作重试：同命令号、同内容、同理由、同操作人，不接受新输入（OP-94）。 */
+  const runRetry = async () => {
+    if (!retry) return;
+    // 过期和查不到记录都不发送，也不解除：解除只在后端明确拒绝之后（OP-96、OP-153）。
+    const stale = retry.expiresAt <= Date.now() ? RETRY_EXPIRED : !retry.allowed ? RETRY_NO_PERMISSION : !retry.stored() ? "浏览器里查不到这条记录，本次没有发送。记录继续保留，请到操作记录与审批核对。" : "";
+    if (stale) {
+      setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} ${stale}` }));
+      setRetry(null);
+      return;
+    }
+    setRetrying(true);
+    setRetryRejected((current) => current.filter((key) => key !== retry.commandKey));
+    try {
+      await retry.resend();
+    } catch (err) {
+      if (isPermissionDenied(err)) announcePermissionDenied();
+      setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} 重试没有成功：${errorText(err, "原因未知")} 原操作结果仍未知，记录继续保留。` }));
+      if (isExplicitRejection(err)) {
+        setRetryRejected((current) => [...current, retry.commandKey]);
+        toast(displayAdminError(err), "warn");
+      }
+    } finally {
+      setRetrying(false);
+      setRetry(null);
+    }
+  };
+
+  const releasePending = (item: PendingItem) => {
+    item.forget();
+    setUnknownTick((tick) => tick + 1);
+    setReleasing(null);
+    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
+  };
+
+  /** Query or submit evidence against the saved original. */
+  const checkInvestigation = async (item: PendingItem, evidence?: FundCommandEvidence) => {
+    try {
+      const receipt = await checkFundCommand(item.investigationRecord, evidence);
+      setInvestigationResults(current => ({ ...current, [item.commandKey]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        item.forget();
+        setSettled(current => [...current.filter(entry => entry.key !== item.commandKey), { key: item.commandKey, label: item.label, status: receipt!.originalStatus }]);
+        setUnknownTick(tick => tick + 1);
+        setRetry(null); setConfirm(null); setInjectOpen(false);
+        await load();
+      }
+      return receipt;
+    } catch (cause) {
+      const error = displayAdminError(cause);
+      // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
+      if (!evidence) setInvestigationResults(current => ({ ...current, [item.commandKey]: { error } }));
+      throw cause;
+    }
+  };
+  const verifyPending = async (item: PendingItem) => {
+    try { if (fundCommandSettled(await checkInvestigation(item))) return; }
+    catch { /* 查询失败已写到原记录，保留原命令。 */ }
+    refresh();
+  };
+
+  const crossLink = (href: string, label: string): CrossLink => ({
+    href,
+    label,
+    reachable: reach(href),
+  });
+
+  const dataBlocked = !main ? "资金数据没读到，刷新后再试" : loading ? "正在刷新，稍等" : undefined;
+  const exportBlocked = (kind: ExportKind) => (unknownCommands.exports.some((record) => record.exportKind === kind) ? "上次导出结果未知，先到页面上方查询原结果" : dataBlocked);
+  const mainFailed = canReadMain && !main && !loading;
+  // 读取失败只在页签上方写一条，带重新加载（VS-107）。
+  const mainState = loading && !main ? <BlockState state="loading" title="正在读取资金数据…" /> : null;
+  const tier = main?.reserve.waterLevel.tier;
+  const fundAlarm = tier === "DANGER" || tier === "WARNING";
+  const fundConclusion = main ? <FundConclusion main={main} emergencyLink={crossLink("/emergency/kill-switch", "去紧急停用开关")} withdrawalsLink={crossLink("/finance/withdrawals", "去提现审核")} /> : null;
+
+  const asOf = main?.reserve.asOf;
+  const header = (
+    <PageHeader
+      pageId="D3"
+      title="资金储备与应付款"
+      summary="看平台的钱够不够付，要不要补储备。"
+      meta={tab ? (
+        <span className="rd-toolbar">
+          <span>{asOf && `${businessClock(parseBusinessTime(asOf))} 读取（${businessZone().label}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
+          <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button>
+        </span>
+      ) : undefined}
+      readOnly={canInject || canConfig || canExportLiabilities || !tab ? undefined : "你只能查看；登记储备注入需财务主管。"}
+      actions={(
+        <>
+          {canExportReconciliation && <Button icon={<Download size={14} aria-hidden />} disabledReason={exportBlocked("reconciliation")} onClick={() => exportCsv("reconciliation")}>导出对账 CSV</Button>}
+          {canInject && <Button variant={tier && tier !== "NORMAL" ? "primary" : "secondary"} disabledReason={dataBlocked} onClick={() => setInjectOpen(true)}>登记储备注入</Button>}
+        </>
+      )}
+    />
+  );
+
+  if (!tab) {
+    return (
+      <RdPage>
+        {header}
+        <BlockState state="denied" title="无权限访问" detail="这个账号没有这页内容的读取权限，需要时联系超级管理员。" />
+      </RdPage>
+    );
   }
 
-  if (!data || !draft) {
-    return <section className="l-card"><div className="l-b"><div className="dtint warn">D3 数据异常 · {error || "服务端响应不完整，已停止展示旧财务数据"}</div><button className="l-btn primary" style={{ marginTop: 12 }} onClick={() => void load()}>重新加载</button></div></section>;
-  }
-
-  const water = data?.reserve.waterLevel;
-  const sourceText = Array.from(new Set(
-    [...(data?.reserve.sources ?? []), ...(data?.liabilities.sources ?? [])].map(treasurySourceLabel),
-  )).join(" / ");
-
+  const forecastRecord = unknownCommands.forecast;
+  const savedForecast = forecastRecord && JSON.parse(forecastRecord.inputFingerprint) as { draft: ForecastValues; expectedVersion: number; reason: string; operator: string; ownerAdminId?: number; commandOrigin?: FundCommandOrigin };
+  const originalOwner = (record: { ownerAdminId?: number; operator?: string }) => record.ownerAdminId === undefined
+    ? record.operator === OPERATOR() : record.ownerAdminId === session?.adminId;
+  const savedChanges = savedForecast && baseValues
+    ? forecastDiffRows(baseValues, savedForecast.draft).filter((row) => row.before !== row.after).map((row) => ({ key: row.key, label: row.label, value: <Change from={row.before} to={row.after} /> }))
+    : [];
+  const pendingItems: PendingItem[] = [
+    ...unknownCommands.injections.map((record): PendingItem => ({
+      investigationRecord: record,
+      label: `登记储备注入 ${money(Number(record.amount))}`,
+      commandKey: record.commandKey,
+      record,
+      title: "可能已经入账",
+      body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}。</>,
+      hint: "按原请求重试不会重复登记。",
+      expiresAt: record.expiresAt,
+      allowed: canInject,
+      auditHref: `/platform/audit?domain=D&object=${encodeURIComponent(record.voucherNo)}`,
+      retryTitle: "按原请求重试储备注入",
+      retryEffect: "立即生效",
+      rows: [
+        { key: "amount", label: "金额", value: amountText(Number(record.amount)), lead: true, unit: "USDT" },
+        { key: "voucher", label: "凭证号", value: record.voucherNo },
+        { key: "reason", label: "理由", value: record.reason },
+      ],
+      stored: () => pendingKeys.isDurablyStored(record.fingerprint, record.commandKey),
+      resend: () => submitInjection(record.amount, record.voucherNo, record.reason, record.operator, record.commandKey),
+      forget: () => pendingKeys.forget(record.fingerprint, record.commandKey),
+    })),
+    ...(forecastRecord && savedForecast ? [{
+      investigationRecord: { ...forecastRecord, commandOrigin: savedForecast.commandOrigin },
+      label: "保存预测设置",
+      commandKey: forecastRecord.commandKey,
+      record: forecastRecord,
+      title: "可能已经保存",
+      hint: "按原请求重试不会重复保存。",
+      expiresAt: forecastRecord.expiresAt,
+      allowed: canConfig && originalOwner(savedForecast),
+      auditHref: "/platform/audit?domain=D",
+      retryTitle: "按原请求重试保存预测设置",
+      retryEffect: effectiveText(),
+      rows: [
+        { key: "version", label: "基于版本", value: `v${savedForecast.expectedVersion}` },
+        ...(savedChanges.length ? savedChanges : [{ key: "changes", label: "这次改动", value: baseValues ? "和现在的设置一样，可能已经保存" : "现在的设置没读到，比不出改动" }]),
+        { key: "reason", label: "理由", value: savedForecast.reason },
+      ],
+      stored: () => forecastCommand.isDurablyStored(FORECAST_SLOT, forecastRecord.inputFingerprint, forecastRecord.commandKey),
+      resend: () => submitForecast(savedForecast.draft, savedForecast.expectedVersion, savedForecast.reason, savedForecast.operator, forecastRecord.commandKey, forecastRecord.inputFingerprint, true),
+      forget: () => forecastCommand.forget(FORECAST_SLOT, forecastRecord.commandKey),
+    }] : []),
+    ...unknownCommands.exports.map((record): PendingItem => ({
+      investigationRecord: record,
+      label: `导出${EXPORT_LABEL[record.exportKind]}`,
+      commandKey: record.commandKey,
+      record,
+      title: "导出任务可能已经生成",
+      hint: "文件可能没有下载下来；按原请求重试不会多记一次。",
+      expiresAt: record.expiresAt,
+      allowed: (record.exportKind === "liabilities" ? canExportLiabilities : canExportReconciliation) && originalOwner(record),
+      auditHref: "/platform/audit?domain=D",
+      retryTitle: "按原请求重试导出",
+      retryEffect: "立即生效",
+      rows: [
+        { key: "kind", label: "内容", value: EXPORT_LABEL[record.exportKind] },
+        { key: "reason", label: "理由", value: record.reason },
+      ],
+      stored: () => pendingKeys.isDurablyStored(record.fingerprint, record.commandKey),
+      resend: () => submitExport(record.exportKind, record.reason, record.operator, record.commandKey),
+      forget: () => pendingKeys.forget(record.fingerprint, record.commandKey),
+    })),
+  ];
   return (
-    <>
-      {error && <div className="dtint warn" style={{ marginBottom: 12 }}>D3 数据异常 · {error}</div>}
-
-      <div className="f-stats">
-        <div className="f-stat ok"><div className="k">真实储备</div><div className="v">{money(data?.reserve.reserveTotalUsdt ?? 0)}</div><div className="sub">已扣除质押锁定本金</div></div>
-        <div className="f-stat"><div className="k">应付负债</div><div className="v">{money(data?.liabilities.totalUsdt ?? 0)}</div><div className="sub">固定 9 类服务端科目 · 银行轨挂账入科目 #9</div></div>
-        <div className={`f-stat ${water?.tier === "DANGER" ? "danger" : water?.tier === "WARNING" ? "warn" : "cyan"}`}><div className="k">资金安全等级</div><div className="v">{water ? WATER_LABEL[water.tier] : "—"}</div><div className="sub">{formatReserveCoverDays(data.maturity.cumulativeUsdt, water?.reserveCoverDays ?? 0)}</div></div>
-        <div className="f-stat warn"><div className="k">{(data?.maturity.window ?? maturityWindow).replace("d", " 天")}到期负债</div><div className="v">{money(data?.maturity.cumulativeUsdt ?? 0)}</div><div className="sub">提现 + 利息 + 创世节点</div></div>
+    <RdPage>
+      {header}
+      {main?.liabilities.totalUsdt === null && <Notice tone="warn">UVT 没有有效价格，应付款总额暂时无法估值；导出的 CSV 里这些金额和占比留空并标明无法估值，不能当完整总额用。</Notice>}
+      {fundAlarm && fundConclusion}
+      {mainFailed && (
+        <Notice tone="warn" title="资金状态：暂时无法判断" action={<Button size="sm" onClick={reloadAll}>重新加载</Button>}>
+          加载失败，已暂停显示旧数据。{mainError || "数据不完整。"}
+        </Notice>
+      )}
+      <FundRecoveryPanel settled={settled} onDismissSettled={key => setSettled(current => current.filter(entry => entry.key !== key))}
+        link={reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=D">到操作记录与审批核对</Link>}
+        rows={pendingItems.map((item) => {
+          const expired = item.expiresAt <= Date.now();
+          // 查到记为失败时，「可能已经入账」这类猜测不再写。
+          const outcome = investigationResults[item.commandKey];
+          const found = outcome && "receipt" in outcome ? outcome.receipt?.originalStatus : undefined;
+          return { key: item.commandKey, title: item.label, record: item.investigationRecord, outcome: investigationResults[item.commandKey], createdAt: item.investigationRecord.createdAt, expired, canRetry: !expired && item.allowed,
+            actions: <>
+              <FundCheckButtons record={item.investigationRecord} outcome={investigationResults[item.commandKey]} expired={expired} onCheck={() => void verifyPending(item)} onClose={() => setClosing(item)} />
+              <Button size="sm" disabledReason={expired ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原请求重试</Button>
+              {item.allowed && retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>解除待确认</Button>}
+            </>,
+            detail: <>
+              <p>{found === "FAILED" ? "" : `${item.title}。`}{item.body}{expired ? "" : item.hint}</p>
+              {pendingNotes[item.commandKey] && <p><KeepText text={pendingNotes[item.commandKey]} /></p>}
+              <Fold inset title="原操作完整内容" summary="原请求编号、完整内容和提交时间">
+                <p className="rd-note d3-raw" data-mono>原请求编号 {item.commandKey}</p>
+                <pre className="rd-note d3-raw">{JSON.stringify(item.record, null, 2)}</pre>
+                <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(JSON.stringify(item.record, null, 2)).then(() => toast("已复制原操作记录", "success"), () => toast("复制失败，请手动选择原操作记录", "error"))}>复制原操作记录</Button>
+              </Fold>
+            </> };
+        })} />
+      <PageTabs
+        ids={tabIds}
+        label="资金储备内容"
+        value={tab}
+        onChange={selectTab}
+        items={visibleTabs.map((item) => ({ ...item, count: item.value === "settings" && main?.config.pendingConfig ? 1 : undefined }))}
+      />
+      <div {...tabIds.panel(tab)} className="rd-tab-pane">
+      {tab === "overview" && (main
+        ? (
+          <>
+            {!fundAlarm && fundConclusion}
+            <OverviewTab main={main} links={[crossLink("/overview/dual-ledger", "资金与应付款总览（看覆盖率和告警）"), crossLink("/overview/risk-radar", "风险提醒")]} />
+          </>
+        )
+        : (
+          <>
+            {loading && <Conclusion state="unknown">资金状态：正在读取</Conclusion>}
+            {mainState}
+          </>
+        ))}
+      {tab === "due" && (
+        <DueTab
+          main={main}
+          mainState={mainState}
+          windowValue={maturityWindow}
+          onWindow={selectMaturity}
+          maturity={maturityWindow === "7d" ? { data: main?.maturity7 ?? null, loading, error: mainError } : maturity30}
+          exposure={exposure}
+          onExposureRetry={() => void loadExposure()}
+          onMaturityRetry={() => void loadMaturity30()}
+          canReadExposure={canReadExposure}
+          canExport={canExportLiabilities}
+          exportBlocked={exportBlocked("liabilities")}
+          onExport={() => exportCsv("liabilities")}
+          selected={selectedCategory}
+          onSelect={setSelectedCategory}
+        />
+      )}
+      {tab === "flow" && <FlowTab history={history} />}
+      {tab === "settings" && (
+        <SettingsTab
+          main={main}
+          draft={draft}
+          mainState={mainState}
+          canConfig={canConfig}
+          dirty={dirty}
+          lockedNote={forecastRecord ? "上次保存结果未知，先在页面上方核对。核对完之前这里只能查看。" : undefined}
+          busyReason={loading ? "正在刷新，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : dirty ? undefined : "还没有修改"}
+          saving={previewLoading}
+          note={configNote}
+          impact={currentPreview && <ForecastConfigImpact surface preview={currentPreview} categoryLabel={categoryText} />}
+          onChange={setDraft}
+          onDiscard={() => { if (baseValues) setDraft(baseValues); }}
+          onSave={() => void saveConfig()}
+        />
+      )}
       </div>
 
-      <section className="l-card">
-        <div className="l-h"><span className="ttl">资金安全等级</span><span className="sub">· 服务端按未来 7 日到期负债判定</span><div className="r"><button className="l-btn sm" onClick={() => void load()}>刷新</button></div></div>
-        <div className="l-b">
-          <div className="f-stats">
-            {(water?.thresholds ?? []).map((row) => (
-              <div className={`f-stat ${row.tier === water?.tier ? (row.tier === "DANGER" ? "danger" : row.tier === "WARNING" ? "warn" : "ok") : ""}`} key={row.tier}>
-                <div className="k">{WATER_LABEL[row.tier]}</div>
-                <div className="v">{row.condition}</div>
-                <div className="sub">{row.tier === water?.tier ? "当前所处分级" : "分级阈值"}</div>
-              </div>
-            ))}
-          </div>
-          {water && <div className="dtint" style={{ marginTop: 12 }}>建议动作：{water.suggestedAction}；通知策略：{water.notification}；日均到期 {money(water.dailyAverageDueUsdt)}。</div>}
-        </div>
-      </section>
-
-      <div className="two-col r11">
-        <section className="l-card">
-          <div className="l-h"><span className="ttl">真实储备明细</span><span className="sub">· 按系统业务记录统计</span></div>
-          <div className="l-b">
-            <div className="res-row"><span className="nm">USDT 储备<small>基础可动用储备</small></span><span className="v">{money(data?.reserve.usdtReserveUsdt ?? 0)}</span></div>
-            <div className="res-row"><span className="nm">其他高流动资产<small>当前纳入统计规则</small></span><span className="v">{money(data?.reserve.otherLiquidUsdt ?? 0)}</span></div>
-            <div className="res-row"><span className="nm">累计真实注资<small>凭证登记汇总</small></span><span className="v">{money(data?.reserve.injectedCumulativeUsdt ?? 0)}</span></div>
-            <div className="res-row"><span className="nm">已扣除质押锁定本金<small>不作为可动用储备</small></span><span className="v">-{money(data?.reserve.lockedStakingPrincipalDeductedUsdt ?? 0)}</span></div>
-          </div>
-        </section>
-
-        <section className="l-card">
-          <div className="l-h"><span className="ttl">储备注入登记</span><span className="sub">· 真实到账凭证必填</span></div>
-          <div className="l-b">
-            {canInject ? (
-              <>
-                <div className="lookup" style={{ marginBottom: 10 }}>
-                  <input className="ui-control" value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="注资金额 USDT" aria-label="注资金额（USDT，最多两位小数）" />
-                  <input className="ui-control" value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} placeholder="真实凭证号（必填且唯一）" aria-label="真实凭证号（必填且唯一，登记后不可重复）" />
-                  <button className="l-btn primary" onClick={saveInjection}>登记</button>
-                </div>
-                <div className="dtint">重复凭证返回冲突，不会写储备、审计或事件。</div>
-              </>
-            ) : <div className="dtint">当前账号只有查看权限；仅财务负责人可登记储备注入。</div>}
-          </div>
-        </section>
-      </div>
-
-      <section className="l-card">
-        <div className="l-h"><span className="ttl">应付负债 · 9 类科目</span><span className="sub">· {data?.liabilities.hardLiabilityCategoryCount ?? 0}/9</span>{canExport && <div className="r"><button className="l-btn sm" onClick={() => exportCsv("liabilities")}>导出负债 CSV</button></div>}</div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 920 }}>
-            <thead><tr><th>科目</th><th>说明</th><th className="num">金额</th><th className="num">占比</th><th>事实来源</th></tr></thead>
-            <tbody>{(data?.liabilities.breakdown ?? []).map((row) => <tr key={row.category}><td className="mono">{categoryText(row.category)}</td><td>{operatorCopyText(row.label)}</td><td className="num mono">{money(row.amountUsdt)}</td><td className="num mono">{(row.share * 100).toFixed(2)}%</td><td style={{ color: "var(--ink-4)" }}>{treasurySourceLabel(row.source)}</td></tr>)}</tbody>
-          </table>
-        </div>
-      </section>
-
-      <div className="two-col r11">
-        <section className="l-card">
-          <div className="l-h"><span className="ttl">到期负债预测</span><span className="sub">· 每日构成与累计</span><div className="r"><select className="ui-control" value={maturityWindow} onChange={(event) => selectMaturity(event.target.value as "7d" | "30d")}><option value="7d">7 天</option><option value="30d">30 天</option></select></div></div>
-          <div className="l-b" style={{ maxHeight: 430, overflowY: "auto" }}>
-            {(data?.maturity.daily ?? []).map((row) => <div className="res-row" key={row.date}><span className="nm">{row.date}<small>提现 {money(row.withdrawDueUsdt)} · 利息 {money(row.interestDueUsdt)} · 创世节点 {money(row.genesisDividendUsdt)}{data.maturity.trialStressIncluded ? ` · 试用业务 压力测试 ${money(row.trialShadowStressUsdt)}` : ""}</small></span><span className="v">{money(row.totalDueUsdt)}</span></div>)}
-            <div className="dtint" style={{ marginTop: 10 }}>{operatorCopyText(data?.maturity.farLiabilityNote ?? "")}</div>
-          </div>
-        </section>
-
-        <section className="l-card">
-          <div className="l-h"><span className="ttl">储备与应付款差额曲线</span><span className="sub">· 储备减应付负债</span><div className="r"><select className="ui-control" value={exposureWindow} onChange={(event) => selectExposure(event.target.value as "7d" | "30d" | "90d")}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select></div></div>
-          <div className="l-b">
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, data?.exposure.series.length ?? 1)}, minmax(2px, 1fr))`, gap: 2, alignItems: "end", height: 220 }}>
-              {(data?.exposure.series ?? []).map((row) => <div key={row.date} title={`${row.date}: ${money(row.netExposureUsdt)}`} style={{ minHeight: 4, height: `${Math.max(4, Math.abs(row.netExposureUsdt) / exposureMax * 200)}px`, background: row.negative ? "var(--danger)" : "var(--success)", borderRadius: 2 }} />)}
+      <Drawer
+        open={injectOpen}
+        onClose={() => setInjectOpen(false)}
+        title="登记储备注入"
+        explain="须填写到账凭证号"
+        icon={Landmark}
+        tone="role-1"
+        footer={<Decision explain="凭证号重复时不会登记。下一步核对金额和凭证，再写理由。" others={<Button variant="ghost" onClick={() => setInjectOpen(false)}>取消</Button>} primary={<Button variant="primary" disabledReason={dataBlocked ?? ([amountIssue, voucherIssue].filter(Boolean).join("；") || undefined)} onBlockedClick={() => setInjectShown({ amount: true, voucher: true })} onClick={saveInjection}>下一步：确认</Button>} />}
+      >
+        <p className="rd-note">这里只登记已经到账的资金，不会转账。</p>
+        {/* 可用储备归零时看不出锁定本金缺口，不从归零的余额预估（DT-10）。 */}
+        {main && (
+          <Facts>
+            <Fact k="现在可用储备">{money(main.reserve.reserveTotalUsdt)}</Fact>
+            {!amountIssue && <Fact k="登记后可用储备">{main.reserve.reserveTotalUsdt > 0 ? money(main.reserve.reserveTotalUsdt + Number(injectAmount)) : "当前可用储备为 0，登记后以刷新结果为准。"}</Fact>}
+          </Facts>
+        )}
+        <Field label="注入金额" required explain="最多两位小数。" error={injectShown.amount ? amountIssue : undefined}>
+          {(control) => (
+            <span className="rd-number d3-amount">
+              <Input {...control} value={amount} onChange={(event) => setAmount(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, amount: true }))} inputMode="decimal" aria-label="注入金额（USDT，最多两位小数）" />
+              <span className="rd-number-unit">USDT</span>
+            </span>
+          )}
+        </Field>
+        <Field label="凭证类型" required explain="到账凭证是链上交易还是银行流水。会写进理由，不进凭证号。">
+          <Select aria-label="凭证类型" value={voucherType} options={VOUCHER_TYPES} onChange={setVoucherType} />
+        </Field>
+        <Field label="凭证号" required explain={"链上到账填交易哈希，银行到账填流水号；至少 6\u00a0位，须能查到。"} error={injectShown.voucher ? voucherIssue : undefined}>
+          {(control) => (
+            <div className="rd-reason-box">
+              <Input {...control} className="rd-input-counted" maxLength={96} value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, voucher: true }))} placeholder="不能重复" aria-label="凭证号（必填，不能重复）" />
+              <span className="rd-reason-count">{injectVoucher.length}/96</span>
             </div>
-            <div className="dtint" style={{ marginTop: 12 }}>绿色表示储备有结余，红色表示储备不足；本页只展示后端事实，不计算 B1 的安全判断。</div>
+          )}
+        </Field>
+      </Drawer>
+
+      {confirm && (
+        <OperationConfirmModal
+          key={`${confirm.action}:${confirm.revision ?? 0}`}
+          action={confirm.action}
+          title={confirm.title}
+          detail={confirm.detail}
+          briefKind={confirm.briefKind}
+          statedBrief={confirm.statedBrief}
+          facts={confirm.facts}
+          effect={confirm.effect ? <><StatusTag tone="progress" filled>{confirm.effect}</StatusTag>{confirm.irreversible && <IrreversibleTag />}</> : undefined}
+          confirmLabel={confirm.confirmLabel}
+          confirmTone={confirm.confirmTone}
+          blockedReason={confirm.blocked}
+          reasonMin={8}
+          reasonMax={confirm.reasonMax ?? 200}
+          onClose={() => setConfirm(null)}
+          onConfirm={async (reason) => {
+            await confirm.run(reason);
+            setConfirm(null);
+          }}
+        />
+      )}
+
+      {retry && (
+        <Modal
+          title={retry.retryTitle}
+          icon={ShieldCheck}
+          sub={<StatusTag tone="progress" filled>{retry.retryEffect}</StatusTag>}
+          busy={retrying}
+          onClose={() => setRetry(null)}
+          footer={<><Button disabled={retrying} onClick={() => setRetry(null)}>取消</Button><Button variant="primary" loading={retrying} loadingText="提交中…" onClick={() => void runRetry()}>按原请求重试</Button></>}
+        >
+          <div className="rd-stack">
+            <Facts>{retry.rows.map((row) => <Fact key={row.key} k={row.label} lead={row.lead} tone={row.lead ? "role-1" : undefined} unit={row.unit}>{row.value}</Fact>)}</Facts>
+            <p className="rd-note">按原内容和理由重发，不会重复执行。</p>
           </div>
-        </section>
-      </div>
+        </Modal>
+      )}
 
-      <section className="l-card">
-        <div className="l-h"><span className="ttl">应付款预测设置</span><span className="sub">· 下一 UTC 日 00:00 生效，不追溯历史</span>{canExport && <div className="r"><button className="l-btn sm" onClick={() => exportCsv("reconciliation")}>导出对账 CSV</button></div>}</div>
-        <div className="l-b">
-          {draft && <>
-            <div className="ui-form-grid" style={{ marginBottom: 12 }}>
-              <label>默认窗口 <select className="ui-control" disabled={!canConfig} value={draft.forecastWindow} onChange={(event) => setDraft({ ...draft, forecastWindow: event.target.value as D3ForecastConfig["forecastWindow"] })}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select></label>
-              <label>利息预测 <select className="ui-control" disabled={!canConfig} value={draft.stakingInterestMode} onChange={(event) => setDraft({ ...draft, stakingInterestMode: event.target.value as D3ForecastConfig["stakingInterestMode"] })}><option value="LINEAR">按日线性</option><option value="AT_MATURITY">到期确认</option></select></label>
-            </div>
-            <div className="ui-form-grid" style={{ marginBottom: 12 }}>
-              <label><input type="checkbox" disabled={!canConfig} checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} /> 纳入创世节点分红</label>
-              <label><input type="checkbox" disabled={!canConfig} checked={draft.includeFarLiabilities} onChange={(event) => setDraft({ ...draft, includeFarLiabilities: event.target.checked })} /> 纳入远期负债</label>
-              <label><input type="checkbox" disabled={!canConfig} checked={draft.trialStressEnabled} onChange={(event) => setDraft({ ...draft, trialStressEnabled: event.target.checked })} /> 试用压力情景</label>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <div className="dtint" style={{ marginBottom: 8 }}>储备科目开关</div>
-              <div className="ui-form-grid">{Object.entries(draft.reserveCategories).map(([key, enabled]) => <label key={key}><input type="checkbox" disabled={!canConfig} checked={enabled} onChange={(event) => setDraft({ ...draft, reserveCategories: { ...draft.reserveCategories, [key]: event.target.checked } })} /> {categoryText(key)}</label>)}</div>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <div className="dtint" style={{ marginBottom: 8 }}>负债科目开关</div>
-              <div className="ui-form-grid">{Object.entries(draft.liabilityCategories).map(([key, enabled]) => <label key={key}><input type="checkbox" disabled={!canConfig} checked={enabled} onChange={(event) => setDraft({ ...draft, liabilityCategories: { ...draft.liabilityCategories, [key]: event.target.checked } })} /> {categoryText(key)}</label>)}</div>
-            </div>
-            <div className="dtint" style={{ marginBottom: 12 }}>当前修订 v{draft.version}（已生效 v{draft.effectiveVersion}）；储备科目 {Object.values(draft.reserveCategories).filter(Boolean).length}/{Object.keys(draft.reserveCategories).length} 开启；负债科目 {Object.values(draft.liabilityCategories).filter(Boolean).length}/{Object.keys(draft.liabilityCategories).length} 开启。</div>
-            {draft.pendingConfig && <div className="dtint warn" style={{ marginBottom: 12 }}>待生效 v{draft.pendingVersion}：窗口 {draft.pendingConfig.forecastWindow.replace("d", " 天")}，储备科目 {Object.values(draft.pendingConfig.reserveCategories).filter(Boolean).length}/{Object.keys(draft.pendingConfig.reserveCategories).length}，负债科目 {Object.values(draft.pendingConfig.liabilityCategories).filter(Boolean).length}/{Object.keys(draft.pendingConfig.liabilityCategories).length}，创世节点 {draft.pendingConfig.genesisIncluded ? "纳入" : "不纳入"}，生效时间 {draft.pendingEffectiveAt}。</div>}
-            {canConfig ? <button className="l-btn primary" onClick={saveConfig}>保存预测配置</button> : <div className="dtint">当前账号只有查看权限；仅财务负责人可调整预测统计规则。</div>}
-          </>}
-        </div>
-      </section>
+      {releasing && <ReleaseModal label={releasing.title} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。" />}
 
-      <p className="f-foot">D3 数据来源：{sourceText || "资金储备记录"}。</p>
-    </>
+      {closing && <FundClosureModal label={closing.label} createdAt={closing.investigationRecord.createdAt} offer={eCommandClosureOffer(investigationResults[closing.commandKey], isRetryExpired(closing.investigationRecord))} facts={closing.rows.filter(row => row.key !== "reason").map(row => <Fact key={row.key} k={row.label}>{row.value}{row.unit ? ` ${row.unit}` : ""}</Fact>)}
+        onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
+
+      <LeaveDialog guard={leave} saveLabel="保存预测设置" saveBlocked={loading ? "正在刷新，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined} onSave={() => void saveConfig()} />
+
+      {refreshAsk && (
+        <Modal
+          title="有未保存的修改，刷新后会丢失"
+          icon={ShieldCheck}
+          onClose={() => setRefreshAsk(false)}
+          footer={<><Button onClick={() => setRefreshAsk(false)}>继续编辑</Button><Button onClick={() => { setRefreshAsk(false); reloadAll(); }}>放弃修改并刷新</Button></>}
+        >
+          <p>「预测设置」里的修改还没保存。</p>
+        </Modal>
+      )}
+      {toastNode}
+    </RdPage>
   );
 }

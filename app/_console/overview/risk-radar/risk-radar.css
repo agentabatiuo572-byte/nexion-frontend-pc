@@ -1,339 +1,90 @@
-.radarpage {
-  --b5-green: #35d58b;
-  --b5-yellow: #f3b341;
-  --b5-red: #ff5c68;
+/* B5 风险提醒。只用 --rd-* 令牌，深浅两套由令牌切换。 */
+
+.radarpage .b5-muted { color: var(--rd-text-3); font-weight: 400; }
+.radarpage .b5-meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 4px; }
+.radarpage .b5-row-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
+
+/* ---------- 有事的项：卡片，排在最前 ---------- */
+.radarpage .b5-issues { align-items: stretch; }
+.radarpage .b5-issue {
+  display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0;
+  padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x);
+  border-radius: var(--rd-radius-panel);
+  background: var(--rd-panel);
+  box-shadow: inset 3px 0 0 var(--tone);  /* 左边一条状态色，告警红、注意橙；不整卡涂色 */
 }
+.radarpage .b5-issue-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); min-width: 0; }
+.radarpage .b5-issue-name { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.radarpage .b5-issue-head .rd-explain { margin-left: -4px; }
+.radarpage .b5-issue-headline { margin: 0; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.radarpage .b5-issue-headline b { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); color: var(--tone); }
+.radarpage .b5-issue-body { min-width: 0; }
+.radarpage .b5-issue-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-1); }
 
-.radarpage .b5-summary,
-.radarpage .b5-card-head,
-.radarpage .b5-actions,
-.radarpage .b5-channel-row {
-  display: flex;
-  align-items: center;
+/* ---------- 正常的项：一项一行 ---------- */
+.radarpage .b5-quiet-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.radarpage .b5-quiet-row {
+  display: grid; align-items: center; gap: var(--rd-space-3);
+  grid-template-columns: 22px minmax(120px, 160px) minmax(0, 1fr) auto minmax(0, auto);
+  padding: var(--rd-space-2) 0; min-height: 44px;
 }
+.radarpage .b5-quiet-row + .b5-quiet-row { border-top: 1px solid var(--rd-line); }
+.radarpage .b5-quiet-name { display: inline-flex; align-items: center; gap: 2px; color: var(--rd-text-2); white-space: nowrap; }
+.radarpage .b5-quiet-value { min-width: 0; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.radarpage .b5-quiet-value[data-zero] { color: var(--rd-text-3); }
+.radarpage .b5-quiet-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.radarpage .b5-quiet-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--rd-space-2); }
 
-.radarpage .b5-summary {
-  gap: 18px;
-  margin: 12px 0 16px;
-  color: var(--ink-3);
-  font-size: 12px;
+/* ---------- 卡片里的明细 ---------- */
+.radarpage .b5-backlog { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.radarpage .b5-backlog-row {
+  display: grid; align-items: baseline; gap: var(--rd-space-3);
+  grid-template-columns: minmax(64px, 1fr) minmax(56px, auto) minmax(84px, auto) minmax(112px, 1.4fr);
+  padding: 6px 0;
 }
+.radarpage .b5-backlog-row > :not(:first-child) { text-align: right; }
+.radarpage .b5-backlog-row[data-head] { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); padding-top: 0; }
+.radarpage .b5-backlog-row[data-total] { border-top: 1px solid var(--rd-line); font-weight: var(--rd-weight-medium); }
+.radarpage .b5-num[data-zero] { color: var(--rd-text-3); }
+.radarpage .b5-num[data-tone] { color: var(--tone); font-weight: var(--rd-weight-semibold); }
 
-.radarpage .b5-summary span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.radarpage .b5-gates { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--rd-space-2) var(--rd-space-4); }
+.radarpage .b5-gates li { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
+.radarpage .b5-gate-name { min-width: 0; white-space: nowrap; color: var(--rd-text); }
+
+/* ---------- 走势和分布 ---------- */
+.radarpage .b5-stack { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
+.radarpage .b5-line { margin: 0; color: var(--rd-text-2); }
+.radarpage .b5-strong { font-size: var(--rd-text-section); color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.radarpage .b5-caption { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.radarpage .b5-volume { display: flex; flex-direction: column; gap: var(--rd-space-2); }
+
+/* ---------- 两张表 ---------- */
+.radarpage .b5-lists { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
+.radarpage .b5-signals th:nth-child(2), .radarpage .b5-signals td:nth-child(2) { width: 110px; }
+.radarpage .b5-signals th:nth-child(3), .radarpage .b5-signals td:nth-child(3) { width: 230px; }
+.radarpage .b5-signals th:nth-child(4), .radarpage .b5-signals td:nth-child(4) { width: 140px; white-space: nowrap; }
+/* 一行：级别标签、类别、具体情况；放不下省略，悬停看全句，点行看详情 */
+.radarpage .b5-signals .rd-cell-main > .rd-tag { margin-right: var(--rd-space-2); vertical-align: middle; }
+.radarpage .b5-signal-fact { color: var(--rd-text-2); }
+.radarpage .b5-handler { color: var(--rd-text-2); }
+.radarpage .b5-inbox th:nth-child(2), .radarpage .b5-inbox td:nth-child(2) { width: 200px; }
+.radarpage .b5-inbox th:nth-child(3), .radarpage .b5-inbox td:nth-child(3) { width: 160px; }
+.radarpage .b5-inbox th:nth-child(4), .radarpage .b5-inbox td:nth-child(4) { width: 200px; }
+
+/* ---------- 弹窗 ---------- */
+.b5-dialog { display: flex; flex-direction: column; gap: var(--rd-space-4); min-width: 0; }
+.b5-dialog .b5-line { margin: 0; color: var(--rd-text-2); }
+.b5-dialog .b5-preview { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); color: var(--rd-text-2); }
+
+@media (max-width: 1280px) {
+  .radarpage .b5-signals th:nth-child(3), .radarpage .b5-signals td:nth-child(3) { width: 146px; }
+  .radarpage .b5-signals th:nth-child(4), .radarpage .b5-signals td:nth-child(4) { width: 132px; white-space: normal; }
 }
-
-.radarpage .b5-dimensions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+@media (max-width: 1180px) {
+  .radarpage .b5-quiet-row { grid-template-columns: 22px minmax(104px, 140px) minmax(0, 1fr) auto; }
+  .radarpage .b5-quiet-actions { grid-column: 2 / -1; justify-content: flex-start; }
 }
-
-.radarpage .b5-dimension,
-.radarpage .b5-subscription {
-  padding: 18px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface);
-  box-shadow: 0 10px 30px rgb(0 0 0 / 9%);
-}
-
-.radarpage .b5-dimension:last-child {
-  grid-column: 1 / -1;
-}
-
-.radarpage .b5-dimension.yellow {
-  border-color: color-mix(in srgb, var(--b5-yellow) 55%, var(--border));
-}
-
-.radarpage .b5-dimension.red {
-  border-color: color-mix(in srgb, var(--b5-red) 65%, var(--border));
-}
-
-.radarpage .b5-card-head {
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-  color: var(--ink-2);
-}
-
-.radarpage .b5-card-head > div {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.radarpage .b5-card-head > span {
-  color: var(--ink-3);
-  font-size: 12px;
-}
-
-.radarpage .b5-light {
-  padding: 3px 8px;
-  border-radius: 999px;
-  text-transform: uppercase;
-  font: 700 10px/1.2 var(--font-jet-mono), monospace;
-}
-
-.radarpage .b5-light.green { color: var(--b5-green); background: color-mix(in srgb, var(--b5-green) 12%, transparent); }
-.radarpage .b5-light.yellow { color: var(--b5-yellow); background: color-mix(in srgb, var(--b5-yellow) 12%, transparent); }
-.radarpage .b5-light.red { color: var(--b5-red); background: color-mix(in srgb, var(--b5-red) 12%, transparent); }
-
-.radarpage .b5-bankrun-grid,
-.radarpage .b5-backlog,
-.radarpage .b5-gates {
-  display: grid;
-  gap: 10px;
-}
-
-.radarpage .b5-bankrun-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.radarpage .b5-bankrun-grid > div,
-.radarpage .b5-backlog > div,
-.radarpage .b5-gates > div {
-  padding: 12px;
-  border-radius: 10px;
-  background: var(--surface-2);
-}
-
-.radarpage .b5-bankrun-grid span,
-.radarpage .b5-bankrun-grid small,
-.radarpage .b5-backlog span,
-.radarpage .b5-backlog small,
-.radarpage .b5-coverage span,
-.radarpage .b5-coverage small {
-  display: block;
-  color: var(--ink-3);
-  font-size: 11px;
-}
-
-.radarpage .b5-bankrun-grid strong {
-  display: block;
-  margin: 5px 0;
-  color: var(--ink);
-  font: 700 30px/1 var(--font-jet-mono), monospace;
-}
-
-.radarpage .b5-dimension > p {
-  color: var(--ink-3);
-  font-size: 12px;
-}
-
-.radarpage .b5-list > div,
-.radarpage .b5-gates > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding-block: 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.radarpage .b5-list > div:last-child,
-.radarpage .b5-gates > div:last-child {
-  border-bottom: 0;
-}
-
-.radarpage .b5-backlog {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.radarpage .b5-backlog b,
-.radarpage .b5-backlog strong {
-  display: block;
-  margin-top: 6px;
-}
-
-/**
- * 功能闸自适应列宽。
- *
- * 此前固定 5 列,把「提现/质押/Genesis/兑换/试用入口」五张卡挤进常规桌面宽度下
- * 约 110px 一列,中文被逐字竖排(默认 CJK 可在任意字符间断行),状态与名称的对应
- * 关系也随之散掉。改成按最小卡宽自适应:宽度够就一行 5 列,不够自动落到 2~3 列,
- * 配合 keep-all 禁止汉字内部断行。不设 max 列数,窄屏仍可退到 1 列。
- */
-.radarpage .b5-gates {
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-}
-
-.radarpage .b5-gates > div {
-  justify-content: flex-start;
-  border-bottom: 0;
-  min-width: 0;
-  flex-wrap: wrap;
-  word-break: keep-all;
-  overflow-wrap: normal;
-}
-
-.radarpage .b5-gates b {
-  margin-left: auto;
-  font-size: 11px;
-}
-
-.radarpage .b5-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-}
-
-.radarpage .b5-dot.green { background: var(--b5-green); box-shadow: 0 0 9px color-mix(in srgb, var(--b5-green) 65%, transparent); }
-.radarpage .b5-dot.red { background: var(--b5-red); box-shadow: 0 0 9px color-mix(in srgb, var(--b5-red) 65%, transparent); }
-
-.radarpage .b5-coverage strong {
-  display: block;
-  margin-bottom: 4px;
-  font: 700 34px/1 var(--font-jet-mono), monospace;
-}
-
-.radarpage .b5-actions {
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.radarpage button {
-  min-height: 34px;
-  padding: 0 13px;
-  border: 1px solid color-mix(in srgb, var(--brand) 65%, var(--border));
-  border-radius: 8px;
-  background: var(--brand);
-  color: #fff;
-  cursor: pointer;
-}
-
-.radarpage button.secondary {
-  background: transparent;
-  color: var(--ink-2);
-  border-color: var(--border);
-}
-
-.radarpage button:disabled {
-  opacity: .45;
-  cursor: not-allowed;
-}
-
-.radarpage .b5-subscription {
-  margin-top: 14px;
-}
-
-.radarpage .b5-channel-row {
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.radarpage .b5-channel-row label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.radarpage .b5-channel-row > input {
-  min-width: 300px;
-  flex: 1;
-}
-
-.radarpage input,
-.radarpage textarea {
-  box-sizing: border-box;
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--ink);
-}
-
-.radarpage .b5-channel-row button {
-  margin-left: auto;
-}
-
-.radarpage .b5-modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 2000;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: rgb(0 0 0 / 62%);
-}
-
-.radarpage .b5-modal {
-  width: min(610px, 100%);
-  max-height: 90vh;
-  overflow: auto;
-  padding: 22px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface);
-}
-
-.radarpage .b5-modal h2 {
-  margin: 0 0 8px;
-  font-size: 18px;
-}
-
-.radarpage .b5-modal > p,
-.radarpage .b5-preview {
-  color: var(--ink-3);
-  font-size: 12px;
-}
-
-.radarpage .b5-threshold-fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 16px 0;
-}
-
-.radarpage .b5-threshold-fields label,
-.radarpage .b5-reason {
-  display: grid;
-  gap: 7px;
-  color: var(--ink-2);
-  font-size: 12px;
-}
-
-.radarpage .b5-reason textarea {
-  min-height: 90px;
-  resize: vertical;
-}
-
-.radarpage .b5-preview {
-  margin-top: 12px;
-  padding: 11px;
-  border-radius: 9px;
-  background: var(--surface-2);
-}
-
-.radarpage .b5-preview p,
-.radarpage .b5-error {
-  color: var(--b5-red);
-}
-
-.radarpage .b5-error {
-  margin: 8px 0;
-  font-size: 12px;
-}
-
-.radarpage .b5-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 18px;
-}
-
-@media (max-width: 900px) {
-  .radarpage .b5-dimensions,
-  .radarpage .b5-bankrun-grid,
-  .radarpage .b5-backlog,
-  .radarpage .b5-gates {
-    grid-template-columns: 1fr;
-  }
-
-  .radarpage .b5-dimension:last-child {
-    grid-column: auto;
-  }
-}
+.radarpage .b5-tab-note { margin: 0; padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x) var(--rd-space-1); display: flex; align-items: center; gap: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+/* 分诊记录中：其余能记分诊的链接显示成禁用，指针显示进行中（点了不动，Ctrl／Cmd、中键照常开新标签）。 */
+.radarpage .rd-link[aria-disabled="true"] { color: var(--rd-text-disabled); text-decoration-color: var(--rd-line-strong); cursor: progress; }

@@ -1,0 +1,9 @@
+.m1-invite{display:flex;flex-wrap:wrap;gap:12px;align-items:center;min-width:0}
+.m1-invite-box{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--rd-line);border-radius:var(--rd-radius-panel);min-width:0}
+.m1-invite-linkbox{flex:1;min-width:240px}
+.m1-invite-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.m1-invite-field>span:first-child,.m1-invite-note{color:var(--rd-muted)}
+.m1-invite-code,.m1-invite-link,.m1-invite-mono{font-family:var(--font-mono);overflow-wrap:anywhere}
+.m1-invite-link{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.m1-invite-qr{display:flex;align-items:center;gap:12px}
+.m1-invite-error{color:var(--rd-danger);flex-basis:100%}

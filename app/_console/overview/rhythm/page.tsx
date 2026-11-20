@@ -1,13 +1,22 @@
 "use client";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
 
-import "../b-domain.css";
+/**
+ * B4 运营阶段状态。先答「现在是哪个阶段、第几个月、下一步是什么」：一句结论和阶段线；
+ * 再看用户按注册时长落在哪些阶段、这个月的八项参数和下个月要变的项、钱进得多还是出得多和本月预算；
+ * 每月重点参数收进折叠，去别的页核查放在最后。这页只能查看，参数都到运营阶段设置去改。
+ * 读取、导出、跳转运营阶段设置的请求和权限判断沿用改版前的写法，只换界面。
+ */
 import "./rhythm.css";
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { displayAdminError } from "@/lib/admin/error-messages";
-import { Download, RefreshCw } from "lucide-react";
-import { BPageHeader } from "../b-page-header";
+import { useEffect, useState } from "react";
+import { Ban, Download, Filter, Flag, RefreshCw, Target } from "lucide-react";
+import {
+  BlockState, Button, Conclusion, Explain, FilterBar, Fold, Notice, PageHeader, RdPage, Segments, Select, StatusTag,
+} from "@/app/components/rd";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { useToast } from "@/app/components/domain-views/design-kit";
 import {
   exportB4Distribution,
   recordB4H1Jump,
@@ -15,19 +24,22 @@ import {
   type B4Filters,
 } from "@/lib/admin/b4-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { B4RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
-import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
+import { useReach } from "@/lib/nav/use-reach";
+import { fetchH1Phases } from "@/lib/admin/h-client";
+import { DialsPanel, Distribution, StagePanel, nextMonthPhase, phaseRanges } from "./parts";
+import { PhaseMoney } from "./money";
 
 const ALL = "ALL";
-const B4_REASON_MESSAGES: Record<string, string> = {
-  B4_PHASE_DISTRIBUTION_EMPTY: "当前没有可确认的账户月龄分布；请检查用户创建时间事实后重试。",
+
+/** 去别的页核查：后端给的四个去向，D3 那张保留 key B2。 */
+const TARGET_NOTE: Record<string, string> = {
+  B3: "用户转化概览",
+  B1: "资金与应付款总览",
+  B2: "资金储备与应付款",
 };
 
-function dialValue(value: string | number | boolean, unit: string) {
-  if (typeof value === "boolean") return value ? "已开启" : "未开启";
-  if (String(value) === "是" || String(value) === "否") return String(value);
-  return `${value}${unit ? ` ${unit}` : ""}`;
-}
+/** 全页时间一种写法：2026-11-13 14:30（北京时间），和风险提醒一致。 */
+const timeText = (value: string) => `${formatBusinessTimeCompact(value, "—")}（${businessZone().label}）`;
 
 export default function RhythmPage() {
   const [filters, setFilters] = useState<B4Filters>({
@@ -36,22 +48,36 @@ export default function RhythmPage() {
     phase: ALL,
   });
   const [busy, setBusy] = useState<"export" | "jump" | "">("");
-  const [notice, setNotice] = useState("");
+  // 界面状态：哪一次导出、跳转没有成功（B4-PD02：如实提示重试，不套结果未知的恢复流程），点的是哪一项。
+  const [failure, setFailure] = useState<{ kind: "export" | "jump"; message: string; dial?: string } | null>(null);
+  const [jumping, setJumping] = useState("");
+  const [leverOpen, setLeverOpen] = useState(false);
+  const [, setToast] = useToast();
   const session = useAdminAuth((state) => state.session);
   const { data, loading, error, reload } = useB4PhaseOverview(filters);
   const authorities = session?.authorities ?? [];
   const superAdmin = session?.role === "superadmin";
   const canExport = superAdmin || authorities.includes("overview_b4_export");
-  const canCross = (path: string) => canAccessCrossDomainPath(path, session?.role, authorities);
+  const canCross = useReach();
   const canJump = (superAdmin || authorities.includes("overview_b4_jump")) && canCross("/growth/phase");
-  const maxUsers = useMemo(
-    () => Math.max(1, ...(data?.distribution.map((row) => row.userCount) ?? [1])),
-    [data],
-  );
+  const canReadNames = authorities.includes("growth_h1_read");
+  const [legacyPhaseNames, setLegacyPhaseNames] = useState<Record<string, string>>({});
+  const useLegacyNames = !!data && data.filters.phaseNames === undefined;
+  const phaseNames = data?.filters.phaseNames === undefined ? legacyPhaseNames
+    : Object.fromEntries(Object.entries(data.filters.phaseNames).map(([phase, name]) => [phase, name?.trim() ?? ""]));
+  useEffect(() => {
+    let alive = true;
+    setLegacyPhaseNames({});
+    if (useLegacyNames && canReadNames) void fetchH1Phases().then((catalog) => {
+      if (alive) setLegacyPhaseNames(Object.fromEntries(catalog.attribution.map((item) => [item.phase, item.name])));
+    }).catch(() => { if (alive) setLegacyPhaseNames({}); }); // Old backends: names remain optional, with phase codes as fallback.
+    return () => { alive = false; };
+  }, [canReadNames, useLegacyNames]);
 
   async function downloadDistribution() {
+    if (!canExport || busy || loading || !data?.available || !data.distribution.length) return;
     setBusy("export");
-    setNotice("");
+    setFailure(null);
     try {
       const file = await exportB4Distribution(filters);
       const url = URL.createObjectURL(file.blob);
@@ -60,307 +86,182 @@ export default function RhythmPage() {
       anchor.download = file.fileName;
       anchor.click();
       URL.revokeObjectURL(url);
-      setNotice("运营阶段汇总文件已生成，并保留操作记录；文件不含用户身份信息。");
+      setToast("已导出，文件不含用户个人信息。", "success");
     } catch (value) {
-      setNotice(value instanceof Error ? displayAdminError(value) : "B4 导出失败，请重新读取后再试。");
+      setFailure({ kind: "export", message: value instanceof Error ? displayAdminReadError(value) : "导出失败，请刷新后重试。" });
     } finally {
       setBusy("");
     }
   }
 
   async function openH1(dial: string) {
+    if (!canJump || busy || loading || !data) return;
     setBusy("jump");
-    setNotice("");
+    setFailure(null);
+    setJumping(dial);
     try {
-      const target = await recordB4H1Jump(dial, filters.phase);
+      const phase = dial === "phaseAttribution" ? (filters.phase === ALL ? data.rhythm.currentPhase : filters.phase) : data.rhythm.currentPhase;
+      const target = await recordB4H1Jump(dial, phase);
       window.location.assign(target.href);
     } catch (value) {
-      setNotice(value instanceof Error ? displayAdminError(value) : "H1 跳转留痕失败，本次未跳转。");
+      setFailure({ kind: "jump", dial, message: value instanceof Error ? displayAdminReadError(value) : "跳转失败，请重试。" });
       setBusy("");
+      setJumping("");
     }
   }
 
-  return (
-    <div className="dkpage bpage rhythmpage">
-      <BPageHeader
-        id="B4"
-        title="运营阶段状态"
-        desc={
+  const filtered = filters.phase !== ALL;
+  const current = data?.rhythm.currentPhase;
+  const exportBlocked = busy !== "" || loading || !data?.available || !data.distribution.length;
+  const exportReason = !data ? (loading ? "正在读取各阶段人数" : "这页没有读到数据，先重试") : busy === "export" ? undefined
+    : busy ? "正在打开运营阶段设置" : !data.available ? "还没有注册用户，没有可导出的人数" : !data.distribution.length ? "没有可导出的人数" : undefined;
+
+  const header = (
+    <PageHeader
+      pageId="B4"
+      title="运营阶段状态"
+      summary="看当前运营阶段、用户分布和本月参数，只能查看。"
+      meta={data ? (
+        <span className="b4-meta">
+          数据时间 {timeText(data.asOf)}
+          <Explain label="数据从哪来、多久更新" rows={[
+            { k: "来源", v: operatorCopyText(data.sourceStatement) },
+            { k: "更新", v: "打开页面、换查看方式或阶段、点刷新时重读阶段和人数；钱的进出和预算只在打开页面时读一次，点刷新不重读。" },
+            { k: "记录", v: "读取阶段和人数、导出、点进运营阶段设置会记一条操作记录，不改数据；钱的进出和在新标签页打开不记。" },
+          ]} />
+        </span>
+      ) : undefined}
+      readOnly={!canExport && !canJump ? "你只能查看；导出和去运营阶段设置需要对应权限。" : undefined}
+      actions={<>
+        <Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} loadingText="正在读取…" onClick={() => void reload()}>刷新</Button>
+        {canExport && (
+          <Button icon={<Download size={14} aria-hidden />} loading={busy === "export"} loadingText="正在导出…"
+            disabled={exportBlocked && busy === "export"}
+            disabledReason={exportBlocked && busy !== "export" ? exportReason ?? "暂时不能导出" : undefined}
+            onClick={() => void downloadDistribution()}>导出各阶段用户数</Button>
+        )}
+      </>}
+    />
+  );
+
+  const failureNotice = failure && (
+    <Notice tone="danger" title={failure.kind === "export" ? "没有导出成功" : "没有打开运营阶段设置"}
+      action={<Button size="sm" disabled={busy !== ""}
+        onClick={() => void (failure.kind === "export" ? downloadDistribution() : openH1(failure.dial ?? "phaseAttribution"))}>重试</Button>}>
+      {failure.message.replace(/[。.]$/, "")}。可以直接重试，不会改任何数据。
+    </Notice>
+  );
+
+  if (!data) {
+    return (
+      <RdPage className="rhythmpage">
+        {header}
+        {failureNotice}
+        {error ? (
           <>
-            从 <b>H1 运营阶段设置</b>读取各阶段用户数、当前八项调节值和下月预计变化。
-            本页只读；所有调整与效果分析都进入 H1。
+            <Conclusion state="unknown" icon={Flag}>运营阶段：读取失败，暂时无法判断</Conclusion>
+            <BlockState state="error" title="运营阶段状态没有读到" detail={<>{error} 旧数据和导出已暂停。</>} onRetry={() => void reload()} />
           </>
-        }
+        ) : (
+          <>
+            <Conclusion state="unknown" icon={Flag}>运营阶段：正在读取</Conclusion>
+            <BlockState state="loading" title="正在读取运营阶段状态…" />
+          </>
+        )}
+      </RdPage>
+    );
+  }
+
+  // ---------- 结论 ----------
+  const ranges = phaseRanges(data.monthDistribution);
+  const { currentMonth, totalMonths } = data.rhythm;
+  const last = data.nextPivot.atMonth == null;
+  const nextPhase = nextMonthPhase(data.monthDistribution, currentMonth);
+  const changes = data.nextPivot.changes.length;
+  const hint = last
+    ? "已是最后一个月，后面没有要切换的参数。"
+    : `切到第 ${data.nextPivot.atMonth} 个月后${nextPhase && nextPhase !== current ? `进入 ${nextPhase}` : `还在 ${current}`}，${changes ? `有 ${changes} 项参数不同` : "参数不变"}。`;
+
+  const phaseOptions = [{ value: ALL, label: "全部阶段" }, ...data.filters.phaseOptions.map((phase) => ({ value: phase, label: phase === current ? `${phase}（当前阶段）` : phase }))];
+  const monthValue = filters.month || String(data.filters.month);
+
+  return (
+    <RdPage className="rhythmpage">
+      {header}
+      {failureNotice}
+
+      <Conclusion state="neutral" icon={Flag} hint={hint} explainTitle="这句话从哪来"
+        explain="当前阶段、月份和进度都按运营阶段设置里的记录，和下面选的查看方式、阶段无关。月份不会自动往后切，到运营阶段设置里切换。">
+        运营阶段：<b>{current}</b>，第 {currentMonth} 个月（共 {totalMonths} 个月）
+      </Conclusion>
+
+      <StagePanel data={data} ranges={ranges} nextPhase={nextPhase} phaseNames={phaseNames} />
+
+      <FilterBar
+        scope={<Segments label="查看方式" value={filters.granularity}
+          onChange={(granularity) => setFilters((value) => ({ ...value, granularity }))}
+          items={[{ value: "PHASE", label: "按运营阶段" }, { value: "MONTH", label: "按月" }]} />}
+        onClear={filtered ? () => setFilters((value) => ({ ...value, phase: ALL })) : undefined}
+        canClear
+        clearLabel="看全部阶段"
+        sort={<span className="b4-filter-end">
+          {filtered && <StatusTag tone="progress" icon={Filter}>{filters.phase === current ? `正在看 ${filters.phase}，就是当前阶段` : `正在看 ${filters.phase}，当前阶段是 ${current}`}</StatusTag>}
+          <Select aria-label="运营阶段" value={filters.phase} onChange={(phase) => setFilters((value) => ({ ...value, phase }))} options={phaseOptions} />
+        </span>}
       />
 
-      <section className="card b4-controls" aria-label="节奏筛选与操作">
-        <div className="b4-filter-grid">
-          <label>
-            <span>分布粒度</span>
-            <select
-              aria-label="分布粒度"
-              value={filters.granularity}
-              onChange={(event) => setFilters((current) => ({
-                ...current,
-                granularity: event.target.value as B4Filters["granularity"],
-              }))}
-            >
-              <option value="PHASE">按运营阶段</option>
-              <option value="MONTH">月粒度</option>
-            </select>
+      <Distribution data={data} ranges={ranges} phase={filters.phase} phaseNames={phaseNames} />
+
+      <DialsPanel data={data} canJump={canJump} busy={busy} jumping={jumping} filteredPhase={filtered ? filters.phase : null}
+        onJump={(dial) => { if (!busy) void openH1(dial); }} phaseNames={phaseNames} />
+
+      <PhaseMoney />
+
+      <Fold title={`第 ${data.filters.month} 个月的重点参数`} icon={Target} tone="role-4" open={leverOpen} onOpenChange={setLeverOpen}
+        summary={`${data.monthLeverCombo.length} 项：${data.monthLeverCombo.map((lever) => lever.key).join("、")}`}
+        explain="从这个月倍率大于 1 的加成、加强合规审查，以及提现、结算两项里，按顺序取前 3 项来提示。不是效果统计，也不代表这个月改过它们。">
+        <div className="b4-lever">
+          <label className="b4-lever-month">
+            <span>看第几个月</span>
+            <Select aria-label="查看月份" value={monthValue} onChange={(month) => setFilters((value) => ({ ...value, month }))}
+              options={data.filters.monthOptions.map((month) => ({ value: String(month), label: month === currentMonth ? `第 ${month} 月（当前）` : `第 ${month} 月` }))} />
           </label>
-          <label>
-            <span>查看月份</span>
-            <select
-              aria-label="查看月份"
-              value={filters.month || String(data?.filters.month ?? "")}
-              onChange={(event) => setFilters((current) => ({ ...current, month: event.target.value }))}
-            >
-              {(data?.filters.monthOptions ?? []).map((month) => (
-                <option key={month} value={month}>月 {month}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>运营阶段筛选</span>
-            <select
-              aria-label="运营阶段筛选"
-              value={filters.phase}
-              onChange={(event) => setFilters((current) => ({ ...current, phase: event.target.value }))}
-            >
-              <option value={ALL}>全部 P1–P6</option>
-              {(data?.filters.phaseOptions ?? ["P1", "P2", "P3", "P4", "P5", "P6"]).map((phase) => (
-                <option key={phase} value={phase}>{phase}</option>
-              ))}
-            </select>
-          </label>
+          <ol className="b4-lever-list">
+            {data.monthLeverCombo.map((lever) => (
+              <li key={`${lever.key}-${lever.label}`}>
+                <span className="b4-lever-key" title={lever.key}>{lever.key}</span>
+                <b>{operatorCopyText(lever.label)}</b>
+                <span className="b4-muted">{lever.purpose}</span>
+                {lever.key === "提现" && <StatusTag tone="neutral" icon={Ban}>其中提现惩罚费率已停用，现在不收</StatusTag>}
+              </li>
+            ))}
+          </ol>
         </div>
-        <div className="b4-actions">
-          <button type="button" className="b4-btn" onClick={() => void reload()} disabled={loading}>
-            <RefreshCw size={14} aria-hidden /> 重新读取
-          </button>
-          {canExport && (
-            <button
-              type="button"
-              className="b4-btn primary"
-              onClick={() => void downloadDistribution()}
-              disabled={busy !== "" || !data?.available || !data.distribution.length}
-            >
-              <Download size={14} aria-hidden /> 导出各阶段用户数
-            </button>
-          )}
-        </div>
-        {notice && <p className="b4-notice" role="status">{notice}</p>}
-      </section>
+      </Fold>
 
-      {loading && !data && <B4State loading />}
-      {error && <B4State error={error} onRetry={reload} />}
-
-      {data && !error && (
-        <>
-          {!data.available && (
-            <section className="card b4-alert" role="alert">
-              <b>当前各阶段用户数暂不可用于决策</b>
-              <span>{B4_REASON_MESSAGES[data.reason ?? ""] || "账户月龄事实不可确认；已禁用导出，不以旧值或演示值替代。"}</span>
-            </section>
-          )}
-
-          <section className="b4-summary" aria-label="当前节奏摘要">
-            <article className="card">
-              <span>当前运营阶段</span>
-              <strong>{data.rhythm.currentPhase}</strong>
-              <small>月 {data.rhythm.currentMonth} / {data.rhythm.totalMonths}</small>
-            </article>
-            <article className="card">
-              <span>阶段进度</span>
-              <strong>{data.rhythm.phaseProgressPct}%</strong>
-              <small>由 H1 节奏骨架下发</small>
-            </article>
-            <article className="card">
-              <span>当前视图</span>
-              <strong>{data.filters.granularity === "PHASE" ? "运营阶段" : "月"}</strong>
-              <small>月份 {data.filters.month} · {data.filters.phase === ALL ? "全部阶段" : data.filters.phase}</small>
-            </article>
-          </section>
-
-          <section className="card b4-distribution">
-            <div className="b4-section-head">
-              <div>
-                <h2>各运营阶段用户数</h2>
-                <p>账户月龄事实由服务端映射到 H1 P1–P6；筛选只改变观察范围，不改变权威总数。</p>
-              </div>
-              <span className="b4-source">H1 权威数据</span>
-            </div>
-            <div className="b4-bars">
-              {data.distribution.map((row) => (
-                <article
-                  key={`${row.phase}-${row.month ?? "phase"}`}
-                  className={row.inScope ? "" : "muted"}
-                  data-testid="b4-distribution-row"
-                >
-                  <div className="b4-bar-value">{row.userCount.toLocaleString()}</div>
-                  <div className="b4-bar-track">
-                    <div style={{ height: `${Math.max(4, (row.userCount / maxUsers) * 100)}%` }} />
-                  </div>
-                  <b>{row.month == null ? row.phase : `月 ${row.month}`}</b>
-                  {row.month != null && <small>{row.phase}</small>}
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <div className="b4-grid">
-            <section className="card b4-pivot">
-              <div className="b4-section-head">
-                <div>
-                  <h2>距下一月粒度拐点</h2>
-                  <p>{data.nextPivot.basis}</p>
-                </div>
-              </div>
-              <strong>
-                {data.nextPivot.atMonth == null
-                  ? "节奏末月"
-                  : `${data.nextPivot.daysLeft ?? "—"} 天`}
-              </strong>
-              <span>{data.nextPivot.message}</span>
-              <ul>
-                {data.nextPivot.changes.length
-                  ? data.nextPivot.changes.map((change) => <li key={change}>{change}</li>)
-                  : <li>下个月没有调节值变化</li>}
-              </ul>
-            </section>
-
-            <section className="card b4-levers">
-              <div className="b4-section-head">
-                <div>
-                  <h2>本月被推动的杠杆组合</h2>
-                  <p>月份 {data.filters.month} · 同时推动 2–3 个杠杆</p>
-                </div>
-              </div>
-              <div className="b4-lever-list">
-                {data.monthLeverCombo.map((lever) => (
-                  <article key={`${lever.key}-${lever.label}`}>
-                    <span title={lever.key}>运营杠杆</span>
-                    <b>{lever.label}</b>
-                    <small>{lever.purpose}</small>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          <section className="card b4-dials">
-            <div className="b4-section-head">
-              <div>
-                <h2>八项调节值</h2>
-                <p>当前值来自运营阶段设置；请前往该页面调整。</p>
-              </div>
-              <span className="b4-source">8 / 8</span>
-            </div>
-            <div className="b4-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>调节项</th>
-                    <th>当前值</th>
-                    <th>权威来源</th>
-                    <th>当前生效状态</th>
-                    {canJump && <th>操作</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.dials.map((dial) => (
-                    <tr key={dial.key} data-testid="b4-dial-row">
-                      <td><b>{dial.label}</b></td>
-                      <td className="mono">{dialValue(dial.currentValue, dial.unit)}</td>
-                      <td>{dial.source === "H1" ? "运营阶段设置" : "运营阶段记录"}</td>
-                      <td><span className={dial.v1Active ? "b4-status active" : "b4-status pending"}>{operatorCopyText(dial.v1Status)}</span></td>
-                      {canJump && (
-                        <td>
-                          <a
-                            href={dial.adjustHref}
-                            className="b4-link"
-                            aria-disabled={busy !== ""}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              if (!busy) void openH1(dial.key);
-                            }}
-                          >
-                            在 H1 调整 →
-                          </a>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section className="card b4-attribution">
-            <div className="b4-section-head">
-              <div>
-                <h2>运营阶段效果分析</h2>
-                <p>H1 显示所选运营阶段的调节值变化；B3 显示用户转化，B1/B2 显示资金情况。</p>
-              </div>
-            </div>
-            <div className="b4-attribution-links">
-              {data.attributionLinks.map((item) => (
-                item.key === "H1" ? (
-                  canJump && (
-                    <a
-                      key={item.key}
-                      href={item.href}
-                      className="b4-link-card"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        if (!busy) void openH1("phaseAttribution");
-                      }}
-                    >
-                      <b>{operatorCopyText(item.label)}</b><span>记录 B4 → H1 跳转审计</span>
-                    </a>
-                  )
-                ) : canCross(item.href) ? (
-                  <Link key={item.key} href={item.href} className="b4-link-card">
-                    <b>{operatorCopyText(item.label)}</b>
-                    <span>{item.key === "B3"
-                      ? `按 ${filters.phase === ALL ? "全部阶段" : filters.phase} 查看`
-                      : "查看全局资金事实"}</span>
-                  </Link>
-                ) : (
-                  <span key={item.key} className="b4-link-card" aria-disabled="true">
-                    <b>{operatorCopyText(item.label)}</b><span>目标域无权限</span>
-                  </span>
-                )
-              ))}
-            </div>
-          </section>
-
-          <B4RestoredInsights />
-
-          <p className="b-foot">
-            {data.sourceStatement} · 数据时间 {new Date(data.asOf).toLocaleString()} · 查看、跳 H1、导出均写 A2 审计。
-          </p>
-        </>
-      )}
-    </div>
-  );
-}
-
-function B4State({
-  loading,
-  error,
-  onRetry,
-}: {
-  loading?: boolean;
-  error?: string;
-  onRetry?: () => void;
-}) {
-  return (
-    <section className="card b4-alert" role={error ? "alert" : "status"}>
-      <b>{loading ? "B4 运营阶段状态加载中" : "B4 运营阶段状态加载失败"}</b>
-      <span>{loading ? "正在读取 H1 权威节奏与账户月龄事实。" : `${error}；旧数据与导出已隐藏。`}</span>
-      {error && onRetry && <button type="button" className="b4-btn" onClick={onRetry}>重试</button>}
-    </section>
+      <nav className="rd-links" aria-label="相关页面">
+        <span>相关页面</span>
+        {data.attributionLinks.map((item) => (
+          item.key === "H1" ? (
+            canJump && (
+              <a key={item.key} href={item.href} className="rd-link" aria-disabled={busy !== ""}
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (!busy) void openH1("phaseAttribution");
+                }}>
+                {jumping === "phaseAttribution" ? "正在打开运营阶段设置…" : `运营阶段设置 · ${filtered ? `看 ${filters.phase} 的阶段归因` : "看阶段归因"}`}
+              </a>
+            )
+          ) : canCross(item.href) ? (
+            <Link key={item.key} href={item.href} className="rd-link" prefetch={false}>
+              {item.key === "B3" ? `${TARGET_NOTE.B3} · 按${filtered ? ` ${filters.phase} ` : "全部阶段"}看` : TARGET_NOTE[item.key] ?? operatorCopyText(item.label)}
+            </Link>
+          ) : (
+            <span key={item.key} aria-disabled="true">{TARGET_NOTE[item.key] ?? operatorCopyText(item.label)} · 无访问权限</span>
+          )
+        ))}
+        <Explain label="相关页面是什么" content="这几页只给链接，这页不算效果。打开运营阶段设置会记一条操作记录；其余直接打开，最多带上选的阶段，不带这页的其他条件。" />
+      </nav>
+    </RdPage>
   );
 }

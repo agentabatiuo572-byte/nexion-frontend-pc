@@ -1,7 +1,8 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import type { BusinessFormSpec, BusinessFormValue, EditSpec } from "../design-kit";
+import type { OperatorBriefKind, BusinessFormSpec, BusinessFormValue, EditSpec } from "../design-kit";
 
 export type ActionConfirmReq = {
+  briefKind: OperatorBriefKind;
   action: ReactNode;
   detail: ReactNode;
   amplifies?: boolean;
@@ -10,10 +11,13 @@ export type ActionConfirmReq = {
   businessForm?: BusinessFormSpec;
   /** 理由字数上限(与 k-tabs / l-tabs 同款透传)。不传时沿用弹窗默认(下限恒 8 字)。 */
   reasonMax?: number;
+  getPendingReason?: () => string | undefined;
+  getPendingBusinessValue?: () => BusinessFormValue | undefined;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 
 export type ConfirmReq = {
+  briefKind: OperatorBriefKind;
   action: ReactNode;
   detail: ReactNode;
   chips?: [text: string, tone: "done" | "ready"][];

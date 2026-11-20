@@ -66,11 +66,11 @@ lib/
 │   ├── registry/           # A–L 12 域 × 模块注册表（只保留路由 summary）
 │   └── module-content.ts   # 模块内容装配
 ├── nav/console-nav.ts      # 导航树（路由生成单一真源）
-├── store/                  # Zustand store（鉴权 / 角色 / UI / 主题 …）
+├── store/                  # Zustand store（鉴权 / 角色 / UI …）
 └── format.ts
 
 docs/                       # 控制核对表 / 杠杆映射 / 评审 rubric
-scripts/                    # verify.sh 回测 + nav-routes.mjs 路由生成
+scripts/                    # verify.mjs 静态检查 + nav-routes.mjs 路由生成
 ```
 
 ---
@@ -94,14 +94,13 @@ scripts/                    # verify.sh 回测 + nav-routes.mjs 路由生成
 
 ## 校验
 
-`scripts/verify.sh` 是回测 tripwire：`tsc` 类型检查 + 全路由 HTTP 200 + 脚手架/旗舰页内容 needle 断言。路由清单由 `nav-routes.mjs` 从 `console-nav.ts` 自动生成（单一真源）。
+`npm run verify`（`scripts/verify.mjs`）依次运行类型检查、源码静态检查和生产构建，不含测试，不需要启动 dev server。依赖兄弟仓的检查在缺仓时记为跳过并在汇总里列出。
 
 ```bash
-# 需先启动 dev server（:3002）
-npm run dev
-
-# 另开终端运行回测
 npm run verify
+
+# 跳过生产构建
+node scripts/verify.mjs --static
 ```
 
 ---

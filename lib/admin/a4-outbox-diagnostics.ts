@@ -3,9 +3,22 @@ export type OutboxDiagnostics = {
   total: number; unresolved: number; oldestSeconds: number; groupsTruncated: boolean;
   groups: { eventType: string; status: string; count: number; oldestAt: string; unresolved: number }[];
   rows: { eventId: string; eventType: string; status: string; retryCount: number; createdAt: string;
+    userNo: string | null;
     nextRetryAt: string | null; errorCode: string | null; auditLinkUnresolved: boolean;
     receipts: { status: string; count: number }[] }[];
   nextCursor: string | null; hasMore: boolean;
+};
+export type OutboxDeadLetters = {
+  types: {
+    questCode: string;
+    eventType: string;
+    outboxDeadCount: number;
+    /** Current DEAD in both layers, not a complete redrive eligibility decision. */
+    bothLayersDeadCount: number;
+    oldestOutboxLastStateAt: string | null;
+    oldestBothLayersDeadObservedAt: string | null;
+    bothLayersDeadTimeComplete: boolean;
+  }[];
 };
 const errorCodes = new Set(["OTHER_ERROR", "C1_AUDIT_EVIDENCE_NOT_UNIQUE", "C1_AUDIT_ENVELOPE_INVALID",
   "C1_AUDIT_PAYLOAD_INVALID", "C1_AUDIT_DELIVERY_NOT_COMPLETE", "C1_AUDIT_RECEIPT_NOT_PERSISTED",
@@ -17,6 +30,14 @@ const errorCodes = new Set(["OTHER_ERROR", "C1_AUDIT_EVIDENCE_NOT_UNIQUE", "C1_A
   "F4_ALERT_AUDIT_ALREADY_CLAIMED", "F4_ALERT_RECEIPT_FAILED", "F4_ALERT_RECEIPT_CONFLICT",
   "F4_ALERT_PUBLICATION_FAILED", "F4_ALERT_VERIFICATION_UNAVAILABLE"]);
 function invalid(): never { throw new Error("A4_OUTBOX_DIAGNOSTICS_INVALID"); }
+export function nullableA4UserNo(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string" || !/^U\d{8,19}$/.test(value)
+    || BigInt(value.slice(1)) <= BigInt(0) || BigInt(value.slice(1)) > BigInt("9223372036854775807")) {
+    throw new Error("A4_USER_NUMBER_INVALID");
+  }
+  return value;
+}
 function obj(v: unknown): Record<string, unknown> { return v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : invalid(); }
 function count(v: unknown): number { return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : invalid(); }
 function bool(v: unknown): boolean { return typeof v === "boolean" ? v : invalid(); }
@@ -37,7 +58,7 @@ export function normalizeOutboxDiagnostics(value: unknown): OutboxDiagnostics {
     rows: rows(d.rows, 50).map(value => {
       const r = obj(value), id = text(r.eventId), errorCode = r.errorCode === null ? null : text(r.errorCode);
       if (!/^(?:[a-f0-9]{32}|INVALID_EVENT_ID)$/.test(id) || (errorCode !== null && !errorCodes.has(errorCode))) invalid();
-      return { eventId: id, eventType: code(r.eventType), status: state(r.status), retryCount: count(r.retryCount),
+      return { eventId: id, eventType: code(r.eventType), status: state(r.status), retryCount: count(r.retryCount), userNo: nullableA4UserNo(r.userNo),
         createdAt: stamp(r.createdAt), nextRetryAt: r.nextRetryAt === null ? null : stamp(r.nextRetryAt), errorCode,
         auditLinkUnresolved: bool(r.auditLinkUnresolved), receipts: rows(r.receipts, 8).map(value => { const receipt = obj(value); return { status: state(receipt.status, true), count: count(receipt.count) }; }) };
     }), nextCursor, hasMore,
@@ -60,4 +81,35 @@ export function outboxDiagnosticsQuery(filters: OutboxFilters, cursor = "0"): UR
   if (filters.status) query.set("status", filters.status);
   if (filters.unresolvedOnly) query.set("unresolvedOnly", "true");
   return query;
+}
+
+export function normalizeOutboxDeadLetters(value: unknown): OutboxDeadLetters {
+  const definitions: Record<string, string> = {
+    weekly_t2_browse_store: "H3_STOREFRONT_THREE_PRODUCTS_VIEWED",
+    weekly_t2_genesis_browse: "H3_GENESIS_SECONDARY_MARKET_VIEWED",
+    weekly_t2_ai_jobs_50: "H3_COMPUTE_COMPLETED_50",
+    weekly_t2_invite_friend: "H3_REFERRAL_REGISTERED",
+    weekly_t2_nex_swap: "H3_EXCHANGE_COMPLETED",
+  };
+  const nullableTime = (value: unknown): string | null => {
+    if (value === null) return null;
+    const result = text(value);
+    return /^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d{1,9})?)?$/.test(result) ? result : invalid();
+  };
+  const types = rows(obj(value).types, 5).map(value => {
+    const row = obj(value);
+    const questCode = text(row.questCode), eventType = text(row.eventType);
+    const outboxDeadCount = count(row.outboxDeadCount), bothLayersDeadCount = count(row.bothLayersDeadCount);
+    const oldestOutboxLastStateAt = nullableTime(row.oldestOutboxLastStateAt);
+    const oldestBothLayersDeadObservedAt = nullableTime(row.oldestBothLayersDeadObservedAt);
+    const bothLayersDeadTimeComplete = bool(row.bothLayersDeadTimeComplete);
+    if (definitions[questCode] !== eventType || bothLayersDeadCount > outboxDeadCount
+      || outboxDeadCount === 0 && oldestOutboxLastStateAt !== null
+      || bothLayersDeadCount === 0 && oldestBothLayersDeadObservedAt !== null
+      || !bothLayersDeadTimeComplete && oldestBothLayersDeadObservedAt !== null) invalid();
+    return { questCode, eventType, outboxDeadCount, bothLayersDeadCount, oldestOutboxLastStateAt,
+      oldestBothLayersDeadObservedAt, bothLayersDeadTimeComplete };
+  });
+  if (types.length !== 5 || new Set(types.map(row => row.questCode)).size !== 5) invalid();
+  return { types };
 }

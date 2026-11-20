@@ -15,16 +15,18 @@ export function finiteDashboardNumber(value: unknown): number | null {
  * 之所以提成函数:此前两处各自手写算式,一处用 `length - passed`(把不可计算算进未达),
  * 另一处用 `pass === false`(正确),两边都不会因为对方改口径而变红。
  */
-export function rollupKpiPassState(kpis: ReadonlyArray<{ pass: boolean | null }>): {
+export function rollupKpiPassState(kpis: ReadonlyArray<{ pass: boolean | null; suppressed?: boolean }>): {
   total: number;
   passed: number;
   failed: number;
   unknown: number;
+  suppressed: number;
 } {
   return {
     total: kpis.length,
-    passed: kpis.filter((kpi) => kpi.pass === true).length,
-    failed: kpis.filter((kpi) => kpi.pass === false).length,
-    unknown: kpis.filter((kpi) => kpi.pass === null).length,
+    passed: kpis.filter((kpi) => !kpi.suppressed && kpi.pass === true).length,
+    failed: kpis.filter((kpi) => !kpi.suppressed && kpi.pass === false).length,
+    unknown: kpis.filter((kpi) => !kpi.suppressed && kpi.pass === null).length,
+    suppressed: kpis.filter((kpi) => kpi.suppressed).length,
   };
 }

@@ -1,16 +1,27 @@
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { parseBankEligibility, parseBankSettlement, readBankEvidence, type BankBeneficiaryEligibility, type BankSettlementEvidence } from "@/lib/admin/bank-payout-evidence";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner } from "@/lib/admin/pending-mutation-store";
+import { treasuryValuation } from "@/lib/admin/treasury-valuation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { fundCommandOrigin, type FundCommandRecord } from "./fund-command-investigation";
+import { isExplicitRejection } from "./explicit-rejection";
+import type { PreparationNetwork } from "./cregis-funds-preparation";
 
 interface ApiResult<T> {
   code: number;
   message?: string;
   data?: T;
+}
+
+export class DRequestError extends Error {
+  constructor(message: string, public readonly status: number, public readonly code: number | undefined, public readonly reasonCode: string | undefined) {
+    super(message);
+    this.name = "DRequestError";
+  }
 }
 
 /**
@@ -20,11 +31,11 @@ interface ApiResult<T> {
  * **该不该丢号** —— 确定性拒绝要丢(否则运营改完输入重提会撞载荷不符,那笔单子 24h 无法处置),
  * 结果未知不能丢(否则重试铸新号 = 重复出金)。只有一句文案时,组件唯一能做的就是不判断,
  * 于是先前 D2 / D3 的 catch 里一个 forget 都没有,两种情形一视同仁地保号。
- * 文案逐字不变,只把类型补上,不影响任何按文案渲染的地方。
+ * 原请求编号只留在 commandKey 上，句子里不出现；没有地方按文案判断。
  */
 export class DOutcomeUnknownError extends Error {
-  constructor(public readonly commandKey: string) {
-    super(`操作结果未知，可能已经生效。请先刷新核对，并使用同一请求号重试：${commandKey}`);
+  constructor(public readonly commandKey: string, message = "结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原请求重试。") {
+    super(message);
     this.name = "DOutcomeUnknownError";
   }
 }
@@ -33,6 +44,15 @@ export class DOutcomeUnknownError extends Error {
 export function isDOutcomeUnknownError(error: unknown): error is DOutcomeUnknownError {
   return error instanceof DOutcomeUnknownError
     || (error instanceof Error && error.name === "DOutcomeUnknownError");
+}
+
+/** 写请求已成功返回，响应却读不懂：命令可能已经执行，按结果未知保号（OP-91）。 */
+function readWriteResult<T>(idempotencyKey: string, read: () => T): T {
+  try {
+    return read();
+  } catch {
+    throw new DOutcomeUnknownError(idempotencyKey);
+  }
 }
 
 export interface PageResult<T> {
@@ -117,6 +137,7 @@ export interface D1Overview {
   feeEvidenceAnomalyCount: number;
   treasuryReserveAnomalyCount: number;
   historicalBackfillAnomalyCount: number;
+  bankManualReviewCount: number;
   bins: D1BinRisk[];
   binLockedCount: number;
   chargebacks: D1Chargeback[];
@@ -173,6 +194,7 @@ export interface D1BankOrder {
 }
 
 export interface D1BankOrdersPage extends PageResult<D1BankOrder> {
+  manualReviewCount: number;
   source: string;
   asOf: string;
 }
@@ -262,6 +284,17 @@ export interface D6FxQuote {
   updatedBy: string;
   updateReason: string;
   updatedAt: string;
+  approval: {
+    operationId: string;
+    status: "pending" | "approved" | "rejected" | "withdrawn" | "expired";
+    submittedBy: string;
+    submittedAt: string;
+    decidedAt: string;
+    expectedVersion: number;
+    /** 仅表示这张单已批准，不能用它覆盖当前配置。 */
+    applied: boolean;
+  } | null;
+  applied: boolean | null;
   history: Array<{
     id: number;
     beforeBaseRateVndPerUsdt: number;
@@ -278,6 +311,19 @@ export interface D6FxQuote {
   asOf: string;
 }
 
+export type D6FxValues = Pick<D6FxQuote, "baseRateVndPerUsdt" | "buySpreadPct" | "lockWindowMinutes">;
+export interface D6FxPreflight {
+  current: D6FxValues & { version: number; quoteRateVndPerUsdt: number };
+  proposed: D6FxValues & { version: number; quoteRateVndPerUsdt: number };
+  before: string;
+  after: string;
+  approvalRequired: boolean;
+  baseRateIncrease: boolean;
+  rechargeQuoteDecrease: boolean;
+  fundingCheckRequired: boolean;
+  fundingCheckPassed: boolean;
+}
+
 export interface D2Withdrawal {
   id: number;
   userId: number;
@@ -285,6 +331,9 @@ export interface D2Withdrawal {
   asset: string;
   chain: string;
   amount: number;
+  addressVerificationRequired: boolean | null;
+  /** 大额门槛（后端配置），列表和详情都带；读不到时是 null。 */
+  strongReviewThresholdUsdt: number | null;
   fee: number;
   targetAddress: string;
   riskDecisionId?: number | null;
@@ -382,11 +431,11 @@ export interface D3Reserve {
 }
 
 export interface D3Liabilities {
-  totalUsdt: number;
+  totalUsdt: number | null;
   hardLiabilityCategoryCount: number;
   trialShadowIncluded: boolean;
   asOf: string;
-  breakdown: Array<{ category: string; label: string; amountUsdt: number; share: number; source: string }>;
+  breakdown: Array<{ category: string; label: string; amountUsdt: number | null; share: number | null; source: string }>;
   sources: string[];
 }
 
@@ -411,12 +460,15 @@ export interface D3MaturityForecast {
 
 export interface D3NetExposure {
   window: "7d" | "30d" | "90d";
+  valuationReliable: boolean;
+  historyMethod?: string;
   series: Array<{
     date: string;
     reserveUsdt: number;
     liabilitiesUsdt: number;
     netExposureUsdt: number;
     negative: boolean;
+    backcast?: boolean;
   }>;
   asOf: string;
 }
@@ -445,11 +497,11 @@ export interface D3ForecastConfig {
   effectiveVersion: number;
 }
 
-export interface D3Dashboard {
+export interface D3Main {
   reserve: D3Reserve;
   liabilities: D3Liabilities;
-  maturity: D3MaturityForecast;
-  exposure: D3NetExposure;
+  /** 固定未来 7 天：资金安全等级按这个窗口算，不随页面选的窗口变（B2-C03）。 */
+  maturity7: D3MaturityForecast;
   config: D3ForecastConfig;
 }
 
@@ -498,11 +550,13 @@ export interface D4RunningBalance {
   userId: number;
   total: number;
   rows: D4RunningBalanceRow[];
+  openingBalances: Record<string, number>;
+  closingBalances: Record<string, number>;
   breakCount: number;
   unsettledCount: number;
   reconciliationScope: "CURRENT_WALLET" | "HISTORICAL_RANGE";
   reconciliationNote: string;
-  reconciliation: Record<"USDT" | "NEX", number> | null;
+  reconciliation: Record<"USDT" | "UVT", number> | null;
   balanced: boolean;
   sources: string[];
 }
@@ -516,35 +570,46 @@ export interface D5Params {
   networkConfirmFeeUsd: { trc20: number; bep20: number; erc20: number };
   /** 三网络提现通道状态；由 D5 权威配置下发，缺失时冻结页面而非猜测可用性。 */
   networkEnabled: { trc20: boolean; bep20: boolean; erc20: boolean };
+  effectiveNetworks?: string[] | null;
+  networkStatusReliable?: boolean;
+  networkStatus?: Array<{ network: string; configured: boolean; enabled: boolean | null; disabledReason: string | null; state: "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN" }>;
   nexFeeOffsetRate: number;
   /** FEAT-WD01:小额免审线(USD)。金额 ≤ 此值时可跳过新地址冷却；0 = 关闭快车道。
    *  **永不**免除服务端风控路由裁决(冻结簇/共用地址/风险分)。 */
   smallAmountThresholdUsd: number;
-  /** FEAT-WD01:正常到账时效(小时)。到账时间 = 提交 + 本值;命中大额合规审查时
-   *  改用 cooldownDays,取更晚者。 */
+  /** 正常到账时效(小时)；合规大额窗口到期后仍须人工复核，不能据此认定到账。 */
   payoutSlaHours: number;
   cooldownDays: number;
   complianceHoldEnabled: boolean;
+  /** 服务端合规大额门槛(USDT)，金额严格大于此值才附加窗口；旧接口缺失时待核实。 */
+  complianceReviewThresholdUsdt: number | null;
   currentPhase: string;
   currentMonth: number;
   coverageRatio: number;
   redlinePct: number;
   coverageReliable: boolean;
-  sourceByField: Record<string, "d5" | "phase-h1">;
+  sourceByField: Record<string, "d5" | "phase-h1" | "compliance-rule">;
   updatedFields?: string[];
 }
 
 let requestSeq = 0;
 
-interface PersistedPendingMutation extends PendingMutationRecord {
+interface PersistedPendingMutation extends FundCommandRecord {
   base: "finance" | "treasury" | "bills" | "withdraw";
   path: string;
   method: string;
   body: string;
+  adminId?: number;
+  preparationNetwork?: PreparationNetwork;
 }
+
+const D1_CREGIS_SWITCH_PATH = /^\/cregis\/(?:switch-cases(?:\/[1-9]\d*\/decision)?|switches\/emergency-off)$/;
+const D1_PREPARATION_WRITE_PATH = /^\/cregis\/funds-preparation\/plans(?:\/[^/]+\/decision)?$/;
 
 const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
   storageKey: "nexgrid-admin-d1-uncertain-commands-v1",
+  // 过期的留着做核查证据，只是不能再发（OP-96）。D1 以外过期的号在 apiRequest 里丢掉换新号，和原来一样。
+  retainExpiredRecords: true,
   isValidRecord: (value) =>
     ["finance", "treasury", "bills", "withdraw"].includes(value.base)
     && typeof value.path === "string"
@@ -554,18 +619,128 @@ const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
     && typeof value.body === "string",
 });
 
-export interface D1PendingTopupCommand {
-  commandKey: string;
+/** D1 的写请求：充值通道、对账核销、银行卡支付、USDT 收款。 */
+const isD1Write = (base: string, path: string) => base === "finance" && /^\/(topup|cregis|vietqr)\//.test(path);
+
+/**
+ * 只开放已逐项核对 origin/test@8e48596d、保留原结果的 Cregis 写接口。
+ * preview / preflight 不走命令去重，不能当成可原号重发的业务命令。
+ */
+const D1_RETAINED_CREGIS_WRITES = [
+  /^\/cregis\/(?:addresses\/(?:policy|provision)|reconciliation\/run|review-cases(?:\/[1-9]\d*\/decision)?|exception-ownership\/challenges)$/,
+  D1_CREGIS_SWITCH_PATH,
+  /^\/cregis\/exception-claims(?:\/[1-9]\d*\/decision)?$/,
+  /^\/cregis\/refunds\/(?:fee-policy\/cases(?:\/[1-9]\d*\/decision)?|cases(?:\/[1-9]\d*\/(?:decision|recover|retry))?)$/,
+  /^\/cregis\/reorg\/(?:incidents\/[1-9]\d*\/proposals|proposals\/[1-9]\d*\/decision)$/,
+  /^\/cregis\/auto-forward\/(?:policy|tasks\/[1-9]\d*\/recover)$/,
+  D1_PREPARATION_WRITE_PATH,
+];
+export const d1CommandReplayable = (path: string) => !path.startsWith("/cregis/")
+  || D1_RETAINED_CREGIS_WRITES.some((pattern) => pattern.test(path.split("?")[0]));
+
+export const D1_PENDING_OBJECT_TEXT = "这项上次的操作结果还没确认，先在本页上方核对";
+export const D1_COMMAND_EXPIRED_TEXT = "已超过 24 小时，不能再按原请求重试，请到操作记录与审批核对";
+const D1_IDENTITY_FIELDS = ["network", "cid", "sourceType", "sourceId", "intentNo"] as const;
+
+/**
+ * 写请求改的是哪个对象：路径去掉最后的动作（decision、recover、retry），再加上 network、cid、来源这类对象字段。
+ * 改理由或数值不换对象，结果未知时同一对象不能另发新命令（OP-93、OP-94）。暂停自动流程是收紧，不被未确认的提案挡。
+ */
+export function d1CommandObject(path: string, body = "") {
+  const [route, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  let parsed: Record<string, unknown> = {};
+  try {
+    const value: unknown = body ? JSON.parse(body) : {};
+    if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+  } catch { /* 不是 JSON 的按路径认 */ }
+  if (parsed.action === "PAUSE") return `${route}|PAUSE|network=${params.get("network") ?? parsed.network ?? "BEP20"}`;
+  const ids = D1_IDENTITY_FIELDS.flatMap(field => {
+    const value = params.get(field) ?? parsed[field];
+    return value === undefined || value === null || value === "" ? [] : [`${field}=${String(value)}`];
+  });
+  return [route.replace(/\/(?:decision|recover|retry)$/, ""), ...ids].join("|");
+}
+
+/** 这个对象有没有还没确认结果的命令（资金开关按管理员另管，不在这里）。打开确认框前和发送前都查。 */
+export function d1PendingObjectReason(path: string, body?: Record<string, unknown>) {
+  const object = d1CommandObject(path, body ? JSON.stringify(body) : "");
+  return pendingMutations.list().some(value => isD1Write(value.base, value.path) && !D1_CREGIS_SWITCH_PATH.test(value.path)
+    && d1CommandObject(value.path, value.body) === object) ? D1_PENDING_OBJECT_TEXT : undefined;
+}
+
+export interface D1PendingTopupCommand extends FundCommandRecord {
   path: string;
-  createdAt: number;
-  expiresAt: number;
 }
 
 export function listD1PendingTopupCommands(): D1PendingTopupCommand[] {
   return pendingMutations.list()
     .filter((value) => value.base === "finance" && value.path.startsWith("/topup/"))
-    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
     .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+export function listD1PendingCregisCommands(): D1PendingTopupCommand[] {
+  return pendingMutations.list()
+    .filter(value => value.base === "finance" && value.path.startsWith("/cregis/"));
+}
+
+export interface D1PendingCommand extends D1PendingTopupCommand {
+  method: string;
+  body: string;
+  preparationNetwork?: PreparationNetwork;
+}
+
+/** D1 页上还没确认结果的写请求：充值通道、对账核销、银行卡支付参数和 USDT 收款，按发出时间排。资金开关的按管理员另列。 */
+export function listD1PendingCommands(): D1PendingCommand[] {
+  return pendingMutations.list()
+    .filter(value => value.base === "finance" && !D1_CREGIS_SWITCH_PATH.test(value.path)
+      && (value.path.startsWith("/topup/") || value.path.startsWith("/cregis/") || value.path === "/vietqr/config"))
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+/** 按原请求重发 USDT 收款和银行卡支付参数的写操作：同命令号、同路径、同内容（OP-94）。 */
+export async function retryD1PendingCommand(commandKey: string) {
+  const pending = pendingMutations.list().find(value => value.commandKey === commandKey);
+  if (!pending || pending.base !== "finance" || pending.method === "GET"
+      || !(pending.path.startsWith("/cregis/") || pending.path === "/vietqr/config")) {
+    throw new Error("待重试的请求不存在或已过期，请刷新页面");
+  }
+  return apiRequest<unknown>(pending.base, pending.path, {
+    method: pending.method,
+    body: pending.body || undefined,
+    idempotencyPrefix: "d1-retry",
+    idempotencyKey: pending.commandKey,
+    preparationNetwork: pending.preparationNetwork,
+  });
+}
+
+/** 重试被明确拒绝、人核实过原操作后，只放开本页的锁，不发请求（OP-153）。 */
+export function releaseD1PendingCommand(commandKey: string) {
+  const pending = pendingMutations.list().find(value => value.commandKey === commandKey);
+  if (pending) pendingMutations.forget(pending.fingerprint, pending.commandKey);
+}
+
+function currentD1PendingCregisSwitchCommands() {
+  const { session, isAuthenticated, logoutPending, logoutUnknown } = useAdminAuth.getState();
+  if (!session || !isAuthenticated || logoutPending || logoutUnknown) return [];
+  return pendingMutations.list().filter(value => value.base === "finance" && value.method === "POST"
+    && D1_CREGIS_SWITCH_PATH.test(value.path)
+    && (value.adminId === session.adminId || value.adminId === undefined && hasPersistedPendingCommandOwner(String(session.adminId))));
+}
+
+export function listD1PendingCregisSwitchCommands(): D1PendingTopupCommand[] {
+  return currentD1PendingCregisSwitchCommands()
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+export async function retryD1PendingCregisSwitchCommand(commandKey: string) {
+  const authEpoch = adminAuthLifecycleEpoch();
+  const pending = currentD1PendingCregisSwitchCommands().find(value => value.commandKey === commandKey);
+  if (!pending) throw new Error("待恢复的资金开关请求不存在、已过期或不属于当前管理员，请先刷新核对真实状态");
+  return apiRequest<unknown>("finance", pending.path, {
+    method: pending.method, body: pending.body, idempotencyPrefix: "cregis-ops",
+    idempotencyKey: pending.commandKey, bankManualAuthEpoch: authEpoch,
+  });
 }
 
 function nextId(prefix: string) {
@@ -616,7 +791,14 @@ function assertD1BankManualAuthEpoch(epoch: number | undefined) {
   if (epoch !== undefined && epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
 }
 
-async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw", path: string, init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string; retainOnSuccess?: boolean; bankManualAuthEpoch?: number }) {
+type FinanceRequestInit = RequestInit & {
+  idempotencyPrefix?: string;
+  idempotencyKey?: string;
+  bankManualAuthEpoch?: number;
+  preparationNetwork?: PreparationNetwork;
+};
+
+async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw", path: string, init?: FinanceRequestInit & { retainOnSuccess?: boolean }) {
   assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
@@ -626,21 +808,57 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   const mutationFingerprint = init?.idempotencyPrefix && method !== "GET"
     ? `${method}|${base}|${path}|${typeof init.body === "string" ? init.body : ""}`
     : null;
-  const pendingKeyBeforeRequest = mutationFingerprint
+  let pendingKeyBeforeRequest = mutationFingerprint
     ? pendingMutations.get(mutationFingerprint)
     : undefined;
+  const d1Write = isD1Write(base, path) && method !== "GET";
+  const preparationWrite = d1Write && D1_PREPARATION_WRITE_PATH.test(path);
+  if (mutationFingerprint) {
+    const previous = pendingMutations.list().find(value => value.commandKey === (init?.idempotencyKey ?? pendingKeyBeforeRequest));
+    if (previous && previous.expiresAt <= Date.now()) {
+      // D1 过期的命令只留作核查，不能再发；别的页按原来的做法丢掉过期号，换新号。
+      if (d1Write) throw new Error(D1_COMMAND_EXPIRED_TEXT);
+      pendingMutations.forget(previous.fingerprint, previous.commandKey);
+      pendingKeyBeforeRequest = undefined;
+    }
+    if (d1Write && init?.idempotencyKey && previous && !d1CommandReplayable(previous.path)) {
+      throw new Error("这项操作再发一次可能会再执行一次，所以不能按原请求重试；先读取现在的值核对。");
+    }
+    // 从原入口再交一次（哪怕内容一样）也不发：只能从页面上方的恢复入口按原请求重试。
+    if (d1Write && !init?.idempotencyKey && !D1_CREGIS_SWITCH_PATH.test(path)) {
+      const object = d1CommandObject(path, typeof init?.body === "string" ? init.body : "");
+      if (pendingKeyBeforeRequest || pendingMutations.list().some(value => isD1Write(value.base, value.path) && !D1_CREGIS_SWITCH_PATH.test(value.path)
+        && d1CommandObject(value.path, value.body) === object)) throw new Error(D1_PENDING_OBJECT_TEXT);
+    }
+  }
   if (init?.idempotencyKey || init?.idempotencyPrefix) {
     const commandKey = init.idempotencyKey
       || pendingKeyBeforeRequest
       || nextId(init.idempotencyPrefix!);
     headers.set("Idempotency-Key", commandKey);
     if (mutationFingerprint) {
+      const previous = pendingMutations.list().find(value => value.commandKey === commandKey);
+      const investigationWrite = base === "finance" && (method === "PATCH" && (
+        /^\/topup\/channels\/[^/]+\/(?:enabled|fee|min-amount|max-amount)$/.test(path) || path === "/vietqr/config")
+        || method === "POST" && (/^\/topup\/reconciliation\/[^/]+\/writeoff$/.test(path)
+          || /^\/vietqr\/orders\/[^/]+\/manual-credit$/.test(path)));
       pendingMutations.remember(mutationFingerprint, commandKey, {
         base,
         path,
         method,
         body: typeof init?.body === "string" ? init.body : "",
+        ...(init.preparationNetwork ? { preparationNetwork: init.preparationNetwork } : {}),
+        // A retry keeps the first locator, including its absence on legacy records.
+        commandOrigin: previous ? previous.commandOrigin : investigationWrite
+          ? fundCommandOrigin(method as "PATCH" | "POST", `/api/admin/finance${path}`, "finance_d1_read") : undefined,
+        ...(base === "finance" && method === "POST" && D1_CREGIS_SWITCH_PATH.test(path)
+          ? { adminId: useAdminAuth.getState().session?.adminId } : {}),
       });
+      // 记不住就不发：刷新后找不回原命令号，结果未知时没法按原请求核对（OP-96）。
+      if (d1Write && !pendingMutations.isDurablyStored(mutationFingerprint, commandKey)) {
+        if (!pendingKeyBeforeRequest && !init?.idempotencyKey) pendingMutations.forget(mutationFingerprint, commandKey);
+        throw new Error("浏览器无法保存这次操作的记录，没有提交。请允许浏览器存储后重试。");
+      }
     }
   }
   let response: Response;
@@ -678,7 +896,8 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     // 🔴 运营看到的话术必须与命令号去留同口径(2026-08-06 第三轮验收 P1-6)。
     //   先前只认 unknown 头:5xx 时命令号已经保住了,提示却仍说「失败」——运营据此重勾一批重试,
     //   而 D2 批量的指纹含 ids,换一批 ids 就是新指纹新号,已放行的那部分会**重复放行**。
-    if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+    if (commandKey && (isIdempotencyOutcomeOpen(result?.message)
+      || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code))) {
       throw new DOutcomeUnknownError(commandKey);
     }
@@ -689,11 +908,28 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     // 🔴 2026-08-06 补:这道保护只覆盖「重试链」——**首次**提交撞上结构化 5xx 时
     //   pendingKeyBeforeRequest 为空,照样弃号。5xx 后端可能已落库,必须保号(统一口径见
     //   outcome-classification.ts)。
+    const refusal = new DRequestError(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`), response.status, result?.code, result?.message);
+    if (preparationWrite && commandKey && !pendingKeyBeforeRequest && !isExplicitRejection(refusal)) {
+      throw new DOutcomeUnknownError(commandKey);
+    }
     if (mutationFingerprint && !pendingKeyBeforeRequest
       && !outcomeStaysUnknown(response.status, result?.code)) {
       pendingMutations.forget(mutationFingerprint);
     }
-    throw new Error(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`));
+    throw refusal;
+  }
+  const commandKey = headers.get("Idempotency-Key");
+  if (preparationWrite && commandKey) {
+    const plan = result.data as Record<string, unknown> | undefined;
+    const network = init?.preparationNetwork ?? "BEP20";
+    // Commands recorded before B50 can replay the stored BEP20 receipt without either network field.
+    const legacyReceipt = init?.preparationNetwork === undefined && !!pendingKeyBeforeRequest
+      && plan?.preparationNetwork === undefined && plan?.network === undefined;
+    const planNo = path.split("/")[4];
+    if (typeof plan?.planNo !== "string" || (planNo && plan.planNo !== planNo)
+        || (!legacyReceipt && (plan.preparationNetwork !== network || plan.network !== network))) {
+      throw new DOutcomeUnknownError(commandKey);
+    }
   }
   if (mutationFingerprint && !init?.retainOnSuccess) pendingMutations.forget(mutationFingerprint);
   return result.data as T;
@@ -707,8 +943,12 @@ export interface D2DevelopmentCapabilities {
 
 export function financeAdminRequest<T>(
   path: string,
-  init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string; bankManualAuthEpoch?: number },
+  init?: FinanceRequestInit,
 ) {
+  if ((init?.method ?? "GET").toUpperCase() === "POST" && D1_CREGIS_SWITCH_PATH.test(path)) {
+    const unresolved = currentD1PendingCregisSwitchCommands().find(value => value.path === path);
+    if (unresolved) throw new DOutcomeUnknownError(unresolved.commandKey);
+  }
   return apiRequest<T>("finance", path, init);
 }
 
@@ -926,6 +1166,7 @@ function requireD1Overview(raw: Record<string, unknown> | null | undefined): D1O
     feeEvidenceAnomalyCount: d1Number(root.feeEvidenceAnomalyCount, "feeEvidenceAnomalyCount"),
     treasuryReserveAnomalyCount: d1Number(root.treasuryReserveAnomalyCount, "treasuryReserveAnomalyCount"),
     historicalBackfillAnomalyCount: d1Number(root.historicalBackfillAnomalyCount, "historicalBackfillAnomalyCount"),
+    bankManualReviewCount: d1Number(root.bankManualReviewCount, "bankManualReviewCount"),
     bins: d1Array(root.bins, "bins").map((item, index) => {
       const row = d1Object(item, `bins[${index}]`);
       return {
@@ -1049,13 +1290,14 @@ function requireD1BankOrdersPage(raw: unknown): D1BankOrdersPage {
     };
   });
   const total = d1Number(page.total, "bankOrders.total");
+  const manualReviewCount = d1Number(page.manualReviewCount, "bankOrders.manualReviewCount");
   const pageNum = d1Number(page.pageNum, "bankOrders.pageNum");
   const pageSize = d1Number(page.pageSize, "bankOrders.pageSize");
-  if (![total, pageNum, pageSize].every(Number.isSafeInteger) || total < 0 || pageNum < 1 || pageSize < 1
+  if (![total, manualReviewCount, pageNum, pageSize].every(Number.isSafeInteger) || total < 0 || manualReviewCount < 0 || pageNum < 1 || pageSize < 1
       || records.length > pageSize || total < records.length || new Set(records.map(row => row.intentNo)).size !== records.length) {
     d1Invalid("bankOrders.page");
   }
-  return { records, total, pageNum, pageSize,
+  return { records, total, manualReviewCount, pageNum, pageSize,
     source: d1String(page.source, "bankOrders.source"), asOf: d1String(page.asOf, "bankOrders.asOf") };
 }
 
@@ -1207,6 +1449,11 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
   };
 }
 
+/** 越南盾牌价：基准价 ×（1 + 买入点差），取整到十位，和后端 VietnamPaymentPolicy.quoteRate 一样。修改框按它预览改后的报价。 */
+export function d6QuoteRate(baseRateVndPerUsdt: number, buySpreadPct: number) {
+  return Math.round((baseRateVndPerUsdt * (10_000 + Math.round(buySpreadPct * 100))) / 10_000 / 10) * 10;
+}
+
 function normalizeD6FxQuote(raw: unknown): D6FxQuote {
   const root = d1Object(raw, "fxQuote");
   const configCode = d1String(root.configCode, "fxQuote.configCode");
@@ -1229,6 +1476,21 @@ function normalizeD6FxQuote(raw: unknown): D6FxQuote {
       createdAt: d1String(row.createdAt, `fxQuote.history[${index}].createdAt`),
     };
   });
+  let approval: D6FxQuote["approval"] = null;
+  if (root.approval != null) {
+    const row = d1Object(root.approval, "fxQuote.approval");
+    const status = d1String(row.status, "fxQuote.approval.status");
+    if (!["pending", "approved", "rejected", "withdrawn", "expired"].includes(status)) d1Invalid("fxQuote.approval.status");
+    approval = {
+      operationId: d1String(row.operationId, "fxQuote.approval.operationId"),
+      status: status as NonNullable<D6FxQuote["approval"]>["status"],
+      submittedBy: d1OptionalText(row.submittedBy, "fxQuote.approval.submittedBy"),
+      submittedAt: d1String(row.submittedAt, "fxQuote.approval.submittedAt"),
+      decidedAt: d1OptionalText(row.decidedAt, "fxQuote.approval.decidedAt"),
+      expectedVersion: d1Number(row.expectedVersion, "fxQuote.approval.expectedVersion"),
+      applied: d1Boolean(row.applied, "fxQuote.approval.applied"),
+    };
+  }
   const result: D6FxQuote = {
     configCode: "VND_USDT",
     baseRateVndPerUsdt: d1Number(root.baseRateVndPerUsdt, "fxQuote.baseRateVndPerUsdt"),
@@ -1240,6 +1502,8 @@ function normalizeD6FxQuote(raw: unknown): D6FxQuote {
     updatedBy: d1OptionalText(root.updatedBy, "fxQuote.updatedBy"),
     updateReason: d1OptionalText(root.updateReason, "fxQuote.updateReason"),
     updatedAt: d1String(root.updatedAt, "fxQuote.updatedAt"),
+    approval,
+    applied: root.applied == null ? null : d1Boolean(root.applied, "fxQuote.applied"),
     history,
     source: "nx_finance_fx_quote_config",
     asOf: d1String(root.asOf, "fxQuote.asOf"),
@@ -1250,9 +1514,7 @@ function normalizeD6FxQuote(raw: unknown): D6FxQuote {
       || !Number.isInteger(result.baseRateVndPerUsdt)
       || Math.abs(result.buySpreadPct * 100 - Math.round(result.buySpreadPct * 100)) > 1e-8
       || !Number.isInteger(result.lockWindowMinutes)
-      || result.quoteRateVndPerUsdt !== Math.round(
-        (result.baseRateVndPerUsdt * (10_000 + Math.round(result.buySpreadPct * 100))) / 10_000 / 10,
-      ) * 10) d1Invalid("fxQuote.rangeOrDerivedQuote");
+      || result.quoteRateVndPerUsdt !== d6QuoteRate(result.baseRateVndPerUsdt, result.buySpreadPct)) d1Invalid("fxQuote.rangeOrDerivedQuote");
   return result;
 }
 
@@ -1276,6 +1538,8 @@ function normalizeWithdrawal(value: unknown): D2Withdrawal {
     id,
     userId,
     amount,
+    addressVerificationRequired: typeof row.addressVerificationRequired === "boolean" ? row.addressVerificationRequired : null,
+    strongReviewThresholdUsdt: Number(row.strongReviewThresholdUsdt) > 0 ? Number(row.strongReviewThresholdUsdt) : null,
     fee,
     withdrawalNo: d2String(row.withdrawalNo, "withdrawal.withdrawalNo"),
     asset: d2String(row.asset, "withdrawal.asset"),
@@ -1510,27 +1774,32 @@ function normalizeD3Reserve(raw: Record<string, unknown>): D3Reserve {
 }
 
 function normalizeD3Liabilities(raw: Record<string, unknown>): D3Liabilities {
-  const totalUsdt = d3Number(raw.totalUsdt, "liabilities.totalUsdt");
+  const valuation = treasuryValuation(raw, () => d3Invalid("liabilities.valuationStatus"));
+  const unavailable = valuation === "VALUATION_UNAVAILABLE";
+  const legacy = valuation === "LEGACY";
+  const totalUsdt = unavailable ? null : d3Number(legacy ? raw.totalUsdt : raw.valuedTotalUsdt, "liabilities.totalUsdt");
   const hardLiabilityCategoryCount = d3Number(raw.hardLiabilityCategoryCount, "liabilities.hardLiabilityCategoryCount");
   const breakdown = d3Array(raw.breakdown, "liabilities.breakdown").map((item, index) => {
     const row = d3Object(item, `liabilities.breakdown[${index}]`);
+    const category = d3String(row.category, `liabilities.breakdown[${index}].category`);
     const normalized = {
-      category: d3String(row.category, `liabilities.breakdown[${index}].category`),
+      category,
       label: d3String(row.label, `liabilities.breakdown[${index}].label`),
-      amountUsdt: d3Number(row.amountUsdt, `liabilities.breakdown[${index}].amountUsdt`),
-      share: d3Number(row.share, `liabilities.breakdown[${index}].share`),
+      amountUsdt: unavailable && category === "nex_v2_future" ? null
+        : d3Number(legacy ? row.amountUsdt : row.valuedAmountUsdt, `liabilities.breakdown[${index}].amountUsdt`),
+      share: unavailable ? null : d3Number(legacy ? row.share : row.valuedShare, `liabilities.breakdown[${index}].share`),
       source: d3String(row.source, `liabilities.breakdown[${index}].source`),
     };
-    if (normalized.amountUsdt < 0 || normalized.share < 0 || normalized.share > 1) d3Invalid(`liabilities.breakdown[${index}].range`);
+    if ((normalized.amountUsdt ?? 0) < 0 || (normalized.share ?? 0) < 0 || (normalized.share ?? 0) > 1) d3Invalid(`liabilities.breakdown[${index}].range`);
     return normalized;
   });
   const categories = breakdown.map((row) => row.category);
-  const amountTotal = breakdown.reduce((sum, row) => sum + row.amountUsdt, 0);
-  const shareTotal = breakdown.reduce((sum, row) => sum + row.share, 0);
-  if (totalUsdt < 0 || hardLiabilityCategoryCount !== 9 || breakdown.length !== 9
+  const amountTotal = breakdown.reduce((sum, row) => sum + (row.amountUsdt ?? 0), 0);
+  const shareTotal = breakdown.reduce((sum, row) => sum + (row.share ?? 0), 0);
+  if (hardLiabilityCategoryCount !== 9 || breakdown.length !== 9
       || D3_LIABILITY_KEYS.length !== 9 || new Set(categories).size !== 9 || D3_LIABILITY_KEYS.some((key) => !categories.includes(key))
-      || !d3Near(amountTotal, totalUsdt)
-      || (totalUsdt > 0 && Math.abs(shareTotal - 1) > 0.001)) d3Invalid("liabilities.invariants");
+      || (totalUsdt !== null && (totalUsdt < 0 || !d3Near(amountTotal, totalUsdt)
+        || (totalUsdt > 0 && Math.abs(shareTotal - 1) > 0.001)))) d3Invalid("liabilities.invariants");
   return {
     totalUsdt,
     hardLiabilityCategoryCount,
@@ -1588,15 +1857,22 @@ function normalizeD3Maturity(raw: Record<string, unknown>): D3MaturityForecast {
 
 function normalizeD3Exposure(raw: Record<string, unknown>): D3NetExposure {
   const window = d3String(raw.window, "exposure.window");
-  if (!( ["7d", "30d", "90d"] as string[]).includes(window)) d3Invalid("exposure.window");
+  if (window !== "7d" && window !== "30d" && window !== "90d") d3Invalid("exposure.window");
+  const asOf = d3String(raw.asOf, "exposure.asOf");
+  const historyMethod = raw.historyMethod === undefined ? undefined : d3String(raw.historyMethod, "exposure.historyMethod");
+  const valuation = treasuryValuation(raw, () => d3Invalid("exposure.valuationStatus"));
+  if (valuation === "VALUATION_UNAVAILABLE") return { window, asOf, historyMethod, valuationReliable: false, series: [] };
+  const legacy = valuation === "LEGACY";
   const series = d3Array(raw.series, "exposure.series").map((item, index) => {
       const row = d3Object(item, `exposure.series[${index}]`);
+      const netExposureUsdt = d3Number(legacy ? row.netExposureUsdt : row.valuedNetExposureUsdt, `exposure.series[${index}].netExposureUsdt`);
       const normalized = {
         date: d3String(row.date, `exposure.series[${index}].date`),
         reserveUsdt: d3Number(row.reserveUsdt, `exposure.series[${index}].reserveUsdt`),
-        liabilitiesUsdt: d3Number(row.liabilitiesUsdt, `exposure.series[${index}].liabilitiesUsdt`),
-        netExposureUsdt: d3Number(row.netExposureUsdt, `exposure.series[${index}].netExposureUsdt`),
-        negative: d3Boolean(row.negative, `exposure.series[${index}].negative`),
+        liabilitiesUsdt: d3Number(legacy ? row.liabilitiesUsdt : row.valuedLiabilitiesUsdt, `exposure.series[${index}].liabilitiesUsdt`),
+        netExposureUsdt,
+        negative: legacy ? d3Boolean(row.negative, `exposure.series[${index}].negative`) : netExposureUsdt < 0,
+        backcast: row.backcast === undefined ? undefined : d3Boolean(row.backcast, `exposure.series[${index}].backcast`),
       };
       if (normalized.reserveUsdt < 0 || normalized.liabilitiesUsdt < 0
           || !d3Near(normalized.reserveUsdt - normalized.liabilitiesUsdt, normalized.netExposureUsdt)
@@ -1604,11 +1880,7 @@ function normalizeD3Exposure(raw: Record<string, unknown>): D3NetExposure {
       return normalized;
     });
   d3AssertDateSeries(series, Number(window.slice(0, -1)), "exposure.series");
-  return {
-    window: window as D3NetExposure["window"],
-    series,
-    asOf: d3String(raw.asOf, "exposure.asOf"),
-  };
+  return { window, asOf, historyMethod, valuationReliable: true, series };
 }
 
 function normalizeD3ForecastConfig(raw: Record<string, unknown>): D3ForecastConfig {
@@ -1705,7 +1977,7 @@ function normalizeBill(value: unknown): D4Bill {
   const billType = d4String(row.billType, "bill.billType") as D4BillType;
   if (!D4_BILL_TYPES.has(billType)) d4Invalid("bill.billType");
   const asset = d4String(row.asset, "bill.asset").toUpperCase();
-  if (!["USDT", "NEX"].includes(asset)) d4Invalid("bill.asset");
+  if (!["USDT", "UVT"].includes(asset)) d4Invalid("bill.asset");
   const direction = d4String(row.direction, "bill.direction").toUpperCase();
   if (!["IN", "OUT", "CREDIT", "DEBIT"].includes(direction)) d4Invalid("bill.direction");
   const bizType = d4String(row.bizType, "bill.bizType");
@@ -1767,7 +2039,7 @@ export function normalizeD5Params(value: unknown): D5Params {
     "networkConfirmFeeUsd", "networkEnabled", "nexFeeOffsetRate", "smallAmountThresholdUsd", "payoutSlaHours",
     "cooldownDays", "complianceHoldEnabled",
   ];
-  const sourceByField: Record<string, "d5" | "phase-h1"> = {};
+  const sourceByField: D5Params["sourceByField"] = {};
   sourceKeys.forEach((key) => {
     const item = d5String(source[key], `sourceByField.${key}`);
     if (item !== "d5" && item !== "phase-h1") {
@@ -1775,7 +2047,52 @@ export function normalizeD5Params(value: unknown): D5Params {
     }
     sourceByField[key] = item;
   });
+  let complianceReviewThresholdUsdt: number | null = null;
+  if (raw.complianceReviewThresholdUsdt !== undefined || source.complianceReviewThresholdUsdt !== undefined) {
+    complianceReviewThresholdUsdt = d5Number(raw.complianceReviewThresholdUsdt, "complianceReviewThresholdUsdt");
+    if (complianceReviewThresholdUsdt <= 0 || source.complianceReviewThresholdUsdt !== "compliance-rule") {
+      throw new Error(formatAdminApiError("D5_RESPONSE_INVALID", "D5_RESPONSE_INVALID:complianceReviewThresholdUsdt"));
+    }
+    sourceByField.complianceReviewThresholdUsdt = "compliance-rule";
+  }
+  let networkStatus: D5Params["networkStatus"];
+  let effectiveNetworks: D5Params["effectiveNetworks"];
+  let networkStatusReliable: D5Params["networkStatusReliable"];
+  if (raw.networkStatus !== undefined || raw.effectiveNetworks !== undefined || raw.networkStatusReliable !== undefined) {
+    if (!Array.isArray(raw.networkStatus) || raw.networkStatus.length !== 3)
+      throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+    networkStatusReliable = d5Boolean(raw.networkStatusReliable, "networkStatusReliable");
+    const networks = ["USDT-TRC20", "USDT-BEP20", "USDT-ERC20"];
+    networkStatus = raw.networkStatus.map((item, index, all) => {
+      const row = d5Object(item, "networkStatus");
+      const network = d5String(row.network, "networkStatus.network");
+      const configured = d5Boolean(row.configured, "networkStatus.configured");
+      const enabled = row.enabled === null ? null : d5Boolean(row.enabled, "networkStatus.enabled");
+      const state = d5String(row.state, "networkStatus.state");
+      if (!networks.includes(network) || all.findIndex(value => (value as Record<string, unknown>).network === network) !== index
+          || (row.disabledReason !== null && (typeof row.disabledReason !== "string" || !row.disabledReason))
+          || !["AVAILABLE", "UNAVAILABLE", "UNKNOWN"].includes(state)
+          || (state === "AVAILABLE" ? enabled !== true || !configured || row.disabledReason !== null
+            : state === "UNAVAILABLE" ? enabled !== false || row.disabledReason === null
+              : enabled !== null || row.disabledReason === null))
+        throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+      return { network, configured, enabled, disabledReason: row.disabledReason as string | null, state: state as "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN" };
+    });
+    if (networkStatusReliable !== networkStatus.every(row => row.state !== "UNKNOWN"))
+      throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+    if (!networkStatusReliable) {
+      if (raw.effectiveNetworks !== null) throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+      effectiveNetworks = null;
+    } else {
+      if (!Array.isArray(raw.effectiveNetworks)) throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+      effectiveNetworks = raw.effectiveNetworks as string[];
+      const expected = networkStatus.filter(row => row.state === "AVAILABLE").map(row => row.network);
+      if (effectiveNetworks.length !== expected.length || effectiveNetworks.some((value, index, all) => typeof value !== "string" || !expected.includes(value) || all.indexOf(value) !== index))
+        throw new Error("提现网络实际状态加载不完整，请刷新后再试");
+    }
+  }
   const result: D5Params = {
+    networkStatus, effectiveNetworks, networkStatusReliable,
     version: d5Integer(raw.version, "version", 0),
     dailyLimitCount: d5Integer(raw.dailyLimitCount, "dailyLimitCount", 1),
     maxBalanceRatio: d5Number(raw.balanceMaxRatio, "balanceMaxRatio"),
@@ -1802,6 +2119,7 @@ export function normalizeD5Params(value: unknown): D5Params {
     payoutSlaHours: d5Integer(raw.payoutSlaHours, "payoutSlaHours", 1),
     cooldownDays: d5Integer(raw.cooldownDays, "cooldownDays", 0),
     complianceHoldEnabled: d5Boolean(raw.complianceHoldEnabled, "complianceHoldEnabled"),
+    complianceReviewThresholdUsdt,
     currentPhase: d5String(raw.currentPhase, "currentPhase"),
     currentMonth: d5Integer(raw.currentMonth, "currentMonth", 1),
     coverageRatio: d5Number(raw.coverageRatio, "coverageRatio"),
@@ -1843,7 +2161,7 @@ export async function retryD1PendingTopupCommand(commandKey: string) {
     || !pending.path.startsWith("/topup/")
     || pending.method === "GET"
   ) {
-    throw new Error("待重试请求不存在或已过期，请重新读取服务端真值");
+    throw new Error("待重试的请求不存在或已过期，请刷新页面");
   }
   return requireD1Overview(await apiRequest<Record<string, unknown>>(
     pending.base,
@@ -1857,11 +2175,12 @@ export async function retryD1PendingTopupCommand(commandKey: string) {
   ));
 }
 
-export async function fetchD1TopupFlows(params: { status?: string; keyword?: string; pageNum?: number; pageSize?: number }) {
+/** userId 按用户号精确筛（后端 user_id =）；keyword 只模糊匹配单号、凭证和币种，不能用来找人。按发起时间倒序。 */
+export async function fetchD1TopupFlows(params: { status?: string; userId?: number; keyword?: string; pageNum?: number; pageSize?: number }) {
   return requireD1FlowsPage(await apiRequest<PageResult<D1DepositFlow>>("finance", `/topup/flows${buildQuery(params)}`));
 }
 
-export async function fetchD1BankOrders(params: { paymentRail?: string; status?: string; keyword?: string; pageNum?: number; pageSize?: number }, bankManualAuthEpoch = adminAuthLifecycleEpoch()) {
+export async function fetchD1BankOrders(params: { paymentRail?: string; status?: string; settlementStatus?: string; keyword?: string; pageNum?: number; pageSize?: number }, bankManualAuthEpoch = adminAuthLifecycleEpoch()) {
   const page = requireD1BankOrdersPage(await apiRequest<unknown>("finance", `/vietqr/orders${buildQuery(params)}`, { bankManualAuthEpoch }));
   assertD1BankManualAuthEpoch(bankManualAuthEpoch);
   return page;
@@ -1870,7 +2189,6 @@ export async function fetchD1BankOrders(params: { paymentRail?: string; status?:
 export function listD1PendingBankOrderCommands(): D1PendingTopupCommand[] {
   return pendingMutations.list()
     .filter(value => value.base === "finance" && /^\/vietqr\/orders\/VQR-[A-Za-z0-9]+\/manual-credit$/.test(value.path))
-    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
     .sort((left, right) => left.createdAt - right.createdAt);
 }
 
@@ -1904,13 +2222,13 @@ async function submitD1BankManualCredit(path: string, body: string, commandKey?:
     const latest = await fetchD1BankOrders({ keyword: intentNo, pageNum: 1, pageSize: 20 }, authEpoch);
     assertD1BankManualAuthEpoch(authEpoch);
     const order = latest.records.find(value => value.intentNo === intentNo);
-    if (!order || order.status !== "CREDITED" || order.creditedUsdt <= 0) throw new Error("人工入账尚未回读确认");
+    if (!order || order.status !== "CREDITED" || order.creditedUsdt <= 0) throw new Error("人工入账结果未知");
     pendingMutations.forget(fingerprint);
     return result;
   } catch {
     assertD1BankManualAuthEpoch(authEpoch);
     if (retainedKey) throw new DOutcomeUnknownError(retainedKey);
-    throw new Error("人工入账已受理但订单回读未确认，请先核对订单与账本，不要重新提交");
+    throw new Error("人工入账已提交，结果未知；请先核对订单和账本，不要重新提交");
   }
 }
 
@@ -1932,82 +2250,6 @@ export async function loadD1VietQrOverview(
   return normalizeD1VietQrOverview(await apiRequest<Record<string, unknown>>(
     "finance", `/vietqr/overview${buildQuery({ view, pageNum, pageSize })}`, { bankManualAuthEpoch },
   ));
-}
-
-export async function reconcileD1VietQr(
-  id: number,
-  action: "match-credit" | "write-off" | "return",
-  input: {
-    expectedVersion: number;
-    userId?: number;
-    intentNo?: string;
-    evidenceRef: string;
-    reason: string;
-    operator: string;
-  },
-) {
-  return apiRequest<Record<string, unknown>>(
-    "finance", `/vietqr/reconciliations/${id}/actions/${action}`, {
-      method: "POST",
-      body: JSON.stringify(input),
-      idempotencyPrefix: "d1-vietqr-reconcile",
-    },
-  );
-}
-
-export async function registerD1VietQrReceipt(input: {
-  bankAccountId: number;
-  paymentReference: string;
-  memoCode?: string;
-  receivedVnd: number;
-  receivedAt: string;
-  evidenceRef?: string;
-  reason: string;
-  operator: string;
-}) {
-  return apiRequest<Record<string, unknown>>("finance", "/vietqr/receipts", {
-    method: "POST",
-    body: JSON.stringify(input),
-    idempotencyPrefix: "d1-vietqr-receipt-register",
-  });
-}
-
-export async function createD1VietQrAccount(input: {
-  bankCode: string;
-  bankName: string;
-  accountHolder: string;
-  accountNumber: string;
-  dailyCapVnd: number;
-  reason: string;
-  operator: string;
-}) {
-  return apiRequest<Record<string, unknown>>("finance", "/vietqr/accounts", {
-    method: "POST",
-    body: JSON.stringify(input),
-    idempotencyPrefix: "d1-vietqr-account-create",
-  });
-}
-
-export async function updateD1VietQrAccount(
-  id: number,
-  input: {
-    action: "ENABLE" | "DISABLE" | "RECOVER" | "UPDATE_CAP" | "REPROVISION";
-    dailyCapVnd?: number;
-    /** REPROVISION 专用:重新录入的收款信息。账号只提交给后端加密,列表与审计均不回显全号。 */
-    bankCode?: string;
-    bankName?: string;
-    accountHolder?: string;
-    accountNumber?: string;
-    expectedVersion: number;
-    reason: string;
-    operator: string;
-  },
-) {
-  return apiRequest<Record<string, unknown>>("finance", `/vietqr/accounts/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(input),
-    idempotencyPrefix: "d1-vietqr-account-update",
-  });
 }
 
 export async function updateD1VietQrConfig(
@@ -2038,59 +2280,11 @@ export async function updateD1TopupChannelFee(channelCode: string, numericValue:
   }));
 }
 
-export async function updateD1TopupChannelMin(channelCode: string, numericValue: number, expectedValue: number, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/channels/${encodeURIComponent(channelCode)}/min-amount`, {
-    method: "PATCH",
-    body: JSON.stringify({ numericValue, unit: "USD", expectedValue: String(expectedValue), reason, operator }),
-    idempotencyPrefix: "d1-channel-min",
-  }));
-}
-
-export async function switchD1Psp(value: string, expectedValue: string, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", "/topup/psp/primary", {
-    method: "PATCH",
-    body: JSON.stringify({ value, expectedValue, reason, operator }),
-    idempotencyPrefix: "d1-psp",
-  }));
-}
-
-export async function updateD1CardRisk(key: string, numericValue: number, unit: D1CardParam["unit"], expectedValue: number, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/card-risk/${encodeURIComponent(key)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ numericValue, unit, expectedValue: String(expectedValue), reason, operator }),
-    idempotencyPrefix: "d1-card-risk",
-  }));
-}
-
 export async function writeoffD1Reconciliation(channelCode: string, method: "CONFIRM_EXCEPTION", evidenceRef: string, reason: string, operator: string) {
   return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/reconciliation/${encodeURIComponent(channelCode)}/writeoff`, {
     method: "POST",
     body: JSON.stringify({ method, evidenceRef, reason, operator }),
     idempotencyPrefix: "d1-reconcile",
-  }));
-}
-
-export async function createD1BinLock(segment: string, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", "/topup/bin-locks", {
-    method: "POST",
-    body: JSON.stringify({ value: segment, reason, operator }),
-    idempotencyPrefix: "d1-bin-create",
-  }));
-}
-
-export async function setD1BinLock(segment: string, enabled: boolean, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/bin-locks/${encodeURIComponent(segment)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ enabled, reason, operator }),
-    idempotencyPrefix: "d1-bin-state",
-  }));
-}
-
-export async function refundD1Chargeback(caseNo: string, evidenceRef: string, reason: string, operator: string) {
-  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/chargebacks/${encodeURIComponent(caseNo)}/refund`, {
-    method: "POST",
-    body: JSON.stringify({ evidenceConfirmed: true, evidenceRef, reason, operator }),
-    idempotencyPrefix: "d1-chargeback",
   }));
 }
 
@@ -2126,7 +2320,7 @@ export async function fetchD2CregisPayout(withdrawalNo: string): Promise<D2Cregi
 export async function recoverD2CregisPayout(withdrawalNo: string, providerCid: string, reason: string, idempotencyKey: string) {
   try {
     d2CregisCid(providerCid);
-    if (reason.trim().length < 10 || reason.trim().length > 300) d2Invalid("cregisRecoveryReason");
+    if (reason.trim().length < 10 || reason.trim().length > 200) d2Invalid("cregisRecoveryReason");
   } catch {
     throw new Error(formatAdminApiError("CREGIS_PAYOUT_RECOVERY_REQUEST_INVALID", "CREGIS_PAYOUT_RECOVERY_REQUEST_INVALID"));
   }
@@ -2169,11 +2363,14 @@ export async function fetchD2BankPayout(withdrawalNo: string): Promise<D2BankPay
 }
 
 export async function requeryD2BankPayout(withdrawalNo: string, version: number, reason: string, idempotencyKey: string) {
-  const row = d2Object(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/bank/requery`, {
+  const response = await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/bank/requery`, {
     method: "POST", body: JSON.stringify({ version, reason }), idempotencyKey,
-  }), "bankRecovery");
-  if (row.withdrawalNo !== withdrawalNo || !["PAID", "FAILED", "MANUAL_REVIEW"].includes(String(row.state))) d2Invalid("bankRecovery");
-  return String(row.state);
+  });
+  return readWriteResult(idempotencyKey, () => {
+    const row = d2Object(response, "bankRecovery");
+    if (row.withdrawalNo !== withdrawalNo || !["PAID", "FAILED", "MANUAL_REVIEW"].includes(String(row.state))) d2Invalid("bankRecovery");
+    return String(row.state);
+  });
 }
 
 export async function fetchD2DevelopmentCapabilities() {
@@ -2188,7 +2385,7 @@ export async function simulateD2CooldownExpiry(
   reason: string,
   idempotencyKey: string,
 ) {
-  return normalizeWithdrawal(await apiRequest<unknown>(
+  const response = await apiRequest<unknown>(
     "finance",
     `/withdrawals/development/${encodeURIComponent(withdrawalNo)}/simulate-cooldown-expiry`,
     {
@@ -2196,7 +2393,8 @@ export async function simulateD2CooldownExpiry(
       body: JSON.stringify({ reason }),
       idempotencyKey,
     },
-  ));
+  );
+  return readWriteResult(idempotencyKey, () => normalizeWithdrawal(response));
 }
 
 export async function reviewD2Withdrawal(
@@ -2206,11 +2404,12 @@ export async function reviewD2Withdrawal(
   operator: string,
   idempotencyKey: string,
 ) {
-  return normalizeWithdrawal(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/review`, {
+  const response = await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/review`, {
     method: "POST",
     body: JSON.stringify({ action, operator, ...input }),
     idempotencyKey,
-  }));
+  });
+  return readWriteResult(idempotencyKey, () => normalizeWithdrawal(response));
 }
 
 export async function updateD1TopupChannelMax(channelCode: string, numericValue: number, expectedValue: number, reason: string, operator: string) {
@@ -2228,30 +2427,51 @@ export async function reviewD2WithdrawalsBatch(
   operator: string,
   idempotencyKey: string,
 ) {
-  return apiRequest<D2BatchResult>("finance", "/withdrawals/batch", {
+  const response = await apiRequest<unknown>("finance", "/withdrawals/batch", {
     method: "POST",
     body: JSON.stringify({ action, withdrawalIds, operator, ...input }),
     idempotencyKey,
   });
+  return readWriteResult(idempotencyKey, (): D2BatchResult => {
+    const row = d2Object(response, "batchResult");
+    const ids = (value: unknown, field: string) => (Array.isArray(value) ? value.map((id) => d2String(id, field)) : d2Invalid(field));
+    if (!Array.isArray(row.conflicts)) d2Invalid("batchResult.conflicts");
+    return {
+      batchId: d2String(row.batchId, "batchResult.batchId"),
+      accepted: ids(row.accepted, "batchResult.accepted"),
+      rejected: ids(row.rejected, "batchResult.rejected"),
+      conflicts: row.conflicts.map((item) => {
+        const conflict = d2Object(item, "batchResult.conflict");
+        return { withdrawalId: d2String(conflict.withdrawalId, "batchResult.conflict"), reason: d2String(conflict.reason, "batchResult.conflict") };
+      }),
+      reason: typeof row.reason === "string" ? row.reason : "",
+    };
+  });
 }
 
-export async function fetchD3Dashboard(maturityWindow?: "7d" | "30d", exposureWindow?: "7d" | "30d" | "90d"): Promise<D3Dashboard> {
-  const config = normalizeD3ForecastConfig(await apiRequest<Record<string, unknown>>("treasury", "/forecast-config"));
-  const selectedMaturity = maturityWindow ?? (config.forecastWindow === "30d" ? "30d" : "7d");
-  const selectedExposure = exposureWindow ?? config.forecastWindow;
-  const [reserve, liabilities, maturity, exposure] = await Promise.all([
+/** 储备、应付款、到期预测、预测配置接受 B2 或 D3 读权限，任一失败整块失败，不留旧水位（D3-S01）。 */
+export async function fetchD3Main(): Promise<D3Main> {
+  const [config, reserve, liabilities, maturity7] = await Promise.all([
+    apiRequest<Record<string, unknown>>("treasury", "/forecast-config"),
     apiRequest<Record<string, unknown>>("treasury", "/reserve"),
     apiRequest<Record<string, unknown>>("treasury", "/liabilities?breakdown=true"),
-    apiRequest<Record<string, unknown>>("treasury", `/maturity-forecast?window=${selectedMaturity}`),
-    apiRequest<Record<string, unknown>>("treasury", `/net-exposure?window=${selectedExposure}`),
+    apiRequest<Record<string, unknown>>("treasury", "/maturity-forecast?window=7d"),
   ]);
   return {
     reserve: normalizeD3Reserve(reserve),
     liabilities: normalizeD3Liabilities(liabilities),
-    maturity: normalizeD3Maturity(maturity),
-    exposure: normalizeD3Exposure(exposure),
-    config,
+    maturity7: normalizeD3Maturity(maturity7),
+    config: normalizeD3ForecastConfig(config),
   };
+}
+
+export async function fetchD3Maturity(window: D3MaturityForecast["window"]) {
+  return normalizeD3Maturity(await apiRequest<Record<string, unknown>>("treasury", `/maturity-forecast?window=${window}`));
+}
+
+/** 差额曲线单独读：它接受 B1 或 D3 读权限，和主数据的授权不同（X05）。 */
+export async function fetchD3NetExposure(window: D3NetExposure["window"], signal?: AbortSignal) {
+  return normalizeD3Exposure(await apiRequest<Record<string, unknown>>("treasury", `/net-exposure?window=${window}`, { signal }));
 }
 
 export async function createD3Injection(
@@ -2274,11 +2494,12 @@ export async function updateD3ForecastConfig(
   expectedVersion: number,
   reason: string,
   operator: string,
+  idempotencyKey: string,
 ) {
   return apiRequest<Record<string, unknown>>("treasury", "/forecast-config", {
     method: "PUT",
     body: JSON.stringify({ ...values, expectedVersion, reason, operator }),
-    idempotencyPrefix: "d3-forecast-config",
+    idempotencyKey,
   });
 }
 
@@ -2286,22 +2507,62 @@ export async function loadD6FxQuote() {
   return normalizeD6FxQuote(await apiRequest<Record<string, unknown>>("finance", "/fx-quote"));
 }
 
+/** A2 的 D6 前后值由后端 fxAuditValues(Map).toString() 生成。只解析这份固定投影，不猜待批值。 */
+export function parseD6ApprovalValues(text: string): D6FxValues {
+  const values = {} as D6FxValues;
+  for (const key of ["baseRateVndPerUsdt", "buySpreadPct", "lockWindowMinutes"] as const) {
+    const match = text.match(new RegExp(`(?:\\{|,\\s*)${key}=([0-9]+(?:\\.[0-9]+)?)(?=,|\\})`));
+    if (!match) d1Invalid("fxQuote.approval.values");
+    values[key] = d1Number(match[1], `fxQuote.approval.${key}`);
+  }
+  return values;
+}
+
+/** 只用于需审批方向。成功只说明预检通过，未保存配置。 */
+export async function preflightD6FxQuote(values: D6FxValues, expectedVersion: number, reason: string): Promise<D6FxPreflight> {
+  const row = d1Object(await apiRequest<unknown>("finance", "/fx-quote/preflight", {
+    method: "POST", body: JSON.stringify({ ...values, expectedVersion, reason }),
+  }), "fxQuote.preflight");
+  const snapshot = (value: unknown, name: string) => {
+    const item = d1Object(value, name);
+    return {
+      baseRateVndPerUsdt: d1Number(item.baseRateVndPerUsdt, `${name}.baseRateVndPerUsdt`),
+      buySpreadPct: d1Number(item.buySpreadPct, `${name}.buySpreadPct`),
+      lockWindowMinutes: d1Number(item.lockWindowMinutes, `${name}.lockWindowMinutes`),
+      version: d1Number(item.version, `${name}.version`),
+      quoteRateVndPerUsdt: d1Number(item.quoteRateVndPerUsdt, `${name}.quoteRateVndPerUsdt`),
+    };
+  };
+  return {
+    current: snapshot(row.current, "fxQuote.preflight.current"), proposed: snapshot(row.proposed, "fxQuote.preflight.proposed"),
+    before: d1String(row.before, "fxQuote.preflight.before"), after: d1String(row.after, "fxQuote.preflight.after"),
+    approvalRequired: d1Boolean(row.approvalRequired, "fxQuote.preflight.approvalRequired"),
+    baseRateIncrease: d1Boolean(row.baseRateIncrease, "fxQuote.preflight.baseRateIncrease"),
+    rechargeQuoteDecrease: d1Boolean(row.rechargeQuoteDecrease, "fxQuote.preflight.rechargeQuoteDecrease"),
+    fundingCheckRequired: d1Boolean(row.fundingCheckRequired, "fxQuote.preflight.fundingCheckRequired"),
+    fundingCheckPassed: d1Boolean(row.fundingCheckPassed, "fxQuote.preflight.fundingCheckPassed"),
+  };
+}
+
 export async function updateD6FxQuote(
   values: Pick<D6FxQuote, "baseRateVndPerUsdt" | "buySpreadPct" | "lockWindowMinutes">,
   expectedVersion: number,
   reason: string,
   operator: string,
+  /** 页面持有的命令号：结果未知时原样重试（OP-94）。 */
+  idempotencyKey: string,
 ) {
-  return normalizeD6FxQuote(await apiRequest<Record<string, unknown>>("finance", "/fx-quote", {
+  const raw = await apiRequest<Record<string, unknown>>("finance", "/fx-quote", {
     method: "PATCH",
     body: JSON.stringify({ ...values, expectedVersion, reason, operator }),
-    idempotencyPrefix: "d6-fx-quote",
-  }));
+    idempotencyKey,
+  });
+  return readWriteResult(idempotencyKey, () => normalizeD6FxQuote(raw));
 }
 
 /** Legacy name retained for B1 callers; the authority and endpoint are owned by B1. */
 export async function updateD3Thresholds(
-  values: { redlinePct?: string; healthyPct?: string; runRiskPct?: string },
+  values: { redlinePct?: string; healthyPct?: string; runRiskPct?: string; expectedVersion?: number },
   reason: string,
   operator: string,
   idempotencyKey?: string,
@@ -2332,10 +2593,11 @@ export async function downloadD3Csv(
   if (!response.ok || contentType !== "text/csv" || outcomeUnknown) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     if (isAdminAuthFailure(result?.code === 401 ? 401 : response.status, result?.message)) resetAdminSession();
-    if (outcomeUnknown || outcomeStaysUnknown(response.status, result?.code)) {
+    if (outcomeUnknown || isIdempotencyOutcomeOpen(result?.message)
+      || outcomeStaysUnknown(response.status, result?.code)) {
       throw new DOutcomeUnknownError(idempotencyKey);
     }
-    throw new Error(formatAdminApiError(result?.message, `D3_EXPORT_FAILED_${response.status}`));
+    throw new DRequestError(formatAdminApiError(result?.message, `D3_EXPORT_FAILED_${response.status}`), response.status, result?.code, result?.message);
   }
   const blob = await response.blob().catch(() => { throw new DOutcomeUnknownError(idempotencyKey); });
   const disposition = response.headers.get("Content-Disposition") || "";
@@ -2385,7 +2647,7 @@ export async function fetchD4UserLedger(userId: number, range?: Pick<D4BillQuery
     categoryTotals: numericRecord(rawCategories, "userLedger.categorySums"),
     balance: {
       USDT: d4Number(raw.currentUsdtBalance, "userLedger.currentUsdtBalance"),
-      NEX: d4Number(raw.currentNexBalance, "userLedger.currentNexBalance"),
+      UVT: d4Number(raw.currentNexBalance, "userLedger.currentNexBalance"),
     },
     sources: Array.isArray(raw.sources) ? raw.sources.map((item, index) => d4String(item, `userLedger.sources.${index}`)) : d4Invalid("userLedger.sources"),
   } satisfies D4UserLedger;
@@ -2412,7 +2674,7 @@ export async function fetchD4RunningBalance(
     const values = d4Object(raw.reconciliation, "runningBalance.reconciliation");
     reconciliation = {
       USDT: d4Number(values.USDT, "runningBalance.reconciliation.USDT"),
-      NEX: d4Number(values.NEX, "runningBalance.reconciliation.NEX"),
+      UVT: d4Number(values.UVT, "runningBalance.reconciliation.UVT"),
     };
   } else if (raw.reconciliation !== null) {
     d4Invalid("runningBalance.reconciliation");
@@ -2420,6 +2682,10 @@ export async function fetchD4RunningBalance(
   return {
     userId: d4Integer(raw.userId, "runningBalance.userId", 1),
     total: d4Integer(raw.total, "runningBalance.total"),
+    openingBalances: Object.fromEntries(Object.entries(d4Object(raw.openingBalances, "runningBalance.openingBalances"))
+      .map(([asset, value]) => [asset, d4Number(value, `runningBalance.openingBalances.${asset}`)])),
+    closingBalances: Object.fromEntries(Object.entries(d4Object(raw.closingBalances, "runningBalance.closingBalances"))
+      .map(([asset, value]) => [asset, d4Number(value, `runningBalance.closingBalances.${asset}`)])),
     rows: raw.rows.map((value, index) => {
       const row = d4Object(value, `runningBalance.rows.${index}`);
       const settlementBucket = d4String(
@@ -2479,20 +2745,34 @@ export type D5OwnedChanges = Partial<Pick<D5Params,
   "dailyLimitCount" | "maxBalanceRatio" | "networkConfirmFeeUsd" | "networkEnabled" | "nexFeeOffsetRate"
   | "smallAmountThresholdUsd" | "payoutSlaHours">>;
 
+export function d5WithdrawalLimitsValues(changes: D5OwnedChanges, expectedVersion: number) {
+  const { maxBalanceRatio, ...values } = changes;
+  return { ...values, balanceMaxRatio: maxBalanceRatio, expectedVersion };
+}
+
 export async function updateD5WithdrawalLimits(
   changes: D5OwnedChanges,
   expectedVersion: number,
   reason: string,
   operator: string,
+  /** 页面自己保存的命令号；结果未知后按原操作重试时传同一个（OP-94）。 */
+  commandKey?: string,
 ) {
-  const payload: Record<string, unknown> = { ...changes, expectedVersion, reason, operator };
-  if (Object.prototype.hasOwnProperty.call(payload, "maxBalanceRatio")) {
-    payload.balanceMaxRatio = payload.maxBalanceRatio;
-    delete payload.maxBalanceRatio;
+  const payload = { ...d5WithdrawalLimitsValues(changes, expectedVersion), reason, operator };
+  let data: Record<string, unknown>;
+  try {
+    data = await apiRequest<Record<string, unknown>>("withdraw", "/limits", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+      ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "d5-withdrawal-limits" }),
+    });
+  } catch (cause) {
+    // HTTP 成功、外壳却读不懂：后端可能已经改了，算结果未知，原命令号留着（OP-91）。
+    if (commandKey && cause instanceof DRequestError && cause.status >= 200 && cause.status < 300 && cause.code === undefined) {
+      throw new DOutcomeUnknownError(commandKey);
+    }
+    throw cause;
   }
-  return normalizeD5Params(await apiRequest<Record<string, unknown>>("withdraw", "/limits", {
-    method: "PUT",
-    body: JSON.stringify(payload),
-    idempotencyPrefix: "d5-withdrawal-limits",
-  }));
+  // 写成功了，回来的内容读不懂也算结果未知，不能当失败丢号（OP-91）。
+  return commandKey ? readWriteResult(commandKey, () => normalizeD5Params(data)) : normalizeD5Params(data);
 }

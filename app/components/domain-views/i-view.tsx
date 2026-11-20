@@ -19,9 +19,11 @@ import { I1CopyAb } from "./i-tabs/i1-copy-ab";
 import { I2Nova } from "./i-tabs/i2-nova";
 import { I3Campaign } from "./i-tabs/i3-campaign";
 import { I4Trust } from "./i-tabs/i4-trust";
+import { I5Disclosures } from "./i-tabs/i5-disclosures";
 import { I6I18n } from "./i-tabs/i6-i18n";
 import type { ConfirmReq, ICtx, ActionConfirmReq } from "./i-tabs/types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { RdPage } from "@/app/components/rd";
 
 const FOLD: Record<string, string> = {
   I1: "I1",
@@ -32,14 +34,7 @@ const FOLD: Record<string, string> = {
   I6: "I6",
 };
 
-const RO_COPY: Record<string, string> = {
-  I1: "管理文案版本，实验分组按首次分配结果固定",
-  I2: "管理消息频道和推送间隔；整体停用前往紧急控制",
-  I3: "通知送达、已读和取消状态以系统记录为准",
-  I4: "信任中心发布内容与历史版本均可追溯",
-  I5: "管理披露版本、适用地区与用户重新确认记录",
-  I6: "词条、课程、推荐位与奖励以服务器为唯一来源 · 奖励上调走敏感审批",
-};
+
 
 function countText(value?: number) {
   return Number(value ?? 0).toLocaleString();
@@ -52,52 +47,53 @@ function contentErrorForTab(tab: string, content: IContentData) {
       ? "nova"
       : tab === "I3"
         ? "campaigns"
-        : tab === "I4" || tab === "I5"
-          ? "trustDisclosure"
-          : "i18nLearning";
+        : tab === "I4" ? "trustDisclosure"
+          : tab === "I5" ? "disclosures" : "i18nLearning";
   const error = content.errors?.[key];
   if (!error) return null;
-  if (tab === "I5" && error === "I4 返回数据格式异常，请刷新重试") {
-    return "I5 返回数据格式异常，请刷新重试";
-  }
   if (tab === "I5" && error === "I4 数据加载失败，请刷新重试") {
     return "I5 数据加载失败，请刷新重试";
   }
   return error;
 }
 
+// 页面上不显示 I1–I7 模块代号，只保留用户能看懂的原因。
+function contentErrorText(error: string) {
+  if (/^I\d 数据加载失败，请刷新重试$/.test(error)) return "暂时读不到，请稍后重试。";
+  return error;
+}
+
 function liveFromBackend(tab: string, content: IContentData, loading: boolean, error: string | null) {
-  if (loading) return "数据加载中";
-  if (error) return "接口异常";
+  if (loading || error) return "";
   if (tab === "I1") {
     const stats = content.copyAb?.stats;
-    return stats ? `进行中实验:${countText(stats.runningExps)} 个 · 管理文案:${countText(stats.managedCopies)} 条` : "暂无后端业务数据";
+    return stats ? `进行中测试 ${countText(stats.runningExps)} 个 · 文案 ${countText(stats.managedCopies)} 条` : "";
   }
   if (tab === "I2") {
     const stats = content.nova?.stats;
-    return stats ? `消息点击率 ${stats.ctr} · 在线 ${countText(stats.onlineChannels)}/${countText(stats.totalChannels)}` : "暂无后端业务数据";
+    return stats ? `点击率 ${stats.ctr} · 启用频道 ${countText(stats.onlineChannels)}/${countText(stats.totalChannels)}` : "";
   }
   if (tab === "I3") {
     const stats = content.campaigns?.stats;
-    return stats ? `紧急通道:${countText(stats.criticalInflight)} 条在途 · 本月发送 ${stats.monthSent}` : "暂无后端业务数据";
+    return stats ? `紧急通知发送中 ${countText(stats.criticalInflight)} 条 · 本月已发 ${stats.monthSent}` : "";
   }
   if (tab === "I4") {
     const stats = content.trustDisclosure?.stats;
-    return stats ? `受管信任版块:${countText(stats.managedSections)} 个` : "暂无后端业务数据";
+    return stats ? `信任版块 ${countText(stats.managedSections)} 个` : "";
   }
   if (tab === "I5") {
-    const stats = content.trustDisclosure?.stats;
-    if (!stats) return "暂无后端业务数据";
+    const stats = content.disclosures?.stats;
+    if (!stats) return "";
     const coverage = stats.reackPct !== undefined
-      ? `${stats.reackJurisdiction || "适用地区"} 重新确认 ${stats.reackPct}% · 当前待确认 ${countText(stats.staleAckUsers)}`
-      : `当前待确认 ${countText(stats.staleAckUsers)}`;
-    return `${coverage} · 近7天历史拦截 ${countText(stats.weeklyGateBlocked)}`;
+      ? `${stats.reackJurisdiction || "适用地区"} 已重新确认 ${stats.reackPct}% · 待确认 ${countText(stats.staleAckUsers)} 人`
+      : `待确认 ${countText(stats.staleAckUsers)} 人`;
+    return `${coverage} · 近 7 天拦截 ${countText(stats.weeklyGateBlocked)} 次`;
   }
   if (tab === "I6") {
     const stats = content.i18nLearning?.stats;
-    return stats ? `受管词条:${countText(stats.managedKeys)} 条 · 在线课程:${countText(stats.coursesOnline)} 门 · 本周派发 ${nexGridBrandText(stats.weeklyNexPayout)}` : "暂无后端业务数据";
+    return stats ? `词条 ${countText(stats.managedKeys)} 条 · 上线课程 ${countText(stats.coursesOnline)} 门 · 本周发放 ${nexGridBrandText(stats.weeklyNexPayout)}` : "";
   }
-  return "暂无后端业务数据";
+  return "";
 }
 
 export function IDomainView({ meta }: { meta: DomainViewMeta }) {
@@ -191,21 +187,111 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: ICtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
+    activeActionConfirm: mc,
+    closeActionConfirm: (request) => setActionConfirm(current => !request || current === request ? null : current),
     openConfirm: setCf,
+    closeConfirm: (request) => setCf(current => !request || current === request ? null : current),
     content,
     actions,
     contentLoading,
     contentError,
   };
 
-  const ro = RO_COPY[tab];
   const live = liveFromBackend(tab, content, contentLoading, contentError);
-  const right = (
+  const right = live ? <span className="f-live"><span className="dot" />{live}</span> : null;
+
+  const overlays = (
     <>
-      <span className="f-ro"><span className="d" />{ro}</span>
-      <span className="f-live"><span className="dot" />{live}</span>
+      {mc && (
+        <OperationConfirmModal briefKind={mc.briefKind}
+          action={mc.action}
+          title={mc.title}
+          detail={mc.detail}
+          content={mc.content}
+          amplifies={mc.amplifies}
+          edit={mc.edit}
+          businessForm={mc.businessForm}
+          completionCopy={mc.completionCopy}
+          facts={mc.facts}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          confirmTone={mc.confirmTone}
+          statedBrief={mc.statedBrief}
+          coverageLead={mc.coverageLead}
+          coverageCheck={mc.coverageCheck}
+          blockedReason={mc.blockedReason}
+          reasonPlaceholder={mc.reasonPlaceholder}
+          initialReason={mc.initialReason}
+          getPendingReason={mc.getPendingReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
+          reasonMin={mc.reasonMin}
+          reasonMax={mc.reasonMax}
+          onBusinessSelectionChange={mc.onBusinessSelectionChange}
+          onClose={() => setActionConfirm(current => current === mc ? null : current)}
+          onConfirm={async (reason, newValue, businessValue) => {
+            const succeeded = await mc.run(reason, newValue, businessValue);
+            if (succeeded !== false) setActionConfirm(current => current === mc ? null : current);
+          }}
+        />
+      )}
+      {cf && <KConfirmModal req={cf} onClose={() => setCf(current => current === cf ? null : current)} />}
+      {toastNode}
     </>
   );
+
+  if (tab === "I1") {
+    return (
+      <RdPage className="idom i1-page">
+        <I1CopyAb ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I2") {
+    return (
+      <RdPage className="idom">
+        <I2Nova ctx={{ ...ctx, contentError: contentError ? contentErrorText(contentError) : null }} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I3") {
+    return (
+      <RdPage className="idom i3-page">
+        <I3Campaign key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I4") {
+    return (
+      <RdPage className="idom i4-page">
+        <I4Trust key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I6") {
+    return (
+      <RdPage className="idom i6-page">
+        <I6I18n key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I5") {
+    return (
+      <RdPage className="idom">
+        <I5Disclosures ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
 
   return (
     <div className="dkpage idom">
@@ -215,7 +301,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
         <section className="l-card">
           <div className="l-h">
             <div className="itint danger">
-              <b>I 域数据加载失败</b> · {contentError}
+              <b>内容数据加载失败</b> · {contentErrorText(contentError)}
             </div>
             <div className="r">
               <button className="l-btn" type="button" onClick={() => void reloadIContent()}>
@@ -226,33 +312,8 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
         </section>
       )}
 
-      {(!contentError || contentReadable) && tab === "I1" && <I1CopyAb ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I2" && <I2Nova ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I3" && <I3Campaign ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I4" && <I4Trust ctx={ctx} view="trust" />}
-      {(!contentError || contentReadable) && tab === "I5" && <I4Trust ctx={ctx} view="disclosures" />}
-      {(!contentError || contentReadable) && tab === "I6" && <I6I18n ctx={ctx} />}
 
-      {mc && (
-        <OperationConfirmModal
-          action={mc.action}
-          detail={mc.detail}
-          amplifies={mc.amplifies}
-          edit={mc.edit}
-          businessForm={mc.businessForm}
-          completionCopy={mc.completionCopy}
-          reasonMin={mc.reasonMin}
-          reasonMax={mc.reasonMax}
-          onBusinessSelectionChange={mc.onBusinessSelectionChange}
-          onClose={() => setActionConfirm(null)}
-          onConfirm={async (reason, newValue, businessValue) => {
-            await mc.run(reason, newValue, businessValue);
-            setActionConfirm(null);
-          }}
-        />
-      )}
-      {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
-      {toastNode}
+      {overlays}
     </div>
   );
 }
