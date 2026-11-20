@@ -85,7 +85,7 @@ export function fConfigSpec(key: string, after?: string): FConfigSpec | undefine
       impact: "批准后，之后的结算按新设置决定是否自动分组；已分好的组不变。",
       detail: "关闭后没分组的邀请人结算会被拦下，要在「成员分组」手动分。" });
     case "F.binary.gvResetCron": return spec(F3, "归零说明", { impact: "批准后只换说明文字；归零时点、业务日历和历史结算都不变。" });
-    case "F.binary.paused": return spec(F3, "发放", { action: next === "on" ? "暂停团队平衡奖励发放" : next === "off" ? "恢复团队平衡奖励发放" : "调整团队平衡奖励发放",
+    case "F.binary.paused": return spec(F3, "发放状态", { action: next === "on" ? "暂停团队平衡奖励发放" : next === "off" ? "恢复团队平衡奖励发放" : "调整团队平衡奖励发放",
       values: { on: "已暂停", off: "发放中" },
       impact: next === "on" ? "批准后，之后的结算全部被拦下；已经记账的奖励不受影响。" : "批准后，之后的结算不再被拦下；暂停期间没结的周期不自动补。" });
     // 只有开启、调高走审批；关闭、调低在团队平衡奖励页立即生效，不会出现在这里。

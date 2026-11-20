@@ -523,7 +523,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 
 /* 规则流程图：五步横排，窄时竖排；改的那一步加描边（确认框里） */
 .f3-page .f3-flow, .rd-modal .f3-flow { container: f3-flow / inline-size; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.f3-page .f3-flow-steps, .rd-modal .f3-flow-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 24px; margin: 0; padding: 0; list-style: none; }
+.f3-page .f3-flow-steps, .rd-modal .f3-flow-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 24px; margin: 0; padding: 0; list-style: none; }
 .f3-page .f3-flow-step, .rd-modal .f3-flow-step { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px; border-radius: var(--rd-radius-tile); background: var(--rd-panel-inner); }
 .f3-page .f3-flow-step[data-changed], .rd-modal .f3-flow-step[data-changed], .f3-page .f3-flow-residual[data-changed], .rd-modal .f3-flow-residual[data-changed] { box-shadow: inset 0 0 0 1px var(--rd-progress); }
 .f3-page .f3-flow-no, .rd-modal .f3-flow-no { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--rd-role-4-tile); color: var(--rd-role-4-tile-ink); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }

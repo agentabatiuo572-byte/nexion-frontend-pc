@@ -31,6 +31,8 @@ export type F3Rule = {
   rate: string | null;
   /** 每日上限，已写成「1,000 USDT」；没读到传 null。 */
   cap: string | null;
+  /** 全平台封顶比例，已写成「2%」；没读到（旧接口或读取失败）传 null。 */
+  platformCap: string | null;
   period: string;
   residual: string;
 };
@@ -38,8 +40,8 @@ export type F3Rule = {
 type Step = { key: keyof F3Rule | "legs" | "pay"; title: string; value: ReactNode; sub: ReactNode };
 
 /**
- * 规则流程图：A、B 两组订单额 → 两组都过门槛 → 取较小一组 × 比例 → 不超过每期上限 → 记给邀请人。
- * 看它能判断：现在的门槛、比例、上限、周期合在一起，一位邀请人这一期最多能拿多少、卡在哪一步。
+ * 规则流程图：A、B 两组订单额 → 两组都过门槛 → 取较小一组 × 比例 → 不超过每期上限 → 不超过全平台封顶 → 记给邀请人。
+ * 看它能判断：现在的门槛、比例、上限、全平台封顶、周期合在一起，一位邀请人这一期最多能拿多少、卡在哪一步。
  * 传 next 时（确认框里）改的那一步写「现在 → 改后」并加描边。
  */
 export function F3RuleFlow({ rule, next, changed, capAction, compact }: {
@@ -64,6 +66,7 @@ export function F3RuleFlow({ rule, next, changed, capAction, compact }: {
     { key: "threshold", title: "两组都过门槛", value: shown("threshold", (value) => `每组 ≥ ${value}`, "门槛没读到"), sub: "一组没到就不发" },
     { key: "rate", title: "取较小一组 × 比例", value: shown("rate", (value) => `× ${value}`, "比例读不懂"), sub: "先扣掉已匹配的" },
     { key: "cap", title: "不超过每期上限", value: shown("cap", (value) => `每日 ${value}`, "上限没读到"), sub: <>{PERIOD_TEXT[period]?.cap ?? "按结算周期算天数"}{capAction && <span className="f3-flow-action">{capAction}</span>}</> },
+    { key: "platformCap", title: "不超过全平台封顶", value: shown("platformCap", (value) => `已付款订单额 × ${value}`, "封顶比例没读到"), sub: "超出时每人按同一比例缩减" },
     { key: "pay", title: "记给邀请人", value: shown("period", (value) => PERIOD_TEXT[value]?.when ?? value, "周期没读到"), sub: "冷却期满才能提现" },
   ];
   return (

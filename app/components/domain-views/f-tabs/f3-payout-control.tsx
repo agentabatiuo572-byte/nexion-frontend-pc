@@ -88,7 +88,7 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
           what="开启时，系统按结算周期自动结算到期的奖励。"
           when={`关闭确认后立即生效；开启要${SUPER}批准后生效。`}
           effect="关闭后仍可手动结算；重新开启不补发关闭期间的周期，要补的手动结算。"
-          note="「发放」暂停时，自动和手动结算都停。"
+          note="「发放状态」是已暂停时，自动和手动结算都停。"
           value={<span className="f3-cfg"><span className="f3-cfg-line">{valueTag}{pendingTag}</span><span className="f3-cfg-dir">{dir}</span></span>}
           action={action} />
       : <ConfigRow key={key} name={name}
