@@ -39,7 +39,8 @@ interface UIStore {
   dismissToast: (id: string) => void;
   pauseToast: (id: string) => void;
   resumeToast: (id: string) => void;
-  dismissToasts: () => void;
+  dismissTimedToasts: () => void;
+  dismissPersistentToasts: () => void;
   dialogs: string[];
   openDialog: (id: string) => void;
   closeDialog: (id: string) => void;
@@ -82,11 +83,14 @@ export const useUI = create<UIStore>((set, get) => ({
     const toast = get().toasts.find((item) => item.id === id);
     if (toast && toast.durationMs > 0) toastTimers.set(id, setTimeout(() => get().dismissToast(id), toast.durationMs));
   },
-  dismissToasts: () => {
+  dismissTimedToasts: () => {
     for (const timer of toastTimers.values()) clearTimeout(timer);
     toastTimers.clear();
-    set({ toasts: [] });
+    set((s) => ({ toasts: s.toasts.filter((toast) => toast.durationMs === 0) }));
   },
+  dismissPersistentToasts: () => set((s) => ({
+    toasts: s.toasts.filter((toast) => toast.durationMs !== 0),
+  })),
   dialogs: [],
   openDialog: (id) => {
     for (const timer of toastTimers.values()) clearTimeout(timer);

@@ -107,7 +107,7 @@ function AdminNoAccessPage({ pathname, landingPath }: { pathname: string; landin
 function PermissionDeniedToast() {
   useEffect(() => {
     const onDenied = () => {
-      useUI.getState().dismissToasts();
+      useUI.getState().dismissTimedToasts();
       toast.warn(PERMISSION_DENIED_TEXT);
     };
     window.addEventListener(PERMISSION_DENIED_EVENT, onDenied);
