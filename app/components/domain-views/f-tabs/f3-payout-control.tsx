@@ -131,8 +131,14 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
   const savedProposal = () => adminId === undefined ? undefined : listF3Proposals(adminId).find((row) => row.fingerprint === f3ConfigSlot(key));
   // 新改动打开时已有的原记录（比如在等批准的调高）不算这次的，不让框锁成「按原请求重试」。
   const [existing] = useState(() => ({ direct: savedDirect()?.commandKey, proposal: savedProposal()?.commandKey }));
-  const ownDirect = () => { const row = savedDirect(); return row && (mode !== "new" || row.commandKey !== existing.direct) ? row : undefined; };
-  const ownProposal = () => { const row = savedProposal(); return row && (mode !== "new" || row.commandKey !== existing.proposal) ? row : undefined; };
+  const ownDirect = () => {
+    const row = savedDirect();
+    return row && (mode === "direct" ? row.commandKey === direct?.commandKey : mode === "new" && row.commandKey !== existing.direct) ? row : undefined;
+  };
+  const ownProposal = () => {
+    const row = savedProposal();
+    return row && (mode === "proposal" ? row.commandKey === original?.commandKey : mode === "new" && row.commandKey !== existing.proposal) ? row : undefined;
+  };
   const direction = (value?: string) => {
     if (auto) return mode === "new" ? autoNow ? "direct" : "proposal" : undefined;
     const next = value === undefined ? null : f3PlatformCapPct(value);
