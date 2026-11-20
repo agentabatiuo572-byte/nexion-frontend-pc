@@ -2601,7 +2601,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </p>
         {amount && <p>退款金额 {amount.state === "ok" ? <b className="a2-amount">{refundAmountText(amount)}</b> : <span className="a2-warn-text">{refundAmountText(amount)}</span>}
           {amount.state === "error" && recordOrderNo(record) && <> <InlineRetry onRetry={() => void loadMain()} /></>}</p>}
-        {(record.kind === "approve" || record.kind === "reject") && recordRule(record).backendChecks && <p>{BACKEND_CHECKS_NOTE}。</p>}
+        {/* 只有批准会再核对业务权限；这类单驳回、撤回时后端不核对（AuditReplayBusinessPermissionGuard.validateDecisionPermission）。 */}
+        {record.kind === "approve" && recordRule(record).backendChecks && <p>{BACKEND_CHECKS_NOTE}。</p>}
         {pendingNotes[record.fingerprint] && <p className="a2-pending-check">
           {pendingNotes[record.fingerprint].check && <StatusTag tone={DECISION_CHECK[pendingNotes[record.fingerprint].check!].tone} icon={DECISION_CHECK[pendingNotes[record.fingerprint].check!].icon}>{DECISION_CHECK[pendingNotes[record.fingerprint].check!].label}</StatusTag>}
           <span>{pendingNotes[record.fingerprint].text}</span>

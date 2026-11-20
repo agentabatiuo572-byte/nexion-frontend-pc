@@ -876,11 +876,10 @@
 .a2-f5-table { width: 100%; }
 /* 长编号（K1 收益记录号 ER- 加 32 位）：整串一起换到下一行，比一行还长时才在号里断开；框不出横向滚动。弹窗挂在页面外，不加 .adom 前缀。 */
 .a2-long-code { display: inline-block; max-width: 100%; overflow-wrap: anywhere; vertical-align: top; }
-/* 批准确认框里的 I5 版本对照（BUG-503）：展开后七章全文在框内滚，理由框不被推出很远；标题不被摘要挤成两行，摘要折行时两行均衡，不剩孤字。I5 自己的发布框不受影响。 */
+/* 批准确认框里的 I5 版本对照（BUG-503）：展开后跟着框体滚，框里只有一层滚动（DT-17）；标题不被摘要挤成两行，摘要折行时两行均衡，不剩孤字。I5 自己的发布框不受影响。 */
 .a2-change-review [data-business-form="disclosure-publish-review"] .rd-fold-title { flex: none; }
 .a2-change-review [data-business-form="disclosure-publish-review"] .rd-fold-summary { text-wrap: balance; }
-.rd-confirm .a2-change-review [data-business-form="disclosure-publish-review"] .rd-doc { max-height: 320px; overflow-y: auto; }
-/* 附加语言、新增或去掉的语言对照（A2-BE-16）：和上面的版本对照同一套折叠，一种语言一组；确认框里不再套一层滚动，跟着框体滚（DT-17）。 */
+/* 附加语言、新增或去掉的语言对照（A2-BE-16）：和上面的版本对照同一套折叠，一种语言一组。 */
 .a2-change-review [data-business-form="disclosure-translation-review"] .rd-fold-title { flex: none; }
 .a2-change-review [data-business-form="disclosure-translation-review"] .rd-fold-summary { text-wrap: balance; }
 .a2-translation-lang { display: flex; flex-direction: column; gap: var(--rd-space-4); }
