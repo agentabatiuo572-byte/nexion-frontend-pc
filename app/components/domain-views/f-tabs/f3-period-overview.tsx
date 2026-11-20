@@ -29,7 +29,7 @@ const CELL_ONLY = new Set(["F3_PLATFORM_CAP_PCT_INVALID", "F3_PLATFORM_CAP_PCT_U
 const NEEDS_SETTING = new Set(["F3_SETTLE_PERIOD_MISSING", "F3_SETTLE_PERIOD_INVALID"]);
 const COLUMNS = 6;
 const CAP_FINAL = "结算时按本期全部付款额和当时的比例定稿，期间有退款会变小";
-const LATEST_EXPLAIN = "这一期第一笔结算时，付款额、全平台封顶比例和全平台封顶就定下了；已发是截至现在已经记账的，同一期还有人在结算时还会变，剩余跟着已发变。";
+const LATEST_EXPLAIN = "这一期第一笔结算时，付款额、全平台封顶比例和全平台封顶就定下了；已发是截至现在已记账的，还有人没结算时会变，剩余跟着已发变。";
 
 /** 和本页其它逐笔金额同一写法：千分位，去掉末尾 0，至少两位小数，不舍入。 */
 const money = (raw: string) => {
