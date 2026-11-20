@@ -1049,7 +1049,7 @@ export function disclosureChange(current: DisclosureVersionItemView | undefined,
 }
 
 /** 新旧两段只标中间改过的那一段：前后相同的字照常显示，改后的用 ins、原来的用 del，审批人一眼看到改了哪里。 */
-function ChangedText({ before, after, side }: { before: string; after: string; side: "after" | "before" }) {
+export function ChangedText({ before, after, side }: { before: string; after: string; side: "after" | "before" }) {
   const old = Array.from(before);
   const next = Array.from(after);
   let head = 0;
@@ -1062,7 +1062,7 @@ function ChangedText({ before, after, side }: { before: string; after: string; s
 }
 
 /** 发布核对：总文和改过的章合成一个折叠，点开只放改过的语言，每段先写改后、再写现在；没改的总文和章收进另一个折叠。改几章框都一样高，打开时理由框在一屏里（DP-06）。 */
-export function PublishDiff({ current, target }: { current?: DisclosureVersionItemView; target: DisclosureVersionItemView }) {
+export function PublishDiff({ current, target, scope }: { current?: DisclosureVersionItemView; target: DisclosureVersionItemView; scope?: string }) {
   const change = disclosureChange(current, target);
   const shown = LANGUAGES.filter(([code]) => (target.languageScope ?? "").split("+").includes(code));
   const chapterOf = (no: string) => current?.chapters.find((chapter) => chapter.no === no);
@@ -1070,7 +1070,7 @@ export function PublishDiff({ current, target }: { current?: DisclosureVersionIt
   const parts = !current ? ["总文", `${target.chapters.length} 章`] : [change.summary.length > 0 && `总文（${change.summary.map(([, name]) => name).join("、")}）`, change.chapters.length > 0 && `第 ${change.chapters.map((item) => item.chapter.no).join("、")} 章`].filter(Boolean);
   const summarySame = change.summary.length === 0;
   return <div data-business-form="disclosure-publish-review" className="rd-form-stack">
-    {parts.length > 0 && <Fold inset title={current ? "版本差异" : "全部内容"} summary={parts.join("、")}>
+    {parts.length > 0 && <Fold inset title={`${scope ? `${scope} · ` : ""}${current ? "版本差异" : "全部内容"}`} summary={parts.join("、")}>
       <div className="rd-doc">
         {change.summary.map(([code, name]) => <section key={`summary-${code}`}>
           <h3>总文 · {name}</h3>
@@ -1087,7 +1087,7 @@ export function PublishDiff({ current, target }: { current?: DisclosureVersionIt
         }))}
       </div>
     </Fold>}
-    {(summarySame || change.same.length > 0) && <Fold inset title="无变化的内容" summary={[summarySame && "总文", change.same.length > 0 && `${change.same.length} 章`].filter(Boolean).join("、")}>
+    {(summarySame || change.same.length > 0) && <Fold inset title={`${scope ? `${scope} · ` : ""}无变化的内容`} summary={[summarySame && "总文", change.same.length > 0 && `${change.same.length} 章`].filter(Boolean).join("、")}>
       <div className="rd-doc">
         {summarySame && <section>
           <h3>总文</h3>

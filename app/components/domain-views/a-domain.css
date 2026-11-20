@@ -877,3 +877,8 @@
 .a2-change-review [data-business-form="disclosure-publish-review"] .rd-fold-title { flex: none; }
 .a2-change-review [data-business-form="disclosure-publish-review"] .rd-fold-summary { text-wrap: balance; }
 .rd-confirm .a2-change-review [data-business-form="disclosure-publish-review"] .rd-doc { max-height: 320px; overflow-y: auto; }
+/* 附加语言对照（A2-BE-16）：和上面的版本对照同一套折叠和框内滚动，一种语言一组。 */
+.a2-change-review [data-business-form="disclosure-translation-review"] .rd-fold-title { flex: none; }
+.a2-change-review [data-business-form="disclosure-translation-review"] .rd-fold-summary { text-wrap: balance; }
+.rd-confirm .a2-change-review [data-business-form="disclosure-translation-review"] .rd-doc { max-height: 320px; overflow-y: auto; }
+.a2-translation-lang { display: flex; flex-direction: column; gap: var(--rd-space-4); }
