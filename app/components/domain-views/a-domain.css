@@ -880,8 +880,9 @@
 .a2-change-review [data-business-form="disclosure-publish-review"] .rd-fold-title { flex: none; }
 .a2-change-review [data-business-form="disclosure-publish-review"] .rd-fold-summary { text-wrap: balance; }
 .rd-confirm .a2-change-review [data-business-form="disclosure-publish-review"] .rd-doc { max-height: 320px; overflow-y: auto; }
-/* 附加语言对照（A2-BE-16）：和上面的版本对照同一套折叠和框内滚动，一种语言一组。 */
+/* 附加语言、新增或去掉的语言对照（A2-BE-16）：和上面的版本对照同一套折叠，一种语言一组；确认框里不再套一层滚动，跟着框体滚（DT-17）。 */
 .a2-change-review [data-business-form="disclosure-translation-review"] .rd-fold-title { flex: none; }
 .a2-change-review [data-business-form="disclosure-translation-review"] .rd-fold-summary { text-wrap: balance; }
-.rd-confirm .a2-change-review [data-business-form="disclosure-translation-review"] .rd-doc { max-height: 320px; overflow-y: auto; }
 .a2-translation-lang { display: flex; flex-direction: column; gap: var(--rd-space-4); }
+/* 概览一行里只给「缺译文」「去掉的语言」那半句上注意色。弹窗挂在页面外，不加页面前缀。 */
+.a2-translation-warn { color: var(--rd-warn); }
