@@ -34,7 +34,7 @@ import { A2RoleGrantsChange, isRoleGrantsTicket, roleGrantsSummary } from "./a2-
  */
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, Archive, ArrowLeft, ClipboardList, Coins, Copy, Download, FileText, Flame, History, Inbox, ListChecks, Lock, RefreshCw, Siren, SlidersHorizontal, Users } from "lucide-react";
+import { AlertTriangle, Archive, ArrowLeft, ClipboardList, CloudOff, Coins, Copy, Download, FileText, Flame, History, Inbox, ListChecks, Lock, RefreshCw, SearchX, Siren, SlidersHorizontal, Users } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
   BlockState, Button, Cell, Change, ConfigList, ConfigRow, Decision, DiffList, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, InlineRetry,
@@ -748,13 +748,28 @@ const REFUND_AMOUNT_REQUIRED = "先读到退款金额才能批准";
 const DECISION_VERB: Record<"approve" | "reject" | "withdraw", string> = { approve: "批准", reject: "驳回", withdraw: "撤回" };
 const DECISION_STATUS: Record<"approve" | "reject" | "withdraw", A2OperationRow["status"]> = { approve: "approved", reject: "rejected", withdraw: "withdrawn" };
 const RECOVERY_HINT: Record<A2CommandKind, string> = {
-  approve: "查询只能看到这张单现在的状态，证明不了这次操作的结果。可以按原请求重试，不会重复执行。",
-  reject: "查询只能看到这张单现在的状态，证明不了这次操作的结果。可以按原请求重试，不会重复执行。",
-  withdraw: "查询只能看到这张单现在的状态，证明不了这次操作的结果。可以按原请求重试，不会重复执行。",
+  approve: "可以查询这次批准的结果，或按原请求重试，不会重复执行。",
+  reject: "可以查询这次驳回的结果，或按原请求重试，不会重复执行。",
+  withdraw: "可以查询这次撤回的结果，或按原请求重试，不会重复执行。",
   param: "查询只能看到现在的值，值相同也可能是别人改的。可以按原请求重试，不会重复执行。",
   retention: "查询只能看到最近一次手动清理。可以按原请求重试，不会重复清理。",
   export: "查询只能看到有没有这次的导出记录。可以按原请求重试，按当时的条件重新下载。",
 };
+/**
+ * 查询原决定（A2-BE-17）后留在待确认条上的结果：只按这次决定自己的记录说，不拿这张单现在的状态推断。
+ * 「已确认完成」「明确被拒」由查询自己解除记录，用轻提示，见 DECISION_DONE、DECISION_REFUSED。
+ */
+type DecisionCheck = "processing" | "unconfirmed" | "readFailed";
+/** 查询失败的正文是读取错误本身，所以只有标签。 */
+const DECISION_CHECK: Record<DecisionCheck, { tone: "progress" | "warn"; icon?: typeof SearchX; label: string; text?: (verb: string) => string }> = {
+  processing: { tone: "progress", label: "仍在处理", text: (verb) => `这次${verb}还在处理，稍后再查。` },
+  unconfirmed: { tone: "warn", icon: SearchX, label: "没查到结果", text: (verb) => `查不到能证明这次${verb}结果的记录，不能确认有没有执行。` },
+  readFailed: { tone: "warn", icon: CloudOff, label: "查询失败" },
+};
+const DECISION_DONE = (verb: string, id: string) => `已确认：${id} 已${verb}`;
+const DECISION_REFUSED = (verb: string, why?: string) => why
+  ? `这次${verb}没有执行：${why}。按这张单现在的状态重新处理。`
+  : `这次${verb}被系统拒绝，没有执行。按这张单现在的状态重新处理。`;
 const PARAM_NAME: Record<string, string> = { ttl: "操作理由最短长度", retention: "操作记录保留期", schema: "记录字段版本" };
 const PARAM_TITLE: Record<"ttl" | "retention" | "schema", string> = { ttl: "调整操作理由最短长度", retention: "调整操作记录保留期", schema: "升级记录字段版本" };
 const RETENTION_TITLE = "清理到期记录";
@@ -1377,7 +1392,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /* 写操作 */
   const [submitting, setSubmitting] = useState("");
   const [pendingCommands, setPendingCommands] = useState<A2PendingCommand[]>([]);
-  const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
+  const [pendingNotes, setPendingNotes] = useState<Record<string, { text: string; check?: DecisionCheck }>>({});
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
   const [releasing, setReleasing] = useState<A2PendingCommand | null>(null);
 
@@ -1720,8 +1735,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /* ────────────────── 待确认条 ────────────────── */
 
-  const notePending = (record: A2PendingCommand, text: string) =>
-    setPendingNotes((current) => ({ ...current, [record.fingerprint]: `${businessClock(Date.now())} ${text}` }));
+  const notePending = (record: A2PendingCommand, text: string, check?: DecisionCheck) =>
+    setPendingNotes((current) => ({ ...current, [record.fingerprint]: { text: `${businessClock(Date.now())} ${text}`, check } }));
 
   const verifyDecisionPending = async (record: A2PendingCommand, kind: A2DecisionKind) => {
     const owner = record.commandOwnerId;
@@ -1732,7 +1747,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       .catch((error: unknown) => ({ state: "READ_FAILED" as const, error }));
     if (!hasOriginal()) return;
     if (receipt.state === "READ_FAILED") {
-      notePending(record, displayAdminReadError(receipt.error));
+      // 标签已写「查询失败」，正文只写原因和怎么办。
+      notePending(record, displayAdminReadError(receipt.error), "readFailed");
       return receipt;
     }
     if (receipt.state === "SUCCEEDED" || receipt.state === "REJECTED") {
@@ -1744,11 +1760,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         return next;
       });
       if (receipt.state === "REJECTED") {
-        const why = formatAdminApiError(receipt.businessMessage, "IDEMPOTENCY_INVESTIGATION_CONFIRMED_REJECTED").replace(/[。.]$/, "");
-        toast(`${record.label}没有生效：${why}。原记录已解除。`, "warn");
-      } else decisionToast(kind, record.target);
+        // A2-WIRE: 拒绝原因现在只在轻提示里（悬停暂停，默认 3 秒）；要常留在页面上，需要页面在解除记录后另存一条已结案说明，等协调人决定。
+        const why = receipt.businessMessage ? formatAdminApiError(receipt.businessMessage, receipt.businessMessage).replace(/[。.]$/, "") : undefined;
+        toast(DECISION_REFUSED(DECISION_VERB[kind], why), "warn");
+      } else toast(DECISION_DONE(DECISION_VERB[kind], record.target), "success");
     } else {
-      notePending(record, formatAdminApiError(receipt.state === "PROCESSING" ? "INVESTIGATION_COMMAND_STILL_PROCESSING" : "A2_COMMAND_FAILED", ""));
+      const check = receipt.state === "PROCESSING" ? "processing" : "unconfirmed";
+      notePending(record, DECISION_CHECK[check].text!(DECISION_VERB[kind]), check);
     }
     await refreshAfterWrite();
     return receipt;
@@ -2525,7 +2543,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         {amount && <p>退款金额 {amount.state === "ok" ? <b className="a2-amount">{refundAmountText(amount)}</b> : <span className="a2-warn-text">{refundAmountText(amount)}</span>}
           {amount.state === "error" && recordOrderNo(record) && <> <InlineRetry onRetry={() => void loadMain()} /></>}</p>}
         {(record.kind === "approve" || record.kind === "reject") && recordRule(record).backendChecks && <p>{BACKEND_CHECKS_NOTE}。</p>}
-        {pendingNotes[record.fingerprint] && <p>{pendingNotes[record.fingerprint]}</p>}
+        {pendingNotes[record.fingerprint] && <p className="a2-pending-check">
+          {pendingNotes[record.fingerprint].check && <StatusTag tone={DECISION_CHECK[pendingNotes[record.fingerprint].check!].tone} icon={DECISION_CHECK[pendingNotes[record.fingerprint].check!].icon}>{DECISION_CHECK[pendingNotes[record.fingerprint].check!].label}</StatusTag>}
+          <span>{pendingNotes[record.fingerprint].text}</span>
+        </p>}
       </Notice>
     );
   });
