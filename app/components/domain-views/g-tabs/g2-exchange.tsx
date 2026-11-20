@@ -1193,7 +1193,7 @@ function G2ExchangePage() {
         </>}>这页读不到兑换开关</Conclusion>
     : switchUnread === "missing" || switchUnread === "invalid"
     ? <Conclusion state="warn" icon={ShieldAlert}
-        hint={disclosureBlocked ? bothStepsHint : <>新兑换和处理排队都会被拒绝；到 {killSwitchLink} 打开兑换开关。</>}
+        hint={disclosureBlocked ? bothStepsHint : <>新兑换和处理排队都会被拒绝，排队的单留在队列；到 {killSwitchLink} 打开兑换开关后可继续处理。</>}
         explain={<>
           <p>{switchUnread === "missing" ? "「紧急停用开关」里没有兑换这一项。" : "「紧急停用开关」里兑换这一项存的不是开或关。"}这种情况兑换一律按关闭处理。</p>
           <p>点「紧急暂停兑换」会提示已经是关的；额度和超额度处置策略照常能改。</p>
@@ -1202,7 +1202,7 @@ function G2ExchangePage() {
     : swap.emergencyPaused
     ? <Conclusion state="warn" icon={PauseCircle}
         hint={disclosureBlocked ? bothStepsHint
-          : <>恢复要到 {killSwitchLink}。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}</>}
+          : <>处理排队也会被拒绝，排队的单留在队列；到 {killSwitchLink} 恢复后可继续处理。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}</>}
         explain={<>
           <p>「紧急停用开关」里的兑换开关现在是关的，可能是在这页或那一页关的。</p>
           <p>暂停时，用户新发起的兑换和「处理排队」都会被拒绝；额度和超额度处置策略要等恢复后再改。{disclosureBlocked && canWriteAny ? "手续费照常能改，排队单照常能取消。" : ""}</p>
