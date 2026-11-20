@@ -316,6 +316,10 @@ function G2ExchangePage() {
   // 提交前说「会被拒绝」，提交被拒后才用 batchBlockedReason。
   const batchBlockedNote = j1ExecutionBlocked ? "兑换已暂停，这一批会被拒绝"
     : disclosureBlocked ? "风险披露闸门已阻断兑换，这一批会被拒绝" : undefined;
+  // 「处理排队」灰着时的原因：两道都挡着就并列写，只有闸门挡着就只写闸门。
+  const batchButtonNote = !disclosureBlocked ? switchBlockedReason ?? batchBlockedNote
+    : j1ExecutionBlocked ? "兑换开关和风险披露闸门都在阻断兑换"
+    : "风险披露闸门已阻断兑换，移出后才能处理";
   const latest = useRef({ overview, loading, busyKey, readFailed, rereadPending, j1ExecutionBlocked, batchBlockedReason });
   latest.current = { overview, loading, busyKey, readFailed, rereadPending, j1ExecutionBlocked, batchBlockedReason };
   const confirmationRecovery = useRef<{ request: G2ConfirmReq; saved: boolean } | null>(null);
@@ -1179,7 +1183,8 @@ function G2ExchangePage() {
     : overview.emergencySwitch?.exchange.unavailableReason === "INVALID" ? "invalid" : "absent";
   const disclosureLink = reach("/content/disclosures") ? <Link className="rd-link" href="/content/disclosures" prefetch={false}>法律条款与风险披露</Link> : "「法律条款与风险披露」";
   // 两道都挡着时，各入口只解除自己那一道：分两步写，不说去一处就能恢复。
-  const disclosureStep = disclosureBlocked ? <>风险披露闸门也在阻断兑换，还要到 {disclosureLink} 把兑换移出受限动作。</> : null;
+  const bothStepsHint = <>新兑换和处理排队都会被拒绝，排队的单留在队列；到 {killSwitchLink} 打开兑换开关、到 {disclosureLink} 把兑换移出受限动作，两步都做完后可继续处理。</>;
+  const disclosureExplain = <p>风险披露闸门：兑换在「法律条款与风险披露」的受限动作里。移出要提交审批，批准后才解除；已经处理过的批次照常能查原结果。</p>;
   const conclusion = switchUnread === "absent" && !disclosureBlocked
     ? <Conclusion state="warn" icon={CircleHelp}
         hint={<>真实状态到 {killSwitchLink} 看。</>}
@@ -1188,25 +1193,26 @@ function G2ExchangePage() {
         </>}>这页读不到兑换开关</Conclusion>
     : switchUnread === "missing" || switchUnread === "invalid"
     ? <Conclusion state="warn" icon={ShieldAlert}
-        hint={<>新兑换和处理排队都会被拒绝；到 {killSwitchLink} 打开兑换开关。{disclosureStep}</>}
+        hint={disclosureBlocked ? bothStepsHint : <>新兑换和处理排队都会被拒绝；到 {killSwitchLink} 打开兑换开关。</>}
         explain={<>
           <p>{switchUnread === "missing" ? "「紧急停用开关」里没有兑换这一项。" : "「紧急停用开关」里兑换这一项存的不是开或关。"}这种情况兑换一律按关闭处理。</p>
           <p>点「紧急暂停兑换」会提示已经是关的；额度和超额度处置策略照常能改。</p>
-        </>}>{switchUnread === "missing" ? "兑换开关没有设置，兑换现在是停的" : "兑换开关设置有误，兑换现在是停的"}</Conclusion>
+          {disclosureBlocked && disclosureExplain}
+        </>}>{switchUnread === "missing" ? "兑换开关没有设置" : "兑换开关设置有误"}{disclosureBlocked ? "，风险披露闸门也在阻断兑换" : "，兑换现在是停的"}</Conclusion>
     : swap.emergencyPaused
     ? <Conclusion state="warn" icon={PauseCircle}
-        hint={disclosureBlocked
-          ? <>恢复兑换要两步：到 {killSwitchLink} 打开兑换开关，到 {disclosureLink} 把兑换移出受限动作。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}</>
+        hint={disclosureBlocked ? bothStepsHint
           : <>恢复要到 {killSwitchLink}。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}</>}
         explain={<>
           <p>「紧急停用开关」里的兑换开关现在是关的，可能是在这页或那一页关的。</p>
-          <p>暂停时，用户新发起的兑换和「处理排队」都会被拒绝；额度和超额度处置策略要等恢复后再改。</p>
-        </>}>兑换已暂停，新发起的兑换会被拒绝</Conclusion>
+          <p>暂停时，用户新发起的兑换和「处理排队」都会被拒绝；额度和超额度处置策略要等恢复后再改。{disclosureBlocked && canWriteAny ? "手续费照常能改，排队单照常能取消。" : ""}</p>
+          {disclosureBlocked && disclosureExplain}
+        </>}>{disclosureBlocked ? "兑换已暂停，风险披露闸门也在阻断兑换" : "兑换已暂停，新发起的兑换会被拒绝"}</Conclusion>
     : disclosureBlocked
     ? <Conclusion state="warn" icon={ShieldAlert}
-        hint={<>新兑换和处理排队都会被拒绝，排队的单留在队列；到 {disclosureLink} 把兑换移出受限动作。</>}
+        hint={<>新兑换和处理排队都会被拒绝，排队的单留在队列；到 {disclosureLink} 把兑换移出受限动作后可继续处理。</>}
         explain={<>
-          <p>{swap.emergencyPaused === false ? "兑换开关是开着的。" : "兑换开关的状态暂时读不到。"}挡住兑换的是风险披露闸门：兑换在「法律条款与风险披露」的受限动作里。</p>
+          <p>{swap.emergencyPaused === false ? "兑换开关是开着的。" : "兑换开关的状态暂时读不到，移出后还要兑换开关开着才能处理。"}挡住兑换的是风险披露闸门：兑换在「法律条款与风险披露」的受限动作里。</p>
           <p>移出要提交审批，批准后才解除；已经处理过的批次照常能查原结果。</p>
         </>}>
         风险披露闸门已阻断兑换</Conclusion>
@@ -1306,7 +1312,7 @@ function G2ExchangePage() {
       setRecoveryError(null);
       setRecoveryKey(ownPendingBatch.commandKey);
     }}>核对原处理</Button>
-    : <Button size="sm" variant="primary" disabledReason={busyReason ?? newWriteBlockedReason ?? switchBlockedReason ?? batchBlockedNote ?? (queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
+    : <Button size="sm" variant="primary" disabledReason={busyReason ?? newWriteBlockedReason ?? batchButtonNote ?? (queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
 
   const batchItems = batchResult ? [
     ...batchResult.completed.map((row) => ({ ...row, kind: "completed" as const })),
