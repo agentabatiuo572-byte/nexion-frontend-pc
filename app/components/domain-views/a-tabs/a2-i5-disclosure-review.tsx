@@ -69,8 +69,8 @@ function TranslationText({ label = "", pair, contentOnly }: { label?: string; pa
       <p className="rd-weak">上一版{label}：<ChangedText before={pair.before.text} after={pair.after.text} side="before" /></p>
     </>;
   }
-  if (contentOnly || pair.before.state === "first_publish" || pair.before.state === "out_of_scope") return <p>{sideText(pair.after)}</p>;
   if (pair.after.state === "out_of_scope") return <p>{sideText(pair.before)}</p>;
+  if (contentOnly || pair.before.state === "first_publish" || pair.before.state === "out_of_scope") return <p>{sideText(pair.after)}</p>;
   return <>
     <p>本版{label}：{sideText(pair.after)}</p>
     <p className="rd-weak">上一版{label}：{sideText(pair.before)}</p>
