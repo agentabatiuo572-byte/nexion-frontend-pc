@@ -510,6 +510,8 @@ function approvalTiming(w: A2OperationRow) {
   if (w.amplifies && fund?.kind === "fConfig" && fund.spec?.loosen) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才改；点「驳回」原操作不执行。" };
   if (fund?.kind === "f5Reissue") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才补发；点「驳回」原操作不执行。" };
   if (g3PolicyExecutionTiming(w)) return { tag: "按计划时点生效", impact: "", drawer: "点「批准」确认后按生效时间执行；点「驳回」原操作不执行。" };
+  // 披露发布只封存这一版，用户看哪版另走「设置／调整生效版本」审批（I5，PRD I5 发布批准）。
+  if (w.operationCode === "i5_disclosure_publish" || w.operationCode === "i4_disclosure_publish") return { tag: "批准后封存", impact: "", drawer: "点「批准」后这版封存，用户看到的版本不变，生效版本另行审批；点「驳回」原操作不执行。" };
   return { tag: "立即生效", impact: "", drawer: "点「批准」确认后立即执行，失败不改原值；点「驳回」原操作不执行。" };
 }
 
@@ -2201,7 +2203,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         : w.coverageCheckOnApproval ? "先查兑付覆盖率，够了才执行，不够不动。"
           : g3 ? "按生效时间执行，改线上配置。"
             // 发布只封存这一版，用户看哪版由 I5 的生效版本决定（i5-disclosures 发布框同一说法）。
-            : i5Publish ? "批准后这版封存，用户看到的版本不变。"
+            : i5Publish ? "用户看到的版本不变，生效版本另行审批。"
             // F1 奖励发放按奖励类型影响不同（商品、自定义奖励不动钱），实际影响写在改动里。
             : w.operationCode === "f_reward_payout_action" ? "立即执行，影响见改动；失败不改原值。"
             : isFunds ? "立即执行，改资金或账目；失败不改原值。"
