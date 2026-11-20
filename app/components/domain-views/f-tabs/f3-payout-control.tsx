@@ -185,7 +185,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
       effect={effect}
       facts={facts}
       statedBrief={auto
-        ? autoNow || mode !== "new"
+        ? (mode === "new" ? autoNow : originalValue.trim().toLowerCase() !== "on")
           ? { impact: "确认后立即关闭，之后到期的周期不再自动结算；手动结算照常可用。", check: "确认已安排手动结算，或确实要停掉自动部分。" }
           : { impact: "批准后系统按结算周期自动结算；关闭期间的周期不补发。", check: "开启前确认关闭期间要补的周期已手动结算或另有安排。" }
         : { impact: "之后结算的期按新比例算全平台封顶；已结算的期不重算。", check: "核对新比例；调高可能多付钱，先看兑付覆盖率。" }}
