@@ -569,7 +569,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         fields: [
           { key: "id", label: "活动编号", current: "", inputKind: "select", mustChoose: true, options: [...freeCodes, ...usedCodes], disabledOptions: usedCodes,
             optionLabels: Object.fromEntries(usedCodes.map((code) => [code, `${code}（已用过）`])), required: true,
-            help: freeCodes.length === 0 ? "内置编号都用过了，不能再新建" : !createCandidates ? "没读到删除的活动用过的编号，选到会被拒" : usedCodes.length > 0 ? `置灰的 ${usedCodes.length} 个已用过，删除的活动也算` : undefined,
+            help: freeCodes.length === 0 ? "内置编号都用过了，不能再新建" : !createCandidates ? "没读到已删活动的编号，选到会被拒" : usedCodes.length > 0 ? `置灰的 ${usedCodes.length} 个已用过，删除的活动也算` : undefined,
             explain: "只能用这几个内置编号，建好后不能改。" },
           { key: "name", label: "活动名", current: "", placeholder: "如 夏日狂欢", required: true, help: "后台看的名字，App 上不显示",
             explain: <><span className="rd-keep">App 上的活动名建好后到卡片底部</span><span className="rd-keep">「App 上的文字」按语言填，</span><span className="rd-keep">开放前要填齐英文和运营区域语言。</span></> },
