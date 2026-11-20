@@ -50,7 +50,7 @@ export interface H9PublicStatsValues {
   registeredUsersTickStepMax?: number;
   virtualUserCount: number;
   hashratePercentileTable: H9PercentileBand[];
-  /** 全球作业基座：缺省 = 后端还没支持（页面不提交此项）；null = 未发布；数字 = 赚取页任务中心在真实进行中作业数上加的数。只用于展示。 */
+  /** 全球作业基座：缺省 = 后端还没支持（页面不提交此项）；null = 未发布；数字 = App 全球作业的起算数。只用于展示。 */
   activeJobsBase?: number | null;
 }
 
@@ -80,9 +80,9 @@ export interface H9AppDisplay {
   homeDisplay: { enabled: boolean; startAt: number; serverNow: number; validUntil: number; sequence: number; onlineDevices: number; paidCents: number; paid: string } | null;
   registeredUsers: number | null;
   activeJobsBase: number | null;
-  /** App on-grid count before the base; Sandbox counts task-catalog classes, not running jobs. */
+  /** Real on-grid count, shown for reference only (the App does not show it); Sandbox counts task-catalog classes. */
   activeJobsActual: number | null;
-  /** Absent on the old backend; explicit null means unavailable, never a base-only total. */
+  /** The App's value from the H9 home display batch; explicit null = base unpublished or batch unavailable. */
   activeJobsDisplay?: number | null;
   activeJobsSource?: "APP_HOME_ON_GRID" | "APP_HOME_SANDBOX_TASK_CATALOG" | null;
   globeDisplay: GlobeDisplayConfig | null;
@@ -91,24 +91,6 @@ export interface H9AppDisplay {
   centerNodesSource?: "APP_DISPLAY_SIMULATION" | null;
   centerNodesStep?: number | null;
   unavailable: { field: string; reason: string }[];
-}
-
-/** New-base preview only: backend PRD ae9783f7 uses App binary64 addition and safe integers.
- * An unknown on-grid count cannot be replaced by zero; the admin has no personal fleet context.
- * Current totals and center allocations must always use the server response, not this preview.
- */
-export function previewH9ActiveJobs(display: H9AppDisplay, base: number | null) {
-  const value = display.activeJobsActual === null ? null : display.activeJobsActual + (base ?? 0);
-  return {
-    kind: "preview" as const,
-    capturedAt: display.capturedAt,
-    source: display.activeJobsSource,
-    value: value !== null && Number.isSafeInteger(value) ? value : null,
-    reason: value === null
-      ? display.unavailable.find(item => item.field === "activeJobsDisplay")?.reason
-        ?? display.unavailable.find(item => item.field === "activeJobsActual")?.reason ?? null
-      : Number.isSafeInteger(value) ? null : "APP_ACTIVE_JOBS_DISPLAY_NOT_SAFE_INTEGER",
-  };
 }
 
 /** 单个数值参数的运营面定义:中文标签 + 英文标识 + 合法域(逐字取自规格 FEAT-HOME02b ③)。 */
@@ -243,7 +225,7 @@ export const H9_FIELDS: readonly H9FieldDef[] = [
     step: 1,
     integer: true,
     clearable: true,
-    hint: "赚取页任务中心「N 个全球作业进行中」显示真实进行中作业数加上这个数。留空表示不发布，只显示真实作业数。只用于展示。",
+    hint: "App 首页、赚取页任务中心和全球网络页的「N 个全球作业进行中」从这个数起算，首页数字增长开着时跟在线设备同步增加。留空表示不发布，App 显示「—」。只用于展示。",
   },
 ] as const;
 
