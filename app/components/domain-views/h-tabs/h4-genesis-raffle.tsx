@@ -6,7 +6,7 @@ import { HConflictReviewRequired, hConflictFields } from "@/lib/admin/h-conflict
 import { compareH3Decimal, h3Decimal } from "@/lib/admin/h3-contract";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { Plus, Ticket, Trash2, Trophy } from "lucide-react";
 import type { HCtx } from "./types";
 import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
@@ -52,7 +52,7 @@ const PRIZE_UNIT: Record<RafflePrize["rewardType"], string> = { UVT: "UVT", USDT
 const prizeText = (prize: RafflePrize) => prize.rewardType === "DEVICE" ? `设备 ${prize.productNo || "未选"} × 1 台` : `${amountText(String(prize.amount))} ${PRIZE_UNIT[prize.rewardType]}`;
 const seats = (prizes: RafflePrize[]) => prizes.reduce((sum, prize) => sum + prize.quantity, 0);
 
-export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted }: { ctx: HCtx; onApprovalCompleted?: () => Promise<void>; onRowsChange?: (rows: AdminRaffle[] | null) => void }) {
+export default function H4GenesisRaffle({ ctx, refreshRef, onRowsChange, onApprovalCompleted }: { ctx: HCtx; refreshRef: Ref<() => Promise<unknown>>; onApprovalCompleted?: () => Promise<void>; onRowsChange?: (rows: AdminRaffle[] | null) => void }) {
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [rows, setRows] = useState<AdminRaffle[]>([]), [base, setBase] = useState<AdminRaffle | null>(null), [draft, setDraft] = useState<RaffleDraft | null>(null);
   const [enabled, setEnabled] = useState(false), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
@@ -65,33 +65,33 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   const conflictReview = useRef<HConflictReviewRequired | null>(null);
   /** 合并后回到表单：放回了几项自己改的。只决定显示。 */
   const [merged, setMerged] = useState(0);
-  const load = async (afterWrite = false) => {
+  const load = async (afterWrite = false, closeDraft = false) => {
     const own = ++generation.current; setLoading(true); setError(""); setReadFailed(false);
     try {
-      const result = await fetchAdminRaffles();
-      if (own !== generation.current) return null;
+      const isCurrent = () => own === generation.current && operator === currentAdminOperator();
+      const result = await fetchAdminRaffles(isCurrent);
+      if (!result || !isCurrent()) return null;
       setRows(result.rows);
+      if (closeDraft) { setDraft(null); setBase(null); }
+      for (const id of result.missing) ctx.toast(`本次保存已成功，但编号 ${id} 的这一期已不存在。`, "warn");
       if (result.advanced) ctx.toast(RAFFLE_READBACK_ADVANCED);
+      else if (result.saved) ctx.toast("创世抽奖设置已保存");
       return result;
     } catch (cause) {
-      if (own === generation.current) { setReadFailed(true); setError(displayAdminError(cause)); }
+      if (own !== generation.current || operator !== currentAdminOperator()) return null;
+      setReadFailed(true); setError(displayAdminError(cause));
       if (afterWrite && isOutcomeUnknownError(cause)) throw cause;
       return null;
     }
     finally { if (own === generation.current) setLoading(false); }
   };
+  useImperativeHandle(refreshRef, () => () => read ? load(false, true) : Promise.resolve(null));
   useEffect(() => { setSaving(false); setError(""); setRows([]); setDraft(null); setBase(null); if (read) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [read, operator]);
   useEffect(() => { onRowsChange?.(loading || !read ? null : rows); }, [rows, loading, read]);
   useEffect(() => {
     const changed = () => pendingChanged(v => v + 1);
-    const readback = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail.raffles) setRows(detail.raffles);
-      setBase(null); setDraft(null); setError(detail.raffleError);
-    };
     window.addEventListener("admin-h4-pending-changed", changed);
-    window.addEventListener("admin-h4-readback", readback);
-    return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
+    return () => window.removeEventListener("admin-h4-pending-changed", changed);
   }, []);
   const choose = (row: AdminRaffle | null, required = requiredLanguages) => { conflictReview.current = null; setStale(""); setMerged(0); setBase(row); setDraft(row ? editableRaffle(row, required) : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
   const openRaffle = async (row: AdminRaffle | null) => {
@@ -136,11 +136,13 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
         const complete = async (result: unknown) => {
           if (own !== generation.current) return;
           const approval = isH4ApprovalReceipt(result);
-          if (approval) await onApprovalCompleted?.();
-          const readback = await load(!approval);
-          setDraft(null); setBase(null);
-          if (approval) ctx.toast(result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-          else if (!readback?.advanced) ctx.toast("创世抽奖设置已保存");
+          if (approval) {
+            await onApprovalCompleted?.();
+            if (own !== generation.current) return;
+            setDraft(null); setBase(null);
+            ctx.toast(result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+          }
+          await load(!approval, true);
         };
         try {
           const original = originalKey ? pendingH4Commands().find(r => r.commandKey === originalKey) : undefined;

@@ -3,7 +3,6 @@
 /**
  * H4「既有活动与转盘」页签的展示件：既有活动卡、App 上的样子、转盘概率条、奖档表、护栏卡、确认框里的概率对比。
  * 只排版：数据由页面按后端读模型传进来，不发请求、不判权限、不改请求内容。
- * 取值小工具照旧页面 h3-quest-events.tsx 原样搬过来（旧文件不动）。
  */
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { CalendarRange, CircleAlert, Clock3, EyeOff, Flag, Gift, Hourglass, CircleHelp, Languages, Smartphone, Star, Users } from "lucide-react";

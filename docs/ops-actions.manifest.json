@@ -1410,12 +1410,24 @@
       "status": "built",
       "view": "h-view.tsx",
       "batch": "P1",
-      "restActions": ["updateH3QuestConfig", "h3_weekly_region_policy"],
+      "restActions": ["h3_weekly_region_policy"],
       "runtimeEvidence": [
         {
           "type": "pc-runtime",
-          "file": "app/components/domain-views/h-tabs/h3-quest-events.tsx",
-          "positivePatterns": ["H3WeeklyRegionPolicyPanel", "findHighOp\\(\"h3_weekly_region_policy\"\\)", "withH3WeeklyRegionProposalKey", "fetchA2Overview"],
+          "file": "app/components/domain-views/h-tabs/h3-quest-tasks.tsx",
+          "positivePatterns": ["runWrite\\(\\{ store: \"config\", path: `/quest-events/config/[^,]+, method: \"PATCH\""],
+          "negativePatterns": ["updateH3QuestConfig\\(\"weekly_region_policy\""]
+        },
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/h-tabs/h3-region-policy.tsx",
+          "positivePatterns": ["H3RegionPanel", "findHighOp\\(\"h3_weekly_region_policy\"\\)", "await submitProposal\\(", "fetchA2Overview"],
+          "negativePatterns": ["updateH3QuestConfig\\(\"weekly_region_policy\""]
+        },
+        {
+          "type": "pc-runtime",
+          "file": "lib/admin/use-h3-mutations.ts",
+          "positivePatterns": ["write.regionParams \\? \"h3_weekly_region_policy\"", "command: def.buildCommand\\(values\\)", "growthRequest<Record<string, unknown>>\\(r.request.path, \\{ method: r.request.method"],
           "negativePatterns": ["updateH3QuestConfig\\(\"weekly_region_policy\""]
         },
         {
@@ -2775,13 +2787,20 @@
       "object": "任务生命周期(H3)",
       "action": "编辑、启停、归档和删除既有任务",
       "status": "built",
-      "view": "h-tabs/h3-quest.tsx",
+      "view": "h-tabs/h3-quest-tasks.tsx",
       "batch": "done",
-      "restActions": [
-        "editH3Mission",
-        "transitionH3Mission",
-        "archiveH3Mission",
-        "deleteH3Mission"
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/h-tabs/h3-quest-tasks.tsx",
+          "positivePatterns": [
+            "runWrite\\(\\{ store: \"mission\", path: `/quest-events/tasks/[^/,]+`, method: \"PATCH\"",
+            "runWrite\\(\\{ store: \"mission\", path: `/quest-events/tasks/[^/,]+/status`, method: \"PATCH\"",
+            "runWrite\\(\\{ store: \"mission\", path: `/quest-events/tasks/[^/,]+/archive`, method: \"POST\"",
+            "runWrite\\(\\{ store: \"mission\", path: `/quest-events/tasks/[^/,]+`, method: \"DELETE\""
+          ],
+          "negativePatterns": ["\\b(?:editH3Mission|transitionH3Mission|archiveH3Mission|deleteH3Mission)\\s*\\("]
+        }
       ],
       "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
@@ -2871,16 +2890,23 @@
       "object": "Quest 任务创建(H3)",
       "action": "新建普通任务和月度任务",
       "status": "built",
-      "view": "h-tabs/h3-quest-events.tsx",
+      "view": "h-tabs/h3-quest-tasks.tsx",
       "batch": "done",
-      "restActions": [
-        "createH3Mission",
-        "createH3MonthlyMission",
-        "createH3QuestEventBinding",
-        "updateH3LocalizedContent",
-        "updateH3MissionPresentation",
-        "updateH3QuestEventBinding",
-        "deleteH3QuestEventBinding"
+      "restActions": ["createH3MonthlyMission"],
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/h-tabs/h3-quest-tasks.tsx",
+          "positivePatterns": [
+            "runWrite\\(\\{ store: \"mission\", path: \"/quest-events/missions\", method: \"POST\"",
+            "runWrite\\(\\{ store: \"mission\", path: `/quest-events/tasks/[^/,]+/presentation`, method: \"PATCH\"",
+            "updateConfigWithExpected\\(`content.mission.",
+            "runWrite\\(\\{ store: \"binding\", path: `/quest-events/bindings/[^,]+, method: \"POST\"",
+            "runWrite\\(\\{ store: \"binding\", path: `/quest-events/bindings/[^,]+, method: \"PATCH\"",
+            "runWrite\\(\\{ store: \"binding\", path: `/quest-events/bindings/[^,]+, method: \"DELETE\""
+          ],
+          "negativePatterns": ["\\b(?:createH3Mission|createH3QuestEventBinding|updateH3QuestEventBinding|deleteH3QuestEventBinding)\\s*\\("]
+        }
       ],
       "note": "任务创建已接真实服务端；编辑、启停、归档、删除、持久幂等与认证审计主体已由 OPS-H-12 完成"
     },
@@ -2890,7 +2916,7 @@
       "object": "活动创建与主推(H4)",
       "action": "创建活动并切换主推状态",
       "status": "built",
-      "view": "h-tabs/h3-quest-events.tsx",
+      "view": "h-tabs/h4-legacy-center.tsx",
       "batch": "done",
       "restActions": [
         "createH4QuestEvent",
@@ -3584,7 +3610,7 @@
       "object": "H3 App Weekly Quest",
       "action": "App 从服务端读取周任务并通过真实领奖 API 结算",
       "status": "built",
-      "view": "h-tabs/h3-quest-events.tsx",
+      "view": "h-tabs/h3-quest-tasks.tsx",
       "batch": "done",
       "runtimeEvidence": [
         {

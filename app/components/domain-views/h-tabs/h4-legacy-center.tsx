@@ -20,6 +20,7 @@ import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   fetchH3QuestEvents,
+  fetchH4EventCreateCandidates,
   updateH4LocalizedContent,
   updateH4EventFeatured,
   updateH4EventReward,
@@ -42,7 +43,7 @@ import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
 import { EVENT_CONTENT_LOCALES, eventLocalizedContentGaps, eventRuleReadiness } from "@/lib/admin/event-rule-form";
-import { fetchAdminRaffles, RAFFLE_READBACK_ADVANCED, type AdminRaffle } from "@/lib/admin/genesis-raffle-client";
+import type { AdminRaffle } from "@/lib/admin/genesis-raffle-client";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
 import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, type H4Command } from "@/lib/admin/h4-mutations";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
@@ -549,11 +550,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     });
   };
 
-  const openCreateEvent = () => {
+  const openCreateEvent = async () => {
     const builtIds = new Set((model?.events ?? []).map((event) => event.id));
-    // B511-WIRE: 打开框之前读 GET /api/admin/growth/quest-events/events/create-candidates，把 data.candidates（[{ id, occupied }]，删除过的活动用过的编号也是 occupied: true）放在这里，读完再开框。
-    // 读失败或还没读完传 null：框里写「没读到已删活动的编号」，只把已读到的活动的编号置灰，选到用过的由后端按 409 拒绝，不会新建。
-    const createCandidates = null as readonly { id: string; occupied: boolean }[] | null;
+    const createCandidates = await fetchH4EventCreateCandidates().catch(() => null);
+    if (adminId !== useAdminAuth.getState().session?.adminId || !ctx.can("growth_h4_write")) return;
     const usedCodes = [...H4_EVENT_RULE_CODES].filter((code) => createCandidates ? createCandidates.some((row) => row.id === code && row.occupied) : builtIds.has(code));
     const freeCodes = [...H4_EVENT_RULE_CODES].filter((code) => !usedCodes.includes(code));
     openActionConfirm({ briefKind: "config",
@@ -979,15 +979,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   // ===== 结果未知、待审批 =====
+  const refreshRaffles = useRef<() => Promise<unknown>>(null);
   const refreshAll = async () => {
     await reloadH4Approvals();
     await reload();
-    const [rules, raffles] = await Promise.allSettled([import("@/lib/admin/event-rules-client").then(m => m.fetchEventRules()), fetchAdminRaffles()]);
+    const [rules] = await Promise.allSettled([import("@/lib/admin/event-rules-client").then(m => m.fetchEventRules()), refreshRaffles.current?.()]);
     window.dispatchEvent(new CustomEvent("admin-h4-readback", { detail: {
       rules: rules.status === "fulfilled" ? rules.value : undefined, ruleError: rules.status === "rejected" ? displayAdminError(rules.reason) : "",
-      raffles: raffles.status === "fulfilled" ? raffles.value.rows : undefined, raffleError: raffles.status === "rejected" ? displayAdminError(raffles.reason) : "",
     } }));
-    if (raffles.status === "fulfilled" && raffles.value.advanced) toast(RAFFLE_READBACK_ADVANCED);
   };
   const lookupH4Command = async (record: H4Command) => {
     setLookupKey(record.commandKey);
@@ -1189,7 +1188,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     <div hidden={sub !== "events"} className="h4-tabpanel">
       <Panel id="h4l-events" title="既有活动" icon={Gift} tone="role-3" sub={`共 ${events.length} 个`}
         explain={<><p>平台内置的运营活动，一张卡一个：名称和说明、奖励、地区、时间、参与情况。卡底部改各语言的文字，右下角开放、结束、主推和删除。</p><p>同时只能有一个进行中的主推活动。时间来自「七类玩法」里这个活动的开放时间。</p></>}
-        actions={<Button icon={<Plus size={14} aria-hidden />} disabledReason={!canModuleWrite ? "没有新建既有活动的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openCreateEvent:1"]), openCreateEvent)}>新建既有活动</Button>}>
+        actions={<Button icon={<Plus size={14} aria-hidden />} disabledReason={!canModuleWrite ? "没有新建既有活动的权限" : undefined} onClick={() => void openCreateEvent()}>新建既有活动</Button>}>
         {gapCount > 0 && <Notice tone="warn" title={`有 ${gapCount} 项翻译没填，点卡片底部的「翻译没填」逐格补`}>
           {gapsClosed.count > 0 && <p>补齐才能开放：{gapNames(gapsClosed.rows)}</p>}
           {gapsOpen.count > 0 && <p>已开放，App 上正显示英文或原文：{gapNames(gapsOpen.rows)}</p>}
@@ -1208,7 +1207,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
     <div hidden={sub !== "plays"} className="h4-tabpanel">
       <H4EventRules ctx={ctx} requiredLanguages={requiredLanguages} eventContent={eventContent} contentRefresh={contentRefresh} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRules} />
-      <H4GenesisRaffle ctx={ctx} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRaffles} />
+      <H4GenesisRaffle ctx={ctx} refreshRef={refreshRaffles} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRaffles} />
     </div>
 
     <div hidden={sub !== "wheel"} className="h4-tabpanel">
