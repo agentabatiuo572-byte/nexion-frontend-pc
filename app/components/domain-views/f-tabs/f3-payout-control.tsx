@@ -62,23 +62,27 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
     const autoNow = cfg?.autoSettle;
     const capNow = cfg?.platformCapPct;
     const missing = unread || (auto ? autoNow == null : capNow == null);
+    const canLower = !auto && !!original && !direct && allowed && !missing && Number(capNow) > 0;
     const valueTag = missing
       ? <span className="f3-cfg-value" data-empty="">—</span>
       : auto
         ? autoNow ? <StatusTag tone="ok" icon={PlayCircle}>已开启</StatusTag> : <StatusTag tone="neutral" icon={PauseCircle}>已关闭</StatusTag>
         : <span className="f3-cfg-value">{pctText(capNow!)}</span>;
     const pendingTag = direct ? unknownTag(direct)
-      : original ? <StatusTag tone="warn" icon={CircleHelp} explain="提交审批时没收到确定结果，可能已经建了审批单。点「查看原申请」查询原结果。">结果未知</StatusTag>
+      : original ? <StatusTag tone="warn" icon={CircleHelp} explain={canLower
+          ? "提交审批时没收到确定结果。可在原操作列表查询，也可以调低封顶比例。"
+          : "提交审批时没收到确定结果，可能已经建了审批单。点「查看原申请」查询原结果。"}>结果未知</StatusTag>
         : approval ? <StatusTag tone="warn" icon={Clock3}
             explain={`${auto ? "开启" : `调高到 ${payoutValueText(key, approval.after)}`}在等${SUPER}批准；批准前仍按现在的值。${auto ? "" : "调低不受影响，确认后立即生效。"}`}>待审批</StatusTag>
           : null;
     const dir = missing ? "没读到，暂时不能改"
-      : direct || original ? "先查清原操作再改"
+      : canLower ? "调低立即生效"
+        : direct || original ? "先查清原操作再改"
         : approval ? "现在的值仍生效"
         : auto ? autoNow ? "关闭立即生效" : "开启要超管批准" : "调低立即生效 · 调高要批准";
     const disabledReason = missing ? "这一项没读到，重新加载后再改"
       : auto && !autoNow && approval ? "开启已在等审批，批准或驳回前不能再提交" : undefined;
-    const action = direct || original
+    const action = direct || (original && !canLower)
       ? <Button size="sm" onClick={() => onOpen({ key, snapshot, original, direct })}>{direct ? "查看原操作" : "查看原申请"}</Button>
       : allowed ? <Button size="sm" disabledReason={disabledReason}
           onClick={() => onOpen({ key, snapshot })}>{auto && !missing ? autoNow ? "关闭" : "开启" : "调整"}</Button>
@@ -113,7 +117,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
   const autoNow = cfg?.autoSettle === true;
   const capNow = cfg?.platformCapPct ?? "";
   const capText = capNow ? pctText(capNow) : "—";
-  const approval = ctx.getF3PayoutControlPending(key).approval;
+  const { approval, originalProposal } = ctx.getF3PayoutControlPending(key);
   const canPropose = ctx.can("platform_a2_write") || ctx.can("platform_a2_proposal_create");
   const savedDirect = () => adminId === undefined ? undefined : pendingF3ConfigWrite(adminId, key);
   const savedProposal = () => adminId === undefined ? undefined : listF3Proposals(adminId).find((row) => row.fingerprint === f3ConfigSlot(key));
@@ -201,7 +205,9 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
         disallowCurrent: true, hint: "0–100，最多 10 位小数",
         amplifiesWhen: mode === "new" ? "increase" : undefined,
         validate: (value) => f3PlatformCapPct(value) === null ? "填 0 到 100 的数，最多 10 位小数"
-          : approval && direction(value) === "proposal" ? "已有调高在等审批，批准或驳回前只能调低" : undefined,
+          : direction(value) !== "proposal" ? undefined
+            : approval ? "已有调高在等审批，批准或驳回前只能调低"
+              : originalProposal ? "原申请结果未知，查清前只能调低" : undefined,
       }}
       initialReason={direct?.f3Request?.reason ?? original?.spec?.reason}
       getPendingReason={() => ownDirect()?.f3Request?.reason ?? ownProposal()?.spec?.reason}

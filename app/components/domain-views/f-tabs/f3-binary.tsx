@@ -88,10 +88,11 @@ function matchRatePercent(raw: string): string | null {
   return percent.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-/** 结算记录的状态（TeamCommissionMapper.binarySettlements 归成的五种）。新结算写的是 PENDING：已记账、奖励在冷却。 */
+/** 结算记录的状态。PENDING 表示已记账、奖励在冷却。 */
 const STATE: Record<string, { label: string; tone: StateTone; icon: LucideIcon; explain: string }> = {
   pending: { label: "已记账", tone: "progress", icon: Clock3, explain: "这一期的奖励已写进结算记录，记成邀请人的冷却奖励，冷却期满才能提现。这里是结算记录的状态，不随冷却进度变；每笔冷却和解锁在「奖励记录核对」看。" },
   paid: { label: "已结算", tone: "done", icon: CircleCheck, explain: "结算记录的状态是已付、已结算或已解锁。" },
+  capped: { label: "封顶未发", tone: "warn", icon: Ban, explain: "受全平台封顶限制，这笔实发为零。" },
   blocked: { label: "被拦下", tone: "warn", icon: Ban, explain: "结算记录的状态是被拦下、被拒、失败或冻结；只说明这条记录的状态，不能单凭它认定没发过钱。" },
   processing: { label: "结算中", tone: "progress", icon: Loader2, explain: "结算还在处理。" },
   failed: { label: "结算失败", tone: "danger", icon: AlertTriangle, explain: "这条结算记录失败；不能单凭它认定没发过钱。" },
@@ -401,13 +402,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     </Notice>
   );
 
-  if (ctx.f3Loading && rows.length === 0) {
-    return <div className="f3-page">{header}{recovery}{confirm && <F3ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}{payout && <F3PayoutConfirm open={payout} ctx={ctx} onClose={() => setPayout(null)} />}<BlockState state="loading" title="正在读取团队平衡奖励…" /></div>;
-  }
-
-  if (ctx.f3Error && rows.length === 0) {
-    return <div className="f3-page">{header}{recovery}{confirm && <F3ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}{payout && <F3PayoutConfirm open={payout} ctx={ctx} onClose={() => setPayout(null)} />}<BlockState state="error" title="团队平衡奖励数据加载失败" detail={ctx.f3Error} onRetry={() => void ctx.refreshF3()} retryLabel="重新加载" /></div>;
-  }
+  const showReadState = rows.length === 0 && (ctx.f3Loading || !!ctx.f3Error);
+  const configConfirm = confirm && <F3ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />;
 
   const conclusion = binaryPaused
     ? <Conclusion state="warn" icon={PauseCircle} hint={canPause ? "恢复要提交审批；恢复后不会自动补结暂停期间的周期。" : "恢复要有暂停权限的同事提交审批。"}
@@ -430,8 +426,14 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   return (
     <div className="f3-page">
       {header}
-      {conclusion}
+      {!showReadState && conclusion}
       {recovery}
+      {showReadState ? <>
+        {configConfirm}
+        {ctx.f3Loading
+          ? <BlockState state="loading" title="正在读取团队平衡奖励…" />
+          : <BlockState state="error" title="团队平衡奖励数据加载失败" detail={ctx.f3Error ?? undefined} onRetry={() => void ctx.refreshF3()} retryLabel="重新加载" />}
+      </> : <>
       {ctx.f3Error && <Notice tone="warn" title="团队平衡奖励数据刷新失败">{ctx.f3Error}</Notice>}
 
       <StatBand label="团队平衡奖励摘要">
@@ -628,7 +630,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         onPrev: () => { const i = pager.pageRows.indexOf(openRow!); if (i > 0) setOpenRow(pager.pageRows[i - 1]); },
         onNext: () => { const i = pager.pageRows.indexOf(openRow!); if (i >= 0 && i < pager.pageRows.length - 1) setOpenRow(pager.pageRows[i + 1]); },
       }} />
-      {confirm && <F3ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
+      {configConfirm}
+      </>}
       {payout && <F3PayoutConfirm key={`${payout.key}:${payout.direct?.commandKey ?? payout.original?.commandKey ?? "new"}`} open={payout} ctx={ctx} onClose={() => setPayout(null)} />}
     </div>
   );
