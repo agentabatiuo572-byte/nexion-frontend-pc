@@ -787,7 +787,7 @@ const DECISION_REFUSED_REASON: Record<string, string> = {
   A2_WITHDRAW_STALE: "这张单的状态已经变了",
   A2_BUSINESS_CONTEXT_MISMATCH: "这张单的对象和审批内容对不上",
   A2_MAKER_ID_UNVERIFIED: "发起人身份无法核实，这张单现在不能处理，请联系值班人员",
-  A2_DISCLOSURE_SNAPSHOT_CHANGED: "申请后披露草稿又改过，这张单不能批准",
+  A2_DISCLOSURE_SNAPSHOT_CHANGED: "申请后披露草稿变了，这张单按的是旧内容，不能批准",
   A2_REASON_POLICY_UNAVAILABLE: "理由规则暂时读不到，稍后重新处理这张单",
   A2_REQUEST_HASH_FAILED: "请求无法处理，稍后重新处理这张单",
   PERMISSION_DENIED: "这个账号没有这项操作的业务权限，请核对授权",
