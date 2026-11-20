@@ -94,9 +94,9 @@ export function H9ModuleCards({ data, failed, rank, rankUnknown, module, onSelec
         <Stat {...tab("jobs", "全球作业基座")} icon={ListChecks} tone="role-2"
           head={<>全球作业基座{values ? jobs == null ? <StatusTag tone="neutral">未发布</StatusTag> : <StatusTag tone="ok">已发布</StatusTag> : unreadTag}</>}
           label="App 从这个数起算" value={values && jobs != null ? count(jobs) : "—"} unit={values && jobs != null ? "个" : undefined}
-          explain="App 首页、赚取页任务中心和全球网络页显示从基座起算的展示数，首页数字增长开着时跟在线设备同步增加；不加真实作业数。未发布时 App 显示「—」。">
+          explain="App 首页、赚取页任务中心和全球网络页显示从基座起算的展示数，首页数字增长开着时跟在线设备同步增加；不加真实作业数。未发布时 App 显示「—」，测试环境只显示基座、不增长。">
           <dl className="rd-stat-rows">
-            <div className="rd-stat-row"><dt>App 显示</dt><dd data-empty={values && appJobs !== null ? undefined : ""}>{!values || appJobs === null || appJobs === undefined && jobs == null ? "—" : `${count(appJobs ?? jobs!)} 个`}</dd></div>
+            <div className="rd-stat-row"><dt>App 显示</dt><dd data-empty={values && appJobs != null ? undefined : ""}>{values && appJobs != null ? `${count(appJobs)} 个` : "—"}</dd></div>
           </dl>
         </Stat>
 

@@ -50,7 +50,7 @@ export interface H9PublicStatsValues {
   registeredUsersTickStepMax?: number;
   virtualUserCount: number;
   hashratePercentileTable: H9PercentileBand[];
-  /** 全球作业基座：缺省 = 后端还没支持（页面不提交此项）；null = 未发布；数字 = 赚取页任务中心在真实进行中作业数上加的数。只用于展示。 */
+  /** 全球作业基座：缺省 = 后端还没支持（页面不提交此项）；null = 未发布；数字 = App 全球作业的起算数。只用于展示。 */
   activeJobsBase?: number | null;
 }
 
@@ -225,7 +225,7 @@ export const H9_FIELDS: readonly H9FieldDef[] = [
     step: 1,
     integer: true,
     clearable: true,
-    hint: "赚取页任务中心「N 个全球作业进行中」显示真实进行中作业数加上这个数。留空表示不发布，只显示真实作业数。只用于展示。",
+    hint: "App 首页、赚取页任务中心和全球网络页的「N 个全球作业进行中」从这个数起算，首页数字增长开着时跟在线设备同步增加。留空表示不发布，App 显示「—」。只用于展示。",
   },
 ] as const;
 
