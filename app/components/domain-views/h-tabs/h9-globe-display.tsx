@@ -20,8 +20,8 @@ type ScalarKey = "intervalMs" | "throughputMin" | "throughputMax" | "latencyJitt
 type Draft = Record<ScalarKey, string> & { centers: { id: string; sharePct: string; latencyMs: string }[] };
 const FIELDS: { key: ScalarKey; label: string; unit: string; scale?: number; hint: string; what: string }[] = [
   { key: "intervalMs", label: "数据变化间隔", unit: "秒", scale: 1000, hint: "1–86,400 秒，最多三位小数", what: "App 全球网络页的模拟数字每隔这么久变一次。" },
-  { key: "throughputMin", label: "每任务小时处理量下限", unit: "个", hint: "0–10,000，最多六位小数", what: "每小时任务量 = 进行中作业数 × 下限到上限之间的一个波动值。" },
-  { key: "throughputMax", label: "每任务小时处理量上限", unit: "个", hint: "0–10,000，最多六位小数，不小于下限", what: "每小时任务量 = 进行中作业数 × 下限到上限之间的一个波动值。" },
+  { key: "throughputMin", label: "每任务小时处理量下限", unit: "个", hint: "0–10,000，最多六位小数", what: "每小时任务量 = 该中心分到的全球作业数 × 下限到上限之间的一个波动值。" },
+  { key: "throughputMax", label: "每任务小时处理量上限", unit: "个", hint: "0–10,000，最多六位小数，不小于下限", what: "每小时任务量 = 该中心分到的全球作业数 × 下限到上限之间的一个波动值。" },
   { key: "latencyJitterMs", label: "延迟浮动上限", unit: "毫秒", hint: "0–60,000 的整数", what: "App 上的延迟 = 基础延迟 + 0 到这个数之间的波动，只往上浮。" },
 ];
 const CENTER_NAMES: Record<string, string> = { sg: "新加坡", jp: "东京", vn: "胡志明市", uk: "伦敦", fr: "巴黎", de: "法兰克福", "us-ny": "纽约", "us-sj": "圣何塞" };
@@ -163,7 +163,7 @@ export function H9GlobeDisplay({ ctx, data, appDisplay, refreshing, blocked, rea
   return <section aria-label="全球网络展示">
     <Panel title="全球网络 · 8 个中心" icon={Globe2} tone="role-2" sub={`主配置 v${data.version}`}
       explain={<>
-        <p>App「全球网络」页的模拟展示。在线节点总数就是首页数字增长里的在线设备，进行中任务总数就是赚取页任务中心显示的数（进行中作业数 + 全球作业基座）。</p>
+        <p>App「全球网络」页的模拟展示。在线节点总数就是首页数字增长里的在线设备，进行中任务总数就是赚取页任务中心显示的全球作业数（从全球作业基座起算的展示数，不含真实作业），两项都按下面的占比分到 8 个中心。</p>
         <p>占比只决定这两个总数怎么分到 8 个中心，各中心加起来正好等于总数；每小时任务量和延迟按下面的参数模拟。这些都不是实测遥测。</p>
       </>}>
       {conflict && <Notice tone="warn" title="这块已被别人改过" action={<Button size="sm" disabled={saving || refreshing} onClick={async () => { const result = await onRefresh(); if (result?.values.globeDisplay) accept(result.values.globeDisplay); }}>刷新这一块</Button>}>
