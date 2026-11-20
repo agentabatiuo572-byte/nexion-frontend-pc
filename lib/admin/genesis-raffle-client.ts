@@ -62,7 +62,7 @@ export function parseAdminRaffle(value: unknown): AdminRaffle {
 async function fetchAdminRaffle(id: string): Promise<AdminRaffle | null> {
   try {
     const row = parseAdminRaffle(await growthRequest<unknown>(`/genesis-raffle/${encodeURIComponent(id)}`));
-    if (row.id !== id) throw new Error("创世抽奖配置读取失败，请刷新后重试。");
+    if (row.id !== id || row.revision < 1) throw new Error("创世抽奖配置读取失败，请刷新后重试。");
     return row;
   } catch (cause) {
     const failure = cause as { status?: number; reasonCode?: string } | null;
@@ -87,7 +87,7 @@ export async function fetchAdminRaffles(isCurrent: () => boolean) {
   confirmH4RaffleReadback(records, details);
   markH4Read("raffles", true);
   const missing = receipts.filter(({ id }) => details.get(id) === null).map(({ id }) => id);
-  const advanced = receipts.some(({ id, revision }) => (details.get(id)?.revision ?? 0) > revision);
+  const advanced = receipts.some(({ id, revision }) => revision !== null && (details.get(id)?.revision ?? 0) > revision);
   const saved = receipts.some(({ id }) => details.get(id) != null);
   return { rows, missing, advanced, saved };
 }

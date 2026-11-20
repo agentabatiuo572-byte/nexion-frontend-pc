@@ -30,7 +30,7 @@ export type H4UploadRestoration = { canAutoRestore: boolean; restored: boolean; 
 export type H4Command = H4StoredCommand & {
   store: keyof typeof h4CommandStores; owner: number; scope: string; action: string; reason: string;
   request: Direct | { proposal: Proposal }; acknowledged?: boolean;
-  raffleReceipt?: Pick<AdminRaffle, "id" | "revision">;
+  raffleReceipt?: { id: string; revision: number | null };
   asset?: UploadedAsset;
   uploadTarget?: H4UploadTarget;
   restoration?: H4UploadRestoration;
@@ -75,6 +75,19 @@ function retain(r: H4Command) {
   if (!storage.isDurablyStored(r.fingerprint, r.commandKey)) throw new Error("H4_REQUEST_STORAGE_UNAVAILABLE");
 }
 
+function raffleReadbackReceipt(raw: H4StoredCommand, request: Direct, scope: string): H4Command["raffleReceipt"] {
+  if (!raw.acknowledged) return;
+  const id = /^H\/h4_genesis_raffle\/([A-Za-z0-9_-]{1,64})$/.exec(scope)?.[1];
+  if (!id) return;
+  const matchesRequest = request.method === "PATCH" && request.path === `/genesis-raffle/${id}`
+    || request.method === "POST" && request.path === "/genesis-raffle" && JSON.parse(request.body).id === id;
+  if (!matchesRequest) return;
+  const receipt = raw.raffleReceipt;
+  // receipt-status confirms the command but does not return the raffle revision.
+  if (receipt === undefined) return { id, revision: null };
+  if (receipt?.id === id && (receipt.revision === null || Number.isSafeInteger(receipt.revision) && receipt.revision > 0)) return receipt;
+}
+
 /** Old input fingerprints already contain the exact wire body. Parse them only
  * here, at the persisted-data boundary; never replace them with today's form. */
 export function pendingH4Commands(): H4Command[] {
@@ -102,11 +115,7 @@ export function pendingH4Commands(): H4Command[] {
         const validTarget = target && typeof target.objectId === "string" && !!target.objectId && Number.isSafeInteger(target.revision)
           && (target.kind === "banner" && target.position === "bannerAssetId" && Number.isSafeInteger(target.version)
             || target.kind === "evidence" && target.position === "evidenceAssetId" && typeof target.operation === "string");
-        const receipt = raw.raffleReceipt;
-        const validReceipt = receipt && /^H\/h4_genesis_raffle\/[A-Za-z0-9_-]{1,64}$/.test(raw.scope)
-          && typeof receipt.id === "string" && raw.scope === `H/h4_genesis_raffle/${receipt.id}`
-          && Number.isSafeInteger(receipt.revision) && receipt.revision > 0;
-        return [{ ...raw, store, uploadTarget: validTarget ? target : undefined, raffleReceipt: validReceipt ? receipt : undefined } as H4Command];
+        return [{ ...raw, store, uploadTarget: validTarget ? target : undefined, raffleReceipt: raffleReadbackReceipt(raw, raw.request, raw.scope) } as H4Command];
       }
       if (!hasPersistedPendingCommandOwner(String(actor.adminId))) return [];
       if (store === "delete") return [{ ...raw, store, raffleReceipt: undefined, owner: actor.adminId, scope: `H/h4_legacy_event/${raw.eventId}`, action: `删除既有活动 · ${raw.eventId}`, reason: raw.reason,
@@ -114,10 +123,11 @@ export function pendingH4Commands(): H4Command[] {
       if (!raw.fingerprint.startsWith(`${operator}:`)) return [];
       const body = JSON.parse(raw.inputFingerprint), id = raw.fingerprint.slice(operator.length + 1);
       if (!body || typeof body.reason !== "string" || typeof id !== "string" || !id) return [];
-      return [{ ...raw, store, raffleReceipt: undefined, owner: actor.adminId, scope: `H/${store === "rule" ? "h4_event_rule" : "h4_genesis_raffle"}/${id}`,
-        action: `${store === "rule" ? "保存玩法配置" : "保存抽奖配置"} · ${id}`, reason: body.reason,
-        request: { path: store === "rule" ? `/event-rules/${encodeURIComponent(id)}` : `/genesis-raffle${body.expectedRevision === undefined ? "" : `/${encodeURIComponent(id)}`}`,
-          method: store === "raffle" && body.expectedRevision === undefined ? "POST" : "PATCH", body: raw.inputFingerprint } } as H4Command];
+      const scope = `H/${store === "rule" ? "h4_event_rule" : "h4_genesis_raffle"}/${id}`;
+      const request: Direct = { path: store === "rule" ? `/event-rules/${encodeURIComponent(id)}` : `/genesis-raffle${body.expectedRevision === undefined ? "" : `/${encodeURIComponent(id)}`}`,
+        method: store === "raffle" && body.expectedRevision === undefined ? "POST" : "PATCH", body: raw.inputFingerprint };
+      return [{ ...raw, store, owner: actor.adminId, scope, request, raffleReceipt: raffleReadbackReceipt(raw, request, scope),
+        action: `${store === "rule" ? "保存玩法配置" : "保存抽奖配置"} · ${id}`, reason: body.reason } as H4Command];
     } catch { return []; }
   }));
 }
@@ -127,7 +137,7 @@ export const confirmedH4Saves = () => pendingH4Commands().filter(r => r.acknowle
 export const confirmedH4RaffleSaves = () => confirmedH4Saves().filter(record => resourceOf(record.scope) === "raffles");
 export function confirmH4RaffleReadback(records: H4Command[], details: ReadonlyMap<string, AdminRaffle | null>) {
   const behind = records.find(({ raffleReceipt }) => {
-    if (!raffleReceipt) return false;
+    if (raffleReceipt?.revision == null) return false;
     const current = details.get(raffleReceipt.id);
     return current != null && current.revision < raffleReceipt.revision;
   });
