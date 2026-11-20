@@ -192,14 +192,21 @@ function readOverview(value: unknown): F3CurrentPeriodOverview {
   const data = record(value);
   if (data.domain !== "F3") return invalid();
   const rawCurrentPeriod = record(data.currentPeriod);
+  const rawLatestFrozenPeriod = record(data.latestFrozenPeriod);
+  const estimateKeys = ["platformCapEstimateUsdt", "platformCapEstimateBasis", "platformCapEstimateReason"];
+  const estimateKeyPresence = [rawCurrentPeriod, rawLatestFrozenPeriod]
+    .flatMap(period => estimateKeys.map(key => Object.hasOwn(period, key)));
+  const hasEstimateFields = estimateKeyPresence.some(Boolean);
+  if (hasEstimateFields && !estimateKeyPresence.every(Boolean)) return invalid();
+
   const currentPeriod = readPeriod(rawCurrentPeriod);
-  const latestFrozenPeriod = readPeriod(record(data.latestFrozenPeriod));
+  const latestFrozenPeriod = readPeriod(rawLatestFrozenPeriod);
   validatePeriod(currentPeriod, true);
   validatePeriod(latestFrozenPeriod, false);
 
   const platformCapEstimateUsdt = decimal(rawCurrentPeriod.platformCapEstimateUsdt ?? null);
   const estimateReason = optional(rawCurrentPeriod.platformCapEstimateReason, string);
-  if (Object.hasOwn(rawCurrentPeriod, "platformCapEstimateUsdt")) {
+  if (hasEstimateFields) {
     if (currentPeriod.frozen === true) {
       if (platformCapEstimateUsdt !== null || estimateReason !== null) return invalid();
     } else if (platformCapEstimateUsdt === null) {
