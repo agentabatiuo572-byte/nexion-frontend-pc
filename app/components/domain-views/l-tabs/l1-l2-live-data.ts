@@ -20,6 +20,14 @@ export type L2LiveStage = {
 };
 
 export const SMALL_SAMPLE_LABEL = "样本过小";
+export const DAU_NOT_COLLECTED_LABEL = "未采集";
+
+export function retentionReasonLabel(reason: unknown) {
+  if (reason === "DAU_NOT_COLLECTED") return DAU_NOT_COLLECTED_LABEL;
+  if (reason === "WINDOW_IMMATURE") return "未到";
+  if (reason === "BELOW_MINIMUM") return SMALL_SAMPLE_LABEL;
+  return "—";
+}
 
 const L1_TOTALS = [
   ["users", "注册完成用户", "nx_event_outbox:auth.register_completed", "用户行为事件", "注册完成的人数（同一人只算一次）"],

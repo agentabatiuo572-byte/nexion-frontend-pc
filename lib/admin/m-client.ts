@@ -7,7 +7,7 @@ import { formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-
 import { compareM3Messages } from "./m3-message-order";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient, parseSupportSessionHolder } from "@/lib/admin/m-support-client";
+import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient, parseSupportSessionHolder, parseSupportEffectiveLanguage } from "@/lib/admin/m-support-client";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -1985,7 +1985,7 @@ export async function fetchMConversationDetail(no: string, signal?: AbortSignal,
 export type M3ReadContext = { conversationNo: string; status: string; version: number; lastSeenMessageId: number; alreadyRead: boolean };
 export type M3MessagePage = {
   conversation: SessionConvo; messages: SessionMsg[]; hasMore: boolean; nextBeforeMessageId: number | null;
-  customerIdentity: { customerId: number; userNo: string; nickname: string | null; phoneMasked: string | null };
+  customerIdentity: { customerId: number; userNo: string; nickname: string | null; phoneMasked: string | null; effectiveLanguage: string };
   replyContext: { ready: boolean; targets: Array<{ conversationNo: string; throughMessageId: number }> };
   readContexts: M3ReadContext[];
 };
@@ -1996,7 +1996,13 @@ export function parseM3MessagePage(value: unknown, no: string): M3MessagePage {
   const nonempty = (item: unknown): string => typeof item === "string" && item.trim() ? item : invalid();
   const nullable = (item: unknown): string | null => item === null || typeof item === "string" ? item : invalid();
   const row = obj(value), identity = obj(row.customerIdentity), reply = obj(row.replyContext);
-  const customerIdentity = { customerId: positive(identity.customerId), userNo: nonempty(identity.userNo), nickname: nullable(identity.nickname), phoneMasked: nullable(identity.phoneMasked) };
+  const customerIdentity = {
+    customerId: positive(identity.customerId),
+    userNo: nonempty(identity.userNo),
+    nickname: nullable(identity.nickname),
+    phoneMasked: nullable(identity.phoneMasked),
+    effectiveLanguage: parseSupportEffectiveLanguage(identity.effectiveLanguage),
+  };
   if (!Array.isArray(row.messages) || row.messages.length > 10 || typeof row.hasMore !== "boolean" || !Array.isArray(reply.targets) || typeof reply.ready !== "boolean" || !Array.isArray(row.readContexts)) invalid();
   const detail = assertConversationDetail({ conversation: row.conversation, messages: row.messages, historyTruncated: row.hasMore });
   const conversation = adaptConversation({ ...detail, customerProfile: { uid: customerIdentity.userNo, nickname: customerIdentity.nickname ?? undefined, phone: customerIdentity.phoneMasked ?? undefined } });

@@ -61,7 +61,7 @@ export type SupportCustomer = {
   pendingConversationNo: string | null;
   pendingThroughMessageId: number | null;
 };
-export type SupportCustomerDetail = SupportCustomer & { agentAdminId: number; maintenanceEnabled: boolean; maintenanceVersion: number };
+export type SupportCustomerDetail = SupportCustomer & { effectiveLanguage: string; agentAdminId: number; maintenanceEnabled: boolean; maintenanceVersion: number };
 export type SupportMaintenanceRecord = { id: string; agentAdminId: string | null; kind: string; occurredAt: string; state?: string };
 export type SupportMaintenanceHistory = { customerId: string; cycles: SupportMaintenanceRecord[]; executions: SupportMaintenanceRecord[]; totalCycles: number; totalExecutions: number; pageNum: number; pageSize: number };
 export type SupportBindingPoolItem = {
@@ -309,10 +309,21 @@ function customer(value: unknown): SupportCustomer {
     pendingThroughMessageId: row.pendingThroughMessageId === null ? null : positive(row.pendingThroughMessageId, "customer.pendingThroughMessageId"),
   };
 }
+const EFFECTIVE_SUPPORT_LANGUAGES = new Set(["en-US", "zh-CN", "vi-VN", "id-ID", "ms-MY", "fil-PH", "ru-RU", "kk-KZ", "uz-UZ"]);
+export function parseSupportEffectiveLanguage(value: unknown): string {
+  return typeof value === "string" && EFFECTIVE_SUPPORT_LANGUAGES.has(value) ? value : "en-US";
+}
+
 function detail(value: unknown): SupportCustomerDetail {
   const row = object(value, "detail");
-  const parsed = customer(row.customer);
-  return { ...parsed, agentAdminId: positive(parsed.agentAdminId, "detail.agentAdminId"), maintenanceVersion: parsed.version };
+  const rawCustomer = object(row.customer, "customer");
+  const parsed = customer(rawCustomer);
+  return {
+    ...parsed,
+    effectiveLanguage: parseSupportEffectiveLanguage(rawCustomer.effectiveLanguage),
+    agentAdminId: positive(parsed.agentAdminId, "detail.agentAdminId"),
+    maintenanceVersion: parsed.version,
+  };
 }
 function workbenchSnapshot(value: unknown): SupportWorkbenchSnapshot {
   const row = object(value, "workbench");
