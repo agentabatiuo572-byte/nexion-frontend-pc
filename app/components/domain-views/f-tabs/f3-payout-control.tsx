@@ -15,7 +15,7 @@ import { canRetryF3Proposal, f3ConfigSlot, listF3Proposals, type F3ConfirmationS
 import { pendingF3ConfigWrite } from "@/lib/admin/f3-config-write";
 import { F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY, f3PlatformCapPct, planF3PayoutControl, type F3PayoutControlKey } from "@/lib/admin/f3-policy";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
-import type { FDirectAttempt } from "@/lib/admin/f1-stable-write";
+import { isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -73,14 +73,15 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
             explain={`${auto ? "开启" : `调高到 ${payoutValueText(key, approval.after)}`}在等${SUPER}批准；批准前仍按现在的值。${auto ? "" : "调低不受影响，确认后立即生效。"}`}>待审批</StatusTag>
           : null;
     const dir = missing ? "没读到，暂时不能改"
-      : approval && !direct && !original ? "现在的值仍生效"
+      : direct || original ? "先查清原操作再改"
+        : approval ? "现在的值仍生效"
         : auto ? autoNow ? "关闭立即生效" : "开启要超管批准" : "调低立即生效 · 调高要批准";
     const disabledReason = missing ? "这一项没读到，重新加载后再改"
       : auto && !autoNow && approval ? "开启已在等审批，批准或驳回前不能再提交" : undefined;
     const action = direct || original
       ? <Button size="sm" onClick={() => onOpen({ key, snapshot, original, direct })}>{direct ? "查看原操作" : "查看原申请"}</Button>
-      : allowed ? <Button size="sm" variant={auto && autoNow ? "danger-outline" : undefined} disabledReason={disabledReason}
-          onClick={() => onOpen({ key, snapshot })}>{auto ? autoNow ? "关闭" : "开启" : "调整"}</Button>
+      : allowed ? <Button size="sm" disabledReason={disabledReason}
+          onClick={() => onOpen({ key, snapshot })}>{auto && !missing ? autoNow ? "关闭" : "开启" : "调整"}</Button>
         : undefined;
     return auto
       ? <ConfigRow key={key} name={name}
@@ -240,7 +241,11 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
       onConfirm={async (reason, newValue) => {
         if (mode !== "new") { onClose(); return; }
         const value = auto ? autoNow ? "off" : "on" : newValue ?? "";
-        const result = await ctx.submitF3PayoutControl(key, value, reason, snapshot);
+        const result = await ctx.submitF3PayoutControl(key, value, reason, snapshot).catch((error: unknown) => {
+          // 直接生效的结果未知：这页有自己的查询和重试，提示指向框里的按钮，不指去操作记录与审批。
+          if (isF1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。先点「查询原结果」；查不到再按原请求重试，不会重复执行。" });
+          throw error;
+        });
         ctx.toast(result.kind === "unchanged" ? "和现在一样，没有提交"
           : result.kind === "direct" ? auto ? "自动发放已关闭，立即生效" : `全平台封顶比例已改为 ${payoutValueText(key, value)}，立即生效`
             : auto ? "开启自动发放已提交审批，批准前仍是关闭" : `调高全平台封顶比例已提交审批，批准前仍按 ${capText}`);

@@ -557,19 +557,19 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 /* A、B 两组对比条：A 从中线往左、B 往右，同一刻度；实色是匹配上的，灰是多出来的 */
 .f3-page .f3-records-wrap { container: f3-records / inline-size; }
 .f3-page .f3-records { table-layout: fixed; }
-.f3-page .f3-records th:nth-child(1) { width: 15%; }
-.f3-page .f3-records th:nth-child(2) { width: 11%; }
-.f3-page .f3-records th:nth-child(3) { width: 34%; }
-.f3-page .f3-records th:nth-child(4) { width: 14%; }
-.f3-page .f3-records th:nth-child(5) { width: 15%; }
+.f3-page .f3-records th:nth-child(1) { width: 13%; }
+.f3-page .f3-records th:nth-child(2) { width: 10%; }
+.f3-page .f3-records th:nth-child(3) { width: 30%; }
+.f3-page .f3-records th:nth-child(4) { width: 15%; }
+.f3-page .f3-records th:nth-child(5) { width: 21%; }
 .f3-page .f3-records th:nth-child(6) { width: 11%; }
 .f3-page .f3-sub-narrow { display: none; }
 @container f3-records (max-width: 760px) {
   .f3-page .f3-records .f3-col-date { display: none; }
-  .f3-page .f3-records th:nth-child(1) { width: 20%; }
-  .f3-page .f3-records th:nth-child(3) { width: 34%; }
-  .f3-page .f3-records th:nth-child(4) { width: 16%; }
-  .f3-page .f3-records th:nth-child(5) { width: 16%; }
+  .f3-page .f3-records th:nth-child(1) { width: 18%; }
+  .f3-page .f3-records th:nth-child(3) { width: 28%; }
+  .f3-page .f3-records th:nth-child(4) { width: 17%; }
+  .f3-page .f3-records th:nth-child(5) { width: 23%; }
   .f3-page .f3-records th:nth-child(6) { width: 14%; }
   .f3-page .f3-sub-wide { display: none; }
   .f3-page .f3-sub-narrow { display: inline; }

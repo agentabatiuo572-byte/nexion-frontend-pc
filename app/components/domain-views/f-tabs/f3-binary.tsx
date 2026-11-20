@@ -379,7 +379,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="f3-recovery-name">{configName(original)}</span>
           <span className="f3-recovery-change">{configChange(original)}</span>
           <span className="f3-recovery-time">{businessStamp(original.createdAt)} 提交</span>
-          <span className="f3-recovery-state">{proposalTag(original, CONFIG_APPROVER)}</span>
+          <span className="f3-recovery-state">{proposalTag(original, payoutKey(original) ? SETTLE_APPROVER : CONFIG_APPROVER)}</span>
           <span className="f3-recovery-actions"><Button size="sm" onClick={() => payoutKey(original) ? setPayout({ key: payoutKey(original)!, original }) : openConfig(original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec?.obj ?? original.fingerprint.replace(/^f-config:/, ""), original)}>查询原结果</Button>{release(original, configName(original))}</span>
         </li>)}
         {payoutDirects.map(direct => { const line = payoutDirectLine(direct); return <li key={direct.commandKey}>
