@@ -80,9 +80,9 @@ export interface H9AppDisplay {
   homeDisplay: { enabled: boolean; startAt: number; serverNow: number; validUntil: number; sequence: number; onlineDevices: number; paidCents: number; paid: string } | null;
   registeredUsers: number | null;
   activeJobsBase: number | null;
-  /** App on-grid count before the base; Sandbox counts task-catalog classes, not running jobs. */
+  /** Real on-grid count, shown for reference only (the App does not show it); Sandbox counts task-catalog classes. */
   activeJobsActual: number | null;
-  /** Absent on the old backend; explicit null means unavailable, never a base-only total. */
+  /** The App's value from the H9 home display batch; explicit null = base unpublished or batch unavailable. */
   activeJobsDisplay?: number | null;
   activeJobsSource?: "APP_HOME_ON_GRID" | "APP_HOME_SANDBOX_TASK_CATALOG" | null;
   globeDisplay: GlobeDisplayConfig | null;
@@ -91,24 +91,6 @@ export interface H9AppDisplay {
   centerNodesSource?: "APP_DISPLAY_SIMULATION" | null;
   centerNodesStep?: number | null;
   unavailable: { field: string; reason: string }[];
-}
-
-/** New-base preview only: backend PRD ae9783f7 uses App binary64 addition and safe integers.
- * An unknown on-grid count cannot be replaced by zero; the admin has no personal fleet context.
- * Current totals and center allocations must always use the server response, not this preview.
- */
-export function previewH9ActiveJobs(display: H9AppDisplay, base: number | null) {
-  const value = display.activeJobsActual === null ? null : display.activeJobsActual + (base ?? 0);
-  return {
-    kind: "preview" as const,
-    capturedAt: display.capturedAt,
-    source: display.activeJobsSource,
-    value: value !== null && Number.isSafeInteger(value) ? value : null,
-    reason: value === null
-      ? display.unavailable.find(item => item.field === "activeJobsDisplay")?.reason
-        ?? display.unavailable.find(item => item.field === "activeJobsActual")?.reason ?? null
-      : Number.isSafeInteger(value) ? null : "APP_ACTIVE_JOBS_DISPLAY_NOT_SAFE_INTEGER",
-  };
 }
 
 /** 单个数值参数的运营面定义:中文标签 + 英文标识 + 合法域(逐字取自规格 FEAT-HOME02b ③)。 */

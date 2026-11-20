@@ -20,7 +20,6 @@ import {
   fetchH9AppDisplay,
   fetchH9PublicStats,
   prepareH9PublicStats,
-  previewH9ActiveJobs,
   updateH9PublicStats,
   type H9EditableValues,
   type H9FieldDef,
@@ -135,10 +134,8 @@ const APP_DISPLAY_REASON: Record<string, string> = {
 };
 /** 进行中作业数读不到的原因（GrowthPublicStatsService.appDisplay 的 unavailable，ae9783f7）。 */
 const JOBS_REASON: Record<string, string> = {
-  APP_FLEET_REALIZED_TODAY_CONTEXT_REQUIRED: "首页作业数没读到；当天没收益的用户只看到基座，其他人看到不可用",
-  APP_HOME_ON_GRID_UNAVAILABLE: "首页作业数没读到",
-  APP_HOME_SANDBOX_RUN_ID_REQUIRED: "测试环境的运行批次无效，读不到任务种类数",
-  APP_ACTIVE_JOBS_DISPLAY_NOT_SAFE_INTEGER: "加上基座后超出 App 能显示的范围",
+  H9_ACTIVE_JOBS_BASE_UNPUBLISHED: "基座未发布，App 不显示作业数",
+  HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "这一刻还没有可用的首页展示数据",
 };
 /** 按分算的金额写成两位小数加千分位，不舍入、不补币种（paid 是 JSON 数字，末尾的 0 会丢，所以用 paidCents）。 */
 function centsAmount(cents: number) {
@@ -376,15 +373,13 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const title = toggled ? (submitted.homeDisplayEnabled ? "开启首页数字增长" : "暂停首页数字增长") : `保存${label}`;
     const impactText = toggled
       ? submitted.homeDisplayEnabled
-        ? `开启后 App 首页的在线设备和累计已发放每秒在区间内随机增加，${currentChanged ? "从你填的新当前值开始" : "接着 App 上现在的数继续"}。`
-        : `暂停后 App 首页的两个数停住不再增加，${currentChanged ? "停在你填的新当前值" : "停在 App 上现在的数"}；再开启从那里接着涨。`
+        ? `开启后 App 的在线设备和累计已发放每秒在区间内随机增加，全球作业跟在线设备同步增加，${currentChanged ? "从你填的新当前值开始" : "接着 App 上现在的数继续"}。`
+        : `暂停后 App 的在线设备、全球作业和累计已发放停住不再增加，${currentChanged ? "停在你填的新当前值" : "停在 App 上现在的数"}；再开启从那里接着涨。`
       : module === "home" ? `保存后按新参数生成 App 首页的展示数字，${currentChanged ? "从你填的新当前值开始" : "接着 App 上现在的数继续"}；增长开关不变。`
         : module === "network" ? (memberModels?.resets ? "保存后 App 网络脉搏的注册人数从新基数、在保存时刻重新开始推算。" : "保存后 App 网络脉搏的注册人数按新的月增长率、从原推算起点重算整段。")
-          : module === "jobs" ? `保存后 App 赚取页任务中心和全球网络页显示${nextValues.activeJobsBase == null ? `${jobsName}，不加基座` : `${jobsName} + ${count(nextValues.activeJobsBase)}`}。`
+          : module === "jobs" ? nextValues.activeJobsBase == null ? "保存后 App 首页、赚取页任务中心和全球网络页不显示全球作业数。" : `保存后 App 首页、赚取页任务中心和全球网络页的全球作业从 ${count(nextValues.activeJobsBase)} 重新起算。`
             : "这组参数 App 正式页面不读，保存后只改变这页的历史估算。";
     const homeCompare = (module === "home" || toggled) && stepsChanged;
-    // 改基座的预览：按这次取样的进行中作业数加新基座估一个数；作业数读不到就不出数（previewH9ActiveJobs）。
-    const jobsPreview = module === "jobs" && appData?.activeJobsDisplay !== undefined ? previewH9ActiveJobs(appData!, nextValues.activeJobsBase ?? null) : null;
     const facts = <ConfirmFacts rows={rows} facts={<>
         <Fact k="改的是">{label}</Fact>
         <Fact k="主配置版本"><Change from={`v${data.version}`} to={`v${data.version + 1}`} /></Fact>
@@ -395,10 +390,9 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       {fleetChanged && impact && <Notice tone="neutral" title="历史估算会跟着变">
         日金额估算从 {usd(impact.current.daily)} USD 变成 {usd(usdProduct(nextValues.fleetDevices, data.publishedDailyUsdPerDevice))} USD（每台每日 {usd(data.publishedDailyUsdPerDevice)} USD 不变）。这是内部估算，不是实付，App 不显示。
       </Notice>}
-      {module === "jobs" && jobsBaseSupported && <Notice tone="neutral" title={jobsPreview?.value != null ? `预览：保存后 App 约显示 ${count(jobsPreview.value)} 个` : "预览：估不出保存后 App 显示多少"}>
-        {jobsPreview?.value != null
-          ? <>按 {formatBusinessTimeCompact(jobsPreview.capturedAt, "—")}（{businessZone().label}）取样的{jobsName} {count(appData!.activeJobsActual)} {nextValues.activeJobsBase == null ? "估算，不加基座" : "加新基座估算"}；作业数一直在变，不是保证。</>
-          : !appData ? "这次没读到 App 显示的作业数。" : !jobsPreview ? "进行中作业数现在没有。" : `${JOBS_REASON[jobsPreview.reason ?? ""] ?? "原因不明"}。`}
+      {module === "jobs" && jobsBaseSupported && <Notice tone="neutral" title={nextValues.activeJobsBase != null ? `预览：保存后 App 从 ${count(nextValues.activeJobsBase)} 个开始显示` : "预览：保存后 App 不显示全球作业数"}>
+        {nextValues.activeJobsBase == null ? "基座留空就是不发布，App 上这个数显示「—」。"
+          : data.values.homeDisplayEnabled ? "首页数字增长开着，之后跟在线设备同步增加。" : "首页数字增长暂停中，保存后停在这个数。"}
       </Notice>}
       {virtualZero && <Notice tone="neutral">虚拟人口填了 0：历史估算分母只按注册账号总数（{count(data.realUserCount)} 人）算。</Notice>}
       {homeCompare && <div className="h9-confirm-chart">
@@ -556,7 +550,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   );
 
   const cards = <H9ModuleCards data={data} failed={!data && !loading} rank={rank} rankUnknown={!!rankPending} module={module} onSelect={setModule} ids={ids} readAt={readAt}
-    appJobs={appData?.activeJobsDisplay} jobsName={jobsName} />;
+    appJobs={appData?.activeJobsDisplay} />;
   const rankPanel = <div key="rank" hidden={module !== "rank"} {...ids.panel("rank")}><H9DeviceRank ctx={ctx} onData={setRank} /></div>;
 
   if (!data || !drafts) {
@@ -735,20 +729,20 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const jobsReason = display?.unavailable.find(item => item.field === "activeJobsDisplay")?.reason;
   const jobsSandbox = display?.sourceEnvironment === "SANDBOX";
   const jobsModule = <div className="rd-split h9-module" data-detail="" data-even="" hidden={module !== "jobs"} {...ids.panel("jobs")}>
-    <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="赚取页任务中心和全球网络页用同一个数，基座只加一次。">
+    <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="App 首页、赚取页任务中心和全球网络页用同一个数。">
       <AppPreview where="App 赚取页 · 任务中心"
-        explain={<><p>App 显示 = 进行中作业数 + 基座，全球网络页的进行中任务也是这个数。</p><p>正式环境的进行中作业数和 App 首页同一个来源，开了模拟任务时也算在内；测试环境是任务目录里的任务种类数，不是正在跑的任务。</p><p>进行中作业数读不到时，当天没收益的用户只看到基座，其他人看到不可用。</p></>}
-        status={appJobs === undefined ? undefined : jobsSandbox ? <><StatusTag tone="warn">测试环境</StatusTag>这个数不是正在跑的任务</> : "正式环境 · 和 App 首页同一来源"}>
+        explain={<><p>App 显示的是从基座起算的展示数：首页数字增长开着时跟在线设备同步增加，暂停时停住。不加真实的{jobsName}。</p><p>保存新的基座后从新基座重新起算；留空就是不发布，App 显示「—」。</p><p>{jobsName}只在这页作参考，App 不显示。</p></>}
+        status={appJobs === undefined ? undefined : jobsSandbox ? <><StatusTag tone="warn">测试环境</StatusTag>只显示基座，不增长</> : "正式环境 · 和 App 首页同一批展示数"}>
         <AppNumber label={appJobs != null ? "全球作业进行中 · App 显示" : "全球作业进行中"}
-          value={appJobs != null ? count(appJobs) : appJobs === null ? "—" : jobs == null ? jobsName : <>{jobsName} + {count(jobs)}</>}
-          unit={appJobs === null || appJobs === undefined && jobs == null ? undefined : "个"} empty={appJobs === null || appJobs === undefined && jobs == null}
-          sub={appJobs != null ? `${jobsName} ${count(jobsActual)}${jobs == null ? "，基座未发布" : ` + 基座 ${count(jobs)}`}`
+          value={appJobs != null ? count(appJobs) : appJobs === null || jobs == null ? "—" : count(jobs)}
+          unit={appJobs != null || appJobs === undefined && jobs != null ? "个" : undefined} empty={appJobs === null || appJobs === undefined && jobs == null}
+          sub={appJobs != null ? `基座 ${count(jobs)}${jobsActual == null ? "" : `；${jobsName} ${count(jobsActual)}，仅作参考`}`
             : appJobs === null ? JOBS_REASON[jobsReason ?? ""] ?? "原因不明"
-              : jobs == null ? "基座未发布" : jobs === 0 ? "基座是 0，App 显示的就是进行中作业数" : undefined} />
+              : jobs == null ? "基座未发布" : undefined} />
       </AppPreview>
       {appDisplay.state === "loading" ? <p className="h9-chart-note">正在读取 App 显示的数…</p>
-        : appDisplay.state === "error" ? <p className="h9-chart-note">App 显示的数没读到，上面是算法<Explain label="失败原因" content={appDisplay.message} /></p>
-          : appJobs === undefined ? <p className="h9-chart-note">App 显示的作业数现在没有，上面是算法</p>
+        : appDisplay.state === "error" ? <p className="h9-chart-note">App 显示的数没读到，上面是基座<Explain label="失败原因" content={appDisplay.message} /></p>
+          : appJobs === undefined ? <p className="h9-chart-note">App 显示的作业数现在没有，上面是基座</p>
             : <p className="h9-chart-note">{appJobs === null ? "App 显示的数读不到" : "App 显示的数"} · 取样 {formatBusinessTimeCompact(appDisplay.data.capturedAt, "—")}（{businessZone().label}）</p>}
     </Panel>
     <Panel title="参数" icon={SlidersHorizontal} tone="role-4" sub={`主配置 v${data.version}`}>

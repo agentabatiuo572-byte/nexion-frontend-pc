@@ -29,7 +29,7 @@ export const moduleLabel = (id: H9Module) => MODULES.find((item) => item.id === 
 /** 排名读到没有：独立的模型，失败不影响主配置。 */
 export type RankSnapshot = { state: "loading" } | { state: "failed" } | { state: "ready"; config: DeviceRankConfig };
 
-export function H9ModuleCards({ data, failed, rank, rankUnknown, module, onSelect, ids, readAt, appJobs, jobsName }: {
+export function H9ModuleCards({ data, failed, rank, rankUnknown, module, onSelect, ids, readAt, appJobs }: {
   data: H9PublicStatsOverview | null;
   /** 主配置读取失败：五块写「—」，排名照常。 */
   failed: boolean;
@@ -43,8 +43,6 @@ export function H9ModuleCards({ data, failed, rank, rankUnknown, module, onSelec
   readAt: number;
   /** 服务端给的 App 显示作业数：缺省 = 没读到或服务端还不给，null = 读不到。 */
   appJobs?: number | null;
-  /** 正式环境「进行中作业数」，测试环境「任务种类数」。 */
-  jobsName: string;
 }) {
   const order = MODULES.map((item) => item.id);
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -95,10 +93,10 @@ export function H9ModuleCards({ data, failed, rank, rankUnknown, module, onSelec
 
         <Stat {...tab("jobs", "全球作业基座")} icon={ListChecks} tone="role-2"
           head={<>全球作业基座{values ? jobs == null ? <StatusTag tone="neutral">未发布</StatusTag> : <StatusTag tone="ok">已发布</StatusTag> : unreadTag}</>}
-          label={`加在${jobsName}上`} value={values && jobs != null ? `+${count(jobs)}` : "—"} unit={values && jobs != null ? "个" : undefined}
-          explain="App 赚取页任务中心和全球网络页显示「进行中作业数 + 基座」，未发布时不加。测试环境的进行中作业数是任务目录的种类数，不是正在跑的任务。">
+          label="App 从这个数起算" value={values && jobs != null ? count(jobs) : "—"} unit={values && jobs != null ? "个" : undefined}
+          explain="App 首页、赚取页任务中心和全球网络页显示从基座起算的展示数，首页数字增长开着时跟在线设备同步增加；不加真实作业数。未发布时 App 显示「—」。">
           <dl className="rd-stat-rows">
-            <div className="rd-stat-row"><dt>App 显示</dt><dd data-empty={values && appJobs !== null ? undefined : ""}>{!values || appJobs === null ? "—" : appJobs !== undefined ? `${count(appJobs)} 个` : jobs == null ? `只显示${jobsName}` : `${jobsName} + ${count(jobs)}`}</dd></div>
+            <div className="rd-stat-row"><dt>App 显示</dt><dd data-empty={values && appJobs !== null ? undefined : ""}>{!values || appJobs === null || appJobs === undefined && jobs == null ? "—" : `${count(appJobs ?? jobs!)} 个`}</dd></div>
           </dl>
         </Stat>
 
