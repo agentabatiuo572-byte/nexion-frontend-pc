@@ -371,12 +371,14 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const stepsChanged = (["homeOnlineStepMin", "homeOnlineStepMax", "homePaidStepMin", "homePaidStepMax"] as const).some((key) => nextValues[key] !== data.values[key]);
     const label = moduleLabel(module);
     const title = toggled ? (submitted.homeDisplayEnabled ? "开启首页数字增长" : "暂停首页数字增长") : `保存${label}`;
+    // 环境要等 App 显示读到才知道；没读到时按正式 / 测试两种写。
     const sandbox = appData?.sourceEnvironment === "SANDBOX";
+    const growthNote = appData ? "跟在线设备同步增加" : "正式环境跟在线设备同步增加（测试环境只显示基座、不增长）";
     const jobsBaseChanged = nextValues.activeJobsBase !== data.values.activeJobsBase;
     // 全球作业不跟首页填的新当前值走：后端从 App 上现在的作业数接续，基座未发布时一直是「—」。
     const jobsClause = (enabled: boolean) => data.values.activeJobsBase == null ? "全球作业未发布，App 上仍是「—」"
       : sandbox ? "测试环境的全球作业只显示基座，不增长"
-        : enabled ? "全球作业接着 App 上现在的数，跟在线设备同步增加" : "全球作业停在 App 上现在的数";
+        : enabled ? `全球作业接着 App 上现在的数，${growthNote}` : "全球作业停在 App 上现在的数";
     const impactText = toggled
       ? submitted.homeDisplayEnabled
         ? `开启后 App 的在线设备和累计已发放每秒在区间内随机增加，${currentChanged ? "从你填的新当前值开始" : "接着 App 上现在的数继续"}；${jobsClause(true)}。`
@@ -399,7 +401,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       {module === "jobs" && jobsBaseSupported && jobsBaseChanged && <Notice tone="neutral" title={nextValues.activeJobsBase != null ? `预览：保存后 App 从 ${count(nextValues.activeJobsBase)} 个开始显示` : "预览：保存后 App 不显示全球作业数"}>
         {nextValues.activeJobsBase == null ? "基座留空就是不发布，App 上这个数显示「—」。"
           : sandbox ? "测试环境只显示基座，不增长。"
-          : data.values.homeDisplayEnabled ? "首页数字增长开着，之后跟在线设备同步增加。" : "首页数字增长暂停中，保存后停在这个数。"}
+          : data.values.homeDisplayEnabled ? `首页数字增长开着，之后${growthNote}。` : "首页数字增长暂停中，保存后停在这个数。"}
       </Notice>}
       {virtualZero && <Notice tone="neutral">虚拟人口填了 0：历史估算分母只按注册账号总数（{count(data.realUserCount)} 人）算。</Notice>}
       {homeCompare && <div className="h9-confirm-chart">
@@ -557,7 +559,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   );
 
   const cards = <H9ModuleCards data={data} failed={!data && !loading} rank={rank} rankUnknown={!!rankPending} module={module} onSelect={setModule} ids={ids} readAt={readAt}
-    appJobs={appData?.activeJobsDisplay} />;
+    appJobs={appData && appData.version === data?.version ? appData.activeJobsDisplay : undefined} />;
   const rankPanel = <div key="rank" hidden={module !== "rank"} {...ids.panel("rank")}><H9DeviceRank ctx={ctx} onData={setRank} /></div>;
 
   if (!data || !drafts) {
@@ -730,7 +732,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   </div>;
 
   // 全球作业基座：App 显示的数由服务端按 App 同一算法给出，页面不重算（ae9783f7）。
-  const appJobs = display?.activeJobsDisplay;
+  // 样本和主配置是两次读取，版本对不上（中间有人保存过）就当没读到。
+  const appJobs = display?.version === data.version ? display.activeJobsDisplay : undefined;
   const jobsActual = display?.activeJobsActual ?? null;
   const jobsReason = display?.unavailable.find(item => item.field === "activeJobsDisplay")?.reason;
   const jobsSandbox = display?.sourceEnvironment === "SANDBOX";
