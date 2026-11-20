@@ -3,7 +3,7 @@
 /**
  * F3 本期 / 上期全平台封顶总览。只读，数据来自 useF3CurrentPeriod，页面不算封顶、不算估算、不算缩减比例。
  * 本期还在累积：付款额截至现在，封顶只写后端给的估算（没给写原因或结算时定稿），已发写还没结算。
- * 上期：付款额、比例、封顶在这一期第一笔结算时定下；已发（自动、手动）和剩余是截至现在已记账的，还会变。
+ * 上期：付款额、比例、封顶在这一期第一笔结算时定下；已发（自动、手动）是截至现在已记账的，还会变，剩余跟着已发变。
  * 整页刷新（ctx.f3Loading 由否变是）时跟着重读。
  */
 import { useEffect, useState, type ReactNode } from "react";
@@ -29,7 +29,7 @@ const CELL_ONLY = new Set(["F3_PLATFORM_CAP_PCT_INVALID", "F3_PLATFORM_CAP_PCT_U
 const NEEDS_SETTING = new Set(["F3_SETTLE_PERIOD_MISSING", "F3_SETTLE_PERIOD_INVALID"]);
 const COLUMNS = 6;
 const CAP_FINAL = "结算时按本期全部付款额和当时的比例定稿，期间有退款会变小";
-const LATEST_EXPLAIN = "这一期第一笔结算时，付款额、全平台封顶比例和全平台封顶就定下了；已发和剩余是截至现在已经记账的，同一期还有人在结算时还会变。";
+const LATEST_EXPLAIN = "这一期第一笔结算时，付款额、全平台封顶比例和全平台封顶就定下了；已发是截至现在已经记账的，同一期还有人在结算时还会变，剩余跟着已发变。";
 
 /** 和本页其它逐笔金额同一写法：千分位，去掉末尾 0，至少两位小数，不舍入。 */
 const money = (raw: string) => {
