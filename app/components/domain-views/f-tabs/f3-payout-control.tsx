@@ -279,7 +279,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
         const result = await ctx.submitF3PayoutControl(key, value, reason, snapshot).catch((error: unknown) => {
           // 直接生效的结果未知：这页有自己的查询和重试，提示指向框里的按钮，不指去操作记录与审批。
           if (isF1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。先点「查询原结果」核对。" });
-          else if (isA2OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已建审批单。先点「查询原结果」；关框后也能在设置行点「查看原申请」。" });
+          else if (isA2OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已建审批单。先点「查询原结果」；关框后在页面上方原操作列表也能查询。" });
           throw error;
         });
         ctx.toast(result.kind === "unchanged" ? "和现在一样，没有提交"
