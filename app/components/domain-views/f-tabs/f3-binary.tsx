@@ -21,7 +21,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useDataListPager } from "../design-kit";
-import { f3PauseState, f3SpilloverState, validF3Threshold } from "@/lib/admin/f3-policy";
+import { f3PauseState, f3SpilloverState, isF3PayoutControlKey, validF3Threshold } from "@/lib/admin/f3-policy";
 import { F3_GV_RESET_PARAM_KEY, type F3Settlement } from "@/lib/admin/f1-client";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { F3_BATCH_SLOT, f3ConfigSlot, f3PendingFor, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
@@ -38,6 +38,7 @@ import { F3PairBar, F3RuleFlow, PERIOD_TEXT, RESIDUAL_TEXT, residualLabel, type 
 import { FReleaseButton } from "./f-release";
 import { CONFIG_APPROVER, F3ConfirmHost, SETTLE_APPROVER, type F3Confirm } from "./f3-confirm";
 import { F3PeriodOverview } from "./f3-period-overview";
+import { F3_PAYOUT_KEYS, F3_PAYOUT_NAMES, F3PayoutConfirm, F3PayoutRows, payoutDirectLine, payoutValueText, pctText, type F3PayoutOpen } from "./f3-payout-control";
 
 const text = (value?: string | null) => operatorCopyText(value && value.trim() ? value.trim() : "—");
 const fmtInt = (value: number | null) => value === null ? "—" : Math.round(value).toLocaleString("en-US");
@@ -113,6 +114,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const [cohortFilter, setCohortFilter] = useState("");
   const [view, setView] = useState<View>("teams");
   const [confirm, setConfirm] = useState<F3Confirm | null>(null);
+  const [payout, setPayout] = useState<F3PayoutOpen | null>(null);
   const [openRow, setOpenRow] = useState<F3Settlement | null>(null);
   const [placementChecking, setPlacementChecking] = useState(false);
   const [growthZoneLabel, setGrowthZoneLabel] = useState<string | null>(null);
@@ -184,10 +186,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
   // 最近一期：结算记录按结算日倒序，第一条的结算日就是最近一期（最多 100 条里）。
   const byDate = useMemo(() => {
-    const groups = new Map<string, { date: string; owners: Set<string>; paid: number | null; matched: number | null; blocked: number; count: number }>();
+    const groups = new Map<string, { date: string; owners: Set<string>; paid: number | null; matched: number | null; blocked: number; count: number; used: string | null; cap: string | null }>();
     for (const row of rows) {
       const key = row.settlementDate || "—";
-      const group = groups.get(key) ?? { date: key, owners: new Set<string>(), paid: 0, matched: 0, blocked: 0, count: 0 };
+      const group = groups.get(key) ?? { date: key, owners: new Set<string>(), paid: 0, matched: 0, blocked: 0, count: 0, used: null, cap: null };
+      // 已用和封顶是这一个结算日全平台的数，同一天每条记录一样，取有值的那条。
+      group.used ??= row.platformUsedUsdt;
+      group.cap ??= row.platformCapUsdt;
       group.owners.add(row.user);
       group.count += 1;
       if (row.state.toLowerCase() === "blocked") group.blocked += 1;
@@ -224,7 +229,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     zoneId: growthZoneId, zoneLabel: zone,
   } : undefined;
   useEffect(() => { setConfirm(current => current?.original ? current : null); }, [ctx.f3ReadEpoch]);
-  useEffect(() => { setConfirm(null); }, [adminId]);
+  useEffect(() => { setConfirm(null); setPayout(null); }, [adminId]);
   useEffect(() => {
     setConfirm(current => {
       if (!current) return current;
@@ -271,6 +276,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <Fact k="发多少">批准时按当时的两组订单额、门槛、比例和每期上限算；提交时算不出来</Fact>
             <Fact k="钱从哪出">记成这位邀请人的团队平衡奖励，冷却期满才能提现；计入平台应付款，批准时按这笔实际金额查兑付覆盖率，低于红线就拦下</Fact>
             <Fact k="每期上限">每日上限 {capText ?? "—"}，{PERIOD_TEXT[periodEff]?.cap ?? "按结算周期算天数"}；这一天已记账的先扣掉，用完就拦下不发</Fact>
+            <Fact k="全平台封顶">和自动结算共用这一期的额度，超出时按比例缩减</Fact>
             <Fact k="已经结算过">查回原记录，不重复发，也不按新设置重算</Fact>
           </Facts>
           <Field id="ownerUserId" label="邀请人用户编号" required>
@@ -338,14 +344,18 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>;
   const release = (original: FDomainAttempt, label: ReactNode) => original.expiresAt <= Date.now() && original.absent && !original.ticket && !original.received
     ? <FReleaseButton label={label} toast={ctx.toast} onRelease={() => ctx.recoverF3(original, "release")} /> : null;
-  const recoveryCount = (settlePending ? 1 : 0) + configProposals.length + (showPlacementRecovery ? 1 : 0);
-  const recoveryOpen = [...(settlePending ? [settlePending] : []), ...configProposals].some((row) => row.ticket?.status !== "pending") || showPlacementRecovery;
+  const payoutDirects = F3_PAYOUT_KEYS.flatMap((key) => ctx.getF3PayoutControlPending(key).directWrite ?? []);
+  const recoveryCount = (settlePending ? 1 : 0) + configProposals.length + payoutDirects.length + (showPlacementRecovery ? 1 : 0);
+  const recoveryOpen = [...(settlePending ? [settlePending] : []), ...configProposals].some((row) => row.ticket?.status !== "pending") || payoutDirects.length > 0 || showPlacementRecovery;
+  const payoutKey = (original: FDomainAttempt) => { const key = original.fingerprint.replace(/^f-config:/, ""); return isF3PayoutControlKey(key) ? key : undefined; };
   const CONFIG_NAMES: Record<string, string> = { "F.binary.threshold": "每组订单额门槛", "F.binary.matchRate": "匹配比例", "F.binary.spillover": "自动分组", "F.binary.paused": "发放", [F3_GV_RESET_PARAM_KEY]: "归零说明", [F3_BATCH_SLOT]: "结算周期和残额处理" };
-  const configName = (original: FDomainAttempt) => original.f3Snapshot && original.spec
+  const configName = (original: FDomainAttempt) => payoutKey(original) ? F3_PAYOUT_NAMES[payoutKey(original)!] : original.f3Snapshot && original.spec
     ? f3ConfigurationConfirm(ctx, original.f3Snapshot, original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec.obj).title
     : CONFIG_NAMES[original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.fingerprint.replace(/^f-config:/, "")] ?? "平衡奖励设置";
   const configChange = (original: FDomainAttempt) => {
     if (!original.spec) return "原申请内容不完整，请到「操作记录与审批」核对";
+    const payoutChange = payoutKey(original);
+    if (payoutChange) return `${payoutValueText(payoutChange, original.spec.before)} → ${payoutValueText(payoutChange, original.spec.after)}`;
     if (original.fingerprint === "f-config:F.binary.threshold") return `${fmtDecimal(original.spec.before)} → ${fmtDecimal(original.spec.after)} USDT`;
     if (original.fingerprint !== F3_BATCH_SLOT) return `${original.spec.before} → ${original.spec.after}`;
     const value = (key: string) => /=(.*)$/.exec(original.spec!.after.split(" / ").find((item) => item.trim().startsWith(`${key}=`)) ?? "")?.[1]?.trim();
@@ -355,7 +365,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const recovery = recoveryCount > 0 && (
     <Notice tone="warn" title={<>{recoveryOpen ? `有 ${recoveryCount} 项原申请还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原申请怎么处理" content={<>
       <p>原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。</p>
-      <p>查到审批单只说明申请登记了，不等于已经发钱。成员分组是直接保存，查询只读取现在的分组。</p>
+      <p>查到审批单只说明申请登记了，不等于已经发钱。关闭自动发放、调低封顶比例和成员分组是直接生效的，查询看原操作有没有执行。</p>
     </>} /></>}>
       <ul className="f3-recovery" aria-label="还没有结论的原申请">
         {settlePending && <li>
@@ -370,8 +380,15 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="f3-recovery-change">{configChange(original)}</span>
           <span className="f3-recovery-time">{businessStamp(original.createdAt)} 提交</span>
           <span className="f3-recovery-state">{proposalTag(original, CONFIG_APPROVER)}</span>
-          <span className="f3-recovery-actions"><Button size="sm" onClick={() => openConfig(original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec?.obj ?? original.fingerprint.replace(/^f-config:/, ""), original)}>查询原结果</Button>{release(original, configName(original))}</span>
+          <span className="f3-recovery-actions"><Button size="sm" onClick={() => payoutKey(original) ? setPayout({ key: payoutKey(original)!, original }) : openConfig(original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec?.obj ?? original.fingerprint.replace(/^f-config:/, ""), original)}>查询原结果</Button>{release(original, configName(original))}</span>
         </li>)}
+        {payoutDirects.map(direct => { const line = payoutDirectLine(direct); return <li key={direct.commandKey}>
+          <span className="f3-recovery-name">{line.name}</span>
+          <span className="f3-recovery-change">{line.change}</span>
+          <span className="f3-recovery-time">{businessStamp(direct.createdAt)} 提交</span>
+          <span className="f3-recovery-state">{line.tag}</span>
+          <span className="f3-recovery-actions"><Button size="sm" onClick={() => setPayout({ key: direct.f3Request!.key, direct })}>查询原结果</Button></span>
+        </li>; })}
         {showPlacementRecovery && placementOriginal && <li>
           <span className="f3-recovery-name">成员分组</span>
           <span className="f3-recovery-change">邀请人 {placementOriginal.intent.ownerUserId} · 成员 {placementOriginal.intent.memberUserId} → {placementOriginal.intent.leg} 组</span>
@@ -385,11 +402,11 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   );
 
   if (ctx.f3Loading && rows.length === 0) {
-    return <div className="f3-page">{header}{recovery}{confirm && <F3ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}<BlockState state="loading" title="正在读取团队平衡奖励…" /></div>;
+    return <div className="f3-page">{header}{recovery}{confirm && <F3ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}{payout && <F3PayoutConfirm open={payout} ctx={ctx} onClose={() => setPayout(null)} />}<BlockState state="loading" title="正在读取团队平衡奖励…" /></div>;
   }
 
   if (ctx.f3Error && rows.length === 0) {
-    return <div className="f3-page">{header}{recovery}{confirm && <F3ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}<BlockState state="error" title="团队平衡奖励数据加载失败" detail={ctx.f3Error} onRetry={() => void ctx.refreshF3()} retryLabel="重新加载" /></div>;
+    return <div className="f3-page">{header}{recovery}{confirm && <F3ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}{payout && <F3PayoutConfirm open={payout} ctx={ctx} onClose={() => setPayout(null)} />}<BlockState state="error" title="团队平衡奖励数据加载失败" detail={ctx.f3Error} onRetry={() => void ctx.refreshF3()} retryLabel="重新加载" /></div>;
   }
 
   const conclusion = binaryPaused
@@ -489,11 +506,16 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
               <Th className="f3-col-date">结算日</Th>
               <Th><span className="f3-pair-head"><span>A 组</span><span>B 组<Explain label="两组对比怎么看" side="bottom" content="每一行按这一行较大的一组定长度。实色是较小一组的订单额，灰色是较大一组多出来的；实际匹配额还要扣掉已结算的部分、受每期上限限制，可能更少；刻线和「过没过门槛」按现在的门槛判断，当时的门槛可能不同。" /></span></span></Th>
               <Th align="right">奖励 / 匹配</Th>
+              <Th>全平台封顶<Explain label="全平台封顶怎么看" side="bottom" content={<>
+                <p>缩减：这一期全平台应发超过封顶时，这一笔少发的比例；缩减的部分不补发。</p>
+                <p>该期已用 / 封顶：这条记录所在结算期全平台已发和封顶，自动和手动结算共用。</p>
+                <p>没有封顶记录的旧结算写「—」，不是 0。</p>
+              </>} /></Th>
               <Th>状态{F3_MODE_EXPLAIN}</Th>
             </tr></thead>
             <tbody>
               {pager.pageRows.map((row, index) => <RecordRow key={`${row.user}:${row.settlementDate}:${pager.startIndex + index}`} row={row} threshold={thresholdNumber} selected={row === openRow} onOpen={() => setOpenRow(row)} />)}
-              {pager.pageRows.length === 0 && <TableMessage columns={5}>{rows.length === 0 ? "还没有结算记录" : "没有符合筛选的记录"}</TableMessage>}
+              {pager.pageRows.length === 0 && <TableMessage columns={6}>{rows.length === 0 ? "还没有结算记录" : "没有符合筛选的记录"}</TableMessage>}
             </tbody>
           </Table></div>
           {pager.total > 0 && <Pager label="结算记录" total={pager.total} page={pager.page} pageSize={pager.pageSize} sizes={[10, 20, 50]}
@@ -505,6 +527,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
               <Th align="right">邀请人</Th>
               <Th align="right">记账奖励</Th>
               <Th align="right">匹配订单额</Th>
+              <Th align="right">全平台已用 / 封顶<Explain label="全平台已用和封顶怎么看" side="bottom" content="这一个结算期全平台已发和封顶，自动和手动结算共用。没有封顶记录的旧结算写「—」，不是 0。" /></Th>
               <Th align="right">被拦下<Explain label="被拦下怎么算" side="bottom" content="这一天结算记录里状态是被拦下的旧记录条数。现在被拦下的结算不写结算记录，列在下面「被拦下的结算」。" /></Th>
             </tr></thead>
             <tbody>
@@ -514,10 +537,11 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
                   <Td align="right"><Cell main={`${fmtInt(group.owners.size)} 人`} num /></Td>
                   <Td align="right"><Cell main={group.paid === null ? "—" : `${fmtInt(group.paid)} USDT`} num /></Td>
                   <Td align="right"><Cell main={group.matched === null ? "—" : `${fmtInt(group.matched)} USDT`} num /></Td>
+                  <Td align="right"><Cell main={group.used === null && group.cap === null ? "—" : `${group.used === null ? "—" : fmtMoney(group.used)} / ${group.cap === null ? "—" : fmtMoney(group.cap)} USDT`} num /></Td>
                   <Td align="right"><Cell main={`${fmtInt(group.blocked)} 条`} num /></Td>
                 </Tr>
               ))}
-              {byDate.length === 0 && <TableMessage columns={5}>还没有结算记录</TableMessage>}
+              {byDate.length === 0 && <TableMessage columns={6}>还没有结算记录</TableMessage>}
             </tbody>
           </Table>
           {byDate.some((group) => group.paid === null || group.matched === null) && <p className="f3-dates-note">按结算日的金额合计系统没有算，写「—」，不是 0；人数和条数照实。</p>}
@@ -528,7 +552,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <F3BlockedAttempts attempts={ctx.f3BlockedAttempts} />
 
       <Panel title="结算设置" icon={Settings2} tone="role-4"
-        explain={`这里的修改都要提交审批，${CONFIG_APPROVER}批准后写入；批准后立即用于之后的结算，不是排到下一期。已经记账的奖励不重算。`}>
+        explain={`关闭自动发放、调低全平台封顶比例确认后立即生效；其余修改提交审批，批准后立即用于之后的结算，不是排到下一期。已经记账的奖励不重算。`}>
         <ConfigList label="结算设置">
           <ConfigRow name="每组订单额门槛"
             what="A、B 两组这一期的订单额都要到这个数，才参与结算。"
@@ -575,6 +599,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
               : binaryPaused ? <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag>
               : <StatusTag tone="ok" icon={PlayCircle}>发放中</StatusTag>}<span className="f3-cfg-dir">{binaryPaused ? "恢复会继续付钱" : "只在紧急情况下暂停"}</span></span>}
             action={canPause ? <Button size="sm" variant={binaryPaused ? "primary" : "danger-outline"} disabledReason={configBlocked("F.binary.paused")} onClick={openPause}>{binaryPaused ? "恢复发放" : "暂停发放"}</Button> : undefined} />
+          <F3PayoutRows ctx={ctx} snapshot={snapshot} onOpen={setPayout} />
           <ConfigRow name="团队平衡奖励每日上限"
             what="每位邀请人每天最多记多少奖励；每期上限 = 每日上限 × 这一期的天数。"
             where="在「运营阶段设置」按运营月份设置，这里只读。"
@@ -604,6 +629,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         onNext: () => { const i = pager.pageRows.indexOf(openRow!); if (i >= 0 && i < pager.pageRows.length - 1) setOpenRow(pager.pageRows[i + 1]); },
       }} />
       {confirm && <F3ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
+      {payout && <F3PayoutConfirm key={`${payout.key}:${payout.direct?.commandKey ?? payout.original?.commandKey ?? "new"}`} open={payout} ctx={ctx} onClose={() => setPayout(null)} />}
     </div>
   );
 }
@@ -644,6 +670,10 @@ function RecordRow({ row, threshold, selected, onOpen }: { row: F3Settlement; th
         </span>
       </Td>
       <Td align="right"><Cell num main={`${amountText(row.todayRaw, row.today)} USDT`} sub={`匹配 ${amountText(row.matchRaw, row.match)} USDT`} /></Td>
+      <Td>{row.platformReductionPct === null && row.platformUsedUsdt === null && row.platformCapUsdt === null
+        ? <Cell main="—" sub="没有封顶记录" />
+        : <Cell num main={row.platformReductionPct === null ? "缩减 —" : Number(row.platformReductionPct) === 0 ? "未缩减" : `缩减 ${pctText(row.platformReductionPct)}`}
+            sub={`该期 ${row.platformUsedUsdt === null ? "—" : fmtMoney(row.platformUsedUsdt)} / ${row.platformCapUsdt === null ? "—" : fmtMoney(row.platformCapUsdt)} USDT`} />}</Td>
       <Td><Cell main={<StatusTag tone={state.tone} icon={state.icon} explain={state.explain}>{state.label}</StatusTag>} sub={f3ModeText(row.settlementMode) ?? undefined} /></Td>
     </Tr>
   );

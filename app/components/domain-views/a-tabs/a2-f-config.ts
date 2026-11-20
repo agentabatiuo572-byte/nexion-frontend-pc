@@ -88,9 +88,14 @@ export function fConfigSpec(key: string, after?: string): FConfigSpec | undefine
     case "F.binary.paused": return spec(F3, "发放", { action: next === "on" ? "暂停团队平衡奖励发放" : next === "off" ? "恢复团队平衡奖励发放" : "调整团队平衡奖励发放",
       values: { on: "已暂停", off: "发放中" },
       impact: next === "on" ? "批准后，之后的结算全部被拦下；已经记账的奖励不受影响。" : "批准后，之后的结算不再被拦下；暂停期间没结的周期不自动补。" });
-    // B54 copy and value formatting are supplied with the visual change.
-    case F3_AUTO_SETTLE_KEY: return { page: F3, item: "", action: "", impact: "", payoutControlAmplification: "enable" };
-    case F3_PLATFORM_CAP_PCT_KEY: return { page: F3, item: "", action: "", impact: "", payoutControlAmplification: "increase" };
+    // 只有开启、调高走审批；关闭、调低在团队平衡奖励页立即生效，不会出现在这里。
+    case F3_AUTO_SETTLE_KEY: return spec(F3, "自动发放", { action: next === "on" ? "开启自动发放" : next === "off" ? "关闭自动发放" : "调整自动发放",
+      values: { on: "开", off: "关" }, payoutControlAmplification: "enable",
+      impact: next === "off" ? "关闭后之后到期的周期不再自动结算，手动结算照常可用。" : "批准后系统按结算周期自动结算；关闭期间的周期不补发，要补的手动结算。",
+      detail: "要另一位超级管理员批准；批准时查兑付覆盖率，读不到或低于红线不能批准。" });
+    case F3_PLATFORM_CAP_PCT_KEY: return spec(F3, "全平台封顶比例", { action: "调高全平台封顶比例", unit: "%", loosen: "调高", payoutControlAmplification: "increase",
+      impact: "批准后，之后结算的期按新比例算全平台封顶；已结算的期不重算。",
+      detail: "要另一位超级管理员批准。每期全平台发放最多是该期已付款订单额乘这个比例。" });
     case "F.pool.ratio": return spec(F4, "团队激励池比例", { unit: "%", loosen: "调高", impact: "批准后，本周未结算的和之后的结算按新比例放钱；已发的不重算。" });
     case "F.pool.monthlyCap": return spec(F4, "团队激励池每月上限", { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", detail: "写错格式会让池不能结算。" });
     case "F.pool.settleCron": return spec(F4, "团队激励池结算时间", { cron: true, impact: "批准后，下一次到点就按新时间结算最近结束的一周；已结算的不变。" });

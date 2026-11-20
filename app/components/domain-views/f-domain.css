@@ -557,18 +557,20 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 /* A、B 两组对比条：A 从中线往左、B 往右，同一刻度；实色是匹配上的，灰是多出来的 */
 .f3-page .f3-records-wrap { container: f3-records / inline-size; }
 .f3-page .f3-records { table-layout: fixed; }
-.f3-page .f3-records th:nth-child(1) { width: 17%; }
-.f3-page .f3-records th:nth-child(2) { width: 13%; }
-.f3-page .f3-records th:nth-child(3) { width: 42%; }
-.f3-page .f3-records th:nth-child(4) { width: 15%; }
-.f3-page .f3-records th:nth-child(5) { width: 13%; }
+.f3-page .f3-records th:nth-child(1) { width: 15%; }
+.f3-page .f3-records th:nth-child(2) { width: 11%; }
+.f3-page .f3-records th:nth-child(3) { width: 34%; }
+.f3-page .f3-records th:nth-child(4) { width: 14%; }
+.f3-page .f3-records th:nth-child(5) { width: 15%; }
+.f3-page .f3-records th:nth-child(6) { width: 11%; }
 .f3-page .f3-sub-narrow { display: none; }
 @container f3-records (max-width: 760px) {
   .f3-page .f3-records .f3-col-date { display: none; }
-  .f3-page .f3-records th:nth-child(1) { width: 24%; }
-  .f3-page .f3-records th:nth-child(3) { width: 40%; }
-  .f3-page .f3-records th:nth-child(4) { width: 20%; }
+  .f3-page .f3-records th:nth-child(1) { width: 20%; }
+  .f3-page .f3-records th:nth-child(3) { width: 34%; }
+  .f3-page .f3-records th:nth-child(4) { width: 16%; }
   .f3-page .f3-records th:nth-child(5) { width: 16%; }
+  .f3-page .f3-records th:nth-child(6) { width: 14%; }
   .f3-page .f3-sub-wide { display: none; }
   .f3-page .f3-sub-narrow { display: inline; }
 }
@@ -598,6 +600,8 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f3-page .f3-cfg-value { font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .f3-page .f3-cfg-value[data-warn] { color: var(--rd-warn); }
 .f3-page .f3-cfg-text { font-weight: var(--rd-weight-regular); }
+.f3-page .f3-cfg-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.f3-page .f3-cfg-value[data-empty] { color: var(--rd-text-3); }
 .f3-page .f3-cfg-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 
 /* 成员分组 */
