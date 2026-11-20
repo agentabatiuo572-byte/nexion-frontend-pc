@@ -551,8 +551,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
   const openCreateEvent = () => {
     const builtIds = new Set((model?.events ?? []).map((event) => event.id));
-    const freeCodes = [...H4_EVENT_RULE_CODES].filter((code) => !builtIds.has(code));
-    const builtCount = H4_EVENT_RULE_CODES.size - freeCodes.length;
+    // B511-WIRE: 打开框之前读 GET /api/admin/growth/quest-events/events/create-candidates，把 data.candidates（[{ id, occupied }]，删除过的活动用过的编号也是 occupied: true）放在这里，读完再开框。
+    // 读失败或还没读完传 null：框里写「没读到删除的活动用过的编号」，只把已读到的活动的编号置灰，选到用过的由后端按 409 拒绝，不会新建。
+    const createCandidates = null as readonly { id: string; occupied: boolean }[] | null;
+    const usedCodes = [...H4_EVENT_RULE_CODES].filter((code) => createCandidates ? createCandidates.some((row) => row.id === code && row.occupied) : builtIds.has(code));
+    const freeCodes = [...H4_EVENT_RULE_CODES].filter((code) => !usedCodes.includes(code));
     openActionConfirm({ briefKind: "config",
       action: "新建活动",
       title: "新建既有活动",
@@ -564,9 +567,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       businessForm: {
         kind: "multi-field",
         fields: [
-          { key: "id", label: "活动编号", current: "", inputKind: "select", mustChoose: true, options: freeCodes, required: true,
-            help: freeCodes.length === 0 ? "内置活动都已建好，没有能新建的编号" : builtCount > 0 ? `已建的 ${builtCount} 个不在列表里` : undefined,
-            explain: "只能用这几个内置编号，建好后不能改。删除过的活动用过的编号这里看不出来，选了会被拒绝。" },
+          { key: "id", label: "活动编号", current: "", inputKind: "select", mustChoose: true, options: [...freeCodes, ...usedCodes], disabledOptions: usedCodes,
+            optionLabels: Object.fromEntries(usedCodes.map((code) => [code, `${code}（已用过）`])), required: true,
+            help: freeCodes.length === 0 ? "内置编号都用过了，不能再新建" : !createCandidates ? "没读到删除的活动用过的编号，选到会被拒" : usedCodes.length > 0 ? `置灰的 ${usedCodes.length} 个已用过，删除的活动也算` : undefined,
+            explain: "只能用这几个内置编号，建好后不能改。" },
           { key: "name", label: "活动名", current: "", placeholder: "如 夏日狂欢", required: true, help: "后台看的名字，App 上不显示",
             explain: <><span className="rd-keep">App 上的活动名建好后到卡片底部</span><span className="rd-keep">「App 上的文字」按语言填，</span><span className="rd-keep">开放前要填齐英文和运营区域语言。</span></> },
           { key: "kind", label: "玩法", current: "discount", inputKind: "select", options: KIND_OPTIONS, optionLabels: Object.fromEntries(KIND_OPTIONS.map((kind) => [kind, KIND_LABEL(kind)])) },
