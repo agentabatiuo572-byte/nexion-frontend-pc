@@ -7,7 +7,7 @@ import { verifyF5CsvArtifact } from "@/lib/admin/f5-export-verifier";
 import { parseDirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 import type { F1PolicyValues } from "./f1-policy-change";
-import { f3SpilloverState } from "./f3-policy";
+import { f3PlatformCapPct, f3SpilloverState, isF3PayoutControlKey, type F3PayoutControlKey } from "./f3-policy";
 import { f4Decimal, f4MonthlyCap } from "./f4-money";
 import { readF4VoteProjection } from "./f4-vote-projection";
 import type { F4AmbassadorMetricBasis } from "./f-overview-contract";
@@ -207,6 +207,8 @@ interface BackendF3DailyCap {
 
 interface BackendF3Config {
   paused?: boolean | null;
+  autoSettle?: boolean | null;
+  platformCapPct?: string | null;
   threshold?: string | null;
   matchRate?: string | null;
   spillover?: string | null;
@@ -685,6 +687,9 @@ export interface F3SettlementReview {
   residualAmountUsdt: string | null;
   residualPolicy: string | null;
   settlementMode: string | null;
+  platformReductionPct: string | null;
+  platformCapUsdt: string | null;
+  platformUsedUsdt: string | null;
   proposerName: string | null;
   approverName: string | null;
   a2OperationId: string | null;
@@ -757,6 +762,9 @@ export const F3_GV_RESET_PARAM_KEY = ["F", "binary", "gvResetCron"].join(".");
 
 export interface F3BinaryConfig {
   paused?: boolean | null;
+  autoSettle?: boolean | null;
+  /** Exact percentage points without the storage suffix. */
+  platformCapPct?: string | null;
   threshold: string;
   matchRate: string;
   spillover: string;
@@ -1514,6 +1522,9 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     residualAmountUsdt: item.residualAmountUsdt ?? null,
     residualPolicy: item.residualPolicy ?? null,
     settlementMode: item.settlementMode ?? null,
+    platformReductionPct: item.platformReductionPct ?? null,
+    platformCapUsdt: item.platformCapUsdt ?? null,
+    platformUsedUsdt: item.platformUsedUsdt ?? null,
     proposerName: item.proposerName ?? null,
     approverName: item.approverName ?? null,
     a2OperationId: item.a2OperationId ?? null,
@@ -1571,6 +1582,8 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
       spillover: asText(config.spillover),
       spilloverEnabled: f3SpilloverState(config.spillover ?? undefined) === true,
       paused: config.paused,
+      autoSettle: config.autoSettle,
+      platformCapPct: config.platformCapPct == null ? config.platformCapPct : f3PlatformCapPct(config.platformCapPct),
       gvResetCron: asText(config.gvResetCron),
       settlePeriod: asText(config.settlePeriod),
       residualPolicy: asText(config.residualPolicy),
@@ -1918,6 +1931,8 @@ async function f1Request<T>(
   path: string,
   init?: RequestInit & { stableIdempotencyKey?: string; expectsData?: boolean },
 ) {
+  const configKey = path.startsWith("/commissions/config/") ? path.slice("/commissions/config/".length) : undefined;
+  const isF3ConfigWrite = init?.method === "PATCH" && isF3PayoutControlKey(configKey);
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -1984,7 +1999,7 @@ async function f1Request<T>(
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else if (path === "/binary" && !isWrite) {
       const raw = await response.text();
-      result = JSON.parse(raw.replace(/("(?:h1BinaryDailyCap|monthlyMatchedUsdRaw|dailyMatchUsdRaw|maxDailyCapUsdRaw|maxTrackGmvRaw|residualPoolUsdRaw|trackARaw|trackBRaw|matchAmountRaw|todayPaidRaw|residualTrackARaw|residualTrackBRaw|residualAmountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+      result = JSON.parse(raw.replace(/("(?:h1BinaryDailyCap|monthlyMatchedUsdRaw|dailyMatchUsdRaw|maxDailyCapUsdRaw|maxTrackGmvRaw|residualPoolUsdRaw|trackARaw|trackBRaw|matchAmountRaw|todayPaidRaw|residualTrackARaw|residualTrackBRaw|residualAmountUsdt|platformCapPct|platformReductionPct|platformCapUsdt|platformUsedUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else if (path.startsWith("/commissions") && !isWrite) {
       const raw = await response.text();
@@ -2012,7 +2027,7 @@ async function f1Request<T>(
     // 头 + message 两路都认(与 a2-client 同款):teams proxy 目前不透传该头,靠下面的 5xx 兜底,
     // 但后端若改用「200 + 业务码非 0 + UPSTREAM_OUTCOME_UNKNOWN」表达未知,这一路能接住。
     if (response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
-      || (path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) && isIdempotencyOutcomeOpen(result?.message)
+      || (isF3ConfigWrite || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) && isIdempotencyOutcomeOpen(result?.message)
       || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true) {
       throw new F1OutcomeUncertainError(
         formatAdminApiError(result?.message, "F1_REQUEST_OUTCOME_UNKNOWN"),
@@ -2048,7 +2063,7 @@ async function f1Request<T>(
       throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
     }
     const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
-    if (/^\/commissions\/CM-\d+$/.test(path) || /^\/leadership-pool\/(?:payout-preview|disqualification-readiness)(?:\?|$)/.test(path) || path === "/leadership-pool/vote-projection" || path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
+    if (isF3ConfigWrite || /^\/commissions\/CM-\d+$/.test(path) || /^\/leadership-pool\/(?:payout-preview|disqualification-readiness)(?:\?|$)/.test(path) || path === "/leadership-pool/vote-projection" || path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status, httpStatus: response.status, apiCode: result?.code,
       backendMessage: result?.message, reasonCode: result?.message,
     });
@@ -2090,6 +2105,24 @@ export async function fetchF3BinaryOverview() {
   const data = await f1Request<unknown>("/binary");
   assertF3Overview(data);
   return normalizeF3Overview(data as BackendF3Overview);
+}
+
+export type F3PayoutControlUpdate = { key: F3PayoutControlKey; oldValue: string; newValue: string };
+
+export async function patchF3PayoutControl(
+  key: F3PayoutControlKey,
+  request: { value: string; reason: string; operator: string },
+  commandKey: string,
+): Promise<F3PayoutControlUpdate> {
+  const data = await f1Request<{ updated?: { key?: unknown; oldValue?: unknown; newValue?: unknown } }>(
+    `/commissions/config/${encodeURIComponent(key)}`,
+    { method: "PATCH", stableIdempotencyKey: commandKey, expectsData: true, body: JSON.stringify(request) },
+  );
+  const updated = data.updated;
+  if (updated?.key !== key || typeof updated.oldValue !== "string" || updated.newValue !== request.value) {
+    throw new F1OutcomeUncertainError(formatAdminApiError(undefined, "F1_SUCCESS_RESPONSE_DATA_MISSING"), commandKey);
+  }
+  return { key, oldValue: updated.oldValue, newValue: updated.newValue };
 }
 
 export async function fetchF4LeadershipPoolOverview() {

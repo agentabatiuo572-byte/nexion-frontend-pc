@@ -6,6 +6,7 @@ import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
 import { isRetryExpired } from "./pending-mutation-store";
 import type { F3BinaryOverview } from "./f1-client";
+import { f3PayoutControlAuthority, isF3PayoutControlKey, type F3PayoutControlKey } from "./f3-policy";
 import type { ProposeSpec } from "./propose-or-execute";
 import { roleLabel } from "../nav/console-nav";
 import { useAdminAuth } from "../store/admin-auth";
@@ -48,6 +49,7 @@ function actor(adminId: number) {
 
 export function f3ProposalAuthority(original: FDomainAttempt | ProposeSpec) {
   const spec = "fingerprint" in original ? original.spec : original;
+  if (isF3PayoutControlKey(spec?.obj)) return f3PayoutControlAuthority(spec.obj);
   return spec?.command.op === "f3_binary_settle" ? "network_f3_write"
     : spec?.obj === "F.binary.paused" ? "network_f3_engine_pause" : "network_f3_match_rate";
 }
@@ -103,6 +105,15 @@ export function settlementSpec(values: { ownerUserId: number; settlementDate: st
   return { action: "手动结算团队平衡奖励", obj, before: "—", after: "—", type: "fund", amplifies: true,
     sos: false, gate: { roles: [] }, gateLabel: "超管", reason, sourceDomain: "F3",
     command: { domain: "F", op: "f3_binary_settle", params: { values } }, target: { domain: "F", type: "binary_settlement", id: obj } };
+}
+
+export function f3PayoutControlSpec(key: F3PayoutControlKey, before: string, value: string, reason: string): ProposeSpec {
+  return {
+    action: `F 域配置调整 · ${key}`, obj: key, before, after: value, reason, sourceDomain: "F3",
+    type: "fund", amplifies: true, gate: { roles: [] }, gateLabel: "超管",
+    command: { domain: "F", op: "f_ui_config", params: { key, value } },
+    target: { domain: "F", type: "ui_config", id: key },
+  };
 }
 
 /** Full request is saved before POST; retained retries never read current inputs. */

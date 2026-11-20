@@ -21,6 +21,14 @@ import { residualLabel } from "./f3-rule";
 
 const NONE = "没有记下";
 
+/** 算出来的缩减比例：一位小数（TX-23），截断不进位，不让部分缩减写成 100.0%；不到 0.1% 的写「不到 0.1%」，不写成 0。 */
+export const reductionText = (raw: string) => {
+  const match = /^(\d+)(?:\.(\d))?/.exec(raw.trim());
+  if (!match) return `${raw.trim()}%`;
+  const text = `${match[1]}.${match[2] ?? "0"}`;
+  return text === "0.0" && Number(raw) > 0 ? "不到 0.1%" : `${text}%`;
+};
+
 /** 后端原值：去掉末尾 0，至少两位，不舍入。 */
 const money = (raw: string | null | undefined) => {
   if (raw === null || raw === undefined) return null;
@@ -61,6 +69,7 @@ export function F3SettlementDrawer({ row, state, nav, onClose }: {
   const who = people(row.settlementMode, row.proposerName, row.approverName);
   const amount = (raw: string | null | undefined, legacy: number) => raw === undefined ? `${legacy.toLocaleString("en-US")} USDT` : money(raw) ?? "—";
   const residualKnown = row.residualAmountUsdt !== null;
+  const capped = [row.platformReductionPct, row.platformUsedUsdt, row.platformCapUsdt].some((value) => value !== null);
   return (
     <Drawer open onClose={onClose} title="这一期结算" icon={ReceiptText} tone="role-2" nav={nav}
       sub={<>{row.user} · 结算日 {row.settlementDate || "—"}</>}
@@ -74,9 +83,20 @@ export function F3SettlementDrawer({ row, state, nav, onClose }: {
           <Fact k="B 组订单额">{amount(row.bRaw, row.b)}</Fact>
         </Facts>
       </div>
+      {capped && <div className="rd-detail-block">
+        <Panel plain headingLevel={3} title="全平台封顶"
+          explain="这一期全平台应发超过封顶时按比例缩减，缩减的不补发。已用和封顶是这个结算期全平台的数，自动和手动结算共用。">
+          <Facts>
+            <Fact k="这一笔缩减">{row.platformReductionPct === null ? NONE : Number(row.platformReductionPct) === 0 ? "未缩减" : reductionText(row.platformReductionPct)}</Fact>
+            <Fact k="该期已用">{money(row.platformUsedUsdt) ?? NONE}</Fact>
+            <Fact k="该期封顶">{money(row.platformCapUsdt) ?? NONE}</Fact>
+          </Facts>
+        </Panel>
+      </div>}
       {!reviewed
-        ? <div className="rd-detail-block"><BlockState state="empty" compact title="这条结算没有核对记录" detail="残额、结算方式和经手人都没有记下，不是 0。" /></div>
+        ? <div className="rd-detail-block"><BlockState state="empty" compact title="这条结算没有核对记录" detail={capped ? "残额、结算方式和经手人都没有记下，不是 0。" : "残额、结算方式、经手人和全平台封顶都没有记下，不是 0。"} /></div>
         : <>
+          {!capped && <div className="rd-detail-block"><BlockState state="empty" compact title="这条结算没有封顶记录" detail="缩减比例和该期额度都没有记下，不是 0。" /></div>}
           <div className="rd-detail-block">
             <Panel plain headingLevel={3} title="结算后剩下的订单额"
               explain="两组各扣掉已匹配的部分后剩下的。残额取剩得多的一组，不是两组相加；按当时的残额处理算。">
@@ -197,4 +217,4 @@ export function F3BlockedAttempts({ attempts }: { attempts: F3BlockedSettlementA
 }
 
 /** 表头旁的说明，和主表的「怎么结的」一列一起用。 */
-export const F3_MODE_EXPLAIN = <Explain label="结算方式怎么看" side="bottom" content="自动结算是系统按周期结的；人工结算是有人提交、另一位批准后结的。没有核对记录的旧结算写「没有记下」。点一行看残额和经手人。" />;
+export const F3_MODE_EXPLAIN = <Explain label="结算方式怎么看" side="bottom" content="自动结算是系统按周期结的；人工结算是有人提交、另一位批准后结的。没有核对记录的旧结算写「没有记下」。点一行看残额、封顶和经手人。" />;

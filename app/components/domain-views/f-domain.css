@@ -523,7 +523,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 
 /* 规则流程图：五步横排，窄时竖排；改的那一步加描边（确认框里） */
 .f3-page .f3-flow, .rd-modal .f3-flow { container: f3-flow / inline-size; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.f3-page .f3-flow-steps, .rd-modal .f3-flow-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 24px; margin: 0; padding: 0; list-style: none; }
+.f3-page .f3-flow-steps, .rd-modal .f3-flow-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 24px; margin: 0; padding: 0; list-style: none; }
 .f3-page .f3-flow-step, .rd-modal .f3-flow-step { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px; border-radius: var(--rd-radius-tile); background: var(--rd-panel-inner); }
 .f3-page .f3-flow-step[data-changed], .rd-modal .f3-flow-step[data-changed], .f3-page .f3-flow-residual[data-changed], .rd-modal .f3-flow-residual[data-changed] { box-shadow: inset 0 0 0 1px var(--rd-progress); }
 .f3-page .f3-flow-no, .rd-modal .f3-flow-no { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--rd-role-4-tile); color: var(--rd-role-4-tile-ink); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
@@ -549,26 +549,28 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f3-page .f3-example { margin: 12px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
 
 /* 原申请提醒：一条一行 */
-.f3-page .f3-recovery { display: grid; gap: 8px; margin: 4px 0 0; padding: 0; list-style: none; }
-.f3-page .f3-recovery li { display: grid; grid-template-columns: minmax(0, 7em) minmax(0, 1fr) auto auto auto; align-items: center; gap: 8px 16px; }
+.f3-page .f3-recovery { display: grid; grid-template-columns: minmax(0, 7em) minmax(0, 1fr) auto auto auto; gap: 8px 16px; margin: 4px 0 0; padding: 0; list-style: none; }
+.f3-page .f3-recovery li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
 .f3-page .f3-recovery-name { font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
 .f3-page .f3-recovery-time { color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* A、B 两组对比条：A 从中线往左、B 往右，同一刻度；实色是匹配上的，灰是多出来的 */
 .f3-page .f3-records-wrap { container: f3-records / inline-size; }
 .f3-page .f3-records { table-layout: fixed; }
-.f3-page .f3-records th:nth-child(1) { width: 17%; }
-.f3-page .f3-records th:nth-child(2) { width: 13%; }
-.f3-page .f3-records th:nth-child(3) { width: 42%; }
+.f3-page .f3-records th:nth-child(1) { width: 13%; }
+.f3-page .f3-records th:nth-child(2) { width: 10%; }
+.f3-page .f3-records th:nth-child(3) { width: 30%; }
 .f3-page .f3-records th:nth-child(4) { width: 15%; }
-.f3-page .f3-records th:nth-child(5) { width: 13%; }
+.f3-page .f3-records th:nth-child(5) { width: 21%; }
+.f3-page .f3-records th:nth-child(6) { width: 11%; }
 .f3-page .f3-sub-narrow { display: none; }
 @container f3-records (max-width: 760px) {
   .f3-page .f3-records .f3-col-date { display: none; }
-  .f3-page .f3-records th:nth-child(1) { width: 24%; }
-  .f3-page .f3-records th:nth-child(3) { width: 40%; }
-  .f3-page .f3-records th:nth-child(4) { width: 20%; }
-  .f3-page .f3-records th:nth-child(5) { width: 16%; }
+  .f3-page .f3-records th:nth-child(1) { width: 18%; }
+  .f3-page .f3-records th:nth-child(3) { width: 28%; }
+  .f3-page .f3-records th:nth-child(4) { width: 17%; }
+  .f3-page .f3-records th:nth-child(5) { width: 23%; }
+  .f3-page .f3-records th:nth-child(6) { width: 14%; }
   .f3-page .f3-sub-wide { display: none; }
   .f3-page .f3-sub-narrow { display: inline; }
 }
@@ -598,6 +600,8 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f3-page .f3-cfg-value { font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .f3-page .f3-cfg-value[data-warn] { color: var(--rd-warn); }
 .f3-page .f3-cfg-text { font-weight: var(--rd-weight-regular); }
+.f3-page .f3-cfg-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.f3-page .f3-cfg-value[data-empty] { color: var(--rd-text-3); }
 .f3-page .f3-cfg-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 
 /* 成员分组 */

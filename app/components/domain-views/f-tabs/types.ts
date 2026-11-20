@@ -1,4 +1,6 @@
 import type { F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
+import type { queryF3ConfigWrite } from "@/lib/admin/f3-config-write";
+import type { F3PayoutControlKey } from "@/lib/admin/f3-policy";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4VoteProjectionRead } from "@/lib/admin/f4-vote-projection";
 import type { F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
@@ -30,6 +32,7 @@ import type {
   F3DailyCap,
   F3Formula,
   F3Metric,
+  F3PayoutControlUpdate,
   F3RawAmounts,
   F3Statistics,
   F3Settlement,
@@ -196,6 +199,17 @@ export interface FViewCtx {
   f3Loading: boolean;
   f3Error: string | null;
   refreshF3: () => Promise<void>;
+  getF3PayoutControlPending: (key: F3PayoutControlKey) => {
+    approval?: A2OperationRow;
+    originalProposal?: FDomainAttempt;
+    directWrite?: FDirectAttempt;
+  };
+  submitF3PayoutControl: (key: F3PayoutControlKey, value: string, reason: string, snapshot?: F3ConfirmationSnapshot) => Promise<
+    { kind: "unchanged" } | { kind: "proposal"; ticket: A2OperationRow } | { kind: "direct"; updated: F3PayoutControlUpdate }
+  >;
+  recoverF3PayoutControl: (key: F3PayoutControlKey, mode: "query" | "retry") => Promise<
+    ({ kind: "query" } & Awaited<ReturnType<typeof queryF3ConfigWrite>>) | { kind: "retry"; updated: F3PayoutControlUpdate }
+  >;
   updateF3Config: (key: string, value: string, reason: string, amplifies?: boolean, snapshot?: F3ConfirmationSnapshot) => Promise<void>;
   // -- 领导奖池/硬件配额/大使/榜单(F4)· 读 + 配置写入 --
   f4Overview: F4LeadershipPoolOverview | null;
