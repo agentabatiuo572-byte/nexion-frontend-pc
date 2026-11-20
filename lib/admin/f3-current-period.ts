@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { guardedFetch } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { f4Decimal } from "@/lib/admin/f4-money";
 
 type RecordValue = Record<string, unknown>;
@@ -21,6 +21,10 @@ function record(value: unknown): RecordValue {
 
 function isString(value: unknown): value is string {
   return typeof value === "string";
+}
+
+function string(value: unknown): string {
+  return isString(value) ? value : invalid();
 }
 
 function strings(value: unknown): string[] {
@@ -121,6 +125,7 @@ export type F3PeriodOverview = ReturnType<typeof readPeriod>;
 export type F3CurrentPeriodView = F3PeriodOverview & {
   platformCapEstimateUsdt: string | null;
   estimateAvailable: boolean;
+  estimateReason: string | null;
 };
 export type F3LatestFrozenPeriodView = F3PeriodOverview & {
   plannedRawExceedsCap: boolean;
@@ -133,7 +138,7 @@ export type F3CurrentPeriodOverview = {
 };
 export type F3CurrentPeriodState =
   | { status: "loading" }
-  | { status: "error"; httpStatus?: number; apiCode?: number }
+  | { status: "error"; error: Error; httpStatus?: number; apiCode?: number }
   | { status: "forbidden" }
   | { status: "not-found" }
   | { status: "invalid-response" }
@@ -161,6 +166,7 @@ function readOverview(value: unknown): F3CurrentPeriodOverview {
       ...readPeriod(currentPeriod),
       platformCapEstimateUsdt,
       estimateAvailable: platformCapEstimateUsdt !== null,
+      estimateReason: optional(currentPeriod.platformCapEstimateReason, string),
     },
     latestFrozenPeriod: {
       ...latestFrozenPeriod,
@@ -178,6 +184,11 @@ function parseEnvelope(raw: string): RecordValue {
   )));
 }
 
+function readFailure(httpStatus: number, message?: string, apiCode?: number): F3CurrentPeriodState {
+  const fallback = `F3_CURRENT_PERIOD_READ_FAILED_${apiCode ?? httpStatus}`;
+  return { status: "error", error: new Error(formatAdminApiError(message, fallback, "read")), httpStatus, apiCode };
+}
+
 async function readCurrentPeriod(signal: AbortSignal): Promise<F3CurrentPeriodState> {
   let response: Response;
   try {
@@ -186,34 +197,36 @@ async function readCurrentPeriod(signal: AbortSignal): Promise<F3CurrentPeriodSt
       cache: "no-store",
       signal,
     });
-  } catch {
-    return { status: "error" };
+  } catch (cause) {
+    return { status: "error", error: cause instanceof Error ? cause : new Error("NETWORK_FAILURE") };
   }
 
   const httpStatus = response.status;
   if (isAdminAuthFailure(httpStatus)) resetAdminSession();
   if (httpStatus === 403) return { status: "forbidden" };
   if (httpStatus === 404) return { status: "not-found" };
-  if (!response.ok) return { status: "error", httpStatus };
-
   let raw: string;
   try {
     raw = await response.text();
-  } catch {
-    return { status: "error", httpStatus };
+  } catch (cause) {
+    if (!response.ok) return readFailure(httpStatus);
+    return { status: "error", error: new Error("NETWORK_FAILURE", { cause }), httpStatus };
   }
 
   try {
     const result = parseEnvelope(raw);
-    const apiCode = count(result.code);
-    if (!isString(result.message)) return invalid();
-    if (isAdminAuthFailure(apiCode, result.message)) resetAdminSession();
+    const message = isString(result.message) ? result.message : undefined;
+    if (!response.ok) return readFailure(httpStatus, message);
+    const apiCode = result.code;
+    if (typeof apiCode !== "number" || !Number.isSafeInteger(apiCode)) return invalid();
+    if (isAdminAuthFailure(apiCode, message)) resetAdminSession();
     if (apiCode === 403) return { status: "forbidden" };
     if (apiCode === 404) return { status: "not-found" };
-    if (apiCode !== 0) return { status: "error", httpStatus, apiCode };
+    if (apiCode !== 0) return readFailure(httpStatus, message, apiCode);
+    if (message === undefined) return invalid();
     return { status: "success", data: readOverview(result.data) };
   } catch {
-    return { status: "invalid-response" };
+    return response.ok ? { status: "invalid-response" } : readFailure(httpStatus);
   }
 }
 
