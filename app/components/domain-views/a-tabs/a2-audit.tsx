@@ -86,7 +86,7 @@ import { useUI } from "@/lib/store/ui";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
-import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError, formatAdminApiError, UNMAPPED_ADMIN_ERROR_TEXT } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
@@ -793,10 +793,9 @@ const DECISION_REFUSED_REASON: Record<string, string> = {
   PERMISSION_DENIED: "这个账号没有这项操作的业务权限，请核对授权",
 };
 /** 共用表认不出的机器码会落到这句兜底；被拒已经确认，它的「请刷新后重试」不对，按没有原因写。 */
-const UNMAPPED_ERROR_TEXT = "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。";
 const decisionRefusedReason = (code: string | undefined, fallback: string) => {
   const reason = (code && DECISION_REFUSED_REASON[code.split(":")[0]]) || formatAdminApiError(code, fallback);
-  return reason === UNMAPPED_ERROR_TEXT ? undefined : reason.replace(/[。.]$/, "");
+  return reason === UNMAPPED_ADMIN_ERROR_TEXT ? undefined : reason.replace(/[。.]$/, "");
 };
 const PARAM_NAME: Record<string, string> = { ttl: "操作理由最短长度", retention: "操作记录保留期", schema: "记录字段版本" };
 const PARAM_TITLE: Record<"ttl" | "retention" | "schema", string> = { ttl: "调整操作理由最短长度", retention: "调整操作记录保留期", schema: "升级记录字段版本" };

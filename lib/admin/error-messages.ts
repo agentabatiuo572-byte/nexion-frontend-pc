@@ -3909,6 +3909,8 @@ const ERROR_MESSAGES_BY_CODE_LENGTH = Object.entries(ADMIN_ERROR_MESSAGES)
  *    41 个调用方共用本函数,所以补在这里而不是给每个域的字典各塞一批猜出来的后端码。
  */
 const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
+/** 表里认不出的机器码落到的兜底句。 */
+export const UNMAPPED_ADMIN_ERROR_TEXT = "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。";
 
 function eventRuleIncompleteMessage(code: string, data: unknown): string | undefined {
   if (code !== "EVENT_LOCALIZED_CONTENT_INCOMPLETE" && code !== "EVENT_RULE_INCOMPLETE") return;
@@ -4007,7 +4009,7 @@ export function formatAdminApiError(
     // 而它们几乎全是协议/契约/数据形状类失败(*_INVALID / *_MISSING / *_PROTOCOL_ERROR /
     // *_TRUNCATED / *_EMPTY_RESPONSE),L1 KPI 这类只读报表页运营根本没有输入可检查。
     // 真属输入侧的码靠表内专属条目给可操作提示,不靠这句兜底。
-    return "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。";
+    return UNMAPPED_ADMIN_ERROR_TEXT;
   }
 
   return raw;
