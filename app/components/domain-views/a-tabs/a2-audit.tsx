@@ -82,6 +82,7 @@ import { A2_MECHANISM_HELP, A2_MECHANISM_WHERE } from "@/lib/admin/config-help/a
 import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { useUI } from "@/lib/store/ui";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
@@ -769,7 +770,7 @@ const DECISION_CHECK: Record<DecisionCheck, { tone: "progress" | "warn"; icon?: 
 };
 const DECISION_DONE = (verb: string, id: string) => `已确认：${id} 已${verb}`;
 const DECISION_REFUSED = (verb: string, why?: string) => why
-  ? `这次${verb}没有执行：${why}。按这张单现在的状态重新处理。`
+  ? `这次${verb}没有执行：${why}。`
   : `这次${verb}被系统拒绝，没有执行。按这张单现在的状态重新处理。`;
 const PARAM_NAME: Record<string, string> = { ttl: "操作理由最短长度", retention: "操作记录保留期", schema: "记录字段版本" };
 const PARAM_TITLE: Record<"ttl" | "retention" | "schema", string> = { ttl: "调整操作理由最短长度", retention: "调整操作记录保留期", schema: "升级记录字段版本" };
@@ -1780,9 +1781,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         return next;
       });
       if (receipt.state === "REJECTED") {
-        // A2-WIRE: 拒绝原因现在只在轻提示里（悬停暂停，默认 3 秒）；要常留在页面上，需要页面在解除记录后另存一条已结案说明，等协调人决定。
+        // 记录随即解除，拒绝原因只在这条提示里：这一种不自动消失，运营看完自己关（协调人定，不另外常留）。
         const why = receipt.businessMessage ? formatAdminApiError(receipt.businessMessage, receipt.businessMessage).replace(/[。.]$/, "") : undefined;
-        toast(DECISION_REFUSED(DECISION_VERB[kind], why), "warn");
+        useUI.getState().pushToast({ kind: "warn", title: DECISION_REFUSED(DECISION_VERB[kind], why), durationMs: 0 });
       } else toast(DECISION_DONE(DECISION_VERB[kind], record.target), "success");
     } else {
       const check = receipt.state === "PROCESSING" ? "processing" : "unconfirmed";
