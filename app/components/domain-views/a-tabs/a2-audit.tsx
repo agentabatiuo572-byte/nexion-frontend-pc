@@ -1883,7 +1883,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       // 导出和清理自己会提示「已下载」「清理完成」，不再多弹一条。
       if (outcome === "ok") {
         if (decisionRetryRefusals.current.has(record.commandKey)) clearDecisionPendingNote(record);
-        if (record.kind !== "export" && record.kind !== "retention") toast(`已确认：${record.label}已生效`, "success");
+        // 披露发布批准只封存这一版，不说「已生效」（和 approvalTiming 同一单类判断）。
+        const sealed = record.kind === "approve" && (record.operationCode === "i5_disclosure_publish" || record.operationCode === "i4_disclosure_publish");
+        if (record.kind !== "export" && record.kind !== "retention") toast(`已确认：${record.label}${sealed ? "，这版已封存" : "已生效"}`, "success");
       } else notePending(record, "重试的结果仍然未知，原记录继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
@@ -2597,7 +2599,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <Button size="sm" variant="ghost" onClick={() => showInRecords(record)}>在操作记录里查看</Button>
         </>}>
         <p>
-          {bizTime(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。{expired ? RETRY_EXPIRED : RECOVERY_HINT[record.kind]}
+          {bizTime(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，{record.kind === "approve" && (record.operationCode === "i5_disclosure_publish" || record.operationCode === "i4_disclosure_publish") ? "这版可能已经封存" : "可能已经生效"}。{expired ? RETRY_EXPIRED : RECOVERY_HINT[record.kind]}
           <Explain label="技术信息" content={`原请求编号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
         </p>
         {amount && <p>退款金额 {amount.state === "ok" ? <b className="a2-amount">{refundAmountText(amount)}</b> : <span className="a2-warn-text">{refundAmountText(amount)}</span>}
