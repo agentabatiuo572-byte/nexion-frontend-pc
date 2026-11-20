@@ -49,6 +49,7 @@ import {
   fetchA2RetentionLatest,
   fetchA2RetentionPreview,
   fetchA2Overview,
+  a2VoucherReversalResult,
   isA2OutcomeUncertainError,
   isFirstA2DisclosurePublish,
   rejectA2Operation,
@@ -1218,6 +1219,25 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
   if (row.operationCode === "h3_quest_config") return h3ConfigValue(row.obj, row.before);
   return deviceApprovalValue(changeBeforeText(row), row.operationCode);
 };
+/** F1 券冲正批准后的实际券处置（F1-BE-19）：只翻译批准时记下的结果，不从申请时的选择或券面额推断。原码只进「技术信息」。 */
+const F1_VOUCHER_RESULT: Record<string, string> = {
+  CLAWED_BACK: "已用券，已从 USDT 可用余额扣回",
+  SKIPPED_BY_OPERATOR: "已用券，按申请选择不扣回",
+  SKIPPED: "已用券，没有扣回",
+  AVAILABLE_REVOKED: "券还没用，已作废",
+  ORDER_VOUCHER_REVOKED: "订单还没付款，券已撤回",
+  NO_GRANT_RECORD: "找不到这张券的发放记录，没有扣款",
+};
+const F1_VOUCHER_SKIP_REASON: Record<string, string> = {
+  REDEEMED_AMOUNT_UNKNOWN: "旧订单没有记下实际抵扣金额",
+  REDEEMED_AMOUNT_ZERO: "实际抵扣金额为 0",
+  ORDER_SETTLEMENT_UNKNOWN: "订单付款状态无法确认",
+  ORDER_NOT_SETTLED: "订单还没付款",
+};
+const f1VoucherResultText = (disposition?: string) => !disposition ? "—"
+  : F1_VOUCHER_RESULT[disposition] ?? (disposition.startsWith("GRANT_STATUS_") ? "券已不可用，没有扣款" : "系统记下的处置暂时无法显示");
+const F1_VOUCHER_RESULT_MISSING = "这里没读到这张单的实际结果，可能是较早批准的单没有记下。请到「账本与账单核对」核对这笔冲正的 USDT 流水。";
+
 /** F1 券冲正：申请时选的扣回或不扣回写在提案摘要开头；旧申请没写选择，后端按扣回执行。后果另起一行写在「批准后」。 */
 const f1VoucherReverse = (row: { after: string; action?: string; operationCode?: string; status?: A2OperationRow["status"] }) => {
   const prefix = "已冲正 · 券：";
@@ -2876,6 +2896,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const historyIndex = shownHistory ? histPageRows.findIndex((h) => h.id === shownHistory.id) : -1;
   const shownActors = shownHistory ? historyActors(shownHistory.chain) : null;
   const historyNote = shownHistory?.note.startsWith("原因:") ? { label: "原因", text: shownHistory.note.slice(3).trim() || "—" } : { label: "说明", text: shownHistory?.note || "—" };
+  // 已批准的券冲正：和历史表同一份总览里的审批单按单号对上，读批准时记下的结果（F1-BE-19）。
+  const voucherResult = a2VoucherReversalResult(shownHistory, records?.operationQueue ?? []);
 
   const readOnly = canApprove ? undefined : canWithdraw ? "你不能批准，只能看进度和撤回自己发起的申请。" : "你不能批准审批单，只能查看。";
 
@@ -2979,8 +3001,17 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             { label: "处理时间", value: bizTime(shownHistory.t, shownHistory.t) },
             { label: historyNote.label, value: historyNote.text },
           ]} />
+          {voucherResult && <section className="a2-change-review" aria-label="实际结果">
+            <div className="a2-change-title">实际结果<Explain label="实际结果说明" content="批准执行时系统记下的券处置和扣款，不是申请时的选择。" /></div>
+            {voucherResult.state === "available" ? <Facts>
+              {voucherResult.amountUsdt && <Fact k="实际扣回" lead tone="role-1" unit="USDT">{orderAmount(voucherResult.amountUsdt)}</Fact>}
+              <Fact k="券处置">{f1VoucherResultText(voucherResult.disposition)}</Fact>
+              {voucherResult.skippedReason && <Fact k="没有扣回的原因">{F1_VOUCHER_SKIP_REASON[voucherResult.skippedReason] ?? "系统记下的原因暂时无法显示"}</Fact>}
+            </Facts> : <Notice tone="neutral">{F1_VOUCHER_RESULT_MISSING}</Notice>}
+          </section>}
           <Fold inset title="技术信息" summary="处理链原文">
             <p className="rd-note" data-mono>{shownHistory.chain}</p>
+            {voucherResult?.state === "available" && <p className="rd-note" data-mono>券处置 {voucherResult.disposition ?? "—"}{voucherResult.skippedReason && ` · 未扣回原因 ${voucherResult.skippedReason}`}{voucherResult.amountUsdt && ` · 已扣回 ${voucherResult.amountUsdt} USDT`}</p>}
           </Fold>
         </>}
       </Drawer>
