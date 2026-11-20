@@ -17,7 +17,7 @@ const REASON_TEXT: Record<string, string> = {
   F3_SETTLE_PERIOD_MISSING: "结算周期没设，本期算不出",
   F3_SETTLE_PERIOD_INVALID: "结算周期设置无效，本期算不出",
   F3_BUSINESS_PERIOD_UNAVAILABLE: "日期读不到，这一期算不出",
-  F3_PLATFORM_PERIOD_UNAVAILABLE: "上期的结算数据读不到",
+  F3_PLATFORM_PERIOD_UNAVAILABLE: "结算数据读不到",
   F3_PLATFORM_CAP_PCT_INVALID: "封顶比例无效",
   F3_PLATFORM_CAP_PCT_UNAVAILABLE: "读不到",
   F3_PAID_SALES_UNAVAILABLE: "读不到",
@@ -47,7 +47,7 @@ function Blocked({ label, reasons, onRetry }: { label: string; reasons: readonly
         {label}{" "}
         {code && NEEDS_SETTING.has(code)
           ? <StatusTag tone="warn" explain="在下面「结算设置」里设好结算周期，本期的日期和付款额才算得出。">{text}</StatusTag>
-          : <>{text}{onRetry && <> <InlineRetry onRetry={onRetry} label="重新加载" /></>}</>}
+          : <>{text}{onRetry && <> <InlineRetry onRetry={onRetry} /></>}</>}
       </Td>
     </Tr>
   );
@@ -81,9 +81,9 @@ function CurrentRow({ period, onRetry }: { period: F3CurrentPeriodView; onRetry:
         {settled
           ? <Cell num main={period.platformCapUsdt === null ? "—" : money(period.platformCapUsdt)} />
           : period.platformCapEstimateUsdt !== null
-            ? <Cell num main={<>约 {money(period.platformCapEstimateUsdt)}<Explain label="封顶估算的说明" content={CAP_FINAL} /></>}
+            ? <Cell num main={<>约 {money(period.platformCapEstimateUsdt)}<Explain label="封顶估算的说明" content={CAP_FINAL} side="top" /></>}
                 sub={<StatusTag tone="neutral">估算</StatusTag>} />
-            : <Cell main={<>结算后才有<Explain label="本期封顶的说明" content={`${CAP_FINAL}。`} /></>} />}
+            : <Cell main={<>结算后才有<Explain label="本期封顶的说明" content={`${CAP_FINAL}。`} side="top" /></>} />}
       </Td>
       {settled
         ? <>
@@ -126,20 +126,21 @@ function LatestRow({ period, onRetry }: { period: F3LatestFrozenPeriodView; onRe
 export function F3PeriodOverview({ ctx }: { ctx: FViewCtx }) {
   const state = useF3CurrentPeriod();
   const { reload } = state;
-  // 整页刷新：读取状态由否变是时重读一次；挂载时 hook 自己读，不重复。
+  // 整页刷新：读取状态由否变是时重读一次；这一块自己还在读（刚挂载）时不再读第二遍。
   const pageLoading = useRef(ctx.f3Loading);
+  const ownLoading = state.status === "loading";
   useEffect(() => {
-    if (ctx.f3Loading && !pageLoading.current) reload();
+    if (ctx.f3Loading && !pageLoading.current && !ownLoading) reload();
     pageLoading.current = ctx.f3Loading;
-  }, [ctx.f3Loading, reload]);
+  }, [ctx.f3Loading, ownLoading, reload]);
 
   const title = "本期和上期封顶";
   const explain = "全平台一期团队平衡奖励最多发多少：封顶 = 这一期已付款订单额 × 封顶比例，结算时定稿。";
   if (state.status !== "success") {
     return (
       <Panel title={title} icon={Gauge} tone="role-4" explain={explain}>
-        {state.status === "loading" && <BlockState state="loading" title="正在读取本期和上期封顶…" />}
-        {(state.status === "error" || state.status === "invalid-response") && <BlockState state="error" title="本期和上期封顶读取失败" onRetry={reload} retryLabel="重新加载" />}
+        {state.status === "loading" && <BlockState state="loading" title="正在加载本期和上期封顶…" />}
+        {(state.status === "error" || state.status === "invalid-response") && <BlockState state="error" title="本期和上期封顶加载失败" onRetry={reload} />}
         {state.status === "forbidden" && <BlockState state="denied" title="没有查看权限" detail="这个账号不能查看团队平衡奖励的封顶。" />}
         {state.status === "not-found" && <BlockState state="empty" title="系统版本还没有这项数据" detail="系统升级后，这里显示本期和上期的封顶。" />}
       </Panel>
