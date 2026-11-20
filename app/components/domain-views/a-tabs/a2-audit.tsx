@@ -1414,6 +1414,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const [submitting, setSubmitting] = useState("");
   const [pendingCommands, setPendingCommands] = useState<A2PendingCommand[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, { text: string; check?: DecisionCheck }>>({});
+  const decisionRetryRefusals = useRef(new Map<string, string>());
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
   const [releasing, setReleasing] = useState<A2PendingCommand | null>(null);
 
@@ -1756,10 +1757,22 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /* ────────────────── 待确认条 ────────────────── */
 
-  const notePending = (record: A2PendingCommand, text: string, check?: DecisionCheck) =>
-    setPendingNotes((current) => ({ ...current, [record.fingerprint]: { text: `${businessClock(Date.now())} ${text}`, check } }));
+  const notePending = (record: A2PendingCommand, text: string, check?: DecisionCheck) => {
+    const refusal = decisionRetryRefusals.current.get(record.commandKey);
+    const note = refusal ? `${refusal} ${text}` : text;
+    setPendingNotes((current) => ({ ...current, [record.fingerprint]: { text: `${businessClock(Date.now())} ${note}`, check } }));
+  };
 
-  const verifyDecisionPending = async (record: A2PendingCommand, kind: A2DecisionKind) => {
+  const clearDecisionPendingNote = (record: A2PendingCommand) => {
+    decisionRetryRefusals.current.delete(record.commandKey);
+    setPendingNotes((current) => {
+      const next = { ...current };
+      delete next[record.fingerprint];
+      return next;
+    });
+  };
+
+  const verifyDecisionPending = async (record: A2PendingCommand, kind: A2DecisionKind, afterRefusedRetry = false) => {
     const owner = record.commandOwnerId;
     const hasOriginal = () => owner !== undefined && isPendingCommandOwnedBy(record, owner)
       && record.fingerprint === `${kind}|${record.target}` && a2Commands.isDurablyStored(record.fingerprint, record.commandKey);
@@ -1768,18 +1781,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       .catch((error: unknown) => ({ state: "READ_FAILED" as const, error }));
     if (!hasOriginal()) return;
     if (receipt.state === "READ_FAILED") {
-      // 标签已写「查询失败」，正文只写原因和怎么办。
       notePending(record, displayAdminReadError(receipt.error), "readFailed");
       return receipt;
     }
     if (receipt.state === "SUCCEEDED" || receipt.state === "REJECTED") {
       a2Commands.forget(record.fingerprint, record.commandKey);
       syncPending();
-      setPendingNotes((current) => {
-        const next = { ...current };
-        delete next[record.fingerprint];
-        return next;
-      });
+      clearDecisionPendingNote(record);
       if (receipt.state === "REJECTED") {
         // 记录随即解除，拒绝原因只在这条提示里：这一种不自动消失，运营看完自己关（协调人定，不另外常留）。
         const why = receipt.businessMessage ? formatAdminApiError(receipt.businessMessage, receipt.businessMessage).replace(/[。.]$/, "") : undefined;
@@ -1787,6 +1795,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       } else toast(DECISION_DONE(DECISION_VERB[kind], record.target), "success");
     } else {
       const check = receipt.state === "PROCESSING" ? "processing" : "unconfirmed";
+      if (!afterRefusedRetry) decisionRetryRefusals.current.delete(record.commandKey);
       notePending(record, DECISION_CHECK[check].text!(DECISION_VERB[kind]), check);
     }
     await refreshAfterWrite();
@@ -1846,8 +1855,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           : record.kind === "export" ? await runExport(record.reason, record.filter ?? {}, record.operator)
             : await runDecision(record.kind, ticketLike, record.reason, record.operator);
       // 导出和清理自己会提示「已下载」「清理完成」，不再多弹一条。
-      if (outcome === "ok") { if (record.kind !== "export" && record.kind !== "retention") toast(`已确认：${record.label}已生效`, "success"); }
-      else notePending(record, "重试的结果仍然未知，原记录继续保留。");
+      if (outcome === "ok") {
+        if (decisionRetryRefusals.current.has(record.commandKey)) clearDecisionPendingNote(record);
+        if (record.kind !== "export" && record.kind !== "retention") toast(`已确认：${record.label}已生效`, "success");
+      } else notePending(record, "重试的结果仍然未知，原记录继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       const why = ((record.kind === "approve" ? approvalRefusedText(record.operationCode, cause) : undefined)
@@ -1859,7 +1870,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       const rejected = isExplicitRejection(cause);
       if ((rejected || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)
         && (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw")) {
-        await verifyDecisionPending(record, record.kind);
+        const reason = formatAdminApiError(backendCode(cause) || undefined, why).replace(/[。.]$/, "");
+        decisionRetryRefusals.current.set(record.commandKey, `这次重试被拒绝：${reason}。`);
+        await verifyDecisionPending(record, record.kind, true);
         return;
       }
       if (rejected) {

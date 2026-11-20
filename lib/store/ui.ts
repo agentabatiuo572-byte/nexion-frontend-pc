@@ -89,8 +89,12 @@ export const useUI = create<UIStore>((set, get) => ({
   },
   dialogs: [],
   openDialog: (id) => {
-    get().dismissToasts();
-    set((s) => ({ dialogs: [...s.dialogs, id] }));
+    for (const timer of toastTimers.values()) clearTimeout(timer);
+    toastTimers.clear();
+    set((s) => ({
+      toasts: s.toasts.filter((toast) => toast.durationMs === 0),
+      dialogs: [...s.dialogs, id],
+    }));
   },
   closeDialog: (id) => set((s) => ({ dialogs: s.dialogs.filter((dialog) => dialog !== id) })),
 

@@ -23,7 +23,9 @@ export function ToastHost({ dialogId }: { dialogId?: string }) {
   const pause = useUI((s) => s.pauseToast);
   const resume = useUI((s) => s.resumeToast);
   const activeDialog = useUI((s) => s.dialogs.at(-1));
-  if (dialogId !== activeDialog || !toasts.length) return null;
+  if (dialogId !== activeDialog) return null;
+  const visibleToasts = dialogId ? toasts.filter((toast) => toast.durationMs !== 0) : toasts;
+  if (!visibleToasts.length) return null;
 
   return (
     <div
@@ -36,7 +38,7 @@ export function ToastHost({ dialogId }: { dialogId?: string }) {
       }}
     >
       <AnimatePresence initial={false}>
-        {toasts.map((t) => {
+        {visibleToasts.map((t) => {
           const { varName, Icon } = KIND[t.kind];
           const c = `var(${varName})`;
           return (
