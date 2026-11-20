@@ -762,16 +762,41 @@ const RECOVERY_HINT: Record<A2CommandKind, string> = {
  * 「已确认完成」「明确被拒」由查询自己解除记录，用轻提示，见 DECISION_DONE、DECISION_REFUSED。
  */
 type DecisionCheck = "processing" | "unconfirmed" | "readFailed";
-/** 查询失败的正文是读取错误本身，所以只有标签。 */
-const DECISION_CHECK: Record<DecisionCheck, { tone: "progress" | "warn"; icon?: typeof SearchX; label: string; text?: (verb: string) => string }> = {
-  processing: { tone: "progress", label: "仍在处理", text: (verb) => `这次${verb}还在处理，稍后再查。` },
-  unconfirmed: { tone: "warn", icon: SearchX, label: "没查到结果", text: (verb) => `查不到能证明这次${verb}结果的记录，不能确认有没有执行。` },
+/**
+ * 标签已经说了查到什么，后面这句只写下一步；查询失败的正文是读取错误本身，所以只有标签。
+ * retried：刚才按原请求重试被拒，前面已经写了重试被拒的原因，这句要说清「原来那次」还没有结果。
+ */
+const DECISION_CHECK: Record<DecisionCheck, { tone: "progress" | "warn"; icon?: typeof SearchX; label: string; text?: (verb: string, retried: boolean) => string }> = {
+  processing: { tone: "progress", label: "仍在处理", text: (verb, retried) => retried ? `原来那次${verb}还在处理，稍后再查。` : "查过，稍后再查。" },
+  unconfirmed: { tone: "warn", icon: SearchX, label: "没查到结果", text: (verb, retried) => `${retried ? `原来那次${verb}` : "查过，"}还不能确认有没有执行，稍后再查。` },
   readFailed: { tone: "warn", icon: CloudOff, label: "查询失败" },
 };
 const DECISION_DONE = (verb: string, id: string) => `已确认：${id} 已${verb}`;
-const DECISION_REFUSED = (verb: string, why?: string) => why
-  ? `这次${verb}没有执行：${why}。`
-  : `这次${verb}被系统拒绝，没有执行。按这张单现在的状态重新处理。`;
+/** 被拒提示不自动消失、能叠几条，所以和成功提示一样带单号。 */
+const DECISION_REFUSED = (verb: string, id: string, why?: string) => why
+  ? `${id} 的${verb}没有执行：${why}。`
+  : `${id} 的${verb}被系统拒绝，没有执行。这张单现在的状态看「待审批」或「操作记录」。`;
+/**
+ * 决定被拒的原因（批准、驳回、撤回能收到的 A2 码）：共用说明里叫人「刷新」「保留原操作记录」「到操作记录与审批核对」，
+ * 可这时页面已经自动刷新、原记录已经解除、人就在这页，所以在这里换成只说原因的句子，不改共用表。
+ */
+const DECISION_REFUSED_REASON: Record<string, string> = {
+  A2_OPERATION_ALREADY_TERMINAL: "这张单已经处理完成",
+  A2_OPERATION_NOT_FOUND: "这张单不存在或已经处理完成",
+  A2_WITHDRAW_STALE: "这张单的状态已经变了",
+  A2_BUSINESS_CONTEXT_MISMATCH: "这张单的对象和审批内容对不上",
+  A2_MAKER_ID_UNVERIFIED: "发起人身份无法核实，这张单现在不能处理，请联系值班人员",
+  A2_DISCLOSURE_SNAPSHOT_CHANGED: "申请后披露草稿又改过，这张单不能批准",
+  A2_REASON_POLICY_UNAVAILABLE: "理由规则暂时读不到，稍后重新处理这张单",
+  A2_REQUEST_HASH_FAILED: "请求无法处理，稍后重新处理这张单",
+  PERMISSION_DENIED: "这个账号没有这项操作的业务权限，请核对授权",
+};
+/** 共用表认不出的机器码会落到这句兜底；被拒已经确认，它的「请刷新后重试」不对，按没有原因写。 */
+const UNMAPPED_ERROR_TEXT = "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。";
+const decisionRefusedReason = (code: string | undefined, fallback: string) => {
+  const reason = (code && DECISION_REFUSED_REASON[code.split(":")[0]]) || formatAdminApiError(code, fallback);
+  return reason === UNMAPPED_ERROR_TEXT ? undefined : reason.replace(/[。.]$/, "");
+};
 const PARAM_NAME: Record<string, string> = { ttl: "操作理由最短长度", retention: "操作记录保留期", schema: "记录字段版本" };
 const PARAM_TITLE: Record<"ttl" | "retention" | "schema", string> = { ttl: "调整操作理由最短长度", retention: "调整操作记录保留期", schema: "升级记录字段版本" };
 const RETENTION_TITLE = "清理到期记录";
@@ -1759,7 +1784,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   const notePending = (record: A2PendingCommand, text: string, check?: DecisionCheck) => {
     const refusal = decisionRetryRefusals.current.get(record.commandKey);
-    const note = refusal ? `${refusal} ${text}` : text;
+    const note = refusal ? `${refusal}${text}` : text;
     setPendingNotes((current) => ({ ...current, [record.fingerprint]: { text: `${businessClock(Date.now())} ${note}`, check } }));
   };
 
@@ -1790,13 +1815,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       clearDecisionPendingNote(record);
       if (receipt.state === "REJECTED") {
         // 记录随即解除，拒绝原因只在这条提示里：这一种不自动消失，运营看完自己关（协调人定，不另外常留）。
-        const why = receipt.businessMessage ? formatAdminApiError(receipt.businessMessage, receipt.businessMessage).replace(/[。.]$/, "") : undefined;
-        useUI.getState().pushToast({ kind: "warn", title: DECISION_REFUSED(DECISION_VERB[kind], why), durationMs: 0 });
+        const why = receipt.businessMessage ? decisionRefusedReason(receipt.businessMessage, receipt.businessMessage) : undefined;
+        useUI.getState().pushToast({ kind: "warn", title: DECISION_REFUSED(DECISION_VERB[kind], record.target, why), durationMs: 0 });
       } else toast(DECISION_DONE(DECISION_VERB[kind], record.target), "success");
     } else {
       const check = receipt.state === "PROCESSING" ? "processing" : "unconfirmed";
       if (!afterRefusedRetry) decisionRetryRefusals.current.delete(record.commandKey);
-      notePending(record, DECISION_CHECK[check].text!(DECISION_VERB[kind]), check);
+      notePending(record, DECISION_CHECK[check].text!(DECISION_VERB[kind], decisionRetryRefusals.current.has(record.commandKey)), check);
     }
     await refreshAfterWrite();
     return receipt;
@@ -1870,8 +1895,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       const rejected = isExplicitRejection(cause);
       if ((rejected || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)
         && (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw")) {
-        const reason = formatAdminApiError(backendCode(cause) || undefined, why).replace(/[。.]$/, "");
-        decisionRetryRefusals.current.set(record.commandKey, `这次重试被拒绝：${reason}。`);
+        const reason = decisionRefusedReason(backendCode(cause) || undefined, why) ?? "系统没有给出原因";
+        decisionRetryRefusals.current.set(record.commandKey, `按原请求重试被拒：${reason}。`);
         await verifyDecisionPending(record, record.kind, true);
         return;
       }
