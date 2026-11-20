@@ -549,8 +549,8 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f3-page .f3-example { margin: 12px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
 
 /* 原申请提醒：一条一行 */
-.f3-page .f3-recovery { display: grid; gap: 8px; margin: 4px 0 0; padding: 0; list-style: none; }
-.f3-page .f3-recovery li { display: grid; grid-template-columns: minmax(0, 7em) minmax(0, 1fr) auto auto auto; align-items: center; gap: 8px 16px; }
+.f3-page .f3-recovery { display: grid; grid-template-columns: minmax(0, 7em) minmax(0, 1fr) auto auto auto; gap: 8px 16px; margin: 4px 0 0; padding: 0; list-style: none; }
+.f3-page .f3-recovery li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
 .f3-page .f3-recovery-name { font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
 .f3-page .f3-recovery-time { color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 

@@ -94,7 +94,7 @@ export function fConfigSpec(key: string, after?: string): FConfigSpec | undefine
       impact: next === "off" ? "关闭后之后到期的周期不再自动结算，手动结算照常可用。" : "批准后系统按结算周期自动结算；关闭期间的周期不补发，要补的手动结算。",
       detail: "要另一位超级管理员批准；批准时查兑付覆盖率，读不到或低于红线不能批准。" });
     case F3_PLATFORM_CAP_PCT_KEY: return spec(F3, "全平台封顶比例", { action: "调高全平台封顶比例", unit: "%", loosen: "调高", payoutControlAmplification: "increase",
-      impact: "批准后，之后结算的期按新比例算全平台封顶；已结算的期不重算。",
+      impact: "批准后，还没开始结算的期按新比例封顶；已结过一笔的期沿用原额度。",
       detail: "要另一位超级管理员批准。每期全平台发放最多是该期已付款订单额乘这个比例。" });
     case "F.pool.ratio": return spec(F4, "团队激励池比例", { unit: "%", loosen: "调高", impact: "批准后，本周未结算的和之后的结算按新比例放钱；已发的不重算。" });
     case "F.pool.monthlyCap": return spec(F4, "团队激励池每月上限", { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", detail: "写错格式会让池不能结算。" });

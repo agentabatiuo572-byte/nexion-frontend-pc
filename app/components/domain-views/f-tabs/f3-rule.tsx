@@ -9,10 +9,10 @@ import { ArrowRight } from "lucide-react";
 import { Change } from "@/app/components/rd";
 
 /** 结算周期怎么算每期上限、哪天结算（BinaryCommissionSettlementService.isSettlementDue、periodDays）。 */
-export const PERIOD_TEXT: Record<string, { when: string; cap: string }> = {
-  每日: { when: "每天结算一次", cap: "每日上限 × 1 天" },
-  每周: { when: "每周日结算一次", cap: "每日上限 × 7 天" },
-  每月: { when: "每月最后一天结算一次", cap: "每日上限 × 当月天数" },
+export const PERIOD_TEXT: Record<string, { when: string; short: string; cap: string }> = {
+  每日: { when: "每天结算一次", short: "每天结算", cap: "每日上限 × 1 天" },
+  每周: { when: "每周日结算一次", short: "每周日结算", cap: "每日上限 × 7 天" },
+  每月: { when: "每月最后一天结算一次", short: "每月末结算", cap: "每日上限 × 当月天数" },
 };
 
 /** 没匹配上的订单额怎么处理（BinaryCommissionSettlementService.volumeWindow）。显示名「每次匹配后清零」，存的值是「每次对碰清零」。 */
@@ -63,11 +63,11 @@ export function F3RuleFlow({ rule, next, changed, capAction, compact }: {
   const period = next?.period ?? rule.period;
   const steps: Step[] = [
     { key: "legs", title: "A 组、B 组订单额", value: "各算各的", sub: "范围看残额怎么处理" },
-    { key: "threshold", title: "两组都过门槛", value: shown("threshold", (value) => `每组 ≥ ${value}`, "门槛没读到"), sub: "一组没到就不发" },
+    { key: "threshold", title: "两组都过门槛", value: shown("threshold", (value) => `≥ ${value}`, "门槛没读到"), sub: "一组没到就不发" },
     { key: "rate", title: "取较小一组 × 比例", value: shown("rate", (value) => `× ${value}`, "比例读不懂"), sub: "先扣掉已匹配的" },
     { key: "cap", title: "不超过每期上限", value: shown("cap", (value) => `每日 ${value}`, "上限没读到"), sub: <>{PERIOD_TEXT[period]?.cap ?? "按结算周期算天数"}{capAction && <span className="f3-flow-action">{capAction}</span>}</> },
-    { key: "platformCap", title: "不超过全平台封顶", value: shown("platformCap", (value) => `已付款订单额 × ${value}`, "封顶比例没读到"), sub: "超出时每人按同一比例缩减" },
-    { key: "pay", title: "记给邀请人", value: shown("period", (value) => PERIOD_TEXT[value]?.when ?? value, "周期没读到"), sub: "冷却期满才能提现" },
+    { key: "platformCap", title: "不超过全平台封顶", value: shown("platformCap", (value) => `已付款订单额 × ${value}`, "封顶比例没读到"), sub: "超出时按比例缩减" },
+    { key: "pay", title: "记给邀请人", value: shown("period", (value) => PERIOD_TEXT[value]?.short ?? value, "周期没读到"), sub: "冷却期满才能提现" },
   ];
   return (
     <div className="f3-flow" data-compact={compact ? "" : undefined}>

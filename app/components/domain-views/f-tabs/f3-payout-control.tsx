@@ -7,7 +7,7 @@
  * recoverF3PayoutControl、recoverF3），方向用 planF3PayoutControl 判断，和提交时一致。
  */
 import { ArrowLeftRight, CircleHelp, Clock3, Hourglass, PauseCircle, PlayCircle } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Change, ConfigRow, Fact, Facts, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import type { FViewCtx } from "./types";
@@ -41,6 +41,12 @@ const unknownTag = (direct: FDirectAttempt) => isRetryExpired(direct)
   ? <StatusTag tone="neutral" icon={Hourglass} explain="原操作超过 24 小时，不能再重试，只能查询原结果。">已过期</StatusTag>
   : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内也可以按原内容重试，不会重复执行。">结果未知</StatusTag>;
 
+/** 把框里填的值交给外层，让标题下的生效标签跟着输入变。 */
+function TypedSync({ value, onValue }: { value: string | undefined; onValue: (value: string | undefined) => void }) {
+  useEffect(() => { onValue(value); }, [value, onValue]);
+  return null;
+}
+
 /** 恢复列表里一条直接生效的原操作：名字、改成什么、状态。 */
 export function payoutDirectLine(direct: FDirectAttempt) {
   const key = direct.f3Request!.key;
@@ -71,16 +77,17 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
         : <span className="f3-cfg-value">{pctText(capNow!)}</span>;
     const pendingTag = direct ? unknownTag(direct)
       : original ? <StatusTag tone="warn" icon={CircleHelp} explain={canLower
-          ? "提交审批时没收到确定结果。可在原操作列表查询，也可以调低封顶比例。"
+          ? "提交审批时没收到确定结果，可能已建审批单。在上方原操作列表查询；调低不受影响。"
           : "提交审批时没收到确定结果，可能已经建了审批单。点「查看原申请」查询原结果。"}>结果未知</StatusTag>
         : approval ? <StatusTag tone="warn" icon={Clock3}
-            explain={`${auto ? "开启" : `调高到 ${payoutValueText(key, approval.after)}`}在等${SUPER}批准；批准前仍按现在的值。${auto ? "" : "调低不受影响，确认后立即生效。"}`}>待审批</StatusTag>
+            explain={`${auto ? "开启" : `调高到 ${payoutValueText(key, approval.after)}`}在等${SUPER}批准；批准前仍按现在的值。${auto ? "" : "现在调低会立即生效，之后这张调高不能再批准。"}`}>待审批</StatusTag>
           : null;
     const dir = missing ? "没读到，暂时不能改"
       : canLower ? "调低立即生效"
-        : direct || original ? "先查清原操作再改"
-        : approval ? "现在的值仍生效"
-        : auto ? autoNow ? "关闭立即生效" : "开启要超管批准" : "调低立即生效 · 调高要批准";
+        : direct ? "先查清原操作再改"
+        : original ? "先查清原申请再改"
+        : approval ? auto ? "开启在等批准，批准或驳回前不能再提交" : `调高到 ${payoutValueText(key, approval.after)} 在等批准；调低仍立即生效`
+        : auto ? autoNow ? "关闭立即生效" : `开启要${SUPER}批准` : "调低立即生效 · 调高要批准";
     const disabledReason = missing ? "这一项没读到，重新加载后再改"
       : auto && !autoNow && approval ? "开启已在等审批，批准或驳回前不能再提交" : undefined;
     const action = direct || (original && !canLower)
@@ -99,7 +106,7 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
       : <ConfigRow key={key} name={name}
           what="每期全平台发放总额最多是该期已付款订单额乘这个比例。"
           when={`调低确认后立即生效；调高要${SUPER}批准后生效。`}
-          effect="超出时这一期每人按同一比例缩减，缩减的部分不补发；已结算的期按当时的比例。"
+          effect="还没开始结算的期按新比例；已结过一笔的期，剩下的人沿用原额度。超出时按比例缩减，缩减的不补发，每笔实际缩减见结算记录。"
           note="自动和手动结算共用同一期的额度。范围 0–100%。"
           value={<span className="f3-cfg"><span className="f3-cfg-line">{valueTag}{pendingTag}</span><span className="f3-cfg-dir">{dir}</span></span>}
           action={action} />;
@@ -134,21 +141,32 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
   const originalValue = direct?.f3Request?.value ?? original?.spec?.after ?? "";
   const expired = direct ? isRetryExpired(direct) : original ? !canRetryF3Proposal(original) : false;
   const recoveryText = direct
-    ? expired ? "原操作超过 24 小时，不能再重试，只能查询原结果" : "提交结果未知，可能已经生效。先查询原结果；24 小时内也可以按原内容重试，不会重复执行"
+    ? expired ? "超过 24 小时，只能查询原结果" : "提交结果未知，可能已经生效；先查询原结果"
     : original?.ticket?.status === "pending" ? `审批单在等${SUPER}批准；批准前不生效`
-      : expired ? "原申请超过 24 小时，不能再重试，只能查询原审批单" : "提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张";
+      : expired ? "超过 24 小时，只能查询原审批单" : "没收到确定结果，可能已经建了审批单；先查询原结果";
+  // 框里填的原样值：被挡下的调高也要写在事实里、按钮写「提交审批」。amplifiesWhen 每次渲染都拿到原值，先于事实和按钮。
+  const rawTyped = useRef<string | undefined>(undefined);
+  const [typed, setTyped] = useState<string>();
+  const typedCap = (value?: string) => {
+    const raw = value ?? rawTyped.current;
+    return raw !== undefined && f3PlatformCapPct(raw) !== null ? raw : undefined;
+  };
+  const blockedRaise = !!approval || !!originalProposal;
 
   const title = mode === "direct" ? `${name}的原操作` : mode === "proposal" ? `${name}的原申请`
     : auto ? autoNow ? "关闭自动发放" : "开启自动发放" : "调整全平台封顶比例";
+  const approveTag = <StatusTag tone="progress" filled explain={`${SUPER}在「操作记录与审批」批准后生效，你自己不能批；批准时查兑付覆盖率。`}>批准后生效</StatusTag>;
+  const typedDir = direction(typed);
   const effect = mode !== "new"
     ? direct ? unknownTag(direct) : <StatusTag tone="warn" icon={CircleHelp}>{original?.ticket?.status === "pending" ? "待审批" : expired ? "已过期" : "结果未知"}</StatusTag>
     : auto
-      ? autoNow ? <StatusTag tone="progress" filled>立即生效</StatusTag>
-        : <StatusTag tone="progress" filled explain={`${SUPER}在「操作记录与审批」批准后生效，你自己不能批；批准时查兑付覆盖率。`}>批准后生效</StatusTag>
-      : <StatusTag tone="neutral" icon={ArrowLeftRight} explain={<>
-          <p>调高会让平台多付钱：提交审批，{SUPER}在「操作记录与审批」批准后生效，你自己不能批。</p>
-          <p>调低确认后立即生效。</p>
-        </>}>调高要批准 · 调低立即生效</StatusTag>;
+      ? autoNow ? <StatusTag tone="progress" filled>立即生效</StatusTag> : approveTag
+      : typedDir === "proposal" ? approveTag
+        : typedDir === "direct" ? <StatusTag tone="progress" filled>立即生效</StatusTag>
+          : <StatusTag tone="neutral" icon={ArrowLeftRight} explain={<>
+              <p>调高会让平台多付钱：提交审批，{SUPER}在「操作记录与审批」批准后生效，你自己不能批。</p>
+              <p>调低确认后立即生效。</p>
+            </>}>调高要批准 · 调低立即生效</StatusTag>;
 
   const facts = (value?: string) => {
     if (mode !== "new") return <Facts>
@@ -157,28 +175,31 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
         : `改为 ${payoutValueText(key, originalValue)}`}</Fact>
       <Fact k="现在">{recoveryText}</Fact>
     </Facts>;
-    const dir = direction(value);
     if (auto) return <Facts>
       <Fact k="自动发放"><Change from={autoNow ? "开" : "关"} to={autoNow ? "关" : "开"} /></Fact>
       {autoNow ? <>
-        <Fact k="这次怎么生效">确认后立即生效，不用审批</Fact>
-        <Fact k="之后到期的周期">不再自动结算；可以手动结算</Fact>
+        <Fact k="正在结算的这批">没结到的人也停下；已发的不收回</Fact>
         <Fact k="重新开启">要{SUPER}批准；关闭期间的周期不补发</Fact>
       </> : <>
-        <Fact k="这次怎么生效" tone="warn">提交审批，{SUPER}批准后生效；批准前仍是关闭</Fact>
-        <Fact k="关闭期间的周期">不补发；要补的按邀请人和结算日手动结算</Fact>
+        <Fact k="批准前">仍是关闭</Fact>
+        <Fact k="关闭期间的周期">不补发，要补的手动结算</Fact>
+        <Fact k="更早没结完的期">先手动补结，之后才会自动结算</Fact>
         {!canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，提交会被拦下</Fact>}
       </>}
     </Facts>;
-    const next = value === undefined ? null : f3PlatformCapPct(value);
-    return <Facts>
-      <Fact k="全平台封顶比例">{next === null ? capText : <Change from={capText} to={`${next}%`} />}</Fact>
-      <Fact k="这次怎么生效" tone={dir === "proposal" ? "warn" : undefined}>{dir === "proposal" ? `调高：提交审批，${SUPER}批准后生效；批准前仍按 ${capText}`
-        : dir === "direct" ? "调低：确认后立即生效" : `调低立即生效；调高要${SUPER}批准`}</Fact>
-      {approval && <Fact k="已有待批" tone="warn">调高到 {payoutValueText(key, approval.after)} 在等批准；现在仍按 {capText}，只能调低</Fact>}
-      {dir === "proposal" && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，调高会被拦下</Fact>}
-      <Fact k="之后">之后结算的期按新比例封顶，超出的按比例缩减；已结算的期不重算</Fact>
-    </Facts>;
+    const shownValue = typedCap(value);
+    const dir = direction(shownValue);
+    const next = shownValue === undefined ? null : f3PlatformCapPct(shownValue);
+    return <>
+      <TypedSync value={shownValue} onValue={setTyped} />
+      <Facts>
+        <Fact k="全平台封顶比例">{next === null || dir === undefined || dir === "unchanged" ? capText : <Change from={capText} to={`${next}%`} />}</Fact>
+        {dir === "proposal" && !blockedRaise && <Fact k="批准前">仍按 {capText}</Fact>}
+        {approval && <Fact k="已有待批" tone="warn">调高到 {payoutValueText(key, approval.after)} 在等批准；调低后它不能再批准</Fact>}
+        {dir === "proposal" && !blockedRaise && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，调高会被拦下</Fact>}
+        <Fact k="已开始结算的期">剩下的人沿用原额度</Fact>
+      </Facts>
+    </>;
   };
 
   return (
@@ -191,20 +212,21 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
       facts={facts}
       statedBrief={auto
         ? (mode === "new" ? autoNow : originalValue.trim().toLowerCase() !== "on")
-          ? { impact: "确认后立即关闭，之后到期的周期不再自动结算；手动结算照常可用。", check: "确认已安排手动结算，或确实要停掉自动部分。" }
-          : { impact: "批准后系统按结算周期自动结算；关闭期间的周期不补发。", check: "开启前确认关闭期间要补的周期已手动结算或另有安排。" }
-        : { impact: "之后结算的期按新比例算全平台封顶；已结算的期不重算。", check: "核对新比例；调高可能多付钱，先看兑付覆盖率。" }}
+          ? { impact: "系统停止自动结算，手动结算照常可用。", check: "确认已安排手动结算，或确实要停掉自动部分。" }
+          : { impact: "批准后系统按结算周期自动结算到期的奖励。", check: "开启前确认关闭期间要补的周期已手动结算或另有安排。" }
+        : { impact: "还没开始结算的期按新比例封顶，已记账的不重算。", check: "核对新比例；调高可能多付钱，先看兑付覆盖率。" }}
       amplifies={mode === "new" && auto && !autoNow}
       coverage={snapshot?.coverage ?? ctx.f3Coverage}
       coverageLead={auto ? `开启后系统按周期自动发钱，要${SUPER}批准` : `调高封顶会让平台多付钱，要${SUPER}批准`}
       coverageCheck="批准时查兑付覆盖率，读不到或低于红线就不能批准。"
       confirmLabel={auto ? autoNow ? "立即生效" : "提交审批" : "立即生效"}
-      confirmLabelForValue={auto ? undefined : (value) => direction(value) === "proposal" ? "提交审批" : "立即生效"}
+      confirmLabelForValue={auto ? undefined : (value) => direction(typedCap(value)) === "proposal" ? "提交审批" : "立即生效"}
       edit={auto ? undefined : {
         kind: "number", label: "改后的封顶比例", current: mode === "new" ? capNow : undefined, unit: "%", min: 0, max: 100, maxDecimals: 10,
         initialValue: mode === "new" ? undefined : originalValue.replace(/%$/, "").trim(),
         disallowCurrent: true, hint: "0–100，最多 10 位小数",
-        amplifiesWhen: mode === "new" ? "increase" : undefined,
+        // 只有能提交的调高才提示多付钱；已有调高在等或原申请未知时调高被挡下，不提示。
+        amplifiesWhen: (value) => { rawTyped.current = value; return mode === "new" && !blockedRaise && direction(value) === "proposal"; },
         validate: (value) => f3PlatformCapPct(value) === null ? "填 0 到 100 的数，最多 10 位小数"
           : direction(value) !== "proposal" ? undefined
             : approval ? "已有调高在等审批，批准或驳回前只能调低"
@@ -224,7 +246,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
             const result = found.kind === "query" ? found.result : "SUCCEEDED";
             if (result === "SUCCEEDED") { ctx.toast(`${name}的原操作已生效`); onClose(); return true; }
             if (result === "REJECTED" || result === "NOT_EXECUTED") { ctx.toast(`${name}的原操作没有执行，设置没变`); onClose(); return true; }
-            throw new Error(isRetryExpired(ownDirect() ?? direct!) ? "还没查到原操作的结果，可以稍后再查。" : "还没查到原操作的结果。可以稍后再查，或按原内容重试，不会重复执行。");
+            throw new Error(isRetryExpired(ownDirect() ?? direct!) ? "还没查到原操作的结果，可以稍后再查。" : "还没查到原操作的结果，可以稍后再查或按原内容重试。");
           }
           const record = ownProposal();
           if (!record) { onClose(); return true; }
@@ -250,8 +272,8 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
         const value = auto ? autoNow ? "off" : "on" : newValue ?? "";
         const result = await ctx.submitF3PayoutControl(key, value, reason, snapshot).catch((error: unknown) => {
           // 直接生效的结果未知：这页有自己的查询和重试，提示指向框里的按钮，不指去操作记录与审批。
-          if (isF1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。先点「查询原结果」；查不到再按原请求重试，不会重复执行。" });
-          else if (isA2OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已建审批单。先点「查询原结果」；查不到可按原请求重试。" });
+          if (isF1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。先点「查询原结果」核对。" });
+          else if (isA2OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已建审批单。先点「查询原结果」；关框后也能在设置行点「查看原申请」。" });
           throw error;
         });
         ctx.toast(result.kind === "unchanged" ? "和现在一样，没有提交"

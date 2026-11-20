@@ -33,7 +33,7 @@ import { fBatchIssueText } from "./f-batch-names";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { FViewCtx } from "./types";
 import { F3Placements, recoverPlacement } from "./f3-placements";
-import { F3_MODE_EXPLAIN, F3BlockedAttempts, F3SettlementDrawer, f3ModeText } from "./f3-review";
+import { F3_MODE_EXPLAIN, F3BlockedAttempts, F3SettlementDrawer, f3ModeText, reductionText } from "./f3-review";
 import { F3PairBar, F3RuleFlow, PERIOD_TEXT, RESIDUAL_TEXT, residualLabel, type F3Rule } from "./f3-rule";
 import { FReleaseButton } from "./f-release";
 import { CONFIG_APPROVER, F3ConfirmHost, SETTLE_APPROVER, type F3Confirm } from "./f3-confirm";
@@ -92,7 +92,7 @@ function matchRatePercent(raw: string): string | null {
 const STATE: Record<string, { label: string; tone: StateTone; icon: LucideIcon; explain: string }> = {
   pending: { label: "已记账", tone: "progress", icon: Clock3, explain: "这一期的奖励已写进结算记录，记成邀请人的冷却奖励，冷却期满才能提现。这里是结算记录的状态，不随冷却进度变；每笔冷却和解锁在「奖励记录核对」看。" },
   paid: { label: "已结算", tone: "done", icon: CircleCheck, explain: "结算记录的状态是已付、已结算或已解锁。" },
-  capped: { label: "封顶未发", tone: "warn", icon: Ban, explain: "受全平台封顶限制，这笔实发为零。" },
+  capped: { label: "封顶未发", tone: "neutral", icon: Scale, explain: "受全平台封顶限制，这笔全额缩减，实发 0，缩减的不补发。" },
   blocked: { label: "被拦下", tone: "warn", icon: Ban, explain: "结算记录的状态是被拦下、被拒、失败或冻结；只说明这条记录的状态，不能单凭它认定没发过钱。" },
   processing: { label: "结算中", tone: "progress", icon: Loader2, explain: "结算还在处理。" },
   failed: { label: "结算失败", tone: "danger", icon: AlertTriangle, explain: "这条结算记录失败；不能单凭它认定没发过钱。" },
@@ -365,8 +365,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   };
   const recovery = recoveryCount > 0 && (
     <Notice tone="warn" title={<>{recoveryOpen ? `有 ${recoveryCount} 项原操作还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原操作怎么处理" content={<>
-      <p>原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。</p>
-      <p>查到审批单只说明申请登记了，不等于已经发钱。关闭自动发放、调低封顶比例和成员分组是直接生效的，查询看原操作有没有执行。</p>
+      <p>原内容和理由只存在这个浏览器标签页，关掉标签页就没了。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。</p>
+      <p>查到审批单只说明申请登记了，不等于已经发钱。关闭自动发放、调低全平台封顶比例和成员分组是直接生效的，查询看原操作有没有执行。</p>
     </>} /></>}>
       <ul className="f3-recovery" aria-label="还没有结论的原操作">
         {settlePending && <li>
@@ -462,7 +462,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         <F3RuleFlow rule={rule} capAction={capAction} />
         <p className="f3-example">
           {example
-            ? <>最近一条：{example.user} 在 {example.settlementDate || "—"} 的结算，A 组 {amountText(example.aRaw, example.a)} USDT、B 组 {amountText(example.bRaw, example.b)} USDT，匹配 {amountText(example.matchRaw, example.match)} USDT，记账 {amountText(example.todayRaw, example.today)} USDT（{stateOf(example.state).label}{example.todayRaw === undefined ? "，整数" : ""}）</>
+            ? <>最近一条：{example.user} 在 {example.settlementDate || "—"} 的结算，A 组 {amountText(example.aRaw, example.a)} USDT、B 组 {amountText(example.bRaw, example.b)} USDT，匹配 {amountText(example.matchRaw, example.match)} USDT，{example.platformReductionPct !== null && Number(example.platformReductionPct) > 0 ? `全平台封顶缩减 ${reductionText(example.platformReductionPct)}，` : ""}记账 {amountText(example.todayRaw, example.today)} USDT（{stateOf(example.state).label}{example.todayRaw === undefined ? "，整数" : ""}）</>
             : "还没有结算记录，第一笔结算后这里写出一条真实的例子。"}
           <Explain label="这条例子怎么来的" content={`取结算记录里最新的一条，金额是${example?.todayRaw === undefined ? "取整后的整数" : "这条记录的原值"}；这条记录用的是当时的门槛、比例和上限，不一定是现在的。`} />
         </p>
@@ -675,7 +675,7 @@ function RecordRow({ row, threshold, selected, onOpen }: { row: F3Settlement; th
       <Td align="right"><Cell num main={`${amountText(row.todayRaw, row.today)} USDT`} sub={`匹配 ${amountText(row.matchRaw, row.match)} USDT`} /></Td>
       <Td>{row.platformReductionPct === null && row.platformUsedUsdt === null && row.platformCapUsdt === null
         ? <Cell main="—" sub="没有封顶记录" />
-        : <Cell num main={row.platformReductionPct === null ? "缩减 —" : Number(row.platformReductionPct) === 0 ? "未缩减" : `缩减 ${pctText(row.platformReductionPct)}`}
+        : <Cell num main={row.platformReductionPct === null ? "缩减 —" : Number(row.platformReductionPct) === 0 ? "未缩减" : `缩减 ${reductionText(row.platformReductionPct)}`}
             sub={`该期 ${row.platformUsedUsdt === null ? "—" : fmtMoney(row.platformUsedUsdt)} / ${row.platformCapUsdt === null ? "—" : fmtMoney(row.platformCapUsdt)} USDT`} />}</Td>
       <Td><Cell main={<StatusTag tone={state.tone} icon={state.icon} explain={state.explain}>{state.label}</StatusTag>} sub={f3ModeText(row.settlementMode) ?? undefined} /></Td>
     </Tr>
