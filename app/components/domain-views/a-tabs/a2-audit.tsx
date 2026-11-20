@@ -95,6 +95,7 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { orderAmount } from "../e-tabs/data";
+import { payoutAmount } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
 
 /* ────────────────── 名字和规则 ────────────────── */
@@ -1262,7 +1263,6 @@ const F1_VOUCHER_SKIP_REASON: Record<string, string> = {
 };
 const f1VoucherResultText = (disposition?: string) => !disposition ? "—"
   : F1_VOUCHER_RESULT[disposition] ?? (disposition.startsWith("GRANT_STATUS_") ? "券已不可用，没有扣款" : "系统记下的处置暂时无法显示");
-const F1_VOUCHER_RESULT_MISSING = "这里没读到这张单的实际结果，可能是较早批准的单没有记下。请到「账本与账单核对」核对这笔冲正的 USDT 流水。";
 
 /** F1 券冲正：申请时选的扣回或不扣回写在提案摘要开头；旧申请没写选择，后端按扣回执行。后果另起一行写在「批准后」。 */
 const f1VoucherReverse = (row: { after: string; action?: string; operationCode?: string; status?: A2OperationRow["status"] }) => {
@@ -3043,10 +3043,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {voucherResult && <section className="a2-change-review" aria-label="实际结果">
             <div className="a2-change-title">实际结果<Explain label="实际结果说明" content="批准执行时系统记下的券处置和扣款，不是申请时的选择。" /></div>
             {voucherResult.state === "available" ? <Facts>
-              {voucherResult.amountUsdt && <Fact k="实际扣回" lead tone="role-1" unit="USDT">{orderAmount(voucherResult.amountUsdt)}</Fact>}
+              {voucherResult.amountUsdt && <Fact k="实际扣回" lead tone="role-1" unit="USDT">{payoutAmount(voucherResult.amountUsdt)}</Fact>}
               <Fact k="券处置">{f1VoucherResultText(voucherResult.disposition)}</Fact>
               {voucherResult.skippedReason && <Fact k="没有扣回的原因">{F1_VOUCHER_SKIP_REASON[voucherResult.skippedReason] ?? "系统记下的原因暂时无法显示"}</Fact>}
-            </Facts> : <Notice tone="neutral">{F1_VOUCHER_RESULT_MISSING}</Notice>}
+            </Facts> : <p className="rd-note">没读到这张单的实际结果，可能是较早批准的单没有记下。到{reach("/finance/ledger") ? <Link className="rd-link" href="/finance/ledger" prefetch={false}>「账本与账单核对」</Link> : "「账本与账单核对」"}核对这笔冲正的 USDT 流水。</p>}
           </section>}
           <Fold inset title="技术信息" summary="处理链原文">
             <p className="rd-note" data-mono>{shownHistory.chain}</p>
