@@ -552,7 +552,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openCreateEvent = () => {
     const builtIds = new Set((model?.events ?? []).map((event) => event.id));
     // B511-WIRE: 打开框之前读 GET /api/admin/growth/quest-events/events/create-candidates，把 data.candidates（[{ id, occupied }]，删除过的活动用过的编号也是 occupied: true）放在这里，读完再开框。
-    // 读失败或还没读完传 null：框里写「没读到删除的活动用过的编号」，只把已读到的活动的编号置灰，选到用过的由后端按 409 拒绝，不会新建。
+    // 读失败或还没读完传 null：框里写「没读到已删活动的编号」，只把已读到的活动的编号置灰，选到用过的由后端按 409 拒绝，不会新建。
     const createCandidates = null as readonly { id: string; occupied: boolean }[] | null;
     const usedCodes = [...H4_EVENT_RULE_CODES].filter((code) => createCandidates ? createCandidates.some((row) => row.id === code && row.occupied) : builtIds.has(code));
     const freeCodes = [...H4_EVENT_RULE_CODES].filter((code) => !usedCodes.includes(code));
