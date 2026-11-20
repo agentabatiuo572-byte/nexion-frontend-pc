@@ -10,6 +10,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Gauge } from "lucide-react";
 import { BlockState, Cell, Explain, InlineRetry, Panel, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
 import { useF3CurrentPeriod, type F3CurrentPeriodView, type F3LatestFrozenPeriodView } from "@/lib/admin/f3-current-period";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { FViewCtx } from "./types";
 
 /** 原因码到运营文字。没列出的原因码统一写「读不到」，不把原因码给运营看。 */
@@ -66,6 +67,20 @@ function paid(period: F3CurrentPeriodView | F3LatestFrozenPeriodView): ReactNode
   return period.unavailableReasons.includes("F3_PAID_SALES_UNAVAILABLE") ? REASON_TEXT.F3_PAID_SALES_UNAVAILABLE : "—";
 }
 
+/** 本期没有估算时封顶这格写什么：有原因写清是哪样读不到；旧版本不给估算时写结算时定稿，不让人以为本期没有封顶。 */
+const ESTIMATE_REASON_TEXT: Record<string, string> = {
+  F3_PAID_SALES_UNAVAILABLE: "付款额读不到，估不出",
+  F3_PLATFORM_CAP_PCT_UNAVAILABLE: "封顶比例读不到，估不出",
+  F3_PLATFORM_CAP_PCT_INVALID: "封顶比例无效，估不出",
+};
+function estimateMissing(period: F3CurrentPeriodView, onRetry: () => void): ReactNode {
+  if (period.estimateReason === null) {
+    return <>结算时定稿<Explain label="本期封顶的说明" content={`这一期有封顶。${CAP_FINAL}；现在的系统版本还不给估算。`} side="top" /></>;
+  }
+  const text = ESTIMATE_REASON_TEXT[period.estimateReason] ?? "读不到，估不出";
+  return period.estimateReason === "F3_PLATFORM_CAP_PCT_INVALID" ? text : <>{text} <InlineRetry onRetry={onRetry} /></>;
+}
+
 function CurrentRow({ period, onRetry }: { period: F3CurrentPeriodView; onRetry: () => void }) {
   if (!period.availability.dates) return <Blocked label="本期" reasons={period.unavailableReasons} onRetry={onRetry} />;
   const settled = period.frozen === true;
@@ -83,7 +98,7 @@ function CurrentRow({ period, onRetry }: { period: F3CurrentPeriodView; onRetry:
           : period.platformCapEstimateUsdt !== null
             ? <Cell num main={<>约 {money(period.platformCapEstimateUsdt)}<Explain label="封顶估算的说明" content={CAP_FINAL} side="top" /></>}
                 sub={<StatusTag tone="neutral">估算</StatusTag>} />
-            : <Cell main={<>结算后才有<Explain label="本期封顶的说明" content={`${CAP_FINAL}。`} side="top" /></>} />}
+            : <Cell main={estimateMissing(period, onRetry)} />}
       </Td>
       {settled
         ? <>
@@ -140,7 +155,8 @@ export function F3PeriodOverview({ ctx }: { ctx: FViewCtx }) {
     return (
       <Panel title={title} icon={Gauge} tone="role-4" explain={explain}>
         {state.status === "loading" && <BlockState state="loading" title="正在加载本期和上期封顶…" />}
-        {(state.status === "error" || state.status === "invalid-response") && <BlockState state="error" title="本期和上期封顶加载失败" onRetry={reload} />}
+        {state.status === "error" && <BlockState state="error" title="本期和上期封顶加载失败" detail={displayAdminError(state.error)} onRetry={reload} />}
+        {state.status === "invalid-response" && <BlockState state="error" title="本期和上期封顶加载失败" detail={displayAdminError(undefined)} onRetry={reload} />}
         {state.status === "forbidden" && <BlockState state="denied" title="没有查看权限" detail="这个账号不能查看团队平衡奖励的封顶。" />}
         {state.status === "not-found" && <BlockState state="empty" title="系统版本还没有这项数据" detail="系统升级后，这里显示本期和上期的封顶。" />}
       </Panel>
