@@ -378,11 +378,11 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     // 全球作业不跟首页填的新当前值走：后端从 App 上现在的作业数接续，基座未发布时一直是「—」。
     const jobsClause = (enabled: boolean) => data.values.activeJobsBase == null ? "全球作业未发布，App 上仍是「—」"
       : sandbox ? "测试环境的全球作业只显示基座，不增长"
-        : enabled ? `全球作业接着 App 上现在的数，${growthNote}` : "全球作业停在 App 上现在的数";
+        : enabled ? `全球作业接着 App 上现在的数，${growthNote}` : "全球作业跟着一起停住";
     const impactText = toggled
       ? submitted.homeDisplayEnabled
         ? `开启后 App 的在线设备和累计已发放每秒在区间内随机增加，${currentChanged ? "从你填的新当前值开始" : "接着 App 上现在的数继续"}；${jobsClause(true)}。`
-        : `暂停后 App 的在线设备和累计已发放停住不再增加，${currentChanged ? "停在你填的新当前值" : "停在 App 上现在的数"}，再开启从那里接着涨；${jobsClause(false)}。`
+        : `暂停后 App 的在线设备和累计已发放停住不再增加，${currentChanged ? "停在你填的新当前值" : "已打开的页面最多再涨约一分钟，所有页面停在同一个数"}，再开启从那里接着涨；${jobsClause(false)}。`
       : module === "home" ? `保存后按新参数生成 App 首页的展示数字，${currentChanged ? "从你填的新当前值开始" : "接着 App 上现在的数继续"}；${jobsClause(data.values.homeDisplayEnabled)}；增长开关不变。`
         : module === "network" ? (memberModels?.resets ? "保存后 App 网络脉搏的注册人数从新基数、在保存时刻重新开始推算。" : "保存后 App 网络脉搏的注册人数按新的月增长率、从原推算起点重算整段。")
           : module === "jobs" ? !jobsBaseChanged ? "全球作业基座没变，App 上的数照常。" : nextValues.activeJobsBase == null ? "保存后 App 首页、赚取页任务中心和全球网络页不显示全球作业数。" : `保存后 App 首页、赚取页任务中心和全球网络页的全球作业从 ${count(nextValues.activeJobsBase)} 重新起算。`
