@@ -7,6 +7,8 @@ const APP_TEXT_FIELD_LABELS: Record<string, string> = {
   power: "功耗 / 功率说明", datacenter: "托管机房", uptime: "在线率", warranty: "质保期限", specDocumentTitle: "资料名称",
 };
 
+const COVERAGE_REDLINE_MESSAGE = "当前兑付覆盖率没有达到资金红线，或权威覆盖率未可靠读取；请先核对资金状态后再申请放大奖励。";
+
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   APP_TEXT_CHINESE_NOT_ALLOWED: "显示给 App 用户的文字不能包含中文，请改成英文",
   NOTIFICATION_CAMPAIGN_COPY_NOT_SAVED: "通知草稿的写入结果未确认，请保留原内容重试，系统会沿用原操作编号。",
@@ -2254,7 +2256,9 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   LEARNING_COURSE_ROLLBACK_TARGET_INVALID: "只能回滚到非当前的历史版本；请重新读取版本列表，核对目标为历史版本后再操作。",
   EVENT_ALREADY_JOINED: "用户已经参加过这个活动，请核对原参与记录；不要重复报名。",
   EVENT_NOT_FOUND: "活动已不存在或已删除，请重新读取活动列表；原结果未知时仍需核对原操作。",
-  COVERAGE_REDLINE: "当前兑付覆盖率没有达到资金红线，或权威覆盖率未可靠读取；请先核对资金状态后再申请放大奖励。",
+  COVERAGE_REDLINE: COVERAGE_REDLINE_MESSAGE,
+  // 试用资格发放被覆盖率阻止，与抽奖改发安慰奖的 B1_COVERAGE_REDLINE 不同。
+  B1_COVERAGE_REDLINE_BLOCKED: COVERAGE_REDLINE_MESSAGE,
   RAFFLE_ALREADY_EXISTS: "这一期编号已存在，请读取原期核对；新建其他期须使用不同编号。",
   RAFFLE_CONFIG_STALE: "这一期的配置已变化，请读取当前配置后重新确认；原操作未知时先查询原结果。",
   RAFFLE_ALREADY_OPEN: "这一期当前不能修改：开放且已有报名、仍保持开放，或已进入开奖阶段；请读取期状态核对。",
@@ -3893,6 +3897,9 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   PERMISSION_NOT_FOUND: "这项权限不存在或已停用，请重新读取权限清单后核对。",
 };
 
+const ERROR_MESSAGES_BY_CODE_LENGTH = Object.entries(ADMIN_ERROR_MESSAGES)
+  .sort(([left], [right]) => right.length - left.length);
+
 /**
  * 机器码兜底判据:裸码,或**带 `:明细` 后缀**的码(`H9_CONFIG_VERSION_CONFLICT:v7`)。
  *
@@ -3902,6 +3909,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
  *    41 个调用方共用本函数,所以补在这里而不是给每个域的字典各塞一批猜出来的后端码。
  */
 const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
+/** 表里认不出的机器码落到的兜底句。 */
+export const UNMAPPED_ADMIN_ERROR_TEXT = "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。";
 
 function eventRuleIncompleteMessage(code: string, data: unknown): string | undefined {
   if (code !== "EVENT_LOCALIZED_CONTENT_INCOMPLETE" && code !== "EVENT_RULE_INCOMPLETE") return;
@@ -3973,7 +3982,7 @@ export function formatAdminApiError(
   const exact = ADMIN_ERROR_MESSAGES[raw];
   if (exact) return exact;
 
-  for (const [code, translated] of Object.entries(ADMIN_ERROR_MESSAGES)) {
+  for (const [code, translated] of ERROR_MESSAGES_BY_CODE_LENGTH) {
     if (raw.includes(code)) return translated;
   }
 
@@ -4000,7 +4009,7 @@ export function formatAdminApiError(
     // 而它们几乎全是协议/契约/数据形状类失败(*_INVALID / *_MISSING / *_PROTOCOL_ERROR /
     // *_TRUNCATED / *_EMPTY_RESPONSE),L1 KPI 这类只读报表页运营根本没有输入可检查。
     // 真属输入侧的码靠表内专属条目给可操作提示,不靠这句兜底。
-    return "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。";
+    return UNMAPPED_ADMIN_ERROR_TEXT;
   }
 
   return raw;

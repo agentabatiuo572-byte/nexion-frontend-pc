@@ -9,6 +9,7 @@ import { claimPendingCommandOwner, clearPendingCommandRecords } from "@/lib/admi
 import type { AdminRole, EffectiveMenuNode } from "@/lib/nav/console-nav";
 import type { SupportReadMode } from "@/lib/admin/session-role";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
+import { useUI } from "@/lib/store/ui";
 
 export interface AdminSession {
   adminId: number;
@@ -66,6 +67,7 @@ export const useAdminAuth = create<AdminAuthState>()((set) => ({
         || state.session.username !== session.username;
       const accessChanged = adminShellSessionKey(state.session) !== adminShellSessionKey(session);
       if (identityChanged || accessChanged) renewAdminAuthLifecycle();
+      if (identityChanged) useUI.getState().dismissPersistentToasts();
       claimPendingCommandOwner(session.passwordChangeRequired ? "" : String(session.adminId));
       return {
         isAuthenticated: !session.passwordChangeRequired,
@@ -111,6 +113,7 @@ export const useAdminAuth = create<AdminAuthState>()((set) => ({
   signOut: () => {
     completeAdminLogout();
     clearPendingCommandRecords();
+    useUI.getState().dismissPersistentToasts();
     set((state) => ({
       isAuthenticated: false,
       operator: "",

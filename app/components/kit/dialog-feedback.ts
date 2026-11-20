@@ -3,7 +3,7 @@
 import { useId, useLayoutEffect } from "react";
 import { useUI } from "@/lib/store/ui";
 
-/** 开框前清掉旧提示；后来的反馈由最上层框内的 ToastHost 显示，随内容排版。 */
+/** 开框前清掉普通提示；常驻提示等关框后恢复，新的普通反馈显示在最上层框内。 */
 export function useDialogFeedback(open: boolean | string = true) {
   const id = useId();
   useLayoutEffect(() => {

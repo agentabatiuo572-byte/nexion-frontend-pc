@@ -1049,7 +1049,7 @@ export function disclosureChange(current: DisclosureVersionItemView | undefined,
 }
 
 /** 新旧两段只标中间改过的那一段：前后相同的字照常显示，改后的用 ins、原来的用 del，审批人一眼看到改了哪里。 */
-function ChangedText({ before, after, side }: { before: string; after: string; side: "after" | "before" }) {
+export function ChangedText({ before, after, side }: { before: string; after: string; side: "after" | "before" }) {
   const old = Array.from(before);
   const next = Array.from(after);
   let head = 0;
@@ -1061,33 +1061,38 @@ function ChangedText({ before, after, side }: { before: string; after: string; s
   return <>{text.slice(0, head).join("")}{middle && (side === "after" ? <ins>{middle}</ins> : <del>{middle}</del>)}{text.slice(text.length - tail).join("")}</>;
 }
 
-/** 发布核对：总文和改过的章合成一个折叠，点开只放改过的语言，每段先写改后、再写现在；没改的总文和章收进另一个折叠。改几章框都一样高，打开时理由框在一屏里（DP-06）。 */
-export function PublishDiff({ current, target }: { current?: DisclosureVersionItemView; target: DisclosureVersionItemView }) {
+/**
+ * 发布核对：总文和改过的章合成一个折叠，点开只放改过的语言，每段先写改后、再写现在；没改的总文和章收进另一个折叠。改几章框都一样高，打开时理由框在一屏里（DP-06）。
+ * frozen：A2 审批单冻结的两版对照，前后写「本版／上一版」（单结束后旧版不再是「现在」），无变化的内容只放两版都有的语言。I5 自己不传。
+ */
+export function PublishDiff({ current, target, scope, frozen }: { current?: DisclosureVersionItemView; target: DisclosureVersionItemView; scope?: string; frozen?: boolean }) {
   const change = disclosureChange(current, target);
-  const shown = LANGUAGES.filter(([code]) => (target.languageScope ?? "").split("+").includes(code));
+  const [afterLabel, beforeLabel] = frozen ? ["本版", "上一版"] : ["改后", "现在"];
+  const currentCodes = (current?.languageScope ?? "").split("+");
+  const shown = LANGUAGES.filter(([code]) => (target.languageScope ?? "").split("+").includes(code) && (!frozen || !current || currentCodes.includes(code)));
   const chapterOf = (no: string) => current?.chapters.find((chapter) => chapter.no === no);
   // 第一次发布没有旧版本，折叠里是全部内容，不叫差异。
   const parts = !current ? ["总文", `${target.chapters.length} 章`] : [change.summary.length > 0 && `总文（${change.summary.map(([, name]) => name).join("、")}）`, change.chapters.length > 0 && `第 ${change.chapters.map((item) => item.chapter.no).join("、")} 章`].filter(Boolean);
   const summarySame = change.summary.length === 0;
   return <div data-business-form="disclosure-publish-review" className="rd-form-stack">
-    {parts.length > 0 && <Fold inset title={current ? "版本差异" : "全部内容"} summary={parts.join("、")}>
+    {parts.length > 0 && <Fold inset title={`${scope ? `${scope} · ` : ""}${current ? "版本差异" : "全部内容"}`} summary={parts.join("、")}>
       <div className="rd-doc">
         {change.summary.map(([code, name]) => <section key={`summary-${code}`}>
           <h3>总文 · {name}</h3>
-          <p>{current && "改后："}{!target[code] ? "空" : current ? <ChangedText before={current[code]} after={target[code]} side="after" /> : target[code]}</p>
-          {current && <p className="rd-weak">现在：{current[code] ? <ChangedText before={current[code]} after={target[code]} side="before" /> : "空"}</p>}
+          <p>{current && `${afterLabel}：`}{!target[code] ? "空" : current ? <ChangedText before={current[code]} after={target[code]} side="after" /> : target[code]}</p>
+          {current && <p className="rd-weak">{beforeLabel}：{current[code] ? <ChangedText before={current[code]} after={target[code]} side="before" /> : "空"}</p>}
         </section>)}
         {change.chapters.flatMap(({ chapter, languages }) => languages.map(([code, name]) => {
           const before = chapterOf(chapter.no);
           return <section key={`${chapter.no}-${code}`}>
             <h3>第 {chapter.no} 章 · {name} · {chapter[code]}</h3>
-            <p>{before ? <>改后：<ChangedText before={before[`${code}Body`]} after={chapter[`${code}Body`]} side="after" /></> : chapter[`${code}Body`]}</p>
-            {before && <p className="rd-weak">现在：{before[code]} <ChangedText before={before[`${code}Body`]} after={chapter[`${code}Body`]} side="before" /></p>}
+            <p>{before ? <>{afterLabel}：<ChangedText before={before[`${code}Body`]} after={chapter[`${code}Body`]} side="after" /></> : chapter[`${code}Body`]}</p>
+            {before && <p className="rd-weak">{beforeLabel}：{before[code]} <ChangedText before={before[`${code}Body`]} after={chapter[`${code}Body`]} side="before" /></p>}
           </section>;
         }))}
       </div>
     </Fold>}
-    {(summarySame || change.same.length > 0) && <Fold inset title="无变化的内容" summary={[summarySame && "总文", change.same.length > 0 && `${change.same.length} 章`].filter(Boolean).join("、")}>
+    {(summarySame || change.same.length > 0) && <Fold inset title={`${scope ? `${scope} · ` : ""}无变化的内容`} summary={[summarySame && "总文", change.same.length > 0 && `${change.same.length} 章`].filter(Boolean).join("、")}>
       <div className="rd-doc">
         {summarySame && <section>
           <h3>总文</h3>
