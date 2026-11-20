@@ -329,6 +329,8 @@ const F2_POLICY_COVERAGE = "批准时先查兑付覆盖率：读不到或低于�
 function coverageFacts(w: { operationCode?: string | null; obj?: string; after?: string; action?: string }) {
   const fund = fundTicket(w);
   if (fund?.kind === "fConfig" && fund.spec?.loosen) return { lead: `这次${fund.spec.loosen}，会让平台多付钱`, check: "批准时先查兑付覆盖率：低于红线就不改，审批单留着待审批。" };
+  // 开启自动发放没有「调高、调低」的方向，后果写成和团队平衡奖励页确认框同一句，不写「多付钱」；批准时读不到覆盖率也拦（BinarySettlementPolicyProvider.currentCoverageBlock）。
+  if (fund?.kind === "fConfig" && fund.spec?.payoutControlAmplification === "enable") return { lead: "开启后系统按周期自动发钱", check: "批准时先查兑付覆盖率：读不到或低于红线就不改，审批单留着待审批。" };
   if (fund?.kind === "f5Reissue") return { lead: "补发会给每笔生成一条新的应付奖励", check: "批准时先查兑付覆盖率，读不到或低于红线就不补，审批单留着待审批。" };
   if (w.operationCode === "f_seven_layer_activation" || w.operationCode === "f_direct_referral_policy") return { lead: undefined, check: F2_POLICY_COVERAGE };
   // OpsTeamService.initializeUnilevelRules：建规则前查兑付覆盖率，低于红线整单不执行。
@@ -507,7 +509,7 @@ function approvalTiming(w: A2OperationRow) {
   const fund = fundTicket(w);
   if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才发钱；点「驳回」原操作不执行。" };
   if (fund?.kind === "f5Status" && fund.state === "unlocked") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对，通过了才放钱；点「驳回」原操作不执行。" };
-  if (w.amplifies && fund?.kind === "fConfig" && fund.spec?.loosen) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才改；点「驳回」原操作不执行。" };
+  if (w.amplifies && fund?.kind === "fConfig" && (fund.spec?.loosen || fund.spec?.payoutControlAmplification === "enable")) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才改；点「驳回」原操作不执行。" };
   if (fund?.kind === "f5Reissue") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才补发；点「驳回」原操作不执行。" };
   if (g3PolicyExecutionTiming(w)) return { tag: "按计划时点生效", impact: "", drawer: "点「批准」确认后按生效时间执行；点「驳回」原操作不执行。" };
   // 披露发布只封存这一版，用户看哪版另走「设置／调整生效版本」审批（I5，PRD I5 发布批准）。
@@ -2917,6 +2919,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? "真实放钱，不能撤销。批准时先核对暂停和兑付覆盖率，结算组的奖励还核冷却到没到期；不满足就不放钱，审批单留着待审批。"
       : shownFund?.kind === "f5Reissue" ? `真实补发，不能撤销。${shownCover?.check ?? ""}`
         : shown?.operationCode === "k1_release_param" || shown?.operationCode === "k1_earnings_release" ? `会让平台多付钱。${K1_APPROVAL_CHECK[shown.operationCode === "k1_release_param" ? "param" : "release"]}`
+        : shownFund?.kind === "fConfig" && shownFund.spec?.payoutControlAmplification === "enable" && shownCover ? `${shownCover.lead}。${shownCover.check}`
         : `会让平台多付钱。${shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。`}`;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
   const ticketFooter = shown && (shownOwn || shownCanApprove || shownCanReject ? (

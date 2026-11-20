@@ -92,7 +92,7 @@ export function fConfigSpec(key: string, after?: string): FConfigSpec | undefine
     case F3_AUTO_SETTLE_KEY: return spec(F3, "自动发放", { action: next === "on" ? "开启自动发放" : next === "off" ? "关闭自动发放" : "调整自动发放",
       values: { on: "开", off: "关" }, payoutControlAmplification: "enable",
       impact: next === "off" ? "关闭后之后到期的周期不再自动结算，手动结算照常可用。" : "批准后系统按结算周期自动结算；关闭期间的周期不补发，要补的手动结算。",
-      detail: "要另一位超级管理员批准；批准时查兑付覆盖率，读不到或低于红线不能批准。" });
+      detail: "要另一位超级管理员批准。" });
     case F3_PLATFORM_CAP_PCT_KEY: return spec(F3, "全平台封顶比例", { action: "调高全平台封顶比例", unit: "%", loosen: "调高", payoutControlAmplification: "increase",
       impact: "批准后，还没开始结算的期按新比例封顶；已结过一笔的期沿用原额度。",
       detail: "要另一位超级管理员批准。每期全平台发放最多是该期已付款订单额乘这个比例。" });
