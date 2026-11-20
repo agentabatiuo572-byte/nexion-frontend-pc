@@ -144,6 +144,41 @@ export type F3CurrentPeriodState =
   | { status: "invalid-response" }
   | { status: "success"; data: F3CurrentPeriodOverview };
 
+function validatePeriod(period: F3PeriodOverview, current: boolean) {
+  const { availability, frozen, settlementDate, periodStart, periodEnd } = period;
+  const expectedFreezeStatus = frozen === null ? "UNKNOWN" : frozen ? "FROZEN" : "NOT_FROZEN";
+  const hasUtc = period.periodStartAtUtc !== null && period.periodEndExclusiveAtUtc !== null;
+  if (period.freezeStatus !== expectedFreezeStatus
+    || availability.dates !== (settlementDate !== null)
+    || availability.utc !== hasUtc
+    || availability.paidSales !== (period.paidSalesUsdt !== null)
+    || availability.platformCap !== (period.platformCapUsdt !== null)
+    || availability.platformUsed !== (period.platformUsedUsdt !== null)
+    || period.available !== Object.values(availability).every(Boolean)) return invalid();
+
+  const expectedDates = current ? frozen !== null : frozen === true;
+  if (availability.dates !== expectedDates) return invalid();
+  if (!current && frozen === false && !period.unavailableReasons.includes("F3_PLATFORM_PERIOD_NOT_FROZEN")) return invalid();
+  if (availability.dates) {
+    if (periodStart === null || periodEnd === null || periodEnd !== settlementDate
+      || periodStart > periodEnd || period.periodDays === null
+      || period.businessZone === null || period.storageZone === null
+      || (current && period.cadence === null)) return invalid();
+  } else if (periodStart !== null || periodEnd !== null || period.periodDays !== null
+    || period.periodStartAtUtc !== null || period.periodEndExclusiveAtUtc !== null
+    || period.paidSalesUsdt !== null || period.platformCapPct !== null) return invalid();
+
+  const formalValues = [
+    period.platformCapUsdt, period.plannedRawTotalUsdt, period.platformUsedUsdt,
+    period.settledPayoutUsdt, period.automaticSettledUsdt, period.manualSettledUsdt,
+    period.settledSettlementCount, period.platformRemainingUsdt,
+  ];
+  if (frozen === true) {
+    if (formalValues.some(value => value === null) || period.paidSalesUsdt === null
+      || period.platformCapPct === null || !period.paidSalesComplete) return invalid();
+  } else if (formalValues.some(value => value !== null) || period.paidSalesComplete) return invalid();
+}
+
 function exceedsCap(planned: string | null, cap: string | null): boolean {
   if (planned === null || cap === null) return false;
   const [plannedWhole, plannedFraction = ""] = planned.split(".");
@@ -156,17 +191,30 @@ function exceedsCap(planned: string | null, cap: string | null): boolean {
 function readOverview(value: unknown): F3CurrentPeriodOverview {
   const data = record(value);
   if (data.domain !== "F3") return invalid();
-  const currentPeriod = record(data.currentPeriod);
-  const platformCapEstimateUsdt = decimal(currentPeriod.platformCapEstimateUsdt ?? null);
+  const rawCurrentPeriod = record(data.currentPeriod);
+  const currentPeriod = readPeriod(rawCurrentPeriod);
   const latestFrozenPeriod = readPeriod(record(data.latestFrozenPeriod));
+  validatePeriod(currentPeriod, true);
+  validatePeriod(latestFrozenPeriod, false);
+
+  const platformCapEstimateUsdt = decimal(rawCurrentPeriod.platformCapEstimateUsdt ?? null);
+  const estimateReason = optional(rawCurrentPeriod.platformCapEstimateReason, string);
+  if (Object.hasOwn(rawCurrentPeriod, "platformCapEstimateUsdt")) {
+    if (currentPeriod.frozen === true) {
+      if (platformCapEstimateUsdt !== null || estimateReason !== null) return invalid();
+    } else if (platformCapEstimateUsdt === null) {
+      if (!estimateReason?.trim()) return invalid();
+    } else if (estimateReason !== null || currentPeriod.paidSalesUsdt === null
+      || currentPeriod.platformCapPct === null) return invalid();
+  }
 
   return {
     domain: data.domain,
     currentPeriod: {
-      ...readPeriod(currentPeriod),
+      ...currentPeriod,
       platformCapEstimateUsdt,
       estimateAvailable: platformCapEstimateUsdt !== null,
-      estimateReason: optional(currentPeriod.platformCapEstimateReason, string),
+      estimateReason,
     },
     latestFrozenPeriod: {
       ...latestFrozenPeriod,
@@ -230,19 +278,20 @@ async function readCurrentPeriod(signal: AbortSignal): Promise<F3CurrentPeriodSt
   }
 }
 
-export function useF3CurrentPeriod(refreshKey = 0): F3CurrentPeriodState & { reload: () => void } {
+export function useF3CurrentPeriod(refreshKey = 0, enabled = true): F3CurrentPeriodState & { reload: () => void } {
   const [reloadKey, setReloadKey] = useState(0);
   const [state, setState] = useState<F3CurrentPeriodState>({ status: "loading" });
   const reload = useCallback(() => setReloadKey(key => key + 1), []);
 
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     setState({ status: "loading" });
     void readCurrentPeriod(controller.signal).then(result => {
       if (!controller.signal.aborted) setState(result);
     });
     return () => controller.abort();
-  }, [refreshKey, reloadKey]);
+  }, [enabled, refreshKey, reloadKey]);
 
   return { ...state, reload };
 }

@@ -6,7 +6,7 @@
  * 上期已结算：付款额、封顶、已发（自动、手动）、剩余都是结算时定下的数。
  * 整页刷新（ctx.f3Loading 由否变是）时跟着重读。
  */
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Gauge } from "lucide-react";
 import { BlockState, Cell, Explain, InlineRetry, Panel, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
 import { useF3CurrentPeriod, type F3CurrentPeriodView, type F3LatestFrozenPeriodView } from "@/lib/admin/f3-current-period";
@@ -139,15 +139,17 @@ function LatestRow({ period, onRetry }: { period: F3LatestFrozenPeriodView; onRe
 }
 
 export function F3PeriodOverview({ ctx }: { ctx: FViewCtx }) {
-  const state = useF3CurrentPeriod();
-  const { reload } = state;
-  // 整页刷新：读取状态由否变是时重读一次；这一块自己还在读（刚挂载）时不再读第二遍。
-  const pageLoading = useRef(ctx.f3Loading);
-  const ownLoading = state.status === "loading";
+  const [mounted, setMounted] = useState(false);
+  const [refreshKey, setRefreshKey] = useState<number | null>(null);
+  // Let the parent start its tab-entry read in the same effect pass before starting ours.
+  useEffect(() => setMounted(true), []);
   useEffect(() => {
-    if (ctx.f3Loading && !pageLoading.current && !ownLoading) reload();
-    pageLoading.current = ctx.f3Loading;
-  }, [ctx.f3Loading, ownLoading, reload]);
+    if (!mounted) return;
+    if (ctx.f3Loading) setRefreshKey(key => key === null ? null : key + 1);
+    else setRefreshKey(key => key ?? 0);
+  }, [mounted, ctx.f3Loading]);
+  const state = useF3CurrentPeriod(refreshKey ?? 0, refreshKey !== null);
+  const { reload } = state;
 
   const title = "本期和上期封顶";
   const explain = "全平台一期团队平衡奖励最多发多少：封顶 = 这一期已付款订单额 × 封顶比例，结算时定稿。";
