@@ -62,6 +62,7 @@ export function listF4Proposals(adminId: number): FDomainAttempt[] {
 }
 
 export function f4ProposalAuthority(spec: ProposeSpec) {
+  if (spec.command.op === "f4_quota_tier_create") return "network_f4_write";
   if (["f4_pool_settle", "f4_leaderboard_period_payout", "f4_ambassador_policy_change"].includes(spec.command.op)) return "network_f4_pool_fund";
   const key = String(spec.command.params.key ?? "");
   if (key.startsWith("F.pool.votes.") || key.startsWith("F.quota.")) return "network_f4_write";
@@ -81,7 +82,7 @@ export function canRetryF4Proposal(original: FDomainAttempt) {
   return !!session && original.adminId === session.adminId && !!original.request && !!original.spec
     && !original.received && !original.ticket && !isRetryExpired(original)
     && (original.spec?.command.op === "f_config_batch" ? !fConfigBatchPermissionIssue(original.spec.obj.split(","), session.authorities) : session.authorities.includes(f4ProposalAuthority(original.spec)))
-    && (original.spec.command.op === "f4_ambassador_policy_change" || session.authorities.some(code => code === "platform_a2_write" || code === "platform_a2_proposal_create"))
+    && (["f4_ambassador_policy_change", "f4_quota_tier_create"].includes(original.spec.command.op) || session.authorities.some(code => code === "platform_a2_write" || code === "platform_a2_proposal_create"))
     && (!String(original.spec.command.params.key ?? "").startsWith("F.pool.votes.") || session.authorities.includes("network_f4_pool_fund"));
 }
 
@@ -127,7 +128,7 @@ export async function sendF4Proposal(adminId: number, slot: string, spec?: Propo
   const batchIssue = intent.command.op === "f_config_batch" ? fConfigBatchPermissionIssue(intent.obj.split(","), current.authorities) : undefined;
   if (batchIssue) throw new Error(batchIssue);
   if (intent.command.op !== "f_config_batch" && !current.authorities.includes(f4ProposalAuthority(intent))
-    || intent.command.op !== "f4_ambassador_policy_change" && !current.authorities.some(code => code === "platform_a2_write" || code === "platform_a2_proposal_create")
+    || !["f4_ambassador_policy_change", "f4_quota_tier_create"].includes(intent.command.op) && !current.authorities.some(code => code === "platform_a2_write" || code === "platform_a2_proposal_create")
     || String(intent.command.params.key ?? "").startsWith("F.pool.votes.") && !current.authorities.includes("network_f4_pool_fund")) throw new Error("ADMIN_PERMISSION_DENIED");
   if (!original) {
     const request = { action: intent.action, obj: intent.obj, beforeValue: intent.before, afterValue: intent.after,

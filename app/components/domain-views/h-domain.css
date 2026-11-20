@@ -370,6 +370,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-usage .rd-segbar-wrap { max-width: none; }
 .h7-card-actions { display: flex; align-items: center; gap: var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
 .h7-card-actions > :last-child { margin-left: auto; }
+.h7-table-period { display: block; min-width: 136px; }
 .h7-table-usage { display: inline-grid; grid-template-columns: auto 64px; align-items: center; justify-items: end; gap: var(--rd-space-3); }
 .h7-table-usage > :last-child { justify-self: stretch; }
 /* 结果未知逐条列表（和 G 域原操作提醒同一排法） */

@@ -1,7 +1,7 @@
 import type { L1KpiQuery, LReportCreateInput } from "@/lib/admin/l-client";
 import type { FundCommandOrigin } from "@/lib/admin/fund-command-investigation";
 import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { validateL1Dashboard } from "./l1-kpi-contract.ts";
+import { L1_KPI_IDS, validateL1Dashboard } from "./l1-kpi-contract.ts";
 import { readL1LiveTotals } from "./l1-l2-live-data.ts";
 
 export type L1ExportMode = "series" | "snapshot" | "totals";
@@ -92,9 +92,9 @@ export function l1ReportInput(mode: L1ExportMode, query: L1KpiQuery): LReportCre
     exportType: complete ? "KPI 序列" : "KPI 当前汇总",
     timeRange: complete ? "当前时间范围" : "当前数据",
     fields: complete
-      ? "8关键指标当前值/目标/环比序列"
+      ? `${L1_KPI_IDS.length}关键指标当前值/目标/环比序列`
       : mode === "snapshot"
-        ? "8关键指标当前值/目标/可用性"
+        ? `${L1_KPI_IDS.length}关键指标当前值/目标/可用性`
         : "用户/订单/提现/兑换/质押/钱包流水/工单/审计聚合计数",
     piiLevel: "NONE",
     maskPolicy: "NONE",

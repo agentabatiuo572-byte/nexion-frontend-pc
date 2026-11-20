@@ -175,6 +175,9 @@ function approvalExecutorLabel(w: A2OperationRow) {
   // K1RiskApproval.validateChecker：有效超级管理员且有审批批准权限，不能是提交人。
   if (w.operationCode === "k1_release_param" || w.operationCode === "k1_earnings_release") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "c2_session_revoke_all" || !w.operationCode && w.action.startsWith("强制登出 · ")) return "另一位有审批批准权限和退出全部设备权限的超级管理员";
+  if (w.operationCode === "e1_hosting_centers_update") return "另一位有审批批准权限和商品修改权限的管理员";
+  if (w.operationCode === "h5_earn_milestone_create") return "另一位有审批批准权限的超级管理员";
+  if (w.operationCode === "f4_quota_tier_create") return "另一位有审批批准权限和购机名额修改权限的超级管理员";
   // H5GrowthApproval：三类成长审批都要超级管理员且有审批批准权限。
   if (w.operationCode === "h5_streak_milestone" || w.operationCode === "h5_power_up_config" || w.operationCode === "h5_earn_milestone") return "另一位有审批批准权限的超级管理员";
   if (/^(?:兑换|回购)参数调整 · /.test(w.action)) return "另一位有审批批准权限的超级管理员";
@@ -452,6 +455,7 @@ function g4ChangesSupply(w: Pick<A2OperationRow, "before" | "after">) {
 /** Presentation-only: retain existing backend-check notes without copying business permissions. */
 function decisionRule(w: TicketIdentity): DecisionRule {
   const code = w.operationCode ?? "";
+  if (["e1_hosting_centers_update", "h5_earn_milestone_create", "f4_quota_tier_create"].includes(code)) return {};
   if (["h1_phase_dial", "c2_session_revoke_all", "h5_power_up_config", "h5_earn_milestone", "h5_streak_milestone", "g2_exchange_param", "g7_repurchase_param", "g4_genesis_param", "e4_order_refund", "j1_gate_resume", "f5_commission_suspension", "h2_trial_charge"].includes(code)
     || !code && w.action.startsWith("强制登出 · ") || w.fundEffect === "ORDER_REFUND" || A4_REGISTRY_CODES.includes(code) || isH7VoucherApproval(code)
     || w.action === `兑换参数调整 · ${w.obj}` || w.action === `回购参数调整 · ${w.obj}` || w.action === `调整创世参数 · ${w.obj}`) return {};

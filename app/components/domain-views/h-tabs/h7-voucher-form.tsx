@@ -10,7 +10,7 @@ import { BellOff, CircleSlash, Layers, Lock, Ticket } from "lucide-react";
 import { Button, Check, CheckGroup, Decision, Drawer, Field, Fold, Input, Modal, Notice, NumberInput, Segments, StatusTag } from "@/app/components/rd";
 import { h7DateFacts, h7Stamp, h7EditedDateMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
 import { validateH7VoucherMoneyPrecision } from "@/lib/admin/h7-voucher-money";
-import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, amountText, countText, voucherSentence, startText, endText, type H7Voucher } from "./h7-voucher-parts";
+import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, WHEEL_ONLY_TEXT, amountText, countText, voucherSentence, startText, endText, type H7Voucher } from "./h7-voucher-parts";
 
 export type H7FormValue = Record<string, string>;
 /** 3c2031d4：「可拆分」已停用，新的勾选会被拒；编辑时只显示以前存的值。券都是整张核销。 */
@@ -172,6 +172,8 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
   const [leaving, setLeaving] = useState(false);
   const [folds, setFolds] = useState({ popup: false, stack: false });
   const typeLocked = !!voucher && voucher.issuedCount > 0;
+  // 转盘专发券的入口不能改：换成锁定标签，保存时原样带回存的入口。
+  const wheelOnly = voucher?.wheelOnly === true;
   const errors = useMemo(() => formErrors(value), [value]);
   const shown = attempted ? errors : {};
   const dirty = JSON.stringify(value) !== JSON.stringify(initial);
@@ -259,10 +261,14 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
               <Field label="发给谁" required error={shown.audience} help={value.audience === "new" ? "新用户指注册不满 1 个月的账号；不是没下过单的人。" : undefined}>
                 <Segments label="发给谁" value={value.audience} onChange={(next) => set("audience", next)} items={[{ value: "all", label: AUDIENCE_LABEL.all }, { value: "new", label: AUDIENCE_LABEL.new }]} />
               </Field>
-              <CheckGroup legend="领取入口" summary={selectedSurfaces.length ? `已选 ${selectedSurfaces.length} 个` : "不选＝不限"}
+              {wheelOnly
+                ? <Field label="领取入口" help="用户不能自己领，只在幸运转盘中奖时发到钱包，所以入口不能改。">
+                  <span className="h7-locked-type"><StatusTag tone="neutral" icon={Lock}>{WHEEL_ONLY_TEXT}</StatusTag></span>
+                </Field>
+                : <CheckGroup legend="领取入口" summary={selectedSurfaces.length ? `已选 ${selectedSurfaces.length} 个` : "不选＝不限"}
                 help="App 目前只有首页和商城能领券，选别的不会多出入口。">
                 {SURFACES.map((id) => <Check key={id} label={SURFACE_LABEL[id]} checked={selectedSurfaces.includes(id)} onChange={() => toggle("claimSurfaces", id)} />)}
-              </CheckGroup>
+              </CheckGroup>}
               {shown.claimSurfaces && <p className="rd-form-error" role="alert">{shown.claimSurfaces}</p>}
             </section>
 
@@ -331,8 +337,8 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
             </div>
             <p className="h7-preview-sentence">{voucherSentence(preview, skuLabels)}</p>
             <ul className="h7-preview-notes">
-              <li>{value.status === "paused" ? "保存后是已暂停：用户还领不到。" : "保存后是投放中：符合条件的用户可以领。"}</li>
-              <li>{`领取入口：${selectedSurfaces.length ? selectedSurfaces.map((id) => SURFACE_LABEL[id]).join("、") : "不限"}`}</li>
+              <li>{value.status === "paused" ? wheelOnly ? "保存后是已暂停：转盘抽中这一档会发券失败。" : "保存后是已暂停：用户还领不到。" : wheelOnly ? "保存后是投放中：用户不能自己领，转盘中奖时发放。" : "保存后是投放中：符合条件的用户可以领。"}</li>
+              <li>{`领取入口：${wheelOnly ? WHEEL_ONLY_TEXT : selectedSurfaces.length ? selectedSurfaces.map((id) => SURFACE_LABEL[id]).join("、") : "不限"}`}</li>
             </ul>
             {voucher && issued > 0 && (touchesIssued
               ? <Notice tone="warn" title="会影响已发出的券">{`已发出还没用的 ${countText(voucher.availableCount)} 张也按改后的面额、门槛、商品和有效期使用；已用掉的 ${countText(voucher.redeemedCount)} 张和已完成的订单不变。`}</Notice>

@@ -64,7 +64,7 @@ import {
 } from "./e-tabs/data";
 import type { E4PendingCommand, E6SkuCandidates, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
 import { DevicePoolChoices, FIXED_DEVICE_LEVELS } from "./e-tabs/task-type-policy";
-import { E1Page } from "./e-tabs/e1-page";
+import { E1Area } from "./e-tabs/hosting-centers";
 import { E2Tasks } from "./e-tabs/e2-tasks";
 import { useE3Proposals } from "./e-tabs/e3-proposals";
 import { E3Lifecycle, E3_APPROVER_BATCH, E3_APPROVER_SINGLE, E3_COVERAGE_CHECK } from "./e-tabs/e3-lifecycle";
@@ -124,7 +124,7 @@ function SkuFld({ label, value, onChange, placeholder, type = "text", hint, tip,
 
 export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = meta.l2Id;
-  return tab === "E1" ? <E1Page /> : <ELegacyDomainView meta={meta} />;
+  return tab === "E1" ? <E1Area /> : <ELegacyDomainView meta={meta} />;
 }
 
 function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {

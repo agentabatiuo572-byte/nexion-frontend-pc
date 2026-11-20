@@ -656,6 +656,7 @@ export type H7Voucher = {
   id: string; name: string; type: "fixed" | "percent";
   amountUSD?: number; percent?: number; minPurchaseUSD?: number; maxDiscountUSD?: number;
   applicableSkus: string[]; audience: "new" | "all"; startAt: number; endAt: number; claimSurfaces: string[];
+  wheelOnly?: boolean;
   popupEnabled: boolean; popupDelayMs: number; popupCooldownHours: number; popupMaxPerSession: number;
   popupCadenceEnabled: boolean; stackWithTrial: boolean; stackWithOthers: boolean; splittable: boolean;
   splittableConfigurable?: boolean; splittableRetired?: boolean; splittableWriteBlockedReason?: string;
@@ -710,6 +711,7 @@ export function parseH7Voucher(raw: unknown): H7Voucher {
     amountUSD: number("amountUSD", false), percent: number("percent", false),
     minPurchaseUSD: number("minPurchaseUSD", false), maxDiscountUSD: number("maxDiscountUSD", false),
     applicableSkus: strings("applicableSkus"), claimSurfaces: strings("claimSurfaces"),
+    wheelOnly: row.wheelOnly === undefined ? false : boolean("wheelOnly"),
     startAt: number("startAt"), endAt: number("endAt"), issuanceLimit: number("issuanceLimit"), version: number("version", true, 1),
     issuedCount: number("issuedCount"), availableCount: number("availableCount"), redeemedCount: number("redeemedCount"),
     revokedCount: number("revokedCount"), batchCount: number("batchCount"),

@@ -211,6 +211,7 @@ export interface FViewCtx {
   f4ApprovalRows: A2OperationRow[];
   recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry" | "release") => Promise<boolean>;
   refreshF4: () => Promise<void>;
+  submitF4Proposal: (slot: string, spec: import("@/lib/admin/propose-or-execute").ProposeSpec) => Promise<void>;
   updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number, expectedMaterialRevision?: number) => Promise<void>;
   updateF4AmbassadorPolicy: (policy: F4AmbassadorPolicyUpdate, reason: string) => Promise<boolean>;
   proposeF4Settlement: (reason: string) => Promise<void>;

@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle, ArrowUpDown, BarChart3, CalendarCheck, CircleSlash, Dices, Gift, Lock, Pencil, RefreshCw, ShieldCheck, Sparkles, Trophy, Users,
+  AlertTriangle, ArrowUpDown, BarChart3, CalendarCheck, CircleSlash, Dices, Gift, Lock, Pencil, Plus, RefreshCw, ShieldCheck, Sparkles, Trophy, Users,
 } from "lucide-react";
 import {
   BlockState, Button, Change, ChartLegend, ColumnChart, Conclusion, ConfigList, ConfigRow, Fact, Facts, Notice, PageHeader, PageTabs, Panel, ReleaseModal,
@@ -28,6 +28,7 @@ import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, HCtx } from "./types";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
+import { EARN_CREATE_TARGET, earnCreateRequest } from "./h5-earn-create";
 import {
   CheckInStrip, H5RecoveryNotice, MilestoneTrack, acknowledgedTag, amountText, countText, dayNumber, expiredTag, legacyRewardName, pendingTag,
   positiveInteger, rewardKindText, streakRewardView, unknownTag,
@@ -459,6 +460,11 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     });
   };
 
+  const openEarnCreate = (original?: H5PendingCommand) => openActionConfirm({
+    ...earnCreateRequest({ snapshot: original?.change.snapshot ?? model!, approver: FUND_APPROVER, rights: FUND_APPROVER_RIGHTS, runChange }),
+    original,
+  });
+
   const openTick = (original?: H5PendingCommand) => {
     const snapshot = original?.change.snapshot ?? model!;
     const target = "tick:interval";
@@ -505,7 +511,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     const snapshot = original.change.snapshot;
     const [kind, ...idParts] = original.change.target.split(":");
     const id = idParts.join(":");
-    if (kind === "rule") openRule(snapshot.rules.find(item => item.key === id)!, original);
+    if (original.change.target === EARN_CREATE_TARGET) openEarnCreate(original);
+    else if (kind === "rule") openRule(snapshot.rules.find(item => item.key === id)!, original);
     else if (kind === "streak") openStreak(snapshot.streakMilestones.find(item => item.id === Number(id))!, original);
     else if (kind === "power") openPowerUp(snapshot.powerUps.find(item => item.id === Number(id))!, original);
     else if (kind === "earn") openEarn(snapshot.earnMilestones.find(item => item.key === id)!, original);
@@ -522,14 +529,14 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
   // 连签档后端存的旧名称（+5 NEX）原样标成旧名称，不让裸的 NEX 出现。
   const shownReward = (value: string) => /\bNEX\b/i.test(value) ? `旧名称「${value}」` : value;
-  const releasable = (record: H5PendingCommand) => record.request.kind === "approval" && isRetryExpired(record) && !record.acknowledged && !record.ticket;
+  const releasable = (record: H5PendingCommand) => record.request.kind !== "direct" && isRetryExpired(record) && !record.acknowledged && !record.ticket;
   const recoveryRows: H5RecoveryRow[] = mutations.records.map((record) => ({
     key: record.commandKey,
     name: record.change.name,
     change: `${shownReward(record.change.before)} → ${shownReward(record.change.after)}`,
     submittedAt: record.createdAt,
     tag: record.ticket ? pendingTag(...(record.change.target.startsWith("rule:") ? [RULE_APPROVER, RULE_PENDING_NOTE] : [FUND_APPROVER, FUND_PENDING_NOTE]) as [string, string])
-      : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind) : unknownTag(record.request.kind),
+      : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind === "direct" ? "direct" : "approval") : unknownTag(record.request.kind === "direct" ? "direct" : "approval"),
     ticket: record.ticket?.id,
     actions: <>
       <Button size="sm" onClick={() => void queryOriginal(record)}>查询原结果</Button>
@@ -808,6 +815,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     earn: (
       <Panel title="收益里程碑" icon={Trophy} tone="role-4"
         sub={`${model.earnMilestones.length} 档 · 门槛是累计 USDT 收益`}
+        actions={canWrite && model.earnMilestones.length > 0 ? <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={blocked(EARN_CREATE_TARGET)} onClick={() => openEarnCreate()}>新建档位</Button> : undefined}
         explain={<>
           <p>用户累计到账的 USDT 收益满门槛，可以在 App 成就页领取这一档的 UVT 奖励，一次领一档；不是到了就自动发。</p>
           <p>降门槛、加奖励要{FUND_APPROVER}批准；提高门槛、减奖励立即生效。门槛要从小到大，已经达成的不重发、不追发；奖励是 0 的档达成后不发 UVT。</p>
@@ -827,7 +835,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 disabledReason={blocked(`earn:${milestone.key}`)} onClick={conflictDraft.register(JSON.stringify(["openEarn:1", milestone.id ?? milestone.key]), () => openEarn(milestone))}>调整</Button> : undefined,
             };
           })} />
-          : <BlockState state="empty" title="还没有收益里程碑" />}
+          : <BlockState state="empty" title="还没有收益里程碑" detail={canWrite ? "新建一档后，要另一位超级管理员批准才加上。" : undefined}
+            onRetry={canWrite && !blocked(EARN_CREATE_TARGET) ? () => openEarnCreate() : undefined} retryLabel="新建档位" />}
       </Panel>
     ),
     idle: (

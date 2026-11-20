@@ -4,7 +4,7 @@ import { f4Decimal } from "./f4-money";
 export type CheckInRule = { key: string; name: string; sub?: string; cur: string; hot?: boolean | number; configurable?: boolean; writeBlockedReason?: string };
 export type StreakMilestone = { id: number; day: string; reward: string; kind?: string };
 export type PowerUp = { id: number; day: number; label: string; sub?: string; downstream?: string | null; note?: string; effectType?: string; businessAvailable?: boolean | null };
-export type EarnMilestone = { id: number; key: string; threshold: string; nex: string; weekTrigger?: number | null };
+export type EarnMilestone = { id: number; key: string; threshold: string; nex: string; sortOrder?: number; weekTrigger?: number | null };
 export type H5StatisticBasis = {
   source: string; windowType: string; window: string | null; aggregate: string; condition: string;
   denominator: string | null; unit: string | null; availability: string; fallback?: string | null;
@@ -37,6 +37,17 @@ function integer(value: unknown): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new Error("H5_RESPONSE_INVALID");
   return value;
 }
+export const H5_MAX_SORT_ORDER = 2147483647;
+
+// Older saved H5 snapshots predate this field. Keep them readable for exact retries.
+function earnSortOrder(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < -H5_MAX_SORT_ORDER - 1 || value > H5_MAX_SORT_ORDER) {
+    throw new Error("H5_RESPONSE_INVALID");
+  }
+  return value;
+}
+
 function decimal(value: unknown, signed = false): string {
   if ((typeof value !== "string" && typeof value !== "number") || !(signed ? /^-?\d+(?:\.\d+)?$/ : /^\d+(?:\.\d+)?$/).test(String(value))) throw new Error("H5_RESPONSE_INVALID");
   return String(value);
@@ -96,7 +107,7 @@ export function parseH5Model(value: unknown): H5Model {
     powerUps: rows("powerUps").map(r => ({ id: integer(r.id), day: integer(r.day), label: string(r.label),
       sub: r.sub == null ? undefined : string(r.sub), downstream: r.downstream == null ? null : string(r.downstream),
       note: string(r.note), effectType: string(r.effectType), businessAvailable: r.businessAvailable == null ? null : bool(r.businessAvailable) })),
-    earnMilestones: rows("earnMilestones").map(r => ({ id: integer(r.id), key: string(r.key), threshold: decimal(r.threshold), nex: decimal(r.nex), weekTrigger: r.weekTrigger == null ? null : integer(r.weekTrigger) })),
+    earnMilestones: rows("earnMilestones").map(r => ({ id: integer(r.id), key: string(r.key), threshold: decimal(r.threshold), nex: decimal(r.nex), sortOrder: earnSortOrder(r.sortOrder), weekTrigger: r.weekTrigger == null ? null : integer(r.weekTrigger) })),
     tickInterval: { value: string(tick.value), seconds: integer(tick.seconds), min: integer(tick.min), max: integer(tick.max), note: string(tick.note) },
     coverage: { coverageRatio: coverage.coverageRatio == null ? null : decimal(coverage.coverageRatio, true), redlinePct: coverage.redlinePct == null ? null : decimal(coverage.redlinePct, true), reliable: bool(coverage.reliable), redlineBreached: bool(coverage.redlineBreached) },
   };

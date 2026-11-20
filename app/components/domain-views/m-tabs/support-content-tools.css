@@ -20,6 +20,7 @@
 .support-content-tools .sku-pop-list[data-short] { max-height: 300px; }
 .support-content-tools .support-content-result.l-btn { box-sizing: border-box; width: 100%; height: auto; min-width: 0; min-height: 44px; justify-content: flex-start; text-align: left; white-space: normal; overflow-wrap: anywhere; line-height: 1.6; padding: 10px 12px; }
 .support-content-tools .support-content-result .sku-pop-title, .support-content-tools .support-content-result .sku-pop-sub { white-space: pre-wrap; overflow: visible; overflow-wrap: anywhere; text-overflow: clip; }
+.support-content-tools .support-faq-lang { flex: none; align-self: flex-start; }
 .support-content-tools .support-content-result:not(:disabled):active { background: var(--v5-surface-3); }
 @media (hover: hover) and (pointer: fine) { .support-content-tools .support-content-result:not(:disabled):hover { background: var(--v5-surface-3); } }
 .support-content-tools .support-content-pager { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }

@@ -253,7 +253,6 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (form.datacenter.trim().length > 128) e.datacenter = "托管机房最多 128 字";
     if (original?.status === "on") {
       if (!form.allowedPoolCodes.length) e.allowedPoolCodes = "在售商品至少要选择一个任务等级";
-      if (!form.datacenter.trim()) e.datacenter = "在售商品必须填写托管机房";
       if (!form.monthlyTargetUsdt.trim()) e.monthlyTargetUsdt = "在售商品不能清空月收益目标";
     }
     if (original?.monthlyTargetUsdt != null && !form.monthlyTargetUsdt.trim() && form.monthlyTargetBandPct.trim()) e.monthlyTargetBandPct = "关闭目标时请使用关闭选项，同时清空允许波动";
@@ -365,7 +364,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           {canClear && <Check label="关闭已有月收益目标，改用兼容展示值" checked={!hasTarget} onChange={e => setForm(f => ({ ...f, monthlyTargetUsdt: e.target.checked ? "" : String(original!.monthlyTargetUsdt), monthlyTargetBandPct: e.target.checked ? "" : String(original!.monthlyTargetBandPct) }))} />}
           {form.allowedPoolCodes.length > 0 && !hasTarget && <Notice tone="warn" title="已选任务等级，必须填写月收益目标" />}
           {hasTarget && Number(form.monthlyTargetUsdt) >= 1 && Number(form.monthlyTargetBandPct) >= 1 && Number(form.monthlyTargetBandPct) <= 50 && <div className="e1-draft-preview"><span className="e1-muted">本次草稿 · 配置边界</span><E1TargetRange sku={draft} /></div>}
-          <Field label="托管机房" error={errors.datacenter || appTextErrors.datacenter} hint="最多128字" explain={`${APP_VISIBLE_TEXT_HINT}。交付时复制到新设备的文字，已交付设备不随SKU修改。建议英文城市和编号，可自由手填。`}><Input aria-label="托管机房" list="e1-hosting-labels" maxLength={128} value={form.datacenter} placeholder="Singapore · SG-1" onChange={e => update("datacenter", e.target.value)} /><datalist id="e1-hosting-labels">{labels.map(label => <option key={label} value={label} />)}</datalist></Field>
+          <Field label="托管机房" error={errors.datacenter || appTextErrors.datacenter} hint="选填，最多 128 字" explain="新设备交付时按页头「托管机房」清单分配，实际机房记在设备上。这里只做记录，App 不显示，可以留空；填写时用英文。"><Input aria-label="托管机房" list="e1-hosting-labels" maxLength={128} value={form.datacenter} placeholder="可留空" onChange={e => update("datacenter", e.target.value)} /><datalist id="e1-hosting-labels">{labels.map(label => <option key={label} value={label} />)}</datalist></Field>
           {labelError && <span className="e1-muted">{labelError}</span>}
           <div className="rd-form-grid">{form.tier !== "Share" ? <>
             {!hasTarget && field("dailyEarn", "每日收益 USDT", { number: true, min: 0, step: 0.000001, help: original?.monthlyTargetUsdt != null ? "关闭月目标时须在同一申请中手填" : "兼容展示值" })}
@@ -395,7 +394,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           </>}
         </EditorSection>
         <EditorSection id="e1-specs" title="规格与资料">
-          <div className="rd-form-grid">{field("gpu", "GPU 型号（单卡）", { placeholder: "RTX 4090", explain: APP_VISIBLE_TEXT_HINT })}{field("gpuCount", "GPU 数量", { number: true, min: 1, max: 1024, step: 1, help: "1～1024，须同时填写单卡型号" })}{field("vram", "显存")}
+          <div className="rd-form-grid">{field("gpu", "GPU 型号（单卡）", { placeholder: "RTX 4090", explain: APP_VISIBLE_TEXT_HINT })}{field("gpuCount", "GPU 数量", { number: true, min: 1, max: 1024, step: 1, help: "1～1024，须同时填写单卡型号" })}{form.tier === "Share" ? field("vram", "显存", { placeholder: "不适用（共享份额）", explain: "共享份额不是独立设备，没有显存；留空时 App 显示「不适用」。" }) : field("vram", "显存")}
             {form.tier !== "Share" && <>{field("hashRate", "算力")}{field("power", "功耗 / 功率说明", { placeholder: "1,800 W (combined GPU rated)", help: `${APP_VISIBLE_TEXT_HINT}，如 1,800 W`, explain: <><span className="rd-keep">只能用下面几种写法，数值大于 0。</span><span className="rd-keep">写成别的，用户下单后设备会交付失败。</span><br />{E1_POWER_FORMATS.map((format, index) => <span key={format}>{index ? "、" : ""}<span className="rd-keep">{format}</span></span>)}</> })}</>}
             {field("uptime", "在线率", { hint: "最多64字", placeholder: "99.9%", explain: APP_VISIBLE_TEXT_HINT })}{field("warranty", "质保期限", { hint: "最多128字", placeholder: "24 months", explain: APP_VISIBLE_TEXT_HINT })}
             {form.tier !== "Share" && <>{field("aiImageGenPerMin", "图像生成 张/分钟", { number: true, step: 1 })}{field("aiLlmTokensPerSec", "大模型推理（词元/秒）", { number: true, step: 1 })}{field("aiVideoMinPerHour", "每小时可渲染视频时长（分钟）", { number: true, step: 1 })}{field("aiFineTuneMins", "LoRA 微调（分钟）", { number: true, step: 1 })}</>}
