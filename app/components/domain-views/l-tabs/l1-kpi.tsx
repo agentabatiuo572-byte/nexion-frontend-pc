@@ -5,7 +5,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
- * L1 · 关键指标（报表页样板）。查询条 → 结论 → 四张概览卡 → 八项指标 ┬ 所选指标明细 → 折叠组 → 相关页面。
+ * L1 · 关键指标（报表页样板）。查询条 → 结论 → 四张概览卡 → 七项指标 ┬ 所选指标明细 → 折叠组 → 相关页面。
  * 状态沿用 kpiState 的现有比较；可用性、样本保护和注册批次均以服务端为准。
  * 查询状态写网址（ST-23），优先于本机保存的视图；导出由操作者填理由（OP-115），文件到 L5 下载。
  */
@@ -24,16 +24,16 @@ import { businessClock, businessDay, businessStamp, businessZone } from "@/lib/a
 import { findByPath } from "@/lib/nav/console-nav";
 import { PaginationExemptionList } from "../design-kit";
 import { kpiState, num, rec } from "./live-data";
-import { readL1LiveTotals } from "./l1-l2-live-data";
+import { DAU_NOT_COLLECTED_LABEL, readL1LiveTotals } from "./l1-l2-live-data";
 import { L1LiveTotals } from "./l1-l2-live-fallback";
 import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, isLOutcomeUnknownError, type L1KpiQuery, type LReportCreateInput } from "@/lib/admin/l-client";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
-import { validateL1Dashboard, validateL1Drilldown, validateL1Trend, type L1CohortPoint, type L1Dashboard, type L1KpiRow } from "./l1-kpi-contract";
+import { L1_KPI_IDS, validateL1Dashboard, validateL1Drilldown, validateL1Trend, type L1CohortPoint, type L1Dashboard, type L1KpiRow } from "./l1-kpi-contract";
 import { L1_EXPORT_ORIGINAL_INCOMPLETE, L1_EXPORT_RECIPIENT, l1ReportInput, resolveL1ExportMode, resolveL1ExportUnavailableReason, type L1ExportMode, type L1ExportSource, type L1PendingExport } from "./l1-export-contract";
-import { loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view";
+import { L1_DEFAULT_OVERLAY_IDS, loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view";
 import { createL1ReadController } from "./l1-request-generation";
 import { ATTRIBUTION_ROUTE_READ, assertL1AttributionLinks } from "./l-attribution-routes";
 
@@ -54,13 +54,14 @@ const tgtLabel = (k: Kpi) => {
 };
 const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
 
-type KpiState = "g" | "y" | "r" | "none" | "source" | "young" | "small" | "inapp";
+type KpiState = "g" | "y" | "r" | "none" | "uncollected" | "source" | "young" | "small" | "inapp";
 type Metric = Pick<L1CohortPoint, "available" | "unavailableReason" | "value"> & { suppressed?: boolean; maturityStatus?: string; scope?: Kpi["scope"] };
 const tgtShort = (k: Kpi) => tgtLabel(k).replace("目标 ", "").replace("健康带 ", "");
-/** 算不出的按后端原因分五类：样本过小优先于成熟度（BE-19）；一个满观察期的人都没有才是观察期未满。
+/** 算不出的按后端原因分类：样本过小优先于成熟度（BE-19）；一个满观察期的人都没有才是观察期未满。
  *  后端标了保护（人数不足 5，含一个都没有）的一律算样本过小，不按「分母为 0」的原因说「没人…」，否则 0 人和 1–4 人能分出来。 */
 const blankState = (m: Metric): KpiState | null => {
   if (m.scope === "NOT_APPLICABLE_TO_COHORT" || m.unavailableReason === "COHORT_NOT_APPLICABLE") return "inapp";
+  if (m.unavailableReason === "DAU_NOT_COLLECTED") return "uncollected";
   if (m.unavailableReason === "SOURCE_INCOMPLETE") return "source";
   if (m.unavailableReason === "BELOW_MINIMUM") return "small";
   if (m.maturityStatus === "IMMATURE") return "young";
@@ -72,18 +73,17 @@ const kpiStatus = (k: Kpi, offset: number): KpiState => blankState(k) ?? kpiStat
 const pointStatus = (k: Kpi, point: L1CohortPoint, offset: number): KpiState => blankState(point) ?? kpiState({ ...k, value: point.value! }, offset);
 /** 一部分人满了观察期：照常给值和判断，另标「暂定」。 */
 const isPartial = (m: Metric) => m.available && m.maturityStatus === "PARTIAL";
-const STATE_TONE: Record<KpiState, StateTone> = { g: "ok", y: "warn", r: "danger", none: "done", source: "done", young: "done", small: "done", inapp: "done" };
-const BLANK_TEXT = { none: "没有数据", source: "来源不全", young: "观察期未满", small: "样本过小", inapp: "不适用" } as const;
+const STATE_TONE: Record<KpiState, StateTone> = { g: "ok", y: "warn", r: "danger", none: "done", uncollected: "done", source: "done", young: "done", small: "done", inapp: "done" };
+const BLANK_TEXT = { none: "没有数据", uncollected: DAU_NOT_COLLECTED_LABEL, source: "来源不全", young: "观察期未满", small: "样本过小", inapp: "不适用" } as const;
 const stateText = (state: KpiState, k: Kpi) => state === "g" ? "达标" : state === "y" ? (k.dir === "band" ? "在健康带外" : "接近目标") : state === "r" ? "未达标" : BLANK_TEXT[state];
 /** 未达标排最前，其次接近目标、各类算不出的，达标的放后面，不适用的放最后；同一档按指标编号。 */
-const STATE_RANK: Record<KpiState, number> = { r: 0, y: 1, source: 2, young: 2, small: 2, none: 2, g: 3, inapp: 4 };
-const BLANK_KINDS = ["source", "young", "small", "none"] as const;
+const STATE_RANK: Record<KpiState, number> = { r: 0, y: 1, source: 2, young: 2, small: 2, none: 2, uncollected: 2, g: 3, inapp: 4 };
+const BLANK_KINDS = ["source", "young", "small", "uncollected", "none"] as const;
 /** 后端的不可用原因写成人话，事实来自 L1KpiAnalytics 的分母。 */
 const REASON_TEXT: Record<string, string> = {
   NO_REGISTRATION_DENOMINATOR: "这个范围没有注册完成的用户，算不出，不按 0% 算。",
   NO_STORE_VIEW_DENOMINATOR: "这些注册用户里没人看过商城，算不出，不按 0% 算。",
   NO_DEVICE_HOLDER_DENOMINATOR: "这些注册用户里没有设备持有者，算不出，不按 0% 算。",
-  NO_PUSH_SENT_DENOMINATOR: "这些注册用户里没人收到过消息推送，算不出，不按 0% 算。",
   NO_DIRECT_REFERRAL_DENOMINATOR: "这些注册用户里没有被直接邀请来的好友，算不出，不按 0% 算。",
   NO_GENESIS_PURCHASES: "这个范围没有创世节点购买记录，还没售罄，售罄天数暂无法计算。",
   GENESIS_NOT_SOLD_OUT: "创世节点还没累计售出 1,000，售罄天数暂无法计算。",
@@ -276,7 +276,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
     // 分组导出是长表：每项指标每个批次一行（后端 prepareRegistrationCohortSnapshot），批次数取本页这份数据。
     const buckets = query.granularity ? (exportData as L1Dashboard).weeks.length : 0;
     const unit = query.granularity === "registration_month" ? "月" : "周";
-    const rows = query.granularity ? `${8 * buckets} 行，每项指标每个注册${unit}一行` : mode === "totals" ? `${readL1LiveTotals(exportData).length} 行，一个累计数一行` : "8 行，一项指标一行";
+    const rows = query.granularity ? `${L1_KPI_IDS.length * buckets} 行，每项指标每个注册${unit}一行` : mode === "totals" ? `${readL1LiveTotals(exportData).length} 行，一个累计数一行` : `${L1_KPI_IDS.length} 行，一项指标一行`;
     ctx.openActionConfirm({ briefKind: "export",
       action: "导出关键指标",
       detail: `聚合数据，不含用户隐私。提交后生成任务，文件到「${pageName}」下载。`,
@@ -290,7 +290,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
           <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
           <Fact k="文件格式">CSV</Fact>
           <Fact k="文件行数">{rows}，另有表头</Fact>
-          <Fact k="文件内容">{query.granularity ? `各注册${unit}的数值、人数和状态，不含汇总值` : mode === "series" ? "8 项指标的可用数值、目标和六段趋势" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性" : "当前累计数"}{mode !== "totals" && (query.granularity
+          <Fact k="文件内容">{query.granularity ? `各注册${unit}的数值、人数和状态，不含汇总值` : mode === "series" ? `${L1_KPI_IDS.length} 项指标的可用数值、目标和六段趋势` : mode === "snapshot" ? `${L1_KPI_IDS.length} 项指标的可用数值、目标和可用性` : "当前累计数"}{mode !== "totals" && (query.granularity
             ? <Explain label="算不出的批次怎么导出" content="算不出或样本过小的批次，数值和人数留空，另一列写原因。" />
             : <Explain label="样本过小的项怎么导出" content="受保护项标为样本过小，相关数值留空。" />)}</Fact>
         </Facts>
@@ -398,10 +398,6 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
 }
 
 /** fx 公式渲染:fxBold 词高亮(cyan b),其余纯文本。 */
-/** 旧版第 6 项的名称和口径；新版使用概览里的定义。 */
-const NOVA_FX = "nova.push_clicked ÷ nova.push_sent";
-const NOVA_PLAIN = "消息推送点击人数 ÷ 发送人数";
-const NOVA_NOTE = "统计的是消息推送的发送和点击，不代表手机系统推送送达率。";
 /** 后端各项的说明句写的是统计口径的内部说法，这页换成运营的话；后端改了原句就照原句显示。 */
 const NOTE_TEXT: Record<string, string> = {
   "衡量注册后能否快速感知收益": "看新用户注册后能不能很快收到第一笔收益。",
@@ -409,7 +405,6 @@ const NOTE_TEXT: Record<string, string> = {
   "客户端浏览事件按锁定 KPI 口径统计": "以商城浏览记录为准，同一人只算一次。",
   "健康带为 5%–10%": "健康带是 5%–10%，两端都算。",
   "推广率不是提现或收入指标": "只看有没有发出邀请，和提现、收入无关。",
-  "点击为锁定的客户端 KPI 事件": NOVA_NOTE,
   "只计算能与邀请关系匹配的奖励事件": "只算能对上邀请关系的奖励。",
   "未售罄时显示不可计算并保留进度": "还没售罄时算不出天数。",
 };
@@ -421,7 +416,6 @@ function renderFx(fx: string, bold: string[]) {
     "store.viewed distinct user ÷ auth.register_completed": "浏览商城的用户数 ÷ 注册完成人数",
     "checkout.completed ÷ store.viewed": "支付完成的用户数 ÷ 浏览商城的用户数",
     "device holder referral.invite_sent ÷ device holders": "发出邀请的设备持有者人数 ÷ 设备持有者人数",
-    "nova.push_clicked ÷ nova.push_sent": "消息推送点击人数 ÷ 发送人数（同一人只算一次）。不代表手机系统推送送达率。",
     "L1 referred first commission.paid ÷ referral.bound": "直接邀请的好友中带来首笔团队奖励的人数 ÷ 直接邀请的好友人数",
     "genesis.purchased cumulative 1,000 days": "累计售出 1,000 个节点所用的自然日数",
   } as Record<string,string>)[fx] ?? fx;
@@ -466,7 +460,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   const [picked, setPicked] = useState<number | null>(null); // 没点过时跟着排在最前的那一项
   const [ylOffset, setYlOffset] = useState(10);
   const [phaseOn, setPhaseOn] = useState(true);
-  const [ovlSel, setOvlSel] = useState<number[]>([1, 2, 3]);
+  const [ovlKpiIds, setOvlKpiIds] = useState<number[]>(L1_DEFAULT_OVERLAY_IDS);
   const [editingOffset, setEditingOffset] = useState(false);
   const [win, setWin] = useState<L1Window>("7d");
   const [customOpen, setCustomOpen] = useState(false);
@@ -484,7 +478,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   const [refreshError, setRefreshError] = useState("");
   const [readAt, setReadAt] = useState("");
   const [drillKpi, setDrillKpi] = useState<Kpi | null>(null);
-  const [drillTrend, setDrillTrend] = useState<{ values: KpiTrendPoint[]; suppressedPoints?: boolean[] } | null>(null);
+  const [drillTrend, setDrillTrend] = useState<{ values: KpiTrendPoint[]; suppressedPoints?: boolean[]; unavailableReasons?: (string | null)[] } | null>(null);
   const [drillError, setDrillError] = useState("");
   const l1Requests = useRef(createL1ReadController());
   const selectedQuery = useRef<L1KpiQuery>(DEFAULT_QUERY);
@@ -503,7 +497,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       if (saved) {
         setPhaseOn(saved.phaseOn);
         setYlOffset(saved.ylOffset);
-        setOvlSel(saved.ovlSel);
+        setOvlKpiIds(saved.ovlKpiIds);
       }
       next = queryFromUrl(window.location.search) ?? (saved ? {
         ...(saved.window === "custom" ? { window: "custom", from: saved.customFrom, to: saved.customTo } : { window: saved.window }),
@@ -531,8 +525,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
 
   const data = localData;
   useEffect(() => { if (data) setReadAt(businessClock(Date.now())); }, [data]);
-  const legacyNotification = data?.kpis.some((item) => item.n === 6 && item.name === "Nova 推送点击");
-  const rawKpis = (data?.kpis ?? []).map((item) => legacyNotification && item.n === 6 ? { ...item, name: "消息推送点击率" } : item);
+  const rawKpis = data?.kpis ?? [];
   const liveTotals = readL1LiveTotals(data);
 
   const draftSlices = { cohort: cohortFilter || undefined, phase: phaseFilter || undefined, locale: localeFilter || undefined, ref: refFilter || undefined };
@@ -607,7 +600,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     try {
       // 存屏幕上这份，不存没应用的输入：它和网址一致，刷新才真的还是这个视图。
       saved = saveL1LocalView(window.localStorage, {
-        window: applied.window ?? "7d", customFrom: applied.from ?? "", customTo: applied.to ?? "", granularity: applied.granularity, phaseOn, ylOffset, ovlSel,
+        window: applied.window ?? "7d", customFrom: applied.from ?? "", customTo: applied.to ?? "", granularity: applied.granularity, phaseOn, ylOffset, ovlKpiIds,
         cohortFilter: applied.cohort ?? "", phaseFilter: applied.phase ?? "", localeFilter: applied.locale ?? "", refFilter: applied.ref ?? "",
       });
     } catch {
@@ -695,9 +688,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const PHASE_SWITCH_IDX = data?.phaseSwitchIndex == null ? -1 : num(data.phaseSwitchIndex, -1);
     const applicableCount = data?.applicableKpiCount ?? KPIS.length;
     const KPI_EXT = rec<KpiExt>(data?.kpiExt);
-    const plain = rec<string>(data?.kpiPlain);
-    const KPI_PLAIN = legacyNotification ? { ...plain, "6": NOVA_PLAIN } : plain;
-    const formula = (id: number, ext: KpiExt) => renderFx(!legacyNotification && ext.fx === NOVA_FX ? KPI_PLAIN[id] ?? ext.fx : ext.fx, ext.fxBold);
+    const KPI_PLAIN = rec<string>(data?.kpiPlain);
+    const formula = (ext: KpiExt) => renderFx(ext.fx, ext.fxBold);
     const states = KPIS.map((item) => kpiStatus(item, ylOffset));
     const count = (state: KpiState) => states.filter((item) => item === state).length;
     const green = count("g");
@@ -713,9 +705,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const safeSelKpi = Math.min(picked ?? order[0], KPIS.length - 1);
     const baseKpi = KPIS[safeSelKpi];
     const k = drillKpi?.n === baseKpi.n
-      ? { ...baseKpi, ...drillKpi, name: baseKpi.name, spark: drillTrend?.values ?? drillKpi.spark ?? baseKpi.spark, sparkSuppressed: drillTrend?.suppressedPoints ?? drillKpi.sparkSuppressed }
+      ? { ...baseKpi, ...drillKpi, name: baseKpi.name, spark: drillTrend?.values ?? drillKpi.spark ?? baseKpi.spark, sparkSuppressed: drillTrend?.suppressedPoints ?? drillKpi.sparkSuppressed, sparkUnavailableReasons: drillTrend?.unavailableReasons ?? drillKpi.sparkUnavailableReasons }
       : baseKpi;
-    const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂时没有这项指标的解读", jump: [] };
+    const baseExt = KPI_EXT[k.kpiId] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂时没有这项指标的解读", jump: [] };
     const kState = kpiStatus(k, ylOffset);
     const points = k.points ?? [];
     const partialEdges = points.filter((point) => point.partial);
@@ -724,13 +716,14 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const blankNote = (state: KpiState, row: Metric & { n?: number }) => state === "inapp" ? INAPP_TEXT
       : state === "source" ? (oldHistory || (row.n ?? k.n) > 3 ? SOURCE_OLD_TEXT : SOURCE_REG_TEXT)
       : state === "young" ? YOUNG_TEXT[k.n] ?? REASON_TEXT.NO_REGISTRATION_DENOMINATOR
+      : state === "uncollected" ? BLANK_TEXT.uncollected
       : state === "none" ? REASON_TEXT[row.unavailableReason ?? ""] ?? REASON_TEXT.NO_REGISTRATION_DENOMINATOR
       : undefined;
     const ext = {
       ...baseExt,
       num: k.numerator == null ? null : String(k.numerator),
       den: k.denominator == null ? null : String(k.denominator),
-      note: blankNote(kState, k) ?? (legacyNotification && baseExt.fx === NOVA_FX ? NOVA_NOTE : NOTE_TEXT[baseExt.note] ?? baseExt.note),
+      note: blankNote(kState, k) ?? (NOTE_TEXT[baseExt.note] ?? baseExt.note),
     };
     const phase = rec(data?.currentPhase);
     const phaseKnown = typeof phase.code === "string" && phase.code.length > 0;
@@ -738,7 +731,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
 
     const selectKpi = async (index: number) => {
       setPicked(index);
-      const kpiId = KPIS[index]?.n;
+      const kpiId = Number(KPIS[index]?.kpiId);
       if (!kpiId) return;
       const read = ++drillRead.current;
       setDrillKpi(null);
@@ -761,7 +754,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         ctx.toast(`明细加载失败 · ${message}`, "error");
       }
     };
-    /** 八项是一组单选：方向键、Home、End 移动并立即选中，Tab 只停在当前行（ST-56）。 */
+    /** 七项是一组单选：方向键、Home、End 移动并立即选中，Tab 只停在当前行（ST-56）。 */
     const moveRow = (event: KeyboardEvent<HTMLTableRowElement>) => {
       const next = nextTabValue(order, safeSelKpi, event.key);
       if (next === null) return;
@@ -785,7 +778,11 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
 
     // 指数只对单侧目标成立：越高越好算实际 ÷ 目标，越低越好算目标 ÷ 实际，高于 100 都是好于目标。
     // 健康带没有单一目标，不换算，按真实值和上下限单独画（DP-63）。
-    const picks = ovlSel.filter(index => KPIS[index].scope !== "NOT_APPLICABLE_TO_COHORT").map((index) => ({ ...KPIS[index], spark: trendOf(index) }));
+    const picks = ovlKpiIds.flatMap((id) => {
+      const index = KPIS.findIndex((item) => item.n === id);
+      const item = KPIS[index];
+      return item && item.scope !== "NOT_APPLICABLE_TO_COHORT" ? [{ ...item, spark: trendOf(index) }] : [];
+    });
     const bandPicks = picks.filter((item) => item.dir === "band");
     const compared = picks.filter((item) => item.dir !== "band").map((item, position) => ({
       item,
@@ -806,6 +803,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 <p>来源不全：这批有用户缺注册记录或注册太早，算不出。</p>
                 <p>观察期未满：用户注册时间太近，还不能算。</p>
                 <p>样本过小：少于 5 人不显示，不下结论。</p>
+                {count("uncollected") > 0 && <p>未采集：观察日在采集范围外。</p>}
                 <p>没有数据：这个范围没有对应的用户。</p>
               </>}>关键指标：暂时无法判断</Conclusion>
             : green === applicableCount
@@ -817,13 +815,13 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           <Stat label="接近目标的指标" value={yellow} tone={yellow > 0 ? "warn" : undefined} icon={Gauge} iconTone="warn"
             sub={<>距目标 {ylOffset}% 以内 · <button type="button" className="rd-link" onClick={() => setEditingOffset(true)}>调整接近范围</button></>}
             explain={`没达标，但离目标不超过 ${ylOffset}%；购买转化在健康带外也算这里。调整只改你看到的状态，不改业务规则。`} />
-          <Stat label="暂无法判断" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" sub={blankKinds.length ? blankSummary : "每项都算得出"} explain="来源不全、观察期未满、没有数据的算不出；样本过小的数值受保护。都不按 0% 算，也不算未达标。" />
+          <Stat label="暂无法判断" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" sub={blankKinds.length ? blankSummary : "每项都算得出"} explain="来源不全、观察期未满、未采集、没有数据的算不出；样本过小的数值受保护。都不按 0% 算，也不算未达标。" />
           <Stat label="当前运营阶段" value={phaseKnown ? String(phase.code) : "未提供"} unit={phaseKnown ? `· ${String(phase.name ?? "")} · 第 ${num(phase.month, 0)} 月` : undefined} tone="role-2" icon={Flag}
             explain={PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间。" : grouped ? "按注册批次看时图上不标阶段切换，切换时间到「运营阶段状态」看。" : "当前时间范围内没有阶段切换记录。"} />
         </StatBand>
 
         <div className="rd-split" data-detail="">
-          <Panel title="八项指标" sub={applied.granularity ? `${regTime(applied)} · 按${GROUP_NAME[applied.granularity]} · ${WEEKS.length} 批` : undefined} explain="未达标的排在前面，点一行看明细。" icon={ListChecks} tone="role-2" flush>
+          <Panel title="七项指标" sub={applied.granularity ? `${regTime(applied)} · 按${GROUP_NAME[applied.granularity]} · ${WEEKS.length} 批` : undefined} explain="未达标的排在前面，点一行看明细。" icon={ListChecks} tone="role-2" flush>
             <Table label="选择要查看的关键指标" rowFocus data-tight={showTrendColumn ? "" : undefined}>
               <thead><tr>
                 <Th>指标</Th>
@@ -909,7 +907,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                       />
                       {partialEdges.length > 0 && <p className="rd-note">{partialEdges.map((point) => point.bucketKey).join("、")} 不完整：只含所选范围内注册的用户。</p>}
                     </Panel>
-                  : <p className="rd-note">{points.length === 1 ? `只有 1 个注册批次（${points[0].bucketKey}），数值就是上面的汇总。` : points.length === 0 ? "这个范围没有注册批次。" : allZero(k.spark) ? `${flatText(k.spark)}，没有走势可画。` : k.spark.every((point) => point === null) ? "各批次都算不出，原因见「各批次」。" : "有数值的批次不到 2 个，画不出走势。"}</p>}
+                  : <p className="rd-note">{points.length === 1 ? `只有 1 个注册批次（${points[0].bucketKey}），数值就是上面的汇总。` : points.length === 0 ? grouped ? "这个范围没有注册批次。" : k.sparkUnavailableReasons?.includes("DAU_NOT_COLLECTED") ? BLANK_TEXT.uncollected : flatText(k.spark) : allZero(k.spark) ? `${flatText(k.spark)}，没有走势可画。` : k.spark.every((point) => point === null) ? "各批次都算不出，原因见「各批次」。" : "有数值的批次不到 2 个，画不出走势。"}</p>}
               {points.length > 0 && kState !== "inapp" && (
                 <Fold inset title="各批次" summary={`${points.length} 批 · ${points.filter((point) => point.value !== null).length} 批有数值`}>
                   <div className="rd-stack">
@@ -935,7 +933,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               )}
               <Fold inset title="这项指标怎么算" summary={`指标 ${k.n} 的公式和开放批次`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
                 <div className="rd-stack">
-                  <div>{formula(k.n, ext)}</div>
+                  <div>{formula(ext)}</div>
                   <p className="rd-note">开放批次：{batchText(k.vis)}</p>
                 </div>
               </Fold>
@@ -952,10 +950,10 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             <div role="group" aria-label="要比的指标" className="rd-filter-more-row">
               {order.map((index) => {
                 const item = KPIS[index];
-                const on = ovlSel.includes(index);
+                const on = ovlKpiIds.includes(item.n);
                 // 不适用的一项不能勾，保存过的勾选留在视图里，不画（画图集合已排除它）。
                 if (item.scope === "NOT_APPLICABLE_TO_COHORT") return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={false} disabled explain="按注册批次看时不适用。" onChange={() => undefined} />;
-                return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={on} disabled={on && picks.length === 1} onChange={() => setOvlSel((current) => (on ? current.filter((value) => value !== index) : [...current, index]))} />;
+                return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={on} disabled={on && picks.length === 1} onChange={() => setOvlKpiIds((current) => (on ? current.filter((id) => id !== item.n) : [...current, item.n]))} />;
               })}
             </div>
             {drawable.length > 0 && (
@@ -968,7 +966,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 event={phaseEvent}
               />}>
                 <Table label={grouped ? "对比指标的最近一批" : "对比指标的最新值"}>
-                  <thead><tr><Th>指标</Th><Th align="right">{grouped ? <>最近一批<Explain label="最近一批是哪一批" content="图上最后一个有数值的注册批次，和图上最后一个点是同一个数；距目标也按它算。整个范围的汇总在上面「八项指标」。" /></> : "最新"}</Th><Th align="right">距目标</Th></tr></thead>
+                  <thead><tr><Th>指标</Th><Th align="right">{grouped ? <>最近一批<Explain label="最近一批是哪一批" content="图上最后一个有数值的注册批次，和图上最后一个点是同一个数；距目标也按它算。整个范围的汇总在上面「七项指标」。" /></> : "最新"}</Th><Th align="right">距目标</Th></tr></thead>
                   <tbody>
                     {drawable.map(({ item, slot }) => {
                       const last = lastPoint(item);
@@ -1030,14 +1028,14 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                   <Tr key={item.n}>
                     <Td><Cell num main={item.n} /></Td>
                     <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
-                    <Td className="l1-rule-fx"><Cell full main={<><AutoGloss>{operatorCopyText(KPI_PLAIN[item.n] ?? "")}</AutoGloss><Explain label={`${operatorCopyText(item.name)}的公式`} content={formula(item.n, KPI_EXT[item.n])} /></>} /></Td>
+                    <Td className="l1-rule-fx"><Cell full main={<><AutoGloss>{operatorCopyText(KPI_PLAIN[item.kpiId] ?? "")}</AutoGloss><Explain label={`${operatorCopyText(item.name)}的公式`} content={formula(KPI_EXT[item.kpiId])} /></>} /></Td>
                     <Td align="right"><Cell num main={tgtShort(item)} /></Td>
                     <Td><Cell main={batchText(item.vis)} /></Td>
                   </Tr>
                 ))}
               </tbody>
             </Table>
-            <PaginationExemptionList items={[{ label: "关键指标 统计规则锁定表", kind: "reference-catalog", maxRows: 8, reason: "八项关键指标 为固定验收统计规则,需要同屏锁定算式和状态" }]} />
+            <PaginationExemptionList items={[{ label: "关键指标 统计规则锁定表", kind: "reference-catalog", maxRows: L1_KPI_IDS.length, reason: "七项关键指标 为固定验收统计规则,需要同屏锁定算式和状态" }]} />
           </div>
         </Fold>
 

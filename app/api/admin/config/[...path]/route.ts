@@ -3,6 +3,7 @@ import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/re
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ROUTE_METHODS: readonly (readonly [string, readonly string[]])[] = [
+  ["hosting-centers", ["GET"]],
   ["task-pricing", ["GET", "HEAD"]],
   ["phone-tiers", ["GET", "HEAD", "PUT"]],
   ["phone-tiers/comparison", ["GET", "HEAD", "PUT"]],

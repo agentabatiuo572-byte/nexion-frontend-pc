@@ -5,7 +5,7 @@
  * 只管排版，不发请求、不改数据；按钮调用页面传进来的处理函数。
  */
 import type { ReactNode } from "react";
-import { CalendarClock, CheckCircle2, CircleHelp, Clock3, Hourglass, PauseCircle, TriangleAlert } from "lucide-react";
+import { CalendarClock, CheckCircle2, CircleHelp, Clock3, Dices, Hourglass, PauseCircle, TriangleAlert } from "lucide-react";
 import { Button, Explain, Notice, SegmentBar, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
@@ -66,6 +66,12 @@ export function skuText(skus: readonly string[], labels: Record<string, string>)
 
 export const surfacesText = (surfaces: readonly string[]) => surfaces.map((s) => SURFACE_LABEL[s] ?? "其他页面").join("、") || "不限入口";
 
+/** 转盘专发券：四个自领入口都拒绝，只有幸运转盘中奖能发；它的空入口不是「不限」。PC 保存不改这一项。 */
+export const WHEEL_ONLY_TEXT = "仅转盘发放";
+export const WHEEL_ONLY_HELP = "用户不能自己领，只在幸运转盘中奖时发到钱包。";
+/** 转盘抽中时券发不出（暂停、过期、发完），这次抽奖整体报错，不会换成别的奖。 */
+export const WHEEL_STOP_HINT = "要停发这张券，先在「活动中心」的转盘奖池把这一档的概率调成 0，或先关闭转盘。";
+
 /** 一句人话：这张券最后是什么意思。 */
 export function voucherSentence(v: Pick<H7Voucher, "type" | "amountUSD" | "percent" | "minPurchaseUSD" | "maxDiscountUSD" | "applicableSkus" | "audience" | "startAt" | "endAt">, labels: Record<string, string>): string {
   const min = v.minPurchaseUSD ?? 0, max = v.maxDiscountUSD ?? 0;
@@ -92,16 +98,18 @@ export const limitReached = (v: Pick<H7Voucher, "issuanceLimit" | "issuedCount">
 /** 状态标签：投放状态之外，过期、未开始、发完各一枚；过期的不再写「投放中」。 */
 export function VoucherTags({ v, now, showPending = true }: { v: H7Voucher; now: number; showPending?: boolean }) {
   const phase = voucherPhase(v, now);
+  const wheelOnly = v.wheelOnly;
   return (
     <span className="h7-tags">
       {showPending && v.pendingApproval && pendingTag(v.pendingApproval)}
       {phase === "expired"
-        ? <StatusTag tone="done" icon={Hourglass} explain={v.status === "active" ? "有效期已过，用户不能再领，已领到的也不能再用。模板状态还是「投放中」。" : "有效期已过，用户不能再领，已领到的也不能再用。已暂停的不能投放，先编辑有效期。"}>已过期</StatusTag>
+        ? <StatusTag tone="done" icon={Hourglass} explain={wheelOnly ? `有效期已过，转盘抽中这一档会发券失败。${WHEEL_STOP_HINT}` : v.status === "active" ? "有效期已过，用户不能再领，已领到的也不能再用。模板状态还是「投放中」。" : "有效期已过，用户不能再领，已领到的也不能再用。已暂停的不能投放，先编辑有效期。"}>已过期</StatusTag>
         : v.status === "active"
-          ? <StatusTag tone="ok" icon={CheckCircle2} explain="用户可以领；还要符合有效期、发给谁、发行上限和领取入口。">投放中</StatusTag>
-          : <StatusTag tone="done" icon={PauseCircle} explain="用户不能再领；已领到的不收回，有效期内仍能用。">已暂停</StatusTag>}
+          ? <StatusTag tone="ok" icon={CheckCircle2} explain={wheelOnly ? "用户在幸运转盘抽中这一档时发到钱包；还要在有效期内、没到发行上限。" : "用户可以领；还要符合有效期、发给谁、发行上限和领取入口。"}>投放中</StatusTag>
+          : <StatusTag tone="done" icon={PauseCircle} explain={wheelOnly ? `转盘抽中这一档会发券失败；已领到的不收回，有效期内仍能用。${WHEEL_STOP_HINT}` : "用户不能再领；已领到的不收回，有效期内仍能用。"}>已暂停</StatusTag>}
+      {wheelOnly && <StatusTag tone="neutral" icon={Dices} explain={WHEEL_ONLY_HELP}>{WHEEL_ONLY_TEXT}</StatusTag>}
       {phase === "upcoming" && <StatusTag tone="progress" icon={CalendarClock}>{`${h7Stamp(v.startAt).slice(5, 10)} 开始`}</StatusTag>}
-      {phase !== "expired" && limitReached(v) && <StatusTag tone="warn" icon={TriangleAlert} explain="已发出的张数到了发行上限，用户领不到了；作废或用掉的也占上限。要继续发，调高发行上限。">已发完</StatusTag>}
+      {phase !== "expired" && limitReached(v) && <StatusTag tone="warn" icon={TriangleAlert} explain={wheelOnly ? `已发出的张数到了发行上限，转盘抽中这一档会发券失败。${WHEEL_STOP_HINT}` : "已发出的张数到了发行上限，用户领不到了；作废或用掉的也占上限。要继续发，调高发行上限。"}>已发完</StatusTag>}
     </span>
   );
 }

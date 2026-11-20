@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_L: ModuleEntry[] = [
   {
     path: "/analytics/kpi",
-    summary: "查看八项经营指标的当前值、是否达标和变化趋势。",
+    summary: "查看七项经营指标的当前值、是否达标和变化趋势。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

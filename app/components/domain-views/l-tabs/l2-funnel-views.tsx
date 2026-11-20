@@ -10,7 +10,7 @@ import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { Cell, ColumnChart, Explain, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
 import { formatB3RefOption } from "@/lib/admin/b3-ref-display";
 import { INTERFACE_LANGUAGES } from "@/lib/admin/platform-experience-client";
-import { SMALL_SAMPLE_LABEL } from "./l1-l2-live-data";
+import { DAU_NOT_COLLECTED_LABEL, retentionReasonLabel, SMALL_SAMPLE_LABEL } from "./l1-l2-live-data";
 
 export type FunnelRow = { stage: string; ev?: string; users: number | null; cvr?: number | null; lc: string; color: string; target?: string | null; suppressed?: true };
 export type FunnelExt = {
@@ -27,8 +27,9 @@ export type FunnelExt = {
   dwellSuppressed?: true;
 };
 export type TrialStep = { e: string; n: number | null; arr?: string | null; arrLb?: string | null; suppressed?: true };
-export type CohortRow = { w: string; size: number | null; d1?: number | null; d7?: number | null; d14?: number | null; d30?: number | null; d60?: number | null; suppressed?: true };
-export type XdMetric = { columns: string[]; rows: (string | number | null)[][]; alert: number[]; unit: string; suppressedCells: Set<string>; msg: { pre: string; bold: string; post: string } };
+type RetentionDay = "d1" | "d7" | "d14" | "d30" | "d60";
+export type CohortRow = { retentionUnavailableReasons?: Record<string, string>; w: string; size: number | null; d1?: number | null; d7?: number | null; d14?: number | null; d30?: number | null; d60?: number | null; suppressed?: true };
+export type XdMetric = { columns: string[]; rows: (string | number | null)[][]; alert: number[]; unit: string; suppressedCells: Set<string>; unavailableCells: Map<string, string>; msg: { pre: string; bold: string; post: string } };
 
 export const people = (value: number) => value.toLocaleString("en-US");
 export const pct = (value: number) => `${value.toFixed(1)}%`;
@@ -234,20 +235,21 @@ export function TrialLine({ steps }: { steps: readonly TrialStep[] }) {
   );
 }
 
-export type RetentionColumn = { day: number; key: keyof CohortRow };
+export type RetentionColumn = { day: number; key: RetentionDay };
 
-/** 注册周或月为行、第几天为列的留存热力格。没成熟、样本过小、来源没接上都和 0% 分开写。 */
-export function RetentionHeatmap({ kind, cohorts, columns, selected, curveFor, disabled, sourceReady }: {
+/** 注册周或月为行、第几天为列的留存热力格。未到、样本过小、未采集和 0% 分开写。 */
+export function RetentionHeatmap({ kind, cohorts, columns, selected, curveFor, disabled }: {
   kind: "周" | "月";
   cohorts: readonly CohortRow[];
   columns: readonly RetentionColumn[];
   selected: number;
   curveFor: (index: number) => void;
   disabled: boolean;
-  sourceReady: boolean;
 }) {
-  const values = sourceReady ? cohorts.flatMap((row) => (row.suppressed ? [] : columns.map(({ key }) => row[key]).filter((value): value is number => typeof value === "number"))) : [];
+  const values = cohorts.flatMap((row) => (row.suppressed ? [] : columns.map(({ key }) => row[key]).filter((value): value is number => typeof value === "number")));
   const level = values.length ? heatLevel(values) : null;
+  const hasUncollected = cohorts.some((row) => !row.suppressed && columns.some(({ key }) => row.retentionUnavailableReasons?.[key] === "DAU_NOT_COLLECTED"));
+  const legend = <span>未到：还没满这么多天{hasUncollected && ` · ${DAU_NOT_COLLECTED_LABEL}：观察日在采集范围外`}</span>;
   return (
     <div className="rd-stack">
       <Table label={`按注册${kind}的留存`} className="l2-heat-table">
@@ -272,8 +274,12 @@ export function RetentionHeatmap({ kind, cohorts, columns, selected, curveFor, d
                 ? <Td colSpan={columns.length}><span className="l2-heat-empty">少于 5 人，留存不显示</span></Td>
                 : columns.map(({ day, key }) => {
                   const value = row[key];
-                  if (typeof value !== "number") return <Td key={day} align="right"><span className="l2-heat-cell" data-state="young" title={`这批还有人注册不满 ${day} 天`}>未到</span></Td>;
-                  if (!sourceReady) return <Td key={day} align="right"><span className="l2-heat-cell" data-state="nosource" title="日活事件还没接上，这个数不能当留存看">未接上</span></Td>;
+                  if (typeof value !== "number") {
+                    const reason = row.retentionUnavailableReasons?.[key];
+                    return <Td key={day} align="right"><span className="l2-heat-cell"
+                      data-state={reason === "DAU_NOT_COLLECTED" ? "nosource" : reason === "WINDOW_IMMATURE" ? "young" : "none"}
+                      title={reason === "WINDOW_IMMATURE" ? `这批还有人注册不满 ${day} 天` : undefined}>{retentionReasonLabel(reason)}</span></Td>;
+                  }
                   return (
                     <Td key={day} align="right">
                       <button type="button" className="l2-heat-cell" data-heat={level?.(value)} tabIndex={-1} disabled={disabled} onClick={() => curveFor(index)} title={`${row.w} 第 ${day} 天 ${pct(value)}，点一下看这一批的曲线`}>{pct(value)}</button>
@@ -285,8 +291,8 @@ export function RetentionHeatmap({ kind, cohorts, columns, selected, curveFor, d
         </tbody>
       </Table>
       {level
-        ? <HeatLegend low={pct(Math.min(...values))} high={pct(Math.max(...values))}><span>未到：还没满这么多天，不是 0%</span></HeatLegend>
-        : <div className="l2-legend"><span>未到：还没满这么多天</span><span>未接上：日活事件没接上，不是 0%</span></div>}
+        ? <HeatLegend low={pct(Math.min(...values))} high={pct(Math.max(...values))}>{legend}</HeatLegend>
+        : <div className="l2-legend">{legend}</div>}
     </div>
   );
 }
@@ -335,7 +341,12 @@ export function CrossTable({ metric, name }: { metric: XdMetric; name: string })
                 {metric.columns.map((column, columnIndex) => {
                   const value = cellValue(row, columnIndex);
                   if (metric.suppressedCells.has(`${rowIndex}:${columnIndex}`)) return <Td key={column} align="right"><span className="l2-heat-cell" data-state="small">{SMALL_SAMPLE_LABEL}</span></Td>;
-                  if (typeof value !== "number") return <Td key={column} align="right"><span className="l2-heat-cell" data-state="none" title="这个渠道没有这个语言的注册用户，或还算不出">—</span></Td>;
+                  if (typeof value !== "number") {
+                    const reason = metric.unavailableCells.get(`${rowIndex}:${columnIndex}`);
+                    return <Td key={column} align="right"><span className="l2-heat-cell"
+                      data-state={reason === "DAU_NOT_COLLECTED" ? "nosource" : reason === "WINDOW_IMMATURE" ? "young" : "none"}
+                      title={reason === "DAU_NOT_COLLECTED" || reason === "WINDOW_IMMATURE" ? undefined : "这个渠道没有这个语言的注册用户，或还算不出"}>{retentionReasonLabel(reason)}</span></Td>;
+                  }
                   const mark = marked && value === high ? "最高" : marked && value === low ? "最低" : null;
                   return (
                     <Td key={column} align="right">
@@ -345,7 +356,7 @@ export function CrossTable({ metric, name }: { metric: XdMetric; name: string })
                     </Td>
                   );
                 })}
-                <Td align="right"><Cell num main={metric.suppressedCells.has(`${rowIndex}:${metric.columns.length}`) ? SMALL_SAMPLE_LABEL : typeof average === "number" ? text(average) : "—"} /></Td>
+                <Td align="right"><Cell num main={metric.suppressedCells.has(`${rowIndex}:${metric.columns.length}`) ? SMALL_SAMPLE_LABEL : typeof average === "number" ? text(average) : retentionReasonLabel(metric.unavailableCells.get(`${rowIndex}:${metric.columns.length}`))} /></Td>
               </Tr>
             );
           })}

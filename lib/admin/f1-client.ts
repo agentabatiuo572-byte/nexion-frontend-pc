@@ -248,6 +248,7 @@ interface BackendF4Metric {
 }
 
 interface BackendF4QuotaRow {
+  status?: number | null;
   id?: number | string | null;
   quotaCode?: string | null;
   productNo?: string | null;
@@ -810,6 +811,7 @@ export interface F4Metric {
 }
 
 export interface F4QuotaRow {
+  status?: number | null;
   id: number;
   quotaCode: string;
   productNo: string;
@@ -1659,6 +1661,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
   const quotaRows = (data?.quotaRows ?? []).map((row) => ({
     id: toNumber(row.id),
     quotaCode: asText(row.quotaCode),
+    status: row.status,
     productNo: asText(row.productNo),
     name: asText(row.name, "Quota"),
     directRefs: toNumber(row.directRefs),

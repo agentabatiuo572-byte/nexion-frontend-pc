@@ -1,7 +1,8 @@
 import type { L1Granularity, L1KpiQuery } from "@/lib/admin/l-client";
 
 type JsonRecord = Record<string, unknown>;
-const KPI_IDS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+export const L1_KPI_IDS = [1, 2, 3, 4, 5, 7, 8] as const;
+const COHORT_KPI_COUNT = L1_KPI_IDS.length - 1;
 export const L1_COHORT_CONTRACT = "L1_REGISTRATION_COHORT_V1";
 const COUNTS = ["cohortSize", "eligibleUsers", "sampleSize", "numerator", "denominator"] as const;
 const BOUNDARIES = ["bucketKey", "startDate", "endDateExclusive", "registrationFrom", "registrationToExclusive", "selectedFrom", "selectedToExclusive", "partial", "observationAsOf"] as const;
@@ -27,6 +28,7 @@ export type L1KpiRow = {
   vis: string;
   spark: (number | null)[];
   sparkSuppressed?: boolean[];
+  sparkUnavailableReasons?: (string | null)[];
   suppressed?: boolean;
   previousSuppressed?: boolean;
   available: boolean;
@@ -69,15 +71,35 @@ function sameInstant(a: unknown, b: unknown) {
   const canonical = (value: string) => value.replace(/(\.\d*?)0+Z$/, "$1Z").replace(".Z", "Z");
   return instant(a) && instant(b) && canonical(a) === canonical(b);
 }
-function validTrend(values: unknown, markers: unknown, length: number) {
-  return Array.isArray(values) && (values.length === 0 || values.length === length)
-    && values.every(point => point === null || finite(point))
-    && (markers === undefined || Array.isArray(markers) && markers.length === values.length
-      && markers.every((masked, index) => typeof masked === "boolean" && (!masked || values[index] === null)));
+const LEGACY_TREND_LENGTH = 6;
+const LEGACY_REASONS: Readonly<Record<number, readonly string[]>> = {
+  1: ["NO_REGISTRATION_DENOMINATOR"],
+  2: ["NO_MATURE_DAY7_COHORT", "DAU_NOT_COLLECTED"],
+  3: ["NO_REGISTRATION_DENOMINATOR"],
+  4: ["NO_STORE_VIEW_DENOMINATOR"],
+  5: ["NO_DEVICE_HOLDER_DENOMINATOR"],
+  7: ["NO_DIRECT_REFERRAL_DENOMINATOR"],
+  8: ["NO_GENESIS_PURCHASES", "GENESIS_NOT_SOLD_OUT"],
+};
+
+function validLegacyPoint(id: number, value: unknown, suppressed: unknown, reason: unknown) {
+  const allowedReasons = LEGACY_REASONS[id];
+  if (!allowedReasons || typeof suppressed !== "boolean") return false;
+  if (suppressed) return value === null && reason === null;
+  if (value === null) return typeof reason === "string" && allowedReasons.includes(reason);
+  return reason === null && finite(value) && (id === 8 ? value > 0 : value >= 0 && value <= 100);
 }
+
+function validTrend(id: number, values: unknown, markers: unknown, reasons: unknown) {
+  return Array.isArray(values) && values.length === LEGACY_TREND_LENGTH
+    && Array.isArray(markers) && markers.length === LEGACY_TREND_LENGTH
+    && Array.isArray(reasons) && reasons.length === LEGACY_TREND_LENGTH
+    && values.every((point, index) => validLegacyPoint(id, point, markers[index], reasons[index]));
+}
+
 function metadata(value: unknown, expectedId: number) {
   const row = record(value);
-  if (row.n !== expectedId || String(row.kpiId) !== String(expectedId)) throw new Error("L1_KPI_ID_SEQUENCE_INVALID");
+  if (row.n !== expectedId || row.kpiId !== String(expectedId)) throw new Error("L1_KPI_ID_SEQUENCE_INVALID");
   if (typeof row.name !== "string" || !row.name.trim() || !finite(row.target)
       || !["gte", "lte", "band"].includes(String(row.dir)) || !["%", "d"].includes(String(row.unit))
       || !Array.isArray(row.band) || !row.band.every(finite)
@@ -90,9 +112,11 @@ function metadata(value: unknown, expectedId: number) {
 }
 function legacyKpi(value: unknown, expectedId: number): L1KpiRow {
   const row = metadata(value, expectedId);
-  if (!validTrend(row.spark, row.sparkSuppressed, 6)
-      || (row.suppressed === true
-        ? row.available || row.numerator != null || row.denominator != null || row.momDelta != null
+  const hiddenCounts = row.suppressed === true || row.unavailableReason === "DAU_NOT_COLLECTED";
+  if (!validLegacyPoint(expectedId, row.value, row.suppressed, row.unavailableReason)
+      || !validTrend(expectedId, row.spark, row.sparkSuppressed, row.sparkUnavailableReasons)
+      || (hiddenCounts
+        ? row.numerator !== null || row.denominator !== null || row.momDelta !== null
         : !count(row.numerator) || !count(row.denominator))) throw new Error("L1_KPI_ROW_INVALID");
   return row as L1KpiRow;
 }
@@ -122,9 +146,9 @@ function cohortHeader(data: JsonRecord, expected?: L1KpiQuery) {
       || !calendar.versions.every(value => { const version = record(value); return date(version.effectiveDate) && typeof version.zoneId === "string" && version.zoneId.length > 0; })
       || coverage.registrationTimeSource !== "nx_user.created_at" || typeof coverage.historyComplete !== "boolean"
       || !["COMPLETE", "INCOMPLETE"].includes(String(coverage.registrationEventCoverage))
-      || capabilities.registrationCohorts !== true || capabilities.minimumSampleSize !== 5
+      || capabilities.sevenKpis !== true || capabilities.registrationCohorts !== true || capabilities.minimumSampleSize !== 5
       || capabilities.maxPoints !== 60 || capabilities.phaseMarkers !== false || data.phaseSwitchIndex !== null
-      || data.applicableKpiCount !== 7 || !count(data.onTargetKpiCount) || data.onTargetKpiCount > 7) {
+      || data.applicableKpiCount !== COHORT_KPI_COUNT || !count(data.onTargetKpiCount) || data.onTargetKpiCount > COHORT_KPI_COUNT) {
     throw new Error("L1_COHORT_METADATA_INVALID");
   }
   const filters = record(data.filters);
@@ -145,7 +169,15 @@ function cohortMetric(row: JsonRecord, id: number) {
   const reason = row.unavailableReason;
   const applicable = id !== 8;
   const basis = id === 1 || id === 3 ? "NUMERATOR_USERS" : "DENOMINATOR_USERS";
-  const noDenominator = ["NO_REGISTRATION_DENOMINATOR", "NO_MATURE_DAY7_COHORT", "NO_REGISTRATION_DENOMINATOR", "NO_STORE_VIEW_DENOMINATOR", "NO_DEVICE_HOLDER_DENOMINATOR", "NO_PUSH_SENT_DENOMINATOR", "NO_DIRECT_REFERRAL_DENOMINATOR"][id - 1];
+  const noDenominator: Record<number, string> = {
+    1: "NO_REGISTRATION_DENOMINATOR",
+    2: "NO_MATURE_DAY7_COHORT",
+    3: "NO_REGISTRATION_DENOMINATOR",
+    4: "NO_STORE_VIEW_DENOMINATOR",
+    5: "NO_DEVICE_HOLDER_DENOMINATOR",
+    7: "NO_DIRECT_REFERRAL_DENOMINATOR",
+  };
+  const notCollected = id === 2 && reason === "DAU_NOT_COLLECTED";
   if (typeof row.suppressed !== "boolean" || typeof row.available !== "boolean"
       || row.sampleBasis !== (applicable ? basis : null)
       || (row.available
@@ -155,9 +187,9 @@ function cohortMetric(row: JsonRecord, id: number) {
           || Number(row.cohortSize) < Number(row.denominator)
           || row.sampleSize !== row[id === 1 || id === 3 ? "numerator" : "denominator"] || Number(row.sampleSize) < 5
         : row.value !== null || !COUNTS.every(key => row[key] === null)
-          || !["SOURCE_INCOMPLETE", "COHORT_NOT_APPLICABLE", "BELOW_MINIMUM", noDenominator, ...(id === 1 ? ["NO_MATURE_DAY0_COHORT"] : [])].includes(String(reason)))
+          || !["SOURCE_INCOMPLETE", "COHORT_NOT_APPLICABLE", "BELOW_MINIMUM", noDenominator[id], ...(id === 1 ? ["NO_MATURE_DAY0_COHORT"] : [])].includes(String(reason)) && !notCollected)
       || (!applicable ? row.available || row.suppressed || reason !== "COHORT_NOT_APPLICABLE"
-        : reason === "COHORT_NOT_APPLICABLE" || (reason === "SOURCE_INCOMPLETE" ? row.suppressed : !row.available && !row.suppressed))
+        : reason === "COHORT_NOT_APPLICABLE" || (reason === "SOURCE_INCOMPLETE" || notCollected ? row.suppressed : !row.available && !row.suppressed))
       || (id >= 3 ? row.mature !== null || row.maturityStatus !== (applicable ? "OPEN_ENDED" : "NOT_APPLICABLE")
         : !["UNKNOWN", "IMMATURE", "PARTIAL", "MATURE"].includes(String(row.maturityStatus))
           || row.mature !== (row.maturityStatus === "UNKNOWN" ? null : row.maturityStatus === "MATURE")
@@ -210,15 +242,15 @@ function cohortKpi(value: unknown, id: number, header: ReturnType<typeof cohortH
     if (end.toISOString().slice(0, 10) !== point.endDateExclusive) throw new Error("L1_COHORT_POINTS_INVALID");
     return point as L1CohortPoint;
   });
-  return { ...row, points, spark: points.map(point => point.value), sparkSuppressed: points.map(point => point.suppressed) } as L1KpiRow;
+  return { ...row, points, spark: points.map(point => point.value), sparkSuppressed: points.map(point => point.suppressed), sparkUnavailableReasons: points.map(point => point.unavailableReason) } as L1KpiRow;
 }
 
 function definitions(data: JsonRecord, kpis: L1KpiRow[]) {
   const plain = record(data.kpiPlain);
   const ext = record(data.kpiExt);
   for (const row of kpis) {
-    const definition = record(ext[row.n]);
-    if (typeof plain[row.n] !== "string" || typeof definition.fx !== "string"
+    const definition = record(ext[row.kpiId]);
+    if (typeof plain[row.kpiId] !== "string" || typeof definition.fx !== "string"
         || !Array.isArray(definition.fxBold) || !definition.fxBold.every(item => typeof item === "string")
         || typeof definition.note !== "string" || typeof definition.delta !== "string"
         || !["num", "den"].every(key => definition[key] === null || typeof definition[key] === "string")
@@ -234,17 +266,18 @@ function definitions(data: JsonRecord, kpis: L1KpiRow[]) {
 export function validateL1Dashboard(value: unknown, expected?: L1KpiQuery): L1Dashboard {
   const data = record(value);
   if (expected?.granularity && data.contractVersion === undefined) throw new Error("L1_COHORT_NOT_SUPPORTED");
-  if (data.module !== "L1" || !Array.isArray(data.kpis) || data.kpis.length !== 8) throw new Error("L1_DASHBOARD_SHAPE_INVALID");
+  if (data.module !== "L1" || !Array.isArray(data.kpis) || data.kpis.length !== L1_KPI_IDS.length
+      || record(data.capabilities).sevenKpis !== true) throw new Error("L1_DASHBOARD_SHAPE_INVALID");
   let kpis: L1KpiRow[];
   let weeks: string[];
   if (data.contractVersion !== undefined) {
     const header = cohortHeader(data, expected);
-    kpis = [];
-    for (const id of KPI_IDS) kpis.push(cohortKpi(data.kpis[id - 1], id, header, kpis[0]?.points));
+    const axis = cohortKpi(data.kpis[0], L1_KPI_IDS[0], header);
+    kpis = [axis, ...data.kpis.slice(1).map((row, index) => cohortKpi(row, L1_KPI_IDS[index + 1], header, axis.points))];
     weeks = kpis[0].points!.map(point => point.bucketKey);
   } else {
-    kpis = data.kpis.map((row, index) => legacyKpi(row, KPI_IDS[index]));
-    if (!Array.isArray(data.weeks) || data.weeks.length !== 6 || !data.weeks.every(item => typeof item === "string" && item.length > 0)) throw new Error("L1_TREND_LABELS_INVALID");
+    kpis = data.kpis.map((row, index) => legacyKpi(row, L1_KPI_IDS[index]));
+    if (!Array.isArray(data.weeks) || data.weeks.length !== LEGACY_TREND_LENGTH || !data.weeks.every(item => typeof item === "string" && item.length > 0)) throw new Error("L1_TREND_LABELS_INVALID");
     weeks = data.weeks;
   }
   definitions(data, kpis);
@@ -281,10 +314,10 @@ export function validateL1Trend(value: unknown, expectedId: number, expected?: L
   if (expected?.granularity && data.contractVersion === undefined) throw new Error("L1_COHORT_NOT_SUPPORTED");
   if (data.contractVersion !== undefined) {
     const checked = validateL1Drilldown(data, expectedId, expected, axis);
-    return { ...checked, labels: checked.weeks as string[], values: checked.selected.spark, suppressedPoints: checked.selected.sparkSuppressed };
+    return { ...checked, labels: checked.weeks as string[], values: checked.selected.spark, suppressedPoints: checked.selected.sparkSuppressed, unavailableReasons: checked.selected.sparkUnavailableReasons };
   }
-  if (data.module !== "L1" || data.kpiId !== expectedId || !Array.isArray(data.labels) || data.labels.length !== 6
+  if (data.module !== "L1" || data.kpiId !== expectedId || !Array.isArray(data.labels) || data.labels.length !== LEGACY_TREND_LENGTH
       || !data.labels.every(item => typeof item === "string" && item.length > 0)
-      || !validTrend(data.values, data.suppressedPoints, data.labels.length)) throw new Error("L1_TREND_PROTOCOL_INVALID");
-  return { ...data, labels: data.labels as string[], values: data.values as (number | null)[], suppressedPoints: data.suppressedPoints as boolean[] | undefined };
+      || !validTrend(expectedId, data.values, data.suppressedPoints, data.unavailableReasons)) throw new Error("L1_TREND_PROTOCOL_INVALID");
+  return { ...data, labels: data.labels as string[], values: data.values as (number | null)[], suppressedPoints: data.suppressedPoints as boolean[] | undefined, unavailableReasons: data.unavailableReasons as (string | null)[] };
 }

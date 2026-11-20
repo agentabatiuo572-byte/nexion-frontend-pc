@@ -53,7 +53,8 @@ export function requireH7Actor(adminId: number, write: boolean): AdminSession {
 
 export function createH7VoucherMutation(session: AdminSession, context: H7DirectContext, voucher: H7Voucher, reason: string): H7DirectMutation {
   if (context.kind !== "status") validateH7VoucherMoneyPrecision(context.values);
-  const voucherInput: Omit<H7Voucher, "splittable"> & { splittable?: boolean } = { ...voucher };
+  const { wheelOnly: _wheelOnly, ...input } = voucher;
+  const voucherInput: Omit<typeof input, "splittable"> & { splittable?: boolean } = input;
   // 57ecd268 fixes preservation when omitted; explicitly resending historical true
   // is still rejected. Keep omission on both backends and retain exact retry bytes.
   if (context.kind === "update" && voucher.splittable === context.voucher.splittable) delete voucherInput.splittable;

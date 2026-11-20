@@ -576,7 +576,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               id: String(device.deviceId),
               value: device.kind === "PROMOTION_GIFT" ? "赠品设备" : "购买设备",
               status: <StatusTag tone={deviceTone(device.status, device.ownershipStatus)}>{operatorDeviceStatus(device.status)} · {({ OWNED: "持有中", REFUNDED: "已退款", REVOKED: "已收回", RECYCLED: "已回收", UNBOUND: "已解绑" } as Record<string, string>)[device.ownershipStatus ?? ""] ?? device.ownershipStatus ?? "持有状态未提供"}</StatusTag>,
-              object: <>设备编号 {device.deviceId} <Explain label="设备原始信息" rows={[{ k: "设备编号", v: String(device.deviceId) }, { k: "来源", v: device.sourceChannel ?? "未提供" }, { k: "设备状态", v: device.status ?? "未提供" }, { k: "持有状态", v: device.ownershipStatus ?? "未提供" }]} /></>,
+              object: <>设备编号 {device.deviceId} · 托管机房 {device.dcLocation?.trim() || "未记录"} <Explain label="设备原始信息" rows={[{ k: "设备编号", v: String(device.deviceId) }, { k: "托管机房", v: device.dcLocation?.trim() || "未记录" }, { k: "来源", v: device.sourceChannel ?? "未提供" }, { k: "设备状态", v: device.status ?? "未提供" }, { k: "持有状态", v: device.ownershipStatus ?? "未提供" }]} /></>,
               reference: device.deviceInstanceNo ?? undefined,
             }))} />}
         </Fold>
