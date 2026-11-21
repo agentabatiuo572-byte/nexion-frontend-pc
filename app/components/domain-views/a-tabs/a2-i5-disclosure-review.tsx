@@ -95,13 +95,15 @@ function TranslationDiffFold({ name, languages, mode }: { name: string; language
     }))
     .filter(item => item.summary || item.chapters.length > 0);
   if (!items.length) return null;
+  // 只有一种语言时语言名只写在折叠标题里，摘要、小标题和「其余没变」不再逐处重复（BUG-535）。
+  const single = items.length === 1 ? languageName(items[0].language.code) : undefined;
   const summaryText = items.map(({ language, fresh, summary, chapters }) => {
     const scope = added(language) ? "本版新增，" : removed(language) ? "本版去掉，" : "";
     const parts = [summary && "总文", chapters.length > 0 && (fresh ? `${chapters.length} 章` : chapterList(chapters.map(chapter => chapter.no)))].filter(Boolean).join("、");
     const missing = fresh ? 0 : translationPairs(language).filter(pair => pair.before.state === "missing_evidence" || pair.after.state === "missing_evidence").length;
-    return `${languageName(language.code)}：${scope}${parts}${missing ? `（${missing} 处缺记录）` : ""}`;
+    return `${single ? "" : `${languageName(language.code)}：`}${scope}${parts}${missing ? `（${missing} 处缺记录）` : ""}`;
   }).join("；");
-  return <div data-business-form="disclosure-translation-review"><Fold inset title={`${name} · ${mode === "first" ? "全部内容" : mode === "contentOnly" ? "本版内容" : "版本差异"}`} summary={summaryText}>
+  return <div data-business-form="disclosure-translation-review"><Fold inset title={`${single ?? name} · ${mode === "first" ? "全部内容" : mode === "contentOnly" ? "本版内容" : "版本差异"}`} summary={summaryText}>
     <div className="rd-doc">
       {items.map(({ language, fresh, summary, chapters }) => {
         const languageLabel = languageName(language.code);
@@ -110,14 +112,14 @@ function TranslationDiffFold({ name, languages, mode }: { name: string; language
           {added(language) && <p className="rd-weak">上一版没有{languageLabel}，下面是本版原文。</p>}
           {removed(language) && <p className="rd-weak">本版没有{languageLabel}，下面是上一版原文。</p>}
           {summary && <section>
-            <h3>总文 · {languageLabel}</h3>
+            <h3>{single ? "总文" : `总文 · ${languageLabel}`}</h3>
             <TranslationText pair={language.summary} contentOnly={fresh} />
           </section>}
           {chapters.map(chapter => {
             const title = chapter.title.after.state === "available" ? chapter.title.after.text
               : chapter.title.before.state === "available" ? chapter.title.before.text : "";
             return <section key={chapter.no}>
-              <h3>第 {chapter.no} 章 · {languageLabel}{title && ` · ${title}`}</h3>
+              <h3>第 {chapter.no} 章{!single && ` · ${languageLabel}`}{title && ` · ${title}`}</h3>
               {fresh ? <TranslationText pair={chapter.body} contentOnly={contentOnly} />
                 : <>
                   {shown(chapter.title) && <TranslationText label="标题" pair={chapter.title} />}
@@ -125,7 +127,7 @@ function TranslationDiffFold({ name, languages, mode }: { name: string; language
                 </>}
             </section>;
           })}
-          {!fresh && same.length > 0 && <p className="rd-weak">{languageLabel}其余没变：{chapterList(same)}{!summary && "、总文"}</p>}
+          {!fresh && same.length > 0 && <p className="rd-weak">{single ? "" : languageLabel}其余没变：{chapterList(same)}{!summary && "、总文"}</p>}
         </div>;
       })}
     </div>

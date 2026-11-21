@@ -5,6 +5,7 @@ import { BlockState, Button, Check, CheckGroup, Decision, DiffList, Drawer, Expl
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fetchSkuDatacenterLabels, fetchTaskPools, type TaskPool } from "@/lib/admin/task-pool-client";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import { ADMIN_ERROR_MESSAGES, guardedFetch, displayAdminError } from "@/lib/admin/error-messages";
@@ -15,7 +16,7 @@ import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { SKU_SERIES_NAMES, skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSeries, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
-import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1SkuDiff, type E1MediaPending } from "./e1-state";
+import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
 
 export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number };
@@ -249,7 +250,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (!/^\d+(?:\.\d+)?$/.test(form.price.trim()) || Number(form.price) <= 0) e.price = "售价须为大于 0 的 USD 金额";
     if (form.id.trim().toLowerCase() === "phone") e.id = "phone 是手机策略的专用编号";
     const seriesError = validateSkuSeries(form, original);
-    if (seriesError) e.seriesCode = ADMIN_ERROR_MESSAGES[seriesError];
+    if (seriesError) e.seriesCode = ADMIN_ERROR_MESSAGES[seriesError].replace(/。$/, "");
     if (form.datacenter.trim().length > 128) e.datacenter = "托管机房最多 128 字";
     if (original?.status === "on") {
       if (!form.allowedPoolCodes.length) e.allowedPoolCodes = "在售商品至少要选择一个任务等级";
@@ -278,7 +279,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (gates?.skuReviewContractVersion !== 1) e.form = "商品审核暂时不可用，请刷新后重试；已填写的内容会保留";
     if (!writable) e.form = "当前不能提交，请核对权限和目录读取状态";
     if (mediaBusy || mediaPending || media && !media.assetId) e.media = "媒体上传尚未确认，请先核对原文件";
-    if (!acceptedRevision && latestChanged) e.form = "商品修订已变化，请核对新旧修订后继续";
+    if (!acceptedRevision && latestChanged) e.form = "商品已被别人改过，请先核对别人改了什么";
     for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
       const error = appVisibleTextError(form[key], label);
       if (!error) continue;
@@ -330,7 +331,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   return <>
     <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
       {errors.form && <Notice tone="warn" title={errors.form} />}
-      {latestChanged && <Notice tone="warn" title="商品修订已变化，本地输入仍保留"><Facts><Fact k="打开时修订">{original.updatedAt}</Fact><Fact k="最新修订">{currentSku?.updatedAt}</Fact></Facts>{currentSku && <Fold inset title="读取期间的商品变化" summary="核对完整前后值"><DiffList rows={e1SkuDiff(original, currentSku)} /></Fold>}<Check label="我已核对最新修订，保留本地改动" checked={false} onChange={e => { if (e.target.checked && currentSku) adoptRevision(currentSku, form, original, media); }} /></Notice>}
+      {latestChanged && <Notice tone="warn" title="商品已被别人改过，你填的内容还在" action={currentSku ? <Button size="sm" onClick={() => adoptRevision(currentSku, form, original, media)}>已核对，保留我的修改</Button> : undefined}><Facts><Fact k="别人保存于">{formatBusinessTimeCompact(currentSku?.updatedAt, "—")}（{businessZone().label}）</Fact></Facts>{currentSku && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={e1ShownDiff(e1SkuDiff(original, currentSku), original, currentSku)} /></Fold>}</Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
         <EditorSection id="e1-basic" title="基本信息">
           <div className="rd-form-grid">{field("name", "型号名称", { required: true, placeholder: "UVELBox Pro v3", explain: APP_VISIBLE_TEXT_HINT })}{field("id", "商品编号", { disabled: !!editId, help: editId ? "创建后不能修改" : "只做唯一标识，留空按型号名称生成" })}
@@ -384,13 +385,13 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           <Field label="购买条件类型" explain="限制哪些用户可购买；无用户条件仍可独立设置销售配额。"><Select aria-label="购买条件类型" value={form.gateType} onChange={v => update("gateType", v)} options={[{ value: "none", label: "无用户条件" }, { value: "activeDirect", label: "活跃直接邀请人数" }, { value: "rank", label: "最低会员等级" }, { value: "combo", label: "组合条件（会员等级 / 直接邀请 / 团队算力点）" }]} /></Field>
           <div className="rd-form-grid">{(form.gateType === "rank" || form.gateType === "combo") && field("gateRankMin", "最低会员等级", { number: true, min: 0, max: 8, step: 1, help: "0～8；0 为不设条件" })}{(form.gateType === "activeDirect" || form.gateType === "combo") && field("gateActiveDirectMin", "活跃直接邀请人数", { number: true, min: 0, max: 1000000, step: 1, help: "0～1,000,000 的整数" })}{form.gateType === "combo" && field("gateTeamComputePointsMin", "团队算力点", { number: true, min: 0, step: 1, help: "非负整数，0 为不设条件" })}
             {form.gateType === "combo" && <Field label="多条件关系" explain="全部满足是all；任一满足是either。"><Select aria-label="多条件关系" value={form.gateMode} onChange={v => update("gateMode", v)} options={[{ value: "all", label: "全部满足" }, { value: "either", label: "任一满足" }]} /></Field>}
-            {field("gateQuotaCap", "本期可售上限", { number: true, min: 1, step: 1, help: "留空不限量；有值时不小于已有售量" })}
-            <Field label="本期已售数量" explain="只读销售计数，随商品原快照保留；移除上限时清整组配额。"><Input aria-label="本期已售数量" value={form.gateQuotaSold || "— · 未配置"} readOnly /></Field>
+            {field("gateQuotaCap", "销售配额上限", { number: true, min: 1, step: 1, help: "留空不限量；有值时不小于已有售量" })}
+            <Field label="配额已售数量" explain="只读销售计数，随商品原快照保留；移除上限时清整组配额。"><Input aria-label="配额已售数量" value={form.gateQuotaSold || "— · 未配置"} readOnly /></Field>
           </div>
           {(form.gateType !== "none" || form.gateQuotaCap) && <>
             <Field label="售卖统计周期" error={errors.gateQuotaPeriod} explain="当前只支持不分周期累计。旧按月值必须人工改选后提交。">{form.gateQuotaPeriod === "month" ? <Select aria-label="售卖统计周期" value={form.gateQuotaPeriod} onChange={v => update("gateQuotaPeriod", v)} options={[{ value: "month", label: "按月统计（已停用）" }, { value: "lifetime", label: "不分周期（累计）" }]} /> : <Input aria-label="售卖统计周期" value="不分周期（累计）" readOnly />}</Field>
-            {form.gateQuotaPeriod === "month" && <Notice tone="warn" title="按月统计已停用，请改为不分周期后保存" />}
-            <Field label="售罄后限制购买" explain="此项是软配额限制；允许继续购买不代表实体库存不限。"><Select aria-label="售罄后限制购买" value={form.gateEnforce} onChange={v => update("gateEnforce", v)} options={[{ value: "true", label: "卖完后不能再买" }, { value: "false", label: "卖完只显示售罄，仍可购买" }]} /></Field>
+            {form.gateQuotaPeriod === "month" && <Notice tone="warn" title="按月统计已停用，现在不能购买；改为不分周期后保存" />}
+            <Field label="购买条件是否生效" explain="不生效时不检查上面的用户条件和配额；库存另算。"><Select aria-label="购买条件是否生效" value={form.gateEnforce} onChange={v => update("gateEnforce", v)} options={[{ value: "true", label: "生效：按上面的条件和配额限制购买" }, { value: "false", label: "不生效：不检查条件和配额" }]} /></Field>
           </>}
         </EditorSection>
         <EditorSection id="e1-specs" title="规格与资料">

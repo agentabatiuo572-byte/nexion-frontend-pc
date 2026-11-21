@@ -4,6 +4,7 @@ import { ArrowLeftRight, Smartphone } from "lucide-react";
 import { Button, Cell, Change, Conclusion, Fact, Facts, Fold, Modal, Notice, Panel, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { e6AmountPrecision, formatE6Amount } from "@/lib/admin/e6-decimal";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { buildE6OnboardingYieldSkuProposal } from "@/lib/admin/high-ops-registry";
 import { skuSeriesText } from "@/lib/admin/device-monthly-target";
 import type { E2YieldComparison } from "@/lib/admin/e2-client";
@@ -38,6 +39,14 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
   const m = useE6Mutations();
   const [pick, setPick] = useState<{ row: E2YieldComparison; skuId: string } | null>(null);
   const [confirm, setConfirm] = useState<{ row: E2YieldComparison; sku: OpsSku } | null>(null);
+  const [conflict, setConflict] = useState<{ reading: boolean; latest?: E2YieldComparison } | null>(null);
+  const readConflict = async (row: E2YieldComparison) => {
+    setConflict({ reading: true });
+    const comparisons = await m.refreshYieldBinding();
+    const latest = comparisons?.find(current => current.configKey === row.configKey
+      && current.bindingRevision != null && row.bindingRevision != null && current.bindingRevision > row.bindingRevision);
+    setConflict({ reading: false, latest });
+  };
   const showActions = m.showYieldSkuActions;
   const candidates = ctx.e6SkuCandidates;
   const rows = [...ctx.yieldComparisons].sort((a, b) => Number(b.configKey === "phone") - Number(a.configKey === "phone") || a.sortOrder - b.sortOrder);
@@ -48,7 +57,8 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
   const blockReason = (row: E2YieldComparison) => candidates.status === "forbidden" ? "需要商品目录的查看权限"
     : m.pending.find(p => p.scope === scopeOf(row))?.terminal ? "原审批已有结论，先在上方点「准备新变更」"
     : m.locked(scopeOf(row)) ? "这一位有待审批或结果未知的更换"
-    : !m.canBindYieldSku || row.bindingRevision == null ? "这一位暂时不能更换，请刷新后核对"
+    : !m.canBindYieldSku ? "当前账号缺少商品目录或审批记录的查看权限"
+    : row.bindingRevision == null ? "这一位缺少绑定记录，暂时不能更换，请联系技术支持"
       : candidates.status === "loading" ? "正在加载可选商品"
         : candidates.status === "error" ? "可选商品加载失败，请先重试"
           : !others(row).length ? "没有可替换的在售商品" : undefined;
@@ -83,7 +93,7 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
       const list = others(pick.row), precision = candidatePrecision(list), chosen = list.find(s => s.id === pick.skuId);
       return <Modal title={`更换选品 · ${slotName(pick.row.configKey)}`} icon={ArrowLeftRight} onClose={() => setPick(null)} footer={<>
         <Button onClick={() => setPick(null)}>取消</Button>
-        <Button variant="primary" disabledReason={chosen ? undefined : "先选一件商品"} onClick={() => { if (chosen) { setPick(null); setConfirm({ row: pick.row, sku: chosen }); } }}>下一步</Button>
+        <Button variant="primary" disabledReason={chosen ? undefined : "先选一件商品"} onClick={() => { if (chosen) { setPick(null); setConflict(null); setConfirm({ row: pick.row, sku: chosen }); } }}>下一步</Button>
       </>}>
         <Facts><Fact k="当前商品">{currentBinding(pick.row)}</Fact></Facts>
         <div className="e6-yield-picks" role="radiogroup" aria-label="选择新商品">
@@ -115,17 +125,31 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
         </Facts>}
         content={<Fold inset title="技术信息" summary="提交时核对有没有被别人改过"><Facts><Fact k="修改序号">{String(row.bindingRevision ?? "—")}</Fact></Facts></Fold>}
         getPendingReason={() => m.pendingReason(scope)} onClose={() => setConfirm(null)}
+        refusal={conflict ? {
+          message: conflict.latest ? "这个对比位已被别人改过，页面已换成最新内容，请重新选择商品。"
+            : conflict.reading ? "正在读取最新内容。" : "这个对比位已被别人改过，最新内容没读到。",
+          retryRead: conflict.latest ? undefined : () => void readConflict(row),
+          reading: conflict.reading,
+        } : undefined}
+        onBack={() => { setConfirm(null); setPick({ row: conflict?.latest ?? ctx.yieldComparisons.find(current => current.configKey === row.configKey) ?? row, skuId: "" }); }}
         onConfirm={async reason => {
           const original = m.pending.find(r => r.scope === scope);
           let receipt: E6WriteReceipt | undefined;
           if (original) receipt = await m.send(original, true);
           else {
             const spec = buildE6OnboardingYieldSkuProposal(row, sku.id);
-            if (!spec) throw new Error("这一位暂时不能更换，请刷新后核对。");
+            if (!spec) throw new Error("这一位缺少绑定记录，暂时不能更换，请联系技术支持。");
             if (!ready || ctx.yieldComparisons.find(current => current.configKey === row.configKey)?.bindingRevision !== row.bindingRevision) {
-              throw new Error("ONBOARDING_COMPARISON_VERSION_CONFLICT");
+              await readConflict(row);
+              return;
             }
-            receipt = await m.proposal(scope, "tiers", { ...spec, action: `更换引导对比商品 · ${slot}`, beforeValue, afterValue, reason });
+            try {
+              receipt = await m.proposal(scope, "tiers", { ...spec, action: `更换引导对比商品 · ${slot}`, beforeValue, afterValue, reason });
+            } catch (failure) {
+              if (explicitRejectionCode(failure) !== "ONBOARDING_COMPARISON_VERSION_CONFLICT") throw failure;
+              await readConflict(row);
+              return;
+            }
           }
           const status = receipt?.proposal?.status;
           if (!status) return;

@@ -104,8 +104,9 @@ function E1PurchaseConditions({ sku }: { sku: OpsSku }) {
     {!!gate.activeDirectMin && <Fact k="活跃直接邀请人数">至少 {e1Number(gate.activeDirectMin)} 人</Fact>}
     {!!gate.teamComputePointsMin && <Fact k="团队算力点">至少 {e1Number(gate.teamComputePointsMin)} 点</Fact>}
     <Fact k="条件关系">{gate.mode === "either" ? "任一满足" : "全部满足"}</Fact>
-    <Fact k="本期可售上限">{gate.quotaCap == null ? "不限量" : `${e1Number(gate.quotaCap)} 件`}</Fact>
-    {gate.quotaCap != null && <><Fact k="本期已售">{e1Number(gate.quotaSold)} 件</Fact><Fact k="剩余配额">{e1Number(gateRemaining(gate))} 件</Fact><Fact k="统计周期">{gate.quotaPeriod === "month" ? "按月统计（已停用）" : "不分周期（累计）"}</Fact><Fact k="售罄后限制购买">{gate.enforce ? "卖完后不能再买" : "卖完仅提示，仍可购买"}</Fact></>}
+    <Fact k="销售配额上限">{gate.quotaCap == null ? "不限量" : `${e1Number(gate.quotaCap)} 件`}</Fact>
+    {gate.quotaCap != null && <><Fact k="配额已售">{e1Number(gate.quotaSold)} 件</Fact><Fact k="剩余配额">{e1Number(gateRemaining(gate))} 件</Fact><Fact k="统计周期">{gate.quotaPeriod === "month" ? "按月统计（已停用）" : "不分周期（累计）"}</Fact></>}
+    <Fact k="是否生效" tone={gate.quotaPeriod === "month" ? "warn" : undefined}>{gate.quotaPeriod === "month" ? "现在不能购买：按月统计已停用，改为不分周期后恢复" : gate.enforce ? "生效" : "不生效，不检查用户条件和配额；库存另算"}</Fact>
   </Facts>;
 }
 
@@ -375,8 +376,9 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       const seriesReason = hasUnsupportedSeries(s) ? E1_MISSING_SERIES_REASON : undefined;
       const onBlock = writeBlock({ op: "sku-status", status: s.status === "on" ? "off" : "on" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : s.status !== "on" && seriesReason ? seriesReason : s.publishBlocked === true ? publishReason : s.status !== "on" && s.publishBlocked === undefined ? "上架状态未知，请重新加载核对" : s.status !== "on" && !open ? blockers.join("；") : s.status !== "on" && !s.allowedPoolCodes?.length ? "上架前请至少选择一个任务等级" : s.status !== "on" && s.monthlyTargetUsdt == null ? "上架前请设置月收益目标" : s.status !== "on" && s.inventoryMode !== "UNLIMITED" && Number(s.stock) === 0 ? "库存为 0，商品已售罄" : undefined);
       const cardReasons = [...new Set([...blockers, ...(s.publishBlocked === true ? [publishReason] : []), ...(s.publishBlocked === undefined ? ["上架状态待核实"] : []), ...(seriesReason ? [seriesReason] : [])])];
-      const actionReason = onBlock && !cardReasons.some(reason => onBlock.includes(reason)) ? onBlock : undefined;
       const proposal = ctx.pendingProposal(s.id);
+      // 待审批时卡片底部已有「有变更待审批」入口，按钮旁不再写同一件事；不能点的原因仍在按钮提示里。
+      const actionReason = onBlock && !proposal && !cardReasons.some(reason => onBlock.includes(reason)) ? onBlock : undefined;
       const sold = s.sold, stock = s.stock == null ? null : Number(s.stock);
       return <article key={s.id} className="e1-product" data-hit={skuLink === s.id ? "" : undefined} aria-label={s.name}>
         <div className="e1-product-identity">

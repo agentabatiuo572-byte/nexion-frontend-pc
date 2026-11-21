@@ -9,8 +9,8 @@ import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Plus, Ticket, Trash2, Trophy } from "lucide-react";
 import type { HCtx } from "./types";
-import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
+import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, RAFFLE_SAVE_PENDING, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -325,11 +325,13 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
   };
   const keepMine = () => { const current = conflictReview.current; if (!current) return; setError(""); current.confirm(); pendingChanged(v => v + 1); };
   const pendingSave = draft ? h4PendingFor(`H/h4_genesis_raffle/${draft.id}`) : undefined;
-  const savedUnread = !!draft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${draft.id}`);
+  const awaitingRead = draft ? confirmedH4Saves().find(record => record.scope === `H/h4_genesis_raffle/${draft.id}`) : undefined;
+  const savedUnread = !!awaitingRead;
+  const needsVerification = !!awaitingRead && h4RaffleSaveNeedsVerification(awaitingRead);
   if (!read) return <BlockState state="denied" title="没有查看创世抽奖的权限" detail="创世抽奖需要「活动中心查看」权限。" />;
 
   const showSaved = savedUnread && (!error || readFailed);
-  const saveNoticeTitle = showSaved ? "已保存，但没读到最新的这一期" : pendingSave && !pendingSave.acknowledged ? "操作结果未知"
+  const saveNoticeTitle = showSaved ? needsVerification ? RAFFLE_SAVE_PENDING : "已保存，但没读到最新的这一期" : pendingSave && !pendingSave.acknowledged ? "操作结果未知"
     : stale ? "没有保存：最新的这一期也没读到" : "没有保存";
   const formLocked = !write || saving || savedUnread || !!draft && h4Blocked(`H/h4_genesis_raffle/${draft.id}`) || !!review;
   const enableBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || base.totalEntries > 0);
@@ -365,7 +367,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
       explain="保存前先在这里填完整：三语名称、时间和奖项。关闭这个抽屉会丢掉没保存的改动。"
       footer={<Decision note={!write ? "没有修改创世抽奖的权限" : saveBlocked ? (base?.status === "OPEN" ? "已有人报名：奖项和时间锁定，也不能关闭" : "已开奖或正在开奖，只能查看") : undefined}
         others={<Button disabled={saving} onClick={close}>取消</Button>}
-        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : draft ? h4ApprovalLockedReason(`H/h4_genesis_raffle/${draft.id}`) : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
+        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : savedUnread ? needsVerification ? "保存结果待核对；关掉后点「刷新」。" : "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : draft ? h4ApprovalLockedReason(`H/h4_genesis_raffle/${draft.id}`) : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
       {draft && <div className="h4-dialog-body">
         {review && <H4ConflictCompare groups={compareGroups} sections={prizeSections} overwrites={overwrites} structure={structure} mergeDisabledReason={mergeBlocked ? "奖项有增删时不能合并。" : undefined} onMerge={mergeConflict} onKeepMine={keepMine} />}
         {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新的这一期，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
@@ -409,7 +411,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
             <Button size="sm" icon={<Plus size={13} aria-hidden />} disabled={formLocked || locked || draft.prizes.length >= 20} onClick={() => setDraft({ ...draft, prizes: [...draft.prizes, { id: `prize-${Date.now().toString(36)}-${draft.prizes.length}`, nameZh: "", nameEn: "", nameVi: "", rewardType: "UVT", amount: "", quantity: 1 }] })}>添加奖项</Button>
           </div>
         </fieldset>
-        {(error || savedUnread) && !review && <Notice tone={showSaved ? "warn" : "danger"} title={saveNoticeTitle}>{showSaved ? "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
+        {(error || savedUnread) && !review && <Notice tone={showSaved ? "warn" : "danger"} title={saveNoticeTitle}>{showSaved ? needsVerification ? "关掉后点「刷新」，读到这一期才能确认是否保存。" : "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
       </fieldset></div>}
     </Drawer>
   </Panel>;

@@ -1058,7 +1058,11 @@ export function ChangedText({ before, after, side }: { before: string; after: st
   while (tail < old.length - head && tail < next.length - head && old[old.length - 1 - tail] === next[next.length - 1 - tail]) tail += 1;
   const text = side === "after" ? next : old;
   const middle = text.slice(head, text.length - tail).join("");
-  return <>{text.slice(0, head).join("")}{middle && (side === "after" ? <ins>{middle}</ins> : <del>{middle}</del>)}{text.slice(text.length - tail).join("")}</>;
+  // 改动两头的空格不画线：下划线从第一个改了的字开始。
+  const core = middle.trim() || middle;
+  const lead = core === middle ? "" : middle.slice(0, middle.indexOf(core));
+  const trail = middle.slice(lead.length + core.length);
+  return <>{text.slice(0, head).join("")}{lead}{core && (side === "after" ? <ins>{core}</ins> : <del>{core}</del>)}{trail}{text.slice(text.length - tail).join("")}</>;
 }
 
 /**

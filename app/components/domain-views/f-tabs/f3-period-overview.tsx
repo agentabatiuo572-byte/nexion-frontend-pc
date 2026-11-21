@@ -129,7 +129,7 @@ function LatestRow({ period, onRetry }: { period: F3LatestFrozenPeriodView; onRe
       <Td align="right">
         <Cell num main={period.platformCapUsdt === null ? "—" : money(period.platformCapUsdt)}
           sub={period.plannedRawExceedsCap ? <StatusTag tone="warn"
-            explain={<><p>{`这一期按规则应发 ${money(period.plannedRawTotalUsdt ?? "")} USDT，超过全平台封顶。`}</p><p>第一笔结算时按同一个比例把全期应发压到封顶以内；每笔实际缩减可能因资格变化再往下调，以下面结算记录里每笔的缩减比例为准。</p></>}>
+            explain={<><p>{`这一期按规则应发 ${money(period.plannedRawTotalUsdt ?? "")} USDT，超过全平台封顶。`}</p><p>第一笔结算时按同一个比例把全期应发压到封顶以内；之后每笔只会少发、不会多发，实际缩减比例可能更大，以下面结算记录里每笔为准。</p></>}>
             超出封顶，已按比例压缩</StatusTag> : undefined} />
       </Td>
       <Td align="right"><Cell num main={period.settledPayoutUsdt === null ? "—" : money(period.settledPayoutUsdt)}
