@@ -140,10 +140,11 @@ export const h4RaffleSaveNeedsVerification = (record: H4Command) =>
   resourceOf(record.scope) === "raffles" && !record.raffleReadback?.hasMatchingReceipt;
 export function confirmH4RaffleReadback(records: H4Command[], details: ReadonlyMap<string, AdminRaffle | null>) {
   const unconfirmed = records.some(({ raffleReadback }) => {
-    if (!raffleReadback) return true;
+    // A record that cannot be read back (an older one without a valid revision) or whose draw is gone has
+    // nothing left to protect: keeping it would fail every list read and lock the page with no way out.
+    if (!raffleReadback) return false;
     const current = details.get(raffleReadback.id);
-    // Only a matching write receipt already established the saved revision when the draw is gone.
-    if (current === null) return !raffleReadback.hasMatchingReceipt;
+    if (current === null) return false;
     return !current || current.revision < raffleReadback.minimumRevision;
   });
   if (unconfirmed) {
