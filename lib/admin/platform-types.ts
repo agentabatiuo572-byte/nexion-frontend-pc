@@ -39,6 +39,9 @@ export interface PurchaseGate {
 }
 
 export interface OpsSku {
+  // BUG-549 to wire: read model only, never written back with purchaseGate; null when the SKU has no quota, absent on an old server.
+  purchaseQuotaHeld?: number | null;
+  purchaseQuotaRemaining?: number | null;
   seriesCode?: string | null;
   readonly seriesLocked?: boolean;
   allowedPoolCodes?: string[];

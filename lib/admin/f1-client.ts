@@ -833,6 +833,10 @@ export interface F4QuotaRow {
   cap: number;
   monthlyQuota?: string | null;
   tight: boolean;
+  // BUG-549 to wire: the mapper below does not copy these yet. current stays 已用 (pending included).
+  soldThisMonth?: number;
+  pendingThisMonth?: number;
+  remaining?: number;
 }
 
 export interface F4AmbassadorBand {
@@ -1024,6 +1028,9 @@ export interface F4LeadershipPoolOverview {
   quotaMonthlyStockTotal: number;
   quotaMonthlyStockUsed: number;
   quotaMonthlyStockRemaining: number;
+  // BUG-549 to wire: not mapped yet; an old server omits them and F4 shows 已用 alone.
+  quotaMonthlyStockSold?: number;
+  quotaMonthlyStockPending?: number;
   proUnlock: string;
   rackUnlock: string;
   ambassadorBands: F4AmbassadorBand[];

@@ -105,7 +105,7 @@ function E1PurchaseConditions({ sku }: { sku: OpsSku }) {
     {!!gate.teamComputePointsMin && <Fact k="团队算力点">至少 {e1Number(gate.teamComputePointsMin)} 点</Fact>}
     <Fact k="条件关系">{gate.mode === "either" ? "任一满足" : "全部满足"}</Fact>
     <Fact k="销售配额上限">{gate.quotaCap == null ? "不限量" : `${e1Number(gate.quotaCap)} 件`}</Fact>
-    {gate.quotaCap != null && <><Fact k="配额已售">{e1Number(gate.quotaSold)} 件</Fact><Fact k="剩余配额">{e1Number(gateRemaining(gate))} 件</Fact><Fact k="统计周期">{gate.quotaPeriod === "month" ? "按月统计（已停用）" : "不分周期（累计）"}</Fact></>}
+    {gate.quotaCap != null && <><Fact k="配额已售">{e1Number(gate.quotaSold)} 件</Fact>{sku.purchaseQuotaHeld != null && <Fact k="待付款">{e1Number(sku.purchaseQuotaHeld)} 件</Fact>}<Fact k="剩余配额">{e1Number(sku.purchaseQuotaRemaining ?? gateRemaining(gate, sku.purchaseQuotaHeld ?? 0))} 件</Fact><Fact k="统计周期">{gate.quotaPeriod === "month" ? "按月统计（已停用）" : "不分周期（累计）"}</Fact></>}
     <Fact k="是否生效" tone={gate.quotaPeriod === "month" ? "warn" : undefined}>{gate.quotaPeriod === "month" ? "现在不能购买：按月统计已停用，须改为累计并获批" : gate.enforce ? "生效" : "不生效，不检查用户条件和配额；库存另算"}</Fact>
   </Facts>;
 }

@@ -70,6 +70,8 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
   const total = data.quotaMonthlyStockTotal;
   const used = data.quotaMonthlyStockUsed;
   const remaining = data.quotaMonthlyStockRemaining;
+  // 已用含待付款；后端不给（旧版本）或为 0 时不单列。
+  const pending = data.quotaMonthlyStockPending ?? 0;
   const stages = data.ambassadorApplications.map((application) => ({ application, stage: applicationStage(application) }));
   // 已用记录只给代码，商品名从名额卡里按同一个额度编号找；找不到的只写代码。
   const quotaName = (usage: F4LeadershipPoolOverview["quotaUsages"][number]) => data.quotaRows.find((row) => (usage.quotaCode && row.quotaCode === usage.quotaCode) || (usage.productNo && row.productNo === usage.productNo))?.name;
@@ -86,7 +88,8 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
       <Panel title="购机名额" icon={Package} tone="role-2" sub="本月 · 台"
         actions={canWrite && data.quotaRows.length > 0 ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating(true)}>新建档位</Button> : undefined}
         explain={<>
-          <p>每个商品每月最多卖多少台。已用按本月还在占用的记录合计；剩余 = 总量 − 已用，不会小于 0。门槛是买这个商品要满足的条件，不是订单金额。</p>
+          <p>每个商品每月最多卖多少台。已用 = 本月已售加待付款；剩余 = 总量 − 已用，不会小于 0。门槛是买这个商品要满足的条件，不是订单金额。</p>
+          <p>待付款是用户已建付款单、还没付完的台数：付款成功就算成交，超时或付款失败会自动放回。</p>
           <p>总量不是下面各商品额度直接相加：每个商品取额度和已用里较大的一个再加，用超了或额度读不到的按已用算。已暂停的商品不算进总量和剩余。</p>
         </>}>
         <div className="f4-quota-sum">
@@ -97,8 +100,8 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           <div className="f4-quota-bar">
             <RatioBar label="本月购机名额已用" value={Math.min(used, total)} total={total} tone="role-2"
               state={total > 0 ? "ready" : "empty"} emptyText="本月名额总数为 0"
-              valueText={`已用 ${count(used)} 台，总量 ${count(total)} 台`} />
-            <span className="f4-muted">已用 {count(used)} 台 · 总量 {count(total)} 台</span>
+              valueText={`已用 ${count(used)} 台${pending > 0 ? `（含待付款 ${count(pending)} 台）` : ""}，总量 ${count(total)} 台`} />
+            <span className="f4-muted">已用 {count(used)} 台{pending > 0 && `（含待付款 ${count(pending)} 台）`} · 总量 {count(total)} 台</span>
           </div>
         </div>
         {data.quotaRows.length ? <ul className="f4-quota-items" aria-label="各商品本月名额">
@@ -109,8 +112,8 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
             </span>
             <span className="f4-quota-cond">{quotaPrerequisites(quota)}</span>
             <RatioBar label={`${quota.name} 本月已用`} value={Math.min(quota.current, quota.cap)} total={quota.cap} tone={paused ? "done" : soldOut ? "danger" : quota.tight ? "warn" : "role-2"}
-              state={quota.monthlyQuota === null ? "failed" : quota.cap > 0 ? "ready" : "empty"} failedText="这个商品的月额度没读到" emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"} 台`} quiet />
-            <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? null : Number(quota.monthlyQuota))} 台</span>{paused ? <StatusTag tone="neutral" icon={PauseCircle}>已暂停</StatusTag> : soldOut ? <StatusTag tone="danger" icon={Ban}>本月已停卖</StatusTag> : quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
+              state={quota.monthlyQuota === null ? "failed" : quota.cap > 0 ? "ready" : "empty"} failedText="这个商品的月额度没读到" emptyText="额度为 0" valueText={`已用 ${quota.current} 台${(quota.pendingThisMonth ?? 0) > 0 ? `（含待付款 ${quota.pendingThisMonth} 台）` : ""}，共 ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"} 台`} quiet />
+            <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? null : Number(quota.monthlyQuota))} 台</span>{(quota.pendingThisMonth ?? 0) > 0 && <span className="f4-muted">含待付款 {count(quota.pendingThisMonth ?? 0)} 台</span>}{paused ? <StatusTag tone="neutral" icon={PauseCircle}>已暂停</StatusTag> : soldOut ? <StatusTag tone="danger" icon={Ban}>本月已停卖</StatusTag> : quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
             {paused && <span className="f4-quota-cond">用户买不了这个商品，不算进总量</span>}
           </li>; })}
         </ul> : <BlockState state="empty" title="还没有设置购机名额" detail={canWrite ? "新建一档后，要另一位超级管理员批准才生效。" : undefined}
@@ -121,7 +124,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           { key: "stock", label: "本月名额总量", value: monthQuota(data.quotaMonthlyStockLabel), explain: "和上面的「总量」同一个数：每个商品取额度和已用里较大的一个再加，不是各商品额度直接相加。" },
         ]} />
         <Fold title="已用记录" summary={data.quotaUsages.length ? `最近 ${data.quotaUsages.length} 条 · 可回收` : "还没有已用记录"}
-          explain={`按发生时间从新到旧，最多 30 条；时间为${zoneNote()}。回收要另一位管理员批准。`}>
+          explain={`按发生时间从新到旧，最多 30 条，不含还没付完的待付款；时间为${zoneNote()}。回收要另一位管理员批准。`}>
           <Table label="购机名额已用记录" className="f4-usage-table">
             <thead><tr><Th>记录</Th><Th>用户</Th><Th>商品</Th><Th align="right">数量</Th><Th>订单号</Th><Th>时间</Th><Th>状态</Th><Th data-fit=""><span className="rd-sr-only">操作</span></Th></tr></thead>
             <tbody>
