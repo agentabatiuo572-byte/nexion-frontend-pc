@@ -112,7 +112,7 @@ export function templateIssues(form: TemplateFormValue, requiredLanguages: reado
   return { mismatch, unknown, used };
 }
 
-export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, social, sample, retiredInTranslations, requiredLanguages, blocked, missing, onClose, onSubmit }: {
+export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, social, sample, retiredInTranslations, requiredLanguages, blocked, note, onClose, onSubmit }: {
   editing: boolean;
   form: TemplateFormValue;
   requiredLanguages: readonly OperatingLanguageCode[];
@@ -125,8 +125,8 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
   /** 存着的其他语言旧译文里有已停用的 {sourceNote}：这页改不了译文，保存一定被拒。 */
   retiredInTranslations?: boolean;
   blocked?: string;
-  /** 还差的必填项，写在「保存草稿」旁边。 */
-  missing?: readonly string[];
+  /** 写在「保存草稿」旁边的一行：被锁的原因，或还差的必填项。 */
+  note?: string;
   onClose: () => void;
   onSubmit: () => void;
 }) {
@@ -143,7 +143,7 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
         <p>用户收到的标题和正文以模板为底：发送时可能替换变量、按长度截断，没填的语言用通用提示；已发出的通知不跟着改。保存后是草稿，发布后频道才用它。</p>
         <p>App 里标题最多显示 128 字、正文 512 字，按用户账户的语言选一种。</p>
       </>}
-      footer={<Decision note={missing?.length ? `还差：${missing.join("、")}` : undefined} primary={<Button variant="primary" disabledReason={blocked} onClick={onSubmit}>保存草稿</Button>} />}>
+      footer={<Decision note={note} primary={<Button variant="primary" disabledReason={blocked} onClick={onSubmit}>保存草稿</Button>} />}>
       <div className="rd-stack i2-form">
         <div className="rd-form-grid i2-tpl-grid" data-cols="4">
           <Field label="频道" required explain={editing ? "一个频道只有一个模板，编辑时不能换频道。" : "只列出还没有模板的频道。"}>

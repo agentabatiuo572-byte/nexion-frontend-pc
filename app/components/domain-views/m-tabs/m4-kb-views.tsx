@@ -43,7 +43,7 @@ export type M4Faq = Omit<SupportFaq, "language"> & {
 type Reach = { key: string; icon: typeof Smartphone; who: string; reaches: boolean; note: string };
 
 /** 一条问答发布后谁读得到：按后端和 App 现在的真实读取写，不按选项名承诺（M4-B03、M4-X02）。 */
-export function reachOf(faq: Pick<M4Faq, "surface" | "language">): Reach[] {
+export function reachOf(faq: Pick<M4Faq, "surface" | "language">, after: "on" | "off" = "on"): Reach[] {
   const rows: Reach[] = [];
   if (faq.surface === "Nova") {
     rows.push({ key: "nova", icon: Bot, who: "Nova 智能问答", reaches: false, note: "已下线，用户看不到" });
@@ -53,7 +53,7 @@ export function reachOf(faq: Pick<M4Faq, "surface" | "language">): Reach[] {
   } else {
     rows.push({ key: "app", icon: Smartphone, who: "App 帮助中心", reaches: false, note: `App 现在只按中文、英语、越南语读取，${languageName(faq.language)}的问答用户看不到` });
   }
-  rows.push({ key: "agent", icon: Headset, who: "客服回复时", reaches: true, note: faq.language === "en-US"
+  rows.push({ key: "agent", icon: Headset, who: "客服回复时", reaches: true, note: after === "off" ? "客服的「知识库」不再列出这条" : faq.language === "en-US"
     ? "英语客户能查到；其他语言没有问答时也列英语"
     : `${languageName(faq.language)}客户能查到` });
   return rows;
@@ -62,10 +62,10 @@ export function reachOf(faq: Pick<M4Faq, "surface" | "language">): Reach[] {
 /** 发布后有没有用户能在 App 里看到。 */
 export const reachesUsers = (faq: Pick<M4Faq, "surface" | "language">) => faq.surface === "Help Center" && APP_LANGUAGES.includes(faq.language);
 
-export function ReachList({ faq, label }: { faq: Pick<M4Faq, "surface" | "language">; label: string }) {
+export function ReachList({ faq, label, after = "on" }: { faq: Pick<M4Faq, "surface" | "language">; label: string; after?: "on" | "off" }) {
   return (
     <ul className="m4-reach" aria-label={label}>
-      {reachOf(faq).map((row) => (
+      {reachOf(faq, after).map((row) => (
         <li key={row.key} data-reaches={row.reaches ? "" : undefined}>
           <row.icon size={16} aria-hidden />
           <span className="m4-reach-who">{row.who}</span>
@@ -185,7 +185,7 @@ export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel,
       </Facts>
       <section className="m4-confirm-block" aria-label={publish ? "发布后谁读得到" : "下架后谁读不到"}>
         <h3 className="m4-block-title">{publish ? "发布后谁读得到" : "下架后这些地方不再读到"}</h3>
-        <ReachList faq={faq} label={publish ? "发布后谁读得到" : "下架后谁读不到"} />
+        <ReachList faq={faq} after={publish ? "on" : "off"} label={publish ? "发布后谁读得到" : "下架后谁读不到"} />
       </section>
       {publish && !reachesUsers(faq) && <Notice tone="warn">发布后状态会变成已发布，但 App 用户现在还看不到这条。</Notice>}
       {!publish && <p className="m4-confirm-note">问答留在列表里，随时可以重新发布。已经发给客户的回答不会撤回；App 里已打开的帮助页可能过几分钟才更新。</p>}

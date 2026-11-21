@@ -1026,7 +1026,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const missingTemplateCopy = templateCopyGap(mapContentTitleBody(tplForm, requiredLanguages, "submit"));
   /** 「保存草稿」旁边一行列出还差的全部必填项，只用来显示；能不能保存仍看 tplBlocked。被锁时只说锁的原因。 */
   const tplCopy = mapContentTitleBody(tplForm, requiredLanguages, "submit");
-  const tplMissing = lockReason(`channel:${tplForm.channel}`) ? [] : [
+  const tplLock = lockReason(`channel:${tplForm.channel}`);
+  const tplMissing = tplLock ? [] : [
     !tplForm.channel && "频道", !tplForm.name.trim() && "模板名称", !tplForm.version.trim() && "版本", !tplForm.cta && "点击后去哪",
     ...TEMPLATE_LANGUAGES.filter(({ code, suffix }) => (!tplCopy[`title${suffix}`].trim() || !tplCopy[`body${suffix}`].trim())
       && (code === "en" || requiredLanguages.includes(code) || !!tplForm[`title${suffix}`].trim() || !!tplForm[`body${suffix}`].trim()))
@@ -1315,7 +1316,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       )}
       {tplDrawer && (
         <TemplateDrawer editing={!!editTplChannel} form={tplForm} setForm={setTplForm} channels={templateChannelOptions} ctaOptions={CTA_OPTIONS}
-          social={tplForm.channel === SOCIAL_CHANNEL} sample={sampleEvent} retiredInTranslations={tplRetiredTranslations} requiredLanguages={requiredLanguages} blocked={tplBlocked} missing={tplMissing} onClose={closeTplDrawer} onSubmit={submitTpl} />
+          social={tplForm.channel === SOCIAL_CHANNEL} sample={sampleEvent} retiredInTranslations={tplRetiredTranslations} requiredLanguages={requiredLanguages} blocked={tplBlocked} note={tplLock || (tplMissing.length ? `还差：${tplMissing.join("、")}` : undefined)} onClose={closeTplDrawer} onSubmit={submitTpl} />
       )}
     </div>
   );

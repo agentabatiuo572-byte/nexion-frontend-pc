@@ -331,6 +331,9 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
   const required = requiredLanguages.includes(lang);
   const copyHint = lang !== "en" && required && Object.keys(groups.en).length === Object.keys(groups[lang]).length
     && isEnglishCopy(groups.en, groups[lang]) ? englishCopyHint(lang) : undefined;
+  // 「第 N 项」按全部内容项的顺序编号，同一项在各语言页签里号码相同。
+  const itemOf = (key: string) => key.trim().replace(LOCALIZED, "$1").toLowerCase();
+  const items = [...new Set(editor.fields.map((field) => itemOf(field.key)))];
   const shown = editor.fields.map((field, index) => ({ field, index })).filter(({ field }) => {
     const own = fieldLang(field.key);
     return own === null || own === lang;
@@ -363,10 +366,10 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
         {overLimit && <Notice tone="warn">内容超过 {APP_FIELD_LIMIT} 项：后台能保存，但发布后 App 会拒收整份内容。</Notice>}
         <LocaleTabs label="编辑语言" value={lang} onChange={setLang} items={localeItems(submittedFields)} />
         <div className="i4-editor-list">
-          {shown.map(({ field, index }, order) => (
+          {shown.map(({ field, index }) => (
             <div className="i4-editor-field" key={field.key} data-changed={changed.has(field.key) ? "" : undefined}>
               <div className="i4-editor-key">
-                <span data-trust-field-key="fixed" title={`内容项标识 ${field.key}，不能改`}>{`第 ${order + 1} 项${fieldLang(field.key) ? "" : " · 各语言共用"}`}</span>
+                <span data-trust-field-key="fixed" title={`内容项标识 ${field.key}，不能改`}>{`第 ${items.indexOf(itemOf(field.key)) + 1} 项${fieldLang(field.key) ? "" : " · 各语言共用"}`}</span>
                 {changed.has(field.key) && <StatusTag tone="progress">已改</StatusTag>}
                 {!blanked.all && blanked.keys.has(field.key) && <span className="i4-field-note">App 公开时清空</span>}
               </div>
