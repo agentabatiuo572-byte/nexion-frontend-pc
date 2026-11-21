@@ -89,8 +89,9 @@ function E1PurchaseConditions({ sku }: { sku: OpsSku }) {
     {!!gate.activeDirectMin && <Fact k="活跃直接邀请人数">至少 {e1Number(gate.activeDirectMin)} 人</Fact>}
     {!!gate.teamComputePointsMin && <Fact k="团队算力点">至少 {e1Number(gate.teamComputePointsMin)} 点</Fact>}
     <Fact k="条件关系">{gate.mode === "either" ? "任一满足" : "全部满足"}</Fact>
-    <Fact k="本期可售上限">{gate.quotaCap == null ? "不限量" : `${e1Number(gate.quotaCap)} 件`}</Fact>
-    {gate.quotaCap != null && <><Fact k="本期已售">{e1Number(gate.quotaSold)} 件</Fact><Fact k="剩余配额">{e1Number(gateRemaining(gate))} 件</Fact><Fact k="统计周期">{gate.quotaPeriod === "month" ? "按月统计（已停用）" : "不分周期（累计）"}</Fact><Fact k="售罄后限制购买">{gate.enforce ? "卖完后不能再买" : "卖完仅提示，仍可购买"}</Fact></>}
+    <Fact k="销售配额上限">{gate.quotaCap == null ? "不限量" : `${e1Number(gate.quotaCap)} 件`}</Fact>
+    {gate.quotaCap != null && <><Fact k="配额已售">{e1Number(gate.quotaSold)} 件</Fact><Fact k="剩余配额">{e1Number(gateRemaining(gate))} 件</Fact><Fact k="统计周期">{gate.quotaPeriod === "month" ? "按月统计（已停用）" : "不分周期（累计）"}</Fact></>}
+    <Fact k="是否生效">{gate.enforce ? "生效" : "不生效，谁都能买"}</Fact>
   </Facts>;
 }
 

@@ -385,13 +385,13 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           <Field label="购买条件类型" explain="限制哪些用户可购买；无用户条件仍可独立设置销售配额。"><Select aria-label="购买条件类型" value={form.gateType} onChange={v => update("gateType", v)} options={[{ value: "none", label: "无用户条件" }, { value: "activeDirect", label: "活跃直接邀请人数" }, { value: "rank", label: "最低会员等级" }, { value: "combo", label: "组合条件（会员等级 / 直接邀请 / 团队算力点）" }]} /></Field>
           <div className="rd-form-grid">{(form.gateType === "rank" || form.gateType === "combo") && field("gateRankMin", "最低会员等级", { number: true, min: 0, max: 8, step: 1, help: "0～8；0 为不设条件" })}{(form.gateType === "activeDirect" || form.gateType === "combo") && field("gateActiveDirectMin", "活跃直接邀请人数", { number: true, min: 0, max: 1000000, step: 1, help: "0～1,000,000 的整数" })}{form.gateType === "combo" && field("gateTeamComputePointsMin", "团队算力点", { number: true, min: 0, step: 1, help: "非负整数，0 为不设条件" })}
             {form.gateType === "combo" && <Field label="多条件关系" explain="全部满足是all；任一满足是either。"><Select aria-label="多条件关系" value={form.gateMode} onChange={v => update("gateMode", v)} options={[{ value: "all", label: "全部满足" }, { value: "either", label: "任一满足" }]} /></Field>}
-            {field("gateQuotaCap", "本期可售上限", { number: true, min: 1, step: 1, help: "留空不限量；有值时不小于已有售量" })}
-            <Field label="本期已售数量" explain="只读销售计数，随商品原快照保留；移除上限时清整组配额。"><Input aria-label="本期已售数量" value={form.gateQuotaSold || "— · 未配置"} readOnly /></Field>
+            {field("gateQuotaCap", "销售配额上限", { number: true, min: 1, step: 1, help: "留空不限量；有值时不小于已有售量" })}
+            <Field label="配额已售数量" explain="只读销售计数，随商品原快照保留；移除上限时清整组配额。"><Input aria-label="配额已售数量" value={form.gateQuotaSold || "— · 未配置"} readOnly /></Field>
           </div>
           {(form.gateType !== "none" || form.gateQuotaCap) && <>
             <Field label="售卖统计周期" error={errors.gateQuotaPeriod} explain="当前只支持不分周期累计。旧按月值必须人工改选后提交。">{form.gateQuotaPeriod === "month" ? <Select aria-label="售卖统计周期" value={form.gateQuotaPeriod} onChange={v => update("gateQuotaPeriod", v)} options={[{ value: "month", label: "按月统计（已停用）" }, { value: "lifetime", label: "不分周期（累计）" }]} /> : <Input aria-label="售卖统计周期" value="不分周期（累计）" readOnly />}</Field>
             {form.gateQuotaPeriod === "month" && <Notice tone="warn" title="按月统计已停用，请改为不分周期后保存" />}
-            <Field label="售罄后限制购买" explain="此项是软配额限制；允许继续购买不代表实体库存不限。"><Select aria-label="售罄后限制购买" value={form.gateEnforce} onChange={v => update("gateEnforce", v)} options={[{ value: "true", label: "卖完后不能再买" }, { value: "false", label: "卖完只显示售罄，仍可购买" }]} /></Field>
+            <Field label="购买条件是否生效" explain="不生效时用户条件和配额都不检查，谁都能买；实物库存另算。"><Select aria-label="购买条件是否生效" value={form.gateEnforce} onChange={v => update("gateEnforce", v)} options={[{ value: "true", label: "生效：按上面的条件和配额限制购买" }, { value: "false", label: "不生效：谁都能买" }]} /></Field>
           </>}
         </EditorSection>
         <EditorSection id="e1-specs" title="规格与资料">

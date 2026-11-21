@@ -1074,7 +1074,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       }} />}
     {stale && <Notice tone="warn" title={`没有保存：别人先改过（${stale}）`} action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>{error ? "最新值没读到；重试读取成功后再核对，你填的还在。" : "已读到最新值，你填的还在，核对后再提交。"}</Notice>}
     {confirmed.length > 0 && <Notice tone="warn" title={raffleChecks.length ? RAFFLE_SAVE_PENDING : "已保存，但没读到最新数据"} action={<Button size="sm" loading={loading} onClick={() => void refreshAll()}>重新读取</Button>}>
-      {raffleChecks.length > 0 && `${raffleChecks.map(record => `「${hiCommandSubject(record, eventName)}」`).join("、")}需要重新读取这一期核对。`}
+      {raffleChecks.length > 0 && `${raffleChecks.map(record => `「${hiCommandSubject(record, eventName)}」`).join("、")}重新读取这一期后才能确认是否保存，之前不能再改。`}
       {savedUnread.length > 0 && `${savedUnread.map(record => `「${hiCommandSubject(record, eventName)}」`).join("、")}已保存，不用重新提交。重新读取成功后才能再改。`}
     </Notice>}
     {(h4Pending.length > 0 || h4Approvals === "error") && <Notice tone="warn" title={h4Approvals === "error" ? "审批进度没有读到" : `${h4Pending.length} 项修改在等审批`} actionBelow
