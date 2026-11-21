@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { RefreshCw, SearchCheck, Server } from "lucide-react";
+import { RefreshCw, RotateCcw, SearchCheck, Server } from "lucide-react";
 import { BlockState, Button, Change, ConflictBar, DiffList, Explain, Facts, Fact, Fold, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "../design-kit";
+import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { datacenterNameText } from "@/lib/admin/brand-copy";
 import { businessClock, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -25,7 +26,7 @@ import { E1_CURRENT_PHASE_UNVERIFIED, e1CurrentPhase, e1SkuOpening, resolveE1Pha
 import { E1Catalog, E1_MISSING_SERIES_REASON, type E1CatalogContext } from "./e1-catalog";
 import { E1Editor, type E1EditRequest, type E1SkuReview } from "./e1-editor";
 import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
-import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1Number, e1Decimal, e1TargetPrecision, e1Object, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
+import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1Number, e1Decimal, e1TargetPrecision, e1Object, e1ShownDiff, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
 
 type Confirmation = McSpec & Partial<E1SkuReview> & { gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
 type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; reading?: boolean; readError?: string };
@@ -87,6 +88,8 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const [absent, setAbsent] = useState<string[]>([]);
   const [release, setRelease] = useState<E1Pending | null>(null);
   const [conflict, setConflict] = useState(false);
+  // 首次提交被后端明确拒绝：同一份输入再点也会被拒，按钮停住，给「返回修改」（只管这个框的界面状态）。
+  const [refused, setRefused] = useState<{ on: Confirmation; text: string } | null>(null);
   const [conflictLatest, setConflictLatest] = useState<E1CatalogSnapshot | null>(null);
   const [skuConflict, setSkuConflict] = useState<{ nonce: number; latest?: OpsSku | null } | null>(null);
   const draftConflict = skuConflict?.nonce === edit?.nonce ? skuConflict : null;
@@ -251,7 +254,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       const skuReview = !retry && confirmation?.op === "sku-save" ? confirmation : null;
       const code = response.backendMessage;
       if (firstRejection && skuReview && code?.startsWith("SKU_SERIES_") && ADMIN_ERROR_MESSAGES[code]) {
-        skuReview.setSeriesError?.(ADMIN_ERROR_MESSAGES[code]);
+        skuReview.setSeriesError?.(ADMIN_ERROR_MESSAGES[code].replace(/。$/, ""));
       }
       if ((code ?? response.message)?.includes("VERSION_CONFLICT")) {
         if (skuReview?.beforeSku && edit) setSkuConflict({ nonce: edit.nonce });
@@ -292,7 +295,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         if (row.status !== "pending") { await refresh(); await refreshEarly(); }
       }
     } catch (failure) {
-      const message = full?.receivedTicketId ? TICKET_UNREAD : isA2OutcomeUncertainError(failure) ? (failure as Error).message : eReadError(failure);
+      const message = full?.receivedTicketId ? TICKET_UNREAD : isA2OutcomeUncertainError(failure) ? (failure as Error).message : `这次没查到：${eReadError(failure)}`;
       setNotes(n => ({ ...n, [record.commandKey]: message }));
       if (propagate) throw failure;
     }
@@ -309,7 +312,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const confirm = async (reason: string, value?: string, business?: Record<string, string>) => {
     const mc = confirmation;
     if (!mc || !canWrite) throw new Error("当前不能提交，请保留输入并刷新目录核对");
-    if (hasSkuVersionConflict(mc)) throw new Error("商品或配置版本已变化，本地输入保留；读取最新后请重新核对。");
+    if (hasSkuVersionConflict(mc)) throw new Error("商品或配置已被别人改过，你填的内容还在；读取最新后重新核对。");
     const missingSource = readBlock(mc, business);
     if (missingSource) throw new Error(missingSource);
     let op = "", context: Record<string, unknown> = {}, before = "", after = "", obj = "", amplifies = !!mc.amplify;
@@ -405,7 +408,15 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       setConflict(false); setConflictLatest(null); setAttemptKey("");
     }
   };
-  const skuDiff = mc?.op === "sku-save" && mc.sku ? e1SkuDiff(mc.beforeSku, mc.sku, mc.form) : null;
+  // 只用于显示：开放阶段写阶段名，不写阶段编号。
+  const phaseName = (text?: string) => mc?.gates?.phases.find(phase => phase.p === resolveE1PhaseId(mc.gates!.phases, text ?? ""))?.label || text;
+  const skuDiff = mc?.op === "sku-save" && mc.sku ? e1ShownDiff(e1SkuDiff(mc.beforeSku, mc.sku, mc.form), mc.beforeSku, mc.sku).map(row => row.key === "unlock" ? { ...row, before: phaseName(row.before), after: phaseName(row.after) } : row) : null;
+  // 新增商品只列填了的项；只改系列时关键信息写系列，不拿没变的售价当关键数字。
+  const skuFilled = skuDiff && !mc?.beforeSku ? skuDiff.filter(row => !["未设置", "未填写", "未配置"].includes(row.after ?? "")) : [];
+  const skuChanges = skuDiff && mc?.beforeSku ? skuDiff.filter(row => row.before !== row.after) : [];
+  const seriesChange = skuChanges.length === 1 && skuChanges[0].key === "seriesCode" ? skuChanges[0] : undefined;
+  // 只改系列时上面常显的几项不再在「其余设置」里写第二遍（DP-61）。
+  const SERIES_ONLY_SHOWN = ["seriesCode", "price", "name", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter"];
   const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (mc.sku ? e1Object(r.spec) === `device_sku|${mc.sku.id}` : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
   const ctx: E1CatalogContext = {
     skus, canWriteE1: canWrite, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, e1Gates: gates, e1BundleDiscount: discount, currentPhase, refreshE1: async () => { await refresh(); },
@@ -428,12 +439,12 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       detail: <p>审批单 {row.id}；批准前目录不变，这个对象暂停新修改。</p> })),
     ...pending.filter(record => record.commandKey !== busy).map(record => {
       const expired = isRetryExpired(record), canRelease = rejected.includes(record.commandKey) && !expired || absent.includes(record.commandKey) && expired;
-      const state = record.receivedTicketId ? { tag: "进度没读到", line: RECOVERY_LINE.created, more: "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" }
-        : rejected.includes(record.commandKey) && !expired ? { tag: "重试被拒绝", line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对原操作的结果后，可以解除这条记录。" }
-          : absent.includes(record.commandKey) ? expired ? { tag: "没有建成", line: RECOVERY_LINE.missing, more: "按原请求查不到这张审批单，说明没建成；确认解除时会再查一次。" }
-            : { tag: "结果未知", line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
-            : expired ? { tag: "结果未知", line: RECOVERY_LINE.expired, more: "已超过 24 小时，不能再重试；查不到这张审批单时可以确认解除。" }
-              : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "可以查询原结果，或按原请求重试；重试用原来的请求，不会重复建单。" };
+      const state = record.receivedTicketId ? { tag: "进度没读到", line: RECOVERY_LINE.created, more: "点「查询原结果」再查。" }
+        : rejected.includes(record.commandKey) && !expired ? { tag: "重试被拒绝", line: RECOVERY_LINE.refused, more: "解除前先核对原操作有没有生效。" }
+          : absent.includes(record.commandKey) ? expired ? { tag: "没有建成", line: RECOVERY_LINE.missing, more: "确认解除时会再查一次。" }
+            : { tag: "结果未知", line: RECOVERY_LINE.absent, more: "重试不会重复建单。" }
+            : expired ? { tag: "结果未知", line: RECOVERY_LINE.expired, more: "查不到这张审批单时可以确认解除。" }
+              : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "重试只发原内容和原理由。" };
       return { key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
         tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? record.retryRejection,
         actions: <>
@@ -464,22 +475,31 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       <E1Catalog ctx={ctx} />
     </>}
     <E1Editor request={edit} gates={gates} currentPhaseId={currentPhase.phaseId} writable={skuWritesReady} writeBlockedReason={skuReadBlock} currentSku={currentSku} onClose={() => { setEdit(null); setSkuConflict(null); }} busy={!!busy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onRevisionAccepted={() => { setSkuConflict(null); setAttemptKey(""); }} onReview={review => { setAttemptKey(""); setConfirmation({ ...review, briefKind: "config", name: `${review.beforeSku ? "编辑" : "新增"}商品 · ${review.sku.name}`, op: "sku-save", gates, isNew: !review.beforeSku }); }} />
-    {mc && <OperationConfirmModal action={mc.name} title={mc.title ?? mc.name.split(" · ")[0]} briefKind={mc.briefKind} detail={mc.detail ?? "核对完整变更，批准后生效。"} edit={mc.edit} businessForm={mc.businessForm?.kind === "multi-field" ? { ...mc.businessForm, onFieldChange: (key, next) => { const value = mc.businessForm?.kind === "multi-field" && mc.businessForm.onFieldChange ? mc.businessForm.onFieldChange(key, next) : next; setBusinessValues(value); return value; } } : mc.businessForm}
+    {mc && <OperationConfirmModal action={mc.name} title={mc.title ?? mc.name.split(" · ")[0]} briefKind={mc.briefKind} detail={mc.detail ?? "核对完整变更，批准后生效。"} edit={mc.edit} businessForm={mc.businessForm?.kind === "multi-field" ? { ...mc.businessForm, onFieldChange: (key, next) => { const value = mc.businessForm?.kind === "multi-field" && mc.businessForm.onFieldChange ? mc.businessForm.onFieldChange(key, next) : next; setBusinessValues(value); setRefused(null); return value; } } : mc.businessForm}
       amplifies={!!mc.amplify} reasonMin={8} reasonMax={200} completionCopy={APPROVAL} confirmLabel="提交审批" confirmTone={["sku-delete", "phase-archive", "generation-gate-archive"].includes(mc.op) ? "danger" : "primary"}
       effect={<StatusTag tone="progress" filled explain={APPROVAL}>批准后生效</StatusTag>}
       statedBrief={{ impact: mc.detail ?? (mc.isNew ? "批准后创建商品草稿；上架仍须满足购买与开放条件。" : "批准后保存本次商品资料、购买条件和任务配置；售价供之后购买读取，已冻结任务不重算。"), check: "核对对象、完整前后值及操作理由。" }}
-      facts={mc.sku ? <Facts><Fact k="售价" lead unit="USD">{e1Decimal(mc.sku.price)}</Fact><Fact k="商品">{mc.sku.name}</Fact><Fact k="任务等级">{mc.sku.allowedPoolCodes?.join("、") || "未配置"}</Fact><Fact k="月收益目标">{mc.sku.monthlyTargetUsdt == null ? "未设月收益目标" : `${e1Decimal(mc.sku.monthlyTargetUsdt, e1TargetPrecision(mc.sku))} USDT/月 · ±${e1Number(mc.sku.monthlyTargetBandPct)} %`}</Fact><Fact k="托管机房">{mc.sku.datacenter?.trim() ? `按托管机房清单分配（原填 ${datacenterNameText(mc.sku.datacenter)}）` : "按托管机房清单分配"}</Fact>{mc.op === "sku-status" && <><Fact k="状态"><Change from={e1Value(mc.sku.status)} to={e1Value(mc.status)} /></Fact><Fact k="库存">{mc.sku.inventoryMode === "UNLIMITED" ? "不限（非实物）" : e1Number(mc.sku.stock)}</Fact></>}{mc.op === "sku-delete" && <Fact k="当前状态">{e1Value(mc.sku.status)}</Fact>}</Facts> : mc.facts}
-      content={skuDiff ? !mc.beforeSku || skuDiff.filter(row => row.before !== row.after).length > 4
+      facts={mc.sku ? <Facts>{seriesChange && <Fact k="所属系列"><Change from={seriesChange.before} to={seriesChange.after} /></Fact>}<Fact k="售价" lead={!seriesChange} unit="USD">{e1Decimal(mc.sku.price)}</Fact><Fact k="商品">{mc.sku.name}</Fact><Fact k="任务等级">{mc.sku.allowedPoolCodes?.join("、") || "未配置"}</Fact><Fact k="月收益目标">{mc.sku.monthlyTargetUsdt == null ? "未设月收益目标" : `${e1Decimal(mc.sku.monthlyTargetUsdt, e1TargetPrecision(mc.sku))} USDT/月 · ±${e1Number(mc.sku.monthlyTargetBandPct)} %`}</Fact><Fact k="托管机房">{mc.sku.datacenter?.trim() ? `按托管机房清单分配（原填 ${datacenterNameText(mc.sku.datacenter)}）` : "按托管机房清单分配"}</Fact>{mc.op === "sku-status" && <><Fact k="状态"><Change from={e1Value(mc.sku.status)} to={e1Value(mc.status)} /></Fact><Fact k="库存">{mc.sku.inventoryMode === "UNLIMITED" ? "不限（非实物）" : e1Number(mc.sku.stock)}</Fact></>}{mc.op === "sku-delete" && <Fact k="当前状态">{e1Value(mc.sku.status)}</Fact>}</Facts> : mc.facts}
+      content={skuDiff ? !mc.beforeSku ? <Fold inset title="完整商品资料" summary={`已填 ${skuFilled.length} 项${skuDiff.length > skuFilled.length ? `，其余 ${skuDiff.length - skuFilled.length} 项未设置` : ""}`}><Facts>{skuFilled.map(row => <Fact key={row.key} k={row.label}>{row.after}</Fact>)}</Facts></Fold>
+        : seriesChange ? <Fold inset title="其余设置" summary={`${skuDiff.filter(row => !SERIES_ONLY_SHOWN.includes(row.key)).length} 项不变`}><Facts>{skuDiff.filter(row => !SERIES_ONLY_SHOWN.includes(row.key)).map(row => <Fact key={row.key} k={row.label}>{row.after}</Fact>)}</Facts></Fold>
+        : skuChanges.length > 4
         ? <Fold inset title="完整商品变更" summary="展开核对每一项的前后值"><DiffList rows={skuDiff} /></Fold>
         : <DiffList rows={skuDiff} /> : <>{mc.businessForm?.kind === "multi-field" && (mc.op === "bundle-discount" || mc.op === "early-access" || mc.op === "generation-gate-save" && !!mc.generationGateId || mc.op === "phase-save" && !!mc.phaseId) && <Facts>{mc.businessForm.fields.map(f => <Fact key={f.key} k={f.label}><Change from={f.optionLabels?.[f.current ?? ""] ?? (f.current || "未设置")} to={(f.optionLabels?.[businessValues[f.key] ?? f.current ?? ""] ?? (businessValues[f.key] ?? f.current)) || "未填写"} /></Fact>)}</Facts>}{mc.content}</>}
       blockedReason={currentPending && currentPending.commandKey !== busy ? "这个对象有一次结果未知的提交，先在页面上方查询原结果或按原请求重试" : (reviewingSku ? hasSkuVersionConflict(mc) : conflict) ? <>
-        <ConflictBar message="商品或配置版本已变化，本地输入保留；读取最新后请重新核对。" onRead={readConflict} />
-        {conflictRead && <Notice tone="warn" title="请核对最新值，再决定是否沿用本地输入">
-          {mc.op === "bundle-discount" && conflictLatest ? <DiffList rows={[{ key: "two", label: "2件折扣", before: `${mc.discount?.twoItemsPct}%`, after: `${conflictLatest.bundleDiscount.twoItemsPct}%` }, { key: "three", label: "3件折扣", before: `${mc.discount?.threeItemsPct}%`, after: `${conflictLatest.bundleDiscount.threeItemsPct}%` }, { key: "four", label: "4+件折扣", before: `${mc.discount?.fourPlusItemsPct}%`, after: `${conflictLatest.bundleDiscount.fourPlusItemsPct}%` }]} /> : mc.sku && latestConflictSku ? <DiffList rows={e1SkuDiff(mc.beforeSku ?? mc.sku, latestConflictSku)} /> : <p>原对象未读取到，请保留草稿并核查。</p>}
-          <Button disabledReason={canAcceptRevision ? undefined : "原对象未读取到"} onClick={acceptConflictRevision}>已核对，保留输入并采用此修订</Button>
+        <ConflictBar message="商品或配置已被别人改过，你填的内容还在；读取最新后重新核对。" onRead={readConflict} />
+        {conflictRead && <Notice tone="warn" title="核对别人改了什么，再决定是否保留你的修改">
+          {mc.op === "bundle-discount" && conflictLatest ? <DiffList rows={[{ key: "two", label: "2件折扣", before: `${mc.discount?.twoItemsPct}%`, after: `${conflictLatest.bundleDiscount.twoItemsPct}%` }, { key: "three", label: "3件折扣", before: `${mc.discount?.threeItemsPct}%`, after: `${conflictLatest.bundleDiscount.threeItemsPct}%` }, { key: "four", label: "4+件折扣", before: `${mc.discount?.fourPlusItemsPct}%`, after: `${conflictLatest.bundleDiscount.fourPlusItemsPct}%` }]} /> : mc.sku && latestConflictSku ? <DiffList rows={e1ShownDiff(e1SkuDiff(mc.beforeSku ?? mc.sku, latestConflictSku), mc.beforeSku ?? mc.sku, latestConflictSku)} /> : <p>原对象未读取到，请保留草稿并核查。</p>}
+          <Button disabledReason={canAcceptRevision ? undefined : "原对象未读取到"} onClick={acceptConflictRevision}>已核对，保留我的修改</Button>
         </Notice>}
-      </> : !canWrite ? "当前不能提交，请先核对权限和读取状态" : readBlock(mc, businessValues)}
-      onClose={() => setConfirmation(null)} onConfirm={confirm} />}
+      </> : refused?.on === mc ? <span className="rd-toolbar"><span>{refused.text}</span><Button size="sm" icon={<RotateCcw size={14} aria-hidden />} onClick={() => { setRefused(null); if (reviewingSku) setConfirmation(null); }}>返回修改</Button></span>
+      : !canWrite ? "当前不能提交，请先核对权限和读取状态" : readBlock(mc, businessValues)}
+      onClose={() => setConfirmation(null)} onConfirm={async (...args) => {
+        try { await confirm(...args); } catch (failure) {
+          const response = failure as { httpStatus?: number; apiCode?: number };
+          if (!isA2OutcomeUncertainError(failure) && response.httpStatus !== undefined && isDeterministicRejection(response.httpStatus, response.apiCode)) setRefused({ on: mc, text: operationConfirmErrorMessage(failure) });
+          throw failure;
+        }
+      }} />}
     {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在读取…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? APPROVAL : "审批已结束，这张审批单不再锁住商品；请按现在的目录重新核对后编辑。"}</p></Drawer>}
     {release && (isRetryExpired(release)
       ? <MissingProposalReleaseModal label={release.spec.action} createdAt={release.createdAt} onCancel={() => setRelease(null)} onConfirm={async () => { const released = await releaseMissing(release); setRelease(null); if (released) toast("已解除这条记录，可以重新提交", "success"); else if (released === false) toast("查到了这张审批单，没有解除", "warn"); }} />

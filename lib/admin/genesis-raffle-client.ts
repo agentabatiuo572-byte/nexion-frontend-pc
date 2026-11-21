@@ -9,6 +9,7 @@ export interface RaffleDraft { id: string; titleZh: string; titleEn: string; tit
 export interface AdminRaffle extends RaffleDraft { status: "DRAFT" | "OPEN" | "PROCESSING" | "DRAWN"; revision: number; totalEntries: number; titleTranslations?: RaffleTranslations | null; }
 export const RAFFLE_LANGUAGES = { zh: { suffix: "Zh", label: "中文" }, en: { suffix: "En", label: "英文" }, vi: { suffix: "Vi", label: "越南语" } } as const;
 export const RAFFLE_READBACK_ADVANCED = "本次保存已成功，当前配置已被后续修改。请核对最新配置。";
+export const RAFFLE_SAVE_PENDING = "保存结果待核对";
 export function raffleDraftError(value: RaffleDraft, requiredLanguages: readonly OperatingLanguageCode[] = OPERATING_LANGUAGE_CODES): string {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(value.id)) return "本期编号需为 1–64 位字母、数字、下划线或短横线。";
   const missingTitles = requiredLanguages.filter(locale => !value[`title${RAFFLE_LANGUAGES[locale].suffix}`].trim());
@@ -74,21 +75,21 @@ async function fetchAdminRaffle(id: string): Promise<AdminRaffle | null> {
 export async function fetchAdminRaffles(isCurrent: () => boolean) {
   markH4Read("raffles", false);
   const records = confirmedH4RaffleSaves();
-  const receipts = records.flatMap(record => record.raffleReceipt ? [record.raffleReceipt] : []);
+  const readbacks = records.flatMap(record => record.raffleReadback ? [record.raffleReadback] : []);
   const result = await growthRequest<{ draws: unknown[] }>("/genesis-raffle");
   if (!isCurrent()) return null;
   if (!Array.isArray(result?.draws)) throw new Error("创世抽奖配置读取失败，请刷新后重试。");
   const rowsFromList = result.draws.map(parseAdminRaffle);
-  const details = new Map(await Promise.all(receipts.map(async ({ id }) => [id, await fetchAdminRaffle(id)] as const)));
+  const details = new Map(await Promise.all(readbacks.map(async ({ id }) => [id, await fetchAdminRaffle(id)] as const)));
   if (!isCurrent()) return null;
   const rows = rowsFromList
     .filter(row => details.get(row.id) !== null)
     .map(row => details.get(row.id) ?? row);
   confirmH4RaffleReadback(records, details);
   markH4Read("raffles", true);
-  const missing = receipts.filter(({ id }) => details.get(id) === null).map(({ id }) => id);
-  const advanced = receipts.some(({ id, revision }) => revision !== null && (details.get(id)?.revision ?? 0) > revision);
-  const saved = receipts.some(({ id }) => details.get(id) != null);
+  const missing = readbacks.filter(({ id }) => details.get(id) === null).map(({ id }) => id);
+  const advanced = readbacks.some(({ id, minimumRevision }) => (details.get(id)?.revision ?? 0) > minimumRevision);
+  const saved = readbacks.some(({ id }) => details.get(id) != null);
   return { rows, missing, advanced, saved };
 }
 export async function saveAdminRaffle(draft: RaffleDraft, revision: number | null, enabled: boolean, reason: string, opening = revision !== null && enabled): Promise<AdminRaffle | H4ApprovalReceipt> {

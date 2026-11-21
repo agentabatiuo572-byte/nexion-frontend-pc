@@ -18,7 +18,7 @@ import { e5Commands, e5LegacyCommands, e5CommandBlocks, checkE5Command, queryE5P
 import { canInvestigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { e6Commands, type E6Pending } from "@/lib/admin/e6-command";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { BlockState, Button, Change, Check, Fact as RdFact, Facts, Fold, IconButton, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
+import { BlockState, Button, Change, Check, Decision, Fact as RdFact, Facts, Fold, IconButton, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import { E5_STATES, e5StateNote } from "./e5-device-state";
 import { CommandClosureModal, CommandOutcomeLine, commandOutcomeSummary, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
@@ -301,19 +301,19 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   const proposal = action === "force-activate" || action === "unbind" || action === "legacy";
   return <>
     {options.length ? inline ? <div className="rd-toolbar">{options.map(option => <Button key={option.key} size="sm" variant={option.danger ? "danger-outline" : "secondary"} disabledReason={option.disabledReason} onClick={option.onSelect}>{option.label}</Button>)}</div> : <MoreMenu label={`操作 ${d.serial}`} items={options} /> : phones ? <span className="rd-muted" title="当前权限或状态没有可执行的操作">{!ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5 ? "只读" : "—"}</span> : d.simState === "CLOSING" ? inline ? <span className="rd-muted">停用中，当前任务结束后自动停用，暂时没有可做的操作。</span> : <IconButton aria-label={`操作 ${d.serial}`} disabledReason="停用中，结算后自动停用，暂时没有可做的操作"><MoreHorizontal size={16} aria-hidden /></IconButton> : inline ? <span className="rd-muted">{readOnly ? "任务已关闭，仅可查看设备事实。" : "当前账号或设备状态没有可执行的操作。"}</span> : null}
-    {candidateOpen && <Modal title="旧任务终结资格" onClose={() => setCandidateOpen(false)} busy={reading} footer={<Button onClick={() => setCandidateOpen(false)}>关闭</Button>}>
-      <Facts><Fact label="设备" value={d.serial} /><Fact label="用户" value={d.user} /></Facts>
-      {reading ? <BlockState state="loading" title="正在核对终结资格…" /> : candidateError ? <BlockState state="error" title="终结资格读取失败" detail={candidateError} onRetry={() => void readCandidate()} /> : candidate && <>
-        <Notice tone={candidate.eligible ? "progress" : "neutral"} title={!candidate.caseId ? "无可终结的未确认旧任务" : candidate.resolution ? "已取消 · 不计收益" : candidate.status === "QUIESCENCE_REQUIRED" ? "等待有效退出证明" : candidate.eligible ? "可申请终结" : "终结条件未满足"}>{candidate.reason && <p>{displayAdminError(new Error(candidate.reason))}</p>}</Notice>
-        {candidate.caseId && <Facts><Fact label="案件" value={candidate.caseId} copy mono /><Fact label="原任务" value={candidate.taskNo} copy mono />{candidate.resolution && <Fact label="结案审批单" value={candidate.resolution.a2OperationId} copy mono />}</Facts>}
-        <Fold inset title="技术信息" summary="原请求与证据"><Facts><Fact label="代际" value={candidate.requestGeneration} /><Fact label="退出证明" value={candidate.proofSha ?? "—"} copy mono /><Fact label="后端实例" value={candidate.backendInstanceId} copy mono /><Fact label="请求键哈希" value={candidate.requestKeyHash ?? "—"} mono copy /><Fact label="请求体哈希" value={candidate.requestBodyHash ?? "—"} mono copy /><Fact label="案件集合哈希" value={candidate.caseSetSha256 ?? "—"} mono copy /></Facts></Fold>
-        <div className="rd-toolbar"><Button onClick={() => void readCandidate()}>重新核对</Button>{candidate.eligible && <Button variant="danger" disabledReason={locked("legacy")} onClick={async () => {
+    {candidateOpen && <Modal title="旧任务终结资格" onClose={() => setCandidateOpen(false)} busy={reading} footer={<Decision
+      danger={candidate?.eligible && !reading && <Button variant="danger" disabledReason={locked("legacy")} onClick={async () => {
           setReading(true); setCandidateError("");
           try { const fresh = await fetchLegacyUnknownCandidate(d.deviceId); if (!sameLegacyUnknownProof(candidate, fresh)) throw new Error("退出证据或设备状态已更新，请重新核对。"); setCandidate(fresh); setCandidateOpen(false); setAction("legacy"); }
           catch (cause) { setCandidate(null); setCandidateError(displayAdminReadError(cause)); }
           finally { setReading(false); }
-        }}>结束未确认任务（不计收益）</Button>}</div>
-      </>}
+        }}>结束未确认任务（不计收益）</Button>}
+      others={<>{candidate && !reading && <Button onClick={() => void readCandidate()}>重新核对</Button>}<Button onClick={() => setCandidateOpen(false)}>关闭</Button></>} />}>
+      <Facts><Fact label="设备" value={d.serial} /><Fact label="用户" value={d.user} /></Facts>
+      {reading ? <BlockState state="loading" title="正在核对终结资格…" /> : candidateError ? <BlockState state="error" title="终结资格读取失败" detail={candidateError} onRetry={() => void readCandidate()} /> : candidate && <>
+        <Notice tone={candidate.eligible ? "progress" : "neutral"} title={!candidate.caseId ? "无可终结的未确认旧任务" : candidate.resolution ? "已取消 · 不计收益" : candidate.status === "QUIESCENCE_REQUIRED" ? "等待有效退出证明" : candidate.eligible ? "可申请终结" : "终结条件未满足"}>{candidate.reason && <p>{displayAdminError(new Error(candidate.reason))}</p>}</Notice>
+        {candidate.caseId && <Facts><Fact label="案件" value={candidate.caseId} copy mono /><Fact label="原任务" value={candidate.taskNo} copy mono />{candidate.resolution && <Fact label="结案审批单" value={candidate.resolution.a2OperationId} copy mono />}</Facts>}
+        <Fold inset title="技术信息" summary="原请求与证据"><Facts><Fact label="代际" value={candidate.requestGeneration} /><Fact label="退出证明" value={candidate.proofSha ?? "—"} copy mono /><Fact label="后端实例" value={candidate.backendInstanceId} copy mono /><Fact label="请求键哈希" value={candidate.requestKeyHash ?? "—"} mono copy /><Fact label="请求体哈希" value={candidate.requestBodyHash ?? "—"} mono copy /><Fact label="案件集合哈希" value={candidate.caseSetSha256 ?? "—"} mono copy /></Facts></Fold>      </>}
     </Modal>}
     {action && <OperationConfirmModal action={LABELS[action]} title={LABELS[action]} briefKind="record" confirmLabel={CONFIRMS[action]} reasonMin={8} reasonMax={200}
       confirmTone={action === "unbind" || action === "pause" || action === "legacy" ? "danger" : "primary"}

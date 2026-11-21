@@ -1,10 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { warrantyMonths } from "@/lib/admin/warranty-months";
 import { Boxes, ImageIcon } from "lucide-react";
 import { BlockState, Button, Check, CheckGroup, Decision, DiffList, Drawer, Explain, Facts, Fact, Field, Fold, Input, LevelStrip, Modal, Notice, NumberInput, ReleaseModal, SectionNav, Select, Textarea, useSectionNav } from "@/app/components/rd";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fetchSkuDatacenterLabels, fetchTaskPools, type TaskPool } from "@/lib/admin/task-pool-client";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import { ADMIN_ERROR_MESSAGES, guardedFetch, displayAdminError } from "@/lib/admin/error-messages";
@@ -15,7 +17,7 @@ import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { SKU_SERIES_NAMES, skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSeries, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
-import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1SkuDiff, type E1MediaPending } from "./e1-state";
+import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
 
 export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number };
@@ -33,7 +35,7 @@ function EditorSection({ id, title, children }: { id: string; title: string; chi
   return <section id={`section-${id}`} className="e1-editor-section"><h3 tabIndex={-1} data-section-focus>{title}</h3><div className="e1-section-fields">{children}</div></section>;
 }
 
-/** App 用户能看到的九个字段：含中文时字段下马上提示，提交时同样拦下。 */
+/** App 用户能看到的字段：含中文时字段下马上提示，提交时同样拦下。 */
 const E1_APP_VISIBLE_FIELDS = [
   ["name", "型号名称"],
   ["badge", "营销角标"],
@@ -42,13 +44,19 @@ const E1_APP_VISIBLE_FIELDS = [
   ["power", "功耗 / 功率说明"],
   ["datacenter", "托管机房"],
   ["uptime", "在线率"],
-  ["warranty", "质保期限"],
   ["specDocumentTitle", "资料名称"],
 ] as const;
 /** 交付设备认得的功耗写法（后端按这几种取瓦数，写成别的设备交付不了）。 */
 const E1_POWER_FORMATS = ["1800", "1,800 W", "1,800 W TDP", "1,800 W (per-GPU rated)", "1,800 W (combined GPU rated)"];
 
 const imageIdentity = (m: Media) => JSON.stringify([m?.assetId ?? "", m?.objectKey ?? ""]);
+
+function warrantyError(value: string, original?: string): string {
+  if (value === original && warrantyMonths(value) === undefined) {
+    return containsHan(value) ? "原质保条款含中文，请换成月数或清除" : "";
+  }
+  return value && !/^\d{1,121}$/.test(value) ? "请填写有效的非负整数月数" : "";
+}
 
 function skuMedia(sku?: OpsSku): Media {
   return sku?.imageAssetId && sku.imageObjectKey ? { kind: /\.(mp4|webm|mov)$/i.test(sku.imageObjectKey) ? "video" : "image", src: "", name: sku.imageObjectKey.split("/").pop() ?? "商品媒体", assetId: sku.imageAssetId, objectKey: sku.imageObjectKey } : null;
@@ -61,6 +69,8 @@ function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media): Op
     // A complete snapshot must retain untouched values, including legacy formatting.
     const earningsChanged = ["monthlyTargetUsdt", "monthlyTargetBandPct", "dailyEarn", "dailyEarnNEX", "shareYieldMin", "shareYieldMax", "tier", "price"].some(key => form[key as keyof SkuForm] !== opened[key as keyof SkuForm]);
     for (const { key } of E1_SKU_FIELDS) {
+      if (key === "warranty" && warrantyMonths(original.warranty) !== undefined && containsHan(original.warranty ?? "")
+        && (JSON.stringify(form) !== JSON.stringify(opened) || imageIdentity(media) !== imageIdentity(skuMedia(original)))) continue;
       if (["dailyEarn", "shareYieldMin", "shareYieldMax", "gpu"].includes(key)) continue;
       if (key in opened && JSON.stringify(form[key as keyof SkuForm]) === JSON.stringify(opened[key as keyof SkuForm])) Object.assign(draft, { [key]: original[key] });
     }
@@ -249,11 +259,11 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (!/^\d+(?:\.\d+)?$/.test(form.price.trim()) || Number(form.price) <= 0) e.price = "售价须为大于 0 的 USD 金额";
     if (form.id.trim().toLowerCase() === "phone") e.id = "phone 是手机策略的专用编号";
     const seriesError = validateSkuSeries(form, original);
-    if (seriesError) e.seriesCode = ADMIN_ERROR_MESSAGES[seriesError];
+    if (seriesError) e.seriesCode = ADMIN_ERROR_MESSAGES[seriesError].replace(/。$/, "");
     if (form.datacenter.trim().length > 128) e.datacenter = "托管机房最多 128 字";
     if (original?.status === "on") {
       if (!form.allowedPoolCodes.length) e.allowedPoolCodes = "在售商品至少要选择一个任务等级";
-      if (!form.monthlyTargetUsdt.trim()) e.monthlyTargetUsdt = "在售商品不能清空月收益目标";
+      if (!form.monthlyTargetUsdt.trim()) e.monthlyTargetUsdt = "在售商品需要设置月收益目标";
     }
     if (original?.monthlyTargetUsdt != null && !form.monthlyTargetUsdt.trim() && form.monthlyTargetBandPct.trim()) e.monthlyTargetBandPct = "关闭目标时请使用关闭选项，同时清空允许波动";
     for (const key of ["phoneDailyEarn", "phoneDailyEarnNEX"] as const) {
@@ -264,7 +274,8 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     for (const key of ["aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"] as const) if (form[key].trim() && (!/^-?\d+$/.test(form[key].trim()) || BigInt(form[key]) < BigInt("-9223372036854775808") || BigInt(form[key]) > BigInt("9223372036854775807"))) e[key] = "请填写 64 位整数，不能含小数";
     for (const key of ["gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap"] as const) if (form[key].trim() && !/^\d+$/.test(form[key].trim())) e[key] = "请填写非负整数";
     if (form.uptime.length > 64) e.uptime = "在线率最多 64 字";
-    if (form.warranty.length > 128) e.warranty = "质保期限最多 128 字";
+    const invalidWarranty = warrantyError(form.warranty, original?.warranty ?? undefined);
+    if (invalidWarranty) e.warranty = invalidWarranty;
     if (form.inventoryMode === "FINITE" && (!/^\d+$/.test(form.stock) || Number(form.stock) > 2147483647)) e.stock = "库存须为 0～2147483647 的整数";
     if (form.tier !== "Share" && form.inventoryMode === "UNLIMITED") e.inventoryMode = "仅共享份额可用不限库存";
     const specError = validateSkuSpecs(form, original);
@@ -278,7 +289,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (gates?.skuReviewContractVersion !== 1) e.form = "商品审核暂时不可用，请刷新后重试；已填写的内容会保留";
     if (!writable) e.form = "当前不能提交，请核对权限和目录读取状态";
     if (mediaBusy || mediaPending || media && !media.assetId) e.media = "媒体上传尚未确认，请先核对原文件";
-    if (!acceptedRevision && latestChanged) e.form = "商品修订已变化，请核对新旧修订后继续";
+    if (!acceptedRevision && latestChanged) e.form = "商品已被别人改过，请先核对别人改了什么";
     for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
       const error = appVisibleTextError(form[key], label);
       if (!error) continue;
@@ -310,13 +321,13 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   };
   const review = () => { reviewDraft(form, original, media); };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
-  const appTextErrors: Record<string, string> = {};
+  const appTextErrors: Record<string, string> = { warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
   for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
     const error = appVisibleTextError(form[key], label);
     if (error && !(key === "power" && form.tier === "Share")) appTextErrors[key] = error;
   }
   const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: ReactNode; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={errors[key] || appTextErrors[key]} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
-    {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
+    {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={key === "warranty" && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? "" : String(form[key])} onChange={e => update(key, e.target.value)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
   </Field>;
   const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未知" : !dirty || original && !changes.length ? "没有修改" : undefined;
   const sectionItems = SECTIONS.map((s, index) => {
@@ -330,7 +341,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   return <>
     <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
       {errors.form && <Notice tone="warn" title={errors.form} />}
-      {latestChanged && <Notice tone="warn" title="商品修订已变化，本地输入仍保留"><Facts><Fact k="打开时修订">{original.updatedAt}</Fact><Fact k="最新修订">{currentSku?.updatedAt}</Fact></Facts>{currentSku && <Fold inset title="读取期间的商品变化" summary="核对完整前后值"><DiffList rows={e1SkuDiff(original, currentSku)} /></Fold>}<Check label="我已核对最新修订，保留本地改动" checked={false} onChange={e => { if (e.target.checked && currentSku) adoptRevision(currentSku, form, original, media); }} /></Notice>}
+      {latestChanged && <Notice tone="warn" title="商品已被别人改过，你填的内容还在" action={currentSku ? <Button size="sm" onClick={() => adoptRevision(currentSku, form, original, media)}>已核对，保留我的修改</Button> : undefined}><Facts><Fact k="别人保存于">{formatBusinessTimeCompact(currentSku?.updatedAt, "—")}（{businessZone().label}）</Fact></Facts>{currentSku && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={e1ShownDiff(e1SkuDiff(original, currentSku), original, currentSku)} /></Fold>}</Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
         <EditorSection id="e1-basic" title="基本信息">
           <div className="rd-form-grid">{field("name", "型号名称", { required: true, placeholder: "UVELBox Pro v3", explain: APP_VISIBLE_TEXT_HINT })}{field("id", "商品编号", { disabled: !!editId, help: editId ? "创建后不能修改" : "只做唯一标识，留空按型号名称生成" })}
@@ -359,8 +370,8 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           <div className="rd-form-grid">{field("price", "售价(USD)", { number: true, unit: "USD", min: 0, required: true, explain: "购买一件商品的目录价，批准后影响新交易；原订单快照不回写。" })}{field("computePoints", "每件算力点", { number: true, min: 0, step: 1, help: editId ? "留空保留原值；0 为真实零" : "留空按售价 × 10", explain: "购买一件计入团队的点数，最多18位非负整数，只影响之后的新订单快照；App为0时当前隐藏。" })}</div>
           <CheckGroup legend="任务等级" explain="等级只决定跑什么任务；每单收益按月目标配平。已发布策略决定用户端等级文字，未批准的草稿不生效。" summary={`${form.allowedPoolCodes.length} 级已选`}>{E1_LEVELS.map(level => <Check key={level.key} label={`${level.label} ${level.name}`} explain={pools.find(p => p.code === level.key) ? `该等级当前启用 ${pools.find(p => p.code === level.key)!.enabledCount} 个任务；数量不决定是否可选。` : "固定设备任务等级，可自由选择，不依赖任务池读取权限。"} checked={form.allowedPoolCodes.includes(level.key)} onChange={e => setForm(f => ({ ...f, allowedPoolCodes: e.target.checked ? [...f.allowedPoolCodes, level.key] : f.allowedPoolCodes.filter(c => c !== level.key) }))} />)}</CheckGroup>
           {errors.allowedPoolCodes && <Notice tone="warn" title={errors.allowedPoolCodes} />}
-          <div className="e1-draft-preview"><span className="e1-muted">本次草稿 · App 等级文字预览<Explain label="等级文字显示位置" content="批准发布后的等级文字由用户端本地化；商品卡、详情、组合购买与活动组合均可读取。空等级隐藏此句，不代表设备能运行任务。" /></span><LevelStrip label="本次草稿任务等级" levels={E1_LEVELS} selectedKeys={form.allowedPoolCodes} /><strong>{form.allowedPoolCodes.length ? `可运行${E1_LEVELS.filter(l => form.allowedPoolCodes.includes(l.key)).map(l => l.name).join(" / ")} AI算力任务` : "未配置任务等级；等级句隐藏"}</strong></div>
-          <div className="rd-form-grid">{field("monthlyTargetUsdt", "月收益目标（USDT）", { number: true, min: 1, max: 1000000, step: 0.01, help: "1～1,000,000，最多2位小数", explain: "持续运行的设备月预估边界。设备月从购入日、缺失时从激活日起算；停跑不补发，已冻结任务不重算。" })}{field("monthlyTargetBandPct", "允许波动 %", { number: true, min: 1, max: 50, step: 0.1, disabled: !hasTarget, help: "1～50%，最多1位小数", explain: "目标 ×（1±波动）是配置范围，不是到账保证；提高上界时会检查兑付覆盖率。" })}</div>
+          <div className="e1-draft-preview"><span className="e1-muted">本次草稿 · App 等级文字预览<Explain label="等级文字显示位置" content="批准发布后的等级文字由用户端本地化；商品卡、详情、组合购买与活动组合均可读取。空等级隐藏此句，不代表设备能运行任务。" /></span><LevelStrip label="本次草稿任务等级" levels={E1_LEVELS} selectedKeys={form.allowedPoolCodes} /><strong>{form.allowedPoolCodes.length ? `可运行${E1_LEVELS.filter(l => form.allowedPoolCodes.includes(l.key)).map(l => l.name).join(" / ")} AI算力任务` : "未配置任务等级；App 不显示这句"}</strong></div>
+          <div className="rd-form-grid">{field("monthlyTargetUsdt", "月收益目标（USDT）", { number: true, min: 1, max: 1000000, step: 0.01, required: original?.status === "on", hint: "1～1,000,000，最多2位小数", explain: "持续运行的设备月预估边界。设备月从购入日、缺失时从激活日起算；停跑不补发，已冻结任务不重算。" })}{field("monthlyTargetBandPct", "允许波动 %", { number: true, min: 1, max: 50, step: 0.1, disabled: !hasTarget, hint: "1～50%，最多1位小数", explain: "目标 ×（1±波动）是配置范围，不是到账保证；提高上界时会检查兑付覆盖率。" })}</div>
           {canClear && <Check label="关闭已有月收益目标，改用兼容展示值" checked={!hasTarget} onChange={e => setForm(f => ({ ...f, monthlyTargetUsdt: e.target.checked ? "" : String(original!.monthlyTargetUsdt), monthlyTargetBandPct: e.target.checked ? "" : String(original!.monthlyTargetBandPct) }))} />}
           {form.allowedPoolCodes.length > 0 && !hasTarget && <Notice tone="warn" title="已选任务等级，必须填写月收益目标" />}
           {hasTarget && Number(form.monthlyTargetUsdt) >= 1 && Number(form.monthlyTargetBandPct) >= 1 && Number(form.monthlyTargetBandPct) <= 50 && <div className="e1-draft-preview"><span className="e1-muted">本次草稿 · 配置边界</span><E1TargetRange sku={draft} /></div>}
@@ -368,7 +379,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           {labelError && <span className="e1-muted">{labelError}</span>}
           <div className="rd-form-grid">{form.tier !== "Share" ? <>
             {!hasTarget && field("dailyEarn", "每日收益 USDT", { number: true, min: 0, step: 0.000001, help: original?.monthlyTargetUsdt != null ? "关闭月目标时须在同一申请中手填" : "兼容展示值" })}
-            {field("dailyEarnNEX", "每日收益 UVT", { number: true, min: 0, explain: "付费激活的设备每个 UTC 日首个任务完成时发一次，按购买时的每日 UVT 和当时产能计算；只影响新订单，手机和 Cloud Share 不适用。" })}{field("phoneDailyEarn", "手机每日收益 USDT", { number: true, min: 0, step: 0.000001, help: "可留空，留空时不显示对比" })}{field("phoneDailyEarnNEX", "手机每日收益 UVT", { number: true, min: 0, step: 0.000001, help: "可留空，最多6位小数" })}
+            {field("dailyEarnNEX", "每日收益 UVT", { number: true, min: 0, explain: "付费激活的设备每个 UTC 日首个任务完成时发一次，按购买时的每日 UVT 和当时产能计算；只影响新订单，手机和 Cloud Share 不适用。" })}{field("phoneDailyEarn", "手机每日收益 USDT", { number: true, min: 0, step: 0.000001, hint: "选填", help: "留空时不显示对比" })}{field("phoneDailyEarnNEX", "手机每日收益 UVT", { number: true, min: 0, step: 0.000001, hint: "选填，最多6位小数" })}
           </> : <>{!hasTarget && <>{field("shareYieldMin", "共享份额参考年奖励率下限 %", { number: true, min: 0 })}{field("shareYieldMax", "共享份额参考年奖励率上限 %", { number: true, min: 0 })}</>}{field("dailyEarnNEX", "每日额外发放 UVT", { number: true, min: 0 })}</>}</div>
           {hasTarget && <Facts><Fact k="派生日均"><E1Amount value={draft.derivedDailyEarnUsdt} unit="USDT/天" /></Fact>{form.tier === "Share" && <><Fact k="派生年率下限"><E1Amount value={draft.derivedShareYieldMinPct} precision={e1Precision([draft.derivedShareYieldMinPct, draft.derivedShareYieldMaxPct])} unit="%" /></Fact><Fact k="派生年率上限"><E1Amount value={draft.derivedShareYieldMaxPct} precision={e1Precision([draft.derivedShareYieldMinPct, draft.derivedShareYieldMaxPct])} unit="%" /></Fact></>}</Facts>}
           {Number(form.price) > 0 && draft.dailyEarn > 0 && <Fold inset title="旧参考测算" summary="参考口径未换汇" explain="沿旧公式保留参考测算。USD售价与USDT日均未换汇，不是实际利润。手机基准固定0.08，不是「手机算力配置」的当前档。"><Facts><Fact k="参考回本天数">≈ <E1Amount value={Number(form.price) / draft.dailyEarn} unit="天" /></Fact><Fact k="首年净额旧算式"><E1Amount value={draft.dailyEarn * 365 - Number(form.price)} />（USDT日均×365 − USD售价，未换汇）</Fact><Fact k="参考年率">≈ <E1Amount value={draft.dailyEarn * 365 / Number(form.price) * 100} unit="%" /></Fact><Fact k="固定手机基准比">≈ <E1Amount value={draft.dailyEarn / 0.08} unit="倍" /></Fact><Fact k="售价输入" unit="USD"><E1Amount value={form.price} /></Fact><Fact k="日均输入" unit="USDT/天"><E1Amount value={draft.dailyEarn} precision={e1Precision([draft.dailyEarn, 0.08])} /></Fact><Fact k="固定手机基准" unit="USDT/天"><E1Amount value={0.08} precision={e1Precision([draft.dailyEarn, 0.08])} /></Fact></Facts></Fold>}
@@ -384,21 +395,22 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           <Field label="购买条件类型" explain="限制哪些用户可购买；无用户条件仍可独立设置销售配额。"><Select aria-label="购买条件类型" value={form.gateType} onChange={v => update("gateType", v)} options={[{ value: "none", label: "无用户条件" }, { value: "activeDirect", label: "活跃直接邀请人数" }, { value: "rank", label: "最低会员等级" }, { value: "combo", label: "组合条件（会员等级 / 直接邀请 / 团队算力点）" }]} /></Field>
           <div className="rd-form-grid">{(form.gateType === "rank" || form.gateType === "combo") && field("gateRankMin", "最低会员等级", { number: true, min: 0, max: 8, step: 1, help: "0～8；0 为不设条件" })}{(form.gateType === "activeDirect" || form.gateType === "combo") && field("gateActiveDirectMin", "活跃直接邀请人数", { number: true, min: 0, max: 1000000, step: 1, help: "0～1,000,000 的整数" })}{form.gateType === "combo" && field("gateTeamComputePointsMin", "团队算力点", { number: true, min: 0, step: 1, help: "非负整数，0 为不设条件" })}
             {form.gateType === "combo" && <Field label="多条件关系" explain="全部满足是all；任一满足是either。"><Select aria-label="多条件关系" value={form.gateMode} onChange={v => update("gateMode", v)} options={[{ value: "all", label: "全部满足" }, { value: "either", label: "任一满足" }]} /></Field>}
-            {field("gateQuotaCap", "本期可售上限", { number: true, min: 1, step: 1, help: "留空不限量；有值时不小于已有售量" })}
-            <Field label="本期已售数量" explain="只读销售计数，随商品原快照保留；移除上限时清整组配额。"><Input aria-label="本期已售数量" value={form.gateQuotaSold || "— · 未配置"} readOnly /></Field>
+            {field("gateQuotaCap", "销售配额上限", { number: true, min: 1, step: 1, help: "留空不限量；有值时不小于已有售量" })}
+            <Field label="配额已售数量" explain="只读销售计数，随商品原快照保留；移除上限时清整组配额。"><Input aria-label="配额已售数量" value={form.gateQuotaSold || "— · 未配置"} readOnly /></Field>
           </div>
           {(form.gateType !== "none" || form.gateQuotaCap) && <>
             <Field label="售卖统计周期" error={errors.gateQuotaPeriod} explain="当前只支持不分周期累计。旧按月值必须人工改选后提交。">{form.gateQuotaPeriod === "month" ? <Select aria-label="售卖统计周期" value={form.gateQuotaPeriod} onChange={v => update("gateQuotaPeriod", v)} options={[{ value: "month", label: "按月统计（已停用）" }, { value: "lifetime", label: "不分周期（累计）" }]} /> : <Input aria-label="售卖统计周期" value="不分周期（累计）" readOnly />}</Field>
-            {form.gateQuotaPeriod === "month" && <Notice tone="warn" title="按月统计已停用，请改为不分周期后保存" />}
-            <Field label="售罄后限制购买" explain="此项是软配额限制；允许继续购买不代表实体库存不限。"><Select aria-label="售罄后限制购买" value={form.gateEnforce} onChange={v => update("gateEnforce", v)} options={[{ value: "true", label: "卖完后不能再买" }, { value: "false", label: "卖完只显示售罄，仍可购买" }]} /></Field>
+            {form.gateQuotaPeriod === "month" && <Notice tone="warn" title="按月统计已停用，现在不能购买；改为不分周期后保存" />}
+            <Field label="购买条件是否生效" explain="不生效时不检查上面的用户条件和配额；库存另算。"><Select aria-label="购买条件是否生效" value={form.gateEnforce} onChange={v => update("gateEnforce", v)} options={[{ value: "true", label: "生效：按上面的条件和配额限制购买" }, { value: "false", label: "不生效：不检查条件和配额" }]} /></Field>
           </>}
         </EditorSection>
         <EditorSection id="e1-specs" title="规格与资料">
           <div className="rd-form-grid">{field("gpu", "GPU 型号（单卡）", { placeholder: "RTX 4090", explain: APP_VISIBLE_TEXT_HINT })}{field("gpuCount", "GPU 数量", { number: true, min: 1, max: 1024, step: 1, help: "1～1024，须同时填写单卡型号" })}{form.tier === "Share" ? field("vram", "显存", { placeholder: "不适用（共享份额）", explain: "共享份额不是独立设备，没有显存；留空时 App 显示「不适用」。" }) : field("vram", "显存")}
             {form.tier !== "Share" && <>{field("hashRate", "算力")}{field("power", "功耗 / 功率说明", { placeholder: "1,800 W (combined GPU rated)", help: `${APP_VISIBLE_TEXT_HINT}，如 1,800 W`, explain: <><span className="rd-keep">只能用下面几种写法，数值大于 0。</span><span className="rd-keep">写成别的，用户下单后设备会交付失败。</span><br />{E1_POWER_FORMATS.map((format, index) => <span key={format}>{index ? "、" : ""}<span className="rd-keep">{format}</span></span>)}</> })}</>}
-            {field("uptime", "在线率", { hint: "最多64字", placeholder: "99.9%", explain: APP_VISIBLE_TEXT_HINT })}{field("warranty", "质保期限", { hint: "最多128字", placeholder: "24 months", explain: APP_VISIBLE_TEXT_HINT })}
+            {field("uptime", "在线率", { hint: "最多64字", placeholder: "99.9%", explain: APP_VISIBLE_TEXT_HINT })}{field("warranty", "质保期限（月）", { number: true, min: 0, step: 1, placeholder: "24", help: form.warranty && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? `原质保条款：${form.warranty}。填写月数可替换。` : undefined })}
             {form.tier !== "Share" && <>{field("aiImageGenPerMin", "图像生成 张/分钟", { number: true, step: 1 })}{field("aiLlmTokensPerSec", "大模型推理（词元/秒）", { number: true, step: 1 })}{field("aiVideoMinPerHour", "每小时可渲染视频时长（分钟）", { number: true, step: 1 })}{field("aiFineTuneMins", "LoRA 微调（分钟）", { number: true, step: 1 })}</>}
           </div>
+          {form.warranty && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined && <Button size="sm" disabled={busy} onClick={() => update("warranty", "")}>清除原质保条款</Button>}
           {field("specDocumentTitle", "资料名称", { hint: "最多200字", placeholder: "Manufacturer specifications", explain: `${APP_VISIBLE_TEXT_HINT}。商品外部资料的入口名称；批准后商品详情在名称与安全链接同时存在时显示。` })}
           {field("specDocumentUrl", "资料链接", { hint: "HTTPS，最多2048字", help: "不能含账号密码；同时清空名称和链接可移除", explain: "公开资料的HTTPS地址，不会自动下载或审核链接内容。" })}
           <Field label="特性清单 · 每行一条" explain="商品特性文字，批准后供目录读取；逐行去除空行。"><Textarea aria-label="特性清单 · 每行一条" value={form.features} onChange={e => update("features", e.target.value)} /></Field>

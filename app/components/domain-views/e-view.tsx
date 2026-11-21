@@ -286,7 +286,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     setE2Error(null);
     const [tasksResult, phoneResult] = await Promise.allSettled([
       canReadE2 ? fetchE2Tasks() : Promise.resolve([]),
-      canReadE2 ? fetchE2PhoneTiers() : Promise.resolve({ tiers: [], comparisons: [] }),
+      canReadE2 ? fetchE2PhoneTiers() : Promise.resolve({ tiers: [], comparisons: [], configRevision: 0 }),
     ]);
     const errors: string[] = [];
     if (tasksResult.status === "fulfilled") {
@@ -307,19 +307,22 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     setE2Error(errors.length ? errors.join("；") : null);
     setE2Loading(false);
+    return phoneResult.status === "fulfilled" && canReadE2 ? phoneResult.value : undefined;
   }, [canReadE2]);
   useEffect(() => { if (tab === "E6" && canReadE2) void refreshE2(); }, [tab, canReadE2, refreshE2]);
 
   const [e6SkuCandidateRead, setE6SkuCandidateRead] = useState<E6SkuCandidates>({ status: "loading" });
   const canReadE6SkuCandidates = tab === "E6" && canReadE2 && canReadE1;
   const refreshE6SkuCandidates = useCallback(async () => {
-    if (!canReadE6SkuCandidates) return;
+    if (!canReadE6SkuCandidates) return false;
     setE6SkuCandidateRead({ status: "loading" });
     try {
       const skus = await fetchE6OnboardingSkuCandidates();
       setE6SkuCandidateRead({ status: "ready", skus });
+      return true;
     } catch (error) {
       setE6SkuCandidateRead({ status: "error", error: displayAdminReadError(error) });
+      return false;
     }
   }, [canReadE6SkuCandidates]);
   useEffect(() => { void refreshE6SkuCandidates(); }, [refreshE6SkuCandidates]);

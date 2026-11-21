@@ -1,4 +1,4 @@
-import type { OpsSku } from "@/lib/admin/platform-types";
+import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { SkuForm } from "./data";
 import { skuSeriesText } from "@/lib/admin/device-monthly-target";
@@ -167,6 +167,39 @@ export function e1Value(value: unknown, unit?: string): string {
     : typeof value === "object" ? JSON.stringify(value, null, 2) : E1_VALUE_NAMES[String(value)] ?? String(value);
   return `${text}${unit && value != null && value !== "" ? ` ${unit}` : ""}`;
 }
+/** 购买条件写成一句人话（只用于显示；提交给审批的前后值仍是 e1SkuDiff 的原文）。后端字段同 DevicePurchaseGateView。 */
+export function e1GateText(gate: Partial<Record<keyof PurchaseGate, unknown>> | null | undefined): string {
+  if (!gate) return "无购买条件，不限量";
+  const count = (value: unknown) => value == null || value === "" ? 0 : Number(value);
+  const shown = (value: unknown) => e1Number(value as number | string);
+  const rules = [
+    count(gate.rankMin) > 0 && `会员 V${shown(gate.rankMin)} 及以上`,
+    count(gate.activeDirectMin) > 0 && `活跃直接邀请至少 ${shown(gate.activeDirectMin)} 人`,
+    count(gate.teamComputePointsMin) > 0 && `团队算力点至少 ${shown(gate.teamComputePointsMin)}`,
+  ].filter((rule): rule is string => !!rule);
+  const who = !rules.length ? "无用户条件" : rules.length === 1 ? rules[0] : `${rules.join("、")}（${String(gate.mode).toLowerCase() === "either" ? "满足任一" : "全部满足"}）`;
+  const hasQuota = gate.quotaCap != null && gate.quotaCap !== "";
+  if (gate.quotaPeriod === "month") {
+    const legacyQuota = hasQuota ? `原配额 ${shown(gate.quotaCap)} 件、已售 ${shown(gate.quotaSold ?? 0)} 件；` : "";
+    return `按月统计（已停用），现在不能购买；${legacyQuota}原用户条件：${who}`;
+  }
+  const quota = hasQuota ? `销售配额 ${shown(gate.quotaCap)} 件（累计）、已售 ${shown(gate.quotaSold ?? 0)} 件` : "不限量";
+  if (gate.enforce === false) {
+    const filled = [rules.length ? who : "", hasQuota ? quota : ""].filter(Boolean);
+    return `不生效，不检查用户条件和配额${filled.length ? `；已填：${filled.join("；")}` : ""}`;
+  }
+  return `${who}；${quota}${hasQuota ? "，卖完后不能再买" : ""}`;
+}
+
+/** 显示用：购买条件这一行换成人话。没有购买条件的一侧保留原来的「未创建」「未设置」，新增商品的「只列填了的项」照旧生效。 */
+export function e1ShownDiff<Row extends { key: string; before?: string; after?: string }>(rows: Row[], before: OpsSku | undefined, after: OpsSku | undefined): Row[] {
+  return rows.map(row => row.key !== "purchaseGate" ? row : {
+    ...row,
+    before: before?.purchaseGate ? e1GateText(before.purchaseGate) : before && after?.purchaseGate ? e1GateText(null) : row.before,
+    after: after?.purchaseGate ? e1GateText(after.purchaseGate) : before?.purchaseGate ? e1GateText(null) : row.after,
+  });
+}
+
 export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuForm) {
   const numericInputs = ["price", "computePoints", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins", ...(after.monthlyTargetUsdt == null ? ["dailyEarn", "shareYieldMin", "shareYieldMax"] : [])];
   return E1_SKU_FIELDS.map(({ key, label, unit }) => {

@@ -13,6 +13,7 @@ import { eDomainLegacyCommands as legacyCommands, e5LegacyCommands as legacyPhon
 import { e5Commands, type E5Command } from "@/lib/admin/e5-command";
 import { e6Commands as commands, type E6DeviceInput as DeviceInput, type E6Payload as Payload, type E6Pending, type E6Proposal, type E6Section } from "@/lib/admin/e6-command";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import type { E2YieldComparison } from "@/lib/admin/e2-client";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused, fetchE5Devices } from "@/lib/admin/e5-client";
 import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskReceipt, type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
@@ -36,7 +37,8 @@ type ProposalDraft = Omit<E6Proposal, "operator" | "operatorRole" | "sos" | "rol
 const Context = createContext<ReturnType<typeof useMutations> | null>(null);
 const isYieldSkuProposal = (payload: Payload) => payload.kind === "proposal" && payload.input.command.op === "e6_onboarding_yield_sku";
 
-function useMutations(refreshYieldBinding: () => Promise<void>) {
+type RefreshYieldBinding = () => Promise<E2YieldComparison[] | undefined>;
+function useMutations(refreshYieldBinding: RefreshYieldBinding) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const owner = session!.adminId, rights = session!.authorities;
   const [pending, setPending] = useState<E6Pending[]>([]);
@@ -183,7 +185,7 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
         if (!checkingProposal && retry && isExplicitRejection(failure)) setRejected(r => [...r, record.commandKey]);
         setNotes(n => ({ ...n, [record.commandKey]: !checkingProposal && isExplicitRejection(failure) ? "按原请求重试被明确拒绝，核对后可以解除这条记录。" : "原请求已保留，结果仍待核实。" }));
         setTechnicalErrors(n => ({ ...n, [record.commandKey]: JSON.stringify(failure instanceof Error ? { ...failure, name: failure.name, message: failure.message } : failure, null, 2) }));
-        if (!checkingProposal && isYieldSkuProposal(record.payload)
+        if (retry && !checkingProposal && isYieldSkuProposal(record.payload)
           && response.backendMessage === "ONBOARDING_COMPARISON_VERSION_CONFLICT") await refreshYieldBinding();
       }
       throw failure;
@@ -247,7 +249,7 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
       if (ticket.status === "approved" && isYieldSkuProposal(record.payload)) await refreshYieldBinding();
       return false;
     } catch (failure) {
-      if (unchangedRecord()) setNotes(n => ({ ...n, [key]: record.ticketId ? TICKET_UNREAD : eReadError(failure) }));
+      if (unchangedRecord()) setNotes(n => ({ ...n, [key]: record.ticketId ? TICKET_UNREAD : `这次没查到：${eReadError(failure)}` }));
       if (releasing) throw failure;
       return false;
     } finally { end(key); }
@@ -286,7 +288,7 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
     } finally { if (active.current) sync(); end(record.commandKey); }
   }
   return { pending, devicePending, legacy, busy: busyKeys.size > 0, isBusy: (key: string) => busyKeys.has(key), sending: sending.current,
-    notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, showYieldSkuActions, canBindYieldSku, proposal, start, check, releaseMissing, checkDirect, send,
+    notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, showYieldSkuActions, canBindYieldSku, proposal, start, check, releaseMissing, checkDirect, send, refreshYieldBinding,
     canInvestigate: canInvestigateECommand("device_e5_read"),
     canInvestigateRisk: canInvestigateECommand("device_e6_read"),
     device: (scope: string, label: string, input: Omit<DeviceInput, "operator">) => start(scope, "phones", label, { kind: "device", input: { ...input, operator: session!.operator || session!.username } }),
@@ -296,7 +298,7 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
     forget: (record: E6Pending) => { commands.forget(record.fingerprint, record.commandKey); sync(); },
   };
 }
-export function E6MutationProvider({ children, refreshYieldBinding }: { children: ReactNode; refreshYieldBinding: () => Promise<void> }) {
+export function E6MutationProvider({ children, refreshYieldBinding }: { children: ReactNode; refreshYieldBinding: RefreshYieldBinding }) {
   const mutations = useMutations(refreshYieldBinding);
   return <Context.Provider value={mutations}>{children}</Context.Provider>;
 }
@@ -359,10 +361,10 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
           : refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对拒绝原因后，可以解除这条记录。" }
             : r.payload.kind === "proposal" ? r.absent ? expired ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing, more: "按原请求查不到这张审批单，说明没建成；确认解除时会再查一次。" }
               : { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
-              : { tag: "结果未知", tone: "warn" as const, line: expired ? RECOVERY_LINE.expired : RECOVERY_LINE.unknown, more: expired ? "已超过 24 小时，不能再重试；查不到这张审批单时可以确认解除。" : "可以查询原结果，或按原请求重试；重试只发原内容和原理由，不会重复建单。" }
+              : { tag: "结果未知", tone: "warn" as const, line: expired ? RECOVERY_LINE.expired : RECOVERY_LINE.unknown, more: expired ? "已超过 24 小时，不能再重试；查不到这张审批单时可以确认解除。" : "重试只发原内容和原理由。" }
               : r.payload.kind === "risk" ? { tag: "结果未知", tone: "warn" as const, line: r.payload.receiptVersion !== 1 ? "旧记录查不到原结果，只能读取现在的设置。" : expired ? RECOVERY_LINE.expired : "先查询原结果；重试不会重复保存。",
                 more: "现在的设置一样，也不代表原保存成功了。" }
-                : { tag: "结果未知", tone: "warn" as const, line: expired ? RECOVERY_LINE.expired : RECOVERY_LINE.direct, more: expired ? "已超过 24 小时，不能再重试；现在的状态不代表原操作的结果。" : "可以查询原结果，或按原请求重试；重试只发原内容和原理由。" };
+                : { tag: "结果未知", tone: "warn" as const, line: expired ? RECOVERY_LINE.expired : RECOVERY_LINE.direct, more: expired ? "已超过 24 小时，不能再重试；现在的状态不代表原操作的结果。" : "重试只发原内容和原理由。" };
       const riskShown = r.payload.kind === "risk" && !outcomes[r.commandKey] && riskReceipts[r.commandKey] ? RISK_STATUS[riskReceipts[r.commandKey].status] : undefined;
       const note = <>
         {noteOf(r) && <span>{noteOf(r)}</span>}
