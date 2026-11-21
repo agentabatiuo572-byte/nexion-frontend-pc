@@ -48,7 +48,8 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
   const blockReason = (row: E2YieldComparison) => candidates.status === "forbidden" ? "需要商品目录的查看权限"
     : m.pending.find(p => p.scope === scopeOf(row))?.terminal ? "原审批已有结论，先在上方点「准备新变更」"
     : m.locked(scopeOf(row)) ? "这一位有待审批或结果未知的更换"
-    : !m.canBindYieldSku || row.bindingRevision == null ? "这一位暂时不能更换，请刷新后核对"
+    : !m.canBindYieldSku ? "需要商品目录的查看权限"
+    : row.bindingRevision == null ? "这一位缺少绑定记录，暂时不能更换，请联系技术支持"
       : candidates.status === "loading" ? "正在加载可选商品"
         : candidates.status === "error" ? "可选商品加载失败，请先重试"
           : !others(row).length ? "没有可替换的在售商品" : undefined;
@@ -115,13 +116,14 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
         </Facts>}
         content={<Fold inset title="技术信息" summary="提交时核对有没有被别人改过"><Facts><Fact k="修改序号">{String(row.bindingRevision ?? "—")}</Fact></Facts></Fold>}
         getPendingReason={() => m.pendingReason(scope)} onClose={() => setConfirm(null)}
+        onBack={() => { setConfirm(null); setPick({ row: ctx.yieldComparisons.find(current => current.configKey === row.configKey) ?? row, skuId: "" }); }}
         onConfirm={async reason => {
           const original = m.pending.find(r => r.scope === scope);
           let receipt: E6WriteReceipt | undefined;
           if (original) receipt = await m.send(original, true);
           else {
             const spec = buildE6OnboardingYieldSkuProposal(row, sku.id);
-            if (!spec) throw new Error("这一位暂时不能更换，请刷新后核对。");
+            if (!spec) throw new Error("这一位缺少绑定记录，暂时不能更换，请联系技术支持。");
             if (!ready || ctx.yieldComparisons.find(current => current.configKey === row.configKey)?.bindingRevision !== row.bindingRevision) {
               throw new Error("ONBOARDING_COMPARISON_VERSION_CONFLICT");
             }

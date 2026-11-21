@@ -359,8 +359,9 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       const seriesReason = hasUnsupportedSeries(s) ? E1_MISSING_SERIES_REASON : undefined;
       const onBlock = writeBlock({ op: "sku-status", status: s.status === "on" ? "off" : "on" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : s.status !== "on" && seriesReason ? seriesReason : s.publishBlocked === true ? publishReason : s.status !== "on" && s.publishBlocked === undefined ? "上架状态未知，请重新加载核对" : s.status !== "on" && !open ? blockers.join("；") : s.status !== "on" && !s.allowedPoolCodes?.length ? "上架前请至少选择一个任务等级" : s.status !== "on" && s.monthlyTargetUsdt == null ? "上架前请设置月收益目标" : s.status !== "on" && s.inventoryMode !== "UNLIMITED" && Number(s.stock) === 0 ? "库存为 0，商品已售罄" : undefined);
       const cardReasons = [...new Set([...blockers, ...(s.publishBlocked === true ? [publishReason] : []), ...(s.publishBlocked === undefined ? ["上架状态待核实"] : []), ...(seriesReason ? [seriesReason] : [])])];
-      const actionReason = onBlock && !cardReasons.some(reason => onBlock.includes(reason)) ? onBlock : undefined;
       const proposal = ctx.pendingProposal(s.id);
+      // 待审批时卡片底部已有「有变更待审批」入口，按钮旁不再写同一件事；不能点的原因仍在按钮提示里。
+      const actionReason = onBlock && !proposal && !cardReasons.some(reason => onBlock.includes(reason)) ? onBlock : undefined;
       const sold = s.sold, stock = s.stock == null ? null : Number(s.stock);
       return <article key={s.id} className="e1-product" data-hit={skuLink === s.id ? "" : undefined} aria-label={s.name}>
         <div className="e1-product-identity">

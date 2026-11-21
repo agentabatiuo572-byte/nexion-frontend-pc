@@ -34,7 +34,7 @@ import { A2RoleGrantsChange, isRoleGrantsTicket, roleGrantsSummary } from "./a2-
  */
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, Archive, ArrowLeft, ClipboardList, CloudOff, Coins, Copy, Download, FileText, Flame, History, Inbox, ListChecks, Lock, RefreshCw, SearchX, Siren, SlidersHorizontal, Users } from "lucide-react";
+import { Archive, ArrowLeft, ClipboardList, CloudOff, Coins, Copy, Download, FileText, Flame, History, Inbox, ListChecks, Lock, RefreshCw, SearchX, Siren, SlidersHorizontal, Users } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
   BlockState, Button, Cell, Change, ConfigList, ConfigRow, Decision, DiffList, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, InlineRetry,
@@ -82,7 +82,6 @@ import { A2_MECHANISM_HELP, A2_MECHANISM_WHERE } from "@/lib/admin/config-help/a
 import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { useUI } from "@/lib/store/ui";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
@@ -95,6 +94,8 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { orderAmount } from "../e-tabs/data";
+import { e1Decimal, e1Value } from "../e-tabs/e1-state";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
 
@@ -805,7 +806,9 @@ const DECISION_REFUSED_REASON: Record<string, string> = {
 /** 共用表认不出的机器码会落到这句兜底；被拒已经确认，它的「请刷新后重试」不对，按没有原因写。 */
 const decisionRefusedReason = (code: string | undefined, fallback: string) => {
   const reason = (code && DECISION_REFUSED_REASON[code.split(":")[0]]) || formatAdminApiError(code, fallback);
-  return reason === UNMAPPED_ADMIN_ERROR_TEXT ? undefined : reason.replace(/[。.]$/, "");
+  if (reason === UNMAPPED_ADMIN_ERROR_TEXT) return undefined;
+  // 被拒后页面已自动重读：共用说明里叫人刷新的半句不写，只留原因。
+  return reason.split(/(?<=[，；])/).filter((part) => !part.includes("刷新")).join("").replace(/[，；。.]+$/, "") || undefined;
 };
 const PARAM_NAME: Record<string, string> = { ttl: "操作理由最短长度", retention: "操作记录保留期", schema: "记录字段版本" };
 const PARAM_TITLE: Record<"ttl" | "retention" | "schema", string> = { ttl: "调整操作理由最短长度", retention: "调整操作记录保留期", schema: "升级记录字段版本" };
@@ -1061,10 +1064,16 @@ function reviewPair(before: string, after: string, operationCode?: string) {
   const a = parseReview(operationCode === "g_param" ? gParamText(after) : k1ApprovalSummaryText(after, operationCode));
   const labels = hiReviewLabels(operationCode);
   const original = { b, a, labels, evidenceKeys: [] as string[] };
-  // E1 商品的所属系列：后端冻结的是代码值，这里换成名称。新建没有前值；旧票没有这一项时不补。
+  // E1 商品：后端冻结的是代码值（系列、档位、商城状态、生命周期、库存模式），这里换成和商品页一样的名称，价格带币种。新建没有前值；旧票没有这一项时不补。
   if (operationCode === "e1_sku_create" || operationCode === "e1_sku_update") {
-    const named = (review: Review | null): Review | null => review?.kind === "object" && "seriesCode" in review.value
-      ? { kind: "object", value: { ...review.value, seriesCode: skuSeriesText(review.value.seriesCode) } } : review;
+    const named = (review: Review | null): Review | null => {
+      if (review?.kind !== "object") return review;
+      const value = { ...review.value };
+      if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
+      for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
+      if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${e1Decimal(value.price)} USD`;
+      return { kind: "object", value };
+    };
     return { b: named(b), a: named(a), labels: { ...labels, seriesCode: "所属系列" }, evidenceKeys: [] as string[] };
   }
   // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
@@ -1409,6 +1418,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /* 网址：进页读一次，之后回写（ST-23）。 */
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState<A2Tab>("pending");
+  // 决定被拒的提示：记录已解除，原因只在这里；留在页签上方直到点「知道了」或切页签，不盖页头和统计。
+  const [refusals, setRefusals] = useState<string[]>([]);
   const [view, setView] = useState<RecordView>("logs");
   const [qType, setQType] = useState<QType>("all");
   const [qOperator, setQOperator] = useState<QOperator>("all");
@@ -1675,7 +1686,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   if (history) historyShown.current = history;
 
   const closeDrawers = () => { setTicketId(null); setLogId(null); setHistoryId(null); setConfirmListOpen(false); };
-  const chooseTab = (next: A2Tab) => { closeDrawers(); setTab(next); };
+  const chooseTab = (next: A2Tab) => { closeDrawers(); setRefusals([]); setTab(next); };
 
   /* ────────────────── 写操作的共用路 ────────────────── */
 
@@ -1823,9 +1834,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       syncPending();
       clearDecisionPendingNote(record);
       if (receipt.state === "REJECTED") {
-        // 记录随即解除，拒绝原因只在这条提示里：这一种不自动消失，运营看完自己关（协调人定，不另外常留）。
+        // 记录随即解除，拒绝原因只在这条提示里：不自动消失，运营点「知道了」或切页签才收起（协调人定，不另外常留）。
         const why = receipt.businessMessage ? decisionRefusedReason(receipt.businessMessage, receipt.businessMessage) : undefined;
-        useUI.getState().pushToast({ kind: "warn", title: DECISION_REFUSED(DECISION_VERB[kind], record.target, why), durationMs: 0 });
+        setRefusals((current) => [...current, DECISION_REFUSED(DECISION_VERB[kind], record.target, why)]);
       } else toast(DECISION_DONE(DECISION_VERB[kind], record.target), "success");
     } else {
       const check = receipt.state === "PROCESSING" ? "processing" : "unconfirmed";
@@ -2295,7 +2306,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       // 低于红线时共用框写的是发起人的话（「暂时不能提交」）：这里不把读数交给共用框，自己写读数和批准人的话，按钮照样禁用。
       coverage: amplifies && !belowRedline ? coverage : undefined,
       coverageLead: amplifies && belowRedline ? <span className="a2-coverage-unknown">兑付覆盖率 {fmtPct(coverage.coverageRatio)}，低于红线 {fmtConfigPct(coverage.redlinePct)}</span>
-        : amplifies && !coverage ? <span className="a2-coverage-unknown"><AlertTriangle size={14} aria-hidden />{fund?.coverageUnknown ?? "会让平台多付钱，兑付覆盖率暂时读不到"}</span> : fund?.coverageLead,
+        : amplifies && !coverage ? <span className="a2-coverage-unknown">{fund?.coverageUnknown ?? "会让平台多付钱，兑付覆盖率暂时读不到"}</span> : fund?.coverageLead,
       coverageCheck: fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
       blockedReason: amplifies && belowRedline ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined,
       reasonMin,
@@ -2595,32 +2606,37 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     void navigator.clipboard?.writeText(value).then(() => toast("已复制审批单号", "success"), () => toast("复制失败，请手动选择单号", "error"));
   };
 
-  const pendingNotices = pendingCommands.map((record) => {
+  // 结果未知的决定收成一个面板：每条一行，细节点开看，默认露三条（提示不能盖住正事）。
+  const pendingItems: RecoveryItem[] = pendingCommands.map((record) => {
     const expired = isRetryExpired(record);
     const amount = retryAmount(record);
-    return (
-      <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} actionBelow
-        action={<>
-          <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
-          <Button size="sm" disabled={!!submitting} disabledReason={retryBlock(record)} onClick={() => void retryPending(record)}>按原请求重试</Button>
-          {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
-          <Button size="sm" variant="ghost" onClick={() => showInRecords(record)}>在操作记录里查看</Button>
-        </>}>
-        <p>
-          {bizTime(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，{record.kind === "approve" && (record.operationCode === "i5_disclosure_publish" || record.operationCode === "i4_disclosure_publish") ? "这版可能已经封存" : "可能已经生效"}。{expired ? RETRY_EXPIRED : RECOVERY_HINT[record.kind]}
-          <Explain label="技术信息" content={`原请求编号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
-        </p>
+    const note = pendingNotes[record.fingerprint];
+    const check = note?.check ? DECISION_CHECK[note.check] : undefined;
+    const sealed = record.kind === "approve" && (record.operationCode === "i5_disclosure_publish" || record.operationCode === "i4_disclosure_publish");
+    return {
+      key: record.fingerprint, object: record.label, createdAt: record.createdAt,
+      tag: <StatusTag tone="warn">结果未知</StatusTag>,
+      line: `${sealed ? "这版可能已经封存" : "可能已经生效"}。${expired ? RETRY_EXPIRED : RECOVERY_HINT[record.kind]}`,
+      result: note ? { tag: check ? <StatusTag tone={check.tone} icon={check.icon}>{check.label}</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>, line: note.text } : undefined,
+      note: note?.text,
+      actions: <>
+        <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
+        <Button size="sm" disabled={!!submitting} disabledReason={retryBlock(record)} onClick={() => void retryPending(record)}>按原请求重试</Button>
+        {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+      </>,
+      detail: <>
+        <p>{bizTime(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，理由：{record.reason}</p>
         {amount && <p>退款金额 {amount.state === "ok" ? <b className="a2-amount">{refundAmountText(amount)}</b> : <span className="a2-warn-text">{refundAmountText(amount)}</span>}
           {amount.state === "error" && recordOrderNo(record) && <> <InlineRetry onRetry={() => void loadMain()} /></>}</p>}
         {/* 只有批准会再核对业务权限；这类单驳回、撤回时后端不核对（AuditReplayBusinessPermissionGuard.validateDecisionPermission）。 */}
         {record.kind === "approve" && recordRule(record).backendChecks && <p>{BACKEND_CHECKS_NOTE}。</p>}
-        {pendingNotes[record.fingerprint] && <p className="a2-pending-check">
-          {pendingNotes[record.fingerprint].check && <StatusTag tone={DECISION_CHECK[pendingNotes[record.fingerprint].check!].tone} icon={DECISION_CHECK[pendingNotes[record.fingerprint].check!].icon}>{DECISION_CHECK[pendingNotes[record.fingerprint].check!].label}</StatusTag>}
-          <span>{pendingNotes[record.fingerprint].text}</span>
-        </p>}
-      </Notice>
-    );
+        <p><Button size="sm" variant="ghost" onClick={() => showInRecords(record)}>在操作记录里查看</Button></p>
+      </>,
+      tech: <p className="rd-note">技术信息：原请求编号 <span data-mono>{record.commandKey}</span> ｜ 操作人 {record.operator}</p>,
+    };
   });
+  const pendingNotices = <RecoveryPanel title={recoveryTitle(pendingItems.length)} items={pendingItems}
+    explain="有结论前不要重复处理这几张单。点行首的箭头看发出时间、理由和原请求编号。" />;
 
   /* 待审批：行内按钮都是小号次按钮，点了只开确认框（D2 新手测试）。整屏主按钮只有抽屉里的「批准」（DP-40）。
      没有这张单的业务权限时不显示批准、驳回（OP-124）；整页一行都没有可做的事时不画「操作」列（建议 3）。 */
@@ -2965,6 +2981,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </span>}
         readOnly={readOnly} />
 
+      {refusals.length > 0 && <Notice tone="warn" title={refusals.length === 1 ? refusals[0] : `${refusals.length} 个决定没有执行`}
+        action={<Button size="sm" onClick={() => setRefusals([])}>知道了</Button>}>{refusals.length > 1 && refusals.map((text, index) => <p key={index}>{text}</p>)}</Notice>}
       {pendingNotices}
 
       <PageTabs ids={tabIds} label="操作记录与审批内容" value={tab} onChange={chooseTab} items={[
@@ -2984,7 +3002,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         nav={{ hasPrev: Boolean(prevTicket), hasNext: Boolean(nextTicket), onPrev: () => { if (prevTicket) setTicketId(prevTicket.id); }, onNext: () => { if (nextTicket) setTicketId(nextTicket.id); } }}
         footer={ticketFooter}>
         {shown && <>
-          {pendingTicketIds.has(shown.id) && <Notice tone="warn">这张单有一次操作结果未知，先到页面上方查询原结果，不要重复处理；单子状态变了也不算查到结果。</Notice>}
+          {pendingTicketIds.has(shown.id) && <Notice tone="warn">这张单有一次决定结果未知，先到页面上方「查询原结果」，查清前不要重复处理。</Notice>}
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={judgment} />
           {shown.coverageCheckOnApproval && <Notice tone="warn">{approvalCoverageCopy(shown)}</Notice>}
           {shown.amplifies && !shown.coverageCheckOnApproval && <Notice tone="warn">{shownFundCheck}</Notice>}

@@ -5,6 +5,7 @@ import { BlockState, Button, Check, CheckGroup, Decision, DiffList, Drawer, Expl
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fetchSkuDatacenterLabels, fetchTaskPools, type TaskPool } from "@/lib/admin/task-pool-client";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import { ADMIN_ERROR_MESSAGES, guardedFetch, displayAdminError } from "@/lib/admin/error-messages";
@@ -249,7 +250,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (!/^\d+(?:\.\d+)?$/.test(form.price.trim()) || Number(form.price) <= 0) e.price = "售价须为大于 0 的 USD 金额";
     if (form.id.trim().toLowerCase() === "phone") e.id = "phone 是手机策略的专用编号";
     const seriesError = validateSkuSeries(form, original);
-    if (seriesError) e.seriesCode = ADMIN_ERROR_MESSAGES[seriesError];
+    if (seriesError) e.seriesCode = ADMIN_ERROR_MESSAGES[seriesError].replace(/。$/, "");
     if (form.datacenter.trim().length > 128) e.datacenter = "托管机房最多 128 字";
     if (original?.status === "on") {
       if (!form.allowedPoolCodes.length) e.allowedPoolCodes = "在售商品至少要选择一个任务等级";
@@ -278,7 +279,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (gates?.skuReviewContractVersion !== 1) e.form = "商品审核暂时不可用，请刷新后重试；已填写的内容会保留";
     if (!writable) e.form = "当前不能提交，请核对权限和目录读取状态";
     if (mediaBusy || mediaPending || media && !media.assetId) e.media = "媒体上传尚未确认，请先核对原文件";
-    if (!acceptedRevision && latestChanged) e.form = "商品修订已变化，请核对新旧修订后继续";
+    if (!acceptedRevision && latestChanged) e.form = "商品已被别人改过，请先核对别人改了什么";
     for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
       const error = appVisibleTextError(form[key], label);
       if (!error) continue;
@@ -330,7 +331,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   return <>
     <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
       {errors.form && <Notice tone="warn" title={errors.form} />}
-      {latestChanged && <Notice tone="warn" title="商品修订已变化，本地输入仍保留"><Facts><Fact k="打开时修订">{original.updatedAt}</Fact><Fact k="最新修订">{currentSku?.updatedAt}</Fact></Facts>{currentSku && <Fold inset title="读取期间的商品变化" summary="核对完整前后值"><DiffList rows={e1SkuDiff(original, currentSku)} /></Fold>}<Check label="我已核对最新修订，保留本地改动" checked={false} onChange={e => { if (e.target.checked && currentSku) adoptRevision(currentSku, form, original, media); }} /></Notice>}
+      {latestChanged && <Notice tone="warn" title="商品已被别人改过，你填的内容还在" action={currentSku ? <Button size="sm" onClick={() => adoptRevision(currentSku, form, original, media)}>已核对，保留我的修改</Button> : undefined}><Facts><Fact k={`别人保存于（${businessZone().label}）`}>{formatBusinessTimeCompact(currentSku?.updatedAt, "—")}</Fact></Facts>{currentSku && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={e1SkuDiff(original, currentSku)} /></Fold>}</Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
         <EditorSection id="e1-basic" title="基本信息">
           <div className="rd-form-grid">{field("name", "型号名称", { required: true, placeholder: "UVELBox Pro v3", explain: APP_VISIBLE_TEXT_HINT })}{field("id", "商品编号", { disabled: !!editId, help: editId ? "创建后不能修改" : "只做唯一标识，留空按型号名称生成" })}

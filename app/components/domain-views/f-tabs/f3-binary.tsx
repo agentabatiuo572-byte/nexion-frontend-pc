@@ -464,7 +464,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           {example
             ? <>最近一条：{example.user} 在 {example.settlementDate || "—"} 的结算，A 组 {amountText(example.aRaw, example.a)} USDT、B 组 {amountText(example.bRaw, example.b)} USDT，匹配 {amountText(example.matchRaw, example.match)} USDT，{example.platformReductionPct !== null && Number(example.platformReductionPct) > 0 ? `全平台封顶缩减 ${reductionText(example.platformReductionPct)}，` : ""}记账 {amountText(example.todayRaw, example.today)} USDT（{stateOf(example.state).label}{example.todayRaw === undefined ? "，整数" : ""}）</>
             : "还没有结算记录，第一笔结算后这里写出一条真实的例子。"}
-          <Explain label="这条例子怎么来的" content={`取结算记录里最新的一条，金额是${example?.todayRaw === undefined ? "取整后的整数" : "这条记录的原值"}；这条记录用的是当时的门槛、比例和上限，不一定是现在的。`} />
+          <Explain label="这条例子怎么来的" content={`取结算记录里最新的一条，金额是${example?.todayRaw === undefined ? "取整后的整数" : "这条记录的原值"}；这条记录用的是当时的门槛、比例、每人每期上限和全平台封顶，不一定是现在的。`} />
         </p>
       </Panel>
 

@@ -6,7 +6,7 @@
  * 设置行和确认框只做样子，提交、查询、重试都调 F 域上下文现成的函数（submitF3PayoutControl、
  * recoverF3PayoutControl、recoverF3），方向用 planF3PayoutControl 判断，和提交时一致。
  */
-import { ArrowLeftRight, CircleHelp, Clock3, Hourglass, PauseCircle, PlayCircle } from "lucide-react";
+import { ArrowLeftRight, CalendarClock, CalendarOff, CircleHelp, Clock3, Hourglass } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Change, ConfigRow, Fact, Facts, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
@@ -73,7 +73,7 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
     const valueTag = missing
       ? <span className="f3-cfg-value" data-empty="">—</span>
       : auto
-        ? autoNow ? <StatusTag tone="ok" icon={PlayCircle}>已开启</StatusTag> : <StatusTag tone="neutral" icon={PauseCircle}>已关闭</StatusTag>
+        ? autoNow ? <StatusTag tone="ok" icon={CalendarClock}>已开启</StatusTag> : <StatusTag tone="neutral" icon={CalendarOff}>已关闭</StatusTag>
         : <span className="f3-cfg-value">{pctText(capNow!)}</span>;
     const pendingTag = direct ? unknownTag(direct)
       : original ? <StatusTag tone="warn" icon={CircleHelp} explain={canLower
@@ -87,7 +87,7 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
         : direct ? "先查清原操作再改"
         : original ? "先查清原申请再改"
         : approval ? auto ? "开启在等批准，批准或驳回前不能再提交" : `调高到 ${payoutValueText(key, approval.after)} 在等批准；调低仍立即生效`
-        : auto ? autoNow ? "关闭立即生效" : `开启要${SUPER}批准` : "调低立即生效 · 调高要批准";
+        : auto ? autoNow ? "关闭立即生效，手动照常" : `开启要${SUPER}批准` : "调低立即生效 · 调高要批准";
     const disabledReason = missing ? "这一项没读到，重新加载后再改"
       : auto && !autoNow && approval ? "开启已在等审批，批准或驳回前不能再提交" : undefined;
     const action = direct || (original && !canLower)
@@ -189,7 +189,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
       </> : <>
         <Fact k="批准前">仍是关闭</Fact>
         <Fact k="关闭期间的周期">不补发，要补的手动结算</Fact>
-        <Fact k="更早没结完的期">先手动补结，之后才会自动结算</Fact>
+        <Fact k="更早没结完的期">只影响有这种期的邀请人：手动补结后才自动结算</Fact>
         {!canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，提交会被拦下</Fact>}
       </>}
     </Facts>;
