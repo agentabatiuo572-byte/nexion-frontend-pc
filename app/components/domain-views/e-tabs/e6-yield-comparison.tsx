@@ -48,7 +48,7 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
   const blockReason = (row: E2YieldComparison) => candidates.status === "forbidden" ? "需要商品目录的查看权限"
     : m.pending.find(p => p.scope === scopeOf(row))?.terminal ? "原审批已有结论，先在上方点「准备新变更」"
     : m.locked(scopeOf(row)) ? "这一位有待审批或结果未知的更换"
-    : !m.canBindYieldSku ? "需要商品目录的查看权限"
+    : !m.canBindYieldSku ? "当前账号缺少商品目录或审批记录的查看权限"
     : row.bindingRevision == null ? "这一位缺少绑定记录，暂时不能更换，请联系技术支持"
       : candidates.status === "loading" ? "正在加载可选商品"
         : candidates.status === "error" ? "可选商品加载失败，请先重试"

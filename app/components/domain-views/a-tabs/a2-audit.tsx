@@ -2621,7 +2621,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       tag: <StatusTag tone="warn">结果未知</StatusTag>,
       line: `${sealed ? "这版可能已经封存" : "可能已经生效"}。${expired ? RETRY_EXPIRED : RECOVERY_HINT[record.kind]}`,
       result: note ? { tag: check ? <StatusTag tone={check.tone} icon={check.icon}>{check.label}</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>, line: note.text } : undefined,
-      note: note?.text,
+      // 查询的回答已在 result 里替换这一行的结论；noteKey 只让回答变了时自动展开，不在展开内容里再写一遍。
+      noteKey: note?.text,
       actions: <>
         <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
         <Button size="sm" disabled={!!submitting} disabledReason={retryBlock(record)} onClick={() => void retryPending(record)}>按原请求重试</Button>
