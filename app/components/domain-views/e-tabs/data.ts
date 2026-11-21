@@ -3,6 +3,7 @@
  * server-canonical:E1/E2/E3/E4 展示值来自后端接口;E5 设备管理来自设备接口。
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
+import { warrantyMonths } from "@/lib/admin/warranty-months";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import type { StateTone } from "@/app/components/rd";
@@ -205,7 +206,7 @@ export function skuToForm(s: OpsSku): SkuForm {
   return {
     name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", seriesCode: s.seriesCode ?? "", tagline: s.tagline ?? "", badge: s.badge ?? "",
     gpuCount: gpuParts.count, specDocumentTitle: s.specDocumentTitle ?? "", specDocumentUrl: s.specDocumentUrl ?? "",
-    gpu: gpuParts.model, vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
+    gpu: gpuParts.model, vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: warrantyMonths(s.warranty) ?? s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
     allowedPoolCodes: s.allowedPoolCodes ?? [],
     price: str(s.price), computePoints: str(s.computePoints),
     dailyEarn: s.monthlyTargetUsdt == null ? str(s.dailyEarn) : "", dailyEarnNEX: str(s.dailyEarnNEX ?? undefined),
@@ -442,7 +443,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     name: f.name.trim(), id: f.id.trim() || existing?.id || f.name.trim(),
     tier: f.tier, seriesCode: f.seriesCode || undefined, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
     specDocumentTitle: f.specDocumentTitle.trim() || undefined, specDocumentUrl: f.specDocumentUrl.trim() || undefined,
-    gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
+    gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty ? `${f.warranty} months` : undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
     allowedPoolCodes: f.allowedPoolCodes,
     price, computePoints: skuNumU(f.computePoints) ?? existing?.computePoints,
     dailyEarn, dailyEarnNEX, shareYieldMin, shareYieldMax, baseRate,

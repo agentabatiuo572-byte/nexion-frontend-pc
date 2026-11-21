@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { warrantyMonths } from "@/lib/admin/warranty-months";
 import { Boxes, ImageIcon } from "lucide-react";
 import { BlockState, Button, Check, CheckGroup, Decision, DiffList, Drawer, Explain, Facts, Fact, Field, Fold, Input, LevelStrip, Modal, Notice, NumberInput, ReleaseModal, SectionNav, Select, Textarea, useSectionNav } from "@/app/components/rd";
 import type { OpsSku } from "@/lib/admin/platform-types";
@@ -34,7 +35,7 @@ function EditorSection({ id, title, children }: { id: string; title: string; chi
   return <section id={`section-${id}`} className="e1-editor-section"><h3 tabIndex={-1} data-section-focus>{title}</h3><div className="e1-section-fields">{children}</div></section>;
 }
 
-/** App 用户能看到的九个字段：含中文时字段下马上提示，提交时同样拦下。 */
+/** App 用户能看到的字段：含中文时字段下马上提示，提交时同样拦下。 */
 const E1_APP_VISIBLE_FIELDS = [
   ["name", "型号名称"],
   ["badge", "营销角标"],
@@ -43,13 +44,19 @@ const E1_APP_VISIBLE_FIELDS = [
   ["power", "功耗 / 功率说明"],
   ["datacenter", "托管机房"],
   ["uptime", "在线率"],
-  ["warranty", "质保期限"],
   ["specDocumentTitle", "资料名称"],
 ] as const;
 /** 交付设备认得的功耗写法（后端按这几种取瓦数，写成别的设备交付不了）。 */
 const E1_POWER_FORMATS = ["1800", "1,800 W", "1,800 W TDP", "1,800 W (per-GPU rated)", "1,800 W (combined GPU rated)"];
 
 const imageIdentity = (m: Media) => JSON.stringify([m?.assetId ?? "", m?.objectKey ?? ""]);
+
+function warrantyError(value: string, original?: string): string {
+  if (value === original && warrantyMonths(value) === undefined) {
+    return containsHan(value) ? "原质保条款含中文，请换成月数或清除" : "";
+  }
+  return value && !/^\d{1,121}$/.test(value) ? "请填写有效的非负整数月数" : "";
+}
 
 function skuMedia(sku?: OpsSku): Media {
   return sku?.imageAssetId && sku.imageObjectKey ? { kind: /\.(mp4|webm|mov)$/i.test(sku.imageObjectKey) ? "video" : "image", src: "", name: sku.imageObjectKey.split("/").pop() ?? "商品媒体", assetId: sku.imageAssetId, objectKey: sku.imageObjectKey } : null;
@@ -62,6 +69,8 @@ function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media): Op
     // A complete snapshot must retain untouched values, including legacy formatting.
     const earningsChanged = ["monthlyTargetUsdt", "monthlyTargetBandPct", "dailyEarn", "dailyEarnNEX", "shareYieldMin", "shareYieldMax", "tier", "price"].some(key => form[key as keyof SkuForm] !== opened[key as keyof SkuForm]);
     for (const { key } of E1_SKU_FIELDS) {
+      if (key === "warranty" && warrantyMonths(original.warranty) !== undefined && containsHan(original.warranty ?? "")
+        && JSON.stringify(form) !== JSON.stringify(opened)) continue;
       if (["dailyEarn", "shareYieldMin", "shareYieldMax", "gpu"].includes(key)) continue;
       if (key in opened && JSON.stringify(form[key as keyof SkuForm]) === JSON.stringify(opened[key as keyof SkuForm])) Object.assign(draft, { [key]: original[key] });
     }
@@ -265,7 +274,8 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     for (const key of ["aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"] as const) if (form[key].trim() && (!/^-?\d+$/.test(form[key].trim()) || BigInt(form[key]) < BigInt("-9223372036854775808") || BigInt(form[key]) > BigInt("9223372036854775807"))) e[key] = "请填写 64 位整数，不能含小数";
     for (const key of ["gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap"] as const) if (form[key].trim() && !/^\d+$/.test(form[key].trim())) e[key] = "请填写非负整数";
     if (form.uptime.length > 64) e.uptime = "在线率最多 64 字";
-    if (form.warranty.length > 128) e.warranty = "质保期限最多 128 字";
+    const invalidWarranty = warrantyError(form.warranty, original?.warranty ?? undefined);
+    if (invalidWarranty) e.warranty = invalidWarranty;
     if (form.inventoryMode === "FINITE" && (!/^\d+$/.test(form.stock) || Number(form.stock) > 2147483647)) e.stock = "库存须为 0～2147483647 的整数";
     if (form.tier !== "Share" && form.inventoryMode === "UNLIMITED") e.inventoryMode = "仅共享份额可用不限库存";
     const specError = validateSkuSpecs(form, original);
@@ -311,13 +321,13 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   };
   const review = () => { reviewDraft(form, original, media); };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
-  const appTextErrors: Record<string, string> = {};
+  const appTextErrors: Record<string, string> = { warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
   for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
     const error = appVisibleTextError(form[key], label);
     if (error && !(key === "power" && form.tier === "Share")) appTextErrors[key] = error;
   }
   const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: ReactNode; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={errors[key] || appTextErrors[key]} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
-    {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
+    {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={key === "warranty" && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? "" : String(form[key])} onChange={e => update(key, e.target.value)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
   </Field>;
   const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未知" : !dirty || original && !changes.length ? "没有修改" : undefined;
   const sectionItems = SECTIONS.map((s, index) => {
@@ -397,9 +407,10 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
         <EditorSection id="e1-specs" title="规格与资料">
           <div className="rd-form-grid">{field("gpu", "GPU 型号（单卡）", { placeholder: "RTX 4090", explain: APP_VISIBLE_TEXT_HINT })}{field("gpuCount", "GPU 数量", { number: true, min: 1, max: 1024, step: 1, help: "1～1024，须同时填写单卡型号" })}{form.tier === "Share" ? field("vram", "显存", { placeholder: "不适用（共享份额）", explain: "共享份额不是独立设备，没有显存；留空时 App 显示「不适用」。" }) : field("vram", "显存")}
             {form.tier !== "Share" && <>{field("hashRate", "算力")}{field("power", "功耗 / 功率说明", { placeholder: "1,800 W (combined GPU rated)", help: `${APP_VISIBLE_TEXT_HINT}，如 1,800 W`, explain: <><span className="rd-keep">只能用下面几种写法，数值大于 0。</span><span className="rd-keep">写成别的，用户下单后设备会交付失败。</span><br />{E1_POWER_FORMATS.map((format, index) => <span key={format}>{index ? "、" : ""}<span className="rd-keep">{format}</span></span>)}</> })}</>}
-            {field("uptime", "在线率", { hint: "最多64字", placeholder: "99.9%", explain: APP_VISIBLE_TEXT_HINT })}{field("warranty", "质保期限", { hint: "最多128字", placeholder: "24 months", explain: APP_VISIBLE_TEXT_HINT })}
+            {field("uptime", "在线率", { hint: "最多64字", placeholder: "99.9%", explain: APP_VISIBLE_TEXT_HINT })}{field("warranty", "质保期限（月）", { number: true, min: 0, step: 1, placeholder: "24", help: form.warranty && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? `原质保条款：${form.warranty}。填写月数可替换。` : undefined })}
             {form.tier !== "Share" && <>{field("aiImageGenPerMin", "图像生成 张/分钟", { number: true, step: 1 })}{field("aiLlmTokensPerSec", "大模型推理（词元/秒）", { number: true, step: 1 })}{field("aiVideoMinPerHour", "每小时可渲染视频时长（分钟）", { number: true, step: 1 })}{field("aiFineTuneMins", "LoRA 微调（分钟）", { number: true, step: 1 })}</>}
           </div>
+          {form.warranty && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined && <Button size="sm" disabled={busy} onClick={() => update("warranty", "")}>清除原质保条款</Button>}
           {field("specDocumentTitle", "资料名称", { hint: "最多200字", placeholder: "Manufacturer specifications", explain: `${APP_VISIBLE_TEXT_HINT}。商品外部资料的入口名称；批准后商品详情在名称与安全链接同时存在时显示。` })}
           {field("specDocumentUrl", "资料链接", { hint: "HTTPS，最多2048字", help: "不能含账号密码；同时清空名称和链接可移除", explain: "公开资料的HTTPS地址，不会自动下载或审核链接内容。" })}
           <Field label="特性清单 · 每行一条" explain="商品特性文字，批准后供目录读取；逐行去除空行。"><Textarea aria-label="特性清单 · 每行一条" value={form.features} onChange={e => update("features", e.target.value)} /></Field>
