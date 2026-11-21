@@ -808,7 +808,7 @@ const decisionRefusedReason = (code: string | undefined, fallback: string, appro
   const reason = approvalReason ?? ((code && DECISION_REFUSED_REASON[code.split(":")[0]]) || formatAdminApiError(code, fallback));
   if (reason === UNMAPPED_ADMIN_ERROR_TEXT) return undefined;
   // 被拒后页面已自动重读：共用说明里叫人刷新的半句不写，只留原因。
-  return reason.split(/(?<=[，；])/).filter((part) => !part.includes("刷新")).join("").replace(/[，；。.]+$/, "") || undefined;
+  return reason.split(/(?<=[，；。])/).filter((part) => !part.includes("刷新")).join("").replace(/[，；。.]+$/, "") || undefined;
 };
 const PARAM_NAME: Record<string, string> = { ttl: "操作理由最短长度", retention: "操作记录保留期", schema: "记录字段版本" };
 const PARAM_TITLE: Record<"ttl" | "retention" | "schema", string> = { ttl: "调整操作理由最短长度", retention: "调整操作记录保留期", schema: "升级记录字段版本" };
@@ -1842,9 +1842,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       if (receipt.state === "REJECTED") {
         // 记录随即解除，拒绝原因只在这条提示里：不自动消失，运营点「知道了」或切页签才收起（协调人定，不另外常留）。
         const code = receipt.businessMessage;
-        const why = code ? decisionRefusedReason(code, code, kind === "approve"
-          ? approvalRefusedText(record.operationCode ?? recordTicket(record)?.operationCode, code) : undefined) : undefined;
-        setRefusals((current) => [...current, DECISION_REFUSED(DECISION_VERB[kind], record.target, why)]);
+        const approvalReason = code && kind === "approve" ? approvalRefusedText(record.operationCode ?? recordTicket(record)?.operationCode, code) : undefined;
+        const why = code ? decisionRefusedReason(code, code, approvalReason) : undefined;
+        // 专项原因本身已写明「这次批准没有执行」和单子现状，不再套「…没有执行：」。
+        setRefusals((current) => [...current, approvalReason && why ? `${record.target}：${why}。` : DECISION_REFUSED(DECISION_VERB[kind], record.target, why)]);
       } else toast(DECISION_DONE(DECISION_VERB[kind], record.target), "success");
     } else {
       const check = receipt.state === "PROCESSING" ? "processing" : "unconfirmed";
