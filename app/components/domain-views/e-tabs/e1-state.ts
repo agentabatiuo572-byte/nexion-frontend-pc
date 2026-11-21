@@ -186,7 +186,7 @@ export function e1GateText(gate: Partial<Record<keyof PurchaseGate, unknown>> | 
   const quota = hasQuota ? `销售配额 ${shown(gate.quotaCap)} 件（累计）、已售 ${shown(gate.quotaSold ?? 0)} 件` : "不限量";
   if (gate.enforce === false) {
     const filled = [rules.length ? who : "", hasQuota ? quota : ""].filter(Boolean);
-    return `不生效，谁都能买${filled.length ? `；已填：${filled.join("；")}` : ""}`;
+    return `不生效，不检查用户条件和配额${filled.length ? `；已填：${filled.join("；")}` : ""}`;
   }
   return `${who}；${quota}${hasQuota ? "，卖完后不能再买" : ""}`;
 }
