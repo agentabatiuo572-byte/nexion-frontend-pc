@@ -31,6 +31,8 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
     setPhraseBusy(true); setPhraseError("");
     try { setPhrases(await action()); setPhraseDraft(""); } catch (e) { setPhraseError(displayAdminError(e)); } finally { setPhraseBusy(false); }
   }
+  // 客户语言是长码（id-ID），附加语言的问答存短码（id）：按主语言码比较。
+  const sameLanguage = (a: string, b: string) => a.split("-")[0].toLowerCase() === b.split("-")[0].toLowerCase();
   // M-47: published FAQ answers can be looked up and inserted without leaving the conversation.
   const faqs: Array<{ id: string; question: string; answer: string; status: string; language: string }> = (() => {
     try {
@@ -38,17 +40,18 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
       if (!Array.isArray(rows)) return [];
       const published = rows.filter(row => row?.status === "published" && typeof row.answer === "string");
       if (faqLanguage === undefined) return published;
-      const localized = published.filter(row => row.language === faqLanguage);
+      const localized = published.filter(row => typeof row.language === "string" && sameLanguage(row.language, faqLanguage));
       return localized.length ? localized : published.filter(row => row.language === "en-US");
     } catch {
       return [];
     }
   })();
   // 名字和「知识库」页一致；不认识的语言码原样写出来。
-  const languageName = (code: string) => ({ "zh-CN": "中文", "en-US": "英语", "vi-VN": "越南语", id: "印尼语", ms: "马来语", fil: "菲律宾语", ru: "俄语", kk: "哈萨克语", uz: "乌兹别克语" } as Record<string, string>)[code] ?? code;
+  const LANGUAGE_NAMES: Record<string, string> = { "zh-CN": "中文", "en-US": "英语", "vi-VN": "越南语", id: "印尼语", ms: "马来语", fil: "菲律宾语", ru: "俄语", kk: "哈萨克语", uz: "乌兹别克语" };
+  const languageName = (code: string) => LANGUAGE_NAMES[code] ?? LANGUAGE_NAMES[code.split("-")[0]] ?? code;
   // 单个客户：列表只有一种语言，语言写在条数后面；客户语言没有时退到英语，写明「X 暂无」。群发：每条标语言。
-  const faqLanguageText = faqLanguage === undefined || !faqs.length ? "" : faqs[0].language === faqLanguage ? ` · ${languageName(faqLanguage)}` : ` · 英语（${languageName(faqLanguage)}暂无）`;
-  const faqEmptyText = faqLanguage === undefined ? "还没有已发布的问答" : faqLanguage === "en-US" ? "还没有已发布的英语问答" : `${languageName(faqLanguage)}和英语都还没有已发布的问答`;
+  const faqLanguageText = faqLanguage === undefined || !faqs.length ? "" : sameLanguage(faqs[0].language, faqLanguage) ? ` · ${languageName(faqLanguage)}` : ` · 英语（${languageName(faqLanguage)}暂无）`;
+  const faqEmptyText = faqLanguage === undefined ? "还没有已发布的问答" : sameLanguage(faqLanguage, "en-US") ? "还没有已发布的英语问答" : `${languageName(faqLanguage)}和英语都还没有已发布的问答`;
   const [faqQuery, setFaqQuery] = useState("");
   const faqMatches = faqs.filter(f => !faqQuery.trim() || `${f.question}${f.answer}`.includes(faqQuery.trim()));
   const faqAvailable = ctx.pget("I.support.knowledgeAvailable") === "1";
