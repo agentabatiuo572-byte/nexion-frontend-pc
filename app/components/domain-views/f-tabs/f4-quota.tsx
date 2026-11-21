@@ -81,6 +81,9 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
   const quotaName = (usage: F4LeadershipPoolOverview["quotaUsages"][number]) => data.quotaRows.find((row) => (usage.quotaCode && row.quotaCode === usage.quotaCode) || (usage.productNo && row.productNo === usage.productNo))?.name;
   const productName = (usage: F4LeadershipPoolOverview["quotaUsages"][number]) => quotaName(usage) ?? (usage.productNo || usage.quotaCode);
   const shown = stageFilter ? stages.filter(({ stage }) => stage.key === stageFilter) : stages;
+  // Pro / Rack 月额度取在卖档位里名字带 Pro / Rack 的第一个；那一档额度没读到时，后端的数只按已用算，不当额度显示。
+  const unlockValue = (code: string, label: string) => data.quotaRows.find((row) => row.status === 1 && row.name.toUpperCase().includes(code))?.monthlyQuota === null
+    ? <>—<span className="f4-muted"> · 月额度没读到</span></> : monthQuota(label);
 
   const openQuota = (quota: F4LeadershipPoolOverview["quotaRows"][number]) => ctx.openActionConfirm(f4Confirmation(ctx, { action: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`, overview: data, policy: ctx.f4AmbassadorPolicy }));
 
@@ -93,7 +96,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
         actions={canWrite && data.quotaRows.length > 0 ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating(true)}>新建档位</Button> : undefined}
         explain={<>
           <p>每个商品每月最多卖多少台。门槛是买这个商品要满足的条件，不是订单金额。</p>
-          <p>已用含待付款，即已下单、还没交付的台数。交付后算已售；付款超时或银行明确失败才放回；人工核对中的单可能继续占着名额。</p>
+          <p>已用含待付款。部分未交付订单会先占用名额，交付后计入已售。符合释放条件才归还，人工核对期间可能继续占用。</p>
           <p>总量是各商品本月额度相加，用超的按已用算；已暂停的商品不算。</p>
         </>}>
         <div className="f4-quota-sum">
@@ -120,8 +123,8 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
             const heldFull = soldOut && limit !== null && held > 0 && quota.soldThisMonth !== undefined && quota.soldThisMonth < limit && limit <= quota.soldThisMonth + held;
             const tight = quota.tight && !paused && !soldOut && limit !== null;
             const over = limit !== null && quota.current > limit ? quota.current - limit : 0;
-            // 一台都没用时不写「已售 0 台」。
-            const parts = quota.current > 0 ? [held > 0 && `含待付款 ${count(held)} 台`, quota.soldThisMonth !== undefined && `已售 ${count(quota.soldThisMonth)} 台`].filter(Boolean).join(" · ") : "";
+            // 后端给了已售就照实写，0 也写；旧后端不给时不写。
+            const parts = [held > 0 && `含待付款 ${count(held)} 台`, quota.soldThisMonth !== undefined && `已售 ${count(quota.soldThisMonth)} 台`].filter(Boolean).join(" · ");
             return <li key={quota.id} data-tight={tight ? "" : undefined} data-paused={paused ? "" : undefined}>
             <span className="f4-quota-head">
               <span className="f4-quota-name"><b>{quota.name}</b><span data-mono>{quota.productNo || quota.quotaCode}</span></span>
@@ -141,8 +144,8 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
         </ul> : <BlockState state="empty" title="还没有设置购机名额" detail={canWrite ? "新建一档后，要另一位超级管理员批准才生效。" : undefined}
           onRetry={canWrite ? () => setCreating(true) : undefined} retryLabel="新建档位" />}
         <KeyValues rows={[
-          { key: "pro", label: "Pro 商品月额度", value: monthQuota(data.proUnlock), explain: "名字里带 Pro 的第一个商品，取额度和已用里较大的一个；额度读不到时按已用算。不是购买门槛。" },
-          { key: "rack", label: "Rack 商品月额度", value: monthQuota(data.rackUnlock), explain: "名字里带 Rack 的第一个商品，取额度和已用里较大的一个；额度读不到时按已用算。不是购买门槛。" },
+          { key: "pro", label: "Pro 商品月额度", value: unlockValue("PRO", data.proUnlock), explain: "名字里带 Pro 的第一个在卖商品，取额度和已用里较大的一个。不是购买门槛。" },
+          { key: "rack", label: "Rack 商品月额度", value: unlockValue("RACK", data.rackUnlock), explain: "名字里带 Rack 的第一个在卖商品，取额度和已用里较大的一个。不是购买门槛。" },
         ]} />
         <Fold title="已用记录" summary={data.quotaUsages.length ? `最近 ${data.quotaUsages.length} 条 · 可回收` : "还没有已用记录"}
           explain={`按发生时间从新到旧，最多 30 条，不含待付款；时间为${zoneNote()}。回收要另一位管理员批准。`}>

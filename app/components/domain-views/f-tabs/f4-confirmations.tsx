@@ -207,12 +207,12 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
         const next = Number(value), now = quota.monthlyQuota === undefined ? quota.cap : Number(quota.monthlyQuota);
         if (next > now && next < quota.current) return `调高时不能低于本月已用 ${count(quota.current)} 台，批准时会被拒绝。`;
         if (quota.status === 0) return null;
-        if (next <= quota.current) return `本月已用 ${count(quota.current)} 台，改完本月不再卖。`;
+        if (next <= quota.current) return `本月已用 ${count(quota.current)} 台，调整后当前没有可售名额。`;
         return `改完本月还剩 ${count(next - quota.current)} 台。`;
       } },
     title: `调整 ${quota.name} 的月额度`, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
-      impact: "批准后限制这个商品之后的购买；已用的记录不删，也不退单。改到本月已用或更低（可以填 0），本月就不再卖。",
+      impact: "批准后限制这个商品之后的购买；已用的记录不删，也不退单。改到本月已用或更低（可以填 0）时，调整后当前没有可售名额。",
       check: "只能填 0–1,000,000 的整数；调高时不能低于本月已用。批准时额度已被别人改过，会被拒绝并给出最新值。",
     },
     completionCopy: approvalCopy("这页的常规修改"),
