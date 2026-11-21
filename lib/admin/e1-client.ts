@@ -237,11 +237,9 @@ async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPref
 /**
  * 单行 → OpsSku。
  *
- * 目录由 `inspectE1SkuPage` 逐行校验；单条写后读回也使用同一配额字段规则。
+ * 目录由 `inspectE1SkuPage` 逐行校验；单条写后读回由 `fromSkuWriteResponse` 校验配额字段。
  */
 function fromSku(sku: BackendSku): OpsSku {
-  const invalidQuotaFields = e1SkuQuotaInvalidFields(sku);
-  if (invalidQuotaFields.length) throw new Error(`E1_SKU_RESPONSE_INVALID:${invalidQuotaFields.join(",")}`);
   const inventoryMode = sku.inventoryMode;
   const stock = inventoryMode === "UNLIMITED" ? undefined : sku.stock as string;
   const mapped: OpsSku = {
@@ -489,6 +487,12 @@ export async function updateE1BundleDiscount(
   return parseE1BundleDiscount(raw);
 }
 
+function fromSkuWriteResponse(sku: BackendSku): OpsSku {
+  const invalidQuotaFields = e1SkuQuotaInvalidFields(sku);
+  if (invalidQuotaFields.length) throw new Error(`E1_SKU_RESPONSE_INVALID:${invalidQuotaFields.join(",")}`);
+  return fromSku(sku);
+}
+
 export async function saveE1Sku(sku: OpsSku, previousSkuId: string | undefined, reason: string, operator: string) {
   const body = JSON.stringify(toSkuPayload(sku, reason, operator));
   const saved = previousSkuId
@@ -503,7 +507,7 @@ export async function saveE1Sku(sku: OpsSku, previousSkuId: string | undefined, 
         body,
         idempotencyPrefix: "e1-sku-create",
       });
-  return fromSku(saved);
+  return fromSkuWriteResponse(saved);
 }
 
 export async function updateE1SkuStatus(
@@ -515,7 +519,7 @@ export async function updateE1SkuStatus(
     headers: { "X-Product-Revision": expectedUpdatedAt },
     idempotencyPrefix: "e1-sku-status",
   });
-  return fromSku(saved);
+  return fromSkuWriteResponse(saved);
 }
 
 export async function deleteE1Sku(skuId: string, expectedUpdatedAt: string, reason: string, operator: string) {

@@ -20,7 +20,7 @@ function isNonNegativeNumberLike(value: unknown) {
   return isFiniteNumberLike(value) && Number(value) >= 0;
 }
 
-function isNonNegativeInteger(value: unknown) {
+function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
@@ -69,11 +69,19 @@ export function e1SkuQuotaInvalidFields(value: {
   purchaseQuotaHeld?: unknown;
   purchaseQuotaRemaining?: unknown;
 }): string[] {
-  const hasQuota = isRecord(value.purchaseGate) && value.purchaseGate.quotaCap != null;
-  return (["purchaseQuotaHeld", "purchaseQuotaRemaining"] as const).filter((key) => {
+  const gate = isRecord(value.purchaseGate) ? value.purchaseGate : undefined;
+  const hasQuota = gate?.quotaCap != null;
+  const invalid: string[] = (["purchaseQuotaHeld", "purchaseQuotaRemaining"] as const).filter((key) => {
     const field = value[key];
     return field !== undefined && (hasQuota ? !isNonNegativeInteger(field) : field !== null);
   });
+  const { purchaseQuotaHeld: held, purchaseQuotaRemaining: remaining } = value;
+  if (isNonNegativeInteger(held) && isNonNegativeInteger(remaining)
+    && isNonNegativeNumberLike(gate?.quotaCap) && isNonNegativeNumberLike(gate?.quotaSold)
+    && remaining !== Math.max(0, Number(gate?.quotaCap) - Number(gate?.quotaSold) - held)) {
+    invalid.push("purchaseQuotaRemaining");
+  }
+  return invalid;
 }
 
 /**
