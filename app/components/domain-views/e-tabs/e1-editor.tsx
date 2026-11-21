@@ -391,7 +391,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           {(form.gateType !== "none" || form.gateQuotaCap) && <>
             <Field label="售卖统计周期" error={errors.gateQuotaPeriod} explain="当前只支持不分周期累计。旧按月值必须人工改选后提交。">{form.gateQuotaPeriod === "month" ? <Select aria-label="售卖统计周期" value={form.gateQuotaPeriod} onChange={v => update("gateQuotaPeriod", v)} options={[{ value: "month", label: "按月统计（已停用）" }, { value: "lifetime", label: "不分周期（累计）" }]} /> : <Input aria-label="售卖统计周期" value="不分周期（累计）" readOnly />}</Field>
             {form.gateQuotaPeriod === "month" && <Notice tone="warn" title="按月统计已停用，现在不能购买；改为不分周期后保存" />}
-            <Field label="购买条件是否生效" explain="不生效时不检查上面的用户条件和配额；库存照常限制。"><Select aria-label="购买条件是否生效" value={form.gateEnforce} onChange={v => update("gateEnforce", v)} options={[{ value: "true", label: "生效：按上面的条件和配额限制购买" }, { value: "false", label: "不生效：不检查条件和配额" }]} /></Field>
+            <Field label="购买条件是否生效" explain="不生效时不检查上面的用户条件和配额；库存另算。"><Select aria-label="购买条件是否生效" value={form.gateEnforce} onChange={v => update("gateEnforce", v)} options={[{ value: "true", label: "生效：按上面的条件和配额限制购买" }, { value: "false", label: "不生效：不检查条件和配额" }]} /></Field>
           </>}
         </EditorSection>
         <EditorSection id="e1-specs" title="规格与资料">
