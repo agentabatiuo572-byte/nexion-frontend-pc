@@ -570,7 +570,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <Facts>
           <Fact k="频道">{n ? channelName(n.key, n.name) : tplForm.channel}</Fact>
           <Fact k="模板">{`${tplForm.name} · ${tplForm.version}`}</Fact>
-          <Fact k="语言">{templateLanguageText(mapContentTitleBody(tplForm, requiredLanguages, "submit"))}</Fact>
+          <Fact k="语言">{(() => {
+            // 只列真正填了的语言；没填、提交时按英文补的写「用英语」。只是显示，提交内容不变。
+            const copy = mapContentTitleBody(tplForm, requiredLanguages, "submit");
+            const own = TEMPLATE_LANGUAGES.filter(({ suffix }) => tplForm[`title${suffix}`].trim() && tplForm[`body${suffix}`].trim());
+            const borrowed = TEMPLATE_LANGUAGES.filter(({ suffix }) => !own.some((item) => item.suffix === suffix) && copy[`title${suffix}`].trim() && copy[`body${suffix}`].trim());
+            return [own.map(({ label }) => label).join("、"), ...borrowed.map(({ label }) => `${label}：用英语`)].filter(Boolean).join("；") || "—";
+          })()}</Fact>
           <Fact k="点击后去哪" tone={UNREACHABLE_CTA.has(tplForm.cta) ? "warn" : undefined}>{ctaLabel(CTA_OPTIONS, tplForm.cta)}</Fact>
           {n?.on && <Fact k="频道状态"><Change from="已启用" to="已停用" tone="warn" /></Fact>}
         </Facts>

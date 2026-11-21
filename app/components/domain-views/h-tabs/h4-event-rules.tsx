@@ -300,7 +300,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       <fieldset disabled={selected.rulesLocked} className="h4-fieldset">
         <div className="rd-form-grid" data-cols="2" data-dense="">
           {(["startsAt", "endsAt"] as const).map((key, index) => <Field key={key} label={`${index ? "结束时间" : "开始时间"}（UTC）`} help={draft[key] ? `北京时间 ${formatTime(draft[key], "Asia/Shanghai")}` : "未配置"}>
-            <Input type="datetime-local" step={1} value={draft[key] ? new Date(draft[key]!).toISOString().slice(0, 19) : ""} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : null })} />
+            <Input type="datetime-local" step={60} value={draft[key] ? new Date(draft[key]!).toISOString().slice(0, 16) : ""} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : null })} />
           </Field>)}
         </div>
         {selected.kind === "boost" && <Facts><Fact k="加成玩法">{draft.rules.action === "CHECKIN_MULTIPLIER" ? "周末签到加倍" : "锁定计划加抽奖券"}</Fact></Facts>}
@@ -376,7 +376,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     {!loading && <p className="h4l-note">时间为北京时间</p>}
     <Drawer open={!!editor} onClose={close} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}${/[A-Za-z0-9]$/.test(EVENT_KIND_LABELS[selected.kind] ?? "") ? " " : ""}的配置` : "玩法配置"} sub={selected?.eventCode}
       explain="先保存完整配置，再开启活动。关闭这个抽屉会丢掉没保存的改动。"
-      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>关闭配置</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : review ? "先在上面选一种继续" : selected ? h4ApprovalLockedReason(`H/h4_event_rule/${selected.eventCode}`) : undefined} onClick={() => save()}>保存配置</Button>} />}>
+      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>取消</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : review ? "先在上面选一种继续" : selected ? h4ApprovalLockedReason(`H/h4_event_rule/${selected.eventCode}`) : undefined} onClick={() => save()}>保存配置</Button>} />}>
       {editor}
     </Drawer>
   </Panel>;
