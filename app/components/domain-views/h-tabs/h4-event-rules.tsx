@@ -285,9 +285,10 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       {review && <H4ConflictCompare groups={compareGroups} onMerge={mergeConflict} onKeepMine={keepMine} />}
       {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新配置，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
       <fieldset disabled={lockedForm} className="h4-fieldset">
+      {!ended(selected) && !readiness.ready && <Notice tone="warn" title="还没就绪">{readinessGapParts(readiness).map(part => <div key={part}>{part}</div>)}</Notice>}
       <Facts>
         <Fact k="玩法">{PLAY_SENTENCE[playKey({ kind: selected.kind, rules: draft.rules })] ?? "—"}</Fact>
-        <Fact k="就绪" tone={readiness.ready ? "ok" : "warn"}>{ended(selected) ? "活动已结束，参与条件与有效期保持原配置" : readiness.ready ? "配置已满足开启条件" : readinessGapParts(readiness).map(part => <div key={part}>{part}</div>)}</Fact>
+        {(ended(selected) || readiness.ready) && <Fact k="就绪" tone={readiness.ready ? "ok" : "warn"}>{ended(selected) ? "活动已结束，参与条件与有效期保持原配置" : "配置已满足开启条件"}</Fact>}
         <Fact k="改动范围">{selected.rulesLocked ? "玩法和时间已固定，只可关闭活动；关闭后不能重新开启" : "第一次开启后玩法和时间固定；关闭后不能重新开启"}</Fact>
       </Facts>
       <Field label="开放状态" explain={enableBlocked ? `不能选「开启」：${enableBlocked}。` : undefined}>
@@ -299,7 +300,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       <fieldset disabled={selected.rulesLocked} className="h4-fieldset">
         <div className="rd-form-grid" data-cols="2" data-dense="">
           {(["startsAt", "endsAt"] as const).map((key, index) => <Field key={key} label={`${index ? "结束时间" : "开始时间"}（UTC）`} help={draft[key] ? `北京时间 ${formatTime(draft[key], "Asia/Shanghai")}` : "未配置"}>
-            <Input type="datetime-local" step={1} value={draft[key] ? new Date(draft[key]!).toISOString().slice(0, 19) : ""} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : null })} />
+            <Input type="datetime-local" step={60} value={draft[key] ? new Date(draft[key]!).toISOString().slice(0, 16) : ""} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : null })} />
           </Field>)}
         </div>
         {selected.kind === "boost" && <Facts><Fact k="加成玩法">{draft.rules.action === "CHECKIN_MULTIPLIER" ? "周末签到加倍" : "锁定计划加抽奖券"}</Fact></Facts>}
@@ -375,7 +376,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     {!loading && <p className="h4l-note">时间为北京时间</p>}
     <Drawer open={!!editor} onClose={close} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}${/[A-Za-z0-9]$/.test(EVENT_KIND_LABELS[selected.kind] ?? "") ? " " : ""}的配置` : "玩法配置"} sub={selected?.eventCode}
       explain="先保存完整配置，再开启活动。关闭这个抽屉会丢掉没保存的改动。"
-      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>关闭配置</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : review ? "先在上面选一种继续" : selected ? h4ApprovalLockedReason(`H/h4_event_rule/${selected.eventCode}`) : undefined} onClick={() => save()}>保存配置</Button>} />}>
+      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>取消</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : review ? "先在上面选一种继续" : selected ? h4ApprovalLockedReason(`H/h4_event_rule/${selected.eventCode}`) : undefined} onClick={() => save()}>保存配置</Button>} />}>
       {editor}
     </Drawer>
   </Panel>;

@@ -570,7 +570,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <Facts>
           <Fact k="频道">{n ? channelName(n.key, n.name) : tplForm.channel}</Fact>
           <Fact k="模板">{`${tplForm.name} · ${tplForm.version}`}</Fact>
-          <Fact k="语言">{templateLanguageText(mapContentTitleBody(tplForm, requiredLanguages, "submit"))}</Fact>
+          <Fact k="语言">{(() => {
+            // 只列真正填了的语言；没填、提交时按英文补的写「用英语」。只是显示，提交内容不变。
+            const copy = mapContentTitleBody(tplForm, requiredLanguages, "submit");
+            const own = TEMPLATE_LANGUAGES.filter(({ suffix }) => tplForm[`title${suffix}`].trim() && tplForm[`body${suffix}`].trim());
+            const borrowed = TEMPLATE_LANGUAGES.filter(({ suffix }) => !own.some((item) => item.suffix === suffix) && copy[`title${suffix}`].trim() && copy[`body${suffix}`].trim());
+            return [own.map(({ label }) => label).join("、"), ...borrowed.map(({ label }) => `${label}：用英语`)].filter(Boolean).join("；") || "—";
+          })()}</Fact>
           <Fact k="点击后去哪" tone={UNREACHABLE_CTA.has(tplForm.cta) ? "warn" : undefined}>{ctaLabel(CTA_OPTIONS, tplForm.cta)}</Fact>
           {n?.on && <Fact k="频道状态"><Change from="已启用" to="已停用" tone="warn" /></Fact>}
         </Facts>
@@ -1015,9 +1021,18 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     </>;
   };
   const templateChannelOptions = novas.filter((n) => editTplChannel === n.key || !NOVA_TPLS.some((t) => t.ch === n.key))
-    .map((n) => ({ value: n.key, label: `${channelName(n.key, n.name)}（${n.key}）` }));
+    .map((n) => ({ value: n.key, label: channelName(n.key, n.name) }));
   const tplRetiredTranslations = !!editTplSnapshot && hasRetiredPlaceholder(...Object.values(editTplSnapshot.translations ?? {}).flatMap((t) => [t.title, t.body]));
   const missingTemplateCopy = templateCopyGap(mapContentTitleBody(tplForm, requiredLanguages, "submit"));
+  /** 「保存草稿」旁边一行列出还差的全部必填项，只用来显示；能不能保存仍看 tplBlocked。被锁时只说锁的原因。 */
+  const tplCopy = mapContentTitleBody(tplForm, requiredLanguages, "submit");
+  const tplLock = lockReason(`channel:${tplForm.channel}`);
+  const tplMissing = tplLock ? [] : [
+    !tplForm.channel && "频道", !tplForm.name.trim() && "模板名称", !tplForm.version.trim() && "版本", !tplForm.cta && "点击后去哪",
+    ...TEMPLATE_LANGUAGES.filter(({ code, suffix }) => (!tplCopy[`title${suffix}`].trim() || !tplCopy[`body${suffix}`].trim())
+      && (code === "en" || requiredLanguages.includes(code) || !!tplForm[`title${suffix}`].trim() || !!tplForm[`body${suffix}`].trim()))
+      .map(({ label, suffix }) => `${label}${!tplCopy[`title${suffix}`].trim() && !tplCopy[`body${suffix}`].trim() ? "标题和正文" : !tplCopy[`title${suffix}`].trim() ? "标题" : "正文"}`),
+  ].filter((item): item is string => !!item);
   const tplBlocked = lockReason(`channel:${tplForm.channel}`) || (!tplForm.channel ? "选择频道" : !tplForm.name.trim() ? "填写模板名称" : !tplForm.version.trim() ? "填写版本" : !tplForm.cta ? "选择点击后去哪"
     : missingTemplateCopy ? missingTemplateCopy.code === "en" ? "英语标题和正文都要填写。" : `填写${missingTemplateCopy.label}标题和正文`
         : UNREACHABLE_CTA.has(tplForm.cta) ? "「点击后去哪」已停用，请改选一个"
@@ -1301,7 +1316,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       )}
       {tplDrawer && (
         <TemplateDrawer editing={!!editTplChannel} form={tplForm} setForm={setTplForm} channels={templateChannelOptions} ctaOptions={CTA_OPTIONS}
-          social={tplForm.channel === SOCIAL_CHANNEL} sample={sampleEvent} retiredInTranslations={tplRetiredTranslations} requiredLanguages={requiredLanguages} blocked={tplBlocked} onClose={closeTplDrawer} onSubmit={submitTpl} />
+          social={tplForm.channel === SOCIAL_CHANNEL} sample={sampleEvent} retiredInTranslations={tplRetiredTranslations} requiredLanguages={requiredLanguages} blocked={tplBlocked} note={tplLock || (tplMissing.length ? `还差：${tplMissing.join("、")}` : undefined)} onClose={closeTplDrawer} onSubmit={submitTpl} />
       )}
     </div>
   );

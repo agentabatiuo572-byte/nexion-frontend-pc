@@ -1114,8 +1114,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       {active.length === 0
         ? "没有启用的新手任务或每周任务"
         : `新手任务 ${dayOne.filter((task) => taskStatusOf(task) === "active").length} 个、每周任务 ${[...t1, ...t2].filter((task) => taskStatusOf(task) === "active").length} 个在启用`}
-      {unknownCount > 0 && `；${unknownCount} 个修改结果未知`}
-      {attention.length > 0 ? `；${attention.length} 件要处理` : mutations.auditKnown ? "，没有要处理的事" : shellCtx.can("platform_a2_read") ? "；审批进度这次没读到，点刷新重试" : ""}
+      {unknownCount > 0 && `；${unknownCount} 个修改结果未知，先查询原结果`}
+      {attention.length > 0 ? `；${attention.length} 件要处理` : mutations.auditKnown ? (unknownCount > 0 ? "" : "，没有要处理的事") : shellCtx.can("platform_a2_read") ? "；审批进度这次没读到，点刷新重试" : ""}
     </Conclusion>
   );
 

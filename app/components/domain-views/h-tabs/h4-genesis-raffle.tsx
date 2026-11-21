@@ -41,7 +41,7 @@ function equalRaffleField(path: string, left: unknown, right: unknown): boolean 
   }
   return false;
 }
-const dateInput = (value: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().slice(0, 19) : "";
+const dateInput = (value: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().slice(0, 16) : "";
 const STATUS: Record<AdminRaffle["status"], { label: string; tone: "neutral" | "ok" | "progress" | "done"; step: number; explain: string }> = {
   DRAFT: { label: "草稿", tone: "neutral", step: 0, explain: "还没对用户开放，可以随便改。" },
   OPEN: { label: "开放报名", tone: "ok", step: 1, explain: "用户可以用创世抽奖券报名。还没人报名时可以关闭回草稿再改；有人报名后奖项和时间锁定，也不能再关闭。" },
@@ -364,7 +364,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
     <Drawer open={!!draft} onClose={close} busy={saving} wide title={base ? "这一期的配置" : "新建一期抽奖"} sub={base ? base.id : undefined}
       explain="保存前先在这里填完整：三语名称、时间和奖项。关闭这个抽屉会丢掉没保存的改动。"
       footer={<Decision note={!write ? "没有修改创世抽奖的权限" : saveBlocked ? (base?.status === "OPEN" ? "已有人报名：奖项和时间锁定，也不能关闭" : "已开奖或正在开奖，只能查看") : undefined}
-        others={<Button disabled={saving} onClick={close}>关闭配置</Button>}
+        others={<Button disabled={saving} onClick={close}>取消</Button>}
         primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : draft ? h4ApprovalLockedReason(`H/h4_genesis_raffle/${draft.id}`) : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
       {draft && <div className="h4-dialog-body">
         {review && <H4ConflictCompare groups={compareGroups} sections={prizeSections} overwrites={overwrites} structure={structure} mergeDisabledReason={mergeBlocked ? "奖项有增删时不能合并。" : undefined} onMerge={mergeConflict} onKeepMine={keepMine} />}
@@ -389,7 +389,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
               );
               return <Field key={locale} label={`抽奖名称 · ${label}`} required={required} help={copied ? englishCopyHint(locale) : undefined}><Input value={draft[`title${suffix}`]} onChange={event => setDraft({ ...draft, [`title${suffix}`]: event.target.value })} /></Field>;
             })}
-            {(["startsAt", "drawAt"] as const).map((key, index) => <Field key={key} label={`${index ? "开奖时间" : "报名开始"}（UTC）`} help={draft[key] && Number.isFinite(Date.parse(draft[key])) ? `北京时间 ${formatTime(draft[key], "Asia/Shanghai")}` : "未配置"}><Input type="datetime-local" step={1} value={dateInput(draft[key])} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : "" })} /></Field>)}
+            {(["startsAt", "drawAt"] as const).map((key, index) => <Field key={key} label={`${index ? "开奖时间" : "报名开始"}（UTC）`} help={draft[key] && Number.isFinite(Date.parse(draft[key])) ? `北京时间 ${formatTime(draft[key], "Asia/Shanghai")}` : "未配置"}><Input type="datetime-local" step={60} value={dateInput(draft[key])} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : "" })} /></Field>)}
           </div>
           <ol className="h4l-prizes" aria-label="奖项">
             {draft.prizes.map((prize, index) => <li key={prize.id} className="h4l-prize">
