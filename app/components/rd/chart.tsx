@@ -29,7 +29,7 @@
  * 全是 0、数据不足或只有一类时不要用这些组件，页面写一句话（DP-62）。
  * 图是 role="img"，数值要能在图外读到：结论、表格、图例或明细（ST-63）。刻度尺和档位带在 meter.tsx。
  */
-import { useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { kpiTrendPath, type KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import type { StateTone } from "./tone";
 
@@ -247,6 +247,28 @@ export function TrendLines({ label, ticks, series, format, axisFormat = format, 
   height?: number;
 }) {
   const [active, setActive] = useState<number | null>(null);
+  // 横轴刻度按位置排，图窄时末端两个会贴在一起（BUG-536）：按实际宽度量，和前一个留下的或最后一个挨得太近的中间刻度藏起来，首尾不藏。
+  const axis = useRef<HTMLDivElement>(null);
+  const [crowded, setCrowded] = useState("");
+  useLayoutEffect(() => {
+    const row = axis.current;
+    if (!row) return;
+    const fit = () => {
+      if (!row.offsetWidth) return;  // 收起的页签里量不到宽度，等显示出来再量
+      const boxes = [...row.children].map((span) => span.getBoundingClientRect());
+      const hidden: number[] = [];
+      let keptRight = boxes[0]?.right ?? 0;
+      for (let index = 1; index < boxes.length - 1; index += 1) {
+        if (boxes[index].left < keptRight + 8 || boxes[index].right > boxes[boxes.length - 1].left - 8) hidden.push(index);
+        else keptRight = boxes[index].right;
+      }
+      setCrowded(hidden.join(","));
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [ticks]);
   const { low, top } = axisBounds([...series.flatMap((item) => item.values.filter((value) => value !== null)), ...marks.map((mark) => mark.value)]);
   const y = (value: number) => (value - low) / (top - low);
   const xRatio = (index: number) => ticks.length > 1 ? index / (ticks.length - 1) : 0.5;
@@ -285,8 +307,11 @@ export function TrendLines({ label, ticks, series, format, axisFormat = format, 
             </Tip>
           )}
         </div>
-        <div className="rd-chart-x" data-spread="">
-          {ticks.map((tick, index) => (index % every === 0 || index === ticks.length - 1) && <span key={tick} data-edge={index === 0 ? "start" : index === ticks.length - 1 ? "end" : undefined} style={{ left: `${xRatio(index) * 100}%` }}>{tick}</span>)}
+        <div ref={axis} className="rd-chart-x" data-spread="">
+          {ticks.filter((_, index) => index % every === 0 || index === ticks.length - 1).map((tick, shown) => {
+            const index = ticks.indexOf(tick);
+            return <span key={tick} data-edge={index === 0 ? "start" : index === ticks.length - 1 ? "end" : undefined} style={{ left: `${xRatio(index) * 100}%`, visibility: crowded.split(",").includes(String(shown)) ? "hidden" : undefined }}>{tick}</span>;
+          })}
         </div>
       </div>
     </div>

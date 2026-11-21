@@ -79,7 +79,14 @@ function useFocusHandoff(open: boolean) {
     },
     onCloseAutoFocus: (event: Event) => {
       event.preventDefault();
-      if (previous.current?.isConnected) previous.current.focus();
+      const opener = previous.current;
+      if (opener?.isConnected) opener.focus();
+      // 提交时按钮可能重画过（变灰、转圈后换了节点，BUG-536）：原节点不在了，就回到页面上看得见的同名那一个；同名不止一个时不猜。
+      else if (opener) {
+        const name = opener.getAttribute("aria-label") ?? opener.textContent;
+        const same = [...document.querySelectorAll<HTMLElement>(opener.tagName)].filter((element) => element.getClientRects().length > 0 && (element.getAttribute("aria-label") ?? element.textContent) === name);
+        if (same.length === 1) same[0].focus();
+      }
     },
   };
 }
@@ -216,6 +223,8 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
   const focus = useFocusHandoff(true);
   const feedbackId = useDialogFeedback();
   const typed = useRef(false);
+  // 失焦时校验提示换掉帮助文字（删了节点），Radix 的焦点圈在焦点换手途中看到删除，会把焦点拉回外框（BUG-536）；记下本来要去的控件，送过去。
+  const focusTarget = useRef<HTMLElement | null>(null);
   // 填过内容后第一次按 Esc 只提示，第二次才关；接着打字就收起提示，重新算。
   const [escArmed, setEscArmed] = useState(false);
   const close = () => { if (!busy) onClose(); };
@@ -236,6 +245,12 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
             if (event.target instanceof Element && event.target.matches(SEARCH_INPUT)) return;
             typed.current = true;
             setEscArmed(false);
+          }}
+          onBlur={(event) => { focusTarget.current = event.relatedTarget instanceof HTMLElement ? event.relatedTarget : null; }}
+          onFocus={(event) => {
+            const next = focusTarget.current;
+            focusTarget.current = null;
+            if (event.target === event.currentTarget && next && next !== event.currentTarget && event.currentTarget.contains(next)) next.focus();
           }}
           onEscapeKeyDown={(event) => {
             if (busy || !(dirty || typed.current) || escArmed) return;
