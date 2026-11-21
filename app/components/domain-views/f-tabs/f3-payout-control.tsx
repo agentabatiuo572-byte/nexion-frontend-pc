@@ -154,7 +154,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
     : original?.ticket?.status === "pending" ? `审批单在等${SUPER}批准；批准前不生效`
       : expired ? "超过 24 小时，只能查询原审批单"
         : queryOnly && !canWriteProposal ? PERMISSION_DENIED_TEXT
-          : original?.received ? "已建审批单，审批结果还没查到；继续查询原结果"
+          : original?.received ? "原申请建过单，批没批准还没查到，请继续查询"
             : "可能已经建了审批单；先查询原结果";
   // 框里填的原样值：被挡下的调高也要写在事实里、按钮写「提交审批」。amplifiesWhen 每次渲染都拿到原值，先于事实和按钮。
   const rawTyped = useRef<string | undefined>(undefined);
