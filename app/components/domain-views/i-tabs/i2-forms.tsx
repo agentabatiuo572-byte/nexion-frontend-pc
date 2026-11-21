@@ -187,7 +187,7 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
               ? englishCopyHint(l.code) : undefined;
             return (
               <section key={l.key} className="i2-lang" aria-label={l.label}>
-                <h3 className="i2-lang-head">{l.label}{filled ? <StatusTag tone="ok">已填</StatusTag> : required ? <StatusTag tone="warn">缺</StatusTag> : <StatusTag tone="done">可选，未填</StatusTag>}</h3>
+                <h3 className="i2-lang-head">{l.label}{filled ? <StatusTag tone="ok">已填</StatusTag> : partial ? <StatusTag tone="warn">只填了一半</StatusTag> : required ? <StatusTag tone="warn">缺</StatusTag> : <StatusTag tone="done">可选，未填</StatusTag>}</h3>
                 <Field label="标题" required={required} error={partial && !title.trim() ? l.key === "En" ? "英语标题和正文都要填写。" : "选填，不填时 App 显示英文；填了标题或正文，另一项也要填。" : undefined}>
                   <Input value={title} maxLength={255} onChange={(e) => setForm({ ...form, [`title${l.key}`]: e.target.value })} placeholder={`${l.label}标题`} />
                 </Field>

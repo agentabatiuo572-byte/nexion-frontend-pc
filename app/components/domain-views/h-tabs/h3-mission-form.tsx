@@ -74,7 +74,7 @@ export function H3MissionFormDrawer({ missionType, readFailed, onClose, onReview
             <Field label="任务编号" required hint="英文和数字" error={shown.missionCode ?? (creationRefusal ? displayAdminError(new Error(creationRefusal)) : undefined)}>
               {(control) => <Input {...control} value={value.missionCode ?? ""} placeholder="如 dayOne-visit-earn" onChange={(event) => set("missionCode", event.target.value)} />}
             </Field>
-            <Field label="任务名称" required help="没有译名时 App 显示它；各语言名称建好后在任务详情里填" error={shown.missionName}>
+            <Field label="任务名称" required help="各语言名称建好后在任务详情里填，启用前要填齐" error={shown.missionName}>
               {(control) => <Input {...control} value={value.missionName ?? ""} placeholder="如 Visit earnings page" onChange={(event) => set("missionName", event.target.value)} />}
             </Field>
             <Field label="奖励" required hint="非负整数" error={shown.rewardPoints}
