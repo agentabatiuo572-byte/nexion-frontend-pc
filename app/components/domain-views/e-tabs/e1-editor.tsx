@@ -70,7 +70,7 @@ function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media): Op
     const earningsChanged = ["monthlyTargetUsdt", "monthlyTargetBandPct", "dailyEarn", "dailyEarnNEX", "shareYieldMin", "shareYieldMax", "tier", "price"].some(key => form[key as keyof SkuForm] !== opened[key as keyof SkuForm]);
     for (const { key } of E1_SKU_FIELDS) {
       if (key === "warranty" && warrantyMonths(original.warranty) !== undefined && containsHan(original.warranty ?? "")
-        && JSON.stringify(form) !== JSON.stringify(opened)) continue;
+        && (JSON.stringify(form) !== JSON.stringify(opened) || imageIdentity(media) !== imageIdentity(skuMedia(original)))) continue;
       if (["dailyEarn", "shareYieldMin", "shareYieldMax", "gpu"].includes(key)) continue;
       if (key in opened && JSON.stringify(form[key as keyof SkuForm]) === JSON.stringify(opened[key as keyof SkuForm])) Object.assign(draft, { [key]: original[key] });
     }
