@@ -61,7 +61,7 @@ export function H3MissionFormDrawer({ missionType, readFailed, onClose, onReview
   return (
     <>
       <Drawer open wide onClose={close} title={`新建${subject}`} sub="建好后是已停用" icon={ListChecks} tone="role-4"
-        explain="左边填，右边看它在 App 上的样子。名称建好后可以在任务详情里分别填英文、中文、越南语。点「下一步」后核对、写理由再提交。建好的任务先是已停用，要先在「完成条件」里绑定用户做了什么算完成，再启用。"
+        explain="左边填，右边看它在 App 上的样子。点「下一步」后核对、写理由再提交。建好的任务先是已停用，要先在「完成条件」里绑定用户做了什么算完成，再启用。"
         footer={<Decision note={attempted && missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : undefined}
           primary={<Button variant="primary" disabledReason={readFailed ? "最新数据读到后才能继续" : creationRefusal ? displayAdminError(new Error(creationRefusal)) : undefined} onClick={review}>下一步：核对并提交</Button>}
           others={<Button onClick={close}>取消</Button>} />}>
@@ -74,8 +74,8 @@ export function H3MissionFormDrawer({ missionType, readFailed, onClose, onReview
             <Field label="任务编号" required hint="英文和数字" error={shown.missionCode ?? (creationRefusal ? displayAdminError(new Error(creationRefusal)) : undefined)}>
               {(control) => <Input {...control} value={value.missionCode ?? ""} placeholder="如 dayOne-visit-earn" onChange={(event) => set("missionCode", event.target.value)} />}
             </Field>
-            <Field label="任务名称" required error={shown.missionName}>
-              {(control) => <Input {...control} value={value.missionName ?? ""} placeholder="如 逛收益页" onChange={(event) => set("missionName", event.target.value)} />}
+            <Field label="任务名称" required help="没有译名时 App 显示它；各语言名称建好后在任务详情里填" error={shown.missionName}>
+              {(control) => <Input {...control} value={value.missionName ?? ""} placeholder="如 Visit earnings page" onChange={(event) => set("missionName", event.target.value)} />}
             </Field>
             <Field label="奖励" required hint="非负整数" error={shown.rewardPoints}
 >

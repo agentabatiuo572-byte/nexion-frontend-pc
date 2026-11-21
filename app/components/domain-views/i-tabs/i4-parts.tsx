@@ -363,18 +363,18 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
         {overLimit && <Notice tone="warn">内容超过 {APP_FIELD_LIMIT} 项：后台能保存，但发布后 App 会拒收整份内容。</Notice>}
         <LocaleTabs label="编辑语言" value={lang} onChange={setLang} items={localeItems(submittedFields)} />
         <div className="i4-editor-list">
-          {shown.map(({ field, index }) => (
+          {shown.map(({ field, index }, order) => (
             <div className="i4-editor-field" key={field.key} data-changed={changed.has(field.key) ? "" : undefined}>
               <div className="i4-editor-key">
-                <span data-mono="" data-trust-field-key="fixed" title="内容项标识，不能改">{field.key}</span>
+                <span data-trust-field-key="fixed" title={`内容项标识 ${field.key}，不能改`}>{`第 ${order + 1} 项${fieldLang(field.key) ? "" : " · 各语言共用"}`}</span>
                 {changed.has(field.key) && <StatusTag tone="progress">已改</StatusTag>}
                 {!blanked.all && blanked.keys.has(field.key) && <span className="i4-field-note">App 公开时清空</span>}
               </div>
               <div className="i4-editor-pair">
-                <Field label="名称">
+                <Field label="名称" required>
                   <Input aria-label="名称" disabled={frozen} value={field.label} onChange={(event) => setField(index, { label: event.target.value })} />
                 </Field>
-                <Field label="内容" hint={/(url|href)$/i.test(field.key.trim()) || !required && fieldLang(field.key) === lang ? "选填" : undefined} help={fieldLang(field.key) === lang ? copyHint : undefined}>
+                <Field label="内容" required={required && fieldLang(field.key) === lang && !/(url|href)$/i.test(field.key.trim())} hint={/(url|href)$/i.test(field.key.trim()) || !required && fieldLang(field.key) === lang ? "选填" : undefined} help={fieldLang(field.key) === lang ? copyHint : undefined}>
                   <Textarea aria-label="内容" disabled={frozen} rows={1} value={field.value} onChange={(event) => setField(index, { value: event.target.value })} />
                 </Field>
               </div>
