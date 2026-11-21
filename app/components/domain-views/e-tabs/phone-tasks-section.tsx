@@ -83,7 +83,7 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
   return <>
     <E6PendingNotice section="tasks" toast={ctx.toast} onRead={()=>void ctx.refreshE2()} />
     <Conclusion state={ctx.e2Loading || poolLoading ? "neutral" : !ready || poolError ? "neutral" : pool?.enabledCount === 0 ? "warn" : "ok"} icon={Smartphone}>{ctx.e2Loading || poolLoading ? "正在读取手机任务" : !ready || poolError ? "等手机任务读取成功后可用" : pool?.enabledCount === 0 ? "还没有启用的手机任务" : `${ctx.tasks.filter(task => task.simulation?.enabled).length} 个手机任务启用中`}</Conclusion>
-    <Panel title="任务节奏" icon={Activity} tone="role-2" sub={readAt ? `读取于 ${readAt}` : undefined}>
+    <Panel className="e6-rhythm" title="任务节奏" icon={Activity} tone="role-2" sub={readAt ? `读取于 ${readAt}` : undefined}>
       {poolError ? <BlockState state="error" title="任务节奏暂不可读" detail={poolError} onRetry={()=>void ctx.refreshE2()} /> : <StatBand fit>
         <Stat label="启用任务" icon={ListTodo} tone="role-2" lead value={poolLoading ? "—" : pool?.enabledCount ?? "—"} unit="个" sub={pool ? `共 ${pool.taskCount} 个` : undefined} />
         <Stat label="平均时长" icon={Clock3} tone="role-3" value={poolLoading || !pool?.enabledCount ? "—" : pool.avgDurationMinutes ?? "—"} unit="分钟" explain={!pool?.enabledCount?"没有启用任务，无法估算。":"已启用任务的平均时长，原样显示。"}/>
