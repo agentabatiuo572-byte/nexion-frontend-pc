@@ -2513,6 +2513,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A3_ORIGINAL_CURRENT_ONLY: "已重新读取。现在的值证明不了原操作的结果，原记录继续保留；24 小时内可以按原请求重试。",
   A3_MUTATION_OUTCOME_UNCERTAIN: "结果未知：可能已经生效。请查询原结果，原请求已保留。",
   A3_MUTATION_RESPONSE_UNREADABLE: "结果未知：保存结果没读全，可能已经生效。请查询原结果，原请求已保留。",
+  PLATFORM_EXPERIENCE_DOWNLOAD_NOT_CONFIRMED: "保存回执中的下载来源或平台链接与提交值不一致。请查询原结果，再刷新核对下载配置。",
   BUSINESS_CALENDAR_RESPONSE_INVALID: "业务日历读取不完整，无法确认当前时区和安排；请重新读取或联系平台值班人员。",
   A3_RESPONSE_INVALID: "系统配置读到的数据不完整，为免误判没有显示；请重试或联系值班人员。",
   A4_OVERVIEW_INVALID: "事件数据读到的不完整，为免误判没有显示；请重新加载或联系值班人员。",

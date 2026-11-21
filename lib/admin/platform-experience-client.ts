@@ -163,8 +163,10 @@ function normalize(raw: unknown): PlatformExperienceConfig {
   const notes = { zh: String(releaseNotes?.zh ?? ""), en: String(releaseNotes?.en ?? "") };
   const version = String(download.version ?? "").trim();
   if (source !== "unavailable" && (!version || !notes.en.trim())) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
-  if (source === "unavailable" && [download.officialUrl, download.iosUrl, download.androidUrl, download.apkUrl, version, notes.zh, notes.en]
-    .some((value) => String(value ?? "").trim())) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
+  if (source === "unavailable" && (
+    [download.officialUrl, download.apkUrl, version, notes.zh, notes.en].some((value) => String(value ?? "").trim())
+    || [download.iosUrl, download.androidUrl].some((value) => value != null && typeof value !== "string")
+  )) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
   return {
     version: Number(root.version),
     baseUrl: strictUrl(share.baseUrl, false, false),
@@ -203,6 +205,11 @@ export async function fetchPlatformExperienceConfig() {
   return normalize(await request<unknown>());
 }
 
+export function matchesUnavailableDownload(expected: ExperienceDownload, saved: ExperienceDownload): boolean {
+  return expected.source !== "unavailable" || (saved.source === "unavailable"
+    && saved.iosUrl === expected.iosUrl.trim() && saved.androidUrl === expected.androidUrl.trim());
+}
+
 export async function fetchOperatingLanguages(): Promise<OperatingLanguageCode[]> {
   const response = await guardedFetch("/api/admin/platform/config/operating-languages", { cache: "no-store" });
   const raw = await parseResponse<unknown>(response);
@@ -221,11 +228,20 @@ export async function platformExperienceBody(
   if (config.interfaceLanguages === null) throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_INVALID");
   if (config.operatingLanguages === null && operatingLanguages === undefined) throw new Error("PLATFORM_OPERATING_LANGUAGES_INVALID");
   let appDownload = config.appDownload;
+  if (appDownload.source === "unavailable") {
+    appDownload = {
+      ...appDownload, iosUrl: appDownload.iosUrl.trim(), androidUrl: appDownload.androidUrl.trim(),
+      officialUrl: "", apkUrl: "", version: "", releaseNotes: { zh: "", en: "" },
+    };
+  } else if (appDownload.source !== "official") {
+    throw new Error("PLATFORM_EXPERIENCE_SOURCE_INVALID");
+  }
+  for (const [field, label] of [["officialUrl", "官方安装链接"], ["iosUrl", "iOS 官方下载链接"], ["androidUrl", "Android 官方下载链接"], ["apkUrl", "APK 下载链接"]] as const) {
+    const landingPage = field === "officialUrl";
+    try { strictUrl(appDownload[field], landingPage && appDownload.source === "official", false, landingPage); }
+    catch { throw new Error(`${label}需填写有效的 HTTPS 地址，不能包含空格或账号密码${landingPage ? "，支持 #download 等页面锚点" : "或页面锚点"}。`); }
+  }
   if (appDownload.source === "official") {
-    for (const [field, label] of [["officialUrl", "官方安装链接"], ["iosUrl", "iOS 官方下载链接"], ["androidUrl", "Android 官方下载链接"], ["apkUrl", "APK 下载链接"]] as const) {
-      try { strictUrl(config.appDownload[field], field === "officialUrl", false, field === "officialUrl"); }
-      catch { throw new Error(`${label}需填写有效的 HTTPS 地址，不能包含空格或账号密码${field === "officialUrl" ? "，支持 #download 等页面锚点" : "或页面锚点"}。`); }
-    }
     const required = operatingLanguages ?? await getRequiredContentLanguages();
     const { en, zh } = appDownload.releaseNotes;
     const releaseNotes = { en, zh: fillBlankContentLanguage(required, "zh", { text: en }, { text: zh }).text };
@@ -233,8 +249,6 @@ export async function platformExperienceBody(
       throw new Error("PLATFORM_EXPERIENCE_RELEASE_METADATA_REQUIRED");
     }
     appDownload = { ...appDownload, releaseNotes };
-  } else if (appDownload.source !== "unavailable") {
-    throw new Error("PLATFORM_EXPERIENCE_SOURCE_INVALID");
   }
   return {
     expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels,
@@ -262,6 +276,7 @@ export async function updatePlatformExperienceConfig(
       body: JSON.stringify(body),
     });
     const saved = normalize(response);
+    if (!matchesUnavailableDownload(body.appDownload, saved.appDownload)) throw new Error("PLATFORM_EXPERIENCE_DOWNLOAD_NOT_CONFIRMED");
     if (body.interfaceLanguages && saved.interfaceLanguages?.join() !== body.interfaceLanguages.join()) {
       throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_NOT_SAVED");
     }

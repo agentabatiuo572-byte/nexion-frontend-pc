@@ -21,6 +21,7 @@ import {
   changedOperatingLanguages,
   fetchPlatformExperienceConfig,
   INTERFACE_LANGUAGES,
+  matchesUnavailableDownload,
   OPERATING_LANGUAGE_CODES,
   recommendedExperienceChannels,
   platformExperienceBody,
@@ -185,7 +186,10 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
       conflictDraft.current = false;
       setReadReady(false); setConfirmOpen(false); setReason("");
       const saved = await refresh();
-      if (saved) { setSuccess(`已保存，当前版本 v${saved.version}。`); toast(`App 分享与下载已保存，当前版本 v${saved.version}`, "success"); }
+      if (saved && config.appDownload.source === "unavailable" && (saved.version < config.version + 1
+        || (saved.version === config.version + 1 && !matchesUnavailableDownload(config.appDownload, saved.appDownload)))) {
+        toast("刷新读到的下载配置与保存回执不一致，请核对当前版本和两个平台的链接。", "warn");
+      } else if (saved) { setSuccess(`已保存，当前版本 v${saved.version}。`); toast(`App 分享与下载已保存，当前版本 v${saved.version}`, "success"); }
       else toast(`已保存，但页面刷新失败，正在重新加载。请不要重复提交。`, "warn");
     } catch (cause) {
       setError(displayAdminError(cause));
@@ -229,6 +233,8 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
   };
   const operatingChanged = changed.includes("发布必填语言");
   const onlyOperating = operatingChanged && changed.length === 1;
+  const onlyUnavailableDownload = unavailable && baseline?.appDownload.source === "unavailable"
+    && changed.length === 1 && changed[0] === "官方应用下载";
   const h3 = reach("/growth/quest", "growth_h3_read");
   const conflictRows = conflictDraft.current && baseline ? draftVsLatest(config, baseline) : [];
 
@@ -308,7 +314,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
       explain="用户在注册成功页和下载入口看到的官方安装信息。这里只登记链接和说明，不上传安装包，也不强制用户更新。">
       <div className="a3-with-preview">
         <div className="rd-form-stack">
-          <Field label="来源" explain="选「暂不提供」并保存后，安装链接、版本和说明会被清空，App 显示暂不可用。">
+          <Field label="来源" explain="选「暂不提供」并保存后，iOS 和 Android 下载链接仅保存在后台，用户仍无法下载。官方安装页、APK 链接、版本和更新说明会被清空。">
             {() => <Segments label="安装包来源" value={config.appDownload.source} onChange={(value) => !fieldsLocked && patchDownload({ source: value as PlatformExperienceConfig["appDownload"]["source"] })}
               items={[{ value: "official", label: "官方渠道", disabled: fieldsLocked }, { value: "unavailable", label: "暂不提供", disabled: fieldsLocked }]} />}
           </Field>
@@ -320,10 +326,10 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
               {(control) => <Input {...control} aria-label="安装包版本" value={config.appDownload.version} disabled={fieldsLocked || unavailable} onChange={(event) => patchDownload({ version: event.target.value })} />}
             </Field>
             <Field label="iOS 下载链接" help="可不填；HTTPS，不能带锚点">
-              {(control) => <Input {...control} aria-label="iOS 官方下载链接" value={config.appDownload.iosUrl} disabled={fieldsLocked || unavailable} onChange={(event) => patchDownload({ iosUrl: event.target.value })} />}
+              {(control) => <Input {...control} aria-label="iOS 官方下载链接" value={config.appDownload.iosUrl} disabled={fieldsLocked} onChange={(event) => patchDownload({ iosUrl: event.target.value })} />}
             </Field>
             <Field label="Android 下载链接" help="可不填；HTTPS，不能带锚点">
-              {(control) => <Input {...control} aria-label="Android 官方下载链接" value={config.appDownload.androidUrl} disabled={fieldsLocked || unavailable} onChange={(event) => patchDownload({ androidUrl: event.target.value })} />}
+              {(control) => <Input {...control} aria-label="Android 官方下载链接" value={config.appDownload.androidUrl} disabled={fieldsLocked} onChange={(event) => patchDownload({ androidUrl: event.target.value })} />}
             </Field>
             <Field label="更新说明（中文）" required={!unavailable && requiredNow.includes("zh")}
               help={!unavailable && requiredNow.includes("zh") && isEnglishCopy({ text: config.appDownload.releaseNotes.en }, { text: config.appDownload.releaseNotes.zh }) ? englishCopyHint("zh") : undefined}>
@@ -333,7 +339,8 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
               {(control) => <Textarea {...control} aria-label="英文发布说明" rows={2} value={config.appDownload.releaseNotes.en} disabled={fieldsLocked || unavailable} onChange={(event) => patchDownload({ releaseNotes: { ...config.appDownload.releaseNotes, en: event.target.value } })} />}
             </Field>
           </div>
-          <p className="rd-note">APK 链接：{config.appDownload.apkUrl || "—"}（这里不能改，保存时不变）</p>
+          {unavailable && <p className="rd-note">iOS 和 Android 链接可提前填写，留空并保存可清除对应链接。用户仍无法下载。</p>}
+          <p className="rd-note">APK 链接：{config.appDownload.apkUrl || "—"}（{unavailable ? "保存时清空" : "这里不能改，保存时不变"}）</p>
         </div>
         {preview("下载", unavailable
           ? <div className="a3-download" data-empty=""><b>暂不提供官方安装包</b><span>用户看到下载暂不可用，没有可点的链接</span></div>
@@ -414,7 +421,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
 
 
     {confirmOpen && <Modal title={onlyOperating ? "修改发布必填语言" : "保存 App 分享与下载"} icon={onlyOperating ? Languages : Link2} busy={saving} dirty={Boolean(reason)} onClose={() => setConfirmOpen(false)}
-      sub={<>{!onlyOperating && <StatusTag tone="progress" filled>保存后 App 下次读取配置时生效</StatusTag>}{operatingChanged && <StatusTag tone="progress" filled={onlyOperating}>{onlyOperating ? "保存后" : "发布必填："}下次打开内容编辑器时生效</StatusTag>}</>}
+      sub={<>{!onlyOperating && <StatusTag tone="progress" filled>{onlyUnavailableDownload ? "仅在后台保存，用户仍无法下载" : "保存后 App 下次读取配置时生效"}</StatusTag>}{operatingChanged && <StatusTag tone="progress" filled={onlyOperating}>{onlyOperating ? "保存后" : "发布必填："}下次打开内容编辑器时生效</StatusTag>}</>}
       footer={<>
         <Button disabled={saving} onClick={() => setConfirmOpen(false)}>取消</Button>
         <Button variant="primary" loading={saving} disabledReason={original && isRetryExpired(original) ? "已过期" : !canWrite ? "你只能查看" : undefined} onClick={() => void save()}>确认修改</Button>
@@ -425,7 +432,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         {unreadable.interface && config.interfaceLanguages && <Fact k="App 里可选"><Change from="读不出" to={operatingNames(config.interfaceLanguages)} /></Fact>}
         {operatingChanged && baseline?.operatingLanguages !== undefined && config.operatingLanguages && <Fact k="发布必填"><Change from={baseline.operatingLanguages ? operatingNames(baseline.operatingLanguages) : "读不出"} to={operatingNames(config.operatingLanguages)} /></Fact>}
         <Fact k="版本">v{config.version} → v{config.version + 1}</Fact>
-        {!onlyOperating && <Fact k="官方下载">{unavailable ? "暂不提供（保存后清空安装链接、版本和说明）" : "官方渠道"}</Fact>}
+        {!onlyOperating && <Fact k="官方下载">{unavailable ? "用户暂时无法下载。后台按填写内容保存 iOS 和 Android 链接，清空官方安装页、APK 链接、版本和更新说明。" : "官方渠道"}</Fact>}
         <Fact k="一起保存">分享、下载、语言整组；首页开关不在这里</Fact>
         {operatingChanged && <Fact k="已发布的内容">不变；以后发布按新的必填语言检查</Fact>}
         {!onlyOperating && <Fact k="已有订单和奖励">不重算</Fact>}
