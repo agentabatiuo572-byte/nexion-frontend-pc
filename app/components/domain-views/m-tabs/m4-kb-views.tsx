@@ -53,9 +53,9 @@ export function reachOf(faq: Pick<M4Faq, "surface" | "language">): Reach[] {
   } else {
     rows.push({ key: "app", icon: Smartphone, who: "App 帮助中心", reaches: false, note: `App 现在只按中文、英语、越南语读取，${languageName(faq.language)}的问答用户看不到` });
   }
-  rows.push(faq.language === "zh-CN"
-    ? { key: "agent", icon: Headset, who: "客服回复时", reaches: true, note: "专属会话的「知识库」里能查到，点一下插入回答" }
-    : { key: "agent", icon: Headset, who: "客服回复时", reaches: false, note: "客服的「知识库」只列中文问答" });
+  rows.push({ key: "agent", icon: Headset, who: "客服回复时", reaches: true, note: faq.language === "en-US"
+    ? "英语客户能查到；其他语言没有问答时也列英语"
+    : `${languageName(faq.language)}客户能查到` });
   return rows;
 }
 
