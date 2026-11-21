@@ -96,16 +96,42 @@ const E1_FIELD_LABELS: Record<string, string> = {
 function E1SeriesValue({ sku }: { sku: OpsSku }) {
   return <>{skuSeriesText(sku.seriesCode)}{sku.seriesLocked === true && <> · 已锁定<Explain label="所属系列为什么锁定" content="这件商品已有订单或已发出设备，系列不能再改。其他资料可以照常修改。" /></>}</>;
 }
+/** 剩余配额：有上限才有；服务端给了就用服务端的，旧后端按 上限 − 已售 算。 */
+function e1QuotaLeft(sku: OpsSku): number | null {
+  const gate = sku.purchaseGate;
+  return gate?.quotaCap == null ? null : sku.purchaseQuotaRemaining ?? gateRemaining(gate, sku.purchaseQuotaHeld ?? 0);
+}
+
+/** 首屏那一行「剩余配额」：配额不生效时不写，按月统计已停用时写现在不能买。 */
+function e1QuotaLeftValue(sku: OpsSku) {
+  const gate = sku.purchaseGate, left = e1QuotaLeft(sku);
+  if (!gate || left == null || !gate.enforce) return null;
+  if (gate.quotaPeriod === "month") return <span className="e1-card-warning">按月统计已停用，现在不能购买</span>;
+  return <>{e1Number(left)} 件{left === 0 && <StatusTag tone="warn" icon={PackageX}>配额用完</StatusTag>}</>;
+}
+
+/** 「库存与购买条件」折叠的结论：有没有条件、配额还能不能卖、能不能试用。 */
+function e1GateSummary(sku: OpsSku) {
+  const gate = sku.purchaseGate, trial = sku.trialEligible ? "允许试用" : "不可试用";
+  if (!gate) return `无购买条件或配额 · ${trial}`;
+  if (gate.quotaPeriod === "month") return `按月配额已停用 · ${trial}`;
+  if (!gate.enforce) return `购买条件不生效 · ${trial}`;
+  const left = e1QuotaLeft(sku);
+  return [gate.rankMin || gate.activeDirectMin || gate.teamComputePointsMin ? "有用户条件" : "无用户条件", left == null ? "不限量" : left === 0 ? "配额用完" : "有销售配额", trial].join(" · ");
+}
+
 function E1PurchaseConditions({ sku }: { sku: OpsSku }) {
   const gate = sku.purchaseGate;
   if (!gate) return <p>无用户购买条件或销售配额</p>;
+  const left = e1QuotaLeft(sku), held = sku.purchaseQuotaHeld ?? 0;
   return <Facts>
+    {left != null && <Fact k="剩余配额" tone={left === 0 && gate.enforce ? "warn" : undefined}>{e1Number(left)} 件</Fact>}
     {!!gate.rankMin && <Fact k="最低会员等级">V{gate.rankMin}</Fact>}
     {!!gate.activeDirectMin && <Fact k="活跃直接邀请人数">至少 {e1Number(gate.activeDirectMin)} 人</Fact>}
     {!!gate.teamComputePointsMin && <Fact k="团队算力点">至少 {e1Number(gate.teamComputePointsMin)} 点</Fact>}
     <Fact k="条件关系">{gate.mode === "either" ? "任一满足" : "全部满足"}</Fact>
     <Fact k="销售配额上限">{gate.quotaCap == null ? "不限量" : `${e1Number(gate.quotaCap)} 件`}</Fact>
-    {gate.quotaCap != null && <><Fact k="配额已售">{e1Number(gate.quotaSold)} 件</Fact>{sku.purchaseQuotaHeld != null && <Fact k="待付款">{e1Number(sku.purchaseQuotaHeld)} 件</Fact>}<Fact k="剩余配额">{e1Number(sku.purchaseQuotaRemaining ?? gateRemaining(gate, sku.purchaseQuotaHeld ?? 0))} 件</Fact><Fact k="统计周期">{gate.quotaPeriod === "month" ? "按月统计（已停用）" : "不分周期（累计）"}</Fact></>}
+    {gate.quotaCap != null && <><Fact k="配额已售">{e1Number(gate.quotaSold)} 件<Explain label="配额已售和累计销量的区别" content="配额已售是计入这组配额的件数，不含待付款；库存里的累计销量是这件商品一共卖出的件数，两个数可能不同。" /></Fact>{held > 0 && <Fact k="待付款">{e1Number(held)} 件</Fact>}<Fact k="统计周期">{gate.quotaPeriod === "month" ? "按月统计（已停用）" : "不分周期（累计）"}</Fact></>}
     <Fact k="是否生效" tone={gate.quotaPeriod === "month" ? "warn" : undefined}>{gate.quotaPeriod === "month" ? "现在不能购买：按月统计已停用，须改为累计并获批" : gate.enforce ? "生效" : "不生效，不检查用户条件和配额；库存另算"}</Fact>
   </Facts>;
 }
@@ -380,6 +406,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       // 待审批时卡片底部已有「有变更待审批」入口，按钮旁不再写同一件事；不能点的原因仍在按钮提示里。
       const actionReason = onBlock && !proposal && !cardReasons.some(reason => onBlock.includes(reason)) ? onBlock : undefined;
       const sold = s.sold, stock = s.stock == null ? null : Number(s.stock);
+      const quotaLeft = e1QuotaLeftValue(s);
       return <article key={s.id} className="e1-product" data-hit={skuLink === s.id ? "" : undefined} aria-label={s.name}>
         <div className="e1-product-identity">
           <div className="e1-product-media"><SkuMediaThumb sku={s} />{s.badge && <span className="e1-badge" title={nexGridBrandText(s.badge)}>{nexGridBrandText(s.badge)}</span>}</div>
@@ -393,8 +420,9 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         <div className="e1-product-levels"><div className="e1-value-line"><span className="e1-muted">任务等级</span>{s.allowedPoolCodes?.length === 0 && <StatusTag tone={s.status === "on" ? "warn" : "neutral"} icon={ShieldAlert}>未配置任务等级</StatusTag>}</div>{s.allowedPoolCodes == null ? <span className="e1-muted">— · 任务等级未读取</span> : <LevelStrip label={`${s.name}任务等级`} levels={E1_LEVELS} selectedKeys={s.allowedPoolCodes} />}</div>
         <div className="e1-product-target"><E1TargetRange sku={s} label={<span className="e1-muted">月收益目标<Explain label="月收益目标口径" content="范围是持续运行的设备月目标边界，停跑不补发。各卡刻度独立，不表示实际到账。" /></span>} /></div>
         <div className="e1-product-stock">
-          <div className="e1-value-line"><span className="e1-muted">库存</span>{s.inventoryMode === "UNLIMITED" ? <span className="e1-muted">不限（非实物） · 已售 {e1Number(sold)}</span> : <span className="e1-muted">已售 {e1Number(sold)} · 剩余 {e1Number(stock)}{stock === 0 && <StatusTag tone="warn" icon={PackageX}>售罄</StatusTag>}</span>}</div>
-          {s.inventoryMode === "UNLIMITED" ? null : sold != null && stock != null && sold + stock > 0 ? <RatioBar label="已售与剩余库存构成" value={sold} total={sold + stock} valueText={`已售 ${sold}，剩余 ${stock}`} tone="role-2" /> : <span className="e1-muted">{sold == null || stock == null ? "— · 库存数据未读取" : "暂无已售和库存"}</span>}
+          <div className="e1-value-line"><span className="e1-muted">库存</span>{s.inventoryMode === "UNLIMITED" ? <span className="e1-muted">不限（非实物） · 累计销量 {e1Number(sold)}</span> : <span className="e1-muted">累计销量 {e1Number(sold)} · 剩余 {e1Number(stock)}{stock === 0 && <StatusTag tone="warn" icon={PackageX}>售罄</StatusTag>}</span>}</div>
+          {s.inventoryMode === "UNLIMITED" ? null : sold != null && stock != null && sold + stock > 0 ? <RatioBar label="累计销量与剩余库存" value={sold} total={sold + stock} valueText={`累计销量 ${sold}，剩余 ${stock}`} tone="role-2" /> : <span className="e1-muted">{sold == null || stock == null ? "— · 库存数据未读取" : "暂无销量和库存"}</span>}
+          {quotaLeft && <div className="e1-value-line"><span className="e1-muted">剩余配额</span><span className="e1-muted">{quotaLeft}</span></div>}
         </div>
         <div className="e1-product-conditions">
           <div className="e1-product-meta">
@@ -461,11 +489,11 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       </Fold>}
     </>
     {detail && <Drawer open title="商品资料" sub={detail.name} icon={Boxes} onClose={() => setDetail(null)} footer={<Decision primary={canWrite && <Button variant="primary" disabledReason={writeBlock({ op: "sku-save" }) || (ctx.locked("device_sku", detail.id) ? "此对象有待审批或待核对的操作" : undefined)} onClick={() => { const id = detail.id; setDetail(null); ctx.openSku(id); }}>改价 / 编辑</Button>} others={<Button onClick={() => setDetail(null)}>关闭</Button>} />}>
-      <Facts><Fact k="售价" lead unit="USD"><E1Amount value={detail.price} /></Fact><Fact k="所属系列" tone={hasUnsupportedSeries(detail) ? "warn" : undefined}><E1SeriesValue sku={detail} /></Fact><Fact k="商城状态">{e1Value(detail.status)}</Fact><Fact k="任务等级">{detail.allowedPoolCodes?.join("、") || "未配置"}</Fact><Fact k="月收益目标">{detail.monthlyTargetUsdt == null ? "未设月收益目标" : <E1Amount value={detail.monthlyTargetUsdt} precision={e1TargetPrecision(detail)} unit="USDT/月" />}</Fact><Fact k="库存">{detail.inventoryMode === "UNLIMITED" ? "不限（非实物）" : `${e1Number(detail.stock)} 件`}</Fact></Facts>
+      <Facts><Fact k="售价" lead unit="USD"><E1Amount value={detail.price} /></Fact><Fact k="所属系列" tone={hasUnsupportedSeries(detail) ? "warn" : undefined}><E1SeriesValue sku={detail} /></Fact><Fact k="商城状态">{e1Value(detail.status)}</Fact><Fact k="任务等级">{detail.allowedPoolCodes?.join("、") || "未配置"}</Fact><Fact k="月收益目标">{detail.monthlyTargetUsdt == null ? "未设月收益目标" : <E1Amount value={detail.monthlyTargetUsdt} precision={e1TargetPrecision(detail)} unit="USDT/月" />}</Fact><Fact k="库存">{detail.inventoryMode === "UNLIMITED" ? "不限（非实物）" : `${e1Number(detail.stock)} 件`}</Fact>{e1QuotaLeftValue(detail) && <Fact k="剩余配额" tone={e1QuotaLeft(detail) === 0 ? "warn" : undefined}>{e1QuotaLeftValue(detail)}</Fact>}</Facts>
       {[
         { title: "基本信息", summary: "名称、编号与商品文案", keys: ["name", "id", "tier", "seriesCode", "status", "lifecycle", "tagline", "badge", "tag"] },
         { title: "收益与任务", summary: "等级、目标与托管", keys: ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", ...(detail.tier === "Share" ? ["shareYieldMin", "shareYieldMax"] : [])] },
-        { title: "库存与购买条件", summary: "试用、开放阶段与购买限制", keys: ["inventoryMode", ...(detail.inventoryMode === "UNLIMITED" ? [] : ["stock"]), "trialEligible", "unlock", "purchaseGate"] },
+        { title: "库存与购买条件", summary: e1GateSummary(detail), keys: ["inventoryMode", ...(detail.inventoryMode === "UNLIMITED" ? [] : ["stock"]), "trialEligible", "unlock", "purchaseGate"] },
         { title: "规格与资料", summary: "硬件、资料与完整特性", keys: ["gpu", "vram", ...(detail.tier === "Share" ? [] : ["hashRate", "power", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"]), "uptime", "warranty", "features", "specDocumentTitle", "specDocumentUrl", "imageAssetId", "imageObjectKey", "aiUnlocks", "rating", "reviews", "generation", "supersededBy", "tradeinDiscount"] },
       ].map(group => <Fold inset key={group.title} title={group.title} summary={group.summary}><Facts>{E1_SKU_FIELDS.filter(f => group.keys.includes(f.key)).map(f => <Fact key={f.key} k={f.label}>{f.key === "purchaseGate" ? <E1PurchaseConditions sku={detail} /> : f.key === "seriesCode" ? <E1SeriesValue sku={detail} /> : f.key === "datacenter" ? detail.datacenter?.trim() ? `按托管机房清单分配（原填 ${datacenterNameText(detail.datacenter)}）` : "按托管机房清单分配" : f.key === "vram" && detail.tier === "Share" && !detail.vram?.trim() ? "不适用（共享份额）" : f.key === "unlock" ? detail.unlock ? phaseLabel(detail.unlock) : "无需阶段" : f.key === "features" ? detail.features?.length ? <ul>{detail.features.map((item, i) => <li key={i}>{item}</li>)}</ul> : "— · 未填写" : f.unit || f.key === "tradeinDiscount" ? detail[f.key] == null ? "— · 未填写" : <E1Amount value={detail[f.key] as number} precision={f.key === "monthlyTargetUsdt" ? e1TargetPrecision(detail) : f.unit === "%" ? e1Precision([detail[f.key] as number], 0) : undefined} unit={f.unit} /> : detail[f.key] == null || detail[f.key] === "" ? "— · 未填写" : e1Value(detail[f.key])}</Fact>)}</Facts>
         {group.title === "收益与任务" && <Facts><Fact k="派生日均"><E1Amount value={detail.derivedDailyEarnUsdt} unit="USDT/天" /></Fact>{detail.tier === "Share" && detail.monthlyTargetUsdt != null && detail.monthlyTargetBandPct != null && <><Fact k="预估日收益下限"><E1Amount value={(Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).low) / 30).toFixed(6)} unit="USDT/天" /></Fact><Fact k="预估日收益上限"><E1Amount value={(Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).high) / 30).toFixed(6)} unit="USDT/天" /></Fact><Fact k="派生年奖励率下限"><E1Amount value={detail.derivedShareYieldMinPct} unit="%" /></Fact><Fact k="派生年奖励率上限"><E1Amount value={detail.derivedShareYieldMaxPct} unit="%" /></Fact></>}</Facts>}

@@ -218,6 +218,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     completionCopy: approvalCopy("这页的常规修改"),
     facts: <KeyValues rows={[
       { key: "used", label: "本月已用", value: `${count(quota.current)} 台` },
+      ...((quota.pendingThisMonth ?? 0) > 0 ? [{ key: "pending", label: "其中待付款", value: `${count(quota.pendingThisMonth ?? 0)} 台` }] : []),
       ...(quota.status === 0 ? [{ key: "paused", label: "状态", value: "已暂停：调额度不会恢复销售" }] : []),
       { key: "code", label: "额度编号", value: <span data-mono>{quota.quotaCode || quota.id}</span> },
     ]} />,
