@@ -882,6 +882,9 @@
 /* 附加语言、新增或去掉的语言对照（A2-BE-16）：和上面的版本对照同一套折叠，一种语言一组。 */
 .a2-change-review [data-business-form="disclosure-translation-review"] .rd-fold-title { flex: none; }
 .a2-change-review [data-business-form="disclosure-translation-review"] .rd-fold-summary { text-wrap: balance; }
+/* 相邻两组事实（「变更」和披露的「申请后草稿」等）读成一张表：中间不叠两层内边距，行距和组内一样（BUG-535）。 */
+.a2-change-review > .rd-facts:has(+ .rd-facts) { padding-bottom: 0; }
+.a2-change-review > .rd-facts + .rd-facts { padding-top: 0; }
 .a2-translation-lang { display: flex; flex-direction: column; gap: var(--rd-space-4); }
 /* 概览一行里只给「缺译文」「去掉的语言」那半句上注意色。弹窗挂在页面外，不加页面前缀。 */
 .a2-translation-warn { color: var(--rd-warn); }
