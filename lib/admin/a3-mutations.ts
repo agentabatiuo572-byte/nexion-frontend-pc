@@ -6,7 +6,7 @@ import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError
 import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { A3FeatureFlag, A3PlatformParam } from "@/lib/admin/a3-client";
 import { parseBusinessCalendar, type BusinessCalendarView, type BusinessCalendarVersion, type BusinessZoneOption } from "@/lib/admin/business-calendar-client";
-import { isOperatingLanguageList, matchesUnavailableDownload, parsePlatformExperienceConfig, type PlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
+import { isOperatingLanguageList, matchesSavedDownload, parsePlatformExperienceConfig, type PlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, parseDeveloperDocs, parseHowContent, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { FundCommandOrigin, FundCommandEvidence } from "./fund-command-investigation";
@@ -82,6 +82,7 @@ function validOriginal(value: unknown): value is A3Original {
           && ["textTemplate", "urlTemplate", "androidPackage", "iosScheme"].every(key => channel[key] == null || typeof channel[key] === "string"))
         && object(item.appDownload) && ["officialUrl", "iosUrl", "androidUrl", "apkUrl", "version", "source"].every(key => typeof (item.appDownload as Record<string, unknown>)[key] === "string")
         && object(item.appDownload.releaseNotes) && typeof item.appDownload.releaseNotes.zh === "string" && typeof item.appDownload.releaseNotes.en === "string"
+        && (item.appDownload.releaseNotes.vi === undefined || typeof item.appDownload.releaseNotes.vi === "string")
         && (item.interfaceLanguages == null || Array.isArray(item.interfaceLanguages) && item.interfaceLanguages.every(code => typeof code === "string"))
         && (item.operatingLanguages == null || isOperatingLanguageList(item.operatingLanguages));
       return form(value.config) && form(value.baseline);
@@ -225,13 +226,8 @@ export function useA3Commands() {
           const { interfaceLanguages, operatingLanguages, appDownload } = JSON.parse(record.body) as {
             interfaceLanguages?: unknown; operatingLanguages?: unknown; appDownload: PlatformExperienceConfig["appDownload"];
           };
-          if (!matchesUnavailableDownload(appDownload, saved.appDownload)) {
+          if (!matchesSavedDownload(appDownload, saved.appDownload)) {
             throw new OutcomeUnknownError("PLATFORM_EXPERIENCE_DOWNLOAD_NOT_CONFIRMED");
-          }
-          if (appDownload.source === "official" && (saved.appDownload.releaseNotes.en !== appDownload.releaseNotes.en
-            || appDownload.releaseNotes.zh.trim() && saved.appDownload.releaseNotes.zh !== appDownload.releaseNotes.zh
-            || !appDownload.releaseNotes.zh.trim() && saved.appDownload.releaseNotes.zh !== appDownload.releaseNotes.en)) {
-            throw new OutcomeUnknownError("A3_MUTATION_RESPONSE_UNREADABLE");
           }
           if (saved.version !== record.original.config.version + 1
             || interfaceLanguages !== undefined && JSON.stringify(saved.interfaceLanguages) !== JSON.stringify(interfaceLanguages)
