@@ -64,6 +64,18 @@ function validPurchaseGate(value: unknown) {
     .every((key) => isOptionalNonNegativeNumberLike(value[key]));
 }
 
+export function e1SkuQuotaInvalidFields(value: {
+  purchaseGate?: unknown;
+  purchaseQuotaHeld?: unknown;
+  purchaseQuotaRemaining?: unknown;
+}): string[] {
+  const hasQuota = isRecord(value.purchaseGate) && value.purchaseGate.quotaCap != null;
+  return (["purchaseQuotaHeld", "purchaseQuotaRemaining"] as const).filter((key) => {
+    const field = value[key];
+    return field !== undefined && (hasQuota ? !isNonNegativeInteger(field) : field !== null);
+  });
+}
+
 /**
  * 单行 SKU 的不合规字段名。
  *
@@ -115,6 +127,7 @@ export function e1SkuInvalidFields(value: unknown): string[] {
   if (typeof value.datacenter === "string" && value.datacenter.length > 128) invalid.push("datacenter");
   if (value.features !== undefined && value.features !== null && !isStringArray(value.features)) invalid.push("features");
   if (!validPurchaseGate(value.purchaseGate)) invalid.push("purchaseGate");
+  invalid.push(...e1SkuQuotaInvalidFields(value));
   if (typeof value.trialEligible !== "boolean") invalid.push("trialEligible");
   // 发布门结论是**后加的服务端字段**:`DeviceSkuView` 的历史兼容构造器把它填 null,
   // 且测试环境曾运行早于发布门提交的后端构建。因此「未声明」是合法状态,不是行级错误 ——

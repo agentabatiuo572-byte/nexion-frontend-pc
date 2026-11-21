@@ -5,6 +5,7 @@ import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-erro
 import { fromPurchaseGate, toPurchaseGate, type BackendPurchaseGate } from "@/lib/admin/e1-purchase-gate";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import {
+  e1SkuQuotaInvalidFields,
   inspectE1SkuPage,
   parseE1GenerationGateData,
   parseE1SkuPage,
@@ -86,6 +87,8 @@ interface BackendSku {
   lifecycle?: string | null;
   unlockPhase?: string | null;
   purchaseGate?: BackendPurchaseGate | null;
+  purchaseQuotaHeld?: number | null;
+  purchaseQuotaRemaining?: number | null;
   imageAssetId?: string | null;
   imageObjectKey?: string | null;
   imagePreviewUrl?: string | null;
@@ -234,10 +237,11 @@ async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPref
 /**
  * 单行 → OpsSku。
  *
- * 行级合规性由 `inspectE1SkuPage` 在调用前逐字段判定并具名,不合规的行根本到不了这里 ——
- * 校验只有一处,不会出现「同一个条件在两处各写一遍、改一处漏一处」。
+ * 目录由 `inspectE1SkuPage` 逐行校验；单条写后读回也使用同一配额字段规则。
  */
 function fromSku(sku: BackendSku): OpsSku {
+  const invalidQuotaFields = e1SkuQuotaInvalidFields(sku);
+  if (invalidQuotaFields.length) throw new Error(`E1_SKU_RESPONSE_INVALID:${invalidQuotaFields.join(",")}`);
   const inventoryMode = sku.inventoryMode;
   const stock = inventoryMode === "UNLIMITED" ? undefined : sku.stock as string;
   const mapped: OpsSku = {
@@ -295,6 +299,8 @@ function fromSku(sku: BackendSku): OpsSku {
     lifecycle: sku.lifecycle ?? undefined,
     unlock: sku.unlockPhase ?? "",
     purchaseGate: fromPurchaseGate(sku.purchaseGate),
+    purchaseQuotaHeld: sku.purchaseQuotaHeld,
+    purchaseQuotaRemaining: sku.purchaseQuotaRemaining,
     imageAssetId: sku.imageAssetId ?? undefined,
     imageObjectKey: sku.imageObjectKey ?? undefined,
     imagePreviewUrl: sku.imagePreviewUrl ?? undefined,

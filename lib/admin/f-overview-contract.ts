@@ -357,6 +357,9 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
     const item = record(value, "F4", `quotaRows[${index}]`);
     positiveInteger(item.id, "F4", `quotaRows[${index}].id`);
     for (const key of ["current", "cap"]) nonNegativeInteger(item[key], "F4", `quotaRows[${index}].${key}`);
+    for (const key of ["soldThisMonth", "pendingThisMonth", "remaining"]) {
+      if (item[key] !== undefined) nonNegativeInteger(item[key], "F4", `quotaRows[${index}].${key}`);
+    }
     if (item.monthlyQuota !== undefined && item.monthlyQuota !== null
       && (typeof item.monthlyQuota !== "string" || !/^\d+$/.test(item.monthlyQuota) || !Number.isSafeInteger(Number(item.monthlyQuota)))) invalid("F4", `quotaRows[${index}].monthlyQuota`);
   });
@@ -400,6 +403,9 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
   if (!["READY", "HOLD"].includes(String(row.settlementConfigStatus))) invalid("F4", "settlementConfigStatus");
   if (row.currentWeekPoolUsd !== null) nonNegative(row.currentWeekPoolUsd, "F4", "currentWeekPoolUsd");
   for (const field of ["weeklyInjectedUsd", "weeklyGmvUsd", "monthlyCapUsd", "participantCount", "topN", "topSharePct", "unlockRank", "quotaMonthlyStockTotal", "quotaMonthlyStockUsed", "quotaMonthlyStockRemaining", "ambassadorPendingCount", "leaderboardFraudHitCount"]) nonNegative(row[field], "F4", field);
+  for (const field of ["quotaMonthlyStockSold", "quotaMonthlyStockPending"]) {
+    if (row[field] !== undefined) nonNegativeInteger(row[field], "F4", field);
+  }
   for (const [key, value] of Object.entries(row.configValues as JsonRecord)) {
     if (typeof value !== "string") invalid("F4", `configValues.${key}`);
   }
