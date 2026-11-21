@@ -125,6 +125,8 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
             const over = limit !== null && quota.current > limit ? quota.current - limit : 0;
             // 后端给了已售就照实写，0 也写；旧后端不给时不写。
             const parts = [held > 0 && `含待付款 ${count(held)} 台`, quota.soldThisMonth !== undefined && `已售 ${count(quota.soldThisMonth)} 台`].filter(Boolean).join(" · ");
+            // 剩余照后端给的（已用含待付款，最少 0）；旧后端不给、额度没读到或已暂停时不写。
+            const left = !paused && limit !== null && quota.remaining !== undefined ? quota.remaining : null;
             return <li key={quota.id} data-tight={tight ? "" : undefined} data-paused={paused ? "" : undefined}>
             <span className="f4-quota-head">
               <span className="f4-quota-name"><b>{quota.name}</b><span data-mono>{quota.productNo || quota.quotaCode}</span></span>
@@ -135,9 +137,9 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
               state={limit === null ? "failed" : over > 0 ? "empty" : limit > 0 ? "ready" : "empty"}
               failedText={<>这个商品的月额度没读到 · <InlineRetry onRetry={() => void ctx.refreshF4()} /></>}
               emptyText={over > 0 ? `已超出 ${count(over)} 台` : "额度为 0"}
-              valueText={`已用 ${count(quota.current)} 台${parts ? `，${parts.replaceAll(" · ", "，")}` : ""}，共 ${limit === null ? "—" : count(limit)} 台`} quiet />
+              valueText={`已用 ${count(quota.current)} 台${parts ? `，${parts.replaceAll(" · ", "，")}` : ""}，共 ${limit === null ? "—" : count(limit)} 台${left === null ? "" : `，剩 ${count(left)} 台`}`} quiet />
             {/* 「含待付款 · 已售」放在下面一行：和标签挤在一行时卡片放不下。 */}
-            <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(limit)} 台</span>{paused ? <StatusTag tone="neutral" icon={PauseCircle}>已暂停</StatusTag> : soldOut ? heldFull ? <StatusTag tone="warn" icon={AlertCircle}>名额已占满</StatusTag> : <StatusTag tone="danger" icon={Ban}>本月已停卖</StatusTag> : tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
+            <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(limit)} 台{left !== null && <> · 剩 {count(left)} 台</>}</span>{paused ? <StatusTag tone="neutral" icon={PauseCircle}>已暂停</StatusTag> : soldOut ? heldFull ? <StatusTag tone="warn" icon={AlertCircle}>名额已占满</StatusTag> : <StatusTag tone="danger" icon={Ban}>本月已停卖</StatusTag> : tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
             {parts && <span className="f4-muted">{parts}</span>}
             {paused && <span className="f4-quota-cond">用户买不了这个商品，不算进总量</span>}
           </li>; })}
