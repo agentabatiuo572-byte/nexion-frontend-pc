@@ -94,7 +94,7 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { orderAmount } from "../e-tabs/data";
-import { e1Decimal, e1Value } from "../e-tabs/e1-state";
+import { e1Decimal, e1GateText, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
@@ -1072,6 +1072,9 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
       for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
       if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${e1Decimal(value.price)} USD`;
+      // 购买条件写成人话；读不到阶段名时写「第 N 阶段」，不只写数字。
+      if (isRecord(value.purchaseGate)) value.purchaseGate = e1GateText(value.purchaseGate);
+      if ((typeof value.unlockPhase === "string" || typeof value.unlockPhase === "number") && /^\d+$/.test(String(value.unlockPhase).trim())) value.unlockPhase = `第 ${String(value.unlockPhase).trim()} 阶段`;
       return { kind: "object", value };
     };
     // 新建只列填了的项，没填的不逐行写「未设置」（和商品页确认框一致）。

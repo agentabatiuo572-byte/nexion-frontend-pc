@@ -905,7 +905,8 @@
 .e1-product-id > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e1-product-id > :not(:first-child) { flex: none; }
 .e1-tagline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
-.e1-badge { position: absolute; top: var(--rd-space-1); left: var(--rd-space-1); max-width: calc(100% - 2 * var(--rd-space-1)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-inline: var(--rd-space-1); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+/* 角标可以盖到缩略图和商品名之间的空隙（离商品名留 4px）：Flagship 一行写完，Cloud Share、Best Seller 两行写完，再长的两行后省略，悬停看全文。 */
+.e1-badge { position: absolute; top: var(--rd-space-1); left: var(--rd-space-1); width: max-content; max-width: calc(100% + var(--rd-space-1)); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; padding-inline: var(--rd-space-1); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .e1-stage-summary { display: flex; align-items: center; flex-wrap: wrap; gap: var(--rd-space-4); padding: var(--rd-space-2) var(--rd-panel-pad-x); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); }
 .e1-stage-summary > .rd-stageline-scroll { flex: 1; min-width: 0; }
 .e1-stage-identity { display: flex; flex-direction: column; gap: var(--rd-space-1); }

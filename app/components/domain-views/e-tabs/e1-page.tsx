@@ -26,7 +26,7 @@ import { E1_CURRENT_PHASE_UNVERIFIED, e1CurrentPhase, e1SkuOpening, resolveE1Pha
 import { E1Catalog, E1_MISSING_SERIES_REASON, type E1CatalogContext } from "./e1-catalog";
 import { E1Editor, type E1EditRequest, type E1SkuReview } from "./e1-editor";
 import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
-import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1Number, e1Decimal, e1TargetPrecision, e1Object, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
+import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1Number, e1Decimal, e1TargetPrecision, e1Object, e1ShownDiff, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
 
 type Confirmation = McSpec & Partial<E1SkuReview> & { gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
 type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; reading?: boolean; readError?: string };
@@ -295,7 +295,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         if (row.status !== "pending") { await refresh(); await refreshEarly(); }
       }
     } catch (failure) {
-      const message = full?.receivedTicketId ? TICKET_UNREAD : isA2OutcomeUncertainError(failure) ? (failure as Error).message : eReadError(failure);
+      const message = full?.receivedTicketId ? TICKET_UNREAD : isA2OutcomeUncertainError(failure) ? (failure as Error).message : `这次没查到：${eReadError(failure)}`;
       setNotes(n => ({ ...n, [record.commandKey]: message }));
       if (propagate) throw failure;
     }
@@ -410,7 +410,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   };
   // 只用于显示：开放阶段写阶段名，不写阶段编号。
   const phaseName = (text?: string) => mc?.gates?.phases.find(phase => phase.p === resolveE1PhaseId(mc.gates!.phases, text ?? ""))?.label || text;
-  const skuDiff = mc?.op === "sku-save" && mc.sku ? e1SkuDiff(mc.beforeSku, mc.sku, mc.form).map(row => row.key === "unlock" ? { ...row, before: phaseName(row.before), after: phaseName(row.after) } : row) : null;
+  const skuDiff = mc?.op === "sku-save" && mc.sku ? e1ShownDiff(e1SkuDiff(mc.beforeSku, mc.sku, mc.form), mc.beforeSku, mc.sku).map(row => row.key === "unlock" ? { ...row, before: phaseName(row.before), after: phaseName(row.after) } : row) : null;
   // 新增商品只列填了的项；只改系列时关键信息写系列，不拿没变的售价当关键数字。
   const skuFilled = skuDiff && !mc?.beforeSku ? skuDiff.filter(row => !["未设置", "未填写", "未配置"].includes(row.after ?? "")) : [];
   const skuChanges = skuDiff && mc?.beforeSku ? skuDiff.filter(row => row.before !== row.after) : [];
@@ -437,12 +437,12 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       detail: <p>审批单 {row.id}；批准前目录不变，这个对象暂停新修改。</p> })),
     ...pending.filter(record => record.commandKey !== busy).map(record => {
       const expired = isRetryExpired(record), canRelease = rejected.includes(record.commandKey) && !expired || absent.includes(record.commandKey) && expired;
-      const state = record.receivedTicketId ? { tag: "进度没读到", line: RECOVERY_LINE.created, more: "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" }
-        : rejected.includes(record.commandKey) && !expired ? { tag: "重试被拒绝", line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对原操作的结果后，可以解除这条记录。" }
-          : absent.includes(record.commandKey) ? expired ? { tag: "没有建成", line: RECOVERY_LINE.missing, more: "按原请求查不到这张审批单，说明没建成；确认解除时会再查一次。" }
-            : { tag: "结果未知", line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
-            : expired ? { tag: "结果未知", line: RECOVERY_LINE.expired, more: "已超过 24 小时，不能再重试；查不到这张审批单时可以确认解除。" }
-              : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "可以查询原结果，或按原请求重试；重试用原来的请求，不会重复建单。" };
+      const state = record.receivedTicketId ? { tag: "进度没读到", line: RECOVERY_LINE.created, more: "点「查询原结果」再查。" }
+        : rejected.includes(record.commandKey) && !expired ? { tag: "重试被拒绝", line: RECOVERY_LINE.refused, more: "解除前先核对原操作有没有生效。" }
+          : absent.includes(record.commandKey) ? expired ? { tag: "没有建成", line: RECOVERY_LINE.missing, more: "确认解除时会再查一次。" }
+            : { tag: "结果未知", line: RECOVERY_LINE.absent, more: "重试不会重复建单。" }
+            : expired ? { tag: "结果未知", line: RECOVERY_LINE.expired, more: "查不到这张审批单时可以确认解除。" }
+              : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "重试只发原内容和原理由。" };
       return { key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
         tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? record.retryRejection,
         actions: <>
@@ -486,7 +486,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       blockedReason={currentPending && currentPending.commandKey !== busy ? "这个对象有一次结果未知的提交，先在页面上方查询原结果或按原请求重试" : (reviewingSku ? hasSkuVersionConflict(mc) : conflict) ? <>
         <ConflictBar message="商品或配置已被别人改过，你填的内容还在；读取最新后重新核对。" onRead={readConflict} />
         {conflictRead && <Notice tone="warn" title="核对别人改了什么，再决定是否保留你的修改">
-          {mc.op === "bundle-discount" && conflictLatest ? <DiffList rows={[{ key: "two", label: "2件折扣", before: `${mc.discount?.twoItemsPct}%`, after: `${conflictLatest.bundleDiscount.twoItemsPct}%` }, { key: "three", label: "3件折扣", before: `${mc.discount?.threeItemsPct}%`, after: `${conflictLatest.bundleDiscount.threeItemsPct}%` }, { key: "four", label: "4+件折扣", before: `${mc.discount?.fourPlusItemsPct}%`, after: `${conflictLatest.bundleDiscount.fourPlusItemsPct}%` }]} /> : mc.sku && latestConflictSku ? <DiffList rows={e1SkuDiff(mc.beforeSku ?? mc.sku, latestConflictSku)} /> : <p>原对象未读取到，请保留草稿并核查。</p>}
+          {mc.op === "bundle-discount" && conflictLatest ? <DiffList rows={[{ key: "two", label: "2件折扣", before: `${mc.discount?.twoItemsPct}%`, after: `${conflictLatest.bundleDiscount.twoItemsPct}%` }, { key: "three", label: "3件折扣", before: `${mc.discount?.threeItemsPct}%`, after: `${conflictLatest.bundleDiscount.threeItemsPct}%` }, { key: "four", label: "4+件折扣", before: `${mc.discount?.fourPlusItemsPct}%`, after: `${conflictLatest.bundleDiscount.fourPlusItemsPct}%` }]} /> : mc.sku && latestConflictSku ? <DiffList rows={e1ShownDiff(e1SkuDiff(mc.beforeSku ?? mc.sku, latestConflictSku), mc.beforeSku ?? mc.sku, latestConflictSku)} /> : <p>原对象未读取到，请保留草稿并核查。</p>}
           <Button disabledReason={canAcceptRevision ? undefined : "原对象未读取到"} onClick={acceptConflictRevision}>已核对，保留我的修改</Button>
         </Notice>}
       </> : refused?.on === mc ? <span className="rd-toolbar"><span>{refused.text}</span><Button size="sm" icon={<RotateCcw size={14} aria-hidden />} onClick={() => { setRefused(null); if (reviewingSku) setConfirmation(null); }}>返回修改</Button></span>
