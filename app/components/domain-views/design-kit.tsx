@@ -4020,7 +4020,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     ? surface ? "原操作已过期，不能重发；请刷新页面核对当前值。" : "原操作已过期，不能重发，请刷新页面核对当前值。"
     : inlineApproval?.expiredRequestRecovery === "query"
       ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
-      : inlineApproval?.queryOnly ? "先查询原结果"
+      : inlineApproval?.queryOnly ? "只能查询原结果，不能重发。"
         : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。";
   const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined) ?? confirmLabel;
   // 放大提示固定在关键信息层，先于所有填写项。
