@@ -87,7 +87,7 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
         : direct ? "先查清原操作再改"
         : original ? "先查清原申请再改"
         : approval ? auto ? "开启在等批准，批准或驳回前不能再提交" : `调高到 ${payoutValueText(key, approval.after)} 在等批准；调低仍立即生效`
-        : auto ? autoNow ? "关闭立即生效，手动照常" : `开启要${SUPER}批准` : "调低立即生效 · 调高要批准";
+        : auto ? autoNow ? "关闭立即生效，手动照常" : `开启要${SUPER}批准` : "调高可能多付钱 · 调低立即生效";
     const disabledReason = missing ? "这一项没读到，重新加载后再改"
       : auto && !autoNow && approval ? "开启已在等审批，批准或驳回前不能再提交" : undefined;
     const action = direct || (original && !canLower)
