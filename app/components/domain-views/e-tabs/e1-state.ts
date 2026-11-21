@@ -178,9 +178,14 @@ export function e1GateText(gate: Partial<Record<keyof PurchaseGate, unknown>> | 
     count(gate.teamComputePointsMin) > 0 && `团队算力点至少 ${shown(gate.teamComputePointsMin)}`,
   ].filter((rule): rule is string => !!rule);
   const who = !rules.length ? "无用户条件" : rules.length === 1 ? rules[0] : `${rules.join("、")}（${String(gate.mode).toLowerCase() === "either" ? "满足任一" : "全部满足"}）`;
-  const quota = gate.quotaCap == null || gate.quotaCap === "" ? "不限量"
-    : `本期可售 ${shown(gate.quotaCap)} 件、已售 ${shown(gate.quotaSold ?? 0)} 件，${gate.enforce ? "卖完后不能再买" : "卖完仅提示"}`;
-  return `${who}；${quota}`;
+  const hasQuota = gate.quotaCap != null && gate.quotaCap !== "";
+  if (gate.quotaPeriod === "month") {
+    const legacyQuota = hasQuota ? `，原上限 ${shown(gate.quotaCap)} 件、原已售 ${shown(gate.quotaSold ?? 0)} 件` : "";
+    return `按月统计（已停用）${legacyQuota}；购买受阻；原用户条件：${who}`;
+  }
+  const quota = hasQuota ? `累计上限 ${shown(gate.quotaCap)} 件、累计已售 ${shown(gate.quotaSold ?? 0)} 件` : "不限量";
+  return gate.enforce === false ? `购买条件已配置但不生效：${who}；${quota}`
+    : `${who}；${quota}${hasQuota ? "，卖完后不能再买" : ""}`;
 }
 
 /** 显示用：购买条件这一行换成人话。没有购买条件的一侧保留原来的「未创建」「未设置」，新增商品的「只列填了的项」照旧生效。 */

@@ -8,10 +8,11 @@ import { isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/op
 import { useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 
 /** E6 owns its funding explanation and persisted-command recovery feedback. */
-export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack, ...props }: ComponentProps<typeof OperationConfirmModal> & {
+export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack, refusal, ...props }: ComponentProps<typeof OperationConfirmModal> & {
   scope: string;
   /** 首次提交被明确拒绝后点「返回修改」：有上一步的框回到上一步；不传就留在这个框里改。 */
   onBack?: () => void;
+  refusal?: { message: string; retryRead?: () => void; reading?: boolean };
   amplificationBasis?: ReactNode | ((value?: string) => ReactNode);
   onRecovered?: (result?: E6WriteReceipt) => void | Promise<void>;
 }) {
@@ -21,8 +22,9 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
   const [refused, setRefused] = useState<string>();
   const record = m.pending.find(r => r.scope === scope);
   const rejected = !!record && m.rejected.includes(record.commandKey);
+  const refusalMessage = refusal?.message ?? refused;
   const blockedReason = props.blockedReason ?? (rejected ? "按原请求重试被明确拒绝，请关闭窗口，核对后解除这条记录。"
-    : refused ? <span className="rd-toolbar"><span>{refused}</span><Button size="sm" icon={<RotateCcw size={14} aria-hidden />} onClick={() => { setRefused(undefined); onBack?.(); }}>返回修改</Button></span> : undefined);
+    : refusalMessage ? <span className="rd-toolbar"><span>{refusalMessage}</span><Button size="sm" icon={<RotateCcw size={14} aria-hidden />} loading={refusal?.reading} onClick={refusal?.retryRead ?? (() => { setRefused(undefined); onBack?.(); })}>{refusal?.retryRead ? "重新读取" : "返回修改"}</Button></span> : undefined);
   const facts = (value?: string) => {
     const direction = props.edit?.amplifiesWhen;
     const decimalDirection = compareEditDecimals(value ?? "", props.edit?.current ?? "");

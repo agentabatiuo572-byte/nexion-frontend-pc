@@ -623,7 +623,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SKU_SERIES_LOCKED: "这件商品已有订单或已发出设备，所属系列不能再改；其他资料可以照常修改。",
   ONBOARDING_COMPARISON_SKU_INVALID: "所选商品无效，请重新选择。",
   ONBOARDING_COMPARISON_NOT_FOUND: "这个对比位已不存在，请刷新页面后核对。",
-  ONBOARDING_COMPARISON_VERSION_CONFLICT: "这个对比位已被别人改过，页面已换成最新内容，请重新选择商品。",
+  ONBOARDING_COMPARISON_VERSION_CONFLICT: "这个对比位已被别人改过。",
   ONBOARDING_COMPARISON_SKU_UNCHANGED: "所选商品就是当前商品，不用更换。",
   ONBOARDING_COMPARISON_SKU_UNAVAILABLE: "所选商品现在不能放进引导对比（须在售，USDT 和 UVT 日收益都大于 0），请换一件。",
   CREGIS_SWITCH_DIFFERENT_CHECKER_REQUIRED: "不能复核自己发起的资金开关申请，请由另一位有权限的管理员复核。",

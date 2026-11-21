@@ -13,6 +13,7 @@ import { eDomainLegacyCommands as legacyCommands, e5LegacyCommands as legacyPhon
 import { e5Commands, type E5Command } from "@/lib/admin/e5-command";
 import { e6Commands as commands, type E6DeviceInput as DeviceInput, type E6Payload as Payload, type E6Pending, type E6Proposal, type E6Section } from "@/lib/admin/e6-command";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import type { E2YieldComparison } from "@/lib/admin/e2-client";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused, fetchE5Devices } from "@/lib/admin/e5-client";
 import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskReceipt, type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
@@ -36,7 +37,8 @@ type ProposalDraft = Omit<E6Proposal, "operator" | "operatorRole" | "sos" | "rol
 const Context = createContext<ReturnType<typeof useMutations> | null>(null);
 const isYieldSkuProposal = (payload: Payload) => payload.kind === "proposal" && payload.input.command.op === "e6_onboarding_yield_sku";
 
-function useMutations(refreshYieldBinding: () => Promise<void>) {
+type RefreshYieldBinding = () => Promise<E2YieldComparison[] | undefined>;
+function useMutations(refreshYieldBinding: RefreshYieldBinding) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const owner = session!.adminId, rights = session!.authorities;
   const [pending, setPending] = useState<E6Pending[]>([]);
@@ -183,7 +185,7 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
         if (!checkingProposal && retry && isExplicitRejection(failure)) setRejected(r => [...r, record.commandKey]);
         setNotes(n => ({ ...n, [record.commandKey]: !checkingProposal && isExplicitRejection(failure) ? "按原请求重试被明确拒绝，核对后可以解除这条记录。" : "原请求已保留，结果仍待核实。" }));
         setTechnicalErrors(n => ({ ...n, [record.commandKey]: JSON.stringify(failure instanceof Error ? { ...failure, name: failure.name, message: failure.message } : failure, null, 2) }));
-        if (!checkingProposal && isYieldSkuProposal(record.payload)
+        if (retry && !checkingProposal && isYieldSkuProposal(record.payload)
           && response.backendMessage === "ONBOARDING_COMPARISON_VERSION_CONFLICT") await refreshYieldBinding();
       }
       throw failure;
@@ -286,7 +288,7 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
     } finally { if (active.current) sync(); end(record.commandKey); }
   }
   return { pending, devicePending, legacy, busy: busyKeys.size > 0, isBusy: (key: string) => busyKeys.has(key), sending: sending.current,
-    notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, showYieldSkuActions, canBindYieldSku, proposal, start, check, releaseMissing, checkDirect, send,
+    notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, showYieldSkuActions, canBindYieldSku, proposal, start, check, releaseMissing, checkDirect, send, refreshYieldBinding,
     canInvestigate: canInvestigateECommand("device_e5_read"),
     canInvestigateRisk: canInvestigateECommand("device_e6_read"),
     device: (scope: string, label: string, input: Omit<DeviceInput, "operator">) => start(scope, "phones", label, { kind: "device", input: { ...input, operator: session!.operator || session!.username } }),
@@ -296,7 +298,7 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
     forget: (record: E6Pending) => { commands.forget(record.fingerprint, record.commandKey); sync(); },
   };
 }
-export function E6MutationProvider({ children, refreshYieldBinding }: { children: ReactNode; refreshYieldBinding: () => Promise<void> }) {
+export function E6MutationProvider({ children, refreshYieldBinding }: { children: ReactNode; refreshYieldBinding: RefreshYieldBinding }) {
   const mutations = useMutations(refreshYieldBinding);
   return <Context.Provider value={mutations}>{children}</Context.Provider>;
 }

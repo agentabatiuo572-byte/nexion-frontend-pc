@@ -136,6 +136,8 @@ export const h4PendingFor = (scope: string) => pendingH4Commands().find(r => r.s
 /** Validated direct successes awaiting a current read, never unknown outcomes. */
 export const confirmedH4Saves = () => pendingH4Commands().filter(r => r.acknowledged && !r.asset && !("proposal" in r.request));
 export const confirmedH4RaffleSaves = () => confirmedH4Saves().filter(record => resourceOf(record.scope) === "raffles");
+export const h4RaffleSaveNeedsVerification = (record: H4Command) =>
+  resourceOf(record.scope) === "raffles" && !record.raffleReadback?.hasMatchingReceipt;
 export function confirmH4RaffleReadback(records: H4Command[], details: ReadonlyMap<string, AdminRaffle | null>) {
   const unconfirmed = records.some(({ raffleReadback }) => {
     if (!raffleReadback) return true;

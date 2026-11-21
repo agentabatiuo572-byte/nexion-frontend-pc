@@ -21,7 +21,10 @@ const SECTIONS=[{id:"rules",label:"档位分界"},{id:"hardware",label:"硬件�
 export function E6ComputeConfig({ctx}:{ctx:EViewCtx}) {
   const session=useAdminAuth(s=>s.session),epoch=useAdminAuth(s=>s.authEpoch);
   if(!session)return <BlockState state="denied" title="请重新登录后查看手机算力配置"/>;
-  const refreshYieldBinding = async () => { await Promise.all([ctx.refreshE2(), ctx.refreshE6SkuCandidates()]); };
+  const refreshYieldBinding = async () => {
+    const [phone, candidatesReady] = await Promise.all([ctx.refreshE2(), ctx.refreshE6SkuCandidates()]);
+    return candidatesReady && phone?.tiers.length === 5 ? phone.comparisons : undefined;
+  };
   return <E6MutationProvider key={`${session.adminId}:${epoch}`} refreshYieldBinding={refreshYieldBinding}><E6Content ctx={ctx}/></E6MutationProvider>;
 }
 function E6Content({ctx}:{ctx:EViewCtx}) {

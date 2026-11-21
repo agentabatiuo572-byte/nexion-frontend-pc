@@ -348,6 +348,7 @@ function coverageFacts(w: { operationCode?: string | null; obj?: string; after?:
  * 覆盖率两句全站共用的说法不改（别处是直接执行），这里按批准的场景另写。重试被拒时原记录已清掉，同一句也成立。
  */
 function approvalRefusedText(operationCode: string | null | undefined, code: string) {
+  if (code === "ONBOARDING_COMPARISON_VERSION_CONFLICT") return "这个对比位已被别人改过，这次批准没有执行；审批单还是待审批。请驳回，或请发起人撤回后重新提交。";
   // A6 授权单：后端在改授权之前拒（OpsPlatformRoleService 审计角色只读门），授权、单子和锁都不动。
   if (code === "AUDIT_ROLE_WRITE_FORBIDDEN") return "审计角色只能有查看权限，这次批准没有执行，角色权限没有变；审批单还是待审批，不会自己结束。请驳回，或请发起人撤回。";
   // F 域配置（放宽方向）和 F5 补发：后端在改之前拒（OpsTeamService.updateUiConfig 等、F5CommissionService.reissueInternal），单子和锁都不动。

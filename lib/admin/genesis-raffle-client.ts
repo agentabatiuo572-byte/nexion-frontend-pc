@@ -9,6 +9,7 @@ export interface RaffleDraft { id: string; titleZh: string; titleEn: string; tit
 export interface AdminRaffle extends RaffleDraft { status: "DRAFT" | "OPEN" | "PROCESSING" | "DRAWN"; revision: number; totalEntries: number; titleTranslations?: RaffleTranslations | null; }
 export const RAFFLE_LANGUAGES = { zh: { suffix: "Zh", label: "中文" }, en: { suffix: "En", label: "英文" }, vi: { suffix: "Vi", label: "越南语" } } as const;
 export const RAFFLE_READBACK_ADVANCED = "本次保存已成功，当前配置已被后续修改。请核对最新配置。";
+export const RAFFLE_SAVE_PENDING = "保存结果待核对";
 export function raffleDraftError(value: RaffleDraft, requiredLanguages: readonly OperatingLanguageCode[] = OPERATING_LANGUAGE_CODES): string {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(value.id)) return "本期编号需为 1–64 位字母、数字、下划线或短横线。";
   const missingTitles = requiredLanguages.filter(locale => !value[`title${RAFFLE_LANGUAGES[locale].suffix}`].trim());
