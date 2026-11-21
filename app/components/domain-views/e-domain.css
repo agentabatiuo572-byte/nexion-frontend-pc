@@ -1048,3 +1048,5 @@
 .e3p-manual dl > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--rd-space-3); }
 .e3p-manual dt { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
 .e3p-manual dd { margin: 0; color: var(--rd-text-2); }
+/* E6 任务节奏：统计带已经在面板里，不再自带一层底和边，浅色下不出现卡中卡（BUG-419 E6-2）。 */
+:root[data-theme] .e6-rhythm .rd-stats.rd-stats { padding: 0; box-shadow: none; }

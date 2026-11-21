@@ -303,6 +303,6 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
       </>}
       {releaseKey&&pending&&releaseKey===pending.commandKey&&pending.absent&&!pending.ticketId&&isRetryExpired(pending)&&<MissingProposalReleaseModal label="手机换机规则的变更申请" createdAt={pending.createdAt} onCancel={()=>setReleaseKey(null)} onConfirm={async()=>{try{await releaseMissing();}catch{throw new Error("这次没查到审批记录，请稍后再查或到审批页面核对；原请求保留。");}}}/>}
       {releaseKey&&pending&&!(releaseKey===pending.commandKey&&pending.absent&&!pending.ticketId&&isRetryExpired(pending))&&<ReleaseModal label="原手机换机策略提案" onCancel={()=>setReleaseKey(null)} onConfirm={()=>{if(releaseKey!==pending.commandKey||retryRejectedKey!==pending.commandKey){setReleaseKey(null);return;}proposals.forget(pending.fingerprint,pending.commandKey);setRetryRejectedKey(null);syncPending();setReleaseKey(null);void refresh();}}/>}
-      {discard&&<Modal title="刷新会放弃未提交草稿" onClose={()=>setDiscard(false)} footer={<Decision primary={<Button variant="primary" onClick={()=>{setDiscard(false);void refresh();}}>放弃草稿并刷新</Button>} others={<Button onClick={()=>setDiscard(false)}>继续编辑</Button>}/> }><p>将放弃换机规则普通草稿；原提案和原操作记录继续保留。</p></Modal>}
+      {discard&&<Modal title="刷新会放弃未提交草稿" onClose={()=>setDiscard(false)} footer={<Decision danger={<Button variant="danger-outline" onClick={()=>{setDiscard(false);void refresh();}}>放弃草稿并刷新</Button>} others={<Button onClick={()=>setDiscard(false)}>继续编辑</Button>}/> }><p>将放弃换机规则普通草稿；原提案和原操作记录继续保留。</p></Modal>}
     </Panel>;
 }
