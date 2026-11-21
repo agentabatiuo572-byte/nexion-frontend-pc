@@ -243,6 +243,22 @@
 /* ============================ A3 系统配置（改版） ============================
    页面根 .a3-page 不占版面（display: contents），块间距仍由 .rd-page 给。只用 --rd-* 令牌。 */
 .a3-page { display: contents; }
+.a3-page[hidden] { display: none; }
+.av-manager .av-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(280px, 1fr); gap: var(--rd-section-gap); align-items: start; }
+.av-name, .av-package, .av-actions { display: flex; align-items: center; gap: var(--rd-space-2); }
+.av-actions { flex-wrap: wrap; }
+.av-package { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.av-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--rd-space-3); }
+.av-metrics div { display: grid; gap: var(--rd-space-1); }
+.av-metrics span { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.av-metrics strong { color: var(--rd-text); font-size: var(--rd-text-section); overflow-wrap: anywhere; }
+.av-notes p, .av-phone p, .av-changes dd { white-space: pre-wrap; overflow-wrap: anywhere; }
+.rd-modal.av-editor { inset: 0 0 0 auto; width: min(540px, 100vw); height: 100dvh; max-height: none; transform: none; border-radius: 0; }
+.av-notes h3, .av-phone h3 { font-size: var(--rd-text-section); color: var(--rd-text); }
+.av-changes summary, .av-manager details > summary { cursor: pointer; color: var(--rd-text-2); }
+.av-phone { display: grid; gap: var(--rd-space-3); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); padding: var(--rd-space-6); }
+.av-phone-primary { padding: var(--rd-space-2) var(--rd-space-4); border-radius: var(--rd-radius-control); color: var(--rd-text-on-brand); background: var(--rd-brand); text-align: center; }
+@container adom (max-width: 880px) { .av-manager .av-grid { grid-template-columns: minmax(0, 1fr); } }
 .a3-page [role="tabpanel"][hidden] { display: none; }
 
 /* 开关与门槛：两张参数卡并排，现在的值大字，下面写这意味着什么 */

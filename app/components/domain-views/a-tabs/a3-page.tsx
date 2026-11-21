@@ -39,6 +39,7 @@ import type { FundCommandEvidence, FundInvestigationOutcome } from "@/lib/admin/
 import type { ACtx } from "./types";
 import { A3Calendar, type A3CalendarSummary } from "./a3-calendar";
 import { A3Experience } from "./a3-experience";
+import { AppVersionManager } from "./app-version-manager";
 import { A3Content, contentCheckLine, type A3ContentSummary, type A3Restored } from "./a3-content";
 
 type TabKey = "switches" | "calendar" | "experience" | "content" | "status";
@@ -132,6 +133,18 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   const [content, setContent] = useState<A3ContentSummary | null>(null);
   const [calendarNonce, setCalendarNonce] = useState(0);
   const [tab, setTab] = useState<TabKey>("switches");
+  const [versionManager, setVersionManager] = useState(false);
+  useEffect(() => {
+    const syncLocation = () => {
+      const hash = window.location.hash;
+      setVersionManager(hash === "#app-versions");
+      if (hash === "#app-versions" || hash === "#a3-installer") setTab("experience");
+      if (hash === "#app-versions" || hash === "#a3-installer") requestAnimationFrame(() => document.getElementById(hash.slice(1))?.scrollIntoView());
+    };
+    syncLocation();
+    window.addEventListener("hashchange", syncLocation);
+    return () => window.removeEventListener("hashchange", syncLocation);
+  }, []);
   const ids = useTabIds();
   const commands = useA3Commands();
   const [recovery, setRecovery] = useState<A3Command | null>(null);
@@ -655,7 +668,9 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   };
 
   return (
-    <div className="a3-page">
+    <>
+    {versionManager && <AppVersionManager key={session?.adminId} />}
+    <div className="a3-page" hidden={versionManager}>
       <PageHeader pageId="A3" title="系统配置" summary="平台时区、App 分享下载、公开说明和全局开关。"
         meta={readAt ? `${readAt} 读取（${businessZone().label}）` : undefined}
         readOnly={!anyWrite && overview ? "你只能查看" : undefined}
@@ -724,5 +739,6 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         checks={checks} onRelease={openRelease} retry={contentRetry} restored={restored} onRestored={onRestored} /></div>
       <div {...ids.panel("status")} hidden={tab !== "status"}>{statusPanel}</div>
     </div>
+    </>
   );
 }

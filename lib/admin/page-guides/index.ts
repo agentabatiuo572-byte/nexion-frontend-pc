@@ -17,6 +17,15 @@ export interface PageGuideContent {
 }
 
 const PAGE_GUIDES: Record<string, PageGuideContent> = {
+  "A3-app-versions": {
+    purpose: "管理 Android 和 iOS 的更新提示与最低支持版本。",
+    tasks: [
+      { title: "准备更新", steps: ["选择平台，打开草稿，选择已核实的产物", "填写最低支持构建号和三语更新说明，提高门槛时补充三语原因", "保存后提交审批"] },
+      { title: "预览提示", steps: ["在「App 上的样子」选择待发布或线上策略", "输入手机已装构建号，并切换预览语言"] },
+      { title: "发布或恢复", steps: ["由未编辑、未提交本次候选的管理员批准", "有权管理员核对前后值后发布", "需恢复时，在发布记录申请恢复上一策略，重新审批并发布"] },
+    ],
+    terms: [{ name: "构建号", text: "客户端用来比较版本的正整数。低于最低支持构建号时必须更新。" }],
+  },
   F1: {
     purpose: "管 V0–V8 九级的晋升条件、升级奖励和每级人数。",
     tasks: [
