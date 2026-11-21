@@ -31,6 +31,11 @@ export interface Snapshot {
   restoring: boolean;
   live: Policy | null;
   candidate: Policy | null;
+  previous?: Policy | null;
+  livePackage?: Policy | null;
+  liveResource?: Policy | null;
+  previousPackage?: Policy | null;
+  previousResource?: Policy | null;
 }
 export interface PlatformUpdates extends Snapshot {
   platform: Platform;
@@ -50,6 +55,32 @@ export interface ActionBody {
 }
 export class UpdateError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
+}
+
+export function livePolicies(state: Snapshot) {
+  // Earlier releases and their stored history contain only the active full package.
+  return {
+    package: state.livePackage ?? (state.live?.updateType === "package" ? state.live : null),
+    resource: state.liveResource ?? (state.live?.updateType === "resource" ? state.live : null),
+  };
+}
+
+export function targetPolicies(state: Snapshot, restoring = state.restoring) {
+  const current = livePolicies(state);
+  if (restoring) {
+    const previous = state.previous === undefined ? state.candidate : state.previous;
+    return {
+      package: state.previousPackage ?? (previous?.updateType === "package" ? previous : null),
+      resource: state.previousResource ?? (previous?.updateType === "resource" ? previous : null),
+    };
+  }
+  if (state.candidate) current[state.candidate.updateType] = state.candidate;
+  return current;
+}
+
+export function eligibleArtifacts(state: PlatformUpdates) {
+  const live = livePolicies(state);
+  return state.artifacts.filter(item => item.latestBuild > (live[item.updateType]?.latestBuild ?? 0));
 }
 
 export async function requestUpdates(platform: Platform, command?: { action: Action; body: ActionBody }): Promise<PlatformUpdates> {

@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { PackageCheck, ShieldCheck } from "lucide-react";
 import { Button, Change, Fact, Facts, Field, Fold, Input, Modal, Notice, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { languages, platforms, requestUpdates, UpdateError, type Action, type ActionBody, type Artifact, type Draft, type Language, type PlatformUpdates, type Policy } from "@/lib/admin/app-updates-client";
+import { eligibleArtifacts, languages, livePolicies, platforms, requestUpdates, targetPolicies, UpdateError, type Action, type ActionBody, type Artifact, type Draft, type Language, type PlatformUpdates, type Policy } from "@/lib/admin/app-updates-client";
 import { toast } from "@/lib/store/ui";
 
 export const languageOptions = (Object.keys(languages) as Language[]).map(value => ({ value, label: languages[value] }));
@@ -27,7 +27,9 @@ export function PolicyChanges({ before, after }: { before: Policy | null; after:
   return <div className="av-changes"><Facts>
     <Fact k="版本名称"><Change from={before?.versionName ?? "无策略"} to={after?.versionName ?? "无策略"} /></Fact>
     <Fact k="最新构建号"><Change from={before?.latestBuild ?? "—"} to={after?.latestBuild ?? "—"} /></Fact>
-    <Fact k="最低支持构建号"><Change from={before?.minBuild ?? "—"} to={after?.minBuild ?? "—"} /></Fact>
+    {(before ?? after)?.updateType === "resource" ? <Fact k="适用安装包构建号"><Change
+      from={before ? `${before.minNativeBuild} 至 ${before.maxNativeBuild}` : "—"} to={after ? `${after.minNativeBuild} 至 ${after.maxNativeBuild}` : "—"} /></Fact>
+      : <Fact k="最低支持构建号"><Change from={before?.minBuild ?? "—"} to={after?.minBuild ?? "—"} /></Fact>}
     <Fact k="下载目标"><Change from={before?.downloadUrl ?? "—"} to={after?.downloadUrl ?? "—"} /></Fact>
   </Facts><details><summary>产物与三语文案对照</summary><Facts>
     <Fact k="产物编号"><Change from={before?.artifactId ?? "—"} to={after?.artifactId ?? "—"} /></Fact>
@@ -39,6 +41,11 @@ export function PolicyChanges({ before, after }: { before: Policy | null; after:
   </Facts></details></div>;
 }
 
+export function ReleaseChanges({ before, after }: { before: ReturnType<typeof livePolicies>; after: ReturnType<typeof livePolicies> }) {
+  return <>{(["package", "resource"] as const).filter(kind => before[kind] || after[kind]).map(kind =>
+    <section key={kind}><h3>{kind === "package" ? "官方整包" : "日常更新"}</h3><PolicyChanges before={before[kind]} after={after[kind]} /></section>)}</>;
+}
+
 function artifactName(item: Artifact) {
   return `${item.versionName} · 构建 ${item.latestBuild} · ${item.updateType === "package" ? "官方整包" : "资源包"}`;
 }
@@ -47,8 +54,9 @@ export function AppVersionCommand({ state, action, language, onClose, onReload, 
   state: PlatformUpdates; action: Action; language: Language; onClose: () => void; onReload: () => void; onSaved: (value: PlatformUpdates) => void;
 }) {
   const editing = state.status === "draft" ? state.candidate : null;
-  const base = editing ?? state.live;
-  const artifacts = state.artifacts.filter(item => item.latestBuild > (state.live?.latestBuild ?? 0));
+  const livePair = livePolicies(state);
+  const base = editing?.updateType === "package" ? editing : livePair.package;
+  const artifacts = eligibleArtifacts(state);
   const [artifactId, setArtifactId] = useState(editing?.artifactId ?? "");
   const [minimum, setMinimum] = useState(String(base?.minBuild ?? 1));
   const [notes, setNotes] = useState(editing?.notes ?? { zh: "", en: "", vi: "" });
@@ -65,9 +73,12 @@ export function AppVersionCommand({ state, action, language, onClose, onReload, 
   const inFlight = useRef(false);
   const locked = busy || uncertain || conflict;
   const artifact = artifacts.find(item => item.artifactId === artifactId);
-  const min = Number(minimum);
+  const resource = artifact?.updateType === "resource";
+  const min = resource ? 1 : Number(minimum);
   const needsReasons = min > 1;
   const target = action === "restore" ? state.previous : state.candidate;
+  const recovering = action === "restore" || state.restoring;
+  const targetPair = targetPolicies(state, recovering);
   const saving = action === "save";
   const title = saving ? editing ? "编辑版本草稿" : "创建版本草稿"
     : action === "restore" ? "申请恢复上一策略" : action === "publish" && state.restoring ? "发布恢复策略" : actionNames[action];
@@ -91,7 +102,7 @@ export function AppVersionCommand({ state, action, language, onClose, onReload, 
             setLocale(value); setError(`请补全 ${label} ${notes[value]?.trim() ? "必须更新的原因" : "更新说明"}。`); return;
           }
         }
-        policy = { artifactId, minBuild: min, notes, reasons };
+        policy = { artifactId, minBuild: min, notes, reasons: resource ? { zh: "", en: "", vi: "" } : reasons };
       } else if (reason.trim().length < 8 || reason.trim().length > 200) {
         setError("请填写 8 至 200 字的操作理由。"); return;
       }
@@ -130,17 +141,17 @@ export function AppVersionCommand({ state, action, language, onClose, onReload, 
           options={artifacts.map(item => ({ value: item.artifactId, label: artifactName(item) }))}
           onChange={value => { setArtifactId(value); setDirty(true); }} />}</Field>
       {artifact && <Fold inset defaultOpen title="产物资料" summary={artifactName(artifact)}><Facts>
-        <Fact k="版本名称">{artifact.versionName}</Fact><Fact k="安装包构建号">{artifact.latestBuild}</Fact>
+        <Fact k="版本名称">{artifact.versionName}</Fact><Fact k={resource ? "资源构建号" : "安装包构建号"}>{artifact.latestBuild}</Fact>
         <Fact k="更新方式">{artifact.updateType === "package" ? "官方整包" : "已核实资源包"}</Fact>
         <Fact k="下载目标">{artifact.downloadUrl}</Fact><Fact k="SHA-256">{artifact.sha256}</Fact>
         {artifact.updateType === "resource" && <Fact k="适用基座构建号">{artifact.minNativeBuild} 至 {artifact.maxNativeBuild}</Fact>}
       </Facts></Fold>}
-      <Field label="最低支持构建号" required>{control =>
-        <Input {...control} type="number" step={1} min={1} max={artifact?.latestBuild} value={minimum} disabled={locked} onChange={e => setMinimum(e.target.value)} />}</Field>
+      {!resource && <Field label="最低支持构建号" required>{control =>
+        <Input {...control} type="number" step={1} min={1} max={artifact?.latestBuild} value={minimum} disabled={locked} onChange={e => setMinimum(e.target.value)} />}</Field>}
       <Segments label="编辑语言" items={languageOptions} value={locale} onChange={setLocale} />
       <Field label={`更新说明 · ${languages[locale]}`} required>{control =>
         <Textarea {...control} rows={4} maxLength={1000} disabled={locked} value={notes[locale] ?? ""} onChange={e => setNotes({ ...notes, [locale]: e.target.value })} />}</Field>
-      {(needsReasons || reasons[locale]) && <Field label={`必须更新的原因 · ${languages[locale]}`} required={needsReasons}
+      {!resource && (needsReasons || reasons[locale]) && <Field label={`必须更新的原因 · ${languages[locale]}`} required={needsReasons}
         help={needsReasons ? "请分别填写三种语言的原因，低于门槛的用户会看到对应语言的提示。" : undefined}>{control =>
         <Textarea {...control} rows={3} maxLength={1000} disabled={locked} value={reasons[locale] ?? ""} onChange={e => setReasons({ ...reasons, [locale]: e.target.value })} />}</Field>}
       {feedback}
@@ -150,9 +161,10 @@ export function AppVersionCommand({ state, action, language, onClose, onReload, 
     sub={<StatusTag tone={action === "publish" ? "warn" : "progress"}>{action === "publish" ? "确认后生效" : "线上策略继续生效"}</StatusTag>}>
     <div className="rd-form-stack">
       <p>{platforms[state.platform]} · {effects[action]}</p>
-      <PolicyChanges before={state.live} after={target} />
+      {recovering ? <ReleaseChanges before={livePair} after={targetPair}/>
+        : <PolicyChanges before={target ? livePair[target.updateType] : state.live} after={target} />}
       {state.requestReason && <p>申请理由 · {state.requestReason}</p>}
-      {target && target.minBuild > (state.live?.minBuild ?? 1) && <Notice tone="warn" title={`构建号低于 ${target.minBuild} 的设备必须更新`}>{target.reasons[language]}</Notice>}
+      {target?.updateType === "package" && target.minBuild > (livePair.package?.minBuild ?? 1) && <Notice tone="warn" title={`构建号低于 ${target.minBuild} 的设备必须更新`}>{target.reasons[language]}</Notice>}
       <Field label="操作理由" hint="8 至 200 字" required>{control => <Textarea {...control} value={reason} rows={3} maxLength={200}
         disabled={locked} onChange={e => { setReason(e.target.value); setDirty(true); }} />}</Field>
       {feedback}

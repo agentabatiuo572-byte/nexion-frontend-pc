@@ -5,9 +5,9 @@ import { ArrowLeft, Bot, History, Layers3, PackageCheck, RefreshCw, Smartphone }
 import { BlockState, Button, Fact, Facts, Field, Input, Modal, Notice, PageHeader, Panel, Segments, Select, StatusTag, Steps, Table, Td, Th, Timeline, Tr } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
-import { languages, platforms, requestUpdates, type Action, type Language, type Platform, type PlatformUpdates, type Snapshot } from "@/lib/admin/app-updates-client";
+import { eligibleArtifacts, languages, livePolicies, platforms, requestUpdates, targetPolicies, type Action, type Language, type Platform, type PlatformUpdates, type Snapshot } from "@/lib/admin/app-updates-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { AppVersionCommand, PolicyChanges, actionNames, languageOptions } from "./app-version-command";
+import { AppVersionCommand, PolicyChanges, ReleaseChanges, actionNames, languageOptions } from "./app-version-command";
 
 const stageNames = { idle: "无待办", draft: "草稿", pending: "待独立审批", approved: "已批准待发布" };
 const phoneCopy = {
@@ -25,29 +25,47 @@ function stage(state: Snapshot) {
 function Preview({ state, language }: { state: PlatformUpdates; language: Language }) {
   const [source, setSource] = useState("candidate");
   const [installed, setInstalled] = useState("1");
+  const [installedResource, setInstalledResource] = useState("");
   const [open, setOpen] = useState(false);
   const hasCandidate = state.status !== "idle";
   const chosen = hasCandidate ? source : "live";
-  const policy = chosen === "candidate" ? state.candidate : state.live;
+  const policies = chosen === "candidate" ? targetPolicies(state) : livePolicies(state);
   const build = Number(installed);
-  const valid = installed.trim() !== "" && Number.isSafeInteger(build) && build > 0;
-  const decision = policy && build < policy.minBuild ? "required" : policy && build < policy.latestBuild ? "optional" : "current";
+  const resourceBuild = Number(installedResource);
+  const validHost = installed.trim() !== "" && Number.isSafeInteger(build) && build > 0;
+  const validResource = installedResource === "" || (Number.isSafeInteger(resourceBuild) && resourceBuild > 0);
+  const valid = validHost && (!policies.resource || validResource);
+  const registered = (item: typeof policies.package) => item && state.artifacts.some(a =>
+    a.artifactId === item.artifactId && a.sha256 === item.sha256 && a.downloadUrl === item.downloadUrl);
+  const pkg = registered(policies.package) ? policies.package : null;
+  const resource = registered(policies.resource) ? policies.resource : null;
+  const compatible = resource && resource.minNativeBuild != null && resource.maxNativeBuild != null
+    && build >= resource.minNativeBuild && build <= resource.maxNativeBuild && installedResource !== "";
+  const packageUpdate = pkg && build < pkg.latestBuild;
+  const policy = packageUpdate ? pkg : compatible ? resource : pkg;
+  const decision = packageUpdate && build < pkg.minBuild ? "required"
+    : packageUpdate || (compatible && resourceBuild < resource.latestBuild) ? "optional" : "current";
   const text = phoneCopy[language];
   return <Panel title="App 上的样子" icon={Smartphone} tone="role-2" sub={`${platforms[state.platform]} · ${languages[language]}`}>
     <div className="rd-form-stack">
       <Field label="预览策略">{control => <Select {...control} aria-label="预览策略" value={chosen} onChange={setSource} options={[
         ...(hasCandidate ? [{ value: "candidate", label: "待发布策略" }] : []), { value: "live", label: "当前线上策略" },
       ]} />}</Field>
-      <Field label="手机已装构建号" error={valid ? undefined : "请输入大于零的整数。"}>{control =>
+      <Field label="手机已装构建号" error={validHost ? undefined : "请输入大于零的整数。"}>{control =>
         <Input {...control} type="number" min={1} step={1} value={installed} onChange={e => setInstalled(e.target.value)} />}</Field>
+      {resource && <Field label="手机已装资源构建号" help="使用手机版本更新页里的资源构建号。留空时只检查整包。" error={validResource ? undefined : "请输入大于零的整数。"}>{control =>
+        <Input {...control} type="number" min={1} step={1} value={installedResource} onChange={e => setInstalledResource(e.target.value)} />}</Field>}
       {valid && (policy ? <>
         <Notice tone={decision === "required" ? "warn" : decision === "optional" ? "progress" : "ok"} title={text[decision]}>
           {decision === "required" ? policy.reasons[language] : decision === "optional" ? policy.notes[language] : undefined}
         </Notice>
         <Facts>
-          <Fact k="必须更新">{policy.minBuild === 1 ? "无此区间" : `小于 ${policy.minBuild}`}</Fact>
-          <Fact k="可以稍后更新">{policy.minBuild === policy.latestBuild ? "无此区间" : `${policy.minBuild} 至 ${policy.latestBuild - 1}`}</Fact>
-          <Fact k="已是最新版本">{policy.latestBuild} 及以上</Fact>
+          {policy.updateType === "package" ? <>
+            <Fact k="必须更新">{policy.minBuild === 1 ? "无此区间" : `小于 ${policy.minBuild}`}</Fact>
+            <Fact k="可以稍后更新">{policy.minBuild === policy.latestBuild ? "无此区间" : `${policy.minBuild} 至 ${policy.latestBuild - 1}`}</Fact>
+            <Fact k="已是最新版本">{policy.latestBuild} 及以上</Fact></> : <>
+            <Fact k="适用安装包构建号">{policy.minNativeBuild} 至 {policy.maxNativeBuild}</Fact>
+            <Fact k="最新资源构建号">{policy.latestBuild}</Fact></>}
         </Facts>
         <Button onClick={() => setOpen(true)}>查看手机预览</Button>
       </> : <Notice tone="neutral" title="此策略不显示更新提示" />)}
@@ -71,7 +89,8 @@ function VersionDetails({ state, onSaved, refresh }: { state: PlatformUpdates; o
   const step = state.status === "draft" ? 0 : state.status === "pending" ? 1 : 2;
   const allowed = state.allowedActions;
   const title = state.restoring ? "待恢复策略" : state.status === "idle" ? "线上策略" : "待发布策略";
-  const available = state.artifacts.some(item => item.latestBuild > (state.live?.latestBuild ?? 0));
+  const available = eligibleArtifacts(state).length > 0;
+  const live = livePolicies(state);
   const history = allRecords ? state.history : state.history.slice(0, 2);
   const submitted = state.status === "pending" || state.status === "approved" ? state.history.find(event => event.action === "submit" || event.action === "restore") : null;
   const approved = state.status === "approved" ? state.history.find(event => event.action === "approve") : null;
@@ -82,10 +101,15 @@ function VersionDetails({ state, onSaved, refresh }: { state: PlatformUpdates; o
         actions={<StatusTag tone={state.status === "pending" ? "warn" : state.status === "approved" ? "progress" : "neutral"}>{stage(state)}</StatusTag>}>
         <div className="rd-form-stack">
           {shown ? <>
-            <div className="av-metrics">{[["版本名称", shown.versionName], ["安装包构建号", shown.latestBuild], ["最低支持构建号", shown.minBuild]].map(([label, value]) =>
+            <div className="av-metrics">{[["版本名称", shown.versionName], [shown.updateType === "package" ? "安装包构建号" : "资源构建号", shown.latestBuild],
+              shown.updateType === "package" ? ["最低支持构建号", shown.minBuild] : ["适用安装包构建号", `${shown.minNativeBuild} 至 ${shown.maxNativeBuild}`]].map(([label, value]) =>
               <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
             <div className="av-package"><PackageCheck size={16} aria-hidden />{shown.updateType === "package" ? "官方整包" : "已核实资源包"} · {platforms[state.platform]}</div>
           </> : <Notice tone="neutral" title={state.restoring ? "恢复后停止显示更新提示" : "尚未发布更新策略"} />}
+          {state.status === "idle" && live.package && live.resource && <Facts>
+            <Fact k="线上整包">{live.package.versionName} · {live.package.latestBuild} · 最低 {live.package.minBuild}</Fact>
+            <Fact k="线上日常更新">{live.resource.versionName} · {live.resource.latestBuild}</Fact>
+          </Facts>}
           <Segments label="预览语言" value={language} items={languageOptions} onChange={setLanguage} />
           {shown && <div className="av-notes"><h3>更新说明</h3><p lang={language}>{shown.notes[language]}</p>
             {shown.reasons[language] && <><h3>必须更新的原因</h3><p lang={language}>{shown.reasons[language]}</p></>}</div>}
@@ -108,7 +132,10 @@ function VersionDetails({ state, onSaved, refresh }: { state: PlatformUpdates; o
           id: `${item.createdAt}-${index}`, action: item.action === "publish" && item.before.restoring ? "已发布恢复策略" : actionNames[item.action],
           actor: item.actor, at: item.createdAt, detail: <><p>{item.reason}</p><details><summary>查看变更</summary>
             <p>{stage(item.before)} → {stage(item.after)}</p>
-            <PolicyChanges before={item.action === "publish" ? item.before.live : item.before.candidate} after={item.action === "publish" ? item.after.live : item.after.candidate} />
+            {item.action === "publish" ? <ReleaseChanges before={livePolicies(item.before)} after={livePolicies(item.after)} />
+              : item.action === "restore" || item.before.restoring || item.after.restoring
+                ? <ReleaseChanges before={livePolicies(item.before)} after={targetPolicies(item.after)} />
+                : <PolicyChanges before={item.before.candidate} after={item.after.candidate} />}
           </details></>,
         }))} />
         {state.history.length > 2 && <Button size="sm" variant="ghost" onClick={() => setAllRecords(!allRecords)}>{allRecords ? "收起记录" : "查看全部记录"}</Button>}
@@ -153,7 +180,7 @@ export function AppVersionManager() {
         <Table label="平台版本"><thead><tr><Th>平台</Th><Th>线上版本</Th><Th align="right">线上构建号</Th><Th align="right">最低支持构建号</Th><Th>发布进度</Th><Th sticky="end">操作</Th></tr></thead>
           <tbody>{platformKeys.map(key => { const row = records[key], Icon = key === "android" ? Bot : Smartphone; return <Tr key={key} selected={key === platform}>
             <Td><span className="av-name"><Icon size={16} />{platforms[key]}</span></Td>
-            <Td>{row ? row.live?.versionName ?? "无策略" : "—"}</Td><Td align="right">{row?.live?.latestBuild ?? "—"}</Td><Td align="right">{row?.live?.minBuild ?? "—"}</Td>
+            <Td>{row ? row.live?.versionName ?? "无策略" : "—"}</Td><Td align="right">{row?.live?.latestBuild ?? "—"}</Td><Td align="right">{row ? livePolicies(row).package?.minBuild ?? "—" : "—"}</Td>
             <Td>{row ? stage(row) : errors[key] ? "读取失败" : "读取中"}</Td>
             <Td sticky="end"><Button size="sm" variant="ghost" aria-label={`查看 ${platforms[key]} 策略`} aria-pressed={platform === key} onClick={() => setPlatform(key)}>{platform === key ? "当前平台" : "查看策略"}</Button></Td>
           </Tr>; })}</tbody></Table>
