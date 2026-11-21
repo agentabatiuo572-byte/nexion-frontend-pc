@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Cpu, FilePenLine } from "lucide-react";
 import "./phone-calibration-panel.css";
 import { Drawer, Decision, Button, Table, Th, Tr, Td, Explain, BlockState, Fold, Field, Input, Textarea, Check, Select, Facts, Fact, StatusTag, Notice } from "@/app/components/rd";
@@ -22,8 +22,9 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
 }) {
   const [chipTouched, setChipTouched] = useState(false);
   const [query, setQuery] = useState("");
-  // 新增的档展开并把焦点放到名称上，页面跟着滚到它（BUG-419 E6-18）。
-  const [added, setAdded] = useState<string | null>(null);
+  // 新增的档展开并把焦点放到名称上，页面跟着滚到它（BUG-419 E6-18）。只聚焦一次：之后档重新挂载（清搜索、删前面的档、导入预设）不再抢焦点。
+  const [openTiers, setOpenTiers] = useState<ReadonlySet<string>>(new Set());
+  const focusTier = useRef<string | null>(null);
   const [chipForm, setChipForm] = useState<ChipForm | null>(null);
   const [presets, setPresets] = useState<{ catalog: AndroidPresetCatalog; plan: AndroidImportPlan; restore: boolean } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -67,7 +68,7 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
 
   const chipMissing = chipForm && (!chipForm.chip.socKey ? "请填写芯片编号" : !chipForm.chip.name.trim() ? "请填写芯片名称" : !chipForm.chip.manufacturer.trim() ? "请填写厂商" : !chipForm.aliases.trim() ? "至少填写一个已核验标识" : undefined);
   const actions = canWrite && <div className="e6-hw-actions"><Button disabled={!editable || loading || !!chipForm || importOpen} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入芯片预设"}</Button>
-    <Button disabled={!editable} onClick={() => { const rule = blankAndroidRule(rules, iosRuleIds); setAdded(rule.id); onChange([...rules, rule], removals); }}>新增芯片档</Button></div>;
+    <Button disabled={!editable} onClick={() => { const rule = blankAndroidRule(rules, iosRuleIds); focusTier.current = rule.id; setOpenTiers(old => new Set(old).add(rule.id)); onChange([...rules, rule], removals); }}>新增芯片档</Button></div>;
 
   return <fieldset className="ios-model-rules e6-hw-directory" aria-label="Android 芯片档">
     <legend><span className="e6-actions">Android 芯片档（{rules.length} 档 · {rules.reduce((sum, rule) => sum + rule.chips.length, 0)} 颗芯片）
@@ -91,7 +92,7 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
         </>}
       </div>
     </Drawer>}
-    {issues.length > 0 && rules[issues[0].index]?.id !== added && <Notice tone="warn">{issues[0].index >= 0 ? `第 ${issues[0].index + 1} 档：` : ""}{issues[0].message}</Notice>}
+    {issues.length > 0 && !(!needle && openTiers.has(rules[issues[0].index]?.id ?? "")) && <Notice tone="warn">{issues[0].index >= 0 ? `第 ${issues[0].index + 1} 档：` : ""}{issues[0].message}</Notice>}
     {changes.length > 0 && <Fold title="Android 草稿变化" summary={`${changes.length} 项，尚未发布`} inset>{changes.map(change=><p key={change.id}>{CHANGE_LABELS[change.kind]}「{change.name || change.id}」</p>)}</Fold>}
     {needle && rules.length > 0 && !rules.some(rule=>rule.chips.some(matches)) && <BlockState state="empty" title="没有匹配芯片" detail={<Button size="sm" onClick={()=>setQuery("")}>清空搜索</Button>}/>}
     {rules.length === 0 ? <BlockState state="empty" title="尚无芯片档，Android 校准将进入待核验" detail={actions}/> : rules.map((rule,index)=>{
@@ -99,9 +100,9 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
       const change=changes.find(item=>item.id===rule.id);
       const issue=(field:string)=>issues.find(item=>item.index===index && item.field===field)?.message;
       const chipActions=canWrite && <div className="e6-hw-actions"><Button size="sm" disabled={!editable || !!chipForm || importOpen} onClick={()=>{setChipTouched(false);setChipForm({tierId:rule.id,isNew:true,aliases:"",chip:{socKey:"",name:"",manufacturer:"",aliases:[]}});}}>在本档新增芯片</Button>{!rule.chips.length && <Button size="sm" variant="danger-outline" disabled={!editable} onClick={()=>onChange(rules.filter(item=>item.id!==rule.id),removals)}>删除空档</Button>}</div>;
-      return <Fold key={rule.id + index} title={rule.name || "未命名档"} summary={<>{formatRange(rule)} · {rule.chips.length} 颗芯片{!rule.enabled && " · 已停用"}{change && ` · ${CHANGE_LABELS[change.kind]}`}</>} inset defaultOpen={!!needle || rule.id === added} open={needle ? true : undefined}>
+      return <Fold key={rule.id + index} title={rule.name || "未命名档"} summary={<>{formatRange(rule)} · {rule.chips.length} 颗芯片{!rule.enabled && " · 已停用"}{change && ` · ${CHANGE_LABELS[change.kind]}`}</>} inset defaultOpen={!!needle || openTiers.has(rule.id)} open={needle ? true : undefined} onOpenChange={next => setOpenTiers(old => { const set = new Set(old); if (next) set.add(rule.id); else set.delete(rule.id); return set; })}>
         <div className="e6-hw-tier-form">
-          <Field label="档位名称" error={issue("name")}><Input autoFocus={rule.id === added} value={rule.name} maxLength={64} disabled={!editable} onChange={event=>update(rule.id,{name:event.target.value})}/></Field>
+          <Field label="档位名称" error={issue("name")}><Input ref={input => { if (input && focusTier.current === rule.id) { focusTier.current = null; input.focus(); } }} value={rule.name} maxLength={64} disabled={!editable} onChange={event=>update(rule.id,{name:event.target.value})}/></Field>
           <div className="e6-hw-range"><Field label="算力下限（含）" error={issue("minComputeValue")}><Input type="number" min="0" step="0.01" disabled={!editable} value={Number.isFinite(rule.minComputeValue)?rule.minComputeValue:""} onChange={event=>update(rule.id,{minComputeValue:event.target.value?Number(event.target.value):NaN})}/></Field><Field label="算力上限（含）" error={issue("maxComputeValue")}><Input type="number" min="0" step="0.01" disabled={!editable} value={Number.isFinite(rule.maxComputeValue)?rule.maxComputeValue:""} onChange={event=>update(rule.id,{maxComputeValue:event.target.value?Number(event.target.value):NaN})}/></Field></div>
           <Check label="参加后续校准匹配" checked={rule.enabled} disabled={!editable} onChange={event=>update(rule.id,{enabled:event.target.checked})}/>
           <Field label="运营说明" hint="选填 · 最多 500 字" error={issue("note")}><Input value={rule.note??""} maxLength={500} disabled={!editable} onChange={event=>update(rule.id,{note:event.target.value||null})}/></Field>

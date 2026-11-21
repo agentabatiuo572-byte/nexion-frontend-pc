@@ -309,7 +309,7 @@ export function TrendLines({ label, ticks, series, format, axisFormat = format, 
         </div>
         <div ref={axis} className="rd-chart-x" data-spread="">
           {ticks.map((tick, index) => ({ tick, index })).filter(({ index }) => index % every === 0 || index === ticks.length - 1).map(({ tick, index }, shown) => {
-            return <span key={tick} data-edge={index === 0 ? "start" : index === ticks.length - 1 ? "end" : undefined} style={{ left: `${xRatio(index) * 100}%`, visibility: crowded.split(",").includes(String(shown)) ? "hidden" : undefined }}>{tick}</span>;
+            return <span key={index} data-edge={index === 0 ? "start" : index === ticks.length - 1 ? "end" : undefined} style={{ left: `${xRatio(index) * 100}%`, visibility: crowded.split(",").includes(String(shown)) ? "hidden" : undefined }}>{tick}</span>;
           })}
         </div>
       </div>

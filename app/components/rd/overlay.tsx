@@ -66,9 +66,14 @@ function dismissesDrawer(target: EventTarget | null) {
 /** 打开时聚焦容器，关闭后回到打开前的元素。Dialog 没有 Trigger 时要自己记。 */
 function useFocusHandoff(open: boolean) {
   const previous = useRef<HTMLElement | null>(null);
+  /** 打开者所在的行、面板或页签：原按钮被重画时只在这里面找同名的。 */
+  const area = useRef<Element | null>(null);
   const wasOpen = useRef(false);
   const content = useRef<HTMLDivElement>(null);
-  if (open && !wasOpen.current && document.activeElement instanceof HTMLElement) previous.current = document.activeElement;
+  if (open && !wasOpen.current && document.activeElement instanceof HTMLElement) {
+    previous.current = document.activeElement;
+    area.current = document.activeElement.closest("tr, section, [role=tabpanel]");
+  }
   wasOpen.current = open;
   return {
     ref: content,
@@ -81,10 +86,11 @@ function useFocusHandoff(open: boolean) {
       event.preventDefault();
       const opener = previous.current;
       if (opener?.isConnected) opener.focus();
-      // 提交时按钮可能重画过（变灰、转圈后换了节点，BUG-536）：原节点不在了，就回到页面上看得见的同名那一个；同名不止一个时不猜。
-      else if (opener) {
+      // 提交时按钮可能重画过（变灰、转圈后换了节点，BUG-536）：原节点不在了，就在它原来那一行、那块面板里找看得见的同名那一个；
+      // 同名不止一个、或那一块也不在了，焦点不动。
+      else if (opener && area.current?.isConnected) {
         const name = opener.getAttribute("aria-label") ?? opener.textContent;
-        const same = [...document.querySelectorAll<HTMLElement>(opener.tagName)].filter((element) => element.getClientRects().length > 0 && (element.getAttribute("aria-label") ?? element.textContent) === name);
+        const same = [...area.current.querySelectorAll<HTMLElement>(opener.tagName)].filter((element) => element.getClientRects().length > 0 && (element.getAttribute("aria-label") ?? element.textContent) === name);
         if (same.length === 1) same[0].focus();
       }
     },
