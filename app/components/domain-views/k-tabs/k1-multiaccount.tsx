@@ -1537,7 +1537,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
   const sections: SectionNavItem[] = [
     { id: "risk", label: "风险判断标准" },
-    { id: "registration", label: "H5 注册防刷与新人礼" },
+    { id: "registration", label: "注册防刷与新人礼" },
     { id: "earnings", label: "收益审核规则", alert: Boolean(overviewReady) && overviewReady?.releaseParams.length === 0 },
     { id: "whitelist", label: "IP 允许名单" },
   ];
@@ -1896,7 +1896,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 </ConfigList>
               </Panel>
 
-              <Panel id={nav.anchor("registration")} title="H5 注册防刷与新人礼" icon={Gift} tone="role-3">
+              <Panel id={nav.anchor("registration")} title="注册防刷与新人礼" icon={Gift} tone="role-3">
                 {overviewReady.registrationParams.length ? <ConfigList>
                   {overviewReady.registrationParams.map((param) => <ConfigRow key={param.key} name={param.name} what={h5ParamDesc(param.desc, param.unit)} value={h5ParamValue(param.value, param.unit)}
                     action={param.writable ? paramAction(param.name, blockedBy("param", param.key), () => ctx.openActionConfirm({
@@ -1908,7 +1908,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                       effect: IMMEDIATE_EFFECT, confirmLabel: "确认修改", reasonPlaceholder: "写清调整原因和依据", reasonMax: 200,
                       run: (reason, value) => runRecord({ kind: "registration-param", target: param.key, name: param.name, label: `调整 ${param.name}`, operator, reason, value, expectedValue: param.value }),
                     })) : undefined} />)}
-                </ConfigList> : <p className="rd-note">暂无已配置的 H5 注册参数。</p>}
+                </ConfigList> : <p className="rd-note">暂无已配置的注册参数。</p>}
               </Panel>
 
               {/* 收益审核规则与账户组处置分开。 */}
