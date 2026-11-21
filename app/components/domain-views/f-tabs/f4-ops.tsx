@@ -233,7 +233,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           label="待处理的大使申请" value={count(data.ambassadorPendingCount)} unit="份" tone="role-3"
           sub={data.ambassadorPendingCount > 0 ? [waitBusiness && `业务核验 ${waitBusiness}`, waitFinance && `财务核验 ${waitFinance}`, waitApproval && `核验已通过 ${waitApproval}`].filter(Boolean).join(" · ") || undefined : undefined}>
           {quotaUnread
-            ? <span className="f4-card-line">有商品的月额度没读到，名额剩余先不显示</span>
+            ? <span className="f4-card-line">名额剩余 —</span>
             : quotaTotal > 0
             ? <span className="f4-card-meter">
               <RatioBar label="本月购机名额已用" value={Math.min(quotaUsed, quotaTotal)} total={quotaTotal} valueText={`已用 ${count(quotaUsed)} 台，总量 ${count(quotaTotal)} 台`} tone="role-2" quiet />
