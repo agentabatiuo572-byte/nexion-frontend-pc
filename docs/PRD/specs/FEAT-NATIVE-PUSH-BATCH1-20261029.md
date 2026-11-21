@@ -129,3 +129,15 @@ Apple上传COMPLETE且无错误/警告，build `c3b2b6fe-7465-4689-9e90-d536c9ec
 主控后发`[TEST1030-02]`的human3819/notification43901/delivery257同获APNs受理、attempt1，但用户未点该ID、opened_at仍NULL；不将其当作点击或打开证明，也不为补证重复发送。主控服务器持久证据为`ios3005-functional-acceptance.json`与`click-id-correlation.json`，本地关联汇总为`D:/workspace/output/push-direct-20261030/ios3005-actual-click-acceptance.json`。
 
 本轮结论为未完成设备初始化账号的iOS3005后台客服业务链路、系统展示、对应会话定位及精确打开回执通过；3004的点击失败作为历史保留。五类业务、iOS前台/冷启动全覆盖、首次拒绝/恢复、Token轮换及登出/切号缺口继续保留。Android仍限同签名3003宿主资源UI与既有单安装FCM三态烟测，不扩大为完整新宿主或双平台五类全验。证据索引见 `D:/workspace/output/push-direct-20261030/REPORT.md` 与 `TEST-PLAN.md`。
+
+## 2026-11-22 iOS 极光推送接入
+
+- UVEL 的 iOS TEST 包使用 Bundle ID `ai.uvel.app` 和 Production APNs。极光生产推送证书已通过控制台验证，有效期至 2027 年 12 月 22 日。
+- iOS 新装或升级后首次打开时提示极光隐私授权。用户可查看完整隐私政策、同意并启用或暂不启用。主动同意并开启系统通知后，App 才初始化 JPush 并将 Apple 推送令牌注册到极光。暂不启用可继续使用 App、站内消息和现有系统通知。
+- iOS 包使用 JPush 6.3.0 和 JCore 5.6.0-noidfa。AppKey 随构建注入，极光 Master Secret 和推送认证私钥不进入安装包。已有业务通知仍由后端通过 Apple APNs 直连发送，Android 仍使用 FCM。
+- TestFlight 完整 IPA 需核对 Bundle ID、SDK 链接、AppKey 与控制台一致、签名及描述文件的 Production APNs 权限。安装后实测同意与暂不启用两条路径，并核对收到极光单设备测试通知的结果。后台改用极光发送业务通知另行验收。
+
+- 2026-11-22 构建 `2026112201` 已完成原生云打包、签名核验及 TestFlight 内测分发。包内 JPush 6.3.0、JCore 5.6.0-noidfa 和极光隐私清单已核对，AppKey 与 UVEL 控制台一致。IPA 权限和分发描述文件均为 `production`，签名者与获准的 Apple Distribution 证书匹配，包内 API 指向 TEST。SHA-256 为 `198f495c8dc6e46deeb3b9b74fc54c6818aec5de99185b1700301ebe7db3c927`。测试用户确认已在 iOS 16 安装并选择启用极光，随后发现「开启通知」无响应。极光定向收件和「暂不启用」路径待真机验收。
+- iOS「偏好设置 → 系统通知」读取原生系统权限。尚未询问时，由按钮直接发起系统授权，不依赖登录会话或推送登记完成。系统已记录选择时，按钮打开 UVEL 的系统设置，打开失败时提示手动入口。返回 App 后重新读系统权限，再按实际结果同步当前安装的推送登记。极光隐私选择继续单独控制极光 SDK 初始化。真机验收覆盖首次弹窗、拒绝后打开设置、手动开启后返回刷新，以及同意极光后的定向收件。
+- 测试 iPhone 运行 iOS 16.7.16。通过 USB 确认安装版本 `2026112201` 后，用户重试仍无反馈，并确认系统「设置 → 通知」未列出 UVEL。设备日志未捕获可用于定向测试的极光注册编号。
+- 修复构建 `2026112202` 已完成类型检查、5.33 资源编译和完整 iOS 签名打包。IPA 的 Bundle ID、极光 SDK 和 AppKey、Production APNs 签名和描述文件、TEST 后端均经核对。SHA-256 为 `722c27ad8543d24599da55097969f4cdf4ce6355a3cbfd571667a6fc54910e9c`。Apple 已完成处理并只在原内部测试组 `UVEL TEST Push` 分发。通过 USB 确认该 iPhone 已安装。用户确认看到了极光隐私提示和独立的 iOS 系统授权框，并选择允许系统通知。设备日志捕获到极光注册编号。极光后台按这台手机的 Registration ID 向 iOS 生产环境发送一条「UVEL 推送测试」，预估目标数为 1，后台提示推送成功。用户在测试 iPhone 上确认看到了正文带构建号 2026112202 的通知。「同意并启用」至真机收件验证通过。用户随后重装同一版本，未再次看到极光隐私提示，未能验证「暂不启用」。用户确认本轮验收以极光推送真机收件成功为准。已做过系统授权后的设置跳转与返回刷新未在本轮单独验证。

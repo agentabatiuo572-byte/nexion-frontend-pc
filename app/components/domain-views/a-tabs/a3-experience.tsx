@@ -304,6 +304,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     </Panel>
 
     <Panel title="官方应用下载" icon={Download} tone="role-2" sub={unavailable ? "暂不提供" : `官方渠道 · 版本 ${config.appDownload.version || "—"}`}
+      actions={<a href="#app-versions" className="rd-btn" data-size="sm" data-variant="secondary">管理 App 版本</a>}
       explain="用户在注册成功页和下载入口看到的官方安装信息。这里只登记链接和说明，不上传安装包，也不强制用户更新。">
       <div className="a3-with-preview">
         <div className="rd-form-stack">

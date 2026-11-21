@@ -39,6 +39,9 @@ export interface PurchaseGate {
 }
 
 export interface OpsSku {
+  // Read-only quota counts. Null without a quota; absent on older servers.
+  purchaseQuotaHeld?: number | null;
+  purchaseQuotaRemaining?: number | null;
   seriesCode?: string | null;
   readonly seriesLocked?: boolean;
   allowedPoolCodes?: string[];

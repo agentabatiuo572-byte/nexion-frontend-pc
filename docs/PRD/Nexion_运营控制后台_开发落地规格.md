@@ -118,7 +118,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 ### 0.5 接口硬校验(server 强制)
 - 业务规则前置失败 → **400 / 422**;状态机非法转移 → **409**。
 - 高敏写 `reason` 缺失 → **400 `REASON_REQUIRED`**(确认弹窗理由必填,server 强制非空,8–200 字)。
-- **放大资金流出方向**(上调 APY/费率/奖励/排放率/匹配比/cap、下调罚款/冷却/积分门、kill 恢复)提交时 server 前置核 **B1 覆盖率红线**,低于 `coverageRedLine`(默认 100%)**统一拒绝返 422**(✅ PM 2026-06-02;旧文 403 已废)。
+- **放大资金流出方向**(上调 APY/费率/奖励/排放率/匹配比/cap、下调罚款/冷却、kill 恢复)提交时 server 前置核 **B1 覆盖率红线**,低于 `coverageRedLine`(默认 100%)**统一拒绝返 422**(✅ PM 2026-06-02;旧文 403 已废)。
 - 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / E3 产能分段保序与换新阶梯严格保序 / V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序。原七层费率和合并上限继续约束购买预算；L1 拆分仅改变发放构成，不改变预算占用，设备分成不占购买额度。
 
 ### 0.6 ID 全 server mint
@@ -136,7 +136,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 - **拐点**:`binaryDailyCap` 在月 **7**(非月 6);`withdrawCooldownDays` 月 **8=35d** 中间档(前端缺,须新增)。
 
 ### 0.10 Phase 派发参数权威唯一性
-10 个 dial(`newUserBonusMultiplier / inviteRewardMultiplier / reinvestMultiplier / withdrawPointsRatio / withdrawCooldownDays / binaryDailyCap / premiumSubAvailable / nexV2LockAvailable / questBonusMultiplier / complianceHoldEnabled`)**全部权威归 H1**;D5/F3/G5/G6/H3/E1 等生效面 `PUT` 收到这些参数返 **422 `PHASE_PARAM_READONLY`**(+ `redirect:/admin/phase/h1`)。
+以下阶段参数(`newUserBonusMultiplier / inviteRewardMultiplier / reinvestMultiplier / withdrawCooldownDays / binaryDailyCap / premiumSubAvailable / nexV2LockAvailable / questBonusMultiplier / complianceHoldEnabled`)**全部权威归 H1**;D5/F3/G5/G6/H3/E1 等生效面 `PUT` 收到这些参数返 **422 `PHASE_PARAM_READONLY`**(+ `redirect:/admin/phase/h1`)。
 
 ### 0.11 关键业务不变量
 - `cumulativeDepositUsdt` **仅 D1 真实充值确认链路写**(正向 recordDeposit / 负向 chargeback、E4 退款核减);earnings/trade-in 折抵/quest/C3 纯余额补记**均不得触达**(trade-in 资格硬前提)。
@@ -164,7 +164,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | B1 | 双账本总览 | 真实储备 vs 应付负债并列 + 兑付覆盖率(资金安全最高水位) | B 总览 | V1·Ch4 | §5.14 / §9.6.3 |
 | B2 | 资金池水位 | 应付款 9 类科目 + 到期负债预测概览(口径同 D3) | B 总览 | V1·Ch4 | §9.2/§9.3/§9.6/§10 |
 | B3 | 转化漏斗 | 注册→首购→锁定计划→提现四步漏斗 + L1–L5 + Day7 留存 | B 总览 | V1·Ch4 | §1.6 / §2.4.7 |
-| B4 | 节奏状态 | 各 Phase 用户分布 + 10-dial 现值 + 距拐点(dial 只读) | B 总览 | V1·Ch4 | §13.4 / 节奏表§6.4 |
+| B4 | 节奏状态 | 各 Phase 用户分布 + 10-dial 现值 + 距拐点(dial 只读) | B 总览 | V1·Ch4 | 节奏表§6.4 |
 | B5 | 风险雷达 | 挤兑/异常账户/提现积压/kill-switch/覆盖率五维只读雷达 + 跳转 | B 总览 | V1·Ch4 | §9.11d.1 |
 | C1 | 查找用户与查看资料 | 多条件查询、独立统计、权限裁列及带理由脱敏导出，进入用户详情 | C 用户 | V1·Ch5 | §2.1/§2.2/§2.4/§12.1 |
 | C2 | 账户操作 | 账户处置、注销申请、限时用户数据只读视图、账户名单；全设备退出须审批 | C 用户 | V1·Ch5 | §4.5 / §4.5.2 |
@@ -175,7 +175,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | D2 | 提现审核队列 | 逐笔/批量审核提现,server 状态机放行/拒绝/延迟/冻结 | D 资金 | V1·Ch6 | §9.3 / §9.3.6 / §9.11f |
 | D3 | 资金池水位仪表盘 | 储备/负债/到期底层账本权威(储备明细+8科目+净敞口) | D 资金 | V1·Ch6 | §9.6 / §9.6.3 / §9.2 / §10 |
 | D4 | 账本与账单核对 | server 唯一账本审计面:全平台账单/按用户逐笔核对与钱包核对/脱敏导出 | D 资金 | V1·Ch6 | §9.7 / §12 |
-| D5 | USDT 提现参数 | 每日次数/余额可提上限/小额免审线/到账时效/提现网络/网络费/UVT 抵扣率(到账审查窗口、加强合规审查由 H1 派发只读) | D 资金 | V1·Ch6 | §9.3.2 / §13.4.1 / §9.11c.1 |
+| D5 | USDT 提现参数 | 每日次数/余额可提上限/小额免审线/到账时效/提现网络/网络费/UVT 抵扣率(到账审查窗口、加强合规审查由 H1 派发只读) | D 资金 | V1·Ch6 | §9.3.2 / §9.11c.1 |
 | D7 | 越南盾提现参数 | 卖出点差、提现报价有效期、手续费与单笔限额，HDPay 设置可用状态；D6 基准价与买入点差只读 | D 资金 | V1·Ch6 | §9.3 |
 | D6 | 汇率设置 | VND/USDT 基准价、买入点差、报价有效期与调整历史；买入价由服务端单源计算 | D 资金 | 2026-07 高保真增量 | §4.4 D6 |
 | E1 | 商品目录 & 定价 | 设备 SKU 目录/定价/上下架/库存 + 设备规格唯一权威 | E 设备 | V2·Ch10 | §7.1 / §9.11c.1 |
@@ -188,7 +188,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | E6 | 算力与设备配置 | PC 算力备用模块入口开关、在线系数、显卡档位映射、下载内容配置 | E 设备 | V2·Ch10 | 三端改造 SPEC-0~2 |
 | F1 | V-Rank 晋升管理 | V0–V8 有效门槛/server 晋升判定/等级奖励/培育奖 | F 分销 | V2·Ch11 | §8.2 / §13.2 / 节奏表§6.3 |
 | F2 | 团队奖励设置 | 现行团队购买奖励（L1–L7）配置、原 L1 预算与冷却只读引用的好友购买奖励拆分、独立好友设备收益奖励总比例/拆分/冷却整组审批；Partner Status 独立；空配置不补默认 | F 分销 | V2·Ch11 | v2 F2 / F5 / A2 / B1 |
-| F3 | 团队平衡奖励 | 较小一组匹配比例/A 组 B 组门槛/自动分组/月度订单额归零(日上限只读) | F 分销 | V2·Ch11 | §8.4 / §13.4.1 / 节奏表§6.4 |
+| F3 | 团队平衡奖励 | 较小一组匹配比例/A 组 B 组门槛/自动分组/月度订单额归零(日上限只读) | F 分销 | V2·Ch11 | §8.4 / 节奏表§6.4 |
 | F4 | 领导奖池 | 周注入比例/V_VOTES 票数权重/周结算(V3+ 头部分享) | F 分销 | V2·Ch11 | §8.5 |
 | F5 | 奖励记录核对 | 八类奖励统一流水/异常预警/冷却/撤销补发(资金出口审计中枢) | F 分销 | V2·Ch11 | §8.6 |
 | F4b | 硬件配额 | Pro/Rack 配额解锁门(直推/月业绩)+ 月库存上限 | F 分销 | V2·Ch11 | §8.9 |
@@ -198,10 +198,10 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | G2 | 兑换风控 | NEX↔USDT 三阈值 caps/gate/排队(代币→可提现闸门) | G 金融 | V3·Ch12 | §9.4 / §9.11c.1 |
 | G3 | NEX 行情引擎 | 价格曲线/做市波动/预言机喂价源(G2/G7 定价源) | G 金融 | V3·Ch12 | §5.7 / §11.9 / §9.11c.1 |
 | G4 | Genesis 经济 | 节点总量/单价/日排放率/二级版税/pause/geo；认购资格三项新配置 `enabled/maxPerUser/minAccountAgeDays` | G 金融 | V3·Ch12 | §10 / §9.11d.1 / FEAT-GEN02 |
-| G5 | Premium 订阅 | 月费/首月折扣/权益(gate 由 H1 派发) | G 金融 | V3·Ch12 | §9.5a / §13.4 / §9.11d.1 |
+| G5 | Premium 订阅 | 月费/首月折扣/权益(gate 由 H1 派发) | G 金融 | V3·Ch12 | §9.5a / §9.11d.1 |
 | G6 | NEX v2 Founders Vault | NEX v2 锁仓(250% APY/24 月/min 1,000 NEX) | G 金融 | V3·Ch12 | §9.5b / §9.11d.1 |
 | G7 | 锁定计划 | 锁定计划参考年奖励率/期限/积分倍率/好友升级奖励倍率/Genesis 抽奖券 | G 金融 | V3·Ch12 | §9.5 |
-| H1 | 12 月节奏 Phase 调度器 | 12 月节奏唯一操作面 + 全平台 10-dial 权威源 | H 增长 | V1·Ch7 | §13.4 / 节奏表§6.4 / §9.11c.1 |
+| H1 | 12 月节奏 Phase 调度器 | 12 月节奏唯一操作面 + 全平台 10-dial 权威源 | H 增长 | V1·Ch7 | 节奏表§6.4 / §9.11c.1 |
 | H2 | 免费试用引擎 | 试用配置与记录、用户主动购买、强制取消审批 | H 增长 | V1·Ch7 | §9.11a / §9.11b / §9.11.1 |
 | H3 | Quest 任务引擎 | 三层任务(首日/每周/每月)清单/NEX 奖励/3-phase 时窗 | H 增长 | V3·Ch13 | §5.15 / §11.13 / §9.11c.1 |
 | H4 | 活动中心 CMS | 限时活动上下架/featured/奖励/追踪/7 种 EventKind | H 增长 | V3·Ch13 | §11.10 / §9.11c.2 |
@@ -274,8 +274,8 @@ I2 名称同步（2026-11-15）：本页现名「消息推送」，管发到 App
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **Withdrawal 扩展态**(本体属 §12) | state:enum{正常5态 submitted\|review-passed\|processing\|sent\|confirmed · 异常6态 review-rejected\|address-invalid\|tx-failed\|tx-orphaned\|refunded\|frozen · 后台扩展 review-pending} · withdrawalNo(server mint) · userId · amountUsdt · address(hash)+chain · riskScore(K4) · pointsOk · count24h · hitRules(K3);**共12态;非法转移 409**;**单笔主键线上真名 = `withdrawalNo`,不是 `withdrawalId`**(权威契约 `PRD/specs/FEAT-WD01-trust-payout-rails.md` §4.2 响应表) | SC | §9.1 / Ch6 D2 / §9.3.6 / §9.11f |
-| **WithdrawConfig**(Phase 派发) | withdrawCooldownDays(月8=35d/月9=45d) · withdrawPointsRatio(月9=20) · 日限/上限/fee(source:'d5' 可写) · complianceHold(只读 source:'phase-h1') | SC | §17.1 / Ch6 D5 |
+| **Withdrawal 扩展态**(本体属 §12) | state:enum{正常5态 submitted\|review-passed\|processing\|sent\|confirmed · 异常6态 review-rejected\|address-invalid\|tx-failed\|tx-orphaned\|refunded\|frozen · 后台扩展 review-pending} · withdrawalNo(server mint) · userId · amountUsdt · address(hash)+chain · riskScore(K4) · count24h · hitRules(K3);**共12态;非法转移 409**;**单笔主键线上真名 = `withdrawalNo`,不是 `withdrawalId`**(权威契约 `PRD/specs/FEAT-WD01-trust-payout-rails.md` §4.2 响应表) | SC | §9.1 / Ch6 D2 / §9.3.6 / §9.11f |
+| **WithdrawConfig**(Phase 派发) | withdrawCooldownDays(月8=35d/月9=45d) · 日限/上限/fee(source:'d5' 可写) · complianceHold(只读 source:'phase-h1') | SC | §17.1 / Ch6 D5 |
 | **Bill / BillType**(§12/§9.7) | type:enum{swap\|topup\|withdraw\|earning\|commission\|refund\|bonus\|purchase}(**8类**) · billId(server mint) · userId · amount · currency · ts:ms-epoch;**server 唯一账本;积分调整不落 bill** | SC | §9.1 / Ch6 D4；2026-10-09 用户裁定 #488 |
 | **VietQrBankAccount / VietQrReconciliation / VietQrConfig** | 银行账户仅持久化 AES-GCM 密文，读接口只回传尾号；对账动作 enum{match\|writeoff\|return} 携 expectedVersion、reason、evidence 与 Idempotency-Key。match/writeoff 原子更新钱包、`cumulativeDepositUsdt`、D4 与 D3；return 不入钱包 | SC | 2026-07-25 D1 高保真落地 |
 | **FxQuoteConfig / FxQuoteHistory** | baseVndPerUsdt · spreadPct · lockMinutes · version；服务端派生 effectiveVndPerUsdt，更新使用 CAS + Idempotency-Key，历史 append-only | SC | 2026-07-25 D6 高保真落地 |
@@ -808,18 +808,16 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | 余额上限(可提比例) | 80% | 50%–100% | 实时 | D5 | D5 |
 | 网络确认费(`networkConfirmFeeUsd`,每笔固定) | TRC20 $1 / BEP20 $1 / ERC20 $5 | 各 0–25 USD,步进 0.5 | 仅新对象(在途不变) | D5 | D5 |
 | `withdrawCooldownDays` | 月1–7=30 / 月8=35 / 月9+=45 | 7–90d | Phase 派发 | **H1**(D5 只读) | D5 |
-| `withdrawPointsRatio` | 月1–8=10 / 月9–12=20(每$100) | 0–100 | Phase 派发 | **H1**(D5 只读) | D5 |
 | `complianceHoldEnabled` | 月8+=true | 是/否 | Phase 派发 | **H1**(D5 只读) | D5 |
 | BillType 口径 | 8 类(swap/topup/withdraw/earning/commission/refund/bonus/purchase) | 固定读分类；后续新增仍需 schema 治理 | 读投影生效；不回写历史账本 | D4 | D4；2026-10-09 用户裁定 #488 |
 
-### 4.5 域 H1 — 12 月节奏 Phase 调度器(全平台 10-dial 唯一权威;逐月矩阵,触发口径=月份数)
+### 4.5 域 H1 — 12 月节奏 Phase 调度器(全平台阶段参数的权威来源;逐月矩阵,触发口径=月份数)
 
 | dial(key) | 默认值(逐月) | 范围 | 生效范围 | 生效面 |
 |---|---|---|---|---|
 | `newUserBonusMultiplier` | 月1–2=2 / 月3–4=1.5 / 月5+=1 | 1–4 | 仅新用户 | 新注册加成 |
 | `inviteRewardMultiplier` | 月1–2=2 / 月3–4=1.5 / 月5+=1 | 1–4 | 仅新用户 | 新邀请计酬 |
 | `reinvestMultiplier` | 月5–6=2 / 其余=1 | 1–4 | 实时全量 | G7 锁定计划 |
-| `withdrawPointsRatio` | 月1–8=10 / 月9–12=20 | 0–100 | 实时全量 | D5 提现积分门 |
 | `withdrawCooldownDays` | 月1–7=30 / 月8=35 / 月9+=45 | 7–90 天 | 实时全量 | D5 提现冷却 |
 | `binaryDailyCap` | 月1–6=5000 / 月7+=2000 | 0–50000 USD | 实时全量 | F3 双轨封顶 |
 | `premiumSubAvailable` | 月7+=是 | 是/否 | 实时全量 | G5 Premium gate |
@@ -1264,7 +1262,6 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 12 | `MAX_DEVICES` 是否参数化开放未定(V2 写死=6) | E5 | 不阻塞 V2;V4 评估 | PM(V4) | v2 §E5③ |
 | 13 | 激活 auto-prompt 延迟取值待定 | E5 | 低优:激活引导时机 | PM / 开发 | v2 §E5③ |
 | 14 | D2 批量小额 approve/reject/delay 的幂等要求未明确(2026-06 操作确认决议后 A2 复核端点已废除,仅余 D2 批量端点待明确) | D2 | 开发接口契约缺口 | 开发(回源 D2) | v1 §3.x API 表 |
-| 15 | C3 调 points 后对 D2 在途申请是否触发门槛实时重判未确认 | C3 / D2 | 开发缺口:否则退化为「下次提现实时读 points」 | 回源 D2 | v1 §C3⑦ |
 | 16 | C3 双事件 `admin.balance_adjusted` vs `admin.bill_adjusted` 分工未对齐 D4 落地文本 | C3 / D4 | 开发缺口:影响 A4 registry + L3/A2 去重 | 对齐 D4 + A4 | v1 §C3⑧ |
 | 17 | C5 step-up auth 时限「可配」能力未确认(前端现状硬编码 7 天) | C5 | 开发缺口:若 server config 不可行则降为 V1 只读 | 开发确认 | v1 §C5③ |
 | 18 | F4 领导奖池头部集中度护栏 `top1MaxPct`/`top5MaxPct` 为编辑自设,未经 PM 确认 | F4 | **V2 阻断** | PM(V2 gate) | v2 §F4③⑦ |
@@ -1276,9 +1273,9 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 | # | 参数/口径 | 现状值(前端/代码) | 目标值(PRD) | 所属模块 | 出处§ |
 |---|---|---|---|---|---|
-| 1 | Phase dial 数量 | §13.4.1=7-dial;§9.11c.1/§9.11d.3=8-dial | 后台权威 **10-dial**(前端须补 newUserBonusMultiplier+questBonusMultiplier) | H1 / B4 | v1 附录 A.1 #1 / §1.7 |
+| 1 | Phase dial 数量 | §9.11c.1/§9.11d.3=8-dial | 后台权威 **10-dial**(前端须补 newUserBonusMultiplier+questBonusMultiplier) | H1 / B4 | v1 附录 A.1 #1 / §1.7 |
 | 2 | 双轨日封顶 `binaryDailyCap` | 前端 §8.4 固定 $5,000 | Phase 派发:月1–6=$5,000 / 月7+=$2,000(权威 H1) | F3 / H1 | v1 附录 A.1 #2 |
-| 3 | 提现冷却 `withdrawCooldownDays` | §13.4.1 缺月 8=35d 中间档 | 月1–7=30d / **月8=35d** / 月9+=45d | D5 / H1 | v1 附录 A.1 #3 |
+| 3 | 提现冷却 `withdrawCooldownDays` | 旧版阶段表缺月 8=35d 中间档 | 月1–7=30d / **月8=35d** / 月9+=45d | D5 / H1 | v1 附录 A.1 #3 |
 | 4 | Genesis 每日排放率 | §10.1=0.1% vs §10.3=1.5%(15× 矛盾) | **✅ 0.1%/日**(PM 2026-06-01);前端 §10.3 笔误待订正 | G4 / B2 / D3 | v1 附录 A.1 #5 |
 | 5 | 抽奖转盘奖池文案 | events.ts 含「win $1–$500 或 a Genesis Node」 | **✅ Genesis 不进转盘**;删「or a Genesis Node」 | H4 | v1 附录 A.1 #8 |
 | 6 | KPI 章节序号引用 | 前端 §17/§18.2 混排;SKILL 写 §17.2 | 八项 KPI 统一引 **§18.2** | L1 / 全局 | v1 附录 A.1 #4 |

@@ -171,7 +171,8 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
   const waitApproval = stages.filter((stage) => stage.key === "approve").length;
   const board = leaderboardState(data);
   const week = data.leaderboardComputePointPeriods?.week;
-  const tightQuota = data.quotaRows.filter((row) => row.tight).length;
+  // 额度没读到的商品不算「快用完」：额度都不知道，就说不了用到多少。
+  const tightQuota = data.quotaRows.filter((row) => row.tight && row.monthlyQuota !== null).length;
 
   const cadence = settlement.ready ? settleCadenceNote(data.configValues["F.pool.settleCron"] ?? "") : null;
   const cadenceWarn = cadence?.tone === "warn" ? cadence : null;
@@ -199,6 +200,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
 
   const quotaTotal = data.quotaMonthlyStockTotal;
   const quotaUsed = data.quotaMonthlyStockUsed;
+  const quotaUnread = data.quotaRows.some((row) => row.status !== 0 && row.monthlyQuota === null);
 
   return (
     <div className="f4-page">
@@ -230,7 +232,9 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           head={<span className="f4-card-head">名额与大使</span>}
           label="待处理的大使申请" value={count(data.ambassadorPendingCount)} unit="份" tone="role-3"
           sub={data.ambassadorPendingCount > 0 ? [waitBusiness && `业务核验 ${waitBusiness}`, waitFinance && `财务核验 ${waitFinance}`, waitApproval && `核验已通过 ${waitApproval}`].filter(Boolean).join(" · ") || undefined : undefined}>
-          {quotaTotal > 0
+          {quotaUnread
+            ? <span className="f4-card-line">名额剩余 —</span>
+            : quotaTotal > 0
             ? <span className="f4-card-meter">
               <RatioBar label="本月购机名额已用" value={Math.min(quotaUsed, quotaTotal)} total={quotaTotal} valueText={`已用 ${count(quotaUsed)} 台，总量 ${count(quotaTotal)} 台`} tone="role-2" quiet />
               <span className="f4-card-line">名额剩余 {count(data.quotaMonthlyStockRemaining)} 台 · 总量 {count(quotaTotal)} 台</span>

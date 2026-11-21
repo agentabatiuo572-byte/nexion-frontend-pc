@@ -249,8 +249,9 @@ export function formToGate(f: SkuForm): PurchaseGate | undefined {
 
 // 锁额余量单源(remaining = cap − sold,下限 0)。抽屉派生提示 + E1 卡 chip 共用此函数,
 // 杜绝公式在多处重复(对齐前端 evaluatePurchaseGate 的 remaining 口径)。无 cap = null(不限量)。
-export function gateRemaining(g: PurchaseGate): number | null {
-  return g.quotaCap != null ? Math.max(0, g.quotaCap - (g.quotaSold ?? 0)) : null;
+/** 剩余 = 上限 − 已售 − 待付款（BUG-549）；待付款缺省为 0，即旧后端的 上限 − 已售。 */
+export function gateRemaining(g: PurchaseGate, held = 0): number | null {
+  return g.quotaCap != null ? Math.max(0, g.quotaCap - (g.quotaSold ?? 0) - held) : null;
 }
 
 export const effectiveReleaseMonth = (releaseMonth: number, phaseOffset = 0): number => releaseMonth + phaseOffset;

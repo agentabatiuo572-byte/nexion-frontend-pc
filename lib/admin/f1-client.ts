@@ -261,6 +261,9 @@ interface BackendF4QuotaRow {
   unlockMode?: string | null;
   current?: number | string | null;
   cap?: number | string | null;
+  soldThisMonth?: number | string;
+  pendingThisMonth?: number | string;
+  remaining?: number | string;
   monthlyQuota?: string | null;
   tight?: boolean | string | null;
 }
@@ -326,6 +329,8 @@ interface BackendF4LeadershipPoolOverview {
   quotaMonthlyStockTotal?: number | string | null;
   quotaMonthlyStockUsed?: number | string | null;
   quotaMonthlyStockRemaining?: number | string | null;
+  quotaMonthlyStockSold?: number | string;
+  quotaMonthlyStockPending?: number | string;
   proUnlock?: string | null;
   rackUnlock?: string | null;
   ambassadorBands?: BackendF4AmbassadorBand[] | null;
@@ -833,6 +838,10 @@ export interface F4QuotaRow {
   cap: number;
   monthlyQuota?: string | null;
   tight: boolean;
+  // current includes both sold units and unpaid holds.
+  soldThisMonth?: number;
+  pendingThisMonth?: number;
+  remaining?: number;
 }
 
 export interface F4AmbassadorBand {
@@ -1024,6 +1033,9 @@ export interface F4LeadershipPoolOverview {
   quotaMonthlyStockTotal: number;
   quotaMonthlyStockUsed: number;
   quotaMonthlyStockRemaining: number;
+  // Older servers omit the breakdown.
+  quotaMonthlyStockSold?: number;
+  quotaMonthlyStockPending?: number;
   proUnlock: string;
   rackUnlock: string;
   ambassadorBands: F4AmbassadorBand[];
@@ -1684,6 +1696,9 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     criteriaKnown: quotaCriteriaKnown(row),
     current: toNumber(row.current),
     cap: toNumber(row.cap),
+    soldThisMonth: row.soldThisMonth === undefined ? undefined : toNumber(row.soldThisMonth),
+    pendingThisMonth: row.pendingThisMonth === undefined ? undefined : toNumber(row.pendingThisMonth),
+    remaining: row.remaining === undefined ? undefined : toNumber(row.remaining),
     monthlyQuota: row.monthlyQuota,
     tight: toBoolean(row.tight),
   }));
@@ -1751,6 +1766,8 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     quotaMonthlyStockLabel: asText(data?.quotaMonthlyStockLabel, asText(config.monthlyStock)),
     quotaMonthlyStockTotal: toNumber(data?.quotaMonthlyStockTotal, quotaRows.reduce((sum, row) => sum + row.cap, 0)),
     quotaMonthlyStockUsed: toNumber(data?.quotaMonthlyStockUsed, quotaRows.reduce((sum, row) => sum + row.current, 0)),
+    quotaMonthlyStockSold: data?.quotaMonthlyStockSold === undefined ? undefined : toNumber(data.quotaMonthlyStockSold),
+    quotaMonthlyStockPending: data?.quotaMonthlyStockPending === undefined ? undefined : toNumber(data.quotaMonthlyStockPending),
     quotaMonthlyStockRemaining: toNumber(
       data?.quotaMonthlyStockRemaining,
       quotaRows.reduce((sum, row) => sum + Math.max(0, row.cap - row.current), 0),

@@ -32,8 +32,9 @@ type Confirmation = McSpec & Partial<E1SkuReview> & { gates?: E1GenerationGateDa
 type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; reading?: boolean; readError?: string };
 const APPROVAL = "由另一位有批准及商品业务权限的管理员批准。批准前目录不变。";
 const RECEIPT_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
-const E1_UNKNOWN = "结果还不确定，原请求和理由已保留；可以查询原结果，或按原请求重试。";
+const E1_UNKNOWN = "结果还不确定，原请求和理由已保留；请先查询原结果，查不到才能按原请求重试。";
 const TICKET_UNREAD = "刚查过：还是没查到审批进度，稍后再查。";
+const RETRY_REQUIRES_LOOKUP = "先查询原结果，查不到才能重试";
 const endToast = (obj: string, id: string, status: string) => PROPOSAL_END[status] ? `${obj} · 审批单 ${id} ${PROPOSAL_END[status].tag}：${PROPOSAL_END[status].text}` : `${obj} · 审批单 ${id} 状态待核实`;
 
 function e1Error(error: unknown) {
@@ -41,7 +42,7 @@ function e1Error(error: unknown) {
   const value = error as { backendMessage?: string; message?: string } | null;
   const code = value?.backendMessage ?? value?.message ?? "";
   if (code.includes("TASK_POOL_FORMAT_RETIRED")) return "原商品操作使用旧任务格式，请先核对原申请，再从商品管理与上架条件重新配置任务等级。";
-  if (code.startsWith("IDEMPOTENCY_")) return "原请求的结果还在核对，记录保留；请查询原结果或按原请求重试，不要重新填写提交。";
+  if (code.startsWith("IDEMPOTENCY_")) return "原请求的结果还在核对，记录保留；请先查询原结果，不要重新填写提交。";
   return displayAdminError(error);
 }
 
@@ -213,6 +214,11 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   };
   const send = async (record: E1Pending, retry: boolean) => {
     if (!canWrite || !actor || record.actorId !== actor || sending.current) throw new Error("账号、权限或提交状态不允许重试，请先核对原操作");
+    if (retry) {
+      const original = e1Pending(actor).find(row => row.commandKey === record.commandKey);
+      if (!original?.absent || original.receivedTicketId) throw new Error(RETRY_REQUIRES_LOOKUP);
+      record = original;
+    }
     if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
     const store = record.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
     record = { ...record, retryRejection: undefined, absent: false };
@@ -221,7 +227,6 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     sending.current = true; setBusy(record.commandKey); setRejected(keys => keys.filter(k => k !== record.commandKey));
     try {
       const spec = record.spec;
-      if (retry && record.receivedTicketId) { await check(record, true); return; }
       const result = await createA2OperationProposal({ action: spec.action, obj: spec.obj, beforeValue: spec.before, afterValue: spec.after,
         operator: session?.operator || session?.username || "", operatorRole: roleLabel(session!.role), type: spec.type,
         amplifies: !!spec.amplifies, sos: !!spec.sos, roleGate: spec.gateLabel, reason: spec.reason, sourceDomain: spec.sourceDomain,
@@ -439,6 +444,11 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       detail: <p>审批单 {row.id}；批准前目录不变，这个对象暂停新修改。</p> })),
     ...pending.filter(record => record.commandKey !== busy).map(record => {
       const expired = isRetryExpired(record), canRelease = rejected.includes(record.commandKey) && !expired || absent.includes(record.commandKey) && expired;
+      const retryDisabledReason = !canWrite ? "当前账号不能重试"
+        : busy ? "正在提交原操作"
+          : expired ? "超过 24 小时不能再重试"
+            : record.receivedTicketId ? "审批单已经建了，只能查询"
+              : !absent.includes(record.commandKey) ? RETRY_REQUIRES_LOOKUP : undefined;
       const state = record.receivedTicketId ? { tag: "进度没读到", line: RECOVERY_LINE.created, more: "点「查询原结果」再查。" }
         : rejected.includes(record.commandKey) && !expired ? { tag: "重试被拒绝", line: RECOVERY_LINE.refused, more: "解除前先核对原操作有没有生效。" }
           : absent.includes(record.commandKey) ? expired ? { tag: "没有建成", line: RECOVERY_LINE.missing, more: "确认解除时会再查一次。" }
@@ -449,7 +459,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? record.retryRejection,
         actions: <>
           {canQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void check(record)}>查询原结果</Button>}
-          {<Button size="sm" disabledReason={!canWrite ? "当前账号不能重试" : busy ? "正在提交原操作" : expired ? "超过 24 小时不能再重试" : record.receivedTicketId ? "审批单已经建了，只能查询" : undefined} onClick={() => { void send(record, true).catch(failure => toast(e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原请求重试</Button>}
+          {<Button size="sm" disabledReason={retryDisabledReason} onClick={() => { void send(record, true).catch(failure => toast(e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原请求重试</Button>}
           {canRelease && <Button size="sm" disabled={!!busy} onClick={() => setRelease(record)}>解除原操作记录</Button>}
         </>,
         detail: <>
@@ -485,7 +495,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         : skuChanges.length > 4
         ? <Fold inset title="完整商品变更" summary="展开核对每一项的前后值"><DiffList rows={skuDiff} /></Fold>
         : <DiffList rows={skuDiff} /> : <>{mc.businessForm?.kind === "multi-field" && (mc.op === "bundle-discount" || mc.op === "early-access" || mc.op === "generation-gate-save" && !!mc.generationGateId || mc.op === "phase-save" && !!mc.phaseId) && <Facts>{mc.businessForm.fields.map(f => <Fact key={f.key} k={f.label}><Change from={f.optionLabels?.[f.current ?? ""] ?? (f.current || "未设置")} to={(f.optionLabels?.[businessValues[f.key] ?? f.current ?? ""] ?? (businessValues[f.key] ?? f.current)) || "未填写"} /></Fact>)}</Facts>}{mc.content}</>}
-      blockedReason={currentPending && currentPending.commandKey !== busy ? "这个对象有一次结果未知的提交，先在页面上方查询原结果或按原请求重试" : (reviewingSku ? hasSkuVersionConflict(mc) : conflict) ? <>
+      blockedReason={currentPending && currentPending.commandKey !== busy ? "这个对象有一次结果未知的提交，先在页面上方查询原结果" : (reviewingSku ? hasSkuVersionConflict(mc) : conflict) ? <>
         <ConflictBar message="商品或配置已被别人改过，你填的内容还在；读取最新后重新核对。" onRead={readConflict} />
         {conflictRead && <Notice tone="warn" title="核对别人改了什么，再决定是否保留你的修改">
           {mc.op === "bundle-discount" && conflictLatest ? <DiffList rows={[{ key: "two", label: "2件折扣", before: `${mc.discount?.twoItemsPct}%`, after: `${conflictLatest.bundleDiscount.twoItemsPct}%` }, { key: "three", label: "3件折扣", before: `${mc.discount?.threeItemsPct}%`, after: `${conflictLatest.bundleDiscount.threeItemsPct}%` }, { key: "four", label: "4+件折扣", before: `${mc.discount?.fourPlusItemsPct}%`, after: `${conflictLatest.bundleDiscount.fourPlusItemsPct}%` }]} /> : mc.sku && latestConflictSku ? <DiffList rows={e1ShownDiff(e1SkuDiff(mc.beforeSku ?? mc.sku, latestConflictSku), mc.beforeSku ?? mc.sku, latestConflictSku)} /> : <p>原对象未读取到，请保留草稿并核查。</p>}

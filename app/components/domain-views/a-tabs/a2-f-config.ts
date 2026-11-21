@@ -51,7 +51,7 @@ export function fConfigSpec(key: string, after?: string): FConfigSpec | undefine
     impact: "批准后，还没结算的团队激励池按新票数分；已发的不变。",
     detail: "票数改成 0 后这个等级不再显示在「奖励池、名额与排行榜」，也不能在那页改回。" });
   if ((m = /^F\.quota\.tier\.(.+)\.monthlyQuota$/.exec(key))) return spec(F4, `商品月额度 ${m[1]}`, { unit: "台",
-    impact: "批准后限制这个商品之后的购买；已用的记录不删，也不退单。", detail: "调低随时可以，改到本月已用或更低本月就不再卖；调高时不能低于本月已用。额度已被别人改过会被拒绝。" });
+    impact: "批准后限制这个商品之后的购买；已用的记录不删，也不退单。", detail: "调低随时可以，改到本月已用或更低时，调整后当前没有可售名额；调高时不能低于本月已用。额度已被别人改过会被拒绝。" });
   if ((m = /^F\.quota\.usage\.(\d+)\.status$/.exec(key))) return spec(F4, `名额记录 #${m[1]}`, { action: `回收名额 #${m[1]}`, values: { recycled: "已回收" },
     impact: "批准后这条记录改为已回收，名额退回所属月份；不退款、不删订单。", detail: "只有还在占用的记录能回收；已回收或不存在的会被拒绝。" });
   if ((m = /^F\.leaderboard\.week\.user\.(\d+)\.status$/.exec(key))) return spec(F4, `周榜成员 ${m[1]}`, { action: "取消周榜资格", values: { disqualified: "取消资格" },

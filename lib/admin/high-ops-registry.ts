@@ -41,6 +41,8 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
     derivedDailyEarnUsdt: _derivedDailyEarnUsdt,
     derivedShareYieldMinPct: _derivedShareYieldMinPct,
     derivedShareYieldMaxPct: _derivedShareYieldMaxPct,
+    purchaseQuotaHeld: _purchaseQuotaHeld,
+    purchaseQuotaRemaining: _purchaseQuotaRemaining,
     ...rest
   } = ctx;
   const hasTarget = monthlyTargetUsdt != null;

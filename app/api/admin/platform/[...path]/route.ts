@@ -20,6 +20,14 @@ function isNonEmpty(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
+  if (parts[0] === "app-updates") {
+    if (parts.length === 1) return "/api/admin/platform/app-updates";
+    if (parts.length === 3 && ["android", "ios"].includes(parts[1])
+      && ["save", "submit", "withdraw", "reject", "approve", "publish", "restore"].includes(parts[2])) {
+      return `/api/admin/platform/app-updates/${parts[1]}/${parts[2]}`;
+    }
+    return null;
+  }
   // Avatar methods and the reserved self namespace are handled before generic A1 routes.
   if (parts[0] === "accounts" && (parts[1] === "self" || parts[1] === "avatar-assets" || parts[2] === "avatar")) return null;
   if (parts.length === 2 && parts[0] === "ops-dashboard" && parts[1] === "summary") {
@@ -190,6 +198,7 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
+  if (path[0] === "app-updates" && request.method !== (path.length === 1 ? "GET" : "POST")) return jsonError(405, "METHOD_NOT_ALLOWED");
   if (path.join("/") === "audit/operations/proposals/by-idempotency-key" && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
   if (path.join("/") === "config/operating-languages" && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
   const diagnostics = path.length === 2 && path[0] === "events" && ["outbox-diagnostics", "outbox-dead-letters"].includes(path[1]);
