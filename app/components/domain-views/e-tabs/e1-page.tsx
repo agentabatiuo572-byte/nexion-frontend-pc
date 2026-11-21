@@ -32,9 +32,9 @@ type Confirmation = McSpec & Partial<E1SkuReview> & { gates?: E1GenerationGateDa
 type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; reading?: boolean; readError?: string };
 const APPROVAL = "由另一位有批准及商品业务权限的管理员批准。批准前目录不变。";
 const RECEIPT_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
-const E1_UNKNOWN = "结果还不确定，原请求和理由已保留；可以查询原结果，或按原请求重试。";
+const E1_UNKNOWN = "结果还不确定，原请求和理由已保留；请先查询原结果，查不到才能按原请求重试。";
 const TICKET_UNREAD = "刚查过：还是没查到审批进度，稍后再查。";
-const RETRY_REQUIRES_LOOKUP = "先查询原操作，查不到才能重试";
+const RETRY_REQUIRES_LOOKUP = "先查询原结果，查不到才能重试";
 const endToast = (obj: string, id: string, status: string) => PROPOSAL_END[status] ? `${obj} · 审批单 ${id} ${PROPOSAL_END[status].tag}：${PROPOSAL_END[status].text}` : `${obj} · 审批单 ${id} 状态待核实`;
 
 function e1Error(error: unknown) {
@@ -42,7 +42,7 @@ function e1Error(error: unknown) {
   const value = error as { backendMessage?: string; message?: string } | null;
   const code = value?.backendMessage ?? value?.message ?? "";
   if (code.includes("TASK_POOL_FORMAT_RETIRED")) return "原商品操作使用旧任务格式，请先核对原申请，再从商品管理与上架条件重新配置任务等级。";
-  if (code.startsWith("IDEMPOTENCY_")) return "原请求的结果还在核对，记录保留；请查询原结果或按原请求重试，不要重新填写提交。";
+  if (code.startsWith("IDEMPOTENCY_")) return "原请求的结果还在核对，记录保留；请先查询原结果，不要重新填写提交。";
   return displayAdminError(error);
 }
 
@@ -495,7 +495,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         : skuChanges.length > 4
         ? <Fold inset title="完整商品变更" summary="展开核对每一项的前后值"><DiffList rows={skuDiff} /></Fold>
         : <DiffList rows={skuDiff} /> : <>{mc.businessForm?.kind === "multi-field" && (mc.op === "bundle-discount" || mc.op === "early-access" || mc.op === "generation-gate-save" && !!mc.generationGateId || mc.op === "phase-save" && !!mc.phaseId) && <Facts>{mc.businessForm.fields.map(f => <Fact key={f.key} k={f.label}><Change from={f.optionLabels?.[f.current ?? ""] ?? (f.current || "未设置")} to={(f.optionLabels?.[businessValues[f.key] ?? f.current ?? ""] ?? (businessValues[f.key] ?? f.current)) || "未填写"} /></Fact>)}</Facts>}{mc.content}</>}
-      blockedReason={currentPending && currentPending.commandKey !== busy ? "这个对象有一次结果未知的提交，先在页面上方查询原结果或按原请求重试" : (reviewingSku ? hasSkuVersionConflict(mc) : conflict) ? <>
+      blockedReason={currentPending && currentPending.commandKey !== busy ? "这个对象有一次结果未知的提交，先在页面上方查询原结果" : (reviewingSku ? hasSkuVersionConflict(mc) : conflict) ? <>
         <ConflictBar message="商品或配置已被别人改过，你填的内容还在；读取最新后重新核对。" onRead={readConflict} />
         {conflictRead && <Notice tone="warn" title="核对别人改了什么，再决定是否保留你的修改">
           {mc.op === "bundle-discount" && conflictLatest ? <DiffList rows={[{ key: "two", label: "2件折扣", before: `${mc.discount?.twoItemsPct}%`, after: `${conflictLatest.bundleDiscount.twoItemsPct}%` }, { key: "three", label: "3件折扣", before: `${mc.discount?.threeItemsPct}%`, after: `${conflictLatest.bundleDiscount.threeItemsPct}%` }, { key: "four", label: "4+件折扣", before: `${mc.discount?.fourPlusItemsPct}%`, after: `${conflictLatest.bundleDiscount.fourPlusItemsPct}%` }]} /> : mc.sku && latestConflictSku ? <DiffList rows={e1ShownDiff(e1SkuDiff(mc.beforeSku ?? mc.sku, latestConflictSku), mc.beforeSku ?? mc.sku, latestConflictSku)} /> : <p>原对象未读取到，请保留草稿并核查。</p>}
