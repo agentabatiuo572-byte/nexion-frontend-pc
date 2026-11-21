@@ -768,7 +768,14 @@
 .e6-page .rd-table .rd-cell[data-full] { max-width: none; }
 .e6-page .rd-table .rd-cell[data-full] :is(.rd-cell-main,.rd-cell-sub) { white-space: normal; overflow-wrap: anywhere; }
 .e6-page :is(.e6-tasks-table,.e6-phones-table) tbody td:first-child { min-width: 180px; }
-.e6-page .e6-phones-table .e6-phone-user { min-width: 124px; width: 22%; }
+/* 用户手机表列宽定在表头上：读取中、读取失败、空结果时表头不挪位（BUG-419 E6-19）；设备列拿剩下的宽度。 */
+.e6-page .e6-phones-table { table-layout: fixed; }
+.e6-page .e6-phones-table .e6-pcol-user { width: 200px; }
+.e6-page .e6-phones-table .e6-pcol-status { width: 136px; }
+.e6-page .e6-phones-table .e6-pcol-daily { width: 120px; }
+.e6-page .e6-phones-table .e6-pcol-battery { width: 120px; }
+.e6-page .e6-phones-table .e6-pcol-task { width: 240px; }
+.e6-page .e6-phones-table .e6-pcol-action { width: 96px; }
 
 .e6-page .e6-tier-long .rd-stepbar-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
 
@@ -780,7 +787,6 @@
 .e6-original-tiers :is(th,td) { padding: 4px 0 4px 16px; white-space: nowrap; text-align: right; }
 .e6-original-tiers :is(th,td):first-child { padding-left: 0; text-align: left; }
 .e6-original-tiers th { color: var(--rd-text-3); font-weight: 500; }
-.e6-page .e6-phones-table .e6-phone-device { width: 42%; }
 .e6-phone-device .rd-cell { max-width: none; }
 .e6-page .e6-phones-table :is(.rd-cell-main,.rd-cell-sub) { white-space: nowrap; }
 /* 编号省略中间、留末 8 位。两段都是行内块和行内文字，复制和读屏仍是一整串，不在中间断开；空格不丢。 */
@@ -790,7 +796,6 @@
 .e6-end-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e6-phone-device .rd-cell-sub > .e6-original, .e6-tasks-table .rd-cell-main > .e6-original { display: block; }
 .e6-phone-panel { min-width: 0; }
-.e6-page .e6-phones-table .e6-phone-task { min-width: 240px; width: 240px; }
 .e6-phone-task > .e6-original { display: block; }
 .e6-phone-telemetry, .e6-phone-status { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .e6-phone-telemetry { justify-content: flex-end; }
@@ -905,7 +910,8 @@
 .e1-product-id > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e1-product-id > :not(:first-child) { flex: none; }
 .e1-tagline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
-.e1-badge { position: absolute; top: var(--rd-space-1); left: var(--rd-space-1); max-width: none; white-space: nowrap; padding-inline: var(--rd-space-1); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+/* 角标可以盖到缩略图和商品名之间的空隙（离商品名留 4px）：Flagship 一行写完，Cloud Share、Best Seller 两行写完，再长的两行后省略，悬停看全文。 */
+.e1-badge { position: absolute; top: var(--rd-space-1); left: var(--rd-space-1); width: max-content; max-width: calc(100% + var(--rd-space-1)); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; padding-inline: var(--rd-space-1); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .e1-stage-summary { display: flex; align-items: center; flex-wrap: wrap; gap: var(--rd-space-4); padding: var(--rd-space-2) var(--rd-panel-pad-x); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); }
 .e1-stage-summary > .rd-stageline-scroll { flex: 1; min-width: 0; }
 .e1-stage-identity { display: flex; flex-direction: column; gap: var(--rd-space-1); }
@@ -1048,3 +1054,5 @@
 .e3p-manual dl > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--rd-space-3); }
 .e3p-manual dt { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
 .e3p-manual dd { margin: 0; color: var(--rd-text-2); }
+/* E6 任务节奏：统计带已经在面板里，不再自带一层底和边，浅色下不出现卡中卡（BUG-419 E6-2）。 */
+:root[data-theme] .e6-rhythm .rd-stats.rd-stats { padding: 0; box-shadow: none; }

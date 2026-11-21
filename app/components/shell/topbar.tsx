@@ -131,7 +131,7 @@ function CoveragePill({ enabled }: { enabled: boolean }) {
   const cov = bDomain.ledger.coverageRatio;
   const redline = bDomain.ledger.redlinePct;
   const healthy = bDomain.ledger.healthyPct;
-  const unavailable = !bDomain.hasData || !!bDomain.error;
+  const unavailable = !bDomain.hasData || !!bDomain.error || !bDomain.ledger.valuationReliable;
   // 读不到不等于危险（VS-107）：未知值用中性色，不上状态底。
   const zone = unavailable
     ? "neutral"

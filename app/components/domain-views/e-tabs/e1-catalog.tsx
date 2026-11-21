@@ -56,7 +56,7 @@ function SkuMediaThumb({ sku }: { sku: OpsSku }) {
 
 export function E1Amount({ value, precision, unit }: { value: number | string | null | undefined; precision?: number; unit?: string }) {
   const raw = value == null || value === "" ? "—" : String(value);
-  return <span className="e1-decimal" tabIndex={raw === "—" ? undefined : 0} title={`${raw}${unit ? ` ${unit}` : ""}`} aria-label={`${raw}${unit ? ` ${unit}` : ""}`}>{e1Decimal(value, precision)}{unit && ` ${unit}`}</span>;
+  return <span className="e1-decimal" title={`${raw}${unit ? ` ${unit}` : ""}`} aria-label={`${raw}${unit ? ` ${unit}` : ""}`}>{e1Decimal(value, precision)}{unit && ` ${unit}`}</span>;
 }
 
 function E1MiddleText({ text, tail = 8 }: { text: string; tail?: number }) {
@@ -72,10 +72,25 @@ export function E1TargetRange({ sku, label }: { sku: OpsSku; label?: ReactNode }
   const bandPlaces = e1Precision([band], 0);
   return <>
     <div className="e1-value-line">{label}<strong><E1Amount value={target} precision={places} /> <small>USDT/月</small></strong></div>
-    <ScaleBar label="月收益目标范围" valueText={`目标 ${e1Number(target)} USDT/月，范围 ${e1Number(range.low)} 至 ${e1Number(range.high)} USDT/月，允许波动 ±${e1Number(band)}%`} max={Number(range.high)} range={{ low: Number(range.low), high: Number(range.high) }} target={target} tone="neutral" />
+    <ScaleBar label="月收益目标范围" valueText={`目标 ${e1Number(target)} USDT/月，范围 ${e1Number(range.low)} 至 ${e1Number(range.high)} USDT/月，允许波动 ±${e1Number(band)}%`} min={Number(e1Multiply(target, "0.5"))} max={Number(e1Multiply(target, "1.5"))} range={{ low: Number(range.low), high: Number(range.high) }} target={target} tone="neutral" />
     <div className="e1-range-labels"><span><E1Amount value={range.low} precision={places} /> — <E1Amount value={range.high} precision={places} /></span><span>±<E1Amount value={band} precision={bandPlaces} />%</span></div>
   </>;
 }
+
+/** 行数据校验报出的字段，换成运营看得懂的名字；契约里的键不变。 */
+const E1_FIELD_LABELS: Record<string, string> = {
+  sku: "整行资料", skuId: "商品编号", name: "商品名称", price: "售价", status: "上架状态", productType: "商品类型",
+  inventoryMode: "库存方式", "inventoryMode.stock": "库存方式和库存数", stock: "库存", tier: "档位", tagline: "宣传语", badge: "角标",
+  gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "托管机房", uptime: "在线率", warranty: "保修",
+  specDocumentTitle: "规格书标题", specDocumentUrl: "规格书链接", baseRate: "基础收益率", aiUnlocks: "AI 解锁项", lifecycle: "生命周期",
+  unlockPhase: "开放阶段", imageAssetId: "产品图", imageObjectKey: "产品图", imagePreviewUrl: "产品图", tag: "标签",
+  dailyEarn: "每日收益（USDT）", dailyEarnNex: "每日收益（UVT）", phoneDailyEarn: "手机每日收益（USDT）", phoneDailyEarnNex: "手机每日收益（UVT）",
+  shareYieldMin: "份额收益率下限", shareYieldMax: "份额收益率上限", sold: "已售数量",
+  aiImageGenPerMin: "图片生成速度", aiLlmTokensPerSec: "文本生成速度", aiVideoMinPerHour: "视频生成速度", aiFineTuneMins: "微调时长",
+  monthlyTargetUsdt: "月收益目标", monthlyTargetBandPct: "月收益允许波动", derivedDailyEarnUsdt: "推算日收益",
+  derivedShareYieldMinPct: "推算份额收益率下限", derivedShareYieldMaxPct: "推算份额收益率上限", allowedPoolCodes: "任务等级",
+  features: "特性清单", purchaseGate: "购买条件", trialEligible: "试用资格", publishBlocked: "上架受阻状态", publishBlockReason: "上架受阻原因",
+};
 
 /** 所属系列：只显示名称；没有系列写「未设系列」，不按编号推导。锁定时问号里说明为什么不能改。 */
 function E1SeriesValue({ sku }: { sku: OpsSku }) {
@@ -89,8 +104,9 @@ function E1PurchaseConditions({ sku }: { sku: OpsSku }) {
     {!!gate.activeDirectMin && <Fact k="活跃直接邀请人数">至少 {e1Number(gate.activeDirectMin)} 人</Fact>}
     {!!gate.teamComputePointsMin && <Fact k="团队算力点">至少 {e1Number(gate.teamComputePointsMin)} 点</Fact>}
     <Fact k="条件关系">{gate.mode === "either" ? "任一满足" : "全部满足"}</Fact>
-    <Fact k="本期可售上限">{gate.quotaCap == null ? "不限量" : `${e1Number(gate.quotaCap)} 件`}</Fact>
-    {gate.quotaCap != null && <><Fact k="本期已售">{e1Number(gate.quotaSold)} 件</Fact><Fact k="剩余配额">{e1Number(gateRemaining(gate))} 件</Fact><Fact k="统计周期">{gate.quotaPeriod === "month" ? "按月统计（已停用）" : "不分周期（累计）"}</Fact><Fact k="售罄后限制购买">{gate.enforce ? "卖完后不能再买" : "卖完仅提示，仍可购买"}</Fact></>}
+    <Fact k="销售配额上限">{gate.quotaCap == null ? "不限量" : `${e1Number(gate.quotaCap)} 件`}</Fact>
+    {gate.quotaCap != null && <><Fact k="配额已售">{e1Number(gate.quotaSold)} 件</Fact><Fact k="剩余配额">{e1Number(gateRemaining(gate))} 件</Fact><Fact k="统计周期">{gate.quotaPeriod === "month" ? "按月统计（已停用）" : "不分周期（累计）"}</Fact></>}
+    <Fact k="是否生效" tone={gate.quotaPeriod === "month" ? "warn" : undefined}>{gate.quotaPeriod === "month" ? "现在不能购买：按月统计已停用，须改为累计并获批" : gate.enforce ? "生效" : "不生效，不检查用户条件和配额；库存另算"}</Fact>
   </Facts>;
 }
 
@@ -333,13 +349,14 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
   return <>
     {available && <Conclusion state={stats[3].value || legacy || unknown || unconfigured || ctx.e1InvalidSkus.length ? "warn" : "neutral"} explain="在售只计通过发布门的商品；仍须同时满足库存、开放阶段和个人购买条件。草稿不是待审批单。">
       {stats[3].value || legacy || unknown || unconfigured || ctx.e1InvalidSkus.length ? "商品目录有待处理项" : skus.length ? "商品目录已就绪" : "商品目录尚为空"}
+      {!!ctx.e1InvalidSkus.length && <> · {ctx.e1InvalidSkus.length} 个商品数据有误，暂不显示</>}
       {!!unconfigured && <> · <Button variant="ghost" onClick={() => setScope("unconfigured")}>{unconfigured} 个在售商品没有配置任务等级</Button></>}
       {!!stats[3].value && <> · <Button variant="ghost" onClick={() => setScope("blocked")}>{stats[3].value} 个上架受阻</Button></>}
       {!!legacy && <> · <Button variant="ghost" onClick={() => setScope("legacy")}>{legacy} 个商品未设系列</Button></>}
       {!!unknown && <> · <Button variant="ghost" onClick={() => setScope("unknown")}>{unknown} 个上架状态待核实</Button></>}
     </Conclusion>}
     <StatBand label="商品目录汇总">{stats.map(stat => <Stat key={stat.key} label={stat.label} value={available ? stat.value : "—"} unit="个" icon={stat.icon} tone={stat.key === "blocked" ? "warn" : "neutral"} onOpen={available ? () => setScope(scope === stat.key ? "all" : stat.key) : undefined} selected={scope === stat.key} selectedText="已筛选" aria-pressed={scope === stat.key} openLabel={`筛选${stat.label}商品`} explain="全量目录统计，不随关键词和档位筛选变化；发布门未声明和无效行另列。" />)}</StatBand>
-    {available && !!ctx.e1InvalidSkus.length && <Notice tone="warn" title={`${ctx.e1InvalidSkus.length} 个商品数据有误，暂不显示`} action={<Button onClick={() => void ctx.refreshE1()}>重新加载</Button>}><ul>{ctx.e1InvalidSkus.map(row => <li key={row.skuId}>{row.name} · {row.skuId} · 有误的字段：{row.invalidFields.join("、")}</li>)}</ul></Notice>}
+    {available && !!ctx.e1InvalidSkus.length && <Notice tone="warn" title="资料有误的商品" action={<Button onClick={() => void ctx.refreshE1()}>重新加载</Button>}><ul>{ctx.e1InvalidSkus.map(row => <li key={row.skuId}>{row.name} · {row.skuId} · 有误的资料：{[...new Set(row.invalidFields.map(field => E1_FIELD_LABELS[field] ?? "其他资料"))].join("、")}</li>)}</ul></Notice>}
     <section className="e1-stage-summary" aria-label="开放阶段">
       <div className="e1-stage-identity"><strong>开放阶段<Explain label="开放阶段的说明" content="节点等距只表示先后，不代表各阶段持续时间；这里不能推进当前阶段。" /></strong><span className="e1-muted">{ctx.e1Gates ? `运营第 ${e1Number(platformMonth)} 个月${phaseSummary ? ` · ${phaseSummary}` : ""}` : ctx.gatesLoading ? "正在读取…" : "— · 未读取"}</span>{ctx.e1Gates && !phaseCurrentKnown && <StatusTag tone="warn" explain="「运营阶段设置」的当前阶段在这里没有对应的开放阶段。核实前，依赖当前阶段的上架、强制开放和删除阶段不能提交。">{E1_CURRENT_PHASE_UNVERIFIED}</StatusTag>}{phaseMismatch && <StatusTag tone="warn" explain={`「运营阶段设置」现在是${phaseLabel(phaseMismatch.h1)}，这里是${phaseLabel(phaseMismatch.e1)}。商品什么时候开放只看这里的阶段。`}>和运营阶段设置不一致</StatusTag>}</div>
       <StageLine label="开放阶段" stages={phaseOrder.map(id => ({ id, label: <span className="e1-stage-label">{phaseLabel(id)}<Explain label={`${phaseLabel(id)}的阶段资料`} rows={[{ k: "门槛说明", v: phases.find(p => p.p === id)?.meta || "未填写" }, { k: "商品标签", v: phases.find(p => p.p === id)?.skus || "未填写" }, { k: "排序", v: phases.find(p => p.p === id)?.sortOrder ?? "未读取" }, { k: "状态", v: phases.find(p => p.p === id)?.status === "archived" ? "已归档" : "已启用" }]} /></span> }))} currentId={phaseCurrentKnown ? phaseCur : null} state={ctx.gatesLoading ? "loading" : ctx.gatesError ? "failed" : phases.length ? "ready" : "empty"} emptyText="尚未配置阶段" failedText="阶段暂时读不到" />
@@ -359,8 +376,9 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       const seriesReason = hasUnsupportedSeries(s) ? E1_MISSING_SERIES_REASON : undefined;
       const onBlock = writeBlock({ op: "sku-status", status: s.status === "on" ? "off" : "on" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : s.status !== "on" && seriesReason ? seriesReason : s.publishBlocked === true ? publishReason : s.status !== "on" && s.publishBlocked === undefined ? "上架状态未知，请重新加载核对" : s.status !== "on" && !open ? blockers.join("；") : s.status !== "on" && !s.allowedPoolCodes?.length ? "上架前请至少选择一个任务等级" : s.status !== "on" && s.monthlyTargetUsdt == null ? "上架前请设置月收益目标" : s.status !== "on" && s.inventoryMode !== "UNLIMITED" && Number(s.stock) === 0 ? "库存为 0，商品已售罄" : undefined);
       const cardReasons = [...new Set([...blockers, ...(s.publishBlocked === true ? [publishReason] : []), ...(s.publishBlocked === undefined ? ["上架状态待核实"] : []), ...(seriesReason ? [seriesReason] : [])])];
-      const actionReason = onBlock && !cardReasons.some(reason => onBlock.includes(reason)) ? onBlock : undefined;
       const proposal = ctx.pendingProposal(s.id);
+      // 待审批时卡片底部已有「有变更待审批」入口，按钮旁不再写同一件事；不能点的原因仍在按钮提示里。
+      const actionReason = onBlock && !proposal && !cardReasons.some(reason => onBlock.includes(reason)) ? onBlock : undefined;
       const sold = s.sold, stock = s.stock == null ? null : Number(s.stock);
       return <article key={s.id} className="e1-product" data-hit={skuLink === s.id ? "" : undefined} aria-label={s.name}>
         <div className="e1-product-identity">

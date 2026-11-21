@@ -66,9 +66,14 @@ function dismissesDrawer(target: EventTarget | null) {
 /** 打开时聚焦容器，关闭后回到打开前的元素。Dialog 没有 Trigger 时要自己记。 */
 function useFocusHandoff(open: boolean) {
   const previous = useRef<HTMLElement | null>(null);
+  /** 打开者所在的行、面板或页签：原按钮被重画时只在这里面找同名的。 */
+  const area = useRef<Element | null>(null);
   const wasOpen = useRef(false);
   const content = useRef<HTMLDivElement>(null);
-  if (open && !wasOpen.current && document.activeElement instanceof HTMLElement) previous.current = document.activeElement;
+  if (open && !wasOpen.current && document.activeElement instanceof HTMLElement) {
+    previous.current = document.activeElement;
+    area.current = document.activeElement.closest("tr, section, [role=tabpanel]");
+  }
   wasOpen.current = open;
   return {
     ref: content,
@@ -79,7 +84,15 @@ function useFocusHandoff(open: boolean) {
     },
     onCloseAutoFocus: (event: Event) => {
       event.preventDefault();
-      if (previous.current?.isConnected) previous.current.focus();
+      const opener = previous.current;
+      if (opener?.isConnected) opener.focus();
+      // 提交时按钮可能重画过（变灰、转圈后换了节点，BUG-536）：原节点不在了，就在它原来那一行、那块面板里找看得见的同名那一个；
+      // 同名不止一个、或那一块也不在了，焦点不动。
+      else if (opener && area.current?.isConnected) {
+        const name = opener.getAttribute("aria-label") ?? opener.textContent;
+        const same = [...area.current.querySelectorAll<HTMLElement>(opener.tagName)].filter((element) => element.getClientRects().length > 0 && (element.getAttribute("aria-label") ?? element.textContent) === name);
+        if (same.length === 1) same[0].focus();
+      }
     },
   };
 }
@@ -216,6 +229,8 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
   const focus = useFocusHandoff(true);
   const feedbackId = useDialogFeedback();
   const typed = useRef(false);
+  // 失焦时校验提示换掉帮助文字（删了节点），Radix 的焦点圈在焦点换手途中看到删除，会把焦点拉回外框（BUG-536）；记下本来要去的控件，送过去。
+  const focusTarget = useRef<HTMLElement | null>(null);
   // 填过内容后第一次按 Esc 只提示，第二次才关；接着打字就收起提示，重新算。
   const [escArmed, setEscArmed] = useState(false);
   const close = () => { if (!busy) onClose(); };
@@ -236,6 +251,12 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
             if (event.target instanceof Element && event.target.matches(SEARCH_INPUT)) return;
             typed.current = true;
             setEscArmed(false);
+          }}
+          onBlur={(event) => { focusTarget.current = event.relatedTarget instanceof HTMLElement ? event.relatedTarget : null; }}
+          onFocus={(event) => {
+            const next = focusTarget.current;
+            focusTarget.current = null;
+            if (event.target === event.currentTarget && next && next !== event.currentTarget && event.currentTarget.contains(next)) next.focus();
           }}
           onEscapeKeyDown={(event) => {
             if (busy || !(dirty || typed.current) || escArmed) return;

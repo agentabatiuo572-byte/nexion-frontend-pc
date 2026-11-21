@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { OperatorBriefKind, BusinessFormSpec, EditSpec } from "../design-kit";
 import type { E4Query } from "./data";
 import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput, E1InvalidSku } from "@/lib/admin/e1-client";
-import type { E2PhoneTier, E2YieldComparison } from "@/lib/admin/e2-client";
+import type { E2OnboardingYieldConfig, E2PhoneTier, E2YieldComparison } from "@/lib/admin/e2-client";
 import type { useE3Proposals } from "./e3-proposals";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E4OrderDetail, E4PendingApproval } from "@/lib/admin/e4-client";
@@ -138,11 +138,11 @@ export interface EViewCtx {
   phoneTiers: E2PhoneTier[];
   yieldComparisons: E2YieldComparison[];
   e6SkuCandidates: E6SkuCandidates;
-  refreshE6SkuCandidates: () => Promise<void>;
+  refreshE6SkuCandidates: () => Promise<boolean>;
   e2Loading: boolean;
   e2Error: string | null;
   e2TaskCatalogReady: boolean;
-  refreshE2: () => Promise<void>;
+  refreshE2: () => Promise<E2OnboardingYieldConfig | undefined>;
   openAddTask: () => void;
   openEditTask: (t: OpsTask) => void;        // 编辑任务全字段(预填抽屉)
   // E3 生命周期 & Trade-in(配置/指标/tx 监控均走后端 API)

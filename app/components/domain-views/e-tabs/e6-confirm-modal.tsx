@@ -1,22 +1,30 @@
 "use client";
 import { useState, type ComponentProps, type ReactNode } from "react";
 import { compareEditDecimals, OperationConfirmModal } from "../design-kit";
-import { Notice } from "@/app/components/rd";
+import { RotateCcw } from "lucide-react";
+import { Button, Notice } from "@/app/components/rd";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 
 /** E6 owns its funding explanation and persisted-command recovery feedback. */
-export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, ...props }: ComponentProps<typeof OperationConfirmModal> & {
+export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack, refusal, ...props }: ComponentProps<typeof OperationConfirmModal> & {
   scope: string;
+  /** 首次提交被明确拒绝后点「返回修改」：有上一步的框回到上一步；不传就留在这个框里改。 */
+  onBack?: () => void;
+  refusal?: { message: string; retryRead?: () => void; reading?: boolean };
   amplificationBasis?: ReactNode | ((value?: string) => ReactNode);
   onRecovered?: (result?: E6WriteReceipt) => void | Promise<void>;
 }) {
   const m = useE6Mutations();
   const [unknown, setUnknown] = useState(false);
+  // 首次提交被明确拒绝、没留原记录：同一份输入再点也会被拒，按钮停住，给「返回修改」。
+  const [refused, setRefused] = useState<string>();
   const record = m.pending.find(r => r.scope === scope);
   const rejected = !!record && m.rejected.includes(record.commandKey);
-  const blockedReason = props.blockedReason ?? (rejected ? "按原请求重试被明确拒绝，请关闭窗口，核对后解除这条记录。" : undefined);
+  const refusalMessage = refusal?.message ?? refused;
+  const blockedReason = props.blockedReason ?? (rejected ? "按原请求重试被明确拒绝，请关闭窗口，核对后解除这条记录。"
+    : refusalMessage ? <span className="rd-toolbar"><span>{refusalMessage}</span><Button size="sm" icon={<RotateCcw size={14} aria-hidden />} loading={refusal?.reading} onClick={refusal?.retryRead ?? (() => { setRefused(undefined); onBack?.(); })}>{refusal?.retryRead ? "重新读取" : "返回修改"}</Button></span> : undefined);
   const facts = (value?: string) => {
     const direction = props.edit?.amplifiesWhen;
     const decimalDirection = compareEditDecimals(value ?? "", props.edit?.current ?? "");
@@ -52,6 +60,7 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, ...prop
           setUnknown(true);
           return;
         }
+        if (isExplicitRejection(failure) && m.pendingReason(scope) === undefined) setRefused(operationConfirmErrorMessage(failure));
         throw failure;
       }
     }}/>;
