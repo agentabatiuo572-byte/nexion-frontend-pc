@@ -6,7 +6,7 @@ import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError
 import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { A3FeatureFlag, A3PlatformParam } from "@/lib/admin/a3-client";
 import { parseBusinessCalendar, type BusinessCalendarView, type BusinessCalendarVersion, type BusinessZoneOption } from "@/lib/admin/business-calendar-client";
-import { isOperatingLanguageList, parsePlatformExperienceConfig, type PlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
+import { isOperatingLanguageList, matchesUnavailableDownload, parsePlatformExperienceConfig, type PlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, parseDeveloperDocs, parseHowContent, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { FundCommandOrigin, FundCommandEvidence } from "./fund-command-investigation";
@@ -74,7 +74,7 @@ function validOriginal(value: unknown): value is A3Original {
     case "cancel":
       return object(value.view) && !!parseBusinessCalendar({ ...value.view, pending: value.target });
     case "experience": {
-      // Drafts may contain invalid URLs or old download fields after choosing unavailable: the server validates/clears those on save.
+      // Drafts retain text entered before switching the download source.
       const form = (item: unknown): boolean => object(item) && Number.isSafeInteger(item.version) && typeof item.baseUrl === "string"
         && typeof item.homeNewcomerTasksEnabled === "boolean" && typeof item.homeWeeklyPromoEnabled === "boolean"
         && Array.isArray(item.channels) && item.channels.every(channel => object(channel) && typeof channel.key === "string"
@@ -225,6 +225,9 @@ export function useA3Commands() {
           const { interfaceLanguages, operatingLanguages, appDownload } = JSON.parse(record.body) as {
             interfaceLanguages?: unknown; operatingLanguages?: unknown; appDownload: PlatformExperienceConfig["appDownload"];
           };
+          if (!matchesUnavailableDownload(appDownload, saved.appDownload)) {
+            throw new OutcomeUnknownError("PLATFORM_EXPERIENCE_DOWNLOAD_NOT_CONFIRMED");
+          }
           if (appDownload.source === "official" && (saved.appDownload.releaseNotes.en !== appDownload.releaseNotes.en
             || appDownload.releaseNotes.zh.trim() && saved.appDownload.releaseNotes.zh !== appDownload.releaseNotes.zh
             || !appDownload.releaseNotes.zh.trim() && saved.appDownload.releaseNotes.zh !== appDownload.releaseNotes.en)) {
