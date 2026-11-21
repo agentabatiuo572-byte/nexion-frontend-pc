@@ -2,9 +2,10 @@
    深色是默认主题；浅色挂 data-theme="light"。两套变量名相同，取值分别实测过对比度。
    命名：--rd-<组>-<名>。颜色里 *-bg 是横幅和色块底，*-tile 是图标底，*-tile-ink 是图标底上的图标色，*-pill 是状态标签底。 */
 
-/* 越南语带声调的字母：没装 Inter 时会落到 PingFang SC，它的越南语声调和字母是分开的。只这些字母改用系统西文字体，其余字形不变。 */
-@font-face { font-family: "RD Vietnamese"; font-weight: 100 550; src: local("Helvetica Neue"), local("HelveticaNeue"), local("Segoe UI"), local("Arial"); unicode-range: U+00C0-00C3, U+00C8-00CA, U+00CC-00CD, U+00D2-00D5, U+00D9-00DA, U+00DD, U+00E0-00E3, U+00E8-00EA, U+00EC-00ED, U+00F2-00F5, U+00F9-00FA, U+00FD, U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0303, U+0309, U+0323, U+1EA0-1EF9; }
-@font-face { font-family: "RD Vietnamese"; font-weight: 551 900; src: local("Helvetica Neue Bold"), local("HelveticaNeue-Bold"), local("Segoe UI Semibold"), local("Arial Bold"); unicode-range: U+00C0-00C3, U+00C8-00CA, U+00CC-00CD, U+00D2-00D5, U+00D9-00DA, U+00DD, U+00E0-00E3, U+00E8-00EA, U+00EC-00ED, U+00F2-00F5, U+00F9-00FA, U+00FD, U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0303, U+0309, U+0323, U+1EA0-1EF9; }
+/* 越南语带声调的字母：没装 Inter 时会落到 PingFang SC，它的越南语声调和字母是分开的。只这些字母改用系统西文字体，其余字形不变；400／500／600 三档分别对 PingFang 的常规、中粗、中黑（600 用 Medium，Bold 比 PingFang Semibold 粗）。 */
+@font-face { font-family: "RD Vietnamese"; font-weight: 100 450; src: local("Helvetica Neue"), local("HelveticaNeue"), local("Segoe UI"), local("Arial"); unicode-range: U+00C0-00C3, U+00C8-00CA, U+00CC-00CD, U+00D2-00D5, U+00D9-00DA, U+00DD, U+00E0-00E3, U+00E8-00EA, U+00EC-00ED, U+00F2-00F5, U+00F9-00FA, U+00FD, U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0303, U+0309, U+0323, U+1EA0-1EF9; }
+@font-face { font-family: "RD Vietnamese"; font-weight: 451 650; src: local("Helvetica Neue Medium"), local("HelveticaNeue-Medium"), local("Segoe UI Semibold"), local("Arial"); unicode-range: U+00C0-00C3, U+00C8-00CA, U+00CC-00CD, U+00D2-00D5, U+00D9-00DA, U+00DD, U+00E0-00E3, U+00E8-00EA, U+00EC-00ED, U+00F2-00F5, U+00F9-00FA, U+00FD, U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0303, U+0309, U+0323, U+1EA0-1EF9; }
+@font-face { font-family: "RD Vietnamese"; font-weight: 651 900; src: local("Helvetica Neue Bold"), local("HelveticaNeue-Bold"), local("Segoe UI Bold"), local("Arial Bold"); unicode-range: U+00C0-00C3, U+00C8-00CA, U+00CC-00CD, U+00D2-00D5, U+00D9-00DA, U+00DD, U+00E0-00E3, U+00E8-00EA, U+00EC-00ED, U+00F2-00F5, U+00F9-00FA, U+00FD, U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0303, U+0309, U+0323, U+1EA0-1EF9; }
 
 :root,
 [data-theme="dark"] {
