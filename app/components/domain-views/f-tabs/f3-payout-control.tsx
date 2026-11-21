@@ -14,10 +14,11 @@ import type { FViewCtx } from "./types";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { canRetryF3Proposal, f3ConfigSlot, listF3Proposals, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
 import { pendingF3ConfigWrite } from "@/lib/admin/f3-config-write";
-import { F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY, f3PlatformCapPct, planF3PayoutControl, type F3PayoutControlKey } from "@/lib/admin/f3-policy";
+import { F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY, f3PayoutControlAuthority, f3PlatformCapPct, planF3PayoutControl, type F3PayoutControlKey } from "@/lib/admin/f3-policy";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { PERMISSION_DENIED_TEXT } from "@/lib/admin/operation-confirm-error";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 export const F3_PAYOUT_KEYS: readonly F3PayoutControlKey[] = [F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY];
@@ -145,11 +146,16 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
     return next === null || !cfg || cfg.platformCapPct == null || mode !== "new" ? undefined : planF3PayoutControl(key, next, cfg).direction;
   };
   const originalValue = direct?.f3Request?.value ?? original?.spec?.after ?? "";
-  const expired = direct ? isRetryExpired(direct) : original ? !canRetryF3Proposal(original) : false;
+  const expired = direct ? isRetryExpired(direct) : !!original && isRetryExpired(original);
+  const queryOnly = !!original && !expired && !canRetryF3Proposal(original);
+  const canWriteProposal = canPropose && ctx.can(f3PayoutControlAuthority(key));
   const recoveryText = direct
     ? expired ? "超过 24 小时，只能查询原结果" : "可能已经生效；先查询原结果"
     : original?.ticket?.status === "pending" ? `审批单在等${SUPER}批准；批准前不生效`
-      : expired ? "超过 24 小时，只能查询原审批单" : "可能已经建了审批单；先查询原结果";
+      : expired ? "超过 24 小时，只能查询原审批单"
+        : queryOnly && !canWriteProposal ? PERMISSION_DENIED_TEXT
+          : original?.received ? "原申请建过单，批没批准还没查到，请继续查询。"
+            : "可能已经建了审批单；先查询原结果";
   // 框里填的原样值：被挡下的调高也要写在事实里、按钮写「提交审批」。amplifiesWhen 每次渲染都拿到原值，先于事实和按钮。
   const rawTyped = useRef<string | undefined>(undefined);
   const [typed, setTyped] = useState<string>();
@@ -228,7 +234,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
       confirmLabel={auto ? autoNow ? "立即生效" : "提交审批" : "立即生效"}
       confirmLabelForValue={auto ? undefined : (value) => direction(typedCap(value)) === "proposal" ? "提交审批" : "立即生效"}
       edit={auto ? undefined : {
-        kind: "number", label: "改后的封顶比例", current: mode === "new" ? capNow : undefined, unit: "%", min: 0, max: 100, maxDecimals: 10,
+        kind: "number", label: "改后的封顶比例", current: mode === "new" ? capNow : undefined, unit: "%", min: 0, max: 100, maxDecimals: 10, ignoreTrailingDecimalZeros: true,
         initialValue: mode === "new" ? undefined : originalValue.replace(/%$/, "").trim(),
         disallowCurrent: true, hint: "0–100，最多 10 位小数",
         // 只有能提交的调高才提示多付钱；已有调高在等或原申请未知时调高被挡下，不提示。
@@ -245,7 +251,8 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
         pending: mode !== "new",
         initialRecovery: "retry",
         expired,
-        expiredRequestRecovery: (direct ?? original) && isRetryExpired((direct ?? original)!) ? "query" : undefined,
+        queryOnly,
+        expiredRequestRecovery: expired ? "query" : undefined,
         recover: async () => {
           if (ownDirect()) {
             const found = await ctx.recoverF3PayoutControl(key, "query");

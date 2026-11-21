@@ -347,8 +347,7 @@ function coverageFacts(w: { operationCode?: string | null; obj?: string; after?:
  * 这三类批准被业务拒绝（后端在写任何东西之前拒，单子不变、锁还在）时，批准人看到的话：没执行、钱没动、单子还待审批、能做什么。
  * 覆盖率两句全站共用的说法不改（别处是直接执行），这里按批准的场景另写。重试被拒时原记录已清掉，同一句也成立。
  */
-function approvalRefusedText(operationCode: string | null | undefined, cause: unknown) {
-  const code = backendCode(cause);
+function approvalRefusedText(operationCode: string | null | undefined, code: string) {
   // A6 授权单：后端在改授权之前拒（OpsPlatformRoleService 审计角色只读门），授权、单子和锁都不动。
   if (code === "AUDIT_ROLE_WRITE_FORBIDDEN") return "审计角色只能有查看权限，这次批准没有执行，角色权限没有变；审批单还是待审批，不会自己结束。请驳回，或请发起人撤回。";
   // F 域配置（放宽方向）和 F5 补发：后端在改之前拒（OpsTeamService.updateUiConfig 等、F5CommissionService.reissueInternal），单子和锁都不动。
@@ -804,8 +803,8 @@ const DECISION_REFUSED_REASON: Record<string, string> = {
   PERMISSION_DENIED: "这个账号没有这项操作的业务权限，请核对授权",
 };
 /** 共用表认不出的机器码会落到这句兜底；被拒已经确认，它的「请刷新后重试」不对，按没有原因写。 */
-const decisionRefusedReason = (code: string | undefined, fallback: string) => {
-  const reason = (code && DECISION_REFUSED_REASON[code.split(":")[0]]) || formatAdminApiError(code, fallback);
+const decisionRefusedReason = (code: string | undefined, fallback: string, approvalReason?: string) => {
+  const reason = approvalReason ?? ((code && DECISION_REFUSED_REASON[code.split(":")[0]]) || formatAdminApiError(code, fallback));
   if (reason === UNMAPPED_ADMIN_ERROR_TEXT) return undefined;
   // 被拒后页面已自动重读：共用说明里叫人刷新的半句不写，只留原因。
   return reason.split(/(?<=[，；])/).filter((part) => !part.includes("刷新")).join("").replace(/[，；。.]+$/, "") || undefined;
@@ -1841,7 +1840,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       clearDecisionPendingNote(record);
       if (receipt.state === "REJECTED") {
         // 记录随即解除，拒绝原因只在这条提示里：不自动消失，运营点「知道了」或切页签才收起（协调人定，不另外常留）。
-        const why = receipt.businessMessage ? decisionRefusedReason(receipt.businessMessage, receipt.businessMessage) : undefined;
+        const code = receipt.businessMessage;
+        const why = code ? decisionRefusedReason(code, code, kind === "approve"
+          ? approvalRefusedText(record.operationCode ?? recordTicket(record)?.operationCode, code) : undefined) : undefined;
         setRefusals((current) => [...current, DECISION_REFUSED(DECISION_VERB[kind], record.target, why)]);
       } else toast(DECISION_DONE(DECISION_VERB[kind], record.target), "success");
     } else {
@@ -1914,7 +1915,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       } else notePending(record, "重试的结果仍然未知，原记录继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      const why = ((record.kind === "approve" ? approvalRefusedText(record.operationCode, cause) : undefined)
+      const code = backendCode(cause);
+      const approvalReason = record.kind === "approve" ? approvalRefusedText(record.operationCode ?? recordTicket(record)?.operationCode, code) : undefined;
+      const why = (approvalReason
         ?? (record.kind === "approve" || record.kind === "reject" ? decisionDeniedText(record.kind, cause, true) : undefined) ?? displayAdminError(cause)).replace(/[。.]$/, "");
       if (!a2Commands.list().some(row => row.commandKey === record.commandKey)) {
         toast(why, "error");
@@ -1923,7 +1926,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       const rejected = isExplicitRejection(cause);
       if ((rejected || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)
         && (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw")) {
-        const reason = decisionRefusedReason(backendCode(cause) || undefined, why) ?? "系统没有给出原因";
+        const reason = decisionRefusedReason(code || undefined, why, approvalReason) ?? "系统没有给出原因";
         decisionRetryRefusals.current.set(record.commandKey, `按原请求重试被拒：${reason}。`);
         await verifyDecisionPending(record, record.kind, true);
         return;
@@ -2329,7 +2332,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           if (stale) openActionConfirm({ ...approveRequest(w), blockedReason: stale });
           // 共用的说法对直接编辑、演练都成立；审批这里还要写下一步（M8）。
           if (backendCode(cause) === "J4_PLAYBOOK_NOT_FOUND") throw new Error("应急预案不存在，可能已被删除，这张单不能批准。请驳回后按最新的预案重新发起。");
-          const refused = approvalRefusedText(w.operationCode, cause);
+          const refused = approvalRefusedText(w.operationCode, backendCode(cause));
           if (refused) throw new Error(refused);
           const denied = decisionDeniedText("approve", cause);
           if (denied) throw new Error(denied);

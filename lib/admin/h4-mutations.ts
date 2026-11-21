@@ -31,6 +31,7 @@ export type H4Command = H4StoredCommand & {
   store: keyof typeof h4CommandStores; owner: number; scope: string; action: string; reason: string;
   request: Direct | { proposal: Proposal }; acknowledged?: boolean;
   raffleReceipt?: { id: string; revision: number | null };
+  raffleReadback?: { id: string; minimumRevision: number; hasMatchingReceipt: boolean };
   asset?: UploadedAsset;
   uploadTarget?: H4UploadTarget;
   restoration?: H4UploadRestoration;
@@ -75,17 +76,17 @@ function retain(r: H4Command) {
   if (!storage.isDurablyStored(r.fingerprint, r.commandKey)) throw new Error("H4_REQUEST_STORAGE_UNAVAILABLE");
 }
 
-function raffleReadbackReceipt(raw: H4StoredCommand, request: Direct, scope: string): H4Command["raffleReceipt"] {
+function raffleReadback(raw: H4StoredCommand, request: Direct, scope: string, body: { id?: unknown; expectedRevision?: number }): H4Command["raffleReadback"] {
   if (!raw.acknowledged) return;
   const id = /^H\/h4_genesis_raffle\/([A-Za-z0-9_-]{1,64})$/.exec(scope)?.[1];
   if (!id) return;
-  const matchesRequest = request.method === "PATCH" && request.path === `/genesis-raffle/${id}`
-    || request.method === "POST" && request.path === "/genesis-raffle" && JSON.parse(request.body).id === id;
-  if (!matchesRequest) return;
+  const minimumRevision = request.method === "PATCH" && request.path === `/genesis-raffle/${id}`
+    && typeof body.expectedRevision === "number" && Number.isSafeInteger(body.expectedRevision) && body.expectedRevision > 0
+    ? body.expectedRevision + 1
+    : request.method === "POST" && request.path === "/genesis-raffle" && body.id === id ? 1 : undefined;
+  if (minimumRevision === undefined || !Number.isSafeInteger(minimumRevision)) return;
   const receipt = raw.raffleReceipt;
-  // receipt-status confirms the command but does not return the raffle revision.
-  if (receipt === undefined) return { id, revision: null };
-  if (receipt?.id === id && (receipt.revision === null || Number.isSafeInteger(receipt.revision) && receipt.revision > 0)) return receipt;
+  return { id, minimumRevision, hasMatchingReceipt: receipt?.id === id && receipt.revision === minimumRevision };
 }
 
 /** Old input fingerprints already contain the exact wire body. Parse them only
@@ -115,7 +116,7 @@ export function pendingH4Commands(): H4Command[] {
         const validTarget = target && typeof target.objectId === "string" && !!target.objectId && Number.isSafeInteger(target.revision)
           && (target.kind === "banner" && target.position === "bannerAssetId" && Number.isSafeInteger(target.version)
             || target.kind === "evidence" && target.position === "evidenceAssetId" && typeof target.operation === "string");
-        return [{ ...raw, store, uploadTarget: validTarget ? target : undefined, raffleReceipt: raffleReadbackReceipt(raw, raw.request, raw.scope) } as H4Command];
+        return [{ ...raw, store, uploadTarget: validTarget ? target : undefined, raffleReadback: raffleReadback(raw, raw.request, raw.scope, b) } as H4Command];
       }
       if (!hasPersistedPendingCommandOwner(String(actor.adminId))) return [];
       if (store === "delete") return [{ ...raw, store, raffleReceipt: undefined, owner: actor.adminId, scope: `H/h4_legacy_event/${raw.eventId}`, action: `删除既有活动 · ${raw.eventId}`, reason: raw.reason,
@@ -126,7 +127,7 @@ export function pendingH4Commands(): H4Command[] {
       const scope = `H/${store === "rule" ? "h4_event_rule" : "h4_genesis_raffle"}/${id}`;
       const request: Direct = { path: store === "rule" ? `/event-rules/${encodeURIComponent(id)}` : `/genesis-raffle${body.expectedRevision === undefined ? "" : `/${encodeURIComponent(id)}`}`,
         method: store === "raffle" && body.expectedRevision === undefined ? "POST" : "PATCH", body: raw.inputFingerprint };
-      return [{ ...raw, store, owner: actor.adminId, scope, request, raffleReceipt: raffleReadbackReceipt(raw, request, scope),
+      return [{ ...raw, store, owner: actor.adminId, scope, request, raffleReadback: raffleReadback(raw, request, scope, body),
         action: `${store === "rule" ? "保存玩法配置" : "保存抽奖配置"} · ${id}`, reason: body.reason } as H4Command];
     } catch { return []; }
   }));
@@ -136,14 +137,15 @@ export const h4PendingFor = (scope: string) => pendingH4Commands().find(r => r.s
 export const confirmedH4Saves = () => pendingH4Commands().filter(r => r.acknowledged && !r.asset && !("proposal" in r.request));
 export const confirmedH4RaffleSaves = () => confirmedH4Saves().filter(record => resourceOf(record.scope) === "raffles");
 export function confirmH4RaffleReadback(records: H4Command[], details: ReadonlyMap<string, AdminRaffle | null>) {
-  const behind = records.find(({ raffleReceipt }) => {
-    if (raffleReceipt?.revision == null) return false;
-    const current = details.get(raffleReceipt.id);
-    return current != null && current.revision < raffleReceipt.revision;
+  const unconfirmed = records.some(({ raffleReadback }) => {
+    if (!raffleReadback) return true;
+    const current = details.get(raffleReadback.id);
+    // Only a matching write receipt already established the saved revision when the draw is gone.
+    if (current === null) return !raffleReadback.hasMatchingReceipt;
+    return !current || current.revision < raffleReadback.minimumRevision;
   });
-  if (behind) {
-    retain({ ...behind, raffleReceipt: undefined, acknowledged: false });
-    throw new OutcomeUnknownError("H4_RESULT_UNKNOWN");
+  if (unconfirmed) {
+    throw new OutcomeUnknownError("创世抽奖配置读取失败，请刷新后重试。");
   }
   records.forEach(forget);
 }
