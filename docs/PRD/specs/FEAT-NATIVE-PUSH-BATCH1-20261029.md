@@ -1,5 +1,16 @@
 # 安卓/iOS 业务推送第一批
 
+## iOS 极光群发环境（2026-11-23 起）
+
+| iOS 安装包 | 极光控制台应用 | Bundle ID / APNs topic | APNs 环境 |
+| --- | --- | --- | --- |
+| TEST，自 `2026112301` 起 | UVEL TEST | `ai.uvel.app.test` | Production |
+| 正式版 | UVEL | `ai.uvel.app` | Production |
+
+测试人员从 `UVEL TEST` 发广播。测试设备安装新包、同意极光推送并允许通知后，在新 AppKey 下注册。此前共享正式 AppKey 的 TEST 版（含 `2026112206`）需另行安装新包。下文 2026 年 10 月关于 iOS 共用标识的记录适用于旧包。
+
+首个独立测试 IPA 为 `1.0.2 (2026112301)`。极光控制台已验证该 Bundle ID 的生产推送证书。Ad Hoc 描述文件含 1 台已登记的测试 iPhone。公开 IPA 全文件 SHA-256 为 `0bdca28f4f2b3ca1be61c4ab4c768015cdd40258ba57099e4d65fb5c0bd76314`。签名、TEST 接口、下载文件和安装清单已核对，本构建的实机收件待验。
+
 日期：2026-10-29；通道修订：2026-10-30。依据：用户要求补齐第一批，“设备到期”限定现有试用设备结束与抵扣保留期结束。现场确认 DCloud 国际应用没有 UniPush 入口后，用户选择保留国际应用，Android 直连 FCM、iOS 直连 APNs；后续要求 TEST 与正式统一使用 ai.uvel.app 标识及推送私钥，避免提交生产时人工更换配置，取代此前 ai.uvel.app.test 的 TEST 标识方案。
 
 ## 用户结果与范围
