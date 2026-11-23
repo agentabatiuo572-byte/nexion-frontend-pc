@@ -7,7 +7,7 @@ import {
   AlertTriangle, ArrowUpDown, BarChart3, CalendarCheck, CircleSlash, Dices, Gift, Lock, Pencil, Plus, RefreshCw, ShieldCheck, Sparkles, Trophy, Users,
 } from "lucide-react";
 import {
-  BlockState, Button, Change, ChartLegend, ColumnChart, Conclusion, ConfigList, ConfigRow, Fact, Facts, Notice, PageHeader, PageTabs, Panel, ReleaseModal,
+  BlockState, Button, Change, ChartLegend, ColumnChart, Conclusion, ConfigList, ConfigRow, Fact, Facts, Notice, PageHeader, PageTabs, Panel,
   SegmentBar, Stat, StatBand, StatusTag, StepBar, useTabIds,
 } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
@@ -15,7 +15,7 @@ import {
   fetchH5CheckIn,
 } from "@/lib/admin/h-client";
 import { h5Amount, h5RuleWriteRefusal, h5StreakReward, h5WholeReward, parseH5Model } from "@/lib/admin/h5-contract";
-import { useH5Mutations, type H5Change, type H5PendingCommand } from "@/lib/admin/use-h5-mutations";
+import { h5OriginalNonMultiplierPowerUp, h5PowerUpDayChange, useH5Mutations, type H5Change, type H5PendingCommand } from "@/lib/admin/use-h5-mutations";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -150,7 +150,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   }, () => fresh.current);
   // 保存被「别人先改过」拒绝：页面已重读，留住这次要改的内容给运营对照。
   const [stale, setStale] = useState<{ name: string; before: string; after: string } | null>(null);
-  const [releasing, setReleasing] = useState<H5PendingCommand | null>(null);
   const runChange = async (change: Parameters<typeof mutations.run>[0]) => {
     const request = confirmation.current;
     try { await mutations.run(change, commandKey => { if (request) request.commandKey = commandKey; }); setStale(null); } catch (error) {
@@ -339,6 +338,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     const snapshot = original?.change.snapshot ?? model!;
     const target = `power:${powerUp.id}`;
     const multiplier = powerUp.effectType === "CHECKIN_MULTIPLIER";
+    const noteOnly = original && h5OriginalNonMultiplierPowerUp(original)?.noteOnly;
     const name = operatorCopyText(powerUp.label);
     const currentNote = text(powerUp.note, "");
     const validDay = (value: string) => /^\d+(?:\.0+)?$/.test(value) && Number(value) >= 1 && Number(value) <= 365;
@@ -368,6 +368,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         </Facts>
       ),
       statedBrief: (values) => {
+        if (noteOnly) return { impact: "原操作只改了说明文字，解锁天数没变。", check: "核对原操作和理由。" };
         const check = multiplier ? "核对天数和倍率；理由写清依据或工单号。" : "核对解锁天数；理由写清依据或工单号。";
         const direction = directionOf(values);
         return direction === "approval"
@@ -405,10 +406,14 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         // 非倍率权益的说明文字 App 不显示，后台也不再给改（产品 2026-11-23）；照旧把存着的原值发回去。
         const note = multiplier ? form.note ?? "" : currentNote;
         if (multiplier && (!/^\d+(?:\.\d{1,4})?$/.test(note) || (h5Amount(note) ?? BigInt(0)) <= BigInt(0) || Number(note) >= 100000000)) throw new Error("POWER_UP_MULTIPLIER_INVALID");
-        await runChange({ target, action: `连续签到成长奖励 · ${name}`, name: `连续签到成长奖励 · ${name}`, before: `连签 ${powerUp.day} 天；${currentNote}`, after: `连签 ${day} 天；${note}`,
+        const days = h5PowerUpDayChange(powerUp.day, day);
+        const auditValues = { beforeValue: `${days.before}；${currentNote}`, afterValue: `${days.after}；${note}` };
+        await runChange({ target, action: `连续签到成长奖励 · ${name}`, name: `连续签到成长奖励 · ${name}`,
+          before: multiplier ? auditValues.beforeValue : days.before, after: multiplier ? auditValues.afterValue : days.after,
           success: `${name} 已更新`, reason, snapshot, businessValue: { day: form.day, note }, approvalRequired: amplifies(form),
           direct: { path: `/check-in/power-ups/${powerUp.id}/config`, body: { day, note, expectedDay: powerUp.day, expectedNote: currentNote } },
-          proposal: proposal("h5_power_up_config", { powerUpId: powerUp.id, day, note, expectedDay: powerUp.day, expectedNote: currentNote }),
+          proposal: { ...proposal("h5_power_up_config", { powerUpId: powerUp.id, day, note, expectedDay: powerUp.day, expectedNote: currentNote }),
+            ...(!multiplier ? auditValues : {}) },
         });
       },
     });
@@ -538,30 +543,28 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   };
   const queryOriginal = async (original: H5PendingCommand) => {
     try {
-      const result = await mutations.query(original);
-      if (result === null && isRetryExpired(original) && !original.acknowledged && !original.ticket) {
-        toast("原申请已过期，查询确认没有这张审批单；确认后可以点「查无此单时解除」。");
-      }
+      await mutations.query(original);
     } catch (err) { toast(displayAdminError(err)); }
   };
 
   // 连签档后端存的旧名称（+5 NEX）原样标成旧名称，不让裸的 NEX 出现。
   const shownReward = (value: string) => /\bNEX\b/i.test(value) ? `旧名称「${value}」` : value;
-  const releasable = (record: H5PendingCommand) => record.request.kind !== "direct" && isRetryExpired(record) && !record.acknowledged && !record.ticket;
-  const recoveryRows: H5RecoveryRow[] = mutations.records.map((record) => ({
-    key: record.commandKey,
-    name: record.change.name,
-    change: `${shownReward(record.change.before)} → ${shownReward(record.change.after)}`,
-    submittedAt: record.createdAt,
-    tag: record.ticket ? pendingTag(...(record.change.target.startsWith("rule:") ? [RULE_APPROVER, RULE_PENDING_NOTE] : [FUND_APPROVER, FUND_PENDING_NOTE]) as [string, string])
-      : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind === "direct" ? "direct" : "approval") : unknownTag(record.request.kind === "direct" ? "direct" : "approval"),
-    ticket: record.ticket?.id,
-    actions: <>
-      <Button size="sm" onClick={() => void queryOriginal(record)}>查询原结果</Button>
-      {!isRetryExpired(record) && !record.acknowledged && !record.ticket && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原请求重试</Button>}
-      {releasable(record) && <Button size="sm" variant="ghost" onClick={() => setReleasing(record)}>查无此单时解除</Button>}
-    </>,
-  }));
+  const recoveryRows: H5RecoveryRow[] = mutations.records.map((record) => {
+    const { before, after } = h5OriginalNonMultiplierPowerUp(record) ?? record.change;
+    return {
+      key: record.commandKey,
+      name: record.change.name,
+      change: `${shownReward(before)} → ${shownReward(after)}`,
+      submittedAt: record.createdAt,
+      tag: record.ticket ? pendingTag(...(record.change.target.startsWith("rule:") ? [RULE_APPROVER, RULE_PENDING_NOTE] : [FUND_APPROVER, FUND_PENDING_NOTE]) as [string, string])
+        : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind === "direct" ? "direct" : "approval") : unknownTag(record.request.kind === "direct" ? "direct" : "approval"),
+      ticket: record.ticket?.id,
+      actions: <>
+        <Button size="sm" onClick={() => void queryOriginal(record)}>查询原结果</Button>
+        {!isRetryExpired(record) && !record.acknowledged && !record.ticket && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原请求重试</Button>}
+      </>,
+    };
+  });
   const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
   const pendingCount = mutations.records.filter(r => r.ticket).length;
   const builtCount = mutations.records.filter(r => !r.ticket && r.acknowledged).length;
@@ -575,15 +578,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       </>}
       link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />
   );
-  const releaseModal = releasing && <ReleaseModal label={<>{releasing.change.name} · {shownReward(releasing.change.before)} → {shownReward(releasing.change.after)}</>}
-    explain={<><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></>}
-    onCancel={() => setReleasing(null)} onConfirm={() => {
-      const record = releasing;
-      setReleasing(null);
-      void mutations.releaseExpired(record)
-        .then(() => toast("已解除这条记录，可以重新提交。"))
-        .catch(cause => toast(displayAdminError(cause)));
-    }} />;
   const staleNotice = stale && <Notice tone="warn" title={`没有保存：「${stale.name}」已被别人改过`}
     action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
     {`你打开时是 ${shownReward(stale.before)}，要改成 ${shownReward(stale.after)}。${error || !model ? "最新值没读到；重试读取成功后，会带着你填的内容重新打开。" : "已读到最新值，你填的还在，核对后再提交。"}`}
@@ -660,7 +654,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     />
   );
 
-  if (loading && !model) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="签到数据读取中…" />{confirmModal}{releaseModal}</div>;
+  if (loading && !model) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="签到数据读取中…" />{confirmModal}</div>;
   if (error || !model) {
     return (
       <div className="h5-page">
@@ -669,7 +663,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         {staleNotice}
         <BlockState state="error" title="签到数据读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改签到规则和奖励。`} onRetry={() => void refresh()} retrying={loading} />
         {confirmModal}
-        {releaseModal}
       </div>
     );
   }
@@ -924,7 +917,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       {header}
       {recovery}
       {staleNotice}
-      {releaseModal}
       {conclusion}
 
       <StatBand label="签到概况">

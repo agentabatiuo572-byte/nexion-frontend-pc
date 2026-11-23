@@ -31,7 +31,8 @@ export type H5Change = {
   reason: string;
   direct?: Direct;
   earnCreate?: EarnCreate;
-  proposal?: Pick<Proposal, "command" | "target" | "type" | "amplifies" | "roleGate">;
+  proposal?: Pick<Proposal, "command" | "target" | "type" | "amplifies" | "roleGate">
+    & Partial<Pick<Proposal, "beforeValue" | "afterValue">>;
   approvalRequired: boolean;
 };
 export interface H5PendingCommand extends PendingMutationRecord {
@@ -40,6 +41,22 @@ export interface H5PendingCommand extends PendingMutationRecord {
   request: { kind: "direct"; path: string; body: string } | { kind: "approval"; body: Proposal } | { kind: "earn-create"; body: EarnCreate & { reason: string } };
   acknowledged?: boolean;
   ticket?: A2OperationRow;
+}
+
+export function h5PowerUpDayChange(expectedDay: number, day: number) {
+  return { before: `连签 ${expectedDay} 天`, after: `连签 ${day} 天` };
+}
+
+export function h5OriginalNonMultiplierPowerUp({ change, request }: H5PendingCommand) {
+  if (!change.target.startsWith("power:") || request.kind === "earn-create") return;
+  const powerUp = change.snapshot.powerUps.find(item => `power:${item.id}` === change.target);
+  if (!powerUp || powerUp.effectType === "CHECKIN_MULTIPLIER") return;
+  const values = (request.kind === "direct" ? JSON.parse(request.body) : request.body.command.params.values) as Record<string, unknown> | undefined;
+  if (typeof values?.day !== "number" || typeof values.expectedDay !== "number") return;
+  return {
+    ...h5PowerUpDayChange(values.expectedDay, values.day),
+    noteOnly: values.day === values.expectedDay && typeof values.note === "string" && typeof values.expectedNote === "string" && values.note !== values.expectedNote,
+  };
 }
 
 const paths = (target: string) => {
@@ -173,7 +190,8 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
     else forget(original);
     if (!quiet || ticket.status !== "pending") {
       const status = { pending: "待审批", approved: "已批准", rejected: "被拒", expired: "已过期", withdrawn: "已撤回" }[ticket.status];
-      toast(`审批单${status}：${ticket.before} → ${ticket.after}`);
+      const { before, after } = h5OriginalNonMultiplierPowerUp(original) ?? ticket;
+      toast(`审批单${status}：${before} → ${after}`);
     }
     if (ticket.status !== "pending") await settled(original.commandKey);
     return ticket;
@@ -303,12 +321,6 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
         }
       }
       return send(current, true);
-    },
-    async releaseExpired(original: H5PendingCommand) {
-      if (original.request.kind === "direct" || !isRetryExpired(original) || original.acknowledged || original.ticket
-        || await query(original, true) !== null) throw new Error("原申请不能解除，请查询原结果。");
-      forget(original);
-      await settled(original.commandKey);
     },
     run,
   };
