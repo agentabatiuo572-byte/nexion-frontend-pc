@@ -20,7 +20,7 @@ import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
 import type { H4UploadTarget } from "@/lib/admin/h4-mutations";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
 import { Check as RdCheck, CheckGroup as RdCheckGroup, Field as RdField } from "@/app/components/rd/field";
@@ -29,7 +29,6 @@ import { Button as RdButton, type ButtonVariant } from "@/app/components/rd/butt
 import { Select as RdSelect } from "@/app/components/rd/select";
 import { Segments } from "@/app/components/rd/tabs";
 import { DiffField } from "@/app/components/rd/diff-list";
-import { Change as RdChange } from "@/app/components/rd/facts";
 import { Explain } from "@/app/components/rd/explain";
 import { BlockState as RdBlockState, Notice as RdNotice } from "@/app/components/rd/block-state";
 import { StatusTag as RdStatusTag } from "@/app/components/rd/status-tag";
@@ -597,6 +596,8 @@ type EditReviewResult = {
 };
 type EditReview = {
   conflictOnly?: boolean;
+  /** 核对是只读请求：读不到时区块错误的标题，比如「奖励预览没读到」。 */
+  readFailTitle?: string;
   read: (value: string, signal: AbortSignal, refresh: boolean) => Promise<EditReviewResult>;
   isConflict: (error: unknown) => boolean;
   conflictNote: (readLatest?: () => void) => ReactNode;
@@ -3819,7 +3820,7 @@ export type InlineOperationApproval = {
   fieldLayout?: "compact";
 };
 
-export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, requireReason: reasonRequested = true, initialReason, measureReason, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; confirmLabelForValue?: (value?: string) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; requireReason?: boolean; initialReason?: string; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, requireReason: reasonRequested = true, initialReason, measureReason, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; confirmLabelForValue?: (value?: string) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue, reviewedValue?: string) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; requireReason?: boolean; initialReason?: string; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? initialReason ?? "");
@@ -3833,6 +3834,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const reviewRequest = useRef<AbortController | null>(null);
   useEffect(() => () => reviewRequest.current?.abort(), []);
   const readyReview = editReview?.kind === "ready" ? editReview.result : undefined;
+  // 核对读到的前后值是金额（数字 + 单位）时用关键数字那一档，单位小一档跟在后面（VS-102、VS-103）；文字照正文档。
+  const reviewedPair = readyReview && [readyReview.comparison.before, readyReview.comparison.after].map((text) => /^(\d[\d,]*(?:\.\d+)?) (\S+)$/.exec(text));
+  const reviewedAmounts = reviewedPair?.[0] && reviewedPair[1] ? [reviewedPair[0], reviewedPair[1]] as const : undefined;
   const needsEditPreview = !!review && (!review.conflictOnly || !!reviewBaseline);
   const requireReason = reasonRequested && ((!needsEditPreview && !editReview) || !!readyReview || pendingReason !== undefined);
   // 原生数字框填坏时 value 是空串，只有 validity 分得清；有意清空是另一个状态（CP-54）。
@@ -3867,7 +3871,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   useEffect(() => { if (submitError) submitAlertRef.current?.scrollIntoView({ block: "nearest" }); }, [submitError]);
   const effectiveBriefKind = typeof briefKind === "function" ? briefKind(businessValue) : briefKind;
   // 影响随业务字段变（比如名单有效期选长期还是指定日期），传函数时按现在填的值算。
-  const effectiveStatedBrief = typeof statedBrief === "function" ? statedBrief(businessValue) : statedBrief;
+  const effectiveStatedBrief = typeof statedBrief === "function" ? statedBrief(businessValue, readyReview?.comparison.after) : statedBrief;
   const approval = approvalSpec ?? inlineApproval?.resolve(businessValue, newVal);
   const compareEdit = approval ? inlineApproval?.compareEdit : undefined;
   const compactFields = !!approval && inlineApproval?.fieldLayout === "compact";
@@ -4011,7 +4015,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     } catch (error) {
       if (controller.signal.aborted || closeOnPermissionDenied(error)) return;
       if (review.isConflict(error)) enterEditConflict();
-      else setEditReview({ kind: "error", message: displayAdminError(error), refresh });
+      else setEditReview({ kind: "error", message: displayAdminReadError(error), refresh });
     } finally {
       reviewRequest.current = null;
     }
@@ -4225,16 +4229,19 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {spec && surface && !compareEdit && (
         // 现在值、新值输入合成一块（VS-103）：范围只写在 hint，没改时不多写一句，确认按钮禁用并写原因。
         <div className="rd-confirm-edit">
+          {/* 核对过：读到的前后实额写在「现在 → 改后」这一块，填的原文放在下面，还能改（VS-100、VS-103，复审 V01）。 */}
+          {readyReview && <DiffField before={reviewedAmounts ? reviewedAmounts[0][1] : readyReview.comparison.before} unit={reviewedAmounts?.[0][2]}
+            after={reviewedAmounts ? <>{reviewedAmounts[1][1]}<span className="rd-change-unit">{reviewedAmounts[1][2]}</span></> : readyReview.comparison.after}
+            size={kind === "number" || reviewedAmounts ? "key" : "body"} stack={!reviewedAmounts && kind !== "number" && Math.max(readyReview.comparison.before.length, readyReview.comparison.after.length) > 14} />}
           <DiffField
             before={readyReview ? undefined : reviewBaseline ? reopened?.before : spec.current ? editCurrent(spec, kind).text : undefined}
             beforeLabel={spec.currentLabel}
             unit={editCurrent(spec, kind).unit}
-            label={spec.label ?? "改后"}
+            label={readyReview ? "你填的" : spec.label ?? "改后"}
             size={kind === "number" ? "key" : "body"}
             stack={kind === "text" ? (spec.current?.length ?? 0) > 14 : kind !== "number" && opts.some((o) => { const text = spec.optionLabels?.[o] ?? o; return typeof text !== "string" || text.length > 10; })}
             hint={spec.hint}
-            note={readyReview ? <RdChange from={readyReview.comparison.before} to={readyReview.comparison.after} />
-              : spec.preview && editValueOk ? spec.preview(newVal) : undefined}
+            note={!readyReview && spec.preview && editValueOk ? spec.preview(newVal) : undefined}
             error={retryApproval ? undefined
               : showEditError && sameAsCurrent ? "新值和当前值一样，改了才能保存。"
               : showEditError && editIssue ? editIssue
@@ -4258,7 +4265,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         </div>
       )}
       {review && editReview?.kind === "loading" && <RdBlockState state="loading" compact title="正在读取…" />}
-      {review && editReview?.kind === "error" && <RdBlockState state="error" compact title={editReview.message} onRetry={() => void loadEditReview(editReview.refresh)} />}
+      {/* 核对只读不写：读不到用读取的说法和区块错误（标题 + 原因 + 重试），不说「结果未知、可能已生效」（OP-84，复审 V02）。 */}
+      {review && editReview?.kind === "error" && <RdBlockState state="error" title={review.readFailTitle ?? "预览没读到"} detail={editReview.message} onRetry={() => void loadEditReview(editReview.refresh)} />}
       {review && editReview?.kind === "conflict" && review.conflictNote(() => void loadEditReview(true))}
       {review && editReview?.kind !== "conflict" && reopened && review.conflictNote()}
       {spec && !(surface && !compareEdit) && (

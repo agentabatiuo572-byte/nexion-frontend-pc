@@ -393,6 +393,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       title: "修改活动奖励",
       effect: ruleBased ? effectDirect : undefined,
       detail: ruleBased ? "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。" : "填写新奖励后确认。",
+      // 影响写这次的真实后果（OP-53、OP-146）：核对后用读到的改后实额代入。
+      statedBrief: ruleBased
+        ? { impact: "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。", check: "核对现在和改后的奖励文字，理由写清依据或工单号。" }
+        : (_form, after) => ({ impact: after ? `改成 ${after}：之后达标领奖的用户按 ${after} 发放。` : "之后达标领奖的用户按改后的奖励发放。", check: "核对现在和改后的奖励，理由写清依据或工单号。" }),
       facts: rewardFacts(event),
       confirmLabel: "提交修改",
       reasonPlaceholder: "例如：按运营排期调整奖励，工单号",
@@ -402,6 +406,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue, hint: ruleBased ? undefined : "只认正数的 UVT 或 USDT，如 100 UVT",
         review: {
           conflictOnly: ruleBased,
+          readFailTitle: "奖励预览没读到",
           isConflict: error => isHGrowthReadConflict(error) || error instanceof Error && error.message === "H4_REFRESH_REQUIRED",
           conflictNote: readLatest => <H4StaleNote readLatest={readLatest} />,
           read: async (value, signal, refresh) => {

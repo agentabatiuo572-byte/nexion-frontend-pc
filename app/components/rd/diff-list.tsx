@@ -85,9 +85,11 @@ export function DiffList({ rows, emptyNote, restTitle = "其余设置" }: { rows
   );
 }
 
-export function DiffField({ before, unit, beforeLabel = "现在", label = "改后", size = "key", stack, hint, explain, state, note, error, children }: {
+export function DiffField({ before, after, unit, beforeLabel = "现在", label = "改后", size = "key", stack, hint, explain, state, note, error, children }: {
   /** 现在的值。读不到当前值时不传，只剩新值输入。 */
   before?: ReactNode;
+  /** 只读的改后值（比如核对后后端算出的实额）：传了就不放输入框，这一块只写「现在 → 改后」，改后用进行中蓝、500（VS-103）。 */
+  after?: ReactNode;
   /** 现在值的单位，小一档跟在数字后面。 */
   unit?: ReactNode;
   beforeLabel?: ReactNode;
@@ -103,7 +105,7 @@ export function DiffField({ before, unit, beforeLabel = "现在", label = "改�
   /** 改了会怎样，白话，随输入变化。 */
   note?: ReactNode;
   error?: ReactNode;
-  children: ReactNode | ((control: FieldControlProps) => ReactNode);
+  children?: ReactNode | ((control: FieldControlProps) => ReactNode);
 }) {
   const id = useId();
   const described = [error ? `${id}-error` : hint ? `${id}-hint` : "", note ? `${id}-note` : ""].filter(Boolean).join(" ") || undefined;
@@ -116,12 +118,14 @@ export function DiffField({ before, unit, beforeLabel = "现在", label = "改�
         </div>
       )}
       <div className="rd-change-side" data-next="">
-        <label className="rd-change-k" data-fill="" htmlFor={id}>{label}{explain && <Explain label={`${typeof label === "string" ? label : "新值"}的说明`} content={explain} />}</label>
-        <div className="rd-change-entry">
-          {typeof children === "function" ? children({ id, "aria-describedby": described, "aria-invalid": error ? true : undefined }) : children}
-          {state}
-        </div>
-        {error ? <div id={`${id}-error`} className="rd-form-error" role="alert">{error}</div> : hint && <div id={`${id}-hint`} className="rd-change-hint">{hint}</div>}
+        {after !== undefined ? <><span className="rd-change-k">{label}</span><span className="rd-change-after">{after}</span></> : <>
+          <label className="rd-change-k" data-fill="" htmlFor={id}>{label}{explain && <Explain label={`${typeof label === "string" ? label : "新值"}的说明`} content={explain} />}</label>
+          <div className="rd-change-entry">
+            {typeof children === "function" ? children({ id, "aria-describedby": described, "aria-invalid": error ? true : undefined }) : children}
+            {state}
+          </div>
+          {error ? <div id={`${id}-error`} className="rd-form-error" role="alert">{error}</div> : hint && <div id={`${id}-hint`} className="rd-change-hint">{hint}</div>}
+        </>}
       </div>
       {note && <div id={`${id}-note`} className="rd-change-note">{note}</div>}
     </div>

@@ -655,6 +655,7 @@ body:has(.rd-drawer[data-state="open"]:not([data-wide])) .rd-toast-host { left: 
 /* 只有一句「现在 → 改后」或一行事实时不用底块，内容太短，底块右边全是空的。 */
 .rd-confirm-facts:is(:has(> .rd-diff-one:only-child), :has(> .rd-facts:only-child > .rd-fact:only-child)) { padding: 0; background: none; }
 .rd-confirm-alert .rd-notice { padding: 8px 16px; border-radius: var(--rd-radius-control); }
+.rd-confirm-edit { display: grid; gap: var(--rd-space-3); }  /* 核对后上面是「现在 → 改后」，下面是填的原文 */
 .rd-confirm-edit .chip.tab { min-height: var(--rd-control-h-sm); padding: 0 12px; font-size: var(--rd-text-body); }
 .rd-recipients { display: grid; gap: 8px; max-height: 200px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .rd-modal.rd-confirm .alertbar.danger .ico { background: var(--rd-danger-tile); color: var(--rd-danger-tile-ink); }
@@ -899,6 +900,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-change-k { display: flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
 .rd-change-k[data-fill] { font-size: var(--rd-text-body); font-weight: 500; color: var(--rd-text); }
 .rd-change-now { display: flex; align-items: center; gap: 12px; min-height: var(--rd-control-h-lg); font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; color: var(--rd-text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rd-change-after { display: flex; align-items: center; min-height: var(--rd-control-h-lg); font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 500; color: var(--rd-progress); font-variant-numeric: tabular-nums; white-space: nowrap; }  /* 只读的改后值：和现在值同一档，进行中蓝、500（VS-103） */
 .rd-change-unit { margin-left: 4px; font-size: var(--rd-text-body); font-weight: 400; color: var(--rd-text-3); }
 .rd-change-arrow { flex: none; color: var(--rd-text-3); }
 .rd-change-entry { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: var(--rd-control-h-lg); }
@@ -906,17 +908,17 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-change-entry > .rd-number { flex: none; }  /* 数字框按内容定宽，方向标签紧跟在后面 */
 .rd-change[data-size="key"] .rd-change-entry .rd-input { height: var(--rd-control-h-lg); font-size: var(--rd-text-title); font-weight: 600; font-variant-numeric: tabular-nums; }
 .rd-change[data-size="key"] .rd-change-entry .rd-number-unit { height: var(--rd-control-h-lg); }
-.rd-change[data-size="body"] :is(.rd-change-now, .rd-change-entry) { min-height: var(--rd-control-h); }
+.rd-change[data-size="body"] :is(.rd-change-now, .rd-change-after, .rd-change-entry) { min-height: var(--rd-control-h); }
 /* 短词和开关内容窄，用底块右边全是空的；长文字（stack）还是一块。 */
 .rd-change[data-size="body"]:not([data-stack]) { padding: 0; background: none; }
-.rd-change[data-size="body"] .rd-change-now, .rd-change-now[data-words] { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); }
+.rd-change[data-size="body"] :is(.rd-change-now, .rd-change-after), .rd-change-now[data-words] { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); }
 .rd-change-hint { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-change-note { flex-basis: 100%; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-change-note .rd-diff-note { margin-top: 8px; }
 .rd-change-note .rd-diff-note svg { margin-top: 2px; }
 .rd-change[data-stack] { flex-direction: column; align-items: stretch; gap: 12px; }
 .rd-change[data-stack] .rd-change-side[data-next] { flex: none; }
-.rd-change[data-stack] .rd-change-now { min-height: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
+.rd-change[data-stack] :is(.rd-change-now, .rd-change-after) { min-height: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
 .rd-change[data-stack] .rd-change-arrow { display: none; }
 .rd-change[data-stack] .rd-change-entry { min-height: 0; }
 .rd-change[data-stack] .rd-change-entry > .rd-input { flex: 1 1 100%; max-width: none; }
