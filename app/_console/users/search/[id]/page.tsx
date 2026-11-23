@@ -783,7 +783,7 @@ export default function UserDetailPage() {
   }, [userKey, readKey, readProfile, denialMessage, denyRead, resetReferralRetry]);
 
   const retryReferral = async () => {
-    if (loading || referralRequest.current || loadedKey.current !== readKey) return;
+    if (loading || actionPending || referralRequest.current || loadedKey.current !== readKey) return;
     const controller = new AbortController();
     referralRequest.current = controller;
     const generation = requestGeneration.current;
@@ -1055,7 +1055,7 @@ export default function UserDetailPage() {
       : receiptRejected(result.receipt) ? "REJECTED" : "PROCESSED" }));
   };
 
-  const busyReason = loading ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
+  const busyReason = loading || referralRetrying ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
   const nicknameBlock = pendingCommands.some((command) => command.kind === "nickname") ? "重置昵称的结果未知，先到页面上方核对" : busyReason;
   const methodBlock = (method: UserPaymentMethod) => pendingCommands.some((command) => command.methodId === method.id)
     ? "这张卡有结果未知的操作，先到页面上方核对"
@@ -1652,7 +1652,7 @@ export default function UserDetailPage() {
         {teamPresent && <div id={nav.anchor("team")}>
           <Fold title="团队与互动" icon={Network} tone="role-3" summary={foldSummary("team", teamFailed, teamText)} alertTone="danger" {...foldProps("team", teamFailed)}>
             <Block id="hub-referral" title="推荐团队" {...listProps("member")} section={detail.referral} sub="最多 20 条"
-              sectionRetry={{ detail: referralError ?? displayAdminReadError(undefined), onRetry: () => void retryReferral(), retrying: referralRetrying || loading }}
+              sectionRetry={{ detail: referralError ?? displayAdminReadError(undefined), onRetry: () => void retryReferral(), retrying: referralRetrying || loading || actionPending !== null }}
               explain="成员最多列 20 条，不是完整名单。团队规模、直接邀请和团队订单额是另外算的总数，不是这些行相加。">
               <Values rows={[
                 ...(inKpi("团队规模") ? [] : [["团队规模", `${numberLabel(detail.referral?.teamSize)} 人`] as const]),
