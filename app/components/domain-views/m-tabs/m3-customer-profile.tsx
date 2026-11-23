@@ -63,7 +63,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const [profile, setProfile] = useState<SupportProfile | null>(null), [error, setError] = useState("");
   const [paymentProfileScope, setPaymentProfileScope] = useState("");
-  const [reload, setReload] = useState(0), [view360, setView360] = useState(false);
+  const [reload, setReload] = useState(0), [profileRetry, setProfileRetry] = useState(0), [view360, setView360] = useState(false);
   const [devicePage, setDevicePage] = useState(1), [flowPage, setFlowPage] = useState(1);
   const [deviceGroup, setDeviceGroup] = useState<SupportGroup | null>(null), [flowGroup, setFlowGroup] = useState<SupportGroup | null>(null);
   const [pageError, setPageError] = useState({ devices: "", flows: "" }), [pageRetry, setPageRetry] = useState(0);
@@ -105,13 +105,14 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     if (revokedScope.current !== scopeKey) { revokeScope(); ctx.invalidateScope(conversation?.id, customerId); }
     return true;
   };
-  const retryProfile = () => { if (stamp.current === requestStamp) { revokedScope.current = ""; setReload(n => n + 1); } };
+  // 资料卡的「重试」只重读 /360；设备、流水、维护记录各有自己的读取和参数，读成的不重来（ST-35，复审 F04）。范围被收回时各块都已清空，才全部重读。
+  const retryProfile = () => { if (stamp.current !== requestStamp) return; if (revokedScope.current === scopeKey) { revokedScope.current = ""; setReload(n => n + 1); } else setProfileRetry(n => n + 1); };
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController(), saved = stamp.current; setProfile(null); setError("");
     supportEnhancements.profile(customerId, controller.signal).then(p => { if (!controller.signal.aborted && saved === stamp.current) { setProfile(p); setPaymentProfileScope(paymentScope); } }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setError(displayAdminReadError(e)); });
     return () => controller.abort();
-  }, [customerId, epoch, scopeVersion, reload, paymentScope]);
+  }, [customerId, epoch, scopeVersion, reload, profileRetry, paymentScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController(), saved = stamp.current; setDeviceGroup(null); setPageError(e => ({ ...e, devices: "" }));
