@@ -343,7 +343,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     openActionConfirm({ target, original, briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
       action: `连续签到成长奖励 · ${operatorCopyText(powerUp.label)}`,
       title: `调整${name}`,
-      detail: <>当前连续签到 <b>{powerUp.day}</b> 天解锁。{multiplier ? "签到倍率会改变用户每天签到拿多少。" : "说明文字只改显示。"}</>,
+      detail: <>当前连续签到 <b>{powerUp.day}</b> 天解锁。{multiplier ? "签到倍率会改变用户每天签到拿多少。" : "说明文字只留在后台，App 不显示。"}</>,
       effect: <StatusTag tone="neutral" icon={ArrowUpDown} explain={<>
         <p>{multiplier ? "提前解锁或调高倍率" : "提前解锁"}：提交审批，{FUND_APPROVER}批准后才生效，提交人不能批自己的。</p>
         <p>{multiplier ? "推后或调低倍率" : "推后或只改说明"}：确认后立即生效。已经激活的权益不收回。</p>
@@ -377,7 +377,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           { key: "day", label: "解锁天数", inputKind: "number", current: String(powerUp.day), placeholder: "例如 30", help: "连签满几天解锁，1–365 天" },
           multiplier
             ? { key: "note", label: "签到倍率", inputKind: "text", current: text(powerUp.note, ""), placeholder: "例如 1.5", required: true, help: "激活后每天的签到奖励乘这个数；不能留空，最多 4 位小数" }
-            : { key: "note", label: "说明文字", inputKind: "text", current: text(powerUp.note, ""), placeholder: "可留空", required: false },
+            : { key: "note", label: "说明文字", inputKind: "text", current: text(powerUp.note, ""), placeholder: "可留空", required: false, help: "只留在后台，App 不显示" },
         ],
       },
       run: async (reason, _value, form) => {
