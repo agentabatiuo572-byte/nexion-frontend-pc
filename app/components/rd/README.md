@@ -223,7 +223,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 ```
 
 - 分区的 `alert` 和折叠组的 `alert` 用同一个值，有异常时默认展开，摘要只写异常。
-- 折叠组里的一小块用 `Panel plain headingLevel={3}`，外面包 `.rd-detail-block`；成对的小汇总用 `.rd-detail-values`（`dl`）。详情页给它加 `data-grid`：同一页共用一组列线，列数取这一页项数最多的那一行，项少的从左按列线排（两端对齐）。
+- 折叠组里的一小块用 `Panel plain headingLevel={3}`，外面包 `.rd-detail-block`；成对的小汇总用 `.rd-detail-values`（`dl`）。详情页给它加 `data-grid`：同一页共用一组列线，列数取这一页项数最多的那一行，项少的从左按列线排（两端对齐）。详情页的折叠组和区块折叠内容区和面板同一条左边线（不按展开箭头缩进），所以面板里和折叠里的事实行自然共线，事实行本身不加缩进。
 - 块里记录表的最后一列给 `Th`、`Td` 都传 `fit`：收到内容宽贴右边线，空白交给前面的列。
 - 块里的单条记录点行开 `Drawer`，上一条下一条在当前页的行里切。
 - 缺的区块不显示，读取失败只替换这一块，结论句写「X 读取失败，这部分没有判断」。

@@ -1392,6 +1392,10 @@ button.rd-dist-item[aria-pressed="true"] { background: var(--rd-selected); color
 .rd-detail-groups { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
 .rd-detail-groups [id] { scroll-margin-top: 56px; }
 .rd-detail-groups .rd-fold-body { padding-top: 8px; padding-bottom: 20px; }
+/* 详情页放正文事实行的容器内容区左边线统一成面板的内边距（VS-61「折叠的左右内边距和面板一样」）：折叠组和区块折叠不再各缩进一个展开箭头位，
+   风险与资产面板、各折叠组、各区块的内容都从同一条左边线起，事实行贴各自内容区左边，同一页自然共用一组列线（PG-50）；右边线本来一样 */
+.rd-detail-groups > div > .rd-fold > .rd-fold-body { padding-left: var(--rd-panel-pad-x); }
+.rd-detail-groups .rd-fold[data-inset] > .rd-fold-body { padding-left: 0; }
 .rd-detail-groups > div > .rd-fold > summary .rd-fold-title { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; }
 .rd-detail-groups .rd-panel[data-plain] .rd-panel-title { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; }
 .rd-detail-block { display: grid; gap: 12px; min-width: 0; }
