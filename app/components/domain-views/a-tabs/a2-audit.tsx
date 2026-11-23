@@ -318,6 +318,22 @@ function e1SkuLogSides(log: { delta: string }): { before: string; after: string;
   }
   return undefined;
 }
+/**
+ * E1 批准执行时写的 E1_SKU_UPDATED 只带名称和价格（OpsDeviceService），前后值常是「1199 → 1199」。批准命令号里带着审批单号，
+ * 已读到的记录里有这张单的提案时，按提案的两份快照列改了哪几项；没有时只写价格有没有变，并说明其他改动不在这条里。
+ */
+function e1ApprovedLog(log: A2AuditLogRow, rows: readonly A2AuditLogRow[]): { ticket?: string; sides?: ReturnType<typeof e1SkuLogSides>; price?: string } | undefined {
+  if (log.action !== "E1_SKU_UPDATED") return undefined;
+  const ticket = /^a2-approve-(WO-\d+-\d+)-/.exec(log.idempotencyKey ?? "")?.[1];
+  const proposal = ticket ? rows.find((row) => row.action === "A2_OPERATION_PROPOSED" && row.resourceId === ticket) : undefined;
+  const sides = proposal && e1SkuLogSides(proposal);
+  if (sides) return { ticket, sides };
+  const [before, after] = log.delta.split(" → ");
+  if (!/^\d+(\.\d+)?$/.test(before ?? "") || !/^\d+(\.\d+)?$/.test(after ?? "")) return undefined;
+  const price = (value: string) => `${grouped(e1Decimal(value, 2))} USD`;
+  return { ticket, price: before === after ? `价格 ${price(after)}，没变` : `价格 ${price(before)} → ${price(after)}` };
+}
+const E1_PRICE_ONLY = "这条只记价格，其他改动没记在这里";
 const fBatchSummary = (items: readonly FBatchItem[]) => `${fBatchLabel(items[0], fBatchPages(items))} ${items[0].before} → ${items[0].after}${items.length > 1 ? ` 等 ${items.length} 项` : ""}`;
 /** 涉及的页面名；认不出的项写「团队参数」。 */
 const fBatchPages = (items: readonly FBatchItem[] | undefined) => [...new Set((items ?? []).map((item) => item.spec?.page ?? "团队参数"))];
@@ -1101,6 +1117,8 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
       for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
       if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${e1Decimal(value.price)} USD`;
+      // 纯数字的收益展示文字是后端算出的日收益：设了月收益目标时是月目标 ÷ 30 的 6 位小数（DeviceMonthlyTargetReadService），否则取日产收益（DeviceOpsMapper）。
+      if (typeof value.baseRate === "string" && /^\d+(\.\d+)?$/.test(value.baseRate.trim())) value.baseRate = `${grouped(e1Decimal(value.baseRate.trim(), 2))} USDT/日${value.monthlyTargetUsdt != null ? "（系统按月收益目标折算）" : ""}`;
       // 购买条件写成人话；读不到阶段名时写「第 N 阶段」，不只写数字。
       if (isRecord(value.purchaseGate)) value.purchaseGate = e1GateText(value.purchaseGate);
       if ((typeof value.unlockPhase === "string" || typeof value.unlockPhase === "number") && /^\d+$/.test(String(value.unlockPhase).trim())) value.unlockPhase = `第 ${String(value.unlockPhase).trim()} 阶段`;
@@ -2830,7 +2848,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 ) : logPageRows.map((l) => {
                   const act = logActionShown(l.action);
                   const obj = logObject(l);
-                  const e1Sides = e1SkuLogSides(l);
+                  const e1Approved = e1ApprovedLog(l, logRows);
+                  const e1Sides = e1SkuLogSides(l) ?? e1Approved?.sides;
                   const e1Change = e1Sides && changeSummary(e1Sides.before, e1Sides.after, [], e1Sides.operationCode);
                   return (
                     <Tr key={l.id} selected={l.id === logId} onOpen={() => setLogId(l.id)}>
@@ -2840,7 +2859,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                       <Td>{fBatchLogItems(l) || F_BATCH_DIGEST.test(l.obj) ? <Cell main="整批调整的团队参数" title={l.obj} />
                         : obj.id ? <Cell main={obj.id.length > 16 ? `${obj.id.slice(0, 8)}…${obj.id.slice(-6)}` : obj.id} sub={obj.kind} title={[obj.kind, obj.id].filter(Boolean).join(" · ")} />
                           : <Cell main={obj.kind} title={obj.kind} />}</Td>
-                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : e1Change ? <Cell main={e1Change.main} sub={e1Change.sub} title={e1Change.main} /> : <Cell mono main={logDeltaText(l.delta)} title={logDeltaText(l.delta)} />}</Td>
+                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : e1Change ? <Cell main={e1Change.main} sub={e1Change.sub} title={e1Change.main} /> : e1Approved?.price ? <Cell main={e1Approved.price} sub={E1_PRICE_ONLY} title={e1Approved.price} /> : <Cell mono main={logDeltaText(l.delta)} title={logDeltaText(l.delta)} />}</Td>
                     </Tr>
                   );
                 })}
@@ -2997,7 +3016,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /* 操作记录抽屉 */
   const shownLog = logShown.current;
-  const shownLogE1 = shownLog ? e1SkuLogSides(shownLog) : undefined;
+  const shownLogApproved = shownLog ? e1ApprovedLog(shownLog, logRows) : undefined;
+  const shownLogE1 = shownLog ? e1SkuLogSides(shownLog) ?? shownLogApproved?.sides : undefined;
   const logIndex = shownLog ? logPageRows.findIndex((l) => l.id === shownLog.id) : -1;
   const needIdem = shownLog ? shownLog.action.includes("withdraw") || shownLog.action.includes("balance") || shownLog.action.includes("operation_confirmed") : false;
   const requestNo = shownLog ? shownLog.idempotencyKey || (needIdem ? "缺失" : "—") : "—";
@@ -3085,7 +3105,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: logRoleText(shownLog.role) ? `${shownLog.actor} · ${logRoleText(shownLog.role)}` : shownLog.actor },
             // 对象是「类型 · 编号」，编号可能是整串 UUID：不用不换行的 a2-code，在「·」后面折行，不把抽屉撑出横向滚动。
             { label: "对象", value: F_BATCH_DIGEST.test(shownLog.obj) || fBatchLogItems(shownLog) ? "整批调整的团队参数" : [shownLogObject?.kind, shownLogObject?.id].filter(Boolean).join(" · ") },
-            ...(fBatchLogItems(shownLog) || shownLogE1 ? [] : [{ label: "前值 → 后值", value: <span data-mono>{logDeltaText(shownLog.delta)}</span> }]),
+            ...(shownLogApproved?.ticket ? [{ label: "审批单", value: shownLogApproved.ticket }] : []),
+            ...(fBatchLogItems(shownLog) || shownLogE1 ? [] : [{ label: "前值 → 后值", value: shownLogApproved?.price ? `${shownLogApproved.price}；${E1_PRICE_ONLY}` : <span data-mono>{logDeltaText(shownLog.delta)}</span> }]),
             { label: "原因", value: shownLog.reason || "—" },
           ]} />
           {fBatchLogItems(shownLog) && <A2BatchReview items={fBatchLogItems(shownLog)!} />}
@@ -3099,7 +3120,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               {shownLogObject?.raw && !F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象原文"><span data-mono className="a2-long-code">{shownLogObject.raw}</span></Fact>}
               <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
               {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象摘要"><span data-mono>{shownLog.obj}</span></Fact>}
-              {(fBatchLogItems(shownLog) || shownLogE1 || logDeltaText(shownLog.delta) !== shownLog.delta) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
+              {(fBatchLogItems(shownLog) || shownLogE1 || shownLogApproved?.price || logDeltaText(shownLog.delta) !== shownLog.delta) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
             </Facts>
           </Fold>
         </>}

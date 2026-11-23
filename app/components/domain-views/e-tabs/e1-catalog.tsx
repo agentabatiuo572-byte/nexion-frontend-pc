@@ -193,7 +193,10 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
   const clear = () => { setQuery(""); setStatus("all"); setTier("all"); setScope("all"); setParamNote(""); };
   const hasUnsupportedSeries = (s: OpsSku) => !supportsDeviceMonthlyTarget(s.seriesCode);
   const filtered = useMemo(() => skus.filter(s => {
-    const haystack = [s.id, s.name, s.tagline, s.badge, s.gpu, s.vram, s.datacenter].filter(Boolean).join(" ").toLowerCase();
+    // 预设角标存的是英文固定值，卡片上写类型名：搜类型名（热销、旗舰…）也要找得到，原文照旧能搜。
+    const badgeKind = skuBadgeKind(s.badge);
+    const badgeLabel = badgeKind === "none" || badgeKind === "custom" ? undefined : SKU_BADGE_OPTIONS.find(option => option.value === badgeKind)?.label;
+    const haystack = [s.id, s.name, s.tagline, s.badge, badgeLabel, s.gpu, s.vram, s.datacenter].filter(Boolean).join(" ").toLowerCase();
     return (!query.trim() || haystack.includes(query.trim().toLowerCase())) && (status === "all" || s.status === status) && (tier === "all" || s.tier === tier)
       && (scope === "all" || scope === "blocked" && s.publishBlocked === true || scope === "unknown" && s.publishBlocked === undefined || scope === "legacy" && hasUnsupportedSeries(s) || scope === "unconfigured" && s.status === "on" && s.allowedPoolCodes?.length === 0 || ["on", "pending", "off"].includes(scope) && s.status === scope && s.publishBlocked === false);
   }), [skus, query, status, tier, scope]);
@@ -400,7 +403,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
     </section>
     {ctx.gatesError && <Notice tone="warn" title="开放阶段暂时读不到" action={<Button onClick={ctx.refreshGates}>重新读取阶段</Button>}><p>{ctx.gatesError} · 开放阶段读取成功前不能提交修改</p></Notice>}
     <FilterBar onClear={clear} canClear={!!query || status !== "all" || tier !== "all" || scope !== "all"} result={available ? `显示 ${filtered.length} / ${skus.length} 个商品${scope !== "all" ? ` · 当前筛选：${({ blocked: "上架受阻", legacy: "未设系列", unknown: "上架状态待核实", unconfigured: "在售未配置任务等级", on: "在售", pending: "草稿", off: "已下架" } as Record<string, string>)[scope]}` : ""}` : undefined} notice={paramNote || undefined}>
-      <Input aria-label="搜索商品" className="e1-search" value={query} placeholder="名称 / 商品编号 / GPU / 托管机房" onChange={e => setQuery(e.target.value)} />
+      <Input aria-label="搜索商品" className="e1-search" value={query} placeholder="名称 / 商品编号 / 角标 / GPU / 托管机房" onChange={e => setQuery(e.target.value)} />
       <Select aria-label="商品状态筛选" value={status} onChange={setStatus} options={[{ value: "all", label: "全部状态" }, { value: "on", label: "在售" }, { value: "pending", label: "草稿" }, { value: "off", label: "已下架" }]} />
       <Select aria-label="商品档位筛选" value={tier} onChange={setTier} options={[{ value: "all", label: "全部档位" }, ...["Entry", "Pro", "Flagship", "Share"].map(t => ({ value: t, label: operatorSkuTier(t) }))]} />
     </FilterBar>
