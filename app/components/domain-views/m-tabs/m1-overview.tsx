@@ -201,7 +201,9 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
     const cap = numOr(pget(AGENT_CAP_KEY(a.name)), a.maxConcurrent || loadCfg?.defaultCap || 0);
     const busy = Boolean(a.busy);
     const util = Math.round((total / Math.max(1, cap)) * 100);
-    return { id: a.id, agent: a, name: a.name, role: seatLabel(a.position), enabled: a.enabled, openTk, openCv, total, cap, busy, util, assignments };
+    // 同时接待上限为「不限」时只显示数量，不显示分母、刻度和使用率。
+    const unlimited = a.maxConcurrent === null;
+    return { id: a.id, agent: a, name: a.name, role: seatLabel(a.position), enabled: a.enabled, openTk, openCv, total, cap, busy, util, assignments, unlimited };
   }).sort((x, y) => y.util - x.util);
   const busyCount = loadRows.filter((r) => r.busy).length;
   const maxLoad = Math.max(1, ...loadRows.map((l) => Math.max(l.total, l.cap)));
@@ -371,7 +373,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
               </div>
             ) : loadRows.map((l) => {
               const warnPct = loadCfg?.warnPct ?? 101;
-              const tone = l.util >= 100 ? "var(--m-urgent)" : l.util >= warnPct ? "var(--m-high)" : l.util >= 50 ? "var(--m-hd-2)" : "var(--m-ok)";
+              const tone = l.unlimited ? "var(--m-ok)" : l.util >= 100 ? "var(--m-urgent)" : l.util >= warnPct ? "var(--m-high)" : l.util >= 50 ? "var(--m-hd-2)" : "var(--m-ok)";
               return (
                 <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 0", borderTop: "1px solid var(--border)" }}>
                   <MAvatar name={l.name} size="sm" />
@@ -387,13 +389,13 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
                       )}
                     </div>
                     <div style={{ height: 6, background: "var(--surface-3)", borderRadius: 999, marginTop: 6, overflow: "hidden", position: "relative" }}>
-                      <div style={{ width: `${Math.min(100, (l.total / Math.max(1, l.cap)) * 100)}%`, height: "100%", background: tone, borderRadius: 999, transition: "width .3s" }} />
-                      <div style={{ position: "absolute", left: `${(l.cap / maxLoad) * 100}%`, top: -2, bottom: -2, width: 1, background: "var(--border-strong)" }} />
+                      <div style={{ width: `${Math.min(100, (l.total / Math.max(1, l.unlimited ? maxLoad : l.cap)) * 100)}%`, height: "100%", background: tone, borderRadius: 999, transition: "width .3s" }} />
+                      {!l.unlimited && <div style={{ position: "absolute", left: `${(l.cap / maxLoad) * 100}%`, top: -2, bottom: -2, width: 1, background: "var(--border-strong)" }} />}
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", minWidth: 118, gap: 4 }}>
-                    <span className="tnum" style={{ fontSize: 13, color: tone, fontWeight: 500 }}>{l.util}%</span>
-                    <span className="mono dim2" style={{ fontSize: 11.5 }}>{l.total} / {l.cap} · {l.openTk}单 {l.openCv}话</span>
+                    <span className="tnum" style={{ fontSize: 13, color: tone, fontWeight: 500 }}>{l.unlimited ? "不限" : `${l.util}%`}</span>
+                    <span className="mono dim2" style={{ fontSize: 11.5 }}>{l.unlimited ? l.total : `${l.total} / ${l.cap}`} · {l.openTk}单 {l.openCv}话</span>
                     <span className="dim2" style={{ fontSize: 11.5 }}>服务用户 {l.assignments}</span>
                     {canManageSupportSeats && (
                       <button
@@ -451,7 +453,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
 }
 
 /* ============ 坐席负载调度弹窗(高敏 · 必填理由 · setParam 真写 + 审计)============ */
-type LoadRow = { id: string; agent: MSupportAgent; name: string; role: string; enabled: boolean; total: number; cap: number; busy: boolean; util: number; assignments: number };
+type LoadRow = { id: string; agent: MSupportAgent; name: string; role: string; enabled: boolean; total: number; cap: number; busy: boolean; util: number; assignments: number; unlimited: boolean };
 
 function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: LoadConfig; rows: LoadRow[]; onClose: () => void }) {
   const [autoBalance, setAutoBalance] = useState(loadCfg.autoBalance);
@@ -632,7 +634,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
               <div key={r.id} className="row" style={{ alignItems: "center", gap: 10, padding: "9px 12px", borderTop: i ? "1px solid var(--border)" : "none" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{r.name}</div>
-                  <div className="sub mono">{r.role} · {r.total}/{r.cap} · {r.util}% · {r.enabled ? (busyMap[r.id] ? "暂停接派单" : "接派单中") : "未启用"}</div>
+                  <div className="sub mono">{r.role} · {r.unlimited ? `${r.total} · 不限` : `${r.total}/${r.cap} · ${r.util}%`} · {r.enabled ? (busyMap[r.id] ? "暂停接派单" : "接派单中") : "未启用"}</div>
                 </div>
                 <input className="fld mono" type="number" min={0} max={40} value={caps[r.id] ?? String(r.cap)} onChange={(e) => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setCaps((s) => ({ ...s, [r.id]: e.target.value })); }} disabled={inputsLocked} style={{ width: 68, textAlign: "right" }} aria-label={`${r.name} 接派单上限`} />
                 <div aria-disabled={!r.enabled || inputsLocked} style={{ opacity: r.enabled ? 1 : 0.45, pointerEvents: r.enabled && !inputsLocked ? undefined : "none" }}><Toggle on={r.enabled && !busyMap[r.id]} onClick={() => { if (r.enabled && !commandInFlightRef.current && !writeOutcomeUnknown) setBusyMap((s) => ({ ...s, [r.id]: !s[r.id] })); }} /></div>

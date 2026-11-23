@@ -30,7 +30,7 @@ export function isM5Command(value: unknown): value is M5Command {
     if (!row || typeof row !== "object" || !Number.isSafeInteger(row.adminId) || !Number.isSafeInteger(row.version)
       || ![row.name, row.email, row.position].every(item => typeof item === "string")
       || !Array.isArray(row.tags) || !row.tags.every(item => typeof item === "string")
-      || !Number.isSafeInteger(row.maxConcurrent) || !Number.isSafeInteger(row.assignedUserCount)
+      || (row.maxConcurrent !== null && !Number.isSafeInteger(row.maxConcurrent)) || !Number.isSafeInteger(row.assignedUserCount)
       || ![row.enabled, row.transferable, row.busy].every(item => typeof item === "boolean")) return false;
   }
   try {
@@ -38,7 +38,10 @@ export function isM5Command(value: unknown): value is M5Command {
     if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.operator !== "string" || body.reason !== command.reason) return false;
     if (path.startsWith("/support-agents/")) return !!command.profile && body.adminId === command.profile.adminId
       && body.expectedVersion === command.profile.version && Array.isArray(body.tags) && body.tags.every((tag: unknown) => typeof tag === "string")
-      && Number.isSafeInteger(body.maxConcurrent) && body.maxConcurrent >= 0 && body.maxConcurrent <= 40
+      && (body.maxConcurrentUnlimited === true
+        ? body.maxConcurrent === undefined
+        : (body.maxConcurrentUnlimited === undefined || body.maxConcurrentUnlimited === false)
+          && Number.isSafeInteger(body.maxConcurrent) && body.maxConcurrent >= 0 && body.maxConcurrent <= 40)
       && [body.enabled, body.transferable, body.busy].every(item => typeof item === "boolean");
     if (path.includes("/categories/")) return typeof body.enabled === "boolean" && typeof body.expectedEnabled === "boolean";
     if (path.includes("/advisor-policy/")) return typeof body.value === "string" && typeof body.expectedValue === "string";
