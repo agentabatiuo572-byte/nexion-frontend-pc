@@ -1,5 +1,6 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsSku } from "@/lib/admin/platform-types";
+import { isSkuTaglineTranslations, type SkuTaglineTranslations } from "@/lib/admin/e1-product-copy";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
 import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
 import { fromPurchaseGate, toPurchaseGate, type BackendPurchaseGate } from "@/lib/admin/e1-purchase-gate";
@@ -37,6 +38,7 @@ interface BackendSku {
   name: string;
   tier?: string | null;
   tagline?: string | null;
+  taglineTranslations?: SkuTaglineTranslations | null;
   badge?: string | null;
   gpu?: string | null;
   vram?: string | null;
@@ -252,6 +254,7 @@ function fromSku(sku: BackendSku): OpsSku {
     seriesCode: sku.seriesCode,
     seriesLocked: sku.seriesLocked,
     tagline: sku.tagline ?? undefined,
+    taglineTranslations: sku.taglineTranslations ?? undefined,
     badge: sku.badge ?? undefined,
     gpu: sku.gpu ?? undefined,
     vram: sku.vram ?? undefined,
@@ -323,6 +326,7 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     tier: sku.tier,
     seriesCode: sku.seriesCode,
     tagline: sku.tagline ?? null,
+    taglineTranslations: sku.taglineTranslations,
     badge: sku.badge ?? null,
     gpu: sku.gpu ?? null,
     vram: sku.vram ?? null,
@@ -488,8 +492,9 @@ export async function updateE1BundleDiscount(
 }
 
 function fromSkuWriteResponse(sku: BackendSku): OpsSku {
-  const invalidQuotaFields = e1SkuQuotaInvalidFields(sku);
-  if (invalidQuotaFields.length) throw new Error(`E1_SKU_RESPONSE_INVALID:${invalidQuotaFields.join(",")}`);
+  const invalidFields = e1SkuQuotaInvalidFields(sku);
+  if (sku.taglineTranslations != null && !isSkuTaglineTranslations(sku.taglineTranslations)) invalidFields.push("taglineTranslations");
+  if (invalidFields.length) throw new Error(`E1_SKU_RESPONSE_INVALID:${invalidFields.join(",")}`);
   return fromSku(sku);
 }
 

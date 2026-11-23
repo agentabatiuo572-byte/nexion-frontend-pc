@@ -1,8 +1,9 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, Ban, Boxes, CheckCircle2, CircleDot, Clock3, FastForward, FileText, ImageIcon, PackageCheck, PackagePlus, PackageX, ShieldAlert, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Facts, Fact, FilterBar, Fold, IconButton, Input, JudgmentPoints, LevelStrip, MoreMenu, Notice, Panel, RatioBar, ScaleBar, Segments, Select, StageLine, Stat, StatBand, StatusTag, Table, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, datacenterNameText } from "@/lib/admin/brand-copy";
+import { SKU_BADGE_OPTIONS, SKU_TAGLINE_LABELS, skuBadgeKind, skuBadgeReviewText } from "@/lib/admin/e1-product-copy";
 import { operatorSkuTier } from "@/lib/admin/e-operator-display";
 import { supportsDeviceMonthlyTarget, skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
@@ -80,9 +81,9 @@ export function E1TargetRange({ sku, label }: { sku: OpsSku; label?: ReactNode }
 /** 行数据校验报出的字段，换成运营看得懂的名字；契约里的键不变。 */
 const E1_FIELD_LABELS: Record<string, string> = {
   sku: "整行资料", skuId: "商品编号", name: "商品名称", price: "售价", status: "上架状态", productType: "商品类型",
-  inventoryMode: "库存方式", "inventoryMode.stock": "库存方式和库存数", stock: "库存", tier: "档位", tagline: "宣传语", badge: "角标",
+  inventoryMode: "库存方式", "inventoryMode.stock": "库存方式和库存数", stock: "库存", tier: "档位", tagline: "英文标语", taglineTranslations: "标语译文", badge: "营销角标",
   gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "托管机房", uptime: "在线率", warranty: "保修",
-  specDocumentTitle: "规格书标题", specDocumentUrl: "规格书链接", baseRate: "基础收益率", aiUnlocks: "AI 解锁项", lifecycle: "生命周期",
+  specDocumentTitle: "规格书标题", specDocumentUrl: "规格书链接", baseRate: "收益说明", aiUnlocks: "AI 解锁项", lifecycle: "生命周期",
   unlockPhase: "开放阶段", imageAssetId: "产品图", imageObjectKey: "产品图", imagePreviewUrl: "产品图", tag: "标签",
   dailyEarn: "每日收益（USDT）", dailyEarnNex: "每日收益（UVT）", phoneDailyEarn: "手机每日收益（USDT）", phoneDailyEarnNex: "手机每日收益（UVT）",
   shareYieldMin: "份额收益率下限", shareYieldMax: "份额收益率上限", sold: "已售数量",
@@ -192,7 +193,10 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
   const clear = () => { setQuery(""); setStatus("all"); setTier("all"); setScope("all"); setParamNote(""); };
   const hasUnsupportedSeries = (s: OpsSku) => !supportsDeviceMonthlyTarget(s.seriesCode);
   const filtered = useMemo(() => skus.filter(s => {
-    const haystack = [s.id, s.name, s.tagline, s.badge, s.gpu, s.vram, s.datacenter].filter(Boolean).join(" ").toLowerCase();
+    // 预设角标存的是英文固定值，卡片上写类型名：搜类型名（热销、旗舰…）也要找得到，原文照旧能搜。
+    const badgeKind = skuBadgeKind(s.badge);
+    const badgeLabel = badgeKind === "none" || badgeKind === "custom" ? undefined : SKU_BADGE_OPTIONS.find(option => option.value === badgeKind)?.label;
+    const haystack = [s.id, s.name, s.tagline, s.badge, badgeLabel, s.gpu, s.vram, s.datacenter].filter(Boolean).join(" ").toLowerCase();
     return (!query.trim() || haystack.includes(query.trim().toLowerCase())) && (status === "all" || s.status === status) && (tier === "all" || s.tier === tier)
       && (scope === "all" || scope === "blocked" && s.publishBlocked === true || scope === "unknown" && s.publishBlocked === undefined || scope === "legacy" && hasUnsupportedSeries(s) || scope === "unconfigured" && s.status === "on" && s.allowedPoolCodes?.length === 0 || ["on", "pending", "off"].includes(scope) && s.status === scope && s.publishBlocked === false);
   }), [skus, query, status, tier, scope]);
@@ -399,7 +403,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
     </section>
     {ctx.gatesError && <Notice tone="warn" title="开放阶段暂时读不到" action={<Button onClick={ctx.refreshGates}>重新读取阶段</Button>}><p>{ctx.gatesError} · 开放阶段读取成功前不能提交修改</p></Notice>}
     <FilterBar onClear={clear} canClear={!!query || status !== "all" || tier !== "all" || scope !== "all"} result={available ? `显示 ${filtered.length} / ${skus.length} 个商品${scope !== "all" ? ` · 当前筛选：${({ blocked: "上架受阻", legacy: "未设系列", unknown: "上架状态待核实", unconfigured: "在售未配置任务等级", on: "在售", pending: "草稿", off: "已下架" } as Record<string, string>)[scope]}` : ""}` : undefined} notice={paramNote || undefined}>
-      <Input aria-label="搜索商品" className="e1-search" value={query} placeholder="名称 / 商品编号 / GPU / 托管机房" onChange={e => setQuery(e.target.value)} />
+      <Input aria-label="搜索商品" className="e1-search" value={query} placeholder="名称 / 商品编号 / 角标 / GPU / 托管机房" onChange={e => setQuery(e.target.value)} />
       <Select aria-label="商品状态筛选" value={status} onChange={setStatus} options={[{ value: "all", label: "全部状态" }, { value: "on", label: "在售" }, { value: "pending", label: "草稿" }, { value: "off", label: "已下架" }]} />
       <Select aria-label="商品档位筛选" value={tier} onChange={setTier} options={[{ value: "all", label: "全部档位" }, ...["Entry", "Pro", "Flagship", "Share"].map(t => ({ value: t, label: operatorSkuTier(t) }))]} />
     </FilterBar>
@@ -418,7 +422,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       const quotaLeft = e1QuotaLeftValue(s);
       return <article key={s.id} className="e1-product" data-hit={skuLink === s.id ? "" : undefined} aria-label={s.name}>
         <div className="e1-product-identity">
-          <div className="e1-product-media"><SkuMediaThumb sku={s} />{s.badge && <span className="e1-badge" title={nexGridBrandText(s.badge)}>{nexGridBrandText(s.badge)}</span>}</div>
+          <div className="e1-product-media"><SkuMediaThumb sku={s} />{s.badge && <span className="e1-badge" title={nexGridBrandText(skuBadgeReviewText(s.badge) ?? s.badge)}>{skuBadgeKind(s.badge) === "custom" ? nexGridBrandText(s.badge) : SKU_BADGE_OPTIONS.find(option => option.value === skuBadgeKind(s.badge))?.label}</span>}</div>
           <div className="e1-product-title">
             <div className="e1-product-name"><h2>{canWrite ? <E1MiddleText text={s.name} /> : <button className="rd-link e1-detail-link" aria-label={`商品资料 ${s.name}`} onClick={() => openDetail(s)}><E1MiddleText text={s.name} /></button>}</h2><StatusTag tone={s.status === "off" ? "done" : "neutral"} icon={s.status === "on" ? CheckCircle2 : s.status === "off" ? Archive : FileText}>{e1Value(s.status)}</StatusTag></div>
             <div className="e1-product-id"><span title={s.id}>{s.id}</span><span>{operatorSkuTier(s.tier ?? "")}</span>{hasUnsupportedSeries(s) ? <StatusTag tone="warn" icon={ShieldAlert}>{skuSeriesText(s.seriesCode)}</StatusTag> : <span>{skuSeriesText(s.seriesCode)} 系列</span>}{s.lifecycle === "legacy" && <StatusTag tone="done" icon={Archive}>已停产</StatusTag>}</div>
@@ -504,7 +508,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         { title: "收益与任务", summary: "等级、目标与托管", keys: ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", ...(detail.tier === "Share" ? ["shareYieldMin", "shareYieldMax"] : [])] },
         { title: "库存与购买条件", summary: e1GateSummary(detail), keys: ["inventoryMode", ...(detail.inventoryMode === "UNLIMITED" ? [] : ["stock"]), "trialEligible", "unlock", "purchaseGate"] },
         { title: "规格与资料", summary: "硬件、资料与完整特性", keys: ["gpu", "vram", ...(detail.tier === "Share" ? [] : ["hashRate", "power", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"]), "uptime", "warranty", "features", "specDocumentTitle", "specDocumentUrl", "imageAssetId", "imageObjectKey", "aiUnlocks", "rating", "reviews", "generation", "supersededBy", "tradeinDiscount"] },
-      ].map(group => <Fold inset key={group.title} title={group.title} summary={group.summary} alert={group.title === "库存与购买条件" && e1QuotaBlock(detail) !== null}><Facts>{E1_SKU_FIELDS.filter(f => group.keys.includes(f.key)).map(f => <Fact key={f.key} k={f.label}>{f.key === "purchaseGate" ? <E1PurchaseConditions sku={detail} hideLeft={e1QuotaLeftValue(detail) != null} /> : f.key === "seriesCode" ? <E1SeriesValue sku={detail} /> : f.key === "datacenter" ? detail.datacenter?.trim() ? `按托管机房清单分配（原填 ${datacenterNameText(detail.datacenter)}）` : "按托管机房清单分配" : f.key === "vram" && detail.tier === "Share" && !detail.vram?.trim() ? "不适用（共享份额）" : f.key === "unlock" ? detail.unlock ? phaseLabel(detail.unlock) : "无需阶段" : f.key === "features" ? detail.features?.length ? <ul>{detail.features.map((item, i) => <li key={i}>{item}</li>)}</ul> : "— · 未填写" : f.unit || f.key === "tradeinDiscount" ? detail[f.key] == null ? "— · 未填写" : <E1Amount value={detail[f.key] as number} precision={f.key === "monthlyTargetUsdt" ? e1TargetPrecision(detail) : f.unit === "%" ? e1Precision([detail[f.key] as number], 0) : undefined} unit={f.unit} /> : detail[f.key] == null || detail[f.key] === "" ? "— · 未填写" : e1Value(detail[f.key])}</Fact>)}</Facts>
+      ].map(group => <Fold inset key={group.title} title={group.title} summary={group.summary} alert={group.title === "库存与购买条件" && e1QuotaBlock(detail) !== null}><Facts>{E1_SKU_FIELDS.filter(f => group.keys.includes(f.key)).map(f => <Fragment key={f.key}>{f.key === "tagline" && <Fact k={SKU_TAGLINE_LABELS.zh}>{detail.taglineTranslations?.zh || "— · 未填写"}</Fact>}<Fact k={f.label}>{f.key === "badge" ? skuBadgeReviewText(detail.badge) ?? "— · 未填写" : f.key === "purchaseGate" ? <E1PurchaseConditions sku={detail} hideLeft={e1QuotaLeftValue(detail) != null} /> : f.key === "seriesCode" ? <E1SeriesValue sku={detail} /> : f.key === "datacenter" ? detail.datacenter?.trim() ? `按托管机房清单分配（原填 ${datacenterNameText(detail.datacenter)}）` : "按托管机房清单分配" : f.key === "vram" && detail.tier === "Share" && !detail.vram?.trim() ? "不适用（共享份额）" : f.key === "unlock" ? detail.unlock ? phaseLabel(detail.unlock) : "无需阶段" : f.key === "features" ? detail.features?.length ? <ul>{detail.features.map((item, i) => <li key={i}>{item}</li>)}</ul> : "— · 未填写" : f.unit || f.key === "tradeinDiscount" ? detail[f.key] == null ? "— · 未填写" : <E1Amount value={detail[f.key] as number} precision={f.key === "monthlyTargetUsdt" ? e1TargetPrecision(detail) : f.unit === "%" ? e1Precision([detail[f.key] as number], 0) : undefined} unit={f.unit} /> : detail[f.key] == null || detail[f.key] === "" ? "— · 未填写" : e1Value(detail[f.key])}</Fact>{f.key === "tagline" && <Fact k={SKU_TAGLINE_LABELS.vi}>{detail.taglineTranslations?.vi || "— · 未填写"}</Fact>}</Fragment>)}</Facts>
         {group.title === "收益与任务" && <Facts><Fact k="派生日均"><E1Amount value={detail.derivedDailyEarnUsdt} unit="USDT/天" /></Fact>{detail.tier === "Share" && detail.monthlyTargetUsdt != null && detail.monthlyTargetBandPct != null && <><Fact k="预估日收益下限"><E1Amount value={(Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).low) / 30).toFixed(6)} unit="USDT/天" /></Fact><Fact k="预估日收益上限"><E1Amount value={(Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).high) / 30).toFixed(6)} unit="USDT/天" /></Fact><Fact k="派生年奖励率下限"><E1Amount value={detail.derivedShareYieldMinPct} unit="%" /></Fact><Fact k="派生年奖励率上限"><E1Amount value={detail.derivedShareYieldMaxPct} unit="%" /></Fact></>}</Facts>}
       </Fold>)}
       <Fold inset title="策略与修订" summary={`策略版本 ${detail.productTaskPolicyVersion ?? "—"}`}><Facts><Fact k="任务策略版本">{e1Number(detail.productTaskPolicyVersion)}</Fact><Fact k="策略生效时间">{zonedTime(detail.productTaskPolicyEffectiveAt)}</Fact><Fact k="修订时间">{zonedTime(detail.updatedAt)}</Fact></Facts></Fold>

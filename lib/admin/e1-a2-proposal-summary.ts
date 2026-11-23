@@ -1,6 +1,7 @@
 import type { OpsSku } from "./platform-types";
 import { shareBaseRateText } from "./operator-copy.ts";
 import { skuSeriesText } from "./device-monthly-target.ts";
+import { SKU_TAGLINE_LABELS, skuBadgeReviewText, type SkuTaglineTranslations } from "./e1-product-copy.ts";
 
 export interface SkuProposalSummary {
   before: string;
@@ -87,11 +88,17 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "功耗", read: (sku) => sku.power, format: text, equal: stringEqual },
   { label: "在线率", read: (sku) => sku.uptime, format: text, equal: stringEqual },
   { label: "保修", read: (sku) => sku.warranty, format: text, equal: stringEqual },
-  { label: "角标", read: (sku) => sku.badge, format: text, equal: stringEqual },
-  { label: "卖点", read: (sku) => sku.tagline, format: text, equal: stringEqual },
+  { label: "营销角标", read: (sku) => skuBadgeReviewText(sku.badge), format: text },
+  { label: "英文标语", read: (sku) => sku.tagline, format: text, equal: stringEqual },
+  ...(Object.keys(SKU_TAGLINE_LABELS) as (keyof SkuTaglineTranslations)[]).map((language): FieldDescriptor => ({
+    label: SKU_TAGLINE_LABELS[language],
+    read: (sku) => sku.taglineTranslations?.[language],
+    format: text,
+    equal: stringEqual,
+  })),
   { label: "份额收益下限", targetDerived: true, read: (sku) => sku.shareYieldMin, format: number, equal: numberEqual },
   { label: "份额收益上限", targetDerived: true, read: (sku) => sku.shareYieldMax, format: number, equal: numberEqual },
-  { label: "收益展示串", derived: true, read: (sku) => sku.baseRate, format: (value) => shareBaseRateText(text(value)), equal: stringEqual },
+  { label: "收益说明", derived: true, read: (sku) => sku.baseRate, format: (value) => shareBaseRateText(text(value)), equal: stringEqual },
   { label: "图像生成性能", read: (sku) => sku.aiImageGenPerMin, format: number, equal: numberEqual },
   { label: "LLM 推理性能", read: (sku) => sku.aiLlmTokensPerSec, format: number, equal: numberEqual },
   { label: "视频渲染性能", read: (sku) => sku.aiVideoMinPerHour, format: number, equal: numberEqual },
@@ -111,10 +118,14 @@ export function summarizeSkuProposal(
   afterSku: OpsSku,
   { includeDerived = true }: { includeDerived?: boolean } = {},
 ): SkuProposalSummary | null {
+  // Older commands and unchanged drafts omit the optional write field.
+  const afterSnapshot = afterSku.taglineTranslations === undefined
+    ? { ...afterSku, taglineTranslations: beforeSku.taglineTranslations }
+    : afterSku;
   const changes = SKU_FIELDS.flatMap((field) => {
     if (!includeDerived && (field.derived || field.targetDerived && (beforeSku.monthlyTargetUsdt != null || afterSku.monthlyTargetUsdt != null))) return [];
     const before = field.read(beforeSku);
-    const after = field.read(afterSku);
+    const after = field.read(afterSnapshot);
     const equal = field.equal ? field.equal(before, after) : Object.is(before, after);
     return equal ? [] : [{
       label: field.label,

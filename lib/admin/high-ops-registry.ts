@@ -29,7 +29,7 @@ export interface HighOpDef {
 function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unknown> {
   const {
     dailyEarnNEX, phoneDailyEarnNEX, unlock, sold: _sold, seriesLocked: _seriesLocked,
-    seriesCode,
+    seriesCode, taglineTranslations,
     updatedAt,
     // 媒体预览链接是带时效的预签名 URL,每次拉目录都会重新续签 —— 它既不是运营编辑的商品属性
     // (后端认 assetId / objectKey,展示时按 assetId 重新签发),又会让「业务输入一字未改的重试」
@@ -49,6 +49,7 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
   return {
     ...rest,
     seriesCode,
+    ...(taglineTranslations === undefined ? {} : { taglineTranslations }),
     monthlyTargetUsdt, monthlyTargetBandPct, clearMonthlyTarget: clearMonthlyTarget === true ? true : undefined,
     dailyEarn: hasTarget ? undefined : ctx.dailyEarn,
     shareYieldMin: hasTarget ? undefined : ctx.shareYieldMin,
