@@ -1121,13 +1121,16 @@ export default function UserDetailPage() {
       confirmTone: "danger",
       irreversible: true,
       statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时系统会拒绝。" : "和回收并记录置换的差别只有一点：不留置换单。设备有任务在跑时系统会拒绝。", check: "核对设备编号尾号和用户，理由写清依据或工单号。" },
-      run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "回收并记录置换" : "设备回收"} · ${instance}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
+      run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "回收并记录置换" : "设备回收"} · ${deviceText}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
     });
   };
 
   const showFold = (group: string) => setOpenFolds((current) => ({ ...current, [group]: true }));
+  /** 点统计数字定位时分区导航直接亮这一组，用户再滚之前不被滚动判定改掉（BUG-636）。nav 在下面才建，这里先留位置。 */
+  const markSection = useRef<(group: string) => void>(() => undefined);
   const locate = useCallback((group: string, anchor?: string) => {
     setOpenFolds((current) => ({ ...current, [group]: true }));
+    markSection.current(group);
     const list = ({ "hub-payment-methods": "payment", "hub-deposit": "deposit", "hub-withdrawal": "withdrawal", "hub-devices": "device", "hub-referral": "member", "hub-engagement": "engagement", "hub-orders": "order" } as Partial<Record<string, RecordKind>>)[anchor ?? ""];
     if (list) setOpenRecordList(list);
     window.requestAnimationFrame(() => document.getElementById(anchor ?? `section-${group}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -1183,6 +1186,7 @@ export default function UserDetailPage() {
     recordsPresent && navItem("records", "记录", recordsFailed, failedPushCount + orderExceptions > 0 ? `${failedPushCount + orderExceptions} 条` : "", corrections.length > 0 ? "校正结果未知" : ""),
   ].filter((item) => item !== false);
   const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold, restoreKey: readKey });
+  useEffect(() => { markSection.current = nav.mark; }, [nav.mark]);
   useLayoutEffect(() => {
     const previousTop = teamHeadingTopBeforeRetry.current;
     teamHeadingTopBeforeRetry.current = null;
