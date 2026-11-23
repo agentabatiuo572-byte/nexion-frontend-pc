@@ -1096,7 +1096,7 @@ function e1MonthlyBaseRate(value: unknown, monthlyTarget: unknown): string | und
   // OpsDeviceService.monthlyTargetRequest → DeviceSkuUpsertRequest.withMonthlyTarget → MonthlyTargetProjection.daily (six places).
   const daily = Number((target / 30).toFixed(6));
   if (Number(value) !== daily) return;
-  return `${amountDisplay(daily, 2)} USDT/日（系统按月收益目标折算）`;
+  return `${daily.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT/日（系统按月收益目标折算）`;
 }
 
 /** 后端存的前后值：JSON 对象、成组记录或一段文字。空和「—」是首次配置，返回 null。 */
