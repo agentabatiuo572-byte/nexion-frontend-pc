@@ -463,12 +463,12 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
 
 export function FlowTab({ history }: { history: { data: B2LiquidityHistory | null; loading: boolean; error: string | null; reload: () => void } }) {
   const [detailOpen, setDetailOpen] = useState<"flow" | "months" | null>(null);
-  const wan = (value: number) => `${amountDisplay(value, 2)} 万 USDT`;
+  const wan = (value: number) => `${amountDisplay(value, 2, "fixed")} 万 USDT`;
   const flows = history.data?.flowWindows ?? [];
   const months = history.data?.monthlyNewDeposits ?? [];
   const pending = !history.data && !history.error;
-  const fixed = (value: number) => (value === 0 ? <span className="d3-zero">{amountDisplay(value, 2)}</span> : amountDisplay(value, 2));
-  const signed = (value: number) => `${value > 0 ? "+" : ""}${amountDisplay(value, 2)}`;
+  const fixed = (value: number) => (value === 0 ? <span className="d3-zero">{amountDisplay(value, 2, "fixed")}</span> : amountDisplay(value, 2, "fixed"));
+  const signed = (value: number) => `${value > 0 ? "+" : ""}${amountDisplay(value, 2, "fixed")}`;
   // 图下面给同一份数的表，数值不只靠图和悬停（VS-47）。
   const flowsEmpty = Boolean(history.data) && flows.every((row) => row.inflowWan === 0 && row.outflowWan === 0);
   const monthsEmpty = Boolean(history.data) && months.every((row) => row.amountWan === 0);

@@ -223,7 +223,7 @@ function riskOf(account: Pick<User360Profile, "riskBand" | "riskScore"> | null |
 /** 金额按全站写法（amountDisplay，同用户详情）：千分位，有几位写几位，整数不写小数点，不舍入。读不到写「—」，不当成 0。 */
 function amountValue(value: unknown) {
   const raw = typeof value === "number" && Number.isFinite(value) ? value : typeof value === "string" ? value.trim() : "";
-  return raw === "" ? "—" : amountDisplay(raw);
+  return raw === "" ? "—" : amountDisplay(raw, 20);
 }
 
 /** 算力不是金额，写法不变：接口原值，至少两位小数，不舍入，千分位。读不到写「—」。 */

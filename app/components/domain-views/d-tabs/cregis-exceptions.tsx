@@ -38,6 +38,7 @@ export type RecoveredChallenge = { request: ExceptionRecord; challenge: Exceptio
 type CaseKind = "claim" | "refund" | "incident" | "reorg";
 const CASE_TITLE: Record<CaseKind, string> = { claim: "认领工单", refund: "退款工单", incident: "重组事件", reorg: "重组处置提案" };
 
+const CASE_AMOUNT_KEYS = new Set(["gross", "fee", "net", "debt"]);
 function caseRows(row: ExceptionRecord): KeyValueRow[] {
   const facts: Array<[string, string, unknown, boolean?]> = [
     ["user", "用户", row.userId ?? row.targetUserId ?? row.claimantUserId],
@@ -46,7 +47,8 @@ function caseRows(row: ExceptionRecord): KeyValueRow[] {
     ["debt", "待追偿（USDT）", row.outstandingDebt], ["evidence", "证据摘要", row.evidenceHash, true], ["reason", "理由", row.reason], ["error", "待核查原因", row.lastError],
   ];
   return facts.filter(([, , value], index) => index < 4 || value != null && value !== "").map(([key, name, value, mono]) => ({ key, label: name,
-    value: key === "error" ? ADMIN_ERROR_MESSAGES[String(value)] ?? `原因待核对（${label(value)}）` : mono && value != null ? <LongValue value={label(value)} label={name} /> : label(value), mono: mono && value != null }));
+    // 毛额、费用、净额、待追偿四格按全站金额写法；ID、地址、证据、理由照原文（F06）。
+    value: key === "error" ? ADMIN_ERROR_MESSAGES[String(value)] ?? `原因待核对（${label(value)}）` : mono && value != null ? <LongValue value={label(value)} label={name} /> : CASE_AMOUNT_KEYS.has(key) ? amount(value) : label(value), mono: mono && value != null }));
 }
 
 type OperationsProps = {

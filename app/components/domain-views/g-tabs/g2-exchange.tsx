@@ -79,7 +79,7 @@ function messageOf(error: unknown) {
 
 /** 金额：后端最多 6 位小数。按全站写法（amountDisplay）：去掉末尾 0、整数不写小数点，带千分位；不舍入。 */
 function amount(value: number | string) {
-  return typeof value === "number" ? amountDisplay(value, 6) : amountDisplay(value.trim());
+  return typeof value === "number" ? amountDisplay(value, 6, "fixed") : amountDisplay(value.trim());
 }
 
 /** 资产数量：去掉补的 0，不补位，带千分位。 */

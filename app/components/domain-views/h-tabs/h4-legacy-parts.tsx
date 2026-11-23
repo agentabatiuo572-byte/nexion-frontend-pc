@@ -47,9 +47,19 @@ export function legacyName(value: unknown): { text: string; legacy: boolean } {
   const legacy = /\bNEX\b/i.test(raw);
   return { text: nexGridBrandText(raw.replace(/\bNEX\b/gi, "UVT").replace(/\$\s?(?=\d)/g, "")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券"), legacy };
 }
-/** 既有活动的奖励（如「100.000000 UVT」）给运营看时，带币种的金额按全站写法（OP-39 显示按新规则）；比较、预览和提交仍用原文。App 显示的文字和奖项名不走这里。 */
+/**
+ * 既有活动奖励给运营看时，金额按库里的六位权威金额写（OP-39、TX-20 去尾零）。后端按奖励名里的第一个数（去掉千分位）记这笔奖励，
+ * 写进 DECIMAL(18,6) 时四舍五入到 6 位（OpsGrowthService legacyEventReward / rewardFlow）；列表回包不带这个数，这里按同一条规则得出它。
+ * 第一个数后面紧跟 UVT 或 USDT（完整词）才改写这个数，其余文字照旧；奖励名原文照旧用于比较、预览和提交。App 显示的文字和奖项名不走这里。
+ */
 export function legacyRewardText(value: unknown): string {
-  return legacyName(value).text.replace(/(\d+(?:\.\d+)?)(?=\s*(?:UVT|USDT)\b)/g, (amount) => amountDisplay(amount));
+  const text = legacyName(value).text;
+  const first = /\d[\d,]*(?:\.\d+)?/.exec(text);
+  if (!first || !/^\s*(?:UVT|USDT)(?![\w])(?!\/[A-Za-z])/.test(text.slice(first.index + first[0].length))) return text;
+  const [whole, fraction = ""] = first[0].replace(/,/g, "").split(".");
+  const scaled = BigInt(whole + fraction.slice(0, 6).padEnd(6, "0")) + (fraction.length > 6 && fraction[6] >= "5" ? BigInt(1) : BigInt(0));
+  const digits = scaled.toString().padStart(7, "0");
+  return text.slice(0, first.index) + amountDisplay(`${digits.slice(0, -6)}.${digits.slice(-6)}`) + text.slice(first.index + first[0].length);
 }
 export function LegacyNameTag({ where }: { where: string }) {
   return <StatusTag tone="warn" icon={CircleAlert} explain={`系统存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的也是存的名称（只做品牌替换）。改${where}时写成 UVT。`}>旧名称</StatusTag>;
@@ -169,6 +179,8 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requi
   const life = lifecycleOf(event, requiredLanguages);
   const wheel = text(event.kind, "").toLowerCase() === "wheel";
   const reward = legacyName(event.reward);
+  // 上一行实际显示的奖励；「App 显示同上」按这一行和 App 原文是否完全一样判断（F04）。
+  const shownReward = legacyRewardText(event.reward);
   // 卡片先显示中文；中文没填用英文那一份并标出来；名称、说明中英文都没填时显示原文（App 中文也显示它）并标出来；都没有才写「未配置」。
   const originals = { name: text(event.name, ""), description: text(event.description, "") };
   const pick = (field: ContentField) => zh[field] ? { text: zh[field], en: false, original: false } : en[field] ? { text: en[field], en: true, original: false }
@@ -197,9 +209,9 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requi
         {originalFields[0] === "description" && <>{originalTag} </>}{description?.text ?? "说明未配置"}{enTag("description")}</p>
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
-          {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{legacyRewardText(event.reward) || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
-          <small>{appReward ? <>{!wheel && appReward.text === text(event.reward, "") ? "App 显示同上" : `App 显示：${appReward.text || "—"}`}{enTag("rewardName")}</>
-            : rewardFromRule && !rewardName ? "App 显示玩法规则摘要" : rewardName ? <>{rewardName.text !== text(event.reward, "") ? `App 显示：${rewardName.text}` : "App 显示同上"}{enTag("rewardName")}</> : "奖项名未配置"}</small>
+          {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{shownReward || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
+          <small>{appReward ? <>{!wheel && appReward.text === shownReward ? "App 显示同上" : `App 显示：${appReward.text || "—"}`}{enTag("rewardName")}</>
+            : rewardFromRule && !rewardName ? "App 显示玩法规则摘要" : rewardName ? <>{rewardName.text !== shownReward ? `App 显示：${rewardName.text}` : "App 显示同上"}{enTag("rewardName")}</> : "奖项名未配置"}</small>
         </dd></div>
         {/* 后端的 condition 就是活动说明的原文（同一列），中文界面不再把原文另列成「参与条件」；说明在上面，原文在「App 上的文字」里。 */}
         <div><dt><Flag size={14} aria-hidden />地区</dt><dd>{event.geo ? <span className="h4l-clip" title={event.geo} data-user-content="">{event.geo}</span> : <span className="h4-dim">未设</span>}</dd></div>

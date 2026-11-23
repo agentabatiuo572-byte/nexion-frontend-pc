@@ -28,7 +28,7 @@ export const G4_PARAM_NAME: Record<string, string> = {
 
 /** 金额按全站写法（amountDisplay）：去掉末尾 0、整数不写小数点，带千分位；不舍入。数字保留原来的上限 6 位。 */
 export function g4Amount(value: number | string) {
-  if (typeof value === "number") return Number.isFinite(value) ? amountDisplay(value, 6) : "—";
+  if (typeof value === "number") return Number.isFinite(value) ? amountDisplay(value, 6, "fixed") : "—";
   const text = value.trim();
   return /^-?\d+(?:\.\d+)?$/.test(text) ? amountDisplay(text) : value || "—";
 }

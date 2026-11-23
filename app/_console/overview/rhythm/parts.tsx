@@ -178,7 +178,7 @@ function dialText(value: string | number | boolean, unit: string) {
   if (typeof value === "boolean" || value === "true" || value === "false") return value === true || value === "true" ? "已开启" : "未开启";
   if (String(value) === "是" || String(value) === "否") return String(value);
   if (unit === "USDT" && Number.isFinite(Number(value))) {
-    return `${amountDisplay(typeof value === "number" ? value : value.trim() || 0)} USDT`;
+    return `${amountDisplay(typeof value === "number" ? value : value.trim() || 0, 20)} USDT`;
   }
   if (unit === "%") return `${value}%`;
   return `${value}${unit ? ` ${unit}` : ""}`;

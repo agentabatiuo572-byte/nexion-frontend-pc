@@ -238,7 +238,7 @@ function numberLabel(value: unknown) {
 /** 金额按全站写法（amountDisplay）：接口原值去掉末尾 0、整数不写小数点、千分位，不舍入，非零不会变成 0。读不到写「—」，不当成 0。 */
 function amountValue(value: unknown) {
   const raw = typeof value === "number" && Number.isFinite(value) ? value : typeof value === "string" ? value.trim() : "";
-  return raw === "" ? "—" : amountDisplay(raw);
+  return raw === "" ? "—" : amountDisplay(raw, 20);
 }
 
 function assetText(value: unknown) {

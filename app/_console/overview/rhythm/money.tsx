@@ -15,7 +15,7 @@ import type { B4GrowthFlowHistory } from "@/lib/admin/b-restoration-contract";
 import { amountDisplay } from "@/lib/format";
 
 /** USDT 原金额按全站写法（amountDisplay）：千分位，有几位写几位，整数不写小数点，不舍入。 */
-const usdt = (value: number) => amountDisplay(value);
+const usdt = (value: number) => amountDisplay(value, 20);
 const monthTick = (label: string) => `${Number(label.slice(5))} 月`;
 
 /** 四类预算的名字按这页原来的叫法；后端 label 是拉新、返佣、创世、储备。 */

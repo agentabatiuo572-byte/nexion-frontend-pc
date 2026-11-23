@@ -145,7 +145,7 @@ function messageOf(error: unknown) {
 
 /** 金额按全站写法（amountDisplay）：去掉末尾 0、整数不写小数点，带千分位；不舍入。数字保留原来的上限 6 位。 */
 function amount(value: number | string) {
-  return typeof value === "number" ? amountDisplay(value, 6) : amountDisplay(value.trim());
+  return typeof value === "number" ? amountDisplay(value, 6, "fixed") : amountDisplay(value.trim());
 }
 
 /** 百分数、倍率：去掉补的 0，不补位。 */

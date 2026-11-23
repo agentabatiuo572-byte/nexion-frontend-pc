@@ -25,6 +25,12 @@ export function fmtUsdCompact(n: number): string {
   return (neg ? "-" : "") + out;
 }
 
+function numberText(n: number, maxFraction: number | undefined, rounding: "intl" | "fixed"): string {
+  if (!Number.isFinite(n) || maxFraction === undefined) return String(n);
+  const rounded = rounding === "fixed" ? n.toFixed(maxFraction) : n.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: maxFraction });
+  return n !== 0 && /^[+-]?0(?:\.0*)?$/.test(rounded) ? String(n) : rounded;
+}
+
 const AMOUNT_TEXT = /^([+-]?)(\d{1,3}(?:,\d{3})+|\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/;
 
 /**
@@ -32,12 +38,12 @@ const AMOUNT_TEXT = /^([+-]?)(\d{1,3}(?:,\d{3})+|\d*)(?:\.(\d*))?(?:[eE]([+-]?\d
  * 十进制原文进、显示文字出。整数部分千分位，去掉小数末尾的 0，小数全是 0 不写小数点，不为对齐补零；
  * 负号和显式正号照写，0 不带符号（-0.00 → 0）。认不出的原样返回。
  * 例：1234.500000 → 1,234.5，12480.00 → 12,480，-0.10 → -0.1，0.000123 → 0.000123，0.00 → 0。
- * 后端给的十进制字符串不舍入、不截断。JS 数字（前端算出来的平均数、折合、比例换算，或接口本来就给数字）
- * 先按这一处原有的小数位上限 maxFraction 取整（默认 8，折合和价格的上限），再去末尾 0，不留浮点尾巴，不写科学计数法。
- * 只管显示，结果不进请求、比较和排序。
+ * 后端给的十进制字符串不舍入、不截断。JS 数字按这一处原来的写法：不传 maxFraction 时照数字本身的十进制写（原来按有效位数写的入口），
+ * 传了就在这个上限内取整，取整方式照原来的（rounding "intl" 是 toLocaleString 的取整，"fixed" 是 toFixed 的取整），再去末尾 0，不写科学计数法。
+ * 非零的数在上限内会变成 0 时，照数字本身写，不写成 0（TX-20「非零的小数值不能显示成 0」）。只管显示，结果不进请求、比较和排序。
  */
-export function amountDisplay(value: string | number | bigint, maxFraction = 8): string {
-  const raw = typeof value === "number" ? (Number.isFinite(value) ? String(Number(value.toFixed(maxFraction))) : String(value)) : String(value).trim();
+export function amountDisplay(value: string | number | bigint, maxFraction?: number, rounding: "intl" | "fixed" = "intl"): string {
+  const raw = typeof value === "number" ? numberText(value, maxFraction, rounding) : String(value).trim();
   const match = AMOUNT_TEXT.exec(raw);
   if (!match || (!match[2] && !match[3])) return String(value);
   const [, sign, grouped, fractionRaw = "", exponent] = match;
@@ -56,9 +62,9 @@ export function amountDisplay(value: string | number | bigint, maxFraction = 8):
   return `${zero ? "" : sign}${groupThousands(int)}${fraction ? `.${fraction}` : ""}`;
 }
 
-/** 完整金额，不带币种，按 amountDisplay 写：1,234.56、1,234.5、1,234。原来的上限两位小数保留。 */
+/** 完整金额，不带币种，按 amountDisplay 写：1,234.56、1,234.5、1,234。原来的上限两位小数和 toFixed 取整保留。 */
 export function fmtAmount(n: number): string {
-  return amountDisplay(n, 2);
+  return amountDisplay(n, 2, "fixed");
 }
 
 /** 概览金额，不带币种：0 / 小于 0.01 / 864.5 / 86.4K / 1.2M（TX-21 的紧凑写法，按 PRD §5A 去掉末尾 0）。 */
@@ -67,7 +73,7 @@ export function fmtAmountCompact(n: number): string {
   const abs = Math.abs(n);
   if (abs === 0) return "0";
   if (abs < 0.01) return "小于 0.01";
-  const out = abs >= 1_000_000 ? `${amountDisplay(abs / 1_000_000, 2)}M` : abs >= 1_000 ? `${amountDisplay(abs / 1_000, 1)}K` : amountDisplay(abs, 2);
+  const out = abs >= 1_000_000 ? `${amountDisplay(abs / 1_000_000, 2, "fixed")}M` : abs >= 1_000 ? `${amountDisplay(abs / 1_000, 1, "fixed")}K` : amountDisplay(abs, 2, "fixed");
   return (neg ? "-" : "") + out;
 }
 
