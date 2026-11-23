@@ -914,6 +914,8 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
   const [maxConcurrent, setMaxConcurrent] = useState(String(originalInput?.maxConcurrent ?? agent.maxConcurrent ?? ""));
   // 「不限」先只是界面上的选法：选中时保存要带 maxConcurrentUnlimited、不带 maxConcurrent，由接线项接（canSave 和下面的请求体还没改）。
   const [unlimited, setUnlimited] = useState<boolean>(originalInput ? originalInput.maxConcurrentUnlimited === true : agent.maxConcurrent === null);
+  // 刚切到「设上限」、框还空着时不报错，离开输入框后才报（OP-15）。
+  const [capLeft, setCapLeft] = useState(false);
   const [enabled, setEnabled] = useState<boolean>(originalInput?.enabled ?? agent.enabled);
   const [transferable, setTransferable] = useState<boolean>(originalInput?.transferable ?? agent.transferable);
   const [busy, setBusy] = useState<boolean>(originalInput?.busy ?? agent.busy);
@@ -974,11 +976,11 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
       </Facts>
       {pending && <Notice tone="warn" title="结果未知">{isRetryExpired(pending) ? "原请求超过 24 小时，不能再重试，只能查询原结果。" : "上次保存可能已经生效。内容已锁定为原请求，按原请求重试不会重复执行。"}</Notice>}
       <p className="rd-note">接待资格和主管资格在账号管理里改。</p>
-      <DiffField label="同时接待上限" explain={CAP_EXPLAIN} before={agent.maxConcurrent === null ? "不限" : String(agent.maxConcurrent)} unit={agent.maxConcurrent === null ? undefined : "位"} hint={unlimited ? undefined : "0–40 的整数"} error={capProblem || undefined} note={capNote}>
+      <DiffField label="同时接待上限" explain={CAP_EXPLAIN} before={agent.maxConcurrent === null ? "不限" : String(agent.maxConcurrent)} unit={agent.maxConcurrent === null ? undefined : "位"} hint={unlimited ? undefined : "0–40 的整数"} error={capProblem && (capText !== "" || capLeft) ? capProblem : undefined} note={capNote}>
         {(control) => <>
-          <span className="m5-cap-mode"><Segments label="同时接待上限" value={unlimited ? "unlimited" : "limited"} onChange={(value) => setUnlimited(value === "unlimited")}
+          <span className="m5-cap-mode"><Segments label="同时接待上限" value={unlimited ? "unlimited" : "limited"} onChange={(value) => { setUnlimited(value === "unlimited"); setCapLeft(false); }}
             items={[{ value: "unlimited", label: "不限", disabled: capLocked }, { value: "limited", label: "设上限", disabled: capLocked }]} /></span>
-          <NumberInput {...control} unit="位" min={0} max={40} step={1} value={unlimited ? "" : maxConcurrent} disabled={capLocked || unlimited} onChange={(event) => setMaxConcurrent(event.target.value)} />
+          <NumberInput {...control} unit="位" min={0} max={40} step={1} value={unlimited ? "" : maxConcurrent} disabled={capLocked || unlimited} onBlur={() => setCapLeft(true)} onChange={(event) => setMaxConcurrent(event.target.value)} />
         </>}
       </DiffField>
       <div className="m5-profile-grid">
