@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, BellRing, Clock, Coins, FileSearch, Inbox, MapPin, Power, RefreshCw, ShieldAlert, ShieldCheck, ToggleRight, Wallet, XCircle } from "lucide-react";
+import { AlertTriangle, BellRing, CircleMinus, Clock, Coins, FileSearch, Inbox, MapPin, Power, RefreshCw, ShieldAlert, ShieldCheck, ToggleRight, Wallet, XCircle } from "lucide-react";
 import {
   BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, Input, IrreversibleTag, JudgmentPoints, KeyValues, MoreMenu, Notice,
   PageTabs, Panel, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds, FilterField, Change,
@@ -16,6 +16,7 @@ import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { exceptionObject } from "@/lib/admin/cregis-exceptions";
 import { PREPARATION_STATE } from "@/lib/admin/cregis-funds-preparation";
+import { TRC20_CLOSED } from "@/lib/admin/trc20-closed";
 import type { OperatorBriefKind } from "../design-kit";
 import type { DCtx } from "./types";
 import { CregisExceptionOperations, type ClaimSource, type RecoveredChallenge } from "./cregis-exceptions";
@@ -148,6 +149,7 @@ const networkConfigured = (data: CregisExceptions, network: FundsNetwork) => net
 /** 补充收款地址为什么不能点，写第一条不满足的（D1 第五节）。 */
 function provisionBlock(data: CregisExceptions, network: FundsNetwork): string | undefined {
   const pool = poolOf(data, network);
+  if (network === "TRC20") return TRC20_CLOSED;
   if (data.mode !== "PROVIDER") return "未接入收款服务";
   if (data.provisionGate.state !== "IDLE") return "新地址分配已停止";
   if (!data.provisionGate.assignEnabled) return "地址分配已关闭";
@@ -618,7 +620,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const pools = FUNDS_NETWORKS.map(network => ({ network, pool: data ? poolOf(data, network) : undefined }));
   const connected = data?.mode === "PROVIDER" || data?.mode === "provider";
   const statusSummary = !data ? (loading ? "正在读取" : "读取失败") : !connected ? "未接入"
-    : [MODE_TEXT[data.mode] ?? "接入模式未知", ...pools.map(({ network, pool }) => pool?.available ? `${network} 可分配 ${pool.unassigned}` : pool || !data.addressPools ? `${network} 不可用` : `${network} 未配置`)].join(" · ");
+    : [MODE_TEXT[data.mode] ?? "接入模式未知", ...pools.map(({ network, pool }) => network === "TRC20" ? `${network} ${TRC20_CLOSED}` : pool?.available ? `${network} 可分配 ${pool.unassigned}` : pool || !data.addressPools ? `${network} 不可用` : `${network} 未配置`)].join(" · ");
   const reconLatest = (network: FundsNetwork) => data?.reconcileRuns?.find((row) => row.status === "COMPLETE" && rowNetwork(row) === network)?.completedAt;
   const openCases = reviewCases.filter(row => row.status === "MAKER_DONE" || row.status == null);
   const switchCases = data?.switchCases?.filter((row) => row.status === "MAKER_DONE") ?? [];
@@ -679,12 +681,12 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
           <Table label="专属收款地址池">
             <thead><tr><Th>网络</Th><Th align="right">可分配</Th><Th align="right">已分配</Th><Th align="right">核对中</Th><Th>最近完整对账（{zone}）</Th>{canManage && <Th sticky="end" align="right">操作</Th>}</tr></thead>
             <tbody>{pools.map(({ network, pool }) => <tr key={network}>
-              <Td><Cell main={network} sub={!pool ? undefined : pool.automatic ? `自动补充至 ${pool.reserveTarget ?? 5} 个` : "不自动补充"} /></Td>
+              <Td><Cell main={network} sub={network === "TRC20" ? TRC20_CLOSED : !pool ? undefined : pool.automatic ? `自动补充至 ${pool.reserveTarget ?? 5} 个` : "不自动补充"} /></Td>
               {pool?.available ? <>
                 <Td align="right"><Cell num main={pool.unassigned} sub={`待创建 ${pool.queued ?? 0}`} /></Td>
                 <Td align="right"><Cell num main={pool.assigned} sub={`总计 ${pool.total}${pool.limit > 0 ? ` / ${pool.limit}` : " · 无上限"}`} /></Td>
                 <Td align="right"><Cell num main={pool.verifying} sub={`待核查 ${pool.unknown}`} /></Td>
-              </> : <Td colSpan={3}><Cell main={pool || !data.addressPools ? "暂不可用，请刷新核对" : "尚未配置，请核对部署后刷新"} /></Td>}
+              </> : <Td colSpan={3}><Cell main={network === "TRC20" ? (pool || !data.addressPools ? "暂不可用" : "尚未配置") : pool || !data.addressPools ? "暂不可用，请刷新核对" : "尚未配置，请核对部署后刷新"} /></Td>}
               <Td><Cell num main={reconLatest(network) ? time(reconLatest(network)) : "尚无"} /></Td>
               {canManage && <Td sticky="end" align="right"><span className="rd-row-actions">
                 <Button size="sm" disabledReason={provisionBlock(data, network) ?? readBlock ?? d1PendingObjectReason(`/cregis/addresses/provision?network=${network}`)} onClick={() => confirmCommand({ kind: "record",
@@ -692,7 +694,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   facts: pool && <Facts><Fact k="网络">{network}</Fact><Fact k="可分配">{pool.unassigned} 个</Fact><Fact k="总计">{pool.total}{pool.limit > 0 ? ` / 上限 ${pool.limit}` : "，无上限"}</Fact></Facts>,
                   detail: "向收款服务创建一个候选地址；系统核对归属、余额和链上历史后才可分配给用户。创建结果不明时请先核查，勿连续重试。",
                   completion: "提交后立即执行。地址核对通过后才会分配给用户。", path: `/cregis/addresses/provision?network=${network}` })}>补充收款地址</Button>
-                <MoreMenu label={`${network} 更多操作`} items={[{ key: "recon", label: "立即完整对账", disabledReason: readBlock ?? (networkConfigured(data, network) ? undefined : "这个网络尚未配置") ?? d1PendingObjectReason(`/cregis/reconciliation/run?network=${network}`), onSelect: () => confirmCommand({ kind: "record",
+                <MoreMenu label={`${network} 更多操作`} items={[{ key: "recon", label: "立即完整对账", disabledReason: (network === "TRC20" ? TRC20_CLOSED : undefined) ?? readBlock ?? (networkConfigured(data, network) ? undefined : "这个网络尚未配置") ?? d1PendingObjectReason(`/cregis/reconciliation/run?network=${network}`), onSelect: () => confirmCommand({ kind: "record",
                   action: `立即运行 ${network} 完整对账`, title: `立即完整对账`, confirmLabel: "确认对账", effect: now,
                   facts: <Facts><Fact k="网络">{network}</Fact><Fact k="最近完整对账">{reconLatest(network) ? `${time(reconLatest(network))}（${zone}）` : "尚无"}</Fact></Facts>,
                   detail: `核对收款服务和 ${network} 链上记录。`, completion: "可能给漏掉的充值补入账。查出不明或对不上的款，会暂停 USDT 收款和出款（银行卡、越南盾照常）；已入账的款 5 分钟后仍对不上，还会冻结该用户、他的提现和这笔钱，并让他退出登录。",
@@ -771,7 +773,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       <CregisDepositPolicy key={`policy-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onActivityChange={setProposalActivity} />
       <CregisPoolPolicy key={`pool-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
       <Panel icon={Power} tone="role-4" title="收款与出款开关"
-        explain={<><p>BEP20、ERC20、TRC20 各有一个充值开关，选目标状态后提交审批，另一位管理员复核后生效。关闭一条网络会停止这条网的地址分配、链上直付新下单和自动入账，原交易继续核验，其他网络不受影响。</p><p>全局链上出款总闸是三条网共用的出款上限。BEP20 / ERC20 / TRC20 分别是否允许提现，在「USDT 提现参数」设置。</p></>}
+        explain={<><p>BEP20、ERC20 各有一个充值开关，选目标状态后提交审批，另一位管理员复核后生效。关闭一条网络会停止这条网的地址分配、链上直付新下单和自动入账，原交易继续核验，其他网络不受影响。TRC20 通道暂未开放，开关不能调整。</p><p>全局链上出款总闸是三条网共用的出款上限。BEP20、ERC20 分别是否允许提现，在「USDT 提现参数」设置。</p></>}
         actions={reach("/finance/params", "finance_d5_read") ? <Link className="rd-link" href="/finance/params">前往 USDT 提现参数</Link> : undefined}>
         {!data ? <BlockState state={loading ? "loading" : "error"} compact title={loading ? "正在读取开关…" : "开关读取失败"} onRetry={loading ? undefined : () => void refresh()} />
           : <div className="rd-stack">
@@ -782,12 +784,14 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   const row = data.networkSwitches!.find(item => item.network === network);
                   if (!row) return <tr key={network}>
                     <Td><Cell main={network} sub={networkName[network]} /></Td>
-                    <Td><Cell main="尚未配置" sub="请联系值班人员配置" /></Td>
-                    <Td><Cell main={<StatusTag tone="warn">待核实</StatusTag>} sub="请核对部署后刷新" /></Td>
-                    {canManage && <Td sticky="end" align="right"><Button size="sm" variant="secondary" disabledReason="这个网络尚未配置">调整</Button></Td>}
+                    {/* 解析时 BEP20、ERC20 必须有，缺的只会是 TRC20：通道暂未开放，不提示去配置。 */}
+                    <Td><Cell main="尚未配置" /></Td>
+                    <Td><Cell main={<StatusTag tone="neutral" icon={CircleMinus}>{TRC20_CLOSED}</StatusTag>} /></Td>
+                    {canManage && <Td sticky="end" align="right"><Button size="sm" variant="secondary" disabledReason={TRC20_CLOSED}>调整</Button></Td>}
                   </tr>;
                   const waiting = switchCases.some(item => item.network === row.network);
-                  const block = waiting ? "待另一位管理员复核" : proposalBlock;
+                  const closed = row.network === "TRC20";
+                  const block = closed ? TRC20_CLOSED : waiting ? "待另一位管理员复核" : proposalBlock;
                   const proposal = (target: boolean, restoring: boolean) => confirmCommand({ kind: "config",
                     action: `提交 ${row.network} 充值${restoring ? "恢复" : "开关"}审批`, title: restoring ? `恢复 ${row.network} 充值` : `调整 ${row.network} 充值开关`, confirmLabel: "提交审批", effect: approval,
                     facts: <Facts><Fact k="网络">{row.network}</Fact>{restoring && <Fact k="充值开关"><Change from={row.depositEnabled ? "开" : "关"} to="开（申请恢复）" /></Fact>}<Fact k="实际开放情况">{row.depositAvailable ? "已开放" : availabilityText(row.depositDisabledReason)}</Fact></Facts>,
@@ -800,7 +804,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   return <tr key={row.network}>
                     <Td><Cell main={row.network} sub={networkName[row.network]} /></Td>
                     <Td><Cell main={<SwitchTag on={row.depositEnabled}>{row.depositEnabled ? "开启" : "关闭"}</SwitchTag>} sub={waiting ? "有提案待复核" : undefined} /></Td>
-                    <Td><Cell main={row.depositAvailable ? (row.addressAvailable ? "已开放" : "已开放 · 地址准备中") : <StatusTag tone="warn">{availabilityText(row.depositDisabledReason)}</StatusTag>} /></Td>
+                    <Td><Cell main={closed ? <StatusTag tone="neutral" icon={CircleMinus}>{TRC20_CLOSED}</StatusTag> : row.depositAvailable ? (row.addressAvailable ? "已开放" : "已开放 · 地址准备中") : <StatusTag tone="warn">{availabilityText(row.depositDisabledReason)}</StatusTag>} /></Td>
                     {canManage && <Td sticky="end" align="right"><span className="rd-row-actions">
                       {globalPaused && <Button size="sm" disabledReason={block} onClick={() => proposal(true, true)}>申请恢复</Button>}
                       <Button size="sm" variant={globalPaused ? "ghost" : "secondary"} disabledReason={block} onClick={() => proposal(row.depositEnabled, false)}>调整</Button>
@@ -829,6 +833,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                 const network = row.network ? String(row.network) : "全局出款";
                 const target = row.network ? `${network} 充值 ${row.beforeDepositEnabled == null ? "原值" : row.beforeDepositEnabled ? "开" : "关"} → ${row.creditEnabled ? "开" : "关"}` : `全局链上出款 → ${onOff(row.payoutEnabled)}`;
                 const stale = row.expectedVersion !== gate?.version || (!!row.network && data.networkSwitches?.find(item => item.network === row.network)?.version !== row.expectedNetworkVersion);
+                // 只挡打开 TRC20 的提案；关掉 TRC20 的提案照常能复核通过，是收紧。
+                const closed = row.network === "TRC20" && !!row.creditEnabled;
                 const decisionBusy = switchPending.some(record => record.path === `/cregis/switch-cases/${text(row.id)}/decision`) ? "上次复核结果未知，先在上方核对" : readBlock;
                 const currentSwitch = row.network ? data.networkSwitches?.find(item => item.network === row.network)?.depositEnabled : gate?.payoutEnabled;
                 const facts = <Facts><Fact k="提案">#{text(row.id)}</Fact>
@@ -836,10 +842,10 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   <Fact k="发起人">{text(row.makerId)}</Fact><Fact k="发起理由">{text(row.reason)}</Fact></Facts>;
                 return <tr key={String(row.id)}>
                   <Td><Cell mono main={`#${text(row.id)}`} sub={`发起人 ${text(row.makerId)}${own ? "（你）" : ""}`} /></Td>
-                  <Td><Cell main={target} sub={stale ? "配置版本已变，请拒绝后重新申请" : undefined} /></Td>
+                  <Td><Cell main={target} sub={closed ? `${TRC20_CLOSED}，不能复核通过` : stale ? "配置版本已变，请拒绝后重新申请" : undefined} /></Td>
                   <Td><Cell main={text(row.reason)} title={text(row.reason)} /></Td>
                   {canManage && <Td sticky="end" align="right"><span className="rd-row-actions">
-                    <Button size="sm" disabledReason={own ? "这是你发起的，需要另一位管理员处理" : stale ? "配置版本已变，请拒绝后重新申请" : decisionBusy} onClick={() => confirmCommand({ kind: "config", action: `复核 ${network} 提案 #${text(row.id)}`, title: "复核通过开关提案", confirmLabel: "确认通过", effect: now, facts,
+                    <Button size="sm" disabledReason={own ? "这是你发起的，需要另一位管理员处理" : closed ? TRC20_CLOSED : stale ? "配置版本已变，请拒绝后重新申请" : decisionBusy} onClick={() => confirmCommand({ kind: "config", action: `复核 ${network} 提案 #${text(row.id)}`, title: "复核通过开关提案", confirmLabel: "确认通过", effect: now, facts,
                       detail: `${target}；发起人 ${text(row.makerId)}；理由 ${text(row.reason)}。按当前条件核验后生效。`, completion: "复核通过后立即按提案生效。复核时条件不满足会被拒绝。",
                       path: `/cregis/switch-cases/${text(row.id)}/decision`, body: { decision: "APPROVE" } })}>复核通过</Button>
                     <MoreMenu label="更多操作" items={[{ key: "reject", label: "拒绝", danger: true, disabledReason: own ? "这是你发起的，需要另一位管理员处理" : decisionBusy, onSelect: () => confirmCommand({ kind: "record", action: `拒绝 ${network} 提案 #${text(row.id)}`, title: "拒绝开关提案", confirmLabel: "确认拒绝", effect: now, facts,

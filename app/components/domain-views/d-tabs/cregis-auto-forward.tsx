@@ -9,6 +9,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { exceptionRead,exceptionList,exceptionCommand,exceptionId,exceptionVersion,type ExceptionRecord,type ExceptionPage } from "@/lib/admin/cregis-exceptions";
 import { d1PendingObjectReason } from "@/lib/admin/d-client";
 import { autoForwardStatus,autoForwardPage,AUTO_STATES,AUTO_ERRORS,type AutoNetwork } from "@/lib/admin/cregis-auto-forward";
+import { TRC20_CLOSED } from "@/lib/admin/trc20-closed";
 import { SwitchTag, usdt } from "./d1-shared";
 import type { DCtx } from "./types";
 type Props={canManage:boolean;openActionConfirm:DCtx["openActionConfirm"];onChanged?:()=>void};
@@ -107,7 +108,11 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
       {canWrite&&status&&<Button size="sm" variant="danger-outline" disabledReason={block} onClick={()=>policy("PAUSE")}>暂停本网络自动资金流程</Button>}
     </>}>
     <div className="rd-stack">
-    <Segments label="自动资金流程网络" value={network} onChange={onNetworkChange} items={(["BEP20","ERC20","TRC20"] as const).map(value=>({value,label:value}))}/>
+    {/* 分段的禁用项不能聚焦也没有原因气泡，原因常显在旁边（OP-126）。 */}
+    <div className="rd-toolbar">
+      <Segments label="自动资金流程网络" value={network} onChange={onNetworkChange} items={(["BEP20","ERC20","TRC20"] as const).map(value=>({value,label:value,disabled:value==="TRC20"}))}/>
+      <span className="rd-toolbar-note">TRC20 {TRC20_CLOSED}</span>
+    </div>
     {error&&<Notice tone="warn">{error}</Notice>}
     {loading&&!status?<BlockState state="loading" title="正在读取自动资金流程…"/>
       :!status?<BlockState state="error" title="自动资金流程读取失败" detail={error} onRetry={()=>void refresh()}/>

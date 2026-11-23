@@ -70,7 +70,7 @@ export const D5_PARAM_HELP = {
     what: "每笔提现按网络收的固定费用",
     when: "调高立即生效，调低批准后生效；只影响新提现",
     how: "0–25 USDT，每档 0.5，三个网络一起保存",
-    effect: "改成 TRC20 2 USDT：之后走 TRC20 的提现每笔收 2 USDT。设为 0 不收费。任一网络调低，三个一起走审批",
+    effect: "改成 BEP20 2 USDT：之后走 BEP20 的提现每笔收 2 USDT。设为 0 不收费。任一网络调低，三个一起走审批。TRC20 通道暂未开放，不能改",
     where: "App「选择提现网络」页每个网络卡片上的网络费；提现页「网络确认费」这一行",
   },
   nexFeeOffsetRate: {

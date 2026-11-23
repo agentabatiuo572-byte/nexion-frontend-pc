@@ -3,7 +3,7 @@
 import { useReach } from "@/lib/nav/use-reach";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Coins, CreditCard, ReceiptText, RefreshCw, User } from "lucide-react";
+import { CircleMinus, Coins, CreditCard, ReceiptText, RefreshCw, User } from "lucide-react";
 import {
   BlockState, Button, Cell, Decision, DiffList, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, KeyValues,
   Modal, Notice, NumberInput, Pager, Panel, Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr,
@@ -14,11 +14,15 @@ import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { purchasePaymentMethods, purchaseWasDelivered, validPurchaseChannel, type PurchasePaymentChannel, type PurchasePaymentMethod, type PurchasePaymentPolicy, type PurchasePaymentPage, type PurchasePaymentRecord, type PurchasePaymentState } from "@/lib/admin/purchase-payment-contract";
 import { fetchPurchasePaymentPolicy, fetchPurchasePaymentRecords, fetchPurchasePaymentRecord, updatePurchasePaymentPolicy, revalidatePurchasePayment, pendingPurchasePayments, retryPurchasePayment, releasePurchasePayment, canRetryPurchasePayment, type PendingPurchasePayment } from "@/lib/admin/purchase-payment-client";
+import { TRC20_CLOSED } from "@/lib/admin/trc20-closed";
 import { LongValue, PendingNotices, readPage, readParam, usdt, vnd, writeParams, zoneLabel, type D1Activity, type D1Count, type D1PendingItem } from "./d1-shared";
 import type { DCtx } from "./types";
 
 const methodText: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "银行卡支付", CREGIS_USDT_BSC: "USDT（BEP20）", CREGIS_USDT_ERC20: "USDT（ERC20）", CREGIS_USDT_TRC20: "USDT（TRC20）" };
 const methodNote: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "按手续费收取，不收网络费，不需要支付密码。", CREGIS_USDT_BSC: "按手续费和网络费收取，不需要支付密码。", CREGIS_USDT_ERC20: "以太坊网络费较高，单独设置，不需要支付密码。", CREGIS_USDT_TRC20: "TRON 网络，按手续费和网络费收取，不需要支付密码。" };
+/** TRC20 外部付款通道暂未开放：手续费不能改、不提交，没配置也不算要处理的事。 */
+const CLOSED_METHOD: PurchasePaymentMethod = "CREGIS_USDT_TRC20";
+const closedTag = <StatusTag tone="neutral" icon={CircleMinus}>{TRC20_CLOSED}</StatusTag>;
 const stateText: Record<PurchasePaymentState, string> = { CREATING: "正在创建", SUBMIT_UNKNOWN: "创建结果未知", AWAITING_PAYMENT: "等待付款", FUNDS_CONFIRMED: "已收款，待完成", DELIVERED: "已完成", MANUAL_REVIEW: "需人工处理", EXPIRED: "已过期" };
 const stateTone = (state: PurchasePaymentState): StateTone => state === "MANUAL_REVIEW" ? "warn" : state === "DELIVERED" ? "ok" : state === "EXPIRED" ? "done" : "progress";
 const STATE_GROUPS: readonly { label: string; states: readonly PurchasePaymentState[] }[] = [
@@ -129,7 +133,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
   const canEdit = allowed("finance_d1_fx_manage");
   // 旧响应可能少返回 TRC20 渠道：少了的也算未配置，用户付款时同样看不到（test 5e5a5168）。
   const missingMethods = policy ? purchasePaymentMethods.filter(method => !policy.channels.some(row => row.paymentMethod === method)) : [];
-  const unconfigured = (policy?.channels.filter(row => !row.configured).length ?? 0) + missingMethods.length;
+  const unconfigured = (policy?.channels.filter(row => !row.configured && row.paymentMethod !== CLOSED_METHOD).length ?? 0) + missingMethods.filter(method => method !== CLOSED_METHOD).length;
   useEffect(() => { onUnconfigured(unconfigured); }, [onUnconfigured, unconfigured]);
   const activity = useMemo(() => [
     ...(changed ? [`付款手续费有 ${changedChannels.length} 种付款方式没保存`] : []),
@@ -204,6 +208,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
   }
 
   const issues = policy ? draft.map(row => Object.fromEntries(FEE_FIELDS.map(field => {
+    if (row.paymentMethod === CLOSED_METHOD) return [field, undefined];
     if (field === "networkConfirmFeeUsdt" && row.paymentMethod === "HDPAY_BANK") return [field, undefined];
     if (field === "minTopupPrincipal" && row.paymentMethod !== "HDPAY_BANK") return [field, undefined];
     const before = policy.channels.find(item => item.paymentMethod === row.paymentMethod)!;
@@ -213,7 +218,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
   const saveBlock = !canEdit ? "只有超级管理员能改" : policyLoading ? "正在读取最新数据" : busy ? "正在提交" : policyPending ? "上次保存结果未知，先在本页上方核对"
     : !policy?.constraints ? "暂时拿不到可填范围，只能查看" : !changed ? "还没有修改" : !valid ? "有填错的项，按框下的提示改" : undefined;
   const feeSummary = policyLoading ? "正在读取" : policyError ? "读取失败" : policy
-    ? `${policy.channels.length + missingMethods.length} 种付款方式${unconfigured ? `，${unconfigured} 种未配置 · 用户付款时看不到` : "，都已配置"}${changed ? "，有修改没保存" : ""}` : "—";
+    ? `${policy.channels.filter(row => row.paymentMethod !== CLOSED_METHOD).length + missingMethods.filter(method => method !== CLOSED_METHOD).length} 种付款方式${unconfigured ? `，${unconfigured} 种未配置 · 用户付款时看不到` : "，都已配置"}，${methodText[CLOSED_METHOD]}${TRC20_CLOSED}${changed ? "，有修改没保存" : ""}` : "—";
   const feeFoldOpen = feeOpen ?? (unconfigured > 0 || changed || !!policyError);
   const doRefreshPolicy = () => { setRefreshAsk(false); void loadPolicy(); };
 
@@ -279,8 +284,9 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
               </tr></thead>
               <tbody>{draft.map((row, rowIndex) => {
                 const saved = policy.channels.find(item => item.paymentMethod === row.paymentMethod)!;
+                const closed = row.paymentMethod === CLOSED_METHOD;
                 return <tr key={row.paymentMethod}>
-                  <Td><Cell main={<>{methodText[row.paymentMethod]} <Explain label={`${methodText[row.paymentMethod]}怎么收费`} content={methodNote[row.paymentMethod]} /></>} sub={saved.configured ? undefined : <StatusTag tone="warn">未配置</StatusTag>} /></Td>
+                  <Td><Cell main={<>{methodText[row.paymentMethod]} <Explain label={`${methodText[row.paymentMethod]}怎么收费`} content={methodNote[row.paymentMethod]} /></>} sub={closed ? closedTag : saved.configured ? undefined : <StatusTag tone="warn">未配置</StatusTag>} /></Td>
                   {FEE_FIELDS.map(field => {
                     if (field === "networkConfirmFeeUsdt" && row.paymentMethod === "HDPAY_BANK") return <Td key={field} align={canEdit && policy.constraints ? "left" : "right"}><Cell main="不收" /></Td>;
                     if (field === "minTopupPrincipal" && row.paymentMethod !== "HDPAY_BANK") {
@@ -290,7 +296,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
                     const issue = touched || row[field] !== saved[field] ? issues[rowIndex]?.[field] : undefined;
                     return <Td key={field}>
                       <NumberInput aria-label={`${methodText[row.paymentMethod]}${feeLabel[field]}`} aria-invalid={issue ? true : undefined} unit={feeUnit[field]} inputMode={field === "minTopupPrincipal" ? "numeric" : "decimal"}
-                        placeholder="未配置" step={field === "minTopupPrincipal" ? 1 : 0.01} value={row[field] ?? ""} disabled={busy || policyPending || policyLoading}
+                        placeholder="未配置" step={field === "minTopupPrincipal" ? 1 : 0.01} value={row[field] ?? ""} disabled={closed || busy || policyPending || policyLoading}
                         onChange={event => { const next = event.target.value; setDraft(current => current.map(item => item.paymentMethod === row.paymentMethod ? { ...item, [field]: next === "" && !saved.configured && field !== "minTopupPrincipal" ? null : next } : item)); }} />
                       {issue ? <div className="rd-form-error" role="alert">{issue}</div>
                         : row[field] !== saved[field] && <div className="rd-note">现在 {saved[field] == null ? "未配置" : usdt(saved[field])}</div>}
@@ -299,8 +305,9 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
                 </tr>;
               })}
               {missingMethods.map(method => <tr key={method}>
-                <Td><Cell main={methodText[method]} sub={<StatusTag tone="warn">未配置</StatusTag>} /></Td>
-                <Td colSpan={FEE_FIELDS.length}><Cell full main="读不到这个渠道，不能修改" sub="用户付款时看不到；核对部署后刷新" /></Td>
+                <Td><Cell main={methodText[method]} sub={method === CLOSED_METHOD ? closedTag : <StatusTag tone="warn">未配置</StatusTag>} /></Td>
+                <Td colSpan={FEE_FIELDS.length}>{method === CLOSED_METHOD ? <Cell full main="读不到这个渠道" />
+                  : <Cell full main="读不到这个渠道，不能修改" sub="用户付款时看不到；核对部署后刷新" />}</Td>
               </tr>)}</tbody>
             </Table>
             <div className="rd-col-foot">
