@@ -32,6 +32,7 @@ export type E1SkuReview = {
 type Media = { kind: "image" | "video"; src: string; name: string; size?: number; w?: number; h?: number; duration?: number; assetId?: string; objectKey?: string } | null;
 const SECTIONS = [{ id: "e1-basic", label: "基本信息" }, { id: "e1-earnings", label: "收益与任务" }, { id: "e1-stock", label: "库存与购买条件" }, { id: "e1-specs", label: "规格与资料" }];
 const BASIC_FIELDS = ["name", "id", "tier", "seriesCode", "lifecycle", "badge", "tagline", "taglineZh", "taglineVi", "media"];
+const SKU_NAME_MAX_LENGTH = 128;
 
 function EditorSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return <section id={`section-${id}`} className="e1-editor-section"><h3 tabIndex={-1} data-section-focus>{title}</h3><div className="e1-section-fields">{children}</div></section>;
@@ -52,8 +53,9 @@ const E1_POWER_FORMATS = ["1800", "1,800 W", "1,800 W TDP", "1,800 W (per-GPU ra
 
 const imageIdentity = (m: Media) => JSON.stringify([m?.assetId ?? "", m?.objectKey ?? ""]);
 
-function productCopyErrors(form: SkuForm): Record<string, string> {
+function productCopyErrors(form: SkuForm, skuName: string): Record<string, string> {
   const errors: Record<string, string> = {};
+  if ([...skuName].length > SKU_NAME_MAX_LENGTH) errors.name = ADMIN_ERROR_MESSAGES.SKU_NAME_TOO_LONG;
   if (form.badgeKind === "custom") {
     const badge = skuBadgeValue(form.badgeKind, form.badge);
     if (!badge || skuBadgeKind(badge) === "none") errors.badge = "请填写自定义角标";
@@ -316,7 +318,6 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (!writable) e.form = "当前不能提交，请核对权限和目录读取状态";
     if (mediaBusy || mediaPending || media && !media.assetId) e.media = "媒体上传尚未确认，请先核对原文件";
     if (!acceptedRevision && latestChanged) e.form = "商品已被别人改过，请先核对别人改了什么";
-    Object.assign(e, productCopyErrors(form));
     for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
       const error = appVisibleTextError(form[key], label);
       if (!error) continue;
@@ -326,13 +327,14 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
         e[key] = error;
       }
     }
+    const sku = skuDraft(form, original, media);
+    Object.assign(e, productCopyErrors(form, sku.name));
     setErrors(e);
     if (Object.keys(e).length) {
       const first = Object.keys(e)[0];
       const section = BASIC_FIELDS.includes(first) ? "e1-basic" : ["stock", "unlock", "inventoryMode", "gateQuotaPeriod", "gateQuotaCap", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin"].includes(first) ? "e1-stock" : ["gpu", "gpuCount", "power", "specDocumentTitle", "specDocumentUrl", "uptime", "warranty"].includes(first) || first.startsWith("ai") ? "e1-specs" : "e1-earnings";
       nav.select(section); return false;
     }
-    const sku = skuDraft(form, original, media);
     if (original && !e1SkuDiff(original, sku, form).some(row => row.before !== row.after)) { toast("没有任何修改，无需提交"); return false; }
     setLeave(false);
     onReview({
@@ -348,11 +350,11 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   };
   const review = () => { reviewDraft(form, original, media); };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
-  const copyErrors = productCopyErrors(form);
+  const copyErrors = productCopyErrors(form, draft.name);
   const appTextErrors: Record<string, string> = { ...copyErrors, warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
   for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
     const error = appVisibleTextError(form[key], label);
-    if (error && !(key === "power" && form.tier === "Share")) appTextErrors[key] = error;
+    if (error && !(key === "power" && form.tier === "Share")) appTextErrors[key] ??= error;
   }
   const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: ReactNode; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={errors[key] || appTextErrors[key]} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
     {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={key === "warranty" && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? "" : String(form[key])} onChange={e => update(key, e.target.value)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} disabled={options.disabled || busy} placeholder={options.placeholder} />}

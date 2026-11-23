@@ -618,6 +618,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   C5_SESSION_REVOKE_APPROVAL_FORBIDDEN: "批准退出全部设备需要超级管理员身份和审批批准权限，请由另一位具备账户或登录设备全退权限的超级管理员处理。驳回仍按原权限核验。",
 
   SKU_MODEL_UNRECOGNIZED: LEGACY_SKU_MODEL_UNRECOGNIZED_REASON,
+  SKU_NAME_TOO_LONG: "型号名称最多 128 字，请缩短后再提交。",
   SKU_BADGE_TOO_LONG: "自定义角标最多 64 字，请缩短后再提交。",
   SKU_TAGLINE_TRANSLATIONS_INVALID: "商品标语译文格式不正确，请刷新商品后核对译文。",
   SKU_TAGLINE_TRANSLATION_TOO_LONG: "每栏商品标语译文最多 255 字，请缩短后再提交。",
