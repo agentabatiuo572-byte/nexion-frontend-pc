@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Drawer, Button, BlockState, Explain, Fact, Facts, Fold, Notice, Table, Th, Tr, Td } from "@/app/components/rd";
+import { Drawer, Button, BlockState, Explain, Fact, Facts, Fold, Notice, Table, TableMessage, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, operatorNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, type PerformanceMetric, type SupportOverview } from "@/lib/admin/m-support-client";
 import { supportAnalyticsClient, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer, type SupportAnalyticsQuery, type SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
@@ -180,6 +180,8 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
   const cutoff = source.kind === "maintenance" ? source.overview.evaluatedAt : source.origin.asOf;
   const move = (next: number) => { setResult(null); setPage(next); };
   const group = source.kind === "fund" && source.query.groupId != null ? source.origin.scopeSummary.groups.find(row => row.groupId === String(source.query.groupId)) : null;
+  // 没有可见行时表内写空状态和下一步；总数没数完时也不写 0（ST-33、ST-12，BUG-657）。
+  const empty = source.kind === "fund" ? <>所选月份没有你能看到的{title}记录。<button type="button" className="rd-link" onClick={onClose}>返回工作台换个月份</button></> : "没有你能看到的记录";
   return <Drawer open title={title + "明细"} sub={"统计截至 " + beijing(cutoff) + "（北京时间）"} onClose={onClose} wide footer={<div className="m1-stat-footer"><Button type="button" onClick={onClose}>返回工作台</Button>{result && result.total !== null && <div className="m1-stat-pager"><Button type="button" disabled={page === 1} onClick={() => move(page - 1)}>上一页</Button><span>第 {page} 页</span><Button type="button" disabled={!result.next} onClick={() => move(page + 1)}>下一页</Button></div>}</div>}>
     <section className="m1-stat-detail" data-kind={source.kind} aria-label={title + "核对"}>
       {source.kind === "fund" && <p className="rd-note">{source.query.groupId != null ? group?.name ?? "组编号 " + source.query.groupId : "当前获准范围"}{source.query.agentId != null && " · 客服编号 " + source.query.agentId} · {nexGridBrandText(source.query.currency ?? "USDT")}{source.metric === "net" && source.query.from && source.query.to && " · 统计区间（北京时间）" + beijing(source.query.from) + " 至 " + beijing(source.query.to) + "，不含结束时刻。"}</p>}
@@ -187,7 +189,7 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
       {error === "read" && <BlockState state="error" title="明细读取失败，请重试。" onRetry={() => setRetry(n => n + 1)} retryLabel="重试" />}
       {error === "historyIncomplete" && <Notice tone="progress" title="业绩历史还在同步" action={<Button size="sm" onClick={() => setRetry(n => n + 1)}>重新读取</Button>}>同步完再看明细，不用处理。</Notice>}
       {error === "unreconciled" && <Notice tone="warn" title="明细和已确认的金额或笔数对不上，先不显示" action={<Button size="sm" onClick={() => setRetry(n => n + 1)}>重新读取</Button>}>一直这样请联系技术同事。</Notice>}
-      {result && <><Facts>{result.facts ? result.facts.map(row => <Fact key={row.k} k={row.k}>{row.v}</Fact>) : <Fact k="核对摘要">{result.summary}</Fact>}</Facts><Fold title="统计口径" summary={result.version ? "和工作台是同一份统计" : "只能看这一页"}><p>{result.note}</p></Fold>{result.headings.length > 0 && <div className="m1-stat-table"><Table label={title + "明细"}><thead><Tr>{result.headings.map(header => <Th key={header} scope="col">{header}</Th>)}</Tr></thead><tbody>{result.rows.map((row, index) => <Tr key={index}>{row.map((cell, i) => <Td key={i}>{i === 3 && source.kind === "maintenance" ? <Fold inset title="关联记录" summary="查看完整编号"><span data-mono>{cell}</span></Fold> : <span title={cell} tabIndex={0}>{cell}</span>}</Td>)}</Tr>)}</tbody></Table></div>}{!result.rows.length && result.total !== null && <BlockState state="empty" title="没有你能看到的记录" />}{result.tech && <Fold title="技术信息" summary="记录编号"><p data-mono>{result.tech}</p></Fold>}</>}
+      {result && <><Facts>{result.facts ? result.facts.map(row => <Fact key={row.k} k={row.k}>{row.v}</Fact>) : <Fact k="核对摘要">{result.summary}</Fact>}</Facts><Fold title="统计口径" summary={result.version ? "和工作台是同一份统计" : "只能看这一页"}><p>{result.note}</p></Fold>{result.headings.length > 0 && <div className="m1-stat-table"><Table label={title + "明细"}><thead><Tr>{result.headings.map(header => <Th key={header} scope="col">{header}</Th>)}</Tr></thead><tbody>{!result.rows.length && <TableMessage columns={result.headings.length}>{empty}</TableMessage>}{result.rows.map((row, index) => <Tr key={index}>{row.map((cell, i) => <Td key={i}>{i === 3 && source.kind === "maintenance" ? <Fold inset title="关联记录" summary="查看完整编号"><span data-mono>{cell}</span></Fold> : <span title={cell} tabIndex={0}>{cell}</span>}</Td>)}</Tr>)}</tbody></Table></div>}{!result.rows.length && !result.headings.length && <BlockState state="empty" title={source.kind === "fund" ? `所选月份没有你能看到的${title}记录` : "没有你能看到的记录"} />}{result.tech && <Fold title="技术信息" summary="记录编号"><p data-mono>{result.tech}</p></Fold>}</>}
     </section>
   </Drawer>;
 }
