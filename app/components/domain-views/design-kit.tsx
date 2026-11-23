@@ -3827,10 +3827,13 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const review = edit?.review;
   const [editReview, setEditReview] = useState<EditReviewState | null>(null);
+  // A copy conflict keeps its latest baseline when a new target invalidates the comparison.
+  const [reviewBaseline, setReviewBaseline] = useState<{ before?: string; facts?: ReactNode } | null>(null);
   const reviewRequest = useRef<AbortController | null>(null);
   useEffect(() => () => reviewRequest.current?.abort(), []);
   const readyReview = editReview?.kind === "ready" ? editReview.result : undefined;
-  const requireReason = reasonRequested && (!review || (review.conflictOnly && !editReview) || !!readyReview || pendingReason !== undefined);
+  const needsEditPreview = !!review && (!review.conflictOnly || !!reviewBaseline);
+  const requireReason = reasonRequested && ((!needsEditPreview && !editReview) || !!readyReview || pendingReason !== undefined);
   // 原生数字框填坏时 value 是空串，只有 validity 分得清；有意清空是另一个状态（CP-54）。
   const [numberBad, setNumberBad] = useState(false);
   const [emptyChosen, setEmptyChosen] = useState(false);
@@ -3986,6 +3989,11 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     onClose();
     return true;
   };
+  const enterEditConflict = () => {
+    setReason("");
+    if (review?.conflictOnly) setReviewBaseline(current => current ?? {});
+    setEditReview({ kind: "conflict" });
+  };
   const loadEditReview = async (refresh = false) => {
     if (!review || reviewRequest.current) return;
     const controller = new AbortController();
@@ -3994,13 +4002,15 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     setEditReview({ kind: "loading" });
     try {
       const result = await review.read(newVal, controller.signal, refresh);
-      if (!controller.signal.aborted) setEditReview({ kind: "ready", result, refresh });
+      if (controller.signal.aborted) return;
+      if (review.conflictOnly && (refresh || reviewBaseline)) {
+        setReviewBaseline({ before: result.comparison.before, facts: result.facts });
+      }
+      setEditReview({ kind: "ready", result, refresh });
     } catch (error) {
       if (controller.signal.aborted || closeOnPermissionDenied(error)) return;
-      if (review.isConflict(error)) {
-        setReason("");
-        setEditReview({ kind: "conflict" });
-      } else setEditReview({ kind: "error", message: displayAdminError(error), refresh });
+      if (review.isConflict(error)) enterEditConflict();
+      else setEditReview({ kind: "error", message: displayAdminError(error), refresh });
     } finally {
       reviewRequest.current = null;
     }
@@ -4011,7 +4021,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   };
   const handleConfirm = async () => {
     if (!canConfirm) return;
-    if (review && !review.conflictOnly && !editReview && pendingReason === undefined) {
+    if (needsEditPreview && !editReview && pendingReason === undefined) {
       await loadEditReview();
       return;
     }
@@ -4025,8 +4035,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
       if (closeOnPermissionDenied(error)) return;
       if (review?.isConflict(error)) {
-        setReason("");
-        setEditReview({ kind: "conflict" });
+        enterEditConflict();
         return;
       }
       // The domain callback owns the detailed toast. Keep the form open and
@@ -4087,11 +4096,11 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
       : inlineApproval?.queryOnly ? "只能查询原结果，不能重发。"
         : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。";
-  const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : review && !review.conflictOnly && !editReview ? "下一步" : readyReview?.confirmLabel ?? (approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined) ?? confirmLabel);
+  const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : needsEditPreview && !editReview ? "下一步" : readyReview?.confirmLabel ?? (approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined) ?? confirmLabel);
   // 放大提示固定在关键信息层，先于所有填写项。
   const coverageFirst = surface && (!approval || rdApproval);
   // 事实区随输入变（比如改基准价时买入价写「现在 → 改后」）：新值填好才交给页面。
-  const shownFacts = readyReview?.facts ?? (typeof facts === "function" ? facts(editValueOk ? newVal : undefined) : facts);
+  const shownFacts = readyReview?.facts ?? reviewBaseline?.facts ?? (typeof facts === "function" ? facts(editValueOk ? newVal : undefined) : facts);
   const coverageInFacts = coverageFirst && !!shownFacts;
   const checkCopy = readyReview?.coverageCheck ?? (rdApproval ? approvalSpec?.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。" : coverageCheck);
   const coverageNotice = effectiveAmplifies && (
@@ -4216,7 +4225,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         // 现在值、新值输入合成一块（VS-103）：范围只写在 hint，没改时不多写一句，确认按钮禁用并写原因。
         <div className="rd-confirm-edit">
           <DiffField
-            before={!readyReview && spec.current ? editCurrent(spec, kind).text : undefined}
+            before={readyReview ? undefined : reviewBaseline ? reviewBaseline.before : spec.current ? editCurrent(spec, kind).text : undefined}
             beforeLabel={spec.currentLabel}
             unit={editCurrent(spec, kind).unit}
             label={spec.label ?? "改后"}
@@ -4250,7 +4259,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {review && editReview?.kind === "loading" && <RdBlockState state="loading" compact title="正在读取…" />}
       {review && editReview?.kind === "error" && <RdBlockState state="error" compact title={editReview.message} onRetry={() => void loadEditReview(editReview.refresh)} />}
       {review && editReview?.kind === "conflict" && review.conflictNote(() => void loadEditReview(true))}
-      {review && editReview?.kind === "ready" && editReview.refresh && review.conflictNote()}
+      {review && editReview?.kind !== "conflict" && (reviewBaseline?.before !== undefined || editReview?.kind === "ready" && editReview.refresh) && review.conflictNote()}
       {spec && !(surface && !compareEdit) && (
         <div className={compareEdit ? "field tint" : "field"}>
           {!compareEdit && <span className="bf-legend">{spec.label ?? "新值"}{spec.current ? <> · 当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span></> : null}</span>}

@@ -177,7 +177,13 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       const next = await supportEnhancements.profile(customerId);
       if (!mounted.current || saved !== stamp.current) return;
       if (key !== "identity") {
-        setProfile(old => old ? { ...old, [key]: next[key] } : next);
+        setProfile(old => {
+          if (!old) return next;
+          if (key === "annotations" && next.annotations.status !== "READY" && next.annotations.status !== "FORBIDDEN") {
+            return { ...old, annotations: { ...next.annotations, recoveredSystemTags: old.annotations.recoveredSystemTags } };
+          }
+          return { ...old, [key]: next[key] };
+        });
         return;
       }
       if (next.identity.status !== "READY") {
