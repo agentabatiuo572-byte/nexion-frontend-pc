@@ -1100,7 +1100,7 @@ export default function UserDetailPage() {
   const openDeviceAction = (device: JsonRecord, operation: "replace" | "recycle") => {
     const deviceId = asNumber(device.id);
     const instance = asText(device.instanceNo);
-    // 结果提示、待确认条和「正在执行」写设备名和尾号，不露 PG- 这类前缀（TX-05、BUG-643）；待确认条的对象列只有 280px，写「尾号」不写「编号尾号」，完整编号在悬停和展开里。只改新写入的记录，旧记录照原样显示。
+    // 结果提示、待确认条和「正在执行」写设备名和尾号，不露 PG- 这类前缀（TX-05、BUG-643）；待确认条的对象列只有 280px，写「尾号」不写「编号尾号」；完整编号在悬停里，展开那一条看得到整句。只改新写入的记录，旧记录照原样显示。
     const deviceText = [asText(device.name, ""), instance && instance !== "—" ? `尾号 ${instance.slice(-6)}` : ""].filter((text) => text && text !== "—").join(" · ") || "—";
     setActionConfirm({ briefKind: "record",
       action: operation === "replace" ? `回收并记录置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
