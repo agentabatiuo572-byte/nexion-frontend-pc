@@ -133,6 +133,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const [labelError, setLabelError] = useState("");
   const [leave, setLeave] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
   const editId = original?.id;
   const seriesLocked = original?.seriesLocked === true;
   const seriesChoices = skuSeriesChoices(form.tier, original);
@@ -154,7 +155,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (request.unlock !== undefined) next.unlock = request.unlock;
     const m = skuMedia(sku);
     setOriginal(sku); setForm(next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
-    setMedia(m); setInitialMedia(imageIdentity(m)); setErrors({}); setLeave(false); setMediaError("");
+    setMedia(m); setInitialMedia(imageIdentity(m)); setErrors({}); setTouched(new Set()); setLeave(false); setMediaError("");
     setMediaPending(e1MediaCommands.list().find(r => r.actorId === actor) ?? null);
     if (m?.assetId) void refreshPreview(m.assetId);
     void Promise.allSettled([canReadE2 ? fetchTaskPools() : Promise.resolve([]), fetchSkuDatacenterLabels()]).then(([p, l]) => {
@@ -351,27 +352,28 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const review = () => { reviewDraft(form, original, media); };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
   const copyErrors = productCopyErrors(form, draft);
-  // An empty custom badge is reported after the field loses focus or on submit (OP-15); the save button states it at once.
-  const { badge: liveBadgeError, ...liveCopyErrors } = copyErrors;
-  const appTextErrors: Record<string, string> = { ...liveCopyErrors, ...liveBadgeError && liveBadgeError !== CUSTOM_BADGE_REQUIRED ? { badge: liveBadgeError } : {}, warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
+  const appTextErrors: Record<string, string> = { ...copyErrors, warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
   for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
     const error = appVisibleTextError(form[key], label);
     if (error && !(key === "power" && form.tier === "Share")) appTextErrors[key] ??= error;
   }
-  const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: ReactNode; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={errors[key] || appTextErrors[key]} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
-    {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={key === "warranty" && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? "" : String(form[key])} onChange={e => update(key, e.target.value)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
+  // 字段错误离开字段或点过保存后才写在字段下（OP-15、VS-107）；字数和保存按钮的禁用原因照旧即时。
+  const touch = (key: string) => setTouched(current => current.has(key) ? current : new Set(current).add(key));
+  const shownError = (key: string) => errors[key] || (touched.has(key) ? appTextErrors[key] : undefined);
+  const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: ReactNode; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={shownError(key)} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
+    {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={key === "warranty" && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? "" : String(form[key])} onChange={e => update(key, e.target.value)} onBlur={() => touch(key)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} onBlur={() => touch(key)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
   </Field>;
   const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未知" : Object.values(copyErrors)[0] ?? (!dirty || original && !changes.length ? "没有修改" : undefined);
   const sectionItems = SECTIONS.map((s, index) => {
     const keys = index === 0 ? BASIC_FIELDS : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? ["inventoryMode", "stock", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"] : ["gpu", "gpuCount", "power", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
-    const invalid = keys.some(key => !!(errors[key] || appTextErrors[key]));
+    const invalid = keys.some(key => !!shownError(key));
     const state = invalid ? "有错误" : index === 0 ? form.name && form.tier && form.seriesCode && form.lifecycle ? "已填" : "待填" : index === 1 ? form.price && (!form.allowedPoolCodes.length || form.monthlyTargetUsdt) ? "已填" : "待填" : index === 2 ? form.inventoryMode === "UNLIMITED" || form.stock !== "" ? "已填" : "待填" : "选填";
     return { ...s, label: invalid ? s.label : `${s.label} · ${state}`, alert: invalid };
   });
   const hasTarget = form.monthlyTargetUsdt.trim() !== "";
   const canClear = original?.monthlyTargetUsdt != null && original.status !== "on" && !form.allowedPoolCodes.length;
   return <>
-    <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
+    <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onBlockedClick={() => setTouched(new Set([...touched, ...Object.keys(appTextErrors)]))} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
       {errors.form && <Notice tone="warn" title={errors.form} />}
       {latestChanged && <Notice tone="warn" title="商品已被别人改过，你填的内容还在" action={currentSku ? <Button size="sm" onClick={() => adoptRevision(currentSku, form, original, media)}>已核对，保留我的修改</Button> : undefined}><Facts><Fact k="别人保存于">{formatBusinessTimeCompact(currentSku?.updatedAt, "—")}（{businessZone().label}）</Fact></Facts>{currentSku && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={e1ShownDiff(e1SkuDiff(original, currentSku), original, currentSku)} /></Fold>}</Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
@@ -383,12 +385,12 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
               : <Field label="所属系列" required error={errors.seriesCode} explain="决定设备的产能、可跑的任务和 App 里的设备分类。有订单或发出设备后就不能再改。"><Select aria-label="所属系列" required value={form.seriesCode} disabled={busy || !original && !form.tier} onChange={v => update("seriesCode", v)} placeholder={!original && !form.tier ? "请先选择档位" : "请选择所属系列"} options={[...seriesChoices.map(code => ({ value: code, label: SKU_SERIES_NAMES[code] })), ...form.seriesCode && !seriesChoices.some(code => code === form.seriesCode) ? [{ value: form.seriesCode, label: `${skuSeriesText(form.seriesCode)}（和商品类型不符）`, disabled: true }] : []]} /></Field>}
             <Field label="生命周期" required error={errors.lifecycle} explain="现行或已停产，与商城上下架状态独立。"><Select aria-label="生命周期" required value={form.lifecycle} onChange={v => update("lifecycle", v)} placeholder="请选择生命周期" options={[{ value: "active", label: "现行" }, { value: "legacy", label: "已停产" }]} /></Field>
             <div className="e1-badge-fields">
-              <Field label="营销角标" error={form.badgeKind !== "custom" ? errors.badge || appTextErrors.badge : undefined} explain="商品媒体旁的活动文字，批准后显示在商品卡。"><Select aria-label="营销角标" value={form.badgeKind} onChange={value => {
+              <Field label="营销角标" error={form.badgeKind !== "custom" ? shownError("badge") : undefined} explain="商品媒体旁的活动文字，批准后显示在商品卡。"><Select aria-label="营销角标" value={form.badgeKind} onChange={value => {
                 setForm(draft => ({ ...draft, badgeKind: value as SkuForm["badgeKind"], badgeKindChanged: true }));
                 setErrors(current => ({ ...current, badge: "" }));
               }} options={SKU_BADGE_OPTIONS} disabled={busy} /></Field>
-              {form.badgeKind === "custom" && <Field label="自定义角标" required hint={`${[...skuBadgeValue("custom", form.badge) ?? ""].length}/${SKU_CUSTOM_BADGE_MAX_LENGTH}`} error={errors.badge || appTextErrors.badge} explain={APP_VISIBLE_TEXT_HINT}>
-                <Input aria-label="自定义角标" value={form.badge} onChange={e => update("badge", e.target.value)} onBlur={() => setErrors(current => ({ ...current, badge: copyErrors.badge ?? "" }))} disabled={busy} placeholder="Limited offer" />
+              {form.badgeKind === "custom" && <Field label="自定义角标" required hint={`${[...skuBadgeValue("custom", form.badge) ?? ""].length}/${SKU_CUSTOM_BADGE_MAX_LENGTH}`} error={shownError("badge")} explain={APP_VISIBLE_TEXT_HINT}>
+                <Input aria-label="自定义角标" value={form.badge} onChange={e => update("badge", e.target.value)} onBlur={() => touch("badge")} disabled={busy} placeholder="Limited offer" />
               </Field>}
             </div>
           </div>
@@ -420,7 +422,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           {canClear && <Check label="关闭已有月收益目标，改用兼容展示值" checked={!hasTarget} onChange={e => setForm(f => ({ ...f, monthlyTargetUsdt: e.target.checked ? "" : String(original!.monthlyTargetUsdt), monthlyTargetBandPct: e.target.checked ? "" : String(original!.monthlyTargetBandPct) }))} />}
           {form.allowedPoolCodes.length > 0 && !hasTarget && <Notice tone="warn" title="已选任务等级，必须填写月收益目标" />}
           {hasTarget && Number(form.monthlyTargetUsdt) >= 1 && Number(form.monthlyTargetBandPct) >= 1 && Number(form.monthlyTargetBandPct) <= 50 && <div className="e1-draft-preview"><span className="e1-muted">本次草稿 · 配置边界</span><E1TargetRange sku={draft} /></div>}
-          <Field label="托管机房" error={errors.datacenter || appTextErrors.datacenter} hint="选填，最多 128 字" explain="新设备交付时按页头「托管机房」清单分配，实际机房记在设备上。这里只做记录，App 不显示，可以留空；填写时用英文。"><Input aria-label="托管机房" list="e1-hosting-labels" maxLength={128} value={form.datacenter} placeholder="可留空" onChange={e => update("datacenter", e.target.value)} /><datalist id="e1-hosting-labels">{labels.map(label => <option key={label} value={label} />)}</datalist></Field>
+          <Field label="托管机房" error={shownError("datacenter")} hint="选填，最多 128 字" explain="新设备交付时按页头「托管机房」清单分配，实际机房记在设备上。这里只做记录，App 不显示，可以留空；填写时用英文。"><Input aria-label="托管机房" list="e1-hosting-labels" maxLength={128} value={form.datacenter} placeholder="可留空" onChange={e => update("datacenter", e.target.value)} onBlur={() => touch("datacenter")} /><datalist id="e1-hosting-labels">{labels.map(label => <option key={label} value={label} />)}</datalist></Field>
           {labelError && <span className="e1-muted">{labelError}</span>}
           <div className="rd-form-grid">{form.tier !== "Share" ? <>
             {!hasTarget && field("dailyEarn", "每日收益 USDT", { number: true, min: 0, step: 0.000001, help: original?.monthlyTargetUsdt != null ? "关闭月目标时须在同一申请中手填" : "兼容展示值" })}

@@ -83,7 +83,7 @@ const E1_FIELD_LABELS: Record<string, string> = {
   sku: "整行资料", skuId: "商品编号", name: "商品名称", price: "售价", status: "上架状态", productType: "商品类型",
   inventoryMode: "库存方式", "inventoryMode.stock": "库存方式和库存数", stock: "库存", tier: "档位", tagline: "英文标语", taglineTranslations: "标语译文", badge: "营销角标",
   gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "托管机房", uptime: "在线率", warranty: "保修",
-  specDocumentTitle: "规格书标题", specDocumentUrl: "规格书链接", baseRate: "基础收益率", aiUnlocks: "AI 解锁项", lifecycle: "生命周期",
+  specDocumentTitle: "规格书标题", specDocumentUrl: "规格书链接", baseRate: "收益说明", aiUnlocks: "AI 解锁项", lifecycle: "生命周期",
   unlockPhase: "开放阶段", imageAssetId: "产品图", imageObjectKey: "产品图", imagePreviewUrl: "产品图", tag: "标签",
   dailyEarn: "每日收益（USDT）", dailyEarnNex: "每日收益（UVT）", phoneDailyEarn: "手机每日收益（USDT）", phoneDailyEarnNex: "手机每日收益（UVT）",
   shareYieldMin: "份额收益率下限", shareYieldMax: "份额收益率上限", sold: "已售数量",
