@@ -803,7 +803,7 @@ export default function UserDetailPage() {
       }));
       setOpenRecordList(current => current === undefined ? visibleRecordList : current);
       setActionConfirm(null);
-      setNotificationEvidence(null);
+      // The time evidence drawer reads by notification id and submits on its own, so it stays open like after a header refresh.
       setRecord(null);
       setDetail(next);
       setReadAt(businessClock(Date.now()));
