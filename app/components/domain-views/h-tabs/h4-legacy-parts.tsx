@@ -49,7 +49,7 @@ export function legacyName(value: unknown): { text: string; legacy: boolean } {
 /**
  * 既有活动奖励名给运营看时：按名字显示，只把名字里完整的金额词元（数字可带千分位，空格可有可无，币种 USDT、UVT、USD、VND、₫ 且是完整的词，
  * 后面不紧跟「/币种」）的小数末尾 0 去掉；不舍入、不改正负号、不改大小写、不加千分位，带指数的和认不出的原样写。
- * 名字原文照旧用于比较、预览和提交（OP-39）。列表回包不带库里的实额，这里不从名字推算它。App 显示的文字和奖项名不走这里。
+ * 名字原文照旧用于比较、预览和提交（OP-39）。旧回包缺少实额字段时沿用名称。App 显示的文字和奖项名不走这里。
  */
 const NAME_AMOUNT = /(?<![\w.,])([+-]?(?:\d{1,3}(?:,\d{3})+|\d+))\.(\d+)(?![\d.eE])(?=[ \u00a0]?(?:USDT|UVT|USD|VND|₫)(?![\w])(?!\/[A-Za-z₫]))/g;
 export function legacyRewardText(value: unknown): string {
@@ -83,6 +83,8 @@ export type LegacyEvent = H4EventCapabilities & {
   deleteVersion?: string;
   deletable?: boolean;
   reward?: string;
+  rewardType?: "UVT" | "USDT" | null;
+  rewardAmount?: string | null;
   description?: string;
   rewardName?: string;
   featured?: boolean;
@@ -179,9 +181,10 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requi
 }) {
   const life = lifecycleOf(event, requiredLanguages);
   const wheel = text(event.kind, "").toLowerCase() === "wheel";
-  const reward = legacyName(event.reward);
+  const hasRewardProjection = event.rewardType !== undefined || event.rewardAmount !== undefined;
+  const legacyReward = !hasRewardProjection && legacyName(event.reward).legacy;
   // 上一行实际显示的奖励；「App 显示同上」按这一行和 App 原文是否完全一样判断（F04）。
-  const shownReward = legacyRewardText(event.reward);
+  const shownReward = hasRewardProjection ? actualRewardText(event.rewardAmount, event.rewardType) : legacyRewardText(event.reward);
   // 卡片先显示中文；中文没填用英文那一份并标出来；名称、说明中英文都没填时显示原文（App 中文也显示它）并标出来；都没有才写「未配置」。
   const originals = { name: text(event.name, ""), description: text(event.description, "") };
   const pick = (field: ContentField) => zh[field] ? { text: zh[field], en: false, original: false } : en[field] ? { text: en[field], en: true, original: false }
@@ -210,7 +213,7 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requi
         {originalFields[0] === "description" && <>{originalTag} </>}{description?.text ?? "说明未配置"}{enTag("description")}</p>
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
-          {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{shownReward || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
+          {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{shownReward && shownReward !== "—" ? shownReward : <span className="h4-dim">—</span>}{legacyReward && <LegacyNameTag where="奖励文字" />}</>}
           <small>{appReward ? <>{!wheel && appReward.text === shownReward ? "App 显示同上" : `App 显示：${appReward.text || "—"}`}{enTag("rewardName")}</>
             : rewardFromRule && !rewardName ? "App 显示玩法规则摘要" : rewardName ? <>{rewardName.text !== shownReward ? `App 显示：${rewardName.text}` : "App 显示同上"}{enTag("rewardName")}</> : "奖项名未配置"}</small>
         </dd></div>
