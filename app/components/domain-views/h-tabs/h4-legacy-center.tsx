@@ -6,7 +6,7 @@
  */
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, blankCopiedContentLanguage } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
-import type { BusinessFormValue } from "../design-kit";
+import type { BusinessFormValue, EditComparison } from "../design-kit";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
@@ -189,7 +189,15 @@ const RECONFIRM_UNIT: Record<string, string> = { 调整每日真钱奖预算: "U
  * 被「别人先改过」拒绝、页面重读后由 useHConflictDraft 重开的框：框里常显这条，运营核对后再提交（OP-97 第 1 步、VS-107；BUG-648）。
  * 只认重开的框（带回了上次的理由），运营自己再点开的框不带。页面上的提醒照旧，框关上后还看得到。
  */
-const STALE_NOTE = <Notice tone="warn" title="别人先改过，这次没有保存">现在值已换成最新的；你填的内容和理由都还在，核对后再提交。</Notice>;
+function StaleNote({ readLatest, clearReason }: { readLatest?: () => void; clearReason?: boolean }) {
+  return <Notice tone="warn" title="别人先改过，这次没有保存"
+    action={readLatest && <Button size="sm" onClick={readLatest}>读取最新</Button>}>
+    {readLatest ? "读取最新值后再核对；你填的内容还在，操作理由要重新填写。"
+      : clearReason ? "现在值已换成最新的；你填的内容还在，请重新填写操作理由。"
+      : "现在值已换成最新的；你填的内容和理由都还在，核对后再提交。"}
+  </Notice>;
+}
+const STALE_NOTE = <StaleNote />;
 const restoredAfterConflict = (req: { initialReason?: string }, opened: { initialReason?: string }) => opened.initialReason !== undefined && opened.initialReason !== req.initialReason;
 function withStaleNote(req: ActionConfirmReq, opened: ActionConfirmReq): ActionConfirmReq {
   if (!restoredAfterConflict(req, opened)) return opened;
@@ -205,7 +213,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const adminId = useAdminAuth(state => state.session?.adminId);
   const activeRecovery = useRef<string | null>(null);
   /** 直接保存被判定要走审批：换成审批确认，值和理由沿用（H-改走审批）。 */
-  const approvalReconfirm = (error: HApprovalRequired, req: ActionConfirmReq | ConfirmReq, reason: string, value?: string, businessValue?: BusinessFormValue) => {
+  const approvalReconfirm = (error: HApprovalRequired, req: ActionConfirmReq | ConfirmReq, reason: string, value?: string, businessValue?: BusinessFormValue, comparison?: EditComparison) => {
     const edit = "edit" in req ? req.edit : undefined;
     const facts = "facts" in req ? typeof req.facts === "function" ? req.facts(value) : req.facts : "content" in req ? req.content : undefined;
     const fields = "businessForm" in req && req.businessForm?.kind === "multi-field" ? req.businessForm.fields : [];
@@ -224,16 +232,17 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     return hApprovalReconfirm(error, { changes,
       hasPending: () => !!h4PendingFor(h4Scope((error.input as { path: string }).path, JSON.parse((error.input as { body: string }).body))),
       onUnknown: () => ctx.closeConfirm?.(), action: req.action, title: req.title, reason, approver: "另一位超级管理员", holds: creating ? "现有配置" : "这一项",
-      change: edit && value !== undefined ? (unit => <Change from={`${edit.current || "—"}${unit ? ` ${unit}` : ""}`} to={`${value}${unit ? ` ${unit}` : ""}`} />)(edit.unit ?? RECONFIRM_UNIT[String(req.title)]) : undefined,
+      change: comparison ? <Change from={comparison.before} to={comparison.after} />
+        : edit && value !== undefined ? (unit => <Change from={`${edit.current || "—"}${unit ? ` ${unit}` : ""}`} to={`${value}${unit ? ` ${unit}` : ""}`} />)(edit.unit ?? RECONFIRM_UNIT[String(req.title)]) : undefined,
       // 有逐项改动时不再放原框的「现在」事实；只有改已有一项时补一行对象（目前是转盘奖项编辑）。
       context: edit || changes ? undefined : facts,
       subject: changes && !creating && typeof req.action === "string" && req.action.includes(" · ") ? <Fact k="奖项">{req.action.slice(req.action.indexOf(" · ") + 3)}</Fact> : undefined,
       completed: async result => { await apply(result); } });
   };
-  const openActionConfirm = (req: ActionConfirmReq) => {
+  const openActionConfirm = (req: ActionConfirmReq, getComparison?: () => EditComparison | undefined) => {
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
-    ctx.openActionConfirm(withStaleNote(req, conflictDraft.action({ ...req,
+    const opened: ActionConfirmReq = { ...req,
       blockedReason: req.blockedReason ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
       run: async (reason, value, businessValue) => {
@@ -242,18 +251,19 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           finally { if (!pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) ctx.openActionConfirm(null); await reloadH4Approvals(); await reload(); }
           return;
         }
-        assertH4Fresh("overview", version);
+        if (!req.edit?.review) assertH4Fresh("overview", version);
         const before = new Set(pendingH4Commands().map(r => r.commandKey));
         setStale(null);
         try { await req.run(reason, value, businessValue); }
         catch (cause) {
-          if (cause instanceof HApprovalRequired) { ctx.openActionConfirm(null); ctx.openConfirm(approvalReconfirm(cause, req, reason, value, businessValue)); return; }
-          if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.openActionConfirm(null); await reload(); }
+          if (cause instanceof HApprovalRequired) { ctx.openActionConfirm(null); ctx.openConfirm(approvalReconfirm(cause, req, reason, value, businessValue, getComparison?.())); return; }
+          if (!req.edit?.review && isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.openActionConfirm(null); await reload(); }
           throw cause;
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
       },
-    })));
+    };
+    ctx.openActionConfirm(req.edit?.review ? opened : withStaleNote(req, conflictDraft.action(opened)));
   };
   const openConfirm = (req: ConfirmReq) => {
     const version = h4ReadVersion("overview");
@@ -339,8 +349,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       const owner = useAdminAuth.getState().session?.adminId;
       const [result, required] = await Promise.all([fetchH3QuestEvents("events"), getRequiredContentLanguages()]);
       if (owner !== useAdminAuth.getState().session?.adminId) return false;
-      setRequiredLanguages(required); setModel(result as Model); setError(null);
-      return true;
+      const next = result as Model;
+      setRequiredLanguages(required); setModel(next); setError(null);
+      return next;
     } catch (err) {
       setError(displayAdminReadError(err));
       return false;
@@ -385,55 +396,78 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       : rules === null ? null : H4_EVENT_RULE_CODES.has(event.id) && !!ruleOf(event.id);
     if (ruleBased === null) { toast("活动规则读取失败，请刷新后重试。", "warn"); return; }
     type RewardPreview = Awaited<ReturnType<typeof previewH4EventReward>>;
-    let reviewed: ({ value: string } & ({ preview: RewardPreview } | { conflict: unknown })) | undefined;
     const incompletePreview = "活动奖励预览不完整，本次未提交；请重新读取活动后核对。";
-    const readComparison = async (value: string, signal: AbortSignal) => {
-      let preview: RewardPreview;
-      try { preview = await previewH4EventReward(event.id, value, current, "", signal); }
-      catch (error) {
-        if (signal.aborted || !isHGrowthReadConflict(error)) throw error;
-        // Let the existing submit handler reopen the draft with the entered value and reason.
-        reviewed = { value, conflict: error };
-        return;
-      }
-      if (preview.currentReward === undefined || !preview.proposedReward) throw new Error(incompletePreview);
-      if (!signal.aborted) reviewed = { value, preview };
-      return {
-        before: actualRewardText(preview.currentReward?.amount, preview.currentReward?.asset),
-        after: actualRewardText(preview.proposedReward.amount, preview.proposedReward.asset),
-      };
-    };
+    let baseline = event;
+    let reviewVersion = h4ReadVersion("overview");
+    let reviewed: { value: string; expectedValue: string; preview: RewardPreview; comparison: EditComparison } | undefined;
+    const subject = <Fact k="活动">{eventName(event.id)}</Fact>;
+    const appReward = event.appRewardNames && <Fact k="App 现在显示">{event.appRewardNames.zh || "—"}</Fact>;
     openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,
       title: "修改活动奖励",
-      effect: ruleBased ? effectDirect : effectByDirection(),
+      effect: ruleBased ? effectDirect : undefined,
       detail: ruleBased ? "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。" : "填写新奖励后确认。",
-      facts: (_, comparison) => <>
-        <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{ruleBased ? <>{legacyRewardText(current)}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</> : comparison?.before ?? "—"}</Fact>{ruleBased
-          ? <><Fact k="改的是">这页登记的奖励文字</Fact><Fact k="App 上">{event.appRewardNames ? <>显示「{event.appRewardNames.zh || "—"}」，按玩法规则写，不随这里改</> : "每种语言显示填的奖项名，没填的显示玩法规则摘要"}</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
-          : <>{event.appRewardNames && <Fact k="App 现在显示">{event.appRewardNames.zh || "—"}</Fact>}<ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" /></>}</Facts>
-      </>,
-      amplifies: !ruleBased,
+      facts: <Facts>{subject}{ruleBased
+        ? <><Fact k="现在的奖励">{legacyRewardText(current)}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</Fact><Fact k="改的是">这页登记的奖励文字</Fact><Fact k="App 上">{event.appRewardNames ? <>显示「{event.appRewardNames.zh || "—"}」，按玩法规则写，不随这里改</> : "每种语言显示填的奖项名，没填的显示玩法规则摘要"}</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
+        : appReward}</Facts>,
       confirmLabel: "提交修改",
       reasonPlaceholder: "例如：按运营排期调整奖励，工单号",
       getPendingReason: () => pendingHIRewardCommand(hiEventScope(event.id))?.payload.input.reason,
-      edit: { kind: "text", current, displayCurrent: ruleBased ? undefined : "—", readComparison: ruleBased ? undefined : readComparison,
-        initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue, hint: ruleBased ? undefined : "只认正数的 UVT 或 USDT，如 100 UVT" },
+      edit: { kind: "text", current,
+        displayCurrent: ruleBased ? undefined : actualRewardText(event.rewardAmount, event.rewardType),
+        initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue, hint: ruleBased ? undefined : "只认正数的 UVT 或 USDT，如 100 UVT",
+        review: ruleBased ? undefined : {
+          isConflict: error => isHGrowthReadConflict(error) || error instanceof Error && error.message === "H4_REFRESH_REQUIRED",
+          conflictNote: readLatest => <StaleNote readLatest={readLatest} clearReason />,
+          read: async (value, signal, refresh) => {
+            reviewed = undefined;
+            if (refresh) {
+              const latest = await reload();
+              signal.throwIfAborted();
+              if (!latest) throw new Error("既有活动与转盘没有读到");
+              const refreshed = latest.events?.find(row => row.id === event.id);
+              if (!refreshed) throw new Error("最新读取里没有这项活动");
+              if (lifecycleOf(refreshed, requiredLanguages).key === "ended") throw new Error("已结束的活动不能改奖励");
+              baseline = refreshed;
+              reviewVersion = h4ReadVersion("overview");
+            }
+            assertH4Fresh("overview", reviewVersion);
+            const expectedValue = text(baseline.reward);
+            const preview = await previewH4EventReward(event.id, value, expectedValue, "", signal);
+            signal.throwIfAborted();
+            if (preview.currentReward === undefined || !preview.proposedReward) throw new Error(incompletePreview);
+            const comparison = {
+              before: actualRewardText(preview.currentReward?.amount, preview.currentReward?.asset),
+              after: actualRewardText(preview.proposedReward.amount, preview.proposedReward.asset),
+            };
+            reviewed = { value, expectedValue, preview, comparison };
+            return {
+              comparison,
+              amplifies: preview.approvalRequired,
+              effect: preview.approvalRequired ? effectApproval("奖励") : effectDirect,
+              confirmLabel: preview.approvalRequired ? "提交审批" : "确认修改",
+              coverageCheck: preview.approvalRequired ? "批准执行时检查兑付覆盖率。" : undefined,
+              facts: <Facts>{subject}{baseline.appRewardNames && <Fact k="App 现在显示">{baseline.appRewardNames.zh || "—"}</Fact>}
+                {preview.approvalRequired && <ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" />}</Facts>,
+            };
+          },
+        },
+      },
       run: async (reason, value) => {
-        const scope = hiEventScope(event.id);
         if (!value) return;
-        const comparison = reviewed?.value === value ? reviewed : undefined;
-        if (comparison && "conflict" in comparison) throw comparison.conflict;
-        const preview = ruleBased ? await previewH4EventReward(event.id, value, current, reason) : comparison?.preview;
+        const saved = reviewed?.value === value ? reviewed : undefined;
+        if (!ruleBased) assertH4Fresh("overview", reviewVersion);
+        const preview = ruleBased ? await previewH4EventReward(event.id, value, current, reason) : saved?.preview;
         if (!preview) throw new Error(incompletePreview);
+        const expectedValue = saved?.expectedValue ?? current;
         if (preview.approvalRequired) {
-          await proposeH4(scope, "h4_legacy_event_reward_update", { eventCode: event.id, value, expectedValue: current },
+          await proposeH4(hiEventScope(event.id), "h4_legacy_event_reward_update", { eventCode: event.id, value, expectedValue },
             preview.current, preview.proposed, reason, undefined, value);
           return;
         }
-        if (await apply(await updateH4EventReward(event.id, value, current, reason))) toast(`${event.name} 奖励已更新`);
+        if (await apply(await updateH4EventReward(event.id, value, expectedValue, reason))) toast(`${event.name} 奖励已更新`);
       },
-    });
+    }, () => reviewed?.comparison);
   };
 
   const eventContent = model?.contentLocales?.event ?? {};
