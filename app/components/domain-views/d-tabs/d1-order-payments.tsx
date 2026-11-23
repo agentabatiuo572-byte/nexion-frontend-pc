@@ -14,14 +14,14 @@ import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { purchasePaymentMethods, purchaseWasDelivered, validPurchaseChannel, type PurchasePaymentChannel, type PurchasePaymentMethod, type PurchasePaymentPolicy, type PurchasePaymentPage, type PurchasePaymentRecord, type PurchasePaymentState } from "@/lib/admin/purchase-payment-contract";
 import { fetchPurchasePaymentPolicy, fetchPurchasePaymentRecords, fetchPurchasePaymentRecord, updatePurchasePaymentPolicy, revalidatePurchasePayment, pendingPurchasePayments, retryPurchasePayment, releasePurchasePayment, canRetryPurchasePayment, type PendingPurchasePayment } from "@/lib/admin/purchase-payment-client";
-import { TRC20_CLOSED } from "@/lib/admin/trc20-closed";
+import { purchasePaymentChangesTrc20, TRC20_CLOSED, TRC20_PAYMENT_METHOD } from "@/lib/admin/trc20-closed";
 import { LongValue, PendingNotices, readPage, readParam, usdt, vnd, writeParams, zoneLabel, type D1Activity, type D1Count, type D1PendingItem } from "./d1-shared";
 import type { DCtx } from "./types";
 
 const methodText: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "银行卡支付", CREGIS_USDT_BSC: "USDT（BEP20）", CREGIS_USDT_ERC20: "USDT（ERC20）", CREGIS_USDT_TRC20: "USDT（TRC20）" };
 const methodNote: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "按手续费收取，不收网络费，不需要支付密码。", CREGIS_USDT_BSC: "按手续费和网络费收取，不需要支付密码。", CREGIS_USDT_ERC20: "以太坊网络费较高，单独设置，不需要支付密码。", CREGIS_USDT_TRC20: "TRON 网络，按手续费和网络费收取，不需要支付密码。" };
 /** TRC20 外部付款通道暂未开放：手续费不能改、不提交，没配置也不算要处理的事。 */
-const CLOSED_METHOD: PurchasePaymentMethod = "CREGIS_USDT_TRC20";
+const CLOSED_METHOD: PurchasePaymentMethod = TRC20_PAYMENT_METHOD;
 const closedTag = <StatusTag tone="neutral" icon={CircleMinus}>{TRC20_CLOSED}</StatusTag>;
 const stateText: Record<PurchasePaymentState, string> = { CREATING: "正在创建", SUBMIT_UNKNOWN: "创建结果未知", AWAITING_PAYMENT: "等待付款", FUNDS_CONFIRMED: "已收款，待完成", DELIVERED: "已完成", MANUAL_REVIEW: "需人工处理", EXPIRED: "已过期" };
 const stateTone = (state: PurchasePaymentState): StateTone => state === "MANUAL_REVIEW" ? "warn" : state === "DELIVERED" ? "ok" : state === "EXPIRED" ? "done" : "progress";
@@ -131,7 +131,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
   const valid = !!policy?.constraints && changedChannels.length > 0 && changedChannels.every(row => validPurchaseChannel(row, policy.constraints));
   const changed = changedChannels.length > 0;
   const canEdit = allowed("finance_d1_fx_manage");
-  // 旧响应可能少返回 TRC20 渠道：少了的也算未配置，用户付款时同样看不到（test 5e5a5168）。
+  // TRC20 的占位行不计入待配置数，兼容旧响应缺少该行。
   const missingMethods = policy ? purchasePaymentMethods.filter(method => !policy.channels.some(row => row.paymentMethod === method)) : [];
   const unconfigured = (policy?.channels.filter(row => !row.configured && row.paymentMethod !== CLOSED_METHOD).length ?? 0) + missingMethods.filter(method => method !== CLOSED_METHOD).length;
   useEffect(() => { onUnconfigured(unconfigured); }, [onUnconfigured, unconfigured]);
@@ -146,13 +146,14 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
   const afterPaymentRecovery = () => { syncPending(); void loadRecords(); void loadCount(); };
   const pendingItems: D1PendingItem[] = pending.map((row) => {
     const isPolicy = row.scope === "policy";
+    const restricted = isPolicy && purchasePaymentChangesTrc20(row.body);
     const permitted = allowed(isPolicy ? "finance_d1_fx_manage" : "finance_d1_bank_reconcile");
     return {
       key: row.commandKey,
       record: row.commandOrigin ? row : undefined,
       label: isPolicy ? "修改付款手续费" : `重新核对到账 · ${row.scope}`,
       createdAt: row.createdAt,
-      hint: row.commandOrigin ? "结论以查询原结果为准，现在的值只能参考。按原请求重试不会重复执行。" : "升级前留下的记录，查不了原结果。现在的值只能参考；按原请求重试不会重复执行。",
+      hint: restricted ? TRC20_CLOSED : row.commandOrigin ? "结论以查询原结果为准，现在的值只能参考。按原请求重试不会重复执行。" : "升级前留下的记录，查不了原结果。现在的值只能参考；按原请求重试不会重复执行。",
       blocked: !canRetryPurchasePayment(row) ? row.commandOrigin ? "已超过 10 分钟，不能再重试，先查询原结果" : RETRY_WINDOW_TEXT : permitted ? undefined : "这个账号没有这项权限",
       auditHref: isPolicy ? "/platform/audit?domain=D" : `/platform/audit?domain=D&object=${encodeURIComponent(row.scope)}`,
       verify: async () => {
@@ -165,7 +166,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
         if (owns()) setSelected(current.intentNo);
         return `读到：这笔付款现在是「${stateText[current.status]}」。状态可能是别人改的，记录继续保留。`;
       },
-      retry: async () => {
+      retry: restricted ? undefined : async () => {
         if (mutation.current || !owns()) throw new Error("上一项操作还在处理，请稍后再试");
         mutation.current = true; setBusy(true);
         try {

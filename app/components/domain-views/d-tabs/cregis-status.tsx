@@ -7,7 +7,7 @@ import {
   PageTabs, Panel, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds, FilterField, Change,
 } from "@/app/components/rd";
 import type { StateTone } from "@/app/components/rd";
-import { D1_COMMAND_EXPIRED_TEXT, d1CommandReplayable, d1PendingObjectReason, financeAdminRequest, listD1PendingCommands, listD1PendingCregisSwitchCommands, releaseD1PendingCommand, retryD1PendingCommand, retryD1PendingCregisSwitchCommand, type D1PendingCommand, type D1PendingTopupCommand } from "@/lib/admin/d-client";
+import { D1_COMMAND_EXPIRED_TEXT, d1CommandReplayable, d1PendingObjectReason, financeAdminRequest, listD1PendingCommands, listD1PendingCregisSwitchCommands, releaseD1PendingCommand, retryD1PendingCommand, retryD1PendingCregisSwitchCommand, type D1PendingCommand } from "@/lib/admin/d-client";
 import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
 import { useReach } from "@/lib/nav/use-reach";
 import Link from "next/link";
@@ -16,7 +16,7 @@ import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { exceptionObject } from "@/lib/admin/cregis-exceptions";
 import { PREPARATION_STATE } from "@/lib/admin/cregis-funds-preparation";
-import { TRC20_CLOSED } from "@/lib/admin/trc20-closed";
+import { cregisTrc20ReplayBlock, needsCregisReplayTarget, TRC20_CLOSED } from "@/lib/admin/trc20-closed";
 import type { OperatorBriefKind } from "../design-kit";
 import type { DCtx } from "./types";
 import { CregisExceptionOperations, type ClaimSource, type RecoveredChallenge } from "./cregis-exceptions";
@@ -387,7 +387,9 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const [manualCid, setManualCid] = useState("");
   const [childKey, setChildKey] = useState(0);
   const sequence = useRef(0);
-  const [switchPending, setSwitchPending] = useState<D1PendingTopupCommand[]>([]);
+  const [switchPending, setSwitchPending] = useState<D1PendingCommand[]>([]);
+  const [autoReplayPolicy, setAutoReplayPolicy] = useState<Record<string, unknown> | null>(null);
+  const needsAutoReplayPolicy = pending.some(record => needsCregisReplayTarget(record).autoForward);
   const syncPending = useCallback(() => {
     setPending(listD1PendingCommands().filter(command => command.path.startsWith("/cregis/")));
     setSwitchPending(listD1PendingCregisSwitchCommands());
@@ -411,6 +413,18 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     }
   }, [syncPending]);
   useEffect(() => { if (canRead) void refresh(); }, [refresh, canRead]);
+  useEffect(() => {
+    if (!canRead || !needsAutoReplayPolicy) return;
+    let current = true;
+    const authEpoch = adminAuthLifecycleEpoch();
+    setAutoReplayPolicy(null);
+    void financeAdminRequest<Record<string, unknown>>("/cregis/auto-forward/status?network=TRC20", { bankManualAuthEpoch: authEpoch })
+      .then(policy => {
+        if (current && authEpoch === adminAuthLifecycleEpoch()) setAutoReplayPolicy(policy);
+      })
+      .catch(() => { /* Without the target, recovery remains read-only. */ });
+    return () => { current = false; };
+  }, [canRead, needsAutoReplayPolicy, childKey, reloadTick]);
   const firstTick = useRef(reloadTick);
   useEffect(() => { if (reloadTick !== firstTick.current) { void refresh(); setChildKey(value => value + 1); } }, [reloadTick, refresh]);
   useEffect(() => { writeParams({ sub: sub === "records" ? null : sub }); }, [sub]);
@@ -560,13 +574,14 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     const refund = refundChallenge || record.path.startsWith("/cregis/refunds") || record.path.startsWith("/cregis/auto-forward");
     const canRetry = preparation ? canRefund && authorities.includes("finance_d1_channel_manage")
       && authorities.includes("finance_d1_read") : refund ? canRefund : canManage;
-    const replayable = d1CommandReplayable(record.path);
+    const restriction = cregisTrc20ReplayBlock(record, data?.switchCases, autoReplayPolicy);
+    const replayable = d1CommandReplayable(record.path) && !restriction;
     return {
       key: record.commandKey,
       label: preparation ? `${record.path.endsWith("/decision") ? exceptionObject(JSON.parse(record.body)).decision === "CANCEL" ? "取消" : "复核" : "新建"} ${record.preparationNetwork ?? "BEP20"} 资金准备单` : cregisCommandLabel(record.path),
       createdAt: record.createdAt,
-      hint: replayable ? "现在的值只能参考；按原请求重试不会重复执行。"
-        : "这项操作不能按原请求重试。重新读取只显示现在的状态，记录保留到关掉标签页。",
+      hint: restriction ?? (replayable ? "现在的值只能参考；按原请求重试不会重复执行。"
+        : "这项操作不能按原请求重试。重新读取只显示现在的状态，记录保留到关掉标签页。"),
       blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : canRetry ? undefined : "这个账号没有这项权限",
       auditHref: "/platform/audit?domain=D",
       verify: () => verifyCregisCommand(record),
@@ -585,11 +600,13 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       release: () => releaseD1PendingCommand(record.commandKey),
       after: () => { syncPending(); void refresh(); setChildKey(value => value + 1); },
     };
-  }).concat(switchPending.map((record): D1PendingItem => ({
+  }).concat(switchPending.map((record): D1PendingItem => {
+    const restriction = cregisTrc20ReplayBlock(record, data?.switchCases);
+    return {
     key: record.commandKey,
     label: record.path === "/cregis/switch-cases" ? "开关提案" : record.path === "/cregis/switches/emergency-off" ? "紧急停用三网" : "开关提案复核",
     createdAt: record.createdAt,
-    hint: "请按原请求恢复，不要另建提案或重新填写理由。",
+    hint: restriction ?? "请按原请求恢复，不要另建提案或重新填写理由。",
     blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : canManage ? undefined : "这个账号没有这项权限",
     verify: async () => {
       const next = parseExceptions(await financeAdminRequest<unknown>("/cregis/exceptions"));
@@ -599,10 +616,11 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       return `读取结果：${nets || "各网充值开关读不到"}，链上出款${gateNow?.payoutEnabled ? "开" : "关"}，待复核提案 ${next.switchCases?.filter(row => row.status === "MAKER_DONE").length ?? 0} 个。状态可能是别人改的，记录继续保留。`;
     },
     auditHref: "/platform/audit?domain=D",
-    retry: async () => { setBusy(true); try { await retryD1PendingCregisSwitchCommand(record.commandKey); } finally { setBusy(false); } },
+    retry: restriction ? undefined : async () => { setBusy(true); try { await retryD1PendingCregisSwitchCommand(record.commandKey); } finally { setBusy(false); } },
     release: () => releaseD1PendingCommand(record.commandKey),
     after: () => { syncPending(); void refresh(); },
-  })));
+    };
+  }));
   const entry = entries.find(item => item.key === entryKey) ?? null;
   const entryIndex = entry ? entries.indexOf(entry) : -1;
   const claimSource = (item: ExceptionEntry): ClaimSource | null => {

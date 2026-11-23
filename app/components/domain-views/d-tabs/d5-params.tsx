@@ -271,9 +271,8 @@ const NET_LAST_OPEN = "这是最后一条开着的网络，关掉后用户不能
 const NET_ALL_CLOSED = "提交后 BEP20、ERC20 都关着，用户不能发起 USDT 提现。";
 const NET_PAUSE = "接打款服务时，关掉的网络上还没交给打款服务的提现也会暂停打款。";
 const NET_CLOSE_EFFECT = "关掉后用户不能再用这个网络发起提现。接打款服务时，这个网络上已提交、还没交给打款服务的提现也会暂停打款；已交给打款服务的继续查询核对。";
-/** 直接使用后端同一次读取的三态，已包含提现总闸；未知不等于关闭。 */
+/** 顶部结论用可选通道的三态，行内保留各条通道的后端状态。 */
 function networkView(p: D5ParamData) {
-  const known = p.networkStatusReliable === true && p.effectiveNetworks != null;
   const states = NETWORKS.map((net) => {
     const row = p.networkStatus?.find((item) => item.network === `USDT-${NET_LABEL[net]}`);
     const configured = row?.configured ?? p.networkEnabled[net];
@@ -283,12 +282,13 @@ function networkView(p: D5ParamData) {
   const open = states.filter((item) => item.configured && item.net !== CLOSED_NET);
   const blocked = open.filter((item) => item.usable === false);
   const unknown = open.filter((item) => item.usable === undefined);
+  const known = unknown.length === 0;
   const reasonOf = (code: string | null) => (code && D5_NETWORK_BLOCK_REASON[code]?.text) || D5_NETWORK_BLOCK_UNKNOWN;
   const shared = blocked.length > 0 && blocked.length === open.length && blocked.every((item) => item.code === blocked[0].code) ? blocked[0].code : undefined;
   const names = (list: typeof states) => list.map((item) => NET_LABEL[item.net]).join("、");
   const byConfig = open.length === 0;
   const outage = byConfig ? `BEP20、ERC20 都在这页关着，TRC20 ${TRC20_CLOSED}`
-    : known && p.effectiveNetworks!.filter((network) => network !== `USDT-${NET_LABEL[CLOSED_NET]}`).length === 0
+    : blocked.length === open.length
       ? shared ? `开着的 ${names(open)} ${open.length > 1 ? "都" : ""}用不了：${reasonOf(shared)}` : `开着的 ${names(open)} ${open.length > 1 ? "都" : ""}用不了，原因写在各网络那一行`
       : undefined;
   return { known, states, blocked, unknown, shared, outage, byConfig, reasonOf };
@@ -639,7 +639,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   /** 这一组已经收到最紧：放宽被挡时打开也改不了，入口直接禁用（OP-126）。 */
   const atTightest = (group: Group, p: D5ParamData) => {
     if (group === "network") return NETWORKS.every((net) => !p.networkEnabled[net]);
-    return GROUP_FIELDS[group].filter((key) => can(SPECS[key].authority)).every((key) => clean(SPECS[key].current(p)) === clean(SPECS[key].tightest));
+    return GROUP_FIELDS[group].filter((key) => key !== `fee.${CLOSED_NET}` && can(SPECS[key].authority)).every((key) => clean(SPECS[key].current(p)) === clean(SPECS[key].tightest));
   };
   const entryBlock = (group: Group, p: D5ParamData) => tightenPending.length ? TIGHTEN_LOCK
     : loosenBlock && atTightest(group, p) ? `${loosenBlock}。这一组已经是最紧的值，现在没有能改的` : undefined;

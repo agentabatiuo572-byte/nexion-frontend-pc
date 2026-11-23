@@ -83,6 +83,7 @@ import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact, 
 import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
+import { D5_APPROVAL_OP, d5Trc20ApprovalBlock, TRC20_REPLAY_UNVERIFIED } from "@/lib/admin/trc20-closed";
 import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, UNMAPPED_ADMIN_ERROR_TEXT } from "@/lib/admin/error-messages";
@@ -1877,6 +1878,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const retryBlock = (record: A2PendingCommand) => {
     if (isRetryExpired(record)) return RETRY_EXPIRED;
     if (!canRetry(record)) return RETRY_NO_PERMISSION;
+    const ticket = recordTicket(record);
+    if (record.kind === "approve" && (record.operationCode ?? ticket?.operationCode) === D5_APPROVAL_OP) {
+      const block = ticket ? d5Trc20ApprovalBlock(ticket.before, ticket.after) : TRC20_REPLAY_UNVERIFIED;
+      if (block) return block;
+    }
     const amount = retryAmount(record);
     if (amount?.state === "loading") return "正在读取退款金额，读完再重试";
     if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
@@ -2007,6 +2013,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (kind === "approve" && w.retiredOperation) return RETIRED_OPERATION_COPY;
     if (kind === "approve" && (w.phoneCalibrationError || w.ambassadorMaterialError)) return w.phoneCalibrationError ?? w.ambassadorMaterialError;
     if (!canDecide(w, kind)) return (kind === "approve" ? w.approveDeniedMessage : w.rejectDeniedMessage) ?? NO_DECIDE;
+    if (kind === "approve" && w.operationCode === D5_APPROVAL_OP) {
+      const block = d5Trc20ApprovalBlock(w.before, w.after);
+      if (block) return block;
+    }
     // 读不到退款金额时不能批准（协调人定，同 C3 读不到详情）；驳回不受影响。
     const amount = kind === "approve" ? refundAmount(w) : undefined;
     if (amount?.state === "loading") return "正在读取退款金额，读完再批准";
@@ -2326,6 +2336,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       // 直接动钱的确认用红（决定 50）。
       confirmTone: w.amplifies || isRefund ? "danger" : "primary",
       run: async (reason) => {
+        const block = w.operationCode === D5_APPROVAL_OP ? d5Trc20ApprovalBlock(w.before, w.after) : undefined;
+        if (block) throw new Error(block);
         try {
           const outcome = await runDecision("approve", w, reason);
           if (outcome === "ok") { decisionToast("approve", w.id); setTicketId(null); }

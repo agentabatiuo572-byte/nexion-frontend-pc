@@ -7,6 +7,7 @@ import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { parsePurchasePaymentPolicy, parsePurchasePaymentPage, parsePurchasePaymentRecord, type PurchasePaymentChannelInput } from "@/lib/admin/purchase-payment-contract";
 import { fundCommandOrigin, type FundCommandRecord } from "@/lib/admin/fund-command-investigation";
+import { purchasePaymentChangesTrc20, TRC20_CLOSED } from "./trc20-closed";
 
 const base = "/api/admin/finance";
 /** reasonCode 是后端给的拒绝原因码；只有带原因码的 4xx 才算后端明确拒绝（OP-153）。 */
@@ -42,6 +43,7 @@ async function execute(row: PendingPurchasePayment, retry: boolean) {
   const authority = row.scope === "policy" ? "finance_d1_fx_manage" : "finance_d1_bank_reconcile";
   if (session?.adminId !== row.owner || !session.authorities.includes(authority) && !["superadmin", "super"].includes(session.role)) throw new Error("登录身份或权限已变化，请重新打开页面。");
   if (retry && !canRetryPurchasePayment(row)) throw new Error("已超过可重试时间，请到「操作记录」核对，不能再次提交。");
+  if (retry && row.scope === "policy" && purchasePaymentChangesTrc20(row.body)) throw new Error(TRC20_CLOSED);
   try {
     const raw = await request(row.path, row.method, row.body, row.commandKey);
     let result;
