@@ -20,7 +20,7 @@ import { F4Pool } from "./f4-pool";
 import { F4Quota } from "./f4-quota";
 import { F4Leaderboard, leaderboardState } from "./f4-leaderboard";
 import { FReleaseButton } from "./f-release";
-import { F4RecoveryNotice, count, decimalText, settleCadenceNote, unknownTag, usdt, stamp, type F4RecoveryRow } from "./f4-shared";
+import { F4RecoveryNotice, count, decimalText, settleCadenceNote, unknownTag, usdt, stamp, type F4RecoveryRow, moneyText } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 
@@ -30,7 +30,7 @@ const SECTIONS: readonly Section[] = ["pool", "quota", "board"];
 /** 改动列的值补上单位（比例 %、金额 USDT），只给纯数字补，读到的已带单位或「未配置」原样写。 */
 function withUnit(key: string | undefined, value: string) {
   const unit = key === "F.pool.ratio" ? "%" : key === "F.pool.monthlyCap" || key === "F.leaderboard.poolUsd" ? " USDT" : "";
-  return unit && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? `${unit === "%" ? value.trim() : decimalText(value)}${unit}` : value;
+  return unit && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? `${unit === "%" ? value.trim() : moneyText(value)}${unit}` : value;
 }
 
 /**
@@ -78,7 +78,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
     const legacy = spec && legacyF4(spec, legacyName);
     const snapshot = original.f4Snapshot;
     const form = confirm?.businessForm;
-    const amount = (key: string, value: string) => snapshot?.action === "F.pool.periodPrize" || key === "defaultBudgetUsdt" || /\.(min|max)$/.test(key) ? `${decimalText(value)} USDT` : value;
+    const amount = (key: string, value: string) => snapshot?.action === "F.pool.periodPrize" || key === "defaultBudgetUsdt" || /\.(min|max)$/.test(key) ? `${moneyText(value)} USDT` : value;
     const change = form?.kind === "multi-field" && snapshot?.businessValue
       ? form.fields.filter(field => snapshot.businessValue![field.key] !== field.current).map(field => `${field.label} ${amount(field.key, field.current ?? "")} → ${amount(field.key, snapshot.businessValue![field.key])}`).join("；")
       : confirm?.edit ? `${withUnit(confirm.paramKey, confirm.edit.current ?? "—")} → ${withUnit(confirm.paramKey, snapshot?.value ?? spec?.after ?? "—")}`

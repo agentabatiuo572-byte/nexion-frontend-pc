@@ -10,7 +10,7 @@ import { BlockState, Button, Cell, Explain, Fold, InlineRetry, KeyValues, Panel,
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel, formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
 import type { F4AmbassadorApplication, F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
-import { count, decimalText, stamp, zoneNote } from "./f4-shared";
+import { count, decimalText, stamp, zoneNote, moneyText } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import { f4Confirmation } from "./f4-confirmations";
 import { F4QuotaCreate } from "./f4-quota-create";
@@ -223,7 +223,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
         actions={policy && ctx.canSubmitTeamApproval("F4") ? <Button onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, { action: "policy", overview: data, policy }))}>调整申请规则</Button> : undefined}>
         {!policy ? <BlockState state="error" title="申请规则读取失败" detail="这不是没有规则：规则暂时读不到，调整入口也先收起。" onRetry={() => void ctx.refreshF4()} retryLabel="重新读取" />
           : <>
-            <KeyValues rows={[{ key: "default", label: "默认申请预算", value: `${decimalText(policy.defaultBudgetUsdt)} USDT`, explain: "申请人没改金额时用的预算，要落在某一类的范围里。" }]} />
+            <KeyValues rows={[{ key: "default", label: "默认申请预算", value: `${moneyText(policy.defaultBudgetUsdt)} USDT`, explain: "申请人没改金额时用的预算，要落在某一类的范围里。" }]} />
             <ul className="f4-buckets" aria-label="四类申请">
               {policy.buckets.map((bucket) => <li key={bucket.id}>
                 <span className="f4-bucket-head">{formatF4AmbassadorBucketTitle(bucket.id, bucket.title)}<span data-mono>{bucket.id}</span></span>

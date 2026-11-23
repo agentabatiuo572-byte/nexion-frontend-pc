@@ -9,7 +9,7 @@ import { Cell, Explain, Fact, Facts, Fold, Notice, StatusTag, Table, Td, Th, Tr 
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { fetchF4LeaderboardDisqualificationReadiness, fetchF4LeaderboardPayoutPreview, fetchF4LeadershipPoolOverview, type F4LeaderboardDisqualificationReadiness, type F4LeaderboardPayoutPreview } from "@/lib/admin/f1-client";
 import { f4Decimal } from "@/lib/admin/f4-money";
-import { count, decimalText, usdt } from "./f4-shared";
+import { count, decimalText, usdt, moneyText } from "./f4-shared";
 
 type Read<T> = { state: "loading" } | { state: "failed" } | { state: "ok"; data: T; at: number };
 
@@ -28,14 +28,9 @@ function useRead<T>(read: () => Promise<T | null>): Read<T> {
   return result;
 }
 
-/** 同一处并排比较的几个金额，按最多的小数位对齐（不舍入）。 */
+/** 同一处并排比较的几个金额：按全站金额写法各写各的位数，不为对齐补零（PRD §5A）。 */
 function alignedAmounts(values: readonly string[]): string[] {
-  const shown = values.map((value) => decimalText(value));
-  const places = Math.max(2, ...shown.map((value) => value.split(".")[1]?.length ?? 0));
-  return shown.map((value) => {
-    const [whole, fraction = ""] = value.split(".");
-    return /^-?[\d,]+$/.test(whole) ? `${whole}.${fraction.padEnd(places, "0")}` : value;
-  });
+  return values.map((value) => moneyText(value));
 }
 
 const CAP_LABEL = { top1MaxPct: "第 1 名上限", top5MaxPct: "前 5 名上限" } as const;
@@ -60,7 +55,7 @@ const isZero = (value: string) => /^-?0*(\.0*)?$/.test(f4Decimal(value) ?? "x");
 export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }: { pool?: string; approving?: boolean; rules?: boolean }) {
   const read = useRead<F4LeaderboardPayoutPreview>(() => fetchF4LeaderboardPayoutPreview("allTime"));
   const preview = read.state === "ok" ? read.data : undefined;
-  const poolShown = pool ?? (preview ? decimalText(preview.prizePoolUsdt) : read.state === "loading" ? "正在加载…" : "读不到");
+  const poolShown = pool ?? (preview ? moneyText(preview.prizePoolUsdt) : read.state === "loading" ? "正在加载…" : "读不到");
   const totals = preview?.payableAmount !== undefined && preview.amountBeforeCaps !== undefined && preview.reducedByCaps !== undefined
     ? alignedAmounts([preview.payableAmount, preview.amountBeforeCaps, preview.reducedByCaps]) : undefined;
   const pending = read.state === "loading" ? "正在加载…" : read.state === "failed" ? "读不到" : undefined;
@@ -88,8 +83,8 @@ export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }:
                   <Td><Cell main={`第 ${row.rank} 名`} /></Td>
                   <Td><Cell mono main={row.userNo} /></Td>
                   <Td align="right"><Cell num main={decimalText(row.computePoints).replace(/\.00$/, "")} /></Td>
-                  <Td align="right"><Cell num main={decimalText(row.amount)}
-                    sub={row.limitedBy.length ? <span className="f4-payout-cap"><span>算出 {decimalText(row.amountBeforeCaps)}</span><span>{row.limitedBy.map((cap) => CAP_LABEL[cap]).join("、")}</span></span> : undefined} /></Td>
+                  <Td align="right"><Cell num main={moneyText(row.amount)}
+                    sub={row.limitedBy.length ? <span className="f4-payout-cap"><span>算出 {moneyText(row.amountBeforeCaps)}</span><span>{row.limitedBy.map((cap) => CAP_LABEL[cap]).join("、")}</span></span> : undefined} /></Td>
                 </Tr>
               ))}
             </tbody>

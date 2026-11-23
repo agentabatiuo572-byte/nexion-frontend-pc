@@ -6,7 +6,7 @@ import type { F4AmbassadorPolicy, F4AmbassadorPolicyUpdate } from "@/lib/admin/f
 import { isF1OutcomeUncertainError } from "@/lib/admin/f1-stable-write";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
-import { decimalText } from "./f4-shared";
+import { decimalText, moneyText } from "./f4-shared";
 import type { FViewCtx, McSpec } from "./types";
 
 export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy): McSpec {
@@ -107,7 +107,7 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
             <Field id={`f4-policy-${mainFields[0].key}`} label="规则版本" explain="3–64 位，可用字母、数字、点、横线和下划线。">{input(mainFields[0])}</Field>
             <Field id={`f4-policy-${mainFields[1].key}`} label="默认预算（USDT）" explain="100–10,000 USDT，要落在某一类的预算范围里。">{input(mainFields[1])}</Field>
           </div>
-          {bucketRows.map(({ bucket, name, fields }) => <Fold key={bucket.id} inset title={name} summary={`${decimalText(values[`${bucket.id}.min`] ?? "")}–${decimalText(values[`${bucket.id}.max`] ?? "")} USDT`}>
+          {bucketRows.map(({ bucket, name, fields }) => <Fold key={bucket.id} inset title={name} summary={`${moneyText(values[`${bucket.id}.min`] ?? "")}–${moneyText(values[`${bucket.id}.max`] ?? "")} USDT`}>
             <fieldset className="f4-policy-bucket" aria-label={`${name}（${bucket.id}）`}>
             <Field id={`f4-policy-${fields[0].key}`} label="名称" hint="≤ 80 字">{input(fields[0])}</Field>
             <Field id={`f4-policy-${fields[2].key}`} label="显示范围" hint="≤ 80 字">{input(fields[2])}</Field>

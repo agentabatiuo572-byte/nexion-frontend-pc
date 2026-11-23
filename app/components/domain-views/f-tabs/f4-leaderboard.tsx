@@ -9,7 +9,7 @@ import { Pause, Play, ShieldAlert, SlidersHorizontal, Trophy } from "lucide-reac
 import { BlockState, Button, ConfigList, ConfigRow, Explain, Notice, Panel, Segments, StatusTag } from "@/app/components/rd";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
-import { count, decimalText, minPointsText, periodRange, stamp, usdt, zoneNote } from "./f4-shared";
+import { count, decimalText, minPointsText, periodRange, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import { f4PeriodPrizes } from "@/lib/admin/f4-money";
 import { f4Confirmation } from "./f4-confirmations";
@@ -32,7 +32,7 @@ export function leaderboardState(data: F4LeadershipPoolOverview) {
 /** 后端榜单金额写成「$123.45」，这里去掉 $ 写成 USDT。 */
 function prizeText(label: string) {
   const amount = /^\$?(-?\d+(?:\.\d+)?)$/.exec(label.trim().replace(/,/g, ""));
-  return amount ? decimalText(amount[1]) : label;
+  return amount ? moneyText(amount[1]) : label;
 }
 
 /** 榜读不出来的原因。和「这一期没有人上榜」分开写。 */
@@ -65,7 +65,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
   const ppWeek = currentPeriodPrize("week");
   const ppMonth = currentPeriodPrize("month");
   const ppAllTime = currentPeriodPrize("all");
-  const prizeShown = (value: string) => value === "" ? "—" : decimalText(value);
+  const prizeShown = (value: string) => value === "" ? "—" : moneyText(value);
   const limit = PERIODS.find((item) => item.value === period)!.limit;
 
   const openPause = () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.leaderboard.paused", overview: data, policy: ctx.f4AmbassadorPolicy, period }));

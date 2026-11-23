@@ -9,7 +9,7 @@ import { Button, Cell, Fold, Panel, StatusTag, Table, TableMessage, Td, Th, Tr }
 import type { F5Anomaly, F5CommissionAuditOverview, F5LayerRatioComparison, F5OperationHistory, F5PendingCalculation } from "@/lib/admin/f1-client";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
-import { KIND_LABELS, Money, amountText, isFriend, kindNames, operationLabel, timeText, userCode, zoneNote } from "./f5-shared";
+import { KIND_LABELS, Money, percentText, isFriend, kindNames, operationLabel, timeText, userCode, zoneNote } from "./f5-shared";
 
 /** 后端异常类型是机器码，页面写中文；不认识的原样写。证据里的奖励类型键换成中文名。 */
 const ANOMALY_TYPES: Record<string, string> = { amount: "金额偏离", frequency: "出现太频繁", "layer-ratio": "层比例偏离" };
@@ -81,9 +81,9 @@ function F5LayerCheck({ comparisons, ratio }: { comparisons: readonly F5LayerRat
                   {item.layers.map((layer) => (
                     <Tr key={layer.layer}>
                       <Td><Cell main={`L${layer.layer}`} /></Td>
-                      <Td align="right"><Cell num main={`${amountText(layer.actualPct)}%`} /></Td>
-                      <Td align="right"><Cell num main={`${amountText(layer.theoreticalPct)}%`} /></Td>
-                      <Td align="right"><Cell num main={`${amountText(layer.deviation)}%`} /></Td>
+                      <Td align="right"><Cell num main={`${percentText(layer.actualPct)}%`} /></Td>
+                      <Td align="right"><Cell num main={`${percentText(layer.theoreticalPct)}%`} /></Td>
+                      <Td align="right"><Cell num main={`${percentText(layer.deviation)}%`} /></Td>
                       <Td>{over(layer.deviation, ratio) ? <StatusTag tone="warn">超过 {ratio}%</StatusTag> : <StatusTag tone="ok">在 {ratio}% 以内</StatusTag>}</Td>
                     </Tr>
                   ))}

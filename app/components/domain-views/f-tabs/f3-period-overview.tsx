@@ -12,6 +12,7 @@ import { BlockState, Cell, Explain, InlineRetry, Panel, StatusTag, Table, Td, Th
 import { useF3CurrentPeriod, type F3CurrentPeriodView, type F3LatestFrozenPeriodView } from "@/lib/admin/f3-current-period";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { FViewCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 /** 原因码到运营文字。没列出的原因码统一写「读不到」，不把原因码给运营看。 */
 const REASON_TEXT: Record<string, string> = {
@@ -31,11 +32,8 @@ const COLUMNS = 6;
 const CAP_FINAL = "结算时按本期全部付款额和当时的比例定稿，期间有退款会变小";
 const LATEST_EXPLAIN = "这一期第一笔结算时，付款额、全平台封顶比例和全平台封顶就定下了；已发是截至现在已记账的，还有人没结算时会变，剩余跟着已发变。";
 
-/** 和本页其它逐笔金额同一写法：千分位，去掉末尾 0，至少两位小数，不舍入。 */
-const money = (raw: string) => {
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw);
-  return match ? `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(match[3] ?? "").replace(/0+$/, "").padEnd(2, "0")}` : raw;
-};
+/** 和本页其它逐笔金额同一写法（amountDisplay）：千分位，去掉末尾 0，整数不写小数点，不舍入。 */
+const money = (raw: string) => amountDisplay(raw);
 /** 百分数去掉末尾 0：5.0000 写 5%。 */
 const percent = (raw: string) => `${raw.includes(".") ? raw.replace(/0+$/, "").replace(/\.$/, "") : raw}%`;
 const range = (start: string | null, end: string | null) => start && end ? `${start} 至 ${end}` : null;

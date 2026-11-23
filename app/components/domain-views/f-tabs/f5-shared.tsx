@@ -18,6 +18,7 @@ import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { F5CommissionEvent } from "@/lib/admin/f1-client";
 import type { F5Recovery, FViewCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 export const KIND_LABELS = F5_KIND_LABELS;
 
@@ -71,8 +72,11 @@ const plain = (value: number | string) => f4Decimal(value)!.replace(/(\.\d*?)0+$
 
 export const decimals = (value: number | string) => (plain(value).split(".")[1] ?? "").length;
 
-/** 金额不舍入：原值有几位小数就写几位，不够 digits 位的补零对齐（同一列取这一列最多的位数，最少 2 位）。 */
-export const amountText = (value: number | string, digits = 2) => {
+/** 金额按全站写法（amountDisplay）：原值有几位小数就写几位，去掉末尾 0、整数不写小数点，不舍入、不补零；digits 是旧的对齐位数，不再使用。 */
+export const amountText = (value: number | string, _digits?: number) => amountDisplay(plain(value));
+
+/** 百分比不是金额，写法不变：不舍入，不够 digits 位的补零（最少 2 位）。 */
+export const percentText = (value: number | string, digits = 2) => {
   const [int, frac = ""] = plain(value).split(".");
   const width = Math.max(digits, frac.length);
   return groupDigits(width ? `${int}.${frac.padEnd(width, "0")}` : int);
@@ -88,10 +92,10 @@ export function Money({ value, currency }: { value: number | string; currency: s
   );
 }
 
-/** 后端汇总标签拆成两种币；保留其金额文本与原精度，只加千分位。 */
+/** 后端汇总标签拆成两种币；标签原文不动（合同逐字核对），拆出的金额按全站写法显示，不舍入。 */
 export function splitMoneyLabel(label: string | undefined): { usdt: string; uvt: string } | null {
   const match = /^USDT (\d+(?:\.\d+)?) · UVT (\d+(?:\.\d+)?)$/.exec((label ?? "").trim());
-  return match ? { usdt: groupDigits(match[1]), uvt: groupDigits(match[2]) } : null;
+  return match ? { usdt: amountDisplay(match[1]), uvt: amountDisplay(match[2]) } : null;
 }
 
 /** 时间写到分钟，按业务时区；后端给毫秒数或本地时间字符串都认，0 和空写「—」，不写成 1970 年。时区由区块标一次。 */

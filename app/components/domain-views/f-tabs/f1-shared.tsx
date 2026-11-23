@@ -10,11 +10,11 @@ import type { LucideIcon } from "lucide-react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
 import { listF1Proposals, f1ProposalAuthority } from "@/lib/admin/f1-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { formatF1ExactAmount } from "@/lib/admin/f1-policy-change";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { F1RewardPayout } from "@/lib/admin/f1-client";
 import type { StateTone } from "@/app/components/rd";
 import type { FViewCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 /**
  * 自定义奖励是运营手填的文字，可能存着测试工具名（f1engine、reverify）。它们是内部标识，不上屏，
@@ -45,7 +45,7 @@ export const FUND_ICON = Coins;
 /** 模板里的一项奖励写成一句：资金写金额和币种（后端给的精确文本，不用 $、不舍入），券和商品写名字，自定义写奖品名。 */
 export function rewardText(item: OpsVRankRewardItem, ctx: Pick<FViewCtx, "voucherLabels" | "skuLabels">): { main: string; unit?: string; missing?: boolean } {
   if (item.type === "usdt" || item.type === "uvt") {
-    return item.amountText ? { main: formatF1ExactAmount(item.amountText), unit: item.type.toUpperCase() } : { main: "金额暂不可用", missing: true };
+    return item.amountText ? { main: amountDisplay(item.amountText), unit: item.type.toUpperCase() } : { main: "金额暂不可用", missing: true };
   }
   if (item.type === "voucher") {
     const label = ctx.voucherLabels[item.voucherId ?? ""];
@@ -63,15 +63,12 @@ export function rewardLine(item: OpsVRankRewardItem, ctx: Pick<FViewCtx, "vouche
 }
 
 /**
- * 发放记录的金额：后端原文去掉多补的末尾 0，最少两位小数；有真实小数位的一位不丢、不舍入（F1-B04）。
+ * 发放记录的金额按全站写法（amountDisplay）：后端原文去掉末尾 0、整数不写小数点；有真实小数位的一位不丢、不舍入（F1-B04）。
  * 原文在 title 里看得到。
  */
 export function payoutAmount(raw: string) {
   const text = raw.trim();
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
-  if (!match) return text || "—";
-  const fraction = (match[3] ?? "").replace(/0+$/, "").padEnd(2, "0");
-  return `${match[1]}${formatF1ExactAmount(match[2])}.${fraction}`;
+  return text ? amountDisplay(text) : "—";
 }
 
 /** 发放记录这一笔是什么奖励：资金写金额和币种，券、商品写编号（发放记录只给编号），自定义写奖品名。 */
