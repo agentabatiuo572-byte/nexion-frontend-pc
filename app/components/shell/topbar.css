@@ -74,8 +74,9 @@
   min-height: 44px;
 }
 
+/* 账号名放得下就完整显示（rubric 31），窄顶栏的上限在下面的容器规则里。 */
 .admin-topbar-operator {
-  max-width: 140px;
+  max-width: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
