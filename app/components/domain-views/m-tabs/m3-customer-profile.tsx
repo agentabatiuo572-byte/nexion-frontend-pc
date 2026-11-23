@@ -158,7 +158,17 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     if (revokedScope.current === scopeKey || stamp.current !== requestStamp) return;
     const saved = stamp.current;
     setError(""); setProfile(old => old ? { ...old, [key]: { ...old[key], status: "UNKNOWN", data: null } } : old);
-    try { const next = await supportEnhancements.profile(customerId); if (mounted.current && saved === stamp.current) setProfile(old => old ? { ...old, [key]: next[key] } : next); } catch(e) { if (mounted.current && saved === stamp.current && !denied(e)) { setProfile(old => old ? { ...old, [key]: { ...old[key], status: "ERROR", data: null } } : old); setError(displayAdminError(e)); } }
+    try {
+      const next = await supportEnhancements.profile(customerId);
+      if (!mounted.current || saved !== stamp.current) return;
+      if (key === "identity") applyProfile(next);
+      else setProfile(old => old ? { ...old, [key]: next[key] } : next);
+    } catch (e) {
+      if (mounted.current && saved === stamp.current && !denied(e)) {
+        setProfile(old => old ? { ...old, [key]: { ...old[key], status: "ERROR", data: null } } : old);
+        setError(displayAdminError(e));
+      }
+    }
   }
   const conversationId = conversation?.id;
   const writable = Boolean(!scopeDenied && conversationId && conversation?.ownerAdminId === session?.adminId && (session?.role === "super" || session?.role === "superadmin" || session?.authorities.includes("service_m3_write")));
