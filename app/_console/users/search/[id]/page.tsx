@@ -802,8 +802,12 @@ export default function UserDetailPage() {
         ...current,
       }));
       setOpenRecordList(current => current === undefined ? visibleRecordList : current);
+      setActionConfirm(null);
+      setNotificationEvidence(null);
+      setRecord(null);
       setDetail(next);
       setReadAt(businessClock(Date.now()));
+      setReloadTick(tick => tick + 1);
       setReferralError(null);
     } catch (error) {
       if (!active()) return;
