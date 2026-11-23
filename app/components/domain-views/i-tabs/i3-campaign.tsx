@@ -103,6 +103,24 @@ function splitNotificationBody(value: string): { title: string; body: string } {
   return { title, body: body.join("\n") };
 }
 
+function formFromCampaign(campaign: NotificationCampaignRow, required: readonly OperatingLanguageCode[]): NewForm {
+  const zh = splitNotificationBody(campaign.bodyZh);
+  const vi = splitNotificationBody(campaign.bodyVi);
+  const en = splitNotificationBody(campaign.bodyEn);
+  return {
+    name: campaign.name,
+    ...mapContentTitleBody({ titleZh: zh.title, bodyZh: zh.body, titleVi: vi.title, bodyVi: vi.body, titleEn: en.title, bodyEn: en.body }, required, "edit"),
+    kind: campaign.kind || "system",
+    ctaHref: campaign.ctaHref || "",
+    tier: campaign.tier,
+    phaseMin: campaign.audienceTarget?.phaseMin ?? "P1",
+    phaseMax: campaign.audienceTarget?.phaseMax ?? "P6",
+    language: campaign.audienceTarget?.language ?? "all",
+    registrationDaysMin: String(campaign.audienceTarget?.registrationDaysMin ?? 0),
+    budget: campaign.budget == null ? "" : String(campaign.budget),
+  };
+}
+
 function targetFromForm(form: NewForm): NotificationAudienceTarget {
   return {
     phaseMin: form.phaseMin,
@@ -205,7 +223,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const [readAt, setReadAt] = useState<number | null>(null);
   const data = content.campaigns;
   const conflictReview = useIConflictReview<NotificationCampaignOverview, {
-    reason: string; value?: string; business?: Record<string, string>; form?: NewForm;
+    reason: string; value?: string; business?: Record<string, string>; form?: NewForm; formBase?: NewForm;
     editing?: CampaignRow | null; scheduleRow?: CampaignRow | null; scheduledAt?: string;
   }, I3Command | I3CapCommand>();
   const conflictView = useIConflictView(conflictReview.review);
@@ -415,21 +433,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     const required = await getRequiredContentLanguages();
     setRequiredLanguages(required);
     setDrawerPendingKey(null);
-    const zh = splitNotificationBody(c.bodyZh);
-    const vi = splitNotificationBody(c.bodyVi);
-    const en = splitNotificationBody(c.bodyEn);
-    const next: NewForm = {
-      name: c.name,
-      ...mapContentTitleBody({ titleZh: zh.title, bodyZh: zh.body, titleVi: vi.title, bodyVi: vi.body, titleEn: en.title, bodyEn: en.body }, required, "edit"),
-      kind: c.kind || "system",
-      ctaHref: c.ctaHref || "",
-      tier: c.tier,
-      phaseMin: c.audienceTarget?.phaseMin ?? "P1",
-      phaseMax: c.audienceTarget?.phaseMax ?? "P6",
-      language: c.audienceTarget?.language ?? "all",
-      registrationDaysMin: String(c.audienceTarget?.registrationDaysMin ?? 0),
-      budget: c.budget == null ? "" : String(c.budget),
-    };
+    const next = formFromCampaign(c, required);
     setEditing(c);
     setForm(next);
     setFormBase(next);
@@ -595,8 +599,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     } else {
       subject = <>通知「{now?.name ?? live?.name ?? (campaignId || "—")}」</>;
       if (ready && campaignId && !now) gone = "这条通知在最新读取里没有了，不能按最新的重做。";
-      if (requested.editing && requested.form) {
-        const form = requested.form;
+      if (requested.editing && requested.form && requested.formBase) {
+        const { form, formBase } = requested;
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
         const part = (value?: string) => value === undefined ? { title: undefined, body: undefined } : splitNotificationBody(value);
@@ -618,7 +622,15 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         rows[0].changed = !!now && now.status !== "draft";
         if (!gone && now && now.status !== "draft") gone = `这条通知现在是${stateText(now)}，不能再改草稿。`;
         note = "保存会用你填的整份内容替换现在的草稿；别人改的要留，先在表单里补上。";
-        rebuild = live ? () => setEditing(live) : undefined;
+        rebuild = now?.status === "draft" ? () => {
+          const latest = formFromCampaign(now, requiredLanguages);
+          const merged = Object.fromEntries((Object.keys(latest) as (keyof NewForm)[]).map(key =>
+            [key, form[key] === formBase[key] ? latest[key] : form[key]],
+          )) as NewForm;
+          setEditing({ ...now, st: now.status });
+          setFormBase(latest);
+          setForm(merged);
+        } : undefined;
       } else if (requested.scheduleRow) {
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
@@ -731,7 +743,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       }
     } catch (error) {
       if (isOutcomeUnknownError(error)) setDrawerPendingKey((error as { commandKey?: string }).commandKey ?? null);
-      await reviewConflict(error, { reason: editing ? `编辑通知草稿 ${editing.id}` : `新建通知草稿 ${id}`, form, editing });
+      await reviewConflict(error, { reason: editing ? `编辑通知草稿 ${editing.id}` : `新建通知草稿 ${id}`, form, formBase, editing });
       syncPending();
       toast(displayAdminError(error));
     } finally {
