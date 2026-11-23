@@ -369,10 +369,18 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const ruleBased = event.rewardCopyOnly !== undefined ? event.rewardCopyOnly
       : rules === null ? null : H4_EVENT_RULE_CODES.has(event.id) && !!ruleOf(event.id);
     if (ruleBased === null) { toast("活动规则读取失败，请刷新后重试。", "warn"); return; }
-    let reviewed: { value: string; preview: Awaited<ReturnType<typeof previewH4EventReward>> } | undefined;
+    type RewardPreview = Awaited<ReturnType<typeof previewH4EventReward>>;
+    let reviewed: ({ value: string } & ({ preview: RewardPreview } | { conflict: unknown })) | undefined;
     const incompletePreview = "活动奖励预览不完整，本次未提交；请重新读取活动后核对。";
     const readComparison = async (value: string, signal: AbortSignal) => {
-      const preview = await previewH4EventReward(event.id, value, current, "", signal);
+      let preview: RewardPreview;
+      try { preview = await previewH4EventReward(event.id, value, current, "", signal); }
+      catch (error) {
+        if (signal.aborted || !isHGrowthReadConflict(error)) throw error;
+        // Let the existing submit handler reopen the draft with the entered value and reason.
+        reviewed = { value, conflict: error };
+        return;
+      }
       if (preview.currentReward === undefined || !preview.proposedReward) throw new Error(incompletePreview);
       if (!signal.aborted) reviewed = { value, preview };
       return {
@@ -399,8 +407,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       run: async (reason, value) => {
         const scope = hiEventScope(event.id);
         if (!value) return;
-        const preview = ruleBased ? await previewH4EventReward(event.id, value, current, reason)
-          : reviewed?.value === value ? reviewed.preview : undefined;
+        const comparison = reviewed?.value === value ? reviewed : undefined;
+        if (comparison && "conflict" in comparison) throw comparison.conflict;
+        const preview = ruleBased ? await previewH4EventReward(event.id, value, current, reason) : comparison?.preview;
         if (!preview) throw new Error(incompletePreview);
         if (preview.approvalRequired) {
           await proposeH4(scope, "h4_legacy_event_reward_update", { eventCode: event.id, value, expectedValue: current },
