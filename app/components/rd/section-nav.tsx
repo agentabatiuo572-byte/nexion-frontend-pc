@@ -27,6 +27,9 @@ export interface SectionNavItem {
 const PARAM = "section";
 /** 用户最后一次滚动输入之后这么久之内的滚动和交叉变化，才算用户在滚（键盘平滑滚动约半秒）。 */
 const USER_SCROLL_MS = 1000;
+/** 点导航后的平滑滚动最长按这么久算（Chrome 一屏多约 1 秒）；停下 150ms 算到了。 */
+const JUMP_MS = 1500;
+const SETTLE_MS = 150;
 const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " ", "Tab"]);
 
 export function useSectionNav(items: readonly SectionNavItem[], { onReveal, ready = true, restoreKey }: {
@@ -39,6 +42,8 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
   /** 点导航或 mark 选中后为 true，用户再滚才放开；放在观察器外面，分区变了、观察器重建也留着。 */
   const held = useRef(false);
   const userAt = useRef(0);
+  /** 点导航开始的平滑滚动：滚动中的输入不放开保持（复审 V27）。 */
+  const jumping = useRef<{ id: string; at: number } | null>(null);
   const restoredKey = useRef<string | undefined>(undefined);
   const reveal = useRef(onReveal);
   reveal.current = onReveal;
@@ -49,6 +54,7 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     setActive(id);
     held.current = true;
     userAt.current = 0;
+    jumping.current = smooth ? { id, at: Date.now() } : null;
     window.requestAnimationFrame(() => {
       const target = document.getElementById(`section-${id}`);
       target?.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
@@ -67,7 +73,10 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     if (!ready) return;
     const list = ids.split("|");
     const seen = new Set<string>();
-    const scroller = document.getElementById(`section-${list[0]}`)?.closest("main");
+    const first = document.getElementById(`section-${list[0]}`);
+    const scroller = first?.closest("main");
+    // 判定带上沿放在跳转停下的位置（滚动区顶边 + scroll-padding + 分区的 scroll-margin）：跳过去之后，上一组露在这条线上面的一截不算当前组（复审 V27）。
+    const landing = scroller && first ? scroller.getBoundingClientRect().top + (parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0) + (parseFloat(getComputedStyle(first).scrollMarginTop) || 0) : 81;
     let dragging = false;
     /** 用户造成的最近一次位置变化；交叉变化只在这之后的一小段时间里重判。 */
     let movedAt = 0;
@@ -91,11 +100,30 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     // 拖滚动条：按在滚动区自己身上（不是里面的内容）。
     const onDown = (event: PointerEvent) => { if (event.target === scroller) { dragging = true; input(); } };
     const onUp = () => { dragging = false; };
+    let settle = 0;
     const onScroll = () => {
       if (!scroller) return;
       const now = { top: scroller.scrollTop, height: scroller.clientHeight, full: scroller.scrollHeight };
       const resized = now.height !== last.height || now.full !== last.full, moved = now.top !== last.top;
       last = now;
+      // 点导航的平滑滚动还在走：途中拨滚轮不放开保持（Chrome 照样滚到目标）。停下后到了目标或到底，点的那组照旧亮；
+      // 输入把页面带到别处才按停下的位置判一次（复审 V27）。
+      const jump = jumping.current;
+      if (jump && Date.now() - jump.at < JUMP_MS) {
+        window.clearTimeout(settle);
+        settle = window.setTimeout(() => {
+          if (jumping.current !== jump) return;
+          jumping.current = null;
+          const target = document.getElementById(`section-${jump.id}`);
+          const arrived = !target || Math.abs(target.getBoundingClientRect().top - landing) <= 2 || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
+          if (arrived || !userAt.current) return;
+          held.current = false;
+          userAt.current = movedAt = Date.now();
+          pick();
+        }, SETTLE_MS);
+        return;
+      }
+      jumping.current = null;
       // 视口或内容高度变了，浏览器修正位置：只更新记下的尺寸，不放开保持、不判到底。
       if (resized || !moved || !userInput()) return;
       held.current = false;
@@ -112,7 +140,7 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
         else seen.delete(id);
       }
       if (Date.now() - movedAt < USER_SCROLL_MS) pick();
-    }, { rootMargin: "-80px 0px -60% 0px" });
+    }, { rootMargin: `-${Math.max(0, Math.round(landing) - 1)}px 0px -60% 0px` });
     for (const id of list) {
       const target = document.getElementById(`section-${id}`);
       if (target) observer.observe(target);
@@ -124,6 +152,7 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     window.addEventListener("touchmove", input, { passive: true, capture: true });
     window.addEventListener("keydown", onKey, { capture: true });
     return () => {
+      window.clearTimeout(settle);
       sizes.disconnect();
       observer.disconnect();
       scroller?.removeEventListener("scroll", onScroll);
