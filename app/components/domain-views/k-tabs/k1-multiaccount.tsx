@@ -172,7 +172,7 @@ type NoteDraft = { cluster: K1Cluster; reason: string; changed?: string };
 type WhitelistDraft = { cidr: string; note: string; expireText: string; reason: string };
 type ReasonPolicy = { min: number; max: number } | null;
 const PARAM_LIMITS: Record<string, { min: number; max: number; step: number; integer: boolean }> = {
-  maxSignupPerIp24h: { min: 1, max: 10, step: 1, integer: true },
+  maxSignupPerIp24h: { min: 1, max: 50, step: 1, integer: true },
   maxAccountsPerDevice: { min: 1, max: 5, step: 1, integer: true },
   maxAccountsPerPaymentInstrument: { min: 1, max: 5, step: 1, integer: true },
   clusterFreezeSuggestThreshold: { min: 0, max: 1, step: 0.05, integer: false },

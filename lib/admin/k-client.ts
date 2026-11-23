@@ -678,7 +678,7 @@ export function validateK1ReleaseParamValue(key: string, value: string): boolean
 }
 
 function validateK1ParamValue(key: string, value: string): boolean {
-  if (key === "maxSignupPerIp24h") return Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 10;
+  if (key === "maxSignupPerIp24h") return Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 50;
   if (key === "maxAccountsPerDevice" || key === "maxAccountsPerPaymentInstrument") {
     return Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 5;
   }

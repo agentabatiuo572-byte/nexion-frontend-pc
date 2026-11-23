@@ -847,7 +847,7 @@ App 不展示试用邀请弹窗，也没有申请或接受延长的入口。PC �
 
 | 参数(key) | 默认值 | 范围 | 权威源 | 模块 |
 |---|---|---|---|---|
-| `maxSignupPerIp24h` | ≤ 3 | 1–10 | **K1**(C6 不重设) | K1 |
+| `maxSignupPerIp24h` | ≤ 3 | 1–50 | **K1**(C6 不重设) | K1 |
 | `maxAccountsPerDevice` / `maxAccountsPerPaymentInstrument` | ≤ 2 / ≤ 2 | 1–5 | K1 | K1 |
 | `linkWeight.{ip,device,payment}` | device 0.5 / payment 0.4 / ip 0.1 | 各 0–1 | K1 | K1 |
 | `clusterFreezeSuggestThreshold` | 0.7 | 0–1 | K1 | K1 |

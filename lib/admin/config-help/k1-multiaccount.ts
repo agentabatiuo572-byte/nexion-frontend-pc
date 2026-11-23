@@ -29,7 +29,7 @@ export const K1_PARAM_HELP: Record<string, K1ParamHelp> = {
   maxSignupPerIp24h: {
     what: "同一 IP 24 小时内最多注册几个账号",
     when: "保存后立即生效，下一次用户注册就按新值算",
-    how: "1–10 的整数。",
+    how: "1–50 的整数。",
     direction: "改大算放宽，保存时检查覆盖率，低于红线或读不到时不能保存；改小是收紧，不查覆盖率",
     whatIf: (value) => `改成 ${value}：同一 IP 24 小时内注册到 ${value} 个后，新用户注册被拒绝；超过 ${value} 个的账户归成一组。${GROUP_EFFECT}`,
   },
