@@ -701,7 +701,9 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
           <Table label="专属收款地址池">
             <thead><tr><Th>网络</Th><Th align="right">可分配</Th><Th align="right">已分配</Th><Th align="right">核对中</Th><Th>最近完整对账（{zone}）</Th>{canManage && <Th sticky="end" align="right">操作</Th>}</tr></thead>
             <tbody>{pools.map(({ network, pool }) => <tr key={network}>
-              <Td><Cell main={network} sub={[!pool ? undefined : pool.automatic ? `自动补充至 ${pool.reserveTarget ?? 5} 个` : "不自动补充", network === "TRC20" ? `${TRC20_CLOSED}，不能手动补充` : undefined].filter(Boolean).join(" · ") || undefined} /></Td>
+              {/* TRC20 这一格窄：不写目标数，留出位置常显不能手动补充的原因（OP-126），不被省略号截掉。 */}
+              <Td><Cell main={network} sub={network === "TRC20" ? [!pool ? undefined : pool.automatic ? "自动补充" : "不自动补充", `${TRC20_CLOSED}，不能手动补充`].filter(Boolean).join(" · ")
+                : !pool ? undefined : pool.automatic ? `自动补充至 ${pool.reserveTarget ?? 5} 个` : "不自动补充"} /></Td>
               {pool?.available ? <>
                 <Td align="right"><Cell num main={pool.unassigned} sub={`待创建 ${pool.queued ?? 0}`} /></Td>
                 <Td align="right"><Cell num main={pool.assigned} sub={`总计 ${pool.total}${pool.limit > 0 ? ` / ${pool.limit}` : " · 无上限"}`} /></Td>
