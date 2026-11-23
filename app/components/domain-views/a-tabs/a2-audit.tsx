@@ -2885,8 +2885,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <Th sticky="start">审批单 · 提交时间（{zone}）</Th>
               <Th>变更</Th>
               <Th icon={Users} tone="users">发起人</Th>
-              <Th>标记</Th>
-              {showActions && <Th sticky="end">操作</Th>}
+              <Th fit={!showActions}>标记</Th>
+              {showActions && <Th sticky="end" fit>操作</Th>}
             </tr></thead>
             <tbody>
               {!main && mainLoading ? <TableLoading columns={queueColumns} rows={5} />
@@ -2904,12 +2904,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{shortCodes(name)} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : shortCodes(name)} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`}
+                      <Td sticky="start"><Cell full main={w.objDisplayName && !isGParamTicket(w) ? <>{shortCodes(name)} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : shortCodes(name)} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`}
                         sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
-                      <Td grow><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
+                      <Td><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
-                      <Td><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
-                      {showActions && <Td sticky="end"><span className="rd-row-actions">{rowActions(w)}</span></Td>}
+                      <Td fit={!showActions}><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
+                      {showActions && <Td sticky="end" fit><span className="rd-row-actions">{rowActions(w)}</span></Td>}
                     </Tr>
                   );
                 })}
