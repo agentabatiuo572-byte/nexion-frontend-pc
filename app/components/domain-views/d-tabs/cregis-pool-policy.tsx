@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapPin, RefreshCw } from "lucide-react";
-import { BlockState, Button, ConfigList, ConfigRow, Panel, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, ConfigList, ConfigRow, Notice, Panel, StatusTag } from "@/app/components/rd";
 import { d1PendingObjectReason, financeAdminRequest } from "@/lib/admin/d-client";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -23,7 +23,7 @@ const NUMBERS = [
   ["concurrency", "建址并发上限", "同时创建多少地址", "1–10 的整数，不超过每批数量", 1, 10],
 ] as const;
 
-export function CregisPoolPolicy({canManage,openActionConfirm,onChanged}:{canManage:boolean;openActionConfirm:DCtx["openActionConfirm"];onChanged?:()=>void}) {
+export function CregisPoolPolicy({canManage,openActionConfirm,onChanged,trc20DepositOn}:{canManage:boolean;openActionConfirm:DCtx["openActionConfirm"];onChanged?:()=>void;trc20DepositOn?:boolean}) {
   const [saved,setSaved]=useState<Policy|null>(null);
   const [error,setError]=useState(""),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
   const sequence=useRef(0),live=useRef(true),owner=useAdminAuth(s=>s.session?.adminId),epoch=useAdminAuth(s=>s.authEpoch);
@@ -44,6 +44,8 @@ export function CregisPoolPolicy({canManage,openActionConfirm,onChanged}:{canMan
       effect:<StatusTag tone="progress" filled>立即生效</StatusTag>,
       detail:`现在：备用目标 ${current.target}，低于 ${current.lowWatermark} 触发补充，每批 ${current.batchSize}，建址并发 ${current.concurrency}；自动补充${current.enabled?"开启":"关闭"}。`,
       reasonMin:10,reasonMax:255,completionCopy:"保存后按新配置补充地址，已有用户地址保持绑定",
+      // 自动补充只给充值开关开着的网络补地址：TRC20 开着就会补，只提醒，不拦提交（F09）。
+      content:trc20DepositOn?<Notice tone="warn">TRC20 充值开关还开着，自动补充开着时也会给 TRC20 补地址。TRC20 通道暂未开放，请先在下方「收款与出款开关」关掉 TRC20 充值。</Notice>:undefined,
       businessForm:{kind:"multi-field",requireAnyChange:true,
         feedback:(form)=>{
           const target=Number(form.target),low=Number(form.lowWatermark),batch=Number(form.batchSize),concurrency=Number(form.concurrency);
@@ -70,7 +72,7 @@ export function CregisPoolPolicy({canManage,openActionConfirm,onChanged}:{canMan
   };
   const block=loading?"正在读取最新数据":busy?"正在提交":!saved?"地址池配置没读到，刷新后再试":d1PendingObjectReason("/cregis/addresses/policy");
   return <Panel icon={MapPin} tone="role-4" title="专属充值地址 · 库存与自动补充"
-    explain={`首次进入充值页时分配专属地址，后续重复使用。BEP20、ERC20 与 TRC20 分别计算库存，共用以下补充目标。低于补充阈值后，分批补至目标库存；已分配地址不计入备用库存。保存后直接生效；收款服务限流或额度不足时延后补充。${saved?` 现在是第 ${saved.version} 版。`:""}`}
+    explain={`首次进入充值页时分配专属地址，后续重复使用。BEP20、ERC20 与 TRC20 分别计算库存，共用以下补充目标；TRC20 通道暂未开放，不能手动补充。低于补充阈值后，分批补至目标库存；已分配地址不计入备用库存。保存后直接生效；收款服务限流或额度不足时延后补充。${saved?` 现在是第 ${saved.version} 版。`:""}`}
     actions={<>
       <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden/>} loading={loading} disabled={busy} onClick={()=>void refresh()}>刷新</Button>
       {canManage && <Button size="sm" disabledReason={block} onClick={save}>调整</Button>}

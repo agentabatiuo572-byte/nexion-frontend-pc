@@ -56,9 +56,10 @@ import {
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
+import { d5Trc20ReplayBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL } from "@/lib/admin/trc20-closed";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundReadBlock, fundRecoveryStatus, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
@@ -93,6 +94,9 @@ function rejectionCode(err: unknown) {
 const NETWORKS = ["trc20", "bep20", "erc20"] as const;
 type Net = (typeof NETWORKS)[number];
 const NET_LABEL: Record<Net, string> = { trc20: "TRC20", bep20: "BEP20", erc20: "ERC20" };
+/** TRC20 通道暂未开放（产品 2026-11-23）：这页不能改它，三网一起提交时带现在的值；算用户还能不能提现时不算它。 */
+const CLOSED_NET: Net = "trc20";
+const OPEN_NETS = NETWORKS.filter((net) => net !== CLOSED_NET);
 
 /** 不舍入，只去掉浮点尾巴：0.57 写 57%，不写 56.99999999999999%。 */
 const clean = (value: number) => Number(value.toPrecision(12));
@@ -262,32 +266,38 @@ const GROUP_IMPACT: Record<Group, string> = {
 };
 
 const netKey = (net: Net) => `net.${net}`;
-/** 关完之后一个网络都不开：抽屉和最终确认说同一句（DP-03）。 */
-const NET_LAST_OPEN = "这是最后一条开着的网络，关掉后用户不能发起 USDT 提现。";
-const NET_ALL_CLOSED = "提交后三个网络都关着，用户不能发起 USDT 提现。";
+/** 关完之后 App、H5 能选的网络一个不剩：抽屉和最终确认说同一句（DP-03）。TRC20 不在 App、H5 的选择里，配置还开着时另说一句。 */
+const NET_LAST_OPEN = "这是 App、H5 能选的最后一条网络，关掉后 App、H5 用户不能发起 USDT 提现。";
+const NET_ALL_CLOSED = "提交后 App、H5 能选的 BEP20、ERC20 都关着，App、H5 用户不能发起 USDT 提现。";
+const NET_TRC20_STAYS = "TRC20 配置还开着，旧版本 App 可能仍会用它提现。";
+const TRC20_ROW_NOTE = `TRC20 ${TRC20_CLOSED}，这里不能开启。配置开着、实际可用时，旧版本 App 仍可能用它发起提现，已提交的 TRC20 提现照常走审核和打款；关掉后按「改了会怎样」处理`;
 const NET_PAUSE = "接打款服务时，关掉的网络上还没交给打款服务的提现也会暂停打款。";
 const NET_CLOSE_EFFECT = "关掉后用户不能再用这个网络发起提现。接打款服务时，这个网络上已提交、还没交给打款服务的提现也会暂停打款；已交给打款服务的继续查询核对。";
-/** 直接使用后端同一次读取的三态，已包含提现总闸；未知不等于关闭。 */
+/** 顶部结论用可选通道的三态，行内保留各条通道的后端状态。 */
 function networkView(p: D5ParamData) {
-  const known = p.networkStatusReliable === true && p.effectiveNetworks != null;
   const states = NETWORKS.map((net) => {
     const row = p.networkStatus?.find((item) => item.network === `USDT-${NET_LABEL[net]}`);
     const configured = row?.configured ?? p.networkEnabled[net];
     const usable = row?.state === "AVAILABLE" ? true : row?.state === "UNAVAILABLE" ? false : undefined;
     return { net, configured, usable, code: row?.disabledReason ?? null };
   });
-  const open = states.filter((item) => item.configured);
+  const open = states.filter((item) => item.configured && item.net !== CLOSED_NET);
   const blocked = open.filter((item) => item.usable === false);
   const unknown = open.filter((item) => item.usable === undefined);
+  const known = unknown.length === 0;
   const reasonOf = (code: string | null) => (code && D5_NETWORK_BLOCK_REASON[code]?.text) || D5_NETWORK_BLOCK_UNKNOWN;
   const shared = blocked.length > 0 && blocked.length === open.length && blocked.every((item) => item.code === blocked[0].code) ? blocked[0].code : undefined;
   const names = (list: typeof states) => list.map((item) => NET_LABEL[item.net]).join("、");
   const byConfig = open.length === 0;
-  const outage = byConfig ? "三个网络都在这页关着"
-    : known && p.effectiveNetworks!.length === 0
-      ? shared ? `开着的 ${names(open)} 都用不了：${reasonOf(shared)}` : `开着的 ${names(open)} 都用不了，原因写在各网络那一行`
+  // TRC20 配置开着、后端没说用不了：App、H5 当前版本不给选，旧版本 App 还可能用它发起提现。
+  const trc20 = states.find((item) => item.net === CLOSED_NET)!;
+  const trc20Live = trc20.configured && trc20.usable !== false;
+  const trc20Tail = trc20Live ? "；TRC20 配置还开着，旧版本 App 可能仍在用它提现" : "";
+  const outage = byConfig ? `App、H5 能选的 BEP20、ERC20 都在这页关着${trc20Tail}`
+    : blocked.length === open.length
+      ? `App、H5 能选的 ${names(open)} ${open.length > 1 ? "都" : ""}用不了${shared ? `：${reasonOf(shared)}` : "，原因写在各网络那一行"}${trc20Tail}`
       : undefined;
-  return { known, states, blocked, unknown, shared, outage, byConfig, reasonOf };
+  return { known, states, blocked, unknown, shared, outage, byConfig, reasonOf, trc20Live };
 }
 
 /** 「调整」和组名之间，组名是英文开头时空一格（TX：中英文之间加空格）。和样板页 H2 一样叫「调整」。 */
@@ -312,7 +322,7 @@ function draftOf(group: Group, p: D5ParamData): Draft {
   return Object.fromEntries(GROUP_FIELDS[group].map((key) => [key, String(SPECS[key].current(p))]));
 }
 
-type NumEval = { spec: NumSpec; text: string; now: number; value?: number; error?: string; changed: boolean; loosens: boolean; writable: boolean };
+type NumEval = { spec: NumSpec; text: string; now: number; value?: number; error?: string; changed: boolean; loosens: boolean; writable: boolean; locked?: boolean };
 
 /** 一条命令的草稿算出来的东西：每项的对错和方向、要提交的改动、前后值。 */
 function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => boolean) {
@@ -320,16 +330,20 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
   if (group === "network") {
     const next = Object.fromEntries(NETWORKS.map((net) => [net, draft[netKey(net)] === "on"])) as Record<Net, boolean>;
     const changedNets = NETWORKS.filter((net) => next[net] !== p.networkEnabled[net]);
-    const allClosed = NETWORKS.every((net) => !next[net]);
     const closing = changedNets.filter((net) => !next[net]);
     const lastClosed = closing[closing.length - 1];
+    // 用户还能不能提现只看 BEP20、ERC20：只关 TRC20 不算「关完」（TRC20 通道暂未开放，用户本来就用不了）。
+    const openClosing = closing.filter((net) => net !== CLOSED_NET);
+    const allClosed = OPEN_NETS.every((net) => !next[net]) && openClosing.length > 0;
+    const lastOpen = openClosing.length === 1;
+    const closedNote = allClosed ? `${lastOpen ? NET_LAST_OPEN : NET_ALL_CLOSED}${next[CLOSED_NET] && networkView(p).trc20Live ? NET_TRC20_STAYS : ""}` : "";
     const rows: DiffRow[] = NETWORKS.map((net) => ({
       key: net,
       label: `${NET_LABEL[net]} 提现`,
       before: p.networkEnabled[net] ? "开启" : "关闭",
       after: next[net] ? "开启" : "关闭",
       // 关网络的后果写在最后一个关掉的网络下面，确认框里看得到（DP-03、VS-103）：关完一个不剩时先说这句，再说没打出的单会暂停。
-      note: net === lastClosed ? `${allClosed ? `${changedNets.length === 1 ? NET_LAST_OPEN : NET_ALL_CLOSED}` : ""}${NET_PAUSE}` : undefined,
+      note: net === lastClosed ? `${closedNote}${NET_PAUSE}` : undefined,
     }));
     return {
       numbers: [] as NumEval[],
@@ -339,6 +353,8 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
       loosens: changedNets.some((net) => next[net]),
       closesOnly: changedNets.length > 0 && changedNets.every((net) => !next[net]),
       allClosed,
+      lastOpen,
+      closedNote,
       rows,
       changes: changedNets.length ? { networkEnabled: next } as D5OwnedChanges : null,
     };
@@ -349,6 +365,7 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
     const writable = can(spec.authority);
     const now = spec.current(p);
     if (!writable) return { spec, text, now, value: now, changed: false, loosens: false, writable };
+    if (key === `fee.${CLOSED_NET}`) return { spec, text, now, value: now, changed: false, loosens: false, writable, locked: true };
     if (bad[key]) return { spec, text, now, error: spec.invalid, changed: true, loosens: false, writable };
     if (text.trim() === "") return { spec, text, now, error: `填写${spec.label}：${spec.range}，空着不算 0。`, changed: true, loosens: false, writable };
     const value = Number(text);
@@ -391,6 +408,8 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
     loosens: numbers.some((item) => item.loosens),
     closesOnly: false,
     allClosed: false,
+    lastOpen: false,
+    closedNote: "",
     rows,
     changes,
   };
@@ -414,7 +433,15 @@ function describeChanges(changes: Record<string, unknown>) {
 }
 
 /** 收紧（直接生效）的原操作。结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。版本可能已变，确认前整页不能再改。 */
-type TightenRecord = PendingMutationRecord & { label: string; changes: D5OwnedChanges; expectedVersion: number; reason: string; operator: string; commandOrigin?: FundCommandOrigin };
+type TightenRecord = PendingMutationRecord & {
+  label: string;
+  changes: D5OwnedChanges;
+  expectedVersion: number;
+  reason: string;
+  operator: string;
+  commandOrigin?: FundCommandOrigin;
+  trc20FeeBefore?: number;
+};
 const TIGHTEN_SCOPE = "d5|limits";
 const tightenCommands = createPendingMutationStore<TightenRecord>({
   storageKey: "nexion-admin-d5-withdrawal-commands-v1",
@@ -427,6 +454,27 @@ const tightenCommands = createPendingMutationStore<TightenRecord>({
     && !!record.changes && typeof record.changes === "object" && !Array.isArray(record.changes)
     && isDConfigCommandOrigin(record.commandOrigin, "D5"),
 });
+
+function tightenReplayBlock(record: TightenRecord, params: D5ParamData | null) {
+  return d5Trc20ReplayBlock({ ...record.changes, expectedVersion: record.expectedVersion }, params, record.trc20FeeBefore);
+}
+
+/**
+ * 只能查询的原请求（会打开 TRC20、改它的确认费，或读不到原值）：为什么不能重试和下一步写在行上常显（OP-126、OP-93），
+ * 不只放在按钮提示里；共用状态里叫人按原请求重试的那句换成读现值和操作记录。
+ */
+function queryOnlyStatus(reason: string, base: NonNullable<FundRecoveryRow["status"]>, canQuery: boolean, notFound = false) {
+  const head = /按原请求重试/.test(reason) ? `${reason}。` : `${reason}，不能按原请求重试。`;
+  const next = notFound ? "原审批单暂未查到；刷新页面读现在的值，到操作记录与审批核对。"
+    : base.label === "已处理" ? "后台已处理，看不出成没成；刷新页面读现在的值，再到操作记录与审批核对。"
+      : base.label === "结果未知" ? canQuery ? "先查询原结果，再刷新页面读现在的值，或到操作记录与审批核对。" : "刷新页面读现在的值，到操作记录与审批核对。"
+        : base.line;
+  return { ...base, line: head + next };
+}
+
+function replayReasonFor(block: string | undefined) {
+  return block === TRC20_OPENS_WITHDRAWAL || block === TRC20_CHANGES_FEE ? `原请求${block}，TRC20 ${TRC20_CLOSED}` : block;
+}
 
 export async function queryD5DirectCommand(record: TightenRecord, evidence?: FundCommandEvidence) {
   const saved = tightenCommands.list().find(row => row.commandKey === record.commandKey);
@@ -459,6 +507,11 @@ function D5NumberField({ item, value, showError, onChange, onBadInput, onLeave, 
   const now = `现在 ${spec.show(item.now)}`;
   if (!item.writable) {
     return <div data-d5-field={spec.key}><Field label={spec.label} help={`${now} · 这个账号没有这一项的修改权限，只能看。`}>{null}</Field></div>;
+  }
+  if (item.locked) {
+    return <div data-d5-field={spec.key}><Field label={spec.label} help={`${now} · ${TRC20_CLOSED}`}>
+      {(control) => <NumberInput {...control} aria-label={ariaLabel} unit={spec.unit} value={String(item.now)} disabled />}
+    </Field></div>;
   }
   const tag = item.changed && !item.error && <DirectionTag loosens={item.loosens} />;
   const zeroFee = spec.key.startsWith("fee.") && item.value === 0 && item.changed;
@@ -624,7 +677,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   /** 这一组已经收到最紧：放宽被挡时打开也改不了，入口直接禁用（OP-126）。 */
   const atTightest = (group: Group, p: D5ParamData) => {
     if (group === "network") return NETWORKS.every((net) => !p.networkEnabled[net]);
-    return GROUP_FIELDS[group].filter((key) => can(SPECS[key].authority)).every((key) => clean(SPECS[key].current(p)) === clean(SPECS[key].tightest));
+    return GROUP_FIELDS[group].filter((key) => key !== `fee.${CLOSED_NET}` && can(SPECS[key].authority)).every((key) => clean(SPECS[key].current(p)) === clean(SPECS[key].tightest));
   };
   const entryBlock = (group: Group, p: D5ParamData) => tightenPending.length ? TIGHTEN_LOCK
     : loosenBlock && atTightest(group, p) ? `${loosenBlock}。这一组已经是最紧的值，现在没有能改的` : undefined;
@@ -701,7 +754,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     const { group } = editing;
     const changes = evaluation.changes;
     const loosens = evaluation.loosens;
-    const restoreDefault = group === "fee" && NETWORKS.every((net) => Number(editing.draft[`fee.${net}`]) === D5_NETWORK_CONFIRM_FEE_DEFAULT[net]);
+    const restoreDefault = group === "fee" && OPEN_NETS.every((net) => Number(editing.draft[`fee.${net}`]) === D5_NETWORK_CONFIRM_FEE_DEFAULT[net]);
     const label = restoreDefault ? "网络确认费恢复默认" : GROUP_TITLE[group];
     const open = (p: D5ParamData, blockedReason?: ReactNode) => openActionConfirm({
       briefKind: "config",
@@ -741,7 +794,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             void loadApprovals();
             return;
           }
-          const outcome = await sendTighten({ label: `调整提现参数 · ${label}`, changes, expectedVersion: p.version, reason, operator: OPERATOR() });
+          const outcome = await sendTighten({ label: `调整提现参数 · ${label}`, changes, expectedVersion: p.version, reason, operator: OPERATOR(),
+            ...(changes.networkConfirmFeeUsd ? { trc20FeeBefore: p.networkConfirmFeeUsd.trc20 } : {}) });
           closeDrawer();
           if (outcome === "unknown") toast(UNKNOWN_TOAST, "warn");
           else toast(`${GROUP_TITLE[group]}已生效`, "success");
@@ -782,6 +836,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const retryTighten = async (record: TightenRecord) => {
     if (record.expiresAt <= Date.now()) { syncPending(); return; }
     if (!commandAuthorities(record.changes).every(can)) { note(record.commandKey, NO_WRITE); return; }
+    const block = tightenReplayBlock(record, params);
+    if (block) { note(record.commandKey, block); return; }
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!tightenCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
       note(record.commandKey, "浏览器里查不到这条记录，本次没有发送。记录继续保留，请到操作记录与审批核对。");
@@ -791,8 +847,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     note(record.commandKey, "");
     setRecovering(record.commandKey);
     try {
-      const { label, changes, expectedVersion, reason, operator, commandOrigin } = record;
-      const outcome = await sendTighten({ label, changes, expectedVersion, reason, operator, commandOrigin }, true);
+      const { label, changes, expectedVersion, reason, operator, commandOrigin, trc20FeeBefore } = record;
+      const outcome = await sendTighten({ label, changes, expectedVersion, reason, operator, commandOrigin, trc20FeeBefore }, true);
       if (outcome === "unknown") note(record.commandKey, "重试结果仍未知，原操作继续保留，稍后再试。");
       else toast(`${record.label.replace(/^调整提现参数 · /, "")}已生效`, "success");
     } catch (cause) {
@@ -813,6 +869,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const recoverLoosen = async (mode: "lookup" | "retry") => {
     if (!session || !loosenPending) return;
     const key = loosenPending.commandKey;
+    if (mode === "retry" && loosenReplayBlock) { note(key, loosenReplayBlock); return; }
     note(key, "");
     setRecovering(key);
     try {
@@ -820,7 +877,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       syncPending();
       if (!result) {
         setQueryMissing((current) => [...current, key]);
-        note(key, "暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
+        note(key, loosenReplayBlock ? "暂未查到原审批单，可稍后再查。" : "暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
         return;
       }
       applySnapshot(result.active);
@@ -910,21 +967,25 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       return { ...loosenPending, values: null, reason: "" };
     }
   })();
+  const loosenReplayBlock = loosenRecord?.values ? replayReasonFor(d5Trc20ReplayBlock(loosenRecord.values, params)) : undefined;
   const pendingRows: FundRecoveryRow[] = [
     ...(loosenRecord ? [(() => {
       const key = loosenRecord.commandKey;
       const expired = loosenRecord.expiresAt <= Date.now();
       const needQuery = canLookupOwn && !queryMissing.includes(key);
-      const canRetry = !!loosenRecord.values && commandAuthorities(loosenRecord.values).every(can) && !proposeBlock;
+      const retryDisabled = !loosenRecord.values || !commandAuthorities(loosenRecord.values).every(can) || proposeBlock ? NO_WRITE : loosenReplayBlock;
       const expiredNote = expired && !investigationResults[key] ? canLookupOwn ? expiredNext(loosenRecord) : EXPIRED_NO_QUERY : "";
-      return { key, title: "放宽提现参数", record: loosenRecord, outcome: investigationResults[key], createdAt: loosenRecord.createdAt, expired, canRetry: !expired && canRetry,
-        canQuery: canLookupOwn, copy: { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
-        status: !canLookupOwn && !expired ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
+      const copy = { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" };
+      return { key, title: "放宽提现参数", record: loosenRecord, outcome: investigationResults[key], createdAt: loosenRecord.createdAt, expired, canRetry: !expired && !retryDisabled,
+        canQuery: canLookupOwn, copy,
+        status: loosenReplayBlock && !expired
+          ? queryOnlyStatus(loosenReplayBlock, fundRecoveryStatus({ record: loosenRecord, outcome: investigationResults[key], expired, canRetry: false, canQuery: canLookupOwn, copy }), canLookupOwn, queryMissing.includes(key))
+          : !canLookupOwn && !expired ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
         actions: <>
           {canLookupOwn && <FundCheckButtons record={loosenRecord} lookupWithoutOrigin outcome={investigationResults[key]} expired={expired} busy={!!recovering} checking={recovering === key}
             onCheck={() => void lookupLoosen()} onClose={() => setClosing(true)} />}
           {!expired && <Button size="sm" disabled={!!recovering}
-            disabledReason={!canRetry ? NO_WRITE : needQuery ? "先查询原结果，明确查不到审批单才能重试" : undefined}
+            disabledReason={retryDisabled ?? (needQuery ? "先查询原结果，明确查不到审批单才能重试" : undefined)}
             onClick={() => void recoverLoosen("retry")}>按原请求重试</Button>}
         </>,
         detail: <>
@@ -936,18 +997,24 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     })()] : []),
     ...tightenPending.map((record): FundRecoveryRow => {
       const expired = record.expiresAt <= Date.now();
+      const replayBlock = tightenReplayBlock(record, params);
+      // 原请求改 TRC20 确认费，或读不到它提交时的原费率：只能查询，写明为什么和下一步（OP-93、OP-126）。
+      const replayReason = replayReasonFor(replayBlock);
+      const retryDisabled = !commandAuthorities(record.changes).every(can) ? NO_WRITE : replayReason;
       // 改版前没存出处的记录按当前账号查，queryD5DirectCommand 再核原操作人。
       const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D5") };
       // 查到记为失败时，「可能已经生效」不再写。
       const outcome = investigationResults[record.commandKey];
       const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
+      const shown = replayReason && !expired ? fundRecoveryStatus({ record: target, outcome, expired, canRetry: false }) : undefined;
       return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), record: target, outcome: investigationResults[record.commandKey],
-        createdAt: record.createdAt, expired, canRetry: !expired && commandAuthorities(record.changes).every(can),
+        createdAt: record.createdAt, expired, canRetry: !expired && !retryDisabled,
+        status: replayReason && shown ? queryOnlyStatus(replayReason, shown, !fundReadBlock(target)) : undefined,
         actions: <>
           <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
             onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
-          {!expired && <Button size="sm" disabled={!!recovering} disabledReason={commandAuthorities(record.changes).every(can) ? undefined : NO_WRITE} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
-          {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
+          {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryDisabled} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
+          {!expired && !replayBlock && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
         </>,
         detail: <>
           <p>{`改动：${describeChanges(record.changes)}。${failed ? "" : "可能已经生效，"}有结果前这页不能再修改。`}{expired && !outcome && expiredNext(target)}</p>
@@ -1059,7 +1126,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     : coverageBlock
       ? <Conclusion state="danger" lead hint={<>{p.coverageReliable ? "" : `读到 ${pct(p.coverageRatio)}，红线 ${fmtConfigPct(p.redlinePct)}。`}收紧不受影响。{poolHint}</>} explain={coverageExplain}>{coverageBlock}</Conclusion>
       : networks.outage
-      ? <Conclusion state="warn" lead hint={<>{networks.outage}。{outageNext} {coverageLine}</>} explain={NETWORK_RULE}>用户现在不能发起 USDT 提现</Conclusion>
+      ? <Conclusion state="warn" lead hint={<>{networks.outage}。{outageNext} {coverageLine}</>} explain={NETWORK_RULE}>App、H5 用户现在不能发起 USDT 提现</Conclusion>
       : pendingApproval.length
         ? <Conclusion state="warn" hint={<>{pendingApproval.map(approvalLine).join("；")}。{reach(auditHref, "platform_a2_read") && <><Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批查看</Link> </>}{coverageLine}</>} explain={APPROVAL_NOTE}>
           有 {pendingApproval.length} 项放宽等批准，批准前当前值不变
@@ -1072,7 +1139,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   // 结论句没说到的都用不了、等批准和读不到审批，单独一条（DT-12：同一件事只说一处）。
   const secondary = <>
     {networks.outage && (tightenPending.length || loosenRecord || coverageBlock) && (
-      <Notice tone="warn" title="用户现在不能发起 USDT 提现">{networks.outage}。{outageNext}</Notice>
+      <Notice tone="warn" title="App、H5 用户现在不能发起 USDT 提现">{networks.outage}。{outageNext}</Notice>
     )}
     {pendingApproval.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || networks.outage) && (
       <Notice tone="warn" title={`有 ${pendingApproval.length} 项放宽等批准`}>{pendingApproval.map(approvalLine).join("；")}。批准前当前值不变。{auditLink && <> {auditLink}</>}</Notice>
@@ -1085,8 +1152,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     )}
   </>;
 
-  const action = (group: Group, label: string, focus?: string) => groupWritable(group)
-    ? (describedBy: string | undefined) => <Button size="sm" aria-label={editTitle(label)} aria-describedby={describedBy} disabledReason={entryBlock(group, p)} onClick={() => openDrawer(group, focus)}>调整</Button>
+  const action = (group: Group, label: string, focus?: string, blocked?: string) => groupWritable(group)
+    ? (describedBy: string | undefined) => <Button size="sm" aria-label={editTitle(label)} aria-describedby={describedBy} disabledReason={blocked ?? entryBlock(group, p)} onClick={() => openDrawer(group, focus)}>调整</Button>
     : undefined;
   const H = D5_PARAM_HELP;
   const numRow = (key: "dailyLimitCount" | "maxBalanceRatio" | "smallAmountThresholdUsd" | "payoutSlaHours") => {
@@ -1100,16 +1167,28 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   // 一个网络一行：配置和用户能不能用写在一个标签里；用不了的原因跟在后面，整体原因已在结论句说过的不再写（DT-12）。
   const netRow = ({ net, configured, usable, code }: ReturnType<typeof networkView>["states"][number]) => {
     const help = H.networkEnabled;
+    const closed = net === CLOSED_NET;
     // 只有确实读到「用户能用」才给绿对勾；读不到的是中性，不给「正常」的信号（DP-65、VS-20）。
-    const tag = !configured ? <StatusTag tone="neutral" icon={CircleMinus}>关闭</StatusTag>
+    // TRC20 不在 App、H5 当前版本的选择里：写这页的配置和后端实际状态，不写「用户能用」，实际可用也不给绿对勾。
+    const tag = closed
+      ? !configured ? <StatusTag tone="neutral" icon={CircleMinus}>关闭</StatusTag>
+        : usable === undefined ? <StatusTag tone="neutral" icon={CircleDot}>配置开启，实际状态暂未知</StatusTag>
+          : usable ? <StatusTag tone="neutral" icon={CircleDot}>开启 · 实际可用</StatusTag>
+            : <StatusTag tone="warn" icon={AlertTriangle}>开启 · 现在用不了</StatusTag>
+      : !configured ? <StatusTag tone="neutral" icon={CircleMinus}>关闭</StatusTag>
       : usable === undefined ? <StatusTag tone="neutral" icon={CircleDot}>配置开启，实际状态暂未知</StatusTag>
         : usable ? <StatusTag tone="ok">开启 · 用户能用</StatusTag>
           : <StatusTag tone="warn" icon={AlertTriangle}>开启 · 用户现在用不了</StatusTag>;
-    const reason = !configured ? undefined
+    // TRC20 开着时只能关、关着时不能开（产品 2026-11-23）：原因常显（OP-126）；实际用不了的原因写在前面，结论句已说过的不再写（DT-12）。
+    const reason = closed
+      // 结论句只说 App、H5 能选的网络，TRC20 用不了的原因一直写在这一行。
+      ? [configured && usable !== true ? networks.reasonOf(code) : undefined,
+        configured ? `${TRC20_CLOSED}，只能关闭${usable ? "；旧版本 App 可能仍在用" : ""}` : `${TRC20_CLOSED}，不能开启`].filter(Boolean).join("；")
+      : !configured ? undefined
       : usable === false ? (networks.outage && networks.shared ? undefined : networks.reasonOf(code))
         : usable === undefined ? networks.reasonOf(code) : undefined;
-    return <ConfigRow key={net} name={`${NET_LABEL[net]} 提现`} explainLabel={`${NET_LABEL[net]} 提现`} what={help.what} when={help.when} where={help.where}
-      effect={help.effect} note={help.note} value={tag} sub={reason} action={action("network", `${NET_LABEL[net]} 提现`, netKey(net))} />;
+    return <ConfigRow key={net} name={`${NET_LABEL[net]} 提现`} explainLabel={`${NET_LABEL[net]} 提现`} what={help.what} when={help.when} where={closed ? "App、H5 当前版本不给用户选 TRC20" : help.where}
+      effect={help.effect} note={closed ? TRC20_ROW_NOTE : help.note} value={tag} sub={reason} action={action("network", `${NET_LABEL[net]} 提现`, netKey(net), closed && !p.networkEnabled[net] ? TRC20_CLOSED : undefined)} />;
   };
   const phaseSummary = `${p.currentPhase} · 第 ${p.currentMonth} 月 · 到账审查窗口 ${p.cooldownDays} 天 · 加强合规审查${p.complianceHoldEnabled ? "开启" : "关闭"}`;
   // 三个网络共用后端合规规则；大额门槛未读到时不猜。
@@ -1137,8 +1216,14 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       const sharedReason = view.shared && view.blocked.length > 1 ? view.reasonOf(view.shared) : undefined;
       const fields = NETWORKS.map((net) => {
         const changed = next[net] !== p.networkEnabled[net];
+        const closed = net === CLOSED_NET;
         const state = view.states.find((item) => item.net === net)!;
-        const now = !p.networkEnabled[net] ? "现在关闭"
+        // TRC20 关着时两项都不能选；开着时「开启」是现值，可以选回来，不能从关变开。现状按后端实际状态写。
+        const now = closed
+          ? !p.networkEnabled[net] ? `现在关闭 · ${TRC20_CLOSED}，不能开启`
+            : state.usable === undefined ? `配置开启，实际状态暂未知：${view.reasonOf(state.code)}`
+              : state.usable ? "现在开启 · 实际可用，旧版本 App 可能仍在用" : `现在开启 · 用不了：${view.reasonOf(state.code)}`
+          : !p.networkEnabled[net] ? "现在关闭"
           : state.usable === undefined ? `配置开启，实际状态暂未知：${view.reasonOf(state.code)}`
             : state.usable ? "现在开启 · 用户能用"
               : sharedReason ? "现在开启 · 用户现在用不了" : `现在开启 · 用户现在用不了：${view.reasonOf(state.code)}`;
@@ -1148,17 +1233,17 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         return (
           <div key={net} data-d5-field={netKey(net)}>
             <Field label={<>{NET_LABEL[net]} 提现{changed && <> <DirectionTag loosens={next[net]} /></>}</>}
-              help={<><div>{now}</div>{help && <div>{help}</div>}</>}>
+              help={<><div>{now}</div>{closed && p.networkEnabled[net] && <div>{`${TRC20_CLOSED}，只能关闭`}</div>}{help && <div>{help}</div>}</>}>
               {() => <Segments label={`${NET_LABEL[net]} 提现通道`} value={editing.draft[netKey(net)] ?? "off"}
-                items={[{ value: "on", label: "开启" }, { value: "off", label: "关闭" }]}
+                items={[{ value: "on", label: "开启", disabled: closed && !p.networkEnabled[net] }, { value: "off", label: "关闭", disabled: closed && !p.networkEnabled[net] }]}
                 onChange={(value) => setEditing((current) => current && { ...current, draft: { ...current.draft, [netKey(net)]: value } })} />}
             </Field>
           </div>
         );
       });
       // 关完一个都不剩是能提交的，只提醒一次后果。
-      return <>{sharedReason && <Notice tone="neutral">{`${view.blocked.map((item) => NET_LABEL[item.net]).join("、")} 现在用不了：${sharedReason}。`}</Notice>}{fields}{evaluation.allClosed && evaluation.changedCount > 0 && (
-        <Notice tone="warn">{evaluation.changedCount === 1 ? NET_LAST_OPEN : NET_ALL_CLOSED}</Notice>
+      return <>{sharedReason && <Notice tone="neutral">{`${view.blocked.map((item) => NET_LABEL[item.net]).join("、")} 现在用不了：${sharedReason}。`}</Notice>}{fields}{evaluation.allClosed && (
+        <Notice tone="warn">{evaluation.closedNote}</Notice>
       )}</>;
     }
     if (group === "limits") return <>
@@ -1182,9 +1267,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           : evaluation.loosens && loosenBlock ? loosenBlock
             : undefined);
   const feeDefaultBlock = editing?.group === "fee" ? (
-    NETWORKS.every((net) => Number(editing.draft[`fee.${net}`]) === D5_NETWORK_CONFIRM_FEE_DEFAULT[net]) && !editing.bad["fee.trc20"] && !editing.bad["fee.bep20"] && !editing.bad["fee.erc20"]
+    OPEN_NETS.every((net) => Number(editing.draft[`fee.${net}`]) === D5_NETWORK_CONFIRM_FEE_DEFAULT[net]) && !editing.bad["fee.bep20"] && !editing.bad["fee.erc20"]
       ? "已经是默认值"
-      : loosenBlock && NETWORKS.some((net) => D5_NETWORK_CONFIRM_FEE_DEFAULT[net] < p.networkConfirmFeeUsd[net]) ? `默认值比现在低，算放宽。${loosenBlock}` : undefined
+      : loosenBlock && OPEN_NETS.some((net) => D5_NETWORK_CONFIRM_FEE_DEFAULT[net] < p.networkConfirmFeeUsd[net]) ? `默认值比现在低，算放宽。${loosenBlock}` : undefined
   ) : undefined;
   // 底部：方向和生效方式分开两个标签，放宽和字段旁一样是橙色开锁，生效方式是蓝色（VS-103、DT-13）。
   // 说明图标放进同一行的标签后面，窄屏不单独掉到下一行。
@@ -1232,7 +1317,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
                 <ConfigList label="网络和费用">
                   {networks.states.map(netRow)}
                   <ConfigRow name={H.networkConfirmFeeUsd.label} what={H.networkConfirmFeeUsd.what} when={H.networkConfirmFeeUsd.when} where={H.networkConfirmFeeUsd.where}
-                    effect={H.networkConfirmFeeUsd.effect} note={`默认 ${NETWORKS.map((net) => `${NET_LABEL[net]} ${usd(D5_NETWORK_CONFIRM_FEE_DEFAULT[net])}`).join("、")}，在调整抽屉里可以恢复默认`}
+                    effect={H.networkConfirmFeeUsd.effect} note={`默认 ${OPEN_NETS.map((net) => `${NET_LABEL[net]} ${usd(D5_NETWORK_CONFIRM_FEE_DEFAULT[net])}`).join("、")}，在调整抽屉里可以恢复默认。TRC20 ${TRC20_CLOSED}，不能改`}
                     value={NETWORKS.map((net) => `${NET_LABEL[net]}\u00a0${usd(p.networkConfirmFeeUsd[net]).replace(" ", "\u00a0")}`).join("、")} action={action("fee", "网络确认费")} />
                   <ConfigRow name={H.nexFeeOffsetRate.label} what={H.nexFeeOffsetRate.what} when={H.nexFeeOffsetRate.when} where={H.nexFeeOffsetRate.where}
                     effect={H.nexFeeOffsetRate.effect} value={SPECS.nexFeeOffsetRate.show(p.nexFeeOffsetRate)} action={action("nex", "UVT 抵扣率")} />
@@ -1275,12 +1360,12 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         tone={editing?.group === "limits" ? "role-4" : "role-2"} 
         explain={editing && (editing.group === "limits"
           ? "四项一起提交。只要有一项放宽，整组提交审批，另一位超级管理员批准前当前值不变；全部收紧时提交后立即生效。"
-          : editing.group === "network" ? "三个网络一起提交。开启算放宽，要提交审批；只关不开时提交后立即生效。"
-            : editing.group === "fee" ? "三个网络一起保存。任一网络调低，三个一起走审批。"
+          : editing.group === "network" ? `三个网络一起提交。开启算放宽，要提交审批；只关不开时提交后立即生效。TRC20 ${TRC20_CLOSED}，开着时只能关闭。`
+            : editing.group === "fee" ? `三个网络一起保存。任一网络调低，三个一起走审批。TRC20 ${TRC20_CLOSED}，保持现在的值。`
               : "调高算放宽，要提交审批；调低提交后立即生效。")}
         footer={editing && <Decision note={directionNote || undefined}
           others={editing.group === "fee" && <Button disabledReason={feeDefaultBlock}
-            onClick={() => setEditing((current) => current && { ...current, bad: {}, draft: { ...current.draft, ...Object.fromEntries(NETWORKS.map((net) => [`fee.${net}`, String(D5_NETWORK_CONFIRM_FEE_DEFAULT[net])])) } })}>恢复默认</Button>}
+            onClick={() => setEditing((current) => current && { ...current, bad: {}, draft: { ...current.draft, ...Object.fromEntries(OPEN_NETS.map((net) => [`fee.${net}`, String(D5_NETWORK_CONFIRM_FEE_DEFAULT[net])])) } })}>恢复默认</Button>}
           primary={<Button variant="primary" disabledReason={submitBlock || undefined}
             onBlockedClick={() => setEditing((current) => current && { ...current, attempted: true })} onClick={confirmEdit}>提交修改</Button>} />}>
         {editing?.conflict && <Notice tone="warn">{editing.conflict}</Notice>}

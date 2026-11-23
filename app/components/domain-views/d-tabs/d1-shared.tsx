@@ -104,6 +104,8 @@ export type D1PendingItem = {
   createdAt: number;
   /** 还能重试时写在发出时间后面的话；过了重试时限写 blocked。 */
   hint: ReactNode;
+  /** 只能核对、不能重试的原请求（例如会打开 TRC20）：为什么不能重试，写在行上常显，下一步由面板按查询状态补上（OP-126）。 */
+  onlyCheck?: string;
   /** 现在不能重试的原因：过了时限、没有权限。 */
   blocked?: string;
   /** 过了 24 小时重试时限：标签写「已过期」，和别的页同一个说法。 */
@@ -135,6 +137,15 @@ function recoveryExplain(items: readonly D1PendingItem[]) {
     {queryable && <p>先查询原结果；按原请求重试只发原内容，不会重复执行。不能再重试时，按查到的结果核查结案。</p>}
     {legacy && <p>查不了原结果的记录：现在的值只能参考，不能据此认定原操作成没成；按原请求重试，或到操作记录与审批核对。</p>}
   </>;
+}
+
+/** 只能核对的原请求那一行：原因在前，下一步按有没有查询、查到什么写（OP-93、OP-95）。 */
+function onlyCheckLine(item: D1PendingItem, reason: string, status: { label: string; line: string } | undefined) {
+  const head = /[。；]$/.test(reason) ? reason : `${reason}。`;
+  if (!status) return head + (item.verify ? "点「读取现在的值」核对现状，再到操作记录与审批看它执行没有。" : "到操作记录与审批看它执行没有。");
+  if (status.label === "结果未知") return `${head}先查询原结果${item.verify ? "，再点「读取现在的值」核对现状" : ""}，或到操作记录与审批核对。`;
+  if (status.label === "已处理") return `${head}后台已处理，看不出成没成；${item.verify ? "点「读取现在的值」后" : ""}到操作记录与审批核对。`;
+  return head + status.line;
 }
 
 /**
@@ -213,7 +224,9 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
           return {
             key: item.key, object: item.label, createdAt: item.createdAt,
             tag: <StatusTag tone={status?.tone ?? (refused ? "danger" : "warn")}>{status?.label ?? (refused ? "重试被拒绝" : item.expired ? "已过期" : "结果未知")}</StatusTag>,
-            line: status?.line ?? (refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，到操作记录与审批核对。" : item.blocked ? `${item.blocked}。` : "查不了原结果，先读取现在的值参考。" : "查不了原结果，也不能重试；现在的值只能参考。"),
+            // 没有「按原请求重试」的记录（这类操作不能重发，或被业务规则挡住）：查到已处理时不叫人去重试。
+            line: item.onlyCheck ? onlyCheckLine(item, item.onlyCheck, status)
+              : (status?.label === "已处理" && !item.retry && !expired ? `后台已处理，看不出成没成；这条不能按原请求重试，${item.verify ? "读取现在的值后" : ""}到操作记录与审批核对。` : status?.line) ?? (refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，到操作记录与审批核对。" : item.blocked ? `${item.blocked}。` : "查不了原结果，先读取现在的值参考。" : "查不了原结果，也不能重试；现在的值只能参考。"),
             note: notes[item.key],
             actions: <>
               {item.record && <FundCheckButtons record={item.record} outcome={outcomes[item.key]} expired={expired} busy={disabled || !!running} checking={running === item.key}

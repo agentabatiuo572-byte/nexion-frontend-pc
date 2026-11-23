@@ -9,6 +9,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { exceptionRead,exceptionList,exceptionCommand,exceptionId,exceptionVersion,type ExceptionRecord,type ExceptionPage } from "@/lib/admin/cregis-exceptions";
 import { d1PendingObjectReason } from "@/lib/admin/d-client";
 import { autoForwardStatus,autoForwardPage,AUTO_STATES,AUTO_ERRORS,type AutoNetwork } from "@/lib/admin/cregis-auto-forward";
+import { autoForwardFlagOn, opensTrc20AutoForward, TRC20_CLOSED } from "@/lib/admin/trc20-closed";
 import { SwitchTag, usdt } from "./d1-shared";
 import type { DCtx } from "./types";
 type Props={canManage:boolean;openActionConfirm:DCtx["openActionConfirm"];onChanged?:()=>void};
@@ -22,9 +23,12 @@ export function CregisAutoForward(props:Props){
 }
 function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetworkChange}:Props&{owner:number;epoch:number;network:AutoNetwork;onNetworkChange:(network:AutoNetwork)=>void}){
   const networkQuery=network==="BEP20"?"":`?network=${network}`;
-  const lifecycle=useRef(adminAuthLifecycleEpoch()).current,live=useRef(true),mutation=useRef(false),read=useRef(0);
+  const lifecycle=useRef(adminAuthLifecycleEpoch()).current,live=useRef(true),mutation=useRef(false);
+  const statusRead=useRef(0),taskRead=useRef(0);
   const [status,setStatus]=useState<ExceptionRecord|null>(null),[page,setPage]=useState<ExceptionPage>(EMPTY);
-  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<string|null>(null);
+  const [statusLoading,setStatusLoading]=useState(true),[tasksLoading,setTasksLoading]=useState(true);
+  const [statusError,setStatusError]=useState(""),[tasksError,setTasksError]=useState(""),[moreError,setMoreError]=useState("");
+  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<string|null>(null);
   const session=useAdminAuth(s=>s.session);
   const canWrite=canManage&&!!session?.authorities.includes("finance_d1_channel_manage")&&!!session?.authorities.includes("finance_d2_withdrawal_approve");
   const assertOwner=useCallback((write=false)=>{
@@ -35,14 +39,31 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
   },[owner,epoch,lifecycle,canManage]);
   const owns=useCallback(()=>{try{assertOwner();return true;}catch{return false;}},[assertOwner]);
   const scope=useCallback((write=false)=>({authEpoch:lifecycle,assertOwner:()=>assertOwner(write)}),[lifecycle,assertOwner]);
+  const loadStatus=useCallback(async()=>{
+    const request=scope(),at=++statusRead.current;
+    const current=()=>owns()&&at===statusRead.current;
+    setStatusLoading(true);setStatusError("");
+    try {
+      const config=autoForwardStatus(await exceptionRead(`${ROOT}/status${networkQuery}`,request),network);
+      if(current())setStatus(config);
+    }catch(failure){if(current()){setStatus(null);setStatusError(displayAdminReadError(failure));}}
+    finally{if(current())setStatusLoading(false);}
+  },[scope,owns,network,networkQuery]);
+  const loadTasks=useCallback(async()=>{
+    const request=scope(),at=++taskRead.current;
+    const current=()=>owns()&&at===taskRead.current;
+    setTasksLoading(true);setTasksError("");setMoreError("");
+    try {
+      const next=autoForwardPage(await exceptionList(`${ROOT}/tasks${networkQuery}`,undefined,request),network);
+      if(current())setPage(next);
+    }catch(failure){if(current()){setPage(EMPTY);setTasksError(displayAdminReadError(failure));}}
+    finally{if(current())setTasksLoading(false);}
+  },[scope,owns,network,networkQuery]);
   const refresh=useCallback(async()=>{
-    const request=scope();request.assertOwner();const at=++read.current;setLoading(true);setError("");
-    try{const [config,next]=await Promise.all([exceptionRead(`${ROOT}/status${networkQuery}`,request),exceptionList(`${ROOT}/tasks${networkQuery}`,undefined,request)]);
-      request.assertOwner();if(at!==read.current)return false;const checked=autoForwardStatus(config,network);setStatus(checked);setPage(autoForwardPage(next,network));return true;
-    }catch(failure){if(owns()&&at===read.current){setStatus(null);setPage(EMPTY);setError(displayAdminReadError(failure));}return false;}
-    finally{if(owns()&&at===read.current)setLoading(false);}
-  },[scope,owns,network]);
-  useEffect(()=>{live.current=true;void refresh();return()=>{live.current=false;read.current++;};},[refresh]);
+    setError("");
+    await Promise.all([loadStatus(),loadTasks()]);
+  },[loadStatus,loadTasks]);
+  useEffect(()=>{live.current=true;void refresh();return()=>{live.current=false;statusRead.current++;taskRead.current++;};},[refresh]);
   const command=async(path:string,body:ExceptionRecord)=>{
     const request=scope(true);request.assertOwner();if(mutation.current)throw new Error("上一项操作尚未完成，请先刷新核对");
     mutation.current=true;setBusy(true);
@@ -50,25 +71,46 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
     finally{mutation.current=false;onChanged?.();if(owns()){setBusy(false);await refresh();}}
   };
   const approval=<StatusTag tone="progress" filled>另一位管理员复核后生效</StatusTag>;
+  const trc20=network==="TRC20";
+  const readinessBlock=!status?.configured?"地址与运行权限核实后才能启用。":!status.runtimeApproved?"本环境的运行总开关没开，不能开启自动流程":undefined;
+  // 已有开关为开时，executionEnabled 同时反映出款风控和对账是否允许发送。
+  const trc20TargetOnBlock=readinessBlock??(status&&(status.collectionEnabled===true||status.paymentEnabled===true)
+    &&status.executionEnabled===false?"当前不发送自动转账":undefined);
+  // TRC20 开着的开关碰上地址撤回、运行总开关没开、出款暂停：后端只在留着开启项时核对能不能运行，两项都关的提案照收（CregisAutoForwardService.policy）。
+  const trc20On=trc20&&!!status&&(status.collectionEnabled===true||status.paymentEnabled===true);
+  const trc20Cause=!status?undefined:!status.configured?"收款地址或运行权限已撤回":!status.runtimeApproved?"本环境的运行总开关没开（BEP20、ERC20、TRC20 共用）":"TRC20 链上出款现在不可用";
+  // 框里和待复核提案后面用短说法，原因的长句在页面提示里说过（DT-12）。
+  const trc20CauseShort=!status?undefined:!status.configured?"地址配置已撤回":!status.runtimeApproved?"运行总开关没开":"TRC20 链上出款不可用";
+  const trc20KeepOn=trc20TargetOnBlock&&`${trc20CauseShort??trc20TargetOnBlock}：保留开启项会被拒绝，两项都选「关」才能提交`;
+  const trc20Opens=trc20&&!!status&&opensTrc20AutoForward(status);
+  const approvalBlock=trc20Opens?TRC20_CLOSED:trc20&&status&&(autoForwardFlagOn(status.pendingCollection)||autoForwardFlagOn(status.pendingPayment))
+    ?trc20TargetOnBlock&&`${trc20CauseShort??trc20TargetOnBlock}：留着开启项的提案不能复核通过`:undefined;
   const policy=(action:"PROPOSE"|"APPROVE"|"CANCEL"|"PAUSE")=>{
     try{assertOwner(true);if(!status)throw new Error("请刷新配置");
       const held=d1PendingObjectReason(`/cregis${ROOT}/policy${networkQuery}`,{action});if(held)throw new Error(held);
       const current=status,expectedVersion=exceptionVersion(current.version);
       const title=action==="PAUSE"?"暂停本网络自动资金流程":action==="PROPOSE"?"调整自动流程开关":action==="APPROVE"?"复核自动流程开关":"取消自动流程开关提案";
       const pendingFacts=<Facts><Fact k="网络">{network}</Fact><Fact k="待复核">归集 {current.pendingCollection?"开":"关"} · 付款 {current.pendingPayment?"开":"关"}</Fact><Fact k="发起人">{String(current.makerId)}</Fact><Fact k="理由">{String(current.reason)}</Fact></Facts>;
+      const proposalReadiness=(collect:boolean,pay:boolean)=>trc20&&(collect||pay)?trc20KeepOn:undefined;
       openActionConfirm({ briefKind: "config",action:action==="PAUSE"?"暂停本网络自动资金流程":action==="PROPOSE"?"提交自动流程开关提案":action==="APPROVE"?"复核自动流程开关":"取消自动流程开关提案",
         title,confirmLabel:action==="PAUSE"?"确认暂停本网络":action==="PROPOSE"?"提交审批":action==="APPROVE"?"确认复核":"确认取消",confirmTone:action==="PAUSE"?"danger":"primary",
         effect:action==="PROPOSE"?approval:<StatusTag tone="progress" filled>立即生效</StatusTag>,
         facts:action==="APPROVE"||action==="CANCEL"?pendingFacts:<Facts><Fact k="网络">{network}</Fact><Fact k="自动归集到 Cregis">{current.collectionEnabled?"开":"关"}</Fact><Fact k="自动 Cregis 转平台收款钱包">{current.paymentEnabled?"开":"关"}</Fact></Facts>,
-        detail:action==="PAUSE"?"停止本网络新的自动资金流程，原单仍继续只读核对。":action==="PROPOSE"?"开启需另一位管理员复核，且本环境的运行总开关已打开。":`待审核：归集 ${current.pendingCollection?"开":"关"} · 付款 ${current.pendingPayment?"开":"关"}。`,
+        detail:action==="PAUSE"?"停止本网络新的自动资金流程，原单仍继续只读核对。":action==="PROPOSE"?trc20?`TRC20 ${TRC20_CLOSED}，只能关掉开着的开关，不能新开；提案要另一位管理员复核后生效。`:"开启需另一位管理员复核，且本环境的运行总开关已打开。":`待审核：归集 ${current.pendingCollection?"开":"关"} · 付款 ${current.pendingPayment?"开":"关"}。`,
         completionCopy:action==="PAUSE"?"确认后立即停止本网络新的自动资金流程，已发送的原单继续只读核对。":action==="PROPOSE"?"另一位管理员复核后生效。":"自动流程配置已保存，请核对实际开关",
-        businessForm:action==="PROPOSE"?{kind:"multi-field",requireAnyChange:true,fields:[
-          {key:"collect",label:"自动归集到 Cregis",inputKind:"select",options:["true","false"],optionLabels:{true:"开",false:"关"},current:String(current.collectionEnabled===true),showDiff:true,explain:"入账后把充值全额归集到 Cregis 钱包。"},
-          {key:"pay",label:"自动 Cregis 转平台收款钱包",inputKind:"select",options:["true","false"],optionLabels:{true:"开",false:"关"},current:String(current.paymentEnabled===true),showDiff:true,explain:"归集确认后，按用户入账净额转入平台收款钱包。"},
+        businessForm:action==="PROPOSE"?{kind:"multi-field",requireAnyChange:true,
+          feedback:trc20&&trc20TargetOnBlock?form=>{const message=proposalReadiness(form.collect==="true",form.pay==="true");return {message:message??"",invalid:!!message,live:true};}:undefined,
+          fields:[
+          {key:"collect",label:"自动归集到 Cregis",inputKind:"select",options:trc20&&current.collectionEnabled!==true?["false"]:["true","false"],optionLabels:{true:"开",false:"关"},current:String(current.collectionEnabled===true),showDiff:true,explain:"入账后把充值全额归集到 Cregis 钱包。"},
+          {key:"pay",label:"自动 Cregis 转平台收款钱包",inputKind:"select",options:trc20&&current.paymentEnabled!==true?["false"]:["true","false"],optionLabels:{true:"开",false:"关"},current:String(current.paymentEnabled===true),showDiff:true,explain:"归集确认后，按用户入账净额转入平台收款钱包。"},
         ]}:undefined,
-        reasonMin:10,reasonMax:300,run:(reason,_value,form)=>command("/policy",{action,expectedVersion,
-          collectionEnabled:action==="PROPOSE"?form?.collect==="true":current.collectionEnabled===true,
-          paymentEnabled:action==="PROPOSE"?form?.pay==="true":current.paymentEnabled===true,reason})});
+        reasonMin:10,reasonMax:300,run:(reason,_value,form)=>{
+          const collectionEnabled=action==="PROPOSE"?form?.collect==="true":current.collectionEnabled===true;
+          const paymentEnabled=action==="PROPOSE"?form?.pay==="true":current.paymentEnabled===true;
+          const blocked=action==="PROPOSE"?proposalReadiness(collectionEnabled,paymentEnabled):action==="APPROVE"?approvalBlock:undefined;
+          if(blocked)throw new Error(blocked);
+          return command("/policy",{action,expectedVersion,collectionEnabled,paymentEnabled,reason});
+        }});
     }catch(failure){setError(displayAdminError(failure));}
   };
   const recover=(row:ExceptionRecord,retry:boolean)=>{
@@ -85,13 +127,15 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
     }catch(failure){setError(displayAdminError(failure));}
   };
   const more=async()=>{
-    const request=scope();request.assertOwner();const at=++read.current;setLoading(true);
-    try{const next=await exceptionList(`${ROOT}/tasks${networkQuery}`,page.nextBeforeId??undefined,request);request.assertOwner();if(at===read.current){const checked=autoForwardPage(next,network);setPage({...checked,records:[...page.records,...checked.records]});}}
-    catch(failure){if(owns()&&at===read.current)setError(displayAdminReadError(failure));}
-    finally{if(owns()&&at===read.current)setLoading(false);}
+    const request=scope();request.assertOwner();const at=++taskRead.current;setTasksLoading(true);setMoreError("");
+    try{const next=await exceptionList(`${ROOT}/tasks${networkQuery}`,page.nextBeforeId??undefined,request);request.assertOwner();if(at===taskRead.current){const checked=autoForwardPage(next,network);setPage({...checked,records:[...page.records,...checked.records]});}}
+    catch(failure){if(owns()&&at===taskRead.current)setMoreError(displayAdminReadError(failure));}
+    finally{if(owns()&&at===taskRead.current)setTasksLoading(false);}
   };
-  const block=loading?"正在读取最新数据":busy?"正在提交":undefined;
-  const proposeBlock=block??d1PendingObjectReason(`/cregis${ROOT}/policy${networkQuery}`,{action:"PROPOSE"})??(!status?.configured?"地址与运行权限核实后才能启用。":!status.runtimeApproved?"本环境的运行总开关没开，不能开启自动流程":status.makerId!==null?"有待复核的提案，先复核或取消":undefined);
+  const block=statusLoading?"正在读取最新数据":busy?"正在提交":undefined;
+  const taskBlock=tasksLoading?"正在读取最新数据":busy?"正在提交":undefined;
+  const trc20Off=trc20&&status?.collectionEnabled!==true&&status?.paymentEnabled!==true;
+  const proposeBlock=block??(trc20Off?TRC20_CLOSED:undefined)??d1PendingObjectReason(`/cregis${ROOT}/policy${networkQuery}`,{action:"PROPOSE"})??(!trc20?readinessBlock:undefined)??(status?.makerId!==null?"有待复核的提案，先复核或取消":undefined);
   const records=page.records,index=records.findIndex(row=>String(row.id)===selected),task=index>=0?records[index]:null;
   const taskActions=(row:ExceptionRecord)=>{
     const state=String(row.state),stage=state.startsWith("COLLECTION")?"collection":"payment";
@@ -103,24 +147,28 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
   return <Panel icon={ArrowRightLeft} tone="role-2" title="自动资金流程"
     explain={`充值核实入账 → 自动归集到 Cregis（充值全额）→ 链上确认 → 自动 Cregis 转平台收款钱包（用户入账净额）。充值手续费留在 Cregis 归集钱包，${String(status?.gasSymbol??({BEP20:"BNB",ERC20:"ETH",TRC20:"TRX"}[network]))} 链上手续费由平台另付；不重复入账或扣用户余额。仅处理首次启用水位之后的充值事件，暂停和恢复不会重置水位；已发送单在关闭后仍继续只读核对。`}
     actions={<>
-      <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden/>} loading={loading} disabled={busy} onClick={()=>void refresh()}>刷新</Button>
+      <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden/>} loading={statusLoading||tasksLoading} disabled={busy} onClick={()=>void refresh()}>刷新</Button>
       {canWrite&&status&&<Button size="sm" variant="danger-outline" disabledReason={block} onClick={()=>policy("PAUSE")}>暂停本网络自动资金流程</Button>}
     </>}>
     <div className="rd-stack">
     <Segments label="自动资金流程网络" value={network} onChange={onNetworkChange} items={(["BEP20","ERC20","TRC20"] as const).map(value=>({value,label:value}))}/>
     {error&&<Notice tone="warn">{error}</Notice>}
-    {loading&&!status?<BlockState state="loading" title="正在读取自动资金流程…"/>
-      :!status?<BlockState state="error" title="自动资金流程读取失败" detail={error} onRetry={()=>void refresh()}/>
-        :<div className="rd-stack">
-          <p className="rd-note">{network} · {status.executionEnabled?"自动发送已开放":status.configured?"新转账未开放":"地址待配置"}</p>
-          {!status.configured&&<Notice tone="warn">地址与运行权限核实后才能启用。</Notice>}
-          {!status.runtimeApproved&&<Notice tone="neutral" title="当前不发送自动转账">本环境的运行总开关没开（BEP20、ERC20、TRC20 共用一个）。启用前须确认收款服务的自动审批/签名及套餐权益、绑定钱包和 {String(status.gasSymbol)} 手续费安排，再由技术负责人在部署配置里打开总开关，并由另一位管理员复核下面的归集和转出开关。</Notice>}
+    <div className="rd-stack">
+    {statusLoading&&!status?<BlockState state="loading" title="正在加载自动资金流程…"/>
+      :!status?<BlockState state="error" title="自动资金流程状态加载失败" detail={statusError} onRetry={()=>void loadStatus()}/>
+        :<>
+          {/* 实际发送状态和「不能新开」分两行写：TRC20 开着的照常发送，通道暂未开放只管能不能开（F04）。 */}
+          <p className="rd-note">{network} · {status.executionEnabled?"自动发送已开放":status.configured?"新转账未开放":trc20?"地址未配置":"地址待配置"}</p>
+          {trc20&&<p className="rd-note">{`TRC20 ${TRC20_CLOSED}：${trc20On?"开着的归集和转出开关只能关，不能新开":"不能开启"}。`}</p>}
+          {trc20On&&trc20KeepOn&&<Notice tone="warn" title="当前不发送自动转账">{`${trc20Cause}。仍可提交两项都关的提案，保留任一项开着的会被拒绝；「暂停本网络自动资金流程」和下面的自动任务核对一直可用。`}</Notice>}
+          {!trc20&&!status.configured&&<Notice tone="warn">地址与运行权限核实后才能启用。</Notice>}
+          {!trc20&&!status.runtimeApproved&&<Notice tone="neutral" title="当前不发送自动转账">本环境的运行总开关没开（BEP20、ERC20、TRC20 共用一个）。启用前须确认收款服务的自动审批/签名及套餐权益、绑定钱包和 {String(status.gasSymbol)} 手续费安排，再由技术负责人在部署配置里打开总开关，并由另一位管理员复核下面的归集和转出开关。</Notice>}
           {status.makerId!==null&&<Notice tone="progress" title="有一个开关提案待复核"
             action={canWrite?<>
-              <Button size="sm" disabledReason={String(status.makerId)===String(owner)?"发起人不能复核自己的提案":block} onClick={()=>policy("APPROVE")}>复核自动流程开关</Button>
+              <Button size="sm" disabledReason={String(status.makerId)===String(owner)?"发起人不能复核自己的提案":approvalBlock??block} onClick={()=>policy("APPROVE")}>复核自动流程开关</Button>
               <Button size="sm" variant="ghost" disabledReason={block} onClick={()=>policy("CANCEL")}>取消自动流程开关提案</Button>
             </>:undefined}>
-            待复核提案：归集 {status.pendingCollection?"开":"关"} · 付款 {status.pendingPayment?"开":"关"} · 理由 {String(status.reason)}
+            待复核提案：归集 {status.pendingCollection?"开":"关"} · 付款 {status.pendingPayment?"开":"关"} · 理由 {String(status.reason)}{trc20Opens?` · TRC20 ${TRC20_CLOSED}，不能复核通过`:approvalBlock&&` · ${approvalBlock}`}
           </Notice>}
           <ConfigList label="自动流程开关">
             <ConfigRow name="运行总开关" what="本环境部署时设定，一个开关同时管 BEP20、ERC20、TRC20" when="改部署配置后生效，后台不能改"
@@ -133,6 +181,10 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
             <ConfigRow name="平台收款钱包" value={<span data-mono="">{String(status.counterpartyAddress??"待配置")}</span>}/>
             <ConfigRow name="处理范围" value={status.startEventId===null?"尚未首次启用，不会处理历史充值。":"仅处理首次启用水位之后的充值事件。"}/>
           </ConfigList>
+        </>}
+        {tasksLoading&&records.length===0?<BlockState state="loading" title="正在加载自动任务…"/>
+          :tasksError?<BlockState state="error" title="自动任务加载失败" detail={tasksError} onRetry={()=>void loadTasks()}/>
+          :
           <Fold inset title="自动任务与原单跟踪" alert={waiting>0} summary={records.length?`${waiting?`${waiting} 个待核查，`:""}共 ${records.length} 个`:"暂无自动任务"}>
             {records.length===0?<p className="rd-note">暂无自动任务。关闭状态不会创建任务或发送资金。</p>:<Table label="自动任务">
               <thead><tr><Th>任务</Th><Th align="right">归集全额 · 转入净额（USDT）</Th><Th>状态</Th><Th sticky="end" align="right">操作</Th></tr></thead>
@@ -140,16 +192,17 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
                 <Td><Cell mono main={`任务 ${id}`} sub={`充值事件 ${String(row.eventId)}`}/></Td>
                 <Td align="right"><Cell num main={usdt(String(row.grossAmount))} sub={`转入净额 ${usdt(String(row.netAmount))}`}/></Td>
                 <Td><Cell main={<StatusTag tone={taskTone(state)}>{AUTO_STATES[state]??"状态未知"}</StatusTag>} sub={row.lastError?AUTO_ERRORS[String(row.lastError)]??"任务条件待核实，请联系管理员":undefined}/></Td>
-                <Td sticky="end" align="right">{actions[0]?<Button size="sm" disabledReason={block} onClick={actions[0].run}>{actions[0].label}</Button>:<Button size="sm" variant="ghost" onClick={()=>setSelected(id)}>查看详情</Button>}</Td>
+                <Td sticky="end" align="right">{actions[0]?<Button size="sm" disabledReason={taskBlock} onClick={actions[0].run}>{actions[0].label}</Button>:<Button size="sm" variant="ghost" onClick={()=>setSelected(id)}>查看详情</Button>}</Td>
               </Tr>;})}</tbody>
             </Table>}
-            {page.hasMore&&<Button size="sm" disabled={busy||loading} onClick={()=>void more()}>加载更早自动任务</Button>}
-          </Fold>
-        </div>}
+            {moreError&&<Notice tone="warn">{moreError}</Notice>}
+            {page.hasMore&&<Button size="sm" disabled={busy||tasksLoading} onClick={()=>void more()}>加载更早自动任务</Button>}
+          </Fold>}
+    </div>
     </div>
     <Drawer open={!!task} onClose={()=>setSelected(null)} title="自动任务" sub={task?`任务 ${String(task.id)}`:undefined} icon={ArrowRightLeft} tone="role-2" busy={busy}
       nav={{hasPrev:index>0,hasNext:index>=0&&index<records.length-1,onPrev:()=>setSelected(String(records[index-1]?.id??selected)),onNext:()=>setSelected(String(records[index+1]?.id??selected))}}
-      footer={task&&(()=>{const actions=taskActions(task);return actions.length?<Decision note={block} primary={actions.map((action,i)=><Button key={action.key} variant={i===0?"primary":"secondary"} disabledReason={block} onClick={action.run}>{action.label}</Button>)}/>:undefined;})()}>
+      footer={task&&(()=>{const actions=taskActions(task);return actions.length?<Decision note={taskBlock} primary={actions.map((action,i)=><Button key={action.key} variant={i===0?"primary":"secondary"} disabledReason={taskBlock} onClick={action.run}>{action.label}</Button>)}/>:undefined;})()}>
       {task&&<>
         <JudgmentPoints rows={[
           {label:"状态",state:taskTone(String(task.state))==="progress"?undefined:taskTone(String(task.state)),value:AUTO_STATES[String(task.state)]??"状态未知",reason:task.lastError?AUTO_ERRORS[String(task.lastError)]??"任务条件待核实，请联系管理员":undefined},

@@ -85,6 +85,7 @@ import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact, 
 import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
+import { D5_APPROVAL_OP, D5_DIFF_UNREADABLE, d5Trc20ApprovalBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL, TRC20_REPLAY_UNVERIFIED } from "@/lib/admin/trc20-closed";
 import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, UNMAPPED_ADMIN_ERROR_TEXT } from "@/lib/admin/error-messages";
@@ -796,6 +797,12 @@ const REFUND_AMOUNT_REQUIRED = "先读到退款金额才能批准";
 
 const DECISION_VERB: Record<"approve" | "reject" | "withdraw", string> = { approve: "批准", reject: "驳回", withdraw: "撤回" };
 const DECISION_STATUS: Record<"approve" | "reject" | "withdraw", A2OperationRow["status"]> = { approve: "approved", reject: "rejected", withdraw: "withdrawn" };
+/** D5 审批单动到 TRC20：写这张单（或保存的原批准）会做什么、为什么不能做、下一步（OP-126、OP-93）。 */
+function d5Trc20Reason(block: string, retry: boolean) {
+  if (block === TRC20_OPENS_WITHDRAWAL || block === TRC20_CHANGES_FEE)
+    return retry ? `原批准${block}，TRC20 ${TRC20_CLOSED}，不能按原请求重试` : `这张单${block}，TRC20 ${TRC20_CLOSED}；可以驳回，或由发起人撤回`;
+  return retry && block === D5_DIFF_UNREADABLE ? "审批单的变更详情读不懂，暂不能按原请求重试" : block;
+}
 const RECOVERY_HINT: Record<A2CommandKind, string> = {
   approve: "可以查询这次批准的结果，或按原请求重试，不会重复执行。",
   reject: "可以查询这次驳回的结果，或按原请求重试，不会重复执行。",
@@ -1953,9 +1960,18 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return mainLoading ? { state: "loading" } : ticket ? refundAmount(ticket)
       : { state: "error", message: "退款金额未读取" };
   };
+  /** 保存的 D5 批准会打开 TRC20 或改它的确认费：只能查询，不能按原请求重试。 */
+  const d5RetryBlock = (record: A2PendingCommand) => {
+    const ticket = recordTicket(record);
+    if (record.kind !== "approve" || (record.operationCode ?? ticket?.operationCode) !== D5_APPROVAL_OP) return undefined;
+    const block = ticket ? d5Trc20ApprovalBlock(ticket.before, ticket.after) : TRC20_REPLAY_UNVERIFIED;
+    return block && d5Trc20Reason(block, true);
+  };
   const retryBlock = (record: A2PendingCommand) => {
     if (isRetryExpired(record)) return RETRY_EXPIRED;
     if (!canRetry(record)) return RETRY_NO_PERMISSION;
+    const d5Block = d5RetryBlock(record);
+    if (d5Block) return d5Block;
     const amount = retryAmount(record);
     if (amount?.state === "loading") return "正在读取退款金额，读完再重试";
     if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
@@ -2086,6 +2102,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (kind === "approve" && w.retiredOperation) return RETIRED_OPERATION_COPY;
     if (kind === "approve" && (w.phoneCalibrationError || w.ambassadorMaterialError)) return w.phoneCalibrationError ?? w.ambassadorMaterialError;
     if (!canDecide(w, kind)) return (kind === "approve" ? w.approveDeniedMessage : w.rejectDeniedMessage) ?? NO_DECIDE;
+    if (kind === "approve" && w.operationCode === D5_APPROVAL_OP) {
+      const block = d5Trc20ApprovalBlock(w.before, w.after);
+      if (block) return d5Trc20Reason(block, false);
+    }
     // 读不到退款金额时不能批准（协调人定，同 C3 读不到详情）；驳回不受影响。
     const amount = kind === "approve" ? refundAmount(w) : undefined;
     if (amount?.state === "loading") return "正在读取退款金额，读完再批准";
@@ -2405,6 +2425,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       // 直接动钱的确认用红（决定 50）。
       confirmTone: w.amplifies || isRefund ? "danger" : "primary",
       run: async (reason) => {
+        const block = w.operationCode === D5_APPROVAL_OP ? d5Trc20ApprovalBlock(w.before, w.after) : undefined;
+        if (block) throw new Error(d5Trc20Reason(block, false));
         try {
           const outcome = await runDecision("approve", w, reason);
           if (outcome === "ok") { decisionToast("approve", w.id); setTicketId(null); }
@@ -2703,10 +2725,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const note = pendingNotes[record.fingerprint];
     const check = note?.check ? DECISION_CHECK[note.check] : undefined;
     const sealed = record.kind === "approve" && (record.operationCode === "i5_disclosure_publish" || record.operationCode === "i4_disclosure_publish");
+    const d5Block = d5RetryBlock(record);
     return {
       key: record.fingerprint, object: record.label, createdAt: record.createdAt,
       tag: <StatusTag tone="warn">结果未知</StatusTag>,
-      line: `${sealed ? "这版可能已经封存" : "可能已经生效"}。${expired ? RETRY_EXPIRED : RECOVERY_HINT[record.kind]}`,
+      line: `${sealed ? "这版可能已经封存" : "可能已经生效"}。${expired ? RETRY_EXPIRED : d5Block ? `${d5Block}。点「查询原结果」看这次批准执行没有，或点「在操作记录里查看」。` : RECOVERY_HINT[record.kind]}`,
       result: note ? { tag: check ? <StatusTag tone={check.tone} icon={check.icon}>{check.label}</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>, line: note.text } : undefined,
       // 查询的回答已在 result 里替换这一行的结论；noteKey 只让回答变了时自动展开，不在展开内容里再写一遍。
       noteKey: note?.text,
@@ -3002,11 +3025,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const shownF5Ids = shown ? f5RecordIds(fundTicket(shown)) : [];
   const shownCanReject = shown ? canDecide(shown, "reject") : false;
   // 有结果未确认的操作时抽屉顶上已有一条提示，这里不再写一遍（DT-12）。
+  // D5 单会打开 TRC20 或改它的确认费：不能批准的原因常显在判断要点里（OP-126），不只在按钮提示里。
+  const shownD5Trc20 = shown?.operationCode === D5_APPROVAL_OP ? d5Trc20ApprovalBlock(shown.before, shown.after) : undefined;
+  const shownD5Block = shownD5Trc20 && d5Trc20Reason(shownD5Trc20, false);
   const shownBlock = shown && (pendingTicketIds.has(shown.id) ? undefined
     : shown.retiredOperation ? RETIRED_OPERATION_COPY
       : shown.phoneCalibrationError ?? shown.ambassadorMaterialError
         ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? shown.approveDeniedMessage ?? NO_DECIDE
-          : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : undefined));
+          : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : shownD5Block));
   const shownK1 = shown ? k1TicketView(shown) : undefined;
   const shownBoot = shown?.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(shown.after) : undefined;
   const judgment: JudgmentRow[] = shown ? [

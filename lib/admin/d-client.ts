@@ -10,6 +10,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fundCommandOrigin, type FundCommandRecord } from "./fund-command-investigation";
 import { isExplicitRejection } from "./explicit-rejection";
 import type { PreparationNetwork } from "./cregis-funds-preparation";
+import { cregisTrc20ReplayBlock, needsCregisReplayTarget } from "./trc20-closed";
 
 interface ApiResult<T> {
   code: number;
@@ -728,7 +729,7 @@ function currentD1PendingCregisSwitchCommands() {
     && (value.adminId === session.adminId || value.adminId === undefined && hasPersistedPendingCommandOwner(String(session.adminId))));
 }
 
-export function listD1PendingCregisSwitchCommands(): D1PendingTopupCommand[] {
+export function listD1PendingCregisSwitchCommands(): D1PendingCommand[] {
   return currentD1PendingCregisSwitchCommands()
     .sort((left, right) => left.createdAt - right.createdAt);
 }
@@ -821,8 +822,20 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
       pendingMutations.forget(previous.fingerprint, previous.commandKey);
       pendingKeyBeforeRequest = undefined;
     }
-    if (d1Write && init?.idempotencyKey && previous && !d1CommandReplayable(previous.path)) {
-      throw new Error("这项操作再发一次可能会再执行一次，所以不能按原请求重试；先读取现在的值核对。");
+    if (d1Write && init?.idempotencyKey && previous) {
+      if (!d1CommandReplayable(previous.path)) {
+        throw new Error("这项操作再发一次可能会再执行一次，所以不能按原请求重试；先读取现在的值核对。");
+      }
+      const target = needsCregisReplayTarget(previous);
+      const authEpoch = adminAuthLifecycleEpoch();
+      const readScope = { bankManualAuthEpoch: authEpoch };
+      const cases = target.switchCase
+        ? await apiRequest<Parameters<typeof cregisTrc20ReplayBlock>[1]>(base, "/cregis/switch-cases", readScope) : undefined;
+      const policy = target.autoForward
+        ? await apiRequest<Parameters<typeof cregisTrc20ReplayBlock>[2]>(base, "/cregis/auto-forward/status?network=TRC20", readScope) : undefined;
+      if (authEpoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
+      const restriction = cregisTrc20ReplayBlock(previous, Array.isArray(cases) ? cases : undefined, policy);
+      if (restriction) throw new Error(restriction);
     }
     // 从原入口再交一次（哪怕内容一样）也不发：只能从页面上方的恢复入口按原请求重试。
     if (d1Write && !init?.idempotencyKey && !D1_CREGIS_SWITCH_PATH.test(path)) {
