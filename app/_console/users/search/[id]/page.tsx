@@ -1100,6 +1100,8 @@ export default function UserDetailPage() {
   const openDeviceAction = (device: JsonRecord, operation: "replace" | "recycle") => {
     const deviceId = asNumber(device.id);
     const instance = asText(device.instanceNo);
+    // 结果提示、待确认条和「正在执行」写设备名和编号尾号，不露 PG- 这类前缀（TX-05、BUG-643）；完整编号在待确认条的悬停里。只改新写入的记录，旧记录照原样显示。
+    const deviceText = [asText(device.name, ""), instance && instance !== "—" ? `编号尾号 ${instance.slice(-6)}` : ""].filter((text) => text && text !== "—").join(" · ") || "—";
     setActionConfirm({ briefKind: "record",
       action: operation === "replace" ? `回收并记录置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
       title: operation === "replace" ? "回收并记录置换" : "设备回收",
@@ -1359,6 +1361,7 @@ export default function UserDetailPage() {
       const expired = command.expiresAt <= Date.now();
       // 重试和普通入口一样看现在的入口和权限（OP-123）。没权限只留核对，提示和记录都留着。
       const device = command.kind === "replace" || command.kind === "recycle";
+      const deviceNo = device ? asText(devices.find((row) => asNumber(row.id) === command.deviceId)?.instanceNo, "") : "";
       const writable = device ? canWriteC2 : canWriteC1;
       const hasWrite = device ? hasC2Write : hasC1Write;
       const refused = writable && !command.legacy && isExplicitRejection(command.rejection);
@@ -1390,7 +1393,7 @@ export default function UserDetailPage() {
       }[found];
       const more = found === "REJECTED" || found === "PROCESSED" ? receiptExplain(receipt) : undefined;
       return {
-        key: command.fingerprint, object: command.label, createdAt: command.createdAt,
+        key: command.fingerprint, object: deviceNo ? <span title={`设备编号 ${deviceNo}`}>{command.label}</span> : command.label, createdAt: command.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
         result: shown && { tag: <StatusTag tone={shown.tone}>{shown.label}</StatusTag>, line: shown.line },
         line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。",
