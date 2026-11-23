@@ -31,7 +31,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   port: PaymentSecurityPort;
   userLabel: string;
   /** 页面刷新时变，这一块跟着重读。 */
-  reloadKey?: number;
+  reloadKey?: number | string;
   /** 有独立解除权限才给入口（OP-124）。能不能解除这一条还看后端 capability。 */
   canRelease: boolean;
   retryMissingRelease?: boolean;
