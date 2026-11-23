@@ -1,3 +1,5 @@
+import type { D5Params } from "./d-client";
+
 /**
  * 产品 2026-11-23：App 和 H5 已不让用户选 TRC20（充值、提现、外部 USDT 付款）。
  * 后台 TRC20 的可操作项置灰，控件旁常显这句原因（OP-126）；已有的 TRC20 记录照常显示和处理。
@@ -13,9 +15,32 @@ export const TRC20_CHANGES_FEE = "会改 TRC20 网络确认费";
 export const TRC20_FEE_UNVERIFIED = "读不到提交时 TRC20 的原确认费，核对不了会不会改它";
 export const D5_DIFF_UNREADABLE = "变更详情加载失败，暂不能批准";
 
-export function d5Trc20ConfirmationFeeBlock(before: number | undefined, after: number | undefined) {
+function d5Trc20ConfirmationFeeBlock(before: number | undefined, after: number | undefined) {
   if (!Number.isFinite(before) || !Number.isFinite(after)) return TRC20_FEE_UNVERIFIED;
   if (before !== after) return TRC20_CHANGES_FEE;
+}
+
+function d5Trc20NetworkBlock(before: boolean | undefined, after: boolean | undefined) {
+  if (after === true && before !== true) return before === false ? TRC20_OPENS_WITHDRAWAL : TRC20_REPLAY_UNVERIFIED;
+}
+
+/** Only a snapshot at the recorded version can supply a legacy command's original values. */
+export function d5Trc20ReplayBlock(
+  values: Record<string, unknown>,
+  snapshot: Pick<D5Params, "version" | "networkEnabled" | "networkConfirmFeeUsd"> | null,
+  trc20FeeBefore?: number,
+) {
+  const before = snapshot?.version === values.expectedVersion ? snapshot : null;
+  if (values.networkEnabled !== undefined) {
+    const target = (values.networkEnabled as { trc20?: boolean } | null)?.trc20;
+    if (typeof target !== "boolean") return TRC20_REPLAY_UNVERIFIED;
+    const block = d5Trc20NetworkBlock(before?.networkEnabled.trc20, target);
+    if (block) return block;
+  }
+  if (values.networkConfirmFeeUsd !== undefined) {
+    const target = (values.networkConfirmFeeUsd as { trc20?: number } | null)?.trc20;
+    return d5Trc20ConfirmationFeeBlock(trc20FeeBefore ?? before?.networkConfirmFeeUsd.trc20, target);
+  }
 }
 
 /** D5 preview persists Java map text with complete three-network groups. */
@@ -35,14 +60,14 @@ export function d5Trc20ApprovalBlock(before: string, after: string): string | un
     const feeMatch = fee?.match(/^\[TRC20=([^,]+), BEP20=([^,]+), ERC20=([^,]+)\]$/);
     if ((network && !networkMatch) || (fee && !feeMatch?.slice(1).every(value =>
       /^\d+(?:\.\d+)?(?:E[+-]?\d+)?$/i.test(value) && Number.isFinite(Number(value))))) return null;
-    return { network: networkMatch?.[1], fee: feeMatch ? Number(feeMatch[1]) : undefined };
+    return { network: networkMatch ? networkMatch[1] === "true" : undefined, fee: feeMatch ? Number(feeMatch[1]) : undefined };
   };
   const from = read(before);
   const to = read(after);
   if (!from || !to || (from.network === undefined) !== (to.network === undefined)
     || (from.fee === undefined) !== (to.fee === undefined)) return D5_DIFF_UNREADABLE;
-  if (from.network === "false" && to.network === "true") return TRC20_OPENS_WITHDRAWAL;
-  if (from.fee !== undefined) return d5Trc20ConfirmationFeeBlock(from.fee, to.fee);
+  return d5Trc20NetworkBlock(from.network, to.network)
+    ?? (from.fee !== undefined ? d5Trc20ConfirmationFeeBlock(from.fee, to.fee) : undefined);
 }
 
 type CregisReplayRecord = { path: string; body: string };

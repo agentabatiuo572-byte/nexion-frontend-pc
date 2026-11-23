@@ -56,7 +56,7 @@ import {
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
-import { d5Trc20ConfirmationFeeBlock, TRC20_CHANGES_FEE, TRC20_CLOSED } from "@/lib/admin/trc20-closed";
+import { d5Trc20ReplayBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL } from "@/lib/admin/trc20-closed";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundRecoveryStatus, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
@@ -456,11 +456,11 @@ const tightenCommands = createPendingMutationStore<TightenRecord>({
 });
 
 function tightenReplayBlock(record: TightenRecord, params: D5ParamData | null) {
-  const fees = record.changes.networkConfirmFeeUsd;
-  if (!fees) return;
-  // 旧请求只存三网目标值。读回同一版本才有这笔命令的原费率。
-  const current = params?.version === record.expectedVersion ? params.networkConfirmFeeUsd.trc20 : undefined;
-  return d5Trc20ConfirmationFeeBlock(record.trc20FeeBefore ?? current, fees.trc20);
+  return d5Trc20ReplayBlock({ ...record.changes, expectedVersion: record.expectedVersion }, params, record.trc20FeeBefore);
+}
+
+function replayReasonFor(block: string | undefined) {
+  return block === TRC20_OPENS_WITHDRAWAL || block === TRC20_CHANGES_FEE ? `原请求${block}，TRC20 ${TRC20_CLOSED}` : block;
 }
 
 export async function queryD5DirectCommand(record: TightenRecord, evidence?: FundCommandEvidence) {
@@ -856,6 +856,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const recoverLoosen = async (mode: "lookup" | "retry") => {
     if (!session || !loosenPending) return;
     const key = loosenPending.commandKey;
+    if (mode === "retry" && loosenReplayBlock) { note(key, loosenReplayBlock); return; }
     note(key, "");
     setRecovering(key);
     try {
@@ -863,7 +864,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       syncPending();
       if (!result) {
         setQueryMissing((current) => [...current, key]);
-        note(key, "暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
+        note(key, loosenReplayBlock ? "暂未查到原审批单，可稍后再查。" : "暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
         return;
       }
       applySnapshot(result.active);
@@ -953,21 +954,22 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       return { ...loosenPending, values: null, reason: "" };
     }
   })();
+  const loosenReplayBlock = loosenRecord?.values ? replayReasonFor(d5Trc20ReplayBlock(loosenRecord.values, params)) : undefined;
   const pendingRows: FundRecoveryRow[] = [
     ...(loosenRecord ? [(() => {
       const key = loosenRecord.commandKey;
       const expired = loosenRecord.expiresAt <= Date.now();
       const needQuery = canLookupOwn && !queryMissing.includes(key);
-      const canRetry = !!loosenRecord.values && commandAuthorities(loosenRecord.values).every(can) && !proposeBlock;
+      const retryDisabled = !loosenRecord.values || !commandAuthorities(loosenRecord.values).every(can) || proposeBlock ? NO_WRITE : loosenReplayBlock;
       const expiredNote = expired && !investigationResults[key] ? canLookupOwn ? expiredNext(loosenRecord) : EXPIRED_NO_QUERY : "";
-      return { key, title: "放宽提现参数", record: loosenRecord, outcome: investigationResults[key], createdAt: loosenRecord.createdAt, expired, canRetry: !expired && canRetry,
+      return { key, title: "放宽提现参数", record: loosenRecord, outcome: investigationResults[key], createdAt: loosenRecord.createdAt, expired, canRetry: !expired && !retryDisabled,
         canQuery: canLookupOwn, copy: { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
-        status: !canLookupOwn && !expired ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
+        status: !canLookupOwn && !expired && !loosenReplayBlock ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
         actions: <>
           {canLookupOwn && <FundCheckButtons record={loosenRecord} lookupWithoutOrigin outcome={investigationResults[key]} expired={expired} busy={!!recovering} checking={recovering === key}
             onCheck={() => void lookupLoosen()} onClose={() => setClosing(true)} />}
           {!expired && <Button size="sm" disabled={!!recovering}
-            disabledReason={!canRetry ? NO_WRITE : needQuery ? "先查询原结果，明确查不到审批单才能重试" : undefined}
+            disabledReason={retryDisabled ?? (needQuery ? "先查询原结果，明确查不到审批单才能重试" : undefined)}
             onClick={() => void recoverLoosen("retry")}>按原请求重试</Button>}
         </>,
         detail: <>
@@ -981,7 +983,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       const expired = record.expiresAt <= Date.now();
       const replayBlock = tightenReplayBlock(record, params);
       // 原请求改 TRC20 确认费，或读不到它提交时的原费率：只能查询，写明为什么和下一步（OP-93、OP-126）。
-      const replayReason = replayBlock === TRC20_CHANGES_FEE ? `原请求${TRC20_CHANGES_FEE}，TRC20 ${TRC20_CLOSED}` : replayBlock;
+      const replayReason = replayReasonFor(replayBlock);
       const retryDisabled = !commandAuthorities(record.changes).every(can) ? NO_WRITE : replayReason;
       // 改版前没存出处的记录按当前账号查，queryD5DirectCommand 再核原操作人。
       const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D5") };

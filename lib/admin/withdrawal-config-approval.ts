@@ -18,6 +18,8 @@ import type { H8Original } from "./h8-reward-mutation";
 import type { FDomainAttempt } from "./f2-approval";
 import type { B1CommandFacts } from "./b1-commands";
 import type { B5ThresholdFacts } from "./b5-commands";
+import { fetchD5WithdrawalParams } from "./d-client";
+import { d5Trc20ReplayBlock } from "./trc20-closed";
 
 export const configApprovalAttempts = createPendingMutationStore<PendingMutationRecord & Partial<FDomainAttempt> & {
   input: string;
@@ -424,6 +426,18 @@ export async function submitConfigApproval<T>(
     }
     if (!ticket) {
       if (!proposal) throw new Error("请填写完整后提交。");
+      if (sourceDomain === "D5" && previous) {
+        const original = proposal.command.params.values;
+        if (!original || typeof original !== "object" || JSON.stringify([original, proposal.reason]) !== previous.input) {
+          throw new A2OutcomeUncertainError("原审批申请不完整，请到操作记录核对。", key);
+        }
+        const originalValues = original as Record<string, unknown>;
+        if (d5Trc20ReplayBlock(originalValues, null)) {
+          const active = await fetchD5WithdrawalParams().catch(() => null);
+          const block = d5Trc20ReplayBlock(originalValues, active);
+          if (block) throw new A2OutcomeUncertainError(block, key);
+        }
+      }
       ticket = await createA2OperationProposal(proposal, key, true);
     }
   } catch (error) {
