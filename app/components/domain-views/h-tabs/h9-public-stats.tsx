@@ -127,7 +127,7 @@ function valueText(key: ScalarKey, value: number | null | undefined): string {
 }
 
 
-const APP_PAID_NOTE = "系统记的是金额本身，没有写币种；App 上显示为 $，这里不另加。";
+const APP_PAID_NOTE = "App 上数字前写 $，这里只写数字；设定值写 USD，是同一个单位。";
 const APP_DISPLAY_REASON: Record<string, string> = {
   HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "这一刻还没有可用的展示数据",
   HOME_DISPLAY_SANDBOX_UNAVAILABLE: "测试环境不生成首页展示数据",
