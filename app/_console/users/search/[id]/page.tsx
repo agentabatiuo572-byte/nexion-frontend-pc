@@ -273,6 +273,7 @@ const shortTime = (value: unknown) => formatBusinessTimeCompact(value, "—");
 /** 抽屉里写到分钟，悬停看到秒，对账用。 */
 const detailTime = (value: unknown) => <span title={formatBusinessTimeFull(value, "") || undefined}>{shortTime(value)}</span>;
 const yesNo = (value: unknown, on = "是", off = "否") => value == null ? "—" : value ? on : off;
+const CUSTOMER_READ_DENIED = "你没有查看这位客户的权限";
 
 function sectionFailed(section: User360Section | null | undefined) {
   return ["ERROR", "UNKNOWN", "UNAVAILABLE"].includes(asText(section?.sourceStatus, "READY").toUpperCase());
@@ -731,8 +732,10 @@ export default function UserDetailPage() {
     ? fetchSupportCustomerFullProfile(userKey, signal)
     : fetchUser360(userKey, signal), [supportScope, userKey]);
   const denialMessage = useCallback((error: unknown) => {
-    if (supportScope) return isSupportScopeDenial(error) ? "你没有查看这位客户的权限" : null;
-    return error instanceof UsersRequestError && error.status === 403 ? displayAdminReadError(error) : null;
+    if (supportScope) return isSupportScopeDenial(error) ? CUSTOMER_READ_DENIED : null;
+    if (!(error instanceof UsersRequestError)) return null;
+    if (error.status === 404 && error.code === "SUPPORT_CUSTOMER_NOT_FOUND") return CUSTOMER_READ_DENIED;
+    return error.status === 403 ? displayAdminReadError(error) : null;
   }, [supportScope]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -794,7 +797,16 @@ export default function UserDetailPage() {
       setDetail(current => current && {
         ...current,
         referral: next.referral,
-        summary: current.summary && { ...current.summary, teamSize: next.summary?.teamSize },
+        // The latest response determines which team sections are still visible.
+        team: next.team == null ? next.team : current.team,
+        vrank: next.vrank == null ? next.vrank : current.vrank,
+        engagement: next.engagement == null ? next.engagement : current.engagement,
+        summary: current.summary && {
+          ...current.summary,
+          teamSize: next.summary?.teamSize,
+          directTeamSize: next.summary?.directTeamSize == null ? undefined : current.summary.directTeamSize,
+          teamVolumeUsd: next.summary?.teamVolumeUsd == null ? undefined : current.summary.teamVolumeUsd,
+        },
       });
       setReferralError(null);
     } catch (error) {
@@ -821,7 +833,7 @@ export default function UserDetailPage() {
     const revoke = (event: Event) => {
       const detail = (event as CustomEvent<{ customerId?: string; conversationNo?: string }>).detail ?? {};
       if (detail.customerId && detail.customerId !== userKey || !detail.customerId && detail.conversationNo && detail.conversationNo !== conversationNo) return;
-      denyRead("你没有查看这位客户的权限");
+      denyRead(CUSTOMER_READ_DENIED);
     };
     window.addEventListener("support-scope-invalidated", revoke);
     return () => window.removeEventListener("support-scope-invalidated", revoke);
