@@ -279,8 +279,8 @@ function sectionFailed(section: User360Section | null | undefined) {
   return ["ERROR", "UNKNOWN", "UNAVAILABLE"].includes(asText(section?.sourceStatus, "READY").toUpperCase());
 }
 
-function sectionHeading(id: string) {
-  return document.getElementById(`section-${id}`)?.querySelector<HTMLElement>(":scope > details > summary");
+function teamSectionHeading() {
+  return document.getElementById("section-team")?.querySelector<HTMLElement>(":scope > details > summary");
 }
 
 function auditDetail(row: JsonRecord) {
@@ -663,8 +663,7 @@ export default function UserDetailPage() {
   }, [writeResult, readKey]);
   const [denied, setDenied] = useState(false);
   const referralRequest = useRef<AbortController | null>(null);
-  const activeSection = useRef("");
-  const sectionBeforeRetry = useRef<{ id: string; top: number } | null>(null);
+  const teamHeadingTopBeforeRetry = useRef<number | null>(null);
   const [referralRetrying, setReferralRetrying] = useState(false);
   const [referralError, setReferralError] = useState<string | null>(null);
   const [readAt, setReadAt] = useState("");
@@ -798,9 +797,7 @@ export default function UserDetailPage() {
     try {
       const next = await readProfile(controller.signal);
       if (!active()) return;
-      const id = activeSection.current;
-      const heading = sectionHeading(id);
-      sectionBeforeRetry.current = heading ? { id, top: heading.getBoundingClientRect().top } : null;
+      teamHeadingTopBeforeRetry.current = teamSectionHeading()?.getBoundingClientRect().top ?? null;
       // Keep folds that were open or closed by default before replacing the data.
       setOpenFolds(current => ({
         security: securityAlert || securityFailed,
@@ -1178,14 +1175,13 @@ export default function UserDetailPage() {
     recordsPresent && navItem("records", "记录", recordsFailed, failedPushCount + orderExceptions > 0 ? `${failedPushCount + orderExceptions} 条` : "", corrections.length > 0 ? "校正结果未知" : ""),
   ].filter((item) => item !== false);
   const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold, restoreKey: readKey });
-  activeSection.current = nav.active;
   useLayoutEffect(() => {
-    const saved = sectionBeforeRetry.current;
-    sectionBeforeRetry.current = null;
-    if (!saved) return;
-    const heading = sectionHeading(saved.id);
+    const previousTop = teamHeadingTopBeforeRetry.current;
+    teamHeadingTopBeforeRetry.current = null;
+    if (previousTop === null) return;
+    const heading = teamSectionHeading();
     const scroller = heading?.closest("main");
-    if (heading && scroller) scroller.scrollTop += heading.getBoundingClientRect().top - saved.top;
+    if (heading && scroller) scroller.scrollTop += heading.getBoundingClientRect().top - previousTop;
   }, [detail]);
   const foldProps = (group: string, alert: boolean) => ({
     alert,
