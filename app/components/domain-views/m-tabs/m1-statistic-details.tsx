@@ -181,7 +181,11 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
   const move = (next: number) => { setResult(null); setPage(next); };
   const group = source.kind === "fund" && source.query.groupId != null ? source.origin.scopeSummary.groups.find(row => row.groupId === String(source.query.groupId)) : null;
   // 没有可见行时表内写空状态和下一步；总数没数完时也不写 0（ST-33、ST-12，BUG-657）。
-  const empty = source.kind === "fund" ? <>所选月份没有你能看到的{title}记录。<button type="button" className="rd-link" onClick={onClose}>返回工作台换个月份</button></> : "没有你能看到的记录";
+  // 期间明细（首充、期间净额）按月份列，空了引导换月份；当前客户的余额、提现和累计净额按当前筛选的客户列，和月份无关，空了引导回去改筛选（复审 F05）。
+  const periodEvent = source.kind === "fund" && (!!source.detailView || source.metric === "net" && source.query.basis === "PERIOD_EVENT");
+  const empty = source.kind !== "fund" ? "没有你能看到的记录"
+    : periodEvent ? <>所选月份没有你能看到的{title}记录。<button type="button" className="rd-link" onClick={onClose}>返回工作台换个月份</button></>
+    : <>{source.metric === "net" ? "当前范围" : "当前筛选"}里没有你能看到的客户。<button type="button" className="rd-link" onClick={onClose}>{source.metric === "net" ? "返回工作台" : "返回工作台改筛选"}</button></>;
   return <Drawer open title={title + "明细"} sub={"统计截至 " + beijing(cutoff) + "（北京时间）"} onClose={onClose} wide footer={<div className="m1-stat-footer"><Button type="button" onClick={onClose}>返回工作台</Button>{result && result.total !== null && <div className="m1-stat-pager"><Button type="button" disabled={page === 1} onClick={() => move(page - 1)}>上一页</Button><span>第 {page} 页</span><Button type="button" disabled={!result.next} onClick={() => move(page + 1)}>下一页</Button></div>}</div>}>
     <section className="m1-stat-detail" data-kind={source.kind} aria-label={title + "核对"}>
       {source.kind === "fund" && <p className="rd-note">{source.query.groupId != null ? group?.name ?? "组编号 " + source.query.groupId : "当前获准范围"}{source.query.agentId != null && " · 客服编号 " + source.query.agentId} · {nexGridBrandText(source.query.currency ?? "USDT")}{source.metric === "net" && source.query.from && source.query.to && " · 统计区间（北京时间）" + beijing(source.query.from) + " 至 " + beijing(source.query.to) + "，不含结束时刻。"}</p>}
