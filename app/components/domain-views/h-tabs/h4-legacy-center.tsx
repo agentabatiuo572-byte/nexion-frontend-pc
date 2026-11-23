@@ -185,6 +185,21 @@ export type LegacySection = "events" | "plays" | "wheel";
 /** 输入框不带单位（共用改值框放不下长单位）、再确认里要写单位的改值框，按标题给单位，只用于显示。 */
 const RECONFIRM_UNIT: Record<string, string> = { 调整每日真钱奖预算: "USDT / 天" };
 
+/**
+ * 被「别人先改过」拒绝、页面重读后由 useHConflictDraft 重开的框：框里常显这条，运营核对后再提交（OP-97 第 1 步、VS-107；BUG-648）。
+ * 只认重开的框（带回了上次的理由），运营自己再点开的框不带。页面上的提醒照旧，框关上后还看得到。
+ */
+const STALE_NOTE = <Notice tone="warn" title="别人先改过，这次没有保存">现在值已换成最新的；你填的内容和理由都还在，核对后再提交。</Notice>;
+const restoredAfterConflict = (req: { initialReason?: string }, opened: { initialReason?: string }) => opened.initialReason !== undefined && opened.initialReason !== req.initialReason;
+function withStaleNote(req: ActionConfirmReq, opened: ActionConfirmReq): ActionConfirmReq {
+  if (!restoredAfterConflict(req, opened)) return opened;
+  const facts = opened.facts;
+  return { ...opened, facts: typeof facts === "function" ? (value?: string) => <>{STALE_NOTE}{facts(value)}</> : <>{STALE_NOTE}{facts}</> };
+}
+function withStaleContent(req: ConfirmReq, opened: ConfirmReq): ConfirmReq {
+  return restoredAfterConflict(req, opened) ? { ...opened, content: <>{STALE_NOTE}{opened.content}</> } : opened;
+}
+
 export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: HCtx; section: LegacySection; onSection: (section: LegacySection) => void }) {
   const { toast } = ctx;
   const adminId = useAdminAuth(state => state.session?.adminId);
@@ -218,7 +233,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openActionConfirm = (req: ActionConfirmReq) => {
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
-    ctx.openActionConfirm(conflictDraft.action({ ...req,
+    ctx.openActionConfirm(withStaleNote(req, conflictDraft.action({ ...req,
       blockedReason: req.blockedReason ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
       run: async (reason, value, businessValue) => {
@@ -238,12 +253,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
       },
-    }));
+    })));
   };
   const openConfirm = (req: ConfirmReq) => {
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
-    ctx.openConfirm(conflictDraft.confirm({ ...req, freezePendingInput: true,
+    ctx.openConfirm(withStaleContent(req, conflictDraft.confirm({ ...req, freezePendingInput: true,
       getPendingBlockReason: () => req.getPendingBlockReason?.() ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
       run: async (reason, value) => {
@@ -264,7 +279,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
       },
-    }));
+    })));
   };
   const canModuleWrite = ctx.can("growth_h4_write");
   const canWheelWrite = ctx.can("growth_h4_wheel_pool_write");
