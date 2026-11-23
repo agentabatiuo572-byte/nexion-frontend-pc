@@ -10,7 +10,7 @@ import { Stat, StatBand, StatusTag, type TabIds } from "@/app/components/rd";
 import type { DeviceRankConfig } from "@/lib/admin/device-rank-config";
 import type { H9PublicStatsOverview } from "@/lib/admin/h9-client";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
-import { count, membersAt, paid } from "./h9-parts";
+import { count, membersAt, paid, usd } from "./h9-parts";
 
 export type H9Module = "home" | "network" | "jobs" | "globe" | "rank" | "history";
 
@@ -74,10 +74,10 @@ export function H9ModuleCards({ data, failed, rank, rankUnknown, module, onSelec
         <Stat {...tab("home", "首页数字增长")} icon={Activity} tone="role-2"
           head={<>首页数字增长{values ? <StatusTag tone={values.homeDisplayEnabled ? "progress" : "neutral"}>{values.homeDisplayEnabled ? "增长中" : "已暂停"}</StatusTag> : unreadTag}</>}
           label="在线设备 · 设定值" value={values ? count(values.homeOnlineCurrent) : "—"} unit={values ? "台" : undefined}
-          explain="最近一次设定的当前值。增长开着时 App 上的数每秒在涨，通常比这里大；App 显示的数在「App 上的样子」里。累计已发放在 App 上显示为 $，这里照原样写。">
+          explain="最近一次设定的当前值。增长开着时 App 上的数每秒在涨，通常比这里大；App 显示的数在「App 上的样子」里。">
           <dl className="rd-stat-rows">
             <div className="rd-stat-row"><dt>累计已发放 · 设定值</dt><dd data-empty={values ? undefined : ""}>{values ? paid(values.homePaidCurrent) : "—"}</dd></div>
-            <div className="rd-stat-row"><dt>每秒增加</dt><dd data-empty={values ? undefined : ""}>{values ? `${count(values.homeOnlineStepMin)}–${count(values.homeOnlineStepMax)} 台 · ${paid(values.homePaidStepMin)}–${paid(values.homePaidStepMax)}` : "—"}</dd></div>
+            <div className="rd-stat-row"><dt>每秒增加</dt><dd data-empty={values ? undefined : ""}>{values ? `${count(values.homeOnlineStepMin)}–${count(values.homeOnlineStepMax)} 台 · ${usd(values.homePaidStepMin)}–${usd(values.homePaidStepMax)} USD` : "—"}</dd></div>
           </dl>
         </Stat>
 

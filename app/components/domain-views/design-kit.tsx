@@ -1782,7 +1782,7 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   }
   if (spec.kind === "vrank-reward-edit") {
     const t = state.rtype;
-    if (t === "usdt") return state.amount ? `USDT $${state.amount}` : undefined;
+    if (t === "usdt") return state.amount ? `${state.amount} USDT` : undefined;
     if (t === "uvt") return state.amount ? `${Number(state.amount).toLocaleString()} UVT` : undefined;
     if (t === "voucher") return state.voucherId ? `代金券 ${spec.voucherLabels?.[state.voucherId] ?? state.voucherId}` : undefined;
     if (t === "sku") return state.skuId ? `SKU ${spec.skuLabels?.[state.skuId] ?? state.skuId}` : undefined;
