@@ -202,6 +202,8 @@ const DEPOSIT_STATUS: Record<string, string> = {
 };
 const DIRECTION: Record<string, string> = { IN: "收入", OUT: "支出" };
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
+const CHECK_DEVICE_RESULT_FIRST = "请先查询原结果";
+const isDeviceCommand = (command: C1Command) => command.kind === "replace" || command.kind === "recycle";
 const withdrawalTone = (row: JsonRecord) => WITHDRAWAL_TONE[asText(row.status, "").toUpperCase()];
 const withdrawalLabel = (row: JsonRecord) => withdrawalRecordLabel({ status: asText(row.status, ""), chain: asText(row.chain, "") });
 const depositTone = (row: JsonRecord) => DEPOSIT_TONE[asText(row.status, "").toUpperCase()];
@@ -701,7 +703,8 @@ export default function UserDetailPage() {
   const [pendingCommands, setPendingCommands] = useState<C1Command[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   /** 最近一次查询原结果查到的结论，收起时就写在这一行（RecoveryItem.result）。 */
-  const [pendingFound, setPendingFound] = useState<Record<string, "error" | "none" | "PROCESSING" | "FAILED" | "UNKNOWN" | "REJECTED" | "PROCESSED">>({});
+  const [pendingFound, setPendingFound] = useState<Partial<Record<string, "checking" | "error" | "none" | "PROCESSING" | "FAILED" | "UNKNOWN" | "REJECTED" | "PROCESSED">>>({});
+  const [, refreshDeviceRetryWindow] = useState(0);
   /** 最近一次查到的原回包：结案框按它给结论（closureKnown）。 */
   const [pendingOutcomes, setPendingOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closingCommand, setClosingCommand] = useState<C1Command | null>(null);
@@ -891,6 +894,13 @@ export default function UserDetailPage() {
     setCorrections(adminKey ? pendingCorrections(adminKey, [userKey, c3UserId, profile?.userNo ?? ""]) : []);
   }, [c3UserId, adminKey, userKey, profile?.userNo]);
   useEffect(() => { syncPending(); }, [syncPending]);
+  useEffect(() => {
+    const now = Date.now();
+    const timers = pendingCommands.filter(command => isDeviceCommand(command) && !command.legacy
+      && pendingFound[command.commandKey] === "none" && command.expiresAt > now)
+      .map(command => window.setTimeout(() => refreshDeviceRetryWindow(value => value + 1), command.expiresAt - now));
+    return () => timers.forEach(timer => window.clearTimeout(timer));
+  }, [pendingCommands, pendingFound]);
 
   const loadPaymentMethods = useCallback(async () => {
     if (supportScope || !userId) return;
@@ -1008,13 +1018,26 @@ export default function UserDetailPage() {
     }
   };
 
+  const busyReason = loading || referralRetrying ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
+  const deviceRetryBlock = (command: C1Command) => {
+    if (isExplicitRejection(command.rejection)) return "重试被明确拒绝";
+    const result = pendingFound[command.commandKey];
+    return result === "checking" ? "正在查询原结果" : result !== "none" ? CHECK_DEVICE_RESULT_FIRST : undefined;
+  };
+  const clearPendingFound = (commandKey: string) => {
+    setPendingFound(current => ({ ...current, [commandKey]: undefined }));
+  };
+
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。过期和查不到都不解除（OP-96、OP-153）。 */
   const retryPending = async (command: C1Command) => {
     if (command.expiresAt <= Date.now()) return;
+    const device = isDeviceCommand(command);
+    if (device && (!canWriteC2 || command.legacy || busyReason || deviceRetryBlock(command))) return;
     if (!c1UserCommands.isDurablyStored(command.fingerprint, command.commandKey)) {
       setPendingNotes((current) => ({ ...current, [command.fingerprint]: "本机存储里查不到原操作，这次没有发送。到操作记录与审批核对，原记录继续保留。" }));
       return;
     }
+    if (device) clearPendingFound(command.commandKey);
     try {
       await execute(command);
     } catch (cause) {
@@ -1036,9 +1059,18 @@ export default function UserDetailPage() {
 
   /** 先按原请求查原结果，查到确定结论才解除并告诉运营结果；查不出结论再读回现在的值，变了也可能是别人改的，待确认保留（OP-93、OP-95）。 */
   const verifyPending = async (command: C1Command) => {
+    const device = isDeviceCommand(command);
+    if (device) {
+      if (busyReason || pendingFound[command.commandKey] === "checking") return;
+      setPendingFound(current => ({ ...current, [command.commandKey]: "checking" }));
+    }
     const result = await queryUserDetailCommand(command).catch(() => null);
-    if (String(useAdminAuth.getState().session?.adminId) !== (command.adminKey || adminKey)) return;
+    if (String(useAdminAuth.getState().session?.adminId) !== (command.adminKey || adminKey)) {
+      if (device) clearPendingFound(command.commandKey);
+      return;
+    }
     if (result?.settled) {
+      if (device) clearPendingFound(command.commandKey);
       c1UserCommands.forget(command.fingerprint, command.commandKey);
       syncPending(); setActionConfirm(null); setReleasing(null);
       const status = result.receipt?.originalStatus;
@@ -1076,7 +1108,6 @@ export default function UserDetailPage() {
       : receiptRejected(result.receipt) ? "REJECTED" : "PROCESSED" }));
   };
 
-  const busyReason = loading || referralRetrying ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
   const nicknameBlock = pendingCommands.some((command) => command.kind === "nickname") ? "重置昵称的结果未知，先到页面上方核对" : busyReason;
   const methodBlock = (method: UserPaymentMethod) => pendingCommands.some((command) => command.methodId === method.id)
     ? "这张卡有结果未知的操作，先到页面上方核对"
@@ -1371,28 +1402,31 @@ export default function UserDetailPage() {
     ...pendingCommands.map((command): RecoveryItem => {
       const expired = command.expiresAt <= Date.now();
       // 重试和普通入口一样看现在的入口和权限（OP-123）。没权限只留核对，提示和记录都留着。
-      const device = command.kind === "replace" || command.kind === "recycle";
+      const device = isDeviceCommand(command);
       const writable = device ? canWriteC2 : canWriteC1;
       const hasWrite = device ? hasC2Write : hasC1Write;
       const refused = writable && !command.legacy && isExplicitRejection(command.rejection);
+      const lookup = pendingFound[command.commandKey];
+      const checkingResult = lookup === "checking";
+      const retryBlock = device ? deviceRetryBlock(command) : undefined;
       const canClose = canInvestigateECommand(userDetailCommandRoute(command).readAuthority);
       // 能在这里核查结案的，过期后不再指去操作记录与审批。
       const nextStep = expired ? canClose ? "已超过 24 小时，不能再重试。" : `${EXPIRED_TEXT}。` : command.legacy
         ? "这是升级前发出的操作，没有存下原理由，不能重试，先核对原操作有没有生效。"
         : !writable
           ? hasWrite ? "客服入口不能重试，到用户详情处理。" : "这个账号现在没有这项操作的权限，不能重试，请有权限的同事处理。"
-          : "按原请求重试只重发原请求，不会重复执行。";
+          : retryBlock ? `${retryBlock}。` : "按原请求重试只重发原请求，不会重复执行。";
       // 查到的结论和资金页同一个说法。有调查权限的超级管理员（也是原操作人，数据层只让原操作人查）在这里核查结案：
       // 仍未知随时可以，查到已处理、后台拒绝、记为失败的过了 24 小时才可以；其余指向操作记录与审批。
-      const retryable = writable && !command.legacy && !expired;
-      const found = refused ? undefined : pendingFound[command.commandKey];
+      const retryable = writable && !command.legacy && !expired && !retryBlock;
+      const found = refused || lookup === "checking" ? undefined : lookup;
       const outcome = refused ? undefined : pendingOutcomes[command.commandKey];
       const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
       const closable = canClose && !!receipt && (receipt.originalStatus === "UNKNOWN" || expired && (receipt.originalStatus === "SUCCEEDED" || receipt.originalStatus === "FAILED"));
       const elsewhere = expired && canClose ? "已过 24 小时，请核查结案。" : "到操作记录与审批核对。";
       const shown: { tone: StateTone; label: string; line: string } | undefined = found && {
         error: { tone: "danger" as const, label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" },
-        none: { tone: "warn" as const, label: "没有查到", line: "查不到不等于没执行，先到操作记录与审批核对，不要另做一次。" },
+        none: { tone: "warn" as const, label: "没有查到", line: device && retryable ? "按原请求重试只重发原请求，不会重复执行。" : "查不到不等于没执行，先到操作记录与审批核对，不要另做一次。" },
         PROCESSING: { tone: "progress" as const, label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE },
         FAILED: { tone: "neutral" as const, label: "记为失败", line: retryable ? "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。"
           : expired && canClose ? FAILED_EXPIRED_LINE : "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起。" },
@@ -1409,9 +1443,9 @@ export default function UserDetailPage() {
         line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。",
         note: pendingNotes[command.fingerprint],
         actions: <>
-          <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>查询原结果</Button>
+          <Button size="sm" disabled={!!busyReason || checkingResult} onClick={() => void verifyPending(command)}>查询原结果</Button>
           {closable && <Button size="sm" variant="danger-outline" disabled={!!busyReason} onClick={() => setClosingCommand(command)}>核查结案</Button>}
-          {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原请求重试</Button>}
+          {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason ?? retryBlock} onClick={() => void retryPending(command)}>按原请求重试</Button>}
           {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
           {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
         </>,
