@@ -613,6 +613,14 @@ function Values({ rows }: { rows: readonly (readonly [ReactNode, ReactNode])[] }
   return <dl className="rd-detail-values" data-grid="">{rows.map(([label, value], index) => <div key={index}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
 
+function supportReturnPath(value: string) {
+  if (!value.startsWith("/service/")) return;
+  const url = new URL(value, "https://console.invalid");
+  if (url.origin === "https://console.invalid" && url.pathname.startsWith("/service/")) {
+    return url.pathname + url.search + url.hash;
+  }
+}
+
 export default function UserDetailPage() {
   const session = useAdminAuth((state) => state.session);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
@@ -642,7 +650,7 @@ export default function UserDetailPage() {
   const userKey = params?.id?.trim() ?? "";
   const requestedReturnTo = searchParams?.get("returnTo") ?? "";
   const conversationNo = searchParams?.get("conversationNo")?.trim() ?? "";
-  const returnTo = supportScope ? conversationNo ? `/service/sessions?conversationNo=${encodeURIComponent(conversationNo)}` : "/service/overview" : requestedReturnTo.startsWith("/users/search") && !requestedReturnTo.startsWith("//")
+  const returnTo = supportScope ? conversationNo ? `/service/sessions?conversationNo=${encodeURIComponent(conversationNo)}` : supportReturnPath(requestedReturnTo) ?? "/service/overview" : requestedReturnTo.startsWith("/users/search") && !requestedReturnTo.startsWith("//")
     ? requestedReturnTo
     : "/users/search";
   const returnLabel = supportScope ? conversationNo ? "返回原会话" : "返回工作台" : "返回用户列表";
@@ -1305,18 +1313,19 @@ export default function UserDetailPage() {
     detail.financial?.totalsStatus === "ERROR" && "累计金额",
     detail.risk && !riskAuthorityReady && !supportScope && "风险分",
   ].filter((value): value is string => !!value);
+  const paymentScopeNote = paymentSecurityPort && paymentSecurity.state === "denied" ? "支付安全无权限，不在本次核对范围。" : "";
   const checked = [
     "账户状态",
     detail.risk && (detail.risk.cases !== undefined ? "风险档和最近 20 条风险案件" : "风险档"),
     detail.sessions && !securityUnread && "账号锁定",
-    paymentSecurityPort && "支付安全",
+    paymentSecurityPort && (paymentSecurity.state === "clear" || paymentSecurity.state === "exception") && "支付安全",
     !supportScope && "全部支付方式的撤销状态",
     detail.withdrawals && "提现记录列出的最多 30 条（风险档高的排在前，同档新的在前，所以不一定是最近 30 条）",
     detail.devices && "设备状态",
     detail.commerce && "最近 50 单订单",
     detail.notifications && "通知推送失败",
   ].filter((value): value is string => !!value);
-  const checking = paymentSecurity.state === "loading" || !supportScope && (!paymentMethods && !paymentError || !revokeScan && !revokeScanFailed);
+  const checking = paymentSecurityPort && paymentSecurity.state === "loading" || !supportScope && (!paymentMethods && !paymentError || !revokeScan && !revokeScanFailed);
   const firstIssue = issues.find((issue) => issue.go);
   const firstGo = firstIssue?.go;
   const c2Link = canReadC2 && !supportScope
@@ -1328,7 +1337,7 @@ export default function UserDetailPage() {
   const unreadText = unreadable.length > 0 ? `${unreadable.join("、")}暂时无法确认` : "";
   const unreadCount = unreadable.length > 0 ? `${unreadable.length} 组资料加载失败` : "";
   // 最重要的两件写出来，其余写数量（DP-10）；危险的排在前面。
-  const issueText = [issues.slice(0, 2).map((issue) => issue.text).join("，") + (issues.length > 2 ? `，还有 ${issues.length - 2} 件` : ""), unreadText].filter(Boolean).join("；");
+  const issueText = [issues.slice(0, 2).map((issue) => issue.text).join("，") + (issues.length > 2 ? `，还有 ${issues.length - 2} 件` : ""), unreadText, paymentScopeNote].filter(Boolean).join("；");
   const scopeNote = `这个账号看不到的区块不在内${detail.risk?.cases !== undefined ? "，风险案件读取失败时也显示 0" : ""}`;
   const checkedExplain = <p>核对了：{checked.join("、")}。{scopeNote}。</p>;
   const pendingCount = pendingCommands.length + corrections.length;
@@ -1337,15 +1346,15 @@ export default function UserDetailPage() {
     : issues.length > 0
       ? <Conclusion state={issues.some((issue) => issue.danger) ? "danger" : "warn"} hint={issueText} explain={checkedExplain} action={firstGo ? <Button onClick={firstGo}>{firstIssue?.goLabel}</Button> :(riskHigh || openCases > 0) ? k4Link : undefined}>有 <b>{issues.length}</b> 件事要处理{unreadCount && `，${unreadCount}`}</Conclusion>
       : status === "UNKNOWN"
-        ? <Conclusion state="unknown" hint={unreadText || undefined} explain={checkedExplain}>账户状态未确认，暂时无法判断</Conclusion>
+        ? <Conclusion state="unknown" hint={[unreadText, paymentScopeNote].filter(Boolean).join("；") || undefined} explain={checkedExplain}>账户状态未确认，暂时无法判断</Conclusion>
         : unreadable.length > 0
-          ? <Conclusion state="unknown" hint={`${unreadText}，这部分没有判断。`} explain={checkedExplain}>账户正常，{unreadCount}</Conclusion>
+          ? <Conclusion state="unknown" hint={`${unreadText}，这部分没有判断。${paymentScopeNote}`} explain={checkedExplain}>账户正常，{unreadCount}</Conclusion>
           : checking
-            ? <Conclusion state="unknown">账户正常，正在核对其余项目…</Conclusion>
+            ? <Conclusion state="unknown" hint={paymentScopeNote || undefined}>账户正常，正在核对其余项目…</Conclusion>
             // 结果未确认在下面的提示里写一次，这里不写「没发现问题」，也不再说一遍（VS-105）。
             : pendingCount > 0
-              ? null
-              : <Conclusion state="ok" icon={ShieldCheck} explain={<><p>核对了：{checked.join("、")}。</p><p>这只说明这些项目没发现问题，不代表全部没事：{scopeNote}。</p></>}>账户正常，已核对的项目没发现问题</Conclusion>;
+              ? paymentScopeNote ? <Conclusion state="unknown" explain={checkedExplain}>{paymentScopeNote}</Conclusion> : null
+              : <Conclusion state="ok" icon={ShieldCheck} hint={paymentScopeNote || undefined} explain={<><p>核对了：{checked.join("、")}。</p><p>这只说明这些项目没发现问题，不代表全部没事：{scopeNote}。</p></>}>账户正常，已核对的项目没发现问题</Conclusion>;
 
   const hasEntries = !supportScope;
   const inPageWrites = [canWriteC1 && "重置昵称、处理支付方式", canWriteC2 && "回收设备", canReleasePayment && "解除支付密码异常"].filter(Boolean).join("，");

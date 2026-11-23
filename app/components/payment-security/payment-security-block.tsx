@@ -71,18 +71,18 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   }, [load, owner, reloadKey]);
   const record = summary?.record;
   // 状态未确认的记录不算没事。
-  const state: PaymentSecurityState = denied ? "denied" : loading ? "loading" : error || record?.state === "UNKNOWN" ? "failed" : record?.state === "ACTIVE" ? "exception" : "clear";
+  const state: PaymentSecurityState = error ? "failed" : denied ? "denied" : loading ? "loading" : record?.state === "UNKNOWN" ? "failed" : record?.state === "ACTIVE" ? "exception" : "clear";
   const showPending = pending && !denied;
   useEffect(() => { onState?.(state, showPending); }, [onState, state, showPending]);
   if (!session) return null;
-  const line = denied ? "· 无权限" : loading ? "正在读取…" : error ? "加载失败" : record ? stateText(record) : "支付密码无异常";
+  const line = error ? "加载失败" : denied ? "· 无权限" : loading ? "正在读取…" : record ? stateText(record) : "支付密码无异常";
   return (
     <>
       <Fold inset title="支付安全" alert={state === "exception" || state === "failed" || showPending} alertTone={error ? "danger" : "warn"} summary={line}
         explain={<><p>支付密码仅用于钱包余额付款。HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受此锁定影响。</p>{record && <p>解除只处理本条支付密码异常，登录状态不受影响。</p>}</>}
         actions={!denied && !error && <Button size="sm" aria-label="刷新支付安全" icon={<RefreshCcw size={13} aria-hidden />} loading={loading} onClick={() => void load()}>刷新</Button>}>
         <div className="rd-detail-block">
-          {denied ? <BlockState state="denied" compact title="无权限" /> : error && <BlockState state="error" compact title={error} onRetry={() => void load()} />}
+          {error ? <BlockState state="error" compact title={error} onRetry={() => void load()} /> : denied && <BlockState state="denied" compact title="无权限" />}
           {record && <>
             <Facts>
               <Fact k="当前状态">{stateTag(record)}</Fact>

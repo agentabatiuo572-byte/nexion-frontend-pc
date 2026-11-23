@@ -3,6 +3,7 @@
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { userNicknameText} from "@/lib/admin/brand-copy";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, type SupportProfile, type SupportGroup, type SupportFinanceFieldStatus } from "@/lib/admin/m-support-enhancements";
 import { supportClient, SupportClientError, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
@@ -65,6 +66,7 @@ function Group({ title, note, summary, open, onOpenChange, group, failed, retry,
   return <Fold inset title={title} explain={note} summary={!group ? (failed ? "加载失败" : "正在加载…") : group.status !== "READY" ? statusText[group.status] : summary} alert={group?.status === "ERROR" || !group && failed} {...(onOpenChange ? { open, onOpenChange } : { defaultOpen: open })}>{!group ? <BlockState state={failed ? "error" : "loading"} compact title={failed ? "加载失败" : "正在加载…"} /> : group.status !== "READY" ? <BlockState state={group.status === "ERROR" ? "error" : "empty"} compact title={statusText[group.status]} retryLabel={`重新加载${title}`} onRetry={group.status === "ERROR" ? retry : undefined} /> : children}</Fold>;
 }
 export function M3CustomerProfile({ ctx, customerId, source, transferEntry = true, conversation, scopeVersion, onHistory, messageError, onRetryMessages, openRequest = 0 }: { ctx: MCtx; customerId: string; source: "M1" | "M3"; transferEntry?: boolean; conversation?: SessionConvo; scopeVersion?: number; onHistory: (no: string) => void; messageError?: string; onRetryMessages: () => void; /** 每加一次打开一次全部资料：窄宽时入口在对话头的菜单里。 */ openRequest?: number }) {
+  const pathname = usePathname(), searchParams = useSearchParams();
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const [profile, setProfile] = useState<SupportProfile | null>(null), [error, setError] = useState("");
   const [paymentIdentity, setPaymentIdentity] = useState<{ scope: string; label: string } | null>(null);
@@ -113,13 +115,16 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     return true;
   };
   const retryProfile = () => { if (stamp.current === requestStamp) { revokedScope.current = ""; setReload(n => n + 1); } };
-  const applyProfile = (next: SupportProfile) => {
-    setProfile(next);
-    const identity = next.identity.data;
+  const applyPaymentIdentity = (group: SupportProfile["identity"]) => {
+    const identity = group.data;
     const userNo = String(identity?.userNo ?? customerId);
-    setPaymentIdentity(next.identity.status === "READY"
+    setPaymentIdentity(group.status === "READY"
       ? { scope: paymentScope, label: `${userNicknameText(String(identity?.nickname ?? userNo), identity?.phoneMasked)} · ${userNo}` }
       : null);
+  };
+  const applyProfile = (next: SupportProfile) => {
+    setProfile(next);
+    applyPaymentIdentity(next.identity);
   };
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
@@ -164,12 +169,31 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   async function retryGroup(key: keyof Omit<SupportProfile,"actions">) {
     if (revokedScope.current === scopeKey || stamp.current !== requestStamp) return;
     const saved = stamp.current;
+    const previousIdentity = profile?.identity;
     setError(""); setProfile(old => old ? { ...old, [key]: { ...old[key], status: "UNKNOWN", data: null } } : old);
     try {
       const next = await supportEnhancements.profile(customerId);
       if (!mounted.current || saved !== stamp.current) return;
-      if (key === "identity") applyProfile(next);
-      else setProfile(old => old ? { ...old, [key]: next[key] } : next);
+      if (key !== "identity") {
+        setProfile(old => old ? { ...old, [key]: next[key] } : next);
+        return;
+      }
+      if (next.identity.status !== "READY") {
+        setProfile(old => old && previousIdentity ? { ...old, identity: previousIdentity } : old);
+        return;
+      }
+      applyPaymentIdentity(next.identity);
+      setProfile(old => {
+        if (!old) return old;
+        const { annotations } = old;
+        const systemTags = next.annotations.data?.systemTags;
+        return {
+          ...old, identity: next.identity, risk: next.risk,
+          annotations: annotations.data && next.annotations.data
+            ? { ...annotations, data: { ...annotations.data, systemTags } }
+            : annotations,
+        };
+      });
     } catch (e) {
       if (mounted.current && saved === stamp.current && !denied(e)) {
         setProfile(old => old ? { ...old, [key]: { ...old[key], status: "ERROR", data: null } } : old);
@@ -178,6 +202,13 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     }
   }
   const conversationId = conversation?.id;
+  const profileQuery = new URLSearchParams();
+  if (conversationId) profileQuery.set("conversationNo", conversationId);
+  if (source === "M1" && pathname) {
+    const query = searchParams?.toString();
+    profileQuery.set("returnTo", query ? `${pathname}?${query}` : pathname);
+  }
+  const profileSearch = profileQuery.toString();
   const writable = Boolean(!scopeDenied && conversationId && conversation?.ownerAdminId === session?.adminId && (session?.role === "super" || session?.role === "superadmin" || session?.authorities.includes("service_m3_write")));
   const canReadAccount = session?.role === "super" || session?.role === "superadmin" || Boolean(session?.authorities.includes("user_c1hub_read"));
   const annotationScope = `${scopeKey}:${conversationId ?? ""}:${conversation?.ownerAdminId ?? ""}:${conversation?.assignmentId ?? ""}:${writable}`;
@@ -358,7 +389,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   </div>;
   return <div className="m3-customer-sidebar">
     <header className="m3-profile-identity"><SupportAvatar name={userNicknameText(String(identity?.nickname ?? "客户"), identity?.phoneMasked)} path={identity?.avatar ? customerAvatarPath(customerId) : undefined} size={44}/><div><h3 className="m3-profile-name" title={userNicknameText(show(identity?.nickname), identity?.phoneMasked)}><span className="m3-profile-nick">{identity?.nickname == null ? "客户资料不完整" : userNicknameText(show(identity.nickname), identity?.phoneMasked)}</span>{identity?.level != null && <span className="m3-profile-level">{show(identity.level)}</span>}</h3><p className="m3-profile-meta"><span className="m3-profile-uid">用户编码 <span className="m-user-code">{identity?.userNo == null ? EMPTY : show(identity.userNo)}</span></span>{advisorName && <span className="m3-profile-owner">当前专属客服 {String(advisorName)}</span>}</p></div></header>
-    {!scopeDenied && <div className="m3-profile-entries"><Button size="sm" onClick={()=>open360()}>在本页展开资料</Button><a className="rd-btn m3-profile-full" data-variant="secondary" data-size="sm" href={`/service/customers/${encodeURIComponent(customerId)}${conversation?.id ? `?conversationNo=${encodeURIComponent(conversation.id)}` : ""}`}><span className="rd-btn-face">查看完整客户档案</span></a></div>}
+    {!scopeDenied && <div className="m3-profile-entries"><Button size="sm" onClick={()=>open360()}>在本页展开资料</Button><a className="rd-btn m3-profile-full" data-variant="secondary" data-size="sm" href={`/service/customers/${encodeURIComponent(customerId)}${profileSearch ? `?${profileSearch}` : ""}`}><span className="rd-btn-face">查看完整客户档案</span></a></div>}
     {view360 && <Modal title="客户资料全部分组" icon="users" wide onClose={()=>setView360(false)} footer={<Button onClick={()=>setView360(false)}>返回会话</Button>}>{body}</Modal>}
     <div className="m3-profile-body" hidden={view360}>
       {error && <div className="m3-profile-state" role="alert">{error}<button type="button" className="m3-profile-link" onClick={retryProfile}>重新加载资料</button></div>}
