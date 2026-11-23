@@ -5,7 +5,7 @@ const SKU_BADGE_PRESETS = {
   recommended: { label: "推荐", aliases: ["recommended", "推荐", "đề xuất", "рекомендуем", "ұсынылады", "tavsiya", "rekomendasi", "disyorkan", "mungkahi"] },
   bestSeller: { label: "热销", aliases: ["best seller", "热销", "bán chạy nhất", "bán chạy", "хит продаж", "хит", "xit", "terlaris", "pinakamabenta"] },
   trending: { label: "正热", aliases: ["trending", "上升", "正热", "xu hướng", "đang hot", "в тренде", "танымал", "ommabop", "naik daun", "sohor kini"] },
-  upgradePick: { label: "升级首选", aliases: ["upgrade pick", "升级首选", "nên nâng cấp", "для улучшения", "жаңарту үшін", "yangilash uchun", "pilihan upgrade", "pilihan naik taraf", "pang-upgrade", "lựa chọn nâng cấp"] },
+  upgradePick: { label: "升级首选", aliases: ["upgrade pick", "升级首选", "nên nâng cấp", "для улучшения", "жаңарту үшін", "жақсартуға ұсынылады", "yangilash uchun", "pilihan upgrade", "pilihan naik taraf", "pang-upgrade", "lựa chọn nâng cấp"] },
   flagship: { label: "旗舰", aliases: ["flagship", "旗舰", "hàng đầu", "флагман", "flagman", "unggulan", "perdana"] },
   lowBarrier: { label: "低门槛", aliases: ["low barrier", "低门槛", "rào cản thấp", "лёгкий старт", "төмен кіру шегі", "oson boshlash", "mudah mulai", "mudah dimulakan", "mababang entry"] },
 };

@@ -10,7 +10,7 @@ import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-ti
 import { fetchSkuDatacenterLabels, fetchTaskPools, type TaskPool } from "@/lib/admin/task-pool-client";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import { ADMIN_ERROR_MESSAGES, guardedFetch, displayAdminError } from "@/lib/admin/error-messages";
-import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, containsHan } from "@/lib/admin/content-language-rules";
+import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, containsHan, trimStoredContent } from "@/lib/admin/content-language-rules";
 import { SKU_BADGE_OPTIONS, SKU_CUSTOM_BADGE_MAX_LENGTH, SKU_TAGLINE_LABELS, SKU_TAGLINE_TRANSLATION_MAX_LENGTH, SKU_TAGLINE_VI_HAN_ERROR, skuBadgeKind, skuBadgeValue } from "@/lib/admin/e1-product-copy";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
@@ -54,17 +54,15 @@ const E1_POWER_FORMATS = ["1800", "1,800 W", "1,800 W TDP", "1,800 W (per-GPU ra
 
 const imageIdentity = (m: Media) => JSON.stringify([m?.assetId ?? "", m?.objectKey ?? ""]);
 
-function productCopyErrors(form: SkuForm, skuName: string): Record<string, string> {
+function productCopyErrors(form: SkuForm, sku: OpsSku): Record<string, string> {
   const errors: Record<string, string> = {};
-  if ([...skuName].length > SKU_NAME_MAX_LENGTH) errors.name = ADMIN_ERROR_MESSAGES.SKU_NAME_TOO_LONG;
-  if (form.badgeKind === "custom") {
-    const badge = skuBadgeValue(form.badgeKind, form.badge);
-    if (!badge || skuBadgeKind(badge) === "none") errors.badge = CUSTOM_BADGE_REQUIRED;
-    else if ([...badge].length > SKU_CUSTOM_BADGE_MAX_LENGTH) errors.badge = ADMIN_ERROR_MESSAGES.SKU_BADGE_TOO_LONG;
-    else {
-      const error = appVisibleTextError(badge, "自定义角标");
-      if (error) errors.badge = error;
-    }
+  if ([...sku.name].length > SKU_NAME_MAX_LENGTH) errors.name = ADMIN_ERROR_MESSAGES.SKU_NAME_TOO_LONG;
+  const badge = trimStoredContent(sku.badge ?? "");
+  if (form.badgeKind === "custom" && skuBadgeKind(badge) === "none") errors.badge = CUSTOM_BADGE_REQUIRED;
+  else if ([...badge].length > SKU_CUSTOM_BADGE_MAX_LENGTH) errors.badge = ADMIN_ERROR_MESSAGES.SKU_BADGE_TOO_LONG;
+  else {
+    const error = appVisibleTextError(badge, form.badgeKind === "custom" ? "自定义角标" : "营销角标");
+    if (error) errors.badge = error;
   }
   for (const key of ["taglineZh", "taglineVi"] as const) {
     if ([...form[key].trim()].length > SKU_TAGLINE_TRANSLATION_MAX_LENGTH) {
@@ -139,9 +137,9 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const seriesLocked = original?.seriesLocked === true;
   const seriesChoices = skuSeriesChoices(form.tier, original);
   const nav = useSectionNav(SECTIONS, { ready: !!request });
-  const dirty = !!request && (JSON.stringify(form) !== initialForm || imageIdentity(media) !== initialMedia);
-  const latestChanged = !!original && !!currentSku?.updatedAt && original.updatedAt !== currentSku.updatedAt;
   const draft = skuDraft(form, original, media);
+  const dirty = !!request && (JSON.stringify({ ...form, badgeKindChanged: false }) !== initialForm || draft.badge !== original?.badge || imageIdentity(media) !== initialMedia);
+  const latestChanged = !!original && !!currentSku?.updatedAt && original.updatedAt !== currentSku.updatedAt;
   const changes = e1SkuDiff(original, draft, form).filter(r => r.before !== r.after);
   const update = (key: keyof SkuForm, value: string) => { setForm(f => ({ ...f, [key]: value })); setErrors(e => ({ ...e, [key]: "" })); };
   const refreshPreview = useCallback(async (assetId: string) => {
@@ -259,12 +257,13 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     const latestForm = skuToForm(latest);
     const merged = { ...latestForm };
     for (const key of Object.keys(previous) as (keyof SkuForm)[]) {
-      if (key === "badge" || key === "badgeKind") continue;
+      if (key === "badge" || key === "badgeKind" || key === "badgeKindChanged") continue;
       if (JSON.stringify(form[key]) !== JSON.stringify(previous[key])) Object.assign(merged, { [key]: form[key] });
     }
-    if (form.badgeKind !== previous.badgeKind || form.badgeKind === "custom" && form.badge !== previous.badge) {
+    if (form.badgeKindChanged || form.badgeKind === "custom" && form.badge !== previous.badge) {
       merged.badgeKind = form.badgeKind;
       merged.badge = form.badge;
+      merged.badgeKindChanged = true;
     }
     const latestMedia = skuMedia(latest);
     const mergedMedia = imageIdentity(media) === imageIdentity(skuMedia(original))
@@ -329,7 +328,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
       }
     }
     const sku = skuDraft(form, original, media);
-    Object.assign(e, productCopyErrors(form, sku.name));
+    Object.assign(e, productCopyErrors(form, sku));
     setErrors(e);
     if (Object.keys(e).length) {
       const first = Object.keys(e)[0];
@@ -351,7 +350,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   };
   const review = () => { reviewDraft(form, original, media); };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
-  const copyErrors = productCopyErrors(form, draft.name);
+  const copyErrors = productCopyErrors(form, draft);
   // An empty custom badge is reported after the field loses focus or on submit (OP-15); the save button states it at once.
   const { badge: liveBadgeError, ...liveCopyErrors } = copyErrors;
   const appTextErrors: Record<string, string> = { ...liveCopyErrors, ...liveBadgeError && liveBadgeError !== CUSTOM_BADGE_REQUIRED ? { badge: liveBadgeError } : {}, warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
@@ -384,8 +383,8 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
               : <Field label="所属系列" required error={errors.seriesCode} explain="决定设备的产能、可跑的任务和 App 里的设备分类。有订单或发出设备后就不能再改。"><Select aria-label="所属系列" required value={form.seriesCode} disabled={busy || !original && !form.tier} onChange={v => update("seriesCode", v)} placeholder={!original && !form.tier ? "请先选择档位" : "请选择所属系列"} options={[...seriesChoices.map(code => ({ value: code, label: SKU_SERIES_NAMES[code] })), ...form.seriesCode && !seriesChoices.some(code => code === form.seriesCode) ? [{ value: form.seriesCode, label: `${skuSeriesText(form.seriesCode)}（和商品类型不符）`, disabled: true }] : []]} /></Field>}
             <Field label="生命周期" required error={errors.lifecycle} explain="现行或已停产，与商城上下架状态独立。"><Select aria-label="生命周期" required value={form.lifecycle} onChange={v => update("lifecycle", v)} placeholder="请选择生命周期" options={[{ value: "active", label: "现行" }, { value: "legacy", label: "已停产" }]} /></Field>
             <div className="e1-badge-fields">
-              <Field label="营销角标" explain="商品媒体旁的活动文字，批准后显示在商品卡。"><Select aria-label="营销角标" value={form.badgeKind} onChange={value => {
-                setForm(draft => ({ ...draft, badgeKind: value as SkuForm["badgeKind"] }));
+              <Field label="营销角标" error={form.badgeKind !== "custom" ? errors.badge || appTextErrors.badge : undefined} explain="商品媒体旁的活动文字，批准后显示在商品卡。"><Select aria-label="营销角标" value={form.badgeKind} onChange={value => {
+                setForm(draft => ({ ...draft, badgeKind: value as SkuForm["badgeKind"], badgeKindChanged: true }));
                 setErrors(current => ({ ...current, badge: "" }));
               }} options={SKU_BADGE_OPTIONS} disabled={busy} /></Field>
               {form.badgeKind === "custom" && <Field label="自定义角标" required hint={`${[...skuBadgeValue("custom", form.badge) ?? ""].length}/${SKU_CUSTOM_BADGE_MAX_LENGTH}`} error={errors.badge || appTextErrors.badge} explain={APP_VISIBLE_TEXT_HINT}>

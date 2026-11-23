@@ -7,7 +7,7 @@ import { skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { isSkuTaglineTranslations, SKU_TAGLINE_LABELS, skuBadgeReviewText, type SkuTaglineTranslations } from "@/lib/admin/e1-product-copy";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, AUDIT_RESOURCE_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
 import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
-import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
+import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCopyText } from "@/lib/admin/operator-copy";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
@@ -47,6 +47,7 @@ import {
   approveA2Operation,
   createA2CommandKey,
   exportA2Audit,
+  fetchA2ProposalLog,
   fetchA2RetentionLatest,
   fetchA2RetentionPreview,
   fetchA2Overview,
@@ -318,14 +319,15 @@ function e1SkuLogSides(log: { delta: string }): { before: string; after: string;
   }
   return undefined;
 }
-/**
- * E1 批准执行时写的 E1_SKU_UPDATED 只带名称和价格（OpsDeviceService），前后值常是「1199 → 1199」。批准命令号里带着审批单号，
- * 已读到的记录里有这张单的提案时，按提案的两份快照列改了哪几项；没有时只写价格有没有变，并说明其他改动不在这条里。
- */
-function e1ApprovedLog(log: A2AuditLogRow, rows: readonly A2AuditLogRow[]): { ticket?: string; sides?: ReturnType<typeof e1SkuLogSides>; price?: string } | undefined {
+function e1ApprovalTicket(log: A2AuditLogRow) {
+  if (log.action === "E1_SKU_UPDATED") return /^a2-approve-(WO-\d+-\d+)-/.exec(log.idempotencyKey ?? "")?.[1];
+}
+
+/** The execution audit only records price. Look up the frozen proposal by the ticket in the approval command. */
+function e1ApprovedLog(log: A2AuditLogRow, proposals?: ReadonlyMap<string, A2AuditLogRow | undefined>): { ticket?: string; sides?: ReturnType<typeof e1SkuLogSides>; price?: string } | undefined {
   if (log.action !== "E1_SKU_UPDATED") return undefined;
-  const ticket = /^a2-approve-(WO-\d+-\d+)-/.exec(log.idempotencyKey ?? "")?.[1];
-  const proposal = ticket ? rows.find((row) => row.action === "A2_OPERATION_PROPOSED" && row.resourceId === ticket) : undefined;
+  const ticket = e1ApprovalTicket(log);
+  const proposal = ticket ? proposals?.get(ticket) : undefined;
   const sides = proposal && e1SkuLogSides(proposal);
   if (sides) return { ticket, sides };
   const [before, after] = log.delta.split(" → ");
@@ -1069,7 +1071,7 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
   if (key === "dailyEarn") return `${grouped(String(value))} USDT/日`;
   if (key === "shareYieldMin" || key === "shareYieldMax") return `${grouped(String(value))}%`;
   if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
-  if (key === "baseRate" && typeof value === "string") return shareBaseRateText(value);
+  if (key === "baseRate" && typeof value === "string") return value.trim() ? value : "未设置";
   if (key === "allowedPoolCodes" && Array.isArray(value)) return value.length ? value.map(code => ({L1:"L1 初级",L2:"L2 中级",L3:"L3 高级",L4:"L4 旗舰",PHONE:"手机任务池"}[String(code)] ?? String(code))).join("、") : "未选择";
   if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item, labels)).join("、") : "无";
   if (isRecord(value)) return Object.entries(value).map(([name, item]) => `${labels[name] ?? name} ${valueText(name, item, labels)}`).join("；") || "无";
@@ -1077,6 +1079,17 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
 }
 
 type Review = { kind: "text"; text: string } | { kind: "object"; value: Record<string, unknown> } | { kind: "rows"; rows: Record<string, unknown>[] };
+
+function e1MonthlyBaseRate(value: unknown, monthlyTarget: unknown): string | undefined {
+  if (typeof value !== "string" || !/^\d+(\.\d{1,6})?$/.test(value)) return;
+  if (typeof monthlyTarget !== "number" && typeof monthlyTarget !== "string") return;
+  const target = Number(monthlyTarget);
+  if (!Number.isFinite(target) || target <= 0) return;
+  // OpsDeviceService.monthlyTargetRequest → DeviceSkuUpsertRequest.withMonthlyTarget → MonthlyTargetProjection.daily (six places).
+  const daily = Number((target / 30).toFixed(6));
+  if (Number(value) !== daily) return;
+  return `${daily.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT/日（系统按月收益目标折算）`;
+}
 
 /** 后端存的前后值：JSON 对象、成组记录或一段文字。空和「—」是首次配置，返回 null。 */
 function parseReview(value: string): Review | null {
@@ -1117,8 +1130,7 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
       for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
       if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${e1Decimal(value.price)} USD`;
-      // 纯数字的收益展示文字是后端算出的日收益：设了月收益目标时是月目标 ÷ 30 的 6 位小数（DeviceMonthlyTargetReadService），否则取日产收益（DeviceOpsMapper）。
-      if (typeof value.baseRate === "string" && /^\d+(\.\d+)?$/.test(value.baseRate.trim())) value.baseRate = `${grouped(e1Decimal(value.baseRate.trim(), 2))} USDT/日${value.monthlyTargetUsdt != null ? "（系统按月收益目标折算）" : ""}`;
+      if ("baseRate" in value) value.baseRate = e1MonthlyBaseRate(value.baseRate, value.monthlyTargetUsdt) ?? value.baseRate;
       // 购买条件写成人话；读不到阶段名时写「第 N 阶段」，不只写数字。
       if (isRecord(value.purchaseGate)) value.purchaseGate = e1GateText(value.purchaseGate);
       if ((typeof value.unlockPhase === "string" || typeof value.unlockPhase === "number") && /^\d+$/.test(String(value.unlockPhase).trim())) value.unlockPhase = `第 ${String(value.unlockPhase).trim()} 阶段`;
@@ -1495,6 +1507,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const [filtered, setFiltered] = useState<A2Overview | null>(null);
   const [filteredLoading, setFilteredLoading] = useState(false);
   const [filteredError, setFilteredError] = useState("");
+  const [e1ProposalRead, setE1ProposalRead] = useState<{
+    rows: readonly A2AuditLogRow[];
+    session: typeof session;
+    proposals: ReadonlyMap<string, A2AuditLogRow | undefined>;
+  }>();
   const [readAt, setReadAt] = useState("");
   const [retentionRun, setRetentionRun] = useState<RetentionExecution | null>(null);
   const [retentionRunError, setRetentionRunError] = useState<string | null>(null);
@@ -1708,7 +1725,22 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const logRows = records?.recentLogs ?? [];
   const logPages = Math.max(1, Math.ceil(logRows.length / logPageSize));
   const logSafePage = Math.min(logPage, logPages);
-  const logPageRows = logRows.slice((logSafePage - 1) * logPageSize, logSafePage * logPageSize);
+  const logPageRows = useMemo(() => (records?.recentLogs ?? []).slice((logSafePage - 1) * logPageSize, logSafePage * logPageSize),
+    [records, logSafePage, logPageSize]);
+  useEffect(() => {
+    if (tab !== "records" || view !== "logs" || recordsLoading || !session) return;
+    const tickets = [...new Set(logPageRows.map(e1ApprovalTicket).filter(ticket => ticket !== undefined))];
+    if (!tickets.length) return;
+    const controller = new AbortController();
+    void Promise.all(tickets.map(async ticket => {
+      const proposal = await fetchA2ProposalLog(ticket, controller.signal).catch(() => undefined);
+      return [ticket, proposal] as const;
+    })).then(entries => {
+      if (!controller.signal.aborted) setE1ProposalRead({ rows: logPageRows, session, proposals: new Map(entries) });
+    });
+    return () => controller.abort();
+  }, [logPageRows, recordsLoading, session, tab, view]);
+  const e1Proposals = e1ProposalRead?.rows === logPageRows && e1ProposalRead.session === session ? e1ProposalRead.proposals : undefined;
   const historyRows = records?.operationHistory ?? [];
   const histPages = Math.max(1, Math.ceil(historyRows.length / histPageSize));
   const histSafePage = Math.min(histPage, histPages);
@@ -2848,7 +2880,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 ) : logPageRows.map((l) => {
                   const act = logActionShown(l.action);
                   const obj = logObject(l);
-                  const e1Approved = e1ApprovedLog(l, logRows);
+                  const e1Approved = e1ApprovedLog(l, e1Proposals);
                   const e1Sides = e1SkuLogSides(l) ?? e1Approved?.sides;
                   const e1Change = e1Sides && changeSummary(e1Sides.before, e1Sides.after, [], e1Sides.operationCode);
                   return (
@@ -3016,7 +3048,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /* 操作记录抽屉 */
   const shownLog = logShown.current;
-  const shownLogApproved = shownLog ? e1ApprovedLog(shownLog, logRows) : undefined;
+  const shownLogApproved = shownLog ? e1ApprovedLog(shownLog, e1Proposals) : undefined;
   const shownLogE1 = shownLog ? e1SkuLogSides(shownLog) ?? shownLogApproved?.sides : undefined;
   const logIndex = shownLog ? logPageRows.findIndex((l) => l.id === shownLog.id) : -1;
   const needIdem = shownLog ? shownLog.action.includes("withdraw") || shownLog.action.includes("balance") || shownLog.action.includes("operation_confirmed") : false;
