@@ -98,7 +98,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     revokedScope.current = scopeKey; stamp.current += ":revoked";
     setProfile(null); setDeviceGroup(null); setFlowGroup(null); setMaintenance(null); setView360(false);
     setTag(""); setNote(""); annotationWrite.current = null; setWriting(false); setWriteError("");
-    setError("客户资料加载失败，可能是客户归属或你的查看范围变了。请重新加载，或返回列表核对。");
+    setError("可能是客户归属或你的查看范围变了。请重试，或返回列表核对。");
   };
   const denied = (cause: unknown) => {
     if (!(cause instanceof SupportClientError) || ![403,404].includes(cause.status)) return false;
