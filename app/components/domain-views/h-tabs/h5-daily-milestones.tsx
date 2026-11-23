@@ -89,7 +89,7 @@ function ruleValueText(rule: CheckInRule) {
   return copy.unit === "%" ? `${cur}%` : `${cur} ${copy.unit}`;
 }
 
-type H5Confirm = ActionConfirmReq & { target: string; commandKey?: string; original?: H5PendingCommand; confirmLabelForValue?: (value?: string) => string };
+type H5Confirm = ActionConfirmReq & { target: string; commandKey?: string; original?: H5PendingCommand; confirmLabelForValue?: (value?: string) => string; directionOf?: (values: Record<string, string>) => "approval" | "direct" | null };
 
 type Tab = "rules" | "streak" | "power" | "earn" | "idle";
 
@@ -115,6 +115,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   confirmation.current = mc;
   const conflictDraft = useHConflictDraft(!loading && !error && fresh.current);
   const [approvalLabel, setApprovalLabel] = useState(false);
+  // 成长权益这一笔的方向，填了有效新值才有（OP-19、OP-25）。
+  const [powerDirection, setPowerDirection] = useState<"approval" | "direct" | null>(null);
   const openActionConfirm = (req: H5Confirm) => {
     if (!req.original && (!fresh.current || mutations.record(req.target))) {
       toast("请先查询原结果并成功刷新签到数据，再发起新的修改。");
@@ -122,6 +124,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     }
     const next = conflictDraft.action(req, () => !!mutations.record(req.target)), values = next.getPendingBusinessValue?.();
     setApprovalLabel(next.businessForm?.kind === "multi-field" && values ? next.businessForm.amplifies?.(values) ?? false : false);
+    setPowerDirection(values && next.directionOf ? next.directionOf(values) : null);
     setMc(next);
   };
 
@@ -338,9 +341,17 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     const multiplier = powerUp.effectType === "CHECKIN_MULTIPLIER";
     const name = operatorCopyText(powerUp.label);
     const currentNote = text(powerUp.note, "");
-    const amplifies = (values: Record<string, string>) => Number(values.day) < powerUp.day
+    const validDay = (value: string) => /^\d+(?:\.0+)?$/.test(value) && Number(value) >= 1 && Number(value) <= 365;
+    const validNote = (value: string) => /^\d+(?:\.\d{1,4})?$/.test(value) && (h5Amount(value) ?? BigInt(0)) > BigInt(0) && Number(value) < 100000000;
+    // 徽章的天数打开时是空的（OP-19）：空值或填坏的天数不算提前。
+    const amplifies = (values: Record<string, string>) => validDay(values.day ?? "") && Number(values.day) < powerUp.day
       || (multiplier && (h5Amount(values.note) ?? BigInt(0)) > (h5Amount(currentNote) ?? BigInt(0)));
-    openActionConfirm({ target, original, briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
+    const directionOf = (values: Record<string, string>): "approval" | "direct" | null => {
+      if (!validDay(values.day ?? "") || multiplier && !validNote(values.note ?? "")) return null;
+      const changed = Number(values.day) !== powerUp.day || multiplier && h5Amount(values.note) !== h5Amount(currentNote);
+      return !changed ? null : amplifies(values) ? "approval" : "direct";
+    };
+    openActionConfirm({ target, original, briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号", directionOf,
       action: `连续签到成长奖励 · ${operatorCopyText(powerUp.label)}`,
       title: `调整${name}`,
       detail: <>当前连续签到 <b>{powerUp.day}</b> 天解锁。{multiplier && "签到倍率会改变用户每天签到拿多少。"}</>,
@@ -356,9 +367,15 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           {fundApproverFacts(multiplier ? "提前或调高" : "提前", "h5_power_up_config")}
         </Facts>
       ),
-      statedBrief: (values) => amplifies(values)
-        ? { impact: multiplier ? `提前解锁或调高倍率会让平台多付 UVT：提交审批，${FUND_APPROVER}批准后才生效。已有的签到记录不变。` : `提前解锁：提交审批，${FUND_APPROVER}批准后才生效。已有的签到记录不变。`, check: multiplier ? "核对天数和倍率；理由写清依据或工单号。" : "核对解锁天数；理由写清依据或工单号。" }
-        : { impact: "确认后立即生效：之后达到天数的人按新设置激活；已经激活的权益不收回，已有的签到记录不变。", check: multiplier ? "核对天数和倍率；理由写清依据或工单号。" : "核对解锁天数；理由写清依据或工单号。" },
+      statedBrief: (values) => {
+        const check = multiplier ? "核对天数和倍率；理由写清依据或工单号。" : "核对解锁天数；理由写清依据或工单号。";
+        const direction = directionOf(values);
+        return direction === "approval"
+          ? { impact: multiplier ? `提前解锁或调高倍率会让平台多付 UVT：提交审批，${FUND_APPROVER}批准后才生效。已有的签到记录不变。` : `提前解锁：提交审批，${FUND_APPROVER}批准后才生效。已有的签到记录不变。`, check }
+          : direction === "direct"
+            ? { impact: "确认后立即生效：之后达到天数的人按新设置激活；已经激活的权益不收回，已有的签到记录不变。", check }
+            : { impact: "之后达到天数的人按新设置激活；已经激活的权益不收回，已有的签到记录不变。", check };
+      },
       coverageLead: multiplier ? "提前解锁或调高倍率会让平台多付 UVT" : "提前解锁要检查兑付覆盖率",
       coverageCheck: "提交审批时和批准时都检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
       amplifies: false,
@@ -367,7 +384,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         // 非倍率权益不显示说明文字：重开的原操作可能只改了说明文字，看不到改动也要能按原请求重试。
         requireAnyChange: multiplier || !original,
         amplifies,
-        onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); return values; },
+        onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); setPowerDirection(directionOf(values)); return values; },
         feedback: values => {
           const day = Number(values.day);
           const badDay = !/^\d+(?:\.0+)?$/.test(values.day) || !Number.isInteger(day) || day < 1 || day > 365;
@@ -375,7 +392,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           return { invalid: badDay || badNote, message: badDay ? "解锁天数须为 1–365 天的整数" : badNote ? displayAdminError(new Error("POWER_UP_MULTIPLIER_INVALID")) : "", field: badDay ? "day" : "note" };
         },
         fields: [
-          { key: "day", label: "解锁天数", inputKind: "number", current: String(powerUp.day), placeholder: "例如 30", help: "连签满几天解锁，1–365 天" },
+          // 徽章只改天数，是单值修改：新值留空，现在的天数看「现在」那一行（OP-19）。
+          { key: "day", label: "解锁天数", inputKind: "number", current: String(powerUp.day), mustChoose: !multiplier, placeholder: "例如 30", help: "连签满几天解锁，1–365 天" },
           ...(multiplier ? [{ key: "note", label: "签到倍率", inputKind: "text" as const, current: text(powerUp.note, ""), placeholder: "例如 1.5", required: true, help: "激活后每天的签到奖励乘这个数；不能留空，最多 4 位小数" }] : []),
         ],
       },
@@ -585,6 +603,14 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   );
 
   const activeCommand = mc ? mutations.record(mc.target) : undefined;
+  // 成长权益的生效标签：填了有效新值按这一笔的方向写；按原请求重试时按原请求的路径写（OP-25、OP-37、OP-60）。
+  const powerEffectTag = (direction: "approval" | "direct", retry: boolean) => direction === "approval"
+    ? <StatusTag tone="progress" filled explain={retry ? "按原请求重试：原来提交的是审批申请，批准后才生效。" : `${FUND_APPROVER}批准后才生效，提交人不能批自己的；批准前仍按现在的设置。`}>批准后生效</StatusTag>
+    : <StatusTag tone="progress" filled explain={retry ? "按原请求重试：原来是直接保存，重发成功就生效。" : "不用审批，确认后就按新设置；已经激活的权益不收回。"}>立即生效</StatusTag>;
+  const retryCommand = mc?.original ?? activeCommand;
+  const confirmEffect = !mc?.target.startsWith("power:") ? mc?.effect
+    : retryCommand ? powerEffectTag(retryCommand.request.kind === "direct" ? "direct" : "approval", true)
+    : powerDirection ? powerEffectTag(powerDirection, false) : mc.effect;
   const confirmModal = mc && (
     <OperationConfirmModal key={`${mc.target}:${mc.original?.commandKey ?? mc.formKey ?? "new"}`} briefKind={mc.briefKind}
       action={mc.action}
@@ -594,7 +620,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       edit={mc.edit && mc.original ? { ...mc.edit, initialValue: mc.original.change.editValue } : mc.edit}
       businessForm={mc.businessForm}
       facts={mc.facts}
-      effect={mc.effect}
+      effect={confirmEffect}
       content={mc.content}
       initialReason={mc.original?.change.reason ?? mc.initialReason}
       getPendingReason={() => mutations.record(mc.target)?.change.reason}
@@ -626,7 +652,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               extra: <Fact k="审批单名称">{`「${findHighOp(op)!.action}」`}</Fact> }));
             return;
           }
-          toast(err instanceof Error ? displayAdminError(err) : "操作失败");
+          // 框还开着就只在框里说，结果未知另有页顶恢复条（VS-107、ST-57）；框已经关了才用轻提示。
+          if (confirmation.current !== mc) toast(err instanceof Error ? displayAdminError(err) : "操作失败");
           throw err;
         }
       }}
@@ -686,15 +713,15 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     const coverageText = !coverageKnown
       ? "兑付覆盖率读不到"
       : coverage.reliable === false
-        ? `兑付覆盖率 ${coverageRatio}% 数据不可靠，加奖励、提前解锁这类修改会被拒`
+        ? "兑付覆盖率数据不可靠，加奖励、提前解锁这类修改会被拒"
         : coverage.redlineBreached === true
-          ? `兑付覆盖率 ${coverageRatio}% 低于红线 ${text(coverage.redlinePct, "—")}%，加奖励、提前解锁这类修改会被拒`
-          : `兑付覆盖率 ${coverageRatio}%，高于红线`;
+          ? "兑付覆盖率低于红线，加奖励、提前解锁这类修改会被拒"
+          : "兑付覆盖率高于红线";
     return (
       <Conclusion state={unknownCount || coverageBad ? "warn" : "neutral"} icon={CalendarCheck}
         explain={<>
           <p>签到人数按业务日期算，同一个人一天只算一次；签到率的分母是有连签记录的人，不是注册总人数。</p>
-          <p>兑付覆盖率低于红线或不可靠时，让平台多付的修改会被拒绝：连签、成长、收益三类提交和批准时都查，签到规则只在批准时查。</p>
+          <p>兑付覆盖率低于红线或不可靠时，加奖励、调高概率或倍率、降门槛和提前解锁成长权益都会被拒：连签、成长、收益三类提交和批准时都查，签到规则只在批准时查。</p>
           <p>统计读不到时也显示 0，这页暂时分不出「真的是 0」和「没读到」。</p>
         </>}
         action={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>看待批准的申请</Link> : undefined}>
@@ -916,7 +943,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         <Stat tone={!coverageKnown ? undefined : coverageBad ? "danger" : "ok"} icon={ShieldCheck} label="兑付覆盖率"
           value={coverageKnown ? String(coverageRatio) : "—"} unit={coverageKnown ? "%" : undefined}
           sub={`红线 ${text(coverage.redlinePct, "—")}%${coverage.reliable === false ? " · 数据不可靠" : ""}`}
-          explain="平台能兑付的钱和要付的钱之比。加奖励、调高概率、提前解锁、降门槛这类会让平台多付的修改，系统会检查它不低于红线。" />
+          explain="平台能兑付的钱和要付的钱之比。会让平台多付的修改（加奖励、调高概率或倍率、降门槛）和所有提前解锁，系统都会检查它不低于红线；徽章提前解锁不多付，也照样检查。" />
       </StatBand>
 
       <div className="rd-split">
