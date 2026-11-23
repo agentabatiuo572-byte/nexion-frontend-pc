@@ -1813,7 +1813,7 @@ export default function UserDetailPage() {
             const text = `通知 ${notificationEvidence.id} 已按投递事实校正时间，已读状态保持不变。`;
             setWriteResult({ key: readKey, text, tone: "ok" });
             void load().then(refreshed => {
-              if (!refreshed && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}资料刷新失败，请点「刷新」核对。`, tone: "warn" });
+              if (!refreshed && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}资料刷新失败，点「重试」重新读取后核对。`, tone: "warn" });
             });
           }} onClose={() => { setNotificationEvidence(null); syncPending(); }} />
       )}
