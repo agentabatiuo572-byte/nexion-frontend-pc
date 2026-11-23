@@ -550,11 +550,13 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   // 连签档后端存的旧名称（+5 NEX）原样标成旧名称，不让裸的 NEX 出现。
   const shownReward = (value: string) => /\bNEX\b/i.test(value) ? `旧名称「${value}」` : value;
   const recoveryRows: H5RecoveryRow[] = mutations.records.map((record) => {
-    const { before, after } = h5OriginalNonMultiplierPowerUp(record) ?? record.change;
+    const powerUpOriginal = h5OriginalNonMultiplierPowerUp(record);
+    const { before, after } = powerUpOriginal ?? record.change;
     return {
       key: record.commandKey,
       name: record.change.name,
-      change: `${shownReward(before)} → ${shownReward(after)}`,
+      // 旧的只改说明文字原操作天数没变，不写「14 天 → 14 天」，和重试框同一说法。
+      change: powerUpOriginal?.noteOnly ? `只改了说明文字，${before}不变` : `${shownReward(before)} → ${shownReward(after)}`,
       submittedAt: record.createdAt,
       tag: record.ticket ? pendingTag(...(record.change.target.startsWith("rule:") ? [RULE_APPROVER, RULE_PENDING_NOTE] : [FUND_APPROVER, FUND_PENDING_NOTE]) as [string, string])
         : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind === "direct" ? "direct" : "approval") : unknownTag(record.request.kind === "direct" ? "direct" : "approval"),
