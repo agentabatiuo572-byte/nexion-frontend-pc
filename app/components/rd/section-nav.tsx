@@ -14,7 +14,7 @@
  * - 详情页的分区导航传 row：横排一行，放在折叠组上方（PG-50），外面包 .rd-detail-nav 滚动时钉住。
  * - 高亮只跟着用户自己的滚动走（BUG-636）：点导航选中的组（页面用 nav.mark 定位的组也一样）在用户再滚之前一直亮着；
  *   「滚到底算最后一组」只在用户自己滚到底时算；内容高度变了、页面自己滚动（刷新、展开、补位），都不重判。
- *   用户在滚指滚轮、触摸、翻页和方向键、Tab、拖滚动条。
+ *   用户在滚 = 滚轮、触摸、翻页和方向键、Tab、拖滚动条之后，滚动区的位置真的动了；视口或内容高度变化带来的位置修正只更新记下的尺寸。
  */
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
@@ -48,6 +48,7 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     reveal.current?.(id);
     setActive(id);
     held.current = true;
+    userAt.current = 0;
     window.requestAnimationFrame(() => {
       const target = document.getElementById(`section-${id}`);
       target?.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
@@ -68,16 +69,20 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     const seen = new Set<string>();
     const scroller = document.getElementById(`section-${list[0]}`)?.closest("main");
     let dragging = false;
-    const userScrolling = () => dragging || Date.now() - userAt.current < USER_SCROLL_MS;
+    /** 用户造成的最近一次位置变化；交叉变化只在这之后的一小段时间里重判。 */
+    let movedAt = 0;
+    let last = { top: scroller?.scrollTop ?? 0, height: scroller?.clientHeight ?? 0, full: scroller?.scrollHeight ?? 0 };
+    const userInput = () => dragging || Date.now() - userAt.current < USER_SCROLL_MS;
     const pick = () => {
-      if (held.current || !userScrolling()) return;
+      if (held.current) return;
       // 滚到底时最后一组进不了判定带，上面的组还在里面，这时算最后一组。
       const atEnd = scroller && scroller.scrollTop > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
       // 回到顶部时第一组可能还在判定带下面，这时算第一组，不留着上一次的高亮。
       const current = scroller?.scrollTop === 0 ? list[0] : atEnd ? list.at(-1) : list.find((id) => seen.has(id));
       if (current) setActive(current);
     };
-    const input = () => { held.current = false; userAt.current = Date.now(); };
+    // 输入只记下用户想滚；保持到滚动区真的动了才放开（贴底时往下拨滚轮页面不动，不算）。
+    const input = () => { userAt.current = Date.now(); };
     const onKey = (event: KeyboardEvent) => {
       if (!SCROLL_KEYS.has(event.key) || event.key !== "Tab" && (event.target as Element | null)?.closest?.("input, textarea, select, [contenteditable='true'], [role='listbox'], [role='menu']")) return;
       input();
@@ -85,14 +90,24 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     // 拖滚动条：按在滚动区自己身上（不是里面的内容）。
     const onDown = (event: PointerEvent) => { if (event.target === scroller) { dragging = true; input(); } };
     const onUp = () => { dragging = false; };
-    const onScroll = () => { if (!held.current && userScrolling()) userAt.current = Date.now(); pick(); };
+    const onScroll = () => {
+      if (!scroller) return;
+      const now = { top: scroller.scrollTop, height: scroller.clientHeight, full: scroller.scrollHeight };
+      const resized = now.height !== last.height || now.full !== last.full, moved = now.top !== last.top;
+      last = now;
+      // 视口或内容高度变了，浏览器修正位置：只更新记下的尺寸，不放开保持、不判到底。
+      if (resized || !moved || !userInput()) return;
+      held.current = false;
+      userAt.current = movedAt = Date.now();
+      pick();
+    };
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         const id = entry.target.id.replace(/^section-/, "");
         if (entry.isIntersecting) seen.add(id);
         else seen.delete(id);
       }
-      pick();
+      if (Date.now() - movedAt < USER_SCROLL_MS) pick();
     }, { rootMargin: "-80px 0px -60% 0px" });
     for (const id of list) {
       const target = document.getElementById(`section-${id}`);
