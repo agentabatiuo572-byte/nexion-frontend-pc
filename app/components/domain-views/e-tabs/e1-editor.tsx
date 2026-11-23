@@ -141,7 +141,8 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const draft = skuDraft(form, original, media);
   const dirty = !!request && (JSON.stringify({ ...form, badgeKindChanged: false }) !== initialForm || form.badgeKindChanged && draft.badge !== original?.badge || imageIdentity(media) !== initialMedia);
   const latestChanged = !!original && !!currentSku?.updatedAt && original.updatedAt !== currentSku.updatedAt;
-  const changes = e1SkuDiff(original, draft, form).filter(r => r.before !== r.after);
+  // Untouched drafts count no change, even when a Chinese legacy preset would be saved in English (d191bf189).
+  const changes = dirty ? e1SkuDiff(original, draft, form).filter(r => r.before !== r.after) : [];
   const update = (key: keyof SkuForm, value: string) => { setForm(f => ({ ...f, [key]: value })); setErrors(e => ({ ...e, [key]: "" })); };
   const refreshPreview = useCallback(async (assetId: string) => {
     try {
