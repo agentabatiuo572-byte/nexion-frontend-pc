@@ -11,6 +11,7 @@ import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 
 import type { H7PendingApproval, H7Voucher } from "@/lib/admin/h-client";
 import { h7DateFacts, h7Stamp, isH7VoucherExpired } from "@/lib/admin/h7-voucher-time";
+import { amountDisplay } from "@/lib/format";
 export type { H7Voucher } from "@/lib/admin/h-client";
 
 export const SURFACE_LABEL: Record<string, string> = { home: "首页", store: "商城", me: "我的", earn: "收益" };
@@ -18,13 +19,10 @@ export const AUDIENCE_LABEL = { new: "新用户", all: "全部用户" } as const
 /** 下单时按 USDT 抵扣（字段名是 USD，这条链路没有换汇）。 */
 export const UNIT = "USDT";
 
-/** 后端原值照写：整数部分加千分位，小数位不舍入，最少两位。读不到写「—」。 */
+/** 后端原值按全站金额写法（amountDisplay）：千分位，去掉末尾 0、整数不写小数点，不舍入。读不到写「—」。 */
 export function amountText(value: number | undefined | null): string {
   if (value == null || !Number.isFinite(value)) return "—";
-  const raw = String(value);
-  if (/e/i.test(raw)) return value.toLocaleString("en-US", { maximumFractionDigits: 20 });
-  const [int, frac = ""] = raw.replace(/^-/, "").split(".");
-  return `${value < 0 ? "-" : ""}${Number(int).toLocaleString("en-US")}.${frac.padEnd(2, "0")}`;
+  return amountDisplay(value);
 }
 
 export const countText = (value: number) => value.toLocaleString("en-US");

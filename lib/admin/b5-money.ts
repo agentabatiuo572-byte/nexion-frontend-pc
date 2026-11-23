@@ -1,4 +1,5 @@
 import { f4Decimal } from "./f4-money";
+import { amountDisplay } from "../format";
 
 /** Keep backlog DECIMAL lexemes before JSON.parse can round them through Number. */
 export function parseB5MoneyJson(value: string): unknown {
@@ -16,7 +17,7 @@ export function b5AmountDigits(values: readonly string[]): number {
   return Math.max(2, ...values.map(value => (value.split(".")[1] ?? "").replace(/0+$/, "").length));
 }
 
-export function b5AmountText(value: string, digits: number): string {
-  const [whole, fraction = ""] = value.split(".");
-  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(digits, "0")}`;
+/** 金额按全站写法（amountDisplay），不为对齐补零；digits 是旧的整列对齐位数，不再使用。 */
+export function b5AmountText(value: string, _digits?: number): string {
+  return amountDisplay(value);
 }

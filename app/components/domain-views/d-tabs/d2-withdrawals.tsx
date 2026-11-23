@@ -16,7 +16,7 @@ import {
   TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type JudgmentRow, type RecordListEntry, type SegmentItem, type StateTone, type TableColumn, type TimelineEntry,
 } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
-import { fmtConfigPct, fmtPct } from "@/lib/format";
+import { fmtConfigPct, fmtPct, amountDisplay } from "@/lib/format";
 import { fetchWithdrawalGateOpen } from "@/lib/admin/ops-dashboard-client";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundCommandBatchResolved, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
@@ -68,9 +68,9 @@ type D2BatchAction = (typeof BATCH_ACTIONS)[number];
 const MOVED_STATE_CODES = ["INVALID_STATE_TRANSITION", "WITHDRAWAL_STATE_CONFLICT", "CREGIS_PAYOUT_ALREADY_DISPATCHED",
   "BANK_PAYOUT_ALREADY_DISPATCHED", "BANK_PAYOUT_RECOVERY_STALE"];
 
-/** 明细按接口精度显示，至少 2 位（TX-20）。币种写在列头时只用这个。 */
+/** 明细按全站金额写法（amountDisplay）：上限 8 位照旧，去掉末尾 0，整数不写小数点。币种写在列头时只用这个。 */
 function amountText(value: number) {
-  return Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 8, minimumFractionDigits: 2 });
+  return amountDisplay(Number(value || 0), 8);
 }
 
 function money(value: number) {

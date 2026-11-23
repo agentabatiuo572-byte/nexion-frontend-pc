@@ -137,7 +137,7 @@ const JOBS_REASON: Record<string, string> = {
   H9_ACTIVE_JOBS_BASE_UNPUBLISHED: "基座未发布，App 不显示作业数",
   HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "这一刻还没有可用的首页展示数据",
 };
-/** 按分算的金额写成两位小数加千分位，不舍入、不补币种（paid 是 JSON 数字，末尾的 0 会丢，所以用 paidCents）。 */
+/** 按分算的金额写成两位小数加千分位，不舍入、不补币种（paid 是 JSON 数字，末尾的 0 会丢，所以用 paidCents）。这是「App 显示」的写法，照 App 两位小数写，不按后台金额规则改。 */
 function centsAmount(cents: number) {
   return `${Math.floor(cents / 100).toLocaleString("en-US")}.${String(cents % 100).padStart(2, "0")}`;
 }

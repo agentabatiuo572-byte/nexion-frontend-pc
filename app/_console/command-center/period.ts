@@ -1,4 +1,5 @@
 import type { B0SummaryPeriod } from "@/lib/admin/b0-client";
+import { amountDisplay } from "@/lib/format";
 
 /** 经营数据的四个时段。对比是上一期从头到同一时刻（B36），不是上一期全段。 */
 export const PERIODS: readonly { value: B0SummaryPeriod; label: string; previous: string | null; word: string }[] = [
@@ -8,12 +9,9 @@ export const PERIODS: readonly { value: B0SummaryPeriod; label: string; previous
   { value: "all", label: "全部", previous: null, word: "统计以来" },
 ];
 
-/** 后端给的十进制原文：加千分位、去掉多余的末尾 0、最少两位，不舍入。认不出的原样写。 */
+/** 后端给的十进制原文，按全站金额写法（amountDisplay）：千分位、去掉末尾 0、整数不写小数点，不舍入。认不出的原样写。 */
 export function moneyText(value: string) {
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
-  if (!match) return value;
-  const fraction = (match[3] ?? "").replace(/0+$/, "").padEnd(2, "0");
-  return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction}`;
+  return amountDisplay(value);
 }
 
 export const usdtText = (value: string | null | undefined) => value == null ? "—" : `${moneyText(value)} USDT`;

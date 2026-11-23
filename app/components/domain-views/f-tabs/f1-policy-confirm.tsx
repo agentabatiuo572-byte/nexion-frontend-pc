@@ -21,6 +21,7 @@ import {
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { FViewCtx } from "./types";
 import { SUPER_APPROVER, safeCustomLabel } from "./f1-shared";
+import { amountDisplay } from "@/lib/format";
 
 const typeLabels = { usdt: "USDT（资金）", uvt: "UVT（资金）", voucher: "券", sku: "商品", custom: "自定义奖品" };
 const REBASED = "没有保存：已按刚读到的值重算，核对后再提交。";
@@ -36,7 +37,7 @@ const UNIT: Record<string, string> = { selfBuy: "点", teamGv: "点", directRefs
 const RANGE: Record<string, string> = { selfBuy: "填不小于 0 的整数", teamGv: "填不小于 0 的整数", directRefs: "填不小于 0 的整数", legCount: "填不小于 0 的整数" };
 
 export function f1RewardPolicyLabel(item: OpsVRankRewardItem, ctx: Pick<FViewCtx, "voucherLabels" | "skuLabels">): string {
-  if (isF1FundReward(item.type)) return item.amountText ? `${formatF1ExactAmount(item.amountText)} ${item.type.toUpperCase()}` : `${item.type.toUpperCase()} 金额暂不可用`;
+  if (isF1FundReward(item.type)) return item.amountText ? `${amountDisplay(item.amountText)} ${item.type.toUpperCase()}` : `${item.type.toUpperCase()} 金额暂不可用`;
   if (item.type === "voucher") return `券 · ${ctx.voucherLabels[item.voucherId ?? ""] ?? item.voucherId ?? "未设置"}`;
   if (item.type === "sku") return `商品 · ${ctx.skuLabels[item.skuId ?? ""] ?? item.skuId ?? "未设置"}`;
   return safeCustomLabel(item.custom);

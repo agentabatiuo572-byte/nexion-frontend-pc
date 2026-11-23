@@ -7,7 +7,7 @@ import { Fact, Facts, StatusTag } from "@/app/components/rd";
 import { h5Amount } from "@/lib/admin/h5-contract";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
-import { amountText, type EarnMilestone } from "./h5-parts";
+import { amountText, proposalAmountText, type EarnMilestone } from "./h5-parts";
 import type { ActionConfirmReq } from "./types";
 
 import { EARN_CREATE_TARGET, type H5Change } from "@/lib/admin/use-h5-mutations";
@@ -114,7 +114,7 @@ export function earnCreateRequest({ snapshot, approver, rights, runChange }: { s
       const { sortOrder } = placement;
       await runChange({
         target: EARN_CREATE_TARGET, action: "收益里程碑 · 新建档位", name: `收益里程碑 · ${milestoneKey}`,
-        before: "还没有", after: `${amountText(threshold)} USDT · ${amountText(nex)} UVT`,
+        before: "还没有", after: `${proposalAmountText(threshold)} USDT · ${proposalAmountText(nex)} UVT`,
         reason, success: "已提交审批", approvalRequired: true, snapshot,
         businessValue: { milestoneKey, label, threshold, nex },
         earnCreate: { milestoneKey, label, thresholdUsd: threshold, rewardNex: nex, sortOrder },

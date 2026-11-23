@@ -16,7 +16,8 @@ import { F2BootstrapReview, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_CLAWBACK, F1_VOUCHER_REVERSE_KEEP } from "@/lib/admin/config-help/f1-voucher";
-import { fmtConfigPct, fmtPct } from "@/lib/format";
+import { fmtConfigPct, fmtPct, amountDisplay } from "@/lib/format";
+import { f4MonthlyCap } from "@/lib/admin/f4-money";
 import { fConfigSpec, fConfigValue, type FConfigSpec } from "./a2-f-config";
 import { F5CurrentFact, F5CurrentValue, F5ReissueReadings, readF5Current } from "./a2-f5-current";
 import { A2I5DisclosureReview } from "./a2-i5-disclosure-review";
@@ -97,7 +98,7 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { orderAmount } from "../e-tabs/data";
-import { e1Decimal, e1GateText, e1Value } from "../e-tabs/e1-state";
+import { e1GateText, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
@@ -333,11 +334,14 @@ function e1ApprovedLog(log: A2AuditLogRow, proposals?: ReadonlyMap<string, A2Aud
   if (sides) return { ticket, sides };
   const [before, after] = log.delta.split(" → ");
   if (!/^\d+(\.\d+)?$/.test(before ?? "") || !/^\d+(\.\d+)?$/.test(after ?? "")) return undefined;
-  const price = (value: string) => `${grouped(e1Decimal(value, 2))} USD`;
-  return { ticket, price: before === after ? `价格 ${price(after)}，没变` : `价格 ${price(before)} → ${price(after)}` };
+  // 有没有变按原文比；售价按全站金额写法，原文不同而写法一样时两边照原文写（a2Pair）。
+  const [shownBefore, shownAfter] = a2Pair("price", `${before} USD`, `${after} USD`);
+  return { ticket, price: before === after ? `价格 ${shownAfter}，没变` : `价格 ${shownBefore} → ${shownAfter}` };
 }
 const E1_PRICE_ONLY = "这条只记价格，其他改动没记在这里";
-const fBatchSummary = (items: readonly FBatchItem[]) => `${fBatchLabel(items[0], fBatchPages(items))} ${items[0].before} → ${items[0].after}${items.length > 1 ? ` 等 ${items.length} 项` : ""}`;
+const fBatchSummary = (items: readonly FBatchItem[]) => { const [before, after] = a2Pair(items[0].key, items[0].before, items[0].after); return `${fBatchLabel(items[0], fBatchPages(items))} ${before} → ${after}${items.length > 1 ? ` 等 ${items.length} 项` : ""}`; };
+/** 队列「变更」一格：第一项改后做第一行，原值做第二行。 */
+const fBatchCell = (items: readonly FBatchItem[], count: number) => { const [before, after] = a2Pair(items[0].key, items[0].before, items[0].after); return { main: `${fBatchLabel(items[0], fBatchPages(items))} ${after}${count > 1 ? ` 等 ${count} 项` : ""}`, sub: `原 ${before}` }; };
 /** 涉及的页面名；认不出的项写「团队参数」。 */
 const fBatchPages = (items: readonly FBatchItem[] | undefined) => [...new Set((items ?? []).map((item) => item.spec?.page ?? "团队参数"))];
 const fBatchLabel = (item: FBatchItem, pages: readonly string[]) => item.spec ? (pages.length > 1 ? `${item.spec.page} · ${item.spec.item}` : item.spec.item) : "未识别的配置项";
@@ -349,7 +353,7 @@ function A2BatchReview({ items }: { items: readonly FBatchItem[] }) {
     <section className="a2-change-review" aria-label="完整变更内容">
       <div className="a2-change-title">完整变更内容 · {items.length} 项
         <Explain label="技术信息" content={`各项配置键 ${items.map((item) => item.key).join("、")}`} /></div>
-      <DiffList rows={items.map((item) => ({ key: item.key, label: fBatchLabel(item, pages), before: item.before, after: item.after }))}
+      <DiffList rows={items.map((item) => { const [before, after] = a2Pair(item.key, item.before, item.after); return { key: item.key, label: fBatchLabel(item, pages), before, after }; })}
         restTitle="没有改动的项" emptyNote="这些项没有改动" />
     </section>
   );
@@ -1020,8 +1024,8 @@ function k1TicketView(w: { operationCode?: string | null; before: string; after:
   const release = parseK1ReleaseTicketBefore(w.before);
   return release ? { kind: "release", ...release } : undefined;
 }
-/** 后端写的净额去掉了末尾 0：只补到两位、加千分位，不舍入。 */
-const k1Amount = (text: string) => { const [whole, frac = ""] = text.split("."); return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${frac.padEnd(2, "0")}`; };
+/** 后端写的净额按全站金额写法（amountDisplay）：千分位，有几位写几位，整数不写小数点，不舍入。 */
+const k1Amount = (text: string) => amountDisplay(text);
 const k1Source = k1EarningSourceName;
 const k1Bucket = (bucket: string) => bucket === "bonus_locked" ? "锁定奖励" : "审核中";
 /** 列表「变更」一格。 */
@@ -1078,6 +1082,7 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
   if (key === "dailyEarn") return `${grouped(String(value))} USDT/日`;
   if (key === "shareYieldMin" || key === "shareYieldMax") return `${grouped(String(value))}%`;
   if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
+  if (key === "baseRate" && isDerivedBaseRate(value)) return `${value.derivedDaily} USDT/日${DERIVED_BASE_RATE}`;
   if (key === "baseRate" && typeof value === "string") return value.trim() ? value : "未设置";
   if (key === "allowedPoolCodes" && Array.isArray(value)) return value.length ? value.map(code => ({L1:"L1 初级",L2:"L2 中级",L3:"L3 高级",L4:"L4 旗舰",PHONE:"手机任务池"}[String(code)] ?? String(code))).join("、") : "未选择";
   if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item, labels)).join("、") : "无";
@@ -1085,8 +1090,24 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
   return grouped(String(value));
 }
 
+/** 「收益说明」是按月收益目标折算的金额（reviewPair 换成的 { derivedDaily }）。 */
+const isDerivedBaseRate = (value: unknown): value is { derivedDaily: string } => isRecord(value) && typeof value.derivedDaily === "string";
+const DERIVED_BASE_RATE = "（系统按月收益目标折算）";
+/** 改前改后都是折算的金额（或新建、改后是折算的）时，说明挪进名称，值只写「1.3 USDT/日」，前后两列不各写一遍（VS-105、DT-12）。
+ *  一边折算、一边是文案（设了或关了月收益目标）时，名称不把文案也说成折算的：说明只跟在折算的那一边，写短，两列不折行；
+ *  改短后两边一样时照原样写，不把改动藏掉。有没有改照旧按带说明的原文判断（a2Pair、same），这里只改显示。 */
+const derivedBaseRateShown = (key: string, label: string, was: unknown, now: unknown, created: boolean, before: string | undefined, after: string | undefined) => {
+  const wasDerived = isDerivedBaseRate(was), nowDerived = isDerivedBaseRate(now);
+  if (key !== "baseRate" || !wasDerived && !nowDerived) return { label, before, after };
+  if (nowDerived && (created || wasDerived)) return { label: `${label}（按月收益目标折算）`, before: before?.replace(DERIVED_BASE_RATE, ""), after: after?.replace(DERIVED_BASE_RATE, "") };
+  const short = (text: string | undefined) => text?.replace(DERIVED_BASE_RATE, "（按月折算）");
+  const shown = { label, before: wasDerived ? short(before) : before, after: nowDerived ? short(after) : after };
+  return shown.before === shown.after ? { label, before, after } : shown;
+};
+
 type Review = { kind: "text"; text: string } | { kind: "object"; value: Record<string, unknown> } | { kind: "rows"; rows: Record<string, unknown>[] };
 
+/** 「收益说明」是系统按月收益目标折算的日收益（后端 MonthlyTargetProjection.daily，六位小数）时返回后端存的原值，否则 undefined。比较用这个原值，说明和去尾零在显示时加（R3F02）。 */
 function e1MonthlyBaseRate(value: unknown, monthlyTarget: unknown): string | undefined {
   if (typeof value !== "string" || !/^\d+(\.\d{1,6})?$/.test(value)) return;
   if (typeof monthlyTarget !== "number" && typeof monthlyTarget !== "string") return;
@@ -1095,7 +1116,7 @@ function e1MonthlyBaseRate(value: unknown, monthlyTarget: unknown): string | und
   // OpsDeviceService.monthlyTargetRequest → DeviceSkuUpsertRequest.withMonthlyTarget → MonthlyTargetProjection.daily (six places).
   const daily = Number((target / 30).toFixed(6));
   if (Number(value) !== daily) return;
-  return `${daily.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT/日（系统按月收益目标折算）`;
+  return value;
 }
 
 /** 后端存的前后值：JSON 对象、成组记录或一段文字。空和「—」是首次配置，返回 null。 */
@@ -1136,8 +1157,9 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       for (const language of languages) value[`taglineTranslations.${language}`] = translations?.[language] ?? null;
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
       for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
-      if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${e1Decimal(value.price)} USD`;
-      if ("baseRate" in value) value.baseRate = e1MonthlyBaseRate(value.baseRate, value.monthlyTargetUsdt) ?? value.baseRate;
+      if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${String(value.price).trim()} USD`;
+      const derivedDaily = "baseRate" in value ? e1MonthlyBaseRate(value.baseRate, value.monthlyTargetUsdt) : undefined;
+      if (derivedDaily !== undefined) value.baseRate = { derivedDaily };
       // 购买条件写成人话；读不到阶段名时写「第 N 阶段」，不只写数字。
       if (isRecord(value.purchaseGate)) value.purchaseGate = e1GateText(value.purchaseGate);
       if ((typeof value.unlockPhase === "string" || typeof value.unlockPhase === "number") && /^\d+$/.test(String(value.unlockPhase).trim())) value.unlockPhase = `第 ${String(value.unlockPhase).trim()} 阶段`;
@@ -1244,36 +1266,43 @@ function reviewPair(before: string, after: string, operationCode?: string) {
 }
 
 /** 队列「变更」列：和详情同一套格式。第一项做第一行，原值做第二行，多项时写「等 N 项」（必须改 5）。 */
-function changeSummary(before: string, after: string, omit: readonly string[] = [], operationCode?: string) {
+/** amountKey：整张单是哪个字段（a2TicketKey），文字型前后值按它判断是不是金额。 */
+function changeSummary(before: string, after: string, omit: readonly string[] = [], operationCode?: string, amountKey?: string) {
   const { b, a, labels, evidenceKeys } = reviewPair(before, after, operationCode);
-  if (!a) return { main: "—", sub: b ? `原 ${b.kind === "text" ? b.text : "见详情"}` : undefined };
-  if (a.kind === "text") return { main: a.text, sub: b ? `原 ${b.kind === "text" ? b.text : "见详情"}` : "新建" };
+  if (!a) return { main: "—", sub: b ? `原 ${b.kind === "text" ? a2Shown(amountKey, b.text) : "见详情"}` : undefined };
+  if (a.kind === "text") {
+    const [was, now] = a2Pair(amountKey, b?.kind === "text" ? b.text : undefined, a.text);
+    return { main: now!, sub: b ? `原 ${b.kind === "text" ? was : "见详情"}` : "新建" };
+  }
   if (a.kind === "rows") return { main: `共 ${a.rows.length} 行`, sub: b ? "原 见详情" : "新建" };
   if (a.value.clearMonthlyTarget === true) return {
     main: "关闭月收益目标",
     sub: a.value.shareYieldMin != null && a.value.shareYieldMax != null
       ? `年奖励率 ${valueText("shareYieldMin", a.value.shareYieldMin, labels)}–${valueText("shareYieldMax", a.value.shareYieldMax, labels)}`
-      : `日产收益 ${valueText("dailyEarn", a.value.dailyEarn, labels)}`,
+      : `日产收益 ${a2Shown("dailyEarn", valueText("dailyEarn", a.value.dailyEarn, labels))}`,
   };
   const keys = Object.keys(a.value).filter((key) => !omit.includes(key) && !evidenceKeys.includes(key));
   const changed = b?.kind === "object" ? keys.filter((key) => !same(b.value[key], a.value[key])) : keys;
   const first = changed[0] ?? keys[0];
   if (!first) return { main: "—" };
-  const label = labels[first] ?? first;
   const now = a.value[first];
-  const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : valueText(first, now, labels)}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
   const was = b?.kind === "object" ? b.value[first] : undefined;
-  return { main, sub: !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${valueText(first, was, labels)}` : "原 见详情" };
+  const pair = a2Pair(amountKey ?? first, valueText(first, was, labels), valueText(first, now, labels), [was, now]);
+  const { label, before: wasShown, after: nowShown } = derivedBaseRateShown(first, labels[first] ?? first, was, now, !b, pair[0], pair[1]);
+  const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : nowShown}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
+  return { main, sub: !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${wasShown}` : "原 见详情" };
 }
 
 /** 成组的记录画成小表，每组一行，列头用字段名；超过 5 行的收在「查看全部」后面（VS-109）。 */
-function ReviewRows({ name, rows, labels = CHANGE_LABELS }: { name: string; rows: readonly Record<string, unknown>[]; labels?: Record<string, string> }) {
+/** 金额字段的格按金额写法；format=false：这张表和对照的另一张原文不同、逐格显示后却一样时，两张都照原文写（rowsFormatSafe）。 */
+function ReviewRows({ name, rows, labels = CHANGE_LABELS, format = true }: { name: string; rows: readonly Record<string, unknown>[]; labels?: Record<string, string>; format?: boolean }) {
+  const cell = (column: string, value: unknown) => format ? a2Shown(column, valueText(column, value, labels), value) : valueText(column, value, labels);
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   const unit = ROW_UNIT[name] ?? "行";
   const table = (part: readonly Record<string, unknown>[], label: string) => (
     <Table label={label} data-tight="">
       <thead><tr>{columns.map((column) => <Th key={column}>{labels[column] ?? column}</Th>)}</tr></thead>
-      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={valueText(column, row[column], labels)} title={valueText(column, row[column], labels)} /></Td>)}</Tr>)}</tbody>
+      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={cell(column, row[column])} title={cell(column, row[column])} /></Td>)}</Tr>)}</tbody>
     </Table>
   );
   const title = labels[name] ?? name;
@@ -1319,6 +1348,51 @@ function deviceApprovalValue(value: string, operationCode?: string) {
 function i5MatrixVersionText(version: string, countries?: string[] | null) {
   return `${version || "未配置"} · ${countries?.join("、") || (countries ? "未配置" : "未提供")}`;
 }
+
+/**
+ * A2 按金额写法显示的字段（白名单）。逐个提案来源核对过，清单和出处见 P1-a 报告；只有这些字段的值按金额写法显示：
+ * - E1 商品快照（审批单冻结的商品前后值）：售价、月收益目标、日产收益；「收益说明」只在是系统按月收益目标折算的日收益时算（isA2Amount）。
+ * - F 配置单的配置键：每组订单额门槛、各榜奖池、本周榜单奖池、上榜最低奖励（a2-f-config 里单位是 USDT 的项），团队激励池每月上限（校验和审批都按 USDT）。
+ *   本周榜单奖池和每月上限可以写成 1.30K、2M：按 f4MonthlyCap 精确展开成完整金额再写「… USDT」，认不出的照原文。
+ * - D1 共同充值规则这张单：后端描述器写「最低 20，手续费 0.600000，确认数 25」（不带币种，AuditReplayBusinessPermissionGuard），
+ *   旧单是页面写的「最低 … USDT；手续费 … USDT；确认数 …；版本 …」。只认「最低」「手续费」两个值，按金额写法写并标 USDT；确认数、版本不动。
+ * K1 人工放行的净额另由 k1Amount 按字段显示。其余字段、不认识的键、没有字段键的文字（文本型前后值、摘要句、标语、角标、话术、通知文案）一律照原文。
+ */
+const A2_AMOUNT_FIELDS = new Set(["price", "monthlyTargetUsdt", "dailyEarn", "F.binary.threshold", "F.pool.periodPrize", "F.leaderboard.poolUsd", "F.leaderboard.minUsd", "F.pool.monthlyCap", "d_cregis_deposit_policy"]);
+const D1_POLICY_AMOUNT = /(^|[，；]\s*)(最低|手续费) ((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?: USDT)?(?=\s*(?:[，；]|$))/g;
+const isA2Amount = (key: string | undefined, value?: unknown) => key !== undefined
+  && (A2_AMOUNT_FIELDS.has(key) || key === "baseRate" && isRecord(value) && typeof value.derivedDaily === "string");
+/**
+ * 金额字段的值里完整的金额词元「数字 + 空格 + 币种」（USDT、UVT、USD、₫、VND；数字可带千分位、指数）按全站金额写法写，
+ * 币种后面必须是词边界，也不能紧跟「/币种」（「1.00 USDT/UVT」「USD2」这类汇率、标识不算）。其余文字和不带币种的数字原样。
+ */
+const A2_AMOUNT = /(?<![\w.,])[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?(?=[ \u00a0](?:USDT|UVT|USD|VND|₫)(?![\w])(?!\/[A-Za-z₫]))/g;
+/** 一个值给人看：是金额字段才按金额写法，否则照原文。原文照旧用于解析、匹配和有没有改的判断。 */
+const a2Shown = (key: string | undefined, text: string, value?: unknown) => {
+  if (!isA2Amount(key, value)) return text;
+  if (key === "d_cregis_deposit_policy") return text.replace(D1_POLICY_AMOUNT, (_, lead: string, label: string, amount: string) => `${lead}${label} ${amountDisplay(amount)} USDT`);
+  if (key === "F.leaderboard.poolUsd" || key === "F.pool.monthlyCap") {
+    const full = f4MonthlyCap(text.trim().replace(/\s*USDT$/i, ""));
+    return full === null ? text : `${amountDisplay(full)} USDT`;
+  }
+  return text.replace(A2_AMOUNT, (amount) => amountDisplay(amount));
+};
+/** 两张记录表（前、后）原文不同，逐格按字段显示后却完全一样时返回 false：两张都照原文写（RF01）。原文相同或只有一张表时照常显示。 */
+const rowsFormatSafe = (before: unknown, after: unknown, labels: Record<string, string>) => {
+  if (!isRowList(before) || !isRowList(after) || same(before, after)) return true;
+  const shown = (rows: Record<string, unknown>[]) => JSON.stringify(rows.map((row) => Object.entries(row).map(([key, value]) => [key, a2Shown(key, valueText(key, value, labels), value)])));
+  return shown(before) !== shown(after);
+};
+/** 一个字段的前后值一起显示：金额字段按金额写法；原文不同、写法改了以后一样时，两边都照原文写，不把真实的修改藏掉（OP-49/69）。raw 是两边的原值（判断「收益说明」是不是折算出的金额）。 */
+const a2Pair = (key: string | undefined, before: string | undefined, after: string | undefined, raw: [unknown, unknown] = [before, after]): [string | undefined, string | undefined] => {
+  const shownBefore = before === undefined ? undefined : a2Shown(key, before, raw[0]), shownAfter = after === undefined ? undefined : a2Shown(key, after, raw[1]);
+  return before !== after && shownBefore === shownAfter ? [before, after] : [shownBefore, shownAfter];
+};
+/** 整张单只改一个已知字段、前后值就是这个字段的文字时，这个字段的键：F 配置单是配置键，D1 共同充值规则是这张单的操作；其余没有。 */
+const a2TicketKey = (w: { operationCode?: string | null; obj?: string; after?: string; action?: string }) => {
+  const fund = fundTicket(w);
+  return fund?.kind === "fConfig" ? fund.key : w.operationCode === "d_cregis_deposit_policy" ? w.operationCode : undefined;
+};
 
 const changeBefore = (row: { before: string; after?: string; obj?: string; action?: string; operationCode?: string; ambassadorMaterialProposal?: unknown; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
   if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.expectedVersion, row.disclosureReview.originalCountryCodes);
@@ -1403,7 +1477,7 @@ function g3ControlReviewAfter(before: Record<string, unknown>, after: Record<str
   return { ...after, [currentPrice]: `拟按 ${day} 目标价 ${valueText(currentPrice, price)} 发布` };
 }
 
-export function A2ChangeReview({ before, after, omit = [], operationCode, facts, children }: { before: string; after: string; omit?: readonly string[]; operationCode?: string; /** 跟在「变更」后面同一块里的说明行，比如 F1 券冲正的「批准后」。 */ facts?: ReactNode; children?: ReactNode }) {
+export function A2ChangeReview({ before, after, omit = [], operationCode, amountKey, facts, children }: { before: string; after: string; omit?: readonly string[]; operationCode?: string; /** 整张单是哪个字段（a2TicketKey）：文字型前后值和 F 配置的一组值按它判断是不是金额。 */ amountKey?: string; /** 跟在「变更」后面同一块里的说明行，比如 F1 券冲正的「批准后」。 */ facts?: ReactNode; children?: ReactNode }) {
   const { b, a, labels } = reviewPair(before, after, operationCode);
   const created = !b;
   let body: ReactNode;
@@ -1413,11 +1487,12 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, facts,
     // 「显示名：甲；工作邮箱：乙」这类逐项摘要：两边字段一一对应时每项一行，不拼成一长句折行。
     body = <Facts>{fieldPairs(b.text, a.text)!.map(([label, from, to]) => <Fact key={label} k={label}><Change from={from} to={to} /></Fact>)}</Facts>;
   } else if (a.kind === "text") {
-    body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? a.text : <Change from={b.kind === "text" ? b.text : valueText(undefined, b.kind === "object" ? b.value : b.rows, labels)} to={a.text} />}</Fact>{facts}</Facts>;
+    const [shownFrom, shownTo] = a2Pair(amountKey, b ? b.kind === "text" ? b.text : valueText(undefined, b.kind === "object" ? b.value : b.rows, labels) : undefined, a.text);
+    body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? shownTo : <Change from={shownFrom} to={shownTo} />}</Fact>{facts}</Facts>;
   } else if (a.kind === "rows") {
     body = <>
-      <ReviewRows labels={labels} name="" rows={a.rows} />
-      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows labels={labels} name="" rows={b.rows} /> : <p className="rd-note">{b.kind === "text" ? b.text : valueText(undefined, b.value, labels)}</p>}</Fold>}
+      <ReviewRows labels={labels} name="" rows={a.rows} format={b?.kind !== "rows" || rowsFormatSafe(b.rows, a.rows, labels)} />
+      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows labels={labels} name="" rows={b.rows} format={rowsFormatSafe(b.rows, a.rows, labels)} /> : <p className="rd-note">{a2Shown(amountKey, b.kind === "text" ? b.text : valueText(undefined, b.value, labels))}</p>}</Fold>}
     </>;
   } else {
     const was = b?.kind === "object" ? b.value : undefined;
@@ -1427,24 +1502,25 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, facts,
     const removed = was ? Object.keys(was).filter((key) => !omit.includes(key) && !(key in next)) : [];
     const groups = keys.filter((key) => isRowList(next[key]));
     const plain = [...keys.filter((key) => !isRowList(next[key])), ...removed];
-    const rows: DiffRow[] = plain.map((key) => ({
-      key,
-      label: labels[key] ?? key,
-      before: g3Control && was && !(key in was) ? undefined : valueText(key, was?.[key], labels),
-      after: g3Control && !(key in next) ? undefined : valueText(key, next[key], labels),
-    }));
+    // 有没有改由 DiffList 按两边文字比；a2Pair 只改金额字段，且不会把原来不同的两边变成一样。
+    const rows: DiffRow[] = plain.map((key) => {
+      const [before, after] = a2Pair(amountKey ?? key, g3Control && was && !(key in was) ? undefined : valueText(key, was?.[key], labels),
+        g3Control && !(key in next) ? undefined : valueText(key, next[key], labels), [was?.[key], next[key]]);
+      return { key, ...derivedBaseRateShown(key, labels[key] ?? key, was?.[key], next[key], !was, before, after) };
+    });
     body = <>
-      {b && b.kind !== "object" && <Facts><Fact k="变更前">{b.kind === "text" ? b.text : valueText(undefined, b.rows, labels)}</Fact></Facts>}
+      {b && b.kind !== "object" && <Facts><Fact k="变更前">{a2Shown(amountKey, b.kind === "text" ? b.text : valueText(undefined, b.rows, labels))}</Fact></Facts>}
       {plain.length > 0 && (was
         ? <DiffList rows={rows} restTitle="其余内容" emptyNote="这些项没有改动" />
         : <Facts>{rows.map((row) => <Fact key={row.key} k={String(row.label)}>{row.after}</Fact>)}</Facts>)}
       {groups.map((key) => {
         const old = was?.[key];
+        const format = rowsFormatSafe(old, next[key], labels);
         return (
           <div key={key} className="a2-change-group">
             <div className="a2-change-sub">{labels[key] ?? key}{was && same(old, next[key]) && <span className="rd-weak"> · 没有改动</span>}</div>
-            <ReviewRows labels={labels} name={key} rows={next[key] as Record<string, unknown>[]} />
-            {isRowList(old) && !same(old, next[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} /></Fold>}
+            <ReviewRows labels={labels} name={key} rows={next[key] as Record<string, unknown>[]} format={format} />
+            {isRowList(old) && !same(old, next[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} format={format} /></Fold>}
           </div>
         );
       })}
@@ -2216,7 +2292,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (fund.kind === "fConfig") {
       const item = fund.spec;
       const cover = w.amplifies ? coverageFacts(w) : undefined;
-      const change = <Fact k={item ? item.item : "这一项"}><Change from={changeBefore(w)} to={changeAfter(w)} /></Fact>;
+      const [shownFrom, shownTo] = a2Pair(fund.key, changeBefore(w), changeAfter(w));
+      const change = <Fact k={item ? item.item : "这一项"}><Change from={shownFrom} to={shownTo} /></Fact>;
       return {
         irreversible: false,
         impact: item?.impact ?? "批准后立即改这项设置，失败不改原值。",
@@ -2399,8 +2476,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {fund?.extra}
           {fBatchTicket(w)?.items ? <A2BatchReview items={fBatchTicket(w)!.items!} />
             : isRoleGrantsTicket(w)
-            ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
-            : <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined}
+            ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
+            : <A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined}
                 facts={f1VoucherReverse(w) && <Fact k="批准后">{f1VoucherReverse(w)!.impact}</Fact>}>
                 {/* I5 发布、设置／切换生效版本：列表上直接批准也看同一份对照，和详情抽屉一样（BUG-503）。 */}
                 <A2I5DisclosureReview key={w.id} ticket={w} />
@@ -2816,8 +2893,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const k1 = k1TicketView(w);
                   const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
                   const mission = h3MissionView(w);
-                  const change = mission ? { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建" } : boot ? { main: `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? { main: `${fBatchLabel(batch.items[0], fBatchPages(batch.items))} ${batch.items[0].after}${batch.count > 1 ? ` 等 ${batch.count} 项` : ""}`, sub: `原 ${batch.items[0].before}` }
-                    : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
+                  const change = mission ? { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建" } : boot ? { main: `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? fBatchCell(batch.items, batch.count)
+                    : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w), a2TicketKey(w));
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
@@ -3142,8 +3219,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             </section>
             : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)
-            ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
-            : <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}
+            ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
+            : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}
                 facts={f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>
                 <A2I5DisclosureReview key={shown.id} ticket={shown} />
               </A2ChangeReview>}

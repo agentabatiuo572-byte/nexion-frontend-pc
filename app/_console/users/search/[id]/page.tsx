@@ -37,7 +37,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { formatD4Subtype } from "@/lib/admin/d4-ledger-display";
 import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { platformSessionDeviceText, userNicknameText, nexGridBrandText, operatorNicknameText, datacenterNameText } from "@/lib/admin/brand-copy";
-import { fmtNum } from "@/lib/format";
+import { fmtNum, amountDisplay } from "@/lib/format";
 import { toast } from "@/lib/store/ui";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { queryUserDetailCommand, userDetailCommandOrigin, userDetailCommandRoute } from "@/lib/admin/user-detail-command-query";
@@ -235,14 +235,10 @@ function numberLabel(value: unknown) {
   return Number.isFinite(number) ? fmtNum(number) : "—";
 }
 
-/** 金额按接口原值显示：去掉后端补的末尾 0，至少两位小数，不舍入，非零不会变成 0（TX-20）。读不到写「—」，不当成 0。 */
+/** 金额按全站写法（amountDisplay）：接口原值去掉末尾 0、整数不写小数点、千分位，不舍入，非零不会变成 0。读不到写「—」，不当成 0。 */
 function amountValue(value: unknown) {
-  const raw = typeof value === "number" && Number.isFinite(value)
-    ? value.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 20 })
-    : typeof value === "string" ? value.trim() : "";
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw);
-  if (!match) return raw || "—";
-  return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(match[3] ?? "").replace(/0+$/, "").padEnd(2, "0")}`;
+  const raw = typeof value === "number" && Number.isFinite(value) ? value : typeof value === "string" ? value.trim() : "";
+  return raw === "" ? "—" : amountDisplay(raw, 20);
 }
 
 function assetText(value: unknown) {
@@ -334,7 +330,8 @@ function toAuditEntries(rowsValue: unknown): TimelineEntry[] {
     const note = auditDetail(row);
     return {
       id: asText(row.id, `${index}`),
-      actor: asText(row.actorUsername, "系统"),
+      // 后端只给登录名；系统写的记录写「系统」（TX-32）。
+      actor: /^system$/i.test(asText(row.actorUsername, "")) ? "系统" : asText(row.actorUsername, "系统"),
       role: role ? roleLabel(role) : undefined,
       action: <>{auditEvent(row)}{failed ? " · 失败" : ""} <Explain label="原始操作内容" content={<><p className="rd-pre">{asText(row.action, "UNKNOWN")}</p><p className="rd-pre">{asText(row.detailJson, asText(row.result))}</p><p>结果：{asText(row.result)}</p></>} /></>,
       // 成功是常态不写，只留理由和前后状态，一条两行（VS-109）。
@@ -358,7 +355,8 @@ function riskFlags(flags: unknown, showsCases: boolean) {
 
 const revokeUnfinished = (method: UserPaymentMethod) => method.status !== "BOUND" && !!method.pspRevokeStatus && !/^(revoked|confirmed|success|succeeded|done|completed)$/i.test(method.pspRevokeStatus);
 
-interface Column { label: string; align?: "right"; end?: boolean; cell: (row: JsonRecord) => ReactNode }
+/** width 是这一列占表格的比例，列多、内容短的表给，空白不挤到一列后面（rubric 31）。time 是时间列：一张表的第一个时间列列头写时区，每块只写一次，跟业务时区（TX-25）。 */
+interface Column { label: string; align?: "right"; end?: boolean; width?: string; time?: boolean; cell: (row: JsonRecord) => ReactNode }
 
 const statusCell = (table: Record<string, readonly [string, "ok" | "warn" | "danger" | "progress" | "done"]>, value: string, unknown: string) => {
   const hit = table[value];
@@ -389,53 +387,54 @@ const SESSION_COLUMNS: Column[] = [
   { label: "设备", cell: (row) => <Cell main={platformSessionDeviceText(asText(row.deviceName))} /> },
   { label: "IP", cell: (row) => <Cell mono main={asText(row.clientIpMasked)} /> },
   { label: "状态", cell: sessionTag },
-  { label: "登录时间", cell: (row) => <Cell num main={shortTime(row.issuedAt)} /> },
-  { label: "过期时间", cell: (row) => <Cell num main={shortTime(row.expiresAt)} /> },
+  { label: "登录时间", time: true, cell: (row) => <Cell num main={shortTime(row.issuedAt)} /> },
+  { label: "过期时间", time: true, cell: (row) => <Cell num main={shortTime(row.expiresAt)} /> },
 ];
 const DEPOSIT_COLUMNS: Column[] = [
-  { label: "充值单号", cell: (row) => <Cell mono full main={asText(row.depositNo)} /> },
-  { label: "金额 · 渠道", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={asText(row.channel)} /> },
-  { label: "状态", cell: (row) => <Cell main={asText(row.statusLabel)} /> },
-  { label: "确认时间", cell: (row) => <Cell num main={shortTime(row.confirmedAt)} /> },
+  { label: "充值单号", width: "34%", cell: (row) => <Cell mono full main={asText(row.depositNo)} /> },
+  { label: "金额 · 渠道", align: "right", width: "23%", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={asText(row.channel)} /> },
+  { label: "状态", width: "28%", cell: (row) => <Cell main={asText(row.statusLabel)} /> },
+  { label: "确认时间", time: true, cell: (row) => <Cell num main={shortTime(row.confirmedAt)} /> },
 ];
 const WITHDRAWAL_COLUMNS: Column[] = [
-  { label: "提现单号", cell: (row) => <Cell mono full main={asText(row.withdrawalNo)} /> },
-  { label: "金额 · 链", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={asText(row.chain)} /> },
-  { label: "状态 · 风险分", cell: (row) => <Cell main={withdrawalStatus(row)} sub={`风险分 ${asText(row.riskScore)}`} /> },
-  { label: "创建时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
+  { label: "提现单号", width: "34%", cell: (row) => <Cell mono full main={asText(row.withdrawalNo)} /> },
+  { label: "金额 · 链", align: "right", width: "23%", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={asText(row.chain)} /> },
+  { label: "状态 · 风险分", width: "28%", cell: (row) => <Cell main={withdrawalStatus(row)} sub={`风险分 ${asText(row.riskScore)}`} /> },
+  { label: "创建时间", time: true, cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
 ];
 const EARNING_COLUMNS: Column[] = [
   { label: "业务单号", cell: (row) => <Cell mono full main={asText(row.bizNo)} /> },
   { label: "类型 · 方向", cell: (row) => <Cell main={formatD4Subtype(row.bizType)} sub={DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"} /> },
   { label: "金额 · 余额", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={amountText(row.balanceAfter, row.asset)} /> },
-  { label: "时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
+  { label: "时间", time: true, cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
 ];
+/** 币种写进列头，格子只写数（TX-19）；时区由 RecordTable 写进第一个时间列的列头（TX-25）。 */
 const MEMBER_COLUMNS: Column[] = [
-  { label: "成员编码", cell: (row) => <Cell mono main={asText(row.memberNo)} /> },
-  { label: "昵称", cell: (row) => <Cell main={operatorNicknameText(asText(row.nickname))} /> },
-  { label: "团队等级", cell: (row) => asText(row.vRank) },
-  { label: "相隔邀请次数", align: "right", cell: (row) => <Cell num main={asText(row.level)} /> },
-  { label: "贡献额", align: "right", cell: (row) => <Cell num main={amountText(row.volume)} /> },
-  { label: "加入时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
+  { label: "成员编码", width: "18%", cell: (row) => <Cell mono main={asText(row.memberNo)} /> },
+  { label: "昵称", width: "22%", cell: (row) => <Cell main={operatorNicknameText(asText(row.nickname))} /> },
+  { label: "团队等级", width: "14%", cell: (row) => asText(row.vRank) },
+  { label: "相隔邀请次数", align: "right", width: "14%", cell: (row) => <Cell num main={asText(row.level)} /> },
+  { label: "贡献额（USDT）", align: "right", width: "16%", cell: (row) => <Cell num main={amountValue(row.volume)} /> },
+  { label: "加入时间", time: true, cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
 ];
 const ENGAGEMENT_COLUMNS: Column[] = [
   { label: "项目", cell: (row) => <Cell main={asText(row.name)} /> },
   { label: "状态", cell: (row) => asText(row.status) },
   { label: "进度", cell: (row) => asText(row.progress) },
-  { label: "更新时间", cell: (row) => <Cell num main={shortTime(row.updatedAt)} /> },
+  { label: "更新时间", time: true, cell: (row) => <Cell num main={shortTime(row.updatedAt)} /> },
 ];
 const EXCHANGE_COLUMNS: Column[] = [
   { label: "业务单号", cell: (row) => <Cell mono full main={asText(row.bizNo)} /> },
   { label: "类型 · 方向", cell: (row) => <Cell main={formatD4Subtype(row.bizType)} sub={DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"} /> },
   { label: "金额", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} /> },
-  { label: "时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
+  { label: "时间", time: true, cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
 ];
 const ORDER_COLUMNS: Column[] = [
-  { label: "订单号", cell: (row) => <Cell mono full main={asText(row.orderNo)} /> },
-  { label: "商品 · 机房", cell: (row) => <Cell main={asText(row.skuName)} sub={datacenterNameText(asText(row.dcLocation))} /> },
-  { label: "金额", align: "right", cell: (row) => <Cell num main={amountText(row.amount)} /> },
-  { label: "状态", cell: orderStatus },
-  { label: "下单时间", cell: (row) => <Cell num main={shortTime(row.orderedAt)} /> },
+  { label: "订单号", width: "34%", cell: (row) => <Cell mono full main={asText(row.orderNo)} /> },
+  { label: "商品 · 机房", width: "22%", cell: (row) => <Cell main={asText(row.skuName)} sub={datacenterNameText(asText(row.dcLocation))} /> },
+  { label: "金额", align: "right", width: "10%", cell: (row) => <Cell num main={amountText(row.amount)} /> },
+  { label: "状态", width: "19%", cell: orderStatus },
+  { label: "下单时间", time: true, cell: (row) => <Cell num main={shortTime(row.orderedAt)} /> },
 ];
 
 /** 后端把审核表单拼在说明后面，这里只取中文说明，原因码留给提现审核。 */
@@ -532,13 +531,17 @@ function RecordTable({ label, rows, columns, empty = "暂无记录", selected, o
   onOpen: (index: number) => void;
 }) {
   if (rows.length === 0) return <p className="rd-detail-empty">{empty}</p>;
+  // 最后一列收到内容宽、贴右边线，空白交给前面的列（PRD §5A 两端对齐）。
+  const last = columns.length - 1;
+  const timeColumn = columns.findIndex((column) => column.time);
   return (
     <Table label={label}>
-      <thead><tr>{columns.map((column) => <Th key={column.label} align={column.align} sticky={column.end ? "end" : undefined}>{column.label}</Th>)}</tr></thead>
+      {columns.some((column) => column.width) && <colgroup>{columns.map((column) => <col key={column.label} style={column.width ? { width: column.width } : undefined} />)}</colgroup>}
+      <thead><tr>{columns.map((column, index) => <Th key={column.label} align={column.align} sticky={column.end ? "end" : undefined} fit={index === last}>{index === timeColumn ? `${column.label}（${businessZone().label}）` : column.label}</Th>)}</tr></thead>
       <tbody>
         {rows.map((row, index) => (
           <Tr key={`${asText(row.id ?? row.bizNo ?? row.orderNo ?? row.depositNo ?? row.withdrawalNo ?? row.instanceNo, "row")}-${index}`} selected={selected === index} onOpen={() => onOpen(index)}>
-            {columns.map((column) => <Td key={column.label} align={column.align} sticky={column.end ? "end" : undefined}>{column.cell(row)}</Td>)}
+            {columns.map((column, index) => <Td key={column.label} align={column.align} sticky={column.end ? "end" : undefined} fit={index === last}>{column.cell(row)}</Td>)}
           </Tr>
         ))}
       </tbody>
@@ -605,9 +608,9 @@ function Recent({ label, amount, time, status, tone, openLabel, onOpen, note }: 
   );
 }
 
-/** 一块里成对的小汇总：名字和数字挨着，不拉到面板右端（VS-49）。 */
+/** 一块里成对的小汇总：同一页共用一组列线，列数取这一页项数最多的那一行，项少的从左按列线排（PRD §5A 两端对齐，rd.css data-grid）。 */
 function Values({ rows }: { rows: readonly (readonly [ReactNode, ReactNode])[] }) {
-  return <dl className="rd-detail-values">{rows.map(([label, value], index) => <div key={index}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
+  return <dl className="rd-detail-values" data-grid="">{rows.map(([label, value], index) => <div key={index}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
 
 export default function UserDetailPage() {
@@ -684,6 +687,8 @@ export default function UserDetailPage() {
   const [paymentSecurity, setPaymentSecurity] = useState<{ state: PaymentSecurityState; pending: boolean }>({ state: "loading", pending: false });
   const [openFolds, setOpenFolds] = useState<Record<string, boolean>>({});
   const [openRecordList, setOpenRecordList] = useState<RecordKind | "audit" | null>();
+  /** 后台操作记录展开全部时记下是哪个用户、哪个账号的，换人后回到前 5 条。 */
+  const [auditAllKey, setAuditAllKey] = useState("");
   const [record, setRecord] = useState<{ kind: RecordKind; index: number; latest?: boolean } | null>(null);
   const [pendingCommands, setPendingCommands] = useState<C1Command[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
@@ -916,6 +921,8 @@ export default function UserDetailPage() {
   const visibleEarnings = useMemo(() => earningsRecords.slice((earningsPage - 1) * earningsPageSize, earningsPage * earningsPageSize), [earningsRecords, earningsPage, earningsPageSize]);
   useEffect(() => { setEarningsPage(1); }, [userKey]);
   const auditEntries = useMemo(() => toAuditEntries(detail?.audit), [detail?.audit]);
+  // 超过 5 条只先列最近 5 条，其余收在「查看全部」后面（VS-109）；和时间线同样按时间排，再取前 5 条。
+  const auditRecent = useMemo(() => [...auditEntries].sort((a, b) => parseBusinessTime(b.at) - parseBusinessTime(a.at)).slice(0, 5), [auditEntries]);
   const methods = useMemo(() => paymentMethods?.items ?? [], [paymentMethods]);
   const unfinishedRevokes = useMemo(() => (revokeScan ?? []).filter(revokeUnfinished), [revokeScan]);
   const devices = useMemo(() => asArray(detail?.devices?.records), [detail?.devices?.records]);
@@ -1073,7 +1080,7 @@ export default function UserDetailPage() {
     title: "重置昵称",
     detail: "系统会生成一个不含手机号等个人信息的新昵称，替换当前昵称。",
     amplifies: false,
-    facts: <Facts><Fact k="操作对象">{displayNickname} · {userNo}</Fact><Fact k="昵称"><Change from={displayNickname} to="系统生成的新昵称，提交后才知道" /></Fact></Facts>,
+    facts: <Facts><Fact k="操作对象">{displayNickname} · <span data-mono>{userNo}</span></Fact><Fact k="昵称"><Change from={displayNickname} to="系统生成的新昵称，提交后才知道" /></Fact></Facts>,
     confirmLabel: "确认重置，立即生效",
     statedBrief: { impact: "立即替换这个用户的昵称，结果会记录在操作记录中。", check: "核对操作对象，理由写清依据或工单号。" },
     run: (reason) => execute({ kind: "nickname", label: `重置昵称 · ${displayNickname}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), nickname }),
@@ -1081,9 +1088,9 @@ export default function UserDetailPage() {
   const openUnbind = (method: UserPaymentMethod) => setActionConfirm({ briefKind: "record",
     action: `解绑支付方式 · 尾号 ${method.last4}`,
     title: "解绑支付方式",
-    detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。",
+    detail: "解绑后立即停止作为默认支付方式；若它是默认卡，系统会改用其他已绑定方式作默认。",
     amplifies: false,
-    facts: <Facts><Fact k="操作对象">{displayNickname} · {userNo}</Fact><Fact k="支付方式">{method.brand} ···· {method.last4} · {method.provider}</Fact><Fact k="默认卡">{method.isDefault ? "是，服务器会选取其他已绑定方式作为默认" : "否"}</Fact></Facts>,
+    facts: <Facts><Fact k="操作对象">{displayNickname} · <span data-mono>{userNo}</span></Fact><Fact k="支付方式">{method.brand} ···· {method.last4} · {method.provider}</Fact><Fact k="默认卡">{method.isDefault ? "是，系统会改用其他已绑定方式作默认" : "否"}</Fact></Facts>,
     confirmLabel: "确认解绑，立即生效",
     confirmTone: "danger",
     irreversible: true,
@@ -1101,8 +1108,9 @@ export default function UserDetailPage() {
         : "这台设备回收并离线，不留置换单。不退钱，也不给用户发通知。",
       amplifies: false,
       facts: <Facts>
-        <Fact k="操作对象">{displayNickname} · {userNo}</Fact>
-        <Fact k="设备">{instance} · {asText(device.name)}</Fact>
+        <Fact k="操作对象">{displayNickname} · <span data-mono>{userNo}</span></Fact>
+        {/* 和设备明细表同一套取值：设备名和规格、编号尾号，完整编号在悬停里（TX-05，不露 PG- 这类前缀）；确认框值列窄，来源不写，一行放得下。 */}
+        <Fact k="设备"><span title={instance || undefined}>{[asText(device.name, ""), formatC1DeviceTier(device.productTier)].filter((text) => text && text !== "—").join(" · ") || "—"}{instance && <> · 编号尾号 <span data-mono>{instance.slice(-6)}</span></>}</span></Fact>
         <Fact k="状态"><Change from={formatC1DeviceStatus(device.status)} to="已回收，离线" /></Fact>
         {operation === "replace" && <Fact k="置换单">新增一张已完成的，只作记录</Fact>}
         <Fact k="收益">不再派新任务，已到账的收益不扣回</Fact>
@@ -1112,7 +1120,7 @@ export default function UserDetailPage() {
       confirmLabel: operation === "replace" ? "确认回收并记录置换，立即生效" : "确认回收，立即生效",
       confirmTone: "danger",
       irreversible: true,
-      statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时系统会拒绝。" : "和回收并记录置换的差别只有一点：不留置换单。设备有任务在跑时系统会拒绝。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
+      statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时系统会拒绝。" : "和回收并记录置换的差别只有一点：不留置换单。设备有任务在跑时系统会拒绝。", check: "核对设备编号尾号和用户，理由写清依据或工单号。" },
       run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "回收并记录置换" : "设备回收"} · ${instance}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
     });
   };
@@ -1427,8 +1435,13 @@ export default function UserDetailPage() {
   const goLink = goTarget && <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: goTarget.pathname, query: goTarget.query }} prefetch={false}><span className="rd-btn-face">{goTarget.label}</span></Link>;
   const recordProps = (kind: RecordKind) => ({ selected: record?.kind === kind && !record.latest ? record.index : undefined, onOpen: (index: number) => setRecord({ kind, index }) });
   const deviceColumns: Column[] = [
-    // 规格并进第二行：操作列是「回收并记录置换」加「设备回收」，五列在 1024 放不下（DT-16）。
-    { label: "实例 · 名称 · 规格", cell: (row) => <Cell mono main={asText(row.instanceNo)} sub={[asText(row.name, ""), formatC1DeviceTier(row.productTier)].filter((text) => text && text !== "—").join(" · ") || "—"} title={asText(row.instanceNo)} /> },
+    // 第一行设备名和规格，第二行编号尾号，完整编号在悬停和抽屉里（TX-05，不露 PG-、NEX-ORD-、TRIAL-DEV- 这类前缀）。
+    // 试用转正的设备叫法和设备运行管理同一个（来源 TRIAL）。操作列是「回收并记录置换」加「设备回收」，五列在 1024 放不下（DT-16）。
+    { label: "设备 · 编号尾号", cell: (row) => {
+      const instance = asText(row.instanceNo, "");
+      return <Cell main={[asText(row.name, ""), formatC1DeviceTier(row.productTier)].filter((text) => text && text !== "—").join(" · ") || "—"}
+        sub={instance ? <>{asText(row.sourceChannel, "").toUpperCase() === "TRIAL" ? "试用转正 · " : ""}编号尾号 <span data-mono>{instance.slice(-6)}</span></> : "—"} title={instance || undefined} />;
+    } },
     { label: "状态", cell: (row) => <Cell main={deviceTag(row)} sub={formatC1RuntimeStatus(row.runtimeStatus)} /> },
     { label: "设定日收益", align: "right", cell: (row) => <Cell num main={amountText(row.dailyUsdt)} sub={amountText(row.dailyNex, "UVT")} /> },
     ...(canWriteC2 ? [{ label: "操作", align: "right" as const, end: true, cell: (row: JsonRecord) => {
@@ -1450,7 +1463,7 @@ export default function UserDetailPage() {
     { label: "标题", cell: (row) => <Cell main={nexGridBrandText(asText(row.title))} title={asText(row.title)} /> },
     { label: "类型", cell: (row) => formatC1NotificationType(row.type) },
     { label: "推送 · 已读", cell: (row) => <Cell main={pushText(row)} sub={formatC1ReadFlag(row.readFlag)} /> },
-    { label: "创建时间", cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
+    { label: "创建时间", time: true, cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
   ];
   const paymentColumns: Column[] = [
     { label: "支付方式", cell: (row) => <Cell main={`${asText(row.brand)} ···· ${asText(row.last4)}`} sub={`${asText(row.provider)} · ${asText(row.expiryLabel, "无到期信息")}`} /> },
@@ -1500,7 +1513,7 @@ export default function UserDetailPage() {
   const teamText = referralFailed ? "推荐团队加载失败" : teamFailed ? "有区块加载失败" : joined([
     detail.referral && !inKpi("团队规模") && `团队 ${numberLabel(detail.referral.teamSize)} 人`,
     detail.referral && `直接邀请 ${numberLabel(detail.referral.directCount)} 人`,
-    detail.vrank && `等级 ${asText(detail.vrank.currentRank)}`,
+    detail.vrank && `团队等级 ${asText(detail.vrank.currentRank)}`,
   ]);
   const recordsText = recordsFailed
     ? "有区块加载失败"
@@ -1528,13 +1541,15 @@ export default function UserDetailPage() {
         summary={supportScope ? "这个客户的资料、资金、设备和记录。" : "这个用户的资料、资金、设备和记录。"}
         back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>}
         actions={<Button icon={<RefreshCcw size={14} aria-hidden />} loading={loading} loadingText="读取中…" onClick={() => void load()}>刷新</Button>}
-        identity={<>
-          <span data-mono>用户编码 {userNo}</span>
-          <StatusTag tone={statusTone(status)} icon={STATUS_ICON[status]} filled>{statusLabel(status)}</StatusTag>
-          <span>分层 {asText(profile.userLevel)} · {asText(profile.vRank)}</span>
-          <span>{asText(profile.phoneMasked)}</span>
-        </>}
-        meta={<>注册 {shortTime(profile.registeredAt)} · 最近登录 {shortTime(profile.lastLoginAt)} · {readAt} 读取（{businessZone().label}）<Explain label="什么时候读取" content="打开和点「刷新」时读取，不自动刷新。" /></>}
+        status={<StatusTag tone={statusTone(status)} icon={STATUS_ICON[status]} filled>{statusLabel(status)}</StatusTag>}
+        level={`用户分层 ${asText(profile.userLevel)} · 团队等级 ${asText(profile.vRank)}`}
+        facts={[
+          { label: "用户编码", value: <span data-mono>{userNo}</span> },
+          { label: "手机", value: asText(profile.phoneMasked) },
+          { label: "注册时间", value: shortTime(profile.registeredAt) },
+          { label: "最近登录", value: shortTime(profile.lastLoginAt) },
+        ]}
+        meta={<>{readAt} 读取（{businessZone().label}）<Explain label="什么时候读取" content="打开和点「刷新」时读取，不自动刷新。" /></>}
         readOnly={!supportScope && !canWriteC1 && !canWriteC2 && !canReleasePayment ? "当前账号在这页只能查看" : undefined}
         guideExtra={hiddenNote ? <p>这个账号看不到的区块不显示：{hiddenNote}。</p> : undefined} />
 
@@ -1550,7 +1565,8 @@ export default function UserDetailPage() {
       </StatBand>}
 
       {hasEntries && <Panel title="处理入口" icon={UserCog} tone="role-3" explain={<><p>账户和资金操作到对应页面办，办完回到这页点「刷新」。</p><p>{inPageWrites ? `这个账号在这页能${inPageWrites}。` : "这个账号在这页不能改任何内容。"}</p></>} actions={<>
-            {canReadC2 && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">冻结 / 解冻账户</span></Link>}
+            {/* 写去那里能办的事（PRD §6.6-6）：正常账户、当前账号有冻结权时写「冻结账户」，其余写页面名；条件和账户操作页的「冻结」按钮同一个。 */}
+            {canReadC2 && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">{status === "ACTIVE" && session?.authorities.includes("user_c2_account_freeze") ? "冻结账户" : "账户操作"}</span></Link>}
             {canReadC3 && /^[1-9]\d*$/.test(c3UserId) && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/assets", query: { userCode: userNo, userId: c3UserId, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">调整余额</span></Link>}
             {canReadC5 && <Link className="rd-btn" data-variant="secondary" data-size="sm" href={{ pathname: "/users/security", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">安全与登录设备</span></Link>}
             {canWriteC1 && <Button size="sm" disabledReason={!c3UserId ? "读不到用户号，刷新后再试" : nicknameBlock} onClick={openNicknameReset}>重置昵称</Button>}
@@ -1678,10 +1694,10 @@ export default function UserDetailPage() {
             <Block id="hub-engagement" title="互动与参与" {...listProps("engagement")} section={detail.engagement ? { sourceStatus: asText(detail.engagement.sourceStatus, "READY") } : undefined}>
               <RecordTable label="互动与参与" rows={engagement} columns={ENGAGEMENT_COLUMNS} {...recordProps("engagement")} />
             </Block>
-            <Block title="团队等级" section={detail.vrank} summary={`等级 ${asText(detail.vrank?.currentRank)} · 级别 ${asText(detail.vrank?.userLevel)}`}>
+            <Block title="团队等级" section={detail.vrank} summary={`用户分层 ${asText(detail.vrank?.userLevel)} · 团队等级 ${asText(detail.vrank?.currentRank)}`}>
               <Values rows={[
-                ["当前等级", asText(detail.vrank?.currentRank)],
-                ["用户级别", asText(detail.vrank?.userLevel)],
+                ["用户分层", asText(detail.vrank?.userLevel)],
+                ["团队等级", asText(detail.vrank?.currentRank)],
                 ...(detail.referral ? [] : [
                   ["团队规模", `${numberLabel(detail.vrank?.teamSize)} 人`] as const,
                   ["直接邀请", `${numberLabel(detail.vrank?.directCount)} 人`] as const,
@@ -1710,7 +1726,10 @@ export default function UserDetailPage() {
               <RecordTable label="商城订单" rows={orders} columns={ORDER_COLUMNS} {...recordProps("order")} />
             </Block>
             {detail.audit && <div className="rd-detail-block">
-              <Fold inset title="后台操作记录" open={visibleRecordList === "audit"} onOpenChange={next => setOpenRecordList(next ? "audit" : null)} summary={`最多 20 条 · 这里有 ${auditEntries.length} 条`}><Timeline entries={auditEntries} label="后台操作记录" /></Fold>
+              <Fold inset title="后台操作记录" open={visibleRecordList === "audit"} onOpenChange={next => setOpenRecordList(next ? "audit" : null)} summary={`最多 20 条 · 这里有 ${auditEntries.length} 条`}>
+                <Timeline entries={auditAllKey === readKey ? auditEntries : auditRecent} label="后台操作记录" />
+                {auditEntries.length > 5 && <div className="rd-timeline-more"><Button size="sm" variant="ghost" onClick={() => setAuditAllKey(auditAllKey === readKey ? "" : readKey)}>{auditAllKey === readKey ? "收起" : `查看全部 ${auditEntries.length} 条`}</Button></div>}
+              </Fold>
             </div>}
           </Fold>
         </div>}

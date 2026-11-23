@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { CircleHelp, Clock3, Hourglass } from "lucide-react";
 import { Explain, KeepText, Notice, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { amountDisplay } from "@/lib/format";
 
 /** 后端金额是普通十进制串（最多 6 位小数）。去掉补的末尾 0，至少 2 位，整数带千分位；不经过浮点，不舍入。 */
 export function amountParts(raw: string | number | undefined | null) {
@@ -22,11 +23,11 @@ export function decimalsOf(...values: Array<string | number | undefined | null>)
   return Math.max(2, ...values.map((value) => amountParts(value)?.frac.length ?? 0));
 }
 
-export function amountText(raw: string | number | undefined | null, decimals = decimalsOf(raw)) {
+/** 金额按全站写法（amountDisplay）：千分位、去掉末尾 0、整数不写小数点，不为对齐补零；decimals 是旧的对齐位数，不再使用。 */
+export function amountText(raw: string | number | undefined | null, _decimals?: number) {
   const parts = amountParts(raw);
   if (!parts) return "—";
-  const int = parts.int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${int}.${parts.frac.padEnd(decimals, "0")}`;
+  return amountDisplay(`${parts.int}${parts.frac ? `.${parts.frac}` : ""}`);
 }
 
 /** 倍率写「×1.5」：去掉补的末尾 0，不补位。 */

@@ -26,7 +26,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
-import { fmtConfigPct } from "@/lib/format";
+import { fmtConfigPct, amountDisplay } from "@/lib/format";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   approveUserAssetAdjustment,
@@ -267,15 +267,14 @@ function digitsOf(values: readonly unknown[]) {
   }, 2);
 }
 
-function money(value: string, digits = 2) {
-  const sign = value.startsWith("-") ? "-" : "";
-  const [whole, fraction = ""] = value.replace(/^-/, "").split(".");
-  return `${sign}${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(Math.max(2, digits), "0")}`;
+/** 金额按全站写法（amountDisplay）：千分位，有几位写几位，整数不写小数点，不为对齐补零；digits 是旧的整列位数，不再使用。 */
+function money(value: string, _digits?: number) {
+  return amountDisplay(value);
 }
 
-function moneyOf(value: unknown, digits = 2) {
+function moneyOf(value: unknown, _digits?: number) {
   const shown = decimal(value);
-  return shown === null ? "—" : money(shown, digits);
+  return shown === null ? "—" : money(shown);
 }
 
 /** 余额这类值：0 和「—」两套主题都弱化（runbook）。 */
@@ -291,10 +290,9 @@ function signedAmount(row: Pick<Row, "amount" | "direction">, digits = 2, flip =
   return `${credit ? "+" : "-"}${money(amount, digits)}`;
 }
 
-/** USDT 等值：2–8 位，非零又小于 0.000001 时至少 8 位（原规则）。 */
+/** USDT 等值是前端换算的数：保留原来的上限 8 位，再按全站写法去掉末尾 0。 */
 function usdEquivalent(value: number) {
-  const tiny = value !== 0 && Math.abs(value) < 0.000001;
-  return value.toLocaleString("en-US", { minimumFractionDigits: tiny ? 8 : 2, maximumFractionDigits: 8 });
+  return amountDisplay(value, 8);
 }
 
 function pct(value: number) {

@@ -8,7 +8,7 @@ import { BlockState, Button, Cell, Change, Check, ColumnPicker, Conclusion, Conf
 import { TipSide } from "@/app/components/rd/button";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { fmtConfigPct, fmtPct } from "@/lib/format";
+import { fmtConfigPct, fmtPct, amountDisplay } from "@/lib/format";
 import { executeK3Command, fetchK3Coverage, K1OutcomeUncertainError, K1RequestError, newK1CommandKey, type K3CommandRequest, type K3Coverage, type K3DryRunResult, type K3Hit, type K3RouteCount, type K3Rule, type RuleAction, type RuleState } from "@/lib/admin/k-client";
 import { fetchA2ReasonPolicy, visibleReasonLength } from "@/lib/admin/a2-client";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -308,8 +308,7 @@ function Distribution({ rows, total, simulation = false }: { rows: K3RouteCount[
 function hitAmount(raw: string) {
   const value = raw.replace(/^\$\s*/, "").replaceAll(",", "");
   if (!/^\d+(?:\.\d+)?$/.test(value)) return raw.replaceAll("$", "") || "—";
-  const [whole, decimals = ""] = value.split(".");
-  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${decimals.replace(/0+$/, "").padEnd(2, "0")}`;
+  return amountDisplay(value);
 }
 
 type WriteDialogProps = {

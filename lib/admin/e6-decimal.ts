@@ -1,3 +1,5 @@
+import { amountDisplay } from "../format";
+
 /** Keep the server's canonical decimal lexemes at the E6 response boundary. Drawing may use Number; display and commands use these strings. */
 export function parseE6DecimalJson(text: string): unknown {
   return JSON.parse(text.replace(/("(?:baseRateUsdt|baseRateNex|dailyUsdt|dailyNex)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'));
@@ -9,11 +11,11 @@ export function compareE6Decimal(left: string, right: string) {
   return a === b ? 0 : a > b ? 1 : -1;
 }
 
-/** A display group shares its real precision, with at least two fractional digits. */
+/** A display group's real precision (at least two). Old column alignment; amounts are no longer padded to it (PRD §5A). */
 export function e6AmountPrecision(values: readonly string[]) {
   return Math.max(2, ...values.map(value => (value.split(".")[1] ?? "").replace(/0+$/, "").length));
 }
-export function formatE6Amount(value: string, precision: number) {
-  const [whole, fraction = ""] = value.split(".");
-  return `${whole}.${fraction.replace(/0+$/, "").padEnd(precision, "0")}`;
+/** 只读金额按全站写法（amountDisplay）：千分位、去掉末尾 0、整数不写小数点；precision 不再使用。比较和命令用原串，不经过这里。 */
+export function formatE6Amount(value: string, _precision?: number) {
+  return amountDisplay(value);
 }

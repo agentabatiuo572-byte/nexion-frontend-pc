@@ -25,6 +25,7 @@ import { CregisAutoForward } from "./cregis-auto-forward";
 import { CregisPoolPolicy } from "./cregis-pool-policy";
 import { CregisDepositPolicy, type DepositProposalActivity } from "./cregis-deposit-policy";
 import { LongValue, PendingNotices, SwitchTag, countText, readParam, usdt, writeParams, zoneLabel, type D1Activity, type D1Count, type D1PendingItem } from "./d1-shared";
+import { amountDisplay } from "@/lib/format";
 
 type ExceptionRow = Record<string, unknown>;
 type FundsNetwork = "BEP20" | "ERC20" | "TRC20";
@@ -204,6 +205,8 @@ function rowNetwork(row: { network?: unknown; chainId?: unknown; chain_id?: unkn
   return chain == null ? "BEP20" : chain === "60" || chain === 60 ? "ERC20" : chain === "2510" || chain === 2510 ? "BEP20" : chain === "195" || chain === 195 ? "TRC20" : null;
 }
 const text = (value: unknown) => value == null || value === "" ? "—" : String(value);
+/** 金额按全站写法（amountDisplay）；读不到写「—」。 */
+const amount = (value: unknown) => value == null || value === "" ? "—" : amountDisplay(String(value));
 /** 表格里的长地址、哈希只写头尾，全文在悬停和详情里。 */
 const shortHash = (value: unknown) => { const full = text(value); return full.length > 18 ? `${full.slice(0, 10)}…${full.slice(-6)}` : full; };
 const time = (value: unknown) => formatBusinessTimeCompact(typeof value === "string" ? value : undefined, "—");
@@ -629,8 +632,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const entry = entries.find(item => item.key === entryKey) ?? null;
   const entryIndex = entry ? entries.indexOf(entry) : -1;
   const claimSource = (item: ExceptionEntry): ClaimSource | null => {
-    if (item.queue === "unattributed") return { sourceType: "OBSERVATION", sourceId: String(item.row.id), title: `未归属入金 #${text(item.row.id)} · ${text(item.row.rawAmount)} USDT`, network: rowNetwork(item.row), dust: false };
-    if (item.queue === "heldDeposits" && item.row.status === "DUST_HOLD") return { sourceType: "EVENT", sourceId: String(item.row.id), title: `低额入金 #${text(item.row.id)} · ${text(item.row.grossAmount)} USDT`, network: rowNetwork(item.row), dust: true };
+    if (item.queue === "unattributed") return { sourceType: "OBSERVATION", sourceId: String(item.row.id), title: `未归属入金 #${text(item.row.id)} · ${amount(item.row.rawAmount)} USDT`, network: rowNetwork(item.row), dust: false };
+    if (item.queue === "heldDeposits" && item.row.status === "DUST_HOLD") return { sourceType: "EVENT", sourceId: String(item.row.id), title: `低额入金 #${text(item.row.id)} · ${amount(item.row.grossAmount)} USDT`, network: rowNetwork(item.row), dust: true };
     return null;
   };
   const entryAction = (item: ExceptionEntry): { label: string; block?: string; run: () => void } | null => {
@@ -1061,7 +1064,7 @@ function ReviewDrawer({ cid, caseRow, canManage, adminId, busy, readBlock, onClo
         primary={<Button variant="primary" disabledReason={decideBlock} onClick={() => confirm({ kind: "funds",
           action: `复核入账 CID ${cid}`, title: "复核入账", confirmLabel: "确认复核", danger: true,
           effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>, facts: caseFacts,
-          detail: `交易 ${text(caseRow.txid)}，毛额 ${text(caseRow.grossAmount)} USDT，净入账 ${text(caseRow.proposedNetAmount)} USDT 给用户 ${text(caseRow.userId)}。请独立核对地址、发起理由与证据。`,
+          detail: `交易 ${text(caseRow.txid)}，毛额 ${amount(caseRow.grossAmount)} USDT，净入账 ${amount(caseRow.proposedNetAmount)} USDT 给用户 ${text(caseRow.userId)}。请独立核对地址、发起理由与证据。`,
           completion: "确认后立即把净额入账到用户钱包，不能撤销。",
           path: `/cregis/review-cases/${text(caseRow.id)}/decision`, body: { expectedVersion: caseRow.version, decision: "APPROVE" } })}>复核入账</Button>} />
       : <Decision note={proposeBlock}

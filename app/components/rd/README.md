@@ -208,7 +208,8 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 ```tsx
 <RdPage>
   <PageHeader pageId="C1D" title={对象名字} summary="…" back={<Link …>返回用户列表</Link>} actions={<Button>刷新</Button>}
-    identity={<>编码、状态、等级</>} meta="注册、最近登录、读取时间" readOnly={整页没有写权限时写一句} />
+    status={<StatusTag …>状态</StatusTag>} level="用户分层 L2 · 团队等级 V3" facts={[{ label: "用户编码", value: … }, …]}
+    meta="读取时间" readOnly={整页没有写权限时写一句} />   状态和等级跟在名字后面；读取时间和刷新在右上，只读提示在它下面；facts 另起一行按项数等分
   <Conclusion …>一句话：有没有要处理的事</Conclusion>   账户受限时这句就是页级提示，一屏只有一条
   {待确认条}
   <StatBand>最多 4 个，点数字定位并展开</StatBand>
@@ -222,7 +223,8 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 ```
 
 - 分区的 `alert` 和折叠组的 `alert` 用同一个值，有异常时默认展开，摘要只写异常。
-- 折叠组里的一小块用 `Panel plain headingLevel={3}`，外面包 `.rd-detail-block`；成对的小汇总用 `.rd-detail-values`（`dl`），名字和数字挨着，不拉到面板右端。
+- 折叠组里的一小块用 `Panel plain headingLevel={3}`，外面包 `.rd-detail-block`；成对的小汇总用 `.rd-detail-values`（`dl`）。详情页给它加 `data-grid`：同一页共用一组列线，列数取这一页项数最多的那一行，项少的从左按列线排（两端对齐）。详情页的折叠组和区块折叠内容区和面板同一条左边线（不按展开箭头缩进），所以面板里和折叠里的事实行自然共线，事实行本身不加缩进。
+- 块里记录表的最后一列给 `Th`、`Td` 都传 `fit`：收到内容宽贴右边线，空白交给前面的列。
 - 块里的单条记录点行开 `Drawer`，上一条下一条在当前页的行里切。
 - 缺的区块不显示，读取失败只替换这一块，结论句写「X 读取失败，这部分没有判断」。
 - 带锚点或 `section` 进来时，等上面的内容读完再定位，不然内容撑开会把目标顶走。

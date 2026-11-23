@@ -11,6 +11,7 @@ import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { Info } from "lucide-react";
 import { Fact, Facts, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
+import { amountDisplay } from "@/lib/format";
 
 /** 当前环境不允许人工调价时入口和确认框上的话：说清是环境规则，不是账号权限。 */
 export const G3_TUNING_FORBIDDEN = "当前环境不允许人工改现价和上涨概率，这不是账号权限问题，换账号也一样。要调价请改七天计划的目标价。";
@@ -22,7 +23,7 @@ export const G3_TUNING_FORBIDDEN_REJECTED = "没有执行：当前环境不允�
 export const G3_EXPIRED_DIRECT_READ = "原操作已过期，不能重发。请读取当前配置核对，原记录会保留。";
 
 function price(value: number) {
-  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
+  return amountDisplay(value, 8);
 }
 
 /**

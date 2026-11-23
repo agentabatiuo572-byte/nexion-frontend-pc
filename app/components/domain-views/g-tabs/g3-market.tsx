@@ -2,7 +2,7 @@
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { fmtConfigPct } from "@/lib/format";
+import { fmtConfigPct, amountDisplay } from "@/lib/format";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRecoveryNotice, pendingTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 /**
@@ -103,9 +103,9 @@ function readBaseline(read: G3ReadOverview): { overview: G3Overview; gaps: G3Rea
     coverage: { ...read.coverage, coverageRatio: read.coverage.coverageRatio ?? 0, redlinePct: read.coverage.redlinePct ?? 0, redlineBreached: read.coverage.redlineBreached ?? false } } };
 }
 
-/** 价格：去掉补的末尾 0，最少两位、最多八位小数（后端 scale 8，不舍入）。 */
+/** 价格按全站金额写法：最多八位小数（后端 scale 8），去掉末尾 0、整数不写小数点。 */
 function price(value: number) {
-  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
+  return amountDisplay(value, 8);
 }
 
 /** 0–1 的比例，最多六位小数。 */

@@ -12,6 +12,7 @@ import {
 } from "@/app/components/rd";
 import type { B4DistributionRow, B4PhaseOverview } from "@/lib/admin/b4-client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { amountDisplay } from "@/lib/format";
 
 type Range = { from: number; to: number };
 
@@ -172,12 +173,12 @@ const DIALS: Record<string, { name: string; what: string; detail: string; retire
     detail: "开启时 USDT 三个网络的提现每笔人工审查。开着不等于每一笔都会被挂起等待。" },
 };
 
-/** 值的写法：开关写已开启、未开启；USDT 金额加千分位、至少两位小数，不舍入；其余照后端原值加单位。 */
+/** 值的写法：开关写已开启、未开启；USDT 金额按全站写法（千分位、有几位写几位、整数不写小数点），不舍入；其余照后端原值加单位。 */
 function dialText(value: string | number | boolean, unit: string) {
   if (typeof value === "boolean" || value === "true" || value === "false") return value === true || value === "true" ? "已开启" : "未开启";
   if (String(value) === "是" || String(value) === "否") return String(value);
   if (unit === "USDT" && Number.isFinite(Number(value))) {
-    return `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 20 })} USDT`;
+    return `${amountDisplay(typeof value === "number" ? value : value.trim() || 0, 20)} USDT`;
   }
   if (unit === "%") return `${value}%`;
   return `${value}${unit ? ` ${unit}` : ""}`;

@@ -43,6 +43,7 @@ import { H3RegionPanel, REGION_APPROVER, useH3RegionPolicy } from "./h3-region-p
 import { H3OperatingFold, H3OperatingStat, hasH3OperatingStats } from "./h3-operating-stats";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { H3MissionFormDrawer, type H3MissionForm } from "./h3-mission-form";
+import { amountDisplay } from "@/lib/format";
 
 type H3ActionConfirmReq = ActionConfirmReq & { target?: string; confirmLabelForValue?: (value?: string) => string };
 type Tab = "dayOne" | "weekly" | "bindings" | "monthly";
@@ -858,7 +859,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const codeOf = (task: QuestTask) => text(task.taskCode ?? task.missionCode ?? task.id, "");
   // 月度奖励只改金额，币种沿用后端存的（UVT 或 USDT）：现在的奖励、申请改成的金额都带这一行的币种。
   // 后端把金额补到 6 位小数：去掉末尾的 0，最少留 2 位，不舍入。
-  const monthlyAmount = (value: string) => value.replace(/^(\d+)(?:\.(\d+))?/, (_, w: string, f = "") => `${amountText(w)}.${f.replace(/0+$/, "").padEnd(2, "0")}`);
+  // 金额按全站写法（amountDisplay）：去掉末尾 0、整数不写小数点。
+  const monthlyAmount = (value: string) => value.replace(/^\d+(?:\.\d+)?/, (amount) => amountDisplay(amount));
   const monthlyRow = (mission: QuestTask) => {
     const rewardKey = `monthly.${codeOf(mission)}.reward`;
     const reward = legacyAssetText(text(mission.reward));
@@ -1163,7 +1165,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const result = mulDecimal(base, h1Value, weeklyValue);
     return {
       reward: base == null ? <b data-empty="">—</b> : <><b>{amountText(base)}</b> UVT</>,
-      note: result == null ? undefined : `乘倍率后 ${result} UVT`,
+      note: result == null ? undefined : `乘倍率后 ${amountDisplay(result)} UVT`,
     };
   };
 

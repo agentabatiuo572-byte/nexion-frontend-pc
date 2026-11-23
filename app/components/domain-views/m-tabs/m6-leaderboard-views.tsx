@@ -8,6 +8,7 @@ import { useState, type ReactNode } from "react";
 import { ArrowRight, ListOrdered, Trophy } from "lucide-react";
 import { BlockState, Button, Cell, Explain, Fact, Facts, Notice, Panel, Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import type { SupportBoardCount, SupportBoardKey, SupportBoardQualification, SupportBoardRow } from "./support-leaderboard";
+import { amountDisplay } from "@/lib/format";
 
 /* ---------------- 名字和口径 ---------------- */
 
@@ -58,13 +59,9 @@ export function decimalPlaces(value: string | null) {
 export function amountPlaces(values: readonly (string | null)[]) {
   return Math.max(2, ...values.map(decimalPlaces));
 }
-/** 原值不舍入：整数千分位，小数去掉补的 0 再补到 places 位（places 不小于实际位数）。 */
-export function amountText(value: string | null, places = amountPlaces([value])) {
-  const parts = value === null ? null : DECIMAL.exec(value);
-  if (!parts) return "—";
-  const fraction = (parts[3] ?? "").replace(/0+$/, "").padEnd(places, "0");
-  const whole = parts[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${parts[1]}${whole}${fraction ? `.${fraction}` : ""}`;
+/** 原值不舍入，按全站金额写法（amountDisplay）：整数千分位，去掉末尾 0、整数不写小数点，同组不补零对齐（PRD §6.6-8）；places 不再使用。 */
+export function amountText(value: string | null, _places?: number) {
+  return value !== null && DECIMAL.test(value) ? amountDisplay(value) : "—";
 }
 export function countText(value: string | null) {
   return value === null || !/^\d+$/.test(value) ? "—" : value.replace(/\B(?=(\d{3})+(?!\d))/g, ",");

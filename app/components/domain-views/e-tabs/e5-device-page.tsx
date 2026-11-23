@@ -14,6 +14,7 @@ import { BlockState, Button, Cell, ColumnPicker, Conclusion, Drawer, Explain, Fa
 import { E5CommandScope, E5DeviceActions, E5PendingMark, E5Slots } from "./e5-device-actions";
 import { E5_STATES, e5StateNote } from "./e5-device-state";
 import type { EViewCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 const SOURCES: Record<string, string> = { ORDER: "购买", TRADE_IN: "置换", TRIAL: "试用转正", PROMOTION_GIFT: "赠送" };
 const WAITING: E5SimState[] = ["WAITING_ACTIVATION", "WAITING_INIT", "LEGACY_PENDING"];
@@ -33,17 +34,9 @@ function readQuery() {
   const error = q.simState !== "all" && !Object.hasOwn(E5_STATES, q.simState) ? "设备状态筛选无效，请清除筛选。" : q.source !== "all" && !Object.hasOwn(SOURCES, q.source) ? "设备来源筛选无效，请清除筛选。" : !Number.isSafeInteger(q.pageNum) || q.pageNum < 1 || ![10, 20, 50].includes(q.pageSize) ? "页码或每页条数无效，请清除筛选。" : "";
   return { q, error };
 }
-function amount(value: number | string, digits = 2) {
-  const raw = String(value);
-  let expanded = raw;
-  const scientific = /^(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(raw);
-  if (scientific) {
-    const digits = scientific[1] + (scientific[2] ?? "");
-    const point = scientific[1].length + Number(scientific[3]);
-    expanded = point <= 0 ? `0.${"0".repeat(-point)}${digits}` : point >= digits.length ? digits + "0".repeat(point - digits.length) : `${digits.slice(0, point)}.${digits.slice(point)}`;
-  }
-  const [whole, decimal = ""] = expanded.split(".");
-  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${decimal.replace(/0+$/, "").padEnd(digits, "0")}`;
+/** 金额按全站写法（amountDisplay）：接口原值去掉末尾 0、整数不写小数点、不补零；digits 是旧的对齐位数，不再使用。 */
+function amount(value: number | string, _digits?: number) {
+  return amountDisplay(String(value));
 }
 
 function RawAmount({ value, digits }: { value: number | string; digits: number }) {
@@ -55,8 +48,8 @@ function MonthlyIncome({ device, compact = false, digits, rangeDigits }: { devic
   if (!target) return <span className="e5-empty-value">—{!compact && <Explain label="没有设备月数据" content="没有这台设备的设备月数据，不代表到账为 0。" />}</span>;
   const { rangeLowUsdt: low, rangeHighUsdt: high, creditedUsdt: credited } = target;
   const hasRange = low !== null && high !== null;
-  const precision = digits ?? Math.max(...[credited, low, high].filter(value => value !== null).map(value => amount(value!).split(".")[1].length));
-  const rangePrecision = rangeDigits ?? Math.max(2, ...[low, high].filter(value => value !== null).map(value => amount(value!).split(".")[1].length));
+  const precision = digits ?? Math.max(...[credited, low, high].filter(value => value !== null).map(value => (amount(value!).split(".")[1] ?? "").length));
+  const rangePrecision = rangeDigits ?? Math.max(2, ...[low, high].filter(value => value !== null).map(value => (amount(value!).split(".")[1] ?? "").length));
   const max = hasRange ? Math.max(Number(high), Number(credited)) : 0;
   return <div className="e5-income">
     <div className="e5-amount" data-zero={Number(credited) === 0 ? "" : undefined}><RawAmount value={credited} digits={precision} />{!compact && <> <span className="rd-muted">USDT</span><Explain label="设备月收益口径" content={<>
@@ -199,8 +192,8 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
   const attention = overview ? ATTENTION.filter(item => overview[item.field] > 0) : [];
   const attentionTotal = attention.reduce((sum, item) => sum + overview![item.field], 0);
   const selectedGroup = query.simState === "RUNNING" ? "running" : query.simState === "STOPPED" ? "stopped" : WAITING.includes(query.simState as E5SimState) ? "waiting" : OTHER.includes(query.simState as E5SimState) ? "other" : undefined;
-  const incomeDigits = Math.max(2, ...rows.flatMap(row => row.monthlyTarget ? [row.monthlyTarget.creditedUsdt].filter(value => value !== null).map(value => amount(value!).split(".")[1].length) : []));
-  const rangeDigits = Math.max(2, ...rows.flatMap(row => row.monthlyTarget ? [row.monthlyTarget.rangeLowUsdt, row.monthlyTarget.rangeHighUsdt].filter(value => value !== null).map(value => amount(value!).split(".")[1].length) : []));
+  const incomeDigits = Math.max(2, ...rows.flatMap(row => row.monthlyTarget ? [row.monthlyTarget.creditedUsdt].filter(value => value !== null).map(value => (amount(value!).split(".")[1] ?? "").length) : []));
+  const rangeDigits = Math.max(2, ...rows.flatMap(row => row.monthlyTarget ? [row.monthlyTarget.rangeLowUsdt, row.monthlyTarget.rangeHighUsdt].filter(value => value !== null).map(value => (amount(value!).split(".")[1] ?? "").length) : []));
   // SIM_OFF is the backend's global-switch projection, never mixed with enabled SIM states.
   const simOff = rows.some(row => row.simState === "SIM_OFF");
   const roleReadOnly = !ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5;

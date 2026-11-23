@@ -21,7 +21,7 @@ import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { applicationStage } from "./f4-quota";
-import { count, decimalText, stamp, unknownTag, zoneNote } from "./f4-shared";
+import { count, decimalText, stamp, unknownTag, zoneNote, moneyText } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import { f4Confirmation } from "./f4-confirmations";
 
@@ -37,7 +37,7 @@ const reviewAttempts = createPendingMutationStore<PendingReview>({
 });
 
 function money(value: number | string | null | undefined) {
-  return value == null ? "尚未认可" : `${decimalText(value)} USDT`;
+  return value == null ? "尚未认可" : `${moneyText(value)} USDT`;
 }
 
 function ReviewRecord({ review, title }: { review: F4AmbassadorReview; title: string }) {
@@ -93,7 +93,7 @@ function ReviewCard({ review, title, stage, venue }: { review: F4AmbassadorRevie
     <span className="f4-review-head"><b>{title}</b><StatusTag tone={tag.tone} icon={review.status === "NEEDS_MORE" ? AlertCircle : undefined}>{tag.text}</StatusTag></span>
     <KeyValues rows={[
       { key: "who", label: "核验人", value: review.reviewerLabel ? maskAuditActor(review.reviewerLabel) : "—", sub: review.reviewedAt ? stamp(review.reviewedAt) : undefined },
-      ...(stage === "FINANCE" ? [{ key: "amount", label: "认可金额", value: review.recognizedBudgetUsdt == null ? "尚未认可" : `${decimalText(review.recognizedBudgetUsdt)} USDT` }]
+      ...(stage === "FINANCE" ? [{ key: "amount", label: "认可金额", value: review.recognizedBudgetUsdt == null ? "尚未认可" : `${moneyText(review.recognizedBudgetUsdt)} USDT` }]
         : venue ? [{ key: "people", label: "有效去重人数", value: review.verifiedAttendees == null ? "—" : `${count(review.verifiedAttendees)} 人` }] : []),
       { key: "reason", label: "理由", value: review.reason || "—" },
     ]} />

@@ -18,6 +18,7 @@ import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-ti
 import { useReach } from "@/lib/nav/use-reach";
 import { useDataListPager } from "../design-kit";
 import { residualLabel } from "./f3-rule";
+import { amountDisplay } from "@/lib/format";
 
 const NONE = "没有记下";
 
@@ -29,12 +30,8 @@ export const reductionText = (raw: string) => {
   return text === "0.0" && Number(raw) > 0 ? "不到 0.1%" : `${text}%`;
 };
 
-/** 后端原值：去掉末尾 0，至少两位，不舍入。 */
-const money = (raw: string | null | undefined) => {
-  if (raw === null || raw === undefined) return null;
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw.trim());
-  return match ? `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(match[3] ?? "").replace(/0+$/, "").padEnd(2, "0")} USDT` : `${raw.trim()} USDT`;
-};
+/** 后端原值按全站金额写法（amountDisplay）：去掉末尾 0，整数不写小数点，不舍入。 */
+const money = (raw: string | null | undefined) => raw === null || raw === undefined ? null : `${amountDisplay(raw.trim())} USDT`;
 
 const MODE: Record<string, string> = { MANUAL: "人工结算", AUTOMATIC: "自动结算" };
 export const f3ModeText = (mode: string | null) => mode === null ? null : MODE[mode] ?? "方式没认出";

@@ -35,6 +35,7 @@ import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRec
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { CCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 type Seg = "all" | "frozen" | "highrisk";
 type FilterKey = "tier" | "vRank" | "referralCode" | "depositMin" | "depositMax" | "usdtMin" | "usdtMax" | "nexMin" | "nexMax" | "riskBand" | "joinedFrom" | "joinedTo";
@@ -128,11 +129,9 @@ function rawAmount(value: unknown): string | null {
   return null;
 }
 
-/** 千分位，小数位补到这一列的位数，不舍入（TX-20）。 */
-function amountText(raw: string, digits: number) {
-  const [whole, fraction = ""] = raw.split(".");
-  const sign = whole.startsWith("-") ? "-" : "";
-  return `${sign}${whole.replace("-", "").replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.padEnd(digits, "0")}`;
+/** 金额按全站写法（amountDisplay）：千分位，有几位写几位，整数不写小数点，不舍入、不为对齐补零；第二个参数是旧的整列位数，不再使用。 */
+function amountText(raw: string, _digits?: number) {
+  return amountDisplay(raw);
 }
 
 function keywordQuery(value: string): Pick<UserProfileQuery, "keyword" | "userId" | "phoneHash" | "phoneMasked"> {
@@ -686,7 +685,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   const columns = useTableColumns("c1-users", [
     { key: "user", label: "用户", locked: "第一列不能关" },
     { key: "status", label: "状态", locked: "状态不能关" },
-    { key: "level", label: "等级", locked: "等级不能关" },
+    { key: "level", label: "用户分层 · 团队等级", locked: "用户分层和团队等级不能关" },
     ...(canReadRisk ? [{ key: "risk", label: "风险", locked: "风险列不能关" }] : []),
     ...(showBalance ? [{ key: "balance", label: "USDT 余额", locked: "余额不能关" }] : []),
     ...(showDevice ? [{ key: "device", label: "设备", extra: true }] : []),
@@ -773,7 +772,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       more={<>
         <FilterField label={<span>用户分层<Explain label="用户分层的说明" content="L0–L5，只在后台用，用户在 App 里看不到。" /></span>}>
           <Select aria-label="用户分层" value={draftFilters.tier} onChange={(value) => editFilter("tier", value)}
-            options={[{ value: "", label: "全部分层" }, ...TIERS.map((tier) => ({ value: tier, label: tier }))]} />
+            options={[{ value: "", label: "全部用户分层" }, ...TIERS.map((tier) => ({ value: tier, label: tier }))]} />
         </FilterField>
         <FilterField label={<span>团队等级<Explain label="团队等级的说明" content="现行团队等级是 V0–V8，V9–V12 只用来查历史用户。用户在 App 里能看到自己的团队等级。" /></span>}>
           <Select aria-label="团队等级" value={draftFilters.vRank} onChange={(value) => editFilter("vRank", value)}
@@ -843,7 +842,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         <thead><tr>
           <Th sticky="start" icon={Users} tone="users">用户</Th>
           <Th>状态</Th>
-          <Th>等级</Th>
+          <Th>用户分层 · 团队等级</Th>
           {canReadRisk && <Th icon={ShieldAlert} tone="risk"><Explain label="风险分怎么来" content="风险分取最近 24 小时内的评分，没有评分写「—」。">风险</Explain></Th>}
           {showBalance && <Th align="right" icon={Coins} tone="money"><Explain label="余额这一列的口径" content="钱包可用余额。">USDT 余额</Explain></Th>}
           {deviceVisible && <Th align="right"><Explain label="设备数的口径" content="上面是设备总数，下面是活跃的台数。活跃算在线、忙碌、已激活、运行中的设备。">设备</Explain></Th>}

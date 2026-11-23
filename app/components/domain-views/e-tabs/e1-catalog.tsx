@@ -12,7 +12,7 @@ import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { EViewCtx, McSpec } from "./types";
 import { E1_CURRENT_PHASE_UNVERIFIED, type e1CurrentPhase, e1GateReadiness, e1SkuOpening, gateRemaining, releaseMonthPresentation, resolveE1PhaseId } from "./data";
-import { E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Decimal, e1Precision, e1TargetPrecision, e1Multiply, e1Range, e1Value } from "./e1-state";
+import { E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Amount, e1Precision, e1TargetPrecision, e1Multiply, e1Range, e1Value } from "./e1-state";
 
 export const E1_MISSING_SERIES_REASON = "未设所属系列，编辑时先选系列";
 
@@ -57,7 +57,7 @@ function SkuMediaThumb({ sku }: { sku: OpsSku }) {
 
 export function E1Amount({ value, precision, unit }: { value: number | string | null | undefined; precision?: number; unit?: string }) {
   const raw = value == null || value === "" ? "—" : String(value);
-  return <span className="e1-decimal" title={`${raw}${unit ? ` ${unit}` : ""}`} aria-label={`${raw}${unit ? ` ${unit}` : ""}`}>{e1Decimal(value, precision)}{unit && ` ${unit}`}</span>;
+  return <span className="e1-decimal" title={`${raw}${unit ? ` ${unit}` : ""}`} aria-label={`${raw}${unit ? ` ${unit}` : ""}`}>{e1Amount(value)}{unit && ` ${unit}`}</span>;
 }
 
 function E1MiddleText({ text, tail = 8 }: { text: string; tail?: number }) {
@@ -73,7 +73,7 @@ export function E1TargetRange({ sku, label }: { sku: OpsSku; label?: ReactNode }
   const bandPlaces = e1Precision([band], 0);
   return <>
     <div className="e1-value-line">{label}<strong><E1Amount value={target} precision={places} /> <small>USDT/月</small></strong></div>
-    <ScaleBar label="月收益目标范围" valueText={`目标 ${e1Number(target)} USDT/月，范围 ${e1Number(range.low)} 至 ${e1Number(range.high)} USDT/月，允许波动 ±${e1Number(band)}%`} min={Number(e1Multiply(target, "0.5"))} max={Number(e1Multiply(target, "1.5"))} range={{ low: Number(range.low), high: Number(range.high) }} target={target} tone="neutral" />
+    <ScaleBar label="月收益目标范围" valueText={`目标 ${e1Amount(target)} USDT/月，范围 ${e1Amount(range.low)} 至 ${e1Amount(range.high)} USDT/月，允许波动 ±${e1Number(band)}%`} min={Number(e1Multiply(target, "0.5"))} max={Number(e1Multiply(target, "1.5"))} range={{ low: Number(range.low), high: Number(range.high) }} target={target} tone="neutral" />
     <div className="e1-range-labels"><span><E1Amount value={range.low} precision={places} /> — <E1Amount value={range.high} precision={places} /></span><span>±<E1Amount value={band} precision={bandPlaces} />%</span></div>
   </>;
 }

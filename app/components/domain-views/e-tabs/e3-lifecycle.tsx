@@ -19,6 +19,7 @@ import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Explain, Fact, F
 import type { EViewCtx, McSpec } from "./types";
 import { E3Manual } from "./e3-manual";
 import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
+import { amountDisplay } from "@/lib/format";
 
 /** 批准资格的真实路径（后端 A2：不同于发起人、有批准权、能访问 E 域；单项另要 E3 读权）。 */
 export const E3_APPROVER_SINGLE = "另一位有批准权限、能查看这页的管理员在「操作记录与审批」批准后生效，发起人不能自批；批准前规则不变。";
@@ -109,10 +110,7 @@ const ELIGIBILITY = ["全部用户", "L2+ 持有者", "L3+ 持有者", "L4+ 持�
 const num = (value: string) => Number(value);
 const signed = (value: string) => `${num(value) > 0 ? "+" : ""}${value}%`;
 const countText = (value: number) => value.toLocaleString("zh-CN");
-const usdtText = (value: string) => {
-  const [whole, fraction = ""] = value.split(".");
-  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(2, "0")} USDT`;
-};
+const usdtText = (value: string) => `${amountDisplay(value)} USDT`;
 const capText = (value: number) => `${Number(value.toFixed(2))}%`;
 
 /** 产能（%）：分段连乘再取下限，和后端 E3CapacityCurve 同一个算法。只用来画图和写预览，不参与提交。 */
@@ -560,7 +558,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     {TASK_LOCK_KEYS.some((key) => pE(key) !== "—") && <Fold title="已停用的设置" icon={CircleSlash} tone="role-other" summary="1 组 · 不能再改"
       explain="这组已经停用，不再提示用户升级，也不能再改。这里只显示以前存的值。">
       <ConfigList label="已停用的设置">
-        <ConfigRow name="提示升级的月损失金额" value={`入门 ${pE("E.device.taskLock.s1")} · Pro ${pE("E.device.taskLock.pro")} · 机柜 ${pE("E.device.taskLock.rack")} USDT`}
+        <ConfigRow name="提示升级的月损失金额" value={`入门 ${amountDisplay(pE("E.device.taskLock.s1"))} · Pro ${amountDisplay(pE("E.device.taskLock.pro"))} · 机柜 ${amountDisplay(pE("E.device.taskLock.rack"))} USDT`}
           sub={<>{pendingTag(TASK_LOCK_KEYS)}<StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag></>}
           what="原来设计成设备每月少赚超过这个金额时提示用户升级" when="已停用，不能再改"
           note="不影响派单、任务和收益。" />

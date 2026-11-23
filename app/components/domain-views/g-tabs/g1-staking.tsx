@@ -28,15 +28,14 @@ import {
   type G1PositionGroup,
   type G1PositionRow,
 } from "@/lib/admin/g1-client";
+import { amountDisplay } from "@/lib/format";
 
 const CANONICAL_USDT_TIERS = ["usdt30d", "usdt90d", "usdt180d", "usdt365d"] as const;
 const CANONICAL_USDT_TIER_SET = new Set<string>(CANONICAL_USDT_TIERS);
 
-/** 金额按接口原值写，不舍入、不用 $：千分位，小数去掉补的 0、最少 2 位。 */
+/** 金额按全站写法（amountDisplay）：不舍入、不用 $，千分位，去掉末尾 0、整数不写小数点。 */
 function usdtText(value: number) {
-  const [int, frac = ""] = String(Math.abs(value)).split(".");
-  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${value < 0 ? "-" : ""}${grouped}.${frac.padEnd(2, "0")}`;
+  return amountDisplay(value);
 }
 
 /** 后端明细金额是「$1234.5」这种文本：去掉 $，补千分位和两位小数；认不出的原样显示。 */
@@ -44,8 +43,7 @@ function rowAmount(value: string | null) {
   if (value === null) return "—";
   const match = /^\$?(-?)([\d,]+)(?:\.(\d+))?$/.exec(value.trim());
   if (!match) return operatorCopyText(value);
-  const int = match[2].replace(/,/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${match[1]}${int}.${(match[3] ?? "").padEnd(2, "0")}`;
+  return amountDisplay(`${match[1]}${match[2].replace(/,/g, "")}${match[3] ? `.${match[3]}` : ""}`);
 }
 
 function fmtCount(value: number) {

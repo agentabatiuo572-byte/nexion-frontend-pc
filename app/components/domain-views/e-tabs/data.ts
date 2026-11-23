@@ -11,6 +11,7 @@ import { SKU_SERIES_CODES, supportsDeviceMonthlyTarget, type SkuSeriesCode } fro
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
 import { containsHan } from "@/lib/admin/content-language-rules";
 import { skuBadgeKind, skuBadgeValue, skuTaglineTranslationUpdate, type SkuBadgeKind } from "@/lib/admin/e1-product-copy";
+import { amountDisplay } from "@/lib/format";
 
 // 全系统统一连续编号 E1-E5(上架节奏门并入 E1、设备生命周期归 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
@@ -53,14 +54,10 @@ function amountParts(value: number | string) {
 }
 export const orderAmountDigits = (value: number | string | null) => value === null ? 0 : amountParts(value).fraction.length;
 /**
- * 订单金额明细写接口的全部小数，至少 digits 位，币种是 USDT（TX-19、TX-20）。列表、抽屉、确认框都用这个。
- * 不用 toLocaleString：它的小数位有上限，位数超了不是舍入成别的数，就是抛错。
+ * 订单金额明细写接口给的全部小数，按全站金额写法（amountDisplay）去掉末尾 0、整数不写小数点，币种是 USDT（TX-19）。
+ * 列表、抽屉、确认框都用这个。接口给的数字按它本身的十进制写（不经过 toLocaleString 的位数上限）；digits 是旧的补零位数，不再使用。
  */
-export const orderAmount = (value: number | string | null, digits = 2) => {
-  if (value === null) return "—";
-  const { whole, fraction } = amountParts(value);
-  return `${String(value).startsWith("-") ? "-" : ""}${whole.replace(/\B(?=(\d{3})+$)/g, ",")}.${fraction.padEnd(digits, "0")}`;
-};
+export const orderAmount = (value: number | string | null, _digits?: number) => value === null ? "—" : amountDisplay(String(value));
 export const orderMoney = (value: number | string | null) => `${orderAmount(value)} USDT`;
 export const E4_DEFAULT_QUERY: E4Query = { group: "all", state: "", keyword: "", page: 1, pageSize: 10 };
 export const e4GroupStates = (group: E4Query["group"]): readonly string[] => ORDER_STATE_GROUPS.find((item) => item.value === group)?.states ?? [];

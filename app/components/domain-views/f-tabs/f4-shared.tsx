@@ -10,10 +10,19 @@ import { Button, Explain, Notice, StatusTag } from "@/app/components/rd";
 import { useFreshFirst } from "../recovery-panel";
 import { businessOffsetMinutes, businessStamp, businessZone, formatBusinessTimeCompact, parseBusinessTime, type BusinessZone } from "@/lib/admin/business-time";
 import { f4Decimal } from "@/lib/admin/f4-money";
+import { amountDisplay } from "@/lib/format";
 
-/** 接口给的 USDT 金额：保留接口十进制，千分位、至少两位，不舍入、不缩写。 */
+/** 接口给的 USDT 金额：保留接口十进制，按全站金额写法（moneyText），不舍入、不缩写。 */
 export function usdt(value: number | string | null | undefined) {
-  return value == null ? "—" : decimalText(f4Decimal(value));
+  return value == null ? "—" : moneyText(value);
+}
+
+/** 后端存的金额十进制文本（预算、认可金额、奖池）按全站写法（amountDisplay）：千分位、去掉末尾 0、整数不写小数点，不舍入。读不到写「—」。
+ * 票数、算力点、比例这些不是金额，仍用 decimalText。 */
+export function moneyText(value: number | string | null | undefined) {
+  if (value === null || value === undefined || String(value).trim() === "") return "—";
+  const decimal = f4Decimal(value);
+  return decimal === null ? String(value) : amountDisplay(decimal);
 }
 
 /** 后端存的十进制文本（预算、认可金额）：整数部分加千分位，小数原样保留，至少两位。 */

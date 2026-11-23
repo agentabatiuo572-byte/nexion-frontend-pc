@@ -14,6 +14,7 @@ import { depositPolicyUnits as units, validDepositPolicy as valid, parseDepositP
 import { businessStamp } from "@/lib/admin/business-time";
 import { usdt, zoneLabel } from "./d1-shared";
 import type { DCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 type ProposalInput = Parameters<typeof createA2OperationProposal>[0];
 type Pending = PendingMutationRecord & { owner: number; input: ProposalInput; ticketId?: string; terminal?: string };
@@ -58,7 +59,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
     const minText = String(Number(current.minDepositUsdt));
     openActionConfirm({ briefKind: "config", action: "提交 USDT BEP20 / ERC20 / TRC20 共同充值规则", title: "调整共同充值规则", confirmLabel: "提交审批",
       effect: <StatusTag tone="progress" filled>超级管理员批准后生效</StatusTag>,
-      detail: `当前：最低 ${current.minDepositUsdt} USDT；手续费 ${current.feeUsdt} USDT；确认数 ${current.confirmations}；版本 ${current.version}。提交后需审批，批准前不生效。`,
+      detail: `当前：最低 ${amountDisplay(current.minDepositUsdt)} USDT；手续费 ${amountDisplay(current.feeUsdt)} USDT；确认数 ${current.confirmations}；版本 ${current.version}。提交后需审批，批准前不生效。`,
       completionCopy: APPROVAL_TEXT,
       reasonMin: 10, reasonMax: 200,
       businessForm: { kind: "multi-field", requireAnyChange: true,
@@ -72,7 +73,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
         fields: [
           { key: "min", label: "最低充值额（USDT）", inputKind: "number", current: minText, min: 1, step: 1, showDiff: true, required: true, help: `现在 ${minText} USDT`,
             explain: "正整数。低于它的到账不自动入账。显示位置：App 充值页 › USDT 链上「最低充值」。" },
-          { key: "fee", label: "固定手续费（USDT）", inputKind: "text", current: current.feeUsdt, pattern: "^(0|[1-9]\\d{0,11})(\\.\\d{1,6})?$", patternMessage: "填不小于 0 的数，最多六位小数", showDiff: true, required: true, help: `现在 ${current.feeUsdt} USDT`,
+          { key: "fee", label: "固定手续费（USDT）", inputKind: "text", current: current.feeUsdt, pattern: "^(0|[1-9]\\d{0,11})(\\.\\d{1,6})?$", patternMessage: "填不小于 0 的数，最多六位小数", showDiff: true, required: true, help: `现在 ${amountDisplay(current.feeUsdt)} USDT`,
             explain: "每笔到账扣的手续费，要低于最低充值额。改成 1：每笔到账少入 1 USDT。显示位置：App 充值页 › USDT 链上「手续费」。" },
           { key: "confirmations", label: "链上确认数", inputKind: "number", current: String(current.confirmations), min: 15, max: 10000, step: 1, showDiff: true, required: true, help: `现在 ${current.confirmations} 次`,
             explain: "到账前要等的区块确认数，15–10000 的整数；环境下限更高时按提示调高。调大：到账更慢。显示位置：App 充值页 › USDT 链上「确认数」。" },

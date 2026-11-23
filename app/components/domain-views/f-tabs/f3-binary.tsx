@@ -39,6 +39,7 @@ import { FReleaseButton } from "./f-release";
 import { CONFIG_APPROVER, F3ConfirmHost, SETTLE_APPROVER, type F3Confirm } from "./f3-confirm";
 import { F3PeriodOverview } from "./f3-period-overview";
 import { F3_PAYOUT_KEYS, F3_PAYOUT_NAMES, F3PayoutConfirm, F3PayoutRows, payoutDirectLine, payoutValueText, pctText, type F3PayoutOpen } from "./f3-payout-control";
+import { amountDisplay } from "@/lib/format";
 
 const text = (value?: string | null) => operatorCopyText(value && value.trim() ? value.trim() : "—");
 const fmtInt = (value: number | null) => value === null ? "—" : Math.round(value).toLocaleString("en-US");
@@ -46,16 +47,10 @@ const fmtInt = (value: number | null) => value === null ? "—" : Math.round(val
 const blockedAttemptsText = (attempts: readonly unknown[] | null) => attempts === null ? "被拦下的结算读不到"
   : attempts.length === 0 ? "最近没有被拦下的结算"
     : attempts.length >= 100 ? "最近被拦下至少 100 次" : `最近被拦下 ${fmtInt(attempts.length)} 次`;
-/** 后端原样的小数文字加千分位，不舍入、不补零。 */
-const fmtDecimal = (raw: string) => {
-  const match = /^(\d+)(\.\d+)?$/.exec(raw.trim());
-  return match ? `${match[1].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${match[2] ?? ""}` : raw.trim();
-};
-/** 逐笔金额：去掉后端补的末尾 0，至少两位，不舍入。 */
-const fmtMoney = (raw: string) => {
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw.trim());
-  return match ? `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(match[3] ?? "").replace(/0+$/, "").padEnd(2, "0")}` : raw.trim();
-};
+/** 后端原样的金额小数文字按全站写法（amountDisplay）：千分位、去掉末尾 0，不舍入、不补零。 */
+const fmtDecimal = (raw: string) => amountDisplay(raw.trim());
+/** 逐笔金额按全站写法（amountDisplay）：去掉后端补的末尾 0，整数不写小数点，不舍入。 */
+const fmtMoney = (raw: string) => amountDisplay(raw.trim());
 const amountText = (raw: string | null | undefined, legacy: number) => raw === undefined ? fmtInt(legacy) : raw === null ? "—" : fmtMoney(raw);
 /**
  * 后端把金额先取整、再压成「$1.2k」这样的短写（OpsTeamService.moneyCompact）。不反算精确值：

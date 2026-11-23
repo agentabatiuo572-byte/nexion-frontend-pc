@@ -18,6 +18,7 @@ import { formatTime } from "./h4-promotion-ui";
 import { ApprovalFact, LOCALE_NAME, effectApproval, effectDirect, type LocaleCode } from "./h4-legacy-parts";
 import { H4ConflictCompare, h4ConflictGroups, type H4ConflictGroup } from "./h4-conflict-compare";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
+import { amountDisplay } from "@/lib/format";
 
 /** 每类玩法一句人话：用户做什么、拿到什么（字段见 H4EventRuleService 的规则闭集）。 */
 const PLAY_SENTENCE: Record<string, string> = {
@@ -32,6 +33,8 @@ const PLAY_SENTENCE: Record<string, string> = {
 };
 const playKey = (row: Pick<EventRuleView, "kind" | "rules">) => row.kind === "boost" ? String(row.rules.action ?? "") : row.kind;
 const value = (rules: Record<string, unknown>, key: string) => rules[key] === undefined || rules[key] === null || rules[key] === "" ? "—" : String(rules[key]);
+/** 金额参数按全站写法显示（amountDisplay）；读不到写「—」。 */
+const money = (rules: Record<string, unknown>, key: string) => { const raw = value(rules, key); return raw === "—" ? raw : amountDisplay(raw); };
 const unset = (text: string) => /—/.test(text) ? "未配置" : text;
 
 /** 卡上写的关键参数：用户拿到什么、平台最多付多少。 */
@@ -42,10 +45,10 @@ function rawParams(row: Pick<EventRuleView, "kind" | "rules">): Array<[string, s
   const r = row.rules;
   switch (playKey(row)) {
     case "referral": return [["门槛", `邀请 ${value(r, "targetInvites")} 人 · ${value(r, "windowDays")} 天内`], ["每人得", `${value(r, "giftQuantity")} 台 ${value(r, "giftProductNo")}`], ["平台最多付", `${value(r, "deviceBudget")} 台设备`]];
-    case "onboarding": return [["门槛", `注册 ${value(r, "windowDays")} 天内到 V${value(r, "minRank")}`], ["每人得", `${value(r, "rewardNex")} UVT + ${value(r, "streakSavers")} 张补签卡`], ["平台最多付", `${value(r, "budgetNex")} UVT`]];
-    case "regional": return [["参赛地区", Array.isArray(r.regions) ? `${r.regions.length} 个` : "—"], ["平台最多付", `${value(r, "poolUsdt")} USDT 奖池`]];
-    case "CHECKIN_MULTIPLIER": return [["加成", `签到 UVT × ${value(r, "multiplier")}`], ["生效", Array.isArray(r.weekdays) && r.weekdays.length ? (r.weekdays as number[]).map((day) => `周${"一二三四五六日"[day - 1] ?? "?"}`).join("、") : "—"], ["平台最多付", `${value(r, "budgetNex")} UVT`]];
-    case "REINVEST_TICKETS": return [["门槛", `每锁定 ${value(r, "thresholdUsdt")} USDT`], ["每档得", `${value(r, "ticketsPerThreshold")} 张抽奖券`], ["平台最多付", `${value(r, "ticketBudget")} 张抽奖券`]];
+    case "onboarding": return [["门槛", `注册 ${value(r, "windowDays")} 天内到 V${value(r, "minRank")}`], ["每人得", `${money(r, "rewardNex")} UVT + ${value(r, "streakSavers")} 张补签卡`], ["平台最多付", `${money(r, "budgetNex")} UVT`]];
+    case "regional": return [["参赛地区", Array.isArray(r.regions) ? `${r.regions.length} 个` : "—"], ["平台最多付", `${money(r, "poolUsdt")} USDT 奖池`]];
+    case "CHECKIN_MULTIPLIER": return [["加成", `签到 UVT × ${value(r, "multiplier")}`], ["生效", Array.isArray(r.weekdays) && r.weekdays.length ? (r.weekdays as number[]).map((day) => `周${"一二三四五六日"[day - 1] ?? "?"}`).join("、") : "—"], ["平台最多付", `${money(r, "budgetNex")} UVT`]];
+    case "REINVEST_TICKETS": return [["门槛", `每锁定 ${money(r, "thresholdUsdt")} USDT`], ["每档得", `${value(r, "ticketsPerThreshold")} 张抽奖券`], ["平台最多付", `${value(r, "ticketBudget")} 张抽奖券`]];
     case "discount": return [["关联促销", value(r, "promotionActivityId")], ["每人得", `${value(r, "extraGenesisTickets")} 张抽奖券`], ["平台最多付", `${value(r, "ticketBudget")} 张抽奖券`]];
     case "seasonal": return [["八折券", value(r, "voucherId")], ["每人得", `${value(r, "extraGenesisTickets")} 张抽奖券`], ["平台最多付", `${value(r, "ticketBudget")} 张抽奖券`]];
     default: return [];

@@ -31,6 +31,7 @@ import {
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { d4SubtypeCode, formatD4Remark, formatD4Subtype } from "@/lib/admin/d4-ledger-display";
 import type { DCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 const BILL_TYPES: ReadonlyArray<readonly [D4BillType | "", string]> = [
   ["", "全部"],
@@ -87,11 +88,12 @@ function decimals(value: number) {
   return exponent ? fraction + Number(exponent) : fraction;
 }
 
-/** 同一列按最多的小数位补零，至少 2 位，最多 8 位（TX-20）。 */
+/** 同一列最多几位小数（2–8 位）。旧的对齐位数，金额不再按它补零（PRD §5A），调用方还在传。 */
 const digitsOf = (values: readonly number[]) => Math.min(8, Math.max(2, ...values.map(decimals)));
 
-function amountText(value: number, digits = digitsOf([value])) {
-  return value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+/** 金额按全站写法（amountDisplay）：上限 8 位照旧，去掉末尾 0，整数不写小数点；digits 不再使用。 */
+function amountText(value: number, _digits?: number) {
+  return amountDisplay(value, 8);
 }
 
 const diffDigitsOf = (running: D4RunningBalance) => (running.reconciliation ? digitsOf([running.reconciliation.USDT, running.reconciliation.UVT]) : 2);

@@ -47,6 +47,7 @@ import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
+import { amountDisplay } from "@/lib/format";
 
 const OPERATOR = currentAdminOperator;
 const BATCH_AUTHORITY = "finprod_g2_write";
@@ -76,13 +77,9 @@ function messageOf(error: unknown) {
   return displayAdminError(error);
 }
 
-/** 金额：后端最多 6 位小数。去掉补的 0，至少两位，带千分位；不舍入。 */
+/** 金额：后端最多 6 位小数。按全站写法（amountDisplay）：去掉末尾 0、整数不写小数点，带千分位；不舍入。 */
 function amount(value: number | string) {
-  const text = typeof value === "number" ? value.toFixed(6) : value.trim();
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
-  if (!match) return String(value);
-  const fraction = (match[3] ?? "").replace(/0+$/, "").padEnd(2, "0");
-  return `${match[1]}${BigInt(match[2]).toLocaleString("en-US")}.${fraction}`;
+  return typeof value === "number" ? amountDisplay(value, 6, "fixed") : amountDisplay(value.trim());
 }
 
 /** 资产数量：去掉补的 0，不补位，带千分位。 */
@@ -1367,7 +1364,7 @@ function G2ExchangePage() {
             <dl className="g2x-quota-nums">
               <div><dt>已兑换</dt><dd>{amount(stats.todayUsd)} USDT</dd></div>
               <div><dt>日额度</dt><dd>{platformCap ? paramValueText("platformDailyCap", platformCap.value) : "—"}</dd></div>
-              <div><dt>还剩</dt><dd>{leftMicros === undefined ? "—" : leftMicros < BigInt(0) ? "0.00 USDT" : `${fromMicros(leftMicros)} USDT`}</dd></div>
+              <div><dt>还剩</dt><dd>{leftMicros === undefined ? "—" : leftMicros < BigInt(0) ? "0 USDT" : `${fromMicros(leftMicros)} USDT`}</dd></div>
             </dl>
           </div>
           <div className="g2x-quota g2x-quota-user">

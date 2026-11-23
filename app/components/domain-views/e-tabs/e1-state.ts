@@ -4,6 +4,7 @@ import type { SkuForm } from "./data";
 import { skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { skuBadgeReviewText, skuTaglineReviewRows } from "@/lib/admin/e1-product-copy";
 import { createPendingMutationStore, isPendingCommandOwnedBy, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { amountDisplay } from "@/lib/format";
 
 export const E1_LEVELS = [
   { key: "L1", label: "L1", name: "初级" }, { key: "L2", label: "L2", name: "中级" },
@@ -21,6 +22,12 @@ export function e1Number(value: number | string | null | undefined): string {
   const expanded = point <= 0 ? `0.${"0".repeat(-point)}${digits}` : point >= digits.length ? digits.padEnd(point, "0") : `${digits.slice(0, point)}.${digits.slice(point)}`;
   const [integer, decimal] = expanded.split(".");
   return `${negative ? "-" : ""}${integer.replace(/\B(?=(\d{3})+$)/g, ",")}${decimal === undefined ? "" : `.${decimal}`}`;
+}
+
+/** 只读金额按全站写法（amountDisplay，PRD §5A）：去掉末尾 0、整数不写小数点、不补零。e1Decimal 的写法留给审批前后值和「有没有改动」的判断，不动。 */
+export function e1Amount(value: number | string | null | undefined): string {
+  const raw = e1Number(value);
+  return raw === "—" ? raw : amountDisplay(raw);
 }
 
 /** Display precision follows the real digits in one amount/configuration group. */
@@ -162,9 +169,10 @@ export const E1_SKU_FIELDS: readonly { key: keyof OpsSku; label: string; unit?: 
   { key: "generation", label: "代际" }, { key: "supersededBy", label: "替代商品" }, { key: "tradeinDiscount", label: "置换折扣" }, { key: "tag", label: "历史标签" },
 ];
 const E1_VALUE_NAMES: Record<string, string> = { on: "在售", off: "已下架", pending: "草稿", active: "现行", legacy: "已停产", FINITE: "有限库存", UNLIMITED: "不限（非实物）", Entry: "入门档", Pro: "专业档", Flagship: "旗舰档", Share: "共享份额" };
-export function e1Value(value: unknown, unit?: string): string {
+/** shown：只用于页面显示的前后值，金额按 e1Amount 写；不传时和提交审批的原文一样。 */
+export function e1Value(value: unknown, unit?: string, shown = false): string {
   const text = value == null || value === "" ? "未设置" : typeof value === "boolean" ? value ? "开" : "关"
-    : typeof value === "number" ? unit && unit !== "%" ? e1Decimal(value) : e1Number(value) : Array.isArray(value) ? value.join("、") || "未配置"
+    : typeof value === "number" ? unit && unit !== "%" ? shown ? e1Amount(value) : e1Decimal(value) : e1Number(value) : Array.isArray(value) ? value.join("、") || "未配置"
     : typeof value === "object" ? JSON.stringify(value, null, 2) : E1_VALUE_NAMES[String(value)] ?? String(value);
   return `${text}${unit && value != null && value !== "" ? ` ${unit}` : ""}`;
 }
@@ -201,7 +209,9 @@ export function e1ShownDiff<Row extends { key: string; before?: string; after?: 
   });
 }
 
-export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuForm) {
+/** shown：确认框里给人看的前后值，金额按 e1Amount 写；不传时是提交审批和判断「有没有改动」用的原文，逐字节不变。 */
+export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuForm, shown = false) {
+  const target = (sku: OpsSku) => shown ? e1Amount(sku.monthlyTargetUsdt) : e1Decimal(sku.monthlyTargetUsdt, e1TargetPrecision(sku));
   const numericInputs = ["price", "computePoints", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins", ...(after.monthlyTargetUsdt == null ? ["dailyEarn", "shareYieldMin", "shareYieldMax"] : [])];
   // Editor drafts contain only the translation update. Catalogue reads contain the stored map.
   const nextTranslations = after.taglineTranslations ?? (raw ? before?.taglineTranslations : undefined);
@@ -209,11 +219,11 @@ export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuFo
   return [...E1_SKU_FIELDS, ...translationRows].map(field => {
     if ("before" in field) return field;
     const { key, label, unit } = field;
-    const value = (sku: OpsSku) => e1Value(key === "badge" ? skuBadgeReviewText(sku.badge) : sku[key], unit);
+    const value = (sku: OpsSku) => e1Value(key === "badge" ? skuBadgeReviewText(sku.badge) : sku[key], unit, shown);
     const input = raw && numericInputs.includes(key) ? raw[key as keyof SkuForm] : undefined;
-    const next = key === "monthlyTargetUsdt" && after.monthlyTargetUsdt != null ? `${e1Decimal(after.monthlyTargetUsdt, e1TargetPrecision(after))} ${unit}` : typeof input === "string" && input.trim() ? `${unit && unit !== "%" ? e1Decimal(input) : e1Number(input)}${unit ? ` ${unit}` : ""}` : value(after);
+    const next = key === "monthlyTargetUsdt" && after.monthlyTargetUsdt != null ? `${target(after)} ${unit}` : typeof input === "string" && input.trim() ? `${unit && unit !== "%" ? shown ? e1Amount(input) : e1Decimal(input) : e1Number(input)}${unit ? ` ${unit}` : ""}` : value(after);
     if (key === "seriesCode") return { key, label, before: before ? skuSeriesText(before.seriesCode) : "未创建", after: skuSeriesText(after.seriesCode), note: undefined };
-    return { key, label, before: before ? key === "monthlyTargetUsdt" && before.monthlyTargetUsdt != null ? `${e1Decimal(before.monthlyTargetUsdt, e1TargetPrecision(before))} ${unit}` : value(before) : "未创建", after: !before && raw && numericInputs.includes(key) && input === "" ? "未填写" : next,
+    return { key, label, before: before ? key === "monthlyTargetUsdt" && before.monthlyTargetUsdt != null ? `${target(before)} ${unit}` : value(before) : "未创建", after: !before && raw && numericInputs.includes(key) && input === "" ? "未填写" : next,
       note: key === "monthlyTargetUsdt" && after.clearMonthlyTarget ? "关闭月目标，改用兼容展示值" : undefined };
   });
 }

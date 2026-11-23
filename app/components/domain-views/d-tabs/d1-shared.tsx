@@ -16,6 +16,7 @@ import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundRecoveryStat
 import { checkFundCommand, fundCommandSettled, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { amountDisplay } from "@/lib/format";
 
 export type D1Section = "payments" | "bank" | "usdt" | "ledger";
 export const D1_SECTIONS: readonly D1Section[] = ["payments", "bank", "usdt", "ledger"];
@@ -53,17 +54,11 @@ export const countText = (count: D1Count): number | string | undefined =>
 /** 这个区有哪些别的区该知道的事：没保存的修改、结果未知、待审批。 */
 export type D1Activity = readonly string[];
 
-/** USDT 金额：千分位，至少两位小数，后端给的精度照写，不舍入。 */
+/** USDT 金额按全站写法（amountDisplay）：千分位，后端给的十进制照写、去掉末尾 0，整数不写小数点，不舍入；数字保留原来的上限 6 位。 */
 export function usdt(value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === "") return "—";
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return "—";
-    return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
-  }
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
-  if (!match) return value;
-  const [, sign, whole, fraction = ""] = match;
-  return `${sign}${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.padEnd(2, "0")}`;
+  if (typeof value === "number") return Number.isFinite(value) ? amountDisplay(value, 6) : "—";
+  return /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? amountDisplay(value) : value;
 }
 
 /** 越南盾整数金额。 */

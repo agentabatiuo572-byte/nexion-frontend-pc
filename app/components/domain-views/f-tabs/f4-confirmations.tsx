@@ -6,7 +6,7 @@ import { f4WeeklyCronIssue, validateF4SettlementConfig } from "@/lib/admin/f4-se
 import { ambassadorBucketLabel } from "@/lib/admin/f4-ambassador-display";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
-import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote } from "./f4-shared";
+import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
 import { decimalText } from "./f4-shared";
 import { f4Decimal, f4HeadCapAmplifies, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrizes } from "@/lib/admin/f4-money";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -61,7 +61,7 @@ export function leaderboardState(data: F4LeadershipPoolOverview) {
 /** 后端榜单金额写成「$123.45」，这里去掉 $ 写成 USDT。 */
 function prizeText(label: string) {
   const amount = /^\$?(-?\d+(?:\.\d+)?)$/.exec(label.trim().replace(/,/g, ""));
-  return amount ? decimalText(amount[1]) : label;
+  return amount ? moneyText(amount[1]) : label;
 }
 
 
@@ -100,7 +100,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
   const ppWeek = currentPeriodPrize("week");
   const ppMonth = currentPeriodPrize("month");
   const ppAllTime = currentPeriodPrize("all");
-  const prizeShown = (value: string) => value === "" ? "—" : decimalText(value);
+  const prizeShown = (value: string) => value === "" ? "—" : moneyText(value);
   const lbPool = current ? `${usdt(current.poolUsdText ?? current.poolUsd)} USDT` : "—";
 
   const quota = data.quotaRows.find(row => action === `F.quota.tier.${row.quotaCode || row.id}.monthlyQuota`)!;

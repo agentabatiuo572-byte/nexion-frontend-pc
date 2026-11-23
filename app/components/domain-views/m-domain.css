@@ -772,3 +772,6 @@
 .m5-cap-mode .rd-seg[aria-checked="true"] { background: var(--rd-control); }
 :root[data-theme="light"] .m5-cap-mode .rd-segs { background: var(--rd-control); box-shadow: inset 0 0 0 1px var(--rd-line); }
 :root[data-theme="light"] .m5-cap-mode .rd-seg[aria-checked="true"] { background: var(--rd-panel); box-shadow: 0 0 0 1px var(--rd-line-strong); }
+
+/* 客服页里的用户编码一律等宽（TX-28）：客户表第二行、客户资料、会话右栏头部。 */
+.m-user-code { font-family: var(--rd-font-mono); }

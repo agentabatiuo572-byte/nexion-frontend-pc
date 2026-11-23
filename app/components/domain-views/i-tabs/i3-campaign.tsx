@@ -33,6 +33,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import { BODY_SENT, campaignQuantity, CampaignCard, CampaignStatusTag, CapCard, chars, I3PendingCapNotice, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, sentWindow, deliveryGap, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
+import { amountDisplay } from "@/lib/format";
 
 type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
@@ -144,6 +145,16 @@ const blockedSchedule = (row: CampaignRow) => row.st === "scheduled" && !!retire
 const GROUP_PREVIEW = 6;
 const AUDIT_HREF = "/platform/audit?domain=I";
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，只能查询。";
+/**
+ * 预算对照（F01、RF04）：有没有改按原文「数 USD」比，和原来一样；两边只读文字里的金额按全站写法显示。
+ * 原文判为不同、格式化后却一样时，两边都照原文写，看得出差在哪（同 A2 的 a2Pair）。输入和提交值不经过这里。
+ */
+const budgetConflictRow = (left: string | undefined, right: string | undefined): IConflictRow => {
+  const shown = (text: string | undefined) => text === undefined ? undefined : text.replace(/^(\S+) USD$/, (_, amount: string) => `${amountDisplay(amount)} USD`);
+  const raw = conflictRow("预算", left, right), formatted = conflictRow("预算", shown(left), shown(right));
+  return raw.changed && formatted.left === formatted.right ? raw : { ...formatted, changed: raw.changed };
+};
+
 export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | null }) {
   const { toast, actions, content, contentLoading } = ctx;
   const reach = useReach();
@@ -596,7 +607,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           conflictRow("优先级", now ? TIER[now.tier].label : undefined, TIER[form.tier].label),
           conflictRow("点了去哪", now && routeName(now.ctaHref), routeName(form.ctaHref)),
           conflictRow("按钮文字", now?.ctaLabel, DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === form.ctaHref)?.label),
-          conflictRow("预算", now?.budget === null || now?.budget === undefined ? undefined : `${now.budget} USD`, form.budget.trim() ? `${form.budget.trim()} USD` : undefined)]),
+          budgetConflictRow(now?.budget === null || now?.budget === undefined ? undefined : `${now.budget} USD`, form.budget.trim() ? `${form.budget.trim()} USD` : undefined)]),
           ...inGroup("发给谁", [conflictRow("P 阶段从", now?.audienceTarget.phaseMin, form.phaseMin),
             conflictRow("P 阶段到", now?.audienceTarget.phaseMax, form.phaseMax),
             conflictRow("语言", now && languageName(now.audienceTarget.language), languageName(form.language)),
@@ -627,7 +638,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           conflictRow("通知类型", opened && kindLabel(opened.kind), now && kindLabel(now.kind)),
           conflictRow("优先级", opened && TIER[opened.tier]?.label, now && TIER[now.tier]?.label),
           conflictRow("发给谁", opened?.audience, now?.audience), conflictRow("点了去哪", routeName(opened?.ctaHref), routeName(now?.ctaHref)),
-          conflictRow("预算", budget(opened), budget(now)), conflictRow("中文内容", opened?.bodyZh, now?.bodyZh),
+          budgetConflictRow(budget(opened), budget(now)), conflictRow("中文内容", opened?.bodyZh, now?.bodyZh),
           conflictRow("越南语内容", opened?.bodyVi, now?.bodyVi), conflictRow("英语内容", opened?.bodyEn, now?.bodyEn)];
         rows[0].changed = !opened || stateText(opened) !== stateText(now);
         rebuild = path.endsWith("/send-now") ? reopen(() => sendNow(live))
@@ -1223,7 +1234,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
                 ? <Fact k="点了去哪" tone="warn">{`${retiredCta(c.ctaHref)}：${RETIRED_CTA_NOTE}`}<Explain label="已下线的去向" content="App 里不再显示这个按钮，点通知只标已读。原来存的去向照原样留在这条活动里。" /></Fact>
                 : <Fact k="点了去哪">{c.ctaHref ? ctaLabelOf(c.ctaHref) : "无跳转（点了只标已读）"}</Fact>}
               <Fact k="左滑">{c.kind === "system" ? "不跳转（系统通知左滑不跳）" : retiredWalletCta(c.ctaHref) ? RETIRED_WALLET_LABEL : retiredCta(c.ctaHref) ? "不跳转（设的页面已下线）" : c.ctaHref ? `去「${ctaLabelOf(c.ctaHref)}」` : fallbackRoute ? `去「${ctaLabelOf(fallbackRoute)}」（按类型默认）` : c.kind === "staking" ? "不跳转（质押页已下线）" : "不跳转"}</Fact>
-              <Fact k="预算">{budget === undefined || budget === "null" ? "—" : `${budget} USD（只记录，不扣款、不发奖）`}</Fact>
+              <Fact k="预算">{budget === undefined || budget === "null" ? "—" : `${amountDisplay(budget)} USD（只记录，不扣款、不发奖）`}</Fact>
             </Facts>
             {c.tier === "critical" && <Notice tone="neutral">紧急通知不看用户的通知设置，也不按保留上限清理。</Notice>}
             <Fold title="技术信息" tone="role-other" inset summary={`版本 ${c.revision}`}>

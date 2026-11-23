@@ -9,6 +9,7 @@ import { ChevronDown, CircleOff, Crosshair, Minus } from "lucide-react";
 import { BarList, Button, Cell, Check, DiffList, Explain, Fold, NumberInput, Panel, RatioBar, ScaleBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
 import { K4_DIMENSION_KEYS, type K4Contribution, type K4Dimension, type K4DimensionKey, type K4Distribution, type K4Model, type K4ScoreMappingKey, type K4ScoreMappings, type K4WithdrawalEvidence } from "@/lib/admin/k-client";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { amountDisplay } from "@/lib/format";
 
 export const fmt = (value: number) => value.toLocaleString("en-US");
 
@@ -219,7 +220,10 @@ export function ModelDiff({ rows }: { rows: DiffRow[] }) {
   return <DiffList rows={rows} emptyNote="草稿和生效版本的配置完全相同" restTitle="没有改的项" />;
 }
 
-/** 原文金额按自己的位数写：去掉末尾的 0、最少 2 位、不舍入，整数部分加千分位。 */
+/** 原文金额按全站写法（amountDisplay）：去掉末尾 0、整数不写小数点、千分位，不舍入。 */
+const moneyText = (raw: string) => amountDisplay(raw);
+
+/** 日均笔数这类不是金额的原文：去掉末尾的 0、最少 2 位、不舍入，整数部分加千分位（写法不变）。 */
 function decimalText(raw: string) {
   const [whole, fraction = ""] = raw.split(".");
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(2, "0")}`;
@@ -228,7 +232,7 @@ function decimalText(raw: string) {
 /** 提现速度打分那一刻的原始记录：每个币种一行，金额是申请提现的原额，不换算、不相加。 */
 function WithdrawEvidence({ data, id }: { data: K4WithdrawalEvidence; id: string }) {
   const time = (value: string | null) => (value ? formatBusinessTimeCompact(value, "—") : "—");
-  const amount = (count: number, value: string, currency: string) => <Cell num main={`${count} 笔`} sub={`${decimalText(value)} ${currency}`} />;
+  const amount = (count: number, value: string, currency: string) => <Cell num main={`${count} 笔`} sub={`${moneyText(value)} ${currency}`} />;
   return (
     <div className="k4-withdraw" id={id}>
       <p className="k4-withdraw-head">
@@ -254,8 +258,8 @@ function WithdrawEvidence({ data, id }: { data: K4WithdrawalEvidence; id: string
                 <Td><Cell mono main={asset.currency} /></Td>
                 <Td align="right">{amount(asset.count24h, asset.amount24h, asset.currency)}</Td>
                 <Td align="right">{amount(asset.count7d, asset.amount7d, asset.currency)}</Td>
-                <Td align="right"><Cell num main={`${decimalText(asset.baselineDailyCount)} 笔`} sub={`${decimalText(asset.baselineDailyAmount)} ${asset.currency}`} /></Td>
-                <Td align="right"><Cell num main={asset.max24h === null ? "—" : `${decimalText(asset.max24h)} ${asset.currency}`} /></Td>
+                <Td align="right"><Cell num main={`${decimalText(asset.baselineDailyCount)} 笔`} sub={`${moneyText(asset.baselineDailyAmount)} ${asset.currency}`} /></Td>
+                <Td align="right"><Cell num main={asset.max24h === null ? "—" : `${moneyText(asset.max24h)} ${asset.currency}`} /></Td>
               </Tr>
             ))}
           </tbody>
