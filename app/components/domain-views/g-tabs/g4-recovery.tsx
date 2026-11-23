@@ -11,6 +11,7 @@ import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type 
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { divBaseFormulaText } from "@/lib/admin/operator-copy";
 import type { GParamRecovery, useGParamApproval } from "@/lib/admin/use-g-param-approval";
+import { amountDisplay } from "@/lib/format";
 
 /** 九个参数在这页的固定叫法（和参数行、确认框标题一致）。 */
 export const G4_PARAM_NAME: Record<string, string> = {
@@ -25,13 +26,11 @@ export const G4_PARAM_NAME: Record<string, string> = {
   showcaseEnabled: "App 商城展示",
 };
 
-/** 去掉补的 0，至少两位小数，带千分位；不舍入。 */
+/** 金额按全站写法（amountDisplay）：去掉末尾 0、整数不写小数点，带千分位；不舍入。数字保留原来的上限 6 位。 */
 export function g4Amount(value: number | string) {
-  const text = typeof value === "number" ? (Number.isFinite(value) ? value.toFixed(6) : "") : value.trim();
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
-  if (!match) return typeof value === "number" ? "—" : value || "—";
-  const fraction = (match[3] ?? "").replace(/0+$/, "").padEnd(2, "0");
-  return `${match[1]}${BigInt(match[2]).toLocaleString("en-US")}.${fraction}`;
+  if (typeof value === "number") return Number.isFinite(value) ? amountDisplay(value, 6) : "—";
+  const text = value.trim();
+  return /^-?\d+(?:\.\d+)?$/.test(text) ? amountDisplay(text) : value || "—";
 }
 
 /** 百分数、比例：去掉补的 0，不补位。 */

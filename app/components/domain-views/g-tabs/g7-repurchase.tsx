@@ -37,6 +37,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { gParamAuthority, useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
 import { canRetryG7DirectCommand, g7DirectCommandExpired, g7DirectCommandVersion, listG7DirectCommands, subscribeG7DirectCommands, type G7DirectCommand } from "@/lib/admin/g7-direct-command";
 import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
+import { amountDisplay } from "@/lib/format";
 
 /** 本页的确认框请求：在共用的 ActionConfirmReq 上只加显示用的字段，提交仍走 run。 */
 type G7ConfirmReq = ActionConfirmReq & {
@@ -142,13 +143,9 @@ function messageOf(error: unknown) {
   return displayAdminError(error);
 }
 
-/** 金额：去掉补的 0，至少两位，带千分位；不舍入。 */
+/** 金额按全站写法（amountDisplay）：去掉末尾 0、整数不写小数点，带千分位；不舍入。数字保留原来的上限 6 位。 */
 function amount(value: number | string) {
-  const text = typeof value === "number" ? value.toFixed(6) : value.trim();
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
-  if (!match) return String(value);
-  const fraction = (match[3] ?? "").replace(/0+$/, "").padEnd(2, "0");
-  return `${match[1]}${BigInt(match[2]).toLocaleString("en-US")}.${fraction}`;
+  return typeof value === "number" ? amountDisplay(value, 6) : amountDisplay(value.trim());
 }
 
 /** 百分数、倍率：去掉补的 0，不补位。 */
@@ -197,7 +194,7 @@ function paramValueText(key: string, raw: string | undefined) {
   if (key === "lockDays") return `${value} 天`;
   if (key === "nurture") return `${plain(value)} 倍`;
   if (key === "lottery") return `${value} 张 / 单`;
-  if (key === "presets") return `${value.split(" / ").map((part) => /^\d+(\.\d+)?$/.test(part) ? part.replace(/^\d+/, (whole) => BigInt(whole).toLocaleString("en-US")) : part).join(" / ")} USDT`;
+  if (key === "presets") return `${value.split(" / ").map((part) => /^\d+(\.\d+)?$/.test(part) ? amountDisplay(part) : part).join(" / ")} USDT`;
   return value;
 }
 
@@ -816,10 +813,10 @@ function G7RepurchasePage() {
                   <span className="g7x-path-num">{fromMicros(maturity!)}<small>USDT</small></span>
                 </div>
                 <SegmentBar label="到期领取" legend={false} segments={[
-                  { key: "principal", label: "本金", value: Number(principal), slot: 1, text: "本金 1,000.00 USDT" },
+                  { key: "principal", label: "本金", value: Number(principal), slot: 1, text: "本金 1,000 USDT" },
                   { key: "reward", label: "预计奖励", value: Number(interest!), slot: 2, text: `预计奖励 ${fromMicros(interest!)} USDT` },
                 ]} />
-                <p className="g7x-path-sub"><span className="rd-chart-swatch g7x-key" data-slot="1" aria-hidden />本金 1,000.00 USDT　<span className="rd-chart-swatch g7x-key" data-slot="2" aria-hidden />预计奖励 {fromMicros(interest!)} USDT · 锁 {String(days)} 天</p>
+                <p className="g7x-path-sub"><span className="rd-chart-swatch g7x-key" data-slot="1" aria-hidden />本金 1,000 USDT　<span className="rd-chart-swatch g7x-key" data-slot="2" aria-hidden />预计奖励 {fromMicros(interest!)} USDT · 锁 {String(days)} 天</p>
               </div>
               <div className="g7x-path">
                 <div className="g7x-path-head">

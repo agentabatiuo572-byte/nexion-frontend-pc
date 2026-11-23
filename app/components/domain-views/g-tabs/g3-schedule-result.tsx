@@ -9,6 +9,7 @@ import { Change, Explain, Fact, Facts, InlineRetry, StatusTag } from "@/app/comp
 import type { StateTone } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { G3ScheduleAttempt, G3ScheduleExecutionRead } from "@/lib/admin/g3-client";
+import { amountDisplay } from "@/lib/format";
 
 const OUTCOME: Record<G3ScheduleAttempt["outcome"], { label: string; tone: StateTone }> = {
   ADVANCED: { label: "已推进", tone: "ok" },
@@ -39,10 +40,7 @@ const REASON: Record<string, string> = {
 
 const reasonText = (code: string | null) => code ? REASON[code] ?? "原因没记下" : "原因没记下";
 const at = (value: string) => formatBusinessTimeCompact(value, "—");
-const usdt = (value: string) => {
-  const [whole, fraction = ""] = value.split(".");
-  return `${whole}.${fraction.replace(/0+$/, "").padEnd(2, "0")} USDT`;
-};
+const usdt = (value: string) => `${amountDisplay(value)} USDT`;
 const day = (index: number | null) => index === null ? "—" : `D${index + 1}`;
 
 /** 这一次做了什么：推进写生效日和价格的前后；没变化、跳过、失败写原因。 */
