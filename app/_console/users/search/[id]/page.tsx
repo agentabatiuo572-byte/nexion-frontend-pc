@@ -391,15 +391,15 @@ const SESSION_COLUMNS: Column[] = [
   { label: "过期时间", time: true, cell: (row) => <Cell num main={shortTime(row.expiresAt)} /> },
 ];
 const DEPOSIT_COLUMNS: Column[] = [
-  { label: "充值单号", cell: (row) => <Cell mono full main={asText(row.depositNo)} /> },
-  { label: "金额 · 渠道", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={asText(row.channel)} /> },
-  { label: "状态", cell: (row) => <Cell main={asText(row.statusLabel)} /> },
+  { label: "充值单号", width: "34%", cell: (row) => <Cell mono full main={asText(row.depositNo)} /> },
+  { label: "金额 · 渠道", align: "right", width: "23%", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={asText(row.channel)} /> },
+  { label: "状态", width: "28%", cell: (row) => <Cell main={asText(row.statusLabel)} /> },
   { label: "确认时间", time: true, cell: (row) => <Cell num main={shortTime(row.confirmedAt)} /> },
 ];
 const WITHDRAWAL_COLUMNS: Column[] = [
-  { label: "提现单号", cell: (row) => <Cell mono full main={asText(row.withdrawalNo)} /> },
-  { label: "金额 · 链", align: "right", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={asText(row.chain)} /> },
-  { label: "状态 · 风险分", cell: (row) => <Cell main={withdrawalStatus(row)} sub={`风险分 ${asText(row.riskScore)}`} /> },
+  { label: "提现单号", width: "34%", cell: (row) => <Cell mono full main={asText(row.withdrawalNo)} /> },
+  { label: "金额 · 链", align: "right", width: "23%", cell: (row) => <Cell num main={amountText(row.amount, row.asset)} sub={asText(row.chain)} /> },
+  { label: "状态 · 风险分", width: "28%", cell: (row) => <Cell main={withdrawalStatus(row)} sub={`风险分 ${asText(row.riskScore)}`} /> },
   { label: "创建时间", time: true, cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
 ];
 const EARNING_COLUMNS: Column[] = [
@@ -430,10 +430,10 @@ const EXCHANGE_COLUMNS: Column[] = [
   { label: "时间", time: true, cell: (row) => <Cell num main={shortTime(row.createdAt)} /> },
 ];
 const ORDER_COLUMNS: Column[] = [
-  { label: "订单号", cell: (row) => <Cell mono full main={asText(row.orderNo)} /> },
-  { label: "商品 · 机房", cell: (row) => <Cell main={asText(row.skuName)} sub={datacenterNameText(asText(row.dcLocation))} /> },
-  { label: "金额", align: "right", cell: (row) => <Cell num main={amountText(row.amount)} /> },
-  { label: "状态", cell: orderStatus },
+  { label: "订单号", width: "34%", cell: (row) => <Cell mono full main={asText(row.orderNo)} /> },
+  { label: "商品 · 机房", width: "22%", cell: (row) => <Cell main={asText(row.skuName)} sub={datacenterNameText(asText(row.dcLocation))} /> },
+  { label: "金额", align: "right", width: "10%", cell: (row) => <Cell num main={amountText(row.amount)} /> },
+  { label: "状态", width: "19%", cell: orderStatus },
   { label: "下单时间", time: true, cell: (row) => <Cell num main={shortTime(row.orderedAt)} /> },
 ];
 
@@ -1088,9 +1088,9 @@ export default function UserDetailPage() {
   const openUnbind = (method: UserPaymentMethod) => setActionConfirm({ briefKind: "record",
     action: `解绑支付方式 · 尾号 ${method.last4}`,
     title: "解绑支付方式",
-    detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。",
+    detail: "解绑后立即停止作为默认支付方式；若它是默认卡，系统会改用其他已绑定方式作默认。",
     amplifies: false,
-    facts: <Facts><Fact k="操作对象">{displayNickname} · <span data-mono>{userNo}</span></Fact><Fact k="支付方式">{method.brand} ···· {method.last4} · {method.provider}</Fact><Fact k="默认卡">{method.isDefault ? "是，服务器会选取其他已绑定方式作为默认" : "否"}</Fact></Facts>,
+    facts: <Facts><Fact k="操作对象">{displayNickname} · <span data-mono>{userNo}</span></Fact><Fact k="支付方式">{method.brand} ···· {method.last4} · {method.provider}</Fact><Fact k="默认卡">{method.isDefault ? "是，系统会改用其他已绑定方式作默认" : "否"}</Fact></Facts>,
     confirmLabel: "确认解绑，立即生效",
     confirmTone: "danger",
     irreversible: true,
@@ -1109,7 +1109,8 @@ export default function UserDetailPage() {
       amplifies: false,
       facts: <Facts>
         <Fact k="操作对象">{displayNickname} · <span data-mono>{userNo}</span></Fact>
-        <Fact k="设备"><span data-mono>{instance}</span> · {asText(device.name)}</Fact>
+        {/* 和设备明细表同一个写法：设备名和规格、编号尾号，完整编号在悬停里（TX-05，不露 PG- 这类前缀）。 */}
+        <Fact k="设备"><span title={instance || undefined}>{[asText(device.name, ""), formatC1DeviceTier(device.productTier)].filter((text) => text && text !== "—").join(" · ") || "—"}{instance && <> · {asText(device.sourceChannel, "").toUpperCase() === "TRIAL" ? "试用转正 · " : ""}编号尾号 <span data-mono>{instance.slice(-6)}</span></>}</span></Fact>
         <Fact k="状态"><Change from={formatC1DeviceStatus(device.status)} to="已回收，离线" /></Fact>
         {operation === "replace" && <Fact k="置换单">新增一张已完成的，只作记录</Fact>}
         <Fact k="收益">不再派新任务，已到账的收益不扣回</Fact>
@@ -1119,7 +1120,7 @@ export default function UserDetailPage() {
       confirmLabel: operation === "replace" ? "确认回收并记录置换，立即生效" : "确认回收，立即生效",
       confirmTone: "danger",
       irreversible: true,
-      statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时系统会拒绝。" : "和回收并记录置换的差别只有一点：不留置换单。设备有任务在跑时系统会拒绝。", check: "核对设备实例号和用户，理由写清依据或工单号。" },
+      statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时系统会拒绝。" : "和回收并记录置换的差别只有一点：不留置换单。设备有任务在跑时系统会拒绝。", check: "核对设备编号尾号和用户，理由写清依据或工单号。" },
       run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "回收并记录置换" : "设备回收"} · ${instance}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
     });
   };
@@ -1727,7 +1728,7 @@ export default function UserDetailPage() {
             {detail.audit && <div className="rd-detail-block">
               <Fold inset title="后台操作记录" open={visibleRecordList === "audit"} onOpenChange={next => setOpenRecordList(next ? "audit" : null)} summary={`最多 20 条 · 这里有 ${auditEntries.length} 条`}>
                 <Timeline entries={auditAllKey === readKey ? auditEntries : auditRecent} label="后台操作记录" />
-                {auditEntries.length > 5 && <div><Button size="sm" variant="ghost" onClick={() => setAuditAllKey(auditAllKey === readKey ? "" : readKey)}>{auditAllKey === readKey ? "收起" : `查看全部 ${auditEntries.length} 条`}</Button></div>}
+                {auditEntries.length > 5 && <div className="rd-timeline-more"><Button size="sm" variant="ghost" onClick={() => setAuditAllKey(auditAllKey === readKey ? "" : readKey)}>{auditAllKey === readKey ? "收起" : `查看全部 ${auditEntries.length} 条`}</Button></div>}
               </Fold>
             </div>}
           </Fold>

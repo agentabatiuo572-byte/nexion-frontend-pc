@@ -391,7 +391,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     </>}
     {view === "customers" && <Panel title="我的客户" sub={rows ? `共 ${rows.total} 位 · 北京时间` : "总数待确认"} actions={canBulk ? <Button onClick={() => setBulkOpen(true)}>圈选群发</Button> : undefined}>
       {permission !== "agent" && <Fold title="我的邀请码" summary="生成、重置与分享"><SelfInviteCodeBar key={sessionKey} toast={ctx.toast} /></Fold>}
-      <FilterBar onSubmit={() => { setPage(1); setKeyword(keywordDraft.trim()); }} onClear={() => { setFilter("ALL"); setKeyword(""); setKeywordDraft(""); setPage(1); }} canClear={filter !== "ALL" || Boolean(keyword)} action={<Button type="submit">查询</Button>}>
+      <FilterBar onSubmit={() => { setPage(1); setKeyword(keywordDraft.trim()); }} onClear={() => { setFilter("TODO"); setKeyword(""); setKeywordDraft(""); setPage(1); }} canClear={filter !== "TODO" || Boolean(keyword)} action={<Button type="submit">查询</Button>}>
         <FilterField label="客户" grow><Input aria-label="查询客户名称或用户编码" value={keywordDraft} onChange={e => setKeywordDraft(e.target.value)} placeholder="客户名称或用户编码" /></FilterField>
         <FilterField label="服务状态"><Select aria-label="筛选客户" value={filter} options={filters} onChange={value => { setFilter(value as SupportCustomerFilter); setPage(1); }} /></FilterField>
       </FilterBar>

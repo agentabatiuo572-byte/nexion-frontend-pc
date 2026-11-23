@@ -74,9 +74,9 @@
   min-height: 44px;
 }
 
-/* 账号名放得下就完整显示（rubric 31），窄顶栏的上限在下面的容器规则里。 */
+/* 账号名最宽 180px，再长省略、悬停看全名（title）：1440 宽的四段详情页面包屑第一段和末段写全，名字再长也不把它挤成省略号；窄顶栏的上限在下面的容器规则里。 */
 .admin-topbar-operator {
-  max-width: none;
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

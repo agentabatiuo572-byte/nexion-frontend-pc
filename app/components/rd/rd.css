@@ -1418,6 +1418,11 @@ button.rd-dist-item[aria-pressed="true"] { background: var(--rd-selected); color
 .rd-page:has(.rd-detail-values[data-grid] > :nth-child(6)) { --rd-detail-cols: 6; }
 @media (max-width: 1199.98px) { .rd-page:has(.rd-detail-values[data-grid] > :nth-child(4)) .rd-detail-values[data-grid] { --rd-detail-cols: 3; } }  /* 窗口窄于 xl 时最多三列，长名称不挤出列 */
 .rd-detail-empty { margin: 0; color: var(--rd-text-3); }
+/* 用户详情的记录表：右对齐的金额后面接左对齐的列（状态）时左边多留一点，两列的字不贴在一起（PRD §5A 两端对齐，00 亲密性）。 */
+.rd-detail-groups .rd-table :is(th, td)[data-align="right"] + :is(th, td):not([data-align="right"]) { padding-left: 24px; }
+/* 后台操作记录的「查看全部 N 条」：和最后一条隔 8px，字和时间线正文一条左边线（VS-65、DT-25），时间线正文缩进见 .rd-timeline-item。 */
+.rd-detail-groups .rd-timeline-more { margin-top: var(--rd-space-2); }
+.rd-detail-groups .rd-timeline-more > .rd-btn { margin-left: calc(26px - var(--rd-btn-pad)); }
 /* 用户详情统计格第二行的最近一笔：名称和金额一行、时间和状态一行，词不拆；金额是点开那一笔的链接，状态标签跟着辅助字号。
    限宽：长状态（「打款异常，需人工核对」）整个换到时间下面，不撑宽这一格，统计带不被挤成三行。 */
 .rd-detail-recent { display: grid; max-width: 17em; }

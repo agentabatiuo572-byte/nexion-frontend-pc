@@ -1082,13 +1082,28 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
   if (key === "dailyEarn") return `${grouped(String(value))} USDT/日`;
   if (key === "shareYieldMin" || key === "shareYieldMax") return `${grouped(String(value))}%`;
   if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
-  if (key === "baseRate" && isRecord(value) && typeof value.derivedDaily === "string") return `${value.derivedDaily} USDT/日（系统按月收益目标折算）`;
+  if (key === "baseRate" && isDerivedBaseRate(value)) return `${value.derivedDaily} USDT/日${DERIVED_BASE_RATE}`;
   if (key === "baseRate" && typeof value === "string") return value.trim() ? value : "未设置";
   if (key === "allowedPoolCodes" && Array.isArray(value)) return value.length ? value.map(code => ({L1:"L1 初级",L2:"L2 中级",L3:"L3 高级",L4:"L4 旗舰",PHONE:"手机任务池"}[String(code)] ?? String(code))).join("、") : "未选择";
   if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item, labels)).join("、") : "无";
   if (isRecord(value)) return Object.entries(value).map(([name, item]) => `${labels[name] ?? name} ${valueText(name, item, labels)}`).join("；") || "无";
   return grouped(String(value));
 }
+
+/** 「收益说明」是按月收益目标折算的金额（reviewPair 换成的 { derivedDaily }）。 */
+const isDerivedBaseRate = (value: unknown): value is { derivedDaily: string } => isRecord(value) && typeof value.derivedDaily === "string";
+const DERIVED_BASE_RATE = "（系统按月收益目标折算）";
+/** 改前改后都是折算的金额（或新建、改后是折算的）时，说明挪进名称，值只写「1.3 USDT/日」，前后两列不各写一遍（VS-105、DT-12）。
+ *  一边折算、一边是文案（设了或关了月收益目标）时，名称不把文案也说成折算的：说明只跟在折算的那一边，写短，两列不折行；
+ *  改短后两边一样时照原样写，不把改动藏掉。有没有改照旧按带说明的原文判断（a2Pair、same），这里只改显示。 */
+const derivedBaseRateShown = (key: string, label: string, was: unknown, now: unknown, created: boolean, before: string | undefined, after: string | undefined) => {
+  const wasDerived = isDerivedBaseRate(was), nowDerived = isDerivedBaseRate(now);
+  if (key !== "baseRate" || !wasDerived && !nowDerived) return { label, before, after };
+  if (nowDerived && (created || wasDerived)) return { label: `${label}（按月收益目标折算）`, before: before?.replace(DERIVED_BASE_RATE, ""), after: after?.replace(DERIVED_BASE_RATE, "") };
+  const short = (text: string | undefined) => text?.replace(DERIVED_BASE_RATE, "（按月折算）");
+  const shown = { label, before: wasDerived ? short(before) : before, after: nowDerived ? short(after) : after };
+  return shown.before === shown.after ? { label, before, after } : shown;
+};
 
 type Review = { kind: "text"; text: string } | { kind: "object"; value: Record<string, unknown> } | { kind: "rows"; rows: Record<string, unknown>[] };
 
@@ -1270,10 +1285,10 @@ function changeSummary(before: string, after: string, omit: readonly string[] = 
   const changed = b?.kind === "object" ? keys.filter((key) => !same(b.value[key], a.value[key])) : keys;
   const first = changed[0] ?? keys[0];
   if (!first) return { main: "—" };
-  const label = labels[first] ?? first;
   const now = a.value[first];
   const was = b?.kind === "object" ? b.value[first] : undefined;
-  const [wasShown, nowShown] = a2Pair(amountKey ?? first, valueText(first, was, labels), valueText(first, now, labels), [was, now]);
+  const pair = a2Pair(amountKey ?? first, valueText(first, was, labels), valueText(first, now, labels), [was, now]);
+  const { label, before: wasShown, after: nowShown } = derivedBaseRateShown(first, labels[first] ?? first, was, now, !b, pair[0], pair[1]);
   const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : nowShown}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
   return { main, sub: !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${wasShown}` : "原 见详情" };
 }
@@ -1491,7 +1506,7 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, amount
     const rows: DiffRow[] = plain.map((key) => {
       const [before, after] = a2Pair(amountKey ?? key, g3Control && was && !(key in was) ? undefined : valueText(key, was?.[key], labels),
         g3Control && !(key in next) ? undefined : valueText(key, next[key], labels), [was?.[key], next[key]]);
-      return { key, label: labels[key] ?? key, before, after };
+      return { key, ...derivedBaseRateShown(key, labels[key] ?? key, was?.[key], next[key], !was, before, after) };
     });
     body = <>
       {b && b.kind !== "object" && <Facts><Fact k="变更前">{a2Shown(amountKey, b.kind === "text" ? b.text : valueText(undefined, b.rows, labels))}</Fact></Facts>}
