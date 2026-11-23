@@ -403,7 +403,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         review: {
           conflictOnly: ruleBased,
           isConflict: error => isHGrowthReadConflict(error) || error instanceof Error && error.message === "H4_REFRESH_REQUIRED",
-          conflictNote: readLatest => <H4StaleNote readLatest={readLatest} clearReason />,
+          conflictNote: readLatest => <H4StaleNote readLatest={readLatest} />,
           read: async (value, signal, refresh) => {
             reviewed = undefined;
             if (refresh) {

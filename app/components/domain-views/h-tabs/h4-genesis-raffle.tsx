@@ -134,7 +134,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
       effect: opening ? effectApproval("这一期") : effectDirect,
       detail: <>本期共 {seats(savedDraft.prizes)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
       facts: <>
-        {(rebased || merged > 0) && <H4StaleNote clearReason />}
+        {(rebased || merged > 0) && <H4StaleNote />}
         <Facts>
           <Fact k="这一期">{savedDraft.titleZh || savedDraft.titleEn || "—"} · {savedDraft.id}</Fact>
           <Fact k="报名开始 → 开奖（北京时间）">{formatTime(savedDraft.startsAt, "Asia/Shanghai")} → {formatTime(savedDraft.drawAt, "Asia/Shanghai")}</Fact>

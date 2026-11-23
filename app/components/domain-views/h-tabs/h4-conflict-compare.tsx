@@ -100,7 +100,7 @@ export function H4ConflictCompare({ groups, sections, overwrites, structure, onM
           {lost.length ? <>
             <p>{`整份换成你填的，别人改过的 ${lost.length} 项会被换掉：`}</p>
             <ul className="h4-compare-lost-list">{lost.map(item => <li key={item.key}><b>{item.label}</b>{item.note ?? <>：别人改成 {item.latest}，{item.submitted === "—" ? "提交后清空" : <>提交后是 {item.submitted}</>}</>}</li>)}</ul>
-          </> : <p>整份按你填的提交，理由沿用刚才填的。</p>}
+          </> : <p>整份按你填的提交，理由要重新填写。</p>}
         </div>
       </div>
     </div>

@@ -159,7 +159,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       effect: firstOpen ? effectApproval("玩法") : effectDirect,
       detail: <>更新本活动的参与条件、奖励及有效期。{next.enabled ? "启用后符合条件的用户可参与；保存时会检查配置与奖励预算。" : "保存后活动保持关闭，不发放新奖励。"}</>,
       facts: <>
-        {(rebased || merged > 0) && <H4StaleNote clearReason />}
+        {(rebased || merged > 0) && <H4StaleNote />}
         <Facts>
           <Fact k="玩法">{EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · {base.eventCode}</Fact>
           <Fact k="开放状态">{base.enabled === next.enabled ? (next.enabled ? "开着" : "关着") : <>{base.enabled ? "开着" : "关着"} → {next.enabled ? "开启" : "关闭"}</>}</Fact>

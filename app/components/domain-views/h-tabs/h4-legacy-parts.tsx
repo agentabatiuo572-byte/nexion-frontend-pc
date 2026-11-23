@@ -14,12 +14,12 @@ import { EVENT_CONTENT_LOCALES, type EventCopyReadiness } from "@/lib/admin/even
 import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { amountText, formatTime } from "./h4-promotion-ui";
 
-export function H4StaleNote({ readLatest, clearReason }: { readLatest?: () => void; clearReason?: boolean }) {
+/** 真实冲突（别人先改过）后的提示：拟改值留着、现在值换成最新的、旧理由清空，要重新填理由才能提交。结果未知的原请求恢复用原理由，是另一句提示。 */
+export function H4StaleNote({ readLatest }: { readLatest?: () => void }) {
   return <Notice tone="warn" title="别人先改过，这次没有保存"
     action={readLatest && <Button size="sm" onClick={readLatest}>读取最新</Button>}>
     {readLatest ? "读取最新值后再核对；你填的内容还在，操作理由要重新填写。"
-      : clearReason ? "现在值已换成最新的；你填的内容还在，请重新填写操作理由。"
-      : "现在值已换成最新的；你填的内容和理由都还在，核对后再提交。"}
+      : "现在值已换成最新的；你填的内容还在，请重新填写操作理由。"}
   </Notice>;
 }
 
