@@ -773,7 +773,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       more={<>
         <FilterField label={<span>用户分层<Explain label="用户分层的说明" content="L0–L5，只在后台用，用户在 App 里看不到。" /></span>}>
           <Select aria-label="用户分层" value={draftFilters.tier} onChange={(value) => editFilter("tier", value)}
-            options={[{ value: "", label: "全部分层" }, ...TIERS.map((tier) => ({ value: tier, label: tier }))]} />
+            options={[{ value: "", label: "全部用户分层" }, ...TIERS.map((tier) => ({ value: tier, label: tier }))]} />
         </FilterField>
         <FilterField label={<span>团队等级<Explain label="团队等级的说明" content="现行团队等级是 V0–V8，V9–V12 只用来查历史用户。用户在 App 里能看到自己的团队等级。" /></span>}>
           <Select aria-label="团队等级" value={draftFilters.vRank} onChange={(value) => editFilter("vRank", value)}

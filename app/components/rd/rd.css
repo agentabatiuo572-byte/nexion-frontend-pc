@@ -1442,6 +1442,7 @@ button.rd-dist-item[aria-pressed="true"] { background: var(--rd-selected); color
 /* 小工具类 */
 .rd-contents { display: contents; }
 .rd-pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.rd-pop .rd-pre { text-wrap: wrap; }  /* 气泡里的原文（用户详情「原始操作内容」）按原样换行，不拉平行长（VS-85） */
 .rd-thumb { display: block; max-width: 180px; max-height: 150px; }
 .rd-input-counted { padding-right: 64px; }  /* 框角写字数时给数字留位 */
 .rd-graph-label { font-size: 11px; }  /* 关系图的节点文字，画布按比例缩放 */
