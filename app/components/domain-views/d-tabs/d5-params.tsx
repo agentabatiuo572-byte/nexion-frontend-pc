@@ -56,10 +56,10 @@ import {
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
-import { d5Trc20ConfirmationFeeBlock, TRC20_CLOSED } from "@/lib/admin/trc20-closed";
+import { d5Trc20ConfirmationFeeBlock, TRC20_CHANGES_FEE, TRC20_CLOSED } from "@/lib/admin/trc20-closed";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundRecoveryStatus, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
@@ -266,9 +266,11 @@ const GROUP_IMPACT: Record<Group, string> = {
 };
 
 const netKey = (net: Net) => `net.${net}`;
-/** 关完之后一个网络都不开：抽屉和最终确认说同一句（DP-03）。 */
-const NET_LAST_OPEN = "这是最后一条开着的网络，关掉后用户不能发起 USDT 提现。";
-const NET_ALL_CLOSED = "提交后 BEP20、ERC20 都关着，用户不能发起 USDT 提现。";
+/** 关完之后 App、H5 能选的网络一个不剩：抽屉和最终确认说同一句（DP-03）。TRC20 不在 App、H5 的选择里，配置还开着时另说一句。 */
+const NET_LAST_OPEN = "这是 App、H5 能选的最后一条网络，关掉后 App、H5 用户不能发起 USDT 提现。";
+const NET_ALL_CLOSED = "提交后 App、H5 能选的 BEP20、ERC20 都关着，App、H5 用户不能发起 USDT 提现。";
+const NET_TRC20_STAYS = "TRC20 配置还开着，旧版本 App 可能仍会用它提现。";
+const TRC20_ROW_NOTE = `TRC20 ${TRC20_CLOSED}，这里不能开启。配置开着、实际可用时，旧版本 App 仍可能用它发起提现，已提交的 TRC20 提现照常走审核和打款；关掉后按「改了会怎样」处理`;
 const NET_PAUSE = "接打款服务时，关掉的网络上还没交给打款服务的提现也会暂停打款。";
 const NET_CLOSE_EFFECT = "关掉后用户不能再用这个网络发起提现。接打款服务时，这个网络上已提交、还没交给打款服务的提现也会暂停打款；已交给打款服务的继续查询核对。";
 /** 顶部结论用可选通道的三态，行内保留各条通道的后端状态。 */
@@ -287,11 +289,15 @@ function networkView(p: D5ParamData) {
   const shared = blocked.length > 0 && blocked.length === open.length && blocked.every((item) => item.code === blocked[0].code) ? blocked[0].code : undefined;
   const names = (list: typeof states) => list.map((item) => NET_LABEL[item.net]).join("、");
   const byConfig = open.length === 0;
-  const outage = byConfig ? `BEP20、ERC20 都在这页关着，TRC20 ${TRC20_CLOSED}`
+  // TRC20 配置开着、后端没说用不了：App、H5 当前版本不给选，旧版本 App 还可能用它发起提现。
+  const trc20 = states.find((item) => item.net === CLOSED_NET)!;
+  const trc20Live = trc20.configured && trc20.usable !== false;
+  const trc20Tail = trc20Live ? "；TRC20 配置还开着，旧版本 App 可能仍在用它提现" : "";
+  const outage = byConfig ? `App、H5 能选的 BEP20、ERC20 都在这页关着${trc20Tail}`
     : blocked.length === open.length
-      ? shared ? `开着的 ${names(open)} ${open.length > 1 ? "都" : ""}用不了：${reasonOf(shared)}` : `开着的 ${names(open)} ${open.length > 1 ? "都" : ""}用不了，原因写在各网络那一行`
+      ? `App、H5 能选的 ${names(open)} ${open.length > 1 ? "都" : ""}用不了${shared ? `：${reasonOf(shared)}` : "，原因写在各网络那一行"}${trc20Tail}`
       : undefined;
-  return { known, states, blocked, unknown, shared, outage, byConfig, reasonOf };
+  return { known, states, blocked, unknown, shared, outage, byConfig, reasonOf, trc20Live };
 }
 
 /** 「调整」和组名之间，组名是英文开头时空一格（TX：中英文之间加空格）。和样板页 H2 一样叫「调整」。 */
@@ -330,13 +336,14 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
     const openClosing = closing.filter((net) => net !== CLOSED_NET);
     const allClosed = OPEN_NETS.every((net) => !next[net]) && openClosing.length > 0;
     const lastOpen = openClosing.length === 1;
+    const closedNote = allClosed ? `${lastOpen ? NET_LAST_OPEN : NET_ALL_CLOSED}${next[CLOSED_NET] && networkView(p).trc20Live ? NET_TRC20_STAYS : ""}` : "";
     const rows: DiffRow[] = NETWORKS.map((net) => ({
       key: net,
       label: `${NET_LABEL[net]} 提现`,
       before: p.networkEnabled[net] ? "开启" : "关闭",
       after: next[net] ? "开启" : "关闭",
       // 关网络的后果写在最后一个关掉的网络下面，确认框里看得到（DP-03、VS-103）：关完一个不剩时先说这句，再说没打出的单会暂停。
-      note: net === lastClosed ? `${allClosed ? `${lastOpen ? NET_LAST_OPEN : NET_ALL_CLOSED}` : ""}${NET_PAUSE}` : undefined,
+      note: net === lastClosed ? `${closedNote}${NET_PAUSE}` : undefined,
     }));
     return {
       numbers: [] as NumEval[],
@@ -347,6 +354,7 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
       closesOnly: changedNets.length > 0 && changedNets.every((net) => !next[net]),
       allClosed,
       lastOpen,
+      closedNote,
       rows,
       changes: changedNets.length ? { networkEnabled: next } as D5OwnedChanges : null,
     };
@@ -401,6 +409,7 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
     closesOnly: false,
     allClosed: false,
     lastOpen: false,
+    closedNote: "",
     rows,
     changes,
   };
@@ -971,14 +980,19 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     ...tightenPending.map((record): FundRecoveryRow => {
       const expired = record.expiresAt <= Date.now();
       const replayBlock = tightenReplayBlock(record, params);
-      const retryDisabled = !commandAuthorities(record.changes).every(can) ? NO_WRITE : replayBlock;
+      // 原请求改 TRC20 确认费，或读不到它提交时的原费率：只能查询，写明为什么和下一步（OP-93、OP-126）。
+      const replayReason = replayBlock === TRC20_CHANGES_FEE ? `原请求${TRC20_CHANGES_FEE}，TRC20 ${TRC20_CLOSED}` : replayBlock;
+      const retryDisabled = !commandAuthorities(record.changes).every(can) ? NO_WRITE : replayReason;
       // 改版前没存出处的记录按当前账号查，queryD5DirectCommand 再核原操作人。
       const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D5") };
       // 查到记为失败时，「可能已经生效」不再写。
       const outcome = investigationResults[record.commandKey];
       const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
+      // 查到「已处理」时共用的话会叫人按原请求重试；这条重试不了，改说下一步。
+      const shown = replayReason && !expired ? fundRecoveryStatus({ record: target, outcome, expired, canRetry: false }) : undefined;
       return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), record: target, outcome: investigationResults[record.commandKey],
         createdAt: record.createdAt, expired, canRetry: !expired && !retryDisabled,
+        status: shown?.label === "已处理" ? { ...shown, line: "后台已处理，看不出成没成；这条不能按原请求重试，刷新页面读现在的费率，再到操作记录与审批核对。" } : undefined,
         actions: <>
           <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
             onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
@@ -987,6 +1001,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         </>,
         detail: <>
           <p>{`改动：${describeChanges(record.changes)}。${failed ? "" : "可能已经生效，"}有结果前这页不能再修改。`}{expired && !outcome && expiredNext(target)}</p>
+          {replayReason && !expired && <p>{`${replayReason}，不能按原请求重试。先点「查询原结果」，再刷新页面读现在的费率，或到操作记录与审批核对。`}</p>}
           {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
         </>,
         tech: `版本 v${record.expectedVersion} ｜ 理由 ${record.reason}` };
@@ -1095,7 +1110,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     : coverageBlock
       ? <Conclusion state="danger" lead hint={<>{p.coverageReliable ? "" : `读到 ${pct(p.coverageRatio)}，红线 ${fmtConfigPct(p.redlinePct)}。`}收紧不受影响。{poolHint}</>} explain={coverageExplain}>{coverageBlock}</Conclusion>
       : networks.outage
-      ? <Conclusion state="warn" lead hint={<>{networks.outage}。{outageNext} {coverageLine}</>} explain={NETWORK_RULE}>用户现在不能发起 USDT 提现</Conclusion>
+      ? <Conclusion state="warn" lead hint={<>{networks.outage}。{outageNext} {coverageLine}</>} explain={NETWORK_RULE}>App、H5 用户现在不能发起 USDT 提现</Conclusion>
       : pendingApproval.length
         ? <Conclusion state="warn" hint={<>{pendingApproval.map(approvalLine).join("；")}。{reach(auditHref, "platform_a2_read") && <><Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批查看</Link> </>}{coverageLine}</>} explain={APPROVAL_NOTE}>
           有 {pendingApproval.length} 项放宽等批准，批准前当前值不变
@@ -1108,7 +1123,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   // 结论句没说到的都用不了、等批准和读不到审批，单独一条（DT-12：同一件事只说一处）。
   const secondary = <>
     {networks.outage && (tightenPending.length || loosenRecord || coverageBlock) && (
-      <Notice tone="warn" title="用户现在不能发起 USDT 提现">{networks.outage}。{outageNext}</Notice>
+      <Notice tone="warn" title="App、H5 用户现在不能发起 USDT 提现">{networks.outage}。{outageNext}</Notice>
     )}
     {pendingApproval.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || networks.outage) && (
       <Notice tone="warn" title={`有 ${pendingApproval.length} 项放宽等批准`}>{pendingApproval.map(approvalLine).join("；")}。批准前当前值不变。{auditLink && <> {auditLink}</>}</Notice>
@@ -1138,19 +1153,25 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     const help = H.networkEnabled;
     const closed = net === CLOSED_NET;
     // 只有确实读到「用户能用」才给绿对勾；读不到的是中性，不给「正常」的信号（DP-65、VS-20）。
-    // TRC20 通道暂未开放：App 不给用户选，不写「用户能用」；这页的配置照实写在前面。
-    const tag = closed ? <StatusTag tone="neutral" icon={CircleMinus}>{configured ? "配置开启" : "关闭"} · {TRC20_CLOSED}</StatusTag>
+    // TRC20 不在 App、H5 当前版本的选择里：写这页的配置和后端实际状态，不写「用户能用」，实际可用也不给绿对勾。
+    const tag = closed
+      ? !configured ? <StatusTag tone="neutral" icon={CircleMinus}>关闭</StatusTag>
+        : usable === undefined ? <StatusTag tone="neutral" icon={CircleDot}>配置开启，实际状态暂未知</StatusTag>
+          : usable ? <StatusTag tone="neutral" icon={CircleDot}>开启 · 实际可用</StatusTag>
+            : <StatusTag tone="warn" icon={AlertTriangle}>开启 · 现在用不了</StatusTag>
       : !configured ? <StatusTag tone="neutral" icon={CircleMinus}>关闭</StatusTag>
       : usable === undefined ? <StatusTag tone="neutral" icon={CircleDot}>配置开启，实际状态暂未知</StatusTag>
         : usable ? <StatusTag tone="ok">开启 · 用户能用</StatusTag>
           : <StatusTag tone="warn" icon={AlertTriangle}>开启 · 用户现在用不了</StatusTag>;
-    // TRC20 开着时只能关（产品 2026-11-23）：常显这句，入口照常。
-    const reason = closed ? (p.networkEnabled[net] ? "只能关闭" : undefined)
+    // TRC20 开着时只能关、关着时不能开（产品 2026-11-23）：原因常显（OP-126）；实际用不了的原因写在前面，结论句已说过的不再写（DT-12）。
+    const reason = closed
+      ? [configured && usable !== true && !(usable === false && networks.outage && networks.shared === code) ? networks.reasonOf(code) : undefined,
+        configured ? `${TRC20_CLOSED}，只能关闭${usable ? "；旧版本 App 可能仍在用" : ""}` : `${TRC20_CLOSED}，不能开启`].filter(Boolean).join("；")
       : !configured ? undefined
       : usable === false ? (networks.outage && networks.shared ? undefined : networks.reasonOf(code))
         : usable === undefined ? networks.reasonOf(code) : undefined;
-    return <ConfigRow key={net} name={`${NET_LABEL[net]} 提现`} explainLabel={`${NET_LABEL[net]} 提现`} what={help.what} when={help.when} where={help.where}
-      effect={help.effect} note={help.note} value={tag} sub={reason} action={action("network", `${NET_LABEL[net]} 提现`, netKey(net), closed && !p.networkEnabled[net] ? TRC20_CLOSED : undefined)} />;
+    return <ConfigRow key={net} name={`${NET_LABEL[net]} 提现`} explainLabel={`${NET_LABEL[net]} 提现`} what={help.what} when={help.when} where={closed ? "App、H5 当前版本不给用户选 TRC20" : help.where}
+      effect={help.effect} note={closed ? TRC20_ROW_NOTE : help.note} value={tag} sub={reason} action={action("network", `${NET_LABEL[net]} 提现`, netKey(net), closed && !p.networkEnabled[net] ? TRC20_CLOSED : undefined)} />;
   };
   const phaseSummary = `${p.currentPhase} · 第 ${p.currentMonth} 月 · 到账审查窗口 ${p.cooldownDays} 天 · 加强合规审查${p.complianceHoldEnabled ? "开启" : "关闭"}`;
   // 三个网络共用后端合规规则；大额门槛未读到时不猜。
@@ -1180,8 +1201,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         const changed = next[net] !== p.networkEnabled[net];
         const closed = net === CLOSED_NET;
         const state = view.states.find((item) => item.net === net)!;
-        // TRC20 关着时两项都不能选；开着时「开启」是现值，可以选回来，不能从关变开。
-        const now = closed ? (p.networkEnabled[net] ? `配置开启 · ${TRC20_CLOSED}，只能关闭` : `现在关闭 · ${TRC20_CLOSED}`)
+        // TRC20 关着时两项都不能选；开着时「开启」是现值，可以选回来，不能从关变开。现状按后端实际状态写。
+        const now = closed
+          ? !p.networkEnabled[net] ? `现在关闭 · ${TRC20_CLOSED}，不能开启`
+            : state.usable === undefined ? `配置开启，实际状态暂未知：${view.reasonOf(state.code)}`
+              : state.usable ? "现在开启 · 实际可用，旧版本 App 可能仍在用" : `现在开启 · 用不了：${view.reasonOf(state.code)}`
           : !p.networkEnabled[net] ? "现在关闭"
           : state.usable === undefined ? `配置开启，实际状态暂未知：${view.reasonOf(state.code)}`
             : state.usable ? "现在开启 · 用户能用"
@@ -1192,7 +1216,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         return (
           <div key={net} data-d5-field={netKey(net)}>
             <Field label={<>{NET_LABEL[net]} 提现{changed && <> <DirectionTag loosens={next[net]} /></>}</>}
-              help={<><div>{now}</div>{help && <div>{help}</div>}</>}>
+              help={<><div>{now}</div>{closed && p.networkEnabled[net] && <div>{`${TRC20_CLOSED}，只能关闭`}</div>}{help && <div>{help}</div>}</>}>
               {() => <Segments label={`${NET_LABEL[net]} 提现通道`} value={editing.draft[netKey(net)] ?? "off"}
                 items={[{ value: "on", label: "开启", disabled: closed && !p.networkEnabled[net] }, { value: "off", label: "关闭", disabled: closed && !p.networkEnabled[net] }]}
                 onChange={(value) => setEditing((current) => current && { ...current, draft: { ...current.draft, [netKey(net)]: value } })} />}
@@ -1202,7 +1226,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       });
       // 关完一个都不剩是能提交的，只提醒一次后果。
       return <>{sharedReason && <Notice tone="neutral">{`${view.blocked.map((item) => NET_LABEL[item.net]).join("、")} 现在用不了：${sharedReason}。`}</Notice>}{fields}{evaluation.allClosed && (
-        <Notice tone="warn">{evaluation.lastOpen ? NET_LAST_OPEN : NET_ALL_CLOSED}</Notice>
+        <Notice tone="warn">{evaluation.closedNote}</Notice>
       )}</>;
     }
     if (group === "limits") return <>

@@ -153,7 +153,8 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
       record: row.commandOrigin ? row : undefined,
       label: isPolicy ? "修改付款手续费" : `重新核对到账 · ${row.scope}`,
       createdAt: row.createdAt,
-      hint: restricted ? TRC20_CLOSED : row.commandOrigin ? "结论以查询原结果为准，现在的值只能参考。按原请求重试不会重复执行。" : "升级前留下的记录，查不了原结果。现在的值只能参考；按原请求重试不会重复执行。",
+      // 原请求里有 TRC20 付款手续费：只能查询和读现值，写明为什么和下一步（OP-93、OP-126）。
+      hint: restricted ? `原请求改了 USDT（TRC20）的付款手续费，TRC20 ${TRC20_CLOSED}，不能按原请求重试。${row.commandOrigin ? "先查询原结果，再" : ""}点「读取现在的值」核对现在的费用，或到操作记录与审批核对。` : row.commandOrigin ? "结论以查询原结果为准，现在的值只能参考。按原请求重试不会重复执行。" : "升级前留下的记录，查不了原结果。现在的值只能参考；按原请求重试不会重复执行。",
       blocked: !canRetryPurchasePayment(row) ? row.commandOrigin ? "已超过 10 分钟，不能再重试，先查询原结果" : RETRY_WINDOW_TEXT : permitted ? undefined : "这个账号没有这项权限",
       auditHref: isPolicy ? "/platform/audit?domain=D" : `/platform/audit?domain=D&object=${encodeURIComponent(row.scope)}`,
       verify: async () => {

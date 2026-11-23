@@ -468,7 +468,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   type ConfirmSpec = { kind: OperatorBriefKind; action: string; title: string; detail: string; path: string; body?: Record<string, unknown>;
     confirmLabel: string; danger?: boolean; effect: ReactNode; facts?: ReactNode; completion: string; businessForm?: Parameters<DCtx["openActionConfirm"]>[0]["businessForm"];
     toBody?: (form: Record<string, string> | undefined, value?: string) => Record<string, unknown>; optionalPolicy?: boolean;
-    edit?: Parameters<DCtx["openActionConfirm"]>[0]["edit"] };
+    edit?: Parameters<DCtx["openActionConfirm"]>[0]["edit"]; content?: ReactNode };
   const confirmCommand = (spec: ConfirmSpec) => {
     const held = d1PendingObjectReason(spec.path, spec.body);
     if (held) { toast(held, "warn"); return; }
@@ -476,7 +476,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     openActionConfirm({ briefKind: spec.kind,
       action: spec.action, title: spec.title, detail: spec.detail, reasonMin: 10, reasonMax: 255,
       confirmLabel: spec.confirmLabel, confirmTone: spec.danger ? "danger" : "primary",
-      effect: spec.effect, facts: spec.facts, completionCopy: spec.completion, businessForm: spec.businessForm, edit: spec.edit,
+      effect: spec.effect, facts: spec.facts, content: spec.content, completionCopy: spec.completion, businessForm: spec.businessForm, edit: spec.edit,
       reasonPolicyOptional: spec.optionalPolicy,
       run: (reason, _value, form) => {
         if (authEpoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
@@ -486,6 +486,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   };
   const approval = <StatusTag tone="progress" filled>另一位管理员复核后生效</StatusTag>;
   const now = <StatusTag tone="progress" filled>立即生效</StatusTag>;
+  // 出款总闸三网共用：打开时 TRC20 留着的提现和自动流程开关会跟着生效。只提醒，不拦提交（F09）。
+  const trc20GateNotice = <Notice tone="warn">TRC20 {TRC20_CLOSED}。总闸三条网共用，打开后 TRC20 开着的提现（「USDT 提现参数」）和自动资金流程（「归集与转入」）会重新生效；提交前先在这两处把 TRC20 关掉。</Notice>;
 
   const loadMoreAlerts = async (beforeId: number) => {
     setBusy(true);
@@ -580,7 +582,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       key: record.commandKey,
       label: preparation ? `${record.path.endsWith("/decision") ? exceptionObject(JSON.parse(record.body)).decision === "CANCEL" ? "取消" : "复核" : "新建"} ${record.preparationNetwork ?? "BEP20"} 资金准备单` : cregisCommandLabel(record.path),
       createdAt: record.createdAt,
-      hint: restriction ?? (replayable ? "现在的值只能参考；按原请求重试不会重复执行。"
+      hint: restriction ? trc20ReplayHint(record, restriction) : (replayable ? "现在的值只能参考；按原请求重试不会重复执行。"
         : "这项操作不能按原请求重试。重新读取只显示现在的状态，记录保留到关掉标签页。"),
       blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : canRetry ? undefined : "这个账号没有这项权限",
       auditHref: "/platform/audit?domain=D",
@@ -606,7 +608,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     key: record.commandKey,
     label: record.path === "/cregis/switch-cases" ? "开关提案" : record.path === "/cregis/switches/emergency-off" ? "紧急停用三网" : "开关提案复核",
     createdAt: record.createdAt,
-    hint: restriction ?? "请按原请求恢复，不要另建提案或重新填写理由。",
+    hint: restriction ? trc20ReplayHint(record, restriction) : "请按原请求恢复，不要另建提案或重新填写理由。",
     blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : canManage ? undefined : "这个账号没有这项权限",
     verify: async () => {
       const next = parseExceptions(await financeAdminRequest<unknown>("/cregis/exceptions"));
@@ -638,7 +640,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const pools = FUNDS_NETWORKS.map(network => ({ network, pool: data ? poolOf(data, network) : undefined }));
   const connected = data?.mode === "PROVIDER" || data?.mode === "provider";
   const statusSummary = !data ? (loading ? "正在读取" : "读取失败") : !connected ? "未接入"
-    : [MODE_TEXT[data.mode] ?? "接入模式未知", ...pools.map(({ network, pool }) => network === "TRC20" ? `${network} ${TRC20_CLOSED}` : pool?.available ? `${network} 可分配 ${pool.unassigned}` : pool || !data.addressPools ? `${network} 不可用` : `${network} 未配置`)].join(" · ");
+    : [MODE_TEXT[data.mode] ?? "接入模式未知", ...pools.map(({ network, pool }) => pool?.available ? `${network} 可分配 ${pool.unassigned}` : pool || !data.addressPools ? `${network} 不可用` : `${network} 未配置`)].join(" · ");
   const reconLatest = (network: FundsNetwork) => data?.reconcileRuns?.find((row) => row.status === "COMPLETE" && rowNetwork(row) === network)?.completedAt;
   const openCases = reviewCases.filter(row => row.status === "MAKER_DONE" || row.status == null);
   const switchCases = data?.switchCases?.filter((row) => row.status === "MAKER_DONE") ?? [];
@@ -699,7 +701,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
           <Table label="专属收款地址池">
             <thead><tr><Th>网络</Th><Th align="right">可分配</Th><Th align="right">已分配</Th><Th align="right">核对中</Th><Th>最近完整对账（{zone}）</Th>{canManage && <Th sticky="end" align="right">操作</Th>}</tr></thead>
             <tbody>{pools.map(({ network, pool }) => <tr key={network}>
-              <Td><Cell main={network} sub={network === "TRC20" ? TRC20_CLOSED : !pool ? undefined : pool.automatic ? `自动补充至 ${pool.reserveTarget ?? 5} 个` : "不自动补充"} /></Td>
+              <Td><Cell main={network} sub={[!pool ? undefined : pool.automatic ? `自动补充至 ${pool.reserveTarget ?? 5} 个` : "不自动补充", network === "TRC20" ? `${TRC20_CLOSED}，不能手动补充` : undefined].filter(Boolean).join(" · ") || undefined} /></Td>
               {pool?.available ? <>
                 <Td align="right"><Cell num main={pool.unassigned} sub={`待创建 ${pool.queued ?? 0}`} /></Td>
                 <Td align="right"><Cell num main={pool.assigned} sub={`总计 ${pool.total}${pool.limit > 0 ? ` / ${pool.limit}` : " · 无上限"}`} /></Td>
@@ -789,7 +791,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
 
     <div {...subIds.panel("settings")} hidden={sub !== "settings"} className="rd-tab-pane">
       <CregisDepositPolicy key={`policy-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onActivityChange={setProposalActivity} />
-      <CregisPoolPolicy key={`pool-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
+      <CregisPoolPolicy key={`pool-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending}
+        trc20DepositOn={data?.networkSwitches?.some(row => row.network === "TRC20" && row.depositEnabled) === true} />
       <Panel icon={Power} tone="role-4" title="收款与出款开关"
         explain={<><p>BEP20、ERC20 各有一个充值开关，选目标状态后提交审批，另一位管理员复核后生效。关闭一条网络会停止这条网的地址分配、链上直付新下单和自动入账，原交易继续核验，其他网络不受影响。TRC20 通道暂未开放，开关开着时只能关闭。</p><p>全局链上出款总闸是三条网共用的出款上限。BEP20、ERC20 分别是否允许提现，在「USDT 提现参数」设置。</p></>}
         actions={reach("/finance/params", "finance_d5_read") ? <Link className="rd-link" href="/finance/params">前往 USDT 提现参数</Link> : undefined}>
@@ -814,7 +817,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   const restoreBlock = closed ? TRC20_CLOSED : block;
                   const proposal = (target: boolean, restoring: boolean) => confirmCommand({ kind: "config",
                     action: `提交 ${row.network} 充值${restoring ? "恢复" : "开关"}审批`, title: restoring ? `恢复 ${row.network} 充值` : `调整 ${row.network} 充值开关`, confirmLabel: "提交审批", effect: approval,
-                    facts: <Facts><Fact k="网络">{row.network}</Fact>{restoring && <Fact k="充值开关"><Change from={row.depositEnabled ? "开" : "关"} to="开（申请恢复）" /></Fact>}<Fact k="实际开放情况">{closed ? TRC20_CLOSED : row.depositAvailable ? "已开放" : availabilityText(row.depositDisabledReason)}</Fact></Facts>,
+                    facts: <Facts><Fact k="网络">{row.network}</Fact>{restoring && <Fact k="充值开关"><Change from={row.depositEnabled ? "开" : "关"} to="开（申请恢复）" /></Fact>}<Fact k="实际开放情况">{row.depositAvailable ? (row.addressAvailable ? "已开放" : "已开放 · 地址准备中") : availabilityText(row.depositDisabledReason)}</Fact>
+                      {closed && <Fact k="用户入口">App、H5 已不给用户选 TRC20；关掉后旧版本 App 也不能再用 TRC20 充值</Fact>}</Facts>,
                     detail: `${restoring ? "当前全局暂停，本次只申请恢复所选网络充值；其他网络充值继续保持暂停，不会恢复出款总闸。" : ""}关闭将停止该网地址分配、链上直付新下单与自动入账，原交易继续核验。`,
                     completion: `另一位管理员复核后生效。${restoring ? "只恢复这条网络的充值，其他网络和出款总闸保持现状。" : "关闭一条网络，不改变其他网络的充值开关。"}`,
                     path: "/cregis/switch-cases", body: { network: row.network, expectedVersion: gate?.version, expectedNetworkVersion: row.version, ...(restoring ? { depositEnabled: target } : {}) },
@@ -823,8 +827,9 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                     toBody: restoring ? undefined : (_form, value) => ({ depositEnabled: value === "true" }) });
                   return <tr key={row.network}>
                     <Td><Cell main={row.network} sub={networkName[row.network]} /></Td>
-                    <Td><Cell main={<SwitchTag on={row.depositEnabled}>{row.depositEnabled ? "开启" : "关闭"}</SwitchTag>} sub={waiting ? "有提案待复核" : undefined} /></Td>
-                    <Td><Cell main={closed ? <StatusTag tone="neutral" icon={CircleMinus}>{TRC20_CLOSED}</StatusTag> : row.depositAvailable ? (row.addressAvailable ? "已开放" : "已开放 · 地址准备中") : <StatusTag tone="warn">{availabilityText(row.depositDisabledReason)}</StatusTag>} sub={closed && row.depositEnabled ? "开关开着，只能关闭" : undefined} /></Td>
+                    {/* 配置开关、服务实际开放、App 和 H5 的入口分开写：「通道暂未开放」只管这页能不能开（F04）。 */}
+                    <Td><Cell main={<SwitchTag on={row.depositEnabled}>{row.depositEnabled ? "开启" : "关闭"}</SwitchTag>} sub={waiting ? "有提案待复核" : closed ? `${TRC20_CLOSED}，${row.depositEnabled ? "只能关闭" : "不能开启"}` : undefined} /></Td>
+                    <Td><Cell main={row.depositAvailable ? (row.addressAvailable ? "已开放" : "已开放 · 地址准备中") : <StatusTag tone="warn">{availabilityText(row.depositDisabledReason)}</StatusTag>} sub={closed && row.depositAvailable ? "App、H5 不给选，旧版本 App 仍可能用" : undefined} /></Td>
                     {canManage && <Td sticky="end" align="right"><span className="rd-row-actions">
                       {globalPaused && <Button size="sm" disabledReason={restoreBlock} onClick={() => proposal(true, true)}>申请恢复</Button>}
                       <Button size="sm" variant={globalPaused ? "ghost" : "secondary"} disabledReason={block} onClick={() => proposal(row.depositEnabled, false)}>调整</Button>
@@ -840,7 +845,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   action: "提交全局链上出款审批", title: "调整全局链上出款总闸", confirmLabel: "提交审批", effect: approval,
                   detail: "BEP20 / ERC20 / TRC20 三网共用这个总闸。不恢复充值，也不修改 D5 的分网络提现许可；开启后仍须满足收款服务、对账、风险和单笔审核条件。",
                   completion: "另一位管理员复核后生效。复核时条件不满足会被拒绝。不会直接放行任何提现。",
-                  path: "/cregis/switch-cases", body: { expectedVersion: gate?.version },
+                  path: "/cregis/switch-cases", body: { expectedVersion: gate?.version }, content: gate?.payoutEnabled ? undefined : trc20GateNotice,
                   edit: { kind: "select", label: "全局链上出款", current: String(Boolean(gate?.payoutEnabled)), options: ["true", "false"], optionLabels: { true: "开", false: "关" },
                     disallowCurrent: !globalPaused, amplifiesWhen: { from: "false", to: "true" }, hint: payoutCapabilityText(data), submitEditValue: true },
                   toBody: (_form, value) => ({ payoutEnabled: value === "true" }) })}>调整</Button> : undefined} />
@@ -867,6 +872,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   {canManage && <Td sticky="end" align="right"><span className="rd-row-actions">
                     <Button size="sm" disabledReason={own ? "这是你发起的，需要另一位管理员处理" : closed ? TRC20_CLOSED : stale ? "配置版本已变，请拒绝后重新申请" : decisionBusy} onClick={() => confirmCommand({ kind: "config", action: `复核 ${network} 提案 #${text(row.id)}`, title: "复核通过开关提案", confirmLabel: "确认通过", effect: now, facts,
                       detail: `${target}；发起人 ${text(row.makerId)}；理由 ${text(row.reason)}。按当前条件核验后生效。`, completion: "复核通过后立即按提案生效。复核时条件不满足会被拒绝。",
+                      content: !row.network && (row.payoutEnabled === true || row.payoutEnabled === 1) ? trc20GateNotice : undefined,
                       path: `/cregis/switch-cases/${text(row.id)}/decision`, body: { decision: "APPROVE" } })}>复核通过</Button>
                     <MoreMenu label="更多操作" items={[{ key: "reject", label: "拒绝", danger: true, disabledReason: own ? "这是你发起的，需要另一位管理员处理" : decisionBusy, onSelect: () => confirmCommand({ kind: "record", action: `拒绝 ${network} 提案 #${text(row.id)}`, title: "拒绝开关提案", confirmLabel: "确认拒绝", effect: now, facts,
                       detail: `${target}；发起理由 ${text(row.reason)}`, completion: "拒绝后提案结束，开关保持现状。",
@@ -964,6 +970,19 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     {review && <ReviewDrawer cid={review.cid} caseRow={review.caseRow} canManage={canManage} adminId={session?.adminId} busy={busy} readBlock={readBlock}
       onClose={() => setReview(null)} confirm={confirmCommand} approval={approval} />}
   </>;
+}
+
+/** TRC20 挡住的原请求：写它会做什么、为什么只能核对、下一步（OP-93、OP-126）。 */
+function trc20ReplayHint(record: { path: string; body: string }, restriction: string) {
+  const route = record.path.split("?")[0];
+  const decision = route.startsWith("/cregis/switch-cases/");
+  const approve = decision || exceptionObject(JSON.parse(record.body || "{}")).action === "APPROVE";
+  const what = route === "/cregis/addresses/provision" ? "原请求会补一个 TRC20 收款地址"
+    : `原请求会${approve ? "复核通过" : "提交"}打开 TRC20 ${route.startsWith("/cregis/switch-cases") ? "充值" : "自动资金流程"}的提案`;
+  const why = restriction === TRC20_CLOSED ? `${what}，TRC20 ${TRC20_CLOSED}，不能按原请求重试`
+    : decision ? "读不到原提案，核对不了这次复核会不会打开 TRC20 充值，暂不能按原请求重试"
+      : "TRC20 自动资金流程的设置读不到或已经变了，核对不了原请求会不会打开它，暂不能按原请求重试";
+  return `${why}。点「读取现在的值」核对现状，再到操作记录与审批看它执行没有。`;
 }
 
 /** 写请求的名字，按路径认，不露路径（D1-A09）。 */

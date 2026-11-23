@@ -213,7 +213,8 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
           return {
             key: item.key, object: item.label, createdAt: item.createdAt,
             tag: <StatusTag tone={status?.tone ?? (refused ? "danger" : "warn")}>{status?.label ?? (refused ? "重试被拒绝" : item.expired ? "已过期" : "结果未知")}</StatusTag>,
-            line: status?.line ?? (refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，到操作记录与审批核对。" : item.blocked ? `${item.blocked}。` : "查不了原结果，先读取现在的值参考。" : "查不了原结果，也不能重试；现在的值只能参考。"),
+            // 没有「按原请求重试」的记录（这类操作不能重发，或被业务规则挡住）：查到已处理时不叫人去重试。
+            line: (status?.label === "已处理" && !item.retry && !expired ? `后台已处理，看不出成没成；这条不能按原请求重试，${item.verify ? "读取现在的值后" : ""}到操作记录与审批核对。` : status?.line) ?? (refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，到操作记录与审批核对。" : item.blocked ? `${item.blocked}。` : "查不了原结果，先读取现在的值参考。" : "查不了原结果，也不能重试；现在的值只能参考。"),
             note: notes[item.key],
             actions: <>
               {item.record && <FundCheckButtons record={item.record} outcome={outcomes[item.key]} expired={expired} busy={disabled || !!running} checking={running === item.key}
