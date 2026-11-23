@@ -133,6 +133,11 @@ const commandSlot = (command: C1CommandInput) => command.kind === "nickname"
   : command.kind === "unbind" || command.kind === "rebind"
     ? paymentSlot(command.kind, command.userId, command.methodId ?? 0)
     : deviceSlot(command.kind, command.userId, command.deviceId ?? 0);
+/** 设备回收、回收并记录置换的标签是「动作 · 设备名 · 尾号」：拆成动作和设备身份；不是设备操作，或旧记录的写法对不上时，整条当身份。 */
+const deviceLabel = (command: { kind: C1CommandKind; label: string }) => {
+  const action = command.kind === "replace" ? "回收并记录置换" : command.kind === "recycle" ? "设备回收" : "";
+  return { action, identity: action && command.label.startsWith(`${action} · `) ? command.label.slice(action.length + 3) : command.label };
+};
 const COMMAND_PREFIX: Record<C1CommandKind, string> = {
   nickname: "c1-nickname-reset",
   unbind: "c1-payment-unbind",
@@ -986,10 +991,11 @@ export default function UserDetailPage() {
       }
       c1UserCommands.forget(slot, commandKey);
       syncPending();
+      const { action, identity } = deviceLabel(command);
       const text = command.kind === "nickname" ? `昵称已重置为 ${userNicknameText(nextNickname, profile?.phoneMasked)}`
         : command.kind === "unbind" ? "支付方式已从 UVEL 账户解绑"
         : command.kind === "rebind" ? "换绑通知已进入推送队列"
-        : command.kind === "replace" ? "回收并记录置换已执行" : "设备回收已执行";
+        : `${action}已执行：${identity}`;
       setWriteResult({ key: readKey, text, tone: "ok" });
       if (command.kind === "unbind") {
         if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else await loadPaymentMethods();
@@ -1364,8 +1370,7 @@ export default function UserDetailPage() {
       // 重试和普通入口一样看现在的入口和权限（OP-123）。没权限只留核对，提示和记录都留着。
       const device = command.kind === "replace" || command.kind === "recycle";
       // 对象列只有 280px（共用）：设备操作这一格只写「设备名 · 尾号」，动作写进同一行的结论，尾号不被截掉（尾号 > 动作 > 设备名）。
-      const action = command.kind === "replace" ? "回收并记录置换" : command.kind === "recycle" ? "设备回收" : "";
-      const identity = action && command.label.startsWith(`${action} · `) ? command.label.slice(action.length + 3) : command.label;
+      const { action, identity } = deviceLabel(command);
       const said = (text: string) => action ? `${action}：${text}` : text;
       const deviceNo = device ? asText(devices.find((row) => asNumber(row.id) === command.deviceId)?.instanceNo, "") : "";
       const writable = device ? canWriteC2 : canWriteC1;
