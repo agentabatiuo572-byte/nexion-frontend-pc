@@ -35,6 +35,7 @@ import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRec
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { CCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 type Seg = "all" | "frozen" | "highrisk";
 type FilterKey = "tier" | "vRank" | "referralCode" | "depositMin" | "depositMax" | "usdtMin" | "usdtMax" | "nexMin" | "nexMax" | "riskBand" | "joinedFrom" | "joinedTo";
@@ -128,11 +129,9 @@ function rawAmount(value: unknown): string | null {
   return null;
 }
 
-/** 千分位，小数位补到这一列的位数，不舍入（TX-20）。 */
-function amountText(raw: string, digits: number) {
-  const [whole, fraction = ""] = raw.split(".");
-  const sign = whole.startsWith("-") ? "-" : "";
-  return `${sign}${whole.replace("-", "").replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.padEnd(digits, "0")}`;
+/** 金额按全站写法（amountDisplay）：千分位，有几位写几位，整数不写小数点，不舍入、不为对齐补零；第二个参数是旧的整列位数，不再使用。 */
+function amountText(raw: string, _digits?: number) {
+  return amountDisplay(raw);
 }
 
 function keywordQuery(value: string): Pick<UserProfileQuery, "keyword" | "userId" | "phoneHash" | "phoneMasked"> {

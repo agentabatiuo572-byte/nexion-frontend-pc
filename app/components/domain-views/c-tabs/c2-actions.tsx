@@ -61,6 +61,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { AccountDeletionQueue, DELETION_STATUS_LABELS, deletionActionLabel, deletionResultToast, type DeletionAction } from "./account-deletion-queue";
 import type { ActionConfirmReq, CCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 const OPERATOR = currentAdminOperator;
 const K1_PATH = "/risk/multi-account";
@@ -219,8 +220,14 @@ function riskOf(account: Pick<User360Profile, "riskBand" | "riskScore"> | null |
 
 /** 表格里只给中、高风险上色，低风险和没有档的不上色（VS-21）。 */
 
-/** 金额按接口原值显示，至少两位小数，不舍入，千分位（TX-20，同用户详情）。读不到写「—」，不当成 0。 */
+/** 金额按全站写法（amountDisplay，同用户详情）：千分位，有几位写几位，整数不写小数点，不舍入。读不到写「—」，不当成 0。 */
 function amountValue(value: unknown) {
+  const raw = typeof value === "number" && Number.isFinite(value) ? value : typeof value === "string" ? value.trim() : "";
+  return raw === "" ? "—" : amountDisplay(raw);
+}
+
+/** 算力不是金额，写法不变：接口原值，至少两位小数，不舍入，千分位。读不到写「—」。 */
+function hashrateValue(value: unknown) {
   const raw = typeof value === "number" && Number.isFinite(value)
     ? value.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 20 })
     : typeof value === "string" ? value.trim() : "";
@@ -459,7 +466,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
             <Tr key={text(device.instanceNo)}>
               <Td grow><Cell main={text(device.name)} sub={<span data-mono>{text(device.instanceNo)}</span>} /></Td>
               <Td><StatusTag tone={["ONLINE", "RUNNING", "BUSY", "ACTIVE"].includes(upper(device.status)) ? "ok" : "done"}>{formatC1DeviceStatus(device.status)}</StatusTag></Td>
-              <Td align="right"><Cell num main={amountValue(device.hashrate)} /></Td>
+              <Td align="right"><Cell num main={hashrateValue(device.hashrate)} /></Td>
               <Td align="right"><Cell num main={deviceDailyReference(device)} /></Td>
             </Tr>
           ))}

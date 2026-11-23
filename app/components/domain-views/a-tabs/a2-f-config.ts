@@ -7,6 +7,7 @@
  */
 
 import { F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY } from "@/lib/admin/f3-policy";
+import { amountDisplay } from "@/lib/format";
 
 const F1 = "团队等级晋升";
 const F2 = "团队奖励设置";
@@ -149,6 +150,7 @@ const UNIT_TAIL = /\s*(?:%|UVT\s*\/\s*(?:1\s*)?USDT|USDT|天|台|倍|票|点)$/;
 function withUnit(text: string, unit?: string) {
   const bare = text.trim().replace(UNIT_TAIL, "");
   if (!unit || !/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(bare)) return text.trim();
+  if (unit === "USDT") return `${amountDisplay(plain(bare))} USDT`;
   const value = grouped(plain(bare));
   return unit === "%" ? `${value}%` : `${value} ${unit}`;
 }

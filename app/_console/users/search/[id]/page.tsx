@@ -37,7 +37,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { formatD4Subtype } from "@/lib/admin/d4-ledger-display";
 import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { platformSessionDeviceText, userNicknameText, nexGridBrandText, operatorNicknameText, datacenterNameText } from "@/lib/admin/brand-copy";
-import { fmtNum } from "@/lib/format";
+import { fmtNum, amountDisplay } from "@/lib/format";
 import { toast } from "@/lib/store/ui";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { queryUserDetailCommand, userDetailCommandOrigin, userDetailCommandRoute } from "@/lib/admin/user-detail-command-query";
@@ -235,14 +235,10 @@ function numberLabel(value: unknown) {
   return Number.isFinite(number) ? fmtNum(number) : "—";
 }
 
-/** 金额按接口原值显示：去掉后端补的末尾 0，至少两位小数，不舍入，非零不会变成 0（TX-20）。读不到写「—」，不当成 0。 */
+/** 金额按全站写法（amountDisplay）：接口原值去掉末尾 0、整数不写小数点、千分位，不舍入，非零不会变成 0。读不到写「—」，不当成 0。 */
 function amountValue(value: unknown) {
-  const raw = typeof value === "number" && Number.isFinite(value)
-    ? value.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 20 })
-    : typeof value === "string" ? value.trim() : "";
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw);
-  if (!match) return raw || "—";
-  return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(match[3] ?? "").replace(/0+$/, "").padEnd(2, "0")}`;
+  const raw = typeof value === "number" && Number.isFinite(value) ? value : typeof value === "string" ? value.trim() : "";
+  return raw === "" ? "—" : amountDisplay(raw);
 }
 
 function assetText(value: unknown) {

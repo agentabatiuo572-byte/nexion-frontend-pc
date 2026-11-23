@@ -16,7 +16,7 @@ import { F2BootstrapReview, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_CLAWBACK, F1_VOUCHER_REVERSE_KEEP } from "@/lib/admin/config-help/f1-voucher";
-import { fmtConfigPct, fmtPct } from "@/lib/format";
+import { fmtConfigPct, fmtPct, amountDisplay } from "@/lib/format";
 import { fConfigSpec, fConfigValue, type FConfigSpec } from "./a2-f-config";
 import { F5CurrentFact, F5CurrentValue, F5ReissueReadings, readF5Current } from "./a2-f5-current";
 import { A2I5DisclosureReview } from "./a2-i5-disclosure-review";
@@ -97,7 +97,7 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { orderAmount } from "../e-tabs/data";
-import { e1Decimal, e1GateText, e1Value } from "../e-tabs/e1-state";
+import { e1Amount, e1Decimal, e1GateText, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
@@ -1020,8 +1020,8 @@ function k1TicketView(w: { operationCode?: string | null; before: string; after:
   const release = parseK1ReleaseTicketBefore(w.before);
   return release ? { kind: "release", ...release } : undefined;
 }
-/** 后端写的净额去掉了末尾 0：只补到两位、加千分位，不舍入。 */
-const k1Amount = (text: string) => { const [whole, frac = ""] = text.split("."); return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${frac.padEnd(2, "0")}`; };
+/** 后端写的净额按全站金额写法（amountDisplay）：千分位，有几位写几位，整数不写小数点，不舍入。 */
+const k1Amount = (text: string) => amountDisplay(text);
 const k1Source = k1EarningSourceName;
 const k1Bucket = (bucket: string) => bucket === "bonus_locked" ? "锁定奖励" : "审核中";
 /** 列表「变更」一格。 */
@@ -1073,9 +1073,9 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
   }
   if (key?.startsWith("taglineTranslations.")) return String(value);
   if (typeof value === "boolean") return value ? "是" : "否";
-  if (key === "monthlyTargetUsdt") return `${grouped(String(value))} USDT`;
+  if (key === "monthlyTargetUsdt") return `${amountDisplay(String(value))} USDT`;
   if (key === "monthlyTargetBandPct") return `±${grouped(String(value))}%`;
-  if (key === "dailyEarn") return `${grouped(String(value))} USDT/日`;
+  if (key === "dailyEarn") return `${amountDisplay(String(value))} USDT/日`;
   if (key === "shareYieldMin" || key === "shareYieldMax") return `${grouped(String(value))}%`;
   if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
   if (key === "baseRate" && typeof value === "string") return value.trim() ? value : "未设置";
@@ -1136,7 +1136,7 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       for (const language of languages) value[`taglineTranslations.${language}`] = translations?.[language] ?? null;
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
       for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
-      if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${e1Decimal(value.price)} USD`;
+      if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${e1Amount(value.price)} USD`;
       if ("baseRate" in value) value.baseRate = e1MonthlyBaseRate(value.baseRate, value.monthlyTargetUsdt) ?? value.baseRate;
       // 购买条件写成人话；读不到阶段名时写「第 N 阶段」，不只写数字。
       if (isRecord(value.purchaseGate)) value.purchaseGate = e1GateText(value.purchaseGate);
