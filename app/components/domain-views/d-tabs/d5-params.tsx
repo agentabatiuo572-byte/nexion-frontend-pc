@@ -324,16 +324,19 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
   if (group === "network") {
     const next = Object.fromEntries(NETWORKS.map((net) => [net, draft[netKey(net)] === "on"])) as Record<Net, boolean>;
     const changedNets = NETWORKS.filter((net) => next[net] !== p.networkEnabled[net]);
-    const allClosed = OPEN_NETS.every((net) => !next[net]);
     const closing = changedNets.filter((net) => !next[net]);
     const lastClosed = closing[closing.length - 1];
+    // 用户还能不能提现只看 BEP20、ERC20：只关 TRC20 不算「关完」（TRC20 通道暂未开放，用户本来就用不了）。
+    const openClosing = closing.filter((net) => net !== CLOSED_NET);
+    const allClosed = OPEN_NETS.every((net) => !next[net]) && openClosing.length > 0;
+    const lastOpen = openClosing.length === 1;
     const rows: DiffRow[] = NETWORKS.map((net) => ({
       key: net,
       label: `${NET_LABEL[net]} 提现`,
       before: p.networkEnabled[net] ? "开启" : "关闭",
       after: next[net] ? "开启" : "关闭",
       // 关网络的后果写在最后一个关掉的网络下面，确认框里看得到（DP-03、VS-103）：关完一个不剩时先说这句，再说没打出的单会暂停。
-      note: net === lastClosed ? `${allClosed ? `${changedNets.length === 1 ? NET_LAST_OPEN : NET_ALL_CLOSED}` : ""}${NET_PAUSE}` : undefined,
+      note: net === lastClosed ? `${allClosed ? `${lastOpen ? NET_LAST_OPEN : NET_ALL_CLOSED}` : ""}${NET_PAUSE}` : undefined,
     }));
     return {
       numbers: [] as NumEval[],
@@ -343,6 +346,7 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
       loosens: changedNets.some((net) => next[net]),
       closesOnly: changedNets.length > 0 && changedNets.every((net) => !next[net]),
       allClosed,
+      lastOpen,
       rows,
       changes: changedNets.length ? { networkEnabled: next } as D5OwnedChanges : null,
     };
@@ -396,6 +400,7 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
     loosens: numbers.some((item) => item.loosens),
     closesOnly: false,
     allClosed: false,
+    lastOpen: false,
     rows,
     changes,
   };
@@ -633,7 +638,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const groupWritable = (group: Group) => group === "limits" ? canDailyWrite || canBalanceWrite : canFeeWrite;
   /** 这一组已经收到最紧：放宽被挡时打开也改不了，入口直接禁用（OP-126）。 */
   const atTightest = (group: Group, p: D5ParamData) => {
-    if (group === "network") return OPEN_NETS.every((net) => !p.networkEnabled[net]);
+    if (group === "network") return NETWORKS.every((net) => !p.networkEnabled[net]);
     return GROUP_FIELDS[group].filter((key) => can(SPECS[key].authority)).every((key) => clean(SPECS[key].current(p)) === clean(SPECS[key].tightest));
   };
   const entryBlock = (group: Group, p: D5ParamData) => tightenPending.length ? TIGHTEN_LOCK
@@ -1118,11 +1123,13 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       : usable === undefined ? <StatusTag tone="neutral" icon={CircleDot}>配置开启，实际状态暂未知</StatusTag>
         : usable ? <StatusTag tone="ok">开启 · 用户能用</StatusTag>
           : <StatusTag tone="warn" icon={AlertTriangle}>开启 · 用户现在用不了</StatusTag>;
-    const reason = closed || !configured ? undefined
+    // TRC20 开着时只能关（产品 2026-11-23）：常显这句，入口照常。
+    const reason = closed ? (p.networkEnabled[net] ? "只能关闭" : undefined)
+      : !configured ? undefined
       : usable === false ? (networks.outage && networks.shared ? undefined : networks.reasonOf(code))
         : usable === undefined ? networks.reasonOf(code) : undefined;
     return <ConfigRow key={net} name={`${NET_LABEL[net]} 提现`} explainLabel={`${NET_LABEL[net]} 提现`} what={help.what} when={help.when} where={help.where}
-      effect={help.effect} note={help.note} value={tag} sub={reason} action={action("network", `${NET_LABEL[net]} 提现`, netKey(net), closed ? TRC20_CLOSED : undefined)} />;
+      effect={help.effect} note={help.note} value={tag} sub={reason} action={action("network", `${NET_LABEL[net]} 提现`, netKey(net), closed && !p.networkEnabled[net] ? TRC20_CLOSED : undefined)} />;
   };
   const phaseSummary = `${p.currentPhase} · 第 ${p.currentMonth} 月 · 到账审查窗口 ${p.cooldownDays} 天 · 加强合规审查${p.complianceHoldEnabled ? "开启" : "关闭"}`;
   // 三个网络共用后端合规规则；大额门槛未读到时不猜。
@@ -1152,7 +1159,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         const changed = next[net] !== p.networkEnabled[net];
         const closed = net === CLOSED_NET;
         const state = view.states.find((item) => item.net === net)!;
-        const now = closed ? `${p.networkEnabled[net] ? "配置开启" : "现在关闭"} · ${TRC20_CLOSED}`
+        // TRC20 关着时两项都不能选；开着时「开启」是现值，可以选回来，不能从关变开。
+        const now = closed ? (p.networkEnabled[net] ? `配置开启 · ${TRC20_CLOSED}，只能关闭` : `现在关闭 · ${TRC20_CLOSED}`)
           : !p.networkEnabled[net] ? "现在关闭"
           : state.usable === undefined ? `配置开启，实际状态暂未知：${view.reasonOf(state.code)}`
             : state.usable ? "现在开启 · 用户能用"
@@ -1165,15 +1173,15 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             <Field label={<>{NET_LABEL[net]} 提现{changed && <> <DirectionTag loosens={next[net]} /></>}</>}
               help={<><div>{now}</div>{help && <div>{help}</div>}</>}>
               {() => <Segments label={`${NET_LABEL[net]} 提现通道`} value={editing.draft[netKey(net)] ?? "off"}
-                items={[{ value: "on", label: "开启", disabled: closed }, { value: "off", label: "关闭", disabled: closed }]}
+                items={[{ value: "on", label: "开启", disabled: closed && !p.networkEnabled[net] }, { value: "off", label: "关闭", disabled: closed && !p.networkEnabled[net] }]}
                 onChange={(value) => setEditing((current) => current && { ...current, draft: { ...current.draft, [netKey(net)]: value } })} />}
             </Field>
           </div>
         );
       });
       // 关完一个都不剩是能提交的，只提醒一次后果。
-      return <>{sharedReason && <Notice tone="neutral">{`${view.blocked.map((item) => NET_LABEL[item.net]).join("、")} 现在用不了：${sharedReason}。`}</Notice>}{fields}{evaluation.allClosed && evaluation.changedCount > 0 && (
-        <Notice tone="warn">{evaluation.changedCount === 1 ? NET_LAST_OPEN : NET_ALL_CLOSED}</Notice>
+      return <>{sharedReason && <Notice tone="neutral">{`${view.blocked.map((item) => NET_LABEL[item.net]).join("、")} 现在用不了：${sharedReason}。`}</Notice>}{fields}{evaluation.allClosed && (
+        <Notice tone="warn">{evaluation.lastOpen ? NET_LAST_OPEN : NET_ALL_CLOSED}</Notice>
       )}</>;
     }
     if (group === "limits") return <>
@@ -1290,7 +1298,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         tone={editing?.group === "limits" ? "role-4" : "role-2"} 
         explain={editing && (editing.group === "limits"
           ? "四项一起提交。只要有一项放宽，整组提交审批，另一位超级管理员批准前当前值不变；全部收紧时提交后立即生效。"
-          : editing.group === "network" ? `三个网络一起提交。开启算放宽，要提交审批；只关不开时提交后立即生效。TRC20 ${TRC20_CLOSED}，保持现在的设置。`
+          : editing.group === "network" ? `三个网络一起提交。开启算放宽，要提交审批；只关不开时提交后立即生效。TRC20 ${TRC20_CLOSED}，开着时只能关闭。`
             : editing.group === "fee" ? `三个网络一起保存。任一网络调低，三个一起走审批。TRC20 ${TRC20_CLOSED}，保持现在的值。`
               : "调高算放宽，要提交审批；调低提交后立即生效。")}
         footer={editing && <Decision note={directionNote || undefined}

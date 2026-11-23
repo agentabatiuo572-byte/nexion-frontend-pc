@@ -64,8 +64,8 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
         detail:action==="PAUSE"?"停止本网络新的自动资金流程，原单仍继续只读核对。":action==="PROPOSE"?"开启需另一位管理员复核，且本环境的运行总开关已打开。":`待审核：归集 ${current.pendingCollection?"开":"关"} · 付款 ${current.pendingPayment?"开":"关"}。`,
         completionCopy:action==="PAUSE"?"确认后立即停止本网络新的自动资金流程，已发送的原单继续只读核对。":action==="PROPOSE"?"另一位管理员复核后生效。":"自动流程配置已保存，请核对实际开关",
         businessForm:action==="PROPOSE"?{kind:"multi-field",requireAnyChange:true,fields:[
-          {key:"collect",label:"自动归集到 Cregis",inputKind:"select",options:["true","false"],optionLabels:{true:"开",false:"关"},current:String(current.collectionEnabled===true),showDiff:true,explain:"入账后把充值全额归集到 Cregis 钱包。"},
-          {key:"pay",label:"自动 Cregis 转平台收款钱包",inputKind:"select",options:["true","false"],optionLabels:{true:"开",false:"关"},current:String(current.paymentEnabled===true),showDiff:true,explain:"归集确认后，按用户入账净额转入平台收款钱包。"},
+          {key:"collect",label:"自动归集到 Cregis",inputKind:"select",options:trc20&&current.collectionEnabled!==true?["false"]:["true","false"],optionLabels:{true:"开",false:"关"},current:String(current.collectionEnabled===true),showDiff:true,explain:"入账后把充值全额归集到 Cregis 钱包。"},
+          {key:"pay",label:"自动 Cregis 转平台收款钱包",inputKind:"select",options:trc20&&current.paymentEnabled!==true?["false"]:["true","false"],optionLabels:{true:"开",false:"关"},current:String(current.paymentEnabled===true),showDiff:true,explain:"归集确认后，按用户入账净额转入平台收款钱包。"},
         ]}:undefined,
         reasonMin:10,reasonMax:300,run:(reason,_value,form)=>command("/policy",{action,expectedVersion,
           collectionEnabled:action==="PROPOSE"?form?.collect==="true":current.collectionEnabled===true,
@@ -92,7 +92,11 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
     finally{if(owns()&&at===read.current)setLoading(false);}
   };
   const block=loading?"正在读取最新数据":busy?"正在提交":undefined;
-  const proposeBlock=block??d1PendingObjectReason(`/cregis${ROOT}/policy${networkQuery}`,{action:"PROPOSE"})??(!status?.configured?"地址与运行权限核实后才能启用。":!status.runtimeApproved?"本环境的运行总开关没开，不能开启自动流程":status.makerId!==null?"有待复核的提案，先复核或取消":undefined);
+  // TRC20 通道暂未开放（产品 2026-11-23）：任务、核对原 CID、申请重试和暂停照常；不能开启，开着的开关只能关。
+  const trc20=network==="TRC20";
+  const trc20Off=trc20&&status?.collectionEnabled!==true&&status?.paymentEnabled!==true;
+  const trc20Opens=trc20&&!!status&&(status.pendingCollection===true&&status.collectionEnabled!==true||status.pendingPayment===true&&status.paymentEnabled!==true);
+  const proposeBlock=block??(trc20Off?TRC20_CLOSED:undefined)??d1PendingObjectReason(`/cregis${ROOT}/policy${networkQuery}`,{action:"PROPOSE"})??(!status?.configured?"地址与运行权限核实后才能启用。":!status.runtimeApproved?"本环境的运行总开关没开，不能开启自动流程":status.makerId!==null?"有待复核的提案，先复核或取消":undefined);
   const records=page.records,index=records.findIndex(row=>String(row.id)===selected),task=index>=0?records[index]:null;
   const taskActions=(row:ExceptionRecord)=>{
     const state=String(row.state),stage=state.startsWith("COLLECTION")?"collection":"payment";
@@ -108,24 +112,20 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
       {canWrite&&status&&<Button size="sm" variant="danger-outline" disabledReason={block} onClick={()=>policy("PAUSE")}>暂停本网络自动资金流程</Button>}
     </>}>
     <div className="rd-stack">
-    {/* 分段的禁用项不能聚焦也没有原因气泡，原因常显在旁边（OP-126）。 */}
-    <div className="rd-toolbar">
-      <Segments label="自动资金流程网络" value={network} onChange={onNetworkChange} items={(["BEP20","ERC20","TRC20"] as const).map(value=>({value,label:value,disabled:value==="TRC20"}))}/>
-      <span className="rd-toolbar-note">TRC20 {TRC20_CLOSED}</span>
-    </div>
+    <Segments label="自动资金流程网络" value={network} onChange={onNetworkChange} items={(["BEP20","ERC20","TRC20"] as const).map(value=>({value,label:value}))}/>
     {error&&<Notice tone="warn">{error}</Notice>}
     {loading&&!status?<BlockState state="loading" title="正在读取自动资金流程…"/>
       :!status?<BlockState state="error" title="自动资金流程读取失败" detail={error} onRetry={()=>void refresh()}/>
         :<div className="rd-stack">
-          <p className="rd-note">{network} · {status.executionEnabled?"自动发送已开放":status.configured?"新转账未开放":"地址待配置"}</p>
+          <p className="rd-note">{network} · {status.executionEnabled?"自动发送已开放":status.configured?"新转账未开放":"地址待配置"}{trc20&&` · ${TRC20_CLOSED}，不能开启`}</p>
           {!status.configured&&<Notice tone="warn">地址与运行权限核实后才能启用。</Notice>}
           {!status.runtimeApproved&&<Notice tone="neutral" title="当前不发送自动转账">本环境的运行总开关没开（BEP20、ERC20、TRC20 共用一个）。启用前须确认收款服务的自动审批/签名及套餐权益、绑定钱包和 {String(status.gasSymbol)} 手续费安排，再由技术负责人在部署配置里打开总开关，并由另一位管理员复核下面的归集和转出开关。</Notice>}
           {status.makerId!==null&&<Notice tone="progress" title="有一个开关提案待复核"
             action={canWrite?<>
-              <Button size="sm" disabledReason={String(status.makerId)===String(owner)?"发起人不能复核自己的提案":block} onClick={()=>policy("APPROVE")}>复核自动流程开关</Button>
+              <Button size="sm" disabledReason={String(status.makerId)===String(owner)?"发起人不能复核自己的提案":trc20Opens?TRC20_CLOSED:block} onClick={()=>policy("APPROVE")}>复核自动流程开关</Button>
               <Button size="sm" variant="ghost" disabledReason={block} onClick={()=>policy("CANCEL")}>取消自动流程开关提案</Button>
             </>:undefined}>
-            待复核提案：归集 {status.pendingCollection?"开":"关"} · 付款 {status.pendingPayment?"开":"关"} · 理由 {String(status.reason)}
+            待复核提案：归集 {status.pendingCollection?"开":"关"} · 付款 {status.pendingPayment?"开":"关"} · 理由 {String(status.reason)}{trc20Opens&&` · TRC20 ${TRC20_CLOSED}，不能复核通过`}
           </Notice>}
           <ConfigList label="自动流程开关">
             <ConfigRow name="运行总开关" what="本环境部署时设定，一个开关同时管 BEP20、ERC20、TRC20" when="改部署配置后生效，后台不能改"

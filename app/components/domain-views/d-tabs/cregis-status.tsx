@@ -694,7 +694,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   facts: pool && <Facts><Fact k="网络">{network}</Fact><Fact k="可分配">{pool.unassigned} 个</Fact><Fact k="总计">{pool.total}{pool.limit > 0 ? ` / 上限 ${pool.limit}` : "，无上限"}</Fact></Facts>,
                   detail: "向收款服务创建一个候选地址；系统核对归属、余额和链上历史后才可分配给用户。创建结果不明时请先核查，勿连续重试。",
                   completion: "提交后立即执行。地址核对通过后才会分配给用户。", path: `/cregis/addresses/provision?network=${network}` })}>补充收款地址</Button>
-                <MoreMenu label={`${network} 更多操作`} items={[{ key: "recon", label: "立即完整对账", disabledReason: (network === "TRC20" ? TRC20_CLOSED : undefined) ?? readBlock ?? (networkConfigured(data, network) ? undefined : "这个网络尚未配置") ?? d1PendingObjectReason(`/cregis/reconciliation/run?network=${network}`), onSelect: () => confirmCommand({ kind: "record",
+                <MoreMenu label={`${network} 更多操作`} items={[{ key: "recon", label: "立即完整对账", disabledReason: readBlock ?? (networkConfigured(data, network) ? undefined : "这个网络尚未配置") ?? d1PendingObjectReason(`/cregis/reconciliation/run?network=${network}`), onSelect: () => confirmCommand({ kind: "record",
                   action: `立即运行 ${network} 完整对账`, title: `立即完整对账`, confirmLabel: "确认对账", effect: now,
                   facts: <Facts><Fact k="网络">{network}</Fact><Fact k="最近完整对账">{reconLatest(network) ? `${time(reconLatest(network))}（${zone}）` : "尚无"}</Fact></Facts>,
                   detail: `核对收款服务和 ${network} 链上记录。`, completion: "可能给漏掉的充值补入账。查出不明或对不上的款，会暂停 USDT 收款和出款（银行卡、越南盾照常）；已入账的款 5 分钟后仍对不上，还会冻结该用户、他的提现和这笔钱，并让他退出登录。",
@@ -773,7 +773,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       <CregisDepositPolicy key={`policy-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onActivityChange={setProposalActivity} />
       <CregisPoolPolicy key={`pool-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
       <Panel icon={Power} tone="role-4" title="收款与出款开关"
-        explain={<><p>BEP20、ERC20 各有一个充值开关，选目标状态后提交审批，另一位管理员复核后生效。关闭一条网络会停止这条网的地址分配、链上直付新下单和自动入账，原交易继续核验，其他网络不受影响。TRC20 通道暂未开放，开关不能调整。</p><p>全局链上出款总闸是三条网共用的出款上限。BEP20、ERC20 分别是否允许提现，在「USDT 提现参数」设置。</p></>}
+        explain={<><p>BEP20、ERC20 各有一个充值开关，选目标状态后提交审批，另一位管理员复核后生效。关闭一条网络会停止这条网的地址分配、链上直付新下单和自动入账，原交易继续核验，其他网络不受影响。TRC20 通道暂未开放，开关开着时只能关闭。</p><p>全局链上出款总闸是三条网共用的出款上限。BEP20、ERC20 分别是否允许提现，在「USDT 提现参数」设置。</p></>}
         actions={reach("/finance/params", "finance_d5_read") ? <Link className="rd-link" href="/finance/params">前往 USDT 提现参数</Link> : undefined}>
         {!data ? <BlockState state={loading ? "loading" : "error"} compact title={loading ? "正在读取开关…" : "开关读取失败"} onRetry={loading ? undefined : () => void refresh()} />
           : <div className="rd-stack">
@@ -790,11 +790,13 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                     {canManage && <Td sticky="end" align="right"><Button size="sm" variant="secondary" disabledReason={TRC20_CLOSED}>调整</Button></Td>}
                   </tr>;
                   const waiting = switchCases.some(item => item.network === row.network);
+                  // TRC20 通道暂未开放（产品 2026-11-23）：开着时只能关，关着时不能动；申请恢复就是打开，一律不能点。
                   const closed = row.network === "TRC20";
-                  const block = closed ? TRC20_CLOSED : waiting ? "待另一位管理员复核" : proposalBlock;
+                  const block = closed && !row.depositEnabled ? TRC20_CLOSED : waiting ? "待另一位管理员复核" : proposalBlock;
+                  const restoreBlock = closed ? TRC20_CLOSED : block;
                   const proposal = (target: boolean, restoring: boolean) => confirmCommand({ kind: "config",
                     action: `提交 ${row.network} 充值${restoring ? "恢复" : "开关"}审批`, title: restoring ? `恢复 ${row.network} 充值` : `调整 ${row.network} 充值开关`, confirmLabel: "提交审批", effect: approval,
-                    facts: <Facts><Fact k="网络">{row.network}</Fact>{restoring && <Fact k="充值开关"><Change from={row.depositEnabled ? "开" : "关"} to="开（申请恢复）" /></Fact>}<Fact k="实际开放情况">{row.depositAvailable ? "已开放" : availabilityText(row.depositDisabledReason)}</Fact></Facts>,
+                    facts: <Facts><Fact k="网络">{row.network}</Fact>{restoring && <Fact k="充值开关"><Change from={row.depositEnabled ? "开" : "关"} to="开（申请恢复）" /></Fact>}<Fact k="实际开放情况">{closed ? TRC20_CLOSED : row.depositAvailable ? "已开放" : availabilityText(row.depositDisabledReason)}</Fact></Facts>,
                     detail: `${restoring ? "当前全局暂停，本次只申请恢复所选网络充值；其他网络充值继续保持暂停，不会恢复出款总闸。" : ""}关闭将停止该网地址分配、链上直付新下单与自动入账，原交易继续核验。`,
                     completion: `另一位管理员复核后生效。${restoring ? "只恢复这条网络的充值，其他网络和出款总闸保持现状。" : "关闭一条网络，不改变其他网络的充值开关。"}`,
                     path: "/cregis/switch-cases", body: { network: row.network, expectedVersion: gate?.version, expectedNetworkVersion: row.version, ...(restoring ? { depositEnabled: target } : {}) },
@@ -804,9 +806,9 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   return <tr key={row.network}>
                     <Td><Cell main={row.network} sub={networkName[row.network]} /></Td>
                     <Td><Cell main={<SwitchTag on={row.depositEnabled}>{row.depositEnabled ? "开启" : "关闭"}</SwitchTag>} sub={waiting ? "有提案待复核" : undefined} /></Td>
-                    <Td><Cell main={closed ? <StatusTag tone="neutral" icon={CircleMinus}>{TRC20_CLOSED}</StatusTag> : row.depositAvailable ? (row.addressAvailable ? "已开放" : "已开放 · 地址准备中") : <StatusTag tone="warn">{availabilityText(row.depositDisabledReason)}</StatusTag>} /></Td>
+                    <Td><Cell main={closed ? <StatusTag tone="neutral" icon={CircleMinus}>{TRC20_CLOSED}</StatusTag> : row.depositAvailable ? (row.addressAvailable ? "已开放" : "已开放 · 地址准备中") : <StatusTag tone="warn">{availabilityText(row.depositDisabledReason)}</StatusTag>} sub={closed && row.depositEnabled ? "开关开着，只能关闭" : undefined} /></Td>
                     {canManage && <Td sticky="end" align="right"><span className="rd-row-actions">
-                      {globalPaused && <Button size="sm" disabledReason={block} onClick={() => proposal(true, true)}>申请恢复</Button>}
+                      {globalPaused && <Button size="sm" disabledReason={restoreBlock} onClick={() => proposal(true, true)}>申请恢复</Button>}
                       <Button size="sm" variant={globalPaused ? "ghost" : "secondary"} disabledReason={block} onClick={() => proposal(row.depositEnabled, false)}>调整</Button>
                     </span></Td>}
                   </tr>;
