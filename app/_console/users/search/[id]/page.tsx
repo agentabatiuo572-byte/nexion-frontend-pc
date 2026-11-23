@@ -952,6 +952,14 @@ export default function UserDetailPage() {
   };
 
   /** 结果未知时转成页面上方的待确认条，这个对象在确认前不能再操作（OP-93）。做法同提现审核的 sendCommand。 */
+  /** 结果提示里的设备写「设备名 · 尾号」（BUG-643，复审 F06）：按 deviceId 从这次读到的设备明细取；取不到时用标签，旧记录的标签存的是完整编号，只写尾号。 */
+  const deviceResult = (command: C1CommandInput) => {
+    const row = devices.find((item) => asNumber(item.id) === command.deviceId);
+    const instance = asText(row?.instanceNo, "");
+    if (row && instance && instance !== "—") return [asText(row.name, ""), `尾号 ${instance.slice(-6)}`].filter((text) => text && text !== "—").join(" · ");
+    const { identity } = deviceLabel(command);
+    return identity === "—" || identity.includes("尾号 ") ? identity : `尾号 ${identity.slice(-6)}`;
+  };
   const execute = async (command: C1CommandInput) => {
     if (String(useAdminAuth.getState().session?.adminId) !== command.adminKey) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     const slot = commandSlot(command);
@@ -991,11 +999,10 @@ export default function UserDetailPage() {
       }
       c1UserCommands.forget(slot, commandKey);
       syncPending();
-      const { action, identity } = deviceLabel(command);
       const text = command.kind === "nickname" ? `昵称已重置为 ${userNicknameText(nextNickname, profile?.phoneMasked)}`
         : command.kind === "unbind" ? "支付方式已从 UVEL 账户解绑"
         : command.kind === "rebind" ? "换绑通知已进入推送队列"
-        : `${action}已执行：${identity}`;
+        : `${deviceLabel(command).action}已执行：${deviceResult(command)}`;
       setWriteResult({ key: readKey, text, tone: "ok" });
       if (command.kind === "unbind") {
         if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else await loadPaymentMethods();
