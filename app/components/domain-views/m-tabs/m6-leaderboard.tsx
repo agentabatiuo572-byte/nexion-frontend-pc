@@ -23,6 +23,9 @@ function status(error: unknown): number | undefined {
 function versionChanged(error: unknown): boolean {
   return error instanceof SupportClientError && status(error) === 409 && ["SUPPORT_LEADERBOARD_VERSION_CHANGED", "SUPPORT_LEADERBOARD_SCOPE_CHANGED", "AVATAR_STATE_CONFLICT"].includes(error.backendMessage ?? "");
 }
+function scopeChanged(error: unknown): boolean {
+  return error instanceof SupportClientError && status(error) === 409 && error.backendMessage === "SUPPORT_LEADERBOARD_SCOPE_CHANGED";
+}
 function message(error: unknown): string {
   return status(error) === 403 || status(error) === 401 ? "当前账号不能查看此榜单，请重新确认登录和客服权限。"
     : versionChanged(error) ? "榜单已更新，或你能看的范围变了，请从第一页重新加载。"
@@ -57,6 +60,8 @@ export function M6Leaderboard() {
   /** 这个账号和权限下最近一次读成的榜单：这次读取失败或还在读时，月份、币种、范围和榜单页签照它的选项继续可用（ST-15，复审 F02）；换账号、权限或被拒时清掉。 */
   const [lastGood, setLastGood] = useState<{ identity: string; data: LeaderboardPage }>();
   const options = data ?? (enabled && lastGood?.identity === identity ? lastGood.data : undefined);
+  /** 后端说能看的范围变了，按新授权重读还没读成：旧的组目录不再给。 */
+  const [scopeStale, setScopeStale] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const pendingLocate = useRef<{ identity: string; query: string } | undefined>(undefined);
   const [photos, setPhotos] = useState<{ key: string; urls: Record<string, string> }>();
@@ -64,6 +69,14 @@ export function M6Leaderboard() {
   const detailAbort = useRef<AbortController | null>(null), detailSequence = useRef(0);
   const closeDetail = () => { detailSequence.current++; detailAbort.current?.abort(); detailAbort.current = null; setDetail(undefined); };
   const resetFirstPage = (text: string) => { setResult(undefined); setPhotos(undefined); closeDetail(); setNotice(text); setQuery(current => ({ ...current, pageNum: 1, expectedVersion: undefined })); setRefresh(value => value + 1); };
+  /** 后端明确说范围变了（409 SCOPE_CHANGED，复审 F02）：旧组目录立刻收起，范围回到全员榜，月份、币种、榜单、搜索和每页条数照旧，按新授权重读；版本更新照旧走「榜单已更新」。 */
+  const scopeLost = (cause: unknown) => {
+    setScopeStale(true); setResult(undefined); setPhotos(undefined); closeDetail();
+    const fallback: LeaderboardQuery = { ...query, scope: "all", groupId: undefined, pageNum: 1, expectedVersion: undefined };
+    if (JSON.stringify(fallback) === JSON.stringify(query)) { setFailure({ key: requestKey, text: message(cause) }); return; }
+    setNotice("能看的范围变了，范围已回到全员榜，按新权限重读。");
+    setQuery(fallback);
+  };
   const deny = () => { setDeniedIdentity(identity); setResult(undefined); setLastGood(undefined); setPhotos(undefined); closeDetail(); setFailure({ key: requestKey, text: "当前账号不能查看此榜单，请重新确认登录和客服权限。" }); };
 
   useEffect(() => {
@@ -78,7 +91,7 @@ export function M6Leaderboard() {
   }, [data, enabled, error, identity, query]);
 
   useEffect(() => {
-    setResult(undefined); setLastGood(undefined); setFailure(undefined); setNotice(undefined); setPhotos(undefined); closeDetail(); setKeyword("");
+    setResult(undefined); setLastGood(undefined); setScopeStale(false); setFailure(undefined); setNotice(undefined); setPhotos(undefined); closeDetail(); setKeyword("");
     selectedMonth.current = undefined;
     setQuery({ board: "netContribution", currency: "USDT", scope: "all", pageNum: 1, pageSize: 5 });
     return () => { detailSequence.current++; detailAbort.current?.abort(); };
@@ -90,10 +103,11 @@ export function M6Leaderboard() {
     setResult(undefined); setFailure(undefined); closeDetail();
     if (enabled) void supportLeaderboardClient.page(query, controller.signal).then(next => {
       if (next.self.row && next.self.row.id !== String(session?.adminId)) throw new Error("本人成绩身份不一致");
-      if (active && !controller.signal.aborted && liveKey.current === requestKey) { setResult({ key: requestKey, data: next }); setLastGood({ identity, data: next }); }
+      if (active && !controller.signal.aborted && liveKey.current === requestKey) { setResult({ key: requestKey, data: next }); setLastGood({ identity, data: next }); setScopeStale(false); }
     }).catch(cause => {
       if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
       if (status(cause) === 403 || status(cause) === 401) deny();
+      else if (scopeChanged(cause)) scopeLost(cause);
       else { setResult(undefined); setFailure({ key: requestKey, text: message(cause), conflict: versionChanged(cause) }); }
     });
     return () => { active = false; controller.abort(); };
@@ -111,6 +125,7 @@ export function M6Leaderboard() {
       }).catch(cause => {
         if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
         if (status(cause) === 403 || status(cause) === 401) { controller.abort(); deny(); }
+        else if (scopeChanged(cause)) { controller.abort(); scopeLost(cause); }
         else if (versionChanged(cause)) { controller.abort(); setResult(undefined); setPhotos(undefined); closeDetail(); setFailure({ key: requestKey, text: message(cause), conflict: true }); }
       });
     }
@@ -121,7 +136,7 @@ export function M6Leaderboard() {
     // 第一次就没读成、没有选项可核对时，只剩页签能换（ST-15）；读取中不换。
     if (!options && !readFailed) return;
     const [scope, groupId] = next.scope.split(":");
-    if (options && (!options.scopeOptions.some(option => option.scope === scope && (!groupId || option.groups.some(group => group.id === groupId)))
+    if (options && (!scopeStale && !options.scopeOptions.some(option => option.scope === scope && (!groupId || option.groups.some(group => group.id === groupId)))
       || !options.currencies.includes(next.currency as "USDT" | "UVT") || query.board !== "customers" && next.board !== "customers" && next.month && !options.selectableMonths.includes(next.month))) return;
     closeDetail(); setNotice(undefined);
     if (next.month) selectedMonth.current = next.month;
@@ -137,6 +152,7 @@ export function M6Leaderboard() {
     }).catch(cause => {
       if (controller.signal.aborted || sequence !== detailSequence.current || liveKey.current !== requestKey) return;
       if (status(cause) === 403 || status(cause) === 401) deny();
+      else if (scopeChanged(cause)) scopeLost(cause);
       else if (versionChanged(cause)) { closeDetail(); setResult(undefined); setPhotos(undefined); setFailure({ key: requestKey, text: message(cause), conflict: true }); }
       else setDetail({ key: requestKey, agentId, error: message(cause) });
     });
@@ -165,7 +181,7 @@ export function M6Leaderboard() {
   const groupName = (id?: string) => options?.scopeOptions.flatMap(option => option.groups).find(group => group.id === id)?.name;
   const scopeText = query.groupId ? groupName(query.groupId) ?? "所选组" : query.scope === "ownGroup" ? `${scopeLabels.ownGroup}（${options?.scopeOptions.find(option => option.scope === "ownGroup")?.groups[0]?.name ?? "本组"}）` : scopeLabels[query.scope];
   const groupScope = query.scope !== "all";
-  const managedOption = options?.scopeOptions.find(option => option.scope === "managedGroups");
+  const managedOption = scopeStale ? undefined : options?.scopeOptions.find(option => option.scope === "managedGroups");
   const tabs = useTabIds();
   const rankingRef = useRef<HTMLDivElement>(null);
   const locate = () => { if (data) { const target = locateLeaderboardSelf(data, acceptedQuery(data, query)); if (target) { pendingLocate.current = { identity, query: JSON.stringify(target) }; setKeyword(""); closeDetail(); setNotice(query.keyword ? "已清除搜索，跳到你在完整榜单里的那一页。" : "已跳到你所在的那一页。"); setQuery(target); setRefresh(value => value + 1); } } };
@@ -189,7 +205,7 @@ export function M6Leaderboard() {
         action={managedOption && query.scope === "all" ? <Button onClick={() => changeQuery({ ...currentQuery, scope: "managedGroups" })}>看我负责的组</Button> : undefined}>
         {data.total === 0 ? `${scopeText}：暂无参榜客服` : `${scopeText}：${data.total} 人参榜`}；你不在这一版里（{data.self.reason || "当前账号未参榜"}）
       </Conclusion>;
-  const scopeSelect = (options?.scopeOptions ?? []);
+  const scopeSelect = scopeStale ? [] : options?.scopeOptions ?? [];
   const missingAmounts = board === "netContribution" ? rows.filter(row => row.amount.coverage === "unavailable").length : 0;
   const pages = data ? Math.max(1, Math.ceil(data.matched / data.pageSize)) : 1;
   const emptyText = !data ? undefined : query.keyword
@@ -209,7 +225,7 @@ export function M6Leaderboard() {
             ? <Select aria-label="月份" disabled value="now" onChange={() => undefined} options={[{ value: "now", label: "不分月份" }]} />
             : <Select aria-label="月份" disabled={!options?.selectableMonths.length} value={options ? currentQuery.month : ""} onChange={value => changeQuery({ ...currentQuery, month: value })} options={(options?.selectableMonths ?? []).map(value => ({ value, label: value }))} placeholder="读取后可选" />}</FilterField>
           <FilterField label="币种"><Select aria-label="币种" disabled={!options?.currencies.length} value={options ? currentQuery.currency ?? "" : ""} onChange={value => changeQuery({ ...currentQuery, currency: value })} options={(options?.currencies ?? []).map(value => ({ value, label: nexGridBrandText(value) }))} placeholder="读取后可选" /></FilterField>
-          <FilterField label="范围"><Select aria-label="范围" disabled={!scopeSelect.length} value={options ? currentQuery.scope : ""} onChange={value => changeQuery({ ...currentQuery, scope: value })} placeholder="读取后可选"
+          <FilterField label="范围"><Select aria-label="范围" disabled={!scopeSelect.length} value={options && !scopeStale ? currentQuery.scope : ""} onChange={value => changeQuery({ ...currentQuery, scope: value })} placeholder={scopeStale ? "正在重读范围" : "读取后可选"}
             groups={[{ label: "榜单范围", options: scopeSelect.map(option => ({ value: option.scope, label: option.scope === "ownGroup" ? `${scopeLabels.ownGroup}（${option.groups[0]?.name ?? "本组"}）` : option.scope === "managedGroups" ? `${scopeLabels.managedGroups}（全部负责组）` : scopeLabels[option.scope] })) },
               ...(managedOption ? [{ label: "负责的单个组", options: managedOption.groups.map(group => ({ value: scopeValue("managedGroups", group.id), label: group.name })) }] : [])]} /></FilterField>
         </FilterBar>
