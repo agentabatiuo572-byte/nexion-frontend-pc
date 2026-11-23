@@ -1109,8 +1109,8 @@ export default function UserDetailPage() {
       amplifies: false,
       facts: <Facts>
         <Fact k="操作对象">{displayNickname} · <span data-mono>{userNo}</span></Fact>
-        {/* 和设备明细表同一个写法：设备名和规格、编号尾号，完整编号在悬停里（TX-05，不露 PG- 这类前缀）。 */}
-        <Fact k="设备"><span title={instance || undefined}>{[asText(device.name, ""), formatC1DeviceTier(device.productTier)].filter((text) => text && text !== "—").join(" · ") || "—"}{instance && <> · {asText(device.sourceChannel, "").toUpperCase() === "TRIAL" ? "试用转正 · " : ""}编号尾号 <span data-mono>{instance.slice(-6)}</span></>}</span></Fact>
+        {/* 和设备明细表同一套取值：设备名和规格、编号尾号，完整编号在悬停里（TX-05，不露 PG- 这类前缀）；确认框值列窄，来源不写，一行放得下。 */}
+        <Fact k="设备"><span title={instance || undefined}>{[asText(device.name, ""), formatC1DeviceTier(device.productTier)].filter((text) => text && text !== "—").join(" · ") || "—"}{instance && <> · 编号尾号 <span data-mono>{instance.slice(-6)}</span></>}</span></Fact>
         <Fact k="状态"><Change from={formatC1DeviceStatus(device.status)} to="已回收，离线" /></Fact>
         {operation === "replace" && <Fact k="置换单">新增一张已完成的，只作记录</Fact>}
         <Fact k="收益">不再派新任务，已到账的收益不扣回</Fact>
