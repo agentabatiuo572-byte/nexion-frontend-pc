@@ -42,7 +42,7 @@ function count(value: unknown) {
   if ((state === "UNKNOWN" || state === "FAILED") && amount !== null || state === "COMPLETE" && (amount === null || r.reason !== "NONE") || state !== "COMPLETE" && r.reason === "NONE") invalid("countCoverage");
   return { value: amount, coverage: displayCoverage(state), reason: reason(r.reason) };
 }
-const META_FIELDS = "viewVersion queryVersion sourceVersion definitionVersion board rankMonth referenceMonth currency scope businessZone asOf publishedAt state candidateCoverage stale refreshFailed selectableMonths currencies scopeOptions";
+const META_FIELDS = "viewVersion queryVersion sourceVersion definitionVersion board rankMonth referenceMonth currency scope businessZone asOf publishedAt state candidateCoverage stale refreshFailed selectableMonths currencies scopeOptions metricVersion generation";
 function businessZoneId(value: unknown): string {
   const zone = text(value);
   try {
@@ -70,7 +70,8 @@ function metadata(r: Record<string, unknown>) {
 }
 export type LeaderboardMetadata = ReturnType<typeof metadata>;
 function row(value: unknown, meta: LeaderboardMetadata): SupportBoardRow {
-  const r = object(value, "agentId name avatarUrl groupName qualification rank isTied rankMetricCoverage firstPayment customers amount movement canViewCustomers");
+  // B80 may include performance in old responses. Continue projecting the legacy amount.
+  const r = object(value, "agentId name avatarUrl groupName qualification rank isTied rankMetricCoverage firstPayment customers amount movement canViewCustomers performance");
   const qualification = enumeration(r.qualification, ["ACTIVE", "DISABLED", "REMOVED", "HANDOVER_REQUIRED", "UNKNOWN"] as const);
   const a = object(r.amount, "value currency month kind coverage reason"), state = coverage(a.coverage);
   const amount = { value: decimal(a.value, true), currency: enumeration(a.currency, ["USDT", "UVT"] as const), periodLabel: month(a.month), sourceVersion: meta.sourceVersion, coverage: displayCoverage(state), reason: reason(a.reason) };
