@@ -821,8 +821,12 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                     action: `提交 ${row.network} 充值${restoring ? "恢复" : "开关"}审批`, title: restoring ? `恢复 ${row.network} 充值` : `调整 ${row.network} 充值开关`, confirmLabel: "提交审批", effect: approval,
                     facts: <Facts><Fact k="网络">{row.network}</Fact>{restoring && <Fact k="充值开关"><Change from={row.depositEnabled ? "开" : "关"} to="开（申请恢复）" /></Fact>}<Fact k="实际开放情况">{row.depositAvailable ? (row.addressAvailable ? "已开放" : "已开放 · 地址准备中") : availabilityText(row.depositDisabledReason)}</Fact>
                       {closed && <Fact k="用户入口">App、H5 已不给用户选 TRC20；关掉后旧版本 App 也不能再用 TRC20 充值</Fact>}</Facts>,
-                    detail: `${restoring ? "当前全局暂停，本次只申请恢复所选网络充值；其他网络充值继续保持暂停，不会恢复出款总闸。" : ""}关闭将停止该网地址分配、链上直付新下单与自动入账，原交易继续核验。`,
-                    completion: `另一位管理员复核后生效。${restoring ? "只恢复这条网络的充值，其他网络和出款总闸保持现状。" : "关闭一条网络，不改变其他网络的充值开关。"}`,
+                    detail: restoring ? "当前全局暂停，本次只申请恢复所选网络充值；其他网络充值继续保持暂停，不会恢复出款总闸。"
+                      : row.depositEnabled ? "关闭将停止该网地址分配、链上直付新下单与自动入账，原交易继续核验。" : "开启后该网恢复地址分配、链上直付新下单与自动入账，实际能不能用仍看收款服务和全局开关。",
+                    // 关或开这条网的后果常显在框顶（OP-47、OP-48），执行摘要里保留明细；开着的只能选关，关着的只能选开。
+                    completion: `另一位管理员复核后生效。${restoring ? "只恢复这条网络的充值，其他网络和出款总闸保持现状。"
+                      : row.depositEnabled ? "生效后停止这条网的地址分配、链上直付新下单和自动入账，原交易继续核验；其他网络的充值开关不变。"
+                        : "生效后这条网重新开放地址分配、链上直付新下单和自动入账，实际能不能用仍看「实际开放情况」；其他网络的充值开关不变。"}`,
                     path: "/cregis/switch-cases", body: { network: row.network, expectedVersion: gate?.version, expectedNetworkVersion: row.version, ...(restoring ? { depositEnabled: target } : {}) },
                     edit: restoring ? undefined : { kind: "select", label: `${row.network} 充值`, current: String(row.depositEnabled), options: ["true", "false"], optionLabels: { true: "开", false: "关" },
                       disallowCurrent: true, amplifiesWhen: { from: "false", to: "true" }, submitEditValue: true },
