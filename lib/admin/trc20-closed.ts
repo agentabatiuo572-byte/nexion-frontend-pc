@@ -8,6 +8,11 @@ export const TRC20_PAYMENT_METHOD = "CREGIS_USDT_TRC20";
 export const D5_APPROVAL_OP = "d5_withdrawal_limits";
 export const TRC20_REPLAY_UNVERIFIED = "提案详情加载失败，暂不能按原请求重试";
 
+export function d5Trc20ConfirmationFeeBlock(before: number | undefined, after: number | undefined) {
+  if (!Number.isFinite(before) || !Number.isFinite(after)) return "先查询原结果";
+  if (before !== after) return TRC20_CLOSED;
+}
+
 /** D5 preview persists Java map text with complete three-network groups. */
 export function d5Trc20ApprovalBlock(before: string, after: string): string | undefined {
   const read = (side: string) => {
@@ -31,7 +36,8 @@ export function d5Trc20ApprovalBlock(before: string, after: string): string | un
   const to = read(after);
   if (!from || !to || (from.network === undefined) !== (to.network === undefined)
     || (from.fee === undefined) !== (to.fee === undefined)) return "变更详情加载失败，暂不能批准";
-  if ((from.network === "false" && to.network === "true") || from.fee !== to.fee) return TRC20_CLOSED;
+  if (from.network === "false" && to.network === "true") return TRC20_CLOSED;
+  if (from.fee !== undefined) return d5Trc20ConfirmationFeeBlock(from.fee, to.fee);
 }
 
 type CregisReplayRecord = { path: string; body: string };

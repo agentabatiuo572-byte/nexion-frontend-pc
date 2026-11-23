@@ -56,7 +56,7 @@ import {
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
-import { TRC20_CLOSED } from "@/lib/admin/trc20-closed";
+import { d5Trc20ConfirmationFeeBlock, TRC20_CLOSED } from "@/lib/admin/trc20-closed";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
@@ -424,7 +424,15 @@ function describeChanges(changes: Record<string, unknown>) {
 }
 
 /** 收紧（直接生效）的原操作。结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。版本可能已变，确认前整页不能再改。 */
-type TightenRecord = PendingMutationRecord & { label: string; changes: D5OwnedChanges; expectedVersion: number; reason: string; operator: string; commandOrigin?: FundCommandOrigin };
+type TightenRecord = PendingMutationRecord & {
+  label: string;
+  changes: D5OwnedChanges;
+  expectedVersion: number;
+  reason: string;
+  operator: string;
+  commandOrigin?: FundCommandOrigin;
+  trc20FeeBefore?: number;
+};
 const TIGHTEN_SCOPE = "d5|limits";
 const tightenCommands = createPendingMutationStore<TightenRecord>({
   storageKey: "nexion-admin-d5-withdrawal-commands-v1",
@@ -437,6 +445,14 @@ const tightenCommands = createPendingMutationStore<TightenRecord>({
     && !!record.changes && typeof record.changes === "object" && !Array.isArray(record.changes)
     && isDConfigCommandOrigin(record.commandOrigin, "D5"),
 });
+
+function tightenReplayBlock(record: TightenRecord, params: D5ParamData | null) {
+  const fees = record.changes.networkConfirmFeeUsd;
+  if (!fees) return;
+  // 旧请求只存三网目标值。读回同一版本才有这笔命令的原费率。
+  const current = params?.version === record.expectedVersion ? params.networkConfirmFeeUsd.trc20 : undefined;
+  return d5Trc20ConfirmationFeeBlock(record.trc20FeeBefore ?? current, fees.trc20);
+}
 
 export async function queryD5DirectCommand(record: TightenRecord, evidence?: FundCommandEvidence) {
   const saved = tightenCommands.list().find(row => row.commandKey === record.commandKey);
@@ -756,7 +772,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             void loadApprovals();
             return;
           }
-          const outcome = await sendTighten({ label: `调整提现参数 · ${label}`, changes, expectedVersion: p.version, reason, operator: OPERATOR() });
+          const outcome = await sendTighten({ label: `调整提现参数 · ${label}`, changes, expectedVersion: p.version, reason, operator: OPERATOR(),
+            ...(changes.networkConfirmFeeUsd ? { trc20FeeBefore: p.networkConfirmFeeUsd.trc20 } : {}) });
           closeDrawer();
           if (outcome === "unknown") toast(UNKNOWN_TOAST, "warn");
           else toast(`${GROUP_TITLE[group]}已生效`, "success");
@@ -797,6 +814,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const retryTighten = async (record: TightenRecord) => {
     if (record.expiresAt <= Date.now()) { syncPending(); return; }
     if (!commandAuthorities(record.changes).every(can)) { note(record.commandKey, NO_WRITE); return; }
+    const block = tightenReplayBlock(record, params);
+    if (block) { note(record.commandKey, block); return; }
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!tightenCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
       note(record.commandKey, "浏览器里查不到这条记录，本次没有发送。记录继续保留，请到操作记录与审批核对。");
@@ -806,8 +825,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     note(record.commandKey, "");
     setRecovering(record.commandKey);
     try {
-      const { label, changes, expectedVersion, reason, operator, commandOrigin } = record;
-      const outcome = await sendTighten({ label, changes, expectedVersion, reason, operator, commandOrigin }, true);
+      const { label, changes, expectedVersion, reason, operator, commandOrigin, trc20FeeBefore } = record;
+      const outcome = await sendTighten({ label, changes, expectedVersion, reason, operator, commandOrigin, trc20FeeBefore }, true);
       if (outcome === "unknown") note(record.commandKey, "重试结果仍未知，原操作继续保留，稍后再试。");
       else toast(`${record.label.replace(/^调整提现参数 · /, "")}已生效`, "success");
     } catch (cause) {
@@ -951,18 +970,20 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     })()] : []),
     ...tightenPending.map((record): FundRecoveryRow => {
       const expired = record.expiresAt <= Date.now();
+      const replayBlock = tightenReplayBlock(record, params);
+      const retryDisabled = !commandAuthorities(record.changes).every(can) ? NO_WRITE : replayBlock;
       // 改版前没存出处的记录按当前账号查，queryD5DirectCommand 再核原操作人。
       const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D5") };
       // 查到记为失败时，「可能已经生效」不再写。
       const outcome = investigationResults[record.commandKey];
       const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
       return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), record: target, outcome: investigationResults[record.commandKey],
-        createdAt: record.createdAt, expired, canRetry: !expired && commandAuthorities(record.changes).every(can),
+        createdAt: record.createdAt, expired, canRetry: !expired && !retryDisabled,
         actions: <>
           <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
             onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
-          {!expired && <Button size="sm" disabled={!!recovering} disabledReason={commandAuthorities(record.changes).every(can) ? undefined : NO_WRITE} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
-          {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
+          {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryDisabled} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
+          {!expired && !replayBlock && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
         </>,
         detail: <>
           <p>{`改动：${describeChanges(record.changes)}。${failed ? "" : "可能已经生效，"}有结果前这页不能再修改。`}{expired && !outcome && expiredNext(target)}</p>
