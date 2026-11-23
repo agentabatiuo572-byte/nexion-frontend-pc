@@ -15,7 +15,7 @@ import {
   fetchH5CheckIn,
 } from "@/lib/admin/h-client";
 import { h5Amount, h5RuleWriteRefusal, h5StreakReward, h5WholeReward, parseH5Model } from "@/lib/admin/h5-contract";
-import { h5OriginalNonMultiplierPowerUp, h5PowerUpDayChange, useH5Mutations, type H5Change, type H5PendingCommand } from "@/lib/admin/use-h5-mutations";
+import { h5OriginalNonMultiplierPowerUpSummary, h5PowerUpDayChange, useH5Mutations, type H5Change, type H5PendingCommand } from "@/lib/admin/use-h5-mutations";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -338,7 +338,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     const snapshot = original?.change.snapshot ?? model!;
     const target = `power:${powerUp.id}`;
     const multiplier = powerUp.effectType === "CHECKIN_MULTIPLIER";
-    const noteOnly = original && h5OriginalNonMultiplierPowerUp(original)?.noteOnly;
+    const originalSummary = original && h5OriginalNonMultiplierPowerUpSummary(original);
     const name = operatorCopyText(powerUp.label);
     const currentNote = text(powerUp.note, "");
     const validDay = (value: string) => /^\d+(?:\.0+)?$/.test(value) && Number(value) >= 1 && Number(value) <= 365;
@@ -346,10 +346,11 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     // 徽章的天数打开时是空的（OP-19）：空值或填坏的天数不算提前。
     const amplifies = (values: Record<string, string>) => validDay(values.day ?? "") && Number(values.day) < powerUp.day
       || (multiplier && (h5Amount(values.note) ?? BigInt(0)) > (h5Amount(currentNote) ?? BigInt(0)));
+    const hasChange = (values: Record<string, string>) => Number(values.day) !== powerUp.day
+      || multiplier && h5Amount(values.note ?? "") !== h5Amount(currentNote);
     const directionOf = (values: Record<string, string>): "approval" | "direct" | null => {
       if (!validDay(values.day ?? "") || multiplier && !validNote(values.note ?? "")) return null;
-      const changed = Number(values.day) !== powerUp.day || multiplier && h5Amount(values.note) !== h5Amount(currentNote);
-      return !changed ? null : amplifies(values) ? "approval" : "direct";
+      return !hasChange(values) ? null : amplifies(values) ? "approval" : "direct";
     };
     openActionConfirm({ target, original, briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号", directionOf,
       action: `连续签到成长奖励 · ${operatorCopyText(powerUp.label)}`,
@@ -368,7 +369,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         </Facts>
       ),
       statedBrief: (values) => {
-        if (noteOnly) return { impact: "原操作只改了说明文字，解锁天数没变。", check: "核对原操作和理由。" };
+        if (originalSummary) return { impact: `${originalSummary}。`, check: "核对原操作和理由。" };
         const check = multiplier ? "核对天数和倍率；理由写清依据或工单号。" : "核对解锁天数；理由写清依据或工单号。";
         const direction = directionOf(values);
         return direction === "approval"
@@ -383,7 +384,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       businessForm: {
         kind: "multi-field",
         // 非倍率权益不显示说明文字：重开的原操作可能只改了说明文字，看不到改动也要能按原请求重试。
-        requireAnyChange: multiplier || !original,
+        requireAnyChange: multiplier ? hasChange : !original,
         amplifies,
         onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); setPowerDirection(directionOf(values)); return values; },
         feedback: values => {
@@ -549,24 +550,19 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
   // 连签档后端存的旧名称（+5 NEX）原样标成旧名称，不让裸的 NEX 出现。
   const shownReward = (value: string) => /\bNEX\b/i.test(value) ? `旧名称「${value}」` : value;
-  const recoveryRows: H5RecoveryRow[] = mutations.records.map((record) => {
-    const powerUpOriginal = h5OriginalNonMultiplierPowerUp(record);
-    const { before, after } = powerUpOriginal ?? record.change;
-    return {
-      key: record.commandKey,
-      name: record.change.name,
-      // 旧的只改说明文字原操作天数没变，不写「14 天 → 14 天」，和重试框同一说法。
-      change: powerUpOriginal?.noteOnly ? `只改了说明文字，${before}不变` : `${shownReward(before)} → ${shownReward(after)}`,
-      submittedAt: record.createdAt,
-      tag: record.ticket ? pendingTag(...(record.change.target.startsWith("rule:") ? [RULE_APPROVER, RULE_PENDING_NOTE] : [FUND_APPROVER, FUND_PENDING_NOTE]) as [string, string])
-        : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind === "direct" ? "direct" : "approval") : unknownTag(record.request.kind === "direct" ? "direct" : "approval"),
-      ticket: record.ticket?.id,
-      actions: <>
-        <Button size="sm" onClick={() => void queryOriginal(record)}>查询原结果</Button>
-        {!isRetryExpired(record) && !record.acknowledged && !record.ticket && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原请求重试</Button>}
-      </>,
-    };
-  });
+  const recoveryRows: H5RecoveryRow[] = mutations.records.map((record) => ({
+    key: record.commandKey,
+    name: record.change.name,
+    change: h5OriginalNonMultiplierPowerUpSummary(record) ?? `${shownReward(record.change.before)} → ${shownReward(record.change.after)}`,
+    submittedAt: record.createdAt,
+    tag: record.ticket ? pendingTag(...(record.change.target.startsWith("rule:") ? [RULE_APPROVER, RULE_PENDING_NOTE] : [FUND_APPROVER, FUND_PENDING_NOTE]) as [string, string])
+      : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind === "direct" ? "direct" : "approval") : unknownTag(record.request.kind === "direct" ? "direct" : "approval"),
+    ticket: record.ticket?.id,
+    actions: <>
+      <Button size="sm" onClick={() => void queryOriginal(record)}>查询原结果</Button>
+      {!isRetryExpired(record) && !record.acknowledged && !record.ticket && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原请求重试</Button>}
+    </>,
+  }));
   const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
   const pendingCount = mutations.records.filter(r => r.ticket).length;
   const builtCount = mutations.records.filter(r => !r.ticket && r.acknowledged).length;

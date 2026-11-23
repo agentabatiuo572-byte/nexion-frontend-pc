@@ -47,16 +47,17 @@ export function h5PowerUpDayChange(expectedDay: number, day: number) {
   return { before: `连签 ${expectedDay} 天`, after: `连签 ${day} 天` };
 }
 
-export function h5OriginalNonMultiplierPowerUp({ change, request }: H5PendingCommand) {
+export function h5OriginalNonMultiplierPowerUpSummary({ change, request }: H5PendingCommand) {
   if (!change.target.startsWith("power:") || request.kind === "earn-create") return;
   const powerUp = change.snapshot.powerUps.find(item => `power:${item.id}` === change.target);
   if (!powerUp || powerUp.effectType === "CHECKIN_MULTIPLIER") return;
   const values = (request.kind === "direct" ? JSON.parse(request.body) : request.body.command.params.values) as Record<string, unknown> | undefined;
   if (typeof values?.day !== "number" || typeof values.expectedDay !== "number") return;
-  return {
-    ...h5PowerUpDayChange(values.expectedDay, values.day),
-    noteOnly: values.day === values.expectedDay && typeof values.note === "string" && typeof values.expectedNote === "string" && values.note !== values.expectedNote,
-  };
+  const dayChanged = values.day !== values.expectedDay;
+  const noteChanged = typeof values.note === "string" && typeof values.expectedNote === "string" && values.note !== values.expectedNote;
+  const { before, after } = h5PowerUpDayChange(values.expectedDay, values.day);
+  if (!dayChanged) return noteChanged ? `只改了说明文字，${before}不变` : undefined;
+  return `${before} → ${after}${noteChanged ? "，还会改旧说明文字" : ""}`;
 }
 
 const paths = (target: string) => {
@@ -172,27 +173,29 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       throw new Error("审批单与保存的原申请不符，原请求继续保留，请查询原结果。");
     }
   };
-  const query = async (original: H5PendingCommand, quiet = false) => {
+  const query = async (original: H5PendingCommand, feedback: "lookup" | "refresh" | "submitted" = "lookup") => {
     requireActor(original.change.target, false);
     if (original.request.kind === "direct") {
       await settled(original.commandKey);
-      if (!quiet) toast("已重读当前配置；当前值不能证明原操作是否执行，原请求继续保留，请到操作记录与审批核对。");
+      if (feedback !== "refresh") toast("已重读当前配置；当前值不能证明原操作是否执行，原请求继续保留，请到操作记录与审批核对。");
       return undefined;
     }
     if (original.ticket) retain({ ...original, acknowledged: true, ticket: undefined });
     const ticket = await fetchA2ProposalByKey(original.commandKey, true);
     if (!ticket) {
       // 过期后不能重试，下一步是去操作记录与审批核对（OP-152、OP-153）；没过期的照旧可以按原请求重试。
-      if (!quiet) toast(isRetryExpired(original) ? "没查到原审批单。原申请已过期，记录和修改锁保留，请到操作记录与审批核对。" : "暂未查到原审批单，原请求继续保留。");
+      if (feedback !== "refresh") toast(isRetryExpired(original) ? "没查到原审批单。原申请已过期，记录和修改锁保留，请到操作记录与审批核对。" : "暂未查到原审批单，原请求继续保留。");
       return null;
     }
     checkTicket(original, ticket);
     if (ticket.status === "pending") retain({ ...original, acknowledged: true, ticket });
     else forget(original);
-    if (!quiet || ticket.status !== "pending") {
+    if (feedback === "submitted" && ticket.status === "pending") {
+      toast(`已提交，等待审批后执行 · 审批单 ${ticket.id}`);
+    } else if (feedback !== "refresh" || ticket.status !== "pending") {
       const status = { pending: "待审批", approved: "已批准", rejected: "被拒", expired: "已过期", withdrawn: "已撤回" }[ticket.status];
-      const { before, after } = h5OriginalNonMultiplierPowerUp(original) ?? ticket;
-      toast(`审批单${status}：${before} → ${after}`);
+      const summary = h5OriginalNonMultiplierPowerUpSummary(original) ?? `${ticket.before} → ${ticket.after}`;
+      toast(`审批单${status}：${summary}`);
     }
     if (ticket.status !== "pending") await settled(original.commandKey);
     return ticket;
@@ -228,7 +231,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       // A POST replay is only historical evidence. Only the by-key GET may mark it pending.
       const acknowledged = { ...original, acknowledged: true };
       retain(acknowledged);
-      const current = await query(acknowledged);
+      const current = await query(acknowledged, recovering ? "lookup" : "submitted");
       if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原结果，原请求继续保留。");
       if ((recovering || request.kind === "earn-create") && current.status === "pending") await settled(original.commandKey);
       return;
@@ -306,7 +309,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       try { requireActor(original.change.target, true); return true; } catch { return false; }
     },
     async refreshTickets() {
-      const results = await Promise.allSettled(records().filter(r => r.request.kind !== "direct").map(r => query(r, true)));
+      const results = await Promise.allSettled(records().filter(r => r.request.kind !== "direct").map(r => query(r, "refresh")));
       // A failed lookup must not promote a historical POST receipt to a current pending status.
       update();
       return results;
