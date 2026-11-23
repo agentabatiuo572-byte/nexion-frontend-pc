@@ -1,4 +1,5 @@
 import type { ComputeTaskConfig } from "./e2-compute-config";
+import type { SkuTaglineTranslations } from "./e1-product-copy";
 
 export interface TaskSimulation {
   durationMinutes: number;
@@ -51,6 +52,7 @@ export interface OpsSku {
   id: string;
   tier?: string;
   tagline?: string;
+  taglineTranslations?: SkuTaglineTranslations;
   badge?: string;
   gpu?: string;
   specDocumentTitle?: string;

@@ -870,6 +870,15 @@ export async function fetchA2Overview(filter: A2AuditFilter = {}, requireQueue =
   return { ...await normalizeOverview({ ...data, operationQueue: [] }), operationQueue: await withRoleGrantsNames(operationQueue), operationQueueInvalidCount };
 }
 
+/** The proposal audit record contains the server-frozen before/after snapshots. */
+export async function fetchA2ProposalLog(operationId: string, signal?: AbortSignal): Promise<A2AuditLogRow | undefined> {
+  const query = new URLSearchParams({ action: "A2_OPERATION_PROPOSED", resourceType: "A2_OPERATION", resourceId: operationId, limit: "1" });
+  const rows = await a2Request<BackendAuditLog[]>(`/logs?${query}`, { signal });
+  const row = Array.isArray(rows) && rows.find(row => row?.action === "A2_OPERATION_PROPOSED"
+    && row.resourceType === "A2_OPERATION" && row.resourceId === operationId && row.result === "SUCCESS");
+  return row ? fromLog(row) : undefined;
+}
+
 export async function approveA2Operation(operationId: string, reason: string, commandKey?: string, operationCode?: string) {
   const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/approve`, {
     method: "POST",

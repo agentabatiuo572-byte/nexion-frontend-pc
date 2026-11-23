@@ -4,9 +4,10 @@ import { k1EarningSourceName } from "@/lib/admin/k1-earning-sources";
 import { parseK1ReleaseTicketBefore } from "@/lib/admin/k1-risk-approval";
 import { operatorDeviceStatus } from "@/lib/admin/e-operator-display";
 import { skuSeriesText } from "@/lib/admin/device-monthly-target";
+import { isSkuTaglineTranslations, SKU_TAGLINE_LABELS, skuBadgeReviewText, type SkuTaglineTranslations } from "@/lib/admin/e1-product-copy";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, AUDIT_RESOURCE_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
 import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
-import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
+import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCopyText } from "@/lib/admin/operator-copy";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
@@ -46,6 +47,7 @@ import {
   approveA2Operation,
   createA2CommandKey,
   exportA2Audit,
+  fetchA2ProposalLog,
   fetchA2RetentionLatest,
   fetchA2RetentionPreview,
   fetchA2Overview,
@@ -181,7 +183,8 @@ function approvalExecutorLabel(w: A2OperationRow) {
   // K1RiskApproval.validateChecker：有效超级管理员且有审批批准权限，不能是提交人。
   if (w.operationCode === "k1_release_param" || w.operationCode === "k1_earnings_release") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "c2_session_revoke_all" || !w.operationCode && w.action.startsWith("强制登出 · ")) return "另一位有审批批准权限和退出全部设备权限的超级管理员";
-  if (w.operationCode === "e1_hosting_centers_update") return "另一位有审批批准权限和商品修改权限的管理员";
+  // 后端 ROLE_GATE_E1_SKU 原文带权限码 device_e1_write，这里写成同一含义的权限名。
+  if (["e1_hosting_centers_update", "e1_sku_create", "e1_sku_update"].includes(w.operationCode ?? "")) return "另一位有审批批准权限和商品修改权限的管理员";
   if (w.operationCode === "h5_earn_milestone_create") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "f4_quota_tier_create") return "另一位有审批批准权限和购机名额修改权限的超级管理员";
   // H5GrowthApproval：三类成长审批都要超级管理员且有审批批准权限。
@@ -302,6 +305,38 @@ function fBatchLogItems(log: { obj: string; delta: string }): FBatchItem[] | und
   const items = fBatchItems(sides[0], sides[1]);
   return items && (F_BATCH_DIGEST.test(log.obj) || log.obj === items.map((item) => item.key).join(",")) ? items : undefined;
 }
+/**
+ * E1 商品提案的操作记录：前后值是提案时冻结的两份商品快照（JSON 原文，后端 createProposalOnce 写入）。拆回两份，按审批单详情同一套行写；
+ * 拆不出两份商品快照时照原文显示。
+ */
+function e1SkuLogSides(log: { delta: string }): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
+  const isSku = (text: string) => {
+    try { const value: unknown = JSON.parse(text); return isRecord(value) && typeof value.skuId === "string"; } catch { return false; }
+  };
+  if (log.delta.startsWith("— → ") && isSku(log.delta.slice(4))) return { before: "", after: log.delta.slice(4), operationCode: "e1_sku_create" };
+  for (let at = log.delta.indexOf("} → {"); at >= 0; at = log.delta.indexOf("} → {", at + 1)) {
+    const before = log.delta.slice(0, at + 1), after = log.delta.slice(at + 4);
+    if (isSku(before) && isSku(after)) return { before, after, operationCode: "e1_sku_update" };
+  }
+  return undefined;
+}
+function e1ApprovalTicket(log: A2AuditLogRow) {
+  if (log.action === "E1_SKU_UPDATED") return /^a2-approve-(WO-\d+-\d+)-/.exec(log.idempotencyKey ?? "")?.[1];
+}
+
+/** The execution audit only records price. Look up the frozen proposal by the ticket in the approval command. */
+function e1ApprovedLog(log: A2AuditLogRow, proposals?: ReadonlyMap<string, A2AuditLogRow | undefined>): { ticket?: string; sides?: ReturnType<typeof e1SkuLogSides>; price?: string } | undefined {
+  if (log.action !== "E1_SKU_UPDATED") return undefined;
+  const ticket = e1ApprovalTicket(log);
+  const proposal = ticket ? proposals?.get(ticket) : undefined;
+  const sides = proposal && e1SkuLogSides(proposal);
+  if (sides) return { ticket, sides };
+  const [before, after] = log.delta.split(" → ");
+  if (!/^\d+(\.\d+)?$/.test(before ?? "") || !/^\d+(\.\d+)?$/.test(after ?? "")) return undefined;
+  const price = (value: string) => `${grouped(e1Decimal(value, 2))} USD`;
+  return { ticket, price: before === after ? `价格 ${price(after)}，没变` : `价格 ${price(before)} → ${price(after)}` };
+}
+const E1_PRICE_ONLY = "这条只记价格，其他改动没记在这里";
 const fBatchSummary = (items: readonly FBatchItem[]) => `${fBatchLabel(items[0], fBatchPages(items))} ${items[0].before} → ${items[0].after}${items.length > 1 ? ` 等 ${items.length} 项` : ""}`;
 /** 涉及的页面名；认不出的项写「团队参数」。 */
 const fBatchPages = (items: readonly FBatchItem[] | undefined) => [...new Set((items ?? []).map((item) => item.spec?.page ?? "团队参数"))];
@@ -861,7 +896,7 @@ const CHANGE_LABELS: Record<string, string> = {
   warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格", computePoints: "每件算力点",
   dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
   monthlyTargetUsdt: "月收益目标", monthlyTargetBandPct: "允许波动", clearMonthlyTarget: "关闭月收益目标",
-  baseRate: "收益展示文字", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
+  baseRate: "收益说明", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
   aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
   aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
   lifecycle: "生命周期", supersededBy: "后继商品", tradeinDiscount: "换新折扣", unlockPhase: "解锁阶段",
@@ -1030,13 +1065,14 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
     if (key === "clearMonthlyTarget" || key === "trialEligible") return "否";
     return "未设置";
   }
+  if (key?.startsWith("taglineTranslations.")) return String(value);
   if (typeof value === "boolean") return value ? "是" : "否";
   if (key === "monthlyTargetUsdt") return `${grouped(String(value))} USDT`;
   if (key === "monthlyTargetBandPct") return `±${grouped(String(value))}%`;
   if (key === "dailyEarn") return `${grouped(String(value))} USDT/日`;
   if (key === "shareYieldMin" || key === "shareYieldMax") return `${grouped(String(value))}%`;
   if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
-  if (key === "baseRate" && typeof value === "string") return shareBaseRateText(value);
+  if (key === "baseRate" && typeof value === "string") return value.trim() ? value : "未设置";
   if (key === "allowedPoolCodes" && Array.isArray(value)) return value.length ? value.map(code => ({L1:"L1 初级",L2:"L2 中级",L3:"L3 高级",L4:"L4 旗舰",PHONE:"手机任务池"}[String(code)] ?? String(code))).join("、") : "未选择";
   if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item, labels)).join("、") : "无";
   if (isRecord(value)) return Object.entries(value).map(([name, item]) => `${labels[name] ?? name} ${valueText(name, item, labels)}`).join("；") || "无";
@@ -1044,6 +1080,17 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
 }
 
 type Review = { kind: "text"; text: string } | { kind: "object"; value: Record<string, unknown> } | { kind: "rows"; rows: Record<string, unknown>[] };
+
+function e1MonthlyBaseRate(value: unknown, monthlyTarget: unknown): string | undefined {
+  if (typeof value !== "string" || !/^\d+(\.\d{1,6})?$/.test(value)) return;
+  if (typeof monthlyTarget !== "number" && typeof monthlyTarget !== "string") return;
+  const target = Number(monthlyTarget);
+  if (!Number.isFinite(target) || target <= 0) return;
+  // OpsDeviceService.monthlyTargetRequest → DeviceSkuUpsertRequest.withMonthlyTarget → MonthlyTargetProjection.daily (six places).
+  const daily = Number((target / 30).toFixed(6));
+  if (Number(value) !== daily) return;
+  return `${daily.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT/日（系统按月收益目标折算）`;
+}
 
 /** 后端存的前后值：JSON 对象、成组记录或一段文字。空和「—」是首次配置，返回 null。 */
 function parseReview(value: string): Review | null {
@@ -1067,12 +1114,24 @@ function reviewPair(before: string, after: string, operationCode?: string) {
   const original = { b, a, labels, evidenceKeys: [] as string[] };
   // E1 商品：后端冻结的是代码值（系列、档位、商城状态、生命周期、库存模式），这里换成和商品页一样的名称，价格带币种。新建没有前值；旧票没有这一项时不补。
   if (operationCode === "e1_sku_create" || operationCode === "e1_sku_update") {
-    const named = (review: Review | null): Review | null => {
+    const previous = b?.kind === "object" && isSkuTaglineTranslations(b.value.taglineTranslations) ? b.value.taglineTranslations : undefined;
+    const next = a?.kind === "object" && isSkuTaglineTranslations(a.value.taglineTranslations) ? a.value.taglineTranslations : previous;
+    // 语言按中文、越南语、其他语言的固定顺序列（TX-35），不随服务器快照里键的先后变。
+    const languages = (Object.keys(SKU_TAGLINE_LABELS) as (keyof SkuTaglineTranslations)[]).filter(language => language in { ...previous, ...next });
+    const translationLabels = Object.fromEntries(languages.map(language => [`taglineTranslations.${language}`, SKU_TAGLINE_LABELS[language]]));
+    const named = (review: Review | null, translations?: SkuTaglineTranslations): Review | null => {
       if (review?.kind !== "object") return review;
       const value = { ...review.value };
+      if ("badge" in value && (typeof value.badge === "string" || value.badge == null)) value.badge = skuBadgeReviewText(value.badge) ?? null;
+      // 提交时空标签写成 ""，快照里没有标签是 null，两者都是「未设置」，不当成一项改动列出来。
+      if (value.tag === "") value.tag = null;
+      // The server snapshot uses null for a missing command field and {} for an explicit clear.
+      delete value.taglineTranslations;
+      for (const language of languages) value[`taglineTranslations.${language}`] = translations?.[language] ?? null;
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
       for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
       if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${e1Decimal(value.price)} USD`;
+      if ("baseRate" in value) value.baseRate = e1MonthlyBaseRate(value.baseRate, value.monthlyTargetUsdt) ?? value.baseRate;
       // 购买条件写成人话；读不到阶段名时写「第 N 阶段」，不只写数字。
       if (isRecord(value.purchaseGate)) value.purchaseGate = e1GateText(value.purchaseGate);
       if ((typeof value.unlockPhase === "string" || typeof value.unlockPhase === "number") && /^\d+$/.test(String(value.unlockPhase).trim())) value.unlockPhase = `第 ${String(value.unlockPhase).trim()} 阶段`;
@@ -1081,7 +1140,7 @@ function reviewPair(before: string, after: string, operationCode?: string) {
     // 新建只列填了的项，没填的不逐行写「未设置」（和商品页确认框一致）。
     const filled = (review: Review | null): Review | null => b || review?.kind !== "object" ? review
       : { kind: "object", value: Object.fromEntries(Object.entries(review.value).filter(([, item]) => item !== null && item !== "" && !(Array.isArray(item) && !item.length))) };
-    return { b: named(b), a: filled(named(a)), labels: { ...labels, seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
+    return { b: named(b, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
   }
   // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
   if (operationCode === "h4_legacy_event_reward_update" && b?.kind === "object" && a?.kind === "object" && "eventCode" in b.value) {
@@ -1449,6 +1508,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const [filtered, setFiltered] = useState<A2Overview | null>(null);
   const [filteredLoading, setFilteredLoading] = useState(false);
   const [filteredError, setFilteredError] = useState("");
+  const [e1ProposalRead, setE1ProposalRead] = useState<{
+    rows: readonly A2AuditLogRow[];
+    session: typeof session;
+    proposals: ReadonlyMap<string, A2AuditLogRow | undefined>;
+  }>();
   const [readAt, setReadAt] = useState("");
   const [retentionRun, setRetentionRun] = useState<RetentionExecution | null>(null);
   const [retentionRunError, setRetentionRunError] = useState<string | null>(null);
@@ -1662,7 +1726,22 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const logRows = records?.recentLogs ?? [];
   const logPages = Math.max(1, Math.ceil(logRows.length / logPageSize));
   const logSafePage = Math.min(logPage, logPages);
-  const logPageRows = logRows.slice((logSafePage - 1) * logPageSize, logSafePage * logPageSize);
+  const logPageRows = useMemo(() => (records?.recentLogs ?? []).slice((logSafePage - 1) * logPageSize, logSafePage * logPageSize),
+    [records, logSafePage, logPageSize]);
+  useEffect(() => {
+    if (tab !== "records" || view !== "logs" || recordsLoading || !session) return;
+    const tickets = [...new Set(logPageRows.map(e1ApprovalTicket).filter(ticket => ticket !== undefined))];
+    if (!tickets.length) return;
+    const controller = new AbortController();
+    void Promise.all(tickets.map(async ticket => {
+      const proposal = await fetchA2ProposalLog(ticket, controller.signal).catch(() => undefined);
+      return [ticket, proposal] as const;
+    })).then(entries => {
+      if (!controller.signal.aborted) setE1ProposalRead({ rows: logPageRows, session, proposals: new Map(entries) });
+    });
+    return () => controller.abort();
+  }, [logPageRows, recordsLoading, session, tab, view]);
+  const e1Proposals = e1ProposalRead?.rows === logPageRows && e1ProposalRead.session === session ? e1ProposalRead.proposals : undefined;
   const historyRows = records?.operationHistory ?? [];
   const histPages = Math.max(1, Math.ceil(historyRows.length / histPageSize));
   const histSafePage = Math.min(histPage, histPages);
@@ -2813,6 +2892,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 ) : logPageRows.map((l) => {
                   const act = logActionShown(l.action);
                   const obj = logObject(l);
+                  const e1Approved = e1ApprovedLog(l, e1Proposals);
+                  const e1Sides = e1SkuLogSides(l) ?? e1Approved?.sides;
+                  const e1Change = e1Sides && changeSummary(e1Sides.before, e1Sides.after, [], e1Sides.operationCode);
                   return (
                     <Tr key={l.id} selected={l.id === logId} onOpen={() => setLogId(l.id)}>
                       <Td sticky="start"><Cell num main={thisYear(logTime(l))} title={logTime(l)} /></Td>
@@ -2821,7 +2903,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                       <Td>{fBatchLogItems(l) || F_BATCH_DIGEST.test(l.obj) ? <Cell main="整批调整的团队参数" title={l.obj} />
                         : obj.id ? <Cell main={obj.id.length > 16 ? `${obj.id.slice(0, 8)}…${obj.id.slice(-6)}` : obj.id} sub={obj.kind} title={[obj.kind, obj.id].filter(Boolean).join(" · ")} />
                           : <Cell main={obj.kind} title={obj.kind} />}</Td>
-                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : <Cell mono main={logDeltaText(l.delta)} title={logDeltaText(l.delta)} />}</Td>
+                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : e1Change ? <Cell main={e1Change.main} sub={e1Change.sub} title={e1Change.main} /> : e1Approved?.price ? <Cell main={e1Approved.price} sub={E1_PRICE_ONLY} title={e1Approved.price} /> : <Cell mono main={logDeltaText(l.delta)} title={logDeltaText(l.delta)} />}</Td>
                     </Tr>
                   );
                 })}
@@ -2978,6 +3060,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /* 操作记录抽屉 */
   const shownLog = logShown.current;
+  const shownLogApproved = shownLog ? e1ApprovedLog(shownLog, e1Proposals) : undefined;
+  const shownLogE1 = shownLog ? e1SkuLogSides(shownLog) ?? shownLogApproved?.sides : undefined;
   const logIndex = shownLog ? logPageRows.findIndex((l) => l.id === shownLog.id) : -1;
   const needIdem = shownLog ? shownLog.action.includes("withdraw") || shownLog.action.includes("balance") || shownLog.action.includes("operation_confirmed") : false;
   const requestNo = shownLog ? shownLog.idempotencyKey || (needIdem ? "缺失" : "—") : "—";
@@ -3065,10 +3149,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: logRoleText(shownLog.role) ? `${shownLog.actor} · ${logRoleText(shownLog.role)}` : shownLog.actor },
             // 对象是「类型 · 编号」，编号可能是整串 UUID：不用不换行的 a2-code，在「·」后面折行，不把抽屉撑出横向滚动。
             { label: "对象", value: F_BATCH_DIGEST.test(shownLog.obj) || fBatchLogItems(shownLog) ? "整批调整的团队参数" : [shownLogObject?.kind, shownLogObject?.id].filter(Boolean).join(" · ") },
-            ...(fBatchLogItems(shownLog) ? [] : [{ label: "前值 → 后值", value: <span data-mono>{logDeltaText(shownLog.delta)}</span> }]),
+            ...(shownLogApproved?.ticket ? [{ label: "审批单", value: shownLogApproved.ticket }] : []),
+            ...(fBatchLogItems(shownLog) || shownLogE1 ? [] : [{ label: "前值 → 后值", value: shownLogApproved?.price ? `${shownLogApproved.price}；${E1_PRICE_ONLY}` : <span data-mono>{logDeltaText(shownLog.delta)}</span> }]),
             { label: "原因", value: shownLog.reason || "—" },
           ]} />
           {fBatchLogItems(shownLog) && <A2BatchReview items={fBatchLogItems(shownLog)!} />}
+          {shownLogE1 && <A2ChangeReview before={shownLogE1.before} after={shownLogE1.after} operationCode={shownLogE1.operationCode} />}
           <Fold inset title="技术信息" summary={`请求编号 ${requestNo}`}>
             <Facts>
               <Fact k="IP"><span data-mono>{shownLog.ip}</span></Fact>
@@ -3078,7 +3164,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               {shownLogObject?.raw && !F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象原文"><span data-mono className="a2-long-code">{shownLogObject.raw}</span></Fact>}
               <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
               {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象摘要"><span data-mono>{shownLog.obj}</span></Fact>}
-              {(fBatchLogItems(shownLog) || logDeltaText(shownLog.delta) !== shownLog.delta) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
+              {(fBatchLogItems(shownLog) || shownLogE1 || shownLogApproved?.price || logDeltaText(shownLog.delta) !== shownLog.delta) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
             </Facts>
           </Fold>
         </>}
