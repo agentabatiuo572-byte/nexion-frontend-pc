@@ -1100,7 +1100,7 @@ export default function UserDetailPage() {
   const openDeviceAction = (device: JsonRecord, operation: "replace" | "recycle") => {
     const deviceId = asNumber(device.id);
     const instance = asText(device.instanceNo);
-    // 结果提示、待确认条和「正在执行」写设备名和尾号，不露 PG- 这类前缀（TX-05、BUG-643）；待确认条的对象列只有 280px，写「尾号」不写「编号尾号」；完整编号在悬停里，展开那一条看得到整句。只改新写入的记录，旧记录照原样显示。
+    // 结果提示和「正在执行」写「动作 · 设备名 · 尾号」，不露 PG- 这类前缀（TX-05、BUG-643）；待确认条对象格只写其中的设备名和尾号，动作写进同一行的结论（见 recoveryItems）。完整编号在悬停里。只改新写入的记录，旧记录照原样显示。
     const deviceText = [asText(device.name, ""), instance && instance !== "—" ? `尾号 ${instance.slice(-6)}` : ""].filter((text) => text && text !== "—").join(" · ") || "—";
     setActionConfirm({ briefKind: "record",
       action: operation === "replace" ? `回收并记录置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
@@ -1363,6 +1363,10 @@ export default function UserDetailPage() {
       const expired = command.expiresAt <= Date.now();
       // 重试和普通入口一样看现在的入口和权限（OP-123）。没权限只留核对，提示和记录都留着。
       const device = command.kind === "replace" || command.kind === "recycle";
+      // 对象列只有 280px（共用）：设备操作这一格只写「设备名 · 尾号」，动作写进同一行的结论，尾号不被截掉（尾号 > 动作 > 设备名）。
+      const action = command.kind === "replace" ? "回收并记录置换" : command.kind === "recycle" ? "设备回收" : "";
+      const identity = action && command.label.startsWith(`${action} · `) ? command.label.slice(action.length + 3) : command.label;
+      const said = (text: string) => action ? `${action}：${text}` : text;
       const deviceNo = device ? asText(devices.find((row) => asNumber(row.id) === command.deviceId)?.instanceNo, "") : "";
       const writable = device ? canWriteC2 : canWriteC1;
       const hasWrite = device ? hasC2Write : hasC1Write;
@@ -1395,10 +1399,10 @@ export default function UserDetailPage() {
       }[found];
       const more = found === "REJECTED" || found === "PROCESSED" ? receiptExplain(receipt) : undefined;
       return {
-        key: command.fingerprint, object: deviceNo ? <span title={`设备编号 ${deviceNo}`}>{command.label}</span> : command.label, createdAt: command.createdAt,
+        key: command.fingerprint, object: deviceNo ? <span title={`设备编号 ${deviceNo}`}>{identity}</span> : identity, createdAt: command.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
-        result: shown && { tag: <StatusTag tone={shown.tone}>{shown.label}</StatusTag>, line: shown.line },
-        line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。",
+        result: shown && { tag: <StatusTag tone={shown.tone}>{shown.label}</StatusTag>, line: said(shown.line) },
+        line: said(refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。"),
         note: pendingNotes[command.fingerprint],
         actions: <>
           <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>查询原结果</Button>
