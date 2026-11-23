@@ -980,7 +980,7 @@ export default function UserDetailPage() {
     const instance = asText(row?.instanceNo, "");
     if (row && instance && instance !== "—") return [asText(row.name, ""), `尾号 ${instance.slice(-6)}`].filter((text) => text && text !== "—").join(" · ");
     const { identity } = deviceLabel(command);
-    return identity === "—" || identity.includes("尾号 ") ? identity : `尾号 ${identity.slice(-6)}`;
+    return identity === "—" || identity.includes("尾号 ") || command.legacy ? identity : `尾号 ${identity.slice(-6)}`;
   };
   /** 查询原结果、核查结案的结论提示用的对象：设备操作写「动作 · 设备名 · 尾号」，旧记录也不露完整编号；其余照存的标签。 */
   const resultLabel = (command: C1CommandInput) => command.kind === "replace" || command.kind === "recycle" ? `${deviceLabel(command).action} · ${deviceResult(command)}` : command.label;
@@ -1435,6 +1435,8 @@ export default function UserDetailPage() {
       const { action, identity } = deviceLabel(command);
       const said = (text: string) => action ? `${action}：${text}` : text;
       const deviceNo = device ? asText(devices.find((row) => asNumber(row.id) === command.deviceId)?.instanceNo, "") : "";
+      // 旧版界面存的标签是「动作 · 完整编号」（BUG-643）：对象照样写「设备名 · 尾号」或只写尾号，完整编号只放悬停。
+      const fullNo = deviceNo && deviceNo !== "—" ? deviceNo : device && !command.legacy && identity !== "—" && !identity.includes("尾号 ") ? identity : "";
       const writable = device ? canWriteC2 : canWriteC1;
       const hasWrite = device ? hasC2Write : hasC1Write;
       const refused = writable && !command.legacy && isExplicitRejection(command.rejection);
@@ -1469,7 +1471,7 @@ export default function UserDetailPage() {
       }[found];
       const more = found === "REJECTED" || found === "PROCESSED" ? receiptExplain(receipt) : undefined;
       return {
-        key: command.fingerprint, object: deviceNo ? <span title={`设备编号 ${deviceNo}`}>{identity}</span> : identity, createdAt: command.createdAt,
+        key: command.fingerprint, object: device ? <span title={fullNo ? `设备编号 ${fullNo}` : undefined}>{deviceResult(command)}</span> : identity, createdAt: command.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
         result: shown && { tag: <StatusTag tone={shown.tone}>{shown.label}</StatusTag>, line: said(shown.line) },
         line: said(refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。"),
@@ -1856,10 +1858,10 @@ export default function UserDetailPage() {
           }}
         />
       )}
-      {closingCommand && <FundClosureModal label={closingCommand.label} createdAt={closingCommand.createdAt} known={closureKnown(pendingOutcomes[closingCommand.commandKey])}
+      {closingCommand && <FundClosureModal label={resultLabel(closingCommand)} createdAt={closingCommand.createdAt} known={closureKnown(pendingOutcomes[closingCommand.commandKey])}
         facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(pendingOutcomes[closingCommand.commandKey]), "记录保留")}</Fact>}
         onClose={() => setClosingCommand(null)} onSubmit={(evidence) => closePending(closingCommand, evidence)} />}
-      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
+      {releasing && <ReleaseModal label={resultLabel(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
         explain={`${releasing.legacy ? "这条记录是升级前留下的，不能重试" : "重试被拒说明不了原操作的结果"}，先到操作记录确认原操作有没有生效。解除只删掉本页的这条记录，不算核查结案；这个对象可能仍被锁住。`} />}
       {notificationEvidence && canReadNotificationEvidence
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
