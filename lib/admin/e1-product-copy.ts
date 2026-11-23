@@ -40,16 +40,16 @@ export function skuBadgeReviewText(badge?: string | null): string | undefined {
 
 export const SKU_CUSTOM_BADGE_MAX_LENGTH = 64;
 export const SKU_TAGLINE_TRANSLATION_MAX_LENGTH = 255;
-export const SKU_TAGLINE_VI_HAN_ERROR = "商品标语（越南语）不能包含中文，请改成越南语";
+export const SKU_TAGLINE_VI_HAN_ERROR = "越南语标语不能包含中文，请改成越南语";
 export const SKU_TAGLINE_LABELS = {
-  zh: "商品标语（中文）",
-  vi: "商品标语（越南语）",
-  id: "商品标语（印尼语）",
-  ms: "商品标语（马来语）",
-  fil: "商品标语（菲律宾语）",
-  ru: "商品标语（俄语）",
-  kk: "商品标语（哈萨克语）",
-  uz: "商品标语（乌兹别克语）",
+  zh: "中文标语",
+  vi: "越南语标语",
+  id: "印尼语标语",
+  ms: "马来语标语",
+  fil: "菲律宾语标语",
+  ru: "俄语标语",
+  kk: "哈萨克语标语",
+  uz: "乌兹别克语标语",
 };
 export type SkuTaglineTranslations = Partial<Record<keyof typeof SKU_TAGLINE_LABELS, string>>;
 const E1_EDITABLE_TAGLINE_FIELDS = { zh: "taglineZh", vi: "taglineVi" } as const;

@@ -1090,7 +1090,7 @@ function reviewPair(before: string, after: string, operationCode?: string) {
     // 新建只列填了的项，没填的不逐行写「未设置」（和商品页确认框一致）。
     const filled = (review: Review | null): Review | null => b || review?.kind !== "object" ? review
       : { kind: "object", value: Object.fromEntries(Object.entries(review.value).filter(([, item]) => item !== null && item !== "" && !(Array.isArray(item) && !item.length))) };
-    return { b: named(b, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
+    return { b: named(b, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
   }
   // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
   if (operationCode === "h4_legacy_event_reward_update" && b?.kind === "object" && a?.kind === "object" && "eventCode" in b.value) {

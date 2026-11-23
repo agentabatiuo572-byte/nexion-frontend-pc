@@ -80,7 +80,7 @@ export function E1TargetRange({ sku, label }: { sku: OpsSku; label?: ReactNode }
 /** 行数据校验报出的字段，换成运营看得懂的名字；契约里的键不变。 */
 const E1_FIELD_LABELS: Record<string, string> = {
   sku: "整行资料", skuId: "商品编号", name: "商品名称", price: "售价", status: "上架状态", productType: "商品类型",
-  inventoryMode: "库存方式", "inventoryMode.stock": "库存方式和库存数", stock: "库存", tier: "档位", tagline: "宣传语", taglineTranslations: "商品标语译文", badge: "角标",
+  inventoryMode: "库存方式", "inventoryMode.stock": "库存方式和库存数", stock: "库存", tier: "档位", tagline: "英文标语", taglineTranslations: "标语译文", badge: "营销角标",
   gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "托管机房", uptime: "在线率", warranty: "保修",
   specDocumentTitle: "规格书标题", specDocumentUrl: "规格书链接", baseRate: "基础收益率", aiUnlocks: "AI 解锁项", lifecycle: "生命周期",
   unlockPhase: "开放阶段", imageAssetId: "产品图", imageObjectKey: "产品图", imagePreviewUrl: "产品图", tag: "标签",

@@ -155,7 +155,7 @@ export const E1_SKU_FIELDS: readonly { key: keyof OpsSku; label: string; unit?: 
   { key: "power", label: "功耗 / 功率说明" }, { key: "uptime", label: "在线率" }, { key: "warranty", label: "质保期限" },
   { key: "aiImageGenPerMin", label: "图像生成 张/分钟" }, { key: "aiLlmTokensPerSec", label: "大模型推理（词元/秒）" },
   { key: "aiVideoMinPerHour", label: "每小时可渲染视频时长（分钟）" }, { key: "aiFineTuneMins", label: "LoRA 微调（分钟）" },
-  { key: "tagline", label: "商品标语" }, { key: "badge", label: "营销角标" }, { key: "features", label: "特性清单" },
+  { key: "tagline", label: "英文标语" }, { key: "badge", label: "营销角标" }, { key: "features", label: "特性清单" },
   { key: "specDocumentTitle", label: "资料名称" }, { key: "specDocumentUrl", label: "资料链接" },
   { key: "imageAssetId", label: "媒体标识" }, { key: "imageObjectKey", label: "媒体对象键" },
   { key: "aiUnlocks", label: "历史算力标记" }, { key: "rating", label: "评分" }, { key: "reviews", label: "评价数量" },

@@ -88,8 +88,8 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "功耗", read: (sku) => sku.power, format: text, equal: stringEqual },
   { label: "在线率", read: (sku) => sku.uptime, format: text, equal: stringEqual },
   { label: "保修", read: (sku) => sku.warranty, format: text, equal: stringEqual },
-  { label: "角标", read: (sku) => skuBadgeReviewText(sku.badge), format: text },
-  { label: "卖点", read: (sku) => sku.tagline, format: text, equal: stringEqual },
+  { label: "营销角标", read: (sku) => skuBadgeReviewText(sku.badge), format: text },
+  { label: "英文标语", read: (sku) => sku.tagline, format: text, equal: stringEqual },
   ...(Object.keys(SKU_TAGLINE_LABELS) as (keyof SkuTaglineTranslations)[]).map((language): FieldDescriptor => ({
     label: SKU_TAGLINE_LABELS[language],
     read: (sku) => sku.taglineTranslations?.[language],

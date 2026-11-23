@@ -33,6 +33,7 @@ type Media = { kind: "image" | "video"; src: string; name: string; size?: number
 const SECTIONS = [{ id: "e1-basic", label: "基本信息" }, { id: "e1-earnings", label: "收益与任务" }, { id: "e1-stock", label: "库存与购买条件" }, { id: "e1-specs", label: "规格与资料" }];
 const BASIC_FIELDS = ["name", "id", "tier", "seriesCode", "lifecycle", "badge", "tagline", "taglineZh", "taglineVi", "media"];
 const SKU_NAME_MAX_LENGTH = 128;
+const CUSTOM_BADGE_REQUIRED = "请填写自定义角标";
 
 function EditorSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return <section id={`section-${id}`} className="e1-editor-section"><h3 tabIndex={-1} data-section-focus>{title}</h3><div className="e1-section-fields">{children}</div></section>;
@@ -41,7 +42,7 @@ function EditorSection({ id, title, children }: { id: string; title: string; chi
 /** App 用户能看到的字段：含中文时字段下马上提示，提交时同样拦下。 */
 const E1_APP_VISIBLE_FIELDS = [
   ["name", "型号名称"],
-  ["tagline", "商品标语"],
+  ["tagline", "英文标语"],
   ["gpu", "GPU 型号（单卡）"],
   ["power", "功耗 / 功率说明"],
   ["datacenter", "托管机房"],
@@ -58,10 +59,10 @@ function productCopyErrors(form: SkuForm, skuName: string): Record<string, strin
   if ([...skuName].length > SKU_NAME_MAX_LENGTH) errors.name = ADMIN_ERROR_MESSAGES.SKU_NAME_TOO_LONG;
   if (form.badgeKind === "custom") {
     const badge = skuBadgeValue(form.badgeKind, form.badge);
-    if (!badge || skuBadgeKind(badge) === "none") errors.badge = "请填写自定义角标";
+    if (!badge || skuBadgeKind(badge) === "none") errors.badge = CUSTOM_BADGE_REQUIRED;
     else if ([...badge].length > SKU_CUSTOM_BADGE_MAX_LENGTH) errors.badge = ADMIN_ERROR_MESSAGES.SKU_BADGE_TOO_LONG;
     else {
-      const error = appVisibleTextError(badge, "营销角标");
+      const error = appVisibleTextError(badge, "自定义角标");
       if (error) errors.badge = error;
     }
   }
@@ -351,7 +352,9 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const review = () => { reviewDraft(form, original, media); };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
   const copyErrors = productCopyErrors(form, draft.name);
-  const appTextErrors: Record<string, string> = { ...copyErrors, warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
+  // An empty custom badge is reported after the field loses focus or on submit (OP-15); the save button states it at once.
+  const { badge: liveBadgeError, ...liveCopyErrors } = copyErrors;
+  const appTextErrors: Record<string, string> = { ...liveCopyErrors, ...liveBadgeError && liveBadgeError !== CUSTOM_BADGE_REQUIRED ? { badge: liveBadgeError } : {}, warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
   for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
     const error = appVisibleTextError(form[key], label);
     if (error && !(key === "power" && form.tier === "Share")) appTextErrors[key] ??= error;
@@ -380,14 +383,20 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
               ? <Field label="所属系列" error={errors.seriesCode} explain={original?.seriesCode ? "这件商品已有订单或已发出设备，系列已锁定，不能再改。其他资料可以照常修改。" : "这件商品已有订单或已发出设备，系列已锁定，这里补不了；请联系技术支持核对。"}><Input aria-label="所属系列" value={skuSeriesText(original?.seriesCode)} readOnly /></Field>
               : <Field label="所属系列" required error={errors.seriesCode} explain="决定设备的产能、可跑的任务和 App 里的设备分类。有订单或发出设备后就不能再改。"><Select aria-label="所属系列" required value={form.seriesCode} disabled={busy || !original && !form.tier} onChange={v => update("seriesCode", v)} placeholder={!original && !form.tier ? "请先选择档位" : "请选择所属系列"} options={[...seriesChoices.map(code => ({ value: code, label: SKU_SERIES_NAMES[code] })), ...form.seriesCode && !seriesChoices.some(code => code === form.seriesCode) ? [{ value: form.seriesCode, label: `${skuSeriesText(form.seriesCode)}（和商品类型不符）`, disabled: true }] : []]} /></Field>}
             <Field label="生命周期" required error={errors.lifecycle} explain="现行或已停产，与商城上下架状态独立。"><Select aria-label="生命周期" required value={form.lifecycle} onChange={v => update("lifecycle", v)} placeholder="请选择生命周期" options={[{ value: "active", label: "现行" }, { value: "legacy", label: "已停产" }]} /></Field>
-            <Field label="营销角标" explain="商品媒体旁的活动文字，批准后显示在商品卡。"><Select aria-label="营销角标" value={form.badgeKind} onChange={value => {
-              setForm(draft => ({ ...draft, badgeKind: value as SkuForm["badgeKind"] }));
-              setErrors(current => ({ ...current, badge: "" }));
-            }} options={SKU_BADGE_OPTIONS} disabled={busy} /></Field>
-            {form.badgeKind === "custom" && field("badge", "自定义角标", { required: true, hint: "最多 64 字", explain: APP_VISIBLE_TEXT_HINT })}
-            {field("tagline", "商品标语", { placeholder: "Fully hosted personal AI hardware", explain: `${APP_VISIBLE_TEXT_HINT}。商品识别文案，批准后供商品卡和商品详情读取。` })}
-            {field("taglineZh", SKU_TAGLINE_LABELS.zh, { hint: "选填，最多 255 字", explain: "未填写时显示英文商品标语。" })}
-            {field("taglineVi", SKU_TAGLINE_LABELS.vi, { hint: "选填，最多 255 字", explain: "未填写时显示英文商品标语。" })}
+            <div className="e1-badge-fields">
+              <Field label="营销角标" explain="商品媒体旁的活动文字，批准后显示在商品卡。"><Select aria-label="营销角标" value={form.badgeKind} onChange={value => {
+                setForm(draft => ({ ...draft, badgeKind: value as SkuForm["badgeKind"] }));
+                setErrors(current => ({ ...current, badge: "" }));
+              }} options={SKU_BADGE_OPTIONS} disabled={busy} /></Field>
+              {form.badgeKind === "custom" && <Field label="自定义角标" required hint={`${[...skuBadgeValue("custom", form.badge) ?? ""].length}/${SKU_CUSTOM_BADGE_MAX_LENGTH}`} error={errors.badge || appTextErrors.badge} explain={APP_VISIBLE_TEXT_HINT}>
+                <Input aria-label="自定义角标" value={form.badge} onChange={e => update("badge", e.target.value)} onBlur={() => setErrors(current => ({ ...current, badge: copyErrors.badge ?? "" }))} disabled={busy} placeholder="Limited offer" />
+              </Field>}
+            </div>
+          </div>
+          <div className="e1-tagline-fields">
+            {field("taglineZh", SKU_TAGLINE_LABELS.zh, { hint: "选填，最多 255 字", explain: "App 界面是中文时显示。" })}
+            {field("tagline", "英文标语", { placeholder: "Fully hosted personal AI hardware", help: "中文、越南语没填时，App 显示这句英文", explain: `${APP_VISIBLE_TEXT_HINT}。商品识别文案，批准后供商品卡和商品详情读取。` })}
+            {field("taglineVi", SKU_TAGLINE_LABELS.vi, { hint: "选填，最多 255 字", explain: "App 界面是越南语时显示。" })}
           </div>
           <Field label="产品图 / 视频" error={errors.media} explain="图片≤10 MiB；视频≤200 MiB。直接上传不经审批；关联商品由商品提案批准，移除不删除原资源。">
             <label className="e1-upload" data-drag={drag ? "" : undefined} onDragOver={e => { e.preventDefault(); if (!mediaBusy) setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={e => { e.preventDefault(); setDrag(false); void pickMedia(e.dataTransfer.files[0]); }}>
