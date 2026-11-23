@@ -240,6 +240,7 @@ export function ConfirmCommand({ title, intent, body, prepareBody, children, onC
             && ['PROMOTION_REVISION_CONFLICT', 'PROMOTION_CONCURRENT_CHANGE', 'PROMOTION_VERSION_NOT_CURRENT', 'PROMOTION_VERSION_STATE_INVALID', 'PROMOTION_RESOURCE_NOT_FOUND'].includes(e.reasonCode || '')) {
             // A rejection never authorizes a read-and-rebase or a second write.
             setReloadNeeded(true);
+            setReason('');
             setNote('');
             setReviewed(null);
             onVersionConflict?.(e);

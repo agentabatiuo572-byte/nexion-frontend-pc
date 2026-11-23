@@ -55,7 +55,7 @@ import {
   ApprovalFact, EventCard, EventPreview, GuardCard, contentFieldsText, contentGaps, gapWeight, languageNames, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
   WHEEL_APP_KINDS, WHEEL_KIND_LABEL, WheelBar, WheelLegend, boolValue, effectApproval, effectByDirection, effectDirect, expiredTag, formStore,
   legacyName, lifecycleOf, numericValue, pendingTag, percentText, text, unknownTag, wheelLegacyNexTier, wheelPointsTier, wheelUnit,
-  type LegacyEvent, type LocaleCode, type WheelTier, actualRewardText, legacyRewardText } from "./h4-legacy-parts";
+  type LegacyEvent, type LocaleCode, type WheelTier, actualRewardText, legacyRewardText, H4StaleNote } from "./h4-legacy-parts";
 
 type Model = H4Statistics & {
   events?: LegacyEvent[];
@@ -185,29 +185,6 @@ export type LegacySection = "events" | "plays" | "wheel";
 /** 输入框不带单位（共用改值框放不下长单位）、再确认里要写单位的改值框，按标题给单位，只用于显示。 */
 const RECONFIRM_UNIT: Record<string, string> = { 调整每日真钱奖预算: "USDT / 天" };
 
-/**
- * 被「别人先改过」拒绝、页面重读后由 useHConflictDraft 重开的框：框里常显这条，运营核对后再提交（OP-97 第 1 步、VS-107；BUG-648）。
- * 只认重开的框（带回了上次的理由），运营自己再点开的框不带。页面上的提醒照旧，框关上后还看得到。
- */
-function StaleNote({ readLatest, clearReason }: { readLatest?: () => void; clearReason?: boolean }) {
-  return <Notice tone="warn" title="别人先改过，这次没有保存"
-    action={readLatest && <Button size="sm" onClick={readLatest}>读取最新</Button>}>
-    {readLatest ? "读取最新值后再核对；你填的内容还在，操作理由要重新填写。"
-      : clearReason ? "现在值已换成最新的；你填的内容还在，请重新填写操作理由。"
-      : "现在值已换成最新的；你填的内容和理由都还在，核对后再提交。"}
-  </Notice>;
-}
-const STALE_NOTE = <StaleNote />;
-const restoredAfterConflict = (req: { initialReason?: string }, opened: { initialReason?: string }) => opened.initialReason !== undefined && opened.initialReason !== req.initialReason;
-function withStaleNote(req: ActionConfirmReq, opened: ActionConfirmReq): ActionConfirmReq {
-  if (!restoredAfterConflict(req, opened)) return opened;
-  const facts = opened.facts;
-  return { ...opened, facts: typeof facts === "function" ? (value?: string) => <>{STALE_NOTE}{facts(value)}</> : <>{STALE_NOTE}{facts}</> };
-}
-function withStaleContent(req: ConfirmReq, opened: ConfirmReq): ConfirmReq {
-  return restoredAfterConflict(req, opened) ? { ...opened, content: <>{STALE_NOTE}{opened.content}</> } : opened;
-}
-
 export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: HCtx; section: LegacySection; onSection: (section: LegacySection) => void }) {
   const { toast } = ctx;
   const adminId = useAdminAuth(state => state.session?.adminId);
@@ -241,8 +218,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
   const openActionConfirm = (req: ActionConfirmReq, getComparison?: () => EditComparison | undefined) => {
     const version = h4ReadVersion("overview");
+    const reopenedAfterConflict = conflictDraft.reopenedAfterConflict;
+    const facts = req.facts;
     let retained: H4Command | undefined;
     const opened: ActionConfirmReq = { ...req,
+      facts: reopenedAfterConflict ? (value?: string) => <><H4StaleNote />{typeof facts === "function" ? facts(value) : facts}</> : facts,
       blockedReason: req.blockedReason ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
       run: async (reason, value, businessValue) => {
@@ -263,12 +243,13 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
       },
     };
-    ctx.openActionConfirm(req.edit?.review ? opened : withStaleNote(req, conflictDraft.action(opened)));
+    ctx.openActionConfirm(req.edit?.review ? opened : conflictDraft.action(opened));
   };
   const openConfirm = (req: ConfirmReq) => {
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
-    ctx.openConfirm(withStaleContent(req, conflictDraft.confirm({ ...req, freezePendingInput: true,
+    ctx.openConfirm(conflictDraft.confirm({ ...req, freezePendingInput: true,
+      content: conflictDraft.reopenedAfterConflict ? <><H4StaleNote />{req.content}</> : req.content,
       getPendingBlockReason: () => req.getPendingBlockReason?.() ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
       run: async (reason, value) => {
@@ -289,7 +270,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
       },
-    })));
+    }));
   };
   const canModuleWrite = ctx.can("growth_h4_write");
   const canWheelWrite = ctx.can("growth_h4_wheel_pool_write");
@@ -305,7 +286,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const [model, setModel] = useState<Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const conflictDraft = useHConflictDraft(!loading && !error && h4ReadVersion("overview") !== undefined);
+  const conflictDraft = useHConflictDraft(!loading && !error && h4ReadVersion("overview") !== undefined, { rebaseOnConflict: true });
   const canReadA2 = ctx.can("platform_a2_read");
   // 已建成、等别人批的 H4 审批单只在审批中心里；这里读一次，好让运营在本页看到哪项在等批。
   const [h4Approvals, setH4Approvals] = useState<A2OperationRow[] | "error" | null>(null);
@@ -422,7 +403,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         review: {
           conflictOnly: ruleBased,
           isConflict: error => isHGrowthReadConflict(error) || error instanceof Error && error.message === "H4_REFRESH_REQUIRED",
-          conflictNote: readLatest => <StaleNote readLatest={readLatest} clearReason />,
+          conflictNote: readLatest => <H4StaleNote readLatest={readLatest} clearReason />,
           read: async (value, signal, refresh) => {
             reviewed = undefined;
             if (refresh) {
@@ -563,10 +544,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     });
   };
 
-  const openLocalizedContent = async (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
+  const openLocalizedContent = (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
     if (h4Blocked(hiEventScope(code))) { toast(h4ApprovalLockedReason(hiEventScope(code)) ?? "原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
-    const required = await getRequiredContentLanguages();
-    setRequiredLanguages(required);
+    const required = requiredLanguages;
     const expectedValue = eventContent[code]?.[locale]?.[field];
     const current = text(expectedValue, "");
     const group = (codeOfLanguage: LocaleCode) => ({
@@ -603,7 +583,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         setRequiredLanguages(required);
         if (!value.trim() && (!clearable || required.includes(locale))) return;
         localizedDraft.current = { code, field, locale, value, reason };
-        const result = await updateH4LocalizedContent(code, field, locale, value, expectedValue, reason);
+        let result: Awaited<ReturnType<typeof updateH4LocalizedContent>>;
+        try { result = await updateH4LocalizedContent(code, field, locale, value, expectedValue, reason); }
+        catch (cause) {
+          if (isHGrowthReadConflict(cause)) localizedDraft.current = null;
+          throw cause;
+        }
         localizedDraft.current = null;
         if (await apply(result)) {
           setContentRefresh(current => current + 1);
@@ -857,9 +842,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const fixed = tiers.filter(wheelPointsTier);
     const probabilityText = (tier: Record<string, unknown>, values: Record<string, string>) =>
       wheelPointsTier(tier) ? String(numericValue(tier.prob)) : values[text(tier.tier)] ?? "";
-    const initial = pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form
-      ?? conflictDraft.business
-      ?? Object.fromEntries(tiers.filter((tier) => !wheelPointsTier(tier)).map((tier) => [text(tier.tier), String(numericValue(tier.prob))]));
+    const currentProbabilities = Object.fromEntries(tiers.filter((tier) => !wheelPointsTier(tier)).map((tier) => [text(tier.tier), String(numericValue(tier.prob))]));
+    const initial = pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form ?? { ...currentProbabilities, ...conflictDraft.business };
     const store = formStore(initial);
     openActionConfirm({ briefKind: "config",
       action: "调整转盘奖项概率",
@@ -1416,7 +1400,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       {contentEvent && <EventPreview canEdit={canModuleWrite} requiredLanguages={requiredLanguages} copyReadiness={contentEvent.copyReadiness} requiresAll={allLocalesRequired(contentEvent)} opened={contentEvent.state !== "upcoming"} rewardFromRule={rewardFromRule(contentEvent)} authored={contentEvent.appUsesAuthoredRewardName} appNames={contentEvent.appRewardNames} lockedReason={h4ApprovalLockedReason(hiEventScope(contentEvent.id))}
         names={Object.fromEntries((["zh", "en", "vi"] as const).map((locale) => [locale, { name: localizedValue(contentEvent.id, "name", locale), description: localizedValue(contentEvent.id, "description", locale), rewardName: localizedValue(contentEvent.id, "rewardName", locale) }])) as Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>}
         original={{ name: text(contentEvent.name, ""), description: text(contentEvent.description, ""), rewardName: text(contentEvent.rewardName, "") }}
-        onEdit={(field, locale) => openLocalizedContent(contentEvent.id, field, locale, field === "name" ? contentEvent.name : field === "description" ? text(contentEvent.description) : text(contentEvent.rewardName))} />}
+        onEdit={(field, locale) => conflictDraft.register(JSON.stringify(["openLocalizedContent", contentEvent.id, field, locale]),
+          () => openLocalizedContent(contentEvent.id, field, locale, field === "name" ? contentEvent.name : field === "description" ? text(contentEvent.description) : text(contentEvent.rewardName)))} />}
     </Drawer>
   </div>;
 }

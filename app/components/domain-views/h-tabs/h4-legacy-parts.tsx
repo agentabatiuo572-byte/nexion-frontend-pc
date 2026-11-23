@@ -6,13 +6,22 @@
  */
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { CalendarRange, CircleAlert, Clock3, EyeOff, Flag, Gift, Hourglass, CircleHelp, Languages, Smartphone, Star, Users } from "lucide-react";
-import { Button, Explain, Fact, Facts, MoreMenu, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
+import { Button, Explain, Fact, Facts, MoreMenu, Notice, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EVENT_KIND_LABELS } from "@/lib/admin/event-rule-form";
 import type { H4EventCapabilities } from "@/lib/admin/h-client";
 import { EVENT_CONTENT_LOCALES, type EventCopyReadiness } from "@/lib/admin/event-rule-form";
 import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { amountText, formatTime } from "./h4-promotion-ui";
+
+export function H4StaleNote({ readLatest, clearReason }: { readLatest?: () => void; clearReason?: boolean }) {
+  return <Notice tone="warn" title="别人先改过，这次没有保存"
+    action={readLatest && <Button size="sm" onClick={readLatest}>读取最新</Button>}>
+    {readLatest ? "读取最新值后再核对；你填的内容还在，操作理由要重新填写。"
+      : clearReason ? "现在值已换成最新的；你填的内容还在，请重新填写操作理由。"
+      : "现在值已换成最新的；你填的内容和理由都还在，核对后再提交。"}
+  </Notice>;
+}
 
 // ===== 取值小工具：照旧页面原样 =====
 export function text(value: unknown, fallback = "-") {
@@ -243,7 +252,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
   requiredLanguages: readonly LocaleCode[];
   names: Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>;
   original: Record<"name" | "description" | "rewardName", string>;
-  onEdit: (field: "name" | "description" | "rewardName", locale: LocaleCode) => void;
+  onEdit: (field: "name" | "description" | "rewardName", locale: LocaleCode) => () => void;
   canEdit: boolean;
   /** 还没开放，或玩法还能首次开启：必填语言都要填。 */
   requiresAll: boolean;
@@ -304,7 +313,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
               {hidden && <StatusTag tone="neutral" icon={EyeOff} explain={`App 的奖励一行显示系统按实际发放写的文字${appReward ? `（${LOCALE_NAME[locale]}：${appReward.text || "—"}）` : ""}，这一格填了也不显示，开放和开启玩法都不要求填。`}>App 不显示</StatusTag>}</span>
             {canEdit && (lockedReason
               ? <Button size="sm" variant="ghost" className="h4l-locale-edit" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} disabledReason={lockedReason}>{value ? "编辑" : "填写"}</Button>
-              : <button type="button" className="rd-link" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} onClick={() => onEdit(field, locale)}>{value ? "编辑" : "填写"}</button>)}
+              : <button type="button" className="rd-link" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} onClick={onEdit(field, locale)}>{value ? "编辑" : "填写"}</button>)}
           </li>;
         })}
       </ul>

@@ -16,7 +16,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Steps } from "@/app/components/rd";
 import { amountText, formatTime } from "./h4-promotion-ui";
-import { ApprovalFact, effectApproval, effectDirect } from "./h4-legacy-parts";
+import { ApprovalFact, H4StaleNote, effectApproval, effectDirect } from "./h4-legacy-parts";
 import { H4ConflictCompare, h4ConflictGroups, type H4CompareSection, type H4ConflictGroup, type H4Overwrite } from "./h4-conflict-compare";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 
@@ -118,7 +118,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
   };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const saveBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0));
-  const save = (rebased?: { base: AdminRaffle; draft: RaffleDraft; enabled: boolean; reason: string }) => {
+  const save = (rebased?: { base: AdminRaffle; draft: RaffleDraft; enabled: boolean }) => {
     if (conflictReview.current) { setError(displayAdminError(conflictReview.current)); return; }
     const savedDraft = rebased?.draft ?? draft, previous = rebased?.base ?? base, nextEnabled = rebased?.enabled ?? (!!base && enabled);
     if (savedDraft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${savedDraft.id}`)) return;
@@ -129,11 +129,12 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
     const closing = !nextEnabled && previous?.status === "OPEN";
     const readVersion = h4ReadVersion("raffles");
     let originalKey: string | undefined;
-    ctx.openActionConfirm({ initialReason: rebased?.reason, getPendingReason: () => h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
+    ctx.openActionConfirm({ getPendingReason: () => h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
       title: opening ? "开放抽奖报名" : closing ? "关闭报名回草稿" : previous ? "保存抽奖配置" : "保存抽奖草稿",
       effect: opening ? effectApproval("这一期") : effectDirect,
       detail: <>本期共 {seats(savedDraft.prizes)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
       facts: <>
+        {(rebased || merged > 0) && <H4StaleNote clearReason />}
         <Facts>
           <Fact k="这一期">{savedDraft.titleZh || savedDraft.titleEn || "—"} · {savedDraft.id}</Fact>
           <Fact k="报名开始 → 开奖（北京时间）">{formatTime(savedDraft.startsAt, "Asia/Shanghai")} → {formatTime(savedDraft.drawAt, "Asia/Shanghai")}</Fact>
@@ -198,7 +199,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
                 comparable(editableRaffle(latest, requiredLanguages), latest.status === "OPEN"), comparable(savedDraft, nextEnabled), equalRaffleField);
               conflictReview.current = new HConflictReviewRequired(displayAdminError(cause), fields, () => {
                 conflictReview.current = null;
-                save({ base: latest, draft: savedDraft, enabled: nextEnabled, reason });
+                save({ base: latest, draft: savedDraft, enabled: nextEnabled });
               });
             }
           } else if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)) { ctx.openActionConfirm(null); setDraft(null); setBase(null); await load(); }
