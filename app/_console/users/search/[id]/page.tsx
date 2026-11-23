@@ -663,7 +663,6 @@ export default function UserDetailPage() {
   }, [writeResult, readKey]);
   const [denied, setDenied] = useState(false);
   const referralRequest = useRef<AbortController | null>(null);
-  const detailGroups = useRef<HTMLDivElement>(null);
   const activeSection = useRef("");
   const sectionBeforeRetry = useRef<{ id: string; top: number } | null>(null);
   const [referralRetrying, setReferralRetrying] = useState(false);
@@ -1180,34 +1179,14 @@ export default function UserDetailPage() {
   ].filter((item) => item !== false);
   const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold, restoreKey: readKey });
   activeSection.current = nav.active;
-  const { preservePosition } = nav;
   useLayoutEffect(() => {
     const saved = sectionBeforeRetry.current;
     sectionBeforeRetry.current = null;
     if (!saved) return;
     const heading = sectionHeading(saved.id);
-    const groups = detailGroups.current;
-    const scroller = groups?.closest("main");
-    if (!heading || !groups || !scroller) return;
-
-    const scrollTop = scroller.scrollTop + heading.getBoundingClientRect().top - saved.top;
-    // A narrower response can shorten the page enough to clamp the restored position.
-    const extra = Math.ceil(scrollTop + scroller.clientHeight - scroller.scrollHeight);
-    if (extra > 0) groups.style.paddingBottom = `${extra}px`;
-    scroller.scrollTop = scrollTop;
-    preservePosition(saved.id, scroller.scrollTop);
-
-    if (extra <= 0) return;
-    const releaseSpace = () => {
-      groups.style.removeProperty("padding-bottom");
-      scroller.removeEventListener("scroll", releaseWhenInRange);
-    };
-    const releaseWhenInRange = () => {
-      if (scroller.scrollTop + scroller.clientHeight <= scroller.scrollHeight - extra) releaseSpace();
-    };
-    scroller.addEventListener("scroll", releaseWhenInRange, { passive: true });
-    return releaseSpace;
-  }, [detail, preservePosition]);
+    const scroller = heading?.closest("main");
+    if (heading && scroller) scroller.scrollTop += heading.getBoundingClientRect().top - saved.top;
+  }, [detail]);
   const foldProps = (group: string, alert: boolean) => ({
     alert,
     open: openFolds[group] ?? alert,
@@ -1604,7 +1583,7 @@ export default function UserDetailPage() {
 
       {sections.length > 0 && <div className="rd-detail-nav"><SectionNav row label="本页分区" items={sections} nav={nav} /></div>}
 
-      <div className="rd-detail-groups" ref={detailGroups}>
+      <div className="rd-detail-groups">
         {securityPresent && <div id={nav.anchor("security")}>
           <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={foldSummary("security", securityAlert || securityFailed, securityText)} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityAlert || securityFailed)}>
             {detail.sessions && <Block title="登录安全" {...listProps("session")} section={{ sourceStatus: "READY" }} issue={summary.locked === true ? "账号已锁定" : undefined} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。登录记录读取失败时也显示为空，0 条或没有记录不能证明没登录过。">
