@@ -97,7 +97,7 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { orderAmount } from "../e-tabs/data";
-import { e1Decimal, e1GateText, e1Value } from "../e-tabs/e1-state";
+import { e1GateText, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
@@ -333,8 +333,9 @@ function e1ApprovedLog(log: A2AuditLogRow, proposals?: ReadonlyMap<string, A2Aud
   if (sides) return { ticket, sides };
   const [before, after] = log.delta.split(" → ");
   if (!/^\d+(\.\d+)?$/.test(before ?? "") || !/^\d+(\.\d+)?$/.test(after ?? "")) return undefined;
-  const price = (value: string) => `${grouped(e1Decimal(value, 2))} USD`;
-  return { ticket, price: before === after ? `价格 ${price(after)}，没变` : `价格 ${price(before)} → ${price(after)}` };
+  // 有没有变按原文比；金额按全站写法，原文不同而写法一样时两边照原文写（a2Pair）。
+  const [shownBefore, shownAfter] = a2Pair(`${before} USD`, `${after} USD`);
+  return { ticket, price: before === after ? `价格 ${shownAfter}，没变` : `价格 ${shownBefore} → ${shownAfter}` };
 }
 const E1_PRICE_ONLY = "这条只记价格，其他改动没记在这里";
 const fBatchSummary = (items: readonly FBatchItem[]) => { const [before, after] = a2Pair(items[0].before, items[0].after); return `${fBatchLabel(items[0], fBatchPages(items))} ${before} → ${after}${items.length > 1 ? ` 等 ${items.length} 项` : ""}`; };
@@ -1095,7 +1096,7 @@ function e1MonthlyBaseRate(value: unknown, monthlyTarget: unknown): string | und
   // OpsDeviceService.monthlyTargetRequest → DeviceSkuUpsertRequest.withMonthlyTarget → MonthlyTargetProjection.daily (six places).
   const daily = Number((target / 30).toFixed(6));
   if (Number(value) !== daily) return;
-  return `${daily.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT/日（系统按月收益目标折算）`;
+  return `${amountDisplay(daily, 2)} USDT/日（系统按月收益目标折算）`;
 }
 
 /** 后端存的前后值：JSON 对象、成组记录或一段文字。空和「—」是首次配置，返回 null。 */
