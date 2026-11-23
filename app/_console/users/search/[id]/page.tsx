@@ -1007,7 +1007,7 @@ export default function UserDetailPage() {
       if (command.kind === "unbind") {
         if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else await loadPaymentMethods();
       } else if (command.kind === "rebind") await loadPaymentMethods();
-      else if (!await load() && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}。资料刷新失败，请点「刷新」核对。`, tone: "warn" });
+      else if (!await load() && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}。资料刷新失败，点「重试」重新读取后核对。`, tone: "warn" });
     } finally {
       setActionPending(null);
     }
