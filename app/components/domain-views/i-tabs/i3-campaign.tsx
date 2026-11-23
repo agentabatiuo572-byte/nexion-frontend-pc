@@ -145,10 +145,14 @@ const blockedSchedule = (row: CampaignRow) => row.st === "scheduled" && !!retire
 const GROUP_PREVIEW = 6;
 const AUDIT_HREF = "/platform/audit?domain=I";
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，只能查询。";
-/** 预算对照（F01）：有没有改按原文「数 USD」比，和原来一样；两边只读文字里的金额按全站写法显示。输入和提交值不经过这里。 */
+/**
+ * 预算对照（F01、RF04）：有没有改按原文「数 USD」比，和原来一样；两边只读文字里的金额按全站写法显示。
+ * 原文判为不同、格式化后却一样时，两边都照原文写，看得出差在哪（同 A2 的 a2Pair）。输入和提交值不经过这里。
+ */
 const budgetConflictRow = (left: string | undefined, right: string | undefined): IConflictRow => {
   const shown = (text: string | undefined) => text === undefined ? undefined : text.replace(/^(\S+) USD$/, (_, amount: string) => `${amountDisplay(amount)} USD`);
-  return { ...conflictRow("预算", shown(left), shown(right)), changed: conflictRow("预算", left, right).changed };
+  const raw = conflictRow("预算", left, right), formatted = conflictRow("预算", shown(left), shown(right));
+  return raw.changed && formatted.left === formatted.right ? raw : { ...formatted, changed: raw.changed };
 };
 
 export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | null }) {

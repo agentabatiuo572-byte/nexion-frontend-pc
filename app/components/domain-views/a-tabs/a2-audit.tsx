@@ -97,7 +97,7 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { orderAmount } from "../e-tabs/data";
-import { e1Amount, e1Decimal, e1GateText, e1Value } from "../e-tabs/e1-state";
+import { e1Decimal, e1GateText, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
@@ -337,7 +337,7 @@ function e1ApprovedLog(log: A2AuditLogRow, proposals?: ReadonlyMap<string, A2Aud
   return { ticket, price: before === after ? `价格 ${price(after)}，没变` : `价格 ${price(before)} → ${price(after)}` };
 }
 const E1_PRICE_ONLY = "这条只记价格，其他改动没记在这里";
-const fBatchSummary = (items: readonly FBatchItem[]) => `${fBatchLabel(items[0], fBatchPages(items))} ${items[0].before} → ${items[0].after}${items.length > 1 ? ` 等 ${items.length} 项` : ""}`;
+const fBatchSummary = (items: readonly FBatchItem[]) => { const [before, after] = a2Pair(items[0].before, items[0].after); return `${fBatchLabel(items[0], fBatchPages(items))} ${before} → ${after}${items.length > 1 ? ` 等 ${items.length} 项` : ""}`; };
 /** 涉及的页面名；认不出的项写「团队参数」。 */
 const fBatchPages = (items: readonly FBatchItem[] | undefined) => [...new Set((items ?? []).map((item) => item.spec?.page ?? "团队参数"))];
 const fBatchLabel = (item: FBatchItem, pages: readonly string[]) => item.spec ? (pages.length > 1 ? `${item.spec.page} · ${item.spec.item}` : item.spec.item) : "未识别的配置项";
@@ -349,7 +349,7 @@ function A2BatchReview({ items }: { items: readonly FBatchItem[] }) {
     <section className="a2-change-review" aria-label="完整变更内容">
       <div className="a2-change-title">完整变更内容 · {items.length} 项
         <Explain label="技术信息" content={`各项配置键 ${items.map((item) => item.key).join("、")}`} /></div>
-      <DiffList rows={items.map((item) => ({ key: item.key, label: fBatchLabel(item, pages), before: item.before, after: item.after }))}
+      <DiffList rows={items.map((item) => { const [before, after] = a2Pair(item.before, item.after); return { key: item.key, label: fBatchLabel(item, pages), before, after }; })}
         restTitle="没有改动的项" emptyNote="这些项没有改动" />
     </section>
   );
@@ -1073,9 +1073,9 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
   }
   if (key?.startsWith("taglineTranslations.")) return String(value);
   if (typeof value === "boolean") return value ? "是" : "否";
-  if (key === "monthlyTargetUsdt") return `${amountDisplay(String(value))} USDT`;
+  if (key === "monthlyTargetUsdt") return `${grouped(String(value))} USDT`;
   if (key === "monthlyTargetBandPct") return `±${grouped(String(value))}%`;
-  if (key === "dailyEarn") return `${amountDisplay(String(value))} USDT/日`;
+  if (key === "dailyEarn") return `${grouped(String(value))} USDT/日`;
   if (key === "shareYieldMin" || key === "shareYieldMax") return `${grouped(String(value))}%`;
   if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
   if (key === "baseRate" && typeof value === "string") return value.trim() ? value : "未设置";
@@ -1136,7 +1136,7 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       for (const language of languages) value[`taglineTranslations.${language}`] = translations?.[language] ?? null;
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
       for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
-      if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${e1Amount(value.price)} USD`;
+      if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${String(value.price).trim()} USD`;
       if ("baseRate" in value) value.baseRate = e1MonthlyBaseRate(value.baseRate, value.monthlyTargetUsdt) ?? value.baseRate;
       // 购买条件写成人话；读不到阶段名时写「第 N 阶段」，不只写数字。
       if (isRecord(value.purchaseGate)) value.purchaseGate = e1GateText(value.purchaseGate);
@@ -1167,7 +1167,7 @@ function reviewPair(before: string, after: string, operationCode?: string) {
     const extra: Record<string, unknown>[] = [];
     for (const key of Object.keys(a.value)) {
       if (key in b.value) { was[key] = show(key, b.value[key]); next[key] = show(key, a.value[key]); }
-      else extra.push({ field: labels[key] ?? key, content: valueText(key, show(key, a.value[key]), labels) });
+      else extra.push({ field: labels[key] ?? key, content: a2AmountText(valueText(key, show(key, a.value[key]), labels)) });
     }
     for (const key of Object.keys(b.value)) if (!(key in a.value)) was[key] = show(key, b.value[key]);
     if (extra.length) next.courseTarget = extra;
@@ -1256,7 +1256,7 @@ function changeSummary(before: string, after: string, omit: readonly string[] = 
     main: "关闭月收益目标",
     sub: a.value.shareYieldMin != null && a.value.shareYieldMax != null
       ? `年奖励率 ${valueText("shareYieldMin", a.value.shareYieldMin, labels)}–${valueText("shareYieldMax", a.value.shareYieldMax, labels)}`
-      : `日产收益 ${valueText("dailyEarn", a.value.dailyEarn, labels)}`,
+      : `日产收益 ${a2AmountText(valueText("dailyEarn", a.value.dailyEarn, labels))}`,
   };
   const keys = Object.keys(a.value).filter((key) => !omit.includes(key) && !evidenceKeys.includes(key));
   const changed = b?.kind === "object" ? keys.filter((key) => !same(b.value[key], a.value[key])) : keys;
@@ -1271,13 +1271,15 @@ function changeSummary(before: string, after: string, omit: readonly string[] = 
 }
 
 /** 成组的记录画成小表，每组一行，列头用字段名；超过 5 行的收在「查看全部」后面（VS-109）。 */
-function ReviewRows({ name, rows, labels = CHANGE_LABELS }: { name: string; rows: readonly Record<string, unknown>[]; labels?: Record<string, string> }) {
+/** format=false：这张表和对照的另一张原文不同、逐格格式化后却一样时，两张都照原文写（rowsFormatSafe）。 */
+function ReviewRows({ name, rows, labels = CHANGE_LABELS, format = true }: { name: string; rows: readonly Record<string, unknown>[]; labels?: Record<string, string>; format?: boolean }) {
+  const cell = (column: string, value: unknown) => format ? a2AmountText(valueText(column, value, labels)) : valueText(column, value, labels);
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   const unit = ROW_UNIT[name] ?? "行";
   const table = (part: readonly Record<string, unknown>[], label: string) => (
     <Table label={label} data-tight="">
       <thead><tr>{columns.map((column) => <Th key={column}>{labels[column] ?? column}</Th>)}</tr></thead>
-      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={a2AmountText(valueText(column, row[column], labels))} title={a2AmountText(valueText(column, row[column], labels))} /></Td>)}</Tr>)}</tbody>
+      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={cell(column, row[column])} title={cell(column, row[column])} /></Td>)}</Tr>)}</tbody>
     </Table>
   );
   const title = labels[name] ?? name;
@@ -1331,6 +1333,12 @@ function i5MatrixVersionText(version: string, countries?: string[] | null) {
  */
 const A2_AMOUNT = /(?<![\w.,])[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?(?=[ \u00a0](?:USDT|UVT|USD|VND|₫)(?![\w])(?!\/[A-Za-z₫]))/g;
 const a2AmountText = (text: string) => text.replace(A2_AMOUNT, (amount) => amountDisplay(amount));
+/** 两张记录表（前、后）原文不同，逐格格式化后却完全一样时返回 false：两张都照原文写（RF01）。原文相同或只有一张表时照常格式化。 */
+const rowsFormatSafe = (before: unknown, after: unknown, labels: Record<string, string>) => {
+  if (!isRowList(before) || !isRowList(after) || same(before, after)) return true;
+  const shown = (rows: Record<string, unknown>[]) => JSON.stringify(rows.map((row) => Object.entries(row).map(([key, value]) => [key, a2AmountText(valueText(key, value, labels))])));
+  return shown(before) !== shown(after);
+};
 /** 一对前后值一起显示：原文不同、格式化后却变成一样时，两边都照原文写，不把真实的修改藏掉（OP-49/69）。 */
 const a2Pair = (before: string | undefined, after: string | undefined): [string | undefined, string | undefined] => {
   const shownBefore = before === undefined ? undefined : a2AmountText(before), shownAfter = after === undefined ? undefined : a2AmountText(after);
@@ -1434,8 +1442,8 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, facts,
     body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? shownTo : <Change from={shownFrom} to={shownTo} />}</Fact>{facts}</Facts>;
   } else if (a.kind === "rows") {
     body = <>
-      <ReviewRows labels={labels} name="" rows={a.rows} />
-      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows labels={labels} name="" rows={b.rows} /> : <p className="rd-note">{a2AmountText(b.kind === "text" ? b.text : valueText(undefined, b.value, labels))}</p>}</Fold>}
+      <ReviewRows labels={labels} name="" rows={a.rows} format={b?.kind !== "rows" || rowsFormatSafe(b.rows, a.rows, labels)} />
+      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows labels={labels} name="" rows={b.rows} format={rowsFormatSafe(b.rows, a.rows, labels)} /> : <p className="rd-note">{a2AmountText(b.kind === "text" ? b.text : valueText(undefined, b.value, labels))}</p>}</Fold>}
     </>;
   } else {
     const was = b?.kind === "object" ? b.value : undefined;
@@ -1458,11 +1466,12 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, facts,
         : <Facts>{rows.map((row) => <Fact key={row.key} k={String(row.label)}>{row.after === undefined ? undefined : a2AmountText(row.after)}</Fact>)}</Facts>)}
       {groups.map((key) => {
         const old = was?.[key];
+        const format = rowsFormatSafe(old, next[key], labels);
         return (
           <div key={key} className="a2-change-group">
             <div className="a2-change-sub">{labels[key] ?? key}{was && same(old, next[key]) && <span className="rd-weak"> · 没有改动</span>}</div>
-            <ReviewRows labels={labels} name={key} rows={next[key] as Record<string, unknown>[]} />
-            {isRowList(old) && !same(old, next[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} /></Fold>}
+            <ReviewRows labels={labels} name={key} rows={next[key] as Record<string, unknown>[]} format={format} />
+            {isRowList(old) && !same(old, next[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} format={format} /></Fold>}
           </div>
         );
       })}

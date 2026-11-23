@@ -25,12 +25,6 @@ export function fmtUsdCompact(n: number): string {
   return (neg ? "-" : "") + out;
 }
 
-function numberText(n: number, maxFraction: number | undefined, rounding: "intl" | "fixed"): string {
-  if (!Number.isFinite(n) || maxFraction === undefined) return String(n);
-  const rounded = rounding === "fixed" ? n.toFixed(maxFraction) : n.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: maxFraction });
-  return n !== 0 && /^[+-]?0(?:\.0*)?$/.test(rounded) ? String(n) : rounded;
-}
-
 const AMOUNT_TEXT = /^([+-]?)(\d{1,3}(?:,\d{3})+|\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/;
 
 /**
@@ -40,10 +34,19 @@ const AMOUNT_TEXT = /^([+-]?)(\d{1,3}(?:,\d{3})+|\d*)(?:\.(\d*))?(?:[eE]([+-]?\d
  * 例：1234.500000 → 1,234.5，12480.00 → 12,480，-0.10 → -0.1，0.000123 → 0.000123，0.00 → 0。
  * 后端给的十进制字符串不舍入、不截断。JS 数字按这一处原来的写法：不传 maxFraction 时照数字本身的十进制写（原来按有效位数写的入口），
  * 传了就在这个上限内取整，取整方式照原来的（rounding "intl" 是 toLocaleString 的取整，"fixed" 是 toFixed 的取整），再去末尾 0，不写科学计数法。
- * 非零的数在上限内会变成 0 时，照数字本身写，不写成 0（TX-20「非零的小数值不能显示成 0」）。只管显示，结果不进请求、比较和排序。
+ * 有上限时，非零的数在上限内会变成 0：写「小于 最小单位」，负数前面照写负号（例：上限 8 →「小于 0.00000001」「-小于 0.00000001」，同 TX-21）。
+ * 只管显示，结果不进请求、比较和排序。
  */
 export function amountDisplay(value: string | number | bigint, maxFraction?: number, rounding: "intl" | "fixed" = "intl"): string {
-  const raw = typeof value === "number" ? numberText(value, maxFraction, rounding) : String(value).trim();
+  if (typeof value === "number" && Number.isFinite(value) && maxFraction !== undefined) {
+    const rounded = rounding === "fixed" ? value.toFixed(maxFraction) : value.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: maxFraction });
+    if (value !== 0 && /^[+-]?0(?:\.0*)?$/.test(rounded)) return `${value < 0 ? "-" : ""}小于 ${maxFraction > 0 ? `0.${"0".repeat(maxFraction - 1)}1` : "1"}`;
+    return decimalDisplay(rounded, value);
+  }
+  return decimalDisplay(typeof value === "number" ? String(value) : String(value).trim(), value);
+}
+
+function decimalDisplay(raw: string, value: string | number | bigint): string {
   const match = AMOUNT_TEXT.exec(raw);
   if (!match || (!match[2] && !match[3])) return String(value);
   const [, sign, grouped, fractionRaw = "", exponent] = match;

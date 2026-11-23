@@ -13,7 +13,6 @@ import type { H4EventCapabilities } from "@/lib/admin/h-client";
 import { EVENT_CONTENT_LOCALES, type EventCopyReadiness } from "@/lib/admin/event-rule-form";
 import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { amountText, formatTime } from "./h4-promotion-ui";
-import { amountDisplay } from "@/lib/format";
 
 // ===== 取值小工具：照旧页面原样 =====
 export function text(value: unknown, fallback = "-") {
@@ -48,18 +47,16 @@ export function legacyName(value: unknown): { text: string; legacy: boolean } {
   return { text: nexGridBrandText(raw.replace(/\bNEX\b/gi, "UVT").replace(/\$\s?(?=\d)/g, "")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券"), legacy };
 }
 /**
- * 既有活动奖励给运营看时，金额按库里的六位权威金额写（OP-39、TX-20 去尾零）。后端按奖励名里的第一个数（去掉千分位）记这笔奖励，
- * 写进 DECIMAL(18,6) 时四舍五入到 6 位（OpsGrowthService legacyEventReward / rewardFlow）；列表回包不带这个数，这里按同一条规则得出它。
- * 第一个数后面紧跟 UVT 或 USDT（完整词）才改写这个数，其余文字照旧；奖励名原文照旧用于比较、预览和提交。App 显示的文字和奖项名不走这里。
+ * 既有活动奖励名给运营看时：按名字显示，只把名字里完整的金额词元（数字可带千分位，空格可有可无，币种 USDT、UVT、USD、VND、₫ 且是完整的词，
+ * 后面不紧跟「/币种」）的小数末尾 0 去掉；不舍入、不改正负号、不改大小写、不加千分位，带指数的和认不出的原样写。
+ * 名字原文照旧用于比较、预览和提交（OP-39）。列表回包不带库里的实额，这里不从名字推算它。App 显示的文字和奖项名不走这里。
  */
+const NAME_AMOUNT = /(?<![\w.,])([+-]?(?:\d{1,3}(?:,\d{3})+|\d+))\.(\d+)(?![\d.eE])(?=[ \u00a0]?(?:USDT|UVT|USD|VND|₫)(?![\w])(?!\/[A-Za-z₫]))/g;
 export function legacyRewardText(value: unknown): string {
-  const text = legacyName(value).text;
-  const first = /\d[\d,]*(?:\.\d+)?/.exec(text);
-  if (!first || !/^\s*(?:UVT|USDT)(?![\w])(?!\/[A-Za-z])/.test(text.slice(first.index + first[0].length))) return text;
-  const [whole, fraction = ""] = first[0].replace(/,/g, "").split(".");
-  const scaled = BigInt(whole + fraction.slice(0, 6).padEnd(6, "0")) + (fraction.length > 6 && fraction[6] >= "5" ? BigInt(1) : BigInt(0));
-  const digits = scaled.toString().padStart(7, "0");
-  return text.slice(0, first.index) + amountDisplay(`${digits.slice(0, -6)}.${digits.slice(-6)}`) + text.slice(first.index + first[0].length);
+  return legacyName(value).text.replace(NAME_AMOUNT, (_, whole: string, fraction: string) => {
+    const kept = fraction.replace(/0+$/, "");
+    return kept ? `${whole}.${kept}` : whole;
+  });
 }
 export function LegacyNameTag({ where }: { where: string }) {
   return <StatusTag tone="warn" icon={CircleAlert} explain={`系统存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的也是存的名称（只做品牌替换）。改${where}时写成 UVT。`}>旧名称</StatusTag>;
