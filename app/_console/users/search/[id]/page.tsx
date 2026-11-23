@@ -789,25 +789,21 @@ export default function UserDetailPage() {
     const generation = requestGeneration.current;
     const active = () => generation === requestGeneration.current && currentReadKey.current === readKey && !controller.signal.aborted;
     setReferralRetrying(true);
-    // A failure opens the team fold by default. Keep that open state after recovery too.
-    setOpenFolds(current => current.team === undefined ? { ...current, team: true } : current);
     try {
       const next = await readProfile(controller.signal);
       if (!active()) return;
-      setDetail(current => current && {
+      // Keep folds that were open or closed by default before replacing the data.
+      setOpenFolds(current => ({
+        security: securityAlert || securityFailed,
+        funds: fundsFailed || fundsAlert,
+        devices: devicesFailed || devicesAlert,
+        team: teamFailed,
+        records: recordsAlert || recordsFailed,
         ...current,
-        referral: next.referral,
-        // The latest response determines which team sections are still visible.
-        team: next.team == null ? next.team : current.team,
-        vrank: next.vrank == null ? next.vrank : current.vrank,
-        engagement: next.engagement == null ? next.engagement : current.engagement,
-        summary: current.summary && {
-          ...current.summary,
-          teamSize: next.summary?.teamSize,
-          directTeamSize: next.summary?.directTeamSize == null ? undefined : current.summary.directTeamSize,
-          teamVolumeUsd: next.summary?.teamVolumeUsd == null ? undefined : current.summary.teamVolumeUsd,
-        },
-      });
+      }));
+      setOpenRecordList(current => current === undefined ? visibleRecordList : current);
+      setDetail(next);
+      setReadAt(businessClock(Date.now()));
       setReferralError(null);
     } catch (error) {
       if (!active()) return;
@@ -1120,7 +1116,7 @@ export default function UserDetailPage() {
   }, []);
 
   // 从客服和工单带锚点进来时先展开所在的组，再定位（C1-L07）。等支付方式读完，不然上面的内容撑开会把目标顶走。
-  const layoutReady = !!detail && (supportScope || !!paymentMethods || !!paymentError);
+  const layoutReady = detailKey === readKey && !!detail && (supportScope || !!paymentMethods || !!paymentError);
   const ledgerUnread = !!detail?.financial && !Array.isArray((detail.ledger as JsonRecord | null | undefined)?.rows);
   const withdrawalExceptions = withdrawals.filter((row) => withdrawalTone(row) === "danger").length;
   const withdrawalsWaiting = withdrawals.filter((row) => withdrawalTone(row) === "warn").length;
@@ -1168,7 +1164,7 @@ export default function UserDetailPage() {
     teamPresent && navItem("team", "团队与互动", teamFailed, ""),
     recordsPresent && navItem("records", "记录", recordsFailed, failedPushCount + orderExceptions > 0 ? `${failedPushCount + orderExceptions} 条` : "", corrections.length > 0 ? "校正结果未知" : ""),
   ].filter((item) => item !== false);
-  const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold });
+  const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold, restoreKey: readKey });
   const foldProps = (group: string, alert: boolean) => ({
     alert,
     open: openFolds[group] ?? alert,
