@@ -59,7 +59,7 @@ import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from
 import { d5Trc20ReplayBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL } from "@/lib/admin/trc20-closed";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundRecoveryStatus, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundReadBlock, fundRecoveryStatus, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
@@ -457,6 +457,19 @@ const tightenCommands = createPendingMutationStore<TightenRecord>({
 
 function tightenReplayBlock(record: TightenRecord, params: D5ParamData | null) {
   return d5Trc20ReplayBlock({ ...record.changes, expectedVersion: record.expectedVersion }, params, record.trc20FeeBefore);
+}
+
+/**
+ * 只能查询的原请求（会打开 TRC20、改它的确认费，或读不到原值）：为什么不能重试和下一步写在行上常显（OP-126、OP-93），
+ * 不只放在按钮提示里；共用状态里叫人按原请求重试的那句换成读现值和操作记录。
+ */
+function queryOnlyStatus(reason: string, base: NonNullable<FundRecoveryRow["status"]>, canQuery: boolean, notFound = false) {
+  const head = /按原请求重试/.test(reason) ? `${reason}。` : `${reason}，不能按原请求重试。`;
+  const next = notFound ? "原审批单暂未查到；刷新页面读现在的值，到操作记录与审批核对。"
+    : base.label === "已处理" ? "后台已处理，看不出成没成；刷新页面读现在的值，再到操作记录与审批核对。"
+      : base.label === "结果未知" ? canQuery ? "先查询原结果，再刷新页面读现在的值，或到操作记录与审批核对。" : "刷新页面读现在的值，到操作记录与审批核对。"
+        : base.line;
+  return { ...base, line: head + next };
 }
 
 function replayReasonFor(block: string | undefined) {
@@ -962,9 +975,12 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       const needQuery = canLookupOwn && !queryMissing.includes(key);
       const retryDisabled = !loosenRecord.values || !commandAuthorities(loosenRecord.values).every(can) || proposeBlock ? NO_WRITE : loosenReplayBlock;
       const expiredNote = expired && !investigationResults[key] ? canLookupOwn ? expiredNext(loosenRecord) : EXPIRED_NO_QUERY : "";
+      const copy = { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" };
       return { key, title: "放宽提现参数", record: loosenRecord, outcome: investigationResults[key], createdAt: loosenRecord.createdAt, expired, canRetry: !expired && !retryDisabled,
-        canQuery: canLookupOwn, copy: { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
-        status: !canLookupOwn && !expired && !loosenReplayBlock ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
+        canQuery: canLookupOwn, copy,
+        status: loosenReplayBlock && !expired
+          ? queryOnlyStatus(loosenReplayBlock, fundRecoveryStatus({ record: loosenRecord, outcome: investigationResults[key], expired, canRetry: false, canQuery: canLookupOwn, copy }), canLookupOwn, queryMissing.includes(key))
+          : !canLookupOwn && !expired ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
         actions: <>
           {canLookupOwn && <FundCheckButtons record={loosenRecord} lookupWithoutOrigin outcome={investigationResults[key]} expired={expired} busy={!!recovering} checking={recovering === key}
             onCheck={() => void lookupLoosen()} onClose={() => setClosing(true)} />}
@@ -990,11 +1006,10 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       // 查到记为失败时，「可能已经生效」不再写。
       const outcome = investigationResults[record.commandKey];
       const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
-      // 查到「已处理」时共用的话会叫人按原请求重试；这条重试不了，改说下一步。
       const shown = replayReason && !expired ? fundRecoveryStatus({ record: target, outcome, expired, canRetry: false }) : undefined;
       return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), record: target, outcome: investigationResults[record.commandKey],
         createdAt: record.createdAt, expired, canRetry: !expired && !retryDisabled,
-        status: shown?.label === "已处理" ? { ...shown, line: "后台已处理，看不出成没成；这条不能按原请求重试，刷新页面读现在的费率，再到操作记录与审批核对。" } : undefined,
+        status: replayReason && shown ? queryOnlyStatus(replayReason, shown, !fundReadBlock(target)) : undefined,
         actions: <>
           <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
             onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
@@ -1003,7 +1018,6 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         </>,
         detail: <>
           <p>{`改动：${describeChanges(record.changes)}。${failed ? "" : "可能已经生效，"}有结果前这页不能再修改。`}{expired && !outcome && expiredNext(target)}</p>
-          {replayReason && !expired && <p>{`${replayReason}，不能按原请求重试。先点「查询原结果」，再刷新页面读现在的费率，或到操作记录与审批核对。`}</p>}
           {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
         </>,
         tech: `版本 v${record.expectedVersion} ｜ 理由 ${record.reason}` };
