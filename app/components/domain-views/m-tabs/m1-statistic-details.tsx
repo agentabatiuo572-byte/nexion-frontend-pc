@@ -6,6 +6,7 @@ import { nexGridBrandText, operatorNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, type PerformanceMetric, type SupportOverview } from "@/lib/admin/m-support-client";
 import { supportAnalyticsClient, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer, type SupportAnalyticsQuery, type SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
 import "./m1-statistic-details.css";
+import { amountDisplay } from "@/lib/format";
 
 export const maintenanceLabels = { EXECUTION: "已执行维护", SUCCESSFUL_CYCLE: "成功周期", SUCCESSFUL_CUSTOMER: "成功客户", STOPPED: "暂停主动维护" } as const;
 export const fundLabels = { balance: "当前余额", successPrincipal: "成功提现金额", successNet: "成功提现实到", processingPrincipal: "处理中提现金额", net: "有效净额" } as const;
@@ -76,10 +77,9 @@ export function fundAmount(funds: SupportAnalyticsCustomer["funds"], metric: Exc
 function amountPlaces(values: ReadonlyArray<string | null | undefined>): number {
   return values.reduce<number>((max, value) => Math.max(max, (/^-?\d+(?:\.(\d+))?$/.exec(value ?? "")?.[1] ?? "").replace(/0+$/, "").length), 2);
 }
-function groupedAmount(value: string, places = 2): string {
-  const parts = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
-  if (!parts) return value;
-  return `${parts[1]}${parts[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(parts[3] ?? "").replace(/0+$/, "").padEnd(Math.max(2, places), "0")}`;
+/** 金额按全站写法（amountDisplay）：千分位、去掉末尾 0、整数不写小数点，不补零对齐；places 不再使用。认不出的原样写。 */
+function groupedAmount(value: string, _places?: number): string {
+  return amountDisplay(value);
 }
 function amountText(amount?: Amount, places?: number) {
   return amount?.confirmed != null ? groupedAmount(amount.confirmed, places) : amount?.observed == null ? "未知" : groupedAmount(amount.observed, places) + "（未核实完）";

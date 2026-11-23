@@ -35,6 +35,7 @@ import { compactSupportBoardValue } from "./support-leaderboard";
 import { AnalyticsFreshness } from "./analytics-freshness";
 import type { MCtx } from "./types";
 import "./m1-analytics-workbench.css";
+import { amountDisplay } from "@/lib/format";
 
 
 const M1SupervisorPool = dynamic(() => import("./m1-supervisor-pool").then(m => m.M1SupervisorPool), { loading: DomainModuleLoading });
@@ -151,8 +152,8 @@ export function analyticsErrorText(error: unknown): string {
 function dateText(value: string | null): string {
   return value === null ? "未知" : formatBusinessTimeCompact(value, "未知");
 }
-function Numeric({ value, observed, label, kind = "count", onClick, unavailable = false, places }: { value: string | null; observed?: string | null; label: string; kind?: "count" | "amount"; onClick?: () => void; unavailable?: boolean; places?: number }) {
-  const content = value === null ? "—" : kind === "amount" ? fullAmount(value, places) : value.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+function Numeric({ value, observed, label, kind = "count", onClick, unavailable = false, places }: { value: string | null; observed?: string | null; label: string; kind?: "count" | "amount" | "hashrate"; onClick?: () => void; unavailable?: boolean; places?: number }) {
+  const content = value === null ? "—" : kind === "amount" ? fullAmount(value, places) : kind === "hashrate" ? hashrateText(value, places) : value.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const explanation = unavailable ? "资料暂不可用" : content === "—" ? observed == null ? "资料未同步" : `已数到 ${observed}，完整数还在统计` : `已核实 ${value}${observed != null && observed !== value ? `，已数到 ${observed}` : ""}`;
   const quiet = content === "—" ? " sa-quiet sa-dash" : /^0(\.0+)?$/.test(content) ? " sa-quiet" : "";
   return <span className="sa-number-wrap">{onClick ? <button type="button" className={`rd-link sa-number sa-link${quiet}`} title={explanation} aria-label={`${label}：${explanation}；查看明细`} onClick={onClick}>{content}</button> : <span className={`sa-number${quiet}`} tabIndex={0} title={explanation} aria-label={`${label}：${explanation}`}>{content}</span>}</span>;
@@ -166,7 +167,12 @@ function MoneyValue({ money, label, onClick, places }: { money?: Money; label: s
 // Customer table (design ①): full amounts, a real value drills down, a real 0 stays plain, unknown is a muted "-".
 // Trailing zeros the backend pads are dropped; values shown side by side (one column, one card group) share
 // the most decimals any of them really needs, at least two.
-function fullAmount(value: string, places = 2): string {
+function fullAmount(value: string, _places?: number): string {
+  // 金额按全站写法（amountDisplay）：千分位、去掉末尾 0、整数不写小数点，同列不补零对齐（PRD §5A）。
+  return /^-?\d+(?:\.\d+)?$/.test(value) ? amountDisplay(value) : "—";
+}
+/** 算力不是金额，写法不变：同列补到 places 位（至少两位）。 */
+function hashrateText(value: string, places = 2): string {
   const parts = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
   if (!parts) return "—";
   const fraction = (parts[3] ?? "").replace(/0+$/, "").padEnd(Math.max(2, places), "0");
@@ -230,7 +236,7 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session }: 
   </>;
   }
   if (data.view === "FINANCE") return <Table label="授权客户资金事件" className="m1-analytics-table m1-finance-table"><colgroup><col /><col /><col /><col /><col /><col /></colgroup><thead><Tr><Th>客户 / 用户编码</Th><Th>事件类型</Th><Th>成功时间</Th><Th align="right">金额 · {unit}</Th><Th>历史覆盖</Th><Th sticky="end">详情</Th></Tr></thead><tbody>{data.records.map((row, index) => <Tr key={`${row.customerId}:${row.orderNo}:${row.succeededAt}:${index}`}><Td><Button variant="ghost" size="sm" title={name(row)} onClick={() => openProfile(row.customerId)}>{name(row)}</Button><span className="rd-note"><span className="m-user-code">{m1CustomerCode(row.customerId)}</span></span></Td><Td>{row.kind === "DEPOSIT" ? "充值" : row.kind === "DEVICE_PURCHASE" ? "购机" : row.kind === "CONSUMPTION" ? "付费消费" : "购机退款"}</Td><Td><span className="sa-nowrap" title={dateText(row.succeededAt)}>{row.succeededAt ? activityTime(row.succeededAt) : "—"}</span></Td><Td align="right"><Numeric value={row.amount} kind="amount" label={`此笔当前查到的金额 ${unit}`} onClick={() => openProfile(row.customerId)} places={amountPlaces(data.records.map(item => item.amount))} /></Td><Td><span className="sa-nowrap">{row.historyStatus === "READY" ? "已核实" : "历史未同步"}</span></Td><Td sticky="end"><Button size="sm" onClick={() => openProfile(row.customerId)}>客户资金详情</Button></Td></Tr>)}</tbody></Table>;
-  if (data.view === "DEVICES") return <Table label="当前托管设备" className="m1-analytics-table m1-device-table"><colgroup><col /><col /><col /><col /><col /><col /></colgroup><thead><Tr><Th>设备 / 用户编码</Th><Th>类型</Th><Th align="right">算力</Th><Th>持有 / 连接</Th><Th>取得来源</Th><Th sticky="end">详情</Th></Tr></thead><tbody>{data.records.map(row => <Tr key={row.deviceId}><Td><span title={row.deviceId}>{row.deviceId.length > 20 ? `${row.deviceId.slice(0, 8)}…${row.deviceId.slice(-8)}` : row.deviceId}</span><span className="rd-note">客户 <span className="m-user-code">{m1CustomerCode(row.customerId)}</span></span></Td><Td>{row.deviceType === "SHARE" || row.deviceType === "CLOUD_SHARE" ? "云份额" : row.deviceType === "DEVICE" ? "实体设备" : row.deviceType === "SERVER" ? "服务器" : "类型未知"}</Td><Td align="right"><Numeric value={row.hashrate} kind="amount" label="设备算力" onClick={() => openProfile(row.customerId)} places={amountPlaces(data.records.map(item => item.hashrate))} /></Td><Td>{row.holdingStatus === "AVAILABLE" ? "持有已核实" : "持有未知"}<span className="rd-note">{row.connectionStatus === "ONLINE" ? "在网" : row.connectionStatus === "OFFLINE" ? "离线" : row.connectionStatus === "NOT_APPLICABLE" ? "不适用" : "未知"}</span></Td><Td>{row.acquisition === "PAID_PURCHASE" ? "付费购买" : "来源未知"}</Td><Td sticky="end"><Button size="sm" onClick={() => openProfile(row.customerId)}>客户设备详情</Button></Td></Tr>)}</tbody></Table>;
+  if (data.view === "DEVICES") return <Table label="当前托管设备" className="m1-analytics-table m1-device-table"><colgroup><col /><col /><col /><col /><col /><col /></colgroup><thead><Tr><Th>设备 / 用户编码</Th><Th>类型</Th><Th align="right">算力</Th><Th>持有 / 连接</Th><Th>取得来源</Th><Th sticky="end">详情</Th></Tr></thead><tbody>{data.records.map(row => <Tr key={row.deviceId}><Td><span title={row.deviceId}>{row.deviceId.length > 20 ? `${row.deviceId.slice(0, 8)}…${row.deviceId.slice(-8)}` : row.deviceId}</span><span className="rd-note">客户 <span className="m-user-code">{m1CustomerCode(row.customerId)}</span></span></Td><Td>{row.deviceType === "SHARE" || row.deviceType === "CLOUD_SHARE" ? "云份额" : row.deviceType === "DEVICE" ? "实体设备" : row.deviceType === "SERVER" ? "服务器" : "类型未知"}</Td><Td align="right"><Numeric value={row.hashrate} kind="hashrate" label="设备算力" onClick={() => openProfile(row.customerId)} places={amountPlaces(data.records.map(item => item.hashrate))} /></Td><Td>{row.holdingStatus === "AVAILABLE" ? "持有已核实" : "持有未知"}<span className="rd-note">{row.connectionStatus === "ONLINE" ? "在网" : row.connectionStatus === "OFFLINE" ? "离线" : row.connectionStatus === "NOT_APPLICABLE" ? "不适用" : "未知"}</span></Td><Td>{row.acquisition === "PAID_PURCHASE" ? "付费购买" : "来源未知"}</Td><Td sticky="end"><Button size="sm" onClick={() => openProfile(row.customerId)}>客户设备详情</Button></Td></Tr>)}</tbody></Table>;
   const netPlaces = amountPlaces(data.records.map(row => row.lifetime.find(x => x.currency === currency)?.net.confirmed));
   const personal = data.scopeSummary.mode === "PERSONAL";
   return <Table label="客户统计" className="m1-analytics-table m1-customer-table"><colgroup><col /><col /><col /><col /><col /><col /></colgroup><thead><Tr><Th>{personal ? "客户" : "客户 / 专属客服"}</Th><Th>首充</Th><Th align="right">本人净贡献 · {unit}</Th><Th>最近活动</Th><Th>服务状态</Th><Th sticky="end">操作</Th></Tr></thead><tbody>{data.records.map(row => {
