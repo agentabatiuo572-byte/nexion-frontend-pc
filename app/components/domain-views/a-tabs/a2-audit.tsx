@@ -97,7 +97,7 @@ import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
-import { orderAmount } from "../e-tabs/data";
+import { ORDER_STATES, orderAmount, stateLabel } from "../e-tabs/data";
 import { e1GateText, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount } from "../f-tabs/f1-shared";
@@ -1415,6 +1415,8 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
   // 新建任务的变更前是「任务不存在：编号」：按新建显示，不画变更前。
   if (row.operationCode === "h3_mission_create" && row.after && h3MissionView({ operationCode: row.operationCode, after: row.after })) return "";
   if (row.operationCode === "h3_quest_config") return h3ConfigValue(row.obj, row.before);
+  // 退款、取消、终止单发起时记的是订单状态码（activated）：写订单页同名的中文状态，前后同一种语言（TX-32，复审 V10）。
+  if (["e4_order_refund", "e4_order_cancel", "e4_order_terminal"].includes(row.operationCode ?? "") && ORDER_STATES.includes(row.before)) return stateLabel(row.before);
   return deviceApprovalValue(changeBeforeText(row), row.operationCode);
 };
 /** F1 券冲正批准后的实际券处置（F1-BE-19）：只翻译批准时记下的结果，不从申请时的选择或券面额推断。原码只进「技术信息」。 */
@@ -2904,7 +2906,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{shortCodes(name)} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : shortCodes(name)} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`}
+                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`}
                         sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
                       <Td><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
