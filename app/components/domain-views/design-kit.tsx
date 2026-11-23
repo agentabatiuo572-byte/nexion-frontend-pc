@@ -596,6 +596,7 @@ type EditReviewResult = {
   facts?: ReactNode;
 };
 type EditReview = {
+  conflictOnly?: boolean;
   read: (value: string, signal: AbortSignal, refresh: boolean) => Promise<EditReviewResult>;
   isConflict: (error: unknown) => boolean;
   conflictNote: (readLatest?: () => void) => ReactNode;
@@ -3829,7 +3830,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const reviewRequest = useRef<AbortController | null>(null);
   useEffect(() => () => reviewRequest.current?.abort(), []);
   const readyReview = editReview?.kind === "ready" ? editReview.result : undefined;
-  const requireReason = reasonRequested && (!review || !!readyReview || pendingReason !== undefined);
+  const requireReason = reasonRequested && (!review || (review.conflictOnly && !editReview) || !!readyReview || pendingReason !== undefined);
   // 原生数字框填坏时 value 是空串，只有 validity 分得清；有意清空是另一个状态（CP-54）。
   const [numberBad, setNumberBad] = useState(false);
   const [emptyChosen, setEmptyChosen] = useState(false);
@@ -3979,6 +3980,12 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     });
     return () => { active = false; };
   }, [reasonPolicyOptional, requireReason]);
+  const closeOnPermissionDenied = (error: unknown) => {
+    if (!isPermissionDenied(error)) return false;
+    announcePermissionDenied();
+    onClose();
+    return true;
+  };
   const loadEditReview = async (refresh = false) => {
     if (!review || reviewRequest.current) return;
     const controller = new AbortController();
@@ -3989,7 +3996,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       const result = await review.read(newVal, controller.signal, refresh);
       if (!controller.signal.aborted) setEditReview({ kind: "ready", result, refresh });
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || closeOnPermissionDenied(error)) return;
       if (review.isConflict(error)) {
         setReason("");
         setEditReview({ kind: "conflict" });
@@ -4004,7 +4011,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   };
   const handleConfirm = async () => {
     if (!canConfirm) return;
-    if (review && !editReview && pendingReason === undefined) {
+    if (review && !review.conflictOnly && !editReview && pendingReason === undefined) {
       await loadEditReview();
       return;
     }
@@ -4016,11 +4023,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       else await onConfirm(requireReason ? reason.trim() : "", submittedValue || (emptyChosen && spec?.emptyOption ? "" : undefined), activeBusinessForm ? businessValue : undefined);
     } catch (error) {
       // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
-      if (isPermissionDenied(error)) {
-        announcePermissionDenied();
-        onClose();
-        return;
-      }
+      if (closeOnPermissionDenied(error)) return;
       if (review?.isConflict(error)) {
         setReason("");
         setEditReview({ kind: "conflict" });
@@ -4084,7 +4087,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
       : inlineApproval?.queryOnly ? "只能查询原结果，不能重发。"
         : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。";
-  const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : review && !editReview ? "下一步" : readyReview?.confirmLabel ?? (approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined) ?? confirmLabel);
+  const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : review && !review.conflictOnly && !editReview ? "下一步" : readyReview?.confirmLabel ?? (approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined) ?? confirmLabel);
   // 放大提示固定在关键信息层，先于所有填写项。
   const coverageFirst = surface && (!approval || rdApproval);
   // 事实区随输入变（比如改基准价时买入价写「现在 → 改后」）：新值填好才交给页面。
