@@ -7,7 +7,7 @@ import {
   AlertTriangle, ArrowUpDown, BarChart3, CalendarCheck, CircleSlash, Dices, Gift, Lock, Pencil, Plus, RefreshCw, ShieldCheck, Sparkles, Trophy, Users,
 } from "lucide-react";
 import {
-  BlockState, Button, Change, ChartLegend, ColumnChart, Conclusion, ConfigList, ConfigRow, Fact, Facts, Notice, PageHeader, PageTabs, Panel, ReleaseModal,
+  BlockState, Button, Change, ChartLegend, ColumnChart, Conclusion, ConfigList, ConfigRow, Fact, Facts, Notice, PageHeader, PageTabs, Panel,
   SegmentBar, Stat, StatBand, StatusTag, StepBar, useTabIds,
 } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
@@ -15,7 +15,7 @@ import {
   fetchH5CheckIn,
 } from "@/lib/admin/h-client";
 import { h5Amount, h5RuleWriteRefusal, h5StreakReward, h5WholeReward, parseH5Model } from "@/lib/admin/h5-contract";
-import { useH5Mutations, type H5Change, type H5PendingCommand } from "@/lib/admin/use-h5-mutations";
+import { h5OriginalNonMultiplierPowerUpSummary, h5PowerUpDayChange, useH5Mutations, type H5Change, type H5PendingCommand } from "@/lib/admin/use-h5-mutations";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -89,7 +89,7 @@ function ruleValueText(rule: CheckInRule) {
   return copy.unit === "%" ? `${cur}%` : `${cur} ${copy.unit}`;
 }
 
-type H5Confirm = ActionConfirmReq & { target: string; commandKey?: string; original?: H5PendingCommand; confirmLabelForValue?: (value?: string) => string };
+type H5Confirm = ActionConfirmReq & { target: string; commandKey?: string; original?: H5PendingCommand; confirmLabelForValue?: (value?: string) => string; directionOf?: (values: Record<string, string>) => "approval" | "direct" | null };
 
 type Tab = "rules" | "streak" | "power" | "earn" | "idle";
 
@@ -115,6 +115,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   confirmation.current = mc;
   const conflictDraft = useHConflictDraft(!loading && !error && fresh.current);
   const [approvalLabel, setApprovalLabel] = useState(false);
+  // 成长权益这一笔的方向，填了有效新值才有（OP-19、OP-25）。
+  const [powerDirection, setPowerDirection] = useState<"approval" | "direct" | null>(null);
   const openActionConfirm = (req: H5Confirm) => {
     if (!req.original && (!fresh.current || mutations.record(req.target))) {
       toast("请先查询原结果并成功刷新签到数据，再发起新的修改。");
@@ -122,6 +124,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     }
     const next = conflictDraft.action(req, () => !!mutations.record(req.target)), values = next.getPendingBusinessValue?.();
     setApprovalLabel(next.businessForm?.kind === "multi-field" && values ? next.businessForm.amplifies?.(values) ?? false : false);
+    setPowerDirection(values && next.directionOf ? next.directionOf(values) : null);
     setMc(next);
   };
 
@@ -147,7 +150,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   }, () => fresh.current);
   // 保存被「别人先改过」拒绝：页面已重读，留住这次要改的内容给运营对照。
   const [stale, setStale] = useState<{ name: string; before: string; after: string } | null>(null);
-  const [releasing, setReleasing] = useState<H5PendingCommand | null>(null);
   const runChange = async (change: Parameters<typeof mutations.run>[0]) => {
     const request = confirmation.current;
     try { await mutations.run(change, commandKey => { if (request) request.commandKey = commandKey; }); setStale(null); } catch (error) {
@@ -336,17 +338,27 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     const snapshot = original?.change.snapshot ?? model!;
     const target = `power:${powerUp.id}`;
     const multiplier = powerUp.effectType === "CHECKIN_MULTIPLIER";
+    const originalSummary = original && h5OriginalNonMultiplierPowerUpSummary(original);
     const name = operatorCopyText(powerUp.label);
     const currentNote = text(powerUp.note, "");
-    const amplifies = (values: Record<string, string>) => Number(values.day) < powerUp.day
+    const validDay = (value: string) => /^\d+(?:\.0+)?$/.test(value) && Number(value) >= 1 && Number(value) <= 365;
+    const validNote = (value: string) => /^\d+(?:\.\d{1,4})?$/.test(value) && (h5Amount(value) ?? BigInt(0)) > BigInt(0) && Number(value) < 100000000;
+    // 徽章的天数打开时是空的（OP-19）：空值或填坏的天数不算提前。
+    const amplifies = (values: Record<string, string>) => validDay(values.day ?? "") && Number(values.day) < powerUp.day
       || (multiplier && (h5Amount(values.note) ?? BigInt(0)) > (h5Amount(currentNote) ?? BigInt(0)));
-    openActionConfirm({ target, original, briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
+    const hasChange = (values: Record<string, string>) => Number(values.day) !== powerUp.day
+      || multiplier && h5Amount(values.note ?? "") !== h5Amount(currentNote);
+    const directionOf = (values: Record<string, string>): "approval" | "direct" | null => {
+      if (!validDay(values.day ?? "") || multiplier && !validNote(values.note ?? "")) return null;
+      return !hasChange(values) ? null : amplifies(values) ? "approval" : "direct";
+    };
+    openActionConfirm({ target, original, briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号", directionOf,
       action: `连续签到成长奖励 · ${operatorCopyText(powerUp.label)}`,
       title: `调整${name}`,
-      detail: <>当前连续签到 <b>{powerUp.day}</b> 天解锁。{multiplier ? "签到倍率会改变用户每天签到拿多少。" : "说明文字只改显示。"}</>,
+      detail: <>当前连续签到 <b>{powerUp.day}</b> 天解锁。{multiplier && "签到倍率会改变用户每天签到拿多少。"}</>,
       effect: <StatusTag tone="neutral" icon={ArrowUpDown} explain={<>
         <p>{multiplier ? "提前解锁或调高倍率" : "提前解锁"}：提交审批，{FUND_APPROVER}批准后才生效，提交人不能批自己的。</p>
-        <p>{multiplier ? "推后或调低倍率" : "推后或只改说明"}：确认后立即生效。已经激活的权益不收回。</p>
+        <p>{multiplier ? "推后或调低倍率" : "推后"}：确认后立即生效。已经激活的权益不收回。</p>
       </>}>{multiplier ? "提前、调高要批准" : "提前要批准"} · 其余立即生效</StatusTag>,
       facts: (
         <Facts>
@@ -356,17 +368,25 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           {fundApproverFacts(multiplier ? "提前或调高" : "提前", "h5_power_up_config")}
         </Facts>
       ),
-      statedBrief: (values) => amplifies(values)
-        ? { impact: `${multiplier ? "提前解锁或调高倍率" : "提前解锁"}会让平台多付 UVT：提交审批，${FUND_APPROVER}批准后才生效。已有的签到记录不变。`, check: "核对天数和倍率；理由写清依据或工单号。" }
-        : { impact: "确认后立即生效：之后达到天数的人按新设置激活；已经激活的权益不收回，已有的签到记录不变。", check: "核对天数和倍率；理由写清依据或工单号。" },
-      coverageLead: multiplier ? "提前解锁或调高倍率会让平台多付 UVT" : "提前解锁会让平台多付",
+      statedBrief: (values) => {
+        if (originalSummary) return { impact: `原操作：${originalSummary}。`, check: "核对原操作和理由。" };
+        const check = multiplier ? "核对天数和倍率；理由写清依据或工单号。" : "核对解锁天数；理由写清依据或工单号。";
+        const direction = directionOf(values);
+        return direction === "approval"
+          ? { impact: multiplier ? `提前解锁或调高倍率会让平台多付 UVT：提交审批，${FUND_APPROVER}批准后才生效。已有的签到记录不变。` : `提前解锁：提交审批，${FUND_APPROVER}批准后才生效。已有的签到记录不变。`, check }
+          : direction === "direct"
+            ? { impact: "确认后立即生效：之后达到天数的人按新设置激活；已经激活的权益不收回，已有的签到记录不变。", check }
+            : { impact: "之后达到天数的人按新设置激活；已经激活的权益不收回，已有的签到记录不变。", check };
+      },
+      coverageLead: multiplier ? "提前解锁或调高倍率会让平台多付 UVT" : "提前解锁要检查兑付覆盖率",
       coverageCheck: "提交审批时和批准时都检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
       amplifies: false,
       businessForm: {
         kind: "multi-field",
-        requireAnyChange: true,
+        // 非倍率权益不显示说明文字：重开的原操作可能只改了说明文字，看不到改动也要能按原请求重试。
+        requireAnyChange: multiplier ? hasChange : !original,
         amplifies,
-        onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); return values; },
+        onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); setPowerDirection(directionOf(values)); return values; },
         feedback: values => {
           const day = Number(values.day);
           const badDay = !/^\d+(?:\.0+)?$/.test(values.day) || !Number.isInteger(day) || day < 1 || day > 365;
@@ -374,10 +394,9 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           return { invalid: badDay || badNote, message: badDay ? "解锁天数须为 1–365 天的整数" : badNote ? displayAdminError(new Error("POWER_UP_MULTIPLIER_INVALID")) : "", field: badDay ? "day" : "note" };
         },
         fields: [
-          { key: "day", label: "解锁天数", inputKind: "number", current: String(powerUp.day), placeholder: "例如 30", help: "连签满几天解锁，1–365 天" },
-          multiplier
-            ? { key: "note", label: "签到倍率", inputKind: "text", current: text(powerUp.note, ""), placeholder: "例如 1.5", required: true, help: "激活后每天的签到奖励乘这个数；不能留空，最多 4 位小数" }
-            : { key: "note", label: "说明文字", inputKind: "text", current: text(powerUp.note, ""), placeholder: "可留空", required: false },
+          // 徽章只改天数，是单值修改：新值留空，现在的天数看「现在」那一行（OP-19）。
+          { key: "day", label: "解锁天数", inputKind: "number", current: String(powerUp.day), mustChoose: !multiplier, placeholder: "例如 30", help: "连签满几天解锁，1–365 天" },
+          ...(multiplier ? [{ key: "note", label: "签到倍率", inputKind: "text" as const, current: text(powerUp.note, ""), placeholder: "例如 1.5", required: true, help: "激活后每天的签到奖励乘这个数；不能留空，最多 4 位小数" }] : []),
         ],
       },
       run: async (reason, _value, form) => {
@@ -385,12 +404,17 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         if (powerUp.businessAvailable === false) throw new Error("H5_POWER_UP_BUSINESS_RETIRED");
         const day = Number(form.day);
         if (!/^\d+(?:\.0+)?$/.test(form.day) || !Number.isInteger(day) || day < 1 || day > 365) throw new Error("POWER_UP_DAY_INTEGER_REQUIRED");
-        const note = form.note ?? "";
+        // 非倍率权益的说明文字 App 不显示，后台也不再给改（产品 2026-11-23）；照旧把存着的原值发回去。
+        const note = multiplier ? form.note ?? "" : currentNote;
         if (multiplier && (!/^\d+(?:\.\d{1,4})?$/.test(note) || (h5Amount(note) ?? BigInt(0)) <= BigInt(0) || Number(note) >= 100000000)) throw new Error("POWER_UP_MULTIPLIER_INVALID");
-        await runChange({ target, action: `连续签到成长奖励 · ${name}`, name: `连续签到成长奖励 · ${name}`, before: `连签 ${powerUp.day} 天；${currentNote}`, after: `连签 ${day} 天；${note}`,
+        const days = h5PowerUpDayChange(powerUp.day, day);
+        const auditValues = { beforeValue: `${days.before}；${currentNote}`, afterValue: `${days.after}；${note}` };
+        await runChange({ target, action: `连续签到成长奖励 · ${name}`, name: `连续签到成长奖励 · ${name}`,
+          before: multiplier ? auditValues.beforeValue : days.before, after: multiplier ? auditValues.afterValue : days.after,
           success: `${name} 已更新`, reason, snapshot, businessValue: { day: form.day, note }, approvalRequired: amplifies(form),
           direct: { path: `/check-in/power-ups/${powerUp.id}/config`, body: { day, note, expectedDay: powerUp.day, expectedNote: currentNote } },
-          proposal: proposal("h5_power_up_config", { powerUpId: powerUp.id, day, note, expectedDay: powerUp.day, expectedNote: currentNote }),
+          proposal: { ...proposal("h5_power_up_config", { powerUpId: powerUp.id, day, note, expectedDay: powerUp.day, expectedNote: currentNote }),
+            ...(!multiplier ? auditValues : {}) },
         });
       },
     });
@@ -520,20 +544,16 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   };
   const queryOriginal = async (original: H5PendingCommand) => {
     try {
-      const result = await mutations.query(original);
-      if (result === null && isRetryExpired(original) && !original.acknowledged && !original.ticket) {
-        toast("原申请已过期，查询确认没有这张审批单；确认后可以点「查无此单时解除」。");
-      }
+      await mutations.query(original);
     } catch (err) { toast(displayAdminError(err)); }
   };
 
   // 连签档后端存的旧名称（+5 NEX）原样标成旧名称，不让裸的 NEX 出现。
   const shownReward = (value: string) => /\bNEX\b/i.test(value) ? `旧名称「${value}」` : value;
-  const releasable = (record: H5PendingCommand) => record.request.kind !== "direct" && isRetryExpired(record) && !record.acknowledged && !record.ticket;
   const recoveryRows: H5RecoveryRow[] = mutations.records.map((record) => ({
     key: record.commandKey,
     name: record.change.name,
-    change: `${shownReward(record.change.before)} → ${shownReward(record.change.after)}`,
+    change: h5OriginalNonMultiplierPowerUpSummary(record) ?? `${shownReward(record.change.before)} → ${shownReward(record.change.after)}`,
     submittedAt: record.createdAt,
     tag: record.ticket ? pendingTag(...(record.change.target.startsWith("rule:") ? [RULE_APPROVER, RULE_PENDING_NOTE] : [FUND_APPROVER, FUND_PENDING_NOTE]) as [string, string])
       : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind === "direct" ? "direct" : "approval") : unknownTag(record.request.kind === "direct" ? "direct" : "approval"),
@@ -541,7 +561,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     actions: <>
       <Button size="sm" onClick={() => void queryOriginal(record)}>查询原结果</Button>
       {!isRetryExpired(record) && !record.acknowledged && !record.ticket && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原请求重试</Button>}
-      {releasable(record) && <Button size="sm" variant="ghost" onClick={() => setReleasing(record)}>查无此单时解除</Button>}
     </>,
   }));
   const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
@@ -557,15 +576,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       </>}
       link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />
   );
-  const releaseModal = releasing && <ReleaseModal label={<>{releasing.change.name} · {shownReward(releasing.change.before)} → {shownReward(releasing.change.after)}</>}
-    explain={<><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></>}
-    onCancel={() => setReleasing(null)} onConfirm={() => {
-      const record = releasing;
-      setReleasing(null);
-      void mutations.releaseExpired(record)
-        .then(() => toast("已解除这条记录，可以重新提交。"))
-        .catch(cause => toast(displayAdminError(cause)));
-    }} />;
   const staleNotice = stale && <Notice tone="warn" title={`没有保存：「${stale.name}」已被别人改过`}
     action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
     {`你打开时是 ${shownReward(stale.before)}，要改成 ${shownReward(stale.after)}。${error || !model ? "最新值没读到；重试读取成功后，会带着你填的内容重新打开。" : "已读到最新值，你填的还在，核对后再提交。"}`}
@@ -585,6 +595,14 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   );
 
   const activeCommand = mc ? mutations.record(mc.target) : undefined;
+  // 成长权益的生效标签：填了有效新值按这一笔的方向写；按原请求重试时按原请求的路径写（OP-25、OP-37、OP-60）。
+  const powerEffectTag = (direction: "approval" | "direct", retry: boolean) => direction === "approval"
+    ? <StatusTag tone="progress" filled explain={retry ? "按原请求重试：原来提交的是审批申请，批准后才生效。" : `${FUND_APPROVER}批准后才生效，提交人不能批自己的；批准前仍按现在的设置。`}>批准后生效</StatusTag>
+    : <StatusTag tone="progress" filled explain={retry ? "按原请求重试：原来是直接保存，重发成功就生效。" : "不用审批，确认后就按新设置；已经激活的权益不收回。"}>立即生效</StatusTag>;
+  const retryCommand = mc?.original ?? activeCommand;
+  const confirmEffect = !mc?.target.startsWith("power:") ? mc?.effect
+    : retryCommand ? powerEffectTag(retryCommand.request.kind === "direct" ? "direct" : "approval", true)
+    : powerDirection ? powerEffectTag(powerDirection, false) : mc.effect;
   const confirmModal = mc && (
     <OperationConfirmModal key={`${mc.target}:${mc.original?.commandKey ?? mc.formKey ?? "new"}`} briefKind={mc.briefKind}
       action={mc.action}
@@ -594,7 +612,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       edit={mc.edit && mc.original ? { ...mc.edit, initialValue: mc.original.change.editValue } : mc.edit}
       businessForm={mc.businessForm}
       facts={mc.facts}
-      effect={mc.effect}
+      effect={confirmEffect}
       content={mc.content}
       initialReason={mc.original?.change.reason ?? mc.initialReason}
       getPendingReason={() => mutations.record(mc.target)?.change.reason}
@@ -626,14 +644,15 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               extra: <Fact k="审批单名称">{`「${findHighOp(op)!.action}」`}</Fact> }));
             return;
           }
-          toast(err instanceof Error ? displayAdminError(err) : "操作失败");
+          // 框还开着就只在框里说，结果未知另有页顶恢复条（VS-107、ST-57）；框已经关了才用轻提示。
+          if (confirmation.current !== mc) toast(err instanceof Error ? displayAdminError(err) : "操作失败");
           throw err;
         }
       }}
     />
   );
 
-  if (loading && !model) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="签到数据读取中…" />{confirmModal}{releaseModal}</div>;
+  if (loading && !model) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="签到数据读取中…" />{confirmModal}</div>;
   if (error || !model) {
     return (
       <div className="h5-page">
@@ -642,7 +661,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         {staleNotice}
         <BlockState state="error" title="签到数据读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改签到规则和奖励。`} onRetry={() => void refresh()} retrying={loading} />
         {confirmModal}
-        {releaseModal}
       </div>
     );
   }
@@ -682,25 +700,24 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const plainChance = luckyValid ? Number((100 - p15Number - p2Number).toFixed(6)) : null;
 
   const conclusion = (() => {
-    const signText = stats.todaySign == null ? "今天签到人数读不到" : `今天 ${countText(stats.todaySign)} 人签到，签到率 ${text(stats.signRate, "—")}`;
     const coverageText = !coverageKnown
       ? "兑付覆盖率读不到"
       : coverage.reliable === false
-        ? `兑付覆盖率 ${coverageRatio}% 数据不可靠，加奖励、提前解锁这类修改会被拒`
+        ? "兑付覆盖率数据不可靠，加奖励、提前解锁这类修改会被拒"
         : coverage.redlineBreached === true
-          ? `兑付覆盖率 ${coverageRatio}% 低于红线 ${text(coverage.redlinePct, "—")}%，加奖励、提前解锁这类修改会被拒`
-          : `兑付覆盖率 ${coverageRatio}%，高于红线`;
+          ? "兑付覆盖率低于红线，加奖励、提前解锁这类修改会被拒"
+          : "兑付覆盖率高于红线";
+    // 结论只写状态和下一步（ST-74）：签到人数和签到率在「今日签到」卡里，原操作的条数在页顶恢复条里。
+    const summary = [stats.todaySign == null ? "今天签到人数读不到" : undefined, coverageText,
+      unknownCount > 0 ? "有修改结果未知，先查询原结果" : undefined, pendingCount > 0 ? "有修改在等批准" : undefined].filter(Boolean).join("；");
     return (
       <Conclusion state={unknownCount || coverageBad ? "warn" : "neutral"} icon={CalendarCheck}
         explain={<>
-          <p>签到人数按业务日期算，同一个人一天只算一次；签到率的分母是有连签记录的人，不是注册总人数。</p>
-          <p>兑付覆盖率低于红线或不可靠时，让平台多付的修改会被拒绝：连签、成长、收益三类提交和批准时都查，签到规则只在批准时查。</p>
+          <p>兑付覆盖率低于红线或不可靠时，加奖励、调高概率或倍率、降门槛和提前解锁成长权益都会被拒：连签、成长、收益三类提交和批准时都查，签到规则只在批准时查。</p>
           <p>统计读不到时也显示 0，这页暂时分不出「真的是 0」和「没读到」。</p>
         </>}
         action={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>看待批准的申请</Link> : undefined}>
-        {`${signText}；${coverageText}`}
-        {unknownCount > 0 && `；${unknownCount} 个修改结果未知，先查询原结果`}
-        {pendingCount > 0 && `；${pendingCount} 个修改在等批准`}
+        {summary}
       </Conclusion>
     );
   })();
@@ -784,7 +801,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         sub={`${model.powerUps.length} 档 · 用户在 App 激活`}
         explain={<>
           <p>连签到这一天解锁，用户在 App 签到页自己激活；签到加成激活后，之后每天的签到奖励再乘它，断签后失效。</p>
-          <p>提前解锁、调高倍率要{FUND_APPROVER}批准；推后、调低、只改说明文字立即生效。已经激活的权益不收回，改倍率后已激活的人之后也按新倍率。</p>
+          <p>提前解锁、调高倍率要{FUND_APPROVER}批准；推后、调低立即生效。已经激活的权益不收回，改倍率后已激活的人之后也按新倍率。</p>
           <p>指向的业务停用后这一档只读：App 里显示已停用、不能激活，已获得的记录保留。</p>
         </>}>
         {model.powerUps.length
@@ -897,7 +914,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       {header}
       {recovery}
       {staleNotice}
-      {releaseModal}
       {conclusion}
 
       <StatBand label="签到概况">
@@ -916,7 +932,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         <Stat tone={!coverageKnown ? undefined : coverageBad ? "danger" : "ok"} icon={ShieldCheck} label="兑付覆盖率"
           value={coverageKnown ? String(coverageRatio) : "—"} unit={coverageKnown ? "%" : undefined}
           sub={`红线 ${text(coverage.redlinePct, "—")}%${coverage.reliable === false ? " · 数据不可靠" : ""}`}
-          explain="平台能兑付的钱和要付的钱之比。加奖励、调高概率、提前解锁、降门槛这类会让平台多付的修改，系统会检查它不低于红线。" />
+          explain="平台能兑付的钱和要付的钱之比。会让平台多付的修改（加奖励、调高概率或倍率、降门槛）和所有提前解锁，系统都会检查它不低于红线；徽章提前解锁不多付，也照样检查。" />
       </StatBand>
 
       <div className="rd-split">

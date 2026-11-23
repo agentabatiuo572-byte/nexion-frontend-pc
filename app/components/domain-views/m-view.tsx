@@ -1075,6 +1075,7 @@ async function applyMBackendWrite(
       serviceTypes?: Array<"support" | "advisor">;
       tags?: string[];
       maxConcurrent?: number;
+      maxConcurrentUnlimited?: boolean;
       enabled?: boolean;
       transferable?: boolean;
       busy?: boolean;
