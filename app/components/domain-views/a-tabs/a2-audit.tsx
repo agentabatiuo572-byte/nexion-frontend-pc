@@ -181,7 +181,8 @@ function approvalExecutorLabel(w: A2OperationRow) {
   // K1RiskApproval.validateChecker：有效超级管理员且有审批批准权限，不能是提交人。
   if (w.operationCode === "k1_release_param" || w.operationCode === "k1_earnings_release") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "c2_session_revoke_all" || !w.operationCode && w.action.startsWith("强制登出 · ")) return "另一位有审批批准权限和退出全部设备权限的超级管理员";
-  if (w.operationCode === "e1_hosting_centers_update") return "另一位有审批批准权限和商品修改权限的管理员";
+  // 后端 ROLE_GATE_E1_SKU 原文带权限码 device_e1_write，这里写成同一含义的权限名。
+  if (["e1_hosting_centers_update", "e1_sku_create", "e1_sku_update"].includes(w.operationCode ?? "")) return "另一位有审批批准权限和商品修改权限的管理员";
   if (w.operationCode === "h5_earn_milestone_create") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "f4_quota_tier_create") return "另一位有审批批准权限和购机名额修改权限的超级管理员";
   // H5GrowthApproval：三类成长审批都要超级管理员且有审批批准权限。
@@ -301,6 +302,21 @@ function fBatchLogItems(log: { obj: string; delta: string }): FBatchItem[] | und
   if (sides.length !== 2) return undefined;
   const items = fBatchItems(sides[0], sides[1]);
   return items && (F_BATCH_DIGEST.test(log.obj) || log.obj === items.map((item) => item.key).join(",")) ? items : undefined;
+}
+/**
+ * E1 商品提案的操作记录：前后值是提案时冻结的两份商品快照（JSON 原文，后端 createProposalOnce 写入）。拆回两份，按审批单详情同一套行写；
+ * 拆不出两份商品快照时照原文显示。
+ */
+function e1SkuLogSides(log: { delta: string }): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
+  const isSku = (text: string) => {
+    try { const value: unknown = JSON.parse(text); return isRecord(value) && typeof value.skuId === "string"; } catch { return false; }
+  };
+  if (log.delta.startsWith("— → ") && isSku(log.delta.slice(4))) return { before: "", after: log.delta.slice(4), operationCode: "e1_sku_create" };
+  for (let at = log.delta.indexOf("} → {"); at >= 0; at = log.delta.indexOf("} → {", at + 1)) {
+    const before = log.delta.slice(0, at + 1), after = log.delta.slice(at + 4);
+    if (isSku(before) && isSku(after)) return { before, after, operationCode: "e1_sku_update" };
+  }
+  return undefined;
 }
 const fBatchSummary = (items: readonly FBatchItem[]) => `${fBatchLabel(items[0], fBatchPages(items))} ${items[0].before} → ${items[0].after}${items.length > 1 ? ` 等 ${items.length} 项` : ""}`;
 /** 涉及的页面名；认不出的项写「团队参数」。 */
@@ -2814,6 +2830,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 ) : logPageRows.map((l) => {
                   const act = logActionShown(l.action);
                   const obj = logObject(l);
+                  const e1Sides = e1SkuLogSides(l);
+                  const e1Change = e1Sides && changeSummary(e1Sides.before, e1Sides.after, [], e1Sides.operationCode);
                   return (
                     <Tr key={l.id} selected={l.id === logId} onOpen={() => setLogId(l.id)}>
                       <Td sticky="start"><Cell num main={thisYear(logTime(l))} title={logTime(l)} /></Td>
@@ -2822,7 +2840,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                       <Td>{fBatchLogItems(l) || F_BATCH_DIGEST.test(l.obj) ? <Cell main="整批调整的团队参数" title={l.obj} />
                         : obj.id ? <Cell main={obj.id.length > 16 ? `${obj.id.slice(0, 8)}…${obj.id.slice(-6)}` : obj.id} sub={obj.kind} title={[obj.kind, obj.id].filter(Boolean).join(" · ")} />
                           : <Cell main={obj.kind} title={obj.kind} />}</Td>
-                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : <Cell mono main={logDeltaText(l.delta)} title={logDeltaText(l.delta)} />}</Td>
+                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : e1Change ? <Cell main={e1Change.main} sub={e1Change.sub} title={e1Change.main} /> : <Cell mono main={logDeltaText(l.delta)} title={logDeltaText(l.delta)} />}</Td>
                     </Tr>
                   );
                 })}
@@ -2979,6 +2997,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /* 操作记录抽屉 */
   const shownLog = logShown.current;
+  const shownLogE1 = shownLog ? e1SkuLogSides(shownLog) : undefined;
   const logIndex = shownLog ? logPageRows.findIndex((l) => l.id === shownLog.id) : -1;
   const needIdem = shownLog ? shownLog.action.includes("withdraw") || shownLog.action.includes("balance") || shownLog.action.includes("operation_confirmed") : false;
   const requestNo = shownLog ? shownLog.idempotencyKey || (needIdem ? "缺失" : "—") : "—";
@@ -3066,10 +3085,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: logRoleText(shownLog.role) ? `${shownLog.actor} · ${logRoleText(shownLog.role)}` : shownLog.actor },
             // 对象是「类型 · 编号」，编号可能是整串 UUID：不用不换行的 a2-code，在「·」后面折行，不把抽屉撑出横向滚动。
             { label: "对象", value: F_BATCH_DIGEST.test(shownLog.obj) || fBatchLogItems(shownLog) ? "整批调整的团队参数" : [shownLogObject?.kind, shownLogObject?.id].filter(Boolean).join(" · ") },
-            ...(fBatchLogItems(shownLog) ? [] : [{ label: "前值 → 后值", value: <span data-mono>{logDeltaText(shownLog.delta)}</span> }]),
+            ...(fBatchLogItems(shownLog) || shownLogE1 ? [] : [{ label: "前值 → 后值", value: <span data-mono>{logDeltaText(shownLog.delta)}</span> }]),
             { label: "原因", value: shownLog.reason || "—" },
           ]} />
           {fBatchLogItems(shownLog) && <A2BatchReview items={fBatchLogItems(shownLog)!} />}
+          {shownLogE1 && <A2ChangeReview before={shownLogE1.before} after={shownLogE1.after} operationCode={shownLogE1.operationCode} />}
           <Fold inset title="技术信息" summary={`请求编号 ${requestNo}`}>
             <Facts>
               <Fact k="IP"><span data-mono>{shownLog.ip}</span></Fact>
@@ -3079,7 +3099,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               {shownLogObject?.raw && !F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象原文"><span data-mono className="a2-long-code">{shownLogObject.raw}</span></Fact>}
               <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
               {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象摘要"><span data-mono>{shownLog.obj}</span></Fact>}
-              {(fBatchLogItems(shownLog) || logDeltaText(shownLog.delta) !== shownLog.delta) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
+              {(fBatchLogItems(shownLog) || shownLogE1 || logDeltaText(shownLog.delta) !== shownLog.delta) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
             </Facts>
           </Fold>
         </>}

@@ -464,7 +464,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
         </EditorSection>
       </div></div></div>
     </Drawer>
-    {leave && <Modal title="商品改动尚未提交" onClose={() => setLeave(false)} footer={<><Button onClick={() => setLeave(false)}>继续编辑</Button><Button variant="danger-outline" onClick={() => { setLeave(false); onClose(); }}>放弃改动并返回</Button><Button variant="primary" disabledReason={blocked} onClick={review}>提交确认</Button></>}><p>商品改动还没有提交审批。放弃后关闭本地草稿，已上传的媒体资源不删除。</p></Modal>}
+    {leave && <Modal title="商品改动尚未提交" onClose={() => setLeave(false)} footer={<><Button onClick={() => setLeave(false)}>继续编辑</Button><Button variant="danger-outline" onClick={() => { setLeave(false); onClose(); }}>放弃改动并返回</Button><Button variant="primary" disabledReason={blocked} onClick={review}>提交审批后继续</Button></>}><p>商品改动还没有提交审批。放弃后关闭本地草稿，已上传的媒体资源不删除。</p></Modal>}
     {mediaRelease && mediaPending && <ReleaseModal label={`${mediaPending.fileName} · 媒体上传`} onCancel={() => setMediaRelease(false)} onConfirm={() => { e1MediaCommands.forget(mediaPending.fingerprint, mediaPending.commandKey); setMediaPending(null); fileRef.current = null; setMediaRelease(false); onMediaChange(); }} />}
   </>;
 }

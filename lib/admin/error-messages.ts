@@ -4,7 +4,7 @@ import { SKU_TAGLINE_VI_HAN_ERROR } from "./e1-product-copy.ts";
 
 /** APP_TEXT_CHINESE_NOT_ALLOWED 回来的字段写成运营认得的名字；认不出的只写通用那句。 */
 const APP_TEXT_FIELD_LABELS: Record<string, string> = {
-  displayName: "显示名", rewardName: "奖品名称", name: "名称", badge: "营销角标", tagline: "商品标语", gpu: "GPU 型号",
+  displayName: "显示名", rewardName: "奖品名称", name: "名称", badge: "营销角标", tagline: "英文标语", gpu: "GPU 型号",
   power: "功耗 / 功率说明", datacenter: "托管机房", uptime: "在线率", warranty: "质保期限", specDocumentTitle: "资料名称",
 };
 
@@ -620,8 +620,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SKU_MODEL_UNRECOGNIZED: LEGACY_SKU_MODEL_UNRECOGNIZED_REASON,
   SKU_NAME_TOO_LONG: "型号名称最多 128 字，请缩短后再提交。",
   SKU_BADGE_TOO_LONG: "自定义角标最多 64 字，请缩短后再提交。",
-  SKU_TAGLINE_TRANSLATIONS_INVALID: "商品标语译文格式不正确，请刷新商品后核对译文。",
-  SKU_TAGLINE_TRANSLATION_TOO_LONG: "每栏商品标语译文最多 255 字，请缩短后再提交。",
+  SKU_TAGLINE_TRANSLATIONS_INVALID: "标语译文格式不正确，请刷新商品后核对中文标语和越南语标语。",
+  SKU_TAGLINE_TRANSLATION_TOO_LONG: "中文标语、越南语标语每条最多 255 字，请缩短后再提交。",
   SKU_SERIES_REQUIRED: "请选择所属系列。",
   SKU_SERIES_INVALID: "所选系列不在可选范围内，请重新选择。",
   SKU_SERIES_TYPE_MISMATCH: "共享份额只能选 Cloud Share 系列，实物商品不能选 Cloud Share。",
