@@ -133,6 +133,11 @@ const commandSlot = (command: C1CommandInput) => command.kind === "nickname"
   : command.kind === "unbind" || command.kind === "rebind"
     ? paymentSlot(command.kind, command.userId, command.methodId ?? 0)
     : deviceSlot(command.kind, command.userId, command.deviceId ?? 0);
+/** 设备回收、回收并记录置换的标签是「动作 · 设备名 · 尾号」：拆成动作和设备身份；不是设备操作，或旧记录的写法对不上时，整条当身份。 */
+const deviceLabel = (command: { kind: C1CommandKind; label: string }) => {
+  const action = command.kind === "replace" ? "回收并记录置换" : command.kind === "recycle" ? "设备回收" : "";
+  return { action, identity: action && command.label.startsWith(`${action} · `) ? command.label.slice(action.length + 3) : command.label };
+};
 const COMMAND_PREFIX: Record<C1CommandKind, string> = {
   nickname: "c1-nickname-reset",
   unbind: "c1-payment-unbind",
@@ -965,6 +970,16 @@ export default function UserDetailPage() {
   };
 
   /** 结果未知时转成页面上方的待确认条，这个对象在确认前不能再操作（OP-93）。做法同提现审核的 sendCommand。 */
+  /** 结果提示里的设备写「设备名 · 尾号」（BUG-643，复审 F06）：按 deviceId 从这次读到的设备明细取；取不到时用标签，旧记录的标签存的是完整编号，只写尾号。 */
+  const deviceResult = (command: C1CommandInput) => {
+    const row = devices.find((item) => asNumber(item.id) === command.deviceId);
+    const instance = asText(row?.instanceNo, "");
+    if (row && instance && instance !== "—") return [asText(row.name, ""), `尾号 ${instance.slice(-6)}`].filter((text) => text && text !== "—").join(" · ");
+    const { identity } = deviceLabel(command);
+    return identity === "—" || identity.includes("尾号 ") ? identity : `尾号 ${identity.slice(-6)}`;
+  };
+  /** 查询原结果、核查结案的结论提示用的对象：设备操作写「动作 · 设备名 · 尾号」，旧记录也不露完整编号；其余照存的标签。 */
+  const resultLabel = (command: C1CommandInput) => command.kind === "replace" || command.kind === "recycle" ? `${deviceLabel(command).action} · ${deviceResult(command)}` : command.label;
   const execute = async (command: C1CommandInput) => {
     if (String(useAdminAuth.getState().session?.adminId) !== command.adminKey) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     const slot = commandSlot(command);
@@ -1007,12 +1022,12 @@ export default function UserDetailPage() {
       const text = command.kind === "nickname" ? `昵称已重置为 ${userNicknameText(nextNickname, profile?.phoneMasked)}`
         : command.kind === "unbind" ? "支付方式已从 UVEL 账户解绑"
         : command.kind === "rebind" ? "换绑通知已进入推送队列"
-        : command.kind === "replace" ? "回收并记录置换已执行" : "设备回收已执行";
+        : `${deviceLabel(command).action}已执行：${deviceResult(command)}`;
       setWriteResult({ key: readKey, text, tone: "ok" });
       if (command.kind === "unbind") {
         if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else await loadPaymentMethods();
       } else if (command.kind === "rebind") await loadPaymentMethods();
-      else if (!await load() && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}。资料刷新失败，请点「刷新」核对。`, tone: "warn" });
+      else if (!await load() && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}。资料刷新失败，点「重试」重新读取后核对。`, tone: "warn" });
     } finally {
       setActionPending(null);
     }
@@ -1074,7 +1089,7 @@ export default function UserDetailPage() {
       c1UserCommands.forget(command.fingerprint, command.commandKey);
       syncPending(); setActionConfirm(null); setReleasing(null);
       const status = result.receipt?.originalStatus;
-      toast.success(command.label, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+      toast.success(resultLabel(command), status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
         : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "原操作已执行，记录已解除，不要再做一次。");
       await load(); await loadPaymentMethods();
       return;
@@ -1098,7 +1113,7 @@ export default function UserDetailPage() {
       c1UserCommands.forget(command.fingerprint, command.commandKey);
       syncPending();
       const status = result.receipt?.originalStatus;
-      toast.success(command.label, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+      toast.success(resultLabel(command), status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
         : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "核查确认已执行，记录已解除，不要再做一次。");
       await load(); await loadPaymentMethods();
       return;
@@ -1139,6 +1154,8 @@ export default function UserDetailPage() {
   const openDeviceAction = (device: JsonRecord, operation: "replace" | "recycle") => {
     const deviceId = asNumber(device.id);
     const instance = asText(device.instanceNo);
+    // 结果提示和「正在执行」写「动作 · 设备名 · 尾号」，不露 PG- 这类前缀（TX-05、BUG-643）；待确认条对象格只写其中的设备名和尾号，动作写进同一行的结论（见 recoveryItems）。完整编号在悬停里。只改新写入的记录，旧记录照原样显示。
+    const deviceText = [asText(device.name, ""), instance && instance !== "—" ? `尾号 ${instance.slice(-6)}` : ""].filter((text) => text && text !== "—").join(" · ") || "—";
     setActionConfirm({ briefKind: "record",
       action: operation === "replace" ? `回收并记录置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
       title: operation === "replace" ? "回收并记录置换" : "设备回收",
@@ -1160,13 +1177,16 @@ export default function UserDetailPage() {
       confirmTone: "danger",
       irreversible: true,
       statedBrief: { impact: operation === "replace" ? "和设备回收的差别只有一点：多记一张已完成的置换单，留下这次置换的记录。设备有任务在跑时系统会拒绝。" : "和回收并记录置换的差别只有一点：不留置换单。设备有任务在跑时系统会拒绝。", check: "核对设备编号尾号和用户，理由写清依据或工单号。" },
-      run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "回收并记录置换" : "设备回收"} · ${instance}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
+      run: (reason) => execute({ kind: operation, label: `${operation === "replace" ? "回收并记录置换" : "设备回收"} · ${deviceText}`, adminKey, userId: c3UserId, reason, operator: currentAdminOperator(), deviceId, deviceStatus: asText(device.status) }),
     });
   };
 
   const showFold = (group: string) => setOpenFolds((current) => ({ ...current, [group]: true }));
+  /** 点统计数字定位时分区导航直接亮这一组，用户再滚之前不被滚动判定改掉（BUG-636）。nav 在下面才建，这里先留位置。 */
+  const markSection = useRef<(group: string) => void>(() => undefined);
   const locate = useCallback((group: string, anchor?: string) => {
     setOpenFolds((current) => ({ ...current, [group]: true }));
+    markSection.current(group);
     const list = ({ "hub-payment-methods": "payment", "hub-deposit": "deposit", "hub-withdrawal": "withdrawal", "hub-devices": "device", "hub-referral": "member", "hub-engagement": "engagement", "hub-orders": "order" } as Partial<Record<string, RecordKind>>)[anchor ?? ""];
     if (list) setOpenRecordList(list);
     window.requestAnimationFrame(() => document.getElementById(anchor ?? `section-${group}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -1222,6 +1242,7 @@ export default function UserDetailPage() {
     recordsPresent && navItem("records", "记录", recordsFailed, failedPushCount + orderExceptions > 0 ? `${failedPushCount + orderExceptions} 条` : "", corrections.length > 0 ? "校正结果未知" : ""),
   ].filter((item) => item !== false);
   const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold, restoreKey: readKey });
+  useEffect(() => { markSection.current = nav.mark; }, [nav.mark]);
   useLayoutEffect(() => {
     const previousTop = teamHeadingTopBeforeRetry.current;
     teamHeadingTopBeforeRetry.current = null;
@@ -1288,6 +1309,8 @@ export default function UserDetailPage() {
   };
   const requestedWithdrawal = fundTotalValue("processingWithdrawalPrincipalTotal", summary.withdrawRequestedUsd);
   const subtotal = (field: string) => usdtTotals?.[field] === "PARTIAL" && <p>这次只核对到一部分，这是已核对的小计。</p>;
+  /** 这一项的状态是 UNKNOWN：值写「—」，问号里先说这一项暂时无法核对，不猜原因（R12）；整份读取失败照旧用页面上方的提示。 */
+  const unknownNote = (field: string) => usdtTotals?.[field] === "UNKNOWN" && <p>这一项暂时无法核对。</p>;
   // 最近一笔写在累计数第二行，一眼对上是哪个数的（产品 2026-11-07）。
   const depositRecent = <Recent label="最近一笔" openLabel="查看最近一笔充值"
     note={detail.latestDepositStatus === "ERROR" ? "暂时读不到" : detail.latestDepositStatus !== "READY" ? "—" : latestDeposit ? undefined : "暂无充值"}
@@ -1301,11 +1324,11 @@ export default function UserDetailPage() {
   const kpis = [
     detail.financial && { label: "钱包可用余额", value: amountValue(summary.walletUsdt ?? profile.walletUsdt), unit: "USDT", tone: "role-1" as const, icon: Wallet, group: "funds", anchor: "hub-deposit" },
     detail.deposits && { label: "累计充值", value: fundTotalValue("creditedDepositTotal", summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: ArrowDownToLine, group: "funds", anchor: "hub-deposit", sub: depositRecent, explain: <>
-      <p>能核对到的已确认充值小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。</p>{subtotal("creditedDepositTotal")}
+      {unknownNote("creditedDepositTotal")}<p>能核对到的已确认充值小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。</p>{subtotal("creditedDepositTotal")}
       <p>最近一笔：按发起时间取最新的一笔充值，链上、银行卡支付、银行转账和国际卡都算，待付款和失败的也算。</p>
     </> },
     detail.withdrawals && { label: "累计提现", value: fundTotalValue("successfulWithdrawalPrincipalTotal", summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: ArrowUpFromLine, group: "funds", anchor: "hub-withdrawal", sub: withdrawalRecent, explain: <>
-      <p>能核对到的成功提现本金小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。</p>{subtotal("successfulWithdrawalPrincipalTotal")}
+      {unknownNote("successfulWithdrawalPrincipalTotal")}<p>能核对到的成功提现本金小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。</p>{subtotal("successfulWithdrawalPrincipalTotal")}
       <p>最近一笔：按创建时间取最新的一笔提现，各种状态都算，不受下面列表条数限制。</p>
     </> },
     detail.devices && { label: "设备数", value: numberLabel(summary.deviceCount), unit: "台", tone: "role-2" as const, icon: Cpu, group: "devices", anchor: "hub-devices", explain: "这个用户的全部设备记录，含已回收和已停用的，最多读 200 台。现在还能运行的看下面的活跃数。" },
@@ -1403,6 +1426,10 @@ export default function UserDetailPage() {
       const expired = command.expiresAt <= Date.now();
       // 重试和普通入口一样看现在的入口和权限（OP-123）。没权限只留核对，提示和记录都留着。
       const device = isDeviceCommand(command);
+      // 对象列只有 280px（共用）：设备操作这一格只写「设备名 · 尾号」，动作写进同一行的结论，尾号不被截掉（尾号 > 动作 > 设备名）。
+      const { action, identity } = deviceLabel(command);
+      const said = (text: string) => action ? `${action}：${text}` : text;
+      const deviceNo = device ? asText(devices.find((row) => asNumber(row.id) === command.deviceId)?.instanceNo, "") : "";
       const writable = device ? canWriteC2 : canWriteC1;
       const hasWrite = device ? hasC2Write : hasC1Write;
       const refused = writable && !command.legacy && isExplicitRejection(command.rejection);
@@ -1437,10 +1464,10 @@ export default function UserDetailPage() {
       }[found];
       const more = found === "REJECTED" || found === "PROCESSED" ? receiptExplain(receipt) : undefined;
       return {
-        key: command.fingerprint, object: command.label, createdAt: command.createdAt,
+        key: command.fingerprint, object: deviceNo ? <span title={`设备编号 ${deviceNo}`}>{identity}</span> : identity, createdAt: command.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
-        result: shown && { tag: <StatusTag tone={shown.tone}>{shown.label}</StatusTag>, line: shown.line },
-        line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。",
+        result: shown && { tag: <StatusTag tone={shown.tone}>{shown.label}</StatusTag>, line: said(shown.line) },
+        line: said(refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。"),
         note: pendingNotes[command.fingerprint],
         actions: <>
           <Button size="sm" disabled={!!busyReason || checkingResult} onClick={() => void verifyPending(command)}>查询原结果</Button>
@@ -1639,7 +1666,7 @@ export default function UserDetailPage() {
           ...(detail.risk?.cases !== undefined ? [[<>风险案件<Explain label="风险案件的口径" content="按最近 20 条案件算。案件读取失败时也显示 0，这个数不能证明没有案件。" /></>, `${numberLabel(detail.risk.openCaseCount)} 个未关闭`] as const] : []),
           ...(detail.financial ? [
             ["UVT 余额", amountText(summary.walletNex ?? profile.walletNex, "UVT")] as const,
-            [<>提现申请额<Explain label="提现申请额的口径" content="能核对到的处理中提现本金小计，不是已到账的钱，也不保证覆盖全部历史。" /></>, requestedWithdrawal === "—" ? requestedWithdrawal : `${requestedWithdrawal} USDT`] as const,
+            [<>提现申请额<Explain label="提现申请额的口径" content={<>{unknownNote("processingWithdrawalPrincipalTotal")}<p>能核对到的处理中提现本金小计，不是已到账的钱，也不保证覆盖全部历史。</p></>} /></>, requestedWithdrawal === "—" ? requestedWithdrawal : `${requestedWithdrawal} USDT`] as const,
           ] : []),
         ]} />
       </Panel>}
@@ -1837,7 +1864,7 @@ export default function UserDetailPage() {
             const text = `通知 ${notificationEvidence.id} 已按投递事实校正时间，已读状态保持不变。`;
             setWriteResult({ key: readKey, text, tone: "ok" });
             void load().then(refreshed => {
-              if (!refreshed && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}资料刷新失败，请点「刷新」核对。`, tone: "warn" });
+              if (!refreshed && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}资料刷新失败，点「重试」重新读取后核对。`, tone: "warn" });
             });
           }} onClose={() => { setNotificationEvidence(null); syncPending(); }} />
       )}

@@ -621,7 +621,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             conflictRow("英语标题", part(now?.bodyEn).title, form.titleEn), conflictRow("英语正文", part(now?.bodyEn).body, form.bodyEn)])];
         rows[0].changed = !!now && now.status !== "draft";
         if (!gone && now && now.status !== "draft") gone = `这条通知现在是${stateText(now)}，不能再改草稿。`;
-        note = "保存会用你填的整份内容替换现在的草稿；别人改的要留，先在表单里补上。";
+        note = "没改过的项已换成最新值，改过的保留你填的；对照下面各项，核对后再提交。";
         rebuild = now?.status === "draft" ? () => {
           const latest = formFromCampaign(now, requiredLanguages);
           const merged = Object.fromEntries((Object.keys(latest) as (keyof NewForm)[]).map(key =>

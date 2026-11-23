@@ -12,6 +12,9 @@
  * - 组内有异常时 item.alert 为 true，导航项上标出来（DP-03）。
  * - 每项是真实链接，当前组 aria-current。窄宽时收成一行，由 CSS 管。
  * - 详情页的分区导航传 row：横排一行，放在折叠组上方（PG-50），外面包 .rd-detail-nav 滚动时钉住。
+ * - 高亮只跟着用户自己的滚动走（BUG-636）：点导航选中的组（页面用 nav.mark 定位的组也一样）在用户再滚之前一直亮着；
+ *   「滚到底算最后一组」只在用户自己滚到底时算；内容高度变了、页面自己滚动（刷新、展开、补位），都不重判。
+ *   用户在滚 = 滚轮、触摸、翻页和方向键、Tab、拖滚动条之后，滚动区的位置真的动了；视口或内容高度变化带来的位置修正只更新记下的尺寸。
  */
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
@@ -22,6 +25,9 @@ export interface SectionNavItem {
 }
 
 const PARAM = "section";
+/** 用户最后一次滚动输入之后这么久之内的滚动和交叉变化，才算用户在滚（键盘平滑滚动约半秒）。 */
+const USER_SCROLL_MS = 1000;
+const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " ", "Tab"]);
 
 export function useSectionNav(items: readonly SectionNavItem[], { onReveal, ready = true, restoreKey }: {
   onReveal?: (id: string) => void;
@@ -30,7 +36,9 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
   restoreKey?: string;
 }) {
   const [active, setActive] = useState(items[0]?.id ?? "");
-  const lock = useRef(0);
+  /** 点导航或 mark 选中后为 true，用户再滚才放开；放在观察器外面，分区变了、观察器重建也留着。 */
+  const held = useRef(false);
+  const userAt = useRef(0);
   const restoredKey = useRef<string | undefined>(undefined);
   const reveal = useRef(onReveal);
   reveal.current = onReveal;
@@ -39,7 +47,8 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
   const go = useCallback((id: string, smooth = true) => {
     reveal.current?.(id);
     setActive(id);
-    lock.current = Date.now() + 800;
+    held.current = true;
+    userAt.current = 0;
     window.requestAnimationFrame(() => {
       const target = document.getElementById(`section-${id}`);
       target?.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
@@ -59,30 +68,70 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     const list = ids.split("|");
     const seen = new Set<string>();
     const scroller = document.getElementById(`section-${list[0]}`)?.closest("main");
+    let dragging = false;
+    /** 用户造成的最近一次位置变化；交叉变化只在这之后的一小段时间里重判。 */
+    let movedAt = 0;
+    const measure = () => ({ top: scroller?.scrollTop ?? 0, height: scroller?.clientHeight ?? 0, full: scroller?.scrollHeight ?? 0 });
+    let last = measure();
+    const userInput = () => dragging || Date.now() - userAt.current < USER_SCROLL_MS;
     const pick = () => {
-      if (Date.now() < lock.current) return;
+      if (held.current) return;
       // 滚到底时最后一组进不了判定带，上面的组还在里面，这时算最后一组。
       const atEnd = scroller && scroller.scrollTop > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
       // 回到顶部时第一组可能还在判定带下面，这时算第一组，不留着上一次的高亮。
       const current = scroller?.scrollTop === 0 ? list[0] : atEnd ? list.at(-1) : list.find((id) => seen.has(id));
       if (current) setActive(current);
     };
+    // 输入只记下用户想滚；保持到滚动区真的动了才放开（贴底时往下拨滚轮页面不动，不算）。
+    const input = () => { userAt.current = Date.now(); };
+    const onKey = (event: KeyboardEvent) => {
+      if (!SCROLL_KEYS.has(event.key) || event.key !== "Tab" && (event.target as Element | null)?.closest?.("input, textarea, select, [contenteditable='true'], [role='listbox'], [role='menu']")) return;
+      input();
+    };
+    // 拖滚动条：按在滚动区自己身上（不是里面的内容）。
+    const onDown = (event: PointerEvent) => { if (event.target === scroller) { dragging = true; input(); } };
+    const onUp = () => { dragging = false; };
+    const onScroll = () => {
+      if (!scroller) return;
+      const now = { top: scroller.scrollTop, height: scroller.clientHeight, full: scroller.scrollHeight };
+      const resized = now.height !== last.height || now.full !== last.full, moved = now.top !== last.top;
+      last = now;
+      // 视口或内容高度变了，浏览器修正位置：只更新记下的尺寸，不放开保持、不判到底。
+      if (resized || !moved || !userInput()) return;
+      held.current = false;
+      userAt.current = movedAt = Date.now();
+      pick();
+    };
+    // 尺寸一变（窗口缩放、内容展开收起）就单独重记基准，连同浏览器顺带修正的位置；没有 scroll 事件也一样，之后第一次真实滚动按新基准判断。
+    const sizes = new ResizeObserver(() => { last = measure(); });
+    if (scroller) { sizes.observe(scroller); for (const child of scroller.children) sizes.observe(child); }
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         const id = entry.target.id.replace(/^section-/, "");
         if (entry.isIntersecting) seen.add(id);
         else seen.delete(id);
       }
-      pick();
+      if (Date.now() - movedAt < USER_SCROLL_MS) pick();
     }, { rootMargin: "-80px 0px -60% 0px" });
     for (const id of list) {
       const target = document.getElementById(`section-${id}`);
       if (target) observer.observe(target);
     }
-    scroller?.addEventListener("scroll", pick, { passive: true });
+    scroller?.addEventListener("scroll", onScroll, { passive: true });
+    scroller?.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("wheel", input, { passive: true, capture: true });
+    window.addEventListener("touchmove", input, { passive: true, capture: true });
+    window.addEventListener("keydown", onKey, { capture: true });
     return () => {
+      sizes.disconnect();
       observer.disconnect();
-      scroller?.removeEventListener("scroll", pick);
+      scroller?.removeEventListener("scroll", onScroll);
+      scroller?.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("wheel", input, { capture: true });
+      window.removeEventListener("touchmove", input, { capture: true });
+      window.removeEventListener("keydown", onKey, { capture: true });
     };
   }, [ids, ready]);
 
@@ -93,7 +142,14 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     go(id);
   }, [go]);
 
-  return { active, select, anchor: (id: string) => `section-${id}` };
+  /** 页面自己定位到某组（比如点统计数字）时用：只高亮这一组，不滚动、不写网址，用户再滚之前保持。 */
+  const mark = useCallback((id: string) => {
+    setActive(id);
+    held.current = true;
+    userAt.current = 0;
+  }, []);
+
+  return { active, select, mark, anchor: (id: string) => `section-${id}` };
 }
 
 export function SectionNav({ label, items, nav, row }: { label: string; items: readonly SectionNavItem[]; nav: ReturnType<typeof useSectionNav>; row?: boolean }) {

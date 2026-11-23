@@ -227,7 +227,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
             <ul className="f4-buckets" aria-label="四类申请">
               {policy.buckets.map((bucket) => <li key={bucket.id}>
                 <span className="f4-bucket-head">{formatF4AmbassadorBucketTitle(bucket.id, bucket.title)}<span data-mono>{bucket.id}</span></span>
-                <span className="f4-bucket-range">{decimalText(bucket.minBudgetUsdt)}–{decimalText(bucket.maxBudgetUsdt)}<small>USDT</small></span>
+                <span className="f4-bucket-range">{moneyText(bucket.minBudgetUsdt)}–{moneyText(bucket.maxBudgetUsdt)}<small>USDT</small></span>
                 <span className="f4-bucket-rule">{formatF4AmbassadorBucketRule(bucket.id, bucket.rule)}<Explain label={`${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)}的原文`} rows={[
                   { k: "显示的金额范围", v: bucket.range || "—" },
                   { k: "后台保存的名称", v: bucket.title || "—" },
