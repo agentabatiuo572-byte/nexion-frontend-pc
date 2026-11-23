@@ -912,7 +912,6 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
   const position = agent.position;
   const [tags, setTags] = useState<string[]>(originalInput?.tags ?? agent.tags ?? []);
   const [maxConcurrent, setMaxConcurrent] = useState(String(originalInput?.maxConcurrent ?? agent.maxConcurrent ?? ""));
-  // 「不限」先只是界面上的选法：选中时保存要带 maxConcurrentUnlimited、不带 maxConcurrent，由接线项接（canSave 和下面的请求体还没改）。
   const [unlimited, setUnlimited] = useState<boolean>(originalInput ? originalInput.maxConcurrentUnlimited === true : agent.maxConcurrent === null);
   // 刚切到「设上限」、框还空着时不报错，离开输入框后才报（OP-15）。
   const [capLeft, setCapLeft] = useState(false);
@@ -921,8 +920,16 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
   const [busy, setBusy] = useState<boolean>(originalInput?.busy ?? agent.busy);
   const [reason, setReason] = useState(pending?.m5?.reason ?? "");
   const [saving, setSaving] = useState(false);
+  const capText = maxConcurrent.trim();
+  const capNumber = Number(capText);
+  const capProblem = !unlimited && (capText === "" || !Number.isInteger(capNumber) || capNumber < 0 || capNumber > 40) ? "要填 0–40 的整数" : "";
+  const changed = (unlimited ? null : capNumber) !== agent.maxConcurrent
+    || enabled !== agent.enabled || transferable !== agent.transferable || busy !== agent.busy
+    || tags.length !== agent.tags.length || tags.some(tag => !agent.tags.includes(tag));
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
-  const canSave = !saving && (pending ? !isRetryExpired(pending) && Boolean(useAdminAuth.getState().session?.authorities.includes("service_m1_write")) : canSubmitNew && reasonOk && maxConcurrent.trim() !== "" && Number.isInteger(Number(maxConcurrent)) && Number(maxConcurrent) >= 0 && Number(maxConcurrent) <= 40);
+  const canSave = !saving && (pending
+    ? !isRetryExpired(pending) && Boolean(useAdminAuth.getState().session?.authorities.includes("service_m1_write"))
+    : canSubmitNew && reasonOk && !capProblem && changed);
 
   const save = async () => {
     if (!canSave) return;
@@ -934,7 +941,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
         // M-56: the displayed type ("advisor") is the canonical role; the stored legacy routing flag is
         // left alone, so saving tags or capacity no longer rewrites it.
         tags,
-        maxConcurrent: Number(maxConcurrent),
+        ...(unlimited ? { maxConcurrentUnlimited: true } : { maxConcurrent: capNumber }),
         enabled,
         transferable,
         busy,
@@ -951,10 +958,6 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
     }
   };
 
-  // 只显示用（F03 的提交修正归代码 worker）：如实写出现在保存会提交的上限，不悄悄改。
-  const capText = maxConcurrent.trim();
-  const capNumber = Number(capText);
-  const capProblem = !unlimited && (capText === "" || !Number.isInteger(capNumber) || capNumber < 0 || capNumber > 40) ? "要填 0–40 的整数" : "";
   const capNote = unlimited
     ? agent.maxConcurrent !== null ? "改成不限：自动分配不再看他名下有多少客户。" : undefined
     : capText === "" || capProblem ? undefined
@@ -967,7 +970,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
       sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">{agent.name} · 账号 #{agent.adminId}</span></>}
       footer={<>
         <Button disabled={saving} onClick={onClose}>取消</Button>
-        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !pending && !canSubmitNew ? "名册没读到，或这位客服已不在你的范围" : !saving && !reasonOk ? "操作理由要 8–200 字" : !saving && canSubmitNew && !canSave ? "同时接待上限要填 0–40 的整数" : undefined} onClick={() => void save()}>{pending ? "按原请求重试" : "保存"}</Button>
+        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !pending && !canSubmitNew ? "名册没读到，或这位客服已不在你的范围" : !saving && !reasonOk ? "操作理由要 8–200 字" : !saving && !pending && capProblem ? "同时接待上限要填 0–40 的整数" : undefined} onClick={() => void save()}>{pending ? "按原请求重试" : "保存"}</Button>
       </>}>
       <Facts>
         <Fact k="客服">{agent.name || "名称未同步"} · {agent.email || "—"}</Fact>

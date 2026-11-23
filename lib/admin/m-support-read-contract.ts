@@ -86,7 +86,7 @@ export function parseM1SupportAgentOverview(value: unknown): M1SupportAgentOverv
       && isNonEmptyString(agentValue.position)
       && isM1ServiceTypes(agentValue.serviceTypes)
       && isStringArray(agentValue.tags, true)
-      && isNonNegativeSafeInteger(agentValue.maxConcurrent)
+      && (agentValue.maxConcurrent === null || isNonNegativeSafeInteger(agentValue.maxConcurrent))
       && typeof agentValue.enabled === "boolean"
       && typeof agentValue.assignmentEligible === "boolean"
       && (!agentValue.assignmentEligible || (agentValue.status === "enabled" && agentValue.enabled))

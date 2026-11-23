@@ -97,7 +97,7 @@ export type SupportAgentCandidate = {
   assignmentEligible: boolean;
   busy: boolean;
   assignedUserCount: number;
-  /** null 表示不限（自动分配不看名下客户数）。现在的解析仍要求整数，接线项再改。 */
+  /** null 表示不限（自动分配不看名下客户数）。 */
   maxConcurrent: number | null;
   currentActiveSessions?: number;
   avatarAssetId?: string;
@@ -546,7 +546,7 @@ export const supportClient = {
       const assignmentEligible = bool(row.assignmentEligible, "agent.assignmentEligible");
       const enabled = bool(row.enabled, "agent.enabled");
       if (assignmentEligible && (status !== "enabled" || !enabled)) malformed("agent.assignmentEligible");
-      return { status, assignmentEligible, adminId: positive(row.adminId, "agent.adminId"), name: nonempty(row.name, "agent.name"), seatType: enumValue(row.seatType, ["MANAGER", "DEDICATED", "GENERAL"] as const, "agent.seatType"), serviceTypes: row.serviceTypes.map((type) => enumValue(type, ["support", "advisor"] as const, "agent.serviceTypes")), enabled, busy: bool(row.busy, "agent.busy"), assignedUserCount: count(row.assignedUserCount, "agent.assignedUserCount"), maxConcurrent: count(row.maxConcurrent, "agent.maxConcurrent"), currentActiveSessions: row.currentActiveSessions === undefined ? undefined : count(row.currentActiveSessions, "agent.currentActiveSessions"), avatarAssetId: row.avatarAssetId==null?undefined:nonempty(row.avatarAssetId,"agent.avatar"), avatarVersion: row.avatarVersion==null?undefined:count(row.avatarVersion,"agent.avatarVersion"), version: count(row.version, "agent.version") };
+      return { status, assignmentEligible, adminId: positive(row.adminId, "agent.adminId"), name: nonempty(row.name, "agent.name"), seatType: enumValue(row.seatType, ["MANAGER", "DEDICATED", "GENERAL"] as const, "agent.seatType"), serviceTypes: row.serviceTypes.map((type) => enumValue(type, ["support", "advisor"] as const, "agent.serviceTypes")), enabled, busy: bool(row.busy, "agent.busy"), assignedUserCount: count(row.assignedUserCount, "agent.assignedUserCount"), maxConcurrent: row.maxConcurrent === null ? null : count(row.maxConcurrent, "agent.maxConcurrent"), currentActiveSessions: row.currentActiveSessions === undefined ? undefined : count(row.currentActiveSessions, "agent.currentActiveSessions"), avatarAssetId: row.avatarAssetId==null?undefined:nonempty(row.avatarAssetId,"agent.avatar"), avatarVersion: row.avatarVersion==null?undefined:count(row.avatarVersion,"agent.avatarVersion"), version: count(row.version, "agent.version") };
     }), { signal: options.signal }),
   transfer: (input: { targetAgentAdminId: number; customers: Array<{ id: string; expectedAssignmentId: string | null; expectedVersion: number }>; reason: string }, idempotencyKey: string, signal?: AbortSignal) =>
     request("/support-agents/assignments/transfer", (value): SupportTransferResult => {

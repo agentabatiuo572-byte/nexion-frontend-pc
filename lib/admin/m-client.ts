@@ -449,7 +449,7 @@ export type MLoadConfig = {
   overflowQueue: string;
 };
 
-export type MAgentState = Record<string, { cap: number; busy: boolean }>;
+export type MAgentState = Record<string, { cap: number | null; busy: boolean }>;
 
 export type MSupportServiceType = "support" | "advisor";
 
@@ -464,7 +464,7 @@ export type MSupportAgent = {
   position: string;
   serviceTypes: MSupportServiceType[];
   tags: string[];
-  /** null 表示不限（自动分配不看名下客户数）。现在的解析仍把 null 读成 0，接线项再改。 */
+  /** null 表示不限（自动分配不看名下客户数）。 */
   maxConcurrent: number | null;
   enabled: boolean;
   assignmentEligible: boolean;
@@ -536,7 +536,7 @@ export type MContentData = {
 
 export type MLoadConfigWrite = Omit<MLoadConfig, "version"> & {
   expectedVersion: number;
-  agentState: Record<string, { cap: number; busy?: boolean; expectedProfileVersion?: number }>;
+  agentState: Record<string, { cap: number | null; busy?: boolean; expectedProfileVersion?: number }>;
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -1508,7 +1508,7 @@ function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
     position,
     serviceTypes: serviceTypes.length ? serviceTypes : ["support"],
     tags: asStringArray(row.tags),
-    maxConcurrent: num(row.maxConcurrent, 0),
+    maxConcurrent: row.maxConcurrent === null ? null : parseSupportCount(row.maxConcurrent, "maxConcurrent"),
     enabled: bool(row.enabled, true),
     assignmentEligible: row.assignmentEligible,
     transferable: bool(row.transferable, true),
@@ -1552,14 +1552,15 @@ function adaptLoadConfig(raw: Record<string, unknown> | undefined, agents: MSupp
   const agentState: MAgentState = {};
   agents.forEach((agent) => {
     agentState[agent.id] = {
-      cap: agent.maxConcurrent || base.defaultCap,
+      cap: agent.maxConcurrent,
       busy: agent.busy,
     };
   });
   Object.entries(agentRaw).forEach(([id, value]) => {
     const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    const current = agentState[id];
     agentState[id] = {
-      cap: num(row.cap, agentState[id]?.cap ?? base.defaultCap),
+      cap: current?.cap === null || row.cap === null ? null : num(row.cap, current?.cap ?? base.defaultCap),
       // M5 profile is routing authority; a legacy load flag must not override it.
       busy: agents.find((agent) => agent.id === id)?.busy ?? false,
     };
@@ -1718,8 +1719,9 @@ export async function sendM5Command(command: M5Command, commandKey: string): Pro
   const value = await apiRequest<unknown>(command.request.path, { method: command.request.method, body: command.request.body, headers: { "Idempotency-Key": commandKey } });
   const result = supportObject(value, "m5.receipt"), input = JSON.parse(command.request.body);
   if (command.profile) {
+    const expectedCap = input.maxConcurrentUnlimited === true ? null : input.maxConcurrent;
     if (result.adminId !== command.profile.adminId || result.version !== command.profile.version + 1
-      || result.maxConcurrent !== input.maxConcurrent || result.enabled !== input.enabled || result.transferable !== input.transferable || result.busy !== input.busy
+      || result.maxConcurrent !== expectedCap || result.enabled !== input.enabled || result.transferable !== input.transferable || result.busy !== input.busy
       || JSON.stringify(result.tags) !== JSON.stringify(input.tags)) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
   } else if (command.request.path.includes("/categories/")) {
     if (result.type !== "advisor" || result.enabled !== input.enabled) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
@@ -2146,15 +2148,13 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
   });
   data.supportAgents.forEach((agent) => {
     const state = data.agentState[agent.id] ?? { cap: agent.maxConcurrent, busy: agent.busy };
-    if (state) {
-      params[`I.support.agent.${agent.name}.cap`] = String(state.cap);
-      params[`I.support.agent.${agent.name}.busy`] = agent.busy ? "1" : "0";
-    }
+    if (state.cap !== null) params[`I.support.agent.${agent.name}.cap`] = String(state.cap);
+    params[`I.support.agent.${agent.name}.busy`] = agent.busy ? "1" : "0";
   });
   Object.entries(data.agentState).forEach(([id, state]) => {
     if (data.supportAgents.some((agent) => agent.id === id)) return;
     if (state) {
-      params[`I.support.agent.${id}.cap`] = String(state.cap);
+      if (state.cap !== null) params[`I.support.agent.${id}.cap`] = String(state.cap);
       params[`I.support.agent.${id}.busy`] = state.busy ? "1" : "0";
     }
   });
@@ -2422,6 +2422,7 @@ export const mContentActions = {
     serviceTypes?: MSupportServiceType[];
     tags?: string[];
     maxConcurrent?: number;
+    maxConcurrentUnlimited?: boolean;
     enabled?: boolean;
     transferable?: boolean;
     busy?: boolean;
@@ -2438,6 +2439,7 @@ export const mContentActions = {
     serviceTypes?: MSupportServiceType[];
     tags?: string[];
     maxConcurrent?: number;
+    maxConcurrentUnlimited?: boolean;
     enabled?: boolean;
     transferable?: boolean;
     busy?: boolean;
