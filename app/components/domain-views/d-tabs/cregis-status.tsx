@@ -582,7 +582,9 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       key: record.commandKey,
       label: preparation ? `${record.path.endsWith("/decision") ? exceptionObject(JSON.parse(record.body)).decision === "CANCEL" ? "取消" : "复核" : "新建"} ${record.preparationNetwork ?? "BEP20"} 资金准备单` : cregisCommandLabel(record.path),
       createdAt: record.createdAt,
-      hint: restriction ? trc20ReplayHint(record, restriction) : (replayable ? "现在的值只能参考；按原请求重试不会重复执行。"
+      // 只能核对的原因写在行上（onlyCheck），展开后不再重复。
+      onlyCheck: restriction ? trc20ReplayReason(record, restriction) : undefined,
+      hint: restriction ? null : (replayable ? "现在的值只能参考；按原请求重试不会重复执行。"
         : "这项操作不能按原请求重试。重新读取只显示现在的状态，记录保留到关掉标签页。"),
       blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : canRetry ? undefined : "这个账号没有这项权限",
       auditHref: "/platform/audit?domain=D",
@@ -608,7 +610,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     key: record.commandKey,
     label: record.path === "/cregis/switch-cases" ? "开关提案" : record.path === "/cregis/switches/emergency-off" ? "紧急停用三网" : "开关提案复核",
     createdAt: record.createdAt,
-    hint: restriction ? trc20ReplayHint(record, restriction) : "请按原请求恢复，不要另建提案或重新填写理由。",
+    onlyCheck: restriction ? trc20ReplayReason(record, restriction) : undefined,
+    hint: restriction ? null : "请按原请求恢复，不要另建提案或重新填写理由。",
     blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : canManage ? undefined : "这个账号没有这项权限",
     verify: async () => {
       const next = parseExceptions(await financeAdminRequest<unknown>("/cregis/exceptions"));
@@ -978,17 +981,16 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   </>;
 }
 
-/** TRC20 挡住的原请求：写它会做什么、为什么只能核对、下一步（OP-93、OP-126）。 */
-function trc20ReplayHint(record: { path: string; body: string }, restriction: string) {
+/** TRC20 挡住的原请求：写它会做什么、为什么只能核对。下一步由恢复面板按状态补在后面（OP-93、OP-126）。 */
+function trc20ReplayReason(record: { path: string; body: string }, restriction: string) {
   const route = record.path.split("?")[0];
   const decision = route.startsWith("/cregis/switch-cases/");
   const approve = decision || exceptionObject(JSON.parse(record.body || "{}")).action === "APPROVE";
   const what = route === "/cregis/addresses/provision" ? "原请求会补一个 TRC20 收款地址"
     : `原请求会${approve ? "复核通过" : "提交"}打开 TRC20 ${route.startsWith("/cregis/switch-cases") ? "充值" : "自动资金流程"}的提案`;
-  const why = restriction === TRC20_CLOSED ? `${what}，TRC20 ${TRC20_CLOSED}，不能按原请求重试`
+  return restriction === TRC20_CLOSED ? `${what}，TRC20 ${TRC20_CLOSED}，不能按原请求重试`
     : decision ? "读不到原提案，核对不了这次复核会不会打开 TRC20 充值，暂不能按原请求重试"
       : "TRC20 自动资金流程的设置读不到或已经变了，核对不了原请求会不会打开它，暂不能按原请求重试";
-  return `${why}。点「读取现在的值」核对现状，再到操作记录与审批看它执行没有。`;
 }
 
 /** 写请求的名字，按路径认，不露路径（D1-A09）。 */
