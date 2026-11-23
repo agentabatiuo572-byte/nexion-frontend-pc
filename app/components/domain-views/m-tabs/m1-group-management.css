@@ -45,6 +45,9 @@
 .m1-group-management .rd-table{table-layout:fixed;width:100%}
 .m1-group-management .rd-table :is(th,td){min-width:0;white-space:normal;overflow:hidden}
 .m1-group-management .rd-table th:last-child,.m1-group-management .rd-table td:last-child{width:14%}
+/* 组目录最后一列「操作」用 fit 收到按钮宽、贴右，空白给前面的列（PRD §5A 两端对齐，量尺 P2-op） */
+.m1-group-management .rd-table.m1-group-directory{table-layout:auto}
+.m1-group-management .rd-table.m1-group-directory :is(th,td):last-child{width:1%;white-space:nowrap}
 .m1-group-management .rd-note{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m1-group-management .m-group-name{max-width:100%;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m1-group-management .m-invite-ops{display:flex;gap:6px;flex-wrap:wrap}.mdom .m1-group-management .m-group-count{min-width:40px;justify-content:flex-end}
