@@ -866,7 +866,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     const body = command ? JSON.parse(command.request.body) : null;
     const statusName = (status: string) => status === "published" ? "已发布" : status === "archived" ? "已归档" : "草稿";
     const change = !command ? "结果未知" : command.profile
-      ? `${command.profile.name} · 同时接待上限 ${capShown(command.profile.maxConcurrent)} → ${body.maxConcurrentUnlimited === true ? "不限" : capShown(body.maxConcurrent)}`
+      ? profileChangeText(command.profile, body)
       : command.request.method === "POST" ? command.text
         : command.key === CAT_KEY("advisor") ? `${command.text} · ${body.expectedEnabled ? "已启用" : "已停用"} → ${body.enabled ? "已启用" : "已停用"}`
           : command.key.startsWith("I.session.advisor.policy.") ? `${command.beforeValue} → ${body.value}`
@@ -898,6 +898,22 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
 // 同时接待上限的三种取值，名册列头和接单设置共用一句。
 const CAP_EXPLAIN = "只管自动分配：「不限」不看他名下有多少客户；填 1–40，名下有效绑定客户到这个数就不再自动分给他；填 0，自动分配不选他。不是同时会话数，邀请继承和主管指定不受它限制。";
 const capShown = (value: unknown) => value === null ? "不限" : String(value);
+const onOff = (value: unknown) => value ? "开" : "关";
+const tagText = (tags: unknown) => Array.isArray(tags) && tags.length ? tags.join("、") : "—";
+const sameTags = (a: unknown, b: unknown) => Array.isArray(a) && Array.isArray(b) && [...a].sort().join("\u0000") === [...b].sort().join("\u0000");
+
+/** 结果未知记录的一行摘要：按存下的档案和原请求写实际改了什么，上限没变就不写上限。 */
+function profileChangeText(profile: MSupportAgent, body: Record<string, unknown>): string {
+  const capAfter = body.maxConcurrentUnlimited === true ? null : body.maxConcurrent;
+  const changes = [
+    profile.maxConcurrent !== capAfter && `同时接待上限 ${capShown(profile.maxConcurrent)} → ${capShown(capAfter)}`,
+    profile.enabled !== body.enabled && `开放接待 ${onOff(profile.enabled)} → ${onOff(body.enabled)}`,
+    profile.transferable !== body.transferable && `允许被转交 ${onOff(profile.transferable)} → ${onOff(body.transferable)}`,
+    profile.busy !== body.busy && `暂停接新单 ${onOff(profile.busy)} → ${onOff(body.busy)}`,
+    !sameTags(profile.tags, body.tags) && `标签 ${tagText(profile.tags)} → ${tagText(body.tags)}`,
+  ].filter(Boolean);
+  return `${profile.name} · ${changes.length ? changes.join("，") : "没有改动"}`;
+}
 
 function toggleList<T extends string>(rows: T[], item: T): T[] {
   return rows.includes(item) ? rows.filter((row) => row !== item) : [...rows, item];
@@ -970,7 +986,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
       sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">{agent.name} · 账号 #{agent.adminId}</span></>}
       footer={<>
         <Button disabled={saving} onClick={onClose}>取消</Button>
-        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !pending && !canSubmitNew ? "名册没读到，或这位客服已不在你的范围" : !saving && !reasonOk ? "操作理由要 8–200 字" : !saving && !pending && capProblem ? "同时接待上限要填 0–40 的整数" : undefined} onClick={() => void save()}>{pending ? "按原请求重试" : "保存"}</Button>
+        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !pending && !canSubmitNew ? "名册没读到，或这位客服已不在你的范围" : !saving && !pending && capProblem ? "同时接待上限要填 0–40 的整数" : !saving && !pending && !changed ? "还没有改动" : !saving && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{pending ? "按原请求重试" : "保存"}</Button>
       </>}>
       <Facts>
         <Fact k="客服">{agent.name || "名称未同步"} · {agent.email || "—"}</Fact>
