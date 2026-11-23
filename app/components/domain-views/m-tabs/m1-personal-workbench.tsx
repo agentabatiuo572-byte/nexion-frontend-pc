@@ -115,7 +115,12 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const [recentError, setRecentError] = useState<string | null>(null);
   const [recentRefresh, setRecentRefresh] = useState(0);
   const [filter, setFilter] = useState<SupportCustomerFilter>(() => { if (typeof window === "undefined") return "TODO"; const value = new URLSearchParams(window.location.search).get("filter"); return filters.find(x => x.value === value)?.value ?? "TODO"; });
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => {
+    if (typeof window === "undefined") return 1;
+    const value = new URLSearchParams(window.location.search).get("page");
+    const number = Number(value);
+    return value && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(number) ? number : 1;
+  });
   const [keywordDraft, setKeywordDraft] = useState("");
   const [keyword, setKeyword] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -158,7 +163,14 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
 
   const personalSearchKey = `nexion-m1-personal-keyword:${adminId}`;
   useEffect(() => { try { const saved = sessionStorage.getItem(personalSearchKey) ?? ""; setKeyword(saved); setKeywordDraft(saved); } catch { /* Search still works without memory. */ } }, [personalSearchKey]);
-  useEffect(() => { if (!active || view !== "customers") return; const url = new URL(window.location.href); url.searchParams.set("filter", filter); window.history.replaceState(null, "", url); try { sessionStorage.setItem(personalSearchKey, keyword); } catch { /* Search still works without memory. */ } }, [active, view, filter, keyword, personalSearchKey]);
+  useEffect(() => {
+    if (!active || view !== "customers") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("filter", filter);
+    url.searchParams.set("page", String(page));
+    window.history.replaceState(null, "", url);
+    try { sessionStorage.setItem(personalSearchKey, keyword); } catch { /* Search still works without memory. */ }
+  }, [active, view, filter, page, keyword, personalSearchKey]);
   const conversationSnapshot = ctx.pget("I.session.convos");
   const priorConversationSnapshot = useRef(conversationSnapshot);
   useEffect(() => { if (priorConversationSnapshot.current === conversationSnapshot) return; priorConversationSnapshot.current = conversationSnapshot; setRowsRefresh(n => n + 1); setRecentRefresh(n => n + 1); }, [conversationSnapshot]);
@@ -168,7 +180,15 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     snapshotController.current = controller;
     setSnapshot(null); setRowsLoading(true); setOverviewLoading(true); setRowsError(null); setOverviewError(null);
     void supportClient.snapshot({ mode: "PERSONAL", pageNum: view === "dashboard" ? 1 : page, pageSize: view === "dashboard" ? 6 : PAGE_SIZE, keyword: view === "dashboard" ? undefined : keyword || undefined, filter: activeFilter, signal: controller.signal })
-      .then((next) => { if (!controller.signal.aborted) { setSnapshot(next); if (!next.customers.available) setRowsError("当前筛选条件暂不可用，请调整服务规则后重试。"); } })
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        if (view === "customers" && next.customers.available) {
+          const lastPage = Math.max(1, Math.ceil(next.customers.total / PAGE_SIZE));
+          if (page > lastPage) { setPage(lastPage); return; }
+        }
+        setSnapshot(next);
+        if (!next.customers.available) setRowsError("当前筛选条件暂不可用，请调整服务规则后重试。");
+      })
       .catch((error) => { if (!controller.signal.aborted) { setSnapshot(null); setRowsError(errorText(error)); setOverviewError(errorText(error)); } })
       .finally(() => { if (!controller.signal.aborted) { setRowsLoading(false); setOverviewLoading(false); } });
     return () => { controller.abort(); if (snapshotController.current === controller) snapshotController.current = null; };
@@ -239,7 +259,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     const params = new URLSearchParams(window.location.search);
     const customerId = params.get("customerId");
     if (!customerId || !/^[1-9]\d*$/.test(customerId)) return;
-    setView("customers"); setFilter("ALL"); setKeyword(customerId);
+    setView("customers"); setFilter("ALL"); setKeyword(customerId); setPage(1);
     void openDetail(customerId);
   }, [authEpoch, openDetail, permission]);
   useEffect(() => {
