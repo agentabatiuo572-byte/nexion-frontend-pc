@@ -1320,7 +1320,14 @@ function i5MatrixVersionText(version: string, countries?: string[] | null) {
   return `${version || "未配置"} · ${countries?.join("、") || (countries ? "未配置" : "未提供")}`;
 }
 
-const changeBefore = (row: { before: string; after?: string; obj?: string; action?: string; operationCode?: string; ambassadorMaterialProposal?: unknown; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
+/**
+ * A2 显示用：提案里存的「数字 + 空格 + 币种」（USDT、UVT、USD、₫、VND）按全站金额写法写（去掉末尾 0，整数不写小数点），
+ * 旧单新单一起生效；其余文字和不带币种的数字原样。只改给人看的前后值和摘要，审批请求、判断规则和「技术信息」里的原文不经过这里。
+ */
+const A2_AMOUNT = /(?<![\w.,])[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?=[ \u00a0](?:USDT|UVT|USD|VND|₫)(?![A-Za-z]))/g;
+const a2AmountText = (text: string) => text.replace(A2_AMOUNT, (amount) => amountDisplay(amount));
+
+const changeBeforeValue = (row: { before: string; after?: string; obj?: string; action?: string; operationCode?: string; ambassadorMaterialProposal?: unknown; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
   if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.expectedVersion, row.disclosureReview.originalCountryCodes);
   if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.previousVersion
     ?? (isFirstA2DisclosurePublish(row.disclosureReview) ? "无上一版" : "未提供");
@@ -1366,7 +1373,7 @@ const f1VoucherReverse = (row: { after: string; action?: string; operationCode?:
     impact: row.status === "pending" ? (chosen?.[1] ? F1_VOUCHER_REVERSE_KEEP : F1_VOUCHER_REVERSE_CLAWBACK) : submittedImpact,
   };
 };
-const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; status?: A2OperationRow["status"]; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
+const changeAfterValue = (row: { after: string; obj?: string; action?: string; operationCode?: string; status?: A2OperationRow["status"]; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
   if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.version, row.disclosureReview.targetCountryCodes);
   if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.version;
   const voucher = f1VoucherReverse(row);
@@ -1385,6 +1392,9 @@ const changeAfter = (row: { after: string; obj?: string; action?: string; operat
   if (row.operationCode === "h3_quest_config") return h3ConfigValue(row.obj, row.after);
   return row.operationCode === "f5_commission_reverse" && row.after === "REVERSED" ? F5_STATE_NAME.reversed : deviceApprovalValue(row.after, row.operationCode);
 };
+/** 前后值的显示：金额按 a2AmountText 写。 */
+const changeBefore = (row: Parameters<typeof changeBeforeValue>[0]) => a2AmountText(changeBeforeValue(row));
+const changeAfter = (row: Parameters<typeof changeAfterValue>[0]) => a2AmountText(changeAfterValue(row));
 const changeBeforeText = (row: { before: string; ambassadorMaterialProposal?: unknown }) => !row.ambassadorMaterialProposal ? row.before
   : row.before.replace(/^类别 ([a-z]+)；/, (_, code: string) => `类别 ${ambassadorBucketLabel(code)}；`)
     .replace(/；(NOT_SUBMITTED|PENDING|NEEDS_MORE|PASSED)$/, (_, state: string) => `；${ambassadorMaterialStateLabel(state)}`);
