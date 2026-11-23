@@ -1240,6 +1240,14 @@ export default function UserDetailPage() {
 
   /** 汇总是后端能核对到的小计，不保证覆盖全部历史（后端 fieldStatuses 写 PARTIAL）。第二行放最近一笔，「已核对小计」收进问号。 */
   const usdtTotals = asArray(detail.financial?.byCurrency).find((row) => row.currency === "USDT")?.fieldStatuses as JsonRecord | undefined;
+  const fundTotalValue = (field: string, value: unknown) => {
+    const status = usdtTotals?.[field];
+    const amount = amountValue(value);
+    if (status !== undefined && status !== "READY" && status !== "PARTIAL") return "—";
+    // The display projection confirms a zero with a decimal string and a READY field.
+    return amount === "0" && (typeof value !== "string" || status !== "READY") ? "—" : amount;
+  };
+  const requestedWithdrawal = fundTotalValue("processingWithdrawalPrincipalTotal", summary.withdrawRequestedUsd);
   const subtotal = (field: string) => usdtTotals?.[field] === "PARTIAL" && <p>这次只核对到一部分，这是已核对的小计。</p>;
   // 最近一笔写在累计数第二行，一眼对上是哪个数的（产品 2026-11-07）。
   const depositRecent = <Recent label="最近一笔" openLabel="查看最近一笔充值"
@@ -1253,11 +1261,11 @@ export default function UserDetailPage() {
     onOpen={() => setRecord({ kind: "withdrawal", index: 0, latest: true })} />;
   const kpis = [
     detail.financial && { label: "钱包可用余额", value: amountValue(summary.walletUsdt ?? profile.walletUsdt), unit: "USDT", tone: "role-1" as const, icon: Wallet, group: "funds", anchor: "hub-deposit" },
-    detail.deposits && { label: "累计充值", value: amountValue(summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: ArrowDownToLine, group: "funds", anchor: "hub-deposit", sub: depositRecent, explain: <>
+    detail.deposits && { label: "累计充值", value: fundTotalValue("creditedDepositTotal", summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: ArrowDownToLine, group: "funds", anchor: "hub-deposit", sub: depositRecent, explain: <>
       <p>能核对到的已确认充值小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。</p>{subtotal("creditedDepositTotal")}
       <p>最近一笔：按发起时间取最新的一笔充值，链上、银行卡支付、银行转账和国际卡都算，待付款和失败的也算。</p>
     </> },
-    detail.withdrawals && { label: "累计提现", value: amountValue(summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: ArrowUpFromLine, group: "funds", anchor: "hub-withdrawal", sub: withdrawalRecent, explain: <>
+    detail.withdrawals && { label: "累计提现", value: fundTotalValue("successfulWithdrawalPrincipalTotal", summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: ArrowUpFromLine, group: "funds", anchor: "hub-withdrawal", sub: withdrawalRecent, explain: <>
       <p>能核对到的成功提现本金小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。</p>{subtotal("successfulWithdrawalPrincipalTotal")}
       <p>最近一笔：按创建时间取最新的一笔提现，各种状态都算，不受下面列表条数限制。</p>
     </> },
@@ -1588,7 +1596,7 @@ export default function UserDetailPage() {
           ...(detail.risk?.cases !== undefined ? [[<>风险案件<Explain label="风险案件的口径" content="按最近 20 条案件算。案件读取失败时也显示 0，这个数不能证明没有案件。" /></>, `${numberLabel(detail.risk.openCaseCount)} 个未关闭`] as const] : []),
           ...(detail.financial ? [
             ["UVT 余额", amountText(summary.walletNex ?? profile.walletNex, "UVT")] as const,
-            [<>提现申请额<Explain label="提现申请额的口径" content="能核对到的处理中提现本金小计，不是已到账的钱，也不保证覆盖全部历史。" /></>, amountText(summary.withdrawRequestedUsd)] as const,
+            [<>提现申请额<Explain label="提现申请额的口径" content="能核对到的处理中提现本金小计，不是已到账的钱，也不保证覆盖全部历史。" /></>, requestedWithdrawal === "—" ? requestedWithdrawal : `${requestedWithdrawal} USDT`] as const,
           ] : []),
         ]} />
       </Panel>}
