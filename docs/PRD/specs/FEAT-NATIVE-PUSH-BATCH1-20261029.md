@@ -159,3 +159,4 @@ Apple上传COMPLETE且无错误/警告，build `c3b2b6fe-7465-4689-9e90-d536c9ec
 - 已启用且模板已发布的 NOVA 频道，按原有业务事件、频率、收件人和通知偏好发送。手机使用该条站内通知生成时已选定语言的标题和正文。点击“收益任务”进入收益首页，点击“团队”进入团队首页。“无跳转”只唤起 App。关闭频道或撤下模板后，尚未发送的投递停止。
 - 仅 TEST 部署配置启用这批文案与 NOVA 投递。首次启用记录已有通知的编号上限，只处理此后新生成的 NOVA 通知。iOS 隔离测试包按实际包名登记 ai.uvel.app.test，由服务端匹配 TEST topic。Android 沿用 FCM。设备权限、用户偏好、当前账号和会话仍须通过检查。
 - 验收分别覆盖 App 在后台及进程完全退出。两种状态都从系统通知点击，核对落地会话编号或模板指定页面，并核对服务端打开回执。
+- `ai.uvel.app.test` 使用独立 Apple Push Services 证书，由 TEST Java 服务通过 APNs HTTP/2 双向 TLS 连接发送。运维通过 `NATIVE_PUSH_APNS_TEST_PKCS12_FILE` 与 `NATIVE_PUSH_APNS_TEST_PKCS12_PASSWORD_FILE` 指定服务账号可读的私有文件路径。更换证书后重启 TEST 后端。此配置仅匹配隔离测试包的 topic，原有 APNs 令牌认证与安卓 FCM 配置继续使用。
