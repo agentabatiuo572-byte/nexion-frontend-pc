@@ -141,6 +141,7 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
   const mark = useCallback((id: string) => {
     setActive(id);
     held.current = true;
+    userAt.current = 0;
   }, []);
 
   return { active, select, mark, anchor: (id: string) => `section-${id}` };
