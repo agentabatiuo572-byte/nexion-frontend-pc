@@ -73,7 +73,7 @@ export function M6Leaderboard() {
   const scopeLost = (cause: unknown) => {
     setScopeStale(true); setResult(undefined); setPhotos(undefined); closeDetail();
     const fallback: LeaderboardQuery = { ...query, scope: "all", groupId: undefined, pageNum: 1, expectedVersion: undefined };
-    if (JSON.stringify(fallback) === JSON.stringify(query)) { setFailure({ key: requestKey, text: message(cause) }); return; }
+    if (JSON.stringify(fallback) === JSON.stringify(query)) { setNotice(current => current === "正在重新加载…" ? undefined : current); setFailure({ key: requestKey, text: message(cause) }); return; }
     setNotice("能看的范围变了，范围已回到全员榜，按新权限重读。");
     setQuery(fallback);
   };
@@ -108,7 +108,8 @@ export function M6Leaderboard() {
       if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
       if (status(cause) === 403 || status(cause) === 401) deny();
       else if (scopeChanged(cause)) scopeLost(cause);
-      else { setResult(undefined); setFailure({ key: requestKey, text: message(cause), conflict: versionChanged(cause) }); }
+      // 读失败时「正在重新加载…」不再留在错误卡旁边。
+      else { setResult(undefined); setNotice(current => current === "正在重新加载…" ? undefined : current); setFailure({ key: requestKey, text: message(cause), conflict: versionChanged(cause) }); }
     });
     return () => { active = false; controller.abort(); };
   }, [enabled, requestKey]);
