@@ -185,7 +185,7 @@ function approvalExecutorLabel(w: A2OperationRow) {
   if (w.operationCode === "k1_release_param" || w.operationCode === "k1_earnings_release") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "c2_session_revoke_all" || !w.operationCode && w.action.startsWith("强制登出 · ")) return "另一位有审批批准权限和退出全部设备权限的超级管理员";
   // 后端 ROLE_GATE_E1_SKU 原文带权限码 device_e1_write，这里写成同一含义的权限名。
-  if (["e1_hosting_centers_update", "e1_sku_create", "e1_sku_update"].includes(w.operationCode ?? "")) return "另一位有审批批准权限和商品修改权限的管理员";
+  if (["e1_hosting_centers_update", "e1_sku_create", "e1_sku_update"].includes(w.operationCode ?? "")) return "另一位超级管理员（需有商品修改权限）";
   if (w.operationCode === "h5_earn_milestone_create") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "f4_quota_tier_create") return "另一位有审批批准权限和购机名额修改权限的超级管理员";
   // H5GrowthApproval：三类成长审批都要超级管理员且有审批批准权限。
@@ -194,7 +194,7 @@ function approvalExecutorLabel(w: A2OperationRow) {
   if (/^调整创世参数 · /.test(w.action)) return "另一位有审批批准权限和该参数业务权限的超级管理员";
   if (["提高旧活动奖励", "放宽转盘奖项配置", "新增转盘奖项", "删除转盘奖项并提高安慰奖", "提高转盘奖项概率",
     "首次发布奖励课程", "发布奖励课程版本", "回滚至有奖励的课程版本"].includes(w.action)) return "另一位有审批批准权限的超级管理员";
-  if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位有审批批准权限和商品修改权限的管理员";
+  if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位超级管理员（需有商品修改权限）";
   if (w.action === "发布规则任务") return "另一位有审批批准权限和任务池修改权限的管理员";
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
     ? "另一位具有审批和大使批准权限、且未参与本版材料核验的管理员"
