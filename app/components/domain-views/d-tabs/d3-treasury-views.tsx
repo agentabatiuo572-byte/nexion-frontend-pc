@@ -13,6 +13,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { coverDaysText, formatReserveCoverDays } from "@/lib/admin/treasury-cover-days";
 import { amountDigits, amountText } from "@/lib/admin/treasury-amount";
 import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
+import { amountDisplay } from "@/lib/format";
 
 /** 90 天不再提供。已有的 90 天草稿还看得到，但不能连别的改动一起保存（PCN-38）。 */
 export const FORECAST_90D_BLOCK = "90 天不再提供，改成 7 天或 30 天才能保存。";
@@ -462,12 +463,12 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
 
 export function FlowTab({ history }: { history: { data: B2LiquidityHistory | null; loading: boolean; error: string | null; reload: () => void } }) {
   const [detailOpen, setDetailOpen] = useState<"flow" | "months" | null>(null);
-  const wan = (value: number) => `${Number(value.toFixed(2))} 万 USDT`;
+  const wan = (value: number) => `${amountDisplay(value, 2)} 万 USDT`;
   const flows = history.data?.flowWindows ?? [];
   const months = history.data?.monthlyNewDeposits ?? [];
   const pending = !history.data && !history.error;
-  const fixed = (value: number) => (value === 0 ? <span className="d3-zero">{value.toFixed(2)}</span> : value.toFixed(2));
-  const signed = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+  const fixed = (value: number) => (value === 0 ? <span className="d3-zero">{amountDisplay(value, 2)}</span> : amountDisplay(value, 2));
+  const signed = (value: number) => `${value > 0 ? "+" : ""}${amountDisplay(value, 2)}`;
   // 图下面给同一份数的表，数值不只靠图和悬停（VS-47）。
   const flowsEmpty = Boolean(history.data) && flows.every((row) => row.inflowWan === 0 && row.outflowWan === 0);
   const monthsEmpty = Boolean(history.data) && months.every((row) => row.amountWan === 0);

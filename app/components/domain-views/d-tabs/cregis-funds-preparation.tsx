@@ -13,6 +13,7 @@ import { preparationAmount, preparationConfig, PREPARATION_BLOCKER, PREPARATION_
 import { LongValue, usdt, zoneLabel } from "./d1-shared";
 import { businessStamp, parseBusinessTime } from "@/lib/admin/business-time";
 import type { DCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 const EMPTY: ExceptionPage = { records: [], hasMore: false, nextBeforeId: null };
 const ROOT = "/funds-preparation";
@@ -228,7 +229,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
         </Field>
         {formError && <BlockState state="error" compact title="这一步没有完成" detail={formError} />}
         {preflight && <JudgmentPoints title="只读检查结果" rows={[
-          { label: "来源 USDT", value: balance ? String(balance.usdt) : "待核实" },
+          { label: "来源 USDT", value: balance ? amountDisplay(String(balance.usdt)) : "待核实" },
           { label: `来源 ${gasSymbol}`, value: balance ? String(balance.nativeBalance) : "待核实", reason: `须在执行前重新核对项目钱包绑定及实际手续费；${gasSymbol} 余额大于零不表示足以支付网络费。` },
           { label: "检查时间", value: Number.isFinite(parseBusinessTime(String(preflight.checkedAt))) ? `${businessStamp(parseBusinessTime(String(preflight.checkedAt)))}（${zoneLabel()}）` : "待核实", reason: "仅供准备核对，仍未授权转账。" },
           ...(preflight.blockers as string[]).map(item => ({ label: "条件", state: "warn" as const, value: PREPARATION_BLOCKER[item] ?? "仍有条件待核实，请联系管理员" })),

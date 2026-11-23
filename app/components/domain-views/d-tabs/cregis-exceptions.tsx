@@ -16,6 +16,7 @@ import { exceptionChallengeId, exceptionCommand, exceptionFee, exceptionId, exce
 import type { OperatorBriefKind } from "../design-kit";
 import type { DCtx } from "./types";
 import { LongValue, usdt } from "./d1-shared";
+import { amountDisplay } from "@/lib/format";
 
 const EMPTY: ExceptionPage = { records: [], hasMore: false, nextBeforeId: null };
 const MODE: Record<string, string> = { UNCONFIGURED: "待配置（禁止退款）", PLATFORM_PAYS: "全额退回，平台承担网络费", FIXED_USDT: "扣除固定 USDT 费用" };
@@ -23,6 +24,8 @@ const ACTION: Record<string, string> = { REVERSE: "核实重组并冲正", RESTO
 const STATE: Record<string, string> = { MAKER_DONE: "等待另一位管理员复核", PROPOSED: "等待另一位管理员复核", APPROVED: "已批准，等待发送", SUBMITTING: "发送请求处理中", UNKNOWN: "结果未知，保留原单核查", SENT: "已取得收款服务订单，等待链确认", COMPLETED: "处置完成", RESOLVED: "处置完成", REJECTED: "已拒绝", CANCELLED: "已取消", FAILED_NO_TRANSFER: "确认未转出，可重新提案", REVERSED: "已冲正", DEBT_OPEN: "尚有欠款", OPEN: "等待处置", RELEASED: "本事件已释放", RESTORED: "原入金已恢复" };
 Object.assign(STATE, { CREDITED: "认领已入账", INVESTIGATING: "调查中", REVERSED_DEBT: "已冲正，尚有欠款", REPROPOSED: "已生成新的复核提案", CANCELLED_LATE_EVIDENCE: "原单证据变化，已撤销此提案" });
 const label = (value: unknown) => value == null || value === "" ? "—" : String(value);
+/** 金额按全站写法（amountDisplay）；读不到写「—」。 */
+const amount = (value: unknown) => value == null || value === "" ? "—" : amountDisplay(String(value));
 const stateOf = (row: ExceptionRecord) => String(row.state ?? row.status);
 const stateTone = (row: ExceptionRecord): StateTone => ["MAKER_DONE", "PROPOSED", "OPEN", "UNKNOWN", "DEBT_OPEN", "FAILED_NO_TRANSFER", "INVESTIGATING", "REVERSED_DEBT"].includes(stateOf(row)) ? "warn"
   : ["COMPLETED", "RESOLVED", "CREDITED", "REVERSED", "RELEASED", "RESTORED"].includes(stateOf(row)) ? "ok" : ["REJECTED", "CANCELLED", "CANCELLED_LATE_EVIDENCE"].includes(stateOf(row)) ? "done" : "progress";
@@ -152,13 +155,13 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
     completionCopy: "提案提交后，须由另一位管理员复核才生效", detail: "另一位管理员复核后仅对新工单生效，已有工单保留原毛额、费用与净额快照。",
     reasonMin: 10, reasonMax: 200, businessForm: { kind: "multi-field", requireAnyChange: true, fields: [
       { key: "mode", label: "退款费用方式", inputKind: "select", current: String(policy?.mode ?? "UNCONFIGURED"), options: Object.keys(MODE), optionLabels: MODE, required: true, showDiff: true, help: `现在：${MODE[String(policy?.mode ?? "UNCONFIGURED")]}` },
-      { key: "fee", label: "固定扣费（USDT）", current: policy?.mode === "FIXED_USDT" ? String(policy.feeUsdt ?? "0") : "0", inputKind: "text", help: policy?.mode === "FIXED_USDT" ? `现在 ${String(policy.feeUsdt ?? "0")} USDT` : "现在不扣固定费", visibleWhen: { key: "mode", equals: "FIXED_USDT" }, pattern: "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,6})?$", patternMessage: "填不小于 0 的数，最多六位小数", required: true },
+      { key: "fee", label: "固定扣费（USDT）", current: policy?.mode === "FIXED_USDT" ? String(policy.feeUsdt ?? "0") : "0", inputKind: "text", help: policy?.mode === "FIXED_USDT" ? `现在 ${amountDisplay(String(policy.feeUsdt ?? "0"))} USDT` : "现在不扣固定费", visibleWhen: { key: "mode", equals: "FIXED_USDT" }, pattern: "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,6})?$", patternMessage: "填不小于 0 的数，最多六位小数", required: true },
     ] }, run: (reason, _value, form) => mutate("/refunds/fee-policy/cases", { expectedVersion: exceptionVersion(policy?.version),
       mode: form?.mode, feeUsdt: exceptionFee(form?.mode ?? "", form?.fee ?? ""), reason }),
   });
   const recover = (row: ExceptionRecord) => openActionConfirm({ briefKind: "record", action: "核对并恢复原退款单 CID", title: "核对原单 CID", confirmLabel: "确认核对", effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     completionCopy: "只核对原退款单，不重新发送退款", detail: "只核对原业务号、返款地址及净额，不重新发送退款。",
-    facts: <Facts><Fact k="退款工单">#{label(row.id)}</Fact><Fact k="原转出地址"><span data-mono="">{label(row.returnAddress)}</span></Fact><Fact k="净额">{label(row.netAmount)} USDT</Fact></Facts>,
+    facts: <Facts><Fact k="退款工单">#{label(row.id)}</Fact><Fact k="原转出地址"><span data-mono="">{label(row.returnAddress)}</span></Fact><Fact k="净额">{amount(row.netAmount)} USDT</Fact></Facts>,
     reasonMin: 10, reasonMax: 200, businessForm: { kind: "multi-field", fields: [{ key: "cid", label: "收款服务原单 CID", inputKind: "text", required: true, pattern: "^[1-9][0-9]{0,18}$", patternMessage: "CID 只能是数字", maxLength: 19 }] },
     run: (reason, _v, form) => mutate(`/refunds/cases/${exceptionId(row.id)}/recover`, { expectedVersion: exceptionVersion(row.version), providerCid: exceptionId(form?.cid), reason }),
   });
@@ -169,8 +172,8 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
       const proof = await exceptionRead(`/reorg/incidents/${exceptionId(row.id)}/evidence?action=${action}`, scope); scope.assertOwner();
       confirm({ kind: action === "UNFREEZE" ? "security" : "funds", action: ACTION[action], title: ACTION[action], confirmLabel: "提交审批", path: `/reorg/incidents/${exceptionId(row.id)}/proposals`,
         body: { action, expectedVersion: exceptionVersion(row.version), evidenceHash: proof.evidenceHash },
-        facts: <Facts><Fact k="原净入账" lead tone="role-1" unit="USDT">{label(row.netAmount)}</Fact><Fact k="用户">{label(row.userId)}</Fact><Fact k="待追偿">{label(row.outstandingDebt)} USDT</Fact><Fact k="证据">{label(proof.evidenceHash)}</Fact></Facts>,
-        detail: `用户 ${label(row.userId)}，原净入账 ${label(row.netAmount)} USDT，待追偿 ${label(row.outstandingDebt)} USDT。证据 ${label(proof.evidenceHash)}。只处置本事件，不自动重开资金开关。` });
+        facts: <Facts><Fact k="原净入账" lead tone="role-1" unit="USDT">{amount(row.netAmount)}</Fact><Fact k="用户">{label(row.userId)}</Fact><Fact k="待追偿">{amount(row.outstandingDebt)} USDT</Fact><Fact k="证据">{label(proof.evidenceHash)}</Fact></Facts>,
+        detail: `用户 ${label(row.userId)}，原净入账 ${amount(row.netAmount)} USDT，待追偿 ${amount(row.outstandingDebt)} USDT。证据 ${label(proof.evidenceHash)}。只处置本事件，不自动重开资金开关。` });
     } catch (failure) { if (owns()) setError(displayAdminError(failure)); }
     finally { if (owns()) setBusy(false); }
   };
@@ -182,22 +185,22 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
   /** 每类工单在抽屉底部能做什么；发起人看不到复核按钮（D1-A46～A50）。 */
   const caseActions = (kind: CaseKind, row: ExceptionRecord) => {
     const own = isMaker(row, session?.adminId);
-    const net = <Fact k="净额" lead tone="role-1" unit="USDT">{label(row.netAmount)}</Fact>;
+    const net = <Fact k="净额" lead tone="role-1" unit="USDT">{amount(row.netAmount)}</Fact>;
     const actions: { key: string; label: string; danger?: boolean; primary?: boolean; run: () => void }[] = [];
     if (kind === "claim" && canManage && waitsReview(row) && !own) {
       const facts = <Facts>{net}<Fact k="目标用户">{label(row.userId ?? row.targetUserId ?? row.claimantUserId)}</Fact><Fact k="证据">{label(row.evidenceHash)}</Fact></Facts>;
       actions.push({ key: "approve", label: "复核认领", primary: true, run: () => confirm({ kind: "funds", review: true, danger: true, action: "复核认领入账", title: "复核认领入账", confirmLabel: "确认复核", path: `/exception-claims/${exceptionId(row.id)}/decision`, body: { expectedVersion: exceptionVersion(row.version), decision: "APPROVE" }, facts,
-        detail: `目标用户 ${label(row.userId ?? row.targetUserId ?? row.claimantUserId)}，净额 ${label(row.netAmount)} USDT，证据 ${label(row.evidenceHash)}。系统将再次独立核验原资金及钱包归属。`, completion: "确认后系统再次核验归属，通过后净额入账到目标用户钱包，不能撤销。" }) });
+        detail: `目标用户 ${label(row.userId ?? row.targetUserId ?? row.claimantUserId)}，净额 ${amount(row.netAmount)} USDT，证据 ${label(row.evidenceHash)}。系统将再次独立核验原资金及钱包归属。`, completion: "确认后系统再次核验归属，通过后净额入账到目标用户钱包，不能撤销。" }) });
       actions.push({ key: "reject", label: "拒绝", danger: true, run: () => confirm({ kind: "record", review: true, action: "拒绝认领", title: "拒绝认领", confirmLabel: "确认拒绝", path: `/exception-claims/${exceptionId(row.id)}/decision`, body: { expectedVersion: exceptionVersion(row.version), decision: "REJECT" }, facts,
-        detail: `目标用户 ${label(row.userId ?? row.targetUserId ?? row.claimantUserId)}，净额 ${label(row.netAmount)} USDT。`, completion: "拒绝后这笔入金留在异常里，不入账。" }) });
+        detail: `目标用户 ${label(row.userId ?? row.targetUserId ?? row.claimantUserId)}，净额 ${amount(row.netAmount)} USDT。`, completion: "拒绝后这笔入金留在异常里，不入账。" }) });
     }
     if (kind === "refund" && canRefund) {
-      const facts = <Facts>{net}<Fact k="原转出地址"><span data-mono="">{label(row.returnAddress)}</span></Fact><Fact k="毛额">{label(row.grossAmount)} USDT</Fact><Fact k="费用">{label(row.feeAmount)} USDT</Fact><Fact k="证据">{label(row.evidenceHash)}</Fact></Facts>;
+      const facts = <Facts>{net}<Fact k="原转出地址"><span data-mono="">{label(row.returnAddress)}</span></Fact><Fact k="毛额">{amount(row.grossAmount)} USDT</Fact><Fact k="费用">{amount(row.feeAmount)} USDT</Fact><Fact k="证据">{label(row.evidenceHash)}</Fact></Facts>;
       if (waitsReview(row) && !own) {
         actions.push({ key: "approve", label: "复核退款", primary: true, run: () => confirm({ kind: "funds", review: true, danger: true, action: "复核链上原路退款", title: "复核原路退款", confirmLabel: "确认复核", path: `/refunds/cases/${exceptionId(row.id)}/decision`, body: { expectedVersion: exceptionVersion(row.version), decision: "APPROVE" }, facts,
-          detail: `原地址 ${label(row.returnAddress)}，毛额 ${label(row.grossAmount)}，费用 ${label(row.feeAmount)}，实退 ${label(row.netAmount)} USDT。证据 ${label(row.evidenceHash)}。`, completion: "确认后按净额原路退回到原转出地址，钱转出后不能撤销。" }) });
+          detail: `原地址 ${label(row.returnAddress)}，毛额 ${amount(row.grossAmount)}，费用 ${amount(row.feeAmount)}，实退 ${amount(row.netAmount)} USDT。证据 ${label(row.evidenceHash)}。`, completion: "确认后按净额原路退回到原转出地址，钱转出后不能撤销。" }) });
         actions.push({ key: "reject", label: "拒绝", danger: true, run: () => confirm({ kind: "funds", review: true, danger: true, action: "拒绝退款", title: "拒绝退款", confirmLabel: "确认拒绝", path: `/refunds/cases/${exceptionId(row.id)}/decision`, body: { expectedVersion: exceptionVersion(row.version), decision: "REJECT" }, facts,
-          detail: `原地址 ${label(row.returnAddress)}，实退 ${label(row.netAmount)} USDT。`, completion: "拒绝后不退款，这笔入金留在异常里。" }) });
+          detail: `原地址 ${label(row.returnAddress)}，实退 ${amount(row.netAmount)} USDT。`, completion: "拒绝后不退款，这笔入金留在异常里。" }) });
       }
       if (stateOf(row) === "MAKER_DONE" && own) actions.push({ key: "cancel", label: "取消提案", danger: true, run: () => confirm({ kind: "funds", review: true, danger: true, action: "取消退款提案", title: "取消退款提案", confirmLabel: "确认取消", path: `/refunds/cases/${exceptionId(row.id)}/decision`, body: { expectedVersion: exceptionVersion(row.version), decision: "CANCEL" }, facts,
         detail: "取消尚未批准的原退款提案并释放其资金占用。", completion: "取消尚未批准的原退款提案并释放其资金占用。" }) });
@@ -256,13 +259,13 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
         explain="异常入金原路退款时扣多少费用。读不到时原路退款先不能提交，认领照常。">
         <BlockState state="error" compact title="退款手续费读取失败" detail={errors.fee} onRetry={() => void refresh()} />
       </Fold> : <Fold title="退款手续费" icon={Receipt} tone="role-4" alert={policy.mode === "UNCONFIGURED" || policyWaiting.length > 0 || !!errors.feeCases} defaultOpen={policyWaiting.length > 0}
-        summary={`${MODE[String(policy.mode)]}${policy.mode === "FIXED_USDT" ? ` ${label(policy.feeUsdt)} USDT` : ""}${policyWaiting.length ? `，${policyWaiting.length} 个提案待复核` : ""}`}
+        summary={`${MODE[String(policy.mode)]}${policy.mode === "FIXED_USDT" ? ` ${amount(policy.feeUsdt)} USDT` : ""}${policyWaiting.length ? `，${policyWaiting.length} 个提案待复核` : ""}`}
         explain="异常入金原路退款时扣多少费用。另一位管理员复核后生效，只对新工单；待配置时不能退款。">
         <div className="rd-stack">
           {errors.feeCases && <BlockState state="error" compact title="费用规则提案读取失败" detail={errors.feeCases} onRetry={() => void refresh()} />}
           <ConfigList label="退款手续费">
             <ConfigRow name="退款手续费" what="异常退款时扣多少费用" when="另一位管理员复核后生效，只对新工单" effect="待配置时不能退款"
-              value={`${MODE[String(policy.mode)]}${policy.mode === "FIXED_USDT" ? ` ${label(policy.feeUsdt)} USDT` : ""}`} sub={`版本 ${label(policy.version)}`}
+              value={`${MODE[String(policy.mode)]}${policy.mode === "FIXED_USDT" ? ` ${amount(policy.feeUsdt)} USDT` : ""}`} sub={`版本 ${label(policy.version)}`}
               action={canRefund ? <Button size="sm" disabledReason={readBlock} onClick={configureFee}>配置退款手续费</Button> : undefined} />
           </ConfigList>
           {policyCases.length > 0 && <Table label="费用规则提案">
@@ -271,15 +274,15 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
               const own = isMaker(row, session?.adminId);
               const facts = <Facts>
                 <Fact k="费用方式"><Change from={MODE[String(policy.mode)]} to={MODE[String(row.mode)]} /></Fact>
-                <Fact k="固定费"><Change from={`${policy.mode === "FIXED_USDT" ? label(policy.feeUsdt) : "0"} USDT`} to={`${label(row.feeUsdt)} USDT`} /></Fact>
+                <Fact k="固定费"><Change from={`${policy.mode === "FIXED_USDT" ? amount(policy.feeUsdt) : "0"} USDT`} to={`${amount(row.feeUsdt)} USDT`} /></Fact>
                 <Fact k="发起人">{label(row.makerId)}</Fact></Facts>;
               return <tr key={label(row.id)}>
                 <Td><Cell mono main={`#${label(row.id)}`} sub={`发起人 ${label(row.makerId)}${own ? "（你）" : ""}`} /></Td>
-                <Td><Cell main={MODE[String(row.mode)]} sub={`固定费 ${label(row.feeUsdt)} USDT`} /></Td>
+                <Td><Cell main={MODE[String(row.mode)]} sub={`固定费 ${amount(row.feeUsdt)} USDT`} /></Td>
                 <Td><Cell main={<StatusTag tone={stateTone(row)}>{STATE[stateOf(row)] ?? "状态未知"}</StatusTag>} /></Td>
                 <Td sticky="end" align="right">{canRefund && waitsReview(row) && (own ? <span className="rd-note">等另一位管理员复核</span> : <span className="rd-row-actions">
-                  <Button size="sm" disabledReason={readBlock} onClick={() => confirm({ kind: "config", review: true, action: "复核费用规则", title: "复核退款费用规则", confirmLabel: "确认复核", path: `/refunds/fee-policy/cases/${exceptionId(row.id)}/decision`, body: { expectedVersion: exceptionVersion(row.version), decision: "APPROVE" }, facts, detail: `请独立核对费用规则 ${MODE[String(row.mode)]}、固定费用 ${label(row.feeUsdt)} USDT。`, completion: "复核通过后立即生效，只对新工单。" })}>复核费用规则</Button>
-                  <Button size="sm" variant="ghost" disabledReason={readBlock} onClick={() => confirm({ kind: "config", review: true, action: "拒绝费用规则", title: "拒绝退款费用规则", confirmLabel: "确认拒绝", path: `/refunds/fee-policy/cases/${exceptionId(row.id)}/decision`, body: { expectedVersion: exceptionVersion(row.version), decision: "REJECT" }, facts, detail: `费用规则 ${MODE[String(row.mode)]}、固定费用 ${label(row.feeUsdt)} USDT。`, completion: "拒绝后现行费用规则不变。" })}>拒绝</Button>
+                  <Button size="sm" disabledReason={readBlock} onClick={() => confirm({ kind: "config", review: true, action: "复核费用规则", title: "复核退款费用规则", confirmLabel: "确认复核", path: `/refunds/fee-policy/cases/${exceptionId(row.id)}/decision`, body: { expectedVersion: exceptionVersion(row.version), decision: "APPROVE" }, facts, detail: `请独立核对费用规则 ${MODE[String(row.mode)]}、固定费用 ${amount(row.feeUsdt)} USDT。`, completion: "复核通过后立即生效，只对新工单。" })}>复核费用规则</Button>
+                  <Button size="sm" variant="ghost" disabledReason={readBlock} onClick={() => confirm({ kind: "config", review: true, action: "拒绝费用规则", title: "拒绝退款费用规则", confirmLabel: "确认拒绝", path: `/refunds/fee-policy/cases/${exceptionId(row.id)}/decision`, body: { expectedVersion: exceptionVersion(row.version), decision: "REJECT" }, facts, detail: `费用规则 ${MODE[String(row.mode)]}、固定费用 ${amount(row.feeUsdt)} USDT。`, completion: "拒绝后现行费用规则不变。" })}>拒绝</Button>
                 </span>)}</Td>
               </tr>;
             })}</tbody>
@@ -374,7 +377,7 @@ function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, b
       explain="由原转出钱包签名证明归属。交易所或合约不能提供该证明时，保留待核查并联系原平台补证；公开交易哈希不能代替签名。"
       primary={<Button variant="primary" disabledReason={proposeBlock} onClick={() => challenge && evidence && onPropose(intent, {
         challengeId: exceptionChallengeId(challenge.challengeId), signature, ...(intent === "CLAIM_CREDIT" ? { targetUserId: exceptionId(userId) } : {}), evidenceHash: evidence.evidenceHash,
-      }, <Facts><Fact k="净额" lead tone="role-1" unit="USDT">{label(evidence.netAmount)}</Fact><Fact k="来源">{source.title}</Fact><Fact k="方式">{refund ? "原路退款" : `认领给用户 ${userId}`}</Fact><Fact k="证据">{label(evidence.evidenceHash)}</Fact></Facts>)}>提交处置提案</Button>} />}>
+      }, <Facts><Fact k="净额" lead tone="role-1" unit="USDT">{amount(evidence.netAmount)}</Fact><Fact k="来源">{source.title}</Fact><Fact k="方式">{refund ? "原路退款" : `认领给用户 ${userId}`}</Fact><Fact k="证据">{label(evidence.evidenceHash)}</Fact></Facts>)}>提交处置提案</Button>} />}>
     <Steps label="认领或退款进度" items={[
       { label: "选方式", state: step > 0 ? "done" : "current" },
       { label: "生成签名原文", state: step > 0 ? "done" : "todo" },
@@ -400,7 +403,7 @@ function ClaimDrawer({ source, sources, policyMode, canRefund, scopeFor, owns, b
       </Field>
       <div><Button disabledReason={working ? "正在处理" : d1PendingObjectReason(`/cregis${previewPath}`) ?? (signatureValid ? undefined : "先粘贴签名结果")} onClick={() => void preview()}>核对归属与资金证据</Button></div>
     </>}
-    {evidence && <Fold inset defaultOpen title="归属与资金证据" summary={`净额 ${label(evidence.netAmount)} USDT`}>
+    {evidence && <Fold inset defaultOpen title="归属与资金证据" summary={`净额 ${amount(evidence.netAmount)} USDT`}>
       <KeyValues rows={caseRows(evidence)} />
       {refund && evidence.canPropose === false && <p className="rd-note">当前费用规则下不能提交退款，请核对净额及费用配置。</p>}
     </Fold>}
