@@ -680,6 +680,8 @@ export default function UserDetailPage() {
     return () => window.clearTimeout(timer);
   }, [writeResult, readKey]);
   const [denied, setDenied] = useState(false);
+  /** 最近一次读用户资料是否被拒（403 等）：写成功后回读失败时，提示要按页面实际给的入口写。 */
+  const readDenied = useRef(false);
   const referralRequest = useRef<AbortController | null>(null);
   const teamHeadingTopBeforeRetry = useRef<number | null>(null);
   const [referralRetrying, setReferralRetrying] = useState(false);
@@ -750,6 +752,7 @@ export default function UserDetailPage() {
     setActionConfirm(null); setNotificationEvidence(null); setRecord(null);
     setClosingCommand(null); setReleasing(null); setWriteResult(null);
     setOpenFolds({}); setOpenRecordList(undefined);
+    readDenied.current = true;
     setDenied(true);
     setError(message);
     setLoading(false);
@@ -772,6 +775,7 @@ export default function UserDetailPage() {
     setLoading(true);
     setError(null);
     setDenied(false);
+    readDenied.current = false;
     setActionConfirm(null); setNotificationEvidence(null); setRecord(null);
     // 换用户、换账号时先清旧资料（C1-H02）。同一个用户刷新时旧资料留在屏幕上，写入口禁用，读失败再清。
     if (loadedKey.current !== readKey) { setDetail(null); setPaymentMethods(null); setRevokeScan(null); setRevokeScanFailed(false); setOpenFolds({}); setOpenRecordList(undefined); }
@@ -1027,7 +1031,8 @@ export default function UserDetailPage() {
       if (command.kind === "unbind") {
         if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else await loadPaymentMethods();
       } else if (command.kind === "rebind") await loadPaymentMethods();
-      else if (!await load() && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}。资料刷新失败，点「重试」重新读取后核对。`, tone: "warn" });
+      // 无权限页没有「重试」，被拒时只说现在看不了（复审 I01-403）。
+      else if (!await load() && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: readDenied.current ? `${text}。这个账号现在没有查看这位用户的权限，资料没有重新读取。` : `${text}。资料刷新失败，点「重试」重新读取后核对。`, tone: "warn" });
     } finally {
       setActionPending(null);
     }
@@ -1864,7 +1869,7 @@ export default function UserDetailPage() {
             const text = `通知 ${notificationEvidence.id} 已按投递事实校正时间，已读状态保持不变。`;
             setWriteResult({ key: readKey, text, tone: "ok" });
             void load().then(refreshed => {
-              if (!refreshed && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: `${text}资料刷新失败，点「重试」重新读取后核对。`, tone: "warn" });
+              if (!refreshed && currentReadKey.current === readKey) setWriteResult({ key: readKey, text: readDenied.current ? `${text}这个账号现在没有查看这位用户的权限，资料没有重新读取。` : `${text}资料刷新失败，点「重试」重新读取后核对。`, tone: "warn" });
             });
           }} onClose={() => { setNotificationEvidence(null); syncPending(); }} />
       )}
