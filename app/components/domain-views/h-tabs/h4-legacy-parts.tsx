@@ -58,6 +58,10 @@ export function legacyRewardText(value: unknown): string {
     return kept ? `${whole}.${kept}` : whole;
   });
 }
+export function actualRewardText(amount: unknown, asset: unknown): string {
+  return typeof amount === "string" && /^\d+(?:\.\d+)?$/.test(amount) && (asset === "UVT" || asset === "USDT")
+    ? `${amountText(amount)} ${asset}` : "—";
+}
 export function LegacyNameTag({ where }: { where: string }) {
   return <StatusTag tone="warn" icon={CircleAlert} explain={`系统存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的也是存的名称（只做品牌替换）。改${where}时写成 UVT。`}>旧名称</StatusTag>;
 }

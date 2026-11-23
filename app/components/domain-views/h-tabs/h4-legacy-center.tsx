@@ -55,7 +55,7 @@ import {
   ApprovalFact, EventCard, EventPreview, GuardCard, contentFieldsText, contentGaps, gapWeight, languageNames, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
   WHEEL_APP_KINDS, WHEEL_KIND_LABEL, WheelBar, WheelLegend, boolValue, effectApproval, effectByDirection, effectDirect, expiredTag, formStore,
   legacyName, lifecycleOf, numericValue, pendingTag, percentText, text, unknownTag, wheelLegacyNexTier, wheelPointsTier, wheelUnit,
-  type LegacyEvent, type LocaleCode, type WheelTier, legacyRewardText } from "./h4-legacy-parts";
+  type LegacyEvent, type LocaleCode, type WheelTier, actualRewardText, legacyRewardText } from "./h4-legacy-parts";
 
 type Model = H4Statistics & {
   events?: LegacyEvent[];
@@ -369,13 +369,24 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const ruleBased = event.rewardCopyOnly !== undefined ? event.rewardCopyOnly
       : rules === null ? null : H4_EVENT_RULE_CODES.has(event.id) && !!ruleOf(event.id);
     if (ruleBased === null) { toast("活动规则读取失败，请刷新后重试。", "warn"); return; }
+    let reviewed: { value: string; preview: Awaited<ReturnType<typeof previewH4EventReward>> } | undefined;
+    const incompletePreview = "活动奖励预览不完整，本次未提交；请重新读取活动后核对。";
+    const readComparison = async (value: string, signal: AbortSignal) => {
+      const preview = await previewH4EventReward(event.id, value, current, "", signal);
+      if (preview.currentReward === undefined || !preview.proposedReward) throw new Error(incompletePreview);
+      if (!signal.aborted) reviewed = { value, preview };
+      return {
+        before: actualRewardText(preview.currentReward?.amount, preview.currentReward?.asset),
+        after: actualRewardText(preview.proposedReward.amount, preview.proposedReward.asset),
+      };
+    };
     openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,
       title: "修改活动奖励",
       effect: ruleBased ? effectDirect : effectByDirection(),
-      detail: ruleBased ? "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。" : <>当前奖励 <b>{legacyRewardText(current)}</b>。填写新奖励后确认。</>,
-      facts: <>
-        <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{legacyRewardText(current)}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</Fact>{ruleBased
+      detail: ruleBased ? "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。" : "填写新奖励后确认。",
+      facts: (_, comparison) => <>
+        <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{ruleBased ? <>{legacyRewardText(current)}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</> : comparison?.before ?? "—"}</Fact>{ruleBased
           ? <><Fact k="改的是">这页登记的奖励文字</Fact><Fact k="App 上">{event.appRewardNames ? <>显示「{event.appRewardNames.zh || "—"}」，按玩法规则写，不随这里改</> : "每种语言显示填的奖项名，没填的显示玩法规则摘要"}</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
           : <>{event.appRewardNames && <Fact k="App 现在显示">{event.appRewardNames.zh || "—"}</Fact>}<ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" /></>}</Facts>
       </>,
@@ -383,11 +394,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       confirmLabel: "提交修改",
       reasonPlaceholder: "例如：按运营排期调整奖励，工单号",
       getPendingReason: () => pendingHIRewardCommand(hiEventScope(event.id))?.payload.input.reason,
-      edit: { kind: "text", current, initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue, hint: ruleBased ? undefined : "只认正数的 UVT 或 USDT，如 100 UVT" },
+      edit: { kind: "text", current, displayCurrent: ruleBased ? undefined : "—", readComparison: ruleBased ? undefined : readComparison,
+        initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue, hint: ruleBased ? undefined : "只认正数的 UVT 或 USDT，如 100 UVT" },
       run: async (reason, value) => {
         const scope = hiEventScope(event.id);
         if (!value) return;
-        const preview = await previewH4EventReward(event.id, value, current, reason);
+        const preview = ruleBased ? await previewH4EventReward(event.id, value, current, reason)
+          : reviewed?.value === value ? reviewed.preview : undefined;
+        if (!preview) throw new Error(incompletePreview);
         if (preview.approvalRequired) {
           await proposeH4(scope, "h4_legacy_event_reward_update", { eventCode: event.id, value, expectedValue: current },
             preview.current, preview.proposed, reason, undefined, value);
