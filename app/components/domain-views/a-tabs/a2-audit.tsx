@@ -1070,12 +1070,15 @@ function reviewPair(before: string, after: string, operationCode?: string) {
   if (operationCode === "e1_sku_create" || operationCode === "e1_sku_update") {
     const previous = b?.kind === "object" && isSkuTaglineTranslations(b.value.taglineTranslations) ? b.value.taglineTranslations : undefined;
     const next = a?.kind === "object" && isSkuTaglineTranslations(a.value.taglineTranslations) ? a.value.taglineTranslations : previous;
-    const languages = Object.keys({ ...previous, ...next }) as (keyof SkuTaglineTranslations)[];
+    // 语言按中文、越南语、其他语言的固定顺序列（TX-35），不随服务器快照里键的先后变。
+    const languages = (Object.keys(SKU_TAGLINE_LABELS) as (keyof SkuTaglineTranslations)[]).filter(language => language in { ...previous, ...next });
     const translationLabels = Object.fromEntries(languages.map(language => [`taglineTranslations.${language}`, SKU_TAGLINE_LABELS[language]]));
     const named = (review: Review | null, translations?: SkuTaglineTranslations): Review | null => {
       if (review?.kind !== "object") return review;
       const value = { ...review.value };
       if ("badge" in value && (typeof value.badge === "string" || value.badge == null)) value.badge = skuBadgeReviewText(value.badge) ?? null;
+      // 提交时空标签写成 ""，快照里没有标签是 null，两者都是「未设置」，不当成一项改动列出来。
+      if (value.tag === "") value.tag = null;
       // The server snapshot uses null for a missing command field and {} for an explicit clear.
       delete value.taglineTranslations;
       for (const language of languages) value[`taglineTranslations.${language}`] = translations?.[language] ?? null;
