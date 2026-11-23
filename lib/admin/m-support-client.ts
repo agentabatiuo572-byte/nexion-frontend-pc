@@ -2,6 +2,7 @@ import { MContentReadError, parseMContentApiEnvelope } from "./m-support-read-co
 import { parseBusinessTime } from "./business-time.ts";
 import { guardedFetch } from "./error-messages.ts";
 import { isExplicitRejection } from "./explicit-rejection";
+import { parseInvitationInviter, type InvitationInviter } from "./invitation-read-contract.ts";
 
 const BASE = "/api/admin/content";
 const FILTERS = ["ALL", "WINDOW_ACTIVE", "ACTIVE", "DORMANT", "UNKNOWN", "TODO", "DUE", "WAITING_REPLY", "FIRST_CONTACT", "STOPPED"] as const;
@@ -45,6 +46,7 @@ export type SupportCustomer = {
   version: number;
   customerNo?: string;
   displayName?: string;
+  inviter?: InvitationInviter;
   agentName?: string;
   advisorAvatar?: {assetId:string;version:number};
   customerAvatarRef: string | null;
@@ -61,7 +63,7 @@ export type SupportCustomer = {
   pendingConversationNo: string | null;
   pendingThroughMessageId: number | null;
 };
-export type SupportCustomerDetail = SupportCustomer & { effectiveLanguage: string; agentAdminId: number; maintenanceEnabled: boolean; maintenanceVersion: number };
+export type SupportCustomerDetail = SupportCustomer & { effectiveLanguage: string; agentAdminId: number; maintenanceEnabled: boolean; maintenanceVersion: number; profile?: Record<string, unknown> };
 export type SupportMaintenanceRecord = { id: string; agentAdminId: string | null; kind: string; occurredAt: string; state?: string };
 export type SupportMaintenanceHistory = { customerId: string; cycles: SupportMaintenanceRecord[]; executions: SupportMaintenanceRecord[]; totalCycles: number; totalExecutions: number; pageNum: number; pageSize: number };
 export type SupportBindingPoolItem = {
@@ -293,6 +295,7 @@ function customer(value: unknown): SupportCustomer {
     version: count(row.preferenceVersion, "customer.preferenceVersion"),
     customerNo: optionalString(row.customerNo, "customer.customerNo"),
     displayName: nullableString(row.nickname, "customer.nickname") ?? undefined,
+    ...(row.inviter === undefined ? {} : { inviter: parseInvitationInviter(object(row.inviter, "customer.inviter")) }),
     agentName: row.agentName==null?undefined:nonempty(row.agentName,"customer.agentName"),
     customerAvatarRef: row.customerAvatarRef==null?null:row.customerAvatarRef===`/api/admin/content/support-workbench/customers/${id(row.customerId, "customer.customerId")}/avatar`?row.customerAvatarRef:malformed("customer.customerAvatarRef"),
     advisorAvatar: row.advisorAvatar==null?undefined:(()=>{const avatar=object(row.advisorAvatar,"customer.avatar");return {assetId:nonempty(avatar.assetId,"avatar.assetId"),version:count(avatar.version,"avatar.version")};})(),
@@ -321,6 +324,7 @@ function detail(value: unknown): SupportCustomerDetail {
   const parsed = customer(rawCustomer);
   return {
     ...parsed,
+    ...(row.profile === undefined ? {} : { profile: object(row.profile, "detail.profile") }),
     effectiveLanguage: parseSupportEffectiveLanguage(rawCustomer.effectiveLanguage),
     agentAdminId: positive(parsed.agentAdminId, "detail.agentAdminId"),
     maintenanceVersion: parsed.version,

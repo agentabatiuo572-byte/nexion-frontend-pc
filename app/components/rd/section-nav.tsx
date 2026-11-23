@@ -23,9 +23,15 @@ export interface SectionNavItem {
 
 const PARAM = "section";
 
-export function useSectionNav(items: readonly SectionNavItem[], { onReveal, ready = true }: { onReveal?: (id: string) => void; ready?: boolean }) {
+export function useSectionNav(items: readonly SectionNavItem[], { onReveal, ready = true, restoreKey }: {
+  onReveal?: (id: string) => void;
+  ready?: boolean;
+  /** When supplied, restore the URL position once per key, even if sections change later. */
+  restoreKey?: string;
+}) {
   const [active, setActive] = useState(items[0]?.id ?? "");
   const lock = useRef(0);
+  const restoredKey = useRef<string | undefined>(undefined);
   const reveal = useRef(onReveal);
   reveal.current = onReveal;
   const ids = items.map((item) => item.id).join("|");
@@ -42,10 +48,11 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
   }, []);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || (restoreKey !== undefined && restoredKey.current === restoreKey)) return;
+    restoredKey.current = restoreKey;
     const wanted = new URLSearchParams(window.location.search).get(PARAM);
     if (wanted && ids.split("|").includes(wanted)) go(wanted, false);
-  }, [go, ids, ready]);
+  }, [go, ids, ready, restoreKey]);
 
   useEffect(() => {
     if (!ready) return;
