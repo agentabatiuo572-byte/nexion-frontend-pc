@@ -960,6 +960,8 @@ export default function UserDetailPage() {
     const { identity } = deviceLabel(command);
     return identity === "—" || identity.includes("尾号 ") ? identity : `尾号 ${identity.slice(-6)}`;
   };
+  /** 查询原结果、核查结案的结论提示用的对象：设备操作写「动作 · 设备名 · 尾号」，旧记录也不露完整编号；其余照存的标签。 */
+  const resultLabel = (command: C1CommandInput) => command.kind === "replace" || command.kind === "recycle" ? `${deviceLabel(command).action} · ${deviceResult(command)}` : command.label;
   const execute = async (command: C1CommandInput) => {
     if (String(useAdminAuth.getState().session?.adminId) !== command.adminKey) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     const slot = commandSlot(command);
@@ -1047,7 +1049,7 @@ export default function UserDetailPage() {
       c1UserCommands.forget(command.fingerprint, command.commandKey);
       syncPending(); setActionConfirm(null); setReleasing(null);
       const status = result.receipt?.originalStatus;
-      toast.success(command.label, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+      toast.success(resultLabel(command), status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
         : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "原操作已执行，记录已解除，不要再做一次。");
       await load(); await loadPaymentMethods();
       return;
@@ -1071,7 +1073,7 @@ export default function UserDetailPage() {
       c1UserCommands.forget(command.fingerprint, command.commandKey);
       syncPending();
       const status = result.receipt?.originalStatus;
-      toast.success(command.label, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+      toast.success(resultLabel(command), status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
         : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "核查确认已执行，记录已解除，不要再做一次。");
       await load(); await loadPaymentMethods();
       return;
