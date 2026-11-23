@@ -765,8 +765,11 @@ function normalizeUser360Detail<Inviter extends InvitationInviterDetail>(
   return { ...detail, ...parseUserLatestFunds(detail) };
 }
 
-export async function fetchUser360(userKey: string) {
-  const detail = await usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
+export async function fetchUser360(userKey: string, signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(30_000);
+  const detail = await usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`, {
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
   return normalizeUser360Detail(detail, parseInvitationInviterDetail);
 }
 

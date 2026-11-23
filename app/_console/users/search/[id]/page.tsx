@@ -47,7 +47,8 @@ import { canInvestigateECommand } from "@/lib/admin/e-command-investigation";
 import { FAILED_EXPIRED_LINE, FundClosureModal, PROCESSING_LINE, UNKNOWN_LINE, closureKnown } from "@/app/components/domain-views/fund-command-check";
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { isSupportScopeDenial } from "@/lib/admin/m-support-client";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -541,7 +542,7 @@ function RecordTable({ label, rows, columns, empty = "暂无记录", selected, o
 }
 
 /** 折叠组里的一小块：缺的不显示，读取失败只替换这一块（C1-V02、C1-S04）。同组块头一个样子，都是收起的一行（重复）；里面有事时摘要写清是哪件事（DP-04）。 */
-function Block({ id, title, sub, explain, section, actions, failure, issue, issueTone = "warn", summary, disclosure, children }: {
+function Block({ id, title, sub, explain, section, actions, failure, sectionRetry, issue, issueTone = "warn", summary, disclosure, children }: {
   id?: string;
   title: string;
   sub?: ReactNode;
@@ -550,6 +551,7 @@ function Block({ id, title, sub, explain, section, actions, failure, issue, issu
   actions?: ReactNode;
   /** 这块单独读取、读失败有自己的原因时传，不走整页刷新。 */
   failure?: ReactNode;
+  sectionRetry?: { detail: string; onRetry: () => void; retrying: boolean };
   /** 这块里有要处理的事：写进摘要并上色，不用点开才知道（DP-04）。 */
   issue?: string;
   issueTone?: StateTone;
@@ -563,7 +565,8 @@ function Block({ id, title, sub, explain, section, actions, failure, issue, issu
   const body = failure
     ? <BlockState state="error" compact title={failure} />
     : sectionFailed(section)
-      ? <BlockState state="error" compact title={`${title}加载失败`} onRetry={() => window.location.reload()} />
+      ? <BlockState state="error" compact title={`${title}加载失败`} detail={sectionRetry?.detail}
+          onRetry={sectionRetry?.onRetry ?? (() => window.location.reload())} retrying={sectionRetry?.retrying} />
       : <div className="rd-detail-block">{children}</div>;
   return (
     <div id={id} className="rd-detail-block">
@@ -654,6 +657,9 @@ export default function UserDetailPage() {
     return () => window.clearTimeout(timer);
   }, [writeResult, readKey]);
   const [denied, setDenied] = useState(false);
+  const referralRequest = useRef<AbortController | null>(null);
+  const [referralRetrying, setReferralRetrying] = useState(false);
+  const [referralError, setReferralError] = useState<string | null>(null);
   const [readAt, setReadAt] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
   const [actionPending, setActionPending] = useState<string | null>(null);
@@ -700,10 +706,40 @@ export default function UserDetailPage() {
 
   const onPaymentSecurity = useCallback((state: PaymentSecurityState, pending: boolean) => setPaymentSecurity({ state, pending }), []);
 
+  const resetReferralRetry = useCallback(() => {
+    referralRequest.current?.abort();
+    referralRequest.current = null;
+    setReferralRetrying(false);
+    setReferralError(null);
+  }, []);
+  const denyRead = useCallback((message: string) => {
+    requestGeneration.current++;
+    loadedKey.current = "";
+    resetReferralRetry();
+    setDetailKey(readKey);
+    setDetail(null);
+    setReadAt("");
+    setPaymentMethods(null); setPaymentError(null); setRevokeScan(null); setRevokeScanFailed(false);
+    setActionConfirm(null); setNotificationEvidence(null); setRecord(null);
+    setClosingCommand(null); setReleasing(null); setWriteResult(null);
+    setOpenFolds({}); setOpenRecordList(undefined);
+    setDenied(true);
+    setError(message);
+    setLoading(false);
+  }, [readKey, resetReferralRetry]);
+  const readProfile = useCallback((signal?: AbortSignal) => supportScope
+    ? fetchSupportCustomerFullProfile(userKey, signal)
+    : fetchUser360(userKey, signal), [supportScope, userKey]);
+  const denialMessage = useCallback((error: unknown) => {
+    if (supportScope) return isSupportScopeDenial(error) ? "你没有查看这位客户的权限" : null;
+    return error instanceof UsersRequestError && error.status === 403 ? displayAdminReadError(error) : null;
+  }, [supportScope]);
+
   const load = useCallback(async (signal?: AbortSignal) => {
     if (currentReadKey.current !== readKey) return;
     const generation = ++requestGeneration.current;
     const active = () => generation === requestGeneration.current && currentReadKey.current === readKey && !signal?.aborted;
+    resetReferralRetry();
     setLoading(true);
     setError(null);
     setDenied(false);
@@ -718,7 +754,7 @@ export default function UserDetailPage() {
       return false;
     }
     try {
-      const next = supportScope ? await fetchSupportCustomerFullProfile(userKey, signal) : await fetchUser360(userKey);
+      const next = await readProfile(signal);
       if (active()) {
         loadedKey.current = readKey;
         setDetail(next);
@@ -728,22 +764,56 @@ export default function UserDetailPage() {
       }
     } catch (err) {
       if (active()) {
-        loadedKey.current = "";
-        setDetail(null);
-        setPaymentMethods(null);
-        setDenied(err instanceof UsersRequestError && err.status === 403);
-        setError(displayAdminError(err));
+        const message = denialMessage(err);
+        if (message) denyRead(message);
+        else {
+          loadedKey.current = "";
+          setDetail(null);
+          setPaymentMethods(null);
+          setError(displayAdminError(err));
+        }
       }
     } finally {
       if (active()) setLoading(false);
     }
     return false;
-  }, [userKey, supportScope, readKey]);
+  }, [userKey, readKey, readProfile, denialMessage, denyRead, resetReferralRetry]);
+
+  const retryReferral = async () => {
+    if (loading || referralRequest.current || loadedKey.current !== readKey) return;
+    const controller = new AbortController();
+    referralRequest.current = controller;
+    const generation = requestGeneration.current;
+    const active = () => generation === requestGeneration.current && currentReadKey.current === readKey && !controller.signal.aborted;
+    setReferralRetrying(true);
+    // A failure opens the team fold by default. Keep that open state after recovery too.
+    setOpenFolds(current => current.team === undefined ? { ...current, team: true } : current);
+    try {
+      const next = await readProfile(controller.signal);
+      if (!active()) return;
+      setDetail(current => current && {
+        ...current,
+        referral: next.referral,
+        summary: current.summary && { ...current.summary, teamSize: next.summary?.teamSize },
+      });
+      setReferralError(null);
+    } catch (error) {
+      if (!active()) return;
+      const message = denialMessage(error);
+      if (message) denyRead(message);
+      else setReferralError(displayAdminReadError(error));
+    } finally {
+      if (active()) {
+        referralRequest.current = null;
+        setReferralRetrying(false);
+      }
+    }
+  };
 
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal);
-    return () => { controller.abort(); requestGeneration.current++; };
+    return () => { controller.abort(); referralRequest.current?.abort(); requestGeneration.current++; };
   }, [load]);
 
   useEffect(() => {
@@ -751,12 +821,11 @@ export default function UserDetailPage() {
     const revoke = (event: Event) => {
       const detail = (event as CustomEvent<{ customerId?: string; conversationNo?: string }>).detail ?? {};
       if (detail.customerId && detail.customerId !== userKey || !detail.customerId && detail.conversationNo && detail.conversationNo !== conversationNo) return;
-      requestGeneration.current++; loadedKey.current = ""; setDetail(null); setPaymentMethods(null); setLoading(false);
-      setError("客户资料加载失败，请重试或返回列表。");
+      denyRead("你没有查看这位客户的权限");
     };
     window.addEventListener("support-scope-invalidated", revoke);
     return () => window.removeEventListener("support-scope-invalidated", revoke);
-  }, [supportScope, userKey, conversationNo]);
+  }, [supportScope, userKey, conversationNo, denyRead]);
 
   const profile: User360Profile | null = detail?.profile ?? null;
   const summary: User360Summary = detail?.summary ?? {};
@@ -765,10 +834,11 @@ export default function UserDetailPage() {
   const userNo = asText(profile?.userNo ?? summary.userNo);
   const nickname = asText(profile?.nickname, "用户详情");
   const displayNickname = userNicknameText(nickname, profile?.phoneMasked);
+  const hasDetail = detail !== null;
   const paymentSecurityPort = useMemo(() => {
-    if (detailKey !== readKey || !detail || !c3UserId) return null;
+    if (detailKey !== readKey || !hasDetail || !c3UserId) return null;
     return supportScope ? paymentSecurityPorts.support(c3UserId) : paymentSecurityPorts.global(c3UserId);
-  }, [detailKey, readKey, detail, c3UserId, supportScope]);
+  }, [detailKey, readKey, hasDetail, c3UserId, supportScope]);
   const status = asText(profile?.status ?? summary.status, "UNKNOWN").toUpperCase();
   const riskAuthorityReady = detail?.risk?.sourceStatus === "READY";
   const rawRiskScore = riskAuthorityReady ? detail?.risk?.effectiveScore : null;
@@ -1069,7 +1139,8 @@ export default function UserDetailPage() {
   const fundsAlert = withdrawalExceptions + withdrawalsWaiting > 0;
   const devicesFailed = failedSection(detail?.devices, detail?.earnings) || ledgerUnread && !!detail?.earnings;
   const devicesAlert = deviceExceptions > 0;
-  const teamFailed = failedSection(detail?.referral, detail?.engagement, detail?.vrank);
+  const referralFailed = sectionFailed(detail?.referral);
+  const teamFailed = referralFailed || failedSection(detail?.engagement, detail?.vrank);
   const recordsFailed = failedSection(detail?.notifications, detail?.commerce);
   const failedPushCount = asNumber(detail?.notifications?.failedPushCount);
   const recordsAlert = failedPushCount > 0 || orderExceptions > 0 || corrections.length > 0;
@@ -1157,7 +1228,7 @@ export default function UserDetailPage() {
       <p>最近一笔：按创建时间取最新的一笔提现，各种状态都算，不受下面列表条数限制。</p>
     </> },
     detail.devices && { label: "设备数", value: numberLabel(summary.deviceCount), unit: "台", tone: "role-2" as const, icon: Cpu, group: "devices", anchor: "hub-devices", explain: "这个用户的全部设备记录，含已回收和已停用的，最多读 200 台。现在还能运行的看下面的活跃数。" },
-    detail.referral && { label: "团队规模", value: numberLabel(summary.teamSize), unit: "人", tone: "role-3" as const, icon: UsersRound, group: "team", anchor: "hub-referral" },
+    detail.referral && { label: "团队规模", value: numberLabel(referralFailed ? null : summary.teamSize), unit: "人", tone: "role-3" as const, icon: UsersRound, group: "team", anchor: "hub-referral" },
   ].filter((value) => !!value).slice(0, 4) as { label: string; value: string; unit: string; tone: "role-1" | "role-2" | "role-3" | "role-4"; icon: typeof Wallet; group: string; anchor: string; explain?: ReactNode; sub?: ReactNode }[];
 
   const inKpi = (label: string) => kpis.some((kpi) => kpi.label === label);
@@ -1400,7 +1471,7 @@ export default function UserDetailPage() {
         detail.devices && `在线 ${numberLabel(detail.devices.onlineCount)} / 活跃 ${numberLabel(detail.devices.activeCount)}`,
         detail.earnings && `收益合计 ${amountText(detail.earnings.totalUsdt)}`,
       ]);
-  const teamText = teamFailed ? "有区块加载失败" : joined([
+  const teamText = referralFailed ? "推荐团队加载失败" : teamFailed ? "有区块加载失败" : joined([
     detail.referral && !inKpi("团队规模") && `团队 ${numberLabel(detail.referral.teamSize)} 人`,
     detail.referral && `直接邀请 ${numberLabel(detail.referral.directCount)} 人`,
     detail.vrank && `等级 ${asText(detail.vrank.currentRank)}`,
@@ -1568,7 +1639,8 @@ export default function UserDetailPage() {
 
         {teamPresent && <div id={nav.anchor("team")}>
           <Fold title="团队与互动" icon={Network} tone="role-3" summary={foldSummary("team", teamFailed, teamText)} alertTone="danger" {...foldProps("team", teamFailed)}>
-            <Block id="hub-referral" title="推荐团队" {...listProps("member")} section={detail.referral ? { sourceStatus: asText(detail.referral.sourceStatus, "READY") } : undefined} sub="最多 20 条"
+            <Block id="hub-referral" title="推荐团队" {...listProps("member")} section={detail.referral} sub="最多 20 条"
+              sectionRetry={{ detail: referralError ?? displayAdminReadError(undefined), onRetry: () => void retryReferral(), retrying: referralRetrying || loading }}
               explain="成员最多列 20 条，不是完整名单。团队规模、直接邀请和团队订单额是另外算的总数，不是这些行相加。">
               <Values rows={[
                 ...(inKpi("团队规模") ? [] : [["团队规模", `${numberLabel(detail.referral?.teamSize)} 人`] as const]),
