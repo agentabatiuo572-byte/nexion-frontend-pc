@@ -878,6 +878,10 @@
 .a7-page .a7-recovery-zone { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 
 /* A2 待确认条：查询原决定的结果（A2-BE-17）。状态标签和这一句排一行，放不下时整句换到下一行。 */
+/* 待审批表：第一列（动作 · 对象）按内容放宽到 480，常见长度不截；放不下才省略，悬停看全文。不设伸缩列，多出的宽度按内容分给各列，操作列贴右边线（ST-02、BUG-647）。1024 宽仍按 data-tight 收到 200。 */
+@media (min-width: 1280px) {
+  .rd-table.a2-queue td[data-sticky="start"] > .rd-cell { max-width: 480px; }
+}
 .a2-pending-check { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--rd-space-2); }
 
 /* A3 上方结果未知提示条：说明内容读回对不上时，每条一行。 */

@@ -2880,7 +2880,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
         <Panel flush icon={ClipboardList} tone="role-3" title="待审批的操作" explain="应急在前，资金类其次，其余按提交时间从新到旧。">
           {/* 1024 也要放下：对象多是系统键，名字里通常已经带着，列表不单列，抽屉和确认框里常显（DP-13）。 */}
-          <Table label="待审批的操作" data-tight="">
+          <Table label="待审批的操作" className="a2-queue" data-tight="">
             <thead><tr>
               <Th sticky="start">审批单 · 提交时间（{zone}）</Th>
               <Th>变更</Th>
@@ -2904,7 +2904,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell full main={w.objDisplayName && !isGParamTicket(w) ? <>{shortCodes(name)} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : shortCodes(name)} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`}
+                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{shortCodes(name)} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : shortCodes(name)} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`}
                         sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
                       <Td><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
