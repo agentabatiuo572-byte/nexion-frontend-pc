@@ -62,7 +62,7 @@ export function compactSupportBoardValue(value: unknown, kind: "amount" | "count
   if (whole < BigInt(1000)) {
     if (kind === "count") return whole.toString();
     const cents = whole * hundred + BigInt(fraction.slice(0, 2).padEnd(2, "0"));
-    if (cents === zero) return negative ? ">-0.01" : "<0.01";
+    if (cents === zero) return negative ? "大于 -0.01" : "小于 0.01";
     const rounded = cents + (fraction[2] && fraction[2] >= "5" ? BigInt(1) : zero);
     if (rounded >= BigInt(100000)) return sign + "1K";
     const decimal = (rounded % hundred).toString().padStart(2, "0").replace(/0+$/, "");

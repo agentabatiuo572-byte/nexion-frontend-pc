@@ -17,6 +17,7 @@ import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_CLAWBACK, F1_VOUCHER_REVERSE_KEEP } from "@/lib/admin/config-help/f1-voucher";
 import { fmtConfigPct, fmtPct, amountDisplay } from "@/lib/format";
+import { f4MonthlyCap } from "@/lib/admin/f4-money";
 import { fConfigSpec, fConfigValue, type FConfigSpec } from "./a2-f-config";
 import { F5CurrentFact, F5CurrentValue, F5ReissueReadings, readF5Current } from "./a2-f5-current";
 import { A2I5DisclosureReview } from "./a2-i5-disclosure-review";
@@ -1336,11 +1337,14 @@ function i5MatrixVersionText(version: string, countries?: string[] | null) {
 /**
  * A2 按金额写法显示的字段（白名单）。逐个提案来源核对过，清单和出处见 P1-a 报告；只有这些字段的值按金额写法显示：
  * - E1 商品快照（审批单冻结的商品前后值）：售价、月收益目标、日产收益；「收益说明」只在是系统按月收益目标折算的日收益时算（isA2Amount）。
- * - F 配置单的配置键（a2-f-config 里单位是 USDT 的项）：每组订单额门槛、各榜奖池、本周榜单奖池、上榜最低奖励。
- * - D1 共同充值规则这张单（cregis-deposit-policy 写的「最低 … USDT；手续费 … USDT；确认数 …；版本 …」）：金额只有最低充值额和手续费。
+ * - F 配置单的配置键：每组订单额门槛、各榜奖池、本周榜单奖池、上榜最低奖励（a2-f-config 里单位是 USDT 的项），团队激励池每月上限（校验和审批都按 USDT）。
+ *   本周榜单奖池和每月上限可以写成 1.30K、2M：按 f4MonthlyCap 精确展开成完整金额再写「… USDT」，认不出的照原文。
+ * - D1 共同充值规则这张单：后端描述器写「最低 20，手续费 0.600000，确认数 25」（不带币种，AuditReplayBusinessPermissionGuard），
+ *   旧单是页面写的「最低 … USDT；手续费 … USDT；确认数 …；版本 …」。只认「最低」「手续费」两个值，按金额写法写并标 USDT；确认数、版本不动。
  * K1 人工放行的净额另由 k1Amount 按字段显示。其余字段、不认识的键、没有字段键的文字（文本型前后值、摘要句、标语、角标、话术、通知文案）一律照原文。
  */
-const A2_AMOUNT_FIELDS = new Set(["price", "monthlyTargetUsdt", "dailyEarn", "F.binary.threshold", "F.pool.periodPrize", "F.leaderboard.poolUsd", "F.leaderboard.minUsd", "d_cregis_deposit_policy"]);
+const A2_AMOUNT_FIELDS = new Set(["price", "monthlyTargetUsdt", "dailyEarn", "F.binary.threshold", "F.pool.periodPrize", "F.leaderboard.poolUsd", "F.leaderboard.minUsd", "F.pool.monthlyCap", "d_cregis_deposit_policy"]);
+const D1_POLICY_AMOUNT = /(^|[，；]\s*)(最低|手续费) ((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?: USDT)?(?=\s*(?:[，；]|$))/g;
 const isA2Amount = (key: string | undefined, value?: unknown) => key !== undefined
   && (A2_AMOUNT_FIELDS.has(key) || key === "baseRate" && isRecord(value) && typeof value.derivedDaily === "string");
 /**
@@ -1349,7 +1353,15 @@ const isA2Amount = (key: string | undefined, value?: unknown) => key !== undefin
  */
 const A2_AMOUNT = /(?<![\w.,])[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?(?=[ \u00a0](?:USDT|UVT|USD|VND|₫)(?![\w])(?!\/[A-Za-z₫]))/g;
 /** 一个值给人看：是金额字段才按金额写法，否则照原文。原文照旧用于解析、匹配和有没有改的判断。 */
-const a2Shown = (key: string | undefined, text: string, value?: unknown) => isA2Amount(key, value) ? text.replace(A2_AMOUNT, (amount) => amountDisplay(amount)) : text;
+const a2Shown = (key: string | undefined, text: string, value?: unknown) => {
+  if (!isA2Amount(key, value)) return text;
+  if (key === "d_cregis_deposit_policy") return text.replace(D1_POLICY_AMOUNT, (_, lead: string, label: string, amount: string) => `${lead}${label} ${amountDisplay(amount)} USDT`);
+  if (key === "F.leaderboard.poolUsd" || key === "F.pool.monthlyCap") {
+    const full = f4MonthlyCap(text.trim().replace(/\s*USDT$/i, ""));
+    return full === null ? text : `${amountDisplay(full)} USDT`;
+  }
+  return text.replace(A2_AMOUNT, (amount) => amountDisplay(amount));
+};
 /** 两张记录表（前、后）原文不同，逐格按字段显示后却完全一样时返回 false：两张都照原文写（RF01）。原文相同或只有一张表时照常显示。 */
 const rowsFormatSafe = (before: unknown, after: unknown, labels: Record<string, string>) => {
   if (!isRowList(before) || !isRowList(after) || same(before, after)) return true;
