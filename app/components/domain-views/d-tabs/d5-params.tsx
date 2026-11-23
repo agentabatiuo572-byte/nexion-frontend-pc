@@ -289,7 +289,7 @@ function networkView(p: D5ParamData) {
   const byConfig = open.length === 0;
   const outage = byConfig ? `BEP20、ERC20 都在这页关着，TRC20 ${TRC20_CLOSED}`
     : known && p.effectiveNetworks!.filter((network) => network !== `USDT-${NET_LABEL[CLOSED_NET]}`).length === 0
-      ? shared ? `开着的 ${names(open)} 都用不了：${reasonOf(shared)}` : `开着的 ${names(open)} 都用不了，原因写在各网络那一行`
+      ? shared ? `开着的 ${names(open)} ${open.length > 1 ? "都" : ""}用不了：${reasonOf(shared)}` : `开着的 ${names(open)} ${open.length > 1 ? "都" : ""}用不了，原因写在各网络那一行`
       : undefined;
   return { known, states, blocked, unknown, shared, outage, byConfig, reasonOf };
 }
