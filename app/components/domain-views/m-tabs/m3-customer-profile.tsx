@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, type SupportProfile, type SupportGroup, type SupportFinanceFieldStatus } from "@/lib/admin/m-support-enhancements";
 import { supportClient, SupportClientError, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { Icon, Modal } from "../design-kit";
 import type { SupportCustomerStatistics } from "@/lib/admin/support-analytics-client";
@@ -55,6 +55,8 @@ const statisticMoney = (value?: SupportCustomerStatistics["lifetime"][number]["d
 function Row({ label, value, numeric = false, title, mono = false, amount = false }: { label: ReactNode; value: unknown; numeric?: boolean | "count"; title?: string; /** 用户编码这类编号用等宽字体（TX-28）。 */ mono?: boolean; /** 金额按全站写法显示（PRD §5A）；算力等其他数值照原样。 */ amount?: boolean }) { return <div className="cvp-row"><span className="k">{label}</span><span className={mono ? "v m-user-code" : "v"} data-exact={title} aria-label={title} tabIndex={title ? 0 : undefined}>{numeric && compactSupportBoardValue(value, numeric === "count" ? "count" : "amount") === "-" ? EMPTY : amount ? grouped(value) : show(value)}</span></div>; }
 /** 客户资料框里的一组：只展开入口对应的组，读取失败的组自己展开（DP-04、M11）。 */
 function Group({ title, note, summary, open, onOpenChange, group, failed, retry, children }: { title: string; note?: string; summary: ReactNode; open: boolean; onOpenChange?: (open: boolean) => void; group?: SupportGroup; failed?: boolean; retry: () => void; children: ReactNode }) {
+  // 资料第一次就没读到时，失败由框顶的一张错误卡说，依赖资料的各组不再各写一遍「加载失败」（BUG-650）。
+  if (!group && failed) return null;
   return <Fold inset title={title} explain={note} summary={!group ? (failed ? "加载失败" : "正在加载…") : group.status !== "READY" ? statusText[group.status] : summary} alert={group?.status === "ERROR" || !group && failed} {...(onOpenChange ? { open, onOpenChange } : { defaultOpen: open })}>{!group ? <BlockState state={failed ? "error" : "loading"} compact title={failed ? "加载失败" : "正在加载…"} /> : group.status !== "READY" ? <BlockState state={group.status === "ERROR" ? "error" : "empty"} compact title={statusText[group.status]} retryLabel={`重新加载${title}`} onRetry={group.status === "ERROR" ? retry : undefined} /> : children}</Fold>;
 }
 export function M3CustomerProfile({ ctx, customerId, source, transferEntry = true, conversation, scopeVersion, onHistory, messageError, onRetryMessages, openRequest = 0 }: { ctx: MCtx; customerId: string; source: "M1" | "M3"; transferEntry?: boolean; conversation?: SessionConvo; scopeVersion?: number; onHistory: (no: string) => void; messageError?: string; onRetryMessages: () => void; /** 每加一次打开一次全部资料：窄宽时入口在对话头的菜单里。 */ openRequest?: number }) {
@@ -107,7 +109,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController(), saved = stamp.current; setProfile(null); setError("");
-    supportEnhancements.profile(customerId, controller.signal).then(p => { if (!controller.signal.aborted && saved === stamp.current) { setProfile(p); setPaymentProfileScope(paymentScope); } }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setError(displayAdminError(e)); });
+    supportEnhancements.profile(customerId, controller.signal).then(p => { if (!controller.signal.aborted && saved === stamp.current) { setProfile(p); setPaymentProfileScope(paymentScope); } }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setError(displayAdminReadError(e)); });
     return () => controller.abort();
   }, [customerId, epoch, scopeVersion, reload, paymentScope]);
   useEffect(() => {
@@ -245,7 +247,8 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   // 客户资料里的明细记录一次展开一组，避免上下堆叠列表（DP-67）。
   const recordFold = (title: string) => ({ open: recordSection === title, onOpenChange: (open: boolean) => setRecordSection(open ? title : "") });
   const body = <div className="m3-service-profile">
-    {error && <Notice tone="danger" action={<Button size="sm" onClick={retryProfile}>重新加载资料</Button>}>{error}</Notice>}
+    {profileFailed ? <BlockState state="error" compact title="客户资料加载失败" detail={error} onRetry={retryProfile} retryLabel="重试" />
+      : error && <Notice tone="danger" action={<Button size="sm" onClick={retryProfile}>重新加载资料</Button>}>{error}</Notice>}
     {!scopeDenied && <>
     <Group title="基本信息" open={opens("基本信息")} summary={`${show(identity?.level)} · ${show(identity?.region)}`} group={profile?.identity} failed={Boolean(error)} retry={()=>void retryGroup("identity")}>
       <Row label="客户姓名" value={userNicknameText(show(identity?.nickname), identity?.phoneMasked)}/><Row label={<>用户编码<Explain label="系统编号" content={`系统编号 ${customerId}`}/></>} value={identity?.userNo} mono/><Row label="客户等级" value={identity?.level}/><Row label="手机" value={identity?.phoneMasked}/><Row label="地区" value={identity?.region}/><Row label="注册时间" value={dates(identity?.registeredAt)}/><Row label="最近登录" value={dates(identity?.lastLoginAt)}/>
