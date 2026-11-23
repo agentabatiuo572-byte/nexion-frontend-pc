@@ -1294,22 +1294,22 @@ function changeSummary(before: string, after: string, omit: readonly string[] = 
 }
 
 /** 成组的记录画成小表，每组一行，列头用字段名；超过 5 行的收在「查看全部」后面（VS-109）。 */
-/** 金额字段的格按金额写法；format=false：这张表和对照的另一张原文不同、逐格显示后却一样时，两张都照原文写（rowsFormatSafe）。 */
-function ReviewRows({ name, rows, labels = CHANGE_LABELS, format = true }: { name: string; rows: readonly Record<string, unknown>[]; labels?: Record<string, string>; format?: boolean }) {
-  const cell = (column: string, value: unknown) => format ? a2Shown(column, valueText(column, value, labels), value) : valueText(column, value, labels);
+/** 金额字段的格按金额写法；raw(行号, 列) 为 true 的格照原文写：和对照的另一张表同一格原文不同、按写法显示后却一样（rowsRawCells）。 */
+function ReviewRows({ name, rows, labels = CHANGE_LABELS, raw }: { name: string; rows: readonly Record<string, unknown>[]; labels?: Record<string, string>; raw?: (index: number, column: string) => boolean }) {
+  const cell = (column: string, value: unknown, index: number) => raw?.(index, column) ? valueText(column, value, labels) : a2Shown(column, valueText(column, value, labels), value);
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   const unit = ROW_UNIT[name] ?? "行";
-  const table = (part: readonly Record<string, unknown>[], label: string) => (
+  const table = (part: readonly Record<string, unknown>[], label: string, offset: number) => (
     <Table label={label} data-tight="">
       <thead><tr>{columns.map((column) => <Th key={column}>{labels[column] ?? column}</Th>)}</tr></thead>
-      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={cell(column, row[column])} title={cell(column, row[column])} /></Td>)}</Tr>)}</tbody>
+      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={cell(column, row[column], offset + index)} title={cell(column, row[column], offset + index)} /></Td>)}</Tr>)}</tbody>
     </Table>
   );
   const title = labels[name] ?? name;
   return (
     <div className="a2-change-rows">
-      {table(rows.slice(0, ROWS_SHOWN), title)}
-      {rows.length > ROWS_SHOWN && <Fold inset title={`查看全部 ${rows.length} ${unit}`} summary={`还有 ${rows.length - ROWS_SHOWN} ${unit}`}>{table(rows.slice(ROWS_SHOWN), `${title}（续）`)}</Fold>}
+      {table(rows.slice(0, ROWS_SHOWN), title, 0)}
+      {rows.length > ROWS_SHOWN && <Fold inset title={`查看全部 ${rows.length} ${unit}`} summary={`还有 ${rows.length - ROWS_SHOWN} ${unit}`}>{table(rows.slice(ROWS_SHOWN), `${title}（续）`, ROWS_SHOWN)}</Fold>}
     </div>
   );
 }
@@ -1377,11 +1377,18 @@ const a2Shown = (key: string | undefined, text: string, value?: unknown) => {
   }
   return text.replace(A2_AMOUNT, (amount) => amountDisplay(amount));
 };
-/** 两张记录表（前、后）原文不同，逐格按字段显示后却完全一样时返回 false：两张都照原文写（RF01）。原文相同或只有一张表时照常显示。 */
-const rowsFormatSafe = (before: unknown, after: unknown, labels: Record<string, string>) => {
-  if (!isRowList(before) || !isRowList(after) || same(before, after)) return true;
-  const shown = (rows: Record<string, unknown>[]) => JSON.stringify(rows.map((row) => Object.entries(row).map(([key, value]) => [key, a2Shown(key, valueText(key, value, labels), value)])));
-  return shown(before) !== shown(after);
+/**
+ * 两张记录表（前、后）哪些格照原文写：同一行同一列原文不同、按字段写法显示后却一样（12.50 USDT 和 12.5 USDT）的格，两张都照原文写，别的格照常（RF01、BUG-638）。
+ * 行数不同、对不上行时按整张表判断：原文不同、逐格显示后完全一样，两张整表照原文写。原文相同或只有一张表时都照常显示。
+ */
+const rowsRawCells = (rows: unknown, other: unknown, labels: Record<string, string>): ((index: number, column: string) => boolean) | undefined => {
+  if (!isRowList(rows) || !isRowList(other) || same(rows, other)) return undefined;
+  const shown = (column: string, value: unknown) => a2Shown(column, valueText(column, value, labels), value);
+  if (rows.length !== other.length) {
+    const table = (list: Record<string, unknown>[]) => JSON.stringify(list.map((row) => Object.entries(row).map(([key, value]) => [key, shown(key, value)])));
+    return table(rows) === table(other) ? () => true : undefined;
+  }
+  return (index, column) => !same(rows[index]?.[column], other[index]?.[column]) && shown(column, rows[index]?.[column]) === shown(column, other[index]?.[column]);
 };
 /** 一个字段的前后值一起显示：金额字段按金额写法；原文不同、写法改了以后一样时，两边都照原文写，不把真实的修改藏掉（OP-49/69）。raw 是两边的原值（判断「收益说明」是不是折算出的金额）。 */
 const a2Pair = (key: string | undefined, before: string | undefined, after: string | undefined, raw: [unknown, unknown] = [before, after]): [string | undefined, string | undefined] => {
@@ -1491,8 +1498,8 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, amount
     body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? shownTo : <Change from={shownFrom} to={shownTo} />}</Fact>{facts}</Facts>;
   } else if (a.kind === "rows") {
     body = <>
-      <ReviewRows labels={labels} name="" rows={a.rows} format={b?.kind !== "rows" || rowsFormatSafe(b.rows, a.rows, labels)} />
-      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows labels={labels} name="" rows={b.rows} format={rowsFormatSafe(b.rows, a.rows, labels)} /> : <p className="rd-note">{a2Shown(amountKey, b.kind === "text" ? b.text : valueText(undefined, b.value, labels))}</p>}</Fold>}
+      <ReviewRows labels={labels} name="" rows={a.rows} raw={b?.kind === "rows" ? rowsRawCells(a.rows, b.rows, labels) : undefined} />
+      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows labels={labels} name="" rows={b.rows} raw={rowsRawCells(b.rows, a.rows, labels)} /> : <p className="rd-note">{a2Shown(amountKey, b.kind === "text" ? b.text : valueText(undefined, b.value, labels))}</p>}</Fold>}
     </>;
   } else {
     const was = b?.kind === "object" ? b.value : undefined;
@@ -1515,12 +1522,11 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, amount
         : <Facts>{rows.map((row) => <Fact key={row.key} k={String(row.label)}>{row.after}</Fact>)}</Facts>)}
       {groups.map((key) => {
         const old = was?.[key];
-        const format = rowsFormatSafe(old, next[key], labels);
         return (
           <div key={key} className="a2-change-group">
             <div className="a2-change-sub">{labels[key] ?? key}{was && same(old, next[key]) && <span className="rd-weak"> · 没有改动</span>}</div>
-            <ReviewRows labels={labels} name={key} rows={next[key] as Record<string, unknown>[]} format={format} />
-            {isRowList(old) && !same(old, next[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} format={format} /></Fold>}
+            <ReviewRows labels={labels} name={key} rows={next[key] as Record<string, unknown>[]} raw={rowsRawCells(next[key], old, labels)} />
+            {isRowList(old) && !same(old, next[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} raw={rowsRawCells(old, next[key], labels)} /></Fold>}
           </div>
         );
       })}

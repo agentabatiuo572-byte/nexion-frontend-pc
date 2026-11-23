@@ -47,11 +47,11 @@ export function legacyName(value: unknown): { text: string; legacy: boolean } {
   return { text: nexGridBrandText(raw.replace(/\bNEX\b/gi, "UVT").replace(/\$\s?(?=\d)/g, "")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券"), legacy };
 }
 /**
- * 既有活动奖励名给运营看时：按名字显示，只把名字里完整的金额词元（数字可带千分位，空格可有可无，币种 USDT、UVT、USD、VND、₫ 且是完整的词，
+ * 既有活动奖励名给运营看时：按名字显示，只把名字里完整的金额词元（数字可带千分位，空格可有可无，币种 USDT、UVT、USD、VND、₫ 且是完整的词、大小写都认，
  * 后面不紧跟「/币种」）的小数末尾 0 去掉；不舍入、不改正负号、不改大小写、不加千分位，带指数的和认不出的原样写。
  * 名字原文照旧用于比较、预览和提交（OP-39）。列表回包不带库里的实额，这里不从名字推算它。App 显示的文字和奖项名不走这里。
  */
-const NAME_AMOUNT = /(?<![\w.,])([+-]?(?:\d{1,3}(?:,\d{3})+|\d+))\.(\d+)(?![\d.eE])(?=[ \u00a0]?(?:USDT|UVT|USD|VND|₫)(?![\w])(?!\/[A-Za-z₫]))/g;
+const NAME_AMOUNT = /(?<![\w.,])([+-]?(?:\d{1,3}(?:,\d{3})+|\d+))\.(\d+)(?![\d.eE])(?=[ \u00a0]?(?:USDT|UVT|USD|VND|₫)(?![\w])(?!\/[A-Za-z₫]))/gi;
 export function legacyRewardText(value: unknown): string {
   return legacyName(value).text.replace(NAME_AMOUNT, (_, whole: string, fraction: string) => {
     const kept = fraction.replace(/0+$/, "");
