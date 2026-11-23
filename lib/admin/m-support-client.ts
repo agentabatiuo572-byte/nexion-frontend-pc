@@ -97,7 +97,8 @@ export type SupportAgentCandidate = {
   assignmentEligible: boolean;
   busy: boolean;
   assignedUserCount: number;
-  maxConcurrent: number;
+  /** null 表示不限（自动分配不看名下客户数）。现在的解析仍要求整数，接线项再改。 */
+  maxConcurrent: number | null;
   currentActiveSessions?: number;
   avatarAssetId?: string;
   avatarVersion?: number;

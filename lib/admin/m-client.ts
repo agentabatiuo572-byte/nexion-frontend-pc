@@ -464,7 +464,8 @@ export type MSupportAgent = {
   position: string;
   serviceTypes: MSupportServiceType[];
   tags: string[];
-  maxConcurrent: number;
+  /** null 表示不限（自动分配不看名下客户数）。现在的解析仍把 null 读成 0，接线项再改。 */
+  maxConcurrent: number | null;
   enabled: boolean;
   assignmentEligible: boolean;
   transferable: boolean;
