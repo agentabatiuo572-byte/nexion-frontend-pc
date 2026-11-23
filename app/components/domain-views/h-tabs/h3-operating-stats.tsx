@@ -10,13 +10,11 @@ import { Cell, Fold, Stat, Table, Td, Th, Tr } from "@/app/components/rd";
 import type { H3Stats } from "@/lib/admin/h3-contract";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { amountText } from "./h3-quest-parts";
+import { amountDisplay } from "@/lib/format";
 
 const count = (value: number) => value.toLocaleString("en-US");
-/** 原值去掉末尾补的 0，最少两位小数，不舍入。 */
-const money = (value: string) => {
-  const [whole, frac = ""] = (amountText(value) ?? value).split(".");
-  return `${whole}.${frac.replace(/0+$/, "").padEnd(2, "0")}`;
-};
+/** 原值按全站金额写法（amountDisplay）：去掉末尾 0、整数不写小数点，不舍入。 */
+const money = (value: string) => amountDisplay(amountText(value) ?? value);
 const WEEK_ZONE: Record<string, string> = { "Asia/Ho_Chi_Minh": "越南时间", "Asia/Shanghai": "北京时间" };
 
 /** 新后端才有 operatingStatsAvailable；旧后端返回 undefined，页面保持原来的占位。 */

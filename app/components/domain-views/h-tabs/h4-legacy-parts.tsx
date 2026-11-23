@@ -13,6 +13,7 @@ import type { H4EventCapabilities } from "@/lib/admin/h-client";
 import { EVENT_CONTENT_LOCALES, type EventCopyReadiness } from "@/lib/admin/event-rule-form";
 import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { amountText, formatTime } from "./h4-promotion-ui";
+import { amountDisplay } from "@/lib/format";
 
 // ===== 取值小工具：照旧页面原样 =====
 export function text(value: unknown, fallback = "-") {
@@ -44,7 +45,9 @@ export const WHEEL_APP_KINDS = ["uvt", "usdt", "coupon"];
 export function legacyName(value: unknown): { text: string; legacy: boolean } {
   const raw = text(value, "");
   const legacy = /\bNEX\b/i.test(raw);
-  return { text: nexGridBrandText(raw.replace(/\bNEX\b/gi, "UVT").replace(/\$\s?(?=\d)/g, "")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券"), legacy };
+  // 带币种的金额按全站写法显示（去掉末尾 0、整数不写小数点）；原文照旧用于比较和提交（OP-39）。
+  return { text: nexGridBrandText(raw.replace(/\bNEX\b/gi, "UVT").replace(/\$\s?(?=\d)/g, "")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券")
+    .replace(/(\d+(?:\.\d+)?)(?=\s*(?:UVT|USDT)\b)/g, (amount) => amountDisplay(amount)), legacy };
 }
 export function LegacyNameTag({ where }: { where: string }) {
   return <StatusTag tone="warn" icon={CircleAlert} explain={`系统存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的也是存的名称（只做品牌替换）。改${where}时写成 UVT。`}>旧名称</StatusTag>;

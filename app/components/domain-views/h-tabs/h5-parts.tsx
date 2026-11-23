@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { CircleHelp, Clock3, Gift, Hourglass } from "lucide-react";
 import { Explain, Notice, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { amountDisplay } from "@/lib/format";
 
 export type { CheckInRule, StreakMilestone, PowerUp, EarnMilestone, H5Model } from "@/lib/admin/h5-contract";
 
@@ -18,17 +19,28 @@ export function countText(value: unknown) {
 }
 
 /**
- * 金额照原值写：整数部分加千分位，去掉后端补的末尾 0，至少两位小数，有真实小数位的一位不丢、不舍入。
+ * 金额按全站写法（amountDisplay）：整数部分加千分位，去掉后端补的末尾 0，整数不写小数点，有真实小数位的一位不丢、不舍入。
  * 用原始字符串拆，不经过浮点运算。
  */
 export function amountText(value: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
+  const raw = String(value).trim();
+  if (/^-?\d+(?:\.\d+)?$/.test(raw)) return amountDisplay(raw);
+  const n = Number(raw);
+  return Number.isFinite(n) ? amountDisplay(n.toFixed(20).replace(/0+$/, "").replace(/\.$/, "")) : raw;
+}
+
+/**
+ * 提交审批时写进前后值的旧写法（至少两位小数），提交内容逐字节不变；页面显示用 amountText。
+ */
+export function proposalAmountText(value: unknown) {
   if (value === null || value === undefined || value === "") return "—";
   const raw = String(value).trim();
   const match = raw.match(/^(-?)(\d+)(?:\.(\d+))?$/);
   if (!match) {
     const n = Number(raw);
     if (!Number.isFinite(n)) return raw;
-    return amountText(n.toFixed(20).replace(/0+$/, "").replace(/\.$/, ""));
+    return proposalAmountText(n.toFixed(20).replace(/0+$/, "").replace(/\.$/, ""));
   }
   const [, sign, int, frac = ""] = match;
   const decimals = frac.replace(/0+$/, "").padEnd(2, "0");

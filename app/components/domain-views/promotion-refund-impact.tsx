@@ -7,6 +7,7 @@ import { PromotionApiError, promotionRead } from "@/lib/admin/promotion-client";
 import type { RewardAdmin, RewardAdminPage } from "@/lib/admin/promotion-types";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { Button, Explain, Notice, RecordList, StatusTag, type StateTone } from "@/app/components/rd";
+import { amountDisplay } from "@/lib/format";
 
 /** 资金去向常显；compact 只收起台账编号和规则全文，不收起对象、金额、追回结果和谁承担（DT-10）。 */
 export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: string; compact?: boolean }) {
@@ -51,7 +52,7 @@ export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: s
             : { text: "按余额追回", tone: "warn", short: "按执行时余额同币种追回，不足部分由平台承担。" };
   const rewards = <ul className="rd-impact-list">
         {result.items.map(r => <li key={r.obligationId}>
-          <b>{r.beneficiaryRole === "BUYER" ? "购买者 ID" : "直接邀请人 ID"} · {r.beneficiaryId} · {r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity} 台` : `${r.reward.amount} ${nexGridBrandText(r.reward.type === "DISCOUNT_USDT" ? "USDT" : r.reward.type)}`}</b>
+          <b>{r.beneficiaryRole === "BUYER" ? "购买者 ID" : "直接邀请人 ID"} · {r.beneficiaryId} · {r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity} 台` : `${amountDisplay(String(r.reward.amount))} ${nexGridBrandText(r.reward.type === "DISCOUNT_USDT" ? "USDT" : r.reward.type)}`}</b>
           {compact ? <Explain label="奖励台账编号" content={`奖励项 ${r.obligationId}`} /> : <div className="rd-note">奖励项 {r.obligationId}</div>}
           <div>{refundOutcome(r)}</div>
         </li>)}
@@ -73,7 +74,7 @@ export function PromotionRefundImpact({ orderNo, compact = false }: { orderNo: s
         const { text, tone } = refundResult(r);
         return {
           id: r.obligationId,
-          value: r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity}` : r.reward.amount,
+          value: r.reward.type === "DEVICE" ? `${r.disclosure.deviceName || "赠品设备"} × ${r.reward.quantity}` : amountDisplay(String(r.reward.amount)),
           unit: r.reward.type === "DEVICE" ? "台" : nexGridBrandText(r.reward.type === "DISCOUNT_USDT" ? "USDT" : r.reward.type),
           object: <>{r.beneficiaryRole === "BUYER" ? "购买者（本单用户）" : `直接邀请人 ID ${r.beneficiaryId}`}<Explain label="奖励台账编号" content={<RecordList label="奖励台账编号" records={[{ id: r.obligationId, value: "奖励项", reference: r.obligationId }]} />} /></>,
           status: <StatusTag tone={tone} icon={tone === "warn" ? AlertTriangle : undefined}>{text}</StatusTag>,

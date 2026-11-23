@@ -16,6 +16,7 @@ import { canInvestigateECommand } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { fundRecoveryStatus } from "../fund-command-check";
 import type { H9AppDisplay } from "@/lib/admin/h9-client";
+import { amountDisplay } from "@/lib/format";
 
 /** App 此刻实际显示的数（读 /public-stats/app-display）：读取中、读到、没读到。 */
 export type AppDisplayRead = { state: "loading" } | { state: "ready"; data: H9AppDisplay } | { state: "error"; message: string };
@@ -28,10 +29,10 @@ export function count(value: number | null | undefined): string {
 }
 
 /** 金额：千分位，至少两位小数，原值多出的小数照写，不舍入。单位由调用方写「USD」。 */
+/** 金额按全站写法（amountDisplay）：千分位，去掉末尾 0、整数不写小数点，不舍入。读不到写「—」。 */
 export function usd(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
-  const [whole, fraction = ""] = String(value).split(".");
-  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.padEnd(2, "0")}`;
+  return amountDisplay(value);
 }
 
 /**

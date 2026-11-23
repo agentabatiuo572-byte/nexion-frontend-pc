@@ -2,6 +2,7 @@
 import { restoreH4Uploads, type H4UploadTarget } from "@/lib/admin/h4-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { amountDisplay } from "@/lib/format";
 import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type DependencyList, type ReactNode, type ReactElement } from 'react';
 import { displayAdminError } from '@/lib/admin/error-messages';
 import { fetchA2ReasonPolicy } from '@/lib/admin/a2-client';
@@ -23,15 +24,11 @@ catch {
 } };
 /** 页面上标「现在按哪个时区」的写法，和时区下拉的选项一致。 */
 export const zoneLabel = (zone: string | null | undefined) => ({ 'Asia/Tokyo': '日本时间 UTC+9', UTC: '协调世界时 UTC', 'Asia/Ho_Chi_Minh': '越南时间 UTC+7', 'Asia/Shanghai': '北京时间 UTC+8' } as Record<string, string>)[zone || 'UTC'] || zone || '协调世界时 UTC';
-/** 后端金额固定补到 6 位小数：显示时去掉补的 0，至少留 2 位，不舍入；whole 给整台设备这类整数。 */
-export function amountText(value: string | number | null | undefined, whole = false): string {
+/** 后端金额固定补到 6 位小数：按全站写法（amountDisplay）去掉补的 0、整数不写小数点、加千分位，不舍入；whole（整台设备这类整数）写法相同，参数留给调用方。 */
+export function amountText(value: string | number | null | undefined, _whole = false): string {
     if (value === null || value === undefined || value === '') return '—';
     const raw = String(value);
-    if (!/^-?\d+(\.\d+)?$/.test(raw)) return raw;
-    const [integer, fraction = ''] = raw.split('.');
-    const trimmed = fraction.replace(/0+$/, '');
-    if (whole && !trimmed) return integer;
-    return `${integer}.${trimmed.padEnd(2, '0')}`;
+    return /^-?\d+(\.\d+)?$/.test(raw) ? amountDisplay(raw) : raw;
 }
 export const TEMPLATE_LABELS = { SKU_GIFT: '单设备赠礼', FIRST_PURCHASE: '首购礼', DIRECT_REFERRAL: '直邀首购双向礼', MULTI_PRODUCT: '多型号组合', REPURCHASE: '复购召回' } as const;
 const STATES: Record<string, string> = { DRAFT: '草稿', SCHEDULED: '待开始', ACTIVE: '进行中', PAUSED: '暂停新预留', ENDED: '已结束', ARCHIVED: '已归档', PENDING_APPROVAL: '待审核', APPROVED: '已审核待发布', PUBLISHED: '已发布', PENDING: '待发放', READY: '待执行', PROCESSING: '处理中', ISSUED: '已发放', RETRYABLE_FAILED: '可重试失败', OUTCOME_UNKNOWN: '结果未知', REVERSAL_PENDING: '追回待处理', REVERSED: '已冲正', CANCELED: '已取消', CANCELLED: '已取消', MANUAL_REVIEW: '人工审阅', MATCHED: '符合条件', REJECTED: '不符合', UNKNOWN: '未知', COMPLETE: '完整', UNAVAILABLE: '不可用', DELAYED: '延迟', ELIGIBLE: '符合条件', INELIGIBLE: '不符合', AVAILABLE: '可用', SHORTAGE: '不足', BUYER: '购买者', DIRECT_INVITER: '直接邀请人', SUCCEEDED: '成功', FAILED: '失败', NOT_FOUND: '未查到原操作', REVOKED: '已撤销' };
