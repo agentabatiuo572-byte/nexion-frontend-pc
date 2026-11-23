@@ -28,6 +28,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { unknownTag } from "../g-tabs/g-recovery";
 import { CountryDiff, CountryEditor, CountryLabel, STATUS_TEXT, countryName, type EditorResult, type EditorSpec, type GeoStatus } from "./j2-editor";
 import type { JCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 const TRIGGER_BASES = ["", "监管点名", "挤兑风险", "安全事件", "其他"];
 const TRIGGER_LABELS = { "": "请选择触发依据" };
@@ -80,9 +81,8 @@ function usdtSum(values: string[]) {
   }, BigInt(0));
   const negative = total < BigInt(0);
   const digits = (negative ? -total : total).toString().padStart(scale + 1, "0");
-  const whole = digits.slice(0, -scale).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  const fraction = digits.slice(-scale).replace(/0+$/, "").padEnd(2, "0");
-  return `${negative ? "-" : ""}${whole}.${fraction}`;
+  // 合计按全站金额写法（amountDisplay）：千分位、去掉末尾 0、整数不写小数点。
+  return amountDisplay(`${negative ? "-" : ""}${digits.slice(0, -scale)}.${digits.slice(-scale)}`);
 }
 
 function parseAuditValue(value: string): unknown {

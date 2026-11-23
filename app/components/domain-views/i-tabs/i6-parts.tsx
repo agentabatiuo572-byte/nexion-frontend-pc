@@ -14,6 +14,7 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { I6_COURSE_REWARD_DECIMALS, i6Amount } from "@/lib/admin/i6-amount";
 import { i6HasCopyText } from "@/lib/admin/i6-copy-quality";
+import { amountDisplay } from "@/lib/format";
 
 export type Lang = "zh" | "vi" | "en";
 export const LANGS: readonly { key: Lang; label: string; short: string }[] = [
@@ -45,13 +46,11 @@ export const durationText = (value: string) => {
   const minutes = /(\d+)/.exec(value ?? "")?.[1];
   return minutes ? `${minutes} 分钟` : "—";
 };
-/** 去掉后端补的末尾 0，最少 2 位，不舍入。 */
+/** UVT 金额按全站写法（amountDisplay）：千分位、去掉末尾 0、整数不写小数点，不舍入。审批前后值用原值，不经过这里。 */
 export const uvtText = (value: unknown) => {
   const raw = i6Amount(value);
   if (raw === undefined) return "—";
-  const [int, frac = ""] = raw.split(".");
-  const kept = frac.replace(/0+$/, "");
-  return `${int.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${kept.length >= 2 ? kept : kept.padEnd(2, "0")}`;
+  return amountDisplay(raw);
 };
 /** 后端明确给的 null 是这门课没设奖励，和读不到（「—」）分开写，也不写成 0。 */
 export const NO_REWARD = "未设奖励";

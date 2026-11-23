@@ -23,6 +23,7 @@ import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-ti
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
 import { expiredTag, KRecoveryNotice, MidId, pendingTag, submittedTag, unknownTag, type KRecoveryRow } from "./k-recovery";
+import { amountDisplay } from "@/lib/format";
 
 type K2ProposalInput = Parameters<typeof createA2OperationProposal>[0];
 type K2SavedOperation = {
@@ -294,8 +295,8 @@ const viewUi = (view: K2ViewGroup): ViewUi => VIEW_UI[view.key] ?? { name: view.
 const cell = (row: K2Row, index: number) => row.cells[index] ?? "—";
 /** 金额的整数部分加千分位，小数原样保留，不换算、不舍入。 */
 const groupDigits = (text: string) => text.replace(/(^|[\s(])(\d{4,})(?=(\.\d+)?(\s|$))/g, (_, lead: string, digits: string) => lead + digits.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
-/** 原值去掉后端补的末尾 0，最少 2 位小数，不舍入；科学记数原样。 */
-const rawAmountText = (raw: string) => /[eE]/.test(raw) ? raw : (([whole, fraction = ""]) => `${whole}.${fraction.replace(/0+$/, "").padEnd(2, "0")}`)(raw.split("."));
+/** 原值按全站金额写法（amountDisplay）：去掉后端补的末尾 0、整数不写小数点、千分位，不舍入；科学记数写成普通小数。 */
+const rawAmountText = (raw: string) => amountDisplay(raw);
 /** 后端原文换成这页的叫法：账户组、倍、已结算笔数。认不出的原样写。 */
 const plainText = (value: string) => value === "未关联 K1 簇" ? "未关联账户组" : value;
 /** 一格的显示：金额分币种成行并加千分位，倍数写「倍」，已结算笔数只留数字部分。 */

@@ -33,6 +33,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import { BODY_SENT, campaignQuantity, CampaignCard, CampaignStatusTag, CapCard, chars, I3PendingCapNotice, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, sentWindow, deliveryGap, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
+import { amountDisplay } from "@/lib/format";
 
 type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
@@ -596,7 +597,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           conflictRow("优先级", now ? TIER[now.tier].label : undefined, TIER[form.tier].label),
           conflictRow("点了去哪", now && routeName(now.ctaHref), routeName(form.ctaHref)),
           conflictRow("按钮文字", now?.ctaLabel, DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === form.ctaHref)?.label),
-          conflictRow("预算", now?.budget === null || now?.budget === undefined ? undefined : `${now.budget} USD`, form.budget.trim() ? `${form.budget.trim()} USD` : undefined)]),
+          conflictRow("预算", now?.budget === null || now?.budget === undefined ? undefined : `${amountDisplay(now.budget)} USD`, form.budget.trim() ? `${form.budget.trim()} USD` : undefined)]),
           ...inGroup("发给谁", [conflictRow("P 阶段从", now?.audienceTarget.phaseMin, form.phaseMin),
             conflictRow("P 阶段到", now?.audienceTarget.phaseMax, form.phaseMax),
             conflictRow("语言", now && languageName(now.audienceTarget.language), languageName(form.language)),
@@ -621,7 +622,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       } else if (live) {
         const opened = campaignCommand?.snapshot;
         const routeName = (href?: string) => href === undefined ? undefined : retiredCta(href) ? `${retiredCta(href)}（已停用）` : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
-        const budget = (row?: NotificationCampaignRow) => row?.budget === null || row?.budget === undefined ? undefined : `${row.budget} USD`;
+        const budget = (row?: NotificationCampaignRow) => row?.budget === null || row?.budget === undefined ? undefined : `${amountDisplay(row.budget)} USD`;
         // 别人改的可能是名称、预算这些，不只状态和正文；只比两项会出现「两边一样」却被拒。
         rows = [conflictRow("状态", opened ? stateText(opened) : "—", stateText(now)), conflictRow("名称", opened?.name, now?.name),
           conflictRow("通知类型", opened && kindLabel(opened.kind), now && kindLabel(now.kind)),

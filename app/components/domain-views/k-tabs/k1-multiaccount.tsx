@@ -36,6 +36,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { a3ParamCommandOrigin, a3ParamCommandRoutes, queryA3ParamCommand } from "@/lib/admin/a3-command-query";
 import { isOriginalCommandOrigin } from "@/lib/admin/original-command-query";
 import type { ActionConfirmReq, KCtx } from "./types";
+import { amountDisplay } from "@/lib/format";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 type K1PendingKind = "cluster" | "note" | "param" | "release-param" | "registration-param" | "entry" | "whitelist-add" | "whitelist-remove";
@@ -217,13 +218,11 @@ const RELEASE_PARAM_NAME: Record<string, string> = {
 };
 const releaseParamName = (p: KRiskParam) => RELEASE_PARAM_NAME[p.key] ?? p.name;
 
-/** 后端给的金额原文（可能写成指数）：写全位数、去掉末尾补的 0、最少 2 位，不舍入。places 给定时补到这么多位，用于同一个框里并排的几个数。 */
+/** 后端给的金额原文（可能写成指数）按全站写法（amountDisplay）：写全位数、去掉末尾 0、整数不写小数点，不舍入；并排的几个数也不补零对齐，places 不再使用。 */
 const decimalPlaces = (raw: string) => Math.max(2, (f4Decimal(raw) ?? "").split(".")[1]?.replace(/0+$/, "").length ?? 0);
-const exactAmountText = (raw: string, places = decimalPlaces(raw)) => {
+const exactAmountText = (raw: string, _places?: number) => {
   const plain = f4Decimal(raw);
-  if (plain === null) return raw;
-  const [whole, fraction = ""] = plain.split(".");
-  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(places, "0")}`;
+  return plain === null ? raw : amountDisplay(plain);
 };
 /** 这次放多少：新后端给的净额原文优先；旧后端只有 amount。 */
 const netAmountText = (entry: K1ProtectedEntry, places?: number) => exactAmountText(entry.netAmount ?? entry.amount, places);
