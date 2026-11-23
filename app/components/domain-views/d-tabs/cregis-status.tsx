@@ -828,7 +828,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   return <tr key={row.network}>
                     <Td><Cell main={row.network} sub={networkName[row.network]} /></Td>
                     {/* 配置开关、服务实际开放、App 和 H5 的入口分开写：「通道暂未开放」只管这页能不能开（F04）。 */}
-                    <Td><Cell main={<SwitchTag on={row.depositEnabled}>{row.depositEnabled ? "开启" : "关闭"}</SwitchTag>} sub={waiting ? "有提案待复核" : closed ? `${TRC20_CLOSED}，${row.depositEnabled ? "只能关闭" : "不能开启"}` : undefined} /></Td>
+                    <Td><Cell main={<SwitchTag on={row.depositEnabled}>{row.depositEnabled ? "开启" : "关闭"}</SwitchTag>} sub={[waiting ? "有提案待复核" : undefined, closed ? `${TRC20_CLOSED}，${row.depositEnabled ? "只能关闭" : "不能开启"}` : undefined].filter(Boolean).join(" · ") || undefined} /></Td>
                     <Td><Cell main={row.depositAvailable ? (row.addressAvailable ? "已开放" : "已开放 · 地址准备中") : <StatusTag tone="warn">{availabilityText(row.depositDisabledReason)}</StatusTag>} sub={closed && row.depositAvailable ? "App、H5 不给选，旧版本 App 仍可能用" : undefined} /></Td>
                     {canManage && <Td sticky="end" align="right"><span className="rd-row-actions">
                       {globalPaused && <Button size="sm" disabledReason={restoreBlock} onClick={() => proposal(true, true)}>申请恢复</Button>}

@@ -3025,11 +3025,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const shownF5Ids = shown ? f5RecordIds(fundTicket(shown)) : [];
   const shownCanReject = shown ? canDecide(shown, "reject") : false;
   // 有结果未确认的操作时抽屉顶上已有一条提示，这里不再写一遍（DT-12）。
+  // D5 单会打开 TRC20 或改它的确认费：不能批准的原因常显在判断要点里（OP-126），不只在按钮提示里。
+  const shownD5Trc20 = shown?.operationCode === D5_APPROVAL_OP ? d5Trc20ApprovalBlock(shown.before, shown.after) : undefined;
+  const shownD5Block = shownD5Trc20 && d5Trc20Reason(shownD5Trc20, false);
   const shownBlock = shown && (pendingTicketIds.has(shown.id) ? undefined
     : shown.retiredOperation ? RETIRED_OPERATION_COPY
       : shown.phoneCalibrationError ?? shown.ambassadorMaterialError
         ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? shown.approveDeniedMessage ?? NO_DECIDE
-          : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : undefined));
+          : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : shownD5Block));
   const shownK1 = shown ? k1TicketView(shown) : undefined;
   const shownBoot = shown?.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(shown.after) : undefined;
   const judgment: JudgmentRow[] = shown ? [

@@ -1165,7 +1165,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           : <StatusTag tone="warn" icon={AlertTriangle}>开启 · 用户现在用不了</StatusTag>;
     // TRC20 开着时只能关、关着时不能开（产品 2026-11-23）：原因常显（OP-126）；实际用不了的原因写在前面，结论句已说过的不再写（DT-12）。
     const reason = closed
-      ? [configured && usable !== true && !(usable === false && networks.outage && networks.shared === code) ? networks.reasonOf(code) : undefined,
+      // 结论句只说 App、H5 能选的网络，TRC20 用不了的原因一直写在这一行。
+      ? [configured && usable !== true ? networks.reasonOf(code) : undefined,
         configured ? `${TRC20_CLOSED}，只能关闭${usable ? "；旧版本 App 可能仍在用" : ""}` : `${TRC20_CLOSED}，不能开启`].filter(Boolean).join("；")
       : !configured ? undefined
       : usable === false ? (networks.outage && networks.shared ? undefined : networks.reasonOf(code))

@@ -79,10 +79,12 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
   // TRC20 开着的开关碰上地址撤回、运行总开关没开、出款暂停：后端只在留着开启项时核对能不能运行，两项都关的提案照收（CregisAutoForwardService.policy）。
   const trc20On=trc20&&!!status&&(status.collectionEnabled===true||status.paymentEnabled===true);
   const trc20Cause=!status?undefined:!status.configured?"收款地址或运行权限已撤回":!status.runtimeApproved?"本环境的运行总开关没开（BEP20、ERC20、TRC20 共用）":"TRC20 链上出款现在不可用";
-  const trc20KeepOn=trc20TargetOnBlock&&`${trc20Cause??trc20TargetOnBlock}，保留开着的项会被拒绝；两项都选「关」可以提交`;
+  // 框里和待复核提案后面用短说法，原因的长句在页面提示里说过（DT-12）。
+  const trc20CauseShort=!status?undefined:!status.configured?"地址配置已撤回":!status.runtimeApproved?"运行总开关没开":"TRC20 链上出款不可用";
+  const trc20KeepOn=trc20TargetOnBlock&&`${trc20CauseShort??trc20TargetOnBlock}：保留开启项会被拒绝，两项都选「关」才能提交`;
   const trc20Opens=trc20&&!!status&&opensTrc20AutoForward(status);
   const approvalBlock=trc20Opens?TRC20_CLOSED:trc20&&status&&(autoForwardFlagOn(status.pendingCollection)||autoForwardFlagOn(status.pendingPayment))
-    ?trc20TargetOnBlock&&`${trc20Cause??trc20TargetOnBlock}，留着开启项的提案不能复核通过`:undefined;
+    ?trc20TargetOnBlock&&`${trc20CauseShort??trc20TargetOnBlock}：留着开启项的提案不能复核通过`:undefined;
   const policy=(action:"PROPOSE"|"APPROVE"|"CANCEL"|"PAUSE")=>{
     try{assertOwner(true);if(!status)throw new Error("请刷新配置");
       const held=d1PendingObjectReason(`/cregis${ROOT}/policy${networkQuery}`,{action});if(held)throw new Error(held);
