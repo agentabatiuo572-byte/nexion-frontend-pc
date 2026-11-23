@@ -346,7 +346,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       detail: <>当前连续签到 <b>{powerUp.day}</b> 天解锁。{multiplier && "签到倍率会改变用户每天签到拿多少。"}</>,
       effect: <StatusTag tone="neutral" icon={ArrowUpDown} explain={<>
         <p>{multiplier ? "提前解锁或调高倍率" : "提前解锁"}：提交审批，{FUND_APPROVER}批准后才生效，提交人不能批自己的。</p>
-        <p>{multiplier ? "推后或调低倍率" : "推后或只改说明文字"}：确认后立即生效。已经激活的权益不收回。</p>
+        <p>{multiplier ? "推后或调低倍率" : "推后"}：确认后立即生效。已经激活的权益不收回。</p>
       </>}>{multiplier ? "提前、调高要批准" : "提前要批准"} · 其余立即生效</StatusTag>,
       facts: (
         <Facts>
@@ -357,14 +357,15 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         </Facts>
       ),
       statedBrief: (values) => amplifies(values)
-        ? { impact: `${multiplier ? "提前解锁或调高倍率" : "提前解锁"}会让平台多付 UVT：提交审批，${FUND_APPROVER}批准后才生效。已有的签到记录不变。`, check: multiplier ? "核对天数和倍率；理由写清依据或工单号。" : "核对解锁天数；理由写清依据或工单号。" }
+        ? { impact: multiplier ? `提前解锁或调高倍率会让平台多付 UVT：提交审批，${FUND_APPROVER}批准后才生效。已有的签到记录不变。` : `提前解锁：提交审批，${FUND_APPROVER}批准后才生效。已有的签到记录不变。`, check: multiplier ? "核对天数和倍率；理由写清依据或工单号。" : "核对解锁天数；理由写清依据或工单号。" }
         : { impact: "确认后立即生效：之后达到天数的人按新设置激活；已经激活的权益不收回，已有的签到记录不变。", check: multiplier ? "核对天数和倍率；理由写清依据或工单号。" : "核对解锁天数；理由写清依据或工单号。" },
-      coverageLead: multiplier ? "提前解锁或调高倍率会让平台多付 UVT" : "提前解锁会让平台多付",
+      coverageLead: multiplier ? "提前解锁或调高倍率会让平台多付 UVT" : "提前解锁要检查兑付覆盖率",
       coverageCheck: "提交审批时和批准时都检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
       amplifies: false,
       businessForm: {
         kind: "multi-field",
-        requireAnyChange: true,
+        // 非倍率权益不显示说明文字：重开的原操作可能只改了说明文字，看不到改动也要能按原请求重试。
+        requireAnyChange: multiplier || !original,
         amplifies,
         onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); return values; },
         feedback: values => {
@@ -375,9 +376,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         },
         fields: [
           { key: "day", label: "解锁天数", inputKind: "number", current: String(powerUp.day), placeholder: "例如 30", help: "连签满几天解锁，1–365 天" },
-          multiplier
-            ? { key: "note", label: "签到倍率", inputKind: "text", current: text(powerUp.note, ""), placeholder: "例如 1.5", required: true, help: "激活后每天的签到奖励乘这个数；不能留空，最多 4 位小数" }
-            : { key: "note", label: "说明文字", inputKind: "text", current: text(powerUp.note, ""), required: false, help: "只留在后台，App 不显示" },
+          ...(multiplier ? [{ key: "note", label: "签到倍率", inputKind: "text" as const, current: text(powerUp.note, ""), placeholder: "例如 1.5", required: true, help: "激活后每天的签到奖励乘这个数；不能留空，最多 4 位小数" }] : []),
         ],
       },
       run: async (reason, _value, form) => {
@@ -385,7 +384,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         if (powerUp.businessAvailable === false) throw new Error("H5_POWER_UP_BUSINESS_RETIRED");
         const day = Number(form.day);
         if (!/^\d+(?:\.0+)?$/.test(form.day) || !Number.isInteger(day) || day < 1 || day > 365) throw new Error("POWER_UP_DAY_INTEGER_REQUIRED");
-        const note = form.note ?? "";
+        // 非倍率权益的说明文字 App 不显示，后台也不再给改（产品 2026-11-23）；照旧把存着的原值发回去。
+        const note = multiplier ? form.note ?? "" : currentNote;
         if (multiplier && (!/^\d+(?:\.\d{1,4})?$/.test(note) || (h5Amount(note) ?? BigInt(0)) <= BigInt(0) || Number(note) >= 100000000)) throw new Error("POWER_UP_MULTIPLIER_INVALID");
         await runChange({ target, action: `连续签到成长奖励 · ${name}`, name: `连续签到成长奖励 · ${name}`, before: `连签 ${powerUp.day} 天；${currentNote}`, after: `连签 ${day} 天；${note}`,
           success: `${name} 已更新`, reason, snapshot, businessValue: { day: form.day, note }, approvalRequired: amplifies(form),
@@ -784,7 +784,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         sub={`${model.powerUps.length} 档 · 用户在 App 激活`}
         explain={<>
           <p>连签到这一天解锁，用户在 App 签到页自己激活；签到加成激活后，之后每天的签到奖励再乘它，断签后失效。</p>
-          <p>提前解锁、调高倍率要{FUND_APPROVER}批准；推后、调低、只改说明文字立即生效。已经激活的权益不收回，改倍率后已激活的人之后也按新倍率。</p>
+          <p>提前解锁、调高倍率要{FUND_APPROVER}批准；推后、调低立即生效。已经激活的权益不收回，改倍率后已激活的人之后也按新倍率。</p>
           <p>指向的业务停用后这一档只读：App 里显示已停用、不能激活，已获得的记录保留。</p>
         </>}>
         {model.powerUps.length
