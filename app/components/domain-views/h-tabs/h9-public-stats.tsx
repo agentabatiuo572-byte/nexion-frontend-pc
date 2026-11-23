@@ -127,7 +127,7 @@ function valueText(key: ScalarKey, value: number | null | undefined): string {
 }
 
 
-const APP_PAID_NOTE = "App 上数字前写 $，这里只写数字；设定值写 USD，是同一个单位。";
+const APP_PAID_NOTE = "App 上数字前写 $，这里照 App 写；设定值写 USD，是同一个单位。";
 const APP_DISPLAY_REASON: Record<string, string> = {
   HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "这一刻还没有可用的展示数据",
   HOME_DISPLAY_SANDBOX_UNAVAILABLE: "测试环境不生成首页展示数据",
@@ -137,7 +137,7 @@ const JOBS_REASON: Record<string, string> = {
   H9_ACTIVE_JOBS_BASE_UNPUBLISHED: "基座未发布，App 不显示作业数",
   HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "这一刻还没有可用的首页展示数据",
 };
-/** 按分算的金额写成两位小数加千分位，不舍入、不补币种（paid 是 JSON 数字，末尾的 0 会丢，所以用 paidCents）。这是「App 显示」的写法，照 App 两位小数写，不按后台金额规则改。 */
+/** 按分算的金额写成两位小数加千分位，不舍入（paid 是 JSON 数字，末尾的 0 会丢，所以用 paidCents）。这是「App 显示」的写法，照 App 两位小数写，不按后台金额规则改；$ 由调用处照 App 加在前面。 */
 function centsAmount(cents: number) {
   return `${Math.floor(cents / 100).toLocaleString("en-US")}.${String(cents % 100).padStart(2, "0")}`;
 }
@@ -654,7 +654,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         <AppNumber label={shown ? "在线设备 · App 显示" : "在线设备 · 设定值"} value={count(shown ? shown.onlineDevices : values.homeOnlineCurrent)} unit="台"
           sub={shown ? `设定值 ${count(values.homeOnlineCurrent)} 台` : undefined} />
         <AppNumber label={<>{shown ? "累计已发放 · App 显示" : "累计已发放 · 设定值"}<Explain label="累计已发放的单位" content={shown ? APP_PAID_NOTE : PAID_UNIT_NOTE} /></>}
-          value={shown ? centsAmount(shown.paidCents) : paid(values.homePaidCurrent)} sub={shown ? `设定值 ${paid(values.homePaidCurrent)}` : undefined} />
+          value={shown ? `$${centsAmount(shown.paidCents)}` : paid(values.homePaidCurrent)} sub={shown ? `设定值 ${paid(values.homePaidCurrent)}` : undefined} />
       </AppPreview>
       <AppSample read={appDisplay} found={!!shown} fallback="设定值" />
       {growthChart("online")}
