@@ -369,7 +369,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         </Facts>
       ),
       statedBrief: (values) => {
-        if (originalSummary) return { impact: `${originalSummary}。`, check: "核对原操作和理由。" };
+        if (originalSummary) return { impact: `原操作：${originalSummary}。`, check: "核对原操作和理由。" };
         const check = multiplier ? "核对天数和倍率；理由写清依据或工单号。" : "核对解锁天数；理由写清依据或工单号。";
         const direction = directionOf(values);
         return direction === "approval"
@@ -700,7 +700,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const plainChance = luckyValid ? Number((100 - p15Number - p2Number).toFixed(6)) : null;
 
   const conclusion = (() => {
-    const signText = stats.todaySign == null ? "今天签到人数读不到" : `今天 ${countText(stats.todaySign)} 人签到，签到率 ${text(stats.signRate, "—")}`;
     const coverageText = !coverageKnown
       ? "兑付覆盖率读不到"
       : coverage.reliable === false
@@ -708,17 +707,17 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         : coverage.redlineBreached === true
           ? "兑付覆盖率低于红线，加奖励、提前解锁这类修改会被拒"
           : "兑付覆盖率高于红线";
+    // 结论只写状态和下一步（ST-74）：签到人数和签到率在「今日签到」卡里，原操作的条数在页顶恢复条里。
+    const summary = [stats.todaySign == null ? "今天签到人数读不到" : undefined, coverageText,
+      unknownCount > 0 ? "有修改结果未知，先查询原结果" : undefined, pendingCount > 0 ? "有修改在等批准" : undefined].filter(Boolean).join("；");
     return (
       <Conclusion state={unknownCount || coverageBad ? "warn" : "neutral"} icon={CalendarCheck}
         explain={<>
-          <p>签到人数按业务日期算，同一个人一天只算一次；签到率的分母是有连签记录的人，不是注册总人数。</p>
           <p>兑付覆盖率低于红线或不可靠时，加奖励、调高概率或倍率、降门槛和提前解锁成长权益都会被拒：连签、成长、收益三类提交和批准时都查，签到规则只在批准时查。</p>
           <p>统计读不到时也显示 0，这页暂时分不出「真的是 0」和「没读到」。</p>
         </>}
         action={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>看待批准的申请</Link> : undefined}>
-        {`${signText}；${coverageText}`}
-        {unknownCount > 0 && `；${unknownCount} 个修改结果未知，先查询原结果`}
-        {pendingCount > 0 && `；${pendingCount} 个修改在等批准`}
+        {summary}
       </Conclusion>
     );
   })();
