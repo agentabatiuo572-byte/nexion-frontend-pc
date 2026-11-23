@@ -191,9 +191,9 @@ function countValue(count: Count): string | null { return count.confirmed === nu
 function activityTime(value: string): string {
   return formatBusinessTimeCompact(value, "时间待核验");
 }
-/** 服务状态和它的颜色（VS-20、VS-22）：待回复橙黄，要主动联系的进行中蓝，其余灰，颜色留给要处理的行。 */
-function serviceTag(task: SupportAnalyticsCustomer["task"]): [string, "warn" | "progress" | "neutral"] {
-  return task.status === "UNAVAILABLE" ? ["任务资料待加载", "neutral"] : task.waitingReply === true ? ["待回复", "warn"] : task.due === true ? ["待维护", "progress"] : task.firstContact === true ? ["首次待联系", "progress"] : task.enabled === false ? ["暂停主动维护", "neutral"] : task.status !== "COMPLETE" ? ["未知", "neutral"] : ["正常跟进", "neutral"];
+/** 服务状态和它的颜色（VS-20、VS-22）：待回复橙黄；待维护、首次待联系是专属客服要去做的事，不是系统在跑，用灰色的默认待办态，和「我的客户」表同色（VS-21）；其余灰。 */
+function serviceTag(task: SupportAnalyticsCustomer["task"]): [string, "warn" | "neutral"] {
+  return task.status === "UNAVAILABLE" ? ["任务资料待加载", "neutral"] : task.waitingReply === true ? ["待回复", "warn"] : task.due === true ? ["待维护", "neutral"] : task.firstContact === true ? ["首次待联系", "neutral"] : task.enabled === false ? ["暂停主动维护", "neutral"] : task.status !== "COMPLETE" ? ["未知", "neutral"] : ["正常跟进", "neutral"];
 }
 export type CustomerSessionStart = { checkingId: string | null; start: (row: SupportAnalyticsCustomer) => void };
 const SESSION_RETURN_KEY = "nexion-m1-customers-return-v1";
