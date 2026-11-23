@@ -65,7 +65,7 @@ export function M1LiveService({ ctx, alertMinutes = ctx.unboundAlertMinutes ?? 5
     {rosterOpen && agentsReady && <Drawer open title="可接待专属客服" sub={`共 ${roster.rows.length} 位`} explain="名册中已启用且未停用的专属客服，不是空闲人数。" onClose={() => setRosterOpen(false)} footer={<Decision others={<Button type="button" onClick={() => setRosterOpen(false)}>返回工作台</Button>} />}>
       {roster.rows.length ? <Table label="可接待专属客服名单"><thead><Tr><Th scope="col">专属客服</Th><Th scope="col" align="right">现在服务</Th></Tr></thead><tbody>{roster.rows.map(row => <Tr key={row.adminId}>
         <Td><span className="m1-live-roster-name"><SupportAvatar name={row.name} path={row.avatarAssetId ? advisorAvatarPath(row.adminId) : undefined} version={row.avatarVersion} size={24} /><span title={row.name}>{row.name}</span></span></Td>
-        <Td align="right">{row.assignedUserCount == null ? "—" : `${row.assignedUserCount} 位客户`}</Td>
+        <Td align="right">{row.assignedUserCount == null ? "—" : <>{row.assignedUserCount}<span className="rd-record-unit">位客户</span></>}</Td>
       </Tr>)}</tbody></Table> : <p className="rd-note">名册里现在没有可接待的专属客服。</p>}
     </Drawer>}
   </section>;
