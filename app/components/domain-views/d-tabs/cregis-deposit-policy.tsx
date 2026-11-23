@@ -21,9 +21,10 @@ type Pending = PendingMutationRecord & { owner: number; input: ProposalInput; ti
 const RETRY_WINDOW_MS = 10 * 60 * 1000;
 const RETRY_EXPIRED = "原请求已超过重试时间或本机时间异常，请通过操作记录继续核实。";
 const CHECK_FIRST = "请先查询原提案。";
+const retryDeadline = (pending: Pending) => Math.min(pending.expiresAt, pending.createdAt + RETRY_WINDOW_MS);
 function retryWindowOpen(pending: Pending) {
   const now = Date.now();
-  return now >= pending.createdAt && now < Math.min(pending.expiresAt, pending.createdAt + RETRY_WINDOW_MS);
+  return now >= pending.createdAt && now < retryDeadline(pending);
 }
 const proposals = createPendingMutationStore<Pending>({ storageKey: "nexion-admin-cregis-deposit-policy-proposals-v1", retainExpiredRecords: true,
   isValidRecord: row => Number.isSafeInteger(row.owner) && !!row.input && !!row.input.command });
@@ -44,6 +45,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [pending, setPending] = useState<Pending | null>(null), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(""), [message, setMessage] = useState("");
   const [missingProposalKey, setMissingProposalKey] = useState<string | null>(null);
+  const [, updateRetryWindow] = useState(0);
   const live = useRef(true), sequence = useRef(0), mutation = useRef(false);
   const owns = useCallback(() => live.current && useAdminAuth.getState().isAuthenticated && useAdminAuth.getState().session?.adminId === owner && useAdminAuth.getState().authEpoch === epoch, [owner, epoch]);
   const syncPending = useCallback(() => setPending(proposals.list().find(row => row.owner === owner) ?? null), [owner]);
@@ -56,6 +58,11 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
     finally { if (owns() && current === sequence.current) setLoading(false); }
   }, [owns]);
   useEffect(() => { live.current = true; syncPending(); void refresh(); return () => { live.current = false; sequence.current++; }; }, [refresh, syncPending]);
+  useEffect(() => {
+    if (!pending || pending.ticketId || pending.terminal || !retryWindowOpen(pending)) return;
+    const timer = window.setTimeout(() => updateRetryWindow(value => value + 1), retryDeadline(pending) - Date.now());
+    return () => window.clearTimeout(timer);
+  }, [pending]);
   const unknown = pending && !pending.terminal && !pending.ticketId ? 1 : 0;
   const awaitingApproval = pending && !pending.terminal && pending.ticketId ? 1 : 0;
   useEffect(() => { onActivityChange?.({ unknown, awaitingApproval }); }, [onActivityChange, unknown, awaitingApproval]);
