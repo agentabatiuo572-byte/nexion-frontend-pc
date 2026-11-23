@@ -196,7 +196,7 @@ function invitations(value: unknown) {
 export function parseSupportCustomerStatistics(value: unknown, source: "analytics" | "profile" = "analytics") {
   const fromProfile = source === "profile";
   const r = object(value, "first lifetime lifetimeStatus invitations activity" + (fromProfile ? " performance" : ""));
-  const f = object(r.first, "state status kind currency amount succeededAt" + (fromProfile ? " channel" : ""));
+  const f = object(r.first, "state status kind currency amount succeededAt channel");
   const a = object(r.activity, "state status lastEffectiveAt");
   return { first: { state: enumeration(f.state, ["CONFIRMED", "NONE", "UNKNOWN"]), status: enumeration(f.status, STATUS), kind: f.kind === null ? null : enumeration(f.kind, FIRST_KINDS), currency: f.currency === null ? null : enumeration(f.currency, CURRENCIES), amount: decimal(f.amount), succeededAt: nullableInstant(f.succeededAt) }, lifetime: unique(array(r.lifetime, customerMoney), x => x.currency), lifetimeStatus: enumeration(r.lifetimeStatus, STATUS), invitations: invitations(r.invitations), activity: { state: enumeration(a.state, ["ACTIVE", "INACTIVE", "UNKNOWN"]), status: enumeration(a.status, STATUS), lastEffectiveAt: nullableInstant(a.lastEffectiveAt) } };
 }
@@ -249,7 +249,7 @@ function detailSummary(value: unknown) {
 }
 export type SupportAnalyticsDetailResponse = Metadata & { view: SupportAnalyticsDetailView; records: ReturnType<typeof detailRow>[]; detailSummary: ReturnType<typeof detailSummary> };
 function parseDetailResponse(value: unknown, expected: ReturnType<typeof query>, currency: string): SupportAnalyticsDetailResponse {
-  const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records detailSummary");
+  const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records detailSummary performanceWindow metricVersion generation");
   const view = enumeration(r.view, DETAIL_VIEWS), meta = metadata(r), summary = detailSummary(r.detailSummary);
   if (view !== expected.view || meta.basis !== "PERIOD_EVENT" || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize || meta.recordsStatus !== meta.versionState || expected.expectedVersion !== undefined && meta.queryVersion !== expected.expectedVersion) malformed("detail.queryMismatch");
   const records = unique(array(r.records, value => detailRow(value, view)), row => row.id);
@@ -281,7 +281,7 @@ function metadata(r: Record<string, unknown>) {
   return { basis: enumeration(r.basis, BASES), businessZone: enumeration(r.businessZone, ["Asia/Shanghai"]), asOf: instant(r.asOf), pageNum, pageSize, total, observedTotal, versionState, queryVersion, canContinue, recordsStatus, selectedCustomerCount: integer(r.selectedCustomerCount), selectedCurrent: current(r.selectedCurrent), scopeSummary: scopeSummary(r.scopeSummary), funds: selectedFunds(r.funds) };
 }
 export function parseSupportAnalyticsResponse(value: unknown, expected: { view: SupportAnalyticsView | SupportAnalyticsDetailView; basis: typeof BASES[number]; pageNum: number; pageSize: number; expectedVersion?: string }): SupportAnalyticsResponse {
-  const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records performanceWindow");
+  const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records performanceWindow metricVersion generation");
   const view = enumeration(r.view, VIEWS), meta = metadata(r);
   if (view !== expected.view || meta.basis !== expected.basis || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize) malformed("queryMismatch");
   if (expected.expectedVersion !== undefined && meta.queryVersion !== expected.expectedVersion) malformed("versionMismatch");

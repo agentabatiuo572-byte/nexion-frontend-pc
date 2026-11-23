@@ -42,7 +42,7 @@ function count(value: unknown) {
   if ((state === "UNKNOWN" || state === "FAILED") && amount !== null || state === "COMPLETE" && (amount === null || r.reason !== "NONE") || state !== "COMPLETE" && r.reason === "NONE") invalid("countCoverage");
   return { value: amount, coverage: displayCoverage(state), reason: reason(r.reason) };
 }
-const META_FIELDS = "viewVersion queryVersion sourceVersion definitionVersion board rankMonth referenceMonth currency scope businessZone asOf publishedAt state candidateCoverage stale refreshFailed selectableMonths currencies scopeOptions";
+const META_FIELDS = "viewVersion queryVersion sourceVersion definitionVersion board rankMonth referenceMonth currency scope businessZone asOf publishedAt state candidateCoverage stale refreshFailed selectableMonths currencies scopeOptions metricVersion generation";
 function businessZoneId(value: unknown): string {
   const zone = text(value);
   try {
