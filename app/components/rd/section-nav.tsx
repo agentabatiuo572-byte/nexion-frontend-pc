@@ -32,11 +32,13 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
   const [active, setActive] = useState(items[0]?.id ?? "");
   const lock = useRef(0);
   const restoredKey = useRef<string | undefined>(undefined);
+  const preservedPosition = useRef<{ id: string; scrollTop: number } | null>(null);
   const reveal = useRef(onReveal);
   reveal.current = onReveal;
   const ids = items.map((item) => item.id).join("|");
 
   const go = useCallback((id: string, smooth = true) => {
+    preservedPosition.current = null;
     reveal.current?.(id);
     setActive(id);
     lock.current = Date.now() + 800;
@@ -45,6 +47,11 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
       target?.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
       target?.querySelector<HTMLElement>("[data-section-focus], summary")?.focus({ preventScroll: true });
     });
+  }, []);
+
+  const preservePosition = useCallback((id: string, scrollTop: number) => {
+    preservedPosition.current = { id, scrollTop };
+    setActive(id);
   }, []);
 
   useEffect(() => {
@@ -61,6 +68,9 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     const scroller = document.getElementById(`section-${list[0]}`)?.closest("main");
     const pick = () => {
       if (Date.now() < lock.current) return;
+      const preserved = preservedPosition.current;
+      if (preserved && scroller?.scrollTop === preserved.scrollTop && list.includes(preserved.id)) return;
+      preservedPosition.current = null;
       // 滚到底时最后一组进不了判定带，上面的组还在里面，这时算最后一组。
       const atEnd = scroller && scroller.scrollTop > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
       // 回到顶部时第一组可能还在判定带下面，这时算第一组，不留着上一次的高亮。
@@ -93,7 +103,7 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     go(id);
   }, [go]);
 
-  return { active, select, anchor: (id: string) => `section-${id}` };
+  return { active, select, preservePosition, anchor: (id: string) => `section-${id}` };
 }
 
 export function SectionNav({ label, items, nav, row }: { label: string; items: readonly SectionNavItem[]; nav: ReturnType<typeof useSectionNav>; row?: boolean }) {
