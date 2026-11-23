@@ -66,7 +66,7 @@ const PERSONAL_FILTER_OPTIONS = [...FILTER_OPTIONS, { value: "ACTIVE" as const, 
 const SORT_OPTIONS: Record<SupportAnalyticsView, Array<{ value: NonNullable<SupportAnalyticsQuery["sortKey"]>; label: string }>> = {
   OVERVIEW: [{ value: "LAST_ACTIVE_AT", label: "最近活动" }],
   AGENTS: [{ value: "BOUND_CUSTOMER_COUNT", label: "当前客户" }, { value: "ACTIVE_CUSTOMER_COUNT", label: "当前统计期活跃" }, { value: "FIRST_CONFIRMED_CUSTOMER_COUNT", label: "已首充客户" }, { value: "DEVICE_COUNT", label: "当前设备" }, { value: "PERSONAL_DEPOSIT", label: "客户累计充值" }],
-  CUSTOMERS: [{ value: "LAST_ACTIVE_AT", label: "最近活动" }, { value: "REGISTERED_AT", label: "注册时间" }, { value: "DIRECT_INVITATION_COUNT", label: "直接邀请的好友" }, { value: "TEAM_CUSTOMER_COUNT", label: "团队成员" }, { value: "PERSONAL_DEPOSIT", label: "本人累计充值" }, { value: "NET_CONTRIBUTION", label: "净贡献额" }, { value: "TEAM_DEPOSIT", label: "邀请累计充值" }],
+  CUSTOMERS: [{ value: "LAST_ACTIVE_AT", label: "最近活动" }, { value: "REGISTERED_AT", label: "注册时间" }, { value: "DIRECT_INVITATION_COUNT", label: "直接邀请" }, { value: "TEAM_CUSTOMER_COUNT", label: "团队成员" }, { value: "PERSONAL_DEPOSIT", label: "本人累计充值" }, { value: "NET_CONTRIBUTION", label: "净贡献额" }, { value: "TEAM_DEPOSIT", label: "邀请累计充值" }],
   FINANCE: [{ value: "SUCCEEDED_AT", label: "成功时间" }, { value: "AMOUNT", label: "金额" }],
   DEVICES: [{ value: "HASHRATE", label: "算力" }, { value: "LAST_ACTIVE_AT", label: "客户最近活动" }, { value: "DEVICE_COUNT", label: "客户设备数" }],
   ACTIVITY: [{ value: "LAST_ACTIVE_AT", label: "最近活动" }, { value: "REGISTERED_AT", label: "注册时间" }],

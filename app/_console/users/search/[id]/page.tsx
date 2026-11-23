@@ -1113,7 +1113,7 @@ export default function UserDetailPage() {
       amplifies: false,
       facts: <Facts>
         <Fact k="操作对象">{displayNickname} · <span data-mono>{userNo}</span></Fact>
-        <Fact k="设备">{instance} · {asText(device.name)}</Fact>
+        <Fact k="设备"><span data-mono>{instance}</span> · {asText(device.name)}</Fact>
         <Fact k="状态"><Change from={formatC1DeviceStatus(device.status)} to="已回收，离线" /></Fact>
         {operation === "replace" && <Fact k="置换单">新增一张已完成的，只作记录</Fact>}
         <Fact k="收益">不再派新任务，已到账的收益不扣回</Fact>
