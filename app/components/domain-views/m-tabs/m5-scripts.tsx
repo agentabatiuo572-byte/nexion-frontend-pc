@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, CheckCircle2, CircleOff, Headset, Lock, Megaphone, MessageSquareText, MessagesSquare, PauseCircle, Plus, SlidersHorizontal, Upload, Zap } from "lucide-react";
 import {
   BlockState, Button, Change, Check, CheckGroup, ConfigList, ConfigRow, DiffField, Explain, Fact, Facts, Field, IrreversibleTag, Modal as RdModal, Notice, NumberInput,
-  PageTabs, Pager as RdPager, Panel, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type TabIds,
+  PageTabs, Pager as RdPager, Panel, Segments, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type TabIds,
 } from "@/app/components/rd";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import { ContentStatusTag, M5PendingWrites, type M5Tab } from "./m5-views";
@@ -681,7 +681,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const roster = !hasM1ReadAuthority
     ? <BlockState state="denied" title="当前账号没有客服名册权限" detail="话术与模板照常能维护。" />
     : <>
-      <Notice tone="neutral">暂停接新单的客服，自动分配、人工转接和主管随机分配都选不到；邀请来的新用户仍可能分给他。同时接待上限只管自动分配。</Notice>
+      <Notice tone="neutral">暂停接新单的客服，自动分配、人工转接和主管随机分配都选不到；邀请来的新用户仍可能分给他。同时接待上限只管自动分配，「不限」就不看名下客户数。</Notice>
       <Panel flush icon={Headset} tone="role-3" title="客服接待名册" sub={agentPageAvailable ? `${agentTotal} 位` : undefined}
         explain="列出你能管的客服，每页 5 位。分组、在不在线到客服工作台的「客服与分组」看；接待资格和主管资格在账号管理里改，这里不改。">
         <Table label="客服接待名册" className="m5-roster">
@@ -689,7 +689,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
             <Th>客服</Th>
             <Th className="m5-col-state">接待状态</Th>
             <Th className="m5-col-served"><Explain label="服务客户怎么算" content="现在绑定在这位客服名下的客户，最多列出 4 位，其余写「+n」。">服务客户</Explain></Th>
-            <Th className="m5-col-cap" align="right"><Explain label="同时接待上限是什么" content="自动分配时，这位客服名下的有效绑定客户数到这个数就不再选他，0 表示自动分配不选他。不是同时会话数；邀请继承和主管指定不受它限制。">同时接待上限</Explain></Th>
+            <Th className="m5-col-cap" align="right"><Explain label="同时接待上限是什么" content={CAP_EXPLAIN}>同时接待上限</Explain></Th>
             <Th className="m5-col-tags">标签</Th>
             {canManageSupportSeats && <Th sticky="end">操作</Th>}
           </tr></thead>
@@ -724,7 +724,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
                             {assignments.length > 4 && <span className="m5-more">+{assignments.length - 4}</span>}
                           </span>
                         </Td>
-                        <Td align="right"><span className="m5-cap" data-empty={agent.maxConcurrent === 0 ? "" : undefined}>{compactSupportBoardValue(agent.maxConcurrent, "count") === "-" ? "—" : `${agent.maxConcurrent} 位`}</span></Td>
+                        <Td align="right"><span className="m5-cap" data-empty={agent.maxConcurrent === 0 ? "" : undefined}>{agent.maxConcurrent === null ? "不限" : compactSupportBoardValue(agent.maxConcurrent, "count") === "-" ? "—" : `${agent.maxConcurrent} 位`}</span></Td>
                         <Td>{agent.tags?.length ? <span className="m5-tags">{agent.tags.map((tag) => <span key={tag} className="m5-chip">{tag}</span>)}</span> : <span className="rd-note">—</span>}</Td>
                         {canManageSupportSeats && <Td sticky="end"><Button size="sm" icon={<SlidersHorizontal size={14} aria-hidden />} disabled={writePending || needsRead || blocked("I.support.agentProfile.__update", agent.adminId)} disabledReason={profileRestriction(agent)} onClick={() => { activeConfirm.current = {}; setProfileRecovery(undefined); setProfileAgent(agent); }}>接单设置</Button></Td>}
                       </Tr>;
@@ -866,7 +866,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     const body = command ? JSON.parse(command.request.body) : null;
     const statusName = (status: string) => status === "published" ? "已发布" : status === "archived" ? "已归档" : "草稿";
     const change = !command ? "结果未知" : command.profile
-      ? `${command.profile.name} · 同时接待上限 ${command.profile.maxConcurrent} → ${body.maxConcurrent}`
+      ? profileChangeText(command.profile, body)
       : command.request.method === "POST" ? command.text
         : command.key === CAT_KEY("advisor") ? `${command.text} · ${body.expectedEnabled ? "已启用" : "已停用"} → ${body.enabled ? "已启用" : "已停用"}`
           : command.key.startsWith("I.session.advisor.policy.") ? `${command.beforeValue} → ${body.value}`
@@ -895,6 +895,26 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   );
 }
 
+// 同时接待上限的三种取值，名册列头和接单设置共用一句。
+const CAP_EXPLAIN = "只管自动分配：「不限」不看他名下有多少客户；填 1–40，名下有效绑定客户到这个数就不再自动分给他；填 0，自动分配不选他。不是同时会话数，邀请继承和主管指定不受它限制。";
+const capShown = (value: unknown) => value === null ? "不限" : String(value);
+const onOff = (value: unknown) => value ? "开" : "关";
+const tagText = (tags: unknown) => Array.isArray(tags) && tags.length ? tags.join("、") : "—";
+const sameTags = (a: unknown, b: unknown) => Array.isArray(a) && Array.isArray(b) && [...a].sort().join("\u0000") === [...b].sort().join("\u0000");
+
+/** 结果未知记录的一行摘要：按存下的档案和原请求写实际改了什么，上限没变就不写上限。 */
+function profileChangeText(profile: MSupportAgent, body: Record<string, unknown>): string {
+  const capAfter = body.maxConcurrentUnlimited === true ? null : body.maxConcurrent;
+  const changes = [
+    profile.maxConcurrent !== capAfter && `同时接待上限 ${capShown(profile.maxConcurrent)} → ${capShown(capAfter)}`,
+    profile.enabled !== body.enabled && `开放接待 ${onOff(profile.enabled)} → ${onOff(body.enabled)}`,
+    profile.transferable !== body.transferable && `允许被转交 ${onOff(profile.transferable)} → ${onOff(body.transferable)}`,
+    profile.busy !== body.busy && `暂停接新单 ${onOff(profile.busy)} → ${onOff(body.busy)}`,
+    !sameTags(profile.tags, body.tags) && `标签 ${tagText(profile.tags)} → ${tagText(body.tags)}`,
+  ].filter(Boolean);
+  return `${profile.name} · ${changes.length ? changes.join("，") : "没有改动"}`;
+}
+
 function toggleList<T extends string>(rows: T[], item: T): T[] {
   return rows.includes(item) ? rows.filter((row) => row !== item) : [...rows, item];
 }
@@ -907,14 +927,25 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
   );
   const position = agent.position;
   const [tags, setTags] = useState<string[]>(originalInput?.tags ?? agent.tags ?? []);
-  const [maxConcurrent, setMaxConcurrent] = useState(String(originalInput?.maxConcurrent ?? agent.maxConcurrent));
+  const [maxConcurrent, setMaxConcurrent] = useState(String(originalInput?.maxConcurrent ?? agent.maxConcurrent ?? ""));
+  const [unlimited, setUnlimited] = useState<boolean>(originalInput ? originalInput.maxConcurrentUnlimited === true : agent.maxConcurrent === null);
+  // 刚切到「设上限」、框还空着时不报错，离开输入框后才报（OP-15）。
+  const [capLeft, setCapLeft] = useState(false);
   const [enabled, setEnabled] = useState<boolean>(originalInput?.enabled ?? agent.enabled);
   const [transferable, setTransferable] = useState<boolean>(originalInput?.transferable ?? agent.transferable);
   const [busy, setBusy] = useState<boolean>(originalInput?.busy ?? agent.busy);
   const [reason, setReason] = useState(pending?.m5?.reason ?? "");
   const [saving, setSaving] = useState(false);
+  const capText = maxConcurrent.trim();
+  const capNumber = Number(capText);
+  const capProblem = !unlimited && (capText === "" || !Number.isInteger(capNumber) || capNumber < 0 || capNumber > 40) ? "要填 0–40 的整数" : "";
+  const changed = (unlimited ? null : capNumber) !== agent.maxConcurrent
+    || enabled !== agent.enabled || transferable !== agent.transferable || busy !== agent.busy
+    || tags.length !== agent.tags.length || tags.some(tag => !agent.tags.includes(tag));
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
-  const canSave = !saving && (pending ? !isRetryExpired(pending) && Boolean(useAdminAuth.getState().session?.authorities.includes("service_m1_write")) : canSubmitNew && reasonOk && maxConcurrent.trim() !== "" && Number.isInteger(Number(maxConcurrent)) && Number(maxConcurrent) >= 0 && Number(maxConcurrent) <= 40);
+  const canSave = !saving && (pending
+    ? !isRetryExpired(pending) && Boolean(useAdminAuth.getState().session?.authorities.includes("service_m1_write"))
+    : canSubmitNew && reasonOk && !capProblem && changed);
 
   const save = async () => {
     if (!canSave) return;
@@ -926,7 +957,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
         // M-56: the displayed type ("advisor") is the canonical role; the stored legacy routing flag is
         // left alone, so saving tags or capacity no longer rewrites it.
         tags,
-        maxConcurrent: Number(maxConcurrent),
+        ...(unlimited ? { maxConcurrentUnlimited: true } : { maxConcurrent: capNumber }),
         enabled,
         transferable,
         busy,
@@ -943,18 +974,19 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
     }
   };
 
-  // 只显示用（F03 的提交修正归代码 worker）：如实写出现在保存会提交的上限，不悄悄改。
-  const capText = maxConcurrent.trim();
-  const capNumber = Number(capText);
-  const capProblem = capText === "" || !Number.isInteger(capNumber) || capNumber < 0 || capNumber > 40 ? "要填 0–40 的整数" : "";
-  const capNote = capText !== "" && !capProblem && capNumber === 0 ? "填 0：自动分配不再选他；已有客户、邀请继承和主管指定不受影响。" : undefined;
+  const capNote = unlimited
+    ? agent.maxConcurrent !== null ? "改成不限：自动分配不再看他名下有多少客户。" : undefined
+    : capText === "" || capProblem ? undefined
+      : capNumber === 0 ? "填 0：自动分配不再选他；已有客户、邀请继承和主管指定不受影响。"
+        : capNumber !== agent.maxConcurrent ? `改成 ${capNumber}：名下有效绑定客户到 ${capNumber} 位，自动分配就不再选他。` : undefined;
+  const capLocked = saving || Boolean(pending);
 
   return (
     <RdModal title="客服接单设置" icon={SlidersHorizontal} wide busy={saving} onClose={onClose}
       sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">{agent.name} · 账号 #{agent.adminId}</span></>}
       footer={<>
         <Button disabled={saving} onClick={onClose}>取消</Button>
-        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !pending && !canSubmitNew ? "名册没读到，或这位客服已不在你的范围" : !saving && !reasonOk ? "操作理由要 8–200 字" : !saving && canSubmitNew && !canSave ? "同时接待上限要填 0–40 的整数" : undefined} onClick={() => void save()}>{pending ? "按原请求重试" : "保存"}</Button>
+        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !pending && !canSubmitNew ? "名册没读到，或这位客服已不在你的范围" : !saving && !pending && capProblem ? "同时接待上限要填 0–40 的整数" : !saving && !pending && !changed ? "还没有改动" : !saving && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{pending ? "按原请求重试" : "保存"}</Button>
       </>}>
       <Facts>
         <Fact k="客服">{agent.name || "名称未同步"} · {agent.email || "—"}</Fact>
@@ -963,8 +995,12 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
       </Facts>
       {pending && <Notice tone="warn" title="结果未知">{isRetryExpired(pending) ? "原请求超过 24 小时，不能再重试，只能查询原结果。" : "上次保存可能已经生效。内容已锁定为原请求，按原请求重试不会重复执行。"}</Notice>}
       <p className="rd-note">接待资格和主管资格在账号管理里改。</p>
-      <DiffField label="同时接待上限" before={String(agent.maxConcurrent)} unit="位" hint="0–40 的整数，0 表示不自动分配给他" error={capProblem || undefined} note={capNote}>
-        {(control) => <NumberInput {...control} unit="位" min={0} max={40} step={1} value={maxConcurrent} disabled={saving || Boolean(pending)} onChange={(event) => setMaxConcurrent(event.target.value)} />}
+      <DiffField label="同时接待上限" explain={CAP_EXPLAIN} before={agent.maxConcurrent === null ? "不限" : String(agent.maxConcurrent)} unit={agent.maxConcurrent === null ? undefined : "位"} hint={unlimited ? undefined : "0–40 的整数"} error={capProblem && (capText !== "" || capLeft) ? capProblem : undefined} note={capNote}>
+        {(control) => <>
+          <span className="m5-cap-mode"><Segments label="同时接待上限" value={unlimited ? "unlimited" : "limited"} onChange={(value) => { setUnlimited(value === "unlimited"); setCapLeft(false); }}
+            items={[{ value: "unlimited", label: "不限", disabled: capLocked }, { value: "limited", label: "设上限", disabled: capLocked }]} /></span>
+          <NumberInput {...control} unit="位" min={0} max={40} step={1} value={unlimited ? "" : maxConcurrent} disabled={capLocked || unlimited} onBlur={() => setCapLeft(true)} onChange={(event) => setMaxConcurrent(event.target.value)} />
+        </>}
       </DiffField>
       <div className="m5-profile-grid">
       <CheckGroup legend="接待开关">

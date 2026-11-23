@@ -766,3 +766,9 @@
 .m5-profile-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--rd-space-6); align-items: start; }
 .m5-profile-grid > .rd-check-group .rd-check-grid { grid-template-columns: minmax(0, 1fr); }
 .m5-tag-checks .rd-check-grid { display: flex; flex-wrap: wrap; gap: var(--rd-space-2) var(--rd-space-4); }
+/* 接单设置「同时接待上限」：不限 / 设上限 和数字框排一行，和弹窗里表单的选项底槽同一个样子，高度对齐 44 的数字框。 */
+.m5-cap-mode .rd-segs { gap: 2px; padding: 2px; border-radius: var(--rd-radius-control); background: var(--rd-bg); }
+.m5-cap-mode .rd-seg { height: calc(var(--rd-control-h-lg) - 4px); }
+.m5-cap-mode .rd-seg[aria-checked="true"] { background: var(--rd-control); }
+:root[data-theme="light"] .m5-cap-mode .rd-segs { background: var(--rd-control); box-shadow: inset 0 0 0 1px var(--rd-line); }
+:root[data-theme="light"] .m5-cap-mode .rd-seg[aria-checked="true"] { background: var(--rd-panel); box-shadow: 0 0 0 1px var(--rd-line-strong); }
