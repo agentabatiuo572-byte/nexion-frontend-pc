@@ -103,7 +103,7 @@ function splitNotificationBody(value: string): { title: string; body: string } {
   return { title, body: body.join("\n") };
 }
 
-function formFromCampaign(campaign: NotificationCampaignRow, required: readonly OperatingLanguageCode[]): NewForm {
+function formFromCampaign(campaign: Omit<NotificationCampaignRow, "status">, required: readonly OperatingLanguageCode[]): NewForm {
   const zh = splitNotificationBody(campaign.bodyZh);
   const vi = splitNotificationBody(campaign.bodyVi);
   const en = splitNotificationBody(campaign.bodyEn);
