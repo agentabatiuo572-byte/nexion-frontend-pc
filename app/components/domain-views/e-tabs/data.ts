@@ -9,6 +9,7 @@ import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import type { StateTone } from "@/app/components/rd";
 import { SKU_SERIES_CODES, supportsDeviceMonthlyTarget, type SkuSeriesCode } from "@/lib/admin/device-monthly-target";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
+import { containsHan } from "@/lib/admin/content-language-rules";
 import { skuBadgeKind, skuBadgeValue, skuTaglineTranslationUpdate, type SkuBadgeKind } from "@/lib/admin/e1-product-copy";
 
 // 全系统统一连续编号 E1-E5(上架节奏门并入 E1、设备生命周期归 E3)。
@@ -448,7 +449,9 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     name: f.name.trim(), id: f.id.trim() || existing?.id || f.name.trim(),
     tier: f.tier, seriesCode: f.seriesCode || undefined, tagline: f.tagline.trim() || undefined,
     taglineTranslations: skuTaglineTranslationUpdate(f, existing?.taglineTranslations),
-    badge: existing && !f.badgeKindChanged && (f.badgeKind !== "custom" || f.badge === existing.badge)
+    // An untouched legacy badge is kept as stored, except a preset written in Chinese (e.g. 升级首选), which the
+    // operator cannot fix by picking the same option again: it is saved as that preset's English value.
+    badge: existing && !f.badgeKindChanged && (f.badgeKind === "custom" ? f.badge === existing.badge : !containsHan(existing.badge ?? ""))
       ? existing.badge : skuBadgeValue(f.badgeKind, f.badge),
     specDocumentTitle: f.specDocumentTitle.trim() || undefined, specDocumentUrl: f.specDocumentUrl.trim() || undefined,
     gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty ? `${f.warranty} months` : undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),

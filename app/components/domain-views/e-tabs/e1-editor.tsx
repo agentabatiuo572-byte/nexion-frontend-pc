@@ -139,7 +139,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const seriesChoices = skuSeriesChoices(form.tier, original);
   const nav = useSectionNav(SECTIONS, { ready: !!request });
   const draft = skuDraft(form, original, media);
-  const dirty = !!request && (JSON.stringify({ ...form, badgeKindChanged: false }) !== initialForm || draft.badge !== original?.badge || imageIdentity(media) !== initialMedia);
+  const dirty = !!request && (JSON.stringify({ ...form, badgeKindChanged: false }) !== initialForm || form.badgeKindChanged && draft.badge !== original?.badge || imageIdentity(media) !== initialMedia);
   const latestChanged = !!original && !!currentSku?.updatedAt && original.updatedAt !== currentSku.updatedAt;
   const changes = e1SkuDiff(original, draft, form).filter(r => r.before !== r.after);
   const update = (key: keyof SkuForm, value: string) => { setForm(f => ({ ...f, [key]: value })); setErrors(e => ({ ...e, [key]: "" })); };
