@@ -45,9 +45,11 @@ export const WHEEL_APP_KINDS = ["uvt", "usdt", "coupon"];
 export function legacyName(value: unknown): { text: string; legacy: boolean } {
   const raw = text(value, "");
   const legacy = /\bNEX\b/i.test(raw);
-  // 带币种的金额按全站写法显示（去掉末尾 0、整数不写小数点）；原文照旧用于比较和提交（OP-39）。
-  return { text: nexGridBrandText(raw.replace(/\bNEX\b/gi, "UVT").replace(/\$\s?(?=\d)/g, "")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券")
-    .replace(/(\d+(?:\.\d+)?)(?=\s*(?:UVT|USDT)\b)/g, (amount) => amountDisplay(amount)), legacy };
+  return { text: nexGridBrandText(raw.replace(/\bNEX\b/gi, "UVT").replace(/\$\s?(?=\d)/g, "")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券"), legacy };
+}
+/** 既有活动的奖励（如「100.000000 UVT」）给运营看时，带币种的金额按全站写法（OP-39 显示按新规则）；比较、预览和提交仍用原文。App 显示的文字和奖项名不走这里。 */
+export function legacyRewardText(value: unknown): string {
+  return legacyName(value).text.replace(/(\d+(?:\.\d+)?)(?=\s*(?:UVT|USDT)\b)/g, (amount) => amountDisplay(amount));
 }
 export function LegacyNameTag({ where }: { where: string }) {
   return <StatusTag tone="warn" icon={CircleAlert} explain={`系统存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的也是存的名称（只做品牌替换）。改${where}时写成 UVT。`}>旧名称</StatusTag>;
@@ -195,7 +197,7 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requi
         {originalFields[0] === "description" && <>{originalTag} </>}{description?.text ?? "说明未配置"}{enTag("description")}</p>
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
-          {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{reward.text || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
+          {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{legacyRewardText(event.reward) || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
           <small>{appReward ? <>{!wheel && appReward.text === text(event.reward, "") ? "App 显示同上" : `App 显示：${appReward.text || "—"}`}{enTag("rewardName")}</>
             : rewardFromRule && !rewardName ? "App 显示玩法规则摘要" : rewardName ? <>{rewardName.text !== text(event.reward, "") ? `App 显示：${rewardName.text}` : "App 显示同上"}{enTag("rewardName")}</> : "奖项名未配置"}</small>
         </dd></div>

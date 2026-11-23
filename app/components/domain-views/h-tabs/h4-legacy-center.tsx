@@ -55,8 +55,7 @@ import {
   ApprovalFact, EventCard, EventPreview, GuardCard, contentFieldsText, contentGaps, gapWeight, languageNames, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
   WHEEL_APP_KINDS, WHEEL_KIND_LABEL, WheelBar, WheelLegend, boolValue, effectApproval, effectByDirection, effectDirect, expiredTag, formStore,
   legacyName, lifecycleOf, numericValue, pendingTag, percentText, text, unknownTag, wheelLegacyNexTier, wheelPointsTier, wheelUnit,
-  type LegacyEvent, type LocaleCode, type WheelTier,
-} from "./h4-legacy-parts";
+  type LegacyEvent, type LocaleCode, type WheelTier, legacyRewardText } from "./h4-legacy-parts";
 
 type Model = H4Statistics & {
   events?: LegacyEvent[];
@@ -374,9 +373,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       action: `活动奖励 · ${event.name}`,
       title: "修改活动奖励",
       effect: ruleBased ? effectDirect : effectByDirection(),
-      detail: ruleBased ? "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。" : <>当前奖励 <b>{legacyName(current).text}</b>。填写新奖励后确认。</>,
+      detail: ruleBased ? "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。" : <>当前奖励 <b>{legacyRewardText(current)}</b>。填写新奖励后确认。</>,
       facts: <>
-        <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{legacyName(current).text}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</Fact>{ruleBased
+        <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{legacyRewardText(current)}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</Fact>{ruleBased
           ? <><Fact k="改的是">这页登记的奖励文字</Fact><Fact k="App 上">{event.appRewardNames ? <>显示「{event.appRewardNames.zh || "—"}」，按玩法规则写，不随这里改</> : "每种语言显示填的奖项名，没填的显示玩法规则摘要"}</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
           : <>{event.appRewardNames && <Fact k="App 现在显示">{event.appRewardNames.zh || "—"}</Fact>}<ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" /></>}</Facts>
       </>,

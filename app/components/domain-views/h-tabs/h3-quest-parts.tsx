@@ -13,6 +13,7 @@ import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from 
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { H3QuestEventBinding } from "@/lib/admin/h-client";
 import { h3Decimal, h3HasConfigValue, h3MissionEnableRefusal, type H3PendingApproval, type H3PendingMissionCreation, type H3TaskContract } from "@/lib/admin/h3-contract";
+import { amountDisplay } from "@/lib/format";
 
 export type QuestTask = Record<string, any>;
 
@@ -166,14 +167,12 @@ export function sumDecimal(values: string[]): string | null {
   return scale ? `${raw.slice(0, raw.length - scale)}.${raw.slice(raw.length - scale)}`.replace(/\.?0+$/, "") : raw;
 }
 
-/** 千分位只给整数部分，编号不走这里。 */
+/** 金额按全站写法（amountDisplay）：千分位、去掉末尾 0、整数不写小数点，不舍入；编号不走这里。 */
 export function amountText(value: string | null) {
   if (value == null) return null;
   if (value.includes(",")) return value;
   const decimal = h3Decimal(value);
-  if (decimal === null) return value;
-  const [whole, frac] = decimal.split(".");
-  return `${BigInt(whole).toLocaleString("en-US")}${frac ? `.${frac}` : ""}`;
+  return decimal === null ? value : amountDisplay(decimal);
 }
 
 /** 首日三档奖励「全额 / 宽限 / 0 UVT」。读不懂时返回 null，页面照原文显示。 */

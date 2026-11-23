@@ -55,7 +55,6 @@ import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
 import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { useSearchParams } from "next/navigation";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { amountDisplay } from "@/lib/format";
 
 type ScalarKey = H9FieldDef["key"];
 type ScalarDrafts = Record<ScalarKey, string>;
@@ -138,9 +137,9 @@ const JOBS_REASON: Record<string, string> = {
   H9_ACTIVE_JOBS_BASE_UNPUBLISHED: "基座未发布，App 不显示作业数",
   HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "这一刻还没有可用的首页展示数据",
 };
-/** 按分算的金额按全站写法（amountDisplay）：千分位，去掉末尾 0、整数不写小数点，不舍入、不补币种（用 paidCents 拼十进制，不经过浮点）。 */
+/** 按分算的金额写成两位小数加千分位，不舍入、不补币种（paid 是 JSON 数字，末尾的 0 会丢，所以用 paidCents）。这是「App 显示」的写法，照 App 两位小数写，不按后台金额规则改。 */
 function centsAmount(cents: number) {
-  return amountDisplay(`${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`);
+  return `${Math.floor(cents / 100).toLocaleString("en-US")}.${String(cents % 100).padStart(2, "0")}`;
 }
 /** App 示意卡下的一行：读到时写取样时间，读不到写原因和上面显示的是什么。 */
 function AppSample({ read, found, fallback }: { read: AppDisplayRead; found: boolean; fallback: "设定值" | "推算" }) {
