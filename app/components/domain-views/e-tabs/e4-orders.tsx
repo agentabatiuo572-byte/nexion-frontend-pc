@@ -20,12 +20,8 @@ import { FundClosureModal, FundRecoveryPanel, type FundRecoveryRow } from "../fu
 import type { E4PendingCommand, EViewCtx } from "./types";
 import { E4_PAGE_SIZES, ORDER_FINAL_STATES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, orderAmount, stateLabel, type E4Query } from "./data";
 
-/** 显示用金额：去掉后端补的末尾 0、至少两位小数，不舍入（全站金额写法）；请求和校验用原值。 */
-const e4Amount = (value: number | string | null) => {
-  const text = orderAmount(value);
-  const [whole, fraction] = text.split(".");
-  return fraction === undefined ? text : `${whole}.${fraction.replace(/0+$/, "").padEnd(2, "0")}`;
-};
+/** 显示用金额：按全站金额写法（orderAmount），不舍入；请求和校验用原值。 */
+const e4Amount = (value: number | string | null) => orderAmount(value);
 const e4Money = (value: number | string | null) => `${e4Amount(value)} USDT`;
 const FLOW_STATES = ["placed", "paid", "provisioning"];
 const FAILED_STATES = ["payment_failed", "provisioning_failed", "chargeback"];
