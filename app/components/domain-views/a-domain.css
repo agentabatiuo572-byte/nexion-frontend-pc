@@ -878,10 +878,10 @@
 .a7-page .a7-recovery-zone { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 
 /* A2 待确认条：查询原决定的结果（A2-BE-17）。状态标签和这一句排一行，放不下时整句换到下一行。 */
-/* 待审批表：第一列（动作 · 对象）占 45%、变更占 30%，各自在自己的宽度里写全，超出才省略、悬停看全文；发起人和标记按内容，操作列收到按钮宽贴右边线。
+/* 待审批表：第一列（动作 · 对象）占 40%、变更占 30%，各自在自己的宽度里写全，超出才省略、悬停看全文；发起人和标记按内容，操作列收到按钮宽贴右边线。
    空白按比例分在前两列，不集中在一列后面，长名称也不会把表格撑出面板（ST-02、ST-04、BUG-647）。1024 宽仍按 data-tight 收到 200。 */
 @media (min-width: 1280px) {
-  .rd-table.a2-queue th:first-child, .rd-table.a2-queue td:first-child:not([colspan]) { width: 45%; }
+  .rd-table.a2-queue th:first-child, .rd-table.a2-queue td:first-child:not([colspan]) { width: 40%; }
   .rd-table.a2-queue th:nth-child(2), .rd-table.a2-queue td:nth-child(2) { width: 30%; }
   .rd-table.a2-queue td:is(:first-child, :nth-child(2)):not([colspan]) { max-width: 0; }
   .rd-table.a2-queue td:is(:first-child, :nth-child(2)):not([colspan]) > .rd-cell { max-width: none; }
