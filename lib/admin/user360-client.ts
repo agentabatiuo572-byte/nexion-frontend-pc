@@ -9,6 +9,10 @@ import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { supportRequest, supportObject, parseSupportId } from "./m-support-client.ts";
 import { parseUserLatestFunds, preserveUserFundAmounts, type UserLatestFundActivity } from "./user-latest-funds-contract";
+import {
+  parseInvitationCountReason, parseInvitationInviter, parseInvitationInviterDetail, parseSupportInvitationInviterDetail,
+  type InvitationCountReason, type InvitationInviter, type InvitationInviterDetail, type SupportInvitationInviterDetail,
+} from "./invitation-read-contract.ts";
 
 interface ApiResult<T> {
   code: number;
@@ -60,6 +64,7 @@ export interface User360Profile extends JsonRecord {
   userId?: number | string | null;
   userNo?: string | null;
   nickname?: string | null;
+  inviter?: InvitationInviter;
   phoneMasked?: string | null;
   countryCode?: string | null;
   status?: string | null;
@@ -450,12 +455,19 @@ export interface User360Section {
   wallet?: JsonRecord | null;
 }
 
-export interface User360Detail extends JsonRecord {
+interface User360TeamSection extends User360Section {
+  withinRewardRange?: number | null;
+  beyondRewardRange?: number | null;
+  countStatus?: "AVAILABLE" | "PARTIAL" | "UNKNOWN" | "FAILED";
+  countReasons?: InvitationCountReason[];
+}
+
+export interface User360Detail<Inviter extends InvitationInviterDetail = InvitationInviterDetail> extends JsonRecord {
   latestDeposit?: UserLatestFundActivity | null;
   latestWithdrawal?: UserLatestFundActivity | null;
   latestDepositStatus?: "READY" | "ERROR";
   latestWithdrawalStatus?: "READY" | "ERROR";
-  profile?: User360Profile | null;
+  profile?: (User360Profile & { inviter?: Inviter }) | null;
   security?: JsonRecord | null;
   sessions?: JsonRecord[] | null;
   deposits?: User360Section | null;
@@ -463,10 +475,10 @@ export interface User360Detail extends JsonRecord {
   devices?: User360Section | null;
   orders?: User360Section | null;
   risk?: User360Section | null;
-  team?: User360Section | null;
+  team?: User360TeamSection | null;
   notifications?: User360Section | null;
   earnings?: User360Section | null;
-  referral?: User360Section | null;
+  referral?: User360TeamSection | null;
   vrank?: User360Section | null;
   financial?: User360Section | null;
   engagement?: User360Section | null;
@@ -736,15 +748,32 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
   return result.data as T;
 }
 
-export async function fetchUser360(userKey: string) {
-  const detail = await usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
+function normalizeUser360Detail<Inviter extends InvitationInviterDetail>(
+  detail: User360Detail<Inviter>, parseInviter: (row: JsonRecord) => Inviter,
+) {
+  const profile = detail.profile;
+  if (profile?.inviter !== undefined) {
+    detail.profile = { ...profile, inviter: parseInviter(supportObject(profile.inviter, "profile.inviter")) };
+  }
+  // Count coverage belongs to the counts. The outer status governs access to the whole section.
+  for (const key of ["team", "referral"] as const) {
+    const section = detail[key];
+    if (section?.countReasons !== undefined) {
+      detail[key] = { ...section, countReasons: section.countReasons.map(parseInvitationCountReason) };
+    }
+  }
   return { ...detail, ...parseUserLatestFunds(detail) };
 }
 
-export async function fetchSupportCustomerFullProfile(customerId: string, signal?: AbortSignal): Promise<User360Detail> {
+export async function fetchUser360(userKey: string) {
+  const detail = await usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
+  return normalizeUser360Detail(detail, parseInvitationInviterDetail);
+}
+
+export async function fetchSupportCustomerFullProfile(customerId: string, signal?: AbortSignal): Promise<User360Detail<SupportInvitationInviterDetail>> {
   const id = parseSupportId(customerId, "customerId");
   return supportRequest(`/support-workbench/customers/${encodeURIComponent(id)}/full-profile`, value => {
-    const detail = { ...supportObject(value, "full-profile") } as User360Detail;
+    const detail = { ...supportObject(value, "full-profile") } as User360Detail<SupportInvitationInviterDetail>;
     const profile = supportObject(detail.profile, "full-profile.profile");
     if (parseSupportId(profile.id ?? profile.userId, "full-profile.customerId") !== id) throw new Error("SUPPORT_PROFILE_CUSTOMER_MISMATCH");
     for (const [key, section] of Object.entries(detail)) {
@@ -754,7 +783,7 @@ export async function fetchSupportCustomerFullProfile(customerId: string, signal
         else if (status !== "READY") detail[key] = { sourceStatus: status === "ERROR" ? "ERROR" : "UNKNOWN" };
       }
     }
-    return { ...detail, ...parseUserLatestFunds(detail) };
+    return normalizeUser360Detail(detail, parseSupportInvitationInviterDetail);
   }, { signal, transformResponseText: preserveUserFundAmounts });
 }
 
@@ -990,7 +1019,12 @@ export async function fetchUserProfilesPage(query: UserProfileQuery = {}) {
     pageNum,
     pageSize,
   })}`);
-  return normalizePage(page, pageNum, pageSize);
+  const normalized = normalizePage(page, pageNum, pageSize);
+  const records = normalized.records.map(profile => profile?.inviter === undefined ? profile : {
+    ...profile,
+    inviter: parseInvitationInviter(supportObject(profile.inviter, "profile.inviter")),
+  });
+  return { ...normalized, records };
 }
 
 function filenameFromDisposition(disposition: string | null, fallback: string) {

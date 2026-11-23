@@ -1,5 +1,6 @@
 import { supportRequest } from "./m-support-client.ts";
 import { parseBusinessTime } from "./business-time.ts";
+import { parseInvitationCountReason, parseInvitationInviter } from "./invitation-read-contract.ts";
 
 const VIEWS = ["OVERVIEW", "AGENTS", "CUSTOMERS", "FINANCE", "DEVICES", "ACTIVITY"] as const;
 const DETAIL_VIEWS = ["NET_CONTRIBUTIONS", "FIRST_DEPOSITS", "FIRST_PURCHASES"] as const;
@@ -70,6 +71,11 @@ function count(value: unknown) {
   const r = object(value, "observed confirmed status");
   const result = { observed: nullableInteger(r.observed), confirmed: nullableInteger(r.confirmed), status: enumeration(r.status, STATUS) };
   if (["UNKNOWN", "FAILED", "UNAVAILABLE"].includes(result.status) && result.confirmed !== null) malformed("countCoverage");
+  return result;
+}
+function invitationCount(value: unknown) {
+  const result = count(value);
+  if (result.status !== "AVAILABLE" && result.confirmed !== null) malformed("invitationCountCoverage");
   return result;
 }
 function money(value: unknown) {
@@ -171,16 +177,30 @@ function avatar(value: unknown) {
   if (!/^[a-f0-9-]{36}$/.test(assetId)) malformed("avatar");
   return { assetId, version: integer(r.version) };
 }
+function invitations(value: unknown) {
+  const r = object(value, "direct descendants status deposits withinRewardRange beyondRewardRange reasons");
+  return {
+    direct: invitationCount(r.direct),
+    descendants: invitationCount(r.descendants),
+    status: enumeration(r.status, STATUS),
+    deposits: unique(array(r.deposits, value => {
+      const p = object(value, "currency deposits");
+      return { currency: enumeration(p.currency, CURRENCIES), deposits: money(p.deposits) };
+    }), x => x.currency),
+    ...(r.withinRewardRange === undefined ? {} : { withinRewardRange: invitationCount(r.withinRewardRange) }),
+    ...(r.beyondRewardRange === undefined ? {} : { beyondRewardRange: invitationCount(r.beyondRewardRange) }),
+    ...(r.reasons === undefined ? {} : { reasons: array(r.reasons, reason => parseInvitationCountReason(text(reason))) }),
+  };
+}
 export function parseSupportCustomerStatistics(value: unknown) {
   const r = object(value, "first lifetime lifetimeStatus invitations activity");
   const f = object(r.first, "state status kind currency amount succeededAt");
-  const i = object(r.invitations, "direct descendants status deposits");
   const a = object(r.activity, "state status lastEffectiveAt");
-  return { first: { state: enumeration(f.state, ["CONFIRMED", "NONE", "UNKNOWN"]), status: enumeration(f.status, STATUS), kind: f.kind === null ? null : enumeration(f.kind, FIRST_KINDS), currency: f.currency === null ? null : enumeration(f.currency, CURRENCIES), amount: decimal(f.amount), succeededAt: nullableInstant(f.succeededAt) }, lifetime: unique(array(r.lifetime, customerMoney), x => x.currency), lifetimeStatus: enumeration(r.lifetimeStatus, STATUS), invitations: { direct: count(i.direct), descendants: count(i.descendants), status: enumeration(i.status, STATUS), deposits: unique(array(i.deposits, value => { const p = object(value, "currency deposits"); return { currency: enumeration(p.currency, CURRENCIES), deposits: money(p.deposits) }; }), x => x.currency) }, activity: { state: enumeration(a.state, ["ACTIVE", "INACTIVE", "UNKNOWN"]), status: enumeration(a.status, STATUS), lastEffectiveAt: nullableInstant(a.lastEffectiveAt) } };
+  return { first: { state: enumeration(f.state, ["CONFIRMED", "NONE", "UNKNOWN"]), status: enumeration(f.status, STATUS), kind: f.kind === null ? null : enumeration(f.kind, FIRST_KINDS), currency: f.currency === null ? null : enumeration(f.currency, CURRENCIES), amount: decimal(f.amount), succeededAt: nullableInstant(f.succeededAt) }, lifetime: unique(array(r.lifetime, customerMoney), x => x.currency), lifetimeStatus: enumeration(r.lifetimeStatus, STATUS), invitations: invitations(r.invitations), activity: { state: enumeration(a.state, ["ACTIVE", "INACTIVE", "UNKNOWN"]), status: enumeration(a.status, STATUS), lastEffectiveAt: nullableInstant(a.lastEffectiveAt) } };
 }
 export type SupportCustomerStatistics = ReturnType<typeof parseSupportCustomerStatistics>;
 function customer(value: unknown) {
-  const r = object(value, "customerId customerNo nickname avatar level customTags systemTags systemTagsStatus profileRef registeredAt assignedAt category placement handoverRequired owner first lifetime lifetimeStatus invitations devices activity task funds");
+  const r = object(value, "customerId customerNo nickname avatar level customTags systemTags systemTagsStatus profileRef registeredAt assignedAt category placement handoverRequired owner first lifetime lifetimeStatus invitations devices activity task funds inviter");
   const customerId = id(r.customerId), profileRef = text(r.profileRef), avatarRef = nullableText(r.avatar);
   if (profileRef !== `/api/admin/content/support-workbench/customers/${customerId}` || avatarRef !== null && avatarRef !== `${profileRef}/avatar`) malformed("profileRef");
   const o = object(r.owner, "agentId groupId agentName advisorAvatar advisorAvatarRef");
@@ -188,7 +208,10 @@ function customer(value: unknown) {
   if (advisorAvatarRef !== null && advisorAvatarRef !== `/api/admin/content/support-agents/${agentId}/avatar?customerId=${customerId}`) malformed("advisorAvatarRef");
   const t = object(r.task, "status enabled due waitingReply firstContact nextDueAt waitingSinceAt");
   const task = t.status === "UNAVAILABLE" ? (Object.keys(t).length === 1 ? { status: "UNAVAILABLE" as const } : malformed("taskUnavailable")) : { status: enumeration(t.status, READS), enabled: t.enabled === null ? null : boolean(t.enabled), due: t.due === null ? null : boolean(t.due), waitingReply: t.waitingReply === null ? null : boolean(t.waitingReply), firstContact: t.firstContact === null ? null : boolean(t.firstContact), nextDueAt: nullableInstant(t.nextDueAt), waitingSinceAt: nullableInstant(t.waitingSinceAt) };
-  return { customerId, customerNo: nullableText(r.customerNo), nickname: nullableText(r.nickname), avatar: avatarRef, level: nullableText(r.level), customTags: array(r.customTags, text), systemTags: array(r.systemTags, text), systemTagsStatus: enumeration(r.systemTagsStatus, ["PARTIAL"]), profileRef, registeredAt: nullableInstant(r.registeredAt), assignedAt: nullableInstant(r.assignedAt), category: enumeration(r.category, ["BOUND", "PENDING", "ANOMALY"]), placement: enumeration(r.placement, ["GROUPED", "UNGROUPED", "GROUP_QUEUE", "GLOBAL_QUEUE", "UNKNOWN"]), handoverRequired: boolean(r.handoverRequired), owner: { agentId, groupId: nullableId(o.groupId), agentName: nullableText(o.agentName), advisorAvatar: avatar(o.advisorAvatar), advisorAvatarRef }, ...parseSupportCustomerStatistics({ first: r.first, lifetime: r.lifetime, lifetimeStatus: r.lifetimeStatus, invitations: r.invitations, activity: r.activity }), devices: devices(r.devices), task, funds: funds(r.funds) };
+  return {
+    ...(r.inviter === undefined ? {} : { inviter: parseInvitationInviter(object(r.inviter, "state userNo nickname reason")) }),
+    customerId, customerNo: nullableText(r.customerNo), nickname: nullableText(r.nickname), avatar: avatarRef, level: nullableText(r.level), customTags: array(r.customTags, text), systemTags: array(r.systemTags, text), systemTagsStatus: enumeration(r.systemTagsStatus, ["PARTIAL"]), profileRef, registeredAt: nullableInstant(r.registeredAt), assignedAt: nullableInstant(r.assignedAt), category: enumeration(r.category, ["BOUND", "PENDING", "ANOMALY"]), placement: enumeration(r.placement, ["GROUPED", "UNGROUPED", "GROUP_QUEUE", "GLOBAL_QUEUE", "UNKNOWN"]), handoverRequired: boolean(r.handoverRequired), owner: { agentId, groupId: nullableId(o.groupId), agentName: nullableText(o.agentName), advisorAvatar: avatar(o.advisorAvatar), advisorAvatarRef }, ...parseSupportCustomerStatistics({ first: r.first, lifetime: r.lifetime, lifetimeStatus: r.lifetimeStatus, invitations: r.invitations, activity: r.activity }), devices: devices(r.devices), task, funds: funds(r.funds),
+  };
 }
 function agent(value: unknown) {
   const r = object(value, "accountId displayName avatar avatarRef account current funds");
