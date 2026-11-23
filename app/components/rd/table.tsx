@@ -40,6 +40,7 @@
  * - 内容能横向滚时固定列自带影子；行的焦点环画在格子上，固定列也看得全。
  *   上一条下一条切到视口外的行时自动滚过去。默认列按列表占满宽度定，不给抽屉留宽度。
  * - 对齐按 ST-02：文字、状态左对齐，金额、数量、百分比 align="right"；操作列传 sticky="end"，默认右对齐，贴表格右边，窄屏也看得全。空值写「—」。
+ * - 最后一列不是操作列、也要贴右边线时（详情页的记录表），这一列的 Th 和 Td 都传 fit：收到内容宽，空白交给前面的列，左边多留 24px（PRD §5A 两端对齐）。
  * - 加载用 <TableLoading columns={n} />；空和失败用 <TableMessage columns={n}>…</TableMessage> 放表体，
  *   失败不写「暂无数据」（T09）。
  * - 列选择只影响显示，不影响导出列和读取请求（ST-03）。按账号和表格记在 localStorage。
@@ -84,9 +85,9 @@ export function Table({ label, rowFocus, children, className, ...rest }: HTMLAtt
 }
 
 /** control 是勾选这类控件列，不是数据列，不算进默认 6 列。 */
-export function Th({ align, sticky, control, icon: Icon, tone, children, ...rest }: ThHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right"; sticky?: "start" | "end"; control?: boolean; icon?: LucideIcon; tone?: DomainTone }) {
+export function Th({ align, sticky, control, fit, icon: Icon, tone, children, ...rest }: ThHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right"; sticky?: "start" | "end"; control?: boolean; fit?: boolean; icon?: LucideIcon; tone?: DomainTone }) {
   return (
-    <th {...rest} scope={rest.scope ?? "col"} data-cp={control ? undefined : "column"} data-control={control ? "" : undefined} data-align={align ?? (sticky === "end" ? "right" : undefined)} data-sticky={sticky}>
+    <th {...rest} {...(fit ? { "data-fit": "end" } : null)} scope={rest.scope ?? "col"} data-cp={control ? undefined : "column"} data-control={control ? "" : undefined} data-align={align ?? (sticky === "end" ? "right" : undefined)} data-sticky={sticky}>
       <span className="rd-th-inner">
         {Icon && <span className="rd-th-icon" data-tone={tone ?? "system"}><Icon size={13} strokeWidth={1.9} aria-hidden /></span>}
         {children}
@@ -95,9 +96,9 @@ export function Th({ align, sticky, control, icon: Icon, tone, children, ...rest
   );
 }
 
-/** grow：这一列占满剩下的宽度，里面的 Cell 放不下才省略（长文本列，比如理由）。一张表最多一列。 */
-export function Td({ align, sticky, grow, children, ...rest }: TdHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right"; sticky?: "start" | "end"; grow?: boolean }) {
-  return <td {...rest} data-align={align ?? (sticky === "end" ? "right" : undefined)} data-sticky={sticky} data-grow={grow ? "" : undefined}>{children}</td>;
+/** grow：这一列占满剩下的宽度，里面的 Cell 放不下才省略（长文本列，比如理由）。一张表最多一列。fit：见文件头，和这一列的 Th 一起传。 */
+export function Td({ align, sticky, grow, fit, children, ...rest }: TdHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right"; sticky?: "start" | "end"; grow?: boolean; fit?: boolean }) {
+  return <td {...rest} {...(fit ? { "data-fit": "end" } : null)} data-align={align ?? (sticky === "end" ? "right" : undefined)} data-sticky={sticky} data-grow={grow ? "" : undefined}>{children}</td>;
 }
 
 /** mark 是常亮的行标记，和打开详情的 selected 无关：hit 是带单号进来定位到的行，danger 是对不上要核查的行。 */
