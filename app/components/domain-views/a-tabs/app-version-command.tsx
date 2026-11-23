@@ -53,6 +53,7 @@ function artifactName(item: Artifact) {
 export function AppVersionCommand({ state, action, language, onClose, onReload, onSaved }: {
   state: PlatformUpdates; action: Action; language: Language; onClose: () => void; onReload: () => void; onSaved: (value: PlatformUpdates) => void;
 }) {
+  const approvingRelease = action === "approve" && state.autoPublishOnApproval === true;
   const editing = state.status === "draft" ? state.candidate : null;
   const livePair = livePolicies(state);
   const base = editing?.updateType === "package" ? editing : livePair.package;
@@ -113,7 +114,7 @@ export function AppVersionCommand({ state, action, language, onClose, onReload, 
     setBusy(true); setError("");
     try {
       const saved = await requestUpdates(state.platform, { action, body });
-      toast.success(outcomes[action]); onSaved(saved);
+      toast.success(approvingRelease ? "审批通过，iOS TEST 版本已发布" : outcomes[action]); onSaved(saved);
     } catch (cause) {
       const known = cause instanceof UpdateError && cause.status >= 400 && cause.status < 500;
       if (known) {
@@ -158,9 +159,9 @@ export function AppVersionCommand({ state, action, language, onClose, onReload, 
     </div>
   </Modal>;
   return <Modal title={title} icon={ShieldCheck} dirty={dirty} busy={busy} onClose={close} footer={footer}
-    sub={<StatusTag tone={action === "publish" ? "warn" : "progress"}>{action === "publish" ? "确认后生效" : "线上策略继续生效"}</StatusTag>}>
+    sub={<StatusTag tone={action === "publish" || approvingRelease ? "warn" : "progress"}>{action === "publish" || approvingRelease ? "确认后生效" : "线上策略继续生效"}</StatusTag>}>
     <div className="rd-form-stack">
-      <p>{platforms[state.platform]} · {effects[action]}</p>
+      <p>{platforms[state.platform]} · {approvingRelease ? "批准后立即发布，向允许系统通知且已上报旧构建号的 TEST iOS 用户发送一次更新通知。" : effects[action]}</p>
       {recovering ? <ReleaseChanges before={livePair} after={targetPair}/>
         : <PolicyChanges before={target ? livePair[target.updateType] : state.live} after={target} />}
       {state.requestReason && <p>申请理由 · {state.requestReason}</p>}

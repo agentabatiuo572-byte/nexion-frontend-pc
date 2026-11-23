@@ -113,11 +113,12 @@ function VersionDetails({ state, onSaved, refresh }: { state: PlatformUpdates; o
           <Segments label="预览语言" value={language} items={languageOptions} onChange={setLanguage} />
           {shown && <div className="av-notes"><h3>更新说明</h3><p lang={language}>{shown.notes[language]}</p>
             {shown.reasons[language] && <><h3>必须更新的原因</h3><p lang={language}>{shown.reasons[language]}</p></>}</div>}
-          {state.status !== "idle" && <Steps label="发布步骤" items={["准备草稿", "独立审批", "发布生效"].map((label, index) =>
+          {state.status !== "idle" && <Steps label="发布步骤" items={(state.autoPublishOnApproval
+            ? ["准备草稿", "超管审批后自动发布"] : ["准备草稿", "独立审批", "发布生效"]).map((label, index) =>
             ({ label, state: index < step ? "done" : index === step ? "current" : "todo" }))} />}
           {submitted && <p className="rd-note">发起人 {maskAuditActor(submitted.actor)}{approved && ` · 审批人 ${maskAuditActor(approved.actor)}`}</p>}
           {state.requestReason && <p className="rd-note">申请理由 · {state.requestReason}</p>}
-          {state.status === "pending" && !allowed.includes("approve") && <p className="rd-note">等待未参与本次编辑或提交的有权管理员审核。</p>}
+          {state.status === "pending" && !allowed.includes("approve") && <p className="rd-note">等待未参与本次编辑或提交的{state.autoPublishOnApproval ? "超管" : "有权管理员"}审核。</p>}
           {allowed.includes("save") && !available && <Notice tone="warn" title="当前没有可用于新版本的已核实产物">请先完成该平台的构建和产物核实，再刷新版本记录。</Notice>}
           {actions.length > 0 && <div className="av-actions">{actions.map((key, index) =>
             <Button key={key} variant={index === 0 ? "primary" : "secondary"}
@@ -128,16 +129,21 @@ function VersionDetails({ state, onSaved, refresh }: { state: PlatformUpdates; o
       </Panel>
       <Panel title="发布记录" icon={History} sub={`${state.history.length} 条`}
         actions={state.canRestore && allowed.includes("restore") && <Button size="sm" onClick={() => setAction("restore")}>恢复上一策略</Button>}>
-        <Timeline entries={history.map((item, index) => ({
-          id: `${item.createdAt}-${index}`, action: item.action === "publish" && item.before.restoring ? "已发布恢复策略" : actionNames[item.action],
+        <Timeline entries={history.map((item, index) => {
+          const autoPublished = item.action === "approve" && item.before.candidate != null
+            && item.after.livePackage?.releaseId === item.before.candidate.releaseId;
+          return {
+          id: `${item.createdAt}-${index}`, action: autoPublished ? "已批准并自动发布"
+            : item.action === "publish" && item.before.restoring ? "已发布恢复策略" : actionNames[item.action],
           actor: item.actor, at: item.createdAt, detail: <><p>{item.reason}</p><details><summary>查看变更</summary>
             <p>{stage(item.before)} → {stage(item.after)}</p>
-            {item.action === "publish" ? <ReleaseChanges before={livePolicies(item.before)} after={livePolicies(item.after)} />
+            {item.action === "publish" || autoPublished ? <ReleaseChanges before={livePolicies(item.before)} after={livePolicies(item.after)} />
               : item.action === "restore" || item.before.restoring || item.after.restoring
                 ? <ReleaseChanges before={livePolicies(item.before)} after={targetPolicies(item.after)} />
                 : <PolicyChanges before={item.before.candidate} after={item.after.candidate} />}
           </details></>,
-        }))} />
+          };
+        })} />
         {state.history.length > 2 && <Button size="sm" variant="ghost" onClick={() => setAllRecords(!allRecords)}>{allRecords ? "收起记录" : "查看全部记录"}</Button>}
       </Panel>
     </div><Preview state={state} language={language} /></div>

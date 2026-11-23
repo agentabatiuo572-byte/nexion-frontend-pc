@@ -45,6 +45,7 @@ export interface PlatformUpdates extends Snapshot {
   requestReason: string | null;
   artifacts: Artifact[];
   allowedActions: Action[];
+  autoPublishOnApproval?: boolean;
   history: { action: Action; actor: string; reason: string; createdAt: string; before: Snapshot; after: Snapshot }[];
 }
 export interface ActionBody {
