@@ -45,13 +45,18 @@ export function M6Leaderboard() {
   const [query, setQuery] = useState<LeaderboardQuery>({ board: "netContribution", currency: "USDT", scope: "all", pageNum: 1, pageSize: 5 });
   const selectedMonth = useRef<string | undefined>(undefined);
   const [keyword, setKeyword] = useState("");
-  const [refresh, setRefresh] = useState(0), [error, setError] = useState<string>(), [notice, setNotice] = useState<string>();
+  // 失败记在出错的那次读取上：换了查询、翻页或重读后，旧的失败和「榜单已更新」都不再算（BUG-650 复审 F03）。
+  const [refresh, setRefresh] = useState(0), [failure, setFailure] = useState<{ key: string; text: string; conflict?: boolean }>(), [notice, setNotice] = useState<string>();
   const [deniedIdentity, setDeniedIdentity] = useState<string>();
   const enabled = allowed && deniedIdentity !== identity;
   const requestKey = identity + "|" + JSON.stringify(query) + "|" + refresh;
   const liveKey = useRef(requestKey); liveKey.current = enabled ? requestKey : "";
   const [result, setResult] = useState<{ key: string; data: LeaderboardPage }>();
   const data = enabled && result?.key === requestKey ? result.data : undefined;
+  const error = failure?.key === requestKey ? failure.text : undefined, conflict = !!error && !!failure?.conflict;
+  /** 这个账号和权限下最近一次读成的榜单：这次读取失败或还在读时，月份、币种、范围和榜单页签照它的选项继续可用（ST-15，复审 F02）；换账号、权限或被拒时清掉。 */
+  const [lastGood, setLastGood] = useState<{ identity: string; data: LeaderboardPage }>();
+  const options = data ?? (enabled && lastGood?.identity === identity ? lastGood.data : undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const pendingLocate = useRef<{ identity: string; query: string } | undefined>(undefined);
   const [photos, setPhotos] = useState<{ key: string; urls: Record<string, string> }>();
@@ -59,7 +64,7 @@ export function M6Leaderboard() {
   const detailAbort = useRef<AbortController | null>(null), detailSequence = useRef(0);
   const closeDetail = () => { detailSequence.current++; detailAbort.current?.abort(); detailAbort.current = null; setDetail(undefined); };
   const resetFirstPage = (text: string) => { setResult(undefined); setPhotos(undefined); closeDetail(); setNotice(text); setQuery(current => ({ ...current, pageNum: 1, expectedVersion: undefined })); setRefresh(value => value + 1); };
-  const deny = () => { setDeniedIdentity(identity); setResult(undefined); setPhotos(undefined); closeDetail(); setError("当前账号不能查看此榜单，请重新确认登录和客服权限。"); };
+  const deny = () => { setDeniedIdentity(identity); setResult(undefined); setLastGood(undefined); setPhotos(undefined); closeDetail(); setFailure({ key: requestKey, text: "当前账号不能查看此榜单，请重新确认登录和客服权限。" }); };
 
   useEffect(() => {
     const pending = pendingLocate.current;
@@ -73,7 +78,7 @@ export function M6Leaderboard() {
   }, [data, enabled, error, identity, query]);
 
   useEffect(() => {
-    setResult(undefined); setError(undefined); setNotice(undefined); setPhotos(undefined); closeDetail(); setKeyword("");
+    setResult(undefined); setLastGood(undefined); setFailure(undefined); setNotice(undefined); setPhotos(undefined); closeDetail(); setKeyword("");
     selectedMonth.current = undefined;
     setQuery({ board: "netContribution", currency: "USDT", scope: "all", pageNum: 1, pageSize: 5 });
     return () => { detailSequence.current++; detailAbort.current?.abort(); };
@@ -82,14 +87,14 @@ export function M6Leaderboard() {
 
   useEffect(() => {
     const controller = new AbortController(); let active = true;
-    setResult(undefined); setError(undefined); closeDetail();
+    setResult(undefined); setFailure(undefined); closeDetail();
     if (enabled) void supportLeaderboardClient.page(query, controller.signal).then(next => {
       if (next.self.row && next.self.row.id !== String(session?.adminId)) throw new Error("本人成绩身份不一致");
-      if (active && !controller.signal.aborted && liveKey.current === requestKey) setResult({ key: requestKey, data: next });
+      if (active && !controller.signal.aborted && liveKey.current === requestKey) { setResult({ key: requestKey, data: next }); setLastGood({ identity, data: next }); }
     }).catch(cause => {
       if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
       if (status(cause) === 403 || status(cause) === 401) deny();
-      else { setResult(undefined); setError(message(cause)); if (versionChanged(cause)) setNotice("榜单已更新，请刷新后重试。"); }
+      else { setResult(undefined); setFailure({ key: requestKey, text: message(cause), conflict: versionChanged(cause) }); }
     });
     return () => { active = false; controller.abort(); };
   }, [enabled, requestKey]);
@@ -106,17 +111,18 @@ export function M6Leaderboard() {
       }).catch(cause => {
         if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
         if (status(cause) === 403 || status(cause) === 401) { controller.abort(); deny(); }
-        else if (versionChanged(cause)) { controller.abort(); setResult(undefined); setPhotos(undefined); closeDetail(); setError(message(cause)); setNotice("榜单已更新，请刷新后重试。"); }
+        else if (versionChanged(cause)) { controller.abort(); setResult(undefined); setPhotos(undefined); closeDetail(); setFailure({ key: requestKey, text: message(cause), conflict: true }); }
       });
     }
     return () => { active = false; controller.abort(); for (const url of Object.values(urls)) URL.revokeObjectURL(url); };
   }, [data, requestKey]);
 
   const changeQuery = (next: SupportBoardQuery) => {
-    if (!data) return;
+    // 第一次就没读成、没有选项可核对时，只剩页签能换（ST-15）；读取中不换。
+    if (!options && !readFailed) return;
     const [scope, groupId] = next.scope.split(":");
-    if (!data.scopeOptions.some(option => option.scope === scope && (!groupId || option.groups.some(group => group.id === groupId)))
-      || !data.currencies.includes(next.currency as "USDT" | "UVT") || query.board !== "customers" && next.board !== "customers" && next.month && !data.selectableMonths.includes(next.month)) return;
+    if (options && (!options.scopeOptions.some(option => option.scope === scope && (!groupId || option.groups.some(group => group.id === groupId)))
+      || !options.currencies.includes(next.currency as "USDT" | "UVT") || query.board !== "customers" && next.board !== "customers" && next.month && !options.selectableMonths.includes(next.month))) return;
     closeDetail(); setNotice(undefined);
     if (next.month) selectedMonth.current = next.month;
     setQuery({ board: next.board, currency: next.currency as "USDT" | "UVT", scope: scope as LeaderboardQuery["scope"], groupId, month: next.board === "customers" ? undefined : next.month || undefined, keyword: query.keyword, pageNum: 1, pageSize: query.pageSize });
@@ -131,21 +137,21 @@ export function M6Leaderboard() {
     }).catch(cause => {
       if (controller.signal.aborted || sequence !== detailSequence.current || liveKey.current !== requestKey) return;
       if (status(cause) === 403 || status(cause) === 401) deny();
-      else if (versionChanged(cause)) { closeDetail(); setResult(undefined); setPhotos(undefined); setError(message(cause)); setNotice("榜单已更新，请刷新后重试。"); }
+      else if (versionChanged(cause)) { closeDetail(); setResult(undefined); setPhotos(undefined); setFailure({ key: requestKey, text: message(cause), conflict: true }); }
       else setDetail({ key: requestKey, agentId, error: message(cause) });
     });
   };
   const customers = (row: SupportBoardRow) => { if (enabled && privateRead && row.canViewCustomers) router.push(`/service/overview?agentId=${encodeURIComponent(row.id)}`); };
   const withPhoto = (row: SupportBoardRow): SupportBoardRow => ({ ...row, avatarUrl: photos?.key === requestKey ? photos.urls[row.id] : undefined, canViewCustomers: row.canViewCustomers && privateRead });
   const visibleDetail = enabled && detail?.key === requestKey ? detail : undefined;
-  const currentQuery: SupportBoardQuery = { board: query.board, currency: data?.currency ?? query.currency, month: data?.rankMonth ?? query.month ?? selectedMonth.current ?? "", scope: scopeValue(query.scope, query.groupId) };
+  const currentQuery: SupportBoardQuery = { board: query.board, currency: data?.currency ?? query.currency, month: data?.rankMonth ?? query.month ?? selectedMonth.current ?? options?.rankMonth ?? "", scope: scopeValue(query.scope, query.groupId) };
   const scopeLabels = { all: "全员榜", ownGroup: "本组榜", managedGroups: "负责组榜" };
   const detailRow = visibleDetail?.data?.row;
   const board = query.board, ready = !!data;
   const denied = !allowed || deniedIdentity === identity;
   const reload = () => { if (allowed) { setDeniedIdentity(undefined); resetFirstPage("正在重新加载…"); } };
   /** 读取失败后的重试：按现在已应用的查询和页码再读一次；只有榜单版本已更新（409）才回第一页重读（ST-35、BUG-650）。 */
-  const retry = () => { if (!allowed) return; if (notice === "榜单已更新，请刷新后重试。") reload(); else { setNotice(undefined); setRefresh(value => value + 1); } };
+  const retry = () => { if (!allowed) return; if (conflict) reload(); else { setNotice(undefined); setRefresh(value => value + 1); } };
   const readFailed = !data && !denied && !!error;
   const rows = data?.rows.map(withPhoto) ?? [];
   const selfRow = data?.self.row ? withPhoto(data.self.row) : undefined;
@@ -156,10 +162,10 @@ export function M6Leaderboard() {
   const unit = board === "netContribution" ? currency : "人";
   const places = amountPlaces([...rows, ...podiumRows, ...(selfRow ? [selfRow] : [])].map(row => row.amount.coverage === "unavailable" ? null : row.amount.value));
   const month = data?.referenceMonth ?? "—";
-  const groupName = (id?: string) => data?.scopeOptions.flatMap(option => option.groups).find(group => group.id === id)?.name;
-  const scopeText = query.groupId ? groupName(query.groupId) ?? "所选组" : query.scope === "ownGroup" ? `${scopeLabels.ownGroup}（${data?.scopeOptions.find(option => option.scope === "ownGroup")?.groups[0]?.name ?? "本组"}）` : scopeLabels[query.scope];
+  const groupName = (id?: string) => options?.scopeOptions.flatMap(option => option.groups).find(group => group.id === id)?.name;
+  const scopeText = query.groupId ? groupName(query.groupId) ?? "所选组" : query.scope === "ownGroup" ? `${scopeLabels.ownGroup}（${options?.scopeOptions.find(option => option.scope === "ownGroup")?.groups[0]?.name ?? "本组"}）` : scopeLabels[query.scope];
   const groupScope = query.scope !== "all";
-  const managedOption = data?.scopeOptions.find(option => option.scope === "managedGroups");
+  const managedOption = options?.scopeOptions.find(option => option.scope === "managedGroups");
   const tabs = useTabIds();
   const rankingRef = useRef<HTMLDivElement>(null);
   const locate = () => { if (data) { const target = locateLeaderboardSelf(data, acceptedQuery(data, query)); if (target) { pendingLocate.current = { identity, query: JSON.stringify(target) }; setKeyword(""); closeDetail(); setNotice(query.keyword ? "已清除搜索，跳到你在完整榜单里的那一页。" : "已跳到你所在的那一页。"); setQuery(target); setRefresh(value => value + 1); } } };
@@ -183,7 +189,7 @@ export function M6Leaderboard() {
         action={managedOption && query.scope === "all" ? <Button onClick={() => changeQuery({ ...currentQuery, scope: "managedGroups" })}>看我负责的组</Button> : undefined}>
         {data.total === 0 ? `${scopeText}：暂无参榜客服` : `${scopeText}：${data.total} 人参榜`}；你不在这一版里（{data.self.reason || "当前账号未参榜"}）
       </Conclusion>;
-  const scopeSelect = (data?.scopeOptions ?? []);
+  const scopeSelect = (options?.scopeOptions ?? []);
   const missingAmounts = board === "netContribution" ? rows.filter(row => row.amount.coverage === "unavailable").length : 0;
   const pages = data ? Math.max(1, Math.ceil(data.matched / data.pageSize)) : 1;
   const emptyText = !data ? undefined : query.keyword
@@ -196,19 +202,20 @@ export function M6Leaderboard() {
         actions={<Button icon={<RefreshCw size={14} aria-hidden />} disabled={!allowed} onClick={reload}>刷新</Button>}
         meta={data ? `数据截至 ${asOf(data)} · 每 10 分钟发布一次` : undefined} />
       <PageTabs label="榜单" ids={tabs} value={board} onChange={(next: SupportBoardKey) => changeQuery({ ...currentQuery, board: next })}
-        items={(["netContribution", "firstPayment", "customers"] as const).map(key => ({ value: key, label: BOARD_LABEL[key], disabled: !ready && key !== board }))} />
+        items={(["netContribution", "firstPayment", "customers"] as const).map(key => ({ value: key, label: BOARD_LABEL[key], disabled: !options && !readFailed && key !== board }))} />
       <div {...tabs.panel(board)} className="m6-board">
         <FilterBar sort={<span className="m6-board-line">{BOARD_DEFINITION[board].line}<Explain label={`${BOARD_LABEL[board]}怎么算`} rows={[...BOARD_DEFINITION[board].rows, { k: "范围", v: "只列出这个账号现在能看的范围：全员榜、本组榜、负责组榜和负责的单个组。" }, { k: "发布", v: "系统每 10 分钟发布一次新的一版；刷新只读取最新发布的那一版，不会马上重算。" }]} /></span>}>
           <FilterField label="月份">{board === "customers"
             ? <Select aria-label="月份" disabled value="now" onChange={() => undefined} options={[{ value: "now", label: "不分月份" }]} />
-            : <Select aria-label="月份" disabled={!data?.selectableMonths.length} value={data ? currentQuery.month : ""} onChange={value => changeQuery({ ...currentQuery, month: value })} options={(data?.selectableMonths ?? []).map(value => ({ value, label: value }))} placeholder="读取后可选" />}</FilterField>
-          <FilterField label="币种"><Select aria-label="币种" disabled={!data?.currencies.length} value={data ? currentQuery.currency ?? "" : ""} onChange={value => changeQuery({ ...currentQuery, currency: value })} options={(data?.currencies ?? []).map(value => ({ value, label: nexGridBrandText(value) }))} placeholder="读取后可选" /></FilterField>
-          <FilterField label="范围"><Select aria-label="范围" disabled={!scopeSelect.length} value={data ? currentQuery.scope : ""} onChange={value => changeQuery({ ...currentQuery, scope: value })} placeholder="读取后可选"
+            : <Select aria-label="月份" disabled={!options?.selectableMonths.length} value={options ? currentQuery.month : ""} onChange={value => changeQuery({ ...currentQuery, month: value })} options={(options?.selectableMonths ?? []).map(value => ({ value, label: value }))} placeholder="读取后可选" />}</FilterField>
+          <FilterField label="币种"><Select aria-label="币种" disabled={!options?.currencies.length} value={options ? currentQuery.currency ?? "" : ""} onChange={value => changeQuery({ ...currentQuery, currency: value })} options={(options?.currencies ?? []).map(value => ({ value, label: nexGridBrandText(value) }))} placeholder="读取后可选" /></FilterField>
+          <FilterField label="范围"><Select aria-label="范围" disabled={!scopeSelect.length} value={options ? currentQuery.scope : ""} onChange={value => changeQuery({ ...currentQuery, scope: value })} placeholder="读取后可选"
             groups={[{ label: "榜单范围", options: scopeSelect.map(option => ({ value: option.scope, label: option.scope === "ownGroup" ? `${scopeLabels.ownGroup}（${option.groups[0]?.name ?? "本组"}）` : option.scope === "managedGroups" ? `${scopeLabels.managedGroups}（全部负责组）` : scopeLabels[option.scope] })) },
               ...(managedOption ? [{ label: "负责的单个组", options: managedOption.groups.map(group => ({ value: scopeValue("managedGroups", group.id), label: group.name })) }] : [])]} /></FilterField>
         </FilterBar>
         {board === "netContribution" && groupScope && <Notice tone="done">组榜按贡献发生时所在的组统计：调组后历史贡献仍算在原来的组，所以榜上可能有现在已经不在这个组的客服。</Notice>}
-        {notice && !(ready && notice === "正在重新加载…") && <Notice tone={notice.includes("已更新") ? "warn" : notice.startsWith("已") ? "ok" : "progress"}>{notice}</Notice>}
+        {conflict ? <Notice tone="warn">榜单已更新，请刷新后重试。</Notice>
+          : notice && !(ready && notice === "正在重新加载…") && <Notice tone={notice.startsWith("已") ? "ok" : "progress"}>{notice}</Notice>}
         {data?.stale && <Notice tone="warn" title="当前显示上次发布的榜单" action={<Button size="sm" onClick={() => resetFirstPage("正在重新加载…")}>重新加载</Button>}>{data.refreshFailed ? "榜单更新暂未成功，请稍后读取最新结果。" : "榜单更新延迟，请稍后读取最新结果。"}</Notice>}
         {conclusion}
         {!data && denied ? <BlockState state="denied" title="这个账号不能查看业绩榜"
