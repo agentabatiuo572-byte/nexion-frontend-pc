@@ -4,6 +4,7 @@ import { k1EarningSourceName } from "@/lib/admin/k1-earning-sources";
 import { parseK1ReleaseTicketBefore } from "@/lib/admin/k1-risk-approval";
 import { operatorDeviceStatus } from "@/lib/admin/e-operator-display";
 import { skuSeriesText } from "@/lib/admin/device-monthly-target";
+import { isSkuTaglineTranslations, SKU_TAGLINE_LABELS, skuBadgeReviewText, type SkuTaglineTranslations } from "@/lib/admin/e1-product-copy";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, AUDIT_RESOURCE_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
 import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
 import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
@@ -1029,6 +1030,7 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
     if (key === "clearMonthlyTarget" || key === "trialEligible") return "否";
     return "未设置";
   }
+  if (key?.startsWith("taglineTranslations.")) return String(value);
   if (typeof value === "boolean") return value ? "是" : "否";
   if (key === "monthlyTargetUsdt") return `${grouped(String(value))} USDT`;
   if (key === "monthlyTargetBandPct") return `±${grouped(String(value))}%`;
@@ -1066,9 +1068,17 @@ function reviewPair(before: string, after: string, operationCode?: string) {
   const original = { b, a, labels, evidenceKeys: [] as string[] };
   // E1 商品：后端冻结的是代码值（系列、档位、商城状态、生命周期、库存模式），这里换成和商品页一样的名称，价格带币种。新建没有前值；旧票没有这一项时不补。
   if (operationCode === "e1_sku_create" || operationCode === "e1_sku_update") {
-    const named = (review: Review | null): Review | null => {
+    const previous = b?.kind === "object" && isSkuTaglineTranslations(b.value.taglineTranslations) ? b.value.taglineTranslations : undefined;
+    const next = a?.kind === "object" && isSkuTaglineTranslations(a.value.taglineTranslations) ? a.value.taglineTranslations : previous;
+    const languages = Object.keys({ ...previous, ...next }) as (keyof SkuTaglineTranslations)[];
+    const translationLabels = Object.fromEntries(languages.map(language => [`taglineTranslations.${language}`, SKU_TAGLINE_LABELS[language]]));
+    const named = (review: Review | null, translations?: SkuTaglineTranslations): Review | null => {
       if (review?.kind !== "object") return review;
       const value = { ...review.value };
+      if ("badge" in value && (typeof value.badge === "string" || value.badge == null)) value.badge = skuBadgeReviewText(value.badge) ?? null;
+      // The server snapshot uses null for a missing command field and {} for an explicit clear.
+      delete value.taglineTranslations;
+      for (const language of languages) value[`taglineTranslations.${language}`] = translations?.[language] ?? null;
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
       for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
       if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${e1Decimal(value.price)} USD`;
@@ -1080,7 +1090,7 @@ function reviewPair(before: string, after: string, operationCode?: string) {
     // 新建只列填了的项，没填的不逐行写「未设置」（和商品页确认框一致）。
     const filled = (review: Review | null): Review | null => b || review?.kind !== "object" ? review
       : { kind: "object", value: Object.fromEntries(Object.entries(review.value).filter(([, item]) => item !== null && item !== "" && !(Array.isArray(item) && !item.length))) };
-    return { b: named(b), a: filled(named(a)), labels: { ...labels, seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
+    return { b: named(b, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
   }
   // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
   if (operationCode === "h4_legacy_event_reward_update" && b?.kind === "object" && a?.kind === "object" && "eventCode" in b.value) {

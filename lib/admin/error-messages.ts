@@ -1,5 +1,6 @@
 import { LEGACY_SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 import { eventRuleMissingLabel } from "./event-rule-form.ts";
+import { SKU_TAGLINE_VI_HAN_ERROR } from "./e1-product-copy.ts";
 
 /** APP_TEXT_CHINESE_NOT_ALLOWED 回来的字段写成运营认得的名字；认不出的只写通用那句。 */
 const APP_TEXT_FIELD_LABELS: Record<string, string> = {
@@ -617,6 +618,9 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   C5_SESSION_REVOKE_APPROVAL_FORBIDDEN: "批准退出全部设备需要超级管理员身份和审批批准权限，请由另一位具备账户或登录设备全退权限的超级管理员处理。驳回仍按原权限核验。",
 
   SKU_MODEL_UNRECOGNIZED: LEGACY_SKU_MODEL_UNRECOGNIZED_REASON,
+  SKU_BADGE_TOO_LONG: "自定义角标最多 64 字，请缩短后再提交。",
+  SKU_TAGLINE_TRANSLATIONS_INVALID: "商品标语译文格式不正确，请刷新商品后核对译文。",
+  SKU_TAGLINE_TRANSLATION_TOO_LONG: "每栏商品标语译文最多 255 字，请缩短后再提交。",
   SKU_SERIES_REQUIRED: "请选择所属系列。",
   SKU_SERIES_INVALID: "所选系列不在可选范围内，请重新选择。",
   SKU_SERIES_TYPE_MISMATCH: "共享份额只能选 Cloud Share 系列，实物商品不能选 Cloud Share。",
@@ -3965,6 +3969,7 @@ export function formatAdminApiError(
   if (raw === "APP_TEXT_CHINESE_NOT_ALLOWED" && data && typeof data === "object"
     && "field" in data && typeof data.field === "string") {
     const field = data.field.trim();
+    if (field === "taglineTranslations.vi") return SKU_TAGLINE_VI_HAN_ERROR;
     const region = /^regions\[(\d+)\]\.name$/.exec(field);
     const label = region ? `第 ${Number(region[1]) + 1} 个地区名称` : APP_TEXT_FIELD_LABELS[field];
     if (label) return `${label}不能包含中文，请改成英文`;

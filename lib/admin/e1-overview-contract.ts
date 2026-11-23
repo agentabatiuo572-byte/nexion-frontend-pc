@@ -1,3 +1,5 @@
+import { isSkuTaglineTranslations } from "./e1-product-copy.ts";
+
 type UnknownRecord = Record<string, unknown>;
 
 export interface E1SkuPageContract<T = UnknownRecord> {
@@ -110,6 +112,7 @@ export function e1SkuInvalidFields(value: unknown): string[] {
     "imageObjectKey", "imagePreviewUrl", "tag", "status"]) {
     if (!isOptionalString(value[key])) invalid.push(key);
   }
+  if (value.taglineTranslations != null && !isSkuTaglineTranslations(value.taglineTranslations)) invalid.push("taglineTranslations");
   for (const key of ["price", "dailyEarn", "dailyEarnNex", "phoneDailyEarn", "phoneDailyEarnNex", "shareYieldMin", "shareYieldMax", "sold",
     "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"]) {
     if (!isOptionalNonNegativeNumberLike(value[key])) invalid.push(key);

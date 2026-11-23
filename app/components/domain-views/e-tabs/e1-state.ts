@@ -2,6 +2,7 @@ import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { SkuForm } from "./data";
 import { skuSeriesText } from "@/lib/admin/device-monthly-target";
+import { skuBadgeReviewText, skuTaglineReviewRows } from "@/lib/admin/e1-product-copy";
 import { createPendingMutationStore, isPendingCommandOwnedBy, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
 export const E1_LEVELS = [
@@ -202,11 +203,17 @@ export function e1ShownDiff<Row extends { key: string; before?: string; after?: 
 
 export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuForm) {
   const numericInputs = ["price", "computePoints", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins", ...(after.monthlyTargetUsdt == null ? ["dailyEarn", "shareYieldMin", "shareYieldMax"] : [])];
-  return E1_SKU_FIELDS.map(({ key, label, unit }) => {
+  // Editor drafts contain only the translation update. Catalogue reads contain the stored map.
+  const nextTranslations = after.taglineTranslations ?? (raw ? before?.taglineTranslations : undefined);
+  const translationRows = skuTaglineReviewRows(before?.taglineTranslations, nextTranslations, !before);
+  return [...E1_SKU_FIELDS, ...translationRows].map(field => {
+    if ("before" in field) return field;
+    const { key, label, unit } = field;
+    const value = (sku: OpsSku) => e1Value(key === "badge" ? skuBadgeReviewText(sku.badge) : sku[key], unit);
     const input = raw && numericInputs.includes(key) ? raw[key as keyof SkuForm] : undefined;
-    const next = key === "monthlyTargetUsdt" && after.monthlyTargetUsdt != null ? `${e1Decimal(after.monthlyTargetUsdt, e1TargetPrecision(after))} ${unit}` : typeof input === "string" && input.trim() ? `${unit && unit !== "%" ? e1Decimal(input) : e1Number(input)}${unit ? ` ${unit}` : ""}` : e1Value(after[key], unit);
+    const next = key === "monthlyTargetUsdt" && after.monthlyTargetUsdt != null ? `${e1Decimal(after.monthlyTargetUsdt, e1TargetPrecision(after))} ${unit}` : typeof input === "string" && input.trim() ? `${unit && unit !== "%" ? e1Decimal(input) : e1Number(input)}${unit ? ` ${unit}` : ""}` : value(after);
     if (key === "seriesCode") return { key, label, before: before ? skuSeriesText(before.seriesCode) : "未创建", after: skuSeriesText(after.seriesCode), note: undefined };
-    return { key, label, before: before ? key === "monthlyTargetUsdt" && before.monthlyTargetUsdt != null ? `${e1Decimal(before.monthlyTargetUsdt, e1TargetPrecision(before))} ${unit}` : e1Value(before[key], unit) : "未创建", after: !before && raw && numericInputs.includes(key) && input === "" ? "未填写" : next,
+    return { key, label, before: before ? key === "monthlyTargetUsdt" && before.monthlyTargetUsdt != null ? `${e1Decimal(before.monthlyTargetUsdt, e1TargetPrecision(before))} ${unit}` : value(before) : "未创建", after: !before && raw && numericInputs.includes(key) && input === "" ? "未填写" : next,
       note: key === "monthlyTargetUsdt" && after.clearMonthlyTarget ? "关闭月目标，改用兼容展示值" : undefined };
   });
 }

@@ -11,6 +11,7 @@ import { fetchSkuDatacenterLabels, fetchTaskPools, type TaskPool } from "@/lib/a
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import { ADMIN_ERROR_MESSAGES, guardedFetch, displayAdminError } from "@/lib/admin/error-messages";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, containsHan } from "@/lib/admin/content-language-rules";
+import { SKU_BADGE_OPTIONS, SKU_CUSTOM_BADGE_MAX_LENGTH, SKU_TAGLINE_LABELS, SKU_TAGLINE_TRANSLATION_MAX_LENGTH, SKU_TAGLINE_VI_HAN_ERROR, skuBadgeKind, skuBadgeValue } from "@/lib/admin/e1-product-copy";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
@@ -30,6 +31,7 @@ export type E1SkuReview = {
 };
 type Media = { kind: "image" | "video"; src: string; name: string; size?: number; w?: number; h?: number; duration?: number; assetId?: string; objectKey?: string } | null;
 const SECTIONS = [{ id: "e1-basic", label: "基本信息" }, { id: "e1-earnings", label: "收益与任务" }, { id: "e1-stock", label: "库存与购买条件" }, { id: "e1-specs", label: "规格与资料" }];
+const BASIC_FIELDS = ["name", "id", "tier", "seriesCode", "lifecycle", "badge", "tagline", "taglineZh", "taglineVi", "media"];
 
 function EditorSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return <section id={`section-${id}`} className="e1-editor-section"><h3 tabIndex={-1} data-section-focus>{title}</h3><div className="e1-section-fields">{children}</div></section>;
@@ -38,7 +40,6 @@ function EditorSection({ id, title, children }: { id: string; title: string; chi
 /** App 用户能看到的字段：含中文时字段下马上提示，提交时同样拦下。 */
 const E1_APP_VISIBLE_FIELDS = [
   ["name", "型号名称"],
-  ["badge", "营销角标"],
   ["tagline", "商品标语"],
   ["gpu", "GPU 型号（单卡）"],
   ["power", "功耗 / 功率说明"],
@@ -50,6 +51,26 @@ const E1_APP_VISIBLE_FIELDS = [
 const E1_POWER_FORMATS = ["1800", "1,800 W", "1,800 W TDP", "1,800 W (per-GPU rated)", "1,800 W (combined GPU rated)"];
 
 const imageIdentity = (m: Media) => JSON.stringify([m?.assetId ?? "", m?.objectKey ?? ""]);
+
+function productCopyErrors(form: SkuForm): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (form.badgeKind === "custom") {
+    const badge = skuBadgeValue(form.badgeKind, form.badge);
+    if (!badge || skuBadgeKind(badge) === "none") errors.badge = "请填写自定义角标";
+    else if ([...badge].length > SKU_CUSTOM_BADGE_MAX_LENGTH) errors.badge = ADMIN_ERROR_MESSAGES.SKU_BADGE_TOO_LONG;
+    else {
+      const error = appVisibleTextError(badge, "营销角标");
+      if (error) errors.badge = error;
+    }
+  }
+  for (const key of ["taglineZh", "taglineVi"] as const) {
+    if ([...form[key].trim()].length > SKU_TAGLINE_TRANSLATION_MAX_LENGTH) {
+      errors[key] = ADMIN_ERROR_MESSAGES.SKU_TAGLINE_TRANSLATION_TOO_LONG;
+    }
+  }
+  if (!errors.taglineVi && containsHan(form.taglineVi)) errors.taglineVi = SKU_TAGLINE_VI_HAN_ERROR;
+  return errors;
+}
 
 function warrantyError(value: string, original?: string): string {
   if (value === original && warrantyMonths(value) === undefined) {
@@ -71,7 +92,7 @@ function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media): Op
     for (const { key } of E1_SKU_FIELDS) {
       if (key === "warranty" && warrantyMonths(original.warranty) !== undefined && containsHan(original.warranty ?? "")
         && (JSON.stringify(form) !== JSON.stringify(opened) || imageIdentity(media) !== imageIdentity(skuMedia(original)))) continue;
-      if (["dailyEarn", "shareYieldMin", "shareYieldMax", "gpu"].includes(key)) continue;
+      if (["dailyEarn", "shareYieldMin", "shareYieldMax", "gpu", "badge"].includes(key)) continue;
       if (key in opened && JSON.stringify(form[key as keyof SkuForm]) === JSON.stringify(opened[key as keyof SkuForm])) Object.assign(draft, { [key]: original[key] });
     }
     if (form.gpu === opened.gpu && form.gpuCount === opened.gpuCount) draft.gpu = original.gpu;
@@ -235,7 +256,12 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     const latestForm = skuToForm(latest);
     const merged = { ...latestForm };
     for (const key of Object.keys(previous) as (keyof SkuForm)[]) {
+      if (key === "badge" || key === "badgeKind") continue;
       if (JSON.stringify(form[key]) !== JSON.stringify(previous[key])) Object.assign(merged, { [key]: form[key] });
+    }
+    if (form.badgeKind !== previous.badgeKind || form.badgeKind === "custom" && form.badge !== previous.badge) {
+      merged.badgeKind = form.badgeKind;
+      merged.badge = form.badge;
     }
     const latestMedia = skuMedia(latest);
     const mergedMedia = imageIdentity(media) === imageIdentity(skuMedia(original))
@@ -290,6 +316,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (!writable) e.form = "当前不能提交，请核对权限和目录读取状态";
     if (mediaBusy || mediaPending || media && !media.assetId) e.media = "媒体上传尚未确认，请先核对原文件";
     if (!acceptedRevision && latestChanged) e.form = "商品已被别人改过，请先核对别人改了什么";
+    Object.assign(e, productCopyErrors(form));
     for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
       const error = appVisibleTextError(form[key], label);
       if (!error) continue;
@@ -302,7 +329,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     setErrors(e);
     if (Object.keys(e).length) {
       const first = Object.keys(e)[0];
-      const section = ["name", "id", "tier", "seriesCode", "lifecycle", "tagline", "badge", "media"].includes(first) ? "e1-basic" : ["stock", "unlock", "inventoryMode", "gateQuotaPeriod", "gateQuotaCap", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin"].includes(first) ? "e1-stock" : ["gpu", "gpuCount", "power", "specDocumentTitle", "specDocumentUrl", "uptime", "warranty"].includes(first) || first.startsWith("ai") ? "e1-specs" : "e1-earnings";
+      const section = BASIC_FIELDS.includes(first) ? "e1-basic" : ["stock", "unlock", "inventoryMode", "gateQuotaPeriod", "gateQuotaCap", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin"].includes(first) ? "e1-stock" : ["gpu", "gpuCount", "power", "specDocumentTitle", "specDocumentUrl", "uptime", "warranty"].includes(first) || first.startsWith("ai") ? "e1-specs" : "e1-earnings";
       nav.select(section); return false;
     }
     const sku = skuDraft(form, original, media);
@@ -321,7 +348,8 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   };
   const review = () => { reviewDraft(form, original, media); };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
-  const appTextErrors: Record<string, string> = { warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
+  const copyErrors = productCopyErrors(form);
+  const appTextErrors: Record<string, string> = { ...copyErrors, warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
   for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
     const error = appVisibleTextError(form[key], label);
     if (error && !(key === "power" && form.tier === "Share")) appTextErrors[key] = error;
@@ -329,9 +357,9 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: ReactNode; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={errors[key] || appTextErrors[key]} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
     {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={key === "warranty" && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? "" : String(form[key])} onChange={e => update(key, e.target.value)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
   </Field>;
-  const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未知" : !dirty || original && !changes.length ? "没有修改" : undefined;
+  const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未知" : Object.values(copyErrors)[0] ?? (!dirty || original && !changes.length ? "没有修改" : undefined);
   const sectionItems = SECTIONS.map((s, index) => {
-    const keys = index === 0 ? ["name", "id", "tier", "seriesCode", "lifecycle", "badge", "tagline", "media"] : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? ["inventoryMode", "stock", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"] : ["gpu", "gpuCount", "power", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
+    const keys = index === 0 ? BASIC_FIELDS : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? ["inventoryMode", "stock", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"] : ["gpu", "gpuCount", "power", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
     const invalid = keys.some(key => !!(errors[key] || appTextErrors[key]));
     const state = invalid ? "有错误" : index === 0 ? form.name && form.tier && form.seriesCode && form.lifecycle ? "已填" : "待填" : index === 1 ? form.price && (!form.allowedPoolCodes.length || form.monthlyTargetUsdt) ? "已填" : "待填" : index === 2 ? form.inventoryMode === "UNLIMITED" || form.stock !== "" ? "已填" : "待填" : "选填";
     return { ...s, label: invalid ? s.label : `${s.label} · ${state}`, alert: invalid };
@@ -350,7 +378,14 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
               ? <Field label="所属系列" error={errors.seriesCode} explain={original?.seriesCode ? "这件商品已有订单或已发出设备，系列已锁定，不能再改。其他资料可以照常修改。" : "这件商品已有订单或已发出设备，系列已锁定，这里补不了；请联系技术支持核对。"}><Input aria-label="所属系列" value={skuSeriesText(original?.seriesCode)} readOnly /></Field>
               : <Field label="所属系列" required error={errors.seriesCode} explain="决定设备的产能、可跑的任务和 App 里的设备分类。有订单或发出设备后就不能再改。"><Select aria-label="所属系列" required value={form.seriesCode} disabled={busy || !original && !form.tier} onChange={v => update("seriesCode", v)} placeholder={!original && !form.tier ? "请先选择档位" : "请选择所属系列"} options={[...seriesChoices.map(code => ({ value: code, label: SKU_SERIES_NAMES[code] })), ...form.seriesCode && !seriesChoices.some(code => code === form.seriesCode) ? [{ value: form.seriesCode, label: `${skuSeriesText(form.seriesCode)}（和商品类型不符）`, disabled: true }] : []]} /></Field>}
             <Field label="生命周期" required error={errors.lifecycle} explain="现行或已停产，与商城上下架状态独立。"><Select aria-label="生命周期" required value={form.lifecycle} onChange={v => update("lifecycle", v)} placeholder="请选择生命周期" options={[{ value: "active", label: "现行" }, { value: "legacy", label: "已停产" }]} /></Field>
-            {field("badge", "营销角标", { placeholder: "Best Seller", explain: `${APP_VISIBLE_TEXT_HINT}。商品媒体旁的活动文字，批准后显示在商品卡。` })}{field("tagline", "商品标语", { placeholder: "Fully hosted personal AI hardware", explain: `${APP_VISIBLE_TEXT_HINT}。商品识别文案，批准后供商品卡和商品详情读取。` })}
+            <Field label="营销角标" explain="商品媒体旁的活动文字，批准后显示在商品卡。"><Select aria-label="营销角标" value={form.badgeKind} onChange={value => {
+              setForm(draft => ({ ...draft, badgeKind: value as SkuForm["badgeKind"] }));
+              setErrors(current => ({ ...current, badge: "" }));
+            }} options={SKU_BADGE_OPTIONS} disabled={busy} /></Field>
+            {form.badgeKind === "custom" && field("badge", "自定义角标", { required: true, hint: "最多 64 字", explain: APP_VISIBLE_TEXT_HINT })}
+            {field("tagline", "商品标语", { placeholder: "Fully hosted personal AI hardware", explain: `${APP_VISIBLE_TEXT_HINT}。商品识别文案，批准后供商品卡和商品详情读取。` })}
+            {field("taglineZh", SKU_TAGLINE_LABELS.zh, { hint: "选填，最多 255 字", explain: "未填写时显示英文商品标语。" })}
+            {field("taglineVi", SKU_TAGLINE_LABELS.vi, { hint: "选填，最多 255 字", explain: "未填写时显示英文商品标语。" })}
           </div>
           <Field label="产品图 / 视频" error={errors.media} explain="图片≤10 MiB；视频≤200 MiB。直接上传不经审批；关联商品由商品提案批准，移除不删除原资源。">
             <label className="e1-upload" data-drag={drag ? "" : undefined} onDragOver={e => { e.preventDefault(); if (!mediaBusy) setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={e => { e.preventDefault(); setDrag(false); void pickMedia(e.dataTransfer.files[0]); }}>

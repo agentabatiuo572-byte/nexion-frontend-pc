@@ -9,6 +9,7 @@ import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import type { StateTone } from "@/app/components/rd";
 import { SKU_SERIES_CODES, supportsDeviceMonthlyTarget, type SkuSeriesCode } from "@/lib/admin/device-monthly-target";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
+import { skuBadgeKind, skuBadgeValue, skuTaglineTranslationUpdate, type SkuBadgeKind } from "@/lib/admin/e1-product-copy";
 
 // 全系统统一连续编号 E1-E5(上架节奏门并入 E1、设备生命周期归 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
@@ -112,7 +113,7 @@ export function effCurve(early: number, mid: number, late: number, stage1: numbe
 
 // ── SKU 表单 = 前端 Product 全字段镜像。input 一律 string,提交时 formToSku 转结构化 OpsSku ──
 export const EMPTY_SKU_FORM = {
-  name: "", id: "", tier: "", seriesCode: "", tagline: "", badge: "",
+  name: "", id: "", tier: "", seriesCode: "", tagline: "", taglineZh: "", taglineVi: "", badge: "", badgeKind: "none" as SkuBadgeKind,
   gpuCount: "", specDocumentTitle: "", specDocumentUrl: "",
   gpu: "", vram: "", hashRate: "", power: "", datacenter: "", uptime: "", warranty: "", phoneDailyEarn: "", phoneDailyEarnNEX: "",
   allowedPoolCodes: [] as string[],
@@ -203,8 +204,11 @@ export function skuToForm(s: OpsSku): SkuForm {
   const str = (v: number | string | undefined): string => (v === undefined || v === null ? "" : String(v));
   const g = s.purchaseGate;
   const gpuParts = splitGpu(s.gpu);
+  const badgeKind = skuBadgeKind(s.badge);
   return {
-    name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", seriesCode: s.seriesCode ?? "", tagline: s.tagline ?? "", badge: s.badge ?? "",
+    name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", seriesCode: s.seriesCode ?? "", tagline: s.tagline ?? "",
+    taglineZh: s.taglineTranslations?.zh ?? "", taglineVi: s.taglineTranslations?.vi ?? "",
+    badgeKind, badge: badgeKind === "custom" ? s.badge ?? "" : "",
     gpuCount: gpuParts.count, specDocumentTitle: s.specDocumentTitle ?? "", specDocumentUrl: s.specDocumentUrl ?? "",
     gpu: gpuParts.model, vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: warrantyMonths(s.warranty) ?? s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
     allowedPoolCodes: s.allowedPoolCodes ?? [],
@@ -442,7 +446,9 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
   const stockTrim = f.stock.trim();
   const sku: OpsSku = {
     name: f.name.trim(), id: f.id.trim() || existing?.id || f.name.trim(),
-    tier: f.tier, seriesCode: f.seriesCode || undefined, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
+    tier: f.tier, seriesCode: f.seriesCode || undefined, tagline: f.tagline.trim() || undefined,
+    taglineTranslations: skuTaglineTranslationUpdate(f, existing?.taglineTranslations),
+    badge: skuBadgeValue(f.badgeKind, f.badge),
     specDocumentTitle: f.specDocumentTitle.trim() || undefined, specDocumentUrl: f.specDocumentUrl.trim() || undefined,
     gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty ? `${f.warranty} months` : undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
     allowedPoolCodes: f.allowedPoolCodes,
