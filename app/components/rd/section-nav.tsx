@@ -71,7 +71,8 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     let dragging = false;
     /** 用户造成的最近一次位置变化；交叉变化只在这之后的一小段时间里重判。 */
     let movedAt = 0;
-    let last = { top: scroller?.scrollTop ?? 0, height: scroller?.clientHeight ?? 0, full: scroller?.scrollHeight ?? 0 };
+    const measure = () => ({ top: scroller?.scrollTop ?? 0, height: scroller?.clientHeight ?? 0, full: scroller?.scrollHeight ?? 0 });
+    let last = measure();
     const userInput = () => dragging || Date.now() - userAt.current < USER_SCROLL_MS;
     const pick = () => {
       if (held.current) return;
@@ -101,6 +102,9 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
       userAt.current = movedAt = Date.now();
       pick();
     };
+    // 尺寸一变（窗口缩放、内容展开收起）就单独重记基准，连同浏览器顺带修正的位置；没有 scroll 事件也一样，之后第一次真实滚动按新基准判断。
+    const sizes = new ResizeObserver(() => { last = measure(); });
+    if (scroller) { sizes.observe(scroller); for (const child of scroller.children) sizes.observe(child); }
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         const id = entry.target.id.replace(/^section-/, "");
@@ -120,6 +124,7 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
     window.addEventListener("touchmove", input, { passive: true, capture: true });
     window.addEventListener("keydown", onKey, { capture: true });
     return () => {
+      sizes.disconnect();
       observer.disconnect();
       scroller?.removeEventListener("scroll", onScroll);
       scroller?.removeEventListener("pointerdown", onDown);
