@@ -45,7 +45,7 @@ function rowsOf(s: H3Stats): Row[] {
           : s.t1Done != null && s.t2Done != null ? `一档 ${count(s.t1Done)} 次 · 二档 ${count(s.t2Done)} 次`
             : `${count(s.weeklyUnknownTierCount ?? 0)} 次找不到所属档位，分不出一档、二档` },
     { key: "paid", name: "本周发放的任务奖励", range: week,
-      value: !ok ? "—" : paid.length ? paid.map((row) => `${money(row.amount)} ${row.asset}`).join("；") : `0.00 ${s.weeklyNexAsset ?? "UVT"}`,
+      value: !ok ? "—" : paid.length ? paid.map((row) => `${money(row.amount)} ${row.asset}`).join("；") : `0 ${s.weeklyNexAsset ?? "UVT"}`,
       basis: !ok ? "这次读不到" : paid.length ? `已到账，按币种分开：${paid.map((row) => `${row.asset} ${count(row.ledgerCount)} 笔`).join("、")}` : "本周还没有到账的任务奖励" },
     { key: "monthly", name: "本月有任务记录的用户", range: "本月",
       value: ok && s.monthlyInflightAvailable && s.monthlyInflight != null ? `${count(s.monthlyInflight)} 人` : "—",

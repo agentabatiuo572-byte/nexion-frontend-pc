@@ -62,6 +62,7 @@ import {
   type H1RhythmOverview
 } from "@/lib/admin/h-client";
 import { H1_DIAL_LIMITS, h1DialIssue } from "@/lib/admin/h1-dial-validation";
+import { amountDisplay } from "@/lib/format";
 import {
   beginH1,
   executeH1,
@@ -217,9 +218,14 @@ function format(value: unknown,
     ",")}${width ? `.${actual.padEnd(width,
         "0")}` : ""}`;
 }
+/** 表盘值显示：团队平衡奖励每日上限是金额，按全站金额写法（TX-20：去掉末尾的 0，不为对齐补零）；倍率、天数照原来的写法。只管显示。 */
+function dialValue(key: string | undefined, value: unknown, places?: number) {
+  const raw = text(value);
+  return key === "binaryDailyCap" && /^\d+(?:\.\d+)?$/.test(raw) ? amountDisplay(raw) : format(value, places);
+}
 function pendingValue(row: H1Pending, value: string) {
   const dial = DIALS.find((item) => row.scope.startsWith("dial:") && row.scope.endsWith(`:${item.key}`));
-  return dial && dial.unit ? `${format(value, dial.key === "withdrawCooldownDays" ? 0 : undefined)} ${dial.unit}` : value;
+  return dial && dial.unit ? `${dialValue(dial.key, value, dial.key === "withdrawCooldownDays" ? 0 : undefined)} ${dial.unit}` : value;
 }
 function amplifies(key: string,
   before: string,
@@ -706,7 +712,7 @@ export default function H1Phase({ ctx,
       edit: {
         kind: dial.key === "complianceHoldEnabled" ? "select" : "number",
         current: before,
-        optionLabels: dial.unit ? { [before]: <span title={`完整值 ${before}`}>{format(before, dial.key === "withdrawCooldownDays" ? 0 : undefined)} <small className="h1-unit">{dial.unit}</small></span> } : undefined,
+        optionLabels: dial.unit ? { [before]: <span title={`完整值 ${before}`}>{dialValue(dial.key, before, dial.key === "withdrawCooldownDays" ? 0 : undefined)} <small className="h1-unit">{dial.unit}</small></span> } : undefined,
         unit: dial.unit,
         options: ["否",
           "是"],
@@ -1040,8 +1046,8 @@ export default function H1Phase({ ctx,
                     const zero = dial.key === "binaryDailyCap" && capZero(row);
                     return <Td key={dial.key} align="right">
                       <span className="h1-dial-cell">{changed && <span className="h1-dial-change" title="和上个月不同" aria-label="和上个月不同">•</span>}{zero && <StatusTag tone="warn" icon={CircleSlash} explain={CAP_ZERO}>以前存的</StatusTag>}{canWrite ? <Button size="sm" variant="ghost" className="h1-value-button" title={`完整值 ${raw}`} aria-label={`第 ${row.month} 月 ${dial.label}，当前 ${raw}${dial.unit ? ` ${dial.unit}` : ""}，修改`} disabledReason={scopeBlock(`dial:${row.month}:${dial.key}`)} onClick={() => openDial(row,
-                        dial)}>{dial.key === "complianceHoldEnabled" ? raw : format(row.dials[dial.key],
-                          precision[dial.key])}</Button> : <span title={`完整值 ${raw}`}>{dial.key === "complianceHoldEnabled" ? raw : format(row.dials[dial.key],
+                        dial)}>{dial.key === "complianceHoldEnabled" ? raw : dialValue(dial.key, row.dials[dial.key],
+                          precision[dial.key])}</Button> : <span title={`完整值 ${raw}`}>{dial.key === "complianceHoldEnabled" ? raw : dialValue(dial.key, row.dials[dial.key],
                             precision[dial.key])}</span>}</span>
                     </Td>;
                   })}</Tr>)}{!rows.length && <TableMessage columns={8}>没有读到每月参数，请先核对总体安排。</TableMessage>}
@@ -1078,7 +1084,7 @@ export default function H1Phase({ ctx,
                 "到账审查窗口").replaceAll("增强合规审查",
                   "加强合规审查")}</Fact>
               <Fact k="阶段参数">{DIALS.find((dial) => dial.key === row.paramKey)?.label ?? row.paramKey}</Fact>
-              {row.value && row.value !== "未提供效果数据" && <Fact k="参考值">{format(row.value, row.paramKey === "withdrawCooldownDays" ? 0 : undefined)}{number(row.value) != null && DIALS.find((dial) => dial.key === row.paramKey)?.unit ? ` ${DIALS.find((dial) => dial.key === row.paramKey)?.unit}` : ""}</Fact>}
+              {row.value && row.value !== "未提供效果数据" && <Fact k="参考值">{dialValue(row.paramKey, row.value, row.paramKey === "withdrawCooldownDays" ? 0 : undefined)}{number(row.value) != null && DIALS.find((dial) => dial.key === row.paramKey)?.unit ? ` ${DIALS.find((dial) => dial.key === row.paramKey)?.unit}` : ""}</Fact>}
               <Fact k="负责模块">{row.owner}</Fact>
             </Facts>
             <Fold inset title="原始资料" summary="系统里的原文">
