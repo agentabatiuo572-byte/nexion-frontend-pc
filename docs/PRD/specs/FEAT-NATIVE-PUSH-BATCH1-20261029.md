@@ -160,3 +160,4 @@ Apple上传COMPLETE且无错误/警告，build `c3b2b6fe-7465-4689-9e90-d536c9ec
 - 仅 TEST 部署配置启用这批文案与 NOVA 投递。首次启用记录已有通知的编号上限，只处理此后新生成的 NOVA 通知。iOS 隔离测试包按实际包名登记 ai.uvel.app.test，由服务端匹配 TEST topic。Android 沿用 FCM。设备权限、用户偏好、当前账号和会话仍须通过检查。
 - 验收分别覆盖 App 在后台及进程完全退出。两种状态都从系统通知点击，核对落地会话编号或模板指定页面，并核对服务端打开回执。
 - `ai.uvel.app.test` 使用独立 Apple Push Services 证书，由 TEST Java 服务通过 APNs HTTP/2 双向 TLS 连接发送。运维通过 `NATIVE_PUSH_APNS_TEST_PKCS12_FILE` 与 `NATIVE_PUSH_APNS_TEST_PKCS12_PASSWORD_FILE` 指定服务账号可读的私有文件路径。更换证书后重启 TEST 后端。此配置仅匹配隔离测试包的 topic，原有 APNs 令牌认证与安卓 FCM 配置继续使用。
+- 隔离 iOS TEST 包将会话刷新凭据保存到当前设备的 Keychain。App 完全退出后，从手机通知打开时先向 TEST 后端恢复会话。会话仍有效时进入当前用户的客服会话或 NOVA 配置页面。后端确认会话失效时进入登录，使用原账号登录后继续原通知的跳转。退出登录时删除本机刷新记录，点击目标仍由后端按当前账号校验。
