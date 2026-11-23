@@ -18,7 +18,7 @@ import { amountText, formatTime } from "./h4-promotion-ui";
 export function H4StaleNote({ readLatest }: { readLatest?: () => void }) {
   return <Notice tone="warn" title="别人先改过，这次没有保存"
     action={readLatest && <Button size="sm" onClick={readLatest}>读取最新</Button>}>
-    {readLatest ? "读取最新值后再核对；你填的内容还在，操作理由要重新填写。"
+    {readLatest ? "读取最新值后再核对；你填的还在，理由要重填。"
       : "现在值已换成最新的；你填的内容还在，请重新填写操作理由。"}
   </Notice>;
 }
