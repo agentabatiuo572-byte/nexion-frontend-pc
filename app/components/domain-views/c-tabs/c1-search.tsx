@@ -686,7 +686,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   const columns = useTableColumns("c1-users", [
     { key: "user", label: "用户", locked: "第一列不能关" },
     { key: "status", label: "状态", locked: "状态不能关" },
-    { key: "level", label: "等级", locked: "等级不能关" },
+    { key: "level", label: "用户分层 · 团队等级", locked: "用户分层和团队等级不能关" },
     ...(canReadRisk ? [{ key: "risk", label: "风险", locked: "风险列不能关" }] : []),
     ...(showBalance ? [{ key: "balance", label: "USDT 余额", locked: "余额不能关" }] : []),
     ...(showDevice ? [{ key: "device", label: "设备", extra: true }] : []),
@@ -843,7 +843,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         <thead><tr>
           <Th sticky="start" icon={Users} tone="users">用户</Th>
           <Th>状态</Th>
-          <Th>等级</Th>
+          <Th>用户分层 · 团队等级</Th>
           {canReadRisk && <Th icon={ShieldAlert} tone="risk"><Explain label="风险分怎么来" content="风险分取最近 24 小时内的评分，没有评分写「—」。">风险</Explain></Th>}
           {showBalance && <Th align="right" icon={Coins} tone="money"><Explain label="余额这一列的口径" content="钱包可用余额。">USDT 余额</Explain></Th>}
           {deviceVisible && <Th align="right"><Explain label="设备数的口径" content="上面是设备总数，下面是活跃的台数。活跃算在线、忙碌、已激活、运行中的设备。">设备</Explain></Th>}
