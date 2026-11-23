@@ -144,6 +144,9 @@ export function M6Leaderboard() {
   const board = query.board, ready = !!data;
   const denied = !allowed || deniedIdentity === identity;
   const reload = () => { if (allowed) { setDeniedIdentity(undefined); resetFirstPage("正在重新加载…"); } };
+  /** 读取失败后的重试：按现在已应用的查询和页码再读一次；只有榜单版本已更新（409）才回第一页重读（ST-35、BUG-650）。 */
+  const retry = () => { if (!allowed) return; if (notice === "榜单已更新，请刷新后重试。") reload(); else { setNotice(undefined); setRefresh(value => value + 1); } };
+  const readFailed = !data && !denied && !!error;
   const rows = data?.rows.map(withPhoto) ?? [];
   const selfRow = data?.self.row ? withPhoto(data.self.row) : undefined;
   const podiumRows = data?.podium?.rows.map(withPhoto) ?? [];
@@ -208,12 +211,12 @@ export function M6Leaderboard() {
         {notice && !(ready && notice === "正在重新加载…") && <Notice tone={notice.includes("已更新") ? "warn" : notice.startsWith("已") ? "ok" : "progress"}>{notice}</Notice>}
         {data?.stale && <Notice tone="warn" title="当前显示上次发布的榜单" action={<Button size="sm" onClick={() => resetFirstPage("正在重新加载…")}>重新加载</Button>}>{data.refreshFailed ? "榜单更新暂未成功，请稍后读取最新结果。" : "榜单更新延迟，请稍后读取最新结果。"}</Notice>}
         {conclusion}
-        {!data && (denied || error) ? <BlockState state={denied ? "denied" : "error"} title={denied ? "这个账号不能查看业绩榜" : error ?? "榜单加载失败，请重试。"}
-            detail={denied ? "请重新确认登录和客服权限；看榜要有客服工作台或专属会话的查看权限，并且是专属客服、客服主管或超级管理员。" : undefined}
-            onRetry={allowed ? reload : undefined} retryLabel={denied ? "重新核验" : "重试"} />
+        {!data && denied ? <BlockState state="denied" title="这个账号不能查看业绩榜"
+            detail="请重新确认登录和客服权限；看榜要有客服工作台或专属会话的查看权限，并且是专属客服、客服主管或超级管理员。"
+            onRetry={allowed ? reload : undefined} retryLabel="重新核验" />
           : <>
-            <Podium board={board} rows={podiumRows} total={data?.podium?.total ?? 0} unit={unit} places={places} onOpen={openDetail} onViewAll={viewAll}
-              status={!data ? { kind: "loading" } : provisional ? { kind: "provisional", reason: candidateReason ?? "" } : { kind: "ready" }} />
+            {!readFailed && <Podium board={board} rows={podiumRows} total={data?.podium?.total ?? 0} unit={unit} places={places} onOpen={openDetail} onViewAll={viewAll}
+              status={!data ? { kind: "loading" } : provisional ? { kind: "provisional", reason: candidateReason ?? "" } : { kind: "ready" }} />}
             {missingAmounts > 0 && <Notice tone="done">{missingAmounts} 位客服的净贡献额缺少资金数据，表里写「—」和原因，不是 0。</Notice>}
             <div ref={rankingRef} tabIndex={-1} className="m6-ranking-anchor">
               <RankingPanel sub={data && data.candidateCoverage === "COMPLETE" ? query.keyword ? `匹配 ${data.matched} 人` : `共 ${data.total} 人` : undefined}
@@ -222,9 +225,11 @@ export function M6Leaderboard() {
                   <Button type="submit" disabled={!enabled}>搜索</Button>
                   {!!query.keyword && <Button variant="ghost" onClick={clearSearch}>清除搜索</Button>}
                 </form>}>
-                <RankingTable board={board} currency={currency} month={month} places={places} privateRead={privateRead} onOpen={openDetail}
+                {/* 读取失败时查询控件（月份、币种、范围、搜索）照常留着，失败只在榜单这一块写（ST-15、ST-34）。 */}
+                {readFailed ? <BlockState state="error" title="榜单加载失败" detail={error} onRetry={allowed ? retry : undefined} retryLabel="重试" />
+                  : <RankingTable board={board} currency={currency} month={month} places={places} privateRead={privateRead} onOpen={openDetail}
                   onCustomers={agentId => { const row = [...(data?.rows ?? []), ...(data?.podium?.rows ?? [])].find(row => row.id === agentId); if (row) customers(row); }}
-                  state={data ? { kind: "ready", rows, selfId: selfRow?.id, empty: emptyText } : { kind: "loading" }} />
+                  state={data ? { kind: "ready", rows, selfId: selfRow?.id, empty: emptyText } : { kind: "loading" }} />}
                 {data && data.matched > 0 && <BoardPager page={data.pageNum} pages={pages} total={data.candidateCoverage === "COMPLETE" ? data.matched : undefined} pageSize={data.pageSize}
                   onPageSize={pageSize => { if ([5, 10, 20].includes(pageSize)) { closeDetail(); setQuery({ ...acceptedQuery(data, query), pageNum: 1, pageSize }); } }}
                   onPage={pageNum => { if (pageNum >= 1 && pageNum <= Math.ceil(data.matched / data.pageSize)) { closeDetail(); setQuery({ ...acceptedQuery(data, query), pageNum }); } }} />}

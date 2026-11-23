@@ -577,7 +577,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   navigation={currentTab === "home" ? navigation : undefined} primarySummary={<section className="sa-personal-summary" aria-label="本人客户与期间业绩">
     <div className="sa-personal-head"><h3>期间业绩</h3><Explain label="期间业绩的说明" content={<>{queryState.month} · {nexGridBrandText(currency)} · {businessZoneText()}；绑定与活跃按当前客户统计，首充和净贡献按所选自然月统计。</>} /><div className="sa-personal-period-controls"><AnalyticsSelect label="业绩自然月" value={queryState.month} options={monthOptions} onChange={month => change({ month })} /><AnalyticsSelect label="业绩币种" value={currency} options={[{ value: "USDT", label: "USDT" }, { value: "UVT", label: "UVT" }]} onChange={value => { if (value === "USDT" || value === "UVT") change({ currency: value }); }} /></div></div>
     <p className="sa-personal-asof"><AnalyticsFreshness asOf={scope.asOf} label="客户统计" onRefresh={() => refreshScope()} />{personalPeriod && <AnalyticsFreshness asOf={personalPeriod.asOf} label="期间业绩" onRefresh={() => refreshScope()} />}</p>
-    {!monthCalendar && <p className="sa-state" role={calendarError ? "alert" : "status"}>{calendarError || "正在读取业绩月份…"}{calendarError && <Button type="button" onClick={() => setCalendarRetry(n => n + 1)}>重试读取月份</Button>}</p>}
+    {/* 月份目录读不到时写错误卡：哪块读不到、原因、重试（ST-34、ST-35，BUG-650）。 */}
+    {!monthCalendar && (calendarError ? <BlockState state="error" compact title="业绩月份加载失败" detail={calendarError} onRetry={() => setCalendarRetry(n => n + 1)} retryLabel="重试" />
+      : <p className="sa-state" role="status">正在加载业绩月份…</p>)}
     {personalPeriodError && <p className="sa-state" role="alert">{personalPeriodError}<Button type="button" onClick={() => refreshScope()}>重新加载业绩</Button></p>}
     <div className="sa-personal-primary-metrics" data-secondary="">
       <div><span>当前本人绑定</span><Numeric value={scope.scopeSummary.bound === null ? null : String(scope.scopeSummary.bound)} label="当前本人绑定客户" onClick={() => drill({ view: "CUSTOMERS", category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY", filter: "ALL", firstState: "ALL" })} /></div>
@@ -611,7 +613,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         {["CUSTOMERS", "ACTIVITY"].includes(queryState.view) && <AnalyticsSelect label="服务状态" value={queryState.filter ?? "ALL"} options={isPersonal ? PERSONAL_FILTER_OPTIONS : FILTER_OPTIONS} onChange={value => change({ filter: value as AnalyticsQueryState["filter"] })} />}
       </FilterBar>
       {activeConditions.length > 0 && <div className="sa-active-conditions" role="group" aria-label="当前生效条件"><span>当前生效：</span>{activeConditions.map(condition => <Button type="button" key={condition.key} title={condition.label} aria-label={`移除${condition.label}`} onClick={() => { if (condition.key === "keyword") setKeyword(""); change(condition.remove); }}><span>{condition.label}</span><span aria-hidden="true">×</span></Button>)}</div>}
-      {queryState.basis === "PERIOD_EVENT" && !monthCalendar && <div className="sa-state" role={calendarError ? "alert" : "status"}>{calendarError || "正在读取统计月份…"}{calendarError && <Button type="button" onClick={() => setCalendarRetry(n => n + 1)}>重试读取月份</Button>}</div>}
+      {queryState.basis === "PERIOD_EVENT" && !monthCalendar && (calendarError ? <BlockState state="error" compact title="统计月份加载失败" detail={calendarError} onRetry={() => setCalendarRetry(n => n + 1)} retryLabel="重试" />
+        : <div className="sa-state" role="status">正在加载统计月份…</div>)}
       {loading && <div className="sa-state" role="status">正在加载…<Button type="button" size="sm" onClick={() => { controllerRef.current?.abort(); generation.current++; setLoading(false); setCancelled(true); setData(null); }}>取消读取</Button></div>}
       {error ? <BlockState state="error" title={error} onRetry={reloadFirstPage} retryLabel={error.includes("第一页") ? "从第一页重新加载" : "重试"} /> : cancelled && <div className="sa-state" role="status">已取消加载，筛选条件不变。<Button type="button" size="sm" onClick={reloadFirstPage}>重试</Button></div>}
       {data && current && personnel && <>
