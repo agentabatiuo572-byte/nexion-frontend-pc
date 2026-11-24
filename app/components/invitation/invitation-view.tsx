@@ -11,10 +11,10 @@
  * <CountsNotice view={…} />   人数数据异常、没读全时常显的提示条（DP-03）
  * <CountsExplain />           四个人数的口径，只放在「团队奖励范围内」旁，朝上开（不盖数字）
  */
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
-import { Cell, Explain, InlineRetry, Notice, StatusTag } from "@/app/components/rd";
+import { Cell, Explain, Notice, StatusTag } from "@/app/components/rd";
 import "./invitation-view.css";
 
 export type InviterView =
@@ -29,9 +29,10 @@ export type CountsView =
   /** 旧后端没有新口径：四个数写「—」，不提示原因（PRD §5 版本交叉）。旧采样代（GENERATION_UPGRADING）同样。 */
   | { kind: "absent" }
   | { kind: "anomaly" }
-  | { kind: "partial"; onRetry?: () => void; retrying?: boolean }
+  /** rereading：这次重读正在进行，「重试」写「重试中…」（只因写操作进行中而禁用时仍写「重试」）。 */
+  | { kind: "partial"; onRetry?: () => void; retrying?: boolean; rereading?: boolean }
   /** 只有人数读不出：一行「邀请人数」+ 加载失败 + 原因 + 重试（07c）。后台详情整块读不出走区块失败。 */
-  | { kind: "failed"; reason: string; onRetry?: () => void; retrying?: boolean }
+  | { kind: "failed"; reason: string; onRetry?: () => void; retrying?: boolean; rereading?: boolean }
   | { kind: "loading" };
 
 export type CountKey = "direct" | "within" | "beyond" | "total";
@@ -40,7 +41,7 @@ export const COUNT_LABELS: Record<CountKey, string> = { direct: "直接邀请", 
 export const INVITER_UNKNOWN_NOTE = "邀请关系记录有异常，暂时无法确认邀请人。";
 export const INVITER_SCOPE_NOTE = "不在你的客户范围内，只显示昵称和用户编码。";
 export const COUNTS_RULE = "这里按邀请次数统计人数。具体奖励以团队奖励设置和实际结算为准。";
-const COUNTS_ANOMALY = "邀请关系数据有异常，人数暂不显示。请联系技术值班核对。";
+const COUNTS_ANOMALY = "邀请关系数据有异常，人数暂不显示。请联系值班人员核对。";
 const COUNTS_PARTIAL = "人数没有读全";
 /** 只有人数读不出时写的原因：后端这一段整段没读出（人数状态 FAILED），不是网络错误，其余资料照常显示（PRD §4.4、§5）。 */
 export const COUNTS_FAILED_REASON = "这次没读出人数，其他资料照常。";
@@ -100,10 +101,18 @@ export function countText(view: CountsView, key: CountKey, unit = true): ReactNo
   return view.kind === "ready" ? (unit ? `${view[key]} 人` : String(view[key])) : <span className="rd-weak">—</span>;
 }
 
+/**
+ * 人数的「重试」：和 rd InlineRetry 一个样子，但不能点时用 aria-disabled，不用原生 disabled。
+ * 原生 disabled 一按下焦点就掉到页面上（Chrome，R01）；这里重读期间按钮留着、焦点也留着，写「重试中…」并标 aria-busy（CP-28）。
+ */
+export function CountsRetryButton({ onRetry, retrying, rereading }: { onRetry: () => void; retrying?: boolean; rereading?: boolean }) {
+  return <button type="button" className="rd-inline-retry inv-retry" aria-disabled={retrying || undefined} aria-busy={rereading || undefined} onClick={retrying ? undefined : onRetry}>{rereading ? "重试中…" : "重试"}</button>;
+}
+
 /** 数据异常、没读全：四个数「—」，下面常显一条橙黄提示（DP-03，VS-107）；没读全的「重试」在右侧。 */
 export function CountsNotice({ view }: { view: CountsView }) {
   if (view.kind === "anomaly") return <Notice tone="warn">{COUNTS_ANOMALY}</Notice>;
-  if (view.kind === "partial") return <Notice tone="warn" action={view.onRetry && <InlineRetry onRetry={view.onRetry} retrying={view.retrying} />}>{COUNTS_PARTIAL}</Notice>;
+  if (view.kind === "partial") return <Notice tone="warn" action={view.onRetry && <CountsRetryButton onRetry={view.onRetry} retrying={view.retrying} rereading={view.rereading} />}>{COUNTS_PARTIAL}</Notice>;
   return null;
 }
 
@@ -113,7 +122,7 @@ export function CountsFailed({ view }: { view: Extract<CountsView, { kind: "fail
     <span className="inv-failed" role="alert">
       <StatusTag tone="warn" icon={AlertTriangle}>加载失败</StatusTag>
       <span className="inv-failed-reason">{view.reason}</span>
-      {view.onRetry && <InlineRetry onRetry={view.onRetry} retrying={view.retrying} />}
+      {view.onRetry && <CountsRetryButton onRetry={view.onRetry} retrying={view.retrying} rereading={view.rereading} />}
     </span>
   );
 }
@@ -140,4 +149,35 @@ export function CountsFacts({ view }: { view: CountsView }) {
       <CountsNotice view={view} />
     </>
   );
+}
+
+/**
+ * 人数「重试」读完后焦点去哪（R01；CP-05、rubric 26）。重读期间按钮留着、写「重试中…」，读完：
+ * 还有「重试」（仍没读到）焦点落到它上面；没有了焦点回到这一块折叠的标题，人数读到了再读出「人数已更新」。
+ * 按下「重试」时记住它所在的折叠；读完时焦点已去了别处（不在这一块里、不在页面上、也不在包着它的外框上）就不动。
+ * 页面在按下时调 arm()，把 status 放进一直挂着的 role="status"（rd-sr-only）里。
+ */
+export function useCountsRetryFocus(rereading: boolean, updated: boolean) {
+  const fold = useRef<HTMLDetailsElement | null>(null);
+  const was = useRef(false);
+  const [status, setStatus] = useState("");
+  const arm = () => {
+    const active = document.activeElement;
+    fold.current = active instanceof HTMLElement ? active.closest("details") : null;
+    setStatus("");
+  };
+  useEffect(() => {
+    if (rereading) { was.current = true; return; }
+    if (!was.current) return;
+    was.current = false;
+    const target = fold.current;
+    fold.current = null;
+    if (updated) setStatus("人数已更新");
+    if (!target?.isConnected) return;
+    const active = document.activeElement;
+    // 焦点掉到页面上，或被弹窗的焦点圈接到外框上（外框包着这一块）时才接回来；已经去了别处就不动。
+    if (active && active !== document.body && !target.contains(active) && !active.contains(target)) return;
+    (target.querySelector<HTMLElement>(".rd-inline-retry:not(:disabled)") ?? target.querySelector<HTMLElement>(":scope > summary"))?.focus();
+  }, [rereading, updated]);
+  return { arm, status };
 }

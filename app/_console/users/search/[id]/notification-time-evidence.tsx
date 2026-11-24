@@ -151,7 +151,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
     : data.reason);
   return <Drawer open onClose={onClose} busy={submitting} icon={Clock3} tone="role-3" title="通知时间证据" sub={`通知 ${notificationId}`}
     explain={<><p>读取证据不会修改通知。校正时间需要单独确认，已读状态保持不变。</p><p>此处展示当前回读证据；是否曾执行校正请查审计记录。</p></>}
-    footer={correctable ? <Decision primary={<Button variant="primary" disabledReason={writeBlockedReason} onClick={() => setConfirmation(data)}>按投递事实校正时间</Button>} /> : undefined}>
+    footer={correctable ? <Decision note={writeBlockedReason} primary={<Button variant="primary" disabledReason={writeBlockedReason} onClick={() => setConfirmation(data)}>按投递事实校正时间</Button>} /> : undefined}>
     {notice && <Notice tone={notice.tone}><KeepText text={notice.text} /></Notice>}
     {pending && canCorrect && actorKey && <Notice tone="warn" title="原校正结果未知"
       action={<>
@@ -160,6 +160,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       </>}>
       {expired ? `${EXPIRED_TEXT}。` : "按原请求重试会用原证据和理由。"}原理由：{pending.reason}
       <Explain label="技术信息" content={`原请求编号 ${pending.commandKey}`} />
+      {!expired && writeBlockedReason && <p className="rd-toolbar-note">{writeBlockedReason}</p>}
     </Notice>}
     {!data && !error && <BlockState state="loading" title="正在读取关联证据…" />}
     {error && <BlockState state="error" title={error} onRetry={() => setAttempt(value => value + 1)} />}

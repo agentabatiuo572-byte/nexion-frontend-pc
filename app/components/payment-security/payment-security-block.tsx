@@ -97,7 +97,8 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
                 disabledReason={pending ? "有一笔解除结果未知，先查询原结果" : record.capabilities.releaseAllowed ? writeBlockedReason : record.capabilities.disabledReason || "现在不能解除"}
                 onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</Button>}
             </div>
-            {record.state === "ACTIVE" && canRelease && !pending && !record.capabilities.releaseAllowed && <p className="rd-toolbar-note">{record.capabilities.disabledReason || "现在不能解除"}</p>}
+            {/* 不能解除的原因常显在按钮下（OP-126）：后端不让解除优先，其次是资料正在重读；结果未知由下面的提示条说。 */}
+            {record.state === "ACTIVE" && canRelease && !pending && (!record.capabilities.releaseAllowed || writeBlockedReason) && <p className="rd-toolbar-note">{!record.capabilities.releaseAllowed ? record.capabilities.disabledReason || "现在不能解除" : writeBlockedReason}</p>}
           </>}
           {summary && !record && <p className="rd-detail-empty">历史处置记录仍保留。</p>}
           {summary && <p className="rd-toolbar-note">查询时间 {formatBusinessTimeCompact(summary.observedAt, "暂无记录")}</p>}

@@ -65,3 +65,5 @@ span.m1-tile-value{cursor:default}
 .m1-personal .rd-fold-body>.rd-notice{margin-bottom:12px}
 .m1-nowrap{white-space:nowrap}
 .m1-tiles>li>span:first-child{text-wrap:balance}
+/* 资料重读时底栏左边常显一句为什么不能操作（OP-126）。 */
+.m1-drawer-actions > .rd-toolbar-note, .rd-modal-foot > .rd-toolbar-note { margin: 0 auto 0 0; }

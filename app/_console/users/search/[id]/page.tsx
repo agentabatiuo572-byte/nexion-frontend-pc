@@ -68,7 +68,7 @@ import {
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
 import { RecoveryPanel, SETTLED_REJECTED, receiptExplain, receiptFact, receiptRejected, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
-import { COUNT_LABELS, COUNTS_RULE, CountsExplain, CountsFacts, CountsNotice, InviterValue, countText, type CountsView } from "@/app/components/invitation/invitation-view";
+import { COUNT_LABELS, COUNTS_RULE, CountsExplain, CountsFacts, CountsNotice, InviterValue, countText, useCountsRetryFocus, type CountsView } from "@/app/components/invitation/invitation-view";
 import { INVITATION_REREAD_BLOCK, inviterDetailView, referralCountsView } from "@/app/components/invitation/wiring";
 
 /**
@@ -559,7 +559,7 @@ function RecordTable({ label, rows, columns, empty = "暂无记录", selected, o
 }
 
 /** 折叠组里的一小块：缺的不显示，读取失败只替换这一块（C1-V02、C1-S04）。同组块头一个样子，都是收起的一行（重复）；里面有事时摘要写清是哪件事（DP-04）。 */
-function Block({ id, title, sub, explain, section, actions, failure, sectionRetry, issue, issueTone = "warn", summary, disclosure, loading, children }: {
+function Block({ id, title, sub, explain, section, actions, failure, sectionRetry, issue, issueTone = "warn", summary, disclosure, reloading, live, children }: {
   id?: string;
   title: string;
   sub?: ReactNode;
@@ -575,23 +575,24 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
   /** 不是列表的小块：摘要写结论，自己管开合。 */
   summary?: ReactNode;
   disclosure?: { open: boolean; onOpenChange: (open: boolean) => void; summary: ReactNode };
-  /** 整块还在读：一行占位，不显示数也不写 0（ST-31）。传占位的文字，比如「正在加载推荐团队…」。 */
-  loading?: string;
+  /** 这一块正在重读：标题行写「正在加载…」，失败卡和「重试」留在原处，按钮写「重试中…」（CP-28），这一块标 aria-busy。 */
+  reloading?: boolean;
+  /** 一直挂着的读屏状态（rd-sr-only），放在这一块里，不打断相邻块的间距规则。 */
+  live?: ReactNode;
   children: ReactNode;
 }) {
   if (!section) return null;
   const failed = !!failure || sectionFailed(section);
-  const body = loading
-    ? <BlockState state="loading" compact title={loading} />
-    : failure
+  const body = failure
     ? <BlockState state="error" compact title={failure} />
     : sectionFailed(section)
       ? <BlockState state="error" compact title={`${title}加载失败`} detail={sectionRetry?.detail}
-          onRetry={sectionRetry?.onRetry ?? (() => window.location.reload())} retrying={sectionRetry?.retrying} />
+          onRetry={sectionRetry?.onRetry ?? (() => window.location.reload())} retrying={sectionRetry?.retrying} retryLabel={reloading ? "重试中…" : undefined} />
       : <div className="rd-detail-block">{children}</div>;
   return (
-    <div id={id} className="rd-detail-block">
-      <Fold inset title={title} explain={explain} actions={actions} alert={failed || !!issue} alertTone={failed ? "danger" : issueTone} {...disclosure} summary={loading ? "正在加载…" : failed ? "加载失败" : issue ?? sub ?? disclosure?.summary ?? summary}>{body}</Fold>
+    <div id={id} className="rd-detail-block" aria-busy={reloading || undefined}>
+      <Fold inset title={title} explain={explain} actions={actions} alert={!reloading && (failed || !!issue)} alertTone={failed ? "danger" : issueTone} {...disclosure} summary={reloading ? "正在加载…" : failed ? "加载失败" : issue ?? sub ?? disclosure?.summary ?? summary}>{body}</Fold>
+      {live}
     </div>
   );
 }
@@ -1237,12 +1238,13 @@ export default function UserDetailPage() {
   const fundsAlert = withdrawalExceptions + withdrawalsWaiting > 0;
   const devicesFailed = failedSection(detail?.devices, detail?.earnings) || ledgerUnread && !!detail?.earnings;
   const devicesAlert = deviceExceptions > 0;
-  const referralRetry = { onRetry: () => void retryReferral(), retrying: referralRetrying || loading || writeBusy };
+  const referralRetry = { onRetry: () => { referralFocus.arm(); void retryReferral(); }, retrying: referralRetrying || loading || writeBusy, rereading: referralRetrying };
   const referralSourceFailed = sectionFailed(detail?.referral);
   const counts: CountsView = referralSourceFailed ? { kind: "absent" }
     : referralError ? { kind: "failed", reason: referralError, ...referralRetry }
     : referralCountsView(detail?.referral, referralRetry);
   const countsAlert = counts.kind === "anomaly" || counts.kind === "partial" || counts.kind === "failed";
+  const referralFocus = useCountsRetryFocus(referralRetrying, counts.kind === "ready");
   const inviter = inviterDetailView(detail?.profile?.inviter, supportScope, reach);
   const teamFailed = referralSourceFailed || failedSection(detail?.engagement, detail?.vrank);
   const recordsFailed = failedSection(detail?.notifications, detail?.commerce);
@@ -1277,7 +1279,7 @@ export default function UserDetailPage() {
   });
   // 多个分区可以同时露出异常摘要，记录表只展开一张（DP-67）。
   const visibleRecordList = openRecordList === undefined
-    ? unfinishedRevokes.length > 0 ? "payment" : fundsAlert ? "withdrawal" : devicesAlert ? "device" : orderExceptions > 0 ? "order" : failedPushCount > 0 ? "notification" : countsAlert ? "member" : null
+    ? unfinishedRevokes.length > 0 ? "payment" : fundsAlert ? "withdrawal" : devicesAlert ? "device" : orderExceptions > 0 ? "order" : failedPushCount > 0 ? "notification" : countsAlert || referralSourceFailed ? "member" : null
     : openRecordList;
   const listProps = (kind: RecordKind) => ({ disclosure: {
     open: visibleRecordList === kind,
@@ -1617,6 +1619,8 @@ export default function UserDetailPage() {
     detail.referral && !countsHead && countsPhrase("direct"),
     detail.vrank && `团队等级 ${asText(detail.vrank.currentRank)}`,
   ]);
+  // 推荐团队收起时写人数结论；展开后下面有同样的数，只写成员表的说明（DP-04、DP-61）。
+  const referralSummary = visibleRecordList === "member" ? "成员最多 20 位" : countsHead ?? joined([countsPhrase("direct"), !inKpi(COUNT_LABELS.total) && countsPhrase("total")]);
   const recordsText = recordsFailed
     ? "有区块加载失败"
     : recordsAlert
@@ -1785,9 +1789,9 @@ export default function UserDetailPage() {
 
         {teamPresent && <div id={nav.anchor("team")}>
           <Fold title="团队与互动" icon={Network} tone="role-3" summary={foldSummary("team", teamFailed || countsAlert, teamText)} alertTone={teamFailed ? "danger" : "warn"} {...foldProps("team", teamFailed || countsAlert)}>
-            <Block id="hub-referral" title="推荐团队" {...listProps("member")} section={detail.referral} sub="成员最多 20 位"
+            <Block id="hub-referral" title="推荐团队" {...listProps("member")} section={detail.referral} sub={referralSummary}
               issue={counts.kind === "failed" ? countsHead ?? undefined : undefined}
-              loading={referralSourceFailed && referralRetrying ? "正在加载推荐团队…" : undefined}
+              reloading={referralRetrying} live={<span role="status" className="rd-sr-only">{referralFocus.status}</span>}
               sectionRetry={{ detail: referralError ?? displayAdminReadError(undefined), ...referralRetry }}
               explain="下面最多列 20 位成员，是注册时记下的样本，不是完整名单；上面的人数另算，对不上是正常的。">
               {/* 四个人数加团队订单额，按同页列线铺开（PRD §4.2）；全部团队成员已是关键数字时不重复（DP-61）。口径只在「团队奖励范围内」旁的问号里。 */}

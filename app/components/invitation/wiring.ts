@@ -36,7 +36,7 @@ export function inviterDetailView(
   return inviterView(inviter, reach(href, supportScope ? undefined : "user_c1hub_read") ? { href } : undefined);
 }
 
-export type CountsRetry = { onRetry: () => void; retrying: boolean };
+export type CountsRetry = { onRetry: () => void; retrying: boolean; rereading?: boolean };
 
 function whole(value: unknown) {
   const number = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
