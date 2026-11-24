@@ -100,15 +100,15 @@ const GUARD_NAME: Record<string, string> = { budget: "每日真钱奖预算", ca
 const REWARD_PREVIEW_VALUE_ERRORS = new Set([
   "EVENT_REWARD_ASSET_INVALID", "EVENT_REWARD_INVALID", "EVENT_CONFIG_NO_CHANGE", "VALUE_TOO_LONG", "MANUAL_JSON_NOT_ALLOWED",
 ]);
-function isRewardPreviewValueRejected(error: unknown) {
+function isPreviewExplicitRejection(error: unknown): error is Error & { reasonCode: string } {
   if (!(error instanceof Error)) return false;
   const { status, apiCode, reasonCode, bodyUnreadable, unknownOutcome } = error as Error & {
     status?: number; apiCode?: number; reasonCode?: string; bodyUnreadable?: boolean; unknownOutcome?: boolean;
   };
-  return typeof status === "number" && status !== 429 && typeof apiCode === "number" && apiCode !== 0
-    && !bodyUnreadable && !unknownOutcome && isDeterministicRejection(status, apiCode)
-    && REWARD_PREVIEW_VALUE_ERRORS.has(reasonCode ?? "");
+  return typeof status === "number" && status !== 429 && typeof apiCode === "number" && apiCode !== 0 && apiCode < 500
+    && !!reasonCode && !bodyUnreadable && !unknownOutcome && isDeterministicRejection(status, apiCode);
 }
+const isRewardPreviewValueRejected = (error: unknown) => isPreviewExplicitRejection(error) && REWARD_PREVIEW_VALUE_ERRORS.has(error.reasonCode);
 
 function wheelRewardNameFeedback(value: BusinessFormValue, label: string) {
   const message = appVisibleTextError(value.rewardName, label);
@@ -590,17 +590,24 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     let readVersion: number | undefined;
     let shownApproval: boolean | undefined;
     let verified: { reason: string; approvalRequired: boolean } | undefined;
-    let showOpening: (approvalRequired: boolean | undefined, rejection?: ConfirmReadConflict) => void;
-    const openingReadError = (cause: unknown, reason: string) => h4OpeningReadFailure(cause, async () => {
-      const approvalRequired = await verifyOpening(reason);
-      verified = { reason, approvalRequired };
-      showOpening(approvalRequired);
+    let showOpening: (approvalRequired: boolean | undefined, rejection?: ConfirmReadConflict, initialError?: string) => void;
+    const rereadOpening = (reason: string) => async () => {
+      try {
+        const approvalRequired = await verifyOpening(reason);
+        verified = { reason, approvalRequired };
+        showOpening(approvalRequired);
+      } catch (cause) {
+        if (isHGrowthReadConflict(cause)) throw h4ReadConflict(rereadOpening(""));
+        if (isPermissionDenied(cause) || !isPreviewExplicitRejection(cause)) throw cause;
+        showOpening(undefined, undefined, displayAdminError(cause));
+      }
       return true;
-    });
+    };
+    const openingReadError = (cause: unknown, reason: string) => h4OpeningReadFailure(cause, rereadOpening(reason));
     const readBeforeOpening = async <T,>(read: () => Promise<T>, reason: string): Promise<T> => {
       try { return await read(); }
       catch (cause) {
-        if (isPermissionDenied(cause) || isHGrowthReadConflict(cause)) throw cause;
+        if (isPermissionDenied(cause) || isHGrowthReadConflict(cause) || isPreviewExplicitRejection(cause)) throw cause;
         throw openingReadError(cause, reason);
       }
     };
@@ -610,7 +617,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       readVersion = h4ReadVersion("overview");
       setRequiredLanguages(required);
       const current = (latest as Model).events?.find(row => row.id === event.id);
-      if (!current || current.state !== event.state) throw new Error("活动规则读取失败，请刷新后重试。");
+      if (!current || current.state !== event.state) throw unavailableOperation(current ? "这个活动" : undefined);
       if (missingFor(current, required, (latest as Model).contentLocales?.event ?? {}).length) {
         throw new Error(formatAdminApiError("EVENT_LOCALIZED_CONTENT_INCOMPLETE", "", "write", current.copyReadiness));
       }
@@ -654,13 +661,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       const dialogs = useUI.getState().dialogs;
       const current = () => requestId === openingRequest.current && dialogs === useUI.getState().dialogs
         && adminId === useAdminAuth.getState().session?.adminId;
-      showOpening = (approvalRequired, rejection) => {
+      showOpening = (approvalRequired, rejection, initialError) => {
         shownApproval = approvalRequired;
         ctx.openConfirm({ ...wrapped,
           effect: approvalRequired === undefined ? undefined : approvalRequired ? effectApproval("活动") : effectDirect,
           content: approvalRequired ? <>{reopened && <H4StaleNote />}{facts(true)}</> : wrapped.content,
           okLabel: approvalRequired ? "提交审批" : wrapped.okLabel,
           initialRejection: rejection ?? wrapped.initialRejection,
+          ...(initialError ? { initialError, getPendingBlockReason: () => initialError } : {}),
         });
       };
       if (missing.length || wrapped.initialRejection instanceof ConfirmReadConflict) { ctx.openConfirm(wrapped); return; }
@@ -670,7 +678,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       } catch (cause) {
         if (!current()) return;
         if (isPermissionDenied(cause)) { announcePermissionDenied(); return; }
-        showOpening(undefined, openingReadError(cause, ""));
+        if (isHGrowthReadConflict(cause)) showOpening(undefined, h4ReadConflict(rereadOpening("")));
+        else if (isPreviewExplicitRejection(cause)) showOpening(undefined, undefined, displayAdminError(cause));
+        else showOpening(undefined, openingReadError(cause, ""));
       }
     } : undefined);
   };

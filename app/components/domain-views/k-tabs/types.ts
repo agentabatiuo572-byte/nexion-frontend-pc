@@ -66,6 +66,10 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
+  initialError?: string;
+  /** Only explicitly designated emergency shutdowns may use the default policy on read failure (Q-06). */
+  reasonPolicyOptional?: boolean;
+  reasonMin?: number;
   /** Fixed operation intent retained by useHConflictDraft; not an editable input default. */
   rebaseValue?: string;
   /** Editable input restored only after the operator reviews a rejected first attempt. */

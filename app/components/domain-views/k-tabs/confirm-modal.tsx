@@ -8,14 +8,16 @@
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { ConfirmReadConflict, PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
+import { fetchA2ReasonPolicy, visibleReasonLength, type A2ReasonPolicy } from "@/lib/admin/a2-client";
 import { useEffect, useId, useState } from "react";
 import { Notice } from "@/app/components/rd/block-state";
 import { Button as RdButton } from "@/app/components/rd/button";
 import { useRdSurface } from "@/app/components/rd/surface";
-import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { Modal, Btn, Chip, OperatorBriefBlock, usePendingConfirmRecovery } from "../design-kit";
 import type { ConfirmReq } from "./types";
+
+const POLICY_LOADING = "正在加载，稍候即可提交。";
+const POLICY_FAILED = "理由规则加载失败，暂时无法提交。请关闭弹窗后重试。";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
   const [pendingReason, setPendingReason] = useState(() => req.freezePendingInput ? req.getPendingReason?.() : undefined);
@@ -26,6 +28,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const [submitting, setSubmitting] = useState(false);
   const rejection = req.initialRejection;
   const [error, setError] = useState(() => rejection && !(rejection instanceof ConfirmReadConflict && rejection.review) ? displayAdminError(rejection) : null);
+  const shownError = req.initialError ?? error;
   const [readConflict, setReadConflict] = useState<ConfirmReadConflict | null>(() => rejection instanceof ConfirmReadConflict ? rejection : null);
   const [readingConflict, setReadingConflict] = useState(false);
   // 刚打开不报错：字数不够等失焦或点过提交才用警告色（DP-06）。
@@ -33,20 +36,25 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const [reasonLeft, setReasonLeft] = useState(false);
   const [valueLeft, setValueLeft] = useState(false);
   const fieldId = useId();
-  // 改版页面里和 OperationConfirmModal 同一个样子；旧页面不变。
+  // 改版页面里和 OperationConfirmModal 使用同一套样式。
   const surface = useRdSurface();
-  // 理由规则读得到就按它，读不到按默认 8–200 继续，紧急关停不能被规则服务挡住（Q-06）。
-  const [policy, setPolicy] = useState<{ minChars: number; maxChars: number } | null>(null);
-  // 读取中还不知道规则，不放行；读失败才按默认继续。
-  const [policySettled, setPolicySettled] = useState(!req.reason);
+  const [policy, setPolicy] = useState<A2ReasonPolicy | "loading" | "failed">("loading");
   useEffect(() => {
+    setPolicy("loading");
     if (!req.reason) return;
     let active = true;
-    void fetchA2ReasonPolicy().then((next) => { if (active) setPolicy(next); }, () => { if (active) setPolicy(null); }).finally(() => { if (active) setPolicySettled(true); });
+    void fetchA2ReasonPolicy().then(
+      next => { if (active) setPolicy(next); },
+      () => { if (active) setPolicy("failed"); },
+    );
     return () => { active = false; };
   }, [req.reason]);
-  const reasonMin = policy?.minChars ?? 8;
-  const reasonMax = policy?.maxChars ?? 200;
+  const loadedPolicy = typeof policy === "object" ? policy : undefined;
+  const policyReady = !!loadedPolicy || policy === "failed" && !!req.reasonPolicyOptional;
+  const replaying = !!req.replayPendingInput && pendingReason !== undefined;
+  const policyMessage = req.reason && !replaying && !policyReady ? policy === "failed" ? POLICY_FAILED : POLICY_LOADING : undefined;
+  const reasonMin = Math.max(8, req.reasonMin ?? 8, loadedPolicy?.minChars ?? 8);
+  const reasonMax = Math.min(200, loadedPolicy?.maxChars ?? 200);
   const reasonLength = visibleReasonLength(reason);
   const reasonOk = !req.reason || (reasonLength >= reasonMin && reasonLength <= reasonMax);
   // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
@@ -54,7 +62,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const valueProblem = req.input?.validate?.(value);
   const pendingBlockReason = readConflict ? readConflict.review ? "请先读取最新" : displayAdminReadError(readConflict)
     : pendingRecovery?.blockedReason ?? (req.freezePendingInput ? req.getPendingBlockReason?.() : undefined);
-  const can = !pendingBlockReason && (req.replayPendingInput && pendingReason !== undefined || reasonOk && inputOk && !valueProblem && policySettled);
+  const can = !pendingBlockReason && (replaying || !policyMessage && reasonOk && inputOk && !valueProblem);
   const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
   const submit = async () => {
     if (!can || submitting) return;
@@ -140,7 +148,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               variant={req.confirmTone ?? "primary"}
               loading={submitting || readingConflict}
               loadingText={readingConflict ? "正在读取…" : "提交中…"}
-              disabledReason={can || submitting || readingConflict ? undefined : pendingBlockReason ?? [!policySettled && "正在读取理由规则", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
+              disabledReason={can || submitting || readingConflict ? undefined : pendingBlockReason ?? policyMessage ?? [!inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
               onBlockedClick={() => setAttempted(true)}
               onClick={() => void submit()}
             >
@@ -162,9 +170,12 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
       {readConflict?.review && <div className="rd-confirm-alert">{readConflict.review.renderNotice(() => void readLatestConflict())}</div>}
       <fieldset disabled={submitting || !!readConflict || pendingReason !== undefined} className="rd-contents">
-      {error && (surface
-        ? <div className="rd-confirm-alert"><Notice tone="danger">{error}</Notice></div>
-        : <div role="alert" className="tint danger">{error}</div>)}
+      {shownError && (surface
+        ? <div className="rd-confirm-alert"><Notice tone="danger">{shownError}</Notice></div>
+        : <div role="alert" className="tint danger">{shownError}</div>)}
+      {policyMessage === POLICY_FAILED && (surface
+        ? <div className="rd-confirm-alert" role="alert"><Notice tone="warn">{policyMessage}</Notice></div>
+        : <div role="alert" className="tint danger">{policyMessage}</div>)}
       <OperatorBriefBlock kind={req.briefKind} action={req.action} detail={req.detail} hasEdit={!!req.input} stated={req.statedBrief} />
       {req.content}
       {req.chips && req.chips.length > 0 && (
@@ -216,11 +227,11 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         {surface ? (
           // 字段名强，下限跟在后面，上限在框角的字数里，各写一处（VS-104、VS-105）。
           <label htmlFor={`${fieldId}-reason`}>
-            {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></> : <>备注<span className="rd-form-hint">{req.remarkHint ?? "选填，最多 200 字"}</span></>}
+            {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span>{(policyReady || policyMessage === POLICY_LOADING) && <span className="rd-form-hint">{policyReady ? `至少 ${reasonMin} 字` : policyMessage}</span>}</> : <>备注<span className="rd-form-hint">{req.remarkHint ?? "选填，最多 200 字"}</span></>}
           </label>
         ) : (
           <label htmlFor={`${fieldId}-reason`} style={{ display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>
-            {req.reason ? `操作理由（必填，${reasonMin}–${reasonMax} 字）` : "备注（可选，最多 200 字）"}
+            {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span>{policyReady ? ` 至少 ${reasonMin} 字` : policyMessage === POLICY_LOADING ? policyMessage : null}</> : "备注（可选，最多 200 字）"}
           </label>
         )}
         <div className={surface ? "rd-reason-box" : undefined}>
@@ -230,13 +241,14 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
             onChange={(e) => setReason(e.target.value)}
             onBlur={() => setReasonLeft(true)}
             rows={2}
+            aria-required={req.reason || undefined}
             maxLength={req.reason ? reasonMax : 200}
             placeholder={req.reasonPlaceholder ?? (req.reason ? "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索" : "可以补充处理依据")}
             className={surface ? undefined : "k-confirm-textarea"}
           />
-          {surface && req.reason && <span className="rd-reason-count">{reasonLength}/{reasonMax}</span>}
+          {surface && req.reason && policyReady && <span className="rd-reason-count">{reasonLength}/{reasonMax}</span>}
         </div>
-        {req.reason && (surface ? !reasonOk && (attempted || reasonLeft) : true) && (
+        {req.reason && policyReady && (surface ? !reasonOk && (attempted || reasonLeft) : true) && (
           <div className={surface ? "rd-form-error" : "tiny k-confirm-count"} data-ok={reasonOk ? "" : undefined}>{reasonShort}</div>
         )}
       </div>
