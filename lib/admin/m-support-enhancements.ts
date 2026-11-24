@@ -45,7 +45,8 @@ export function parseSupportProfile(v: unknown): SupportProfile {
   const inviter = identity.data?.inviter === undefined ? undefined : parseSupportInvitationInviterDetail(obj(identity.data.inviter, "identity.inviter"));
   const statistics = r.statistics === undefined ? { status: "UNKNOWN" as const, data: null, evaluatedAt: identity.evaluatedAt } : parseSupportGroup(r.statistics);
   const actions = Object.fromEntries(Object.entries(obj(r.actions, "actions")).map(([k, v]) => [k, { allowed: bool(obj(v, "action").allowed) }]));
-  if (groups.finance.data) for (const value of rows(groups.finance.data.byCurrency)) {
+  const financeData = groups.finance.data;
+  if (financeData) for (const value of rows(financeData.byCurrency)) {
     const currency = obj(value, "currency"); text(currency.currency); const statuses = obj(currency.fieldStatuses, "fieldStatuses");
     for (const field of ["creditedDepositTotal", "depositRefundTotal", "successfulWithdrawalPrincipalTotal", "successfulWithdrawalFeeTotal", "successfulWithdrawalNetTotal", "processingWithdrawalPrincipalTotal", "balance", "availableBalance"]) {
       const status = statuses[field];
@@ -61,10 +62,16 @@ export function parseSupportProfile(v: unknown): SupportProfile {
     if (netStatus === "READY" && (typeof currency.netContributionTotal !== "string" || !/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(currency.netContributionTotal))) throw new Error("SUPPORT_DECIMAL_INVALID");
     if (netStatus !== "READY" && currency.netContributionTotal !== null) throw new Error("SUPPORT_NET_COVERAGE_INVALID");
   }
+  // Finance otherwise passes through its data record. Drop the B80 key before returning it.
+  if (financeData && Object.hasOwn(financeData, "performance")) {
+    groups.finance.data = Object.fromEntries(Object.keys(financeData)
+      .filter(key => key !== "performance")
+      .map(key => [key, financeData[key]]));
+  }
   return {
     ...groups,
     identity: inviter === undefined ? identity : { ...identity, data: { ...identity.data, inviter } },
-    statistics: { ...statistics, data: statistics.data === null ? null : parseSupportCustomerStatistics(statistics.data) },
+    statistics: { ...statistics, data: statistics.data === null ? null : parseSupportCustomerStatistics(statistics.data, "profile") },
     actions,
   };
 }

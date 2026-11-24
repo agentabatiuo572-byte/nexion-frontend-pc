@@ -219,9 +219,12 @@ export function supportAttachmentUnavailableText(reason: string | null): string 
 }
 
 function malformed(field: string): never { throw new Error(`SUPPORT_CONTRACT_MALFORMED:${field}`); }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 function object(value: unknown, field: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) malformed(field);
-  return value as Record<string, unknown>;
+  if (!isRecord(value)) malformed(field);
+  return value;
 }
 function nonempty(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) malformed(field);
@@ -318,13 +321,27 @@ export function parseSupportEffectiveLanguage(value: unknown): string {
   return typeof value === "string" && EFFECTIVE_SUPPORT_LANGUAGES.has(value) ? value : "en-US";
 }
 
+function legacyCustomerProfile(value: unknown): Record<string, unknown> {
+  const profile = object(value, "detail.profile");
+  // The response is freshly parsed JSON. Drop B80 keys before returning the legacy profile.
+  const statistics = isRecord(profile.statistics) ? profile.statistics.data : undefined;
+  if (isRecord(statistics)) {
+    delete statistics.performance;
+    const first = statistics.first;
+    if (isRecord(first)) delete first.channel;
+  }
+  const finance = isRecord(profile.finance) ? profile.finance.data : undefined;
+  if (isRecord(finance)) delete finance.performance;
+  return profile;
+}
+
 function detail(value: unknown): SupportCustomerDetail {
   const row = object(value, "detail");
   const rawCustomer = object(row.customer, "customer");
   const parsed = customer(rawCustomer);
   return {
     ...parsed,
-    ...(row.profile === undefined ? {} : { profile: object(row.profile, "detail.profile") }),
+    ...(row.profile === undefined ? {} : { profile: legacyCustomerProfile(row.profile) }),
     effectiveLanguage: parseSupportEffectiveLanguage(rawCustomer.effectiveLanguage),
     agentAdminId: positive(parsed.agentAdminId, "detail.agentAdminId"),
     maintenanceVersion: parsed.version,

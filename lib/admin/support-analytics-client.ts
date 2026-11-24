@@ -31,6 +31,7 @@ export type SupportAnalyticsQuery = {
 };
 
 function malformed(field: string): never { throw new Error(`SUPPORT_CONTRACT_MALFORMED:analytics.${field}`); }
+// The response allowlists include B80 compatibility keys by name. The legacy projections omit their values.
 function object(value: unknown, keys: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) malformed("object");
   const row = value as Record<string, unknown>;
@@ -107,7 +108,7 @@ function devices(value: unknown) {
   }) };
 }
 function current(value: unknown) {
-  const r = object(value, "lifetimeBasis status ownLifetime firstConfirmed firstNone firstUnknown devices activity");
+  const r = object(value, "lifetimeBasis status ownLifetime firstConfirmed firstNone firstUnknown devices activity performance");
   const a = object(r.activity, "active inactive unknown status window");
   const w = object(a.window, "days from through status");
   return { lifetimeBasis: enumeration(r.lifetimeBasis, ["CURRENT_CUSTOMER_HISTORY"]), status: enumeration(r.status, STATUS), ownLifetime: unique(array(r.ownLifetime, customerMoney), x => x.currency), firstConfirmed: count(r.firstConfirmed), firstNone: count(r.firstNone), firstUnknown: count(r.firstUnknown), devices: devices(r.devices), activity: {
@@ -124,14 +125,14 @@ function personnel(value: unknown) {
   }) };
 }
 function financial(value: unknown) {
-  const r = object(value, "status firstCandidates currencies firstSources");
+  const r = object(value, "status firstCandidates currencies firstSources performance");
   return { status: enumeration(r.status, STATUS), firstCandidates: count(r.firstCandidates), currencies: unique(array(r.currencies, value => {
     const p = object(value, "currency deposits purchases purchaseRefunds net");
     return { currency: enumeration(p.currency, CURRENCIES), deposits: money(p.deposits), purchases: money(p.purchases), purchaseRefunds: money(p.purchaseRefunds), net: netMoney(p.net) };
   }), x => x.currency), firstSources: unique(array(r.firstSources, firstSourceMoney), x => x.currency) };
 }
 function scopeSummary(value: unknown) {
-  const r = object(value, "mode total bound pending anomaly status current financial restrictedSummary personnel groups");
+  const r = object(value, "mode total bound pending anomaly status current financial restrictedSummary personnel groups performanceAttribution");
   const restricted = object(r.restrictedSummary, "customers firstCandidates");
   return { mode: enumeration(r.mode, ["PERSONAL", "MANAGED", "ALL"]), total: nullableInteger(r.total), bound: nullableInteger(r.bound), pending: nullableInteger(r.pending), anomaly: nullableInteger(r.anomaly), status: enumeration(r.status, STATUS), current: current(r.current), financial: financial(r.financial), restrictedSummary: { customers: count(restricted.customers), firstCandidates: count(restricted.firstCandidates) }, personnel: personnel(r.personnel), groups: unique(array(r.groups, value => {
     const p = object(value, "groupId name total current period personnel");
@@ -192,15 +193,16 @@ function invitations(value: unknown) {
     ...(r.reasons === undefined ? {} : { reasons: array(r.reasons, reason => parseInvitationCountReason(text(reason))) }),
   };
 }
-export function parseSupportCustomerStatistics(value: unknown) {
-  const r = object(value, "first lifetime lifetimeStatus invitations activity");
-  const f = object(r.first, "state status kind currency amount succeededAt");
+export function parseSupportCustomerStatistics(value: unknown, source: "analytics" | "profile" = "analytics") {
+  const fromProfile = source === "profile";
+  const r = object(value, "first lifetime lifetimeStatus invitations activity" + (fromProfile ? " performance" : ""));
+  const f = object(r.first, "state status kind currency amount succeededAt channel");
   const a = object(r.activity, "state status lastEffectiveAt");
   return { first: { state: enumeration(f.state, ["CONFIRMED", "NONE", "UNKNOWN"]), status: enumeration(f.status, STATUS), kind: f.kind === null ? null : enumeration(f.kind, FIRST_KINDS), currency: f.currency === null ? null : enumeration(f.currency, CURRENCIES), amount: decimal(f.amount), succeededAt: nullableInstant(f.succeededAt) }, lifetime: unique(array(r.lifetime, customerMoney), x => x.currency), lifetimeStatus: enumeration(r.lifetimeStatus, STATUS), invitations: invitations(r.invitations), activity: { state: enumeration(a.state, ["ACTIVE", "INACTIVE", "UNKNOWN"]), status: enumeration(a.status, STATUS), lastEffectiveAt: nullableInstant(a.lastEffectiveAt) } };
 }
 export type SupportCustomerStatistics = ReturnType<typeof parseSupportCustomerStatistics>;
 function customer(value: unknown) {
-  const r = object(value, "customerId customerNo nickname avatar level customTags systemTags systemTagsStatus profileRef registeredAt assignedAt category placement handoverRequired owner first lifetime lifetimeStatus invitations devices activity task funds inviter");
+  const r = object(value, "customerId customerNo nickname avatar level customTags systemTags systemTagsStatus profileRef registeredAt assignedAt category placement handoverRequired owner first lifetime lifetimeStatus invitations devices activity task funds inviter performance");
   const customerId = id(r.customerId), profileRef = text(r.profileRef), avatarRef = nullableText(r.avatar);
   if (profileRef !== `/api/admin/content/support-workbench/customers/${customerId}` || avatarRef !== null && avatarRef !== `${profileRef}/avatar`) malformed("profileRef");
   const o = object(r.owner, "agentId groupId agentName advisorAvatar advisorAvatarRef");
@@ -224,8 +226,8 @@ function financeRow(value: unknown) {
   const r = object(value, "customerId customerNo nickname kind currency amount succeededAt orderNo historyStatus");
   return { customerId: id(r.customerId), customerNo: nullableText(r.customerNo), nickname: nullableText(r.nickname), kind: enumeration(r.kind, KINDS), currency: enumeration(r.currency, CURRENCIES), amount: decimal(r.amount), succeededAt: nullableInstant(r.succeededAt), orderNo: nullableText(r.orderNo), historyStatus: enumeration(r.historyStatus, ["READY", "UNKNOWN"]) };
 }
-function detailRow(value: unknown) {
-  const r = object(value, "id customerId customerNo nickname kind currency amount succeededAt agentId groupId agentDisplayName");
+function detailRow(value: unknown, view: SupportAnalyticsDetailView) {
+  const r = object(value, "id customerId customerNo nickname kind currency amount succeededAt agentId groupId agentDisplayName" + (view === "NET_CONTRIBUTIONS" ? "" : " channel"));
   const amount = decimal(r.amount);
   if (amount === null) malformed("detail.amount");
   return { id: text(r.id), customerId: id(r.customerId), customerNo: nullableText(r.customerNo), nickname: nullableText(r.nickname),
@@ -247,10 +249,10 @@ function detailSummary(value: unknown) {
 }
 export type SupportAnalyticsDetailResponse = Metadata & { view: SupportAnalyticsDetailView; records: ReturnType<typeof detailRow>[]; detailSummary: ReturnType<typeof detailSummary> };
 function parseDetailResponse(value: unknown, expected: ReturnType<typeof query>, currency: string): SupportAnalyticsDetailResponse {
-  const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records detailSummary");
+  const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records detailSummary performanceWindow metricVersion generation");
   const view = enumeration(r.view, DETAIL_VIEWS), meta = metadata(r), summary = detailSummary(r.detailSummary);
   if (view !== expected.view || meta.basis !== "PERIOD_EVENT" || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize || meta.recordsStatus !== meta.versionState || expected.expectedVersion !== undefined && meta.queryVersion !== expected.expectedVersion) malformed("detail.queryMismatch");
-  const records = unique(array(r.records, detailRow), row => row.id);
+  const records = unique(array(r.records, value => detailRow(value, view)), row => row.id);
   const remaining = Math.max(0, meta.observedTotal - (meta.pageNum - 1) * meta.pageSize);
   const kind = view === "NET_CONTRIBUTIONS" ? "NET_CONTRIBUTION" : view === "FIRST_DEPOSITS" ? "DEPOSIT" : "DEVICE_PURCHASE";
   if (summary.currency !== currency || summary.visibleCount !== meta.observedTotal || meta.total !== null && meta.total !== summary.visibleCount || records.length !== Math.min(remaining, meta.pageSize) || meta.canContinue !== (meta.versionState === "READY" && remaining > records.length) || records.some(row => row.currency !== currency || row.kind !== kind)) malformed("detail.records");
@@ -279,7 +281,7 @@ function metadata(r: Record<string, unknown>) {
   return { basis: enumeration(r.basis, BASES), businessZone: enumeration(r.businessZone, ["Asia/Shanghai"]), asOf: instant(r.asOf), pageNum, pageSize, total, observedTotal, versionState, queryVersion, canContinue, recordsStatus, selectedCustomerCount: integer(r.selectedCustomerCount), selectedCurrent: current(r.selectedCurrent), scopeSummary: scopeSummary(r.scopeSummary), funds: selectedFunds(r.funds) };
 }
 export function parseSupportAnalyticsResponse(value: unknown, expected: { view: SupportAnalyticsView | SupportAnalyticsDetailView; basis: typeof BASES[number]; pageNum: number; pageSize: number; expectedVersion?: string }): SupportAnalyticsResponse {
-  const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records");
+  const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records performanceWindow metricVersion generation");
   const view = enumeration(r.view, VIEWS), meta = metadata(r);
   if (view !== expected.view || meta.basis !== expected.basis || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize) malformed("queryMismatch");
   if (expected.expectedVersion !== undefined && meta.queryVersion !== expected.expectedVersion) malformed("versionMismatch");
@@ -330,8 +332,8 @@ function query(options: Omit<SupportAnalyticsQuery, "view"> & { view: SupportAna
 /** One business month and its exact UTC window from the server's business calendar (BUG-005). */
 export type SupportAnalyticsMonth = { month: string; from: string; to: string };
 export function parseSupportAnalyticsMonths(value: unknown): SupportAnalyticsMonth[] {
-  const months = array(object(value, "months").months, entry => {
-    const row = object(entry, "month from to");
+  const months = array(object(value, "months metricVersion generation").months, entry => {
+    const row = object(entry, "month from to businessZone availability reasonCodes");
     const month = text(row.month);
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) malformed("month");
     const from = instant(row.from), to = instant(row.to);
