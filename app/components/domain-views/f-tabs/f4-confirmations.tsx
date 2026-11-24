@@ -35,13 +35,13 @@ function weeklyCronProblem(value: string, issue: string) {
 // 领导奖池参与门槛枚举(V0 为新人,无奖池资格 → 从 V1 起)。
 const POOL_UNLOCK_OPTIONS = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8"];
 
-/** A2 普通提案：批准前不变；谁来批、需有权限写在事实区，需要的权限只写一次。 */
+/** A2 普通提案：批准前不变；「谁来批」按后端批准时实际检查的权限写（AuditReplayBusinessPermissionGuard），权限名和权限清单一致。 */
 export const approvalCopy = "批准前保持现在的设置。";
+const POOL_FUND = "奖池资金类调整";
+const F4_WRITE = "F4 池配额大使榜 - 常规写";
+const LEADERBOARD_CONTROL = "排行榜控制(暂停/取消资格)";
 function approvalRows(permission: string) {
-  return [
-    { key: "approver", label: "谁来批", value: "另一位管理员，不能是你" },
-    { key: "permission", label: "需有权限", value: `${permission}和审批权限` },
-  ];
+  return [{ key: "approver", label: "谁来批", value: `另一位有「${permission}」权限的管理员` }];
 }
 function approvalFacts(permission: string) {
   return approvalRows(permission).map((row) => <Fact key={row.key} k={row.label}>{row.value}</Fact>);
@@ -127,14 +127,14 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       impact: "批准后按执行那一刻的当前周重新计算池金额，并作为已解锁的 USDT 奖励真实入账到有资格的用户；本周已经结算过的会跳过，不补发差额。",
       check: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。",
     },
-    completionCopy: approvalCopy,
+    completionCopy: "批准前不结算。",
     coverageLead: "这次结算按算出的金额真实发钱",
     coverageCheck: "提交时按这里的数查一次。批准时系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。每周自动结算不做这项检查。",
     facts: <Facts>
       <Fact k={settled ? "本周已结算（实发）" : "本周池（估算）"} lead tone="role-1" unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
       <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
       <Fact k="怎么分">按各等级票数分，最后一位领取尾差</Fact>
-      {approvalFacts("「奖池资金类调整」")}
+      {approvalFacts(POOL_FUND)}
     </Facts>,
     detail: "池金额 = 本周已付款成交额 × 奖池比例，不含退款和拒付，不超过本月剩余额度；按当前等级和票数分给达到参与等级的人。估算是现在读到的数，批准执行时会重新计算，可能和这里不同；没有合格票时不发钱。",
     run: async (reason) => {
@@ -156,7 +156,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       },
       coverageLead: "调高票数：池的总额不变，这一级多分、其他等级少分",
       coverageCheck: "批准时系统查兑付覆盖率，低于红线不执行。",
-      completionCopy: approvalCopy, facts: <Facts>{approvalFacts("这页的常规修改")}</Facts>,
+      completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
       detail: `${vote.v} 当前 ${vote.votes} 票。票数越多，这个等级每人分到的团队激励池越多；池的总额不会因此变大。`,
     };
       break;
@@ -166,7 +166,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
               edit: { kind: "text", current: data.poolRatio, unit: "%" },
               title: "调整团队激励池比例", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，还没结算的这周估算和之后每次结算按新比例放钱；已经发的不重算。", check: "只接受 0–30 的百分数：5 表示 5%，0.05 表示 0.05%。" },
-              completionCopy: approvalCopy, facts: <Facts>{approvalFacts("「奖池资金类调整」")}</Facts>,
+              completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
               detail: `放进团队激励池的成交额比例，现在是 ${ratioEff}。` };
       break;
     }
@@ -177,7 +177,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
                 validate: value => f4MonthlyCap(value) === null ? POOL_MONEY_INVALID : undefined, hint: POOL_MONEY_HINT },
               title: "调整团队激励池每月上限", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", check: POOL_MONEY_CHECK },
-              completionCopy: approvalCopy, facts: <Facts>{approvalFacts("这页的常规修改")}</Facts>,
+              completionCopy: approvalCopy, facts: <Facts>{approvalFacts(F4_WRITE)}</Facts>,
               detail: `团队激励池每月最多发多少 · 当前 ${capEff}。` };
       break;
     }
@@ -188,7 +188,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
                 hint: `每周一次，比如 0 0 2 * * MON 是${describeSettleCron("0 0 2 * * MON", data.settlementZone) ?? "每周一 02:00"}`,
                 preview: (value) => `这样写是：${describeSettleCron(value, data.settlementZone) ?? "自定义时间，页面读不出，系统按原文执行"}。${settleCadenceNote(value)?.text.replace("按现在的设置", "按这个设置") ?? (value.trim() ? "每周自动结算一次，结算刚结束的那一周。" : "")}` },
               title: "调整自动结算时间", effect: approvalTag(), confirmLabel: "提交审批",
-              facts: <Facts><Fact k="现在是">{settleCronText}</Fact>{cadence && <Fact k="会结算哪些周" tone={cadence.tone === "warn" ? "warn" : undefined}>{cadence.text}</Fact>}<Fact k="按哪个时区">{data.settlementZone ? `${data.settlementZone.label}（${data.settlementZone.offset}）` : "—"}</Fact>{approvalFacts("这页的常规修改")}</Facts>,
+              facts: <Facts><Fact k="现在是">{settleCronText}</Fact>{cadence && <Fact k="会结算哪些周" tone={cadence.tone === "warn" ? "warn" : undefined}>{cadence.text}</Fact>}<Fact k="按哪个时区">{data.settlementZone ? `${data.settlementZone.label}（${data.settlementZone.offset}）` : "—"}</Fact>{approvalFacts(F4_WRITE)}</Facts>,
               statedBrief: { impact: "批准后的下一次命中就按新时间自动结算最近一个已结束的周；已经结算的不变。", check: "只能设成每周一次，写错提交不了；现在不是每周一次的旧设置照常执行，不会自动改。" },
               completionCopy: approvalCopy,
               detail: `团队激励池自动结算时间 · 当前 ${settleCronText}。` };
@@ -199,7 +199,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
               edit: { kind: "select", current: unlockVRank, options: POOL_UNLOCK_OPTIONS },
               title: "调整参与等级", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后的结算只分给达到新等级的人；已经发出的不追溯。", check: "只能选 V1–V8。" },
-              completionCopy: approvalCopy, facts: <Facts>{approvalFacts("这页的常规修改")}</Facts>,
+              completionCopy: approvalCopy, facts: <Facts>{approvalFacts(F4_WRITE)}</Facts>,
               detail: `达到这个等级才能分团队激励池 · 当前 ${unlockVRankEff}。调高参与人数变少，调低参与人数变多。` };
       break;
     }
@@ -228,7 +228,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       ...((quota.pendingThisMonth ?? 0) > 0 ? [{ key: "pending", label: "其中待付款", value: `${count(quota.pendingThisMonth ?? 0)} 台` }] : []),
       ...(quota.status === 0 ? [{ key: "paused", label: "状态", value: "已暂停：调额度不会恢复销售" }] : []),
       { key: "code", label: "额度编号", value: <span data-mono>{quota.quotaCode || quota.id}</span> },
-      ...approvalRows("这页的常规修改"),
+      ...approvalRows(F4_WRITE),
     ]} />,
     detail: `${quota.quotaCode || quota.id} · 已用 ${quota.current} / ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"}。如果别人刚改过，会提示你刷新后再改。`,
   };
@@ -243,12 +243,12 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       impact: "批准后这条记录改为已回收，这几台的名额回到它所属月份的剩余里；不退款、不删订单，用户已买的设备不受影响。",
       check: "只有还在占用的记录能回收；已回收或不存在的会被拒绝。",
     },
-    completionCopy: approvalCopy,
+    completionCopy: "批准前不会回收。",
     facts: <KeyValues rows={[
       { key: "user", label: "谁的", value: `用户 ${usage.userId}` },
       { key: "item", label: "哪一类", value: `${productName(usage)} · ${count(usage.quantity)} 台` },
       { key: "order", label: "订单号", value: usage.orderNo ? <span data-mono>{usage.orderNo}</span> : "无订单号" },
-      ...approvalRows("这页的常规修改"),
+      ...approvalRows(F4_WRITE),
     ]} />,
     detail: "跨月才批准时，名额仍回到原来那个月，批准当月的剩余不会增加。",
   };
@@ -265,7 +265,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       impact: "批准后四个榜停在暂停那一刻的名次；暂停期间到期的日、周、月榜自动派奖不发，恢复后也不会补发；总榜派奖不能提交。团队激励池照常结算。",
       check: "已经暂停时会被拒绝；四个榜的名次没存下来时整次不生效。",
     },
-    completionCopy: approvalCopy, facts: <Facts>{approvalFacts("榜单处置权限")}</Facts>,
+    completionCopy: approvalCopy, facts: <Facts>{approvalFacts(LEADERBOARD_CONTROL)}</Facts>,
     detail: board.paused ? "恢复后榜单重新更新，之后的周期按当时的规则发奖。" : "暂停后榜单停在当前名次，榜单奖励暂停发放，团队激励池不受影响。",
   };
       break;
@@ -279,13 +279,13 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       impact: "批准后按执行那一刻的总榜，把总榜奖池按名次分给团队订单算力点最多的前 100 名（不足 100 名按实际人数），作为已解锁的 USDT 奖励真实入账。",
       check: "总榜派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。批准时先查兑付覆盖率，不够不发。",
     },
-    completionCopy: approvalCopy,
+    completionCopy: "批准前不派奖。",
     coverageLead: "这次派奖按算出的金额真实发钱",
     coverageCheck: "提交时按这里的数查一次。批准时系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
     facts: <div className="rd-stack">
       <F4PayoutPreviewFacts pool={prizeShown(ppAllTime)} />
       <F4PayoutRules top1MaxPct={top1MaxPct} top5MaxPct={top5MaxPct} />
-      <Facts>{approvalFacts("「奖池资金类调整」")}</Facts>
+      <Facts>{approvalFacts(POOL_FUND)}</Facts>
     </div>,
     detail: `总榜不会自动清零。名次按算力点排，发的是 USDT：当前奖池 ${prizeShown(ppAllTime)} USDT，需要审批，不会重复发放。`,
     run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),
@@ -308,7 +308,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       <Fact k="谁">{`用户 ${member.userId}`}</Fact>
       <Fact k="本周名次">{"computePoints" in member ? `第 ${member.rank} 名 · ${count(member.computePoints as number)} 点` : `第 ${member.rank} 名 · ${prizeText(member.gmvLabel)} USDT`}</Fact>
       <F4DisqualifyEvidenceFact memberUserId={member.memberUserId} />
-      {approvalFacts("榜单处置权限")}
+      {approvalFacts(LEADERBOARD_CONTROL)}
     </Facts>,
     detail: "只管批准那一周的周榜；日榜、月榜、总榜照常算这个人。",
   };
@@ -319,7 +319,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
               name: "调整各榜奖池", amplify: true,
               title: "调整各榜奖池", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，日、周、月榜从下一次还没结算的周期起用新金额，总榜在人工派奖时读；已经派过的不改。", check: "四个都要填 0 或正数，一起提交，一张审批单。" },
-              completionCopy: approvalCopy, facts: <Facts>{approvalFacts("「奖池资金类调整」")}</Facts>,
+              completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
               businessForm: {
                 kind: "multi-field",
                 title: "各榜奖池（USDT）",
@@ -354,7 +354,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
                 validate: value => f4MonthlyCap(value) === null ? POOL_MONEY_INVALID : undefined, hint: POOL_MONEY_HINT },
               title: "调整周榜奖池覆盖额", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，还没结算的周榜按新金额派奖；填 0 表示改回用四榜奖池里的周榜金额，不是关掉。", check: POOL_MONEY_CHECK },
-              completionCopy: approvalCopy, facts: <Facts>{approvalFacts("「奖池资金类调整」")}</Facts>,
+              completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
               detail: `本周榜单奖池总额 · 当前 ${lbPool}。` };
       break;
     }
@@ -363,7 +363,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
               edit: { kind: "number", current: lbMinPoints ?? "1", unit: "点", min: 0, max: Number.MAX_SAFE_INTEGER, step: 1, maxDecimals: 0 },
               title: "调整上榜门槛", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，本期团队订单算力点低于新门槛的人不参与四个榜的排名和派奖；已发的不变。", check: "只能填 0 或正整数，0 表示不设门槛。" },
-              completionCopy: approvalCopy, facts: <Facts>{approvalFacts("这页的常规修改")}</Facts>,
+              completionCopy: approvalCopy, facts: <Facts>{approvalFacts(F4_WRITE)}</Facts>,
               detail: `上榜门槛 · 当前 ${minPointsText(lbMinPoints)} · 低于这个点数不参与排名。` };
       break;
     }
@@ -373,7 +373,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
               edit: { kind: "number", current: data.configValues["F.leaderboard.minUsd"] ?? "0", unit: "USDT" },
               title: "调整上榜最低奖励（已停用）", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "这一项已经停用，排名不再看它；要改门槛请用「上榜门槛」（算力点）。", check: "按原请求重试会被拒绝，不会生效。" },
-              completionCopy: approvalCopy, facts: <Facts>{approvalFacts("这页的常规修改")}</Facts>,
+              completionCopy: approvalCopy, facts: <Facts>{approvalFacts(F4_WRITE)}</Facts>,
               detail: "旧的 USDT 上榜门槛已停用，只能查询原申请的结果。" };
       break;
     }
@@ -382,7 +382,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
               edit: { kind: "number", current: top1MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top1MaxPct", data.configValues["F.pool.top1MaxPct"], value) },
               title: "调整第 1 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后排行榜派奖时第 1 名最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "只能填 0–100。" },
-              completionCopy: approvalCopy, facts: <Facts>{approvalFacts("「奖池资金类调整」")}</Facts>,
+              completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
               detail: `第 1 名最多能分到排行榜奖池的百分比 · 当前 ${top1MaxPct}%。` };
       break;
     }
@@ -391,7 +391,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
               edit: { kind: "number", current: top5MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top5MaxPct", data.configValues["F.pool.top5MaxPct"], value) },
               title: "调整前 5 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后排行榜派奖时前 5 名合计最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "只能填 0–100。" },
-              completionCopy: approvalCopy, facts: <Facts>{approvalFacts("「奖池资金类调整」")}</Facts>,
+              completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
               detail: `前 5 名合计最多能分到排行榜奖池的百分比 · 当前 ${top5MaxPct}%。` };
       break;
     }
@@ -414,8 +414,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
         <Fact k="类别">{ambassadorBucketLabel(packet!.bucket)}</Fact>
         <Fact k="材料">第 {packet!.materialRevision} 版 · 业务核验和财务核验都已通过</Fact>
         {/* 谁来批一行写完，和别的页同一个叫法；不再铺一段后端校验条件（BUG-682 第 4 条）。 */}
-        <Fact k="谁来批">另一位管理员，不能是你，也不能核验过这一版材料</Fact>
-        <Fact k="需有权限">大使最终批准权限和审批权限</Fact>
+        <Fact k="谁来批">另一位有「区域大使审批」权限的管理员，不能核验过这一版材料</Fact>
       </Facts>,
       detail: `${ambassadorBucketLabel(packet!.bucket)} · 申请金额 ${money(packet!.budgetUsdt)} · 认可金额 ${money(packet!.financeReview.recognizedBudgetUsdt)} · 材料 V${packet!.materialRevision}。业务核验与财务核验均已通过。本次仅开通所选类别的申请额度。`,
     };
@@ -431,8 +430,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     },
     completionCopy: "批准前这份申请不变。",
     facts: <Facts>
-      <Fact k="谁来批">另一位管理员，不能是你</Fact>
-      <Fact k="需有权限">大使最终批准权限和审批权限</Fact>
+      <Fact k="谁来批">另一位有「区域大使审批」权限的管理员</Fact>
     </Facts>,
     detail: "驳回这一份申请，提交审批后由另一位有权限的管理员执行。",
   };

@@ -82,9 +82,11 @@ function useF2Model(ctx: FViewCtx) {
   return { canRoyaltyRate, canPolicyAmplify, l1NexReadonly, l1NexStatus, value, paused, gate, rank, gateRaw, rankRaw, cap };
 }
 
-/** 走审批的修改：批准前不变；谁来批、需有权限写在事实区，需要的权限只写一次。 */
+/** 走审批的修改：批准前不变；「谁来批」按后端批准时实际检查的权限写（AuditReplayBusinessPermissionGuard），权限名和权限清单一致。 */
 const approvalCopy = "批准前按原设置执行。";
-const approvalFacts = (perm: string) => <><Fact k="谁来批">另一位管理员，不能是你</Fact><Fact k="需有权限">「{perm}」权限和审批批准权限</Fact></>;
+const RATE_PERMISSION = "L1-L7 团队购买奖励比例放宽";
+const POLICY_PERMISSION = "Partner 档位与费率杠杆参数";
+const approvalFacts = (perm: string) => <Fact k="谁来批">另一位有「{perm}」权限的管理员</Fact>;
 const effectTag = <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才生效；只影响之后新算的订单，已经算好的不重算。">批准后生效</StatusTag>;
 const COVERAGE_CHECK = "批准时检查兑付覆盖率，低于红线不会执行。";
 
@@ -131,7 +133,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
           <Fact k="批准后实际执行">{next === undefined ? (current ? `现在是 ${rateMeaning(current)}` : "未配置") : rateMeaning(next) ?? "—"}</Fact>
           <Fact k="示例订单里这一层">{rate ? <Change from={`${num(sampleUsdt(rate.usdt))} USDT`} to={next === undefined ? `${num(sampleUsdt(rate.usdt))} USDT` : `${num(sampleUsdt(Number(next)))} USDT`} /> : "这一层还没有规则"}</Fact>
           {total.before !== null && <Fact k={anyPaused ? "合计含暂停层" : "七层合计占订单"}><Change from={`${num(total.before)}%`} to={`${num(total.after)}%`} /></Fact>}
-          {approvalFacts("团队奖励比例")}
+          {approvalFacts(RATE_PERMISSION)}
         </Facts>;
       },
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text={missingRuleCopy} /></Notice>,
@@ -155,7 +157,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       facts: (next) => <Facts>
         {next !== undefined && current && Number(next) < Number(current) && <Fact k="这次">调低，平台每笔订单少发 UVT</Fact>}
         <Fact k="这一层另发 UVT">{rate ? <Change from={`${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} to={`${num(rate.usdt === null || !(next ?? current).trim() ? null : sampleUsdt(rate.usdt)! * Number(next ?? current))} UVT`} /> : "这一层还没有规则"}</Fact>
-        {approvalFacts("团队奖励比例")}
+        {approvalFacts(RATE_PERMISSION)}
       </Facts>,
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text={missingRuleCopy} /></Notice>,
       statedBrief: { impact: "批准后，之后新算的订单这一层按新系数另发 UVT；已经算好的不重算。", check: COVERAGE_CHECK },
@@ -179,7 +181,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
     },
     statedBrief: { impact: "七层一起提交，批准后一起生效。暂停的层，之后新算的订单这一层记 0、不补发；已经算好的不变。不影响好友设备收益奖励，也不是整体结算暂停。", check: "整组一次写入，有一项失败整组都不改。" },
     detail: "L1–L7 一起提交审批，批准后只影响之后的购买奖励，不影响好友设备收益奖励。",
-    completionCopy: approvalCopy, coverageCheck: COVERAGE_CHECK, facts: <Facts>{approvalFacts("团队奖励规则")}</Facts>,
+    completionCopy: approvalCopy, coverageCheck: COVERAGE_CHECK, facts: <Facts>{approvalFacts(POLICY_PERMISSION)}</Facts>,
     submit: async (reason, _next, values) => {
       if (!values || LAYERS.some((level) => values[level] !== "on" && values[level] !== "off")) throw new Error("请选择 L1–L7 全部的暂停状态");
       await ctx.updateFConfigBatch("F2", LAYERS.map((level) => ({ key: `F.unilevel.${level}.paused`, value: values[level] })), reason);
@@ -273,12 +275,12 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
 /* ───────────── 单项参数行（谁能拿到、总量和冷却共用） ───────────── */
 
 const PARAM_HELP: Record<string, { what: string; effect: string; hint?: string; note?: string; perm: string; unit?: string }> = {
-  "F.unilevel.depthGate": { what: "从哪一层起要看上级的等级", effect: "比如选 L3：L3–L7 的上级要到解锁等级才拿得到；可以选 L1", perm: "团队奖励规则" },
-  "F.unilevel.depthGateRank": { what: "解锁起点及以后各层，上级至少要到的 V 等级", effect: "等级不够的上级这一层记 0", perm: "团队奖励规则" },
-  "F.influence.clampMin": { what: "L2–L7 影响分的最小值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。保存时不检查下限是否不大于上限", perm: "团队奖励规则" },
-  "F.influence.clampMax": { what: "L2–L7 影响分的最大值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。保存时不检查下限是否不大于上限", perm: "团队奖励规则" },
-  "F.promo.weekMultiplier": { what: "活动周每层奖励再乘的倍数，含 L1", effect: "调高平台多付钱", hint: "1–3 倍", perm: "团队奖励比例", unit: "倍" },
-  "F.unilevel.mergeExitMaxPct": { what: "一笔订单七层 USDT 奖励最多占订单的比例", effect: "超出时从 L1 往下分完为止；旧 UVT 系数另发的 UVT 不算在内", hint: "0–100%", perm: "团队奖励规则", unit: "%" },
+  "F.unilevel.depthGate": { what: "从哪一层起要看上级的等级", effect: "比如选 L3：L3–L7 的上级要到解锁等级才拿得到；可以选 L1", perm: POLICY_PERMISSION },
+  "F.unilevel.depthGateRank": { what: "解锁起点及以后各层，上级至少要到的 V 等级", effect: "等级不够的上级这一层记 0", perm: POLICY_PERMISSION },
+  "F.influence.clampMin": { what: "L2–L7 影响分的最小值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。保存时不检查下限是否不大于上限", perm: POLICY_PERMISSION },
+  "F.influence.clampMax": { what: "L2–L7 影响分的最大值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。保存时不检查下限是否不大于上限", perm: POLICY_PERMISSION },
+  "F.promo.weekMultiplier": { what: "活动周每层奖励再乘的倍数，含 L1", effect: "调高平台多付钱", hint: "1–3 倍", perm: RATE_PERMISSION, unit: "倍" },
+  "F.unilevel.mergeExitMaxPct": { what: "一笔订单七层 USDT 奖励最多占订单的比例", effect: "超出时从 L1 往下分完为止；旧 UVT 系数另发的 UVT 不算在内", hint: "0–100%", perm: POLICY_PERMISSION, unit: "%" },
 };
 
 function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: ReturnType<typeof useF2Model>; paramKey: string; openConfirm: Open; shown?: ReactNode }) {
@@ -372,7 +374,7 @@ export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
     facts: <Facts>
       {coolingRaw && coolingDays === "" ? <Fact k="现在存的值" tone="danger">{coolingRaw}（不是 0–90 的整数）</Fact>
         : !coolingRaw && <><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK["F.cooldown"].replace(/^没配[^，]*时，/, "")}</Fact></>}
-      {approvalFacts("团队奖励规则")}
+      {approvalFacts(POLICY_PERMISSION)}
     </Facts>,
     statedBrief: { impact: "批准后，之后新算的购买奖励和其他团队奖励按新天数冷却；已经在冷却中的到期日不变。缩短会让钱更早能提。不影响好友设备收益奖励的冷却。", check: COVERAGE_CHECK },
     detail: `购买与其他奖励冷却期 · ${coolingState}。缩短前先看兑付覆盖率；不影响好友设备收益奖励的冷却期。`,
@@ -438,7 +440,7 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
     },
     statedBrief: { impact: "批准后保存新的四档门槛；目前只保存门槛，不会自动开通权益，也不影响任何奖励。", check: "系统检查四个都是数字且逐档不降低。" },
     detail: `合作伙伴权益门槛 · ${partnerState} · 不影响任何奖励。`,
-    completionCopy: approvalCopy, coverageCheck: COVERAGE_CHECK, facts: <Facts>{approvalFacts("团队奖励规则")}</Facts>,
+    completionCopy: approvalCopy, coverageCheck: COVERAGE_CHECK, facts: <Facts>{approvalFacts(POLICY_PERMISSION)}</Facts>,
     submit: async (reason, _next, bv) => {
       if (!bv || [bv.standard, bv.verified, bv.premium, bv.diamond].some((value) => !value?.trim())) throw new Error("请填写全部 4 档");
       const standard = Number(bv.standard);
