@@ -50,6 +50,8 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   /** 提交没收到结果：选择和理由都锁住，只给「查询原操作」（OP-91–96）。 */
   const [original, setOriginal] = useState(() => ports.pendingSubmit());
   const [originalReason, setOriginalReason] = useState(() => original?.reason ?? ports.recoveredSubmit()?.reason);
+  /** 提交时后端说这一版数据换了（409 EXPORT_PREVIEW_CHANGED）：这次没提交，条件没变时也要在框里说清楚。 */
+  const [versionChanged, setVersionChanged] = useState(false);
   const [confirmationRevision, setConfirmationRevision] = useState(0);
   const unknown = !!original;
   const expired = useExportClock([original]) >= (original?.expiresAt ?? Infinity);
@@ -245,7 +247,8 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     : !data ? <p className="m1-export-loading" role="status">正在读取导出内容…</p>
     : <div className="m1-export">
       {recovery}
-      {differences?.length ? <Notice tone="warn" title="原来的条件和现在不同，请重新选择"><dl className="m1-export-diff">{differences.map(row => <div key={row.k}><dt>{row.k}</dt><dd>{row.v}</dd></div>)}</dl></Notice> : null}
+      {differences?.length ? <Notice tone="warn" title="原来的条件和现在不同，请重新选择"><dl className="m1-export-diff">{differences.map(row => <div key={row.k}><dt>{row.k}</dt><dd>{row.v}</dd></div>)}</dl></Notice>
+        : versionChanged ? <Notice tone="warn" title="这次没有提交">业绩数据刚更新了一版，已按原来的月份、范围和内容重新核对，理由也保留着。核对无误后再点确认。</Notice> : null}
       <div className="m1-export-scope">
         <Field label="月份" help={data.since}>{control => (data.months.length > 1 || !month && !!data.restoration)
           ? <Select {...control} aria-label="月份" value={month} options={data.months} onChange={changeMonth} disabled={unknown} placeholder="选择这次的月份" />
@@ -316,6 +319,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
         if (exportPreviewChanged(error)) {
           const draft = ports.recoveredSubmit();
           if (!draft) throw error;
+          setVersionChanged(true);
           restoreDraft(draft.reason);
           return;
         }

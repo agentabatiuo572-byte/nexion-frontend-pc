@@ -206,19 +206,21 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
   const queryButton = (key: string, onClick: () => void) => <Button size="sm" loading={querying === key} loadingText="正在查询…" disabledReason={querying && querying !== key ? "等上一条查完" : undefined} onClick={onClick}>查询原结果</Button>;
   const unknownTag = <StatusTag tone="warn">结果未知</StatusTag>;
   const acceptedTag = <StatusTag tone="progress">已受理</StatusTag>;
-  const expiredResult = { tag: <StatusTag tone="warn">已过期</StatusTag>, line: RETRY_EXPIRED_TEXT };
+  // 过期后发出时间照样写着，原操作和查询入口都留着（OP-153）。
+  const expiredResult = (at: string) => ({ tag: <StatusTag tone="warn">已过期</StatusTag>, line: `${at} 发出；${RETRY_EXPIRED_TEXT}` });
   const recovery: RecoveryItem[] = [
     ...(pendingSubmit ? [{
       key: pendingSubmit.operationId, createdAt: pendingSubmit.createdAt, object: `提交导出 · ${pendingSubmit.query.month} · ${pendingSubmit.query.types.map(type => EXPORT_LABEL[type]).join("、")}`,
       tag: pendingSubmit.acceptedRequestId ? acceptedTag : unknownTag,
       line: pendingSubmit.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT : `${businessStamp(pendingSubmit.createdAt)} 发出后没收到结果；先查询原结果，不要再点提交。`,
-      result: !pendingSubmit.acceptedRequestId && now >= pendingSubmit.expiresAt ? expiredResult : answers[pendingSubmit.operationId],
+      result: !pendingSubmit.acceptedRequestId && now >= pendingSubmit.expiresAt ? expiredResult(businessStamp(pendingSubmit.createdAt)) : answers[pendingSubmit.operationId],
       actions: queryButton(pendingSubmit.operationId, () => querySubmit(pendingSubmit)), detail: <p>理由：{pendingSubmit.reason}</p>, tech: <TechInfo commandKey={pendingSubmit.operationId} />,
     }] : []),
     ...pending.map(p => ({
       key: p.operationId, createdAt: p.createdAt, object: p.objectHidden ? "导出操作" : `${VERB[p.decision]}导出申请 ${p.taskId}`,
       tag: unknownTag, line: p.objectHidden ? `${p.at} 发出；原操作继续保留，可以再查询。` : `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`,
-      result: now >= p.expiresAt ? expiredResult : p.objectHidden ? undefined : answers[p.operationId],
+      // 查询反馈不含申请内容，遮住时也照写（看不到、仍未知、这次没连上要分得清）。
+      result: now >= p.expiresAt ? expiredResult(p.at) : answers[p.operationId],
       actions: queryButton(p.operationId, () => queryOriginal(p)), detail: p.reason && <p>理由：{p.reason}</p>, tech: <TechInfo commandKey={p.operationId} />,
     })),
   ];

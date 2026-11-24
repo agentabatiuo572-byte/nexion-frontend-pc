@@ -598,6 +598,8 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
           return { kind: "cleared", text: "这次操作未执行，原理由已保留，可以重新确认。" };
         }
         enumeration(found.status, ["UNKNOWN", "PROCESSING"]);
+        // 后端回 200 之前已核过审批权、对象和当前组（SupportPerformanceExportService.java:293–327），这位管理员看得到这条申请。
+        setTaskVisible(row.taskId, true);
         if (isRetryExpired(row)) return { kind: "expired", text: RETRY_EXPIRED_TEXT };
         return { kind: "pending", text: "还没查到这次操作的结果，先保持锁定，稍后再查。" };
       } catch (error) {
