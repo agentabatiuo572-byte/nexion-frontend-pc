@@ -8,7 +8,8 @@
  *
  * 失败和空不共用文字（T09）。重试只重读这一块。失败带 data-module-health-state="error"。compact 时一行写完，用在折叠摘要里，重试是文字链，和 InlineRetry 同一个样子。
  * 重读期间「重试」写「重试中…」、aria-busy，用 aria-disabled 不用原生 disabled，焦点不掉到页面上（CP-05、CP-28）。
- * 按过「重试」之后：这一块换成加载中时焦点交给这一块；仍失败焦点回到「重试」；读到了（这一块卸下）焦点交给 afterRetryFocus 指的标题，没传就不动。
+ * 按过「重试」之后：这一块换成加载中时焦点交给这一块；仍失败焦点回到「重试」；读到了（这一块卸下）焦点交给 afterRetryFocus 指的标题。
+ * 没传标题、或这一块重读时被换成别的占位时，焦点交给还挂着的最近一层外框（tabIndex=-1），不掉到页面上。
  *
  * <Notice tone="progress" title="待生效 v3" action={<Button size="sm">刷新</Button>}>明天 08:00 起生效。</Notice>
  * tone 是状态色，图标由 tone 决定。待处理、结果未知这类不能收起的内容放这里（DP-03）。
@@ -26,7 +27,7 @@ const focusLost = () => { const active = document.activeElement; return !active 
  * 按过「重试」、还没有结果的那一次。有的页面重读时把这一块换成加载占位（卸下），仍失败时再挂一块新的：
  * 新挂上的失败块认出是同一块（标题相同），焦点掉在页面上时把它交回「重试」。30 秒内有效，用一次就清掉。
  */
-let pendingRetry: { key: string; at: number } | null = null;
+let pendingRetry: { key: string; at: number; landing?: HTMLElement } | null = null;
 const RETRY_FOCUS_MS = 30_000;
 
 export function BlockState({ state, title, detail, onRetry, retrying, retryLabel = "重试", compact, afterRetryFocus }: {
@@ -38,7 +39,7 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
   retryLabel?: string;
   /** 一行写完：折叠摘要里的读取失败用这个，不占一整块。 */
   compact?: boolean;
-  /** 按「重试」读到之后焦点去哪：这一块的标题。不传时焦点留在原处。 */
+  /** 按「重试」读到之后焦点去哪：这一块的标题。不传时交给还挂着的最近一层外框。 */
   afterRetryFocus?: RefObject<HTMLElement | null>;
 }) {
   const failed = state === "error";
@@ -49,8 +50,16 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
   const armed = useRef(false);
   const focusAfter = useRef(afterRetryFocus);
   focusAfter.current = afterRetryFocus;
+  /** 按「重试」那一刻这一块的外框，由近到远；这一块卸下后从里面找还挂着的一层接焦点。 */
+  const frames = useRef<HTMLElement[]>([]);
   const key = typeof title === "string" ? title : "";
-  const retry = onRetry && (() => { armed.current = true; pendingRetry = { key, at: Date.now() }; onRetry(); });
+  const retry = onRetry && (() => {
+    armed.current = true;
+    pendingRetry = { key, at: Date.now() };
+    frames.current = [];
+    for (let frame = box.current?.parentElement; frame && frame !== document.body; frame = frame.parentElement) frames.current.push(frame);
+    onRetry();
+  });
   useEffect(() => {
     if (!armed.current) return;
     const inside = box.current?.contains(document.activeElement) ?? false;
@@ -68,19 +77,23 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
     const pending = pendingRetry;
     if (!failed || !pending || Date.now() - pending.at > RETRY_FOCUS_MS || pending.key !== key) return;
     pendingRetry = null;
-    if (focusLost()) retryButton.current?.focus({ preventScroll: true });
+    if (focusLost() || document.activeElement === pending.landing) retryButton.current?.focus({ preventScroll: true });
   // 只在挂上时看一次。
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => () => {
     if (!armed.current) return;
-    // 读到了，这一块卸下：焦点交给调用方给的标题；没给就不动。
+    // 这一块卸下（读到了，或重读时换成了别的占位）：焦点交给调用方给的标题；没给就交给还挂着的最近一层外框。
     const target = focusAfter.current;
+    const outer = frames.current;
     window.requestAnimationFrame(() => {
+      if (!focusLost()) return;
       const heading = target?.current;
-      if (!heading?.isConnected || !focusLost()) return;
-      if (!heading.hasAttribute("tabindex")) heading.tabIndex = -1;
-      heading.focus({ preventScroll: true });
+      const landing = heading?.isConnected ? heading : outer.find((frame) => frame.isConnected);
+      if (!landing) return;
+      if (!landing.hasAttribute("tabindex")) { landing.tabIndex = -1; landing.setAttribute("data-retry-landing", ""); }
+      if (pendingRetry) pendingRetry.landing = landing;
+      landing.focus({ preventScroll: true });
     });
   }, []);
   return (

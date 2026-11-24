@@ -312,8 +312,9 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
 
   let body;
   if (!canRead) body = <BlockState state="denied" title="没有查看托管机房的权限" detail="要有商品管理的查看权限。" />;
-  else if (loading && !state) body = <Panel title="机房和分配比例" icon={Server} tone="role-2" flush><Table label="托管机房"><tbody><TableLoading columns={4} /></tbody></Table></Panel>;
+  // 读取失败后重试：失败块留在原处写「重试中…」，焦点不掉；读到了再换成表格（BlockState 交接焦点）。
   else if (error && !state) body = <BlockState state="error" title="托管机房清单读取失败" detail={error} onRetry={() => void reload()} retrying={loading} />;
+  else if (loading && !state) body = <Panel title="机房和分配比例" icon={Server} tone="role-2" flush><Table label="托管机房"><tbody><TableLoading columns={4} /></tbody></Table></Panel>;
   else if (state) {
     const defaults = state.revision === 0;
     body = <>
