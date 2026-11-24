@@ -11,7 +11,7 @@ import { Fragment, isValidElement, useCallback, useEffect, useId, useMemo, useRe
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
-import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
+import { ConfirmReadConflict, PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import { useUI, type ToastKind } from "@/lib/store/ui";
 import { useDialogFeedback } from "@/app/components/kit/dialog-feedback";
 import { ToastHost } from "@/app/components/kit/toast-host";
@@ -4131,7 +4131,16 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     setReadingConflict(true);
     setSubmitError(null);
     try { await pendingRecovery.query(); }
-    catch (error) { if (!closeOnPermissionDenied(error)) setSubmitError(displayAdminReadError(error)); }
+    catch (error) {
+      if (error instanceof ConfirmReadConflict) {
+        setReason(""); setSubmitUnknown(false); setReadConflict(error);
+        if (!error.review) setSubmitError(displayAdminError(error));
+      } else if (error instanceof PendingConfirmRejected) {
+        setReason(""); setSubmitUnknown(false);
+        if (review?.isConflict(error)) enterEditConflict();
+        else setSubmitError(displayAdminError(error));
+      } else if (!closeOnPermissionDenied(error)) setSubmitError(displayAdminReadError(error));
+    }
     finally { setPendingReason(getPendingReason?.()); setReadingConflict(false); }
   };
   const handleClose = () => {

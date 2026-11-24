@@ -36,3 +36,10 @@ export class ConfirmReadConflict extends Error {
     super(message);
   }
 }
+
+/** A receipt established that the retained write did not take effect. */
+export class PendingConfirmRejected extends Error {
+  constructor(message: string, public readonly reasonCode?: string, public readonly status = 409) {
+    super(message);
+  }
+}

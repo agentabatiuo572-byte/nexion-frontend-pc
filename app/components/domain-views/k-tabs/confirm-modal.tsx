@@ -6,7 +6,7 @@
  * 强制留痕(业务服务必达审计);reason=true 时原因必填,input 为可选输入框。
  */
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
+import { ConfirmReadConflict, PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
 import { useEffect, useId, useState } from "react";
@@ -106,7 +106,12 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
     setError(null);
     try { await pendingRecovery.query(); }
     catch (cause) {
-      if (isPermissionDenied(cause)) { announcePermissionDenied(); onClose(); }
+      if (cause instanceof ConfirmReadConflict) {
+        setReason(""); setReadConflict(cause);
+        if (!cause.review) setError(displayAdminError(cause));
+      } else if (cause instanceof PendingConfirmRejected) {
+        setReason(""); setError(displayAdminError(cause));
+      } else if (isPermissionDenied(cause)) { announcePermissionDenied(); onClose(); }
       else setError(displayAdminReadError(cause));
     }
     finally { setPendingReason(req.getPendingReason?.()); setReadingConflict(false); }

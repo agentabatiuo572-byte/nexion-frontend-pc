@@ -1,4 +1,5 @@
 import { HApprovalRequired } from "./h-approval-required";
+import { PendingConfirmRejected } from "./h-conflict-review";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 import { guardedFetch, formatAdminApiError } from "./error-messages";
 import { saveH4UploadFile, readH4UploadFile, deleteH4UploadFile } from "./h4-upload-file";
@@ -18,7 +19,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { promotionRead } from "./promotion-client";
 import type { Promotion, RewardAdmin } from "./promotion-types";
 import type { FundCommandOrigin } from "./fund-command-investigation";
-import { fetchDirectCommandReceipt, type DirectCommandReceiptState } from "./direct-command-receipt";
+import { fetchDirectCommandReceiptDetails, type DirectCommandReceipt, type DirectCommandReceiptState } from "./direct-command-receipt";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 type Resource = "overview" | "rules" | "raffles";
@@ -269,7 +270,9 @@ function h4DirectReceiptScope(request: Direct) {
   }
 }
 
-export async function queryH4Command(r: H4Command): Promise<A2OperationRow | null | undefined> {
+export const isH4MediaCommand = (r: H4Command) => !("proposal" in r.request) && r.request.path.startsWith("/media/uploads?");
+
+export async function queryH4Command(r: H4Command): Promise<{ receipt: DirectCommandReceipt } | { ticket: A2OperationRow | null } | undefined> {
   requireActor(r.owner, false, r.scope);
   h4TicketObservations();
   if (!("proposal" in r.request)) {
@@ -278,7 +281,8 @@ export async function queryH4Command(r: H4Command): Promise<A2OperationRow | nul
     directReceipts.delete(r.commandKey);
     notify();
     try {
-      const state = await fetchDirectCommandReceipt(directScope, r.commandKey, r.owner);
+      const receipt = await fetchDirectCommandReceiptDetails(directScope, r.commandKey, r.owner);
+      const { state } = receipt;
       const original = pendingH4Commands().find(row => row.commandKey === r.commandKey);
       if (!original) return undefined;
       directReceipts.set(r.commandKey, state);
@@ -286,12 +290,12 @@ export async function queryH4Command(r: H4Command): Promise<A2OperationRow | nul
         markH4Read(resourceOf(original.scope), false);
         retain({ ...original, acknowledged: true });
       } else if (state === "REJECTED" || state === "NOT_EXECUTED") {
-        markH4Read(resourceOf(original.scope), false);
+        if (state === "REJECTED" && isHGrowthReadConflict(h4ReceiptRejection(receipt))) markH4Read(resourceOf(original.scope), false);
         forget(original);
       }
+      return { receipt };
     }
     finally { notify(); }
-    return undefined;
   }
   const ticket = await fetchA2ProposalByKey(r.commandKey, true);
   requireActor(r.owner, false, r.scope);
@@ -304,28 +308,38 @@ export async function queryH4Command(r: H4Command): Promise<A2OperationRow | nul
     else forget(r);
     notify();
   }
-  return ticket;
+  return { ticket };
+}
+
+export function h4ReceiptRejection(receipt: DirectCommandReceipt) {
+  if (receipt.state === "NOT_EXECUTED") return new PendingConfirmRejected("原操作未执行，你填的内容没有提交。");
+  if (receipt.state !== "REJECTED") return;
+  const code = receipt.businessMessage;
+  return new PendingConfirmRejected(code ? formatAdminApiError(code, "") : "原操作已被拒绝，你填的内容没有提交。", code);
 }
 
 export function h4RetryBlockedReason(r: H4Command): string | undefined {
   if (isRetryExpired(r)) return RETRY_EXPIRED_TEXT;
   if (r.acknowledged) return "请查询原结果";
   try { requireActor(r.owner, true, r.scope); } catch { return "没有这项修改的权限"; }
-  if ("proposal" in r.request) return;
+  if ("proposal" in r.request || isH4MediaCommand(r)) return;
   const state = directReceipts.get(r.commandKey);
   if (state === "NOT_FOUND") return;
   return state === "PROCESSING" ? "原操作还在处理，请稍后再查" : "先查询原结果，明确查不到后才能重试";
 }
 
-export function h4PendingConfirmRecovery(record: H4Command | undefined, onSettled: () => Promise<void>) {
+export function h4PendingConfirmRecovery(record: H4Command | undefined, onSucceeded: () => Promise<void>, onRejected?: (error: PendingConfirmRejected) => Error) {
   if (!record) return;
   return {
     expiresAt: record.expiresAt,
     blockedReason: h4RetryBlockedReason(record),
-    query: async () => {
-      await queryH4Command(record);
-      const current = pendingH4Commands().find(row => row.commandKey === record.commandKey);
-      if (!current || current.acknowledged) await onSettled();
+    query: isH4MediaCommand(record) ? undefined : async () => {
+      const result = await queryH4Command(record);
+      if (!result) return;
+      if ("ticket" in result) { if (result.ticket) await onSucceeded(); return; }
+      const rejection = h4ReceiptRejection(result.receipt);
+      if (rejection) throw onRejected?.(rejection) ?? rejection;
+      if (result.receipt.state === "SUCCEEDED") await onSucceeded();
     },
   };
 }
@@ -404,16 +418,19 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
   }
   markH4Read(resourceOf(r.scope), false);
   if ("proposal" in r.request) {
-    const ticket = await queryH4Command({ ...r, acknowledged: true });
-    if (!ticket) throw new OutcomeUnknownError("H4_APPROVAL_STATUS_UNKNOWN");
-    return { h4Approval: true, ticket };
+    const result = await queryH4Command({ ...r, acknowledged: true });
+    if (!result || !("ticket" in result) || !result.ticket) throw new OutcomeUnknownError("H4_APPROVAL_STATUS_UNKNOWN");
+    return { h4Approval: true, ticket: result.ticket };
   }
   return result;
 }
 export async function retryH4Command(original: H4Command) {
   const r = pendingH4Commands().find(item => item.commandKey === original.commandKey);
   if (!r) throw new Error("H4_ORIGINAL_RESOLVED");
-  if ("proposal" in r.request) { const ticket = await queryH4Command(r); if (ticket) return { h4Approval: true, ticket } as H4ApprovalReceipt; }
+  if ("proposal" in r.request) {
+    const result = await queryH4Command(r);
+    if (result && "ticket" in result && result.ticket) return { h4Approval: true, ticket: result.ticket } as H4ApprovalReceipt;
+  }
   else {
     const blocked = h4RetryBlockedReason(r);
     if (blocked) throw new Error(blocked);

@@ -20,7 +20,8 @@ import { pendingI3Commands, queryI3Command, retryI3Command, i3RetryPermission, i
 import { fundCommandSettled, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, releaseExpiredI3Cap, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
-import { useIConflictReview } from "@/lib/admin/i-conflict-review";
+import { isIConflictRejection, useIConflictReview } from "@/lib/admin/i-conflict-review";
+import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
@@ -70,6 +71,7 @@ type NewForm = {
   registrationDaysMin: string;
   budget: string;
 };
+type DraftAttempt = { form: NewForm; formBase: NewForm; editing: CampaignRow | null };
 
 const FORM_INIT: NewForm = {
   name: "",
@@ -186,6 +188,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const [form, setForm] = useState<NewForm>(FORM_INIT);
   const [formBase, setFormBase] = useState<NewForm>(FORM_INIT);
   const [leaving, setLeaving] = useState(false);
+  const [draftSaveError, setDraftSaveError] = useState<string>();
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [formLang, setFormLang] = useState<Lang>("zh");
   const [estimatedAudience, setEstimatedAudience] = useState<number | null>(null);
@@ -220,9 +223,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const conflictView = useIConflictView(conflictReview.review);
   /** 核对冲突后重开确认框时带回的理由和新值，只给紧接着打开的那一个框用。 */
   const prefill = useRef<{ reason: string; value?: string } | null>(null);
-  const reviewConflict = (error: unknown, requested: NonNullable<typeof conflictReview.review>["requested"]) =>
+  const reviewConflict = (error: unknown, requested: NonNullable<typeof conflictReview.review>["requested"], readLatest?: NotificationCampaignOverview) =>
     conflictReview.reject(error, requested, async () => {
-      const latest = await fetchI3CampaignOverview();
+      const latest = readLatest ?? await fetchI3CampaignOverview();
+      readLatest = undefined;
       await actions.reloadIContent();
       return latest;
     });
@@ -271,7 +275,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
     if (newMutationBlocked.current || latestRead.current !== openedData) throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
   };
-  const recoveryConfirm = useRef<{ key: () => string | undefined; close: () => void } | null>(null);
+  const recoveryConfirm = useRef<{ key: () => string | undefined; close: () => void; draft?: DraftAttempt; resume?: () => void } | null>(null);
   const recoveryEditors = useRef({ drawer: drawerPendingKey, schedule: schedulePendingKey });
   recoveryEditors.current = { drawer: drawerPendingKey, schedule: schedulePendingKey };
   const refreshAfterMutation = async (record?: I3Command | I3CapCommand) => {
@@ -323,9 +327,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     return true;
   };
   const openActionConfirm = (req: ActionConfirmReq, restored?: I3Command | I3CapCommand, cap = false,
-    draftAttempt?: { form: NewForm; formBase: NewForm; editing: CampaignRow | null }) => {
+    draftAttempt?: DraftAttempt) => {
     if (!restored) { try { requireNewMutation(); } catch (error) { toast(displayAdminError(error)); return; } }
-    const openedData = data;
+    let openedData = data;
     let key = restored?.commandKey;
     const original = () => (cap ? pendingI3CapCommands() : pendingI3Commands()).find((row) => row.commandKey === key);
     const carried = restored ? null : prefill.current;
@@ -333,7 +337,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     const confirmation: ActionConfirmReq = { ...req, getPendingReason: () => original()?.reason, initialReason: carried?.reason,
       getPendingRecovery: draftAttempt ? () => {
         const record = pendingI3Commands().find(row => row.commandKey === key);
-        return record && { expiresAt: record.expiresAt, blockedReason: i3DraftRetryBlockedReason(record), query: canReadI3 ? () => query(record) : undefined };
+        return record && { expiresAt: record.expiresAt, blockedReason: i3DraftRetryBlockedReason(record), query: canReadI3 ? () => query(record, true) : undefined };
       } : req.getPendingRecovery,
       edit: req.edit && restored && "after" in restored ? { ...req.edit, initialValue: restored.after } : req.edit && carried?.value ? { ...req.edit, initialValue: carried.value } : req.edit,
       run: async (reason, value, business) => {
@@ -355,7 +359,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         }
       },
     };
-    recoveryConfirm.current = { key: () => key, close: () => ctx.closeActionConfirm(confirmation) };
+    recoveryConfirm.current = { key: () => key, close: () => ctx.closeActionConfirm(confirmation), draft: draftAttempt,
+      resume: () => { key = undefined; openedData = latestRead.current; } };
     ctx.openActionConfirm(confirmation);
   };
   const openConfirm = (req: ConfirmReq, restored?: I3Command) => {
@@ -425,14 +430,14 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const openNew = async () => {
     if (lockReason("create")) return;
     setRequiredLanguages(await getRequiredContentLanguages());
-    setDrawerPendingKey(null); setEditing(null); setForm(FORM_INIT); setFormBase(FORM_INIT); setFormLang("zh"); setNewOpen(true);
+    setDraftSaveError(undefined); setDrawerPendingKey(null); setEditing(null); setForm(FORM_INIT); setFormBase(FORM_INIT); setFormLang("zh"); setNewOpen(true);
   };
 
   const editDraft = async (c: CampaignRow) => {
     if (lockReason(c.id)) return;
     const required = await getRequiredContentLanguages();
     setRequiredLanguages(required);
-    setDrawerPendingKey(null);
+    setDraftSaveError(undefined); setDrawerPendingKey(null);
     const next = formFromCampaign(c, required);
     setEditing(c);
     setForm(next);
@@ -675,7 +680,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
 
   /* ---------- new campaign drawer 提交 ---------- */
   const submitNew = async () => {
-    if (submitting) return;
+    if (submitting || draftSaveBlocked) return;
     if (drawerPendingKey) {
       const original = pendingI3Commands().find((row) => row.commandKey === drawerPendingKey);
       if (!original) { setNewOpen(false); setDrawerPendingKey(null); return; }
@@ -691,6 +696,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       return;
     }
     setSubmitting(true);
+    setDraftSaveError(undefined);
     try {
       const required = await getRequiredContentLanguages();
       setRequiredLanguages(required);
@@ -839,21 +845,31 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     return null;
   };
 
+  const draftAttemptFromRecord = (record: I3Command): DraftAttempt | undefined => {
+    if (!record.original || record.action === "draft" && !record.snapshot) return;
+    const input = parseI3Json(record.original.body) as NewForm & { audienceTarget: NotificationAudienceTarget };
+    const form: NewForm = { name: input.name, ...mapContentTitleBody(input, requiredLanguages, "edit"),
+      kind: input.kind, ctaHref: input.ctaHref, tier: input.tier,
+      phaseMin: input.audienceTarget.phaseMin, phaseMax: input.audienceTarget.phaseMax, language: input.audienceTarget.language,
+      registrationDaysMin: String(input.audienceTarget.registrationDaysMin), budget: input.budget == null ? "" : String(input.budget) };
+    const editing = record.snapshot ? { ...record.snapshot, st: record.snapshot.status } : null;
+    return { form, formBase: editing ? formFromCampaign(editing, requiredLanguages) : FORM_INIT, editing };
+  };
+  const openDraftAttempt = (attempt: DraftAttempt, record: I3Command, pendingKey?: string) => {
+    setEditing(attempt.editing); setForm(attempt.form); setFormBase(attempt.formBase); setFormLang("zh");
+    setDrawerPendingKey(pendingKey ?? null);
+    setEstimating(false); setEstimatedAudience(record.formSnapshot?.estimatedAudience ?? null); setEstimatedAt(record.formSnapshot?.estimatedAt ?? null);
+    setNewOpen(true);
+  };
   const restore = (record: I3Command) => {
     if (!record.original || i3DraftRetryBlockedReason(record)) return;
-    const input = parseI3Json(record.original.body) as NewForm & { audienceTarget: NotificationAudienceTarget; schedule: string };
-    if (record.action === "create" || record.action === "draft") {
-      const next: NewForm = { name: input.name, titleZh: input.titleZh, titleVi: input.titleVi, titleEn: input.titleEn,
-        bodyZh: input.bodyZh, bodyVi: input.bodyVi, bodyEn: input.bodyEn, kind: input.kind, ctaHref: input.ctaHref, tier: input.tier,
-        phaseMin: input.audienceTarget.phaseMin, phaseMax: input.audienceTarget.phaseMax, language: input.audienceTarget.language,
-        registrationDaysMin: String(input.audienceTarget.registrationDaysMin), budget: input.budget == null ? "" : String(input.budget) };
-      setEditing(record.snapshot ? { ...record.snapshot, st: record.snapshot.status } : null);
-      setForm(next); setFormBase(next); setFormLang("zh"); setDrawerPendingKey(record.commandKey);
-      setEstimating(false); setEstimatedAudience(record.formSnapshot?.estimatedAudience ?? null); setEstimatedAt(record.formSnapshot?.estimatedAt ?? null);
-      setNewOpen(true);
+    if (isI3DraftCommand(record)) {
+      const attempt = draftAttemptFromRecord(record);
+      if (attempt) { setDraftSaveError(undefined); openDraftAttempt(attempt, record, record.commandKey); }
       return;
     }
     if (!record.snapshot) return;
+    const input = parseI3Json(record.original.body) as { schedule: string };
     const originalRow = { ...record.snapshot, st: record.snapshot.status };
     if (record.action === "schedule") {
       setScheduleRow(originalRow); setScheduledAt(input.schedule); setScheduleReason(record.reason); setScheduleVerified(true);
@@ -862,13 +878,39 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     else if (record.action === "cancel") cancelScheduled(originalRow, record);
     else if (record.action === "delete") deleteDraft(originalRow, record);
   };
+  const recoverDraftRejection = async (record: I3Command, rejection: PendingConfirmRejected, fromConfirm = false) => {
+    const confirmation = recoveryConfirm.current?.key() === record.commandKey ? recoveryConfirm.current : undefined;
+    const attempt = confirmation?.draft ?? draftAttemptFromRecord(record);
+    confirmation?.resume?.();
+    syncPending();
+    if (!attempt) { toast(displayAdminError(rejection), "warn"); return; }
+    openDraftAttempt(attempt, record);
+    let latest: NotificationCampaignOverview | undefined;
+    if (!rejection.reasonCode && rejection.status === 409 && attempt.editing) {
+      // Older verdicts carry only a 409. I3 PATCH can also reject a non-draft state,
+      // so use the CAS flow only when the campaign is still a draft at a different revision.
+      latest = await fetchI3CampaignOverview().catch(() => undefined);
+      const row = latest?.campaigns.find(item => item.id === attempt.editing?.id);
+      if (row?.status === "draft" && row.revision !== attempt.editing.revision) {
+        rejection = new PendingConfirmRejected(formatAdminApiError("NOTIFICATION_CAMPAIGN_STALE_VERSION", ""), "NOTIFICATION_CAMPAIGN_STALE_VERSION");
+      }
+    }
+    if (isIConflictRejection(rejection)) {
+      setDraftSaveError(undefined);
+      confirmation?.close();
+      await reviewConflict(Object.assign(rejection, { rejectedCommand: record }), { ...attempt, reason: "" }, latest);
+      return;
+    }
+    setDraftSaveError(displayAdminError(rejection));
+    if (fromConfirm) throw rejection;
+  };
   /** 查过原结果的直接操作这一行怎么说：共用面板的标签和句子（查询失败的原因放标签问号里）。 */
   const i3Status = (record: I3Command, outcome: FundInvestigationOutcome | undefined) => {
     const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canClose: canInvestigateECommand("content_i3_read"),
       canRetry: !!record.original && (record.action === "create" || !!record.snapshot) && !i3RetryPermission(record) && !i3DraftRetryBlockedReason(record) });
     return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
   };
-  const query = async (record: I3Command | I3CapCommand) => {
+  const query = async (record: I3Command | I3CapCommand, fromConfirm = false) => {
     if (recoveryInFlight.current) return;
     recoveryInFlight.current = true; setRecovering(record.commandKey);
     try {
@@ -884,9 +926,14 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       } else {
         let outcome: FundInvestigationOutcome;
         try {
-          const receipt = await queryI3Command(record);
-          outcome = { receipt };
+          const result = await queryI3Command(record);
+          if (result.rejection) {
+            await recoverDraftRejection(record, result.rejection, fromConfirm);
+            return;
+          }
+          outcome = { receipt: result.receipt };
         } catch (error) {
+          if (error instanceof PendingConfirmRejected) throw error;
           outcome = { error: displayAdminError(error) };
         }
         setOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
@@ -900,7 +947,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         toast(`${shown.label}：${shown.line}`);
       }
       syncPending();
-    } catch (error) { toast(displayAdminError(error)); }
+    } catch (error) {
+      if (fromConfirm && error instanceof PendingConfirmRejected) throw error;
+      toast(displayAdminError(error));
+    }
     finally { recoveryInFlight.current = false; setRecovering(null); }
   };
   const recoveryRows: I3RecoveryRow[] = [
@@ -938,7 +988,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     syncPending();
   };
   const drawerOriginal = pending.find((row) => row.commandKey === drawerPendingKey);
-  const drawerRetryReason = drawerOriginal ? i3DraftRetryBlockedReason(drawerOriginal) : undefined;
+  const draftSaveBlocked = submitting ? "正在保存…" : drawerPendingKey ? drawerOriginal && i3DraftRetryBlockedReason(drawerOriginal)
+    : lockReason(editing?.id ?? "create") ?? (!AUDIENCE_CATALOG ? "受众目录没读到，不能保存；刷新页面后再试" : estimating ? "正在估算人数，估完再保存" : undefined);
   const scheduleOriginal = pending.find((row) => row.commandKey === schedulePendingKey);
   const scheduleRetryReason = scheduleOriginal && isRetryExpired(scheduleOriginal) ? RETRY_EXPIRED : scheduleOriginal ? i3RetryPermission(scheduleOriginal) : undefined;
 
@@ -1016,10 +1067,11 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(outcomes[closing.commandKey]), "记录保留")}</Fact>}
         onClose={() => setClosing(null)} onSubmit={async evidence => {
           const record = closing;
-          const receipt = await queryI3Command(record, evidence);
+          const { receipt, rejection } = await queryI3Command(record, evidence);
           setOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
           setClosing(null); syncPending();
-          if (fundCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await refreshAfterMutation(record); }
+          if (rejection) await recoverDraftRejection(record, rejection);
+          else if (fundCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await refreshAfterMutation(record); }
           else toast(CLOSURE_KEPT_TEXT, "warn");
         }} />}
       {conflictUi}
@@ -1172,7 +1224,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           setLang={setFormLang}
           submitting={submitting}
           frozen={!!drawerPendingKey}
-          blocked={drawerPendingKey ? drawerRetryReason : lockReason(editing?.id ?? "create")}
+          blocked={draftSaveBlocked}
+          saveError={draftSaveError}
           estimating={estimating}
           estimatedAudience={estimatedAudience}
           estimatedAt={estimatedAt}
@@ -1190,7 +1243,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       )}
       <LeaveDialog guard={{ asking: leaving, stay: () => setLeaving(false), hide: () => setLeaving(false),
         discard: () => { setLeaving(false); setNewOpen(false); setEditing(null); } }}
-        discardLabel="放弃改动并返回" saveLabel="保存草稿" saveBlocked={lockReason(editing?.id ?? "create")} onSave={() => void submitNew()} />
+        discardLabel="放弃改动并返回" saveLabel="保存草稿" saveBlocked={draftSaveBlocked} onSave={() => void submitNew()} />
 
       {/* ===== 排期 ===== */}
       {scheduleRow && (canSendCampaign(scheduleRow) || !!schedulePendingKey) && (
@@ -1322,6 +1375,7 @@ type FormProps = {
   submitting: boolean;
   frozen: boolean;
   blocked?: string;
+  saveError?: string;
   estimating: boolean;
   estimatedAudience: number | null;
   estimatedAt: number | null;
@@ -1352,7 +1406,7 @@ const SAVE_BODY_MAX = 4000;
 const budgetPlacesOver = (value: string) => /^\s*-?\d*\.\d*[1-9]\d*\s*$/.test(value) && (value.trim().split(".")[1] ?? "").replace(/0+$/, "").length > 2;
 
 /** 新建、编辑的宽抽屉：左边填，右边是通知列表里和点开后的样子。提交沿用页面的 submitNew。 */
-function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLanguages, submitting, frozen, blocked: mutationBlocked, estimating, estimatedAudience, estimatedAt, audienceCatalog, deliveryCatalog, tierOptions, kindLabel, onSubmit, onClose }: FormProps) {
+function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLanguages, submitting, frozen, blocked, saveError, estimating, estimatedAudience, estimatedAt, audienceCatalog, deliveryCatalog, tierOptions, kindLabel, onSubmit, onClose }: FormProps) {
   const set = (key: keyof NewForm, value: string) => { if (!frozen) setForm({ ...form, [key]: value }); };
   const setKind = (kind: string) => {
     if (frozen) return;
@@ -1374,7 +1428,6 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
   const over = OPERATING_LANGUAGE_CODES.filter(locale => chars(copy[TITLE_KEY[locale]].trim()).length > TITLE_SENT || chars(copy[BODY_KEY[locale]].trim()).length > BODY_SENT);
   const selectedCta = deliveryCatalog?.ctaRoutes.find((option) => option.value === form.ctaHref);
   const copied = lang !== "en" && required && isEnglishCopy({ title: form.titleEn, body: form.bodyEn }, { title, body });
-  const blocked = mutationBlocked || (!audienceCatalog && !frozen ? "受众目录没读到，不能保存；刷新页面后再试" : estimating && !frozen ? "正在估算人数，估完再保存" : undefined);
   // 字数按字算（表情算 1 个）；保存上限 160 另按长度算，表情多的标题会先碰到它。
   const lengthHelp = (len: number, sent: number, raw: string, saveMax: number) => len > sent
     ? `${len}/${sent} 字：多了 ${len - sent} 字，不能保存、排期或发送`
@@ -1389,6 +1442,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
         <div className="i3-form">
           {frozen && <Notice tone="warn" title="结果未知">原请求已冻结。先在页面上方查询原结果，明确查不到后才能按原请求重试。</Notice>}
+          {saveError && <Notice tone="danger" title="草稿没有保存">{saveError}</Notice>}
           <section className="i3-form-section" aria-labelledby="i3-f-base">
             <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>
             <Field label="名称" required help="只给后台看，最多 160 字。">

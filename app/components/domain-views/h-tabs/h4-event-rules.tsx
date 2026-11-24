@@ -197,10 +197,22 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
         throw new Error(formatAdminApiError("EVENT_RULE_INCOMPLETE", "", "write", { missing, incomplete: readiness.incomplete }));
       }
     };
+    const rereadConflict = () => h4ReadConflict(async () => {
+      const values = await load(true);
+      if (!values) throw new Error("玩法规则没有读到");
+      const latest = values.find(row => row.eventCode === base.eventCode);
+      if (!latest) throw missingRule();
+      compareLatest(latest);
+    });
     let originalKey: string | undefined;
-    const pending = () => h4PendingFor(`H/h4_event_rule/${base.eventCode}`);
+    const pending = () => originalKey ? pendingH4Commands().find(record => record.commandKey === originalKey) : h4PendingFor(`H/h4_event_rule/${base.eventCode}`);
     ctx.openActionConfirm({ getPendingReason: () => pending()?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
-      getPendingRecovery: () => h4PendingConfirmRecovery(pending(), async () => { ctx.openActionConfirm(null); await onApprovalCompleted?.(); await load(); }),
+      getPendingRecovery: () => h4PendingConfirmRecovery(pending(), async () => {
+        await onApprovalCompleted?.();
+        if (!await load()) throw new Error("已保存，但没读到最新数据");
+        ctx.openActionConfirm(null);
+      },
+        error => error.reasonCode === "EVENT_NOT_FOUND" || error.reasonCode === "EVENT_RULE_NOT_FOUND" ? missingRule() : isH4ReadConflict(error) ? rereadConflict() : error),
       title: firstOpen ? "开启玩法" : next.enabled ? "保存玩法配置" : "保存关闭状态",
       effect: firstOpen ? effectApproval("玩法") : effectDirect,
       detail: <>更新本活动的参与条件、奖励及有效期。{next.enabled ? "启用后符合条件的用户可参与；保存时会检查配置与奖励预算。" : "保存后活动保持关闭，不发放新奖励。"}</>,
@@ -260,13 +272,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
           if (failure && !failure.unknownOutcome && !failure.bodyUnreadable && isDeterministicRejection(failure.status ?? 0, failure.apiCode)
             && (failure.reasonCode === "EVENT_NOT_FOUND" || failure.reasonCode === "EVENT_RULE_NOT_FOUND")) throw missingRule();
           if (isH4ReadConflict(cause) && !originalKey) {
-            throw h4ReadConflict(async () => {
-              const values = await load(true);
-              if (!values) throw new Error("玩法规则没有读到");
-              const latest = values.find(row => row.eventCode === base.eventCode);
-              if (!latest) throw missingRule();
-              compareLatest(latest);
-            });
+            throw rereadConflict();
           }
           if (own === generation.current) setError(displayAdminError(cause));
           if (originalKey && !h4PendingFor(`H/h4_event_rule/${base.eventCode}`)) { ctx.openActionConfirm(null); await load(); }
