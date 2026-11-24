@@ -106,7 +106,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
             variant={req.confirmTone ?? "primary"}
             loading={submitting}
             loadingText="提交中…"
-            disabledReason={can || submitting ? undefined : req.blockedReason ?? (policyBlocked ? POLICY_FAILED_TEXT : undefined) ?? [!policySettled && "正在加载，稍候即可提交", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
+            disabledReason={can || submitting ? undefined : req.blockedReason ?? (policyBlocked ? POLICY_FAILED_TEXT : undefined) ?? [!policySettled && "正在加载，稍候即可提交", !inputOk ? `填写${req.input?.label}` : valueProblem, policySettled && !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
             onBlockedClick={() => setAttempted(true)}
             onClick={() => void submit()}
           >
@@ -166,9 +166,9 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           {req.reason && <span className="rd-reason-count">{reasonLength}/{reasonMax}</span>}
         </div>
         {req.recoveryUi && pendingReason !== undefined && <p className="k-locked-hint">保存的原理由，重试时原样发送，不能修改</p>}
-        {req.reason && !(req.recoveryUi && pendingReason !== undefined) && !policyBlocked && !reasonOk && (attempted || reasonLeft) ? (
+        {req.reason && !(req.recoveryUi && pendingReason !== undefined) && policySettled && !policyBlocked && !reasonOk && (attempted || reasonLeft) ? (
           <div className="rd-form-error">{reasonShort}</div>
-        ) : req.recoveryUi && req.reason && pendingReason === undefined && <div className="rd-form-help">{!policySettled ? "正在加载，稍候即可提交。" : policyBlocked ? POLICY_FAILED_TEXT : `${reasonMin}–${reasonMax} 字`}</div>}
+        ) : req.recoveryUi && req.reason && pendingReason === undefined && <div className="rd-form-help">{!policySettled ? "正在加载，稍候即可提交。" : policyBlocked ? POLICY_FAILED_TEXT : `至少 ${reasonMin} 字`}</div>}
       </div>
       </fieldset>
     </Modal>
