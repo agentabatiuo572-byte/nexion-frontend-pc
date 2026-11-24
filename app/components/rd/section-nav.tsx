@@ -114,8 +114,9 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
         settle = window.setTimeout(() => {
           if (jumping.current !== jump) return;
           jumping.current = null;
-          const target = document.getElementById(`section-${jump.id}`);
-          const arrived = !target || Math.abs(target.getBoundingClientRect().top - landing) <= 2 || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
+          const top = document.getElementById(`section-${jump.id}`)?.getBoundingClientRect().top;
+          // 到了 = 目标停在跳转线上，或页面到底、目标还在线下面（跳不上去）；滚过了头不算。
+          const arrived = top === undefined || Math.abs(top - landing) <= 2 || top > landing && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
           if (arrived || !userAt.current) return;
           held.current = false;
           userAt.current = movedAt = Date.now();
