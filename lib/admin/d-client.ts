@@ -581,6 +581,8 @@ export interface D5Params {
   smallAmountThresholdUsd: number;
   /** 正常到账时效(小时)；合规大额窗口到期后仍须人工复核，不能据此认定到账。 */
   payoutSlaHours: number;
+  addressEffectiveDelayHours?: number;
+  addressChangeCooldownDays?: number;
   cooldownDays: number;
   complianceHoldEnabled: boolean;
   /** 服务端合规大额门槛(USDT)，金额严格大于此值才附加窗口；旧接口缺失时待核实。 */
@@ -2041,6 +2043,8 @@ export function isD5MinimumUsdt(value: number) {
 }
 export const D5_PAYOUT_SLA_HOURS_MIN = 1;
 export const D5_PAYOUT_SLA_HOURS_MAX = 168;
+export const D5_ADDRESS_CHANGE_COOLDOWN_DAYS_MAX = 365;
+export const D5_ADDRESS_EFFECTIVE_DELAY_HOURS_MAX = D5_ADDRESS_CHANGE_COOLDOWN_DAYS_MAX * 24;
 /** FEAT-WD02 三网络确认费默认值，仅用于恢复默认按钮；读取缺失时必须失败关闭。 */
 export const D5_NETWORK_CONFIRM_FEE_DEFAULT = { trc20: 1, bep20: 1, erc20: 5 } as const;
 /** FEAT-WD02 网络确认费值域上限(USD)。uniapp isNetworkFeeConfigUsable pin 同数字系(26→false / 30→invalid 两侧固定靶)。 */
@@ -2066,6 +2070,20 @@ export function normalizeD5Params(value: unknown): D5Params {
     }
     sourceByField[key] = item;
   });
+  const addressProtection: Pick<D5Params, "addressEffectiveDelayHours" | "addressChangeCooldownDays"> = {};
+  const addressFields = ["addressEffectiveDelayHours", "addressChangeCooldownDays"] as const;
+  if (addressFields.some((key) => raw[key] !== undefined || source[key] !== undefined)) {
+    for (const key of addressFields) {
+      const value = d5Integer(raw[key], key, 1);
+      const max = key === "addressEffectiveDelayHours"
+        ? D5_ADDRESS_EFFECTIVE_DELAY_HOURS_MAX : D5_ADDRESS_CHANGE_COOLDOWN_DAYS_MAX;
+      if (value > max || source[key] !== "d5") {
+        throw new Error(formatAdminApiError("D5_RESPONSE_INVALID", `D5_RESPONSE_INVALID:${key}`));
+      }
+      addressProtection[key] = value;
+      sourceByField[key] = "d5";
+    }
+  }
   let complianceReviewThresholdUsdt: number | null = null;
   if (raw.complianceReviewThresholdUsdt !== undefined || source.complianceReviewThresholdUsdt !== undefined) {
     complianceReviewThresholdUsdt = d5Number(raw.complianceReviewThresholdUsdt, "complianceReviewThresholdUsdt");
@@ -2112,6 +2130,7 @@ export function normalizeD5Params(value: unknown): D5Params {
   }
   const result: D5Params = {
     networkStatus, effectiveNetworks, networkStatusReliable,
+    ...addressProtection,
     version: d5Integer(raw.version, "version", 0),
     dailyLimitCount: d5Integer(raw.dailyLimitCount, "dailyLimitCount", 1),
     maxBalanceRatio: d5Number(raw.balanceMaxRatio, "balanceMaxRatio"),
@@ -2764,7 +2783,7 @@ export async function fetchD5WithdrawalParams() {
 // 沿用旧三件套的原子提交先例);不提供单键补丁,防止三网络费半更新。
 export type D5OwnedChanges = Partial<Pick<D5Params,
   "dailyLimitCount" | "maxBalanceRatio" | "minUsdt" | "networkConfirmFeeUsd" | "networkEnabled" | "nexFeeOffsetRate"
-  | "smallAmountThresholdUsd" | "payoutSlaHours">>;
+  | "smallAmountThresholdUsd" | "payoutSlaHours" | "addressEffectiveDelayHours" | "addressChangeCooldownDays">>;
 
 export function d5WithdrawalLimitsValues(changes: D5OwnedChanges, expectedVersion: number) {
   const { maxBalanceRatio, ...values } = changes;
@@ -2803,5 +2822,13 @@ export async function updateD5WithdrawalLimits(
     }
   }
   // 写成功了，回来的内容读不懂也算结果未知，不能当失败丢号（OP-91）。
-  return commandKey ? readWriteResult(commandKey, () => normalizeD5Params(data)) : normalizeD5Params(data);
+  const normalize = () => {
+    const result = normalizeD5Params(data);
+    if ((changes.addressEffectiveDelayHours !== undefined && result.addressEffectiveDelayHours === undefined)
+        || (changes.addressChangeCooldownDays !== undefined && result.addressChangeCooldownDays === undefined)) {
+      throw new Error(formatAdminApiError("D5_RESPONSE_INVALID", "D5_RESPONSE_INVALID:addressProtection"));
+    }
+    return result;
+  };
+  return commandKey ? readWriteResult(commandKey, normalize) : normalize();
 }

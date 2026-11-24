@@ -52,6 +52,8 @@ import {
   D5_NETWORK_CONFIRM_FEE_DEFAULT,
   type D5OwnedChanges,
   D5_MIN_USDT_MAX,
+  D5_ADDRESS_EFFECTIVE_DELAY_HOURS_MAX,
+  D5_ADDRESS_CHANGE_COOLDOWN_DAYS_MAX,
   isD5MinimumUsdt,
   type D5Params as D5ParamData,
 } from "@/lib/admin/d-client";
@@ -108,7 +110,10 @@ const minimumUsd = (value: number) => value === 0 ? "不限制" : `${value.toLoc
 const pct = (value: number) => `${value.toFixed(1)}%`;
 
 type Group = "limits" | "network" | "fee" | "nex";
-type NumKey = "dailyLimitCount" | "maxBalanceRatio" | "minUsdt" | "smallAmountThresholdUsd" | "payoutSlaHours" | "nexFeeOffsetRate" | `fee.${Net}`;
+const ADDRESS_PROTECTION_FIELDS = ["addressEffectiveDelayHours", "addressChangeCooldownDays"] as const;
+type LimitsKey = "dailyLimitCount" | "maxBalanceRatio" | "minUsdt" | "smallAmountThresholdUsd"
+  | "payoutSlaHours" | (typeof ADDRESS_PROTECTION_FIELDS)[number];
+type NumKey = LimitsKey | "nexFeeOffsetRate" | `fee.${Net}`;
 
 interface NumSpec {
   key: NumKey;
@@ -249,6 +254,40 @@ const SPECS: Record<NumKey, NumSpec> = {
     whatIf: (value) => `改成 ${value}：新提现的截止时间是审查窗口结束后 ${value} 小时。`,
     authority: DAILY_WRITE,
   },
+  addressEffectiveDelayHours: {
+    key: "addressEffectiveDelayHours",
+    label: D5_PARAM_HELP.addressEffectiveDelayHours.label,
+    unit: "小时",
+    min: 1,
+    max: D5_ADDRESS_EFFECTIVE_DELAY_HOURS_MAX,
+    step: 1,
+    invalid: "新地址生效等待要填 1–8,760 的整数小时。",
+    range: "1–8,760 的整数小时",
+    valid: (value) => Number.isInteger(value) && value >= 1 && value <= D5_ADDRESS_EFFECTIVE_DELAY_HOURS_MAX,
+    loosen: "down",
+    tightest: D5_ADDRESS_EFFECTIVE_DELAY_HOURS_MAX,
+    current: (p) => p.addressEffectiveDelayHours ?? NaN,
+    show: (value) => `${num(value)} 小时`,
+    how: D5_PARAM_HELP.addressEffectiveDelayHours.how,
+    authority: DAILY_WRITE,
+  },
+  addressChangeCooldownDays: {
+    key: "addressChangeCooldownDays",
+    label: D5_PARAM_HELP.addressChangeCooldownDays.label,
+    unit: "天",
+    min: 1,
+    max: D5_ADDRESS_CHANGE_COOLDOWN_DAYS_MAX,
+    step: 1,
+    invalid: "地址再次更换间隔要填 1–365 的整数天。",
+    range: "1–365 的整数天",
+    valid: (value) => Number.isInteger(value) && value >= 1 && value <= D5_ADDRESS_CHANGE_COOLDOWN_DAYS_MAX,
+    loosen: "down",
+    tightest: D5_ADDRESS_CHANGE_COOLDOWN_DAYS_MAX,
+    current: (p) => p.addressChangeCooldownDays ?? NaN,
+    show: (value) => `${num(value)} 天`,
+    how: D5_PARAM_HELP.addressChangeCooldownDays.how,
+    authority: DAILY_WRITE,
+  },
   nexFeeOffsetRate: {
     key: "nexFeeOffsetRate",
     label: D5_PARAM_HELP.nexFeeOffsetRate.label,
@@ -274,13 +313,13 @@ const SPECS: Record<NumKey, NumSpec> = {
 };
 
 const GROUP_FIELDS: Record<Exclude<Group, "network">, readonly NumKey[]> = {
-  limits: ["dailyLimitCount", "maxBalanceRatio", "minUsdt", "smallAmountThresholdUsd", "payoutSlaHours"],
+  limits: ["dailyLimitCount", "maxBalanceRatio", "minUsdt", "smallAmountThresholdUsd", "payoutSlaHours", ...ADDRESS_PROTECTION_FIELDS],
   fee: ["fee.trc20", "fee.bep20", "fee.erc20"],
   nex: ["nexFeeOffsetRate"],
 };
 const GROUP_TITLE: Record<Group, string> = { limits: "额度和时效", network: "提现网络", fee: "网络确认费", nex: "UVT 抵扣率" };
 const GROUP_IMPACT: Record<Group, string> = {
-  limits: "下一笔提现起按新值；调低每日次数时，当天超过新次数、还没放行的单放行时也被拦",
+  limits: "地址保护适用于之后保存的地址。其他参数从下一笔提现起按新值；调低每日次数时，当天超过新次数、还没放行的单放行时也被拦",
   network: "关掉的网络用户不能再发起提现；接打款服务时，这个网络上还没交给打款服务的提现也会暂停打款",
   fee: "之后的新提现按新费用收，已提交的提现不变",
   nex: "之后的新提现按新抵扣率算，已提交的提现不变",
@@ -338,9 +377,13 @@ type Editing = {
   conflict?: ReactNode;
 };
 
+function configuredFields(group: Exclude<Group, "network">, p: D5ParamData) {
+  return GROUP_FIELDS[group].filter((key) => Number.isFinite(SPECS[key].current(p)));
+}
+
 function draftOf(group: Group, p: D5ParamData): Draft {
   if (group === "network") return Object.fromEntries(NETWORKS.map((net) => [netKey(net), p.networkEnabled[net] ? "on" : "off"]));
-  return Object.fromEntries(GROUP_FIELDS[group].map((key) => [key, String(SPECS[key].current(p))]));
+  return Object.fromEntries(configuredFields(group, p).map((key) => [key, String(SPECS[key].current(p))]));
 }
 
 type NumEval = { spec: NumSpec; text: string; now: number; value?: number; error?: string; changed: boolean; loosens: boolean; writable: boolean; locked?: boolean };
@@ -380,7 +423,7 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
       changes: changedNets.length ? { networkEnabled: next } as D5OwnedChanges : null,
     };
   }
-  const numbers = GROUP_FIELDS[group].map((key): NumEval => {
+  const numbers = configuredFields(group, p).map((key): NumEval => {
     const spec = SPECS[key];
     const text = draft[key] ?? "";
     const writable = can(spec.authority);
@@ -419,6 +462,9 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
         else if (item.spec.key === "minUsdt") changes.minUsdt = item.value!;
         else if (item.spec.key === "smallAmountThresholdUsd") changes.smallAmountThresholdUsd = item.value!;
         else if (item.spec.key === "payoutSlaHours") changes.payoutSlaHours = item.value!;
+        else if (item.spec.key === "addressEffectiveDelayHours" || item.spec.key === "addressChangeCooldownDays") {
+          changes[item.spec.key] = item.value!;
+        }
       }
     }
   }
@@ -447,6 +493,8 @@ function describeChanges(changes: Record<string, unknown>) {
   if (changes.minUsdt !== undefined) parts.push(`最低提现额 ${minimumUsd(n(changes.minUsdt))}`);
   if (changes.smallAmountThresholdUsd !== undefined) parts.push(`小额免审线 ${usd(n(changes.smallAmountThresholdUsd))}`);
   if (changes.payoutSlaHours !== undefined) parts.push(`到账时效 ${n(changes.payoutSlaHours)} 小时`);
+  if (changes.addressEffectiveDelayHours !== undefined) parts.push(`新地址生效等待 ${n(changes.addressEffectiveDelayHours)} 小时`);
+  if (changes.addressChangeCooldownDays !== undefined) parts.push(`地址再次更换间隔 ${n(changes.addressChangeCooldownDays)} 天`);
   const fees = changes.networkConfirmFeeUsd as Record<Net, unknown> | undefined;
   if (fees) parts.push(`网络确认费 ${NETWORKS.map((net) => `${NET_LABEL[net]} ${usd(n(fees[net]))}`).join("、")}`);
   const enabled = changes.networkEnabled as Record<Net, unknown> | undefined;
@@ -568,7 +616,7 @@ function DirectionTag({ loosens }: { loosens: boolean }) {
 function commandAuthorities(changes: Record<string, unknown>) {
   const need = new Set<string>();
   for (const key of Object.keys(changes)) {
-    if (["dailyLimitCount", "minUsdt", "smallAmountThresholdUsd", "payoutSlaHours"].includes(key)) need.add(DAILY_WRITE);
+    if (["dailyLimitCount", "minUsdt", "smallAmountThresholdUsd", "payoutSlaHours", ...ADDRESS_PROTECTION_FIELDS].includes(key)) need.add(DAILY_WRITE);
     else if (["maxBalanceRatio", "balanceMaxRatio"].includes(key)) need.add(BALANCE_WRITE);
     else if (["networkConfirmFeeUsd", "networkEnabled", "nexFeeOffsetRate"].includes(key)) need.add(FEE_WRITE);
   }
@@ -700,7 +748,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   /** 这一组已经收到最紧：放宽被挡时打开也改不了，入口直接禁用（OP-126）。 */
   const atTightest = (group: Group, p: D5ParamData) => {
     if (group === "network") return NETWORKS.every((net) => !p.networkEnabled[net]);
-    return GROUP_FIELDS[group].filter((key) => key !== `fee.${CLOSED_NET}` && can(SPECS[key].authority)).every((key) => clean(SPECS[key].current(p)) === clean(SPECS[key].tightest));
+    return configuredFields(group, p).filter((key) => key !== `fee.${CLOSED_NET}` && can(SPECS[key].authority)).every((key) => clean(SPECS[key].current(p)) === clean(SPECS[key].tightest));
   };
   const entryBlock = (group: Group, p: D5ParamData) => tightenPending.length ? TIGHTEN_LOCK
     : loosenBlock && atTightest(group, p) ? `${loosenBlock}。这一组已经是最紧的值，现在没有能改的` : undefined;
@@ -732,7 +780,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       if (!current) return current;
       const before = draftOf(current.group, current.base);
       const after = draftOf(current.group, latest);
-      const draft = Object.fromEntries(Object.entries(current.draft).map(([key, value]) => [key, value === before[key] ? after[key] : value]));
+      const draft = Object.fromEntries(Object.entries(after).map(([key, value]) => [
+        key, current.draft[key] !== undefined && current.draft[key] !== before[key] ? current.draft[key] : value,
+      ]));
       const moved = evaluate({ ...current, draft: after }, current.base, () => true).rows.filter((row) => row.before !== row.after);
       return {
         ...current,
@@ -1179,13 +1229,13 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     ? (describedBy: string | undefined) => <Button size="sm" aria-label={editTitle(label)} aria-describedby={describedBy} disabledReason={blocked ?? entryBlock(group, p)} onClick={() => openDrawer(group, focus)}>调整</Button>
     : undefined;
   const H = D5_PARAM_HELP;
-  const numRow = (key: "dailyLimitCount" | "maxBalanceRatio" | "minUsdt" | "smallAmountThresholdUsd" | "payoutSlaHours") => {
+  const numRow = (key: LimitsKey) => {
     const help = H[key];
     const spec = SPECS[key];
     const value = spec.current(p);
     return <ConfigRow key={key} name={help.label} what={help.what} when={help.when} where={help.where} effect={help.effect} note={"note" in help ? help.note : undefined}
-      value={key === "smallAmountThresholdUsd" && value === 0 ? "0 USDT（已关闭）" : spec.show(value)}
-      action={can(spec.authority) ? action("limits", help.label, key) : undefined} />;
+      value={!Number.isFinite(value) ? "待核实" : key === "smallAmountThresholdUsd" && value === 0 ? "0 USDT（已关闭）" : spec.show(value)}
+      action={Number.isFinite(value) && can(spec.authority) ? action("limits", help.label, key) : undefined} />;
   };
   // 一个网络一行：配置和用户能不能用写在一个标签里；用不了的原因跟在后面，整体原因已在结论句说过的不再写（DT-12）。
   const netRow = ({ net, configured, usable, code }: ReturnType<typeof networkView>["states"][number]) => {
@@ -1275,6 +1325,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <D5NumberField {...fieldProps("minUsdt")} aria-label="最低提现额目标值" />
       <D5NumberField {...fieldProps("smallAmountThresholdUsd")} aria-label="小额免审线目标值" />
       <D5NumberField {...fieldProps("payoutSlaHours")} aria-label="到账时效目标值" />
+      {ADDRESS_PROTECTION_FIELDS.map((key) => (
+        <D5NumberField key={key} {...fieldProps(key)} aria-label={`${SPECS[key].label}目标值`} />
+      ))}
     </>;
     if (group === "fee") return <>
       <D5NumberField {...fieldProps("fee.trc20")} aria-label="TRC20 网络确认费目标值" />
@@ -1330,6 +1383,10 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
                   {numRow("minUsdt")}
                   {numRow("smallAmountThresholdUsd")}
                   {numRow("payoutSlaHours")}
+                </ConfigList>
+                <h3 className="mt-5 mb-2 text-sm font-medium">提现地址保护</h3>
+                <ConfigList label="提现地址保护">
+                  {ADDRESS_PROTECTION_FIELDS.map(numRow)}
                 </ConfigList>
               </Panel>
             </div>
