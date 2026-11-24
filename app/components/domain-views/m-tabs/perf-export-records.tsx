@@ -201,7 +201,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
   };
   const queryButton = (key: string, onClick: () => void) => <Button size="sm" loading={querying === key} loadingText="正在查询…" disabledReason={querying && querying !== key ? "等上一条查完" : undefined} onClick={onClick}>查询原结果</Button>;
   const unknownTag = <StatusTag tone="warn">结果未知</StatusTag>;
-  const acceptedTag = <StatusTag tone="ok">已受理</StatusTag>;
+  const acceptedTag = <StatusTag tone="progress">已受理</StatusTag>;
   const expiredResult = { tag: <StatusTag tone="warn">已过期</StatusTag>, line: RETRY_EXPIRED_TEXT };
   const recovery: RecoveryItem[] = [
     ...(pendingSubmit ? [{
