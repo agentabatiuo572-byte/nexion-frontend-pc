@@ -956,6 +956,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       reasonPlaceholder: "例如：上线前补齐转盘护栏",
       businessForm: {
         kind: "multi-field",
+        // 后端只认带整数部分、最多两位小数的预算（如 200、0.01）：「.01」「0.010」在点确认前挡下（OP-15、OP-16）。
+        feedback: (value) => {
+          const budget = value.guardKey === "budget" ? (value.budgetValue ?? "").trim() : "";
+          const invalid = budget !== "" && !/^\d+(?:\.\d{1,2})?$/.test(budget);
+          return { invalid, field: "budgetValue", message: invalid ? "每日预算要写整数部分，最多两位小数，例如 200 或 0.01" : "" };
+        },
         fields: [
           { key: "guardKey", label: "护栏类型", current: "", inputKind: "select", mustChoose: true, options: ["budget", "kill"], optionLabels: { budget: "每日真钱奖预算", kill: "真钱奖发放开关" }, required: true, help: "每种只能有一条；各奖档每日库存由奖项自己的库存决定，不在这里建" },
           { key: "guardLabel", label: "名称", current: "", placeholder: "如 奖池预算", required: true },
@@ -1320,8 +1326,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       const opener = area === "event-rules" ? reopenRule.current : reopenRaffle.current;
       opened = !!opener && await opener(record, cause, closeRetry);
     } else if (group === "wheel-guards") {
-      if (!target) opened = reopen(["openCreateWheelGuard:1"], { business: savedFields(body) });
-      else if (target === "budget") opened = reopen(["openWheelBudget:1"], { value: String(body.value) });
+      if (!target) {
+        // 新建时的值按类型分在两个控件里：原请求的 guardValue 放回看得见的那一个（OP-93 保留输入）。
+        const value = String(body.guardValue ?? "");
+        const typed: BusinessFormValue = body.guardKey === "budget" ? { budgetValue: value } : body.guardKey === "kill" ? { killValue: killOn(value) ? "开" : "关" } : {};
+        opened = reopen(["openCreateWheelGuard:1"], { business: { ...savedFields(body), ...typed } });
+      } else if (target === "budget") opened = reopen(["openWheelBudget:1"], { value: String(body.value) });
       else if (target === "kill") opened = reopen(["openWheelKill:1"], { intent: killOn(String(body.value)) ? "开" : "关" });
     } else if (group === "wheel-tiers") {
       if (!target) opened = reopen(["openCreateWheelTier:1"], { business: savedFields(body) });
