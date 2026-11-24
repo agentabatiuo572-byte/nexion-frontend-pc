@@ -98,6 +98,8 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   /** 重新检查这几项（只读）。只认最后一次检查的结果；没查到的这一项写没加载出来。 */
   const recheck = (types: readonly ExportType[], next = { month, scope }, edited = false) => {
     if (edited) editedConditions.current = true;
+    // 换了条件或重新检查后，「这次没有提交」那句只说上一次，不再挂着。
+    setVersionChanged(false);
     const generation = ++checkGeneration.current;
     setPreview("checking");
     setData(previous => previous && { ...previous, asOf: "—", blocked: undefined });
@@ -309,6 +311,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     reasonPlaceholder="写清导出用途和接收人，例如：对账工单号、发给谁"
     onClose={onClose}
     onConfirm={async reason => {
+      setVersionChanged(false);
       try {
         setResult(await ports.submit({ month, scope, types: selected }, reason));
       } catch (error) {
