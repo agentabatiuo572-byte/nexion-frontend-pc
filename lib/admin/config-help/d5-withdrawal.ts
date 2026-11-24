@@ -40,6 +40,14 @@ export const D5_PARAM_HELP = {
     effect: "改成 90%：可提余额 1,000 USDT 时，一笔最多提 900 USDT。越南盾提现同样受限",
     where: "App 提现页「可提现」金额；低于 100% 时多一行「余额中 N 暂不可提」",
   },
+  minUsdt: {
+    label: "最低提现额",
+    what: "单笔链上提现的最低金额",
+    when: "调高立即生效，调低批准后生效；只影响新提现",
+    how: "填写 0 或正整数，0 表示不限制",
+    effect: "改成 25 后，25 USDT 起才符合最低金额要求",
+    where: "App 和 H5 链上提现页的最低金额提示",
+  },
   smallAmountThresholdUsd: {
     label: "小额免审线",
     what: "不超过这条线的低风险 USDT 提现可以自动过审",
@@ -56,6 +64,22 @@ export const D5_PARAM_HELP = {
     how: "整数，1–168 小时",
     effect: "改成 12：新提现的截止时间是审查窗口结束后 12 小时，打款按截止时间排先后。没有超时提醒",
     where: "App 提现进度页的「预计处理时刻」就是这个截止时间（审查窗口结束时间加这个时效）",
+  },
+  addressEffectiveDelayHours: {
+    label: "新地址生效等待",
+    what: "从链上提现地址首次绑定或更换成功起，要等多久才能用这个地址提现",
+    when: "调长立即生效，缩短批准后生效。之后保存的地址按新值计算",
+    how: "填写 1–8,760 的整数小时",
+    effect: "三个 USDT 网络共用。已保存地址的生效时间沿用保存时的规则",
+    where: "App 和 H5 的提现地址管理",
+  },
+  addressChangeCooldownDays: {
+    label: "地址再次更换间隔",
+    what: "从链上提现地址保存成功起，要等几天才能再次更换",
+    when: "调长立即生效，缩短批准后生效。之后保存的地址按新值计算",
+    how: "填写 1–365 的整数天",
+    effect: "三个 USDT 网络共用。已保存地址的下次可更换时间沿用保存时的规则",
+    where: "App 和 H5 的提现地址管理",
   },
   networkEnabled: {
     label: "提现网络",
@@ -103,7 +127,7 @@ export const D5_PARAM_HELP = {
   complianceReviewThresholdUsdt: {
     label: "合规大额线",
     what: "加强合规审查开着时，超过这条线的要多等",
-    when: "系统固定的合规规则，这页和运营阶段设置都改不了",
+    when: "按当前运营月的金额线显示，修改请到「运营阶段设置」的每月参数",
     note: "单笔超过这个金额才算大额，正好等于不算",
   },
   networkRules: {

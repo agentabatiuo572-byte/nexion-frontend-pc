@@ -125,7 +125,15 @@ const DIALS = [
     unit: "天",
     ...H1_DIAL_LIMITS.withdrawCooldownDays,
     what: "提现从提交起要等多少天才能放行",
-    effect: "调低是放大，要审批。越南盾提现每笔都等；USDT 在加强合规审查开着，且超过 1,000\u00a0USDT 时才等；风控延迟、冻结的也按它算。"
+    effect: "调低是放大，要审批。越南盾提现每笔都等；USDT 在加强合规审查开启且超过合规大额线时才等；风控延迟、冻结的也按这个天数算。"
+  },
+  {
+    key: "complianceReviewThresholdUsdt",
+    label: "合规大额线",
+    unit: "USDT",
+    ...H1_DIAL_LIMITS.complianceReviewThresholdUsdt,
+    what: "加强合规审查开启后，单笔链上提现本金严格超过这个金额才等待",
+    effect: "调高后需要等待的订单减少，须经另一位超管批准。新提现按提交时的有效金额线判断。"
   },
   {
     key: "binaryDailyCap",
@@ -149,7 +157,7 @@ const DIALS = [
     unit: "",
     ...H1_DIAL_LIMITS.complianceHoldEnabled,
     what: "USDT 提现加强人工审查的开关",
-    effect: "关闭是放大，要审批。开启时 USDT 三个网络的提现每笔人工审查，本金超过 1,000 USDT 的还要等到账审查窗口；关闭后也不保证自动通过。"
+    effect: "关闭是放大，要审批。开启时 USDT 三个网络的提现每笔人工审查，本金超过合规大额线的还要等到账审查窗口。"
   },
 ] as const;
 type Dial = typeof DIALS[number];
@@ -389,7 +397,7 @@ export default function H1Phase({ ctx,
   const freshBlock = loading ? "正在读取最新数据，请稍后操作" : error ? "数据没读到，请先刷新" : undefined;
   const scopeBlock = (scope: string) => freshBlock ?? (pending.some((row) => row.scope === scope) ? LOCKED : undefined);
   const precision = useMemo(() => Object.fromEntries(DIALS.map((dial) => [dial.key,
-  dial.key === "withdrawCooldownDays" || dial.key === "complianceHoldEnabled" ? 0 : Math.max(2,
+  dial.key === "withdrawCooldownDays" || dial.key === "complianceReviewThresholdUsdt" || dial.key === "complianceHoldEnabled" ? 0 : Math.max(2,
     ...rows.map((row) => text(row.dials[dial.key],
       "").split(".")[1]?.replace(/0+$/,
         "").length ?? 0))])),
@@ -654,6 +662,7 @@ export default function H1Phase({ ctx,
     dial: Dial) => {
     if (!canWrite) return;
     const before = text(row.dials[dial.key]);
+    const integerDial = dial.key === "withdrawCooldownDays" || dial.key === "complianceReviewThresholdUsdt";
     const scope = `dial:${row.month}:${dial.key}`;
     const label = `调整第 ${row.month} 月 · ${dial.label}`;
     const missingValue = before === "—";
@@ -712,22 +721,22 @@ export default function H1Phase({ ctx,
       edit: {
         kind: dial.key === "complianceHoldEnabled" ? "select" : "number",
         current: before,
-        optionLabels: dial.unit ? { [before]: <span title={`完整值 ${before}`}>{dialValue(dial.key, before, dial.key === "withdrawCooldownDays" ? 0 : undefined)} <small className="h1-unit">{dial.unit}</small></span> } : undefined,
+        optionLabels: dial.unit ? { [before]: <span title={`完整值 ${before}`}>{dialValue(dial.key, before, integerDial ? 0 : undefined)} <small className="h1-unit">{dial.unit}</small></span> } : undefined,
         unit: dial.unit,
         options: ["否",
           "是"],
         min: dial.min,
         max: dial.max,
-        step: dial.key === "withdrawCooldownDays" ? 1 : 0.000001,
-        maxDecimals: dial.key === "withdrawCooldownDays" ? 0 : 6,
+        step: integerDial ? 1 : 0.000001,
+        maxDecimals: integerDial ? 0 : 6,
         disallowCurrent: true,
         amplifiesWhen: (value) => amplifies(dial.key,
           before,
           value),
         validate: (value) => dial.key === "binaryDailyCap" && h1DialIssue(dial.key, value) ? CAP_RANGE : h1DialIssue(dial.key,
           value),
-        hint: dial.key === "complianceHoldEnabled" ? "选否或是" : dial.key === "binaryDailyCap" ? CAP_RANGE : `${dial.min}–${dial.max.toLocaleString()} ${dial.unit}${dial.key === "withdrawCooldownDays" ? "，整数" : "，最多六位小数"}`,
-        preview: (value) => dial.key === "complianceHoldEnabled" ? value === "是" ? "本次收紧：USDT 三个网络的提现每笔人工审查，本金超过 1,000 USDT 的还要等到账审查窗口。" : "本次放大：不再强制每笔人工审查和等待，也不保证自动通过。" : `${amplifies(dial.key, before, value) ? "本次放大" : "本次收紧"}：${dial.effect.replace(/^(调高是放大，要审批；|调低是放大，要审批。)/, "")}`
+        hint: dial.key === "complianceHoldEnabled" ? "选否或是" : dial.key === "binaryDailyCap" ? CAP_RANGE : `${dial.min}–${dial.max.toLocaleString()} ${dial.unit}${integerDial ? " 的整数" : "，最多六位小数"}`,
+        preview: (value) => dial.key === "complianceHoldEnabled" ? value === "是" ? "本次收紧：USDT 三个网络的提现每笔人工审查，本金超过合规大额线的还要等到账审查窗口。" : "本次放大：提现按小额免审和风险规则审核。" : `${amplifies(dial.key, before, value) ? "本次放大" : "本次收紧"}：${dial.effect.replace(/^(调高是放大，要审批；|调低是放大，要审批。)/, "")}`
       },
       run: async (reason,
         value) => {
@@ -1022,8 +1031,8 @@ export default function H1Phase({ ctx,
           0)} unit={currentRow?.dials.withdrawCooldownDays == null ? undefined : "天"} tone="role-3" explain={DIALS[3].effect} />
       </StatBand>
       <div id={nav.anchor("monthly")} className="h1-section">
-        <Panel title={<span tabIndex={-1} data-section-focus="">每月参数</span>} sub={`${rows.length} 个月 × 7 项`} icon={SlidersHorizontal} tone="role-4" flush explain="收紧直接保存，放大要另一位超级管理员批准。其他月份的值到那个月才生效；圆点表示和上个月不同。">
-          <Table label="每月七项参数" className="h1-matrix">
+        <Panel title={<span tabIndex={-1} data-section-focus="">每月参数</span>} sub={`${rows.length} 个月 × ${DIALS.length} 项`} icon={SlidersHorizontal} tone="role-4" flush explain="收紧直接保存，放大要另一位超级管理员批准。其他月份的值到那个月才生效；圆点表示和上个月不同。">
+          <Table label="每月参数" className="h1-matrix">
             <colgroup>
               <col className="h1-col-month" />{DIALS.map((dial) => <col key={dial.key} className={`h1-col-${dial.key}`} />)}</colgroup>
             <thead>
@@ -1050,7 +1059,7 @@ export default function H1Phase({ ctx,
                           precision[dial.key])}</Button> : <span title={`完整值 ${raw}`}>{dial.key === "complianceHoldEnabled" ? raw : dialValue(dial.key, row.dials[dial.key],
                             precision[dial.key])}</span>}</span>
                     </Td>;
-                  })}</Tr>)}{!rows.length && <TableMessage columns={8}>没有读到每月参数，请先核对总体安排。</TableMessage>}
+                  })}</Tr>)}{!rows.length && <TableMessage columns={DIALS.length + 1}>没有读到每月参数，请先核对总体安排。</TableMessage>}
             </tbody>
           </Table>
         </Panel>

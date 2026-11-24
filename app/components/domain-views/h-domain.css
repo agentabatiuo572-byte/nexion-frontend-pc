@@ -281,14 +281,14 @@
 .h1-catalog-note { display: flex; align-items: center; gap: 6px; margin-top: 24px; color: var(--rd-text-3); }
 .h1-access-note { color: var(--rd-text-3); }
 .h1-matrix { table-layout: fixed; width: 100%; min-width: 0; }
-.h1-col-month { width: 10%; }
-.h1-col-newUserBonusMultiplier, .h1-col-inviteRewardMultiplier, .h1-col-questBonusMultiplier { width: 11.5%; }
-.h1-col-reinvestMultiplier, .h1-col-withdrawCooldownDays { width: 14%; }
-.h1-col-binaryDailyCap { width: 190px; }
+.h1-col-month { width: 9%; }
+.h1-col-newUserBonusMultiplier, .h1-col-inviteRewardMultiplier, .h1-col-questBonusMultiplier { width: 10.5%; }
+.h1-col-reinvestMultiplier, .h1-col-withdrawCooldownDays, .h1-col-complianceReviewThresholdUsdt { width: 12%; }
+.h1-col-binaryDailyCap { width: 13.5%; }
 .h1-matrix th, .h1-matrix td { padding-left: 10px; padding-right: 10px; }
 .h1-matrix th { vertical-align: top; }
 .h1-matrix th .rd-th-inner { white-space: normal; }
-.h1-matrix th .rd-th-inner > span { white-space: nowrap; }
+.h1-matrix th .rd-th-inner > span { white-space: normal; }
 .h1-matrix th small { display: block; margin-top: 4px; color: var(--rd-text-3); font: inherit; font-weight: 400; }
 .h1-month-cell { display: flex; flex-direction: column; gap: 4px; white-space: nowrap; }
 .h1-month-cell b { font-weight: 500; }
@@ -327,12 +327,6 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
   .h1-arrangement { gap: 20px; }
   .h1-progress { padding-left: 20px; }
   .h1-matrix th, .h1-matrix td { padding-left: 6px; padding-right: 6px; }
-  .h1-col-month { width: 11.2%; }
-  .h1-col-newUserBonusMultiplier { width: 10.7%; }
-  .h1-col-inviteRewardMultiplier, .h1-col-questBonusMultiplier { width: 9.6%; }
-  .h1-col-reinvestMultiplier, .h1-col-withdrawCooldownDays { width: 12.8%; }
-  .h1-col-binaryDailyCap { width: 19.4%; }
-  .h1-col-complianceHoldEnabled { width: 13.9%; }
   .h1-attribution-item { padding: 16px; }
 }
 
