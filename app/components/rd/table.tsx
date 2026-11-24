@@ -143,10 +143,14 @@ export function Cell({ main, sub, mono, num, title, full }: { main: ReactNode; s
   const ref = useRef<HTMLSpanElement>(null);
   const [cut, setCut] = useState(false);
   const [focused, setFocused] = useState(false);
+  /** 格子里自己有按钮或链接时，焦点落在它上面就显示全文，格子不再多一个 Tab 停靠点。 */
+  const [ownControl, setOwnControl] = useState(false);
   useEffect(() => {
     const box = ref.current;
     if (!title || !box) return;
-    const measure = () => setCut([...box.children].some((line) => line.scrollWidth > line.clientWidth + 1
+    setOwnControl(!!box.querySelector("a[href], button"));
+    // 第一行是省略的按钮时（.rd-cell-link），量按钮本身。
+    const measure = () => setCut([...box.children, ...box.querySelectorAll(".rd-cell-link")].some((line) => line.scrollWidth > line.clientWidth + 1
       || getComputedStyle(line).webkitLineClamp !== "none" && line.scrollHeight > line.clientHeight + 1));
     measure();
     const observer = new ResizeObserver(measure);
@@ -155,7 +159,7 @@ export function Cell({ main, sub, mono, num, title, full }: { main: ReactNode; s
   }, [title, main, sub]);
   const cell = (
     <span ref={ref} className="rd-cell" data-mono={mono ? "" : undefined} data-num={num ? "" : undefined} data-full={full ? "" : undefined} title={title}
-      tabIndex={cut ? 0 : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}>
+      tabIndex={cut && !ownControl ? 0 : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}>
       <span className="rd-cell-main">{main}</span>
       {sub !== undefined && sub !== null && <span className="rd-cell-sub">{sub}</span>}
     </span>

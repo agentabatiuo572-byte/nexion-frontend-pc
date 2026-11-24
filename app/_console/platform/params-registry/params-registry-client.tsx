@@ -235,10 +235,10 @@ export function PlatformParamsRegistry() {
     const name = ownerName(row);
     if (row.canonicalKey === H5_RETIRED_KEY) return <Cell main={<span className="a5-muted">没有修改入口</span>} sub="已停用，值固定为 0" />;
     const path = row.ownerRoute.split(/[?#]/, 1)[0];
-    if (!findByPath(path)) return <Cell main={name} sub="这一页还没有上线" />;
-    if (!reach(row.ownerRoute)) return <Cell main={name} sub="你的账号进不去这一页" />;
+    if (!findByPath(path)) return <Cell title={name} main={name} sub="这一页还没有上线" />;
+    if (!reach(row.ownerRoute)) return <Cell title={name} main={name} sub="你的账号进不去这一页" />;
     return (
-      <Cell main={<Link className="rd-link a5-owner" href={row.ownerRoute} prefetch={false} aria-label={ownerLinkAccessibleName(row)}>{name}</Link>}
+      <Cell title={name} main={<Link className="rd-link a5-owner" href={row.ownerRoute} prefetch={false} aria-label={ownerLinkAccessibleName(row)}>{name}</Link>}
         sub={row.canonicalKey === CONTINUITY_RETIRED_KEY ? "去那里只能查看" : undefined} />
     );
   };

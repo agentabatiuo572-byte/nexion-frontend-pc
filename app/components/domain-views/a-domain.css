@@ -582,17 +582,21 @@
 .a5-page .a5-search-box > .rd-input { width: 100%; padding-left: calc(var(--rd-space-3) + 24px); }
 .a5-page .a5-groups { display: grid; gap: var(--rd-section-gap); }
 .a5-page .a5-table { table-layout: fixed; width: 100%; }
-.a5-page .a5-table th:nth-child(1) { width: 30%; }
-.a5-page .a5-table th:nth-child(2) { width: 22%; }
-.a5-page .a5-table th:nth-child(3) { width: 14%; }
+/* 参数列给足宽度：1440 下最长的参数名和参数键都一行放得下，主值不折行（03 ST-04，BUG-666）。 */
+.a5-page .a5-table th:nth-child(1) { width: 38%; }
+.a5-page .a5-table th:nth-child(2) { width: 17%; }
+.a5-page .a5-table th:nth-child(3) { width: 13%; }
 .a5-page .a5-table th:nth-child(4) { width: 15%; }
-.a5-page .a5-table th:nth-child(5) { width: 19%; }
+.a5-page .a5-table th:nth-child(5) { width: 17%; }
 .a5-page .a5-table th .rd-th-inner { display: flex; flex-wrap: wrap; row-gap: 0; }
 .a5-page .a5-time > span { white-space: nowrap; }
 @media (max-width: 1279px) { .a5-page .a5-time > span { display: block; } }
 .a5-page .a5-table td .rd-cell { max-width: none; }
 .a5-page .a5-table td:nth-child(1) :is(.rd-cell-main, .rd-cell-sub) { white-space: normal; overflow-wrap: anywhere; }  /* 参数键不截断：1024 下折行，保住区分用的后段 */
-.a5-page .a5-table td:is(:nth-child(2), :nth-child(5)) .rd-cell-main { display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* 当前值、在哪改：主值一行，放不下末尾省略，悬停和聚焦看全文；第二行是弱化说明（03 ST-04，BUG-666）。值和链接改成行内，省略号才落在字上。 */
+.a5-page .a5-table td:is(:nth-child(2), :nth-child(5)) .rd-cell-main > :is(.a5-value, .a5-owner) { display: inline; }
+.a5-page .a5-table .a5-value > svg { margin-right: var(--rd-space-1); vertical-align: -1px; }
+.a5-page .a5-table .a5-value > .a5-unit { margin-left: var(--rd-space-1); }
 .a5-page .a5-th-zone { width: 100%; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .a5-page .a5-name > :last-child { margin-left: var(--rd-space-1); vertical-align: -2px; }
 .a5-page .a5-value { display: inline-flex; align-items: baseline; gap: var(--rd-space-1); max-width: 100%; color: var(--rd-text); }
@@ -611,7 +615,6 @@
 .a8-page .a8-table th:nth-child(3) { width: 18%; }
 .a8-page .a8-table th:nth-child(4) { width: 28%; }
 .a8-page .a8-table td .rd-cell { max-width: none; }
-.a8-page .a8-table td:nth-child(1) .rd-cell-link { display: -webkit-box; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .a8-page .a8-muted { color: var(--rd-text-3); }
 .a8-page .a8-roles { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1); }
 .a8-page .a8-table .a8-role { padding: 0 6px; }
