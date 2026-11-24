@@ -9,7 +9,7 @@ import { MContentReadError, parseMContentApiEnvelope } from "@/lib/admin/m-suppo
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { performanceEnum as enumeration, performanceInstant as instant, performanceInteger as integer, performanceList as array, performanceMalformed as invalid, performanceObject as object, performanceText as text, performanceWindow, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
-import { EXPORT_TYPES, ExportOutcomeUnknownError, type DecisionLookup, type ExportCheck, type ExportColumns, type ExportDownload, type ExportDraft, type ExportOriginal, type ExportPersona, type ExportQuery, type ExportSubmitted, type ExportTask, type ExportType, type PendingDecision, type PerfExportPorts, type SubmitLookup } from "./perf-view";
+import { EXPORT_TYPES, ExportOutcomeUnknownError, type DecisionLookup, type ExportCheck, type ExportColumns, type ExportDownload, type ExportDraft, type ExportConditionDifference, type ExportSelection, type ExportVisibleReceipt, type ExportOriginal, type ExportPersona, type ExportQuery, type ExportSubmitted, type ExportTask, type ExportType, type PendingDecision, type PerfExportPorts, type SubmitLookup } from "./perf-view";
 
 const PATH = "/support-workbench/performance-exports";
 const SUMMARY = "service_performance_export_summary", DETAIL = "service_performance_export_detail", APPROVE = "service_performance_export_approve";
@@ -25,8 +25,8 @@ const ACTIONS = ["APPROVE", "REJECT", "WITHDRAW"] as const;
 type Action = typeof ACTIONS[number];
 type View = ExportPersona["views"][number];
 type Operator = { id: string; epoch: number; name: string; authorities: readonly string[] };
-type Scope = { kind: typeof SCOPES[number]; groupIds?: string[] };
-type Selection = { month: string; scope: Scope; types: ExportType[] };
+type Selection = ExportSelection;
+type Scope = Selection["scope"];
 type SubmitBody = Selection & { previewVersion: string; reason: string };
 type DecisionBody = { expectedVersion: number; reason: string; decision?: Exclude<Action, "WITHDRAW"> };
 type SavedExport = PendingMutationRecord & ({ action: "SUBMIT"; body: SubmitBody; selection: ExportQuery; acceptedRequestId?: string }
@@ -174,8 +174,8 @@ function taskParser(operator: Operator) {
     const approvalTime = row.approvedAt === null ? undefined : instant(row.approvedAt);
     const scopeLost = row.scope === null;
     const failure = status !== "FAILED" ? undefined
-      : scopeLost && approvalTime && !reasons.length ? "SCOPE_HIDDEN"
-      : reasons.some(reason => /SCOPE|INELIGIBLE|PERMISSION/.test(reason)) ? "SCOPE_LOST_BEFORE_GENERATE" : "GENERATE_FAILED";
+      : scopeLost ? "SCOPE_HIDDEN"
+      : reasons.some(reason => reason === "EXPORT_SCOPE_CHANGED" || reason === "EXPORT_APPLICANT_INELIGIBLE") ? "SCOPE_LOST_BEFORE_GENERATE" : "GENERATE_FAILED";
     return {
       taskId: id(row.taskId), version: integer(row.version), type, mine,
       requester: mine ? operator.name : NAME_PENDING, requesterRole: "",
@@ -195,11 +195,30 @@ function taskParser(operator: Operator) {
   };
 }
 
+const uncheckedItems = (types: readonly ExportType[]) => types.map(type => ({
+  type, grain: GRAIN[type], limit: 0, columns: columns(null, type), check: { state: "unchecked" as const },
+}));
 const fingerprint = (query: ExportQuery) => JSON.stringify([query.month, query.scope, [...query.types].sort()]);
 const originalFields = (row: SavedExport) => ({ operationId: row.commandKey, createdAt: row.createdAt, expiresAt: row.expiresAt });
 const pendingDecision = (row: Extract<SavedExport, { taskId: string }>): PendingDecision =>
   ({ ...originalFields(row), taskId: row.taskId, decision: row.action, objectHidden: row.objectHidden,
     reason: row.objectHidden ? undefined : row.body.reason, at: businessStamp(row.createdAt) });
+type SavedDecision = Extract<SavedExport, { taskId: string }>;
+const decisionLane = (row: SavedDecision): View => row.action === "WITHDRAW" ? "MINE" : "APPROVALS";
+function setDecisionVisibility(matches: (row: SavedDecision) => boolean, visible: boolean) {
+  let changed = false;
+  for (const row of store.list()) {
+    if (row.action === "SUBMIT" || !matches(row) || Boolean(row.objectHidden) === !visible) continue;
+    const next: SavedDecision = { ...row, objectHidden: !visible };
+    store.remember(row.fingerprint, row.commandKey, next);
+    changed = true;
+  }
+  if (changed) notifyPending();
+}
+function restoredDraft(row: Extract<SavedExport, { action: "SUBMIT" }>): ExportDraft {
+  const { month, scope, types, reason } = row.body;
+  return { reason, query: row.selection, selection: { month, scope, types } };
+}
 const updateOriginal = (row: SavedExport) => { store.remember(row.fingerprint, row.commandKey, row); notifyPending(); };
 const forget = (row: SavedExport) => { store.forget(row.fingerprint, row.commandKey); notifyPending(); };
 const save = (slot: string, extra: Omit<Extract<SavedExport, { action: "SUBMIT" }>, keyof PendingMutationRecord> | Omit<Extract<SavedExport, { taskId: string }>, keyof PendingMutationRecord>) => {
@@ -232,7 +251,16 @@ export function exportDecisionConflict(error: unknown) {
 }
 
 export function exportTaskHidden(error: unknown) {
-  return error instanceof SupportClientError && apiStatus(error) === 404 && error.backendMessage === "EXPORT_TASK_NOT_FOUND";
+  if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return false;
+  const status = apiStatus(error);
+  return status === 404 && error.backendMessage === "EXPORT_TASK_NOT_FOUND"
+    || status === 403 && ["EXPORT_TASK_NOT_FOUND", "EXPORT_SCOPE_CHANGED", "EXPORT_APPLICANT_INELIGIBLE"].includes(error.backendMessage ?? "");
+}
+
+function hideDeniedTasks(error: unknown, matches: (row: SavedDecision) => boolean) {
+  const denied = exportTaskHidden(error) || isExportPermissionDenied(error);
+  if (denied) setDecisionVisibility(matches, false);
+  return denied;
 }
 
 function outcomeUnknown(error: unknown) {
@@ -276,6 +304,9 @@ export function usePerformanceExportPorts(): PerfExportPorts | null | undefined 
       canReview ? available("APPROVALS") : Promise.resolve(null),
     ] as const).then(([options, mine, approvals]) => {
       if (signal.aborted) return;
+      setDecisionVisibility(row => !canRecover(row, session.authorities), false);
+      if (mine.status === "rejected") hideDeniedTasks(mine.reason, row => decisionLane(row) === "MINE");
+      if (approvals.status === "rejected") hideDeniedTasks(approvals.reason, row => decisionLane(row) === "APPROVALS");
       const views: View[] = [];
       const keep = (result: PromiseSettledResult<View | null>, lane: View, wanted: boolean) => {
         if (result.status === "fulfilled") return result.value === lane;
@@ -304,6 +335,9 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
   let choices = new Map<string, { scope: Scope; label: string; types: ExportType[] }>();
   let latest: { id: string; payload: Selection; preview: Preview } | undefined;
   let previewSequence = 0;
+  let months: string[] = [];
+  let restoration: { kind: "conditions-changed"; differences: ExportConditionDifference[] } | undefined;
+  let lastVisible: (ExportVisibleReceipt & { operationId: string }) | undefined;
   const parseTask = taskParser(operator);
   const parseBatch = (value: unknown): { requestId: string; rows: ExportSubmitted[] } => {
     const row = object(value);
@@ -320,7 +354,11 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
   const readTask = (taskId: string) => read(`/${id(taskId)}`, value => {
     const task = parseTask(value);
     if (task.taskId !== taskId) invalid("export.taskIdentity");
+    if (!task.scopeLost) setDecisionVisibility(row => row.taskId === taskId, true);
     return task;
+  }).catch(error => {
+    hideDeniedTasks(error, row => row.taskId === taskId);
+    throw error;
   });
   const requestPreview = async (query: ExportQuery, includeOthers = false) => {
     const sequence = ++previewSequence;
@@ -354,7 +392,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       if (outcomeUnknown(error)) throw new ExportOutcomeUnknownError("提交后没收到结果，请查询原操作。");
       const drafts = draftsFor(operator);
       if (drafts && error instanceof SupportClientError && error.backendMessage === "EXPORT_PREVIEW_CHANGED") {
-        drafts.submit = { reason: record.body.reason, query: record.selection };
+        drafts.submit = restoredDraft(record);
       }
       forget(record);
       throw writeError(error);
@@ -399,9 +437,11 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     },
     invalidateAccess,
     async open(initial) {
+      latest = undefined;
       const options = await read("/options", parseOptions);
       choices = new Map();
-      latest = undefined;
+      months = options.months.map(month => month.value);
+      restoration = undefined;
       for (const scope of options.scopes) {
         const types = scope.allowed.filter(type => operator.authorities.includes(TYPES[type]));
         if (scope.blocked || !types.length) continue;
@@ -413,32 +453,56 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       const original = mySubmit();
       const draft = draftsFor(operator)?.submit;
       const saved = original?.action === "SUBMIT" ? original.selection : draft?.query;
-      const defaultMonth = options.months.find(month => month.value === initial?.month) ?? options.months[0];
-      const month = original?.action === "SUBMIT" ? original.selection.month
-        : options.months.find(month => month.value === saved?.month)?.value ?? defaultMonth?.value ?? "";
-      const defaultScope = initial?.scope && choices.has(initial.scope) ? initial.scope : choices.keys().next().value;
-      const scope = original?.action === "SUBMIT" ? original.selection.scope
-        : saved && choices.has(saved.scope) ? saved.scope : defaultScope ?? "";
+      const differences: ExportConditionDifference[] = [];
+      if (!original && draft) {
+        const approved = choices.get(draft.query.scope);
+        const originalScope = draft.selection.scope;
+        if (!months.includes(draft.selection.month)) differences.push({ field: "month", original: draft.selection.month });
+        if (!approved || approved.scope.kind !== originalScope.kind
+          || JSON.stringify([...(approved.scope.groupIds ?? [])].sort()) !== JSON.stringify([...(originalScope.groupIds ?? [])].sort())) {
+          const availableGroups = options.scopes.find(entry => entry.kind === originalScope.kind && !entry.blocked)?.groups;
+          const current = approved?.scope ?? (originalScope.kind === "MANAGED_GROUPS" && availableGroups?.length
+            ? { kind: originalScope.kind, groupIds: availableGroups.map(group => group.id) } : undefined);
+          differences.push({ field: "scope", original: originalScope, current });
+        }
+        const allowed = approved?.types ?? options.scopes.find(entry => entry.kind === originalScope.kind && !entry.blocked)?.allowed
+          .filter(type => operator.authorities.includes(TYPES[type])) ?? [];
+        const removed = draft.selection.types.filter(type => !allowed.includes(type));
+        if (removed.length) differences.push({ field: "types", removed });
+        if (differences.length) restoration = { kind: "conditions-changed", differences };
+      }
+      const defaultMonth = options.months.find(month => month.value === initial?.month)?.value ?? months[0] ?? "";
+      const defaultScope = initial?.scope && choices.has(initial.scope) ? initial.scope : choices.keys().next().value ?? "";
+      const month = differences.some(diff => diff.field === "month") ? "" : draft && !original ? draft.selection.month : saved?.month ?? defaultMonth;
+      const scope = differences.some(diff => diff.field === "scope") ? "" : saved?.scope ?? defaultScope;
       const types = choices.get(scope)?.types ?? [];
-      const selected = original?.action === "SUBMIT" ? original.selection.types
-        : saved ? saved.types.filter(type => types.includes(type)) : types.includes("SUMMARY") ? ["SUMMARY" as const] : [];
-      const preview = !original && month && scope && types.length ? await requestPreview({ month, scope, types: selected }, true) : undefined;
+      const selected = differences.some(diff => diff.field === "types") ? []
+        : original?.action === "SUBMIT" ? original.body.types : draft?.selection.types
+          ?? (types.includes("SUMMARY") ? ["SUMMARY" as const] : []);
+      const preview = !original && !restoration && month && scope && types.length ? await requestPreview({ month, scope, types: selected }, true) : undefined;
       return {
         months: options.months, month, since: options.months.length ? `自 ${businessStamp(Date.parse(options.months.at(-1)!.from))} 起` : "", scopes: Array.from(choices, ([value, item]) => ({ value, label: item.label, types: item.types })), scope,
-        asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", downloader: operator.name, items: preview?.items ?? [],
+        asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", downloader: operator.name, items: preview?.items ?? (restoration ? uncheckedItems(types) : []),
         selected: saved ? selected : selected.filter(type => preview?.items.some(item => item.type === type && !["empty", "stale", "unavailable"].includes(item.check.state))),
-        blocked: previewBlocked(preview),
+        blocked: previewBlocked(preview), restoration,
+        catalogState: months.length ? "ready" : "no-months",
         minReasonChars: options.minReasonChars, maxReasonChars: options.maxReasonChars,
       };
     },
-    async check(query) {
+    async check(query, edited) {
+      const types = choices.get(query.scope)?.types ?? [];
+      if (restoration && (!edited || !months.includes(query.month) || !query.types.length || query.types.some(type => !types.includes(type)))) {
+        latest = undefined;
+        return { items: uncheckedItems(types), asOf: "—", restoration };
+      }
       const preview = await requestPreview(query, true);
+      restoration = undefined;
       return { items: preview.items, asOf: preview.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", blocked: previewBlocked(preview) };
     },
     async submit(query, reason) {
       const original = mySubmit();
       if (original) throw new ExportOutcomeUnknownError("请先查询原操作。");
-      if (!latest || latest.id !== fingerprint(query) || !latest.preview.window || latest.preview.items.some(item => item.check.state !== "ok" || item.check.rows === null)) throw new Error("重新检查导出内容后再提交。");
+      if (restoration || !latest || latest.id !== fingerprint(query) || !latest.preview.window || latest.preview.items.some(item => item.check.state !== "ok" || item.check.rows === null)) throw new Error("重新检查导出内容后再提交。");
       const body = { ...latest.payload, previewVersion: latest.preview.version, reason };
       latest = undefined;
       const key = save("submit", { action: "SUBMIT", body, selection: query });
@@ -450,7 +514,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     },
     pendingSubmit() {
       const original = mySubmit();
-      return original?.action === "SUBMIT" ? { ...originalFields(original), reason: original.body.reason, query: original.selection, acceptedRequestId: original.acceptedRequestId } : undefined;
+      return original?.action === "SUBMIT" ? { ...originalFields(original), ...restoredDraft(original), acceptedRequestId: original.acceptedRequestId } : undefined;
     },
     recoveredSubmit: () => draftsFor(operator)?.submit,
     recoveredDecision: (taskId, action) => draftsFor(operator)?.decisions.get(decisionDraftKey(taskId, action)),
@@ -461,49 +525,65 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     async lookupSubmit(): Promise<SubmitLookup> {
       const original = mySubmit();
       if (original?.action !== "SUBMIT") return { kind: "missing" };
-      const found = await receipt("/command-receipt", original.commandKey);
-      if (found.status === "SUCCEEDED") {
-        const { requestId, rows } = parseBatch(found.batch);
-        const visibleTypes = new Set(rows.map(row => row.type));
-        if (visibleTypes.size !== rows.length || rows.some(row => !original.body.types.includes(row.type))) {
-          return { kind: "pending", expired: isRetryExpired(original) };
+      const previous = lastVisible?.operationId === original.commandKey ? lastVisible : undefined;
+      try {
+        const found = await receipt("/command-receipt", original.commandKey);
+        if (found.status === "SUCCEEDED") {
+          const { requestId, rows } = parseBatch(found.batch);
+          const visibleTypes = new Set(rows.map(row => row.type));
+          if (visibleTypes.size !== rows.length || rows.some(row => !original.body.types.includes(row.type))) {
+            return { kind: "pending", expired: isRetryExpired(original), previous };
+          }
+          if (visibleTypes.size < original.body.types.length) {
+            if (original.acceptedRequestId !== requestId) updateOriginal({ ...original, acceptedRequestId: requestId });
+            const checkedAt = Date.now();
+            lastVisible = { operationId: original.commandKey, rows, checkedAt };
+            return { kind: "partial", requestId, rows, checkedAt };
+          }
+          forget(original);
+          return { kind: "matched", rows };
         }
-        if (visibleTypes.size < original.body.types.length) {
-          if (original.acceptedRequestId !== requestId) updateOriginal({ ...original, acceptedRequestId: requestId });
-          return { kind: "partial", requestId, rows };
+        if (found.status === "FAILED" || found.status === "CONFIRMED_NOT_EXECUTED") {
+          const draft = restoredDraft(original);
+          const drafts = draftsFor(operator);
+          if (drafts) drafts.submit = draft;
+          forget(original);
+          return { kind: "cleared", draft };
         }
-        forget(original);
-        return { kind: "matched", rows };
+        enumeration(found.status, ["UNKNOWN", "PROCESSING"]);
+        return { kind: "pending", expired: isRetryExpired(original), previous };
+      } catch (error) {
+        if (isExportPermissionDenied(error)) {
+          lastVisible = undefined;
+          throw error;
+        }
+        return { kind: "check-failed", previous };
       }
-      if (found.status === "FAILED" || found.status === "CONFIRMED_NOT_EXECUTED") {
-        const draft = { reason: original.body.reason, query: original.selection };
-        const drafts = draftsFor(operator);
-        if (drafts) drafts.submit = draft;
-        forget(original);
-        return { kind: "cleared", draft };
-      }
-      enumeration(found.status, ["UNKNOWN", "PROCESSING"]);
-      return { kind: "pending", expired: isRetryExpired(original) };
     },
     tasks(view, page, pageSize, signal) {
       if (!views.includes(view)) throw new Error("当前没有查看权限。");
       return read(`?view=${view}&pageNum=${page}&pageSize=${pageSize}`, value => {
         const row = object(value);
         if (integer(row.pageNum) !== page || integer(row.pageSize) !== pageSize) invalid("export.taskPage");
-        return { rows: array(row.records, parseTask), total: integer(row.total) };
-      }, signal);
+        const hidden = new Set(store.list().flatMap(record => record.action !== "SUBMIT" && record.objectHidden ? [record.taskId] : []));
+        return { rows: array(row.records, parseTask).filter(task => !hidden.has(task.taskId)), total: integer(row.total) };
+      }, signal).catch(error => {
+        if (!signal?.aborted) hideDeniedTasks(error, row => decisionLane(row) === view);
+        throw error;
+      });
     },
     task: readTask,
     decide: decision,
     withdraw: (task, reason) => decision(task, "WITHDRAW", reason),
     async lookupDecision(pending): Promise<DecisionLookup> {
       const row = store.list().find(record => record.commandKey === pending.operationId);
-      if (!row || row.action === "SUBMIT" || row.taskId !== pending.taskId || row.action !== pending.decision || !canRecover(row, operator.authorities)) return { kind: "failed", text: "找不到本标签页保存的原操作。" };
+      if (!row || row.action === "SUBMIT" || row.taskId !== pending.taskId || row.action !== pending.decision) return { kind: "failed", text: "找不到本标签页保存的原操作。" };
       const command = row.action === "WITHDRAW" ? "WITHDRAW" : "DECISION";
       const hidden = (): DecisionLookup => {
-        if (!row.objectHidden) updateOriginal({ ...row, objectHidden: true });
+        setDecisionVisibility(record => record.taskId === row.taskId, false);
         return { kind: "hidden", text: "这条申请现在不在你能看的范围内，原操作继续保留。" };
       };
+      if (!canRecover(row, operator.authorities)) return hidden();
       try {
         const found = await receipt(`/${row.taskId}/command-receipt?command=${command}`, row.commandKey);
         if (found.status === "SUCCEEDED") {
@@ -520,11 +600,11 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
           return { kind: "cleared", text: "这次操作未执行，原理由已保留，可以重新确认。" };
         }
         enumeration(found.status, ["UNKNOWN", "PROCESSING"]);
-        if (row.objectHidden) updateOriginal({ ...row, objectHidden: false });
+        setDecisionVisibility(record => record.taskId === row.taskId, true);
         if (isRetryExpired(row)) return { kind: "expired", text: RETRY_EXPIRED_TEXT };
         return { kind: "pending", text: "还没查到这次操作的结果，先保持锁定，稍后再查。" };
       } catch (error) {
-        if (exportTaskHidden(error)) return hidden();
+        if (exportTaskHidden(error) || isExportPermissionDenied(error)) return hidden();
         throw error;
       }
     },
@@ -574,7 +654,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         }
       }
     },
-    pendingDecisions: () => store.list().flatMap(record => record.action === "SUBMIT" || !canRecover(record, operator.authorities)
-      || !views.includes(record.action === "WITHDRAW" ? "MINE" : "APPROVALS") ? [] : [pendingDecision(record)]),
+    pendingDecisions: () => store.list().flatMap(record => record.action === "SUBMIT"
+      || !record.objectHidden && (!canRecover(record, operator.authorities) || !views.includes(decisionLane(record))) ? [] : [pendingDecision(record)]),
   };
 }

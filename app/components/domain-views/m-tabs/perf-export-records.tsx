@@ -11,7 +11,7 @@ import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ExportAuditLink, ExportColumnsFold } from "./perf-export";
-import { EXPORT_LABEL, EXPORT_PARTIAL_RECEIPT, ExportOutcomeUnknownError, exportDownloadMessage, exportVisibleReceiptSummary, exportReceiptSummary, exportStatus, type DecisionLookup, type ExportDownload, type ExportTask, type PendingDecision, type PendingSubmit, type PerfExportPorts } from "./perf-view";
+import { EXPORT_LABEL, EXPORT_PARTIAL_RECEIPT, ExportOutcomeUnknownError, exportDownloadMessage, exportVisibleReceiptSummary, exportPreviousReceipt, exportReceiptSummary, exportStatus, type DecisionLookup, type ExportDownload, type ExportTask, type PendingDecision, type PendingSubmit, type PerfExportPorts } from "./perf-view";
 import { exportDecisionConflict, exportTaskHidden, isExportPermissionDenied, useExportClock } from "./perf-export-ports";
 import "./m1-export.css";
 
@@ -191,6 +191,10 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
       } else if (found.kind === "partial") {
         setAnswers(map => ({ ...map, [key]: { tag: acceptedTag, line: EXPORT_PARTIAL_RECEIPT + exportVisibleReceiptSummary(found.rows) } }));
         setRefresh(value => value + 1);
+      } else if (found.kind === "check-failed" || found.kind === "pending" && original.acceptedRequestId) {
+        const line = (found.kind === "check-failed" ? "本次查询失败，请重试。" : "本次未查到可见结果。") + exportPreviousReceipt(found.previous);
+        if (original.acceptedRequestId) setAnswers(map => ({ ...map, [key]: { tag: acceptedTag, line: EXPORT_PARTIAL_RECEIPT + line } }));
+        else stillUnknown(key, line);
       } else if (found.kind === "cleared") setSettled(list => [{ key, label: "提交导出", text: "这次提交没有执行，原理由已保留，可以重新导出。", mine: true }, ...list]);
       else if (!original.acceptedRequestId) stillUnknown(key, found.kind === "missing" ? "找不到本标签页保存的原操作。"
         : found.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。");
@@ -326,7 +330,7 @@ function TaskDrawer({ task, view, zone, rows, pending, now, lookup, downloadFail
     : reviewing && task.approveBlocked ? `批准不了：${task.approveBlocked}。驳回照常可以。`
     : task.scopeLost && task.state === "PENDING_APPROVAL" ? "恢复权限前这条不能批准；可以撤回。"
     : task.state === "PENDING_APPROVAL" && task.mine ? "还不能下载：没批准，文件还没生成。"
-    : task.failure === "SCOPE_HIDDEN" ? "生成前你已没有这个范围的权限，文件没有生成。请超级管理员在「客服与分组」恢复负责组，或在「运营账号与权限」恢复导出权限。"
+    : task.failure === "SCOPE_HIDDEN" ? "文件没有生成。当前范围和失败原因不可查看，请先恢复权限。"
     : (task.state === "APPROVED" || task.state === "FAILED") && task.failure === "SCOPE_LOST_BEFORE_GENERATE" ? task.decidedAt ? "已批准，但生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。" : "生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。"
     : (task.state === "APPROVED" || task.state === "FAILED") && task.failure ? task.decidedAt ? "文件没生成出来，不能下载。批准记录还在；请重新导出，明细要重新审批。" : "文件没生成出来，不能下载。请重新导出。"
     : task.state === "APPROVED" ? "还不能下载：已批准，文件还在生成。生成好会变成「可下载」。"

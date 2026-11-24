@@ -202,6 +202,16 @@ function CustomerValue({ value, observed, status, kind, label, onClick, places }
   return <button type="button" className={`rd-link sa-cell-value sa-link${/^0(\.0+)?$/.test(text) ? " zero" : missing ? " unknown sa-dash" : ""}`} title={missing ? note : undefined} aria-label={`${label}：${note}；查看明细`} onClick={onClick}>{text}</button>;
 }
 function countValue(count: Count): string | null { return count.confirmed === null || count.status !== "AVAILABLE" ? null : String(count.confirmed); }
+function fundsCoverage(funds: SupportAnalyticsResponse["funds"]): "COMPLETE" | "PARTIAL" | "UNKNOWN" {
+  const states = [funds?.balanceStatus, funds?.withdrawalStatus, funds?.walletReadStatus, funds?.withdrawalReadStatus];
+  if (states.every(state => state === "READY")) return "COMPLETE";
+  return states.some(state => state === "PARTIAL" || state === "READY") ? "PARTIAL" : "UNKNOWN";
+}
+const fundsSummary = {
+  COMPLETE: "客户与资金 · 已同步",
+  PARTIAL: "客户与资金 · 部分待核",
+  UNKNOWN: "客户与资金 · 暂待核实",
+};
 function activityTime(value: string): string {
   return formatBusinessTimeCompact(value, "时间待核验");
 }
@@ -236,74 +246,117 @@ function PerfAmount({ value, label, onClick }: { value: PerfValue | undefined; l
     sub={shown.state === "partial" && shown.observed !== null ? `已核 ${perfText({ state: "complete", value: shown.observed })}` : undefined} />;
 }
 const PERF_SINCE = "自 2026-11-20 起";
-export function AnalyticsTable({ data, currency, drill, openProfile, session, perf, query, onSourceRefreshed }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void; session?: CustomerSessionStart; perf: AnalyticsPerf; query: AnalyticsQueryState; onSourceRefreshed: (data: SupportAnalyticsResponse) => void }) {
+type AgentRow = Extract<SupportAnalyticsResponse, { view: "AGENTS" }>["records"][number];
+type AgentSubject = { agent: AgentRow; groupName?: string };
+type AgentStatisticsRead =
+  | { status: "loading" | "refresh-required" | "error" | "missing" | "denied" }
+  | { status: "ready"; subject: AgentSubject; amount: PerfValue };
+const agentReadReason = {
+  loading: "正在读取期间业绩…",
+  "refresh-required": "数据已更新，点「刷新」从第一页重新读取。",
+  error: "期间业绩读取失败，点「刷新」重试。",
+  missing: "暂时无法确认这位客服的统计，点「刷新」重试。",
+  denied: "已无权查看这位客服的统计。",
+};
+function AgentStatisticsDrawer({ subject, read, month, currency, drill, onClose }: {
+  subject?: AgentSubject; read: AgentStatisticsRead; month: string; currency: Currency; drill: Drill; onClose: () => void;
+}) {
+  const agent = subject?.agent, unit = nexGridBrandText(currency);
+  const agentPeriod: PerfValue = read.status === "ready" ? read.amount : { state: "unavailable", reason: agentReadReason[read.status] };
+  return <Drawer open title="客服统计详情" sub={agent ? agent.displayName || `客服 ${agent.accountId}` : undefined} onClose={onClose} footer={<div className="m1-drawer-actions"><Button type="button" onClick={onClose}>返回统计列表</Button></div>}><Facts>
+    {agent ? <>
+      <Fact k="当前组">{subject?.groupName || "待分组"}</Fact>
+      <Fact k="账号"><StatusTag tone={agent.account.accountState === "ENABLED" ? "ok" : "done"}>{agent.account.accountState === "ENABLED" ? "已启用" : agent.account.accountState === "DISABLED" ? "已停用" : "未知"}</StatusTag></Fact>
+      <Fact k="资格">{agent.account.serviceQualification === "ENABLED" ? "专属客服资格有效" : agent.account.serviceQualification === "DISABLED" ? "资格暂停" : agent.account.serviceQualification === "REMOVED" ? "资格已移除" : "资格未知"}</Fact>
+      {agentPeriod && <Fact k="期间业绩额" unit={agentPeriod.state === "complete" ? "USDT" : undefined}>{perfText(agentPeriod)}<span className="m1-fact-reason">{agentPeriod.state === "complete" ? month : perfNote(agentPeriod)}</span></Fact>}
+      <Fact k="已首充"><CountValue count={agent.current.firstConfirmed} label="已首充客户" onClick={() => drill({ view: "CUSTOMERS", agentId: agent.accountId, category: "BOUND", firstState: "CONFIRMED" })} /></Fact>
+      <Fact k="持有设备"><CountValue count={agent.current.devices.held} label="当前设备" onClick={() => drill({ view: "DEVICES", agentId: agent.accountId, category: "BOUND", basis: "CURRENT_ASSET" })} /></Fact>
+      <Fact k="客户累计充值" unit={unit}><MoneyValue money={agent.current.ownLifetime.find(x => x.currency === currency)?.deposits} label={`客户累计充值 ${unit}`} onClick={() => drill({ view: "FINANCE", agentId: agent.accountId, category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY" })} /></Fact>
+      <Fact k="当前余额" unit={unit}><Numeric kind="amount" value={agent.funds.balances?.find(f => f.currency === currency)?.confirmedAmount ?? null} observed={agent.funds.balances?.find(f => f.currency === currency)?.observedAmount} label={`当前余额 ${unit}`} onClick={() => drill({ view: "CUSTOMERS", agentId: agent.accountId, category: "BOUND" })} /></Fact>
+    </> : <Fact k="期间业绩额">—<span className="m1-fact-reason">{perfNote(agentPeriod)}</span></Fact>}
+    </Facts></Drawer>;
+}
+function agentScopeDenied(cause: unknown) {
+  if (!(cause instanceof SupportClientError)) return false;
+  const status = cause.status >= 200 && cause.status < 300 ? cause.apiCode : cause.status;
+  return status === 401 || status === 403 || status === 404
+    && ["SUPPORT_GROUP_NOT_FOUND", "SUPPORT_AGENT_NOT_FOUND"].includes(cause.backendMessage ?? "");
+}
+export function AnalyticsTable({ data, currency, drill, openProfile, session, perf, query, onSourceRefreshed, onSourceDenied }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void; session?: CustomerSessionStart; perf: AnalyticsPerf; query: AnalyticsQueryState; onSourceRefreshed: (data: SupportAnalyticsResponse) => void; onSourceDenied: () => void }) {
   const { month, groupId } = query;
-  const [agentId, setAgentId] = useState<string | null>(null);
-  const agent = data.view === "AGENTS" && agentId ? data.records.find(row => row.accountId === agentId) : undefined;
-  const accountId = agent?.accountId;
-  const [targetPeriod, setTargetPeriod] = useState<{ origin: SupportAnalyticsResponse; accountId: string; month: string; groupId: typeof groupId }
-    & ({ status: "ready"; amount: PerfValue } | { status: "data-updated"; refreshing: boolean })>();
-  const pairedSource = useRef<SupportAnalyticsResponse | null>(null);
-  function selectAgent(id: string | null) {
-    pairedSource.current = null;
-    setTargetPeriod(undefined);
-    setAgentId(id);
+  const [selection, setSelection] = useState<{ subject: AgentSubject; origin: SupportAnalyticsResponse } | null>(null);
+  const [read, setRead] = useState<AgentStatisticsRead>({ status: "loading" });
+  const agentId = selection?.subject.agent.accountId;
+  const requiresPeriod = selection?.origin.generation === "READY" && selection.origin.basis === "CURRENT_CUSTOMER_HISTORY" && !!selection.origin.performance?.window;
+  function selectAgent(agent: AgentRow) {
+    const subject = { agent, groupName: data.scopeSummary.groups.find(group => group.groupId === agent.account.groupId)?.name ?? undefined };
+    setSelection({ subject, origin: data });
+    const direct = agent.periodPerformance;
+    setRead(data.generation === "READY" && data.basis === "CURRENT_CUSTOMER_HISTORY" && data.performance?.window ? { status: "loading" }
+      : { status: "ready", subject, amount: direct?.window.month === month ? boardTotals(direct).amount
+        : data.generation === "UPGRADING" ? { state: "unavailable", reason: "数据正在升级" } : PERF_UNAVAILABLE_VALUE });
   }
   useEffect(() => {
-    const origin = data.performance?.window;
-    if (!accountId || data.generation !== "READY" || data.basis !== "CURRENT_CUSTOMER_HISTORY" || !origin || pairedSource.current === data) return;
+    const origin = selection?.origin, originWindow = origin?.performance?.window;
+    if (!agentId || !origin || !originWindow || !requiresPeriod) return;
     const controller = new AbortController();
     const signal = controller.signal;
-    void (async () => {
+    type Result = { read: AgentStatisticsRead; source?: SupportAnalyticsResponse };
+    const readTarget = async (): Promise<Result> => {
       const calendar = await analytics.months(signal);
       const selected = calendar.months.find(entry => entry.month === month);
-      if (calendar.generation !== "READY" || !selected || signal.aborted) return;
-      const readPeriod = () => analytics.query({ view: "AGENTS", basis: "PERIOD_EVENT", from: selected.from, to: selected.to,
-        agentId: accountId, groupId, currency: "USDT", pageNum: 1, pageSize: 100, signal }, "READY");
-      const validPeriod = (receipt: SupportAnalyticsResponse) => {
-        const window = receipt.performance?.window;
-        if (receipt.view !== "AGENTS" || receipt.scopeSummary.mode !== data.scopeSummary.mode || window?.month !== month) return;
-        const record = receipt.records.find(row => row.accountId === accountId)?.periodPerformance;
-        return record && samePerformanceWindow(record.window, window) ? record : undefined;
+      if (calendar.generation !== "READY" || !selected) return { read: { status: "missing" } };
+      const periodQuery = { view: "AGENTS" as const, basis: "PERIOD_EVENT" as const, from: selected.from, to: selected.to,
+        agentId, groupId, currency: "USDT" as const, pageNum: 1, pageSize: 100, signal };
+      const resolvePeriod = (response: SupportAnalyticsResponse) => {
+        if (response.scopeSummary.mode !== origin.scopeSummary.mode) return { status: "denied" as const };
+        const window = response.performance?.window;
+        if (response.view !== "AGENTS" || window?.month !== month) return { status: "missing" as const };
+        const agent = response.records.find(row => row.accountId === agentId);
+        if (!agent?.periodPerformance || !samePerformanceWindow(agent.periodPerformance.window, window)) return { status: "missing" as const };
+        const groupName = response.scopeSummary.groups.find(group => group.groupId === agent.account.groupId)?.name ?? undefined;
+        return { status: "ready" as const, subject: { agent, groupName }, amount: boardTotals(agent.periodPerformance).amount, window };
       };
-      const sameGeneration = (period: NonNullable<ReturnType<typeof validPeriod>>, cumulative: typeof origin) =>
-        period.window.sourceVersion === cumulative.sourceVersion && period.window.asOf === cumulative.asOf;
-      const period = validPeriod(await readPeriod());
-      if (signal.aborted || !period) return;
-      const target = { origin: data, accountId, month, groupId };
-      if (sameGeneration(period, origin)) {
-        setTargetPeriod({ ...target, status: "ready", amount: boardTotals(period).amount });
-        return;
-      }
-      setTargetPeriod({ ...target, status: "data-updated", refreshing: true });
+      const sameGeneration = (left: typeof originWindow, right: typeof originWindow) =>
+        left.sourceVersion === right.sourceVersion && left.asOf === right.asOf;
+      const period = resolvePeriod(await analytics.query(periodQuery, "READY"));
+      if (period.status !== "ready" || sameGeneration(period.window, originWindow)) return { read: period };
       const sourceQuery = analyticsWireQuery({ ...query, pageNum: 1, expectedVersion: undefined }, []);
-      let fresh = await analytics.query({ ...sourceQuery, signal }, "READY");
-      if (signal.aborted || fresh.view !== "AGENTS" || fresh.scopeSummary.mode !== data.scopeSummary.mode) return;
+      const sourceStatus = (source: SupportAnalyticsResponse): "denied" | "refresh-required" | "missing" | undefined => {
+        if (source.scopeSummary.mode !== origin.scopeSummary.mode) return "denied";
+        if (source.versionState !== "READY" || !source.queryVersion) return "refresh-required";
+        if (source.view !== "AGENTS" || !source.performance?.window) return "missing";
+      };
+      let source = await analytics.query({ ...sourceQuery, signal }, "READY");
+      let status = sourceStatus(source);
+      if (status) return { read: { status } };
       if (query.pageNum > 1) {
-        if (fresh.versionState !== "READY" || !fresh.queryVersion) return;
-        fresh = await analytics.query({ ...sourceQuery, pageNum: query.pageNum, expectedVersion: fresh.queryVersion, signal }, "READY");
+        source = await analytics.query({ ...sourceQuery, pageNum: query.pageNum, expectedVersion: source.queryVersion!, signal }, "READY");
+        status = sourceStatus(source);
+        if (status) return { read: { status } };
       }
-      const freshWindow = fresh.performance?.window;
-      if (signal.aborted || fresh.view !== "AGENTS" || fresh.scopeSummary.mode !== data.scopeSummary.mode || !freshWindow) return;
-      const freshPeriod = validPeriod(await readPeriod());
+      const refreshedPeriod = await analytics.query(periodQuery, "READY");
+      const fresh = resolvePeriod(refreshedPeriod);
+      if (fresh.status !== "ready") return { read: fresh };
+      if (refreshedPeriod.versionState !== "READY" || !refreshedPeriod.queryVersion) return { read: { status: "refresh-required" } };
+      if (!sameGeneration(fresh.window, source.performance!.window)) return { read: { status: "refresh-required" } };
+      return { read: fresh, source };
+    };
+    void readTarget().catch((cause): Result => {
+      if (agentScopeDenied(cause)) return { read: { status: "denied" } };
+      if (cause instanceof SupportClientError && (cause.status === 409 || cause.apiCode === 409)) return { read: { status: "refresh-required" } };
+      return { read: { status: "error" } };
+    }).then(result => {
       if (signal.aborted) return;
-      if (freshPeriod && sameGeneration(freshPeriod, freshWindow)) {
-        pairedSource.current = fresh;
-        setTargetPeriod({ ...target, origin: fresh, status: "ready", amount: boardTotals(freshPeriod).amount });
-        onSourceRefreshed(fresh);
-      } else setTargetPeriod({ ...target, status: "data-updated", refreshing: false });
-    })().catch(() => {
-      // The existing unavailable value covers an unsuccessful targeted read; only stop saying it is re-reading.
-      if (!signal.aborted) setTargetPeriod(previous => previous?.status === "data-updated" ? { ...previous, refreshing: false } : previous);
+      setRead(result.read);
+      if (result.read.status === "denied") onSourceDenied();
+      if (result.source) onSourceRefreshed(result.source);
     });
     return () => controller.abort();
-  }, [data, accountId, month, groupId, query, onSourceRefreshed]);
-  // 这位客服所选月份的期间业绩额：有就写数，没有写「—」和原因（新版接口读成但没给这一项、升级中、旧版接口各一种说法）。
-  const targeted = targetPeriod?.origin === data && targetPeriod.accountId === accountId && targetPeriod.month === month && targetPeriod.groupId === groupId ? targetPeriod : undefined;
-  const agentPeriod: PerfValue | undefined = agent && ((agent.periodPerformance?.window.month === month ? perf.agentPeriods?.[agent.accountId] : undefined)
-    ?? (targeted?.status === "ready" ? targeted.amount : targeted ? { state: "unavailable", reason: targeted.refreshing ? "数据已更新，正在重新加载…" : "数据已更新，点「刷新」重新加载" } : undefined)
-    ?? (data.generation === "READY" ? { state: "unavailable", reason: "暂时无法确认" } : data.generation === "UPGRADING" ? { state: "unavailable", reason: "数据正在升级" } : PERF_UNAVAILABLE_VALUE));
-  if (!data.records.length) return <BlockState state="empty" title={data.total === null ? "还没数到记录，总数还在统计。" : "当前筛选下没有记录。"} />;
+  }, [selection, agentId, requiresPeriod, month, groupId, query, onSourceRefreshed, onSourceDenied]);
+  const agentDrawer = selection && <AgentStatisticsDrawer read={read} subject={read.status === "ready" ? read.subject : read.status === "loading" ? selection.subject : undefined}
+    month={month} currency={currency} drill={drill} onClose={() => setSelection(null)} />;
+  if (!data.records.length) return <><BlockState state="empty" title={data.total === null ? "还没数到记录，总数还在统计。" : "当前筛选下没有记录。"} />{agentDrawer}</>;
   const name = (row: Pick<SupportAnalyticsCustomer, "nickname" | "customerNo" | "customerId">) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
   const unit = nexGridBrandText(currency);
   if (data.view === "AGENTS") {
@@ -318,19 +371,10 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
       const customerCount = row.funds.customerCount !== undefined ? String(row.funds.customerCount) : row.current.firstConfirmed.confirmed !== null && row.current.firstNone.confirmed !== null && row.current.firstUnknown.confirmed !== null ? (BigInt(row.current.firstConfirmed.confirmed) + BigInt(row.current.firstNone.confirmed) + BigInt(row.current.firstUnknown.confirmed)).toString() : null;
       const group = data.scopeSummary.groups.find(g => g.groupId === row.account.groupId);
       const onlyAgent = (view: SupportAnalyticsView, extra: Partial<AnalyticsQueryState> = {}) => drill({ view, agentId: row.accountId, category: "BOUND", ...extra });
-      return <Tr key={row.accountId} selected={agentId === row.accountId}><Td><div className="sa-identity"><SupportAvatar name={row.displayName || "客服"} path={row.avatarRef ?? undefined} version={row.avatar?.version} /><div><Button variant="ghost" size="sm" title={row.displayName || "客服"} onClick={() => onlyAgent("CUSTOMERS")}>{row.displayName || "名称未同步"}</Button><span className="rd-note">{group?.name || (row.account.groupId === null ? "待分组" : "组名未同步")} · {role(row)}</span></div></div></Td><Td align="right"><Numeric value={customerCount} label="当前绑定客户" onClick={() => onlyAgent("CUSTOMERS")} /></Td><Td align="right"><CountValue count={row.current.activity.active} coverage={[row.current.activity.status, row.current.activity.window.status]} label={activeHead} onClick={() => onlyAgent("ACTIVITY", { filter: "WINDOW_ACTIVE" })} /></Td><Td align="right">{assets ? <CountValue count={row.current.devices.held} label="当前持有设备" onClick={() => onlyAgent("DEVICES", { basis: "CURRENT_ASSET" })} /> : <PerfAmount value={perf.agents[row.accountId]} label="当前客户累计业绩额" onClick={() => onlyAgent("CUSTOMERS")} />}</Td><Td sticky="end" fit><Button size="sm" onClick={() => selectAgent(row.accountId)}>查看统计</Button></Td></Tr>;
+      return <Tr key={row.accountId} selected={agentId === row.accountId}><Td><div className="sa-identity"><SupportAvatar name={row.displayName || "客服"} path={row.avatarRef ?? undefined} version={row.avatar?.version} /><div><Button variant="ghost" size="sm" title={row.displayName || "客服"} onClick={() => onlyAgent("CUSTOMERS")}>{row.displayName || "名称未同步"}</Button><span className="rd-note">{group?.name || (row.account.groupId === null ? "待分组" : "组名未同步")} · {role(row)}</span></div></div></Td><Td align="right"><Numeric value={customerCount} label="当前绑定客户" onClick={() => onlyAgent("CUSTOMERS")} /></Td><Td align="right"><CountValue count={row.current.activity.active} coverage={[row.current.activity.status, row.current.activity.window.status]} label={activeHead} onClick={() => onlyAgent("ACTIVITY", { filter: "WINDOW_ACTIVE" })} /></Td><Td align="right">{assets ? <CountValue count={row.current.devices.held} label="当前持有设备" onClick={() => onlyAgent("DEVICES", { basis: "CURRENT_ASSET" })} /> : <PerfAmount value={perf.agents[row.accountId]} label="当前客户累计业绩额" onClick={() => onlyAgent("CUSTOMERS")} />}</Td><Td sticky="end" fit><Button size="sm" onClick={() => selectAgent(row)}>查看统计</Button></Td></Tr>;
     })}</tbody></Table>
-    {agent && <Drawer open title="客服统计详情" sub={agent.displayName || `客服 ${agent.accountId}`} onClose={() => selectAgent(null)} footer={<div className="m1-drawer-actions"><Button type="button" onClick={() => selectAgent(null)}>返回统计列表</Button></div>}><Facts>
-      <Fact k="当前组">{data.scopeSummary.groups.find(g => g.groupId === agent.account.groupId)?.name || "待分组"}</Fact>
-      <Fact k="账号"><StatusTag tone={agent.account.accountState === "ENABLED" ? "ok" : "done"}>{agent.account.accountState === "ENABLED" ? "已启用" : agent.account.accountState === "DISABLED" ? "已停用" : "未知"}</StatusTag></Fact>
-      <Fact k="资格">{agent.account.serviceQualification === "ENABLED" ? "专属客服资格有效" : agent.account.serviceQualification === "DISABLED" ? "资格暂停" : agent.account.serviceQualification === "REMOVED" ? "资格已移除" : "资格未知"}</Fact>
-      {agentPeriod && <Fact k="期间业绩额" unit={agentPeriod.state === "complete" ? "USDT" : undefined}>{perfText(agentPeriod)}<span className="m1-fact-reason">{agentPeriod.state === "complete" ? month : perfNote(agentPeriod)}</span></Fact>}
-      <Fact k="已首充"><CountValue count={agent.current.firstConfirmed} label="已首充客户" onClick={() => drill({ view: "CUSTOMERS", agentId: agent.accountId, category: "BOUND", firstState: "CONFIRMED" })} /></Fact>
-      <Fact k="持有设备"><CountValue count={agent.current.devices.held} label="当前设备" onClick={() => drill({ view: "DEVICES", agentId: agent.accountId, category: "BOUND", basis: "CURRENT_ASSET" })} /></Fact>
-      <Fact k="客户累计充值" unit={unit}><MoneyValue money={agent.current.ownLifetime.find(x => x.currency === currency)?.deposits} label={`客户累计充值 ${unit}`} onClick={() => drill({ view: "FINANCE", agentId: agent.accountId, category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY" })} /></Fact>
-      <Fact k="当前余额" unit={unit}><Numeric kind="amount" value={agent.funds.balances?.find(f => f.currency === currency)?.confirmedAmount ?? null} observed={agent.funds.balances?.find(f => f.currency === currency)?.observedAmount} label={`当前余额 ${unit}`} onClick={() => drill({ view: "CUSTOMERS", agentId: agent.accountId, category: "BOUND" })} /></Fact>
-    </Facts></Drawer>}
-  </>;
+    {agentDrawer}
+    </>;
   }
   if (data.view === "FINANCE") return <Table label="授权客户资金事件" className="m1-analytics-table m1-finance-table"><colgroup><col /><col /><col /><col /><col /><col /></colgroup><thead><Tr><Th>客户 / 用户编码</Th><Th>事件类型</Th><Th>成功时间</Th><Th align="right">金额 · {unit}</Th><Th>历史覆盖</Th><Th sticky="end" fit>详情</Th></Tr></thead><tbody>{data.records.map((row, index) => <Tr key={`${row.customerId}:${row.orderNo}:${row.succeededAt}:${index}`}><Td><Button variant="ghost" size="sm" title={name(row)} onClick={() => openProfile(row.customerId)}>{name(row)}</Button><span className="rd-note"><span className="m-user-code">{m1CustomerCode(row.customerId)}</span></span></Td><Td>{row.kind === "DEPOSIT" ? "充值" : row.kind === "DEVICE_PURCHASE" ? "购机" : row.kind === "CONSUMPTION" ? "付费消费" : "购机退款"}</Td><Td><span className="sa-nowrap" title={dateText(row.succeededAt)}>{row.succeededAt ? activityTime(row.succeededAt) : "—"}</span></Td><Td align="right"><Numeric value={row.amount} kind="amount" label={`此笔当前查到的金额 ${unit}`} onClick={() => openProfile(row.customerId)} places={amountPlaces(data.records.map(item => item.amount))} /></Td><Td><span className="sa-nowrap">{row.historyStatus === "READY" ? "已核实" : "历史未同步"}</span></Td><Td sticky="end" fit><Button size="sm" onClick={() => openProfile(row.customerId)}>客户资金详情</Button></Td></Tr>)}</tbody></Table>;
   if (data.view === "DEVICES") return <Table label="当前托管设备" className="m1-analytics-table m1-device-table"><colgroup><col /><col /><col /><col /><col /><col /></colgroup><thead><Tr><Th>设备 / 用户编码</Th><Th>类型</Th><Th align="right">算力</Th><Th>持有 / 连接</Th><Th>取得来源</Th><Th sticky="end" fit>详情</Th></Tr></thead><tbody>{data.records.map(row => <Tr key={row.deviceId}><Td><span title={row.deviceId}>{row.deviceId.length > 20 ? `${row.deviceId.slice(0, 8)}…${row.deviceId.slice(-8)}` : row.deviceId}</span><span className="rd-note">客户 <span className="m-user-code">{m1CustomerCode(row.customerId)}</span></span></Td><Td>{row.deviceType === "SHARE" || row.deviceType === "CLOUD_SHARE" ? "云份额" : row.deviceType === "DEVICE" ? "实体设备" : row.deviceType === "SERVER" ? "服务器" : "类型未知"}</Td><Td align="right"><Numeric value={row.hashrate} kind="hashrate" label="设备算力" onClick={() => openProfile(row.customerId)} places={amountPlaces(data.records.map(item => item.hashrate))} /></Td><Td>{row.holdingStatus === "AVAILABLE" ? "持有已核实" : "持有未知"}<span className="rd-note">{row.connectionStatus === "ONLINE" ? "在网" : row.connectionStatus === "OFFLINE" ? "离线" : row.connectionStatus === "NOT_APPLICABLE" ? "不适用" : "未知"}</span></Td><Td>{row.acquisition === "PAID_PURCHASE" ? "付费购买" : "来源未知"}</Td><Td sticky="end" fit><Button size="sm" onClick={() => openProfile(row.customerId)}>客户设备详情</Button></Td></Tr>)}</tbody></Table>;
@@ -387,6 +431,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [section, setSection] = useState<Section>("stats"), [personalView, setPersonalView] = useState<PersonalWorkbenchView>("dashboard");
   const lastDataView = useRef<SupportAnalyticsView>("OVERVIEW");
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [agentScopeLost, setAgentScopeLost] = useState(false);
   const [periodDetail, setPeriodDetail] = useState<SupportAnalyticsDetailView | null>(null);
   const [personalPeriodRetry, setPersonalPeriodRetry] = useState(0);
   const [fundMetric, setFundMetric] = useState<FundMetric | null>(null);
@@ -600,6 +645,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     }
   }, [scope, exportsPorts, section, isPersonal]);
   const change: Drill = changes => {
+    setAgentScopeLost(false);
     controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setFundMetric(null); setError("");
     if (changes.month !== undefined || changes.currency !== undefined) closeEvents();
     const basis = scope?.generation !== "LEGACY" && changes.basis === undefined
@@ -607,6 +653,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     setQueryState(previous => changeAnalyticsQuery(previous, basis ? { ...changes, basis } : changes));
   };
   function refreshScope(invalidated = false, targeted = false) {
+    setAgentScopeLost(false);
     closeEvents();
     targetedRefresh.current = targeted;
     setFundMetric(null);
@@ -618,6 +665,11 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     setScopeError(""); setData(null); setProfileId(null); setError("");
     setScopeRetry(n => n + 1);
   }
+  const invalidateAgentScope = useCallback(() => {
+    refreshScope(true);
+    setAgentScopeLost(true);
+  }, [queryState]);
+  const deniedAgentDrawer = agentScopeLost && <AgentStatisticsDrawer read={{ status: "denied" }} month={queryState.month} currency={queryState.currency ?? "USDT"} drill={change} onClose={() => setAgentScopeLost(false)} />;
   function reloadFirstPage() { change({}); setRetry(n => n + 1); }
   function closeTransfer(keepCustomer = false) {
     const url = new URL(window.location.href); url.searchParams.delete("action"); if (!keepCustomer) url.searchParams.delete("customerId"); window.history.replaceState(null, "", url);
@@ -686,7 +738,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{!noScopedContent && <Button onClick={() => refreshScope()}>刷新</Button>}
   </>} />;
   const related = !personalHeader && leaderboardReachable && <nav className="rd-links" aria-label="相关页面"><span>相关页面</span><a className="rd-link" href="/service/leaderboard" onClick={event => { event.preventDefault(); router.push("/service/leaderboard"); }}>业绩榜</a></nav>;
-  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>{header}{exportsOnly ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} /><PerfExportRecords ports={exportsPorts} /></> : <Panel><BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" : scopeError || "正在核对当前可见范围…"} detail={noScopedContent ? "主管负责的组由超级管理员在「客服与分组」里设置。" : undefined} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重新核对范围" /></Panel>}{noScopedContent && related}</section>;
+  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>{header}{exportsOnly ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} /><PerfExportRecords ports={exportsPorts} /></> : <Panel><BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" : scopeError || "正在核对当前可见范围…"} detail={noScopedContent ? "主管负责的组由超级管理员在「客服与分组」里设置。" : undefined} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重新核对范围" /></Panel>}{noScopedContent && related}{deniedAgentDrawer}</section>;
 
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
   const leadPermission: Permission = mode === "ALL" ? "superadmin" : "supervisor";
@@ -695,6 +747,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     ? section === "stats" ? "my-data" : personalView === "customers" ? "my-customers" : "home"
     : section === "stats" ? queryState.view === "CUSTOMERS" ? "customers" : "data" : section === "personal" ? "data" : section;
   function openTab(tab: M1Tab) {
+    setAgentScopeLost(false);
     // Group changes in 客服与分组 feed the scope (group chips, names); re-read it once the supervisor leaves that tab.
     if (section === "team" && tab !== "team" && teamChanged.current) { teamChanged.current = false; setScope(null); setScopeRetry(n => n + 1); }
     restoreExports.current = false;
@@ -840,7 +893,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       {loading && <div className="sa-state" role="status">正在加载…<Button type="button" size="sm" onClick={() => { controllerRef.current?.abort(); generation.current++; setLoading(false); setCancelled(true); setData(null); }}>取消读取</Button></div>}
       {error ? <BlockState state="error" title={error} onRetry={reloadFirstPage} retryLabel={error.includes("第一页") ? "从第一页重新加载" : "重试"} /> : cancelled && <div className="sa-state" role="status">已取消加载，筛选条件不变。<Button type="button" size="sm" onClick={reloadFirstPage}>重试</Button></div>}
       {data && current && personnel && <>
-        {(queryState.view === "OVERVIEW" || queryState.view === "FINANCE") && <Fold title="经营概况" summary={overviewSummary ?? `客户与资金 · ${data.versionState === "READY" ? "已同步" : "数据仍在同步"}`} explain={queryState.view === "OVERVIEW" && queryState.basis === "PERIOD_EVENT" && perf.attribution ? "业绩按所选月份发生时的归属算。当时还没分组的客服的业绩算给客服本人、不进组，所以组卡和下面两类加起来比总额少；在业绩榜里能看到。" : caption}>
+        {(queryState.view === "OVERVIEW" || queryState.view === "FINANCE") && <Fold title="经营概况" summary={overviewSummary ?? fundsSummary[fundsCoverage(data.funds)]} explain={queryState.view === "OVERVIEW" && queryState.basis === "PERIOD_EVENT" && perf.attribution ? "业绩按所选月份发生时的归属算。当时还没分组的客服的业绩算给客服本人、不进组，所以组卡和下面两类加起来比总额少；在业绩榜里能看到。" : caption}>
           {queryState.view === "OVERVIEW" && queryState.basis !== "CURRENT_ASSET" && <StatBand label="经营概况">
             {queryState.basis === "PERIOD_EVENT" ? <>
               <Stat label="期间业绩额" value={perfText(perf.scope.period.amount)} unit={perf.scope.period.amount.state === "complete" ? "USDT" : undefined} sub={perfNote(perf.scope.period.amount)} />
@@ -893,9 +946,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
           {!data.scopeSummary.groups.length && mode === "MANAGED" && <BlockState state="empty" title="当前没有负责组。" />}
         </> : <>{queryState.view === "CUSTOMERS" && <div className="sa-legend"><span>金额单位 {nexGridBrandText(currency)}</span><span><span className="sa-dot on" aria-hidden="true" />本统计期活跃</span><span><span className="sa-dot off" aria-hidden="true" />本统计期未活跃</span><span><span className="sa-cell-unknown">-</span> 数据还在同步</span><span>点客户名查看资料与记录</span></div>}
           {sessionError && <Notice tone="danger" action={<><Button size="sm" type="button" onClick={() => { const row = sessionError; setSessionError(null); openSessions(row); }}>查看会话记录</Button><Button size="sm" type="button" onClick={() => setSessionError(null)}>知道了</Button></>}>{customerName(sessionError)}：暂时无法核对接待状态，请稍后重试。</Notice>}
-          <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} perf={perf} query={queryState} onSourceRefreshed={setData} /><footer className="sa-pager"><p>{data.total === null ? `第 ${queryState.pageNum} 页 · 共 — 条（已数到 ${data.observedTotal ?? "—"} 条）` : `第 ${queryState.pageNum} / ${Math.max(1, Math.ceil(data.total / data.pageSize))} 页 · 共 ${data.total} 条`}</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">这份数据还在变，暂时不能翻页；请刷新后重试。</p>}</>}
+          <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} perf={perf} query={queryState} onSourceRefreshed={setData} onSourceDenied={invalidateAgentScope} /><footer className="sa-pager"><p>{data.total === null ? `第 ${queryState.pageNum} 页 · 共 — 条（已数到 ${data.observedTotal ?? "—"} 条）` : `第 ${queryState.pageNum} / ${Math.max(1, Math.ceil(data.total / data.pageSize))} 页 · 共 ${data.total} 条`}</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">这份数据还在变，暂时不能翻页；请刷新后重试。</p>}</>}
       </>}
     </Panel>}
+    {deniedAgentDrawer}
     {(showStatistics || periodDetail) && fundSource && <M1StatisticDetails key={`${periodDetail ?? fundMetric}:${fundSource.kind === "fund" ? fundSource.origin.asOf : ""}`} source={fundSource} onClose={() => { setFundMetric(null); setPeriodDetail(null); }} onInvalid={invalidateFund} />}
     {sessionBusy && <SessionBusyDialog customer={customerName(sessionBusy.row)} hold={sessionBusy.hold} onClose={() => setSessionBusy(null)} onRead={() => { const row = sessionBusy.row; setSessionBusy(null); openSessions(row); }} />}
     {transferCustomer && <CustomerTransferDialog key={transferCustomer} customerId={transferCustomer} mode={mode === "ALL" ? "ALL" : "MANAGED"} onClose={() => closeTransfer()} onDone={notice => { closeTransfer(); setTransferNotice(notice); setTransferRevision(n => n + 1); setRetry(n => n + 1); }} onOpenOwn={canMine ? () => { closeTransfer(true); openTab("mine"); } : undefined} />}

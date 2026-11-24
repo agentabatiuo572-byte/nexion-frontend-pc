@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Decision, Explain, Fact, Facts, Field, Fold, InlineRetry, Modal, Notice, Select, StatusTag, CheckGroup } from "@/app/components/rd";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { businessZone } from "@/lib/admin/business-time";
-import { EXPORT_LABEL, EXPORT_PARTIAL_RECEIPT, ExportOutcomeUnknownError, exportDownloadMessage, exportVisibleReceiptSummary, exportReceiptSummary, exportStatus, type ExportColumns, type ExportDialogData, type ExportDownload, type ExportItem, type ExportSubmitted, type ExportType, type PerfExportPorts } from "./perf-view";
+import { EXPORT_LABEL, EXPORT_PARTIAL_RECEIPT, ExportOutcomeUnknownError, exportDownloadMessage, exportVisibleReceiptSummary, exportPreviousReceipt, exportReceiptSummary, exportStatus, type ExportColumns, type ExportDialogData, type ExportDownload, type ExportItem, type ExportSubmitted, type ExportType, type PerfExportPorts } from "./perf-view";
 import { isExportPermissionDenied, useExportClock } from "./perf-export-ports";
 import "./m1-export.css";
 
@@ -58,6 +58,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   const [found, setFound] = useState(false);
   const [preview, setPreview] = useState<"checking" | "ready" | "failed">("checking");
   const checkGeneration = useRef(0);
+  const editedConditions = useRef(false);
   const zone = businessZone().label;
   const permissionLost = () => {
     checkGeneration.current++;
@@ -67,6 +68,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   };
 
   const load = () => {
+    editedConditions.current = false;
     setLoadFailed(false);
     setPreview("checking");
     const generation = ++checkGeneration.current;
@@ -83,7 +85,8 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   useEffect(() => { load(); return () => { checkGeneration.current++; }; }, [ports]);
 
   /** 重新检查这几项（只读）。只认最后一次检查的结果；没查到的这一项写没加载出来。 */
-  const recheck = (types: readonly ExportType[], next = { month, scope }) => {
+  const recheck = (types: readonly ExportType[], next = { month, scope }, edited = false) => {
+    if (edited) editedConditions.current = true;
     const generation = ++checkGeneration.current;
     setPreview("checking");
     setData(previous => previous && { ...previous, asOf: "—", blocked: undefined });
@@ -91,10 +94,10 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     setItems(rows => rows.filter(row => permitted?.includes(row.type)).map(row => ({
       ...row, columns: { total: 0, summary: "", groups: [] }, check: { state: "checking" },
     })));
-    ports.check({ month: next.month, scope: next.scope, types: [...types] }).then(found => {
+    ports.check({ month: next.month, scope: next.scope, types: [...types] }, editedConditions.current).then(found => {
       if (generation !== checkGeneration.current) return;
       setItems(found.items);
-      setData(previous => previous && { ...previous, asOf: found.asOf, blocked: found.blocked });
+      setData(previous => previous && { ...previous, asOf: found.asOf, blocked: found.blocked, restoration: found.restoration });
       setPreview("ready");
     }, error => {
       if (generation !== checkGeneration.current) return;
@@ -110,15 +113,15 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     if (on && item.check.state === "failed") setDropped(rows => [...rows, item.type]);
     if (!on) setDropped(rows => rows.filter(type => type !== item.type));
     // 取消勾选没加载出来的一项后，马上对剩下勾着的重新检查，用这次的结果提交（5h）。
-    recheck(next);
+    recheck(next, { month, scope }, true);
   };
   const changeScope = (value: string) => {
     const types = data?.scopes.find(choice => choice.value === value)?.types;
     const next = selected.filter(type => types?.includes(type));
     setSelected(next); setScope(value); setDropped([]);
-    recheck(next, { month, scope: value });
+    recheck(next, { month, scope: value }, true);
   };
-  const changeMonth = (value: string) => { setMonth(value); setDropped([]); recheck(selected, { month: value, scope }); };
+  const changeMonth = (value: string) => { setMonth(value); setDropped([]); recheck(selected, { month: value, scope }, true); };
 
   if (result) {
     const pending = result.some(row => row.state === "PENDING_APPROVAL");
@@ -168,9 +171,18 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   const confirmLabel = hasSummary && hasDetail ? "导出汇总并提交明细审批" : hasDetail ? "提交审批" : "提交导出";
   const notReady = chosen.find(item => item.check.state !== "ok");
   // 要人处理的才出橙黄提示条：页面那一版刷新没成功、提交结果未知（VS-107）。
+  const differences = data?.restoration?.differences.map(change => {
+    if (change.field === "month") return `月份 ${change.original} 已不可选`;
+    if (change.field === "types") return `已不可选：${change.removed.map(type => EXPORT_LABEL[type]).join("、")}`;
+    const before = change.original.groupIds ?? [], after = change.current?.groupIds ?? [];
+    const removed = before.filter(id => !after.includes(id)).length, added = after.filter(id => !before.includes(id)).length;
+    return removed || added ? `负责组：减少 ${removed} 个，新增 ${added} 个` : "原范围已不可选";
+  });
   const blockedReason = !data ? undefined
     : original?.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT
     : unknown ? "提交后没收到结果，原来的选择和理由已保存。先查询原操作，不要再点提交。"
+    : data.catalogState === "no-months" ? "暂无可导出月份。"
+    : differences?.length ? `原条件和现在不同。${differences.join("；")}。请重新选择。`
     : data.blocked;
   // 空、没勾选、正在检查、勾着的项没加载出来：那一项自己在内容区写清楚，这里只写进确认按钮的灰色原因，不另出提示条（VS-107，一件事只说一处）。
   const quietReason = blockedReason ? undefined
@@ -186,7 +198,15 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   const recovery = unknown && <div className="m1-export-recover"><Button size="sm" loading={querying} loadingText="正在查询…" onClick={() => {
         setQuerying(true); setLookupText(null);
         ports.lookupSubmit().then(outcome => {
-          if (outcome.kind === "pending") { if (!original?.acceptedRequestId) setLookupText(outcome.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。"); return; }
+          if (outcome.kind === "check-failed") {
+            setLookupText("本次查询失败，请重试。" + exportPreviousReceipt(outcome.previous));
+            return;
+          }
+          if (outcome.kind === "pending") {
+            setLookupText(original?.acceptedRequestId ? "本次未查到可见结果。" + exportPreviousReceipt(outcome.previous)
+              : outcome.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。");
+            return;
+          }
           if (outcome.kind === "partial") {
             setOriginal(ports.pendingSubmit());
             setLookupText(exportVisibleReceiptSummary(outcome.rows));
@@ -205,16 +225,16 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           setLookupText(original?.acceptedRequestId ? "这次查询没连上，暂时无法核对当前可见结果。" : "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
         }).finally(() => setQuerying(false));
       }}>查询原操作</Button>{lookupText && lookupText !== RETRY_EXPIRED_TEXT && <span role="status">{lookupText}</span>}{expired && <span role="status">{RETRY_EXPIRED_TEXT} <ExportAuditLink /></span>}</div>;
-  const content = !data && unknown ? recovery : loadFailed
-    ? <Notice tone="danger" action={<Button size="sm" onClick={load}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。</Notice>
+  const content = !data && unknown ? recovery : loadFailed || (!unknown && data?.catalogState === "no-months")
+    ? <Notice tone="danger" action={<Button size="sm" onClick={load} loading={preview === "checking"}>重试</Button>}>{loadFailed ? "导出内容没加载出来，月份、范围和已填的理由都还在。" : "暂无可导出月份。"}</Notice>
     : !data ? <p className="m1-export-loading" role="status">正在读取导出内容…</p>
     : <div className="m1-export">
       {recovery}
       <div className="m1-export-scope">
-        <Field label="月份" help={data.since}>{control => data.months.length > 1
+        <Field label="月份" help={data.since}>{control => (data.months.length > 1 || !month && !!data.restoration)
           ? <Select {...control} aria-label="月份" value={month} options={data.months} onChange={changeMonth} disabled={unknown} />
           : <div id={control.id} className="m1-export-static">{month}</div>}</Field>
-        <Field label="范围">{control => data.scopes.length > 1
+        <Field label="范围">{control => (data.scopes.length > 1 || !scope && !!data.restoration)
           ? <Select {...control} aria-label="范围" value={scope} options={data.scopes} onChange={changeScope} disabled={unknown} />
           : <div id={control.id} className="m1-export-static">{scopeLabel}</div>}</Field>
       </div>
@@ -229,12 +249,12 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
         <div className="m1-export-items">{items.map(item => {
           const on = selected.includes(item.type), label = EXPORT_LABEL[item.type], check = item.check;
           const rows = check.state === "ok" || check.state === "stale" ? check.rows : null;
-          const meta = check.state === "empty" ? item.grain
+          const meta = check.state === "empty" || check.state === "unchecked" ? item.grain
             : check.state === "checking" ? `${item.grain} · 正在检查…`
             : `${item.grain}${rows !== null ? ` · ${num(rows)} 行` : ""} · 上限 ${num(item.limit)} 行（拟设）`;
           const showColumns = check.state === "ok" || check.state === "stale";
           return <div key={item.type} className="m1-export-item" data-state={check.state}>
-            <input type="checkbox" className="rd-check" aria-label={label} checked={on} disabled={unknown || (!on && check.state !== "ok")} onChange={() => toggle(item)} />
+            <input type="checkbox" className="rd-check" aria-label={label} checked={on} disabled={unknown || (!on && check.state !== "ok" && check.state !== "unchecked")} onChange={() => toggle(item)} />
             <div className="m1-export-item-main">
               <div className="m1-export-item-head"><span className="m1-export-item-name">{label}</span>
                 {check.state === "ok" && <StatusTag tone="neutral">{DETAIL_TYPES.includes(item.type) ? "批准后才能下载" : "提交后就能下载"}</StatusTag>}</div>

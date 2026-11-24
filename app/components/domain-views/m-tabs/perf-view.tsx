@@ -4,6 +4,7 @@
  * 显示件只认「有哪些东西、什么状态」，不认后端字段名：接线（perf-wiring.ts）把后端合同映射成这里的形状；
  */
 import { amountDisplay } from "@/lib/format";
+import { businessStamp } from "@/lib/admin/business-time";
 
 /** 一个业绩金额：核完了写数；没核完写已核小计和缺什么；读不到、不可用写「—」和原因。 */
 export type PerfValue =
@@ -102,7 +103,7 @@ export type ExportColumns = { total: number; summary: string; groups: { name: st
 export type ExportCheck =
   /** rows 为 null：新的一版没核完，不写行数。note：部分覆盖时缺什么、文件里怎么写（灰字）。 */
   | { state: "ok"; rows: number | null; note?: string }
-  | { state: "checking" }
+  | { state: "checking" | "unchecked" }
   /** 这个月没有记录（灰字，不是警告）。 */
   | { state: "empty"; text: string }
   /** 没加载出来（红字，旁边「重试」只重查这一项）。 */
@@ -129,6 +130,8 @@ export type ExportDialogData = {
   selected: ExportType[];
   /** 整框暂时不能申请的原因（页面那一版刷新没成功、数据升级中）。 */
   blocked?: string;
+  catalogState: "ready" | "no-months";
+  restoration?: { kind: "conditions-changed"; differences: ExportConditionDifference[] };
   minReasonChars: number; maxReasonChars: number;
 };
 export type ExportQuery = { month: string; scope: string; types: ExportType[] };
@@ -156,7 +159,16 @@ export type ExportTask = {
 };
 /** 批准、驳回没收到结果时记下的原操作（OP-91–96）。 */
 export type ExportOriginal = { operationId: string; createdAt: number; expiresAt: number };
-export type ExportDraft = { reason: string; query: ExportQuery };
+export type ExportSelection = {
+  month: string;
+  scope: { kind: "SELF" | "MANAGED_GROUPS" | "ALL"; groupIds?: string[] };
+  types: ExportType[];
+};
+export type ExportConditionDifference =
+  | { field: "month"; original: string }
+  | { field: "scope"; original: ExportSelection["scope"]; current?: ExportSelection["scope"] }
+  | { field: "types"; removed: ExportType[] };
+export type ExportDraft = { reason: string; query: ExportQuery; selection: ExportSelection };
 export type PendingSubmit = ExportDraft & ExportOriginal & { acceptedRequestId?: string };
 export type PendingDecision = ExportOriginal & { taskId: string; decision: "APPROVE" | "REJECT" | "WITHDRAW"; reason?: string; at: string; objectHidden?: boolean };
 /** 查询原操作的几种结果。 */
@@ -167,10 +179,12 @@ export type DecisionLookup =
 /** 这个账号在导出上能做什么。views 只有一个时不画分段。 */
 export type ExportPersona = { name: string; canExport: boolean; exportBlocked?: string; views: ("MINE" | "APPROVALS")[] };
 
+export type ExportVisibleReceipt = { rows: ExportSubmitted[]; checkedAt: number };
 export type SubmitLookup =
   | { kind: "matched"; rows: ExportSubmitted[] }
-  | { kind: "partial"; requestId: string; rows: ExportSubmitted[] }
-  | { kind: "pending"; expired: boolean }
+  | ({ kind: "partial"; requestId: string } & ExportVisibleReceipt)
+  | { kind: "pending"; expired: boolean; previous?: ExportVisibleReceipt }
+  | { kind: "check-failed"; previous?: ExportVisibleReceipt }
   | { kind: "cleared"; draft: ExportDraft }
   | { kind: "missing" };
 
@@ -182,7 +196,7 @@ export interface PerfExportPorts {
   persona: ExportPersona;
   invalidateAccess(): void;
   open(initial?: { month?: string; scope?: string }): Promise<ExportDialogData>;
-  check(query: ExportQuery): Promise<Pick<ExportDialogData, "items" | "asOf" | "blocked">>;
+  check(query: ExportQuery, edited?: boolean): Promise<Pick<ExportDialogData, "items" | "asOf" | "blocked" | "restoration">>;
   submit(query: ExportQuery, reason: string): Promise<ExportSubmitted[]>;
   pendingSubmit(): PendingSubmit | undefined;
   recoveredSubmit(): ExportDraft | undefined;
@@ -235,4 +249,10 @@ export function exportDownloadMessage(kind: Exclude<ExportDownload["kind"], "dow
 /** 写操作没收到结果（断网、超时、回包读不出来）。名字以 OutcomeUnknownError 结尾，共用确认框按「结果未知」写橙黄、不当成失败。 */
 export class ExportOutcomeUnknownError extends Error {
   constructor(message: string) { super(message); this.name = "ExportOutcomeUnknownError"; }
+}
+
+export function exportPreviousReceipt(previous?: ExportVisibleReceipt) {
+  if (!previous) return "";
+  const rows = previous.rows.map(row => `${EXPORT_LABEL[row.type]}：${exportStatus(row).label}`).join("，");
+  return ` 上次查询（${businessStamp(previous.checkedAt)}）：${rows || "没有可见结果"}。`;
 }
