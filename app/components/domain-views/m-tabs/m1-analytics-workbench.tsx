@@ -946,7 +946,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
           <div><span>已首充客户 · 当前</span><CountValue count={current.firstConfirmed} label="当前客户已首充" onClick={() => change({ view: "CUSTOMERS", basis: "CURRENT_CUSTOMER_HISTORY", firstState: "CONFIRMED" })} /></div>
           <div><span>持有设备 · 当前</span><CountValue count={current.devices.held} label="当前持有设备" onClick={() => change({ view: "DEVICES", basis: "CURRENT_ASSET" })} /></div>
           <div><span>当前统计期活跃 · 当前</span><CountValue count={current.activity.active} coverage={[current.activity.status, current.activity.window.status]} label="当前统计期活跃" onClick={() => change({ view: "ACTIVITY", filter: "WINDOW_ACTIVE" })} /></div>
-          {!legacyInFold && legacyFunds}
+          {/* 按当前设备不查历史资金（B80），旧口径格不出，免得看着像读取失败。 */}
+          {!legacyInFold && queryState.basis !== "CURRENT_ASSET" && legacyFunds}
         </div>
         {legacyInFold && <Fold inset title="按订单和付款记录统计" summary={queryState.basis === "PERIOD_EVENT" ? "口径和上面的客户入金不同" : "口径和上面的累计业绩额不同"}><div className="sa-metrics" aria-label="按订单和付款记录统计">{legacyFunds}</div></Fold>}
         {queryState.view === "FINANCE" && <section className="sa-current-funds" aria-label="当前客户资金观测"><p>当前客户资金<Explain label="当前客户资金的说明" content="当前筛选客户的余额和提现，不受月份筛选；系统没有记下提现当时客户归谁。" /></p><div className="sa-inline-metrics">{(["balance", "successPrincipal", "successNet", "processingPrincipal"] as const).map(metric => {
