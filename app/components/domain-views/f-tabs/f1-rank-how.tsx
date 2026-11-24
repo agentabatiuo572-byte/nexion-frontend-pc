@@ -25,6 +25,8 @@ const LOCALE_NAMES: Record<string, string> = { zh: "中文", "zh-cn": "简体中
 const KIND = "rankHow";
 const CONFLICT = "版本已变化，草稿已保留，请核对后再保存。";
 
+/** 发布内容只收中文、英语、越南语（A3「发布必填」的三个语言位）；其余语言只用于显示已有内容的名字。 */
+const PUBLISH_LOCALES = ["zh", "en", "vi"];
 /** 正文里的规则占位：预览里画成灰底小块、写中文名，App 上按实时等级数据替换；没登记的占位显示原名。 */
 const SLOT_NAMES: Record<string, string> = {
   firstRank: "最低等级", lastRank: "最高等级", rankCount: "等级数", fromRank: "当前等级", toRank: "下一等级",
@@ -268,7 +270,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
                   <Segments label="内容语言" value={locale} items={Object.keys(document.locales).map((key) => ({ value: key, label: LOCALE_NAMES[key] ?? key }))} onChange={setLocale} />
                   {canWrite && <span className="f1-how-locale-tools">
                     <Select aria-label="新增语言" placeholder="选语言" value={newLocale} disabled={locked} onChange={setNewLocale}
-                      options={Object.entries(LOCALE_NAMES).filter(([key]) => !document.locales[key]).map(([key, name]) => ({ value: key, label: name }))} />
+                      options={Object.entries(LOCALE_NAMES).filter(([key]) => PUBLISH_LOCALES.includes(key) && !document.locales[key]).map(([key, name]) => ({ value: key, label: name }))} />
                     <Button size="sm" icon={<Plus size={14} aria-hidden />} disabled={locked} onClick={addLocale}>新增语言</Button>
                     <Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} disabled={locked} onClick={removeLocale}>删除这种语言</Button>
                   </span>}
