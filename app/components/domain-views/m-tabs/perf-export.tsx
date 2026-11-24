@@ -203,7 +203,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
         setQuerying(true); setLookupText(null);
         ports.lookupSubmit().then(outcome => {
           if (outcome.kind === "check-failed") {
-            setLookupText("这次查询失败，可以再点「查询原操作」。" + exportPreviousReceipt(outcome.previous));
+            setLookupText("这次查询失败。" + exportPreviousReceipt(outcome.previous));
             return;
           }
           if (outcome.kind === "pending") {
@@ -240,10 +240,10 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
       {differences?.length ? <Notice tone="warn" title="原来的条件和现在不同，请重新选择"><dl className="m1-export-diff">{differences.map(row => <div key={row.k}><dt>{row.k}</dt><dd>{row.v}</dd></div>)}</dl></Notice> : null}
       <div className="m1-export-scope">
         <Field label="月份" help={data.since}>{control => (data.months.length > 1 || !month && !!data.restoration)
-          ? <Select {...control} aria-label="月份" value={month} options={data.months} onChange={changeMonth} disabled={unknown} />
+          ? <Select {...control} aria-label="月份" value={month} options={data.months} onChange={changeMonth} disabled={unknown} placeholder="选择这次的月份" />
           : <div id={control.id} className="m1-export-static">{month}</div>}</Field>
         <Field label="范围">{control => (data.scopes.length > 1 || !scope && !!data.restoration)
-          ? <Select {...control} aria-label="范围" value={scope} options={data.scopes} onChange={changeScope} disabled={unknown} />
+          ? <Select {...control} aria-label="范围" value={scope} options={data.scopes} onChange={changeScope} disabled={unknown} placeholder="选择这次的范围" />
           : <div id={control.id} className="m1-export-static">{scopeLabel}</div>}</Field>
       </div>
       <p className="m1-export-fixed">

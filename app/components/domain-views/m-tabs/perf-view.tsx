@@ -255,5 +255,5 @@ export function exportPreviousReceipt(previous?: ExportVisibleReceipt) {
   if (!previous) return "";
   // 只是上次查到的样子，写明时间，不当成现在的结果。
   const rows = previous.rows.map(row => `${EXPORT_LABEL[row.type]}${exportStatus(row).label}`).join("、");
-  return `上次查询（${businessStamp(previous.checkedAt)}，${businessZone().label}）看到：${rows || "没有可见结果"}。`;
+  return `上次（${businessStamp(previous.checkedAt)}，${businessZone().label}）看到：${rows || "没有可见结果"}。`;
 }

@@ -202,3 +202,6 @@
 /* 总览的筛选条只有负责组、统计规则、月份三个范围控件：三格等宽铺开、各最宽 280，不挤在左边（P2-side；排法同 Ant Design ProComponents QueryFilter）。 */
 .m1-overview-filter .rd-filter-row > [data-cp="filter"] { flex: 1 1 0; max-width: 280px; }
 .m1-overview-filter .rd-filter-row > [data-cp="filter"] .rd-select { width: 100%; }
+
+/* 总览经营概况下面一行只剩当前口径的几格：铺满一行，不留孤格（P01）。 */
+.sa-metrics.sa-metrics-overview { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }

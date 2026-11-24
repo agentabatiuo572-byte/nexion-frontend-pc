@@ -780,6 +780,12 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const current = data?.selectedCurrent ?? data?.scopeSummary.current, personnel = data?.scopeSummary.personnel;
   const scopeCurrent = scope.selectedCurrent ?? scope.scopeSummary.current;
   const deposits = queryState.basis === "PERIOD_EVENT" ? data?.scopeSummary.financial.currencies.find(x => x.currency === currency)?.deposits : current?.ownLifetime.find(x => x.currency === currency)?.deposits;
+  /** 旧资金汇总的几格（按订单和付款记录统计）：总览里口径和统计条的「客户入金」不同，收进第二层折叠并写清口径；资金视角照旧铺开。 */
+  const legacyInFold = queryState.view === "OVERVIEW" && queryState.basis !== "CURRENT_ASSET";
+  const legacyFunds = data && <>
+    <div><span>{queryState.basis === "PERIOD_EVENT" ? "期间充值" : "客户累计充值"} / {nexGridBrandText(currency)}</span><MoneyValue money={deposits} label={`充值 ${nexGridBrandText(currency)}`} onClick={() => change({ view: "FINANCE", basis: queryState.basis === "CURRENT_ASSET" ? "CURRENT_CUSTOMER_HISTORY" : queryState.basis })} /></div>
+    {queryState.basis === "PERIOD_EVENT" && <><div><span>首次付款客户</span><CountValue count={data.scopeSummary.financial.firstCandidates} label="首次付款客户（按付款记录）；查看同范围资金事件" onClick={() => change({ view: "FINANCE" })} /></div><div><span>期间购机 / {nexGridBrandText(currency)}</span><MoneyValue money={data.scopeSummary.financial.currencies.find(x => x.currency === currency)?.purchases} label={`期间购机 ${nexGridBrandText(currency)}；查看同范围资金事件`} onClick={() => change({ view: "FINANCE" })} /></div></>}
+  </>;
   /** 折叠标题写结论，不重复里面的数字（DP-04、DP-61）。 */
   const perfConclusion = (value: PerfValue) => value.state === "complete" ? "已核完" : value.state === "partial" ? "有数据没核完" : value.reason;
   const overviewSummary = !data || queryState.view !== "OVERVIEW" ? undefined
@@ -918,9 +924,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
           <div><span>已首充客户 · 当前</span><CountValue count={current.firstConfirmed} label="当前客户已首充" onClick={() => change({ view: "CUSTOMERS", basis: "CURRENT_CUSTOMER_HISTORY", firstState: "CONFIRMED" })} /></div>
           <div><span>持有设备 · 当前</span><CountValue count={current.devices.held} label="当前持有设备" onClick={() => change({ view: "DEVICES", basis: "CURRENT_ASSET" })} /></div>
           <div><span>当前统计期活跃 · 当前</span><CountValue count={current.activity.active} coverage={[current.activity.status, current.activity.window.status]} label="当前统计期活跃" onClick={() => change({ view: "ACTIVITY", filter: "WINDOW_ACTIVE" })} /></div>
-          <div><span>{queryState.basis === "PERIOD_EVENT" ? "期间充值" : "客户累计充值"} / {nexGridBrandText(currency)}</span><MoneyValue money={deposits} label={`充值 ${nexGridBrandText(currency)}`} onClick={() => change({ view: "FINANCE", basis: queryState.basis === "CURRENT_ASSET" ? "CURRENT_CUSTOMER_HISTORY" : queryState.basis })} /></div>
-          {queryState.basis === "PERIOD_EVENT" && <><div><span>期间首次付费</span><CountValue count={data.scopeSummary.financial.firstCandidates} label="期间首次付费；查看同范围资金事件" onClick={() => change({ view: "FINANCE" })} /></div><div><span>期间购机 / {nexGridBrandText(currency)}</span><MoneyValue money={data.scopeSummary.financial.currencies.find(x => x.currency === currency)?.purchases} label={`期间购机 ${nexGridBrandText(currency)}；查看同范围资金事件`} onClick={() => change({ view: "FINANCE" })} /></div></>}
+          {!legacyInFold && legacyFunds}
         </div>
+        {legacyInFold && <Fold inset title="按订单和付款记录统计" summary="口径和上面的客户入金不同"><div className="sa-metrics" aria-label="按订单和付款记录统计">{legacyFunds}</div></Fold>}
         {queryState.view === "FINANCE" && <section className="sa-current-funds" aria-label="当前客户资金观测"><p>当前客户资金<Explain label="当前客户资金的说明" content="当前筛选客户的余额和提现，不受月份筛选；系统没有记下提现当时客户归谁。" /></p><div className="sa-inline-metrics">{(["balance", "successPrincipal", "successNet", "processingPrincipal"] as const).map(metric => {
           const amount = fundAmount(data.funds, metric, currency);
           return <div key={metric}><span>{fundLabels[metric]} / {nexGridBrandText(currency)}</span><Numeric kind="amount" value={amount.confirmed} observed={amount.observed} label={fundLabels[metric] + " " + nexGridBrandText(currency)} onClick={() => setFundMetric(metric)} /></div>;

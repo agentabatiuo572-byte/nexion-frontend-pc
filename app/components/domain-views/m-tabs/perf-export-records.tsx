@@ -192,7 +192,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
         setAnswers(map => ({ ...map, [key]: { tag: acceptedTag, line: EXPORT_PARTIAL_RECEIPT + exportVisibleReceiptSummary(found.rows) } }));
         setRefresh(value => value + 1);
       } else if (found.kind === "check-failed" || found.kind === "pending" && original.acceptedRequestId) {
-        const line = (found.kind === "check-failed" ? "这次查询失败，可以再点「查询原结果」。" : "这次没查到看得到的结果。") + exportPreviousReceipt(found.previous);
+        const line = (found.kind === "check-failed" ? "这次查询失败。" : "这次没查到看得到的结果。") + exportPreviousReceipt(found.previous);
         if (original.acceptedRequestId) setAnswers(map => ({ ...map, [key]: { tag: acceptedTag, line: EXPORT_PARTIAL_RECEIPT + line } }));
         else stillUnknown(key, line);
       } else if (found.kind === "cleared") setSettled(list => [{ key, label: "提交导出", text: "这次提交没有执行，原理由已保留，可以重新导出。", mine: true }, ...list]);
