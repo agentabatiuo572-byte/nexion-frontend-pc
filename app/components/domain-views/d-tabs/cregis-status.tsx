@@ -29,6 +29,8 @@ import { amountDisplay } from "@/lib/format";
 
 type ExceptionRow = Record<string, unknown>;
 type FundsNetwork = "BEP20" | "ERC20" | "TRC20";
+type ReviewTarget = { cid: string; network: FundsNetwork; caseRow?: never }
+  | { cid: string; network: FundsNetwork | null | undefined; caseRow: ExceptionRow };
 const FUNDS_NETWORKS: FundsNetwork[] = ["BEP20", "ERC20", "TRC20"];
 const networkName = { BEP20: "BNB Smart Chain", ERC20: "Ethereum", TRC20: "TRON" };
 type NetworkSwitch = { network: FundsNetwork; depositEnabled: boolean; version: number;
@@ -203,6 +205,10 @@ function rowNetwork(row: { network?: unknown; chainId?: unknown; chain_id?: unkn
   if (row.network !== undefined && row.network !== null) return null;
   const chain = row.chainId ?? row.chain_id;
   return chain == null ? "BEP20" : chain === "60" || chain === 60 ? "ERC20" : chain === "2510" || chain === 2510 ? "BEP20" : chain === "195" || chain === 195 ? "TRC20" : null;
+}
+function reportedReviewNetwork(row: ExceptionRow) {
+  if (row.network == null && row.chainId == null && row.chain_id == null) return undefined;
+  return rowNetwork(row);
 }
 const text = (value: unknown) => value == null || value === "" ? "—" : String(value);
 /** 金额按全站写法（amountDisplay）；读不到写「—」。 */
@@ -384,10 +390,10 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const [pending, setPending] = useState<D1PendingCommand[]>([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [entryKey, setEntryKey] = useState<string | null>(null);
-  const [review, setReview] = useState<{ cid: string; caseRow?: ExceptionRow } | null>(null);
+  const [review, setReview] = useState<ReviewTarget | null>(null);
   const [claim, setClaim] = useState<ClaimSource | null>(null);
   const [recoveredChallenge, setRecoveredChallenge] = useState<RecoveredChallenge | null>(null);
-  const [manualCid, setManualCid] = useState("");
+  const [manualReview, setManualReview] = useState<{ cid: string; network?: Exclude<FundsNetwork, "TRC20"> }>({ cid: "" });
   const [childKey, setChildKey] = useState(0);
   const sequence = useRef(0);
   const [switchPending, setSwitchPending] = useState<D1PendingCommand[]>([]);
@@ -638,10 +644,20 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   };
   const entryAction = (item: ExceptionEntry): { label: string; block?: string; run: () => void } | null => {
     if (!canManage) return null;
-    if (item.queue === "heldDeposits" && item.row.status === "REVIEW_HOLD" && item.row.cid != null) return { label: "入金复核", block: readBlock, run: () => setReview({ cid: String(item.row.cid) }) };
+    if (item.queue === "heldDeposits" && item.row.status === "REVIEW_HOLD" && item.row.cid != null) {
+      const network = reportedReviewNetwork(item.row);
+      const block = readBlock ?? (network ? undefined : "网络待核实，请刷新异常记录后重试");
+      return { label: "入金复核", block, run: () => { if (!block && network) setReview({ cid: String(item.row.cid), network }); } };
+    }
     const source = claimSource(item);
     if (source) return { label: "认领或退款", block: readBlock, run: () => setClaim(source) };
     return null;
+  };
+  const openReviewCase = (row: ExceptionRow) => setReview({ cid: String(row.cid), network: reportedReviewNetwork(row), caseRow: row });
+  const manualReviewBlock = readBlock ?? (!/^[1-9]\d{0,18}$/.test(manualReview.cid)
+    ? "先填 CID，只能是数字" : !manualReview.network ? "先选择网络" : undefined);
+  const openManualReview = () => {
+    if (!manualReviewBlock && manualReview.network) setReview({ cid: manualReview.cid, network: manualReview.network });
   };
   const pools = FUNDS_NETWORKS.map(network => ({ network, pool: data ? poolOf(data, network) : undefined }));
   const connected = data?.mode === "PROVIDER" || data?.mode === "provider";
@@ -774,17 +790,17 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
         explain="需要复核的入金先冻结，一位管理员核验证据后发起复核，另一位管理员复核后入账。找不到对应订单的资金或链上交易重组时，须保持冻结并核查。">
         <div className="rd-stack">
           {canManage && <div className="rd-toolbar">
-            <FilterField label="按 CID 发起"><Input data-search aria-label="待审核 CID" placeholder="CID" inputMode="numeric" value={manualCid} onChange={(event) => setManualCid(event.target.value.trim())} /></FilterField>
-            <Button size="sm" disabledReason={readBlock ?? (/^[1-9]\d{0,18}$/.test(manualCid) ? undefined : "先填 CID，只能是数字")} onClick={() => setReview({ cid: manualCid })}>实时核验证据</Button>
+            <FilterField label="按 CID 发起"><Input data-search aria-label="待审核 CID" placeholder="CID" inputMode="numeric" value={manualReview.cid} onChange={(event) => setManualReview({ ...manualReview, cid: event.target.value.trim() })} /></FilterField>
+            <Button size="sm" disabledReason={manualReviewBlock} onClick={openManualReview}>实时核验证据</Button>
           </div>}
           {openCases.length === 0 ? <p className="rd-note">现在没有待复核的入金工单。</p> : <Table label="入金复核工单">
             <thead><tr><Th>工单 · CID</Th><Th>用户</Th><Th align="right">净入账（USDT）</Th><Th>发起人</Th><Th sticky="end" align="right">操作</Th></tr></thead>
-            <tbody>{openCases.map(row => <Tr key={String(row.id)} onOpen={() => setReview({ cid: String(row.cid), caseRow: row })}>
+            <tbody>{openCases.map(row => <Tr key={String(row.id)} onOpen={() => openReviewCase(row)}>
               <Td><Cell mono main={`#${text(row.id)}`} sub={`CID ${text(row.cid)}`} /></Td>
               <Td><Cell main={text(row.userId)} /></Td>
               <Td align="right"><Cell num main={usdt(text(row.proposedNetAmount))} sub={`毛额 ${usdt(text(row.grossAmount))}`} /></Td>
               <Td><Cell main={text(row.makerId)} sub={isMaker(row, session?.adminId) ? "你发起的" : undefined} /></Td>
-              <Td sticky="end" align="right"><Button size="sm" variant="ghost" onClick={() => setReview({ cid: String(row.cid), caseRow: row })}>打开工单</Button></Td>
+              <Td sticky="end" align="right"><Button size="sm" variant="ghost" onClick={() => openReviewCase(row)}>打开工单</Button></Td>
             </Tr>)}</tbody>
           </Table>}
           {reviewCases.length > 0 && reviewCases.length < (data.openReviewCaseCount ?? 0) && <div><Button size="sm" disabled={busy} onClick={() => void loadMoreReviewCases(Number(reviewCases[reviewCases.length - 1].id))}>加载更早工单</Button></div>}
@@ -979,7 +995,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       </>}
     </Drawer>
 
-    {review && <ReviewDrawer cid={review.cid} caseRow={review.caseRow} canManage={canManage} adminId={session?.adminId} busy={busy} readBlock={readBlock}
+    {review && <ReviewDrawer {...review} canManage={canManage} adminId={session?.adminId} busy={busy} readBlock={readBlock}
       onClose={() => setReview(null)} confirm={confirmCommand} approval={approval} />}
   </>;
 }
@@ -1000,7 +1016,7 @@ function trc20ReplayReason(record: { path: string; body: string }, restriction: 
 function cregisCommandLabel(path: string) {
   if (path.startsWith("/cregis/addresses/provision")) return "补充收款地址";
   if (path.startsWith("/cregis/reconciliation/run")) return "立即完整对账";
-  if (path === "/cregis/review-cases") return "提交入金复核";
+  if (path.split("?")[0] === "/cregis/review-cases") return "提交入金复核";
   if (path.startsWith("/cregis/review-cases/")) return "复核入金";
   if (path === "/cregis/switch-cases") return "提交开关修改";
   if (path.startsWith("/cregis/switch-cases/")) return "复核开关提案";
@@ -1017,31 +1033,38 @@ function cregisCommandLabel(path: string) {
 
 type ConfirmFn = (spec: { kind: OperatorBriefKind; action: string; title: string; detail: string; path: string; body?: Record<string, unknown>; confirmLabel: string; danger?: boolean; effect: ReactNode; facts?: ReactNode; completion: string }) => void;
 
-/** 入金复核：按 CID 核验证据，发起复核；工单由另一位管理员复核入账或拒绝（D1-A30～A32）。 */
-function ReviewDrawer({ cid, caseRow, canManage, adminId, busy, readBlock, onClose, confirm, approval }: {
-  cid: string; caseRow?: ExceptionRow; canManage: boolean; adminId?: number; busy: boolean; readBlock?: string;
+/** 入金复核：按网络和 CID 核验证据；工单由另一位管理员复核入账或拒绝（D1-A30～A32）。 */
+function ReviewDrawer({ cid, network, caseRow, canManage, adminId, busy, readBlock, onClose, confirm, approval }: ReviewTarget & {
+  canManage: boolean; adminId?: number; busy: boolean; readBlock?: string;
   onClose: () => void; confirm: ConfirmFn; approval: ReactNode;
 }) {
   const [evidence, setEvidence] = useState<ExceptionRow | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const sequence = useRef(0);
+  const networkQuery = network ? `?network=${network}` : "";
+  const proposalPath = `/cregis/review-cases${networkQuery}`;
   const load = useCallback(async () => {
     const current = ++sequence.current;
     setLoading(true); setError(""); setEvidence(null);
     try {
-      const next = await financeAdminRequest<ExceptionRow>(`/cregis/review-evidence/${cid}`);
+      if (network === null) throw new Error("工单网络待核实，请刷新工单后重试。");
+      const next = await financeAdminRequest<ExceptionRow>(`/cregis/review-evidence/${cid}${networkQuery}`);
+      const evidenceNetwork = reportedReviewNetwork(next);
+      if (evidenceNetwork !== undefined && evidenceNetwork !== (network ?? "BEP20")) {
+        throw new Error("证据网络与请求不一致，请刷新证据后核对。");
+      }
       if (current === sequence.current) setEvidence(next);
     } catch (failure) {
       if (current === sequence.current) setError(displayAdminReadError(failure));
     } finally { if (current === sequence.current) setLoading(false); }
-  }, [cid]);
+  }, [cid, network, networkQuery]);
   // 发起时直接核验；打开已有工单时等人点「刷新证据」，复核前必须读最新的（D1-A32）。
   useEffect(() => { if (!caseRow) void load(); return () => { sequence.current++; }; }, [load, caseRow]);
   const matches = !!evidence && String(evidence.cid) === cid;
   const own = caseRow ? String(caseRow.makerId) === String(adminId) : false;
   const sameEvidence = matches && !!caseRow && String(evidence?.evidenceHash) === String(caseRow.evidenceHash);
-  const proposeBlock = readBlock ?? d1PendingObjectReason("/cregis/review-cases", { cid }) ?? (loading ? "正在核验证据" : !matches ? "证据没读到，先点「刷新证据」" : undefined);
+  const proposeBlock = readBlock ?? d1PendingObjectReason(proposalPath, { cid }) ?? (loading ? "正在核验证据" : !matches ? "证据没读到，先点「刷新证据」" : undefined);
   const decideBlock = own ? "发起人不能复核自己的工单" : readBlock ?? (caseRow ? d1PendingObjectReason(`/cregis/review-cases/${text(caseRow.id)}/decision`) : undefined) ?? (loading ? "正在核验证据" : !evidence ? "先点「刷新证据」" : !sameEvidence ? "证据和发起时不一致，不能复核" : undefined);
   const net = caseRow?.proposedNetAmount ?? evidence?.proposedNetAmount;
   const caseFacts = caseRow && <Facts>
@@ -1073,7 +1096,7 @@ function ReviewDrawer({ cid, caseRow, canManage, adminId, busy, readBlock, onClo
           action: "提交入金复核", title: "提交入金复核", confirmLabel: "提交审批", effect: approval,
           facts: <Facts><Fact k="净入账" lead tone="role-1" unit="USDT">{usdt(text(evidence.proposedNetAmount))}</Fact><Fact k="CID">{cid}</Fact><Fact k="用户">{text(evidence.userId)}</Fact><Fact k="证据摘要">{text(evidence.evidenceHash)}</Fact></Facts>,
           detail: `CID ${cid} · 证据 ${text(evidence.evidenceHash)}。需另一位管理员复核。`, completion: "提交后需另一位管理员复核才生效。",
-          path: "/cregis/review-cases", body: { cid, evidenceHash: evidence.evidenceHash } })}>提交入金复核</Button>} />
+          path: proposalPath, body: { cid, evidenceHash: evidence.evidenceHash } })}>提交入金复核</Button>} />
       : undefined}>
     {error && <BlockState state="error" title="证据核验失败" detail={error} onRetry={() => void load()} />}
     <JudgmentPoints loading={loading} rows={[
