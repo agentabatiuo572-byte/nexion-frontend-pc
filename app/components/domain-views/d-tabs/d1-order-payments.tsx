@@ -238,7 +238,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
         金额不对、到账太晚或核对没通过的付款，系统不会自动完成，要人核对后处理。
       </Notice>
     )}
-    <Panel flush icon={ReceiptText} tone="role-2" title="付款记录" sub={records && filtered ? `当前筛选 ${records.total} 笔` : undefined} explain="用户购买设备、试用转购买、升级置换和扩容时的付款。钱包余额付款不在这里。"
+    <Panel flush icon={ReceiptText} tone="role-2" title="付款记录" sub={records && filtered ? `当前筛选 ${records.total} 笔` : undefined} explain="银行卡付款，以及试用转购买、升级置换、扩容的 USDT 付款。普通购买用 USDT 已改为先充值、再用余额付：充值去「USDT 充值」查，订单去「订单进度」查，这里只留历史记录。钱包余额付款不在这里。"
       actions={<>
         <Select aria-label="付款状态" value={status} onChange={value => { setStatus(value); setPage(1); }} options={[{ value: "", label: "全部状态" }]} groups={statusOptions} />
         <Select aria-label="付款方式" value={method} onChange={value => { setMethod(value); setPage(1); }} options={[{ value: "", label: "全部方式" }, ...purchasePaymentMethods.map(value => ({ value, label: methodText[value] }))]} />
@@ -273,7 +273,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
 
     <Fold title="付款手续费" icon={CreditCard} tone="role-4" summary={feeSummary} alert={unconfigured > 0 || changed || !!policyError} alertTone={policyError ? "danger" : "warn"}
       open={feeFoldOpen} onOpenChange={setFeeOpen}
-      explain={<><p>用户实付 = 订单金额 + 订单金额 × 手续费比例 + 每笔固定费 + 网络费（仅 USDT）。全部填 0 表示免费。</p><p>新手续费只用于之后发起的付款，已下单的按原费用。没配置的付款方式，用户在付款弹窗里看不到。</p><p>银行卡和 USDT 付款不需要支付密码。钱包余额付款不收手续费，要输入支付密码。</p></>}
+      explain={<><p>用户实付 = 订单金额 + 订单金额 × 手续费比例 + 每笔固定费 + 网络费（仅 USDT）。全部填 0 表示免费。</p><p>新手续费只用于之后发起的付款，已下单的按原费用。没配置的付款方式，用户在付款弹窗里看不到。</p><p>这里的 USDT 手续费只对试用转购买、升级置换和扩容有效；普通购买用 USDT 是先充值再用余额付，只收充值手续费。</p><p>银行卡和 USDT 付款不需要支付密码。钱包余额付款不收手续费，要输入支付密码。</p></>}
       actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=D">修改历史</Link> : undefined}>
       {policyLoading && !policy ? <BlockState state="loading" title="正在读取付款手续费…" />
         : policyError ? <BlockState state="error" title="付款手续费读取失败" detail={policyError} onRetry={() => void loadPolicy()} />
