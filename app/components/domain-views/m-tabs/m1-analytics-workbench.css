@@ -198,3 +198,7 @@
 
 /* 「查看统计」里期间业绩额没有数时，「—」后面跟一句弱字原因。 */
 .m1-fact-reason { margin-left: var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
+
+/* 总览的筛选条只有负责组、统计规则、月份三个范围控件：三格等宽铺开、各最宽 280，不挤在左边（P2-side；排法同 Ant Design ProComponents QueryFilter）。 */
+.m1-overview-filter .rd-filter-row > [data-cp="filter"] { flex: 1 1 0; max-width: 280px; }
+.m1-overview-filter .rd-filter-row > [data-cp="filter"] .rd-select { width: 100%; }

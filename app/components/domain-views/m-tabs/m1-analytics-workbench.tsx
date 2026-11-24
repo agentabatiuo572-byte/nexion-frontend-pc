@@ -684,7 +684,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   /** 折叠标题写结论，不重复里面的数字（DP-04、DP-61）。 */
   const perfConclusion = (value: PerfValue) => value.state === "complete" ? "已核完" : value.state === "partial" ? "有数据没核完" : value.reason;
   const overviewSummary = !data || queryState.view !== "OVERVIEW" ? undefined
-    : queryState.basis === "PERIOD_EVENT" ? `期间业绩 · ${queryState.month} · ${perfConclusion(perf.scope.period.amount)}`
+    : queryState.basis === "PERIOD_EVENT" ? `期间业绩 · ${perfConclusion(perf.scope.period.amount)}`
     : queryState.basis === "CURRENT_ASSET" ? "按当前设备 · 不含业绩额"
     : `当前客户累计 · ${perfConclusion(perf.scope.current)}`;
   const basisExplain = queryState.view === "OVERVIEW" ? "按发生时归属：组卡写这个月的业绩额，下面一行写当前客户累计。按现在的客户：只写当前客户累计。按当前设备：只写设备，不写业绩额。"
@@ -774,6 +774,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         : <><p>期间业绩按所选月份里发生的业务和当时的归属算；当前客户累计按现在的客户算，自 2026-11-20 22:57 起。</p><p>{caption}。统计约每分钟更新一次，刷新读最近算好的一版。</p></>} explainLabel={`${isPersonal ? "本人客户画像" : currentTab === "customers" ? mode === "ALL" ? "全部客户" : "负责组客户" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}的说明`}>
       {restoreNotice && <Notice tone="warn" action={<Button size="sm" type="button" onClick={() => setRestoreNotice("")}>知道了</Button>}>{restoreNotice}</Notice>}
       {(isPersonal || queryState.view !== "CUSTOMERS") && <PageTabs level={2} label="数据视角" value={queryState.view} items={DATASETS.filter(x => isPersonal ? !["OVERVIEW", "AGENTS"].includes(x.value) : x.value !== "CUSTOMERS")} onChange={value => change({ view: value, ...(value === "DEVICES" ? { basis: "CURRENT_ASSET" as const } : {}) })} />}
+      {/* 总览只有三个范围控件：包一层让三格等宽铺开（样式见 m1-analytics-workbench.css）。 */}
+      <div className={queryState.view === "OVERVIEW" ? "m1-overview-filter" : undefined}>
       <FilterBar onSubmit={() => change({ keyword: keyword.trim() || undefined })} querying={loading} action={queryState.view === "OVERVIEW" ? <></> : <Button type="submit">查询</Button>} onClear={() => { setKeyword(""); change({ groupId: undefined, agentId: undefined, basis: defaultBasis, keyword: undefined, firstState: "ALL", filter: "ALL", category: "ALL", sortKey: undefined, direction: undefined }); }} canClear={activeConditions.length > 0 || queryState.basis !== defaultBasis}
         sort={!isPersonal ? sortField : undefined}
         moreCount={activeConditions.filter(condition => ["basis", "firstState", "direction"].includes(condition.key)).length}
@@ -791,6 +793,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         {queryState.view !== "OVERVIEW" && <FilterField label={isPersonal || queryState.view !== "AGENTS" ? "客户" : "客服"} grow><Input value={keyword} maxLength={200} onChange={event => setKeyword(event.target.value)} placeholder={isPersonal || queryState.view !== "AGENTS" ? "客户名称或用户编码" : "客服名称"} aria-label={isPersonal || queryState.view !== "AGENTS" ? "查询客户名称或用户编码" : "查询客服名称"} /></FilterField>}
         {["CUSTOMERS", "ACTIVITY"].includes(queryState.view) && <AnalyticsSelect label="服务状态" value={queryState.filter ?? "ALL"} options={isPersonal ? PERSONAL_FILTER_OPTIONS : FILTER_OPTIONS} onChange={value => change({ filter: value as AnalyticsQueryState["filter"] })} />}
       </FilterBar>
+      </div>
       {queryState.basis === "PERIOD_EVENT" && !monthCalendar && (calendarError ? <BlockState state="error" compact title="统计月份加载失败" detail={calendarError} onRetry={() => setCalendarRetry(n => n + 1)} retryLabel="重试" />
         : <div className="sa-state" role="status">正在加载统计月份…</div>)}
       {queryState.basis === "PERIOD_EVENT" && monthCalendar?.length === 0 && <BlockState state="empty" title={calendarGeneration === "UPGRADING" ? "数据正在升级" : PERF_UNAVAILABLE_VALUE.reason} onRetry={() => setCalendarRetry(n => n + 1)} />}

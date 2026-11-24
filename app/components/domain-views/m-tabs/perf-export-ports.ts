@@ -17,7 +17,7 @@ const TYPES = { SUMMARY, CUSTOMER_DETAIL: DETAIL, TRANSACTION_DETAIL: DETAIL } a
 const GRAIN = { SUMMARY: "一位客服在一个组一个月一行", CUSTOMER_DETAIL: "一位客户在一位客服名下一个月一行", TRANSACTION_DETAIL: "一笔入金、提现或参考交易一行" };
 /** 申请人、审批人：后端给姓名之前不显示内部账号编号。 */
 const NAME_PENDING = "（姓名待补）";
-const COVERAGE_TEXT: Record<string, string> = { COMPLETE: "完整", PARTIAL: "部分数据还在核对", UNKNOWN: "暂时无法确认是否完整", FAILED: "核对没完成，文件可能缺数" };
+const COVERAGE_TEXT: Record<string, string> = { COMPLETE: "完整", PARTIAL: "部分数据还在核对", UNKNOWN: "暂时无法确认是否完整", FAILED: "核对没完成" };
 const STALE_BLOCKED = "这一版数据更新延迟，暂时不能导出。关掉这个框，在页面上刷新到最新一版后再导出。";
 const SCOPES = ["SELF", "MANAGED_GROUPS", "ALL"] as const;
 const STATES = ["PENDING_GENERATION", "PENDING_APPROVAL", "APPROVED", "REJECTED", "WITHDRAWN", "READY", "FAILED", "EXPIRED"] as const;
@@ -136,8 +136,10 @@ function parsePreview(value: unknown) {
     else if (status === "LIMIT_EXCEEDED") check = { state: "over", text: `共 ${rows ?? "—"} 行，超过导出上限。` };
     else if (status === "READ_FAILED") check = { state: "failed", text: "没加载出来。" };
     else check = { state: "unavailable", text: reasons.includes("EXPORT_GENERATION_UPGRADING") ? "数据正在升级，这一项暂时不能导出。"
-      : reasons.includes("EXPORT_ROWS_UNVERIFIED") ? "新的一版还没核完，行数要等核完才知道。" : "这一项暂时不能导出。" };
-    return { type, grain: GRAIN[type], limit: integer(item.limit), columns: columns(item.columns, type), check, reasons };
+      : reasons.includes("EXPORT_ROWS_UNVERIFIED") ? "新的一版还没核完，行数要等核完才知道。" : "这一项的数据暂时无法确认，暂时不能导出。" };
+    // 看不到明细的记录（归属不明、或现在不在你能看的客户里）合成一行匿名小计；只用来写说明。
+    const anonymous = typeof item.restrictedHistoryRows === "number" && item.restrictedHistoryRows > 0;
+    return { type, grain: GRAIN[type], limit: integer(item.limit), columns: columns(item.columns, type), check, reasons, anonymous };
   });
   if (new Set(items.map(item => item.type)).size !== items.length) invalid("export.previewItems");
   return { version: text(row.previewVersion), window, scope: object(row.scope), items };
@@ -406,7 +408,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       return {
         months: options.months, month, since: options.months.length ? `自 ${businessStamp(Date.parse(options.months.at(-1)!.from))} 起` : "", scopes: Array.from(choices, ([value, item]) => ({ value, label: item.label, types: item.types })), scope,
         asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", downloader: operator.name, items: preview?.items ?? [],
-        selected: original ? selected : selected.filter(type => preview?.items.some(item => item.type === type && item.check.state !== "empty")),
+        selected: original ? selected : selected.filter(type => preview?.items.some(item => item.type === type && !["empty", "stale", "unavailable"].includes(item.check.state))),
         blocked: !preview?.window ? "数据正在升级，这一版暂时不能导出。升级完、页面刷新后再导出。"
           : preview.items.some(item => item.reasons.includes("EXPORT_REFRESH_FAILED")) ? "这一版数据刷新没成功，暂时不能导出。关掉这个框，在页面上刷新成功后再导出。"
           : preview.items.some(item => item.reasons.includes("EXPORT_DATA_STALE")) ? STALE_BLOCKED : undefined,

@@ -113,7 +113,8 @@ export type ExportCheck =
   | { state: "stale"; rows: number | null }
   /** 这一版这一项不能导出（新的一版没核完、数据升级中）：灰字写原因，不给重试；只有真读取失败才是 failed。 */
   | { state: "unavailable"; text: string };
-export type ExportItem = { type: ExportType; grain: string; limit: number; columns: ExportColumns; check: ExportCheck };
+/** anonymous：文件里有一行匿名小计（看不到明细的记录合在一起）。 */
+export type ExportItem = { type: ExportType; grain: string; limit: number; columns: ExportColumns; check: ExportCheck; anonymous?: boolean };
 export type ExportChoice = { value: string; label: string };
 /** 导出确认框要的全部内容。月份、范围只有一个合法选项时写成只读值。 */
 export type ExportDialogData = {

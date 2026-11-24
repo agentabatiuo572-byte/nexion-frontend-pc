@@ -177,7 +177,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     : notReady ? notReady.check.state === "checking" ? "正在检查…" : notReady.check.state === "failed" ? `${EXPORT_LABEL[notReady.type]}没加载出来` : `${EXPORT_LABEL[notReady.type]}这次不能导出`
     : (!chosen.length || chosen.length !== selected.length) ? "还没勾选导出内容" : chosen.some(item => item.check.state === "ok" && item.check.rows === null) ? "行数暂时无法确认" : undefined;
   // 没有能提交的项时不要求填理由，也不显示理由框（5f、5g）。
-  const requireReason = unknown || !data || (!data.blocked && (selectable.length > 0 || !!notReady));
+  const requireReason = unknown || !data || (!data.blocked && (selectable.length > 0 || notReady?.check.state === "failed" || notReady?.check.state === "checking"));
   const scopeLabel = data?.scopes.find(row => row.value === scope)?.label ?? "—";
 
   const recovery = unknown && <div className="m1-export-recover"><Button size="sm" loading={querying} loadingText="正在查询…" onClick={() => {
@@ -235,8 +235,9 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
               {check.state === "ok" && check.rows === null && <p className="m1-export-item-note">新的一版还没核完，行数要等核完才知道。</p>}
               {check.state === "ok" && check.note && <p className="m1-export-item-note">{check.note}</p>}
               {check.state === "empty" && <p className="m1-export-item-note">{check.text}</p>}
-              {check.state === "unavailable" && <p className="m1-export-item-note">{check.text}</p>}
-              {check.state === "ok" && item.type === "CUSTOMER_DETAIL" && <p className="m1-export-item-note">看不到明细的客户，记录合成一行匿名小计。</p>}
+              {/* 整框已写不能导出的原因时（升级中、更新延迟），各项不再重复。 */}
+              {check.state === "unavailable" && !data.blocked && <p className="m1-export-item-note">{check.text}</p>}
+              {check.state === "ok" && item.anonymous && <p className="m1-export-item-note">含 1 行匿名小计：归属不明或你看不到的客户合在这一行。</p>}
               {check.state === "over" && <p className="m1-export-item-note" data-tone="warn">{check.text}</p>}
               {check.state === "failed" && <p className="m1-export-item-error" role="alert">
                 {on ? `${check.text}点「重试」，或取消勾选。` : dropped.includes(item.type) ? "没加载出来，这次不导出。" : check.text}

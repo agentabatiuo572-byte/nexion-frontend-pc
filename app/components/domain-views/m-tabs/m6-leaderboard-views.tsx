@@ -9,7 +9,7 @@ import { ArrowRight, ListOrdered, Trophy } from "lucide-react";
 import { BlockState, Button, Cell, Explain, Fact, Facts, Notice, Panel, Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import type { SupportBoardCount, SupportBoardKey, SupportBoardQualification, SupportBoardRow } from "./support-leaderboard";
 import { amountDisplay } from "@/lib/format";
-import { PERF_UNAVAILABLE, perfFlowText, perfNote, perfText, type PerfTotals } from "./perf-view";
+import { PERF_UNAVAILABLE, perfFlowText, perfText, type PerfTotals } from "./perf-view";
 
 /* ---------------- 名字和口径 ---------------- */
 
@@ -176,7 +176,7 @@ export function RankingTable({ board, state, month, perf, openId, privateRead, o
             </span></Td>
             <Td align="right" data-primary={primary("netContribution")}>{openId === row.id
               ? <Cell num main={<span className="m6-in-drawer">见右侧</span>} />
-              : <Cell num main={perfText(totals.amount)} sub={perfFlowText(totals)} title={perfNote(totals.amount)} />}</Td>
+              : <Cell num main={perfText(totals.amount)} sub={perfFlowText(totals)} title={totals.amount.state === "complete" ? undefined : perfFlowText(totals)} />}</Td>
             <Td align="right" data-primary={primary("firstPayment")}><Cell num main={countShown(row.firstPayment)} {...gapNote(row.firstPayment)} /></Td>
             <Td align="right" data-primary={primary("customers")}><Cell num main={customers !== "—" && row.canViewCustomers && privateRead
               ? <button type="button" className="rd-link m6-count-link" aria-label={`查看${row.name}的当前绑定客户，${customers} 人`} onClick={() => onCustomers(row.id)}>{customers}</button>
