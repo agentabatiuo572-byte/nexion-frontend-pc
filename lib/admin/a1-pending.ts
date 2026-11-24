@@ -9,8 +9,8 @@ import { accountAvatarFields } from "./account-avatar-contract";
 import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 
 export type A1Intent =
-  | { kind: "create"; form: A1CreateAccountInput & { reason: string }; approval: boolean }
-  | { kind: "profile"; account: A1Operator; form: A1UpdateAccountInput & { reason: string } }
+  | { kind: "create"; form: A1CreateAccountInput; approval: boolean }
+  | { kind: "profile"; account: A1Operator; form: A1UpdateAccountInput }
   | { kind: "role"; account: A1Operator; picked: string }
   | { kind: "2fa" | "password" | "disable" | "enable" | "logout"; account: A1Operator }
   | { kind: "session"; account: A1Operator; sessionId: string }
@@ -25,7 +25,7 @@ export type A1Request =
 export type A1Pending = PendingMutationRecord & {
   actorId: number; intent: A1Intent; snapshot: A1Snapshot; request: A1Request;
   confirmationReason: string; businessValue?: Record<string, string>;
-  ticket?: A2OperationRow; received?: boolean;
+  ticket?: A2OperationRow; received?: boolean; verifiedNotExecuted?: boolean;
 };
 type LegacyCreation = PendingMutationRecord & { actorId: number; form: A1CreateAccountInput & { reason: string }; reason: string; operator: string };
 
@@ -46,14 +46,14 @@ function validRecord(value: A1Pending | LegacyCreation) {
     if (!Array.isArray(snapshot.roles) || !Number.isSafeInteger(snapshot.effectiveSupers) || snapshot.effectiveSupers < 0 || typeof snapshot.permissionReady !== "boolean") return false;
     snapshot.roles.forEach(parseA1Role);
     for (const codes of Object.values(a1Object(snapshot.codes))) { if (!Array.isArray(codes)) return false; codes.forEach(a1Text); }
-    if (intent.kind === "create") { formValid(intent.form, true); a1Text(intent.form.reason); if (typeof intent.approval !== "boolean") return false; }
+    if (intent.kind === "create") { formValid(intent.form, true); if (typeof intent.approval !== "boolean") return false; }
     else if (intent.kind === "permission") {
       a1Text(intent.draft.code); a1Text(intent.draft.name); a1Text(intent.draft.path);
       if (!["READ", "WRITE"].includes(intent.draft.type) || typeof intent.draft.amplifies !== "boolean") return false;
     } else {
       if (!["profile", "role", "2fa", "password", "disable", "enable", "logout", "session"].includes(intent.kind)) return false;
       parseA1Operator(intent.account);
-      if (intent.kind === "profile") { formValid(intent.form, false); a1Text(intent.form.reason); }
+      if (intent.kind === "profile") formValid(intent.form, false);
       if (intent.kind === "role") a1Text(intent.picked);
       if (intent.kind === "session") a1Text(intent.sessionId);
     }
@@ -76,6 +76,7 @@ function validRecord(value: A1Pending | LegacyCreation) {
       } else return false;
     }
     if (value.ticket && (!value.ticket.id || typeof value.ticket.mine !== "boolean" || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(value.ticket.status))) return false;
+    if (value.verifiedNotExecuted !== undefined && typeof value.verifiedNotExecuted !== "boolean") return false;
     return true;
   } catch { return false; }
 }
@@ -109,7 +110,7 @@ export function a1IntentAuthority(intent: A1Intent) {
     : intent.kind === "permission" ? "platform_a1_rbac_grants_update" : "platform_a1_write";
 }
 export function a1RecoveryCapability(record: A1Pending): PendingRecoveryCapability {
-  return record.request.kind === "session" ? "readback" : "receipt";
+  return record.request.kind === "session" ? "replay" : "receipt";
 }
 
 export const a1Recovery = createPendingRecovery<A1Pending>(a1PendingCommands, {
@@ -123,7 +124,7 @@ export const a1Recovery = createPendingRecovery<A1Pending>(a1PendingCommands, {
       && canAccessResolvedPath(resolveVisibleDomains(session), "/platform/rbac")
       && (record.request.kind !== "proposal" || session.authorities.includes("platform_a2_write"))
       && (!["create", "password", "session", "logout"].includes(record.intent.kind) || ["super", "superadmin"].includes(session.role))
-      && !record.received && !record.ticket;
+      && !record.received && !record.ticket && !record.verifiedNotExecuted;
   },
 });
 

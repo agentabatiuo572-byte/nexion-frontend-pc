@@ -5,7 +5,8 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { accountVersion, canManageSupportQualifications, canReplayGroupCommand, commandRejected, groupPendingCommands, inviteRevokeReason, isInvitePending, isQualificationPending, observedVersion, qualificationRecovery, supportGroupClient, supportGroupReason, type GroupPendingRecord, type InviteCodeView, type InviteRevokeRecord, type QualificationKind, type QualificationPending, type QualificationStatus, type SupportGroup, type SupportGroupDirectory, type SupportGroupDetail, type SupportGroupMember, type SupportQualifications } from "@/lib/admin/support-group-client";
-import { Btn, Modal, usePendingReplayDeadline } from "../design-kit";
+import { Btn, Modal, useOperationReasonPolicy, usePendingReplayDeadline } from "../design-kit";
+import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { RETRY_EXPIRED_TEXT, type PendingRecoveryConclusion } from "@/lib/admin/pending-mutation-store";
 import { BlockState, Button, Change, Explain, Fact, Facts, Field, Fold, Input, MoreMenu, Notice, PageTabs, Panel, ReleaseModal, Select, StatusTag, Table, Th, Tr, Td, Textarea } from "@/app/components/rd";
 import { ChevronLeft, Network, SearchCheck, UsersRound } from "lucide-react";
@@ -326,6 +327,10 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged, 
   const recovery = pending && qualificationRecovery.state(pending);
   usePendingReplayDeadline(recovery?.expiresAt);
   const replayBlocked = writeBlockedReason ?? (recovery && pendingReplayReason(recovery, "当前账号不能重试这条原操作。"));
+  const { policy: reasonPolicy, error: reasonPolicyError } = useOperationReasonPolicy(readAllowed && !!data && !pending);
+  const qualifiedReason = supportGroupReason(reason);
+  const reasonLength = visibleReasonLength(reason);
+  const reasonOk = !!reasonPolicy && qualifiedReason.valid && reasonLength >= reasonPolicy.minChars && reasonLength <= reasonPolicy.maxChars;
   const check = async () => {
     if (!pending || busy || !readAllowed) return;
     const saved = pending, intent = pending.intent, controller = new AbortController();
@@ -380,9 +385,9 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged, 
     }
     let saved = previous;
     if (!saved) {
-      if (!data || !fact || fact.observationState === "UNKNOWN" || stale || !reasonValid(reason) || fact.state === state || state === "ENABLED" && data.accountStatus !== 1) return;
+      if (!data || !fact || fact.observationState === "UNKNOWN" || stale || !reasonOk || fact.state === state || state === "ENABLED" && data.accountStatus !== 1) return;
       const commandKey = crypto.randomUUID(), fingerprint = `support-qualification:${session!.adminId}:${adminId}:${kind}`;
-      const intent: QualificationPending["intent"] = { kind: "QUALIFICATION", targetId: adminId, payload: { qualificationKind: kind, state, expectedQualificationVersion: observedVersion(fact), expectedAccountVersion: accountVersion(data.accountVersion), reason: supportGroupReason(reason).normalized } };
+      const intent: QualificationPending["intent"] = { kind: "QUALIFICATION", targetId: adminId, payload: { qualificationKind: kind, state, expectedQualificationVersion: observedVersion(fact), expectedAccountVersion: accountVersion(data.accountVersion), reason: qualifiedReason.normalized } };
       groupPendingCommands.remember(fingerprint, commandKey, { actorId: session!.adminId, intent, label: `${KIND_TEXT[kind]}资格 · ${data.name}` });
       saved = currentPending();
       if (!saved || !groupPendingCommands.isDurablyStored(fingerprint, commandKey)) {
@@ -422,7 +427,10 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged, 
       setError(errorText(cause));
     } finally { if (active()) setBusy(false); }
   };
-  const blockedReason = writeBlockedReason ?? (!allowed ? "只有超级管理员（并有账号查看和修改权限）能管理资格" : !data ? "当前资格还没读到" : !fact || fact.observationState === "UNKNOWN" ? "当前资格信息不完整，不能保存" : stale ? "版本已变化，先点「重读当前资格」" : state === fact.state ? "选一个和现在不同的资格状态" : state === "ENABLED" && data.accountStatus !== 1 ? "账号已停用，不能启用资格" : !reasonValid(reason) ? "请填写 8–200 字的操作理由" : undefined);
+  const reasonBlock = !reasonPolicy ? reasonPolicyError ?? "正在加载，稍候即可提交。"
+    : reasonLength < reasonPolicy.minChars ? `操作理由还差 ${reasonPolicy.minChars - reasonLength} 字`
+      : !reasonOk ? `操作理由不能超过 ${reasonPolicy.maxChars} 字` : undefined;
+  const blockedReason = writeBlockedReason ?? (!allowed ? "只有超级管理员（并有账号查看和修改权限）能管理资格" : !data ? "当前资格还没读到" : !fact || fact.observationState === "UNKNOWN" ? "当前资格信息不完整，不能保存" : stale ? "版本已变化，先点「重读当前资格」" : state === fact.state ? "选一个和现在不同的资格状态" : state === "ENABLED" && data.accountStatus !== 1 ? "账号已停用，不能启用资格" : reasonBlock);
   const resultTone = /^(资格已更新|原操作已成功)/.test(error) ? "ok" : /失败|无权|不能/.test(error) ? "danger" : "warn";
   return <Modal title={pending ? "查询原结果" : `${KIND_TEXT[kind]}资格`} busy={busy} onClose={() => { if (!busy) onClose(); }} footer={<><Btn disabled={busy} onClick={onClose}>关闭</Btn>{readAllowed && pending ? <><Btn disabled={busy} onClick={() => void check()}>查询原结果</Btn>{!recovery?.replayRejection && <Btn variant="primary" disabled={busy} disabledReason={replayBlocked} onClick={() => void submit(true)}>按原请求重试</Btn>}</> : <><Btn disabled={!readAllowed || busy} onClick={() => setRefresh(n => n + 1)}>重读当前资格</Btn><Btn variant="primary" disabled={busy} disabledReason={busy ? undefined : blockedReason} onClick={() => void submit()}>{busy ? "正在提交…" : "确认并提交"}</Btn></>}</>}>
     <div className="m1-group-form">
@@ -431,7 +439,7 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged, 
       <p className="m1-field-value">资格不是角色，单独管理；同一账号可以同时有专属客服和主管资格。授予资格不会自动绑定客户，也不改账号角色。<Explain label="资格的说明" content="专属客服资格让这个账号以客服身份接待本人绑定的客户；有全部或管理范围的管理员仍可在权限范围内介入会话。主管资格用于管理客服组，不带账号管理权限。" /></p>
       {kind === "SUPERVISOR" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先将全部负责组（含归档组）移交给有效主管。</Notice>}{kind === "SERVICE" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先处理已有绑定客户并退出组；不会自动改派客户。</Notice>}
       <Field label="资格状态">{busy ? <p className="m1-field-value">{STATUS_TEXT[state]}</p> : <Select aria-label="资格状态" value={state} options={QUAL_OPTIONS} onChange={value => setState(value as QualificationStatus)} />}</Field>
-      <Field label="操作理由" required help="请填写 8–200 字，将记入操作记录。">{control => <Textarea {...control} value={reason} disabled={busy} count={`${supportGroupReason(reason).length}/200`} onChange={e => setReason(e.target.value)} />}</Field></>}
+      <Field label="操作理由" required help={reasonPolicy ? `至少 ${reasonPolicy.minChars} 字` : reasonPolicyError ?? "正在加载，稍候即可提交。"}>{control => <Textarea {...control} value={reason} disabled={busy} count={reasonPolicy ? `${reasonLength}/${reasonPolicy.maxChars}` : undefined} onChange={e => setReason(e.target.value)} />}</Field></>}
     {readAllowed && pending && <Notice tone="warn">{recovery?.expired ? RETRY_EXPIRED_TEXT : replayBlocked ?? "按原内容和理由重发，不会重复执行。"}</Notice>}{allowed && !pending && stale && <Notice tone="warn">版本已变化，请重读当前资格并再次确认。理由已保留。</Notice>}{error && data && <Notice tone={resultTone}>{error}</Notice>}
     </div>
   </Modal>;

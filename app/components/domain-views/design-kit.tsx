@@ -19,7 +19,7 @@ import { ToastHost } from "@/app/components/kit/toast-host";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
-import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
+import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength, type A2ReasonPolicy } from "@/lib/admin/a2-client";
 import type { H4UploadTarget } from "@/lib/admin/h4-mutations";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -588,6 +588,25 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
 export type EditComparison = { before: string; after: string };
+export function useOperationReasonPolicy(required: boolean, optional = false) {
+  const [policy, setPolicy] = useState<A2ReasonPolicy | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setPolicy(null);
+    setError(null);
+    if (!required) return;
+    let active = true;
+    void fetchA2ReasonPolicy().then(value => {
+      if (active) setPolicy(value);
+    }, () => {
+      if (!active) return;
+      if (optional) setPolicy({ minChars: 8, maxChars: 200, sourceKey: "admin.a2.reason_min_chars" });
+      else setError("理由规则加载失败，暂时无法提交。请关闭弹窗后重试。");
+    });
+    return () => { active = false; };
+  }, [required, optional]);
+  return { policy, error };
+}
 export type PendingConfirmRecovery = {
   expiresAt: number;
   blockedReason?: string;
@@ -3896,9 +3915,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const [editLeft, setEditLeft] = useState(false);
   const [openedForm] = useState(() => JSON.stringify([newVal, businessValue]));
   const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(inlineApproval?.pending ? inlineApproval.initialRecovery ?? "lookup" : null);
-  const [authoritativeReasonMin, setAuthoritativeReasonMin] = useState<number | null>(null);
-  const [authoritativeReasonMax, setAuthoritativeReasonMax] = useState<number | null>(null);
-  const [reasonPolicyError, setReasonPolicyError] = useState<string | null>(null);
+  const { policy: reasonPolicy, error: reasonPolicyError } = useOperationReasonPolicy(requireReason, reasonPolicyOptional);
+  const authoritativeReasonMin = reasonPolicy?.minChars ?? null;
+  const authoritativeReasonMax = reasonPolicy?.maxChars ?? null;
   const reasonFieldId = useId();
   const comparisonValueId = useId();
   const comparisonUnitId = useId();
@@ -4006,28 +4025,6 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     ...businessMissing.map((message) => message.replace(/。+$/, "")),
     !reasonOk && (visibleLength < reasonMin ? `操作理由${reasonShort}` : reasonShort.replace(/。$/, "")),
   ].filter(Boolean);
-  useEffect(() => {
-    if (!requireReason) return;
-    let active = true;
-    setAuthoritativeReasonMin(null);
-    setAuthoritativeReasonMax(null);
-    setReasonPolicyError(null);
-    void fetchA2ReasonPolicy().then((policy) => {
-      if (active) {
-        setAuthoritativeReasonMin(policy.minChars);
-        setAuthoritativeReasonMax(policy.maxChars);
-      }
-    }).catch(() => {
-      if (!active) return;
-      if (reasonPolicyOptional) {
-        setAuthoritativeReasonMin(8);
-        setAuthoritativeReasonMax(200);
-      } else {
-        setReasonPolicyError("理由规则加载失败，暂时无法提交。请关闭弹窗后重试。");
-      }
-    });
-    return () => { active = false; };
-  }, [reasonPolicyOptional, requireReason]);
   const closeOnPermissionDenied = (error: unknown) => {
     if (!isPermissionDenied(error)) return false;
     announcePermissionDenied();
@@ -4187,6 +4184,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   };
   const pendingReasonHelp = pendingRecovery?.state?.expired ? RETRY_EXPIRED_TEXT
     : pendingRecovery?.state && pendingRecovery.blockedReason ? pendingRecovery.blockedReason
+    : pendingRecovery?.state?.capability === "replay" ? "按原请求重试会重新发送一次。"
     : inlineApproval?.expiredRequestRecovery === "reload"
     ? surface ? "原操作已过期，不能重发；请刷新页面核对当前值。" : "原操作已过期，不能重发，请刷新页面核对当前值。"
     : inlineApproval?.expiredRequestRecovery === "query"
