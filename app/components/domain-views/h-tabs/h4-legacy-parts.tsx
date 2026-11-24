@@ -14,6 +14,7 @@ import { EVENT_CONTENT_LOCALES, type EventCopyReadiness } from "@/lib/admin/even
 import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { amountText, formatTime } from "./h4-promotion-ui";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
 export const h4ReadConflict = (readLatest: () => Promise<void>) =>
   new ConfirmReadConflict({ readLatest, renderNotice: action => <H4StaleNote readLatest={action} /> });
@@ -122,15 +123,13 @@ export function lifecycleOf(event: LegacyEvent, requiredLanguages: readonly Loca
 export function unknownTag(kind: "approval" | "direct") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "approval"
     ? "没收到确定结果，审批单可能已经建成。先查询原结果，查不到再按原请求重试，不会建第二张单。"
-    : "没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行；现在读到的值证明不了原操作的结果。"}>结果未知</StatusTag>;
+    : "没收到确定结果，可能已经生效。先查询原结果，明确查不到后才能按原请求重试。"}>结果未知</StatusTag>;
 }
 export function pendingTag(object: string) {
   return <StatusTag tone="warn" icon={Clock3} explain={`等另一位超级管理员在「操作记录与审批」批准。批准、驳回或撤回之前，${object}不能再改，调低和关闭也不行。`}>待审批</StatusTag>;
 }
-export function expiredTag(kind: "approval" | "direct") {
-  return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "approval"
-    ? "原请求超过 24 小时，不能再重发，只能查询原审批单；记录继续保留。"
-    : "原请求超过 24 小时，不能再重发。直接保存的修改没有审批单可查，到「操作记录与审批」核对；记录继续保留。"}>已过期</StatusTag>;
+export function expiredTag() {
+  return <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
 }
 
 /** 走审批的修改在框里常显怎么生效：哪个方向要批、谁来批、批准前什么不变。 */

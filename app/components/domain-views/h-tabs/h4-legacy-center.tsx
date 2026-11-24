@@ -9,16 +9,17 @@ import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/a
 import type { BusinessFormValue, EditComparison } from "../design-kit";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
+import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
-  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, Panel, RatioBar, ReleaseModal, Stat, StatBand, StatusTag,
+  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, Panel, RatioBar, Stat, StatBand, StatusTag,
   Table, Td, Th, Tr, type MoreMenuItem,
 } from "@/app/components/rd";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
   fetchH3QuestEvents,
   fetchH4EventCreateCandidates,
@@ -46,7 +47,7 @@ import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
 import { EVENT_CONTENT_LOCALES, eventLocalizedContentGaps, eventRuleReadiness } from "@/lib/admin/event-rule-form";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
-import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4Command } from "@/lib/admin/h4-mutations";
+import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, h4RetryBlockedReason, h4PendingConfirmRecovery, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4Command } from "@/lib/admin/h4-mutations";
 import { RAFFLE_SAVE_PENDING } from "@/lib/admin/genesis-raffle-client";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import H4EventRules from "./h4-event-rules";
@@ -235,10 +236,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const reopenedAfterConflict = conflictDraft.reopenedAfterConflict;
     const facts = req.facts;
     let retained: H4Command | undefined;
+    const original = () => pendingH4Commands().find(r => r.commandKey === retained?.commandKey);
     const opened: ActionConfirmReq = { ...req,
       facts: reopenedAfterConflict ? (value?: string) => <><H4StaleNote />{typeof facts === "function" ? facts(value) : facts}</> : facts,
       blockedReason: req.blockedReason ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
-      getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
+      getPendingReason: () => original()?.reason,
+      getPendingRecovery: () => h4PendingConfirmRecovery(original(), async () => { ctx.openActionConfirm(null); await refreshAll(); }),
       run: async (reason, value, businessValue) => {
         if (retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) {
           try { if (!retained.acknowledged) await retryH4Command(retained); }
@@ -263,10 +266,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openConfirm = (req: ConfirmReq) => {
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
-    ctx.openConfirm(conflictDraft.confirm({ ...req, freezePendingInput: true,
+    const original = () => pendingH4Commands().find(r => r.commandKey === retained?.commandKey);
+    ctx.openConfirm(conflictDraft.confirm({ ...req, freezePendingInput: true, replayPendingInput: true,
       content: conflictDraft.reopenedAfterConflict ? <><H4StaleNote />{req.content}</> : req.content,
       getPendingBlockReason: () => req.getPendingBlockReason?.() ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
-      getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
+      getPendingReason: () => original()?.reason,
+      getPendingRecovery: () => h4PendingConfirmRecovery(original(), async () => { ctx.closeConfirm?.(); await refreshAll(); }),
       run: async (reason, value) => {
         if (retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) {
           try { if (!retained.acknowledged) await retryH4Command(retained); }
@@ -305,8 +310,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const conflictDraft = useHConflictDraft(!loading && !error && h4ReadVersion("overview") !== undefined, {
     readConflict: (afterRead, kind, req) => h4ReadConflict(async () => {
       if (!await reload()) throw new Error("既有活动与转盘没有读到");
-      setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改");
-      afterRead(() => { if (kind === "action") ctx.openActionConfirm(null); else ctx.closeConfirm?.(); });
+      const found = await afterRead(() => {
+        setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改");
+        if (kind === "action") ctx.openActionConfirm(null); else ctx.closeConfirm?.();
+      });
+      if (!found) throw new ConfirmReadConflict(undefined, "最新列表里已没有这个对象，你填的内容没有提交。");
     }),
   });
   const canReadA2 = ctx.can("platform_a2_read");
@@ -315,7 +323,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const [lookupKey, setLookupKey] = useState("");
   /** 被「别人先改过」拒绝后，页面已重读；这条提醒留到运营关掉或下次提交。只决定显示。 */
   const [stale, setStale] = useState<string | null>(null);
-  const [releasing, setReleasing] = useState<H4Command | null>(null);
   const [rules, setRules] = useState<EventRuleView[] | null>(null);
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(EVENT_CONTENT_LOCALES);
   const [contentRefresh, setContentRefresh] = useState(0);
@@ -831,10 +838,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       facts: <>
         <Facts><Fact k="现在">{amountText(budgetNumber(current))} USDT / 天</Fact><Fact k="超过后">当天再抽中真钱奖改发 UVT 安慰奖</Fact><ApprovalFact amplify="调高预算" object="预算" /></Facts>
       </>,
-      amplifies: true,
       coverageLead: "调高预算会让转盘每天多发真钱",
       reasonPlaceholder: "例如：活动期放宽每日真钱奖预算",
-      edit: { kind: "number", current: budgetNumber(current), min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT" },
+      edit: { kind: "number", current: budgetNumber(current), amplifiesWhen: "increase", disallowCurrent: true, min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT" },
       run: async (reason, value) => {
         if (!value) return;
         if (await apply(await updateH4WheelGuard(guard.key, value, current, reason))) toast("转盘安全限制「每日实际奖励预算（美元）」已更新");
@@ -1098,15 +1104,17 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     setLookupKey(record.commandKey);
     try {
       const ticket = await queryH4Command(record);
-      if (!pendingH4Commands().some(row => row.commandKey === record.commandKey) && activeRecovery.current === record.commandKey) {
+      const original = pendingH4Commands().find(row => row.commandKey === record.commandKey);
+      if ((!original || original.acknowledged) && activeRecovery.current === record.commandKey) {
         activeRecovery.current = null; ctx.openActionConfirm(null);
       }
       if (ticket === null) toast("暂未查到原审批单，原请求继续保留。", "warn");
-      await refreshAll();
-    } catch (cause) { toast(displayAdminError(cause), "warn"); }
+      if (!original || original.acknowledged) await refreshAll();
+    } catch (cause) { toast(displayAdminReadError(cause), "warn"); }
     finally { setLookupKey(""); }
   };
   const openResumeHICommand = (record: H4Command, subject: string) => {
+    if (h4RetryBlockedReason(record)) return;
     activeRecovery.current = record.commandKey;
     const expired = isRetryExpired(record);
     const approval = "proposal" in record.request;
@@ -1119,17 +1127,29 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       facts: <Facts><Fact k="原操作">{subject}</Fact>{change && <Fact k="原改动">{change}</Fact>}<Fact k="提交时间">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}（北京时间）</Fact><Fact k="原请求">内容和理由锁住，原样重发</Fact></Facts>,
       confirmLabel: "按原请求重试",
       getPendingReason: () => pendingH4Commands().some(r => r.commandKey === record.commandKey) ? record.reason : undefined,
+      getPendingRecovery: () => h4PendingConfirmRecovery(pendingH4Commands().find(r => r.commandKey === record.commandKey), async () => {
+        activeRecovery.current = null; ctx.openActionConfirm(null); await refreshAll();
+      }),
       run: async () => {
         if (activeRecovery.current !== record.commandKey || !pendingH4Commands().some(r => r.commandKey === record.commandKey)) throw new Error("H4_ORIGINAL_RESOLVED");
         try { await retryH4Command(record); }
         finally {
-          if (!pendingH4Commands().some(r => r.commandKey === record.commandKey) || h4CommandHasPendingTicket(record.commandKey)) { activeRecovery.current = null; ctx.openActionConfirm(null); }
-          await refreshAll();
+          const current = pendingH4Commands().find(r => r.commandKey === record.commandKey);
+          if (!current || current.acknowledged || h4CommandHasPendingTicket(record.commandKey)) {
+            activeRecovery.current = null; ctx.openActionConfirm(null);
+            await refreshAll();
+          }
         }
       },
     });
   };
   const hiRecords = pendingH4Commands().filter(r => !r.asset && (!r.acknowledged || "proposal" in r.request));
+  const nextExpiry = hiRecords.filter(record => !isRetryExpired(record)).reduce((at, record) => Math.min(at, record.expiresAt), Infinity);
+  useEffect(() => {
+    if (!Number.isFinite(nextExpiry)) return;
+    const timer = setTimeout(() => pendingDeleteChanged(v => v + 1), Math.max(1, nextExpiry - Date.now()));
+    return () => clearTimeout(timer);
+  }, [nextExpiry]);
   const h4Pending = [...new Map(h4TicketObservations().map(row => [row.id, row])).values()];
   const unknownCount = hiRecords.filter(r => !h4CommandHasPendingTicket(r.commandKey)).length;
   const confirmed = confirmedH4Saves();
@@ -1140,32 +1160,21 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       {hiRecords.map((record) => {
         const subject = hiCommandSubject(record, eventName);
         const expired = isRetryExpired(record);
-        const allowed = canRetryH4Command(record);
+        const retryBlocked = lookupKey === record.commandKey ? "正在查询" : h4RetryBlockedReason(record);
         const pending = h4CommandHasPendingTicket(record.commandKey);
         return <li key={record.commandKey}>
           <span className="h4-pending-what"><b>{subject}</b>{hiCommandChange(record) && <span className="h4-pending-change">{hiCommandChange(record)}</span>}</span>
           <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}</span>（北京时间）</span>
-          {pending ? pendingTag(subject) : expired ? expiredTag("proposal" in record.request ? "approval" : "direct") : unknownTag("proposal" in record.request ? "approval" : "direct")}
+          {pending ? pendingTag(subject) : expired ? expiredTag() : unknownTag("proposal" in record.request ? "approval" : "direct")}
+          {expired && !pending && <span className="h4-pending-when">{RETRY_EXPIRED_TEXT}</span>}
           <span className="h4-pending-actions">
             <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => void lookupH4Command(record)}>查询原结果</Button>
-            {!expired && !record.acknowledged && <Button size="sm" disabledReason={!allowed ? "没有这项修改的权限" : undefined} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>}
-            {expired && !record.acknowledged && "proposal" in record.request && <Button size="sm" variant="ghost" disabledReason={lookupKey ? "正在查询" : undefined} onClick={() => setReleasing(record)}>查无此单时解除</Button>}
+            {!expired && !record.acknowledged && <Button size="sm" disabledReason={retryBlocked} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>}
           </span>
         </li>;
       })}
 
     </ul>}>关闭或刷新页面不会重新提交。</Notice>}
-    {releasing && <ReleaseModal label={<>{hiCommandSubject(releasing, eventName)}{hiCommandChange(releasing) ? ` · ${hiCommandChange(releasing)}` : ""}</>}
-      explain={<><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></>}
-      onCancel={() => setReleasing(null)} onConfirm={() => {
-        const record = releasing;
-        setReleasing(null);
-        setLookupKey(record.commandKey);
-        void releaseExpiredH4Proposal(record)
-          .then(() => { toast("已解除这条记录，可以重新提交修改。", "success"); return refreshAll(); })
-          .catch(cause => { toast(displayAdminError(cause), "warn"); return refreshAll(); })
-          .finally(() => setLookupKey(""));
-      }} />}
     {stale && <Notice tone="warn" title={`没有保存：别人先改过（${stale}）`} action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>{error ? "最新值没读到；重试读取成功后再核对，你填的还在。" : "已读到最新值，你填的还在，核对后再提交。"}</Notice>}
     {confirmed.length > 0 && <Notice tone="warn" title={raffleChecks.length ? RAFFLE_SAVE_PENDING : "已保存，但没读到最新数据"} action={<Button size="sm" loading={loading} onClick={() => void refreshAll()}>重新读取</Button>}>
       {raffleChecks.length > 0 && `${raffleChecks.map(record => `「${hiCommandSubject(record, eventName)}」`).join("、")}重新读取这一期后才能确认是否保存，之前不能再改。`}

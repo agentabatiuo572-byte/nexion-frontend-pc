@@ -28,7 +28,11 @@ export function hConflictFields(opened: object, latest: object, mine: object,
 
 /** Keep the confirmation locked until an explicit read can rebuild it from current data. */
 export class ConfirmReadConflict extends Error {
-  constructor(public readonly review?: { readLatest: () => Promise<void>; renderNotice: (readLatest: () => void) => ReactNode }, message = "H4_REFRESH_REQUIRED") {
+  constructor(public readonly review?: {
+    readLatest: () => Promise<boolean | void>;
+    renderNotice: (readLatest: () => void) => ReactNode;
+    preserveReason?: boolean;
+  }, message = "H4_REFRESH_REQUIRED") {
     super(message);
   }
 }

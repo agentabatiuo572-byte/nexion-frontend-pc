@@ -718,16 +718,38 @@ export async function fetchI3CampaignOverview(): Promise<NotificationCampaignOve
   } };
 }
 
+const i3DraftReceiptState = new Map<string, "missing" | "processing">();
+export const isI3DraftCommand = (command: I3Command) => command.action === "create" || command.action === "draft";
+
+export function i3DraftRetryBlockedReason(command: I3Command): string | undefined {
+  if (!isI3DraftCommand(command)) return;
+  if (isRetryExpired(command)) return RETRY_EXPIRED_TEXT;
+  if (!command.original || command.action === "draft" && !command.snapshot) return "原操作记录不完整，只能查询核对，不能重试。";
+  const permission = i3RetryPermission(command);
+  if (permission) return permission;
+  const state = i3DraftReceiptState.get(command.commandKey);
+  return state === "missing" ? undefined : state === "processing" ? "原操作还在处理，请稍后再查。" : "先查询原结果，明确查不到后才能重试。";
+}
+
 export async function retryI3Command(saved: I3Command): Promise<void> {
   const command = pendingI3Commands().find((row) => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
+  const blocked = i3DraftRetryBlockedReason(command);
+  if (blocked) throw new Error(blocked);
+  i3DraftReceiptState.delete(command.commandKey);
   return sendI3Command(command, true);
 }
 
 export async function queryI3Command(saved: I3Command, evidence?: FundCommandEvidence) {
   const command = pendingI3Commands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  return queryIContentCommand(command, "content_i3_read", evidence);
+  i3DraftReceiptState.delete(command.commandKey);
+  const receipt = await queryIContentCommand(command, "content_i3_read", evidence);
+  if (!evidence && command.original && isI3DraftCommand(command) && !isRetryExpired(command)) {
+    if (receipt === null) i3DraftReceiptState.set(command.commandKey, "missing");
+    else if (receipt.originalStatus === "PROCESSING") i3DraftReceiptState.set(command.commandKey, "processing");
+  }
+  return receipt;
 }
 
 async function prepareI3Command(path: string, init: RequestInit, snapshot?: NotificationCampaignRow, formSnapshot?: I3FormSnapshot): Promise<void> {

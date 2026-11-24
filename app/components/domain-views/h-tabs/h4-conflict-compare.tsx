@@ -44,7 +44,7 @@ export function h4ConflictGroups(fields: HConflictField[], groupOf: (path: strin
 
 /** 一组差别行；抽奖按奖项分组时带组标题和增删标记。 */
 export type H4CompareSection = { key: string; title?: ReactNode; tags?: ReactNode; rows: H4ConflictGroup[];
-  /** 增删过的整项：一行写完三份，不再分字段。 */
+  /** 增删过的整项，以及另一侧仍有的字段改动。 */
   whole?: { opened: ReactNode; latest: ReactNode; mine: ReactNode; byOther: boolean; byMe: boolean } };
 export function H4ConflictCompare({ groups, sections, onMerge, mergeDisabledReason }: {
   groups: H4ConflictGroup[]; sections?: H4CompareSection[];
@@ -69,7 +69,7 @@ export function H4ConflictCompare({ groups, sections, onMerge, mergeDisabledReas
           ? <tbody key={section.key}><tr data-whole="">
             <th scope="row"><span className="h4-compare-name">{section.title}</span><span className="h4-compare-tags">{section.tags}</span></th>
             <td>{section.whole.opened}</td><td data-changed={section.whole.byOther ? "" : undefined}>{section.whole.latest}</td><td data-changed={section.whole.byMe ? "" : undefined}>{section.whole.mine}</td>
-          </tr></tbody>
+          </tr>{section.rows.map(row)}</tbody>
           : <tbody key={section.key} data-section={section.title ? "" : undefined}>
             {section.title && <tr className="h4-compare-section"><th scope="rowgroup" colSpan={4}><span>{section.title}</span>{section.tags}</th></tr>}
             {section.rows.map(row)}

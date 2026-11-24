@@ -9,8 +9,8 @@ import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Plus, Ticket, Trash2, Trophy } from "lucide-react";
 import type { HCtx } from "./types";
-import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, RAFFLE_SAVE_PENDING, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification } from "@/lib/admin/h4-mutations";
+import { fetchAdminRaffle, fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, RAFFLE_SAVE_PENDING, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -101,7 +101,6 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
   /** 保存被「别人先改过」拒绝、已重读后的提醒；只决定显示。 */
   const [stale, setStale] = useState("");
   const [conflictFields, setConflictFields] = useState<HConflictField[] | null>(null);
-  const rebasedBase = useRef<AdminRaffle | null>(null);
   /** 合并后回到表单：放回了几项自己改的。只决定显示。 */
   const [merged, setMerged] = useState(0);
   useEffect(() => { setSaving(false); if (read) void load(); }, [read, operator]);
@@ -111,7 +110,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
     window.addEventListener("admin-h4-pending-changed", changed);
     return () => window.removeEventListener("admin-h4-pending-changed", changed);
   }, []);
-  const choose = (row: AdminRaffle | null, required = requiredLanguages) => { rebasedBase.current = null; setConflictFields(null); setStale(""); setMerged(0); setBase(row); setDraft(row ? editableRaffle(row, required) : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
+  const choose = (row: AdminRaffle | null, required = requiredLanguages) => { setConflictFields(null); setStale(""); setMerged(0); setBase(row); setDraft(row ? editableRaffle(row, required) : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
   const openRaffle = async (row: AdminRaffle | null) => {
     const required = await getRequiredContentLanguages();
     setRequiredLanguages(required);
@@ -121,7 +120,6 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
   const saveBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0));
   const save = () => {
     const savedDraft = draft, previous = base, nextEnabled = !!base && enabled;
-    const preserveFallback = previous !== null && previous === rebasedBase.current;
     if (savedDraft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${savedDraft.id}`)) return;
     setReadFailed(false);
     if (!savedDraft || !write || saving || saveBlocked || conflictFields) return;
@@ -130,7 +128,9 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
     const closing = !nextEnabled && previous?.status === "OPEN";
     const readVersion = h4ReadVersion("raffles");
     let originalKey: string | undefined;
-    ctx.openActionConfirm({ getPendingReason: () => h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
+    const pending = () => h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`);
+    ctx.openActionConfirm({ getPendingReason: () => pending()?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
+      getPendingRecovery: () => h4PendingConfirmRecovery(pending(), async () => { ctx.openActionConfirm(null); if (opening) await onApprovalCompleted?.(); await load(false, true); }),
       title: opening ? "开放抽奖报名" : closing ? "关闭报名回草稿" : previous ? "保存抽奖配置" : "保存抽奖草稿",
       effect: opening ? effectApproval("这一期") : effectDirect,
       detail: <>本期共 {seats(savedDraft.prizes)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
@@ -175,22 +175,6 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
             const problem = raffleDraftError(savedDraft, required);
             if (problem) throw new Error(problem);
             const submitted = raffleLocalizedDraft(savedDraft, required, "submit");
-            if (previous && preserveFallback) {
-              // Blanks may represent the latest stored English fallback. Keep that value on
-              // unchanged locales when the operator only edited English in the rebased draft.
-              const opened = editableRaffle(previous, required);
-              const latestPrizes = new Map(previous.prizes.map(prize => [prize.id, prize]));
-              for (const locale of ["zh", "vi"] as const) {
-                if (required.includes(locale)) continue;
-                const { suffix } = RAFFLE_LANGUAGES[locale];
-                const title = `title${suffix}` as const, name = `name${suffix}` as const;
-                const stillUsingFallback = !opened[title].trim() && !savedDraft[title].trim()
-                  && opened.prizes.every(prize => !prize[name].trim()) && savedDraft.prizes.every(prize => !prize[name].trim());
-                if (!stillUsingFallback) continue;
-                submitted[title] = previous[title] || submitted[title];
-                for (const prize of submitted.prizes) prize[name] = latestPrizes.get(prize.id)?.[name] || prize[name];
-              }
-            }
             result = await saveAdminRaffle(submitted, previous?.revision ?? null, nextEnabled, reason, opening);
           }
           await complete(result);
@@ -207,7 +191,8 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
             throw h4ReadConflict(async () => {
               const values = await load();
               if (!values) throw new Error("最新的这一期也没读到");
-              const latest = values.rows.find(row => row.id === savedDraft.id);
+              const latest = values.rows.find(row => row.id === savedDraft.id) ?? await fetchAdminRaffle(savedDraft.id);
+              if (!isActive()) return;
               if (!previous) {
                 if (latest) throw new ConfirmReadConflict(undefined, "RAFFLE_ALREADY_EXISTS");
                 ctx.openActionConfirm(null);
@@ -280,7 +265,9 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
     { key: "raffle", rows: compareGroups.filter(group => !group.key.startsWith("prizes.")) },
     ...prizeIds.map(id => {
       const opened = prizeAt(id, "opened"), latest = prizeAt(id, "latest"), mine = prizeAt(id, "mine"), tags = marks(id);
-      const rows = compareGroups.filter(group => group.key.startsWith(`prizes.${prizeKey(id)}.`)).map(group => ({ ...group, label: PRIZE_FIELD[group.key.split(".")[2]] ?? "其他" }));
+      const rows = compareGroups.filter(group => group.key.startsWith(`prizes.${prizeKey(id)}.`)
+        && (!tags.length || !!opened && (latest && !mine && group.byOther || mine && !latest && group.byMe)))
+        .map(group => ({ ...group, label: PRIZE_FIELD[group.key.split(".")[2]] ?? "其他" }));
       const fields = prizeFields(id);
       const whole = tags.length ? { opened: prizeSummary(opened), latest: prizeSummary(latest), byOther: fields.some(field => field.changedByOther), byMe: fields.some(field => field.changedByMe),
         mine: prizeSummary(mine) } : undefined;
@@ -289,10 +276,9 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
   ].filter((section: H4CompareSection) => section.rows.length || section.whole) : [];
   const overlappingRemoval = (removed: string[], other: "latest" | "mine", changed: "changedByOther" | "changedByMe") =>
     removed.some(id => prizeAt(id, other) && prizeFields(id).some(field => field[changed]));
-  const mergeBlockedReason = saveBlocked || base?.status === "OPEN" && compareGroups.some(group => group.byMe && (group.key !== "enabled" || enabled))
-    ? "这一期不能再改"
-    : overlappingRemoval(structureChanges.mine.removed, "latest", "changedByOther") || overlappingRemoval(structureChanges.latest.removed, "mine", "changedByMe")
-      ? "奖项有增删时不能合并。" : undefined;
+  const mergeBlockedReason = overlappingRemoval(structureChanges.mine.removed, "latest", "changedByOther") || overlappingRemoval(structureChanges.latest.removed, "mine", "changedByMe")
+    ? "同一个奖项一边被删除、一边被修改，不能合并。关闭后读取最新一期，再重新编辑。"
+    : saveBlocked || base?.status === "OPEN" && compareGroups.some(group => group.byMe && (group.key !== "enabled" || enabled)) ? "这一期不能再改" : undefined;
   // Latest configuration plus only the draft's changed fields, matched by prize id.
   const mergeConflict = () => {
     if (!base || !draft || mergeBlockedReason) return;
@@ -311,7 +297,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
       }
       else if (top === "titleZh" || top === "titleEn" || top === "titleVi" || top === "startsAt" || top === "drawAt") next[top] = mine[top];
     }
-    choose(latest); rebasedBase.current = latest; setDraft(next); setEnabled(nextEnabled); setMerged(kept.length);
+    choose(latest); setDraft(next); setEnabled(nextEnabled); setMerged(kept.length);
   };
   const pendingSave = draft ? h4PendingFor(`H/h4_genesis_raffle/${draft.id}`) : undefined;
   const awaitingRead = draft ? confirmedH4Saves().find(record => record.scope === `H/h4_genesis_raffle/${draft.id}`) : undefined;

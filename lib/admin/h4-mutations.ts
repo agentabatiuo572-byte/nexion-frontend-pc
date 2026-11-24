@@ -18,7 +18,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { promotionRead } from "./promotion-client";
 import type { Promotion, RewardAdmin } from "./promotion-types";
 import type { FundCommandOrigin } from "./fund-command-investigation";
-import { fetchDirectCommandReceipt } from "./direct-command-receipt";
+import { fetchDirectCommandReceipt, type DirectCommandReceiptState } from "./direct-command-receipt";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 type Resource = "overview" | "rules" | "raffles";
@@ -46,6 +46,7 @@ export const H4_APPROVAL_OPS = new Set([
 ]);
 const fresh = new Map<string, number>();
 const observations = new Map<string, A2OperationRow>();
+const directReceipts = new Map<string, DirectCommandReceiptState>();
 let observationOwner: number | undefined;
 const resourceOf = (scope: string): Resource => scope.includes("/h4_event_rule/") ? "rules" : scope.includes("/h4_genesis_raffle/") ? "raffles" : "overview";
 const notify = () => { if (typeof window !== "undefined") window.dispatchEvent(new Event("admin-h4-pending-changed")); };
@@ -68,7 +69,7 @@ function requireActor(owner: number, write: boolean, scope: string) {
   if (write && !allowed) throw new Error("H4_MAKER_FORBIDDEN");
   return actor;
 }
-function forget(r: H4Command) { h4CommandStores[r.store].forget(r.fingerprint, r.commandKey); observations.delete(r.commandKey); notify(); }
+function forget(r: H4Command) { h4CommandStores[r.store].forget(r.fingerprint, r.commandKey); observations.delete(r.commandKey); directReceipts.delete(r.commandKey); notify(); }
 function retain(r: H4Command) {
   const storage = h4CommandStores[r.store];
   storage.remember(r.fingerprint, r.commandKey, r);
@@ -191,7 +192,7 @@ export async function restoreH4Uploads(target: H4UploadTarget, writable: boolean
 export async function acknowledgeH4Upload(record: H4Command) { if (!record.asset) throw new Error("H4_RESULT_UNKNOWN"); await deleteH4UploadFile(record.commandKey); forget(record); }
 export const h4TicketObservations = () => {
   const owner = useAdminAuth.getState().session?.adminId;
-  if (owner !== observationOwner) { observations.clear(); observationOwner = owner; }
+  if (owner !== observationOwner) { observations.clear(); directReceipts.clear(); observationOwner = owner; }
   return [...observations.values()];
 };
 export const h4CommandHasPendingTicket = (key: string) => { h4TicketObservations(); return observations.get(key)?.status === "pending"; };
@@ -272,12 +273,15 @@ export async function queryH4Command(r: H4Command): Promise<A2OperationRow | nul
   requireActor(r.owner, false, r.scope);
   h4TicketObservations();
   if (!("proposal" in r.request)) {
+    const directScope = h4DirectReceiptScope(r.request);
+    if (!directScope) return undefined;
+    directReceipts.delete(r.commandKey);
+    notify();
     try {
-      const directScope = h4DirectReceiptScope(r.request);
-      if (!directScope) return undefined;
       const state = await fetchDirectCommandReceipt(directScope, r.commandKey, r.owner);
       const original = pendingH4Commands().find(row => row.commandKey === r.commandKey);
       if (!original) return undefined;
+      directReceipts.set(r.commandKey, state);
       if (state === "SUCCEEDED") {
         markH4Read(resourceOf(original.scope), false);
         retain({ ...original, acknowledged: true });
@@ -286,7 +290,7 @@ export async function queryH4Command(r: H4Command): Promise<A2OperationRow | nul
         forget(original);
       }
     }
-    catch { /* Keep the existing overview read available when the auxiliary receipt query fails. */ }
+    finally { notify(); }
     return undefined;
   }
   const ticket = await fetchA2ProposalByKey(r.commandKey, true);
@@ -303,13 +307,27 @@ export async function queryH4Command(r: H4Command): Promise<A2OperationRow | nul
   return ticket;
 }
 
-export async function releaseExpiredH4Proposal(r: H4Command) {
-  if (!("proposal" in r.request) || !isRetryExpired(r) || await queryH4Command(r) !== null) throw new Error("H4_ORIGINAL_NOT_RELEASABLE");
-  forget(r);
+export function h4RetryBlockedReason(r: H4Command): string | undefined {
+  if (isRetryExpired(r)) return RETRY_EXPIRED_TEXT;
+  if (r.acknowledged) return "请查询原结果";
+  try { requireActor(r.owner, true, r.scope); } catch { return "没有这项修改的权限"; }
+  if ("proposal" in r.request) return;
+  const state = directReceipts.get(r.commandKey);
+  if (state === "NOT_FOUND") return;
+  return state === "PROCESSING" ? "原操作还在处理，请稍后再查" : "先查询原结果，明确查不到后才能重试";
 }
-export function canRetryH4Command(r: H4Command) {
-  if (r.acknowledged || isRetryExpired(r)) return false;
-  try { requireActor(r.owner, true, r.scope); return true; } catch { return false; }
+
+export function h4PendingConfirmRecovery(record: H4Command | undefined, onSettled: () => Promise<void>) {
+  if (!record) return;
+  return {
+    expiresAt: record.expiresAt,
+    blockedReason: h4RetryBlockedReason(record),
+    query: async () => {
+      await queryH4Command(record);
+      const current = pendingH4Commands().find(row => row.commandKey === record.commandKey);
+      if (!current || current.acknowledged) await onSettled();
+    },
+  };
 }
 async function send(r: H4Command, recovery: boolean): Promise<Record<string, any> | H4ApprovalReceipt> {
   requireActor(r.owner, true, r.scope);
@@ -396,6 +414,12 @@ export async function retryH4Command(original: H4Command) {
   const r = pendingH4Commands().find(item => item.commandKey === original.commandKey);
   if (!r) throw new Error("H4_ORIGINAL_RESOLVED");
   if ("proposal" in r.request) { const ticket = await queryH4Command(r); if (ticket) return { h4Approval: true, ticket } as H4ApprovalReceipt; }
+  else {
+    const blocked = h4RetryBlockedReason(r);
+    if (blocked) throw new Error(blocked);
+    directReceipts.delete(r.commandKey);
+    notify();
+  }
   return send(r, true);
 }
 export async function submitH4Proposal(scope: string, proposal: Proposal, form?: Record<string, string>, editValue?: string) {

@@ -13,10 +13,10 @@ import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLa
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Trash2, Users } from "lucide-react";
-import { BlockState, Button, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Change, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
-import { pendingI3Commands, queryI3Command, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, I3_WALLET_CTA, I3_RETIRED_WALLET_CTA, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
+import { pendingI3Commands, queryI3Command, retryI3Command, i3RetryPermission, i3DraftRetryBlockedReason, isI3DraftCommand, parseI3Json, fetchI3CampaignOverview, I3_WALLET_CTA, I3_RETIRED_WALLET_CTA, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, releaseExpiredI3Cap, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -34,6 +34,7 @@ import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 import { useReach } from "@/lib/nav/use-reach";
 import { BODY_SENT, campaignQuantity, CampaignCard, CampaignStatusTag, CapCard, chars, I3PendingCapNotice, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, sentWindow, deliveryGap, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
 import { amountDisplay } from "@/lib/format";
+import { LeaveDialog } from "./i5-writes";
 
 type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
@@ -303,6 +304,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         const ticket = await retryI3CapCommand(record);
         toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
       } else {
+        if (isI3DraftCommand(record) && !i3DraftRetryBlockedReason(record)) {
+          setOutcomes(all => { const next = { ...all }; delete next[record.commandKey]; return next; });
+        }
         await retryI3Command(record);
         toast(`${I3_ACTION[record.action]} · ${record.name}`);
       }
@@ -327,6 +331,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     const carried = restored ? null : prefill.current;
     prefill.current = null;
     const confirmation: ActionConfirmReq = { ...req, getPendingReason: () => original()?.reason, initialReason: carried?.reason,
+      getPendingRecovery: draftAttempt ? () => {
+        const record = pendingI3Commands().find(row => row.commandKey === key);
+        return record && { expiresAt: record.expiresAt, blockedReason: i3DraftRetryBlockedReason(record), query: canReadI3 ? () => query(record) : undefined };
+      } : req.getPendingRecovery,
       edit: req.edit && restored && "after" in restored ? { ...req.edit, initialValue: restored.after } : req.edit && carried?.value ? { ...req.edit, initialValue: carried.value } : req.edit,
       run: async (reason, value, business) => {
         if (key) {
@@ -671,6 +679,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     if (drawerPendingKey) {
       const original = pendingI3Commands().find((row) => row.commandKey === drawerPendingKey);
       if (!original) { setNewOpen(false); setDrawerPendingKey(null); return; }
+      if (i3DraftRetryBlockedReason(original)) return;
       setSubmitting(true);
       try { await replay(original); } catch (error) { toast(displayAdminError(error)); } finally { setSubmitting(false); }
       return;
@@ -724,11 +733,35 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         budget: form.budget.trim() || null,
       };
       const originalForm = AUDIENCE_CATALOG && DELIVERY_CATALOG ? { audienceCatalog: AUDIENCE_CATALOG, deliveryCatalog: DELIVERY_CATALOG, estimatedAudience, estimatedAt } : undefined;
+      const draftChanges = editing ? (() => {
+        const audienceLanguage = (value: string) => AUDIENCE_CATALOG?.languages.find(option => option.value === value)?.label ?? value;
+        const budget = (value: string | number | null | undefined) => value == null ? "" : `${amountDisplay(value)} USD`;
+        const changes: Array<[string, string, string]> = [
+          ["名称", editing.name, payload.name],
+          ["通知类型", kindLabel(editing.kind), kindLabel(payload.kind)],
+          ["优先级", TIER[editing.tier].label, TIER[payload.tier].label],
+          ["点了去哪", ctaLabelOf(editing.ctaHref), ctaLabelOf(payload.ctaHref)],
+          ["按钮文字", editing.ctaLabel, payload.ctaLabel ?? ""],
+          ["P 阶段从", editing.audienceTarget.phaseMin, payload.audienceTarget.phaseMin],
+          ["P 阶段到", editing.audienceTarget.phaseMax, payload.audienceTarget.phaseMax],
+          ["语言", audienceLanguage(editing.audienceTarget.language), audienceLanguage(payload.audienceTarget.language)],
+          ["注册超过", `${editing.audienceTarget.registrationDaysMin} 天`, `${payload.audienceTarget.registrationDaysMin} 天`],
+          ["预算", budget(editing.budget), budget(payload.budget)],
+        ];
+        for (const language of OPERATING_LANGUAGE_CODES) {
+          const old = splitNotificationBody(language === "zh" ? editing.bodyZh : language === "vi" ? editing.bodyVi : editing.bodyEn);
+          changes.push([`${LANG_NAME[language]}标题`, old.title, copy[TITLE_KEY[language]]], [`${LANG_NAME[language]}正文`, old.body, copy[BODY_KEY[language]]]);
+        }
+        return changes.filter(([, before, after]) => before !== after);
+      })() : undefined;
       openActionConfirm({
         briefKind: "content",
         action: `保存草稿 · ${trimmedName}`,
         title: "保存草稿",
         detail: "还没排期，不会发给任何人。",
+        statedBrief: { impact: "只保存为草稿：不会发给任何人，用户现在看到的内容不变。", check: "核对标题、正文、受众和预算。" },
+        reviewedFacts: draftChanges?.length ? <Facts>{draftChanges.map(([label, before, after]) =>
+          <Fact key={label} k={label}><Change from={before || "—"} to={after || "—"} /></Fact>)}</Facts> : undefined,
         confirmLabel: "保存草稿",
         run: async reason => {
           const task = editing
@@ -807,7 +840,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   };
 
   const restore = (record: I3Command) => {
-    if (!record.original) return;
+    if (!record.original || i3DraftRetryBlockedReason(record)) return;
     const input = parseI3Json(record.original.body) as NewForm & { audienceTarget: NotificationAudienceTarget; schedule: string };
     if (record.action === "create" || record.action === "draft") {
       const next: NewForm = { name: input.name, titleZh: input.titleZh, titleVi: input.titleVi, titleEn: input.titleEn,
@@ -832,7 +865,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   /** 查过原结果的直接操作这一行怎么说：共用面板的标签和句子（查询失败的原因放标签问号里）。 */
   const i3Status = (record: I3Command, outcome: FundInvestigationOutcome | undefined) => {
     const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canClose: canInvestigateECommand("content_i3_read"),
-      canRetry: !!record.original && (record.action === "create" || !!record.snapshot) && !i3RetryPermission(record) });
+      canRetry: !!record.original && (record.action === "create" || !!record.snapshot) && !i3RetryPermission(record) && !i3DraftRetryBlockedReason(record) });
     return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
   };
   const query = async (record: I3Command | I3CapCommand) => {
@@ -878,7 +911,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原结果</Button>
         {canInvestigateECommand("content_i3_read") && eCommandClosureOffer(outcomes[row.commandKey], isRetryExpired(row)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(row)}>核查结案</Button>}
-        {!isRetryExpired(row) && <Button size="sm" disabledReason={!row.original || row.action !== "create" && !row.snapshot ? "原操作记录不完整，只能查询核对，不能重试。" : i3RetryPermission(row)} onClick={() => restore(row)}>按原请求重试</Button>}
+        {!isRetryExpired(row) && <Button size="sm" disabledReason={isI3DraftCommand(row) ? i3DraftRetryBlockedReason(row)
+          : !row.original || !row.snapshot ? "原操作记录不完整，只能查询核对，不能重试。" : i3RetryPermission(row)} onClick={() => restore(row)}>按原请求重试</Button>}
       </> })),
     ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: `${TIER[row.tier as TierK].label}优先级`,
       change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), submitted: !!row.receiptKnown,
@@ -904,7 +938,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     syncPending();
   };
   const drawerOriginal = pending.find((row) => row.commandKey === drawerPendingKey);
-  const drawerRetryReason = drawerOriginal && isRetryExpired(drawerOriginal) ? RETRY_EXPIRED : drawerOriginal ? i3RetryPermission(drawerOriginal) : undefined;
+  const drawerRetryReason = drawerOriginal ? i3DraftRetryBlockedReason(drawerOriginal) : undefined;
   const scheduleOriginal = pending.find((row) => row.commandKey === schedulePendingKey);
   const scheduleRetryReason = scheduleOriginal && isRetryExpired(scheduleOriginal) ? RETRY_EXPIRED : scheduleOriginal ? i3RetryPermission(scheduleOriginal) : undefined;
 
@@ -1149,15 +1183,14 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           onSubmit={submitNew}
           onClose={() => {
             if (submitting) return;
-            if (JSON.stringify(form) !== JSON.stringify(formBase)) { setLeaving(true); return; }
+            if (!drawerPendingKey && JSON.stringify(form) !== JSON.stringify(formBase)) { setLeaving(true); return; }
             setNewOpen(false); setEditing(null);
           }}
         />
       )}
-      {leaving && <Modal title="放弃这次填写？" onClose={() => setLeaving(false)} footer={<>
-        <Button onClick={() => setLeaving(false)}>继续填写</Button>
-        <Button variant="danger-outline" onClick={() => { setLeaving(false); setNewOpen(false); setEditing(null); }}>放弃并关闭</Button>
-      </>}><p>填的内容还没保存，关闭后不保留。</p></Modal>}
+      <LeaveDialog guard={{ asking: leaving, stay: () => setLeaving(false), hide: () => setLeaving(false),
+        discard: () => { setLeaving(false); setNewOpen(false); setEditing(null); } }}
+        discardLabel="放弃改动并返回" saveLabel="保存草稿" saveBlocked={lockReason(editing?.id ?? "create")} onSave={() => void submitNew()} />
 
       {/* ===== 排期 ===== */}
       {scheduleRow && (canSendCampaign(scheduleRow) || !!schedulePendingKey) && (
@@ -1355,7 +1388,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
         others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
         <div className="i3-form">
-          {frozen && <Notice tone="warn" title="结果未知">原请求已冻结，只能按原请求重试或在页面上方查询原结果。</Notice>}
+          {frozen && <Notice tone="warn" title="结果未知">原请求已冻结。先在页面上方查询原结果，明确查不到后才能按原请求重试。</Notice>}
           <section className="i3-form-section" aria-labelledby="i3-f-base">
             <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>
             <Field label="名称" required help="只给后台看，最多 160 字。">

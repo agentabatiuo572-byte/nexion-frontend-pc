@@ -1,6 +1,6 @@
 "use client";
 
-import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
+import { fetchOperatingLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { ConfirmReadConflict, hConflictFields, type HConflictField } from "@/lib/admin/h-conflict-review";
 import { isH4ReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
@@ -9,9 +9,11 @@ import { CalendarRange, CircleAlert, CircleCheck, Lock, Settings2, Sparkles } fr
 import type { HCtx } from "./types";
 import { fetchEventRules, fetchEventVouchers, updateEventRule, type EventRuleReadiness, type EventRuleView, type EventRuleChange, type EventVoucherOption } from "@/lib/admin/event-rules-client";
 import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleMissingLabel, eventRuleReadiness, eventRegionText, parseEventRegions, type EventLocalizedContent } from "@/lib/admin/event-rule-form";
-import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatTime } from "./h4-promotion-ui";
@@ -150,9 +152,55 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       }
     }
     const firstOpen = next.enabled && !base.enabled && !base.rulesLocked;
-    const readVersion = h4ReadVersion("rules");
+    let readVersion = h4ReadVersion("rules");
+    let verifiedVersion: number | undefined;
+    const missingRule = () => new ConfirmReadConflict({
+      readLatest: async () => {
+        if (!await load()) throw new Error("玩法规则没有读到");
+        ctx.openActionConfirm(null);
+      },
+      renderNotice: readLatest => <Notice tone="warn" title="最新读取里没有这项活动"
+        action={<Button size="sm" onClick={readLatest}>读取最新列表</Button>}>你填的内容没有提交。</Notice>,
+    });
+    const compareLatest = (latest: EventRuleView) => {
+      setSelected(latest); setDraft(next);
+      const opened = { enabled: base.enabled, startsAt: base.startsAt, endsAt: base.endsAt, rules: eventRuleDraftRules(base) };
+      const current = { enabled: latest.enabled, startsAt: latest.startsAt, endsAt: latest.endsAt, rules: eventRuleDraftRules(latest) };
+      setConflictFields(hConflictFields(opened, current, next));
+      setStale(`${EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · ${base.eventCode}`);
+      ctx.openActionConfirm(null);
+    };
+    const readFirstOpen = async (): Promise<[EventRuleView[], readonly OperatingLanguageCode[]]> => {
+      try { return await Promise.all([fetchEventRules(), fetchOperatingLanguages()]); }
+      catch (cause) {
+        if (isPermissionDenied(cause)) throw cause;
+        throw new ConfirmReadConflict({ preserveReason: true, readLatest: async () => {
+          const [latest, required] = await readFirstOpen();
+          const current = latest.find(row => row.eventCode === base.eventCode);
+          if (!current) throw missingRule();
+          if (current.revision !== base.revision || current.enabled !== base.enabled) {
+            setRuleRows(latest);
+            compareLatest(current);
+            return;
+          }
+          checkFirstOpen(current, required);
+          readVersion = verifiedVersion = h4ReadVersion("rules");
+          return true;
+        }, renderNotice: retry => <Notice tone="danger" title="开启前所需数据没有读到"
+          action={<Button size="sm" onClick={retry}>重试</Button>}>{displayAdminReadError(cause)}</Notice> });
+      }
+    };
+    const checkFirstOpen = (current: EventRuleView, required: readonly OperatingLanguageCode[]) => {
+      const readiness = eventRuleReadiness(current, eventContent, required);
+      const missing = readiness.missing.filter(key => key.startsWith("localized."));
+      if (missing.length || readiness.incomplete?.length) {
+        throw new Error(formatAdminApiError("EVENT_RULE_INCOMPLETE", "", "write", { missing, incomplete: readiness.incomplete }));
+      }
+    };
     let originalKey: string | undefined;
-    ctx.openActionConfirm({ getPendingReason: () => h4PendingFor(`H/h4_event_rule/${base.eventCode}`)?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
+    const pending = () => h4PendingFor(`H/h4_event_rule/${base.eventCode}`);
+    ctx.openActionConfirm({ getPendingReason: () => pending()?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
+      getPendingRecovery: () => h4PendingConfirmRecovery(pending(), async () => { ctx.openActionConfirm(null); await onApprovalCompleted?.(); await load(); }),
       title: firstOpen ? "开启玩法" : next.enabled ? "保存玩法配置" : "保存关闭状态",
       effect: firstOpen ? effectApproval("玩法") : effectDirect,
       detail: <>更新本活动的参与条件、奖励及有效期。{next.enabled ? "启用后符合条件的用户可参与；保存时会检查配置与奖励预算。" : "保存后活动保持关闭，不发放新奖励。"}</>,
@@ -186,17 +234,15 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
           const original = originalKey ? pendingH4Commands().find(r => r.commandKey === originalKey) : undefined;
           if (!original) {
             assertH4Fresh("rules", readVersion);
-            if (firstOpen) {
-              const [latest, required] = await Promise.all([fetchEventRules(), getRequiredContentLanguages()]);
+            if (firstOpen && verifiedVersion !== readVersion) {
+              const [latest, required] = await readFirstOpen();
               const current = latest.find(row => row.eventCode === base.eventCode);
-              if (!current) throw new ConfirmReadConflict(undefined, "最新读取里没有这项活动");
+              if (!current) throw missingRule();
               if (current.revision !== base.revision || current.enabled !== base.enabled) throw new Error("H4_REFRESH_REQUIRED");
-              const readiness = eventRuleReadiness(current, eventContent, required);
-              const missing = readiness.missing.filter(key => key.startsWith("localized."));
-              if (missing.length || readiness.incomplete?.length) {
-                throw new Error(formatAdminApiError("EVENT_RULE_INCOMPLETE", "", "write", { missing, incomplete: readiness.incomplete }));
-              }
+              readVersion = h4ReadVersion("rules");
+              checkFirstOpen(current, required);
             }
+            verifiedVersion = undefined;
           }
           const saved = original ? await retryH4Command(original) : await updateEventRule(base.eventCode, next, base.revision, reason, firstOpen);
           await complete(saved);
@@ -209,18 +255,17 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
               onUnknown: () => { ctx.closeConfirm?.(); setSelected(null); setDraft(null); }, approver: "另一位超级管理员", holds: "玩法", extra: <Fact k="玩法">{EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · {base.eventCode}</Fact> }));
             return;
           }
+          if (cause instanceof ConfirmReadConflict) throw cause;
+          const failure = cause as { status?: number; apiCode?: number; reasonCode?: string; unknownOutcome?: boolean; bodyUnreadable?: boolean } | null;
+          if (failure && !failure.unknownOutcome && !failure.bodyUnreadable && isDeterministicRejection(failure.status ?? 0, failure.apiCode)
+            && (failure.reasonCode === "EVENT_NOT_FOUND" || failure.reasonCode === "EVENT_RULE_NOT_FOUND")) throw missingRule();
           if (isH4ReadConflict(cause) && !originalKey) {
             throw h4ReadConflict(async () => {
               const values = await load(true);
               if (!values) throw new Error("玩法规则没有读到");
               const latest = values.find(row => row.eventCode === base.eventCode);
-              if (!latest) throw new ConfirmReadConflict(undefined, "最新读取里没有这项活动");
-              setSelected(latest); setDraft(next);
-              const opened = { enabled: base.enabled, startsAt: base.startsAt, endsAt: base.endsAt, rules: eventRuleDraftRules(base) };
-              const current = { enabled: latest.enabled, startsAt: latest.startsAt, endsAt: latest.endsAt, rules: eventRuleDraftRules(latest) };
-              setConflictFields(hConflictFields(opened, current, next));
-              setStale(`${EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · ${base.eventCode}`);
-              ctx.openActionConfirm(null);
+              if (!latest) throw missingRule();
+              compareLatest(latest);
             });
           }
           if (own === generation.current) setError(displayAdminError(cause));

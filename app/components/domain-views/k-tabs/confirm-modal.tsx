@@ -14,11 +14,12 @@ import { Notice } from "@/app/components/rd/block-state";
 import { Button as RdButton } from "@/app/components/rd/button";
 import { useRdSurface } from "@/app/components/rd/surface";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
-import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
+import { Modal, Btn, Chip, OperatorBriefBlock, usePendingConfirmRecovery } from "../design-kit";
 import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
   const [pendingReason, setPendingReason] = useState(() => req.freezePendingInput ? req.getPendingReason?.() : undefined);
+  const pendingRecovery = usePendingConfirmRecovery(pendingReason, req.getPendingRecovery);
   const [draftReason, setReason] = useState(pendingReason ?? req.initialReason ?? "");
   const reason = pendingReason ?? draftReason;
   const [value, setValue] = useState(() => (req.freezePendingInput ? req.getPendingValue?.() : undefined) ?? req.initialInputValue ?? "");
@@ -50,7 +51,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
   const inputOk = !req.input || req.input.required === false || (req.input.options ? value !== "" : value.trim().length >= 1);
   const valueProblem = req.input?.validate?.(value);
-  const pendingBlockReason = readConflict ? readConflict.review ? "请先读取最新" : displayAdminReadError(readConflict) : req.freezePendingInput ? req.getPendingBlockReason?.() : undefined;
+  const pendingBlockReason = readConflict ? readConflict.review ? "请先读取最新" : displayAdminReadError(readConflict)
+    : pendingRecovery?.blockedReason ?? (req.freezePendingInput ? req.getPendingBlockReason?.() : undefined);
   const can = !pendingBlockReason && (req.replayPendingInput && pendingReason !== undefined || reasonOk && inputOk && !valueProblem && policySettled);
   const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
   const submit = async () => {
@@ -98,6 +100,17 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
     }
     finally { setReadingConflict(false); }
   };
+  const queryPending = async () => {
+    if (!pendingRecovery?.query || submitting || readingConflict) return;
+    setReadingConflict(true);
+    setError(null);
+    try { await pendingRecovery.query(); }
+    catch (cause) {
+      if (isPermissionDenied(cause)) { announcePermissionDenied(); onClose(); }
+      else setError(displayAdminReadError(cause));
+    }
+    finally { setPendingReason(req.getPendingReason?.()); setReadingConflict(false); }
+  };
   return (
     <Modal
       title={req.title ?? req.action}
@@ -111,6 +124,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       footer={
         <>
           <Btn disabled={submitting || readingConflict} onClick={onClose}>取消</Btn>
+          {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>查询原结果</Btn>}
           {surface ? (
             <RdButton
               variant={req.confirmTone ?? "primary"}
@@ -120,7 +134,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               onBlockedClick={() => setAttempted(true)}
               onClick={() => void submit()}
             >
-              {req.okLabel ?? "确认"}
+              {pendingRecovery ? "按原请求重试" : req.okLabel ?? "确认"}
             </RdButton>
           ) : (
             <Btn

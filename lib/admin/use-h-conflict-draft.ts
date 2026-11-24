@@ -7,29 +7,30 @@ import { isH4ReadConflict, isHGrowthReadConflict } from "./h-write-conflict";
 
 /** Bind recovery to the operation constructing this request, never a previous click. */
 export function useHConflictDraft(ready: boolean, { readConflict }: {
-  readConflict?: (afterRead: (beforeOpen: () => void) => void, kind: "action" | "confirm", request: ActionConfirmReq | ConfirmReq) => Error;
+  readConflict?: (afterRead: (beforeOpen: () => void) => Promise<boolean>, kind: "action" | "confirm", request: ActionConfirmReq | ConfirmReq) => Error;
 } = {}) {
   const openers = useRef(new Map<string, () => void>());
   openers.current.clear();
   const opening = useRef<string | undefined>(undefined);
-  const saved = useRef<{ key: string; reason?: string; value?: string; business?: BusinessFormValue; intent?: string; beforeOpen?: () => void } | undefined>(undefined);
+  const saved = useRef<{ key: string; reason?: string; value?: string; business?: BusinessFormValue; intent?: string;
+    recovery?: { beforeOpen: () => void; done: (found: boolean) => void } } | undefined>(undefined);
   const [pending, setPending] = useState(false);
   const [revision, setRevision] = useState(0);
   const restoring = useRef(false);
   useEffect(() => {
     if (!pending || !ready || !saved.current) return;
-    const key = saved.current.key, open = openers.current.get(key);
-    saved.current.beforeOpen?.();
-    if (!open) { saved.current = undefined; setPending(false); return; }
+    const { key, recovery } = saved.current, open = openers.current.get(key);
+    if (!open) { recovery?.done(false); saved.current = undefined; setPending(false); return; }
+    recovery?.beforeOpen();
     restoring.current = true;
     opening.current = key;
-    try { open(); } finally { restoring.current = false; opening.current = undefined; }
+    try { open(); } finally { restoring.current = false; opening.current = undefined; recovery?.done(true); }
     setPending(false);
     saved.current = undefined;
   }, [pending, ready]);
-  const retain = (key: string | undefined, reason: string, value?: string, business?: BusinessFormValue, intent?: string, beforeOpen?: () => void) => {
-    if (!key) { beforeOpen?.(); return; }
-    saved.current = { key, reason: readConflict ? undefined : reason, value, business, intent, beforeOpen };
+  const retain = (key: string | undefined, reason: string, value?: string, business?: BusinessFormValue, intent?: string, recovery?: NonNullable<typeof saved.current>["recovery"]) => {
+    if (!key) { recovery?.beforeOpen(); recovery?.done(true); return; }
+    saved.current = { key, reason: readConflict ? undefined : reason, value, business, intent, recovery };
     setRevision(v => v + 1);
     setPending(true);
   };
@@ -60,7 +61,7 @@ export function useHConflictDraft(ready: boolean, { readConflict }: {
           if (!original && (readConflict ? isH4ReadConflict(error) : isHGrowthReadConflict(error))) {
             const initial = readConflict && business ? initBusinessForm(request.businessForm) : undefined;
             const changes = initial && business ? Object.fromEntries(Object.entries(business).filter(([field, input]) => input !== initial[field])) : business;
-            if (readConflict) throw readConflict(beforeOpen => retain(key, reason, value, changes, request.rebaseValue, beforeOpen), "action", request);
+            if (readConflict) throw readConflict(beforeOpen => new Promise(done => retain(key, reason, value, changes, request.rebaseValue, { beforeOpen, done })), "action", request);
             retain(key, reason, value, changes, request.rebaseValue);
           }
           throw error;
@@ -77,7 +78,7 @@ export function useHConflictDraft(ready: boolean, { readConflict }: {
           try { return await request.run(reason, value); }
           catch (error) {
             if (!original && (readConflict ? isH4ReadConflict(error) : isHGrowthReadConflict(error))) {
-              if (readConflict) throw readConflict(beforeOpen => retain(key, reason, value, undefined, request.rebaseValue, beforeOpen), "confirm", request);
+              if (readConflict) throw readConflict(beforeOpen => new Promise(done => retain(key, reason, value, undefined, request.rebaseValue, { beforeOpen, done })), "confirm", request);
               retain(key, reason, value, undefined, request.rebaseValue);
             }
             throw error;

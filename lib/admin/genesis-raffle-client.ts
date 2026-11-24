@@ -60,7 +60,7 @@ export function parseAdminRaffle(value: unknown): AdminRaffle {
   }
   return row;
 }
-async function fetchAdminRaffle(id: string): Promise<AdminRaffle | null> {
+export async function fetchAdminRaffle(id: string): Promise<AdminRaffle | null> {
   try {
     const row = parseAdminRaffle(await growthRequest<unknown>(`/genesis-raffle/${encodeURIComponent(id)}`));
     if (row.id !== id || row.revision < 1) throw new Error("创世抽奖配置读取失败，请刷新后重试。");

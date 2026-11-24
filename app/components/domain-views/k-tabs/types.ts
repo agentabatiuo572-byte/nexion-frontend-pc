@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { K4PaginationQuery, KRiskActions, KRiskData, KRiskOverviewQuery, MultiAccountOverview, ScoringOverview } from "@/lib/admin/k-client";
-import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, InlineOperationApproval, OperationApproval, OperatorBriefKind } from "../design-kit";
+import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, InlineOperationApproval, OperationApproval, OperatorBriefKind, PendingConfirmRecovery } from "../design-kit";
 import type { ToastKind } from "@/lib/store/ui";
 
 export type ActionConfirmReq = {
@@ -24,6 +24,8 @@ export type ActionConfirmReq = {
   reasonMax?: number;
   /** 未确认的原操作理由；提交后重新查询，终态返回 undefined 解除锁定。 */
   getPendingReason?: () => string | undefined;
+  getPendingRecovery?: () => PendingConfirmRecovery | undefined;
+  reviewedFacts?: ReactNode;
   getPendingBusinessValue?: () => BusinessFormValue | undefined;
   completionCopy?: string;
   approval?: OperationApproval;
@@ -73,6 +75,7 @@ export type ConfirmReq = {
   /** The caller replays its saved request, so current form validation must not block it. */
   replayPendingInput?: boolean;
   getPendingBlockReason?: () => string | undefined;
+  getPendingRecovery?: () => PendingConfirmRecovery | undefined;
   getPendingReason?: () => string | undefined;
   /** 原覆盖分，恢复时只展示保存的输入。 */
   getPendingValue?: () => string | undefined;
