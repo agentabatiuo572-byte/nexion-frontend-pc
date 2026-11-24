@@ -48,9 +48,14 @@ export const e2Commands = createPendingMutationStore<E2Pending>({
   },
 });
 
-export function e2CommandLabel(record: Pick<E2Pending, "request">) {
-  return record.request.kind === "random" ? `随机添加 ${record.request.body.count} 个任务`
-    : `${record.request.body.enabled ? "批量启用" : "批量停用"} ${record.request.body.taskTypeIds.length} 个任务`;
+/** 待 Codex 接入：单条新增、修改的原操作。请求类型接进 TaskPoolCommand 前，这里只给待确认条出标题。 */
+type E2TaskEditLabel = { kind: "create"; body: { name: string } } | { kind: "update"; body: { name: string } };
+
+export function e2CommandLabel(record: { request: TaskPoolCommand | E2TaskEditLabel }) {
+  const request = record.request;
+  if (request.kind === "create" || request.kind === "update") return `${request.kind === "create" ? "新增" : "修改"}任务「${request.body.name}」`;
+  return request.kind === "random" ? `随机添加 ${request.body.count} 个任务`
+    : `${request.body.enabled ? "批量启用" : "批量停用"} ${request.body.taskTypeIds.length} 个任务`;
 }
 
 export async function checkE2Command(record: E2Pending, evidence?: ECommandEvidence) {

@@ -12,6 +12,8 @@ export interface TaskPool {
 export interface PoolTask {
   taskTypeId: string; name: string; taskClass: TaskClass; durationMinutes: number;
   enabled: boolean; version: number; effectiveAt: string;
+  /** 权重，六位小数字符串，只用于显示。待接入：DEVICE 列表回包的解析接上后才有值（B85-BE-03）。 */
+  baseReward?: string;
 }
 export interface PhonePoolTask extends PoolTask { baseReward: string; asset: "USDT" | "UVT" }
 export interface PoolTaskPage<T = PoolTask> { records: T[]; total: number }

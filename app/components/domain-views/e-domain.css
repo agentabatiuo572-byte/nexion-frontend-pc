@@ -542,22 +542,27 @@
 .e2-task-table .e2-control-column { width: 44px; }
 .e2-task-table .e2-name-column { width: 58ch; }
 .e2-task-table th:nth-child(2) { padding-inline-start: var(--rd-cell-pad); }
-/* 右对齐的时长和左对齐的状态之间多留一档，表头不读成「时长状态」。 */
-.e2-task-table :is(th, td):nth-child(5) { padding-inline-start: var(--rd-space-6); }
+/* 右对齐的时长、权重和左对齐的状态之间多留一档，表头不读成「时长权重」「权重状态」。 */
+.e2-task-table :is(th, td).e2-gap { padding-inline-start: var(--rd-space-6); }
+.e2-task-table .e2-weight-column { width: 112px; }
+.e2-task-table .e2-action-column { width: 80px; }
+.e2-empty-actions { display: inline-flex; gap: var(--rd-space-2); }
 @container (max-width: 900px) { .e2-levels .rd-stat[data-selected]::after { display: none; } }
-.e2-task-table .rd-cell-main { white-space: normal; overflow-wrap: break-word; }
-.e2-task-table col:nth-child(4) { width: 24%; }
+/* 任务名称最多两行，放不下省略，悬停和聚焦看全文（ST-04）。 */
+.e2-task-table .rd-cell-main { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: break-word; }
+.e2-task-table .e2-duration-column { width: 20%; }
 @media (max-width: 1279px) {
   .e2-duration > .rd-scale { width: 64px; }
-  .e2-task-table .e2-name-column { width: calc(100% - 432px); }
-  .e2-task-table col:nth-child(3) { width: 112px; }
-  .e2-task-table col:nth-child(4) { width: 168px; }
-  .e2-task-table col:nth-child(5) { width: 108px; }
+  .e2-task-table .e2-name-column { width: calc(100% - 624px); }
+  .e2-task-table .e2-class-column { width: 112px; }
+  .e2-task-table .e2-duration-column { width: 168px; }
+  .e2-task-table .e2-weight-column { width: 104px; }
+  .e2-task-table .e2-status-column { width: 108px; }
 }
 @media (max-width: 1100px) {
   .e2-duration > .rd-scale { display: none; }
-  .e2-task-table .e2-name-column { width: calc(100% - 348px); }
-  .e2-task-table col:nth-child(4) { width: 84px; }
+  .e2-task-table .e2-name-column { width: calc(100% - 540px); }
+  .e2-task-table .e2-duration-column { width: 84px; }
 }
 
 /* E5: device operations. Shared graphics retain their rd styling. */
