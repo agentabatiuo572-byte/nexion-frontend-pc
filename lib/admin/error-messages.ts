@@ -1950,6 +1950,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   CREGIS_DISPATCH_INTENT_CONFLICT: "打款派发记录发生冲突。请到提现详情和操作记录核对原单，由技术值班人员检查派发记录；不要重新打款。",
   CREGIS_CHAIN_PROOF_REQUIRED: "这笔提现需要可靠的链上付款证据才能确认结果。请核对打款方原单和链上交易。",
   H1_WITHDRAWAL_DIAL_UNAVAILABLE: "当前阶段的提现冷却设置暂不可读取，已转待审核。请核对阶段设置与最新提现详情。",
+  H1_COMPLIANCE_THRESHOLD_UNAVAILABLE: "未读取到合规大额线，请在运营阶段设置核对当月参数。",
+  H1_COMPLIANCE_THRESHOLD_INVALID: "合规大额线须为 1 至 999,999,999,999 USDT 的整数。",
   WITHDRAWAL_AUTO_REVIEW_POLICY_CHANGED: "自动审核的条件已变化，已转待审核。请按最新金额门槛和风险信息人工复核。",
   K4_FAST_TRACK_NO_LONGER_ELIGIBLE: "这笔提现已不符合低风险自动放行条件。请查看当前风险分并人工复核。",
   TRC20_WINDOW_SNAPSHOT_UNAVAILABLE: "这是旧版 TRC20 窗口未核实的记录，请刷新核对当前订单。现在三个网络按同一套合规规则审核。",

@@ -111,7 +111,7 @@ export const D5_PARAM_HELP = {
   complianceReviewThresholdUsdt: {
     label: "合规大额线",
     what: "加强合规审查开着时，超过这条线的要多等",
-    when: "系统固定的合规规则，这页和运营阶段设置都改不了",
+    when: "按当前运营月的金额线显示，修改请到「运营阶段设置」的每月参数",
     note: "单笔超过这个金额才算大额，正好等于不算",
   },
   networkRules: {
