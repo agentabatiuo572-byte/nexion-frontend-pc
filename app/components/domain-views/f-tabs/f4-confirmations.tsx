@@ -35,10 +35,10 @@ function weeklyCronProblem(value: string, issue: string) {
 // 领导奖池参与门槛枚举(V0 为新人,无奖池资格 → 从 V1 起)。
 const POOL_UNLOCK_OPTIONS = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8"];
 
-/** A2 普通提案：批准前不变；「谁来批」按后端批准时实际检查的权限写（AuditReplayBusinessPermissionGuard），权限名和权限清单一致。 */
+/** A2 普通提案：批准前不变；「谁来批」按后端批准时实际检查的权限写（AuditReplayBusinessPermissionGuard），权限名照后台返回、和「权限清单」显示的一致。 */
 export const approvalCopy = "批准前保持现在的设置。";
 const POOL_FUND = "奖池资金类调整";
-const F4_WRITE = "F4 池配额大使榜 - 常规写";
+const F4_WRITE = "奖励池、名额与排行榜 · 池配额大使榜 - 常规写";
 const LEADERBOARD_CONTROL = "排行榜控制(暂停/取消资格)";
 function approvalRows(permission: string) {
   // 「」权限的管理员」放在一起，名字长时在名字里折行，末行不留孤字（D10、TL-01）。

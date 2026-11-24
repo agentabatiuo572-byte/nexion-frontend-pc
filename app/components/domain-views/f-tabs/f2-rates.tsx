@@ -82,9 +82,9 @@ function useF2Model(ctx: FViewCtx) {
   return { canRoyaltyRate, canPolicyAmplify, l1NexReadonly, l1NexStatus, value, paused, gate, rank, gateRaw, rankRaw, cap };
 }
 
-/** 走审批的修改：批准前不变；「谁来批」按后端批准时实际检查的权限写（AuditReplayBusinessPermissionGuard），权限名和权限清单一致。 */
+/** 走审批的修改：批准前不变；「谁来批」按后端批准时实际检查的权限写（AuditReplayBusinessPermissionGuard），权限名照后台返回、和「权限清单」显示的一致。 */
 const approvalCopy = "批准前按原设置执行。";
-const RATE_PERMISSION = "L1-L7 团队购买奖励比例放宽";
+const RATE_PERMISSION = "团队奖励设置 · L7 团队购买奖励比例放宽";
 const POLICY_PERMISSION = "Partner 档位与费率杠杆参数";
 // 「」权限的管理员」放在一起，名字长时在名字里折行，末行不留孤字（D10、TL-01）。
 const approvalFacts = (perm: string) => <Fact k="谁来批">另一位有「{perm}<span className="rd-keep">」权限的管理员</span></Fact>;
