@@ -25,11 +25,13 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
   const fingerprint = actorId ? avatarDraftFingerprint(actorId, scope, scope === "self" ? "self" : account?.id ?? targetId ?? "new") : "";
   const [draft, setDraft] = useState<AvatarDraft | null>(null), [file, setFile] = useState<File | null>(null), [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [invalidSelection, setInvalidSelection] = useState(false), [assetExpired, setAssetExpired] = useState(false);
+  /** 原头像只是暂时读不到（不是明确不可用）：原选择保留、继续挡住提交，给「重试」。 */
+  const [previewFailed, setPreviewFailed] = useState(false), [previewRetry, setPreviewRetry] = useState(0);
   const generation = useRef(0), controller = useRef<AbortController | null>(null), objectUrl = useRef("");
   const resetFile = () => { if (objectUrl.current) URL.revokeObjectURL(objectUrl.current); objectUrl.current = ""; setUrl(""); setFile(null); };
   const updateDraft = (next: AvatarDraft | null) => { setDraft(next); onChange(next?.asset?.assetId); onBlocking(Boolean(next && (!next.asset || next.cancelKey))); };
   useEffect(() => {
-    generation.current++; controller.current?.abort(); resetFile(); setBusy(false); setError(""); setInvalidSelection(false);
+    generation.current++; controller.current?.abort(); resetFile(); setBusy(false); setError(""); setInvalidSelection(false); setPreviewFailed(false);
     const saved = avatarDrafts.list().find(row => row.fingerprint === fingerprint && row.actorId === actorId
       && (!originalAssetId || row.asset?.assetId === originalAssetId)) ?? null;
     if (!originalAssetId) updateDraft(saved);
@@ -41,20 +43,29 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
       const asset = saved.asset, abort = new AbortController();
       controller.current = abort;
       void guardedFetch(asset.previewRef, { cache: "no-store", signal: abort.signal }).then(async response => {
-        if (!response.ok || !["image/jpeg", "image/png"].includes(response.headers.get("Content-Type") ?? "")) throw new Error();
+        if (response.status === 404 || response.status === 410) throw new Error("AVATAR_GONE");
+        if (!response.ok) throw new Error("AVATAR_READ_FAILED");
+        if (!["image/jpeg", "image/png"].includes(response.headers.get("Content-Type") ?? "")) throw new Error("AVATAR_GONE");
         const blob = await response.blob();
         if (abort.signal.aborted) return;
-        if (!blob.size || Date.parse(asset.expiresAt) <= Date.now()) throw new Error();
+        if (!blob.size || Date.parse(asset.expiresAt) <= Date.now()) throw new Error("AVATAR_GONE");
         objectUrl.current = URL.createObjectURL(blob); setUrl(objectUrl.current);
         updateDraft(saved);
-      }).catch(() => {
+      }).catch(cause => {
         if (abort.signal.aborted) return;
-        updateDraft(null);
-        setError("原头像已不可用，请重新选择。");
+        if (cause instanceof Error && cause.message === "AVATAR_GONE") {
+          updateDraft(null);
+          setError("原头像已不可用，请重新选择。");
+          return;
+        }
+        // 读失败（断网、5xx）不等于素材没了：原选择留着，提交继续挡住。
+        onBlocking(true);
+        setPreviewFailed(true);
+        setError("原头像暂时没加载出来，原来选的头像还在，点「重试」再加载。");
       }).finally(() => { if (!abort.signal.aborted) setBusy(false); });
     }
     return () => { generation.current++; controller.current?.abort(); if (objectUrl.current) URL.revokeObjectURL(objectUrl.current); };
-  }, [epoch, fingerprint, originalAssetId]);
+  }, [epoch, fingerprint, originalAssetId, previewRetry]);
   const expired = Boolean(draft && Date.now() >= draft.expiresAt);
   const cancellation = draft ? a1AvatarCancellation(draft) : undefined;
   const cancellationState = cancellation && a1AvatarCancellationRecovery.state(cancellation);
@@ -204,6 +215,6 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
       {draft.asset && <small>新头像有效期至 {businessStamp(new Date(draft.asset.expiresAt).getTime())}（{businessZone().label}）</small>}
       {(cancellationState?.expired ?? expired) && <p role="alert">{scope === "admin" ? RETRY_EXPIRED_TEXT : "重试期限已过，请联系管理员核对结果。"}</p>}
       {assetExpired && !(cancellationState?.expired ?? expired) && <p role="alert">新头像已过期，请取消后重新选择。</p>}</div>}
-    {invalidSelection && !draft && <button type="button" className="l-btn" onClick={() => void clear()}>取消失败的头像选择</button>}{error && <p role="alert">{error}</p>}
+    {invalidSelection && !draft && <button type="button" className="l-btn" onClick={() => void clear()}>取消失败的头像选择</button>}{error && <p role="alert">{error}</p>}{previewFailed && <button type="button" className="l-btn" disabled={busy} onClick={() => setPreviewRetry(n => n + 1)}>重试</button>}
   </fieldset>;
 }

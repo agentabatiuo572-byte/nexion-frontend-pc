@@ -404,7 +404,9 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
   const [email, setEmail] = useState(initialForm?.email ?? "");
   const [role, setRole] = useState(initialForm?.role ?? defaultRole);
   const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(initialForm?.avatarGender ?? "UNSPECIFIED");
-  const [avatarMode, setAvatarMode] = useState<"default" | "manual">(originalCommandKey || actorId && avatarDrafts.list().some(row => row.fingerprint === avatarDraftFingerprint(actorId, "admin", "new")) ? "manual" : "default");
+  // 恢复原草稿时照原来的头像来源：原来选的是随机默认头像就还是默认（OP-93 第 5 条）。
+  const [avatarMode, setAvatarMode] = useState<"default" | "manual">(originalCommandKey ? (initialForm?.useDefaultAvatar ? "default" : "manual")
+    : actorId && avatarDrafts.list().some(row => row.fingerprint === avatarDraftFingerprint(actorId, "admin", "new")) ? "manual" : "default");
   const [avatarAssetId, setAvatarAssetId] = useState<string | undefined>(), [avatarBlocking, setAvatarBlocking] = useState(Boolean(originalCommandKey && initialForm?.avatarAssetId));
   const [touched, setTouched] = useState(false);
   const useDefaultAvatar = role === "support" && avatarMode === "default";
