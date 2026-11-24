@@ -586,7 +586,8 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         if (found.status === "SUCCEEDED") {
           const response = parseTask(found.task);
           if (found.action !== row.action || found.acceptedVersion !== row.body.expectedVersion + 1 || response.taskId !== row.taskId) return { kind: "mismatch", text: "这条申请的状态对不上这次操作，继续核对，先保持锁定。" };
-          setTaskVisible(row.taskId, !response.scopeLost);
+          // 只有审批回执直接证明看得到；撤回的成功回执交给下面的详情读取去证明。
+          if (command === "DECISION") setTaskVisible(row.taskId, !response.scopeLost);
           const task = await readTask(row.taskId);
           if (task.version < response.version || task.state === "PENDING_APPROVAL") return { kind: "pending", text: "还没查到这次操作的结果，先保持锁定。" };
           forget(row);

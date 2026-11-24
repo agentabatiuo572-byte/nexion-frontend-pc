@@ -86,6 +86,8 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   };
   useEffect(() => { load(); return () => { checkGeneration.current++; }; }, [ports]);
 
+  /** 用户自己点整框「重试」或「刷新」：上一次的「这次没有提交」不再挂着。 */
+  const retryLoad = () => { setVersionChanged(false); load(); };
   const restoreDraft = (reason: string) => {
     setOriginal(undefined);
     setOriginalReason(reason);
@@ -242,10 +244,10 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
         }).finally(() => setQuerying(false));
       }}>查询原操作</Button>{lookupText && lookupText !== RETRY_EXPIRED_TEXT && <span role="status">{lookupText}</span>}{expired && <span role="status">{RETRY_EXPIRED_TEXT} <ExportAuditLink /></span>}</div>;
   const content = !data && unknown ? recovery : loadFailed
-    ? <Notice tone="danger" action={<Button size="sm" onClick={load} loading={preview === "checking"}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。</Notice>
+    ? <Notice tone="danger" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。</Notice>
     // 没有已发布的一版：不是失败，写原因，给「刷新」重新读目录。
     : !unknown && data?.catalogState === "no-months"
-    ? <Notice tone="done" title="暂无可导出月份" action={<Button size="sm" onClick={load} loading={preview === "checking"}>刷新</Button>}>业绩数据还没发布第一版，发布后才能导出。</Notice>
+    ? <Notice tone="done" title="暂无可导出月份" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>刷新</Button>}>业绩数据还没发布第一版，发布后才能导出。</Notice>
     : !data ? <p className="m1-export-loading" role="status">正在读取导出内容…</p>
     : <div className="m1-export">
       {recovery}

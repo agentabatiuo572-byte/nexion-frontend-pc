@@ -168,7 +168,8 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
         setRefresh(value => value + 1);
       } else {
         if (found.kind === "hidden") forgetTaskRead(p.taskId);
-        stillUnknown(key, found.text);
+        // 过期后查到的仍是 UNKNOWN / PROCESSING：卡上已经常显过期句，这里只写这次查询的结果。
+        stillUnknown(key, found.kind === "expired" ? "还没查到这次操作的结果。" : found.text);
       }
       if (openId === p.taskId) setTaskRefresh(value => value + 1);
     }, error => {
@@ -197,7 +198,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
         else stillUnknown(key, line);
       } else if (found.kind === "cleared") setSettled(list => [{ key, label: "提交导出", text: "这次提交没有执行，原理由已保留，可以重新导出。", mine: true }, ...list]);
       else if (!original.acceptedRequestId) stillUnknown(key, found.kind === "missing" ? "找不到本标签页保存的原操作。"
-        : found.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。");
+        : found.expired ? "还没查到这次提交的结果。" : "还没查到这次提交的结果，先保持锁定，稍后再查。");
     }, error => {
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
       if (!original.acceptedRequestId) stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。");
