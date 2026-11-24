@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
-import { Cell, Explain, Notice, StatusTag } from "@/app/components/rd";
+import { Cell, Explain, InlineRetry, Notice, StatusTag } from "@/app/components/rd";
 import "./invitation-view.css";
 
 export type InviterView =
@@ -102,11 +102,11 @@ export function countText(view: CountsView, key: CountKey, unit = true): ReactNo
 }
 
 /**
- * 人数的「重试」：和 rd InlineRetry 一个样子，但不能点时用 aria-disabled，不用原生 disabled。
- * 原生 disabled 一按下焦点就掉到页面上（Chrome，R01）；这里重读期间按钮留着、焦点也留着，写「重试中…」并标 aria-busy（CP-28）。
+ * 人数的「重试」：就是 rd 的 InlineRetry。retrying 是不能点（重读中或写操作进行中），rereading 是这次重读正在进行：写「重试中…」、aria-busy。
+ * 两种都用 aria-disabled，重读期间按钮和焦点都留着（R01，CP-28）。
  */
 export function CountsRetryButton({ onRetry, retrying, rereading }: { onRetry: () => void; retrying?: boolean; rereading?: boolean }) {
-  return <button type="button" className="rd-inline-retry inv-retry" aria-disabled={retrying || undefined} aria-busy={rereading || undefined} onClick={retrying ? undefined : onRetry}>{rereading ? "重试中…" : "重试"}</button>;
+  return <InlineRetry onRetry={onRetry} retrying={rereading} blocked={retrying} />;
 }
 
 /** 数据异常、没读全：四个数「—」，下面常显一条橙黄提示（DP-03，VS-107）；没读全的「重试」在右侧。 */
