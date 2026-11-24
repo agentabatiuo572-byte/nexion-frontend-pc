@@ -143,6 +143,24 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   chargeFailRate: { what: "系统内部参数，页面不显示真实值", when: "只由系统判定，这里不能修改" },
 };
 
+const LEGACY_TRIAL_PARAM_COPY: Record<string, Partial<TrialParamHelp>> = {
+  discountRate: { howMore: "实际减的钱不超过「购买减价上限」，和试用收益抵扣、提前购买立减叠加。" },
+  discountCapUSD: { howMore: "只管购买减价这一项，不管试用收益抵扣和提前购买立减。" },
+  trialOffsetCapUSD: {
+    whatIf: (value) => (value.trim() === "" ? "不设上限：之后领取的试用，试用收益抵扣不封顶。" : `改成 ${value}：之后领取的试用，试用收益最多抵 ${value} USDT。`),
+  },
+  graceDays: {
+    what: "试用到期后还能用抵扣金购买的天数",
+    whatIf: (value) => (Number(value) === 0 ? "改成 0：之后新领取或重新领取的试用，到期后不能再用抵扣金购买。" : `改成 ${value}：之后新领取或重新领取的试用，到期后 ${value} 天内还能用抵扣金购买。`),
+  },
+};
+
+export function trialParamHelp(key: string, hasBuyList: boolean) {
+  const help = TRIAL_PARAM_HELP[key];
+  const legacy = LEGACY_TRIAL_PARAM_COPY[key];
+  return !hasBuyList && help && legacy ? { ...help, ...legacy } : help;
+}
+
 /** 常改参数，一屏约 6 项（DP-15）；其余可写的进高级设置。 */
 export const COMMON_TRIAL_PARAMS = ["trialProductId", "trialDays", "seatsLeftToday", "discountRate", "discountCapUSD", "trialOffsetCapUSD"] as const;
 

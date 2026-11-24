@@ -4,7 +4,7 @@
  * 免费试用设置 ·「可购买设备」分区（PLAN 第三节，画板 01–11）：用户除了自己领的试用设备，还能用试用抵扣金买哪些设备。
  * 后台只保存「其他可购买设备」；读取结果里没有这块数据时整块不显示，页面和以前一样。
  */
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { CircleDot, Coins, Eye, EyeOff, Package, PackageX, Plus, SlidersHorizontal, X } from "lucide-react";
 import { BlockState, Button, Cell, Check, CheckGroup, ConfigList, ConfigRow, Decision, DiffList, Drawer, Explain, Fact, Facts, KeepText, Notice, Panel, StatusTag, Table, TableMessage, Td, Th, type DiffRow } from "@/app/components/rd";
@@ -16,17 +16,21 @@ import { isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-
 import type { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
 
-export type BuyListDraft = Omit<BuyListWrite, "operator"> & {
+export type BuyListDraft = Omit<BuyListWrite, "operator" | "confirmedByAdminId"> & {
   added: string[];
   removed: string[];
   nextNames: string[];
 };
 
-export type BuyListPending = PendingMutationRecord & BuyListDraft & { operator: string };
+export type BuyListPending = PendingMutationRecord & BuyListDraft & { operator: string; retryRejection?: string };
+export type BuyListSubmitResult = Exclude<Awaited<ReturnType<typeof updateH2TrialBuyList>>, { kind: "unauthenticated" | "forbidden" | "accountMismatch" }>
+  | { kind: "stopped" };
 
 export const BUY_INTRO = "用户领的那台试用设备自动在他的清单里，不用添加；这里添加其他可以用试用抵扣金购买的设备。";
 const MONEY_LINE = "减价后的价格低于试用抵扣金时，抵不完的购后到账给用户。";
 const BUY_LOCKED = "这项有一次修改结果未知，先到页面上方处理";
+export const BUY_CONFLICT = "这份清单刚被别人改过，这次没有保存";
+export const BUY_READ_INVALID = "收到的数据不完整，已停止显示。";
 const ROW_HELP = {
   what: "用户还能用试用抵扣金买的设备，每次试用限购一款",
   where: "App 试用详情 ›「专享限时折扣设备」",
@@ -58,28 +62,39 @@ function AppState({ device }: { device: BuyDevice }) {
   return <Cell main={<span className="h2-buy-state"><StatusTag tone="neutral" icon={Eye}>显示</StatusTag></span>} />;
 }
 
-export function BuyListPendingNotice({ record, canWrite, onRetry, retrying, auditLink }: {
+export function BuyListPendingNotice({ record, canWrite, onRetry, onRelease, retrying, auditLink }: {
   record: BuyListPending;
   canWrite: boolean;
   onRetry: () => void;
+  onRelease: () => void;
   retrying: boolean;
   auditLink?: ReactNode;
 }) {
+  const [, refreshDeadline] = useState(0);
   const expired = isRetryExpired(record);
+  useEffect(() => {
+    if (expired) return;
+    const timer = setTimeout(() => refreshDeadline((current) => current + 1), Math.max(1, record.expiresAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [expired, record.expiresAt]);
+  const rejection = record.retryRejection;
   const op = [record.added.length > 0 && `新增 ${record.added.join("、")}`, record.removed.length > 0 && `移除 ${record.removed.join("、")}`].filter(Boolean).join(" · ");
   return (
     <Notice tone="warn" title="调整其他可购买设备 · 结果未知"
-      action={!expired && <Button size="sm" disabled={retrying} disabledReason={canWrite ? undefined : "这个账号已没有这项权限，不能重试。"} onClick={onRetry}>按原操作重试</Button>}>
+      action={canWrite && (rejection
+        ? <Button size="sm" onClick={onRelease}>解除原操作记录</Button>
+        : !expired && <Button size="sm" disabled={retrying} onClick={onRetry}>按原操作重试</Button>)}>
       {op && <span className="h2-pending-op">{op}</span>}
       {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，
       <KeepText text="可能已经生效，重试成功或核对清楚前，这项不能再改。" />
-      <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canWrite ? " 这个账号已没有这项权限，不能重试。" : " 按原操作重试不会重复执行。"} />
+      <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canWrite ? " 这个账号已没有这项权限，不能重试。" : rejection ? " 请核对原操作的结果再解除。" : " 按原操作重试不会重复执行。"} />
       {auditLink && <> {auditLink}</>}
       <Explain label="技术信息" rows={[
         { k: "操作编号", v: <span data-mono="" className="h2-nowrap">{record.commandKey}</span> },
         { k: "改后清单", v: record.nextNames.length > 0 ? record.nextNames.join("、") : "空" },
         { k: "理由", v: record.reason },
       ]} />
+      {rejection && <div><KeepText text={`重试没有成功：${rejection} 原操作结果仍未知，记录继续保留。`} /></div>}
     </Notice>
   );
 }
@@ -95,23 +110,35 @@ function buyChoices(list: BuyList | undefined) {
   return { items, candidates };
 }
 
-export function BuySection({ ctx, list, invalid, trialTargetNo, blocked, reach, onReload, onSubmit }: {
+function rebaseSelection(latest: BuyList, added: BuyCandidate[], removed: BuyDevice[]) {
+  const removedNos = new Set(removed.map((item) => item.productNo));
+  const selection = new Set(latest.items.filter((item) => !removedNos.has(item.productNo)).map((item) => item.productNo));
+  const known = new Set([...latest.items, ...latest.candidates].map((item) => item.productNo));
+  const missing = added.filter((item) => !known.has(item.productNo)).map((item) => ({ ...item, selectable: false, unavailableReason: undefined }));
+  const base = { ...latest, candidates: [...latest.candidates, ...missing] };
+  for (const item of added) selection.add(item.productNo);
+  return { base, selection: [...selection] };
+}
+
+export function BuySection({ ctx, list, readError, trialTargetNo, blocked, reading, reach, onReload, onSubmit }: {
   ctx: HCtx;
   list?: BuyList;
   /** 收到了这块数据但形状不对：显示区块错误卡，不显示成空清单（ST-34）。 */
-  invalid: boolean;
+  readError?: string;
   /** 当前「试用目标商品」的商品编号，候选里给它加标签。 */
   trialTargetNo?: string;
   /** 读取中或这一行结果未知时，「调整」和提交的禁用原因。 */
   blocked?: string;
+  reading: boolean;
   reach: ReturnType<typeof useReach>;
-  onReload: () => Promise<BuyList | "invalid" | undefined>;
-  onSubmit: (input: BuyListDraft) => ReturnType<typeof updateH2TrialBuyList>;
+  onReload: (requireList?: boolean) => Promise<BuyList | undefined>;
+  onSubmit: (input: BuyListDraft) => Promise<BuyListSubmitResult>;
 }) {
   const canWrite = ctx.can("growth_h2_write");
   const [draftBase, setDraftBase] = useState<BuyList>();
   const [picked, setPicked] = useState<string[]>([]);
   const [lastReason, setLastReason] = useState("");
+  const [rejectedDraft, setRejectedDraft] = useState<ConfirmReadConflict>();
   const formSequence = useRef(0);
   const items = list ? byPrice(list.items) : [];
   const { items: draftItems, candidates } = buyChoices(draftBase);
@@ -120,12 +147,14 @@ export function BuySection({ ctx, list, invalid, trialTargetNo, blocked, reach, 
   const added = picked.filter((no) => !inList.has(no));
   const removed = draftItems.filter((item) => !picked.includes(item.productNo));
   const changed = added.length + removed.length > 0;
+  const invalidPicked = candidates.some((item) => !item.selectable && added.includes(item.productNo));
+  const draftBlock = blocked ?? (invalidPicked ? "请先取消不能新增的设备" : changed ? undefined : "勾选和现在一样，没有要保存的改动");
 
-  const openDrawer = () => { setPicked(items.map((item) => item.productNo)); setLastReason(""); setDraftBase(list); };
+  const openDrawer = () => { setPicked(items.map((item) => item.productNo)); setLastReason(""); setRejectedDraft(undefined); setDraftBase(list); };
   const closeDrawer = () => setDraftBase(undefined);
   const toggle = (no: string, on: boolean) => setPicked((current) => on ? [...current, no] : current.filter((item) => item !== no));
 
-  const showConfirm = (base: BuyList, selection: string[], initialReason: string) => {
+  const showConfirm = (base: BuyList, selection: string[], initialReason: string, initialRejection?: ConfirmReadConflict) => {
     const { items, candidates } = buyChoices(base);
     const selected = new Set(selection);
     const current = new Set(items.map((item) => item.productNo));
@@ -133,7 +162,7 @@ export function BuySection({ ctx, list, invalid, trialTargetNo, blocked, reach, 
     const added = next.filter((candidate) => !current.has(candidate.productNo));
     const removed = items.filter((item) => !selected.has(item.productNo));
     const kept = items.filter((item) => selected.has(item.productNo));
-    if (!added.length && !removed.length) return false;
+    if (added.some((item) => !item.selectable) || (!added.length && !removed.length)) return false;
     const rows: DiffRow[] = [
       ...added.map((item) => ({ key: item.productNo, label: item.name, before: "不在清单", after: "新增" })),
       ...removed.map((item) => item.appState === "hidden"
@@ -155,39 +184,45 @@ export function BuySection({ ctx, list, invalid, trialTargetNo, blocked, reach, 
         removed: removed.map((item) => item.name),
         nextNames: next.map((item) => item.name),
       });
+      if (outcome.kind === "stopped") { closeDrawer(); return; }
+      const readReview = async () => {
+        const latest = await onReload(true);
+        if (!latest) throw new Error(BUY_READ_INVALID);
+        const review = rebaseSelection(latest, added, removed);
+        setDraftBase(review.base);
+        setPicked(review.selection);
+        return review;
+      };
       if (outcome.kind === "conflict") {
         throw new ConfirmReadConflict({
+          preserveReason: true,
           readLatest: async () => {
-            const latest = await onReload();
-            if (latest === "invalid" || !latest) return false;
-            const removedNos = new Set(removed.map((item) => item.productNo));
-            const rebased = new Set(latest.items.filter((item) => !removedNos.has(item.productNo)).map((item) => item.productNo));
-            const selectableNos = new Set(latest.candidates.filter((item) => item.selectable).map((item) => item.productNo));
-            const unavailable = added.filter((item) => !rebased.has(item.productNo) && !selectableNos.has(item.productNo));
-            added.filter((item) => selectableNos.has(item.productNo)).forEach((item) => rebased.add(item.productNo));
-            const selection = [...rebased];
-            setDraftBase(latest);
-            setPicked(selection);
+            const { base, selection } = await readReview();
             setLastReason("");
-            // Use the latest baseline for untouched items. An unavailable addition needs a fresh selection.
-            if (unavailable.length || !showConfirm(latest, selection, "")) ctx.openActionConfirm(null);
+            if (!showConfirm(base, selection, "")) ctx.openActionConfirm(null);
             return false;
           },
           renderNotice: (readLatest) => (
             <Notice tone="warn" action={<Button size="sm" onClick={readLatest}>读取最新</Button>}>
-              这份清单刚被别人改过，这次没有保存
+              {BUY_CONFLICT}
               <p className="h2-alert-aux">读取最新后重算增删，理由要重填；没有变化不能提交。</p>
             </Notice>
           ),
         });
       }
       if (outcome.kind === "rejected") {
-        throw new ConfirmReadConflict({
+        const rejection = new ConfirmReadConflict({
           preserveReason: true,
-          // 「返回调整」关掉确认框，抽屉里的勾选不动，再进确认框时理由带回来。
-          readLatest: async () => { ctx.openActionConfirm(null); return false; },
+          readLatest: async () => {
+            await readReview();
+            setRejectedDraft(undefined);
+            ctx.openActionConfirm(null);
+            return false;
+          },
           renderNotice: (back) => <Notice tone="danger" action={<Button size="sm" onClick={back}>返回调整</Button>}>{outcome.message}</Notice>,
         });
+        setRejectedDraft(rejection);
+        throw rejection;
       }
       if (outcome.kind === "unknown") {
         closeDrawer();
@@ -195,7 +230,7 @@ export function BuySection({ ctx, list, invalid, trialTargetNo, blocked, reach, 
         return;
       }
       closeDrawer();
-      await onReload();
+      await onReload().catch(() => undefined);
       ctx.toast("其他可购买设备 已更新", "success");
     };
     ctx.openActionConfirm({
@@ -215,6 +250,7 @@ export function BuySection({ ctx, list, invalid, trialTargetNo, blocked, reach, 
         </div>
       ),
       initialReason: initialReason || undefined,
+      initialRejection,
       blockedReason: blocked,
       reasonPlaceholder: "写清调整原因和依据",
       confirmLabel: "确认修改，立即生效",
@@ -224,7 +260,7 @@ export function BuySection({ ctx, list, invalid, trialTargetNo, blocked, reach, 
   };
 
   const openConfirm = () => {
-    if (canWrite && draftBase && list && !blocked) showConfirm(draftBase, picked, lastReason);
+    if (canWrite && draftBase && !draftBlock) showConfirm(draftBase, picked, lastReason, rejectedDraft);
   };
 
   const pricingHref = (no: string) => `/devices/pricing?sku=${encodeURIComponent(no)}`;
@@ -233,8 +269,8 @@ export function BuySection({ ctx, list, invalid, trialTargetNo, blocked, reach, 
   return (
     <>
       <Panel title={<span tabIndex={-1} data-section-focus="">可购买设备</span>} explainLabel="可购买设备" icon={Package} tone="role-2" explain={<p>{BUY_INTRO}</p>}>
-        {invalid || !list ? (
-          <BlockState state="error" title="可购买设备加载失败" detail="收到的数据不完整，已停止显示。" onRetry={() => void onReload()} />
+        {readError || !list ? (
+          <BlockState state="error" title="可购买设备加载失败" detail={readError ?? BUY_READ_INVALID} retrying={reading} onRetry={() => void onReload().catch(() => undefined)} />
         ) : (
           <>
             <ConfigList>
@@ -272,10 +308,10 @@ export function BuySection({ ctx, list, invalid, trialTargetNo, blocked, reach, 
         )}
       </Panel>
 
-      <Drawer open={!!draftBase && !!list} onClose={closeDrawer} title="调整其他可购买设备" sub="保存后立即生效" icon={SlidersHorizontal} tone="neutral"
+      <Drawer open={!!draftBase} onClose={closeDrawer} title="调整其他可购买设备" sub="保存后立即生效" icon={SlidersHorizontal} tone="neutral"
         footer={<Decision note={note}
           others={<Button size="md" onClick={closeDrawer}>取消</Button>}
-          primary={<Button variant="primary" size="md" disabledReason={blocked ?? (changed ? undefined : "勾选和现在一样，没有要保存的改动")} onClick={openConfirm}>下一步：核对并保存</Button>} />}>
+          primary={<Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>下一步：核对并保存</Button>} />}>
         <div className="h2-buy-form">
           <div className="h2-buy-checks">
             <CheckGroup legend="其他可购买设备" summary={`候选 ${candidates.length} 款`}
@@ -283,11 +319,12 @@ export function BuySection({ ctx, list, invalid, trialTargetNo, blocked, reach, 
               {candidates.map((candidate) => {
                 const listed = inList.has(candidate.productNo);
                 const on = picked.includes(candidate.productNo);
-                const disabled = !candidate.selectable && !listed;
+                const unavailable = !candidate.selectable && !listed;
+                const disabled = unavailable && !on;
                 const mark = on && !listed ? "新增" : !on && listed ? "移除" : "";
                 const reason = listed && candidate.appState === "hidden"
                   ? `${hiddenText(candidate).replace(/^商城/, "")}，App 不显示；可以保留，重新上架后自动显示`
-                  : disabled ? <>不能选：{candidate.unavailableReason ?? "不符合添加条件"}{reach(pricingHref(candidate.productNo)) && <> <Link className="rd-link" href={pricingHref(candidate.productNo)} prefetch={false}>到商品管理与上架条件查看</Link></>}</> : undefined;
+                  : unavailable ? <>不能选：{candidate.unavailableReason ?? "不符合添加条件"}{reach(pricingHref(candidate.productNo)) && <> <Link className="rd-link" href={pricingHref(candidate.productNo)} prefetch={false}>到商品管理与上架条件查看</Link></>}</> : undefined;
                 return (
                   <div className="h2-buy-check" data-disabled={disabled ? "" : undefined} key={candidate.productNo}>
                     <Check checked={on} disabled={disabled} onChange={(event) => toggle(candidate.productNo, event.currentTarget.checked)}

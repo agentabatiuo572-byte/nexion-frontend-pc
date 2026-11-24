@@ -1374,3 +1374,24 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
 export function getPageGuide(pageId: string): PageGuideContent | undefined {
   return PAGE_GUIDES[pageId];
 }
+
+export function getH2PageGuide(hasBuyList: boolean, canWrite: boolean, canCancel: boolean): PageGuideContent {
+  const guide = PAGE_GUIDES.H2;
+  const [settings, buyList, records] = guide.tasks;
+  const terms = hasBuyList ? guide.terms : guide.terms
+    .filter((term) => !["试用抵扣金", "试用目标商品", "其他可购买设备"].includes(term.name))
+    .map((term) => {
+      if (term.name === "三种优惠") return { ...term, text: "购买减价、试用收益抵扣、提前购买立减可以叠加，实付最低 0。各自的上限和条件看对应参数的提示。" };
+      if (term.name === "宽限期") return { ...term, text: "试用到期后设备停止产出，还能用抵扣金购买的那几天；到期系统自动结束，不扣款。改天数只影响之后领取的试用。" };
+      return term;
+    });
+  return {
+    ...guide,
+    tasks: [
+      ...(canWrite ? [settings] : []),
+      ...(canWrite && hasBuyList ? [buyList] : []),
+      canCancel ? records : { ...records, steps: records.steps.slice(0, 1) },
+    ],
+    terms,
+  };
+}

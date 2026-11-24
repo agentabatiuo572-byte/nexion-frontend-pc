@@ -102,7 +102,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}
           getPendingReason={mc.inlineApproval || tab === "H4" || tab === "H9" ? mc.getPendingReason : undefined}
           getPendingRecovery={mc.getPendingRecovery}
-          blockedReason={tab === "H4" || tab === "H9" ? mc.blockedReason : undefined}
+          blockedReason={tab === "H2" || tab === "H4" || tab === "H9" ? mc.blockedReason : undefined}
           getPendingBusinessValue={tab === "H4" ? mc.getPendingBusinessValue : undefined}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
           onClose={() => setActionConfirm(current => current === mc ? null : current)}

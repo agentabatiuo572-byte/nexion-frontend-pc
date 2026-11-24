@@ -9,6 +9,7 @@ export type BuyDevice = {
   inventoryMode: "FINITE" | "UNLIMITED";
   priceUsdt: number | string;
   stock: number | string | null;
+  status: StoreStatus;
   appState: "shown" | "hidden" | "soldOut";
   hiddenReason?: string;
 };
@@ -21,6 +22,8 @@ export type TrialTarget = {
   name: string;
   status: StoreStatus;
   stock: number | string;
+  appVisible?: boolean;
+  hiddenReason?: string;
 };
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -55,10 +58,12 @@ function readDevice(raw: unknown): BuyDevice | undefined {
   if (!nonBlank(productNo) || !nonBlank(name) || !isStoreStatus(status)
     || (productType !== "DEVICE" && productType !== "SERVER" && productType !== "SHARE")
     || (inventoryMode !== "FINITE" && inventoryMode !== "UNLIMITED") || !decimal(priceUsdt)
+    || (productType === "SHARE" ? inventoryMode !== "UNLIMITED" : inventoryMode !== "FINITE")
     || !(stockCount(stock) || inventoryMode === "UNLIMITED" && stock === null)
+    || (hiddenReason != null && typeof hiddenReason !== "string")
     || typeof appVisible !== "boolean" || (appVisible ? status !== "on" : !nonBlank(hiddenReason))) return;
   return {
-    productNo, name, productType, inventoryMode, priceUsdt, stock,
+    productNo, name, productType, inventoryMode, priceUsdt, stock, status,
     appState: !appVisible ? "hidden" : inventoryMode === "FINITE" && Number(stock) === 0 ? "soldOut" : "shown",
     hiddenReason: nonBlank(hiddenReason) ? hiddenReason : undefined,
   };
@@ -87,29 +92,59 @@ function readRows<T extends BuyDevice>(raw: unknown, parse: (row: unknown) => T 
   return rows;
 }
 
+function sameDevice(left: BuyDevice, right: BuyDevice) {
+  return left.name === right.name && left.productType === right.productType
+    && left.inventoryMode === right.inventoryMode && left.status === right.status
+    && Number(left.priceUsdt) === Number(right.priceUsdt)
+    && (left.stock === null || right.stock === null ? left.stock === right.stock : Number(left.stock) === Number(right.stock))
+    && left.appState === right.appState && left.hiddenReason === right.hiddenReason;
+}
+
+function readTrialTarget(raw: unknown): TrialTarget | "invalid" | undefined {
+  if (raw === undefined) return undefined;
+  const target = object(raw);
+  if (!target) return "invalid";
+  const { productNo, name, status, stock, appVisible, hiddenReason } = target;
+  if (!nonBlank(productNo) || !nonBlank(name) || !isStoreStatus(status) || !stockCount(stock)) return "invalid";
+  if ((hiddenReason != null && typeof hiddenReason !== "string")
+    || (appVisible !== undefined && (typeof appVisible !== "boolean"
+      || (appVisible ? status !== "on" : !nonBlank(hiddenReason))))) return "invalid";
+  return { productNo, name, status, stock, appVisible, hiddenReason: nonBlank(hiddenReason) ? hiddenReason : undefined };
+}
+
 export function readH2TrialPurchase(raw: Record<string, unknown>) {
   const extra = raw.extraPurchase;
   const list = object(extra);
   const items = readRows(list?.items, readDevice);
   const candidates = readRows(list?.candidates, readCandidate);
+  const byProductNo = new Map(candidates?.map((candidate) => [candidate.productNo, candidate]));
+  const consistent = items?.every((item) => {
+    const candidate = byProductNo.get(item.productNo);
+    return !candidate || sameDevice(item, candidate);
+  });
   const buyList: BuyList | "invalid" | undefined = extra === undefined ? undefined
-    : isBuyListVersion(list?.version) && items && candidates ? { version: list.version, items, candidates }
+    : isBuyListVersion(list?.version) && items && candidates && consistent ? { version: list.version, items, candidates }
     : "invalid";
 
-  const target = object(raw.trialTargetProduct);
-  const trialTarget: TrialTarget | undefined = target && nonBlank(target.productNo)
-    && nonBlank(target.name) && isStoreStatus(target.status) && stockCount(target.stock)
-    ? { productNo: target.productNo, name: target.name, status: target.status, stock: target.stock }
-    : undefined;
-  return { buyList, trialTarget };
+  return {
+    buyList,
+    trialTarget: readTrialTarget(raw.trialTargetProduct),
+    writePermissionName: nonBlank(raw.writePermissionName) ? raw.writePermissionName : undefined,
+  };
 }
 
 export function readH2SessionProducts(value: unknown) {
   const raw = object(value) ?? {};
+  const { state, trialProductName, purchasedProductName, convertible } = raw;
+  if ((trialProductName !== undefined && trialProductName !== null && !nonBlank(trialProductName))
+    || (purchasedProductName !== undefined && purchasedProductName !== null && !nonBlank(purchasedProductName))
+    || (convertible !== undefined && typeof convertible !== "boolean")
+    || (state === "redeemed" && purchasedProductName === null)
+    || (convertible === true && (state === "redeemed" || nonBlank(purchasedProductName)))) return "invalid";
   return {
-    trialProductName: nonBlank(raw.trialProductName) ? raw.trialProductName : undefined,
-    purchasedProductName: raw.purchasedProductName === null || nonBlank(raw.purchasedProductName)
-      ? raw.purchasedProductName : undefined,
+    trialProductName: nonBlank(trialProductName) ? trialProductName : undefined,
+    purchasedProductName,
+    convertible,
   };
 }
 
@@ -121,4 +156,5 @@ export type BuyListWrite = {
   expectedVersion: BuyListVersion;
   reason: string;
   operator: string;
+  confirmedByAdminId: number;
 };

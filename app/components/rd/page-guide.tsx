@@ -12,7 +12,7 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { CircleHelp, X } from "lucide-react";
-import { getPageGuide } from "@/lib/admin/page-guides";
+import { getPageGuide, type PageGuideContent } from "@/lib/admin/page-guides";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Fold } from "./fold";
 import { Drawer } from "./overlay";
@@ -22,8 +22,8 @@ function seenKey(adminId: number | undefined, pageId: string) {
   return `nexion-admin-page-guide-seen-v1:${adminId ?? "anonymous"}:${pageId}`;
 }
 
-export function PageGuide({ pageId, extra }: { pageId: string; extra?: ReactNode }) {
-  const guide = getPageGuide(pageId);
+export function PageGuide({ pageId, extra, content }: { pageId: string; extra?: ReactNode; content?: PageGuideContent }) {
+  const guide = content ?? getPageGuide(pageId);
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const [open, setOpen] = useState(false);
   const [hint, setHint] = useState(false);
