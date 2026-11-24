@@ -226,7 +226,7 @@ export interface FViewCtx {
   f4QueryNotes: Record<string, { tone: "warn" | "danger"; text: string }>;
   f4PolicyWrites: FDirectAttempt[];
   f4ApprovalRows: A2OperationRow[];
-  recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry" | "release") => Promise<boolean>;
+  recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry") => Promise<boolean>;
   refreshF4: () => Promise<void>;
   submitF4Proposal: (slot: string, spec: import("@/lib/admin/propose-or-execute").ProposeSpec) => Promise<void>;
   updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number, expectedMaterialRevision?: number) => Promise<void>;
