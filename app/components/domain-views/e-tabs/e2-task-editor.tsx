@@ -187,8 +187,8 @@ export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule,
   const dirty = isE2TaskEditorDirty(state);
   const weightUp = before && validTaskWeight(draft.weight) && validTaskWeight(before.weight) && !sameWeight(draft.weight, before.weight)
     ? taskWeightMicros(draft.weight) > taskWeightMicros(before.weight) : null;
-  const direction = weightUp === null || !task ? undefined : !task.enabled ? `这条任务已停用，现在不参加分配；启用后，它相对同等级其他任务的权重比调整前${weightUp ? "高" : "低"}。`
-    : weightUp ? "调高后，这条任务相对同等级其他启用任务的权重变高。" : "调低后，这条任务相对同等级其他启用任务的权重变低。";
+  const direction = weightUp === null || !task ? undefined : !task.enabled ? "这条任务已停用，现在不参加分配；启用后按新权重计算。"
+    : "之后新派到这条任务时按新权重计算；每单实际多少，要和设备当时能接的其他任务一起算。";
   const range = levelWeightRange && `本等级启用的 ${levelWeightRange.count} 个任务：权重 ${formatWeight(levelWeightRange.min)}${sameWeight(levelWeightRange.min, levelWeightRange.max) ? "" : `–${formatWeight(levelWeightRange.max)}`}`;
   const reasonRejected = outcome.kind === "rejected" && outcome.code === "REASON_LENGTH_INVALID" ? outcome.message : undefined;
   const close = () => { if (!saving) onClose(); };

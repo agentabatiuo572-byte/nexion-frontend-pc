@@ -664,7 +664,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             {dialog.kind === "status" && <Fact k={dialog.enabled ? "本次启用" : "本次停用"}>{dialog.tasks.length} 个任务 · 整批一起生效，有一个改不了就都不改</Fact>}
             {dialog.kind === "random" && dialog.original && <><Fact k="任务数量">{dialog.original.request.kind === "random" ? dialog.original.request.body.count : "—"} 个</Fact><Fact k="限定类型">{dialog.original.request.kind === "random" && dialog.original.request.body.taskClasses ? dialog.original.request.body.taskClasses.map(value => TASK_CLASS_LABELS[value]).join("、") : "不限类型"}</Fact></>}
           </Facts>
-          {!dialog.original && (dialog.kind === "random" || dialog.enabled) && <Notice tone="neutral">{dialog.kind === "random" ? "生成后立即加入当前等级，仅影响之后新派的任务。" : "只影响之后新派的任务，不改当前单。"}</Notice>}
+          {!dialog.original && (dialog.kind === "random" || dialog.enabled) && <Notice tone="neutral">{dialog.kind === "random" ? "生成后立即加入当前等级，仅影响之后新派的任务；整批一起生效，有一个加不了就都不加。" : "只影响之后新派的任务，不改当前单。"}</Notice>}
           {dialog.kind === "status" && !dialog.enabled && <>{impactLoading ? <BlockState state="loading" title="正在计算停用影响…" />
             : impactError ? <BlockState state="error" title="停用影响读取失败" detail={impactError} onRetry={() => void readImpact(dialog)} retryLabel="重新计算影响" />
               : impact && <>{dialog.original && <p className="rd-aux">首次读取的影响 · {impactAt ? businessStamp(impactAt) : "—"} · {businessZoneText()}</p>}
