@@ -67,19 +67,50 @@ function Row({ label, value, numeric = false, title, mono = false, amount = fals
 /** 值是标签、链接、问号这类元素时用它（Row 只写文字和数）。 */
 function NodeRow({ label, children }: { label: ReactNode; children: ReactNode }) { return <div className="cvp-row"><span className="k">{label}</span><span className="v">{children}</span></div>; }
 /** 客户资料框里的一组：只展开入口对应的组，读取失败的组自己展开（DP-04、M11）。 */
-function Group({ title, note, summary, open, onOpenChange, group, failed, retry, retrying, retryDetail, available, deniedInTitle, children }: { title: string; note?: string; summary: ReactNode; open: boolean; onOpenChange?: (open: boolean) => void; group?: SupportGroup; failed?: boolean; retry: () => void; retrying?: boolean; retryDetail?: string; available?: ReactNode; /** 无权限只在标题行写「· 无权限」，正文不再写一遍（ST-39）。 */ deniedInTitle?: boolean; children: ReactNode }) {
+function Group({ title, note, summary, open, onOpenChange, group, failed, retry, retrying, retryDetail, retryError, available, deniedInTitle, children }: { title: string; note?: string; summary: ReactNode; open: boolean; onOpenChange?: (open: boolean) => void; group?: SupportGroup; failed?: boolean; retry: () => void; retrying?: boolean; retryDetail?: string; retryError?: string; available?: ReactNode; /** 无权限只在标题行写「· 无权限」，正文不再写一遍（ST-39）。 */ deniedInTitle?: boolean; children: ReactNode }) {
   // 资料第一次就没读到时，失败由框顶的一张错误卡说，依赖资料的各组不再各写一遍「加载失败」（BUG-650）。
   if (!group && failed) return null;
-  return <Fold inset title={title} explain={note} summary={!group ? (failed ? "加载失败" : "正在加载…") : group.status === "FORBIDDEN" && deniedInTitle ? "· 无权限" : group.status !== "READY" ? statusText[group.status] : summary} alert={group?.status === "ERROR" || !group && failed} {...(onOpenChange ? { open, onOpenChange } : { defaultOpen: open })}>{available}{!group ? <BlockState state={failed ? "error" : "loading"} compact title={failed ? "加载失败" : "正在加载…"} /> : group.status === "FORBIDDEN" && deniedInTitle ? null : group.status !== "READY" ? <BlockState state={group.status === "ERROR" ? "error" : "empty"} compact title={statusText[group.status]} detail={retryDetail} retrying={retrying} retryLabel={`重新加载${title}`} onRetry={group.status === "ERROR" ? retry : undefined} /> : children}</Fold>;
+  const denied = group?.status === "FORBIDDEN" && deniedInTitle;
+  const status = retryError && group?.status !== "FORBIDDEN" ? "ERROR" : group?.status;
+  return <Fold inset title={title} explain={note} summary={denied ? "· 无权限" : !status ? "正在加载…" : status === "READY" ? summary : statusText[status]} alert={status === "ERROR"} {...(onOpenChange ? { open, onOpenChange } : { defaultOpen: open })}>
+    {available}
+    {!status ? <BlockState state="loading" compact title="正在加载…" /> : !denied && status !== "READY" &&
+      <BlockState state={status === "ERROR" ? "error" : "empty"} compact title={statusText[status]} detail={retryError ?? retryDetail} retrying={retrying} retryLabel={`重新加载${title}`} onRetry={status === "ERROR" ? retry : undefined} />}
+    {group?.status === "READY" && children}
+  </Fold>;
 }
 
 type CustomerProfile = SupportProfile & { annotations: SupportGroup & { recoveredSystemTags?: unknown[] } };
+type ProfileGroup = Exclude<keyof SupportProfile, "actions" | "statistics">;
+type ProfileReadIntent = ProfileGroup | "initial" | "statistics" | "annotation-write";
+
+function isProfileGroup(intent: ProfileReadIntent): intent is ProfileGroup {
+  return intent !== "initial" && intent !== "statistics" && intent !== "annotation-write";
+}
+
+function mergeProfileGroups(previous: CustomerProfile, next: SupportProfile, groups: readonly ProfileGroup[]): CustomerProfile {
+  const updated: CustomerProfile = { ...previous, ...Object.fromEntries(groups.map(key => [key, next[key]])) };
+  if (groups.includes("identity") && next.identity.status === "READY") {
+    // Identity reload also owns risk and system tags. Keep custom tags and notes unless requested.
+    updated.risk = next.risk;
+    const systemTags = next.annotations.data?.systemTags;
+    if (Array.isArray(systemTags) && updated.annotations.status !== "FORBIDDEN") {
+      updated.annotations = updated.annotations.data
+        ? { ...updated.annotations, data: { ...updated.annotations.data, systemTags } }
+        : { ...updated.annotations, recoveredSystemTags: systemTags };
+    }
+  } else if (groups.includes("annotations") && next.annotations.status !== "READY" && next.annotations.status !== "FORBIDDEN") {
+    updated.annotations = { ...next.annotations, recoveredSystemTags: previous.annotations.recoveredSystemTags };
+  }
+  return updated;
+}
+
 export function M3CustomerProfile({ ctx, customerId, source, transferEntry = true, conversation, scopeVersion, onHistory, messageError, onRetryMessages, openRequest = 0 }: { ctx: MCtx; customerId: string; source: "M1" | "M3"; transferEntry?: boolean; conversation?: SessionConvo; scopeVersion?: number; onHistory: (no: string) => void; messageError?: string; onRetryMessages: () => void; /** 每加一次打开一次全部资料：窄宽时入口在对话头的菜单里。 */ openRequest?: number }) {
   const pathname = usePathname(), searchParams = useSearchParams();
   const reach = useReach();
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const [profile, setProfile] = useState<CustomerProfile | null>(null), [error, setError] = useState("");
-  const statisticsRequest = useRef<AbortController | null>(null);
+  const [groupReadErrors, setGroupReadErrors] = useState<Partial<Record<ProfileGroup, string>>>({});
   const [statisticsRetrying, setStatisticsRetrying] = useState(false);
   const [paymentWriteBusy, setPaymentWriteBusy] = useState(false);
   const [statisticsRetryError, setStatisticsRetryError] = useState("");
@@ -116,18 +147,13 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const requestStamp = `${profileScope}:${reload}:${scopeDenied}`;
   const stamp = useRef(""), mounted = useRef(true); stamp.current = requestStamp;
   const profileReadSequence = useRef(0);
-  const beginProfileRead = () => {
-    const sequence = ++profileReadSequence.current;
-    const scope = stamp.current;
-    return () => mounted.current && scope === stamp.current && sequence === profileReadSequence.current;
-  };
+  const profileReadIntents = useRef(new Set<ProfileReadIntent>());
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const revokeScope = () => {
     if (revokedScope.current === scopeKey) return;
     revokedScope.current = scopeKey; stamp.current += ":revoked";
-    statisticsRequest.current?.abort();
-    statisticsRequest.current = null;
-    setStatisticsRetrying(false); setStatisticsRetryError("");
+    profileReadIntents.current.clear();
+    setStatisticsRetrying(false); setStatisticsRetryError(""); setGroupReadErrors({});
     setProfile(null); setPaymentIdentity(null); setDeviceGroup(null); setFlowGroup(null); setMaintenance(null); setView360(false);
     setTag(""); setNote(""); annotationWrite.current = null; setWriting(false); setWriteError("");
     setError("可能是客户归属或你的查看范围变了。请重试，或返回列表核对。");
@@ -146,27 +172,70 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       ? { scope: paymentScope, label: `${userNicknameText(String(identity?.nickname ?? userNo), identity?.phoneMasked)} · ${userNo}` }
       : null);
   };
-  const applyProfile = (next: SupportProfile) => {
-    setProfile(next);
-    applyPaymentIdentity(next.identity);
-    setStatisticsRetryError("");
-  };
+  async function readProfile(intent: ProfileReadIntent, signal?: AbortSignal) {
+    const scope = stamp.current;
+    const sequence = ++profileReadSequence.current;
+    profileReadIntents.current.add(intent);
+    if (intent === "statistics") setStatisticsRetrying(true);
+
+    const result = await supportEnhancements.profile(customerId, signal).then(
+      profile => ({ profile }),
+      failure => ({ failure }),
+    );
+    if (!mounted.current || signal?.aborted || scope !== stamp.current || sequence !== profileReadSequence.current) return;
+
+    // The latest response settles the whole set even when an earlier response has already arrived.
+    const intents = profileReadIntents.current;
+    profileReadIntents.current = new Set();
+    const groups = [...intents].filter(isProfileGroup);
+    const initial = intents.has("initial");
+    const statistics = intents.has("statistics");
+    const annotationReadback = intents.has("annotation-write");
+    if (statistics) setStatisticsRetrying(false);
+
+    if ("failure" in result) {
+      if (denied(result.failure)) return;
+      const reason = displayAdminReadError(result.failure);
+      if (initial) {
+        setPaymentIdentity(null);
+        setError(reason);
+      }
+      if (statistics) setStatisticsRetryError(reason);
+      const errors: Partial<Record<ProfileGroup, string>> = Object.fromEntries(groups.map(group => [group, reason]));
+      if (annotationReadback) errors.annotations = `已保存，但资料刷新失败，请重新加载 · ${reason}`;
+      setGroupReadErrors(previous => ({ ...previous, ...errors }));
+      return;
+    }
+
+    const next = result.profile;
+    if (initial || statistics || annotationReadback) {
+      setProfile(next);
+      applyPaymentIdentity(next.identity);
+      setStatisticsRetryError("");
+      setGroupReadErrors({});
+      return;
+    }
+
+    if (groups.includes("identity")) applyPaymentIdentity(next.identity);
+    setProfile(previous => previous ? mergeProfileGroups(previous, next, groups) : next);
+    setGroupReadErrors(previous => {
+      const errors = { ...previous };
+      for (const group of groups) delete errors[group];
+      if (groups.includes("identity") && next.identity.status === "READY") delete errors.risk;
+      return errors;
+    });
+  }
+
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
-    const controller = new AbortController(), current = beginProfileRead(); setProfile(null); setError("");
-    setStatisticsRetrying(false); setStatisticsRetryError("");
-    supportEnhancements.profile(customerId, controller.signal).then(p => {
-      if (!controller.signal.aborted && current()) applyProfile(p);
-    }).catch(e => {
-      if (!controller.signal.aborted && current()) {
-        setPaymentIdentity(null);
-        if (!denied(e)) setError(displayAdminReadError(e));
-      }
-    });
+    const controller = new AbortController();
+    setProfile(null); setError("");
+    setStatisticsRetrying(false); setStatisticsRetryError(""); setGroupReadErrors({});
+    void readProfile("initial", controller.signal);
     return () => {
       controller.abort();
-      statisticsRequest.current?.abort();
-      statisticsRequest.current = null;
+      profileReadIntents.current.clear();
+      profileReadSequence.current++;
     };
   }, [customerId, epoch, reload, profileRetry, profileScope]);
   useEffect(() => {
@@ -196,63 +265,15 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     window.addEventListener("support-scope-invalidated", onInvalidated);
     return () => window.removeEventListener("support-scope-invalidated", onInvalidated);
   }, [customerId, epoch, conversation?.id]);
-  async function retryStatistics() {
-    if (scopeDenied || stamp.current !== requestStamp || annotationWrite.current || paymentWriteBusy || statisticsRequest.current) return;
-    const controller = new AbortController();
-    const current = beginProfileRead();
-    const active = () => !controller.signal.aborted && current();
-    statisticsRequest.current = controller;
-    setStatisticsRetrying(true);
-    try {
-      const next = await supportEnhancements.profile(customerId, controller.signal);
-      if (active()) applyProfile(next);
-    } catch (error) {
-      if (active() && !denied(error)) setStatisticsRetryError(displayAdminReadError(error));
-    } finally {
-      if (statisticsRequest.current === controller) {
-        statisticsRequest.current = null;
-        if (mounted.current && stamp.current === requestStamp) setStatisticsRetrying(false);
-      }
-    }
-  }
-  async function retryGroup(key: keyof Omit<SupportProfile,"actions">) {
-    if (revokedScope.current === scopeKey || stamp.current !== requestStamp) return;
-    const current = beginProfileRead();
+  const retryStatistics = () => {
+    if (scopeDenied || stamp.current !== requestStamp || annotationWrite.current || paymentWriteBusy || profileReadIntents.current.has("statistics")) return;
+    return readProfile("statistics");
+  };
+  const retryGroup = (key: ProfileGroup) => {
+    if (scopeDenied || stamp.current !== requestStamp) return;
     setError("");
-    try {
-      const next = await supportEnhancements.profile(customerId);
-      if (!current()) return;
-      if (key !== "identity") {
-        setProfile(old => {
-          if (!old) return next;
-          if (key === "annotations" && next.annotations.status !== "READY" && next.annotations.status !== "FORBIDDEN") {
-            return { ...old, annotations: { ...next.annotations, recoveredSystemTags: old.annotations.recoveredSystemTags } };
-          }
-          return { ...old, [key]: next[key] };
-        });
-        return;
-      }
-      if (next.identity.status !== "READY") return;
-      applyPaymentIdentity(next.identity);
-      setProfile(old => {
-        if (!old) return old;
-        let { annotations } = old;
-        const systemTags = next.annotations.data?.systemTags;
-        if (Array.isArray(systemTags)) {
-          // Identity retry owns the system tags. The separate annotation read owns its status, custom tags and notes.
-          annotations = annotations.data
-            ? { ...annotations, data: { ...annotations.data, systemTags } }
-            : { ...annotations, recoveredSystemTags: systemTags };
-        }
-        return { ...old, identity: next.identity, risk: next.risk, annotations };
-      });
-    } catch (e) {
-      if (current() && !denied(e)) {
-        setProfile(old => old ? { ...old, [key]: { ...old[key], status: "ERROR", data: null } } : old);
-        setError(displayAdminError(e));
-      }
-    }
-  }
+    return readProfile(key);
+  };
   const conversationId = conversation?.id;
   const profileQuery = new URLSearchParams();
   if (conversationId) profileQuery.set("conversationNo", conversationId);
@@ -263,13 +284,13 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const profileSearch = profileQuery.toString();
   const writable = Boolean(!scopeDenied && conversationId && conversation?.ownerAdminId === session?.adminId && (session?.role === "super" || session?.role === "superadmin" || session?.authorities.includes("service_m3_write")));
   const canReadAccount = session?.role === "super" || session?.role === "superadmin" || Boolean(session?.authorities.includes("user_c1hub_read"));
+  const annotationsStale = Boolean(groupReadErrors.annotations);
   const annotationScope = `${scopeKey}:${conversationId ?? ""}:${conversation?.ownerAdminId ?? ""}:${conversation?.assignmentId ?? ""}:${writable}`;
   const currentAnnotationScope = useRef(annotationScope); currentAnnotationScope.current = annotationScope;
   async function annotate(action: (id: string) => Promise<boolean>, clear: () => void, failureInDialog = false) {
-    if (revokedScope.current === scopeKey || stamp.current !== requestStamp || !conversationId || !writable || annotationWrite.current || statisticsRequest.current) return false; const saved = stamp.current, writeToken = {}; annotationWrite.current = writeToken; setWriting(true); setWriteError("");
+    if (revokedScope.current === scopeKey || stamp.current !== requestStamp || !conversationId || !writable || annotationsStale || annotationWrite.current || profileReadIntents.current.has("statistics")) return false; const saved = stamp.current, writeToken = {}; annotationWrite.current = writeToken; setWriting(true); setWriteError("");
     const sameWriteScope = () => mounted.current && annotationWrite.current === writeToken && revokedScope.current !== scopeKey && currentAnnotationScope.current === annotationScope;
     let confirmed = false;
-    let currentRead: (() => boolean) | undefined;
     try {
       const ok = await action(conversationId);
       if (!sameWriteScope()) return false;
@@ -278,15 +299,11 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
         confirmed = true; clear();
         // A new message can advance the conversation version without changing
         // annotation ownership. Settle the receipt, but let the newer read win.
-        if (saved === stamp.current) {
-          currentRead = beginProfileRead();
-          const next = await supportEnhancements.profile(customerId);
-          if (sameWriteScope() && currentRead()) applyProfile(next);
-        }
+        if (saved === stamp.current) await readProfile("annotation-write");
       }
       return ok;
     } catch(e) {
-      if ((!failureInDialog || confirmed) && sameWriteScope() && saved === stamp.current && (currentRead?.() ?? true) && !denied(e)) setWriteError(confirmed ? `已保存，但资料刷新失败，请重新加载 · ${displayAdminError(e)}` : displayAdminError(e));
+      if ((!failureInDialog || confirmed) && sameWriteScope() && saved === stamp.current && !denied(e)) setWriteError(confirmed ? `已保存，但资料刷新失败，请重新加载 · ${displayAdminError(e)}` : displayAdminError(e));
       return confirmed;
     } finally { if (annotationWrite.current === writeToken) { annotationWrite.current = null; if (mounted.current) setWriting(false); } }
   }
@@ -341,9 +358,16 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const latestNote = asRows(annotations?.notes).toSorted((a, b) => (Date.parse(String(b.createdAt)) || 0) - (Date.parse(String(a.createdAt)) || 0))[0];
   /** 客户资料第一次就没读到：依赖它的各块由一张错误卡接管，不再各写「正在加载」「币种未同步」；独立读取的支付安全、设备照常（ST-30、ST-34，BUG-650）。 */
   const profileFailed = !profile && !!error;
-  const summaryState = (key: keyof Omit<SupportProfile, "actions">) => {
+  const groupReadProps = (key: ProfileGroup) => ({
+    group: profile?.[key],
+    retry: () => void retryGroup(key),
+    retryError: groupReadErrors[key],
+  });
+  const summaryState = (key: ProfileGroup) => {
     const group = profile?.[key];
-    return group?.status === "READY" ? null : <p className="m3-profile-state" role={group?.status === "ERROR" || error ? "alert" : "status"}>{group ? statusText[group.status] : error ? "加载失败" : "正在加载…"}{group?.status === "ERROR" && <button type="button" className="m3-profile-link" onClick={()=>void retryGroup(key)}>重新加载</button>}</p>;
+    const readError = group?.status === "FORBIDDEN" ? undefined : groupReadErrors[key];
+    const status = readError ? "ERROR" : group?.status;
+    return status === "READY" ? null : <p className="m3-profile-state" role={status === "ERROR" || error ? "alert" : "status"}>{status ? statusText[status] : error ? "加载失败" : "正在加载…"}{readError && <> · {readError}</>}{status === "ERROR" && <button type="button" className="m3-profile-link" onClick={()=>void retryGroup(key)}>重新加载</button>}</p>;
   };
   const annotationState = summaryState("annotations");
   /** 四个人数（PRD §6.6-7）：口径问号在「团队奖励范围内」旁；只有人数读不出时换成一行，带原因和重试（07c）；数据异常、没读全常显提示（DP-03）。 */
@@ -398,7 +422,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     {profileFailed ? <BlockState state="error" compact title="客户资料加载失败" detail={error} onRetry={retryProfile} retryLabel="重试" />
       : error && <Notice tone="danger" action={<Button size="sm" onClick={retryProfile}>重新加载资料</Button>}>{error}</Notice>}
     {!scopeDenied && <>
-    <Group title="基本信息" open={opens("基本信息")} summary={[levelSummary, show(identity?.region)].filter(Boolean).join(" · ")} group={profile?.identity} failed={Boolean(error)} retry={()=>void retryGroup("identity")}>
+    <Group title="基本信息" open={opens("基本信息")} summary={[levelSummary, show(identity?.region)].filter(Boolean).join(" · ")} {...groupReadProps("identity")} failed={Boolean(error)}>
       <Row label="客户姓名" value={userNicknameText(show(identity?.nickname), identity?.phoneMasked)}/><Row label={<>用户编码<Explain label="系统编号" content={`系统编号 ${customerId}`}/></>} value={identity?.userNo} mono/>{inviter && <NodeRow label="邀请人"><InviterValue view={inviter} /></NodeRow>}{levels.userLevel && <Row label="用户分层" value={levels.userLevel}/>}{levels.vRank && <Row label="团队等级" value={levels.vRank}/>}<Row label="手机" value={identity?.phoneMasked}/><Row label="地区" value={identity?.region}/><Row label="注册时间" value={dates(identity?.registeredAt)}/><Row label="最近登录" value={dates(identity?.lastLoginAt)}/>
     </Group>
     <Group title="首充与邀请统计" open={opens("首充与邀请统计")} summary={`首充：${firstState}${countsHead && ` · ${countsHead}`}`} note="首充包括成功充值或购机，赠送与试用不计入。" group={statisticsGroup} deniedInTitle failed={Boolean(error)} retry={statisticsRetry.onRetry} retrying={statisticsRetry.retrying} retryDetail={statisticsRetryError || "这次没读出这组统计，其他资料照常。"}>
@@ -408,7 +432,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       {statistics?.lifetime.map(row=>{const invited=statistics.invitations.deposits.find(item=>item.currency===row.currency)?.deposits;return <div key={row.currency}><h4>{nexGridBrandText(row.currency)} · 累计</h4>{/* 展开视图是详情，金额写完整值，币种在小标题里（TX-20、TX-21，BUG-652）；侧栏摘要卡照旧用紧凑写法。 */}<Row label="本人充值" value={statisticMoney(row.deposits, true)}/><Row label="本人净贡献" value={statisticMoney(row.net, true)}/><Row label="团队成员充值" value={statisticMoney(invited, true)}/></div>;})}
       </div>
     </Group>
-    <Group title="账户资金（全历史）" open={opens("账户资金（全历史）")} summary={currencies.length ? `${currencies.length} 个币种` : "暂无可信资料"} note="净贡献已扣除对应的成功提现及后台退款。成功充值不支持退款。" group={profile?.finance} failed={Boolean(error)} retry={()=>void retryGroup("finance")}>
+    <Group title="账户资金（全历史）" open={opens("账户资金（全历史）")} summary={currencies.length ? `${currencies.length} 个币种` : "暂无可信资料"} note="净贡献已扣除对应的成功提现及后台退款。成功充值不支持退款。" {...groupReadProps("finance")} failed={Boolean(error)}>
       {!currencies.length && <p className="m-admin-muted">尚无可信币种资金资料，累计未知。</p>}
       {financeGaps.length > 0 && <Notice tone="warn" action={financeGaps.some(gap => gap.state !== "FORBIDDEN") ? <Button size="sm" onClick={()=>void retryGroup("finance")}>重新加载资金</Button> : undefined}>部分资金资料暂时无法确认 <Explain label="哪些项目" content={financeGaps.map(gap => <p key={gap.state}>{gap.text}</p>)}/></Notice>}
       {currencies.length > 0 && <Table label="账户资金"><thead><tr><Th>项目</Th>{currencies.map((row,i)=><Th key={String(row.currency??i)} align="right">{nexGridBrandText(String(row.currency ?? "币种未同步"))}</Th>)}</tr></thead><tbody>{Object.entries(financeLabels).map(([key,label])=><Tr key={key}><Td>{label}</Td>{currencies.map((row,i)=><Td key={String(row.currency??i)} align="right">{financeCell(row,key)}</Td>)}</Tr>)}</tbody></Table>}
@@ -417,21 +441,21 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       <div className="m3-profile-flow-filters"><Field label="币种"><Select aria-label="流水币种" value={currency} onChange={value=>{setCurrency(value);setFlowPage(1);}} options={[{value:"",label:"全部币种"},...currencies.map(row=>({value:String(row.currency),label:nexGridBrandText(String(row.currency ?? "币种未同步"))}))]}/></Field><Field label="状态"><Select aria-label="流水状态" value={flowStatus} onChange={value=>{setFlowStatus(value);setFlowPage(1);}} options={[{value:"",label:"全部状态"},...Object.entries(flowStatusLabels).map(([value,label])=>({value,label}))]}/></Field><Field label={`起始日期（${businessZone().label}）`}>{control=><Input {...control} type="date" value={from} onChange={e=>{setFrom(e.target.value);setFlowPage(1);}}/>}</Field><Field label={`结束日期（${businessZone().label}，不含）`}>{control=><Input {...control} type="date" value={to} onChange={e=>{setTo(e.target.value);setFlowPage(1);}}/>}</Field></div>
       {pageError.flows ? <div role="alert">{pageError.flows}<Button size="sm" onClick={()=>setPageRetry(n=>n+1)}>重试流水</Button></div> : !flowGroup ? <p role="status">正在加载流水…</p> : flowGroup.status !== "READY" ? <p>{statusText[flowGroup.status]}<Button size="sm" onClick={()=>setPageRetry(n=>n+1)}>重试流水</Button></p> : <>{!flows.length && <p>没有匹配的流水。</p>}{flows.map((r,i)=><Fold inset key={String(r.sourceId??r.id??`${r.bizNo??"flow"}:${i}`)} title={flowKindLabel(r.kind)} summary={`${nexGridBrandText(String(r.currency ?? "币种未同步"))} · ${flowStatusLabel(r.status)} · ${dates(r.createdAt)}`}><Row label="业务单号" value={r.bizNo??r.orderNo}/><Row numeric amount label="金额" value={r.principal}/><Row numeric amount label="费用" value={r.fee}/><Row numeric amount label="实际到账" value={r.net}/><Row label="创建时间" value={dates(r.createdAt)}/><Row label="完成时间" value={dates(r.completedAt)}/></Fold>)}{pager(flowPage,flowGroup.data?.total,setFlowPage)}</>}
     </Fold>
-    <Group title="风险信息" open={opens("风险信息")} summary={riskLevel} note="这里只有风险等级。风险案件和账户安全明细要有对应权限的账号在用户详情里看。" group={profile?.risk} failed={Boolean(error)} retry={()=>void retryGroup("risk")}><Row label="风险等级" value={riskLevel}/>{profile?.risk.data?.serviceExplanation ? <div className="m3-profile-explanation"><span>服务说明</span><p>{show(profile.risk.data.serviceExplanation)}</p></div> : <Row label="服务说明" value={null}/>}<Row label="评估时间" value={dates(profile?.risk.data?.evaluatedAt)}/></Group>
+    <Group title="风险信息" open={opens("风险信息")} summary={riskLevel} note="这里只有风险等级。风险案件和账户安全明细要有对应权限的账号在用户详情里看。" {...groupReadProps("risk")} failed={Boolean(error)}><Row label="风险等级" value={riskLevel}/>{profile?.risk.data?.serviceExplanation ? <div className="m3-profile-explanation"><span>服务说明</span><p>{show(profile.risk.data.serviceExplanation)}</p></div> : <Row label="服务说明" value={null}/>}<Row label="评估时间" value={dates(profile?.risk.data?.evaluatedAt)}/></Group>
     {view360 && paymentSecurityPort && <PaymentSecurityBlock key={`${paymentScope}|modal|${paymentSecurityPort.key}`} port={paymentSecurityPort} reloadKey={profileScope} userLabel={paymentUserLabel} canRelease={canReleasePayment} writeBlockedReason={invitationWriteBlock} onWriteBusy={setPaymentWriteBusy} retryMissingRelease />}
     <Fold inset title="设备信息" explain={deviceScope} {...recordFold("设备信息")} alert={Boolean(pageError.devices)} summary={pageError.devices ? "加载失败" : devicesRead ? `持有 ${heldDevices} 台 · 在网 ${compactSupportBoardValue(deviceGroup?.data?.onlineCount, "count")} 台` : deviceGroup ? statusText[deviceGroup.status] : "正在加载…"}>{pageError.devices ? <div role="alert">{pageError.devices}<Button size="sm" onClick={()=>setPageRetry(n=>n+1)}>重试设备</Button></div> : !deviceGroup ? <p role="status">正在加载设备…</p> : deviceGroup.status !== "READY" ? <p>{statusText[deviceGroup.status]}<Button size="sm" onClick={()=>setPageRetry(n=>n+1)}>重试设备</Button></p> : <><Row numeric="count" label="持有设备" value={deviceStatuses?.heldCount==="READY"?deviceGroup.data?.heldCount:null}/><Row numeric="count" label="在网设备" value={deviceGroup.data?.onlineCount}/><Row numeric label="实际总算力" value={deviceGroup.data?.hashrateTotal}/><p className="m-admin-muted">设备记录（含历史）</p>{!devices.length&&<p>没有设备记录。</p>}{devices.map((r,i)=><Fold inset key={String(r.id??i)} title={show(r.name)} summary={show(r.instanceNo)}><Row label="在网情况" value={labelState(r.runtimeStatus)}/><Row numeric label="实际算力" value={r.hashrate}/><Row numeric amount label="实际收益" value={r.dailyUsdt}/><Row label="最近心跳" value={dates(r.heartbeatAt)}/><Row label="激活时间" value={dates(r.activatedAt)}/></Fold>)}{pager(devicePage,deviceGroup.data?.total,setDevicePage)}</>}</Fold>
-    <Group title="标签与内部备注" {...recordFold("标签与内部备注")} summary={`${tags.length} 个标签 · ${asRows(annotations?.notes).length} 条备注`} group={profile?.annotations} failed={Boolean(error)} retry={()=>void retryGroup("annotations")}
+    <Group title="标签与内部备注" {...recordFold("标签与内部备注")} summary={`${tags.length} 个标签 · ${asRows(annotations?.notes).length} 条备注`} {...groupReadProps("annotations")} failed={Boolean(error)}
       available={(annotations || systemTags?.length) ? <><p className="rd-form-group-title">系统标签（只读）</p><div className="m3-profile-tags">{systemTags?.map(t=><span key={String(t)}>{show(t)}</span>)}</div></> : undefined}>
-      <p className="rd-form-group-title">自定义标签</p><div className="m3-profile-tags">{Array.isArray(annotations?.customTags)&&annotations.customTags.map(t=><span key={String(t)}>{show(t)} {!readOnlyAnnotations && <IconButton aria-label={`删除标签 ${show(t)}`} disabled={!writable||writing} disabledReason={writable && !writing ? invitationWriteBlock : undefined} onClick={()=>void annotate(id=>ctx.removeCustomerTag(id,String(t)),()=>{})}><Icon name="x" size={12}/></IconButton>}</span>)}</div>
-      {writable&&<div className="m3-profile-editor"><Field label="新标签">{control=><Input {...control} value={tag} maxLength={30} disabled={!writable||writing||statisticsRetrying} onChange={e=>setTag(e.target.value)}/>}</Field><Button size="sm" disabled={!writable||writing||!tag.trim()} disabledReason={writable && !writing && tag.trim() ? invitationWriteBlock : undefined} onClick={()=>void annotate(id=>ctx.addCustomerTag(id,tag.trim()),()=>setTag(""))}>添加标签</Button></div>}
+      <p className="rd-form-group-title">自定义标签</p><div className="m3-profile-tags">{Array.isArray(annotations?.customTags)&&annotations.customTags.map(t=><span key={String(t)}>{show(t)} {!readOnlyAnnotations && <IconButton aria-label={`删除标签 ${show(t)}`} disabled={!writable||writing||annotationsStale} disabledReason={writable && !writing && !annotationsStale ? invitationWriteBlock : undefined} onClick={()=>void annotate(id=>ctx.removeCustomerTag(id,String(t)),()=>{})}><Icon name="x" size={12}/></IconButton>}</span>)}</div>
+      {writable&&<div className="m3-profile-editor"><Field label="新标签">{control=><Input {...control} value={tag} maxLength={30} disabled={!writable||writing||statisticsRetrying||annotationsStale} onChange={e=>setTag(e.target.value)}/>}</Field><Button size="sm" disabled={!writable||writing||annotationsStale||!tag.trim()} disabledReason={writable && !writing && !annotationsStale && tag.trim() ? invitationWriteBlock : undefined} onClick={()=>void annotate(id=>ctx.addCustomerTag(id,tag.trim()),()=>setTag(""))}>添加标签</Button></div>}
       {asRows(annotations?.notes).length === 0 ? <p className="m-admin-muted">暂无内部备注。</p> : <Timeline label="内部备注" entries={asRows(annotations?.notes).map((r,i) => ({
         id: String(r.id ?? i), actor: show(r.authorName ?? r.author), at: String(r.createdAt ?? ""),
-        action: <div className="m3-profile-note-event"><span className="rd-pre">{show(r.text)}</span>{!readOnlyAnnotations && <Button size="sm" disabled={!writable||writing} disabledReason={writable && !writing ? invitationWriteBlock : undefined} onClick={()=>ctx.openActionConfirm({action:"删除内部备注",briefKind:"note-delete",detail:"删除后这条备注不再显示。",facts:<Facts><Fact k="客户">{userNicknameText(show(identity?.nickname), identity?.phoneMasked)}</Fact><Fact k="备注内容">{show(r.text)}</Fact></Facts>,effect:<><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag/></>,confirmLabel:"确认删除备注",confirmTone:"danger",reasonMin:8,reasonMax:200,run:async(reason)=>{let failure="";if(!await annotate(id=>ctx.removeCustomerNote(id,String(r.id),reason,message=>{failure=message;}),()=>{},true))throw new Error(failure||"备注没有删除成功，请核对客户归属和原备注。");return true;}})}>删除备注</Button>}</div>,
+        action: <div className="m3-profile-note-event"><span className="rd-pre">{show(r.text)}</span>{!readOnlyAnnotations && <Button size="sm" disabled={!writable||writing||annotationsStale} disabledReason={writable && !writing && !annotationsStale ? invitationWriteBlock : undefined} onClick={()=>ctx.openActionConfirm({action:"删除内部备注",briefKind:"note-delete",detail:"删除后这条备注不再显示。",facts:<Facts><Fact k="客户">{userNicknameText(show(identity?.nickname), identity?.phoneMasked)}</Fact><Fact k="备注内容">{show(r.text)}</Fact></Facts>,effect:<><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag/></>,confirmLabel:"确认删除备注",confirmTone:"danger",reasonMin:8,reasonMax:200,run:async(reason)=>{let failure="";if(!await annotate(id=>ctx.removeCustomerNote(id,String(r.id),reason,message=>{failure=message;}),()=>{},true))throw new Error(failure||"备注没有删除成功，请核对客户归属和原备注。");return true;}})}>删除备注</Button>}</div>,
       }))} />}
-      {writable&&<div className="m3-profile-editor"><Field label="新内部备注">{control=><Textarea {...control} value={note} maxLength={1000} disabled={!writable||writing||statisticsRetrying} onChange={e=>setNote(e.target.value)}/>}</Field><Button size="sm" disabled={!writable||writing||!note.trim()} disabledReason={writable && !writing && note.trim() ? invitationWriteBlock : undefined} onClick={()=>void annotate(id=>ctx.addCustomerNote(id,note.trim()),()=>setNote(""))}>保存备注</Button></div>}
+      {writable&&<div className="m3-profile-editor"><Field label="新内部备注">{control=><Textarea {...control} value={note} maxLength={1000} disabled={!writable||writing||statisticsRetrying||annotationsStale} onChange={e=>setNote(e.target.value)}/>}</Field><Button size="sm" disabled={!writable||writing||annotationsStale||!note.trim()} disabledReason={writable && !writing && !annotationsStale && note.trim() ? invitationWriteBlock : undefined} onClick={()=>void annotate(id=>ctx.addCustomerNote(id,note.trim()),()=>setNote(""))}>保存备注</Button></div>}
       {!writable&&<p className="m-admin-muted">只读 <Explain label="谁能修改标签和备注" content={conversation ? "只有这位客户当前的专属客服能改，客服主管审阅时只读。" : "还没有服务会话，标签和备注只读。发出第一条消息后，专属客服就能修改。"}/></p>}{writeError&&<p role="alert">{writeError}</p>}
     </Group>
-    <Group title="服务与维护" open={opens("服务与维护")} summary={advisorName ? `当前专属客服 ${String(advisorName)}` : "暂无专属客服"} group={profile?.service} failed={Boolean(error)} retry={()=>void retryGroup("service")}>
+    <Group title="服务与维护" open={opens("服务与维护")} summary={advisorName ? `当前专属客服 ${String(advisorName)}` : "暂无专属客服"} {...groupReadProps("service")} failed={Boolean(error)}>
       <div className="cvp-row"><span className="k">当前专属客服</span><span className="v m3-profile-advisor"><SupportAvatar name={String(advisorName??"专属客服")} size={22} path={advisorId&&service?.advisorAvatar?advisorAvatarPath(advisorId,customerId):undefined} version={typeof (service?.advisorAvatar as Record<string,unknown>|undefined)?.version==="number"?(service?.advisorAvatar as {version:number}).version:undefined}/>{show(advisorName)}</span></div><Row label="归属状态" value={labelState(service?.assignmentState)}/>{assignmentSource && <Row label="绑定来源" value={assignmentSource}/>}<Row label="会话状态" value={service?.conversationCount===0?"暂无会话":labelState(serviceConversationStatus)}/><Row label="账户活动" value={labelState(service?.activityStatus)}/><Row label="主动维护" value={service?.maintenanceEnabled==null?"未知":service.maintenanceEnabled?"正常维护":"不再维护"}/><Row label="有效活动" value={dates(service?.lastEffectiveAt)}/><Row label="下次维护" value={dates(service?.nextMaintenanceAt)}/><Row label="最近服务" value={dates(lastServiceAt)}/><Row label="首次待联系" value={service?.firstContact}/><Row label="待专属客服回复" value={waitingReply}/>
       {transferEntry && <div className="m3-profile-actions"><a className="rd-btn" data-variant="secondary" data-size="sm" href={`/service/overview?customerId=${customerId}&action=transfer`}><span className="rd-btn-face">维护状态与正式转绑</span></a></div>}
     </Group>
@@ -488,9 +512,9 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
         {!profileFailed && summaryState("identity")}
         {!view360 && paymentSecurityPort && <PaymentSecurityBlock key={`${paymentScope}|sidebar|${paymentSecurityPort.key}`} port={paymentSecurityPort} reloadKey={profileScope} userLabel={paymentUserLabel} canRelease={canReleasePayment} writeBlockedReason={invitationWriteBlock} onWriteBusy={setPaymentWriteBusy} retryMissingRelease />}
         {!profileFailed && <>
-        <section className="m3-profile-section"><div className="m3-profile-heading"><h4>风险研判<Explain label="风险研判的说明" content="这里只有风险等级。风险案件和账户安全明细要有对应权限的账号在用户详情里看。"/></h4>{detailLink("风险信息")}</div>{summaryState("risk") ?? <div className="m3-profile-risk" data-tone={riskLevel === "低风险" ? "low" : riskLevel === "中风险" ? "medium" : riskLevel === "高风险" ? "high" : "unknown"}><span>{riskLevel}</span><p>{typeof risk?.serviceExplanation === "string" && risk.serviceExplanation ? risk.serviceExplanation : `评估时间 ${dates(risk?.evaluatedAt)}`}</p></div>}</section>
+        <section className="m3-profile-section"><div className="m3-profile-heading"><h4>风险研判<Explain label="风险研判的说明" content="这里只有风险等级。风险案件和账户安全明细要有对应权限的账号在用户详情里看。"/></h4>{detailLink("风险信息")}</div>{summaryState("risk")}{profile?.risk.status === "READY" && <div className="m3-profile-risk" data-tone={riskLevel === "低风险" ? "low" : riskLevel === "中风险" ? "medium" : riskLevel === "高风险" ? "high" : "unknown"}><span>{riskLevel}</span><p>{typeof risk?.serviceExplanation === "string" && risk.serviceExplanation ? risk.serviceExplanation : `评估时间 ${dates(risk?.evaluatedAt)}`}</p></div>}</section>
         <section className="m3-profile-section"><div className="m3-profile-heading"><h4>资金概览</h4><div>{currencies.length > 1 ? <div className="m3-profile-currency"><Select aria-label="资金摘要币种" value={String(summaryFinance?.currency)} onChange={setSummaryCurrency} options={currencies.map(row=>({value:String(row.currency),label:nexGridBrandText(String(row.currency))}))}/></div> : <span>{summaryFinance?.currency == null ? "币种未同步" : summaryUnit}</span>}{detailLink("账户资金")}</div></div>{summaryState("finance")}<div className="m3-profile-funds">{[["balance", "当前余额"], ["creditedDepositTotal", "累计成功充值"], ["successfulWithdrawalPrincipalTotal", "累计成功提现金额"]].map(([key,label])=><button type="button" key={key} onClick={()=>open360("账户资金")} title={exactMoney(key) === EMPTY ? `${label}暂无法确认` : `${label} ${exactMoney(key)} ${summaryUnit}`}><span>{label}</span><strong data-empty={exactMoney(key) === EMPTY || Number(summaryFinance?.[key]) === 0 ? "" : undefined}>{exactMoney(key)}{exactMoney(key) !== EMPTY && <small>{summaryUnit}</small>}{summaryStatuses?.[key] === "PARTIAL" && exactMoney(key) !== EMPTY && <small>部分统计</small>}</strong></button>)}</div>{summaryStatuses && Object.values(summaryStatuses).some(status=>status === "ERROR" || status === "UNKNOWN" || status === "FORBIDDEN") && <p className="m3-profile-state" data-tone="warn">部分资金资料暂时无法确认。<button type="button" className="m3-profile-link" onClick={()=>void retryGroup("finance")}>重新加载资金</button></p>}</section>
-        <section className="m3-profile-section"><div className="m3-profile-heading"><h4>客户标签</h4>{detailLink("标签与内部备注", readOnlyAnnotations ? "查看" : "管理")}</div>{(!annotationState || tags.length > 0) && <div className="m3-profile-tags">{tags.length ? tags.map((tag,index)=><span key={`${tag}:${index}`}>{tag}</span>) : <p className="m3-profile-state">暂无标签。</p>}</div>}{annotationState ?? <><div className="m3-profile-heading"><h4>最新内部备注</h4>{detailLink("标签与内部备注", readOnlyAnnotations ? "查看" : "管理")}</div>{latestNote ? <p className="m3-profile-note" title={show(latestNote.text)}>{show(latestNote.text)}</p> : <p className="m3-profile-state">暂无内部备注。</p>}</>}</section>
+        <section className="m3-profile-section"><div className="m3-profile-heading"><h4>客户标签</h4>{detailLink("标签与内部备注", readOnlyAnnotations ? "查看" : "管理")}</div>{(!annotationState || tags.length > 0) && <div className="m3-profile-tags">{tags.length ? tags.map((tag,index)=><span key={`${tag}:${index}`}>{tag}</span>) : <p className="m3-profile-state">暂无标签。</p>}</div>}{annotationState}{profile?.annotations.status === "READY" && <><div className="m3-profile-heading"><h4>最新内部备注</h4>{detailLink("标签与内部备注", readOnlyAnnotations ? "查看" : "管理")}</div>{latestNote ? <p className="m3-profile-note" title={show(latestNote.text)}>{show(latestNote.text)}</p> : <p className="m3-profile-state">暂无内部备注。</p>}</>}</section>
         </>}
         <Fold inset title="账户与设备" explain={<><p>{deviceScope}</p><p>时间为{businessZone().label}。</p></>} actions={detailLink("设备信息")} alert={Boolean(pageError.devices)||deviceGroup?.status==="ERROR"} summary={pageError.devices ? "设备读取失败" : devicesRead ? `在网 ${compactSupportBoardValue(deviceGroup?.data?.onlineCount, "count")} / 持有 ${heldDevices} 台` : deviceGroup ? statusText[deviceGroup.status] : "正在加载设备…"}>{pageError.devices ? <p className="m3-profile-state" role="alert">{pageError.devices}<button type="button" className="m3-profile-link" onClick={()=>setPageRetry(n=>n+1)}>重试设备</button></p> : !deviceGroup || deviceGroup.status !== "READY" ? <p className="m3-profile-state">{deviceGroup ? statusText[deviceGroup.status] : "正在加载设备…"}<button type="button" className="m3-profile-link" onClick={()=>setPageRetry(n=>n+1)}>重新加载</button></p> : <><Row label="持有设备" value={heldDevices}/><Row label="在网设备" value={compactSupportBoardValue(deviceGroup.data?.onlineCount, "count")}/><Row label="实际总算力" value={show(deviceGroup.data?.hashrateTotal)}/></>}{!profileFailed && <><Row label="地区" value={identity?.region}/><Row label="脱敏手机号" value={identity?.phoneMasked}/><Row label="注册时间" value={dates(identity?.registeredAt)}/><Row label="最近登录" value={dates(identity?.lastLoginAt)}/><Row label="最近有效活动" value={dates(service?.lastEffectiveAt)}/></>}</Fold>
         {!profileFailed && <Fold inset title="首充与邀请" actions={detailLink("首充与邀请统计")} alert={statisticsGroup?.status === "ERROR" || !!countsHead} alertTone={statisticsGroup?.status === "ERROR" ? "danger" : "warn"} summary={statisticsGroup?.status === "READY" ? countsHead || `首充：${firstState}` : statisticsGroup?.status === "FORBIDDEN" ? "· 无权限" : statisticsGroup ? statusText[statisticsGroup.status] : "正在加载…"}>{statisticsState ?? <div className="m3-invite-group"><Row label="首充状态" value={firstState}/>{countRows(true)}<Row label={`邀请累充（${nexGridBrandText(summaryCurrency)}）`} value={statisticMoney(statistics?.invitations.deposits.find(row=>row.currency===summaryCurrency)?.deposits, true)}/><Row label="账户活跃" value={statistics?.activity.status === "AVAILABLE" ? statistics.activity.state === "ACTIVE" ? "活跃" : statistics.activity.state === "INACTIVE" ? "近期未活跃" : EMPTY : EMPTY}/></div>}</Fold>}
