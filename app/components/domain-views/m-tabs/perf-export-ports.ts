@@ -16,7 +16,8 @@ const SUMMARY = "service_performance_export_summary", DETAIL = "service_performa
 const TYPES = { SUMMARY, CUSTOMER_DETAIL: DETAIL, TRANSACTION_DETAIL: DETAIL } as const;
 const GRAIN = { SUMMARY: "一位客服在一个组一个月一行", CUSTOMER_DETAIL: "一位客户在一位客服名下一个月一行", TRANSACTION_DETAIL: "一笔入金、提现或参考交易一行" };
 /** 申请人、审批人：后端给姓名之前不显示内部账号编号。 */
-const NAME_PENDING = "（姓名待补）";
+/** 后端还没给发起人、审批人的姓名（只给账号编号）：先写账号编号，审批人能到「运营账号与权限」核对是谁（OP-69）。 */
+const namePending = (adminId: string) => `账号 ${adminId}（姓名待补）`;
 const COVERAGE_TEXT: Record<string, string> = { COMPLETE: "完整", PARTIAL: "部分数据还在核对", UNKNOWN: "暂时无法确认是否完整", FAILED: "核对没完成" };
 const STALE_BLOCKED = "这一版数据更新延迟，暂时不能导出。关掉这个框，在页面上刷新到最新一版后再导出。";
 const SCOPES = ["SELF", "MANAGED_GROUPS", "ALL"] as const;
@@ -178,13 +179,13 @@ function taskParser(operator: Operator) {
       : reasons.some(reason => reason === "EXPORT_SCOPE_CHANGED" || reason === "EXPORT_APPLICANT_INELIGIBLE") ? "SCOPE_LOST_BEFORE_GENERATE" : "GENERATE_FAILED";
     return {
       taskId: id(row.taskId), version: integer(row.version), type, mine,
-      requester: mine ? operator.name : NAME_PENDING, requesterRole: "",
+      requester: mine ? operator.name : namePending(String(id(row.requesterId))), requesterRole: "",
       scope: row.scope === null ? null : scopeTitle(row.scope), month: window?.month ?? null, asOf: window?.asOf ?? null,
       rows: nullableNumber(row.rowCount), columns: columns(row.columns, type),
       coverage: row.coverage == null ? null : COVERAGE_TEXT[String(object(row.coverage).status)] ?? null,
       requestReason: row.requestReason == null ? "" : text(row.requestReason), requestedAt: instant(row.requestedAt),
       state: status,
-      decidedBy: row.reviewerId === null ? undefined : id(row.reviewerId) === operator.id ? operator.name : NAME_PENDING,
+      decidedBy: row.reviewerId === null ? undefined : id(row.reviewerId) === operator.id ? operator.name : namePending(String(id(row.reviewerId))),
       decidedAt: approvalTime ? businessStamp(Date.parse(approvalTime)) : undefined,
       decisionReason: row.decisionReason == null ? undefined : text(row.decisionReason), failure,
       canDownload: bool(row.canDownload) && mine && operator.authorities.includes(TYPES[type]),
