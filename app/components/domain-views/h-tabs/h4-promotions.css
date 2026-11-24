@@ -326,7 +326,7 @@
 .h4l-preview-note[data-tone="warn"] { color: var(--rd-warn); }
 /* 确认框里的新旧概率对比 */
 .h4l-compare { display: flex; flex-direction: column; gap: 8px; }
-.h4l-compare + .rd-notice, .h4l-compare + .rd-facts { margin-top: 12px; }
+.h4l-compare + .rd-notice, .h4l-compare + .rd-facts, .rd-confirm-facts > .rd-notice + .h4l-compare { margin-top: 12px; }
 .h4l-compare-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) 96px; gap: 8px; align-items: center; }
 .h4l-compare-key { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .h4l-compare-total { margin: 0; display: flex; justify-content: flex-end; align-items: center; gap: 4px; color: var(--rd-text-2); font-size: var(--rd-text-aux); white-space: nowrap; }

@@ -888,8 +888,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       detail: <>概率 0–100，所有奖项合计要等于 100%；发真钱的奖项在覆盖率低于红线时存不了。</>,
       facts: (_value, draft) => draftApproval(draft) ? <Facts><ApprovalFact amplify="新建" object="奖池" /></Facts> : null,
       confirmLabelForValue: (_value, draft) => draftApproval(draft) ? "提交审批" : "确认提交",
-
-      amplifies: true,
       coverageLead: "这一档会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案新增一档奖品",
       getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
@@ -897,6 +895,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       businessForm: {
         kind: "multi-field",
         feedback: (value) => wheelRewardNameFeedback(value, "奖品名称"),
+        // 只在这一档真走审批（会多发奖）时提示；0% 的 USDT、代金券直写，还没填到能判断时都不提示（OP-55）。
+        amplifies: draft => !!draftApproval(draft),
         fields: [
           { key: "tierName", label: "奖项编号", current: "", placeholder: "如 uvt-100", required: true, help: "不能和已有奖项重复" },
           { key: "rewardName", label: "奖品名称", current: "", placeholder: "100 UVT", required: true, help: APP_VISIBLE_TEXT_HINT, explain: "抽中时 App 显示这串文字，不影响发放。" },
@@ -965,7 +965,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         fields: [
           { key: "guardKey", label: "护栏类型", current: "", inputKind: "select", mustChoose: true, options: ["budget", "kill"], optionLabels: { budget: "每日真钱奖预算", kill: "真钱奖发放开关" }, required: true, help: "每种只能有一条；各奖档每日库存由奖项自己的库存决定，不在这里建" },
           { key: "guardLabel", label: "名称", current: "", placeholder: "如 奖池预算", required: true },
-          // 值按护栏类型分开填：预算是数字，开关只能选开或关（后端把认不出的文字当成关）。
+          // 值按护栏类型分开填：预算是数字，开关只能选开或关（后端对认不出的开关文字直接拒绝：WHEEL_KILL_VALUE_INVALID）。
           { key: "budgetValue", label: "每日预算", current: "", placeholder: "如 200", inputKind: "number", min: 0.01, max: 1_000_000_000, step: 0.01, required: true, help: "大于 0，最多两位小数，单位 USDT", visibleWhen: { key: "guardKey", equals: "budget" } },
           { key: "killValue", label: "真钱奖发放", current: "", inputKind: "select", mustChoose: true, options: ["开", "关"], required: true, visibleWhen: { key: "guardKey", equals: "kill" } },
           { key: "note", label: "备注", current: "", placeholder: "如 单日真钱奖上限", required: false },
@@ -1056,7 +1056,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       effect: draft => wheelEffect(amplifies(tier => Number(probabilityText(tier, draft))), "奖池"),
       confirmLabelForValue: (_value, draft) => draft && amplifies(tier => Number(probabilityText(tier, draft))) ? "提交审批" : "确认提交",
       detail: <>一次设置所有奖项，加起来要等于 100%。调高发钱奖项的概率时，覆盖率低于红线无法保存。</>,
-      facts: <ProbabilityCompare tiers={tiers} store={store} valueOf={probabilityText} />,
+      // 走审批时常显谁批、批准前奖池不变（和标签、按钮、run 同一个放大判断）。
+      facts: (_value, draft) => <><ProbabilityCompare tiers={tiers} store={store} valueOf={probabilityText} />{draft && amplifies(tier => Number(probabilityText(tier, draft))) && <Facts><ApprovalFact amplify="这次修改" object="奖池" /></Facts>}</>,
       coverageLead: "调高中奖概率会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案调整各档概率",
       getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,

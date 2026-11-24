@@ -136,7 +136,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       title={req.title ?? req.action}
       icon={req.confirmTone === "danger" ? "alert" : surface ? "shield" : "check"}
       tone={req.confirmTone === "danger" ? "danger" : "neutral"}
-      sub={req.effect}
+      // 终态只剩提示和「取消」，不再挂原来的生效标签。
+      sub={finalConflict ? undefined : req.effect}
       className={surface ? "rd-confirm" : undefined}
       busy={submitting || readingConflict}
       dirty={value !== ""}

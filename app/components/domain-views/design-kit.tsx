@@ -4214,7 +4214,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     </div>
   );
   return (
-    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : spec ? "sliders" : "shield"} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={readyReview?.effect ?? (rdApproval ? effectiveEffect ?? <RdStatusTag tone="progress" filled explain={completionCopy}>批准后生效</RdStatusTag> : effectiveEffect)} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting || readingConflict} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
+    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : spec ? "sliders" : "shield"} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={finalConflict ? undefined : readyReview?.effect ?? (rdApproval ? effectiveEffect ?? <RdStatusTag tone="progress" filled explain={completionCopy}>批准后生效</RdStatusTag> : effectiveEffect)} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting || readingConflict} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
       footer={<>
         <Btn disabled={submitting || readingConflict} onClick={handleClose}>取消</Btn>
         {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>查询原结果</Btn>}

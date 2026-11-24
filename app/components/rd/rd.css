@@ -645,7 +645,7 @@ body:has(.rd-drawer[data-state="open"]:not([data-wide])) .rd-toast-host { left: 
 .rd-modal.rd-confirm .rd-destructive-impact { font-family: var(--rd-font); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
 .rd-reason-count { position: absolute; right: 10px; bottom: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; pointer-events: none; }
 .rd-confirm-facts { padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
-.rd-confirm-facts :is(.rd-facts, .rd-diff) + .rd-notice, .rd-confirm-facts .rd-notice + * { margin-top: 12px; }
+.rd-confirm-facts :is(.rd-facts, .rd-diff) + .rd-notice, .rd-confirm-facts > .rd-notice + :is(.rd-facts, .rd-diff) { margin-top: 12px; }
 .rd-confirm-facts > .rd-confirm-funding { margin-top: 12px; }
 .rd-funding-coverage { margin-top: 4px; color: var(--rd-text-2); }
 .rd-funding-coverage b { font-weight: 500; color: var(--rd-text); font-variant-numeric: tabular-nums; }
