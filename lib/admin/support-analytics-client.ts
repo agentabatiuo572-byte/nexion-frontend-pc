@@ -2,6 +2,7 @@ import { PERFORMANCE_VERSION, legacyPerformanceSelectorError, performanceDecimal
 import { SupportClientError, supportRequest } from "./m-support-client.ts";
 import { parseBusinessTime } from "./business-time.ts";
 import { parseInvitationCountReason, parseInvitationInviter } from "./invitation-read-contract.ts";
+import { supportContractMalformed } from "./m-support-read-contract.ts";
 
 const VIEWS = ["OVERVIEW", "AGENTS", "CUSTOMERS", "FINANCE", "DEVICES", "ACTIVITY"] as const;
 const DETAIL_VIEWS = ["NET_CONTRIBUTIONS", "FIRST_DEPOSITS", "FIRST_PURCHASES"] as const;
@@ -31,7 +32,7 @@ export type SupportAnalyticsQuery = {
   expectedVersion?: string; signal?: AbortSignal;
 };
 
-function malformed(field: string): never { throw new Error(`SUPPORT_CONTRACT_MALFORMED:analytics.${field}`); }
+function malformed(field: string): never { return supportContractMalformed(`analytics.${field}`); }
 // The response allowlists include B80 compatibility keys by name. The legacy projections omit their values.
 function object(value: unknown, keys: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) malformed("object");
@@ -223,8 +224,18 @@ function customer(value: unknown) {
   if (advisorAvatarRef !== null && advisorAvatarRef !== `/api/admin/content/support-agents/${agentId}/avatar?customerId=${customerId}`) malformed("advisorAvatarRef");
   const t = object(r.task, "status enabled due waitingReply firstContact nextDueAt waitingSinceAt");
   const task = t.status === "UNAVAILABLE" ? (Object.keys(t).length === 1 ? { status: "UNAVAILABLE" as const } : malformed("taskUnavailable")) : { status: enumeration(t.status, READS), enabled: t.enabled === null ? null : boolean(t.enabled), due: t.due === null ? null : boolean(t.due), waitingReply: t.waitingReply === null ? null : boolean(t.waitingReply), firstContact: t.firstContact === null ? null : boolean(t.firstContact), nextDueAt: nullableInstant(t.nextDueAt), waitingSinceAt: nullableInstant(t.waitingSinceAt) };
+  let inviter;
+  if (r.inviter !== undefined) {
+    const rawInviter = object(r.inviter, "state userNo nickname reason");
+    try {
+      inviter = parseInvitationInviter(rawInviter);
+    } catch (error) {
+      if (error instanceof Error && error.message === "INVITATION_INVITER_INVALID") malformed("customer.inviter");
+      throw error;
+    }
+  }
   return {
-    ...(r.inviter === undefined ? {} : { inviter: parseInvitationInviter(object(r.inviter, "state userNo nickname reason")) }),
+    ...(inviter === undefined ? {} : { inviter }),
     customerId, customerNo: nullableText(r.customerNo), nickname: nullableText(r.nickname), avatar: avatarRef, level: nullableText(r.level), customTags: array(r.customTags, text), systemTags: array(r.systemTags, text), systemTagsStatus: enumeration(r.systemTagsStatus, ["PARTIAL"]), profileRef, registeredAt: nullableInstant(r.registeredAt), assignedAt: nullableInstant(r.assignedAt), category: enumeration(r.category, ["BOUND", "PENDING", "ANOMALY"]), placement: enumeration(r.placement, ["GROUPED", "UNGROUPED", "GROUP_QUEUE", "GLOBAL_QUEUE", "UNKNOWN"]), handoverRequired: boolean(r.handoverRequired), owner: { agentId, groupId: nullableId(o.groupId), agentName: nullableText(o.agentName), advisorAvatar: avatar(o.advisorAvatar), advisorAvatarRef }, ...parseSupportCustomerStatistics({ first: r.first, lifetime: r.lifetime, lifetimeStatus: r.lifetimeStatus, invitations: r.invitations, activity: r.activity }), devices: devices(r.devices), task, funds: funds(r.funds),
   };
 }
@@ -452,7 +463,10 @@ export const supportPerformanceAnalyticsClient = {
       if (options.expectedVersion || !legacyPerformanceSelectorError(error, "SUPPORT_ANALYTICS_QUERY_INVALID", "SUPPORT_METRIC_VERSION_UNSUPPORTED", "SUPPORT_READ_SCOPE_INVALID", "SUPPORT_ANALYTICS_INVALID_QUERY")) throw error;
       return supportAnalyticsClient.query(options);
     }
-    if (performanceGeneration(result) === "LEGACY" && !options.expectedVersion) return supportAnalyticsClient.query(options);
+    if (performanceGeneration(result) === "LEGACY" && !options.expectedVersion) {
+      parseSupportAnalyticsResponse(result, expected);
+      return supportAnalyticsClient.query(options);
+    }
     return parseSupportAnalyticsResponse(result, expected, true);
   },
   async months(signal?: AbortSignal) {
@@ -465,8 +479,9 @@ export const supportPerformanceAnalyticsClient = {
       return legacy();
     }
     const generation = performanceGeneration(result);
+    const months = parseSupportAnalyticsMonths(result);
     if (generation === "LEGACY") return legacy();
-    return { generation, months: parseSupportAnalyticsMonths(result) };
+    return { generation, months };
   },
   async firstDetails(options: Omit<SupportAnalyticsQuery, "view"> & { view: "FIRST_DEPOSITS" | "FIRST_PURCHASES" }, origin: PerformanceWindow): Promise<SupportAnalyticsDetailResponse | IncompleteFirstDetail> {
     const expected = query(options);

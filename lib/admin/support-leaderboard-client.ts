@@ -1,5 +1,5 @@
 import { PERFORMANCE_VERSION, legacyPerformanceSelectorError, performanceGeneration, performanceTotals, performanceObject, type PerformanceTotals } from "./support-performance-contract";
-import { MContentReadError, parseMContentApiEnvelope } from "./m-support-read-contract";
+import { MContentReadError, parseMContentApiEnvelope, supportContractMalformed } from "./m-support-read-contract";
 import { SupportClientError, supportRequest } from "./m-support-client.ts";
 import { guardedFetch } from "./error-messages.ts";
 import { businessStamp, businessZone } from "./business-time.ts";
@@ -13,7 +13,7 @@ const PARAMETERS = "board month currency scope groupId keyword pageNum pageSize 
 const BASE = "/api/admin/content/support-workbench/leaderboard";
 export type LeaderboardQuery = { board: typeof BOARDS[number]; month?: string; currency?: "USDT" | "UVT"; scope: typeof SCOPES[number]; groupId?: string; keyword?: string; pageNum?: number; pageSize?: number; expectedVersion?: string; metricVersion?: typeof PERFORMANCE_VERSION };
 export type LeaderboardScope = { scope: typeof SCOPES[number]; groups: { id: string; name: string }[] };
-function invalid(field: string): never { throw new Error(`SUPPORT_CONTRACT_MALFORMED:leaderboard.${field}`); }
+function invalid(field: string): never { return supportContractMalformed(`leaderboard.${field}`); }
 function object(value: unknown, fields: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) invalid("object");
   const row = value as Record<string, unknown>;
@@ -167,7 +167,12 @@ export function parseLeaderboardDetail(value: unknown, q: LeaderboardQuery, agen
 }
 export type LeaderboardDetail = ReturnType<typeof parseLeaderboardDetail>;
 export function publicLeaderboardAvatar(url: string, agentId: string, q: LeaderboardQuery, expectedVersion: string): string {
-  const target = new URL(url, "https://leaderboard.invalid");
+  let target: URL;
+  try {
+    target = new URL(url, "https://leaderboard.invalid");
+  } catch {
+    return invalid("avatarPath");
+  }
   if (!url.startsWith(`${BASE}/`) || target.origin !== "https://leaderboard.invalid" || target.pathname !== `${BASE}/${id(agentId)}/avatar` || target.hash) invalid("avatarPath");
   const found = new Set<string>(); const raw: Record<string, string> = {};
   for (const [key, value] of target.searchParams) { if (!PARAMETERS.split(" ").includes(key) || found.has(key)) invalid("avatarQuery"); found.add(key); raw[key] = value; }
@@ -214,7 +219,11 @@ export const supportLeaderboardClient = {
       if (root.board !== q.board) invalid("upgradingBoard");
       throw new LeaderboardUpgrading("数据正在升级");
     }
-    return generation === "LEGACY" ? parseLeaderboardPage(await read(legacy), legacy) : parseLeaderboardPage(response, next);
+    if (generation === "LEGACY") {
+      parseLeaderboardPage(response, legacy);
+      return parseLeaderboardPage(await read(legacy), legacy);
+    }
+    return parseLeaderboardPage(response, next);
   },
   detail(agentId: string, q: LeaderboardQuery, signal?: AbortSignal): Promise<LeaderboardDetail> {
     id(agentId);

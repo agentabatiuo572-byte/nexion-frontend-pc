@@ -4056,7 +4056,9 @@ export function supportContractReadError(error: unknown): string | undefined {
 /** 读取失败用这个：不说「结果未知」「不要重复提交」，这些话只给写操作（TX-14）。 */
 export function displayAdminReadError(error: unknown): string {
   const shown = displayAdminError(error);
-  if (shown === SERVICE_DOWN_WRITE || shown === GATEWAY_FAILED_WRITE) return SERVICE_DOWN_READ;
+  if (shown === SERVICE_DOWN_WRITE || shown === GATEWAY_FAILED_WRITE || shown === ADMIN_ERROR_MESSAGES.CONTENT_BACKEND_UNAVAILABLE) {
+    return SERVICE_DOWN_READ;
+  }
   // Some clients format HTTP 503 using the generic 5xx code but retain the status.
   if (shown === ADMIN_ERROR_MESSAGES.INTERNAL_SERVER_ERROR && error instanceof Error && "status" in error && error.status === 503) {
     return SERVICE_DOWN_READ;

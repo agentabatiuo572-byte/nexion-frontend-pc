@@ -1,6 +1,6 @@
 "use client";
 import { m1CustomerCode } from "./m1-customer-code";
-import { ADMIN_ERROR_MESSAGES, displayAdminError, supportContractReadError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminReadError, supportContractReadError } from "@/lib/admin/error-messages";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -158,7 +158,7 @@ export function analyticsErrorText(error: unknown): string {
   if (contractError) return contractError;
   if (error instanceof SupportClientError) {
     if (error.backendMessage === "SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE") return ADMIN_ERROR_MESSAGES.SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE;
-    if (error.backendMessage && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error);
+    if (error.backendMessage && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminReadError(error);
     const status = analyticsResponseStatus(error);
     if (status === 401) return "登录已失效，请重新登录。";
     if (status === 403) return "当前范围已无查看权限，请重新核对负责范围。";

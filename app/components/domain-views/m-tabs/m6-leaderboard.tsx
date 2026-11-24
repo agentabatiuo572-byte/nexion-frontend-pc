@@ -19,6 +19,7 @@ import { PERF_UNAVAILABLE, type PerfTotals } from "./perf-view";
 import { boardTotals, leaderboardPerf, type BoardPerf } from "./perf-wiring";
 import { usePerformanceExportPorts } from "./perf-export-ports";
 import { PERFORMANCE_VERSION } from "@/lib/admin/support-performance-contract";
+import { supportContractMalformed } from "@/lib/admin/m-support-read-contract";
 import { PerfExportDialog } from "./perf-export";
 import "./m6-leaderboard.css";
 
@@ -128,7 +129,7 @@ export function M6Leaderboard() {
     const controller = new AbortController(); let active = true;
     setResult(undefined); setFailure(undefined); closeDetail();
     if (enabled) void supportLeaderboardClient.page(query, controller.signal).then(next => {
-      if (next.self.row && next.self.row.id !== String(session?.adminId)) throw new Error("本人成绩身份不一致");
+      if (next.self.row && next.self.row.id !== String(session?.adminId)) supportContractMalformed("leaderboard.selfIdentity");
       if (active && !controller.signal.aborted && liveKey.current === requestKey) { setResult({ key: requestKey, data: next }); setLastGood({ identity, data: next }); setScopeStale(false); }
     }).catch(cause => {
       if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
@@ -177,7 +178,7 @@ export function M6Leaderboard() {
     const sequence = ++detailSequence.current; setDetail({ key: requestKey, agentId });
     const bound = acceptedQuery(data, query);
     void supportLeaderboardClient.detail(agentId, bound, controller.signal).then(next => {
-      if (next.sourceVersion !== data.sourceVersion || next.definitionVersion !== data.definitionVersion || next.asOf !== data.asOf || next.referenceMonth !== data.referenceMonth || next.state !== data.state || next.candidateCoverage !== data.candidateCoverage) throw new Error("公开成绩版本信息不一致");
+      if (next.sourceVersion !== data.sourceVersion || next.definitionVersion !== data.definitionVersion || next.asOf !== data.asOf || next.referenceMonth !== data.referenceMonth || next.state !== data.state || next.candidateCoverage !== data.candidateCoverage) supportContractMalformed("leaderboard.detailSnapshot");
       if (!controller.signal.aborted && sequence === detailSequence.current && liveKey.current === requestKey) setDetail({ key: requestKey, agentId, data: next });
     }).catch(cause => {
       if (controller.signal.aborted || sequence !== detailSequence.current || liveKey.current !== requestKey) return;
