@@ -69,9 +69,11 @@ import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrect
 import { RecoveryPanel, SETTLED_REJECTED, receiptExplain, receiptFact, receiptRejected, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
 import { COUNT_LABELS, COUNTS_RULE, CountsExplain, CountsFacts, CountsNotice, CountsRetryButton, InviterValue, countText, useCountsRetryFocus, type CountsView } from "@/app/components/invitation/invitation-view";
-import { INVITATION_REREAD_BLOCK, inviterDetailView, referralCountsView } from "@/app/components/invitation/wiring";
+import { inviterDetailView, referralCountsView } from "@/app/components/invitation/wiring";
 
 const STALE_PROFILE_WRITE_BLOCK = "资料没有刷新成功，刷新成功后再操作";
+/** 同一次重读在途时，各写入口的原因都用这一句；读失败后才换成上面那句（R30）。 */
+const PROFILE_REREAD_BLOCK = "正在重新读取，读完再操作";
 
 /**
  * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、回收并记录置换和回收）共用一张表，槽位分命名空间。
@@ -899,7 +901,8 @@ export default function UserDetailPage() {
   const displayNickname = userNicknameText(nickname, profile?.phoneMasked);
   const hasDetail = detail !== null;
   const staleWriteReason = detailKey === readKey && hasDetail && referralError ? STALE_PROFILE_WRITE_BLOCK : undefined;
-  const profileWriteBlockedReason = staleWriteReason ?? (referralRetrying ? INVITATION_REREAD_BLOCK : undefined);
+  // 挡不挡写和原来一样（资料旧了或推荐团队在重读）；只有原因的说法按在途与否换（R30）。
+  const profileWriteBlockedReason = staleWriteReason || referralRetrying ? loading || referralRetrying ? PROFILE_REREAD_BLOCK : staleWriteReason : undefined;
   const paymentSecurityPort = useMemo(() => {
     if (detailKey !== readKey || !hasDetail || !c3UserId) return null;
     return supportScope ? paymentSecurityPorts.support(c3UserId) : paymentSecurityPorts.global(c3UserId);
@@ -1061,7 +1064,7 @@ export default function UserDetailPage() {
     }
   };
 
-  const busyReason = loading || referralRetrying ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
+  const busyReason = loading || referralRetrying ? PROFILE_REREAD_BLOCK : actionPending ? `正在执行：${actionPending}` : undefined;
   const deviceRetryBlock = (command: C1Command) => {
     if (isExplicitRejection(command.rejection)) return "重试被明确拒绝";
     const result = pendingFound[command.commandKey];
@@ -1683,7 +1686,6 @@ export default function UserDetailPage() {
       {conclusion}
       {recoveryPanel}
       {writeResultNotice}
-      {inPageWrites && staleWriteReason && <p className="rd-toolbar-note">{staleWriteReason}</p>}
 
       {kpis.length > 0 && <StatBand label="关键数字">
         {kpis.map((kpi, index) => (

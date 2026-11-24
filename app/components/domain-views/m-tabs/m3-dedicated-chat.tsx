@@ -65,12 +65,12 @@ export type SessionEndRecord = PendingMutationRecord & { actorId: number; custom
 const sessionEndCommands = createPendingMutationStore<SessionEndRecord>({ storageKey: "nexion-admin-m3-session-end-v1", retainExpiredRecords: true, isValidRecord: (row) => Number.isSafeInteger(row.actorId) && typeof row.customerId === "string" && (row.rejection === undefined || isExplicitRejection(row.rejection) && row.rejection.status !== 404) });
 /**
  * 单行省略的字在能聚焦的控件旁边（会话行整行的点击区、「看全部」）：键盘聚焦这个控件、字确实被省略时，弹出全文气泡（ST-04，同 rd Cell 的做法）。
- * 鼠标悬停看控件的 title。
+ * 鼠标悬停看控件的 title。按 Esc 关掉气泡，焦点留在控件上（同共用问号气泡，I07）。
  */
 function FocusFullText({ text, clipped, children }: { text?: string; clipped: (trigger: HTMLElement) => Element | null | undefined; children: ReactElement }) {
   const [open, setOpen] = useState(false);
   if (!text) return children;
-  return <Tooltip.Provider><Tooltip.Root open={open}>
+  return <Tooltip.Provider><Tooltip.Root open={open} onOpenChange={next => { if (!next) setOpen(false); }}>
     <Tooltip.Trigger asChild onFocus={event => { const target = clipped(event.currentTarget); setOpen(event.currentTarget.matches(":focus-visible") && !!target && target.scrollWidth > target.clientWidth + 1); }} onBlur={() => setOpen(false)}>{children}</Tooltip.Trigger>
     <Tooltip.Portal><Tooltip.Content className="rd-tip" side="bottom" align="start" sideOffset={4}>{text}</Tooltip.Content></Tooltip.Portal>
   </Tooltip.Root></Tooltip.Provider>;
