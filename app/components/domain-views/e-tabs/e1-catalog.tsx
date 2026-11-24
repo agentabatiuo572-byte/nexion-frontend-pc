@@ -60,8 +60,9 @@ export function E1Amount({ value, precision, unit }: { value: number | string | 
   return <span className="e1-decimal" title={`${raw}${unit ? ` ${unit}` : ""}`} aria-label={`${raw}${unit ? ` ${unit}` : ""}`}>{e1Amount(value)}{unit && ` ${unit}`}</span>;
 }
 
-function E1MiddleText({ text, tail = 8 }: { text: string; tail?: number }) {
-  return <span className="e1-middle-text" title={text}><span>{text.slice(0, -tail)}</span><span>{text.slice(-tail)}</span></span>;
+/** clip：放在表格 Cell 里时给省略的那段加 rd-cell-clip，Cell 量到截断才给键盘入口和全文气泡（ST-04）。 */
+function E1MiddleText({ text, tail = 8, clip }: { text: string; tail?: number; clip?: boolean }) {
+  return <span className="e1-middle-text" title={clip ? undefined : text}><span className={clip ? "rd-cell-clip" : undefined}>{text.slice(0, -tail)}</span><span>{text.slice(-tail)}</span></span>;
 }
 
 export function E1TargetRange({ sku, label }: { sku: OpsSku; label?: ReactNode }) {
@@ -469,7 +470,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
             const lock = ctx.locked("device_generation_gate", g.id);
             const forceBlock = !state.declaredPhase || state.phaseConflict || !state.eligibilityReady || !state.phaseReached ? state.blockers.join("；") : undefined;
             return <Tr key={g.id} mark={planSku === g.id ? "hit" : undefined}>
-              <Td><div className="e1-table-stack"><strong><E1MiddleText text={g.name} /></strong><span data-mono><E1MiddleText text={g.id} tail={10} /></span></div></Td>
+              <Td><Cell main={<strong><E1MiddleText text={g.name} clip /></strong>} sub={<span data-mono><E1MiddleText text={g.id} tail={10} clip /></span>} title={`${g.name}\n${g.id}`} /></Td>
               <Td align="right"><div className="e1-table-stack"><span>{presentation.effectiveLabel}</span>{g.phaseOffset ? <Explain label={`${g.name}完整开放月份`} content={presentation.adjustmentLabel}><span className="e1-muted">{g.phaseOffset > 0 ? "推迟" : "提前"} {Math.abs(g.phaseOffset)} 个月</span></Explain> : <span className="e1-muted">{presentation.adjustmentLabel}</span>}</div></Td>
               <Td><div className="e1-table-stack">{!available ? <span className="e1-muted">商品目录未读取，开放状态待核对</span> : <><StatusTag tone={state.unlocked ? "ok" : needsAttention ? "warn" : "neutral"} icon={state.unlocked ? CheckCircle2 : needsAttention ? ShieldAlert : Clock3} explain={state.blockers.length ? state.blockers.join("；") : undefined}>{state.unlocked ? "已开放" : "尚未开放"}</StatusTag>{g.forceUnlock ? <StatusTag tone="neutral" icon={FastForward} explain={`批准人 ${g.forceUnlockApprovedBy || "未记录"}；批准时间 ${g.forceUnlockApprovedAt ? g.forceUnlockApprovedAt.replace("T", " ") : "未记录"}；操作记录 ${g.forceUnlockAuditId || "未记录"}`}>强制提前</StatusTag> : !state.unlocked && <span className={needsAttention ? "e1-card-warning" : "e1-muted"}>{needsAttention ? state.blockers[0] : !state.phaseReached ? `待${phaseLabel(g.phase)}` : `距开放 ${Math.max(0, state.effectiveMonth - platformMonth)} 个月`}</span>}</>}</div></Td>
               <Td><span className="e1-phase-name" title={phaseLabel(g.phase)}>{phaseLabel(g.phase)}</span></Td><Td><StatusTag tone={g.eligibility ? "ok" : "warn"} icon={g.eligibility ? ShieldCheck : ShieldAlert}>{g.eligibility ? "已补齐" : "未补录"}</StatusTag></Td>
