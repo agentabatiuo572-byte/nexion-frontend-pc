@@ -227,7 +227,9 @@ export function PerformanceBody({ row, board, month, perf, stale, refreshFailed 
   const movement = movementText(row), reason = movementReason(row);
   // 没核完的项写「…待核」，和表格、结论同一个说法；旧后端的「暂不可用」照写。
   const amountGap = perf.amount.state === "complete" ? undefined : perf.amount.state === "unavailable" && perf.amount.reason === PERF_UNAVAILABLE ? "业绩额暂不可用" : perf.amount.state === "unavailable" && perf.amount.reason === "数据正在升级" ? "业绩额：数据正在升级" : "业绩额待核";
-  const gaps = [amountGap, row.firstPayment.coverage === "complete" ? undefined : "首充人数待核", row.customers.coverage === "complete" ? undefined : "当前绑定客户待核"].filter(Boolean);
+  const countGap = (metric: SupportBoardCount, label: string) => metric.coverage === "complete" ? undefined
+    : metric.coverage === "partial" || PENDING_REASONS.includes(metric.reason || "") ? `${label}待核` : `${label}：${metric.reason || "数据未同步"}`;
+  const gaps = [amountGap, countGap(row.firstPayment, "首充人数"), countGap(row.customers, "当前绑定客户")].filter(Boolean);
   const amount = perfText(perf.amount), inflow = perfText(perf.inflow), withdrawal = perfText(perf.withdrawal);
   return <>
     <div className="m6-detail-who">
