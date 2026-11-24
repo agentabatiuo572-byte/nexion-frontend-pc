@@ -2,7 +2,7 @@ import type { InvitationInviter, InvitationInviterDetail, SupportInvitationInvit
 import type { SupportCustomerStatistics } from "@/lib/admin/support-analytics-client";
 import { COUNTS_FAILED_REASON, INVITER_SCOPE_NOTE, INVITER_UNKNOWN_NOTE, type CountsView, type InviterView } from "./invitation-view";
 
-export const INVITATION_REREAD_BLOCK = "资料正在重读，读完再操作";
+export const INVITATION_REREAD_BLOCK = "正在重新读取，读完再操作";
 
 const inviterUnknownReasons = {
   DANGLING_SPONSOR: "记录里的邀请人账户已不存在，无法确认是谁邀请的。",
