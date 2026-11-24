@@ -95,7 +95,7 @@ type ProfileGroup = Exclude<keyof SupportProfile, "actions" | "statistics">;
 const profileRefreshGroups = ["identity", "statistics", "finance", "risk", "annotations", "service"] as const;
 type ProfileReadErrors = Partial<Record<ProfileGroup | "statistics", string>>;
 type ProfileReadIntent = ProfileGroup | "initial" | "refresh" | "statistics" | "annotation-write";
-type AnnotationWrite = { completeReadback?: () => void };
+type AnnotationWrite = { scope: string; completeReadback?: () => void };
 
 function isProfileGroup(intent: ProfileReadIntent): intent is ProfileGroup {
   return intent !== "initial" && intent !== "refresh" && intent !== "statistics" && intent !== "annotation-write";
@@ -166,13 +166,19 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const stamp = useRef(""), mounted = useRef(true); stamp.current = requestStamp;
   const profileReadSequence = useRef(0);
   const profileReadIntents = useRef(new Set<ProfileReadIntent>());
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const settleAnnotationReadback = () => {
     const write = annotationWrite.current;
     const complete = write?.completeReadback;
     if (write) write.completeReadback = undefined;
     complete?.();
   };
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      settleAnnotationReadback();
+    };
+  }, []);
   const revokeScope = (message = "可能是客户归属或你的查看范围变了。请重试，或返回列表核对。") => {
     if (revokedScope.current === scopeKey) return;
     revokedScope.current = scopeKey; stamp.current += ":revoked";
@@ -234,7 +240,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
         setPaymentIdentity(null);
         setError(reason);
       }
-      if (statistics) setStatisticsRetryError(reason);
+      if (statistics && !refresh) setStatisticsRetryError(reason);
       const failedGroups = refresh ? profileRefreshGroups : groups;
       const errors: ProfileReadErrors = Object.fromEntries(failedGroups.map(group => [group, reason]));
       if (annotationReadback) errors.annotations = `已保存。${reason}`;
@@ -267,6 +273,17 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController();
+    const write = annotationWrite.current;
+    profileReadIntents.current.clear();
+    if (write && write.scope !== profileAuthorization) {
+      settleAnnotationReadback();
+      annotationWrite.current = null;
+      setWriting(false);
+      setWriteError("");
+    } else if (write?.completeReadback) {
+      // The new snapshot read completes a pending write readback in the same authorization scope.
+      profileReadIntents.current.add("annotation-write");
+    }
     const keepProfile = profile !== null && scopeVersion !== previousScopeVersion.current;
     previousScopeVersion.current = scopeVersion;
     setError("");
@@ -278,8 +295,6 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     void readProfile(keepProfile ? "refresh" : "initial", controller.signal);
     return () => {
       controller.abort();
-      profileReadIntents.current.clear();
-      settleAnnotationReadback();
       profileReadSequence.current++;
     };
   }, [customerId, epoch, reload, profileRetry, profileScope]);
@@ -312,6 +327,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   }, [customerId, epoch, conversation?.id]);
   const retryStatistics = () => {
     if (scopeDenied || stamp.current !== requestStamp || annotationWrite.current || paymentWriteBusy || profileReadIntents.current.has("statistics")) return;
+    if (groupReadErrors.statistics) profileReadIntents.current.add("refresh");
     return readProfile("statistics");
   };
   const retryGroup = (key: ProfileGroup) => {
@@ -330,12 +346,12 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const writable = Boolean(!scopeDenied && conversationId && conversation?.ownerAdminId === session?.adminId && (session?.role === "super" || session?.role === "superadmin" || session?.authorities.includes("service_m3_write")));
   const canReadAccount = session?.role === "super" || session?.role === "superadmin" || Boolean(session?.authorities.includes("user_c1hub_read"));
   const annotationsStale = Boolean(groupReadErrors.annotations);
-  const annotationScope = `${scopeKey}:${conversationId ?? ""}:${conversation?.ownerAdminId ?? ""}:${conversation?.assignmentId ?? ""}:${writable}`;
+  const annotationScope = `${profileAuthorization}:${writable}`;
   const currentAnnotationScope = useRef(annotationScope); currentAnnotationScope.current = annotationScope;
   async function annotate(action: (id: string) => Promise<boolean>, clear: () => void, failureInDialog = false) {
     if (revokedScope.current === scopeKey || stamp.current !== requestStamp || !conversationId || !writable || annotationsStale || annotationWrite.current || profileReadIntents.current.has("statistics")) return false;
     const saved = stamp.current;
-    const writeToken: AnnotationWrite = {};
+    const writeToken: AnnotationWrite = { scope: profileAuthorization };
     annotationWrite.current = writeToken;
     setWriting(true); setWriteError("");
     const sameWriteScope = () => mounted.current && annotationWrite.current === writeToken && revokedScope.current !== scopeKey && currentAnnotationScope.current === annotationScope;
@@ -346,15 +362,15 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       // 写请求失败由页面 toast 或删除确认框展示一次。
       if (ok) {
         confirmed = true; clear();
-        // A new message can advance the conversation version without changing
-        // annotation ownership. Settle the receipt, but let the newer read win.
-        if (saved === stamp.current) {
-          // Wait for the readback intent to settle even if another request delivers its result.
-          await new Promise<void>(resolve => {
-            writeToken.completeReadback = resolve;
+        await new Promise<void>(resolve => {
+          writeToken.completeReadback = resolve;
+          // The write can refresh the conversation snapshot before it returns its receipt.
+          if (saved !== stamp.current && profileReadIntents.current.has("refresh")) {
+            profileReadIntents.current.add("annotation-write");
+          } else {
             void readProfile("annotation-write");
-          });
-        }
+          }
+        });
       }
       return ok;
     } catch(e) {
@@ -379,10 +395,17 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     ? { kind: "failed", reason: statisticsRetryError, ...statisticsRetry }
     : supportCountsView(statistics?.invitations, statisticsRetry);
   const countsHead = counts.kind === "anomaly" ? "人数暂不显示" : counts.kind === "partial" ? "人数没有读全" : counts.kind === "failed" ? "人数加载失败" : "";
-  const statisticsFocus = useCountsRetryFocus(statisticsRetrying, counts.kind === "ready");
+  const statisticsRefreshError = groupReadErrors.statistics;
+  const statisticsFocus = useCountsRetryFocus(statisticsRetrying, counts.kind === "ready" && !statisticsRefreshError);
   const statisticsLive = <span role="status" className="rd-sr-only">{statisticsFocus.status}</span>;
-  // 人数重读失败时，这一组上次读到的首充、累充还留着：在组顶写明是哪次的数据（ST-36）；人数那一行照旧写失败原因和重试。
-  const statisticsStale = (statisticsRetryError || groupReadErrors.statistics) && !statisticsRetrying && statisticsGroup?.status === "READY" && <p className="m3-profile-state" data-tone="warn">{staleText(statisticsGroup)}</p>;
+  const countsHaveRetry = counts.kind === "failed" || counts.kind === "partial";
+  const showStatisticsRetry = Boolean(statisticsRefreshError) && !countsHaveRetry;
+  const showStatisticsStale = !statisticsRetrying && Boolean(statisticsRetryError || statisticsRefreshError);
+  const statisticsStale = statisticsGroup?.status === "READY" && (showStatisticsStale || showStatisticsRetry) &&
+    <p className="m3-profile-state" data-tone="warn">
+      {showStatisticsStale && <>{staleText(statisticsGroup)}{statisticsRefreshError && <Explain label="刷新失败的原因" content={statisticsRefreshError} />}</>}
+      {showStatisticsRetry && <CountsRetryButton {...statisticsRetry} />}
+    </p>;
   const firstKnown = statistics?.first.status === "AVAILABLE";
   const firstConfirmed = firstKnown && statistics?.first.state === "CONFIRMED";
   const firstState = firstConfirmed ? "已首充" : firstKnown && statistics?.first.state === "NONE" ? "未首充" : "未知";
