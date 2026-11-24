@@ -82,7 +82,9 @@ function useF2Model(ctx: FViewCtx) {
   return { canRoyaltyRate, canPolicyAmplify, l1NexReadonly, l1NexStatus, value, paused, gate, rank, gateRaw, rankRaw, cap };
 }
 
-const approvalCopy = (perm: string) => `批准人要是另一位管理员，需有审批批准权限和「${perm}」权限；批准前按原设置执行。`;
+/** 走审批的修改：批准前不变；谁来批、需有权限写在事实区，需要的权限只写一次。 */
+const approvalCopy = "批准前按原设置执行。";
+const approvalFacts = (perm: string) => <><Fact k="谁来批">另一位管理员，不能是你</Fact><Fact k="需有权限">「{perm}」权限和审批批准权限</Fact></>;
 const effectTag = <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才生效；只影响之后新算的订单，已经算好的不重算。">批准后生效</StatusTag>;
 const COVERAGE_CHECK = "批准时检查兑付覆盖率，低于红线不会执行。";
 
@@ -129,12 +131,13 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
           <Fact k="批准后实际执行">{next === undefined ? (current ? `现在是 ${rateMeaning(current)}` : "未配置") : rateMeaning(next) ?? "—"}</Fact>
           <Fact k="示例订单里这一层">{rate ? <Change from={`${num(sampleUsdt(rate.usdt))} USDT`} to={next === undefined ? `${num(sampleUsdt(rate.usdt))} USDT` : `${num(sampleUsdt(Number(next)))} USDT`} /> : "这一层还没有规则"}</Fact>
           {total.before !== null && <Fact k={anyPaused ? "合计含暂停层" : "七层合计占订单"}><Change from={`${num(total.before)}%`} to={`${num(total.after)}%`} /></Fact>}
+          {approvalFacts("团队奖励比例")}
         </Facts>;
       },
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text={missingRuleCopy} /></Notice>,
       statedBrief: { impact: "批准后，之后新算的订单这一层按新比例算；已经算好的订单不重算。", check: COVERAGE_CHECK },
       detail: `${level} USDT 奖励比例 · 现在 ${current ? `${current}%` : "未配置"}。只影响之后的结算。`,
-      completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多付钱",
+      completionCopy: approvalCopy, coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多付钱",
       submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(`F.unilevel.${level}`, next, reason); },
       done: `调整 ${level} USDT 奖励比例 已提交审批，等另一位管理员批准`,
     });
@@ -152,11 +155,12 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       facts: (next) => <Facts>
         {next !== undefined && current && Number(next) < Number(current) && <Fact k="这次">调低，平台每笔订单少发 UVT</Fact>}
         <Fact k="这一层另发 UVT">{rate ? <Change from={`${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} to={`${num(rate.usdt === null || !(next ?? current).trim() ? null : sampleUsdt(rate.usdt)! * Number(next ?? current))} UVT`} /> : "这一层还没有规则"}</Fact>
+        {approvalFacts("团队奖励比例")}
       </Facts>,
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text={missingRuleCopy} /></Notice>,
       statedBrief: { impact: "批准后，之后新算的订单这一层按新系数另发 UVT；已经算好的不重算。", check: COVERAGE_CHECK },
       detail: `${level} 每发 1 USDT 奖励，另发多少 UVT · 现在 ${current || "未配置"}。只影响之后的结算。`,
-      completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多发 UVT",
+      completionCopy: approvalCopy, coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多发 UVT",
       submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(`F.unilevel.nex.${level}`, next, reason); },
       done: `调整 ${level} UVT 奖励系数 已提交审批，等另一位管理员批准`,
     });
@@ -175,7 +179,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
     },
     statedBrief: { impact: "七层一起提交，批准后一起生效。暂停的层，之后新算的订单这一层记 0、不补发；已经算好的不变。不影响好友设备收益奖励，也不是整体结算暂停。", check: "整组一次写入，有一项失败整组都不改。" },
     detail: "L1–L7 一起提交审批，批准后只影响之后的购买奖励，不影响好友设备收益奖励。",
-    completionCopy: approvalCopy("团队奖励规则"), coverageCheck: COVERAGE_CHECK,
+    completionCopy: approvalCopy, coverageCheck: COVERAGE_CHECK, facts: <Facts>{approvalFacts("团队奖励规则")}</Facts>,
     submit: async (reason, _next, values) => {
       if (!values || LAYERS.some((level) => values[level] !== "on" && values[level] !== "off")) throw new Error("请选择 L1–L7 全部的暂停状态");
       await ctx.updateFConfigBatch("F2", LAYERS.map((level) => ({ key: `F.unilevel.${level}.paused`, value: values[level] })), reason);
@@ -296,11 +300,14 @@ function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: 
     effect: effectTag,
     edit: enumSpec ? { kind: "select", current: parsed?.normalized ?? value, options: enumSpec.options, unit: enumSpec.unit }
       : { kind: "number", current: value, ...(promo ? { min: 1, max: 3, unit: "倍", amplifiesWhen: "increase" as const } : merge ? { min: 0, max: 100, unit: "%" } : {}), hint: help.hint },
-    facts: parsed && !parsed.legal ? <Facts><Fact k="现在存的值" tone="danger">{value}（不是有效值）</Fact></Facts>
-      : !value ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK[paramKey].replace(/^没配[^，]*时，/, "")}</Fact></Facts> : undefined,
+    facts: <Facts>
+      {parsed && !parsed.legal ? <Fact k="现在存的值" tone="danger">{value}（不是有效值）</Fact>
+        : !value && <><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK[paramKey].replace(/^没配[^，]*时，/, "")}</Fact></>}
+      {approvalFacts(help.perm)}
+    </Facts>,
     statedBrief: { impact: `${help.what}。${help.effect}。批准后对之后新算的订单生效，已经算好的不重算。`, check: promo ? COVERAGE_CHECK : "核对新值；保存时不检查上下限的大小关系。" },
     detail: `${name} · 现在 ${value || "未配置"}。只影响之后的购买奖励结算。`,
-    completionCopy: approvalCopy(help.perm), coverageCheck: COVERAGE_CHECK, coverageLead: "调高倍率，每层都多付钱",
+    completionCopy: approvalCopy, coverageCheck: COVERAGE_CHECK, coverageLead: "调高倍率，每层都多付钱",
     submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(paramKey, next, reason); },
     done: `${name}调整 已提交审批，等另一位管理员批准`,
   });
@@ -362,11 +369,14 @@ export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
     effect: effectTag,
     edit: { kind: "number", current: coolingDays, unit: "天", min: 0, max: 90, step: 1, hint: "0–90 的整数",
       ...(coolingDays !== "" ? { amplifiesWhen: "decrease" as const } : {}) },
-    facts: coolingRaw && coolingDays === "" ? <Facts><Fact k="现在存的值" tone="danger">{coolingRaw}（不是 0–90 的整数）</Fact></Facts>
-      : !coolingRaw ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK["F.cooldown"].replace(/^没配[^，]*时，/, "")}</Fact></Facts> : undefined,
+    facts: <Facts>
+      {coolingRaw && coolingDays === "" ? <Fact k="现在存的值" tone="danger">{coolingRaw}（不是 0–90 的整数）</Fact>
+        : !coolingRaw && <><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK["F.cooldown"].replace(/^没配[^，]*时，/, "")}</Fact></>}
+      {approvalFacts("团队奖励规则")}
+    </Facts>,
     statedBrief: { impact: "批准后，之后新算的购买奖励和其他团队奖励按新天数冷却；已经在冷却中的到期日不变。缩短会让钱更早能提。不影响好友设备收益奖励的冷却。", check: COVERAGE_CHECK },
     detail: `购买与其他奖励冷却期 · ${coolingState}。缩短前先看兑付覆盖率；不影响好友设备收益奖励的冷却期。`,
-    completionCopy: approvalCopy("团队奖励规则"), coverageCheck: COVERAGE_CHECK, coverageLead: "缩短冷却，钱更早能提",
+    completionCopy: approvalCopy, coverageCheck: COVERAGE_CHECK, coverageLead: "缩短冷却，钱更早能提",
     submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config("F.cooldown", next, reason); },
     done: "购买与其他奖励冷却期调整 已提交审批，等另一位管理员批准",
   });
@@ -428,7 +438,7 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
     },
     statedBrief: { impact: "批准后保存新的四档门槛；目前只保存门槛，不会自动开通权益，也不影响任何奖励。", check: "系统检查四个都是数字且逐档不降低。" },
     detail: `合作伙伴权益门槛 · ${partnerState} · 不影响任何奖励。`,
-    completionCopy: approvalCopy("团队奖励规则"), coverageCheck: COVERAGE_CHECK,
+    completionCopy: approvalCopy, coverageCheck: COVERAGE_CHECK, facts: <Facts>{approvalFacts("团队奖励规则")}</Facts>,
     submit: async (reason, _next, bv) => {
       if (!bv || [bv.standard, bv.verified, bv.premium, bv.diamond].some((value) => !value?.trim())) throw new Error("请填写全部 4 档");
       const standard = Number(bv.standard);
