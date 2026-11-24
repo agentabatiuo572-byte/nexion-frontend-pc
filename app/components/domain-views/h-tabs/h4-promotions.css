@@ -24,11 +24,13 @@
 
 /* 结果未知逐条 */
 .h4-page .h4-pending { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; width: 100%; }
-.h4-page .h4-pending li { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding-top: 8px; border-top: 1px solid var(--rd-line); }
+.h4-page .h4-pending li { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; padding-top: 8px; border-top: 1px solid var(--rd-line); }
 .h4-page .h4-pending-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .h4-page .h4-pending-change { color: var(--rd-text-2); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .h4-page .h4-pending-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .h4-page .h4-pending-when { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+/* 查询后的说明单起一行，按钮留在第一行行尾（和 I3 同一状态一样） */
+.h4-page .h4-pending-note { grid-column: 1 / -1; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 
 /* 等你处理 */
 .h4-page .h4-todo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }

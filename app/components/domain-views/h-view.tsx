@@ -91,6 +91,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           content={mc.content}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
+          confirmLabelForValue={mc.confirmLabelForValue}
           confirmTone={mc.confirmTone}
           statedBrief={mc.statedBrief}
           coverageLead={mc.coverageLead}

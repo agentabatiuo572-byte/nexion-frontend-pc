@@ -21,9 +21,10 @@ export const H4_MISSING_ORIGINAL = "最新列表里已没有这个对象，你�
 export const H4_OLD_RECORD_REJECTED = "原来的修改没有保存，记录太旧无法逐项对比，请按最新配置重新修改。";
 export const h4ReadConflict = (readLatest: () => Promise<boolean | void>) =>
   new ConfirmReadConflict({ readLatest, renderNotice: action => <H4StaleNote readLatest={action} /> });
-export const h4OpeningReadFailure = (cause: unknown, readLatest: () => Promise<boolean | void>) =>
+/** title 按动作写：玩法第一次「开启」，既有活动「开放」。 */
+export const h4OpeningReadFailure = (cause: unknown, readLatest: () => Promise<boolean | void>, title = "开启前所需数据加载失败") =>
   new ConfirmReadConflict({ preserveReason: true, readLatest,
-    renderNotice: retry => <Notice tone="danger" title="开启前所需数据加载失败"
+    renderNotice: retry => <Notice tone="danger" title={title}
       action={<Button size="sm" onClick={retry}>重试</Button>}>{displayAdminReadError(cause)}</Notice> });
 
 /** 真实冲突（别人先改过）后的提示：拟改值留着、现在值换成最新的、旧理由清空，要重新填理由才能提交。结果未知的原请求恢复用原理由，是另一句提示。 */

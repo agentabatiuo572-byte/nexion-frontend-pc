@@ -603,7 +603,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       }
       return true;
     };
-    const openingReadError = (cause: unknown, reason: string) => h4OpeningReadFailure(cause, rereadOpening(reason));
+    const openingReadError = (cause: unknown, reason: string) => h4OpeningReadFailure(cause, rereadOpening(reason), "开放前所需数据加载失败");
     const readBeforeOpening = async <T,>(read: () => Promise<T>, reason: string): Promise<T> => {
       try { return await read(); }
       catch (cause) {
@@ -874,16 +874,20 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     if (wheelCommandBlocks("h4_wheel_tier_create")) return;
     const amplifies = (kind: string, probability: number) => kind === "uvt" || (["usdt", "coupon"].includes(kind)
       && Math.floor(probability * 10000 + 0.5) > 0);
+    // 和 run 里同一个判断：走审批时标签、审批行和按钮一起变；UVT 以外概率没填好时还说不准，不写。
+    const draftApproval = (draft?: BusinessFormValue) => {
+      const probability = Number(draft?.probabilityPct);
+      if (!draft || draft.rewardKind !== "uvt" && (!draft.probabilityPct?.trim() || !Number.isFinite(probability) || probability < 0 || probability > 100)) return;
+      return amplifies(draft.rewardKind, probability);
+    };
     openActionConfirm({ briefKind: "config",
       action: "新建转盘奖项",
       title: "新建转盘奖项",
       statedBrief: { impact: "这一档进奖池，按概率参与抽奖。", check: "核对奖型、发真钱和每日库存。" },
-      effect: (draft) => {
-        const probability = Number(draft.probabilityPct);
-        if (draft.rewardKind !== "uvt" && (!draft.probabilityPct?.trim() || !Number.isFinite(probability) || probability < 0 || probability > 100)) return;
-        return wheelEffect(amplifies(draft.rewardKind, probability), "奖池");
-      },
+      effect: draft => wheelEffect(draftApproval(draft), "奖池"),
       detail: <>概率 0–100，所有奖项合计要等于 100%；发真钱的奖项在覆盖率低于红线时存不了。</>,
+      facts: (_value, draft) => draftApproval(draft) ? <Facts><ApprovalFact amplify="新建" object="奖池" /></Facts> : null,
+      confirmLabelForValue: (_value, draft) => draftApproval(draft) ? "提交审批" : "确认提交",
 
       amplifies: true,
       coverageLead: "这一档会让转盘多发奖",
@@ -936,10 +940,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openCreateWheelGuard = () => {
+    // 后端 createWheelGuard：预算必须大于 0，新建预算护栏一律要批准，选了类型就能说；开关填「开」要批准、填「关」立即生效，没填值还说不准。
     const approval = (draft: BusinessFormValue) => {
       const value = draft.guardValue?.trim() ?? "";
       if (draft.guardKey === "kill" && ["开", "关", "on", "off", "true", "false"].includes(value)) return h4WheelGuardAmplifies("kill", value);
-      if (draft.guardKey === "budget" && /^\$?\s*\d[\d,]*(?:\.\d{1,2})?$/.test(value) && h4WheelGuardAmplifies("budget", value) && Number(budgetNumber(value)) <= 1_000_000_000) return true;
+      if (draft.guardKey === "budget") return true;
     };
     openActionConfirm({ briefKind: "config",
       action: "新建转盘安全限制",
@@ -948,6 +953,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       effect: draft => wheelEffect(approval(draft), "转盘"),
       detail: <>每种护栏只能建一条。</>,
       facts: (_value, draft) => draft && approval(draft) ? <Facts><ApprovalFact amplify="这次修改" object="转盘" /></Facts> : null,
+      confirmLabelForValue: (_value, draft) => draft && approval(draft) ? "提交审批" : "确认提交",
       reasonPlaceholder: "例如：上线前补齐转盘护栏",
       businessForm: {
         kind: "multi-field",
@@ -986,6 +992,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       </>,
       coverageLead: "调高预算会让转盘每天多发真钱",
       reasonPlaceholder: "例如：活动期放宽每日真钱奖预算",
+      confirmLabelForValue: value => value !== undefined && h4WheelGuardAmplifies("budget", value, current) ? "提交审批" : "确认提交",
       edit: { kind: "number", current: budgetNumber(current), amplifiesWhen: "increase", disallowCurrent: true, min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT" },
       run: async (reason, value) => {
         if (!value) return;
@@ -1040,9 +1047,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       title: "调整转盘概率",
       statedBrief: { impact: "保存后按新概率抽，已抽的不变。", check: "核对各档概率合计正好 100%。" },
       effect: draft => wheelEffect(amplifies(tier => Number(probabilityText(tier, draft))), "奖池"),
+      confirmLabelForValue: (_value, draft) => draft && amplifies(tier => Number(probabilityText(tier, draft))) ? "提交审批" : "确认提交",
       detail: <>一次设置所有奖项，加起来要等于 100%。调高发钱奖项的概率时，覆盖率低于红线无法保存。</>,
       facts: <ProbabilityCompare tiers={tiers} store={store} valueOf={probabilityText} />,
-      amplifies: true,
       coverageLead: "调高中奖概率会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案调整各档概率",
       getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
@@ -1060,6 +1067,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           ? `历史积分档只读：${fixed.map((tier) => `${text(tier.tier)} ${numericValue(tier.prob)}%`).join("、")}。所有奖项合计须为 100%。`
           : "所有奖项一起提交，加起来要等于 100%。",
         requireAnyChange: true,
+        // 只在调高方向提示多发奖（OP-55），和编辑奖项一样。
+        amplifies: draft => amplifies(tier => Number(probabilityText(tier, draft))),
         fields: tiers.filter((tier) => !wheelPointsTier(tier)).map((tier) => ({
           key: text(tier.tier),
           label: `${text(tier.tier)} · ${legacyName(tier.reward).text}`,
@@ -1121,6 +1130,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       statedBrief: { impact: "生效后下一次抽奖就按新内容发，已经抽中的不变。", check: "核对奖型、发真钱、每次数量和每日库存。" },
       // 哪些方向要批准按后端 updateWheelTier 分流写全，含反直觉的一条：收紧 UVT 库存，用完后改发的安慰奖可能更大。
       effect: draft => wheelEffect(draftAmplifies(draft), "奖池"),
+      confirmLabelForValue: (_value, draft) => draftAmplifies(draft) ? "提交审批" : "确认提交",
       detail: <>编辑奖项名称、奖励类型、是否发真钱。概率请在「改奖池 / 概率」里统一调，保证加起来是 100%。</>,
       facts: (_value, draft) => tierFacts(tier, draftAmplifies(draft) ? <ApprovalFact amplify="这次修改" object="奖池" /> : null),
       coverageLead: "这一档会让转盘多发奖",
@@ -1402,8 +1412,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           <span className="h4-pending-what"><b>{subject}</b>{hiCommandChange(record) && <span className="h4-pending-change">{hiCommandChange(record)}</span>}</span>
           <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}</span>（北京时间）</span>
           {pending ? pendingTag(subject) : lookup ? <StatusTag tone={lookup.tone}>{lookup.label}</StatusTag> : expired ? expiredTag() : media ? <StatusTag tone="warn">结果未知</StatusTag> : unknownTag("proposal" in record.request ? "approval" : "direct")}
-          {!pending && state === "NOT_FOUND" && lookup && <span className="h4-pending-when">{lookup.line}</span>}
-          {expired && !pending && <span className="h4-pending-when">{RETRY_EXPIRED_TEXT}</span>}
           <span className="h4-pending-actions">
             {!media && <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => void lookupH4Command(record)}>查询原结果</Button>}
             {!expired && !record.acknowledged && (media ? <>
@@ -1411,6 +1419,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
               <span className="h4-pending-change">重新发送同一个文件，不会重复保存。</span>
             </> : <Button size="sm" disabledReason={retryBlocked} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>)}
           </span>
+          {!pending && lookup && <span className="h4-pending-note">{lookup.line}</span>}
+          {expired && !pending && <span className="h4-pending-note">{RETRY_EXPIRED_TEXT}</span>}
         </li>;
       })}
 
@@ -1439,7 +1449,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   </>;
 
   if (loading && !model) return <>{recovery}<BlockState state="loading" title="正在加载既有活动与转盘" /></>;
-  if (error || !model) return <>{recovery}<BlockState state="error" title="既有活动与转盘加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班同事。"} onRetry={() => void reload()} retryLabel="重试读取 · 既有活动与转盘" /></>;
+  if (error || !model) return <>{recovery}<BlockState state="error" title="既有活动与转盘加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班同事。"} onRetry={() => void reload()} /></>;
 
   const events = model.events ?? [];
   const tiers = model.wheelTiers ?? [];

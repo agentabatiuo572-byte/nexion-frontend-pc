@@ -566,7 +566,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 /* 正文相邻两块（事实块、提示条、字段、勾选、按钮组）之间统一 16，和抽屉正文同一量级（VS-100）。只排直接子块：页面自己包 rd-stack
    或网格的是一整块，里面的间距不变；两个共用确认框里 display: contents 的 fieldset（.rd-contents）的子块也算直接子块。
    用上外边距：块级兄弟的外边距合并，旧块残留的下外边距不会叠成两倍；比 .rd-facts 这类组件自带的 margin: 0 强一档。 */
-.rd-modal-body > :not(:first-child), .rd-modal-body > .rd-contents > :not(:first-child) { margin-top: var(--rd-space-4); }
+.rd-modal-body > :not(:first-child), .rd-modal-body > .rd-contents > :not(:first-child), .rd-modal-body > * + .rd-contents > :first-child { margin-top: var(--rd-space-4); }
 /* 框只有一层滚动，头和底栏固定，内容在底栏前渐隐，看得出下面还有（Carbon Overflow content）。滚到底时渐隐落在下内边距上，看不见。 */
 .rd-modal-body::after { content: ""; position: sticky; bottom: calc(-1 * var(--rd-space-4)); display: block; height: var(--rd-space-4); margin-bottom: calc(-1 * var(--rd-space-4)); background: linear-gradient(to top, var(--rd-panel), transparent); pointer-events: none; }
 .rd-dialog-feedback { flex: none; max-height: 25vh; overflow-y: auto; margin: 0 20px 12px; }
@@ -645,7 +645,7 @@ body:has(.rd-drawer[data-state="open"]:not([data-wide])) .rd-toast-host { left: 
 .rd-modal.rd-confirm .rd-destructive-impact { font-family: var(--rd-font); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
 .rd-reason-count { position: absolute; right: 10px; bottom: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; pointer-events: none; }
 .rd-confirm-facts { padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
-.rd-confirm-facts :is(.rd-facts, .rd-diff) + .rd-notice { margin-top: 12px; }
+.rd-confirm-facts :is(.rd-facts, .rd-diff) + .rd-notice, .rd-confirm-facts .rd-notice + * { margin-top: 12px; }
 .rd-confirm-facts > .rd-confirm-funding { margin-top: 12px; }
 .rd-funding-coverage { margin-top: 4px; color: var(--rd-text-2); }
 .rd-funding-coverage b { font-weight: 500; color: var(--rd-text); font-variant-numeric: tabular-nums; }
