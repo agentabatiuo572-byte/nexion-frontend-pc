@@ -7,7 +7,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, type SupportProfile, type SupportGroup, type SupportFinanceFieldStatus } from "@/lib/admin/m-support-enhancements";
-import { supportClient, isSupportScopeDenial, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, isSupportScopeDenial, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { Icon, Modal } from "../design-kit";
@@ -92,11 +92,13 @@ function Group({ title, note, summary, open, onOpenChange, group, failed, retry,
 
 type CustomerProfile = SupportProfile & { annotations: SupportGroup & { recoveredSystemTags?: unknown[] } };
 type ProfileGroup = Exclude<keyof SupportProfile, "actions" | "statistics">;
-type ProfileReadIntent = ProfileGroup | "initial" | "statistics" | "annotation-write";
+const profileRefreshGroups = ["identity", "statistics", "finance", "risk", "annotations", "service"] as const;
+type ProfileReadErrors = Partial<Record<ProfileGroup | "statistics", string>>;
+type ProfileReadIntent = ProfileGroup | "initial" | "refresh" | "statistics" | "annotation-write";
 type AnnotationWrite = { completeReadback?: () => void };
 
 function isProfileGroup(intent: ProfileReadIntent): intent is ProfileGroup {
-  return intent !== "initial" && intent !== "statistics" && intent !== "annotation-write";
+  return intent !== "initial" && intent !== "refresh" && intent !== "statistics" && intent !== "annotation-write";
 }
 
 function mergeProfileGroups(previous: CustomerProfile, next: SupportProfile, groups: readonly ProfileGroup[]): CustomerProfile {
@@ -120,8 +122,9 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const pathname = usePathname(), searchParams = useSearchParams();
   const reach = useReach();
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
-  const [profile, setProfile] = useState<CustomerProfile | null>(null), [error, setError] = useState("");
-  const [groupReadErrors, setGroupReadErrors] = useState<Partial<Record<ProfileGroup, string>>>({});
+  const [profileRead, setProfileRead] = useState<{ scope: string; data: CustomerProfile } | null>(null);
+  const [error, setError] = useState("");
+  const [groupReadErrors, setGroupReadErrors] = useState<ProfileReadErrors>({});
   const [statisticsRetrying, setStatisticsRetrying] = useState(false);
   const [paymentWriteBusy, setPaymentWriteBusy] = useState(false);
   const [statisticsRetryError, setStatisticsRetryError] = useState("");
@@ -153,7 +156,11 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const scopeDenied = revokedScope.current === scopeKey;
   // A scope refresh revalidates the current customer without remounting the payment block.
   const paymentScope = `${adminShellSessionKey(session, epoch)}:${customerId}:${conversation?.id ?? ""}`;
-  const profileScope = `${paymentScope}:${scopeVersion ?? ""}:${conversation?.ownerAdminId ?? ""}:${conversation?.assignmentId ?? ""}`;
+  // A snapshot revision invalidates the request, while the authorization key owns the retained data.
+  const profileAuthorization = `${paymentScope}:${conversation?.ownerAdminId ?? ""}:${conversation?.assignmentId ?? ""}`;
+  const profileScope = `${profileAuthorization}:${scopeVersion ?? ""}`;
+  const profile = !scopeDenied && profileRead?.scope === profileAuthorization ? profileRead.data : null;
+  const previousScopeVersion = useRef(scopeVersion);
   const annotationWrite = useRef<AnnotationWrite | null>(null);
   const requestStamp = `${profileScope}:${reload}:${scopeDenied}`;
   const stamp = useRef(""), mounted = useRef(true); stamp.current = requestStamp;
@@ -166,17 +173,22 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     if (write) write.completeReadback = undefined;
     complete?.();
   };
-  const revokeScope = () => {
+  const revokeScope = (message = "可能是客户归属或你的查看范围变了。请重试，或返回列表核对。") => {
     if (revokedScope.current === scopeKey) return;
     revokedScope.current = scopeKey; stamp.current += ":revoked";
     profileReadIntents.current.clear();
     settleAnnotationReadback();
     setStatisticsRetrying(false); setStatisticsRetryError(""); setGroupReadErrors({});
-    setProfile(null); setPaymentIdentity(null); setDeviceGroup(null); setFlowGroup(null); setMaintenance(null); setView360(false);
+    setProfileRead(null); setPaymentIdentity(null); setDeviceGroup(null); setFlowGroup(null); setMaintenance(null); setView360(false);
     setTag(""); setNote(""); annotationWrite.current = null; setWriting(false); setWriteError("");
-    setError("可能是客户归属或你的查看范围变了。请重试，或返回列表核对。");
+    setError(message);
   };
   const denied = (cause: unknown) => {
+    if (cause instanceof SupportClientError
+      && (cause.status === 401 || cause.status === 200 && cause.apiCode === 401)) {
+      revokeScope(displayAdminReadError(cause));
+      return true;
+    }
     if (!isSupportScopeDenial(cause)) return false;
     if (revokedScope.current !== scopeKey) { revokeScope(); ctx.invalidateScope(conversation?.id, customerId); }
     return true;
@@ -187,7 +199,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     const identity = group.data;
     const userNo = String(identity?.userNo ?? customerId);
     setPaymentIdentity(group.status === "READY"
-      ? { scope: paymentScope, label: `${userNicknameText(String(identity?.nickname ?? userNo), identity?.phoneMasked)} · ${userNo}` }
+      ? { scope: profileAuthorization, label: `${userNicknameText(String(identity?.nickname ?? userNo), identity?.phoneMasked)} · ${userNo}` }
       : null);
   };
   async function readProfile(intent: ProfileReadIntent, signal?: AbortSignal) {
@@ -209,6 +221,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     profileReadIntents.current = new Set();
     const groups = [...intents].filter(isProfileGroup);
     const initial = intents.has("initial");
+    const refresh = intents.has("refresh");
     const statistics = intents.has("statistics");
     const annotationReadback = intents.has("annotation-write");
     if (statistics) setStatisticsRetrying(false);
@@ -222,15 +235,16 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
         setError(reason);
       }
       if (statistics) setStatisticsRetryError(reason);
-      const errors: Partial<Record<ProfileGroup, string>> = Object.fromEntries(groups.map(group => [group, reason]));
+      const failedGroups = refresh ? profileRefreshGroups : groups;
+      const errors: ProfileReadErrors = Object.fromEntries(failedGroups.map(group => [group, reason]));
       if (annotationReadback) errors.annotations = `已保存。${reason}`;
       setGroupReadErrors(previous => ({ ...previous, ...errors }));
       return;
     }
 
     const next = result.profile;
-    if (initial || statistics || annotationReadback) {
-      setProfile(next);
+    if (initial || refresh || statistics || annotationReadback) {
+      setProfileRead({ scope: profileAuthorization, data: next });
       applyPaymentIdentity(next.identity);
       setStatisticsRetryError("");
       setGroupReadErrors({});
@@ -238,7 +252,10 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     }
 
     if (groups.includes("identity")) applyPaymentIdentity(next.identity);
-    setProfile(previous => previous ? mergeProfileGroups(previous, next, groups) : next);
+    setProfileRead(previous => ({
+      scope: profileAuthorization,
+      data: previous?.scope === profileAuthorization ? mergeProfileGroups(previous.data, next, groups) : next,
+    }));
     setGroupReadErrors(previous => {
       const errors = { ...previous };
       for (const group of groups) delete errors[group];
@@ -250,9 +267,15 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController();
-    setProfile(null); setError("");
-    setStatisticsRetrying(false); setStatisticsRetryError(""); setGroupReadErrors({});
-    void readProfile("initial", controller.signal);
+    const keepProfile = profile !== null && scopeVersion !== previousScopeVersion.current;
+    previousScopeVersion.current = scopeVersion;
+    setError("");
+    setStatisticsRetrying(false);
+    if (!keepProfile) {
+      setProfileRead(null); setPaymentIdentity(null);
+      setStatisticsRetryError(""); setGroupReadErrors({});
+    }
+    void readProfile(keepProfile ? "refresh" : "initial", controller.signal);
     return () => {
       controller.abort();
       profileReadIntents.current.clear();
@@ -294,7 +317,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const retryGroup = (key: ProfileGroup) => {
     if (scopeDenied || stamp.current !== requestStamp) return;
     setError("");
-    return readProfile(key);
+    return readProfile(groupReadErrors.statistics ? "refresh" : key);
   };
   const conversationId = conversation?.id;
   const profileQuery = new URLSearchParams();
@@ -341,9 +364,9 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   }
   const identity = profile?.identity.data, finance = profile?.finance.data, service = profile?.service.data, annotations = profile?.annotations.data;
   const paymentSecurityPort = useMemo(() => {
-    if (scopeDenied || paymentIdentity?.scope !== paymentScope) return null;
+    if (scopeDenied || paymentIdentity?.scope !== profileAuthorization) return null;
     return paymentSecurityPorts.support(customerId);
-  }, [scopeDenied, paymentIdentity?.scope, paymentScope, customerId]);
+  }, [scopeDenied, paymentIdentity?.scope, profileAuthorization, customerId]);
   const paymentUserLabel = paymentIdentity?.label ?? customerId;
   const statisticsGroup = profile?.statistics;
   const statistics = statisticsGroup?.status === "READY" ? statisticsGroup.data : null;
@@ -359,7 +382,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const statisticsFocus = useCountsRetryFocus(statisticsRetrying, counts.kind === "ready");
   const statisticsLive = <span role="status" className="rd-sr-only">{statisticsFocus.status}</span>;
   // 人数重读失败时，这一组上次读到的首充、累充还留着：在组顶写明是哪次的数据（ST-36）；人数那一行照旧写失败原因和重试。
-  const statisticsStale = statisticsRetryError && !statisticsRetrying && statisticsGroup?.status === "READY" && <p className="m3-profile-state" data-tone="warn">{staleText(statisticsGroup)}</p>;
+  const statisticsStale = (statisticsRetryError || groupReadErrors.statistics) && !statisticsRetrying && statisticsGroup?.status === "READY" && <p className="m3-profile-state" data-tone="warn">{staleText(statisticsGroup)}</p>;
   const firstKnown = statistics?.first.status === "AVAILABLE";
   const firstConfirmed = firstKnown && statistics?.first.state === "CONFIRMED";
   const firstState = firstConfirmed ? "已首充" : firstKnown && statistics?.first.state === "NONE" ? "未首充" : "未知";
