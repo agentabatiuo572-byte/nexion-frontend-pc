@@ -2,10 +2,11 @@
 .m3-profile-identity{display:flex;align-items:center;gap:11px;margin-bottom:12px}
 .m3-profile-identity>div{min-width:0;flex:1}
 /* 名字和等级是一个标题，编码和专属客服是一段两行说明：头部是一个身份块，不按独立块拉开间距。 */
-.m3-profile-name{display:flex;align-items:center;gap:8px;min-width:0;margin:0}
+.m3-profile-name{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px;min-width:0;margin:0}
 .m3-profile-nick{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .m3-profile-meta>span{display:block}
-.m3-profile-level{flex-shrink:0;font-weight:400;font-size:12.5px;padding:1px 6px;border-radius:4px;background:color-mix(in srgb,var(--admin-violet) 14%,transparent);color:var(--admin-violet)}
+/* 名字后弱字写「用户分层 L1 · 团队等级 V0」，和展开视图、后台详情页头同一写法；放不下时整段换到下一行，不挤名字。 */
+.m3-profile-level{flex:none;font-weight:400;font-size:12.5px;color:var(--v5-ink-3);white-space:nowrap}
 .m3-profile-identity p{margin:3px 0 0;overflow-wrap:anywhere}
 .m3-profile-uid{font-size:12.5px;color:var(--v5-ink-3)}
 .m3-profile-owner{font-size:12.5px;color:var(--v5-ink-2)}
@@ -87,7 +88,7 @@
 .m3-profile-body .rd-fold-actions .rd-btn-face > svg { display: none; }
 .rd-page .m3-profile-identity { margin-bottom: var(--rd-space-3); }
 .rd-page .m3-profile-name { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
-.rd-page .m3-profile-level { padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-role-3-bg); color: var(--rd-role-3); font-size: var(--rd-text-aux); }
+.rd-page .m3-profile-level { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); }
 .rd-page .m3-profile-identity p, .rd-page .m3-profile-uid, .rd-page .m3-profile-owner { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 /* 块和块靠留白分（VS-73）。 */
 .rd-page .m3-profile-section { margin-bottom: 0; }  /* 块间距由 .m3-profile-body > * + * 给，这里只去掉旧样式的下边距 */
@@ -133,3 +134,17 @@
 .rd-page .m3-service-profile .cvp-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); justify-content: start; gap: var(--rd-space-3); padding: var(--rd-space-1) 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
 .rd-page .m3-service-profile .cvp-row .k { color: var(--rd-text-3); white-space: nowrap; }
 .rd-page .m3-service-profile .m-admin-muted { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+
+/* 「首充与邀请」这一组的名称列按最长的「团队奖励范围内（人）」连问号一行放下定宽（DESIGN.md 名称列按组定宽，PR2 只放宽这一组）；其余组仍是 120。 */
+.rd-page :is(.m3-service-profile, .m3-customer-sidebar) .m3-invite-group .cvp-row { grid-template-columns: 160px minmax(0, 1fr); }
+.m3-invite-group .cvp-row .k .rd-explain { margin-left: 4px; vertical-align: -2px; }
+.m3-invite-group > .rd-notice { margin: var(--rd-space-2) 0; }
+/* 右栏窄：提示在标点处折行、各行拉平，不把「联系」拆开，最后一行不只剩两三个字。 */
+.m3-invite-group .rd-notice-text { text-wrap: balance; word-break: keep-all; overflow-wrap: anywhere; }
+.m3-invite-failed-reason { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--rd-text-2); }
+/* 包了一层后，弹窗和抽屉里的行距跟同一个框里其他组一样（rd 的 .rd-fold-body > :not(:first-child) 只排直接子块）。 */
+:is(.rd-modal-body, .rd-drawer-body) .m3-invite-group > :not(:first-child) { margin-top: var(--rd-space-3); }
+/* 无权限的组：只有标题行，和折叠标题行同高同缩进，没有箭头（ST-39）。 */
+/* 旧数据那一行的「重试」（rd-inline-retry）和问号、文字之间留一点空。 */
+.m3-profile-state .rd-inline-retry { margin-left: 6px; }
+.m3-denied-row > p { display: flex; align-items: center; gap: var(--rd-space-2); min-height: 40px; margin: 0; padding: 8px 0 8px calc(14px + var(--rd-space-2)); }

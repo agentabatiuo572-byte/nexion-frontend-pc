@@ -1,0 +1,29 @@
+/* 邀请关系显示件（invitation-view.tsx）。只排这几个件自己的元素，颜色、字号都取 rd 令牌，深浅两套主题自然都有。 */
+
+/* 一行里的邀请人：昵称可省略，用户编码不截（TX-28）；问号紧跟在后面（VS-85）。 */
+.inv-value { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; vertical-align: bottom; }
+.inv-link, .inv-text { display: inline-flex; align-items: baseline; min-width: 0; max-width: 100%; }
+.inv-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-code { flex: none; white-space: nowrap; font-family: var(--rd-font-mono); }
+/* 长昵称省略后，省略号到编码之间是空白，文字下划线在这里断开，看着像两个链接（R06）。下划线改由整个链接画一条，
+   位置、粗细、颜色和 rd-link 的文字下划线一致（offset 3px），短昵称看起来和普通链接一样。 */
+.rd-link.inv-link { position: relative; text-decoration: none; }
+.rd-link.inv-link::after { content: ""; position: absolute; left: 0; right: 0; bottom: calc((1lh - 1em) / 2 - 1.5px); border-bottom: 1px solid var(--rd-text-3); pointer-events: none; }
+@media (hover: hover) and (pointer: fine) { .rd-link.inv-link:hover::after { border-bottom-color: var(--rd-text); } }
+.inv-value > .rd-explain, .inv-value > .rd-weak { flex: none; }
+
+/* 详情页头的事实行：邀请人这一项按内容放宽（PG-50「邀请人较宽」），长昵称在格里省略，不把整项挤到下一行。 */
+.rd-head-facts > div:has(.inv-value) { flex: 1.5 1 0; min-width: 0; }
+.rd-head-facts > div:has(.inv-value) > dd { min-width: 0; overflow: hidden; padding: 4px; margin: -4px; }  /* 省略要裁，四周留 4px 给键盘焦点环（2px 加间隔 2px），环不被裁掉（CP-05） */
+
+/* 表格里的邀请人列和用户列各占四分之一（01a），长昵称放得下就完整显示。 */
+.rd-table th.inv-col-quarter { width: 25%; }
+
+/* 人数一组：名称和问号同一行不折（VS-65）；失败一行写标签、原因、重试。 */
+.inv-nowrap { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.inv-failed { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.inv-failed-reason { color: var(--rd-text-2); }
+/* 人数「重试」不能点时（重读中、写操作进行中）的样子，同 rd 的 .rd-inline-retry:disabled。 */
+.inv-retry[aria-disabled="true"] { color: var(--rd-text-disabled); cursor: progress; }
+.inv-counts + .rd-notice { margin-top: var(--rd-space-2); }
+.inv-counts + .rd-notice .rd-notice-text { text-wrap: balance; word-break: keep-all; overflow-wrap: anywhere; }

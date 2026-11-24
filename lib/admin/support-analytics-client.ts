@@ -178,18 +178,30 @@ function avatar(value: unknown) {
   if (!/^[a-f0-9-]{36}$/.test(assetId)) malformed("avatar");
   return { assetId, version: integer(r.version) };
 }
-function invitations(value: unknown) {
+function invitationCounts(row: Record<string, unknown>, isolateCountFailure: boolean) {
+  try {
+    return {
+      direct: invitationCount(row.direct),
+      descendants: invitationCount(row.descendants),
+      ...(row.withinRewardRange === undefined ? {} : { withinRewardRange: invitationCount(row.withinRewardRange) }),
+      ...(row.beyondRewardRange === undefined ? {} : { beyondRewardRange: invitationCount(row.beyondRewardRange) }),
+    };
+  } catch (error) {
+    if (!isolateCountFailure) throw error;
+    const failed = { observed: null, confirmed: null, status: "FAILED" as const };
+    return { direct: failed, descendants: failed, withinRewardRange: failed, beyondRewardRange: failed };
+  }
+}
+
+function invitations(value: unknown, isolateCountFailure: boolean) {
   const r = object(value, "direct descendants status deposits withinRewardRange beyondRewardRange reasons");
   return {
-    direct: invitationCount(r.direct),
-    descendants: invitationCount(r.descendants),
+    ...invitationCounts(r, isolateCountFailure),
     status: enumeration(r.status, STATUS),
     deposits: unique(array(r.deposits, value => {
       const p = object(value, "currency deposits");
       return { currency: enumeration(p.currency, CURRENCIES), deposits: money(p.deposits) };
     }), x => x.currency),
-    ...(r.withinRewardRange === undefined ? {} : { withinRewardRange: invitationCount(r.withinRewardRange) }),
-    ...(r.beyondRewardRange === undefined ? {} : { beyondRewardRange: invitationCount(r.beyondRewardRange) }),
     ...(r.reasons === undefined ? {} : { reasons: array(r.reasons, reason => parseInvitationCountReason(text(reason))) }),
   };
 }
@@ -198,7 +210,7 @@ export function parseSupportCustomerStatistics(value: unknown, source: "analytic
   const r = object(value, "first lifetime lifetimeStatus invitations activity" + (fromProfile ? " performance" : ""));
   const f = object(r.first, "state status kind currency amount succeededAt channel");
   const a = object(r.activity, "state status lastEffectiveAt");
-  return { first: { state: enumeration(f.state, ["CONFIRMED", "NONE", "UNKNOWN"]), status: enumeration(f.status, STATUS), kind: f.kind === null ? null : enumeration(f.kind, FIRST_KINDS), currency: f.currency === null ? null : enumeration(f.currency, CURRENCIES), amount: decimal(f.amount), succeededAt: nullableInstant(f.succeededAt) }, lifetime: unique(array(r.lifetime, customerMoney), x => x.currency), lifetimeStatus: enumeration(r.lifetimeStatus, STATUS), invitations: invitations(r.invitations), activity: { state: enumeration(a.state, ["ACTIVE", "INACTIVE", "UNKNOWN"]), status: enumeration(a.status, STATUS), lastEffectiveAt: nullableInstant(a.lastEffectiveAt) } };
+  return { first: { state: enumeration(f.state, ["CONFIRMED", "NONE", "UNKNOWN"]), status: enumeration(f.status, STATUS), kind: f.kind === null ? null : enumeration(f.kind, FIRST_KINDS), currency: f.currency === null ? null : enumeration(f.currency, CURRENCIES), amount: decimal(f.amount), succeededAt: nullableInstant(f.succeededAt) }, lifetime: unique(array(r.lifetime, customerMoney), x => x.currency), lifetimeStatus: enumeration(r.lifetimeStatus, STATUS), invitations: invitations(r.invitations, fromProfile), activity: { state: enumeration(a.state, ["ACTIVE", "INACTIVE", "UNKNOWN"]), status: enumeration(a.status, STATUS), lastEffectiveAt: nullableInstant(a.lastEffectiveAt) } };
 }
 export type SupportCustomerStatistics = ReturnType<typeof parseSupportCustomerStatistics>;
 function customer(value: unknown) {

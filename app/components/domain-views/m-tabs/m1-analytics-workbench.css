@@ -23,7 +23,8 @@
 .m1-analytics-table .rd-note{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .m1-analytics-table td>.rd-btn .rd-btn-face{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
 .m1-agent-table col:nth-child(1){width:24%}.m1-agent-table col:nth-child(2){width:17%}.m1-agent-table col:nth-child(3){width:12%}.m1-agent-table col:nth-child(4){width:13%}.m1-agent-table col:nth-child(5){width:22%}.m1-agent-table col:nth-child(6){width:12%}
-.m1-customer-table col:nth-child(1){width:28%}.m1-customer-table col:nth-child(2){width:11%}.m1-customer-table col:nth-child(3){width:20%}.m1-customer-table col:nth-child(4){width:14%}.m1-customer-table col:nth-child(5){width:14%}.m1-customer-table col:nth-child(6){width:13%}
+/* 客户、邀请人、首充、本人净贡献、服务状态 / 最近活动、操作（PRD §4.3，画布 06）。 */
+.m1-customer-table col:nth-child(1){width:24%}.m1-customer-table col:nth-child(2){width:16%}.m1-customer-table col:nth-child(3){width:12%}.m1-customer-table col:nth-child(4){width:13%}.m1-customer-table col:nth-child(5){width:21%}.m1-customer-table col:nth-child(6){width:14%}
 .m1-finance-table col:nth-child(1){width:24%}.m1-finance-table col:nth-child(2){width:12%}.m1-finance-table col:nth-child(3){width:15%}.m1-finance-table col:nth-child(4){width:20%}.m1-finance-table col:nth-child(5){width:13%}
 .m1-device-table col:nth-child(1){width:26%}.m1-device-table col:nth-child(2){width:12%}.m1-device-table col:nth-child(3){width:14%}.m1-device-table col:nth-child(4){width:17%}.m1-device-table col:nth-child(5){width:13%}
 @media(max-width:1100px){.m1-analytics-table :is(th,td){padding-inline:8px}.m1-customer-table .support-avatar,.m1-agent-table .support-avatar{display:none}}
@@ -136,7 +137,8 @@
 .m1-inline-pager{justify-content:flex-start;margin-top:8px}
 /* 1024: list times (2026-11-05 14:30) stay on one line; the name column gives up the width. */
 @media(max-width:1100px){
-.m1-customer-table col:nth-child(1){width:24%}.m1-customer-table col:nth-child(2){width:13%}.m1-customer-table col:nth-child(3){width:16%}.m1-customer-table col:nth-child(4){width:19%}.m1-customer-table col:nth-child(5){width:14%}.m1-customer-table col:nth-child(6){width:14%}
+/* 加了邀请人列、服务状态和最近活动合成一格后：首充「历史未同步」一行放下，客户列让出宽度。 */
+.m1-customer-table col:nth-child(1){width:22%}.m1-customer-table col:nth-child(2){width:15%}.m1-customer-table col:nth-child(3){width:13%}.m1-customer-table col:nth-child(4){width:13%}.m1-customer-table col:nth-child(5){width:22%}.m1-customer-table col:nth-child(6){width:15%}
 .m1-finance-table col:nth-child(1){width:19%}.m1-finance-table col:nth-child(2){width:11%}.m1-finance-table col:nth-child(3){width:20%}.m1-finance-table col:nth-child(4){width:18%}.m1-finance-table col:nth-child(5){width:13%}
 .m1-pool-table col:nth-child(2){width:22%}.m1-pool-table col:nth-child(3){width:19%}.m1-pool-table col:nth-child(4){width:20%}.m1-pool-table col:nth-child(5){width:15%}
 }

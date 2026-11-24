@@ -38,8 +38,8 @@ export function pendingCorrections(actorKey: string, userKeys: readonly string[]
 }
 const outcomeUnknown = (cause: unknown) => cause instanceof UsersOutcomeUnknownError || cause instanceof UsersRequestError && cause.code === "IDEMPOTENCY_RESULT_UNKNOWN";
 
-export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorKey, canCorrect = false, onCorrected, onPendingChange, onClose }: {
-  userKey: string; notificationId: number; actorKey?: string; canCorrect?: boolean; onCorrected?: () => void; onPendingChange?: () => void; onClose: () => void;
+export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorKey, canCorrect = false, writeBlockedReason, onWriteBusy, onCorrected, onPendingChange, onClose }: {
+  userKey: string; notificationId: number; actorKey?: string; canCorrect?: boolean; writeBlockedReason?: string; onWriteBusy?: (busy: boolean) => void; onCorrected?: () => void; onPendingChange?: () => void; onClose: () => void;
 }) {
   const [data, setData] = useState<NotificationTimeEvidence | null>(null);
   const [error, setError] = useState("");
@@ -74,7 +74,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
     return () => { active = false; generation.current += 1; controller.abort(); };
   }, [userKey, notificationId, actorKey, canCorrect, attempt]);
   const submit = async (reason: string) => {
-    if (!canCorrect || !actorKey || busy.current) return;
+    if (!canCorrect || !actorKey || busy.current || writeBlockedReason) return;
     let command = corrections.list().find(value => value.fingerprint === slot);
     const retained = !!command;
     if (command && command.expiresAt <= Date.now()) return;
@@ -93,6 +93,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
     corrections.remember(slot, command.commandKey, { preview: command.preview, reason: command.reason, rejection: undefined });
     refreshPending();
     busy.current = true;
+    onWriteBusy?.(true);
     setSubmitting(true);
     const ownedGeneration = generation.current;
     const reread = () => { setConfirmation(null); setData(null); setAttempt(value => value + 1); };
@@ -131,6 +132,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       throw new Error(displayAdminError(cause));
     } finally {
       busy.current = false;
+      onWriteBusy?.(false);
       setSubmitting(false);
     }
   };
@@ -149,15 +151,16 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
     : data.reason);
   return <Drawer open onClose={onClose} busy={submitting} icon={Clock3} tone="role-3" title="通知时间证据" sub={`通知 ${notificationId}`}
     explain={<><p>读取证据不会修改通知。校正时间需要单独确认，已读状态保持不变。</p><p>此处展示当前回读证据；是否曾执行校正请查审计记录。</p></>}
-    footer={correctable ? <Decision primary={<Button variant="primary" onClick={() => setConfirmation(data)}>按投递事实校正时间</Button>} /> : undefined}>
+    footer={correctable ? <Decision note={writeBlockedReason} primary={<Button variant="primary" disabledReason={writeBlockedReason} onClick={() => setConfirmation(data)}>按投递事实校正时间</Button>} /> : undefined}>
     {notice && <Notice tone={notice.tone}><KeepText text={notice.text} /></Notice>}
     {pending && canCorrect && actorKey && <Notice tone="warn" title="原校正结果未知"
       action={<>
-        <Button size="sm" loading={submitting} disabledReason={expired ? EXPIRED_TEXT : undefined} onClick={() => void submit(pending.reason)}>重试原校正</Button>
+        <Button size="sm" loading={submitting} disabledReason={expired ? EXPIRED_TEXT : writeBlockedReason} onClick={() => void submit(pending.reason)}>重试原校正</Button>
         {isExplicitRejection(pending.rejection) && <Button size="sm" disabled={submitting} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>}>
       {expired ? `${EXPIRED_TEXT}。` : "按原请求重试会用原证据和理由。"}原理由：{pending.reason}
       <Explain label="技术信息" content={`原请求编号 ${pending.commandKey}`} />
+      {!expired && writeBlockedReason && <p className="rd-toolbar-note">{writeBlockedReason}</p>}
     </Notice>}
     {!data && !error && <BlockState state="loading" title="正在读取关联证据…" />}
     {error && <BlockState state="error" title={error} onRetry={() => setAttempt(value => value + 1)} />}
@@ -183,7 +186,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       </Facts>}
       effect={<StatusTag tone="progress" filled>立即生效</StatusTag>} confirmLabel="确认校正，立即生效"
       statedBrief={{ impact: "只改这条通知显示的时间，不重新发送，已读状态不变。", check: "核对当前记录时间和投递事实时间，理由写明依据。" }}
-      reasonMax={500} onClose={() => { if (!busy.current) setConfirmation(null); }} onConfirm={submit} />}
+      blockedReason={writeBlockedReason} reasonMax={500} onClose={() => { if (!busy.current) setConfirmation(null); }} onConfirm={submit} />}
     {releasing && pending && <ReleaseModal label={`校正通知 ${notificationId} 的时间`} onCancel={() => setReleasing(false)} onConfirm={release}
       explain="重试被明确拒绝也说明不了原校正的结果，先到操作记录核实。解除只移除本页这条原操作记录，原操作的结果和锁定不变。" />}
   </Drawer>;

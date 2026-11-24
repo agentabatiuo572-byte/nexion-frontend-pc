@@ -236,8 +236,11 @@ export type RecoveryItem = {
  * 结果未知、待审批这类记录的通用面板，和资金页的面板同一个样子（同一组 fund-* 类）：设备域、账户操作、客服组管理用它。
  * 一行标题加问号里的通用说明；每条一行（箭头和对象、状态标签、一句结论、右侧按钮），点行首箭头看细节；默认露三条。
  */
-export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎么处理", foot, items, tone = "warn", label = "结果未知的操作" }: {
-  title: ReactNode; explain?: ReactNode; explainLabel?: string; foot?: ReactNode; items: readonly RecoveryItem[]; tone?: StateTone; label?: string;
+export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎么处理", note, foot, items, tone = "warn", label = "结果未知的操作" }: {
+  title: ReactNode; explain?: ReactNode; explainLabel?: string;
+  /** 整个面板共用的一句常显说明，写在标题下、各行之上，一处只说一次（比如各行的按钮暂时不能点的原因，OP-126）。 */
+  note?: ReactNode;
+  foot?: ReactNode; items: readonly RecoveryItem[]; tone?: StateTone; label?: string;
 }) {
   const [all, setAll] = useState(false);
   const [open, setOpen] = useState<string[]>([]);
@@ -252,6 +255,7 @@ export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎�
   if (!items.length) return null;
   const shownItems = all ? ordered : ordered.slice(0, 3);
   return <div ref={box}><Notice tone={tone} title={<>{title}{explain && <Explain label={explainLabel} content={explain} />}</>}>
+    {note && <p className="fund-rows-note">{note}</p>}
     <ul className="fund-rows" aria-label={label}>{shownItems.map(item => {
       const expanded = open.includes(item.key);
       const id = `recovery-row-${item.key.replace(/[^A-Za-z0-9_-]/g, "-")}`;

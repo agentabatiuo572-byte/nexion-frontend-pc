@@ -68,6 +68,14 @@ import {
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
 import { RecoveryPanel, SETTLED_REJECTED, receiptExplain, receiptFact, receiptRejected, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
+import { COUNT_LABELS, COUNTS_RULE, CountsExplain, CountsFacts, CountsNotice, CountsRetryButton, InviterValue, countText, useCountsRetryFocus, type CountsView } from "@/app/components/invitation/invitation-view";
+import { inviterDetailView, referralCountsView } from "@/app/components/invitation/wiring";
+
+const STALE_PROFILE_WRITE_BLOCK = "资料没有刷新成功，刷新成功后再操作";
+/** 同一次重读在途时，各写入口的原因都用这一句；读失败后才换成上面那句（R30）。 */
+const PROFILE_REREAD_BLOCK = "正在重新读取，读完再操作";
+/** 结果未知面板在资料没刷新成功时的常显原因：只点名这时真被挡住的按钮，说清什么时候能点、查询不受影响（OP-126）。 */
+const recoveryStaleNote = (buttons: readonly string[]) => `资料没有刷新成功，刷新成功后再${buttons.map((name) => `「${name}」`).join("或")}；「查询原结果」照常可用。`;
 
 /**
  * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、回收并记录置换和回收）共用一张表，槽位分命名空间。
@@ -207,7 +215,7 @@ const DEPOSIT_STATUS: Record<string, string> = {
 };
 const DIRECTION: Record<string, string> = { IN: "收入", OUT: "支出" };
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
-const CHECK_DEVICE_RESULT_FIRST = "请先查询原结果";
+const CHECK_RESULT_FIRST = "请先查询原结果";
 const isDeviceCommand = (command: C1Command) => command.kind === "replace" || command.kind === "recycle";
 const withdrawalTone = (row: JsonRecord) => WITHDRAWAL_TONE[asText(row.status, "").toUpperCase()];
 const withdrawalLabel = (row: JsonRecord) => withdrawalRecordLabel({ status: asText(row.status, ""), chain: asText(row.chain, "") });
@@ -282,8 +290,8 @@ function sectionFailed(section: User360Section | null | undefined) {
   return ["ERROR", "UNKNOWN", "UNAVAILABLE"].includes(asText(section?.sourceStatus, "READY").toUpperCase());
 }
 
-function teamSectionHeading() {
-  return document.getElementById("section-team")?.querySelector<HTMLElement>(":scope > details > summary");
+function referralHeading() {
+  return document.getElementById("hub-referral")?.querySelector<HTMLElement>(":scope > details > summary");
 }
 
 function auditDetail(row: JsonRecord) {
@@ -557,7 +565,7 @@ function RecordTable({ label, rows, columns, empty = "暂无记录", selected, o
 }
 
 /** 折叠组里的一小块：缺的不显示，读取失败只替换这一块（C1-V02、C1-S04）。同组块头一个样子，都是收起的一行（重复）；里面有事时摘要写清是哪件事（DP-04）。 */
-function Block({ id, title, sub, explain, section, actions, failure, sectionRetry, issue, issueTone = "warn", summary, disclosure, children }: {
+function Block({ id, title, sub, explain, section, actions, failure, sectionRetry, issue, issueTone = "warn", summary, disclosure, reloading, live, children }: {
   id?: string;
   title: string;
   sub?: ReactNode;
@@ -573,6 +581,10 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
   /** 不是列表的小块：摘要写结论，自己管开合。 */
   summary?: ReactNode;
   disclosure?: { open: boolean; onOpenChange: (open: boolean) => void; summary: ReactNode };
+  /** 这一块正在重读：在途只有「重试中…」一种状态（ST-30、ST-31）。整块失败时失败标题、原因先收起，标题行也不写「加载失败」「正在加载…」；这一块标 aria-busy。 */
+  reloading?: boolean;
+  /** 一直挂着的读屏状态（rd-sr-only），放在这一块里，不打断相邻块的间距规则。 */
+  live?: ReactNode;
   children: ReactNode;
 }) {
   if (!section) return null;
@@ -580,12 +592,19 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
   const body = failure
     ? <BlockState state="error" compact title={failure} />
     : sectionFailed(section)
-      ? <BlockState state="error" compact title={`${title}加载失败`} detail={sectionRetry?.detail}
-          onRetry={sectionRetry?.onRetry ?? (() => window.location.reload())} retrying={sectionRetry?.retrying} />
+      ? sectionRetry
+        // 这块能自己重读：在途时只有一种状态，失败标题和原因先收起，新回包仍失败才放回来（ST-30、ST-31）。
+        // 样子同 rd BlockState 的单行失败卡；按钮一直是同一个、不用原生 disabled，按下后焦点不掉（rd 的 InlineRetry 会掉，BUG-677）。
+        ? <div className="rd-block-state" data-state={reloading ? "loading" : "error"} data-compact="" data-module-health-state={reloading ? undefined : "error"} role={reloading ? "status" : "alert"}>
+            {!reloading && <><div className="rd-block-state-title">{`${title}加载失败`}</div><div className="rd-block-state-detail">{sectionRetry.detail}</div></>}
+            <CountsRetryButton onRetry={sectionRetry.onRetry} retrying={sectionRetry.retrying} rereading={reloading} />
+          </div>
+        : <BlockState state="error" compact title={`${title}加载失败`} onRetry={() => window.location.reload()} />
       : <div className="rd-detail-block">{children}</div>;
   return (
-    <div id={id} className="rd-detail-block">
-      <Fold inset title={title} explain={explain} actions={actions} alert={failed || !!issue} alertTone={failed ? "danger" : issueTone} {...disclosure} summary={failed ? "加载失败" : issue ?? sub ?? disclosure?.summary ?? summary}>{body}</Fold>
+    <div id={id} className="rd-detail-block" aria-busy={reloading || undefined}>
+      <Fold inset title={title} explain={explain} actions={actions} alert={!reloading && (failed || !!issue)} alertTone={failed ? "danger" : issueTone} {...disclosure} summary={reloading ? (failed ? "" : sub ?? disclosure?.summary ?? summary) : failed ? "加载失败" : issue ?? sub ?? disclosure?.summary ?? summary}>{body}</Fold>
+      {live}
     </div>
   );
 }
@@ -683,12 +702,15 @@ export default function UserDetailPage() {
   /** 最近一次读用户资料是否被拒（403 等）：写成功后回读失败时，提示要按页面实际给的入口写。 */
   const readDenied = useRef(false);
   const referralRequest = useRef<AbortController | null>(null);
-  const teamHeadingTopBeforeRetry = useRef<number | null>(null);
+  const referralTopBeforeRetry = useRef<number | null>(null);
   const [referralRetrying, setReferralRetrying] = useState(false);
   const [referralError, setReferralError] = useState<string | null>(null);
   const [readAt, setReadAt] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
   const [actionPending, setActionPending] = useState<string | null>(null);
+  const [paymentWriteBusy, setPaymentWriteBusy] = useState(false);
+  const [notificationWriteBusy, setNotificationWriteBusy] = useState(false);
+  const writeBusy = actionPending !== null || paymentWriteBusy || notificationWriteBusy;
   const [paymentMethods, setPaymentMethods] = useState<UserPaymentMethodPage | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [includeUnbound, setIncludeUnbound] = useState(false);
@@ -735,16 +757,16 @@ export default function UserDetailPage() {
 
   const onPaymentSecurity = useCallback((state: PaymentSecurityState, pending: boolean) => setPaymentSecurity({ state, pending }), []);
 
-  const resetReferralRetry = useCallback(() => {
+  const stopReferralRetry = useCallback(() => {
     referralRequest.current?.abort();
     referralRequest.current = null;
     setReferralRetrying(false);
-    setReferralError(null);
   }, []);
   const denyRead = useCallback((message: string) => {
     requestGeneration.current++;
     loadedKey.current = "";
-    resetReferralRetry();
+    stopReferralRetry();
+    setReferralError(null);
     setDetailKey(readKey);
     setDetail(null);
     setReadAt("");
@@ -756,7 +778,7 @@ export default function UserDetailPage() {
     setDenied(true);
     setError(message);
     setLoading(false);
-  }, [readKey, resetReferralRetry]);
+  }, [readKey, stopReferralRetry]);
   const readProfile = useCallback((signal?: AbortSignal) => supportScope
     ? fetchSupportCustomerFullProfile(userKey, signal)
     : fetchUser360(userKey, signal), [supportScope, userKey]);
@@ -771,14 +793,15 @@ export default function UserDetailPage() {
     if (currentReadKey.current !== readKey) return;
     const generation = ++requestGeneration.current;
     const active = () => generation === requestGeneration.current && currentReadKey.current === readKey && !signal?.aborted;
-    resetReferralRetry();
+    stopReferralRetry();
     setLoading(true);
     setError(null);
     setDenied(false);
     readDenied.current = false;
     setActionConfirm(null); setNotificationEvidence(null); setRecord(null);
     // 换用户、换账号时先清旧资料（C1-H02）。同一个用户刷新时旧资料留在屏幕上，写入口禁用，读失败再清。
-    if (loadedKey.current !== readKey) { setDetail(null); setPaymentMethods(null); setRevokeScan(null); setRevokeScanFailed(false); setOpenFolds({}); setOpenRecordList(undefined); }
+    // 已标为旧的资料在重读期间继续禁写，直到替换或清空这份资料（ST-36）。
+    if (loadedKey.current !== readKey) { setReferralError(null); setDetail(null); setPaymentMethods(null); setRevokeScan(null); setRevokeScanFailed(false); setOpenFolds({}); setOpenRecordList(undefined); }
     setDetailKey(readKey);
     if (!userKey) {
       setDetail(null);
@@ -791,6 +814,7 @@ export default function UserDetailPage() {
       if (active()) {
         loadedKey.current = readKey;
         setDetail(next);
+        setReferralError(null);
         setReadAt(businessClock(Date.now()));
         setReloadTick((tick) => tick + 1);
         return true;
@@ -802,6 +826,7 @@ export default function UserDetailPage() {
         else {
           loadedKey.current = "";
           setDetail(null);
+          setReferralError(null);
           setPaymentMethods(null);
           setError(displayAdminError(err));
         }
@@ -810,35 +835,34 @@ export default function UserDetailPage() {
       if (active()) setLoading(false);
     }
     return false;
-  }, [userKey, readKey, readProfile, denialMessage, denyRead, resetReferralRetry]);
+  }, [userKey, readKey, readProfile, denialMessage, denyRead, stopReferralRetry]);
 
   const retryReferral = async () => {
-    if (loading || actionPending || referralRequest.current || loadedKey.current !== readKey) return;
+    if (loading || writeBusy || referralRequest.current || loadedKey.current !== readKey) return;
     const controller = new AbortController();
     referralRequest.current = controller;
     const generation = requestGeneration.current;
     const active = () => generation === requestGeneration.current && currentReadKey.current === readKey && !controller.signal.aborted;
+    // Keep folds that were open or closed by default before replacing the data.
+    setOpenFolds(current => ({
+      security: securityAlert || securityFailed,
+      funds: fundsFailed || fundsAlert,
+      devices: devicesFailed || devicesAlert,
+      team: teamFailed || countsAlert,
+      records: recordsAlert || recordsFailed,
+      ...current,
+    }));
+    setOpenRecordList(current => current === undefined ? visibleRecordList : current);
     setReferralRetrying(true);
     try {
       const next = await readProfile(controller.signal);
       if (!active()) return;
-      teamHeadingTopBeforeRetry.current = teamSectionHeading()?.getBoundingClientRect().top ?? null;
-      // Keep folds that were open or closed by default before replacing the data.
-      setOpenFolds(current => ({
-        security: securityAlert || securityFailed,
-        funds: fundsFailed || fundsAlert,
-        devices: devicesFailed || devicesAlert,
-        team: teamFailed,
-        records: recordsAlert || recordsFailed,
-        ...current,
-      }));
-      setOpenRecordList(current => current === undefined ? visibleRecordList : current);
+      referralTopBeforeRetry.current = referralHeading()?.getBoundingClientRect().top ?? null;
       setActionConfirm(null);
       // The time evidence drawer reads by notification id and submits on its own, so it stays open like after a header refresh.
       setRecord(null);
       setDetail(next);
       setReadAt(businessClock(Date.now()));
-      setReloadTick(tick => tick + 1);
       setReferralError(null);
     } catch (error) {
       if (!active()) return;
@@ -878,6 +902,9 @@ export default function UserDetailPage() {
   const nickname = asText(profile?.nickname, "用户详情");
   const displayNickname = userNicknameText(nickname, profile?.phoneMasked);
   const hasDetail = detail !== null;
+  const staleWriteReason = detailKey === readKey && hasDetail && referralError ? STALE_PROFILE_WRITE_BLOCK : undefined;
+  // 挡不挡写和原来一样（资料旧了或推荐团队在重读）；只有原因的说法按在途与否换（R30）。
+  const profileWriteBlockedReason = staleWriteReason || referralRetrying ? loading || referralRetrying ? PROFILE_REREAD_BLOCK : staleWriteReason : undefined;
   const paymentSecurityPort = useMemo(() => {
     if (detailKey !== readKey || !hasDetail || !c3UserId) return null;
     return supportScope ? paymentSecurityPorts.support(c3UserId) : paymentSecurityPorts.global(c3UserId);
@@ -905,7 +932,7 @@ export default function UserDetailPage() {
   useEffect(() => { syncPending(); }, [syncPending]);
   useEffect(() => {
     const now = Date.now();
-    const timers = pendingCommands.filter(command => isDeviceCommand(command) && !command.legacy
+    const timers = pendingCommands.filter(command => !command.legacy
       && pendingFound[command.commandKey] === "none" && command.expiresAt > now)
       .map(command => window.setTimeout(() => refreshDeviceRetryWindow(value => value + 1), command.expiresAt - now));
     return () => timers.forEach(timer => window.clearTimeout(timer));
@@ -986,6 +1013,7 @@ export default function UserDetailPage() {
   const resultLabel = (command: C1CommandInput) => command.kind === "replace" || command.kind === "recycle" ? `${deviceLabel(command).action} · ${deviceResult(command)}` : command.label;
   const execute = async (command: C1CommandInput) => {
     if (String(useAdminAuth.getState().session?.adminId) !== command.adminKey) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+    if (staleWriteReason) throw new Error(staleWriteReason);
     const slot = commandSlot(command);
     const saved = c1UserCommands.list().find(record => record.fingerprint === slot && record.adminKey === command.adminKey);
     const retained = saved?.commandKey;
@@ -1038,11 +1066,14 @@ export default function UserDetailPage() {
     }
   };
 
-  const busyReason = loading || referralRetrying ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
-  const deviceRetryBlock = (command: C1Command) => {
+  const busyReason = loading || referralRetrying ? PROFILE_REREAD_BLOCK : actionPending ? `正在执行：${actionPending}` : undefined;
+  // 先查原结果，明确查不到才开放「按原请求重试」（OP-93 第 7 条），设备和账户操作一样。
+  const pendingRetryBlock = (command: C1Command) => {
     if (isExplicitRejection(command.rejection)) return "重试被明确拒绝";
     const result = pendingFound[command.commandKey];
-    return result === "checking" ? "正在查询原结果" : result !== "none" ? CHECK_DEVICE_RESULT_FIRST : undefined;
+    // 已经查到的说清是哪种情况，不把「查到了别的结论」说成「还没查」。
+    return result === undefined ? CHECK_RESULT_FIRST : result === "checking" ? "正在查询原结果" : result === "error" ? "查询失败，稍后再查"
+      : result === "PROCESSING" ? "原操作还在执行，稍后再查" : result === "none" ? undefined : "已查到原结果，按这一行的说明处理";
   };
   const clearPendingFound = (commandKey: string) => {
     setPendingFound(current => ({ ...current, [commandKey]: undefined }));
@@ -1050,14 +1081,14 @@ export default function UserDetailPage() {
 
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。过期和查不到都不解除（OP-96、OP-153）。 */
   const retryPending = async (command: C1Command) => {
-    if (command.expiresAt <= Date.now()) return;
+    if (command.expiresAt <= Date.now() || staleWriteReason) return;
     const device = isDeviceCommand(command);
-    if (device && (!canWriteC2 || command.legacy || busyReason || deviceRetryBlock(command))) return;
+    if (pendingRetryBlock(command) || device && (!canWriteC2 || command.legacy || busyReason)) return;
     if (!c1UserCommands.isDurablyStored(command.fingerprint, command.commandKey)) {
       setPendingNotes((current) => ({ ...current, [command.fingerprint]: "本机存储里查不到原操作，这次没有发送。到操作记录与审批核对，原记录继续保留。" }));
       return;
     }
-    if (device) clearPendingFound(command.commandKey);
+    clearPendingFound(command.commandKey);
     try {
       await execute(command);
     } catch (cause) {
@@ -1079,18 +1110,15 @@ export default function UserDetailPage() {
 
   /** 先按原请求查原结果，查到确定结论才解除并告诉运营结果；查不出结论再读回现在的值，变了也可能是别人改的，待确认保留（OP-93、OP-95）。 */
   const verifyPending = async (command: C1Command) => {
-    const device = isDeviceCommand(command);
-    if (device) {
-      if (busyReason || pendingFound[command.commandKey] === "checking") return;
-      setPendingFound(current => ({ ...current, [command.commandKey]: "checking" }));
-    }
+    if (busyReason || pendingFound[command.commandKey] === "checking") return;
+    setPendingFound(current => ({ ...current, [command.commandKey]: "checking" }));
     const result = await queryUserDetailCommand(command).catch(() => null);
     if (String(useAdminAuth.getState().session?.adminId) !== (command.adminKey || adminKey)) {
-      if (device) clearPendingFound(command.commandKey);
+      clearPendingFound(command.commandKey);
       return;
     }
     if (result?.settled) {
-      if (device) clearPendingFound(command.commandKey);
+      clearPendingFound(command.commandKey);
       c1UserCommands.forget(command.fingerprint, command.commandKey);
       syncPending(); setActionConfirm(null); setReleasing(null);
       const status = result.receipt?.originalStatus;
@@ -1110,6 +1138,7 @@ export default function UserDetailPage() {
 
   /** 核查结案：按原请求号交后端核对证据（同 A3、A4、D7）；结了案才解除，没结案的按新查到的结论显示。 */
   const closePending = async (command: C1Command, evidence: FundCommandEvidence) => {
+    if (staleWriteReason) throw new Error(staleWriteReason);
     const result = await queryUserDetailCommand(command, evidence);
     if (String(useAdminAuth.getState().session?.adminId) !== (command.adminKey || adminKey)) return;
     setPendingOutcomes((current) => ({ ...current, [command.commandKey]: { receipt: result.receipt } }));
@@ -1128,11 +1157,11 @@ export default function UserDetailPage() {
       : receiptRejected(result.receipt) ? "REJECTED" : "PROCESSED" }));
   };
 
-  const nicknameBlock = pendingCommands.some((command) => command.kind === "nickname") ? "重置昵称的结果未知，先到页面上方核对" : busyReason;
+  const nicknameBlock = pendingCommands.some((command) => command.kind === "nickname") ? "重置昵称的结果未知，先到页面上方核对" : busyReason ?? staleWriteReason;
   const methodBlock = (method: UserPaymentMethod) => pendingCommands.some((command) => command.methodId === method.id)
     ? "这张卡有结果未知的操作，先到页面上方核对"
     : paymentLoading ? "正在读取支付方式，读完再操作" : busyReason;
-  const deviceBlock = (deviceId: number) => pendingCommands.some((command) => command.deviceId === deviceId) ? "这台设备有结果未知的操作，先到页面上方核对" : busyReason;
+  const deviceBlock = (deviceId: number) => pendingCommands.some((command) => command.deviceId === deviceId) ? "这台设备有结果未知的操作，先到页面上方核对" : busyReason ?? staleWriteReason;
 
   const openNicknameReset = () => setActionConfirm({ briefKind: "record",
     action: `重置昵称 · ${displayNickname}`,
@@ -1229,8 +1258,15 @@ export default function UserDetailPage() {
   const fundsAlert = withdrawalExceptions + withdrawalsWaiting > 0;
   const devicesFailed = failedSection(detail?.devices, detail?.earnings) || ledgerUnread && !!detail?.earnings;
   const devicesAlert = deviceExceptions > 0;
-  const referralFailed = sectionFailed(detail?.referral);
-  const teamFailed = referralFailed || failedSection(detail?.engagement, detail?.vrank);
+  const referralRetry = { onRetry: () => { referralFocus.arm(); void retryReferral(); }, retrying: referralRetrying || loading || writeBusy, rereading: referralRetrying };
+  const referralSourceFailed = sectionFailed(detail?.referral);
+  const counts: CountsView = referralSourceFailed ? { kind: "absent" }
+    : referralError ? { kind: "failed", reason: referralError, ...referralRetry }
+    : referralCountsView(detail?.referral, referralRetry);
+  const countsAlert = counts.kind === "anomaly" || counts.kind === "partial" || counts.kind === "failed";
+  const referralFocus = useCountsRetryFocus(referralRetrying, counts.kind === "ready");
+  const inviter = inviterDetailView(detail?.profile?.inviter, supportScope, reach);
+  const teamFailed = referralSourceFailed || failedSection(detail?.engagement, detail?.vrank);
   const recordsFailed = failedSection(detail?.notifications, detail?.commerce);
   const failedPushCount = asNumber(detail?.notifications?.failedPushCount);
   const recordsAlert = failedPushCount > 0 || orderExceptions > 0 || corrections.length > 0;
@@ -1243,16 +1279,17 @@ export default function UserDetailPage() {
     securityPresent && navItem("security", "安全", securityFailed, securityIssues > 0 ? `${securityIssues} 项` : "", paymentSecurity.pending ? "解除结果未知" : ""),
     fundsPresent && navItem("funds", "资金", fundsFailed, withdrawalExceptions > 0 ? `${withdrawalExceptions} 笔` : "", withdrawalsWaiting > 0 ? `${withdrawalsWaiting} 笔待处理` : ""),
     devicesPresent && navItem("devices", "设备与收益", devicesFailed, deviceExceptions > 0 ? `${deviceExceptions} 台` : ""),
-    teamPresent && navItem("team", "团队与互动", teamFailed, ""),
+    // 推荐团队整块重读在途时页签不写「加载失败」，和块里只留「重试中…」一致（ST-30，R26）。
+    teamPresent && navItem("team", "团队与互动", referralSourceFailed && !referralRetrying || failedSection(detail?.engagement, detail?.vrank), ""),
     recordsPresent && navItem("records", "记录", recordsFailed, failedPushCount + orderExceptions > 0 ? `${failedPushCount + orderExceptions} 条` : "", corrections.length > 0 ? "校正结果未知" : ""),
   ].filter((item) => item !== false);
   const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold, restoreKey: readKey });
   useEffect(() => { markSection.current = nav.mark; }, [nav.mark]);
   useLayoutEffect(() => {
-    const previousTop = teamHeadingTopBeforeRetry.current;
-    teamHeadingTopBeforeRetry.current = null;
+    const previousTop = referralTopBeforeRetry.current;
+    referralTopBeforeRetry.current = null;
     if (previousTop === null) return;
-    const heading = teamSectionHeading();
+    const heading = referralHeading();
     const scroller = heading?.closest("main");
     if (heading && scroller) scroller.scrollTop += heading.getBoundingClientRect().top - previousTop;
   }, [detail]);
@@ -1263,7 +1300,7 @@ export default function UserDetailPage() {
   });
   // 多个分区可以同时露出异常摘要，记录表只展开一张（DP-67）。
   const visibleRecordList = openRecordList === undefined
-    ? unfinishedRevokes.length > 0 ? "payment" : fundsAlert ? "withdrawal" : devicesAlert ? "device" : orderExceptions > 0 ? "order" : failedPushCount > 0 ? "notification" : null
+    ? unfinishedRevokes.length > 0 ? "payment" : fundsAlert ? "withdrawal" : devicesAlert ? "device" : orderExceptions > 0 ? "order" : failedPushCount > 0 ? "notification" : countsAlert || referralSourceFailed ? "member" : null
     : openRecordList;
   const listProps = (kind: RecordKind) => ({ disclosure: {
     open: visibleRecordList === kind,
@@ -1337,7 +1374,7 @@ export default function UserDetailPage() {
       <p>最近一笔：按创建时间取最新的一笔提现，各种状态都算，不受下面列表条数限制。</p>
     </> },
     detail.devices && { label: "设备数", value: numberLabel(summary.deviceCount), unit: "台", tone: "role-2" as const, icon: Cpu, group: "devices", anchor: "hub-devices", explain: "这个用户的全部设备记录，含已回收和已停用的，最多读 200 台。现在还能运行的看下面的活跃数。" },
-    detail.referral && { label: "团队规模", value: numberLabel(referralFailed ? null : summary.teamSize), unit: "人", tone: "role-3" as const, icon: UsersRound, group: "team", anchor: "hub-referral" },
+    detail.referral && { label: COUNT_LABELS.total, value: numberLabel(counts.kind === "ready" ? counts.total : null), unit: "人", tone: "role-3" as const, icon: UsersRound, group: "team", anchor: "hub-referral", explain: COUNTS_RULE },
   ].filter((value) => !!value).slice(0, 4) as { label: string; value: string; unit: string; tone: "role-1" | "role-2" | "role-3" | "role-4"; icon: typeof Wallet; group: string; anchor: string; explain?: ReactNode; sub?: ReactNode }[];
 
   const inKpi = (label: string) => kpis.some((kpi) => kpi.label === label);
@@ -1426,6 +1463,8 @@ export default function UserDetailPage() {
   ].filter((item): item is [string, string] => Array.isArray(item));
 
   /** 结果未知的操作收成一个面板（和资金页同一个样子）：每条一行，通用说明只在标题问号里说一次；按钮和可用条件照旧。 */
+  // 哪些行有只因资料没刷新成功才点不了的「按原请求重试」「核查结案」：面板那句常显原因只点名这些按钮，一个都没有就不写。
+  const staleButtons = new Set<string>();
   const recoveryItems: RecoveryItem[] = [
     ...pendingCommands.map((command): RecoveryItem => {
       const expired = command.expiresAt <= Date.now();
@@ -1442,7 +1481,7 @@ export default function UserDetailPage() {
       const refused = writable && !command.legacy && isExplicitRejection(command.rejection);
       const lookup = pendingFound[command.commandKey];
       const checkingResult = lookup === "checking";
-      const retryBlock = device ? deviceRetryBlock(command) : undefined;
+      const retryBlock = pendingRetryBlock(command);
       const canClose = canInvestigateECommand(userDetailCommandRoute(command).readAuthority);
       // 能在这里核查结案的，过期后不再指去操作记录与审批。
       const nextStep = expired ? canClose ? "已超过 24 小时，不能再重试。" : `${EXPIRED_TEXT}。` : command.legacy
@@ -1457,10 +1496,13 @@ export default function UserDetailPage() {
       const outcome = refused ? undefined : pendingOutcomes[command.commandKey];
       const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
       const closable = canClose && !!receipt && (receipt.originalStatus === "UNKNOWN" || expired && (receipt.originalStatus === "SUCCEEDED" || receipt.originalStatus === "FAILED"));
+      if (retryable) staleButtons.add("按原请求重试");
+      if (closable) staleButtons.add("核查结案");
       const elsewhere = expired && canClose ? "已过 24 小时，请核查结案。" : "到操作记录与审批核对。";
       const shown: { tone: StateTone; label: string; line: string } | undefined = found && {
         error: { tone: "danger" as const, label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" },
-        none: { tone: "warn" as const, label: "没有查到", line: device && retryable ? "按原请求重试只重发原请求，不会重复执行。" : "查不到不等于没执行，先到操作记录与审批核对，不要另做一次。" },
+        none: { tone: "warn" as const, label: "没有查到", line: retryable ? "按原请求重试只重发原请求，不会重复执行。"
+          : expired ? `${EXPIRED_TEXT}。` : "查不到不等于没执行，先到操作记录与审批核对，不要另做一次。" },
         PROCESSING: { tone: "progress" as const, label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE },
         FAILED: { tone: "neutral" as const, label: "记为失败", line: retryable ? "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。"
           : expired && canClose ? FAILED_EXPIRED_LINE : "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起。" },
@@ -1478,8 +1520,8 @@ export default function UserDetailPage() {
         note: pendingNotes[command.fingerprint],
         actions: <>
           <Button size="sm" disabled={!!busyReason || checkingResult} onClick={() => void verifyPending(command)}>查询原结果</Button>
-          {closable && <Button size="sm" variant="danger-outline" disabled={!!busyReason} onClick={() => setClosingCommand(command)}>核查结案</Button>}
-          {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason ?? retryBlock} onClick={() => void retryPending(command)}>按原请求重试</Button>}
+          {closable && <Button size="sm" variant="danger-outline" disabled={!!busyReason} disabledReason={busyReason ? undefined : staleWriteReason} onClick={() => setClosingCommand(command)}>核查结案</Button>}
+          {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason ?? retryBlock ?? staleWriteReason} onClick={() => void retryPending(command)}>按原请求重试</Button>}
           {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
           {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
         </>,
@@ -1501,7 +1543,10 @@ export default function UserDetailPage() {
     }),
   ];
   const openCount = pendingCommands.filter((command) => !isExplicitRejection(command.rejection) && ["FAILED", "REJECTED", "PROCESSED"].includes(pendingFound[command.commandKey] ?? "")).length;
-  const recoveryPanel = <RecoveryPanel title={recoveryTitle(recoveryItems.length - openCount, 0, 0, openCount)} explainLabel="结果未知怎么处理"
+  // 资料没刷新成功时，各行按钮上的原因只在悬停和聚焦时看得到：面板标题下常显一句，一处只说一次；同一次重读在途时和各写入口同一个说法（R30）。
+  const staleBlocked = ["按原请求重试", "核查结案"].filter((name) => staleButtons.has(name));
+  const recoveryNote = staleBlocked.length && (staleWriteReason || referralRetrying) ? loading || referralRetrying ? PROFILE_REREAD_BLOCK : recoveryStaleNote(staleBlocked) : undefined;
+  const recoveryPanel = <RecoveryPanel title={recoveryTitle(recoveryItems.length - openCount, 0, 0, openCount)} explainLabel="结果未知怎么处理" note={recoveryNote}
     explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原请求重试不会重复执行。有结果前，相关对象不能再操作。"
     foot={canReadA2 ? <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录与审批核对</Link> : undefined}
     items={recoveryItems} />;
@@ -1558,7 +1603,10 @@ export default function UserDetailPage() {
     ...(canWriteC1 ? [{ label: "操作", align: "right" as const, end: true, cell: (row: JsonRecord) => {
       const method = row as UserPaymentMethod;
       if (method.status !== "BOUND") return "—";
-      return <Cell full sub={methodBlock(method)} main={<Button size="sm" disabledReason={methodBlock(method) ?? (method.trialGuard ? "这张卡有历史试用关联记录，暂时不能解绑。" : undefined)} onClick={() => openUnbind(method)}>解绑</Button>} />;
+      const blocked = methodBlock(method);
+      const trialBlock = method.trialGuard ? "这张卡有历史试用关联记录，暂时不能解绑。" : undefined;
+      const visibleBlock = blocked ?? (trialBlock ? undefined : staleWriteReason);
+      return <Cell full sub={visibleBlock} main={<Button size="sm" disabledReason={visibleBlock ?? trialBlock} onClick={() => openUnbind(method)}>解绑</Button>} />;
     } }] : []),
   ];
 
@@ -1595,11 +1643,16 @@ export default function UserDetailPage() {
         detail.devices && `在线 ${numberLabel(detail.devices.onlineCount)} / 活跃 ${numberLabel(detail.devices.activeCount)}`,
         detail.earnings && `收益合计 ${amountText(detail.earnings.totalUsdt)}`,
       ]);
-  const teamText = referralFailed ? "推荐团队加载失败" : teamFailed ? "有区块加载失败" : joined([
-    detail.referral && !inKpi("团队规模") && `团队 ${numberLabel(detail.referral.teamSize)} 人`,
-    detail.referral && `直接邀请 ${numberLabel(detail.referral.directCount)} 人`,
+  // 收起时的摘要按本人的数写；人数读不全时开头换成对应的话，不写旧的数（DESIGN.md 团队与互动折叠摘要）。
+  const countsHead = counts.kind === "anomaly" ? "人数暂不显示" : counts.kind === "partial" ? "人数没有读全" : counts.kind === "failed" ? "人数加载失败" : null;
+  const countsPhrase = (key: "total" | "direct") => `${COUNT_LABELS[key]} ${counts.kind === "ready" ? `${counts[key]} 人` : "—"}`;
+  const teamText = referralSourceFailed ? "推荐团队加载失败" : teamFailed ? "有区块加载失败" : joined([
+    detail.referral && (countsHead ?? (!inKpi(COUNT_LABELS.total) && countsPhrase("total"))),
+    detail.referral && !countsHead && countsPhrase("direct"),
     detail.vrank && `团队等级 ${asText(detail.vrank.currentRank)}`,
   ]);
+  // 推荐团队收起时写人数结论；展开后下面有同样的数，只写成员表的说明（DP-04、DP-61）。
+  const referralSummary = visibleRecordList === "member" ? "成员最多 20 位" : countsHead ?? joined([countsPhrase("direct"), !inKpi(COUNT_LABELS.total) && countsPhrase("total")]);
   const recordsText = recordsFailed
     ? "有区块加载失败"
     : recordsAlert
@@ -1630,12 +1683,14 @@ export default function UserDetailPage() {
         level={`用户分层 ${asText(profile.userLevel)} · 团队等级 ${asText(profile.vRank)}`}
         facts={[
           { label: "用户编码", value: <span data-mono>{userNo}</span> },
+          // 邀请人只在页头写一次，推荐团队里不再写（PRD §4.2）。旧后端没有这个字段时整项不显示，不当成「无邀请人」。
+          ...(inviter ? [{ label: "邀请人", value: <InviterValue view={inviter} /> }] : []),
           { label: "手机", value: asText(profile.phoneMasked) },
           { label: "注册时间", value: shortTime(profile.registeredAt) },
           { label: "最近登录", value: shortTime(profile.lastLoginAt) },
         ]}
         meta={<>{readAt} 读取（{businessZone().label}）<Explain label="什么时候读取" content="打开和点「刷新」时读取，不自动刷新。" /></>}
-        readOnly={!supportScope && !canWriteC1 && !canWriteC2 && !canReleasePayment ? "当前账号在这页只能查看" : undefined}
+        readOnly={!supportScope && !canWriteC1 && !canWriteC2 && !canReleasePayment ? "你只能查看；修改需要「C1 用户360画像-常规写」、「C2 账户操作-常规写」或「C5 解除钱包支付密码锁定」权限" : undefined}
         guideExtra={hiddenNote ? <p>这个账号看不到的区块不显示：{hiddenNote}。</p> : undefined} />
 
       {conclusion}
@@ -1695,7 +1750,7 @@ export default function UserDetailPage() {
               {filteredSessions.length > C1_SESSION_PAGE_SIZE && <Pager label="登录记录" total={filteredSessions.length} page={sessionPage} pageSize={C1_SESSION_PAGE_SIZE} sizes={[C1_SESSION_PAGE_SIZE]} onPage={(page) => { setRecord(null); setSessionPage(Math.min(sessionPageCount, Math.max(1, page))); }} onPageSize={() => undefined} />}
             </Block>}
             {paymentSecurityPort && <div className="rd-detail-block">
-              <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick} canRelease={canReleasePayment}
+              <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick} canRelease={canReleasePayment} writeBlockedReason={profileWriteBlockedReason} onWriteBusy={setPaymentWriteBusy}
                 onState={onPaymentSecurity} />
             </div>}
             {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError && `支付方式加载失败：${paymentError}`}
@@ -1765,15 +1820,23 @@ export default function UserDetailPage() {
         </div>}
 
         {teamPresent && <div id={nav.anchor("team")}>
-          <Fold title="团队与互动" icon={Network} tone="role-3" summary={foldSummary("team", teamFailed, teamText)} alertTone="danger" {...foldProps("team", teamFailed)}>
-            <Block id="hub-referral" title="推荐团队" {...listProps("member")} section={detail.referral} sub="最多 20 条"
-              sectionRetry={{ detail: referralError ?? displayAdminReadError(undefined), onRetry: () => void retryReferral(), retrying: referralRetrying || loading || actionPending !== null }}
-              explain="成员最多列 20 条，不是完整名单。团队规模、直接邀请和团队订单额是另外算的总数，不是这些行相加。">
+          <Fold title="团队与互动" icon={Network} tone="role-3" summary={foldSummary("team", teamFailed || countsAlert, teamText)} alertTone={teamFailed ? "danger" : "warn"} {...foldProps("team", teamFailed || countsAlert)}>
+            <Block id="hub-referral" title="推荐团队" {...listProps("member")} section={detail.referral} sub={referralSummary}
+              issue={counts.kind === "failed" ? countsHead ?? undefined : undefined}
+              reloading={referralRetrying} live={<span role="status" className="rd-sr-only">{referralFocus.status}</span>}
+              sectionRetry={{ detail: referralError ?? displayAdminReadError(undefined), ...referralRetry }}
+              explain="下面最多列 20 位成员，是注册时记下的样本，不是完整名单；上面的人数另算，对不上是正常的。">
+              {/* 局部重读失败、上次读到的成员和订单额还在：写明是哪次读到的（ST-36）；时间就是页头那次读取，下一次重读在途时不写（只留「重试中…」）。 */}
+              {referralError && !referralSourceFailed && !referralRetrying && <p className="rd-toolbar-note" data-tone="warn">以下是 {readAt}（{businessZone().label}）的数据，刷新失败</p>}
+              {/* 四个人数加团队订单额，按同页列线铺开（PRD §4.2）；全部团队成员已是关键数字时不重复（DP-61）。口径只在「团队奖励范围内」旁的问号里。 */}
               <Values rows={[
-                ...(inKpi("团队规模") ? [] : [["团队规模", `${numberLabel(detail.referral?.teamSize)} 人`] as const]),
-                ["直接邀请", `${numberLabel(detail.referral?.directCount)} 人`],
+                [COUNT_LABELS.direct, countText(counts, "direct")],
+                [<>{COUNT_LABELS.within}<CountsExplain /></>, countText(counts, "within")],
+                [COUNT_LABELS.beyond, countText(counts, "beyond")],
+                ...(inKpi(COUNT_LABELS.total) ? [] : [[COUNT_LABELS.total, countText(counts, "total")] as const]),
                 ["团队订单额", amountText(detail.referral?.teamVolumeUsd)],
               ]} />
+              {counts.kind === "failed" ? <CountsFacts view={counts} /> : <CountsNotice view={counts} />}
               <RecordTable label="推荐团队" rows={members} columns={MEMBER_COLUMNS} {...recordProps("member")} />
             </Block>
             <Block id="hub-engagement" title="互动与参与" {...listProps("engagement")} section={detail.engagement ? { sourceStatus: asText(detail.engagement.sourceStatus, "READY") } : undefined}>
@@ -1784,8 +1847,8 @@ export default function UserDetailPage() {
                 ["用户分层", asText(detail.vrank?.userLevel)],
                 ["团队等级", asText(detail.vrank?.currentRank)],
                 ...(detail.referral ? [] : [
-                  ["团队规模", `${numberLabel(detail.vrank?.teamSize)} 人`] as const,
-                  ["直接邀请", `${numberLabel(detail.vrank?.directCount)} 人`] as const,
+                  [COUNT_LABELS.total, countText(counts, "total")] as const,
+                  [COUNT_LABELS.direct, countText(counts, "direct")] as const,
                   ["团队订单额", amountText(detail.vrank?.teamVolumeUsd)] as const,
                 ]),
               ]} />
@@ -1850,6 +1913,7 @@ export default function UserDetailPage() {
           confirmLabel={actionConfirm.confirmLabel}
           confirmTone={actionConfirm.confirmTone}
           statedBrief={actionConfirm.statedBrief}
+          blockedReason={staleWriteReason}
           reasonMax={200}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason) => {
@@ -1858,7 +1922,7 @@ export default function UserDetailPage() {
           }}
         />
       )}
-      {closingCommand && <FundClosureModal label={resultLabel(closingCommand)} createdAt={closingCommand.createdAt} known={closureKnown(pendingOutcomes[closingCommand.commandKey])}
+      {closingCommand && <FundClosureModal label={resultLabel(closingCommand)} createdAt={closingCommand.createdAt} known={closureKnown(pendingOutcomes[closingCommand.commandKey])} blockedReason={staleWriteReason}
         facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(pendingOutcomes[closingCommand.commandKey]), "记录保留")}</Fact>}
         onClose={() => setClosingCommand(null)} onSubmit={(evidence) => closePending(closingCommand, evidence)} />}
       {releasing && <ReleaseModal label={resultLabel(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
@@ -1867,7 +1931,7 @@ export default function UserDetailPage() {
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}
           userKey={userKey} notificationId={notificationEvidence.id} actorKey={session?.adminId == null ? undefined : String(session.adminId)}
-          canCorrect={canCorrectNotificationTime} onPendingChange={syncPending} onCorrected={() => {
+          canCorrect={canCorrectNotificationTime} writeBlockedReason={profileWriteBlockedReason} onWriteBusy={setNotificationWriteBusy} onPendingChange={syncPending} onCorrected={() => {
             const text = `通知 ${notificationEvidence.id} 已按投递事实校正时间，已读状态保持不变。`;
             setWriteResult({ key: readKey, text, tone: "ok" });
             void load().then(refreshed => {

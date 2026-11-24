@@ -3,7 +3,8 @@
 import { useReach } from "@/lib/nav/use-reach";
 import { customerConversations, replyTimeout } from "@/lib/admin/customer-conversations";
 
-import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode, type SetStateAction } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { useSearchParams } from "next/navigation";
 import { Bell, BellOff, Check as CheckIcon, Clock3, Image as ImageIcon, Lock, Megaphone, Plus, Search, SendHorizontal, Square, TimerOff } from "lucide-react";
 import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, Fold, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, RecordList, ReleaseModal, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
@@ -62,6 +63,19 @@ const pendingTimeoutPolicies = createPendingMutationStore<StoredMessage>({ stora
 export type SessionEndRecord = PendingMutationRecord & { actorId: number; customerId: string; sessionRef?: string; rejection?: { status: number; backendMessage: string } };
 // Keep legacy customer-only records; new commands bind one reception instance and never overwrite older evidence.
 const sessionEndCommands = createPendingMutationStore<SessionEndRecord>({ storageKey: "nexion-admin-m3-session-end-v1", retainExpiredRecords: true, isValidRecord: (row) => Number.isSafeInteger(row.actorId) && typeof row.customerId === "string" && (row.rejection === undefined || isExplicitRejection(row.rejection) && row.rejection.status !== 404) });
+/**
+ * 单行省略的字在能聚焦的控件旁边（会话行整行的点击区、「看全部」）：键盘聚焦这个控件、字确实被省略时，弹出全文气泡（ST-04，同 rd Cell 的做法）。
+ * 鼠标悬停看控件的 title。按 Esc 关掉气泡，焦点留在控件上（同共用问号气泡，I07）。
+ */
+function FocusFullText({ text, clipped, children }: { text?: string; clipped: (trigger: HTMLElement) => Element | null | undefined; children: ReactElement }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return children;
+  return <Tooltip.Provider><Tooltip.Root open={open} onOpenChange={next => { if (!next) setOpen(false); }}>
+    <Tooltip.Trigger asChild onFocus={event => { const target = clipped(event.currentTarget); setOpen(event.currentTarget.matches(":focus-visible") && !!target && target.scrollWidth > target.clientWidth + 1); }} onBlur={() => setOpen(false)}>{children}</Tooltip.Trigger>
+    <Tooltip.Portal><Tooltip.Content className="rd-tip" side="bottom" align="start" sideOffset={4}>{text}</Tooltip.Content></Tooltip.Portal>
+  </Tooltip.Root></Tooltip.Provider>;
+}
+
 export function readSessionEndRecords(actorId: number, customerId: string | undefined): SessionEndRecord[] {
   return sessionEndCommands.list().filter(row => row.actorId === actorId && row.customerId === customerId);
 }
@@ -2132,7 +2146,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         {recoveryError && <div className="m3s-pending"><Notice tone={recoveryError.startsWith("查到了") ? "neutral" : "warn"} action={<Button size="sm" onClick={() => setRecoveryError("")}>知道了</Button>}>{recoveryError}</Notice></div>}
         <div ref={rowsRef} className="m3s-rows" onScroll={event => { const el = event.currentTarget; if (listLimit < filtered.length && el.scrollTop + el.clientHeight >= el.scrollHeight - 80) setListLimit(n => n + LIST_CHUNK); }}>
           {!conversationsAvailable && <div className="m3s-empty"><p>读不到会话。</p></div>}
-          {openElsewhere && <p className="m3s-row-note">打开的{title}不符合当前筛选 <button type="button" className="rd-link rd-link-button" onClick={() => { setQuery(""); changeTab(selected?.archived ? "archived" : "all"); }}>{selected?.archived ? "看归档" : "看全部"}</button></p>}
+          {/* 一行写完：名字长就在名字里省略，悬停看 title、键盘聚焦「看全部」看气泡（ST-04）；名字是客户填的，标 data-user-content。 */}
+          {openElsewhere && <p className="m3s-row-note" title={`打开的${title}不符合当前筛选`}>打开的<span className="m3s-row-note-name" data-user-content="">{title}</span>不符合当前筛选<FocusFullText text={`打开的${title}不符合当前筛选`} clipped={button => button.parentElement?.querySelector(".m3s-row-note-name")}><button type="button" className="rd-link rd-link-button" onClick={() => { setQuery(""); changeTab(selected?.archived ? "archived" : "all"); }}>{selected?.archived ? "看归档" : "看全部"}</button></FocusFullText></p>}
           {conversationsAvailable && !qualificationUnknown && filtered.length === 0 && <div className="m3s-empty">
             <p>{query ? "没有匹配的客户，请清除搜索。" : listTab === "pending" ? "没有待回复的客户。" : listTab === "unassigned" ? "没有待分配的客户。" : "暂无会话。可从“我的客户”发起首次联系。"}</p>
             {query ? <Button size="sm" onClick={() => setQuery("")}>清除搜索</Button> : listTab === "pending" && customerRows.length > 0 ? <Button size="sm" onClick={() => changeTab("all")}>看全部会话</Button> : null}
@@ -2149,14 +2164,17 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             const name = rowName(convo);
             const holdText = convo.holder ? convo.holder.adminId === adminId ? `你在接待${convo.ownerAdminId !== adminId ? ` · 专属客服 ${ownerLabel(convo.owner)}` : ""}` : convo.holder.role !== "ADVISOR" ? `${convo.holder.role === "ADMIN" ? "超级管理员" : "主管"}接待中 · ${convo.holder.name}` : "" : "";
             const origin = convo.origin ? `${{ user: "客户发起", advisor: "客服主动联系", support: "客服主动联系" }[convo.origin]} · ` : "";
+            // 消息预览是客户发来的原文：单行省略，整行悬停的 title 第一行、键盘聚焦时的气泡都给全文（ST-04）。
+            const fullPreview = kind === "IMAGE" || kind === "SKU" || kind === "LINK" ? undefined : message?.text || convo.lastPreview || undefined;
+            const previewId = `m3s-preview-${convo.id}`;
             return <div key={convo.id} className="m3s-row-wrap">
               {archiveMode && <label className="m3s-row-check" title={`选择会话 ${convo.id}`}><Checkbox aria-label={`选择会话 ${convo.id}`} checked={archiveIds.has(convo.id)} disabled={!canWriteM3 || convo.ownerAdminId !== adminId || convo.archived || Boolean(convo.pendingReplyCount)} onChange={e => setArchiveIds(old => { const next = new Set(old); if (e.target.checked) next.add(convo.id); else next.delete(convo.id); return next; })} /></label>}
               <div className="m3s-row" data-on={active ? "" : undefined}>
-                <button type="button" className="m3s-row-hit" aria-label={`${name}，${timeoutLabel || replyLabel}`} aria-current={active ? "true" : undefined} title={`${origin}${replyLabel} · 当前专属客服：${ownerLabel(convo.owner)} · 会话 ${convo.id}`} onClick={() => select(convo.id)} />
+                <FocusFullText text={fullPreview} clipped={button => button.parentElement?.querySelector(".m3s-row-preview")}><button type="button" className="m3s-row-hit" aria-label={`${name}，${timeoutLabel || replyLabel}`} aria-describedby={previewId} aria-current={active ? "true" : undefined} title={`${fullPreview ? `${fullPreview}\n` : ""}${origin}${replyLabel} · 当前专属客服：${ownerLabel(convo.owner)} · 会话 ${convo.id}`} onClick={() => select(convo.id)} /></FocusFullText>
                 <SupportAvatar name={userNicknameText(convo.customer || convo.profile?.nickname || "客户", convo.profile?.phone)} path={convo.customerAvatarRef ?? undefined} size={36} />
                 <span className="m3s-row-main">
                   <span className="m3s-row-top"><strong title={name}>{name}</strong><time title={`${messageDay(convo.lastTs)} ${messageTime(convo.lastTs)}（${zoneLabel}）`}>{agoText(convo.lastTs, timeoutNow)}</time></span>
-                  <span className="m3s-row-preview" title={message?.text || convo.lastPreview || undefined}>{kind === "IMAGE" ? "[图片]" : kind === "SKU" ? "[商品推荐]" : kind === "LINK" ? "[页面链接]" : message?.text || convo.lastPreview || (hasMessage === false ? "尚无人工消息" : "消息摘要暂不可用")}</span>
+                  <span id={previewId} className="m3s-row-preview" data-user-content="" title={fullPreview}>{kind === "IMAGE" ? "[图片]" : kind === "SKU" ? "[商品推荐]" : kind === "LINK" ? "[页面链接]" : message?.text || convo.lastPreview || (hasMessage === false ? "尚无人工消息" : "消息摘要暂不可用")}</span>
                   <span className="m3s-row-meta">
                     <StatusTag tone={tagTone} explain={STATE_HELP[timeoutLabel ? "late" : replyLabel]}>{timeoutLabel || replyLabel}</StatusTag>
                     {(holdText || !timeoutLabel) && <span className="m3s-row-owner" data-hold={holdText ? (convo.holder?.adminId === adminId ? "mine" : "other") : undefined} title={holdText || `${convo.archived ? "已归档" : conversationStateLabel(convo.status)} · ${ownerLabel(convo.owner)}`}>{holdText || `${convo.archived ? "已归档" : conversationStateLabel(convo.status)} · ${ownerLabel(convo.owner)}`}</span>}
