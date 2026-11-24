@@ -10,6 +10,7 @@ import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/ad
 import { validateH1DialValue } from "@/lib/admin/h1-dial-validation";
 import { depositPolicyUnits } from "@/lib/admin/cregis-deposit-policy";
 import { validateH7VoucherMoneyPrecision } from "./h7-voucher-money";
+import { H2_BUY_LIST_PATH, type BuyListWrite } from "./h2-trial-purchase";
 
 interface ApiResult<T> {
   code: number;
@@ -200,7 +201,7 @@ export async function growthRequest<T>(path: string, init?: RequestInit, idempot
     // 带上 HTTP 状态码 + 回执是否读得出:H8 的稳定命令号靠它们区分「后端明确拒绝(4xx)」与
     // 「结果未知(5xx / 回执读不出)」。growth proxy 后端不可达时返回的是**带 JSON body 的 503**,
     // 只认解析异常会把它误判成确定性失败。网络层异常已由 guardedFetch 接管(抛出的 Error 没有 status)。
-    Object.assign(error, { status: response.status, reasonCode: result?.message, apiCode: result?.code, apiMessage: result?.message, bodyUnreadable: result === null, unknownOutcome });
+    Object.assign(error, { status: response.status, reasonCode: result?.message, apiCode: result?.code, apiMessage: result?.message, details: result?.data, bodyUnreadable: result === null, unknownOutcome });
     throw error;
   }
   return result.data as T;
@@ -325,7 +326,7 @@ export async function fetchH2Trials(pageNum = 1, pageSize = 20): Promise<Record<
   return growthRequest<Record<string, any>>(`/trials?pageNum=${pageNum}&pageSize=${pageSize}`);
 }
 
-export function createH2CommandKey(prefix: "h2-param") {
+export function createH2CommandKey(prefix: "h2-param" | "h2-buy-list") {
   return nextIdempotencyKey(prefix);
 }
 
@@ -340,6 +341,23 @@ export async function updateH2TrialParam(key: string, value: string, reason: str
     `/trials/params/${encodeURIComponent(key)}`,
     { method: "PATCH", body: commandBody(key, value, reason), headers: { "Idempotency-Key": commandKey } },
   );
+}
+
+export async function updateH2TrialBuyList(input: BuyListWrite, commandKey: string) {
+  try {
+    await growthRequest<unknown>(H2_BUY_LIST_PATH, {
+      method: "PUT", body: JSON.stringify(input), headers: { "Idempotency-Key": commandKey },
+    }, undefined, true);
+    return { kind: "saved" } as const;
+  } catch (cause) {
+    const error = cause as Error & { status?: number; apiCode?: number; apiMessage?: string; details?: { reason?: unknown }; unknownOutcome?: boolean };
+    if (error.unknownOutcome || error.status === 408 || isH2OutcomeUnknown(error)) return { kind: "unknown" } as const;
+    if (error.status === 401 || error.status === 403 || error.apiCode === 401 || error.apiCode === 403) throw error;
+    if (error.apiMessage === "TRIAL_BUY_LIST_VERSION_CONFLICT") return { kind: "conflict" } as const;
+    const message = typeof error.details?.reason === "string" && error.details.reason.trim()
+      ? formatAdminApiError(error.details.reason, "") : error.message;
+    return { kind: "rejected", message } as const;
+  }
 }
 
 export async function cancelH2TrialSession(sessionId: string, reason: string) {
