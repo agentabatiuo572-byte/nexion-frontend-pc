@@ -1274,7 +1274,8 @@ export default function UserDetailPage() {
     securityPresent && navItem("security", "安全", securityFailed, securityIssues > 0 ? `${securityIssues} 项` : "", paymentSecurity.pending ? "解除结果未知" : ""),
     fundsPresent && navItem("funds", "资金", fundsFailed, withdrawalExceptions > 0 ? `${withdrawalExceptions} 笔` : "", withdrawalsWaiting > 0 ? `${withdrawalsWaiting} 笔待处理` : ""),
     devicesPresent && navItem("devices", "设备与收益", devicesFailed, deviceExceptions > 0 ? `${deviceExceptions} 台` : ""),
-    teamPresent && navItem("team", "团队与互动", teamFailed, ""),
+    // 推荐团队整块重读在途时页签不写「加载失败」，和块里只留「重试中…」一致（ST-30，R26）。
+    teamPresent && navItem("team", "团队与互动", referralSourceFailed && !referralRetrying || failedSection(detail?.engagement, detail?.vrank), ""),
     recordsPresent && navItem("records", "记录", recordsFailed, failedPushCount + orderExceptions > 0 ? `${failedPushCount + orderExceptions} 条` : "", corrections.length > 0 ? "校正结果未知" : ""),
   ].filter((item) => item !== false);
   const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold, restoreKey: readKey });

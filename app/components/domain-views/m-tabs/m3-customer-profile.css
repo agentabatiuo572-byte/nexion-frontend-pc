@@ -145,4 +145,6 @@
 /* 包了一层后，弹窗和抽屉里的行距跟同一个框里其他组一样（rd 的 .rd-fold-body > :not(:first-child) 只排直接子块）。 */
 :is(.rd-modal-body, .rd-drawer-body) .m3-invite-group > :not(:first-child) { margin-top: var(--rd-space-3); }
 /* 无权限的组：只有标题行，和折叠标题行同高同缩进，没有箭头（ST-39）。 */
+/* 旧数据那一行的「重试」（rd-inline-retry）和问号、文字之间留一点空。 */
+.m3-profile-state .rd-inline-retry { margin-left: 6px; }
 .m3-denied-row > p { display: flex; align-items: center; gap: var(--rd-space-2); min-height: 40px; margin: 0; padding: 8px 0 8px calc(14px + var(--rd-space-2)); }
