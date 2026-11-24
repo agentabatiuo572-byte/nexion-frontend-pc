@@ -1,14 +1,14 @@
 "use client";
 /**
  * 客服工作台的业绩额显示件：我的数据的「期间业绩」、业绩额明细抽屉、表格里的业绩额格。
- * 只认 perf-view.tsx 的显示形状；数字从哪来见 perf-wiring.ts（接线）和 perf-fixture.ts（开发夹具）。
+ * 只认 perf-view.tsx 的显示形状；数据投影见 perf-wiring.ts。
  */
 import type { ReactNode } from "react";
 import { ArrowDownToLine, ArrowUpFromLine, BarChart3, ListChecks, Scale, UserCheck } from "lucide-react";
 import { BlockState, Button, Cell, Drawer, Explain, Fact, Facts, Fold, Panel, Stat, StatBand, Table, Td, Th, Tr } from "@/app/components/rd";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { amountDisplay } from "@/lib/format";
-import { perfCountText, perfNote, perfObservedText, perfText, type PerfEvents, type PerfValue, type PeriodPerf } from "./perf-view";
+import { perfCountText, perfNote, perfObservedText, perfText, type PerfCount, type PerfEvents, type PerfValue, type PeriodPerf } from "./perf-view";
 
 /** 业绩额的问号：公式常显在名称行（CP-40 具名例外），口径和归属进问号。 */
 const AMOUNT_EXPLAIN = "所选月份里你名下客户的入金减提现，可以是负数。每一笔算给发生时绑定的客服和所在的组；更正记在确认月，算给原来那笔的客服和组。";
@@ -63,13 +63,16 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail }: {
   </Panel>;
 }
 
-const summaryText = (part: { amount: PerfValue; count: number; customers: number }) => <>{perfText(part.amount)}{part.amount.state === "complete" ? " USDT" : ""}<span className="m1-perf-count">（{part.count} 条，{part.customers} 位客户）</span></>;
+const summaryText = (part: { amount: PerfValue; count: PerfCount; customers: PerfCount }) => <>{perfText(part.amount)}{part.amount.state === "complete" ? " USDT" : ""}<span className="m1-perf-count">（{perfCountText(part.count)} 条，{perfCountText(part.customers)} 位客户）</span></>;
 
 /** 业绩额明细：先三行核对「本月合计 = 现在名下的客户 + 已转走的客户」，再列能看的每一笔。 */
-export function PerfEventsDrawer({ events, onClose }: { events: PerfEvents; onClose: () => void }) {
+export function PerfEventsDrawer({ events, page, pageSize, total, observedTotal, canContinue, loading, onPage, onClose }: {
+  events: PerfEvents; page: number; pageSize: number; total: number | null; observedTotal: number;
+  canContinue: boolean; loading: boolean; onPage: (page: number) => void; onClose: () => void;
+}) {
   const range = `统计区间 ${formatBusinessTimeCompact(events.from, "—")} 至 ${formatBusinessTimeCompact(events.to, "—")}（北京时间）`;
   return <Drawer open wide title="业绩额明细" sub="本人 · USDT" onClose={onClose}
-    footer={<div className="m1-perf-foot"><Button onClick={onClose}>关闭</Button><span className="m1-perf-pager"><Button size="sm" disabledReason="已经是第一页">上一页</Button>第 1 / 1 页 · 共 {events.rows.length} 条<Button size="sm" disabledReason="已经是最后一页">下一页</Button></span></div>}>
+    footer={<div className="m1-perf-foot"><Button onClick={onClose}>关闭</Button><span className="m1-perf-pager"><Button size="sm" disabledReason={loading ? "正在加载…" : page === 1 ? "已经是第一页" : undefined} onClick={() => onPage(page - 1)}>上一页</Button>第 {page} / {total === null ? "—" : Math.max(1, Math.ceil(observedTotal / pageSize))} 页 · 共 {total ?? "—"} 条<Button size="sm" disabledReason={loading ? "正在加载…" : canContinue ? undefined : "已经是最后一页"} onClick={() => onPage(page + 1)}>下一页</Button></span></div>}>
     <p className="rd-note">{range}</p>
     <Facts>
       <Fact k="本月合计">{summaryText(events.total)}</Fact>
@@ -85,7 +88,7 @@ export function PerfEventsDrawer({ events, onClose }: { events: PerfEvents; onCl
         <Td><Cell main={row.customer} sub={<span className="m-user-code">{row.customerNo}</span>} /></Td>
         <Td><Cell main={row.kind} sub={row.detail} /></Td>
         <Td align="right"><Cell num main={row.business ?? "—"} /></Td>
-        <Td align="right"><Cell num main={amountDisplay(row.delta)} /></Td>
+        <Td align="right"><Cell num main={row.delta === null ? "—" : amountDisplay(row.delta)} /></Td>
       </Tr>)}
     </tbody></Table>
   </Drawer>;

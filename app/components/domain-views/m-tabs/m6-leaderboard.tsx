@@ -11,13 +11,14 @@ import { useRouter } from "next/navigation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
-import { fetchLeaderboardAvatar, locateLeaderboardSelf, supportLeaderboardClient, type LeaderboardDetail, type LeaderboardPage, type LeaderboardQuery } from "@/lib/admin/support-leaderboard-client";
+import { LeaderboardUpgrading, fetchLeaderboardAvatar, locateLeaderboardSelf, supportLeaderboardClient, type LeaderboardDetail, type LeaderboardPage, type LeaderboardQuery } from "@/lib/admin/support-leaderboard-client";
 import { BlockState, Button, Conclusion, Decision, Drawer, Explain, FilterBar, FilterField, Input, Notice, PageHeader, PageTabs, RdPage, Select, useTabIds } from "@/app/components/rd";
 import type { SupportBoardKey, SupportBoardQuery, SupportBoardRow } from "./support-leaderboard";
 import { BOARD_DEFINITION, BOARD_LABEL, BoardPager, PerformanceBody, Podium, RankingPanel, RankingTable, amountPlaces, amountText, countText } from "./m6-leaderboard-views";
 import { PERF_UNAVAILABLE, type PerfTotals } from "./perf-view";
-import { exportPorts, leaderboardPerf, type BoardPerf } from "./perf-wiring";
-import { exportFixturePorts, leaderboardDetailFixture, leaderboardFixture, perfFixture } from "./perf-fixture"; // 接线删：夹具
+import { boardTotals, leaderboardPerf, type BoardPerf } from "./perf-wiring";
+import { usePerformanceExportPorts } from "./perf-export-ports";
+import { PERFORMANCE_VERSION } from "@/lib/admin/support-performance-contract";
 import { PerfExportDialog } from "./perf-export";
 import "./m6-leaderboard.css";
 
@@ -31,19 +32,20 @@ function scopeChanged(error: unknown): boolean {
   return error instanceof SupportClientError && status(error) === 409 && error.backendMessage === "SUPPORT_LEADERBOARD_SCOPE_CHANGED";
 }
 function message(error: unknown): string {
+  if (error instanceof LeaderboardUpgrading) return error.message;
   return status(error) === 403 || status(error) === 401 ? "当前账号不能查看此榜单，请重新确认登录和客服权限。"
     : versionChanged(error) ? "榜单已更新，或你能看的范围变了，请从第一页重新加载。"
       : error instanceof SupportClientError ? displayAdminReadError(error) : "榜单加载失败，请重试。";
 }
 function scopeValue(scope: string, groupId?: string) { return groupId ? `${scope}:${groupId}` : scope; }
 function asOf(data: LeaderboardPage | LeaderboardDetail) { return `${businessStamp(Date.parse(data.asOf))}（${businessZone().label}）`; }
-function acceptedQuery(data: LeaderboardPage, query: LeaderboardQuery): LeaderboardQuery { return { ...query, month: data.rankMonth ?? undefined, currency: data.currency, expectedVersion: data.viewVersion }; }
+function acceptedQuery(data: LeaderboardPage, query: LeaderboardQuery): LeaderboardQuery { return { ...query, metricVersion: data.generation === "READY" ? PERFORMANCE_VERSION : undefined, month: data.rankMonth ?? undefined, currency: data.currency, expectedVersion: data.viewVersion }; }
 
 /** Public aggregates have their own lifecycle; entering M6 never mounts the private M1/M3 hooks. */
 export function M6Leaderboard() {
   const router = useRouter();
   // 页头「导出业绩」：有导出读写口才出现（接线前只有开发夹具给），框和我的数据、主管工作台是同一个（OP-41）。
-  const [exportsPorts] = useState(() => exportFixturePorts() ?? exportPorts()); // 接线删：夹具（只留 exportPorts()）
+  const exportsPorts = usePerformanceExportPorts();
   const [exportOpen, setExportOpen] = useState(false);
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
   const authenticated = useAdminAuth(state => state.isAuthenticated), logoutPending = useAdminAuth(state => state.logoutPending), logoutUnknown = useAdminAuth(state => state.logoutUnknown);
@@ -56,15 +58,15 @@ export function M6Leaderboard() {
   const selectedMonth = useRef<string | undefined>(undefined);
   const [keyword, setKeyword] = useState("");
   // 失败记在出错的那次读取上：换了查询、翻页或重读后，旧的失败和「榜单已更新」都不再算（BUG-650 复审 F03）。
-  const [refresh, setRefresh] = useState(0), [failure, setFailure] = useState<{ key: string; text: string; conflict?: boolean }>(), [notice, setNotice] = useState<string>();
+  const [refresh, setRefresh] = useState(0), [failure, setFailure] = useState<{ key: string; text: string; conflict?: boolean; upgrading?: boolean }>(), [notice, setNotice] = useState<string>();
   const [deniedIdentity, setDeniedIdentity] = useState<string>();
   const enabled = allowed && deniedIdentity !== identity;
   const requestKey = identity + "|" + JSON.stringify(query) + "|" + refresh;
   const liveKey = useRef(requestKey); liveKey.current = enabled ? requestKey : "";
-  // perf 只有夹具给（接线删：夹具）；生产路径从 leaderboardPerf(data) 取。
-  const [result, setResult] = useState<{ key: string; data: LeaderboardPage; perf?: Record<string, PerfTotals> }>();
+  const [result, setResult] = useState<{ key: string; data: LeaderboardPage }>();
   const data = enabled && result?.key === requestKey ? result.data : undefined;
   const error = failure?.key === requestKey ? failure.text : undefined, conflict = !!error && !!failure?.conflict;
+  const upgrading = failure?.key === requestKey && failure.upgrading;
   /** 这个账号和权限下最近一次读成的榜单：这次读取失败或还在读时，月份、币种、范围和榜单页签照它的选项继续可用（ST-15，复审 F02）；换账号、权限或被拒时清掉。 */
   const [lastGood, setLastGood] = useState<{ identity: string; data: LeaderboardPage }>();
   const options = data ?? (enabled && lastGood?.identity === identity ? lastGood.data : undefined);
@@ -109,13 +111,6 @@ export function M6Leaderboard() {
   useEffect(() => {
     const controller = new AbortController(); let active = true;
     setResult(undefined); setFailure(undefined); closeDetail();
-    // 接线删：夹具。夹具开着时这一块不发读请求，整版数据来自夹具。
-    const fixture = enabled ? perfFixture()?.m6 : undefined;
-    if (fixture) {
-      const sample = leaderboardFixture(fixture, query, String(session?.adminId ?? "1003"));
-      setResult({ key: requestKey, data: sample.page, perf: sample.perf }); setLastGood({ identity, data: sample.page }); setScopeStale(false);
-      return () => { active = false; controller.abort(); };
-    }
     if (enabled) void supportLeaderboardClient.page(query, controller.signal).then(next => {
       if (next.self.row && next.self.row.id !== String(session?.adminId)) throw new Error("本人成绩身份不一致");
       if (active && !controller.signal.aborted && liveKey.current === requestKey) { setResult({ key: requestKey, data: next }); setLastGood({ identity, data: next }); setScopeStale(false); }
@@ -124,7 +119,7 @@ export function M6Leaderboard() {
       if (status(cause) === 403 || status(cause) === 401) deny();
       else if (scopeChanged(cause)) scopeLost(cause);
       // 读失败时「正在重新加载…」不再留在错误卡旁边。
-      else { setResult(undefined); setNotice(current => current === "正在重新加载…" ? undefined : current); setFailure({ key: requestKey, text: message(cause), conflict: versionChanged(cause) }); }
+      else { setResult(undefined); setNotice(current => current === "正在重新加载…" ? undefined : current); setFailure({ key: requestKey, text: message(cause), conflict: versionChanged(cause), upgrading: cause instanceof LeaderboardUpgrading }); }
     });
     return () => { active = false; controller.abort(); };
   }, [enabled, requestKey]);
@@ -162,8 +157,6 @@ export function M6Leaderboard() {
     if (!data || !enabled || ![...data.rows, ...(data.podium?.rows ?? []), ...(data.self.row ? [data.self.row] : [])].some(row => row.id === agentId)) return;
     detailAbort.current?.abort(); const controller = new AbortController(); detailAbort.current = controller;
     const sequence = ++detailSequence.current; setDetail({ key: requestKey, agentId });
-    // 接线删：夹具。
-    if (result?.perf) { const sample = leaderboardDetailFixture({ page: data, perf: result.perf }, agentId); if (sample) setDetail({ key: requestKey, agentId, data: sample }); return; }
     void supportLeaderboardClient.detail(agentId, acceptedQuery(data, query), controller.signal).then(next => {
       if (next.sourceVersion !== data.sourceVersion || next.definitionVersion !== data.definitionVersion || next.asOf !== data.asOf || next.referenceMonth !== data.referenceMonth || next.state !== data.state || next.candidateCoverage !== data.candidateCoverage) throw new Error("公开成绩版本信息不一致");
       if (!controller.signal.aborted && sequence === detailSequence.current && liveKey.current === requestKey) setDetail({ key: requestKey, agentId, data: next });
@@ -211,7 +204,7 @@ export function M6Leaderboard() {
   const rankRule = board === "netContribution" ? "名次按发布时的精确业绩额从高到低排；相同的并列，下一名跳过（1、2、2、4）。差距是和紧挨着你、业绩更好的那一位相差多少。"
     : "名次按发布时的精确成绩从高到低排；成绩相同名次并列，下一名跳过（1、2、2、4）。差距是和紧挨着你、成绩更好的那一位相差多少。";
   /** 这一版各行的业绩额。新口径没有能用的数据时，业绩额榜整榜不排名次，另两个榜里的业绩额一列写「—」。 */
-  const boardPerf: BoardPerf = data ? result?.perf ? { kind: "ready", byAgent: result.perf } : leaderboardPerf(data) : { kind: "unavailable", reason: PERF_UNAVAILABLE };
+  const boardPerf: BoardPerf = data ? leaderboardPerf(data) : { kind: "unavailable", reason: PERF_UNAVAILABLE };
   const perfOf = (agentId: string): PerfTotals => {
     if (boardPerf.kind === "ready" && boardPerf.byAgent[agentId]) return boardPerf.byAgent[agentId];
     const missing = { state: "unavailable" as const, reason: boardPerf.kind === "unavailable" ? boardPerf.reason : PERF_UNAVAILABLE };
@@ -221,6 +214,7 @@ export function M6Leaderboard() {
   const locateAction = data && data.self.pageNum !== null ? <Button icon={<MapPin size={14} aria-hidden />} onClick={locate}>定位到我</Button> : undefined;
   const conclusion = !data
     ? denied ? <Conclusion state="unknown">业绩榜：这个账号看不到榜单</Conclusion>
+      : upgrading ? <Conclusion state="unknown">{BOARD_LABEL[board]}：{error}</Conclusion>
       : error ? <Conclusion state="unknown">业绩榜：读取失败，这部分没有判断</Conclusion>
       : <Conclusion state="unknown">正在读取业绩榜…</Conclusion>
     : perfMissing ? <Conclusion state="unknown">{BOARD_LABEL[board]}：{boardPerf.kind === "unavailable" ? boardPerf.reason : PERF_UNAVAILABLE}，暂不排名次</Conclusion>
@@ -298,10 +292,10 @@ export function M6Leaderboard() {
           others={<><Button onClick={closeDetail}>关闭</Button>{visibleDetail.error && <Button onClick={() => openDetail(visibleDetail.agentId)}>重试</Button>}</>}
           primary={detailRow && privateRead && detailRow.canViewCustomers ? <Button variant="primary" onClick={() => customers(detailRow)}>查看当前绑定客户</Button> : undefined} />}>
         {!visibleDetail.data ? <Notice tone={visibleDetail.error ? "danger" : "progress"}>{visibleDetail.error ?? "正在加载成绩…"}</Notice>
-          : detailRow && <PerformanceBody row={withPhoto(detailRow)} board={board} month={visibleDetail.data.referenceMonth} perf={perfOf(detailRow.id)}
+          : detailRow && <PerformanceBody row={withPhoto(detailRow)} board={board} month={visibleDetail.data.referenceMonth} perf={detailRow.performance ? boardTotals(detailRow.performance) : perfOf(detailRow.id)}
             stale={visibleDetail.data.stale} refreshFailed={visibleDetail.data.refreshFailed} />}
       </Drawer>}
-      {exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts} onClose={() => setExportOpen(false)} onRecords={() => router.push("/service/overview?view=exports")} />}
+      {exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts} initialMonth={currentQuery.month} initialScope={query.groupId ? `GROUP:${query.groupId}` : query.scope === "all" ? "ALL" : "MANAGED_GROUPS"} onClose={() => setExportOpen(false)} onRecords={exportsPorts.persona.views.length && privateRead ? () => router.push("/service/overview?view=exports") : undefined} />}
     </div>
   </RdPage>;
 }

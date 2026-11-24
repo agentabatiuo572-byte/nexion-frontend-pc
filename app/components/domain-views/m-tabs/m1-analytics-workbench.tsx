@@ -10,7 +10,7 @@ import dynamic from "next/dynamic";
 import { BarChart3, Users } from "lucide-react";
 import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
-import { supportAnalyticsClient, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
+import { supportPerformanceAnalyticsClient as analytics, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
 import { SupportClientError, supportClient, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -37,8 +37,8 @@ import type { MCtx } from "./types";
 import "./m1-analytics-workbench.css";
 import { amountDisplay } from "@/lib/format";
 import { PERF_UNAVAILABLE_VALUE, perfNote, perfText, type AnalyticsPerf, type PerfValue } from "./perf-view";
-import { analyticsPerf, exportPorts } from "./perf-wiring";
-import { analyticsFixtureClient, analyticsPerfFixture, exportFixturePorts, perfFixture } from "./perf-fixture"; // 接线删：夹具
+import { analyticsPerf, eventsPerf } from "./perf-wiring";
+import { usePerformanceExportPorts } from "./perf-export-ports";
 import { PerfEventsDrawer, PeriodPerfPanel } from "./m1-performance";
 import { PerfExportDialog } from "./perf-export";
 import { PerfExportRecords } from "./perf-export-records";
@@ -55,7 +55,7 @@ type Permission = "agent" | "supervisor" | "superadmin";
 type M1Tab = "home" | "my-customers" | "my-data" | "data" | "customers" | "pool" | "team" | "mine" | "exports";
 type Section = "personal" | "stats" | "pool" | "team" | "mine" | "exports";
 const TAB_LABEL: Record<M1Tab, string> = { home: "工作台", "my-customers": "我的客户", "my-data": "我的数据", data: "数据", customers: "客户", pool: "待分配", team: "客服与分组", mine: "我的客户", exports: "导出记录" };
-// 「导出记录」页签只在有导出读写口时出现（审批入口按已定的甲）；接线前只有开发夹具给，生产页签不变。
+// 「导出记录」只在服务端允许读取至少一个导出视图时出现。
 function roleTabs(personal: boolean, canMine: boolean, withExports = false): M1Tab[] {
   const tabs: M1Tab[] = personal ? ["home", "my-customers", "my-data"] : ["data", "pool", "customers", "team", ...(canMine ? ["mine" as const] : [])];
   return withExports ? [...tabs, "exports"] : tabs;
@@ -116,10 +116,11 @@ export function changeAnalyticsQuery(state: AnalyticsQueryState, changes: Partia
   // Finance has no current-asset projection. A dataset click changes that inherited basis,
   // while keeping the selected group/agent/customer conditions.
   if (changes.view === "FINANCE" && changes.basis === undefined && next.basis === "CURRENT_ASSET") next.basis = "CURRENT_CUSTOMER_HISTORY";
-  if (next.sortKey === "NET_CONTRIBUTION" && next.basis !== "CURRENT_CUSTOMER_HISTORY") next.sortKey = undefined;
+  if (next.sortKey === "NET_CONTRIBUTION" && next.basis !== "CURRENT_CUSTOMER_HISTORY" || next.sortKey === "PERFORMANCE_AMOUNT" && (next.basis !== "CURRENT_CUSTOMER_HISTORY" || next.currency !== "USDT" || next.view !== "CUSTOMERS")) next.sortKey = undefined;
   if (next.basis === "CURRENT_ASSET") {
+    if (changes.basis || changes.view) next.direction = undefined;
     next.firstState = "ALL";
-    if (next.sortKey && ["PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "FIRST_SUCCEEDED_AT"].includes(next.sortKey)) next.sortKey = undefined;
+    if (next.sortKey && ["PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "FIRST_SUCCEEDED_AT", "FIRST_CONFIRMED_CUSTOMER_COUNT"].includes(next.sortKey)) next.sortKey = undefined;
   }
   // Device sorts are independent of pool/maintenance state; the shared API default
   // sort can otherwise be POOL_ENTERED_AT/NEXT_DUE_AT, which DEVICES cannot accept.
@@ -296,13 +297,11 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const router = useRouter();
   const [, setRecoveryRevision] = useState(0);
   const [bulkRecovery, setBulkRecovery] = useState(false);
-  // 接线删：夹具。夹具开着时整页统计读取换成样本，不发请求；业绩额只从夹具或接线（analyticsPerf）来。
-  const [fixtureKind] = useState(() => perfFixture()?.m1);
-  const analytics = useMemo(() => fixtureKind ? analyticsFixtureClient(fixtureKind) : supportAnalyticsClient, [fixtureKind]);
-  const perf: AnalyticsPerf = useMemo(() => fixtureKind ? analyticsPerfFixture(fixtureKind) : analyticsPerf(), [fixtureKind]);
-  const [exportsPorts] = useState(() => exportFixturePorts() ?? exportPorts()); // 接线删：夹具（只留 exportPorts()）
+  const exportsPorts = usePerformanceExportPorts();
   const [exportOpen, setExportOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
+  const [events, setEvents] = useState<Awaited<ReturnType<typeof analytics.events>> | null>(null);
+  const [eventPage, setEventPage] = useState<{ number: number; version?: string }>({ number: 1 });
   useEffect(() => { const update = () => setRecoveryRevision(n => n + 1); window.addEventListener("m1-pending-changed", update); window.addEventListener("nexion-payment-security-updated", update); return () => { window.removeEventListener("m1-pending-changed", update); window.removeEventListener("nexion-payment-security-updated", update); }; }, []);
   const authSession = useAdminAuth(state => state.session);
   const tabIds = useTabIds();
@@ -313,6 +312,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [scopeRetry, setScopeRetry] = useState(0), [queryState, setQueryState] = useState(initialAnalyticsQuery("PERSONAL"));
   const [data, setData] = useState<SupportAnalyticsResponse | null>(null), [error, setError] = useState("");
   const [loading, setLoading] = useState(false), [retry, setRetry] = useState(0), [cancelled, setCancelled] = useState(false);
+  const [requestedExports] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "exports");
+  const restoreExports = useRef(requestedExports);
   const [section, setSection] = useState<Section>("stats"), [personalView, setPersonalView] = useState<PersonalWorkbenchView>("dashboard");
   const lastDataView = useRef<SupportAnalyticsView>("OVERVIEW");
   const [profileId, setProfileId] = useState<string | null>(null);
@@ -320,8 +321,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [personalPeriodRetry, setPersonalPeriodRetry] = useState(0);
   const [fundMetric, setFundMetric] = useState<FundMetric | null>(null);
   const [monthCalendar, setMonthCalendar] = useState<SupportAnalyticsMonth[] | null>(null);
+  const [calendarGeneration, setCalendarGeneration] = useState<"LEGACY" | "READY" | "UPGRADING">();
   const [calendarError, setCalendarError] = useState(""), [calendarRetry, setCalendarRetry] = useState(0);
   const [personalPeriod, setPersonalPeriod] = useState<SupportAnalyticsResponse | null>(null), [personalPeriodError, setPersonalPeriodError] = useState("");
+  const perf = useMemo(() => analyticsPerf(data, personalPeriod), [data, personalPeriod]);
   const adminId = useAdminAuth(state => state.session?.adminId);
   const operatorName = useAdminAuth(state => state.session?.operator || state.session?.username || "本人账号");
   // 「返回负责组客户」 from M3 brings back the list view, filters and page saved when 发起会话 was clicked.
@@ -361,7 +364,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const readModes = useAdminAuth(state => state.session?.supportReadModes);
   // A session hint only chooses the requested projection. The response still resolves current authority.
   const noReadableServiceScope = readModes?.length === 0 && authSession?.role !== "super" && authSession?.role !== "superadmin";
-  const noScopedContent = scopeDenied && (noReadableServiceScope || fixtureKind === "nogroup");
+  const noScopedContent = scopeDenied && (noReadableServiceScope || !!exportsPorts?.persona.views.length);
   const entryReadMode = readModes?.includes("ALL") ? "ALL" : readModes?.includes("MANAGED") ? "MANAGED" : readModes?.includes("PERSONAL") ? "PERSONAL" : "ALL";
   const needsCalendar = Boolean(scope && (isPersonal || queryState.basis === "PERIOD_EVENT"));
   // A supervisor who also holds personal service keeps a tab for their own customers, grouped or not (the managed agent list omits an ungrouped self).
@@ -376,17 +379,21 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   useEffect(() => {
     const controller = new AbortController();
     setPersonalPeriod(null); setPersonalPeriodError("");
-    if (scope?.scopeSummary.mode !== "PERSONAL" || !monthCalendar) return () => controller.abort();
-    void analytics.query({ view: "OVERVIEW", basis: "PERIOD_EVENT", ...analyticsMonthWindow(queryState.month, monthCalendar), currency: queryState.currency ?? "USDT", pageSize: 1, signal: controller.signal })
+    if (scope?.scopeSummary.mode !== "PERSONAL" || !monthCalendar?.some(month => month.month === queryState.month)) return () => controller.abort();
+    void analytics.query({ view: "OVERVIEW", basis: "PERIOD_EVENT", ...analyticsMonthWindow(queryState.month, monthCalendar), currency: queryState.currency ?? "USDT", pageSize: 1, signal: controller.signal }, scope.generation)
       .then(next => { if (!controller.signal.aborted && next.scopeSummary.mode === "PERSONAL") setPersonalPeriod(next); })
       .catch(cause => { if (!controller.signal.aborted) setPersonalPeriodError(analyticsErrorText(cause)); });
     return () => controller.abort();
   }, [scope, queryState.month, queryState.currency, monthCalendar, personalPeriodRetry]);
   useEffect(() => {
     const controller = new AbortController();
-    setMonthCalendar(null); setCalendarError("");
+    setMonthCalendar(null); setCalendarGeneration(undefined); setCalendarError("");
     if (!needsCalendar) return () => controller.abort();
-    void analytics.months(controller.signal).then(months => { if (!controller.signal.aborted) setMonthCalendar(months); })
+    void analytics.months(controller.signal).then(({ months, generation }) => {
+      if (controller.signal.aborted) return;
+      setMonthCalendar(months); setCalendarGeneration(generation);
+      if (months[0]) setQueryState(previous => months.some(month => month.month === previous.month) ? previous : changeAnalyticsQuery(previous, { month: months[0].month }));
+    })
       .catch(cause => { if (!controller.signal.aborted) setCalendarError(analyticsErrorText(cause)); });
     return () => controller.abort();
   }, [needsCalendar, scopeRetry, calendarRetry]);
@@ -417,6 +424,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       if (customerGroup && String(groupId) !== customerGroup) throw new SupportClientError(403, undefined, undefined);
       const restored: AnalyticsQueryState = remembered ? { ...changeAnalyticsQuery(remembered, { groupId, view: next.scopeSummary.mode === "PERSONAL" && ["OVERVIEW", "AGENTS"].includes(remembered.view) ? "CUSTOMERS" : remembered.view }), agentId: groupId === remembered.groupId ? remembered.agentId : undefined } : { ...initialAnalyticsQuery(next.scopeSummary.mode), ...(agentId === undefined ? {} : { view: "CUSTOMERS" as const, category: "BOUND" as const, agentId }) };
       if (!remembered) {
+        if (next.generation !== "LEGACY" && restored.view === "OVERVIEW" && agentId === undefined) restored.basis = "PERIOD_EVENT";
         const params = new URLSearchParams(window.location.search);
         const fields = { dataset: ["OVERVIEW", "AGENTS", "CUSTOMERS", "FINANCE", "DEVICES", "ACTIVITY"], basis: BASIS_OPTIONS.map(x => x.value), currency: ["USDT", "UVT"], category: ["ALL", "BOUND", "PENDING", "ANOMALY"], firstState: FIRST_OPTIONS.map(x => x.value), filter: PERSONAL_FILTER_OPTIONS.map(x => x.value), direction: ["ASC", "DESC"] };
         const changes: Partial<AnalyticsQueryState> = {};
@@ -434,15 +442,17 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         const month = params.get("month"); if (month && /^\d{4}-(0[1-9]|1[0-2])$/.test(month)) changes.month = month;
         Object.assign(restored, changeAnalyticsQuery(restored, changes));
         const sortKey = params.get("sortKey");
-        if (sortKey && SORT_OPTIONS[restored.view].some(x => x.value === sortKey)) restored.sortKey = sortKey as AnalyticsQueryState["sortKey"];
+        if (restored.basis !== "CURRENT_ASSET" && sortKey && SORT_OPTIONS[restored.view].some(x => x.value === sortKey)) restored.sortKey = sortKey as AnalyticsQueryState["sortKey"];
+        if ((sortKey === "NET_CONTRIBUTION" || sortKey === "PERFORMANCE_AMOUNT") && next.generation === "READY" && restored.view === "CUSTOMERS" && restored.basis === "CURRENT_CUSTOMER_HISTORY" && restored.currency === "USDT") restored.sortKey = "PERFORMANCE_AMOUNT";
+        if (restored.basis === "CURRENT_ASSET") restored.direction = undefined;
         try { const savedKeyword = sessionStorage.getItem(`nexion-m1-keyword:${adminId}`); if (savedKeyword && savedKeyword.length <= 200) { restored.keyword = savedKeyword; setKeyword(savedKeyword); } } catch { /* Search remains usable without memory. */ }
       }
-      if (remembered && remembered.view === restored.view) restored.sortKey = remembered.sortKey;
+      if (remembered && remembered.view === restored.view && restored.basis !== "CURRENT_ASSET" && (remembered.sortKey !== "PERFORMANCE_AMOUNT" || next.generation === "READY")) restored.sortKey = remembered.sortKey;
       if (remembered === sessionReturn && sessionReturn && restored.groupId === sessionReturn.groupId && sessionReturn.pageNum > 1 && sessionReturn.expectedVersion) Object.assign(restored, { pageNum: sessionReturn.pageNum, expectedVersion: sessionReturn.expectedVersion });
       const personal = next.scopeSummary.mode === "PERSONAL";
       if (agentId !== undefined) setSection("stats");
       else if (!remembered) {
-        const tab = entryTab(personal, next.scopeSummary.mode === "MANAGED" && Boolean(readModes?.includes("PERSONAL")), !!exportsPorts);
+        const tab = entryTab(personal, next.scopeSummary.mode === "MANAGED" && Boolean(readModes?.includes("PERSONAL")), false);
         if (tab === "customers") restored.view = "CUSTOMERS";
         setSection(personal ? tab === "my-data" ? "stats" : tab === "exports" ? "exports" : "personal" : tab === "data" || tab === "customers" ? "stats" : tab as Section);
         if (personal) setPersonalView(tab === "my-customers" ? "customers" : "dashboard");
@@ -458,7 +468,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   }, [queryState]);
   useEffect(() => {
     if (!showStatistics) { entryStatistics.current = null; return; }
-    if (queryState.basis === "PERIOD_EVENT" && !statisticsCalendar) return;
+    if (queryState.basis === "PERIOD_EVENT" && !statisticsCalendar?.some(month => month.month === queryState.month)) return;
     const current = ++generation.current, controller = new AbortController(); controllerRef.current = controller;
     setData(null); setProfileId(null); setError(""); setLoading(true); setCancelled(false);
     (async () => {
@@ -466,7 +476,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       const entry = entryStatistics.current;
       entryStatistics.current = null;
       // Reuse only this mount's just-authorized response for the identical first query.
-      return entry?.query === JSON.stringify(query) ? entry.data : analytics.query({ ...query, signal: controller.signal });
+      return entry?.query === JSON.stringify(query) ? entry.data : analytics.query({ ...query, signal: controller.signal }, scope?.generation);
     })().then(next => {
       if (controller.signal.aborted || current !== generation.current) return;
       if (next.scopeSummary.mode !== scope?.scopeSummary.mode) { setScope(null); setScopeRetry(n => n + 1); return; }
@@ -474,12 +484,47 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     }).catch(cause => {
       if (controller.signal.aborted || current !== generation.current) return;
       setData(null); setError(analyticsErrorText(cause));
+      if (cause instanceof SupportClientError && (cause.status === 409 || cause.apiCode === 409)) {
+        setEventsOpen(false); setFundMetric(null); setProfileId(null);
+        if (queryState.expectedVersion) setQueryState(previous => changeAnalyticsQuery(previous, {}));
+      }
       if (cause instanceof SupportClientError && [401, 403].includes(cause.status)) { setScope(null); setScopeError(analyticsErrorText(cause)); }
     }).finally(() => { if (!controller.signal.aborted && current === generation.current) setLoading(false); });
     return () => { controller.abort(); generation.current++; };
-  }, [showStatistics, queryState, retry, scope?.scopeSummary.mode, statisticsCalendar]);
-  const change: Drill = changes => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setFundMetric(null); setError(""); setQueryState(previous => changeAnalyticsQuery(previous, changes)); };
+  }, [showStatistics, queryState, retry, scope?.scopeSummary.mode, scope?.generation, statisticsCalendar]);
+  useEffect(() => { setEventsOpen(false); setEvents(null); setEventPage({ number: 1 }); }, [personalPeriod]);
+  useEffect(() => {
+    const periodWindow = personalPeriod?.performance?.window;
+    if (!eventsOpen || !periodWindow || !monthCalendar) return;
+    const controller = new AbortController();
+    const calendar = analyticsMonthWindow(queryState.month, monthCalendar);
+    void analytics.events({ ...calendar, pageNum: eventPage.number, pageSize: 20, expectedVersion: eventPage.version, signal: controller.signal }).then(next => {
+      if (controller.signal.aborted) return;
+      if (next.window.sourceVersion !== periodWindow.sourceVersion || next.window.sourceScopeVersion !== periodWindow.sourceScopeVersion
+        || next.window.from !== periodWindow.from || next.window.to !== periodWindow.to) throw new SupportClientError(409, undefined, "SUPPORT_ANALYTICS_QUERY_CHANGED");
+      setEvents(next);
+    }).catch(cause => {
+      if (controller.signal.aborted) return;
+      setEventsOpen(false); setEvents(null);
+      if (cause instanceof SupportClientError && (cause.status === 409 || cause.apiCode === 409)) setPersonalPeriodRetry(value => value + 1);
+      setPersonalPeriodError(analyticsErrorText(cause));
+    });
+    return () => controller.abort();
+  }, [eventsOpen, eventPage, personalPeriod, monthCalendar, queryState.month]);
+  useEffect(() => {
+    if (restoreExports.current && scope && exportsPorts?.persona.views.length) {
+      restoreExports.current = false;
+      setSection("exports");
+    }
+  }, [scope, exportsPorts]);
+  const change: Drill = changes => {
+    controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setFundMetric(null); setError("");
+    const basis = scope?.generation !== "LEGACY" && changes.basis === undefined
+      ? changes.view === "OVERVIEW" ? "PERIOD_EVENT" : changes.view === "AGENTS" ? "CURRENT_CUSTOMER_HISTORY" : undefined : undefined;
+    setQueryState(previous => changeAnalyticsQuery(previous, basis ? { ...changes, basis } : changes));
+  };
   function refreshScope(invalidated = false, targeted = false) {
+    setEventsOpen(false); setEvents(null);
     targetedRefresh.current = targeted;
     setFundMetric(null);
     scopeControllerRef.current?.abort(); controllerRef.current?.abort(); generation.current++;
@@ -550,7 +595,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const personalHeader = scope?.scopeSummary.mode === "PERSONAL";
   // 主管和超管：页头次按钮是会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
-  const exportsOnly = !!exportsPorts && noScopedContent;
+  const exportsOnly = !!exportsPorts?.persona.views.length && noScopedContent;
   const header = <PageHeader pageId="M1" title="客服工作台" summary={exportsOnly ? exportsPorts.persona.views.includes("MINE") ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
     {exportsPorts && (exportsPorts.persona.canExport || exportsPorts.persona.exportBlocked) && <Button disabledReason={exportsPorts.persona.exportBlocked} onClick={() => setExportOpen(true)}>导出业绩</Button>}
     {scope?.scopeSummary.mode === "MANAGED" && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}
@@ -562,7 +607,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
 
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
   const leadPermission: Permission = mode === "ALL" ? "superadmin" : "supervisor";
-  const tabs = roleTabs(isPersonal, canMine, !!exportsPorts);
+  const tabs = roleTabs(isPersonal, canMine, Boolean(exportsPorts?.persona.views.length));
   const currentTab: M1Tab = section === "exports" ? "exports" : isPersonal
     ? section === "stats" ? "my-data" : personalView === "customers" ? "my-customers" : "home"
     : section === "stats" ? queryState.view === "CUSTOMERS" ? "customers" : "data" : section === "personal" ? "data" : section;
@@ -596,13 +641,13 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     : "客服表的当前客户累计业绩额总是按现在的客户算。选「按发生时归属」时，近 30 天活跃换成所选月份的活跃；选「按当前设备」时，累计业绩额那一列换成持有设备。";
   const basisField = <FilterField label={<span className="m1-field-label">统计规则<Explain label="统计规则的说明" content={basisExplain} /></span>}><Select aria-label="统计规则" value={queryState.basis ?? "CURRENT_CUSTOMER_HISTORY"} options={BASIS_OPTIONS.filter(x => queryState.view !== "FINANCE" || x.value !== "CURRENT_ASSET")} onChange={value => { const found = BASIS_OPTIONS.find(x => x.value === value && (queryState.view !== "FINANCE" || x.value !== "CURRENT_ASSET")); if (found) change({ basis: found.value }); }} /></FilterField>;
   const monthField = <AnalyticsSelect label="月份" value={queryState.month} options={(monthCalendar ?? []).map(({ month }) => ({ value: month, label: month }))} onChange={month => change({ month })} />;
-  // 排序：排序项和方向合成一个下拉（ST-05）。业绩额排序要后端新合同（PERFORMANCE_AMOUNT），接线前只在夹具里显示（接线删：夹具）。
-  const sortChoices = queryState.view === "OVERVIEW" ? [] : SORT_OPTIONS[queryState.view].filter(x => x.value !== "NET_CONTRIBUTION" && (queryState.basis !== "CURRENT_ASSET" || !["PERSONAL_DEPOSIT", "TEAM_DEPOSIT"].includes(x.value)))
+  // 排序项和方向共用一个下拉（ST-05）。
+  const sortChoices = queryState.view === "OVERVIEW" ? [] : SORT_OPTIONS[queryState.view].filter(x => x.value !== "NET_CONTRIBUTION" && (queryState.basis !== "CURRENT_ASSET" || !["PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "FIRST_CONFIRMED_CUSTOMER_COUNT"].includes(x.value)))
     .flatMap(x => { const [down, up] = sortDirectionText(x.value); return [{ value: `${x.value}:DESC`, label: `${x.label} · ${down}` }, { value: `${x.value}:ASC`, label: `${x.label} · ${up}` }]; });
-  const perfSortShown = !!fixtureKind && queryState.view === "CUSTOMERS" && !isPersonal && queryState.sortKey === undefined;
-  const sortValue = queryState.sortKey ? `${queryState.sortKey}:${queryState.direction ?? "DESC"}` : queryState.view === "AGENTS" ? "BOUND_CUSTOMER_COUNT:DESC" : perfSortShown ? "PERFORMANCE_AMOUNT:DESC" : "";
+  const perfSortShown = scope.generation === "READY" && queryState.view === "CUSTOMERS" && queryState.basis === "CURRENT_CUSTOMER_HISTORY" && queryState.currency === "USDT" && !isPersonal;
+  const sortValue = queryState.sortKey ? `${queryState.sortKey}:${queryState.direction ?? "DESC"}` : queryState.view === "AGENTS" ? "BOUND_CUSTOMER_COUNT:DESC" : "";
   const sortField = queryState.view !== "OVERVIEW" && <FilterField label="排序"><Select aria-label="排序" value={sortValue} options={[...(queryState.view === "AGENTS" ? [] : [{ value: "", label: "默认顺序" }]), ...(perfSortShown ? [{ value: "PERFORMANCE_AMOUNT:DESC", label: "累计业绩额 · 从高到低" }] : []), ...sortChoices]}
-    onChange={value => { if (value === "PERFORMANCE_AMOUNT:DESC") return; if (!value) { change({ sortKey: undefined, direction: undefined }); return; } const [key, direction] = value.split(":"); const found = SORT_OPTIONS[queryState.view].find(x => x.value === key); if (found) change({ sortKey: found.value, direction: direction === "ASC" ? "ASC" : "DESC" }); }} /></FilterField>;
+    onChange={value => { if (value === "PERFORMANCE_AMOUNT:DESC") { change({ sortKey: "PERFORMANCE_AMOUNT", direction: "DESC" }); return; } if (!value) { change({ sortKey: undefined, direction: undefined }); return; } const [key, direction] = value.split(":"); const found = SORT_OPTIONS[queryState.view].find(x => x.value === key); if (found) change({ sortKey: found.value, direction: direction === "ASC" ? "ASC" : "DESC" }); }} /></FilterField>;
   const caption = queryState.basis === "PERIOD_EVENT" ? `统计 ${queryState.month} 当月发生的业务（${businessZone().label}）；绑定和设备按当前状态` : queryState.basis === "CURRENT_ASSET" ? "按当前设备和活跃状态统计；不含首充和累计资金" : "按客户注册以来的累计数据统计，不是本月新增";
   const navigation = <PageTabs ids={tabIds} label="客服工作台" value={currentTab} items={tabs.map(tab => ({ value: tab, label: TAB_LABEL[tab], count: tab === "pool" ? scope.scopeSummary.pending ?? "—" : undefined }))} onChange={tab => {
     if (document.activeElement?.closest('[role="tablist"][aria-label="客服工作台"]')) pendingTabFocus.current = tab;
@@ -659,12 +704,16 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       setKeyword(""); setSection("stats"); setScope(null); setScopeRetry(n => n + 1);
     }} />}
     {!isPersonal && section === "mine" && <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} onTransfer={setTransferCustomer} transferRevision={transferRevision} />}
-    {section === "exports" && exportsPorts && <PerfExportRecords ports={exportsPorts} />}
-    {exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts} onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />}
+    {section === "exports" && !!exportsPorts?.persona.views.length && <PerfExportRecords ports={exportsPorts} />}
+    {exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts} initialMonth={queryState.month} initialScope={queryState.groupId ? `GROUP:${queryState.groupId}` : mode === "PERSONAL" ? "SELF" : mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL"} onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />}
     {isPersonal && showStatistics && <PeriodPerfPanel perf={perf.period} month={queryState.month} asOf={`${formatBusinessTimeCompact((personalPeriod ?? scope).asOf, "—")}（${businessZone().label}）`}
       monthControl={<span className="m1-group-scope"><span aria-hidden="true">月份</span><Select aria-label="业绩月份" value={queryState.month} onChange={month => change({ month })} options={(monthCalendar ?? []).map(({ month }) => ({ value: month, label: month }))} placeholder="加载后可选" /></span>}
-      onDetail={perf.events ? () => setEventsOpen(true) : undefined} />}
-    {eventsOpen && perf.events && <PerfEventsDrawer events={perf.events} onClose={() => setEventsOpen(false)} />}
+      onDetail={personalPeriod?.performance?.period ? () => { setEventPage({ number: 1 }); setEventsOpen(true); } : undefined} />}
+    {eventsOpen && events && <PerfEventsDrawer events={eventsPerf(events)} page={events.pageNum} pageSize={events.pageSize}
+      total={events.total} observedTotal={events.observedTotal} canContinue={events.canContinue && events.version !== null}
+      loading={events.pageNum !== eventPage.number}
+      onPage={number => { if (events.version) setEventPage({ number, version: events.version }); }}
+      onClose={() => { setEventsOpen(false); setEvents(null); }} />}
     {showStatistics && <Panel className="sa-stats" icon={currentTab === "customers" ? Users : BarChart3} tone="role-1" title={isPersonal ? "本人客户画像" : currentTab === "customers" ? mode === "ALL" ? "全部客户" : "负责组客户" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}
       sub={<>{selectedGroup?.name || (queryState.groupId ? "组名未同步" : isPersonal ? "本人当前客户" : mode === "ALL" ? "全部获准客服范围" : `全部负责组 · ${groups.length} 个`)}{queryState.basis === "CURRENT_ASSET" ? "" : ` · ${nexGridBrandText(currency)}`}{data ? <> · <AnalyticsFreshness asOf={data.asOf} label="" explain={false} onRefresh={() => refreshScope()} />{data.versionState === "READY" ? "" : " · 数据仍在同步"}</> : <> · {businessZone().label}</>}</>}
       explain={isPersonal ? <><p>你现在名下的客户。累计业绩额是这位客户自 2026-11-20 22:57 起的入金减提现。</p><p>{caption}。统计约每分钟更新一次，刷新读最近算好的一版。</p></>
@@ -691,6 +740,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       </FilterBar>
       {queryState.basis === "PERIOD_EVENT" && !monthCalendar && (calendarError ? <BlockState state="error" compact title="统计月份加载失败" detail={calendarError} onRetry={() => setCalendarRetry(n => n + 1)} retryLabel="重试" />
         : <div className="sa-state" role="status">正在加载统计月份…</div>)}
+      {queryState.basis === "PERIOD_EVENT" && monthCalendar?.length === 0 && <BlockState state="empty" title={calendarGeneration === "UPGRADING" ? "数据正在升级" : PERF_UNAVAILABLE_VALUE.reason} onRetry={() => setCalendarRetry(n => n + 1)} />}
       {loading && <div className="sa-state" role="status">正在加载…<Button type="button" size="sm" onClick={() => { controllerRef.current?.abort(); generation.current++; setLoading(false); setCancelled(true); setData(null); }}>取消读取</Button></div>}
       {error ? <BlockState state="error" title={error} onRetry={reloadFirstPage} retryLabel={error.includes("第一页") ? "从第一页重新加载" : "重试"} /> : cancelled && <div className="sa-state" role="status">已取消加载，筛选条件不变。<Button type="button" size="sm" onClick={reloadFirstPage}>重试</Button></div>}
       {data && current && personnel && <>
@@ -746,7 +796,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
           {!data.scopeSummary.groups.length && mode === "MANAGED" && <BlockState state="empty" title="当前没有负责组。" />}
         </> : <>{queryState.view === "CUSTOMERS" && <div className="sa-legend"><span>金额单位 {nexGridBrandText(currency)}</span><span><span className="sa-dot on" aria-hidden="true" />本统计期活跃</span><span><span className="sa-dot off" aria-hidden="true" />本统计期未活跃</span><span><span className="sa-cell-unknown">-</span> 数据还在同步</span><span>点客户名查看资料与记录</span></div>}
           {sessionError && <Notice tone="danger" action={<><Button size="sm" type="button" onClick={() => { const row = sessionError; setSessionError(null); openSessions(row); }}>查看会话记录</Button><Button size="sm" type="button" onClick={() => setSessionError(null)}>知道了</Button></>}>{customerName(sessionError)}：暂时无法核对接待状态，请稍后重试。</Notice>}
-          <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} perf={perf} month={queryState.month} /><footer className="sa-pager"><p>{data.total === null ? `第 ${queryState.pageNum} 页 · 共 — 条（已数到 ${data.observedTotal} 条）` : `第 ${queryState.pageNum} / ${Math.max(1, Math.ceil(data.total / data.pageSize))} 页 · 共 ${data.total} 条`}</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">这份数据还在变，暂时不能翻页；请刷新后重试。</p>}</>}
+          <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} perf={perf} month={queryState.month} /><footer className="sa-pager"><p>{data.total === null ? `第 ${queryState.pageNum} 页 · 共 — 条（已数到 ${data.observedTotal ?? "—"} 条）` : `第 ${queryState.pageNum} / ${Math.max(1, Math.ceil(data.total / data.pageSize))} 页 · 共 ${data.total} 条`}</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">这份数据还在变，暂时不能翻页；请刷新后重试。</p>}</>}
       </>}
     </Panel>}
     {(showStatistics || periodDetail) && fundSource && <M1StatisticDetails key={`${periodDetail ?? fundMetric}:${fundSource.kind === "fund" ? fundSource.origin.asOf : ""}`} source={fundSource} onClose={() => { setFundMetric(null); setPeriodDetail(null); }} onInvalid={invalidateFund} />}

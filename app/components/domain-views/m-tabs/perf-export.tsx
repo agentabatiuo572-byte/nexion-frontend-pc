@@ -2,8 +2,11 @@
 /**
  * 导出业绩的确认框（画板 5a–5h）：业绩榜、我的数据、主管工作台三处同一个框（OP-41）。
  * 用共用的 OperationConfirmModal：理由规则、提交中锁定、失败留表单都在它里面；这里只给月份、范围、导出内容和按钮上的字。
- * 读写都走 PerfExportPorts（接线前只有开发夹具给）。
+ * 读写都走 PerfExportPorts。
  */
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useEffect, useRef, useState } from "react";
 import { Button, Decision, Explain, Fact, Facts, Field, Fold, InlineRetry, Modal, Notice, Select, StatusTag, CheckGroup } from "@/app/components/rd";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
@@ -21,7 +24,17 @@ export function ExportColumnsFold({ columns, summary }: { columns: ExportColumns
   </Fold>;
 }
 
-export function PerfExportDialog({ ports, onClose, onRecords }: { ports: PerfExportPorts; onClose: () => void; onRecords?: () => void }) {
+export function ExportAuditLink() {
+  const session = useAdminAuth(state => state.session);
+  return session && canAccessResolvedPath(resolveVisibleDomains(session), "/platform/audit")
+    ? <a className="rd-link" href="/platform/audit">操作记录与审批</a>
+    : <span>没有那一页的权限时，请有权限的管理员核对这次操作。</span>;
+}
+
+export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, onRecords }: {
+  ports: PerfExportPorts; initialMonth?: string; initialScope?: string; onClose: () => void; onRecords?: () => void;
+}) {
+  const [initial] = useState({ month: initialMonth, scope: initialScope });
   const [data, setData] = useState<ExportDialogData | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [month, setMonth] = useState("");
@@ -33,7 +46,10 @@ export function PerfExportDialog({ ports, onClose, onRecords }: { ports: PerfExp
   const [result, setResult] = useState<ExportSubmitted[] | null>(null);
   const [downloadFailed, setDownloadFailed] = useState<string | null>(null);
   /** 提交没收到结果：选择和理由都锁住，只给「查询原操作」（OP-91–96）。 */
-  const [unknown, setUnknown] = useState(false);
+  const [original] = useState(() => ports.pendingSubmit());
+  const [originalReason, setOriginalReason] = useState(original?.reason);
+  const [confirmationRevision, setConfirmationRevision] = useState(0);
+  const [unknown, setUnknown] = useState(Boolean(original));
   const [lookupText, setLookupText] = useState<string | null>(null);
   const [querying, setQuerying] = useState(false);
   const [found, setFound] = useState<string | null>(null);
@@ -42,20 +58,22 @@ export function PerfExportDialog({ ports, onClose, onRecords }: { ports: PerfExp
 
   const load = () => {
     setLoadFailed(false);
-    ports.open().then(next => {
+    const generation = ++checkGeneration.current;
+    ports.open(initial).then(next => {
+      if (generation !== checkGeneration.current) return;
       setData(next); setMonth(next.month); setScope(next.scope); setItems(next.items); setSelected(next.selected);
-    }, () => setLoadFailed(true));
+    }, () => { if (generation === checkGeneration.current) setLoadFailed(true); });
   };
-  useEffect(load, [ports]);
+  useEffect(() => { load(); return () => { checkGeneration.current++; }; }, [ports]);
 
   /** 重新检查这几项（只读）。只认最后一次检查的结果；没查到的这一项写没加载出来。 */
   const recheck = (types: readonly ExportType[], next = { month, scope }) => {
-    if (!types.length) return;
     const generation = ++checkGeneration.current;
     setItems(rows => rows.map(row => types.includes(row.type) ? { ...row, check: { state: "checking" } } : row));
     ports.check({ month: next.month, scope: next.scope, types: [...types] }).then(found => {
       if (generation !== checkGeneration.current) return;
-      setItems(rows => rows.map(row => found.find(item => item.type === row.type) ?? row));
+      setItems(found.items);
+      setData(previous => previous && { ...previous, asOf: found.asOf, blocked: found.blocked });
     }, () => {
       if (generation !== checkGeneration.current) return;
       setItems(rows => rows.map(row => types.includes(row.type) ? { ...row, check: { state: "failed", text: "没加载出来。" } } : row));
@@ -68,10 +86,10 @@ export function PerfExportDialog({ ports, onClose, onRecords }: { ports: PerfExp
     if (on && item.check.state === "failed") setDropped(rows => [...rows, item.type]);
     if (!on) setDropped(rows => rows.filter(type => type !== item.type));
     // 取消勾选没加载出来的一项后，马上对剩下勾着的重新检查，用这次的结果提交（5h）。
-    if (on && item.check.state !== "ok") recheck(next);
+    recheck(next);
   };
-  const changeScope = (value: string) => { setScope(value); setDropped([]); recheck(items.map(row => row.type), { month, scope: value }); };
-  const changeMonth = (value: string) => { setMonth(value); setDropped([]); recheck(items.map(row => row.type), { month: value, scope }); };
+  const changeScope = (value: string) => { setScope(value); setDropped([]); recheck(selected, { month, scope: value }); };
+  const changeMonth = (value: string) => { setMonth(value); setDropped([]); recheck(selected, { month: value, scope }); };
 
   if (result) {
     const pending = result.some(row => row.state === "PENDING_APPROVAL");
@@ -109,24 +127,27 @@ export function PerfExportDialog({ ports, onClose, onRecords }: { ports: PerfExp
   const quietReason = !data || blockedReason ? undefined
     : !selectable.length && !notReady ? items[0]?.check.state === "empty" ? "这个月还没有记录" : "没有能导出的内容"
     : notReady ? notReady.check.state === "checking" ? "正在检查…" : `${EXPORT_LABEL[notReady.type]}没加载出来`
-    : !chosen.length ? "还没勾选导出内容" : undefined;
+    : (!chosen.length || chosen.length !== selected.length) ? "还没勾选导出内容" : chosen.some(item => item.check.state === "ok" && item.check.rows === null) ? "行数暂时无法确认" : undefined;
   // 没有能提交的项时不要求填理由，也不显示理由框（5f、5g）。
-  const requireReason = !data || (!data.blocked && (selectable.length > 0 || !!notReady));
+  const requireReason = unknown || !data || (!data.blocked && (selectable.length > 0 || !!notReady));
   const scopeLabel = data?.scopes.find(row => row.value === scope)?.label ?? "—";
 
-  const content = loadFailed
-    ? <Notice tone="danger" action={<Button size="sm" onClick={load}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。</Notice>
-    : !data ? <p className="m1-export-loading" role="status">正在读取导出内容…</p>
-    : <div className="m1-export">
-      {unknown && <div className="m1-export-recover"><Button size="sm" loading={querying} loadingText="正在查询…" onClick={() => {
+  const recovery = unknown && <div className="m1-export-recover"><Button size="sm" loading={querying} loadingText="正在查询…" onClick={() => {
         setQuerying(true); setLookupText(null);
-        ports.lookupSubmit({ month, scope, types: selected }).then(rows => {
-          if (!rows) { setLookupText("还没查到这次提交的结果，先保持锁定，稍后再查。"); return; }
+        ports.lookupSubmit().then(outcome => {
+          if (outcome.kind === "pending") { setLookupText(outcome.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。"); return; }
+          if (outcome.kind === "cleared") { setUnknown(false); setConfirmationRevision(value => value + 1); if (data) recheck(selected); else load(); return; }
+          const rows = outcome.rows;
           const ready = rows.filter(row => row.state === "READY").map(row => EXPORT_LABEL[row.type]), waiting = rows.filter(row => row.state !== "READY").map(row => EXPORT_LABEL[row.type]);
           setFound(`已查到这次提交：${[ready.length ? `${ready.join("、")}可下载` : "", waiting.length ? `${waiting.join("、")}待审批` : ""].filter(Boolean).join("，")}。`);
           setResult(rows);
         }, () => setLookupText("这次查询没连上，原操作还没确定。稍后再点「查询原操作」。")).finally(() => setQuerying(false));
-      }}>查询原操作</Button>{lookupText && <span role="status">{lookupText}</span>}</div>}
+      }}>查询原操作</Button>{lookupText && <span role="status">{lookupText}</span>}</div>;
+  const content = !data && unknown ? recovery : loadFailed
+    ? <Notice tone="danger" action={<Button size="sm" onClick={load}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。</Notice>
+    : !data ? <p className="m1-export-loading" role="status">正在读取导出内容…</p>
+    : <div className="m1-export">
+      {recovery}
       <div className="m1-export-scope">
         <Field label="月份" help={data.since}>{control => data.months.length > 1
           ? <Select {...control} aria-label="月份" value={month} options={data.months} onChange={changeMonth} disabled={unknown} />
@@ -161,7 +182,7 @@ export function PerfExportDialog({ ports, onClose, onRecords }: { ports: PerfExp
               {check.state === "over" && <p className="m1-export-item-note" data-tone="warn">{check.text}</p>}
               {check.state === "failed" && <p className="m1-export-item-error" role="alert">
                 {on ? "没加载出来。点「重试」，或取消勾选。" : dropped.includes(item.type) ? "没加载出来，这次不导出。" : check.text}
-                <InlineRetry onRetry={() => recheck([item.type])} />
+                <InlineRetry onRetry={() => recheck(selected)} />
               </p>}
               {/* 列名展开只给勾着的项：打开时不用滚就看得到理由框（FP-5）；没勾的项看「N 列」的问号。 */}
               {check.state === "ok" && on && <ExportColumnsFold columns={item.columns} summary="这次检查的列" />}
@@ -172,8 +193,8 @@ export function PerfExportDialog({ ports, onClose, onRecords }: { ports: PerfExp
     </div>;
 
   const effect = hasSummary || hasDetail ? <>{hasSummary && <StatusTag tone="progress" filled>汇总立即生成</StatusTag>}{hasDetail && <StatusTag tone="progress" filled>明细批准后生成</StatusTag>}</> : undefined;
-  return <OperationConfirmModal briefKind="export" title="导出业绩" action="导出客服业绩" detail={`${month} · ${scopeLabel}`}
-    effect={effect} content={content} confirmLabel={confirmLabel} blockedReason={blockedReason} requireReason={requireReason}
+  return <OperationConfirmModal key={confirmationRevision} briefKind="export" title="导出业绩" action="导出客服业绩" detail={`${month} · ${scopeLabel}`}
+    effect={effect} content={content} initialReason={originalReason} reasonReadOnly={unknown} reasonMin={data?.minReasonChars} reasonMax={data?.maxReasonChars} confirmLabel={confirmLabel} blockedReason={blockedReason} requireReason={requireReason}
     // 共用框没有「只灰按钮、不出提示条」的属性：借多字段表单的跨字段校验，field 指向页面自己画的「导出内容」，
     // 共用框不在别处再写这句，只把它放进确认按钮的灰色原因。表单本身没有字段，页面样式里收起（m1-export.css）。
     // businessFormRevision 让共用框每次重读这份表单（原因跟着勾选、检查结果变）。
@@ -184,8 +205,13 @@ export function PerfExportDialog({ ports, onClose, onRecords }: { ports: PerfExp
       try {
         setResult(await ports.submit({ month, scope, types: selected }, reason));
       } catch (error) {
-        if (!(error instanceof ExportOutcomeUnknownError)) throw error;
+        if (!(error instanceof ExportOutcomeUnknownError)) {
+          recheck(selected);
+          throw error;
+        }
+        setOriginalReason(reason);
         setUnknown(true);
+        setConfirmationRevision(value => value + 1);
       }
     }} />;
 }

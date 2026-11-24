@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Drawer, Button, BlockState, Explain, Fact, Facts, Fold, Notice, Table, TableMessage, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, operatorNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, type PerformanceMetric, type SupportOverview } from "@/lib/admin/m-support-client";
-import { supportAnalyticsClient, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer, type SupportAnalyticsQuery, type SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
+import { supportAnalyticsClient, supportPerformanceAnalyticsClient, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer, type SupportAnalyticsQuery, type SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
 import "./m1-statistic-details.css";
 import { amountDisplay } from "@/lib/format";
 
@@ -106,18 +106,25 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
   };
   // The original projection and the customer list have independent versions. An unversioned read supports a live first page only.
   const confirmOrigin = async () => {
-    const fresh = await supportAnalyticsClient.query({ ...query, pageNum: 1, expectedVersion: origin.queryVersion ?? undefined, signal });
+    const fresh = await supportPerformanceAnalyticsClient.query({ ...query, pageNum: 1, expectedVersion: origin.queryVersion ?? undefined, signal }, origin.generation);
+    if (origin.performance && fresh.performance?.window.sourceVersion !== origin.performance.window.sourceVersion) throw changed();
     checkSummary(fresh);
     return fresh;
   };
   if (source.detailView || metric === "net" && query.basis === "PERIOD_EVENT") {
     const view = source.detailView ?? "NET_CONTRIBUTIONS";
-    const list = await supportAnalyticsClient.details({ view, basis: "PERIOD_EVENT", from: query.from, to: query.to, groupId: query.groupId, agentId: query.agentId,
-      currency: query.currency, sortKey: "SUCCEEDED_AT", direction: "DESC", pageNum: page, pageSize: PAGE_SIZE, expectedVersion: version, signal });
+    const options = { basis: "PERIOD_EVENT", from: query.from, to: query.to, groupId: query.groupId, agentId: query.agentId,
+      currency: query.currency, sortKey: "SUCCEEDED_AT", direction: "DESC", pageNum: page, pageSize: PAGE_SIZE, expectedVersion: version, signal } as const;
+    const list = origin.performance && view !== "NET_CONTRIBUTIONS"
+      ? await supportPerformanceAnalyticsClient.firstDetails({ ...options, view }, origin.performance.window)
+      : await supportAnalyticsClient.details({ ...options, view });
     const expected = view === "NET_CONTRIBUTIONS" ? origin.scopeSummary.financial.currencies.find(row => row.currency === currency)?.net
       : origin.scopeSummary.financial.firstSources.find(row => row.currency === currency)?.[view === "FIRST_DEPOSITS" ? "deposits" : "purchases"];
     const detail = list.detailSummary;
-    if (expected?.confirmed == null || !exactGroupSum([detail.totalAmount!], expected.confirmed)) throw changed();
+    if (origin.performance && view !== "NET_CONTRIBUTIONS") {
+      if (detail.totalAmount === null || detail.visibleAmount === null || detail.restrictedAmount === null
+        || !exactGroupSum([detail.visibleAmount, detail.restrictedAmount], detail.totalAmount)) throw changed();
+    } else if (expected?.confirmed == null || !exactGroupSum([detail.totalAmount!], expected.confirmed)) throw changed();
     const title = view === "NET_CONTRIBUTIONS" ? fundLabels.net : view === "FIRST_DEPOSITS" ? "充值首充" : "付费购机首充";
     const unit = nexGridBrandText(currency);
     const money = (value: string) => groupedAmount(value) + " " + unit;
@@ -146,7 +153,8 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
   // Without a query version there is no next page, so this one read takes everything the backend allows instead of cutting the list at PAGE_SIZE.
   const projection: SupportAnalyticsQuery = { ...query, view: "CUSTOMERS", sortKey: undefined, direction: undefined, pageNum: page, pageSize: origin.queryVersion ? PAGE_SIZE : 100, expectedVersion: version, signal };
   if (metric === "net") Object.assign(projection, { keyword: undefined, firstState: "ALL", category: "ALL", filter: "ALL" });
-  const list = await supportAnalyticsClient.query(projection);
+  const list = await supportPerformanceAnalyticsClient.query(projection, origin.generation);
+  if (origin.performance && list.performance?.window.sourceVersion !== origin.performance.window.sourceVersion) throw changed();
   if (list.view !== "CUSTOMERS") throw new Error("CUSTOMER_PROJECTION_UNAVAILABLE");
   await confirmOrigin();
   checkSummary(list);

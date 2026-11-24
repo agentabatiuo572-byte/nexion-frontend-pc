@@ -1,13 +1,13 @@
 "use client";
 /**
  * 客服工作台「导出记录」页签（画板 6a–6l，审批入口按已定的甲）：我的申请、待我审批、申请详情抽屉、批准 / 驳回 / 撤回确认框、
- * 下载失败后重新获取、批准结果未知的待确认。读写都走 PerfExportPorts（接线前只有开发夹具给）。
+ * 下载失败后重新获取、批准结果未知的待确认。读写都走 PerfExportPorts。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { BlockState, Button, Cell, Decision, Drawer, Fact, Facts, Fold, Notice, Pager, Panel, Segments, StatusTag, Steps, Table, Td, Th, Tr } from "@/app/components/rd";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { ExportColumnsFold } from "./perf-export";
+import { ExportAuditLink, ExportColumnsFold } from "./perf-export";
 import { EXPORT_LABEL, ExportOutcomeUnknownError, exportStatus, type DecisionLookup, type ExportTask, type PendingDecision, type PerfExportPorts } from "./perf-view";
 import "./m1-export.css";
 
@@ -23,40 +23,62 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
   const [view, setView] = useState<View>(persona.views[0]);
   const [rows, setRows] = useState<ExportTask[] | null>(null);
   const [readError, setReadError] = useState(false);
+  const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(10), [total, setTotal] = useState(0);
+  const [refresh, setRefresh] = useState(0);
+  const [taskRefresh, setTaskRefresh] = useState(0);
+  const [detail, setDetail] = useState<ExportTask | null>(null);
+  const [detailStatus, setDetailStatus] = useState<"loading" | "error" | null>(null);
+  const [recoveredReason, setRecoveredReason] = useState<PendingDecision | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [pending, setPending] = useState<PendingDecision[]>(() => ports.pendingDecisions());
   const [lookup, setLookup] = useState<DecisionLookup | "loading" | null>(null);
-  const [retryRejected, setRetryRejected] = useState(false);
   const [downloadFailed, setDownloadFailed] = useState<string | null>(null);
 
-  const load = useCallback((next: View) => {
+  useEffect(() => {
+    const controller = new AbortController();
     setRows(null); setReadError(false);
-    ports.tasks(next).then(setRows, () => setReadError(true));
-  }, [ports]);
-  useEffect(() => load(view), [load, view]);
+    ports.tasks(view, page, pageSize, controller.signal).then(result => {
+      if (controller.signal.aborted) return;
+      const lastPage = Math.max(1, Math.ceil(result.total / pageSize));
+      if (page > lastPage) { setPage(lastPage); return; }
+      setRows(result.rows); setTotal(result.total);
+    }, () => { if (!controller.signal.aborted) setReadError(true); });
+    return () => controller.abort();
+  }, [ports, view, page, pageSize, refresh]);
 
-  const put = (task: ExportTask) => setRows(list => list?.map(row => row.taskId === task.taskId ? task : row) ?? list);
+  useEffect(() => {
+    setDetail(null); setDetailStatus(null);
+    if (!openId) return;
+    let active = true;
+    setDetailStatus("loading");
+    ports.task(openId).then(task => {
+      if (active) { setDetail(task); setDetailStatus(null); }
+    }, () => { if (active) setDetailStatus("error"); });
+    return () => { active = false; };
+  }, [openId, ports, taskRefresh]);
+
+  const put = (task: ExportTask) => {
+    setDetail(task);
+    setRefresh(value => value + 1);
+  };
   const download = (task: ExportTask) => { setDownloadFailed(null); ports.download(task.taskId).catch(() => { setDownloadFailed(task.taskId); setOpenId(task.taskId); }); };
   const query = (p: PendingDecision) => {
-    setLookup("loading"); setRetryRejected(false);
+    setLookup("loading");
     ports.lookupDecision(p).then(found => {
       setLookup(found);
       if (found.kind === "matched") { put(found.task); setPending(ports.pendingDecisions()); }
+      if (found.kind === "cleared") { setRecoveredReason(p); setPending(ports.pendingDecisions()); setTaskRefresh(value => value + 1); }
     }, () => setLookup({ kind: "failed", text: "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。" }));
   };
-  const retryOriginal = (p: PendingDecision, task: ExportTask) => {
-    (p.decision === "WITHDRAW" ? ports.withdraw(task, p.reason) : ports.decide(task, p.decision, p.reason)).then(next => { put(next); setPending(ports.pendingDecisions()); setLookup(null); }, () => setRetryRejected(true));
-  };
-
   const single = persona.views.length === 1;
-  const sub = !rows ? undefined : view === "MINE" ? `本人提交的 · ${rows.length} 条` : single ? `待我审批 · ${rows.length} 条` : `共 ${rows.length} 条`;
-  const open = rows?.find(row => row.taskId === openId) ?? null;
+  const sub = !rows ? undefined : view === "MINE" ? `本人提交的 · ${total} 条` : single ? `待我审批 · ${total} 条` : `共 ${total} 条`;
+  const open = detail?.taskId === openId ? detail : null;
 
   return <>
     <Panel title="导出记录" sub={sub} explain="汇总提交后就能下载；明细要另一位有审批权的管理员批准后才生成。下载链接每次获取后 24 小时内有效。"
-      actions={!single && <Segments label="导出记录视图" value={view} items={[{ value: "MINE", label: "我的申请" }, { value: "APPROVALS", label: "待我审批" }]} onChange={next => { setOpenId(null); setView(next); }} />}>
-      {readError ? <BlockState state="error" title="导出记录加载失败" onRetry={() => load(view)} />
+      actions={!single && <Segments label="导出记录视图" value={view} items={[{ value: "MINE", label: "我的申请" }, { value: "APPROVALS", label: "待我审批" }]} onChange={next => { setOpenId(null); setPage(1); setView(next); }} />}>
+      {readError ? <BlockState state="error" title="导出记录加载失败" onRetry={() => setRefresh(value => value + 1)} />
         : !rows ? <BlockState state="loading" title="正在读取导出记录…" />
         : !rows.length ? <BlockState state="empty" title={view === "MINE" ? "还没有导出申请" : "没有等你审批的申请"} />
         : <>
@@ -79,19 +101,21 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
                 : <Button size="sm" onClick={() => setOpenId(task.taskId)}>查看</Button>}</Td>
             </Tr>;
           })}</tbody></Table>
-          <Pager label="导出记录" sizeLabel="导出记录每页条数" total={rows.length} page={1} pageSize={10} sizes={[10]} onPage={() => undefined} onPageSize={() => undefined} />
+          <Pager label="导出记录" sizeLabel="导出记录每页条数" total={total} page={page} pageSize={pageSize} sizes={[10]} onPage={setPage} onPageSize={size => { setPageSize(size); setPage(1); }} />
         </>}
     </Panel>
 
+    {openId && detailStatus && <Drawer open title="导出记录" onClose={() => setOpenId(null)}>
+      <BlockState state={detailStatus} title={detailStatus === "loading" ? "正在加载…" : "导出记录加载失败"} onRetry={detailStatus === "error" ? () => setTaskRefresh(value => value + 1) : undefined} />
+    </Drawer>}
     {open && <TaskDrawer task={open} view={view} zone={zone} rows={rows ?? []}
-      pending={pending.find(p => p.taskId === open.taskId)} lookup={lookup} retryRejected={retryRejected} downloadFailed={downloadFailed === open.taskId}
-      onNav={id => { setOpenId(id); setLookup(null); setRetryRejected(false); }}
-      onClose={() => { setOpenId(null); setLookup(null); setRetryRejected(false); }}
+      pending={pending.find(p => p.taskId === open.taskId)} lookup={lookup} downloadFailed={downloadFailed === open.taskId}
+      onNav={id => { setOpenId(id); setLookup(null); }}
+      onClose={() => { setOpenId(null); setLookup(null); }}
       onConfirm={kind => setConfirm({ kind, task: open })} onDownload={() => download(open)}
-      onQuery={p => query(p)} onRetry={p => retryOriginal(p, open)}
-      onRelease={p => { setPending(list => list.filter(row => row !== p)); setLookup(null); setRetryRejected(false); }} />}
+      onQuery={p => query(p)} />}
 
-    {confirm && <TaskConfirm confirm={confirm} zone={zone} onClose={() => setConfirm(null)}
+    {confirm && <TaskConfirm confirm={confirm} zone={zone} initialReason={recoveredReason?.taskId === confirm.task.taskId && recoveredReason.decision === ({ approve: "APPROVE", reject: "REJECT", withdraw: "WITHDRAW" } as const)[confirm.kind] ? recoveredReason.reason : undefined} onClose={() => setConfirm(null)}
       onConfirm={async reason => {
         const { kind, task } = confirm;
         try {
@@ -106,11 +130,11 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
   </>;
 }
 
-function TaskDrawer({ task, view, zone, rows, pending, lookup, retryRejected, downloadFailed, onNav, onClose, onConfirm, onDownload, onQuery, onRetry, onRelease }: {
+function TaskDrawer({ task, view, zone, rows, pending, lookup, downloadFailed, onNav, onClose, onConfirm, onDownload, onQuery }: {
   task: ExportTask; view: View; zone: string; rows: ExportTask[];
-  pending?: PendingDecision; lookup: DecisionLookup | "loading" | null; retryRejected: boolean; downloadFailed: boolean;
+  pending?: PendingDecision; lookup: DecisionLookup | "loading" | null; downloadFailed: boolean;
   onNav: (id: string) => void; onClose: () => void; onConfirm: (kind: Confirm["kind"]) => void; onDownload: () => void;
-  onQuery: (p: PendingDecision) => void; onRetry: (p: PendingDecision) => void; onRelease: (p: PendingDecision) => void;
+  onQuery: (p: PendingDecision) => void;
 }) {
   const status = exportStatus(task);
   const label = EXPORT_LABEL[task.type];
@@ -142,8 +166,8 @@ function TaskDrawer({ task, view, zone, rows, pending, lookup, retryRejected, do
     : undefined;
   const footer = reviewing
     ? <Decision note={note}
-        danger={<Button variant="danger-outline" disabledReason={pending ? "查询有结果前不能驳回" : task.mine ? "你发起的，要另一位有审批权的管理员处理" : undefined} onClick={() => onConfirm("reject")}>驳回</Button>}
-        primary={<Button variant="primary" disabledReason={pending ? "查询有结果前不能批准" : task.mine ? "你发起的，要另一位有审批权的管理员处理" : task.approveBlocked} onClick={() => onConfirm("approve")}>批准</Button>} />
+        danger={<Button variant="danger-outline" disabledReason={pending ? "查询有结果前不能驳回" : task.mine ? "你发起的，要另一位有审批权的管理员处理" : task.canReject ? undefined : "当前不能驳回"} onClick={() => onConfirm("reject")}>驳回</Button>}
+        primary={<Button variant="primary" disabledReason={pending ? "查询有结果前不能批准" : task.mine ? "你发起的，要另一位有审批权的管理员处理" : task.canApprove ? undefined : task.approveBlocked} onClick={() => onConfirm("approve")}>批准</Button>} />
     : <Decision note={note}
         others={<>{task.canWithdraw && task.state === "PENDING_APPROVAL" && <Button disabledReason={pending ? "查询有结果前不能再撤回" : undefined} onClick={() => onConfirm("withdraw")}>撤回申请</Button>}<Button onClick={onClose}>关闭</Button></>}
         primary={task.state === "READY" && task.canDownload && !downloadFailed ? <Button variant="primary" onClick={onDownload}>下载</Button> : undefined} />;
@@ -153,15 +177,12 @@ function TaskDrawer({ task, view, zone, rows, pending, lookup, retryRejected, do
     footer={footer}>
     {pending && <Notice tone="warn" title={`${VERB[pending.decision]}结果未知`} actionBelow action={<>
       <Button size="sm" loading={lookup === "loading"} loadingText="正在查询…" onClick={() => onQuery(pending)}>查询原操作</Button>
-      {lookup !== "loading" && lookup?.kind === "not-received" && !retryRejected && <Button size="sm" onClick={() => onRetry(pending)}>按原操作重试</Button>}
-      {retryRejected && <Button size="sm" onClick={() => onRelease(pending)}>解除待确认</Button>}
     </>}>
       <p>{pending.at} 点{VERB[pending.decision]}后没收到结果，原操作和理由已保存。先查询原操作，不要再点{VERB[pending.decision]}。</p>
-      {lookup && lookup !== "loading" && !retryRejected && <p>{lookup.text}</p>}
-      {lookup && lookup !== "loading" && (lookup.kind === "mismatch" || lookup.kind === "expired") && <p className="rd-note">没有那一页的权限时，请有权限的管理员核对这次操作。</p>}
-      {retryRejected && <><p>按原操作重试被拒绝了。先核实原操作的结果，再解除待确认。</p><p className="rd-note">解除只在这个页面生效，不进操作记录。</p></>}
+      {lookup && lookup !== "loading" && <p>{lookup.text}</p>}
+      {lookup && lookup !== "loading" && (lookup.kind === "mismatch" || lookup.kind === "expired") && <p className="rd-note"><ExportAuditLink /></p>}
     </Notice>}
-    {!pending && lookup && lookup !== "loading" && lookup.kind === "matched" && <Notice tone="ok">{lookup.text}</Notice>}
+    {!pending && lookup && lookup !== "loading" && (lookup.kind === "matched" || lookup.kind === "cleared") && <Notice tone="ok">{lookup.text}</Notice>}
     {downloadFailed && <Notice tone="warn" title="下载没有完成" actionBelow action={<Button size="sm" onClick={onDownload}>重新获取下载链接</Button>}>文件还在，重新获取下载链接再下，不会重新生成。</Notice>}
     <Steps label="导出进度" items={steps} />
     <Facts>
@@ -190,7 +211,7 @@ function TaskDrawer({ task, view, zone, rows, pending, lookup, retryRejected, do
 }
 
 /** 批准、驳回、撤回：同一种共用确认框，同一份申请摘要（OP-69），后果写在「…后」一行，理由必填。 */
-function TaskConfirm({ confirm, zone, onClose, onConfirm }: { confirm: Confirm; zone: string; onClose: () => void; onConfirm: (reason: string) => Promise<void> }) {
+function TaskConfirm({ confirm, zone, initialReason, onClose, onConfirm }: { confirm: Confirm; zone: string; initialReason?: string; onClose: () => void; onConfirm: (reason: string) => Promise<void> }) {
   const { kind, task } = confirm;
   const label = EXPORT_LABEL[task.type];
   const month = task.month ? `${task.month}（截至 ${task.asOf ? formatBusinessTimeCompact(task.asOf, "—") : "—"}，${zone}）` : "—";
@@ -202,13 +223,13 @@ function TaskConfirm({ confirm, zone, onClose, onConfirm }: { confirm: Confirm; 
     <Fact k="数据覆盖">{task.coverage ?? "—"}</Fact>
     <Fact k="申请理由">{task.requestReason}</Fact>
   </Facts>;
-  if (kind === "withdraw") return <OperationConfirmModal briefKind="export" title={`撤回${label}导出申请`} action="撤回业绩导出申请" detail={task.taskId}
+  if (kind === "withdraw") return <OperationConfirmModal initialReason={initialReason} briefKind="export" title={`撤回${label}导出申请`} action="撤回业绩导出申请" detail={task.taskId}
     effect={<StatusTag tone="progress" filled>立即生效</StatusTag>} confirmLabel="确认撤回" onClose={onClose} onConfirm={onConfirm}
     facts={task.scopeLost
       ? <Facts><Fact k="内容">{label}</Fact><Fact k="编号"><span data-mono="">{task.taskId}</span></Fact><Fact k="提交时间">{formatBusinessTimeCompact(task.requestedAt, "—")}（{zone}）</Fact><Fact k="撤回后">不再审批，也不生成文件；要导出得重新申请</Fact></Facts>
       : <Facts><Fact k="内容">{label}（{task.rows ?? "—"} 行）</Fact><Fact k="范围">{task.scope ?? "—"}</Fact><Fact k="提交时间">{formatBusinessTimeCompact(task.requestedAt, "—")}（{zone}）</Fact><Fact k="撤回后">不再审批，也不生成文件；要导出得重新申请</Fact></Facts>} />;
   const approve = kind === "approve";
-  return <OperationConfirmModal briefKind="export" title={approve ? `批准${label}导出` : `驳回${label}导出申请`} action={approve ? "批准业绩明细导出" : "驳回业绩明细导出"} detail={task.taskId}
+  return <OperationConfirmModal initialReason={initialReason} briefKind="export" title={approve ? `批准${label}导出` : `驳回${label}导出申请`} action={approve ? "批准业绩明细导出" : "驳回业绩明细导出"} detail={task.taskId}
     effect={<StatusTag tone="progress" filled>{approve ? "批准后生成文件" : "立即生效"}</StatusTag>} confirmLabel={approve ? "确认批准" : "确认驳回"}
     facts={summary}
     content={<><ExportColumnsFold columns={task.columns} summary="提交时的列" />

@@ -9,7 +9,6 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, type SupportProfile, type SupportGroup, type SupportFinanceFieldStatus } from "@/lib/admin/m-support-enhancements";
 import { perfText } from "./perf-view";
 import { profilePerf } from "./perf-wiring";
-import { perfFixture, profileFixture, profilePerfFixture } from "./perf-fixture"; // 接线删：夹具
 import { supportClient, SupportClientError, isSupportScopeDenial, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
@@ -100,7 +99,7 @@ function Group({ title, note, summary, open, onOpenChange, group, failed, retry,
 }
 
 type CustomerProfile = SupportProfile & { annotations: SupportGroup & { recoveredSystemTags?: unknown[] } };
-type ProfileGroup = Exclude<keyof SupportProfile, "actions" | "statistics">;
+type ProfileGroup = Exclude<keyof SupportProfile, "actions" | "statistics" | "performance">;
 const profileRefreshGroups = ["identity", "statistics", "finance", "risk", "annotations", "service"] as const;
 type ProfileReadErrors = Partial<Record<ProfileGroup | "statistics", string>>;
 type ProfileReadIntent = ProfileGroup | "initial" | "refresh" | "statistics" | "annotation-write";
@@ -111,7 +110,7 @@ function isProfileGroup(intent: ProfileReadIntent): intent is ProfileGroup {
 }
 
 function mergeProfileGroups(previous: CustomerProfile, next: SupportProfile, groups: readonly ProfileGroup[]): CustomerProfile {
-  const updated: CustomerProfile = { ...previous, ...Object.fromEntries(groups.map(key => [key, next[key]])) };
+  const updated: CustomerProfile = { ...previous, ...Object.fromEntries(groups.map(key => [key, next[key]])), performance: next.performance };
   if (groups.includes("identity") && next.identity.status === "READY") {
     // Identity reload also owns risk and system tags. Keep custom tags and notes unless requested.
     updated.risk = next.risk;
@@ -231,8 +230,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
 
     let result: { profile: SupportProfile } | { failure: unknown };
     try {
-      // 接线删：夹具。夹具开着时客户资料不发读请求。
-      result = { profile: perfFixture()?.profile ? profileFixture() : await supportEnhancements.profile(customerId, signal) };
+      result = { profile: await supportEnhancements.performanceProfile(customerId, signal) };
     } catch (failure) {
       result = { failure };
     }
@@ -316,21 +314,18 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   }, [customerId, epoch, reload, profileRetry, profileScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
-    if (perfFixture()?.profile) return; // 接线删：夹具。样本客户只有统计组和资金组，其余读取不发。
     const controller = new AbortController(), saved = stamp.current; setDeviceGroup(null); setPageError(e => ({ ...e, devices: "" }));
     supportEnhancements.devices(customerId, devicePage, controller.signal).then(g => { if (!controller.signal.aborted && saved === stamp.current) setDeviceGroup(g); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setPageError(v => ({ ...v, devices: displayAdminError(e) })); });
     return () => controller.abort();
   }, [customerId, epoch, devicePage, pageRetry, reload, profileScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
-    if (perfFixture()?.profile) return; // 接线删：夹具。样本客户只有统计组和资金组，其余读取不发。
     const controller = new AbortController(), saved = stamp.current; setFlowGroup(null); setPageError(e => ({ ...e, flows: "" }));
     supportEnhancements.flows(customerId, { pageNum: flowPage, currency: currency || undefined, status: flowStatus || undefined, from: from ? businessDayStart(from) : undefined, to: to ? businessDayStart(to) : undefined }, controller.signal).then(g => { if (!controller.signal.aborted && saved === stamp.current) setFlowGroup(g); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setPageError(v => ({ ...v, flows: displayAdminError(e) })); });
     return () => controller.abort();
   }, [customerId, epoch, flowPage, currency, flowStatus, from, to, pageRetry, reload, profileScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
-    if (perfFixture()?.profile) return; // 接线删：夹具。样本客户只有统计组和资金组，其余读取不发。
     const controller = new AbortController(), saved = stamp.current; setMaintenance(null); setMaintenanceError("");
     supportClient.maintenanceHistory(customerId, { pageNum: maintenancePage, pageSize: 10, signal: controller.signal }).then(v => { if (!controller.signal.aborted && saved === stamp.current) setMaintenance(v); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setMaintenanceError(displayAdminError(e)); });
     return () => controller.abort();
@@ -439,7 +434,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const firstConfirmed = firstKnown && statistics?.first.state === "CONFIRMED";
   const firstState = firstConfirmed ? "已首充" : firstKnown && statistics?.first.state === "NONE" ? "未首充" : "未知";
   // 累计业绩额（只算 USDT，自起算点以来）。接线前只有夹具给数，生产路径写「业绩数据暂不可用」（perf-wiring.ts）。
-  const perfOfProfile = perfFixture()?.profile ? profilePerfFixture() : profilePerf();
+  const perfOfProfile = profilePerf(profile?.performance);
   const cumulativeText = perfOfProfile.cumulative.state === "complete" ? `${perfText(perfOfProfile.cumulative)} USDT（自 2026-11-20 起）` : "—";
   const firstSource = firstConfirmed ? perfOfProfile.firstSource ?? (statistics?.first.kind === "DEPOSIT" ? "充值" : statistics?.first.kind === "DEVICE_PURCHASE" ? "购机" : "-") : "-";
   const advisorName = service?.agentName ?? conversation?.owner;
@@ -561,7 +556,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       {/* 这一组的名称列按最长的「团队奖励范围内（人）」放宽（DESIGN.md 名称列按组定宽）。 */}
       <div className="m3-invite-group" aria-busy={statisticsInFlight || undefined}>{statisticsStale(false)}<Row label="首充状态" value={firstState}/><Row label="首充来源" value={firstSource}/><Row label="首充时间" value={firstConfirmed && statistics?.first.succeededAt ? dates(statistics.first.succeededAt) : "-"}/><Row label="首充金额" value={firstConfirmed && statistics?.first.amount != null && statistics.first.currency ? `${grouped(statistics.first.amount)} ${nexGridBrandText(statistics.first.currency)}` : "-"}/>
       {/* 同一个数一页只写一处（ST-74）：统计和资金两组都读到时，累计业绩额只写在账户资金里；资金组读不到时写在这里。 */}
-      {profile?.finance.status === "READY" ? <div className="cvp-row"><span className="k">累计业绩额</span><span className="v"><button type="button" className="rd-link m3-profile-link" onClick={()=>open360("账户资金")}>见下方账户资金</button></span></div> : <Row label="累计业绩额" value={cumulativeText}/>}
+      {(perfOfProfile.both || (!profile?.performance && profile?.finance.status === "READY")) ? <div className="cvp-row"><span className="k">累计业绩额</span><span className="v"><button type="button" className="rd-link m3-profile-link" onClick={()=>open360("账户资金")}>见下方账户资金</button></span></div> : <Row label="累计业绩额" value={cumulativeText}/>}
       {countRows(false)}
       {statistics?.lifetime.map(row=>{const invited=statistics.invitations.deposits.find(item=>item.currency===row.currency)?.deposits;return <div key={row.currency}><h4>{nexGridBrandText(row.currency)} · 累计</h4>{/* 展开视图是详情，金额写完整值，币种在小标题里（TX-20、TX-21，BUG-652）；侧栏摘要卡照旧用紧凑写法。 */}<Row label="本人充值" value={statisticMoney(row.deposits, true)}/><Row label="团队成员充值" value={statisticMoney(invited, true)}/></div>;})}
       </div>

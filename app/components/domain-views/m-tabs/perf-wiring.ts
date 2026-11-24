@@ -1,36 +1,78 @@
-/**
- * 客服业绩额的接线占位。后端新合同（B80）交付、核定字段名后，由 Codex 按合同替换这里的函数；显示件（perf-view.tsx 和各页）不用改。
- *
- * 现在 PC 照旧只发旧请求（不带 metricVersion），旧回包里的「净贡献」是旧算法，不能当业绩额显示（交接 §2.4 第 3 条）。
- * 所以这里一律返回「业绩数据暂不可用」，导出入口和「导出记录」页签不显示；新数据只有开发夹具给（perf-fixture.ts）。
- */
 import type { LeaderboardPage } from "@/lib/admin/support-leaderboard-client";
-import { PERF_UNAVAILABLE, PERF_UNAVAILABLE_VALUE, type AnalyticsPerf, type PerfExportPorts, type PerfTotals, type PerfValue } from "./perf-view";
+import type { SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
+import { PERFORMANCE_CHANNEL_LABELS, type PerformanceTotals, type ProfilePerformance, type performanceEvents, type performanceMeasured } from "@/lib/admin/support-performance-contract";
+import { PERF_UNAVAILABLE, PERF_UNAVAILABLE_VALUE, type AnalyticsPerf, type PerfCount, type PerfEvents, type PerfTotals, type PerfValue } from "./perf-view";
 
-/** 业绩榜各行的三项合计。接线：新版 page / detail 行里的 performance（业绩额、入金合计、提现合计），按 agentId 取。 */
+const UPGRADING = "数据正在升级";
+const NO_PROJECTION: Extract<PerfValue, { state: "unavailable" }> = { state: "unavailable", reason: "暂时无法确认" };
+
+function measurement<T extends string | number>(value: ReturnType<typeof performanceMeasured<T>>) {
+  const reason = value.reasons.includes("GENERATION_UPGRADING") ? UPGRADING : "暂时无法确认";
+  if (value.status === "COMPLETE" && value.value !== null) return { state: "complete" as const, value: value.value };
+  if (value.status === "PARTIAL") return { state: "partial" as const, observed: value.observed, missing: "部分数据还在核对" };
+  return { state: "unavailable" as const, reason };
+}
+
+export function boardTotals(value: PerformanceTotals): PerfTotals {
+  return { amount: measurement(value.amount), inflow: measurement(value.inflow), withdrawal: measurement(value.withdrawal) };
+}
+
 export type BoardPerf = { kind: "ready"; byAgent: Record<string, PerfTotals> } | { kind: "unavailable"; reason: string };
-export function leaderboardPerf(_page: LeaderboardPage): BoardPerf {
-  return { kind: "unavailable", reason: PERF_UNAVAILABLE };
+export function leaderboardPerf(page: LeaderboardPage): BoardPerf {
+  if (page.generation !== "READY") return { kind: "unavailable", reason: PERF_UNAVAILABLE };
+  const rows = [...page.rows, ...(page.podium?.rows ?? []), ...(page.self.row ? [page.self.row] : [])];
+  return { kind: "ready", byAgent: Object.fromEntries(rows.flatMap(row => row.performance ? [[row.id, boardTotals(row.performance)]] : [])) };
 }
 
-/**
- * 客服工作台各处的业绩额。接线：新版 analytics 回包的 performanceWindow、scopeSummary.financial.performance、groups[].period / current.performance、
- * AGENTS.records[].current.performance、客户记录的 performance、仅超管的 scopeSummary.performanceAttribution，以及 PERFORMANCE_EVENTS 视图（交接 §2.2）。
- */
-export function analyticsPerf(): AnalyticsPerf {
-  const none = PERF_UNAVAILABLE_VALUE;
-  return { period: { unavailable: PERF_UNAVAILABLE }, customers: {}, agents: {}, groups: {}, scope: { period: { amount: none, inflow: none, withdrawal: none }, current: none } };
+export function analyticsPerf(data: SupportAnalyticsResponse | null, personalPeriod: SupportAnalyticsResponse | null): AnalyticsPerf {
+  const none = data?.generation === "READY" ? NO_PROJECTION
+    : data?.generation === "UPGRADING" ? { state: "unavailable" as const, reason: UPGRADING } : PERF_UNAVAILABLE_VALUE;
+  const amount = (record?: PerformanceTotals) => record ? measurement(record.amount) : none;
+  const projection = data?.performance, period = personalPeriod?.performance?.period;
+  const customers = data?.view === "OVERVIEW" || data?.view === "CUSTOMERS" || data?.view === "ACTIVITY" ? data.records : [];
+  return {
+    period: period ? {
+      totals: boardTotals(period.totals), first: measurement(period.first),
+      inflow: period.inflow.flatMap(row => {
+        const label = PERFORMANCE_CHANNEL_LABELS[row.channel];
+        const main = { label, value: measurement(row.net) };
+        const correction = row.correction.value ?? row.correction.observed;
+        return correction !== null && Number(correction) !== 0
+          ? [main, { label: `${label} · 其中本期更正`, value: measurement(row.correction), sub: true }] : [main];
+      }),
+      withdrawals: period.withdrawals.map(row => ({
+        label: PERFORMANCE_CHANNEL_LABELS[row.channel], walletDebited: measurement(row.walletDebited), fee: measurement(row.fee), received: measurement(row.received),
+      })),
+    } : { unavailable: personalPeriod?.generation === "UPGRADING" ? UPGRADING : none.reason },
+    customers: Object.fromEntries(customers.map(row => [row.customerId, amount(row.performance)])),
+    agents: Object.fromEntries(data?.view === "AGENTS" ? data.records.map(row => [row.accountId, amount(row.performance)]) : []),
+    groups: Object.fromEntries(Object.entries(projection?.groups ?? {}).map(([id, row]) => [id, { period: amount(row.period), current: amount(row.current) }])),
+    scope: { period: projection?.period ? boardTotals(projection.period.totals) : { amount: none, inflow: none, withdrawal: none }, current: amount(projection?.current) },
+    attribution: projection?.attribution && { unassigned: amount(projection.attribution.unassigned), unknown: amount(projection.attribution.unknown) },
+  };
 }
 
-/** 客户资料：累计业绩额和首充来源。接线：/customers/{id} 与 /360 新版统计组、资金组各自的 performance（同版本同范围），首付的 channel。 */
-export function profilePerf(): { cumulative: PerfValue; firstSource?: string } {
-  return { cumulative: PERF_UNAVAILABLE_VALUE };
+const EVENT_LABELS = { INFLOW: "入金", WITHDRAWAL: "提现", CORRECTION: "更正", DEVICE_PURCHASE: "购机", REFUND: "退款", MANUAL_CREDIT: "钱包加款", REWARD: "奖励" };
+export function eventsPerf(events: Awaited<ReturnType<typeof performanceEvents>>): PerfEvents {
+  const summary = (part: typeof events.totals): { amount: PerfValue; count: PerfCount; customers: PerfCount } => ({
+    amount: measurement(part.amount), count: measurement(part.count), customers: measurement(part.customers),
+  });
+  return {
+    from: events.window.from, to: events.window.to, total: summary(events.totals),
+    visible: summary(events.visible), restricted: summary(events.restricted),
+    rows: events.rows.map(row => ({
+      id: row.id, at: row.at, customer: row.customer ?? "—", customerNo: row.customerNo ?? "—", kind: EVENT_LABELS[row.kind],
+      detail: row.status === "PENDING_REVIEW" ? "待核对" : PERFORMANCE_CHANNEL_LABELS[row.channel] ?? "—",
+      business: row.business === null ? null : `${row.business} ${row.currency ?? ""}`.trim(), delta: row.delta,
+    })),
+  };
 }
 
-/**
- * 导出和审批。接线：新 client 走交接 §2.3 的 E 路由（options、preview、提交、列表、详情、decision、withdraw、download-token + file），
- * 申请键和结果未知的恢复照 OP-91–96。没接线前返回 null：页头不出「导出业绩」，客服工作台不出「导出记录」页签。
- */
-export function exportPorts(): PerfExportPorts | null {
-  return null;
+export function profilePerf(profile?: ProfilePerformance) {
+  const value = profile?.finance ?? profile?.statistics;
+  return {
+    cumulative: value ? measurement(value.amount) : profile?.generation === "UPGRADING" ? { state: "unavailable" as const, reason: UPGRADING } : PERF_UNAVAILABLE_VALUE,
+    both: Boolean(profile?.finance && profile.statistics),
+    firstSource: profile?.firstChannel ? PERFORMANCE_CHANNEL_LABELS[profile.firstChannel] : undefined,
+  };
 }

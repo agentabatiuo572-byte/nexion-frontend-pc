@@ -1186,7 +1186,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const controller = new AbortController();
     const requestStamp = identityRef.current;
     setDetailLoading(true); setDetailError(""); setDetailDenied(false); setFirstDetail(null);
-    supportClient.customerDetail(requestedCustomerId, controller.signal).then((result) => {
+    supportClient.performanceCustomerDetail(requestedCustomerId, controller.signal).then((result) => {
       if (controller.signal.aborted || requestStamp !== identityRef.current) return;
       if (!canReviewAll && result.agentAdminId !== adminId) {
         revokeCustomer(requestedCustomerId);
@@ -1210,7 +1210,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const controller = new AbortController();
     const requestStamp = identityRef.current;
     setProfileError("");
-    supportClient.customerDetail(String(selected.customerId), controller.signal).then((detail) => {
+    supportClient.performanceCustomerDetail(String(selected.customerId), controller.signal).then((detail) => {
       if (controller.signal.aborted || requestStamp !== identityRef.current) return;
       if (!canReviewAll && detail.agentAdminId !== adminId) {
         ctx.invalidateScope(selected.id, String(selected.customerId));

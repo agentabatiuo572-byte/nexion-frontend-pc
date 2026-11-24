@@ -2,7 +2,6 @@
 /**
  * 客服业绩额（客户入金 − 客户提现，只算 USDT）的显示形状和小件。
  * 显示件只认「有哪些东西、什么状态」，不认后端字段名：接线（perf-wiring.ts）把后端合同映射成这里的形状；
- * 后端新合同（B80）交付前，新数据只有开发夹具（perf-fixture.ts）给。
  */
 import { amountDisplay } from "@/lib/format";
 
@@ -19,7 +18,7 @@ export type PerfCount =
 
 /** 新口径还没有能用的数据时（接线前、后端回滚、还没发布新的一版）写这一句，不拿旧的「净贡献」顶替。 */
 export const PERF_UNAVAILABLE = "业绩数据暂不可用";
-export const PERF_UNAVAILABLE_VALUE: PerfValue = { state: "unavailable", reason: PERF_UNAVAILABLE };
+export const PERF_UNAVAILABLE_VALUE: Extract<PerfValue, { state: "unavailable" }> = { state: "unavailable", reason: PERF_UNAVAILABLE };
 
 /** 公开榜和各处汇总共用的三项：业绩额、入金合计、提现合计。 */
 export type PerfTotals = { amount: PerfValue; inflow: PerfValue; withdrawal: PerfValue };
@@ -63,13 +62,13 @@ export type PeriodPerf = {
   withdrawals: PerfWithdrawal[];
 };
 /** 业绩额明细里的一笔。业务金额带它自己的币种；原币不是 USDT 的写 null，类别第二行写清去导出里看。 */
-export type PerfEvent = { id: string; at: string; customer: string; customerNo: string; kind: string; detail: string; business: string | null; delta: string };
+export type PerfEvent = { id: string; at: string; customer: string; customerNo: string; kind: string; detail: string; business: string | null; delta: string | null };
 /** 业绩额明细：合计、现在名下能看的、已转走只给小计。 */
 export type PerfEvents = {
   from: string; to: string;
-  total: { amount: PerfValue; count: number; customers: number };
-  visible: { amount: PerfValue; count: number; customers: number };
-  restricted: { amount: PerfValue; count: number; customers: number };
+  total: { amount: PerfValue; count: PerfCount; customers: PerfCount };
+  visible: { amount: PerfValue; count: PerfCount; customers: PerfCount };
+  restricted: { amount: PerfValue; count: PerfCount; customers: PerfCount };
   rows: PerfEvent[];
 };
 /** 客服工作台一次读取里各处要用的业绩额。缺哪项写哪项的不可用，不拿旧的「净贡献」顶替。 */
@@ -77,7 +76,6 @@ export type AnalyticsPerf = {
   /** 我的数据：期间业绩。 */
   period: PeriodPerf | { unavailable: string };
   /** 我的数据：业绩额明细。 */
-  events?: PerfEvents;
   /** 客户表：这位客户自起算点以来的累计业绩额（跟着客户走）。 */
   customers: Record<string, PerfValue>;
   /** 客服表：这位客服现在的客户的累计业绩额。 */
@@ -125,14 +123,15 @@ export type ExportDialogData = {
   selected: ExportType[];
   /** 整框暂时不能申请的原因（页面那一版刷新没成功、数据升级中）。 */
   blocked?: string;
+  minReasonChars: number; maxReasonChars: number;
 };
 export type ExportQuery = { month: string; scope: string; types: ExportType[] };
-export type ExportSubmitted = { type: ExportType; taskId: string; state: "READY" | "PENDING_APPROVAL"; rows: number | null };
+export type ExportSubmitted = { type: ExportType; taskId: string; state: ExportTaskState; rows: number | null };
 
 export type ExportTaskState = "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "WITHDRAWN" | "READY" | "FAILED" | "EXPIRED";
 /** 导出记录里的一条。scope、month、rows 为 null 时这些现在看不到（申请人已没有这个范围）。 */
 export type ExportTask = {
-  taskId: string; type: ExportType;
+  taskId: string; version: number; type: ExportType;
   /** 申请人姓名；requesterRole 是括号里的角色。mine：是不是当前账号提交的。 */
   requester: string; requesterRole: string; mine: boolean;
   scope: string | null; month: string | null; asOf: string | null;
@@ -143,7 +142,7 @@ export type ExportTask = {
   decidedBy?: string; decidedAt?: string; decisionReason?: string;
   /** 已生成但现在不能下载、批准后生成失败这类原因。 */
   failure?: "GENERATE_FAILED" | "SCOPE_LOST_BEFORE_GENERATE";
-  canDownload: boolean; canReview: boolean; canWithdraw: boolean;
+  canDownload: boolean; canApprove: boolean; canReject: boolean; canWithdraw: boolean;
   /** 批准不了的原因（只管批准，驳回另判，6j）。 */
   approveBlocked?: string;
   /** 申请人已没有这个范围（6l）。 */
@@ -154,33 +153,29 @@ export type PendingDecision = { taskId: string; decision: "APPROVE" | "REJECT" |
 /** 查询原操作的几种结果。 */
 export type DecisionLookup =
   | { kind: "matched"; task: ExportTask; text: string }
-  | { kind: "mismatch" | "pending" | "failed" | "expired"; text: string }
+  | { kind: "mismatch" | "pending" | "failed" | "expired" | "cleared"; text: string }
   | { kind: "not-received"; text: string };
 /** 这个账号在导出上能做什么。views 只有一个时不画分段。 */
 export type ExportPersona = { name: string; canExport: boolean; exportBlocked?: string; views: ("MINE" | "APPROVALS")[] };
 
-/** 导出和审批的读写口。接线时换成新 client（交接 §2.3 的 E 路由）；显示件只认这些函数。 */
+export type SubmitLookup =
+  | { kind: "matched"; rows: ExportSubmitted[] }
+  | { kind: "pending"; expired: boolean }
+  | { kind: "cleared" };
+
 export interface PerfExportPorts {
   persona: ExportPersona;
-  /** GET E/options + POST E/preview（只读）。 */
-  open(): Promise<ExportDialogData>;
-  /** POST E/preview（只读），只查这几项。 */
-  check(query: ExportQuery): Promise<ExportItem[]>;
-  /** POST E（Idempotency-Key）。 */
+  open(initial?: { month?: string; scope?: string }): Promise<ExportDialogData>;
+  check(query: ExportQuery): Promise<Pick<ExportDialogData, "items" | "asOf" | "blocked">>;
   submit(query: ExportQuery, reason: string): Promise<ExportSubmitted[]>;
-  /** 提交没收到结果时按原申请键查（GET E?requestKey=）：查到原申请给它的各项，查不到给 null。 */
-  lookupSubmit(query: ExportQuery): Promise<ExportSubmitted[] | null>;
-  /** GET E?view=。 */
-  tasks(view: "MINE" | "APPROVALS"): Promise<ExportTask[]>;
-  /** POST E/{taskId}/decision（Idempotency-Key），回读后的任务。 */
+  pendingSubmit(): { reason: string; query: ExportQuery } | undefined;
+  lookupSubmit(): Promise<SubmitLookup>;
+  tasks(view: "MINE" | "APPROVALS", page: number, pageSize: number, signal?: AbortSignal): Promise<{ rows: ExportTask[]; total: number }>;
+  task(taskId: string): Promise<ExportTask>;
   decide(task: ExportTask, decision: "APPROVE" | "REJECT", reason: string): Promise<ExportTask>;
-  /** 按原操作号查（GET E/{taskId} 核 reviewerId 和版本）。 */
   lookupDecision(pending: PendingDecision): Promise<DecisionLookup>;
-  /** POST E/{taskId}/withdraw（Idempotency-Key）。 */
   withdraw(task: ExportTask, reason: string): Promise<ExportTask>;
-  /** POST E/{taskId}/download-token，再 GET E/{taskId}/file（带 X-Download-Token）。 */
   download(taskId: string): Promise<void>;
-  /** 页面上开着的那条待确认（结果未知）。 */
   pendingDecisions(): PendingDecision[];
 }
 
@@ -195,7 +190,7 @@ export function exportStatus(task: ExportTask): { tone: "ok" | "warn" | "progres
     case "REJECTED": return { tone: "neutral", label: "已驳回", line: `${task.decidedBy ?? "审批人"} 驳回，理由见详情` };
     case "WITHDRAWN": return { tone: "done", label: "已撤回", line: task.mine ? "你撤回的" : "申请人撤回的" };
     case "EXPIRED": return { tone: "neutral", label: "已过期", line: "文件已过保留期，不能再下载" };
-    case "FAILED": return { tone: "danger", label: "生成失败", line: "文件没生成出来" };
+    case "FAILED": return { tone: "danger", label: task.decidedAt ? "已批准，执行失败" : "生成失败", line: "文件没生成出来" };
   }
 }
 
