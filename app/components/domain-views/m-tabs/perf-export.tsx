@@ -141,7 +141,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
       footer={<Decision others={onRecords && <Button onClick={onRecords}>去导出记录</Button>} primary={<Button variant="primary" onClick={onClose}>知道了</Button>} />}>
       <Facts>
         <Fact k="范围">{scopeLabel}</Fact>
-        <Fact k="月份">{month}（截至 {data?.asOf}，{zone}）</Fact>
+        <Fact k="月份">{!data || data.asOf === "—" ? month : `${month}（截至 ${data.asOf}，${zone}）`}</Fact>
       </Facts>
       {found && <Notice tone="ok">{exportReceiptSummary(result)}</Notice>}
       {downloadFailed && <Notice tone="warn" title="下载没有完成" actionBelow action={downloadFailed.outcome.kind === "retry" && <Button size="sm" onClick={() => download(downloadFailed.taskId)}>重新获取下载链接</Button>}>{exportDownloadMessage(downloadFailed.outcome.kind)}</Notice>}
@@ -211,7 +211,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           : <div id={control.id} className="m1-export-static">{scopeLabel}</div>}</Field>
       </div>
       <p className="m1-export-fixed">
-        <span><em>统计截至</em>{data.asOf}（{zone}）</span>
+        <span><em>统计截至</em>{data.asOf === "—" ? "—" : `${data.asOf}（${zone}）`}</span>
         <span><em>币种</em>USDT，越南盾只作参考列</span>
         <span><em>下载人</em>{data.downloader}</span>
       </p>

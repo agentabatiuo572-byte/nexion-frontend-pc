@@ -807,11 +807,13 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
               <Stat label="客户入金" tone="role-2" value={perfText(perf.scope.period.inflow)} unit={perf.scope.period.inflow.state === "complete" ? "USDT" : undefined} />
               <Stat label="客户提现" tone="role-4" value={perfText(perf.scope.period.withdrawal)} unit={perf.scope.period.withdrawal.state === "complete" ? "USDT" : undefined} />
             </> : <Stat label="当前客户累计业绩额" value={perfText(perf.scope.current)} unit={perf.scope.current.state === "complete" ? "USDT" : undefined} sub={perfNote(perf.scope.current)} />}
+            {/* 当前客户只在统计条主显示一处，点开看客户表；下面一行不再重复「已绑定客户」（DP-61）。 */}
+            <Stat label="当前客户" value={data.scopeSummary.bound ?? "—"} unit={data.scopeSummary.bound == null ? undefined : "位"} onOpen={() => change({ view: "CUSTOMERS", category: "BOUND", firstState: "ALL", filter: "ALL" })} openLabel="查看当前客户" />
           </StatBand>}
           <div className={`sa-metrics ${queryState.view === "OVERVIEW" ? "sa-metrics-overview" : ""}`} aria-label="所选范围汇总">
           {!isPersonal && <div><span>专属客服</span><CountValue count={personnel.serviceAccounts} label="专属客服" onClick={() => change({ view: "AGENTS" })} /></div>}
           {mode === "ALL" && <><div><span>主管</span><CountValue count={personnel.supervisors} label="主管账号；客服列表保留兼任标识" onClick={() => change({ view: "AGENTS" })} /></div><div><span>负责组</span><CountValue count={personnel.groups} label="负责组" onClick={() => change({ view: "OVERVIEW" })} /></div></>}
-          <div><span>已绑定客户</span><Numeric value={data.scopeSummary.bound === null ? null : String(data.scopeSummary.bound)} label="当前绑定客户" onClick={() => change({ view: "CUSTOMERS", category: "BOUND", firstState: "ALL", filter: "ALL" })} /></div>
+          {!(queryState.view === "OVERVIEW" && queryState.basis !== "CURRENT_ASSET") && <div><span>已绑定客户</span><Numeric value={data.scopeSummary.bound === null ? null : String(data.scopeSummary.bound)} label="当前绑定客户" onClick={() => change({ view: "CUSTOMERS", category: "BOUND", firstState: "ALL", filter: "ALL" })} /></div>}
           <div><span>已首充客户 · 当前</span><CountValue count={current.firstConfirmed} label="当前客户已首充" onClick={() => change({ view: "CUSTOMERS", basis: "CURRENT_CUSTOMER_HISTORY", firstState: "CONFIRMED" })} /></div>
           <div><span>持有设备 · 当前</span><CountValue count={current.devices.held} label="当前持有设备" onClick={() => change({ view: "DEVICES", basis: "CURRENT_ASSET" })} /></div>
           <div><span>当前统计期活跃 · 当前</span><CountValue count={current.activity.active} coverage={[current.activity.status, current.activity.window.status]} label="当前统计期活跃" onClick={() => change({ view: "ACTIVITY", filter: "WINDOW_ACTIVE" })} /></div>

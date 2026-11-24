@@ -267,8 +267,8 @@ export function M6Leaderboard() {
         <FilterBar sort={<span className="m6-board-line">{BOARD_DEFINITION[board].line}<Explain label={`${BOARD_LABEL[board]}怎么算`} rows={BOARD_DEFINITION[board].rows} /></span>}>
           <FilterField label="月份">{board === "customers"
             ? <Select aria-label="月份" disabled value="now" onChange={() => undefined} options={[{ value: "now", label: "不分月份" }]} />
-            : <Select aria-label="月份" disabled={!options?.selectableMonths.length} value={options ? currentQuery.month : ""} onChange={value => changeQuery({ ...currentQuery, month: value })} options={(options?.selectableMonths ?? []).map(value => ({ value, label: value }))} placeholder="读取后可选" />}</FilterField>
-          <FilterField label="范围"><Select aria-label="范围" disabled={!scopeSelect.length} value={options && !scopeStale ? currentQuery.scope : ""} onChange={value => changeQuery({ ...currentQuery, scope: value })} placeholder={scopeStale ? readFailed ? "范围没读到，先重试" : "正在重读范围" : "读取后可选"}
+            : <Select aria-label="月份" disabled={!options?.selectableMonths.length} value={options ? currentQuery.month : ""} onChange={value => changeQuery({ ...currentQuery, month: value })} options={(options?.selectableMonths ?? []).map(value => ({ value, label: value }))} placeholder="加载后可选" />}</FilterField>
+          <FilterField label="范围"><Select aria-label="范围" disabled={!scopeSelect.length} value={options && !scopeStale ? currentQuery.scope : ""} onChange={value => changeQuery({ ...currentQuery, scope: value })} placeholder={scopeStale ? readFailed ? "范围没读到，先重试" : "正在重读范围" : "加载后可选"}
             groups={[{ label: "榜单范围", options: scopeSelect.map(option => ({ value: option.scope, label: option.scope === "ownGroup" ? `${scopeLabels.ownGroup}（${option.groups[0]?.name ?? "本组"}）` : option.scope === "managedGroups" ? `${scopeLabels.managedGroups}（全部负责组）` : scopeLabels[option.scope] })) },
               ...(managedOption ? [{ label: "负责的单个组", options: managedOption.groups.map(group => ({ value: scopeValue("managedGroups", group.id), label: group.name })) }] : [])]} /></FilterField>
         </FilterBar>
