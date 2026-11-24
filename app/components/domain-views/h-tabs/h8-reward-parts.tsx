@@ -8,7 +8,6 @@ import type { ReactNode } from "react";
 import { CircleHelp, Clock3, Hourglass } from "lucide-react";
 import { Explain, KeepText, Notice, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
-import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { amountDisplay } from "@/lib/format";
 
 /** 后端金额是普通十进制串（最多 6 位小数）。去掉补的末尾 0，至少 2 位，整数带千分位；不经过浮点，不舍入。 */
@@ -130,11 +129,13 @@ export type H8RecoveryRow = {
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
     ? "提交时没收到确定结果，可能已经生效。到「操作记录与审批」核对；24 小时内可以按原请求重试，不会重复执行。"
-    : "提交时没收到确定结果，可能已经建了审批单。明确查不到原审批单后，24 小时内可按原请求重试。"}>结果未知</StatusTag>;
+    : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，不会建第二张。"}>结果未知</StatusTag>;
 }
 
-export function expiredTag() {
-  return <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
+export function expiredTag(kind: "direct" | "approval") {
+  return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "direct"
+    ? "原请求超过 24 小时，不能再重试，只能到「操作记录与审批」核对。"
+    : "原请求超过 24 小时，不能再重试，只能查询原审批单；明确查不到这张单时，可以确认解除。"}>已过期</StatusTag>;
 }
 
 export function pendingTag() {

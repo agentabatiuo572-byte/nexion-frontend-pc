@@ -2,10 +2,9 @@ import { fConfigBatchPermissionIssue, fConfigObjectMatches } from "./f-config-ba
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
 import { configApprovalAttempts, configApprovalOriginalInput } from "./withdrawal-config-approval";
-import { explicitRejectionCode } from "./explicit-rejection";
-import { beginProposalRetry, releaseRejectedProposal } from "./proposal-recovery";
+import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "./pending-mutation-store";
+import { isRetryExpired } from "./pending-mutation-store";
 import type { F3BinaryOverview } from "./f1-client";
 import { f3PayoutControlAuthority, isF3PayoutControlKey, type F3PayoutControlKey } from "./f3-policy";
 import type { ProposeSpec } from "./propose-or-execute";
@@ -96,7 +95,7 @@ export async function queryF3Proposal(adminId: number, original: FDomainAttempt)
     return null;
   }
   await checkTicket(original, ticket);
-  if (ticket.status === "pending") remember({ ...original, received: true, ticket, absent: false, retryRejection: undefined });
+  if (ticket.status === "pending") remember({ ...original, received: true, ticket, absent: false });
   else forget(original);
   return ticket;
 }
@@ -147,9 +146,8 @@ export async function sendF3Proposal(adminId: number, slot: string, spec?: Propo
       throw new Error("F3_PROPOSAL_STORAGE_UNAVAILABLE");
     }
   }
-  if (isRetryExpired(original)) throw new A2OutcomeUncertainError(RETRY_EXPIRED_TEXT, original.commandKey);
+  if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !durable(original)) throw new Error("F3_PROPOSAL_ORIGINAL_INCOMPLETE");
-  if (recovering) beginProposalRetry(original);
   original.absent = false;
   remember(original);
   if (original.received || original.ticket) return queryReceivedF3Proposal(adminId, original);
@@ -157,9 +155,7 @@ export async function sendF3Proposal(adminId: number, slot: string, spec?: Propo
   try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
   catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
-    const rejection = recovering ? explicitRejectionCode(error) : undefined;
-    if (rejection) remember({ ...original, retryRejection: rejection });
-    if (!recovering && !isA2OutcomeUncertainError(error)
+    if (recovering ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
       && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) forget(original);
     throw error;
   }
@@ -181,9 +177,13 @@ async function queryReceivedF3Proposal(adminId: number, original: FDomainAttempt
   return ticket;
 }
 
-export function releaseF3Proposal(adminId: number, original: FDomainAttempt) {
-  actor(adminId);
-  releaseRejectedProposal(listF3Proposals(adminId).find(row => row.commandKey === original.commandKey), forget);
+/** R1-提案过期: invoke only after an explicit confirmation in the visual layer. */
+export async function releaseF3Proposal(adminId: number, original: FDomainAttempt) {
+  if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
+  if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
+  const ticket = await queryF3Proposal(adminId, original);
+  if (ticket?.status === "pending") throw new Error("这张申请仍在等待审批。");
+  if (!ticket) forget(original);
 }
 
 export function f3PendingFor(rows: A2OperationRow[], key: string) {

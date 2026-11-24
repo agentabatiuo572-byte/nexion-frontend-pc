@@ -7,7 +7,6 @@
  * 请求仍使用原配置与结算合同；完整原请求、确认快照和恢复由 F 域上下文提供。
  * 筛选/分页保留，配置确认框从保存的原快照恢复，成员分组见 f3-placements。
  */
-import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -337,9 +336,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     ? <StatusTag tone="warn" icon={Clock3} explain={`等${approver}在「操作记录与审批」批准；批准前不生效。`}>待审批</StatusTag>
     : original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
       : original.expiresAt <= Date.now()
-        ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
-        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果，明确查不到才可在 24 小时内按原请求重试。">结果未知</StatusTag>;
-  const release = (original: FDomainAttempt, label: ReactNode) => original.retryRejection
+        ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除这条记录。">已过期</StatusTag>
+        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>;
+  const release = (original: FDomainAttempt, label: ReactNode) => original.expiresAt <= Date.now() && original.absent && !original.ticket && !original.received
     ? <FReleaseButton label={label} toast={ctx.toast} onRelease={() => ctx.recoverF3(original, "release")} /> : null;
   const payoutDirects = F3_PAYOUT_KEYS.flatMap((key) => ctx.getF3PayoutControlPending(key).directWrite ?? []);
   const recoveryCount = (settlePending ? 1 : 0) + configProposals.length + payoutDirects.length + (showPlacementRecovery ? 1 : 0);
@@ -361,7 +360,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   };
   const recovery = recoveryCount > 0 && (
     <Notice tone="warn" title={<>{recoveryOpen ? `有 ${recoveryCount} 项原操作还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原操作怎么处理" content={<>
-      <p>原内容和理由只存在这个浏览器标签页，关掉标签页就没了。明确查不到原审批单后，24 小时内可按原请求重试。</p>
+      <p>原内容和理由只存在这个浏览器标签页，关掉标签页就没了。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。</p>
       <p>查到审批单只说明申请登记了，不等于已经发钱。关闭自动发放、调低全平台封顶比例和成员分组是直接生效的，查询看原操作有没有执行。</p>
     </>} /></>}>
       <ul className="f3-recovery" aria-label="还没有结论的原操作">
@@ -384,8 +383,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="f3-recovery-change">{line.change}</span>
           <span className="f3-recovery-time">{businessStamp(direct.createdAt)} 提交</span>
           <span className="f3-recovery-state">{line.tag}</span>
-          <span className="f3-recovery-actions"><Button size="sm" onClick={() => setPayout({ key: direct.f3Request!.key, direct })}>查询原结果</Button>
-            {direct.retryRejection && <FReleaseButton label={line.name} toast={ctx.toast} onRelease={() => ctx.releaseF3PayoutControl(direct.f3Request!.key)} />}</span>
+          <span className="f3-recovery-actions"><Button size="sm" onClick={() => setPayout({ key: direct.f3Request!.key, direct })}>查询原结果</Button></span>
         </li>; })}
         {showPlacementRecovery && placementOriginal && <li>
           <span className="f3-recovery-name">成员分组</span>

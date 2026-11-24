@@ -150,7 +150,7 @@ export type F4RecoveryRow = {
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
     ? "提交时没收到确定结果，可能已经记录。24 小时内可以按原请求重试，不会记两次。"
-    : "提交时没收到确定结果，可能已经建了审批单。明确查不到原审批单后才可按原请求重试。"}>结果未知</StatusTag>;
+    : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；按原请求重试不会建第二张。"}>结果未知</StatusTag>;
 }
 
 /**
@@ -164,7 +164,7 @@ export function F4RecoveryNotice({ rows }: { rows: F4RecoveryRow[] }) {
   const { ordered, box } = useFreshFirst([...rows].sort((a, b) => rank(a) - rank(b)).map((row) => ({ ...row, createdAt: row.submittedAt })));
   if (!rows.length) return null;
   return (
-    <div ref={box}><Notice tone="warn" title={<>{rows.every((row) => row.pending) ? `${rows.length} 项申请在等批准` : `有 ${rows.length} 项原操作还没有结论`}<Explain label="原操作怎么处理" content="原请求和理由只存在这个浏览器标签页里：关掉标签页就没了，退出或换账号不丢，别人看不到。按原请求重试只用原内容，不能改。查到审批结束会清掉；重试被明确拒绝后，先核对原操作再解除。申请过期后仍可查询原结果，查不到审批单时继续保留原记录和对象锁。" /></>}>
+    <div ref={box}><Notice tone="warn" title={<>{rows.every((row) => row.pending) ? `${rows.length} 项申请在等批准` : `有 ${rows.length} 项原操作还没有结论`}<Explain label="原操作怎么处理" content="原请求和理由只存在这个浏览器标签页里：关掉标签页就没了，退出或换账号不丢，别人看不到。按原请求重试只用原内容，不能改。有了结论（成功、被拒或审批结束）会清掉。申请过期后仍可查询原结果，查不到审批单时继续保留原记录和对象锁。" /></>}>
       <ul className="f4-recovery" aria-label="还没有结论的原操作">
         {(all ? ordered : ordered.slice(0, 3)).map((row) => (
           <li key={row.key}>

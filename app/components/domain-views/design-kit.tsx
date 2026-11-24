@@ -587,7 +587,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
 export type EditComparison = { before: string; after: string };
-export type PendingConfirmRecovery = { expiresAt: number; blockedReason?: string; query?: () => Promise<void>; queryOnlyAfterExpiry?: boolean };
+export type PendingConfirmRecovery = { expiresAt: number; blockedReason?: string; query?: () => Promise<void> };
 
 export function usePendingConfirmRecovery(reason: string | undefined, getRecovery?: () => PendingConfirmRecovery | undefined) {
   const [, redraw] = useState(0);
@@ -4085,7 +4085,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       }
       // The domain callback owns the detailed toast. Keep the form open and
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
-      if ((approval || retryApproval) && isA2OutcomeUncertainError(error) && !getPendingRecovery?.()?.queryOnlyAfterExpiry) {
+      if ((approval || retryApproval) && isA2OutcomeUncertainError(error)) {
         setApprovalRecovery(recoverApproval ? "lookup" : "retry");
         setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原结果；查不到再按原请求重试，" : "按原请求重试，"}不会建第二张。命令号：${error.commandKey}`);
       } else {
@@ -4168,9 +4168,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
     }
   };
-  const pendingReasonHelp = pendingRecovery?.queryOnlyAfterExpiry && pendingRecovery.expiresAt <= Date.now()
-    ? pendingRecovery.blockedReason
-    : inlineApproval?.expiredRequestRecovery === "reload"
+  const pendingReasonHelp = inlineApproval?.expiredRequestRecovery === "reload"
     ? surface ? "原操作已过期，不能重发；请刷新页面核对当前值。" : "原操作已过期，不能重发，请刷新页面核对当前值。"
     : inlineApproval?.expiredRequestRecovery === "query"
       ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
@@ -4225,7 +4223,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
             {submitting ? inlineApproval?.recoverLabel ? "读取中…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原结果"}
           </Btn>
         )}
-        {!approvalOnlyLookup && !finalConflict && !(pendingRecovery?.queryOnlyAfterExpiry && pendingRecovery.expiresAt <= Date.now()) && (surface ? (
+        {!approvalOnlyLookup && !finalConflict && (surface ? (
           <RdButton variant={confirmTone} loading={submitting || readingConflict} loadingText={readingConflict ? "正在读取…" : "提交中…"}
             disabledReason={canConfirm || submitting || readingConflict ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
             onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>

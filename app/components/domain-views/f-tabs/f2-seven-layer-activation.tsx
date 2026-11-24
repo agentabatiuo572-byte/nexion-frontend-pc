@@ -5,7 +5,6 @@
  * 启用前后端要检查的三条，以及这件事的待审批和结果未知。
  * 申请、恢复原申请的逻辑照旧：submitted、recovering 只在本页内存，原申请由外壳的专用存储保留。
  */
-import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useState } from "react";
 import Link from "next/link";
 import { CircleCheck, CircleHelp, Clock3, Hourglass, PauseCircle, Power, PowerOff, TriangleAlert } from "lucide-react";
@@ -173,14 +172,14 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
   if (!attempts.length && !error) return null;
   const canAudit = ctx.can("platform_a2_read");
   async function recover(attempt: F2Recovery, query: boolean) {
-    if (recovering || (query ? !attempt.canQuery : !attempt.canRetry || attempt.retryBlockedReason)) return;
+    if (recovering || (query ? !attempt.canQuery : !attempt.canRetry)) return;
     setRecovering(true); setError(null); setActive(`${attempt.commandKey}:${query ? "query" : "retry"}`);
     const note = (value?: { tone: "warn" | "danger"; text: string }) => setNotes(({ [attempt.commandKey]: _, ...rest }) => value ? { ...rest, [attempt.commandKey]: value } : rest);
     note();
     try {
       if (!query) { await ctx.retryF2Proposal(attempt.fingerprint); return; }
       const ticket = await ctx.queryF2Proposal(attempt.fingerprint);
-      if (!ticket) note({ tone: "warn", text: attempt.expiresAt <= Date.now() ? RETRY_EXPIRED_TEXT : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。" });
+      if (!ticket) note({ tone: "warn", text: attempt.expiresAt <= Date.now() ? "没查到原审批单。已过 24 小时，可以解除这条记录。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。" });
       else if (ticket.status === "pending") note({ tone: "warn", text: "审批单已建，在等批准；批准前不生效。" });
       else ctx.toast(fProposalEndText(ticket.status));
     } catch (cause) {
@@ -191,7 +190,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
   }
   const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
   return (
-    <div ref={box}><Notice tone="warn" title={<>{open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。明确查不到原审批单后，24 小时内可按原请求重试。有结论前不要换个办法重做。" /></>}>
+    <div ref={box}><Notice tone="warn" title={<>{open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
       <ul className="f2-recovery" aria-label="还没有结论的原申请">
         {(all ? ordered : ordered.slice(0, 3)).map(({ attempt }) => {
           const { name, change } = attemptLabel(attempt);
@@ -203,11 +202,11 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
             <span>{attempt.ticket?.status === "pending"
               ? <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准；批准前不生效。">待审批</StatusTag>
               : attempt.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
-                : expired ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
-                  : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果，明确查不到才可在 24 小时内按原请求重试。">结果未知</StatusTag>}</span>
+                : expired ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。">已过期</StatusTag>
+                  : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>}</span>
             <span className="f2-actions">
               {attempt.canQuery && <Button size="sm" loading={active === `${attempt.commandKey}:query`} disabled={recovering} onClick={() => void recover(attempt, true)}>查询原结果</Button>}
-              {attempt.canRetry && !expired && <Button size="sm" loading={active === `${attempt.commandKey}:retry`} disabled={recovering} disabledReason={recovering ? "正在处理原操作" : attempt.retryBlockedReason} loadingText="正在重试…" onClick={() => void recover(attempt, false)}>按原请求重试</Button>}
+              {attempt.canRetry && !expired && <Button size="sm" loading={active === `${attempt.commandKey}:retry`} disabled={recovering} loadingText="正在重试…" onClick={() => void recover(attempt, false)}>按原请求重试</Button>}
               {attempt.canRelease && !attempt.ticket && <FReleaseButton label={name} toast={ctx.toast} onRelease={() => ctx.releaseF2Proposal(attempt.fingerprint)} />}
             </span>
             {notes[attempt.commandKey] && <span className="f2-recovery-line" role="status" data-tone={notes[attempt.commandKey].tone}>{notes[attempt.commandKey].text}</span>}

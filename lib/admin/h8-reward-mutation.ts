@@ -1,11 +1,10 @@
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, A2OutcomeUncertainError, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { createH8CommandKey, growthRequest, h8RewardParamAmplifies, h8RewardParamValid, parseH8ReferralRewardOverview, type H8ReferralRewardOverview, type H8RewardParamKey } from "./h-client";
-import { explicitRejectionCode } from "./explicit-rejection";
+import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 import { configApprovalOriginalInput, pendingConfigApproval, releaseConfigApproval, storeH8ConfigApproval } from "./withdrawal-config-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { beginProposalRetry, proposalRetryBlockedReason, releaseRejectedProposal } from "./proposal-recovery";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 export type H8Original = { overview: H8ReferralRewardOverview; body: string } & (
@@ -16,9 +15,9 @@ export type H8Original = { overview: H8ReferralRewardOverview; body: string } & 
 export type H8RewardCommand = PendingMutationRecord & {
   adminId: number; kind: H8Original["kind"]; paramKey?: H8RewardParamKey; value?: string;
   invitedUserId?: number; limit?: number;
-  original?: H8Original; ticket?: A2OperationRow; acknowledged?: boolean; retryRejection?: string;
+  original?: H8Original; ticket?: A2OperationRow; acknowledged?: boolean;
 };
-type StoredCommand = PendingMutationRecord & { original?: H8Original; adminId?: number; ticket?: A2OperationRow; acknowledged?: boolean; inputFingerprint?: string; retryRejection?: string };
+type StoredCommand = PendingMutationRecord & { original?: H8Original; adminId?: number; ticket?: A2OperationRow; acknowledged?: boolean; inputFingerprint?: string };
 const PARAM_KEYS: H8RewardParamKey[] = ["enabled", "newcomer.usdt", "newcomer.nex", "newcomer.lockMode", "inviter.nex"];
 
 /** sessionStorage is an input boundary. Legacy key-only records remain query-only evidence. */
@@ -120,7 +119,7 @@ function remember(record: H8RewardCommand, storageErrorCode: string) {
     const previous = pendingConfigApproval("H8", record.adminId, { objectId: "current", field: record.paramKey! });
     storeH8ConfigApproval(record.adminId, record.paramKey!, record.commandKey, {
       input: previous?.input ?? JSON.stringify([{ key: record.paramKey, value: record.value, expectedVersion: original?.overview.version }, original?.kind === "param-approval" ? original.request.reason : ""]),
-      h8Original: original, h8Ticket: record.ticket, h8Acknowledged: record.acknowledged, retryRejection: record.retryRejection,
+      h8Original: original, h8Ticket: record.ticket, h8Acknowledged: record.acknowledged,
     }, storageErrorCode);
   } else {
     commands.remember(record.fingerprint, record.commandKey, record);
@@ -161,7 +160,7 @@ export async function queryH8RewardCommand(record: H8RewardCommand) {
     throw error;
   }
   if (ticket) {
-    remember({ ...record, ticket, acknowledged: true, retryRejection: undefined }, "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE");
+    remember({ ...record, ticket, acknowledged: true }, "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE");
     if (ticket.status !== "pending") forget(record);
   } else remember({ ...record, ticket: undefined }, record.acknowledged ? "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE" : "H8_REQUEST_RETRY_STORAGE_UNAVAILABLE");
   return ticket;
@@ -171,19 +170,14 @@ export async function queryH8RewardCommand(record: H8RewardCommand) {
 export async function sendH8RewardCommand(record: H8RewardCommand, recovering = false) {
   requireH8Actor(record.adminId);
   const pending = pendingH8RewardCommands(record.adminId);
-  if (recovering) {
-    const saved = pending.find(row => row.commandKey === record.commandKey);
-    if (!saved) throw new Error("H8_ORIGINAL_RESOLVED");
-    record = saved;
-  }
+  if (recovering && !pending.some(r => r.commandKey === record.commandKey)) throw new Error("H8_ORIGINAL_RESOLVED");
   if (!recovering && pending.some(r => record.kind === "settlement" ? r.kind === "settlement" : r.paramKey === record.paramKey)) throw new Error("H8_ORIGINAL_UNRESOLVED");
+  if (recovering && record.kind !== "direct") {
+    const current = await queryH8RewardCommand(record);
+    if (current) return { ticket: current, unchanged: false };
+  }
   if (!canRetryH8RewardCommand(record)) throw new Error(RETRY_EXPIRED_TEXT);
   requireH8Actor(record.adminId, record.kind === "settlement" ? "settlement" : "param");
-  if (recovering && record.kind !== "direct") {
-    const blocked = proposalRetryBlockedReason(record, record.acknowledged || !!record.ticket);
-    if (blocked) throw new Error(blocked);
-    beginProposalRetry(record);
-  } else if (recovering && record.retryRejection) throw new Error("重试被明确拒绝，请先核对原操作");
   try { remember(record, recovering ? "H8_REQUEST_RETRY_STORAGE_UNAVAILABLE" : "H8_REQUEST_STORAGE_UNAVAILABLE"); }
   catch (error) { if (!recovering) forget(record); throw error; }
   const original = record.original!;
@@ -213,11 +207,10 @@ export async function sendH8RewardCommand(record: H8RewardCommand, recovering = 
     const e = error as { status?: number; apiCode?: number; reasonCode?: string; backendMessage?: string; unknownOutcome?: boolean; bodyUnreadable?: boolean };
     const verdict = e.status && e.status >= 200 && e.status < 300 && e.apiCode && e.apiCode >= 400 && e.apiCode < 500
       ? Object.assign(error as object, { status: e.apiCode }) : error;
-    const rejectionEligible = !isA2OutcomeUncertainError(error) && !isOutcomeUnknownError(error) && !e.unknownOutcome && !e.bodyUnreadable
-      && !(e.apiCode && e.apiCode >= 500) && !(e.reasonCode ?? e.backendMessage ?? "").startsWith("IDEMPOTENCY_");
-    const rejection = recovering && rejectionEligible ? explicitRejectionCode(verdict) : undefined;
-    if (rejection) { remember({ ...record, retryRejection: rejection }, "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE"); throw error; }
-    if (!recovering && rejectionEligible && isDeterministicRejection(e.status ?? 0, e.apiCode)) { forget(record); throw error; }
+    const rejected = !isA2OutcomeUncertainError(error) && !isOutcomeUnknownError(error) && !e.unknownOutcome && !e.bodyUnreadable
+      && !(e.apiCode && e.apiCode >= 500) && !(e.reasonCode ?? e.backendMessage ?? "").startsWith("IDEMPOTENCY_")
+      && (recovering ? isExplicitRejection(verdict) : isDeterministicRejection(e.status ?? 0, e.apiCode));
+    if (rejected) { forget(record); throw error; }
     throw new OutcomeUnknownError(error instanceof Error ? error.message : "H8_RESULT_UNKNOWN");
   }
   // An idempotent POST receipt is historical. GET determines the current pending/terminal state.
@@ -228,7 +221,9 @@ export async function sendH8RewardCommand(record: H8RewardCommand, recovering = 
   return { ticket: current, unchanged: false };
 }
 
-export function releaseRejectedH8RewardCommand(record: H8RewardCommand) {
+/** Only an expired proposal with an authoritative not-found result may be released after UI confirmation. */
+export async function releaseExpiredH8RewardProposal(record: H8RewardCommand) {
   requireH8Actor(record.adminId);
-  releaseRejectedProposal(pendingH8RewardCommands(record.adminId).find(row => row.commandKey === record.commandKey), forget);
+  if (record.kind === "direct" || !isRetryExpired(record) || record.acknowledged || await queryH8RewardCommand(record) !== null) throw new Error("H8_PROPOSAL_RELEASE_FORBIDDEN");
+  forget(record);
 }

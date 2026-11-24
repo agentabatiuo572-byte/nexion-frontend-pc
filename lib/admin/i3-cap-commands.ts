@@ -2,13 +2,12 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
 import { findHighOp } from "./high-ops-registry";
-import { explicitRejectionCode } from "./explicit-rejection";
+import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "./pending-mutation-store";
-import { beginProposalRetry, proposalRetryBlockedReason, releaseRejectedProposal } from "./proposal-recovery";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
-type StoredCap = SlotAttemptRecord & { owner?: number; request?: Proposal; receiptKnown?: boolean; ticketStatus?: A2OperationRow["status"]; retryRejection?: string };
+type StoredCap = SlotAttemptRecord & { owner?: number; request?: Proposal; receiptKnown?: boolean; ticketStatus?: A2OperationRow["status"] };
 export type I3CapCommand = StoredCap & { tier: string; before: string; after: string; reason: string };
 // Replace the page's old slot store, keeping its storage key and legacy evidence.
 const pending = createPendingMutationStore<StoredCap>({ storageKey: "nexion-admin-i3-campaign-commands-v1", retainExpiredRecords: true });
@@ -50,11 +49,6 @@ export function canQueryI3Cap(): boolean {
   return auth.isAuthenticated && !!auth.session;
 }
 
-export function i3CapRetryBlockedReason(original: I3CapCommand) {
-  return proposalRetryBlockedReason(original, original.receiptKnown || original.ticketStatus === "pending")
-    ?? (!original.request ? "原操作记录不完整，只能查询核对，不能重试。" : i3CapPermission());
-}
-
 export async function queryI3CapCommand(saved: I3CapCommand): Promise<A2OperationRow | null> {
   const original = pendingI3CapCommands().find((row) => row.commandKey === saved.commandKey);
   if (!original) throw new Error("原操作已处理，请重新读取后再操作。");
@@ -70,7 +64,7 @@ export async function queryI3CapCommand(saved: I3CapCommand): Promise<A2Operatio
     || ticket.after !== `${Number(original.after)} 条` || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.status)) {
     throw new Error("返回的审批单与原操作不符，请保留原记录并查询原结果。");
   }
-  if (ticket.status === "pending") pending.remember(original.fingerprint, original.commandKey, { ...original, ticketStatus: ticket.status, receiptKnown: true, retryRejection: undefined });
+  if (ticket.status === "pending") pending.remember(original.fingerprint, original.commandKey, { ...original, ticketStatus: ticket.status, receiptKnown: true });
   else pending.forget(original.fingerprint, original.commandKey);
   return ticket;
 }
@@ -90,11 +84,9 @@ async function send(original: I3CapCommand, retry: boolean): Promise<A2Operation
     await createA2OperationProposal(original.request, original.commandKey, true);
   } catch (error) {
     const failure = error as { status?: number };
-    const rejection = retry ? explicitRejectionCode(error) : undefined;
-    if (rejection) pending.remember(original.fingerprint, original.commandKey, { ...original, retryRejection: rejection });
-    if (!retry && !isOutcomeUnknownError(error) && isDeterministicRejection(failure.status ?? 0)) {
+    if (retry ? isExplicitRejection(error) : !isOutcomeUnknownError(error) && isDeterministicRejection(failure.status ?? 0)) {
       pending.forget(original.fingerprint, original.commandKey);
-      if (error instanceof Error) Object.assign(error, { rejectedCommand: original });
+      if (!retry && error instanceof Error) Object.assign(error, { rejectedCommand: original });
     }
     throw Object.assign(error instanceof Error ? error : new Error("审批提交结果未知"), { commandKey: original.commandKey });
   }
@@ -112,15 +104,7 @@ async function send(original: I3CapCommand, retry: boolean): Promise<A2Operation
 export async function retryI3CapCommand(saved: I3CapCommand): Promise<A2OperationRow> {
   const original = pendingI3CapCommands().find((row) => row.commandKey === saved.commandKey);
   if (!original) throw new Error("原操作已处理，请重新读取后再操作。");
-  const blocked = i3CapRetryBlockedReason(original);
-  if (blocked) throw new Error(blocked);
-  beginProposalRetry(original);
   return send(original, true);
-}
-
-export function releaseRejectedI3Cap(saved: I3CapCommand) {
-  releaseRejectedProposal(pendingI3CapCommands().find(row => row.commandKey === saved.commandKey),
-    row => pending.forget(row.fingerprint, row.commandKey));
 }
 
 export async function proposeI3Cap(tier: string, before: string, after: string, reason: string): Promise<A2OperationRow> {

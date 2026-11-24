@@ -29,7 +29,6 @@ export function isF1OutcomeUncertainError(error: unknown): error is F1OutcomeUnc
 }
 
 export interface FDirectAttempt extends SlotAttemptRecord {
-  retryRejection?: string;
   commandOrigin?: FundCommandOrigin;
   adminId?: number;
   f3Request?: { key: F3PayoutControlKey; value: string; reason: string; operator: string };

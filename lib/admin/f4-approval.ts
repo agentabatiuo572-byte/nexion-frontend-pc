@@ -2,10 +2,9 @@ import { fConfigBatchPermissionIssue, fConfigObjectMatches } from "./f-config-ba
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
 import { configApprovalAttempts, configApprovalOriginalInput } from "./withdrawal-config-approval";
-import { explicitRejectionCode } from "./explicit-rejection";
+import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
 import { hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT } from "./pending-mutation-store";
-import { beginProposalRetry, proposalRetryBlockedReason, releaseRejectedProposal } from "./proposal-recovery";
 import type { F4AmbassadorApplication, F4AmbassadorMaterialPacket, F4AmbassadorPolicy, F4AmbassadorPolicyUpdate, F4LeadershipPoolOverview } from "./f1-client";
 import type { ProposeSpec } from "./propose-or-execute";
 import { roleLabel } from "../nav/console-nav";
@@ -87,11 +86,6 @@ export function canRetryF4Proposal(original: FDomainAttempt) {
     && (!String(original.spec.command.params.key ?? "").startsWith("F.pool.votes.") || session.authorities.includes("network_f4_pool_fund"));
 }
 
-export function f4ProposalRetryBlockedReason(original: FDomainAttempt) {
-  return proposalRetryBlockedReason(original, original.received || !!original.ticket)
-    ?? (!original.request ? "原操作记录不完整，只能查询核对，不能重试。" : !canRetryF4Proposal(original) ? "当前账号没有这项操作的权限。" : undefined);
-}
-
 function remember(original: FDomainAttempt) {
   if (isFund(original)) configApprovalAttempts.remember(original.fingerprint, original.commandKey, { ...original, input: original.inputFingerprint });
   else fCommands.remember(original.fingerprint, original.commandKey, original);
@@ -118,7 +112,7 @@ export async function queryF4Proposal(adminId: number, original: FDomainAttempt)
     return null;
   }
   await checkTicket(original, ticket);
-  if (ticket.status === "pending") remember({ ...original, received: true, ticket, absent: false, retryRejection: undefined });
+  if (ticket.status === "pending") remember({ ...original, received: true, ticket, absent: false });
   else forget(original);
   return ticket;
 }
@@ -151,11 +145,6 @@ export async function sendF4Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new A2OutcomeUncertainError(RETRY_EXPIRED_TEXT, original.commandKey);
   if (!original.request || !storeFor(original).isDurablyStored(original.fingerprint, original.commandKey)) throw new Error("F4_PROPOSAL_ORIGINAL_INCOMPLETE");
-  if (recovering) {
-    const blocked = f4ProposalRetryBlockedReason(original);
-    if (blocked) throw new Error(blocked);
-    beginProposalRetry(original);
-  }
   original.absent = false;
   remember(original);
   if (original.received || original.ticket) return queryReceived(adminId, original);
@@ -163,9 +152,7 @@ export async function sendF4Proposal(adminId: number, slot: string, spec?: Propo
   try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
   catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
-    const rejection = recovering ? explicitRejectionCode(error) : undefined;
-    if (rejection) remember({ ...original, retryRejection: rejection });
-    if (!recovering && !isA2OutcomeUncertainError(error)
+    if (recovering ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
       && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) forget(original);
     throw error;
   }
@@ -188,9 +175,4 @@ export async function f4PendingFor(rows: A2OperationRow[], spec: ProposeSpec) {
   for (const row of rows) {
     if (row.status === "pending" && row.operationCode === spec.command.op && await fConfigObjectMatches(spec.command.op, spec.obj, row.obj)) return row;
   }
-}
-
-export function releaseF4RejectedProposal(adminId: number, commandKey: string) {
-  actor(adminId);
-  releaseRejectedProposal(listF4Proposals(adminId).find(row => row.commandKey === commandKey), forget);
 }

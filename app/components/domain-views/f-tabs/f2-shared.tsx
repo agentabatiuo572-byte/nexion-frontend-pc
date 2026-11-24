@@ -131,15 +131,9 @@ export function F2ConfirmModal({ spec, ctx, coverage, onClose, toast }: { spec: 
         const original = ctx.f2ProposalRecord(spec.slot);
         return original && !original.ticket ? original.spec.reason : undefined;
       }}
-      getPendingRecovery={() => {
-        const original = ctx.f2ProposalRecord(spec.slot);
-        return original && { expiresAt: original.expiresAt, queryOnlyAfterExpiry: true, blockedReason: original.retryBlockedReason
-          ?? (original.canRetry ? undefined : "原操作记录不完整或权限已变化，只能查询原结果。"),
-          query: original.canQuery ? async () => { if (await ctx.queryF2Proposal(spec.slot)) onClose(); } : undefined };
-      }}
       blockedReason={(() => {
         const original = ctx.f2ProposalRecord(spec.slot);
-        return original && !original.ticket ? undefined : ctx.f2WriteBlocked(spec.slot);
+        return original && !original.ticket ? original.canRetry ? undefined : "上一次申请结果未知，先按原请求重试或去核对" : ctx.f2WriteBlocked(spec.slot);
       })()}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {

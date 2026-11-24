@@ -1,10 +1,9 @@
 import { fConfigBatchPermissionIssue, fConfigObjectMatches } from "./f-config-batch";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { f2ActivationAttempts, type F2ActivationAttempt } from "./f2-activation-attempt";
-import { explicitRejectionCode } from "./explicit-rejection";
-import { beginProposalRetry, proposalRetryBlockedReason, releaseRejectedProposal } from "./proposal-recovery";
+import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
-import { createPendingMutationStore, createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createSlotAttemptStore, isRetryExpired, type SlotAttemptRecord } from "./pending-mutation-store";
 import type { ProposeSpec } from "./propose-or-execute";
 import { roleLabel } from "../nav/console-nav";
 import { useAdminAuth } from "../store/admin-auth";
@@ -31,7 +30,6 @@ export interface FDomainAttempt extends SlotAttemptRecord {
   ticket?: A2OperationRow;
   received?: boolean;
   absent?: boolean;
-  retryRejection?: string;
   f3Snapshot?: F3ConfirmationSnapshot;
   f4Snapshot?: F4ConfirmationSnapshot;
   f5Snapshot?: F5ConfirmationSnapshot;
@@ -53,7 +51,7 @@ export const fCommands = createPendingMutationStore<FDomainAttempt>({
 export const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-commands-v1" }, fCommands);
 
 export type F2Proposal = F2ActivationAttempt | FDomainAttempt;
-export type F2Recovery = F2Proposal & { spec: ProposeSpec; canRetry: boolean; canQuery: boolean; retryBlockedReason?: string; canRelease: boolean };
+export type F2Recovery = F2Proposal & { spec: ProposeSpec; canRetry: boolean; canQuery: boolean; canRelease: boolean };
 
 function actor(adminId: number) {
   const auth = useAdminAuth.getState();
@@ -98,8 +96,7 @@ export function listF2Proposals(adminId: number): F2Recovery[] {
       canRetry: !isRetryExpired(row) && !!row.request && !row.ticket && !row.received && !!session && session.adminId === adminId
         && (row.spec?.command.op === "f_config_batch" ? !fConfigBatchPermissionIssue(row.spec.obj.split(","), session.authorities) : session.authorities.includes(f2ProposalAuthority(row.fingerprint)))
         && session.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create"),
-      retryBlockedReason: proposalRetryBlockedReason(row, row.received || !!row.ticket),
-      canRelease: !!row.retryRejection,
+      canRelease: isRetryExpired(row) && row.absent === true && !row.received && !row.ticket,
     }));
 }
 
@@ -132,7 +129,7 @@ export async function queryF2Proposal(adminId: number, original: F2Recovery) {
     return null;
   }
   const spec = await checkTicket(original, ticket);
-  if (ticket.status === "pending") remember({ ...original, spec, ticket, received: true, absent: false, retryRejection: undefined });
+  if (ticket.status === "pending") remember({ ...original, spec, ticket, received: true, absent: false });
   else forgetF2Proposal(original);
   return ticket;
 }
@@ -166,10 +163,9 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
     if (!latest) throw new Error("F2_PROPOSAL_STATUS_UNAVAILABLE");
     return latest;
   }
-  if (isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
+  if (isRetryExpired(original)) throw new Error("F2_PROPOSAL_RETRY_EXPIRED");
   if (!original.request) throw new Error("F2_PROPOSAL_ORIGINAL_INCOMPLETE");
   if (!storeFor(slot).isDurablyStored(slot, original.commandKey)) throw new Error(recovering ? "F2_PROPOSAL_RETRY_STORAGE_UNAVAILABLE" : "F2_PROPOSAL_STORAGE_UNAVAILABLE");
-  if (recovering) beginProposalRetry(original);
   original.absent = false;
   remember(original);
   let ticket: A2OperationRow;
@@ -177,9 +173,7 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
     ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal");
   } catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
-    const rejection = recovering ? explicitRejectionCode(error) : undefined;
-    if (rejection) remember({ ...original, retryRejection: rejection });
-    if (!recovering && !isA2OutcomeUncertainError(error)
+    if (recovering ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
         && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) forgetF2Proposal(original);
     throw error;
   }
@@ -195,9 +189,13 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
   return ticket;
 }
 
-export function releaseF2Proposal(adminId: number, original: F2Recovery) {
-  actor(adminId);
-  releaseRejectedProposal(listF2Proposals(adminId).find(row => row.commandKey === original.commandKey), forgetF2Proposal);
+// The visual worker must provide the existing confirmation surface's release action.
+export async function releaseF2Proposal(adminId: number, original: F2Recovery) {
+  if (original.received || original.ticket) throw new Error("F2_PROPOSAL_STATUS_UNAVAILABLE");
+  if (!isRetryExpired(original)) throw new Error("F2_PROPOSAL_UNRESOLVED");
+  const ticket = await queryF2Proposal(adminId, original);
+  if (ticket?.status === "pending") throw new Error("F2_PROPOSAL_UNRESOLVED");
+  if (!ticket) forgetF2Proposal(original);
 }
 
 /** Match real A2 lock targets using the queue's obj and operationCode. */
