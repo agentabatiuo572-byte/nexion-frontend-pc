@@ -217,9 +217,10 @@ export function exportReceiptSummary(rows: readonly ExportSubmitted[]) {
   return "已查到这次提交，" + rows.map(row => `${EXPORT_LABEL[row.type]}：${exportStatus(row).label}`).join("，") + "。";
 }
 
-export const EXPORT_PARTIAL_RECEIPT = "原批已受理，原操作继续保留供核查。";
+/** 原批已受理但现在只看得到一部分结果：原批算未结案，原操作保留。 */
+export const EXPORT_PARTIAL_RECEIPT = "这次提交已受理，还没核对完；原操作保留，可以再查询。";
 export function exportVisibleReceiptSummary(rows: readonly ExportSubmitted[]) {
-  return rows.length ? "当前可见结果：" + rows.map(row => `${EXPORT_LABEL[row.type]}：${exportStatus(row).label}`).join("，") + "。" : "当前没有可见结果。";
+  return rows.length ? "你现在看得到的：" + rows.map(row => `${EXPORT_LABEL[row.type]}${exportStatus(row).label}`).join("、") + "。" : "你现在看不到这次提交的结果。";
 }
 
 export function exportDownloadMessage(kind: Exclude<ExportDownload["kind"], "downloaded">) {

@@ -20,7 +20,7 @@ function statUnit(value: PerfValue, unit: string) { return value.state === "comp
 export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail, status, detail }: {
   perf: PeriodPerf | { unavailable: string };
   /** 期间业绩自己的加载和读取失败（不写成空态）。 */
-  status?: "loading" | { error: string; onRetry: () => void };
+  status?: "loading" | { title?: string; error: string; onRetry: () => void };
   /** 「业绩明细」入口的加载和读取失败，写在入口处。 */
   detail?: { loading: boolean; error?: string };
   month: string;
@@ -35,7 +35,7 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail, sta
     sub={`${month} · USDT${asOf ? ` · 截至 ${asOf}` : ""}`}
     actions={<div className="m1-perf-actions">{monthControl}{ready && onDetail && <Button icon={<ListChecks size={14} aria-hidden />} loading={detail?.loading} loadingText="正在加载…" onClick={onDetail}>业绩明细</Button>}</div>}>
     {status === "loading" ? <BlockState state="loading" title="正在加载…" />
-      : status ? <BlockState state="error" title="期间业绩加载失败" detail={status.error} onRetry={status.onRetry} />
+      : status ? <BlockState state="error" title={status.title ?? "期间业绩加载失败"} detail={status.error} onRetry={status.onRetry} />
       : !ready ? <BlockState state="empty" title={perf.unavailable} detail="名下客户和其他统计照常看。" /> : <>
       {detail?.error && <BlockState state="error" compact title="业绩额明细加载失败" detail={detail.error} onRetry={onDetail} />}
       <StatBand label="期间业绩">

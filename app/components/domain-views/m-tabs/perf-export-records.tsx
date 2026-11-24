@@ -213,7 +213,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
     }] : []),
     ...pending.map(p => ({
       key: p.operationId, createdAt: p.createdAt, object: p.objectHidden ? "导出操作" : `${VERB[p.decision]}导出申请 ${p.taskId}`,
-      tag: unknownTag, line: p.objectHidden ? `${p.at} 发出；当前无法查看这条申请，原操作继续保留。` : `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`,
+      tag: unknownTag, line: p.objectHidden ? `${p.at} 发出；这条申请现在不在你能看的范围内，原操作继续保留，可以再查询。` : `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`,
       result: now >= p.expiresAt ? expiredResult : p.objectHidden ? undefined : answers[p.operationId],
       actions: queryButton(p.operationId, () => queryOriginal(p)), detail: p.reason && <p>理由：{p.reason}</p>, tech: <TechInfo commandKey={p.operationId} />,
     })),
@@ -225,7 +225,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
   const open = detail?.taskId === openId ? detail : null;
 
   return <>
-    <RecoveryPanel title={recoveryTitle(recovery.length - acceptedOriginals, 0, 0, acceptedOriginals)} label="结果未知的导出操作" items={recovery}
+    <RecoveryPanel title={recoveryTitle(recovery.length - acceptedOriginals, 0, 0, acceptedOriginals)} label={`导出操作：${recoveryTitle(recovery.length - acceptedOriginals, 0, 0, acceptedOriginals)}`} items={recovery}
       explain="提交导出、批准、驳回、撤回没收到结果时，原操作和理由存在这个浏览器标签页里。先按原操作查询，查到之前不要重做；关掉标签页这些记录就没了。"
       foot={anyExpired ? <ExportAuditLink /> : undefined} />
     {settled.map(row => <SettledLine key={row.key} label={row.label} text={row.text}
@@ -326,7 +326,7 @@ function TaskDrawer({ task, view, zone, rows, pending, now, lookup, downloadFail
     : reviewing && task.approveBlocked ? `批准不了：${task.approveBlocked}。驳回照常可以。`
     : task.scopeLost && task.state === "PENDING_APPROVAL" ? "恢复权限前这条不能批准；可以撤回。"
     : task.state === "PENDING_APPROVAL" && task.mine ? "还不能下载：没批准，文件还没生成。"
-    : task.failure === "SCOPE_HIDDEN" ? "当前无法查看申请范围，请先恢复权限。"
+    : task.failure === "SCOPE_HIDDEN" ? "生成前你已没有这个范围的权限，文件没有生成。请超级管理员在「客服与分组」恢复负责组，或在「运营账号与权限」恢复导出权限。"
     : (task.state === "APPROVED" || task.state === "FAILED") && task.failure === "SCOPE_LOST_BEFORE_GENERATE" ? task.decidedAt ? "已批准，但生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。" : "生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。"
     : (task.state === "APPROVED" || task.state === "FAILED") && task.failure ? task.decidedAt ? "文件没生成出来，不能下载。批准记录还在；请重新导出，明细要重新审批。" : "文件没生成出来，不能下载。请重新导出。"
     : task.state === "APPROVED" ? "还不能下载：已批准，文件还在生成。生成好会变成「可下载」。"

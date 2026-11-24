@@ -242,7 +242,7 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
   const agent = data.view === "AGENTS" && agentId ? data.records.find(row => row.accountId === agentId) : undefined;
   const accountId = agent?.accountId;
   const [targetPeriod, setTargetPeriod] = useState<{ origin: SupportAnalyticsResponse; accountId: string; month: string; groupId: typeof groupId }
-    & ({ status: "ready"; amount: PerfValue } | { status: "data-updated" })>();
+    & ({ status: "ready"; amount: PerfValue } | { status: "data-updated"; refreshing: boolean })>();
   const pairedSource = useRef<SupportAnalyticsResponse | null>(null);
   function selectAgent(id: string | null) {
     pairedSource.current = null;
@@ -275,7 +275,7 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
         setTargetPeriod({ ...target, status: "ready", amount: boardTotals(period).amount });
         return;
       }
-      setTargetPeriod({ ...target, status: "data-updated" });
+      setTargetPeriod({ ...target, status: "data-updated", refreshing: true });
       const sourceQuery = analyticsWireQuery({ ...query, pageNum: 1, expectedVersion: undefined }, []);
       let fresh = await analytics.query({ ...sourceQuery, signal }, "READY");
       if (signal.aborted || fresh.view !== "AGENTS" || fresh.scopeSummary.mode !== data.scopeSummary.mode) return;
@@ -291,14 +291,17 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
         pairedSource.current = fresh;
         setTargetPeriod({ ...target, origin: fresh, status: "ready", amount: boardTotals(freshPeriod).amount });
         onSourceRefreshed(fresh);
-      }
-    })().catch(() => { /* The existing unavailable value covers an unsuccessful targeted read. */ });
+      } else setTargetPeriod({ ...target, status: "data-updated", refreshing: false });
+    })().catch(() => {
+      // The existing unavailable value covers an unsuccessful targeted read; only stop saying it is re-reading.
+      if (!signal.aborted) setTargetPeriod(previous => previous?.status === "data-updated" ? { ...previous, refreshing: false } : previous);
+    });
     return () => controller.abort();
   }, [data, accountId, month, groupId, query, onSourceRefreshed]);
   // 这位客服所选月份的期间业绩额：有就写数，没有写「—」和原因（新版接口读成但没给这一项、升级中、旧版接口各一种说法）。
   const targeted = targetPeriod?.origin === data && targetPeriod.accountId === accountId && targetPeriod.month === month && targetPeriod.groupId === groupId ? targetPeriod : undefined;
   const agentPeriod: PerfValue | undefined = agent && ((agent.periodPerformance?.window.month === month ? perf.agentPeriods?.[agent.accountId] : undefined)
-    ?? (targeted?.status === "ready" ? targeted.amount : targeted ? { state: "unavailable", reason: "数据已更新" } : undefined)
+    ?? (targeted?.status === "ready" ? targeted.amount : targeted ? { state: "unavailable", reason: targeted.refreshing ? "数据已更新，正在重新加载…" : "数据已更新，点「刷新」重新加载" } : undefined)
     ?? (data.generation === "READY" ? { state: "unavailable", reason: "暂时无法确认" } : data.generation === "UPGRADING" ? { state: "unavailable", reason: "数据正在升级" } : PERF_UNAVAILABLE_VALUE));
   if (!data.records.length) return <BlockState state="empty" title={data.total === null ? "还没数到记录，总数还在统计。" : "当前筛选下没有记录。"} />;
   const name = (row: Pick<SupportAnalyticsCustomer, "nickname" | "customerNo" | "customerId">) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
@@ -792,7 +795,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {section === "exports" && !!exportsPorts?.persona.views.length && <PerfExportRecords ports={exportsPorts} />}
     {exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts} initialMonth={queryState.month} initialScope={queryState.groupId ? `GROUP:${queryState.groupId}` : mode === "PERSONAL" ? "SELF" : mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL"} onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />}
     {isPersonal && showStatistics && <PeriodPerfPanel perf={perf.period} month={queryState.month} asOf={personalPeriod ? `${formatBusinessTimeCompact(personalPeriod.asOf, "—")}（${businessZone().label}）` : undefined}
-      status={!monthCalendar ? calendarError ? { error: calendarError, onRetry: () => setCalendarRetry(value => value + 1) } : "loading"
+      status={!monthCalendar ? calendarError ? { title: "业绩月份加载失败", error: calendarError, onRetry: () => setCalendarRetry(value => value + 1) } : "loading"
         : personalPeriodError ? { error: personalPeriodError, onRetry: () => setPersonalPeriodRetry(value => value + 1) }
         : !personalPeriod && monthCalendar.some(entry => entry.month === queryState.month) ? "loading" : undefined}
       detail={{ loading: eventsOpen && !events, error: eventError || undefined }}
@@ -837,7 +840,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       {loading && <div className="sa-state" role="status">正在加载…<Button type="button" size="sm" onClick={() => { controllerRef.current?.abort(); generation.current++; setLoading(false); setCancelled(true); setData(null); }}>取消读取</Button></div>}
       {error ? <BlockState state="error" title={error} onRetry={reloadFirstPage} retryLabel={error.includes("第一页") ? "从第一页重新加载" : "重试"} /> : cancelled && <div className="sa-state" role="status">已取消加载，筛选条件不变。<Button type="button" size="sm" onClick={reloadFirstPage}>重试</Button></div>}
       {data && current && personnel && <>
-        {(queryState.view === "OVERVIEW" || queryState.view === "FINANCE") && <Fold title="经营概况" summary={overviewSummary ?? `已绑定 ${data.scopeSummary.bound == null ? "—" : `${data.scopeSummary.bound} 位`} · 已首充 ${countValue(current.firstConfirmed) == null ? "—" : `${countValue(current.firstConfirmed)} 位`} · 持有设备 ${countValue(current.devices.held) == null ? "—" : `${countValue(current.devices.held)} 台`}`} explain={queryState.view === "OVERVIEW" && queryState.basis === "PERIOD_EVENT" && perf.attribution ? "业绩按所选月份发生时的归属算。当时还没分组的客服的业绩算给客服本人、不进组，所以组卡和下面两类加起来比总额少；在业绩榜里能看到。" : caption}>
+        {(queryState.view === "OVERVIEW" || queryState.view === "FINANCE") && <Fold title="经营概况" summary={overviewSummary ?? `客户与资金 · ${data.versionState === "READY" ? "已同步" : "数据仍在同步"}`} explain={queryState.view === "OVERVIEW" && queryState.basis === "PERIOD_EVENT" && perf.attribution ? "业绩按所选月份发生时的归属算。当时还没分组的客服的业绩算给客服本人、不进组，所以组卡和下面两类加起来比总额少；在业绩榜里能看到。" : caption}>
           {queryState.view === "OVERVIEW" && queryState.basis !== "CURRENT_ASSET" && <StatBand label="经营概况">
             {queryState.basis === "PERIOD_EVENT" ? <>
               <Stat label="期间业绩额" value={perfText(perf.scope.period.amount)} unit={perf.scope.period.amount.state === "complete" ? "USDT" : undefined} sub={perfNote(perf.scope.period.amount)} />

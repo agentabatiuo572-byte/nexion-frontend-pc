@@ -136,8 +136,8 @@ function parsePreview(value: unknown) {
     else if (status === "EMPTY") check = { state: "empty", text: "这个月还没有记录。" };
     else if (status === "LIMIT_EXCEEDED") {
       if (rows === null) return invalid("export.limitRows");
-      check = rows > limit ? { state: "over", limitKind: "rows", rows, text: `共 ${rows} 行，超过导出上限。` }
-        : { state: "over", limitKind: "file", rows, text: "文件大小超过本次导出限制。" };
+      check = rows > limit ? { state: "over", limitKind: "rows", rows, text: `共 ${rows.toLocaleString("en-US")} 行，行数超过上限。` }
+        : { state: "over", limitKind: "file", rows, text: "文件超过本次导出大小限制。" };
     }
     else if (status === "READ_FAILED") check = { state: "failed", text: "没加载出来。" };
     else check = { state: "unavailable", text: reasons.includes("EXPORT_GENERATION_UPGRADING") ? "数据正在升级，这一项暂时不能导出。"
@@ -502,7 +502,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       const command = row.action === "WITHDRAW" ? "WITHDRAW" : "DECISION";
       const hidden = (): DecisionLookup => {
         if (!row.objectHidden) updateOriginal({ ...row, objectHidden: true });
-        return { kind: "hidden", text: "当前无法查看这条申请，原操作继续保留。" };
+        return { kind: "hidden", text: "这条申请现在不在你能看的范围内，原操作继续保留。" };
       };
       try {
         const found = await receipt(`/${row.taskId}/command-receipt?command=${command}`, row.commandKey);
