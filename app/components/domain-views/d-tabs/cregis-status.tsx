@@ -688,7 +688,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
         ? "收款服务限制了请求频率，稍后会自动继续补充。" : "收款服务暂时不接受创建地址，请检查地址额度和服务状态后再恢复。"}</Notice>}
 
     <StatBand label="USDT 收款">
-      <Stat tone={Number(data?.unresolvedExposureUsdt ?? 0) > 0 ? "warn" : undefined} icon={Wallet} label="待处理资金"
+      {/* 自动停站已删，这个数又含进行中的提现，几乎总大于 0，不是状态：按角色二（往来的钱）上色，读不到时写「—」自动弱化（VS-11、VS-12、DP-05）。 */}
+      <Stat tone={data && data.unresolvedExposureUsdt != null ? "role-2" : undefined} icon={Wallet} label="待处理资金"
         value={data && data.unresolvedExposureUsdt != null ? usdt(data.unresolvedExposureUsdt) : "—"} unit={data && data.unresolvedExposureUsdt != null ? "USDT" : undefined}
         sub={data ? `待处理回调 ${data.pendingAcceptedDeliveries ?? "—"} 笔` : undefined}
         explain="链上已到账但还没入账或没处理完的 USDT，加上还没完成的提现，各网络合计。" />
@@ -787,7 +788,9 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
         explain="需要人工复核的入金先冻结：一位管理员核验证据后发起，另一位管理员复核后入账。未归属的入金和链上重组的入金不在这里处理，保持冻结待核查。">
         <div className="rd-stack">
           {canManage && <div className="rd-toolbar">
-            <FilterField label="按 CID 发起"><Input data-search aria-label="待审核 CID" placeholder="CID" inputMode="numeric" value={manualCid} onChange={(event) => setManualCid(event.target.value.trim())} /></FilterField>
+            {/* 标签在框左边，和输入框、按钮同一条线（rubric 28），照 K1、D4 工具条的左标签写法。 */}
+            <label className="rd-toolbar-note" htmlFor="d1-review-cid">按 CID 发起</label>
+            <FilterField><Input id="d1-review-cid" data-search aria-label="待审核 CID" placeholder="CID" inputMode="numeric" value={manualCid} onChange={(event) => setManualCid(event.target.value.trim())} /></FilterField>
             <Button size="sm" disabledReason={manualReviewBlock} onClick={openManualReview}>实时核验证据</Button>
           </div>}
           {openCases.length === 0 ? <p className="rd-note">现在没有待复核的入金工单。</p> : <Table label="入金复核工单">
