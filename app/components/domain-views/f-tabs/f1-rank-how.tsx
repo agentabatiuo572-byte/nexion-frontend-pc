@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenText, CircleHelp, Plus, RefreshCw, ShieldCheck, Smartphone, Trash2 } from "lucide-react";
-import { BlockState, Button, Explain, Fact, Facts, Field, Fold, Input, KeepText, Modal, Notice, Panel, Segments, StatusTag, Textarea } from "@/app/components/rd";
+import { BlockState, Button, Explain, Fact, Facts, Field, Fold, Input, KeepText, Modal, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -20,10 +20,23 @@ type Row = Record<string, unknown>;
 function row(value: unknown): Row { return value && typeof value === "object" && !Array.isArray(value) ? value as Row : {}; }
 function text(value: unknown) { return typeof value === "string" ? value : ""; }
 function list(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
-const LOCALE_NAMES: Record<string, string> = { zh: "中文", "zh-cn": "简体中文", en: "英语", vi: "越南语" };
+const LOCALE_NAMES: Record<string, string> = { zh: "中文", "zh-cn": "简体中文", en: "英语", vi: "越南语", id: "印尼语", ms: "马来语", fil: "菲律宾语", ru: "俄语", kk: "哈萨克语", uz: "乌兹别克语" };
 /** 和共用编辑器同一个测试钩子：data-testid="published-content-rankHow"。 */
 const KIND = "rankHow";
 const CONFLICT = "版本已变化，草稿已保留，请核对后再保存。";
+
+/** 正文里的规则占位：预览里画成灰底小块、写中文名，App 上按实时等级数据替换；没登记的占位显示原名。 */
+const SLOT_NAMES: Record<string, string> = {
+  firstRank: "最低等级", lastRank: "最高等级", rankCount: "等级数", fromRank: "当前等级", toRank: "下一等级",
+  referralThreshold: "好友自购要求", selfComputePoints: "自购算力点要求", teamComputePoints: "团队算力点要求", directRefs: "达标好友要求",
+  peerRate: "同级奖励比例", votes: "票数", leadershipStatus: "激励池状态", cultivation: "好友升级奖励合计", protection: "等级保护状态",
+};
+function slots(value: string) {
+  return value.split(/(\{[A-Za-z]+\})/).map((part, index) => {
+    const key = /^\{([A-Za-z]+)\}$/.exec(part)?.[1];
+    return key ? <span key={index} className="f1-how-slot" title={`App 上换成实时数据：${SLOT_NAMES[key] ?? key}`}>{SLOT_NAMES[key] ?? key}</span> : part;
+  });
+}
 
 /** 版本冲突后：运营的草稿和刚读到的最新内容逐项比，只写哪里不同，不贴原文。 */
 function draftDiff(draft: PublishedContentDocument, latest: PublishedContentDocument) {
@@ -206,8 +219,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
     <span>{businessStamp(original.createdAt)}（{businessZone().label}）提交</span>
   </span> : document && <span className="f1-how-status">
     {baseStatus === "PUBLISHED" ? <StatusTag tone="ok">已发布</StatusTag> : <StatusTag tone="neutral">草稿</StatusTag>}
-    <span>版本号 {document.version || "—"}</span>
-    <span>修订号 {document.revision}</span>
+    <span>版本 {document.version || "—"}<Explain label="技术信息" content={`修订号 ${document.revision}：每保存一次加 1，核对「已被别人改过」时用。`} /></span>
     {document.revision === 0 && <StatusTag tone="warn" icon={CircleHelp} explain="还没保存过，或者读取时用的是内置的默认说明。这不代表运营已经保存或发布过。">内置默认内容</StatusTag>}
   </span>;
 
@@ -215,7 +227,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
     <Panel data-testid={`published-content-${KIND}`} title="App 等级说明" icon={BookOpenText} tone="role-4"
       sub={document ? (document.hasPublishedVersion ? "App 读的是最近一次发布的版本" : "还没发布过，App 读的是内置默认说明") : undefined}
       explain="App「等级怎么升」页面的说明文字，按语言分开写。保存草稿不替换 App 正在读的版本；保存并发布后，App 下一次读取成功就换成新内容，缺用户的语言或缺固定段落时可能显示不全。保存直接生效，不走审批。"
-      actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void (unknown ? checkOriginal() : refresh())}>重新读取</Button>}>
+      actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void (unknown ? checkOriginal() : refresh())}>刷新</Button>}>
       {unknown && <Notice tone="warn" title="保存结果未知" actionBelow
         action={<><Button size="sm" loading={loading} disabled={!!releasing} onClick={() => void checkOriginal()}>重新读取核对</Button>
           {comparison && howSave && <Button size="sm" variant="ghost" disabled={loading || !!releasing} onClick={() => setReleasing("open")}>解除原操作记录</Button>}</>}>
@@ -255,7 +267,8 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
                 <div className="f1-how-locales">
                   <Segments label="内容语言" value={locale} items={Object.keys(document.locales).map((key) => ({ value: key, label: LOCALE_NAMES[key] ?? key }))} onChange={setLocale} />
                   {canWrite && <span className="f1-how-locale-tools">
-                    <Input aria-label="新增语言" placeholder="例如 vi、zh-cn" value={newLocale} maxLength={11} size={12} disabled={locked} onChange={(event) => setNewLocale(event.target.value)} />
+                    <Select aria-label="新增语言" placeholder="选语言" value={newLocale} disabled={locked} onChange={setNewLocale}
+                      options={Object.entries(LOCALE_NAMES).filter(([key]) => !document.locales[key]).map(([key, name]) => ({ value: key, label: name }))} />
                     <Button size="sm" icon={<Plus size={14} aria-hidden />} disabled={locked} onClick={addLocale}>新增语言</Button>
                     <Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} disabled={locked} onClick={removeLocale}>删除这种语言</Button>
                   </span>}
@@ -270,7 +283,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
                   <h3 className="f1-subhead">规则段落 <span className="f1-weak">{sections.length} 段，点开编辑</span></h3>
                   {sections.map((item, index) => (
                     <Fold key={index} inset title={<span className="f1-how-section-title">{text(item.title) || <span className="f1-weak">没有标题</span>}</span>}
-                      summary={`顺序 ${Number.isSafeInteger(item.order) ? item.order : 0} · ${text(item.id) || "没有 ID"}`}>
+                      summary={`第 ${Number.isSafeInteger(item.order) ? item.order : 0} 位`}>
                       <div className="f1-how-section">
                         <div className="rd-form-grid" data-cols="2" data-dense="">
                           <Field label="段落 ID" hint="最多 64 字"><Input maxLength={64} value={text(item.id)} disabled={!canWrite || locked} onChange={(event) => setSection(index, "id", event.target.value)} /></Field>
@@ -285,7 +298,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
                   {sections.length === 0 && <p className="f1-empty">这种语言还没有段落；至少要有一段才能保存。</p>}
                   {canWrite && sections.length < 100 && <div><Button size="sm" icon={<Plus size={14} aria-hidden />} disabled={locked} onClick={addSection}>新增段落</Button></div>}
                 </div>
-                <Fold inset title="变更预览（只读）" summary={`${LOCALE_NAMES[locale] ?? locale} 的原始内容`}>
+                <Fold inset title="技术信息" summary={`${LOCALE_NAMES[locale] ?? locale}的原始内容，只读`}>
                   <pre className="f1-json">{JSON.stringify(document.locales[locale], null, 2)}</pre>
                 </Fold>
               </div>
@@ -293,14 +306,14 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
                 <div className="f1-how-phone-head"><Smartphone size={14} aria-hidden />App 上的样子（示意） · {LOCALE_NAMES[locale] ?? locale}
                   <StatusTag tone={status === "PUBLISHED" ? "ok" : "neutral"}>{status === "PUBLISHED" ? "保存后发布" : "草稿，App 看不到"}</StatusTag></div>
                 <div className="f1-how-phone-body">
-                  {text(current.hero) ? <p className="f1-how-hero">{text(current.hero)}</p> : <p className="f1-weak">主说明还没写</p>}
+                  {text(current.hero) ? <p className="f1-how-hero" data-user-content="">{slots(text(current.hero))}</p> : <p className="f1-weak">主说明还没写</p>}
                   {preview.map(({ item, index }) => (
-                    <section key={index} className="f1-how-card">
-                      <h4>{text(item.title) || <span className="f1-weak">没有标题</span>}</h4>
-                      <p>{text(item.body) || <span className="f1-weak">没有正文</span>}</p>
+                    <section key={index} className="f1-how-card" data-user-content="">
+                      <h4>{text(item.title) ? slots(text(item.title)) : <span className="f1-weak">没有标题</span>}</h4>
+                      <p>{text(item.body) ? slots(text(item.body)) : <span className="f1-weak">没有正文</span>}</p>
                     </section>
                   ))}
-                  <p className="f1-how-note">示意，实际排版以 App 为准：App 按「顺序」从小到大排，正文里的规则占位换成实时的等级数据（共 {ladder.length} 级）。</p>
+                  <p className="f1-how-note">示意：灰底的占位在 App 上换成实时等级数据<Explain label="预览和 App 的差别" content={`实际排版以 App 为准：App 按「顺序」从小到大排，占位按当时的 ${ladder.length} 级数据替换。`} /></p>
                 </div>
               </aside>
             </div>

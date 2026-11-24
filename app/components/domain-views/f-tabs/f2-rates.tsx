@@ -86,8 +86,7 @@ function useF2Model(ctx: FViewCtx) {
   return { canRoyaltyRate, canPolicyAmplify, l1NexReadonly, l1NexStatus, value, paused, gate, rank, gateRaw, rankRaw, cap };
 }
 
-const approvalCopy = (perm: string) => `批准人要是另一位管理员，需有审批批准权限和「${perm}」权限；批准前按原设置执行。`;
-const effectTag = <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才生效；只影响之后新算的订单，已经算好的不重算。">批准后生效</StatusTag>;
+const effectTag = <StatusTag tone="progress" filled explain="另一位超级管理员在「操作记录与审批」批准后才生效；只影响之后新算的订单，已经算好的不重算。">批准后生效</StatusTag>;
 const COVERAGE_CHECK = "批准时检查兑付覆盖率，低于红线不会执行。";
 
 /* ───────────── 每层分多少 ───────────── */
@@ -102,6 +101,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
   if (ctx.f2Error) return <Panel title="每层分多少" icon={Layers} tone="role-4"><BlockState state="error" title="七层比例没读到，这部分没有判断" detail={ctx.f2Error} onRetry={() => void ctx.refreshF2()} /></Panel>;
   const gateLayer = m.gate?.legal ? LAYERS.indexOf(m.gate.normalized as Layer) : -1;
   const pausedLayers = LAYERS.filter((level) => m.paused(level) === "on");
+  const unsetPause = rates.length ? LAYERS.filter((level) => m.paused(level) === "") : [];
   const complete = LAYERS.every(level => rates.some(row => row.l === level && row.usdt !== null && row.usdt <= 100));
   const activeSum = rates.filter((row) => m.paused(row.l as Layer) !== "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
   const pausedSum = rates.filter((row) => m.paused(row.l as Layer) === "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
@@ -160,11 +160,11 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         </Facts>;
       },
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text={missingRuleCopy} /></Notice>,
-      statedBrief: { impact: `另一位管理员批准后，之后新算的订单这一层按新比例算；批准前仍按 ${current ? `${num(current)}%` : "现在的设置"}，已经算好的订单不重算。`, check: COVERAGE_CHECK },
+      statedBrief: { impact: `另一位超级管理员批准后，之后新算的订单这一层按新比例算；批准前仍按 ${current ? `${num(current)}%` : "现在的设置"}，已经算好的订单不重算。`, check: COVERAGE_CHECK },
       detail: `${level} USDT 奖励比例 · 现在 ${current ? `${current}%` : "未配置"}。只影响之后的结算。`,
-      completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: layerPaused ? "恢复这一层后，平台每笔订单多付钱" : "调高这一层，平台每笔订单多付钱",
+      coverageCheck: COVERAGE_CHECK, coverageLead: layerPaused ? "恢复这一层后，平台每笔订单多付钱" : "调高这一层，平台每笔订单多付钱",
       submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(`F.unilevel.${level}`, next, reason); },
-      done: `调整 ${level} USDT 奖励比例 已提交审批，等另一位管理员批准`,
+      done: "已提交，等待审批后执行",
     });
   };
   const openNex = (level: Layer) => {
@@ -176,7 +176,17 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       effect: effectTag,
       edit: { kind: "number", current, min: 0, unit: "UVT / 1 USDT", amplifiesWhen: "increase",
         hint: "这一层每发 1 USDT 奖励，另发多少 UVT",
-        preview: (next) => rates.length ? <LayerCompare rates={sourcesUseFirstTwo ? rates.filter(row => !rankedLevel(row.l as Layer) && !noRateSource(row.l as Layer)) : rates} level={level} next={next || current ? Number(next || current) : null} field="nex" ranked={ranked} /> : null },
+        preview: (next) => {
+          if (!rates.length) return null;
+          const drawn = sourcesUseFirstTwo ? rates.filter(row => !rankedLevel(row.l as Layer) && !noRateSource(row.l as Layer)) : rates;
+          const value = next || current ? Number(next || current) : null;
+          const othersZero = drawn.filter(row => row.l !== level).every(row => !row.nex);
+          const named = drawn.filter(row => row.l !== level).map(row => row.l);
+          const quiet = named.length ? <p className="f2-diff-note">{`${named[0]}–${named[named.length - 1]} 都不另发 UVT。`}</p> : null;
+          if (!drawn.some(row => row.l === level)) return othersZero ? quiet : null;
+          if (othersZero && !value) return quiet;
+          return <LayerCompare rates={drawn} level={level} next={value} field="nex" ranked={ranked} />;
+        } },
       facts: (next) => <Facts>
         {next !== undefined && current && Number(next) < Number(current) && <Fact k="这次">调低，平台每笔订单少发 UVT</Fact>}
         {rankedLevel(level) ? (() => {
@@ -191,9 +201,9 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text={missingRuleCopy} /></Notice>,
       statedBrief: { impact: "批准后，之后新算的订单这一层按新系数另发 UVT；已经算好的不重算。", check: COVERAGE_CHECK },
       detail: `${level} 每发 1 USDT 奖励，另发多少 UVT · 现在 ${current || "未配置"}。只影响之后的结算。`,
-      completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多发 UVT",
+      coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多发 UVT",
       submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(`F.unilevel.nex.${level}`, next, reason); },
-      done: `调整 ${level} UVT 奖励系数 已提交审批，等另一位管理员批准`,
+      done: "已提交，等待审批后执行",
     });
   };
   const openPause = () => openConfirm({
@@ -210,11 +220,11 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
     },
     statedBrief: { impact: "七层一起提交，批准后一起生效。暂停的层，之后新算的订单这一层记 0、不补发；已经算好的不变。不影响好友设备收益奖励，也不是整体结算暂停。", check: "整组一次写入，有一项失败整组都不改。" },
     detail: "L1–L7 一起提交审批，批准后只影响之后的购买奖励，不影响好友设备收益奖励。",
-    completionCopy: approvalCopy("团队奖励规则"), coverageCheck: COVERAGE_CHECK,
+    coverageCheck: COVERAGE_CHECK,
     submit: async (reason, _next, values) => {
       if (!values || LAYERS.some((level) => values[level] !== "on" && values[level] !== "off")) throw new Error("请选择 L1–L7 全部的暂停状态");
       await ctx.updateFConfigBatch("F2", LAYERS.map((level) => ({ key: `F.unilevel.${level}.paused`, value: values[level] })), reason);
-      ctx.toast("L1–L7 暂停设置已提交审批，另一位管理员批准后生效");
+      ctx.toast("已提交，等待审批后执行");
     },
   });
 
@@ -222,6 +232,8 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
     <Panel title="每层分多少" icon={Layers} tone="role-4" sub={`示例订单 ${num(SAMPLE_ORDER)} USDT`}
       explain={ranked ? "第 1 到 7 层的人买设备时，按层给上面的人发 USDT 奖励，另按系数加发 UVT。第 1、2 层的比例按受益人等级，在团队等级晋升设置。示例只按比例和系数算，不是真实订单。"
         : "好友（第 1 层）和好友的好友（第 2 层）……一直到第 7 层买设备时，按层给上面的人发 USDT 奖励，另按系数加发 UVT。示例金额只按比例和系数算，没算影响分、活动倍率、等级门槛和奖励总额上限，不是真实订单。"}>
+      {unsetPause.length > 0 && <Notice tone="neutral" title={unsetPause.length === LAYERS.length ? "按层暂停还没配置，七层都照常发放" : `${unsetPause.join("、")} 的暂停开关没配，照常发放`}
+        action={m.canPolicyAmplify && !pendingFor(ctx, "f-config-batch:F2") && !ctx.f2WriteBlocked("f-config-batch:F2") ? <Button size="sm" onClick={openPause}>去设置</Button> : undefined} />}
       {ctx.f2DirectPolicyError && <Notice tone="warn" title="购买奖励比例来源没读到"
         action={<Button size="sm" onClick={() => void ctx.refreshF2DirectPolicy()}>重试</Button>}>{ctx.f2DirectPolicyError}</Notice>}
       {ctx.f2RankRangeError && <Notice tone="warn" title="九级购买奖励比例没读到"
@@ -288,15 +300,15 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
                     : pausedRaw === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
                     : pausedRaw === "off" ? <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>
                       : pausedRaw ? <StatusTag tone="danger" explain={`存的是「${pausedRaw}」，不是暂停或发放。按层暂停里重新选一次。`}>配置无效</StatusTag>
-                        : <StatusTag tone="neutral" explain="暂停开关没配。按层暂停里七层都选一次。">未配置</StatusTag>}
+                        : <><StatusTag tone="neutral" icon={ShieldCheck} explain="这一层的暂停开关没配，结算按发放算。要停发到下面「按层暂停」设置。">发放中</StatusTag>{unsetPause.length < LAYERS.length && <span className="f2-muted">暂停开关未配</span>}</>}
                   {rate && gated && m.rank?.legal && <StatusTag tone="neutral" icon={Lock} explain={`上级要到 ${m.rank.normalized} 及以上才拿得到这一层；等级不够这一层记 0。`}>需 {m.rank.normalized}+</StatusTag>}
-                  {(usdtPending || nexPending) && <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员批准；批准前这一层不变，也不能再提交。">待审批</StatusTag>}
+                  {(usdtPending || nexPending) && <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员批准；批准前这一层不变，也不能再提交。">待审批</StatusTag>}
                 </span></Td>
                 <Td align="right"><span className="f2-row-actions">
                   {noRateSource(level) && direct ? <span className="f2-fixed">—</span> : byRank ? canOpenF1 ? <Link className="rd-link" href="/network/v-rank" prefetch={false}>去团队等级晋升 →</Link> : <span className="f2-fixed">在团队等级晋升设置</span>
                     : direct ? <span className="f2-fixed">比例固定<Explain label="第 1 层比例为什么改不了" content="第 1 层 USDT 比例固定 10%，后台不能改；启用整体结算时要求它是 10%。" /></span>
-                    : m.canRoyaltyRate && <Button size="sm" aria-label={`调整 ${level} USDT 比例`} disabledReason={usdtPending ? "等另一位管理员批准" : ctx.f2WriteBlocked(`f-config:F.unilevel.${level}`)} onClick={() => openRate(level)}>{rate ? "改比例" : "设置比例"}</Button>}
-                  {m.canRoyaltyRate && (!nexLocked ? <Button size="sm" aria-label={`调整 ${level} UVT 系数`} disabledReason={nexPending ? "等另一位管理员批准" : ctx.f2WriteBlocked(`f-config:F.unilevel.nex.${level}`)} onClick={() => openNex(level)}>改系数</Button>
+                    : m.canRoyaltyRate && <Button size="sm" aria-label={`调整 ${level} USDT 比例`} disabledReason={usdtPending ? "等另一位超级管理员批准" : ctx.f2WriteBlocked(`f-config:F.unilevel.${level}`)} onClick={() => openRate(level)}>{rate ? "改比例" : "设置比例"}</Button>}
+                  {m.canRoyaltyRate && (!nexLocked ? <Button size="sm" aria-label={`调整 ${level} UVT 系数`} disabledReason={nexPending ? "等另一位超级管理员批准" : ctx.f2WriteBlocked(`f-config:F.unilevel.nex.${level}`)} onClick={() => openNex(level)}>改系数</Button>
                     : <Button size="sm" aria-label={`调整 ${level} UVT 系数`} disabledReason={m.l1NexStatus}>改系数</Button>)}
                   {!m.canRoyaltyRate && !direct && <span className="f2-fixed">只能查看</span>}
                 </span></Td>
@@ -309,9 +321,9 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       <ConfigList label="对七层一起起作用的设置">
         <ConfigRow name="按层暂停" what="把某几层的团队奖励停发，其余层照常" when="批准后，对之后新算的订单生效"
           effect="暂停的层记 0、不补发；不影响好友设备收益奖励，也不是整体结算暂停" note="七层一张审批单，每层按单独修改的权限核；缺哪层的权限，「设置」上会写明。"
-          value={LAYERS.every((level) => m.paused(level) === "") ? "未配置" : pausedLayers.length ? `${pausedLayers.join("、")} 已暂停` : "七层都在发放"}
+          value={LAYERS.every((level) => m.paused(level) === "") ? "未配置，七层都在发放" : pausedLayers.length ? `${pausedLayers.join("、")} 已暂停` : "七层都在发放"}
           sub={pendingFor(ctx, "f-config-batch:F2") ? <StatusTag tone="warn" icon={Clock3}>待审批</StatusTag> : pausedLayers.length ? `其余 ${7 - pausedLayers.length} 层发放` : undefined}
-          action={m.canPolicyAmplify ? <Button size="sm" aria-label="按 L1–L7 暂停" disabledReason={pendingFor(ctx, "f-config-batch:F2") ? "等另一位管理员批准" : ctx.f2WriteBlocked("f-config-batch:F2")} onClick={openPause}>设置</Button> : undefined} />
+          action={m.canPolicyAmplify ? <Button size="sm" aria-label="按 L1–L7 暂停" disabledReason={pendingFor(ctx, "f-config-batch:F2") ? "等另一位超级管理员批准" : ctx.f2WriteBlocked("f-config-batch:F2")} onClick={openPause}>设置</Button> : undefined} />
         <ParamRow ctx={ctx} m={m} paramKey="F.promo.weekMultiplier" openConfirm={openConfirm}
           shown={promo ? `${num(promo)} 倍` : undefined} />
       </ConfigList>
@@ -353,17 +365,17 @@ function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: 
       : !value ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK[paramKey].replace(/^没配[^，]*时，/, "")}</Fact></Facts> : undefined,
     statedBrief: { impact: `${help.what}。${help.effect}。批准后对之后新算的订单生效，已经算好的不重算。`, check: promo ? COVERAGE_CHECK : "核对新值；保存时不检查上下限的大小关系。" },
     detail: `${name} · 现在 ${value || "未配置"}。只影响之后的购买奖励结算。`,
-    completionCopy: approvalCopy(help.perm), coverageCheck: COVERAGE_CHECK, coverageLead: "调高倍率，每层都多付钱",
+    coverageCheck: COVERAGE_CHECK, coverageLead: "调高倍率，每层都多付钱",
     submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(paramKey, next, reason); },
-    done: `${name}调整 已提交审批，等另一位管理员批准`,
+    done: "已提交，等待审批后执行",
   });
   return (
     <ConfigRow name={name.replace(/（L1–L7）|（占订单）/, "")} what={help.what} effect={help.effect} when="批准后，对之后新算的订单生效"
       note={[parsed && !parsed.legal ? enumSpec?.illegalCopy : null, !value ? SETTLEMENT_FALLBACK[paramKey] : null, help.note].filter(Boolean).join("；") || undefined}
       value={parsed && !parsed.legal ? <span className="f2-bad"><StatusTag tone="danger" icon={Ban}>配置无效</StatusTag>{value}</span>
         : display ?? "未配置"}
-      sub={pending ? <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员批准；批准前按原设置执行。">待审批</StatusTag> : param?.vcls === "warn" && promo && value && Number(value) > 1 ? "活动中" : undefined}
-      action={allowed ? <Button size="sm" aria-label={`调整${name}`} disabledReason={pending ? "等另一位管理员批准" : ctx.f2WriteBlocked(`f-config:${paramKey}`)} onClick={open}>{value ? "调整" : "配置"}</Button> : undefined} />
+      sub={pending ? <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员批准；批准前按原设置执行。">待审批</StatusTag> : param?.vcls === "warn" && promo && value && Number(value) > 1 ? "活动中" : undefined}
+      action={allowed ? <Button size="sm" aria-label={`调整${name}`} disabledReason={pending ? "等另一位超级管理员批准" : ctx.f2WriteBlocked(`f-config:${paramKey}`)} onClick={open}>{value ? "调整" : "配置"}</Button> : undefined} />
   );
 }
 
@@ -419,9 +431,9 @@ export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       : !coolingRaw ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK["F.cooldown"].replace(/^没配[^，]*时，/, "")}</Fact></Facts> : undefined,
     statedBrief: { impact: "批准后，之后新算的购买奖励和其他团队奖励按新天数冷却；已经在冷却中的到期日不变。缩短会让钱更早能提。不影响好友设备收益奖励的冷却。", check: COVERAGE_CHECK },
     detail: `购买与其他奖励冷却期 · ${coolingState}。缩短前先看兑付覆盖率；不影响好友设备收益奖励的冷却期。`,
-    completionCopy: approvalCopy("团队奖励规则"), coverageCheck: COVERAGE_CHECK, coverageLead: "缩短冷却，钱更早能提",
+    coverageCheck: COVERAGE_CHECK, coverageLead: "缩短冷却，钱更早能提",
     submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config("F.cooldown", next, reason); },
-    done: "购买与其他奖励冷却期调整 已提交审批，等另一位管理员批准",
+    done: "已提交，等待审批后执行",
   });
   return (
     <Panel title="总量和冷却" icon={Gauge} tone="role-1" explain="一笔订单最多分出多少，奖励记入后多久能提。">
@@ -432,7 +444,7 @@ export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
           note={[coolingRaw && coolingDays === "" ? `现在存的是「${coolingRaw}」，不是 0–90 的整数` : null, coolingDays === "" ? SETTLEMENT_FALLBACK["F.cooldown"] : null, "好友设备收益奖励的冷却单独设置，在「好友奖励政策」里改"].filter(Boolean).join("；")}
           value={coolingDays !== "" ? `${coolingDays} 天` : coolingRaw ? <span className="f2-bad"><StatusTag tone="danger" icon={Ban}>配置无效</StatusTag>{coolingRaw}</span> : "未配置"}
           sub={pending ? <StatusTag tone="warn" icon={Clock3}>待审批</StatusTag> : undefined}
-          action={m.canPolicyAmplify ? <Button size="sm" aria-label="调整购买与其他奖励冷却" disabledReason={pending ? "等另一位管理员批准" : ctx.f2WriteBlocked("f-config:F.cooldown")} onClick={openCooling}>{coolingDays === "" ? "配置" : "调整"}</Button> : undefined} />
+          action={m.canPolicyAmplify ? <Button size="sm" aria-label="调整购买与其他奖励冷却" disabledReason={pending ? "等另一位超级管理员批准" : ctx.f2WriteBlocked("f-config:F.cooldown")} onClick={openCooling}>{coolingDays === "" ? "配置" : "调整"}</Button> : undefined} />
         <ConfigRow name="好友设备收益冷却" what="好友设备收益奖励记入后要等几天才能提" when="随好友奖励政策一起批准生效"
           note="这里只读，和好友奖励政策一起改"
           value={deviceCooling ?? (ctx.f2DirectPolicy ? "未配置" : "—")}
@@ -481,7 +493,7 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
     },
     statedBrief: { impact: "批准后保存新的四档门槛；目前只保存门槛，不会自动开通权益，也不影响任何奖励。", check: "系统检查四个都是数字且逐档不降低。" },
     detail: `合作伙伴权益门槛 · ${partnerState} · 不影响任何奖励。`,
-    completionCopy: approvalCopy("团队奖励规则"), coverageCheck: COVERAGE_CHECK,
+    coverageCheck: COVERAGE_CHECK,
     submit: async (reason, _next, bv) => {
       if (!bv || [bv.standard, bv.verified, bv.premium, bv.diamond].some((value) => !value?.trim())) throw new Error("请填写全部 4 档");
       const standard = Number(bv.standard);
@@ -495,15 +507,15 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
         throw new Error("门槛要逐档不降低（基础 ≤ 认证 ≤ 高级 ≤ 钻石）");
       }
       await ctx.updateF2Config("F.partner.tiers", JSON.stringify({ standard, verified, premium, diamond }), reason);
-      ctx.toast(`已提交审批，等另一位管理员批准 · 合作伙伴门槛 ${standard} / ${verified} / ${premium} / ${diamond} USD`);
+      ctx.toast("已提交，等待审批后执行");
     },
   });
   return (
     <Panel title="合作伙伴权益" icon={ShieldCheck} tone="role-3" sub="四档门槛 · USD"
-      explain="四档门槛不改任何奖励比例。目前只保存门槛，不会自动开通权益。"
-      actions={m.canPolicyAmplify ? <Button size="sm" disabledReason={pending ? "等另一位管理员批准" : ctx.f2WriteBlocked("f-config:F.partner.tiers")} onClick={open}>{partnerConfigured ? "调整权益门槛" : "配置权益门槛"}</Button> : undefined}>
+      explain="四档门槛不改任何奖励比例。权益说明里的名称只是规划，不代表已经开通。"
+      actions={m.canPolicyAmplify ? <Button size="sm" disabledReason={pending ? "等另一位超级管理员批准" : ctx.f2WriteBlocked("f-config:F.partner.tiers")} onClick={open}>{partnerConfigured ? "调整权益门槛" : "配置权益门槛"}</Button> : undefined}>
       <div className="f2-stack">
-      <Notice tone="warn" title="目前只保存门槛，不会自动开通权益">权益说明里的名称只是规划，不代表已经开通。</Notice>
+      <Notice tone="neutral" title="目前只保存门槛，不会自动开通权益" />
       {partnerConfigured ? <ol className="f2-tiers" aria-label="合作伙伴四档门槛">
         {PARTNER_TIERS.map((tier, index) => <li key={tier.key}>
           <span className="f2-tier-name"><span className="f2-tier-step" data-step={index + 1} aria-hidden />{tier.name}</span>
@@ -511,7 +523,7 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
         </li>)}
       </ol>
         : <BlockState state="empty" title={partnerTiersRaw ? "门槛配置无效" : "门槛未配置"} detail={partnerTiersRaw ? "存的内容读不出四个逐档不降低的数，请重新配置。" : "四档门槛都还没设置。"} />}
-      {pending && <p className="f2-inline-tag"><StatusTag tone="warn" icon={Clock3}>待审批</StatusTag>等另一位管理员批准</p>}
+      {pending && <p className="f2-inline-tag"><StatusTag tone="warn" icon={Clock3}>待审批</StatusTag>等另一位超级管理员批准</p>}
       <div className="f2-perk-toggle">
         <Button size="sm" variant="ghost" aria-expanded={showTierDetails} aria-controls="royalty-partner-details" onClick={() => setShowTierDetails(!showTierDetails)}>{showTierDetails ? "收起权益说明" : "查看权益说明"}</Button>
       </div>

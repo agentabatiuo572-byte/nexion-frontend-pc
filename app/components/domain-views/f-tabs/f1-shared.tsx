@@ -94,9 +94,12 @@ export const PAYOUT_TYPES = [
   { value: "SKU", label: "商品" }, { value: "CUSTOM", label: "自定义奖品" },
 ] as const;
 
-/** 审批人叫法照「全站-审批人叫法」：门槛放宽、增加资金奖励由超级管理员批；其余 F1 审批由另一位管理员批。 */
+/**
+ * 审批人叫法，F1、F2 共用（02 OP-67）：走「操作记录与审批」的申请只有超级管理员能批；
+ * 人工调整等级（含 V8 审核通过）是登记的例外，由有人工调级权限的管理员批。
+ */
 export const SUPER_APPROVER = "另一位超级管理员";
-export const ADMIN_APPROVER = "另一位管理员";
+export const VRANK_APPROVER = "另一位有人工调级权限的管理员";
 
 /**
  * F1 自己开的确认框。请求和旧页面一样走 ctx 上现成的提交函数，确认框只多了标题、标签和事实这些样子。

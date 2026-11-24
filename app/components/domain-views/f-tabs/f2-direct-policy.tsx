@@ -26,6 +26,23 @@ const draftOf = (policy: DirectReferralPolicy): DirectReferralUpdate => ({
 const pct = (value: number) => Number.isFinite(value) ? `${num(value)}%` : "未填";
 const onOff = (on: boolean, off = "停用") => on ? "启用" : off;
 
+/** 影响句按改后的开关、比例和改动方向写（B83）：只写这次改了的那一组，设备二级为 0 时写明只发一级。 */
+function impactOf(before: DirectReferralPolicy, after: DirectReferralUpdate, splitChanged: boolean) {
+  const parts: string[] = [];
+  if (splitChanged) {
+    const share = `USDT ${pct(after.purchaseSplit.usdtSharePct)}、UVT ${pct(100 - after.purchaseSplit.usdtSharePct)}`;
+    parts.push(!after.purchaseSplit.enabled ? "之后的购买里第 1 层好友购买奖励改回全额发 USDT，另按旧系数加发 UVT"
+      : before.purchaseSplit.enabled ? `之后的购买里第 1 层好友购买奖励改按 ${share} 拆` : `之后的购买里第 1 层好友购买奖励按 ${share} 拆，不再另加旧 UVT`);
+  }
+  const was = before.deviceEarning, now = after.deviceEarning;
+  if (JSON.stringify(was) !== JSON.stringify(now)) {
+    const level2 = now.level2RatePct === undefined ? "" : Number(now.level2RatePct) > 0 ? `、二级 ${num(now.level2RatePct)}%` : "，二级为 0 不发";
+    parts.push(!now.enabled ? (was.enabled ? "之后的设备收益不再给好友发奖励" : "好友设备收益奖励仍是停用，改的设置启用后才用上")
+      : `之后的设备收益按一级 ${pct(now.totalRatePct)}${level2}给好友发`);
+  }
+  return parts.join("；");
+}
+
 export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: (spec: F2Confirm) => void }) {
   const policy = ctx.f2DirectPolicy;
   const [draft, setDraft] = useState<DirectReferralUpdate | null>(() => policy ? draftOf(policy) : null);
@@ -65,12 +82,11 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
     if (disabled || !draft || !policy || invalid || !changed) return;
     const value = structuredClone(draft), reference = policy.sevenLayerReference, l2After = value.deviceEarning.level2RatePct;
     const splitChanged = JSON.stringify(value.purchaseSplit) !== JSON.stringify(policy.purchaseSplit);
-    const scope = splitChanged && deviceChanged ? "之后发生的购买和设备收益" : splitChanged ? "之后发生的购买" : "之后的设备收益";
     const amplify = directReferralAmplifies(policy, value);
     openConfirm({
       slot: "f-direct-referral-policy",
       action: "好友奖励设置整组调整", title: "提交好友奖励政策", briefKind: "config", amplify, icon: "sliders", dialogClassName: "f2-confirm",
-      effect: <StatusTag tone="progress" filled icon={Clock3} explain="另一位管理员在「操作记录与审批」批准后，两项一起立即生效；批准前按原政策执行。">批准后两项一起生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled icon={Clock3} explain="另一位超级管理员在「操作记录与审批」批准后生效；好友购买奖励和设备收益奖励一起提交、一起生效，批准前按原政策执行。">批准后生效</StatusTag>,
       facts: <Facts>
         <Fact k="购买冷却">{reference.coolingDays === null ? "未配置" : `${reference.coolingDays} 天`}</Fact>
         <Fact k="第 1 层另发 UVT">{reference.legacyNexPerUsd === null ? "未配置" : `${num(reference.legacyNexPerUsd)} UVT / 1 USDT`}</Fact>
@@ -81,10 +97,9 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
         <DiffList rows={rows(policy, value)} restTitle="其余设置" />
         {level2Changed && <p className="f2-diff-note">{`改后：好友的好友的设备每产生 100 USDT 收益，平台另给 ${l2After} USDT 等值，拆法和一级一样。`}</p>}
       </div>,
-      statedBrief: { impact: `另一位管理员批准后生效，只算${scope}；批准前按原政策执行，已经算好的不变。${splitChanged ? "开启拆分后第 1 层的好友购买奖励按比例发 USDT 和 UVT，不再另加旧 UVT。" : ""}`, check: "提交前重读一次政策，已被别人改过就不提交；批准时再核对一次，调高方向检查兑付覆盖率。" },
+      statedBrief: { impact: `另一位超级管理员批准后，${impactOf(policy, value, splitChanged)}；批准前按原政策执行，已经算好的不变。`, check: amplify ? "提交时和批准时各查一次兑付覆盖率，低于红线不能提交、批准时也不会执行；提交前重读政策，已被别人改过就不提交。" : "提交前重读一次政策，已被别人改过就不提交；批准时再核对一次。" },
       detail: `修改前：${directReferralSummary(policy)}。修改后：${directReferralSummary(value)}。（政策版本 ${policy.policyVersion}）`,
-      completionCopy: "批准人要是另一位管理员，需有审批批准权限和「团队奖励比例」权限；批准前按原政策执行。",
-      coverageCheck: "批准时检查兑付覆盖率，低于红线不会执行。", coverageLead: "这次修改会让平台多付好友奖励",
+      coverageCheck: "提交时和批准时各查一次兑付覆盖率，低于红线不能提交、批准时也不会执行。", coverageLead: "这次修改会让平台多付好友奖励",
       submit: (reason) => ctx.updateF2DirectPolicy(value, reason),
     });
   };
@@ -93,7 +108,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
   const lock = disabled || submitted;
   const lockReason = ctx.f2WriteBlocked("f-direct-referral-policy") ?? (!allowed ? "只能查看：改好友奖励政策需有「团队奖励比例」权限"
     : busy ? "正在读取" : ctx.f2DirectPolicyError ? "政策没读到，先刷新" : !policy?.sevenLayerEnabled ? "整体结算启用后才能改"
-      : stale ? "政策刚被别人改过，先放弃修改并刷新" : submitted ? "已提交，等另一位管理员批准" : invalid ?? (!changed ? "还没有改动" : undefined));
+      : stale ? "政策刚被别人改过，先放弃修改并刷新" : submitted ? "已提交，等另一位超级管理员批准" : invalid ?? (!changed ? "还没有改动" : undefined));
 
   const share = (key: "purchaseSplit" | "deviceEarning", label: string) => draft && <>
     <div className="f2-pair">
@@ -127,7 +142,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
               {policy && !policy.configured && <Notice tone="neutral" title="还没设置">下面的数字是默认占位，不代表正在生效；好友购买奖励现在不拆分，按第 1 层的 UVT 系数仍可能另发 UVT。</Notice>}
               {policy?.nexUsdtPrice === null && <Notice tone="warn" title="UVT 价格读不到">开了拆分的奖励，USDT 和 UVT 会一起等价格恢复后再算，不会先发 USDT。</Notice>}
               {stale && <Notice tone="warn" title="政策刚被别人改过">你填的内容还在。点「放弃修改并刷新」读最新的政策后重新填写。</Notice>}
-              {submitted && <Notice tone="warn" title={<>已提交，等另一位管理员批准<StatusTag tone="warn" icon={Clock3}>待审批</StatusTag></>}
+              {submitted && <Notice tone="warn" title={<>已提交，等另一位超级管理员批准<StatusTag tone="warn" icon={Clock3}>待审批</StatusTag></>}
                 action={ctx.can("platform_a2_read") ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
                 批准前仍按原政策执行，批准后点页头「刷新」看新政策。这组在批准前锁住。
               </Notice>}
@@ -159,7 +174,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
                   </div>
                 </div>
                 {draft.purchaseSplit.enabled ? share("purchaseSplit", "好友购买奖励拆分")
-                  : <p className="f2-split-off">{Number.isFinite(draft.purchaseSplit.usdtSharePct) ? `USDT 占比 ${num(draft.purchaseSplit.usdtSharePct)}%、UVT 占比 ${num(100 - draft.purchaseSplit.usdtSharePct)}%：启用后按这个比例拆；现在全发 USDT。` : "启用后按填的比例拆；现在全发 USDT。"}</p>}
+                  : <p className="f2-split-off">{Number.isFinite(draft.purchaseSplit.usdtSharePct) ? `启用后按 USDT ${num(draft.purchaseSplit.usdtSharePct)}%、UVT ${num(100 - draft.purchaseSplit.usdtSharePct)}% 拆；现在全发 USDT` : "启用后按填的比例拆；现在全发 USDT"}</p>}
               </fieldset>
               <fieldset className="f2-policy-card" disabled={lock}>
                 <legend><Smartphone size={16} aria-hidden />好友设备收益奖励</legend>

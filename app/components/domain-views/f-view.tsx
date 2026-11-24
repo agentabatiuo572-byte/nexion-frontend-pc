@@ -329,7 +329,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       const overview = await fetchF1VRankOverview();
       if (request === f1Generation.current) setF1Overview(overview);
     } catch (error) {
-      if (request === f1Generation.current) setF1Error(errorMessage(error));
+      if (request === f1Generation.current) setF1Error(displayAdminReadError(error));
     } finally {
       if (request === f1Generation.current) setF1Loading(false);
     }
@@ -346,7 +346,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     } catch (error) {
       if (request !== f1PromotionGeneration.current) return;
       if (!append) setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
-      setF1PromotionError(errorMessage(error));
+      setF1PromotionError(displayAdminReadError(error));
     } finally {
       if (request === f1PromotionGeneration.current) setF1PromotionLoading(false);
     }
@@ -363,7 +363,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     } catch (error) {
       if (request !== f1PayoutGeneration.current) return;
       if (!append) setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
-      setF1PayoutError(errorMessage(error));
+      setF1PayoutError(displayAdminReadError(error));
     } finally {
       if (request === f1PayoutGeneration.current) setF1PayoutLoading(false);
     }
@@ -387,7 +387,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (!range) throw new Error("九级比例未读完整");
       if (request === f2RangeGeneration.current) setF2RankRange(range);
     } catch (error) {
-      if (request === f2RangeGeneration.current) setF2RankRangeError(errorMessage(error));
+      if (request === f2RangeGeneration.current) setF2RankRangeError(displayAdminReadError(error));
     } finally {
       if (request === f2RangeGeneration.current) setF2RankRangeLoading(false);
     }
@@ -410,7 +410,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     } catch (error) {
       if (request === f2PolicyGeneration.current) {
         setF2DirectPolicy(null);
-        setF2DirectPolicyError(errorMessage(error));
+        setF2DirectPolicyError(displayAdminReadError(error));
       }
       return null;
     } finally {
@@ -433,7 +433,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       ]);
       if (request !== f2Generation.current) return null;
       if (overview.status === "fulfilled") setF2Overview(overview.value);
-      else { setF2Overview(null); setF2Error(errorMessage(overview.reason)); }
+      else { setF2Overview(null); setF2Error(displayAdminReadError(overview.reason)); }
       const observed = session ? listF2Proposals(session.adminId).filter(row => row.ticket) : [];
       const receipts = session ? await Promise.allSettled(observed.map(row => queryF2Proposal(session.adminId, row))) : [];
       if (request !== f2Generation.current) return null;
@@ -452,7 +452,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     } catch (error) {
       if (request !== f2Generation.current) return null;
       setF2Overview(null);
-      setF2Error(errorMessage(error));
+      setF2Error(displayAdminReadError(error));
       return null;
     } finally {
       if (request === f2Generation.current) { setF2Loading(false); setF2ActivationPendingLoading(false); }
@@ -731,8 +731,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           nextQuery: page.nextCursor ? { ...base, cursor: page.nextCursor } : null,
         };
       });
-    } else if (append) setF5AppendError(errorMessage(overview.reason));
-    else { setF5Page(null); setF5Error(errorMessage(overview.reason)); }
+    } else if (append) setF5AppendError(displayAdminReadError(overview.reason));
+    else { setF5Page(null); setF5Error(displayAdminReadError(overview.reason)); }
     const audit = queue.status === "fulfilled" ? queue.value as Awaited<ReturnType<typeof fetchA2Overview>> | null : null;
     setF5ApprovalRows([...(audit?.operationQueue ?? []), ...lookups.flatMap(row => row.status === "fulfilled" && row.value ? [row.value as A2OperationRow] : [])]);
     setF5ApprovalReadError(queue.status === "rejected" ? errorMessage(queue.reason)
@@ -825,7 +825,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (issue) return issue;
     }
     const key = slot.startsWith("f-config:") ? slot.slice(9) : slot;
-    if (f2Pending(key)) return "等另一位管理员批准";
+    if (f2Pending(key)) return "等另一位超级管理员批准";
     const layer = key.match(/^F\.unilevel\.(?:nex\.)?(L[1-7])$/)?.[1];
     if (f2Proposals.some(row => !row.ticket && (row.fingerprint === slot || layer && row.spec.target?.type === "unilevel_rule" && row.spec.target.id === layer))) return "上一次申请结果未知，请先查询原结果";
     return undefined;

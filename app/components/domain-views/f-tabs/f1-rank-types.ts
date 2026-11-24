@@ -21,4 +21,4 @@ export type F1SalaryClaimsState = ReturnType<typeof parseF1SalaryClaims> & {
 
 /** V8 另加的两项条件、五项权益：App 展示的固定文案，后台只读（rank-rules「V8 特别规则」）。 */
 export const V8_TERMS = ["另一位 V8 的推荐信", "官方审核"];
-export const V8_PERKS = ["渠道宣传", "年度旅游", "专属客服", "资金转移", "新市场优先权"];
+export const V8_PERKS = ["渠道宣传", "年度旅游", "VIP 专属客服", "资金转移", "新市场优先权"];

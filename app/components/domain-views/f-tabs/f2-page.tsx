@@ -3,7 +3,7 @@
 /**
  * F2 团队奖励设置（改版，RdPage）。首屏回答：整体结算开着没有、一笔订单的钱怎么一层层分上去、
  * 每一层现在分多少、改哪一项会让平台多付钱。分组按运营的问题排：每层分多少、谁能拿到、总量和冷却、
- * 好友奖励政策、合作伙伴权益，旧档位和旧参数收起。所有修改都是提交审批，另一位管理员批准后才生效。
+ * 好友奖励政策、合作伙伴权益，旧档位和旧参数收起。所有修改都是提交审批，另一位超级管理员批准后才生效。
  * 读取、提交、结果未知的保存和恢复都走外壳 f-view 原来的函数，这里只排界面。
  */
 import { useEffect, useState } from "react";
@@ -33,7 +33,9 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
   const gateBad = ratesReady && (!gate || !rank || !parseF2DepthGateLayer(gate).legal || !parseF2DepthGateRank(rank).legal);
   const coolingRaw = cv("F.cooldown");
   const coolingBad = ratesReady && !!coolingRaw && !(/^[+-]?\d+$/.test(coolingRaw) && Number(coolingRaw) >= 0 && Number(coolingRaw) <= 90);
-  const pauseBad = ratesReady && LAYERS.some((level) => !["on", "off"].includes(cv(`F.unilevel.${level}.paused`)));
+  // 没配的层结算按发放算（后端缺省 off），不算异常；只有存了认不出的值才标出来。
+  const pauseBad = ratesReady && LAYERS.some((level) => { const raw = cv(`F.unilevel.${level}.paused`); return raw !== "" && !["on", "off"].includes(raw); });
+  const pauseUnset = ratesReady && rates.length > 0 && LAYERS.some((level) => cv(`F.unilevel.${level}.paused`) === "");
   const sections: SectionNavItem[] = [
     { id: "layers", label: "每层分多少", alert: ratesReady && (rates.length === 0 || pauseBad) },
     { id: "who", label: "谁能拿到", alert: gateBad },
@@ -51,14 +53,14 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
   const ranked = f2Ranked(ctx);
   const attempt = ctx.f2ActivationAttempt;
   const followUp = attempt ? "上一次整体结算申请结果未知，先在下面的原申请列表里处理。"
-    : pending ? "整体结算有申请在等另一位管理员批准，批准前状态不变。" : undefined;
+    : pending ? "整体结算有申请在等另一位超级管理员批准，批准前状态不变。" : undefined;
   const conclusion = ctx.f2DirectPolicyLoading && !policy ? { state: "unknown" as const, icon: CircleHelp, text: "团队奖励：读取中" }
     : !policy ? { state: "unknown" as const, icon: CircleHelp, text: "团队奖励：结算状态没读到，暂时无法判断", hint: "点页头「刷新」重试。" }
       : !policy.sevenLayerEnabled ? { state: "warn" as const, icon: PowerOff, text: ratesReady && rates.length === 0 ? "团队奖励：还没有配置团队购买奖励" : "团队奖励：七层结算还没启用",
-        hint: followUp ?? (ratesReady && rates.length === 0 ? ctx.f2BootstrapPending ? "首次配置在等另一位管理员批准；批准后还要单独申请启用。" : "先在「每层分多少」做首次配置，之后单独申请启用才开始结算。" : ranked ? undefined : "启用前先看「整体结算」里要检查的三条。") }
+        hint: followUp ?? (ratesReady && rates.length === 0 ? ctx.f2BootstrapPending ? "首次配置在等另一位超级管理员批准；批准后还要单独申请启用。" : "先在「每层分多少」做首次配置，之后单独申请启用才开始结算。" : ranked ? undefined : "启用前先看「整体结算」里要检查的三条。") }
         : policy.sevenLayerPaused ? { state: "warn" as const, icon: PauseCircle, text: "团队奖励：已暂停，新订单的奖励先不算", hint: followUp }
           : !ratesReady ? { state: (ctx.f2Error ? "warn" : "unknown") as "warn" | "unknown", icon: Power, text: ctx.f2Error ? "团队奖励：正常计算，但七层比例没读到" : "团队奖励：正常计算，七层比例读取中", hint: followUp ?? (ctx.f2Error ? "点页头「刷新」重试。" : undefined) }
-            : { state: (complete ? "ok" : "warn") as "ok" | "warn", icon: Power, text: complete ? ranked ? "团队奖励：正常计算，第 1、2 层按受益人等级" : `团队奖励：正常计算，七层合计占订单 ${num(activeSum)}%` : rates.length ? "团队奖励：正常计算，但七层规则不完整" : "团队奖励：正常计算，但七层规则还没配置", hint: followUp };
+            : { state: (complete ? "ok" : "warn") as "ok" | "warn", icon: Power, text: complete ? ranked ? "团队奖励：正常计算，第 1、2 层按受益人等级" : `团队奖励：正常计算，七层合计占订单 ${num(activeSum)}%` : rates.length ? "团队奖励：正常计算，但七层规则不完整" : "团队奖励：正常计算，但七层规则还没配置", hint: followUp ?? (pauseUnset ? "按层暂停还没配置，没配的层照常发放。" : undefined) };
 
   const metric = (id: string) => ctx.f2Metrics.find((row) => row.id === id);
   const usdt = metric("weeklyUsdtRoyalty"), uvt = metric("weeklyNexPayout"), l1 = metric("l1TriggerRate");
@@ -112,7 +114,7 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
           <div id={nav.anchor("partner")}><F2Partner ctx={ctx} openConfirm={setConfirm} /></div>
           <div id={nav.anchor("legacy")}>
             <Fold title="旧档位和旧参数" icon={Archive} open={legacyOpen} onOpenChange={setLegacyOpen}
-              summary={`${ctx.f2RateTiers.length} 个旧档位，只读、已不生效`}
+              summary={ctx.f2Error ? "没读到旧档位，点页头「刷新」重试" : `${ctx.f2RateTiers.length} 个旧档位，只读、已不生效`}
               explain="这些是旧版团队奖励留下的档位和参数，现在的结算不再读它们；这页只读，不能改。">
               <span id="royalty-history" />
               <F2Legacy ctx={ctx} />

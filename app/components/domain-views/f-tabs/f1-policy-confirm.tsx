@@ -6,7 +6,7 @@
  * 标题写动作和对象，标签写哪个方向要批准，事实写现在的值和相邻等级，填写项用 rd 的控件。
  */
 import { useState } from "react";
-import { CircleHelp, Clock3, LockOpen, ShieldCheck, Zap } from "lucide-react";
+import { CircleHelp, Clock3, LockOpen, Zap, Lock } from "lucide-react";
 import { Change, DiffField, Fact, Facts, Field, Input, KeepText, Notice, Select, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
@@ -201,7 +201,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     {pendingApproval && !opening.pending && <Fact k="待审批的申请" tone="warn">这一级有申请在等审批，现在保存或提交审批都会被拒；等它批准、驳回或撤回后再改</Fact>}
   </Facts>;
   const statedBrief = isCondition
-    ? { impact: "保存后，之后每次评估用户时按新值算；不重算已有等级，不补发、不收回历史奖励。", check: "核对新值和相邻等级；理由写清依据或工单号。" }
+    ? (values: BusinessFormValue) => ({ impact: `${baselineReady && f1PolicyNeedsApproval(editor, values) ? `${SUPER_APPROVER}批准后` : "确认后"}，之后的评估按新值算；不重算已有等级，不补发、不收回历史奖励。`, check: "核对新值和相邻等级；理由写清依据或工单号。" })
     : remove ? { impact: "移除后，升到这一级不再发这一项；已经发出的不收回，发放记录保留。", check: "核对要移除的是哪一项；理由写清依据或工单号。" }
       : { impact: "改的是升级时发什么，只影响以后的发放；已经发出的奖励和账本不变。", check: "核对奖励类型和金额或名字；理由写清依据或工单号。" };
 
@@ -214,6 +214,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     facts={facts}
     statedBrief={statedBrief}
     confirmLabel={remove ? "确认移除" : "确认修改"}
+    confirmLabelForValue={isCondition ? (_value, values) => values && baselineReady && f1PolicyNeedsApproval(editor, values) ? "提交审批" : "确认修改" : undefined}
     detail={isCondition ? `当前${fieldLabel}为 ${currentLabel}。修改只影响后续晋升评估，已晋升的记录保留。`
       : remove ? `移除奖励「${currentLabel}」后停止后续发放，已发奖励与账本记录保留。`
       : `当前奖励：${currentLabel}。修改奖励模板，后续发放使用新值；已发奖励与账本记录保留。`}
@@ -230,7 +231,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
       expired: !!opening.pending && opening.pending.expiresAt <= Date.now(),
       expiredRequestRecovery: opening.pending && opening.pending.expiresAt <= Date.now() ? "query" : undefined,
       disabledReason,
-      resolve: (values) => baselineReady && f1PolicyNeedsApproval(editor, values) ? {
+      resolve: (values) => !isCondition && baselineReady && f1PolicyNeedsApproval(editor, values) ? {
         heading: isCondition ? "放宽晋升条件 · 批准后生效" : "增加资金奖励 · 批准后生效",
         disabledReason: ctx.f1Coverage && ctx.f1Coverage.coverageRatio < ctx.f1Coverage.redlinePct ? "当前兑付覆盖率低于红线，暂时无法提交审批。" : undefined,
         completionCopy: isCondition
@@ -259,12 +260,12 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
         if (isCondition) {
           const changed = (values.value ?? "").trim() !== "" && (values.value ?? "").trim() !== (editor.row[editor.field!] ?? "");
           const state = baselineReady && changed && !inputError ? loosen
-            ? <StatusTag tone="warn" icon={LockOpen}>放宽，要批准</StatusTag>
-            : <StatusTag tone="neutral" icon={ShieldCheck}>收紧或不变，立即生效</StatusTag> : undefined;
+            ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag>
+            : <StatusTag tone="neutral" icon={Lock}>收紧</StatusTag> : undefined;
           return <>
             <DiffField before={currentLabel} unit={baselineReady ? UNIT[condition] : undefined} hint={editor.field === "legRank" ? "选比这一级低的等级，或者「未设置」" : RANGE[editor.field!]}
               state={state} error={(values.value ?? "").trim() !== "" ? inputError : undefined}
-              note={editor.field === "legCount" || editor.field === "legRank" ? "人数为 0 时不看这一项；大于 0 时要同时设好比这一级低的最低等级，否则这一项一律判不满足。" : undefined}>
+              note={editor.field === "legCount" || editor.field === "legRank" ? "人数为 0 时不看这一项；大于 0 时还要设好最低等级，否则判不满足。" : undefined}>
               {(control) => editor.field === "legRank"
                 ? <Select {...control} aria-label={fieldLabel} value={values.value ?? ""} disabled={locked} onChange={(value) => changeField("value", value)}
                   options={["NONE", ...ctx.vrankRows.filter((row) => Number(row.v.slice(1)) < Number(editor.row.v.slice(1))).map((row) => row.v)].map((item) => ({ value: item, label: item === "NONE" ? "未设置" : item }))} />
@@ -275,7 +276,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
         if (remove) return null;
         return <div className="rd-form-grid" data-cols="2" data-dense="">
           {option("rtype", "奖励类型", Object.keys(typeLabels), typeLabels)}
-          {isF1FundReward(values.rtype) && <Field label={values.rtype === "usdt" ? "金额" : "数量"} required hint={`${values.rtype === "usdt" ? "USDT" : "UVT"} · 大于 0，最多 6 位小数`}
+          {isF1FundReward(values.rtype) && <Field label={values.rtype === "usdt" ? "金额" : "数量"} required help={`${values.rtype === "usdt" ? "USDT" : "UVT"}，大于 0，最多 6 位小数`}
             error={(values.amount ?? "").trim() !== "" ? inputError : undefined}>
             <Input inputMode="decimal" value={values.amount ?? ""} disabled={locked} onChange={(event) => changeField("amount", event.target.value)} />
           </Field>}

@@ -33,6 +33,7 @@ import { F5KindTiles, F5StatusFlow } from "./f5-overview";
 import { F5Drawer, type F5RowAction } from "./f5-drawer";
 import { F5AnomalyList, F5HistoryList, F5PendingList, F5SuspensionList } from "./f5-lists";
 
+const F5_DISPOSAL_CODES = ["f_commission_status", "f5_commission_reverse", "f5_commission_reissue", "f5_commission_suspension"];
 const STATUS_ORDER = ["cooling", "unlocked", "withdrawn", "frozen", "reversed", "recovery_pending", "rejected"];
 const SETTLED = ["reversed", "withdrawn", "rejected", "recovery_pending"];
 
@@ -135,6 +136,12 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     load({ ...applied, kind: nextKind || undefined, cursor: undefined, limit: "20" });
   };
 
+  /** 页级提示「看待追回」：流水只看待追回（已经在看就不取消），切到流水页签并滚到表格。 */
+  const showRecovery = () => {
+    if (applied.status !== "recovery_pending") applyStatusFilter("recovery_pending");
+    else setTab("records");
+    requestAnimationFrame(() => document.getElementById("f5-records")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  };
   const applyStatusFilter = (selectedStatus: string) => {
     const nextStatus = applied.status === selectedStatus ? "" : selectedStatus;
     setStatus(nextStatus);
@@ -157,6 +164,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     load({ kind: undefined, currency: undefined, userId: undefined, cohort: undefined, status: undefined, limit: "20" });
   };
   const hasDraft = !!(kind || currency || userId.trim() || cohort.trim() || status);
+  // 草稿和已应用条件不一致时在「查询」旁写「条件未应用」（ST-18）；用户输入按查询时的换算比。
+  const draftChanged = (kind || undefined) !== applied.kind || (status || undefined) !== applied.status || (currency || undefined) !== applied.currency
+    || (cohort.trim() || undefined) !== applied.cohort || (userId.trim() ? teamUserId(userId) ?? userId.trim() : undefined) !== applied.userId;
 
   const groupMoney = (row: F5CommissionEvent) => row.amountUSDT !== undefined && row.amountNEX !== undefined
     ? `${amountText(row.amountUSDT)} USDT + ${amountText(row.amountNEX)} UVT` : "—";
@@ -533,7 +543,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       .some(ticket => ticket.status === "pending" && (ticket.obj === row.auditKey || ticket.obj.split(",").includes(row.id)));
     const retained = ctx.f5Proposals.some(original => original.f5Snapshot?.row?.id === row.id
       || original.f5Snapshot?.rows?.some(item => item.id === row.id));
-    return pending ? "这个对象已有待批单，等批准、驳回或撤回后再操作。" : retained ? "请先查询保存的原操作。" : undefined;
+    return pending ? "这个对象已有待审批的申请，批准、驳回或撤回后再操作。" : retained ? "请先查询保存的原操作。" : undefined;
   };
   const rowActions = (row: F5CommissionEvent): F5RowAction[] => {
     const list: F5RowAction[] = [];
@@ -575,11 +585,13 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const conclusion = () => {
     if (!data) {
       if (error) return <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshF5()}>重试</Button>}>奖励记录读不到，现在不知道有没有要处理的</Conclusion>;
-      return <Conclusion state="unknown">正在读取奖励记录…</Conclusion>;
+      return <Conclusion state="unknown">正在加载奖励记录…</Conclusion>;
     }
     const anomalies = data.anomalies.length;
     const recovery = statusCounts.recovery_pending ?? 0;
     const frozen = data.summary.frozenCount;
+    const awaiting = ctx.f5ApprovalRows.filter((ticket, index, rows) => ticket.status === "pending" && F5_DISPOSAL_CODES.includes(ticket.operationCode ?? "")
+      && rows.findIndex(other => other.id === ticket.id) === index).length;
     const parts = [
       anomalies ? <><b>{anomalies}</b> 条异常样本</> : null,
       recovery ? <><b>{recovery}</b> 笔待追回</> : null,
@@ -593,12 +605,13 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     ].filter(Boolean).join(" ") || undefined;
     const explain = <>
       <p>异常样本从最近 200 条奖励里挑出来；待追回、已冻结算全部记录，这三项不跟下方筛选变。等价格跟着类型、用户和注册月份筛选变，选了状态时不显示。</p>
-      <p>提交的处置要{APPROVER}在「操作记录与审批」批准；这页显示读到的本人待批申请。</p>
+      <p>提交的处置要{APPROVER}在「操作记录与审批」批准；这页显示读到的本人待审批申请。</p>
     </>;
-    const approvals = canReadA2 ? <Link className="rd-link" href="/platform/audit?domain=F" prefetch={false}>看待批准的处置</Link> : undefined;
+    const approvals = awaiting && canReadA2 ? <span className="f5-awaiting">{awaiting} 条处置待审批 · <Link className="rd-link" href="/platform/audit?domain=F" prefetch={false}>去操作记录与审批 →</Link></span> : undefined;
     if (!parts.length) return <Conclusion state="ok" hint={hint} explain={explain} action={approvals}>没有异常样本、待追回和冻结中的奖励</Conclusion>;
     return <Conclusion state="warn" hint={hint} explain={explain}
-      action={<>{anomalies ? <Button size="sm" onClick={() => setTab("anomalies")}>看异常样本</Button> : null}{approvals}</>}>
+      action={<>{anomalies ? <Button size="sm" onClick={() => setTab("anomalies")}>看异常样本</Button> : null}
+        {recovery ? <button type="button" className="rd-link" onClick={showRecovery}>看待追回 →</button> : null}{approvals}</>}>
       要核对：{parts.map((part, index) => <span key={index}>{index ? "、" : ""}{part}</span>)}
     </Conclusion>;
   };
@@ -611,8 +624,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     : data ? data.total === events.length ? `共 ${data.total.toLocaleString("en-US")} 笔 · 时间为${zoneNote()}` : `共 ${data.total.toLocaleString("en-US")} 笔符合条件 · 这一批 ${events.length} 笔 · 时间为${zoneNote()}` : undefined;
 
   const recordsPanel = (
-    <div className="f5-records">
+    <div className="f5-records" id="f5-records">
       <FilterBar onSubmit={submitFilters} querying={loading} onClear={clearFilters} canClear={hasDraft || appliedChips.length > 0}
+        result={draftChanged ? "条件未应用" : undefined}
         applied={appliedChips.length ? appliedChips : undefined}
         notice={userQueryError ? "查询条件有误：请填用户编码或正整数系统编号。这次没有查询。" : undefined}
         more={<>
@@ -630,6 +644,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           <p>按上面的筛选查，一批 20 笔，新的在前；「共 N 笔」是符合筛选的总数。点一行看这一笔是怎么来的、现在到哪一步。</p>
           <p>同一个结算组的 USDT 和 UVT 两笔，左边用竖线连在一起。结算时间是这笔最后一次变动的时间，不一定是发奖的时刻。</p>
           <p>导出使用已应用且读取成功的筛选条件，包含全部匹配记录。</p>
+          {canReissue && <p>行首勾选已冲正的记录，可以一起补发；好友奖励、来源已经退款的不能勾。</p>}
         </>}
         actions={canExport ? <Button size="sm" icon={<Download size={14} aria-hidden />} disabled={!!exportBlockedReason} onClick={exportAllFiltered}>导出筛选结果</Button> : undefined}>
         {reissueAvailable && selectedRows.length > 0 && (
@@ -640,7 +655,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         )}
           <Table label="奖励流水" className="f5-table f5-record-table" aria-busy={loading} data-select={canReissue ? "" : undefined} data-actions={rowWrite ? "" : undefined}>
             <thead><tr>
-              {canReissue && <Th control className="f5-col-pick"><Explain label="勾选做什么" content="勾选已冲正的记录，可以一起补发。好友奖励、来源已经退款的不能勾。" /></Th>}
+              {canReissue && <Th control className="f5-col-pick"><span className="rd-sr-only">勾选补发</span></Th>}
               <Th className="f5-col-id">奖励</Th>
               <Th className="f5-col-user">用户 / 来源</Th>
               <Th align="right" className="f5-col-amt">金额</Th>
@@ -706,8 +721,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       <F5RecoveryNotice rows={recoveryRows} />
       {/* 审批进度没读全：和 F2 的审批读取警示一个样子，一行，不挡下面的业务概览。 */}
       {ctx.f5ApprovalReadError && <Notice tone="warn" title="审批进度没读到"
-        action={<Button size="sm" disabled={loading} onClick={() => void ctx.refreshF5(applied)}>重新读取</Button>}>
-        {ctx.f5ApprovalReadError}读到之前，页面可能没标出已有待批单的记录。
+        action={<Button size="sm" disabled={loading} onClick={() => void ctx.refreshF5(applied)}>重试</Button>}>
+        {ctx.f5ApprovalReadError}读到之前，页面可能没标出已有待审批申请的记录。
       </Notice>}
       <fieldset className="f5-fieldset" aria-busy={loading}>
         <div className="f5-stack">

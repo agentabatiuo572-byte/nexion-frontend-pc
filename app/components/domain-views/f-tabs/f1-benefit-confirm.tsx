@@ -71,19 +71,19 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
       ? `${SUPER_APPROVER}批准后，之后付款的订单按新比例算；批准前仍按 ${shown(field, current)}，已经算好的不变。`
       : "确认后，之后付款的订单按新比例算；已经算好的不变。";
     return up
-      ? `${SUPER_APPROVER}批准后，这个月已经是 ${row.v} 的人仍按 ${shown(field, current)}，批准后升到 ${row.v} 的人这个月按新金额；下个月起所有 ${row.v} 按新金额。`
-      : `这个月已经是 ${row.v} 的人仍按 ${shown(field, current)}，从现在起升到 ${row.v} 的人这个月就按新金额；下个月起所有 ${row.v} 按新金额。`;
+      ? `${SUPER_APPROVER}批准后，之后升到 ${row.v} 的人按新金额锁定；已经锁定的仍按 ${shown(field, current)}，下个月起全部 ${row.v} 按新金额。`
+      : `确认后，之后升到 ${row.v} 的人按新金额锁定；已经锁定的仍按 ${shown(field, current)}，下个月起全部 ${row.v} 按新金额。`;
   };
   const note = (value: string) => {
     const text = value.trim();
     if (direction(text) === undefined || direction(text) === 0) return undefined;
     if (isRate(field)) {
       const per100 = text.replace(/^0+(?=\d)/, "");
-      return `改成 ${text}%：${field === "purchaseL1Rate" ? "一级好友" : "二级好友（好友的好友）"}每付款 100 USDT 买设备，${row.v} 用户的奖励从 ${current} 变成 ${per100} USDT 等值。`;
+      return `改成 ${text}%：${field === "purchaseL1Rate" ? "一级好友" : "二级好友（好友的好友）"}每付款 100 USDT 买设备，${row.v} 用户按基础比例算的奖励从 ${current} 变成 ${per100} USDT 等值；实际发多少还看结算时的暂停、拆分和上限。`;
     }
-    if (Number(text) === 0) return `改成 0：${row.v} 不发月薪，这一级的人领不了。`;
+    if (Number(text) === 0) return `改成 0：之后升到 ${row.v} 的人，次日起当月最高可领等级是 ${row.v}、月薪为 0，当月还没领的就领不了；已按原金额锁定的照常领。`;
     if (prevSalary !== undefined && compareDecimal(text, prevSalary) === -1) {
-      return `改成 ${amountDisplay(text)}：比 ${rows[index - 1].v} 的 ${amountDisplay(prevSalary)} 还低，这个月从 ${rows[index - 1].v} 升到 ${row.v} 的人按 ${row.v} 领 ${amountDisplay(text)} USDT。`;
+      return `改成 ${amountDisplay(text)}：比 ${rows[index - 1].v} 的 ${amountDisplay(prevSalary)} 还低。之后从 ${rows[index - 1].v} 升到 ${row.v} 的人，次日起当月最高可领等级是 ${row.v}，当月还没领的按 ${amountDisplay(text)} USDT 领。`;
     }
     return undefined;
   };
@@ -95,7 +95,7 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
       {neighbors && <Fact k="相邻等级">{neighbors}</Fact>}
       <Fact k="这一级人数">{row.v} {row.pop.toLocaleString("en-US")} 人</Fact>
       {field === "monthlySalaryUsdt" && direction(next) === -1 && <Fact k="能否改回" tone="warn">
-        改回 {amountDisplay(current)} 要{SUPER_APPROVER}批准；批准前按 {amountDisplay(next.trim())} 锁定的不补
+        改回 {amountDisplay(current)} 要{SUPER_APPROVER}批准；在那之前按 {amountDisplay(next.trim())} 锁定的，改回后也不补差
       </Fact>}
     </Facts>;
   };
@@ -154,7 +154,7 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
     icon="sliders"
     briefKind={(values) => direction(values.value ?? "") === 1 ? "funds" : "config"}
     action={`调整 ${row.v} 等级权益 · ${name}`}
-    title={`调整 ${row.v} 的${name}`}
+    title={`调整 ${row.v} 的${name.replace(/^好友购买奖励 · (.)级$/, "$1级好友购买奖励比例")}`}
     effect={effect}
     facts={facts}
     statedBrief={(values) => ({ impact: impact(values), check: "核对新值和相邻等级；理由写清依据或工单号。" })}

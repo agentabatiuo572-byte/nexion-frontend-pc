@@ -13,6 +13,7 @@ import { f4Decimal } from "@/lib/admin/f4-money";
 import { F2_BOOTSTRAP_SLOT } from "@/lib/admin/f2-approval";
 import { F2BootstrapReview, f2BootstrapUsesRank, type F2RankedRange, F2_APP_LIMIT_COPY, F2_APP_TOTAL_LIMIT, f2DecimalTimes, f2PctSum, f2SampleUsdt, parseF2BootstrapAfter, type F2BootstrapRow } from "./f2-bootstrap-ticket";
 import { LAYERS, LAYER_WHO, SAMPLE_ORDER, f2Ranked, num, pctAdd, pctSample, rangeText, rankedRange, stamp, type F2Confirm, type Layer } from "./f2-shared";
+import { SUPER_APPROVER } from "./f1-shared";
 import type { FViewCtx } from "./types";
 
 /** 填到一半的七层。 */
@@ -21,7 +22,6 @@ export const emptyF2BootstrapDraft = (): F2BootstrapDraft => ({
   cells: { L1: { usdt: "10", nex: "" }, L2: { usdt: "", nex: "" }, L3: { usdt: "", nex: "" }, L4: { usdt: "", nex: "" }, L5: { usdt: "", nex: "" }, L6: { usdt: "", nex: "" }, L7: { usdt: "", nex: "" } },
 });
 
-const BOOT_APPROVER = "另一位管理员";
 const COVERAGE_CHECK = "批准时检查兑付覆盖率，低于红线不会执行。";
 
 /** 一格的问题；没问题返回 undefined。百分号和千分位逗号照后端去掉再读。 */
@@ -67,7 +67,7 @@ export function F2Bootstrap({ ctx, openConfirm, draft, setDraft, cap }: {
   if (pending) {
     const rows = parseF2BootstrapAfter(pending.after);
     return <div className="f2-boot">
-      <Notice tone="warn" title={<>首次配置在等{BOOT_APPROVER}批准<StatusTag tone="warn" icon={Clock3}>待审批</StatusTag></>} action={auditLink}>
+      <Notice tone="warn" title={<>首次配置在等{SUPER_APPROVER}批准<StatusTag tone="warn" icon={Clock3}>待审批</StatusTag></>} action={auditLink}>
         <p>{pending.operator}{pending.mine ? "（你）" : ""} 提交于 {pending.rawTs ? stamp(pending.rawTs) : pending.ts} · 审批单 <span data-mono>{pending.id}</span></p>
         <p>批准前七层仍没有规则，也不能再提交首次配置。</p>
       </Notice>
@@ -79,7 +79,7 @@ export function F2Bootstrap({ ctx, openConfirm, draft, setDraft, cap }: {
   if (!draft) return (
     <Notice tone="warn" title="还没有配置团队购买奖励"
       action={<Button variant="primary" disabledReason={ctx.f2WriteBlocked(F2_BOOTSTRAP_SLOT)} onClick={() => setDraft(emptyF2BootstrapDraft())}>首次配置</Button>}>
-      一次填好七层，{BOOT_APPROVER}批准后生效；之后还要单独申请启用，才开始结算。
+      一次填好七层，{SUPER_APPROVER}批准后生效；之后还要单独申请启用，才开始结算。
     </Notice>
   );
   return <BootstrapForm ctx={ctx} openConfirm={openConfirm} draft={draft} setDraft={setDraft} cap={cap} />;
@@ -93,8 +93,8 @@ function BootstrapGrid({ rows, ranked }: { rows: readonly F2BootstrapRow[]; rank
   const others = f2PctSum(rows.filter((_, index) => index > 1).map((row) => row.usdtPct));
   const sumText = !byRank ? `${num(f2PctSum(rows.map((row) => row.usdtPct)))}%` : ranked ? rangeText(pctAdd(pctAdd(others, ranked.l1.min), ranked.l2.min), pctAdd(pctAdd(others, ranked.l1.max), ranked.l2.max)) : "—";
   return (
-    <Table label="待批准的七层" className="f2-boot-grid">
-      <thead><tr><Th>待批准的值</Th>{rows.map((row) => <Th key={row.layer} align="right">{row.layer}</Th>)}<Th align="right">七层合计</Th></tr></thead>
+    <Table label="待审批的七层" className="f2-boot-grid">
+      <thead><tr><Th>待审批的值</Th>{rows.map((row) => <Th key={row.layer} align="right">{row.layer}</Th>)}<Th align="right">七层合计</Th></tr></thead>
       <tbody>
         <tr><Td>USDT 比例</Td>{rows.map((row, index) => <Td key={row.layer} align="right">{byRank && index < 2 ? <span className="f2-ranked"><strong>{cell(index)}</strong><span className="f2-ranked-sub">按受益人等级</span></span> : `${num(row.usdtPct)}%`}</Td>)}<Td align="right"><strong>{sumText}</strong></Td></tr>
         <tr><Td>UVT 系数</Td>{rows.map((row) => <Td key={row.layer} align="right">{num(row.nexPerUsd)}</Td>)}<Td align="right">—</Td></tr>
@@ -138,7 +138,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
     openConfirm({
       slot: F2_BOOTSTRAP_SLOT,
       action: "首次配置 L1–L7 团队购买奖励", title: "首次配置团队购买奖励", briefKind: "config", amplify: true, dialogClassName: "f2-confirm",
-      effect: <StatusTag tone="progress" filled explain={`${BOOT_APPROVER}在「操作记录与审批」批准后，七层规则一次建好；结算要另外申请启用。`}>批准后生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后，七层规则一次建好；结算要另外申请启用。`}>批准后生效</StatusTag>,
       facts: <Facts>
         <Fact k="要建立">L1–L7 七层规则</Fact>
         <Fact k="七层合计占订单">{ranked ? sumRange ? `${rangeText(sumRange.low, sumRange.high)}，示例 ${num(SAMPLE_ORDER)} USDT 订单分出 ${rangeText(pctSample(sumRange.low), pctSample(sumRange.high), "USDT")}` : "—"
@@ -151,10 +151,9 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
       </div>,
       statedBrief: { impact: "批准后七层规则一次建好；整体结算不会自动启用，要另外申请。", check: ranked ? "逐层核对下表；第 1、2 层按受益人等级。" : "逐层核对下表；第 1 层固定 10%。" },
       detail: "七层都没有规则时才能首次配置，以前配置过的会被拒。",
-      completionCopy: `批准人要是${BOOT_APPROVER}，需有审批批准权限和「团队奖励比例」权限；批准前七层仍没有规则。`,
       coverageCheck: COVERAGE_CHECK, coverageLead: "启用结算后，平台按这些比例付团队奖励",
       submit: async (reason) => { await ctx.bootstrapF2Unilevel(layers, reason); setDraft(null); },
-      done: `首次配置已提交审批，等${BOOT_APPROVER}批准`,
+      done: "已提交，等待审批后执行",
     });
   };
 

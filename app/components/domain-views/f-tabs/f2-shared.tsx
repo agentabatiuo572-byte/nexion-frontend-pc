@@ -131,7 +131,7 @@ export type F2Confirm = {
   briefKind: OperatorBriefKind;
   amplify: boolean;
   detail: ReactNode;
-  completionCopy: string;
+  completionCopy?: string;
   coverageCheck: string;
   coverageLead?: ReactNode;
   edit?: EditSpec;

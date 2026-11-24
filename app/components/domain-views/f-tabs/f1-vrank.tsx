@@ -37,7 +37,7 @@ import { F1SalaryClaims } from "./f1-salary";
 import { V8_PERKS, V8_TERMS, ratePct, type F1BenefitField, type F1V8Candidate } from "./f1-rank-types";
 import { amountDisplay } from "@/lib/format";
 import { F1RankHow } from "./f1-rank-how";
-import { ADMIN_APPROVER, F1ConfirmHost, REWARD_KIND, SUPER_APPROVER, rewardKind, rewardLine, rewardText, type F1Confirm } from "./f1-shared";
+import { F1ConfirmHost, REWARD_KIND, SUPER_APPROVER, VRANK_APPROVER, rewardKind, rewardLine, rewardText, type F1Confirm } from "./f1-shared";
 
 type View = "ladder" | "v8" | "promotions" | "payouts" | "salary" | "howto";
 type Lens = "pop" | "selfBuy" | "teamGv" | "directRefs" | "l1" | "salary";
@@ -161,11 +161,11 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       v8Review: true,
       recoverOriginal,
       action: "手动调整会员等级",
-      title: `V8 审核通过 · ${name}`,
+      title: `V8 审核通过：${name}`,
       briefKind: "config",
       confirmLabel: "提交审批",
-      effect: <StatusTag tone="progress" filled icon={Clock3} explain={`${ADMIN_APPROVER}（需有人工调级权限和审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
-      statedBrief: { impact: `另一位有人工调级权限的管理员批准后，${name}升到 V8；批准前还是 V7，名单里这一行显示待审批。`, check: "核对推荐信和官方审核；理由写推荐信来自哪位 V8、官方审核的依据。" },
+      effect: <StatusTag tone="progress" filled icon={Clock3} explain={`${VRANK_APPROVER}（还要有审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
+      statedBrief: { impact: `${VRANK_APPROVER}批准后，${name}升到 V8；批准前还是 V7，名单里这一行显示待审批。`, check: "核对推荐信和官方审核；理由写推荐信来自哪位 V8、官方审核的依据。" },
       facts: <Facts>
         {lead
           ? <Fact k="V8 晋级奖励 · 发给本人" lead>{lead.main}{lead.unit && <span className="rd-fact-unit">{lead.unit}</span>}<small className="f1-lead-note">以前领过 V8 晋级奖励的不再发</small></Fact>
@@ -205,23 +205,23 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   ];
   const v8Ready = typeof v8Count === "number" && v8Count > 0 && view !== "v8";
 
-  const tabBar = <div className="f1-tabs-row">
-    <PageTabs label="团队等级晋升" value={view} items={tabs} onChange={setView} ids={ids} />
-    {v8Ready && <p className="f1-tabs-note">{v8Count} 位 V7 已满足 V8 数值条件，可审核 · <button type="button" className="rd-link" onClick={() => setView("v8")}>去 V8 审核 →</button></p>}
-  </div>;
+  const tabBar = <>
+    <div className="f1-tabs-row"><PageTabs label="团队等级晋升" value={view} items={tabs} onChange={setView} ids={ids} /></div>
+    {v8Ready && <p className="f1-tabs-note">有 V7 已满足 V8 数值条件，等审核 · <button type="button" className="rd-link" onClick={() => setView("v8")}>去 V8 审核 →</button></p>}
+  </>;
 
   if (rows.length === 0) {
     const body = ctx.f1Loading
       ? <><Conclusion state="unknown">正在读取会员等级…</Conclusion>{recovery}<Panel title="九级阶梯"><BlockState state="loading" title="正在读取会员等级" /></Panel></>
       : ctx.f1Error
-        ? <><Conclusion state="danger">会员等级读取失败，这部分没有判断</Conclusion>
+        ? <><Conclusion state="unknown" hint="点页头「刷新」重试；其他页签照常能看。">会员等级：暂时无法判断</Conclusion>
           {recovery}
           <Panel title="九级阶梯"><BlockState state="error" title="会员等级读取失败" detail={ctx.f1Error} onRetry={() => void ctx.refreshF1Membership()} /></Panel></>
         : canWrite
           ? <>{recovery}<F1VrankBootstrap ctx={ctx} openConfirm={setConfirm} /></>
           : <><Conclusion state="neutral" icon={Layers3}>还没有建立会员等级</Conclusion>
             {recovery}
-            <Panel title="九级阶梯"><BlockState state="empty" title="还没有建立会员等级" detail="有修改权限的同事可以发起首次配置，另一位管理员批准后这里才会出现九级。" /></Panel></>;
+            <Panel title="九级阶梯"><BlockState state="empty" title="还没有建立会员等级" detail="有修改权限的同事可以发起首次配置，另一位超级管理员批准后这里才会出现九级。" /></Panel></>;
     if (!ctx.f1Error && !ctx.f1Loading) return <div className="f1-page">{header}{body}{dialogs}</div>;
     return <div className="f1-page">{header}
       {view === "v8" || view === "salary" ? recovery : null}
@@ -335,7 +335,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           const isSelected = row.v === selected.v;
           const rewards = rewardsOf(row.v);
           const kinds = [...new Set(rewards.map((item) => rewardKind(item.type)))];
-          const title = titlesByLevel[row.v] ?? row.label;
+          const title = titlesByLevel[row.v] && titlesByLevel[row.v] !== row.v ? titlesByLevel[row.v] : "";
           // 柱的满高 72px，九根柱共用一个刻度；0 不画柱。
           const height = value && value > 0 ? Math.max(3, (value / lensMax) * 72) : 0;
           const valueText = lensText(row, value);
@@ -343,8 +343,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
             <button key={row.v} type="button" role="tab" id={ladderIds.tab(row.v)} aria-selected={isSelected} aria-controls={ladderIds.panelId(selected.v)}
               tabIndex={isSelected ? 0 : -1} onKeyDown={onLadderKey} onClick={() => select(row.v)}
               className="f1-step" data-selected={isSelected ? "" : undefined}
-              aria-label={`${row.v} ${title}，${lensInfo.label} ${valueText}${value && value > 0 && lens !== "l1" ? ` ${lensInfo.unit}` : ""}，${rewards.length ? `${rewards.length} 项晋级奖励` : "没有晋级奖励"}${pendingApprovalRanks.has(row.v) ? "，有待审批的申请" : ""}${pendingByRow[row.v] ? `，${pendingByRow[row.v]} 项修改结果未知` : ""}`}>
-              <span className="f1-step-head"><b>{row.v}</b><span className="f1-step-title" title={title}>{title || "—"}</span></span>
+              aria-label={`${row.v}${title ? ` ${title}` : ""}，${lensInfo.label} ${valueText}${value && value > 0 && lens !== "l1" ? ` ${lensInfo.unit}` : ""}，${rewards.length ? `${rewards.length} 项晋级奖励` : "没有晋级奖励"}${pendingApprovalRanks.has(row.v) ? "，有待审批的申请" : ""}${pendingByRow[row.v] ? `，${pendingByRow[row.v]} 项修改结果未知` : ""}`}>
+              <span className="f1-step-head"><b>{row.v}</b>{title && <span className="f1-step-title" title={title}>{title}</span>}</span>
               <span className="f1-step-col" aria-hidden>
                 <span className="f1-step-value" data-empty={!value ? "" : undefined}>{valueText}{ratio && <small className="f1-step-ratio">×{ratio}</small>}</span>
                 {height > 0 && <svg className="f1-step-bar" data-lens={lens} width="36" height={height} viewBox={`0 0 36 ${height}`} aria-hidden><rect width="36" height={height} rx="2" /></svg>}
@@ -365,7 +365,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   );
 
   const openThreshold = (row: F1VRankRow, field: F1ConditionField) => setPolicyEditor({ row, action: "threshold", field, valuation: ctx.f1RewardValuation });
-  const detail = <RankDetail row={selected} rows={rows} ctx={ctx} rewards={rewardsOf(selected.v)} title={titlesByLevel[selected.v] ?? selected.label}
+  const detail = <RankDetail row={selected} rows={rows} ctx={ctx} rewards={rewardsOf(selected.v)} title={titlesByLevel[selected.v] && titlesByLevel[selected.v] !== selected.v ? titlesByLevel[selected.v] : ""}
     panel={ladderIds.panel(selected.v)} canWrite={canWrite} pendingOf={pendingOf} hasPendingApproval={pendingApprovalRanks.has(selected.v)} hasUnknownOperation={rowPending(selected) > 0}
     onThreshold={openThreshold} onBenefit={(field) => setPolicyEditor({ row: selected, action: "threshold", field, valuation: ctx.f1RewardValuation })}
     onGoV8={v8Review ? () => setView("v8") : undefined} salaryPresent={salaryPresent}
@@ -384,14 +384,14 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       proposalSlot: "f-config:F.vrank.permanent",
       action, briefKind: "record", title: next === "off" ? "关闭不降级保护" : "开启不降级保护",
       confirmTone: next === "off" ? "danger" : "primary", confirmLabel: "提交审批",
-      effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有不降级保护权限和审批批准权限）在「操作记录与审批」批准后才生效；批准前仍按现在的设置评估。`}>批准后生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后才生效；批准前仍按现在的设置评估。`}>批准后生效</StatusTag>,
       facts: <Facts><Fact k="不降级保护"><Change from={now} to={next === "off" ? "关闭" : "开启"} /></Fact><Fact k="影响范围">九级全部用户</Fact></Facts>,
       statedBrief: next === "off"
         ? { impact: "批准后，用户下一次被评估时没达标就降到实际达到的等级，团队激励池票数按所在等级算；已发的奖励不收回。不是批准时一次扫描全部用户。", check: "核对是否要让没达标的用户降级；理由写清依据或工单号。" }
         : { impact: "批准后，用户下一次被评估时没达标也保留现在的等级；已经降过级的用户不会恢复原来的等级，人工降级不受影响。", check: "核对开启范围是全部九级；理由写清依据或工单号。" },
       detail: "不降级保护",
       submit: async (reason) => { await ctx.updateF1Config("F.vrank.permanent", next, reason); },
-      done: `${action} 已提交审批，等另一位管理员批准`,
+      done: "已提交，等待审批后执行",
     });
   };
   const openPrize = () => {
@@ -399,7 +399,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     setConfirm({
       proposalSlot: "f-config:F.prize.name",
       action, briefKind: "config", title: prizeName ? "修改奖品名称" : "配置奖品名称", confirmLabel: "提交审批",
-      effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有团队等级修改权限和审批批准权限）在「操作记录与审批」批准后才生效；批准前仍显示原来的名字。`}>批准后生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后才生效；批准前仍显示原来的名字。`}>批准后生效</StatusTag>,
       edit: { kind: "text", current: prizeName, unit: "奖品名称" },
       statedBrief: { impact: "只改显示的名字，不影响晋升和奖励发放。", check: "核对名字写法；1–160 字。" },
       detail: "会员等级的奖品名称，只用于显示，不影响奖励和晋升。",
@@ -407,13 +407,13 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         if (!newValue) throw new Error("请填写新值");
         await ctx.updateF1Config("F.prize.name", newValue, reason);
       },
-      done: `${action} 已提交审批，等另一位管理员批准`,
+      done: "已提交，等待审批后执行",
     });
   };
   const openTitles = () => setConfirm({
     proposalSlot: "f-config:F.vrank.titles",
     action: "设置各级头衔", briefKind: "config", title: "设置各级头衔", confirmLabel: "提交审批",
-    effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有团队等级修改权限和审批批准权限）在「操作记录与审批」批准后才生效；批准前仍按原来的头衔显示。`}>批准后生效</StatusTag>,
+    effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后才生效；批准前仍按原来的头衔显示。`}>批准后生效</StatusTag>,
     statedBrief: { impact: "只改这页和发给 App 的头衔文字，不影响晋升条件和奖励；App 现在只显示 V0–V8，不显示头衔。", check: "每一级都要填。" },
     businessForm: {
       kind: "multi-field",
@@ -429,16 +429,16 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         titles[row.v] = title;
       }
       await ctx.updateF1Config("F.vrank.titles", JSON.stringify(titles), reason);
-      ctx.toast("各级头衔已提交，批准后生效；批准前仍按原设置显示");
+      ctx.toast("已提交，等待审批后执行");
     },
   });
   const titleCount = Object.keys(titlesByLevel).length;
   const shared = (
-    <Panel title="九级共用的设置" icon={Settings2} tone="role-4" explain="这几项对九级同时生效，修改都要提交审批，由另一位管理员批准。">
+    <Panel title="九级共用的设置" icon={Settings2} tone="role-4" explain="这几项对九级同时生效，修改都要提交审批，由另一位超级管理员批准。">
       <ConfigList label="九级共用的设置">
         <ConfigRow name="不降级保护" value={protectionValue}
           what="没达标时保不保留现在的等级。"
-          when="提交审批，另一位管理员批准后生效；之后每次评估用户时按新设置判断，不是批准时扫描全部用户。"
+          when="提交审批，另一位超级管理员批准后生效；之后每次评估用户时按新设置判断，不是批准时扫描全部用户。"
           effect="开启：下一次评估没达标也保留现在的等级，不会把已经降级的人恢复，人工降级不受这项限制。关闭：降到实际达到的等级，团队激励池票数按所在等级算，已发的奖励不收回。"
           action={canProtect ? <span className="f1-row-actions">
             {permanent !== "on" && <Button size="sm" disabled={ctx.f1Loading || !!ctx.f1Error} onClick={() => openProtection("on")}>开启保护</Button>}
@@ -447,12 +447,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         <ConfigRow name="奖品名称" value={prizeName ? <span className="f1-strong">{prizeName}</span> : <span className="f1-weak">未配置</span>}
           what="会员等级奖品的显示名字，不影响奖励和晋升。"
           where="这页显示；这个名字也会发给 App，App 现在没有地方显示它。没配置时发默认名。"
-          when="提交审批，另一位管理员批准后生效。"
+          when="提交审批，另一位超级管理员批准后生效。"
           action={canWrite ? <Button size="sm" disabled={ctx.f1Loading || !!ctx.f1Error} onClick={openPrize}>{prizeName ? "修改" : "配置"}</Button> : undefined} />
         <ConfigRow name="各级头衔" value={<span className="f1-strong">已设置 {titleCount}/{rows.length} 级</span>}
           what="每一级的称呼，只用于显示，不影响奖励和晋升。"
           where="这页的等级卡和发给 App 的等级名；App 现在只显示 V0–V8，不显示头衔。"
-          when="提交审批，另一位管理员批准后生效；每一级都要填。"
+          when="提交审批，另一位超级管理员批准后生效；每一级都要填。"
           action={canWrite ? <Button size="sm" disabled={ctx.f1Loading || !!ctx.f1Error} onClick={openTitles}>设置头衔</Button> : undefined} />
         <ConfigRow name="团队激励池" value={leadership
           ? <span className="f1-strong">{leadership.unlockRank > 0 ? `从 V${leadership.unlockRank} 起有票数` : "没有等级有票数"}</span>
@@ -493,7 +493,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       briefKind: (value) => !skipsOverrideCoverage(value) && value.direction !== "rollback" && (ctx.rewards[value.targetV] ?? []).some((reward) => reward.type === "usdt" || reward.type === "uvt") ? "funds" : "config",
       amplify: true,
       confirmLabel: "提交审批",
-      effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有人工调级权限和审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled explain={`${VRANK_APPROVER}（还要有审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
       coverageLead: "升级会按目标等级的奖励模板发奖，可能让平台多付钱",
       coverageCheck: "批准执行时按目标等级发奖励，发资金奖励前检查兑付覆盖率。",
       facts: <Facts><Fact k="现在的等级">这页读不到；批准时按当时的等级核对方向</Fact></Facts>,
@@ -502,12 +502,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         const target = value.targetV || "目标等级";
         if (value.direction === "rollback") return {
           impact: `批准后 ${user} 降到 ${target}：不收回已发的奖励，不受不降级保护限制。目标等级必须低于当时的等级，否则批准时被拒。`,
-          check: "先在「晋升记录」按用户编号查这位用户最近一次等级变化，确认现在的等级再选。",
+          check: "先在「晋升记录」查这位用户上次的等级变化，确认现在的等级再选。",
         };
         const rewards = value.targetV ? (ctx.rewards[value.targetV] ?? []).map((item) => rewardLine(item, ctx)) : [];
         return {
           impact: `批准后 ${user} 升到 ${target}：只发 ${target} 这一级的奖励模板${value.targetV ? `（${rewards.length ? rewards.join("、") : "现在没有奖励"}）` : ""}，中间跳过的等级不补发。目标等级必须高于当时的等级，否则批准时被拒。`,
-          check: "先在「晋升记录」按用户编号查这位用户最近一次等级变化，确认现在的等级再选。",
+          check: "先在「晋升记录」查这位用户上次的等级变化，确认现在的等级再选。",
         };
       },
       businessForm: {
@@ -667,7 +667,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
   ];
 
   return (
-    <Panel {...panel} className="f1-detail" title={<>{row.v}<span className="f1-detail-title">{title}</span></>} explainLabel={`${row.v} 的说明`}
+    <Panel {...panel} className="f1-detail" title={<>{row.v}{title && <span className="f1-detail-title">{title}</span>}</>} explainLabel={`${row.v} 的说明`}
       sub={`${fmt(row.pop)} 人 · 占 ${pct(row.pop, total)}`} icon={Layers3} tone="role-3"
       explain={top ? "左边是升到 V8 要满足什么，右边是 V8 拿什么。V8 不自动晋级，审核后人工升级。" : "左边是升到这一级要满足什么，右边是升到这一级拿什么。用户每次被评估最多升一级，所以不能跳过这一级。"}>
       {hasPendingApproval && <Notice tone="warn" title={`${row.v} 有一张待审批的申请`}

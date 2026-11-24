@@ -153,16 +153,6 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
 }
 
 /** 各类奖励：每类的笔数和两种币金额；条是这一类占全部笔数的多少（按笔数算，不按金额）。点一类筛下方列表。 */
-/** 几个金额原文相加：去掉千分位按小数位对齐用整数加，不舍入；有读不懂的就返回 null。 */
-function moneySum(values: string[]) {
-  const parts = values.map((value) => value.replace(/,/g, "").trim());
-  if (parts.some((part) => !/^\d+(\.\d+)?$/.test(part))) return null;
-  const scale = Math.max(0, ...parts.map((part) => (part.split(".")[1] ?? "").length));
-  const total = parts.reduce((sum, part) => { const [whole, fraction = ""] = part.split("."); return sum + BigInt(whole + fraction.padEnd(scale, "0")); }, BigInt(0));
-  const digits = total.toString().padStart(scale + 1, "0");
-  const fraction = digits.slice(digits.length - scale).replace(/0+$/, "");
-  return amountDisplay(`${digits.slice(0, digits.length - scale)}${fraction ? `.${fraction}` : ""}`);
-}
 /** 占全部笔数的比例，一位小数（TX-23），去掉 .0；不到 0.1% 写「<0.1%」。 */
 const sharePct = (count: number, total: number) => {
   const value = (count / total) * 100;
@@ -172,9 +162,6 @@ const sharePct = (count: number, total: number) => {
 export function F5KindTiles({ data, kindFilter, onKind, open, onOpenChange }: { data: F5CommissionAuditOverview; kindFilter: string; onKind: (kind: string) => void; open: boolean; onOpenChange: (open: boolean) => void }) {
   const counts = data.commissionKinds.map((item) => Number.parseInt(item.ct, 10) || 0);
   const total = counts.reduce((sum, value) => sum + value, 0);
-  const monies = data.commissionKinds.map((item) => splitMoneyLabel(item.amt));
-  const allUsdt = monies.every(Boolean) ? moneySum(monies.map((money) => money!.usdt)) : null;
-  const allUvt = monies.every(Boolean) ? moneySum(monies.map((money) => money!.uvt)) : null;
   const allOn = kindFilter === "";
   // 单选组（CP-62）：Tab 只停在选中的那一格，方向键在格子之间移动焦点，回车或空格选中。
   const moveFocus = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -187,9 +174,9 @@ export function F5KindTiles({ data, kindFilter, onKind, open, onOpenChange }: { 
   };
   return (
     <Fold icon={Layers3} tone="role-1" title={`${kindCountLabel(data.commissionKinds.length)}奖励`} open={open} onOpenChange={onOpenChange}
-      summary={`全部记录 · ${data.commissionKinds.length} 类共 ${total.toLocaleString("en-US")} 笔${kindFilter ? ` · 正在看${KIND_LABELS[kindFilter] ?? "所选类型"}` : ""}`}
+      summary={`全部记录 · ${data.commissionKinds.length} 类${kindFilter ? ` · 正在看${KIND_LABELS[kindFilter] ?? "所选类型"}` : ""}`}
       explain={<><p>每类的笔数和两种币的金额，算全部记录，不跟下方筛选变。条是这一类占全部笔数的比例，按笔数算，不按金额。</p>
-        <p>好友购买奖励只有购买拆分开启时的第 1 层；第 2 层和拆分停用时的第 1 层记为团队购买奖励，行内写第几层。点「全部类型」清除类型筛选。</p></>}>
+        <p>按现行七层规则：好友购买奖励只有购买拆分开启时的第 1 层；第 2 层和拆分停用时的第 1 层记为团队购买奖励，行内写第几层。以前按旧规则生成的记录保留当时的类型。点「全部类型」清除类型筛选。</p></>}>
       <div className="f5-kinds" role="radiogroup" aria-label="按奖励类型筛选下方流水" onKeyDown={moveFocus}>
         {data.commissionKinds.map((item, index) => {
           const money = splitMoneyLabel(item.amt);
@@ -213,17 +200,9 @@ export function F5KindTiles({ data, kindFilter, onKind, open, onOpenChange }: { 
           );
         })}
         <button type="button" className="f5-kind" data-kind="all" role="radio" aria-checked={allOn} tabIndex={allOn ? 0 : -1}
-          aria-label={`全部类型 ${total} 笔，${allOn ? "现在看的是全部类型" : "点一下清除类型筛选"}`} onClick={() => onKind("")}>
+          aria-label={`全部类型，${allOn ? "现在看的是全部类型" : "点一下清除类型筛选"}`} onClick={() => onKind("")}>
           <span className="f5-kind-head"><span className="f5-kind-name">全部类型</span></span>
-          <span className="f5-kind-count" data-zero={total ? undefined : ""}>{total.toLocaleString("en-US")}<small>笔</small></span>
-          <RatioBar quiet label="全部类型占全部笔数" value={total} total={total} valueText={`全部 ${total} 笔`} tone="role-1"
-            state={total === 0 ? "empty" : "ready"} emptyText="还没有记录" />
-          {allUsdt !== null && allUvt !== null ? (
-            <span className="f5-kind-money">
-              <span data-zero={/^0(\.0+)?$/.test(allUsdt) ? "" : undefined}>{allUsdt} <small>USDT</small></span>
-              <span data-zero={/^0(\.0+)?$/.test(allUvt) ? "" : undefined}>{allUvt} <small>UVT</small></span>
-            </span>
-          ) : <span className="f5-kind-money" data-empty="">金额读不懂</span>}
+          <span className="f5-kind-money" data-empty="">{allOn ? "现在看的是全部类型" : "点一下清除类型筛选"}</span>
         </button>
       </div>
     </Fold>

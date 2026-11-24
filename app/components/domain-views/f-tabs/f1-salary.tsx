@@ -84,7 +84,8 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1VRankRow[
   const current = items.find((item) => item.claimNo === openNo) ?? null;
   const at = current ? items.indexOf(current) : -1;
   return <>
-    <FilterBar onSubmit={() => run(draft)} querying={state.loading} onClear={() => run(EMPTY)} canClear={hasFilter} applied={chips} notice={queryError ? "查询条件有误：请填用户编码或正整数系统编号。这次没有查询。" : undefined}>
+    <FilterBar onSubmit={() => run(draft)} querying={state.loading} onClear={() => run(EMPTY)} canClear={hasFilter} applied={chips} notice={queryError ? "查询条件有误：请填用户编码或正整数系统编号。这次没有查询。" : undefined}
+      result={draft.user.trim() !== applied.user || draft.month !== applied.month || draft.rank !== applied.rank ? "条件未应用" : undefined}>
       <FilterField grow><Input aria-label="领取用户编码或系统编号" placeholder="用户编码或系统编号" value={draft.user}
         onChange={(event) => { setDraft({ ...draft, user: event.target.value }); setQueryError(false); }} /></FilterField>
       <FilterField><Select aria-label="月薪月份" value={draft.month} onChange={(value) => setDraft({ ...draft, month: value })}
@@ -93,7 +94,7 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1VRankRow[
         options={[{ value: "", label: "全部等级" }, ...salaryRanks.map(rank => ({ value: rank, label: rank }))]} /></FilterField>
     </FilterBar>
     <Panel title="月薪领取记录" icon={Banknote} tone="role-1" flush sub={items.length ? `已加载 ${items.length} 条` : undefined}
-      explain={<><p>用户每领一次记一条，一个月最多一条；等级是这个月到达过的最高等级。</p>
+      explain={<><p>用户每领一次记一条，一个月最多一条；等级和金额是这次实际领取用的等级和锁定的金额，领取后再升级不补差。</p>
         <p>只能当月领，没领的下月作废；月底最后一天升到当月新的最高等级的，下月 1 号当天还能领上个月的，行里写「1 号领上月」。</p>
         <p>领到的月薪直接进可用余额，不冷却。按领取时间倒序，每次加载 100 条；账单号可以在「账本与账单核对」查。</p></>}>
       <Table label="月薪领取记录" className="f1-table f1-salary-table">
@@ -108,7 +109,7 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1VRankRow[
                 : <TableMessage columns={6}>还没有人领过月薪；V2 及以上的用户在 App 领取后会出现在这里</TableMessage>
               : items.map((item) => (
                 <Tr key={item.claimNo} selected={item.claimNo === openNo} onOpen={() => setOpenNo(item.claimNo)}>
-                  <Td><Cell main={<span data-mono="">{item.claimNo}</span>} sub={item.billNo ? <span data-mono="">账单 {item.billNo}</span> : undefined} /></Td>
+                  <Td><Cell title={item.claimNo} main={<span data-mono="">{item.claimNo}</span>} sub={item.billNo ? <span data-mono="">账单 {item.billNo}</span> : undefined} /></Td>
                   <Td><Cell mono main={item.userCode || item.userId} sub={<span className="f5-sans">{item.nickname || "—"}</span>} /></Td>
                   <Td><Cell num main={item.month} sub={lateClaim(item) ? `${item.rankCode} · 1 号领上月` : item.rankCode} /></Td>
                   <Td align="right"><Cell num main={amountDisplay(item.amountUsdt)} /></Td>
@@ -128,7 +129,7 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1VRankRow[
         {current && <KeyValues rows={[
           { key: "user", label: "用户", value: <>{current.nickname || "—"} · <span data-mono="">{current.userCode || current.userId}</span></> },
           { key: "month", label: "月薪月份", value: current.month },
-          { key: "rank", label: "等级", value: current.rankCode, explain: "这个月到达过的最高等级。" },
+          { key: "rank", label: "等级", value: current.rankCode, explain: "这次实际领取用的等级，金额按它锁定；领取后再升级不补差。" },
           ...(lateClaim(current) ? [{ key: "late", label: "领取方式", value: "1 号领上月", explain: "上个月最后一天升到当月新的最高等级，只能在下月 1 号当天领上个月的。" }] : []),
           { key: "amt", label: "金额", value: `${amountDisplay(current.amountUsdt)} USDT` },
           { key: "to", label: "到账", value: "直接进可用余额，不冷却" },

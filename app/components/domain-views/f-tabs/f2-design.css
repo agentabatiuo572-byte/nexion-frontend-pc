@@ -10,6 +10,7 @@
 .f2-page .f2-settle-state { display: grid; gap: 4px; min-width: 0; }
 .f2-page .f2-settle-name { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
 .f2-page .f2-settle-name[data-state="running"] { color: var(--rd-ok); }
+.f2-page .f2-settle-since { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 400; color: var(--rd-text-2); }
 .f2-page .f2-settle-name[data-state="paused"], .f2-page .f2-settle-name[data-state="off"] { color: var(--rd-warn); }
 .f2-page .f2-settle-name[data-state="loading"], .f2-page .f2-settle-name[data-state="failed"] { color: var(--rd-text-3); }
 .f2-page .f2-settle-what { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }

@@ -30,8 +30,8 @@ export function F1V8Review({ ctx, state, v8, canApprove, onApprove }: {
   const leader = v8 && Number(v8.legCount ?? "0") > 0 && v8.legRank && v8.legRank !== "NONE" ? `${v8.legCount} 个 ${v8.legRank}` : undefined;
   const sub = rows.length === 0 ? undefined
     : state.nextCursor
-      ? `已加载 ${rows.length} 人 · ${state.pendingReviewCount ?? "—"} 人可审核 · 时间为${zone}`
-      : `${state.pendingReviewCount ?? "—"} 人可审核 · ${sent} 人待审批 · 时间为${zone}`;
+      ? `已加载 ${rows.length} 人 · 时间为${zone}`
+      : `${sent ? `${sent} 人待审批 · ` : ""}时间为${zone}`;
   return (
     <Panel title="已满足 V8 数值条件" icon={UserCheck} tone="role-3" flush sub={sub}
       explain={<><p>名单里是已满足 V8 数值条件的 V7。核对推荐信、做完官方审核后点「审核通过」；审核不通过的不用处理，系统不会自动升 V8。</p>

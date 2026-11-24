@@ -66,9 +66,9 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
     : ctx.f2DirectPolicyError || !policy ? "结算状态没读到，刷新后再试"
       : ctx.f2ActivationPendingError && canAudit ? "审批进度没读到，刷新后再试"
         : !supported ? "后台页面和系统版本对不上，暂时只能查看；请刷新后再试"
-          : ctx.f2ActivationPending ? "已有申请在等另一位管理员批准"
+          : ctx.f2ActivationPending ? "已有申请在等另一位超级管理员批准"
             : ctx.f2ActivationAttempt ? "上一次申请结果未知，先按原请求重试或去核对"
-              : submitted ? "刚提交的申请在等另一位管理员批准"
+              : submitted ? "刚提交的申请在等另一位超级管理员批准"
                 : recovering ? "正在按原请求重试" : checkedReason);
   const state = !policy ? null : !policy.sevenLayerEnabled ? "off" : policy.sevenLayerPaused ? "paused" : "running";
   const stateName = { off: "未启用", paused: "已暂停", running: "运行中" } as const;
@@ -79,18 +79,17 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
     openConfirm({
       slot: "f-seven-layer-activation",
       action: label, title: label, briefKind: action === "RESUME" ? "funds" : "config", amplify: action !== "PAUSE",
-      effect: <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才生效；批准前结算状态不变。">批准后生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled explain="另一位超级管理员在「操作记录与审批」批准后才生效；批准前结算状态不变。">批准后生效</StatusTag>,
       facts: <Facts>
         <Fact k="整体结算"><Change from={stateName[state]} to={copy.after} /></Fact>
         <Fact k="启用时间">{policy.cutoverAt ? `不变，仍是 ${stamp(policy.cutoverAt)}` : "批准时自动记下"}</Fact>
       </Facts>,
       statedBrief: { impact: copy.impact, check: copy.check },
       detail: copy.impact,
-      completionCopy: "批准人要是另一位管理员，需有审批批准权限和「团队奖励规则」权限；批准前结算状态不变。",
       coverageCheck: "批准时检查兑付覆盖率，低于红线不会执行。",
       coverageLead: action === "ACTIVATE" ? "启用后平台开始按七层比例付团队奖励" : "恢复后平台继续按七层比例付团队奖励",
       submit: async (reason) => { await ctx.changeF2SevenLayerActivation(action, revision, policyVersion, reason); },
-      done: "已提交审批，等另一位管理员批准",
+      done: "已提交，等待审批后执行",
     });
   }
 
@@ -99,13 +98,13 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
   return (
     <Panel className="f2-settle" aria-label="团队购买奖励结算状态" title="整体结算" icon={state === "off" ? PowerOff : state === "paused" ? PauseCircle : Power} tone={state === "running" ? "ok" : state ? "warn" : "role-other"}
       sub={policy?.cutoverAt && state !== "running" ? <>启用于 <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time></> : undefined}
-      explain={<><p>整体结算管新订单要不要按七层规则算团队奖励。启用、暂停、恢复都要另一位管理员批准，都不改比例、冷却和好友拆分。</p><p>启用后不补发启用前的订单；恢复后只重新处理因这次暂停没算的订单；暂停和恢复不改启用时间。</p></>}
+      explain={<><p>整体结算管新订单要不要按七层规则算团队奖励。启用、暂停、恢复都要另一位超级管理员批准，都不改比例、冷却和好友拆分。</p><p>启用后不补发启用前的订单；暂停后新订单的奖励先不算，已在冷却的奖励、退款和解锁照常处理；恢复后只重新处理因这次暂停没算的订单；暂停和恢复不改启用时间。</p></>}
       actions={allowed ? <Button variant={action === "PAUSE" ? "secondary" : "primary"} disabledReason={blockedReason} onClick={submit}>{label}</Button> : undefined}>
       <div className="f2-settle-body">
         <div className="f2-settle-state" role="status" aria-live="polite">
           {busy ? <span className="f2-settle-name" data-state="loading">正在读取…</span>
             : !state ? <span className="f2-settle-name" data-state="failed">读不到</span>
-              : <span className="f2-settle-name" data-state={state}>{stateName[state]}</span>}
+              : <span className="f2-settle-name" data-state={state}>{stateName[state]}{state === "running" && policy?.cutoverAt && <span className="f2-settle-since"> · 启用于 <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time></span>}</span>}
           {state !== "running" && <p className="f2-settle-what">
             {busy ? "结算状态读取中" : !state ? "结算状态读取失败，这部分没有判断。刷新后再看。"
               : state === "off" ? "七层结算还没启用：新订单按原来的规则结算，下表的比例启用后才生效。"
@@ -113,18 +112,14 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
           </p>}
           {!allowed && <p className="f2-settle-note">只能查看：申请启用、暂停、恢复需有「团队奖励规则」和「发起审批」权限。</p>}
         </div>
-        {state === "running" && !busy && <div className="f2-settle-facts"><Facts>
-          <Fact k="启用时间">{policy?.cutoverAt ? <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time> : "—"}</Fact>
-          <Fact k="暂停后">新订单的奖励先不算；已在冷却的奖励、退款和解锁照常处理</Fact>
-        </Facts></div>}
         {state === "off" && <ActivationChecks ctx={ctx} rows={checks} />}
       </div>
       {(pending || submitted || ctx.f2ActivationPendingError || (policy && !supported)) && <ul className="f2-alerts" aria-label="整体结算的申请">
-        {pending && <li><Notice tone="warn" title={<>{a2ActionText(pending.action)}<StatusTag tone="warn" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准；批准前结算状态不变，也不能再提交新的申请。">待审批</StatusTag></>}
+        {pending && <li><Notice tone="warn" title={<>{a2ActionText(pending.action)}<StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准；批准前结算状态不变，也不能再提交新的申请。">待审批</StatusTag></>}
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
-          <p>审批单 <span data-mono>{pending.id}</span>，等另一位管理员批准。</p>
+          <p>审批单 <span data-mono>{pending.id}</span>，等另一位超级管理员批准。</p>
         </Notice></li>}
-        {!pending && submitted && <li><Notice tone="warn" title="申请已提交，等另一位管理员批准"
+        {!pending && submitted && <li><Notice tone="warn" title="申请已提交，等另一位超级管理员批准"
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
           <p>批准前结算状态不变。批准后点页头「刷新」看最新状态。</p>
         </Notice></li>}
@@ -211,7 +206,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
             <span className="f2-recovery-change">{change}{attempt.spec.reason !== "—" && <small title={attempt.spec.reason}>理由：{attempt.spec.reason}</small>}</span>
             <span className="f2-recovery-time">{businessStamp(attempt.createdAt)} 提交</span>
             <span>{attempt.ticket?.status === "pending"
-              ? <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准；批准前不生效。">待审批</StatusTag>
+              ? <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准；批准前不生效。">待审批</StatusTag>
               : attempt.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
                 : expired ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。">已过期</StatusTag>
                   : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>}</span>
@@ -256,7 +251,7 @@ function ActivationChecks({ ctx, rows }: { ctx: FViewCtx; rows: ReturnType<typeo
   return (
     <div className="f2-checks">
       <p className="f2-checks-title">启用时会检查<Explain label={ranked ? "这两条怎么用" : "这三条怎么用"} content={<>
-        <p>提交申请和另一位管理员批准时都会再查一遍，以那时的数据为准。这里只列现在读到的，不代表一定能启用。</p>
+        <p>提交申请和另一位超级管理员批准时都会再查一遍，以那时的数据为准。这里只列现在读到的，不代表一定能启用。</p>
         <p>未配置和配置为 0 分开判断；以提交和批准时系统的检查为准。</p>
         {rates.length === 0 ? <p>七层都没规则时，先在「每层分多少」首次配置。</p>
           : LAYERS.some((level) => !layerRate(rates, level)) && <p>只缺几层时后台补不了，需要技术同事处理。</p>}
