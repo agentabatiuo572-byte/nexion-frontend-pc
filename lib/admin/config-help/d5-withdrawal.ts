@@ -40,6 +40,14 @@ export const D5_PARAM_HELP = {
     effect: "改成 90%：可提余额 1,000 USDT 时，一笔最多提 900 USDT。越南盾提现同样受限",
     where: "App 提现页「可提现」金额；低于 100% 时多一行「余额中 N 暂不可提」",
   },
+  minUsdt: {
+    label: "最低提现额",
+    what: "单笔链上提现的最低金额",
+    when: "调高立即生效，调低批准后生效；只影响新提现",
+    how: "填写 0 或正整数，0 表示不限制",
+    effect: "改成 25 后，25 USDT 起才符合最低金额要求",
+    where: "App 和 H5 链上提现页的最低金额提示",
+  },
   smallAmountThresholdUsd: {
     label: "小额免审线",
     what: "不超过这条线的低风险 USDT 提现可以自动过审",

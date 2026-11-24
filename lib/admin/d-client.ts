@@ -563,6 +563,7 @@ export interface D4RunningBalance {
 }
 
 export interface D5Params {
+  minUsdt: number;
   version: number;
   dailyLimitCount: number;
   maxBalanceRatio: number;
@@ -2033,6 +2034,11 @@ function normalizeD4Page(value: unknown): PageResult<D4Bill> {
 /** FEAT-WD01 参数默认值，仅供“恢复默认”形成一次真实后端写入。 */
 /** 值域(规格 §2):小额线 0–500(0=关闭快车道);到账时效 1–168 小时(即 1 小时–7 天)。 */
 export const D5_SMALL_AMOUNT_THRESHOLD_MAX = 500;
+export const D5_MIN_USDT_MAX = 999999999999;
+
+export function isD5MinimumUsdt(value: number) {
+  return Number.isInteger(value) && value >= 0 && value <= D5_MIN_USDT_MAX;
+}
 export const D5_PAYOUT_SLA_HOURS_MIN = 1;
 export const D5_PAYOUT_SLA_HOURS_MAX = 168;
 /** FEAT-WD02 三网络确认费默认值，仅用于恢复默认按钮；读取缺失时必须失败关闭。 */
@@ -2048,7 +2054,7 @@ export function normalizeD5Params(value: unknown): D5Params {
   // sourceByField 条目(旧后端多发的条目被无害忽略);networkConfirmFeeUsd 的来源条目
   // 现已由真实后端整组下发，缺失时禁止继续编辑。
   const sourceKeys = [
-    "dailyLimitCount", "balanceMaxRatio",
+    "dailyLimitCount", "balanceMaxRatio", "minUsdt",
     "networkConfirmFeeUsd", "networkEnabled", "nexFeeOffsetRate", "smallAmountThresholdUsd", "payoutSlaHours",
     "cooldownDays", "complianceHoldEnabled",
   ];
@@ -2109,6 +2115,7 @@ export function normalizeD5Params(value: unknown): D5Params {
     version: d5Integer(raw.version, "version", 0),
     dailyLimitCount: d5Integer(raw.dailyLimitCount, "dailyLimitCount", 1),
     maxBalanceRatio: d5Number(raw.balanceMaxRatio, "balanceMaxRatio"),
+    minUsdt: d5Number(raw.minUsdt, "minUsdt"),
     networkConfirmFeeUsd: (() => {
           const group = d5Object(raw.networkConfirmFeeUsd, "networkConfirmFeeUsd");
           return {
@@ -2148,6 +2155,7 @@ export function normalizeD5Params(value: unknown): D5Params {
   };
   const confirmFees = result.networkConfirmFeeUsd;
   if (result.dailyLimitCount > 10
+      || !isD5MinimumUsdt(result.minUsdt)
       || result.maxBalanceRatio < 0.5 || result.maxBalanceRatio > 1
       // FEAT-WD02:三网络确认费值域 [0, 25](与 uniapp isNetworkFeeConfigUsable 同数字系)。
       || [confirmFees.trc20, confirmFees.bep20, confirmFees.erc20]
@@ -2755,7 +2763,7 @@ export async function fetchD5WithdrawalParams() {
 // FEAT-WD02:networkConfirmFeeUsd 以**整组对象**为变更单位(三值一次 PUT,任一失败全回滚 ——
 // 沿用旧三件套的原子提交先例);不提供单键补丁,防止三网络费半更新。
 export type D5OwnedChanges = Partial<Pick<D5Params,
-  "dailyLimitCount" | "maxBalanceRatio" | "networkConfirmFeeUsd" | "networkEnabled" | "nexFeeOffsetRate"
+  "dailyLimitCount" | "maxBalanceRatio" | "minUsdt" | "networkConfirmFeeUsd" | "networkEnabled" | "nexFeeOffsetRate"
   | "smallAmountThresholdUsd" | "payoutSlaHours">>;
 
 export function d5WithdrawalLimitsValues(changes: D5OwnedChanges, expectedVersion: number) {
@@ -2785,6 +2793,14 @@ export async function updateD5WithdrawalLimits(
       throw new DOutcomeUnknownError(commandKey);
     }
     throw cause;
+  }
+  // An older same-key receipt can succeed with the pre-minimum response shape.
+  if (commandKey && data.minUsdt === undefined && changes.minUsdt === undefined) {
+    try {
+      return await fetchD5WithdrawalParams();
+    } catch {
+      throw new DOutcomeUnknownError(commandKey);
+    }
   }
   // 写成功了，回来的内容读不懂也算结果未知，不能当失败丢号（OP-91）。
   return commandKey ? readWriteResult(commandKey, () => normalizeD5Params(data)) : normalizeD5Params(data);

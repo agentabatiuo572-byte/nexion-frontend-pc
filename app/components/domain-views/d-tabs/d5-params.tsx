@@ -4,7 +4,7 @@ import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
  * USDT 提现参数（配置页，PG-46）。默认只显示名称、值和「调整」，点「调整」打开抽屉整组填写，抽屉提交后才开最终确认（闸门 2 第 37 条）。
- * 命令边界照旧：额度和时效四项一条命令；提现网络、网络确认费、UVT 抵扣率各一条命令。一条命令里有一项放宽，整条走审批。
+ * 额度和时效共用一条命令；提现网络、网络确认费、UVT 抵扣率各一条命令。一条命令里有一项放宽，整条走审批。
  * 写权按字段判，没有就不显示「调整」（OP-124）；判断看权限码，不看角色名。
  * 结果未知常显在页面上方：收紧按原操作重试，放宽先查原审批单（OP-92～96）。放宽结果未知只锁放宽，收紧照常（闸门 2 第 04 条）。
  */
@@ -51,6 +51,8 @@ import {
   updateD5WithdrawalLimits,
   D5_NETWORK_CONFIRM_FEE_DEFAULT,
   type D5OwnedChanges,
+  D5_MIN_USDT_MAX,
+  isD5MinimumUsdt,
   type D5Params as D5ParamData,
 } from "@/lib/admin/d-client";
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -102,10 +104,11 @@ const OPEN_NETS = NETWORKS.filter((net) => net !== CLOSED_NET);
 const clean = (value: number) => Number(value.toPrecision(12));
 const num = (value: number) => clean(value).toLocaleString("en-US", { maximumFractionDigits: 12 });
 const usd = (value: number) => `${num(value)} USDT`;
+const minimumUsd = (value: number) => value === 0 ? "不限制" : `${value.toLocaleString("en-US")} USDT`;
 const pct = (value: number) => `${value.toFixed(1)}%`;
 
 type Group = "limits" | "network" | "fee" | "nex";
-type NumKey = "dailyLimitCount" | "maxBalanceRatio" | "smallAmountThresholdUsd" | "payoutSlaHours" | "nexFeeOffsetRate" | `fee.${Net}`;
+type NumKey = "dailyLimitCount" | "maxBalanceRatio" | "minUsdt" | "smallAmountThresholdUsd" | "payoutSlaHours" | "nexFeeOffsetRate" | `fee.${Net}`;
 
 interface NumSpec {
   key: NumKey;
@@ -190,6 +193,24 @@ const SPECS: Record<NumKey, NumSpec> = {
     whatIf: (value) => `改成 ${num(value)}%：可提余额 1,000 USDT 时，一笔最多提 ${num(value * 10)} USDT。`,
     authority: BALANCE_WRITE,
   },
+  minUsdt: {
+    key: "minUsdt",
+    label: D5_PARAM_HELP.minUsdt.label,
+    unit: "USDT",
+    min: 0,
+    max: D5_MIN_USDT_MAX,
+    step: 1,
+    invalid: "最低提现额要填 0 或范围内的正整数。",
+    range: "0 或正整数，0 表示不限制",
+    valid: isD5MinimumUsdt,
+    loosen: "down",
+    tightest: D5_MIN_USDT_MAX,
+    current: (p) => p.minUsdt,
+    show: minimumUsd,
+    how: D5_PARAM_HELP.minUsdt.how,
+    whatIf: (value) => value === 0 ? "取消链上提现的最低金额限制。" : `低于 ${minimumUsd(value)} 的链上提现申请会被拒绝。`,
+    authority: DAILY_WRITE,
+  },
   smallAmountThresholdUsd: {
     key: "smallAmountThresholdUsd",
     label: D5_PARAM_HELP.smallAmountThresholdUsd.label,
@@ -253,7 +274,7 @@ const SPECS: Record<NumKey, NumSpec> = {
 };
 
 const GROUP_FIELDS: Record<Exclude<Group, "network">, readonly NumKey[]> = {
-  limits: ["dailyLimitCount", "maxBalanceRatio", "smallAmountThresholdUsd", "payoutSlaHours"],
+  limits: ["dailyLimitCount", "maxBalanceRatio", "minUsdt", "smallAmountThresholdUsd", "payoutSlaHours"],
   fee: ["fee.trc20", "fee.bep20", "fee.erc20"],
   nex: ["nexFeeOffsetRate"],
 };
@@ -370,7 +391,7 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
     if (text.trim() === "") return { spec, text, now, error: `填写${spec.label}：${spec.range}，空着不算 0。`, changed: true, loosens: false, writable };
     const value = Number(text);
     if (!Number.isFinite(value) || !spec.valid(value)) return { spec, text, now, error: spec.invalid, changed: true, loosens: false, writable };
-    const changed = clean(value) !== clean(now);
+    const changed = key === "minUsdt" ? value !== now : clean(value) !== clean(now);
     const loosens = changed && (spec.loosen === "up" ? value > now : value < now);
     return { spec, text, now, value, changed, loosens, writable };
   });
@@ -395,6 +416,7 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
       for (const item of changed) {
         if (item.spec.key === "maxBalanceRatio") changes.maxBalanceRatio = clean(item.value! / 100);
         else if (item.spec.key === "dailyLimitCount") changes.dailyLimitCount = item.value!;
+        else if (item.spec.key === "minUsdt") changes.minUsdt = item.value!;
         else if (item.spec.key === "smallAmountThresholdUsd") changes.smallAmountThresholdUsd = item.value!;
         else if (item.spec.key === "payoutSlaHours") changes.payoutSlaHours = item.value!;
       }
@@ -422,6 +444,7 @@ function describeChanges(changes: Record<string, unknown>) {
   if (changes.dailyLimitCount !== undefined) parts.push(`每日提现次数 ${n(changes.dailyLimitCount)} 次`);
   const ratio = changes.maxBalanceRatio ?? changes.balanceMaxRatio;
   if (ratio !== undefined) parts.push(`余额可提上限 ${num(n(ratio) * 100)}%`);
+  if (changes.minUsdt !== undefined) parts.push(`最低提现额 ${minimumUsd(n(changes.minUsdt))}`);
   if (changes.smallAmountThresholdUsd !== undefined) parts.push(`小额免审线 ${usd(n(changes.smallAmountThresholdUsd))}`);
   if (changes.payoutSlaHours !== undefined) parts.push(`到账时效 ${n(changes.payoutSlaHours)} 小时`);
   const fees = changes.networkConfirmFeeUsd as Record<Net, unknown> | undefined;
@@ -545,7 +568,7 @@ function DirectionTag({ loosens }: { loosens: boolean }) {
 function commandAuthorities(changes: Record<string, unknown>) {
   const need = new Set<string>();
   for (const key of Object.keys(changes)) {
-    if (["dailyLimitCount", "smallAmountThresholdUsd", "payoutSlaHours"].includes(key)) need.add(DAILY_WRITE);
+    if (["dailyLimitCount", "minUsdt", "smallAmountThresholdUsd", "payoutSlaHours"].includes(key)) need.add(DAILY_WRITE);
     else if (["maxBalanceRatio", "balanceMaxRatio"].includes(key)) need.add(BALANCE_WRITE);
     else if (["networkConfirmFeeUsd", "networkEnabled", "nexFeeOffsetRate"].includes(key)) need.add(FEE_WRITE);
   }
@@ -1156,7 +1179,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     ? (describedBy: string | undefined) => <Button size="sm" aria-label={editTitle(label)} aria-describedby={describedBy} disabledReason={blocked ?? entryBlock(group, p)} onClick={() => openDrawer(group, focus)}>调整</Button>
     : undefined;
   const H = D5_PARAM_HELP;
-  const numRow = (key: "dailyLimitCount" | "maxBalanceRatio" | "smallAmountThresholdUsd" | "payoutSlaHours") => {
+  const numRow = (key: "dailyLimitCount" | "maxBalanceRatio" | "minUsdt" | "smallAmountThresholdUsd" | "payoutSlaHours") => {
     const help = H[key];
     const spec = SPECS[key];
     const value = spec.current(p);
@@ -1249,6 +1272,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     if (group === "limits") return <>
       <D5NumberField {...fieldProps("dailyLimitCount")} aria-label="每日提现次数目标值" />
       <D5NumberField {...fieldProps("maxBalanceRatio")} aria-label="余额可提上限目标值" />
+      <D5NumberField {...fieldProps("minUsdt")} aria-label="最低提现额目标值" />
       <D5NumberField {...fieldProps("smallAmountThresholdUsd")} aria-label="小额免审线目标值" />
       <D5NumberField {...fieldProps("payoutSlaHours")} aria-label="到账时效目标值" />
     </>;
@@ -1299,10 +1323,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           <div className="rd-config-groups">
             <div id={nav.anchor("limits")}>
               <Panel title={<span tabIndex={-1} data-section-focus="">额度和时效</span>} explainLabel="额度和时效" icon={Gauge} tone="role-4"
-                explain="四项一起修改、一起提交。只要有一项放宽，整组提交审批；全部收紧时提交后立即生效。">
+                explain="这一组一起提交。只要有一项放宽，整组提交审批；全部收紧时提交后立即生效。">
                 <ConfigList label="额度和时效">
                   {numRow("dailyLimitCount")}
                   {numRow("maxBalanceRatio")}
+                  {numRow("minUsdt")}
                   {numRow("smallAmountThresholdUsd")}
                   {numRow("payoutSlaHours")}
                 </ConfigList>
@@ -1359,7 +1384,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <Drawer open={!!editing} onClose={askClose} title={editing ? editTitle(GROUP_TITLE[editing.group]) : ""} icon={editing ? drawerIcon[editing.group] : undefined}
         tone={editing?.group === "limits" ? "role-4" : "role-2"} 
         explain={editing && (editing.group === "limits"
-          ? "四项一起提交。只要有一项放宽，整组提交审批，另一位超级管理员批准前当前值不变；全部收紧时提交后立即生效。"
+          ? "这一组一起提交。只要有一项放宽，整组提交审批，另一位超级管理员批准前当前值不变；全部收紧时提交后立即生效。"
           : editing.group === "network" ? `三个网络一起提交。开启算放宽，要提交审批；只关不开时提交后立即生效。TRC20 ${TRC20_CLOSED}，开着时只能关闭。`
             : editing.group === "fee" ? `三个网络一起保存。任一网络调低，三个一起走审批。TRC20 ${TRC20_CLOSED}，保持现在的值。`
               : "调高算放宽，要提交审批；调低提交后立即生效。")}
