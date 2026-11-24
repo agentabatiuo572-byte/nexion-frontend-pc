@@ -21,5 +21,5 @@ export function useReasonRule(enabled = true, minimum = 8, maximum = 200) {
     const length = visibleReasonLength(reason);
     return error || (length < min ? `理由还差 ${min - length} 字` : length > max ? `理由多了 ${length - max} 字` : "");
   };
-  return { ready: policy !== null, error, min, max, ok, hint };
+  return { ready: policy !== null, policy, error, min, max, ok, hint };
 }

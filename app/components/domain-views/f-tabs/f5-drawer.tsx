@@ -11,7 +11,7 @@ import { Button, Decision, Drawer, Explain, JudgmentPoints, type JudgmentRow } f
 import type { F5CommissionEvent, F5OperationHistory } from "@/lib/admin/f1-client";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import {
-  KIND_LABELS, Money, STATUS_META, StatusBadge, amountText, isFriend, isGrouped, kindNames, operationLabel, timeText, userCode, zoneNote,
+  KIND_LABELS, Money, STATUS_META, StatusBadge, amountText, deviceEarningSource, isFriend, isGrouped, kindNames, operationLabel, timeText, userCode, zoneNote,
 } from "./f5-shared";
 
 export type F5RowAction = { key: string; label: string; danger?: boolean; disabledReason?: string; onSelect: () => void };
@@ -21,7 +21,7 @@ function sourceText(row: F5CommissionEvent): { title: ReactNode; sub?: ReactNode
   const who = row.sourceUserId ? userCode(row.sourceUserId) : undefined;
   if (row.kind === "direct_purchase") return { title: <>好友 {who ?? "—"} 的购买订单</>, sub: row.sourceRef ? <span data-mono>{row.sourceRef}</span> : undefined };
   if (row.kind === "direct_device_earning") return {
-    title: <>好友 {who ?? "—"} 的设备收益</>,
+    title: <>{deviceEarningSource(row.layer)} {who ?? "—"} 的设备收益</>,
     sub: <>{row.sourceRef ? <><span data-mono>{row.sourceRef}</span> · </> : null}设备 {row.sourceDeviceId ? <span data-mono>{row.sourceDeviceId}</span> : "不适用"}</>,
   };
   const layer = row.layer ? `第 ${row.layer} 层` : undefined;

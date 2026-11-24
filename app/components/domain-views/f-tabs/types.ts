@@ -237,6 +237,7 @@ export interface FViewCtx {
   proposeF4LeaderboardPayout: (period: "today" | "week" | "month" | "allTime", reason: string) => Promise<void>;
   // -- 佣金事件审计(F5)· 读 + 处置状态写入 --
   f5Overview: F5CommissionAuditOverview | null;
+  f5AppliedQuery: F5CommissionQuery | null;
   f5NextQuery: F5CommissionQuery | null;
   f5Loading: boolean;
   f5Error: string | null;

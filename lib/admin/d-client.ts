@@ -659,6 +659,8 @@ export function d1CommandObject(path: string, body = "") {
     if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
   } catch { /* 不是 JSON 的按路径认 */ }
   if (parsed.action === "PAUSE") return `${route}|PAUSE|network=${params.get("network") ?? parsed.network ?? "BEP20"}`;
+  // 入金 CID 在项目内唯一。同一 CID 的未决提案不能因改选网络或旧请求省略网络而另发新命令。
+  if (route === "/cregis/review-cases" && parsed.cid != null) return `${route}|cid=${String(parsed.cid)}`;
   const ids = D1_IDENTITY_FIELDS.flatMap(field => {
     const value = params.get(field) ?? parsed[field];
     return value === undefined || value === null || value === "" ? [] : [`${field}=${String(value)}`];

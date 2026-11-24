@@ -8,7 +8,7 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Cell, Fact, Fold, InlineRetry, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
 import { fetchF5CommissionByBusinessId, type F5CommissionRecord } from "@/lib/admin/f1-client";
-import { amountText, isFriend, KIND_LABELS, StatusBadge } from "../f-tabs/f5-shared";
+import { amountText, isFriend, KIND_LABELS, reissueOutcome, StatusBadge } from "../f-tabs/f5-shared";
 
 type Unread = "denied" | "unsupported" | "failed";
 export type F5Current = { state: "loading" } | { state: "found"; record: F5CommissionRecord } | { state: "missing" } | { state: Unread };
@@ -92,6 +92,15 @@ export function F5CurrentValue({ id }: { id: string }) {
 export function F5CurrentFact({ id }: { id: string }) {
   const [now] = useF5Current([id]);
   return <Fact k="这笔奖励">{currentNode(now, id)}</Fact>;
+}
+
+export function F5ReissueOutcome({ ids }: { ids: readonly string[] }) {
+  const reads = useF5Current(ids);
+  const kinds = new Set(reads.flatMap((read) => read.state === "found" ? [read.record.kind] : []));
+  const outcomes = [...kinds].map((kind) => `${KIND_LABELS[kind]}：${reissueOutcome(kind)}`);
+  if (!outcomes.length) return "尚未读到奖励类型，无法确认解锁时间";
+  if (reads.some((read) => read.state !== "found")) outcomes.push("其余记录的解锁时间未确认");
+  return outcomes.join("；");
 }
 
 /** 补发多笔：按申请单上的顺序逐笔列出，每一笔各读各的；收在折叠里，摘要写读到、查无、读不到各几笔。 */

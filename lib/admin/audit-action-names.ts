@@ -257,6 +257,8 @@ export const AUDIT_ACTION_NAMES: Readonly<Record<string, string>> = {
   "E2_TASK_DELETED": "删除任务",
   "E2_TASK_POOL_RANDOM_ADDED": "随机添加任务",
   "E2_TASK_POOL_STATUS_CHANGED": "批量启用 / 停用任务",
+  "E2_TASK_POOL_TASK_CREATED": "新增任务",
+  "E2_TASK_POOL_TASK_UPDATED": "修改任务",
   "E2_TASK_PRICE_CHANGED": "调整任务定价",
   "E2_TASK_STATUS_CHANGED": "启用 / 停用手机任务",
   "E2_TASK_UPDATED": "编辑手机任务",
