@@ -74,8 +74,8 @@ import { inviterDetailView, referralCountsView } from "@/app/components/invitati
 const STALE_PROFILE_WRITE_BLOCK = "资料没有刷新成功，刷新成功后再操作";
 /** 同一次重读在途时，各写入口的原因都用这一句；读失败后才换成上面那句（R30）。 */
 const PROFILE_REREAD_BLOCK = "正在重新读取，读完再操作";
-/** 结果未知面板在资料没刷新成功时的常显原因：说清哪两个按钮暂时不能点、什么时候能点、查询不受影响（OP-126）。 */
-const RECOVERY_STALE_NOTE = "资料没有刷新成功，刷新成功后再「按原请求重试」或「核查结案」；「查询原结果」照常可用。";
+/** 结果未知面板在资料没刷新成功时的常显原因：只点名这时真被挡住的按钮，说清什么时候能点、查询不受影响（OP-126）。 */
+const recoveryStaleNote = (buttons: readonly string[]) => `资料没有刷新成功，刷新成功后再${buttons.map((name) => `「${name}」`).join("或")}；「查询原结果」照常可用。`;
 
 /**
  * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、回收并记录置换和回收）共用一张表，槽位分命名空间。
@@ -1463,6 +1463,8 @@ export default function UserDetailPage() {
   ].filter((item): item is [string, string] => Array.isArray(item));
 
   /** 结果未知的操作收成一个面板（和资金页同一个样子）：每条一行，通用说明只在标题问号里说一次；按钮和可用条件照旧。 */
+  // 哪些行有只因资料没刷新成功才点不了的「按原请求重试」「核查结案」：面板那句常显原因只点名这些按钮，一个都没有就不写。
+  const staleButtons = new Set<string>();
   const recoveryItems: RecoveryItem[] = [
     ...pendingCommands.map((command): RecoveryItem => {
       const expired = command.expiresAt <= Date.now();
@@ -1494,6 +1496,8 @@ export default function UserDetailPage() {
       const outcome = refused ? undefined : pendingOutcomes[command.commandKey];
       const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
       const closable = canClose && !!receipt && (receipt.originalStatus === "UNKNOWN" || expired && (receipt.originalStatus === "SUCCEEDED" || receipt.originalStatus === "FAILED"));
+      if (retryable) staleButtons.add("按原请求重试");
+      if (closable) staleButtons.add("核查结案");
       const elsewhere = expired && canClose ? "已过 24 小时，请核查结案。" : "到操作记录与审批核对。";
       const shown: { tone: StateTone; label: string; line: string } | undefined = found && {
         error: { tone: "danger" as const, label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" },
@@ -1539,7 +1543,8 @@ export default function UserDetailPage() {
   ];
   const openCount = pendingCommands.filter((command) => !isExplicitRejection(command.rejection) && ["FAILED", "REJECTED", "PROCESSED"].includes(pendingFound[command.commandKey] ?? "")).length;
   // 资料没刷新成功时，各行按钮上的原因只在悬停和聚焦时看得到：面板标题下常显一句，一处只说一次；同一次重读在途时和各写入口同一个说法（R30）。
-  const recoveryNote = staleWriteReason || referralRetrying ? loading || referralRetrying ? PROFILE_REREAD_BLOCK : RECOVERY_STALE_NOTE : undefined;
+  const staleBlocked = ["按原请求重试", "核查结案"].filter((name) => staleButtons.has(name));
+  const recoveryNote = staleBlocked.length && (staleWriteReason || referralRetrying) ? loading || referralRetrying ? PROFILE_REREAD_BLOCK : recoveryStaleNote(staleBlocked) : undefined;
   const recoveryPanel = <RecoveryPanel title={recoveryTitle(recoveryItems.length - openCount, 0, 0, openCount)} explainLabel="结果未知怎么处理" note={recoveryNote}
     explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原请求重试不会重复执行。有结果前，相关对象不能再操作。"
     foot={canReadA2 ? <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录与审批核对</Link> : undefined}
