@@ -22,7 +22,7 @@ export type InviterView =
   | { kind: "present"; nickname: string | null; userNo: string; href?: string; scopeNote?: string }
   | { kind: "none" }
   | { kind: "deleted"; userNo: string }
-  | { kind: "unknown" };
+  | { kind: "unknown"; note: string };
 
 export type CountsView =
   | { kind: "ready"; direct: number; within: number; beyond: number; total: number }
@@ -59,11 +59,11 @@ export function CountsExplain() {
   );
 }
 
-function Unconfirmed() {
+function Unconfirmed({ note }: { note: string }) {
   return (
     <span className="inv-value">
       <StatusTag tone="warn" icon={AlertTriangle}>无法确认</StatusTag>
-      <Explain label="邀请人为什么无法确认" content={INVITER_UNKNOWN_NOTE} />
+      <Explain label="邀请人为什么无法确认" content={note} />
     </span>
   );
 }
@@ -72,7 +72,7 @@ function Unconfirmed() {
 export function InviterCell({ view }: { view: InviterView | undefined }) {
   if (!view) return <span className="rd-weak">—</span>;
   if (view.kind === "none") return <Cell main={<span className="rd-weak">无邀请人</span>} />;
-  if (view.kind === "unknown") return <Cell main={<Unconfirmed />} />;
+  if (view.kind === "unknown") return <Cell main={<Unconfirmed note={view.note} />} />;
   if (view.kind === "deleted") return <Cell title={`${view.userNo} 已删除`} main={<span data-mono>{view.userNo}</span>} sub="已删除" />;
   const name = view.nickname?.trim();
   return <Cell title={name ? `${name} ${view.userNo}` : view.userNo} main={name || <span data-mono>{view.userNo}</span>} sub={name ? <span data-mono>{view.userNo}</span> : undefined} />;
@@ -82,7 +82,7 @@ export function InviterCell({ view }: { view: InviterView | undefined }) {
 export function InviterValue({ view }: { view: InviterView | undefined }) {
   if (!view) return <span className="rd-weak">—</span>;
   if (view.kind === "none") return <span className="rd-weak">无邀请人</span>;
-  if (view.kind === "unknown") return <Unconfirmed />;
+  if (view.kind === "unknown") return <Unconfirmed note={view.note} />;
   if (view.kind === "deleted") return <span className="inv-value"><span data-mono className="inv-code">{view.userNo}</span><span className="rd-weak">· 已删除</span></span>;
   const name = view.nickname?.trim();
   // 昵称和编码之间的空格放进编码那一段：整段是一条连着的下划线，读起来是一个链接，不像两个。

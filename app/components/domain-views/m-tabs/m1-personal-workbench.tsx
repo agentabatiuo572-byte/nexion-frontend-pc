@@ -31,7 +31,7 @@ import { BlockState, Button, Cell, Check, Conclusion, Drawer, Explain, Facts, Fa
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { paymentSecurityPorts } from "@/lib/admin/payment-password-client";
 import { COUNTS_FAILED_REASON, CountsFacts, InviterCell, InviterValue, type CountsView } from "@/app/components/invitation/invitation-view";
-import { inviterDetailView, inviterView, supportCountsView } from "@/app/components/invitation/wiring";
+import { INVITATION_REREAD_BLOCK, inviterDetailView, inviterView, supportCountsView } from "@/app/components/invitation/wiring";
 
 type Permission = "agent" | "supervisor" | "superadmin";
 export type PersonalWorkbenchView = "dashboard" | "customers";
@@ -396,6 +396,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const actionFor = (row: SupportCustomer) => row.waitingReply ? "回复" : row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "联系维护" : "发起会话";
   const listState = rowsLoading ? <BlockState state="loading" title="正在加载客户列表…" /> : rowsError ? <BlockState state="error" title={rowsError} onRetry={() => setRowsRefresh(n => n + 1)} /> : !listRecords.length ? <BlockState state="empty" title="当前筛选下没有客户。可切换筛选或等待主管分配。" /> : null;
 
+  const invitationWriteBlock = invitationRetrying ? INVITATION_REREAD_BLOCK : undefined;
   const showInviter = listRecords.some(row => row.inviter !== undefined);
   const drawerProfile = detailActorKey === sessionKey ? detail?.profile : undefined;
   const drawerInviter = inviterDetailView(drawerProfile?.identity.data?.inviter, true, reach);
@@ -456,13 +457,13 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       {rows && rows.total > 0 && <Pager label="我的客户" total={rows.total} page={page} pageSize={PAGE_SIZE} sizes={[PAGE_SIZE]} onPage={setPage} onPageSize={() => undefined} />}
     </Panel>}
     {bulkOpen && <SupportBulkComposer ctx={ctx} onClose={() => setBulkOpen(false)} />}
-    {detailId && <Drawer open title="客户资料" sub={detail ? <>{customerName(detail)} · <span data-mono>{m1CustomerCode(detail.customerId)}</span></> : "正在读取"} busy={saving} onClose={closeDetail} footer={detail && <div className="m1-drawer-actions"><Button onClick={() => openChat(detail.customerId)}>联系客户</Button>{canMaintain && <Button disabled={invitationRetrying} disabledReason={maintenancePending ? "原操作结果未知，请先查询原结果。" : undefined} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setReasonLeft(false); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</Button>}{permission !== "agent" && detail.assignmentId && transferInScope !== false && <Button disabled={invitationRetrying} onClick={() => onTransfer?.(detail.customerId)}>正式转绑客户</Button>}</div>}>
+    {detailId && <Drawer open title="客户资料" sub={detail ? <>{customerName(detail)} · <span data-mono>{m1CustomerCode(detail.customerId)}</span></> : "正在读取"} busy={saving} onClose={closeDetail} footer={detail && <div className="m1-drawer-actions"><Button onClick={() => openChat(detail.customerId)}>联系客户</Button>{canMaintain && <Button disabledReason={maintenancePending ? "原操作结果未知，请先查询原结果。" : invitationWriteBlock} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setReasonLeft(false); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</Button>}{permission !== "agent" && detail.assignmentId && transferInScope !== false && <Button disabledReason={invitationWriteBlock} onClick={() => onTransfer?.(detail.customerId)}>正式转绑客户</Button>}</div>}>
       {detailLoading ? <BlockState state="loading" title="正在读取…" /> : detailError ? <BlockState state="error" title={detailError} onRetry={() => void openDetail(detailId)} /> : detail && <>
         <div className="m1-customer-name"><SupportAvatar name={customerName(detail)} path={detail.customerAvatarRef ?? undefined} /><strong>{customerName(detail)}</strong></div>
         <Facts><Fact k="当前专属客服">{detail.agentName ?? "资料未知"}</Fact><Fact k="用户编码"><span data-mono>{m1CustomerCode(detail.customerId)}</span></Fact>{drawerInviter && <Fact k="邀请人"><InviterValue view={drawerInviter} /></Fact>}<Fact k="账户状态"><StatusTag tone={accountTone(detail)}>{labelForAccount(detail.accountState)}</StatusTag></Fact><Fact k="维护状态"><StatusTag tone={maintenanceTone(detail)}>{labelForMaintenance(detail)}</StatusTag></Fact><Fact k="上次账户活动">{formatTime(detail.lastEffectiveAt)}</Fact><Fact k="下次维护">{formatTime(detail.nextMaintenanceAt)}</Fact></Facts>
         {/* 四个人数单独一组排在事实下面（DP-16，07a）。 */}
         {drawerCounts && <CountsFacts view={drawerCounts} />}
-        {paymentSecurityPort && <PaymentSecurityBlock key={`${sessionKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={customerName(detail)} canRelease={Boolean(session?.authorities.includes("user_c5_payment_password_release"))} writeBlocked={invitationRetrying} onWriteBusy={setPaymentWriteBusy} retryMissingRelease />}
+        {paymentSecurityPort && <PaymentSecurityBlock key={`${sessionKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={customerName(detail)} canRelease={Boolean(session?.authorities.includes("user_c5_payment_password_release"))} writeBlockedReason={invitationWriteBlock} onWriteBusy={setPaymentWriteBusy} retryMissingRelease />}
         {maintenancePending && <Notice tone="warn" action={<Button disabled={saving} onClick={() => void checkMaintenance()}>查询原结果</Button>}>这位客户有一次维护操作结果未知，暂时不能再调整；原客户和理由已保留。</Notice>}
         {detail.accountState === "UNKNOWN" && <Notice tone="warn">账户活动数据不完整，无法判断沉睡或活跃。</Notice>}
         <button type="button" className="rd-link m1-profile-link" onClick={() => {
@@ -477,12 +478,12 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         <Fold title="技术信息" summary="客户、绑定与维护版本"><Facts><Fact k="系统编号">{detail.customerId}</Fact><Fact k="绑定编号">{detail.assignmentId || "—"}</Fact><Fact k="维护版本">{detail.maintenanceVersion}</Fact></Facts></Fold>
       </>}
     </Drawer>}
-    {maintenanceAction && detail && <Modal title={maintenanceAction === "stop" ? "不再维护" : "恢复维护"} busy={saving} onClose={() => setMaintenanceAction(null)} footer={<><Button disabled={saving} onClick={() => setMaintenanceAction(null)}>取消</Button><Button variant="primary" disabled={saving || invitationRetrying} disabledReason={maintenancePending ? "先查询原结果" : maintenanceNeedsRefresh ? "请先重新读取客户资料" : detailLoading ? "正在重新读取客户资料" : !canMaintain ? "当前客户不再属于本人" : !reasonOk ? "请填写 8–200 字理由" : undefined} onClick={() => void saveMaintenance()}>{saving ? "提交中…" : maintenanceAction === "stop" ? "确认不再维护" : "确认恢复维护"}</Button></>}>
+    {maintenanceAction && detail && <Modal title={maintenanceAction === "stop" ? "不再维护" : "恢复维护"} busy={saving} onClose={() => setMaintenanceAction(null)} footer={<><Button disabled={saving} onClick={() => setMaintenanceAction(null)}>取消</Button><Button variant="primary" disabled={saving} disabledReason={maintenancePending ? "先查询原结果" : maintenanceNeedsRefresh ? "请先重新读取客户资料" : detailLoading ? "正在重新读取客户资料" : !canMaintain ? "当前客户不再属于本人" : !reasonOk ? "请填写 8–200 字理由" : saving ? undefined : invitationWriteBlock} onClick={() => void saveMaintenance()}>{saving ? "提交中…" : maintenanceAction === "stop" ? "确认不再维护" : "确认恢复维护"}</Button></>}>
       <div className="m1-command-form">
       <Facts><Fact k="客户">{customerName(detail)} · <span data-mono>{m1CustomerCode(detail.customerId)}</span></Fact><Fact k="当前专属客服">{detail.agentName || "本人"}</Fact><Fact k="维护状态">{detail.maintenanceEnabled ? "主动维护" : "暂停主动维护"} → {maintenanceAction === "stop" ? "暂停主动维护" : "主动维护"}</Fact></Facts>
       <p>{maintenanceAction === "stop" ? "仅停止主动跟进，客户归属、私聊与求助保持可用。" : "旧周期不恢复，不自动产生执行或成功。"}</p>
       <Field label="操作理由" required help={reasonLeft && !reasonOk ? undefined : "请填写 8–200 字，将记入操作记录。"} error={reasonLeft && !reasonOk ? "请填写 8–200 字的理由。" : undefined}>{control => <Textarea {...control} value={reason} maxLength={200} disabled={saving || Boolean(maintenancePending)} count={`${reason.trim().length}/200`} onBlur={() => setReasonLeft(true)} onChange={e => setReason(e.target.value)} />}</Field>
-      {saveError && <Notice tone="danger">{saveError}</Notice>}{maintenanceNeedsRefresh && <Button disabled={saving || detailLoading} onClick={() => void reloadMaintenanceDetail()}>重新读取客户资料</Button>}{maintenancePending && <Notice tone="warn" action={<Button disabled={saving} onClick={() => void checkMaintenance()}>查询原结果</Button>}>上次操作结果未知，原理由已保留。</Notice>}
+      {saveError && <Notice tone="danger">{saveError}</Notice>}{maintenanceNeedsRefresh && <Button disabled={saving || detailLoading} disabledReason={saving || detailLoading ? undefined : invitationWriteBlock} onClick={() => void reloadMaintenanceDetail()}>重新读取客户资料</Button>}{maintenancePending && <Notice tone="warn" action={<Button disabled={saving} onClick={() => void checkMaintenance()}>查询原结果</Button>}>上次操作结果未知，原理由已保留。</Notice>}
       </div>
     </Modal>}
   </section>;

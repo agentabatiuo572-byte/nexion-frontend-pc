@@ -691,7 +691,8 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     { key: "status", label: "状态 / 用户分层 · 团队等级", locked: "状态和等级不能关" },
     ...(canReadRisk ? [{ key: "risk", label: "风险", locked: "风险列不能关" }] : []),
     ...(showBalance ? [{ key: "balance", label: "USDT 余额", locked: "余额不能关" }] : []),
-    ...(showDevice ? [{ key: "device", label: "设备", extra: true }] : []),
+    // Keep the extra column in the preference schema before the response confirms it is available.
+    { key: "device", label: "设备", extra: true },
     ...(canOpenDetail ? [{ key: "action", label: "操作", locked: "操作列不能关" }] : []),
   ]);
   const deviceVisible = showDevice && columns.isVisible("device");

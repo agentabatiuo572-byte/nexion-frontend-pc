@@ -1,13 +1,23 @@
 import type { InvitationInviter, InvitationInviterDetail, SupportInvitationInviterDetail } from "@/lib/admin/invitation-read-contract";
 import type { SupportCustomerStatistics } from "@/lib/admin/support-analytics-client";
-import { COUNTS_FAILED_REASON, INVITER_SCOPE_NOTE, type CountsView, type InviterView } from "./invitation-view";
+import { COUNTS_FAILED_REASON, INVITER_SCOPE_NOTE, INVITER_UNKNOWN_NOTE, type CountsView, type InviterView } from "./invitation-view";
+
+export const INVITATION_REREAD_BLOCK = "资料正在重读，读完再操作";
+
+const inviterUnknownReasons = {
+  DANGLING_SPONSOR: "记录里的邀请人账户已不存在，无法确认是谁邀请的。",
+  ENVIRONMENT_CONFLICT: "记录里的邀请人是另一套环境的账户，这里无法确认。",
+  UNKNOWN_ENVIRONMENT: "邀请人账户属于哪套环境无法判断，暂时无法确认。",
+  SOURCE_READ_FAILED: "这次没读出邀请人，稍后刷新再看。",
+} satisfies Record<Exclude<InvitationInviter["reason"], "UNKNOWN" | null>, string>;
 
 export function inviterView(inviter: InvitationInviter | undefined, link?: { href?: string; scopeNote?: string }): InviterView | undefined {
   if (!inviter) return undefined;
   if (inviter.state === "NONE") return { kind: "none" };
   if (inviter.state === "DELETED" && inviter.userNo) return { kind: "deleted", userNo: inviter.userNo };
   if (inviter.state === "PRESENT" && inviter.userNo) return { kind: "present", userNo: inviter.userNo, nickname: inviter.nickname, ...link };
-  return { kind: "unknown" };
+  const reason = inviter.state === "UNKNOWN" ? inviter.reason : null;
+  return { kind: "unknown", note: reason && reason !== "UNKNOWN" ? inviterUnknownReasons[reason] : INVITER_UNKNOWN_NOTE };
 }
 
 export function inviterDetailView(
