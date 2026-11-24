@@ -605,7 +605,7 @@ type EditReview = {
 type EditReviewState =
   | { kind: "loading" }
   | { kind: "ready"; result: EditReviewResult }
-  | { kind: "error"; message: string; refresh: boolean }
+  | { kind: "error"; message: string; refresh: boolean; rejected: boolean }
   | { kind: "conflict" };
 export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; /** current 不是现在读到的值时（比如恢复原操作时带的是提交那一刻的值）写它是什么，只改显示的名字。 */ currentLabel?: string; /** Display-only current value; comparisons and requests use current. */ displayCurrent?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; ignoreTrailingDecimalZeros?: boolean; step?: number; /** Keyboard increment when it differs from the accepted numeric precision. */ inputStep?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 进入核对后才读取权威前后值。 */ review?: EditReview; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
@@ -4015,7 +4015,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     } catch (error) {
       if (controller.signal.aborted || closeOnPermissionDenied(error)) return;
       if (review.isConflict(error)) enterEditConflict();
-      else setEditReview({ kind: "error", message: displayAdminReadError(error), refresh });
+      // 其余 4xx 是后端拒了这个值（比如币种不对）：写在字段下，改了再核对；5xx、网络、回包不全是没读到。
+      else setEditReview({ kind: "error", message: displayAdminReadError(error), refresh, rejected: error instanceof Error && "status" in error && typeof error.status === "number" && error.status >= 400 && error.status < 500 });
     } finally {
       reviewRequest.current = null;
     }
@@ -4243,6 +4244,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
             hint={spec.hint}
             note={!readyReview && spec.preview && editValueOk ? spec.preview(newVal) : undefined}
             error={retryApproval ? undefined
+              : editReview?.kind === "error" && editReview.rejected ? editReview.message
               : showEditError && sameAsCurrent ? "新值和当前值一样，改了才能保存。"
               : showEditError && editIssue ? editIssue
               : showEditError && !editValueOk && kind === "number" && (newVal || numberBad) ? `${editNumberError(spec)}。`
@@ -4266,7 +4268,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       )}
       {review && editReview?.kind === "loading" && <RdBlockState state="loading" compact title="正在读取…" />}
       {/* 核对只读不写：读不到用读取的说法和区块错误（标题 + 原因 + 重试），不说「结果未知、可能已生效」（OP-84，复审 V02）。 */}
-      {review && editReview?.kind === "error" && <RdBlockState state="error" title={review.readFailTitle ?? "预览没读到"} detail={editReview.message} onRetry={() => void loadEditReview(editReview.refresh)} />}
+      {review && editReview?.kind === "error" && !editReview.rejected && <RdBlockState state="error" title={review.readFailTitle ?? "预览没读到"} detail={editReview.message} onRetry={() => void loadEditReview(editReview.refresh)} />}
       {review && editReview?.kind === "conflict" && review.conflictNote(() => void loadEditReview(true))}
       {review && editReview?.kind !== "conflict" && reopened && review.conflictNote()}
       {spec && !(surface && !compareEdit) && (
