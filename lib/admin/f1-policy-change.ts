@@ -12,6 +12,7 @@ import { fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type Fun
 import { isOriginalCommandOrigin, queryOriginalCommand, type OriginalCommandRoute } from "./original-command-query";
 import { formatAdminApiError } from "./error-messages";
 import { compareDecimal, f1BenefitInputError, f1BenefitWriteValue, isF1BenefitField, type F1BenefitField } from "./f1-rank-benefit";
+import { withF1ProposalLookupCopy } from "./f1-approval";
 
 export type F1ConditionField = "selfBuy" | "teamGv" | "directRefs" | "legCount" | "legRank";
 export type F1PolicyAction = "threshold" | "reward_add" | "reward_update" | "reward_remove";
@@ -34,6 +35,11 @@ type OriginalCommand = {
 };
 
 export type F1PolicyRecord = PendingMutationRecord & { input: string; ticket?: A2OperationRow; received?: boolean; absent?: boolean; commandOrigin?: FundCommandOrigin };
+
+export function canRetryF1PolicyProposal(record: F1PolicyRecord) {
+  return record.absent === true && !record.received && !record.ticket && record.expiresAt > Date.now();
+}
+
 const attempts = createPendingMutationStore<F1PolicyRecord>({
   storageKey: "nexion-admin-f1-policy-commands-v1", retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.input === "string",
@@ -181,8 +187,15 @@ export async function submitF1Policy(
   let previous = editor.recoveryCommandKey ? records.find(item => item.commandKey === editor.recoveryCommandKey) : records.find(item => !item.ticket) ?? records[0];
   if (mode !== "submit" && !previous) throw new Error("原操作已处理，请关闭弹窗并刷新后再操作。");
   const unresolved = listF1PolicyOperations(session.adminId).find(item => !item.ticket && item.original.values.rank === editor.row.v);
-  if (mode === "submit" && unresolved) throw new A2OutcomeUncertainError("这一级有结果未知的原操作，请先查询原结果。", unresolved.commandKey);
-  if (previous?.ticket && mode === "submit" && f1PolicyNeedsApproval(editor, form)) throw new A2OutcomeUncertainError("这一级已有待审批申请，请先核对原申请。", previous.commandKey);
+  if (mode === "submit" && unresolved) {
+    const copy = "这一级有结果未知的原操作，请先查询原结果。";
+    const error = new A2OutcomeUncertainError(copy, unresolved.commandKey);
+    throw unresolved.original.approval ? withF1ProposalLookupCopy(error, copy) : error;
+  }
+  if (previous?.ticket && mode === "submit" && f1PolicyNeedsApproval(editor, form)) {
+    const copy = "这一级已有待审批申请，请先核对原申请。";
+    throw withF1ProposalLookupCopy(new A2OutcomeUncertainError(copy, previous.commandKey), copy);
+  }
   if (previous && !previous.ticket && mode === "submit") throw new A2OutcomeUncertainError("原操作结果未知，请按原内容核对。", previous.commandKey);
   if (mode === "submit" && previous?.ticket) previous = undefined;
   let original = previous?.original;
@@ -230,6 +243,9 @@ export async function submitF1Policy(
   if (mode === "submit") inFlight.add(key);
   try {
     if (original.approval) {
+      if (mode === "retry-original" && previous && !previous.received && !previous.ticket && !canRetryF1PolicyProposal(previous)) {
+        throw new Error("请先查询原操作，确认查不到且未过期后再按原请求重试。");
+      }
       let ticket;
       if (previous || mode === "lookup") {
         // A failed read cannot revoke an earlier authoritative pending observation.
@@ -291,7 +307,13 @@ export async function submitF1Policy(
       && !failure.backendMessage?.startsWith("IDEMPOTENCY_")
       && isDeterministicRejection(failure.httpStatus ?? failure.status ?? 0, failure.apiCode));
     if (rejected) attempts.forget(fingerprint, key);
-    else if (saved && !isA2OutcomeUncertainError(error)) throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "原操作结果未知，请查询原结果。", key);
+    else if (saved) {
+      const uncertain = isA2OutcomeUncertainError(error) ? error
+        : new A2OutcomeUncertainError(error instanceof Error ? error.message : "原操作结果未知，请查询原结果。", key);
+      if (original.approval) throw withF1ProposalLookupCopy(uncertain,
+        saved.received || saved.ticket ? "原申请已建单，当前结果还没读到，请继续查询。" : undefined);
+      throw uncertain;
+    }
     throw error;
   } finally {
     if (mode === "submit") inFlight.delete(key);

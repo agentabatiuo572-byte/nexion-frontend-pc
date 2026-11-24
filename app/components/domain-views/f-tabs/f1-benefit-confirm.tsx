@@ -16,9 +16,10 @@ import { SUPER_APPROVER } from "./f1-shared";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
 import { fetchF1VRankOverview } from "@/lib/admin/f1-client";
 import { compareDecimal, ratePct, F1_BENEFIT_NAMES as NAME, f1BenefitInputError as inputError, type F1BenefitField } from "@/lib/admin/f1-rank-benefit";
-import { pendingF1Policy, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
+import { canRetryF1PolicyProposal, pendingF1Policy, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { F1_PROPOSAL_LOOKUP_FIRST } from "@/lib/admin/f1-approval";
 import { h4ReadConflict } from "../h-tabs/h4-legacy-parts";
 
 /** 现在的值，按填写的单位：比例是百分数，月薪是 USDT。 */
@@ -39,6 +40,8 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
   const [revision, setRevision] = useState(0);
   const pending = () => owner === undefined ? undefined : pendingF1Policy(owner, baseline);
   const [original, setOriginal] = useState(pending);
+  const canWrite = session?.adminId === owner && !!session?.authorities.includes("network_f1_write");
+  const proposalQueryOnly = !!original?.original.approval && (!canWrite || !canRetryF1PolicyProposal(original));
   const editor = original ? { ...original.original.editor, recoveryCommandKey: original.commandKey } : baseline;
   const row = editor.row;
   const rows = ctx.vrankRows;
@@ -59,7 +62,9 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
   const prevSalary = field === "monthlySalaryUsdt" && index > 0 ? benefitValue(rows[index - 1], field) : undefined;
 
   const effect = (values: BusinessFormValue) => {
-    if (original) return <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。">结果未知</StatusTag>;
+    if (original) return <StatusTag tone="warn" icon={CircleHelp} explain={original.original.approval
+      ? proposalQueryOnly ? F1_PROPOSAL_LOOKUP_FIRST : "没查到原审批单，可以按原内容和理由重试。"
+      : "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。"}>结果未知</StatusTag>;
     const up = direction(values.value ?? "");
     if (up === 1) return <StatusTag tone="progress" filled icon={Clock3}>批准后生效</StatusTag>;
     if (up === -1) return <StatusTag tone="progress" filled icon={Zap}>立即生效</StatusTag>;
@@ -99,7 +104,7 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
       </Fact>}
     </Facts>;
   };
-  const disabledReason = session?.adminId !== owner || !session?.authorities.includes("network_f1_write")
+  const disabledReason = !canWrite
     ? "当前账号没有这项操作的权限，请关闭弹窗后重新核对。"
     : !original && (ctx.f1Loading || ctx.f1Error || !current || !row.policyRevision) ? "请先成功重新读取会员等级。"
     : !original && ctx.f1ApprovalRanks.includes(row.v) ? "等审批结果：批准、驳回或撤回后再改" : undefined;
@@ -181,10 +186,10 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
     inlineApproval={{
       dialogClassName: "f1-policy-confirm",
       pending: !!original,
-      initialRecovery: "retry",
+      initialRecovery: proposalQueryOnly ? "lookup" : "retry",
       expired: !!original && original.expiresAt <= Date.now(),
       expiredRequestRecovery: original && original.expiresAt <= Date.now() ? "query" : undefined,
-      queryOnly: !!original?.original.approval && original.absent !== true,
+      queryOnly: proposalQueryOnly,
       disabledReason,
       // 生效方式只写在标题下的标签里，不再加一条同义横幅（DT-12）；批准前按原值写在影响句里。
       resolve: () => undefined,

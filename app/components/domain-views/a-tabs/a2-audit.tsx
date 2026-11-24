@@ -643,8 +643,8 @@ function logDeltaText(delta: string) {
 }
 
 /** 动作名的显示：认得出的写中文；没收录的动作码写「未识别的操作」，原码在抽屉的技术信息里；本来就是中文的照写。 */
-function logActionShown(code: string) {
-  const text = logActionText(code);
+function logActionShown({ action: code, actionLabel }: A2AuditLogRow) {
+  const text = actionLabel ?? logActionText(code);
   return text === code && /^[A-Za-z][\w.:-]*$/.test(code) && /[_.:]|[a-z][A-Z]/.test(code) ? { text: "未识别的操作", raw: code } : { text };
 }
 
@@ -2985,7 +2985,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     {hasApplied ? <>当前筛选下暂无操作记录 <Button size="sm" onClick={clearFilter}>清除筛选</Button></> : "暂无操作记录"}
                   </TableMessage>
                 ) : logPageRows.map((l) => {
-                  const act = logActionShown(l.action);
+                  const act = logActionShown(l);
                   const obj = logObject(l);
                   const e1Approved = e1ApprovedLog(l, e1Proposals);
                   const e1Sides = e1SkuLogSides(l) ?? e1Approved?.sides;
@@ -3244,7 +3244,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         nav={{ hasPrev: logIndex > 0, hasNext: logIndex >= 0 && logIndex < logPageRows.length - 1, onPrev: () => { if (logIndex > 0) setLogId(logPageRows[logIndex - 1].id); }, onNext: () => { if (logIndex >= 0 && logPageRows[logIndex + 1]) setLogId(logPageRows[logIndex + 1].id); } }}>
         {shownLog && <>
           <JudgmentPoints rows={[
-            { label: "动作", value: logActionShown(shownLog.action).text },
+            { label: "动作", value: logActionShown(shownLog).text },
             { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: logRoleText(shownLog.role) ? `${shownLog.actor} · ${logRoleText(shownLog.role)}` : shownLog.actor },
             // 对象是「类型 · 编号」，编号可能是整串 UUID：不用不换行的 a2-code，在「·」后面折行，不把抽屉撑出横向滚动。
             { label: "对象", value: F_BATCH_DIGEST.test(shownLog.obj) || fBatchLogItems(shownLog) ? "整批调整的团队参数" : [shownLogObject?.kind, shownLogObject?.id].filter(Boolean).join(" · ") },
@@ -3259,7 +3259,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <Fact k="IP"><span data-mono>{shownLog.ip}</span></Fact>
               <Fact k="请求编号"><span data-mono>{requestNo}</span></Fact>
               {/* 没翻成中文时「动作」已经是原码，不再写一遍（建议 8）。 */}
-              {logActionText(shownLog.action) !== shownLog.action || logActionShown(shownLog.action).raw ? <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact> : null}
+              {logActionShown(shownLog).text !== shownLog.action || logActionShown(shownLog).raw ? <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact> : null}
               {shownLogObject?.raw && !F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象原文"><span data-mono className="a2-long-code">{shownLogObject.raw}</span></Fact>}
               <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
               {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象摘要"><span data-mono>{shownLog.obj}</span></Fact>}

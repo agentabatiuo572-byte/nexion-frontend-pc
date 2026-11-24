@@ -698,7 +698,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           <div className="f5-batch-nav">
             <span>{f5AppendError ?? `已加载 ${events.length} 笔，按新到旧`}</span>
             {events.length > 20 && <Button size="sm" disabled={loading} icon={<RotateCcw size={14} aria-hidden />} onClick={() => { setSelected([]); load(applied); }}>回到第一批</Button>}
-            {f5NextQuery && <Button size="sm" disabled={loading} onClick={() => void ctx.refreshF5(f5NextQuery)}>{f5AppendError ? "重试" : "下一批"}</Button>}
+            {f5NextQuery && <Button size="sm" disabled={loading} onClick={() => void ctx.refreshF5(f5NextQuery)}>{f5AppendError ? "重试" : "加载更多"}</Button>}
           </div>
         )}
       </Panel>

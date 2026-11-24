@@ -300,7 +300,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         items: cursor ? [...current.items, ...page.items.filter(row => !current.items.some(item => item.claimNo === row.claimNo))] : page.items,
       }));
     } catch (error) {
-      if (request === salaryGeneration.current) setSalaryClaims(current => ({ ...current, loading: false, error: errorMessage(error) }));
+      if (request === salaryGeneration.current) setSalaryClaims(current => ({ ...current, loading: false, error: displayAdminReadError(error) }));
     }
   }, []);
 

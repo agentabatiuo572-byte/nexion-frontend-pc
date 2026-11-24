@@ -1,3 +1,12 @@
+export function auditActionFieldLabel(action: string, field: unknown): string | undefined {
+  if (action !== "F_TEAM_VRANK_THRESHOLD_CHANGED") return undefined;
+  switch (field) {
+    case "purchaseL1Rate": return "调整等级权益 · 好友购买一级比例";
+    case "purchaseL2Rate": return "调整等级权益 · 好友购买二级比例";
+    case "monthlySalaryUsdt": return "调整等级权益 · 月薪";
+  }
+}
+
 /** 后端 fdc9f469 已知审计动作的显示名；原码保留在技术信息，「动作」筛选仍按原码查。 */
 export const AUDIT_ACTION_NAMES: Readonly<Record<string, string>> = {
   A2_OPERATION_PROPOSED: "提交审批",

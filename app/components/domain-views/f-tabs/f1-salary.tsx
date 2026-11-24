@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Banknote } from "lucide-react";
 import { BlockState, Button, Cell, Drawer, FilterBar, FilterField, Input, KeyValues, Panel, Select, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
-import { businessDay, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessDay, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { growthTeamDate, isPreviousMonthSalaryClaim } from "@/lib/admin/business-calendar-client";
 import { F1_EMPTY_SALARY_FILTERS as EMPTY, teamUserId } from "@/lib/admin/f-overview-contract";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
@@ -133,7 +133,7 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1VRankRow[
           ...(lateClaim(current) ? [{ key: "late", label: "领取方式", value: "1 号领上月", explain: "上个月最后一天升到当月新的最高等级，只能在下月 1 号当天领上个月的。" }] : []),
           { key: "amt", label: "金额", value: `${amountDisplay(current.amountUsdt)} USDT` },
           { key: "to", label: "到账", value: "直接进可用余额，不冷却" },
-          { key: "at", label: `领取时间（${zone}）`, value: formatBusinessTimeCompact(current.claimedAt, "—") },
+          { key: "at", label: `领取时间（${zone}）`, value: formatBusinessTimeFull(current.claimedAt, "—") },
           { key: "bill", label: "账单", value: current.billNo ? <span data-mono="">{current.billNo}</span> : "—", explain: "可以在「账本与账单核对」按账单号查。" },
         ]} />}
       </Drawer>

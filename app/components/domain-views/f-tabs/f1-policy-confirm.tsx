@@ -10,12 +10,13 @@ import { CircleHelp, Clock3, LockOpen, Zap, Lock } from "lucide-react";
 import { Change, DiffField, Fact, Facts, Field, Input, KeepText, Notice, Select, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { F1_PROPOSAL_LOOKUP_FIRST } from "@/lib/admin/f1-approval";
 import { fetchF1VRankOverview } from "@/lib/admin/f1-client";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import {
-  f1ConditionLabels, f1PolicyInitialForm, f1PolicyInputError, f1PolicyNeedsApproval,
+  canRetryF1PolicyProposal, f1ConditionLabels, f1PolicyInitialForm, f1PolicyInputError, f1PolicyNeedsApproval,
   formatF1ExactAmount, isF1FundReward, pendingF1Policy, submitF1Policy, type F1PolicyEditor, type F1ConditionField,
 } from "@/lib/admin/f1-policy-change";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
@@ -58,6 +59,8 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
   const [baseline, setBaseline] = useState(requested);
   const [baselineReady, setBaselineReady] = useState(true);
   const [baselineRevision, setBaselineRevision] = useState(0);
+  const canWrite = session?.adminId === owner && !!session?.authorities.includes("network_f1_write");
+  const proposalQueryOnly = !!opening.pending?.original.approval && (!canWrite || !canRetryF1PolicyProposal(opening.pending));
   const editor = opening.pending?.original.editor ?? baseline;
   const form = opening.pending?.original.form ?? f1PolicyInitialForm(editor);
   const isCondition = editor.action === "threshold", remove = editor.action === "reward_remove";
@@ -70,7 +73,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     : `${editor.row.v} · ${remove ? "移除奖励" : editor.action === "reward_add" ? "新增奖励" : "编辑奖励"}`;
   const title = opening.pending ? `${editor.row.v} 的原操作` : isCondition ? `调整 ${editor.row.v} 的${DISPLAY[condition] ?? fieldLabel}`
     : remove ? `移除 ${editor.row.v} 的奖励` : editor.action === "reward_add" ? `给 ${editor.row.v} 添加奖励` : `编辑 ${editor.row.v} 的奖励`;
-  const disabledReason = opening.error ?? (!opening.pending && (!baselineReady || ctx.f1Loading || ctx.f1Error || ctx.vrankRows.length === 0) ? "请先成功重新读取会员等级。" : undefined) ?? (session?.adminId !== owner || !session?.authorities.includes("network_f1_write")
+  const disabledReason = opening.error ?? (!opening.pending && (!baselineReady || ctx.f1Loading || ctx.f1Error || ctx.vrankRows.length === 0) ? "请先成功重新读取会员等级。" : undefined) ?? (!canWrite
     ? "当前账号没有这项操作的权限，请关闭弹窗后重新核对。"
     : opening.pending && !opening.pending.original.approval && opening.pending.expiresAt <= Date.now()
       ? "原操作已过期，请到操作记录核对，勿重复提交。" : undefined);
@@ -130,7 +133,10 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
       if (locked) throw Object.assign(new Error(LOCKED), { httpStatus: failure.httpStatus, apiCode: failure.apiCode });
       throw error;
     } finally { onPendingChange(); }
-    if (!result) return false;
+    if (!result) {
+      setOpening({ pending: pending(), error: undefined });
+      return false;
+    }
     requireSession(false);
     if (result.active) ctx.acceptF1PolicyOverview(result.active);
     else ctx.invalidateF1(`${result.acknowledgement}；当前配置暂时读不到，重新读取后再发起新修改。`);
@@ -180,7 +186,9 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
       : <StatusTag tone="progress" filled icon={Zap}>立即生效</StatusTag>;
   };
   const effect = opening.pending
-    ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。">结果未知</StatusTag>
+    ? <StatusTag tone="warn" icon={CircleHelp} explain={opening.pending.original.approval
+      ? proposalQueryOnly ? F1_PROPOSAL_LOOKUP_FIRST : "没查到原审批单，可以按原内容和理由重试。"
+      : "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。"}>结果未知</StatusTag>
     : remove ? <StatusTag tone="progress" filled icon={Zap}>立即生效</StatusTag>
       : <StatusTag tone="neutral" icon={LockOpen} explain={isCondition
         ? `调低是放宽：提交审批，${SUPER_APPROVER}（需有审批批准权限）批准后才生效，你自己不能批。调高或不变是收紧：确认后立即生效。`
@@ -227,7 +235,8 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     inlineApproval={{
       dialogClassName: "f1-policy-confirm",
       pending: !!opening.pending,
-      initialRecovery: "retry",
+      initialRecovery: proposalQueryOnly ? "lookup" : "retry",
+      queryOnly: proposalQueryOnly,
       expired: !!opening.pending && opening.pending.expiresAt <= Date.now(),
       expiredRequestRecovery: opening.pending && opening.pending.expiresAt <= Date.now() ? "query" : undefined,
       disabledReason,

@@ -8,7 +8,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { BadgeDollarSign, CircleCheck, Clock3, Coins, Gift, Package, RotateCcw, Ticket, TriangleAlert, Undo2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
-import { listF1Proposals, canSendF1Proposal, isV8Promotion } from "@/lib/admin/f1-approval";
+import { listF1Proposals, canSendF1Proposal, withF1ProposalLookupCopy } from "@/lib/admin/f1-approval";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
@@ -142,10 +142,9 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
   const original = () => owner === undefined ? undefined : listF1Proposals(owner).find(row => row.fingerprint === slot.current);
   const existing = original();
   const session = useAdminAuth(state => state.session);
-  const canRetry = !existing || !!existing.spec && !!session && session.adminId === owner
+  const canSend = !existing || !!existing.spec && !!session && session.adminId === owner
     && canSendF1Proposal(existing.spec, session.authorities);
-  const v8QueryOnly = !!existing && (confirm.v8Review || isV8Promotion(existing.spec))
-    && (existing.absent !== true || !!existing.received || !!existing.ticket || !canRetry);
+  const queryOnly = !!existing && (existing.absent !== true || !!existing.received || !!existing.ticket || !existing.request || !canSend);
   return (
     <OperationConfirmModal
       briefKind={confirm.briefKind}
@@ -172,11 +171,11 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
         dialogClassName: confirm.dialogClassName,
         resolve: () => undefined,
         pending: !!confirm.recoverOriginal && !!existing,
-        initialRecovery: v8QueryOnly ? "lookup" : "retry",
-        queryOnly: v8QueryOnly,
+        initialRecovery: queryOnly ? "lookup" : "retry",
+        queryOnly,
         expired: !!existing && existing.expiresAt <= Date.now(),
         expiredRequestRecovery: existing && existing.expiresAt <= Date.now() ? "query" : undefined,
-        disabledReason: submitted.current && !canRetry ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined,
+        disabledReason: submitted.current && !canSend ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined,
         recover: async () => { const resolved = await ctx.recoverF1(slot.current, "query"); if (resolved) onClose(); return resolved; },
         retry: async () => { await ctx.recoverF1(slot.current, "retry"); onClose(); },
       }}
@@ -197,9 +196,7 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
           onClose();
         } catch (error) {
           // 错误交回确认框，由框里显示（没权限时框关掉、外壳提示），不再另弹轻提示，免得同一句同屏两次。
-          if ((confirm.v8Review || isV8Promotion(original()?.spec)) && isA2OutcomeUncertainError(error)) {
-            throw Object.assign(error, { confirmCopy: "结果未知，可能已经建了审批单。请先查询原结果。" });
-          }
+          if ((confirm.v8Review || original()) && isA2OutcomeUncertainError(error) && !("confirmCopy" in error)) throw withF1ProposalLookupCopy(error);
           throw error;
         }
       }}

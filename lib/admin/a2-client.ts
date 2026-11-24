@@ -1,4 +1,5 @@
 import { ADMIN_ERROR_MESSAGES, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { auditActionFieldLabel } from "./audit-action-names";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
 import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
@@ -292,6 +293,7 @@ export interface A2AuditLogRow {
   actor: string;
   role: string;
   action: string;
+  actionLabel?: string;
   obj: string;
   resourceType?: string;
   resourceId?: string;
@@ -705,6 +707,7 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
     actor: asText(detail.actor ?? log.actorUsername, "系统"),
     role: asText(detail.role ?? log.actorType, "ADMIN"),
     action,
+    actionLabel: auditActionFieldLabel(action, detail.field),
     obj,
     resourceType,
     resourceId: asText(log.resourceId, ""),
