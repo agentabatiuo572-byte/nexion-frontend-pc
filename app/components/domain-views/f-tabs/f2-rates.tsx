@@ -87,6 +87,10 @@ function useF2Model(ctx: FViewCtx) {
   return { canRoyaltyRate, canPolicyAmplify, l1NexReadonly, l1NexStatus, value, pauseValue, paused, gate, rank, gateRaw, rankRaw, cap };
 }
 
+// 权限名照后台「权限清单」写（BUG-709 已修）；F2 的申请后端只认另一位超级管理员（BUG-704、OP-67），所以「谁来批」只写超管，权限名留给配置说明用。
+const RATE_PERMISSION = "团队奖励设置 · L1-L7 团队购买奖励比例放宽";
+const POLICY_PERMISSION = "Partner 档位与费率杠杆参数";
+const approvalFacts = (_perm: string) => <Fact k="谁来批">另一位超级管理员</Fact>;
 const effectTag = <StatusTag tone="progress" filled explain="另一位超级管理员在「操作记录与审批」批准后才生效；只影响之后新算的订单，已经算好的不重算。">批准后生效</StatusTag>;
 const COVERAGE_CHECK = "批准时检查兑付覆盖率，低于红线不会执行。";
 
@@ -335,12 +339,12 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
 /* ───────────── 单项参数行（谁能拿到、总量和冷却共用） ───────────── */
 
 const PARAM_HELP: Record<string, { what: string; effect: string; hint?: string; note?: string; perm: string; unit?: string }> = {
-  "F.unilevel.depthGate": { what: "从哪一层起要看上级的等级", effect: "比如选 L3：L3–L7 的上级要到解锁等级才拿得到；可以选 L1", perm: "团队奖励规则" },
-  "F.unilevel.depthGateRank": { what: "解锁起点及以后各层，上级至少要到的 V 等级", effect: "等级不够的上级这一层记 0", perm: "团队奖励规则" },
-  "F.influence.clampMin": { what: "L2–L7 影响分的最小值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。保存时不检查下限是否不大于上限", perm: "团队奖励规则" },
-  "F.influence.clampMax": { what: "L2–L7 影响分的最大值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。保存时不检查下限是否不大于上限", perm: "团队奖励规则" },
-  "F.promo.weekMultiplier": { what: "活动周每层奖励再乘的倍数，含 L1", effect: "调高平台多付钱", hint: "1–3 倍", perm: "团队奖励比例", unit: "倍" },
-  "F.unilevel.mergeExitMaxPct": { what: "一笔订单七层 USDT 奖励最多占订单的比例", effect: "超出时从 L1 往下分完为止；旧 UVT 系数另发的 UVT 不算在内", hint: "0–100%", perm: "团队奖励规则", unit: "%" },
+  "F.unilevel.depthGate": { what: "从哪一层起要看上级的等级", effect: "比如选 L3：L3–L7 的上级要到解锁等级才拿得到；可以选 L1", perm: POLICY_PERMISSION },
+  "F.unilevel.depthGateRank": { what: "解锁起点及以后各层，上级至少要到的 V 等级", effect: "等级不够的上级这一层记 0", perm: POLICY_PERMISSION },
+  "F.influence.clampMin": { what: "L2–L7 影响分的最小值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。保存时不检查下限是否不大于上限", perm: POLICY_PERMISSION },
+  "F.influence.clampMax": { what: "L2–L7 影响分的最大值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。保存时不检查下限是否不大于上限", perm: POLICY_PERMISSION },
+  "F.promo.weekMultiplier": { what: "活动周每层奖励再乘的倍数，含 L1", effect: "调高平台多付钱", hint: "1–3 倍", perm: RATE_PERMISSION, unit: "倍" },
+  "F.unilevel.mergeExitMaxPct": { what: "一笔订单七层 USDT 奖励最多占订单的比例", effect: "超出时从 L1 往下分完为止；旧 UVT 系数另发的 UVT 不算在内", hint: "0–100%", perm: POLICY_PERMISSION, unit: "%" },
 };
 
 function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: ReturnType<typeof useF2Model>; paramKey: string; openConfirm: Open; shown?: ReactNode }) {
@@ -362,8 +366,11 @@ function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: 
     effect: effectTag,
     edit: enumSpec ? { kind: "select", current: parsed?.normalized ?? value, options: enumSpec.options, unit: enumSpec.unit }
       : { kind: "number", current: value, ...(promo ? { min: 1, max: 3, unit: "倍", amplifiesWhen: "increase" as const } : merge ? { min: 0, max: 100, unit: "%" } : {}), hint: help.hint },
-    facts: parsed && !parsed.legal ? <Facts><Fact k="现在存的值" tone="danger">{value}（不是有效值）</Fact></Facts>
-      : !value ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK[paramKey].replace(/^没配[^，]*时，/, "")}</Fact></Facts> : undefined,
+    facts: <Facts>
+      {parsed && !parsed.legal ? <Fact k="现在存的值" tone="danger">{value}（不是有效值）</Fact>
+        : !value && <><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK[paramKey].replace(/^没配[^，]*时，/, "")}</Fact></>}
+      {approvalFacts(help.perm)}
+    </Facts>,
     statedBrief: { impact: `${help.what}。${help.effect}。批准后对之后新算的订单生效，已经算好的不重算。`, check: promo ? COVERAGE_CHECK : "核对新值；保存时不检查上下限的大小关系。" },
     detail: `${name} · 现在 ${value || "未配置"}。只影响之后的购买奖励结算。`,
     coverageCheck: COVERAGE_CHECK, coverageLead: "调高倍率，每层都多付钱",
@@ -428,8 +435,11 @@ export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
     effect: effectTag,
     edit: { kind: "number", current: coolingDays, unit: "天", min: 0, max: 90, step: 1, hint: "0–90 的整数",
       ...(coolingDays !== "" ? { amplifiesWhen: "decrease" as const } : {}) },
-    facts: coolingRaw && coolingDays === "" ? <Facts><Fact k="现在存的值" tone="danger">{coolingRaw}（不是 0–90 的整数）</Fact></Facts>
-      : !coolingRaw ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK["F.cooldown"].replace(/^没配[^，]*时，/, "")}</Fact></Facts> : undefined,
+    facts: <Facts>
+      {coolingRaw && coolingDays === "" ? <Fact k="现在存的值" tone="danger">{coolingRaw}（不是 0–90 的整数）</Fact>
+        : !coolingRaw && <><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK["F.cooldown"].replace(/^没配[^，]*时，/, "")}</Fact></>}
+      {approvalFacts(POLICY_PERMISSION)}
+    </Facts>,
     statedBrief: { impact: "批准后，之后新算的购买奖励和其他团队奖励按新天数冷却；已经在冷却中的到期日不变。缩短会让钱更早能提。不影响好友设备收益奖励的冷却。", check: COVERAGE_CHECK },
     detail: `购买与其他奖励冷却期 · ${coolingState}。缩短前先看兑付覆盖率；不影响好友设备收益奖励的冷却期。`,
     coverageCheck: COVERAGE_CHECK, coverageLead: "缩短冷却，钱更早能提",

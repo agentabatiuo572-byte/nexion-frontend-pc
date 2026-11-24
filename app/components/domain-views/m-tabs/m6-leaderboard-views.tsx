@@ -9,35 +9,34 @@ import { ArrowRight, ListOrdered, Trophy } from "lucide-react";
 import { BlockState, Button, Cell, Explain, Fact, Facts, Notice, Panel, Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import type { SupportBoardCount, SupportBoardKey, SupportBoardQualification, SupportBoardRow } from "./support-leaderboard";
 import { amountDisplay } from "@/lib/format";
+import { PERF_UNAVAILABLE, perfFlowText, perfText, type PerfTotals } from "./perf-view";
 
 /* ---------------- 名字和口径 ---------------- */
 
-export const BOARD_LABEL: Record<SupportBoardKey, string> = { netContribution: "净贡献额", firstPayment: "首充人数", customers: "当前绑定客户" };
+export const BOARD_LABEL: Record<SupportBoardKey, string> = { netContribution: "业绩额", firstPayment: "首充人数", customers: "当前绑定客户" };
 
-/** 三类榜各一句话：管什么数，跟不跟月份和币种。细则在问号里。 */
+/** 三类榜各一句话：只写数据（跟不跟月份、单位），怎么算收进问号。 */
 export const BOARD_DEFINITION: Record<SupportBoardKey, { line: string; rows: { k: string; v: string }[] }> = {
   netContribution: {
-    line: "按所选月份 · 付款贡献减去退款、提现冲回 · 可以是负数 · USDT 和 UVT 分开排",
+    line: "按所选月份 · USDT",
     rows: [
-      { k: "计入", v: "充值计入贡献；用余额消费时，只把还没算过的部分计入，同一笔钱不重复算。" },
-      { k: "冲减", v: "后台退款只冲减消费时新增的那部分；成功提现只冲减已经算过贡献的部分，收益提现不冲减原业绩。冲减记在发生的那个月。" },
-      { k: "币种", v: "USDT 和 UVT 各算各的，不换算，不合并比较。" },
-      { k: "组榜", v: "按贡献发生时所在的组统计，调组后历史贡献仍算在原来的组，所以组榜里可能有现在已经不在这个组的客服。" },
+      { k: "入金", v: "充值到账加合格的购机直付；人工加款、奖励不算。" },
+      { k: "提现", v: "钱包实际扣的，含手续费。" },
+      { k: "算给谁", v: "发生时绑定的客服和所在的组；更正记在确认月，算给原来那笔的客服和组。" },
     ],
   },
   firstPayment: {
-    line: "按所选月份 · 第一笔充值或购机的客户数 · 算给付款时的专属客服 · 不分币种",
+    line: "按所选月份 · 人",
     rows: [
-      { k: "算谁", v: "每个客户一生只算一次：最早一笔成功的充值或购机。同一时刻两笔时先算充值。" },
-      { k: "算给谁", v: "算给付款那一刻这位客户的专属客服，按这笔付款所在的月份计数。" },
-      { k: "币种", v: "人数不随所选币种变；切币种只换表里的净贡献额一列。" },
+      { k: "算谁", v: "每位客户只算一次：最早一笔成功的充值或付费购机。" },
+      { k: "算给谁", v: "付款时这位客户的专属客服，算在付款的那个月。" },
     ],
   },
   customers: {
-    line: "现在的数 · 发布时名下有效绑定的客户 · 不分月份 · 不是这个月新增",
+    line: "现在的数 · 人",
     rows: [
-      { k: "算谁", v: "当前有效绑定、账号未删除的真实客户；同一客户在一位客服名下只算一次。" },
-      { k: "时间", v: "每次发布时重新数一次，不随所选月份变；表里的净贡献额、首充人数是这个月的参考数。" },
+      { k: "算谁", v: "发布时名下有效绑定的客户，同一位客户只算一次；不是这个月新增。" },
+      { k: "时间", v: "每次发布时重新数，不随所选月份变；表里的业绩额、首充人数是这个月的参考数。" },
     ],
   },
 };
@@ -68,13 +67,6 @@ export function countText(value: string | null) {
 }
 export function rankText(row: SupportBoardRow) {
   return row.rankStatus === "confirmed" && row.rank !== null ? `${row.isTied ? "并列" : ""}第 ${row.rank} 名` : "名次未定";
-}
-/** 主指标：净贡献额按金额写，另两个是人数。 */
-export function mainValue(row: SupportBoardRow, board: SupportBoardKey, places?: number) {
-  return board === "netContribution" ? amountShown(row.amount, places) : countShown(board === "firstPayment" ? row.firstPayment : row.customers);
-}
-function amountShown(metric: SupportBoardCount, places?: number) {
-  return metric.coverage === "unavailable" ? "—" : amountText(metric.value, places);
 }
 function countShown(metric: SupportBoardCount) {
   return metric.coverage === "unavailable" ? "—" : countText(metric.value);
@@ -108,31 +100,27 @@ export function QualificationTag({ row, always = false }: { row: SupportBoardRow
 
 /* ---------------- 前三名 ---------------- */
 
-export function Podium({ board, rows, total, unit, places, status, onOpen, onViewAll }: {
-  board: SupportBoardKey;
+/** 前三名卡只写名次、姓名和组，不写成绩：成绩只在全部排名里写一次（ST-74、DP-61）。 */
+export function Podium({ rows, total, status, onOpen, onViewAll }: {
   rows: SupportBoardRow[];
   total: number;
-  unit: string;
-  places: number;
-  status: { kind: "ready" } | { kind: "loading" } | { kind: "provisional"; reason: string } | { kind: "none" };
+  status: { kind: "ready" } | { kind: "loading" };
   onOpen: (id: string) => void;
   onViewAll: () => void;
 }) {
   const more = rows.length ? Math.max(0, total - rows.length) : 0;
   return <Panel title="前三名" icon={Trophy} tone="role-1" className="m6-podium-panel"
-    explain="同一版榜单里成绩最好的前三个名次；成绩相同的并列，最多列 4 位，其余并列的在全部排名里。不受搜索和翻页影响。">
-    {status.kind === "loading" ? <BlockState state="loading" title="正在读取前三名…" />
-      : status.kind === "provisional" ? <BlockState state="empty" compact title="这一版还在汇总，暂不评前三名" />
+    explain="同一版榜单里业绩最好的前三个名次；成绩相同的并列，最多列 4 位。">
+    {status.kind === "loading" ? <BlockState state="loading" title="正在加载前三名…" />
       : rows.length === 0 ? <BlockState state="empty" title="这个范围还没有排出名次的客服" />
       : <ol className="m6-podium" data-count={rows.length}>
         {rows.map((row) => (
           <li key={row.id} data-rank={row.rank ?? undefined}>
-            <button type="button" className="m6-podium-card" onClick={() => onOpen(row.id)} aria-label={`${row.name}，${rankText(row)}，${BOARD_LABEL[board]} ${mainValue(row, board, places)} ${unit}，查看成绩`}>
+            <button type="button" className="m6-podium-card" onClick={() => onOpen(row.id)} aria-label={`${row.name}，${rankText(row)}，查看成绩`}>
               <span className="m6-podium-rank">{row.isTied && <small>并列</small>}<b>{row.rank}</b></span>
               <Avatar row={row} size="lg" />
               <span className="m6-podium-name">{row.name}</span>
               <span className="m6-podium-group">{row.groupName || "待分组"}<QualificationTag row={row} /></span>
-              <span className="m6-podium-value"><b>{mainValue(row, board, places)}</b><small>{unit}</small></span>
             </button>
           </li>
         ))}
@@ -147,12 +135,14 @@ export type BoardTableState =
   | { kind: "loading" }
   | { kind: "ready"; rows: SupportBoardRow[]; selfId?: string; empty?: ReactNode };
 
-export function RankingTable({ board, state, currency, month, places, privateRead, onOpen, onCustomers }: {
+export function RankingTable({ board, state, month, perf, openId, privateRead, onOpen, onCustomers }: {
   board: SupportBoardKey;
   state: BoardTableState;
-  currency: string;
   month: string;
-  places: number;
+  /** 这一行的业绩额、入金合计、提现合计。 */
+  perf: (agentId: string) => PerfTotals;
+  /** 公开成绩抽屉开着的那一行：金额格写「见右侧」，同一组数不在表里和抽屉里同时出现（ST-74）。 */
+  openId?: string;
   privateRead: boolean;
   onOpen: (id: string) => void;
   onCustomers: (id: string) => void;
@@ -162,7 +152,7 @@ export function RankingTable({ board, state, currency, month, places, privateRea
     <thead><tr>
       <Th>名次</Th>
       <Th>客服</Th>
-      <Th align="right" data-primary={primary("netContribution")}><span className="m6-th">净贡献额<small>{month} · {currency}</small></span></Th>
+      <Th align="right" data-primary={primary("netContribution")}><span className="m6-th">业绩额<small>{month} · USDT</small></span></Th>
       <Th align="right" data-primary={primary("firstPayment")}><span className="m6-th">首充人数<small>{month} · 人</small></span></Th>
       <Th align="right" data-primary={primary("customers")}><span className="m6-th">当前绑定客户<small>现在 · 人</small></span></Th>
       <Th sticky="end">操作</Th>
@@ -173,8 +163,8 @@ export function RankingTable({ board, state, currency, month, places, privateRea
         : state.rows.map((row) => {
           const self = row.id === state.selfId;
           const movement = movementText(row);
-          const customers = countShown(row.customers);
-          return <Tr key={row.id} onOpen={() => onOpen(row.id)} mark={self ? "hit" : undefined} data-self={self ? "true" : undefined}>
+          const customers = countShown(row.customers), totals = perf(row.id);
+          return <Tr key={row.id} onOpen={() => onOpen(row.id)} selected={openId === row.id} mark={self ? "hit" : undefined} data-self={self ? "true" : undefined}>
             <Td><Cell main={row.rankStatus === "confirmed" && row.rank !== null ? <span className="m6-rank">{row.isTied && <small>并列</small>}{row.rank}</span> : "—"}
               sub={row.rankStatus === "confirmed" && movement ? <span className="m6-move" data-kind={row.movement.kind}>{movement.replace("较上一业务日", "").replace("和上一业务日", "")}</span> : undefined} /></Td>
             <Td><span className="m6-identity">
@@ -184,7 +174,9 @@ export function RankingTable({ board, state, currency, month, places, privateRea
                 <span className="rd-note">{row.groupName || "待分组"}<QualificationTag row={row} /></span>
               </span>
             </span></Td>
-            <Td align="right" data-primary={primary("netContribution")}><Cell num main={amountShown(row.amount, places)} {...gapNote(row.amount, "金额未同步")} /></Td>
+            <Td align="right" data-primary={primary("netContribution")}>{openId === row.id
+              ? <Cell num main={<span className="m6-in-drawer">见右侧</span>} />
+              : <Cell num main={perfText(totals.amount)} sub={perfFlowText(totals)} title={totals.amount.state === "complete" ? undefined : perfFlowText(totals)} />}</Td>
             <Td align="right" data-primary={primary("firstPayment")}><Cell num main={countShown(row.firstPayment)} {...gapNote(row.firstPayment)} /></Td>
             <Td align="right" data-primary={primary("customers")}><Cell num main={customers !== "—" && row.canViewCustomers && privateRead
               ? <button type="button" className="rd-link m6-count-link" aria-label={`查看${row.name}的当前绑定客户，${customers} 人`} onClick={() => onCustomers(row.id)}>{customers}</button>
@@ -197,17 +189,19 @@ export function RankingTable({ board, state, currency, month, places, privateRea
 }
 
 /** 暂定或缺数：格子第二行写短词，完整原因在 title 里（窄屏被切时悬停、聚焦能看全）。 */
+const PENDING_REASONS = ["成绩还在汇总", "参榜资料还在汇总"];
 function gapNote(metric: SupportBoardCount, fallback = "数据未同步") {
   if (metric.coverage === "complete") return {};
   const reason = metric.reason || fallback;
-  return metric.coverage === "partial" ? { sub: "暂定", title: `暂定：${reason}` } : { sub: reason, title: reason };
+  // 「没核完」全页一个说法：「待核」（和业绩额格、结论一致），完整原因在 title。
+  return metric.coverage === "partial" || PENDING_REASONS.includes(reason) ? { sub: "待核", title: `待核：${reason}` } : { sub: reason, title: reason };
 }
 
 /** 分页：覆盖不完整时不写总人数（M6-Q04），所以不用共用 Pager（它总写「共 N 条」）；样子和 Pager 一样。 */
 export function BoardPager({ page, pages, total, pageSize, onPage, onPageSize }: { page: number; pages: number; total?: number; pageSize: number; onPage: (page: number) => void; onPageSize: (size: number) => void }) {
   return <div className="rd-pager" data-list-pager="" data-list-label="全部排名">
     <span className="rd-pager-range">第 {page} / {pages} 页{total !== undefined ? ` · 共 ${total.toLocaleString("en-US")} 人` : ""}</span>
-    {total === undefined && <span className="rd-pager-note">参榜名单还在汇总，暂不写总人数</span>}
+    {total === undefined && <span className="rd-pager-note">参榜名单待核，暂不写总人数</span>}
     <div className="rd-pager-tools">
       <Select aria-label="全部排名每页条数" value={String(pageSize)} onChange={(value) => onPageSize(Number(value))} options={[5, 10, 20].map((size) => ({ value: String(size), label: `${size} 条/页` }))} />
       <Button size="sm" aria-label="全部排名 上一页" disabled={page <= 1} onClick={() => onPage(page - 1)}>上一页</Button>
@@ -222,35 +216,38 @@ export function RankingPanel({ children, search, sub }: { children: ReactNode; s
 
 /* ---------------- 公开成绩 ---------------- */
 
-export function PerformanceBody({ row, board, month, places, asOf, stale, refreshFailed, privateRead }: {
+export function PerformanceBody({ row, board, month, perf, stale, refreshFailed }: {
   row: SupportBoardRow;
   board: SupportBoardKey;
   month: string;
-  places: number;
-  asOf: string;
+  perf: PerfTotals;
   stale: boolean;
   refreshFailed: boolean;
-  privateRead: boolean;
 }) {
   const movement = movementText(row), reason = movementReason(row);
-  const reasons = [...new Set([row.amount.reason, row.firstPayment.reason, row.customers.reason].filter(Boolean))];
+  // 没核完的项写「…待核」，和表格、结论同一个说法；旧后端的「暂不可用」照写。
+  const amountGap = perf.amount.state === "complete" ? undefined : perf.amount.state === "unavailable" && perf.amount.reason === PERF_UNAVAILABLE ? "业绩额暂不可用" : perf.amount.state === "unavailable" && perf.amount.reason === "数据正在升级" ? "业绩额：数据正在升级" : "业绩额待核";
+  const countGap = (metric: SupportBoardCount, label: string) => metric.coverage === "complete" ? undefined
+    : metric.coverage === "partial" || PENDING_REASONS.includes(metric.reason || "") ? `${label}待核` : `${label}：${metric.reason || "数据未同步"}`;
+  const gaps = [amountGap, countGap(row.firstPayment, "首充人数"), countGap(row.customers, "当前绑定客户")].filter(Boolean);
+  const amount = perfText(perf.amount), inflow = perfText(perf.inflow), withdrawal = perfText(perf.withdrawal);
   return <>
     <div className="m6-detail-who">
       <Avatar row={row} size="lg" />
       <div><strong>{row.name}</strong><span className="rd-note">{row.groupName || "待分组"}</span></div>
       <QualificationTag row={row} always />
     </div>
+    {/* 关键数字：业绩额放最前（VS-102），名次和三项合计降一层。 */}
+    <div className="m6-lead"><span className="m6-lead-label">业绩额 · {month}</span><span className="m6-lead-value">{amount}{amount !== "—" && <small>USDT</small>}</span></div>
     <Facts>
-      <Fact k="名次" lead>{rankText(row)}</Fact>
-      <Fact k="名次变化">{movement ?? reason ?? "—"}</Fact>
-      <Fact k="统计月份">{month}</Fact>
-      <Fact k="净贡献额" tone="role-1" unit={amountShown(row.amount, places) === "—" ? undefined : row.amount.currency}>{amountShown(row.amount, places)}</Fact>
+      <Fact k="名次">{rankText(row)}</Fact>
+      <Fact k="名次变化">{movement ?? (reason && PENDING_REASONS.includes(reason) ? "待核" : reason) ?? "—"}</Fact>
+      <Fact k="入金合计" unit={inflow === "—" ? undefined : "USDT"}>{inflow}</Fact>
+      <Fact k="提现合计" unit={withdrawal === "—" ? undefined : "USDT"}>{withdrawal}</Fact>
       <Fact k="首充人数" unit={countShown(row.firstPayment) === "—" ? undefined : "人"}>{countShown(row.firstPayment)}</Fact>
       <Fact k="当前绑定客户" unit={countShown(row.customers) === "—" ? undefined : "人"}>{countShown(row.customers)}</Fact>
-      <Fact k="数据截至">{asOf}</Fact>
     </Facts>
-    {reasons.length > 0 && <Notice tone="done" title="部分成绩是暂定或缺数">{reasons.join("；")}。缺的数写「—」，不是 0。</Notice>}
+    {gaps.length > 0 && <Notice tone="done" title={board === "netContribution" ? "这位客服的成绩还没核完" : "部分成绩还没核完"}>{gaps.join("、")}。缺的数写「—」，不是 0。</Notice>}
     {(stale || refreshFailed) && <Notice tone="warn">显示的是上次发布的结果{refreshFailed ? "；榜单更新暂未成功，请稍后读取最新结果" : ""}。</Notice>}
-    {!(privateRead && row.canViewCustomers) && <p className="rd-note">暂无这位客服的客户明细查看权限。</p>}
   </>;
 }

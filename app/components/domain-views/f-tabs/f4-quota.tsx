@@ -85,9 +85,11 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
   const unlockValue = (code: string, label: string) => data.quotaRows.find((row) => row.status === 1 && row.name.toUpperCase().includes(code))?.monthlyQuota === null
     ? <>—<span className="f4-muted"> · 月额度没读到</span></> : monthQuota(label);
 
-  const openQuota = (quota: F4LeadershipPoolOverview["quotaRows"][number]) => ctx.openActionConfirm(f4Confirmation(ctx, { action: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`, overview: data, policy: ctx.f4AmbassadorPolicy }));
+  const quotaSnapshot = (quota: F4LeadershipPoolOverview["quotaRows"][number]) => ({ action: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`, overview: data, policy: ctx.f4AmbassadorPolicy });
+  const openQuota = (quota: F4LeadershipPoolOverview["quotaRows"][number]) => ctx.openActionConfirm(f4Confirmation(ctx, quotaSnapshot(quota)));
 
-  const openRecycle = (usage: F4LeadershipPoolOverview["quotaUsages"][number]) => ctx.openActionConfirm(f4Confirmation(ctx, { action: `F.quota.usage.${usage.id}.status`, overview: data, policy: ctx.f4AmbassadorPolicy }));
+  const recycleSnapshot = (usage: F4LeadershipPoolOverview["quotaUsages"][number]) => ({ action: `F.quota.usage.${usage.id}.status`, overview: data, policy: ctx.f4AmbassadorPolicy });
+  const openRecycle = (usage: F4LeadershipPoolOverview["quotaUsages"][number]) => ctx.openActionConfirm(f4Confirmation(ctx, recycleSnapshot(usage)));
 
   return (
     <div className="f4-stack">
@@ -130,7 +132,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
             return <li key={quota.id} data-tight={tight ? "" : undefined} data-paused={paused ? "" : undefined}>
             <span className="f4-quota-head">
               <span className="f4-quota-name"><b>{quota.name}</b><span data-mono>{quota.productNo || quota.quotaCode}</span></span>
-              {canWrite && <Button size="sm" disabledReason={quota.monthlyQuota === null ? QUOTA_MISSING : undefined} onClick={() => openQuota(quota)}>调额度</Button>}
+              {canWrite && <Button size="sm" disabledReason={quota.monthlyQuota === null ? QUOTA_MISSING : ctx.f4ExpiredReason(quotaSnapshot(quota))} onClick={() => openQuota(quota)}>调额度</Button>}
             </span>
             <span className="f4-quota-cond">{quotaPrerequisites(quota)}</span>
             <RatioBar label={`${quota.name} 本月已用`} value={quota.current} total={limit ?? 0} tone={paused ? "done" : soldOut ? heldFull ? "warn" : "danger" : tight ? "warn" : "role-2"}
@@ -162,7 +164,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
                 <Td>{usage.orderNo ? <Cell mono main={usage.orderNo} /> : <span className="f4-muted">无订单号</span>}</Td>
                 <Td><Cell num main={stamp(usage.occurredAt)} /></Td>
                 <Td>{usage.status.toUpperCase() === "ACTIVE" ? <StatusTag tone="ok">占用中</StatusTag> : usage.status.toUpperCase() === "RECYCLED" ? <StatusTag tone="done">已回收</StatusTag> : <StatusTag tone="neutral">{usage.status || "状态未知"}</StatusTag>}</Td>
-                <Td data-fit="">{canWrite && <Button size="sm" disabled={usage.status.toUpperCase() !== "ACTIVE"} variant={usage.status.toUpperCase() === "ACTIVE" ? "danger-outline" : "ghost"} onClick={() => openRecycle(usage)}>回收</Button>}</Td>
+                <Td data-fit="">{canWrite && <Button size="sm" disabled={usage.status.toUpperCase() !== "ACTIVE"} disabledReason={usage.status.toUpperCase() === "ACTIVE" ? ctx.f4ExpiredReason(recycleSnapshot(usage)) : undefined} variant={usage.status.toUpperCase() === "ACTIVE" ? "danger-outline" : "ghost"} onClick={() => openRecycle(usage)}>回收</Button>}</Td>
               </Tr>) : <TableMessage columns={8}>还没有已用记录</TableMessage>}
             </tbody>
           </Table>
@@ -220,7 +222,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           <p>已知的四类在 PC 和 App 上显示内置的中文名称和条件，自定义的名称和条件文字不一定显示给用户。</p>
           {policy && <p>技术信息：规则版本 {policy.policyVersion}，第 {policy.revision} 次修改。</p>}
         </>}
-        actions={policy && ctx.canSubmitTeamApproval("F4") ? <Button onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, { action: "policy", overview: data, policy }))}>调整申请规则</Button> : undefined}>
+        actions={policy && ctx.canSubmitTeamApproval("F4") ? <Button disabledReason={ctx.f4ExpiredReason({ action: "policy", overview: data, policy })} onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, { action: "policy", overview: data, policy }))}>调整申请规则</Button> : undefined}>
         {!policy ? <BlockState state="error" title="申请规则加载失败" detail="这不是没有规则：规则暂时没加载出来，调整入口也先收起。" onRetry={() => void ctx.retryF4AmbassadorPolicy()} retrying={ctx.f4PolicyLoading} />
           : <>
             <KeyValues rows={[{ key: "default", label: "默认申请预算", value: `${moneyText(policy.defaultBudgetUsdt)} USDT`, explain: "申请人没改金额时用的预算，要落在某一类的范围里。" }]} />

@@ -11,6 +11,7 @@
  * - 目标在折叠组里时 onReveal 先展开，再定位，焦点落到组标题：折叠组的 summary，或带 data-section-focus 的元素。
  * - 组内有异常时 item.alert 为 true，导航项上标出来（DP-03）。
  * - 每项是真实链接，当前组 aria-current。窄宽时收成一行，由 CSS 管。
+ * - 放在抽屉里时观察抽屉自己的滚动区（.rd-drawer-body），页面上观察主区 main；分区比这一次渲染晚挂上时等它挂上再观察。
  * - 详情页的分区导航传 row：横排一行，放在折叠组上方（PG-50），外面包 .rd-detail-nav 滚动时钉住。
  * - 高亮只跟着用户自己的滚动走（BUG-636）：点导航选中的组（页面用 nav.mark 定位的组也一样）在用户再滚之前一直亮着；
  *   「滚到底算最后一组」只在用户自己滚到底时算；内容高度变了、页面自己滚动（刷新、展开、补位），都不重判。
@@ -48,6 +49,8 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
   const reveal = useRef(onReveal);
   reveal.current = onReveal;
   const ids = items.map((item) => item.id).join("|");
+  /** 抽屉里的分区（E1 商品编辑）比打开抽屉的那一次渲染晚一步挂上（Radix Portal）：没找到就下一帧再接观察器，最多等 20 帧（BUG-660）。 */
+  const [waited, setWaited] = useState(0);
 
   const go = useCallback((id: string, smooth = true) => {
     reveal.current?.(id);
@@ -70,11 +73,20 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
   }, [go, ids, ready, restoreKey]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready) {
+      if (waited) setWaited(0);
+      return;
+    }
     const list = ids.split("|");
     const seen = new Set<string>();
     const first = document.getElementById(`section-${list[0]}`);
-    const scroller = first?.closest("main");
+    if (!first) {
+      if (waited >= 20) return;
+      const frame = window.requestAnimationFrame(() => setWaited((count) => count + 1));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    // 抽屉里的分区导航（E1 商品编辑）跟着抽屉自己的滚动区走，页面上的跟着主区（BUG-660）。
+    const scroller = first?.closest<HTMLElement>(".rd-drawer-body, main");
     // 判定带上沿放在跳转停下的位置（滚动区顶边 + scroll-padding + 分区的 scroll-margin）：跳过去之后，上一组露在这条线上面的一截不算当前组（复审 V27）。
     const landing = scroller && first ? scroller.getBoundingClientRect().top + (parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0) + (parseFloat(getComputedStyle(first).scrollMarginTop) || 0) : 81;
     let dragging = false;
@@ -163,7 +175,7 @@ export function useSectionNav(items: readonly SectionNavItem[], { onReveal, read
       window.removeEventListener("touchmove", input, { capture: true });
       window.removeEventListener("keydown", onKey, { capture: true });
     };
-  }, [ids, ready]);
+  }, [ids, ready, waited]);
 
   const select = useCallback((id: string) => {
     const url = new URL(window.location.href);

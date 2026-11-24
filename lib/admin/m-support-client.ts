@@ -1,3 +1,4 @@
+import { PERFORMANCE_VERSION, legacyPerformanceSelectorError, profilePerformance, type ProfilePerformance } from "./support-performance-contract";
 import { MContentReadError, parseMContentApiEnvelope } from "./m-support-read-contract.ts";
 import { parseBusinessTime } from "./business-time.ts";
 import { guardedFetch } from "./error-messages.ts";
@@ -535,6 +536,19 @@ export const supportClient = {
   customers: async (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; mode?: SupportReadMode; groupId?: number; agentId?: number; signal?: AbortSignal }) =>
     (await supportClient.snapshot(options)).customers,
   customerDetail: (customerId: string, signal?: AbortSignal) => request(customerPath(customerId), detail, { signal }),
+  async performanceCustomerDetail(customerId: string, signal?: AbortSignal): Promise<SupportCustomerDetail & { performance?: ProfilePerformance }> {
+    const path = customerPath(customerId);
+    const legacy = () => request(path, detail, { signal });
+    let response;
+    try {
+      response = await request(`${path}?metricVersion=${PERFORMANCE_VERSION}`, value => value, { signal });
+    } catch (error) {
+      if (!legacyPerformanceSelectorError(error, "SUPPORT_ANALYTICS_QUERY_INVALID", "SUPPORT_METRIC_VERSION_UNSUPPORTED")) throw error;
+      return legacy();
+    }
+    const performance = profilePerformance(response);
+    return performance.generation === "LEGACY" ? legacy() : { ...detail(response), performance };
+  },
   sessionHold: (customerId: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold`, sessionHold, { signal }),
   endSessionHold: (customerId: string, idempotencyKey: string, sessionRef: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold/end`, () => undefined, json("POST", { sessionRef }, idempotencyKey, signal)),
   conversationState: (conversationNo: string, signal?: AbortSignal) => request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}`, (value) => {

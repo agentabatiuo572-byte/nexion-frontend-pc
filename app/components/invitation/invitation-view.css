@@ -23,7 +23,5 @@
 .inv-nowrap { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 .inv-failed { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .inv-failed-reason { color: var(--rd-text-2); }
-/* 人数「重试」不能点时（重读中、写操作进行中）的样子，同 rd 的 .rd-inline-retry:disabled。 */
-.inv-retry[aria-disabled="true"] { color: var(--rd-text-disabled); cursor: progress; }
 .inv-counts + .rd-notice { margin-top: var(--rd-space-2); }
 .inv-counts + .rd-notice .rd-notice-text { text-wrap: balance; word-break: keep-all; overflow-wrap: anywhere; }

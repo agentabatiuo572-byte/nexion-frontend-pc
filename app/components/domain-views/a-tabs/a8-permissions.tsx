@@ -239,7 +239,7 @@ export default function A8Permissions() {
                   <tbody>
                     {records.map((p) => (
                       <Tr key={p.permissionCode}>
-                        <Td sticky="start"><Cell title={operatorCopyText(p.permissionName || p.permissionCode)} main={operatorCopyText(p.permissionName || p.permissionCode)} sub={<span data-mono>{p.permissionCode}</span>} /></Td>
+                        <Td sticky="start"><Cell title={`${operatorCopyText(p.permissionName || p.permissionCode)}\n${p.permissionCode}`} main={operatorCopyText(p.permissionName || p.permissionCode)} sub={<span data-mono>{p.permissionCode}</span>} /></Td>
                         {grants.map(({ role, codes, readable }) => (
                           <Td key={role.id} className="a8-matrix-cell"
                             title={!readable ? `${role.roleName} 的权限加载失败，这一格不代表没有权限` : codes.has(p.permissionCode) ? `${role.roleName} 有此权限` : `${role.roleName} 没有此权限`}>
@@ -283,7 +283,7 @@ export default function A8Permissions() {
                 </TableMessage>
                   : records.map((p) => (
                     <Tr key={p.permissionCode} selected={p.permissionCode === current} onOpen={() => openDetail(p.permissionCode)}>
-                      <Td><Cell title={operatorCopyText(p.permissionName || p.permissionCode)}
+                      <Td><Cell title={`${operatorCopyText(p.permissionName || p.permissionCode)}\n${p.permissionCode}`}
                         main={<button type="button" className="rd-cell-link" aria-label={`查看权限详情 ${p.permissionCode}`} aria-haspopup="dialog"
                           onClick={(event) => { event.stopPropagation(); openDetail(p.permissionCode); }}>{operatorCopyText(p.permissionName || "—")}</button>}
                         sub={<span data-mono>{p.permissionCode}</span>} /></Td>

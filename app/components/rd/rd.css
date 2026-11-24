@@ -281,6 +281,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-pop-rows dd { margin: 0; color: var(--rd-text-2); overflow-wrap: anywhere; }
 .rd-pop-rows dd b { font-weight: 500; color: var(--rd-text); }
 .rd-tip { z-index: var(--rd-z-pop); max-width: 280px; padding: 4px 8px; border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); border: 1px solid var(--rd-line-strong); color: var(--rd-text); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.rd-cell-tip { white-space: pre-line; }
 
 /* ── 页内页签 ── */
 .rd-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -744,7 +745,7 @@ body:has(.rd-drawer[data-state="open"]:not([data-wide])) .rd-toast-host { left: 
 .rd-block-loading { display: flex; flex-direction: column; gap: 12px; padding: 8px 0; }
 .rd-inline-retry { padding: 0; border: 0; background: none; color: var(--rd-text); font: inherit; text-decoration: underline; text-decoration-color: var(--rd-text-3); text-underline-offset: 3px; cursor: pointer; }
 .rd-inline-retry:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
-.rd-inline-retry:disabled { color: var(--rd-text-disabled); cursor: progress; }
+.rd-inline-retry:is(:disabled, [aria-disabled="true"]) { color: var(--rd-text-disabled); cursor: progress; }
 
 /* ── 要处理的事 ── */
 .rd-todo { margin: 0; padding: 0; list-style: none; }
@@ -814,6 +815,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-block-state-title { color: var(--rd-text); font-weight: 500; }
 .rd-block-state[data-state="error"] .rd-block-state-title { color: var(--rd-danger); }
 .rd-block-state-detail { max-width: 560px; color: var(--rd-text-2); overflow-wrap: anywhere; }
+.rd-block-state:focus, [data-retry-landing]:focus { outline: none; }  /* 按「重试」后这一块换成加载中时，焦点暂放在这里（不是可操作的元素），读完交回「重试」或标题 */
 .rd-block-state[data-compact] { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 4px 0; text-align: left; }
 .rd-notice { display: flex; align-items: flex-start; gap: var(--rd-space-2); padding: 12px var(--rd-panel-pad-x); border-radius: var(--rd-radius-panel); background: var(--tone-bg); color: var(--rd-text); }
 .rd-notice-icon { flex: none; margin-top: 3px; color: var(--tone); }

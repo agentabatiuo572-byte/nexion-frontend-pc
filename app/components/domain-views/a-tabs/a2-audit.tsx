@@ -2861,10 +2861,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return w.sos || w.amplifies || pendingTicketIds.has(w.id) ? <span className="rd-row-actions">{tags}</span> : TYPE_NAME[w.type];
   };
 
+  // 重试读到后焦点落在这一块的标题「待审批」页签上（BUG-677）。
+  const pendingTitle = { get current() { return document.getElementById(tabIds.panel("pending")["aria-labelledby"]); } };
   const pendingTab = (
     <>
       {mainError && !main ? (
-        <BlockState state="error" title="审批单读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
+        <BlockState state="error" title="审批单读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} afterRetryFocus={pendingTitle} />
       ) : <>
         {/* 待审批是数量不是状态，按角色色；应急、资金类只给图标底上色，数字正文色（必须改 4，同提现审核）。 */}
         <StatBand label="待审批汇总" fit>

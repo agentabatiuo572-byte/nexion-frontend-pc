@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
 import { fDirectSettledText, fProposalEndText } from "./f-tabs/f-release";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { f4HeadCapAmplifies, f4MoneyAmplifies, f4MonthlyCap } from "@/lib/admin/f4-money";
 import { f4WeeklyCronIssue } from "@/lib/admin/f4-settlement-config";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -61,7 +61,7 @@ import { F3_SETTLEMENT_SLOT, f3ConfigSlot, f3PayoutControlSpec, f3PendingFor, li
 import { listF3ConfigWrites, pendingF3ConfigWrite, queryF3ConfigWrite, sendF3ConfigWrite } from "@/lib/admin/f3-config-write";
 import { isF3PayoutControlKey, planF3PayoutControl, type F3PayoutControlKey } from "@/lib/admin/f3-policy";
 import { listF1Proposals, queryF1Proposal, releaseF1Proposal, sendF1Proposal } from "@/lib/admin/f1-approval";
-import { canRetryF4Proposal, F4_POLICY_SLOT, f4PendingFor, f4PolicySpec, listF4Proposals, matchesF4Confirmation, queryF4Proposal, releaseF4Proposal, sendF4Proposal, type F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
+import { canRetryF4Proposal, F4_POLICY_SLOT, f4PendingFor, f4PolicySpec, listF4Proposals, matchesF4Confirmation, queryF4Proposal, sendF4Proposal, type F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import { canRetryF4Policy, listF4PolicyWrites, queryF4Policy, sendF4Policy } from "@/lib/admin/f4-policy-write";
 import { f5ConfirmationSlot, listF5Proposals, queryF5Proposal, releaseF5Proposal, sendF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import { listF5AnomalyWrites, queryF5Anomaly, sendF5Anomaly } from "@/lib/admin/f5-anomaly-write";
@@ -655,7 +655,6 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     note();
     try {
       if (record.kind === "policy") {
-        if (mode === "release") throw new Error("直接保存的原操作只能核对，不能解除记录。");
         if (mode === "retry") { await sendF4Policy(owner); resolved = true; }
         else {
           const result = await queryF4Policy(owner, original as FDirectAttempt);
@@ -664,11 +663,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           else note({ tone: "warn", text: isRetryExpired(original) ? "这次没查到结论，结果仍未知；已过 24 小时，到操作记录与审批核对。" : "这次没查到结论，结果仍未知；可以稍后再查。" });
         }
       } else {
-        const ticket = mode === "release" ? (await releaseF4Proposal(owner, original), null)
-          : mode === "retry" ? await sendF4Proposal(owner, original.fingerprint) : await queryF4Proposal(owner, original);
-        resolved = mode === "release" || !!ticket;
+        const ticket = mode === "retry" ? await sendF4Proposal(owner, original.fingerprint) : await queryF4Proposal(owner, original);
+        resolved = !!ticket;
         if (mode === "query") {
-          if (!ticket) note({ tone: "warn", text: isRetryExpired(original) ? "没查到原审批单。已过 24 小时，可以解除这条记录。" : "没查到原审批单，可以稍后再查。" });
+          if (!ticket) note({ tone: "warn", text: isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "没查到原审批单，可以稍后再查。" });
           else if (ticket.status === "pending") note({ tone: "warn", text: "审批单已建，在等批准；批准前不生效。" });
           else setToast(fProposalEndText(ticket.status));
         } else if (ticket) setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : fProposalEndText(ticket.status));
@@ -688,7 +686,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const sendF4 = async (slot: string, spec: ProposeSpec) => {
     const owner = useAdminAuth.getState().session?.adminId;
     if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-    if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额和排行榜加载失败，请刷新后再操作。");
+    if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额与排行榜加载失败，请刷新后再操作。");
     if (await f4PendingFor(f4ApprovalRows, spec)) throw new Error("OBJECT_ALREADY_PENDING");
     try {
       const ticket = await sendF4Proposal(owner, slot, spec, f4Submission.current ?? mc?.f4Snapshot);
@@ -1084,7 +1082,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     submitTeamApproval,
     openActionConfirm: (m) => {
       if (m.f4Snapshot && !m.f4Recovery) {
-        if (!f4Overview || f4Loading || f4Error) { setToast("奖励池、名额和排行榜加载失败，请刷新后再操作。"); return; }
+        if (!f4Overview || f4Loading || f4Error) { setToast("奖励池、名额与排行榜加载失败，请刷新后再操作。"); return; }
         if ([...f4Proposals, ...f4PolicyWrites].some(row => matchesF4Confirmation(row, m.f4Snapshot!))) {
           setToast("请先查询保存的原操作。"); return;
         }
@@ -1400,6 +1398,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4Proposals,
     f4QueryNotes,
     f4PolicyWrites,
+    f4ExpiredReason: (snapshot) => [...f4Proposals, ...f4PolicyWrites].some(row => isRetryExpired(row) && matchesF4Confirmation(row, snapshot)) ? RETRY_EXPIRED_TEXT : undefined,
     f4ApprovalRows,
     recoverF4,
     refreshF4,
@@ -1656,7 +1655,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           if (mc.f4Snapshot) {
             if (mc.f4Owner !== useAdminAuth.getState().session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
             if (mc.f4Recovery) { await recoverF4(mc.f4Recovery, "retry"); return; }
-            if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额和排行榜加载失败，请刷新后再操作。");
+            if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额与排行榜加载失败，请刷新后再操作。");
             f4Submission.current = { ...mc.f4Snapshot, value: newVal, businessValue };
           }
           if (mc.run) {
