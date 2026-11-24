@@ -148,6 +148,13 @@ export interface FViewCtx {
   submitVRankBenefit?: (rank: string, field: F1BenefitField, value: string, reason: string) => Promise<void>;
   proposeVRankBootstrap: (ranks: VRankBootstrapRow[], reason: string) => Promise<void>;
   proposePayoutAction: (record: F1RewardPayout, action: "reissue" | "reverse", reason: string, usedVoucherClawback?: boolean) => Promise<void>;
+  // ── F2 第 1、2 层按受益人等级、设备收益二级比例（F2-RANK-WIRE 占位，逻辑项接上）──
+  /** 七层规则回包的 purchaseBaseRateSource。"BENEFICIARY_RANK" 时第 1、2 层比例按受益人等级显示；没有这个字段时按旧的单一比例显示。 */
+  f2PurchaseBaseRateSource?: string;
+  /** 九级好友购买奖励一级、二级比例里的最低和最高，百分数字符串（"4"、"5.5"）；读 F1 等级总览或 v-ranks。按等级但读不到时传 null，页面写「—」。 */
+  f2RankPurchaseRange?: { l1: { min: string; max: string }; l2: { min: string; max: string } } | null;
+  /** 好友设备收益奖励二级比例（政策回包 deviceEarning.level2RatePct，百分数）。undefined = 旧后端没有这个字段，不出二级比例。 */
+  f2DeviceLevel2RatePct?: number;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
   f2Metrics: F2Metric[];
   f2PayoutStatistics?: F2PayoutStatistic[];

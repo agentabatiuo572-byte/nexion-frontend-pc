@@ -137,3 +137,13 @@
 .f2-page .f2-boot-error { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-warn); }
 .f2-page .f2-boot-grid { table-layout: fixed; font-variant-numeric: tabular-nums; }
 .f2-page .f2-boot-grid th:first-child { width: 14%; }
+
+/* 第 1、2 层按受益人等级（F2-RANK-WIRE）：七层表和首次配置里这两层的比例是一段，下面一行弱字写来源。 */
+.f2-page .f2-ranked { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.f2-page .f2-ranked strong { font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.f2-page .f2-ranked-sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.f2-page .f2-row-actions .rd-link { white-space: nowrap; }
+/* 合计条下面一行图注写上限，和右边的合计左右同高（DT-27）。 */
+.f2-page .f2-sum-cap { display: flex; align-items: center; gap: 4px; margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+/* 整体结算运行中时右边一块写启用时间和暂停后会怎样，和未启用时的「启用时会检查」同一个位置（DT-27）。 */
+.f2-page .f2-settle-facts { min-width: 0; padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }

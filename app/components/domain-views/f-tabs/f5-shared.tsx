@@ -54,6 +54,9 @@ export function StatusBadge({ status, explain = true }: { status: string; explai
   return <StatusTag tone={meta.tone} icon={meta.icon} explain={explain ? meta.text : undefined}>{meta.name}</StatusTag>;
 }
 
+/** 等级月薪记录在流水里要带的三项（F5-RANK-WIRE：后端 B84 加字段、契约解析带上后才有值；现在都是 undefined）。 */
+export type F5SalaryRowWire = { salaryMonth?: string; salaryRank?: string; claimNo?: string };
+
 export const isFriend = (row: Pick<F5CommissionEvent, "kind">) => row.kind === "direct_purchase" || row.kind === "direct_device_earning";
 export const deviceEarningSource = (layer: number | string | undefined) => Number(layer) === 2 ? "好友的好友" : "好友";
 export const isGrouped = (row: Pick<F5CommissionEvent, "settlementNo" | "kind">) => isFriend(row) || !!row.settlementNo;

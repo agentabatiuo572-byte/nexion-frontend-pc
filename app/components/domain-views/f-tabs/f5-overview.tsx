@@ -9,6 +9,7 @@ import { ArrowDown, ArrowRight, ArrowUp, Check, Layers3, Route } from "lucide-re
 import { Fold, Panel, RatioBar, Table, Td, Th, Tr } from "@/app/components/rd";
 import type { F5CommissionAuditOverview } from "@/lib/admin/f1-client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { amountDisplay } from "@/lib/format";
 import { KIND_LABELS, STATUS_BY_LABEL, STATUS_META, kindCountLabel, splitMoneyLabel } from "./f5-shared";
 
 type Money = { usdt: string; uvt: string } | null;
@@ -152,12 +153,33 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
 }
 
 /** 各类奖励：每类的笔数和两种币金额；条是这一类占全部笔数的多少（按笔数算，不按金额）。点一类筛下方列表。 */
+/** 几个金额原文相加：去掉千分位按小数位对齐用整数加，不舍入；有读不懂的就返回 null。 */
+function moneySum(values: string[]) {
+  const parts = values.map((value) => value.replace(/,/g, "").trim());
+  if (parts.some((part) => !/^\d+(\.\d+)?$/.test(part))) return null;
+  const scale = Math.max(0, ...parts.map((part) => (part.split(".")[1] ?? "").length));
+  const total = parts.reduce((sum, part) => { const [whole, fraction = ""] = part.split("."); return sum + BigInt(whole + fraction.padEnd(scale, "0")); }, BigInt(0));
+  const digits = total.toString().padStart(scale + 1, "0");
+  const fraction = digits.slice(digits.length - scale).replace(/0+$/, "");
+  return amountDisplay(`${digits.slice(0, digits.length - scale)}${fraction ? `.${fraction}` : ""}`);
+}
+/** 占全部笔数的比例，一位小数（TX-23），去掉 .0；不到 0.1% 写「<0.1%」。 */
+const sharePct = (count: number, total: number) => {
+  const value = (count / total) * 100;
+  return count > 0 && value < 0.05 ? "<0.1%" : `${value.toFixed(1).replace(/\.0$/, "")}%`;
+};
+
 export function F5KindTiles({ data, kindFilter, onKind }: { data: F5CommissionAuditOverview; kindFilter: string; onKind: (kind: string) => void }) {
   const counts = data.commissionKinds.map((item) => Number.parseInt(item.ct, 10) || 0);
   const total = counts.reduce((sum, value) => sum + value, 0);
+  const monies = data.commissionKinds.map((item) => splitMoneyLabel(item.amt));
+  const allUsdt = monies.every(Boolean) ? moneySum(monies.map((money) => money!.usdt)) : null;
+  const allUvt = monies.every(Boolean) ? moneySum(monies.map((money) => money!.uvt)) : null;
+  const allOn = kindFilter === "";
   return (
     <Panel icon={Layers3} tone="role-1" title={`${kindCountLabel(data.commissionKinds.length)}奖励`} sub="全部记录"
-      explain="每类的笔数和两种币的金额，算全部记录，不跟下方筛选变。条是这一类占全部笔数的比例，按笔数算，不按金额。">
+      explain={<><p>每类的笔数和两种币的金额，算全部记录，不跟下方筛选变。条是这一类占全部笔数的比例，按笔数算，不按金额。</p>
+        <p>好友购买奖励只有购买拆分开启时的第 1 层；第 2 层和拆分停用时的第 1 层记为团队购买奖励，行内写第几层。点「全部类型」清除类型筛选。</p></>}>
       <div className="f5-kinds">
         {data.commissionKinds.map((item, index) => {
           const money = splitMoneyLabel(item.amt);
@@ -168,7 +190,7 @@ export function F5KindTiles({ data, kindFilter, onKind }: { data: F5CommissionAu
             <button key={item.key} type="button" className="f5-kind" data-testid="f5-commission-kind-card" data-kind={item.key} aria-pressed={on}
               aria-label={`${name} ${count} 笔，${on ? "再点一次取消筛选" : "点一下只看这一类"}`} onClick={() => onKind(item.key)}>
               <span className="f5-kind-head"><span className="f5-kind-name">{name}</span>{on && <span className="f5-node-on"><Check size={12} strokeWidth={2.4} aria-hidden />已筛选</span>}</span>
-              <span className="f5-kind-count" data-zero={count ? undefined : ""}>{count.toLocaleString("en-US")}<small>笔{total ? ` · 占 ${Math.round((count / total) * 100)}%` : ""}</small></span>
+              <span className="f5-kind-count" data-zero={count ? undefined : ""}>{count.toLocaleString("en-US")}<small>笔{total ? ` · 占 ${sharePct(count, total)}` : ""}</small></span>
               <RatioBar quiet label={`${name}占全部笔数`} value={count} total={total} valueText={`${count} 笔，全部 ${total} 笔`} tone="role-1"
                 state={total === 0 ? "empty" : "ready"} emptyText="还没有记录" />
               {money ? (
@@ -180,6 +202,19 @@ export function F5KindTiles({ data, kindFilter, onKind }: { data: F5CommissionAu
             </button>
           );
         })}
+        <button type="button" className="f5-kind" data-kind="all" aria-pressed={allOn}
+          aria-label={`全部类型 ${total} 笔，${allOn ? "现在看的是全部类型" : "点一下清除类型筛选"}`} onClick={() => onKind("")}>
+          <span className="f5-kind-head"><span className="f5-kind-name">全部类型</span></span>
+          <span className="f5-kind-count" data-zero={total ? undefined : ""}>{total.toLocaleString("en-US")}<small>笔</small></span>
+          <RatioBar quiet label="全部类型占全部笔数" value={total} total={total} valueText={`全部 ${total} 笔`} tone="role-1"
+            state={total === 0 ? "empty" : "ready"} emptyText="还没有记录" />
+          {allUsdt !== null && allUvt !== null ? (
+            <span className="f5-kind-money">
+              <span data-zero={/^0(\.0+)?$/.test(allUsdt) ? "" : undefined}>{allUsdt} <small>USDT</small></span>
+              <span data-zero={/^0(\.0+)?$/.test(allUvt) ? "" : undefined}>{allUvt} <small>UVT</small></span>
+            </span>
+          ) : <span className="f5-kind-money" data-empty="">金额读不懂</span>}
+        </button>
       </div>
     </Panel>
   );

@@ -12,7 +12,7 @@ import { Button, Cell, Explain, Fact, Facts, Figure, Notice, NumberInput, ScaleB
 import { f4Decimal } from "@/lib/admin/f4-money";
 import { F2_BOOTSTRAP_SLOT } from "@/lib/admin/f2-approval";
 import { F2BootstrapReview, F2_APP_LIMIT_COPY, F2_APP_TOTAL_LIMIT, f2DecimalTimes, f2PctSum, f2SampleUsdt, parseF2BootstrapAfter, type F2BootstrapRow } from "./f2-bootstrap-ticket";
-import { LAYERS, LAYER_WHO, SAMPLE_ORDER, num, stamp, type F2Confirm, type Layer } from "./f2-shared";
+import { LAYERS, LAYER_WHO, SAMPLE_ORDER, f2Ranked, num, pctAdd, pctSample, rangeText, rankedRange, stamp, type F2Confirm, type Layer } from "./f2-shared";
 import type { FViewCtx } from "./types";
 
 /** 填到一半的七层；checked 是点过「核对并提交审批」，之后没填的格也标出来。 */
@@ -102,17 +102,25 @@ function BootstrapGrid({ rows }: { rows: readonly F2BootstrapRow[] }) {
 function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
   ctx: FViewCtx; openConfirm: (spec: F2Confirm) => void; draft: F2BootstrapDraft; setDraft: (next: F2BootstrapDraft | null) => void; cap: number | null;
 }) {
+  // 第 1、2 层按受益人等级时（F2-RANK-WIRE）：这两层不填比例，只读显示九级最低到最高；
+  // 提交时这两层的基础比例按已定的做法固定写 0（生效后不起作用，后端仍要七行齐全）。
+  const ranked = f2Ranked(ctx);
+  const byRank = (level: Layer) => ranked && (level === "L1" || level === "L2");
   const issues = LAYERS.flatMap((level) => [
-    ...(level === "L1" ? [] : [{ level, kind: "usdt" as const, issue: cellIssue("usdt", draft.cells[level].usdt) }]),
+    ...(level === "L1" || byRank(level) ? [] : [{ level, kind: "usdt" as const, issue: cellIssue("usdt", draft.cells[level].usdt) }]),
     { level, kind: "nex" as const, issue: cellIssue("nex", draft.cells[level].nex) },
   ]).filter((cell) => cell.issue);
-  const usdtPlain = LAYERS.map((level) => cellIssue("usdt", draft.cells[level].usdt) ? null : plain(draft.cells[level].usdt));
-  const filledAll = usdtPlain.every((value) => value !== null);
+  const usdtPlain = LAYERS.map((level) => byRank(level) ? null : cellIssue("usdt", draft.cells[level].usdt) ? null : plain(draft.cells[level].usdt));
+  const filledAll = LAYERS.every((level, index) => byRank(level) || usdtPlain[index] !== null);
   const sum = f2PctSum(usdtPlain.filter((value): value is string => value !== null));
   const sumNumber = Number(sum);
+  // 按等级时合计是一段：已填的第 3 层起加上第 1、2 层九级最低、最高。
+  const l1 = ranked ? rankedRange(ctx, "L1") : null, l2 = ranked ? rankedRange(ctx, "L2") : null;
+  const sumRange = ranked && l1 && l2 ? { low: pctAdd(pctAdd(sum, l1.min), l2.min), high: pctAdd(pctAdd(sum, l1.max), l2.max) } : null;
+  const shownHigh = ranked ? Number(sumRange?.high ?? sum) : sumNumber;
   // 刻度留到 40%，25% 的 App 线和末端的字不挤在一起。
-  const axisMax = Math.max(40, Math.ceil(Math.max(sumNumber, cap ?? 0) / 10) * 10);
-  const over = sumNumber > F2_APP_TOTAL_LIMIT;
+  const axisMax = Math.max(40, Math.ceil(Math.max(shownHigh, cap ?? 0) / 10) * 10);
+  const over = shownHigh > F2_APP_TOTAL_LIMIT;
   const change = (level: Layer, kind: "usdt" | "nex", value: string) => setDraft({ ...draft, cells: { ...draft.cells, [level]: { ...draft.cells[level], [kind]: value } } });
   const shown = (level: Layer, kind: "usdt" | "nex") => draft.checked || draft.cells[level][kind] !== "" ? cellIssue(kind, draft.cells[level][kind]) : undefined;
 
@@ -122,7 +130,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
       document.getElementById(`f2-boot-${issues[0].level}-${issues[0].kind}`)?.focus();
       return;
     }
-    const layers = LAYERS.map((level, index) => ({ layerNo: index + 1, usdtPct: level === "L1" ? "10" : draft.cells[level].usdt.trim(), nexPerUsd: draft.cells[level].nex.trim() }));
+    const layers = LAYERS.map((level, index) => ({ layerNo: index + 1, usdtPct: byRank(level) ? "0" : level === "L1" ? "10" : draft.cells[level].usdt.trim(), nexPerUsd: draft.cells[level].nex.trim() }));
     const rows = LAYERS.map((level, index) => ({ layer: level, usdtPct: plain(layers[index].usdtPct)!, nexPerUsd: plain(layers[index].nexPerUsd)! }));
     openConfirm({
       slot: F2_BOOTSTRAP_SLOT,
@@ -130,14 +138,15 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
       effect: <StatusTag tone="progress" filled explain={`${BOOT_APPROVER}在「操作记录与审批」批准后，七层规则一次建好；结算要另外申请启用。`}>批准后生效</StatusTag>,
       facts: <Facts>
         <Fact k="要建立">L1–L7 七层规则</Fact>
-        <Fact k="七层合计占订单">{`${num(sum)}%，示例 ${num(SAMPLE_ORDER)} USDT 订单分出 ${num(f2SampleUsdt(sum))} USDT`}</Fact>
+        <Fact k="七层合计占订单">{ranked ? sumRange ? `${rangeText(sumRange.low, sumRange.high)}，示例 ${num(SAMPLE_ORDER)} USDT 订单分出 ${rangeText(pctSample(sumRange.low), pctSample(sumRange.high), "USDT")}` : "—"
+          : `${num(sum)}%，示例 ${num(SAMPLE_ORDER)} USDT 订单分出 ${num(f2SampleUsdt(sum))} USDT`}</Fact>
         <Fact k="整体结算">不会自动启用，要另外申请</Fact>
       </Facts>,
       content: <div className="rd-stack">
         {over && <Notice tone="warn" title={`七层合计 ${num(sum)}%，超过 25%`}>{F2_APP_LIMIT_COPY}</Notice>}
         <F2BootstrapReview rows={rows} label="要建立的七层规则" />
       </div>,
-      statedBrief: { impact: "批准后七层规则一次建好；整体结算不会自动启用，要另外申请。", check: "逐层核对下表；第 1 层固定 10%。" },
+      statedBrief: { impact: "批准后七层规则一次建好；整体结算不会自动启用，要另外申请。", check: ranked ? "逐层核对下表；第 1、2 层按受益人等级。" : "逐层核对下表；第 1 层固定 10%。" },
       detail: "七层都没有规则时才能首次配置，以前配置过的会被拒。",
       completionCopy: `批准人要是${BOOT_APPROVER}，需有审批批准权限和「团队奖励比例」权限；批准前七层仍没有规则。`,
       coverageCheck: COVERAGE_CHECK, coverageLead: "启用结算后，平台按这些比例付团队奖励",
@@ -150,28 +159,33 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
   return (
     <section className="f2-boot" aria-label="首次配置七层规则">
       <div className="f2-boot-head">
-        <p className="f2-boot-title">首次配置七层规则</p>
-        <p className="f2-boot-note">每格都要填，这一层不发就填 0；第 1 层固定 10%。</p>
+        {ranked ? <p className="f2-boot-title">首次配置七层规则<Explain label="首次配置怎么填" content="每格都要填，这一层不发就填 0；第 1、2 层的比例按受益人等级，在团队等级晋升设置，这里不填。" /></p>
+          : <><p className="f2-boot-title">首次配置七层规则</p>
+            <p className="f2-boot-note">每格都要填，这一层不发就填 0；第 1 层固定 10%。</p></>}
       </div>
       <Table label="首次配置七层规则" className="f2-boot-table">
         <thead><tr>
           <Th>哪一层</Th>
-          {header("USDT 比例", "这一层分到订单金额的百分之几：填 5 就是 5%。0–100，最多 4 位小数。")}
+          {header("USDT 比例", `这一层分到订单金额的百分之几：填 5 就是 5%。0–100，最多 4 位小数。${ranked ? "第 1、2 层按受益人等级，不在这里填。" : ""}`)}
           {header("UVT 系数", "这一层每发 1 USDT 奖励，另发多少 UVT。不小于 0，最多 6 位小数。")}
           <Th align="right">示例 {num(SAMPLE_ORDER)} USDT 订单分到</Th>
         </tr></thead>
         <tbody>
           {LAYERS.map((level) => {
-            const usdt = level === "L1" ? "10" : plain(draft.cells[level].usdt) !== null && !cellIssue("usdt", draft.cells[level].usdt) ? plain(draft.cells[level].usdt) : null;
+            const rng = byRank(level) ? rankedRange(ctx, level) : null;
+            const usdt = byRank(level) ? null : level === "L1" ? "10" : plain(draft.cells[level].usdt) !== null && !cellIssue("usdt", draft.cells[level].usdt) ? plain(draft.cells[level].usdt) : null;
             const nex = !cellIssue("nex", draft.cells[level].nex) ? plain(draft.cells[level].nex) : null;
             const sample = usdt === null ? null : f2SampleUsdt(usdt);
+            const sampleRange = rng ? { low: pctSample(rng.min), high: pctSample(rng.max) } : null;
             return <tr key={level}>
               <Td><span className="f2-layer"><span className="f2-layer-chip" data-direct={level === "L1" ? "" : undefined}>{level}</span>{LAYER_WHO[level]}</span></Td>
-              <Td align="right">{level === "L1"
-                ? <span className="f2-boot-fixed"><strong>10%</strong><StatusTag tone="neutral" icon={Lock} explain="第 1 层 USDT 比例固定 10%，不接受别的值；提交时照样写进审批单。">固定</StatusTag></span>
+              <Td align="right">{byRank(level)
+                ? <span className="f2-ranked"><strong>{rng ? rangeText(rng.min, rng.max) : "—"}</strong><span className="f2-ranked-sub">按受益人等级</span></span>
+                : level === "L1" ? <span className="f2-boot-fixed"><strong>10%</strong><StatusTag tone="neutral" icon={Lock} explain="第 1 层 USDT 比例固定 10%，不接受别的值；提交时照样写进审批单。">固定</StatusTag></span>
                 : <BootCell id={`f2-boot-${level}-usdt`} label={`${level} USDT 比例`} unit="%" value={draft.cells[level].usdt} issue={shown(level, "usdt")} onChange={(value) => change(level, "usdt", value)} />}</Td>
               <Td align="right"><BootCell id={`f2-boot-${level}-nex`} label={`${level} UVT 系数`} unit="UVT" value={draft.cells[level].nex} issue={shown(level, "nex")} onChange={(value) => change(level, "nex", value)} /></Td>
-              <Td align="right">{sample === null ? <span className="f2-muted">—</span>
+              <Td align="right">{sampleRange ? <Cell num main={rangeText(sampleRange.low, sampleRange.high, "USDT")} sub={nex === null ? "UVT 待填" : `另发 ${rangeText(f2DecimalTimes(sampleRange.low, nex), f2DecimalTimes(sampleRange.high, nex), "USDT").replace(/ USDT$/, "")} UVT`} />
+                : sample === null ? <span className="f2-muted">—</span>
                 : <Cell num main={`${num(sample)} USDT`} sub={nex === null ? "UVT 待填" : `另发 ${num(f2DecimalTimes(sample, nex))} UVT`} />}</Td>
             </tr>;
           })}
@@ -179,16 +193,22 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
       </Table>
       <Figure width={420} stack="wide" graphic={
         <div className="f2-sum-graphic">
-          <ScaleBar label="七层合计占订单" max={axisMax} value={sumNumber} fill tone={over ? "role-other" : "role-4"}
+          {ranked ? <ScaleBar label="七层合计占订单" max={axisMax} range={sumRange ? { low: Number(sumRange.low), high: Number(sumRange.high) } : undefined} target={cap ?? F2_APP_TOTAL_LIMIT} tone="role-4"
+            ticks={[{ value: 0, text: "0%" }, { value: cap ?? F2_APP_TOTAL_LIMIT, text: `上限 ${num(cap ?? F2_APP_TOTAL_LIMIT)}%` }, { value: axisMax, text: `${axisMax}%` }]}
+            valueText={sumRange ? `已填的层合计 ${rangeText(sumRange.low, sumRange.high)}` : "第 1、2 层的九级比例没读到，合计这次没有算"} />
+          : <ScaleBar label="七层合计占订单" max={axisMax} value={sumNumber} fill tone={over ? "role-other" : "role-4"}
             ticks={[{ value: 0, text: "0%" }, { value: F2_APP_TOTAL_LIMIT, text: "App 上限 25%" }, ...(cap !== null && cap <= axisMax && cap !== F2_APP_TOTAL_LIMIT ? [{ value: cap, text: `总额上限 ${num(cap)}%` }] : []), { value: axisMax, text: `${axisMax}%` }]}
-            valueText={`${filledAll ? "七层合计" : "已填的层合计"} ${num(sum)}%`} />
+            valueText={`${filledAll ? "七层合计" : "已填的层合计"} ${num(sum)}%`} />}
+          {ranked && <p className="f2-sum-cap">{`上限 ${num(cap ?? F2_APP_TOTAL_LIMIT)}%：${num(SAMPLE_ORDER)} USDT 订单最多分 ${num(f2SampleUsdt(String(cap ?? F2_APP_TOTAL_LIMIT)))} USDT`}<Explain label="上限怎么用" content="一笔订单七层 USDT 奖励最多占订单金额的这个比例，App 也按它显示。超出时从 L1 往下分，分完为止。" /></p>}
         </div>}>
-        <dl className="f2-sum">
+        {ranked ? <dl className="f2-sum">
+          <div><dt>{filledAll ? "七层合计" : "已填的层合计"}</dt>{sumRange ? <dd><strong>{rangeText(pctSample(sumRange.low), pctSample(sumRange.high), "USDT").replace(/ USDT$/, "")}</strong> USDT<span>占订单 {rangeText(sumRange.low, sumRange.high)}</span></dd> : <dd data-empty="">—</dd>}</div>
+        </dl> : <dl className="f2-sum">
           <div><dt>{filledAll ? "七层合计" : "已填的层合计"}</dt><dd><strong>{num(sum)}%</strong><span>示例订单分出 {num(f2SampleUsdt(sum))} USDT</span></dd></div>
           <div><dt>奖励总额上限</dt><dd data-empty={cap === null ? "" : undefined}>{cap === null ? "未配置" : `${num(cap)}%`}</dd></div>
-        </dl>
+        </dl>}
       </Figure>
-      {over && <Notice tone="warn" title={`七层合计 ${num(sum)}%，超过 25%`}>{F2_APP_LIMIT_COPY}</Notice>}
+      {over && <Notice tone="warn" title={ranked ? `七层合计最高 ${num(sumRange?.high ?? sum)}%，超过 25%` : `七层合计 ${num(sum)}%，超过 25%`}>{F2_APP_LIMIT_COPY}</Notice>}
       <div className="rd-toolbar" data-end="">
         {draft.checked && issues.length > 0 && <span className="f2-boot-error" role="alert">还有 {issues.length} 格要改，已在表里标出</span>}
         <Button onClick={() => setDraft(null)}>取消</Button>

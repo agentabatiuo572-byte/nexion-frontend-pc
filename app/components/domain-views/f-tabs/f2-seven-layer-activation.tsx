@@ -11,7 +11,7 @@ import { CircleCheck, CircleHelp, Clock3, Hourglass, PauseCircle, Power, PowerOf
 import { Button, Explain, Notice, Panel, StatusTag } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { a2ActionText } from "@/lib/admin/operator-copy";
-import { Change, Fact, Facts, LAYERS, layerRate, num, type F2Confirm } from "./f2-shared";
+import { Change, Fact, Facts, LAYERS, f2Ranked, layerRate, num, type F2Confirm } from "./f2-shared";
 import { stamp } from "./f2-shared";
 import { F2_ACTIVATION_SLOT, F2_BOOTSTRAP_SLOT, F2_POLICY_SLOT, type F2Recovery } from "@/lib/admin/f2-approval";
 import { f4Decimal } from "@/lib/admin/f4-money";
@@ -52,7 +52,9 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
   const canAudit = ctx.can("platform_a2_read");
   const supported = policy?.sevenLayerActivationContractVersion === 1;
   const action = !policy?.sevenLayerEnabled ? "ACTIVATE" : policy.sevenLayerPaused ? "RESUME" : "PAUSE";
-  const copy = ACTION_COPY[action];
+  const ranked = f2Ranked(ctx);
+  // 第 1、2 层按受益人等级后，启用时不再要求第 1 层是 10%（B83）；只改说法，检查在后端。
+  const copy = action === "ACTIVATE" && ranked ? { ...ACTION_COPY.ACTIVATE, check: "提交和批准时都会检查七层比例和系数是否配齐；批准时还检查兑付覆盖率不低于红线。" } : ACTION_COPY[action];
   const label = copy.label;
   const writeBlocked = ctx.f2WriteBlocked("f-seven-layer-activation");
   const blocked = !!writeBlocked || busy || !policy || !!ctx.f2DirectPolicyError || !!ctx.f2ActivationPendingError && canAudit || !supported || !!ctx.f2ActivationPending || !!ctx.f2ActivationAttempt || submitted || recovering;
@@ -92,22 +94,25 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
 
   return (
     <Panel className="f2-settle" aria-label="团队购买奖励结算状态" title="整体结算" icon={state === "off" ? PowerOff : state === "paused" ? PauseCircle : Power} tone={state === "running" ? "ok" : state ? "warn" : "role-other"}
-      sub={policy?.cutoverAt ? <>启用于 <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time></> : undefined}
-      explain="整体结算管新订单要不要按七层规则算团队奖励。启用、暂停、恢复都要另一位管理员批准，都不改比例、冷却和好友拆分。启用后不补发启用前的订单；暂停期间已在冷却的奖励、退款和解锁照常处理，恢复后只重新处理因这次暂停没算的订单；暂停和恢复不改启用时间。"
+      sub={policy?.cutoverAt && state !== "running" ? <>启用于 <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time></> : undefined}
+      explain={<><p>整体结算管新订单要不要按七层规则算团队奖励。启用、暂停、恢复都要另一位管理员批准，都不改比例、冷却和好友拆分。</p><p>启用后不补发启用前的订单；恢复后只重新处理因这次暂停没算的订单；暂停和恢复不改启用时间。</p></>}
       actions={allowed ? <Button variant={action === "PAUSE" ? "secondary" : "primary"} disabledReason={blockedReason} onClick={submit}>{label}</Button> : undefined}>
       <div className="f2-settle-body">
         <div className="f2-settle-state" role="status" aria-live="polite">
           {busy ? <span className="f2-settle-name" data-state="loading">正在读取…</span>
             : !state ? <span className="f2-settle-name" data-state="failed">读不到</span>
               : <span className="f2-settle-name" data-state={state}>{stateName[state]}</span>}
-          <p className="f2-settle-what">
+          {state !== "running" && <p className="f2-settle-what">
             {busy ? "结算状态读取中" : !state ? "结算状态读取失败，这部分没有判断。刷新后再看。"
-              : state === "off" ? "七层结算还没启用，按原来的规则结算。"
-                : state === "paused" ? "新订单的奖励先不算；冷却、退款、解锁照常。"
-                  : "新订单按下面「每层分多少」的比例计算团队奖励。"}
-          </p>
+              : state === "off" ? "七层结算还没启用：新订单按原来的规则结算，下表的比例启用后才生效。"
+                : "新订单的奖励先不算；冷却、退款、解锁照常。"}
+          </p>}
           {!allowed && <p className="f2-settle-note">只能查看：申请启用、暂停、恢复需有「团队奖励规则」和「发起审批」权限。</p>}
         </div>
+        {state === "running" && !busy && <div className="f2-settle-facts"><Facts>
+          <Fact k="启用时间">{policy?.cutoverAt ? <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time> : "—"}</Fact>
+          <Fact k="暂停后">新订单的奖励先不算；已在冷却的奖励、退款和解锁照常处理</Fact>
+        </Facts></div>}
         {state === "off" && <ActivationChecks ctx={ctx} />}
       </div>
       {(pending || submitted || ctx.f2ActivationPendingError || (policy && !supported)) && <ul className="f2-alerts" aria-label="整体结算的申请">
@@ -227,20 +232,21 @@ function ActivationChecks({ ctx }: { ctx: FViewCtx }) {
   const allUsdt = LAYERS.every(level => rates.some(row => row.l === level && row.usdt !== null && row.usdt >= 0 && row.usdt <= 100));
   const allNex = LAYERS.every(level => rates.some(row => row.l === level && row.nex !== null && row.nex >= 0));
   const unread = ctx.f2Loading ? "七层规则读取中" : ctx.f2Error ? "七层规则没读到" : null;
+  const ranked = f2Ranked(ctx);
   const rows = unread ? [
     { key: "usdt", ok: null, label: "七层 USDT 比例都已配置", seen: unread },
     { key: "nex", ok: null, label: "七层 UVT 系数都已配置", seen: unread },
-    { key: "l1", ok: null, label: "第 1 层比例是 10%", seen: unread },
+    ...(ranked ? [] : [{ key: "l1", ok: null, label: "第 1 层比例是 10%", seen: unread }]),
   ] : [
     { key: "usdt", ok: allUsdt, label: "七层 USDT 比例都已配置", seen: allUsdt ? "L1–L7 都有" : LAYERS.filter(level => !rates.some(row => row.l === level && row.usdt !== null && row.usdt >= 0 && row.usdt <= 100)).join("、") },
     { key: "nex", ok: allNex, label: "七层 UVT 系数都已配置", seen: allNex ? "L1–L7 都有" : LAYERS.filter(level => !rates.some(row => row.l === level && row.nex !== null && row.nex >= 0)).join("、") },
-    { key: "l1", ok: !!l1 && l1.usdt === 10, label: "第 1 层比例是 10%", seen: l1 ? `第 1 层是 ${num(l1.usdt)}%` : "没有第 1 层规则" },
+    ...(ranked ? [] : [{ key: "l1", ok: !!l1 && l1.usdt === 10, label: "第 1 层比例是 10%", seen: l1 ? `第 1 层是 ${num(l1.usdt)}%` : "没有第 1 层规则" }]),
   ];
   return (
     <div className="f2-checks">
-      <p className="f2-checks-title">启用时会检查<Explain label="这三条怎么用" content={<>
+      <p className="f2-checks-title">启用时会检查<Explain label={ranked ? "这两条怎么用" : "这三条怎么用"} content={<>
         <p>提交申请和另一位管理员批准时都会再查一遍，以那时的数据为准。这里只列现在读到的，不代表一定能启用。</p>
-        <p>没填的比例和系数也显示成 0，这里分不出「没填」和「填了 0」：三条都打勾也不代表一定能启用，以系统的检查为准。</p>
+        <p>没填的比例和系数也显示成 0，这里分不出「没填」和「填了 0」：{ranked ? "两条" : "三条"}都打勾也不代表一定能启用，以系统的检查为准。</p>
         {rates.length === 0 ? <p>七层都没规则时，先在「每层分多少」首次配置。</p>
           : LAYERS.some((level) => !layerRate(rates, level)) && <p>只缺几层时后台补不了，需要技术同事处理。</p>}
       </>} /></p>

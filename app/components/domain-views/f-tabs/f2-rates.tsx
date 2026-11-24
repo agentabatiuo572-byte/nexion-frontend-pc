@@ -5,6 +5,7 @@
  * 每个写入口打开本页确认框，提交仍调外壳原来的写函数，键、值和顺序照旧。
  */
 import { useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Ban, Clock3, Gauge, Layers, Lock, PauseCircle, ShieldCheck, Users } from "lucide-react";
 import {
   BlockState, Button, Cell, ConfigList, KeepText, ConfigRow, Explain, Figure, Notice, Panel, RatioBar, ScaleBar, StatusTag, Table, TableMessage, Td, Th,
@@ -12,10 +13,13 @@ import {
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { F2_DEPTH_GATE_RANKS, f2EnumGateSpec, parseF2DepthGateLayer, parseF2DepthGateRank } from "@/lib/admin/f2-depth-gate";
 import {
-  Change, Fact, Facts, LAYERS, LAYER_WHO, LayerCompare, SAMPLE_ORDER, configuredValue, layerRate, num, rateMeaning, sampleUsdt, totalFacts,
+  Change, Fact, Facts, LAYERS, LAYER_WHO, LayerCompare, SAMPLE_ORDER, configuredValue, f2Ranked, layerRate, num, pctAdd, pctSample, rangeText, rankedRange, rateMeaning, sampleUsdt, totalFacts,
   type F2Confirm, type Layer,
 } from "./f2-shared";
 import { F2Bootstrap, f2BootstrapFormShown, type F2BootstrapDraft } from "./f2-bootstrap";
+import { f2DecimalTimes } from "./f2-bootstrap-ticket";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import type { FViewCtx } from "./types";
 
 const F2_VISIBLE_PARAM_KEYS = new Set([
@@ -93,6 +97,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
   const rates = ctx.f2Unilevel;
   // 首次配置填到一半时点刷新，草稿留着。
   const [bootDraft, setBootDraft] = useState<F2BootstrapDraft | null>(null);
+  const canOpenF1 = useAdminAuth((state) => !!state.session && canAccessResolvedPath(resolveVisibleDomains(state.session), "/network/v-rank"));
   if (ctx.f2Loading) return <Panel title="每层分多少" icon={Layers} tone="role-4"><BlockState state="loading" title="七层比例读取中" /></Panel>;
   if (ctx.f2Error) return <Panel title="每层分多少" icon={Layers} tone="role-4"><BlockState state="error" title="七层比例没读到，这部分没有判断" detail={ctx.f2Error} onRetry={() => void ctx.refreshF2()} /></Panel>;
   const gateLayer = m.gate?.legal ? LAYERS.indexOf(m.gate.normalized as Layer) : -1;
@@ -100,12 +105,20 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
   const complete = LAYERS.every(level => rates.some(row => row.l === level && row.usdt !== null && row.usdt <= 100));
   const activeSum = rates.filter((row) => m.paused(row.l as Layer) !== "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
   const pausedSum = rates.filter((row) => m.paused(row.l as Layer) === "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
-  const axisMax = Math.max(30, Math.ceil(Math.max(activeSum, m.cap ?? 0) / 10) * 10);
   const barMax = Math.max(...rates.map((row) => row.usdt ?? 0), 0);
   const promo = m.value("F.promo.weekMultiplier");
   const missing = LAYERS.filter((level) => !layerRate(rates, level));
   const partValues = LAYERS.some((level) => { const row = layerRate(rates, level); return !!row && (row.usdt === null || row.usdt > 100 || row.nex === null); });
   const booting = rates.length === 0 && f2BootstrapFormShown(ctx, bootDraft);
+  // 第 1、2 层按受益人等级时（F2-RANK-WIRE），这两层没有单一比例：合计是一段，第 1、2 层取九级最低、最高，第 3 层起照存的比例。
+  const ranked = f2Ranked(ctx);
+  const rankedLevel = (level: Layer) => ranked && (level === "L1" || level === "L2");
+  const othersSum = rates.filter((row) => m.paused(row.l as Layer) !== "on" && !rankedLevel(row.l as Layer)).reduce((sum, row) => pctAdd(sum, row.usdtText ?? "0"), "0");
+  const sumRange = ranked && ctx.f2RankPurchaseRange ? (["L1", "L2"] as const).filter((level) => m.paused(level) !== "on")
+    .reduce((sum, level) => ({ low: pctAdd(sum.low, rankedRange(ctx, level)!.min), high: pctAdd(sum.high, rankedRange(ctx, level)!.max) }), { low: othersSum, high: othersSum }) : null;
+  const sumHigh = ranked ? (sumRange ? Number(sumRange.high) : null) : activeSum;
+  const rankedExplain = "第 1、2 层按受益人自己的等级取比例，九级比例在团队等级晋升设置；这里显示九级里最低到最高。";
+  const axisMax = Math.max(30, Math.ceil(Math.max(ranked ? Number(sumRange?.high ?? 0) : activeSum, m.cap ?? 0) / 10) * 10);
   // 单层调整和首次配置是两件事：单层只改已有的行。
   const missingRuleCopy = `批准时只更新已有的规则，没有规则的层会执行失败。${rates.length === 0 ? "七层都没有规则时，请用「首次配置」。" : "缺整层规则后台补不了，需要技术同事处理。"}`;
 
@@ -119,16 +132,21 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       edit: { kind: "number", current, min: 0, unit: "%", amplifiesWhen: "increase",
         validate: (next) => (next.trim().split(".")[1]?.replace(/0+$/, "").length ?? 0) > 4 ? "最多 4 位小数（末尾的 0 不算），多了不能提交" : undefined,
         hint: "填百分数：0.5 就是 0.5%，最多 4 位小数",
-        preview: (next) => rates.length ? <LayerCompare rates={rates} level={level} next={next || current ? Number(next || current) : null} field="usdt" /> : null },
+        preview: (next) => rates.length ? <LayerCompare rates={ranked ? rates.filter((row) => !rankedLevel(row.l as Layer)) : rates} level={level} next={next || current ? Number(next || current) : null} field="usdt" ranked={ranked} /> : null },
       facts: (next) => {
         const total = totalFacts(rates, level, next === undefined ? undefined : Number(next));
+        // 按受益人等级时合计是一段（含暂停层）：第 1、2 层取九级最低、最高，第 3 层起照存的比例，这一层换成新值。
+        const othersAll = (value?: string) => rates.filter((row) => !rankedLevel(row.l as Layer)).reduce((sum, row) => pctAdd(sum, row.l === level && value !== undefined ? value : row.usdtText ?? "0"), "0");
+        const span = (base: string) => ctx.f2RankPurchaseRange ? { low: pctAdd(pctAdd(base, ctx.f2RankPurchaseRange.l1.min), ctx.f2RankPurchaseRange.l2.min), high: pctAdd(pctAdd(base, ctx.f2RankPurchaseRange.l1.max), ctx.f2RankPurchaseRange.l2.max) } : null;
+        const rankedBefore = ranked ? span(othersAll()) : null, rankedAfter = ranked && next !== undefined && next.trim() ? span(othersAll(next.trim())) : rankedBefore;
         const anyPaused = LAYERS.some((item) => m.paused(item) === "on");
         const lower = next !== undefined && !!current && Number(next) < Number(current);
         return <Facts>
           {lower && <Fact k="这次">调低，平台每笔订单少付</Fact>}
           <Fact k="批准后实际执行">{next === undefined ? (current ? `现在是 ${rateMeaning(current)}` : "未配置") : rateMeaning(next) ?? "—"}</Fact>
           <Fact k="示例订单里这一层">{rate ? <Change from={`${num(sampleUsdt(rate.usdt))} USDT`} to={next === undefined ? `${num(sampleUsdt(rate.usdt))} USDT` : `${num(sampleUsdt(Number(next)))} USDT`} /> : "这一层还没有规则"}</Fact>
-          {total.before !== null && <Fact k={anyPaused ? "合计含暂停层" : "七层合计占订单"}><Change from={`${num(total.before)}%`} to={`${num(total.after)}%`} /></Fact>}
+          {ranked ? rankedBefore && rankedAfter && <Fact k={anyPaused ? "合计含暂停层" : "七层合计占订单"}><Change from={rangeText(rankedBefore.low, rankedBefore.high)} to={rangeText(rankedAfter.low, rankedAfter.high)} /></Fact>
+            : total.before !== null && <Fact k={anyPaused ? "合计含暂停层" : "七层合计占订单"}><Change from={`${num(total.before)}%`} to={`${num(total.after)}%`} /></Fact>}
         </Facts>;
       },
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text={missingRuleCopy} /></Notice>,
@@ -148,10 +166,17 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       effect: effectTag,
       edit: { kind: "number", current, min: 0, unit: "UVT / 1 USDT", amplifiesWhen: "increase",
         hint: "这一层每发 1 USDT 奖励，另发多少 UVT",
-        preview: (next) => rates.length ? <LayerCompare rates={rates} level={level} next={next || current ? Number(next || current) : null} field="nex" /> : null },
+        preview: (next) => rates.length ? <LayerCompare rates={ranked ? rates.filter((row) => !rankedLevel(row.l as Layer)) : rates} level={level} next={next || current ? Number(next || current) : null} field="nex" ranked={ranked} /> : null },
       facts: (next) => <Facts>
         {next !== undefined && current && Number(next) < Number(current) && <Fact k="这次">调低，平台每笔订单少发 UVT</Fact>}
-        <Fact k="这一层另发 UVT">{rate ? <Change from={`${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} to={`${num(rate.usdt === null || !(next ?? current).trim() ? null : sampleUsdt(rate.usdt)! * Number(next ?? current))} UVT`} /> : "这一层还没有规则"}</Fact>
+        {rankedLevel(level) ? (() => {
+          const rng = rankedRange(ctx, level);
+          const uvt = (factor: string) => rng && factor.trim() ? rangeText(f2DecimalTimes(pctSample(rng.min), factor.trim()), f2DecimalTimes(pctSample(rng.max), factor.trim()), "USDT").replace(/ USDT$/, " UVT") : "—";
+          return <>
+            <Fact k="这一层另发 UVT"><Change from={uvt(current)} to={uvt(next ?? current)} /></Fact>
+            <Fact k="示例订单里这一层">{rng ? `${rangeText(pctSample(rng.min), pctSample(rng.max), "USDT")}，按受益人等级` : "—"}</Fact>
+          </>;
+        })() : <Fact k="这一层另发 UVT">{rate ? <Change from={`${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} to={`${num(rate.usdt === null || !(next ?? current).trim() ? null : sampleUsdt(rate.usdt)! * Number(next ?? current))} UVT`} /> : "这一层还没有规则"}</Fact>}
       </Facts>,
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text={missingRuleCopy} /></Notice>,
       statedBrief: { impact: "批准后，之后新算的订单这一层按新系数另发 UVT；已经算好的不重算。", check: COVERAGE_CHECK },
@@ -185,24 +210,29 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
 
   return (
     <Panel title="每层分多少" icon={Layers} tone="role-4" sub={`示例订单 ${num(SAMPLE_ORDER)} USDT`}
-      explain="好友（第 1 层）和好友的好友（第 2 层）……一直到第 7 层买设备时，按层给上面的人发 USDT 奖励，另按系数加发 UVT。示例金额只按比例和系数算，没算影响分、活动倍率、等级门槛和奖励总额上限，不是真实订单。">
+      explain={ranked ? "第 1 到 7 层的人买设备时，按层给上面的人发 USDT 奖励，另按系数加发 UVT。第 1、2 层的比例按受益人等级，在团队等级晋升设置。示例只按比例和系数算，不是真实订单。"
+        : "好友（第 1 层）和好友的好友（第 2 层）……一直到第 7 层买设备时，按层给上面的人发 USDT 奖励，另按系数加发 UVT。示例金额只按比例和系数算，没算影响分、活动倍率、等级门槛和奖励总额上限，不是真实订单。"}>
       {rates.length === 0 ? <F2Bootstrap ctx={ctx} openConfirm={openConfirm} draft={bootDraft} setDraft={setBootDraft} cap={m.cap} />
         : !complete ? <Notice tone="warn" title="七层规则不完整">{missing.length > 0 && `缺 ${missing.join("、")} 的整层规则，后台补不了，需要技术同事处理。`}{partValues && "已有的层缺比例或系数，在下表点这一层的按钮补上。"}配齐前不能启用整体结算。</Notice> : (
         <Figure width={420} stack="wide" graphic={
           <div className="f2-sum-graphic">
-            <ScaleBar label="七层合计占订单" max={axisMax} value={activeSum} fill target={m.cap ?? undefined} tone="role-4"
+            {ranked ? <ScaleBar label="七层合计占订单" max={axisMax} range={sumRange ? { low: Number(sumRange.low), high: Number(sumRange.high) } : undefined} target={m.cap ?? undefined} tone="role-4"
               ticks={[{ value: 0, text: "0%" }, ...(m.cap !== null && m.cap <= axisMax ? [{ value: m.cap, text: `上限 ${num(m.cap)}%` }] : []), { value: axisMax, text: `${axisMax}%` }]}
-              valueText={`发放中的层合计 ${num(activeSum)}%${m.cap !== null ? `，总额上限 ${num(m.cap)}%` : "，总额上限未配置"}`} />
+              valueText={sumRange ? `发放中的层合计按受益人等级 ${rangeText(sumRange.low, sumRange.high)}${m.cap !== null ? `，总额上限 ${num(m.cap)}%` : "，总额上限未配置"}` : "第 1、2 层的九级比例没读到，合计这次没有算"} />
+              : <ScaleBar label="七层合计占订单" max={axisMax} value={activeSum} fill target={m.cap ?? undefined} tone="role-4"
+                ticks={[{ value: 0, text: "0%" }, ...(m.cap !== null && m.cap <= axisMax ? [{ value: m.cap, text: `上限 ${num(m.cap)}%` }] : []), { value: axisMax, text: `${axisMax}%` }]}
+                valueText={`发放中的层合计 ${num(activeSum)}%${m.cap !== null ? `，总额上限 ${num(m.cap)}%` : "，总额上限未配置"}`} />}
+            <p className="f2-sum-cap">{m.cap === null ? "总额上限未配置" : `上限 ${num(m.cap)}%：${num(SAMPLE_ORDER)} USDT 订单最多分 ${num(sampleUsdt(m.cap))} USDT`}<Explain label="总额上限怎么用" content="一笔订单七层 USDT 奖励最多占订单金额的这个比例。超出时从 L1 往下分，分完为止，后面的层少发或不发；旧 UVT 系数另发的 UVT 不算在内。" /></p>
           </div>}>
           <dl className="f2-sum">
-            <div><dt>发放中的层合计</dt><dd><strong>{num(sampleUsdt(activeSum))}</strong> USDT<span>占订单 {num(activeSum)}%</span></dd></div>
-            <div><dt>暂停的层</dt><dd data-empty={pausedLayers.length ? undefined : ""}>{pausedLayers.length ? <>{pausedLayers.join("、")}<span>不发 {num(sampleUsdt(pausedSum))} USDT</span></> : "没有"}</dd></div>
-            <div><dt>奖励总额上限<Explain label="总额上限怎么用" content="一笔订单七层 USDT 奖励最多占订单金额的这个比例。超出时从 L1 往下分，分完为止，后面的层少发或不发；旧 UVT 系数另发的 UVT 不算在内。" /></dt>
-              <dd data-empty={m.cap === null ? "" : undefined}>{m.cap === null ? "未配置" : <>{num(m.cap)}%<span>{num(sampleUsdt(m.cap))} USDT</span></>}</dd></div>
+            <div><dt>发放中的层合计</dt>{ranked
+              ? <dd data-empty={sumRange ? undefined : ""}>{sumRange ? <><strong>{rangeText(pctSample(sumRange.low), pctSample(sumRange.high), "USDT").replace(/ USDT$/, "")}</strong> USDT<span>占订单 {rangeText(sumRange.low, sumRange.high)}，按受益人等级</span>
+                <Explain label="合计为什么是一段" content={`第 1、2 层按受益人等级取比例：各级比例里最低一档合计 ${num(sumRange.low)}%，最高一档合计 ${num(sumRange.high)}%。${pausedLayers.length ? `${pausedLayers.join("、")} 现在暂停，不算在内。` : ""}`} /></> : "—"}</dd>
+              : <dd><strong>{num(sampleUsdt(activeSum))}</strong> USDT<span>占订单 {num(activeSum)}%</span></dd>}</div>
           </dl>
         </Figure>
       )}
-      {complete && m.cap !== null && activeSum > m.cap && <Notice tone="warn" title={`按比例合计 ${num(activeSum)}%，超过总额上限 ${num(m.cap)}%`}>结算时从 L1 往下分，分完 {num(sampleUsdt(m.cap))} USDT（示例）为止，后面的层少发或不发。</Notice>}
+      {complete && m.cap !== null && sumHigh !== null && sumHigh > m.cap && <Notice tone="warn" title={ranked ? `按比例合计最高 ${num(sumRange!.high)}%，超过总额上限 ${num(m.cap)}%` : `按比例合计 ${num(activeSum)}%，超过总额上限 ${num(m.cap)}%`}>结算时从 L1 往下分，分完 {num(sampleUsdt(m.cap))} USDT（示例）为止，后面的层少发或不发。</Notice>}
       {!booting && <Table label="团队购买奖励比例" className="f2-layer-table">
         <thead><tr>
           <Th>哪一层</Th>
@@ -221,15 +251,22 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
             const usdtPending = pendingFor(ctx, `F.unilevel.${level}`);
             const nexPending = pendingFor(ctx, `F.unilevel.nex.${level}`);
             const nexLocked = direct && m.l1NexReadonly;
+            const byRank = rankedLevel(level);
+            const rng = byRank ? rankedRange(ctx, level) : null;
             return (
               <tr key={level} data-paused={pausedRaw === "on" ? "" : undefined}>
                 <Td><span className="f2-layer"><span className="f2-layer-chip" data-direct={direct ? "" : undefined}>{level}</span>{LAYER_WHO[level]}</span></Td>
-                <Td align="right">{rate?.usdt != null ? <span className="f2-rate">
+                <Td align="right">{byRank ? <span className="f2-ranked"><strong>{rng ? rangeText(rng.min, rng.max) : "—"}</strong>
+                  <span className="f2-ranked-sub">按受益人等级<Explain label={`${level} 比例为什么按等级`} content={rng ? rankedExplain : `${rankedExplain}九级比例这次没读到。`} /></span></span>
+                  : rate?.usdt != null ? <span className="f2-rate">
                   <RatioBar compact quiet label={`${level} 比例`} value={rate.usdt ?? 0} total={barMax || 1} valueText={`${num(rate.usdtText)}%`} tone={pausedRaw === "on" ? "role-other" : "role-4"} />
                   <strong>{rate.usdt === null ? "未配置" : `${num(rate.usdtText)}%`}</strong>
                 </span> : <span className="f2-muted">未配置</span>}</Td>
-                <Td align="right">{rate?.usdt != null ? <Cell num main={`${num(sampleUsdt(rate.usdt))} USDT`} sub={direct && ctx.f2DirectPolicy?.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled ? "按好友政策拆分" : undefined} /> : <span className="f2-muted">—</span>}</Td>
-                <Td align="right">{rate?.nex != null ? <Cell num main={nexLocked ? <span className="f2-muted">{num(rate.nexText)}</span> : num(rate.nexText)} sub={nexLocked ? (ctx.f2DirectPolicy && !ctx.f2DirectPolicyError && !ctx.f2DirectPolicyLoading ? "已停用，改用拆分" : "暂不能改") : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">{rate ? "未配置" : "—"}</span>}</Td>
+                <Td align="right">{byRank ? rng ? <Cell num main={rangeText(pctSample(rng.min), pctSample(rng.max), "USDT")} /> : <span className="f2-muted">—</span>
+                  : rate?.usdt != null ? <Cell num main={`${num(sampleUsdt(rate.usdt))} USDT`} sub={direct && ctx.f2DirectPolicy?.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled ? "按好友政策拆分" : undefined} /> : <span className="f2-muted">—</span>}</Td>
+                <Td align="right">{rate?.nex != null ? <Cell num main={nexLocked ? <span className="f2-muted">{num(rate.nexText)}</span> : num(rate.nexText)} sub={nexLocked ? (ctx.f2DirectPolicy && !ctx.f2DirectPolicyError && !ctx.f2DirectPolicyLoading ? "已停用，改用拆分" : "暂不能改")
+                  : byRank ? rng && rate.nexText !== null ? `另发 ${rangeText(f2DecimalTimes(pctSample(rng.min), rate.nexText), f2DecimalTimes(pctSample(rng.max), rate.nexText), "USDT").replace(/ USDT$/, "")} UVT` : "另发 — UVT"
+                  : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">{rate ? "未配置" : "—"}</span>}</Td>
                 <Td><span className="f2-tags">
                   {!rate ? <StatusTag tone="neutral" explain={`这一层还没有规则，没有规则时这一层不发。${rates.length === 0 ? "七层都没有时，用上面的「首次配置」。" : "后台补不了，需要技术同事处理。"}`}>没有规则</StatusTag>
                     : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的 ${rate.usdt === null ? "USDT 比例" : "UVT 系数"} 没配置，这页看不出这一层会怎么发。${(rate.usdt === null ? direct : nexLocked) ? "这一项后台不能改，需要技术同事处理。" : `点「${rate.usdt === null ? "改比例" : "改系数"}」补上，批准后生效。`}`}>规则不完整</StatusTag>
@@ -241,7 +278,8 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
                   {(usdtPending || nexPending) && <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员批准；批准前这一层不变，也不能再提交。">待审批</StatusTag>}
                 </span></Td>
                 <Td align="right"><span className="f2-row-actions">
-                  {direct ? <span className="f2-fixed">比例固定<Explain label="第 1 层比例为什么改不了" content="第 1 层 USDT 比例固定 10%，后台不能改；启用整体结算时要求它是 10%。" /></span>
+                  {byRank ? canOpenF1 ? <Link className="rd-link" href="/network/v-rank" prefetch={false}>去团队等级晋升 →</Link> : <span className="f2-fixed">在团队等级晋升设置</span>
+                    : direct ? <span className="f2-fixed">比例固定<Explain label="第 1 层比例为什么改不了" content="第 1 层 USDT 比例固定 10%，后台不能改；启用整体结算时要求它是 10%。" /></span>
                     : m.canRoyaltyRate && <Button size="sm" aria-label={`调整 ${level} USDT 比例`} disabledReason={usdtPending ? "等另一位管理员批准" : ctx.f2WriteBlocked(`f-config:F.unilevel.${level}`)} onClick={() => openRate(level)}>{rate ? "改比例" : "设置比例"}</Button>}
                   {m.canRoyaltyRate && (!nexLocked ? <Button size="sm" aria-label={`调整 ${level} UVT 系数`} disabledReason={nexPending ? "等另一位管理员批准" : ctx.f2WriteBlocked(`f-config:F.unilevel.nex.${level}`)} onClick={() => openNex(level)}>改系数</Button>
                     : <Button size="sm" aria-label={`调整 ${level} UVT 系数`} disabledReason={m.l1NexStatus}>改系数</Button>)}

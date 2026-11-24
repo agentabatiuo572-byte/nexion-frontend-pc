@@ -22,7 +22,7 @@ import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
-  APPROVER, KIND_LABELS, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, deviceEarningSource, isFriend, isGrouped, kindCountLabel, knownRejection,
+  APPROVER, KIND_LABELS, type F5SalaryRowWire, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, deviceEarningSource, isFriend, isGrouped, kindCountLabel, knownRejection,
   reissueOutcome, statusName, timeText, userCode, zoneNote, F5ConfirmHost, Money, F5RecoveryNotice, type F5Confirm, type F5RecoveryRow,
 } from "./f5-shared";
 import { F5KindTiles, F5StatusFlow } from "./f5-overview";
@@ -564,7 +564,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const moreCount = (currency ? 1 : 0) + (cohort ? 1 : 0);
   const busyText = "奖励记录正在更新";
   const recordCounts = loading && data ? "正在更新，暂不能查询或处理"
-    : data ? `共 ${data.total.toLocaleString("en-US")} 笔符合条件 · 这一批 ${events.length} 笔 · 时间为${zoneNote()}` : undefined;
+    : data ? data.total === events.length ? `共 ${data.total.toLocaleString("en-US")} 笔 · 时间为${zoneNote()}` : `共 ${data.total.toLocaleString("en-US")} 笔符合条件 · 这一批 ${events.length} 笔 · 时间为${zoneNote()}` : undefined;
 
   const recordsPanel = (
     <div className="f5-records">
@@ -612,18 +612,21 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                     : events.map((row, index) => {
                       const selectable = !blockedRecord(row) && canReissue && row.status === "reversed" && !isFriend(row) && !row.reversalRecorded;
                       const blockedPick = blockedRecord(row) ?? (row.status === "reversed" && !selectable ? isFriend(row) ? "好友奖励不能补发" : row.reversalRecorded ? "已退款的记录不能补发" : undefined : undefined);
-                      const source = isFriend(row) ? `${row.kind === "direct_device_earning" ? deviceEarningSource(row.layer) : "直接邀请的好友"}${row.sourceUserId ? ` ${userCode(row.sourceUserId)}` : ""}`
+                      // 等级月薪写「月份 · 等级」；设备收益写和受益人的关系；购买奖励（好友购买、团队购买）写「来自 U… · 第 N 层」。
+                      const salary = row.kind === "vrank_salary" ? row as typeof row & F5SalaryRowWire : null;
+                      const source = salary ? [salary.salaryMonth, salary.salaryRank].filter(Boolean).join(" · ") || "—"
+                        : row.kind === "direct_device_earning" ? `${deviceEarningSource(row.layer)}${row.sourceUserId ? ` ${userCode(row.sourceUserId)}` : ""}`
                         : [row.sourceUserId ? `来自 ${userCode(row.sourceUserId)}` : "", row.layer ? `第 ${row.layer} 层` : ""].filter(Boolean).join(" · ") || "—";
                       const items = rowActions(row);
                       return (
                         <Tr key={row.id} selected={openRow?.id === row.id} onOpen={() => setOpenId(row.id)} data-group={groupPos(index)}>
                           {canReissue && <Td>{row.status === "reversed" && <Checkbox aria-label={`选择 ${row.id}`} disabled={!selectable} title={blockedPick} checked={selected.includes(row.id)} onChange={(event) => setSelected((old) => event.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))} />}</Td>}
                           <Td><Cell main={<button type="button" className="rd-cell-link" data-mono="" aria-haspopup="dialog" aria-label={`查看奖励 ${row.id}`} onClick={() => setOpenId(row.id)}>{row.id}</button>}
-                            sub={<>{kindName(row.kind)}{row.settlementNo ? <span className="f5-group-tag">双币组</span> : null}</>} /></Td>
+                            sub={<>{kindName(row.kind)}{row.settlementNo ? <span className="f5-group-tag">双币组</span> : null}{salary?.claimNo ? <span className="f5-sans"> · <span data-mono="" title={`月薪领取的领取号 ${salary.claimNo}`}>{salary.claimNo}</span></span> : null}</>} /></Td>
                           <Td><Cell mono main={row.user} sub={<span className="f5-sans">{source}</span>} /></Td>
                           <Td align="right"><Cell num main={<Money value={row.amt} currency={row.cur} />} /></Td>
                           <Td className="f5-col-time"><Cell num main={timeText(row.settledAt)} /></Td>
-                          <Td><Cell main={<StatusBadge status={row.status} />} sub={row.status === "cooling" ? row.coolingDaysLeft > 0 ? `剩 ${row.coolingDaysLeft} 天` : "当天到期或没有到期时间" : undefined} /></Td>
+                          <Td><Cell main={<StatusBadge status={row.status} />} sub={row.status === "cooling" ? row.coolingDaysLeft > 0 ? `剩 ${row.coolingDaysLeft} 天` : "当天到期或没有到期时间" : row.status === "unlocked" && salary ? "领取即可用" : undefined} /></Td>
                           {rowWrite && <Td sticky="end" data-fit="">{items.length ? <MoreMenu label={`处置 ${row.id}`} items={items.map((item) => ({ key: item.key, label: item.label, danger: item.danger, disabledReason: item.disabledReason, onSelect: item.onSelect }))} /> : <span className="f5-weak">—</span>}</Td>}
                         </Tr>
                       );
@@ -651,7 +654,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
   return (
     <div className="f5-page">
-      <PageHeader pageId="F5" title="奖励记录核对" summary={`核对${data ? kindCountLabel(data.commissionKinds.length) : ""}团队奖励的每一笔，处置有问题的记录。`}
+      <PageHeader pageId="F5" title="奖励记录核对" summary={`核对${data ? kindCountLabel(data.commissionKinds.length) : ""}奖励的每一笔，处置有问题的记录。`}
         readOnly={anyWrite ? undefined : "你只能查看；处置奖励需要对应的处置权限"} />
       {conclusion()}
       <F5RecoveryNotice rows={recoveryRows} />

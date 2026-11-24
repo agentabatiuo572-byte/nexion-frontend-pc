@@ -860,7 +860,8 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f5-page .f5-cool-table :is(th, td):is(:first-child, :nth-child(2)) { white-space: nowrap; }
 
 /* 八类奖励：四张一行，窄时两张一行 */
-.f5-page .f5-kinds { container: f5-kinds / inline-size; display: grid; align-items: stretch; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; --rd-track-w: 100%; }
+.f5-page .f5-kinds { container: f5-kinds / inline-size; display: grid; align-items: stretch; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; --rd-track-w: 100%; }
+@container f5-kinds (max-width: 960px) { .f5-page .f5-kinds { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @container f5-kinds (max-width: 560px) { .f5-page .f5-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* 页签和奖励流水 */
