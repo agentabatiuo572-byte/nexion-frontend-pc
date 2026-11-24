@@ -68,7 +68,7 @@ import {
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
 import { RecoveryPanel, SETTLED_REJECTED, receiptExplain, receiptFact, receiptRejected, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
-import { COUNT_LABELS, COUNTS_RULE, CountsExplain, CountsFacts, CountsNotice, InviterValue, countText, useCountsRetryFocus, type CountsView } from "@/app/components/invitation/invitation-view";
+import { COUNT_LABELS, COUNTS_RULE, CountsExplain, CountsFacts, CountsNotice, CountsRetryButton, InviterValue, countText, useCountsRetryFocus, type CountsView } from "@/app/components/invitation/invitation-view";
 import { INVITATION_REREAD_BLOCK, inviterDetailView, referralCountsView } from "@/app/components/invitation/wiring";
 
 /**
@@ -575,7 +575,7 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
   /** 不是列表的小块：摘要写结论，自己管开合。 */
   summary?: ReactNode;
   disclosure?: { open: boolean; onOpenChange: (open: boolean) => void; summary: ReactNode };
-  /** 这一块正在重读：标题行写「正在加载…」，失败卡和「重试」留在原处，按钮写「重试中…」（CP-28），这一块标 aria-busy。 */
+  /** 这一块正在重读：标题行写「正在加载…」，只留「重试中…」按钮（CP-28），失败标题和原因先收起，这一块标 aria-busy。 */
   reloading?: boolean;
   /** 一直挂着的读屏状态（rd-sr-only），放在这一块里，不打断相邻块的间距规则。 */
   live?: ReactNode;
@@ -586,8 +586,14 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
   const body = failure
     ? <BlockState state="error" compact title={failure} />
     : sectionFailed(section)
-      ? <BlockState state="error" compact title={`${title}加载失败`} detail={sectionRetry?.detail}
-          onRetry={sectionRetry?.onRetry ?? (() => window.location.reload())} retrying={sectionRetry?.retrying} retryLabel={reloading ? "重试中…" : undefined} />
+      ? sectionRetry
+        // 这块能自己重读：在途时只有一种状态，失败标题和原因先收起，新回包仍失败才放回来（ST-30、ST-31）。
+        // 样子同 rd BlockState 的单行失败卡；按钮一直是同一个、不用原生 disabled，按下后焦点不掉（rd 的 InlineRetry 会掉，BUG-677）。
+        ? <div className="rd-block-state" data-state={reloading ? "loading" : "error"} data-compact="" data-module-health-state={reloading ? undefined : "error"} role={reloading ? "status" : "alert"}>
+            {!reloading && <><div className="rd-block-state-title">{`${title}加载失败`}</div><div className="rd-block-state-detail">{sectionRetry.detail}</div></>}
+            <CountsRetryButton onRetry={sectionRetry.onRetry} retrying={sectionRetry.retrying} rereading={reloading} />
+          </div>
+        : <BlockState state="error" compact title={`${title}加载失败`} onRetry={() => window.location.reload()} />
       : <div className="rd-detail-block">{children}</div>;
   return (
     <div id={id} className="rd-detail-block" aria-busy={reloading || undefined}>
