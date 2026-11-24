@@ -735,6 +735,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         <OperationConfirmModal
           action={mc.action}
           getPendingReason={tab === "M4" || tab === "M5" ? mc.getPendingReason : undefined}
+          getPendingRecovery={tab === "M4" ? mc.getPendingRecovery : undefined}
           initialReason={tab === "M4" || tab === "M5" ? mc.initialReason : undefined}
           title={mc.title}
           detail={mc.detail}

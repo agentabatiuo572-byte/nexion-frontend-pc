@@ -65,6 +65,15 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const [needsRead, setNeedsRead] = useState(false);
   const [pendingCommands, setPendingCommands] = useState<MCommandRecord[]>([]);
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  // 弹窗里的回调是打开时建的：读最新的查询结论走 ref，和 state 同步写。
+  const outcomesRef = useRef(outcomes);
+  outcomesRef.current = outcomes;
+  const setOutcome = (commandKey: string, outcome: FundInvestigationOutcome | undefined) => {
+    const next = { ...outcomesRef.current };
+    if (outcome) next[commandKey] = outcome; else delete next[commandKey];
+    outcomesRef.current = next;
+    setOutcomes(next);
+  };
   const [closing, setClosing] = useState<MCommandRecord | null>(null);
   const [recovery, setRecovery] = useState<MCommandRecord | null>(null);
   const authorities = useAdminAuth((state) => state.session?.authorities);
@@ -186,7 +195,11 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         setNeedsRead(true);
         await readCurrent();
       }
-      if (!rejected) setRecovery(mCommands.list().find((record) => record.commandKey === commandKey) ?? null);
+      if (!rejected) {
+        setRecovery(mCommands.list().find((record) => record.commandKey === commandKey) ?? null);
+        // 又一次结果未知：旧的「没有查到」不再算数，要重新查询才能再重试。
+        setOutcome(commandKey, undefined);
+      }
       const failure = `${rejected ? "后台拒绝了这次操作" : "结果未知"} · ${displayAdminError(error)}`;
       if (onFailure && (!rejected || !original)) onFailure(rejected ? new Error(failure, { cause: error }) : new OutcomeUnknownError(failure, { cause: error })); else toast(failure, rejected ? "error" : "warn");
       return false;
@@ -197,6 +210,9 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   };
   const retryOriginal = (record: MCommandRecord, onFailure?: (error: Error) => void) => {
     if (!record.faq) return Promise.resolve(false);
+    // 所有重发都走这里：明确查不到才发（OP-93），其余写明原因、不发请求。
+    const block = retryBlock(outcomesRef.current[record.commandKey]);
+    if (block) { toast(block, "warn"); return Promise.resolve(false); }
     const labels = { create: "已保存", edit: "已保存", publish: "已发布", unpublish: "已下架为草稿", delete: "已删除" };
     return commitM4Write(record.faq, `${record.faq.row.id} ${labels[record.faq.kind]}`, onFailure, record);
   };
@@ -277,6 +293,11 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         return saved?.faq ? JSON.parse(saved.faq.request.body).reason : undefined;
       },
       initialReason: original?.faq ? JSON.parse(original.faq.request.body).reason : undefined,
+      // 共用框自带「查询原结果」；明确查不到前重试按钮写明原因（和 H4 同一做法）。
+      getPendingRecovery: () => {
+        const saved = mCommands.list().find((record) => record.faq?.actorId === actorId && record.faq?.row.id === faq.id);
+        return saved ? { expiresAt: saved.expiresAt, blockedReason: retryBlock(outcomesRef.current[saved.commandKey]), query: () => queryOriginal(saved) } : undefined;
+      },
       blockedReason: !canWriteM4 ? "当前账号没有知识库编辑权限" : original && isRetryExpired(original) ? RETRY_EXPIRED_TEXT : undefined,
       run: async (reason) => {
         const saved = mCommands.list().find((record) => record.faq?.actorId === actorId && record.faq?.row.id === faq.id);
@@ -329,10 +350,10 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       const next = await queryM4FaqCommand(record);
       result = next;
       if (actorId !== useAdminAuth.getState().session?.adminId) return;
-      setOutcomes(all => ({ ...all, [record.commandKey]: { receipt: next.receipt } }));
+      setOutcome(record.commandKey, { receipt: next.receipt });
     } catch (error) {
       if (actorId !== useAdminAuth.getState().session?.adminId) return;
-      setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(error) } }));
+      setOutcome(record.commandKey, { error: displayAdminError(error) });
     }
     if (actorId !== useAdminAuth.getState().session?.adminId) return;
     if (result?.settled) {
@@ -402,7 +423,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
           const record = closing;
           const result = await queryM4FaqCommand(record, evidence);
           if (actorId !== useAdminAuth.getState().session?.adminId) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
-          setOutcomes(all => ({ ...all, [record.commandKey]: { receipt: result.receipt } }));
+          setOutcome(record.commandKey, { receipt: result.receipt });
           setClosing(null);
           if (result.settled) {
             ctx.toast(settledText({ status: result.receipt!.originalStatus }), "success");
@@ -512,14 +533,15 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       <M4FaqDrawer faq={current} author={current ? authorOf(current.id) : undefined} nav={drawerNav} busy={writePending} canWrite={canEdit && !blocked(current?.id)}
         onClose={() => setOpenId(null)} onEdit={() => current && openEdit(current)} onStatus={() => current && openStatus(current)} onDelete={() => current && requestDeleteFaq(current)} />
 
-      {statusTarget && <M4StatusConfirm faq={statusTarget} busy={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} failure={statusFailure} retry={recovery ? { expired: isRetryExpired(recovery) } : undefined}
+      {statusTarget && <M4StatusConfirm faq={statusTarget} busy={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} failure={statusFailure}
+        retry={recovery ? { expired: isRetryExpired(recovery), blockedReason: retryBlock(outcomes[recovery.commandKey]), onQuery: () => queryOriginal(recovery) } : undefined}
         onCancel={() => { setRecovery(null); setStatusTarget(null); }}
         onConfirm={async () => {
           setStatusFailure(null);
           if (await changeFaqStatus(statusTarget.id, statusTarget.status === "draft" ? "published" : "draft", setStatusFailure)) setStatusTarget(null);
         }} />}
 
-      {(showAddFaq || editFaq) && <FaqModal key={recovery?.commandKey ?? editFaq?.id ?? "new"} row={editFaq} authorOf={authorOf} recovery={recovery} pending={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} onClose={() => { createFaqTempId.current = null; setRecovery(null); setShowAddFaq(false); setEditFaq(null); }} onSave={saveFaq} />}
+      {(showAddFaq || editFaq) && <FaqModal key={recovery?.commandKey ?? editFaq?.id ?? "new"} row={editFaq} authorOf={authorOf} recovery={recovery} retryBlocked={recovery ? retryBlock(outcomes[recovery.commandKey]) : undefined} onQuery={recovery ? () => queryOriginal(recovery) : undefined} pending={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} onClose={() => { createFaqTempId.current = null; setRecovery(null); setShowAddFaq(false); setEditFaq(null); }} onSave={saveFaq} />}
     </>
   );
 }
@@ -529,6 +551,8 @@ function FaqModal({
   authorOf,
   pending,
   recovery,
+  retryBlocked,
+  onQuery,
   disabled,
   onClose,
   onSave,
@@ -537,6 +561,9 @@ function FaqModal({
   authorOf: (id: string) => string | null | undefined;
   pending: boolean;
   recovery: MCommandRecord | null;
+  /** 结果未知时重试为什么还不能点（没查、查询失败、还在执行、已查到别的结论）；明确查不到时是 undefined。 */
+  retryBlocked?: string;
+  onQuery?: () => Promise<void>;
   disabled: boolean;
   onClose: () => void;
   onSave: (form: FaqForm, onFailure: (error: Error) => void) => Promise<boolean>;
@@ -552,6 +579,7 @@ function FaqModal({
   const [reason, setReason] = useState(recovery?.faq ? JSON.parse(recovery.faq.request.body).reason as string : "");
   const [tried, setTried] = useState(false);
   const [failure, setFailure] = useState<Error | null>(null);
+  const [querying, setQuerying] = useState(false);
   // 只管界面：记住打开时的版本，重读后版本变了就把别人改的项列出来，和框里你填的对照。
   const [opened] = useState(row);
   const latest = !recovery && row && opened && row.version !== opened.version ? row : null;
@@ -601,8 +629,9 @@ function FaqModal({
       onClose={onClose}
       footer={
         <>
-          <Button disabled={pending} onClick={onClose}>取消</Button>
-          <Button variant="primary" data-proof="support-faq-save" loading={pending} disabled={disabled} onClick={save}>{recovery ? "按原请求重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>
+          <Button disabled={pending || querying} onClick={onClose}>取消</Button>
+          {recovery && onQuery && <Button disabled={pending || querying} loading={querying} onClick={() => { setQuerying(true); void onQuery().finally(() => setQuerying(false)); }}>查询原结果</Button>}
+          <Button variant="primary" data-proof="support-faq-save" loading={pending} disabled={disabled || querying} disabledReason={recovery && !disabled ? retryBlocked : undefined} onClick={save}>{recovery ? "按原请求重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>
         </>
       }
     >
