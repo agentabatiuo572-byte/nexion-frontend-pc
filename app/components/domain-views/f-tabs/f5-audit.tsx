@@ -57,6 +57,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const [applied, setApplied] = useState<F5CommissionQuery>({});
   const [tab, setTab] = useState<Tab>("records");
   const [openId, setOpenId] = useState<string | null>(null);
+  // 九类奖励折叠组开着没有放在这里：筛选后重读数据时卡片会重新挂载，不能因此自己收起。
+  const [kindsOpen, setKindsOpen] = useState(false);
   const [confirm, setConfirm] = useState<F5Confirm | null>(null);
   const tabIds = useTabIds();
   const { f5Overview: data, f5AppliedQuery, f5NextQuery, f5Loading: loading, f5Error: error } = ctx;
@@ -667,7 +669,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         <div className="f5-stack">
         {data && <>
           <F5StatusFlow data={data} statusFilter={applied.status ?? ""} onStatus={applyStatusFilter} pendingCount={pendingCount} onPending={() => setTab("pending")} />
-          <F5KindTiles data={data} kindFilter={applied.kind ?? ""} onKind={applyKindFilter} />
+          <F5KindTiles data={data} kindFilter={applied.kind ?? ""} onKind={applyKindFilter} open={kindsOpen} onOpenChange={setKindsOpen} />
         </>}
         <div className="f5-tabs">
           <PageTabs label="奖励记录内容" value={tab} onChange={setTab} ids={tabIds} items={data ? tabItems : tabItems.slice(0, 1)} />

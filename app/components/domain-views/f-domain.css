@@ -828,7 +828,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f5-page .f5-node, .f5-page .f5-kind { display: flex; flex-direction: column; gap: 4px; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tile); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; text-align: left; }
 .f5-page button.f5-node, .f5-page button.f5-kind { cursor: pointer; }
 @media (hover: hover) and (pointer: fine) { .f5-page button.f5-node:hover, .f5-page button.f5-kind:hover { background: var(--rd-hover); } }
-.f5-page .f5-node[aria-pressed="true"], .f5-page .f5-kind[aria-pressed="true"] { background: var(--rd-selected); box-shadow: inset 0 -2px 0 var(--rd-brand-ink); }
+.f5-page .f5-node[aria-pressed="true"], .f5-page .f5-kind[aria-pressed="true"], .f5-page .f5-kind[aria-checked="true"] { background: var(--rd-selected); box-shadow: inset 0 -2px 0 var(--rd-brand-ink); }
 .f5-page .f5-node:focus-visible, .f5-page .f5-kind:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 .f5-page .f5-node:disabled, .f5-page .f5-kind:disabled { cursor: not-allowed; }
 .f5-page .f5-node-head, .f5-page .f5-kind-head { display: flex; align-items: center; gap: 6px; min-width: 0; }

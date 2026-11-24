@@ -71,7 +71,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
     const amplify = directReferralAmplifies(policy, value) || (level2Changed && value.deviceEarning.enabled && l2After > level2Now!);
     openConfirm({
       slot: "f-direct-referral-policy",
-      action: "好友奖励设置整组调整", title: "提交好友奖励政策", briefKind: "config", amplify, icon: "sliders",
+      action: "好友奖励设置整组调整", title: "提交好友奖励政策", briefKind: "config", amplify, icon: "sliders", dialogClassName: "f2-confirm",
       effect: <StatusTag tone="progress" filled icon={Clock3} explain="另一位管理员在「操作记录与审批」批准后，两项一起立即生效；批准前按原政策执行。">批准后两项一起生效</StatusTag>,
       facts: <Facts>
         <Fact k="购买冷却">{reference.coolingDays === null ? "未配置" : `${reference.coolingDays} 天`}</Fact>
@@ -80,7 +80,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
           : <Fact k="第 1 层比例">{reference.baseRatePct === null ? "未配置" : `${num(reference.baseRatePct)}%`}</Fact>}
       </Facts>,
       content: <div className="rd-stack">
-        <DiffList rows={rows(policy, value, l2After)} restTitle="没改的项" />
+        <DiffList rows={rows(policy, value, l2After)} restTitle="其余设置" />
         {level2Changed && <p className="f2-diff-note">{`改后：好友的好友的设备每产生 100 USDT 收益，平台另给 ${num(l2After)} USDT 等值，拆法和一级一样。`}</p>}
       </div>,
       statedBrief: { impact: `另一位管理员批准后生效，只算${scope}；批准前按原政策执行，已经算好的不变。${splitChanged ? "开启拆分后第 1 层的好友购买奖励按比例发 USDT 和 UVT，不再另加旧 UVT。" : ""}`, check: "提交前重读一次政策，已被别人改过就不提交；批准时再核对一次，调高方向检查兑付覆盖率。" },

@@ -144,6 +144,8 @@ export type F2Confirm = {
   effect?: ReactNode;
   /** 标题前的图标；不传时照共用确认框的默认（VS-101）。 */
   icon?: IconName;
+  /** 弹窗外层类名：f2-confirm 时事实块两项一行（DT-27）。 */
+  dialogClassName?: string;
   /** 原来的提交路径：外壳的写函数，原样调用。 */
   submit: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => Promise<void>;
   /** 提交成功后的提示；不传就不提示（提交函数自己提示了）。 */
@@ -155,7 +157,7 @@ export function F2ConfirmModal({ spec, ctx, coverage, onClose, toast }: { spec: 
   return (
     <OperationConfirmModal briefKind={spec.briefKind} action={spec.action} title={spec.title} detail={spec.detail}
       amplifies={spec.amplify} coverage={coverage} edit={spec.edit} businessForm={spec.businessForm}
-      facts={spec.facts} content={spec.content} statedBrief={spec.statedBrief} effect={spec.effect} icon={spec.icon}
+      facts={spec.facts} content={spec.content} statedBrief={spec.statedBrief} effect={spec.effect} icon={spec.icon} className={spec.dialogClassName}
       completionCopy={spec.completionCopy} coverageCheck={spec.coverageCheck} coverageLead={spec.coverageLead}
       confirmTone={spec.confirmTone} confirmLabel={spec.confirmLabel ?? "提交审批"} reasonPlaceholder="例如：工单号、调整依据"
       getPendingReason={() => {

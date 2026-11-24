@@ -6,7 +6,7 @@
  */
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Ban, Clock3, Gauge, Layers, Lock, PauseCircle, ShieldCheck, Users } from "lucide-react";
+import { Ban, Clock3, Gauge, Layers, Lock, PauseCircle, PowerOff, ShieldCheck, Users } from "lucide-react";
 import {
   BlockState, Button, Cell, ConfigList, KeepText, ConfigRow, Explain, Figure, Notice, Panel, RatioBar, ScaleBar, StatusTag, Table, TableMessage, Td, Th,
 } from "@/app/components/rd";
@@ -125,14 +125,19 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
   const openRate = (level: Layer) => {
     const rate = layerRate(rates, level);
     const current = rate?.usdtText ?? "";
+    // 这一层在按层暂停里停着：改比例批准后也仍不发，说清楚要发放还得去恢复（D5）。
+    const layerPaused = m.paused(level) === "on";
     openConfirm({
       slot: `f-config:F.unilevel.${level}`,
-      action: `调整 ${level} USDT 奖励比例`, title: `调整 ${level}（${LAYER_WHO[level]}）的 USDT 比例`, briefKind: "config", amplify: true,
+      action: `调整 ${level} USDT 奖励比例`, title: `调整 ${level}（${LAYER_WHO[level]}）的 USDT 比例`, briefKind: "config", amplify: true, dialogClassName: "f2-confirm",
       effect: effectTag,
       edit: { kind: "number", current, min: 0, unit: "%", amplifiesWhen: "increase",
         validate: (next) => (next.trim().split(".")[1]?.replace(/0+$/, "").length ?? 0) > 4 ? "最多 4 位小数（末尾的 0 不算），多了不能提交" : undefined,
         hint: "填百分数：0.5 就是 0.5%，最多 4 位小数",
-        preview: (next) => rates.length ? <LayerCompare rates={ranked ? rates.filter((row) => !rankedLevel(row.l as Layer)) : rates} level={level} next={next || current ? Number(next || current) : null} field="usdt" ranked={ranked} /> : null },
+        preview: (next) => <>
+          {layerPaused && <p className="f2-edit-note">{`要发放，到「按层暂停」恢复 ${level}。`}</p>}
+          {rates.length ? <LayerCompare rates={ranked ? rates.filter((row) => !rankedLevel(row.l as Layer)) : rates} level={level} next={next || current ? Number(next || current) : null} field="usdt" ranked={ranked} /> : null}
+        </> },
       facts: (next) => {
         const total = totalFacts(rates, level, next === undefined ? undefined : Number(next));
         // 按受益人等级时合计是一段（含暂停层）：第 1、2 层取九级最低、最高，第 3 层起照存的比例，这一层换成新值。
@@ -143,16 +148,18 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         const lower = next !== undefined && !!current && Number(next) < Number(current);
         return <Facts>
           {lower && <Fact k="这次">调低，平台每笔订单少付</Fact>}
-          <Fact k="批准后实际执行">{next === undefined ? (current ? `现在是 ${rateMeaning(current)}` : "未配置") : rateMeaning(next) ?? "—"}</Fact>
-          <Fact k="示例订单里这一层">{rate ? <Change from={`${num(sampleUsdt(rate.usdt))} USDT`} to={next === undefined ? `${num(sampleUsdt(rate.usdt))} USDT` : `${num(sampleUsdt(Number(next)))} USDT`} /> : "这一层还没有规则"}</Fact>
+          {layerPaused ? <Fact k="批准后的比例">{next === undefined || !rateMeaning(next) ? (current ? `现在是 ${num(current)}%` : "未配置") : `${num(next)}%，恢复这一层后每 100 USDT 订单发 ${num(next)} USDT`}</Fact>
+            : <Fact k="批准后实际执行">{next === undefined ? (current ? `现在是 ${rateMeaning(current)}` : "未配置") : rateMeaning(next) ?? "—"}</Fact>}
+          {layerPaused ? <Fact k="示例订单里这一层">{`0 USDT（暂停中；恢复后 ${num(sampleUsdt(next !== undefined && next.trim() ? Number(next) : rate?.usdt ?? null))} USDT）`}</Fact>
+            : <Fact k="示例订单里这一层">{rate ? <Change from={`${num(sampleUsdt(rate.usdt))} USDT`} to={next === undefined ? `${num(sampleUsdt(rate.usdt))} USDT` : `${num(sampleUsdt(Number(next)))} USDT`} /> : "这一层还没有规则"}</Fact>}
           {ranked ? rankedBefore && rankedAfter && <Fact k={anyPaused ? "合计含暂停层" : "七层合计占订单"}><Change from={rangeText(rankedBefore.low, rankedBefore.high)} to={rangeText(rankedAfter.low, rankedAfter.high)} /></Fact>
             : total.before !== null && <Fact k={anyPaused ? "合计含暂停层" : "七层合计占订单"}><Change from={`${num(total.before)}%`} to={`${num(total.after)}%`} /></Fact>}
         </Facts>;
       },
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text={missingRuleCopy} /></Notice>,
-      statedBrief: { impact: "批准后，之后新算的订单这一层按新比例算；已经算好的订单不重算。", check: COVERAGE_CHECK },
+      statedBrief: { impact: `另一位管理员批准后，之后新算的订单这一层按新比例算；批准前仍按 ${current ? `${num(current)}%` : "现在的设置"}，已经算好的订单不重算。`, check: COVERAGE_CHECK },
       detail: `${level} USDT 奖励比例 · 现在 ${current ? `${current}%` : "未配置"}。只影响之后的结算。`,
-      completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多付钱",
+      completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: layerPaused ? "恢复这一层后，平台每笔订单多付钱" : "调高这一层，平台每笔订单多付钱",
       submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(`F.unilevel.${level}`, next, reason); },
       done: `调整 ${level} USDT 奖励比例 已提交审批，等另一位管理员批准`,
     });
@@ -162,7 +169,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
     const current = rate?.nexText ?? "";
     openConfirm({
       slot: `f-config:F.unilevel.nex.${level}`,
-      action: `调整 ${level} UVT 奖励系数`, title: `调整 ${level}（${LAYER_WHO[level]}）的 UVT 系数`, briefKind: "config", amplify: true,
+      action: `调整 ${level} UVT 奖励系数`, title: `调整 ${level}（${LAYER_WHO[level]}）的 UVT 系数`, briefKind: "config", amplify: true, dialogClassName: "f2-confirm",
       effect: effectTag,
       edit: { kind: "number", current, min: 0, unit: "UVT / 1 USDT", amplifiesWhen: "increase",
         hint: "这一层每发 1 USDT 奖励，另发多少 UVT",
@@ -225,7 +232,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
             <p className="f2-sum-cap">{m.cap === null ? "总额上限未配置" : `上限 ${num(m.cap)}%：${num(SAMPLE_ORDER)} USDT 订单最多分 ${num(sampleUsdt(m.cap))} USDT`}<Explain label="总额上限怎么用" content="一笔订单七层 USDT 奖励最多占订单金额的这个比例。超出时从 L1 往下分，分完为止，后面的层少发或不发；旧 UVT 系数另发的 UVT 不算在内。" /></p>
           </div>}>
           <dl className="f2-sum">
-            <div><dt>发放中的层合计</dt>{ranked
+            <div><dt>{ranked && ctx.f2DirectPolicy && !ctx.f2DirectPolicy.sevenLayerEnabled ? "启用后的合计" : "发放中的层合计"}</dt>{ranked
               ? <dd data-empty={sumRange ? undefined : ""}>{sumRange ? <><strong>{rangeText(pctSample(sumRange.low), pctSample(sumRange.high), "USDT").replace(/ USDT$/, "")}</strong> USDT<span>占订单 {rangeText(sumRange.low, sumRange.high)}，按受益人等级</span>
                 <Explain label="合计为什么是一段" content={`第 1、2 层按受益人等级取比例：各级比例里最低一档合计 ${num(sumRange.low)}%，最高一档合计 ${num(sumRange.high)}%。${pausedLayers.length ? `${pausedLayers.join("、")} 现在暂停，不算在内。` : ""}`} /></> : "—"}</dd>
               : <dd><strong>{num(sampleUsdt(activeSum))}</strong> USDT<span>占订单 {num(activeSum)}%</span></dd>}</div>
@@ -268,7 +275,8 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
                   : byRank ? rng && rate.nexText !== null ? `另发 ${rangeText(f2DecimalTimes(pctSample(rng.min), rate.nexText), f2DecimalTimes(pctSample(rng.max), rate.nexText), "USDT").replace(/ USDT$/, "")} UVT` : "另发 — UVT"
                   : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">{rate ? "未配置" : "—"}</span>}</Td>
                 <Td><span className="f2-tags">
-                  {!rate ? <StatusTag tone="neutral" explain={`这一层还没有规则，没有规则时这一层不发。${rates.length === 0 ? "七层都没有时，用上面的「首次配置」。" : "后台补不了，需要技术同事处理。"}`}>没有规则</StatusTag>
+                  {byRank && ctx.f2DirectPolicy && !ctx.f2DirectPolicy.sevenLayerEnabled ? <StatusTag tone="neutral" icon={PowerOff} explain="整体结算启用后，这一层按受益人等级发放。">未启用</StatusTag>
+                    : !rate ? <StatusTag tone="neutral" explain={`这一层还没有规则，没有规则时这一层不发。${rates.length === 0 ? "七层都没有时，用上面的「首次配置」。" : "后台补不了，需要技术同事处理。"}`}>没有规则</StatusTag>
                     : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的 ${rate.usdt === null ? "USDT 比例" : "UVT 系数"} 没配置，这页看不出这一层会怎么发。${(rate.usdt === null ? direct : nexLocked) ? "这一项后台不能改，需要技术同事处理。" : `点「${rate.usdt === null ? "改比例" : "改系数"}」补上，批准后生效。`}`}>规则不完整</StatusTag>
                     : pausedRaw === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
                     : pausedRaw === "off" ? <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>

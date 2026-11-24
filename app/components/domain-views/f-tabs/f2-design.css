@@ -38,10 +38,10 @@
 
 /* 七层表 */
 .f2-page .f2-layer-table { table-layout: fixed; }
-.f2-page .f2-layer-table th:nth-child(1) { width: 16%; }
+.f2-page .f2-layer-table th:nth-child(1) { width: 14%; }
 .f2-page .f2-layer-table th:nth-child(2) { width: 15%; }
 .f2-page .f2-layer-table th:nth-child(3) { width: 14%; }
-.f2-page .f2-layer-table th:nth-child(4) { width: 15%; }
+.f2-page .f2-layer-table th:nth-child(4) { width: 13%; }
 .f2-page .f2-layer-table th:nth-child(5) { width: 18%; }
 .f2-page .f2-layer { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .f2-page .f2-layer-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 20px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-role-4-bg); color: var(--rd-text); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
@@ -139,11 +139,19 @@
 .f2-page .f2-boot-grid th:first-child { width: 14%; }
 
 /* 第 1、2 层按受益人等级（F2-RANK-WIRE）：七层表和首次配置里这两层的比例是一段，下面一行弱字写来源。 */
-.f2-page .f2-ranked { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.f2-page .f2-ranked strong { font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.f2-page .f2-ranked-sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+:is(.f2-page, .rd-modal.f2-confirm) .f2-ranked { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+:is(.f2-page, .rd-modal.f2-confirm) .f2-ranked strong { font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
+:is(.f2-page, .rd-modal.f2-confirm) .f2-ranked-sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+/* 操作列留够「去团队等级晋升 →」加「改系数」一行的宽（第 1、4 列各让 2%），链接不折出孤字，也不撑出横向滚动。 */
 .f2-page .f2-row-actions .rd-link { white-space: nowrap; }
 /* 合计条下面一行图注写上限，和右边的合计左右同高（DT-27）。 */
 .f2-page .f2-sum-cap { display: flex; align-items: center; gap: 4px; margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 /* 整体结算运行中时右边一块写启用时间和暂停后会怎样，和未启用时的「启用时会检查」同一个位置（DT-27）。 */
 .f2-page .f2-settle-facts { min-width: 0; padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+
+/* F2 的修改框（改比例、改系数、好友奖励政策、首次配置）：事实两项一行，名称在上、值在下；单数时最后一项占满（08 DT-27）。 */
+.rd-modal.f2-confirm .rd-modal-body .rd-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
+.rd-modal.f2-confirm .rd-fact { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.rd-modal.f2-confirm .rd-fact dt { line-height: var(--rd-lh-aux); }
+.rd-modal.f2-confirm .rd-facts > .rd-fact:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.rd-modal.f2-confirm .f2-edit-note { margin: 0 0 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }

@@ -11,7 +11,7 @@ import { Clock3, Lock } from "lucide-react";
 import { Button, Cell, Explain, Fact, Facts, Figure, Notice, NumberInput, ScaleBar, StatusTag, Table, Td, Th } from "@/app/components/rd";
 import { f4Decimal } from "@/lib/admin/f4-money";
 import { F2_BOOTSTRAP_SLOT } from "@/lib/admin/f2-approval";
-import { F2BootstrapReview, F2_APP_LIMIT_COPY, F2_APP_TOTAL_LIMIT, f2DecimalTimes, f2PctSum, f2SampleUsdt, parseF2BootstrapAfter, type F2BootstrapRow } from "./f2-bootstrap-ticket";
+import { F2BootstrapReview, type F2RankedRange, F2_APP_LIMIT_COPY, F2_APP_TOTAL_LIMIT, f2DecimalTimes, f2PctSum, f2SampleUsdt, parseF2BootstrapAfter, type F2BootstrapRow } from "./f2-bootstrap-ticket";
 import { LAYERS, LAYER_WHO, SAMPLE_ORDER, f2Ranked, num, pctAdd, pctSample, rangeText, rankedRange, stamp, type F2Confirm, type Layer } from "./f2-shared";
 import type { FViewCtx } from "./types";
 
@@ -72,7 +72,7 @@ export function F2Bootstrap({ ctx, openConfirm, draft, setDraft, cap }: {
         <p>{pending.operator}{pending.mine ? "（你）" : ""} 提交于 {pending.rawTs ? stamp(pending.rawTs) : pending.ts} · 审批单 <span data-mono>{pending.id}</span></p>
         <p>批准前七层仍没有规则，也不能再提交首次配置。</p>
       </Notice>
-      {rows ? <BootstrapGrid rows={rows} /> : <p className="f2-boot-note">七层各是多少，到「操作记录与审批」的这张单里看。</p>}
+      {rows ? <BootstrapGrid rows={rows} ranked={f2Ranked(ctx) ? ctx.f2RankPurchaseRange ?? null : undefined} /> : <p className="f2-boot-note">七层各是多少，到「操作记录与审批」的这张单里看。</p>}
     </div>;
   }
   if (original && !original.ticket) return <Notice tone="warn" title="首次配置的申请还没有结论">先在页面上方查询原结果，有结论前不能再提交。</Notice>;
@@ -87,12 +87,17 @@ export function F2Bootstrap({ ctx, openConfirm, draft, setDraft, cap }: {
 }
 
 /** 待审批时页面上的七层：横排一张，USDT 比例、UVT 系数各一行，最后一列合计。 */
-function BootstrapGrid({ rows }: { rows: readonly F2BootstrapRow[] }) {
+function BootstrapGrid({ rows, ranked }: { rows: readonly F2BootstrapRow[]; ranked?: F2RankedRange }) {
+  // 第 1、2 层按受益人等级时（D10）：这两格写九级最低到最高，合计是一段，不写提交时填的 0%。
+  const byRank = ranked !== undefined;
+  const cell = (index: number) => !ranked ? "—" : index === 0 ? rangeText(ranked.l1.min, ranked.l1.max) : rangeText(ranked.l2.min, ranked.l2.max);
+  const others = f2PctSum(rows.filter((_, index) => index > 1).map((row) => row.usdtPct));
+  const sumText = !byRank ? `${num(f2PctSum(rows.map((row) => row.usdtPct)))}%` : ranked ? rangeText(pctAdd(pctAdd(others, ranked.l1.min), ranked.l2.min), pctAdd(pctAdd(others, ranked.l1.max), ranked.l2.max)) : "—";
   return (
     <Table label="待批准的七层" className="f2-boot-grid">
       <thead><tr><Th>待批准的值</Th>{rows.map((row) => <Th key={row.layer} align="right">{row.layer}</Th>)}<Th align="right">七层合计</Th></tr></thead>
       <tbody>
-        <tr><Td>USDT 比例</Td>{rows.map((row) => <Td key={row.layer} align="right">{num(row.usdtPct)}%</Td>)}<Td align="right"><strong>{num(f2PctSum(rows.map((row) => row.usdtPct)))}%</strong></Td></tr>
+        <tr><Td>USDT 比例</Td>{rows.map((row, index) => <Td key={row.layer} align="right">{byRank && index < 2 ? <span className="f2-ranked"><strong>{cell(index)}</strong><span className="f2-ranked-sub">按受益人等级</span></span> : `${num(row.usdtPct)}%`}</Td>)}<Td align="right"><strong>{sumText}</strong></Td></tr>
         <tr><Td>UVT 系数</Td>{rows.map((row) => <Td key={row.layer} align="right">{num(row.nexPerUsd)}</Td>)}<Td align="right">—</Td></tr>
       </tbody>
     </Table>
@@ -134,7 +139,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
     const rows = LAYERS.map((level, index) => ({ layer: level, usdtPct: plain(layers[index].usdtPct)!, nexPerUsd: plain(layers[index].nexPerUsd)! }));
     openConfirm({
       slot: F2_BOOTSTRAP_SLOT,
-      action: "首次配置 L1–L7 团队购买奖励", title: "首次配置团队购买奖励", briefKind: "config", amplify: true,
+      action: "首次配置 L1–L7 团队购买奖励", title: "首次配置团队购买奖励", briefKind: "config", amplify: true, dialogClassName: "f2-confirm",
       effect: <StatusTag tone="progress" filled explain={`${BOOT_APPROVER}在「操作记录与审批」批准后，七层规则一次建好；结算要另外申请启用。`}>批准后生效</StatusTag>,
       facts: <Facts>
         <Fact k="要建立">L1–L7 七层规则</Fact>
@@ -144,7 +149,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
       </Facts>,
       content: <div className="rd-stack">
         {over && <Notice tone="warn" title={`七层合计 ${num(sum)}%，超过 25%`}>{F2_APP_LIMIT_COPY}</Notice>}
-        <F2BootstrapReview rows={rows} label="要建立的七层规则" />
+        <F2BootstrapReview rows={rows} label="要建立的七层规则" ranked={ranked ? ctx.f2RankPurchaseRange ?? null : undefined} />
       </div>,
       statedBrief: { impact: "批准后七层规则一次建好；整体结算不会自动启用，要另外申请。", check: ranked ? "逐层核对下表；第 1、2 层按受益人等级。" : "逐层核对下表；第 1 层固定 10%。" },
       detail: "七层都没有规则时才能首次配置，以前配置过的会被拒。",
