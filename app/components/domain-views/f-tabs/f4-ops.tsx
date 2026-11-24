@@ -89,7 +89,12 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
     return {
       key: original.commandKey,
       // 过期的原记录把原因常显在这一行（OP-126，和 I3 的恢复行一样），对应入口按禁用写同一句。
-      line: ctx.f4QueryNotes[original.commandKey] ?? (isRetryExpired(original) ? { tone: "warn", text: record.kind === "proposal" ? RETRY_EXPIRED_TEXT : "原请求超过 24 小时，不能再重试。查询只读取现在的规则，证明不了原操作有没有执行。" } : undefined),
+      // 查询结果和过期原因都常显：查询报错时不盖掉过期原因，同一句不重复（OP-126）。
+      line: (() => {
+        const note = ctx.f4QueryNotes[original.commandKey];
+        const expired = isRetryExpired(original) ? { tone: "warn" as const, text: record.kind === "proposal" ? RETRY_EXPIRED_TEXT : "原请求超过 24 小时，不能再重试。查询只读取现在的规则，证明不了原操作有没有执行。" } : undefined;
+        return note && expired && !note.text.includes(expired.text) ? { tone: note.tone, text: `${note.text} ${expired.text}` } : note ?? expired;
+      })(),
       name: confirm?.name ?? legacy?.name ?? "调整区域大使申请规则",
       change,
       submittedAt: original.createdAt,

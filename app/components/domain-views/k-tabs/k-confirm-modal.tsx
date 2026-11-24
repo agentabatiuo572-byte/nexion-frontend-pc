@@ -166,9 +166,9 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           {req.reason && <span className="rd-reason-count">{reasonLength}/{reasonMax}</span>}
         </div>
         {req.recoveryUi && pendingReason !== undefined && <p className="k-locked-hint">保存的原理由，重试时原样发送，不能修改</p>}
-        {req.reason && !(req.recoveryUi && pendingReason !== undefined) && !reasonOk && (attempted || reasonLeft) ? (
+        {req.reason && !(req.recoveryUi && pendingReason !== undefined) && !policyBlocked && !reasonOk && (attempted || reasonLeft) ? (
           <div className="rd-form-error">{reasonShort}</div>
-        ) : req.recoveryUi && req.reason && pendingReason === undefined && <div className="rd-form-help">{reasonMin}–{reasonMax} 字</div>}
+        ) : req.recoveryUi && req.reason && pendingReason === undefined && <div className="rd-form-help">{!policySettled ? "正在加载，稍候即可提交。" : policyBlocked ? POLICY_FAILED_TEXT : `${reasonMin}–${reasonMax} 字`}</div>}
       </div>
       </fieldset>
     </Modal>

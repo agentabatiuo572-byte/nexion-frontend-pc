@@ -42,7 +42,7 @@ const F4_WRITE = "奖励池、名额与排行榜 · 池配额大使榜 - 常规�
 const LEADERBOARD_CONTROL = "排行榜控制(暂停/取消资格)";
 function approvalRows(permission: string) {
   // 「」权限的管理员」放在一起，名字长时在名字里折行，末行不留孤字（D10、TL-01）。
-  return [{ key: "approver", label: "谁来批", value: <>另一位有「{permission}<span className="rd-keep">」权限的管理员</span></> }];
+  return [{ key: "approver", label: "谁来批", value: <>另一位有审批批准权限和「{permission}<span className="rd-keep">」权限的管理员</span></> }];
 }
 function approvalFacts(permission: string) {
   return approvalRows(permission).map((row) => <Fact key={row.key} k={row.label}>{row.value}</Fact>);
@@ -415,7 +415,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
         <Fact k="类别">{ambassadorBucketLabel(packet!.bucket)}</Fact>
         <Fact k="材料">第 {packet!.materialRevision} 版 · 业务核验和财务核验都已通过</Fact>
         {/* 谁来批一行写完，和别的页同一个叫法；不再铺一段后端校验条件（BUG-682 第 4 条）。 */}
-        <Fact k="谁来批">另一位有「区域大使审批」权限的管理员，不能核验过这一版材料</Fact>
+        <Fact k="谁来批">另一位有审批批准权限和「区域大使审批」权限的管理员，不能核验过这一版材料</Fact>
       </Facts>,
       detail: `${ambassadorBucketLabel(packet!.bucket)} · 申请金额 ${money(packet!.budgetUsdt)} · 认可金额 ${money(packet!.financeReview.recognizedBudgetUsdt)} · 材料 V${packet!.materialRevision}。业务核验与财务核验均已通过。本次仅开通所选类别的申请额度。`,
     };
@@ -431,7 +431,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     },
     completionCopy: "批准前这份申请不变。",
     facts: <Facts>
-      <Fact k="谁来批">另一位有「区域大使审批」权限的管理员</Fact>
+      <Fact k="谁来批">另一位有审批批准权限和「区域大使审批」权限的管理员</Fact>
     </Facts>,
     detail: "驳回这一份申请，提交审批后由另一位有权限的管理员执行。",
   };
