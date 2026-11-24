@@ -191,7 +191,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
             {shown.length ? shown.map(({ application, stage }) => <Tr key={application.id} onOpen={() => onOpenMaterials(application)}>
               <Td><Cell main={operatorNicknameText(application.applicantName)} sub={<span data-mono>#{application.id}</span>} /></Td>
               <Td><Cell main={`${application.region}${application.city ? ` / ${application.city}` : ""}`} sub={application.currentRank} /></Td>
-              <Td><Cell main={ambassadorBucketLabel(application.bucket)} sub={`${decimalText(application.requestedBudgetUsd)} USDT`} /></Td>
+              <Td><Cell main={ambassadorBucketLabel(application.bucket)} sub={`${moneyText(application.requestedBudgetUsd)} USDT`} /></Td>
               <Td>
                 <span className="f4-stage">
                   <RatioBar compact steps label="申请进度" value={stage.done} total={4} tone={stage.tone === "done" ? "done" : "role-3"} valueText={`第 ${Math.min(stage.done + 1, 4)} 步，共 4 步`} quiet />
@@ -221,7 +221,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           {policy && <p>技术信息：规则版本 {policy.policyVersion}，第 {policy.revision} 次修改。</p>}
         </>}
         actions={policy && ctx.canSubmitTeamApproval("F4") ? <Button onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, { action: "policy", overview: data, policy }))}>调整申请规则</Button> : undefined}>
-        {!policy ? <BlockState state="error" title="申请规则读取失败" detail="这不是没有规则：规则暂时读不到，调整入口也先收起。" onRetry={() => void ctx.refreshF4()} retryLabel="重新读取" />
+        {!policy ? <BlockState state="error" title="申请规则加载失败" detail="这不是没有规则：规则暂时没加载出来，调整入口也先收起。" onRetry={() => void ctx.refreshF4()} />
           : <>
             <KeyValues rows={[{ key: "default", label: "默认申请预算", value: `${moneyText(policy.defaultBudgetUsdt)} USDT`, explain: "申请人没改金额时用的预算，要落在某一类的范围里。" }]} />
             <ul className="f4-buckets" aria-label="四类申请">

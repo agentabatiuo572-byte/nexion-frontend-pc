@@ -32,8 +32,9 @@ export const F4_MATERIAL_PERMISSIONS = [
   { code: "network_f4_ambassador_finance_review", label: "大使费用材料核验" },
 ] as const;
 
+/** 申请表、材料抽屉、批准确认和审批记录里的类别名：和规则卡、App 用同一套（BUCKET_COPY）。 */
 export function ambassadorBucketLabel(bucket: string | null | undefined) {
-  return ({ venue: "线下活动", kol: "KOL推广", print: "物料", dev: "开发支持" } as Record<string, string>)[bucket ?? ""] ?? "待申请人补齐类别";
+  return BUCKET_COPY[bucket ?? ""]?.title ?? "待申请人补齐类别";
 }
 
 export function ambassadorMaterialStateLabel(state: string | undefined) {

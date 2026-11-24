@@ -7,7 +7,6 @@ import { ambassadorBucketLabel } from "@/lib/admin/f4-ambassador-display";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
-import { decimalText } from "./f4-shared";
 import { f4Decimal, f4HeadCapAmplifies, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrizes } from "@/lib/admin/f4-money";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
@@ -397,8 +396,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       coverageLead: "批准会开通一笔预算额度",
       coverageCheck: "批准执行时还会检查兑付覆盖率，读不到也不执行。",
       facts: <Facts>
-        <Fact k="申请金额" lead tone="role-1" unit="USDT">{decimalText(packet!.budgetUsdt)}</Fact>
-        <Fact k="认可金额">{packet!.financeReview.recognizedBudgetUsdt == null ? "尚未认可" : `${decimalText(packet!.financeReview.recognizedBudgetUsdt)} USDT`}</Fact>
+        <Fact k="申请金额" lead tone="role-1" unit="USDT">{moneyText(packet!.budgetUsdt)}</Fact>
+        <Fact k="认可金额">{packet!.financeReview.recognizedBudgetUsdt == null ? "尚未认可" : `${moneyText(packet!.financeReview.recognizedBudgetUsdt)} USDT`}</Fact>
         <Fact k="类别">{ambassadorBucketLabel(packet!.bucket)}</Fact>
         <Fact k="材料">第 {packet!.materialRevision} 版 · 业务核验和财务核验都已通过</Fact>
       </Facts>,
