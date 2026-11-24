@@ -4396,7 +4396,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {surface && !approval && !coverageFirst && coverageNotice}
       {requireReason && <div className={surface ? "field rd-reason-field" : "field"}>
         {surface
-          ? <label htmlFor={reasonFieldId}>{approval && !compactFields && !rdApproval ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span>{!reasonPolicyError && <span id={`${reasonFieldId}-range`} className="rd-form-hint">{reasonPolicyReady ? `至少 ${reasonMin} 字` : "正在加载，稍候即可提交"}</span>}</label>
+          ? <label htmlFor={reasonFieldId}>操作理由<span className="rd-form-required" aria-hidden="true">*</span>{!reasonPolicyError && <span id={`${reasonFieldId}-range`} className="rd-form-hint">{reasonPolicyReady ? `至少 ${reasonMin} 字` : "正在加载，稍候即可提交。"}</span>}</label>
           : <label htmlFor={reasonFieldId}>{approval && !compactFields ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}{compactFields ? <span className="muted"> 至少 {reasonMin} 字</span> : `（必填，${reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）`}</label>}
         {/* 字数写在框内角落，够不够看按钮的提示，失焦或点过提交才用警告色（DP-06）。 */}
         <div className={surface ? "rd-reason-box" : compactFields ? "g3-reason-box" : undefined}>

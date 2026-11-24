@@ -1058,9 +1058,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       action: `编辑转盘奖项 · ${tierName}`,
       title: "编辑转盘奖项",
       statedBrief: { impact: "生效后下一次抽奖就按新内容发，已经抽中的不变。", check: "核对奖型、发真钱、每次数量和每日库存。" },
-      effect: effectByDirection(),
+      // 哪些方向要批准按后端 updateWheelTier 分流写全，含反直觉的一条：收紧 UVT 库存，用完后改发的安慰奖可能更大。
+      effect: effectByDirection("提高每次数量、换奖型、放宽每日库存，或收紧 UVT 库存（用完后改发的安慰奖可能更大）"),
       detail: <>编辑奖项名称、奖励类型、是否发真钱。概率请在「改奖池 / 概率」里统一调，保证加起来是 100%。</>,
-      facts: (_value, draft) => tierFacts(tier, draftAmplifies(draft) ? <ApprovalFact amplify="让转盘多发奖的修改（如提高数量、放宽库存）" object="奖池" /> : null),
+      facts: (_value, draft) => tierFacts(tier, draftAmplifies(draft) ? <ApprovalFact amplify="这次修改" object="奖池" /> : null),
       coverageLead: "这一档会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案调整这一档奖品",
       getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
