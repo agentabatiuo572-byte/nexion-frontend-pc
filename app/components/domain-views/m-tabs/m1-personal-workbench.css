@@ -67,3 +67,6 @@ span.m1-tile-value{cursor:default}
 .m1-tiles>li>span:first-child{text-wrap:balance}
 /* 资料重读时底栏左边常显一句为什么不能操作（OP-126）。 */
 .m1-drawer-actions > .rd-toolbar-note, .rd-modal-foot > .rd-toolbar-note { margin: 0 auto 0 0; }
+/* 抽屉里人数这一组：包一层好接焦点，间距和抽屉正文一样（gap 12）；读到后程序聚焦时给焦点环（CP-05）。 */
+.m1-counts-scope { display: flex; flex-direction: column; gap: 12px; min-width: 0; border-radius: var(--rd-radius-control); }
+.m1-counts-scope:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }

@@ -154,16 +154,17 @@ export function CountsFacts({ view }: { view: CountsView }) {
 /**
  * 人数「重试」读完后焦点去哪（R01；CP-05、rubric 26）。重读期间按钮留着、写「重试中…」，读完：
  * 还有「重试」（仍没读到）焦点落到它上面；没有了焦点回到这一块折叠的标题，人数读到了再读出「人数已更新」。
- * 按下「重试」时记住它所在的折叠；读完时焦点已去了别处（不在这一块里、不在页面上、也不在包着它的外框上）就不动。
+ * 按下「重试」时记住它所在的折叠（不在折叠里时，记住带 data-counts-scope 的外框，读到后焦点落在外框上，外框要 tabIndex=-1）；
+ * 读完时焦点已去了别处（不在这一块里、不在页面上、也不在包着它的外框上）就不动。
  * 页面在按下时调 arm()，把 status 放进一直挂着的 role="status"（rd-sr-only）里。
  */
 export function useCountsRetryFocus(rereading: boolean, updated: boolean) {
-  const fold = useRef<HTMLDetailsElement | null>(null);
+  const fold = useRef<HTMLElement | null>(null);
   const was = useRef(false);
   const [status, setStatus] = useState("");
   const arm = () => {
     const active = document.activeElement;
-    fold.current = active instanceof HTMLElement ? active.closest("details") : null;
+    fold.current = active instanceof HTMLElement ? active.closest<HTMLElement>("details, [data-counts-scope]") : null;
     setStatus("");
   };
   useEffect(() => {
@@ -177,7 +178,7 @@ export function useCountsRetryFocus(rereading: boolean, updated: boolean) {
     const active = document.activeElement;
     // 焦点掉到页面上，或被弹窗的焦点圈接到外框上（外框包着这一块）时才接回来；已经去了别处就不动。
     if (active && active !== document.body && !target.contains(active) && !active.contains(target)) return;
-    (target.querySelector<HTMLElement>(".rd-inline-retry:not(:disabled)") ?? target.querySelector<HTMLElement>(":scope > summary"))?.focus();
+    (target.querySelector<HTMLElement>(".rd-inline-retry:not(:disabled)") ?? (target.matches("details") ? target.querySelector<HTMLElement>(":scope > summary") : target))?.focus();
   }, [rereading, updated]);
   return { arm, status };
 }

@@ -6,8 +6,8 @@ export const INVITATION_REREAD_BLOCK = "资料正在重读，读完再操作";
 
 const inviterUnknownReasons = {
   DANGLING_SPONSOR: "记录里的邀请人账户已不存在，无法确认是谁邀请的。",
-  ENVIRONMENT_CONFLICT: "记录里的邀请人是另一套环境的账户，这里无法确认。",
-  UNKNOWN_ENVIRONMENT: "邀请人账户属于哪套环境无法判断，暂时无法确认。",
+  ENVIRONMENT_CONFLICT: "邀请人和这位用户一个是测试账户、一个是正式账户，所以无法确认；要核对请联系值班人员。",
+  UNKNOWN_ENVIRONMENT: "看不出邀请人是测试账户还是正式账户，暂时无法确认；要核对请联系值班人员。",
   SOURCE_READ_FAILED: "这次没读出邀请人，稍后刷新再看。",
 } satisfies Record<Exclude<InvitationInviter["reason"], "UNKNOWN" | null>, string>;
 

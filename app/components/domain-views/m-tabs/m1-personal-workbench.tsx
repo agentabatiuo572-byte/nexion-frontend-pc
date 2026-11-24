@@ -30,7 +30,7 @@ import { PaymentSecurityBlock } from "@/app/components/payment-security/payment-
 import { BlockState, Button, Cell, Check, Conclusion, Drawer, Explain, Facts, Fact, Field, FilterBar, FilterField, Fold, Input, Modal, Notice, PageTabs, Panel, Pager, Select, StatBand, Stat, StatusTag, Table, Th, Td, Tr, Textarea, Timeline, type StateTone } from "@/app/components/rd";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { paymentSecurityPorts } from "@/lib/admin/payment-password-client";
-import { COUNTS_FAILED_REASON, CountsFacts, InviterCell, InviterValue, type CountsView } from "@/app/components/invitation/invitation-view";
+import { COUNTS_FAILED_REASON, CountsFacts, InviterCell, InviterValue, useCountsRetryFocus, type CountsView } from "@/app/components/invitation/invitation-view";
 import { INVITATION_REREAD_BLOCK, inviterDetailView, inviterView, supportCountsView } from "@/app/components/invitation/wiring";
 
 type Permission = "agent" | "supervisor" | "superadmin";
@@ -401,10 +401,11 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const drawerProfile = detailActorKey === sessionKey ? detail?.profile : undefined;
   const drawerInviter = inviterDetailView(drawerProfile?.identity.data?.inviter, true, reach);
   const drawerStats = drawerProfile?.statistics;
-  const drawerRetry = { onRetry: () => void retryInvitations(), retrying: invitationRetrying || saving || paymentWriteBusy };
+  const drawerRetry = { onRetry: () => { drawerCountsFocus.arm(); void retryInvitations(); }, retrying: invitationRetrying || saving || paymentWriteBusy, rereading: invitationRetrying };
   const drawerCounts: CountsView | undefined = !detail || drawerStats?.status === "FORBIDDEN" ? undefined
     : invitationError || drawerStats?.status === "ERROR" ? { kind: "failed", reason: invitationError ?? COUNTS_FAILED_REASON, ...drawerRetry }
     : supportCountsView(drawerStats?.data?.invitations, drawerRetry);
+  const drawerCountsFocus = useCountsRetryFocus(invitationRetrying, drawerCounts?.kind === "ready");
   return <section className="m1-personal" data-proof="s5a-workbench">
     <RecoveryPanel title={recoveryTitle(pendingRecords.length)} explainLabel="结果未知怎么处理" explain="维护调整发出后没收到明确结果，可能已经生效。先查询原结果；查到前这位客户不能再调整维护。" items={pendingRecords.map(record => ({ key: record.commandKey, createdAt: record.createdAt,
       object: `${record.payload.enabled ? "恢复维护" : "不再维护"} · ${m1CustomerCode(record.payload.customerId)}`, tag: <StatusTag tone="warn">结果未知</StatusTag>,
@@ -462,7 +463,8 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         <div className="m1-customer-name"><SupportAvatar name={customerName(detail)} path={detail.customerAvatarRef ?? undefined} /><strong>{customerName(detail)}</strong></div>
         <Facts><Fact k="当前专属客服">{detail.agentName ?? "资料未知"}</Fact><Fact k="用户编码"><span data-mono>{m1CustomerCode(detail.customerId)}</span></Fact>{drawerInviter && <Fact k="邀请人"><InviterValue view={drawerInviter} /></Fact>}<Fact k="账户状态"><StatusTag tone={accountTone(detail)}>{labelForAccount(detail.accountState)}</StatusTag></Fact><Fact k="维护状态"><StatusTag tone={maintenanceTone(detail)}>{labelForMaintenance(detail)}</StatusTag></Fact><Fact k="上次账户活动">{formatTime(detail.lastEffectiveAt)}</Fact><Fact k="下次维护">{formatTime(detail.nextMaintenanceAt)}</Fact></Facts>
         {/* 四个人数单独一组排在事实下面（DP-16，07a）。 */}
-        {drawerCounts && <CountsFacts view={drawerCounts} />}
+        {/* 人数这一组：重读读到后焦点落在这里并读出「人数已更新」，仍失败落到「重试」（和用户详情、M3 同一做法）。 */}
+        {drawerCounts && <div className="m1-counts-scope" data-counts-scope="" tabIndex={-1} aria-label="邀请人数"><CountsFacts view={drawerCounts} /><span role="status" className="rd-sr-only">{drawerCountsFocus.status}</span></div>}
         {paymentSecurityPort && <PaymentSecurityBlock key={`${sessionKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={customerName(detail)} canRelease={Boolean(session?.authorities.includes("user_c5_payment_password_release"))} writeBlockedReason={invitationWriteBlock} onWriteBusy={setPaymentWriteBusy} retryMissingRelease />}
         {maintenancePending && <Notice tone="warn" action={<Button disabled={saving} onClick={() => void checkMaintenance()}>查询原结果</Button>}>这位客户有一次维护操作结果未知，暂时不能再调整；原客户和理由已保留。</Notice>}
         {detail.accountState === "UNKNOWN" && <Notice tone="warn">账户活动数据不完整，无法判断沉睡或活跃。</Notice>}

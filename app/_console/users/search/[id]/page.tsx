@@ -575,7 +575,7 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
   /** 不是列表的小块：摘要写结论，自己管开合。 */
   summary?: ReactNode;
   disclosure?: { open: boolean; onOpenChange: (open: boolean) => void; summary: ReactNode };
-  /** 这一块正在重读：标题行写「正在加载…」，只留「重试中…」按钮（CP-28），失败标题和原因先收起，这一块标 aria-busy。 */
+  /** 这一块正在重读：在途只有「重试中…」一种状态（ST-30、ST-31）。整块失败时失败标题、原因先收起，标题行也不写「加载失败」「正在加载…」；这一块标 aria-busy。 */
   reloading?: boolean;
   /** 一直挂着的读屏状态（rd-sr-only），放在这一块里，不打断相邻块的间距规则。 */
   live?: ReactNode;
@@ -597,7 +597,7 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
       : <div className="rd-detail-block">{children}</div>;
   return (
     <div id={id} className="rd-detail-block" aria-busy={reloading || undefined}>
-      <Fold inset title={title} explain={explain} actions={actions} alert={!reloading && (failed || !!issue)} alertTone={failed ? "danger" : issueTone} {...disclosure} summary={reloading ? "正在加载…" : failed ? "加载失败" : issue ?? sub ?? disclosure?.summary ?? summary}>{body}</Fold>
+      <Fold inset title={title} explain={explain} actions={actions} alert={!reloading && (failed || !!issue)} alertTone={failed ? "danger" : issueTone} {...disclosure} summary={reloading ? (failed ? "" : sub ?? disclosure?.summary ?? summary) : failed ? "加载失败" : issue ?? sub ?? disclosure?.summary ?? summary}>{body}</Fold>
       {live}
     </div>
   );
@@ -1800,6 +1800,8 @@ export default function UserDetailPage() {
               reloading={referralRetrying} live={<span role="status" className="rd-sr-only">{referralFocus.status}</span>}
               sectionRetry={{ detail: referralError ?? displayAdminReadError(undefined), ...referralRetry }}
               explain="下面最多列 20 位成员，是注册时记下的样本，不是完整名单；上面的人数另算，对不上是正常的。">
+              {/* 局部重读失败、上次读到的成员和订单额还在：写明是哪次读到的（ST-36）；时间就是页头那次读取，下一次重读在途时不写（只留「重试中…」）。 */}
+              {referralError && !referralSourceFailed && !referralRetrying && <p className="rd-toolbar-note" data-tone="warn">以下是 {readAt}（{businessZone().label}）的数据，刷新失败</p>}
               {/* 四个人数加团队订单额，按同页列线铺开（PRD §4.2）；全部团队成员已是关键数字时不重复（DP-61）。口径只在「团队奖励范围内」旁的问号里。 */}
               <Values rows={[
                 [COUNT_LABELS.direct, countText(counts, "direct")],
