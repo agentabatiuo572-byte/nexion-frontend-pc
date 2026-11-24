@@ -594,7 +594,7 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
     : sectionFailed(section)
       ? sectionRetry
         // 这块能自己重读：在途时只有一种状态，失败标题和原因先收起，新回包仍失败才放回来（ST-30、ST-31）。
-        // 样子同 rd BlockState 的单行失败卡；按钮一直是同一个、不用原生 disabled，按下后焦点不掉（rd 的 InlineRetry 会掉，BUG-677）。
+        // 样子同 rd BlockState 的单行失败卡；按钮一直是同一个 InlineRetry、不用原生 disabled，按下后焦点不掉（BUG-677）。
         ? <div className="rd-block-state" data-state={reloading ? "loading" : "error"} data-compact="" data-module-health-state={reloading ? undefined : "error"} role={reloading ? "status" : "alert"}>
             {!reloading && <><div className="rd-block-state-title">{`${title}加载失败`}</div><div className="rd-block-state-detail">{sectionRetry.detail}</div></>}
             <CountsRetryButton onRetry={sectionRetry.onRetry} retrying={sectionRetry.retrying} rereading={reloading} />
