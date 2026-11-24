@@ -1,9 +1,10 @@
 /* E2 单条任务的编辑、新增（e2-task-editor.tsx）。只放这两个框自己的排法，颜色、字号都取 --rd-*。 */
 
-/* 权重下面：参考值和「填入参考值」一行，改了会怎样另起一行（VS-103：随输入变的一句白话）。 */
+/* 权重：错误紧贴输入框（CP-52），参考值、本等级启用任务的权重范围、改了会怎样在它下面，各占一行（VS-103：随输入变的一句白话）。 */
+.e2-weight-field { display: grid; gap: var(--rd-space-2); min-width: 0; }
 .e2-editor-ref { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); }
 .e2-editor-ref b { color: var(--rd-text-2); font-weight: 500; font-variant-numeric: tabular-nums; }
-.e2-editor-direction { flex-basis: 100%; }
+.e2-editor-line { flex-basis: 100%; }
 
 /* 辅助：确认框里改了会怎样、参考值、被别人改过时自己保留的值（13/18 弱文字）。 */
 .e2-editor-note, .e2-editor-yours { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }

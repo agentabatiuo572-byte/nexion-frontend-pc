@@ -20,6 +20,7 @@ import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, sendTaskPoolCommand
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Select } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
+import { E6OriginalValues } from "./e6-amount";
 import { FIXED_DEVICE_LEVELS } from "./task-type-policy";
 import { checkE2Command, e2CommandLabel, e2Commands, e2CommandSettled, type E2Pending } from "./e2-pending";
 import { canInvestigateECommand, eCommandRollbackConfirmed } from "@/lib/admin/e-command-investigation";
@@ -36,11 +37,47 @@ const MINUTES = [{ value: 0, text: "0" }, { value: 60, text: "60" }, { value: 12
 const TASK_RULES = "等级只决定跑什么任务，收益由商品的月收益目标决定。当前任务保持原配置，修改只影响之后的新任务。每级最多 200 个启用任务、300 个任务（含停用）。";
 const GENERATION = "系统生成同池唯一的英文名称，时长为 5 分钟整数倍：向量计算 30–60 分钟，语音处理 45–90 分钟，图像生成和大模型推理 60–120 分钟，模型微调和视频生成 90–120 分钟。新任务立即启用。";
 const RETRY_HELP = "先查询原结果。查不到时可重新发送保存的原请求，系统认得出是同一次提交，不会重复执行。";
-const MISSING_TASK_WEIGHT = "还没读到这条任务的权重，暂时不能编辑";
+const MISSING_TASK_WEIGHT = "这条任务还没有权重，暂时不能编辑";
 const EDIT_ERROR_FIELDS: Partial<Record<string, E2TaskField>> = {
   TASK_NAME_INVALID: "name", APP_TEXT_CHINESE_NOT_ALLOWED: "name", TASK_NAME_DUPLICATE: "name",
   TASK_CLASS_INVALID: "taskClass", TASK_DURATION_INVALID: "duration", TASK_WEIGHT_INVALID: "weight",
 };
+
+/** 单条新增、修改被拒时的说法。POOL_ERRORS 按批量写，随机添加和批量启停照旧用它。 */
+function editRejection(code: string, create: boolean, data: unknown) {
+  const limit = (data as { limit?: unknown } | undefined)?.limit;
+  const cap = (fallback: number) => typeof limit === "number" ? limit : fallback;
+  if (code === "MONTHLY_TARGET_POOL_INELIGIBLE") return `${create ? "新增" : "改动"}后，本等级的启用任务不符合月收益规则，这次没有${create ? "新增" : "保存"}。请联系设备负责人核对任务配置。`;
+  if (code === "TASK_POOL_TOTAL_LIMIT") return `这个等级已有 ${cap(300)} 个任务（含停用），这次没有新增。`;
+  if (code === "TASK_POOL_ENABLED_LIMIT") return `这个等级已启用 ${cap(200)} 个任务，这次没有新增。可以不勾「新增后立即启用」，先加为停用。`;
+}
+
+/** 冻结框（结果未知的原操作）只放一条提示，随状态变（OP-93）：没查过先查；查过写查询结论；按原请求重试被明确拒绝写原因。 */
+function FrozenNotice({ expired, rejected, outcome, canClose }: { expired: boolean; rejected?: string; outcome?: CommandOutcome; canClose: boolean }) {
+  return <Notice tone="warn" title={expired ? "已超过 24 小时，不能再重试" : rejected !== undefined ? "按原请求重试被明确拒绝" : "结果未知，原操作已冻结"}>
+    {!expired && rejected !== undefined ? <>{rejected && <p>{rejected}</p>}<p>先查询原结果核实，再决定是否解除原操作记录。</p></>
+      : outcome ? <CommandOutcomeLine outcome={outcome} expired={expired} canClose={canClose} retryOnMissingOnly />
+        : <p>{expired ? "原请求继续保留，这个等级仍暂停新操作。先查询原结果，再到操作记录与审批核对。" : "先查询原结果；查不到再按原请求重试，不会重复执行。"}</p>}
+  </Notice>;
+}
+
+/** 冻结框底栏：按当前状态只有一个主按钮，放在最右（OP-01），接页面已有的查询、重试、解除、核查结案。 */
+function FrozenActions({ expired, rejected, outcome, retryBlock, saving, querying, closure, onClose, onQuery, onRetry, onRelease, onClosure }: {
+  expired: boolean; rejected: boolean; outcome?: CommandOutcome; retryBlock?: string; saving: boolean; querying: boolean; closure: boolean;
+  onClose: () => void; onQuery: () => void; onRetry: () => void; onRelease: () => void; onClosure: () => void;
+}) {
+  const missing = !!outcome && "receipt" in outcome && outcome.receipt === null;
+  const retryable = !expired && !rejected;
+  const queryFirst = !(rejected && !expired) && !(retryable && missing);
+  const query = <Button variant={queryFirst ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabledReason={saving ? "正在提交" : undefined} onClick={onQuery}>查询原结果</Button>;
+  const next = rejected && !expired ? <Button variant="primary" disabledReason={saving || querying ? "正在处理" : undefined} onClick={onRelease}>解除原操作记录</Button>
+    : retryable && <Button variant={missing ? "primary" : "secondary"} loading={saving} loadingText="提交中…" disabledReason={saving ? undefined : querying ? "正在查询原结果" : retryBlock} onClick={onRetry}>按原请求重试</Button>;
+  return <>
+    {closure && <Button variant="danger-outline" disabled={saving || querying} onClick={onClosure}>核查结案</Button>}
+    <Button disabled={saving} onClick={onClose}>收起</Button>
+    {queryFirst ? <>{next}{query}</> : <>{query}{next}</>}
+  </>;
+}
 
 function frozenEditor(record: E2Pending, command: TaskPoolEditCommand, message?: string): E2TaskEditorState {
   const task = command.kind === "update" ? record.tasks[0] : null;
@@ -96,6 +133,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const [denied, setDenied] = useState(false);
   const [pending, setPending] = useState<E2Pending[]>([]);
   const [rejected, setRejected] = useState<string[]>([]);
+  /** 按原请求重试被明确拒绝的原因，只用来显示（冻结框和待确认条）。 */
+  const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [dialog, setDialog] = useState<PoolDialog | null>(null);
   const [releasing, setReleasing] = useState<E2Pending | null>(null);
   const [count, setCount] = useState("10");
@@ -248,6 +287,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const createBlock = writeBlock ?? (pool && pool.taskCount >= 300 ? "这个等级共 300 个任务（含停用），到上限了" : undefined);
   const editBlock = (task: PoolTask | null) => writeBlock ?? (!task?.baseReward ? MISSING_TASK_WEIGHT : undefined);
   const columns = ctx.canWriteE2 ? 7 : 6;
+  const panelNote = !ctx.canWriteE2 || !fresh ? undefined : [pool && pool.taskCount >= 300 ? "已满 300 个（含停用），不能再新增" : "",
+    rows.some(row => !row.baseReward) ? rows.every(row => !row.baseReward) ? "任务还没有权重，暂不能编辑" : "权重为「—」的任务暂不能编辑" : ""].filter(Boolean).join(" · ") || undefined;
   const selectedRows = rows.filter(row => selected.includes(row.taskTypeId));
   const toDisable = selectedRows.filter(row => row.enabled).length, toEnable = selectedRows.length - toDisable;
   const emptyLevels = pools.data.filter(level => level.enabledCount === 0);
@@ -340,7 +381,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           const field = EDIT_ERROR_FIELDS[code];
           setEditor(old => old && { ...old, key: crypto.randomUUID(), step: field ? "form" : "confirm",
             outcome: request.kind === "update" && code === "TASK_TYPE_VERSION_CONFLICT" && error instanceof TaskPoolApiError && error.status === 409
-              ? { kind: "conflict" } : { kind: "rejected", field, message: displayAdminError(error), code } });
+              ? { kind: "conflict" } : { kind: "rejected", field, message: editRejection(code, request.kind === "create", error instanceof TaskPoolApiError ? error.data : undefined) ?? displayAdminError(error), code } });
         } else {
           setDialog(old => old ? { ...old, key: crypto.randomUUID() } : old);
           setDialogError(displayAdminError(error));
@@ -353,7 +394,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           setEditor(frozenEditor(record, request, code ? displayAdminError(error) : undefined));
         } else viewOriginal(record);
         setDialogError("");
-        if (retry && explicit) setRejected(old => [...old.filter(key => key !== record.commandKey), record.commandKey]);
+        if (retry && explicit) {
+          setRejected(old => [...old.filter(key => key !== record.commandKey), record.commandKey]);
+          const reason = (edit ? editRejection(code, request.kind === "create", error instanceof TaskPoolApiError ? error.data : undefined) : undefined) ?? displayAdminError(error);
+          setRejectReasons(old => ({ ...old, [record.commandKey]: reason }));
+        }
         else setRejected(old => old.filter(key => key !== record.commandKey));
       }
       if (!edit) setDialogErrorCode(code);
@@ -476,6 +521,13 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     if (query.code === record.pool.code && query.page === 1) await refresh();
     setPendingNote("");
   }
+  function releaseOriginal(record: E2Pending) {
+    afterEditorLeave.current = null;
+    setEditor(null);
+    if (record.request.kind === "random" || record.request.kind === "status") viewOriginal(record);
+    setReleasing(record);
+  }
+  const querying = pendingNote !== "";
   const originalExpired = !!dialog?.original && isRetryExpired(dialog.original);
   const originalRejected = !!dialog?.original && rejected.includes(dialog.original.commandKey);
   const editorOriginal = editor?.outcome.kind === "unknown" ? pending.find(record => record.commandKey === editor.key) : undefined;
@@ -496,13 +548,10 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} onClick={() => { viewOriginal(record); void send(record, true); }}>按原请求重试</Button>}
         <Button size="sm" disabled={saving} onClick={() => viewOriginal(record)}>查看原操作</Button>
         {canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <Button size="sm" variant="danger-outline" disabled={saving} onClick={() => setClosing(record)}>核查结案</Button>}
-        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} onClick={() => {
-          setEditor(null);
-          if (record.request.kind === "random" || record.request.kind === "status") viewOriginal(record);
-          setReleasing(record);
-        }}>解除原操作记录</Button>}
+        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} onClick={() => releaseOriginal(record)}>解除原操作记录</Button>}
         <Explain label="原样重试的说明" content={RETRY_HELP} /></>}>
       <p>首次提交 {businessStamp(record.createdAt)} · {businessZoneText()}</p>
+      {rejected.includes(record.commandKey) && rejectReasons[record.commandKey] && <p>按原请求重试被明确拒绝：{rejectReasons[record.commandKey]}</p>}
       {/* 过期后下一步只说一处：查过的由下面的结论句说（含核查结案），没查过的先查询。 */}
       {!(isRetryExpired(record) && outcomes[record.commandKey]) && <p>{isRetryExpired(record) ? "超过 24 小时不能再重试，先查询原结果。" : "原对象、内容和理由已保留。这个等级暂停新操作。"}</p>}
       {pendingNote && !outcomes[record.commandKey] && <p>{pendingNote}</p>}
@@ -547,7 +596,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       })}
     </StatBand></div>}
     <section id="e2-current-tasks" className="e2-task-panel" role="tabpanel" aria-labelledby={pool ? tabIds.tab(pool.code) : undefined} aria-label={pool ? undefined : "当前等级任务"}>
-      <Panel title={<span id="e2-task-heading" tabIndex={-1}>{pool ? `${pool.code} ${pool.name}任务` : "当前等级任务"}</span>} flush
+      <Panel title={<span id="e2-task-heading" tabIndex={-1}>{pool ? `${pool.code} ${pool.name}任务` : "当前等级任务"}</span>} flush sub={panelNote}
         explain={TASK_RULES} actions={ctx.canWriteE2 ? <><Button disabledReason={createBlock} onClick={() => openEditor("create", null)}>新增任务</Button><Button variant="primary" icon={<Plus size={16} />} disabledReason={writeBlock} onClick={() => open("random")}>随机添加任务</Button></> : undefined}>
         <FilterBar onClear={() => setQuery(old => ({ ...old, taskClass: "", enabled: "", page: 1 }))} canClear={!!(query.taskClass || query.enabled)}>
           <FilterField><Select aria-label="任务类型筛选" value={query.taskClass} onChange={taskClass => { setSelected([]); setQuery(old => ({ ...old, taskClass, page: 1 })); }} options={[{ value: "", label: "全部类型" }, ...TASK_CLASSES.map(value => ({ value, label: TASK_CLASS_LABELS[value] }))]} /></FilterField>
@@ -560,13 +609,13 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         <Table label="当前等级任务" className="e2-task-table"><colgroup><col className="e2-control-column" /><col className="e2-name-column" /><col className="e2-class-column" /><col className="e2-duration-column" /><col className="e2-weight-column" /><col className="e2-status-column" />{ctx.canWriteE2 && <col className="e2-action-column" />}</colgroup><thead><tr>
           <Th control><Checkbox aria-label="选择本页全部任务" disabled={!!writeBlock || !rows.length} checked={rows.length > 0 && selected.length === rows.length} indeterminate={selected.length > 0 && selected.length < rows.length}
             onChange={event => setSelected(event.target.checked ? rows.map(row => row.taskTypeId) : [])} /></Th>
-          <Th>任务名称</Th><Th>类型</Th><Th align="right">时长</Th><Th align="right" className="e2-gap">权重<Explain label="权重的说明" content="不是每单的钱，只决定这条任务在同等级启用任务里分得多还是少。" /></Th><Th className="e2-gap">状态<Explain label="任务启用状态的说明" content="已启用的任务可参加新派单；停用的不再参加新派单，停用不会取消当前单。" /></Th>{ctx.canWriteE2 && <Th sticky="end" fit>操作</Th>}
+          <Th>任务名称</Th><Th>类型</Th><Th align="right">时长</Th><Th align="right" className="e2-gap"><Explain label="权重的说明" content="不是每单的钱，只决定这条任务在同等级启用任务里分得多还是少。">权重</Explain></Th><Th className="e2-gap">状态<Explain label="任务启用状态的说明" content="已启用的任务可参加新派单；停用的不再参加新派单，停用不会取消当前单。" /></Th>{ctx.canWriteE2 && <Th sticky="end" fit>操作</Th>}
         </tr></thead><tbody>{readingTasks ? <TableLoading columns={columns} /> : tasks.state === "error" ? <TableMessage columns={columns} role="alert"><BlockState state="error" title="任务读取失败" detail={tasks.error} onRetry={() => void refresh()} /></TableMessage>
           : !query.code && pools.state === "error" ? <TableMessage columns={columns}>任务等级读取成功后，再读取任务列表。</TableMessage>
           : rows.length ? rows.map(row => <Tr key={row.taskTypeId} selected={selected.includes(row.taskTypeId)}><Td><Checkbox aria-label={`选择 ${row.name}`} title={writeBlock} disabled={!!writeBlock} checked={selected.includes(row.taskTypeId)} onChange={event => setSelected(event.target.checked ? [...selected, row.taskTypeId] : selected.filter(id => id !== row.taskTypeId))} /></Td>
             <Td><Cell full main={row.name} title={row.name} /></Td><Td><TaskClassTag taskClass={row.taskClass} /></Td>
             <Td align="right"><span className="e2-duration"><ScaleBar quiet compact label="任务时长" max={120} value={row.durationMinutes} valueText={`${row.durationMinutes} 分钟，刻度 0 到 120 分钟`} tone="neutral" /><span className="e2-duration-value">{row.durationMinutes} 分钟</span></span></Td>
-            <Td align="right" className="e2-gap"><Cell num main={row.baseReward ? formatWeight(row.baseReward) : "—"} /></Td>
+            <Td align="right" className="e2-gap"><Cell num main={row.baseReward ? <E6OriginalValues original={row.baseReward}>{formatWeight(row.baseReward)}</E6OriginalValues> : "—"} /></Td>
             <Td className="e2-gap"><StatusTag tone={row.enabled ? "ok" : "done"}>{row.enabled ? "已启用" : "已停用"}</StatusTag></Td>
             {ctx.canWriteE2 && <Td sticky="end" fit><Button size="sm" aria-label={`编辑 ${row.name}`} disabledReason={editBlock(row)} onClick={() => openEditor("update", row)}>编辑</Button></Td>}</Tr>)
             : <TableMessage columns={columns}>{query.taskClass || query.enabled ? <><p>当前筛选没有任务</p><Button size="sm" onClick={() => setQuery(old => ({ ...old, taskClass: "", enabled: "", page: 1 }))}>清除筛选</Button></>
@@ -577,10 +626,17 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     </section>
     {editor && <E2TaskEditor state={editor} onChange={setEditor} onClose={finishEditor} onContinue={() => { afterEditorLeave.current = null; }}
       reasonRule={editorReasonRule} levelWeightRange={editorPoolCode ? levelWeightRange : null} writeBlock={editor.outcome.kind === "unknown"
-      ? editorOriginal ? retryBlock(editorOriginal) : "原操作没有完整持久保存，不能重试"
+      ? editorOriginal ? undefined : "原操作没有完整持久保存，不能重试"
       : editor.mode === "create" ? createBlock : editBlock(editor.task)} toast={ctx.toast}
       onSubmit={submitEditor} onReadLatest={readLatestEditor}
-      onRetry={async state => { if (editorOriginal?.commandKey === state.key) await send(editorOriginal, true); }} />}
+      frozen={editorOriginal && {
+        notice: <FrozenNotice expired={isRetryExpired(editorOriginal)} rejected={rejected.includes(editorOriginal.commandKey) ? rejectReasons[editorOriginal.commandKey] ?? "" : undefined}
+          outcome={outcomes[editorOriginal.commandKey]} canClose={canInvestigate} />,
+        footer: <FrozenActions expired={isRetryExpired(editorOriginal)} rejected={rejected.includes(editorOriginal.commandKey)} outcome={outcomes[editorOriginal.commandKey]}
+          retryBlock={retryBlock(editorOriginal)} saving={saving} querying={querying} closure={canInvestigate && closureOpen(outcomes[editorOriginal.commandKey], isRetryExpired(editorOriginal))}
+          onClose={finishEditor} onQuery={() => void queryOriginal(editorOriginal)} onRetry={() => void send(editorOriginal, true)}
+          onRelease={() => releaseOriginal(editorOriginal)} onClosure={() => { afterEditorLeave.current = null; setEditor(null); setClosing(editorOriginal); }} />,
+      }} />}
     {releasing ? <Modal title="解除原操作记录" icon={ShieldCheck} tone="neutral" busy={saving} dirty onClose={close}
       footer={<><Button onClick={() => setReleasing(null)}>返回</Button><Button variant="primary" onClick={() => {
         if (!rejected.includes(releasing.commandKey) || isRetryExpired(releasing)) return;
@@ -590,14 +646,16 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     </Modal> : dialog && <Modal title={originalExpired ? "原操作已过重试时限" : dialog.original ? "核对原操作" : dialog.kind === "random" ? "随机添加任务" : dialog.enabled ? "批量启用任务" : "批量停用任务"}
       icon={dialog.kind === "random" ? Plus : ClipboardList} tone={dialog.kind === "status" && !dialog.enabled ? "danger" : "neutral"}
       sub={dialog.original ? undefined : <StatusTag tone="progress" filled>立即生效</StatusTag>} busy={saving} dirty={!!dialog.original || !!reason || count !== "10" || classes.length > 0} onClose={close}
-      footer={<><Button disabled={saving} onClick={close}>{dialog.original ? "收起" : "取消"}</Button>
-          {dialog.original && originalRejected && !originalExpired ? <Button variant="primary" disabled={saving} onClick={() => setReleasing(dialog.original!)}>解除原操作记录</Button>
-            : !originalExpired && <Button variant={dialog.kind === "status" && !dialog.enabled ? "danger" : "primary"} loading={saving} loadingText="提交中…" disabledReason={dialog.original ? retryBlock(dialog.original) : formBlock}
-              onClick={() => { if (dialog.original) void send(dialog.original, true); else { setTouched({ count: true, reason: true }); void submit(); } }}>{dialog.original ? "按原请求重试" : dialog.kind === "random" ? "确认添加并生效" : dialog.enabled ? "确认启用" : "确认停用"}</Button>}</>}>
+      footer={dialog.original ? <FrozenActions expired={originalExpired} rejected={originalRejected} outcome={outcomes[dialog.original.commandKey]} retryBlock={retryBlock(dialog.original)}
+          saving={saving} querying={querying} closure={canInvestigate && closureOpen(outcomes[dialog.original.commandKey], originalExpired)} onClose={close}
+          onQuery={() => void queryOriginal(dialog.original!)} onRetry={() => void send(dialog.original!, true)} onRelease={() => setReleasing(dialog.original!)}
+          onClosure={() => { const record = dialog.original!; close(); setClosing(record); }} />
+        : <><Button disabled={saving} onClick={close}>取消</Button>
+          <Button variant={dialog.kind === "status" && !dialog.enabled ? "danger" : "primary"} loading={saving} loadingText="提交中…" disabledReason={formBlock}
+            onClick={() => { setTouched({ count: true, reason: true }); void submit(); }}>{dialog.kind === "random" ? "确认添加并生效" : dialog.enabled ? "确认启用" : "确认停用"}</Button></>}>
       <div className="rd-stack">
-          {dialog.original && <Notice tone="warn" title={originalExpired ? "已超过 24 小时，不能再重试" : originalRejected ? "按原请求重试被明确拒绝" : "结果未知，原操作已冻结"}>
-            {originalExpired ? "原请求继续保留，请核对操作记录；这个等级仍暂停新操作。" : originalRejected ? "先查询原结果，再决定是否解除原操作记录；这次拒绝不会自动清除它。" : retryBlock(dialog.original) ?? "只能按原请求重试：系统认得出是同一次提交，不会重复执行。"}
-          </Notice>}
+          {dialog.original && <FrozenNotice expired={originalExpired} rejected={originalRejected ? rejectReasons[dialog.original.commandKey] ?? "" : undefined}
+            outcome={outcomes[dialog.original.commandKey]} canClose={canInvestigate} />}
           <Facts><Fact k="任务等级">{dialog.pool.code} {dialog.pool.name}</Fact>
             {dialog.original && <><Fact k="原操作">{e2CommandLabel(dialog.original)}</Fact><Fact k="首次提交">{businessStamp(dialog.original.createdAt)} · {businessZoneText()} · {dialog.original.actorName}</Fact></>}
             {dialog.kind === "status" && <Fact k={dialog.enabled ? "本次启用" : "本次停用"}>{dialog.tasks.length} 个任务</Fact>}
