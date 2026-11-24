@@ -21,6 +21,8 @@ import type { ConfirmReq } from "./types";
  * K 域（K1–K4）自己的确认框：在 `confirm-modal.tsx` 的基础上加了「重试原操作」的显示（标题、按钮、框内的结果未知提示、理由锁定、被拒原因留在框里）。
  * `confirm-modal.tsx` 还被 A、C、D、G、H、I、M 域引用，保持不动；两份的合并留给共用确认框那一轮。
  */
+const POLICY_FAILED_TEXT = "理由规则加载失败，暂时无法提交。请关闭弹窗后重试。";
+
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
   const [pendingReason, setPendingReason] = useState(() => req.getPendingReason?.());
   const [reopened] = useState(() => Boolean(req.recoveryUi) && pendingReason !== undefined);
@@ -41,16 +43,18 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const [valueLeft, setValueLeft] = useState(false);
   const fieldId = useId();
   // K1–K4 都在 RdPage 里，只有改版的样子（和 OperationConfirmModal 同一个样子）；旧页面那一支和 chips、枚举勾选没有 K 页面用到，不保留。
-  // 理由规则读得到就按它，读不到按默认 8–200 继续，紧急关停不能被规则服务挡住（Q-06）。
+  // 理由规则读得到就按它。读取中不放行；读失败时一般操作不能提交，只有标了 reasonPolicyOptional 的紧急关停按默认 8–200 继续（02 OP-22、Q-06）。
   const [policy, setPolicy] = useState<{ minChars: number; maxChars: number } | null>(null);
-  // 读取中还不知道规则，不放行；读失败才按默认继续。
   const [policySettled, setPolicySettled] = useState(!req.reason);
+  const [policyFailed, setPolicyFailed] = useState(false);
   useEffect(() => {
     if (!req.reason) return;
     let active = true;
-    void fetchA2ReasonPolicy().then((next) => { if (active) setPolicy(next); }, () => { if (active) setPolicy(null); }).finally(() => { if (active) setPolicySettled(true); });
+    void fetchA2ReasonPolicy().then((next) => { if (active) setPolicy(next); }, () => { if (active) { setPolicy(null); setPolicyFailed(true); } }).finally(() => { if (active) setPolicySettled(true); });
     return () => { active = false; };
   }, [req.reason]);
+  // 按原请求重试沿用原理由，不受规则读取影响。
+  const policyBlocked = Boolean(req.reason) && policyFailed && !req.reasonPolicyOptional && pendingReason === undefined;
   const reasonMin = policy?.minChars ?? 8;
   const reasonMax = policy?.maxChars ?? 200;
   const reasonLength = visibleReasonLength(reason);
@@ -58,7 +62,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   // 文本框要求 trim 后非空（拒纯空白）。
   const inputOk = !req.input || req.input.required === false || value.trim().length >= 1;
   const valueProblem = req.input?.validate?.(value);
-  const can = !req.blockedReason && (pendingReason !== undefined || (reasonOk && inputOk && !valueProblem && policySettled));
+  const can = !req.blockedReason && !policyBlocked && (pendingReason !== undefined || (reasonOk && inputOk && !valueProblem && policySettled));
   const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
   const submit = async () => {
     if (!can || submitting) return;
@@ -102,7 +106,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
             variant={req.confirmTone ?? "primary"}
             loading={submitting}
             loadingText="提交中…"
-            disabledReason={can || submitting ? undefined : req.blockedReason ?? [!policySettled && "正在加载，稍候即可提交", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
+            disabledReason={can || submitting ? undefined : req.blockedReason ?? (policyBlocked ? POLICY_FAILED_TEXT : undefined) ?? [!policySettled && "正在加载，稍候即可提交", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
             onBlockedClick={() => setAttempted(true)}
             onClick={() => void submit()}
           >
@@ -147,7 +151,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       <div className="field rd-reason-field">
         {/* 字段名强，下限跟在后面，上限在框角的字数里，各写一处（VS-104、VS-105）。 */}
         <label htmlFor={`${fieldId}-reason`}>
-          {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span>{!req.recoveryUi && <span className="rd-form-hint">{policySettled ? `至少 ${reasonMin} 字` : "正在加载，稍候即可提交。"}</span>}</> : <>备注<span className="rd-form-hint">{req.remarkHint ?? "选填，最多 200 字"}</span></>}
+          {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span>{!req.recoveryUi && <span className="rd-form-hint">{!policySettled ? "正在加载，稍候即可提交。" : policyBlocked ? POLICY_FAILED_TEXT : `至少 ${reasonMin} 字`}</span>}</> : <>备注<span className="rd-form-hint">{req.remarkHint ?? "选填，最多 200 字"}</span></>}
         </label>
         <div className={`rd-reason-box${req.recoveryUi && pendingReason !== undefined ? " k-reason-locked" : ""}`}>
           <textarea
