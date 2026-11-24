@@ -932,7 +932,7 @@ export default function UserDetailPage() {
   useEffect(() => { syncPending(); }, [syncPending]);
   useEffect(() => {
     const now = Date.now();
-    const timers = pendingCommands.filter(command => isDeviceCommand(command) && !command.legacy
+    const timers = pendingCommands.filter(command => !command.legacy
       && pendingFound[command.commandKey] === "none" && command.expiresAt > now)
       .map(command => window.setTimeout(() => refreshDeviceRetryWindow(value => value + 1), command.expiresAt - now));
     return () => timers.forEach(timer => window.clearTimeout(timer));
@@ -1071,7 +1071,9 @@ export default function UserDetailPage() {
   const pendingRetryBlock = (command: C1Command) => {
     if (isExplicitRejection(command.rejection)) return "重试被明确拒绝";
     const result = pendingFound[command.commandKey];
-    return result === "checking" ? "正在查询原结果" : result !== "none" ? CHECK_RESULT_FIRST : undefined;
+    // 已经查到的说清是哪种情况，不把「查到了别的结论」说成「还没查」。
+    return result === undefined ? CHECK_RESULT_FIRST : result === "checking" ? "正在查询原结果" : result === "error" ? "查询失败，稍后再查"
+      : result === "PROCESSING" ? "原操作还在执行，稍后再查" : result === "none" ? undefined : "已查到原结果，按这一行的说明处理";
   };
   const clearPendingFound = (commandKey: string) => {
     setPendingFound(current => ({ ...current, [commandKey]: undefined }));
