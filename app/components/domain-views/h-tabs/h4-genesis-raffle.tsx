@@ -42,8 +42,9 @@ function equalRaffleField(path: string, left: unknown, right: unknown): boolean 
   return false;
 }
 
-function isUnchangedRaffleDraft(base: AdminRaffle | null, submitted: RaffleDraft, enabled: boolean, required: readonly OperatingLanguageCode[]) {
-  if (base?.status !== "DRAFT" || enabled) return false;
+function isUnchangedRaffle(base: AdminRaffle | null, submitted: RaffleDraft, enabled: boolean, required: readonly OperatingLanguageCode[]) {
+  if (!base || (base.status !== "DRAFT" && (base.status !== "OPEN" || base.totalEntries !== 0))) return false;
+  if (enabled !== (base.status === "OPEN")) return false;
   const original = raffleLocalizedDraft(editableRaffle(base, required), required, "submit");
   return !hConflictFields(original, original, submitted, equalRaffleField).some(field => field.changedByMe);
 }
@@ -137,7 +138,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
     if (savedDraft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${savedDraft.id}`)) return;
     setReadFailed(false);
     if (!savedDraft || !write || !restored && (saving || saveBlocked || conflictFields)) return;
-    const unchanged = isUnchangedRaffleDraft(previous, raffleLocalizedDraft(savedDraft, requiredLanguages, "submit"), nextEnabled, requiredLanguages);
+    const unchanged = isUnchangedRaffle(previous, raffleLocalizedDraft(savedDraft, requiredLanguages, "submit"), nextEnabled, requiredLanguages);
     if (unchanged && !restored) return;
     const invalid = !restored && raffleDraftError(savedDraft, requiredLanguages); if (invalid) { setError(invalid); return; }
     const opening = nextEnabled && previous?.status === "DRAFT";
@@ -222,7 +223,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
             const problem = raffleDraftError(savedDraft, required);
             if (problem) throw new Error(problem);
             const submitted = raffleLocalizedDraft(savedDraft, required, "submit");
-            if (isUnchangedRaffleDraft(previous, submitted, nextEnabled, required)) throw new Error("没有改动");
+            if (isUnchangedRaffle(previous, submitted, nextEnabled, required)) throw new Error("没有改动");
             result = await saveAdminRaffle(submitted, previous?.revision ?? null, nextEnabled, reason, opening, previous);
           }
           await complete(result);
@@ -359,8 +360,8 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
   const awaitingRead = draft ? confirmedH4Saves().find(record => record.scope === `H/h4_genesis_raffle/${draft.id}`) : undefined;
   const savedUnread = !!awaitingRead;
   const needsVerification = !!awaitingRead && h4RaffleSaveNeedsVerification(awaitingRead);
-  const unchanged = base?.status === "DRAFT" && draft
-    && isUnchangedRaffleDraft(base, raffleLocalizedDraft(draft, requiredLanguages, "submit"), enabled, requiredLanguages);
+  const unchanged = base && draft
+    && isUnchangedRaffle(base, raffleLocalizedDraft(draft, requiredLanguages, "submit"), enabled, requiredLanguages);
   if (!read) return <BlockState state="denied" title="没有查看创世抽奖的权限" detail="创世抽奖需要「活动中心查看」权限。" />;
 
   const showSaved = savedUnread && (!error || readFailed);
