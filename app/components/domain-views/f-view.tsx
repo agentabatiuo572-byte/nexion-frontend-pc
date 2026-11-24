@@ -191,6 +191,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const f4Submission = useRef<F4ConfirmationSnapshot | undefined>(undefined);
   const [f5Page, setF5Page] = useState<{
     overview: F5CommissionAuditOverview;
+    query: F5CommissionQuery;
     nextQuery: F5CommissionQuery | null;
   } | null>(null);
   const [f5Loading, setF5Loading] = useState(tab === "F5");
@@ -629,7 +630,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       ...originals.map(row => queryF5Proposal(owner!, row)),
     ]);
     if (request !== f5Generation.current || owner !== useAdminAuth.getState().session?.adminId) return;
-    if (overview.status === "fulfilled") setF5Page({ overview: overview.value,
+    if (overview.status === "fulfilled") setF5Page({ overview: overview.value, query,
       nextQuery: overview.value.nextCursor ? { ...query, cursor: overview.value.nextCursor } : null });
     else { setF5Page(null); setF5Error(errorMessage(overview.reason)); }
     const audit = queue.status === "fulfilled" ? queue.value as Awaited<ReturnType<typeof fetchA2Overview>> | null : null;
@@ -1317,6 +1318,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       });
     },
     f5Overview: f5Page?.overview ?? null,
+    f5AppliedQuery: f5Page?.query ?? null,
     f5NextQuery: f5Page?.nextQuery ?? null,
     f5Loading,
     f5Error,
@@ -1386,7 +1388,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         action: `${def.action} · ${sortedIds.length} 笔`,
         obj: sortedIds.join(","),
         before: "当前状态",
-        after: "重新进入冷却期",
+        after: "每笔生成一条补发记录",
         type: def.type,
         amplifies: def.amplifies,
         gate: { roles: [] },

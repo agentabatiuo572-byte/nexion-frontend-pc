@@ -23,7 +23,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   APPROVER, KIND_LABELS, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, deviceEarningSource, isFriend, isGrouped, kindCountLabel, knownRejection,
-  statusName, timeText, userCode, zoneNote, F5ConfirmHost, Money, F5RecoveryNotice, type F5Confirm, type F5RecoveryRow,
+  reissueOutcome, statusName, timeText, userCode, zoneNote, F5ConfirmHost, Money, F5RecoveryNotice, type F5Confirm, type F5RecoveryRow,
 } from "./f5-shared";
 import { F5KindTiles, F5StatusFlow } from "./f5-overview";
 import { F5Drawer, type F5RowAction } from "./f5-drawer";
@@ -59,9 +59,12 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<F5Confirm | null>(null);
   const tabIds = useTabIds();
-  const { f5Overview: data, f5NextQuery, f5Loading: loading, f5Error: error } = ctx;
+  const { f5Overview: data, f5AppliedQuery, f5NextQuery, f5Loading: loading, f5Error: error } = ctx;
   const suspendableKinds = data?.suspendableKinds ?? [];
   const reissueAvailable = canReissue && !error && !!data;
+  const exportBlockedReason = loading ? "奖励记录正在更新，暂不能导出"
+    : !f5AppliedQuery || !data || error ? "奖励记录未成功读取，重试后才能导出"
+      : data.total === 0 ? "当前结果没有可导出的奖励记录" : undefined;
   const events = useMemo(() => data?.commissionEvents ?? [], [data]);
   const selectedRows = useMemo(
     () => events.filter((row) => selected.includes(row.id)),
@@ -215,20 +218,21 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
   const reverse = (row: F5CommissionEvent, recovery?: F5Recovery) => {
     const friend = isFriend(row);
-    const grouped = isGrouped(row);
+    const tracksRecovery = isGrouped(row) || row.kind === "vrank_salary";
+    const after = tracksRecovery ? "已冲正或待追回" : "已冲正";
     setConfirm({
       recovery, snapshot: recovery?.original.f5Snapshot ?? { action: "reverse", row },
       action: `冲正奖励 ${row.id}`, title: "冲正奖励", briefKind: "funds", confirmTone: "danger", completionCopy: completion,
       effect: <>{approvalTag()}<IrreversibleTag /></>,
       blockedReason: knownRejection(row, "reverse"),
       reasonPlaceholder: "例如：订单已退款，工单号",
-      statedBrief: { impact: grouped ? "批准后收回这笔奖励，余额不够的部分记为待追回" : "批准后收回这笔奖励，余额不够时整次失败", check: "核对凭证单号和这笔奖励有关，理由写清收回的原因。" },
-      detail: `冲正 ${row.id}：批准后收回这笔奖励，状态改为已冲正。`,
+      statedBrief: { impact: tracksRecovery ? "批准后收回这笔奖励，余额不够的部分记为待追回" : "批准后收回这笔奖励，余额不够时整次失败", check: "核对凭证单号和这笔奖励有关，理由写清收回的原因。" },
+      detail: `冲正 ${row.id}：批准后收回这笔奖励，状态改为${after}。`,
       facts: <Facts>
         {recordFacts(row)}
-        <Fact k="状态"><Change from={statusName(row.status)} to="已冲正" /></Fact>
+        <Fact k="状态"><Change from={statusName(row.status)} to={after} /></Fact>
         {scopeFact(row, "收回")}
-        {grouped
+        {tracksRecovery
           ? <Fact k="用户余额" tone="warn">已入账的部分按现在的余额扣回，扣不够的记为待追回，不会扣成负数</Fact>
           : <Fact k="用户余额" tone="warn">已转进钱包的才扣回；余额不够时这次冲正整个失败，什么都不改<Explain label="没有结算组的旧奖励怎么收回" content="还没转进钱包的，只关掉待发记录，不扣余额。余额不够不会记成待追回，冲正会失败，要等余额够了再提交。" /></Fact>}
         <Fact k="之后">{friend ? "好友奖励冲正后不能补发" : "可以勾选申请补发，批准时再核补发条件"}</Fact>
@@ -259,14 +263,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       ctx.toast("请先勾选要补发的已冲正奖励");
       return;
     }
-    const coolingDays = (kindKey: string) => policy?.find((item) => item.kind === kindKey)?.days;
-    const after = (row: F5CommissionEvent) => {
-      if (row.kind === "network" || row.kind === "binary") {
-        const days = coolingDays(row.kind);
-        return days === undefined ? "重新冷却" : days > 0 ? `冷却 ${days} 天后解锁` : "冷却期为 0，马上解锁";
-      }
-      return "批准后马上解锁";
-    };
+    const after = (row: F5CommissionEvent) => reissueOutcome(row.kind, policy?.find((item) => item.kind === row.kind)?.days);
     setConfirm({
       recovery, snapshot: recovery?.original.f5Snapshot ?? { action: "reissue", rows, coolingPolicy: policy, coverage: data?.coverage },
       action: `批量补发 ${rows.length} 笔奖励`, title: "批量补发奖励", briefKind: "funds", amplify: true, completionCopy: `${APPROVER}在「操作记录与审批」批准后才执行；批准前不生成新记录。`,
@@ -279,7 +276,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         <Fact k="补发" lead unit="笔">{String(rows.length)}</Fact>
         <Fact k="补发后">每笔生成一条新记录，原记录保持已冲正</Fact>
         <Fact k="整批" tone="warn">有一笔不合格，整批都不补，不会只补一部分</Fact>
-        <Fact k="用户余额">团队购买、团队平衡两类重新冷却；其余四类批准后马上解锁</Fact>
+        <Fact k="用户余额">{[...new Set(rows.map(after))].join("；")}</Fact>
         <Fact k="能不能撤回">不能；新记录可以再冲正</Fact>
         <Fact k="谁来批准">{approverText("补发权限")}</Fact>
       </Facts>,
@@ -408,7 +405,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   };
 
   const exportAllFiltered = () => {
-    const filters = query();
+    if (exportBlockedReason || !f5AppliedQuery) return;
+    const filters = f5AppliedQuery;
     const scope = [
       filters.kind ? kindName(filters.kind) : "",
       filters.currency ?? "",
@@ -420,11 +418,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       action: "导出当前筛选的全部奖励", title: "导出筛选结果", briefKind: "export", confirmLabel: "导出 CSV",
       effect: <StatusTag tone="neutral">只生成文件，不改数据</StatusTag>,
       completionCopy: "不改奖励和余额，提交后直接生成文件。",
-      statedBrief: { impact: "按筛选栏里现在填的条件导出全部记录，敏感信息已隐藏", check: "核对筛选条件，理由写清导出用途。" },
+      statedBrief: { impact: "按已应用且读取成功的筛选条件导出全部匹配的记录，敏感信息已隐藏", check: "核对筛选条件，理由写清导出用途。" },
       detail: "导出符合筛选的全部奖励记录。",
       reasonPlaceholder: "例如：月度对账，工单号",
       facts: <Facts>
-        <Fact k="筛选条件">{scope.length ? scope.join("、") : "没有填，导出全部记录"}</Fact>
+        <Fact k="筛选条件">{scope.length ? scope.join("、") : "未应用筛选，导出全部记录"}</Fact>
         <Fact k="导出多少">符合条件的全部记录，不只是这一批 20 笔</Fact>
         <Fact k="上限" tone="warn">5 万行、10 MiB，超了不给文件，请缩小筛选</Fact>
         <Fact k="内容">12 列，用户编号只留后 4 位，单号保留</Fact>
@@ -531,7 +529,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
   const conclusion = () => {
     if (!data) {
-      if (error) return <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshF5(query())}>重试</Button>}>奖励记录读不到，现在不知道有没有要处理的</Conclusion>;
+      if (error) return <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshF5()}>重试</Button>}>奖励记录读不到，现在不知道有没有要处理的</Conclusion>;
       return <Conclusion state="unknown">正在读取奖励记录…</Conclusion>;
     }
     const anomalies = data.anomalies.length;
@@ -565,6 +563,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const currencyOptions = [{ value: "", label: "全部币种" }, { value: "USDT", label: "USDT" }, { value: "UVT", label: "UVT" }];
   const moreCount = (currency ? 1 : 0) + (cohort ? 1 : 0);
   const busyText = "奖励记录正在更新";
+  const recordCounts = loading && data ? "正在更新，暂不能查询或处理"
+    : data ? `共 ${data.total.toLocaleString("en-US")} 笔符合条件 · 这一批 ${events.length} 笔 · 时间为${zoneNote()}` : undefined;
 
   const recordsPanel = (
     <div className="f5-records">
@@ -580,12 +580,13 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         <FilterField grow><Input aria-label="用户编号" placeholder="用户编号，只填数字" inputMode="numeric" value={userId} onChange={(event) => setUserId(event.target.value.replace(/\D/g, ""))} /></FilterField>
       </FilterBar>
       <Panel flush icon={ListChecks} tone="role-1" title="奖励流水" className="f5-records-panel"
-        sub={loading && data ? "正在更新，暂不能查询或处理" : data ? `共 ${data.total.toLocaleString("en-US")} 笔符合条件 · 这一批 ${events.length} 笔 · 时间为${zoneNote()}` : undefined}
+        sub={[recordCounts, canExport ? exportBlockedReason : undefined].filter(Boolean).join(" · ") || undefined}
         explain={<>
           <p>按上面的筛选查，一批 20 笔，新的在前；「共 N 笔」是符合筛选的总数。点一行看这一笔是怎么来的、现在到哪一步。</p>
           <p>同一个结算组的 USDT 和 UVT 两笔，左边用竖线连在一起。结算时间是这笔最后一次变动的时间，不一定是发奖的时刻。</p>
+          <p>导出使用已应用且读取成功的筛选条件，包含全部匹配记录。</p>
         </>}
-        actions={canExport ? <Button size="sm" icon={<Download size={14} aria-hidden />} onClick={exportAllFiltered}>导出筛选结果</Button> : undefined}>
+        actions={canExport ? <Button size="sm" icon={<Download size={14} aria-hidden />} disabled={!!exportBlockedReason} onClick={exportAllFiltered}>导出筛选结果</Button> : undefined}>
         {reissueAvailable && selectedRows.length > 0 && (
           <BatchBar summary={`已勾选 ${selectedRows.length} 笔已冲正的记录`} hint="只能勾选这一批里已冲正、不是好友奖励、来源没有退款的记录；改筛选会清掉勾选。">
             <Button size="sm" onClick={() => setSelected([])}>取消勾选</Button>
@@ -604,7 +605,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             </tr></thead>
             <tbody>
               {!data && loading ? <TableLoading columns={columns} rows={8} />
-                : !data && error ? <TableMessage columns={columns} role="alert">奖励记录读取失败：{error.replace(/[。.\s]+$/, "")}。数据不完整，批量补发已暂停。 <Button size="sm" onClick={() => void ctx.refreshF5(query())}>重试</Button></TableMessage>
+                : !data && error ? <TableMessage columns={columns} role="alert">奖励记录读取失败：{error.replace(/[。.\s]+$/, "")}。数据不完整，批量补发已暂停。 <Button size="sm" onClick={() => void ctx.refreshF5()}>重试</Button></TableMessage>
                   : events.length === 0 ? <TableMessage columns={columns} role="status">
                     {appliedChips.length ? <>没有符合条件的奖励记录 <Button size="sm" onClick={clearFilters}>清除筛选</Button></> : "还没有奖励记录"}
                   </TableMessage>

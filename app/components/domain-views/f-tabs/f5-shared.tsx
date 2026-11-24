@@ -58,6 +58,12 @@ export const isFriend = (row: Pick<F5CommissionEvent, "kind">) => row.kind === "
 export const deviceEarningSource = (layer: number | string | undefined) => Number(layer) === 2 ? "好友的好友" : "好友";
 export const isGrouped = (row: Pick<F5CommissionEvent, "settlementNo" | "kind">) => isFriend(row) || !!row.settlementNo;
 
+export function reissueOutcome(kind: string, coolingDays?: number) {
+  if (kind !== "network" && kind !== "binary") return "批准后立即解锁";
+  if (coolingDays === undefined) return "批准后进入冷却期";
+  return coolingDays > 0 ? `批准后进入冷却期，${coolingDays} 天后可解锁` : "批准后进入冷却期，批准时到期";
+}
+
 /** 用户编码：U 加 8 位数字，和后端给的 user 一个写法。编号不加千分位。 */
 export const userCode = (id: number | string | undefined | null) => {
   if (id === undefined || id === null || id === "") return "—";

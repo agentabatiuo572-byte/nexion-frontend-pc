@@ -13,7 +13,8 @@ import { KIND_LABELS, Money, deviceEarningSource, percentText, kindNames, operat
 
 /** 后端异常类型是机器码，页面写中文；不认识的原样写。证据里的奖励类型键换成中文名。 */
 const ANOMALY_TYPES: Record<string, string> = { amount: "金额偏离", frequency: "出现太频繁", "layer-ratio": "层比例偏离" };
-const evidenceText = (text: string) => text.replace(/\b(direct_purchase|direct_device_earning|network|binary|peer|cultivation|leadership|genesis)\b/g, (key) => KIND_LABELS[key] ?? key);
+const kindCodes = new RegExp(`\\b(${Object.keys(KIND_LABELS).join("|")})\\b`, "g");
+const evidenceText = (text: string) => text.replace(kindCodes, (key) => KIND_LABELS[key]);
 
 type Suspension = F5CommissionAuditOverview["activeSuspensions"][number];
 
@@ -47,14 +48,15 @@ export function F5PendingList({ rows, count, statusFiltered }: { rows: readonly 
   );
 }
 
-/** 层比例没法比较的原因：后端原因码换成一句人话（UVT 没有设置的层比例，一律不比）。 */
+/** 层比例没法比较的原因：后端原因码换成运营可核对的说明。 */
 const LAYER_UNAVAILABLE: Record<F5LayerRatioComparison["reason"] & string, string> = {
   F5_LAYER_RATIO_THEORY_UNAVAILABLE: "没有可比的设置比例",
   F5_LAYER_RATIO_LAYER_UNAVAILABLE: "有奖励缺层级，或那一层没设比例",
   F5_LAYER_RATIO_SAMPLE_UNAVAILABLE: "样本金额合计为 0，算不出占比",
+  F5_LAYER_RATIO_SNAPSHOT_UNAVAILABLE: "样本缺少可匹配的订单结算快照",
 };
-const unavailableText = (item: F5LayerRatioComparison) =>
-  item.available ? "" : item.currency !== "USDT" ? `${item.currency} 没有设置层比例，不比` : LAYER_UNAVAILABLE[item.reason];
+const layerBasis = (item: Extract<F5LayerRatioComparison, { available: true }>) =>
+  item.basis === "ORDER_SETTLEMENT_SNAPSHOT" ? "订单结算快照" : "当前七层 USDT 比例";
 const over = (deviation: string, ratio: string) => Number(deviation) > Number(ratio);
 
 /** 层比例核对：默认一行结论，点开看各层。没法比较、没读到比较结果都不当作正常。 */
@@ -69,14 +71,14 @@ function F5LayerCheck({ comparisons, ratio }: { comparisons: readonly F5LayerRat
     <div className="f5-layer-check">
       <Fold inset title="层比例核对" summary={summary} alert={deviating}
         explain={<>
-          <p>团队购买奖励各层的实际金额占比，和设置的七层比例比，按币种分开。只比 USDT；UVT 没有设置层比例，不比。</p>
+          <p>团队购买奖励各层的实际金额占比按币种比较。按订单结算快照比较时，缺少快照就无法比较。旧口径只按当前七层 USDT 比例比较。</p>
           <p>没法比较、没读到结果，都不等于层比例正常。</p>
         </>}>
         {comparisons === undefined ? <p className="f5-layer-note">系统这次没有给出层比例的比较结果。</p>
           : comparisons.length === 0 ? <p className="f5-layer-note">最近 200 条奖励里没有团队购买奖励，没有可比的。</p>
             : comparisons.map((item) => item.available ? (
               <Table key={item.currency} label={`${item.currency} 各层占比`} className="f5-table f5-layer-table">
-                <thead><tr><Th>{item.currency}</Th><Th align="right">实际占比</Th><Th align="right">设置的占比</Th><Th align="right">相差</Th><Th>结论</Th></tr></thead>
+                <thead><tr><Th>{item.currency}</Th><Th align="right">实际占比</Th><Th align="right">{layerBasis(item)}占比</Th><Th align="right">相差</Th><Th>结论</Th></tr></thead>
                 <tbody>
                   {item.layers.map((layer) => (
                     <Tr key={layer.layer}>
@@ -90,7 +92,7 @@ function F5LayerCheck({ comparisons, ratio }: { comparisons: readonly F5LayerRat
                 </tbody>
               </Table>
             ) : (
-              <p key={item.currency} className="f5-layer-row"><StatusTag tone="neutral">{item.currency} 没法比较</StatusTag><span>{unavailableText(item)}</span></p>
+              <p key={item.currency} className="f5-layer-row"><StatusTag tone="neutral">{item.currency} 没法比较</StatusTag><span>{LAYER_UNAVAILABLE[item.reason]}</span></p>
             ))}
       </Fold>
     </div>
@@ -108,7 +110,7 @@ export function F5AnomalyList({ rows, comparisons, sigma, ratio, canWrite, onAdj
   return (
     <Panel flush icon={ShieldAlert} tone="role-4" title="异常样本" sub={`${rows.length} 条 · 金额偏离超过 ${sigma ?? "3"} 倍标准差 · 层比例偏离超过 ${ratioText}%`}
       explain={<>
-        <p>从全部奖励里最近的 200 条挑出来，不跟筛选变。三种：同一类奖励里金额偏离平均太多的；同一用户在这 200 条里出现 10 次以上的；团队购买奖励某一层的金额占比，和设置的比例差太多的。</p>
+        <p>从全部奖励里最近的 200 条挑出来，不跟筛选变。三种：同一类奖励里金额偏离平均太多的；同一用户在这 200 条里出现 10 次以上的；团队购买奖励某一层的金额占比，和「层比例核对」所列依据差太多的。</p>
         <p>金额偏离按奖励类型和币种分开算，两种币不放在一起比；出现太频繁按笔数算，不分币种。</p>
         <p>关联风险群只是文字说明，没有可以点进去的风险群编号。</p>
       </>}
@@ -118,16 +120,19 @@ export function F5AnomalyList({ rows, comparisons, sigma, ratio, canWrite, onAdj
         <thead><tr><Th>类型</Th>{showCurrency && <Th>币种</Th>}<Th>奖励</Th><Th>用户</Th><Th>依据</Th><Th>关联风险群</Th></tr></thead>
         <tbody>
           {rows.length === 0 ? <TableMessage columns={columns} role="status">{notCompared ? `没有挑出异常；${notCompared}，见上方` : "暂无异常"}</TableMessage>
-            : rows.map((item) => (
-              <Tr key={item.id}>
+            : rows.map((item) => {
+              const comparison = item.type === "layer-ratio" ? comparisons?.find((entry) => entry.currency === item.currency) : undefined;
+              const evidence = item.evidence ? evidenceText(item.evidence) : undefined;
+              const evidenceWithBasis = evidence && comparison?.available ? `${evidence} · ${layerBasis(comparison)}` : evidence;
+              return <Tr key={`${item.currency ?? ""}:${item.id}`}>
                 <Td><Cell main={ANOMALY_TYPES[item.type] ?? item.type} /></Td>
                 {showCurrency && <Td><Cell main={item.currency ?? (item.type === "frequency" ? <span className="f5-weak">不分币种</span> : "—")} /></Td>}
                 <Td><Cell mono main={item.commissionId || "—"} /></Td>
                 <Td><Cell mono main={item.userId ? userCode(item.userId) : "—"} /></Td>
-                <Td grow><Cell main={item.evidence ? evidenceText(item.evidence) : "—"} title={item.evidence ? evidenceText(item.evidence) : undefined} /></Td>
+                <Td grow><Cell main={evidenceWithBasis ?? "—"} title={evidenceWithBasis} /></Td>
                 <Td><Cell main={item.relatedKCluster || "—"} title={item.relatedKCluster || undefined} /></Td>
-              </Tr>
-            ))}
+              </Tr>;
+            })}
         </tbody>
       </Table>
     </Panel>

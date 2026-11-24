@@ -1171,11 +1171,12 @@ export type F5LayerRatioComparison = {
   currency: string;
   available: true;
   reason: null;
+  basis?: "CURRENT_ACTIVE_UNILEVEL_USDT_RATE" | "ORDER_SETTLEMENT_SNAPSHOT";
   layers: Array<{ layer: number; actualPct: string; theoreticalPct: string; deviation: string }>;
 } | {
   currency: string;
   available: false;
-  reason: "F5_LAYER_RATIO_THEORY_UNAVAILABLE" | "F5_LAYER_RATIO_LAYER_UNAVAILABLE" | "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE";
+  reason: "F5_LAYER_RATIO_THEORY_UNAVAILABLE" | "F5_LAYER_RATIO_LAYER_UNAVAILABLE" | "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE" | "F5_LAYER_RATIO_SNAPSHOT_UNAVAILABLE";
   layers: null;
   theoreticalPct: null;
   deviation: null;

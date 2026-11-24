@@ -621,11 +621,15 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
       const currency = text(comparison.currency, "F5", `${path}.currency`);
       if (!["USDT", "UVT"].includes(currency)) invalid("F5", `${path}.currency`);
       if (comparison.available === false) {
-        if (!["F5_LAYER_RATIO_THEORY_UNAVAILABLE", "F5_LAYER_RATIO_LAYER_UNAVAILABLE", "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE"].includes(text(comparison.reason, "F5", `${path}.reason`))
+        if (!["F5_LAYER_RATIO_THEORY_UNAVAILABLE", "F5_LAYER_RATIO_LAYER_UNAVAILABLE", "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE", "F5_LAYER_RATIO_SNAPSHOT_UNAVAILABLE"].includes(text(comparison.reason, "F5", `${path}.reason`))
           || comparison.layers !== null || comparison.theoreticalPct !== null || comparison.deviation !== null) invalid("F5", path);
       } else if (comparison.available === true) {
-        if (currency !== "USDT" || comparison.reason !== null) invalid("F5", path);
-        array(comparison, "layers", "F5").forEach((value, layerIndex) => {
+        const basis = comparison.basis;
+        const legacyUSDT = currency === "USDT" && (basis === undefined || basis === "CURRENT_ACTIVE_UNILEVEL_USDT_RATE");
+        if ((!legacyUSDT && basis !== "ORDER_SETTLEMENT_SNAPSHOT") || comparison.reason !== null) invalid("F5", path);
+        const layers = array(comparison, "layers", "F5");
+        if (!layers.length) invalid("F5", `${path}.layers`);
+        layers.forEach((value, layerIndex) => {
           const layerPath = `${path}.layers[${layerIndex}]`;
           const layer = record(value, "F5", layerPath);
           positiveInteger(layer.layer, "F5", `${layerPath}.layer`);
