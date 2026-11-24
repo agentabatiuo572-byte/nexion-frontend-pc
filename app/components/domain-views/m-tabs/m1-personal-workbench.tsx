@@ -25,9 +25,12 @@ import type { SelfAvatarSnapshot } from "@/lib/admin/a1-client";
 import type { MCtx } from "./types";
 import { RecoveryPanel, recoveryTitle } from "../recovery-panel";
 import { PaymentSecurityBlock } from "@/app/components/payment-security/payment-security-block";
-import { BlockState, Button, Check, Conclusion, Drawer, Explain, Facts, Fact, Field, FilterBar, FilterField, Fold, Input, Modal, Notice, PageTabs, Panel, Pager, Select, StatBand, Stat, StatusTag, Table, Th, Td, Tr, Textarea, Timeline, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Check, Conclusion, Drawer, Explain, Facts, Fact, Field, FilterBar, FilterField, Fold, Input, Modal, Notice, PageTabs, Panel, Pager, Select, StatBand, Stat, StatusTag, Table, Th, Td, Tr, Textarea, Timeline, type StateTone } from "@/app/components/rd";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { paymentSecurityPorts } from "@/lib/admin/payment-password-client";
+import { COUNTS_FAILED_REASON, CountsFacts, INVITER_SCOPE_NOTE, InviterCell, InviterValue, type CountsView } from "@/app/components/invitation/invitation-view";
+import { drawerSupportProfile, inviterView, supportCountsView } from "@/app/components/invitation/wiring";
+import { fixtureCounts, fixtureInviter, inviteFixture } from "@/app/components/invitation/invite-fixture";
 
 type Permission = "agent" | "supervisor" | "superadmin";
 export type PersonalWorkbenchView = "dashboard" | "customers";
@@ -367,6 +370,20 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const actionFor = (row: SupportCustomer) => row.waitingReply ? "回复" : row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "联系维护" : "发起会话";
   const listState = rowsLoading ? <BlockState state="loading" title="正在加载客户列表…" /> : rowsError ? <BlockState state="error" title={rowsError} onRetry={() => setRowsRefresh(n => n + 1)} /> : !listRecords.length ? <BlockState state="empty" title="当前筛选下没有客户。可切换筛选或等待主管分配。" /> : null;
 
+  const fixture = inviteFixture(); // P2-b 删：夹具
+  // P2-b 接线（占位）：抽屉的邀请人、人数取客户资料的身份组和统计组（PRD §4.4）；能点时开获准客户的完整档案，不在本人范围时只留文字和问号（§4.6）。
+  const drawerInfo = detail ? drawerSupportProfile(detail.profile) : undefined;
+  const drawerRawInviter = drawerInfo?.identity.status === "READY" ? drawerInfo.identity.data?.inviter : undefined;
+  const drawerInviter = fixtureInviter(inviterView(drawerRawInviter, drawerRawInviter?.navigable && drawerRawInviter.customerId
+    ? { href: `/service/customers/${encodeURIComponent(drawerRawInviter.customerId)}` }
+    : drawerRawInviter ? { scopeNote: INVITER_SCOPE_NOTE } : undefined), fixture);
+  const drawerStats = drawerInfo?.statistics;
+  const drawerRetry = { onRetry: () => { if (detailId) void openDetail(detailId); }, retrying: detailLoading };
+  // 统计组没权限时不画这一组（ST-39）；整组读不出时只换人数这一行，邀请人和其他事实照常（07c）。
+  const drawerCountsRead: CountsView | undefined = !drawerStats || drawerStats.status === "FORBIDDEN" ? undefined
+    : drawerStats.status === "ERROR" ? { kind: "failed", reason: COUNTS_FAILED_REASON, ...drawerRetry }
+    : drawerStats.status === "READY" ? supportCountsView(drawerStats.data?.invitations) : { kind: "absent" };
+  const drawerCounts = drawerCountsRead || fixture?.counts ? fixtureCounts(drawerCountsRead ?? { kind: "absent" }, fixture, drawerRetry) : undefined;
   return <section className="m1-personal" data-proof="s5a-workbench">
     <RecoveryPanel title={recoveryTitle(pendingRecords.length)} explainLabel="结果未知怎么处理" explain="维护调整发出后没收到明确结果，可能已经生效。先查询原结果；查到前这位客户不能再调整维护。" items={pendingRecords.map(record => ({ key: record.commandKey, createdAt: record.createdAt,
       object: `${record.payload.enabled ? "恢复维护" : "不再维护"} · ${m1CustomerCode(record.payload.customerId)}`, tag: <StatusTag tone="warn">结果未知</StatusTag>,
@@ -415,14 +432,16 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         <FilterField label="客户" grow><Input aria-label="查询客户名称或用户编码" value={keywordDraft} onChange={e => setKeywordDraft(e.target.value)} placeholder="客户名称或用户编码" /></FilterField>
         <FilterField label="服务状态"><Select aria-label="筛选客户" value={filter} options={filters} onChange={value => { setFilter(value as SupportCustomerFilter); setPage(1); }} /></FilterField>
       </FilterBar>
-      {listState ?? <Table label="我的客户" className="m1-personal-table"><colgroup><col /><col /><col /><col /><col /><col /></colgroup><thead><Tr><Th>客户</Th><Th>上次活动</Th><Th>账户状态</Th><Th>维护状态</Th><Th>待办</Th><Th sticky="end">操作</Th></Tr></thead><tbody>{listRecords.map(row => <Tr key={row.customerId} selected={row.customerId === detailId}><Td><div className="m1-customer-name"><SupportAvatar name={customerName(row)} path={row.customerAvatarRef ?? undefined} /><div><Button variant="ghost" size="sm" onClick={() => void openDetail(row.customerId)}>{customerName(row)}</Button><span className="rd-note"><span className="m-user-code">{m1CustomerCode(row.customerId)}</span></span></div></div></Td><Td><span className="m1-nowrap" title={formatTime(row.lastEffectiveAt)} tabIndex={0}>{row.lastEffectiveAt ? formatTime(row.lastEffectiveAt) : "—"}</span></Td><Td><StatusTag tone={accountTone(row)}>{labelForAccount(row.accountState)}</StatusTag></Td><Td><StatusTag tone={maintenanceTone(row)}>{labelForMaintenance(row)}</StatusTag></Td><Td><span>{row.waitingReply ? "待回复" : ""}</span><span className="rd-note">{row.maintenanceEnabled && row.firstContact ? "首次待联系" : row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "待维护" : row.waitingReply ? "" : "—"}</span></Td><Td sticky="end"><Button size="sm" onClick={() => openChat(row.customerId, !row.waitingReply && row.maintenanceEnabled && row.maintenanceStatus === "DUE")}>{actionFor(row)}</Button></Td></Tr>)}</tbody></Table>}
+      {listState ?? <Table label="我的客户" className="m1-personal-table"><colgroup><col /><col /><col /><col /><col /><col /></colgroup><thead><Tr><Th>客户</Th><Th>邀请人<Explain label="邀请人的说明" content="邀请这位客户注册的人。人数在客户资料里看。" /></Th><Th>上次活动</Th><Th>账户 / 维护</Th><Th>待办</Th><Th sticky="end">操作</Th></Tr></thead><tbody>{listRecords.map(row => <Tr key={row.customerId} selected={row.customerId === detailId}><Td><div className="m1-customer-name"><SupportAvatar name={customerName(row)} path={row.customerAvatarRef ?? undefined} /><div><Button variant="ghost" size="sm" onClick={() => void openDetail(row.customerId)}>{customerName(row)}</Button><span className="rd-note"><span className="m-user-code">{m1CustomerCode(row.customerId)}</span></span></div></div></Td><Td><InviterCell view={fixtureInviter(inviterView(row.inviter), fixture)} /></Td><Td><span className="m1-nowrap" title={formatTime(row.lastEffectiveAt)} tabIndex={0}>{row.lastEffectiveAt ? formatTime(row.lastEffectiveAt) : "—"}</span></Td><Td><Cell main={<StatusTag tone={accountTone(row)}>{labelForAccount(row.accountState)}</StatusTag>} sub={<StatusTag tone={maintenanceTone(row)}>{labelForMaintenance(row)}</StatusTag>} /></Td><Td><span>{row.waitingReply ? "待回复" : ""}</span><span className="rd-note">{row.maintenanceEnabled && row.firstContact ? "首次待联系" : row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "待维护" : row.waitingReply ? "" : "—"}</span></Td><Td sticky="end"><Button size="sm" onClick={() => openChat(row.customerId, !row.waitingReply && row.maintenanceEnabled && row.maintenanceStatus === "DUE")}>{actionFor(row)}</Button></Td></Tr>)}</tbody></Table>}
       {rows && rows.total > 0 && <Pager label="我的客户" total={rows.total} page={page} pageSize={PAGE_SIZE} sizes={[PAGE_SIZE]} onPage={setPage} onPageSize={() => undefined} />}
     </Panel>}
     {bulkOpen && <SupportBulkComposer ctx={ctx} onClose={() => setBulkOpen(false)} />}
     {detailId && <Drawer open title="客户资料" sub={detail ? <>{customerName(detail)} · <span data-mono>{m1CustomerCode(detail.customerId)}</span></> : "正在读取"} busy={saving} onClose={closeDetail} footer={detail && <div className="m1-drawer-actions"><Button onClick={() => openChat(detail.customerId)}>联系客户</Button>{canMaintain && <Button disabledReason={maintenancePending ? "原操作结果未知，请先查询原结果。" : undefined} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setReasonLeft(false); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</Button>}{permission !== "agent" && detail.assignmentId && transferInScope !== false && <Button onClick={() => onTransfer?.(detail.customerId)}>正式转绑客户</Button>}</div>}>
       {detailLoading ? <BlockState state="loading" title="正在读取…" /> : detailError ? <BlockState state="error" title={detailError} onRetry={() => void openDetail(detailId)} /> : detail && <>
         <div className="m1-customer-name"><SupportAvatar name={customerName(detail)} path={detail.customerAvatarRef ?? undefined} /><strong>{customerName(detail)}</strong></div>
-        <Facts><Fact k="当前专属客服">{detail.agentName ?? "资料未知"}</Fact><Fact k="用户编码"><span data-mono>{m1CustomerCode(detail.customerId)}</span></Fact><Fact k="账户状态"><StatusTag tone={accountTone(detail)}>{labelForAccount(detail.accountState)}</StatusTag></Fact><Fact k="维护状态"><StatusTag tone={maintenanceTone(detail)}>{labelForMaintenance(detail)}</StatusTag></Fact><Fact k="上次账户活动">{formatTime(detail.lastEffectiveAt)}</Fact><Fact k="下次维护">{formatTime(detail.nextMaintenanceAt)}</Fact></Facts>
+        <Facts><Fact k="当前专属客服">{detail.agentName ?? "资料未知"}</Fact><Fact k="用户编码"><span data-mono>{m1CustomerCode(detail.customerId)}</span></Fact>{drawerInviter && <Fact k="邀请人"><InviterValue view={drawerInviter} /></Fact>}<Fact k="账户状态"><StatusTag tone={accountTone(detail)}>{labelForAccount(detail.accountState)}</StatusTag></Fact><Fact k="维护状态"><StatusTag tone={maintenanceTone(detail)}>{labelForMaintenance(detail)}</StatusTag></Fact><Fact k="上次账户活动">{formatTime(detail.lastEffectiveAt)}</Fact><Fact k="下次维护">{formatTime(detail.nextMaintenanceAt)}</Fact></Facts>
+        {/* 四个人数单独一组排在事实下面（DP-16，07a）。 */}
+        {drawerCounts && <CountsFacts view={drawerCounts} />}
         {paymentSecurityPort && <PaymentSecurityBlock key={`${sessionKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={customerName(detail)} canRelease={Boolean(session?.authorities.includes("user_c5_payment_password_release"))} retryMissingRelease />}
         {maintenancePending && <Notice tone="warn" action={<Button disabled={saving} onClick={() => void checkMaintenance()}>查询原结果</Button>}>这位客户有一次维护操作结果未知，暂时不能再调整；原客户和理由已保留。</Notice>}
         {detail.accountState === "UNKNOWN" && <Notice tone="warn">账户活动数据不完整，无法判断沉睡或活跃。</Notice>}

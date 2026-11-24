@@ -133,3 +133,13 @@
 .rd-page .m3-service-profile .cvp-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); justify-content: start; gap: var(--rd-space-3); padding: var(--rd-space-1) 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
 .rd-page .m3-service-profile .cvp-row .k { color: var(--rd-text-3); white-space: nowrap; }
 .rd-page .m3-service-profile .m-admin-muted { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+
+/* 「首充与邀请」这一组的名称列按最长的「团队奖励范围内（人）」连问号一行放下定宽（DESIGN.md 名称列按组定宽，PR2 只放宽这一组）；其余组仍是 120。 */
+.rd-page :is(.m3-service-profile, .m3-customer-sidebar) .m3-invite-group .cvp-row { grid-template-columns: 160px minmax(0, 1fr); }
+.m3-invite-group .cvp-row .k .rd-explain { margin-left: 4px; vertical-align: -2px; }
+.m3-invite-group > .rd-notice { margin: var(--rd-space-2) 0; }
+/* 右栏窄：提示在标点处折行、各行拉平，不把「联系」拆开，最后一行不只剩两三个字。 */
+.m3-invite-group .rd-notice-text { text-wrap: balance; word-break: keep-all; overflow-wrap: anywhere; }
+.m3-invite-failed-reason { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--rd-text-2); }
+/* 包了一层后，弹窗和抽屉里的行距跟同一个框里其他组一样（rd 的 .rd-fold-body > :not(:first-child) 只排直接子块）。 */
+:is(.rd-modal-body, .rd-drawer-body) .m3-invite-group > :not(:first-child) { margin-top: var(--rd-space-3); }

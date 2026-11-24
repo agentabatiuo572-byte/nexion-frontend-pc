@@ -68,6 +68,9 @@ import {
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
 import { RecoveryPanel, SETTLED_REJECTED, receiptExplain, receiptFact, receiptRejected, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
+import { COUNT_LABELS, COUNTS_RULE, CountsExplain, CountsNotice, INVITER_SCOPE_NOTE, InviterValue, countText, type CountsView } from "@/app/components/invitation/invitation-view";
+import { inviterView, referralCountsView } from "@/app/components/invitation/wiring";
+import { fixtureCounts, fixtureInviter, inviteFixture } from "@/app/components/invitation/invite-fixture";
 
 /**
  * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、回收并记录置换和回收）共用一张表，槽位分命名空间。
@@ -557,7 +560,7 @@ function RecordTable({ label, rows, columns, empty = "暂无记录", selected, o
 }
 
 /** 折叠组里的一小块：缺的不显示，读取失败只替换这一块（C1-V02、C1-S04）。同组块头一个样子，都是收起的一行（重复）；里面有事时摘要写清是哪件事（DP-04）。 */
-function Block({ id, title, sub, explain, section, actions, failure, sectionRetry, issue, issueTone = "warn", summary, disclosure, children }: {
+function Block({ id, title, sub, explain, section, actions, failure, sectionRetry, issue, issueTone = "warn", summary, disclosure, loading, forceFailed, children }: {
   id?: string;
   title: string;
   sub?: ReactNode;
@@ -573,19 +576,25 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
   /** 不是列表的小块：摘要写结论，自己管开合。 */
   summary?: ReactNode;
   disclosure?: { open: boolean; onOpenChange: (open: boolean) => void; summary: ReactNode };
+  /** 整块还在读：一行占位，不显示数也不写 0（ST-31）。传占位的文字，比如「正在加载推荐团队…」。 */
+  loading?: string;
+  /** 这块里的数据整段读不出（区块读出来了、里面的人数读不出）：和区块读取失败一样换成一行错误提示（PRD §5）。 */
+  forceFailed?: boolean;
   children: ReactNode;
 }) {
   if (!section) return null;
-  const failed = !!failure || sectionFailed(section);
+  const failed = !!failure || !!forceFailed || sectionFailed(section);
   const body = failure
     ? <BlockState state="error" compact title={failure} />
-    : sectionFailed(section)
+    : forceFailed || sectionFailed(section)
       ? <BlockState state="error" compact title={`${title}加载失败`} detail={sectionRetry?.detail}
           onRetry={sectionRetry?.onRetry ?? (() => window.location.reload())} retrying={sectionRetry?.retrying} />
-      : <div className="rd-detail-block">{children}</div>;
+      : loading
+        ? <BlockState state="loading" compact title={loading} />
+        : <div className="rd-detail-block">{children}</div>;
   return (
     <div id={id} className="rd-detail-block">
-      <Fold inset title={title} explain={explain} actions={actions} alert={failed || !!issue} alertTone={failed ? "danger" : issueTone} {...disclosure} summary={failed ? "加载失败" : issue ?? sub ?? disclosure?.summary ?? summary}>{body}</Fold>
+      <Fold inset title={title} explain={explain} actions={actions} alert={failed || !!issue} alertTone={failed ? "danger" : issueTone} {...disclosure} summary={failed ? "加载失败" : loading ? "正在加载…" : issue ?? sub ?? disclosure?.summary ?? summary}>{body}</Fold>
     </div>
   );
 }
@@ -1229,7 +1238,21 @@ export default function UserDetailPage() {
   const fundsAlert = withdrawalExceptions + withdrawalsWaiting > 0;
   const devicesFailed = failedSection(detail?.devices, detail?.earnings) || ledgerUnread && !!detail?.earnings;
   const devicesAlert = deviceExceptions > 0;
-  const referralFailed = sectionFailed(detail?.referral);
+  const fixture = inviteFixture(); // P2-b 删：夹具
+  // 一页只用一份人数状态：关键数字、推荐团队的数、团队与互动的摘要都读它，不各读各的字段（PRD §4.2）。接线规则见 invitation/wiring.ts（P2-b）。
+  const counts: CountsView = fixtureCounts(referralCountsView(detail?.referral), fixture, { onRetry: () => void retryReferral(), retrying: referralRetrying || loading || actionPending !== null });
+  // 数据异常、没读全是要人注意的事：团队与互动和推荐团队默认展开，原因常显（DP-03、DP-04）。
+  const countsAlert = counts.kind === "anomaly" || counts.kind === "partial";
+  const referralFailed = sectionFailed(detail?.referral) || counts.kind === "failed";
+  // P2-b 接线（占位）：能点时后台详情开这个用户的详情页，客服完整档案开获准的客户档案；navigable 之外还要判目标页可达（PRD §4.5）。
+  const rawInviter = detail?.profile?.inviter;
+  const inviterCustomerId = (rawInviter as { customerId?: string | null } | undefined)?.customerId;
+  const inviterLink = rawInviter?.navigable
+    ? supportScope
+      ? inviterCustomerId ? { href: `/service/customers/${encodeURIComponent(inviterCustomerId)}` } : undefined
+      : rawInviter.userNo ? { href: `/users/search/${encodeURIComponent(rawInviter.userNo)}` } : undefined
+    : supportScope ? { scopeNote: INVITER_SCOPE_NOTE } : undefined;
+  const inviter = fixtureInviter(inviterView(rawInviter, inviterLink), fixture);
   const teamFailed = referralFailed || failedSection(detail?.engagement, detail?.vrank);
   const recordsFailed = failedSection(detail?.notifications, detail?.commerce);
   const failedPushCount = asNumber(detail?.notifications?.failedPushCount);
@@ -1263,7 +1286,7 @@ export default function UserDetailPage() {
   });
   // 多个分区可以同时露出异常摘要，记录表只展开一张（DP-67）。
   const visibleRecordList = openRecordList === undefined
-    ? unfinishedRevokes.length > 0 ? "payment" : fundsAlert ? "withdrawal" : devicesAlert ? "device" : orderExceptions > 0 ? "order" : failedPushCount > 0 ? "notification" : null
+    ? unfinishedRevokes.length > 0 ? "payment" : fundsAlert ? "withdrawal" : devicesAlert ? "device" : orderExceptions > 0 ? "order" : failedPushCount > 0 ? "notification" : countsAlert ? "member" : null
     : openRecordList;
   const listProps = (kind: RecordKind) => ({ disclosure: {
     open: visibleRecordList === kind,
@@ -1337,7 +1360,7 @@ export default function UserDetailPage() {
       <p>最近一笔：按创建时间取最新的一笔提现，各种状态都算，不受下面列表条数限制。</p>
     </> },
     detail.devices && { label: "设备数", value: numberLabel(summary.deviceCount), unit: "台", tone: "role-2" as const, icon: Cpu, group: "devices", anchor: "hub-devices", explain: "这个用户的全部设备记录，含已回收和已停用的，最多读 200 台。现在还能运行的看下面的活跃数。" },
-    detail.referral && { label: "团队规模", value: numberLabel(referralFailed ? null : summary.teamSize), unit: "人", tone: "role-3" as const, icon: UsersRound, group: "team", anchor: "hub-referral" },
+    detail.referral && { label: COUNT_LABELS.total, value: numberLabel(counts.kind === "ready" ? counts.total : null), unit: "人", tone: "role-3" as const, icon: UsersRound, group: "team", anchor: "hub-referral", explain: COUNTS_RULE },
   ].filter((value) => !!value).slice(0, 4) as { label: string; value: string; unit: string; tone: "role-1" | "role-2" | "role-3" | "role-4"; icon: typeof Wallet; group: string; anchor: string; explain?: ReactNode; sub?: ReactNode }[];
 
   const inKpi = (label: string) => kpis.some((kpi) => kpi.label === label);
@@ -1595,9 +1618,12 @@ export default function UserDetailPage() {
         detail.devices && `在线 ${numberLabel(detail.devices.onlineCount)} / 活跃 ${numberLabel(detail.devices.activeCount)}`,
         detail.earnings && `收益合计 ${amountText(detail.earnings.totalUsdt)}`,
       ]);
-  const teamText = referralFailed ? "推荐团队加载失败" : teamFailed ? "有区块加载失败" : joined([
-    detail.referral && !inKpi("团队规模") && `团队 ${numberLabel(detail.referral.teamSize)} 人`,
-    detail.referral && `直接邀请 ${numberLabel(detail.referral.directCount)} 人`,
+  // 收起时的摘要按本人的数写；人数读不全时开头换成对应的话，不写旧的数（DESIGN.md 团队与互动折叠摘要）。
+  const countsHead = counts.kind === "anomaly" ? "人数暂不显示" : counts.kind === "partial" ? "人数没有读全" : null;
+  const countsPhrase = (key: "total" | "direct") => `${COUNT_LABELS[key]} ${counts.kind === "ready" ? `${counts[key]} 人` : "—"}`;
+  const teamText = referralFailed ? "推荐团队加载失败" : teamFailed ? "有区块加载失败" : counts.kind === "loading" ? "正在加载…" : joined([
+    detail.referral && (countsHead ?? (!inKpi(COUNT_LABELS.total) && countsPhrase("total"))),
+    detail.referral && !countsHead && countsPhrase("direct"),
     detail.vrank && `团队等级 ${asText(detail.vrank.currentRank)}`,
   ]);
   const recordsText = recordsFailed
@@ -1630,6 +1656,8 @@ export default function UserDetailPage() {
         level={`用户分层 ${asText(profile.userLevel)} · 团队等级 ${asText(profile.vRank)}`}
         facts={[
           { label: "用户编码", value: <span data-mono>{userNo}</span> },
+          // 邀请人只在页头写一次，推荐团队里不再写（PRD §4.2）。旧后端没有这个字段时整项不显示，不当成「无邀请人」。
+          ...(inviter ? [{ label: "邀请人", value: <InviterValue view={inviter} /> }] : []),
           { label: "手机", value: asText(profile.phoneMasked) },
           { label: "注册时间", value: shortTime(profile.registeredAt) },
           { label: "最近登录", value: shortTime(profile.lastLoginAt) },
@@ -1765,15 +1793,20 @@ export default function UserDetailPage() {
         </div>}
 
         {teamPresent && <div id={nav.anchor("team")}>
-          <Fold title="团队与互动" icon={Network} tone="role-3" summary={foldSummary("team", teamFailed, teamText)} alertTone="danger" {...foldProps("team", teamFailed)}>
-            <Block id="hub-referral" title="推荐团队" {...listProps("member")} section={detail.referral} sub="最多 20 条"
+          <Fold title="团队与互动" icon={Network} tone="role-3" summary={foldSummary("team", teamFailed || countsAlert, teamText)} alertTone={teamFailed ? "danger" : "warn"} {...foldProps("team", teamFailed || countsAlert)}>
+            <Block id="hub-referral" title="推荐团队" {...listProps("member")} section={detail.referral} sub="成员最多 20 位"
+              forceFailed={counts.kind === "failed"} loading={counts.kind === "loading" ? "正在加载推荐团队…" : undefined}
               sectionRetry={{ detail: referralError ?? displayAdminReadError(undefined), onRetry: () => void retryReferral(), retrying: referralRetrying || loading || actionPending !== null }}
-              explain="成员最多列 20 条，不是完整名单。团队规模、直接邀请和团队订单额是另外算的总数，不是这些行相加。">
+              explain="下面最多列 20 位成员，是注册时记下的样本，不是完整名单；上面的人数另算，对不上是正常的。">
+              {/* 四个人数加团队订单额，按同页列线铺开（PRD §4.2）；全部团队成员已是关键数字时不重复（DP-61）。口径只在「团队奖励范围内」旁的问号里。 */}
               <Values rows={[
-                ...(inKpi("团队规模") ? [] : [["团队规模", `${numberLabel(detail.referral?.teamSize)} 人`] as const]),
-                ["直接邀请", `${numberLabel(detail.referral?.directCount)} 人`],
+                [COUNT_LABELS.direct, countText(counts, "direct")],
+                [<>{COUNT_LABELS.within}<CountsExplain /></>, countText(counts, "within")],
+                [COUNT_LABELS.beyond, countText(counts, "beyond")],
+                ...(inKpi(COUNT_LABELS.total) ? [] : [[COUNT_LABELS.total, countText(counts, "total")] as const]),
                 ["团队订单额", amountText(detail.referral?.teamVolumeUsd)],
               ]} />
+              <CountsNotice view={counts} />
               <RecordTable label="推荐团队" rows={members} columns={MEMBER_COLUMNS} {...recordProps("member")} />
             </Block>
             <Block id="hub-engagement" title="互动与参与" {...listProps("engagement")} section={detail.engagement ? { sourceStatus: asText(detail.engagement.sourceStatus, "READY") } : undefined}>
@@ -1784,7 +1817,7 @@ export default function UserDetailPage() {
                 ["用户分层", asText(detail.vrank?.userLevel)],
                 ["团队等级", asText(detail.vrank?.currentRank)],
                 ...(detail.referral ? [] : [
-                  ["团队规模", `${numberLabel(detail.vrank?.teamSize)} 人`] as const,
+                  [COUNT_LABELS.total, `${numberLabel(detail.vrank?.teamSize)} 人`] as const,
                   ["直接邀请", `${numberLabel(detail.vrank?.directCount)} 人`] as const,
                   ["团队订单额", amountText(detail.vrank?.teamVolumeUsd)] as const,
                 ]),
