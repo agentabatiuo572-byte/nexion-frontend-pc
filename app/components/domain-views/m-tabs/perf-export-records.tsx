@@ -3,9 +3,11 @@
  * 客服工作台「导出记录」页签（画板 6a–6l，审批入口按已定的甲）：我的申请、待我审批、申请详情抽屉、批准 / 驳回 / 撤回确认框、
  * 下载失败后重新获取、批准结果未知的待确认。读写都走 PerfExportPorts。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { BlockState, Button, Cell, Decision, Drawer, Fact, Facts, Fold, Notice, Pager, Panel, Segments, StatusTag, Steps, Table, Td, Th, Tr } from "@/app/components/rd";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
+import { RecoveryPanel, SettledLine, TechInfo, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ExportAuditLink, ExportColumnsFold } from "./perf-export";
 import { EXPORT_LABEL, ExportOutcomeUnknownError, exportStatus, type DecisionLookup, type ExportTask, type PendingDecision, type PerfExportPorts } from "./perf-view";
@@ -20,7 +22,8 @@ const VERB: Record<PendingDecision["decision"], string> = { APPROVE: "批准", R
 export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
   const persona = ports.persona;
   const zone = businessZone().label;
-  const [view, setView] = useState<View>(persona.views[0]);
+  // 两个视图都有时进来默认在「待我审批」（画布 6c）。
+  const [view, setView] = useState<View>(persona.views.includes("APPROVALS") ? "APPROVALS" : persona.views[0]);
   const [rows, setRows] = useState<ExportTask[] | null>(null);
   const [readError, setReadError] = useState(false);
   const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(10), [total, setTotal] = useState(0);
@@ -34,6 +37,11 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
   const [pending, setPending] = useState<PendingDecision[]>(() => ports.pendingDecisions());
   const [lookup, setLookup] = useState<DecisionLookup | "loading" | null>(null);
   const [downloadFailed, setDownloadFailed] = useState<string | null>(null);
+  // 待确认面板：本标签页存着的原操作（提交导出、批准、驳回、撤回），审批成功但回包丢了、任务已不在列表里时也能从这里查。
+  const [pendingSubmit, setPendingSubmit] = useState(() => ports.pendingSubmit());
+  const [answers, setAnswers] = useState<Record<string, { tag: ReactNode; line: string }>>({});
+  const [querying, setQuerying] = useState<string | null>(null);
+  const [settled, setSettled] = useState<{ key: string; label: string; text: string; taskId?: string; mine?: boolean }[]>([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -71,11 +79,63 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
       if (found.kind === "cleared") { setRecoveredReason(p); setPending(ports.pendingDecisions()); setTaskRefresh(value => value + 1); }
     }, () => setLookup({ kind: "failed", text: "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。" }));
   };
+  const stillUnknown = (key: string, line: string) => setAnswers(map => ({ ...map, [key]: { tag: <StatusTag tone="warn">{line === RETRY_EXPIRED_TEXT ? "已过期" : "仍未知"}</StatusTag>, line } }));
+  const queryOriginal = (p: PendingDecision) => {
+    const key = p.operationId, label = `${VERB[p.decision]}导出申请 ${p.taskId}`;
+    setQuerying(key);
+    ports.lookupDecision(p).then(found => {
+      if (found.kind === "matched") {
+        setSettled(list => [{ key, label, text: `已查到这次${VERB[p.decision]}：这条申请现在是「${exportStatus(found.task).label}」。`, taskId: p.taskId }, ...list]);
+        setRefresh(value => value + 1);
+      } else if (found.kind === "cleared") {
+        // 确认没执行：解锁，原理由留给重新确认时用。
+        setRecoveredReason(p);
+        setSettled(list => [{ key, label, text: found.text, taskId: p.taskId }, ...list]);
+        setRefresh(value => value + 1);
+      } else stillUnknown(key, found.text);
+      setPending(ports.pendingDecisions());
+      if (openId === p.taskId) setTaskRefresh(value => value + 1);
+    }, () => stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。")).finally(() => setQuerying(null));
+  };
+  const querySubmit = () => {
+    setQuerying("submit");
+    ports.lookupSubmit().then(found => {
+      if (found.kind === "matched") {
+        const ready = found.rows.filter(row => row.state === "READY").map(row => EXPORT_LABEL[row.type]), waiting = found.rows.filter(row => row.state !== "READY").map(row => EXPORT_LABEL[row.type]);
+        setSettled(list => [{ key: "submit", label: "提交导出", text: `已查到这次提交：${[ready.length ? `${ready.join("、")}可下载` : "", waiting.length ? `${waiting.join("、")}待审批` : ""].filter(Boolean).join("，")}。`, mine: true }, ...list]);
+        setRefresh(value => value + 1);
+      } else if (found.kind === "cleared") setSettled(list => [{ key: "submit", label: "提交导出", text: "这次提交没有执行，可以重新导出。", mine: true }, ...list]);
+      else stillUnknown("submit", found.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。");
+      setPendingSubmit(ports.pendingSubmit());
+    }, () => stillUnknown("submit", "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。")).finally(() => setQuerying(null));
+  };
+  const queryButton = (key: string, onClick: () => void) => <Button size="sm" loading={querying === key} loadingText="正在查询…" disabledReason={querying && querying !== key ? "等上一条查完" : undefined} onClick={onClick}>查询原结果</Button>;
+  const unknownTag = <StatusTag tone="warn">结果未知</StatusTag>;
+  const recovery: RecoveryItem[] = [
+    ...(pendingSubmit ? [{
+      key: "submit", object: `提交导出 · ${pendingSubmit.query.month} · ${pendingSubmit.query.types.map(type => EXPORT_LABEL[type]).join("、")}`,
+      tag: unknownTag, line: "发出后没收到结果；先查询原结果，不要再点提交。", result: answers.submit,
+      actions: queryButton("submit", querySubmit), detail: <p>理由：{pendingSubmit.reason}</p>,
+    }] : []),
+    ...pending.map(p => ({
+      key: p.operationId, object: `${VERB[p.decision]}导出申请 ${p.taskId}`,
+      tag: unknownTag, line: `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`, result: answers[p.operationId],
+      actions: queryButton(p.operationId, () => queryOriginal(p)), detail: <p>理由：{p.reason}</p>, tech: <TechInfo commandKey={p.operationId} />,
+    })),
+  ];
+  const anyExpired = Object.values(answers).some(answer => answer.line === RETRY_EXPIRED_TEXT);
   const single = persona.views.length === 1;
   const sub = !rows ? undefined : view === "MINE" ? `本人提交的 · ${total} 条` : single ? `待我审批 · ${total} 条` : `共 ${total} 条`;
   const open = detail?.taskId === openId ? detail : null;
 
   return <>
+    <RecoveryPanel title={recoveryTitle(recovery.length)} label="结果未知的导出操作" items={recovery}
+      explain="提交导出、批准、驳回、撤回没收到结果时，原操作和理由存在这个浏览器标签页里。先按原操作查询，查到之前不要重做；关掉标签页这些记录就没了。"
+      foot={anyExpired ? <ExportAuditLink /> : undefined} />
+    {settled.map(row => <SettledLine key={row.key} label={row.label} text={row.text}
+      action={row.taskId ? <Button size="sm" variant="ghost" onClick={() => setOpenId(row.taskId!)}>查看</Button>
+        : row.mine && persona.views.includes("MINE") ? <Button size="sm" variant="ghost" onClick={() => { setOpenId(null); setPage(1); setView("MINE"); setRefresh(value => value + 1); }}>看我的申请</Button> : undefined}
+      onDismiss={() => setSettled(list => list.filter(item => item.key !== row.key))} />)}
     <Panel title="导出记录" sub={sub} explain="汇总提交后就能下载；明细要另一位有审批权的管理员批准后才生成。下载链接每次获取后 24 小时内有效。"
       actions={!single && <Segments label="导出记录视图" value={view} items={[{ value: "MINE", label: "我的申请" }, { value: "APPROVALS", label: "待我审批" }]} onChange={next => { setOpenId(null); setPage(1); setView(next); }} />}>
       {readError ? <BlockState state="error" title="导出记录加载失败" onRetry={() => setRefresh(value => value + 1)} />
@@ -124,6 +184,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
           // 批准、驳回、撤回没收到结果：关框，抽屉顶上换成待确认条，只给「查询原操作」（OP-91–96）。
           if (!(error instanceof ExportOutcomeUnknownError)) throw error;
           setPending(ports.pendingDecisions());
+          setAnswers(map => Object.fromEntries(Object.entries(map).filter(([key]) => ports.pendingDecisions().some(p => p.operationId === key) || key === "submit")));
         }
         setConfirm(null);
       }} />}
@@ -191,7 +252,7 @@ function TaskDrawer({ task, view, zone, rows, pending, lookup, downloadFailed, o
         <Fact k="提交时间">{formatBusinessTimeCompact(task.requestedAt, "—")}（{zone}）</Fact>
         <Fact k="范围、月份和行数">—</Fact>
       </> : <>
-        {!task.mine && <Fact k="申请人">{task.requester}（{task.requesterRole}）</Fact>}
+        {!task.mine && <Fact k="申请人">{task.requester}{task.requesterRole && `（${task.requesterRole}）`}</Fact>}
         {task.state === "APPROVED" || (task.state === "READY" && DETAIL(task)) ? <><Fact k="谁批的">{task.decidedBy} · {task.decidedAt}</Fact><Fact k="批准理由">{task.decisionReason}</Fact></> : null}
         {task.state === "REJECTED" && <Fact k="驳回理由">{task.decisionReason}</Fact>}
         {task.state === "READY" && <><Fact k="文件">{label}（{task.rows ?? "—"} 行，{task.columns.total} 列，CSV）</Fact><Fact k="下载链接">每次获取后 24 小时内有效</Fact></>}
@@ -216,7 +277,7 @@ function TaskConfirm({ confirm, zone, initialReason, onClose, onConfirm }: { con
   const label = EXPORT_LABEL[task.type];
   const month = task.month ? `${task.month}（截至 ${task.asOf ? formatBusinessTimeCompact(task.asOf, "—") : "—"}，${zone}）` : "—";
   const summary = <Facts>
-    <Fact k="申请人">{task.requester}（{task.requesterRole}）</Fact>
+    <Fact k="申请人">{task.requester}{task.requesterRole && `（${task.requesterRole}）`}</Fact>
     <Fact k="范围">{task.scope ?? "—"}</Fact>
     <Fact k="月份">{month}</Fact>
     <Fact k="内容">{label}（{task.rows ?? "—"} 行，{task.columns.total} 列）</Fact>

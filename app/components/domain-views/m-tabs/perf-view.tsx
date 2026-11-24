@@ -80,6 +80,8 @@ export type AnalyticsPerf = {
   customers: Record<string, PerfValue>;
   /** 客服表：这位客服现在的客户的累计业绩额。 */
   agents: Record<string, PerfValue>;
+  /** 「查看统计」抽屉：这位客服所选月份的期间业绩额（按发生时归属）。接口给出按客服的期间业绩额后由 analyticsPerf 填；缺时抽屉写「—」和原因。 */
+  agentPeriods?: Record<string, PerfValue>;
   /** 组卡：这个月按发生时所在组算的业绩额，和组里现在的客户的累计。 */
   groups: Record<string, { period: PerfValue; current: PerfValue }>;
   /** 经营概况：所选范围这个月的三项合计和现在的客户的累计。 */

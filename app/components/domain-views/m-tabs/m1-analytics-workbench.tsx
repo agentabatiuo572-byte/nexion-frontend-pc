@@ -238,6 +238,9 @@ const PERF_SINCE = "自 2026-11-20 起";
 export function AnalyticsTable({ data, currency, drill, openProfile, session, perf, month }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void; session?: CustomerSessionStart; perf: AnalyticsPerf; month: string }) {
   const [agentId, setAgentId] = useState<string | null>(null);
   const agent = data.view === "AGENTS" && agentId ? data.records.find(row => row.accountId === agentId) : undefined;
+  // 这位客服所选月份的期间业绩额：有就写数，没有写「—」和原因（新版接口读成但没给这一项、升级中、旧版接口各一种说法）。
+  const agentPeriod: PerfValue | undefined = agent && (perf.agentPeriods?.[agent.accountId]
+    ?? (data.generation === "READY" ? { state: "unavailable", reason: "暂时无法确认" } : data.generation === "UPGRADING" ? { state: "unavailable", reason: "数据正在升级" } : PERF_UNAVAILABLE_VALUE));
   if (!data.records.length) return <BlockState state="empty" title={data.total === null ? "还没数到记录，总数还在统计。" : "当前筛选下没有记录。"} />;
   const name = (row: Pick<SupportAnalyticsCustomer, "nickname" | "customerNo" | "customerId">) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
   const unit = nexGridBrandText(currency);
@@ -259,6 +262,7 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
       <Fact k="当前组">{data.scopeSummary.groups.find(g => g.groupId === agent.account.groupId)?.name || "待分组"}</Fact>
       <Fact k="账号"><StatusTag tone={agent.account.accountState === "ENABLED" ? "ok" : "done"}>{agent.account.accountState === "ENABLED" ? "已启用" : agent.account.accountState === "DISABLED" ? "已停用" : "未知"}</StatusTag></Fact>
       <Fact k="资格">{agent.account.serviceQualification === "ENABLED" ? "专属客服资格有效" : agent.account.serviceQualification === "DISABLED" ? "资格暂停" : agent.account.serviceQualification === "REMOVED" ? "资格已移除" : "资格未知"}</Fact>
+      {agentPeriod && <Fact k="期间业绩额" unit={agentPeriod.state === "complete" ? "USDT" : undefined}>{perfText(agentPeriod)}<span className="m1-fact-reason">{agentPeriod.state === "complete" ? month : perfNote(agentPeriod)}</span></Fact>}
       <Fact k="已首充"><CountValue count={agent.current.firstConfirmed} label="已首充客户" onClick={() => drill({ view: "CUSTOMERS", agentId: agent.accountId, category: "BOUND", firstState: "CONFIRMED" })} /></Fact>
       <Fact k="持有设备"><CountValue count={agent.current.devices.held} label="当前设备" onClick={() => drill({ view: "DEVICES", agentId: agent.accountId, category: "BOUND", basis: "CURRENT_ASSET" })} /></Fact>
       <Fact k="客户累计充值" unit={unit}><MoneyValue money={agent.current.ownLifetime.find(x => x.currency === currency)?.deposits} label={`客户累计充值 ${unit}`} onClick={() => drill({ view: "FINANCE", agentId: agent.accountId, category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY" })} /></Fact>

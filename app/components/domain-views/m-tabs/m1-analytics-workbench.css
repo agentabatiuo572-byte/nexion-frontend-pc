@@ -195,3 +195,6 @@
 .m1-perf-count { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
 .m1-perf-panel .rd-fold { margin-top: var(--rd-space-4); }
 .m1-perf-panel .m1-perf-break { margin-top: 0; }
+
+/* 「查看统计」里期间业绩额没有数时，「—」后面跟一句弱字原因。 */
+.m1-fact-reason { margin-left: var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
