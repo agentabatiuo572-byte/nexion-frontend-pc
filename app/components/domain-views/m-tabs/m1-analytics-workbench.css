@@ -147,3 +147,47 @@
    (SupportAvatar sets display inline, so the narrow rule needs to win over it). */
 .sa-metrics>div>span:first-child,.sa-inline-metrics>div>span:first-child,.sa-coverage>div>span:first-child,.sa-personal-primary-metrics>div>span:first-child{text-wrap:balance}
 @media(max-width:1100px){.m1-customer-table .support-avatar,.m1-agent-table .support-avatar{display:none!important}.m1-analytics-table .sa-identity{gap:0}}
+
+/* 业绩额（客户入金 − 客户提现）。我的数据最上面的「期间业绩」：统计格后面是入金构成（2）和提现构成（3）两块。 */
+.m1-perf-actions { display: flex; align-items: center; gap: var(--rd-space-2); }
+.m1-perf-break { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--rd-space-6); margin-top: var(--rd-space-4); }
+.m1-perf-break > .rd-panel { min-width: 0; }
+.m1-perf-table :is(th, td):first-child { padding-left: 0; }
+.m1-perf-table :is(th, td):last-child { padding-right: 0; }
+.m1-perf-sub-row { padding-left: var(--rd-space-4); color: var(--rd-text-3); }
+.m1-perf-pop-rows, .m3-perf-rows { display: grid; gap: var(--rd-space-1); margin: var(--rd-space-2) 0 0; padding-top: var(--rd-space-2); border-top: 1px solid var(--rd-line); }
+.m1-perf-pop-rows > div, .m3-perf-rows > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--rd-space-3); }
+.m1-perf-pop-rows dt, .m3-perf-rows dt { color: var(--rd-text-3); white-space: nowrap; }
+.m1-perf-pop-rows dd, .m3-perf-rows dd { margin: 0; }
+.m1-perf-pager { margin-left: auto; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
+.m1-perf-events th:nth-child(1) { width: 20%; }
+.m1-perf-events th:nth-child(2) { width: 12%; }
+.m1-perf-events th:nth-child(4), .m1-perf-events th:nth-child(5) { width: 14%; }
+@container (max-width: 900px) { .m1-perf-break { grid-template-columns: minmax(0, 1fr); } }
+/* 表头两行：名称（带问号）在上，口径和单位在下。 */
+.m1-th-stack { display: inline-flex; flex-direction: column; align-items: flex-end; white-space: nowrap; }
+.m1-th-stack small { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); }
+.m1-th-title, .m1-field-label { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+.m1-bucket-name { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+/* 组卡和「不在负责组里的业绩」两类按卡数平分一行（canvas 3a）。 */
+.sa-group-comparison > ul { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+/* 客服表 5 列：客服、当前绑定、活跃、当前客户累计业绩额（或持有设备）、操作。 */
+.m1-agent-table col:nth-child(1) { width: 26%; }
+.m1-agent-table col:nth-child(2), .m1-agent-table col:nth-child(3) { width: 14%; }
+.m1-agent-table col:nth-child(4) { width: 28%; }
+.m1-agent-table col:nth-child(5) { width: 18%; }
+
+/* 期间业绩：业绩额的名称行写公式，一行写完；第一格按内容宽。 */
+.m1-perf-panel .rd-stat-label { white-space: nowrap; }
+.m1-perf-break .rd-table-scroll { background: none; }
+/* 客户表没有邀请人列时是 5 列：客户、首充、累计业绩额、服务状态 / 最近活动、操作。 */
+.m1-customer-table-5 col:nth-child(1) { width: 26%; }
+.m1-customer-table-5 col:nth-child(2) { width: 14%; }
+.m1-customer-table-5 col:nth-child(3) { width: 16%; }
+.m1-customer-table-5 col:nth-child(4) { width: 28%; }
+.m1-customer-table-5 col:nth-child(5) { width: 16%; }
+
+/* 业绩额明细抽屉底栏：关闭在左，翻页在右。 */
+.m1-perf-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-3); width: 100%; }
+.m1-perf-foot .m1-perf-pager { display: inline-flex; align-items: center; gap: var(--rd-space-2); margin-left: 0; }
+.m1-perf-inline { display: inline-flex; align-items: center; gap: var(--rd-space-1); }

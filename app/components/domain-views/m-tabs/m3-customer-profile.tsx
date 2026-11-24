@@ -7,6 +7,9 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, type SupportProfile, type SupportGroup, type SupportFinanceFieldStatus } from "@/lib/admin/m-support-enhancements";
+import { perfText } from "./perf-view";
+import { profilePerf } from "./perf-wiring";
+import { perfFixture, profileFixture, profilePerfFixture } from "./perf-fixture"; // 接线删：夹具
 import { supportClient, SupportClientError, isSupportScopeDenial, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
@@ -228,7 +231,8 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
 
     let result: { profile: SupportProfile } | { failure: unknown };
     try {
-      result = { profile: await supportEnhancements.profile(customerId, signal) };
+      // 接线删：夹具。夹具开着时客户资料不发读请求。
+      result = { profile: perfFixture()?.profile ? profileFixture() : await supportEnhancements.profile(customerId, signal) };
     } catch (failure) {
       result = { failure };
     }
@@ -312,18 +316,21 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   }, [customerId, epoch, reload, profileRetry, profileScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
+    if (perfFixture()?.profile) return; // 接线删：夹具。样本客户只有统计组和资金组，其余读取不发。
     const controller = new AbortController(), saved = stamp.current; setDeviceGroup(null); setPageError(e => ({ ...e, devices: "" }));
     supportEnhancements.devices(customerId, devicePage, controller.signal).then(g => { if (!controller.signal.aborted && saved === stamp.current) setDeviceGroup(g); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setPageError(v => ({ ...v, devices: displayAdminError(e) })); });
     return () => controller.abort();
   }, [customerId, epoch, devicePage, pageRetry, reload, profileScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
+    if (perfFixture()?.profile) return; // 接线删：夹具。样本客户只有统计组和资金组，其余读取不发。
     const controller = new AbortController(), saved = stamp.current; setFlowGroup(null); setPageError(e => ({ ...e, flows: "" }));
     supportEnhancements.flows(customerId, { pageNum: flowPage, currency: currency || undefined, status: flowStatus || undefined, from: from ? businessDayStart(from) : undefined, to: to ? businessDayStart(to) : undefined }, controller.signal).then(g => { if (!controller.signal.aborted && saved === stamp.current) setFlowGroup(g); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setPageError(v => ({ ...v, flows: displayAdminError(e) })); });
     return () => controller.abort();
   }, [customerId, epoch, flowPage, currency, flowStatus, from, to, pageRetry, reload, profileScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
+    if (perfFixture()?.profile) return; // 接线删：夹具。样本客户只有统计组和资金组，其余读取不发。
     const controller = new AbortController(), saved = stamp.current; setMaintenance(null); setMaintenanceError("");
     supportClient.maintenanceHistory(customerId, { pageNum: maintenancePage, pageSize: 10, signal: controller.signal }).then(v => { if (!controller.signal.aborted && saved === stamp.current) setMaintenance(v); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setMaintenanceError(displayAdminError(e)); });
     return () => controller.abort();
@@ -431,7 +438,10 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const firstKnown = statistics?.first.status === "AVAILABLE";
   const firstConfirmed = firstKnown && statistics?.first.state === "CONFIRMED";
   const firstState = firstConfirmed ? "已首充" : firstKnown && statistics?.first.state === "NONE" ? "未首充" : "未知";
-  const firstSource = firstConfirmed ? statistics?.first.kind === "DEPOSIT" ? "充值" : statistics?.first.kind === "DEVICE_PURCHASE" ? "购机" : "-" : "-";
+  // 累计业绩额（只算 USDT，自起算点以来）。接线前只有夹具给数，生产路径写「业绩数据暂不可用」（perf-wiring.ts）。
+  const perfOfProfile = perfFixture()?.profile ? profilePerfFixture() : profilePerf();
+  const cumulativeText = perfOfProfile.cumulative.state === "complete" ? `${perfText(perfOfProfile.cumulative)} USDT（自 2026-11-20 起）` : "—";
+  const firstSource = firstConfirmed ? perfOfProfile.firstSource ?? (statistics?.first.kind === "DEPOSIT" ? "充值" : statistics?.first.kind === "DEVICE_PURCHASE" ? "购机" : "-") : "-";
   const advisorName = service?.agentName ?? conversation?.owner;
   const canSeeAssignmentSource = session?.role === "super" || session?.role === "superadmin" || Boolean(session?.supportReadModes?.some(mode => mode === "PERSONAL" || mode === "MANAGED"));
   const assignmentSource = canSeeAssignmentSource && Object.hasOwn(assignmentSourceLabels, String(service?.assignmentSource)) ? assignmentSourceLabels[String(service?.assignmentSource)] : undefined;
@@ -449,7 +459,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     ? history.some(row => row.pendingReplyCount! > 0)
     : service?.waitingReply;
   const tickets = (() => { try { return (JSON.parse(ctx.pget("I.support.tickets") ?? "[]") as SupportTicket[]).filter(t => String(t.userId) === customerId); } catch { return []; } })();
-  const financeLabels: Record<string,string> = { netContributionTotal: "累计净贡献", creditedDepositTotal: "累计成功充值实际入账", successfulWithdrawalPrincipalTotal: "累计成功提现金额", successfulWithdrawalFeeTotal: "累计提现手续费", successfulWithdrawalNetTotal: "累计提现实际到账", processingWithdrawalPrincipalTotal: "处理中提现金额", balance: "余额", availableBalance: "可用余额" };
+  const financeLabels: Record<string,string> = { creditedDepositTotal: "累计成功充值实际入账", successfulWithdrawalPrincipalTotal: "累计成功提现金额", successfulWithdrawalFeeTotal: "累计提现手续费", successfulWithdrawalNetTotal: "累计提现实际到账", processingWithdrawalPrincipalTotal: "处理中提现金额", balance: "余额", availableBalance: "可用余额" };
   // 一页放得下就不显示（ST-13）。
   const pager = (page: number, total: unknown, set: (n:number)=>void, pageSize = 10, showTotal = true) => page === 1 && typeof total === "number" && total <= pageSize ? null : <div className="m3-profile-pager"><Button size="sm" disabled={page<=1} onClick={()=>set(page-1)}>上一页</Button><span>第 {page} 页{showTotal && <> · {show(total)} 条</>}</span><Button size="sm" disabled={typeof total !== "number" || page*pageSize>=total} onClick={()=>set(page+1)}>下一页</Button></div>;
   const summaryFinance = currencies.find(row => row.currency === summaryCurrency) ?? currencies[0];
@@ -547,14 +557,17 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       <Row label="客户姓名" value={userNicknameText(show(identity?.nickname), identity?.phoneMasked)}/><Row label={<>用户编码<Explain label="系统编号" content={`系统编号 ${customerId}`}/></>} value={identity?.userNo} mono/>{inviter && <NodeRow label="邀请人"><InviterValue view={inviter} /></NodeRow>}{levels.userLevel && <Row label="用户分层" value={levels.userLevel}/>}{levels.vRank && <Row label="团队等级" value={levels.vRank}/>}<Row label="手机" value={identity?.phoneMasked}/><Row label="地区" value={identity?.region}/><Row label="注册时间" value={dates(identity?.registeredAt)}/><Row label="最近登录" value={dates(identity?.lastLoginAt)}/>
     </Group>
     {/* 摘要和右栏同一写法：人数读不全时只写这件事并默认展开（DP-04、PG-53）。 */}
-    <Group title="首充与邀请统计" open={opens("首充与邀请统计")} summary={statisticsSummaryStale ? "刷新失败" : countsHead || `首充：${firstState}`} warn={!!countsHead || statisticsSummaryStale} note="首充包括成功充值或购机，赠送与试用不计入。" group={statisticsGroup} deniedInTitle failed={Boolean(error)} retry={statisticsRetry.onRetry} retrying={statisticsRetry.retrying} retryLabel={statisticsInFlight ? "重试中…" : "重试"} retryDetail={statisticsRetryError || "这次没读出这组统计，其他资料照常。"} errorTitle="首充与邀请加载失败" alertTone={statisticsGroup?.status === "ERROR" ? "danger" : "warn"} live={statisticsLive}>
+    <Group title="首充与邀请统计" open={opens("首充与邀请统计")} summary={statisticsSummaryStale ? "刷新失败" : countsHead || `首充：${firstState}`} warn={!!countsHead || statisticsSummaryStale} note="首充是第一次成功充值或合格付费购机，含购机直接付款；赠送与试用不计入。" group={statisticsGroup} deniedInTitle failed={Boolean(error)} retry={statisticsRetry.onRetry} retrying={statisticsRetry.retrying} retryLabel={statisticsInFlight ? "重试中…" : "重试"} retryDetail={statisticsRetryError || "这次没读出这组统计，其他资料照常。"} errorTitle="首充与邀请加载失败" alertTone={statisticsGroup?.status === "ERROR" ? "danger" : "warn"} live={statisticsLive}>
       {/* 这一组的名称列按最长的「团队奖励范围内（人）」放宽（DESIGN.md 名称列按组定宽）。 */}
       <div className="m3-invite-group" aria-busy={statisticsInFlight || undefined}>{statisticsStale(false)}<Row label="首充状态" value={firstState}/><Row label="首充来源" value={firstSource}/><Row label="首充时间" value={firstConfirmed && statistics?.first.succeededAt ? dates(statistics.first.succeededAt) : "-"}/><Row label="首充金额" value={firstConfirmed && statistics?.first.amount != null && statistics.first.currency ? `${grouped(statistics.first.amount)} ${nexGridBrandText(statistics.first.currency)}` : "-"}/>
+      {/* 同一个数一页只写一处（ST-74）：统计和资金两组都读到时，累计业绩额只写在账户资金里；资金组读不到时写在这里。 */}
+      {profile?.finance.status === "READY" ? <div className="cvp-row"><span className="k">累计业绩额</span><span className="v"><button type="button" className="rd-link m3-profile-link" onClick={()=>open360("账户资金")}>见下方账户资金</button></span></div> : <Row label="累计业绩额" value={cumulativeText}/>}
       {countRows(false)}
-      {statistics?.lifetime.map(row=>{const invited=statistics.invitations.deposits.find(item=>item.currency===row.currency)?.deposits;return <div key={row.currency}><h4>{nexGridBrandText(row.currency)} · 累计</h4>{/* 展开视图是详情，金额写完整值，币种在小标题里（TX-20、TX-21，BUG-652）；侧栏摘要卡照旧用紧凑写法。 */}<Row label="本人充值" value={statisticMoney(row.deposits, true)}/><Row label="本人净贡献" value={statisticMoney(row.net, true)}/><Row label="团队成员充值" value={statisticMoney(invited, true)}/></div>;})}
+      {statistics?.lifetime.map(row=>{const invited=statistics.invitations.deposits.find(item=>item.currency===row.currency)?.deposits;return <div key={row.currency}><h4>{nexGridBrandText(row.currency)} · 累计</h4>{/* 展开视图是详情，金额写完整值，币种在小标题里（TX-20、TX-21，BUG-652）；侧栏摘要卡照旧用紧凑写法。 */}<Row label="本人充值" value={statisticMoney(row.deposits, true)}/><Row label="团队成员充值" value={statisticMoney(invited, true)}/></div>;})}
       </div>
     </Group>
-    <Group title="账户资金（全历史）" open={opens("账户资金（全历史）")} summary={currencies.length ? `${currencies.length} 个币种` : "暂无可信资料"} note="净贡献已扣除对应的成功提现及后台退款。成功充值不支持退款。" {...groupReadProps("finance")} failed={Boolean(error)}>
+    <Group title="账户资金（全历史）" open={opens("账户资金（全历史）")} summary={currencies.length ? `${currencies.length} 个币种` : "暂无可信资料"} note="普通资金项按原币写；累计业绩额只算 USDT，自 2026-11-20 起。" {...groupReadProps("finance")} failed={Boolean(error)}>
+      <div className="cvp-row"><span className="k">累计业绩额<Explain label="累计业绩额怎么算" content={<><p>这位客户自 2026-11-20 22:57 起的入金减提现，只算 USDT。</p><dl className="m3-perf-rows"><div><dt>购机直接付款</dt><dd>算入金，只算一次</dd></div><div><dt>退款退回余额</dt><dd>不扣；客户把钱提走时按提现扣</dd></div><div><dt>直付退到站外</dt><dd>核实后在核实的那个月扣回</dd></div></dl></>} /></span><span className="v" title={perfOfProfile.cumulative.state === "unavailable" ? perfOfProfile.cumulative.reason : undefined}>{cumulativeText}</span></div>
       {!currencies.length && <p className="m-admin-muted">尚无可信币种资金资料，累计未知。</p>}
       {financeGaps.length > 0 && <Notice tone="warn" action={!financeStale && financeGaps.some(gap => gap.state !== "FORBIDDEN") ? <Button size="sm" loading={financeRereading} loadingText="重试中…" onClick={()=>void retryGroup("finance")}>重新加载资金</Button> : undefined}>部分资金资料暂时无法确认 <Explain label="哪些项目" content={financeGaps.map(gap => <p key={gap.state}>{gap.text}</p>)}/></Notice>}
       {currencies.length > 0 && <Table label="账户资金"><thead><tr><Th>项目</Th>{currencies.map((row,i)=><Th key={String(row.currency??i)} align="right">{nexGridBrandText(String(row.currency ?? "币种未同步"))}</Th>)}</tr></thead><tbody>{Object.entries(financeLabels).map(([key,label])=><Tr key={key}><Td>{label}</Td>{currencies.map((row,i)=><Td key={String(row.currency??i)} align="right">{financeCell(row,key)}</Td>)}</Tr>)}</tbody></Table>}
