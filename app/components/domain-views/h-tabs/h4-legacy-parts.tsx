@@ -13,6 +13,10 @@ import type { H4EventCapabilities } from "@/lib/admin/h-client";
 import { EVENT_CONTENT_LOCALES, type EventCopyReadiness } from "@/lib/admin/event-rule-form";
 import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { amountText, formatTime } from "./h4-promotion-ui";
+import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
+
+export const h4ReadConflict = (readLatest: () => Promise<void>) =>
+  new ConfirmReadConflict({ readLatest, renderNotice: action => <H4StaleNote readLatest={action} /> });
 
 /** 真实冲突（别人先改过）后的提示：拟改值留着、现在值换成最新的、旧理由清空，要重新填理由才能提交。结果未知的原请求恢复用原理由，是另一句提示。 */
 export function H4StaleNote({ readLatest }: { readLatest?: () => void }) {

@@ -13,3 +13,7 @@ export function isHGrowthReadConflict(error: unknown) {
   const e = error as { status?: number; apiCode?: number; reasonCode?: string; backendMessage?: string; unknownOutcome?: boolean; bodyUnreadable?: boolean } | null;
   return !!e && isDeterministicRejection(e.status ?? 0, e.apiCode) && !e.unknownOutcome && !e.bodyUnreadable && READ_CONFLICTS.has(e.reasonCode ?? e.backendMessage ?? "");
 }
+
+export function isH4ReadConflict(error: unknown) {
+  return isHGrowthReadConflict(error) || error instanceof Error && error.message === "H4_REFRESH_REQUIRED";
+}

@@ -3,20 +3,23 @@
 import { useEffect, useRef, useState } from "react";
 import type { ActionConfirmReq, ConfirmReq } from "@/app/components/domain-views/h-tabs/types";
 import { initBusinessForm, type BusinessFormValue } from "@/app/components/domain-views/design-kit";
-import { isHGrowthReadConflict } from "./h-write-conflict";
+import { isH4ReadConflict, isHGrowthReadConflict } from "./h-write-conflict";
 
 /** Bind recovery to the operation constructing this request, never a previous click. */
-export function useHConflictDraft(ready: boolean, { rebaseOnConflict = false } = {}) {
+export function useHConflictDraft(ready: boolean, { readConflict }: {
+  readConflict?: (afterRead: (beforeOpen: () => void) => void, kind: "action" | "confirm", request: ActionConfirmReq | ConfirmReq) => Error;
+} = {}) {
   const openers = useRef(new Map<string, () => void>());
   openers.current.clear();
   const opening = useRef<string | undefined>(undefined);
-  const saved = useRef<{ key: string; reason?: string; value?: string; business?: BusinessFormValue; intent?: string } | undefined>(undefined);
+  const saved = useRef<{ key: string; reason?: string; value?: string; business?: BusinessFormValue; intent?: string; beforeOpen?: () => void } | undefined>(undefined);
   const [pending, setPending] = useState(false);
   const [revision, setRevision] = useState(0);
   const restoring = useRef(false);
   useEffect(() => {
     if (!pending || !ready || !saved.current) return;
     const key = saved.current.key, open = openers.current.get(key);
+    saved.current.beforeOpen?.();
     if (!open) { saved.current = undefined; setPending(false); return; }
     restoring.current = true;
     opening.current = key;
@@ -24,9 +27,9 @@ export function useHConflictDraft(ready: boolean, { rebaseOnConflict = false } =
     setPending(false);
     saved.current = undefined;
   }, [pending, ready]);
-  const retain = (key: string | undefined, reason: string, value?: string, business?: BusinessFormValue, intent?: string) => {
-    if (!key) return;
-    saved.current = { key, reason: rebaseOnConflict ? undefined : reason, value, business, intent };
+  const retain = (key: string | undefined, reason: string, value?: string, business?: BusinessFormValue, intent?: string, beforeOpen?: () => void) => {
+    if (!key) { beforeOpen?.(); return; }
+    saved.current = { key, reason: readConflict ? undefined : reason, value, business, intent, beforeOpen };
     setRevision(v => v + 1);
     setPending(true);
   };
@@ -48,15 +51,16 @@ export function useHConflictDraft(ready: boolean, { rebaseOnConflict = false } =
       const draft = restoring.current ? saved.current : undefined;
       return { ...request, ...(draft ? { formKey: revision, initialReason: draft.reason ?? "",
         edit: request.edit ? { ...request.edit, initialValue: draft.value } : undefined,
-        getPendingBusinessValue: () => request.getPendingBusinessValue?.() ?? (rebaseOnConflict && draft.business
+        getPendingBusinessValue: () => request.getPendingBusinessValue?.() ?? (readConflict && draft.business
           ? { ...initBusinessForm(request.businessForm), ...draft.business } : draft.business),
       } : {}), run: async (reason: string, value?: string, business?: BusinessFormValue) => {
         const original = recovering?.() ?? request.getPendingReason?.() !== undefined;
         try { return await request.run(reason, value, business); }
         catch (error) {
-          if (!original && isHGrowthReadConflict(error)) {
-            const initial = rebaseOnConflict && business ? initBusinessForm(request.businessForm) : undefined;
+          if (!original && (readConflict ? isH4ReadConflict(error) : isHGrowthReadConflict(error))) {
+            const initial = readConflict && business ? initBusinessForm(request.businessForm) : undefined;
             const changes = initial && business ? Object.fromEntries(Object.entries(business).filter(([field, input]) => input !== initial[field])) : business;
+            if (readConflict) throw readConflict(beforeOpen => retain(key, reason, value, changes, request.rebaseValue, beforeOpen), "action", request);
             retain(key, reason, value, changes, request.rebaseValue);
           }
           throw error;
@@ -66,12 +70,16 @@ export function useHConflictDraft(ready: boolean, { rebaseOnConflict = false } =
     confirm(request: ConfirmReq, recovering?: () => boolean): ConfirmReq {
       const key = opening.current;
       const draft = restoring.current ? saved.current : undefined;
-      return { ...request, ...(draft ? { initialReason: draft.reason ?? "", formKey: revision } : {}),
+      return { ...request, ...(draft ? { initialReason: draft.reason ?? "", formKey: revision,
+        ...(readConflict && draft.value !== undefined ? { initialInputValue: draft.value } : {}), } : {}),
         run: async (reason, value) => {
           const original = recovering?.() ?? request.getPendingReason?.() !== undefined;
           try { return await request.run(reason, value); }
           catch (error) {
-            if (!original && isHGrowthReadConflict(error)) retain(key, reason, value, undefined, request.rebaseValue);
+            if (!original && (readConflict ? isH4ReadConflict(error) : isHGrowthReadConflict(error))) {
+              if (readConflict) throw readConflict(beforeOpen => retain(key, reason, value, undefined, request.rebaseValue, beforeOpen), "confirm", request);
+              retain(key, reason, value, undefined, request.rebaseValue);
+            }
             throw error;
           }
         },

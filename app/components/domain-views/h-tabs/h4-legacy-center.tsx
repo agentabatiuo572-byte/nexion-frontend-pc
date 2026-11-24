@@ -56,7 +56,7 @@ import {
   ApprovalFact, EventCard, EventPreview, GuardCard, contentFieldsText, contentGaps, gapWeight, languageNames, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
   WHEEL_APP_KINDS, WHEEL_KIND_LABEL, WheelBar, WheelLegend, boolValue, effectApproval, effectByDirection, effectDirect, expiredTag, formStore,
   legacyName, lifecycleOf, numericValue, pendingTag, percentText, text, unknownTag, wheelLegacyNexTier, wheelPointsTier, wheelUnit,
-  type LegacyEvent, type LocaleCode, type WheelTier, actualRewardText, legacyRewardText, H4StaleNote } from "./h4-legacy-parts";
+  type LegacyEvent, type LocaleCode, type WheelTier, actualRewardText, legacyRewardText, h4ReadConflict, H4StaleNote } from "./h4-legacy-parts";
 
 type Model = H4Statistics & {
   events?: LegacyEvent[];
@@ -245,13 +245,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           finally { if (!pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) ctx.openActionConfirm(null); await reloadH4Approvals(); await reload(); }
           return;
         }
-        if (!req.edit?.review) assertH4Fresh("overview", version);
         const before = new Set(pendingH4Commands().map(r => r.commandKey));
         setStale(null);
-        try { await req.run(reason, value, businessValue); }
+        try {
+          if (!req.edit?.review) assertH4Fresh("overview", version);
+          await req.run(reason, value, businessValue);
+        }
         catch (cause) {
           if (cause instanceof HApprovalRequired) { ctx.openActionConfirm(null); ctx.openConfirm(approvalReconfirm(cause, req, reason, value, businessValue, getComparison?.())); return; }
-          if (!req.edit?.review && isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.openActionConfirm(null); await reload(); }
           throw cause;
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
@@ -272,14 +273,15 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           finally { if (!pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) ctx.closeConfirm?.(); await reloadH4Approvals(); await reload(); }
           return;
         }
-        assertH4Fresh("overview", version);
         const before = new Set(pendingH4Commands().map(r => r.commandKey));
         setStale(null);
-        try { return await req.run(reason, value); }
+        try {
+          assertH4Fresh("overview", version);
+          return await req.run(reason, value);
+        }
         catch (cause) {
           // 返回 false：原确认框不自己关，换成审批确认。
           if (cause instanceof HApprovalRequired) { ctx.openConfirm(approvalReconfirm(cause, req, reason, value)); return false; }
-          if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.closeConfirm?.(); await reload(); }
           throw cause;
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
@@ -300,7 +302,13 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const [model, setModel] = useState<Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const conflictDraft = useHConflictDraft(!loading && !error && h4ReadVersion("overview") !== undefined, { rebaseOnConflict: true });
+  const conflictDraft = useHConflictDraft(!loading && !error && h4ReadVersion("overview") !== undefined, {
+    readConflict: (afterRead, kind, req) => h4ReadConflict(async () => {
+      if (!await reload()) throw new Error("既有活动与转盘没有读到");
+      setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改");
+      afterRead(() => { if (kind === "action") ctx.openActionConfirm(null); else ctx.closeConfirm?.(); });
+    }),
+  });
   const canReadA2 = ctx.can("platform_a2_read");
   // 已建成、等别人批的 H4 审批单只在审批中心里；这里读一次，好让运营在本页看到哪项在等批。
   const [h4Approvals, setH4Approvals] = useState<A2OperationRow[] | "error" | null>(null);

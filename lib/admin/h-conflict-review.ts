@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 export type HConflictField = {
   path: string; opened: unknown; latest: unknown; mine: unknown;
   changedByOther: boolean; changedByMe: boolean;
@@ -24,10 +26,9 @@ export function hConflictFields(opened: object, latest: object, mine: object,
   return fields;
 }
 
-/** Only the visual comparison's explicit confirmation may reopen the save confirmation. */
-export class HConflictReviewRequired extends Error {
-  constructor(message: string, public readonly fields: HConflictField[], public readonly confirm: () => void) {
+/** Keep the confirmation locked until an explicit read can rebuild it from current data. */
+export class ConfirmReadConflict extends Error {
+  constructor(public readonly review?: { readLatest: () => Promise<void>; renderNotice: (readLatest: () => void) => ReactNode }, message = "H4_REFRESH_REQUIRED") {
     super(message);
-    this.name = "HConflictReviewRequired";
   }
 }

@@ -11,6 +11,7 @@ import { Fragment, isValidElement, useCallback, useEffect, useId, useMemo, useRe
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import { useUI, type ToastKind } from "@/lib/store/ui";
 import { useDialogFeedback } from "@/app/components/kit/dialog-feedback";
 import { ToastHost } from "@/app/components/kit/toast-host";
@@ -3853,6 +3854,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [readConflict, setReadConflict] = useState<ConfirmReadConflict | null>(null);
+  const [readingConflict, setReadingConflict] = useState(false);
   // 结果未知（原操作可能已生效）用警示色，红只给明确失败（VS-107）。
   const [submitUnknown, setSubmitUnknown] = useState(false);
   // 刚打开不报错：字段错误等失焦或点过提交才显示（DP-06）。
@@ -3870,7 +3873,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const selectionRequestRef = useRef(0);
   // 提交失败的提示在正文最上方：长表单点完底栏按钮后它可能已滚出视野，出现时滚到看得见（已在视野里不动）。
   const submitAlertRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (submitError) submitAlertRef.current?.scrollIntoView({ block: "nearest" }); }, [submitError]);
+  useEffect(() => { if (submitError || readConflict) submitAlertRef.current?.scrollIntoView({ block: "nearest" }); }, [submitError, readConflict]);
   const effectiveBriefKind = typeof briefKind === "function" ? briefKind(businessValue) : briefKind;
   // 影响随业务字段变（比如名单有效期选长期还是指定日期），传函数时按现在填的值算。
   const effectiveStatedBrief = typeof statedBrief === "function" ? statedBrief(businessValue, readyReview?.comparison.after) : statedBrief;
@@ -3881,7 +3884,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const recoverApproval = inlineApproval ? (reason: string) => inlineApproval.recover(reason, businessValue, newVal) : approval?.recover;
   const retryApproval = approvalRecovery === "retry" ? inlineApproval?.retry : undefined;
   const approvalOnlyLookup = approvalRecovery === "lookup" || !!(approvalRecovery && (inlineApproval?.expired || inlineApproval?.queryOnly));
-  const formLocked = submitting || !!approvalRecovery || pendingReason !== undefined || editReview?.kind === "loading" || editReview?.kind === "conflict";
+  const formLocked = submitting || !!readConflict || !!approvalRecovery || pendingReason !== undefined || editReview?.kind === "loading" || editReview?.kind === "conflict";
   // 配置型调整:仅当调用方显式传 edit 才提供「目标新值」编辑控件并要求 newVal;纯动作 / 处置(放行 / 冻结 / 驳回 / pause)不传 edit → 仅确认。
   // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。
   const spec: EditSpec | null = edit ?? null;
@@ -3949,14 +3952,14 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const reviewBlock = editReview?.kind === "loading" ? "正在读取…" : editReview?.kind === "conflict" ? "请先读取最新" : editReview?.kind === "error" ? editReview.message : undefined;
   const sameAsCurrent = !!spec?.disallowCurrent && !!newVal.trim() && (newVal.trim() === spec.current?.trim() || (kind === "number" && compareEditDecimals(newVal, spec.current ?? "") === 0));
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
-  const canConfirm = !blockedReason && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason
+  const canConfirm = !blockedReason && !readConflict && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason
     : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && (!editReview || !!readyReview) && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
       && (!inlineApproval || !approvalRecovery || !!approval));
   const showReasonError = !reasonOk && !retryApproval && (!surface || attempted || reasonLeft);
   const showEditError = !surface || attempted || editLeft;
   const reasonShort = visibleLength < reasonMin ? `还差 ${reasonMin - visibleLength} 字` : `操作理由不能超过 ${reasonMax} 字。`;
   // 按钮灰着时缺什么写在按钮的提示里（OP-126）。
-  const missing: ReactNode[] = canConfirm || submitting ? [] : blockedReason ? [blockedReason] : [
+  const missing: ReactNode[] = canConfirm || submitting ? [] : blockedReason ? [blockedReason] : readConflict ? [readConflict.review ? "请先读取最新" : displayAdminReadError(readConflict)] : [
     !reasonPolicyReady && (reasonPolicyError ?? "正在加载"),
     covBlocked && coverageBlockText,
     approval?.disabledReason,
@@ -4052,6 +4055,12 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     } catch (error) {
       // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
       if (closeOnPermissionDenied(error)) return;
+      if (error instanceof ConfirmReadConflict) {
+        setReason("");
+        setReadConflict(error);
+        if (!error.review) setSubmitError(displayAdminReadError(error));
+        return;
+      }
       if (review?.isConflict(error)) {
         enterEditConflict();
         return;
@@ -4071,6 +4080,18 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       setSubmitting(false);
     }
   };
+  const readLatestConflict = async () => {
+    if (!readConflict?.review || readingConflict) return;
+    setReadingConflict(true);
+    setSubmitError(null);
+    try { await readConflict.review.readLatest(); }
+    catch (error) {
+      if (closeOnPermissionDenied(error)) return;
+      if (error instanceof ConfirmReadConflict) setReadConflict(error);
+      setSubmitError(displayAdminReadError(error));
+    }
+    finally { setReadingConflict(false); }
+  };
   const handleApprovalLookup = async () => {
     if (!recoverApproval || submitting) return;
     setSubmitting(true);
@@ -4088,7 +4109,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     }
   };
   const handleClose = () => {
-    if (!submitting) onClose();
+    if (!submitting && !readingConflict) onClose();
   };
   const handleBusinessSelectionChange = async (next: BusinessFormValue) => {
     setBusinessValue(next);
@@ -4153,17 +4174,17 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     </div>
   );
   return (
-    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : spec ? "sliders" : "shield"} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={readyReview?.effect ?? (rdApproval ? effect ?? <RdStatusTag tone="progress" filled explain={completionCopy}>批准后生效</RdStatusTag> : effect)} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
+    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : spec ? "sliders" : "shield"} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={readyReview?.effect ?? (rdApproval ? effect ?? <RdStatusTag tone="progress" filled explain={completionCopy}>批准后生效</RdStatusTag> : effect)} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting || readingConflict} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
       footer={<>
-        <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
+        <Btn disabled={submitting || readingConflict} onClick={handleClose}>取消</Btn>
         {approvalRecovery && recoverApproval && (
           <Btn variant={approvalRecovery === "lookup" ? "primary" : undefined} disabled={submitting} onClick={() => void handleApprovalLookup()}>
             {submitting ? inlineApproval?.recoverLabel ? "读取中…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原结果"}
           </Btn>
         )}
         {!approvalOnlyLookup && (surface ? (
-          <RdButton variant={confirmTone} loading={submitting} loadingText="提交中…"
-            disabledReason={canConfirm || submitting ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
+          <RdButton variant={confirmTone} loading={submitting || readingConflict} loadingText={readingConflict ? "正在读取…" : "提交中…"}
+            disabledReason={canConfirm || submitting || readingConflict ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
             onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>
             {submitLabel}
           </RdButton>
@@ -4174,9 +4195,10 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         ))}
       </>}>
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
-      <fieldset disabled={submitting} className="rd-contents" style={{ display: "contents" }}>
+      <fieldset disabled={submitting || readingConflict} className="rd-contents" style={{ display: "contents" }}>
       {(!approval || rdApproval) && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
       {!surface && content}
+      {readConflict?.review && <div className="rd-confirm-alert" ref={submitError ? undefined : submitAlertRef}>{readConflict.review.renderNotice(() => void readLatestConflict())}</div>}
       {surface ? (blockedReason || submitError) && (
         // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。
         <div className="rd-confirm-alert" ref={submitAlertRef}><RdNotice tone={blockedReason || approvalRecovery || submitUnknown ? "warn" : "danger"}>{keepCommandKey(blockedReason || submitError)}</RdNotice></div>

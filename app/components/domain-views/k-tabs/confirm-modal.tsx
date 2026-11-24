@@ -5,7 +5,8 @@
  * 标记类 / 拦截未发放新人礼(预防性阻断) / 手动补触发 / 白名单 —— 不动已入账资产,
  * 强制留痕(业务服务必达审计);reason=true 时原因必填,input 为可选输入框。
  */
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
 import { useEffect, useId, useState } from "react";
@@ -23,6 +24,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const [value, setValue] = useState(() => (req.freezePendingInput ? req.getPendingValue?.() : undefined) ?? req.initialInputValue ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [readConflict, setReadConflict] = useState<ConfirmReadConflict | null>(null);
+  const [readingConflict, setReadingConflict] = useState(false);
   // 刚打开不报错：字数不够等失焦或点过提交才用警告色（DP-06）。
   const [attempted, setAttempted] = useState(false);
   const [reasonLeft, setReasonLeft] = useState(false);
@@ -47,7 +50,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
   const inputOk = !req.input || req.input.required === false || (req.input.options ? value !== "" : value.trim().length >= 1);
   const valueProblem = req.input?.validate?.(value);
-  const pendingBlockReason = req.freezePendingInput ? req.getPendingBlockReason?.() : undefined;
+  const pendingBlockReason = readConflict ? readConflict.review ? "请先读取最新" : displayAdminReadError(readConflict) : req.freezePendingInput ? req.getPendingBlockReason?.() : undefined;
   const can = !pendingBlockReason && (req.replayPendingInput && pendingReason !== undefined || reasonOk && inputOk && !valueProblem && policySettled);
   const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
   const submit = async () => {
@@ -64,6 +67,12 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         onClose();
         return;
       }
+      if (cause instanceof ConfirmReadConflict) {
+        setReason("");
+        setReadConflict(cause);
+        if (!cause.review) setError(displayAdminReadError(cause));
+        return;
+      }
       const handled = typeof req.errorHandled === "function" ? req.errorHandled(cause) : req.errorHandled;
       if (!handled) setError(displayAdminError(cause));
     } finally {
@@ -75,6 +84,20 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       setSubmitting(false);
     }
   };
+  const readLatestConflict = async () => {
+    if (!readConflict?.review || readingConflict) return;
+    setReadingConflict(true);
+    setError(null);
+    try { await readConflict.review.readLatest(); }
+    catch (cause) {
+      if (isPermissionDenied(cause)) { announcePermissionDenied(); onClose(); }
+      else {
+        if (cause instanceof ConfirmReadConflict) setReadConflict(cause);
+        setError(displayAdminReadError(cause));
+      }
+    }
+    finally { setReadingConflict(false); }
+  };
   return (
     <Modal
       title={req.title ?? req.action}
@@ -82,18 +105,18 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       tone={req.confirmTone === "danger" ? "danger" : "neutral"}
       sub={req.effect}
       className={surface ? "rd-confirm" : undefined}
-      busy={submitting}
+      busy={submitting || readingConflict}
       dirty={value !== ""}
-      onClose={() => { if (!submitting) onClose(); }}
+      onClose={() => { if (!submitting && !readingConflict) onClose(); }}
       footer={
         <>
-          <Btn disabled={submitting} onClick={onClose}>取消</Btn>
+          <Btn disabled={submitting || readingConflict} onClick={onClose}>取消</Btn>
           {surface ? (
             <RdButton
               variant={req.confirmTone ?? "primary"}
-              loading={submitting}
-              loadingText="提交中…"
-              disabledReason={can || submitting ? undefined : pendingBlockReason ?? [!policySettled && "正在读取理由规则", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
+              loading={submitting || readingConflict}
+              loadingText={readingConflict ? "正在读取…" : "提交中…"}
+              disabledReason={can || submitting || readingConflict ? undefined : pendingBlockReason ?? [!policySettled && "正在读取理由规则", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
               onBlockedClick={() => setAttempted(true)}
               onClick={() => void submit()}
             >
@@ -113,7 +136,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       }
     >
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
-      <fieldset disabled={submitting || pendingReason !== undefined} className="rd-contents">
+      {readConflict?.review && <div className="rd-confirm-alert">{readConflict.review.renderNotice(() => void readLatestConflict())}</div>}
+      <fieldset disabled={submitting || !!readConflict || pendingReason !== undefined} className="rd-contents">
       {error && (surface
         ? <div className="rd-confirm-alert"><Notice tone="danger">{error}</Notice></div>
         : <div role="alert" className="tint danger">{error}</div>)}

@@ -52,16 +52,6 @@ const I3_TIER_STATE: Record<TierK, [label: string, tone: string]> = {
   normal: ["普通", "cyan"],
   low: ["低", "dim"],
 };
-/** 名称 → slug(小写、空格转 -、保留中英数字,去其他符号)。 */
-function slug(s: string): string {
-  return s
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^\p{L}\p{N}\-]+/gu, "")
-    .slice(0, 48) || "untitled";
-}
-
 type NewForm = {
   name: string;
   titleZh: string;
@@ -328,7 +318,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     await refreshAfterMutation(record);
     return true;
   };
-  const openActionConfirm = (req: ActionConfirmReq, restored?: I3Command | I3CapCommand, cap = false) => {
+  const openActionConfirm = (req: ActionConfirmReq, restored?: I3Command | I3CapCommand, cap = false,
+    draftAttempt?: { form: NewForm; formBase: NewForm; editing: CampaignRow | null }) => {
     if (!restored) { try { requireNewMutation(); } catch (error) { toast(displayAdminError(error)); return; } }
     const openedData = data;
     let key = restored?.commandKey;
@@ -349,7 +340,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         } catch (error) {
           const candidate = (error as { commandKey?: string }).commandKey;
           key = (cap ? pendingI3CapCommands() : pendingI3Commands()).find((row) => row.commandKey === candidate)?.commandKey;
-          if (await reviewConflict(error, { reason, value, business })) ctx.closeActionConfirm();
+          if (draftAttempt && key) setDrawerPendingKey(key);
+          if (await reviewConflict(error, { ...draftAttempt, reason, value, business })) ctx.closeActionConfirm();
           syncPending();
           throw new Error(displayAdminError(error));
         }
@@ -689,7 +681,6 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       toast("请填写 通知活动名称");
       return;
     }
-    const id = editing?.id ?? `CMP-N-${slug(trimmedName)}`;
     setSubmitting(true);
     try {
       const required = await getRequiredContentLanguages();
@@ -733,18 +724,21 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         budget: form.budget.trim() || null,
       };
       const originalForm = AUDIENCE_CATALOG && DELIVERY_CATALOG ? { audienceCatalog: AUDIENCE_CATALOG, deliveryCatalog: DELIVERY_CATALOG, estimatedAudience, estimatedAt } : undefined;
-      const task = editing
-        ? actions.updateI3CampaignDraft(editing.id, payload, editing.revision, `编辑通知草稿 ${editing.id}`, { ...editing, status: editing.st }, originalForm)
-        : actions.createI3Campaign(payload, `新建通知草稿 ${id}`, originalForm);
-      if (await runBackend(task, editing ? `${editing.id} 草稿已保存` : `通知草稿已创建 · ${trimmedName}`)) {
-        setNewOpen(false);
-        setEditing(null);
-        setForm(FORM_INIT);
-      }
+      openActionConfirm({
+        briefKind: "content",
+        action: `保存草稿 · ${trimmedName}`,
+        title: "保存草稿",
+        detail: "还没排期，不会发给任何人。",
+        confirmLabel: "保存草稿",
+        run: async reason => {
+          const task = editing
+            ? actions.updateI3CampaignDraft(editing.id, payload, editing.revision, reason, { ...editing, status: editing.st }, originalForm)
+            : actions.createI3Campaign(payload, reason, originalForm);
+          await runBackend(task, editing ? `${editing.id} 草稿已保存` : `通知草稿已创建 · ${trimmedName}`);
+          setForm(FORM_INIT);
+        },
+      }, undefined, false, { form, formBase, editing });
     } catch (error) {
-      if (isOutcomeUnknownError(error)) setDrawerPendingKey((error as { commandKey?: string }).commandKey ?? null);
-      await reviewConflict(error, { reason: editing ? `编辑通知草稿 ${editing.id}` : `新建通知草稿 ${id}`, form, formBase, editing });
-      syncPending();
       toast(displayAdminError(error));
     } finally {
       setSubmitting(false);
