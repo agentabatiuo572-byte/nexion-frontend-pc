@@ -42,6 +42,8 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail }: {
           sub={perf.first.state === "complete" ? perf.firstSplit && `充值 ${perf.firstSplit.deposits} · 购机 ${perf.firstSplit.purchases}` : perf.first.state === "partial" ? perf.first.missing : perf.first.reason}
           explain={<><p>成功充值或合格付费购机，含直付；每位客户只算第一次。</p><dl className="m1-perf-pop-rows"><div><dt>算</dt><dd>链上、越南银行卡充值到账；用余额或直接付款买设备，含试用转正</dd></div><div><dt>不算</dt><dd>赠送的设备、免费或零价设备、还在核对的付款</dd></div></dl></>} />
       </StatBand>
+      {/* 一个视图只露一个主列表（DP-67）：入金、提现构成放进默认展开的折叠。 */}
+      <Fold title="入金和提现构成" summary={`入金 ${perf.inflow.filter(row => !row.sub).length} 个渠道 · 提现按网络`} defaultOpen>
       <div className="m1-perf-break">
         <Panel plain headingLevel={3} title="入金构成" sub="4 个渠道" explain="四个渠道各自的净额，已含本期更正。退款退回余额不算；核实过的站外退款记成本期更正（负数）。">
           <Table label="入金构成" className="m1-perf-table"><thead><Tr><Th>渠道</Th><Th align="right">金额（USDT）</Th></Tr></thead><tbody>
@@ -56,17 +58,18 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail }: {
           </tbody></Table>
         </Panel>
       </div>
+      </Fold>
     </>}
   </Panel>;
 }
 
-const summaryText = (part: { amount: PerfValue; count: number; customers: number }) => `${perfText(part.amount)}${part.amount.state === "complete" ? " USDT" : ""} · ${part.count} 条 · ${part.customers} 位客户`;
+const summaryText = (part: { amount: PerfValue; count: number; customers: number }) => <>{perfText(part.amount)}{part.amount.state === "complete" ? " USDT" : ""}<span className="m1-perf-count">（{part.count} 条，{part.customers} 位客户）</span></>;
 
 /** 业绩额明细：先三行核对「本月合计 = 现在名下的客户 + 已转走的客户」，再列能看的每一笔。 */
 export function PerfEventsDrawer({ events, onClose }: { events: PerfEvents; onClose: () => void }) {
   const range = `统计区间 ${formatBusinessTimeCompact(events.from, "—")} 至 ${formatBusinessTimeCompact(events.to, "—")}（北京时间）`;
   return <Drawer open wide title="业绩额明细" sub="本人 · USDT" onClose={onClose}
-    footer={<div className="m1-perf-foot"><Button onClick={onClose}>关闭</Button><span className="m1-perf-pager"><Button size="sm" disabled>上一页</Button>第 1 / 1 页 · 共 {events.rows.length} 条<Button size="sm" disabled>下一页</Button></span></div>}>
+    footer={<div className="m1-perf-foot"><Button onClick={onClose}>关闭</Button><span className="m1-perf-pager"><Button size="sm" disabledReason="已经是第一页">上一页</Button>第 1 / 1 页 · 共 {events.rows.length} 条<Button size="sm" disabledReason="已经是最后一页">下一页</Button></span></div>}>
     <p className="rd-note">{range}</p>
     <Facts>
       <Fact k="本月合计">{summaryText(events.total)}</Fact>

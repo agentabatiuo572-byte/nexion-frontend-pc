@@ -12,7 +12,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { fetchLeaderboardAvatar, locateLeaderboardSelf, supportLeaderboardClient, type LeaderboardDetail, type LeaderboardPage, type LeaderboardQuery } from "@/lib/admin/support-leaderboard-client";
-import { BlockState, Button, Conclusion, Drawer, Explain, FilterBar, FilterField, Input, Notice, PageHeader, PageTabs, RdPage, Select, useTabIds } from "@/app/components/rd";
+import { BlockState, Button, Conclusion, Decision, Drawer, Explain, FilterBar, FilterField, Input, Notice, PageHeader, PageTabs, RdPage, Select, useTabIds } from "@/app/components/rd";
 import type { SupportBoardKey, SupportBoardQuery, SupportBoardRow } from "./support-leaderboard";
 import { BOARD_DEFINITION, BOARD_LABEL, BoardPager, PerformanceBody, Podium, RankingPanel, RankingTable, amountPlaces, amountText, countText } from "./m6-leaderboard-views";
 import { PERF_UNAVAILABLE, type PerfTotals } from "./perf-view";
@@ -287,11 +287,9 @@ export function M6Leaderboard() {
       </div>
       {visibleDetail && <Drawer open title={`${detailName ?? "客服"} 的公开成绩`} explain="公开成绩只有合计，不含分渠道和客户明细。" sub={`${BOARD_LABEL[board]}榜`} icon={UserRound} tone="role-3" onClose={closeDetail}
         nav={{ hasPrev: detailIndex > 0, hasNext: detailIndex >= 0 && detailIndex < rows.length - 1, onPrev: () => { if (detailIndex > 0) openDetail(rows[detailIndex - 1].id); }, onNext: () => { if (detailIndex >= 0 && detailIndex < rows.length - 1) openDetail(rows[detailIndex + 1].id); } }}
-        footer={<>
-          <Button onClick={closeDetail}>关闭</Button>
-          {visibleDetail.error && <Button onClick={() => openDetail(visibleDetail.agentId)}>重试</Button>}
-          {detailRow && privateRead && detailRow.canViewCustomers && <Button variant="primary" onClick={() => customers(detailRow)}>查看当前绑定客户</Button>}
-        </>}>
+        footer={<Decision
+          others={<><Button onClick={closeDetail}>关闭</Button>{visibleDetail.error && <Button onClick={() => openDetail(visibleDetail.agentId)}>重试</Button>}</>}
+          primary={detailRow && privateRead && detailRow.canViewCustomers ? <Button variant="primary" onClick={() => customers(detailRow)}>查看当前绑定客户</Button> : undefined} />}>
         {!visibleDetail.data ? <Notice tone={visibleDetail.error ? "danger" : "progress"}>{visibleDetail.error ?? "正在加载成绩…"}</Notice>
           : detailRow && <PerformanceBody row={withPhoto(detailRow)} board={board} month={visibleDetail.data.referenceMonth} perf={perfOf(detailRow.id)}
             stale={visibleDetail.data.stale} refreshFailed={visibleDetail.data.refreshFailed} />}

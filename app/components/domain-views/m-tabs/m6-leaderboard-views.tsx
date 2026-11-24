@@ -231,8 +231,9 @@ export function PerformanceBody({ row, board, month, perf, stale, refreshFailed 
       <div><strong>{row.name}</strong><span className="rd-note">{row.groupName || "待分组"}</span></div>
       <QualificationTag row={row} always />
     </div>
+    {/* 关键数字：业绩额放最前（VS-102），名次和三项合计降一层。 */}
+    <div className="m6-lead"><span className="m6-lead-label">业绩额 · {month}</span><span className="m6-lead-value">{amount}{amount !== "—" && <small>USDT</small>}</span></div>
     <Facts>
-      <Fact k={`业绩额 · ${month}`} lead tone="role-1" unit={amount === "—" ? undefined : "USDT"}>{amount}</Fact>
       <Fact k="名次">{rankText(row)}</Fact>
       <Fact k="名次变化">{movement ?? reason ?? "—"}</Fact>
       <Fact k="入金合计" unit={inflow === "—" ? undefined : "USDT"}>{inflow}</Fact>

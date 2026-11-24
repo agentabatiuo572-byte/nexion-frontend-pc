@@ -325,8 +325,8 @@ export function profileFixture(): SupportProfile {
   const evaluatedAt = fixtureNow();
   const unknown = { status: "UNKNOWN" as const, data: null, evaluatedAt };
   const money = (value: string) => ({ observed: value, confirmed: value, observedEvents: null, confirmedEvents: null, observedCustomers: null, status: "AVAILABLE" as const });
-  const finance = (currency: string, deposits: string) => ({ currency, fieldStatuses: { creditedDepositTotal: "READY", depositRefundTotal: "READY", successfulWithdrawalPrincipalTotal: "READY", successfulWithdrawalFeeTotal: "READY", successfulWithdrawalNetTotal: "READY", processingWithdrawalPrincipalTotal: "READY", balance: "READY", availableBalance: "READY", netContributionTotal: "UNKNOWN" },
-    creditedDepositTotal: deposits, depositRefundTotal: "0", successfulWithdrawalPrincipalTotal: "0", successfulWithdrawalFeeTotal: "0", successfulWithdrawalNetTotal: "0", processingWithdrawalPrincipalTotal: "0", balance: deposits, availableBalance: deposits, netContributionTotal: null });
+  const finance = (currency: string, deposits: string) => ({ currency, fieldStatuses: { creditedDepositTotal: "READY", depositRefundTotal: "READY", successfulWithdrawalPrincipalTotal: "READY", successfulWithdrawalFeeTotal: "READY", successfulWithdrawalNetTotal: "READY", processingWithdrawalPrincipalTotal: "READY", balance: "READY", availableBalance: "READY" },
+    creditedDepositTotal: deposits, depositRefundTotal: "0", successfulWithdrawalPrincipalTotal: "0", successfulWithdrawalFeeTotal: "0", successfulWithdrawalNetTotal: "0", processingWithdrawalPrincipalTotal: "0", balance: deposits, availableBalance: deposits });
   return {
     identity: { status: "READY", evaluatedAt, data: { customerId: "40000002", userNo: "U40000002", nickname: "林*", phoneMasked: "090****1234", region: "+84", level: "V0", registeredAt: "2026-11-20T15:30:00Z", lastLoginAt: "2026-11-24T05:50:00Z" } },
     statistics: { status: "READY", evaluatedAt, data: {
@@ -338,6 +338,6 @@ export function profileFixture(): SupportProfile {
     } },
     finance: { status: "READY", evaluatedAt, data: { byCurrency: [finance("USDT", "20"), finance("UVT", "0")] } },
     devices: unknown, risk: unknown, annotations: unknown, service: unknown,
-    actions: {},
+    actions: { resetPassword: { allowed: true }, freeze: { allowed: true }, unfreeze: { allowed: false }, adjustBalance: { allowed: true } },
   };
 }

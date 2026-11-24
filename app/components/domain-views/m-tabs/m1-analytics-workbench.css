@@ -191,3 +191,7 @@
 .m1-perf-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-3); width: 100%; }
 .m1-perf-foot .m1-perf-pager { display: inline-flex; align-items: center; gap: var(--rd-space-2); margin-left: 0; }
 .m1-perf-inline { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+
+.m1-perf-count { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
+.m1-perf-panel .rd-fold { margin-top: var(--rd-space-4); }
+.m1-perf-panel .m1-perf-break { margin-top: 0; }

@@ -94,3 +94,9 @@
 
 /* 长姓名在名字按钮里省略，不压到头像和「我」标记上。 */
 .m6-page .m6-identity-text .sl-person-name .m6-name { flex: 0 1 auto; overflow: hidden; }
+
+/* 公开成绩的关键数字：名称一行弱字，数字 24/32、600，单位 14 弱字（VS-102）。 */
+.m6-page .m6-lead { display: flex; flex-direction: column; gap: 2px; }
+.m6-page .m6-lead-label { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m6-page .m6-lead-value { display: flex; align-items: baseline; gap: var(--rd-space-1); color: var(--rd-text); font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.m6-page .m6-lead-value small { color: var(--rd-text-3); font-size: var(--rd-text-body); font-weight: var(--rd-weight-regular); }
