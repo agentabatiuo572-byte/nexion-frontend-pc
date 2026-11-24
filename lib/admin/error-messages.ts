@@ -1439,7 +1439,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   K2_WRITE_RESULT_INVALID: "原操作的返回内容不完整，结果未知；请保留原请求，按原请求重试或到操作记录核对。",
   F4_OPERATION_RETRY_STORAGE_UNAVAILABLE: "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。",
   F4_OPERATION_STORAGE_UNAVAILABLE: "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。",
-  F4_OVERVIEW_RESPONSE_INVALID: "奖励池、名额或材料数据不完整，暂不能按这些数据发起新修改；请重新读取，原操作仍可查询核对。",
+  F4_OVERVIEW_RESPONSE_INVALID: "收到的数据不完整，已停止显示。",
   F4_VOTE_PROJECTION_INVALID: "团队激励池的票数和每票金额数据不完整，请重新读取后核对。",
   F4_PROPOSAL_ORIGINAL_INCOMPLETE: "保存的原请求不完整，不能重发；请保留记录并查询原结果或到「操作记录与审批」核对。",
   AMBASSADOR_POLICY_REVISION_REQUIRED: "缺少大使规则修订号；请重新读取规则后提交。",

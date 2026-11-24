@@ -1463,7 +1463,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
         others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
         <div className="i3-form">
-          {frozen && <Notice tone="warn" title="结果未知">原请求已冻结。先在页面上方查询原结果，明确查不到后才能按原请求重试。</Notice>}
+          {frozen && <Notice tone="warn" title="结果未知">原请求已锁定，不能再改。先在页面上方查询原结果，明确查不到后才能按原请求重试。</Notice>}
           {saveError && <Notice tone="danger" title="草稿没有保存">{saveError}</Notice>}
           <section className="i3-form-section" aria-labelledby="i3-f-base">
             <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>

@@ -250,10 +250,10 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     confirmTone: board.paused ? "primary" : "danger", confirmLabel: board.paused ? "提交恢复" : "提交暂停",
     statedBrief: board.paused ? {
       impact: "批准后四个榜恢复更新，之后到期的日、周、月榜照常自动派奖。暂停期间跳过的周期恢复后不会补发。",
-      check: "榜单已在运行时会被拒绝。暂停时保存的快照留作历史。",
+      check: "榜单已在运行时会被拒绝。暂停那一刻的名次留作历史记录。",
     } : {
       impact: "批准后四个榜停在暂停那一刻的名次；暂停期间到期的日、周、月榜自动派奖不发，恢复后也不会补发；总榜派奖不能提交。团队激励池照常结算。",
-      check: "已经暂停时会被拒绝；保存四个榜的快照失败时整次不生效。",
+      check: "已经暂停时会被拒绝；四个榜的名次没存下来时整次不生效。",
     },
     completionCopy: approvalCopy("榜单处置权限"),
     detail: board.paused ? "恢复后榜单重新更新，之后的周期按当时的规则发奖。" : "暂停后榜单停在当前名次，榜单奖励暂停发放，团队激励池不受影响。",
@@ -392,7 +392,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
         impact: `批准后只开通申请人所选的「${ambassadorBucketLabel(packet!.bucket)}」这一类额度（一笔），不是付款，也不改其他申请。`,
         check: "执行时重新检查材料版本、两次核验、线下活动人数、认可金额、活动日期、附件和兑付覆盖率，任一不符就不执行。",
       },
-      completionCopy: "提交后由另一位管理员在「操作记录与审批」批准才生效。批准人需有大使最终批准权限和审批权限，不能核验过这一版材料，也不能是你自己。",
+      // 批准前什么不变（02 OP-60）；谁来批写在事实里，这里不再铺一段（BUG-682 第 4 条）。
+      completionCopy: "批准前不开通额度，这份申请不变。",
       coverageLead: "批准会开通一笔预算额度",
       coverageCheck: "批准执行时还会检查兑付覆盖率，读不到也不执行。",
       facts: <Facts>
@@ -400,6 +401,9 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
         <Fact k="认可金额">{packet!.financeReview.recognizedBudgetUsdt == null ? "尚未认可" : `${moneyText(packet!.financeReview.recognizedBudgetUsdt)} USDT`}</Fact>
         <Fact k="类别">{ambassadorBucketLabel(packet!.bucket)}</Fact>
         <Fact k="材料">第 {packet!.materialRevision} 版 · 业务核验和财务核验都已通过</Fact>
+        {/* 谁来批一行写完，和别的页同一个叫法；不再铺一段后端校验条件（BUG-682 第 4 条）。 */}
+        <Fact k="谁来批">另一位管理员，不能是你，也不能核验过这一版材料</Fact>
+        <Fact k="需有权限">大使最终批准权限和审批权限</Fact>
       </Facts>,
       detail: `${ambassadorBucketLabel(packet!.bucket)} · 申请金额 ${money(packet!.budgetUsdt)} · 认可金额 ${money(packet!.financeReview.recognizedBudgetUsdt)} · 材料 V${packet!.materialRevision}。业务核验与财务核验均已通过。本次仅开通所选类别的申请额度。`,
     };
@@ -413,7 +417,11 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       impact: "批准后这份申请变成已驳回，不开通额度；材料和核验历史保留。驳回不要求材料核验通过。",
       check: "申请已经处理过时会被拒绝。",
     },
-    completionCopy: "提交后由另一位管理员在「操作记录与审批」批准才生效。批准人需有大使最终批准权限和审批权限，不能是你自己。",
+    completionCopy: "批准前这份申请不变。",
+    facts: <Facts>
+      <Fact k="谁来批">另一位管理员，不能是你</Fact>
+      <Fact k="需有权限">大使最终批准权限和审批权限</Fact>
+    </Facts>,
     detail: "驳回这一份申请，提交审批后由另一位有权限的管理员执行。",
   };
       break;

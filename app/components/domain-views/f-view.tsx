@@ -599,7 +599,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const sendF4 = async (slot: string, spec: ProposeSpec) => {
     const owner = useAdminAuth.getState().session?.adminId;
     if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-    if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额和排行榜加载失败，请刷新后再操作。");
+    if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额与排行榜加载失败，请刷新后再操作。");
     if (await f4PendingFor(f4ApprovalRows, spec)) throw new Error("OBJECT_ALREADY_PENDING");
     try {
       const ticket = await sendF4Proposal(owner, slot, spec, f4Submission.current ?? mc?.f4Snapshot);
@@ -971,7 +971,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     submitTeamApproval,
     openActionConfirm: (m) => {
       if (m.f4Snapshot && !m.f4Recovery) {
-        if (!f4Overview || f4Loading || f4Error) { setToast("奖励池、名额和排行榜加载失败，请刷新后再操作。"); return; }
+        if (!f4Overview || f4Loading || f4Error) { setToast("奖励池、名额与排行榜加载失败，请刷新后再操作。"); return; }
         if ([...f4Proposals, ...f4PolicyWrites].some(row => matchesF4Confirmation(row, m.f4Snapshot!))) {
           setToast("请先查询保存的原操作。"); return;
         }
@@ -1515,7 +1515,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           if (mc.f4Snapshot) {
             if (mc.f4Owner !== useAdminAuth.getState().session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
             if (mc.f4Recovery) { await recoverF4(mc.f4Recovery, "retry"); return; }
-            if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额和排行榜加载失败，请刷新后再操作。");
+            if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额与排行榜加载失败，请刷新后再操作。");
             f4Submission.current = { ...mc.f4Snapshot, value: newVal, businessValue };
           }
           if (mc.run) {

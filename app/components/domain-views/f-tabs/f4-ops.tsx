@@ -146,13 +146,13 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
     return <div className="f4-page">
       {header}
       {ctx.f4Loading ? <>
-        <Conclusion state="unknown">正在读取奖励池、名额和排行榜…</Conclusion>
+        <Conclusion state="unknown">正在加载奖励池、名额与排行榜…</Conclusion>
         {recoveryNotice}
-        <BlockState state="loading" title="正在读取团队激励池、名额、大使申请和排行榜…" />
+        <BlockState state="loading" title="正在加载…" />
       </> : ctx.f4Error ? <>
         <Conclusion state="unknown" hint="点「重试」；加载成功前不显示旧数字，也不能发起新修改。">这页的数据没加载出来，暂时无法判断</Conclusion>
         {recoveryNotice}
-        <BlockState state="error" title="团队激励池、名额和排行榜加载失败" detail={ctx.f4Error} onRetry={() => void ctx.refreshF4()} />
+        <BlockState state="error" title="奖励池、名额与排行榜加载失败" detail={ctx.f4Error} onRetry={() => void ctx.refreshF4()} />
       </> : <>
         <Conclusion state="unknown">还没有读到数据</Conclusion>
         {recoveryNotice}

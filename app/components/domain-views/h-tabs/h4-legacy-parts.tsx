@@ -141,9 +141,9 @@ export function expiredTag() {
 }
 
 /** 走审批的修改在框里常显怎么生效：哪个方向要批、谁来批、批准前什么不变。 */
-/** 一行写清哪个方向要批准、谁来批；放进确认框的 Facts 里。 */
+/** 一行写清哪个方向要批准、谁来批；放进确认框的 Facts 里。行名和别的页一样叫「谁来批」（BUG-682 第 4 条）。 */
 export function ApprovalFact({ amplify, object }: { amplify: string; object: string }) {
-  return <Fact k="审批">{amplify}<span className="rd-keep">要另一位超级管理员批准，</span><span className="rd-keep">批准前{object}不变</span></Fact>;
+  return <Fact k="谁来批">{amplify}<span className="rd-keep">要另一位超级管理员批准，</span><span className="rd-keep">批准前{object}不变</span></Fact>;
 }
 export const effectDirect = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 export const effectByDirection = (amplify = "让平台多付钱的修改") => <><StatusTag tone="progress" filled>调低立即生效</StatusTag><StatusTag tone="neutral" explain={`${amplify}要另一位超级管理员（需有审批批准权限）批准，批准前什么都不变；其余确认后立即生效。提交时由系统判断方向。`}>调高要批准</StatusTag></>;
@@ -240,7 +240,7 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requi
         {/* 后端的 condition 就是活动说明的原文（同一列），中文界面不再把原文另列成「参与条件」；说明在上面，原文在「App 上的文字」里。 */}
         <div><dt><Flag size={14} aria-hidden />地区</dt><dd>{event.geo ? <span className="h4l-clip" title={event.geo} data-user-content="">{event.geo}</span> : <span className="h4-dim">未设</span>}</dd></div>
         <div><dt><CalendarRange size={14} aria-hidden />时间</dt><dd>{!rule ? <span className="h4-dim">—</span>
-          : rule.startsAt || rule.endsAt ? <><span className="h4-num">{formatTime(rule.startsAt, "Asia/Shanghai")}</span> → <span className="h4-num">{formatTime(rule.endsAt, "Asia/Shanghai")}</span><small>北京时间 · 玩法{rule.enabled ? "已开启" : rule.ready ? "已关闭，配置已就绪" : "已关闭，配置没就绪"}</small></>
+          : rule.startsAt || rule.endsAt ? <><span className="h4l-range"><span className="h4-num">{formatTime(rule.startsAt, "Asia/Shanghai")}</span> → <span className="h4-num">{formatTime(rule.endsAt, "Asia/Shanghai")}</span></span><small>北京时间 · 玩法{rule.enabled ? "已开启" : rule.ready ? "已关闭，配置已就绪" : "已关闭，配置没就绪"}</small></>
           : <span className="h4-dim">未配置</span>}</dd></div>
         <div><dt><Users size={14} aria-hidden />参与</dt><dd>{event.trackable
           ? <span className="h4l-funnel"><span><b className="h4-num">{numericValue(event.joinCount)}</b> 参与</span><span aria-hidden>→</span><span><b className="h4-num">{numericValue(event.doneCount)}</b> 达标</span><span aria-hidden>→</span><span><b className="h4-num">{numericValue(event.claimCount)}</b> 已领</span></span>
@@ -365,7 +365,7 @@ export function WheelBar({ tiers, label = "每一档的中奖概率", values, qu
     ...(gap > 0 ? [{ key: "__gap", label: "空缺", value: gap, tone: "warn" as const, text: `还差 ${percentText(gap)}%` }] : []),
   ];
   return <div className="h4l-wheelbar">
-    {total > 100.0001 ? <p className="rd-gfx-note" data-kind="problem">概率合计 {percentText(total)}%，超过 100%，没有画图</p>
+    {total > 100.0001 ? <p className="rd-gfx-note" data-kind="problem">超过 100%，没有画图</p>
       : <SegmentBar label={label} quiet={quiet} segments={segments} legend={false} />}
   </div>;
 }

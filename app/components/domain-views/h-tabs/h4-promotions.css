@@ -240,6 +240,7 @@
 .h4-page .h4l-facts dt { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .h4-page .h4l-facts dd { margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font-size: var(--rd-text-body); min-width: 0; overflow-wrap: anywhere; }
 .h4-page .h4l-facts dd small { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.h4-page .h4l-range .h4-num { white-space: nowrap; }  /* 起止时间是一段：放不下时在箭头后换行，箭头不单独占一行（DT-09，BUG-682 第 8 条） */
 .h4-page .h4l-facts dd.h4l-pay { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
 .h4-page .h4l-funnel { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 6px; color: var(--rd-text-2); }
 .h4-page .h4l-funnel b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }

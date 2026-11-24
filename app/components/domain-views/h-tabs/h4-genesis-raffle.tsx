@@ -397,7 +397,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
     {rows.length > 0 && error && !draft && <Notice tone="danger" title="创世抽奖没有读到最新的">{error}</Notice>}
     {stale && !draft && <Notice tone="warn" title={`没有保存：「${stale}」已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale("")}>知道了</Button>}>{error ? "你这次改的没有提交。" : "已读到最新配置。你这次改的没有提交，关掉时已丢弃；要改就重新打开。"}</Notice>}
     {!loading && rows.length > 0 && <p className="h4l-note">时间为北京时间</p>}
-    <Drawer open={!!draft} onClose={close} busy={saving} wide title={base ? "这一期的配置" : "新建一期抽奖"} sub={base ? base.id : undefined}
+    <Drawer open={!!draft} onClose={close} busy={saving} title={base ? "这一期的配置" : "新建一期抽奖"} sub={base ? base.id : undefined}
       explain="保存前先在这里填完整：三语名称、时间和奖项。关闭这个抽屉会丢掉没保存的改动。"
       footer={<Decision note={!write ? "没有修改创世抽奖的权限" : saveBlocked ? (base?.status === "OPEN" ? "已有人报名：奖项和时间锁定，也不能关闭" : "已开奖或正在开奖，只能查看") : undefined}
         others={<Button disabled={saving} onClick={close}>取消</Button>}

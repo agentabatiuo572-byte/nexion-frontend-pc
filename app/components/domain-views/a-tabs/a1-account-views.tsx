@@ -175,7 +175,7 @@ export const approvalTag = (note = "批准前账号不变。") => (
   <StatusTag tone="progress" filled explain={`另一位超级管理员在「操作记录与审批」批准后执行。${note}`}>批准后生效</StatusTag>
 );
 export const directTag = () => <StatusTag tone="progress" filled>立即生效</StatusTag>;
-export const approverFact = () => <Fact k="批准人">另一位超级管理员，需有批准审批单的权限</Fact>;
+export const approverFact = () => <Fact k="谁来批">另一位超级管理员，需有批准审批单的权限</Fact>;
 
 /* ---------- 账号操作清单（详情抽屉） ---------- */
 
