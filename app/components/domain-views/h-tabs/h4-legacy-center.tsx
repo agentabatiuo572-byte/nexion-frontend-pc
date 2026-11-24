@@ -1419,7 +1419,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         const retryBlocked = lookupKey ? media ? "正在处理原操作" : "正在查询" : h4RetryBlockedReason(record);
         const pending = h4CommandHasPendingTicket(record.commandKey);
         const state = h4CommandLookupState(record);
-        const lookup = state === "PROCESSING" || state === "NOT_FOUND" ? unsettledLookupStatus(state, expired) : undefined;
+        const lookup = state === "PROCESSING" || state === "NOT_FOUND" ? unsettledLookupStatus(state, expired)
+          : state === "FAILED" ? { tone: "neutral" as const, label: "记为失败", line: "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起。" }
+          : state === "UNKNOWN" ? { tone: "warn" as const, label: "仍未知", line: "系统也没有结果，重试也拿不到新结果；到操作记录与审批核对。" } : undefined;
         return <li key={record.commandKey}>
           <span className="h4-pending-what"><b>{subject}</b>{hiCommandChange(record) && <span className="h4-pending-change">{hiCommandChange(record)}</span>}</span>
           <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}</span>（北京时间）</span>
