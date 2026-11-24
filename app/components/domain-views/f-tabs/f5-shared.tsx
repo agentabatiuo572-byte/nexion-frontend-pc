@@ -53,6 +53,7 @@ export function StatusBadge({ status, explain = true }: { status: string; explai
 }
 
 export const isFriend = (row: Pick<F5CommissionEvent, "kind">) => row.kind === "direct_purchase" || row.kind === "direct_device_earning";
+export const deviceEarningSource = (layer: number | string | undefined) => Number(layer) === 2 ? "好友的好友" : "好友";
 export const isGrouped = (row: Pick<F5CommissionEvent, "settlementNo" | "kind">) => isFriend(row) || !!row.settlementNo;
 
 /** 用户编码：U 加 8 位数字，和后端给的 user 一个写法。编号不加千分位。 */

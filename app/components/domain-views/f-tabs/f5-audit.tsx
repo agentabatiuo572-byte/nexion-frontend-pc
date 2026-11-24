@@ -15,7 +15,6 @@ import {
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { F5CommissionEvent, F5CommissionQuery } from "@/lib/admin/f1-client";
-import { F5_KINDS as KINDS } from "@/lib/admin/f-overview-contract";
 import type { F5Recovery, FViewCtx } from "./types";
 import { FReleaseButton } from "./f-release";
 import { canRetryF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
@@ -23,7 +22,7 @@ import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
-  APPROVER, KIND_LABELS, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, isFriend, isGrouped, knownRejection,
+  APPROVER, KIND_LABELS, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, deviceEarningSource, isFriend, isGrouped, knownRejection,
   statusName, timeText, userCode, zoneNote, F5ConfirmHost, Money, F5RecoveryNotice, type F5Confirm, type F5RecoveryRow,
 } from "./f5-shared";
 import { F5KindTiles, F5StatusFlow } from "./f5-overview";
@@ -61,6 +60,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const [confirm, setConfirm] = useState<F5Confirm | null>(null);
   const tabIds = useTabIds();
   const { f5Overview: data, f5NextQuery, f5Loading: loading, f5Error: error } = ctx;
+  const suspendableKinds = data?.suspendableKinds ?? [];
   const reissueAvailable = canReissue && !error && !!data;
   const events = useMemo(() => data?.commissionEvents ?? [], [data]);
   const selectedRows = useMemo(
@@ -330,7 +330,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             label: "暂停哪些奖励",
             current: row.kind,
             inputKind: "multi-select",
-            options: KINDS,
+            options: [...suspendableKinds],
             optionLabels: KIND_LABELS,
             required: true,
             wide: true,
@@ -497,7 +497,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     if (canFreeze && row.status === "cooling") list.push({ key: "freeze", label: "冻结", onSelect: () => dispose("freeze", row) });
     if (canRelease && (row.canUnlock === true || row.status === "cooling" && (!isFriend(row) || row.canUnlock !== undefined))) list.push({ key: "unlock", label: "提前解锁", disabledReason: knownRejection(row, "release", data?.activeSuspensions), onSelect: () => dispose("unlock", row) });
     if (canFreeze && row.status === "frozen") list.push({ key: "unfreeze", label: "解冻", onSelect: () => dispose("unfreeze", row) });
-    if (canSuspend) list.push({ key: "suspend", label: "暂停此类奖励", onSelect: () => suspend(row) });
+    if (canSuspend && suspendableKinds.includes(row.kind)) list.push({ key: "suspend", label: "暂停此类奖励", onSelect: () => suspend(row) });
     if (canReverse && (row.canReverse === true || !SETTLED.includes(row.status))) list.push({ key: "reverse", label: "冲正", danger: true, disabledReason: knownRejection(row, "reverse"), onSelect: () => reverse(row) });
     return list.map(item => ({ ...item, disabledReason: blockedRecord(row) ?? item.disabledReason }));
   };
@@ -560,7 +560,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     </Conclusion>;
   };
 
-  const kindOptions = [{ value: "", label: "全部类型" }, ...KINDS.map((item) => ({ value: item, label: KIND_LABELS[item] }))];
+  const kindOptions = [{ value: "", label: "全部类型" }, ...(data?.commissionKinds ?? []).map((item) => ({ value: item.key, label: KIND_LABELS[item.key] ?? item.lbl }))];
   const statusOptions = [{ value: "", label: "全部状态" }, ...STATUS_ORDER.map((item) => ({ value: item, label: STATUS_META[item].name }))];
   const currencyOptions = [{ value: "", label: "全部币种" }, { value: "USDT", label: "USDT" }, { value: "UVT", label: "UVT" }];
   const moreCount = (currency ? 1 : 0) + (cohort ? 1 : 0);
@@ -611,7 +611,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                     : events.map((row, index) => {
                       const selectable = !blockedRecord(row) && canReissue && row.status === "reversed" && !isFriend(row) && !row.reversalRecorded;
                       const blockedPick = blockedRecord(row) ?? (row.status === "reversed" && !selectable ? isFriend(row) ? "好友奖励不能补发" : row.reversalRecorded ? "已退款的记录不能补发" : undefined : undefined);
-                      const source = isFriend(row) ? `直接邀请的好友${row.sourceUserId ? ` ${userCode(row.sourceUserId)}` : ""}`
+                      const source = isFriend(row) ? `${row.kind === "direct_device_earning" ? deviceEarningSource(row.layer) : "直接邀请的好友"}${row.sourceUserId ? ` ${userCode(row.sourceUserId)}` : ""}`
                         : [row.sourceUserId ? `来自 ${userCode(row.sourceUserId)}` : "", row.layer ? `第 ${row.layer} 层` : ""].filter(Boolean).join(" · ") || "—";
                       const items = rowActions(row);
                       return (

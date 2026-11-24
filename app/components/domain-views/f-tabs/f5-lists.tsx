@@ -9,7 +9,7 @@ import { Button, Cell, Fold, Panel, StatusTag, Table, TableMessage, Td, Th, Tr }
 import type { F5Anomaly, F5CommissionAuditOverview, F5LayerRatioComparison, F5OperationHistory, F5PendingCalculation } from "@/lib/admin/f1-client";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
-import { KIND_LABELS, Money, percentText, isFriend, kindNames, operationLabel, timeText, userCode, zoneNote } from "./f5-shared";
+import { KIND_LABELS, Money, deviceEarningSource, percentText, kindNames, operationLabel, timeText, userCode, zoneNote } from "./f5-shared";
 
 /** 后端异常类型是机器码，页面写中文；不认识的原样写。证据里的奖励类型键换成中文名。 */
 const ANOMALY_TYPES: Record<string, string> = { amount: "金额偏离", frequency: "出现太频繁", "layer-ratio": "层比例偏离" };
@@ -34,7 +34,7 @@ export function F5PendingList({ rows, count, statusFiltered }: { rows: readonly 
               : rows.map((row) => (
                 <Tr key={row.settlementNo}>
                   <Td><Cell mono full main={row.settlementNo} /></Td>
-                  <Td><Cell main={KIND_LABELS[row.kind] ?? "未知奖励类型"} sub={isFriend(row) ? "直接邀请的好友" : `第 ${row.layer} 层`} /></Td>
+                  <Td><Cell main={KIND_LABELS[row.kind] ?? "未知奖励类型"} sub={row.kind === "direct_device_earning" ? deviceEarningSource(row.layer) : "直接邀请的好友"} /></Td>
                   <Td><Cell main={<span data-mono>{row.sourceRef}</span>} sub={operatorNicknameText(row.sourceUserName)} title={row.sourceRef} /></Td>
                   <Td align="right"><Cell num main={<Money value={row.basisUsdt} currency="USDT" />} /></Td>
                   <Td><Cell main={<StatusTag tone="neutral" icon={Clock3}>等价格</StatusTag>} sub="USDT、UVT 都还没算" /></Td>

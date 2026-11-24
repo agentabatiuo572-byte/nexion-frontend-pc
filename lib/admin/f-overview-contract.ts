@@ -19,8 +19,10 @@ export type F4AmbassadorMetricBasis = typeof F4_AMBASSADOR_METRIC_BASIS;
 export const F5_KIND_LABELS: Record<string, string> = {
   direct_purchase: "好友购买奖励", direct_device_earning: "好友设备收益奖励",
   network: "团队购买奖励", binary: "团队平衡奖励", peer: "同级奖励", cultivation: "好友升级奖励", leadership: "团队激励池", genesis: "创世节点收益",
+  vrank_salary: "等级月薪",
 };
 export const F5_KINDS = Object.keys(F5_KIND_LABELS);
+export const F5_LEGACY_KINDS = F5_KINDS.filter((kind) => kind !== "vrank_salary");
 export const F5_STATUSES = ["cooling", "unlocked", "withdrawn", "reversed", "frozen", "rejected", "recovery_pending"];
 
 function invalid(module: string, detail: string): never {
@@ -144,6 +146,7 @@ function uniqueCodes(
     || expected.some((code) => !codes.includes(code))) {
     invalid(module, field);
   }
+  return codes;
 }
 
 export function assertF1Overview(value: unknown): asserts value is JsonRecord {
@@ -477,7 +480,9 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
     const item = record(value, "F5", `pendingCalculations[${index}]`);
     for (const key of ["id", "settlementNo", "sourceRef"]) text(item[key], "F5", key);
     if (typeof item.sourceUserName !== "string") invalid("F5", "sourceUserName");
-    if (item.id !== item.settlementNo || ids.has(String(item.id)) || !["direct_purchase", "direct_device_earning"].includes(String(item.kind)) || item.status !== "waiting_calculation" || item.nexUsdtPrice !== null || finite(item.amountUSDT, "F5", "amountUSDT") !== 0 || finite(item.amountNEX, "F5", "amountNEX") !== 0 || positiveInteger(item.layer, "F5", "layer") !== 1) invalid("F5", `pendingCalculations[${index}].relation`);
+    const layer = positiveInteger(item.layer, "F5", "layer");
+    const validLayer = layer === 1 || (item.kind === "direct_device_earning" && layer === 2);
+    if (item.id !== item.settlementNo || ids.has(String(item.id)) || !["direct_purchase", "direct_device_earning"].includes(String(item.kind)) || item.status !== "waiting_calculation" || item.nexUsdtPrice !== null || finite(item.amountUSDT, "F5", "amountUSDT") !== 0 || finite(item.amountNEX, "F5", "amountNEX") !== 0 || !validLayer) invalid("F5", `pendingCalculations[${index}].relation`);
     nonNegative(item.basisUsdt, "F5", "basisUsdt");
     for (const key of ["ts", "unlockAt"]) {
       if (item[key] !== null && (typeof item[key] !== "number" || !Number.isSafeInteger(item[key]) || item[key] < 0 || !Number.isFinite(new Date(item[key]).getTime()))) invalid("F5", key);
@@ -495,13 +500,18 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   }
   const frozenCount = nonNegativeInteger(summary.frozenCount, "F5", "summary.frozenCount");
   const kinds = array(row, "commissionKinds", "F5");
-  uniqueCodes(
+  const kindKeys = new Set(uniqueCodes(
     kinds,
     "F5",
     "commissionKinds",
-    F5_KINDS,
+    kinds.length === F5_LEGACY_KINDS.length ? F5_LEGACY_KINDS : F5_KINDS,
     "key",
-  );
+  ));
+  if (row.suspendableKinds !== undefined || kinds.length === F5_KINDS.length) {
+    const suspendable = array(row, "suspendableKinds", "F5");
+    if (suspendable.some((kind) => typeof kind !== "string" || !F5_LEGACY_KINDS.includes(kind))
+        || new Set(suspendable).size !== suspendable.length) invalid("F5", "suspendableKinds");
+  }
   const kindCounts: number[] = [];
   kinds.forEach((value, index) => {
     const kind = record(value, "F5", `commissionKinds[${index}]`);
@@ -546,7 +556,7 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
     const kind = text(event.kind, "F5", `commissionEvents[${index}].kind`);
     const currency = text(event.currency, "F5", `commissionEvents[${index}].currency`);
     const status = text(event.status, "F5", `commissionEvents[${index}].status`);
-    if (!F5_KINDS.includes(kind)
+    if (!kindKeys.has(kind)
         || !["USDT", "UVT"].includes(currency)
         || !F5_STATUSES.includes(status)) {
       invalid("F5", `commissionEvents[${index}].enum`);
@@ -631,7 +641,7 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   array(row, "activeSuspensions", "F5").forEach((value, index) => {
     const suspension = record(value, "F5", `activeSuspensions[${index}]`);
     positiveInteger(suspension.userId, "F5", `activeSuspensions[${index}].userId`);
-    if (!F5_KINDS.includes(text(suspension.kind, "F5", `activeSuspensions[${index}].kind`))) invalid("F5", "activeSuspensions.kind");
+    if (!F5_LEGACY_KINDS.includes(text(suspension.kind, "F5", `activeSuspensions[${index}].kind`))) invalid("F5", "activeSuspensions.kind");
   });
   if (row.coverage != null) {
     const coverage = object(row, "coverage", "F5");
