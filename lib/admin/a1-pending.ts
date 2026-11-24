@@ -25,7 +25,7 @@ export type A1Request =
 export type A1Pending = PendingMutationRecord & {
   actorId: number; intent: A1Intent; snapshot: A1Snapshot; request: A1Request;
   confirmationReason: string; businessValue?: Record<string, string>;
-  ticket?: A2OperationRow; received?: boolean; verifiedNotExecuted?: boolean;
+  ticket?: A2OperationRow; received?: boolean; verifiedNotExecuted?: boolean; permissionVerificationPending?: boolean;
 };
 type LegacyCreation = PendingMutationRecord & { actorId: number; form: A1CreateAccountInput & { reason: string }; reason: string; operator: string };
 
@@ -77,6 +77,7 @@ function validRecord(value: A1Pending | LegacyCreation) {
     }
     if (value.ticket && (!value.ticket.id || typeof value.ticket.mine !== "boolean" || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(value.ticket.status))) return false;
     if (value.verifiedNotExecuted !== undefined && typeof value.verifiedNotExecuted !== "boolean") return false;
+    if (value.permissionVerificationPending !== undefined && (request.kind !== "permission" || typeof value.permissionVerificationPending !== "boolean")) return false;
     return true;
   } catch { return false; }
 }
@@ -124,7 +125,7 @@ export const a1Recovery = createPendingRecovery<A1Pending>(a1PendingCommands, {
       && canAccessResolvedPath(resolveVisibleDomains(session), "/platform/rbac")
       && (record.request.kind !== "proposal" || session.authorities.includes("platform_a2_write"))
       && (!["create", "password", "session", "logout"].includes(record.intent.kind) || ["super", "superadmin"].includes(session.role))
-      && !record.received && !record.ticket && !record.verifiedNotExecuted;
+      && !record.received && !record.ticket && !record.verifiedNotExecuted && !record.permissionVerificationPending;
   },
 });
 

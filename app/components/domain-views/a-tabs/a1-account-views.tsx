@@ -11,7 +11,7 @@ import { domainOfPermission, pageLabelFromCode } from "@/lib/admin/perm-domain";
 import { F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
 import { businessStamp, businessZone, businessZoneText, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { AVATAR_GENDER_OPTIONS, type AvatarGender } from "@/lib/admin/account-avatar-contract";
-import { avatarDrafts, avatarDraftFingerprint } from "@/lib/admin/account-avatar-pending";
+import { avatarDrafts, avatarDraftFingerprint, newAccountAvatarTarget } from "@/lib/admin/account-avatar-pending";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { A1CreateAccountInput, A1Operator, A1PasswordResetResult, A1RoleDefinition, A1UpdateAccountInput } from "@/lib/admin/a1-client";
@@ -387,12 +387,13 @@ function StepTitle({ n, children }: { n: number; children: ReactNode }) {
   return <h3 className="a1-step-title"><span className="a1-step-n" aria-hidden>{n}</span>{children}</h3>;
 }
 
-export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, initialForm, onClose, onSubmit }: {
+export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, initialForm, originalCommandKey, onClose, onSubmit }: {
   roles: A1RoleDefinition[];
   codesByRole: Record<string, string[]> | null;
   recoveryMode: boolean;
   disabled?: boolean;
   initialForm?: NaForm;
+  originalCommandKey?: string;
   onClose: () => void;
   onSubmit: (form: NaForm) => void;
 }) {
@@ -403,8 +404,8 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
   const [email, setEmail] = useState(initialForm?.email ?? "");
   const [role, setRole] = useState(initialForm?.role ?? defaultRole);
   const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(initialForm?.avatarGender ?? "UNSPECIFIED");
-  const [avatarMode, setAvatarMode] = useState<"default" | "manual">(initialForm?.avatarAssetId || initialForm?.useDefaultAvatar === false || actorId && avatarDrafts.list().some(row => row.fingerprint === avatarDraftFingerprint(actorId, "admin", "new")) ? "manual" : "default");
-  const [avatarAssetId, setAvatarAssetId] = useState<string | undefined>(), [avatarBlocking, setAvatarBlocking] = useState(false);
+  const [avatarMode, setAvatarMode] = useState<"default" | "manual">(originalCommandKey || actorId && avatarDrafts.list().some(row => row.fingerprint === avatarDraftFingerprint(actorId, "admin", "new")) ? "manual" : "default");
+  const [avatarAssetId, setAvatarAssetId] = useState<string | undefined>(), [avatarBlocking, setAvatarBlocking] = useState(Boolean(originalCommandKey && initialForm?.avatarAssetId));
   const [touched, setTouched] = useState(false);
   const useDefaultAvatar = role === "support" && avatarMode === "default";
   useEffect(() => { if (avatarBlocking || avatarAssetId) setAvatarMode("manual"); }, [avatarBlocking, avatarAssetId]);
@@ -493,7 +494,8 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
             <p className="a1-help">创建后可更换头像。</p>
           </>
         )}
-        {!useDefaultAvatar && <div className="a1-avatar-slot"><AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking} /></div>}
+        {!useDefaultAvatar && <div className="a1-avatar-slot"><AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}
+          targetId={originalCommandKey ? newAccountAvatarTarget(originalCommandKey) : undefined} originalAssetId={initialForm?.avatarAssetId} /></div>}
         {avatarBlocking && <Notice tone="warn">新头像尚未上传成功；上传或取消新头像后可继续创建。</Notice>}
 
         <StepTitle n={role === "support" ? 4 : 3}>首次登录</StepTitle>

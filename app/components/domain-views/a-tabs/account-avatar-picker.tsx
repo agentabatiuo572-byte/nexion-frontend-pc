@@ -6,7 +6,7 @@ import { a1AvatarCancellation, a1AvatarCancellationRecovery, a1AvatarPreparation
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { type AvatarGender, type AvatarScope } from "@/lib/admin/account-avatar-contract";
 import { supportClient } from "@/lib/admin/m-support-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -14,9 +14,9 @@ import { SupportAvatar } from "../m-tabs/support-avatar";
 import { usePendingReplayDeadline } from "../design-kit";
 import "./account-avatar-controls.css";
 
-export function AccountAvatarPicker({ account, targetId, name, disabled, scope = "admin", gender = "UNSPECIFIED", allowDefault = false, currentPath, currentVersion, onChange, onBlocking }: {
+export function AccountAvatarPicker({ account, targetId, originalAssetId, name, disabled, scope = "admin", gender = "UNSPECIFIED", allowDefault = false, currentPath, currentVersion, onChange, onBlocking }: {
   /** 没有账号资料时（原头像的独立处理位置），按原记录里的账号编号对上同一条原记录。 */
-  account?: A1Operator; targetId?: string; name: string; disabled?: boolean; scope?: AvatarScope; gender?: AvatarGender; allowDefault?: boolean;
+  account?: A1Operator; targetId?: string; originalAssetId?: string; name: string; disabled?: boolean; scope?: AvatarScope; gender?: AvatarGender; allowDefault?: boolean;
   currentPath?: string; currentVersion?: number; onChange: (assetId?: string) => void; onBlocking: (blocking: boolean) => void;
 }) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
@@ -30,9 +30,31 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
   const updateDraft = (next: AvatarDraft | null) => { setDraft(next); onChange(next?.asset?.assetId); onBlocking(Boolean(next && (!next.asset || next.cancelKey))); };
   useEffect(() => {
     generation.current++; controller.current?.abort(); resetFile(); setBusy(false); setError(""); setInvalidSelection(false);
-    updateDraft(avatarDrafts.list().find(row => row.fingerprint === fingerprint && row.actorId === actorId) ?? null);
+    const saved = avatarDrafts.list().find(row => row.fingerprint === fingerprint && row.actorId === actorId
+      && (!originalAssetId || row.asset?.assetId === originalAssetId)) ?? null;
+    if (!originalAssetId) updateDraft(saved);
+    else if (!saved?.asset || saved.cancelKey || Date.parse(saved.asset.expiresAt) <= Date.now()) {
+      updateDraft(null);
+      setError("原头像已不可用，请重新选择。");
+    } else {
+      setDraft(null); onChange(undefined); onBlocking(true); setBusy(true);
+      const asset = saved.asset, abort = new AbortController();
+      controller.current = abort;
+      void guardedFetch(asset.previewRef, { cache: "no-store", signal: abort.signal }).then(async response => {
+        if (!response.ok || !["image/jpeg", "image/png"].includes(response.headers.get("Content-Type") ?? "")) throw new Error();
+        const blob = await response.blob();
+        if (abort.signal.aborted) return;
+        if (!blob.size || Date.parse(asset.expiresAt) <= Date.now()) throw new Error();
+        objectUrl.current = URL.createObjectURL(blob); setUrl(objectUrl.current);
+        updateDraft(saved);
+      }).catch(() => {
+        if (abort.signal.aborted) return;
+        updateDraft(null);
+        setError("原头像已不可用，请重新选择。");
+      }).finally(() => { if (!abort.signal.aborted) setBusy(false); });
+    }
     return () => { generation.current++; controller.current?.abort(); if (objectUrl.current) URL.revokeObjectURL(objectUrl.current); };
-  }, [epoch, fingerprint]);
+  }, [epoch, fingerprint, originalAssetId]);
   const expired = Boolean(draft && Date.now() >= draft.expiresAt);
   const cancellation = draft ? a1AvatarCancellation(draft) : undefined;
   const cancellationState = cancellation && a1AvatarCancellationRecovery.state(cancellation);
@@ -165,11 +187,11 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
     finally { if (active(token)) setBusy(false); }
   }
   return <fieldset className="account-avatar-controls" disabled={disabled || busy}><legend>账号头像</legend>
-    <p>{scope === "self" ? "保存本人头像需确认并填写理由，保存前原头像保持不变。" : account || targetId && targetId !== "new" ? "新头像随资料修改批准后生效，批准前原头像不变。" : "新头像在账号建好时一起生效。"}</p>
+    <p>{scope === "self" ? "保存本人头像需确认并填写理由，保存前原头像保持不变。" : account || targetId && targetId !== "new" && !targetId.startsWith("new/") ? "新头像随资料修改批准后生效，批准前原头像不变。" : "新头像在账号建好时一起生效。"}</p>
     <div className="account-avatar-row">
       {canUpload ? <label className="account-avatar-field">选择 JPG / PNG 头像<input type="file" accept="image/jpeg,image/png" title={file?.name} disabled={Boolean(draft?.asset || draft?.kind === "DEFAULT" || draft?.cancelKey || expired)} onChange={e => { void choose(e.target.files?.[0]); e.target.value = ""; }} />{file && <small title={file.name}>{file.name}</small>}</label> : <p>需要超级管理员权限，现有头像只读。</p>}
       <div className="account-avatar-preview"><div><p>当前头像</p><SupportAvatar name={name || "运营账号"} path={currentPath ?? (account?.avatarAssetId ? `/api/admin/platform/accounts/${account.id}/avatar` : undefined)} version={currentVersion ?? account?.avatarVersion ?? undefined} size={64} /></div>
-        {(draft?.asset || url) && <div><p>新头像</p>{draft?.asset ? <SupportAvatar name={name || "运营账号"} path={draft.asset.previewRef} size={64} /> : <img src={url} alt="待上传账号头像" width={64} height={64} style={{ objectFit: "cover", borderRadius: "50%" }} />}<small>尚未保存到账号</small></div>}
+        {(draft?.asset || url) && <div><p>新头像</p>{draft?.asset && (draft.asset.assetId !== originalAssetId || !url) ? <SupportAvatar name={name || "运营账号"} path={draft.asset.previewRef} size={64} /> : <img src={url} alt="待上传账号头像" width={64} height={64} style={{ objectFit: "cover", borderRadius: "50%" }} />}<small>尚未保存到账号</small></div>}
       </div>
     </div>
     {canUpload && allowDefault && !draft && !invalidSelection && <button type="button" className="l-btn" onClick={() => void prepare(true)}>按所选分类准备默认头像</button>}

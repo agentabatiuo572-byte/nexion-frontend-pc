@@ -32,7 +32,7 @@ import type { ACtx, ActionConfirmReq } from "./types";
 import { usePendingReplayDeadline, type BusinessFormValue } from "../design-kit";
 import { pendingReplayReason } from "../recovery-panel";
 import { RETRY_EXPIRED_TEXT, type PendingRecoveryConclusion } from "@/lib/admin/pending-mutation-store";
-import { a1AvatarCancellation, a1AvatarCancellationRecovery, a1AvatarPreparationRecovery, avatarDrafts, avatarDraftFingerprint, queryAvatarCancellation, replayAvatarCancellation } from "@/lib/admin/account-avatar-pending";
+import { a1AvatarCancellation, a1AvatarCancellationRecovery, a1AvatarPreparationRecovery, avatarDrafts, avatarDraftFingerprint, findNewAccountAvatar, linkNewAccountAvatar, queryAvatarCancellation, replayAvatarCancellation } from "@/lib/admin/account-avatar-pending";
 import { AVATAR_GENDER_OPTIONS } from "@/lib/admin/account-avatar-contract";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { SupportQualificationEditor, canManageSupportQualifications } from "../m-tabs/m1-group-management";
@@ -72,6 +72,8 @@ type ListFilter = "all" | "ok" | "unbound" | "disabled" | "super";
 const PROPOSAL_NAME: Partial<Record<A1Intent["kind"], string>> = {
   create: "提交新建账号审批", profile: "编辑资料", role: "改角色", "2fa": "重置两步验证", disable: "停用账号", enable: "启用账号", logout: "撤销全部登录",
 };
+const PERMISSION_VERIFICATION_UNAVAILABLE = "登记已成功，核对暂时读不到。";
+const PERMISSION_VERIFICATION_NOT_ALLOWED = "已按回执确认登记成功；当前账号不能读权限清单，无法再核对。";
 
 const FILTER_TEXT: Record<Exclude<ListFilter, "all">, string> = { ok: "启用且已绑定两步验证", unbound: "启用但未绑定两步验证", disabled: "已停用", super: "超级管理员" };
 
@@ -137,7 +139,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [accountOperations, setAccountOperations] = useState<A1Pending[]>([]);
   const reloadPending = () => setAccountOperations(a1PendingCommands.list().filter(r => r.actorId === useAdminAuth.getState().session?.adminId));
   useEffect(() => { setAccountOperations(a1PendingCommands.list().filter(r => r.actorId === currentAdminId)); }, [currentAdminId]);
-  const pendingOperations = accountOperations.filter(record => !record.verifiedNotExecuted);
+  const pendingOperations = accountOperations.filter(record => !record.verifiedNotExecuted && !record.permissionVerificationPending);
   useSyncExternalStore(a1Recovery.subscribe, a1Recovery.getRevision, () => 0);
   useSyncExternalStore(a1AvatarPreparationRecovery.subscribe, a1AvatarPreparationRecovery.getRevision, () => 0);
   useSyncExternalStore(a1AvatarCancellationRecovery.subscribe, a1AvatarCancellationRecovery.getRevision, () => 0);
@@ -341,7 +343,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     return null;
   };
 
-  const pendingFor = (intent: A1Intent) => a1PendingCommands.list().find(r => r.actorId === currentAdminId && !r.verifiedNotExecuted && a1IntentSlot(r.intent) === a1IntentSlot(intent));
+  const pendingFor = (intent: A1Intent) => a1PendingCommands.list().find(r => r.actorId === currentAdminId && !r.verifiedNotExecuted && !r.permissionVerificationPending && a1IntentSlot(r.intent) === a1IntentSlot(intent));
   const recoveryStarted = () => {
     freshOverview.current = null;
     setOverviewReady(false);
@@ -388,7 +390,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       || ticket.operationCode !== record.request.input.command.op) throw new Error("A1_PROPOSAL_RECEIPT_MISMATCH");
   };
   const queryOriginal = async (original: A1Pending, announce = true, fromConfirm = false) => {
-    const result = await a1Recovery.query(original, async (record): Promise<{ conclusion: PendingRecoveryConclusion; ticket?: A2OperationRow }> => {
+    const result = await a1Recovery.query(original, async (record): Promise<{
+      conclusion: PendingRecoveryConclusion; ticket?: A2OperationRow;
+      permissionVerification?: "checked" | "unavailable" | "not-allowed";
+    }> => {
       requireActor(record.intent, false);
       if (record.actorId !== currentAdminId) throw new Error("A1_SESSION_CHANGED");
       if (record.request.kind === "proposal") {
@@ -411,8 +416,15 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         return { conclusion: offline ? "succeeded" : "unknown" };
       }
 
-      const conclusion = await queryA1DirectReceipt(record);
-      requireActor(record.intent, false);
+      const conclusion = record.permissionVerificationPending ? "succeeded" : await queryA1DirectReceipt(record);
+      const session = requireActor(record.intent, false);
+      if (conclusion === "succeeded" && record.request.kind === "permission") {
+        if (!session.authorities.includes("platform_a8_read")) return { conclusion, permissionVerification: "not-allowed" };
+        const code = record.request.input.permissionCode.toLowerCase();
+        const detail = await fetchA8PermissionDetail(code).catch(() => null);
+        requireActor(record.intent, false);
+        return { conclusion, permissionVerification: detail?.permissionCode === code ? "checked" : "unavailable" };
+      }
       return { conclusion: record.received && conclusion !== "succeeded" ? "unknown" : conclusion };
     });
     if (!result) return false;
@@ -435,28 +447,15 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     }
 
     const request = original.request;
-    const directSuccess = conclusion === "succeeded" && request.kind !== "proposal" && request.kind !== "session";
-    if (directSuccess) {
-      // The receipt is known even if the current actor cannot read the linked business fact.
-      a1PendingCommands.remember(original.fingerprint, original.commandKey, { ...original, received: true });
+    if (result.permissionVerification === "unavailable") {
+      a1PendingCommands.remember(original.fingerprint, original.commandKey, { ...original, received: true, permissionVerificationPending: true });
       reloadPending();
+      if (fromConfirm) ctx.closeActionConfirm?.();
+      if (announce) toast(PERMISSION_VERIFICATION_UNAVAILABLE);
+      return true;
     }
-    if (request.kind !== "session" && (announce || directSuccess)) {
-      const data = await refreshOverview(true);
-      if (!data) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
-      if (directSuccess) {
-        let verified = false;
-        if (request.kind === "create") {
-          verified = data.operators.some(account => account.username.toLowerCase() === request.input.username.toLowerCase());
-        } else if (request.kind === "password") {
-          const account = data.operators.find(item => item.id === request.accountId);
-          verified = !!account && BigInt(account.version) > BigInt(request.expectedVersion);
-        } else if (request.kind === "permission") {
-          const code = request.input.permissionCode.toLowerCase();
-          verified = (await fetchA8PermissionDetail(code).catch(() => null))?.permissionCode === code;
-        }
-        if (!verified) throw new Error("A1_READBACK_ONLY");
-      }
+    if (request.kind !== "session" && announce && (request.kind === "proposal" || conclusion !== "succeeded")) {
+      if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
     }
     requireActor(original.intent, false);
     if (conclusion !== "succeeded") {
@@ -472,14 +471,16 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (fromConfirm) ctx.closeActionConfirm?.();
     if (original.intent.kind === "create" || original.intent.kind === "profile") {
       const { intent, actorId } = original;
-      const fingerprint = avatarDraftFingerprint(actorId, "admin", intent.kind === "create" ? "new" : intent.account.id);
-      const avatar = avatarDrafts.list().find(row => row.fingerprint === fingerprint && row.asset?.assetId === (intent.form.avatarAssetId ?? null));
-      if (avatar) avatarDrafts.forget(fingerprint, avatar.commandKey);
+      const avatar = intent.kind === "create" ? findNewAccountAvatar(actorId, intent.form.avatarAssetId)
+        : avatarDrafts.list().find(row => row.fingerprint === avatarDraftFingerprint(actorId, "admin", intent.account.id) && row.asset?.assetId === (intent.form.avatarAssetId ?? null));
+      if (avatar) avatarDrafts.forget(avatar.fingerprint, avatar.commandKey);
     }
+    if (request.kind === "create" || request.kind === "password") void refreshOverview(true);
     if (announce) toast(result.ticket ? "原审批单：已批准"
       : original.request.kind === "create" ? "查到原结果：账号已建好。一次性密码这里拿不到，请给这个账号重置一次密码，把新的一次性密码交给对方。"
         : original.request.kind === "password" ? "查到原结果：密码已重置。一次性密码这里拿不到，请再重置一次，把新的一次性密码交给对方。"
-          : original.request.kind === "session" ? "该设备已下线" : displayAdminError(new Error("A1_ORIGINAL_OPERATION_CONFIRMED")));
+          : original.request.kind === "session" ? "该设备已下线" : result.permissionVerification === "not-allowed"
+            ? PERMISSION_VERIFICATION_NOT_ALLOWED : "已核对权限登记成功。");
     return true;
   };
 
@@ -530,7 +531,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (result.kind === "create" && record.request.kind === "create") {
       if (result.account.username !== record.request.input.username || result.account.role !== (record.request.input.role || "unassigned")) throw new Error("A1_MUTATION_RESPONSE_UNREADABLE");
       setPasswordFromCreate(true); setPasswordReset({ account: result.account, temporaryPassword: result.account.temporaryPassword! });
-      avatarDrafts.forget(avatarDraftFingerprint(record.actorId, "admin", "new"));
+      const avatar = findNewAccountAvatar(record.actorId, record.request.input.avatarAssetId);
+      if (avatar) avatarDrafts.forget(avatar.fingerprint, avatar.commandKey);
     } else if (result.kind === "password") {
       if (record.request.kind !== "password" || result.result.account.id !== record.request.accountId) throw new Error("A1_MUTATION_RESPONSE_UNREADABLE");
       setPasswordFromCreate(false); setPasswordReset(result.result);
@@ -555,6 +557,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       a1PendingCommands.forget(fingerprint, commandKey); reloadPending();
       throw new Error("A1_COMMAND_STORAGE_UNAVAILABLE");
     }
+    if (draft.intent.kind === "create") linkNewAccountAvatar(currentAdminId, commandKey, draft.intent.form.avatarAssetId);
     reloadPending();
     return executeOriginal(record, false);
   };
@@ -1067,13 +1070,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     });
   };
 
-  const createFacts = (form: A1CreateAccountInput) => (
+  const createFacts = (form: A1CreateAccountInput, includeAvatar = form.role === "support") => (
     <Facts>
       <Fact k="显示名">{form.displayName}</Fact>
       <Fact k="登录名"><span data-mono>{form.username}</span></Fact>
       <Fact k="工作邮箱">{form.email || "未填写"}</Fact>
       <Fact k="角色">{roleName(restoring.current?.snapshot.roles ?? roles, form.role)} · {permSummary(form.role ? (restoring.current?.snapshot.permissionReady ?? permissionDiffReady) ? codesOf(form.role) : null : [])}</Fact>
-      {form.role === "support" && <Fact k="头像">{form.useDefaultAvatar ? "随机默认头像" : form.avatarAssetId ? "已上传的新头像" : "暂不设置"}</Fact>}
+      {includeAvatar && <Fact k="头像">{form.useDefaultAvatar ? "随机默认头像" : form.avatarAssetId ? "已上传的新头像" : "暂不设置"}</Fact>}
     </Facts>
   );
 
@@ -1087,7 +1090,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         amplifies: false,
         effect: approvalTag("批准前账号不会建好。"),
         confirmLabel: "提交审批",
-        facts: <>{createFacts(form)}<Facts>{approverFact()}</Facts></>,
+        facts: <>{createFacts(form, true)}<Facts>{approverFact()}</Facts></>,
         statedBrief: {
           impact: "另一位超级管理员批准后才创建账号；本页拿不到临时密码，批准后到账号列表点「重置密码」，把临时密码交给本人。",
           check: "批准时登录名或邮箱已被占用会被拒绝；恢复期只能新建超级管理员。",
@@ -1279,6 +1282,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (recoveredDraftBlock(record)) return;
     const intent = record.intent, commandKey = record.commandKey;
     if (intent.kind === "create") {
+      linkNewAccountAvatar(record.actorId, commandKey, intent.form.avatarAssetId);
       setRecoveredForm({ ...intent, commandKey });
       setNaOpen(true);
     } else if (intent.kind === "permission") {
@@ -1380,6 +1384,19 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       actions: <Button size="sm" disabledReason={recoveredDraftBlock(record)} onClick={() => openRecoveredDraft(record)}>重新确认</Button>,
     });
   }
+  const permissionVerifications = accountOperations.filter(record => record.actorId === currentAdminId && record.permissionVerificationPending && record.request.kind === "permission");
+  for (const record of permissionVerifications) {
+    if (record.request.kind !== "permission") continue;
+    const { permissionCode, permissionName } = record.request.input;
+    const busy = a1Recovery.state(record).busy;
+    recoveryRows.push({
+      key: record.commandKey, name: "登记新权限", change: `${permissionCode} · ${permissionName}`, submittedAt: record.createdAt,
+      note: authorities.includes("platform_a8_read") ? PERMISSION_VERIFICATION_UNAVAILABLE : PERMISSION_VERIFICATION_NOT_ALLOWED,
+      tag: <StatusTag tone="ok">已登记</StatusTag>,
+      actions: <Button size="sm" disabledReason={busy ? "正在核对原操作，请稍候。" : undefined}
+        onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原结果</Button>,
+    });
+  }
   for (const record of qualificationPending) {
     const intent = record.intent;
     const status = qualificationRecovery.state(record);
@@ -1444,9 +1461,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     });
   }
   const pendingCount = recoveryRows.filter(row => pendingOperations.some(record => record.commandKey === row.key && record.ticket?.status === "pending")).length;
-  const unknownCount = recoveryRows.length - pendingCount - availableDrafts.length;
+  const unknownCount = recoveryRows.length - pendingCount - availableDrafts.length - permissionVerifications.length;
   const recoveryTitle = [unknownCount && `${unknownCount} 个结果未知`, pendingCount && `${pendingCount} 个待审批`,
-    availableDrafts.length && `${availableDrafts.length} 个原操作未执行`].filter(Boolean).join("、");
+    availableDrafts.length && `${availableDrafts.length} 个原操作未执行`,
+    permissionVerifications.length && `${permissionVerifications.length} 个权限已登记`].filter(Boolean).join("、");
   const recovery = <><A1RecoveryNotice title={`账号原操作：${recoveryTitle}`} rows={recoveryRows} />
     {avatarRecovery !== null && <AvatarRecoveryModal target={avatarRecovery} onClose={() => setAvatarRecovery(null)} />}{qualificationTarget && <SupportQualificationEditor adminId={qualificationTarget.id} kind={qualificationTarget.kind} writeBlockedReason={!overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能改资格" : undefined} onClose={() => setQualificationTarget(null)} onChanged={() => void refreshOverview(true)} />}</>;
 
@@ -1623,6 +1641,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           recoveryMode={governanceFrozen}
           disabled={!!mutatingAction}
           initialForm={recoveredForm?.kind === "create" ? recoveredForm.form : undefined}
+          originalCommandKey={recoveredForm?.kind === "create" ? recoveredForm.commandKey : undefined}
           onClose={() => { setNaOpen(false); setRecoveredForm(null); }}
           onSubmit={createAccount}
         />

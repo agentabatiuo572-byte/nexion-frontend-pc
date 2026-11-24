@@ -14,6 +14,7 @@ export interface AvatarDraft extends PendingMutationRecord {
 type AvatarCancellation = PendingMutationRecord & { actorId: number; draftKey: string; assetId: string };
 export interface SelfAvatarPending extends PendingMutationRecord { actorId: number; input: SelfAvatarSave }
 export const avatarDraftFingerprint = (actorId: number, scope: AvatarScope, target: string) => `${actorId}:${scope}:${target}`;
+export const newAccountAvatarTarget = (commandKey: string) => `new/${commandKey}`;
 export const avatarDrafts = createPendingMutationStore<AvatarDraft>({
   storageKey: "nexion-account-avatar-drafts-v1", retainExpiredRecords: true,
   isValidRecord: row => {
@@ -29,6 +30,19 @@ export const avatarDrafts = createPendingMutationStore<AvatarDraft>({
     } catch { return false; }
   },
 });
+
+export function findNewAccountAvatar(actorId: number, assetId: string | undefined) {
+  if (!assetId) return;
+  const prefix = avatarDraftFingerprint(actorId, "admin", "new");
+  return avatarDrafts.list().find(row => row.actorId === actorId && row.scope === "admin" && row.asset?.assetId === assetId
+    && (row.fingerprint === prefix || row.fingerprint.startsWith(`${prefix}/`)));
+}
+
+export function linkNewAccountAvatar(actorId: number, commandKey: string, assetId: string | undefined) {
+  const draft = findNewAccountAvatar(actorId, assetId);
+  const fingerprint = avatarDraftFingerprint(actorId, "admin", newAccountAvatarTarget(commandKey));
+  if (draft && draft.fingerprint !== fingerprint) avatarDrafts.remember(fingerprint, draft.commandKey, draft);
+}
 export function canWriteA1Avatar(actorId: number | undefined) {
   const { session, isAuthenticated, logoutPending, logoutUnknown } = useAdminAuth.getState();
   return !!session && isAuthenticated && !logoutPending && !logoutUnknown && !session.passwordChangeRequired
