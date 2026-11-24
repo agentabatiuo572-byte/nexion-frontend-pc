@@ -8,6 +8,7 @@ import { BatchBar, BlockState, Button, Cell, Check, CheckGroup, Checkbox, Conclu
   FilterBar, FilterField, Fold, KeepText, LevelStrip, Modal, Notice, NumberInput, PageHeader, Pager, Panel, RatioBar,
   ReleaseBody, ScaleBar, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, TaskClassTag, Td, Textarea, Th, Tr, useTabIds } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
+import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { businessClock, businessStamp, businessZoneText } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -156,6 +157,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const [levelWeightRange, setLevelWeightRange] = useState<E2LevelWeightRange | null>(null);
   const editorPoolCode = editor && editor.outcome.kind !== "unknown" ? editor.pool.code : undefined;
   const editorReasonRule = useReasonRule(editor?.step === "confirm" && editor.outcome.kind !== "unknown");
+  const legacyReasonRule = useReasonRule(!!dialog && !dialog.original);
   const editorDirty = editor !== null && isE2TaskEditorDirty(editor);
   const afterEditorLeave = useRef<(() => void) | null>(null);
   const sequence = useRef(0), impactSequence = useRef(0), lastQuery = useRef("");
@@ -284,6 +286,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const writeBlock = !ctx.canWriteE2 ? "只读，你只能查看任务池" : locked ? "这个等级有结果未知的操作，请先查看原操作"
     : !fresh ? "请先重新读取任务等级和任务列表" : undefined;
   const createBlock = writeBlock ?? (pool && pool.taskCount >= 300 ? "这个等级共 300 个任务（含停用），到上限了" : undefined);
+  const randomBlock = createBlock ?? (pool && pool.enabledCount >= 200 ? "这个等级已启用 200 个，到上限了" : undefined);
   const editBlock = (task: PoolTask | null) => writeBlock ?? (!task?.baseReward ? MISSING_TASK_WEIGHT : undefined);
   const columns = ctx.canWriteE2 ? 7 : 6;
   const panelNote = !ctx.canWriteE2 || !fresh ? undefined : [pool && pool.taskCount >= 300 ? "已满 300 个（含停用），不能再新增" : "",
@@ -315,7 +318,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     finally { if (serial === impactSequence.current) setImpactLoading(false); }
   }
   function open(kind: PoolDialog["kind"], enabled = true) {
-    if (!pool || writeBlock) return;
+    if (!pool || (kind === "random" ? randomBlock : writeBlock)) return;
     const target: PoolDialog = { kind, enabled, pool, key: crypto.randomUUID(), tasks: kind === "status" ? selectedRows.filter(row => row.enabled !== enabled) : [] };
     setCount("10"); setClasses([]); setReason(""); setTouched({ count: false, reason: false });
     setDialogError(""); setDialogErrorCode(""); setImpact(null); setImpactAt(null); setImpactError(""); setReleasing(null); setDialog(target);
@@ -346,9 +349,9 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             : retry && (!outcome || !("receipt" in outcome) || outcome.receipt !== null) ? "查不到原结果后才可重试" : undefined;
   }
   const countReady = /^\d+$/.test(count) && Number(count) >= 1 && Number(count) <= 50;
-  const reasonLength = Array.from(reason.trim()).length;
-  const reasonReady = reasonLength >= 8 && reasonLength <= 200;
-  const formBlock = writeBlock ?? (!reasonReady ? "请填写 8–200 字的操作理由" : dialog?.kind === "random" && !countReady ? "任务数量要填 1–50 的整数"
+  const reasonLength = visibleReasonLength(reason);
+  const reasonBlock = e2EditorReasonBlock(reason, legacyReasonRule);
+  const formBlock = (dialog?.kind === "random" ? randomBlock : writeBlock) ?? reasonBlock ?? (dialog?.kind === "random" && !countReady ? "任务数量要填 1–50 的整数"
     : dialog?.kind === "status" && !dialog.tasks.length ? "没有可执行的任务" : dialog?.kind === "status" && !dialog.enabled && (!impact || impactLoading || impactError) ? "请先成功读取停用影响" : undefined);
 
   async function send(record: E2Pending, retry: boolean) {
@@ -536,18 +539,19 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     <PageHeader pageId="E2" title={<>任务池<Explain label="任务池的说明" content="补充和修改商城任务，查看等级和停用影响。" /></>}
       meta={pools.state === "loading" || readingTasks ? "正在读取…" : readAt ? `${businessClock(readAt)} 读取 · ${businessZoneText()}` : `尚未成功读取 · ${businessZoneText()}`}
       readOnly={!ctx.canWriteE2 ? "只读，你只能查看任务池" : undefined}
-      actions={<Button icon={<RefreshCw size={16} />} loading={pools.state === "loading" || tasks.state === "loading"} onClick={() => void refresh()}>刷新</Button>} />
+      actions={<Button icon={<RefreshCw size={16} />} loading={pools.state === "loading" || tasks.state === "loading"} data-e2-editor-leave
+        onClick={() => { if (editorDirty) leaveEditorThen(() => void refresh()); else void refresh(); }}>刷新</Button>} />
     <Conclusion state={pools.state !== "ready" ? "unknown" : noCandidates > 0 || emptyLevels.length === FIXED_DEVICE_LEVELS.length ? "warn" : emptyLevels.length ? "neutral" : "ok"}
       explain="按同一次读取的四个等级联合判断：商品所有已发布等级都没有启用任务，才计入没有候选的商品。草稿不计入，不代表当前单已停止。"
       action={pools.state === "ready" && emptyLevels.length > 0 && emptyLevels[0].code !== query.code ? <Button size="sm" data-e2-switch-pool onClick={() => selectPool(emptyLevels[0].code)}>查看 {emptyLevels[0].code} {emptyLevels[0].name}</Button> : undefined}>{conclusion}</Conclusion>
     {query.reset && <Notice tone="warn" action={<Button size="sm" onClick={() => setQuery(old => ({ ...old, reset: false }))}>知道了</Button>}>网址里无效的查询条件已重置。</Notice>}
     {receipt && <Notice tone={receipt.includes("读不到") ? "warn" : "ok"} action={<Button size="sm" onClick={() => void refresh()}>刷新</Button>}>{receipt}</Notice>}
     {pending.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}，结果未知`}
-      actionBelow action={<><Button size="sm" disabled={saving} onClick={() => leaveEditorThen(() => void queryOriginal(record))}>查询原结果</Button>
-        {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} onClick={() => { viewOriginal(record); void send(record, true); }}>按原请求重试</Button>}
-        <Button size="sm" disabled={saving} onClick={() => viewOriginal(record)}>查看原操作</Button>
-        {canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <Button size="sm" variant="danger-outline" disabled={saving} onClick={() => setClosing(record)}>核查结案</Button>}
-        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} onClick={() => releaseOriginal(record)}>解除原操作记录</Button>}
+      actionBelow action={<><Button size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => void queryOriginal(record))}>查询原结果</Button>
+        {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} data-e2-editor-leave onClick={() => leaveEditorThen(() => { viewOriginal(record); void send(record, true); })}>按原请求重试</Button>}
+        <Button size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => viewOriginal(record))}>查看原操作</Button>
+        {canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <Button size="sm" variant="danger-outline" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => setClosing(record))}>核查结案</Button>}
+        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => releaseOriginal(record))}>解除原操作记录</Button>}
         <Explain label="原样重试的说明" content={RETRY_HELP} /></>}>
       <p>首次提交 {businessStamp(record.createdAt)} · {businessZoneText()}</p>
       {rejected.includes(record.commandKey) && rejectReasons[record.commandKey] && <p>按原请求重试被明确拒绝：{rejectReasons[record.commandKey]}</p>}
@@ -596,7 +600,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     </StatBand></div>}
     <section id="e2-current-tasks" className="e2-task-panel" role="tabpanel" aria-labelledby={pool ? tabIds.tab(pool.code) : undefined} aria-label={pool ? undefined : "当前等级任务"}>
       <Panel title={<span id="e2-task-heading" tabIndex={-1}>{pool ? `${pool.code} ${pool.name}任务` : "当前等级任务"}</span>} flush sub={panelNote}
-        explain={TASK_RULES} actions={ctx.canWriteE2 ? <><Button disabledReason={createBlock} onClick={() => openEditor("create", null)}>新增任务</Button><Button variant="primary" icon={<Plus size={16} />} disabledReason={writeBlock} onClick={() => open("random")}>随机添加任务</Button></> : undefined}>
+        explain={TASK_RULES} actions={ctx.canWriteE2 ? <><Button disabledReason={createBlock} onClick={() => openEditor("create", null)}>新增任务</Button><Button variant="primary" icon={<Plus size={16} />} disabledReason={randomBlock} onClick={() => open("random")}>随机添加任务</Button></> : undefined}>
         <FilterBar onClear={() => setQuery(old => ({ ...old, taskClass: "", enabled: "", page: 1 }))} canClear={!!(query.taskClass || query.enabled)}>
           <FilterField><Select aria-label="任务类型筛选" value={query.taskClass} onChange={taskClass => { setSelected([]); setQuery(old => ({ ...old, taskClass, page: 1 })); }} options={[{ value: "", label: "全部类型" }, ...TASK_CLASSES.map(value => ({ value, label: TASK_CLASS_LABELS[value] }))]} /></FilterField>
           <FilterField><Select aria-label="任务启用状态筛选" value={query.enabled} onChange={enabled => { setSelected([]); setQuery(old => ({ ...old, enabled, page: 1 })); }} options={[{ value: "", label: "全部状态" }, { value: "true", label: "已启用" }, { value: "false", label: "已停用" }]} /></FilterField>
@@ -618,7 +622,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             <Td className="e2-gap"><StatusTag tone={row.enabled ? "ok" : "done"}>{row.enabled ? "已启用" : "已停用"}</StatusTag></Td>
             {ctx.canWriteE2 && <Td sticky="end" fit><Button size="sm" aria-label={`编辑 ${row.name}`} disabledReason={editBlock(row)} onClick={() => openEditor("update", row)}>编辑</Button></Td>}</Tr>)
             : <TableMessage columns={columns}>{query.taskClass || query.enabled ? <><p>当前筛选没有任务</p><Button size="sm" onClick={() => setQuery(old => ({ ...old, taskClass: "", enabled: "", page: 1 }))}>清除筛选</Button></>
-              : <><p>{ctx.canWriteE2 ? "暂无任务，可新增或随机添加" : "暂无任务，请联系有任务池修改权的管理员"}</p>{ctx.canWriteE2 && <span className="e2-empty-actions"><Button size="sm" disabledReason={createBlock} onClick={() => openEditor("create", null)}>新增任务</Button><Button size="sm" disabledReason={writeBlock} onClick={() => open("random")}>随机添加任务</Button></span>}</>}</TableMessage>}</tbody></Table>
+              : <><p>{ctx.canWriteE2 ? "暂无任务，可新增或随机添加" : "暂无任务，请联系有任务池修改权的管理员"}</p>{ctx.canWriteE2 && <span className="e2-empty-actions"><Button size="sm" disabledReason={createBlock} onClick={() => openEditor("create", null)}>新增任务</Button><Button size="sm" disabledReason={randomBlock} onClick={() => open("random")}>随机添加任务</Button></span>}</>}</TableMessage>}</tbody></Table>
         {tasks.data.total > 0 && tasks.state !== "error" && <Pager label="任务" total={tasks.data.total} page={query.page} pageSize={query.size} sizes={[10, 20, 50]} loading={readingTasks}
           onPage={page => { setSelected([]); setQuery(old => ({ ...old, page })); }} onPageSize={size => { setSelected([]); setQuery(old => ({ ...old, size, page: 1 })); }} />}
       </Panel>
@@ -672,8 +676,9 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             <CheckGroup legend="限定类型" summary={classes.length ? `已选 ${classes.length} 类` : "不限类型"} explain="限制本次随机生成的类型；可多选，不选则不限。不保证每类均匀分到或至少分到一个，不改变已有任务。">
               {TASK_CLASSES.map(value => <Check key={value} label={<TaskClassTag taskClass={value} />} aria-label={TASK_CLASS_LABELS[value]} disabled={saving} checked={classes.includes(value)} onChange={event => setClasses(event.target.checked ? TASK_CLASSES.filter(item => classes.includes(item) || item === value) : classes.filter(item => item !== value))} />)}</CheckGroup></>}
           {dialog.original ? <Facts><Fact k="原操作理由">{dialog.original.request.body.reason}</Fact></Facts>
-            : <Field label="操作理由" required hint="至少 8 字" explain="记录这次调整的依据，随这次操作写入操作记录。" error={touched.reason && !reasonReady ? "请填写 8–200 字的操作理由" : undefined}>
-              <Textarea rows={3} maxLength={400} count={`${reasonLength}/200`} placeholder="例如：按本周运营计划补充候选任务" value={reason} disabled={saving} onChange={event => setReason(event.target.value)} onBlur={() => setTouched(old => ({ ...old, reason: true }))} /></Field>}
+            : <Field label="操作理由" required hint={legacyReasonRule.ready ? `至少 ${legacyReasonRule.min} 字` : undefined} explain="记录这次调整的依据，随这次操作写入操作记录。"
+              help={legacyReasonRule.ready ? undefined : reasonBlock} error={legacyReasonRule.ready && touched.reason ? reasonBlock : undefined}>
+              <Textarea rows={3} maxLength={400} count={legacyReasonRule.ready ? `${reasonLength}/${legacyReasonRule.max}` : undefined} placeholder="例如：按本周运营计划补充候选任务" value={reason} disabled={saving} onChange={event => setReason(event.target.value)} onBlur={() => setTouched(old => ({ ...old, reason: true }))} /></Field>}
           {dialogError && <Notice tone="danger">{dialogError}</Notice>}
           {dialog.kind === "status" && <Fold title="本次任务" summary={`${dialog.tasks.length} 个任务，展开核对完整名单`}><ul className="e2-command-tasks">{dialog.tasks.map(task => <li key={task.taskTypeId}>{task.name}</li>)}</ul></Fold>}
           <Fold title="执行摘要" summary="立即生效，不经审批"><p>{TASK_RULES}</p></Fold>
