@@ -523,7 +523,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             : <Fact k="结束后">用户不能再参加；同时停掉这个活动的玩法、取消主推。已有的参与和奖励记录保留，结束后不能再开放</Fact>}
           {opening && <ApprovalFact amplify="没有玩法规则又有正奖励的活动" object="活动" />}
         </Facts>
-        {opening && missing.length > 0 && <Notice tone="warn" title={`还缺 ${missing.length} 项翻译，补齐后才能开放`}>{missing.map(({ locale, field }) => `${LOCALE_NAME[locale]}${FIELD_NAME[field]}`).join("、")}。到卡片底部逐格补。</Notice>}
+        {opening && missing.length > 0 && <Notice tone="warn" title={`还缺 ${missing.length} 项翻译，补齐后才能开放`}>{missing.map(({ locale, field }) => `${LOCALE_NAME[locale]}${FIELD_NAME[field]}`).join("、")}。<span className="rd-keep">到卡片底部逐格补。</span></Notice>}
       </>,
       reason: true,
       // 本地检查会拦下时按钮直接灰着写原因，不再像能提交；拦截条件和 run 里的检查不变。
@@ -595,7 +595,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       title: `编辑${LOCALE_NAME[locale]}${FIELD_NAME[field]}`,
       effect: effectDirect,
       detail: hidden ? <>只在这页登记，不影响开放和开启玩法。</>
-        : requiresAll ? required.includes(locale) ? <>{languageNames(required)}的{contentFieldsText(authored)}填齐，活动才能开放、玩法才能开启。</> : <>{LOCALE_NAME[locale]}可以不填，空着时 App 显示英文。</>
+        : requiresAll ? required.includes(locale) ? <>{languageNames(required)}的{contentFieldsText(authored)}<span className="rd-keep">填齐，活动才能开放、玩法才能开启。</span></> : <>{LOCALE_NAME[locale]}可以不填，空着时 App 显示英文。</>
         : fromRule ? <>已开放的活动照常进行；这一格空着时 App 显示玩法规则摘要。</>
         : <>已开放的活动：这一格空着时 App {locale === "en" ? "显示原文" : "先用英文，再用原文"}，不自动翻译。</>,
       facts: <Facts><Fact k="活动">{eventName(code)}</Fact><Fact k="原文">{source || "—"}</Fact>

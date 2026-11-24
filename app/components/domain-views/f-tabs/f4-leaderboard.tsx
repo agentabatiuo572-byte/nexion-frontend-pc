@@ -93,7 +93,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
         </>}>
         <div className="f4-board-bar">
           <Segments label="排行榜周期" value={period} onChange={setPeriod} items={PERIODS.map(({ value, label }) => ({ value, label }))} />
-          {board.paused ? <StatusTag tone="warn" icon={Pause}>已暂停</StatusTag> : <StatusTag tone="ok">实时更新</StatusTag>}
+          {board.paused ? <StatusTag tone="warn" icon={Pause}>已暂停</StatusTag> : <StatusTag tone="ok">运行中</StatusTag>}
         </div>
         {board.paused && <Notice tone="warn" title="排行榜已暂停">
           {board.frozen ? `榜单停在 ${stamp(data.leaderboardSnapshotAt)}。` : ""}

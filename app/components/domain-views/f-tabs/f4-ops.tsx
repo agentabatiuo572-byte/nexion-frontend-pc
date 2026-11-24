@@ -247,7 +247,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           label={board.paused ? "本周奖池（暂停时）" : "本周奖池"}
           value={board.available && week ? usdt(week.poolUsdText ?? week.poolUsd) : "—"} unit={board.available && week ? "USDT" : undefined} tone="role-1">
           <span className="f4-card-line">
-            {board.paused ? <StatusTag tone="warn">已暂停</StatusTag> : <StatusTag tone="ok">实时更新</StatusTag>}
+            {board.paused ? <StatusTag tone="warn">已暂停</StatusTag> : <StatusTag tone="ok">运行中</StatusTag>}
             {board.available && week?.podium[0] ? <span>第 1 名 {week.podium[0].userId}</span> : <span className="f4-muted">{board.available && week ? "本周还没有上榜的人" : "名次读不出来"}</span>}
           </span>
         </Stat>

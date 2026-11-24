@@ -215,10 +215,10 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
       </Panel>
 
       <Panel title="大使申请规则" icon={FileText} tone="role-4"
-        sub={policy ? `版本 ${policy.policyVersion} · 第 ${policy.revision} 次修改` : undefined}
         explain={<>
           <p>这就是 App 上申请时用的规则：默认预算和四类各自的预算范围。保存后 App 下次打开或刷新就用新规则，已提交的申请不变。</p>
           <p>已知的四类在 PC 和 App 上显示内置的中文名称和条件，自定义的名称和条件文字不一定显示给用户。</p>
+          {policy && <p>技术信息：规则版本 {policy.policyVersion}，第 {policy.revision} 次修改。</p>}
         </>}
         actions={policy && ctx.canSubmitTeamApproval("F4") ? <Button onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, { action: "policy", overview: data, policy }))}>调整申请规则</Button> : undefined}>
         {!policy ? <BlockState state="error" title="申请规则读取失败" detail="这不是没有规则：规则暂时读不到，调整入口也先收起。" onRetry={() => void ctx.refreshF4()} retryLabel="重新读取" />
@@ -226,12 +226,13 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
             <KeyValues rows={[{ key: "default", label: "默认申请预算", value: `${moneyText(policy.defaultBudgetUsdt)} USDT`, explain: "申请人没改金额时用的预算，要落在某一类的范围里。" }]} />
             <ul className="f4-buckets" aria-label="四类申请">
               {policy.buckets.map((bucket) => <li key={bucket.id}>
-                <span className="f4-bucket-head">{formatF4AmbassadorBucketTitle(bucket.id, bucket.title)}<span data-mono>{bucket.id}</span></span>
+                <span className="f4-bucket-head">{formatF4AmbassadorBucketTitle(bucket.id, bucket.title)}</span>
                 <span className="f4-bucket-range">{moneyText(bucket.minBudgetUsdt)}–{moneyText(bucket.maxBudgetUsdt)}<small>USDT</small></span>
                 <span className="f4-bucket-rule">{formatF4AmbassadorBucketRule(bucket.id, bucket.rule)}<Explain label={`${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)}的原文`} rows={[
                   { k: "显示的金额范围", v: bucket.range || "—" },
                   { k: "后台保存的名称", v: bucket.title || "—" },
                   { k: "后台保存的条件", v: bucket.rule || "—" },
+                  { k: "分类编码", v: bucket.id },
                 ]} /></span>
               </li>)}
             </ul>
