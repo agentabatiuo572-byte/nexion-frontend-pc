@@ -1,6 +1,7 @@
 import type { LeaderboardPage } from "@/lib/admin/support-leaderboard-client";
 import type { SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
 import { PERFORMANCE_CHANNEL_LABELS, type PerformanceTotals, type ProfilePerformance, type performanceEvents, type performanceMeasured } from "@/lib/admin/support-performance-contract";
+import { amountDisplay } from "@/lib/format";
 import { PERF_UNAVAILABLE, PERF_UNAVAILABLE_VALUE, type AnalyticsPerf, type PerfCount, type PerfEvents, type PerfTotals, type PerfValue } from "./perf-view";
 
 const UPGRADING = "数据正在升级";
@@ -37,7 +38,7 @@ export function analyticsPerf(data: SupportAnalyticsResponse | null, personalPer
         const label = PERFORMANCE_CHANNEL_LABELS[row.channel];
         const main = { label, value: measurement(row.net) };
         const correction = row.correction.value ?? row.correction.observed;
-        return correction !== null && Number(correction) !== 0
+        return correction !== null && /[1-9]/.test(correction)
           ? [main, { label: `${label} · 其中本期更正`, value: measurement(row.correction), sub: true }] : [main];
       }),
       withdrawals: period.withdrawals.map(row => ({
@@ -46,6 +47,8 @@ export function analyticsPerf(data: SupportAnalyticsResponse | null, personalPer
     } : { unavailable: personalPeriod?.generation === "UPGRADING" ? UPGRADING : none.reason },
     customers: Object.fromEntries(customers.map(row => [row.customerId, amount(row.performance)])),
     agents: Object.fromEntries(data?.view === "AGENTS" ? data.records.map(row => [row.accountId, amount(row.performance)]) : []),
+    agentPeriods: Object.fromEntries(data?.view === "AGENTS" ? data.records.flatMap(row => row.periodPerformance
+      ? [[row.accountId, amount(row.periodPerformance)]] : []) : []),
     groups: Object.fromEntries(Object.entries(projection?.groups ?? {}).map(([id, row]) => [id, { period: amount(row.period), current: amount(row.current) }])),
     scope: { period: projection?.period ? boardTotals(projection.period.totals) : { amount: none, inflow: none, withdrawal: none }, current: amount(projection?.current) },
     attribution: projection?.attribution && { unassigned: amount(projection.attribution.unassigned), unknown: amount(projection.attribution.unknown) },
@@ -62,8 +65,8 @@ export function eventsPerf(events: Awaited<ReturnType<typeof performanceEvents>>
     visible: summary(events.visible), restricted: summary(events.restricted),
     rows: events.rows.map(row => ({
       id: row.id, at: row.at, customer: row.customer ?? "—", customerNo: row.customerNo ?? "—", kind: EVENT_LABELS[row.kind],
-      detail: row.status === "PENDING_REVIEW" ? "待核对" : PERFORMANCE_CHANNEL_LABELS[row.channel] ?? "—",
-      business: row.business === null ? null : `${row.business} ${row.currency ?? ""}`.trim(), delta: row.delta,
+      detail: row.status === "PENDING_REVIEW" ? "待核对" : (row.channel && PERFORMANCE_CHANNEL_LABELS[row.channel]) || "—",
+      business: row.business === null ? null : `${amountDisplay(row.business)} ${row.currency ?? ""}`.trim(), delta: row.delta,
     })),
   };
 }

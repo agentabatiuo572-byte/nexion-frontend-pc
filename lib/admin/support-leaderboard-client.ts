@@ -90,7 +90,9 @@ function row(value: unknown, meta: LeaderboardMetadata): SupportBoardRow & { per
   const metricState = coverage(r.rankMetricCoverage), rank = r.rank === null ? null : integer(r.rank, 1), tied = bool(r.isTied);
   const confirmed = meta.state === "COMPLETE" && meta.candidateCoverage === "COMPLETE" && metricState === "COMPLETE" && main.coverage === "complete" && main.value !== null && rank !== null;
   const mainCoverage = meta.board === "firstPayment" ? coverage(object(r.firstPayment, "value coverage reason").coverage) : meta.board === "customers" ? coverage(object(r.customers, "value coverage reason").coverage) : state;
-  if (meta.state === "COMPLETE" && !confirmed || !confirmed && (rank !== null || tied) || metricState !== mainCoverage) invalid("rank");
+  const provisionalCount = meta.generation === "READY" && meta.state === "PROVISIONAL" && meta.board !== "netContribution"
+    && metricState === "PARTIAL" && mainCoverage === "UNKNOWN" && main.value === null;
+  if (meta.state === "COMPLETE" && !confirmed || !confirmed && (rank !== null || tied) || metricState !== mainCoverage && !provisionalCount) invalid("rank");
   const m = object(r.movement, "kind places previousRank baselineAt baselineVersion reason"), kind = enumeration(m.kind, ["UP", "DOWN", "SAME", "NEW", "UNAVAILABLE"] as const);
   const previousRank = m.previousRank === null ? null : integer(m.previousRank, 1), baselineAt = m.baselineAt === null ? null : instant(m.baselineAt), baselineVersion = m.baselineVersion === null ? null : version(m.baselineVersion);
   const places = m.places === null ? null : integer(m.places);
@@ -187,6 +189,12 @@ export async function fetchLeaderboardAvatar(url: string, agentId: string, q: Le
 }
 export function locateLeaderboardSelf(page: LeaderboardPage, q: LeaderboardQuery): LeaderboardQuery | null { return page.self.pageNum === null ? null : { ...q, keyword: undefined, pageNum: page.self.pageNum, expectedVersion: page.viewVersion }; }
 export class LeaderboardUpgrading extends Error {}
+function oldLeaderboardSelector(error: unknown) {
+  return legacyPerformanceSelectorError(error, "SUPPORT_LEADERBOARD_QUERY_INVALID", "SUPPORT_METRIC_VERSION_UNSUPPORTED", "SUPPORT_LEADERBOARD_INVALID_QUERY");
+}
+export function boundLeaderboardSelectorError(error: unknown, query: LeaderboardQuery) {
+  return query.metricVersion === PERFORMANCE_VERSION && !!query.expectedVersion && oldLeaderboardSelector(error);
+}
 export const supportLeaderboardClient = {
   async page(q: LeaderboardQuery, signal?: AbortSignal): Promise<LeaderboardPage> {
     const read = (input: LeaderboardQuery) => supportRequest(`/support-workbench/leaderboard${leaderboardQueryString(input)}`, value => value, { signal });
@@ -197,7 +205,7 @@ export const supportLeaderboardClient = {
     try {
       response = await read(next);
     } catch (error) {
-      if (!legacyPerformanceSelectorError(error, "SUPPORT_LEADERBOARD_QUERY_INVALID", "SUPPORT_METRIC_VERSION_UNSUPPORTED", "SUPPORT_LEADERBOARD_INVALID_QUERY")) throw error;
+      if (!oldLeaderboardSelector(error)) throw error;
       return parseLeaderboardPage(await read(legacy), legacy);
     }
     const generation = performanceGeneration(response);

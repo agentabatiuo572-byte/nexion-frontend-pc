@@ -88,6 +88,23 @@ export function performanceWindow(value: unknown) {
   return result;
 }
 
+export type PerformanceWindow = ReturnType<typeof performanceWindow>;
+
+export function samePerformanceWindow(left: PerformanceWindow, right: PerformanceWindow, sameScope = true) {
+  return left.sourceVersion === right.sourceVersion && (!sameScope || left.sourceScopeVersion === right.sourceScopeVersion)
+    && left.month === right.month && left.basis === right.basis && left.from === right.from && left.to === right.to
+    && left.asOf === right.asOf && left.businessZone === right.businessZone;
+}
+
+export function sameCoveredPerformance(left: PerformanceTotals, right: PerformanceTotals) {
+  const decimal = (value: string | null) => value?.replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1").replace(/^-0$/, "0") ?? null;
+  return (["amount", "inflow", "withdrawal"] as const).every(key => {
+    const first = left[key], second = right[key];
+    if (first.status !== second.status) return true;
+    return decimal(first.value ?? first.observed) === decimal(second.value ?? second.observed);
+  });
+}
+
 export function privatePerformance(value: unknown, expectedSource?: string) {
   const row = performanceObject(value);
   const window = performanceWindow(row.window);
@@ -146,7 +163,9 @@ export type ProfilePerformance = ReturnType<typeof profilePerformance>;
 
 export function legacyPerformanceSelectorError(error: unknown, ...messages: string[]) {
   // Old controllers reject the additional query parameter before parsing any data.
-  return error instanceof Error && "status" in error && error.status === 422
+  return error instanceof Error && ("status" in error && error.status === 422
+      || "status" in error && typeof error.status === "number" && error.status >= 200 && error.status < 300
+        && "apiCode" in error && error.apiCode === 422)
     && "backendMessage" in error && typeof error.backendMessage === "string" && messages.includes(error.backendMessage);
 }
 
@@ -163,11 +182,14 @@ export function performanceEvents(value: unknown, expected: { pageNum: number; p
     || (expected.expectedVersion !== undefined && version !== expected.expectedVersion)
     || typeof root.canContinue !== "boolean") performanceMalformed("eventsPage");
   const summary = performanceObject(root.detailSummary);
-  const part = (amount: string, events: string, customers: string) => ({
-    amount: privatePerformance(summary[amount], source).amount,
-    count: performanceMeasured(summary[events], performanceInteger),
-    customers: performanceMeasured(summary[customers], performanceInteger),
-  });
+  const part = (amount: string, events: string, customers: string) => {
+    const totals = privatePerformance(summary[amount], source);
+    return {
+      ...totals,
+      count: performanceMeasured(summary[events], performanceInteger),
+      customers: performanceMeasured(summary[customers], performanceInteger),
+    };
+  };
   const rows = performanceList(root.records, value => {
     const row = performanceObject(value);
     return {
@@ -175,7 +197,7 @@ export function performanceEvents(value: unknown, expected: { pageNum: number; p
       customer: row.maskedNickname === null ? null : performanceText(row.maskedNickname),
       customerNo: row.customerNo === null ? null : performanceText(row.customerNo),
       kind: performanceEnum(row.kind, ["INFLOW", "WITHDRAWAL", "CORRECTION", "DEVICE_PURCHASE", "REFUND", "MANUAL_CREDIT", "REWARD"]),
-      channel: performanceText(row.channel),
+      channel: row.channel === null ? null : performanceText(row.channel),
       status: performanceEnum(row.status, ["EFFECTIVE", "PENDING_REVIEW", "EXCLUDED"]),
       business: row.businessAmount === null ? null : performanceDecimal(row.businessAmount),
       currency: row.businessCurrency === null ? null : performanceEnum(row.businessCurrency, ["USDT"]),

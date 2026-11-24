@@ -115,7 +115,7 @@ export type ExportChoice = { value: string; label: string };
 /** 导出确认框要的全部内容。月份、范围只有一个合法选项时写成只读值。 */
 export type ExportDialogData = {
   months: ExportChoice[]; month: string; since: string;
-  scopes: ExportChoice[]; scope: string;
+  scopes: (ExportChoice & { types: ExportType[] })[]; scope: string;
   /** 统计截至，写到分钟（业务时区），时区由页面写。 */
   asOf: string;
   downloader: string;
@@ -128,9 +128,9 @@ export type ExportDialogData = {
   minReasonChars: number; maxReasonChars: number;
 };
 export type ExportQuery = { month: string; scope: string; types: ExportType[] };
-export type ExportSubmitted = { type: ExportType; taskId: string; state: ExportTaskState; rows: number | null };
+export type ExportSubmitted = Pick<ExportTask, "type" | "taskId" | "state" | "rows" | "canDownload" | "mine" | "decidedBy" | "decidedAt" | "failure">;
 
-export type ExportTaskState = "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "WITHDRAWN" | "READY" | "FAILED" | "EXPIRED";
+export type ExportTaskState = "PENDING_GENERATION" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "WITHDRAWN" | "READY" | "FAILED" | "EXPIRED";
 /** 导出记录里的一条。scope、month、rows 为 null 时这些现在看不到（申请人已没有这个范围）。 */
 export type ExportTask = {
   taskId: string; version: number; type: ExportType;
@@ -151,7 +151,10 @@ export type ExportTask = {
   scopeLost?: boolean;
 };
 /** 批准、驳回没收到结果时记下的原操作（OP-91–96）。 */
-export type PendingDecision = { taskId: string; decision: "APPROVE" | "REJECT" | "WITHDRAW"; reason: string; operationId: string; at: string };
+export type ExportOriginal = { operationId: string; createdAt: number; expiresAt: number };
+export type ExportDraft = { reason: string; query: ExportQuery };
+export type PendingSubmit = ExportDraft & ExportOriginal;
+export type PendingDecision = ExportOriginal & { taskId: string; decision: "APPROVE" | "REJECT" | "WITHDRAW"; reason: string; at: string };
 /** 查询原操作的几种结果。 */
 export type DecisionLookup =
   | { kind: "matched"; task: ExportTask; text: string }
@@ -163,28 +166,38 @@ export type ExportPersona = { name: string; canExport: boolean; exportBlocked?: 
 export type SubmitLookup =
   | { kind: "matched"; rows: ExportSubmitted[] }
   | { kind: "pending"; expired: boolean }
-  | { kind: "cleared" };
+  | { kind: "cleared"; draft: ExportDraft }
+  | { kind: "missing" };
+
+export type ExportDownload =
+  | { kind: "downloaded" }
+  | { kind: "expired" | "forbidden" | "retry" | "unconfirmed"; task?: ExportTask; permissionDenied?: boolean };
 
 export interface PerfExportPorts {
   persona: ExportPersona;
+  invalidateAccess(): void;
   open(initial?: { month?: string; scope?: string }): Promise<ExportDialogData>;
   check(query: ExportQuery): Promise<Pick<ExportDialogData, "items" | "asOf" | "blocked">>;
   submit(query: ExportQuery, reason: string): Promise<ExportSubmitted[]>;
-  pendingSubmit(): { reason: string; query: ExportQuery } | undefined;
+  pendingSubmit(): PendingSubmit | undefined;
+  recoveredSubmit(): ExportDraft | undefined;
+  recoveredDecision(taskId: string, decision: PendingDecision["decision"]): string | undefined;
+  subscribePending(update: () => void): () => void;
   lookupSubmit(): Promise<SubmitLookup>;
   tasks(view: "MINE" | "APPROVALS", page: number, pageSize: number, signal?: AbortSignal): Promise<{ rows: ExportTask[]; total: number }>;
   task(taskId: string): Promise<ExportTask>;
   decide(task: ExportTask, decision: "APPROVE" | "REJECT", reason: string): Promise<ExportTask>;
   lookupDecision(pending: PendingDecision): Promise<DecisionLookup>;
   withdraw(task: ExportTask, reason: string): Promise<ExportTask>;
-  download(taskId: string): Promise<void>;
+  download(taskId: string): Promise<ExportDownload>;
   pendingDecisions(): PendingDecision[];
 }
 
 /** 两段状态：审批段和文件段。只有文件已生成且本人现在能取件时才写「可下载」。 */
-export function exportStatus(task: ExportTask): { tone: "ok" | "warn" | "progress" | "neutral" | "done" | "danger"; label: string; line: string } {
+export function exportStatus(task: ExportSubmitted): { tone: "ok" | "warn" | "progress" | "neutral" | "done" | "danger"; label: string; line: string } {
   const decider = task.decidedBy ? `${task.decidedBy}${task.decidedAt ? ` ${task.decidedAt}` : ""}` : "";
   switch (task.state) {
+    case "PENDING_GENERATION": return { tone: "progress", label: "待生成", line: "文件还在等待生成" };
     case "PENDING_APPROVAL": return { tone: "warn", label: "待审批", line: task.mine ? "等另一位有审批权的管理员审批" : "等你审批" };
     case "APPROVED": return task.failure === "GENERATE_FAILED" ? { tone: "danger", label: "已批准，执行失败", line: `${decider} 批准，文件没生成出来` }
       : { tone: "progress", label: "已批准", line: "文件生成中，生成好才能下载" };
@@ -193,6 +206,19 @@ export function exportStatus(task: ExportTask): { tone: "ok" | "warn" | "progres
     case "WITHDRAWN": return { tone: "done", label: "已撤回", line: task.mine ? "你撤回的" : "申请人撤回的" };
     case "EXPIRED": return { tone: "neutral", label: "已过期", line: "文件已过保留期，不能再下载" };
     case "FAILED": return { tone: "danger", label: task.decidedAt ? "已批准，执行失败" : "生成失败", line: "文件没生成出来" };
+  }
+}
+
+export function exportReceiptSummary(rows: readonly ExportSubmitted[]) {
+  return "已查到这次提交，" + rows.map(row => `${EXPORT_LABEL[row.type]}：${exportStatus(row).label}`).join("，") + "。";
+}
+
+export function exportDownloadMessage(kind: Exclude<ExportDownload["kind"], "downloaded">) {
+  switch (kind) {
+    case "expired": return "文件已过保留期，不能重新获取。";
+    case "forbidden": return "你现在没有这份文件的下载权限。";
+    case "retry": return "可重新获取同一份文件的下载链接。";
+    case "unconfirmed": return "暂时无法确认文件状态，请重新读取导出记录。";
   }
 }
 

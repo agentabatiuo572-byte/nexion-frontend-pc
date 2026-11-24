@@ -5,6 +5,7 @@ import { Drawer, Button, BlockState, Explain, Fact, Facts, Fold, Notice, Table, 
 import { nexGridBrandText, operatorNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, type PerformanceMetric, type SupportOverview } from "@/lib/admin/m-support-client";
 import { supportAnalyticsClient, supportPerformanceAnalyticsClient, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer, type SupportAnalyticsQuery, type SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
+import type { performanceMeasured } from "@/lib/admin/support-performance-contract";
 import "./m1-statistic-details.css";
 import { amountDisplay } from "@/lib/format";
 
@@ -16,7 +17,7 @@ export type StatisticSource =
   | { kind: "maintenance"; overview: SupportOverview; choice: MaintenanceChoice }
   | { kind: "fund"; origin: SupportAnalyticsResponse; query: SupportAnalyticsQuery; metric: FundMetric; detailView?: SupportAnalyticsDetailView };
 /** facts 有值时代替一行「核对摘要」；tech 放进折叠的技术信息。 */
-type Result = { headings: string[]; rows: string[][]; total: number | null; next: boolean; summary: string; note?: string; version?: string; facts?: readonly { k: string; v: ReactNode }[]; tech?: string };
+type Result = { headings: string[]; rows: string[][]; total: number | null; next: boolean; summary: string; note?: string; version?: string; facts?: readonly { k: string; v: ReactNode }[]; tech?: string; historyIncomplete?: boolean };
 type SuccessList = { version: string; rows: string[][]; restricted: number };
 const PAGE_SIZE = 10;
 const beijingTime = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Shanghai", hourCycle: "h23" });
@@ -67,7 +68,8 @@ async function maintenancePage(source: Extract<StatisticSource, { kind: "mainten
 }
 
 type Amount = { confirmed: string | null; observed: string | null };
-export function fundAmount(funds: SupportAnalyticsCustomer["funds"], metric: Exclude<FundMetric, "net">, currency: string): Amount {
+export function fundAmount(funds: SupportAnalyticsCustomer["funds"] | null, metric: Exclude<FundMetric, "net">, currency: string): Amount {
+  if (!funds) return { confirmed: null, observed: null };
   // READY means the read finished, so no row for this currency is a real 0. Any other status stays unknown.
   if (metric !== "balance" && funds.withdrawalStatus === "READY" && !funds.withdrawals?.some(row => row.currency === currency)) return { confirmed: "0", observed: "0" };
   const amount = metric === "balance" ? funds.balances?.find(row => row.currency === currency) : funds.withdrawals?.find(row => row.currency === currency)?.[metric];
@@ -91,6 +93,11 @@ function exactGroupSum(values: string[], total: string) {
     return BigInt(integer + decimal.padEnd(digits, "0"));
   };
   return values.reduce((sum, value) => sum + units(value), BigInt(0)) === units(total);
+}
+
+function measuredText<T>(metric: ReturnType<typeof performanceMeasured<T>>, display: (value: T) => string) {
+  if (metric.value !== null) return display(metric.value);
+  return metric.observed === null ? "—" : display(metric.observed) + "（已核小计）";
 }
 
 async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page: number, version: string | undefined, signal: AbortSignal): Promise<Result> {
@@ -120,14 +127,24 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
       : await supportAnalyticsClient.details({ ...options, view });
     const expected = view === "NET_CONTRIBUTIONS" ? origin.scopeSummary.financial.currencies.find(row => row.currency === currency)?.net
       : origin.scopeSummary.financial.firstSources.find(row => row.currency === currency)?.[view === "FIRST_DEPOSITS" ? "deposits" : "purchases"];
+    const unit = nexGridBrandText(currency);
+    const money = (value: string) => groupedAmount(value) + " " + unit;
+    const headings = ["成功时间（北京时间）", "客户编号", "客户名称", "原归属", "金额 / " + unit];
+    if ("measuredSummary" in list) {
+      const { total, visible, restricted } = list.measuredSummary;
+      const subtotal = (part: typeof total) => [measuredText(part.amount, money), measuredText(part.count, value => value + " 条"),
+        measuredText(part.customers, value => value + " 位客户")].join(" · ");
+      return { headings, rows: [], total: null, next: false, summary: "首充历史还在同步",
+        historyIncomplete: true, note: "首充历史还在同步，当前只能核对已确认的小计。",
+        facts: [{ k: "统计总额", v: subtotal(total) }, { k: "核实情况", v: "首充历史还在同步" },
+          { k: "你能看到", v: subtotal(visible) }, { k: "看不到的", v: subtotal(restricted) }] };
+    }
     const detail = list.detailSummary;
     if (origin.performance && view !== "NET_CONTRIBUTIONS") {
       if (detail.totalAmount === null || detail.visibleAmount === null || detail.restrictedAmount === null
         || !exactGroupSum([detail.visibleAmount, detail.restrictedAmount], detail.totalAmount)) throw changed();
     } else if (expected?.confirmed == null || !exactGroupSum([detail.totalAmount!], expected.confirmed)) throw changed();
     const title = view === "NET_CONTRIBUTIONS" ? fundLabels.net : view === "FIRST_DEPOSITS" ? "充值首充" : "付费购机首充";
-    const unit = nexGridBrandText(currency);
-    const money = (value: string) => groupedAmount(value) + " " + unit;
     const groupName = (groupId: string | null) => groupId == null ? null : origin.scopeSummary.groups.find(row => row.groupId === groupId)?.name ?? "组编号 " + groupId;
     // 原归属是这笔钱成功那一刻算给的客服和小组，不是客户现在的归属；没有有效归属写「没有归属」。
     const owner = (row: (typeof list.records)[number]) => row.agentId == null && row.groupId == null ? "没有归属"
@@ -140,7 +157,7 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
       { k: "看不到的", v: detail.restrictedCount === 0 ? "没有"
         : <>{money(detail.restrictedAmount!)} · {detail.restrictedCount} 条 · {detail.restrictedCustomerCount} 位客户<Explain label="看不到的是什么" content="这些客户不在你的查看范围里，金额计入统计总额，不列明细。" /></> },
     ];
-    return { headings: ["成功时间（北京时间）", "客户编号", "客户名称", "原归属", "金额 / " + unit],
+    return { headings,
       rows: list.records.map(row => [beijing(row.succeededAt), row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", owner(row), groupedAmount(row.amount)]),
       total: list.total, next: list.canContinue, facts,
       summary: "统计 " + detail.totalAmount + " " + unit + " · 你能看到 " + detail.visibleAmount + " " + unit + " · 看不到 " + detail.restrictedAmount + " " + unit,
@@ -191,7 +208,8 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
   // 没有可见行时表内写空状态和下一步；总数没数完时也不写 0（ST-33、ST-12，BUG-657）。
   // 期间明细（首充、期间净额）按月份列，空了引导换月份；当前客户的余额、提现和累计净额按当前筛选的客户列，和月份无关，空了引导回去改筛选（复审 F05）。
   const periodEvent = source.kind === "fund" && (!!source.detailView || source.metric === "net" && source.query.basis === "PERIOD_EVENT");
-  const empty = source.kind !== "fund" ? "没有你能看到的记录"
+  const empty = result?.historyIncomplete ? "首充历史还在同步，暂时不能列出明细。"
+    : source.kind !== "fund" ? "没有你能看到的记录"
     : periodEvent ? <>所选月份没有你能看到的{title}记录。<button type="button" className="rd-link" onClick={onClose}>返回工作台换个月份</button></>
     : <>{source.metric === "net" ? "当前范围" : "当前筛选"}里没有你能看到的客户。<button type="button" className="rd-link" onClick={onClose}>{source.metric === "net" ? "返回工作台" : "返回工作台改筛选"}</button></>;
   return <Drawer open title={title + "明细"} sub={"统计截至 " + beijing(cutoff) + "（北京时间）"} onClose={onClose} wide footer={<div className="m1-stat-footer"><Button type="button" onClick={onClose}>返回工作台</Button>{result && result.total !== null && <div className="m1-stat-pager"><Button type="button" disabled={page === 1} onClick={() => move(page - 1)}>上一页</Button><span>第 {page} 页</span><Button type="button" disabled={!result.next} onClick={() => move(page + 1)}>下一页</Button></div>}</div>}>

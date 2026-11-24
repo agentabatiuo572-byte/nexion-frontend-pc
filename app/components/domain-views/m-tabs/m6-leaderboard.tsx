@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
-import { LeaderboardUpgrading, fetchLeaderboardAvatar, locateLeaderboardSelf, supportLeaderboardClient, type LeaderboardDetail, type LeaderboardPage, type LeaderboardQuery } from "@/lib/admin/support-leaderboard-client";
+import { LeaderboardUpgrading, boundLeaderboardSelectorError, fetchLeaderboardAvatar, locateLeaderboardSelf, supportLeaderboardClient, type LeaderboardDetail, type LeaderboardPage, type LeaderboardQuery } from "@/lib/admin/support-leaderboard-client";
 import { BlockState, Button, Conclusion, Decision, Drawer, Explain, FilterBar, FilterField, Input, Notice, PageHeader, PageTabs, RdPage, Select, useTabIds } from "@/app/components/rd";
 import type { SupportBoardKey, SupportBoardQuery, SupportBoardRow } from "./support-leaderboard";
 import { BOARD_DEFINITION, BOARD_LABEL, BoardPager, PerformanceBody, Podium, RankingPanel, RankingTable, amountPlaces, amountText, countText } from "./m6-leaderboard-views";
@@ -78,7 +78,20 @@ export function M6Leaderboard() {
   const [detail, setDetail] = useState<{ key: string; agentId: string; data?: LeaderboardDetail; error?: string }>();
   const detailAbort = useRef<AbortController | null>(null), detailSequence = useRef(0);
   const closeDetail = () => { detailSequence.current++; detailAbort.current?.abort(); detailAbort.current = null; setDetail(undefined); };
-  const resetFirstPage = (text: string) => { setResult(undefined); setPhotos(undefined); closeDetail(); setNotice(text); setQuery(current => ({ ...current, pageNum: 1, expectedVersion: undefined })); setRefresh(value => value + 1); };
+  const resetFirstPage = (text: string) => { setResult(undefined); setPhotos(undefined); closeDetail(); setNotice(text); setQuery(current => ({ ...current, pageNum: 1, expectedVersion: undefined, metricVersion: undefined })); setRefresh(value => value + 1); };
+  const rejectedVersion = useRef<string | undefined>(undefined);
+  const selectorLost = (bound: LeaderboardQuery) => {
+    liveKey.current = "";
+    setLastGood(undefined);
+    pendingLocate.current = undefined;
+    if (rejectedVersion.current === bound.expectedVersion) {
+      setResult(undefined); setPhotos(undefined); closeDetail(); setNotice(undefined);
+      setFailure({ key: requestKey, text: "榜单读取返回 422，请从第一页重试。", conflict: true });
+      return;
+    }
+    rejectedVersion.current = bound.expectedVersion;
+    resetFirstPage("原版本读取返回 422，已从第一页重新加载。");
+  };
   /** 后端明确说范围变了（409 SCOPE_CHANGED，复审 F02）：旧组目录立刻收起，范围回到全员榜，月份、币种、榜单、搜索和每页条数照旧，按新授权重读；版本更新照旧走「榜单已更新」。 */
   const scopeLost = (cause: unknown) => {
     setScopeStale(true); setResult(undefined); setPhotos(undefined); closeDetail();
@@ -103,6 +116,7 @@ export function M6Leaderboard() {
   useEffect(() => {
     setResult(undefined); setLastGood(undefined); setScopeStale(false); setFailure(undefined); setNotice(undefined); setPhotos(undefined); closeDetail(); setKeyword("");
     selectedMonth.current = undefined;
+    rejectedVersion.current = undefined;
     setQuery({ board: "netContribution", currency: "USDT", scope: "all", pageNum: 1, pageSize: 5 });
     return () => { detailSequence.current++; detailAbort.current?.abort(); };
     // The key includes account, permissions, explicit menus and logout state.
@@ -117,6 +131,7 @@ export function M6Leaderboard() {
     }).catch(cause => {
       if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
       if (status(cause) === 403 || status(cause) === 401) deny();
+      else if (boundLeaderboardSelectorError(cause, query)) selectorLost(query);
       else if (scopeChanged(cause)) scopeLost(cause);
       // 读失败时「正在重新加载…」不再留在错误卡旁边。
       else { setResult(undefined); setNotice(current => current === "正在重新加载…" ? undefined : current); setFailure({ key: requestKey, text: message(cause), conflict: versionChanged(cause), upgrading: cause instanceof LeaderboardUpgrading }); }
@@ -136,6 +151,7 @@ export function M6Leaderboard() {
       }).catch(cause => {
         if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
         if (status(cause) === 403 || status(cause) === 401) { controller.abort(); deny(); }
+        else if (boundLeaderboardSelectorError(cause, q)) { controller.abort(); selectorLost(q); }
         else if (scopeChanged(cause)) { controller.abort(); scopeLost(cause); }
         else if (versionChanged(cause)) { controller.abort(); setResult(undefined); setPhotos(undefined); closeDetail(); setFailure({ key: requestKey, text: message(cause), conflict: true }); }
       });
@@ -157,12 +173,14 @@ export function M6Leaderboard() {
     if (!data || !enabled || ![...data.rows, ...(data.podium?.rows ?? []), ...(data.self.row ? [data.self.row] : [])].some(row => row.id === agentId)) return;
     detailAbort.current?.abort(); const controller = new AbortController(); detailAbort.current = controller;
     const sequence = ++detailSequence.current; setDetail({ key: requestKey, agentId });
-    void supportLeaderboardClient.detail(agentId, acceptedQuery(data, query), controller.signal).then(next => {
+    const bound = acceptedQuery(data, query);
+    void supportLeaderboardClient.detail(agentId, bound, controller.signal).then(next => {
       if (next.sourceVersion !== data.sourceVersion || next.definitionVersion !== data.definitionVersion || next.asOf !== data.asOf || next.referenceMonth !== data.referenceMonth || next.state !== data.state || next.candidateCoverage !== data.candidateCoverage) throw new Error("公开成绩版本信息不一致");
       if (!controller.signal.aborted && sequence === detailSequence.current && liveKey.current === requestKey) setDetail({ key: requestKey, agentId, data: next });
     }).catch(cause => {
       if (controller.signal.aborted || sequence !== detailSequence.current || liveKey.current !== requestKey) return;
       if (status(cause) === 403 || status(cause) === 401) deny();
+      else if (boundLeaderboardSelectorError(cause, bound)) selectorLost(bound);
       else if (scopeChanged(cause)) scopeLost(cause);
       else if (versionChanged(cause)) { closeDetail(); setResult(undefined); setPhotos(undefined); setFailure({ key: requestKey, text: message(cause), conflict: true }); }
       else setDetail({ key: requestKey, agentId, error: message(cause) });
@@ -176,7 +194,7 @@ export function M6Leaderboard() {
   const detailRow = visibleDetail?.data?.row;
   const board = query.board, ready = !!data;
   const denied = !allowed || deniedIdentity === identity;
-  const reload = () => { if (allowed) { setDeniedIdentity(undefined); resetFirstPage("正在重新加载…"); } };
+  const reload = () => { if (allowed) { rejectedVersion.current = undefined; setDeniedIdentity(undefined); resetFirstPage("正在重新加载…"); } };
   /** 读取失败后的重试：按现在已应用的查询和页码再读一次；只有榜单版本已更新（409）才回第一页重读（ST-35、BUG-650）。 */
   const retry = () => { if (!allowed) return; if (conflict) reload(); else { setNotice(undefined); setRefresh(value => value + 1); } };
   const readFailed = !data && !denied && !!error;
@@ -198,11 +216,11 @@ export function M6Leaderboard() {
   const viewAll = () => { if (data) { setKeyword(""); closeDetail(); setQuery({ ...acceptedQuery(data, query), keyword: undefined, pageNum: 1 }); setRefresh(value => value + 1); } rankingRef.current?.scrollIntoView({ block: "start", behavior: "auto" }); rankingRef.current?.focus({ preventScroll: true }); };
   const search = (event: React.FormEvent) => { event.preventDefault(); if (!enabled || keyword.length > 200 || /[\x00-\x1f\x7f-\x9f]/.test(keyword)) return; closeDetail(); setNotice(undefined); setQuery(current => ({ ...current, keyword: keyword.trim() || undefined, pageNum: 1, expectedVersion: undefined })); };
   const clearSearch = () => { setKeyword(""); setQuery(current => ({ ...current, keyword: undefined, pageNum: 1, expectedVersion: undefined })); };
-  const gap = data?.self.gap ?? null;
+  const gap = data?.generation === "LEGACY" ? data.self.gap : null;
   const gapText = gap === null ? "" : board === "netContribution" ? amountText(gap, places) : countText(gap) === "—" ? amountText(gap, 0) : countText(gap);
   const selfConfirmed = !!selfRow && selfRow.rankStatus === "confirmed" && selfRow.rank !== null;
-  const rankRule = board === "netContribution" ? "名次按发布时的精确业绩额从高到低排；相同的并列，下一名跳过（1、2、2、4）。差距是和紧挨着你、业绩更好的那一位相差多少。"
-    : "名次按发布时的精确成绩从高到低排；成绩相同名次并列，下一名跳过（1、2、2、4）。差距是和紧挨着你、成绩更好的那一位相差多少。";
+  const rankRule = "名次按发布时的精确成绩从高到低排；成绩相同名次并列，下一名跳过（1、2、2、4）。"
+    + (data?.generation === "LEGACY" ? "差距是和紧挨着你、成绩更好的那一位相差多少。" : "");
   /** 这一版各行的业绩额。新口径没有能用的数据时，业绩额榜整榜不排名次，另两个榜里的业绩额一列写「—」。 */
   const boardPerf: BoardPerf = data ? leaderboardPerf(data) : { kind: "unavailable", reason: PERF_UNAVAILABLE };
   const perfOf = (agentId: string): PerfTotals => {
@@ -231,7 +249,7 @@ export function M6Leaderboard() {
   const scopeSelect = scopeStale ? [] : options?.scopeOptions ?? [];
   const pages = data ? Math.max(1, Math.ceil(data.matched / data.pageSize)) : 1;
   const emptyText = !data ? undefined : query.keyword
-    ? <span className="m6-empty">{provisional ? "参榜资料还在汇总，" : ""}没有匹配「{query.keyword}」的客服。按姓名或完整的客服账号编号查找。<button type="button" className="rd-link" onClick={clearSearch}>清除搜索</button></span>
+    ? <span className="m6-empty">{provisional ? "参榜资料还在汇总，" : ""}没有匹配「{query.keyword}」的客服。{data?.generation === "LEGACY" ? "按显示名或完整的客服账号编号查找。" : "按客服显示名查找。"}<button type="button" className="rd-link" onClick={clearSearch}>清除搜索</button></span>
     : provisional ? "参榜资料还在汇总，暂无法显示完整榜单。请稍后重试。" : "当前范围暂无参榜客服。";
   const detailIndex = visibleDetail ? rows.findIndex(row => row.id === visibleDetail.agentId) : -1;
   const detailName = visibleDetail ? detailRow?.name ?? [...rows, ...podiumRows, ...(selfRow ? [selfRow] : [])].find(row => row.id === visibleDetail.agentId)?.name : undefined;
@@ -269,7 +287,7 @@ export function M6Leaderboard() {
             <div ref={rankingRef} tabIndex={-1} className="m6-ranking-anchor">
               <RankingPanel sub={data && !perfMissing && data.candidateCoverage === "COMPLETE" ? query.keyword ? `匹配 ${data.matched} 人` : `共 ${data.total} 人` : undefined}
                 search={<form className="m6-search" role="search" onSubmit={search}>
-                  <Input aria-label="查找客服" data-search="" placeholder="姓名或完整客服账号编号" value={keyword} maxLength={200} disabled={!enabled} onChange={event => setKeyword(event.target.value)} />
+                  <Input aria-label="查找客服" data-search="" placeholder={options?.generation === "LEGACY" ? "显示名或完整客服账号编号" : "客服显示名"} value={keyword} maxLength={200} disabled={!enabled} onChange={event => setKeyword(event.target.value)} />
                   <Button type="submit" disabled={!enabled}>搜索</Button>
                   {!!query.keyword && <Button variant="ghost" onClick={clearSearch}>清除搜索</Button>}
                 </form>}>

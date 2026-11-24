@@ -1,4 +1,4 @@
-import { PERFORMANCE_VERSION, legacyPerformanceSelectorError, performanceEvents, performanceGeneration, performanceMeasured, performanceInteger, performancePeriod, performanceText, performanceWindow, privatePerformance } from "./support-performance-contract";
+import { PERFORMANCE_VERSION, legacyPerformanceSelectorError, performanceDecimal, performanceEvents, performanceGeneration, performanceMeasured, performanceInteger, performanceObject, performancePeriod, performanceText, performanceWindow, privatePerformance, samePerformanceWindow, type PerformanceWindow } from "./support-performance-contract";
 import { SupportClientError, supportRequest } from "./m-support-client.ts";
 import { parseBusinessTime } from "./business-time.ts";
 import { parseInvitationCountReason, parseInvitationInviter } from "./invitation-read-contract.ts";
@@ -261,6 +261,23 @@ function detailSummary(value: unknown) {
   return result;
 }
 export type SupportAnalyticsDetailResponse = Metadata & { view: SupportAnalyticsDetailView; records: ReturnType<typeof detailRow>[]; detailSummary: ReturnType<typeof detailSummary> };
+function measuredFirstSummary(value: unknown) {
+  const r = object(value, "currency totalAmount visibleAmount restrictedAmount totalCount visibleCount restrictedCount customerCount visibleCustomerCount restrictedCustomerCount");
+  const part = (amount: string, events: string, customers: string) => ({
+    amount: performanceMeasured(r[amount], performanceDecimal),
+    count: performanceMeasured(r[events], performanceInteger),
+    customers: performanceMeasured(r[customers], performanceInteger),
+  });
+  return { currency: enumeration(r.currency, CURRENCIES),
+    total: part("totalAmount", "totalCount", "customerCount"),
+    visible: part("visibleAmount", "visibleCount", "visibleCustomerCount"),
+    restricted: part("restrictedAmount", "restrictedCount", "restrictedCustomerCount") };
+}
+type IncompleteFirstDetail = Metadata & {
+  view: "FIRST_DEPOSITS" | "FIRST_PURCHASES";
+  records: [];
+  measuredSummary: ReturnType<typeof measuredFirstSummary>;
+};
 function parseDetailResponse(value: unknown, expected: ReturnType<typeof query>, currency: string): SupportAnalyticsDetailResponse {
   const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records detailSummary performanceWindow metricVersion generation");
   const view = enumeration(r.view, DETAIL_VIEWS), meta = metadata(r), summary = detailSummary(r.detailSummary);
@@ -283,7 +300,7 @@ export type SupportAnalyticsDeviceRow = ReturnType<typeof deviceRow>;
 type Metadata = ReturnType<typeof metadata>;
 export type SupportAnalyticsResponse = Metadata & (
   { view: "OVERVIEW" | "CUSTOMERS" | "ACTIVITY"; records: (SupportAnalyticsCustomer & { performance?: ReturnType<typeof privatePerformance> })[] } |
-  { view: "AGENTS"; records: (SupportAnalyticsAgent & { performance?: ReturnType<typeof privatePerformance> })[] } |
+  { view: "AGENTS"; records: (SupportAnalyticsAgent & { performance?: ReturnType<typeof privatePerformance>; periodPerformance?: ReturnType<typeof privatePerformance> })[] } |
   { view: "FINANCE"; records: SupportAnalyticsFinanceRow[] } |
   { view: "DEVICES"; records: SupportAnalyticsDeviceRow[] }
 );
@@ -294,7 +311,10 @@ function metadata(r: Record<string, unknown>, versioned = false) {
   if (window && (window.sourceVersion !== source || window.basis !== r.basis || window.asOf !== r.asOf)) malformed("performanceWindow");
   const projection = (value: unknown) => window && value != null ? privatePerformance(value, source) : undefined;
   const scopeRaw = object(r.scopeSummary, "mode total bound pending anomaly status current financial restrictedSummary personnel groups performanceAttribution");
-  const selectedCurrent = current(r.selectedCurrent);
+  const firstCoverage = generation !== "LEGACY" && r.firstPaymentCoverage !== undefined ? (() => {
+    const coverage = object(r.firstPaymentCoverage, "status reasonCodes");
+    return { status: enumeration(coverage.status, ["COMPLETE", "PARTIAL", "UNKNOWN", "FAILED"]), reasons: array(coverage.reasonCodes, text) };
+  })() : undefined;
   const performance = source === undefined || !window ? undefined : (() => {
     const financial = object(scopeRaw.financial, "status firstCandidates currencies firstSources performance");
     const currentRaw = object(scopeRaw.current, "lifetimeBasis status ownLifetime firstConfirmed firstNone firstUnknown devices activity performance");
@@ -315,14 +335,21 @@ function metadata(r: Record<string, unknown>, versioned = false) {
   const pageNum = integer(r.pageNum, 1), pageSize = integer(r.pageSize, 1), recordsStatus = enumeration(r.recordsStatus, [...STATUS, "READY"]);
   if (pageSize > 100 || (versionState === "READY" ? queryVersion === null || !/^saq-v1:[0-9a-f]{64}$/.test(queryVersion) : queryVersion !== null || total !== null || canContinue || pageNum > 1)) malformed("version");
   if (total !== null && total !== observedTotal) malformed("total");
-  return { generation, performance, basis: enumeration(r.basis, BASES), businessZone: enumeration(r.businessZone, ["Asia/Shanghai"]), asOf: instant(r.asOf), pageNum, pageSize, total, observedTotal, versionState, queryVersion, canContinue, recordsStatus, selectedCustomerCount: integer(r.selectedCustomerCount), selectedCurrent, scopeSummary: scopeSummary(r.scopeSummary), funds: selectedFunds(r.funds) };
+  const missingSelection = firstCoverage && firstCoverage.status !== "COMPLETE" && recordsStatus === "UNKNOWN"
+    && r.selectedCurrent === null && r.selectedCustomerCount === null && r.funds === null;
+  return { generation, performance, firstCoverage, basis: enumeration(r.basis, BASES), businessZone: enumeration(r.businessZone, ["Asia/Shanghai"]), asOf: instant(r.asOf), pageNum, pageSize, total, observedTotal, versionState, queryVersion, canContinue, recordsStatus,
+    selectedCustomerCount: missingSelection ? null : integer(r.selectedCustomerCount),
+    selectedCurrent: missingSelection ? null : current(r.selectedCurrent),
+    scopeSummary: scopeSummary(r.scopeSummary), funds: missingSelection ? null : selectedFunds(r.funds) };
 }
-export function parseSupportAnalyticsResponse(value: unknown, expected: { view: SupportAnalyticsView | SupportAnalyticsDetailView; basis: typeof BASES[number]; pageNum: number; pageSize: number; expectedVersion?: string }, versioned = false): SupportAnalyticsResponse {
+export function parseSupportAnalyticsResponse(value: unknown, expected: { view: SupportAnalyticsView | SupportAnalyticsDetailView; basis: typeof BASES[number]; pageNum: number; pageSize: number; expectedVersion?: string; firstDependent?: boolean; firstFiltered?: boolean }, versioned = false): SupportAnalyticsResponse {
   const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records performanceWindow metricVersion generation sourceVersion firstPaymentCoverage detailSummary exportReadiness");
-  if (versioned && r.recordsStatus === "UNKNOWN" && r.selectedCurrent === null) throw new SupportClientError(503, undefined, "SUPPORT_ANALYTICS_HISTORY_INCOMPLETE");
   const view = enumeration(r.view, VIEWS), meta = metadata(r, versioned);
   if (view !== expected.view || meta.basis !== expected.basis || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize) malformed("queryMismatch");
   if (expected.expectedVersion !== undefined && meta.queryVersion !== expected.expectedVersion) malformed("versionMismatch");
+  const incompleteFirst = expected.firstDependent && meta.firstCoverage && meta.firstCoverage.status !== "COMPLETE";
+  if (incompleteFirst && (meta.versionState !== "UNKNOWN" || meta.recordsStatus !== "UNKNOWN" || meta.observedTotal !== null
+    || expected.firstFiltered && meta.selectedCurrent !== null) || !incompleteFirst && meta.selectedCurrent === null) malformed("firstCoverage");
   if (meta.generation === "LEGACY" && (meta.recordsStatus !== (view === "AGENTS" ? meta.scopeSummary.personnel.status : meta.versionState) || (meta.total === null) !== (meta.versionState === "UNKNOWN" || view === "AGENTS" && meta.scopeSummary.personnel.status !== "AVAILABLE"))) malformed("recordsCoverage");
   const rows = array(r.records, x => x);
   const remaining = BigInt(meta.observedTotal ?? 0) - BigInt(meta.pageNum - 1) * BigInt(meta.pageSize);
@@ -331,8 +358,12 @@ export function parseSupportAnalyticsResponse(value: unknown, expected: { view: 
   switch (view) {
     case "AGENTS": return { ...meta, view, records: unique(rows.map(value => {
       const row = agent(value);
-      const raw = value as { current: { performance?: unknown } };
-      return { ...row, performance: meta.performance && raw.current.performance != null ? privatePerformance(raw.current.performance, meta.performance.window.sourceVersion) : undefined };
+      const raw = value as { current: { performance?: unknown }; period?: unknown };
+      const window = meta.performance?.window;
+      const period = window?.basis === "PERIOD_EVENT" && raw.period != null ? performanceObject(raw.period).performance : undefined;
+      const periodPerformance = period == null ? undefined : privatePerformance(period, window?.sourceVersion);
+      if (periodPerformance && window && !samePerformanceWindow(periodPerformance.window, window, false)) malformed("agentPeriod");
+      return { ...row, periodPerformance, performance: window && raw.current.performance != null ? privatePerformance(raw.current.performance, window.sourceVersion) : undefined };
     }), x => x.accountId) };
     case "FINANCE": return { ...meta, view, records: rows.map(financeRow) };
     case "DEVICES": return { ...meta, view, records: unique(rows.map(deviceRow), x => x.deviceId) };
@@ -373,7 +404,8 @@ function query(options: Omit<SupportAnalyticsQuery, "view"> & { view: SupportAna
   const parameters: Record<string, string | number | undefined> = { view, category, firstState, filter, keyword: keyword?.trim() || undefined, basis, from, to, businessZone: "Asia/Shanghai", groupId: options.groupId === undefined ? undefined : requestId(options.groupId), agentId: options.agentId === undefined ? undefined : requestId(options.agentId), currency, sortKey, direction, pageNum, pageSize, expectedVersion: options.expectedVersion };
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(parameters)) if (value !== undefined) params.set(key, String(value));
-  return { params, view, basis, pageNum, pageSize, expectedVersion: options.expectedVersion };
+  return { params, view, basis, pageNum, pageSize, expectedVersion: options.expectedVersion, firstFiltered: firstState !== "ALL",
+    firstDependent: firstState !== "ALL" || sortKey === "FIRST_SUCCEEDED_AT" || sortKey === "FIRST_CONFIRMED_CUSTOMER_COUNT" };
 }
 /** One business month and its exact UTC window from the server's business calendar (BUG-005). */
 export type SupportAnalyticsMonth = { month: string; from: string; to: string; generation?: "READY" };
@@ -436,7 +468,7 @@ export const supportPerformanceAnalyticsClient = {
     if (generation === "LEGACY") return legacy();
     return { generation, months: parseSupportAnalyticsMonths(result) };
   },
-  async firstDetails(options: Omit<SupportAnalyticsQuery, "view"> & { view: "FIRST_DEPOSITS" | "FIRST_PURCHASES" }, origin: NonNullable<SupportAnalyticsResponse["performance"]>["window"]): Promise<SupportAnalyticsDetailResponse> {
+  async firstDetails(options: Omit<SupportAnalyticsQuery, "view"> & { view: "FIRST_DEPOSITS" | "FIRST_PURCHASES" }, origin: PerformanceWindow): Promise<SupportAnalyticsDetailResponse | IncompleteFirstDetail> {
     const expected = query(options);
     expected.params.set("metricVersion", PERFORMANCE_VERSION);
     expected.params.delete("businessZone");
@@ -445,25 +477,23 @@ export const supportPerformanceAnalyticsClient = {
       const generation = performanceGeneration(r);
       if (generation === "UPGRADING") throw new SupportClientError(503, undefined, "SUPPORT_ANALYTICS_HISTORY_INCOMPLETE");
       const window = performanceWindow(r.performanceWindow);
-      if (generation !== "READY" || window.sourceVersion !== origin.sourceVersion || window.sourceScopeVersion !== origin.sourceScopeVersion || window.from !== origin.from || window.to !== origin.to) {
+      if (generation !== "READY" || !samePerformanceWindow(window, origin)) {
         throw new SupportClientError(409, undefined, "SUPPORT_ANALYTICS_QUERY_CHANGED");
-      }
-      if (r.recordsStatus === "UNKNOWN" || r.recordsStatus === "PARTIAL") {
-        // The existing first-payment detail presents certified counts and sums. Its
-        // history-incomplete state is used when the API sends measured subtotals.
-        const detail = object(r.detailSummary, "currency totalAmount visibleAmount restrictedAmount totalCount visibleCount restrictedCount customerCount visibleCustomerCount restrictedCustomerCount");
-        for (const key of ["totalAmount", "visibleAmount", "restrictedAmount"]) performanceMeasured(detail[key], decimal);
-        for (const key of ["totalCount", "visibleCount", "restrictedCount", "customerCount", "visibleCustomerCount", "restrictedCustomerCount"]) performanceMeasured(detail[key], performanceInteger);
-        throw new SupportClientError(503, undefined, "SUPPORT_ANALYTICS_HISTORY_INCOMPLETE");
       }
       const meta = metadata(r, true);
       const view = enumeration(r.view, ["FIRST_DEPOSITS", "FIRST_PURCHASES"]);
+      if (view !== options.view || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize
+        || expected.expectedVersion && meta.queryVersion !== expected.expectedVersion) malformed("firstDetails");
       const kind = view === "FIRST_DEPOSITS" ? "DEPOSIT" : "DEVICE_PURCHASE";
       const records = array(r.records, value => detailRow(value, view));
+      if (meta.recordsStatus === "UNKNOWN") {
+        const measuredSummary = measuredFirstSummary(r.detailSummary);
+        if (meta.versionState !== "UNKNOWN" || meta.firstCoverage?.status === "COMPLETE" || meta.observedTotal !== measuredSummary.visible.count.observed
+          || measuredSummary.currency !== options.currency || records.length) malformed("firstDetailCoverage");
+        return { ...meta, view, records: [], measuredSummary };
+      }
       const detail = detailSummary(r.detailSummary);
-      if (view !== options.view || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize
-        || expected.expectedVersion && meta.queryVersion !== expected.expectedVersion
-        || detail.currency !== options.currency || records.some(row => row.currency !== detail.currency || row.kind !== kind)
+      if (detail.currency !== options.currency || records.some(row => row.currency !== detail.currency || row.kind !== kind)
         || detail.visibleCount !== meta.total || records.length !== Math.min(meta.pageSize, Math.max(0, detail.visibleCount - (meta.pageNum - 1) * meta.pageSize))
         || meta.canContinue !== (meta.pageNum * meta.pageSize < detail.visibleCount)) malformed("firstDetails");
       return { ...meta, view, records, detailSummary: detail };

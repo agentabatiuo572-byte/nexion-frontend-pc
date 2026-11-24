@@ -7,11 +7,13 @@
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useEffect, useRef, useState } from "react";
 import { Button, Decision, Explain, Fact, Facts, Field, Fold, InlineRetry, Modal, Notice, Select, StatusTag, CheckGroup } from "@/app/components/rd";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { businessZone } from "@/lib/admin/business-time";
-import { EXPORT_LABEL, ExportOutcomeUnknownError, type ExportColumns, type ExportDialogData, type ExportItem, type ExportSubmitted, type ExportType, type PerfExportPorts } from "./perf-view";
+import { EXPORT_LABEL, ExportOutcomeUnknownError, exportDownloadMessage, exportReceiptSummary, exportStatus, type ExportColumns, type ExportDialogData, type ExportDownload, type ExportItem, type ExportSubmitted, type ExportType, type PerfExportPorts } from "./perf-view";
+import { isExportPermissionDenied, useExportClock } from "./perf-export-ports";
 import "./m1-export.css";
 
 const num = (n: number) => n.toLocaleString("en-US");
@@ -44,39 +46,61 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   /** 勾着时没加载出来、后来取消勾选的项：写「这次不导出」。 */
   const [dropped, setDropped] = useState<ExportType[]>([]);
   const [result, setResult] = useState<ExportSubmitted[] | null>(null);
-  const [downloadFailed, setDownloadFailed] = useState<string | null>(null);
+  const [downloadFailed, setDownloadFailed] = useState<{ taskId: string; outcome: Exclude<ExportDownload, { kind: "downloaded" }> } | null>(null);
   /** 提交没收到结果：选择和理由都锁住，只给「查询原操作」（OP-91–96）。 */
-  const [original] = useState(() => ports.pendingSubmit());
-  const [originalReason, setOriginalReason] = useState(original?.reason);
+  const [original, setOriginal] = useState(() => ports.pendingSubmit());
+  const [originalReason, setOriginalReason] = useState(() => original?.reason ?? ports.recoveredSubmit()?.reason);
   const [confirmationRevision, setConfirmationRevision] = useState(0);
-  const [unknown, setUnknown] = useState(Boolean(original));
+  const unknown = !!original;
+  const expired = useExportClock([original]) >= (original?.expiresAt ?? Infinity);
   const [lookupText, setLookupText] = useState<string | null>(null);
   const [querying, setQuerying] = useState(false);
-  const [found, setFound] = useState<string | null>(null);
+  const [found, setFound] = useState(false);
+  const [preview, setPreview] = useState<"checking" | "ready" | "failed">("checking");
   const checkGeneration = useRef(0);
   const zone = businessZone().label;
+  const permissionLost = () => {
+    checkGeneration.current++;
+    announcePermissionDenied();
+    onClose();
+    ports.invalidateAccess();
+  };
 
   const load = () => {
     setLoadFailed(false);
+    setPreview("checking");
     const generation = ++checkGeneration.current;
     ports.open(initial).then(next => {
       if (generation !== checkGeneration.current) return;
       setData(next); setMonth(next.month); setScope(next.scope); setItems(next.items); setSelected(next.selected);
-    }, () => { if (generation === checkGeneration.current) setLoadFailed(true); });
+      setPreview("ready");
+    }, error => {
+      if (generation !== checkGeneration.current) return;
+      if (isExportPermissionDenied(error)) { permissionLost(); return; }
+      setLoadFailed(true); setPreview("failed");
+    });
   };
   useEffect(() => { load(); return () => { checkGeneration.current++; }; }, [ports]);
 
   /** 重新检查这几项（只读）。只认最后一次检查的结果；没查到的这一项写没加载出来。 */
   const recheck = (types: readonly ExportType[], next = { month, scope }) => {
     const generation = ++checkGeneration.current;
-    setItems(rows => rows.map(row => types.includes(row.type) ? { ...row, check: { state: "checking" } } : row));
+    setPreview("checking");
+    setData(previous => previous && { ...previous, asOf: "—", blocked: undefined });
+    const permitted = data?.scopes.find(choice => choice.value === next.scope)?.types;
+    setItems(rows => rows.filter(row => permitted?.includes(row.type)).map(row => ({
+      ...row, columns: { total: 0, summary: "", groups: [] }, check: { state: "checking" },
+    })));
     ports.check({ month: next.month, scope: next.scope, types: [...types] }).then(found => {
       if (generation !== checkGeneration.current) return;
       setItems(found.items);
       setData(previous => previous && { ...previous, asOf: found.asOf, blocked: found.blocked });
-    }, () => {
+      setPreview("ready");
+    }, error => {
       if (generation !== checkGeneration.current) return;
-      setItems(rows => rows.map(row => types.includes(row.type) ? { ...row, check: { state: "failed", text: "没加载出来。" } } : row));
+      if (isExportPermissionDenied(error)) { permissionLost(); return; }
+      setPreview("failed");
+      setItems(rows => rows.map(row => ({ ...row, check: { state: "failed", text: "没加载出来。" } })));
     });
   };
   const toggle = (item: ExportItem) => {
@@ -88,28 +112,49 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     // 取消勾选没加载出来的一项后，马上对剩下勾着的重新检查，用这次的结果提交（5h）。
     recheck(next);
   };
-  const changeScope = (value: string) => { setScope(value); setDropped([]); recheck(selected, { month, scope: value }); };
+  const changeScope = (value: string) => {
+    const types = data?.scopes.find(choice => choice.value === value)?.types;
+    const next = selected.filter(type => types?.includes(type));
+    setSelected(next); setScope(value); setDropped([]);
+    recheck(next, { month, scope: value });
+  };
   const changeMonth = (value: string) => { setMonth(value); setDropped([]); recheck(selected, { month: value, scope }); };
 
   if (result) {
     const pending = result.some(row => row.state === "PENDING_APPROVAL");
     const scopeLabel = data?.scopes.find(row => row.value === scope)?.label ?? "—";
-    const download = (taskId: string) => { setDownloadFailed(null); ports.download(taskId).catch(() => setDownloadFailed(taskId)); };
+    const download = (taskId: string) => {
+      setDownloadFailed(null);
+      const generation = checkGeneration.current;
+      void ports.download(taskId).then(outcome => {
+        if (generation !== checkGeneration.current || outcome.kind === "downloaded") return;
+        if (outcome.permissionDenied) { permissionLost(); return; }
+        setDownloadFailed({ taskId, outcome });
+        setResult(rows => rows?.map(row => row.taskId !== taskId ? row : {
+          ...row, ...outcome.task, state: outcome.task?.state ?? (outcome.kind === "expired" ? "EXPIRED" : row.state),
+          canDownload: outcome.kind === "retry",
+          rows: outcome.task ? outcome.task.rows : outcome.kind === "forbidden" ? null : row.rows,
+        }) ?? null);
+      });
+    };
     return <Modal title={`已提交 ${result.length} 项导出`} onClose={onClose}
       footer={<Decision others={onRecords && <Button onClick={onRecords}>去导出记录</Button>} primary={<Button variant="primary" onClick={onClose}>知道了</Button>} />}>
       <Facts>
         <Fact k="范围">{scopeLabel}</Fact>
         <Fact k="月份">{month}（截至 {data?.asOf}，{zone}）</Fact>
       </Facts>
-      {found && <Notice tone="ok">{found}</Notice>}
-      {downloadFailed && <Notice tone="warn" title="下载没有完成" actionBelow action={<Button size="sm" onClick={() => download(downloadFailed)}>重新获取下载链接</Button>}>文件还在，重新获取下载链接再下，不会重新生成。</Notice>}
-      <ul className="m1-export-results">{result.map(row => <li key={row.taskId} className="m1-export-result">
+      {found && <Notice tone="ok">{exportReceiptSummary(result)}</Notice>}
+      {downloadFailed && <Notice tone="warn" title="下载没有完成" actionBelow action={downloadFailed.outcome.kind === "retry" && <Button size="sm" onClick={() => download(downloadFailed.taskId)}>重新获取下载链接</Button>}>{exportDownloadMessage(downloadFailed.outcome.kind)}</Notice>}
+      <ul className="m1-export-results">{result.map(row => {
+        const status = exportStatus(row);
+        return <li key={row.taskId} className="m1-export-result">
         <div className="m1-export-result-main">
-          <div className="m1-export-result-head"><span className="m1-export-result-name">{EXPORT_LABEL[row.type]}</span>{row.state === "READY" ? <StatusTag tone="ok">可下载</StatusTag> : <StatusTag tone="warn">待审批</StatusTag>}</div>
-          <div className="m1-export-result-sub"><span data-mono="">{row.taskId}</span>{row.state === "READY" ? ` · ${row.rows ?? "—"} 行 · CSV` : " · 等另一位有审批权的管理员审批"}</div>
+          <div className="m1-export-result-head"><span className="m1-export-result-name">{EXPORT_LABEL[row.type]}</span><StatusTag tone={status.tone}>{status.label}</StatusTag></div>
+          <div className="m1-export-result-sub"><span data-mono="">{row.taskId}</span>{row.state === "READY" && row.canDownload ? ` · ${row.rows ?? "—"} 行 · CSV` : ` · ${status.line}`}</div>
         </div>
-        {row.state === "READY" && <Button size="sm" onClick={() => download(row.taskId)}>下载</Button>}
-      </li>)}</ul>
+        {row.state === "READY" && row.canDownload && downloadFailed?.taskId !== row.taskId && <Button size="sm" onClick={() => download(row.taskId)}>下载</Button>}
+      </li>;
+      })}</ul>
       {pending && <p className="rd-note">明细批准后才生成文件，生成好后在「导出记录」下载。</p>}
     </Modal>;
   }
@@ -124,7 +169,9 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     : unknown ? "提交后没收到结果，原来的选择和理由已保存。先查询原操作，不要再点提交。"
     : data.blocked;
   // 空、没勾选、正在检查、勾着的项没加载出来：那一项自己在内容区写清楚，这里只写进确认按钮的灰色原因，不另出提示条（VS-107，一件事只说一处）。
-  const quietReason = !data || blockedReason ? undefined
+  const quietReason = blockedReason ? undefined
+    : preview === "checking" ? "正在检查…"
+    : preview === "failed" || !data ? "导出内容没加载出来"
     : !selectable.length && !notReady ? items[0]?.check.state === "empty" ? "这个月还没有记录" : "没有能导出的内容"
     : notReady ? notReady.check.state === "checking" ? "正在检查…" : `${EXPORT_LABEL[notReady.type]}没加载出来`
     : (!chosen.length || chosen.length !== selected.length) ? "还没勾选导出内容" : chosen.some(item => item.check.state === "ok" && item.check.rows === null) ? "行数暂时无法确认" : undefined;
@@ -136,13 +183,19 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
         setQuerying(true); setLookupText(null);
         ports.lookupSubmit().then(outcome => {
           if (outcome.kind === "pending") { setLookupText(outcome.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。"); return; }
-          if (outcome.kind === "cleared") { setUnknown(false); setConfirmationRevision(value => value + 1); if (data) recheck(selected); else load(); return; }
-          const rows = outcome.rows;
-          const ready = rows.filter(row => row.state === "READY").map(row => EXPORT_LABEL[row.type]), waiting = rows.filter(row => row.state !== "READY").map(row => EXPORT_LABEL[row.type]);
-          setFound(`已查到这次提交：${[ready.length ? `${ready.join("、")}可下载` : "", waiting.length ? `${waiting.join("、")}待审批` : ""].filter(Boolean).join("，")}。`);
-          setResult(rows);
-        }, () => setLookupText("这次查询没连上，原操作还没确定。稍后再点「查询原操作」。")).finally(() => setQuerying(false));
-      }}>查询原操作</Button>{lookupText && <span role="status">{lookupText}</span>}</div>;
+          if (outcome.kind === "missing") { setLookupText("找不到本标签页保存的原操作。"); return; }
+          if (outcome.kind === "cleared") {
+            setOriginal(undefined); setOriginalReason(outcome.draft.reason);
+            setConfirmationRevision(value => value + 1); load();
+            return;
+          }
+          setFound(true);
+          setResult(outcome.rows);
+        }, error => {
+          if (isExportPermissionDenied(error)) { permissionLost(); return; }
+          setLookupText("这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
+        }).finally(() => setQuerying(false));
+      }}>查询原操作</Button>{lookupText && lookupText !== RETRY_EXPIRED_TEXT && <span role="status">{lookupText}</span>}{expired && <span role="status">{RETRY_EXPIRED_TEXT} <ExportAuditLink /></span>}</div>;
   const content = !data && unknown ? recovery : loadFailed
     ? <Notice tone="danger" action={<Button size="sm" onClick={load}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。</Notice>
     : !data ? <p className="m1-export-loading" role="status">正在读取导出内容…</p>
@@ -161,6 +214,8 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
         <span><em>币种</em>USDT，越南盾只作参考列</span>
         <span><em>下载人</em>{data.downloader}</span>
       </p>
+      {!items.length && preview === "checking" && <p className="m1-export-loading" role="status">正在检查…</p>}
+      {!items.length && preview === "failed" && <Notice tone="danger" action={<Button size="sm" onClick={() => recheck(selected)}>重试</Button>}>导出内容没加载出来。</Notice>}
       <CheckGroup legend="导出内容" summary={`已选 ${selected.length} 项`}>
         <div className="m1-export-items">{items.map(item => {
           const on = selected.includes(item.type), label = EXPORT_LABEL[item.type], check = item.check;
@@ -205,12 +260,16 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
       try {
         setResult(await ports.submit({ month, scope, types: selected }, reason));
       } catch (error) {
+        if (isExportPermissionDenied(error)) {
+          ports.invalidateAccess();
+          throw error;
+        }
         if (!(error instanceof ExportOutcomeUnknownError)) {
           recheck(selected);
           throw error;
         }
         setOriginalReason(reason);
-        setUnknown(true);
+        setOriginal(ports.pendingSubmit());
         setConfirmationRevision(value => value + 1);
       }
     }} />;

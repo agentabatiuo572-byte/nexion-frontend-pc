@@ -8,9 +8,11 @@ import { BlockState, Button, Cell, Decision, Drawer, Fact, Facts, Fold, Notice, 
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { RecoveryPanel, SettledLine, TechInfo, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ExportAuditLink, ExportColumnsFold } from "./perf-export";
-import { EXPORT_LABEL, ExportOutcomeUnknownError, exportStatus, type DecisionLookup, type ExportTask, type PendingDecision, type PerfExportPorts } from "./perf-view";
+import { EXPORT_LABEL, ExportOutcomeUnknownError, exportDownloadMessage, exportReceiptSummary, exportStatus, type DecisionLookup, type ExportDownload, type ExportTask, type PendingDecision, type PendingSubmit, type PerfExportPorts } from "./perf-view";
+import { exportDecisionConflict, exportTaskHidden, isExportPermissionDenied, useExportClock } from "./perf-export-ports";
 import "./m1-export.css";
 
 type View = "MINE" | "APPROVALS";
@@ -18,32 +20,77 @@ type Confirm = { kind: "approve" | "reject" | "withdraw"; task: ExportTask };
 const DETAIL = (task: ExportTask) => task.type !== "SUMMARY";
 const clock = (iso: string) => formatBusinessTimeCompact(iso, "—").slice(-5);
 const VERB: Record<PendingDecision["decision"], string> = { APPROVE: "批准", REJECT: "驳回", WITHDRAW: "撤回" };
+const ACTION = { approve: "APPROVE", reject: "REJECT", withdraw: "WITHDRAW" } as const;
+
+function exportListLocation(views: readonly View[]): { view: View; page: number } {
+  const defaults = { view: views.includes("APPROVALS") ? "APPROVALS" as const : "MINE" as const, page: 1 };
+  if (typeof window === "undefined") return defaults;
+  const params = new URLSearchParams(window.location.search);
+  const view = params.get("exportView");
+  if (params.getAll("exportView").length !== 1 || (view !== "MINE" && view !== "APPROVALS") || !views.includes(view)) return defaults;
+  const requested = params.get("page") ?? "";
+  const page = /^[1-9]\d*$/.test(requested) && params.getAll("page").length === 1 ? Number(requested) : 1;
+  return { view, page: Number.isSafeInteger(page) && (page - 1) * 10 <= 2_147_483_647 ? page : 1 };
+}
 
 export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
   const persona = ports.persona;
   const zone = businessZone().label;
-  // 两个视图都有时进来默认在「待我审批」（画布 6c）。
-  const [view, setView] = useState<View>(persona.views.includes("APPROVALS") ? "APPROVALS" : persona.views[0]);
+  const [location] = useState(() => exportListLocation(persona.views));
+  const [view, setView] = useState<View>(location.view);
   const [rows, setRows] = useState<ExportTask[] | null>(null);
   const [readError, setReadError] = useState(false);
-  const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(10), [total, setTotal] = useState(0);
+  const [page, setPage] = useState(location.page), [pageSize, setPageSize] = useState(10), [total, setTotal] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const [taskRefresh, setTaskRefresh] = useState(0);
   const [detail, setDetail] = useState<ExportTask | null>(null);
   const [detailStatus, setDetailStatus] = useState<"loading" | "error" | null>(null);
-  const [recoveredReason, setRecoveredReason] = useState<PendingDecision | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [pending, setPending] = useState<PendingDecision[]>(() => ports.pendingDecisions());
   const [lookup, setLookup] = useState<DecisionLookup | "loading" | null>(null);
-  const [downloadFailed, setDownloadFailed] = useState<string | null>(null);
+  const [downloadFailed, setDownloadFailed] = useState<{ taskId: string; outcome: Exclude<ExportDownload, { kind: "downloaded" }> } | null>(null);
   // 待确认面板：本标签页存着的原操作（提交导出、批准、驳回、撤回），审批成功但回包丢了、任务已不在列表里时也能从这里查。
   const [pendingSubmit, setPendingSubmit] = useState(() => ports.pendingSubmit());
   const [answers, setAnswers] = useState<Record<string, { tag: ReactNode; line: string }>>({});
   const [querying, setQuerying] = useState<string | null>(null);
   const [settled, setSettled] = useState<{ key: string; label: string; text: string; taskId?: string; mine?: boolean }[]>([]);
+  const now = useExportClock([pendingSubmit, ...pending]);
 
   useEffect(() => {
+    const sync = () => { setPendingSubmit(ports.pendingSubmit()); setPending(ports.pendingDecisions()); };
+    const unsubscribe = ports.subscribePending(sync);
+    sync();
+    return unsubscribe;
+  }, [ports]);
+  useEffect(() => {
+    if (!persona.views.includes(view)) {
+      setView(exportListLocation(persona.views).view); setPage(1); setOpenId(null); setConfirm(null); setDetail(null); setRows(null);
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "exports");
+    url.searchParams.set("exportView", view);
+    url.searchParams.set("page", String(page));
+    window.history.replaceState(null, "", url);
+  }, [view, page, persona.views]);
+
+  const clearPrivateRead = () => {
+    setRows(null); setDetail(null); setOpenId(null); setConfirm(null); setLookup(null); setDownloadFailed(null);
+  };
+  const permissionLost = () => {
+    clearPrivateRead();
+    announcePermissionDenied();
+    ports.invalidateAccess();
+  };
+  const forgetTaskRead = (taskId: string) => {
+    setRows(list => list?.filter(row => row.taskId !== taskId) ?? null);
+    if (openId === taskId) { setDetail(null); setOpenId(null); setConfirm(null); setLookup(null); }
+    setRefresh(value => value + 1);
+  };
+
+  useEffect(() => {
+    if (!persona.views.includes(view)) return;
     const controller = new AbortController();
     setRows(null); setReadError(false);
     ports.tasks(view, page, pageSize, controller.signal).then(result => {
@@ -51,7 +98,11 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
       const lastPage = Math.max(1, Math.ceil(result.total / pageSize));
       if (page > lastPage) { setPage(lastPage); return; }
       setRows(result.rows); setTotal(result.total);
-    }, () => { if (!controller.signal.aborted) setReadError(true); });
+    }, error => {
+      if (controller.signal.aborted) return;
+      if (isExportPermissionDenied(error)) { permissionLost(); return; }
+      setReadError(true);
+    });
     return () => controller.abort();
   }, [ports, view, page, pageSize, refresh]);
 
@@ -62,22 +113,46 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
     setDetailStatus("loading");
     ports.task(openId).then(task => {
       if (active) { setDetail(task); setDetailStatus(null); }
-    }, () => { if (active) setDetailStatus("error"); });
+    }, error => {
+      if (!active) return;
+      if (isExportPermissionDenied(error)) { permissionLost(); return; }
+      if (exportTaskHidden(error)) { forgetTaskRead(openId); return; }
+      setDetailStatus("error");
+    });
     return () => { active = false; };
   }, [openId, ports, taskRefresh]);
 
   const put = (task: ExportTask) => {
-    setDetail(task);
+    if (task.taskId === openId) setDetail(task);
     setRefresh(value => value + 1);
   };
-  const download = (task: ExportTask) => { setDownloadFailed(null); ports.download(task.taskId).catch(() => { setDownloadFailed(task.taskId); setOpenId(task.taskId); }); };
+  const download = (task: ExportTask) => {
+    setDownloadFailed(null);
+    void ports.download(task.taskId).then(outcome => {
+      if (outcome.kind === "downloaded") return;
+      if (outcome.permissionDenied) { permissionLost(); return; }
+      setDownloadFailed({ taskId: task.taskId, outcome });
+      setRows(list => list?.flatMap(row => row.taskId !== task.taskId ? [row] : outcome.task ? [outcome.task] : []) ?? null);
+      if (outcome.task) {
+        setDetail(outcome.task); setOpenId(task.taskId);
+      } else {
+        setDetail(null); setOpenId(null);
+        setSettled(list => [{ key: `download:${task.taskId}`, label: "下载没有完成", text: exportDownloadMessage(outcome.kind) },
+          ...list.filter(row => row.key !== `download:${task.taskId}`)]);
+      }
+    });
+  };
   const query = (p: PendingDecision) => {
     setLookup("loading");
     ports.lookupDecision(p).then(found => {
       setLookup(found);
-      if (found.kind === "matched") { put(found.task); setPending(ports.pendingDecisions()); }
-      if (found.kind === "cleared") { setRecoveredReason(p); setPending(ports.pendingDecisions()); setTaskRefresh(value => value + 1); }
-    }, () => setLookup({ kind: "failed", text: "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。" }));
+      if (found.kind === "matched") put(found.task);
+      if (found.kind === "cleared") setTaskRefresh(value => value + 1);
+    }, error => {
+      if (isExportPermissionDenied(error)) { permissionLost(); return; }
+      if (exportTaskHidden(error)) { forgetTaskRead(p.taskId); return; }
+      setLookup({ kind: "failed", text: "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。" });
+    });
   };
   const stillUnknown = (key: string, line: string) => setAnswers(map => ({ ...map, [key]: { tag: <StatusTag tone="warn">{line === RETRY_EXPIRED_TEXT ? "已过期" : "仍未知"}</StatusTag>, line } }));
   const queryOriginal = (p: PendingDecision) => {
@@ -88,42 +163,51 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
         setSettled(list => [{ key, label, text: `已查到这次${VERB[p.decision]}：这条申请现在是「${exportStatus(found.task).label}」。`, taskId: p.taskId }, ...list]);
         setRefresh(value => value + 1);
       } else if (found.kind === "cleared") {
-        // 确认没执行：解锁，原理由留给重新确认时用。
-        setRecoveredReason(p);
         setSettled(list => [{ key, label, text: found.text, taskId: p.taskId }, ...list]);
         setRefresh(value => value + 1);
       } else stillUnknown(key, found.text);
-      setPending(ports.pendingDecisions());
       if (openId === p.taskId) setTaskRefresh(value => value + 1);
-    }, () => stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。")).finally(() => setQuerying(null));
+    }, error => {
+      if (isExportPermissionDenied(error)) { permissionLost(); return; }
+      if (exportTaskHidden(error)) {
+        forgetTaskRead(p.taskId);
+        stillUnknown(key, "当前无法查看这条申请，原操作继续保留。");
+        return;
+      }
+      stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。");
+    }).finally(() => setQuerying(null));
   };
-  const querySubmit = () => {
-    setQuerying("submit");
+  const querySubmit = (original: PendingSubmit) => {
+    const key = original.operationId;
+    setQuerying(key);
     ports.lookupSubmit().then(found => {
       if (found.kind === "matched") {
-        const ready = found.rows.filter(row => row.state === "READY").map(row => EXPORT_LABEL[row.type]), waiting = found.rows.filter(row => row.state !== "READY").map(row => EXPORT_LABEL[row.type]);
-        setSettled(list => [{ key: "submit", label: "提交导出", text: `已查到这次提交：${[ready.length ? `${ready.join("、")}可下载` : "", waiting.length ? `${waiting.join("、")}待审批` : ""].filter(Boolean).join("，")}。`, mine: true }, ...list]);
+        setSettled(list => [{ key, label: "提交导出", text: exportReceiptSummary(found.rows), mine: true }, ...list]);
         setRefresh(value => value + 1);
-      } else if (found.kind === "cleared") setSettled(list => [{ key: "submit", label: "提交导出", text: "这次提交没有执行，可以重新导出。", mine: true }, ...list]);
-      else stillUnknown("submit", found.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。");
-      setPendingSubmit(ports.pendingSubmit());
-    }, () => stillUnknown("submit", "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。")).finally(() => setQuerying(null));
+      } else if (found.kind === "cleared") setSettled(list => [{ key, label: "提交导出", text: "这次提交没有执行，原理由已保留，可以重新导出。", mine: true }, ...list]);
+      else stillUnknown(key, found.kind === "missing" ? "找不到本标签页保存的原操作。"
+        : found.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。");
+    }, error => {
+      if (isExportPermissionDenied(error)) { permissionLost(); return; }
+      stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。");
+    }).finally(() => setQuerying(null));
   };
   const queryButton = (key: string, onClick: () => void) => <Button size="sm" loading={querying === key} loadingText="正在查询…" disabledReason={querying && querying !== key ? "等上一条查完" : undefined} onClick={onClick}>查询原结果</Button>;
   const unknownTag = <StatusTag tone="warn">结果未知</StatusTag>;
+  const expiredResult = { tag: <StatusTag tone="warn">已过期</StatusTag>, line: RETRY_EXPIRED_TEXT };
   const recovery: RecoveryItem[] = [
     ...(pendingSubmit ? [{
-      key: "submit", object: `提交导出 · ${pendingSubmit.query.month} · ${pendingSubmit.query.types.map(type => EXPORT_LABEL[type]).join("、")}`,
-      tag: unknownTag, line: "发出后没收到结果；先查询原结果，不要再点提交。", result: answers.submit,
-      actions: queryButton("submit", querySubmit), detail: <p>理由：{pendingSubmit.reason}</p>,
+      key: pendingSubmit.operationId, createdAt: pendingSubmit.createdAt, object: `提交导出 · ${pendingSubmit.query.month} · ${pendingSubmit.query.types.map(type => EXPORT_LABEL[type]).join("、")}`,
+      tag: unknownTag, line: "发出后没收到结果；先查询原结果，不要再点提交。", result: now >= pendingSubmit.expiresAt ? expiredResult : answers[pendingSubmit.operationId],
+      actions: queryButton(pendingSubmit.operationId, () => querySubmit(pendingSubmit)), detail: <p>理由：{pendingSubmit.reason}</p>,
     }] : []),
     ...pending.map(p => ({
-      key: p.operationId, object: `${VERB[p.decision]}导出申请 ${p.taskId}`,
-      tag: unknownTag, line: `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`, result: answers[p.operationId],
+      key: p.operationId, createdAt: p.createdAt, object: `${VERB[p.decision]}导出申请 ${p.taskId}`,
+      tag: unknownTag, line: `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`, result: now >= p.expiresAt ? expiredResult : answers[p.operationId],
       actions: queryButton(p.operationId, () => queryOriginal(p)), detail: <p>理由：{p.reason}</p>, tech: <TechInfo commandKey={p.operationId} />,
     })),
   ];
-  const anyExpired = Object.values(answers).some(answer => answer.line === RETRY_EXPIRED_TEXT);
+  const anyExpired = now >= (pendingSubmit?.expiresAt ?? Infinity) || pending.some(row => now >= row.expiresAt);
   const single = persona.views.length === 1;
   const sub = !rows ? undefined : view === "MINE" ? `本人提交的 · ${total} 条` : single ? `待我审批 · ${total} 条` : `共 ${total} 条`;
   const open = detail?.taskId === openId ? detail : null;
@@ -169,35 +253,47 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
       <BlockState state={detailStatus} title={detailStatus === "loading" ? "正在加载…" : "导出记录加载失败"} onRetry={detailStatus === "error" ? () => setTaskRefresh(value => value + 1) : undefined} />
     </Drawer>}
     {open && <TaskDrawer task={open} view={view} zone={zone} rows={rows ?? []}
-      pending={pending.find(p => p.taskId === open.taskId)} lookup={lookup} downloadFailed={downloadFailed === open.taskId}
+      pending={pending.find(p => p.taskId === open.taskId)} now={now} lookup={lookup} downloadFailed={downloadFailed?.taskId === open.taskId ? downloadFailed.outcome : undefined}
       onNav={id => { setOpenId(id); setLookup(null); }}
       onClose={() => { setOpenId(null); setLookup(null); }}
       onConfirm={kind => setConfirm({ kind, task: open })} onDownload={() => download(open)}
       onQuery={p => query(p)} />}
 
-    {confirm && <TaskConfirm confirm={confirm} zone={zone} initialReason={recoveredReason?.taskId === confirm.task.taskId && recoveredReason.decision === ({ approve: "APPROVE", reject: "REJECT", withdraw: "WITHDRAW" } as const)[confirm.kind] ? recoveredReason.reason : undefined} onClose={() => setConfirm(null)}
+    {confirm && <TaskConfirm confirm={confirm} zone={zone} initialReason={ports.recoveredDecision(confirm.task.taskId, ACTION[confirm.kind])} onClose={() => setConfirm(null)}
       onConfirm={async reason => {
         const { kind, task } = confirm;
         try {
           put(kind === "withdraw" ? await ports.withdraw(task, reason) : await ports.decide(task, kind === "approve" ? "APPROVE" : "REJECT", reason));
         } catch (error) {
+          if (isExportPermissionDenied(error)) {
+            clearPrivateRead();
+            ports.invalidateAccess();
+            throw error;
+          }
+          if (exportDecisionConflict(error)) {
+            setConfirm(null); setDetail(null); setDetailStatus("loading");
+            setRows(list => list?.filter(row => row.taskId !== task.taskId) ?? null);
+            setTaskRefresh(value => value + 1); setRefresh(value => value + 1);
+            return;
+          }
+          if (exportTaskHidden(error)) { forgetTaskRead(task.taskId); setConfirm(null); return; }
           // 批准、驳回、撤回没收到结果：关框，抽屉顶上换成待确认条，只给「查询原操作」（OP-91–96）。
           if (!(error instanceof ExportOutcomeUnknownError)) throw error;
-          setPending(ports.pendingDecisions());
-          setAnswers(map => Object.fromEntries(Object.entries(map).filter(([key]) => ports.pendingDecisions().some(p => p.operationId === key) || key === "submit")));
         }
         setConfirm(null);
       }} />}
   </>;
 }
 
-function TaskDrawer({ task, view, zone, rows, pending, lookup, downloadFailed, onNav, onClose, onConfirm, onDownload, onQuery }: {
+function TaskDrawer({ task, view, zone, rows, pending, now, lookup, downloadFailed, onNav, onClose, onConfirm, onDownload, onQuery }: {
   task: ExportTask; view: View; zone: string; rows: ExportTask[];
-  pending?: PendingDecision; lookup: DecisionLookup | "loading" | null; downloadFailed: boolean;
+  pending?: PendingDecision; now: number; lookup: DecisionLookup | "loading" | null; downloadFailed?: Exclude<ExportDownload, { kind: "downloaded" }>;
   onNav: (id: string) => void; onClose: () => void; onConfirm: (kind: Confirm["kind"]) => void; onDownload: () => void;
   onQuery: (p: PendingDecision) => void;
 }) {
   const status = exportStatus(task);
+  const expired = pending !== undefined && now >= pending.expiresAt;
+  const generating = task.state === "PENDING_GENERATION" || task.state === "APPROVED";
   const label = EXPORT_LABEL[task.type];
   const reviewing = view === "APPROVALS" && task.state === "PENDING_APPROVAL";
   const index = rows.findIndex(row => row.taskId === task.taskId);
@@ -207,7 +303,7 @@ function TaskDrawer({ task, view, zone, rows, pending, lookup, downloadFailed, o
     { label: "提交", sub: submitted, state: "done" as const },
     // 撤回的申请停在审批前：这一步写「已撤回」，不算走完。
     ...(DETAIL(task) ? [{ label: "审批", sub: task.state === "WITHDRAWN" ? "已撤回" : task.state === "PENDING_APPROVAL" ? reviewing ? "你" : "另一位审批人" : task.decidedAt ? `${task.decidedAt} ${task.state === "REJECTED" ? "驳回" : "批准"}` : "—", state: task.state === "PENDING_APPROVAL" ? "current" as const : task.state === "WITHDRAWN" ? "todo" as const : "done" as const }] : []),
-    { label: "生成文件", sub: task.state === "READY" || task.state === "EXPIRED" ? DETAIL(task) ? "已生成" : submitted : task.state === "APPROVED" ? task.failure ? "没生成" : "进行中" : "批准后", state: task.state === "APPROVED" ? "current" as const : task.state === "READY" || task.state === "EXPIRED" ? "done" as const : "todo" as const },
+    { label: "生成文件", sub: task.state === "READY" || task.state === "EXPIRED" ? DETAIL(task) ? "已生成" : submitted : generating ? task.failure ? "没生成" : "进行中" : "批准后", state: generating ? "current" as const : task.state === "READY" || task.state === "EXPIRED" ? "done" as const : "todo" as const },
     { label: "下载", sub: task.mine ? "你本人" : "申请人", state: task.state === "READY" ? "current" as const : "todo" as const },
   ];
   const month = task.month ? `${task.month}（截至 ${task.asOf ? formatBusinessTimeCompact(task.asOf, "—") : "—"}，${zone}）` : "—";
@@ -221,6 +317,7 @@ function TaskDrawer({ task, view, zone, rows, pending, lookup, downloadFailed, o
     : task.state === "APPROVED" && task.failure === "GENERATE_FAILED" ? "文件没生成出来，不能下载。批准记录还在；生成出错请重新导出，明细要重新审批。"
     : task.state === "APPROVED" && task.failure === "SCOPE_LOST_BEFORE_GENERATE" ? "已批准，但生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。"
     : task.state === "APPROVED" ? "还不能下载：已批准，文件还在生成。生成好会变成「可下载」。"
+    : task.state === "PENDING_GENERATION" ? "文件还在等待生成。"
     : task.state === "READY" && !task.canDownload ? "文件还在，但你现在没有这个范围的权限，不能下载。恢复权限、文件还在保留期内时，可以下载同一份。"
     : task.state === "REJECTED" ? "已驳回，不会生成文件。要导出请按理由改好后重新申请。"
     : task.state === "EXPIRED" ? "文件已过保留期，不能再下载，也不能重新获取。要用请重新导出，明细要重新审批。"
@@ -240,11 +337,12 @@ function TaskDrawer({ task, view, zone, rows, pending, lookup, downloadFailed, o
       <Button size="sm" loading={lookup === "loading"} loadingText="正在查询…" onClick={() => onQuery(pending)}>查询原操作</Button>
     </>}>
       <p>{pending.at} 点{VERB[pending.decision]}后没收到结果，原操作和理由已保存。先查询原操作，不要再点{VERB[pending.decision]}。</p>
-      {lookup && lookup !== "loading" && <p>{lookup.text}</p>}
-      {lookup && lookup !== "loading" && (lookup.kind === "mismatch" || lookup.kind === "expired") && <p className="rd-note"><ExportAuditLink /></p>}
+      {lookup && lookup !== "loading" && lookup.kind !== "expired" && <p>{lookup.text}</p>}
+      {expired && <p>{RETRY_EXPIRED_TEXT}</p>}
+      {(expired || lookup && lookup !== "loading" && lookup.kind === "mismatch") && <p className="rd-note"><ExportAuditLink /></p>}
     </Notice>}
     {!pending && lookup && lookup !== "loading" && (lookup.kind === "matched" || lookup.kind === "cleared") && <Notice tone="ok">{lookup.text}</Notice>}
-    {downloadFailed && <Notice tone="warn" title="下载没有完成" actionBelow action={<Button size="sm" onClick={onDownload}>重新获取下载链接</Button>}>文件还在，重新获取下载链接再下，不会重新生成。</Notice>}
+    {downloadFailed && <Notice tone="warn" title="下载没有完成" actionBelow action={downloadFailed.kind === "retry" && <Button size="sm" onClick={onDownload}>重新获取下载链接</Button>}>{exportDownloadMessage(downloadFailed.kind)}</Notice>}
     <Steps label="导出进度" items={steps} />
     <Facts>
       {task.scopeLost ? <>

@@ -5,10 +5,11 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { guardedFetch } from "@/lib/admin/error-messages";
 import { businessStamp } from "@/lib/admin/business-time";
 import { SupportClientError, supportRequest } from "@/lib/admin/m-support-client";
-import { parseMContentApiEnvelope } from "@/lib/admin/m-support-read-contract";
+import { MContentReadError, parseMContentApiEnvelope } from "@/lib/admin/m-support-read-contract";
+import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { performanceEnum as enumeration, performanceInstant as instant, performanceInteger as integer, performanceList as array, performanceMalformed as invalid, performanceObject as object, performanceText as text, performanceWindow } from "@/lib/admin/support-performance-contract";
-import { EXPORT_TYPES, ExportOutcomeUnknownError, type DecisionLookup, type ExportCheck, type ExportColumns, type ExportDialogData, type ExportItem, type ExportPersona, type ExportQuery, type ExportSubmitted, type ExportTask, type ExportType, type PendingDecision, type PerfExportPorts, type SubmitLookup } from "./perf-view";
+import { performanceEnum as enumeration, performanceInstant as instant, performanceInteger as integer, performanceList as array, performanceMalformed as invalid, performanceObject as object, performanceText as text, performanceWindow, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
+import { EXPORT_TYPES, ExportOutcomeUnknownError, type DecisionLookup, type ExportCheck, type ExportColumns, type ExportDownload, type ExportDraft, type ExportOriginal, type ExportPersona, type ExportQuery, type ExportSubmitted, type ExportTask, type ExportType, type PendingDecision, type PerfExportPorts, type SubmitLookup } from "./perf-view";
 
 const PATH = "/support-workbench/performance-exports";
 const SUMMARY = "service_performance_export_summary", DETAIL = "service_performance_export_detail", APPROVE = "service_performance_export_approve";
@@ -19,7 +20,7 @@ const STATES = ["PENDING_GENERATION", "PENDING_APPROVAL", "APPROVED", "REJECTED"
 const ACTIONS = ["APPROVE", "REJECT", "WITHDRAW"] as const;
 type Action = typeof ACTIONS[number];
 type View = ExportPersona["views"][number];
-type Operator = { id: string; name: string; authorities: readonly string[] };
+type Operator = { id: string; epoch: number; name: string; authorities: readonly string[] };
 type Scope = { kind: typeof SCOPES[number]; groupIds?: string[] };
 type Selection = { month: string; scope: Scope; types: ExportType[] };
 type SubmitBody = Selection & { previewVersion: string; reason: string };
@@ -32,6 +33,31 @@ const store = createPendingMutationStore<SavedExport>({
     ? typeof record.body.previewVersion === "string" && typeof record.selection?.month === "string" && Array.isArray(record.selection.types)
     : ACTIONS.includes(record.action) && /^[1-9]\d*$/.test(record.taskId) && Number.isSafeInteger(record.body.expectedVersion)),
 });
+const pendingListeners = new Set<() => void>();
+const notifyPending = () => pendingListeners.forEach(update => update());
+
+let recovered: { owner: string; submit?: ExportDraft; decisions: Map<string, string> } | undefined;
+const decisionDraftKey = (taskId: string, action: Action) => `${taskId}:${action}`;
+function draftsFor(operator: Operator) {
+  const auth = useAdminAuth.getState();
+  if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown
+    || String(auth.session?.adminId) !== operator.id || auth.authEpoch !== operator.epoch) return undefined;
+  const owner = `${operator.id}:${operator.epoch}`;
+  if (recovered?.owner !== owner) recovered = { owner, decisions: new Map() };
+  return recovered;
+}
+
+export function useExportClock(records: readonly (ExportOriginal | undefined)[]) {
+  const [, tick] = useState(0);
+  const now = Date.now();
+  const deadline = Math.min(...records.flatMap(record => record && record.expiresAt > now ? [record.expiresAt] : []));
+  useEffect(() => {
+    if (!Number.isFinite(deadline)) return;
+    const timer = setTimeout(() => tick(value => value + 1), Math.max(1, deadline - Date.now()));
+    return () => clearTimeout(timer);
+  }, [deadline]);
+  return now;
+}
 
 const scopeLabels = { SELF: "本人", MANAGED_GROUPS: "负责组", ALL: "全部范围" };
 const bool = (value: unknown) => typeof value === "boolean" ? value : invalid("export.boolean");
@@ -133,7 +159,7 @@ function taskParser(operator: Operator) {
       rows: nullableNumber(row.rowCount), columns: columns(row.columns, type),
       coverage: row.coverage == null ? null : object(row.coverage).status === "PARTIAL" ? "部分数据还在核对" : null,
       requestReason: row.requestReason == null ? "" : text(row.requestReason), requestedAt: instant(row.requestedAt),
-      state: status === "PENDING_GENERATION" ? "APPROVED" : status,
+      state: status,
       decidedBy: row.reviewerId === null ? undefined : id(row.reviewerId),
       decidedAt: approvalTime ? businessStamp(Date.parse(approvalTime)) : undefined,
       decisionReason: row.decisionReason == null ? undefined : text(row.decisionReason), failure,
@@ -146,9 +172,10 @@ function taskParser(operator: Operator) {
 }
 
 const fingerprint = (query: ExportQuery) => JSON.stringify([query.month, query.scope, [...query.types].sort()]);
+const originalFields = (row: SavedExport) => ({ operationId: row.commandKey, createdAt: row.createdAt, expiresAt: row.expiresAt });
 const pendingDecision = (row: Extract<SavedExport, { taskId: string }>): PendingDecision =>
-  ({ taskId: row.taskId, decision: row.action, reason: row.body.reason, operationId: row.commandKey, at: businessStamp(row.createdAt) });
-const forget = (row: SavedExport) => store.forget(row.fingerprint, row.commandKey);
+  ({ ...originalFields(row), taskId: row.taskId, decision: row.action, reason: row.body.reason, at: businessStamp(row.createdAt) });
+const forget = (row: SavedExport) => { store.forget(row.fingerprint, row.commandKey); notifyPending(); };
 const save = (slot: string, extra: Omit<Extract<SavedExport, { action: "SUBMIT" }>, keyof PendingMutationRecord> | Omit<Extract<SavedExport, { taskId: string }>, keyof PendingMutationRecord>) => {
   if (store.get(slot)) throw new ExportOutcomeUnknownError("请先查询原操作。");
   const key = crypto.randomUUID();
@@ -157,32 +184,64 @@ const save = (slot: string, extra: Omit<Extract<SavedExport, { action: "SUBMIT" 
     store.forget(slot, key);
     throw new Error("原操作无法保存，暂时不能提交。");
   }
+  notifyPending();
   return key;
 };
 
+function apiStatus(error: SupportClientError | MContentReadError) {
+  return error.status >= 200 && error.status < 300 ? error.apiCode : error.status;
+}
+
+export function isExportPermissionDenied(error: unknown) {
+  if (isPermissionDenied(error)) return true;
+  if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return false;
+  const status = apiStatus(error);
+  return status === 401 || status === 403
+    && ["PERMISSION_DENIED", "ADMIN_PASSWORD_CHANGE_REQUIRED", "无权限访问"].includes(error.backendMessage ?? "");
+}
+
+export function exportDecisionConflict(error: unknown) {
+  return error instanceof SupportClientError && apiStatus(error) === 409
+    && ["EXPORT_TASK_VERSION_CHANGED", "EXPORT_INVALID_STATE", "EXPORT_APPLICANT_INELIGIBLE", "EXPORT_SCOPE_CHANGED"].includes(error.backendMessage ?? "");
+}
+
+export function exportTaskHidden(error: unknown) {
+  return error instanceof SupportClientError && apiStatus(error) === 404 && error.backendMessage === "EXPORT_TASK_NOT_FOUND";
+}
+
 function outcomeUnknown(error: unknown) {
-  return !(error instanceof SupportClientError) || error.status >= 500 || error.status === 408
-    || (error.status === 200 && error.apiCode === undefined)
-    || ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN"].includes(error.backendMessage ?? "");
+  if (!(error instanceof SupportClientError)) return true;
+  const status = apiStatus(error);
+  return status === undefined || status >= 500 || status === 408
+    || error.apiCode === undefined || error.apiCode >= 500 || error.apiCode === 408 || !error.backendMessage
+    || ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "EXPORT_IDEMPOTENCY_CONFLICT"].includes(error.backendMessage);
 }
 
 function writeError(error: unknown) {
+  if (isExportPermissionDenied(error)) return new Error("ADMIN_PERMISSION_DENIED", { cause: error });
   if (error instanceof SupportClientError && error.backendMessage === "EXPORT_PREVIEW_CHANGED") return new Error("这一版数据变了，重新检查后再提交。");
-  if (error instanceof SupportClientError && ["EXPORT_SCOPE_CHANGED", "EXPORT_TASK_VERSION_CHANGED"].includes(error.backendMessage ?? "")) return new Error("这条申请的范围或状态变了，刷新后再看。");
   return error;
 }
 
-export function usePerformanceExportPorts(): PerfExportPorts | null {
+function canRecover(record: SavedExport, authorities: readonly string[]) {
+  return record.action === "SUBMIT" ? authorities.includes(SUMMARY) || authorities.includes(DETAIL)
+    : authorities.includes(record.action === "WITHDRAW" ? DETAIL : APPROVE);
+}
+
+export function usePerformanceExportPorts(): PerfExportPorts | null | undefined {
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
   const active = useAdminAuth(state => state.isAuthenticated && !state.logoutPending && !state.logoutUnknown);
   const [access, setAccess] = useState<{ key: string; options: Options | null; views: View[] } | null>(null);
+  const [revision, setRevision] = useState(0);
   const key = `${session?.adminId}:${epoch}:${session?.authorities.join(",")}`;
+  const authorized = active && !!session && !session.passwordChangeRequired
+    && session.authorities.some(code => code === "service_m1_read" || code === "service_m3_read");
+  const canRequest = !!session && (session.authorities.includes(SUMMARY) || session.authorities.includes(DETAIL));
+  const canReview = !!session?.authorities.includes(APPROVE);
+  const name = session?.operator || session?.username || "";
   useEffect(() => {
     const controller = new AbortController();
-    if (!active || !session || session.passwordChangeRequired || !session.authorities.some(code => code === "service_m1_read" || code === "service_m3_read")) return;
-    const canRequest = session.authorities.includes(SUMMARY) || session.authorities.includes(DETAIL);
-    const canReview = session.authorities.includes(APPROVE);
-    if (!canRequest && !canReview) return;
+    if (!authorized || !session || !canRequest && !canReview) return;
     const signal = controller.signal;
     const available = (view: View) => read(`?view=${view}&pageNum=1&pageSize=1`, value => { array(object(value).records, object); return view; }, signal);
     void Promise.allSettled([
@@ -192,18 +251,30 @@ export function usePerformanceExportPorts(): PerfExportPorts | null {
     ] as const).then(([options, mine, approvals]) => {
       if (signal.aborted) return;
       const views: View[] = [];
-      if (mine.status === "fulfilled" && mine.value) views.push(mine.value);
-      if (approvals.status === "fulfilled" && approvals.value) views.push(approvals.value);
+      const keep = (result: PromiseSettledResult<View | null>, lane: View, wanted: boolean) => {
+        if (result.status === "fulfilled") return result.value === lane;
+        const status = result.reason instanceof SupportClientError ? apiStatus(result.reason) : undefined;
+        return wanted && !isExportPermissionDenied(result.reason)
+          && (status === undefined || status === 408 || status >= 500);
+      };
+      if (keep(mine, "MINE", canRequest)) views.push("MINE");
+      if (keep(approvals, "APPROVALS", canReview)) views.push("APPROVALS");
       setAccess({ key, options: options.status === "fulfilled" ? options.value : null, views });
     });
     return () => controller.abort();
-  }, [active, key, session]);
-  return useMemo(() => active && session && access?.key === key && (access.options || access.views.length)
-    ? exportPorts({ id: String(session.adminId), name: session.operator || session.username, authorities: session.authorities }, access.options, access.views)
-    : null, [active, session, key, access]);
+  }, [authorized, canRequest, canReview, key, revision]);
+  return useMemo(() => {
+    if (!authorized || !session || !canRequest && !canReview) return null;
+    if (access?.key !== key) return undefined;
+    if (!access.options && !access.views.length) return null;
+    return exportPorts({ id: String(session.adminId), epoch, name, authorities: session.authorities }, access.options, access.views, () => {
+      setAccess(null);
+      setRevision(value => value + 1);
+    });
+  }, [authorized, canRequest, canReview, epoch, key, name, access]);
 }
 
-function exportPorts(operator: Operator, initialOptions: Options | null, views: View[]): PerfExportPorts {
+function exportPorts(operator: Operator, initialOptions: Options | null, views: View[], invalidateAccess: () => void): PerfExportPorts {
   let choices = new Map<string, { scope: Scope; label: string; types: ExportType[] }>();
   let latest: { id: string; payload: Selection; preview: Preview } | undefined;
   let previewSequence = 0;
@@ -214,10 +285,11 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     return array(row.items, value => {
       const task = parseTask(value);
       if (!task.mine) invalid("export.batchOwner");
-      return { type: task.type, taskId: task.taskId, state: task.state, rows: task.rows };
+      const { type, taskId, state, rows, canDownload, mine, decidedBy, decidedAt, failure } = task;
+      return { type, taskId, state, rows, canDownload, mine, decidedBy, decidedAt, failure };
     });
   };
-  const mySubmit = () => store.list().find(row => row.action === "SUBMIT");
+  const mySubmit = () => store.list().find(row => row.action === "SUBMIT" && canRecover(row, operator.authorities));
   const readTask = (taskId: string) => read(`/${id(taskId)}`, value => {
     const task = parseTask(value);
     if (task.taskId !== taskId) invalid("export.taskIdentity");
@@ -232,15 +304,16 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     const catalog = includeOthers && selection.types.length !== choice.types.length
       ? { ...selection, types: choice.types } : selection;
     const display = await post("/preview", catalog, parsePreview);
+    if (display.items.some(item => item.reasons.includes("PERMISSION_DENIED"))) throw new Error("ADMIN_PERMISSION_DENIED");
     const accepted = selection.types.length && catalog !== selection ? await post("/preview", selection, parsePreview) : display;
+    if (accepted.items.some(item => item.reasons.includes("PERMISSION_DENIED"))) throw new Error("ADMIN_PERMISSION_DENIED");
     for (const [request, response] of [[catalog, display], [selection.types.length ? selection : catalog, accepted]] as const) {
       if (response.scope.kind !== request.scope.kind || JSON.stringify(array(response.scope.groupIds, id).sort()) !== JSON.stringify([...(request.scope.groupIds ?? [])].sort())
         || (response.window && response.window.month !== request.month)
         || JSON.stringify(response.items.map(item => item.type).sort()) !== JSON.stringify([...request.types].sort())) invalid("export.previewSelection");
     }
     if (sequence === previewSequence && selection.types.length) latest = { id: fingerprint(query), payload: selection, preview: accepted };
-    const sameWindow = display.window?.sourceVersion === accepted.window?.sourceVersion
-      && display.window?.sourceScopeVersion === accepted.window?.sourceScopeVersion;
+    const sameWindow = display.window && accepted.window ? samePerformanceWindow(display.window, accepted.window) : display.window === accepted.window;
     return { ...accepted, items: display.items.map(item => accepted.items.find(other => other.type === item.type)
       ?? (sameWindow ? item : { ...item, check: { state: "failed" as const, text: "这一版数据变了，重新检查后再提交。" } })) };
   };
@@ -252,6 +325,10 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       return result;
     } catch (error) {
       if (outcomeUnknown(error)) throw new ExportOutcomeUnknownError("提交后没收到结果，请查询原操作。");
+      const drafts = draftsFor(operator);
+      if (drafts && error instanceof SupportClientError && error.backendMessage === "EXPORT_PREVIEW_CHANGED") {
+        drafts.submit = { reason: record.body.reason, query: record.selection };
+      }
       forget(record);
       throw writeError(error);
     }
@@ -265,10 +342,15 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         || (record.action === "REJECT" ? written.state !== "REJECTED" : record.action === "WITHDRAW" ? written.state !== "WITHDRAWN" : !["APPROVED", "READY", "FAILED"].includes(written.state))) invalid("export.decisionOutcome");
     } catch (error) {
       if (outcomeUnknown(error)) throw new ExportOutcomeUnknownError("没收到结果，请查询原操作。");
+      if (exportDecisionConflict(error)) draftsFor(operator)?.decisions.set(decisionDraftKey(record.taskId, record.action), record.body.reason);
       forget(record);
       throw writeError(error);
     }
-    const fresh = await readTask(record.taskId).catch(() => null);
+    const fresh = await readTask(record.taskId).catch(error => {
+      if (isExportPermissionDenied(error)) throw writeError(error);
+      if (exportTaskHidden(error)) throw error;
+      return null;
+    });
     if (!fresh || fresh.version < written.version || fresh.state === "PENDING_APPROVAL") throw new ExportOutcomeUnknownError("最新状态暂时无法确认，请查询原操作。");
     forget(record);
     return fresh;
@@ -278,6 +360,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     const body = { expectedVersion: task.version, reason, ...(action === "WITHDRAW" ? {} : { decision: action }) };
     const slot = `task:${task.taskId}`;
     const key = save(slot, { action, taskId: task.taskId, body });
+    draftsFor(operator)?.decisions.delete(decisionDraftKey(task.taskId, action));
     const record = store.list().find(row => row.commandKey === key);
     if (!record || record.action === "SUBMIT") return invalid("export.savedDecision");
     return deliverDecision(record);
@@ -287,6 +370,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       name: operator.name, views, canExport: initialOptions?.scopes.some(scope => scope.blocked === null && scope.allowed.length > 0) ?? false,
       exportBlocked: initialOptions?.scopes.some(scope => scope.blocked === "NO_MANAGED_GROUP") && !initialOptions.scopes.some(scope => scope.blocked === null) ? "没有负责组" : undefined,
     },
+    invalidateAccess,
     async open(initial) {
       const options = await read("/options", parseOptions);
       choices = new Map();
@@ -300,15 +384,20 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         } else choices.set(scope.kind, { scope: { kind: scope.kind }, label: scopeLabels[scope.kind], types });
       }
       const original = mySubmit();
+      const draft = draftsFor(operator)?.submit;
+      const saved = original?.action === "SUBMIT" ? original.selection : draft?.query;
       const defaultMonth = options.months.find(month => month.value === initial?.month) ?? options.months[0];
-      const month = original?.action === "SUBMIT" ? original.selection.month : defaultMonth?.value ?? "";
+      const month = original?.action === "SUBMIT" ? original.selection.month
+        : options.months.find(month => month.value === saved?.month)?.value ?? defaultMonth?.value ?? "";
       const defaultScope = initial?.scope && choices.has(initial.scope) ? initial.scope : choices.keys().next().value;
-      const scope = original?.action === "SUBMIT" ? original.selection.scope : defaultScope ?? "";
+      const scope = original?.action === "SUBMIT" ? original.selection.scope
+        : saved && choices.has(saved.scope) ? saved.scope : defaultScope ?? "";
       const types = choices.get(scope)?.types ?? [];
-      const selected = original?.action === "SUBMIT" ? original.selection.types : types.includes("SUMMARY") ? ["SUMMARY" as const] : [];
+      const selected = original?.action === "SUBMIT" ? original.selection.types
+        : saved ? saved.types.filter(type => types.includes(type)) : types.includes("SUMMARY") ? ["SUMMARY" as const] : [];
       const preview = !original && month && scope && types.length ? await requestPreview({ month, scope, types: selected }, true) : undefined;
       return {
-        months: options.months, month, since: options.months.length ? `自 ${businessStamp(Date.parse(options.months.at(-1)!.from))} 起` : "", scopes: Array.from(choices, ([value, item]) => ({ value, label: item.label })), scope,
+        months: options.months, month, since: options.months.length ? `自 ${businessStamp(Date.parse(options.months.at(-1)!.from))} 起` : "", scopes: Array.from(choices, ([value, item]) => ({ value, label: item.label, types: item.types })), scope,
         asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", downloader: operator.name, items: preview?.items ?? [],
         selected: original ? selected : selected.filter(type => preview?.items.some(item => item.type === type && item.check.state !== "empty")),
         blocked: !preview?.window ? "数据正在升级，这一版暂时不能导出。升级完、页面刷新后再导出。"
@@ -329,27 +418,41 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       const body = { ...latest.payload, previewVersion: latest.preview.version, reason };
       latest = undefined;
       const key = save("submit", { action: "SUBMIT", body, selection: query });
+      const drafts = draftsFor(operator);
+      if (drafts) delete drafts.submit;
       const record = store.list().find(row => row.commandKey === key);
       if (!record || record.action !== "SUBMIT") return invalid("export.savedSubmission");
       return deliverSubmit(record);
     },
     pendingSubmit() {
       const original = mySubmit();
-      return original?.action === "SUBMIT" ? { reason: original.body.reason, query: original.selection } : undefined;
+      return original?.action === "SUBMIT" ? { ...originalFields(original), reason: original.body.reason, query: original.selection } : undefined;
+    },
+    recoveredSubmit: () => draftsFor(operator)?.submit,
+    recoveredDecision: (taskId, action) => draftsFor(operator)?.decisions.get(decisionDraftKey(taskId, action)),
+    subscribePending(update) {
+      pendingListeners.add(update);
+      return () => { pendingListeners.delete(update); };
     },
     async lookupSubmit(): Promise<SubmitLookup> {
       const original = mySubmit();
-      if (original?.action !== "SUBMIT") return { kind: "cleared" };
+      if (original?.action !== "SUBMIT") return { kind: "missing" };
       const found = await receipt("/command-receipt", original.commandKey);
       if (found.status === "SUCCEEDED") {
         const rows = parseBatch(found.batch);
-        if (JSON.stringify(rows.map(row => row.type).sort()) !== JSON.stringify([...original.body.types].sort())) return { kind: "pending", expired: isRetryExpired(original) };
+        const visibleTypes = original.body.types.filter(type => operator.authorities.includes(TYPES[type]));
+        if (!rows.length || JSON.stringify(rows.map(row => row.type).sort()) !== JSON.stringify(visibleTypes.sort())) {
+          return { kind: "pending", expired: isRetryExpired(original) };
+        }
         forget(original);
         return { kind: "matched", rows };
       }
       if (found.status === "FAILED" || found.status === "CONFIRMED_NOT_EXECUTED") {
+        const draft = { reason: original.body.reason, query: original.selection };
+        const drafts = draftsFor(operator);
+        if (drafts) drafts.submit = draft;
         forget(original);
-        return { kind: "cleared" };
+        return { kind: "cleared", draft };
       }
       enumeration(found.status, ["UNKNOWN", "PROCESSING"]);
       return { kind: "pending", expired: isRetryExpired(original) };
@@ -367,7 +470,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     withdraw: (task, reason) => decision(task, "WITHDRAW", reason),
     async lookupDecision(pending): Promise<DecisionLookup> {
       const row = store.list().find(record => record.commandKey === pending.operationId);
-      if (!row || row.action === "SUBMIT" || row.taskId !== pending.taskId) return { kind: "failed", text: "找不到本标签页保存的原操作。" };
+      if (!row || row.action === "SUBMIT" || row.taskId !== pending.taskId || row.action !== pending.decision || !canRecover(row, operator.authorities)) return { kind: "failed", text: "找不到本标签页保存的原操作。" };
       const command = row.action === "WITHDRAW" ? "WITHDRAW" : "DECISION";
       const found = await receipt(`/${row.taskId}/command-receipt?command=${command}`, row.commandKey);
       if (found.status === "SUCCEEDED") {
@@ -379,6 +482,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         return { kind: "matched", task, text: "已查到这次操作。" };
       }
       if (found.status === "FAILED" || found.status === "CONFIRMED_NOT_EXECUTED") {
+        draftsFor(operator)?.decisions.set(decisionDraftKey(row.taskId, row.action), row.body.reason);
         forget(row);
         return { kind: "cleared", text: "这次操作未执行，原理由已保留，可以重新确认。" };
       }
@@ -386,25 +490,53 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       if (isRetryExpired(row)) return { kind: "expired", text: RETRY_EXPIRED_TEXT };
       return { kind: "pending", text: "还没查到这次操作的结果，先保持锁定，稍后再查。" };
     },
-    async download(taskId) {
-      const task = await readTask(taskId);
-      if (!task.canDownload) throw new Error("你现在没有这份文件的下载权限。");
-      const token = await post(`/${id(taskId)}/download-token`, undefined, value => {
-        const row = object(value); instant(row.expiresAt); return text(row.token);
-      });
-      const response = await guardedFetch(`/api/admin/content${PATH}/${taskId}/file`, { headers: { "X-Download-Token": token }, cache: "no-store", credentials: "same-origin" });
-      if (!response.ok || response.headers.get("Content-Type")?.split(";")[0] !== "text/csv") {
-        parseMContentApiEnvelope(response.status, await response.text(), false);
-        throw new Error("下载没有完成。");
+    async download(taskId): Promise<ExportDownload> {
+      const unavailable = (task: ExportTask): ExportDownload | undefined => {
+        if (task.state === "EXPIRED") return { kind: "expired", task };
+        if (task.state !== "READY") return { kind: "unconfirmed", task };
+        if (!task.canDownload) return { kind: "forbidden", task };
+      };
+      const readFailure = (error: unknown) => {
+        if (isExportPermissionDenied(error)) return { kind: "forbidden", permissionDenied: true } as const;
+        if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return undefined;
+        const status = apiStatus(error), code = error.backendMessage;
+        if (status === 410 && code !== "EXPORT_TOKEN_EXPIRED") return { kind: "expired" } as const;
+        if (status === 401 || status === 404 || status === 409 && code === "EXPORT_SCOPE_CHANGED"
+          || status === 403 && code !== "EXPORT_TOKEN_INVALID" && code !== "EXPORT_TOKEN_REQUIRED") return { kind: "forbidden" } as const;
+      };
+      try {
+        const task = await readTask(taskId);
+        const blocked = unavailable(task);
+        if (blocked) return blocked;
+        const token = await post(`/${id(taskId)}/download-token`, undefined, value => {
+          const row = object(value); instant(row.expiresAt); return text(row.token);
+        });
+        const response = await guardedFetch(`/api/admin/content${PATH}/${taskId}/file`, { headers: { "X-Download-Token": token }, cache: "no-store", credentials: "same-origin" });
+        if (!response.ok || response.headers.get("Content-Type")?.split(";")[0] !== "text/csv") {
+          parseMContentApiEnvelope(response.status, await response.text(), false);
+          throw new Error("下载没有完成。");
+        }
+        const disposition = response.headers.get("Content-Disposition") ?? "";
+        const fileName = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? `performance-${taskId}.csv`;
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url; link.download = fileName; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+        return { kind: "downloaded" };
+      } catch (error) {
+        const blocked = readFailure(error);
+        if (blocked && "permissionDenied" in blocked) return blocked;
+        try {
+          const task = await readTask(taskId);
+          if (blocked) return { ...blocked, task: { ...task, state: blocked.kind === "expired" ? "EXPIRED" : task.state, canDownload: false } };
+          return unavailable(task) ?? { kind: "retry", task };
+        } catch (readError) {
+          return readFailure(readError) ?? blocked ?? { kind: "unconfirmed" };
+        }
       }
-      const disposition = response.headers.get("Content-Disposition") ?? "";
-      const fileName = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? `performance-${taskId}.csv`;
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url; link.download = fileName; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
     },
-    pendingDecisions: () => store.list().flatMap(record => record.action === "SUBMIT" ? [] : [pendingDecision(record)]),
+    pendingDecisions: () => store.list().flatMap(record => record.action === "SUBMIT" || !canRecover(record, operator.authorities)
+      || !views.includes(record.action === "WITHDRAW" ? "MINE" : "APPROVALS") ? [] : [pendingDecision(record)]),
   };
 }

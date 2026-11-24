@@ -110,7 +110,8 @@ function isProfileGroup(intent: ProfileReadIntent): intent is ProfileGroup {
 }
 
 function mergeProfileGroups(previous: CustomerProfile, next: SupportProfile, groups: readonly ProfileGroup[]): CustomerProfile {
-  const updated: CustomerProfile = { ...previous, ...Object.fromEntries(groups.map(key => [key, next[key]])), performance: next.performance };
+  const updated: CustomerProfile = { ...previous, ...Object.fromEntries(groups.map(key => [key, next[key]])),
+    statistics: next.statistics, finance: next.finance, performance: next.performance };
   if (groups.includes("identity") && next.identity.status === "READY") {
     // Identity reload also owns risk and system tags. Keep custom tags and notes unless requested.
     updated.risk = next.risk;
@@ -247,7 +248,14 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     if (annotationReadback) settleAnnotationReadback();
 
     if ("failure" in result) {
-      if (denied(result.failure)) return;
+      const failure = result.failure;
+      if (failure instanceof SupportClientError && (failure.status === 409 || failure.status === 200 && failure.apiCode === 409)
+        && failure.backendMessage === "SUPPORT_ANALYTICS_QUERY_CHANGED") {
+        revokeScope();
+        ctx.invalidateScope(conversation?.id, customerId);
+        return;
+      }
+      if (denied(failure)) return;
       const reason = displayAdminReadError(result.failure);
       if (initial) {
         setPaymentIdentity(null);
@@ -271,6 +279,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     }
 
     if (groups.includes("identity")) applyPaymentIdentity(next.identity);
+    setStatisticsRetryError("");
     setProfileRead(previous => ({
       scope: profileAuthorization,
       data: previous?.scope === profileAuthorization ? mergeProfileGroups(previous.data, next, groups) : next,
@@ -278,6 +287,8 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     setGroupReadErrors(previous => {
       const errors = { ...previous };
       for (const group of groups) delete errors[group];
+      delete errors.statistics;
+      delete errors.finance;
       if (groups.includes("identity") && next.identity.status === "READY") delete errors.risk;
       return errors;
     });
