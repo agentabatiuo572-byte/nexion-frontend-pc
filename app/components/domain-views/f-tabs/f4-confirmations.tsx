@@ -41,7 +41,8 @@ const POOL_FUND = "奖池资金类调整";
 const F4_WRITE = "F4 池配额大使榜 - 常规写";
 const LEADERBOARD_CONTROL = "排行榜控制(暂停/取消资格)";
 function approvalRows(permission: string) {
-  return [{ key: "approver", label: "谁来批", value: `另一位有「${permission}」权限的管理员` }];
+  // 「」权限的管理员」放在一起，名字长时在名字里折行，末行不留孤字（D10、TL-01）。
+  return [{ key: "approver", label: "谁来批", value: <>另一位有「{permission}<span className="rd-keep">」权限的管理员</span></> }];
 }
 function approvalFacts(permission: string) {
   return approvalRows(permission).map((row) => <Fact key={row.key} k={row.label}>{row.value}</Fact>);

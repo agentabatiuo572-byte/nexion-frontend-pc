@@ -86,7 +86,8 @@ function useF2Model(ctx: FViewCtx) {
 const approvalCopy = "批准前按原设置执行。";
 const RATE_PERMISSION = "L1-L7 团队购买奖励比例放宽";
 const POLICY_PERMISSION = "Partner 档位与费率杠杆参数";
-const approvalFacts = (perm: string) => <Fact k="谁来批">另一位有「{perm}」权限的管理员</Fact>;
+// 「」权限的管理员」放在一起，名字长时在名字里折行，末行不留孤字（D10、TL-01）。
+const approvalFacts = (perm: string) => <Fact k="谁来批">另一位有「{perm}<span className="rd-keep">」权限的管理员</span></Fact>;
 const effectTag = <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才生效；只影响之后新算的订单，已经算好的不重算。">批准后生效</StatusTag>;
 const COVERAGE_CHECK = "批准时检查兑付覆盖率，低于红线不会执行。";
 
