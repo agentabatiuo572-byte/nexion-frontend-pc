@@ -52,6 +52,11 @@ export function e2EditorReasonBlock(reason: string, rule: ReturnType<typeof useR
   if (Array.from(reason.trim()).length > 200) return "操作理由最多 200 个字符，请缩短后重试。";
 }
 
+export function isE2ReasonRejection(code?: string) {
+  return code === "REASON_LENGTH_INVALID" || code === "REASON_REQUIRED"
+    || /^REASON_(?:TOO_SHORT_MIN|TOO_LONG_MAX)_[1-9][0-9]*$/.test(code ?? "");
+}
+
 const ENABLED_LIMIT = 200;
 const NAME_MAX = 128;
 /** 类型系数的十倍：向量计算 1.0 … 视频生成 1.5（B85）。 */
@@ -190,7 +195,7 @@ export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule,
   const direction = weightUp === null || !task ? undefined : !task.enabled ? "这条任务已停用，现在不参加分配；启用后按新权重计算。"
     : "之后新派到这条任务时按新权重计算；每单实际多少，要和设备当时能接的其他任务一起算。";
   const range = levelWeightRange && `本等级启用的 ${levelWeightRange.count} 个任务：权重 ${formatWeight(levelWeightRange.min)}${sameWeight(levelWeightRange.min, levelWeightRange.max) ? "" : `–${formatWeight(levelWeightRange.max)}`}`;
-  const reasonRejected = outcome.kind === "rejected" && outcome.code === "REASON_LENGTH_INVALID" ? outcome.message : undefined;
+  const reasonRejected = outcome.kind === "rejected" && isE2ReasonRejection(outcome.code) ? outcome.message : undefined;
   const close = () => { if (!saving) onClose(); };
   const continueEditing = () => { onContinue(); set({ step: "form" }); };
   const leave = () => { if (saving) return; if (step === "leaving") continueEditing(); else if (dirty) set({ step: "leaving" }); else close(); };

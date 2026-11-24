@@ -26,10 +26,11 @@ import { checkE2Command, e2CommandLabel, e2Commands, e2CommandSettled, type E2Pe
 import { canInvestigateECommand, eCommandRollbackConfirmed } from "@/lib/admin/e-command-investigation";
 import { TechInfo, receiptOf } from "../recovery-panel";
 import { CommandClosureModal, CommandOutcomeLine, SettledCommandNotices, closureOpen, type CommandOutcome, type SettledCommand } from "./e-command-check";
-import { applyLatestE2Task, e2EditorReasonBlock, E2TaskEditor, formatWeight, isE2TaskEditorDirty, openE2TaskEditor, type E2LevelWeightRange, type E2TaskEditorState, type E2TaskField } from "./e2-task-editor";
+import { applyLatestE2Task, e2EditorReasonBlock, E2TaskEditor, formatWeight, isE2ReasonRejection, isE2TaskEditorDirty, openE2TaskEditor, type E2LevelWeightRange, type E2TaskEditorState, type E2TaskField } from "./e2-task-editor";
 
 type Query = { code: string; taskClass: string; enabled: string; page: number; size: number; reset: boolean };
 type Read<T> = { state: "loading" | "ready" | "error"; data: T; error: string };
+type ReadScope = "all" | "pools" | "tasks";
 type PoolDialog = { kind: "random" | "status"; key: string; pool: TaskPool; enabled: boolean; tasks: PoolTask[]; original?: E2Pending };
 const LEVELS = FIXED_DEVICE_LEVELS.map(level => ({ key: level.code, label: level.code, name: level.name }));
 const PRODUCT_STATES = { PUBLISHED: "已发布", DRAFT: "草稿", DELISTED_WITH_DEVICES: "已下架有设备" } as const;
@@ -160,51 +161,80 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const legacyReasonRule = useReasonRule(!!dialog && !dialog.original);
   const editorDirty = editor !== null && isE2TaskEditorDirty(editor);
   const afterEditorLeave = useRef<(() => void) | null>(null);
-  const sequence = useRef(0), impactSequence = useRef(0), lastQuery = useRef("");
+  const poolSequence = useRef(0), taskSequence = useRef(0), impactSequence = useRef(0), lastQuery = useRef("");
+  const nextQueryRead = useRef<{ target: Query; scope: "started" | "tasks" } | null>(null);
   const busy = useRef(false);
   const tabIds = useTabIds();
   const pool = pools.data.find(row => row.code === query.code);
   const rows = tasks.data.records;
   const syncPending = useCallback(() => setPending(e2Commands.list().filter(record => record.actorId === actorId)), [actorId]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (target: Query, scope: ReadScope = "all") => {
     if (!ctx.canReadE2) return false;
-    const serial = ++sequence.current;
-    const key = JSON.stringify(query);
-    const changed = key !== lastQuery.current;
-    lastQuery.current = key;
-    setSelected([]);
-    setPools(old => ({ ...old, state: "loading", error: "" }));
-    setTasks(old => ({ state: "loading", data: changed ? { records: [], total: 0 } : old.data, error: "" }));
-    const [poolResult, taskResult] = await Promise.allSettled([
-      fetchTaskPools(), query.code ? fetchPoolTasks(query.code, { taskClass: query.taskClass, enabled: query.enabled, pageNum: query.page, pageSize: query.size }) : Promise.resolve(null),
+    const readPools = scope !== "tasks", readTasks = scope !== "pools";
+    const poolSerial = readPools ? ++poolSequence.current : null;
+    const taskSerial = readTasks ? ++taskSequence.current : null;
+    if (readPools) setPools(old => ({ ...old, state: "loading", error: "" }));
+    if (readTasks) {
+      const key = JSON.stringify(target);
+      const changed = key !== lastQuery.current;
+      lastQuery.current = key;
+      setSelected([]);
+      setTasks(old => ({ state: "loading", data: changed ? { records: [], total: 0 } : old.data, error: "" }));
+    }
+    const [levels, list] = await Promise.allSettled([
+      readPools ? fetchTaskPools() : null,
+      readTasks && target.code ? fetchPoolTasks(target.code, { taskClass: target.taskClass, enabled: target.enabled, pageNum: target.page, pageSize: target.size }) : null,
     ]);
-    if (sequence.current !== serial) return false;
-    const permissionFailure = [poolResult, taskResult].some(result => result.status === "rejected"
+    const poolResult = poolSequence.current === poolSerial ? levels : null;
+    const taskResult = taskSequence.current === taskSerial ? list : null;
+    const permissionFailure = [poolResult, taskResult].some(result => result?.status === "rejected"
       && (isPermissionDenied(result.reason) || result.reason instanceof TaskPoolApiError && [401, 403].includes(result.reason.status ?? result.reason.httpStatus ?? 0)));
     if (permissionFailure) {
       setDenied(true); setPools({ state: "error", data: [], error: "这个账号没有这项读取权限" });
       setTasks({ state: "error", data: { records: [], total: 0 }, error: "这个账号没有这项读取权限" });
       announcePermissionDenied(); return false;
     }
-    if (poolResult.status === "fulfilled") {
-      setPools({ state: "ready", data: poolResult.value, error: "" });
-      if (!query.code || !poolResult.value.some(level => level.code === query.code)) {
-        setQuery(old => ({ ...old, code: poolResult.value[0].code, page: 1 })); return false;
+    if (poolResult?.status === "fulfilled" && poolResult.value) {
+      const data = poolResult.value;
+      setPools({ state: "ready", data, error: "" });
+      if (!target.code || !data.some(level => level.code === target.code)) {
+        const first = { ...target, code: data[0].code, page: 1 };
+        nextQueryRead.current = { target: first, scope: "tasks" };
+        setQuery(first); return false;
       }
-    } else setPools(old => ({ ...old, state: "error", error: displayAdminError(poolResult.reason) }));
-    if (taskResult.status === "fulfilled" && taskResult.value) {
+    } else if (poolResult?.status === "rejected") setPools(old => ({ ...old, state: "error", error: displayAdminReadError(poolResult.reason) }));
+    if (taskResult?.status === "fulfilled" && taskResult.value) {
       const page = taskResult.value;
-      const last = Math.max(1, Math.ceil(page.total / query.size));
-      if (query.page > last) { setQuery(old => ({ ...old, page: last })); return false; }
+      const last = Math.max(1, Math.ceil(page.total / target.size));
+      if (target.page > last) {
+        const corrected = { ...target, page: last };
+        nextQueryRead.current = { target: corrected, scope: "tasks" };
+        setQuery(corrected); return false;
+      }
       setTasks({ state: "ready", data: page, error: "" });
-    } else if (taskResult.status === "rejected") setTasks({ state: "error", data: { records: [], total: 0 }, error: displayAdminError(taskResult.reason) });
-    else setTasks({ state: "ready", data: { records: [], total: 0 }, error: "" });
-    const ready = poolResult.status === "fulfilled" && taskResult.status === "fulfilled" && taskResult.value !== null;
-    if (ready) { setReadAt(Date.now()); setReceipt(""); }
-    return ready;
-  }, [ctx.canReadE2, query]);
-  useEffect(() => { void refresh(); return () => { sequence.current++; }; }, [refresh]);
+    } else if (taskResult?.status === "rejected") {
+      const error = taskResult.reason instanceof TaskPoolApiError && !taskResult.reason.reasonCode
+        ? "任务列表暂时读不到，请重试。" : displayAdminReadError(taskResult.reason);
+      setTasks({ state: "error", data: { records: [], total: 0 }, error });
+    } else if (taskResult) setTasks({ state: "ready", data: { records: [], total: 0 }, error: "" });
+    return poolResult?.status === "fulfilled" && taskResult?.status === "fulfilled" && taskResult.value !== null;
+  }, [ctx.canReadE2]);
+  useEffect(() => () => { poolSequence.current++; taskSequence.current++; }, [refresh]);
+  useEffect(() => {
+    const scope = nextQueryRead.current?.target === query ? nextQueryRead.current.scope : "all";
+    nextQueryRead.current = null;
+    if (scope !== "started") void refresh(query, scope);
+  }, [query, refresh]);
+  useEffect(() => {
+    if (pools.state === "ready" && tasks.state === "ready" && query.code && lastQuery.current === JSON.stringify(query)) {
+      setReadAt(Date.now()); setReceipt("");
+    }
+  }, [pools, tasks, query]);
+  function retryFailedRead() {
+    if (pools.state === "error") void refresh(query, tasks.state === "error" ? "all" : "pools");
+    else if (tasks.state === "error") void refresh(query, "tasks");
+  }
   useEffect(() => { syncPending(); setDenied(false); }, [actorId, ctx.canReadE2, syncPending]);
   useEffect(() => {
     setLevelWeightRange(null);
@@ -285,12 +315,15 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const locked = pending.some(record => record.pool.code === query.code);
   const writeBlock = !ctx.canWriteE2 ? "只读，你只能查看任务池" : locked ? "这个等级有结果未知的操作，请先查看原操作"
     : !fresh ? "请先重新读取任务等级和任务列表" : undefined;
-  const createBlock = writeBlock ?? (pool && pool.taskCount >= 300 ? "这个等级共 300 个任务（含停用），到上限了" : undefined);
-  const randomBlock = createBlock ?? (pool && pool.enabledCount >= 200 ? "这个等级已启用 200 个，到上限了" : undefined);
+  const totalRemaining = 300 - (pool?.taskCount ?? 0);
+  const enabledRemaining = 200 - (pool?.enabledCount ?? 0);
+  const createBlock = writeBlock ?? (totalRemaining === 0 ? "这个等级共 300 个任务（含停用），到上限了" : undefined);
+  const randomBlock = createBlock ?? (enabledRemaining === 0 ? "这个等级已启用 200 个，到上限了" : undefined);
   const editBlock = (task: PoolTask | null) => writeBlock ?? (!task?.baseReward ? MISSING_TASK_WEIGHT : undefined);
   const columns = ctx.canWriteE2 ? 7 : 6;
-  const panelNote = !ctx.canWriteE2 || !fresh ? undefined : [pool && pool.taskCount >= 300 ? "已满 300 个（含停用），不能再新增" : "",
-    rows.some(row => !row.baseReward) ? rows.every(row => !row.baseReward) ? "任务还没有权重，暂不能编辑" : "权重为「—」的任务暂不能编辑" : ""].filter(Boolean).join(" · ") || undefined;
+  const panelNote = !ctx.canWriteE2 || pools.state !== "ready" || !pool ? undefined : [totalRemaining === 0 ? "已满 300 个（含停用），不能再新增" : "",
+    enabledRemaining === 0 ? "已满 200 个启用任务，不能再随机添加" : "",
+    fresh && rows.some(row => !row.baseReward) ? rows.every(row => !row.baseReward) ? "任务还没有权重，暂不能编辑" : "权重为「—」的任务暂不能编辑" : ""].filter(Boolean).join(" · ") || undefined;
   const selectedRows = rows.filter(row => selected.includes(row.taskTypeId));
   const toDisable = selectedRows.filter(row => row.enabled).length, toEnable = selectedRows.length - toDisable;
   const emptyLevels = pools.data.filter(level => level.enabledCount === 0);
@@ -348,11 +381,18 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           : retry && rejected.includes(record.commandKey) ? "先核对原结果，再决定是否解除原操作记录"
             : retry && (!outcome || !("receipt" in outcome) || outcome.receipt !== null) ? "查不到原结果后才可重试" : undefined;
   }
-  const countReady = /^\d+$/.test(count) && Number(count) >= 1 && Number(count) <= 50;
+  const requestedCount = Number(count);
+  const countReady = /^\d+$/.test(count) && requestedCount >= 1 && requestedCount <= 50;
+  const randomCountBlock = !countReady ? "任务数量要填 1–50 的整数"
+    : requestedCount <= Math.min(totalRemaining, enabledRemaining) ? undefined
+      : totalRemaining <= enabledRemaining ? `这个等级的任务总数（含停用）只剩 ${totalRemaining} 个名额，请减少数量`
+        : `这个等级的启用任务只剩 ${enabledRemaining} 个名额，请减少数量`;
   const reasonLength = visibleReasonLength(reason);
   const reasonBlock = e2EditorReasonBlock(reason, legacyReasonRule);
-  const formBlock = (dialog?.kind === "random" ? randomBlock : writeBlock) ?? reasonBlock ?? (dialog?.kind === "random" && !countReady ? "任务数量要填 1–50 的整数"
-    : dialog?.kind === "status" && !dialog.tasks.length ? "没有可执行的任务" : dialog?.kind === "status" && !dialog.enabled && (!impact || impactLoading || impactError) ? "请先成功读取停用影响" : undefined);
+  const reasonRejected = isE2ReasonRejection(dialogErrorCode) ? dialogError : undefined;
+  const formBlock = (dialog?.kind === "random" ? randomBlock ?? randomCountBlock : writeBlock) ?? reasonBlock ??
+    (dialog?.kind === "status" && !dialog.tasks.length ? "没有可执行的任务"
+      : dialog?.kind === "status" && !dialog.enabled && (!impact || impactLoading || impactError) ? "请先成功读取停用影响" : undefined);
 
   async function send(record: E2Pending, retry: boolean) {
     if (busy.current || retryBlock(record, retry)) return;
@@ -370,7 +410,12 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       if (edit) setEditor(null);
       else setDialog(null);
       setSelected([]); setReceipt(""); ctx.toast(message);
-      if (!await refresh()) setReceipt(`${message}。操作已生效，最新任务列表暂时读不到。`);
+      const target = query.code === record.pool.code ? query : { ...query, code: record.pool.code, page: 1 };
+      if (target !== query) {
+        nextQueryRead.current = { target, scope: "started" };
+        setQuery(target);
+      }
+      if (!await refresh(target)) setReceipt(`${message}。操作已生效，最新任务列表暂时读不到。`);
       document.getElementById("e2-task-heading")?.focus();
       if (edit) finishEditor();
     } catch (error) {
@@ -520,7 +565,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       syncPending();
       showOutcome(record, { receipt: original });
     } catch (cause) { showOutcome(record, { error: displayAdminReadError(cause) }); }
-    if (query.code === record.pool.code && query.page === 1) await refresh();
+    if (query.code === record.pool.code && query.page === 1) await refresh(query);
     setPendingNote("");
   }
   function releaseOriginal(record: E2Pending) {
@@ -540,12 +585,12 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       meta={pools.state === "loading" || readingTasks ? "正在读取…" : readAt ? `${businessClock(readAt)} 读取 · ${businessZoneText()}` : `尚未成功读取 · ${businessZoneText()}`}
       readOnly={!ctx.canWriteE2 ? "只读，你只能查看任务池" : undefined}
       actions={<Button icon={<RefreshCw size={16} />} loading={pools.state === "loading" || tasks.state === "loading"} data-e2-editor-leave
-        onClick={() => { if (editorDirty) leaveEditorThen(() => void refresh()); else void refresh(); }}>刷新</Button>} />
+        onClick={() => { if (editorDirty) leaveEditorThen(() => void refresh(query)); else void refresh(query); }}>刷新</Button>} />
     <Conclusion state={pools.state !== "ready" ? "unknown" : noCandidates > 0 || emptyLevels.length === FIXED_DEVICE_LEVELS.length ? "warn" : emptyLevels.length ? "neutral" : "ok"}
       explain="按同一次读取的四个等级联合判断：商品所有已发布等级都没有启用任务，才计入没有候选的商品。草稿不计入，不代表当前单已停止。"
       action={pools.state === "ready" && emptyLevels.length > 0 && emptyLevels[0].code !== query.code ? <Button size="sm" data-e2-switch-pool onClick={() => selectPool(emptyLevels[0].code)}>查看 {emptyLevels[0].code} {emptyLevels[0].name}</Button> : undefined}>{conclusion}</Conclusion>
     {query.reset && <Notice tone="warn" action={<Button size="sm" onClick={() => setQuery(old => ({ ...old, reset: false }))}>知道了</Button>}>网址里无效的查询条件已重置。</Notice>}
-    {receipt && <Notice tone={receipt.includes("读不到") ? "warn" : "ok"} action={<Button size="sm" onClick={() => void refresh()}>刷新</Button>}>{receipt}</Notice>}
+    {receipt && <Notice tone={receipt.includes("读不到") ? "warn" : "ok"} action={<Button size="sm" onClick={retryFailedRead}>刷新</Button>}>{receipt}</Notice>}
     {pending.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}，结果未知`}
       actionBelow action={<><Button size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => void queryOriginal(record))}>查询原结果</Button>
         {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} data-e2-editor-leave onClick={() => leaveEditorThen(() => { viewOriginal(record); void send(record, true); })}>按原请求重试</Button>}
@@ -567,10 +612,10 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       facts={<Fact k="原理由">{closing.request.body.reason}</Fact>} onClose={() => setClosing(null)} onSubmit={async evidence => {
         const receipt = await checkE2Command(closing, evidence);
         syncPending(); showOutcome(closing, { receipt }); setClosing(null);
-        if (e2CommandSettled(receipt)) await refresh();
+        if (e2CommandSettled(receipt)) await refresh(query);
         else ctx.toast("核查结论已记录，原操作仍是结果未知，继续锁定。");
       }} />}
-    {pools.state === "error" && <BlockState state="error" title={pools.data.length ? "任务等级读取失败，以下是上次读到的数据，暂不能操作" : "任务等级读取失败"} detail={pools.error} onRetry={() => void refresh()} />}
+    {pools.state === "error" && <BlockState state="error" title={pools.data.length ? "任务等级读取失败，以下是上次读到的数据，暂不能操作" : "任务等级读取失败"} detail={pools.error} onRetry={() => void refresh(query, "pools")} />}
     {(pools.state !== "error" || pools.data.length > 0) && <div className="e2-levels"><StatBand cards role="tablist" label="任务等级">
       {(pools.data.length ? pools.data.map(data => ({ code: data.code, name: data.name, data })) : FIXED_DEVICE_LEVELS.map(card => ({ ...card, data: undefined }))).map(({ data: level, ...card }, index) => {
         const loaded = !!level;
@@ -613,7 +658,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           <Th control><Checkbox aria-label="选择本页全部任务" disabled={!!writeBlock || !rows.length} checked={rows.length > 0 && selected.length === rows.length} indeterminate={selected.length > 0 && selected.length < rows.length}
             onChange={event => setSelected(event.target.checked ? rows.map(row => row.taskTypeId) : [])} /></Th>
           <Th>任务名称</Th><Th>类型</Th><Th align="right">时长</Th><Th align="right" className="e2-gap"><Explain label="权重的说明" content="不是每单的钱，只决定这条任务在同等级启用任务里分得多还是少。">权重</Explain></Th><Th className="e2-gap">状态<Explain label="任务启用状态的说明" content="已启用的任务可参加新派单；停用的不再参加新派单，停用不会取消当前单。" /></Th>{ctx.canWriteE2 && <Th sticky="end" fit>操作</Th>}
-        </tr></thead><tbody>{readingTasks ? <TableLoading columns={columns} /> : tasks.state === "error" ? <TableMessage columns={columns} role="alert"><BlockState state="error" title="任务读取失败" detail={tasks.error} onRetry={() => void refresh()} /></TableMessage>
+        </tr></thead><tbody>{readingTasks ? <TableLoading columns={columns} /> : tasks.state === "error" ? <TableMessage columns={columns} role="alert"><BlockState state="error" title="任务读取失败" detail={tasks.error} onRetry={() => void refresh(query, "tasks")} /></TableMessage>
           : !query.code && pools.state === "error" ? <TableMessage columns={columns}>任务等级读取成功后，再读取任务列表。</TableMessage>
           : rows.length ? rows.map(row => <Tr key={row.taskTypeId} selected={selected.includes(row.taskTypeId)}><Td><Checkbox aria-label={`选择 ${row.name}`} title={writeBlock} disabled={!!writeBlock} checked={selected.includes(row.taskTypeId)} onChange={event => setSelected(event.target.checked ? [...selected, row.taskTypeId] : selected.filter(id => id !== row.taskTypeId))} /></Td>
             <Td><Cell full main={row.name} title={row.name} /></Td><Td><TaskClassTag taskClass={row.taskClass} /></Td>
@@ -643,7 +688,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     {releasing ? <Modal title="解除原操作记录" icon={ShieldCheck} tone="neutral" busy={saving} dirty onClose={close}
       footer={<><Button onClick={() => setReleasing(null)}>返回</Button><Button variant="primary" onClick={() => {
         if (!rejected.includes(releasing.commandKey) || isRetryExpired(releasing)) return;
-        e2Commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); close(); void refresh();
+        e2Commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); close(); void refresh(query);
       }}>确认解除</Button></>}>
       <div className="rd-stack"><ReleaseBody label={`${releasing.pool.code} ${releasing.pool.name} · ${e2CommandLabel(releasing)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只删掉本页保存的这条记录，不写入操作记录，也不算核查结案。" /><Facts><Fact k="首次提交">{businessStamp(releasing.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{releasing.request.body.reason}</Fact></Facts></div>
     </Modal> : dialog && <Modal title={originalExpired ? "原操作已过重试时限" : dialog.original ? "核对原操作" : dialog.kind === "random" ? "随机添加任务" : dialog.enabled ? "批量启用任务" : "批量停用任务"}
@@ -671,15 +716,16 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                 {impact.productsLosingAllTasks.length > 0 ? <Notice tone="warn" title="以下商品将没有可用任务"><ul className="e2-command-tasks">{impact.productsLosingAllTasks.map(item => <li key={item.productKey}>{item.productName}</li>)}</ul>
                   <Facts><Fact lead tone="warn" k="影响设备" unit={<>台<Explain label="影响设备的口径" content="按商品全部已发布等级判断候选。设备数统计已激活且未停用、状态合格的非手机生产设备；正在完成当前单的设备也计入，停用不会取消当前单。不等于设备管理列表总数。影响按读取时算，提交时设备数可能变化。" /></>}>{impact.devicesAffected}</Fact></Facts><p>停用不会取消当前单，当前单结束后等待配置；停跑期间不计收益、不补发。<Explain label="当前单什么时候不会完成" content="历史截止时间之前开始、还没入账的旧单例外：会被取消，不发收益。这和停用无关。" /></p>
                 </Notice> : <Notice tone="neutral">没有商品会失去全部可用任务；停用不会取消当前单。</Notice>}</>}</>}
-          {!dialog.original && dialog.kind === "random" && <><Field label="任务数量" required help="1–50 个，整数" explain="每次添加 1–50 个，默认启用。各类任务的时长范围见「技术信息」。" error={touched.count && !countReady ? "任务数量要填 1–50 的整数" : undefined}>
+          {!dialog.original && dialog.kind === "random" && <><Field label="任务数量" required help="1–50 个，整数" explain="每次添加 1–50 个，默认启用。各类任务的时长范围见「技术信息」。" error={touched.count ? randomCountBlock : undefined}>
             <NumberInput unit="个" min={1} max={50} step={1} value={count} disabled={saving} onChange={event => setCount(event.target.value)} onBlur={() => setTouched(old => ({ ...old, count: true }))} /></Field>
             <CheckGroup legend="限定类型" summary={classes.length ? `已选 ${classes.length} 类` : "不限类型"} explain="限制本次随机生成的类型；可多选，不选则不限。不保证每类均匀分到或至少分到一个，不改变已有任务。">
               {TASK_CLASSES.map(value => <Check key={value} label={<TaskClassTag taskClass={value} />} aria-label={TASK_CLASS_LABELS[value]} disabled={saving} checked={classes.includes(value)} onChange={event => setClasses(event.target.checked ? TASK_CLASSES.filter(item => classes.includes(item) || item === value) : classes.filter(item => item !== value))} />)}</CheckGroup></>}
           {dialog.original ? <Facts><Fact k="原操作理由">{dialog.original.request.body.reason}</Fact></Facts>
             : <Field label="操作理由" required hint={legacyReasonRule.ready ? `至少 ${legacyReasonRule.min} 字` : undefined} explain="记录这次调整的依据，随这次操作写入操作记录。"
-              help={legacyReasonRule.ready ? undefined : reasonBlock} error={legacyReasonRule.ready && touched.reason ? reasonBlock : undefined}>
-              <Textarea rows={3} maxLength={400} count={legacyReasonRule.ready ? `${reasonLength}/${legacyReasonRule.max}` : undefined} placeholder="例如：按本周运营计划补充候选任务" value={reason} disabled={saving} onChange={event => setReason(event.target.value)} onBlur={() => setTouched(old => ({ ...old, reason: true }))} /></Field>}
-          {dialogError && <Notice tone="danger">{dialogError}</Notice>}
+              help={legacyReasonRule.ready ? undefined : reasonBlock} error={reasonRejected || (legacyReasonRule.ready && touched.reason ? reasonBlock : undefined)}>
+              <Textarea rows={3} maxLength={400} count={legacyReasonRule.ready ? `${reasonLength}/${legacyReasonRule.max}` : undefined} placeholder="例如：按本周运营计划补充候选任务" value={reason} disabled={saving}
+                onChange={event => { setReason(event.target.value); if (reasonRejected) { setDialogError(""); setDialogErrorCode(""); } }} onBlur={() => setTouched(old => ({ ...old, reason: true }))} /></Field>}
+          {dialogError && !reasonRejected && <Notice tone="danger">{dialogError}</Notice>}
           {dialog.kind === "status" && <Fold title="本次任务" summary={`${dialog.tasks.length} 个任务，展开核对完整名单`}><ul className="e2-command-tasks">{dialog.tasks.map(task => <li key={task.taskTypeId}>{task.name}</li>)}</ul></Fold>}
           <Fold title="执行摘要" summary="立即生效，不经审批"><p>{TASK_RULES}</p></Fold>
           <Fold title="技术信息" summary="任务池与请求编号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="请求编号"><span data-mono className="e2-request-key">{dialog.key}</span><Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("请求编号已复制"), () => setDialogError("复制失败，请选中完整编号复制。")); }}>复制编号</Button></Fact>{dialogErrorCode && <Fact k="原错误码">{dialogErrorCode}</Fact>}</Facts><p><KeepText text={GENERATION} /></p></Fold>
