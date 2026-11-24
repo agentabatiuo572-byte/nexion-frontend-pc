@@ -15,7 +15,7 @@ import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operat
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
-import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, sendTaskPoolCommand, TaskPoolApiError, taskPoolTaskPath, validTaskEditFields,
+import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, sendTaskPoolCommand, TaskPoolApiError, taskPoolTaskPath, taskWeightMicros, validTaskEditFields,
   type DisableImpact, type PoolTask, type TaskClass, type TaskPool, type TaskPoolEditCommand } from "@/lib/admin/task-pool-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Select } from "@/app/components/rd";
@@ -25,7 +25,7 @@ import { checkE2Command, e2CommandLabel, e2Commands, e2CommandSettled, type E2Pe
 import { canInvestigateECommand, eCommandRollbackConfirmed } from "@/lib/admin/e-command-investigation";
 import { TechInfo, receiptOf } from "../recovery-panel";
 import { CommandClosureModal, CommandOutcomeLine, SettledCommandNotices, closureOpen, type CommandOutcome, type SettledCommand } from "./e-command-check";
-import { applyLatestE2Task, e2EditorReasonBlock, E2TaskEditor, formatWeight, isE2TaskEditorDirty, openE2TaskEditor, type E2TaskEditorState, type E2TaskField } from "./e2-task-editor";
+import { applyLatestE2Task, e2EditorReasonBlock, E2TaskEditor, formatWeight, isE2TaskEditorDirty, openE2TaskEditor, type E2LevelWeightRange, type E2TaskEditorState, type E2TaskField } from "./e2-task-editor";
 
 type Query = { code: string; taskClass: string; enabled: string; page: number; size: number; reset: boolean };
 type Read<T> = { state: "loading" | "ready" | "error"; data: T; error: string };
@@ -36,6 +36,7 @@ const MINUTES = [{ value: 0, text: "0" }, { value: 60, text: "60" }, { value: 12
 const TASK_RULES = "等级只决定跑什么任务，收益由商品的月收益目标决定。当前任务保持原配置，修改只影响之后的新任务。每级最多 200 个启用任务、300 个任务（含停用）。";
 const GENERATION = "系统生成同池唯一的英文名称，时长为 5 分钟整数倍：向量计算 30–60 分钟，语音处理 45–90 分钟，图像生成和大模型推理 60–120 分钟，模型微调和视频生成 90–120 分钟。新任务立即启用。";
 const RETRY_HELP = "先查询原结果。查不到时可重新发送保存的原请求，系统认得出是同一次提交，不会重复执行。";
+const MISSING_TASK_WEIGHT = "还没读到这条任务的权重，暂时不能编辑";
 const EDIT_ERROR_FIELDS: Partial<Record<string, E2TaskField>> = {
   TASK_NAME_INVALID: "name", APP_TEXT_CHINESE_NOT_ALLOWED: "name", TASK_NAME_DUPLICATE: "name",
   TASK_CLASS_INVALID: "taskClass", TASK_DURATION_INVALID: "duration", TASK_WEIGHT_INVALID: "weight",
@@ -48,6 +49,25 @@ function frozenEditor(record: E2Pending, command: TaskPoolEditCommand, message?:
     draft: { name: body.name, taskClass: body.taskClass, duration: String(body.durationMinutes), weight: body.baseReward,
       enabled: command.kind === "create" ? command.body.enabled : command.previousEnabled },
     outcome: { kind: "unknown", createdAt: record.createdAt, expired: isRetryExpired(record), message } };
+}
+
+function fetchAllPoolTasks(code: string) {
+  return fetchPoolTasks(code, { pageSize: 300 });
+}
+
+function enabledWeightRange(rows: PoolTask[]): E2LevelWeightRange | null {
+  let range: E2LevelWeightRange | null = null;
+  for (const { enabled, baseReward } of rows) {
+    if (!enabled || !baseReward) continue;
+    const weight = taskWeightMicros(baseReward);
+    if (!range) range = { min: baseReward, max: baseReward, count: 1 };
+    else {
+      if (weight < taskWeightMicros(range.min)) range.min = baseReward;
+      if (weight > taskWeightMicros(range.max)) range.max = baseReward;
+      range.count++;
+    }
+  }
+  return range;
 }
 
 function readQuery(params: URLSearchParams): Query {
@@ -95,6 +115,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const [impactLoading, setImpactLoading] = useState(false);
   const [impactError, setImpactError] = useState("");
   const [editor, setEditor] = useState<E2TaskEditorState | null>(null);
+  const [levelWeightRange, setLevelWeightRange] = useState<E2LevelWeightRange | null>(null);
+  const editorPoolCode = editor && editor.outcome.kind !== "unknown" ? editor.pool.code : undefined;
   const editorReasonRule = useReasonRule(editor?.step === "confirm" && editor.outcome.kind !== "unknown");
   const editorDirty = editor !== null && isE2TaskEditorDirty(editor);
   const afterEditorLeave = useRef<(() => void) | null>(null);
@@ -144,6 +166,15 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   }, [ctx.canReadE2, query]);
   useEffect(() => { void refresh(); return () => { sequence.current++; }; }, [refresh]);
   useEffect(() => { syncPending(); setDenied(false); }, [actorId, ctx.canReadE2, syncPending]);
+  useEffect(() => {
+    setLevelWeightRange(null);
+    if (!editorPoolCode) return;
+    let active = true;
+    void fetchAllPoolTasks(editorPoolCode).then(({ records }) => {
+      if (active) setLevelWeightRange(enabledWeightRange(records));
+    }).catch(() => { if (active) setLevelWeightRange(null); });
+    return () => { active = false; };
+  }, [editorPoolCode]);
   useEffect(() => {
     const url = new URL(window.location.href);
     for (const key of ["pool", "taskClass", "enabled", "pageNum", "pageSize"]) url.searchParams.delete(key);
@@ -215,6 +246,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const writeBlock = !ctx.canWriteE2 ? "只读，你只能查看任务池" : locked ? "这个等级有结果未知的操作，请先查看原操作"
     : !fresh ? "请先重新读取任务等级和任务列表" : undefined;
   const createBlock = writeBlock ?? (pool && pool.taskCount >= 300 ? "这个等级共 300 个任务（含停用），到上限了" : undefined);
+  const editBlock = (task: PoolTask | null) => writeBlock ?? (!task?.baseReward ? MISSING_TASK_WEIGHT : undefined);
   const columns = ctx.canWriteE2 ? 7 : 6;
   const selectedRows = rows.filter(row => selected.includes(row.taskTypeId));
   const toDisable = selectedRows.filter(row => row.enabled).length, toEnable = selectedRows.length - toDisable;
@@ -262,7 +294,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   function close() { if (!busy.current) { impactSequence.current++; setDialog(null); setReleasing(null); } }
   /** 单条编辑、新增：抽屉开着（含「改动还没保存」）时不另开一个。 */
   function openEditor(mode: E2TaskEditorState["mode"], row: PoolTask | null) {
-    if (!pool || writeBlock || editor) return;
+    if (!pool || editor || (mode === "create" ? createBlock : editBlock(row))) return;
     setEditor(openE2TaskEditor(mode, pool, row));
   }
   function retryBlock(record: E2Pending, retry = true) {
@@ -338,7 +370,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
 
   async function submitEditor(state: E2TaskEditorState) {
     if (!session || busy.current || !ctx.canWriteE2 || state.step !== "confirm" || state.outcome.kind === "conflict"
-      || state.outcome.kind === "unknown" || (state.mode === "create" ? createBlock : writeBlock) || state.pool.code !== pool?.code) return;
+      || state.outcome.kind === "unknown" || (state.mode === "create" ? createBlock : editBlock(state.task)) || state.pool.code !== pool?.code) return;
     const fingerprint = `pool|${state.pool.code}`;
     if (e2Commands.get(fingerprint)) return;
     const reason = state.reason.trim();
@@ -374,9 +406,10 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     busy.current = true; setEditor({ ...state, saving: true });
     try {
       // The unfiltered list can include the entire pool, even if the task changed type or status.
-      const result = await fetchPoolTasks(state.pool.code, { pageSize: 300 });
+      const result = await fetchAllPoolTasks(state.pool.code);
       const latest = result.records.find(task => task.taskTypeId === state.task?.taskTypeId);
       if (!latest || latest.version <= state.task.version) throw new Error("暂时没加载到这条任务的最新内容，请重试。");
+      if (!latest.baseReward) throw new Error(MISSING_TASK_WEIGHT);
       setEditor(applyLatestE2Task(state, latest, state.pool));
     } catch (error) {
       if (isPermissionDenied(error) || error instanceof TaskPoolApiError && [401, 403].includes(error.status ?? error.httpStatus ?? 0)) {
@@ -535,7 +568,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             <Td align="right"><span className="e2-duration"><ScaleBar quiet compact label="任务时长" max={120} value={row.durationMinutes} valueText={`${row.durationMinutes} 分钟，刻度 0 到 120 分钟`} tone="neutral" /><span className="e2-duration-value">{row.durationMinutes} 分钟</span></span></Td>
             <Td align="right" className="e2-gap"><Cell num main={row.baseReward ? formatWeight(row.baseReward) : "—"} /></Td>
             <Td className="e2-gap"><StatusTag tone={row.enabled ? "ok" : "done"}>{row.enabled ? "已启用" : "已停用"}</StatusTag></Td>
-            {ctx.canWriteE2 && <Td sticky="end" fit><Button size="sm" aria-label={`编辑 ${row.name}`} disabledReason={writeBlock} onClick={() => openEditor("update", row)}>编辑</Button></Td>}</Tr>)
+            {ctx.canWriteE2 && <Td sticky="end" fit><Button size="sm" aria-label={`编辑 ${row.name}`} disabledReason={editBlock(row)} onClick={() => openEditor("update", row)}>编辑</Button></Td>}</Tr>)
             : <TableMessage columns={columns}>{query.taskClass || query.enabled ? <><p>当前筛选没有任务</p><Button size="sm" onClick={() => setQuery(old => ({ ...old, taskClass: "", enabled: "", page: 1 }))}>清除筛选</Button></>
               : <><p>{ctx.canWriteE2 ? "暂无任务，可新增或随机添加" : "暂无任务，请联系有任务池修改权的管理员"}</p>{ctx.canWriteE2 && <span className="e2-empty-actions"><Button size="sm" disabledReason={createBlock} onClick={() => openEditor("create", null)}>新增任务</Button><Button size="sm" disabledReason={writeBlock} onClick={() => open("random")}>随机添加任务</Button></span>}</>}</TableMessage>}</tbody></Table>
         {tasks.data.total > 0 && tasks.state !== "error" && <Pager label="任务" total={tasks.data.total} page={query.page} pageSize={query.size} sizes={[10, 20, 50]} loading={readingTasks}
@@ -543,9 +576,9 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       </Panel>
     </section>
     {editor && <E2TaskEditor state={editor} onChange={setEditor} onClose={finishEditor} onContinue={() => { afterEditorLeave.current = null; }}
-      reasonRule={editorReasonRule} writeBlock={editor.outcome.kind === "unknown"
+      reasonRule={editorReasonRule} levelWeightRange={editorPoolCode ? levelWeightRange : null} writeBlock={editor.outcome.kind === "unknown"
       ? editorOriginal ? retryBlock(editorOriginal) : "原操作没有完整持久保存，不能重试"
-      : editor.mode === "create" ? createBlock : writeBlock} toast={ctx.toast}
+      : editor.mode === "create" ? createBlock : editBlock(editor.task)} toast={ctx.toast}
       onSubmit={submitEditor} onReadLatest={readLatestEditor}
       onRetry={async state => { if (editorOriginal?.commandKey === state.key) await send(editorOriginal, true); }} />}
     {releasing ? <Modal title="解除原操作记录" icon={ShieldCheck} tone="neutral" busy={saving} dirty onClose={close}

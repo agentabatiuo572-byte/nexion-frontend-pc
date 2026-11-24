@@ -12,11 +12,12 @@ export interface TaskPool {
 export interface PoolTask {
   taskTypeId: string; name: string; taskClass: TaskClass; durationMinutes: number;
   enabled: boolean; version: number; effectiveAt: string;
-  /** 旧随机添加回执和旧待确认快照可能没有权重。 */
-  baseReward?: string;
+  /** 旧 DEVICE 列表使用 null；旧随机回执和旧待确认快照可能省略。 */
+  baseReward?: string | null;
   asset?: "USDT" | "UVT";
 }
 export interface DevicePoolTask extends PoolTask { baseReward: string; asset: "USDT" }
+type DevicePoolListTask = DevicePoolTask | (PoolTask & { baseReward: null; asset?: undefined });
 export interface PhonePoolTask extends PoolTask { baseReward: string; asset: "USDT" | "UVT" }
 export interface PoolTaskPage<T = PoolTask> { records: T[]; total: number }
 export interface DisableImpact { productsLosingAllTasks: Pick<PoolProduct, "productKey" | "productName">[]; devicesAffected: number }
@@ -138,20 +139,34 @@ export function parseTaskPool(value: unknown): TaskPool {
   }
   return parsed;
 }
-function task(value: unknown): PoolTask {
+function task(value: unknown): Omit<PoolTask, "baseReward" | "asset"> {
   const row = record(value);
   if (!TASK_CLASSES.includes(row.taskClass as TaskClass) || typeof row.enabled !== "boolean") throw new Error("任务类型或状态无效，请刷新重试。");
   return { taskTypeId: string(row.taskTypeId), name: string(row.name), taskClass: row.taskClass as TaskClass, durationMinutes: integer(row.durationMinutes),
     enabled: row.enabled, version: integer(row.version), effectiveAt: string(row.effectiveAt) };
 }
-function deviceTask(value: unknown): DevicePoolTask {
+function deviceTaskFields(value: unknown): ReturnType<typeof task> {
   const parsed = task(value);
+  if (parsed.durationMinutes <= 0 || parsed.durationMinutes > 120 || parsed.version < 1) {
+    throw new Error("任务数据不完整，请刷新重试。");
+  }
+  return parsed;
+}
+
+function deviceTask(value: unknown): DevicePoolTask {
+  const parsed = deviceTaskFields(value);
   const { baseReward, asset } = record(value);
-  if (parsed.durationMinutes <= 0 || parsed.durationMinutes > 120 || parsed.version < 1
-    || !validTaskWeight(baseReward) || !/\.\d{6}$/.test(baseReward) || asset !== "USDT") {
+  if (!validTaskWeight(baseReward) || !/\.\d{6}$/.test(baseReward) || asset !== "USDT") {
     throw new Error("任务数据不完整，请刷新重试。");
   }
   return { ...parsed, baseReward, asset };
+}
+
+function deviceListTask(value: unknown): DevicePoolListTask {
+  const row = record(value);
+  return row.baseReward === undefined && row.asset === undefined
+    ? { ...deviceTaskFields(row), baseReward: null }
+    : deviceTask(row);
 }
 
 function randomTask(value: unknown): PoolTask {
@@ -201,7 +216,7 @@ export async function fetchTaskPools(kind: TaskPool["kind"] = "DEVICE"): Promise
 }
 export interface PoolTaskQuery { taskClass?: string; enabled?: string; pageNum?: number; pageSize?: number }
 export function fetchPoolTasks(code: "PHONE", query?: PoolTaskQuery): Promise<PoolTaskPage<PhonePoolTask>>;
-export function fetchPoolTasks(code: "L1" | "L2" | "L3" | "L4", query?: PoolTaskQuery): Promise<PoolTaskPage<DevicePoolTask>>;
+export function fetchPoolTasks(code: "L1" | "L2" | "L3" | "L4", query?: PoolTaskQuery): Promise<PoolTaskPage<DevicePoolListTask>>;
 export function fetchPoolTasks(code: string, query?: PoolTaskQuery): Promise<PoolTaskPage>;
 export async function fetchPoolTasks(code: string, query: PoolTaskQuery = {}): Promise<PoolTaskPage> {
   const params = new URLSearchParams({ pageNum: String(query.pageNum ?? 1), pageSize: String(query.pageSize ?? 20) });
@@ -210,7 +225,7 @@ export async function fetchPoolTasks(code: string, query: PoolTaskQuery = {}): P
   const raw = record(await request(`/task-pools/${encodeURIComponent(code)}/tasks?${params}`));
   if (!Array.isArray(raw.records)) throw new Error("任务列表不完整，请刷新重试。");
   const records = raw.records.map<PoolTask>(value => {
-    if (code !== "PHONE") return deviceTask(value);
+    if (code !== "PHONE") return deviceListTask(value);
     const parsed = task(value);
     const row = record(value);
     if (row.asset !== "USDT" && row.asset !== "UVT") throw new Error("手机任务奖励资产无效，请刷新重试。");

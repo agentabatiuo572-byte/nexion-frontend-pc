@@ -19,6 +19,7 @@ import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
 import { taskWeightMicros, validTaskWeight, type PoolTask, type TaskClass, type TaskPool } from "@/lib/admin/task-pool-client";
 
 export type E2TaskField = "name" | "taskClass" | "duration" | "weight";
+export type E2LevelWeightRange = { min: string; max: string; count: number };
 export interface E2TaskDraft { name: string; taskClass: TaskClass; duration: string; weight: string; enabled: boolean }
 export type E2TaskOutcome =
   | { kind: "none" }
@@ -137,6 +138,7 @@ export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule,
   onClose: () => void;
   onContinue: () => void;
   reasonRule: ReturnType<typeof useReasonRule>;
+  levelWeightRange: E2LevelWeightRange | null;
   /** 页面级的不能写原因（只读、本等级有结果未知的操作、数据不新鲜）。 */
   writeBlock?: string;
   toast: (message: string) => void;
