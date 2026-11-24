@@ -1461,7 +1461,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   HARDWARE_QUOTA_TIER_STALE_OR_MISSING: "额度已变化、商品已不存在，或调高后仍低于本月已用；请重新读取最新额度和占用数后提交。",
   HARDWARE_QUOTA_ALREADY_RECYCLED_OR_MISSING: "这条名额记录已经回收或不存在；请重新读取已用记录。",
   LEADERBOARD_MEMBER_ALREADY_DISQUALIFIED_OR_MISSING: "这个成员已被取消资格或记录不存在；请重新读取本周榜。",
-  F4_LEADERBOARD_ALREADY_LIVE: "排行榜已经恢复实时运行；请重新读取当前状态。",
+  F4_LEADERBOARD_ALREADY_LIVE: "排行榜已在运行，不用再恢复；请刷新后核对当前状态。",
   HARDWARE_QUOTA_EXPECTED_VALUE_REQUIRED: "缺少原月额度，无法防止覆盖别人的修改；请重新读取后提交。",
   AMBASSADOR_POLICY_UNAVAILABLE: "大使规则暂不可用；这不表示没有规则，请稍后重新读取或联系值班人员核对配置。",
   AMBASSADOR_POLICY_APPROVAL_FORBIDDEN: "这次大使规则操作不符合原审批单或对象锁；请在「操作记录与审批」核对原单。",

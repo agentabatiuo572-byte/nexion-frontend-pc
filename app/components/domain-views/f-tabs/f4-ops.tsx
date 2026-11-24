@@ -5,11 +5,12 @@
  * 这页管三件事：团队激励池、购机名额与大使申请、排行榜。首屏三张卡回答「现在有什么在等我」，也是三块内容的页签。
  * 读取、提交和原请求恢复由 f-view 接线；保留已搭建的界面和确认内容。
  */
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { AlertTriangle, ArrowRight, CircleHelp, Clock3, Hourglass, ListChecks, RefreshCw } from "lucide-react";
 import { BlockState, Button, Conclusion, PageHeader, RatioBar, Stat, StatBand, StatusTag, useTabIds } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { businessClock, businessZone } from "@/lib/admin/business-time";
 import type { F4AmbassadorApplication } from "@/lib/admin/f1-client";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
@@ -56,6 +57,9 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
   const actorId = useAdminAuth((state) => state.session?.adminId);
   const ids = useTabIds();
   const data = ctx.f4Overview;
+  // 页头写这份数据是几点读到的：每读到一份新的概览记一次时间，页面不会自己刷新。
+  const [readAt, setReadAt] = useState<number | null>(null);
+  useEffect(() => { if (data) setReadAt(Date.now()); }, [data]);
   const canWrite = ctx.can("network_f4_write");
   const canFund = ctx.can("network_f4_pool_fund");
   const canControl = ctx.can("network_f4_leaderboard_control");
@@ -128,8 +132,12 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
   const header = (
     <PageHeader pageId="F4" title="奖励池、名额与排行榜" summary="看团队激励池怎么分、购机名额和大使申请、排行榜。"
       readOnly={readOnly ? "当前账号只能查看这页" : undefined}
+      meta={readAt ? <span className="rd-toolbar">
+        <span>{`${businessClock(readAt)} 读取（${businessZone().label}）`}</span>
+        <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="读取中…" onClick={() => void ctx.refreshF4()}>刷新</Button>
+      </span> : undefined}
       actions={<>
-        <Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="读取中…" onClick={() => void ctx.refreshF4()}>刷新</Button>
+        {!readAt && <Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="读取中…" onClick={() => void ctx.refreshF4()}>刷新</Button>}
         <Button icon={<ArrowRight size={14} aria-hidden />} onClick={onOpenCommissions}>奖励记录核对</Button>
       </>} />
   );
