@@ -315,7 +315,7 @@ function TaskDrawer({ task, view, zone, rows, pending, now, lookup, downloadFail
     : task.scopeLost && task.state === "PENDING_APPROVAL" ? "恢复权限前这条不能批准；可以撤回。"
     : task.state === "PENDING_APPROVAL" && task.mine ? "还不能下载：没批准，文件还没生成。"
     : (task.state === "APPROVED" || task.state === "FAILED") && task.failure === "SCOPE_LOST_BEFORE_GENERATE" ? task.decidedAt ? "已批准，但生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。" : "生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。"
-    : (task.state === "APPROVED" || task.state === "FAILED") && task.failure ? task.decidedAt ? "文件没生成出来，不能下载。批准记录还在；生成出错请重新导出，明细要重新审批。" : "文件没生成出来，不能下载。请重新导出。"
+    : (task.state === "APPROVED" || task.state === "FAILED") && task.failure ? task.decidedAt ? "文件没生成出来，不能下载。批准记录还在；请重新导出，明细要重新审批。" : "文件没生成出来，不能下载。请重新导出。"
     : task.state === "APPROVED" ? "还不能下载：已批准，文件还在生成。生成好会变成「可下载」。"
     : task.state === "PENDING_GENERATION" ? "文件还在等待生成。"
     : task.state === "READY" && !task.canDownload ? "文件还在，但你现在没有这个范围的权限，不能下载。恢复权限、文件还在保留期内时，可以下载同一份。"
