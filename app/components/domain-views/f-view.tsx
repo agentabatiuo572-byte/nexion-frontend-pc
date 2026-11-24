@@ -2,7 +2,7 @@
 
 import { fBatchIssueText } from "./f-tabs/f-batch-names";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 /**
  * F 分销与团队 — 设计稿 design_handoff_f_domain 内容视图(F1–F5)。
  * 标签:F1 团队等级晋升 / F2 网络版税费率 / F3 左右团队业绩结算 / F4 池·配额·大使·榜 / F5 佣金记录核对。
@@ -180,6 +180,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f4Overview, setF4Overview] = useState<F4LeadershipPoolOverview | null>(null);
   const [f4VoteProjection, setF4VoteProjection] = useState<F4VoteProjectionRead>({ status: "idle" });
   const [f4AmbassadorPolicy, setF4AmbassadorPolicy] = useState<F4AmbassadorPolicy | null>(null);
+  const [f4PolicyLoading, setF4PolicyLoading] = useState(false);
   const [f4Loading, setF4Loading] = useState(tab === "F4");
   const [f4Error, setF4Error] = useState<string | null>(null);
   const [f4Proposals, setF4Proposals] = useState<FDomainAttempt[]>([]);
@@ -480,6 +481,37 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   };
 
+  const refreshF4VoteProjection = useCallback(async () => {
+    const request = f4Generation.current;
+    const owner = useAdminAuth.getState().session?.adminId;
+    setF4VoteProjection(canReadF4 ? { status: "loading" } : { status: "denied" });
+    if (!canReadF4) return;
+    try {
+      const data = await fetchF4VoteProjection();
+      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection({ status: "ready", data });
+    } catch (error) {
+      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection(
+        (error as { status?: number } | null)?.status === 403 ? { status: "denied" } : { status: "error", message: errorMessage(error) });
+    }
+  }, [canReadF4]);
+
+  const readF4AmbassadorPolicy = useCallback(async () => {
+    const request = f4Generation.current;
+    const owner = useAdminAuth.getState().session?.adminId;
+    const current = () => request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId;
+    setF4PolicyLoading(true);
+    try {
+      const policy = await fetchF4AmbassadorPolicy();
+      if (current()) setF4AmbassadorPolicy(policy);
+      return policy;
+    } catch (error) {
+      if (current()) setF4AmbassadorPolicy(null);
+      throw error;
+    } finally {
+      if (current()) setF4PolicyLoading(false);
+    }
+  }, []);
+
   const refreshF4 = useCallback(async () => {
     const request = ++f4Generation.current;
     const owner = useAdminAuth.getState().session?.adminId;
@@ -488,17 +520,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setF4PolicyWrites(owner === undefined ? [] : listF4PolicyWrites(owner));
     setF4Loading(true);
     setF4Error(null);
-    setF4VoteProjection(canReadF4 ? { status: "loading" } : { status: "denied" });
-    if (canReadF4) void fetchF4VoteProjection().then(data => {
-      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection({ status: "ready", data });
-    }, error => {
-      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection(
-        error?.status === 403 ? { status: "denied" } : { status: "error", message: errorMessage(error) });
-    });
+    void refreshF4VoteProjection();
     setActionConfirm(current => current?.f4Snapshot && !current.f4Recovery ? null : current);
-    const [overview, ambassadorPolicy, calendar, queue, ...lookups] = await Promise.allSettled([
+    const [overview, , calendar, queue, ...lookups] = await Promise.allSettled([
       fetchF4LeadershipPoolOverview(),
-      fetchF4AmbassadorPolicy(),
+      readF4AmbassadorPolicy(),
       fetchBusinessCalendar(),
       canReadA2 ? fetchA2Overview() : Promise.resolve(null),
       ...originals.map(row => queryF4Proposal(owner!, row)),
@@ -510,8 +536,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       const offset = zoneId ? new Intl.DateTimeFormat("en-US", { timeZone: zoneId, timeZoneName: "shortOffset" }).formatToParts(new Date()).find(part => part.type === "timeZoneName")?.value : undefined;
       setF4Overview({ ...overview.value, settlementZone: zoneId && label && offset ? { zoneId, label, offset: offset === "GMT" ? "UTC+0" : offset.replace("GMT", "UTC") } : null });
     }
-    else { setF4Overview(null); setF4Error(errorMessage(overview.reason)); }
-    setF4AmbassadorPolicy(ambassadorPolicy.status === "fulfilled" ? ambassadorPolicy.value : null);
+    else { setF4Overview(null); setF4Error(displayAdminReadError(overview.reason)); }
     const audit = queue.status === "fulfilled" ? queue.value as Awaited<ReturnType<typeof fetchA2Overview>> | null : null;
     setF4ApprovalRows([...(audit?.operationQueue ?? []), ...lookups.flatMap(row => row.status === "fulfilled" && row.value ? [row.value as A2OperationRow] : [])]);
     if (owner !== undefined) {
@@ -520,7 +545,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setActionConfirm(current => current?.f4Recovery && ![...proposals, ...direct].some(row => row.commandKey === current.f4Recovery!.original.commandKey) ? null : current);
     }
     setF4Loading(false);
-  }, [canReadA2, canReadF4, session?.adminId]);
+  }, [canReadA2, readF4AmbassadorPolicy, refreshF4VoteProjection, session?.adminId]);
 
   useEffect(() => {
     if (tab === "F4") void refreshF4();
@@ -574,7 +599,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const sendF4 = async (slot: string, spec: ProposeSpec) => {
     const owner = useAdminAuth.getState().session?.adminId;
     if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-    if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额和排行榜读取失败，请重新读取后再操作。");
+    if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额和排行榜加载失败，请刷新后再操作。");
     if (await f4PendingFor(f4ApprovalRows, spec)) throw new Error("OBJECT_ALREADY_PENDING");
     try {
       const ticket = await sendF4Proposal(owner, slot, spec, f4Submission.current ?? mc?.f4Snapshot);
@@ -946,7 +971,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     submitTeamApproval,
     openActionConfirm: (m) => {
       if (m.f4Snapshot && !m.f4Recovery) {
-        if (!f4Overview || f4Loading || f4Error) { setToast("奖励池、名额和排行榜读取失败，请重新读取后再操作。"); return; }
+        if (!f4Overview || f4Loading || f4Error) { setToast("奖励池、名额和排行榜加载失败，请刷新后再操作。"); return; }
         if ([...f4Proposals, ...f4PolicyWrites].some(row => matchesF4Confirmation(row, m.f4Snapshot!))) {
           setToast("请先查询保存的原操作。"); return;
         }
@@ -1220,11 +1245,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     },
     f4Overview,
     f4VoteProjection,
+    refreshF4VoteProjection,
     f4AmbassadorPolicy,
+    f4PolicyLoading,
+    retryF4AmbassadorPolicy: async () => { try { await readF4AmbassadorPolicy(); } catch { /* The rule block shows the read failure. */ } },
     refreshF4PolicyBaseline: async () => {
       setF4AmbassadorPolicy(null);
-      const policy = await fetchF4AmbassadorPolicy();
-      setF4AmbassadorPolicy(policy);
+      const policy = await readF4AmbassadorPolicy();
       setActionConfirm(modal => modal?.f4Snapshot?.action === "policy"
         ? { ...modal, f4Snapshot: { ...modal.f4Snapshot, policy } } : modal);
       return policy;
@@ -1252,7 +1279,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     },
     updateF4AmbassadorPolicy: async (policy, reason) => {
       const current = requireTeamApprovalSession("F4");
-      if (!f4Overview || !f4AmbassadorPolicy || f4Loading || f4Error) throw new Error("申请规则读取失败，请重新读取后再操作。");
+      if (!f4Overview || !f4AmbassadorPolicy || f4Loading || f4Error) throw new Error("申请规则加载失败，请刷新后再操作。");
       if (f4Proposals.some(row => row.spec?.command.op === "f4_ambassador_policy_change")) throw new Error("OBJECT_ALREADY_PENDING");
       let saved = true;
       try { await sendF4Policy(current.adminId, policy, reason, f4Submission.current ?? mc?.f4Snapshot); }
@@ -1488,7 +1515,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           if (mc.f4Snapshot) {
             if (mc.f4Owner !== useAdminAuth.getState().session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
             if (mc.f4Recovery) { await recoverF4(mc.f4Recovery, "retry"); return; }
-            if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额和排行榜读取失败，请重新读取后再操作。");
+            if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额和排行榜加载失败，请刷新后再操作。");
             f4Submission.current = { ...mc.f4Snapshot, value: newVal, businessValue };
           }
           if (mc.run) {

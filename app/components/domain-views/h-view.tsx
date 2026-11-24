@@ -80,7 +80,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "H9" && <H9PublicStats ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal key={mc.formKey} initialReason={mc.initialReason} briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} initialReason={mc.initialReason} initialRejection={mc.initialRejection} briefKind={mc.briefKind}
           action={mc.action}
           title={mc.title}
           detail={mc.detail}
@@ -91,6 +91,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           content={mc.content}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
+          confirmLabelForValue={mc.confirmLabelForValue}
           confirmTone={mc.confirmTone}
           statedBrief={mc.statedBrief}
           coverageLead={mc.coverageLead}
@@ -100,6 +101,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           reasonMin={mc.inlineApproval ? mc.reasonMin : undefined}
           reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}
           getPendingReason={mc.inlineApproval || tab === "H4" || tab === "H9" ? mc.getPendingReason : undefined}
+          getPendingRecovery={mc.getPendingRecovery}
           blockedReason={tab === "H4" || tab === "H9" ? mc.blockedReason : undefined}
           getPendingBusinessValue={tab === "H4" ? mc.getPendingBusinessValue : undefined}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}

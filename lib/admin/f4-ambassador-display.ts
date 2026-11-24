@@ -11,10 +11,10 @@
  */
 
 const BUCKET_COPY: Record<string, { title: string; rule: string }> = {
-  venue: { title: "线下大会场地", rule: "扫码签到 ≥ 100 人" },
-  kol: { title: "达人推广预算", rule: "结束后提交发票 + 流量数据" },
+  venue: { title: "线下大会场地", rule: "核实到场 ≥ 100 人" },
+  kol: { title: "达人推广", rule: "发票 + 流量数据" },
   print: { title: "印制物料", rule: "横幅 / 手册 / 名片" },
-  dev: { title: "开发工具 / 技术支持", rule: "为顶级客户定制集成" },
+  dev: { title: "SDK / 开发支持", rule: "为顶级客户定制集成" },
 };
 
 /** 分档可见名:命中字典用中文,否则退回服务端原文(绝不显示空白)。 */
@@ -32,8 +32,9 @@ export const F4_MATERIAL_PERMISSIONS = [
   { code: "network_f4_ambassador_finance_review", label: "大使费用材料核验" },
 ] as const;
 
+/** 申请表、材料抽屉、批准确认和审批记录里的类别名：和规则卡、App 用同一套（BUCKET_COPY）。 */
 export function ambassadorBucketLabel(bucket: string | null | undefined) {
-  return ({ venue: "线下活动", kol: "KOL推广", print: "物料", dev: "开发支持" } as Record<string, string>)[bucket ?? ""] ?? "待申请人补齐类别";
+  return BUCKET_COPY[bucket ?? ""]?.title ?? "待申请人补齐类别";
 }
 
 export function ambassadorMaterialStateLabel(state: string | undefined) {

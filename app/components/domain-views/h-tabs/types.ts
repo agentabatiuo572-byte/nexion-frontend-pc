@@ -14,12 +14,14 @@
 import type { ConfirmReq } from "../k-tabs/types";
 import type { DCtx } from "../d-tabs/types";
 import type { ActionConfirmReq as BaseActionConfirmReq } from "../k-tabs/types";
-import type { InlineOperationApproval } from "../design-kit";
+import type { BusinessFormValue, InlineOperationApproval } from "../design-kit";
 import type { ToastKind } from "@/lib/store/ui";
 
 export type { ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
-export type ActionConfirmReq = BaseActionConfirmReq & { rebaseValue?: string; inlineApproval?: InlineOperationApproval; reasonPolicyOptional?: boolean };
+export type ActionConfirmReq = BaseActionConfirmReq & { rebaseValue?: string; inlineApproval?: InlineOperationApproval; reasonPolicyOptional?: boolean;
+  /** 确认按钮随填的值变：走审批的写「提交审批」（OP-43）。第二个参数是多字段表单现在填的值。 */
+  confirmLabelForValue?: (value?: string, businessValue?: BusinessFormValue) => string };
 
 export type HCtx = Omit<DCtx, "openActionConfirm" | "toast"> & {
   closeConfirm?: (req?: ConfirmReq) => void;

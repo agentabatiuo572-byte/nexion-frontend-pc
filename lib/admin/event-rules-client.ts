@@ -62,8 +62,8 @@ export async function fetchEventVouchers(): Promise<EventVoucherOption[]> {
     return [{ id: row.id.trim(), name: row.name.trim(), percent, status: row.status as EventVoucherOption["status"] }];
   });
 }
-export async function updateEventRule(eventCode: string, change: EventRuleChange, expectedRevision: number, reason: string, firstEnable = false): Promise<EventRuleView | H4ApprovalReceipt> {
+export async function updateEventRule(eventCode: string, change: EventRuleChange, expectedRevision: number, reason: string, firstEnable = false, opened?: EventRuleView): Promise<EventRuleView | H4ApprovalReceipt> {
   return h4CommandRequest(`/event-rules/${encodeURIComponent(eventCode)}`, {
     method: "PATCH", body: JSON.stringify({ ...change, expectedRevision, reason }),
-  }, `保存玩法配置 · ${eventCode}`, firstEnable) as Promise<EventRuleView | H4ApprovalReceipt>;
+  }, `保存玩法配置 · ${eventCode}`, firstEnable, opened) as Promise<EventRuleView | H4ApprovalReceipt>;
 }

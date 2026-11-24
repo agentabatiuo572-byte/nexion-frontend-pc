@@ -1,4 +1,5 @@
 import { HApprovalRequired } from "./h-approval-required";
+import { PendingConfirmRejected } from "./h-conflict-review";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 import { guardedFetch, formatAdminApiError } from "./error-messages";
 import { saveH4UploadFile, readH4UploadFile, deleteH4UploadFile } from "./h4-upload-file";
@@ -18,7 +19,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { promotionRead } from "./promotion-client";
 import type { Promotion, RewardAdmin } from "./promotion-types";
 import type { FundCommandOrigin } from "./fund-command-investigation";
-import { fetchDirectCommandReceipt } from "./direct-command-receipt";
+import { fetchDirectCommandReceiptDetails, type DirectCommandReceipt, type DirectCommandReceiptState } from "./direct-command-receipt";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 type Resource = "overview" | "rules" | "raffles";
@@ -36,7 +37,9 @@ export type H4Command = H4StoredCommand & {
   uploadTarget?: H4UploadTarget;
   restoration?: H4UploadRestoration;
   commandOrigin?: FundCommandOrigin;
+  opened?: unknown;
 };
+export type H4ReopenRejected = (record: H4Command, cause: PendingConfirmRejected, closeRetry: () => void) => Promise<boolean>;
 export type H4ApprovalReceipt = { h4Approval: true; ticket: A2OperationRow };
 export const isH4ApprovalReceipt = (value: unknown): value is H4ApprovalReceipt => !!(value as H4ApprovalReceipt | null)?.h4Approval;
 export const H4_APPROVAL_OPS = new Set([
@@ -46,6 +49,7 @@ export const H4_APPROVAL_OPS = new Set([
 ]);
 const fresh = new Map<string, number>();
 const observations = new Map<string, A2OperationRow>();
+const receiptStates = new Map<string, DirectCommandReceiptState>();
 let observationOwner: number | undefined;
 const resourceOf = (scope: string): Resource => scope.includes("/h4_event_rule/") ? "rules" : scope.includes("/h4_genesis_raffle/") ? "raffles" : "overview";
 const notify = () => { if (typeof window !== "undefined") window.dispatchEvent(new Event("admin-h4-pending-changed")); };
@@ -68,7 +72,7 @@ function requireActor(owner: number, write: boolean, scope: string) {
   if (write && !allowed) throw new Error("H4_MAKER_FORBIDDEN");
   return actor;
 }
-function forget(r: H4Command) { h4CommandStores[r.store].forget(r.fingerprint, r.commandKey); observations.delete(r.commandKey); notify(); }
+function forget(r: H4Command) { h4CommandStores[r.store].forget(r.fingerprint, r.commandKey); observations.delete(r.commandKey); receiptStates.delete(r.commandKey); notify(); }
 function retain(r: H4Command) {
   const storage = h4CommandStores[r.store];
   storage.remember(r.fingerprint, r.commandKey, r);
@@ -191,7 +195,7 @@ export async function restoreH4Uploads(target: H4UploadTarget, writable: boolean
 export async function acknowledgeH4Upload(record: H4Command) { if (!record.asset) throw new Error("H4_RESULT_UNKNOWN"); await deleteH4UploadFile(record.commandKey); forget(record); }
 export const h4TicketObservations = () => {
   const owner = useAdminAuth.getState().session?.adminId;
-  if (owner !== observationOwner) { observations.clear(); observationOwner = owner; }
+  if (owner !== observationOwner) { observations.clear(); receiptStates.clear(); observationOwner = owner; }
   return [...observations.values()];
 };
 export const h4CommandHasPendingTicket = (key: string) => { h4TicketObservations(); return observations.get(key)?.status === "pending"; };
@@ -268,48 +272,99 @@ function h4DirectReceiptScope(request: Direct) {
   }
 }
 
-export async function queryH4Command(r: H4Command): Promise<A2OperationRow | null | undefined> {
+export const isH4MediaCommand = (r: H4Command) => !("proposal" in r.request) && r.request.path.startsWith("/media/uploads?");
+
+export async function queryH4Command(r: H4Command, explicit = false): Promise<{ receipt: DirectCommandReceipt } | { ticket: A2OperationRow | null } | undefined> {
   requireActor(r.owner, false, r.scope);
   h4TicketObservations();
   if (!("proposal" in r.request)) {
+    const directScope = h4DirectReceiptScope(r.request);
+    if (!directScope) return undefined;
+    receiptStates.delete(r.commandKey);
+    notify();
     try {
-      const directScope = h4DirectReceiptScope(r.request);
-      if (!directScope) return undefined;
-      const state = await fetchDirectCommandReceipt(directScope, r.commandKey, r.owner);
+      const receipt = await fetchDirectCommandReceiptDetails(directScope, r.commandKey, r.owner);
+      const { state } = receipt;
       const original = pendingH4Commands().find(row => row.commandKey === r.commandKey);
       if (!original) return undefined;
+      receiptStates.set(r.commandKey, state);
       if (state === "SUCCEEDED") {
         markH4Read(resourceOf(original.scope), false);
         retain({ ...original, acknowledged: true });
       } else if (state === "REJECTED" || state === "NOT_EXECUTED") {
-        markH4Read(resourceOf(original.scope), false);
+        if (state === "REJECTED" && isHGrowthReadConflict(h4ReceiptRejection(receipt))) markH4Read(resourceOf(original.scope), false);
         forget(original);
       }
+      return { receipt };
     }
-    catch { /* Keep the existing overview read available when the auxiliary receipt query fails. */ }
-    return undefined;
+    finally { notify(); }
+  }
+  if (explicit) {
+    receiptStates.delete(r.commandKey);
+    notify();
   }
   const ticket = await fetchA2ProposalByKey(r.commandKey, true);
   requireActor(r.owner, false, r.scope);
   if (ticket) {
     checkTicket(r, ticket);
+    receiptStates.delete(r.commandKey);
     observations.delete(r.commandKey);
     for (const [key, old] of observations) if (old.obj === ticket.obj && old.operationCode === ticket.operationCode) observations.delete(key);
     if (ticket.status !== "pending") markH4Read(resourceOf(r.scope), false);
     if (ticket.status === "pending") { retain({ ...r, acknowledged: true }); observations.set(r.commandKey, ticket); }
     else forget(r);
     notify();
+  } else if (explicit) {
+    receiptStates.set(r.commandKey, "NOT_FOUND");
+    notify();
   }
-  return ticket;
+  return { ticket };
 }
 
-export async function releaseExpiredH4Proposal(r: H4Command) {
-  if (!("proposal" in r.request) || !isRetryExpired(r) || await queryH4Command(r) !== null) throw new Error("H4_ORIGINAL_NOT_RELEASABLE");
-  forget(r);
+export function h4ReceiptRejection(receipt: DirectCommandReceipt) {
+  if (receipt.state === "NOT_EXECUTED") return new PendingConfirmRejected("原操作未执行，你填的内容没有提交。");
+  if (receipt.state !== "REJECTED") return;
+  const code = receipt.businessMessage;
+  return new PendingConfirmRejected(code ? formatAdminApiError(code, "") : "原操作已被拒绝，你填的内容没有提交。", code);
 }
-export function canRetryH4Command(r: H4Command) {
-  if (r.acknowledged || isRetryExpired(r)) return false;
-  try { requireActor(r.owner, true, r.scope); return true; } catch { return false; }
+
+export const h4CommandLookupState = (record: H4Command) => receiptStates.get(record.commandKey);
+
+export function h4WheelGuardAmplifies(key: string, value: string, expectedValue?: string) {
+  const on = (text: string) => ["1", "true", "on", "enabled", "open", "开"].includes(text.trim().toLowerCase());
+  const amount = (text: string) => Number(text.replace(/[$,\s]/g, ""));
+  return key === "kill" ? on(value) && (expectedValue === undefined || !on(expectedValue))
+    : key === "budget" && amount(value) > (expectedValue === undefined ? 0 : amount(expectedValue));
+}
+
+export function h4RetryBlockedReason(r: H4Command): string | undefined {
+  if (isRetryExpired(r)) return RETRY_EXPIRED_TEXT;
+  if (r.acknowledged) return "请查询原结果";
+  try { requireActor(r.owner, true, r.scope); } catch { return "没有这项修改的权限"; }
+  if (isH4MediaCommand(r)) return;
+  const state = h4CommandLookupState(r);
+  if (state === "NOT_FOUND") return;
+  // 查到别的结论时说清是哪种，不说成「还没查」（OP-93：只有明确查不到才能重试）。
+  return state === "PROCESSING" ? "原操作还在处理，请稍后再查"
+    : state === "FAILED" ? "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起"
+    : state === "UNKNOWN" ? "系统也没有结果，重试也拿不到新结果"
+    : "先查询原结果，明确查不到后才能重试";
+}
+
+export function h4PendingConfirmRecovery(record: H4Command | undefined, onSucceeded: () => Promise<void>, onRejected?: (error: PendingConfirmRejected) => Error) {
+  if (!record) return;
+  return {
+    expiresAt: record.expiresAt,
+    blockedReason: h4RetryBlockedReason(record),
+    query: isH4MediaCommand(record) ? undefined : async () => {
+      const result = await queryH4Command(record, true);
+      if (!result) return;
+      if ("ticket" in result) { if (result.ticket) await onSucceeded(); return; }
+      const rejection = h4ReceiptRejection(result.receipt);
+      if (rejection) throw onRejected?.(rejection) ?? rejection;
+      if (result.receipt.state === "SUCCEEDED") await onSucceeded();
+    },
+  };
 }
 async function send(r: H4Command, recovery: boolean): Promise<Record<string, any> | H4ApprovalReceipt> {
   requireActor(r.owner, true, r.scope);
@@ -374,7 +429,7 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
       if (recovery || isHGrowthReadConflict(error)) markH4Read(resourceOf(r.scope), false);
       throw error;
     }
-    throw new OutcomeUnknownError("H4_RESULT_UNKNOWN");
+    throw new OutcomeUnknownError("proposal" in r.request ? "H4_PROPOSAL_RESULT_UNKNOWN" : "H4_RESULT_UNKNOWN");
   }
   retain({ ...r, acknowledged: true, ...(raffleReceipt ? { raffleReceipt } : {}), ...(media ? { asset: result as UploadedAsset } : {}) });
   if (media) {
@@ -386,16 +441,23 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
   }
   markH4Read(resourceOf(r.scope), false);
   if ("proposal" in r.request) {
-    const ticket = await queryH4Command({ ...r, acknowledged: true });
-    if (!ticket) throw new OutcomeUnknownError("H4_APPROVAL_STATUS_UNKNOWN");
-    return { h4Approval: true, ticket };
+    const result = await queryH4Command({ ...r, acknowledged: true });
+    if (!result || !("ticket" in result) || !result.ticket) throw new OutcomeUnknownError("H4_APPROVAL_STATUS_UNKNOWN");
+    return { h4Approval: true, ticket: result.ticket };
   }
   return result;
 }
 export async function retryH4Command(original: H4Command) {
   const r = pendingH4Commands().find(item => item.commandKey === original.commandKey);
   if (!r) throw new Error("H4_ORIGINAL_RESOLVED");
-  if ("proposal" in r.request) { const ticket = await queryH4Command(r); if (ticket) return { h4Approval: true, ticket } as H4ApprovalReceipt; }
+  const blocked = h4RetryBlockedReason(r);
+  if (blocked) throw new Error(blocked);
+  receiptStates.delete(r.commandKey);
+  notify();
+  if ("proposal" in r.request) {
+    const result = await queryH4Command(r);
+    if (result && "ticket" in result && result.ticket) return { h4Approval: true, ticket: result.ticket } as H4ApprovalReceipt;
+  }
   return send(r, true);
 }
 export async function submitH4Proposal(scope: string, proposal: Proposal, form?: Record<string, string>, editValue?: string) {
@@ -411,7 +473,7 @@ export async function submitH4Proposal(scope: string, proposal: Proposal, form?:
 
 /** Direct request bodies stay byte-for-byte unchanged. Only a known growth
  * direction or the backend's explicit approval rejection switches to A2. */
-export async function h4CommandRequest(path: string, init: Omit<Direct, "path">, action: string, approval = false): Promise<Record<string, any>> {
+export async function h4CommandRequest(path: string, init: Omit<Direct, "path">, action: string, approval = false, opened?: unknown): Promise<Record<string, any>> {
   const actor = useAdminAuth.getState().session;
   if (!actor) throw new Error("ADMIN_AUTH_REQUIRED");
   const body = JSON.parse(init.body), scope = h4Scope(path, body), parts = path.split("/").map(decodeURIComponent);
@@ -426,18 +488,10 @@ export async function h4CommandRequest(path: string, init: Omit<Direct, "path">,
     op = parts[3] ? "h4_wheel_guard_update" : "h4_wheel_guard_create";
     values = parts[3] ? { guardKey: key, value: body.value, expectedValue: body.expectedValue }
       : { guardKey: key, guardLabel: body.guardLabel, guardValue: body.guardValue, note: body.note ?? "" };
-    const on = (v: string) => ["1", "true", "on", "enabled", "open", "开"].includes(v.trim().toLowerCase());
-    const number = (v: string) => Number(v.replace(/[$,\s]/g, ""));
-    approval = approval || (key === "kill" ? on(body.value ?? body.guardValue) && (!parts[3] || !on(body.expectedValue))
-      : key === "budget" && number(body.value ?? body.guardValue) > (parts[3] ? number(body.expectedValue) : 0));
+    approval = approval || h4WheelGuardAmplifies(key, body.value ?? body.guardValue, parts[3] ? body.expectedValue : undefined);
   } else if (parts[2] === "events" && ["reward", "status"].includes(parts[4])) {
     op = parts[4] === "reward" ? "h4_legacy_event_reward_update" : body.value === "ongoing" ? "h4_legacy_event_open" : undefined;
     values = { eventCode: parts[3], value: body.value, expectedValue: body.expectedValue };
-    if (op === "h4_legacy_event_open" && !approval) {
-      const preview = await growthRequest<{ approvalRequired: boolean }>(`${path}/preview`, { method: "POST", body: init.body });
-      if (!preview || typeof preview.approvalRequired !== "boolean") throw new Error("H4_RESPONSE_INVALID");
-      approval = preview.approvalRequired;
-    }
   } else if (parts[2] === "wheel-tiers" && parts[4] !== "retire") {
     op = parts[3] === "probabilities" ? "h4_wheel_probabilities_update" : init.method === "DELETE" ? "h4_wheel_tier_delete" : init.method === "POST" ? "h4_wheel_tier_create" : "h4_wheel_tier_update";
     if (parts[3] === "probabilities") values = { probabilities: Object.fromEntries(Object.entries(body.probabilities).map(([k, v]) => [k, String(v)])), expectedSignature: body.expectedSignature };
@@ -457,10 +511,10 @@ export async function h4CommandRequest(path: string, init: Omit<Direct, "path">,
   const now = Date.now();
   try {
     return await send({ store: "direct", owner: actor.adminId, scope, fingerprint: `${actor.adminId}:${scope}`, commandKey: createA2CommandKey("h4-direct"),
-      createdAt: now, expiresAt: now + 86400000, action, reason: body.reason, request: { ...init, path } }, false);
+      createdAt: now, expiresAt: now + 86400000, action, reason: body.reason, request: { ...init, path }, opened }, false);
   } catch (error) {
     if (op && rejected(error, false) && (error as { reasonCode?: string }).reasonCode === "H4_APPROVAL_REQUIRED") {
-      throw new HApprovalRequired((error as Error).message, { path, ...init, action }, () => h4CommandRequest(path, init, action, true));
+      throw new HApprovalRequired((error as Error).message, { path, ...init, action }, () => h4CommandRequest(path, init, action, true, opened));
     }
     throw error;
   }

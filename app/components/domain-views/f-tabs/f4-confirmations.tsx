@@ -7,7 +7,6 @@ import { ambassadorBucketLabel } from "@/lib/admin/f4-ambassador-display";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
-import { decimalText } from "./f4-shared";
 import { f4Decimal, f4HeadCapAmplifies, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrizes } from "@/lib/admin/f4-money";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
@@ -250,8 +249,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     title: board.paused ? "恢复排行榜" : "暂停排行榜", effect: approvalTag(),
     confirmTone: board.paused ? "primary" : "danger", confirmLabel: board.paused ? "提交恢复" : "提交暂停",
     statedBrief: board.paused ? {
-      impact: "批准后四个榜重新实时更新，之后到期的日、周、月榜照常自动派奖。暂停期间跳过的周期恢复后不会补发。",
-      check: "已经在实时运行时会被拒绝。暂停时保存的快照留作历史。",
+      impact: "批准后四个榜恢复更新，之后到期的日、周、月榜照常自动派奖。暂停期间跳过的周期恢复后不会补发。",
+      check: "榜单已在运行时会被拒绝。暂停时保存的快照留作历史。",
     } : {
       impact: "批准后四个榜停在暂停那一刻的名次；暂停期间到期的日、周、月榜自动派奖不发，恢复后也不会补发；总榜派奖不能提交。团队激励池照常结算。",
       check: "已经暂停时会被拒绝；保存四个榜的快照失败时整次不生效。",
@@ -397,8 +396,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       coverageLead: "批准会开通一笔预算额度",
       coverageCheck: "批准执行时还会检查兑付覆盖率，读不到也不执行。",
       facts: <Facts>
-        <Fact k="申请金额" lead tone="role-1" unit="USDT">{decimalText(packet!.budgetUsdt)}</Fact>
-        <Fact k="认可金额">{packet!.financeReview.recognizedBudgetUsdt == null ? "尚未认可" : `${decimalText(packet!.financeReview.recognizedBudgetUsdt)} USDT`}</Fact>
+        <Fact k="申请金额" lead tone="role-1" unit="USDT">{moneyText(packet!.budgetUsdt)}</Fact>
+        <Fact k="认可金额">{packet!.financeReview.recognizedBudgetUsdt == null ? "尚未认可" : `${moneyText(packet!.financeReview.recognizedBudgetUsdt)} USDT`}</Fact>
         <Fact k="类别">{ambassadorBucketLabel(packet!.bucket)}</Fact>
         <Fact k="材料">第 {packet!.materialRevision} 版 · 业务核验和财务核验都已通过</Fact>
       </Facts>,

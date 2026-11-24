@@ -1,4 +1,5 @@
 import { isDeterministicRejection } from "./outcome-classification";
+import { ConfirmReadConflict } from "./h-conflict-review";
 
 /** Exact backend CAS refusals; ordinary validation, permissions and locks do not invalidate a read. */
 const READ_CONFLICTS = new Set([
@@ -12,4 +13,9 @@ const READ_CONFLICTS = new Set([
 export function isHGrowthReadConflict(error: unknown) {
   const e = error as { status?: number; apiCode?: number; reasonCode?: string; backendMessage?: string; unknownOutcome?: boolean; bodyUnreadable?: boolean } | null;
   return !!e && isDeterministicRejection(e.status ?? 0, e.apiCode) && !e.unknownOutcome && !e.bodyUnreadable && READ_CONFLICTS.has(e.reasonCode ?? e.backendMessage ?? "");
+}
+
+export function isH4ReadConflict(error: unknown) {
+  if (error instanceof ConfirmReadConflict) return false;
+  return isHGrowthReadConflict(error) || error instanceof Error && error.message === "H4_REFRESH_REQUIRED";
 }
