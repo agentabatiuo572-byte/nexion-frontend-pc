@@ -926,7 +926,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
           <div><span>当前统计期活跃 · 当前</span><CountValue count={current.activity.active} coverage={[current.activity.status, current.activity.window.status]} label="当前统计期活跃" onClick={() => change({ view: "ACTIVITY", filter: "WINDOW_ACTIVE" })} /></div>
           {!legacyInFold && legacyFunds}
         </div>
-        {legacyInFold && <Fold inset title="按订单和付款记录统计" summary="口径和上面的客户入金不同"><div className="sa-metrics" aria-label="按订单和付款记录统计">{legacyFunds}</div></Fold>}
+        {legacyInFold && <Fold inset title="按订单和付款记录统计" summary={queryState.basis === "PERIOD_EVENT" ? "口径和上面的客户入金不同" : "口径和上面的累计业绩额不同"}><div className="sa-metrics" aria-label="按订单和付款记录统计">{legacyFunds}</div></Fold>}
         {queryState.view === "FINANCE" && <section className="sa-current-funds" aria-label="当前客户资金观测"><p>当前客户资金<Explain label="当前客户资金的说明" content="当前筛选客户的余额和提现，不受月份筛选；系统没有记下提现当时客户归谁。" /></p><div className="sa-inline-metrics">{(["balance", "successPrincipal", "successNet", "processingPrincipal"] as const).map(metric => {
           const amount = fundAmount(data.funds, metric, currency);
           return <div key={metric}><span>{fundLabels[metric]} / {nexGridBrandText(currency)}</span><Numeric kind="amount" value={amount.confirmed} observed={amount.observed} label={fundLabels[metric] + " " + nexGridBrandText(currency)} onClick={() => setFundMetric(metric)} /></div>;
