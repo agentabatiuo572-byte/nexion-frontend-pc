@@ -88,7 +88,8 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         : confirm?.statedBrief?.impact ?? legacy?.change ?? "—";
     return {
       key: original.commandKey,
-      line: ctx.f4QueryNotes[original.commandKey],
+      // 过期的原记录把原因常显在这一行（OP-126，和 I3 的恢复行一样），对应入口按禁用写同一句。
+      line: ctx.f4QueryNotes[original.commandKey] ?? (isRetryExpired(original) ? { tone: "warn", text: record.kind === "proposal" ? RETRY_EXPIRED_TEXT : "原请求超过 24 小时，不能再重试。查询只读取现在的规则，证明不了原操作有没有执行。" } : undefined),
       name: confirm?.name ?? legacy?.name ?? "调整区域大使申请规则",
       change,
       submittedAt: original.createdAt,
@@ -96,9 +97,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       expired: isRetryExpired(original),
       tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>
         : record.kind === "proposal" && record.original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
-          : isRetryExpired(original) ? <StatusTag tone="neutral" icon={Hourglass} explain={record.kind === "proposal"
-            ? RETRY_EXPIRED_TEXT
-            : "原请求超过 24 小时，不能再重试。查询只读取现在的规则，证明不了原操作有没有执行。"}>已过期</StatusTag>
+          : isRetryExpired(original) ? <StatusTag tone="neutral" icon={Hourglass}>已过期</StatusTag>
             : unknownTag(record.kind === "proposal" ? "approval" : "direct"),
       actions: <>
         <Button size="sm" onClick={() => {
@@ -117,7 +116,8 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       change: `材料第 ${record.input.expectedMaterialRevision} 版 · ${record.input.decision === "PASSED" ? "通过" : "需补材料"}`,
       submittedAt: record.createdAt,
       expired: isRetryExpired(record),
-      tag: isRetryExpired(record) ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，只能查询，不能再重试。">已过期</StatusTag> : unknownTag("direct"),
+      line: isRetryExpired(record) ? { tone: "warn" as const, text: "原请求超过 24 小时，只能查询，不能再重试。" } : undefined,
+      tag: isRetryExpired(record) ? <StatusTag tone="neutral" icon={Hourglass}>已过期</StatusTag> : unknownTag("direct"),
       actions: application
         ? <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>
         : <span className="f4-muted">申请不在最近 30 份里</span>,
