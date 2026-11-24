@@ -940,19 +940,18 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openCreateWheelGuard = () => {
-    // 后端 createWheelGuard：预算必须大于 0，新建预算护栏一律要批准，选了类型就能说；开关填「开」要批准、填「关」立即生效，没填值还说不准。
-    const approval = (draft: BusinessFormValue) => {
-      const value = draft.guardValue?.trim() ?? "";
-      if (draft.guardKey === "kill" && ["开", "关", "on", "off", "true", "false"].includes(value)) return h4WheelGuardAmplifies("kill", value);
-      if (draft.guardKey === "budget") return true;
-    };
+    // 后端 createWheelGuard：预算必须大于 0，新建预算护栏一律要批准，选了类型就能说；开关选「开」要批准、选「关」立即生效。
+    const approval = (draft: BusinessFormValue) => draft.guardKey === "budget" ? true
+      : draft.guardKey === "kill" && draft.killValue ? h4WheelGuardAmplifies("kill", draft.killValue) : undefined;
+    // 开关还没选开或关：两条路都写出来，和调预算框的「调低立即生效 / 调高要批准」同一写法。
+    const killEither = <><StatusTag tone="progress" filled>关立即生效</StatusTag><StatusTag tone="neutral" explain="选「开」要另一位超级管理员（需有审批批准权限）批准，批准前转盘不变；选「关」确认后立即生效。">开要批准</StatusTag></>;
     openActionConfirm({ briefKind: "config",
       action: "新建转盘安全限制",
       title: "新建转盘护栏",
-      statedBrief: { impact: "建好后转盘按它拦真钱奖：开关关着或当天超预算，改发 UVT 安慰奖。", check: "核对护栏类型和值：预算填 USDT 金额，开关填开或关。" },
-      effect: draft => wheelEffect(approval(draft), "转盘"),
+      statedBrief: { impact: "建好后转盘按它拦真钱奖：开关关着或当天超预算，改发 UVT 安慰奖。", check: "核对护栏类型和值：预算填 USDT 金额，开关选开或关。" },
+      effect: draft => draft.guardKey === "kill" && !draft.killValue ? killEither : wheelEffect(approval(draft), "转盘"),
       detail: <>每种护栏只能建一条。</>,
-      facts: (_value, draft) => draft && approval(draft) ? <Facts><ApprovalFact amplify="这次修改" object="转盘" /></Facts> : null,
+      facts: (_value, draft) => draft && approval(draft) ? <Facts><ApprovalFact amplify="新建" object="转盘" /></Facts> : null,
       confirmLabelForValue: (_value, draft) => draft && approval(draft) ? "提交审批" : "确认提交",
       reasonPlaceholder: "例如：上线前补齐转盘护栏",
       businessForm: {
@@ -960,7 +959,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         fields: [
           { key: "guardKey", label: "护栏类型", current: "", inputKind: "select", mustChoose: true, options: ["budget", "kill"], optionLabels: { budget: "每日真钱奖预算", kill: "真钱奖发放开关" }, required: true, help: "每种只能有一条；各奖档每日库存由奖项自己的库存决定，不在这里建" },
           { key: "guardLabel", label: "名称", current: "", placeholder: "如 奖池预算", required: true },
-          { key: "guardValue", label: "值", current: "", placeholder: "预算填数字（USDT），开关填 开 或 关", required: false },
+          // 值按护栏类型分开填：预算是数字，开关只能选开或关（后端把认不出的文字当成关）。
+          { key: "budgetValue", label: "每日预算", current: "", placeholder: "如 200", inputKind: "number", min: 0.01, max: 1_000_000_000, step: 0.01, required: true, help: "大于 0，最多两位小数，单位 USDT", visibleWhen: { key: "guardKey", equals: "budget" } },
+          { key: "killValue", label: "真钱奖发放", current: "", inputKind: "select", mustChoose: true, options: ["开", "关"], required: true, visibleWhen: { key: "guardKey", equals: "kill" } },
           { key: "note", label: "备注", current: "", placeholder: "如 单日真钱奖上限", required: false },
         ],
       },
@@ -969,7 +970,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         const payload = {
           guardKey: String(bv.guardKey || "").trim(),
           guardLabel: String(bv.guardLabel || "").trim(),
-          guardValue: String(bv.guardValue || "").trim(),
+          guardValue: String((bv.guardKey === "budget" ? bv.budgetValue : bv.guardKey === "kill" ? bv.killValue : "") || "").trim(),
           note: String(bv.note || "").trim(),
         };
         if (!payload.guardKey || !payload.guardLabel) return;
@@ -1196,7 +1197,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         ? <>删除后至少还要保留 2 个奖项。</>
         : <>请先在「改奖池 / 概率」把这个奖项的概率调成 0%，再删除。</>,
       facts: tierFacts(tier, needsApproval ? <ApprovalFact amplify="这次删除会让 UVT 安慰奖变多，" object="奖池" /> : null),
-      confirmLabel: "删除奖项",
+      confirmLabel: needsApproval ? "提交审批" : "删除奖项",
       confirmTone: "danger",
       reasonPlaceholder: "例如：这一档已下线，按工单删除",
       getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
