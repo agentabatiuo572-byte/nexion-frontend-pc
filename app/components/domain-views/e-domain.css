@@ -860,6 +860,7 @@
 .e1-page .rd-toolbar { justify-content: space-between; }
 .e1-product-actions > .rd-iconbtn, .e1-table-actions > .rd-iconbtn { width: var(--rd-control-h-sm); height: var(--rd-control-h-sm); }
 .e1-page :is(.e1-plan-table, .e1-phase-table) { table-layout: fixed; width: 100%; min-width: 0; }
+.e1-phase-table td > .rd-cell { max-width: none; }  /* 门槛说明、商品标签用满列宽再省略，全文在格子提示里（ST-04） */
 .e1-page :is(.e1-plan-table, .e1-phase-table) :is(th, td) { min-width: 0; white-space: normal; }
 .e1-plan-table :is(th, td):first-child { width: 30%; }
 .e1-plan-table :is(th, td):nth-child(2) { width: 14%; }
