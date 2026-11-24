@@ -24,8 +24,9 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const reason = pendingReason ?? draftReason;
   const [value, setValue] = useState(() => (req.freezePendingInput ? req.getPendingValue?.() : undefined) ?? req.initialInputValue ?? "");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [readConflict, setReadConflict] = useState<ConfirmReadConflict | null>(null);
+  const rejection = req.initialRejection;
+  const [error, setError] = useState(() => rejection && !(rejection instanceof ConfirmReadConflict && rejection.review) ? displayAdminError(rejection) : null);
+  const [readConflict, setReadConflict] = useState<ConfirmReadConflict | null>(() => rejection instanceof ConfirmReadConflict ? rejection : null);
   const [readingConflict, setReadingConflict] = useState(false);
   // 刚打开不报错：字数不够等失焦或点过提交才用警告色（DP-06）。
   const [attempted, setAttempted] = useState(false);

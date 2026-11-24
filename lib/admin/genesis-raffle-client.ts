@@ -92,9 +92,9 @@ export async function fetchAdminRaffles(isCurrent: () => boolean) {
   const saved = readbacks.some(({ id }) => details.get(id) != null);
   return { rows, missing, advanced, saved };
 }
-export async function saveAdminRaffle(draft: RaffleDraft, revision: number | null, enabled: boolean, reason: string, opening = revision !== null && enabled): Promise<AdminRaffle | H4ApprovalReceipt> {
+export async function saveAdminRaffle(draft: RaffleDraft, revision: number | null, enabled: boolean, reason: string, opening = revision !== null && enabled, opened?: AdminRaffle | null): Promise<AdminRaffle | H4ApprovalReceipt> {
   return h4CommandRequest(`/genesis-raffle${revision === null ? "" : `/${encodeURIComponent(draft.id)}`}`, {
     method: revision === null ? "POST" : "PATCH",
     body: JSON.stringify({ ...draft, ...(revision === null ? {} : { expectedRevision: revision, enabled }), reason }),
-  }, `保存抽奖配置 · ${draft.titleZh}`, opening) as Promise<AdminRaffle | H4ApprovalReceipt>;
+  }, `保存抽奖配置 · ${draft.titleZh}`, opening, opened) as Promise<AdminRaffle | H4ApprovalReceipt>;
 }

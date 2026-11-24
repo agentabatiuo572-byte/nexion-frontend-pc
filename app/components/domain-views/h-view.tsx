@@ -80,7 +80,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "H9" && <H9PublicStats ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal key={mc.formKey} initialReason={mc.initialReason} briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} initialReason={mc.initialReason} initialRejection={mc.initialRejection} briefKind={mc.briefKind}
           action={mc.action}
           title={mc.title}
           detail={mc.detail}

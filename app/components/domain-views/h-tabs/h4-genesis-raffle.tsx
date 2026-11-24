@@ -2,21 +2,21 @@
 
 import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
-import { ConfirmReadConflict, hConflictFields, type HConflictField } from "@/lib/admin/h-conflict-review";
+import { ConfirmReadConflict, hConflictFields, type HConflictField, type PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import { compareH3Decimal, h3Decimal } from "@/lib/admin/h3-contract";
 import { isH4ReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Plus, Ticket, Trash2, Trophy } from "lucide-react";
 import type { HCtx } from "./types";
-import { fetchAdminRaffle, fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, RAFFLE_SAVE_PENDING, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification } from "@/lib/admin/h4-mutations";
+import { fetchAdminRaffle, fetchAdminRaffles, parseAdminRaffle, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, RAFFLE_SAVE_PENDING, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Steps } from "@/app/components/rd";
 import { amountText, formatTime } from "./h4-promotion-ui";
-import { ApprovalFact, h4ReadConflict, H4StaleNote, effectApproval, effectDirect } from "./h4-legacy-parts";
+import { ApprovalFact, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL, effectApproval, effectDirect } from "./h4-legacy-parts";
 import { H4ConflictCompare, h4ConflictGroups, type H4CompareSection, type H4ConflictGroup } from "./h4-conflict-compare";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 
@@ -91,7 +91,7 @@ export function useH4RaffleReadback(ctx: HCtx) {
   return { read, operator, rows, loading, error, setError, readFailed, setReadFailed, draftReset, load, isActive };
 }
 
-export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: { ctx: HCtx; readback: ReturnType<typeof useH4RaffleReadback>; onApprovalCompleted?: () => Promise<void> }) {
+export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, reopenRejected }: { ctx: HCtx; readback: ReturnType<typeof useH4RaffleReadback>; onApprovalCompleted?: () => Promise<void>; reopenRejected: RefObject<H4ReopenRejected | null> }) {
   const { read, operator, rows, loading, error, setError, readFailed, setReadFailed, draftReset, load, isActive } = readback;
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [base, setBase] = useState<AdminRaffle | null>(null), [draft, setDraft] = useState<RaffleDraft | null>(null);
@@ -118,12 +118,13 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
   };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const saveBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0));
-  const save = () => {
-    const savedDraft = draft, previous = base, nextEnabled = !!base && enabled;
+  const save = (restored?: { base: AdminRaffle | null; draft: RaffleDraft; enabled: boolean; rejection: PendingConfirmRejected; originalKnown: boolean }) => {
+    const previous = restored ? restored.base : base, savedDraft = restored?.draft ?? draft;
+    const nextEnabled = restored?.enabled ?? (!!base && enabled);
     if (savedDraft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${savedDraft.id}`)) return;
     setReadFailed(false);
-    if (!savedDraft || !write || saving || saveBlocked || conflictFields) return;
-    const invalid = raffleDraftError(savedDraft, requiredLanguages); if (invalid) { setError(invalid); return; }
+    if (!savedDraft || !write || !restored && (saving || saveBlocked || conflictFields)) return;
+    const invalid = !restored && raffleDraftError(savedDraft, requiredLanguages); if (invalid) { setError(invalid); return; }
     const opening = nextEnabled && previous?.status === "DRAFT";
     const closing = !nextEnabled && previous?.status === "OPEN";
     const readVersion = h4ReadVersion("raffles");
@@ -137,7 +138,12 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
         ctx.openActionConfirm(null);
         return;
       }
-      if (!latest) throw new ConfirmReadConflict(undefined, "最新读取里没有这一期");
+      if (!latest) throw new ConfirmReadConflict(undefined, restored ? H4_MISSING_ORIGINAL : "最新读取里没有这一期");
+      if (restored && !restored.originalKnown) {
+        choose(latest); setDraft(savedDraft); setEnabled(nextEnabled);
+        setError(displayAdminError(restored.rejection)); ctx.openActionConfirm(null);
+        return;
+      }
       setBase(latest); setDraft(savedDraft); setEnabled(nextEnabled);
       const comparable = (value: RaffleDraft, enabled: boolean) => ({ ...value,
         prizes: Object.fromEntries(value.prizes.map(prize => [prizeKey(prize.id), prize])), enabled });
@@ -146,15 +152,16 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
       setStale(savedDraft.titleZh || savedDraft.id);
       ctx.openActionConfirm(null);
     });
+    const rejected = (error: PendingConfirmRejected) => isH4ReadConflict(error) ? rereadConflict() : error;
     let originalKey: string | undefined;
     const pending = () => originalKey ? pendingH4Commands().find(record => record.commandKey === originalKey) : h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`);
-    ctx.openActionConfirm({ getPendingReason: () => pending()?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
+    ctx.openActionConfirm({ formKey: restored ? 0 : undefined, initialRejection: restored && (restored.originalKnown ? rejected(restored.rejection) : rereadConflict()), getPendingReason: () => pending()?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
       getPendingRecovery: () => h4PendingConfirmRecovery(pending(), async () => {
         if (opening) await onApprovalCompleted?.();
         if (!await load(false, true)) throw new Error("已保存，但没读到最新数据");
         ctx.openActionConfirm(null);
       },
-        error => isH4ReadConflict(error) ? rereadConflict() : error),
+        rejected),
       title: opening ? "开放抽奖报名" : closing ? "关闭报名回草稿" : previous ? "保存抽奖配置" : "保存抽奖草稿",
       effect: opening ? effectApproval("这一期") : effectDirect,
       detail: <>本期共 {seats(savedDraft.prizes)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
@@ -199,7 +206,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
             const problem = raffleDraftError(savedDraft, required);
             if (problem) throw new Error(problem);
             const submitted = raffleLocalizedDraft(savedDraft, required, "submit");
-            result = await saveAdminRaffle(submitted, previous?.revision ?? null, nextEnabled, reason, opening);
+            result = await saveAdminRaffle(submitted, previous?.revision ?? null, nextEnabled, reason, opening, previous);
           }
           await complete(result);
         } catch (cause) {
@@ -222,6 +229,25 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
       },
     });
   };
+  useLayoutEffect(() => {
+    reopenRejected.current = async (record, rejection, closeRetry) => {
+      if (!write || "proposal" in record.request) return false;
+      const body = JSON.parse(record.request.body) as RaffleDraft & { enabled?: boolean; expectedRevision?: number };
+      const { id, titleZh, titleEn, titleVi, startsAt, drawAt, prizes } = body;
+      const creating = record.request.method === "POST";
+      const saved = record.opened ? parseAdminRaffle(record.opened) : base;
+      const opened = saved?.id === id && saved.revision === body.expectedRevision ? saved : undefined;
+      const previous = creating ? null : opened ?? rows.find(row => row.id === id) ?? await fetchAdminRaffle(id);
+      if (!isActive() || !creating && !previous) return false;
+      const draft = raffleLocalizedDraft({ id, titleZh, titleEn, titleVi, startsAt, drawAt, prizes }, requiredLanguages, "edit");
+      const enabled = body.enabled === true;
+      closeRetry();
+      choose(previous); setDraft(draft); setEnabled(enabled);
+      save({ base: previous, draft, enabled, rejection, originalKnown: creating || previous?.revision === body.expectedRevision });
+      return true;
+    };
+    return () => { reopenRejected.current = null; };
+  });
   const close = () => { setConflictFields(null); setDraft(null); setBase(null); setError(""); };
   // 三方对比：奖项逐项逐字段列，名称、金额、名额原样写，不舍入。
   const review = base && draft ? conflictFields : null;

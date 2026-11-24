@@ -37,7 +37,9 @@ export type H4Command = H4StoredCommand & {
   uploadTarget?: H4UploadTarget;
   restoration?: H4UploadRestoration;
   commandOrigin?: FundCommandOrigin;
+  opened?: unknown;
 };
+export type H4ReopenRejected = (record: H4Command, cause: PendingConfirmRejected, closeRetry: () => void) => Promise<boolean>;
 export type H4ApprovalReceipt = { h4Approval: true; ticket: A2OperationRow };
 export const isH4ApprovalReceipt = (value: unknown): value is H4ApprovalReceipt => !!(value as H4ApprovalReceipt | null)?.h4Approval;
 export const H4_APPROVAL_OPS = new Set([
@@ -452,7 +454,7 @@ export async function submitH4Proposal(scope: string, proposal: Proposal, form?:
 
 /** Direct request bodies stay byte-for-byte unchanged. Only a known growth
  * direction or the backend's explicit approval rejection switches to A2. */
-export async function h4CommandRequest(path: string, init: Omit<Direct, "path">, action: string, approval = false): Promise<Record<string, any>> {
+export async function h4CommandRequest(path: string, init: Omit<Direct, "path">, action: string, approval = false, opened?: unknown): Promise<Record<string, any>> {
   const actor = useAdminAuth.getState().session;
   if (!actor) throw new Error("ADMIN_AUTH_REQUIRED");
   const body = JSON.parse(init.body), scope = h4Scope(path, body), parts = path.split("/").map(decodeURIComponent);
@@ -498,10 +500,10 @@ export async function h4CommandRequest(path: string, init: Omit<Direct, "path">,
   const now = Date.now();
   try {
     return await send({ store: "direct", owner: actor.adminId, scope, fingerprint: `${actor.adminId}:${scope}`, commandKey: createA2CommandKey("h4-direct"),
-      createdAt: now, expiresAt: now + 86400000, action, reason: body.reason, request: { ...init, path } }, false);
+      createdAt: now, expiresAt: now + 86400000, action, reason: body.reason, request: { ...init, path }, opened }, false);
   } catch (error) {
     if (op && rejected(error, false) && (error as { reasonCode?: string }).reasonCode === "H4_APPROVAL_REQUIRED") {
-      throw new HApprovalRequired((error as Error).message, { path, ...init, action }, () => h4CommandRequest(path, init, action, true));
+      throw new HApprovalRequired((error as Error).message, { path, ...init, action }, () => h4CommandRequest(path, init, action, true, opened));
     }
     throw error;
   }

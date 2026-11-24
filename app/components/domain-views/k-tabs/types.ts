@@ -1,3 +1,4 @@
+import type { ConfirmReadConflict, PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import type { ReactNode } from "react";
 import type { K4PaginationQuery, KRiskActions, KRiskData, KRiskOverviewQuery, MultiAccountOverview, ScoringOverview } from "@/lib/admin/k-client";
 import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, InlineOperationApproval, OperationApproval, OperatorBriefKind, PendingConfirmRecovery } from "../design-kit";
@@ -5,6 +6,7 @@ import type { ToastKind } from "@/lib/store/ui";
 
 export type ActionConfirmReq = {
   initialReason?: string;
+  initialRejection?: ConfirmReadConflict | PendingConfirmRejected;
   action: ReactNode;
   /** 框上写的短标题，只写动作和对象；action 照旧是记进操作记录的名字（VS-101）。 */
   title?: ReactNode;
@@ -69,6 +71,7 @@ export type ConfirmReq = {
   /** Editable input restored only after the operator reviews a rejected first attempt. */
   initialInputValue?: string;
   initialReason?: string;
+  initialRejection?: ConfirmReadConflict | PendingConfirmRejected;
   formKey?: number;
   /** Opt-in for domains retaining the complete request after an unknown result. */
   freezePendingInput?: boolean;

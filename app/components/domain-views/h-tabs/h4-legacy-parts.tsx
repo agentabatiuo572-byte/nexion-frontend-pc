@@ -16,6 +16,7 @@ import { amountText, formatTime } from "./h4-promotion-ui";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
+export const H4_MISSING_ORIGINAL = "最新列表里已没有这个对象，你填的内容没有提交。";
 export const h4ReadConflict = (readLatest: () => Promise<void>) =>
   new ConfirmReadConflict({ readLatest, renderNotice: action => <H4StaleNote readLatest={action} /> });
 

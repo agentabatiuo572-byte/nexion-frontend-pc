@@ -1,23 +1,23 @@
 "use client";
 
 import { fetchOperatingLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
-import { ConfirmReadConflict, hConflictFields, type HConflictField } from "@/lib/admin/h-conflict-review";
+import { ConfirmReadConflict, hConflictFields, type HConflictField, type PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import { isH4ReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { CalendarRange, CircleAlert, CircleCheck, Lock, Settings2, Sparkles } from "lucide-react";
 import type { HCtx } from "./types";
-import { fetchEventRules, fetchEventVouchers, updateEventRule, type EventRuleReadiness, type EventRuleView, type EventRuleChange, type EventVoucherOption } from "@/lib/admin/event-rules-client";
+import { fetchEventRules, fetchEventVouchers, parseEventRule, updateEventRule, type EventRuleReadiness, type EventRuleView, type EventRuleChange, type EventVoucherOption } from "@/lib/admin/event-rules-client";
 import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleMissingLabel, eventRuleReadiness, eventRegionText, parseEventRegions, type EventLocalizedContent } from "@/lib/admin/event-rule-form";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatTime } from "./h4-promotion-ui";
-import { ApprovalFact, h4ReadConflict, H4StaleNote, LOCALE_NAME, effectApproval, effectDirect, type LocaleCode } from "./h4-legacy-parts";
+import { ApprovalFact, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL, LOCALE_NAME, effectApproval, effectDirect, type LocaleCode } from "./h4-legacy-parts";
 import { H4ConflictCompare, h4ConflictGroups, type H4ConflictGroup } from "./h4-conflict-compare";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { amountDisplay } from "@/lib/format";
@@ -57,13 +57,14 @@ function rawParams(row: Pick<EventRuleView, "kind" | "rules">): Array<[string, s
   }
 }
 
-export default function H4EventRules({ ctx, eventContent, requiredLanguages = OPERATING_LANGUAGE_CODES, contentRefresh, onRowsChange, onApprovalCompleted }: {
+export default function H4EventRules({ ctx, eventContent, requiredLanguages = OPERATING_LANGUAGE_CODES, contentRefresh, onRowsChange, onApprovalCompleted, reopenRejected }: {
   ctx: HCtx;
   eventContent?: Record<string, EventLocalizedContent>;
   requiredLanguages?: readonly OperatingLanguageCode[];
   contentRefresh?: number;
   onApprovalCompleted?: () => Promise<void>;
   onRowsChange?: (rows: EventRuleView[] | null) => void;
+  reopenRejected: RefObject<H4ReopenRejected | null>;
 }) {
   const [ruleRows, setRuleRows] = useState<EventRuleView[] | null>(null);
   const rows = ruleRows ?? [];
@@ -123,12 +124,12 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
   }, []);
   const patchRule = (key: string, value: unknown) => setDraft(current => current ? { ...current, rules: { ...current.rules, [key]: value } } : current);
-  const save = () => {
-    const base = selected, input = draft;
+  const save = (restored?: { base: EventRuleView; draft: EventRuleChange; rejection: PendingConfirmRejected; originalKnown: boolean }) => {
+    const base = restored?.base ?? selected, input = restored?.draft ?? draft;
     if (base && confirmedH4Saves().some(record => record.scope === `H/h4_event_rule/${base.eventCode}`)) return;
-    if (!base || !input || saving || !canWrite || conflictFields) return;
+    if (!base || !input || !canWrite || !restored && (saving || conflictFields)) return;
     const next = { ...input, rules: { ...input.rules } };
-    if (base.kind === "regional") {
+    if (base.kind === "regional" && !restored) {
       const baseRegionText = eventRegionText(base.rules.regions);
       const baseRules = eventRuleDraftRules(base);
       const disableOnly = base.enabled && !next.enabled
@@ -201,18 +202,25 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       const values = await load(true);
       if (!values) throw new Error("玩法规则没有读到");
       const latest = values.find(row => row.eventCode === base.eventCode);
-      if (!latest) throw missingRule();
+      if (!latest) throw restored ? new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL) : missingRule();
+      if (restored && !restored.originalKnown) {
+        choose(latest); setDraft(next); setRegions(eventRegionText(next.rules.regions));
+        setError(displayAdminError(restored.rejection)); ctx.openActionConfirm(null);
+        return;
+      }
       compareLatest(latest);
     });
+    const rejected = (error: PendingConfirmRejected) => error.reasonCode === "EVENT_NOT_FOUND" || error.reasonCode === "EVENT_RULE_NOT_FOUND"
+      ? missingRule() : isH4ReadConflict(error) ? rereadConflict() : error;
     let originalKey: string | undefined;
     const pending = () => originalKey ? pendingH4Commands().find(record => record.commandKey === originalKey) : h4PendingFor(`H/h4_event_rule/${base.eventCode}`);
-    ctx.openActionConfirm({ getPendingReason: () => pending()?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
+    ctx.openActionConfirm({ formKey: restored ? 0 : undefined, initialRejection: restored && (restored.originalKnown ? rejected(restored.rejection) : rereadConflict()), getPendingReason: () => pending()?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
       getPendingRecovery: () => h4PendingConfirmRecovery(pending(), async () => {
         await onApprovalCompleted?.();
         if (!await load()) throw new Error("已保存，但没读到最新数据");
         ctx.openActionConfirm(null);
       },
-        error => error.reasonCode === "EVENT_NOT_FOUND" || error.reasonCode === "EVENT_RULE_NOT_FOUND" ? missingRule() : isH4ReadConflict(error) ? rereadConflict() : error),
+        rejected),
       title: firstOpen ? "开启玩法" : next.enabled ? "保存玩法配置" : "保存关闭状态",
       effect: firstOpen ? effectApproval("玩法") : effectDirect,
       detail: <>更新本活动的参与条件、奖励及有效期。{next.enabled ? "启用后符合条件的用户可参与；保存时会检查配置与奖励预算。" : "保存后活动保持关闭，不发放新奖励。"}</>,
@@ -256,7 +264,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
             }
             verifiedVersion = undefined;
           }
-          const saved = original ? await retryH4Command(original) : await updateEventRule(base.eventCode, next, base.revision, reason, firstOpen);
+          const saved = original ? await retryH4Command(original) : await updateEventRule(base.eventCode, next, base.revision, reason, firstOpen, base);
           await complete(saved);
         } catch (cause) {
           // 直接保存被判定要走审批：换成审批确认，内容和理由沿用（H-改走审批）。
@@ -282,6 +290,28 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       },
     });
   };
+  useLayoutEffect(() => {
+    reopenRejected.current = async (record, rejection, closeRetry) => {
+      if (!canWrite || "proposal" in record.request) return false;
+      const code = decodeURIComponent(record.request.path.split("/")[2]);
+      const body = JSON.parse(record.request.body) as EventRuleChange & { expectedRevision: number };
+      const saved = record.opened ? parseEventRule(record.opened) : selected;
+      const opened = saved?.eventCode === code && saved.revision === body.expectedRevision ? saved : undefined;
+      let base = opened ?? ruleRows?.find(row => row.eventCode === code);
+      if (!base) {
+        const values = await load(true);
+        if (!values) throw new Error("玩法规则没有读到");
+        base = values.find(row => row.eventCode === code);
+      }
+      if (operator !== currentAdminOperator() || !base) return false;
+      const draft = { enabled: body.enabled, startsAt: body.startsAt, endsAt: body.endsAt, rules: body.rules };
+      closeRetry();
+      choose(base); setDraft(draft); setRegions(eventRegionText(draft.rules.regions));
+      save({ base, draft, rejection, originalKnown: base.revision === body.expectedRevision });
+      return true;
+    };
+    return () => { reopenRejected.current = null; };
+  });
   const close = () => { setConflictFields(null); setSelected(null); setDraft(null); setError(""); };
   // 改过的地区名称含中文时写在框下，和保存时拦下的是同一句。
   const regionNameError = selected?.kind === "regional" && regions !== eventRegionText(selected.rules.regions)
