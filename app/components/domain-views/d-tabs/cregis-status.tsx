@@ -692,7 +692,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       <Stat tone={data && data.unresolvedExposureUsdt != null ? "role-2" : undefined} icon={Wallet} label="待处理资金"
         value={data && data.unresolvedExposureUsdt != null ? usdt(data.unresolvedExposureUsdt) : "—"} unit={data && data.unresolvedExposureUsdt != null ? "USDT" : undefined}
         sub={data ? `待处理回调 ${data.pendingAcceptedDeliveries ?? "—"} 笔` : undefined}
-        explain="还没入账或没处理完的链上到账（含待处理的回调），加上还没完成的提现，各网络合计。" />
+        explain="还没入账的链上收款、还没核对完的回调金额，加上还没完成的提现，各网络合计。" />
       <Stat tone={alertCount > 0 ? "danger" : undefined} icon={BellRing} label="未解除告警" value={data?.openRiskAlertCount != null ? String(data.openRiskAlertCount) : "—"} unit={data?.openRiskAlertCount != null ? "条" : undefined}
         explain="紧急和严重两级、还没解除的告警。告警不算进页头要处理的数，它可能和异常是同一件事。"
         onOpen={data ? () => setAlertsOpen(true) : undefined} openLabel={alertCount > 0 ? "查看告警" : "查看最近对账与告警"} />
@@ -1033,11 +1033,11 @@ function cregisCommandLabel(path: string) {
 
 type ConfirmFn = (spec: { kind: OperatorBriefKind; action: string; title: string; detail: string; path: string; body?: Record<string, unknown>; confirmLabel: string; danger?: boolean; effect: ReactNode; facts?: ReactNode; completion: string }) => void;
 
-type ReviewEvidence = ExceptionRow & { network: "BEP20" | "ERC20"; evidenceHash: string };
+type ReviewEvidence = ExceptionRow & { network: FundsNetwork; evidenceHash: string };
 
 function parseReviewEvidence(value: unknown, cid: string, network?: FundsNetwork): ReviewEvidence {
   const row = value && typeof value === "object" && !Array.isArray(value) ? value as ExceptionRow : null;
-  if (!row || (row.network !== "BEP20" && row.network !== "ERC20") || row.cid !== cid
+  if (!row || !(row.network === "BEP20" || row.network === "ERC20" || (network === "TRC20" && row.network === "TRC20")) || row.cid !== cid
       || typeof row.evidenceHash !== "string" || !/^[0-9a-f]{64}$/i.test(row.evidenceHash)
       || row.providerMatched !== true || row.chainMatched !== true) {
     throw new Error("收到的数据不完整，已停止显示");
