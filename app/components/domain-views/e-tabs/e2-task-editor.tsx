@@ -242,7 +242,7 @@ export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule,
           </Field>
           <div className="e2-weight-field">
             <Field label="权重" required hint="大于 0，整数最多 12 位，小数最多 6 位" error={shown("weight")}
-              explain={<><p>不是每单的钱，只决定这条任务在同等级启用任务里分得多还是少；同一条任务在不同商品、不同天拿到的钱不同。</p><p>参考值按时长和类型算，可以填别的数。</p></>}>
+              explain={<><p>不是每单的钱。派单时，这条任务和设备当时能接的其他启用任务按权重比例分收益，权重越高分得越多；同一条任务在不同商品、不同天拿到的钱不同。</p><p>参考值按时长和类型算，可以填别的数。</p></>}>
               <NumberInput min="0.000001" step={0.000001} value={draft.weight} disabled={saving} onChange={event => edit({ weight: event.target.value }, "weight")} onBlur={() => touch("weight")} />
             </Field>
             <div className="rd-form-help e2-editor-ref">{reference === null ? "填好时长后给出参考值" : <>参考值 <b>{formatWeight(reference)}</b>
