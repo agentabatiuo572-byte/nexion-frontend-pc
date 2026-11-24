@@ -1384,10 +1384,12 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
                   {numRow("smallAmountThresholdUsd")}
                   {numRow("payoutSlaHours")}
                 </ConfigList>
-                <h3 className="mt-5 mb-2 text-sm font-medium">提现地址保护</h3>
-                <ConfigList label="提现地址保护">
-                  {ADDRESS_PROTECTION_FIELDS.map(numRow)}
-                </ConfigList>
+                <div className="rd-config-group d5-address-protection">
+                  <h3 className="rd-config-group-title">提现地址保护</h3>
+                  <ConfigList label="提现地址保护">
+                    {ADDRESS_PROTECTION_FIELDS.map(numRow)}
+                  </ConfigList>
+                </div>
               </Panel>
             </div>
 
