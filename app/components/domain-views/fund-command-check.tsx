@@ -56,6 +56,11 @@ type Shown = { tone: StateTone; label: string; line: string; more?: string };
 /** 24 小时内重试原请求：后台对还在执行的返回「处理中」、对结果未知的返回「结果未知」，都不会再执行一次，也拿不到新结果。 */
 export const PROCESSING_LINE = "过一会儿再查询；现在重试不会重复执行，也拿不到新结果。";
 export const UNKNOWN_LINE = "系统也没有结果，重试也拿不到新结果；请按证据核查结案。";
+export function unsettledLookupStatus(state: "NOT_FOUND" | "PROCESSING", expired: boolean, where = "操作记录与审批"): Shown {
+  return state === "NOT_FOUND"
+    ? { tone: "warn", label: "没有查到", line: `查不到不等于没执行，先到${where}核对，不要另做一次。` }
+    : { tone: "progress", label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE };
+}
 const INTRO = "这些操作发出后没收到明确结果：直接生效的可能已经生效，走审批的可能已经提交了申请。先查询原结果；按原请求重试只会重发原内容，不会多做一次。有结果前，相关对象不能再操作。";
 
 /** 原请求是提交到「操作记录与审批」的申请：批准前什么都不生效，结果未知时只能说「可能已经提交」。 */
@@ -97,8 +102,8 @@ function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "ca
     ? { tone: "danger", label: "没有查询权限", line: "请原操作人或有调查权限的超级管理员查询。" }
     : { tone: "danger", label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" };
   const receipt = outcome.receipt;
-  if (!receipt) return { tone: "warn", label: "没有查到", line: `查不到不等于没执行，先到${where}核对，不要另做一次。` };
-  if (receipt.originalStatus === "PROCESSING") return { tone: "progress", label: "还在执行", line: row.expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE };
+  if (!receipt) return unsettledLookupStatus("NOT_FOUND", row.expired, where);
+  if (receipt.originalStatus === "PROCESSING") return unsettledLookupStatus("PROCESSING", row.expired, where);
   // 过了 24 小时不能重试：有调查权限的给核查结案，没有的写清找谁。
   const canClose = row.canClose ?? !!access?.canSubmit;
   const closure = canClose ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。";

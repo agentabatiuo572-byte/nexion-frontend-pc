@@ -960,8 +960,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         }
         await fetchI3CampaignOverview();
         await actions.reloadIContent();
-        const shown = i3Status(record, outcome);
-        toast(`${shown.label}：${shown.line}`);
+        if (fromConfirm || !("receipt" in outcome) || outcome.receipt) {
+          const shown = i3Status(record, outcome);
+          toast(`${shown.label}：${shown.line}`);
+        }
       }
       syncPending();
     } catch (error) {

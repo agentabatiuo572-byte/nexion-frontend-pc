@@ -328,12 +328,21 @@ export function h4ReceiptRejection(receipt: DirectCommandReceipt) {
   return new PendingConfirmRejected(code ? formatAdminApiError(code, "") : "原操作已被拒绝，你填的内容没有提交。", code);
 }
 
+export const h4CommandLookupState = (record: H4Command) => receiptStates.get(record.commandKey);
+
+export function h4WheelGuardAmplifies(key: string, value: string, expectedValue?: string) {
+  const on = (text: string) => ["1", "true", "on", "enabled", "open", "开"].includes(text.trim().toLowerCase());
+  const amount = (text: string) => Number(text.replace(/[$,\s]/g, ""));
+  return key === "kill" ? on(value) && (expectedValue === undefined || !on(expectedValue))
+    : key === "budget" && amount(value) > (expectedValue === undefined ? 0 : amount(expectedValue));
+}
+
 export function h4RetryBlockedReason(r: H4Command): string | undefined {
   if (isRetryExpired(r)) return RETRY_EXPIRED_TEXT;
   if (r.acknowledged) return "请查询原结果";
   try { requireActor(r.owner, true, r.scope); } catch { return "没有这项修改的权限"; }
   if (isH4MediaCommand(r)) return;
-  const state = receiptStates.get(r.commandKey);
+  const state = h4CommandLookupState(r);
   if (state === "NOT_FOUND") return;
   return state === "PROCESSING" ? "原操作还在处理，请稍后再查" : "先查询原结果，明确查不到后才能重试";
 }
@@ -475,10 +484,7 @@ export async function h4CommandRequest(path: string, init: Omit<Direct, "path">,
     op = parts[3] ? "h4_wheel_guard_update" : "h4_wheel_guard_create";
     values = parts[3] ? { guardKey: key, value: body.value, expectedValue: body.expectedValue }
       : { guardKey: key, guardLabel: body.guardLabel, guardValue: body.guardValue, note: body.note ?? "" };
-    const on = (v: string) => ["1", "true", "on", "enabled", "open", "开"].includes(v.trim().toLowerCase());
-    const number = (v: string) => Number(v.replace(/[$,\s]/g, ""));
-    approval = approval || (key === "kill" ? on(body.value ?? body.guardValue) && (!parts[3] || !on(body.expectedValue))
-      : key === "budget" && number(body.value ?? body.guardValue) > (parts[3] ? number(body.expectedValue) : 0));
+    approval = approval || h4WheelGuardAmplifies(key, body.value ?? body.guardValue, parts[3] ? body.expectedValue : undefined);
   } else if (parts[2] === "events" && ["reward", "status"].includes(parts[4])) {
     op = parts[4] === "reward" ? "h4_legacy_event_reward_update" : body.value === "ongoing" ? "h4_legacy_event_open" : undefined;
     values = { eventCode: parts[3], value: body.value, expectedValue: body.expectedValue };
