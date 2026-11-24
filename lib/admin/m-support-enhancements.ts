@@ -1,3 +1,4 @@
+import { PERFORMANCE_VERSION, legacyPerformanceSelectorError, profilePerformance, type ProfilePerformance } from "./support-performance-contract";
 import { supportClient, supportRequest, type SupportCustomerDetail, supportObject as obj, parseSupportId as id, parseSupportCount as count, parseSupportPage as page, supportJson as json, supportQuery as query, parseSupportTime as time, supportWireId } from "./m-support-client.ts";
 import { parseSupportCustomerStatistics, type SupportCustomerStatistics } from "./support-analytics-client.ts";
 import { parseSupportInvitationInviterDetail, type SupportInvitationInviterDetail } from "./invitation-read-contract.ts";
@@ -7,6 +8,7 @@ export type SupportProfile = Record<"finance" | "devices" | "risk" | "annotation
   identity: Omit<SupportGroup, "data"> & { data: (Record<string, unknown> & { inviter?: SupportInvitationInviterDetail }) | null };
   statistics: Omit<SupportGroup, "data"> & { data: SupportCustomerStatistics | null };
   actions: Record<string, { allowed: boolean }>;
+  performance?: ProfilePerformance;
 };
 export type SupportCustomerDetailWithProfile = Omit<SupportCustomerDetail, "profile"> & { profile?: SupportProfile };
 export type SupportKind = "TEXT" | "IMAGE" | "SKU" | "LINK";
@@ -39,9 +41,9 @@ export function parseSupportGroup(v: unknown): SupportGroup {
   const r = obj(v, "group"); const status = enumOf(r.status, ["READY", "UNKNOWN", "FORBIDDEN", "ERROR"] as const);
   return { status, data: status === "READY" ? obj(r.data, "group.data") : null, evaluatedAt: time(r.evaluatedAt, "group.evaluatedAt") };
 }
-export function parseSupportProfile(v: unknown): SupportProfile {
+export function parseSupportProfile(v: unknown, projection?: ProfilePerformance): SupportProfile {
   const r = obj(obj(v, "detail").profile, "profile");
-  const groups = Object.fromEntries(["finance", "devices", "risk", "annotations", "service"].map(k => [k, parseSupportGroup(r[k])])) as Omit<SupportProfile, "identity" | "actions" | "statistics">;
+  const groups = Object.fromEntries(["finance", "devices", "risk", "annotations", "service"].map(k => [k, parseSupportGroup(r[k])])) as Record<"finance" | "devices" | "risk" | "annotations" | "service", SupportGroup>;
   const identity = parseSupportGroup(r.identity);
   const inviter = identity.data?.inviter === undefined ? undefined : parseSupportInvitationInviterDetail(obj(identity.data.inviter, "identity.inviter"));
   const statistics = r.statistics === undefined ? { status: "UNKNOWN" as const, data: null, evaluatedAt: identity.evaluatedAt } : parseSupportGroup(r.statistics);
@@ -73,7 +75,7 @@ export function parseSupportProfile(v: unknown): SupportProfile {
     ...groups,
     identity: inviter === undefined ? identity : { ...identity, data: { ...identity.data, inviter } },
     statistics: { ...statistics, data: statistics.data === null ? null : parseSupportCustomerStatistics(statistics.data, "profile") },
-    actions,
+    actions, performance: projection,
   };
 }
 export function parseBulkCandidatePage(v: unknown): BulkCandidatePage {
@@ -115,10 +117,23 @@ const bulk = "/support-workbench/bulk";
 const customer = (customerId: string) => `/support-workbench/customers/${id(customerId, "customer")}`;
 export const supportEnhancements = {
   customerDetail: async (customerId: string): Promise<SupportCustomerDetailWithProfile> => {
-    const { profile, ...detail } = await supportClient.customerDetail(customerId);
-    return profile === undefined ? detail : { ...detail, profile: parseSupportProfile({ profile }) };
+    const { profile, performance, ...detail } = await supportClient.performanceCustomerDetail(customerId);
+    return profile === undefined ? detail : { ...detail, profile: parseSupportProfile({ profile }, performance) };
   },
-  profile: (customerId: string, signal?: AbortSignal) => supportRequest(`${customer(customerId)}/360`, parseSupportProfile, { signal }),
+  profile: (customerId: string, signal?: AbortSignal) => supportRequest(`${customer(customerId)}/360`, value => parseSupportProfile(value), { signal }),
+  async performanceProfile(customerId: string, signal?: AbortSignal) {
+    const path = `${customer(customerId)}/360`;
+    const legacy = () => supportRequest(path, value => parseSupportProfile(value), { signal });
+    let response;
+    try {
+      response = await supportRequest(`${path}?metricVersion=${PERFORMANCE_VERSION}`, value => value, { signal });
+    } catch (error) {
+      if (!legacyPerformanceSelectorError(error, "SUPPORT_ANALYTICS_QUERY_INVALID", "SUPPORT_METRIC_VERSION_UNSUPPORTED")) throw error;
+      return legacy();
+    }
+    const performance = profilePerformance(response);
+    return performance.generation === "LEGACY" ? legacy() : parseSupportProfile(response, performance);
+  },
   devices: (customerId: string, pageNum: number, signal?: AbortSignal) => supportRequest(`${customer(customerId)}/devices${query({ pageNum, pageSize: 10 })}`, parseSupportGroup, { signal }),
   flows: (customerId: string, filters: { pageNum: number; currency?: string; status?: string; from?: string; to?: string }, signal?: AbortSignal) => supportRequest(`${customer(customerId)}/flows${query({ ...filters, pageSize: 10 })}`, parseSupportGroup, { signal }),
   skus: (pageNum: number, keyword: string, signal?: AbortSignal) => supportRequest(`/support-workbench/skus${query({ pageNum, pageSize: 10, keyword })}`, v => page(v, v => { const r = obj(v, "sku"); return { id: text(r.skuId ?? r.id), name: text(r.name), price: typeof r.price === "number" ? r.price : undefined }; }), { signal }),

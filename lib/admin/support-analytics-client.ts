@@ -1,4 +1,5 @@
-import { supportRequest } from "./m-support-client.ts";
+import { PERFORMANCE_VERSION, legacyPerformanceSelectorError, performanceDecimal, performanceEvents, performanceGeneration, performanceMeasured, performanceInteger, performanceObject, performancePeriod, performanceText, performanceWindow, privatePerformance, samePerformanceWindow, type PerformanceWindow } from "./support-performance-contract";
+import { SupportClientError, supportRequest } from "./m-support-client.ts";
 import { parseBusinessTime } from "./business-time.ts";
 import { parseInvitationCountReason, parseInvitationInviter } from "./invitation-read-contract.ts";
 
@@ -9,7 +10,7 @@ const BASES = ["CURRENT_CUSTOMER_HISTORY", "PERIOD_EVENT", "CURRENT_ASSET"] as c
 const CATEGORIES = ["ALL", "BOUND", "PENDING", "ANOMALY"] as const;
 const FIRST = ["ALL", "CONFIRMED", "NONE", "UNKNOWN"] as const;
 const FILTERS = ["ALL", "WINDOW_ACTIVE", "ACTIVE", "DORMANT", "UNKNOWN", "DUE", "WAITING_REPLY", "FIRST_CONTACT", "STOPPED", "TODO"] as const;
-const SORTS = ["REGISTERED_AT", "ASSIGNED_AT", "LAST_ACTIVE_AT", "FIRST_SUCCEEDED_AT", "DIRECT_INVITATION_COUNT", "TEAM_CUSTOMER_COUNT", "PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "NET_CONTRIBUTION", "BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "DEVICE_COUNT", "HASHRATE", "NEXT_DUE_AT", "WAITING_SINCE_AT", "STATE_CHANGED_AT", "POOL_ENTERED_AT", "SUCCEEDED_AT", "AMOUNT"] as const;
+const SORTS = ["REGISTERED_AT", "ASSIGNED_AT", "LAST_ACTIVE_AT", "FIRST_SUCCEEDED_AT", "DIRECT_INVITATION_COUNT", "TEAM_CUSTOMER_COUNT", "PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "NET_CONTRIBUTION", "BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "DEVICE_COUNT", "HASHRATE", "NEXT_DUE_AT", "WAITING_SINCE_AT", "STATE_CHANGED_AT", "POOL_ENTERED_AT", "SUCCEEDED_AT", "AMOUNT", "PERFORMANCE_AMOUNT"] as const;
 const STATUS = ["AVAILABLE", "PARTIAL", "UNKNOWN", "FAILED", "UNAVAILABLE"] as const;
 const CURRENCIES = ["USDT", "UVT"] as const;
 const READS = ["COMPLETE", "UNKNOWN", "FAILED", "NOT_REQUESTED"] as const;
@@ -207,7 +208,7 @@ function invitations(value: unknown, isolateCountFailure: boolean) {
 }
 export function parseSupportCustomerStatistics(value: unknown, source: "analytics" | "profile" = "analytics") {
   const fromProfile = source === "profile";
-  const r = object(value, "first lifetime lifetimeStatus invitations activity" + (fromProfile ? " performance" : ""));
+  const r = object(value, "first lifetime lifetimeStatus invitations activity" + (fromProfile ? " performance firstPaymentCoverage" : ""));
   const f = object(r.first, "state status kind currency amount succeededAt channel");
   const a = object(r.activity, "state status lastEffectiveAt");
   return { first: { state: enumeration(f.state, ["CONFIRMED", "NONE", "UNKNOWN"]), status: enumeration(f.status, STATUS), kind: f.kind === null ? null : enumeration(f.kind, FIRST_KINDS), currency: f.currency === null ? null : enumeration(f.currency, CURRENCIES), amount: decimal(f.amount), succeededAt: nullableInstant(f.succeededAt) }, lifetime: unique(array(r.lifetime, customerMoney), x => x.currency), lifetimeStatus: enumeration(r.lifetimeStatus, STATUS), invitations: invitations(r.invitations, fromProfile), activity: { state: enumeration(a.state, ["ACTIVE", "INACTIVE", "UNKNOWN"]), status: enumeration(a.status, STATUS), lastEffectiveAt: nullableInstant(a.lastEffectiveAt) } };
@@ -228,7 +229,7 @@ function customer(value: unknown) {
   };
 }
 function agent(value: unknown) {
-  const r = object(value, "accountId displayName avatar avatarRef account current funds");
+  const r = object(value, "accountId displayName avatar avatarRef account current funds period");
   const a = object(r.account, "serviceAccount supervisorAccount serviceCategoryStatus supervisorCategoryStatus accountState serviceQualification supervisorQualification receptionEligibility memberState groupId handoverRequired status");
   const accountId = id(r.accountId), avatarRef = nullableText(r.avatarRef);
   if (avatarRef !== null && avatarRef !== `/api/admin/content/support-agents/${accountId}/avatar`) malformed("agentAvatarRef");
@@ -260,11 +261,29 @@ function detailSummary(value: unknown) {
   return result;
 }
 export type SupportAnalyticsDetailResponse = Metadata & { view: SupportAnalyticsDetailView; records: ReturnType<typeof detailRow>[]; detailSummary: ReturnType<typeof detailSummary> };
+function measuredFirstSummary(value: unknown) {
+  const r = object(value, "currency totalAmount visibleAmount restrictedAmount totalCount visibleCount restrictedCount customerCount visibleCustomerCount restrictedCustomerCount");
+  const part = (amount: string, events: string, customers: string) => ({
+    amount: performanceMeasured(r[amount], performanceDecimal),
+    count: performanceMeasured(r[events], performanceInteger),
+    customers: performanceMeasured(r[customers], performanceInteger),
+  });
+  return { currency: enumeration(r.currency, CURRENCIES),
+    total: part("totalAmount", "totalCount", "customerCount"),
+    visible: part("visibleAmount", "visibleCount", "visibleCustomerCount"),
+    restricted: part("restrictedAmount", "restrictedCount", "restrictedCustomerCount") };
+}
+type IncompleteFirstDetail = Metadata & {
+  view: "FIRST_DEPOSITS" | "FIRST_PURCHASES";
+  records: [];
+  measuredSummary: ReturnType<typeof measuredFirstSummary>;
+};
 function parseDetailResponse(value: unknown, expected: ReturnType<typeof query>, currency: string): SupportAnalyticsDetailResponse {
   const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records detailSummary performanceWindow metricVersion generation");
   const view = enumeration(r.view, DETAIL_VIEWS), meta = metadata(r), summary = detailSummary(r.detailSummary);
   if (view !== expected.view || meta.basis !== "PERIOD_EVENT" || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize || meta.recordsStatus !== meta.versionState || expected.expectedVersion !== undefined && meta.queryVersion !== expected.expectedVersion) malformed("detail.queryMismatch");
   const records = unique(array(r.records, value => detailRow(value, view)), row => row.id);
+  if (meta.observedTotal === null) malformed("detail.observedTotal");
   const remaining = Math.max(0, meta.observedTotal - (meta.pageNum - 1) * meta.pageSize);
   const kind = view === "NET_CONTRIBUTIONS" ? "NET_CONTRIBUTION" : view === "FIRST_DEPOSITS" ? "DEPOSIT" : "DEVICE_PURCHASE";
   if (summary.currency !== currency || summary.visibleCount !== meta.observedTotal || meta.total !== null && meta.total !== summary.visibleCount || records.length !== Math.min(remaining, meta.pageSize) || meta.canContinue !== (meta.versionState === "READY" && remaining > records.length) || records.some(row => row.currency !== currency || row.kind !== kind)) malformed("detail.records");
@@ -280,33 +299,79 @@ export type SupportAnalyticsFinanceRow = ReturnType<typeof financeRow>;
 export type SupportAnalyticsDeviceRow = ReturnType<typeof deviceRow>;
 type Metadata = ReturnType<typeof metadata>;
 export type SupportAnalyticsResponse = Metadata & (
-  { view: "OVERVIEW" | "CUSTOMERS" | "ACTIVITY"; records: SupportAnalyticsCustomer[] } |
-  { view: "AGENTS"; records: SupportAnalyticsAgent[] } |
+  { view: "OVERVIEW" | "CUSTOMERS" | "ACTIVITY"; records: (SupportAnalyticsCustomer & { performance?: ReturnType<typeof privatePerformance> })[] } |
+  { view: "AGENTS"; records: (SupportAnalyticsAgent & { performance?: ReturnType<typeof privatePerformance>; periodPerformance?: ReturnType<typeof privatePerformance> })[] } |
   { view: "FINANCE"; records: SupportAnalyticsFinanceRow[] } |
   { view: "DEVICES"; records: SupportAnalyticsDeviceRow[] }
 );
-function metadata(r: Record<string, unknown>) {
-  const versionState = enumeration(r.versionState, ["READY", "UNKNOWN"]), queryVersion = nullableText(r.queryVersion), total = nullableInteger(r.total), observedTotal = integer(r.observedTotal), canContinue = boolean(r.canContinue);
+function metadata(r: Record<string, unknown>, versioned = false) {
+  const generation = versioned ? performanceGeneration(r) : "LEGACY";
+  const source = generation === "READY" && r.performanceWindow != null ? performanceText(r.sourceVersion) : undefined;
+  const window = source === undefined ? undefined : performanceWindow(r.performanceWindow);
+  if (window && (window.sourceVersion !== source || window.basis !== r.basis || window.asOf !== r.asOf)) malformed("performanceWindow");
+  const projection = (value: unknown) => window && value != null ? privatePerformance(value, source) : undefined;
+  const scopeRaw = object(r.scopeSummary, "mode total bound pending anomaly status current financial restrictedSummary personnel groups performanceAttribution");
+  const firstCoverage = generation !== "LEGACY" && r.firstPaymentCoverage !== undefined ? (() => {
+    const coverage = object(r.firstPaymentCoverage, "status reasonCodes");
+    return { status: enumeration(coverage.status, ["COMPLETE", "PARTIAL", "UNKNOWN", "FAILED"]), reasons: array(coverage.reasonCodes, text) };
+  })() : undefined;
+  const performance = source === undefined || !window ? undefined : (() => {
+    const financial = object(scopeRaw.financial, "status firstCandidates currencies firstSources performance");
+    const currentRaw = object(scopeRaw.current, "lifetimeBasis status ownLifetime firstConfirmed firstNone firstUnknown devices activity performance");
+    const groupPerformance = array(scopeRaw.groups, value => {
+      const group = object(value, "groupId name total current period personnel");
+      const currentRaw = object(group.current, "lifetimeBasis status ownLifetime firstConfirmed firstNone firstUnknown devices activity performance");
+      const period = object(group.period, "status firstCandidates currencies firstSources performance");
+      return [id(group.groupId), { current: projection(currentRaw.performance), period: projection(period.performance) }] as const;
+    });
+    const attribution = scopeRaw.performanceAttribution == null ? undefined : object(scopeRaw.performanceAttribution, "unassigned unknown");
+    return {
+      window, period: financial.performance == null ? undefined : performancePeriod(financial.performance, source),
+      current: projection(currentRaw.performance), groups: Object.fromEntries(groupPerformance),
+      attribution: attribution && { unassigned: projection(attribution.unassigned), unknown: projection(attribution.unknown) },
+    };
+  })();
+  const versionState = enumeration(r.versionState, ["READY", "UNKNOWN"]), queryVersion = nullableText(r.queryVersion), total = nullableInteger(r.total), observedTotal = versioned && r.observedTotal === null ? null : integer(r.observedTotal), canContinue = boolean(r.canContinue);
   const pageNum = integer(r.pageNum, 1), pageSize = integer(r.pageSize, 1), recordsStatus = enumeration(r.recordsStatus, [...STATUS, "READY"]);
   if (pageSize > 100 || (versionState === "READY" ? queryVersion === null || !/^saq-v1:[0-9a-f]{64}$/.test(queryVersion) : queryVersion !== null || total !== null || canContinue || pageNum > 1)) malformed("version");
   if (total !== null && total !== observedTotal) malformed("total");
-  return { basis: enumeration(r.basis, BASES), businessZone: enumeration(r.businessZone, ["Asia/Shanghai"]), asOf: instant(r.asOf), pageNum, pageSize, total, observedTotal, versionState, queryVersion, canContinue, recordsStatus, selectedCustomerCount: integer(r.selectedCustomerCount), selectedCurrent: current(r.selectedCurrent), scopeSummary: scopeSummary(r.scopeSummary), funds: selectedFunds(r.funds) };
+  const missingSelection = firstCoverage && firstCoverage.status !== "COMPLETE" && recordsStatus === "UNKNOWN"
+    && r.selectedCurrent === null && r.selectedCustomerCount === null && r.funds === null;
+  return { generation, performance, firstCoverage, basis: enumeration(r.basis, BASES), businessZone: enumeration(r.businessZone, ["Asia/Shanghai"]), asOf: instant(r.asOf), pageNum, pageSize, total, observedTotal, versionState, queryVersion, canContinue, recordsStatus,
+    selectedCustomerCount: missingSelection ? null : integer(r.selectedCustomerCount),
+    selectedCurrent: missingSelection ? null : current(r.selectedCurrent),
+    scopeSummary: scopeSummary(r.scopeSummary), funds: missingSelection ? null : selectedFunds(r.funds) };
 }
-export function parseSupportAnalyticsResponse(value: unknown, expected: { view: SupportAnalyticsView | SupportAnalyticsDetailView; basis: typeof BASES[number]; pageNum: number; pageSize: number; expectedVersion?: string }): SupportAnalyticsResponse {
-  const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records performanceWindow metricVersion generation");
-  const view = enumeration(r.view, VIEWS), meta = metadata(r);
+export function parseSupportAnalyticsResponse(value: unknown, expected: { view: SupportAnalyticsView | SupportAnalyticsDetailView; basis: typeof BASES[number]; pageNum: number; pageSize: number; expectedVersion?: string; firstDependent?: boolean; firstFiltered?: boolean }, versioned = false): SupportAnalyticsResponse {
+  const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records performanceWindow metricVersion generation sourceVersion firstPaymentCoverage detailSummary exportReadiness");
+  const view = enumeration(r.view, VIEWS), meta = metadata(r, versioned);
   if (view !== expected.view || meta.basis !== expected.basis || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize) malformed("queryMismatch");
   if (expected.expectedVersion !== undefined && meta.queryVersion !== expected.expectedVersion) malformed("versionMismatch");
-  if (meta.recordsStatus !== (view === "AGENTS" ? meta.scopeSummary.personnel.status : meta.versionState) || (meta.total === null) !== (meta.versionState === "UNKNOWN" || view === "AGENTS" && meta.scopeSummary.personnel.status !== "AVAILABLE")) malformed("recordsCoverage");
+  const incompleteFirst = expected.firstDependent && meta.firstCoverage && meta.firstCoverage.status !== "COMPLETE";
+  if (incompleteFirst && (meta.versionState !== "UNKNOWN" || meta.recordsStatus !== "UNKNOWN" || meta.observedTotal !== null
+    || expected.firstFiltered && meta.selectedCurrent !== null) || !incompleteFirst && meta.selectedCurrent === null) malformed("firstCoverage");
+  if (meta.generation === "LEGACY" && (meta.recordsStatus !== (view === "AGENTS" ? meta.scopeSummary.personnel.status : meta.versionState) || (meta.total === null) !== (meta.versionState === "UNKNOWN" || view === "AGENTS" && meta.scopeSummary.personnel.status !== "AVAILABLE"))) malformed("recordsCoverage");
   const rows = array(r.records, x => x);
-  const remaining = BigInt(meta.observedTotal) - BigInt(meta.pageNum - 1) * BigInt(meta.pageSize);
+  const remaining = BigInt(meta.observedTotal ?? 0) - BigInt(meta.pageNum - 1) * BigInt(meta.pageSize);
   const expectedLength = remaining <= BigInt(0) ? 0 : Number(remaining < BigInt(meta.pageSize) ? remaining : BigInt(meta.pageSize));
   if (rows.length !== expectedLength || meta.canContinue !== (meta.versionState === "READY" && remaining > BigInt(rows.length))) malformed("pagination");
   switch (view) {
-    case "AGENTS": return { ...meta, view, records: unique(rows.map(agent), x => x.accountId) };
+    case "AGENTS": return { ...meta, view, records: unique(rows.map(value => {
+      const row = agent(value);
+      const raw = value as { current: { performance?: unknown }; period?: unknown };
+      const window = meta.performance?.window;
+      const period = window?.basis === "PERIOD_EVENT" && raw.period != null ? performanceObject(raw.period).performance : undefined;
+      const periodPerformance = period == null ? undefined : privatePerformance(period, window?.sourceVersion);
+      if (periodPerformance && window && !samePerformanceWindow(periodPerformance.window, window, false)) malformed("agentPeriod");
+      return { ...row, periodPerformance, performance: window && raw.current.performance != null ? privatePerformance(raw.current.performance, window.sourceVersion) : undefined };
+    }), x => x.accountId) };
     case "FINANCE": return { ...meta, view, records: rows.map(financeRow) };
     case "DEVICES": return { ...meta, view, records: unique(rows.map(deviceRow), x => x.deviceId) };
-    default: return { ...meta, view, records: unique(rows.map(customer), x => x.customerId) };
+    default: return { ...meta, view, records: unique(rows.map(value => {
+      const row = customer(value);
+      const raw = value as { performance?: unknown };
+      return { ...row, performance: meta.performance && raw.performance != null ? privatePerformance(raw.performance, meta.performance.window.sourceVersion) : undefined };
+    }), x => x.customerId) };
   }
 }
 function micros(value: string): bigint { return BigInt(parseBusinessTime(value)) * BigInt(1000) + BigInt((value.split(".")[1]?.slice(0, -1) ?? "").padEnd(6, "0").slice(3)); }
@@ -318,8 +383,8 @@ function query(options: Omit<SupportAnalyticsQuery, "view"> & { view: SupportAna
   const sortKey = enumeration(options.sortKey ?? (view === "AGENTS" ? "BOUND_CUSTOMER_COUNT" : (view === "FINANCE" || detail) ? "SUCCEEDED_AT" : defaultSort), SORTS);
   const direction = enumeration(options.direction ?? (category === "PENDING" || firstState === "NONE" || ["WAITING_REPLY", "FIRST_CONTACT", "DUE", "DORMANT"].includes(filter) ? "ASC" : "DESC"), ["ASC", "DESC"]);
   const allowed = view === "AGENTS" ? ["BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "DEVICE_COUNT", "PERSONAL_DEPOSIT"] : (view === "FINANCE" || detail) ? ["SUCCEEDED_AT", "AMOUNT"] : view === "DEVICES" ? ["HASHRATE", "LAST_ACTIVE_AT", "REGISTERED_AT", "DEVICE_COUNT"] : SORTS.filter(x => !["BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "HASHRATE", "SUCCEEDED_AT", "AMOUNT"].includes(x));
-  if (sortKey === "NET_CONTRIBUTION" && basis !== "CURRENT_CUSTOMER_HISTORY") malformed("querySort");
-  if (!allowed.includes(sortKey) || sortKey === "NEXT_DUE_AT" && filter !== "DUE" || sortKey === "WAITING_SINCE_AT" && filter !== "WAITING_REPLY" || sortKey === "STATE_CHANGED_AT" && filter !== "STOPPED" || sortKey === "POOL_ENTERED_AT" && category !== "PENDING" || basis === "CURRENT_ASSET" && (view === "FINANCE" || firstState !== "ALL" || ["PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "FIRST_SUCCEEDED_AT"].includes(sortKey))) malformed("querySort");
+  if (sortKey === "PERFORMANCE_AMOUNT" && (view !== "CUSTOMERS" || basis !== "CURRENT_CUSTOMER_HISTORY" || options.currency !== "USDT") || sortKey === "NET_CONTRIBUTION" && basis !== "CURRENT_CUSTOMER_HISTORY") malformed("querySort");
+  if (!allowed.includes(sortKey) || sortKey === "NEXT_DUE_AT" && filter !== "DUE" || sortKey === "WAITING_SINCE_AT" && filter !== "WAITING_REPLY" || sortKey === "STATE_CHANGED_AT" && filter !== "STOPPED" || sortKey === "POOL_ENTERED_AT" && category !== "PENDING" || basis === "CURRENT_ASSET" && (view === "FINANCE" || firstState !== "ALL" || ["PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "FIRST_SUCCEEDED_AT", "FIRST_CONFIRMED_CUSTOMER_COUNT"].includes(sortKey))) malformed("querySort");
   const currency = options.currency === undefined ? undefined : enumeration(options.currency, CURRENCIES);
   if (["PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "NET_CONTRIBUTION", "AMOUNT"].includes(sortKey) && currency === undefined) malformed("queryCurrency");
   if (detail && (basis !== "PERIOD_EVENT" || currency === undefined || category !== "ALL" || firstState !== "ALL" || filter !== "ALL" || options.keyword?.trim())) malformed("detail.query");
@@ -339,20 +404,22 @@ function query(options: Omit<SupportAnalyticsQuery, "view"> & { view: SupportAna
   const parameters: Record<string, string | number | undefined> = { view, category, firstState, filter, keyword: keyword?.trim() || undefined, basis, from, to, businessZone: "Asia/Shanghai", groupId: options.groupId === undefined ? undefined : requestId(options.groupId), agentId: options.agentId === undefined ? undefined : requestId(options.agentId), currency, sortKey, direction, pageNum, pageSize, expectedVersion: options.expectedVersion };
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(parameters)) if (value !== undefined) params.set(key, String(value));
-  return { params, view, basis, pageNum, pageSize, expectedVersion: options.expectedVersion };
+  return { params, view, basis, pageNum, pageSize, expectedVersion: options.expectedVersion, firstFiltered: firstState !== "ALL",
+    firstDependent: firstState !== "ALL" || sortKey === "FIRST_SUCCEEDED_AT" || sortKey === "FIRST_CONFIRMED_CUSTOMER_COUNT" };
 }
 /** One business month and its exact UTC window from the server's business calendar (BUG-005). */
-export type SupportAnalyticsMonth = { month: string; from: string; to: string };
+export type SupportAnalyticsMonth = { month: string; from: string; to: string; generation?: "READY" };
 export function parseSupportAnalyticsMonths(value: unknown): SupportAnalyticsMonth[] {
+  const generation = performanceGeneration(value);
   const months = array(object(value, "months metricVersion generation").months, entry => {
-    const row = object(entry, "month from to businessZone availability reasonCodes");
+    const row = object(entry, "month from to businessZone availability reasonCodes channels");
     const month = text(row.month);
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) malformed("month");
     const from = instant(row.from), to = instant(row.to);
     if (parseBusinessTime(from) >= parseBusinessTime(to)) malformed("monthWindow");
-    return { month, from, to };
+    return { month, from, to, generation: generation === "READY" ? generation : undefined };
   });
-  if (months.length === 0 || new Set(months.map(row => row.month)).size !== months.length) malformed("months");
+  if ((generation === "LEGACY" && months.length === 0) || new Set(months.map(row => row.month)).size !== months.length) malformed("months");
   return months;
 }
 export const supportAnalyticsClient = {
@@ -366,4 +433,78 @@ export const supportAnalyticsClient = {
   },
   months: (signal?: AbortSignal): Promise<SupportAnalyticsMonth[]> =>
     supportRequest("/support-workbench/analytics/months", parseSupportAnalyticsMonths, { signal }),
+};
+
+const analyticsPath = "/support-workbench/analytics";
+const readAnalytics = (path: string, signal?: AbortSignal) => supportRequest(path, value => value, { signal });
+
+export const supportPerformanceAnalyticsClient = {
+  ...supportAnalyticsClient,
+  async query(options: SupportAnalyticsQuery, generation?: "READY" | "UPGRADING" | "LEGACY"): Promise<SupportAnalyticsResponse> {
+    if (generation === "LEGACY") return supportAnalyticsClient.query(options);
+    const expected = query(options);
+    expected.params.set("metricVersion", PERFORMANCE_VERSION);
+    expected.params.delete("businessZone");
+    let result;
+    try {
+      result = await readAnalytics(`${analyticsPath}?${expected.params}`, options.signal);
+    } catch (error) {
+      if (options.expectedVersion || !legacyPerformanceSelectorError(error, "SUPPORT_ANALYTICS_QUERY_INVALID", "SUPPORT_METRIC_VERSION_UNSUPPORTED", "SUPPORT_READ_SCOPE_INVALID", "SUPPORT_ANALYTICS_INVALID_QUERY")) throw error;
+      return supportAnalyticsClient.query(options);
+    }
+    if (performanceGeneration(result) === "LEGACY" && !options.expectedVersion) return supportAnalyticsClient.query(options);
+    return parseSupportAnalyticsResponse(result, expected, true);
+  },
+  async months(signal?: AbortSignal) {
+    const legacy = async () => ({ generation: "LEGACY" as const, months: await supportAnalyticsClient.months(signal) });
+    let result;
+    try {
+      result = await readAnalytics(`${analyticsPath}/months?metricVersion=${PERFORMANCE_VERSION}`, signal);
+    } catch (error) {
+      if (!legacyPerformanceSelectorError(error, "SUPPORT_ANALYTICS_QUERY_INVALID", "SUPPORT_METRIC_VERSION_UNSUPPORTED")) throw error;
+      return legacy();
+    }
+    const generation = performanceGeneration(result);
+    if (generation === "LEGACY") return legacy();
+    return { generation, months: parseSupportAnalyticsMonths(result) };
+  },
+  async firstDetails(options: Omit<SupportAnalyticsQuery, "view"> & { view: "FIRST_DEPOSITS" | "FIRST_PURCHASES" }, origin: PerformanceWindow): Promise<SupportAnalyticsDetailResponse | IncompleteFirstDetail> {
+    const expected = query(options);
+    expected.params.set("metricVersion", PERFORMANCE_VERSION);
+    expected.params.delete("businessZone");
+    return supportRequest(`${analyticsPath}?${expected.params}`, value => {
+      const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records detailSummary performanceWindow metricVersion generation sourceVersion firstPaymentCoverage exportReadiness");
+      const generation = performanceGeneration(r);
+      if (generation === "UPGRADING") throw new SupportClientError(503, undefined, "SUPPORT_ANALYTICS_HISTORY_INCOMPLETE");
+      const window = performanceWindow(r.performanceWindow);
+      if (generation !== "READY" || !samePerformanceWindow(window, origin)) {
+        throw new SupportClientError(409, undefined, "SUPPORT_ANALYTICS_QUERY_CHANGED");
+      }
+      const meta = metadata(r, true);
+      const view = enumeration(r.view, ["FIRST_DEPOSITS", "FIRST_PURCHASES"]);
+      if (view !== options.view || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize
+        || expected.expectedVersion && meta.queryVersion !== expected.expectedVersion) malformed("firstDetails");
+      const kind = view === "FIRST_DEPOSITS" ? "DEPOSIT" : "DEVICE_PURCHASE";
+      const records = array(r.records, value => detailRow(value, view));
+      if (meta.recordsStatus === "UNKNOWN") {
+        const measuredSummary = measuredFirstSummary(r.detailSummary);
+        if (meta.versionState !== "UNKNOWN" || meta.firstCoverage?.status === "COMPLETE" || meta.observedTotal !== measuredSummary.visible.count.observed
+          || measuredSummary.currency !== options.currency || records.length) malformed("firstDetailCoverage");
+        return { ...meta, view, records: [], measuredSummary };
+      }
+      const detail = detailSummary(r.detailSummary);
+      if (detail.currency !== options.currency || records.some(row => row.currency !== detail.currency || row.kind !== kind)
+        || detail.visibleCount !== meta.total || records.length !== Math.min(meta.pageSize, Math.max(0, detail.visibleCount - (meta.pageNum - 1) * meta.pageSize))
+        || meta.canContinue !== (meta.pageNum * meta.pageSize < detail.visibleCount)) malformed("firstDetails");
+      return { ...meta, view, records, detailSummary: detail };
+    }, { signal: options.signal });
+  },
+  async events(options: { from: string; to: string; pageNum: number; pageSize: number; expectedVersion?: string; signal?: AbortSignal }) {
+    const { signal, ...window } = options;
+    const expected = query({ ...window, view: "FINANCE", basis: "PERIOD_EVENT", currency: "USDT" });
+    expected.params.delete("businessZone");
+    expected.params.set("view", "PERFORMANCE_EVENTS");
+    expected.params.set("metricVersion", PERFORMANCE_VERSION);
+    return supportRequest(`${analyticsPath}?${expected.params}`, value => performanceEvents(value, expected), { signal });
+  },
 };

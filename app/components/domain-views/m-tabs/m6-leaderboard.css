@@ -47,11 +47,14 @@
 .m6-page .m6-search { display: flex; align-items: center; gap: var(--rd-space-2); }
 .m6-page .m6-search .rd-input { width: 220px; }
 .m6-page .m6-table { table-layout: fixed; }
-.m6-page .m6-table th:nth-child(1) { width: 104px; }
-.m6-page .m6-table th:nth-child(2) { width: auto; }
-.m6-page .m6-table th:nth-child(3) { width: 22%; }
-.m6-page .m6-table th:nth-child(4), .m6-page .m6-table th:nth-child(5) { width: 17%; }
-.m6-page .m6-table th:nth-child(6) { width: 120px; }
+.m6-page .m6-table th:nth-child(1) { width: 14%; }
+.m6-page .m6-table th:nth-child(2) { width: 18%; }
+.m6-page .m6-table th:nth-child(3) { width: 20%; }
+.m6-page .m6-table th:nth-child(4) { width: 15%; }
+.m6-page .m6-table th:nth-child(5) { width: 16%; }
+.m6-page .m6-table th:nth-child(6) { width: auto; }
+/* 公开成绩抽屉开着的那一行：金额格只写「见右侧」，弱文字（ST-74）。 */
+.m6-page .m6-table .m6-in-drawer { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
 .m6-page .m6-th { display: inline-flex; flex-direction: column; align-items: flex-end; }
 .m6-page .m6-th small { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); }
 .m6-page .m6-table th[data-primary] .m6-th { color: var(--rd-text); }
@@ -72,7 +75,7 @@
 .m6-page .m6-empty { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-2); }
 .m6-page .m6-empty .rd-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
 
-/* 公开成绩弹窗：先是谁，再是名次和三项成绩。 */
+/* 公开成绩抽屉：先是谁，再是业绩额和其余几项。 */
 .m6-page .m6-detail-who { display: flex; align-items: center; gap: var(--rd-space-3); }
 .m6-page .m6-detail-who > div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .m6-page .m6-detail-who strong { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
@@ -85,3 +88,15 @@
   .m6-page .m6-podium[data-count="4"] { --m6-cols: 2; }
 }
 .m6-page .m6-me { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-progress-bg); color: var(--rd-progress); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-medium); }
+
+/* 「按所选月份 · USDT」对齐下拉的中线（canvas 1a）。 */
+.m6-page .rd-filter-sort:has(.m6-board-line) { align-self: flex-end; display: flex; align-items: center; min-height: var(--rd-control-h); }
+
+/* 长姓名在名字按钮里省略，不压到头像和「我」标记上。 */
+.m6-page .m6-identity-text .sl-person-name .m6-name { flex: 0 1 auto; overflow: hidden; }
+
+/* 公开成绩的关键数字：名称一行弱字，数字 24/32、600，单位 14 弱字（VS-102）。 */
+.m6-page .m6-lead { display: flex; flex-direction: column; gap: 2px; }
+.m6-page .m6-lead-label { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m6-page .m6-lead-value { display: flex; align-items: baseline; gap: var(--rd-space-1); color: var(--rd-text); font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.m6-page .m6-lead-value small { color: var(--rd-text-3); font-size: var(--rd-text-body); font-weight: var(--rd-weight-regular); }

@@ -148,3 +148,9 @@
 /* 旧数据那一行的「重试」（rd-inline-retry）和问号、文字之间留一点空。 */
 .m3-profile-state .rd-inline-retry { margin-left: 6px; }
 .m3-denied-row > p { display: flex; align-items: center; gap: var(--rd-space-2); min-height: 40px; margin: 0; padding: 8px 0 8px calc(14px + var(--rd-space-2)); }
+
+/* 累计业绩额问号里的三行：名称列不折行，说明紧跟。 */
+.m3-perf-rows { display: grid; gap: var(--rd-space-1); margin: var(--rd-space-2) 0 0; padding-top: var(--rd-space-2); border-top: 1px solid var(--rd-line); }
+.m3-perf-rows > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--rd-space-3); }
+.m3-perf-rows dt { color: var(--rd-text-3); white-space: nowrap; }
+.m3-perf-rows dd { margin: 0; }

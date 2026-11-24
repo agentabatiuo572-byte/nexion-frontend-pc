@@ -82,6 +82,8 @@ async function proxy(request: Request, context: RouteContext) {
       || path.length === 3 && path[0] === "support-workbench" && path[1] === "bulk" && path[2] === "attachments"
       || documentUpload);
   // 信任中心资料文件（PDF）预览：二进制原样转发，不能按文本读。
+  const performanceFile = request.method === "GET" && path.length === 4 && path[0] === "support-workbench"
+    && path[1] === "performance-exports" && /^[1-9]\d*$/.test(path[2]) && path[3] === "file";
   const documentContent = request.method === "GET" && path.length === 3 && path[0] === "trust-documents" && path[2] === "file";
   const publicLeaderboardAvatar = request.method === "GET" && path.length === 4 && path[0] === "support-workbench"
     && path[1] === "leaderboard" && /^[1-9]\d*$/.test(path[2]) && path[3] === "avatar";
@@ -103,6 +105,10 @@ async function proxy(request: Request, context: RouteContext) {
   const idempotencyKey = request.headers.get(IDEMPOTENCY_KEY_HEADER);
   if (contentType) headers.set("Content-Type", contentType);
   if (idempotencyKey) headers.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey);
+  if (performanceFile) {
+    const downloadToken = request.headers.get("X-Download-Token");
+    if (downloadToken) headers.set("X-Download-Token", downloadToken);
+  }
   if (attachmentContent) {
     const range = request.headers.get("Range");
     if (range) headers.set("Range", range);
@@ -150,6 +156,12 @@ async function proxy(request: Request, context: RouteContext) {
           Connection: "keep-alive",
         },
       });
+    }
+    if (performanceFile) {
+      const responseHeaders = new Headers({ "Content-Type": upstreamType, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+      const disposition = upstream.headers.get("Content-Disposition");
+      if (disposition) responseHeaders.set("Content-Disposition", disposition);
+      return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
     }
     if (documentContent) {
       if (!upstream.ok) {
