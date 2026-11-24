@@ -2321,6 +2321,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H4_RESPONSE_INVALID: "返回的内容和原操作对不上，结果未知。请保留原请求并查询原结果。",
   H4_PROPOSAL_RESPONSE_INVALID: "返回的审批单和原申请对不上，原请求继续保留，请查询原结果。",
   H4_RESULT_UNKNOWN: "结果未知，可能已经生效：先查询原结果，查不到再按原请求重试。",
+  H4_PROPOSAL_RESULT_UNKNOWN: "结果未知：审批申请可能已经提交，配置在批准前不会变。先查询原结果，不要另提一次申请。",
   H4_APPROVAL_STATUS_UNKNOWN: "申请已建单，批没批准还没查到。请查询原结果，原请求继续保留。",
   H4_APPROVAL_REQUIRED: "这项活动或转盘修改会放大奖励权益，需要审批；请保留原配置并提交申请，批准前不会生效。",
   H4_PROPOSAL_INVALID: "活动或转盘审批的内容不符合要求，本次未收录；请重新读取原对象和当前配置后提交。",

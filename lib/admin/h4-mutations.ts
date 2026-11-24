@@ -425,7 +425,7 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
       if (recovery || isHGrowthReadConflict(error)) markH4Read(resourceOf(r.scope), false);
       throw error;
     }
-    throw new OutcomeUnknownError("H4_RESULT_UNKNOWN");
+    throw new OutcomeUnknownError("proposal" in r.request ? "H4_PROPOSAL_RESULT_UNKNOWN" : "H4_RESULT_UNKNOWN");
   }
   retain({ ...r, acknowledged: true, ...(raffleReceipt ? { raffleReceipt } : {}), ...(media ? { asset: result as UploadedAsset } : {}) });
   if (media) {
