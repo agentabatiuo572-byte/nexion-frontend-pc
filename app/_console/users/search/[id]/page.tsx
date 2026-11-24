@@ -215,7 +215,7 @@ const DEPOSIT_STATUS: Record<string, string> = {
 };
 const DIRECTION: Record<string, string> = { IN: "收入", OUT: "支出" };
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
-const CHECK_DEVICE_RESULT_FIRST = "请先查询原结果";
+const CHECK_RESULT_FIRST = "请先查询原结果";
 const isDeviceCommand = (command: C1Command) => command.kind === "replace" || command.kind === "recycle";
 const withdrawalTone = (row: JsonRecord) => WITHDRAWAL_TONE[asText(row.status, "").toUpperCase()];
 const withdrawalLabel = (row: JsonRecord) => withdrawalRecordLabel({ status: asText(row.status, ""), chain: asText(row.chain, "") });
@@ -1067,10 +1067,11 @@ export default function UserDetailPage() {
   };
 
   const busyReason = loading || referralRetrying ? PROFILE_REREAD_BLOCK : actionPending ? `正在执行：${actionPending}` : undefined;
-  const deviceRetryBlock = (command: C1Command) => {
+  // 先查原结果，明确查不到才开放「按原请求重试」（OP-93 第 7 条），设备和账户操作一样。
+  const pendingRetryBlock = (command: C1Command) => {
     if (isExplicitRejection(command.rejection)) return "重试被明确拒绝";
     const result = pendingFound[command.commandKey];
-    return result === "checking" ? "正在查询原结果" : result !== "none" ? CHECK_DEVICE_RESULT_FIRST : undefined;
+    return result === "checking" ? "正在查询原结果" : result !== "none" ? CHECK_RESULT_FIRST : undefined;
   };
   const clearPendingFound = (commandKey: string) => {
     setPendingFound(current => ({ ...current, [commandKey]: undefined }));
@@ -1080,12 +1081,12 @@ export default function UserDetailPage() {
   const retryPending = async (command: C1Command) => {
     if (command.expiresAt <= Date.now() || staleWriteReason) return;
     const device = isDeviceCommand(command);
-    if (device && (!canWriteC2 || command.legacy || busyReason || deviceRetryBlock(command))) return;
+    if (pendingRetryBlock(command) || device && (!canWriteC2 || command.legacy || busyReason)) return;
     if (!c1UserCommands.isDurablyStored(command.fingerprint, command.commandKey)) {
       setPendingNotes((current) => ({ ...current, [command.fingerprint]: "本机存储里查不到原操作，这次没有发送。到操作记录与审批核对，原记录继续保留。" }));
       return;
     }
-    if (device) clearPendingFound(command.commandKey);
+    clearPendingFound(command.commandKey);
     try {
       await execute(command);
     } catch (cause) {
@@ -1107,18 +1108,15 @@ export default function UserDetailPage() {
 
   /** 先按原请求查原结果，查到确定结论才解除并告诉运营结果；查不出结论再读回现在的值，变了也可能是别人改的，待确认保留（OP-93、OP-95）。 */
   const verifyPending = async (command: C1Command) => {
-    const device = isDeviceCommand(command);
-    if (device) {
-      if (busyReason || pendingFound[command.commandKey] === "checking") return;
-      setPendingFound(current => ({ ...current, [command.commandKey]: "checking" }));
-    }
+    if (busyReason || pendingFound[command.commandKey] === "checking") return;
+    setPendingFound(current => ({ ...current, [command.commandKey]: "checking" }));
     const result = await queryUserDetailCommand(command).catch(() => null);
     if (String(useAdminAuth.getState().session?.adminId) !== (command.adminKey || adminKey)) {
-      if (device) clearPendingFound(command.commandKey);
+      clearPendingFound(command.commandKey);
       return;
     }
     if (result?.settled) {
-      if (device) clearPendingFound(command.commandKey);
+      clearPendingFound(command.commandKey);
       c1UserCommands.forget(command.fingerprint, command.commandKey);
       syncPending(); setActionConfirm(null); setReleasing(null);
       const status = result.receipt?.originalStatus;
@@ -1481,7 +1479,7 @@ export default function UserDetailPage() {
       const refused = writable && !command.legacy && isExplicitRejection(command.rejection);
       const lookup = pendingFound[command.commandKey];
       const checkingResult = lookup === "checking";
-      const retryBlock = device ? deviceRetryBlock(command) : undefined;
+      const retryBlock = pendingRetryBlock(command);
       const canClose = canInvestigateECommand(userDetailCommandRoute(command).readAuthority);
       // 能在这里核查结案的，过期后不再指去操作记录与审批。
       const nextStep = expired ? canClose ? "已超过 24 小时，不能再重试。" : `${EXPIRED_TEXT}。` : command.legacy
@@ -1501,7 +1499,7 @@ export default function UserDetailPage() {
       const elsewhere = expired && canClose ? "已过 24 小时，请核查结案。" : "到操作记录与审批核对。";
       const shown: { tone: StateTone; label: string; line: string } | undefined = found && {
         error: { tone: "danger" as const, label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" },
-        none: { tone: "warn" as const, label: "没有查到", line: device && retryable ? "按原请求重试只重发原请求，不会重复执行。" : "查不到不等于没执行，先到操作记录与审批核对，不要另做一次。" },
+        none: { tone: "warn" as const, label: "没有查到", line: retryable ? "按原请求重试只重发原请求，不会重复执行。" : "查不到不等于没执行，先到操作记录与审批核对，不要另做一次。" },
         PROCESSING: { tone: "progress" as const, label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE },
         FAILED: { tone: "neutral" as const, label: "记为失败", line: retryable ? "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。"
           : expired && canClose ? FAILED_EXPIRED_LINE : "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起。" },
