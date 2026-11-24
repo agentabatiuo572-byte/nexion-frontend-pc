@@ -24,11 +24,13 @@
 
 /* 结果未知逐条 */
 .h4-page .h4-pending { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; width: 100%; }
-.h4-page .h4-pending li { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding-top: 8px; border-top: 1px solid var(--rd-line); }
+.h4-page .h4-pending li { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; padding-top: 8px; border-top: 1px solid var(--rd-line); }
 .h4-page .h4-pending-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .h4-page .h4-pending-change { color: var(--rd-text-2); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .h4-page .h4-pending-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .h4-page .h4-pending-when { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+/* 查询后的说明单起一行，按钮留在第一行行尾（和 I3 同一状态一样） */
+.h4-page .h4-pending-note { grid-column: 1 / -1; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 
 /* 等你处理 */
 .h4-page .h4-todo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -324,7 +326,7 @@
 .h4l-preview-note[data-tone="warn"] { color: var(--rd-warn); }
 /* 确认框里的新旧概率对比 */
 .h4l-compare { display: flex; flex-direction: column; gap: 8px; }
-.h4l-compare + .rd-notice, .h4l-compare + .rd-facts { margin-top: 12px; }
+.h4l-compare + .rd-notice, .h4l-compare + .rd-facts, .rd-confirm-facts > .rd-notice + .h4l-compare { margin-top: 12px; }
 .h4l-compare-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) 96px; gap: 8px; align-items: center; }
 .h4l-compare-key { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .h4l-compare-total { margin: 0; display: flex; justify-content: flex-end; align-items: center; gap: 4px; color: var(--rd-text-2); font-size: var(--rd-text-aux); white-space: nowrap; }
@@ -340,15 +342,14 @@
 
 /* 保存被别人先改过之后的三方对比（玩法规则、创世抽奖抽屉顶部） */
 .h4-dialog-body .h4-compare { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; min-width: 0; }
-.h4-dialog-body .h4-compare-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--rd-text-aux); color: var(--rd-text); }
+.h4-dialog-body .h4-compare-table { width: 100%; border-collapse: collapse; table-layout: auto; font-size: var(--rd-text-aux); color: var(--rd-text); }
 .h4-dialog-body .h4-compare-table th, .h4-dialog-body .h4-compare-table td { padding: 8px 10px; border-top: 1px solid var(--rd-line); text-align: left; vertical-align: top; overflow-wrap: anywhere; font-weight: normal; }
 .h4-dialog-body .h4-compare-table thead th { border-top: 0; padding-top: 0; color: var(--rd-text-3); white-space: nowrap; }
-.h4-dialog-body .h4-compare-table thead th:first-child, .h4-dialog-body .h4-compare-table tbody th { width: 30%; }
 .h4-dialog-body .h4-compare-table tbody th { display: table-cell; }
-.h4-dialog-body .h4-compare-name { display: block; margin-bottom: 4px; color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.h4-dialog-body .h4-compare-name { display: block; white-space: nowrap; margin-bottom: 4px; color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
 .h4-dialog-body .h4-compare-table td[data-changed] { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
 .h4-dialog-body .h4-compare-table td:not([data-changed]) { color: var(--rd-text-2); }
-.h4-dialog-body .h4-compare-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.h4-dialog-body .h4-compare-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .h4-dialog-body .h4-compare-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
 .h4-dialog-body .h4-compare-choice p { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .h4-dialog-body .h4-compare-table .h4-compare-section th { padding-top: 12px; color: var(--rd-text); font-weight: var(--rd-weight-semibold); }

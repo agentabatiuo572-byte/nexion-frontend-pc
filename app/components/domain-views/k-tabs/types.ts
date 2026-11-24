@@ -1,10 +1,12 @@
+import type { ConfirmReadConflict, PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import type { ReactNode } from "react";
 import type { K4PaginationQuery, KRiskActions, KRiskData, KRiskOverviewQuery, MultiAccountOverview, ScoringOverview } from "@/lib/admin/k-client";
-import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, InlineOperationApproval, OperationApproval, OperatorBriefKind } from "../design-kit";
+import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, InlineOperationApproval, OperationApproval, OperatorBriefKind, PendingConfirmRecovery } from "../design-kit";
 import type { ToastKind } from "@/lib/store/ui";
 
 export type ActionConfirmReq = {
   initialReason?: string;
+  initialRejection?: ConfirmReadConflict | PendingConfirmRejected;
   action: ReactNode;
   /** 框上写的短标题，只写动作和对象；action 照旧是记进操作记录的名字（VS-101）。 */
   title?: ReactNode;
@@ -24,12 +26,14 @@ export type ActionConfirmReq = {
   reasonMax?: number;
   /** 未确认的原操作理由；提交后重新查询，终态返回 undefined 解除锁定。 */
   getPendingReason?: () => string | undefined;
+  getPendingRecovery?: () => PendingConfirmRecovery | undefined;
+  reviewedFacts?: ReactNode;
   getPendingBusinessValue?: () => BusinessFormValue | undefined;
   completionCopy?: string;
   approval?: OperationApproval;
   inlineApproval?: InlineOperationApproval;
   /** 生效标签，只在 RdPage 里显示。 */
-  effect?: ReactNode;
+  effect?: ReactNode | ((value: BusinessFormValue) => ReactNode);
   /** 确认按钮写动作，比如「确认放行」，默认「确认提交」。 */
   confirmLabel?: string;
   /** 这次不能再提交的原因：写在框里，确认按钮禁用。比如提交时发现单据已被别人处理。 */
@@ -38,8 +42,8 @@ export type ActionConfirmReq = {
   formKey?: number;
   /** 这个操作自己声明的影响和提交前检查，传了就不按文字猜摘要（OP-51）。影响随业务字段变时传函数，参数是现在填的值；改一个值且要核对的框，第二个参数是核对读到的改后值，没核对时 undefined。 */
   statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue, reviewedValue?: string) => { impact: string; check: string });
-  /** 做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。改一个值的框可以传函数，随输入变（参数是填好的新值，没填好是 undefined）。 */
-  facts?: ReactNode | ((value?: string) => ReactNode);
+  /** 做决定要核对的事实。传函数时可按有效的新值和当前业务字段显示。 */
+  facts?: ReactNode | ((value?: string, businessValue?: BusinessFormValue) => ReactNode);
   /** 不能撤销的操作传 danger，确认按钮用危险色。 */
   confirmTone?: "primary" | "danger";
   /** 放大方向提示的开头，默认「这项操作会让平台多付钱」。 */
@@ -62,17 +66,23 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
+  initialError?: string;
+  /** Only explicitly designated emergency shutdowns may use the default policy on read failure (Q-06). */
+  reasonPolicyOptional?: boolean;
+  reasonMin?: number;
   /** Fixed operation intent retained by useHConflictDraft; not an editable input default. */
   rebaseValue?: string;
   /** Editable input restored only after the operator reviews a rejected first attempt. */
   initialInputValue?: string;
   initialReason?: string;
+  initialRejection?: ConfirmReadConflict | PendingConfirmRejected;
   formKey?: number;
   /** Opt-in for domains retaining the complete request after an unknown result. */
   freezePendingInput?: boolean;
   /** The caller replays its saved request, so current form validation must not block it. */
   replayPendingInput?: boolean;
   getPendingBlockReason?: () => string | undefined;
+  getPendingRecovery?: () => PendingConfirmRecovery | undefined;
   getPendingReason?: () => string | undefined;
   /** 原覆盖分，恢复时只展示保存的输入。 */
   getPendingValue?: () => string | undefined;

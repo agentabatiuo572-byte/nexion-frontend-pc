@@ -214,7 +214,10 @@ export interface FViewCtx {
   // -- 领导奖池/硬件配额/大使/榜单(F4)· 读 + 配置写入 --
   f4Overview: F4LeadershipPoolOverview | null;
   f4VoteProjection: F4VoteProjectionRead;
+  refreshF4VoteProjection: () => Promise<void>;
   f4AmbassadorPolicy: F4AmbassadorPolicy | null;
+  f4PolicyLoading: boolean;
+  retryF4AmbassadorPolicy: () => Promise<void>;
   refreshF4PolicyBaseline: () => Promise<F4AmbassadorPolicy>;
   f4Loading: boolean;
   f4Error: string | null;

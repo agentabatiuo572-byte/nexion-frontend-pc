@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { fetchE1Products } from "@/lib/admin/e1-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { Fact, Facts, Notice, StatusTag } from "@/app/components/rd";
+import { Explain, Fact, Facts, Notice, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count } from "./f4-shared";
@@ -62,7 +62,7 @@ export function F4QuotaCreate({ data, ctx, onClose }: { data: F4LeadershipPoolOv
         <Fact k="谁来批">{`${APPROVER}，不能是提交人`}</Fact>
         <Fact k="需有权限">购机名额修改权限；批准人还要有审批批准权限</Fact>
       </Facts>}
-      content={!noSkus && takenNames.length > 0 ? <Notice tone="neutral" title="一个商品只能有一个名额档位">{`${takenNames.join("、")} 已经有档位，不在下面的可选范围里；要改，到它那一行点「调额度」。`}</Notice> : undefined}
+      content={!noSkus && takenNames.length > 0 ? <Notice tone="neutral" title="一个商品只能有一个名额档位">{`${takenNames.length} 个商品已有档位。`}<span className="rd-keep">要改，到它那一行点「调额度」。</span><Explain label="已有档位的商品" content={takenNames.join("、")} /></Notice> : undefined}
       blockedReason={catalogError ? !ctx.can("device_e1_read") ? "需要商品查看权限才能选商品，请联系管理员开通" : catalogError : (noSkus ? "商品清单没读到，暂时选不了商品；刷新这页后再试" : !free.length ? "在售商品都已经有名额档位" : undefined)}
       statedBrief={(values) => ({
         impact: values.productNo && WHOLE.test((values.monthlyQuota ?? "").trim())
@@ -79,8 +79,8 @@ export function F4QuotaCreate({ data, ctx, onClose }: { data: F4LeadershipPoolOv
           return problem ? { invalid: true, ...problem } : { invalid: false, message: "" };
         },
         fields: [
-          { key: "productNo", label: "商品", inputKind: "select", options: free, optionLabels: skuLabels, mustChoose: true, searchable: free.length > 8, current: "", wide: true },
-          { key: "name", label: "名称", inputKind: "text", current: "", placeholder: "例如 Pro 月名额", help: "只在后台显示", maxLength: 128, wide: true },
+          { key: "productNo", label: "商品", inputKind: "select", options: free, optionLabels: skuLabels, mustChoose: true, searchable: free.length > 8, current: "" },
+          { key: "name", label: "名称", inputKind: "text", current: "", placeholder: "例如 Pro 月名额", help: "只在后台显示", maxLength: 128 },
           { key: "directRefs", label: "有效直接邀请（人）", inputKind: "number", current: "0", min: 0, step: 1, help: "填 0 表示不要求" },
           { key: "monthComputePoints", label: "本月团队算力点", inputKind: "number", current: "0", min: 0, step: 1, help: "填 0 表示不要求" },
           { key: "unlockMode", label: "两项条件", inputKind: "select", options: ["ALL", "EITHER"], optionLabels: MODE_LABELS, segments: true, current: "ALL", help: "两项都填了才有区别" },

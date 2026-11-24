@@ -321,7 +321,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 `Conclusion` 的气泡标题可传 `explainTitle`，默认仍为「这句话怎么算」。`PageGuide` 的技术信息用 `Fold`，默认收起，`more` 是纯文字，按句号和分号一句一行；三个分区标题 16/600，最常做的三件事一件一个 14/500 的小标题，步骤一行一步。页面编号只作为查找指南的内部键。
 
-旧的 `KConfirmModal` 放进 `RdPage` 后同样换新外观；`statedBrief`、`effect`、`reasonPlaceholder` 用法同上。它按 A2 理由规则和可见字符计数，规则读不到时按默认 8–200 继续，紧急关闭这类操作继续用它（Q-06）。
+旧的 `KConfirmModal` 放进 `RdPage` 后同样换新外观；`statedBrief`、`effect`、`reasonPlaceholder` 用法同上。它按 A2 理由规则和可见字符计数；规则加载中和加载失败时不能提交（02 OP-22），紧急关停按 Q-06 走 OperationConfirmModal 的 `reasonPolicyOptional`。
 
 业务表单的字段传 `mustChoose: true` 时不给默认值，下拉多一项「请选择」，必须人选了才能提交。核验类字段（大额放行的「地址与风险信息」、手动退款的「已核实」）和不能撤销的操作的原因都要这样，不能取第一项当默认值。多字段表单传 `derive(key, next)` 时，一个字段变了可以带着别的字段变，比如改等待天数时复查时间跟着变。
 

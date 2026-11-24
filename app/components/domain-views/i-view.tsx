@@ -213,6 +213,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           businessForm={mc.businessForm}
           completionCopy={mc.completionCopy}
           facts={mc.facts}
+          reviewedFacts={mc.reviewedFacts}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
           confirmTone={mc.confirmTone}
@@ -223,6 +224,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           reasonPlaceholder={mc.reasonPlaceholder}
           initialReason={mc.initialReason}
           getPendingReason={mc.getPendingReason}
+          getPendingRecovery={mc.getPendingRecovery}
           getPendingBusinessValue={mc.getPendingBusinessValue}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}

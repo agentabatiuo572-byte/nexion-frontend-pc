@@ -6,7 +6,7 @@ import { BlockState, Button, Check, CheckGroup, Decision, Drawer, Fact, Facts, F
 import { OperationConfirmModal } from "../design-kit";
 import { SETTLED_REJECTED } from "../recovery-panel";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { F1OutcomeUncertainError, isF1OutcomeUncertainError } from "@/lib/admin/f1-stable-write";
 import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -21,7 +21,7 @@ import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { applicationStage } from "./f4-quota";
-import { count, decimalText, stamp, unknownTag, zoneNote, moneyText } from "./f4-shared";
+import { count, stamp, unknownTag, zoneNote, moneyText } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import { f4Confirmation } from "./f4-confirmations";
 
@@ -118,7 +118,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
       if (next.applicationId !== application.id) throw new Error("材料详情不完整，请重新加载。");
       setPacket(next);
       return next;
-    } catch (cause) { setPacket(null); setError(displayAdminError(cause)); return null; }
+    } catch (cause) { setPacket(null); setError(displayAdminReadError(cause)); return null; }
     finally { setLoading(false); }
   }, [application.id]);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -196,14 +196,14 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
           state: stage.done > index ? "done" as const : stage.done === index && !final ? "current" as const : "todo" as const,
         }))} />
         <Facts>
-          <Fact k="申请金额" lead tone="role-1" unit="USDT">{decimalText(requested)}</Fact>
+          <Fact k="申请金额" lead tone="role-1" unit="USDT">{moneyText(requested)}</Fact>
           <Fact k="现在">{stage.text}</Fact>
           <Fact k="类别">{ambassadorBucketLabel(packet?.bucket ?? application.bucket)}</Fact>
           <Fact k="活动或服务日期">{packet?.eventDate || application.eventDate || "—"}</Fact>
           <Fact k="材料">{packet ? `${ambassadorMaterialStateLabel(packet.materialState)} · 第 ${packet.materialRevision} 版` : "—"}</Fact>
         </Facts>
         {loading ? <BlockState state="loading" title="正在读取当前材料和核验状态…" />
-          : error ? <BlockState state="error" title="材料读取失败" detail={error} onRetry={() => void refresh()} retryLabel="刷新材料" />
+          : error ? <BlockState state="error" title="材料加载失败" detail={error} onRetry={() => void refresh()} />
           : packet && <>
             {packet.legacyApproved && <Notice tone="neutral">历史已批准的申请：保留原额度和状态，没有材料，不补作核验通过。</Notice>}
             {missingLabels.length > 0 && <Notice tone="warn" title="需要申请人补材料">缺：{missingLabels.join("、")}。申请人在 App 的原申请里补交，补交后形成新的一版，要重新核验。</Notice>}
@@ -244,7 +244,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
                   <span className="f4-history-head"><b>{review.stage === "BUSINESS" ? "业务核验" : "财务核验"}</b><StatusTag tone={tag.tone}>{tag.text}</StatusTag><span className="f4-muted">第 {review.materialRevision ?? "—"} 版 · {review.reviewerLabel ? maskAuditActor(review.reviewerLabel) : "—"} · {review.reviewedAt ? stamp(review.reviewedAt) : "—"}</span></span>
                   {review.reason && <span className="f4-history-reason">{review.reason}</span>}
                   {review.verifiedAttendees != null && <span className="f4-muted">有效去重人数 {count(review.verifiedAttendees)} 人</span>}
-                  {review.recognizedBudgetUsdt != null && <span className="f4-muted">认可金额 {decimalText(review.recognizedBudgetUsdt)} USDT</span>}
+                  {review.recognizedBudgetUsdt != null && <span className="f4-muted">认可金额 {moneyText(review.recognizedBudgetUsdt)} USDT</span>}
                 </li>;
               })}</ul>
             </Fold>}
@@ -264,7 +264,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
         <Fact k="结论" tone={confirmation.decision === "PASSED" ? "ok" : "warn"}>{confirmation.decision === "PASSED" ? "通过" : "需补材料"}</Fact>
         <Fact k="材料">第 {confirmation.expectedMaterialRevision} 版</Fact>
         {confirmation.verifiedAttendees != null && <Fact k="有效去重人数">{count(confirmation.verifiedAttendees)} 人</Fact>}
-        {confirmation.recognizedBudgetUsdt != null && <Fact k="认可金额">{decimalText(confirmation.recognizedBudgetUsdt)} USDT</Fact>}
+        {confirmation.recognizedBudgetUsdt != null && <Fact k="认可金额">{moneyText(confirmation.recognizedBudgetUsdt)} USDT</Fact>}
         {!!confirmation.missingKinds?.length && <Fact k="要补的材料">{confirmation.missingKinds.map((kind) => packet?.requirements.find((item) => item.kind === kind)?.label ?? "材料项目").join("、")}</Fact>}
       </Facts>}
       detail={`材料 V${confirmation.expectedMaterialRevision} · 结论：${confirmation.decision === "PASSED" ? "通过" : "需补材料"}`}

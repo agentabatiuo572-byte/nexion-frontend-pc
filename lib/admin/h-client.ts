@@ -572,8 +572,16 @@ export async function updateH4EventReward(eventId: string, value: string, expect
   return h4EventMutation(eventId, "reward", value, expectedValue, reason);
 }
 
-export async function updateH4EventStatus(eventId: string, value: string, expectedValue: string, reason: string) {
-  return h4EventMutation(eventId, "status", value, expectedValue, reason);
+export async function previewH4EventStatus(eventId: string, value: string, expectedValue: string, reason: string) {
+  const preview = await growthRequest<{ approvalRequired: boolean }>(`/quest-events/events/${encodeURIComponent(eventId)}/status/preview`, {
+    method: "POST", body: commandBody("status", value, reason, currentAdminOperator(), expectedValue),
+  });
+  if (!preview || typeof preview.approvalRequired !== "boolean") throw new Error("H4_RESPONSE_INVALID");
+  return preview.approvalRequired;
+}
+
+export async function updateH4EventStatus(eventId: string, value: string, expectedValue: string, reason: string, approvalRequired: boolean) {
+  return h4EventMutation(eventId, "status", value, expectedValue, reason, approvalRequired);
 }
 
 export async function updateH4EventFeatured(eventId: string, value: boolean, expectedValue: boolean, reason: string) {
@@ -586,11 +594,13 @@ async function h4EventMutation(
   value: string | boolean,
   expectedValue: string | boolean,
   reason: string,
+  approval = false,
 ) {
   return h4CommandRequest(
     `/quest-events/events/${encodeURIComponent(eventId)}/${field}`,
     { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
     `活动${field === "reward" ? "奖励" : field === "status" ? "状态" : "主推"} · ${eventId}`,
+    approval,
   );
 }
 
