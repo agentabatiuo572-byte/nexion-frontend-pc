@@ -32,7 +32,9 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
   const generation = useRef(0), controller = useRef<AbortController | null>(null), objectUrl = useRef("");
   const resetFile = () => { if (objectUrl.current) URL.revokeObjectURL(objectUrl.current); objectUrl.current = ""; setUrl(""); setFile(null); };
   const updateDraft = (next: AvatarDraft | null) => {
-    setDraft(next); onChange(next?.asset?.assetId); onBlocking(Boolean(next && (!next.asset || next.cancelKey)));
+    // 清掉草稿（包括替换上传被拒）时，原头像还要重选或还没读回，就继续挡住提交。
+    setDraft(next); onChange(next?.asset?.assetId);
+    onBlocking(Boolean(next && (!next.asset || next.cancelKey)) || (!next?.asset && (mustReselect || previewFailed)));
     if (next?.asset) { setMustReselect(false); setPreviewFailed(false); }
   };
   const originalGone = () => { updateDraft(null); onBlocking(true); setMustReselect(true); setError("原头像已不可用，请重新选择头像，或选「不设置头像」。"); };
