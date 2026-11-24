@@ -1259,6 +1259,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4Proposals,
     f4QueryNotes,
     f4PolicyWrites,
+    f4ExpiredReason: (snapshot) => [...f4Proposals, ...f4PolicyWrites].some(row => isRetryExpired(row) && matchesF4Confirmation(row, snapshot)) ? RETRY_EXPIRED_TEXT : undefined,
     f4ApprovalRows,
     recoverF4,
     refreshF4,
