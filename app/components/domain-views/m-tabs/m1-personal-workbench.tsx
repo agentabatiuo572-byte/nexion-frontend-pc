@@ -115,7 +115,12 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const [recentError, setRecentError] = useState<string | null>(null);
   const [recentRefresh, setRecentRefresh] = useState(0);
   const [filter, setFilter] = useState<SupportCustomerFilter>(() => { if (typeof window === "undefined") return "TODO"; const value = new URLSearchParams(window.location.search).get("filter"); return filters.find(x => x.value === value)?.value ?? "TODO"; });
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => {
+    if (typeof window === "undefined") return 1;
+    const value = new URLSearchParams(window.location.search).get("page");
+    const number = Number(value);
+    return value && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(number) ? number : 1;
+  });
   const [keywordDraft, setKeywordDraft] = useState("");
   const [keyword, setKeyword] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -158,7 +163,14 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
 
   const personalSearchKey = `nexion-m1-personal-keyword:${adminId}`;
   useEffect(() => { try { const saved = sessionStorage.getItem(personalSearchKey) ?? ""; setKeyword(saved); setKeywordDraft(saved); } catch { /* Search still works without memory. */ } }, [personalSearchKey]);
-  useEffect(() => { if (!active || view !== "customers") return; const url = new URL(window.location.href); url.searchParams.set("filter", filter); window.history.replaceState(null, "", url); try { sessionStorage.setItem(personalSearchKey, keyword); } catch { /* Search still works without memory. */ } }, [active, view, filter, keyword, personalSearchKey]);
+  useEffect(() => {
+    if (!active || view !== "customers") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("filter", filter);
+    url.searchParams.set("page", String(page));
+    window.history.replaceState(null, "", url);
+    try { sessionStorage.setItem(personalSearchKey, keyword); } catch { /* Search still works without memory. */ }
+  }, [active, view, filter, page, keyword, personalSearchKey]);
   const conversationSnapshot = ctx.pget("I.session.convos");
   const priorConversationSnapshot = useRef(conversationSnapshot);
   useEffect(() => { if (priorConversationSnapshot.current === conversationSnapshot) return; priorConversationSnapshot.current = conversationSnapshot; setRowsRefresh(n => n + 1); setRecentRefresh(n => n + 1); }, [conversationSnapshot]);
@@ -168,7 +180,15 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     snapshotController.current = controller;
     setSnapshot(null); setRowsLoading(true); setOverviewLoading(true); setRowsError(null); setOverviewError(null);
     void supportClient.snapshot({ mode: "PERSONAL", pageNum: view === "dashboard" ? 1 : page, pageSize: view === "dashboard" ? 6 : PAGE_SIZE, keyword: view === "dashboard" ? undefined : keyword || undefined, filter: activeFilter, signal: controller.signal })
-      .then((next) => { if (!controller.signal.aborted) { setSnapshot(next); if (!next.customers.available) setRowsError("当前筛选条件暂不可用，请调整服务规则后重试。"); } })
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        if (view === "customers" && next.customers.available) {
+          const lastPage = Math.max(1, Math.ceil(next.customers.total / PAGE_SIZE));
+          if (page > lastPage) { setPage(lastPage); return; }
+        }
+        setSnapshot(next);
+        if (!next.customers.available) setRowsError("当前筛选条件暂不可用，请调整服务规则后重试。");
+      })
       .catch((error) => { if (!controller.signal.aborted) { setSnapshot(null); setRowsError(errorText(error)); setOverviewError(errorText(error)); } })
       .finally(() => { if (!controller.signal.aborted) { setRowsLoading(false); setOverviewLoading(false); } });
     return () => { controller.abort(); if (snapshotController.current === controller) snapshotController.current = null; };
@@ -239,7 +259,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     const params = new URLSearchParams(window.location.search);
     const customerId = params.get("customerId");
     if (!customerId || !/^[1-9]\d*$/.test(customerId)) return;
-    setView("customers"); setFilter("ALL"); setKeyword(customerId);
+    setView("customers"); setFilter("ALL"); setKeyword(customerId); setPage(1);
     void openDetail(customerId);
   }, [authEpoch, openDetail, permission]);
   useEffect(() => {
@@ -406,7 +426,11 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         {paymentSecurityPort && <PaymentSecurityBlock key={`${sessionKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={customerName(detail)} canRelease={Boolean(session?.authorities.includes("user_c5_payment_password_release"))} retryMissingRelease />}
         {maintenancePending && <Notice tone="warn" action={<Button disabled={saving} onClick={() => void checkMaintenance()}>查询原结果</Button>}>这位客户有一次维护操作结果未知，暂时不能再调整；原客户和理由已保留。</Notice>}
         {detail.accountState === "UNKNOWN" && <Notice tone="warn">账户活动数据不完整，无法判断沉睡或活跃。</Notice>}
-        <button type="button" className="rd-link m1-profile-link" onClick={() => router.push(`/service/customers/${detail.customerId}?source=M1&returnTo=/service/overview`)}>查看完整客户档案</button>
+        <button type="button" className="rd-link m1-profile-link" onClick={() => {
+          const { pathname, search } = window.location;
+          const query = new URLSearchParams({ source: "M1", returnTo: pathname + search });
+          router.push(`/service/customers/${detail.customerId}?${query}`);
+        }}>查看完整客户档案</button>
         <Fold title="维护记录" summary={history ? `周期 ${history.totalCycles} · 主动联系 ${history.totalExecutions}` : historyError ? "读取失败" : "尚未读取"} onOpenChange={open => { if (open && !history && !historyLoading) void loadHistory(); }}>
           <Button size="sm" disabled={historyLoading} onClick={() => void loadHistory()}>查看维护记录</Button>{historyError && <Notice tone="danger">{historyError}</Notice>}
           {history && <><Timeline entries={[...history.cycles, ...history.executions].map(item => ({ id: `${item.kind}:${item.id}`, action: historyLabel(item.kind, HISTORY_KINDS), actor: item.agentAdminId ? `客服账号 ${item.agentAdminId}` : "操作人未提供", at: item.occurredAt, detail: item.state ? historyLabel(item.state, HISTORY_STATES) : undefined }))} />{(history.cycles.length < history.totalCycles || history.executions.length < history.totalExecutions) && <Button disabled={historyLoading} onClick={() => void loadHistory(history.pageNum + 1)}>加载更多维护记录</Button>}</>}

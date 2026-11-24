@@ -6,13 +6,22 @@
  */
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { CalendarRange, CircleAlert, Clock3, EyeOff, Flag, Gift, Hourglass, CircleHelp, Languages, Smartphone, Star, Users } from "lucide-react";
-import { Button, Explain, Fact, Facts, MoreMenu, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
+import { Button, Explain, Fact, Facts, MoreMenu, Notice, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EVENT_KIND_LABELS } from "@/lib/admin/event-rule-form";
 import type { H4EventCapabilities } from "@/lib/admin/h-client";
 import { EVENT_CONTENT_LOCALES, type EventCopyReadiness } from "@/lib/admin/event-rule-form";
 import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { amountText, formatTime } from "./h4-promotion-ui";
+
+/** 真实冲突（别人先改过）后的提示：拟改值留着、现在值换成最新的、旧理由清空，要重新填理由才能提交。结果未知的原请求恢复用原理由，是另一句提示。 */
+export function H4StaleNote({ readLatest }: { readLatest?: () => void }) {
+  return <Notice tone="warn" title="别人先改过，这次没有保存"
+    action={readLatest && <Button size="sm" onClick={readLatest}>读取最新</Button>}>
+    {readLatest ? "读取最新值后再核对；你填的还在，理由要重填。"
+      : "现在值已换成最新的；你填的内容还在，请重新填写操作理由。"}
+  </Notice>;
+}
 
 // ===== 取值小工具：照旧页面原样 =====
 export function text(value: unknown, fallback = "-") {
@@ -47,16 +56,20 @@ export function legacyName(value: unknown): { text: string; legacy: boolean } {
   return { text: nexGridBrandText(raw.replace(/\bNEX\b/gi, "UVT").replace(/\$\s?(?=\d)/g, "")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券"), legacy };
 }
 /**
- * 既有活动奖励名给运营看时：按名字显示，只把名字里完整的金额词元（数字可带千分位，空格可有可无，币种 USDT、UVT、USD、VND、₫ 且是完整的词，
+ * 既有活动奖励名给运营看时：按名字显示，只把名字里完整的金额词元（数字可带千分位，空格可有可无，币种 USDT、UVT、USD、VND、₫ 且是完整的词、大小写都认，
  * 后面不紧跟「/币种」）的小数末尾 0 去掉；不舍入、不改正负号、不改大小写、不加千分位，带指数的和认不出的原样写。
- * 名字原文照旧用于比较、预览和提交（OP-39）。列表回包不带库里的实额，这里不从名字推算它。App 显示的文字和奖项名不走这里。
+ * 名字原文照旧用于比较、预览和提交（OP-39）。旧回包缺少实额字段时沿用名称。App 显示的文字和奖项名不走这里。
  */
-const NAME_AMOUNT = /(?<![\w.,])([+-]?(?:\d{1,3}(?:,\d{3})+|\d+))\.(\d+)(?![\d.eE])(?=[ \u00a0]?(?:USDT|UVT|USD|VND|₫)(?![\w])(?!\/[A-Za-z₫]))/g;
+const NAME_AMOUNT = /(?<![\w.,])([+-]?(?:\d{1,3}(?:,\d{3})+|\d+))\.(\d+)(?![\d.eE])(?=[ \u00a0]?(?:USDT|UVT|USD|VND|₫)(?![\w])(?!\/[A-Za-z₫]))/gi;
 export function legacyRewardText(value: unknown): string {
   return legacyName(value).text.replace(NAME_AMOUNT, (_, whole: string, fraction: string) => {
     const kept = fraction.replace(/0+$/, "");
     return kept ? `${whole}.${kept}` : whole;
   });
+}
+export function actualRewardText(amount: unknown, asset: unknown): string {
+  return typeof amount === "string" && /^\d+(?:\.\d+)?$/.test(amount) && (asset === "UVT" || asset === "USDT")
+    ? `${amountText(amount)} ${asset}` : "—";
 }
 export function LegacyNameTag({ where }: { where: string }) {
   return <StatusTag tone="warn" icon={CircleAlert} explain={`系统存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的也是存的名称（只做品牌替换）。改${where}时写成 UVT。`}>旧名称</StatusTag>;
@@ -79,6 +92,8 @@ export type LegacyEvent = H4EventCapabilities & {
   deleteVersion?: string;
   deletable?: boolean;
   reward?: string;
+  rewardType?: "UVT" | "USDT" | null;
+  rewardAmount?: string | null;
   description?: string;
   rewardName?: string;
   featured?: boolean;
@@ -175,9 +190,10 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requi
 }) {
   const life = lifecycleOf(event, requiredLanguages);
   const wheel = text(event.kind, "").toLowerCase() === "wheel";
-  const reward = legacyName(event.reward);
+  const hasRewardProjection = event.rewardType !== undefined || event.rewardAmount !== undefined;
+  const legacyReward = !hasRewardProjection && legacyName(event.reward).legacy;
   // 上一行实际显示的奖励；「App 显示同上」按这一行和 App 原文是否完全一样判断（F04）。
-  const shownReward = legacyRewardText(event.reward);
+  const shownReward = hasRewardProjection ? actualRewardText(event.rewardAmount, event.rewardType) : legacyRewardText(event.reward);
   // 卡片先显示中文；中文没填用英文那一份并标出来；名称、说明中英文都没填时显示原文（App 中文也显示它）并标出来；都没有才写「未配置」。
   const originals = { name: text(event.name, ""), description: text(event.description, "") };
   const pick = (field: ContentField) => zh[field] ? { text: zh[field], en: false, original: false } : en[field] ? { text: en[field], en: true, original: false }
@@ -206,7 +222,7 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requi
         {originalFields[0] === "description" && <>{originalTag} </>}{description?.text ?? "说明未配置"}{enTag("description")}</p>
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
-          {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{shownReward || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
+          {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{shownReward && shownReward !== "—" ? shownReward : <span className="h4-dim">—</span>}{legacyReward && <LegacyNameTag where="奖励文字" />}</>}
           <small>{appReward ? <>{!wheel && appReward.text === shownReward ? "App 显示同上" : `App 显示：${appReward.text || "—"}`}{enTag("rewardName")}</>
             : rewardFromRule && !rewardName ? "App 显示玩法规则摘要" : rewardName ? <>{rewardName.text !== shownReward ? `App 显示：${rewardName.text}` : "App 显示同上"}{enTag("rewardName")}</> : "奖项名未配置"}</small>
         </dd></div>
@@ -236,7 +252,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
   requiredLanguages: readonly LocaleCode[];
   names: Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>;
   original: Record<"name" | "description" | "rewardName", string>;
-  onEdit: (field: "name" | "description" | "rewardName", locale: LocaleCode) => void;
+  onEdit: (field: "name" | "description" | "rewardName", locale: LocaleCode) => () => void;
   canEdit: boolean;
   /** 还没开放，或玩法还能首次开启：必填语言都要填。 */
   requiresAll: boolean;
@@ -297,7 +313,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
               {hidden && <StatusTag tone="neutral" icon={EyeOff} explain={`App 的奖励一行显示系统按实际发放写的文字${appReward ? `（${LOCALE_NAME[locale]}：${appReward.text || "—"}）` : ""}，这一格填了也不显示，开放和开启玩法都不要求填。`}>App 不显示</StatusTag>}</span>
             {canEdit && (lockedReason
               ? <Button size="sm" variant="ghost" className="h4l-locale-edit" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} disabledReason={lockedReason}>{value ? "编辑" : "填写"}</Button>
-              : <button type="button" className="rd-link" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} onClick={() => onEdit(field, locale)}>{value ? "编辑" : "填写"}</button>)}
+              : <button type="button" className="rd-link" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} onClick={onEdit(field, locale)}>{value ? "编辑" : "填写"}</button>)}
           </li>;
         })}
       </ul>

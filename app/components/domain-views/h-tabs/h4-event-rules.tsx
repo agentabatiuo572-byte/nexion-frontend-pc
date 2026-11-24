@@ -15,7 +15,7 @@ import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4Pend
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatTime } from "./h4-promotion-ui";
-import { ApprovalFact, LOCALE_NAME, effectApproval, effectDirect, type LocaleCode } from "./h4-legacy-parts";
+import { ApprovalFact, H4StaleNote, LOCALE_NAME, effectApproval, effectDirect, type LocaleCode } from "./h4-legacy-parts";
 import { H4ConflictCompare, h4ConflictGroups, type H4ConflictGroup } from "./h4-conflict-compare";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { amountDisplay } from "@/lib/format";
@@ -121,7 +121,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
   }, []);
   const patchRule = (key: string, value: unknown) => setDraft(current => current ? { ...current, rules: { ...current.rules, [key]: value } } : current);
-  const save = (rebased?: { base: EventRuleView; draft: EventRuleChange; reason: string }) => {
+  const save = (rebased?: { base: EventRuleView; draft: EventRuleChange }) => {
     if (conflictReview.current) { setError(displayAdminError(conflictReview.current)); return; }
     const base = rebased?.base ?? selected, input = rebased?.draft ?? draft;
     if (base && confirmedH4Saves().some(record => record.scope === `H/h4_event_rule/${base.eventCode}`)) return;
@@ -154,11 +154,12 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     const firstOpen = next.enabled && !base.enabled && !base.rulesLocked;
     const readVersion = h4ReadVersion("rules");
     let originalKey: string | undefined;
-    ctx.openActionConfirm({ initialReason: rebased?.reason, getPendingReason: () => h4PendingFor(`H/h4_event_rule/${base.eventCode}`)?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
+    ctx.openActionConfirm({ getPendingReason: () => h4PendingFor(`H/h4_event_rule/${base.eventCode}`)?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
       title: firstOpen ? "开启玩法" : next.enabled ? "保存玩法配置" : "保存关闭状态",
       effect: firstOpen ? effectApproval("玩法") : effectDirect,
       detail: <>更新本活动的参与条件、奖励及有效期。{next.enabled ? "启用后符合条件的用户可参与；保存时会检查配置与奖励预算。" : "保存后活动保持关闭，不发放新奖励。"}</>,
       facts: <>
+        {(rebased || merged > 0) && <H4StaleNote />}
         <Facts>
           <Fact k="玩法">{EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · {base.eventCode}</Fact>
           <Fact k="开放状态">{base.enabled === next.enabled ? (next.enabled ? "开着" : "关着") : <>{base.enabled ? "开着" : "关着"} → {next.enabled ? "开启" : "关闭"}</>}</Fact>
@@ -220,7 +221,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
               const current = { enabled: latest.enabled, startsAt: latest.startsAt, endsAt: latest.endsAt, rules: eventRuleDraftRules(latest) };
               conflictReview.current = new HConflictReviewRequired(displayAdminError(cause), hConflictFields(opened, current, next), () => {
                 conflictReview.current = null;
-                save({ base: latest, draft: next, reason });
+                save({ base: latest, draft: next });
               });
             }
           } else if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_event_rule/${base.eventCode}`)) { ctx.openActionConfirm(null); await load(); }

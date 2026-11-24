@@ -361,6 +361,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const [firstRead, setFirstDetail] = useState<(SupportCustomerDetail & { revision: number }) | null>(null);
   const firstDetail = firstRead?.revision === snapshotRevision ? firstRead : null;
   const [detailError, setDetailError] = useState("");
+  /** 客户不在这个账号的范围内（403/404）：按 ST-38 写无权限，不说成加载失败（BUG-657）。只决定显示。 */
+  const [detailDenied, setDetailDenied] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailRetry, setDetailRetry] = useState(0);
   const [profileRead, setProfileDetail] = useState<(SupportCustomerDetail & { revision: number }) | null>(null);
@@ -897,7 +899,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     }
     if (revokeAll || affected.includes(selectedId) && !requestedCustomerId || customerId && (selected?.customerId === customerId || requestedCustomerId === customerId)) {
       sendAdminTyping(false); watchAdminConversation(null);
-      setFirstDetail(null); setProfileDetail(null); setDetailError(""); setProfileError(""); setRequestedCustomerId(null); setRestoredId("");
+      setFirstDetail(null); setProfileDetail(null); setDetailError(""); setDetailDenied(false); setProfileError(""); setRequestedCustomerId(null); setRestoredId("");
       clearAttachment(pending?.kind !== "IMAGE"); setMetaTarget(""); setScreen("list"); setContentChoice(null); if (revokeAll) setBulkOpen(false); setContactOpen(false); setSelectedClosedIds(new Set()); setIncludeCurrentReply(false); setArchiveIds(new Set());
     }
   }, [all, originalCustomer, selectedId, selected?.customerId, requestedCustomerId, clearAttachment, adminId, authEpoch, pending?.kind, activeKey, qualificationUnknown]);
@@ -1169,7 +1171,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (!validCustomerId(requestedCustomerId) || requestedConvo || !conversationsAvailable || qualificationUnknown) { setFirstDetail(null); return; }
     const controller = new AbortController();
     const requestStamp = identityRef.current;
-    setDetailLoading(true); setDetailError(""); setFirstDetail(null);
+    setDetailLoading(true); setDetailError(""); setDetailDenied(false); setFirstDetail(null);
     supportClient.customerDetail(requestedCustomerId, controller.signal).then((result) => {
       if (controller.signal.aborted || requestStamp !== identityRef.current) return;
       if (!canReviewAll && result.agentAdminId !== adminId) {
@@ -1182,6 +1184,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       if (lostPermission(cause)) {
         revokeCustomer(requestedCustomerId, true);
       }
+      setDetailDenied(lostPermission(cause));
       setDetailError(displayAdminError(cause));
     })
       .finally(() => { if (!controller.signal.aborted && requestStamp === identityRef.current) setDetailLoading(false); });
@@ -2217,7 +2220,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
               : !conversationsAvailable ? <p className="m3s-blank">读不到消息</p> : <BlockState state="empty" title={requestedCustomerId ? "尚无进行中会话。核对归属后即可发送首次联系。" : selected ? historyComplete ? "这段会话尚无消息。" : "历史消息还没加载完，请稍候或点重试。" : "选择会话后查看消息。"} />}
         </div>
         <div className="m3s-composer">
-          {detailError && <Notice tone="danger" action={<><Button size="sm" onClick={() => setDetailRetry((value) => value + 1)}>重试</Button><a className="rd-link" href="/service/overview">返回我的客户</a></>}>客户资料加载失败：{detailError}</Notice>}
+          {detailError && (detailDenied ? <Notice tone="warn" title="你没有查看这位客户的权限" action={<a className="rd-link" href="/service/overview">返回我的客户</a>} />
+            : <Notice tone="danger" action={<><Button size="sm" onClick={() => setDetailRetry((value) => value + 1)}>重试</Button><a className="rd-link" href="/service/overview">返回我的客户</a></>}>客户资料加载失败：{detailError}</Notice>)}
           {requestedCustomerId && !selected && firstDetail && firstDetail.agentAdminId !== adminId && !holdAllowsOther && !heldByOther && <Notice tone="warn">{canReviewAll && canWriteM3 && hold === undefined ? "正在核对接待状态…" : "这位客户由专属客服负责，你只能查看。"}</Notice>}
           {requestedCustomerId && firstDetail && firstDetail.agentAdminId === adminId && !firstDetail.assignmentId && <Notice tone="warn">还没读到这位客户的归属，暂不能发送，请刷新客户资料。</Notice>}
           {selected && !writable && !ownReplyInFlight && !(editable && messagePages.loading) && composerMode === "write" && (currentProfileDetail || profileError || recoveryBlocksTarget || !canWriteM3 || selected.writeState?.canReply !== true || selected.status !== "open") && (

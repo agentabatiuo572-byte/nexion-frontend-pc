@@ -36,13 +36,13 @@ export function usd(value: number | null | undefined): string {
 }
 
 /**
- * 首页「累计已发放」的单位照 App 原样写：App（home-display-stats.vue）显示为「$」加两位小数，
- * 后端字段 homePaidCurrent 本身不带币种。页面不换算、不改名。
+ * 首页「累计已发放」的设定值：后端字段 homePaidCurrent 不带币种，App（home-display-stats.vue）在金额前写「$」。
+ * 后台自己的显示按 TX-19 写「数字 + 空格 + USD」（重构说明 H9：金额 USD、USD/秒），不换算（BUG-635）；只有「App 上的样子」里 App 显示的数照 App 写。
  */
-export const PAID_UNIT = "$";
-export const PAID_UNIT_NOTE = "App 上显示为 $（例如 $2,865,400.50），这是展示值的单位，页面照 App 原样写，不换算、不代表真实结算币种。";
+export const PAID_UNIT = "USD";
+export const PAID_UNIT_NOTE = "App 上金额前写 $（例如 $2,865,400.50）；这里按美元写 USD，不换算。这是展示数字，不是真实结算币种。";
 export function paid(value: number | null | undefined): string {
-  return value == null || !Number.isFinite(value) ? "—" : `$${usd(value)}`;
+  return value == null || !Number.isFinite(value) ? "—" : `${usd(value)} USD`;
 }
 
 /** 两个金额相乘：按两边的小数位定精度，避开浮点尾差（28432 × 0.06 = 1,705.92）。 */

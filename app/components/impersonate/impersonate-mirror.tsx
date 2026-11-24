@@ -31,6 +31,7 @@ const SESSION_SECONDS = 30 * 60; // 只读代入会话 ≤ 30min
 const DEVICE_MODELS = ["UVELBox S1", "UVELBox Pro", "UVELBox Pro v2", "UVELRack P1", "UVELRack P2", "Cloud Share"];
 const DEVICE_RATE = [7, 13, 14, 45, 75, 0.19];
 
+// 这页是 App 画面的只读镜像，金额照 App 写「$」：App 钱包卡 wallet-card.vue、商品卡 product-card.vue 都在金额前写 $（BUG-635 判别：忠实预览 App 的画面保留 App 写法）。
 const fmtUsd = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 const fmtNex = (n: number) => n.toLocaleString("en-US") + " UVT";
 const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;

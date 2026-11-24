@@ -6,9 +6,10 @@
  */
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, blankCopiedContentLanguage } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
-import type { BusinessFormValue } from "../design-kit";
+import type { BusinessFormValue, EditComparison } from "../design-kit";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
@@ -55,7 +56,7 @@ import {
   ApprovalFact, EventCard, EventPreview, GuardCard, contentFieldsText, contentGaps, gapWeight, languageNames, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
   WHEEL_APP_KINDS, WHEEL_KIND_LABEL, WheelBar, WheelLegend, boolValue, effectApproval, effectByDirection, effectDirect, expiredTag, formStore,
   legacyName, lifecycleOf, numericValue, pendingTag, percentText, text, unknownTag, wheelLegacyNexTier, wheelPointsTier, wheelUnit,
-  type LegacyEvent, type LocaleCode, type WheelTier, legacyRewardText } from "./h4-legacy-parts";
+  type LegacyEvent, type LocaleCode, type WheelTier, actualRewardText, legacyRewardText, H4StaleNote } from "./h4-legacy-parts";
 
 type Model = H4Statistics & {
   events?: LegacyEvent[];
@@ -67,6 +68,19 @@ type Model = H4Statistics & {
 };
 
 const GUARD_NAME: Record<string, string> = { budget: "每日真钱奖预算", cap: "各奖档每日库存", kill: "真钱奖发放开关" };
+const REWARD_PREVIEW_VALUE_ERRORS = new Set([
+  "EVENT_REWARD_ASSET_INVALID", "EVENT_REWARD_INVALID", "EVENT_CONFIG_NO_CHANGE", "VALUE_TOO_LONG", "MANUAL_JSON_NOT_ALLOWED",
+]);
+function isRewardPreviewValueRejected(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const { status, apiCode, reasonCode, bodyUnreadable, unknownOutcome } = error as Error & {
+    status?: number; apiCode?: number; reasonCode?: string; bodyUnreadable?: boolean; unknownOutcome?: boolean;
+  };
+  return typeof status === "number" && status !== 429 && typeof apiCode === "number" && apiCode !== 0
+    && !bodyUnreadable && !unknownOutcome && isDeterministicRejection(status, apiCode)
+    && REWARD_PREVIEW_VALUE_ERRORS.has(reasonCode ?? "");
+}
+
 function wheelRewardNameFeedback(value: BusinessFormValue, label: string) {
   const message = appVisibleTextError(value.rewardName, label);
   return { message: message ?? "", invalid: message !== undefined, field: "rewardName", live: true };
@@ -190,7 +204,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const adminId = useAdminAuth(state => state.session?.adminId);
   const activeRecovery = useRef<string | null>(null);
   /** 直接保存被判定要走审批：换成审批确认，值和理由沿用（H-改走审批）。 */
-  const approvalReconfirm = (error: HApprovalRequired, req: ActionConfirmReq | ConfirmReq, reason: string, value?: string, businessValue?: BusinessFormValue) => {
+  const approvalReconfirm = (error: HApprovalRequired, req: ActionConfirmReq | ConfirmReq, reason: string, value?: string, businessValue?: BusinessFormValue, comparison?: EditComparison) => {
     const edit = "edit" in req ? req.edit : undefined;
     const facts = "facts" in req ? typeof req.facts === "function" ? req.facts(value) : req.facts : "content" in req ? req.content : undefined;
     const fields = "businessForm" in req && req.businessForm?.kind === "multi-field" ? req.businessForm.fields : [];
@@ -209,16 +223,20 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     return hApprovalReconfirm(error, { changes,
       hasPending: () => !!h4PendingFor(h4Scope((error.input as { path: string }).path, JSON.parse((error.input as { body: string }).body))),
       onUnknown: () => ctx.closeConfirm?.(), action: req.action, title: req.title, reason, approver: "另一位超级管理员", holds: creating ? "现有配置" : "这一项",
-      change: edit && value !== undefined ? (unit => <Change from={`${edit.current || "—"}${unit ? ` ${unit}` : ""}`} to={`${value}${unit ? ` ${unit}` : ""}`} />)(edit.unit ?? RECONFIRM_UNIT[String(req.title)]) : undefined,
+      change: comparison ? <Change from={comparison.before} to={comparison.after} />
+        : edit && value !== undefined ? (unit => <Change from={`${edit.current || "—"}${unit ? ` ${unit}` : ""}`} to={`${value}${unit ? ` ${unit}` : ""}`} />)(edit.unit ?? RECONFIRM_UNIT[String(req.title)]) : undefined,
       // 有逐项改动时不再放原框的「现在」事实；只有改已有一项时补一行对象（目前是转盘奖项编辑）。
       context: edit || changes ? undefined : facts,
       subject: changes && !creating && typeof req.action === "string" && req.action.includes(" · ") ? <Fact k="奖项">{req.action.slice(req.action.indexOf(" · ") + 3)}</Fact> : undefined,
       completed: async result => { await apply(result); } });
   };
-  const openActionConfirm = (req: ActionConfirmReq) => {
+  const openActionConfirm = (req: ActionConfirmReq, getComparison?: () => EditComparison | undefined) => {
     const version = h4ReadVersion("overview");
+    const reopenedAfterConflict = conflictDraft.reopenedAfterConflict;
+    const facts = req.facts;
     let retained: H4Command | undefined;
-    ctx.openActionConfirm(conflictDraft.action({ ...req,
+    const opened: ActionConfirmReq = { ...req,
+      facts: reopenedAfterConflict ? (value?: string) => <><H4StaleNote />{typeof facts === "function" ? facts(value) : facts}</> : facts,
       blockedReason: req.blockedReason ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
       run: async (reason, value, businessValue) => {
@@ -227,23 +245,25 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           finally { if (!pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) ctx.openActionConfirm(null); await reloadH4Approvals(); await reload(); }
           return;
         }
-        assertH4Fresh("overview", version);
+        if (!req.edit?.review) assertH4Fresh("overview", version);
         const before = new Set(pendingH4Commands().map(r => r.commandKey));
         setStale(null);
         try { await req.run(reason, value, businessValue); }
         catch (cause) {
-          if (cause instanceof HApprovalRequired) { ctx.openActionConfirm(null); ctx.openConfirm(approvalReconfirm(cause, req, reason, value, businessValue)); return; }
-          if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.openActionConfirm(null); await reload(); }
+          if (cause instanceof HApprovalRequired) { ctx.openActionConfirm(null); ctx.openConfirm(approvalReconfirm(cause, req, reason, value, businessValue, getComparison?.())); return; }
+          if (!req.edit?.review && isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.openActionConfirm(null); await reload(); }
           throw cause;
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
       },
-    }));
+    };
+    ctx.openActionConfirm(req.edit?.review ? opened : conflictDraft.action(opened));
   };
   const openConfirm = (req: ConfirmReq) => {
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
     ctx.openConfirm(conflictDraft.confirm({ ...req, freezePendingInput: true,
+      content: conflictDraft.reopenedAfterConflict ? <><H4StaleNote />{req.content}</> : req.content,
       getPendingBlockReason: () => req.getPendingBlockReason?.() ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
       run: async (reason, value) => {
@@ -280,7 +300,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const [model, setModel] = useState<Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const conflictDraft = useHConflictDraft(!loading && !error && h4ReadVersion("overview") !== undefined);
+  const conflictDraft = useHConflictDraft(!loading && !error && h4ReadVersion("overview") !== undefined, { rebaseOnConflict: true });
   const canReadA2 = ctx.can("platform_a2_read");
   // 已建成、等别人批的 H4 审批单只在审批中心里；这里读一次，好让运营在本页看到哪项在等批。
   const [h4Approvals, setH4Approvals] = useState<A2OperationRow[] | "error" | null>(null);
@@ -324,8 +344,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       const owner = useAdminAuth.getState().session?.adminId;
       const [result, required] = await Promise.all([fetchH3QuestEvents("events"), getRequiredContentLanguages()]);
       if (owner !== useAdminAuth.getState().session?.adminId) return false;
-      setRequiredLanguages(required); setModel(result as Model); setError(null);
-      return true;
+      const next = result as Model;
+      setRequiredLanguages(required); setModel(next); setError(null);
+      return next;
     } catch (err) {
       setError(displayAdminReadError(err));
       return false;
@@ -369,33 +390,96 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const ruleBased = event.rewardCopyOnly !== undefined ? event.rewardCopyOnly
       : rules === null ? null : H4_EVENT_RULE_CODES.has(event.id) && !!ruleOf(event.id);
     if (ruleBased === null) { toast("活动规则读取失败，请刷新后重试。", "warn"); return; }
+    type RewardPreview = Awaited<ReturnType<typeof previewH4EventReward>>;
+    const incompletePreview = "活动奖励预览不完整，本次未提交；请重新读取活动后核对。";
+    let baseline = event;
+    let reviewVersion = h4ReadVersion("overview");
+    let reviewed: { value: string; expectedValue: string; preview: RewardPreview; comparison: EditComparison; submitReason?: string } | undefined;
+    const subject = <Fact k="活动">{eventName(event.id)}</Fact>;
+    const rewardFacts = (activity: LegacyEvent, reviewedCopy = false, approvalRequired = false) => <Facts>{subject}{ruleBased
+      ? <>{!reviewedCopy && <Fact k="现在的奖励">{legacyRewardText(text(activity.reward))}{legacyName(activity.reward).legacy && <LegacyNameTag where="奖励文字" />}</Fact>}
+        <Fact k="改的是">这页登记的奖励文字</Fact><Fact k="App 上">{activity.appRewardNames ? <>显示「{activity.appRewardNames.zh || "—"}」，按玩法规则写，不随这里改</> : "每种语言显示填的奖项名，没填的显示玩法规则摘要"}</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
+      : activity.appRewardNames && <Fact k="App 现在显示">{activity.appRewardNames.zh || "—"}</Fact>}
+      {approvalRequired && <ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" />}
+    </Facts>;
+    const rewardReview = ({ preview, comparison }: NonNullable<typeof reviewed>) => ({
+      comparison,
+      amplifies: preview.approvalRequired,
+      effect: preview.approvalRequired ? effectApproval("奖励") : effectDirect,
+      confirmLabel: preview.approvalRequired ? "提交审批" : ruleBased ? "提交修改" : "确认修改",
+      coverageCheck: preview.approvalRequired ? "批准执行时检查兑付覆盖率。" : undefined,
+      facts: rewardFacts(baseline, true, preview.approvalRequired),
+    });
     openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,
       title: "修改活动奖励",
-      effect: ruleBased ? effectDirect : effectByDirection(),
-      detail: ruleBased ? "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。" : <>当前奖励 <b>{legacyRewardText(current)}</b>。填写新奖励后确认。</>,
-      facts: <>
-        <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{legacyRewardText(current)}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</Fact>{ruleBased
-          ? <><Fact k="改的是">这页登记的奖励文字</Fact><Fact k="App 上">{event.appRewardNames ? <>显示「{event.appRewardNames.zh || "—"}」，按玩法规则写，不随这里改</> : "每种语言显示填的奖项名，没填的显示玩法规则摘要"}</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
-          : <>{event.appRewardNames && <Fact k="App 现在显示">{event.appRewardNames.zh || "—"}</Fact>}<ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" /></>}</Facts>
-      </>,
-      amplifies: !ruleBased,
+      effect: ruleBased ? effectDirect : undefined,
+      detail: ruleBased ? "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。" : "填写新奖励后确认。",
+      // 影响写这次的真实后果（OP-53、OP-146）：核对后用读到的改后实额代入。
+      statedBrief: ruleBased
+        ? { impact: "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。", check: "核对现在和改后的奖励文字，理由写清依据或工单号。" }
+        : (_form, after) => ({ impact: after ? `改成 ${after}：之后达标领奖的用户按 ${after} 发放。` : "之后达标领奖的用户按改后的奖励发放。", check: "核对现在和改后的奖励，理由写清依据或工单号。" }),
+      facts: rewardFacts(event),
       confirmLabel: "提交修改",
       reasonPlaceholder: "例如：按运营排期调整奖励，工单号",
       getPendingReason: () => pendingHIRewardCommand(hiEventScope(event.id))?.payload.input.reason,
-      edit: { kind: "text", current, initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue, hint: ruleBased ? undefined : "只认正数的 UVT 或 USDT，如 100 UVT" },
+      edit: { kind: "text", current,
+        displayCurrent: ruleBased ? undefined : actualRewardText(event.rewardAmount, event.rewardType),
+        initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue, hint: ruleBased ? undefined : "只认正数的 UVT 或 USDT，如 100 UVT",
+        review: {
+          conflictOnly: ruleBased,
+          readFailTitle: "奖励预览没读到",
+          isConflict: error => isHGrowthReadConflict(error) || error instanceof Error && error.message === "H4_REFRESH_REQUIRED",
+          isValueRejected: isRewardPreviewValueRejected,
+          conflictNote: readLatest => <H4StaleNote readLatest={readLatest} />,
+          read: async (value, signal, refresh, submitReason) => {
+            if (refresh) {
+              reviewed = undefined;
+              const latest = await reload();
+              signal.throwIfAborted();
+              if (!latest) throw new Error("既有活动与转盘没有读到");
+              const refreshed = latest.events?.find(row => row.id === event.id);
+              if (!refreshed) throw new Error("最新读取里没有这项活动");
+              if (lifecycleOf(refreshed, requiredLanguages).key === "ended") throw new Error("已结束的活动不能改奖励");
+              baseline = refreshed;
+              reviewVersion = h4ReadVersion("overview");
+            }
+            assertH4Fresh("overview", reviewVersion);
+            const expectedValue = text(baseline.reward);
+            // A successful read-only retry can supply the next explicit submit.
+            if (submitReason !== undefined && reviewed?.submitReason === submitReason && reviewed.value === value
+              && reviewed.expectedValue === expectedValue) return rewardReview(reviewed);
+            reviewed = undefined;
+            const preview = await previewH4EventReward(event.id, value, expectedValue, submitReason ?? "", signal);
+            signal.throwIfAborted();
+            if (!ruleBased && (preview.currentReward === undefined || !preview.proposedReward)) throw new Error(incompletePreview);
+            const comparison = ruleBased
+              ? { before: legacyRewardText(preview.current) || "—", after: legacyRewardText(preview.proposed) || "—" }
+              : {
+                before: actualRewardText(preview.currentReward?.amount, preview.currentReward?.asset),
+                after: actualRewardText(preview.proposedReward?.amount, preview.proposedReward?.asset),
+              };
+            reviewed = { value, expectedValue, preview, comparison, submitReason };
+            return rewardReview(reviewed);
+          },
+        },
+      },
       run: async (reason, value) => {
-        const scope = hiEventScope(event.id);
         if (!value) return;
-        const preview = await previewH4EventReward(event.id, value, current, reason);
+        const saved = reviewed?.value === value ? reviewed : undefined;
+        assertH4Fresh("overview", reviewVersion);
+        if (!saved) throw new Error(incompletePreview);
+        const { expectedValue, preview } = saved;
+        // A new write attempt for ordinary copy must preview again.
+        if (saved.submitReason !== undefined) reviewed = undefined;
         if (preview.approvalRequired) {
-          await proposeH4(scope, "h4_legacy_event_reward_update", { eventCode: event.id, value, expectedValue: current },
+          await proposeH4(hiEventScope(event.id), "h4_legacy_event_reward_update", { eventCode: event.id, value, expectedValue },
             preview.current, preview.proposed, reason, undefined, value);
           return;
         }
-        if (await apply(await updateH4EventReward(event.id, value, current, reason))) toast(`${event.name} 奖励已更新`);
+        if (await apply(await updateH4EventReward(event.id, value, expectedValue, reason))) toast(`${event.name} 奖励已更新`);
       },
-    });
+    }, () => reviewed?.comparison);
   };
 
   const eventContent = model?.contentLocales?.event ?? {};
@@ -486,10 +570,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     });
   };
 
-  const openLocalizedContent = async (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
+  const openLocalizedContent = (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
     if (h4Blocked(hiEventScope(code))) { toast(h4ApprovalLockedReason(hiEventScope(code)) ?? "原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
-    const required = await getRequiredContentLanguages();
-    setRequiredLanguages(required);
+    const required = requiredLanguages;
     const expectedValue = eventContent[code]?.[locale]?.[field];
     const current = text(expectedValue, "");
     const group = (codeOfLanguage: LocaleCode) => ({
@@ -526,7 +609,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         setRequiredLanguages(required);
         if (!value.trim() && (!clearable || required.includes(locale))) return;
         localizedDraft.current = { code, field, locale, value, reason };
-        const result = await updateH4LocalizedContent(code, field, locale, value, expectedValue, reason);
+        let result: Awaited<ReturnType<typeof updateH4LocalizedContent>>;
+        try { result = await updateH4LocalizedContent(code, field, locale, value, expectedValue, reason); }
+        catch (cause) {
+          if (isHGrowthReadConflict(cause)) localizedDraft.current = null;
+          throw cause;
+        }
         localizedDraft.current = null;
         if (await apply(result)) {
           setContentRefresh(current => current + 1);
@@ -780,9 +868,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const fixed = tiers.filter(wheelPointsTier);
     const probabilityText = (tier: Record<string, unknown>, values: Record<string, string>) =>
       wheelPointsTier(tier) ? String(numericValue(tier.prob)) : values[text(tier.tier)] ?? "";
-    const initial = pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form
-      ?? conflictDraft.business
-      ?? Object.fromEntries(tiers.filter((tier) => !wheelPointsTier(tier)).map((tier) => [text(tier.tier), String(numericValue(tier.prob))]));
+    const currentProbabilities = Object.fromEntries(tiers.filter((tier) => !wheelPointsTier(tier)).map((tier) => [text(tier.tier), String(numericValue(tier.prob))]));
+    const initial = pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form ?? { ...currentProbabilities, ...conflictDraft.business };
     const store = formStore(initial);
     openActionConfirm({ briefKind: "config",
       action: "调整转盘奖项概率",
@@ -1339,7 +1426,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       {contentEvent && <EventPreview canEdit={canModuleWrite} requiredLanguages={requiredLanguages} copyReadiness={contentEvent.copyReadiness} requiresAll={allLocalesRequired(contentEvent)} opened={contentEvent.state !== "upcoming"} rewardFromRule={rewardFromRule(contentEvent)} authored={contentEvent.appUsesAuthoredRewardName} appNames={contentEvent.appRewardNames} lockedReason={h4ApprovalLockedReason(hiEventScope(contentEvent.id))}
         names={Object.fromEntries((["zh", "en", "vi"] as const).map((locale) => [locale, { name: localizedValue(contentEvent.id, "name", locale), description: localizedValue(contentEvent.id, "description", locale), rewardName: localizedValue(contentEvent.id, "rewardName", locale) }])) as Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>}
         original={{ name: text(contentEvent.name, ""), description: text(contentEvent.description, ""), rewardName: text(contentEvent.rewardName, "") }}
-        onEdit={(field, locale) => openLocalizedContent(contentEvent.id, field, locale, field === "name" ? contentEvent.name : field === "description" ? text(contentEvent.description) : text(contentEvent.rewardName))} />}
+        onEdit={(field, locale) => conflictDraft.register(JSON.stringify(["openLocalizedContent", contentEvent.id, field, locale]),
+          () => openLocalizedContent(contentEvent.id, field, locale, field === "name" ? contentEvent.name : field === "description" ? text(contentEvent.description) : text(contentEvent.rewardName)))} />}
     </Drawer>
   </div>;
 }

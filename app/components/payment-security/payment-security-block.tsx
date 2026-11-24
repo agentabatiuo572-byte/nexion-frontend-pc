@@ -10,11 +10,11 @@ import { RefreshCcw } from "lucide-react";
 import { BlockState, Button, Fact, Facts, Fold, Notice, StatusTag } from "@/app/components/rd";
 import { PaymentSecurityDetail, paymentSecurityStateText } from "./payment-security-card";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { pendingPaymentRelease, type PaymentSecurityPort } from "@/lib/admin/payment-password-client";
+import { PaymentPasswordApiError, pendingPaymentRelease, type PaymentSecurityPort } from "@/lib/admin/payment-password-client";
 import type { PaymentSecurityRecord, PaymentSecuritySummary } from "@/lib/admin/payment-password-contract";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
-export type PaymentSecurityState = "loading" | "failed" | "clear" | "exception";
+export type PaymentSecurityState = "loading" | "failed" | "denied" | "clear" | "exception";
 
 const message = (failure: unknown) => failure instanceof Error ? failure.message : "支付安全信息未确认，请重新加载。";
 const actionText = (record: PaymentSecurityRecord) => record.type === "PAYMENT_PASSWORD_EXCEPTION" ? "解除异常标记" : "解除锁定";
@@ -31,7 +31,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   port: PaymentSecurityPort;
   userLabel: string;
   /** 页面刷新时变，这一块跟着重读。 */
-  reloadKey?: number;
+  reloadKey?: number | string;
   /** 有独立解除权限才给入口（OP-124）。能不能解除这一条还看后端 capability。 */
   canRelease: boolean;
   retryMissingRelease?: boolean;
@@ -40,6 +40,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   const session = useAdminAuth((state) => state.session), epoch = useAdminAuth((state) => state.authEpoch);
   const [summary, setSummary] = useState<PaymentSecuritySummary | null>(null);
   const [error, setError] = useState("");
+  const [denied, setDenied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [selected, setSelected] = useState<{ id: string; release: boolean } | null>(null);
@@ -50,9 +51,14 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
     setSummary(null); setError(""); setLoading(true); setPending(!!pendingPaymentRelease(owner, port.userId));
     try {
       const next = await port.summary();
-      if (id === generation.current) setSummary(next);
+      if (id === generation.current) { setSummary(next); setDenied(false); }
     } catch (failure) {
-      if (id === generation.current) setError(message(failure));
+      if (id === generation.current) {
+        if (failure instanceof PaymentPasswordApiError && failure.status === 403) {
+          setSelected(null);
+          setDenied(true);
+        } else setError(message(failure));
+      }
     } finally {
       if (id === generation.current) setLoading(false);
     }
@@ -65,17 +71,18 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   }, [load, owner, reloadKey]);
   const record = summary?.record;
   // 状态未确认的记录不算没事。
-  const state: PaymentSecurityState = loading ? "loading" : error || record?.state === "UNKNOWN" ? "failed" : record?.state === "ACTIVE" ? "exception" : "clear";
-  useEffect(() => { onState?.(state, pending); }, [onState, state, pending]);
+  const state: PaymentSecurityState = error ? "failed" : denied ? "denied" : loading ? "loading" : record?.state === "UNKNOWN" ? "failed" : record?.state === "ACTIVE" ? "exception" : "clear";
+  const showPending = pending && !denied;
+  useEffect(() => { onState?.(state, showPending); }, [onState, state, showPending]);
   if (!session) return null;
-  const line = loading ? "正在读取…" : error ? "加载失败" : record ? stateText(record) : "支付密码无异常";
+  const line = error ? "加载失败" : denied ? "· 无权限" : loading ? "正在读取…" : record ? stateText(record) : "支付密码无异常";
   return (
     <>
-      <Fold inset title="支付安全" alert={state === "exception" || state === "failed" || pending} alertTone={error ? "danger" : "warn"} summary={line}
+      <Fold inset title="支付安全" alert={state === "exception" || state === "failed" || showPending} alertTone={error ? "danger" : "warn"} summary={line}
         explain={<><p>支付密码仅用于钱包余额付款。HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受此锁定影响。</p>{record && <p>解除只处理本条支付密码异常，登录状态不受影响。</p>}</>}
-        actions={!error && <Button size="sm" aria-label="刷新支付安全" icon={<RefreshCcw size={13} aria-hidden />} loading={loading} onClick={() => void load()}>刷新</Button>}>
+        actions={!denied && !error && <Button size="sm" aria-label="刷新支付安全" icon={<RefreshCcw size={13} aria-hidden />} loading={loading} onClick={() => void load()}>刷新</Button>}>
         <div className="rd-detail-block">
-          {error && <BlockState state="error" compact title={error} onRetry={() => void load()} />}
+          {error ? <BlockState state="error" compact title={error} onRetry={() => void load()} /> : denied && <BlockState state="denied" compact title="无权限" />}
           {record && <>
             <Facts>
               <Fact k="当前状态">{stateTag(record)}</Fact>
@@ -92,7 +99,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
           </>}
           {summary && !record && <p className="rd-detail-empty">历史处置记录仍保留。</p>}
           {summary && <p className="rd-toolbar-note">查询时间 {formatBusinessTimeCompact(summary.observedAt, "暂无记录")}</p>}
-          {pending && <Notice tone="warn" title="有一笔解除结果未知。"
+          {showPending && <Notice tone="warn" title="有一笔解除结果未知。"
             action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原结果</Button>} />}
         </div>
       </Fold>

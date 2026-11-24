@@ -74,7 +74,7 @@ const FIELD_COPY: Record<ScalarKey, { name: string; what: string }> = {
   homeOnlineCurrent: { name: "当前值", what: "App 上在线设备从这个数开始。只有改了它，保存后才从这个数重新开始；没改就接着 App 上已经涨到的数。" },
   homeOnlineStepMin: { name: "每秒最少增加", what: "开启增长时，每秒在最少和最多之间随机加一个整数，所有用户看到同一个数。" },
   homeOnlineStepMax: { name: "每秒最多增加", what: "开启增长时，每秒在最少和最多之间随机加一个整数，所有用户看到同一个数。" },
-  homePaidCurrent: { name: "当前值", what: "App 上累计已发放从这个金额开始，App 上显示为 $。只有改了它，保存后才从这个金额重新开始。这是展示数字，不是真实已完成提现。" },
+  homePaidCurrent: { name: "当前值", what: "App 上累计已发放从这个金额开始。只有改了它，保存后才从这个金额重新开始。这是展示数字，不是真实已完成提现。" },
   homePaidStepMin: { name: "每秒最少增加", what: "开启增长时，每秒在最少和最多之间随机加一个金额（按整数分）。" },
   homePaidStepMax: { name: "每秒最多增加", what: "开启增长时，每秒在最少和最多之间随机加一个金额（按整数分）。" },
   registeredUsersBase: { name: "注册人数基数", what: "网络脉搏注册人数从这个数开始推算。改了它，推算起点重置为保存时刻。" },
@@ -108,7 +108,7 @@ function scalarError(field: H9FieldDef, raw: string): string {
   if ((field.pairedOptional || field.clearable) && !raw.trim()) return "";
   const value = num(raw);
   if (!Number.isFinite(value)) return "请填数字";
-  if (value < field.min || value > field.max) return `要在 ${field.min}–${field.max}${field.unit} 之间`;
+  if (value < field.min || value > field.max) return `要在 ${count(field.min)}–${count(field.max)} ${field.unit} 之间`;
   if (field.integer && !Number.isInteger(value)) return "只能填整数";
   if (MONEY_KEYS.has(field.key) && !h9MoneyPrecisionValid(raw)) return "金额最多两位小数";
   return "";
@@ -127,7 +127,7 @@ function valueText(key: ScalarKey, value: number | null | undefined): string {
 }
 
 
-const APP_PAID_NOTE = "系统记的是金额本身，没有写币种；App 上显示为 $，这里不另加。";
+const APP_PAID_NOTE = "App 上数字前写 $，这里照 App 写；设定值写 USD，是同一个单位。";
 const APP_DISPLAY_REASON: Record<string, string> = {
   HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "这一刻还没有可用的展示数据",
   HOME_DISPLAY_SANDBOX_UNAVAILABLE: "测试环境不生成首页展示数据",
@@ -137,7 +137,7 @@ const JOBS_REASON: Record<string, string> = {
   H9_ACTIVE_JOBS_BASE_UNPUBLISHED: "基座未发布，App 不显示作业数",
   HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "这一刻还没有可用的首页展示数据",
 };
-/** 按分算的金额写成两位小数加千分位，不舍入、不补币种（paid 是 JSON 数字，末尾的 0 会丢，所以用 paidCents）。这是「App 显示」的写法，照 App 两位小数写，不按后台金额规则改。 */
+/** 按分算的金额写成两位小数加千分位，不舍入（paid 是 JSON 数字，末尾的 0 会丢，所以用 paidCents）。这是「App 显示」的写法，照 App 两位小数写，不按后台金额规则改；$ 由调用处照 App 加在前面。 */
 function centsAmount(cents: number) {
   return `${Math.floor(cents / 100).toLocaleString("en-US")}.${String(cents % 100).padStart(2, "0")}`;
 }
@@ -594,7 +594,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const defaultable = DEFAULTABLE.includes(module);
     const isDefault = defaultable && h9DraftText(values[key]) === h9DraftText(data.defaults[key]) && values[key] !== undefined;
     const unit = MONEY_KEYS.has(key) ? PAID_UNIT : field.unit;
-    const range = MONEY_KEYS.has(key) ? `$${count(field.min)}–$${count(field.max)}` : `${count(field.min)}–${count(field.max)} ${unit}${field.integer ? "，整数" : ""}`;
+    const range = `${count(field.min)}–${count(field.max)} ${unit}${field.integer ? "，整数" : ""}`;
     const defaultText = defaultable && !isDefault ? `默认 ${data.defaults[key] == null ? "不发布" : `${count(data.defaults[key])} ${field.unit}`}` : "";
     return <Field key={key} label={<>{FIELD_COPY[key].name}{isDefault && <StatusTag tone="neutral">默认值</StatusTag>}</>}
       explain={FIELD_COPY[key].what} hint={range}
@@ -634,9 +634,9 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const [minKey, maxKey] = kind === "online" ? ["homeOnlineStepMin", "homeOnlineStepMax"] as const : ["homePaidStepMin", "homePaidStepMax"] as const;
     const showDraft = homeStepsDirty && homeDraftValid;
     const format = kind === "online" ? (value: number) => `${count(Math.round(value))} 台` : (value: number) => paid(Number(value.toFixed(2)));
-    const perDay = (min: number, max: number) => kind === "online" ? `${count(min * 86_400)}–${count(max * 86_400)} 台` : `${paid(usdProduct(min, 86_400))}–${paid(usdProduct(max, 86_400))}`;
+    const perDay = (min: number, max: number) => kind === "online" ? `${count(min * 86_400)}–${count(max * 86_400)} 台` : `${usd(usdProduct(min, 86_400))}–${usd(usdProduct(max, 86_400))} USD`;
     return <div className="h9-chart">
-      <p className="h9-chart-title">{kind === "online" ? "在线设备" : "累计已发放（$）"} · 开启时 24 小时平均增加</p>
+      <p className="h9-chart-title">{kind === "online" ? "在线设备" : "累计已发放（USD）"} · 开启时 24 小时平均增加</p>
       <TrendLines label={`${kind === "online" ? "在线设备" : "累计已发放"}开启后 24 小时平均增加量`} ticks={HOUR_LABELS} height={120} format={format} axisFormat={axisShort(kind === "online" ? "台" : "")}
         series={[
           { key: "saved", label: "现在的参数", slot: showDraft ? "other" : 2, values: homeSeries(values[minKey], values[maxKey]) },
@@ -654,7 +654,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         <AppNumber label={shown ? "在线设备 · App 显示" : "在线设备 · 设定值"} value={count(shown ? shown.onlineDevices : values.homeOnlineCurrent)} unit="台"
           sub={shown ? `设定值 ${count(values.homeOnlineCurrent)} 台` : undefined} />
         <AppNumber label={<>{shown ? "累计已发放 · App 显示" : "累计已发放 · 设定值"}<Explain label="累计已发放的单位" content={shown ? APP_PAID_NOTE : PAID_UNIT_NOTE} /></>}
-          value={shown ? centsAmount(shown.paidCents) : paid(values.homePaidCurrent)} sub={shown ? `设定值 ${paid(values.homePaidCurrent)}` : undefined} />
+          value={shown ? `$${centsAmount(shown.paidCents)}` : paid(values.homePaidCurrent)} sub={shown ? `设定值 ${paid(values.homePaidCurrent)}` : undefined} />
       </AppPreview>
       <AppSample read={appDisplay} found={!!shown} fallback="设定值" />
       {growthChart("online")}
@@ -672,7 +672,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         <div className="h9-pair">{renderField("homeOnlineStepMin")}{renderField("homeOnlineStepMax")}</div>
       </div>
       <div className="h9-group">
-        <h3 className="h9-group-title">累计已发放<Explain label="累计已发放的单位" content={PAID_UNIT_NOTE} /> <span className="h9-group-rule">App 上显示为 $，金额最多两位小数，多了不能保存</span></h3>
+        <h3 className="h9-group-title">累计已发放<Explain label="累计已发放的单位" content={PAID_UNIT_NOTE} /> <span className="h9-group-rule">金额最多两位小数，多了不能保存</span></h3>
         {renderField("homePaidCurrent")}
         <div className="h9-pair">{renderField("homePaidStepMin")}{renderField("homePaidStepMax")}</div>
       </div>

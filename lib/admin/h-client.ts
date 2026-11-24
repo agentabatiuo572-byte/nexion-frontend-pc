@@ -545,13 +545,25 @@ export async function updateH3QuestConfig(key: string, value: string, reason: st
   );
 }
 
+export type H4EventRewardAmount = { asset: "USDT" | "UVT"; amount: string };
+export function isH4EventRewardAmount(value: unknown): value is H4EventRewardAmount {
+  if (!value || typeof value !== "object") return false;
+  const { asset, amount } = value as Partial<H4EventRewardAmount>;
+  return (asset === "USDT" || asset === "UVT") && typeof amount === "string" && /^\d+(?:\.\d+)?$/.test(amount);
+}
+
 /** Backend owns rule presence, asset comparison, status and the reward window. This endpoint does not mutate. */
-export async function previewH4EventReward(eventId: string, value: string, expectedValue: string, reason: string) {
-  const result = await growthRequest<{ approvalRequired: boolean; current: string; proposed: string }>(
+export async function previewH4EventReward(eventId: string, value: string, expectedValue: string, reason: string, signal?: AbortSignal) {
+  const result = await growthRequest<{
+    approvalRequired: boolean; current: string; proposed: string;
+    currentReward?: H4EventRewardAmount | null; proposedReward?: H4EventRewardAmount;
+  }>(
     `/quest-events/events/${encodeURIComponent(eventId)}/reward/preview`,
-    { method: "POST", body: commandBody("reward", value, reason, currentAdminOperator(), expectedValue) },
+    { method: "POST", body: commandBody("reward", value, reason, currentAdminOperator(), expectedValue), signal },
   );
-  if (!result || typeof result.approvalRequired !== "boolean" || typeof result.current !== "string" || typeof result.proposed !== "string")
+  if (!result || typeof result.approvalRequired !== "boolean" || typeof result.current !== "string" || typeof result.proposed !== "string"
+    || (result.currentReward != null && !isH4EventRewardAmount(result.currentReward))
+    || (result.proposedReward !== undefined && !isH4EventRewardAmount(result.proposedReward)))
     throw new Error("活动奖励预览不完整，本次未提交；请重新读取活动后核对。");
   return result;
 }

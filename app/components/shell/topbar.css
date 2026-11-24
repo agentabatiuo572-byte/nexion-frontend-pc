@@ -36,7 +36,8 @@
   flex: 1 1 0;
 }
 
-/* 放不下时先截中间段，再截第一段，末段写全（PG-10）。收缩比差得足够大，前一档截完才轮到下一档，后一档一个像素也不少。 */
+/* 放不下时先截中间段，再截第一段，末段写全（PG-10）。收缩比差得足够大，前一档截完才轮到下一档，后一档一个像素也不少。
+   中间段只要被截就整组收起（下面的 data-compact，breadcrumb.tsx 量），所以实际先收中间段，再截第一段。 */
 .admin-topbar-crumb-ancestor {
   flex: 0 1000000 auto;
   min-width: 52px;
@@ -100,6 +101,11 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
+}
+
+/* 中间段放不下时整组收起，不显示半截的域名和页面名（BUG-643）。 */
+.admin-topbar-breadcrumb[data-compact] .admin-topbar-crumb-ancestor:not(:first-child) {
+  display: none;
 }
 
 /* 详情页四段放不下时，中间段截到只剩箭头不如不写。 */

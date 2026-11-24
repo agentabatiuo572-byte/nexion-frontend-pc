@@ -136,7 +136,7 @@ export function Tr({ selected, mark, onOpen, children, onClick, onKeyDown, ...re
   );
 }
 
-/** 一格两行：第一行主值，第二行弱化。长文本单行省略，title 给全文，只是显示截断（ST-04）。单号这类不能截短的传 full（TX-28）。
+/** 一格两行：第一行主值，第二行弱化。长文本单行省略，title 给全文，只是显示截断（ST-04）；页面把第一行限成两行（line-clamp）时，两行放不下也算截断。单号这类不能截短的传 full（TX-28）。
  *  mono 只给单号、哈希、地址（等宽字体）；金额、数量、日期传 num（Inter 等宽数字，VS-52）。
  *  传了 title 又真被切掉时，格子能用 Tab 聚焦，聚焦时气泡写全文；鼠标走原生 title。 */
 export function Cell({ main, sub, mono, num, title, full }: { main: ReactNode; sub?: ReactNode; mono?: boolean; num?: boolean; title?: string; full?: boolean }) {
@@ -146,7 +146,8 @@ export function Cell({ main, sub, mono, num, title, full }: { main: ReactNode; s
   useEffect(() => {
     const box = ref.current;
     if (!title || !box) return;
-    const measure = () => setCut([...box.children].some((line) => line.scrollWidth > line.clientWidth + 1));
+    const measure = () => setCut([...box.children].some((line) => line.scrollWidth > line.clientWidth + 1
+      || getComputedStyle(line).webkitLineClamp !== "none" && line.scrollHeight > line.clientHeight + 1));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(box);

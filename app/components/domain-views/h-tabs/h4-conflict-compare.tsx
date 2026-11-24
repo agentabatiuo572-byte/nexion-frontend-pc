@@ -3,7 +3,7 @@
 /**
  * H4 玩法规则、创世抽奖保存被「别人先改过」拒绝后的三方对比：你打开时、别人改成、你填的。
  * 只列有差别的项。「按我填的提交」是整份换成你填的：别人改过、和你填的不一样的项都会被换掉（你没动的改回打开时的值），逐项列出来。
- * 两个出口：「按我填的提交」调原来的 conflictReview.confirm（整份按你填的、带原理由）；
+ * 两个出口：「按我填的提交」调 conflictReview.confirm（整份按你填的、理由重新填写）；
  * 「合并后再核对」由页面把你改的项放到最新配置上，回表单再保存。值原样显示，不舍入、空值不当 0。
  */
 import type { ReactNode } from "react";
@@ -100,7 +100,7 @@ export function H4ConflictCompare({ groups, sections, overwrites, structure, onM
           {lost.length ? <>
             <p>{`整份换成你填的，别人改过的 ${lost.length} 项会被换掉：`}</p>
             <ul className="h4-compare-lost-list">{lost.map(item => <li key={item.key}><b>{item.label}</b>{item.note ?? <>：别人改成 {item.latest}，{item.submitted === "—" ? "提交后清空" : <>提交后是 {item.submitted}</>}</>}</li>)}</ul>
-          </> : <p>整份按你填的提交，理由沿用刚才填的。</p>}
+          </> : <p>整份按你填的提交，理由要重新填写。</p>}
         </div>
       </div>
     </div>

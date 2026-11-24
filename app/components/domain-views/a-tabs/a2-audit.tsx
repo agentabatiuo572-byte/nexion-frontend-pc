@@ -97,7 +97,7 @@ import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
-import { orderAmount } from "../e-tabs/data";
+import { ORDER_STATES, orderAmount, stateLabel } from "../e-tabs/data";
 import { e1GateText, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount } from "../f-tabs/f1-shared";
@@ -185,7 +185,7 @@ function approvalExecutorLabel(w: A2OperationRow) {
   if (w.operationCode === "k1_release_param" || w.operationCode === "k1_earnings_release") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "c2_session_revoke_all" || !w.operationCode && w.action.startsWith("强制登出 · ")) return "另一位有审批批准权限和退出全部设备权限的超级管理员";
   // 后端 ROLE_GATE_E1_SKU 原文带权限码 device_e1_write，这里写成同一含义的权限名。
-  if (["e1_hosting_centers_update", "e1_sku_create", "e1_sku_update"].includes(w.operationCode ?? "")) return "另一位有审批批准权限和商品修改权限的管理员";
+  if (["e1_hosting_centers_update", "e1_sku_create", "e1_sku_update"].includes(w.operationCode ?? "")) return "另一位超级管理员（需有商品修改权限）";
   if (w.operationCode === "h5_earn_milestone_create") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "f4_quota_tier_create") return "另一位有审批批准权限和购机名额修改权限的超级管理员";
   // H5GrowthApproval：三类成长审批都要超级管理员且有审批批准权限。
@@ -194,7 +194,7 @@ function approvalExecutorLabel(w: A2OperationRow) {
   if (/^调整创世参数 · /.test(w.action)) return "另一位有审批批准权限和该参数业务权限的超级管理员";
   if (["提高旧活动奖励", "放宽转盘奖项配置", "新增转盘奖项", "删除转盘奖项并提高安慰奖", "提高转盘奖项概率",
     "首次发布奖励课程", "发布奖励课程版本", "回滚至有奖励的课程版本"].includes(w.action)) return "另一位有审批批准权限的超级管理员";
-  if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位有审批批准权限和商品修改权限的管理员";
+  if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位超级管理员（需有商品修改权限）";
   if (w.action === "发布规则任务") return "另一位有审批批准权限和任务池修改权限的管理员";
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
     ? "另一位具有审批和大使批准权限、且未参与本版材料核验的管理员"
@@ -695,11 +695,6 @@ function bizTimeFull(value: string | undefined, fallback: string) {
 function thisYear(full: string) {
   const year = businessStamp(Date.now()).slice(0, 5);
   return full.startsWith(year) ? full.slice(5) : full;
-}
-
-/** 队列第二行的提交时间放在单号前面，放不下时省略的是单号（必须改 6）。 */
-function queueTime(w: A2OperationRow) {
-  return thisYear(bizTime(w.rawTs, w.ts));
 }
 
 /** a2-client 没有 tsLabel 时按浏览器时区写成「11/08 14:30」；那种情况改按业务时区重写，有 tsLabel 时用它（a2-client.ts:378）。 */
@@ -1294,22 +1289,22 @@ function changeSummary(before: string, after: string, omit: readonly string[] = 
 }
 
 /** 成组的记录画成小表，每组一行，列头用字段名；超过 5 行的收在「查看全部」后面（VS-109）。 */
-/** 金额字段的格按金额写法；format=false：这张表和对照的另一张原文不同、逐格显示后却一样时，两张都照原文写（rowsFormatSafe）。 */
-function ReviewRows({ name, rows, labels = CHANGE_LABELS, format = true }: { name: string; rows: readonly Record<string, unknown>[]; labels?: Record<string, string>; format?: boolean }) {
-  const cell = (column: string, value: unknown) => format ? a2Shown(column, valueText(column, value, labels), value) : valueText(column, value, labels);
+/** 金额字段的格按金额写法；raw(行号, 列) 为 true 的格照原文写：和对照的另一张表同一格原文不同、按写法显示后却一样（rowsRawCells）。 */
+function ReviewRows({ name, rows, labels = CHANGE_LABELS, raw }: { name: string; rows: readonly Record<string, unknown>[]; labels?: Record<string, string>; raw?: (index: number, column: string) => boolean }) {
+  const cell = (column: string, value: unknown, index: number) => raw?.(index, column) ? valueText(column, value, labels) : a2Shown(column, valueText(column, value, labels), value);
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   const unit = ROW_UNIT[name] ?? "行";
-  const table = (part: readonly Record<string, unknown>[], label: string) => (
+  const table = (part: readonly Record<string, unknown>[], label: string, offset: number) => (
     <Table label={label} data-tight="">
       <thead><tr>{columns.map((column) => <Th key={column}>{labels[column] ?? column}</Th>)}</tr></thead>
-      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={cell(column, row[column])} title={cell(column, row[column])} /></Td>)}</Tr>)}</tbody>
+      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={cell(column, row[column], offset + index)} title={cell(column, row[column], offset + index)} /></Td>)}</Tr>)}</tbody>
     </Table>
   );
   const title = labels[name] ?? name;
   return (
     <div className="a2-change-rows">
-      {table(rows.slice(0, ROWS_SHOWN), title)}
-      {rows.length > ROWS_SHOWN && <Fold inset title={`查看全部 ${rows.length} ${unit}`} summary={`还有 ${rows.length - ROWS_SHOWN} ${unit}`}>{table(rows.slice(ROWS_SHOWN), `${title}（续）`)}</Fold>}
+      {table(rows.slice(0, ROWS_SHOWN), title, 0)}
+      {rows.length > ROWS_SHOWN && <Fold inset title={`查看全部 ${rows.length} ${unit}`} summary={`还有 ${rows.length - ROWS_SHOWN} ${unit}`}>{table(rows.slice(ROWS_SHOWN), `${title}（续）`, ROWS_SHOWN)}</Fold>}
     </div>
   );
 }
@@ -1377,11 +1372,18 @@ const a2Shown = (key: string | undefined, text: string, value?: unknown) => {
   }
   return text.replace(A2_AMOUNT, (amount) => amountDisplay(amount));
 };
-/** 两张记录表（前、后）原文不同，逐格按字段显示后却完全一样时返回 false：两张都照原文写（RF01）。原文相同或只有一张表时照常显示。 */
-const rowsFormatSafe = (before: unknown, after: unknown, labels: Record<string, string>) => {
-  if (!isRowList(before) || !isRowList(after) || same(before, after)) return true;
-  const shown = (rows: Record<string, unknown>[]) => JSON.stringify(rows.map((row) => Object.entries(row).map(([key, value]) => [key, a2Shown(key, valueText(key, value, labels), value)])));
-  return shown(before) !== shown(after);
+/**
+ * 两张记录表（前、后）哪些格照原文写：同一行同一列原文不同、按字段写法显示后却一样（12.50 USDT 和 12.5 USDT）的格，两张都照原文写，别的格照常（RF01、BUG-638）。
+ * 行数不同、对不上行时按整张表判断：原文不同、逐格显示后完全一样，两张整表照原文写。原文相同或只有一张表时都照常显示。
+ */
+const rowsRawCells = (rows: unknown, other: unknown, labels: Record<string, string>): ((index: number, column: string) => boolean) | undefined => {
+  if (!isRowList(rows) || !isRowList(other) || same(rows, other)) return undefined;
+  const shown = (column: string, value: unknown) => a2Shown(column, valueText(column, value, labels), value);
+  if (rows.length !== other.length) {
+    const table = (list: Record<string, unknown>[]) => JSON.stringify(list.map((row) => Object.entries(row).map(([key, value]) => [key, shown(key, value)])));
+    return table(rows) === table(other) ? () => true : undefined;
+  }
+  return (index, column) => !same(rows[index]?.[column], other[index]?.[column]) && shown(column, rows[index]?.[column]) === shown(column, other[index]?.[column]);
 };
 /** 一个字段的前后值一起显示：金额字段按金额写法；原文不同、写法改了以后一样时，两边都照原文写，不把真实的修改藏掉（OP-49/69）。raw 是两边的原值（判断「收益说明」是不是折算出的金额）。 */
 const a2Pair = (key: string | undefined, before: string | undefined, after: string | undefined, raw: [unknown, unknown] = [before, after]): [string | undefined, string | undefined] => {
@@ -1408,6 +1410,8 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
   // 新建任务的变更前是「任务不存在：编号」：按新建显示，不画变更前。
   if (row.operationCode === "h3_mission_create" && row.after && h3MissionView({ operationCode: row.operationCode, after: row.after })) return "";
   if (row.operationCode === "h3_quest_config") return h3ConfigValue(row.obj, row.before);
+  // 退款、取消、终止单发起时记的是订单状态码（activated）：写订单页同名的中文状态，前后同一种语言（TX-32，复审 V10）。
+  if (["e4_order_refund", "e4_order_cancel", "e4_order_terminal"].includes(row.operationCode ?? "") && ORDER_STATES.includes(row.before)) return stateLabel(row.before);
   return deviceApprovalValue(changeBeforeText(row), row.operationCode);
 };
 /** F1 券冲正批准后的实际券处置（F1-BE-19）：只翻译批准时记下的结果，不从申请时的选择或券面额推断。原码只进「技术信息」。 */
@@ -1491,8 +1495,8 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, amount
     body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? shownTo : <Change from={shownFrom} to={shownTo} />}</Fact>{facts}</Facts>;
   } else if (a.kind === "rows") {
     body = <>
-      <ReviewRows labels={labels} name="" rows={a.rows} format={b?.kind !== "rows" || rowsFormatSafe(b.rows, a.rows, labels)} />
-      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows labels={labels} name="" rows={b.rows} format={rowsFormatSafe(b.rows, a.rows, labels)} /> : <p className="rd-note">{a2Shown(amountKey, b.kind === "text" ? b.text : valueText(undefined, b.value, labels))}</p>}</Fold>}
+      <ReviewRows labels={labels} name="" rows={a.rows} raw={b?.kind === "rows" ? rowsRawCells(a.rows, b.rows, labels) : undefined} />
+      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows labels={labels} name="" rows={b.rows} raw={rowsRawCells(b.rows, a.rows, labels)} /> : <p className="rd-note">{a2Shown(amountKey, b.kind === "text" ? b.text : valueText(undefined, b.value, labels))}</p>}</Fold>}
     </>;
   } else {
     const was = b?.kind === "object" ? b.value : undefined;
@@ -1515,12 +1519,11 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, amount
         : <Facts>{rows.map((row) => <Fact key={row.key} k={String(row.label)}>{row.after}</Fact>)}</Facts>)}
       {groups.map((key) => {
         const old = was?.[key];
-        const format = rowsFormatSafe(old, next[key], labels);
         return (
           <div key={key} className="a2-change-group">
             <div className="a2-change-sub">{labels[key] ?? key}{was && same(old, next[key]) && <span className="rd-weak"> · 没有改动</span>}</div>
-            <ReviewRows labels={labels} name={key} rows={next[key] as Record<string, unknown>[]} format={format} />
-            {isRowList(old) && !same(old, next[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} format={format} /></Fold>}
+            <ReviewRows labels={labels} name={key} rows={next[key] as Record<string, unknown>[]} raw={rowsRawCells(next[key], old, labels)} />
+            {isRowList(old) && !same(old, next[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} raw={rowsRawCells(old, next[key], labels)} /></Fold>}
           </div>
         );
       })}
@@ -2874,13 +2877,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
         <Panel flush icon={ClipboardList} tone="role-3" title="待审批的操作" explain="应急在前，资金类其次，其余按提交时间从新到旧。">
           {/* 1024 也要放下：对象多是系统键，名字里通常已经带着，列表不单列，抽屉和确认框里常显（DP-13）。 */}
-          <Table label="待审批的操作" data-tight="">
+          <Table label="待审批的操作" className="a2-queue" data-tight="">
             <thead><tr>
-              <Th sticky="start">审批单 · 提交时间（{zone}）</Th>
+              <Th sticky="start">审批单</Th>
               <Th>变更</Th>
               <Th icon={Users} tone="users">发起人</Th>
-              <Th>标记</Th>
-              {showActions && <Th sticky="end">操作</Th>}
+              <Th fit={!showActions}>标记</Th>
+              {showActions && <Th sticky="end" fit>操作</Th>}
             </tr></thead>
             <tbody>
               {!main && mainLoading ? <TableLoading columns={queueColumns} rows={5} />
@@ -2898,12 +2901,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{shortCodes(name)} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : shortCodes(name)} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`}
-                        sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
-                      <Td grow><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
+                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）`} /></Td>
+                      <Td><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
-                      <Td><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
-                      {showActions && <Td sticky="end"><span className="rd-row-actions">{rowActions(w)}</span></Td>}
+                      <Td fit={!showActions}><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
+                      {showActions && <Td sticky="end" fit><span className="rd-row-actions">{rowActions(w)}</span></Td>}
                     </Tr>
                   );
                 })}

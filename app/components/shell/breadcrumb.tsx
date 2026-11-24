@@ -4,6 +4,7 @@
  * 面包屑 — usePathname() → nav 查表 → 「UVEL 运营控制台 / 域 / L2」。
  * 根路径 / 显示「今日概览」。未匹配路径回退展示原始 segment。域字母和页面编号不显示(DP-30)。
  */
+import { useLayoutEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronRight } from "lucide-react";
@@ -38,8 +39,28 @@ export function Breadcrumb() {
     }
   }
 
+  // 中间段放不下时整组收起（data-compact），不截成半截，和窄宽时四段面包屑的做法一样；首段和末段写全（PG-10、BUG-643）。
+  // 每次先放开再量，宽了能重新显示；顶栏右边的项变宽、字体加载完都会改可用宽度，所以跟着导航自己的宽度重量。
+  const navRef = useRef<HTMLElement>(null);
+  const labels = crumbs.map((crumb) => crumb.label).join("\n");
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const fit = () => {
+      nav.removeAttribute("data-compact");
+      const cut = [...nav.querySelectorAll<HTMLElement>(".admin-topbar-crumb-ancestor:not(:first-child) > .admin-topbar-crumb-label")]
+        .some((label) => label.scrollWidth > label.clientWidth + 1);
+      if (cut) nav.setAttribute("data-compact", "");
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(nav);
+    void document.fonts?.ready.then(fit);
+    return () => observer.disconnect();
+  }, [labels]);
+
   return (
-    <nav aria-label="面包屑" className="admin-topbar-breadcrumb flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+    <nav ref={navRef} aria-label="面包屑" className="admin-topbar-breadcrumb flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
       {crumbs.map((c, i) => {
         const last = i === crumbs.length - 1;
         return (

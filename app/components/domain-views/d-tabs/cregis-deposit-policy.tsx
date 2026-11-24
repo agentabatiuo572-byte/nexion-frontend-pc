@@ -17,10 +17,35 @@ import type { DCtx } from "./types";
 import { amountDisplay } from "@/lib/format";
 
 type ProposalInput = Parameters<typeof createA2OperationProposal>[0];
-type Pending = PendingMutationRecord & { owner: number; input: ProposalInput; ticketId?: string; terminal?: string };
+type PolicyValues = Omit<Policy, "version">;
+type Pending = PendingMutationRecord & { owner: number; input: ProposalInput; beforePolicy?: PolicyValues; ticketId?: string; terminal?: string };
 const RETRY_WINDOW_MS = 10 * 60 * 1000;
+const RETRY_EXPIRED = "原请求已超过重试时间或本机时间异常，请通过操作记录继续核实。";
+const CHECK_FIRST = "请先查询原提案。";
+const retryDeadline = (pending: Pending) => Math.min(pending.expiresAt, pending.createdAt + RETRY_WINDOW_MS);
+function retryWindowOpen(pending: Pending) {
+  const now = Date.now();
+  return now >= pending.createdAt && now < retryDeadline(pending);
+}
 const proposals = createPendingMutationStore<Pending>({ storageKey: "nexion-admin-cregis-deposit-policy-proposals-v1", retainExpiredRecords: true,
   isValidRecord: row => Number.isSafeInteger(row.owner) && !!row.input && !!row.input.command });
+
+function pendingBeforePolicy({ beforePolicy, input }: Pending): PolicyValues | undefined {
+  if (beforePolicy) return beforePolicy;
+  // Older originals only saved their before snapshot in the A2 description.
+  const match = /^最低 (\S+) USDT；手续费 (\S+) USDT；确认数 (\d+)；版本 \d+$/.exec(input.beforeValue ?? "");
+  if (!match) return undefined;
+  const [, minDepositUsdt, feeUsdt, confirmations] = match;
+  return { minDepositUsdt, feeUsdt, confirmations: Number(confirmations) };
+}
+
+function pendingPolicyText(values?: Record<string, unknown>): string {
+  const { minDepositUsdt, feeUsdt, confirmations } = values ?? {};
+  if (typeof minDepositUsdt !== "string" || typeof feeUsdt !== "string" || typeof confirmations !== "number"
+    || !valid(minDepositUsdt, feeUsdt, confirmations)) return "—";
+  return `最低 ${amountDisplay(minDepositUsdt)} USDT；手续费 ${amountDisplay(feeUsdt)} USDT；确认数 ${confirmations}`;
+}
+
 /** 共同充值规则的批准人（决定 13）。 */
 const APPROVAL_TEXT = "超级管理员批准后生效，超管发起的由另一位超管批准。批准前当前规则不变。已发现的交易保留原规则。";
 
@@ -37,6 +62,8 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
   const reach = useReach();
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [pending, setPending] = useState<Pending | null>(null), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(""), [message, setMessage] = useState("");
+  const [missingProposalKey, setMissingProposalKey] = useState<string | null>(null);
+  const [, updateRetryWindow] = useState(0);
   const live = useRef(true), sequence = useRef(0), mutation = useRef(false);
   const owns = useCallback(() => live.current && useAdminAuth.getState().isAuthenticated && useAdminAuth.getState().session?.adminId === owner && useAdminAuth.getState().authEpoch === epoch, [owner, epoch]);
   const syncPending = useCallback(() => setPending(proposals.list().find(row => row.owner === owner) ?? null), [owner]);
@@ -49,6 +76,11 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
     finally { if (owns() && current === sequence.current) setLoading(false); }
   }, [owns]);
   useEffect(() => { live.current = true; syncPending(); void refresh(); return () => { live.current = false; sequence.current++; }; }, [refresh, syncPending]);
+  useEffect(() => {
+    if (!pending || pending.ticketId || pending.terminal || !retryWindowOpen(pending)) return;
+    const timer = window.setTimeout(() => updateRetryWindow(value => value + 1), retryDeadline(pending) - Date.now());
+    return () => window.clearTimeout(timer);
+  }, [pending]);
   const unknown = pending && !pending.terminal && !pending.ticketId ? 1 : 0;
   const awaitingApproval = pending && !pending.terminal && pending.ticketId ? 1 : 0;
   useEffect(() => { onActivityChange?.({ unknown, awaitingApproval }); }, [onActivityChange, unknown, awaitingApproval]);
@@ -93,31 +125,37 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
           command: { domain: "D", op: "d_cregis_deposit_policy", params: { minDepositUsdt: min, feeUsdt: fee, confirmations: Number(confirmations), expectedVersion: current.version, reason } },
           target: { domain: "D", type: "cregis_deposit_policy", id: "current" } };
         const key = createA2CommandKey("cregis-deposit-policy"), fingerprint = `${owner}|${key}`;
-        proposals.remember(fingerprint, key, { owner, input });
+        const beforePolicy = { minDepositUsdt: current.minDepositUsdt, feeUsdt: current.feeUsdt, confirmations: current.confirmations };
+        const original = { owner, input, beforePolicy };
+        proposals.remember(fingerprint, key, original);
         if (!proposals.isDurablyStored(fingerprint, key)) { proposals.forget(fingerprint, key); mutation.current = false; setBusy(false); throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。"); }
         syncPending();
         try {
           const ticket = await createA2OperationProposal(input, key, true);
-          proposals.remember(fingerprint, key, { owner, input, ticketId: ticket.id });
+          proposals.remember(fingerprint, key, { ...original, ticketId: ticket.id });
           if (owns()) { syncPending(); setMessage("提案已提交，尚未生效。等超级管理员批准。"); }
         } catch (failure) {
           if (!isA2OutcomeUncertainError(failure)) proposals.forget(fingerprint, key);
           if (owns()) syncPending();
-          if (isA2OutcomeUncertainError(failure)) { if (owns()) setError("提交结果待核实，请查询原提案，或使用原请求重试。"); return; }
+          if (isA2OutcomeUncertainError(failure)) { if (owns()) setError(CHECK_FIRST); return; }
           throw failure;
         } finally { mutation.current = false; if (owns()) setBusy(false); }
       } });
   };
   async function check() {
     if (!pending || mutation.current || !owns()) return;
-    mutation.current = true; setBusy(true); setError("");
+    mutation.current = true; setBusy(true); setError(""); setMessage(""); setMissingProposalKey(null);
     try {
-      const result = await fetchA2ProposalByKey(pending.commandKey);
+      const result = await fetchA2ProposalByKey(pending.commandKey, true);
       if (!owns()) return;
-      if (!result) { setMessage("暂未查到原提案。可在首次提交后 10 分钟内使用原请求重试，或继续核实。"); return; }
+      if (!result) {
+        setMissingProposalKey(pending.commandKey);
+        setMessage(retryWindowOpen(pending) ? "暂未查到原提案。可在首次提交后 10 分钟内使用原请求重试，或继续核实。" : RETRY_EXPIRED);
+        return;
+      }
       const status = result.status.toLowerCase();
       const terminal = ["approved", "rejected", "withdrawn", "expired"].includes(status) ? status : undefined;
-      proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, ticketId: result.id, terminal });
+      proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, beforePolicy: pending.beforePolicy, ticketId: result.id, terminal });
       syncPending(); setMessage(terminal === "approved" ? "提案已批准，请重新读取生效规则并核对。" : terminal ? "提案已结束，请核对审批记录。" : "提案仍待处理，尚未确认生效。");
     } catch { if (owns()) setError("查询提案失败，请稍后重试或前往操作记录与审批。"); }
     finally { mutation.current = false; if (owns()) setBusy(false); }
@@ -126,14 +164,13 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
     const auth = useAdminAuth.getState().session;
     if (!pending || pending.ticketId || pending.terminal || mutation.current || !owns() || !canManage
       || !auth || !(auth.role === "superadmin" || auth.role === "super" || auth.authorities.includes("finance_d1_channel_manage"))) return;
-    if (Date.now() < pending.createdAt || Date.now() >= Math.min(pending.expiresAt, pending.createdAt + RETRY_WINDOW_MS)) {
-      setError("原请求已超过重试时间或本机时间异常，请通过操作记录继续核实。"); return;
-    }
-    mutation.current = true; setBusy(true); setError(""); setMessage("");
+    if (!retryWindowOpen(pending)) { setError(RETRY_EXPIRED); return; }
+    if (missingProposalKey !== pending.commandKey) { setError(CHECK_FIRST); return; }
+    mutation.current = true; setBusy(true); setError(""); setMessage(""); setMissingProposalKey(null);
     try {
       const ticket = await createA2OperationProposal(pending.input, pending.commandKey, true);
       if (owns()) {
-        proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, ticketId: ticket.id });
+        proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, beforePolicy: pending.beforePolicy, ticketId: ticket.id });
         syncPending(); setMessage("原提案已提交，尚未生效。等超级管理员批准。");
       }
     } catch (failure) {
@@ -149,7 +186,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
       }
     } finally { mutation.current = false; if (owns()) setBusy(false); }
   }
-  const canRetry = !!pending && !pending.ticketId && !pending.terminal && Date.now() >= pending.createdAt && Date.now() < Math.min(pending.expiresAt, pending.createdAt + RETRY_WINDOW_MS);
+  const retryBlock = pending && (!retryWindowOpen(pending) ? RETRY_EXPIRED : missingProposalKey !== pending.commandKey ? CHECK_FIRST : undefined);
   const entryBlock = loading ? "正在读取最新数据" : busy ? "正在提交" : !policy ? "规则没读到，刷新后再试" : pending && !pending.terminal ? "有一个提案还没结束，先在上面查询原提案" : pending ? "先点「核对完成，准备新变更」" : undefined;
   const audit = reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=D">查看操作记录与审批</Link>;
   return <Panel icon={Scale} tone="role-4" title="USDT 共同充值规则"
@@ -163,11 +200,11 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
         title={pending.terminal ? "原提案已结束" : pending.ticketId ? "提案待超级管理员批准" : "提案提交结果待核实"}
         action={<>
           <Button size="sm" disabled={busy} onClick={() => void check()}>查询原提案</Button>
-          {!pending.ticketId && !pending.terminal && canManage && <Button size="sm" disabled={busy} disabledReason={canRetry ? undefined : "原请求已超过重试时间或本机时间异常，请通过操作记录继续核实。"} onClick={() => void retry()}>使用原请求重试</Button>}
+          {!pending.ticketId && !pending.terminal && canManage && <Button size="sm" disabled={busy} disabledReason={retryBlock ?? undefined} onClick={() => void retry()}>使用原请求重试</Button>}
           {pending.terminal && <Button size="sm" disabled={busy} onClick={() => { proposals.forget(pending.fingerprint, pending.commandKey); syncPending(); void refresh(); }}>核对完成，准备新变更</Button>}
         </>}>
         {businessStamp(pending.createdAt)}（{zoneLabel()}）提交。原提案：{pending.ticketId ?? "结果待核实"}。批准前当前规则不变。 {audit}
-        <DiffList rows={[{ key: "change", label: "这次要改", before: pending.input.beforeValue ?? "—", after: pending.input.afterValue ?? "—" }]} />
+        <DiffList rows={[{ key: "change", label: "这次要改", before: pendingPolicyText(pendingBeforePolicy(pending)), after: pendingPolicyText(pending.input.command.params) }]} />
       </Notice>}
       {error && <Notice tone="warn">{error}</Notice>}
       {message && <Notice tone="progress">{message}</Notice>}
