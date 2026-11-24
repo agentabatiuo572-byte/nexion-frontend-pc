@@ -13,6 +13,7 @@
 - `nx_vietqr_intent`：HDPay 充值单主记录。
 - `nx_vietqr_reconciliation`：HDPay 新单的 `APP-{intentNo}` 在途投影；`OPEN` 且 `received_vnd > 0` 的回单继续计入 D3 待核实入金。
 - `vietqr` 渠道开关和 `perTxLimitUsd`：控制 HDPay 充值；PC 显示为「银行卡支付」。其余配置字段不再有编辑入口，提交时按读回值原样带上。
+- 同一用户可同时保有多笔待付款单。后台的 `perTxLimitUsd` 决定每笔新单的充值上限，当前配置范围为 100–10,000 USDT。
 - `POST /api/admin/finance/vietqr/receipt-evidence`、`nx_vietqr_receipt_evidence`：HDPay 人工确认入账的回单图片，必须上传。
 - `GET /api/admin/finance/vietqr/overview`：页面只取 `config` 和 `asOf`。
 
