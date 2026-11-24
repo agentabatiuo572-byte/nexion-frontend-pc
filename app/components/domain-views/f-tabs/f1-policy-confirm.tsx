@@ -34,6 +34,8 @@ const REREAD: Record<string, string> = {
 };
 const valueLabel = (value: string) => value === "NONE" ? "未设置" : formatF1ExactAmount(value);
 const UNIT: Record<string, string> = { selfBuy: "点", teamGv: "点", directRefs: "人", legCount: "个" };
+/** 框上写的名字（新口径，画板 B3）；记进操作记录的名字仍用 f1ConditionLabels，请求不变。 */
+const DISPLAY: Record<string, string> = { selfBuy: "自购算力点", teamGv: "团队算力点", directRefs: "一二级已购人数", legCount: "下级领导者人数", legRank: "下级领导者最低等级" };
 const RANGE: Record<string, string> = { selfBuy: "填不小于 0 的整数", teamGv: "填不小于 0 的整数", directRefs: "填不小于 0 的整数", legCount: "填不小于 0 的整数" };
 
 export function f1RewardPolicyLabel(item: OpsVRankRewardItem, ctx: Pick<FViewCtx, "voucherLabels" | "skuLabels">): string {
@@ -65,7 +67,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
   // 记进操作记录的名字，和改版前一样。
   const action = remove && opening.pending ? `${editor.row.v} · 核对原移除操作` : isCondition ? `调整 ${editor.row.v} 晋升条件 · ${fieldLabel}`
     : `${editor.row.v} · ${remove ? "移除奖励" : editor.action === "reward_add" ? "新增奖励" : "编辑奖励"}`;
-  const title = opening.pending ? `${editor.row.v} 的原操作` : isCondition ? `调整 ${editor.row.v} 的${fieldLabel}`
+  const title = opening.pending ? `${editor.row.v} 的原操作` : isCondition ? `调整 ${editor.row.v} 的${DISPLAY[editor.field!] ?? fieldLabel}`
     : remove ? `移除 ${editor.row.v} 的奖励` : editor.action === "reward_add" ? `给 ${editor.row.v} 添加奖励` : `编辑 ${editor.row.v} 的奖励`;
   const disabledReason = opening.error ?? (!opening.pending && (!baselineReady || ctx.f1Loading || ctx.f1Error || ctx.vrankRows.length === 0) ? "请先成功重新读取会员等级。" : undefined) ?? (session?.adminId !== owner || !session?.authorities.includes("network_f1_write")
     ? "当前账号没有这项操作的权限，请关闭弹窗后重新核对。"
@@ -206,7 +208,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
       : remove ? `移除奖励「${currentLabel}」后停止后续发放，已发奖励与账本记录保留。`
       : `当前奖励：${currentLabel}。修改奖励模板，后续发放使用新值；已发奖励与账本记录保留。`}
     coverage={ctx.f1Coverage}
-    coverageLead={isCondition ? "放宽门槛会让更多人升级、拿到升级奖励" : "增加资金奖励会让平台多付钱"}
+    coverageLead={isCondition ? "放宽晋升条件会让更多人升级、拿到晋级奖励" : "增加资金奖励会让平台多付钱"}
     businessForm={businessForm}
     businessFormRevision={baselineRevision}
     getPendingReason={() => pending()?.original.reason}
@@ -252,7 +254,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
           return <>
             <DiffField before={currentLabel} unit={baselineReady ? UNIT[editor.field!] : undefined} hint={editor.field === "legRank" ? "选比这一级低的等级，或者「未设置」" : RANGE[editor.field!]}
               state={state} error={(values.value ?? "").trim() !== "" ? inputError : undefined}
-              note={editor.field === "legCount" || editor.field === "legRank" ? "达标分支数为 0 时不看分支；大于 0 时要同时设好比这一级低的分支最低等级，否则这一项一律判不满足。" : undefined}>
+              note={editor.field === "legCount" || editor.field === "legRank" ? "人数为 0 时不看这一项；大于 0 时要同时设好比这一级低的最低等级，否则这一项一律判不满足。" : undefined}>
               {(control) => editor.field === "legRank"
                 ? <Select {...control} aria-label={fieldLabel} value={values.value ?? ""} disabled={locked} onChange={(value) => changeField("value", value)}
                   options={["NONE", ...ctx.vrankRows.filter((row) => Number(row.v.slice(1)) < Number(editor.row.v.slice(1))).map((row) => row.v)].map((item) => ({ value: item, label: item === "NONE" ? "未设置" : item }))} />

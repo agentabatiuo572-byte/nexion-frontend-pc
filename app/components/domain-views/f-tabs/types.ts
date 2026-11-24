@@ -13,6 +13,7 @@ import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { DirectReferralPolicy, DirectReferralUpdate } from "@/lib/admin/direct-referral-policy";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
 import type { VRankBootstrapRow } from "@/lib/admin/vrank-bootstrap";
+import type { F1BenefitField, F1SalaryClaimsState, F1SalaryFilters, F1V8ReviewState } from "./f1-rank-types";
 import type { TeamFundApprovalValues } from "@/lib/admin/withdrawal-config-approval";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type {
@@ -134,6 +135,15 @@ export interface FViewCtx {
   queryPromotions: (filters?: F1PromotionFilters, append?: boolean) => Promise<void>;
   queryPayouts: (filters?: F1PayoutFilters, append?: boolean) => Promise<void>;
   proposeVRankOverride: (userId: string, targetV: string, direction: "promote" | "rollback", reason: string) => Promise<void>;
+  // ── F1「我的等级」改版的新数据（F1-RANK-WIRE 占位，类型见 f1-rank-types.ts，逻辑项接上）──
+  /** V8 审核名单（B88）。不传 = 这个后端没有名单接口，「V8 审核」页签不出现。 */
+  v8Review?: F1V8ReviewState;
+  queryV8Review?: (append?: boolean) => Promise<void>;
+  /** 月薪领取记录（B87-BE-04）。不传 = 读不到月薪，「月薪领取」页签显示没有月薪数据。 */
+  salaryClaims?: F1SalaryClaimsState;
+  querySalaryClaims?: (filters: F1SalaryFilters, cursor?: string) => Promise<void>;
+  /** 等级权益三项的写入：比例传百分数（如 "4.6"），月薪传 USDT。调高走 A2、调低直接保存由实现决定。不传 = 提交还没接上。 */
+  submitVRankBenefit?: (rank: string, field: F1BenefitField, value: string, reason: string) => Promise<void>;
   proposeVRankBootstrap: (ranks: VRankBootstrapRow[], reason: string) => Promise<void>;
   proposePayoutAction: (record: F1RewardPayout, action: "reissue" | "reverse", reason: string, usedVoucherClawback?: boolean) => Promise<void>;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
