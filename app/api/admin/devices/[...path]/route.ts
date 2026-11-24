@@ -44,7 +44,7 @@ function backendPath(parts: string[]) {
   const isTaskPool = parts[0] === "task-pools" && (
     parts.length === 1
     || parts.length === 3 && !!parts[1] && ["tasks", "random-tasks", "disable-impact"].includes(parts[2])
-    || parts.length === 4 && !!parts[1] && parts[2] === "tasks" && parts[3] === "status");
+    || parts.length === 4 && !!parts[1] && parts[2] === "tasks" && !!parts[3]);
   const isHostingLabels = parts.length === 1 && parts[0] === "sku-datacenter-labels";
   const isPhones = parts.length === 1 && parts[0] === "phones";
   // E6 算力与设备配置:GET 聚合视图 + PATCH 原子批量参数 + 兼容单参数入口。
@@ -96,8 +96,9 @@ async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   const targetPath = backendPath(path);
   if (targetPath && path[0] === "task-pools") {
-    const expectedMethod = path[2] === "random-tasks" || path[3] === "status" ? "POST" : "GET";
-    if (request.method !== expectedMethod) return jsonError(405, "METHOD_NOT_ALLOWED");
+    const taskCollection = path[2] === "tasks" && path.length === 3;
+    const expectedMethod = path[2] === "random-tasks" || path.length === 4 ? "POST" : "GET";
+    if (request.method !== expectedMethod && !(taskCollection && request.method === "POST")) return jsonError(405, "METHOD_NOT_ALLOWED");
   }
   if (targetPath && path[0] === "compute-config" && request.method !== (path.length === 1 ? "GET" : "PATCH")) {
     return jsonError(405, "METHOD_NOT_ALLOWED");

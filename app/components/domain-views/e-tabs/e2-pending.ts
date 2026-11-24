@@ -1,7 +1,7 @@
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { parseTaskPool, type DisableImpact, type PoolTask, type TaskPool, type TaskPoolCommand } from "@/lib/admin/task-pool-client";
+import { parseTaskPool, taskPoolTaskPath, validTaskEditFields, validTaskWeight, type DisableImpact, type PoolTask, type TaskPool, type TaskPoolCommand } from "@/lib/admin/task-pool-client";
 import { TASK_CLASSES } from "@/lib/admin/task-classes";
-import { discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence } from "@/lib/admin/e-command-investigation";
+import { discoverECommand, investigateECommand, eCommandRollbackConfirmed, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 
 export type E2Pending = PendingMutationRecord & {
   actorId: string;
@@ -22,11 +22,28 @@ export const e2Commands = createPendingMutationStore<E2Pending>({
       const pool = parseTaskPool(value.pool), command = value.request;
       if (pool.kind !== "DEVICE" || !value.actorId || typeof value.actorId !== "string" || typeof value.actorName !== "string"
         || value.fingerprint !== `pool|${pool.code}` || !command || command.method !== "POST"
-        || !["random", "status"].includes(command.kind)
-        || command.path !== `/task-pools/${pool.code}/${command.kind === "random" ? "random-tasks" : "tasks/status"}`
         || command.body.idempotencyKey !== value.commandKey || typeof command.body.reason !== "string"
         || command.body.reason !== command.body.reason.trim() || Array.from(command.body.reason).length > 200
         || Array.from(command.body.reason).length < 8 || !Array.isArray(value.tasks)) return false;
+      if (command.kind === "create" || command.kind === "update") {
+        if (value.impact !== null || value.impactAt !== null || !validTaskEditFields(command.body)
+          || value.commandKey !== value.commandKey.trim() || value.commandKey.length > 128
+          || Object.keys(command.body).sort().join(",") !== (command.kind === "create"
+            ? "baseReward,durationMinutes,enabled,idempotencyKey,name,reason,taskClass"
+            : "baseReward,durationMinutes,expectedVersion,idempotencyKey,name,reason,taskClass")) return false;
+        if (command.kind === "create") return value.tasks.length === 0 && command.path === taskPoolTaskPath(pool.code)
+          && typeof command.body.enabled === "boolean";
+        const [task] = value.tasks;
+        return value.tasks.length === 1 && typeof task.taskTypeId === "string" && !!task.taskTypeId && task.taskTypeId !== "status"
+          && command.path === taskPoolTaskPath(pool.code, task.taskTypeId)
+          && Number.isSafeInteger(task.version) && task.version > 0 && command.body.expectedVersion === task.version
+          && typeof task.enabled === "boolean" && command.previousEnabled === task.enabled
+          && typeof task.name === "string" && !!task.name && TASK_CLASSES.includes(task.taskClass)
+          && Number.isInteger(task.durationMinutes) && task.durationMinutes > 0 && task.durationMinutes <= 120
+          && typeof task.effectiveAt === "string" && validTaskWeight(task.baseReward) && /\.\d{6}$/.test(task.baseReward) && task.asset === "USDT";
+      }
+      if (command.kind !== "random" && command.kind !== "status"
+        || command.path !== `/task-pools/${pool.code}/${command.kind === "random" ? "random-tasks" : "tasks/status"}`) return false;
       if (command.kind === "random") return Number.isInteger(command.body.count) && command.body.count >= 1 && command.body.count <= 50
         && (command.body.taskClasses === undefined || Array.isArray(command.body.taskClasses)
           && command.body.taskClasses.length > 0 && command.body.taskClasses.every(item => TASK_CLASSES.includes(item))
@@ -48,15 +65,21 @@ export const e2Commands = createPendingMutationStore<E2Pending>({
   },
 });
 
-export function e2CommandLabel(record: Pick<E2Pending, "request">) {
-  return record.request.kind === "random" ? `随机添加 ${record.request.body.count} 个任务`
-    : `${record.request.body.enabled ? "批量启用" : "批量停用"} ${record.request.body.taskTypeIds.length} 个任务`;
+export function e2CommandLabel(record: E2Pending) {
+  const request = record.request;
+  if (request.kind === "create" || request.kind === "update") return `${request.kind === "create" ? "新增" : "修改"}任务「${request.body.name}」`;
+  return request.kind === "random" ? `随机添加 ${request.body.count} 个任务`
+    : `${request.body.enabled ? "批量启用" : "批量停用"} ${request.body.taskTypeIds.length} 个任务`;
+}
+
+export function e2CommandSettled(receipt: ECommandInvestigation | null) {
+  return eCommandSettled(receipt) || eCommandRollbackConfirmed(receipt);
 }
 
 export async function checkE2Command(record: E2Pending, evidence?: ECommandEvidence) {
   const locator = { commandKey: record.commandKey, originalMethod: record.request.method,
     originalPath: `/api/admin/devices${record.request.path}`, originalAdminId: record.actorId };
   const receipt = evidence ? await investigateECommand(record, locator, evidence) : await discoverECommand(locator);
-  if (eCommandSettled(receipt)) e2Commands.forget(record.fingerprint, record.commandKey);
+  if (e2CommandSettled(receipt)) e2Commands.forget(record.fingerprint, record.commandKey);
   return receipt;
 }
