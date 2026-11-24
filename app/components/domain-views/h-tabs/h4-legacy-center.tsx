@@ -584,16 +584,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       title: opening ? "开放活动" : "结束活动",
       statedBrief: opening
         ? { impact: "开放后不能改回草稿，只能结束。", check: "核对活动和各语言文字都已就绪，理由写清依据。" }
-        : { impact: "结束后用户不能再参加，也不能再开放。", check: "确认要结束的是这个活动，理由写清依据。" },
+        : { impact: "用户不能再参加；同时停掉这个活动的玩法、取消主推。已有的参与和奖励记录保留，结束后不能再开放。", check: "确认要结束的是这个活动，理由写清依据。" },
       effect: opening ? effectByDirection() : <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
       detail: <>当前状态 <b>{lifecycleOf(event, requiredLanguages).label}</b>。</>,
       content: <>
         <Facts>
           <Fact k="活动">{eventName(event.id)}</Fact>
           <Fact k="状态"><Change from={lifecycleOf(event, requiredLanguages).label} to={opening ? "进行中" : "已结束"} /></Fact>
-          {opening
-            ? <Fact k="开放后">用户可以在 App 上参加，按活动奖励发放</Fact>
-            : <Fact k="结束后">用户不能再参加；同时停掉这个活动的玩法、取消主推。已有的参与和奖励记录保留，结束后不能再开放</Fact>}
+          {opening && <Fact k="开放后">用户可以在 App 上参加，按活动奖励发放</Fact>}
           {opening && <ApprovalFact amplify="没配玩法、开放后直接发钱的活动" object="活动" />}
         </Facts>
         {opening && missing.length > 0 && <Notice tone="warn" title={`还缺 ${missing.length} 项翻译，补齐后才能开放`}>{missing.map(({ locale, field }, index) => <span key={`${locale}-${field}`} className="rd-keep">{`${LOCALE_NAME[locale]}${FIELD_NAME[field]}${index < missing.length - 1 ? "、" : "。"}`}</span>)}<span className="rd-keep">到卡片底部逐格补。</span></Notice>}
@@ -925,14 +923,13 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       action: `转盘安全限制 · 实际奖品发放开关`,
       title: closing ? "关闭真钱奖发放" : "开启真钱奖发放",
       statedBrief: closing
-        ? { impact: "马上停发真钱奖，抽中的用户改拿 UVT 安慰奖。", check: "确认要停发真钱奖，理由写清触发原因。" }
+        ? { impact: "马上停发真钱奖：抽中 USDT 的改拿 UVT 安慰奖，已发的不变。", check: "确认要停发真钱奖，理由写清触发原因。" }
         : { impact: "批准后按预算和覆盖率发真钱奖；批准前抽中的仍拿 UVT 安慰奖。", check: "核对覆盖率和今天的预算，理由写清依据。" },
       effect: approval ? effectApproval("开关") : effectDirect,
       detail: <>当前值 <b>{on ? "开" : "关"}</b>。如果别人刚改过，需要刷新后再改。</>,
       facts: <>
         <Facts>
           <Fact k="真钱奖发放"><Change from={on ? "开" : "关"} to={next} /></Fact>
-          <Fact k={closing ? "关闭后" : "开启后"}>{closing ? "抽中 USDT 改发 UVT 安慰奖，已发的不变" : "抽中 USDT 按预算和覆盖率发真钱"}</Fact>
           {approval && <ApprovalFact amplify="开启真钱奖" object="开关" />}
         </Facts>
       </>,

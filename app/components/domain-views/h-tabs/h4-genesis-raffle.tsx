@@ -165,8 +165,8 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
         rejected),
       title: opening ? "开放抽奖报名" : closing ? "关闭报名回草稿" : previous ? "保存抽奖配置" : "保存抽奖草稿",
       // 影响写这次保存的真实后果（OP-53）：开放、关闭、存草稿各不相同；开放中的一期后端不让直接改。
-      statedBrief: opening ? { impact: "批准后这一期开放报名，用户可以用抽奖券报名。", check: "核对时间、奖项和名额，理由写清依据。" }
-        : closing ? { impact: "这一期马上回到草稿，用户不能再报名。", check: "确认还没人报名，理由写清依据。" }
+      statedBrief: opening ? { impact: "批准后这一期开放报名。", check: "核对时间、奖项和名额，理由写清依据。" }
+        : closing ? { impact: "这一期马上停止报名。", check: "确认还没人报名，理由写清依据。" }
         : previous && previous.status !== "DRAFT" ? { impact: "开放中的一期不能直接改：先关闭报名回草稿，改好再申请开放。", check: "核对这一期现在的状态。" }
         : { impact: previous ? "只保存这一期的配置，仍是草稿，不对用户开放。" : "新的一期存成草稿，不对用户开放。", check: "核对时间、奖项和名额，理由写清依据。" },
       effect: opening ? effectApproval("这一期") : effectDirect,

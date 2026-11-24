@@ -218,9 +218,10 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
         rejected),
       title: firstOpen ? "开启玩法" : next.enabled ? "保存玩法配置" : "保存关闭状态",
       // 影响写这次保存的真实后果（OP-53）：第一次开启、关闭、只存草稿各不相同。
-      statedBrief: firstOpen ? { impact: "批准后玩法开启、活动对用户开放；玩法和时间从此固定，只能关闭。", check: "核对玩法、时间和平台最多付，理由写清依据。" }
-        : base.enabled && !next.enabled ? { impact: "玩法马上关闭，关了不能再开。", check: "确认要关的是这个玩法，理由写清依据。" }
-        : next.enabled ? { impact: "玩法继续开着，参与条件和时间不变。", check: "核对玩法和时间，理由写清依据。" }
+      statedBrief: firstOpen ? { impact: "批准后玩法开启，活动对用户开放。", check: "核对玩法、时间和平台最多付，理由写清依据。" }
+        : base.enabled && !next.enabled ? { impact: "保存后玩法马上关闭。", check: "确认要关的是这个玩法，理由写清依据。" }
+        : base.enabled ? { impact: "玩法继续开着，参与条件和时间不变。", check: "核对玩法和时间，理由写清依据。" }
+        : next.enabled ? { impact: "开过又关了的玩法不能再开，这次保存会被拒绝。", check: "关过的玩法只能保持关闭。" }
         : { impact: "只保存配置，玩法仍关着，用户看不到变化。", check: "核对参与条件和时间，理由写清依据。" },
       effect: firstOpen ? effectApproval("玩法") : effectDirect,
       detail: <>更新本活动的参与条件、奖励及有效期。{next.enabled ? "启用后符合条件的用户可参与；保存时会检查配置与奖励预算。" : "保存后活动保持关闭，不发放新奖励。"}</>,
