@@ -180,6 +180,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f4Overview, setF4Overview] = useState<F4LeadershipPoolOverview | null>(null);
   const [f4VoteProjection, setF4VoteProjection] = useState<F4VoteProjectionRead>({ status: "idle" });
   const [f4AmbassadorPolicy, setF4AmbassadorPolicy] = useState<F4AmbassadorPolicy | null>(null);
+  const [f4PolicyLoading, setF4PolicyLoading] = useState(false);
   const [f4Loading, setF4Loading] = useState(tab === "F4");
   const [f4Error, setF4Error] = useState<string | null>(null);
   const [f4Proposals, setF4Proposals] = useState<FDomainAttempt[]>([]);
@@ -480,6 +481,37 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   };
 
+  const refreshF4VoteProjection = useCallback(async () => {
+    const request = f4Generation.current;
+    const owner = useAdminAuth.getState().session?.adminId;
+    setF4VoteProjection(canReadF4 ? { status: "loading" } : { status: "denied" });
+    if (!canReadF4) return;
+    try {
+      const data = await fetchF4VoteProjection();
+      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection({ status: "ready", data });
+    } catch (error) {
+      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection(
+        (error as { status?: number } | null)?.status === 403 ? { status: "denied" } : { status: "error", message: errorMessage(error) });
+    }
+  }, [canReadF4]);
+
+  const readF4AmbassadorPolicy = useCallback(async () => {
+    const request = f4Generation.current;
+    const owner = useAdminAuth.getState().session?.adminId;
+    const current = () => request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId;
+    setF4PolicyLoading(true);
+    try {
+      const policy = await fetchF4AmbassadorPolicy();
+      if (current()) setF4AmbassadorPolicy(policy);
+      return policy;
+    } catch (error) {
+      if (current()) setF4AmbassadorPolicy(null);
+      throw error;
+    } finally {
+      if (current()) setF4PolicyLoading(false);
+    }
+  }, []);
+
   const refreshF4 = useCallback(async () => {
     const request = ++f4Generation.current;
     const owner = useAdminAuth.getState().session?.adminId;
@@ -488,17 +520,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setF4PolicyWrites(owner === undefined ? [] : listF4PolicyWrites(owner));
     setF4Loading(true);
     setF4Error(null);
-    setF4VoteProjection(canReadF4 ? { status: "loading" } : { status: "denied" });
-    if (canReadF4) void fetchF4VoteProjection().then(data => {
-      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection({ status: "ready", data });
-    }, error => {
-      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection(
-        error?.status === 403 ? { status: "denied" } : { status: "error", message: errorMessage(error) });
-    });
+    void refreshF4VoteProjection();
     setActionConfirm(current => current?.f4Snapshot && !current.f4Recovery ? null : current);
-    const [overview, ambassadorPolicy, calendar, queue, ...lookups] = await Promise.allSettled([
+    const [overview, , calendar, queue, ...lookups] = await Promise.allSettled([
       fetchF4LeadershipPoolOverview(),
-      fetchF4AmbassadorPolicy(),
+      readF4AmbassadorPolicy(),
       fetchBusinessCalendar(),
       canReadA2 ? fetchA2Overview() : Promise.resolve(null),
       ...originals.map(row => queryF4Proposal(owner!, row)),
@@ -511,7 +537,6 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF4Overview({ ...overview.value, settlementZone: zoneId && label && offset ? { zoneId, label, offset: offset === "GMT" ? "UTC+0" : offset.replace("GMT", "UTC") } : null });
     }
     else { setF4Overview(null); setF4Error(displayAdminReadError(overview.reason)); }
-    setF4AmbassadorPolicy(ambassadorPolicy.status === "fulfilled" ? ambassadorPolicy.value : null);
     const audit = queue.status === "fulfilled" ? queue.value as Awaited<ReturnType<typeof fetchA2Overview>> | null : null;
     setF4ApprovalRows([...(audit?.operationQueue ?? []), ...lookups.flatMap(row => row.status === "fulfilled" && row.value ? [row.value as A2OperationRow] : [])]);
     if (owner !== undefined) {
@@ -520,7 +545,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setActionConfirm(current => current?.f4Recovery && ![...proposals, ...direct].some(row => row.commandKey === current.f4Recovery!.original.commandKey) ? null : current);
     }
     setF4Loading(false);
-  }, [canReadA2, canReadF4, session?.adminId]);
+  }, [canReadA2, readF4AmbassadorPolicy, refreshF4VoteProjection, session?.adminId]);
 
   useEffect(() => {
     if (tab === "F4") void refreshF4();
@@ -1220,11 +1245,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     },
     f4Overview,
     f4VoteProjection,
+    refreshF4VoteProjection,
     f4AmbassadorPolicy,
+    f4PolicyLoading,
+    retryF4AmbassadorPolicy: async () => { try { await readF4AmbassadorPolicy(); } catch { /* The rule block shows the read failure. */ } },
     refreshF4PolicyBaseline: async () => {
       setF4AmbassadorPolicy(null);
-      const policy = await fetchF4AmbassadorPolicy();
-      setF4AmbassadorPolicy(policy);
+      const policy = await readF4AmbassadorPolicy();
       setActionConfirm(modal => modal?.f4Snapshot?.action === "policy"
         ? { ...modal, f4Snapshot: { ...modal.f4Snapshot, policy } } : modal);
       return policy;

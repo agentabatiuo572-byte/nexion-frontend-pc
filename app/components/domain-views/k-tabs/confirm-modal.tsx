@@ -71,7 +71,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         return;
       }
       if (cause instanceof ConfirmReadConflict) {
-        setReason("");
+        if (!cause.review?.preserveReason) setReason("");
         setReadConflict(cause);
         if (!cause.review) setError(displayAdminReadError(cause));
         return;
@@ -91,11 +91,15 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
     if (!readConflict?.review || readingConflict) return;
     setReadingConflict(true);
     setError(null);
-    try { await readConflict.review.readLatest(); }
+    try { if (await readConflict.review.readLatest()) setReadConflict(null); }
     catch (cause) {
       if (isPermissionDenied(cause)) { announcePermissionDenied(); onClose(); }
       else {
-        if (cause instanceof ConfirmReadConflict) setReadConflict(cause);
+        if (cause instanceof ConfirmReadConflict) {
+          if (!cause.review?.preserveReason) setReason("");
+          setReadConflict(cause);
+          if (cause.review) return;
+        }
         setError(displayAdminReadError(cause));
       }
     }

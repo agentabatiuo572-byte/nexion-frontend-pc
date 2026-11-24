@@ -27,6 +27,7 @@ import {
   updateH4EventFeatured,
   updateH4EventReward,
   previewH4EventReward,
+  previewH4EventStatus,
   updateH4EventStatus,
   createH4QuestEvent,
   deleteH4QuestEvent,
@@ -43,6 +44,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useUI } from "@/lib/store/ui";
 import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import { H4_EVENT_RULE_CODES, fetchEventRules, type EventRuleView } from "@/lib/admin/event-rules-client";
 import { EVENT_CONTENT_LOCALES, eventLocalizedContentGaps, eventRuleReadiness } from "@/lib/admin/event-rule-form";
@@ -57,7 +59,7 @@ import {
   ApprovalFact, EventCard, EventPreview, GuardCard, contentFieldsText, contentGaps, gapWeight, languageNames, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
   WHEEL_APP_KINDS, WHEEL_KIND_LABEL, WheelBar, WheelLegend, boolValue, effectApproval, effectByDirection, effectDirect, expiredTag, formStore,
   legacyName, lifecycleOf, numericValue, pendingTag, percentText, text, unknownTag, wheelLegacyNexTier, wheelPointsTier, wheelUnit,
-  type LegacyEvent, type LocaleCode, type WheelTier, actualRewardText, legacyRewardText, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL } from "./h4-legacy-parts";
+  type LegacyEvent, type LocaleCode, type WheelTier, actualRewardText, legacyRewardText, h4OpeningReadFailure, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL } from "./h4-legacy-parts";
 
 type Model = H4Statistics & {
   events?: LegacyEvent[];
@@ -255,7 +257,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   /** 直接保存被判定要走审批：换成审批确认，值和理由沿用（H-改走审批）。 */
   const approvalReconfirm = (error: HApprovalRequired, req: ActionConfirmReq | ConfirmReq, reason: string, value?: string, businessValue?: BusinessFormValue, comparison?: EditComparison) => {
     const edit = "edit" in req ? req.edit : undefined;
-    const facts = "facts" in req ? typeof req.facts === "function" ? req.facts(value) : req.facts : "content" in req ? req.content : undefined;
+    const facts = "facts" in req ? typeof req.facts === "function" ? req.facts(value, businessValue) : req.facts : "content" in req ? req.content : undefined;
     const fields = "businessForm" in req && req.businessForm?.kind === "multi-field" ? req.businessForm.fields : [];
     const creating = (error.input as { method: string }).method === "POST";
     const before = Object.fromEntries(fields.map(field => [field.key, field.current]));
@@ -286,7 +288,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     let retained: H4Command | undefined;
     const original = () => pendingH4Commands().find(r => r.commandKey === retained?.commandKey);
     const opened: ActionConfirmReq = { ...req,
-      facts: reopenedAfterConflict ? (value?: string) => <><H4StaleNote />{typeof facts === "function" ? facts(value) : facts}</> : facts,
+      facts: reopenedAfterConflict ? (value?: string, businessValue?: BusinessFormValue) => <><H4StaleNote />{typeof facts === "function" ? facts(value, businessValue) : facts}</> : facts,
       blockedReason: req.blockedReason ?? (version === undefined && !(req.edit?.review && conflictDraft.rejection) ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => original()?.reason,
       getPendingRecovery: () => h4PendingConfirmRecovery(original(), async () => {
@@ -314,7 +316,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     };
     ctx.openActionConfirm(req.edit?.review && !conflictDraft.rejection && !restored ? opened : conflictDraft.action(opened, undefined, restored));
   };
-  const openConfirm = (req: ConfirmReq) => {
+  const openConfirm = (req: ConfirmReq, latestReadVersion?: () => number | undefined) => {
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
     const original = () => pendingH4Commands().find(r => r.commandKey === retained?.commandKey);
@@ -335,7 +337,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         const before = new Set(pendingH4Commands().map(r => r.commandKey));
         setStale(null);
         try {
-          assertH4Fresh("overview", version);
+          assertH4Fresh("overview", latestReadVersion?.() ?? version);
           return await req.run(reason, value);
         }
         catch (cause) {
@@ -579,6 +581,30 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const missing = missingFor(event);
     const opening = value === "ongoing";
+    let readVersion: number | undefined;
+    let verified: { reason: string; approvalRequired: boolean } | undefined;
+    const readBeforeOpening = async <T,>(read: () => Promise<T>, reason: string): Promise<T> => {
+      try { return await read(); }
+      catch (cause) {
+        if (isPermissionDenied(cause) || isHGrowthReadConflict(cause)) throw cause;
+        throw h4OpeningReadFailure(cause, async () => {
+          verified = { reason, approvalRequired: await verifyOpening(reason) };
+          return true;
+        });
+      }
+    };
+    const verifyOpening = async (reason: string) => {
+      const [latest, required] = await readBeforeOpening(
+        () => Promise.all([fetchH3QuestEvents("events"), getRequiredContentLanguages()]), reason);
+      readVersion = h4ReadVersion("overview");
+      setRequiredLanguages(required);
+      const current = (latest as Model).events?.find(row => row.id === event.id);
+      if (!current || current.state !== event.state) throw new Error("活动规则读取失败，请刷新后重试。");
+      if (missingFor(current, required, (latest as Model).contentLocales?.event ?? {}).length) {
+        throw new Error(formatAdminApiError("EVENT_LOCALIZED_CONTENT_INCOMPLETE", "", "write", current.copyReadiness));
+      }
+      return readBeforeOpening(() => previewH4EventStatus(event.id, value, event.state, reason), reason);
+    };
     openConfirm({ briefKind: "config",
       action: `活动状态 · ${event.name}`,
       title: opening ? "开放活动" : "结束活动",
@@ -603,19 +629,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       confirmTone: opening ? undefined : "danger",
       reasonPlaceholder: opening ? "例如：活动素材已就绪，按排期开放" : "例如：活动到期，按排期结束",
       run: async (reason) => {
-        // 缺项清单和指路已在下面的提示里逐项列出，这里只给一句结论，不重复同一份清单。
-        if (opening) {
-          const [latest, required] = await Promise.all([fetchH3QuestEvents("events"), getRequiredContentLanguages()]);
-          setRequiredLanguages(required);
-          const current = (latest as Model).events?.find(row => row.id === event.id);
-          if (!current || current.state !== event.state) throw new Error("活动规则读取失败，请刷新后重试。");
-          if (missingFor(current, required, (latest as Model).contentLocales?.event ?? {}).length) {
-            throw new Error(formatAdminApiError("EVENT_LOCALIZED_CONTENT_INCOMPLETE", "", "write", current.copyReadiness));
-          }
-        }
-        if (await apply(await updateH4EventStatus(event.id, value, event.state, reason))) toast(`${event.name} 状态已更新`);
+        const approvalRequired = opening && (verified?.reason === reason ? verified.approvalRequired : await verifyOpening(reason));
+        verified = undefined;
+        if (await apply(await updateH4EventStatus(event.id, value, event.state, reason, approvalRequired))) toast(`${event.name} 状态已更新`);
       },
-    });
+    }, () => readVersion);
   };
 
   const openEventFeatured = (event: LegacyEvent) => {
@@ -1023,14 +1041,26 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openEditWheelTier = (tier: WheelTier) => {
     const tierName = text(tier.tier);
     if (wheelCommandBlocks("h4_wheel_tier_update", tierName)) return;
+    const amplifies = (rewardKind: string, rewardAmount: number, dailyStock: number) => {
+      if (!["uvt", "usdt", "coupon"].includes(rewardKind)) return false;
+      const sameKind = rewardKind.toLowerCase() === text(tier.kind).toLowerCase();
+      const previousStock = numericValue(tier.dailyStock);
+      const increasesAmount = rewardAmount > (sameKind ? numericValue(tier.amount) : 0);
+      const increasesStock = previousStock > 0 && (dailyStock === 0 || dailyStock > previousStock);
+      const reducesUvtStock = sameKind && rewardKind === "uvt" && dailyStock > 0
+        && (previousStock === 0 || dailyStock < previousStock);
+      return increasesAmount || increasesStock || (reducesUvtStock
+        && increasesUvtFallback(model?.wheelTiers ?? [], tier, numericValue(tier.prob) > 0));
+    };
+    const draftAmplifies = (draft?: BusinessFormValue) => !!draft?.rewardAmount?.trim() && !!draft.dailyStock?.trim()
+      && amplifies(draft.rewardKind, Number(draft.rewardAmount), Number(draft.dailyStock));
     openActionConfirm({ briefKind: "config",
       action: `编辑转盘奖项 · ${tierName}`,
       title: "编辑转盘奖项",
       statedBrief: { impact: "生效后下一次抽奖就按新内容发，已经抽中的不变。", check: "核对奖型、发真钱、每次数量和每日库存。" },
       effect: effectByDirection(),
       detail: <>编辑奖项名称、奖励类型、是否发真钱。概率请在「改奖池 / 概率」里统一调，保证加起来是 100%。</>,
-      facts: tierFacts(tier, <ApprovalFact amplify="让转盘多发奖的修改（如提高数量、放宽库存）" object="奖池" />),
-      amplifies: true,
+      facts: (_value, draft) => tierFacts(tier, draftAmplifies(draft) ? <ApprovalFact amplify="让转盘多发奖的修改（如提高数量、放宽库存）" object="奖池" /> : null),
       coverageLead: "这一档会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案调整这一档奖品",
       getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
@@ -1038,6 +1068,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       businessForm: {
         kind: "multi-field",
         requireAnyChange: true,
+        amplifies: draftAmplifies,
         feedback: (value) => wheelRewardNameFeedback(value, "奖项名称"),
         fields: [
           { key: "rewardName", label: "奖项名称", current: text(tier.reward), inputKind: "text", required: true, showDiff: true, help: APP_VISIBLE_TEXT_HINT },
@@ -1066,16 +1097,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           dailyStock,
         };
         const expectedSignature = text(model?.wheelSignature, "__EMPTY__");
-        const sameKind = payload.rewardKind.toLowerCase() === text(tier.kind).toLowerCase();
-        const previousStock = numericValue(tier.dailyStock);
-        const increasesAmount = Number(payload.rewardAmount) > (sameKind ? numericValue(tier.amount) : 0);
-        const increasesStock = previousStock > 0 && (payload.dailyStock === 0 || payload.dailyStock > previousStock);
-        const reducesUvtStock = sameKind && payload.rewardKind === "uvt" && payload.dailyStock > 0
-          && (previousStock === 0 || payload.dailyStock < previousStock);
-        const amplifies = ["uvt", "usdt", "coupon"].includes(payload.rewardKind)
-          && (increasesAmount || increasesStock || (reducesUvtStock
-            && increasesUvtFallback(model?.wheelTiers ?? [], tier, numericValue(tier.prob) > 0)));
-        if (amplifies) {
+        if (amplifies(payload.rewardKind, Number(payload.rewardAmount), payload.dailyStock)) {
           await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_tier_update", { ...payload,
             probabilityPct: String(numericValue(tier.prob)), expectedSignature },
             JSON.stringify(tier), JSON.stringify(payload), reason, bv);
@@ -1174,9 +1196,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const lookupH4Command = async (record: H4Command) => {
     setLookupKey(record.commandKey);
     try {
-      const result = await queryH4Command(record);
+      const result = await queryH4Command(record, true);
       const rejection = result && "receipt" in result ? h4ReceiptRejection(result.receipt) : undefined;
-      if (rejection) { toast(displayAdminError(rejection), "warn"); return; }
+      if (rejection) {
+        await recoverRejectedCommand(record, rejection);
+        return;
+      }
       const original = pendingH4Commands().find(row => row.commandKey === record.commandKey);
       if (result && "ticket" in result && result.ticket === null) toast("暂未查到原审批单，原请求继续保留。", "warn");
       if ((!original || original.acknowledged) && await refreshAll() && activeRecovery.current === record.commandKey) {

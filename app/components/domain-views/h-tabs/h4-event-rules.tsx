@@ -17,7 +17,7 @@ import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4Pend
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatTime } from "./h4-promotion-ui";
-import { ApprovalFact, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL, H4_OLD_RECORD_REJECTED, LOCALE_NAME, effectApproval, effectDirect, type LocaleCode } from "./h4-legacy-parts";
+import { ApprovalFact, h4OpeningReadFailure, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL, H4_OLD_RECORD_REJECTED, LOCALE_NAME, effectApproval, effectDirect, type LocaleCode } from "./h4-legacy-parts";
 import { H4ConflictCompare, h4ConflictGroups, type H4ConflictGroup } from "./h4-conflict-compare";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { amountDisplay } from "@/lib/format";
@@ -38,6 +38,17 @@ const value = (rules: Record<string, unknown>, key: string) => rules[key] === un
 /** 金额参数按全站写法显示（amountDisplay）；读不到写「—」。 */
 const money = (rules: Record<string, unknown>, key: string) => { const raw = value(rules, key); return raw === "—" ? raw : amountDisplay(raw); };
 const unset = (text: string) => /—/.test(text) ? "未配置" : text;
+
+function hasRuleChanges(base: EventRuleView, next: EventRuleChange) {
+  const opened = { enabled: base.enabled, startsAt: base.startsAt, endsAt: base.endsAt, rules: eventRuleDraftRules(base) };
+  return hConflictFields(opened, opened, next, (path, before, after) => {
+    if ((path === "startsAt" || path === "endsAt") && typeof before === "string" && typeof after === "string") {
+      const time = Date.parse(before);
+      if (Number.isFinite(time)) return time === Date.parse(after);
+    }
+    return Object.is(before, after);
+  }).some(field => field.changedByMe);
+}
 
 /** 卡上写的关键参数：用户拿到什么、平台最多付多少。 */
 function keyParams(row: Pick<EventRuleView, "kind" | "rules">): Array<[string, string]> {
@@ -152,6 +163,8 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
         if (regions !== baseRegionText) next.rules.regions = parsedRegions;
       }
     }
+    const changed = hasRuleChanges(base, next);
+    if (!changed && !restored) return;
     const firstOpen = next.enabled && !base.enabled && !base.rulesLocked;
     let readVersion = h4ReadVersion("rules");
     let verifiedVersion: number | undefined;
@@ -175,7 +188,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       try { return await Promise.all([fetchEventRules(), fetchOperatingLanguages()]); }
       catch (cause) {
         if (isPermissionDenied(cause)) throw cause;
-        throw new ConfirmReadConflict({ preserveReason: true, readLatest: async () => {
+        throw h4OpeningReadFailure(cause, async () => {
           const [latest, required] = await readFirstOpen();
           const current = latest.find(row => row.eventCode === base.eventCode);
           if (!current) throw missingRule();
@@ -187,8 +200,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
           checkFirstOpen(current, required);
           readVersion = verifiedVersion = h4ReadVersion("rules");
           return true;
-        }, renderNotice: retry => <Notice tone="danger" title="开启前所需数据没有读到"
-          action={<Button size="sm" onClick={retry}>重试</Button>}>{displayAdminReadError(cause)}</Notice> });
+        });
       }
     };
     const checkFirstOpen = (current: EventRuleView, required: readonly OperatingLanguageCode[]) => {
@@ -240,7 +252,8 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       </>,
       confirmLabel: firstOpen ? "提交审批" : "保存配置",
       reasonPlaceholder: firstOpen ? "例如：活动素材和预算已确认，申请开启" : "例如：按活动方案调整参与条件",
-      amplifies: next.enabled,
+      amplifies: firstOpen,
+      blockedReason: changed ? undefined : "没有改动",
       run: async reason => {
         if (operator !== currentAdminOperator() || !ctx.can("growth_h4_write")) throw new Error("登录身份或权限已变化，请重新打开活动配置。");
         const own = generation.current; setSaving(true); setError("");
@@ -346,6 +359,11 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     choose(latest); setDraft(next); setRegions(eventRegionText(next.rules.regions)); setMerged(kept.length);
   };
   const savedUnread = !!selected && confirmedH4Saves().some(record => record.scope === `H/h4_event_rule/${selected.eventCode}`);
+  const unchanged = selected && draft && (() => {
+    if (selected.kind !== "regional" || regions === eventRegionText(selected.rules.regions)) return !hasRuleChanges(selected, draft);
+    try { return !hasRuleChanges(selected, { ...draft, rules: { ...draft.rules, regions: parseEventRegions(regions) } }); }
+    catch { return false; }
+  })();
   if (!canRead) return <BlockState state="denied" title="没有查看玩法规则的权限" detail="七类玩法需要「活动中心查看」权限。" />;
 
   const ended = (row: EventRuleView) => !!(row.rulesLocked && row.endsAt && Date.parse(row.endsAt) <= Date.now());
@@ -465,7 +483,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     {!loading && <p className="h4l-note">时间为北京时间</p>}
     <Drawer open={!!editor} onClose={close} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}${/[A-Za-z0-9]$/.test(EVENT_KIND_LABELS[selected.kind] ?? "") ? " " : ""}的配置` : "玩法配置"} sub={selected?.eventCode}
       explain="先保存完整配置，再开启活动。关闭这个抽屉会丢掉没保存的改动。"
-      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>取消</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : review ? "先在上面选一种继续" : selected ? h4ApprovalLockedReason(`H/h4_event_rule/${selected.eventCode}`) : undefined} onClick={() => save()}>保存配置</Button>} />}>
+      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>取消</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : review ? "先在上面选一种继续" : selected ? h4ApprovalLockedReason(`H/h4_event_rule/${selected.eventCode}`) ?? (unchanged ? "没有改动" : undefined) : undefined} onClick={() => save()}>保存配置</Button>} />}>
       {editor}
     </Drawer>
   </Panel>;

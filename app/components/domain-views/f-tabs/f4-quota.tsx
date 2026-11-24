@@ -221,7 +221,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           {policy && <p>技术信息：规则版本 {policy.policyVersion}，第 {policy.revision} 次修改。</p>}
         </>}
         actions={policy && ctx.canSubmitTeamApproval("F4") ? <Button onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, { action: "policy", overview: data, policy }))}>调整申请规则</Button> : undefined}>
-        {!policy ? <BlockState state="error" title="申请规则加载失败" detail="这不是没有规则：规则暂时没加载出来，调整入口也先收起。" onRetry={() => void ctx.refreshF4()} />
+        {!policy ? <BlockState state="error" title="申请规则加载失败" detail="这不是没有规则：规则暂时没加载出来，调整入口也先收起。" onRetry={() => void ctx.retryF4AmbassadorPolicy()} retrying={ctx.f4PolicyLoading} />
           : <>
             <KeyValues rows={[{ key: "default", label: "默认申请预算", value: `${moneyText(policy.defaultBudgetUsdt)} USDT`, explain: "申请人没改金额时用的预算，要落在某一类的范围里。" }]} />
             <ul className="f4-buckets" aria-label="四类申请">

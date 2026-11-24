@@ -49,7 +49,7 @@ export const H4_APPROVAL_OPS = new Set([
 ]);
 const fresh = new Map<string, number>();
 const observations = new Map<string, A2OperationRow>();
-const directReceipts = new Map<string, DirectCommandReceiptState>();
+const receiptStates = new Map<string, DirectCommandReceiptState>();
 let observationOwner: number | undefined;
 const resourceOf = (scope: string): Resource => scope.includes("/h4_event_rule/") ? "rules" : scope.includes("/h4_genesis_raffle/") ? "raffles" : "overview";
 const notify = () => { if (typeof window !== "undefined") window.dispatchEvent(new Event("admin-h4-pending-changed")); };
@@ -72,7 +72,7 @@ function requireActor(owner: number, write: boolean, scope: string) {
   if (write && !allowed) throw new Error("H4_MAKER_FORBIDDEN");
   return actor;
 }
-function forget(r: H4Command) { h4CommandStores[r.store].forget(r.fingerprint, r.commandKey); observations.delete(r.commandKey); directReceipts.delete(r.commandKey); notify(); }
+function forget(r: H4Command) { h4CommandStores[r.store].forget(r.fingerprint, r.commandKey); observations.delete(r.commandKey); receiptStates.delete(r.commandKey); notify(); }
 function retain(r: H4Command) {
   const storage = h4CommandStores[r.store];
   storage.remember(r.fingerprint, r.commandKey, r);
@@ -195,7 +195,7 @@ export async function restoreH4Uploads(target: H4UploadTarget, writable: boolean
 export async function acknowledgeH4Upload(record: H4Command) { if (!record.asset) throw new Error("H4_RESULT_UNKNOWN"); await deleteH4UploadFile(record.commandKey); forget(record); }
 export const h4TicketObservations = () => {
   const owner = useAdminAuth.getState().session?.adminId;
-  if (owner !== observationOwner) { observations.clear(); directReceipts.clear(); observationOwner = owner; }
+  if (owner !== observationOwner) { observations.clear(); receiptStates.clear(); observationOwner = owner; }
   return [...observations.values()];
 };
 export const h4CommandHasPendingTicket = (key: string) => { h4TicketObservations(); return observations.get(key)?.status === "pending"; };
@@ -274,20 +274,20 @@ function h4DirectReceiptScope(request: Direct) {
 
 export const isH4MediaCommand = (r: H4Command) => !("proposal" in r.request) && r.request.path.startsWith("/media/uploads?");
 
-export async function queryH4Command(r: H4Command): Promise<{ receipt: DirectCommandReceipt } | { ticket: A2OperationRow | null } | undefined> {
+export async function queryH4Command(r: H4Command, explicit = false): Promise<{ receipt: DirectCommandReceipt } | { ticket: A2OperationRow | null } | undefined> {
   requireActor(r.owner, false, r.scope);
   h4TicketObservations();
   if (!("proposal" in r.request)) {
     const directScope = h4DirectReceiptScope(r.request);
     if (!directScope) return undefined;
-    directReceipts.delete(r.commandKey);
+    receiptStates.delete(r.commandKey);
     notify();
     try {
       const receipt = await fetchDirectCommandReceiptDetails(directScope, r.commandKey, r.owner);
       const { state } = receipt;
       const original = pendingH4Commands().find(row => row.commandKey === r.commandKey);
       if (!original) return undefined;
-      directReceipts.set(r.commandKey, state);
+      receiptStates.set(r.commandKey, state);
       if (state === "SUCCEEDED") {
         markH4Read(resourceOf(original.scope), false);
         retain({ ...original, acknowledged: true });
@@ -299,15 +299,23 @@ export async function queryH4Command(r: H4Command): Promise<{ receipt: DirectCom
     }
     finally { notify(); }
   }
+  if (explicit) {
+    receiptStates.delete(r.commandKey);
+    notify();
+  }
   const ticket = await fetchA2ProposalByKey(r.commandKey, true);
   requireActor(r.owner, false, r.scope);
   if (ticket) {
     checkTicket(r, ticket);
+    receiptStates.delete(r.commandKey);
     observations.delete(r.commandKey);
     for (const [key, old] of observations) if (old.obj === ticket.obj && old.operationCode === ticket.operationCode) observations.delete(key);
     if (ticket.status !== "pending") markH4Read(resourceOf(r.scope), false);
     if (ticket.status === "pending") { retain({ ...r, acknowledged: true }); observations.set(r.commandKey, ticket); }
     else forget(r);
+    notify();
+  } else if (explicit) {
+    receiptStates.set(r.commandKey, "NOT_FOUND");
     notify();
   }
   return { ticket };
@@ -324,8 +332,8 @@ export function h4RetryBlockedReason(r: H4Command): string | undefined {
   if (isRetryExpired(r)) return RETRY_EXPIRED_TEXT;
   if (r.acknowledged) return "请查询原结果";
   try { requireActor(r.owner, true, r.scope); } catch { return "没有这项修改的权限"; }
-  if ("proposal" in r.request || isH4MediaCommand(r)) return;
-  const state = directReceipts.get(r.commandKey);
+  if (isH4MediaCommand(r)) return;
+  const state = receiptStates.get(r.commandKey);
   if (state === "NOT_FOUND") return;
   return state === "PROCESSING" ? "原操作还在处理，请稍后再查" : "先查询原结果，明确查不到后才能重试";
 }
@@ -336,7 +344,7 @@ export function h4PendingConfirmRecovery(record: H4Command | undefined, onSuccee
     expiresAt: record.expiresAt,
     blockedReason: h4RetryBlockedReason(record),
     query: isH4MediaCommand(record) ? undefined : async () => {
-      const result = await queryH4Command(record);
+      const result = await queryH4Command(record, true);
       if (!result) return;
       if ("ticket" in result) { if (result.ticket) await onSucceeded(); return; }
       const rejection = h4ReceiptRejection(result.receipt);
@@ -429,15 +437,13 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
 export async function retryH4Command(original: H4Command) {
   const r = pendingH4Commands().find(item => item.commandKey === original.commandKey);
   if (!r) throw new Error("H4_ORIGINAL_RESOLVED");
+  const blocked = h4RetryBlockedReason(r);
+  if (blocked) throw new Error(blocked);
+  receiptStates.delete(r.commandKey);
+  notify();
   if ("proposal" in r.request) {
     const result = await queryH4Command(r);
     if (result && "ticket" in result && result.ticket) return { h4Approval: true, ticket: result.ticket } as H4ApprovalReceipt;
-  }
-  else {
-    const blocked = h4RetryBlockedReason(r);
-    if (blocked) throw new Error(blocked);
-    directReceipts.delete(r.commandKey);
-    notify();
   }
   return send(r, true);
 }
@@ -476,11 +482,6 @@ export async function h4CommandRequest(path: string, init: Omit<Direct, "path">,
   } else if (parts[2] === "events" && ["reward", "status"].includes(parts[4])) {
     op = parts[4] === "reward" ? "h4_legacy_event_reward_update" : body.value === "ongoing" ? "h4_legacy_event_open" : undefined;
     values = { eventCode: parts[3], value: body.value, expectedValue: body.expectedValue };
-    if (op === "h4_legacy_event_open" && !approval) {
-      const preview = await growthRequest<{ approvalRequired: boolean }>(`${path}/preview`, { method: "POST", body: init.body });
-      if (!preview || typeof preview.approvalRequired !== "boolean") throw new Error("H4_RESPONSE_INVALID");
-      approval = preview.approvalRequired;
-    }
   } else if (parts[2] === "wheel-tiers" && parts[4] !== "retire") {
     op = parts[3] === "probabilities" ? "h4_wheel_probabilities_update" : init.method === "DELETE" ? "h4_wheel_tier_delete" : init.method === "POST" ? "h4_wheel_tier_create" : "h4_wheel_tier_update";
     if (parts[3] === "probabilities") values = { probabilities: Object.fromEntries(Object.entries(body.probabilities).map(([k, v]) => [k, String(v)])), expectedSignature: body.expectedSignature };

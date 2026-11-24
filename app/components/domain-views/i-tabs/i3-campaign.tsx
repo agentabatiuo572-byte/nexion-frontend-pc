@@ -36,6 +36,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { BODY_SENT, campaignQuantity, CampaignCard, CampaignStatusTag, CapCard, chars, I3PendingCapNotice, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, sentWindow, deliveryGap, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
 import { amountDisplay } from "@/lib/format";
 import { LeaveDialog } from "./i5-writes";
+import { compareH3Decimal, h3Decimal } from "@/lib/admin/h3-contract";
 
 type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
@@ -121,6 +122,24 @@ function targetFromForm(form: NewForm): NotificationAudienceTarget {
     language: form.language,
     registrationDaysMin: Math.max(0, Number(form.registrationDaysMin || 0)),
   };
+}
+
+function draftCopy(form: NewForm, required: readonly OperatingLanguageCode[]) {
+  return mapContentTitleBody({
+    titleEn: form.titleEn.trim(), bodyEn: form.bodyEn.trim(), titleZh: form.titleZh.trim(), bodyZh: form.bodyZh.trim(),
+    titleVi: form.titleVi.trim(), bodyVi: form.bodyVi.trim(),
+  }, required, "submit");
+}
+
+function sameDraft(form: NewForm, original: NewForm, required: readonly OperatingLanguageCode[]) {
+  const budget = form.budget.trim(), originalBudget = original.budget.trim();
+  const decimalBudget = (value: string) => /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value) ? h3Decimal(value) : null;
+  const a = decimalBudget(budget), b = decimalBudget(originalBudget);
+  return form.name.trim() === original.name.trim()
+    && form.kind === original.kind && form.tier === original.tier && form.ctaHref === original.ctaHref
+    && JSON.stringify(targetFromForm(form)) === JSON.stringify(targetFromForm(original))
+    && JSON.stringify(draftCopy(form, required)) === JSON.stringify(draftCopy(original, required))
+    && (budget === originalBudget || (a !== null && b !== null && compareH3Decimal(a, b) === 0));
 }
 
 /** 没设「点了去哪」时 App 按类型去的默认位置（后端 AppNotificationService.canonicalRoute）。质押类型没有默认位置了（cd7514d1）。 */
@@ -700,10 +719,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     try {
       const required = await getRequiredContentLanguages();
       setRequiredLanguages(required);
-      const copy = mapContentTitleBody({
-        titleEn: form.titleEn.trim(), bodyEn: form.bodyEn.trim(), titleZh: form.titleZh.trim(), bodyZh: form.bodyZh.trim(),
-        titleVi: form.titleVi.trim(), bodyVi: form.bodyVi.trim(),
-      }, required, "submit");
+      if (editing && sameDraft(form, formBase, required)) return;
+      const copy = draftCopy(form, required);
       const missing = OPERATING_LANGUAGE_CODES.flatMap(lang => campaignCopyMissing(copy, lang));
       if (missing.length) { toast(`缺：${missing.join("；")}。`); return; }
       // Match delivery's split-before-trim contract as well as the existing authoring limit.
@@ -989,7 +1006,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   };
   const drawerOriginal = pending.find((row) => row.commandKey === drawerPendingKey);
   const draftSaveBlocked = submitting ? "正在保存…" : drawerPendingKey ? drawerOriginal && i3DraftRetryBlockedReason(drawerOriginal)
-    : lockReason(editing?.id ?? "create") ?? (!AUDIENCE_CATALOG ? "受众目录没读到，不能保存；刷新页面后再试" : estimating ? "正在估算人数，估完再保存" : undefined);
+    : lockReason(editing?.id ?? "create") ?? (!AUDIENCE_CATALOG ? "受众目录没读到，不能保存；刷新页面后再试"
+      : estimating ? "正在估算人数，估完再保存" : editing && sameDraft(form, formBase, requiredLanguages) ? "没有改动" : undefined);
   const scheduleOriginal = pending.find((row) => row.commandKey === schedulePendingKey);
   const scheduleRetryReason = scheduleOriginal && isRetryExpired(scheduleOriginal) ? RETRY_EXPIRED : scheduleOriginal ? i3RetryPermission(scheduleOriginal) : undefined;
 
