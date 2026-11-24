@@ -68,16 +68,20 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
   const prizeShown = (value: string) => value === "" ? "—" : moneyText(value);
   const limit = PERIODS.find((item) => item.value === period)!.limit;
 
-  const openPause = () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.leaderboard.paused", overview: data, policy: ctx.f4AmbassadorPolicy, period }));
+  const pauseSnapshot = { action: "F.leaderboard.paused", overview: data, policy: ctx.f4AmbassadorPolicy, period };
+  const openPause = () => ctx.openActionConfirm(f4Confirmation(ctx, pauseSnapshot));
 
-  const openPayout = () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "payout", overview: data, policy: ctx.f4AmbassadorPolicy, period }));
+  const payoutSnapshot = { action: "payout", overview: data, policy: ctx.f4AmbassadorPolicy, period };
+  const openPayout = () => ctx.openActionConfirm(f4Confirmation(ctx, payoutSnapshot));
 
-  const openDisqualify = (row: { memberUserId: number }) => ctx.openActionConfirm(f4Confirmation(ctx, { action: `F.leaderboard.week.user.${row.memberUserId}.status`, overview: data, policy: ctx.f4AmbassadorPolicy, period }));
+  const disqualifySnapshot = (row: { memberUserId: number }) => ({ action: `F.leaderboard.week.user.${row.memberUserId}.status`, overview: data, policy: ctx.f4AmbassadorPolicy, period });
+  const openDisqualify = (row: { memberUserId: number }) => ctx.openActionConfirm(f4Confirmation(ctx, disqualifySnapshot(row)));
 
-  const paramRow = (spec: { name: string; value: string; what: string; when: string; effect: string; note?: string; allowed: boolean; open: () => void }) => (
-    <ConfigRow key={spec.name} name={spec.name} what={spec.what} when={spec.when} effect={spec.effect} note={spec.note} value={spec.value}
-      action={spec.allowed ? <Button size="sm" onClick={spec.open}>调整</Button> : undefined} />
-  );
+  const paramRow = (spec: { name: string; value: string; what: string; when: string; effect: string; note?: string; allowed: boolean; action: string }) => {
+    const snapshot = { action: spec.action, overview: data, policy: ctx.f4AmbassadorPolicy, period };
+    return <ConfigRow key={spec.name} name={spec.name} what={spec.what} when={spec.when} effect={spec.effect} note={spec.note} value={spec.value}
+      action={spec.allowed ? <Button size="sm" disabledReason={ctx.f4ExpiredReason(snapshot)} onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, snapshot))}>调整</Button> : undefined} />;
+  };
 
   return (
     <div className="f4-stack">
@@ -88,8 +92,8 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
           <p>参赛人数是参与排名的人数，日榜最多统计 20 人、周榜 50 人、月榜和总榜 100 人，不是全部用户。</p>
         </>}
         actions={<>
-          {canControl && <Button variant={board.paused ? "secondary" : "danger-outline"} icon={board.paused ? <Play size={14} aria-hidden /> : <Pause size={14} aria-hidden />} onClick={openPause}>{board.paused ? "恢复榜单" : "暂停榜单"}</Button>}
-          {canFund && <Button variant="primary" disabledReason={board.paused ? "排行榜已暂停，总榜奖励暂停发放" : undefined} onClick={openPayout}>发放总榜奖励</Button>}
+          {canControl && <Button variant={board.paused ? "secondary" : "danger-outline"} icon={board.paused ? <Play size={14} aria-hidden /> : <Pause size={14} aria-hidden />} disabledReason={ctx.f4ExpiredReason(pauseSnapshot)} onClick={openPause}>{board.paused ? "恢复榜单" : "暂停榜单"}</Button>}
+          {canFund && <Button variant="primary" disabledReason={board.paused ? "排行榜已暂停，总榜奖励暂停发放" : ctx.f4ExpiredReason(payoutSnapshot)} onClick={openPayout}>发放总榜奖励</Button>}
         </>}>
         <div className="f4-board-bar">
           <Segments label="排行榜周期" value={period} onChange={setPeriod} items={PERIODS.map(({ value, label }) => ({ value, label }))} />
@@ -110,7 +114,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
                   <span className="f4-podium-user" data-mono>{row.userId}</span>
                   <span className="f4-podium-value"><b>{count(row.computePoints)}</b><small>点</small></span>
                   <span className="f4-podium-tip">{operatorCopyText(row.tip)}{dq && <StatusTag tone="done">已取消资格</StatusTag>}</span>
-                  {canControl && period === "week" && row.memberUserId > 0 && !dq && <Button size="sm" variant="danger-outline" aria-label={`取消 ${row.userId} 的榜单资格`} onClick={() => openDisqualify(row)}>取消资格</Button>}
+                  {canControl && period === "week" && row.memberUserId > 0 && !dq && <Button size="sm" variant="danger-outline" aria-label={`取消 ${row.userId} 的榜单资格`} disabledReason={ctx.f4ExpiredReason(disqualifySnapshot(row))} onClick={() => openDisqualify(row)}>取消资格</Button>}
                 </div>
               </li>;
             })}
@@ -135,28 +139,28 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             when: "批准后，日、周、月榜从下一次还没结算的周期起用新金额，总榜在人工派奖时读；已发的不改。",
             effect: "调高会多发钱，提交前看兑付覆盖率。周榜如果另设了大于 0 的覆盖额，以覆盖额为准。",
             note: periodPrizes ? undefined : "四榜奖池的设置没读到或读不懂，这里显示的是榜单现在用的金额（周榜是生效后的金额）；读不到的写「—」。",
-            open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.periodPrize", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
+            action: "F.pool.periodPrize" })}
           {paramRow({ name: "周榜奖池覆盖额", value: data.leaderboardPoolLabel ? `本周实际生效 ${prizeText(data.leaderboardPoolLabel)} USDT` : "—", allowed: canFund,
             what: "只给周榜用的奖池金额，大于 0 时代替四榜奖池里的周榜金额。",
             when: "批准后从还没结算的周起用；已发的不改。暂停期间读暂停时的奖池。",
             effect: "填 0 不是关掉周榜奖池，而是改回用四榜奖池里的周榜金额。",
             note: "看不出有没有另设覆盖额。格式不对提交不了；以前存下的坏值按四榜奖池的周榜金额发。",
-            open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.leaderboard.poolUsd", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
+            action: "F.leaderboard.poolUsd" })}
           {paramRow({ name: "上榜门槛", value: minPointsText(data.configValues["F.leaderboard.minComputePoints"]), allowed: canWrite,
             what: "本期团队订单算力点低于这个数的人不参与排名和派奖，四个榜共用。填 0 不设门槛。",
             when: "批准后从还没结算的周期起用；暂停期间的榜仍按暂停时的门槛。",
             effect: "调高上榜的人变少。",
-            open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.leaderboard.minComputePoints", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
+            action: "F.leaderboard.minComputePoints" })}
           {paramRow({ name: "第 1 名最高占比", value: data.configValues["F.pool.top1MaxPct"]?.trim() ? `${top1MaxPct}%` : "未设置（按 25%）", allowed: canFund,
             what: "排行榜派奖时第 1 名最多拿到奖池的百分比，0–100。只约束排行榜派奖。",
             when: "批准后对还没结算的榜生效，已发的不追回。",
             effect: "超出上限的部分不再分给别人。调高会多发钱给第 1 名。",
-            open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.top1MaxPct", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
+            action: "F.pool.top1MaxPct" })}
           {paramRow({ name: "前 5 名最高占比", value: data.configValues["F.pool.top5MaxPct"]?.trim() ? `${top5MaxPct}%` : "未设置（按 60%）", allowed: canFund,
             what: "排行榜派奖时前 5 名合计最多拿到奖池的百分比，0–100。只约束排行榜派奖。",
             when: "批准后对还没结算的榜生效，已发的不追回。",
             effect: "超出上限的部分不再分给别人。和第 1 名上限各自独立，系统不检查两者的大小关系。",
-            open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.top5MaxPct", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
+            action: "F.pool.top5MaxPct" })}
         </ConfigList>
       </Panel>
     </div>

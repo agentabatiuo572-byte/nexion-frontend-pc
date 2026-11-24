@@ -623,7 +623,7 @@ type EditReviewState =
   | { kind: "ready"; result: EditReviewResult }
   | { kind: "error"; message: string; attempt: EditReviewAttempt; rejected: boolean }
   | { kind: "conflict" };
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; /** current 不是现在读到的值时（比如恢复原操作时带的是提交那一刻的值）写它是什么，只改显示的名字。 */ currentLabel?: string; /** Display-only current value; comparisons and requests use current. */ displayCurrent?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; ignoreTrailingDecimalZeros?: boolean; step?: number; /** Keyboard increment when it differs from the accepted numeric precision. */ inputStep?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 进入核对后才读取权威前后值。 */ review?: EditReview; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; /** current 不是现在读到的值时（比如恢复原操作时带的是提交那一刻的值）写它是什么，只改显示的名字。 */ currentLabel?: string; /** Display-only current value; comparisons and requests use current. */ displayCurrent?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; ignoreTrailingDecimalZeros?: boolean; step?: number; /** Keyboard increment when it differs from the accepted numeric precision. */ inputStep?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 改了才出现的方向标签（VS-103）：放宽、收紧，传 StatusTag；只在 RdPage 里显示，不传不显示。 */ direction?: (value: string) => ReactNode; /** 进入核对后才读取权威前后值。 */ review?: EditReview; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -1859,15 +1859,15 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
       <textarea rows={rows} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
-  const input = (key: string, label: ReactNode, placeholder: string, type = "text", maxLength?: number) => surface ? (
-    <RdField label={label}>{(control) => <RdInput {...control} type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />}</RdField>
+  const input = (key: string, label: ReactNode, placeholder: string, type = "text", maxLength?: number, required?: boolean) => surface ? (
+    <RdField label={label} required={required}>{(control) => <RdInput {...control} type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />}</RdField>
   ) : (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
       <input className="fld" type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
-  const select = (key: string, label: string, options: string[], proofOrLabels?: string | Record<string, ReactNode>, optionLabels?: Record<string, ReactNode>, onValueChange?: (next: string) => void, unavailableLabel?: string) => {
+  const select = (key: string, label: string, options: string[], proofOrLabels?: string | Record<string, ReactNode>, optionLabels?: Record<string, ReactNode>, onValueChange?: (next: string) => void, unavailableLabel?: string, required?: boolean) => {
     const proof = typeof proofOrLabels === "string" ? proofOrLabels : undefined;
     const labels = typeof proofOrLabels === "string" ? optionLabels : proofOrLabels;
     const current = value[key] ?? options[0] ?? "";
@@ -1877,7 +1877,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
       ...(options.length === 0 ? [{ value: "", label: "暂无可选项" }] : options.map((o) => ({ value: o, label: typeof labels?.[o] === "string" ? displayOption(String(labels[o])) : labels?.[o] ?? displayOption(o) }))),
     ];
     const onValue = (next: string) => onValueChange ? onValueChange(next) : set(key, next);
-    if (surface) return <RdField label={label}>{(control) => <RdSelect {...control} aria-label={label} data-proof={proof} value={current} disabled={options.length === 0} onChange={onValue} options={choiceOptions} />}</RdField>;
+    if (surface) return <RdField label={label} required={required}>{(control) => <RdSelect {...control} aria-label={label} data-proof={proof} value={current} disabled={options.length === 0} onChange={onValue} options={choiceOptions} />}</RdField>;
     return (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
@@ -2930,9 +2930,10 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
           <RdField label="核验时间">{(control) => <RdInput {...control} value={value.verifiedAt ?? ""} readOnly aria-readonly="true" />}</RdField>
           <div style={{ gridColumn: "1 / -1" }}><RdField label="核验依据">{(control) => <RdInput {...control} value={value.ticket ?? ""} readOnly aria-readonly="true" />}</RdField></div>
         </div> : <div className="rd-form-grid" data-cols="2" data-dense="">
-          {select("channel", "核验方式", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel")}
-          {input("verifiedAt", "核验时间", "2026-06-18 14:30", "datetime-local")}
-          <div style={{ gridColumn: "1 / -1" }}>{input("ticket", "来源工单号", spec.ticketHint ?? "如 SEC-20260618-001")}</div>
+          {/* 三项都要填才能提交：写红星号（02 OP-14、06 VS-104）；核验时间按业务时区填，标在字段名上（05 TX-25）。BUG-682 第 6 条。 */}
+          {select("channel", "核验方式", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel", undefined, undefined, undefined, true)}
+          {input("verifiedAt", `核验时间（${businessZone().label}）`, "2026-06-18 14:30", "datetime-local", undefined, true)}
+          <div style={{ gridColumn: "1 / -1" }}>{input("ticket", "来源工单号", spec.ticketHint ?? "如 SEC-20260618-001", undefined, undefined, true)}</div>
         </div>}
         <RdCheck data-proof="identity-ack" label="我已通过上述方式核实是用户本人，不是他人冒充" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
       </div>
@@ -3836,7 +3837,7 @@ export type InlineOperationApproval = {
   fieldLayout?: "compact";
 };
 
-export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, requireReason: reasonRequested = true, initialReason, initialRejection, measureReason, getPendingReason, getPendingRecovery, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, reviewedFacts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode | ((value: BusinessFormValue) => ReactNode); confirmLabel?: string; confirmLabelForValue?: (value?: string, businessValue?: BusinessFormValue) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue, reviewedValue?: string) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string, businessValue?: BusinessFormValue) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; requireReason?: boolean; initialReason?: string; initialRejection?: ConfirmReadConflict | PendingConfirmRejected; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingRecovery?: () => PendingConfirmRecovery | undefined; reviewedFacts?: EditReviewResult["facts"]; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, requireReason: reasonRequested = true, initialReason, initialRejection, measureReason, getPendingReason, getPendingRecovery, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, reviewedFacts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode | ((value: BusinessFormValue, editValue?: string) => ReactNode); confirmLabel?: string; confirmLabelForValue?: (value?: string, businessValue?: BusinessFormValue) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue, reviewedValue?: string) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string, businessValue?: BusinessFormValue) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; requireReason?: boolean; initialReason?: string; initialRejection?: ConfirmReadConflict | PendingConfirmRejected; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingRecovery?: () => PendingConfirmRecovery | undefined; reviewedFacts?: EditReviewResult["facts"]; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const pendingRecovery = usePendingConfirmRecovery(pendingReason, getPendingRecovery);
@@ -3927,7 +3928,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const coverageUnknown = coverageReliable === false;
   const covBlocked = Boolean(effectiveAmplifies && ((coverage && (coverage.redlineBreached ?? coverage.coverageRatio < coverage.redlinePct)) || (coverageUnknown && coverageUnavailableBlocks)));
   const coverageBlockText = coverageUnknown ? "兑付覆盖率暂时读不到，读到之前不能提交" : "兑付覆盖率低于红线，暂时无法提交";
-  const coverageRatioText = coverageUnknown || !coverage ? "—" : coverage.coverageRatioText !== undefined ? `${coverage.coverageRatioText}%` : fmtPct(coverage.coverageRatio);
+  // 覆盖率全后台一位小数，和顶栏一样（05 TX-23，BUG-682 第 5 条）；带原文的只用于判断，不按原文的位数显示。
+  const coverageRatioText = coverageUnknown || !coverage ? "—" : fmtPct(coverage.coverageRatio);
   const coverageRedlineText = coverageUnknown || !coverage ? "—" : coverage.redlinePctText !== undefined ? `${coverage.redlinePctText}%` : fmtConfigPct(coverage.redlinePct);
   // 改版页面里的整组审批（不带自定标题、不是内嵌审批）和直接生效的框一个样子：生效方式是标题下的标签，
   // 业务后果与谁来批分别常显，放大资金提示用同一套警示样式。
@@ -4179,7 +4181,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const coverageFirst = surface && (!approval || rdApproval);
   // 事实区随输入变（比如改基准价时买入价写「现在 → 改后」）：新值填好才交给页面。
   const shownFacts = readyReview?.facts ?? reopened?.facts ?? reviewedFacts ?? (typeof facts === "function" ? facts(editValueOk ? newVal : undefined, businessValue) : facts);
-  const effectiveEffect = typeof effect === "function" ? effect(businessValue) : effect;
+  // 改单值的框：填好了、和现在不一样时把新值交给 effect，生效标签按真实路径只写一种（VS-106）。
+  const effectiveEffect = typeof effect === "function" ? effect(businessValue, spec && editValueOk && newVal.trim() && !sameAsCurrent ? newVal : undefined) : effect;
   const coverageInFacts = coverageFirst && !!shownFacts;
   const checkCopy = readyReview?.coverageCheck ?? (rdApproval ? approvalSpec?.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。" : coverageCheck);
   const coverageNotice = effectiveAmplifies && (
@@ -4317,6 +4320,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
             size={kind === "number" ? "key" : "body"}
             stack={kind === "text" ? (spec.current?.length ?? 0) > 14 : kind !== "number" && opts.some((o) => { const text = spec.optionLabels?.[o] ?? o; return typeof text !== "string" || text.length > 10; })}
             hint={spec.hint}
+            state={!readyReview && spec.direction && editValueOk && newVal.trim() && !sameAsCurrent ? spec.direction(newVal) : undefined}
             note={!readyReview && spec.preview && editValueOk ? spec.preview(newVal) : undefined}
             error={retryApproval ? undefined
               : editReview?.kind === "error" && editReview.rejected ? editReview.message

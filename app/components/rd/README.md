@@ -38,7 +38,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 表单里二选一、三选一（放在 `Field` 里，自带底槽和抬起的选中项） | `Segments` | `tabs.tsx` |
 | 次要内容收起来 | `Fold`，`summary` 必填；区块的「查看…」传 `actions` 放标题行右侧，每块最多一个；这组怎么算传 `explain`，不在折叠里铺长段落 | `fold.tsx` |
 | 看板里要处理的事 | `TodoList`、`TodoItem`，读不到用 `TodoFailed`；目标页不可达时不传 `href`，这一行照样提醒，不能点、没有箭头，`sub` 写该找谁 | `todo-list.tsx` |
-| 一块内容读取中、失败、空 | `BlockState`，折叠摘要里的失败传 `compact` 一行写完，重试是文字链；一个数字或一行读不到用 `InlineRetry`，同一个样子 | `block-state.tsx` |
+| 一块内容读取中、失败、空 | `BlockState`，折叠摘要里的失败传 `compact` 一行写完，重试是文字链；一个数字或一行读不到用 `InlineRetry`，同一个样子。重读时「重试」写「重试中…」、`aria-busy`，用 `aria-disabled` 不用原生 `disabled`，焦点留着；读完仍失败焦点回「重试」，读到了焦点交给 `afterRetryFocus` 指的标题；不传、或重读时这一块被换成别的占位，焦点交给还挂着的最近一层外框（`tabIndex=-1`），不掉到页面上。页面重读时最好让失败块留在原处写「重试中…」，别换成骨架。`InlineRetry` 的 `blocked` 是别的原因暂时不能点，文字不变 | `block-state.tsx` |
 | 按天的柱图 | `Bars`，全是 0 别画，写一句话 | `bars.tsx` |
 | 表格 | `Table`、`Th`、`Tr`、`Td`、`Cell`；金额、数量、日期传 `num`，单号、哈希、地址才传 `mono`；理由这类长文本列给 `Td` 传 `grow`，占满剩下的列宽，放不下才省略（一张表最多一列）；列少、表格比内容宽、操作列左边空出一大段时，给操作列的 `Td` 加 `data-fit=""`，它只占按钮宽，多出的宽度按内容分给前面各列；只有第一行是单号时把它包进 `<span data-mono>`；6 列在 1024 放不下、第一列是长单号时给 `Table` 传 `data-tight`，窄于 1280 时格子最宽 200（`.rd-split` 里始终 200），长单号由页面中间省略，留能区分的尾段；要一直标出来的行给 `Tr` 传 `mark`：带单号进来命中的 `hit`（蓝底），对不上要核查的 `danger`（红底），和打开详情的 `selected` 分开 | `table.tsx` |
 | 显示更多列 | `useTableColumns`、`ColumnPicker` | `table.tsx` |

@@ -4,7 +4,7 @@ import { fCommands, type FDomainAttempt } from "./f2-approval";
 import { configApprovalAttempts, configApprovalOriginalInput } from "./withdrawal-config-approval";
 import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
-import { hasPersistedPendingCommandOwner, isRetryExpired } from "./pending-mutation-store";
+import { hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT } from "./pending-mutation-store";
 import type { F4AmbassadorApplication, F4AmbassadorMaterialPacket, F4AmbassadorPolicy, F4AmbassadorPolicyUpdate, F4LeadershipPoolOverview } from "./f1-client";
 import type { ProposeSpec } from "./propose-or-execute";
 import { roleLabel } from "../nav/console-nav";
@@ -143,7 +143,7 @@ export async function sendF4Proposal(adminId: number, slot: string, spec?: Propo
       forget(original); throw new Error("F4_OPERATION_STORAGE_UNAVAILABLE");
     }
   }
-  if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
+  if (isRetryExpired(original)) throw new A2OutcomeUncertainError(RETRY_EXPIRED_TEXT, original.commandKey);
   if (!original.request || !storeFor(original).isDurablyStored(original.fingerprint, original.commandKey)) throw new Error("F4_PROPOSAL_ORIGINAL_INCOMPLETE");
   original.absent = false;
   remember(original);
@@ -169,15 +169,6 @@ async function queryReceived(adminId: number, original: FDomainAttempt) {
   catch { throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey); }
   if (!ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
   return ticket;
-}
-
-/** The visual layer must explicitly confirm release after authoritative exact absence. */
-export async function releaseF4Proposal(adminId: number, original: FDomainAttempt) {
-  if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
-  if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
-  const ticket = await queryF4Proposal(adminId, original);
-  if (ticket?.status === "pending") throw new Error("这张申请仍在等待审批。");
-  if (!ticket) forget(original);
 }
 
 export async function f4PendingFor(rows: A2OperationRow[], spec: ProposeSpec) {
