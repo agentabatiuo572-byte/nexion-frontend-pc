@@ -308,8 +308,11 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const openEdit = (faq: SupportFaq) => { setRecovery(null); createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(faq); };
   const openStatus = (faq: SupportFaq) => { setRecovery(null); setStatusFailure(null); setStatusTarget(faq); };
 
+  // 先查原结果，明确查不到才开放「按原请求重试」（OP-93 第 7 条）；已查到的说清是哪种情况。
+  const retryBlock = (outcome: FundInvestigationOutcome | undefined) => !outcome ? "请先查询原结果" : "error" in outcome ? "查询失败，稍后再查"
+    : !outcome.receipt ? undefined : outcome.receipt.originalStatus === "PROCESSING" ? "原操作还在执行，稍后再查" : "已查到原结果，按这一行的说明处理";
   const restore = (record: MCommandRecord) => {
-    if (!record.faq) return;
+    if (!record.faq || retryBlock(outcomes[record.commandKey])) return;
     closeWriteDialogs();
     setRecovery(record);
     if (record.faq.kind === "delete") requestDeleteFaq(record.faq.row, record);
@@ -341,8 +344,9 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   };
   const pendingRows = pendingCommands.map((record) => {
     const outcome = outcomes[record.commandKey];
+    const block = retryBlock(outcome);
     const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canClose: canInvestigateECommand("service_m4_read"),
-      canRetry: !!record.faq && canWriteM4 && !isRetryExpired(record) });
+      canRetry: !!record.faq && canWriteM4 && !isRetryExpired(record) && !block });
     return { key: record.commandKey,
     question: record.faq?.row.question ?? "常见问答", change: record.faq ? ({ create: "新建", edit: "编辑", publish: "发布", unpublish: "下架", delete: "删除" }[record.faq.kind]) : "结果未知",
     submittedAt: record.createdAt, expired: isRetryExpired(record),
@@ -351,7 +355,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     actions: <>
       <Button size="sm" disabled={writePending} onClick={() => void queryOriginal(record)}>查询原结果</Button>
       {canInvestigateECommand("service_m4_read") && eCommandClosureOffer(outcomes[record.commandKey], isRetryExpired(record)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={writePending} onClick={() => setClosing(record)}>核查结案</Button>}
-      {record.faq && canWriteM4 && !isRetryExpired(record) && <Button size="sm" disabled={writePending} onClick={() => restore(record)}>按原请求重试</Button>}
+      {record.faq && canWriteM4 && !isRetryExpired(record) && <Button size="sm" disabled={writePending} disabledReason={block} onClick={() => restore(record)}>按原请求重试</Button>}
     </> };
   });
 
