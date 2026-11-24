@@ -598,14 +598,16 @@ type EditReview = {
   conflictOnly?: boolean;
   /** 核对是只读请求：读不到时区块错误的标题，比如「奖励预览没读到」。 */
   readFailTitle?: string;
-  read: (value: string, signal: AbortSignal, refresh: boolean) => Promise<EditReviewResult>;
+  read: (value: string, signal: AbortSignal, refresh: boolean, submitReason?: string) => Promise<EditReviewResult>;
   isConflict: (error: unknown) => boolean;
+  isValueRejected?: (error: unknown) => boolean;
   conflictNote: (readLatest?: () => void) => ReactNode;
 };
+type EditReviewAttempt = { refresh: boolean; submitReason?: string };
 type EditReviewState =
   | { kind: "loading" }
   | { kind: "ready"; result: EditReviewResult }
-  | { kind: "error"; message: string; refresh: boolean; rejected: boolean }
+  | { kind: "error"; message: string; attempt: EditReviewAttempt; rejected: boolean }
   | { kind: "conflict" };
 export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; /** current 不是现在读到的值时（比如恢复原操作时带的是提交那一刻的值）写它是什么，只改显示的名字。 */ currentLabel?: string; /** Display-only current value; comparisons and requests use current. */ displayCurrent?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; ignoreTrailingDecimalZeros?: boolean; step?: number; /** Keyboard increment when it differs from the accepted numeric precision. */ inputStep?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 进入核对后才读取权威前后值。 */ review?: EditReview; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
@@ -3838,7 +3840,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const reviewedPair = readyReview && [readyReview.comparison.before, readyReview.comparison.after].map((text) => /^(\d[\d,]*(?:\.\d+)?) (\S+)$/.exec(text));
   const reviewedAmounts = reviewedPair?.[0] && reviewedPair[1] ? [reviewedPair[0], reviewedPair[1]] as const : undefined;
   const needsEditPreview = !!review && (!review.conflictOnly || !!reviewBaseline);
-  const requireReason = reasonRequested && ((!needsEditPreview && !editReview) || !!readyReview || pendingReason !== undefined);
+  const requireReason = reasonRequested && (!needsEditPreview || !!readyReview || pendingReason !== undefined);
   // 原生数字框填坏时 value 是空串，只有 validity 分得清；有意清空是另一个状态（CP-54）。
   const [numberBad, setNumberBad] = useState(false);
   const [emptyChosen, setEmptyChosen] = useState(() => !!edit?.emptyOption && edit.initialValue === "");
@@ -3999,24 +4001,29 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     if (review?.conflictOnly) setReviewBaseline(current => current ?? { kind: "unread" });
     setEditReview({ kind: "conflict" });
   };
-  const loadEditReview = async (refresh = false) => {
-    if (!review || reviewRequest.current) return;
+  const loadEditReview = async (attempt: EditReviewAttempt = { refresh: false }) => {
+    if (!review || reviewRequest.current) return false;
+    const { refresh, submitReason } = attempt;
     const controller = new AbortController();
     reviewRequest.current = controller;
     setSubmitError(null);
-    setEditReview({ kind: "loading" });
+    // The single-step copy submit already shows the dialog's submitting state.
+    if (submitReason === undefined || editReview?.kind === "error") setEditReview({ kind: "loading" });
     try {
-      const result = await review.read(newVal, controller.signal, refresh);
-      if (controller.signal.aborted) return;
-      if (refresh || reviewBaseline) {
-        setReviewBaseline({ kind: "reopened", before: result.comparison.before, facts: result.facts });
+      const result = await review.read(newVal, controller.signal, refresh, submitReason);
+      if (controller.signal.aborted) return false;
+      if (submitReason === undefined) {
+        if (refresh || reviewBaseline) setReviewBaseline({ kind: "reopened", before: result.comparison.before, facts: result.facts });
+        setEditReview({ kind: "ready", result });
+      } else {
+        setEditReview(null);
       }
-      setEditReview({ kind: "ready", result });
+      return true;
     } catch (error) {
-      if (controller.signal.aborted || closeOnPermissionDenied(error)) return;
+      if (controller.signal.aborted || closeOnPermissionDenied(error)) return false;
       if (review.isConflict(error)) enterEditConflict();
-      // 其余 4xx 是后端拒了这个值（比如币种不对）：写在字段下，改了再核对；5xx、网络、回包不全是没读到。
-      else setEditReview({ kind: "error", message: displayAdminReadError(error), refresh, rejected: error instanceof Error && "status" in error && typeof error.status === "number" && error.status >= 400 && error.status < 500 });
+      else setEditReview({ kind: "error", message: displayAdminReadError(error), attempt, rejected: review.isValueRejected?.(error) ?? false });
+      return false;
     } finally {
       reviewRequest.current = null;
     }
@@ -4036,7 +4043,12 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     setSubmitUnknown(false);
     try {
       if (retryApproval) await retryApproval();
-      else await onConfirm(requireReason ? reason.trim() : "", submittedValue || (emptyChosen && spec?.emptyOption ? "" : undefined), activeBusinessForm ? businessValue : undefined);
+      else {
+        const submitReason = requireReason ? reason.trim() : "";
+        if (review?.conflictOnly && !needsEditPreview && pendingReason === undefined
+          && !await loadEditReview({ refresh: false, submitReason })) return;
+        await onConfirm(submitReason, submittedValue || (emptyChosen && spec?.emptyOption ? "" : undefined), activeBusinessForm ? businessValue : undefined);
+      }
     } catch (error) {
       // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
       if (closeOnPermissionDenied(error)) return;
@@ -4268,8 +4280,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       )}
       {review && editReview?.kind === "loading" && <RdBlockState state="loading" compact title="正在读取…" />}
       {/* 核对只读不写：读不到用读取的说法和区块错误（标题 + 原因 + 重试），不说「结果未知、可能已生效」（OP-84，复审 V02）。 */}
-      {review && editReview?.kind === "error" && !editReview.rejected && <RdBlockState state="error" title={review.readFailTitle ?? "预览没读到"} detail={editReview.message} onRetry={() => void loadEditReview(editReview.refresh)} />}
-      {review && editReview?.kind === "conflict" && review.conflictNote(() => void loadEditReview(true))}
+      {review && editReview?.kind === "error" && !editReview.rejected && <RdBlockState state="error" title={review.readFailTitle ?? "预览没读到"} detail={editReview.message} onRetry={() => void loadEditReview(editReview.attempt)} />}
+      {review && editReview?.kind === "conflict" && review.conflictNote(() => void loadEditReview({ refresh: true }))}
       {review && editReview?.kind !== "conflict" && reopened && review.conflictNote()}
       {spec && !(surface && !compareEdit) && (
         <div className={compareEdit ? "field tint" : "field"}>

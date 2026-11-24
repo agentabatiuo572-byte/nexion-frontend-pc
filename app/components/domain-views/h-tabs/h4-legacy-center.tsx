@@ -9,6 +9,7 @@ import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/a
 import type { BusinessFormValue, EditComparison } from "../design-kit";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
@@ -67,6 +68,19 @@ type Model = H4Statistics & {
 };
 
 const GUARD_NAME: Record<string, string> = { budget: "每日真钱奖预算", cap: "各奖档每日库存", kill: "真钱奖发放开关" };
+const REWARD_PREVIEW_VALUE_ERRORS = new Set([
+  "EVENT_REWARD_ASSET_INVALID", "EVENT_REWARD_INVALID", "EVENT_CONFIG_NO_CHANGE", "VALUE_TOO_LONG", "MANUAL_JSON_NOT_ALLOWED",
+]);
+function isRewardPreviewValueRejected(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const { status, apiCode, reasonCode, bodyUnreadable, unknownOutcome } = error as Error & {
+    status?: number; apiCode?: number; reasonCode?: string; bodyUnreadable?: boolean; unknownOutcome?: boolean;
+  };
+  return typeof status === "number" && status !== 429 && typeof apiCode === "number" && apiCode !== 0
+    && !bodyUnreadable && !unknownOutcome && isDeterministicRejection(status, apiCode)
+    && REWARD_PREVIEW_VALUE_ERRORS.has(reasonCode ?? "");
+}
+
 function wheelRewardNameFeedback(value: BusinessFormValue, label: string) {
   const message = appVisibleTextError(value.rewardName, label);
   return { message: message ?? "", invalid: message !== undefined, field: "rewardName", live: true };
@@ -380,7 +394,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const incompletePreview = "活动奖励预览不完整，本次未提交；请重新读取活动后核对。";
     let baseline = event;
     let reviewVersion = h4ReadVersion("overview");
-    let reviewed: { value: string; expectedValue: string; preview: RewardPreview; comparison: EditComparison } | undefined;
+    let reviewed: { value: string; expectedValue: string; preview: RewardPreview; comparison: EditComparison; submitReason?: string } | undefined;
     const subject = <Fact k="活动">{eventName(event.id)}</Fact>;
     const rewardFacts = (activity: LegacyEvent, reviewedCopy = false, approvalRequired = false) => <Facts>{subject}{ruleBased
       ? <>{!reviewedCopy && <Fact k="现在的奖励">{legacyRewardText(text(activity.reward))}{legacyName(activity.reward).legacy && <LegacyNameTag where="奖励文字" />}</Fact>}
@@ -388,6 +402,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       : activity.appRewardNames && <Fact k="App 现在显示">{activity.appRewardNames.zh || "—"}</Fact>}
       {approvalRequired && <ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" />}
     </Facts>;
+    const rewardReview = ({ preview, comparison }: NonNullable<typeof reviewed>) => ({
+      comparison,
+      amplifies: preview.approvalRequired,
+      effect: preview.approvalRequired ? effectApproval("奖励") : effectDirect,
+      confirmLabel: preview.approvalRequired ? "提交审批" : ruleBased ? "提交修改" : "确认修改",
+      coverageCheck: preview.approvalRequired ? "批准执行时检查兑付覆盖率。" : undefined,
+      facts: rewardFacts(baseline, true, preview.approvalRequired),
+    });
     openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,
       title: "修改活动奖励",
@@ -408,10 +430,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           conflictOnly: ruleBased,
           readFailTitle: "奖励预览没读到",
           isConflict: error => isHGrowthReadConflict(error) || error instanceof Error && error.message === "H4_REFRESH_REQUIRED",
+          isValueRejected: isRewardPreviewValueRejected,
           conflictNote: readLatest => <H4StaleNote readLatest={readLatest} />,
-          read: async (value, signal, refresh) => {
-            reviewed = undefined;
+          read: async (value, signal, refresh, submitReason) => {
             if (refresh) {
+              reviewed = undefined;
               const latest = await reload();
               signal.throwIfAborted();
               if (!latest) throw new Error("既有活动与转盘没有读到");
@@ -423,7 +446,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             }
             assertH4Fresh("overview", reviewVersion);
             const expectedValue = text(baseline.reward);
-            const preview = await previewH4EventReward(event.id, value, expectedValue, "", signal);
+            // A successful read-only retry can supply the next explicit submit.
+            if (submitReason !== undefined && reviewed?.submitReason === submitReason && reviewed.value === value
+              && reviewed.expectedValue === expectedValue) return rewardReview(reviewed);
+            reviewed = undefined;
+            const preview = await previewH4EventReward(event.id, value, expectedValue, submitReason ?? "", signal);
             signal.throwIfAborted();
             if (!ruleBased && (preview.currentReward === undefined || !preview.proposedReward)) throw new Error(incompletePreview);
             const comparison = ruleBased
@@ -432,15 +459,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
                 before: actualRewardText(preview.currentReward?.amount, preview.currentReward?.asset),
                 after: actualRewardText(preview.proposedReward?.amount, preview.proposedReward?.asset),
               };
-            reviewed = { value, expectedValue, preview, comparison };
-            return {
-              comparison,
-              amplifies: preview.approvalRequired,
-              effect: preview.approvalRequired ? effectApproval("奖励") : effectDirect,
-              confirmLabel: preview.approvalRequired ? "提交审批" : ruleBased ? "提交修改" : "确认修改",
-              coverageCheck: preview.approvalRequired ? "批准执行时检查兑付覆盖率。" : undefined,
-              facts: rewardFacts(baseline, true, preview.approvalRequired),
-            };
+            reviewed = { value, expectedValue, preview, comparison, submitReason };
+            return rewardReview(reviewed);
           },
         },
       },
@@ -448,9 +468,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         if (!value) return;
         const saved = reviewed?.value === value ? reviewed : undefined;
         assertH4Fresh("overview", reviewVersion);
-        const expectedValue = saved?.expectedValue ?? text(baseline.reward);
-        const preview = saved?.preview ?? (ruleBased ? await previewH4EventReward(event.id, value, expectedValue, reason) : undefined);
-        if (!preview) throw new Error(incompletePreview);
+        if (!saved) throw new Error(incompletePreview);
+        const { expectedValue, preview } = saved;
+        // A new write attempt for ordinary copy must preview again.
+        if (saved.submitReason !== undefined) reviewed = undefined;
         if (preview.approvalRequired) {
           await proposeH4(hiEventScope(event.id), "h4_legacy_event_reward_update", { eventCode: event.id, value, expectedValue },
             preview.current, preview.proposed, reason, undefined, value);
