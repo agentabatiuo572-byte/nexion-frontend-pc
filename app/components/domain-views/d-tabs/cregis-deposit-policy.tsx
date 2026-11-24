@@ -17,7 +17,8 @@ import type { DCtx } from "./types";
 import { amountDisplay } from "@/lib/format";
 
 type ProposalInput = Parameters<typeof createA2OperationProposal>[0];
-type Pending = PendingMutationRecord & { owner: number; input: ProposalInput; ticketId?: string; terminal?: string };
+type PolicyValues = Omit<Policy, "version">;
+type Pending = PendingMutationRecord & { owner: number; input: ProposalInput; beforePolicy?: PolicyValues; ticketId?: string; terminal?: string };
 const RETRY_WINDOW_MS = 10 * 60 * 1000;
 const RETRY_EXPIRED = "原请求已超过重试时间或本机时间异常，请通过操作记录继续核实。";
 const CHECK_FIRST = "请先查询原提案。";
@@ -28,6 +29,23 @@ function retryWindowOpen(pending: Pending) {
 }
 const proposals = createPendingMutationStore<Pending>({ storageKey: "nexion-admin-cregis-deposit-policy-proposals-v1", retainExpiredRecords: true,
   isValidRecord: row => Number.isSafeInteger(row.owner) && !!row.input && !!row.input.command });
+
+function pendingBeforePolicy({ beforePolicy, input }: Pending): PolicyValues | undefined {
+  if (beforePolicy) return beforePolicy;
+  // Older originals only saved their before snapshot in the A2 description.
+  const match = /^最低 (\S+) USDT；手续费 (\S+) USDT；确认数 (\d+)；版本 \d+$/.exec(input.beforeValue ?? "");
+  if (!match) return undefined;
+  const [, minDepositUsdt, feeUsdt, confirmations] = match;
+  return { minDepositUsdt, feeUsdt, confirmations: Number(confirmations) };
+}
+
+function pendingPolicyText(values?: Record<string, unknown>): string {
+  const { minDepositUsdt, feeUsdt, confirmations } = values ?? {};
+  if (typeof minDepositUsdt !== "string" || typeof feeUsdt !== "string" || typeof confirmations !== "number"
+    || !valid(minDepositUsdt, feeUsdt, confirmations)) return "—";
+  return `最低 ${amountDisplay(minDepositUsdt)} USDT；手续费 ${amountDisplay(feeUsdt)} USDT；确认数 ${confirmations}`;
+}
+
 /** 共同充值规则的批准人（决定 13）。 */
 const APPROVAL_TEXT = "超级管理员批准后生效，超管发起的由另一位超管批准。批准前当前规则不变。已发现的交易保留原规则。";
 
@@ -107,12 +125,14 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
           command: { domain: "D", op: "d_cregis_deposit_policy", params: { minDepositUsdt: min, feeUsdt: fee, confirmations: Number(confirmations), expectedVersion: current.version, reason } },
           target: { domain: "D", type: "cregis_deposit_policy", id: "current" } };
         const key = createA2CommandKey("cregis-deposit-policy"), fingerprint = `${owner}|${key}`;
-        proposals.remember(fingerprint, key, { owner, input });
+        const beforePolicy = { minDepositUsdt: current.minDepositUsdt, feeUsdt: current.feeUsdt, confirmations: current.confirmations };
+        const original = { owner, input, beforePolicy };
+        proposals.remember(fingerprint, key, original);
         if (!proposals.isDurablyStored(fingerprint, key)) { proposals.forget(fingerprint, key); mutation.current = false; setBusy(false); throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。"); }
         syncPending();
         try {
           const ticket = await createA2OperationProposal(input, key, true);
-          proposals.remember(fingerprint, key, { owner, input, ticketId: ticket.id });
+          proposals.remember(fingerprint, key, { ...original, ticketId: ticket.id });
           if (owns()) { syncPending(); setMessage("提案已提交，尚未生效。等超级管理员批准。"); }
         } catch (failure) {
           if (!isA2OutcomeUncertainError(failure)) proposals.forget(fingerprint, key);
@@ -135,7 +155,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
       }
       const status = result.status.toLowerCase();
       const terminal = ["approved", "rejected", "withdrawn", "expired"].includes(status) ? status : undefined;
-      proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, ticketId: result.id, terminal });
+      proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, beforePolicy: pending.beforePolicy, ticketId: result.id, terminal });
       syncPending(); setMessage(terminal === "approved" ? "提案已批准，请重新读取生效规则并核对。" : terminal ? "提案已结束，请核对审批记录。" : "提案仍待处理，尚未确认生效。");
     } catch { if (owns()) setError("查询提案失败，请稍后重试或前往操作记录与审批。"); }
     finally { mutation.current = false; if (owns()) setBusy(false); }
@@ -150,7 +170,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
     try {
       const ticket = await createA2OperationProposal(pending.input, pending.commandKey, true);
       if (owns()) {
-        proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, ticketId: ticket.id });
+        proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, beforePolicy: pending.beforePolicy, ticketId: ticket.id });
         syncPending(); setMessage("原提案已提交，尚未生效。等超级管理员批准。");
       }
     } catch (failure) {
@@ -184,7 +204,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
           {pending.terminal && <Button size="sm" disabled={busy} onClick={() => { proposals.forget(pending.fingerprint, pending.commandKey); syncPending(); void refresh(); }}>核对完成，准备新变更</Button>}
         </>}>
         {businessStamp(pending.createdAt)}（{zoneLabel()}）提交。原提案：{pending.ticketId ?? "结果待核实"}。批准前当前规则不变。 {audit}
-        <DiffList rows={[{ key: "change", label: "这次要改", before: pending.input.beforeValue ?? "—", after: pending.input.afterValue ?? "—" }]} />
+        <DiffList rows={[{ key: "change", label: "这次要改", before: pendingPolicyText(pendingBeforePolicy(pending)), after: pendingPolicyText(pending.input.command.params) }]} />
       </Notice>}
       {error && <Notice tone="warn">{error}</Notice>}
       {message && <Notice tone="progress">{message}</Notice>}
