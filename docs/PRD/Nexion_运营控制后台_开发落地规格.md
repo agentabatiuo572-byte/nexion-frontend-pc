@@ -833,7 +833,7 @@ App 不展示试用邀请弹窗，也没有申请或接受延长的入口。PC �
 |---|---|---|---|
 | `trialDays` / `graceDays` | 3 / 7 | 仅新 trial | H2 |
 | `discountRate` / `discountCapUSD` | 按当前值显示；0–100 的百分点，0.5 是 0.5%，1 是 1% / 金额上限 | 购买时按最新值 | H2；不再猜比例单位，详见 v1 H2④ |
-| `trialOffsetCapUSD`(试用收益抵购机款上限) | 以当前值为准，空为不设上限，0 为零上限 | 领取快照，已领取的不随修改变化 | H2 |
+| `trialOffsetCapUSD`(试用抵扣金上限) | 以当前值为准，空为不设上限，0 为零上限 | 领取快照，已领取的不随修改变化 | H2 |
 | `earlyPurchaseDiscountUSD` | 以当前值为准；0–100 USDT，0 为关闭 | 购买时按最新值及提前购买条件 | H2 |
 | `chargeFailRate` | 0.01(**server-only,前端永不可知**) | 实时全量 | H2 |
 | `trialProductId` | stellarbox-s1(从 E1 明确开启 `trialEligible` 的商品中选择) | 仅新 trial | E1 商品目录 + H2 选择 |
@@ -842,6 +842,7 @@ App 不展示试用邀请弹窗，也没有申请或接受延长的入口。PC �
 | `cooldownDays`(再次试用冷却) | 以当前值为准，**≠ D5 withdrawCooldownDays** | 之后结束的试用使用新值，已有冷却截止不重算 | H2 |
 | `phaseOpen` | true(Phase 派发只读) | 实时全量 | H1 调度 |
 | `seatsLeftToday`(每日免费名额上限；APP 接收当日剩余) | 47 | 实时全量 | H2 |
+| 其他可购买设备（整份清单，带版本） | 初始为空 | 立即生效，进行中的试用也按新清单 | H2；候选取 E1 在售且通过上架条件的实体设备与云份额，不按「允许试用」过滤（v1 H2③(c)） |
 
 ### 4.7 域 K — 风控与反作弊
 
