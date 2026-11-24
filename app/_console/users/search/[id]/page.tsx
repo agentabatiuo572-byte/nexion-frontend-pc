@@ -828,7 +828,7 @@ export default function UserDetailPage() {
           setDetail(null);
           setReferralError(null);
           setPaymentMethods(null);
-          setError(displayAdminError(err));
+          setError(displayAdminReadError(err));
         }
       }
     } finally {

@@ -1,6 +1,6 @@
 "use client";
 
-import { displayAdminReadError } from "@/lib/admin/error-messages";
+import { displayAdminReadError, supportContractReadError } from "@/lib/admin/error-messages";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -33,6 +33,8 @@ function scopeChanged(error: unknown): boolean {
 }
 function message(error: unknown): string {
   if (error instanceof LeaderboardUpgrading) return error.message;
+  const contractError = supportContractReadError(error);
+  if (contractError) return contractError;
   return status(error) === 403 || status(error) === 401 ? "当前账号不能查看此榜单，请重新确认登录和客服权限。"
     : versionChanged(error) ? "榜单已更新，或你能看的范围变了，请从第一页重新加载。"
       : error instanceof SupportClientError ? displayAdminReadError(error) : "榜单加载失败，请重试。";

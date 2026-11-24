@@ -4036,6 +4036,14 @@ const GATEWAY_FAILED_WRITE = "服务连接异常，结果未知，可能已经�
 const NETWORK_FAILED_WRITE = ADMIN_ERROR_MESSAGES.NETWORK_FAILURE;
 const HAS_CJK_RE = /[一-鿿]/;
 
+export function supportContractReadError(error: unknown): string | undefined {
+  if (error instanceof Error && (
+    error.message === "CONTENT_API_MALFORMED_RESPONSE"
+    || error.message === "SUPPORT_CONTRACT_MALFORMED"
+    || error.message.startsWith("SUPPORT_CONTRACT_MALFORMED:")
+  )) return "收到的数据不完整，已停止显示。";
+}
+
 // 展示边界统一入口:页面层拿到 unknown 错误后,唯一允许的「→ 屏幕文案」通道。
 // 已格式化中文透传(formatAdminApiError 幂等),裸机器码/网络英文在此落兜底,垃圾输入不 crash。
 //
@@ -4049,6 +4057,10 @@ const HAS_CJK_RE = /[一-鿿]/;
 export function displayAdminReadError(error: unknown): string {
   const shown = displayAdminError(error);
   if (shown === SERVICE_DOWN_WRITE || shown === GATEWAY_FAILED_WRITE) return SERVICE_DOWN_READ;
+  // Some clients format HTTP 503 using the generic 5xx code but retain the status.
+  if (shown === ADMIN_ERROR_MESSAGES.INTERNAL_SERVER_ERROR && error instanceof Error && "status" in error && error.status === 503) {
+    return SERVICE_DOWN_READ;
+  }
   // 通用兜底「操作失败」对读取不贴切（ISSUES 773）：读取只说没读到。
   if (shown === NEUTRAL_DISPLAY_FALLBACK) return "没有读到数据，请稍后重试；一直读不到请联系值班人员。";
   // 读接口断网只是没读到，不是「结果未知」（visual-1 第 15 条）：按 l-client 给的错误类型认，不看句子。

@@ -1,6 +1,6 @@
 "use client";
 import { m1CustomerCode } from "./m1-customer-code";
-import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminError, supportContractReadError } from "@/lib/admin/error-messages";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -154,9 +154,8 @@ function analyticsResponseStatus(error: SupportClientError) {
 }
 export function analyticsErrorText(error: unknown): string {
   if (error instanceof AnalyticsEntryError) return error.message;
-  if (error instanceof Error && (error.message === "CONTENT_API_MALFORMED_RESPONSE" || error.message.startsWith("SUPPORT_CONTRACT_MALFORMED:"))) {
-    return ADMIN_ERROR_MESSAGES.CONTENT_API_MALFORMED_RESPONSE;
-  }
+  const contractError = supportContractReadError(error);
+  if (contractError) return contractError;
   if (error instanceof SupportClientError) {
     if (error.backendMessage === "SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE") return ADMIN_ERROR_MESSAGES.SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE;
     if (error.backendMessage && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error);
