@@ -32,6 +32,8 @@ import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/ad
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useReach } from "@/lib/nav/use-reach";
 import type { EditSpec } from "../design-kit";
+import { AlertTriangle } from "lucide-react";
+import { BUY_LOCKED, BuyListPendingNotice, BuySection, readBuyList, type BuyListPending } from "./h2-trial-buy";
 import type { HCtx } from "./types";
 
 type TrialParam = {
@@ -57,6 +59,9 @@ type TrialSession = {
   cancelledAt?: string;
   chargedAt?: string;
   pendingApproval?: { action?: string | null; submittedBy?: string | null; submittedAt?: string | null } | null;
+  /** 占位：试用设备和购买设备的名称，字段名等后端定（B90-BE-08）。没有字段时详情里不显示这两项；购买设备为 null 是还没买。 */
+  trialProductName?: string | null;
+  purchasedProductName?: string | null;
 };
 
 /** 列表格里只留「待审批」，动作、提交人和时间写在抽屉里（PG-43 每格最多两行）。动作名后面带的记录编号抽屉标题下已有，这里去掉，一行放得下。 */
@@ -95,7 +100,12 @@ type H2Model = {
   modelA?: Record<string, any>;
   serverOnlyFields?: string[];
   sessionsPage?: { total: number; pageNum: number; pageSize: number };
+  /** 占位：「其他可购买设备」的清单、版本、每款状态和候选（B90-BE-01），字段名等后端定。 */
+  extraPurchase?: unknown;
 };
+
+/** 占位：修改权限 growth_h2_write 的显示名，接线项从权限目录取（B90-BE-09）。没有时页头用原来的说法。 */
+const H2_WRITE_PERMISSION_NAME: string | undefined = undefined;
 
 /** 系统或别处决定的值：只读，不给修改入口（PCM-36）。 */
 const READ_ONLY_KEYS = ["phaseOpen", "trialPriceUSD", "chargeFailRate"];
@@ -228,7 +238,7 @@ function paramValue(param: TrialParam, product: TrialProduct | undefined) {
   return unit ? `${paramInput(param)} ${unit}` : text(param.cur);
 }
 
-function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }: {
+function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft, buyListNos }: {
   ctx: HCtx;
   param: TrialParam;
   trialProducts: TrialProduct[];
@@ -237,6 +247,8 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }
   blocked?: string;
   /** 今日实际剩余。修改框盖住了页面，不能让人回头看，直接写数字。 */
   seatsLeft?: string;
+  /** 「其他可购买设备」的商品编号；读到了才传。换试用目标商品时，旧目标不在里面要提醒一句。 */
+  buyListNos?: string[];
 }) {
   const { openActionConfirm } = ctx;
   const help = TRIAL_PARAM_HELP[param.key];
@@ -314,6 +326,16 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }
           <RecordList label="可选商品编号" records={trialProducts.map((product) => ({ id: product.productNo, value: product.name, reference: product.productNo }))} />
         </>} /></Fact>
       </Facts> : undefined,
+      ...(isProduct && buyListNos && !buyListNos.includes(current) ? { facts: <>
+        <Facts>
+          <Fact k="现在">{currentProduct?.name ?? (current || "未设置")}{productMissing && "，不在可选列表"}<Explain label="可选条件和商品编号" content={<>
+            <p>{help?.howMore}</p>
+            <RecordList label="可选商品编号" records={trialProducts.map((product) => ({ id: product.productNo, value: product.name, reference: product.productNo }))} />
+          </>} /></Fact>
+        </Facts>
+        <p className="h2-target-note"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>换掉后，{currentProduct?.name ?? current} 不在其他可购买设备里，新领取的用户不能用试用抵扣金买它</span></p>
+      </> } : {}),
+      ...(isProduct ? { reasonPlaceholder: "写清调整原因和依据" } : {}),
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认修改，立即生效",
       // 标题行写影响谁（OP-48）。这是什么和显示位置在标题旁的提示图标里。
@@ -376,6 +398,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const [retiredCharge, setRetiredCharge] = useState<RetiredCharge | null>(null);
   const [chargeLookup, setChargeLookup] = useState<{ missing?: boolean; ticket?: A2OperationRow; error?: string }>({});
   const [chargeLookupBusy, setChargeLookupBusy] = useState(false);
+  // 占位：结果未知的「调整其他可购买设备」。接线项改成从 pending-mutation-store 读（新增一种命令记录）。
+  const [buyPending, setBuyPending] = useState<BuyListPending | null>(null);
   const reloadEpochRef = useRef(0);
   const syncPending = useCallback(() => setPending(pendingCommands.list()), []);
   const notePending = (record: PendingCommand, note: string) => setPendingNotes((current) => ({ ...current, [record.commandKey]: note }));
@@ -434,8 +458,13 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   ].filter((group) => group.params.length > 0);
   const advancedCount = advancedGroups.reduce((sum, group) => sum + group.params.length, 0);
 
+  // 读取结果里没有这块数据时整块不显示，导航也没有这一项。
+  const buyRead = readBuyList(model?.extraPurchase);
+  const buyList = buyRead === "invalid" ? undefined : buyRead;
+  const buyInvalid = buyRead === "invalid";
   const sections: SectionNavItem[] = [
     { id: "common", label: "常改参数", alert: productBlocked },
+    ...(buyRead !== undefined ? [{ id: "buy", label: "可购买设备", alert: buyInvalid || !!buyPending }] : []),
     { id: "advanced", label: "高级设置" },
     { id: "readonly", label: "只读项", alert: phaseClosed },
     { id: "records", label: "试用记录", alert: pending.length > 0 },
@@ -600,7 +629,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         <span>{readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新</span>
         <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button>
       </span> : undefined}
-      readOnly={model && !canWrite ? "你只能查看；修改试用设置要有这页的修改权限。" : undefined}
+      readOnly={model && !canWrite ? (H2_WRITE_PERMISSION_NAME ? `你只能查看；修改需要「${H2_WRITE_PERMISSION_NAME}」权限` : "你只能查看；修改试用设置要有这页的修改权限。") : undefined}
     />
   );
 
@@ -724,6 +753,12 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       </Notice>
     );
   })];
+  if (buyPending) pendingNotices.push(
+    <BuyListPendingNotice key={buyPending.commandKey} record={buyPending} canWrite={canWrite} retrying={false}
+      // 占位：按原操作重试由接线项实现（同操作编号、同清单、同理由）。
+      onRetry={() => toast("按原操作重试还没接上，这次没有发送。", "warn")}
+      auditLink={reach(auditHref, "platform_a2_read") && <Link className="rd-link" href={`${auditHref}?domain=H&object=buyList`} prefetch={false}>到操作记录与审批核对</Link>} />,
+  );
   const releaseModal = releasing && (
     <ReleaseModal label={commandTitle(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
       explain="重试被拒不代表原操作没生效，先到操作记录确认。解除只删掉这个标签页里的记录，后台可能仍锁着这一项。" />
@@ -776,6 +811,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       {/* 一切正常时一句话、不放大，和其他页的结论条一个样子（VS-23）；有异常时下面的提示条就是结论。 */}
       {loading
         ? <Conclusion state="unknown">{READING}</Conclusion>
+        : issues.length === 0 && pending.length === 0 && legacyApprovals.length === 0 && (buyInvalid || buyPending)
+          ? <Conclusion state="unknown">{buyInvalid ? "试用正常开放；其他可购买设备暂时无法判断" : "试用正常开放；其他可购买设备有一次修改结果未知"}</Conclusion>
         : issues.length === 0 && pending.length === 0 && legacyApprovals.length === 0 && <Conclusion state="ok">{Number(stats.activeSessions) > 0 ? "试用正常开放，进行中的试用由系统自动结束，没有要处理的事" : "试用正常开放，没有要处理的事"}</Conclusion>}
 
       {issues.map((issue) => <Notice key={issue.key} tone={issue.tone} title={issue.title}>{issue.body}</Notice>)}
@@ -805,13 +842,22 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               <Panel title={<span tabIndex={-1} data-section-focus="">常改参数</span>} explainLabel="常改参数" icon={SlidersHorizontal} tone="role-4"
                 explain={<>
                   <p>每项是什么、显示在哪、什么时候生效，看名称旁的提示；改一项存一项。</p>
-                  <p>三种优惠可以叠加：实付 = 售价 − 购买减价 − 试用收益抵扣 − 提前购买立减，最低 0。提前购买立减只在试用期内有，在高级设置里改。</p>
+                  <p>三种优惠可以叠加：实付 = 售价 − 购买减价 − 试用抵扣金 − 提前购买立减，最低 0。售价指用户所选设备的售价。</p>
+                  <p>提前购买立减只在试用期内有，在高级设置里改。</p>
                 </>}>
                 <ConfigList>
-                  {commonParams.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} seatsLeft={seatsKnown ? seats?.cur : undefined} />)}
+                  {commonParams.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} seatsLeft={seatsKnown ? seats?.cur : undefined} buyListNos={buyList?.items.map((item) => item.productNo)} />)}
                 </ConfigList>
               </Panel>
             </div>
+
+            {buyRead !== undefined && (
+              <div id={nav.anchor("buy")}>
+                <BuySection ctx={ctx} list={buyList} invalid={buyInvalid} trialTargetNo={productNo} reach={reach}
+                  blocked={loading ? READING : buyPending ? BUY_LOCKED : undefined}
+                  onReload={reload} onPending={setBuyPending} />
+              </div>
+            )}
 
             <div id={nav.anchor("advanced")}>
               <Fold title="高级设置" icon={Settings2} tone="role-other" summary={`${advancedCount} 项：${advancedGroups.map((group) => group.title).join("、")}`} open={!!folds.advanced} onOpenChange={(open) => setFolds((state) => ({ ...state, advanced: open }))}>
@@ -895,6 +941,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               { label: "能不能处理", reason: canCharge && !currentRow.terminal ? `${CHARGE_RESULT}。` : undefined, value: currentRow.session.pendingApproval ? "等待审批结果，审批结束后才能再次处理" : currentRow.terminal ? "已结束，不能再取消" : lockedSids.has(currentRow.session.sid) ? LOCKED : !currentRow.owner ? "用户信息暂不可用，不能取消" : canCancel ? "平时不用处理，确要干预才提交强制取消审批" : "这个账号只能查看" },
             ]} />
             <Facts>
+              {typeof currentRow.session.trialProductName === "string" && <Fact k="试用设备">{currentRow.session.trialProductName}</Fact>}
+              {currentRow.session.purchasedProductName !== undefined && <Fact k="购买设备">{currentRow.session.purchasedProductName ?? (currentRow.terminal ? "没有购买" : "尚未购买")}</Fact>}
               <Fact k="开始时间">{sessionTime(currentRow.session.claimedAt, true)}</Fact>
               <Fact k="到期时间">{sessionTime(currentRow.session.expiresAt, !currentRow.session.claimedAt)}</Fact>
             </Facts>

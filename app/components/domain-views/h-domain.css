@@ -666,3 +666,20 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-phone-hero .h3-phone-cat { align-self: flex-start; }
 /* H8 问号里的短列表（生效时间会被哪些保存改掉）。问号气泡不在 .h8-page 里，类名不加前缀。 */
 .h8-list { margin: 4px 0; padding-left: 18px; list-style: disc; }
+/* 免费试用设置 · 可购买设备（画板 01–11） */
+#section-buy .h2-buy-order { margin: 12px 0 8px; font-size: var(--rd-text-aux); line-height: 18px; color: var(--rd-text-3); }
+.h2-buy-sub { color: var(--rd-text-2); }
+.h2-buy-state .rd-tag[data-tone="neutral"] { color: var(--rd-text-2); }
+.h2-buy-form { display: flex; flex-direction: column; gap: 16px; }
+.h2-buy-checks .rd-check-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.h2-buy-check .rd-form-help { display: flex; flex-direction: column; gap: 2px; }
+.h2-buy-check[data-disabled] label { color: var(--rd-text-3); cursor: not-allowed; }
+.h2-buy-check label .rd-tag, .h2-buy-check label .rd-explain { margin-left: 6px; vertical-align: 1px; }
+.h2-buy-check .h2-buy-reason { font-size: var(--rd-text-aux); color: var(--rd-text-2); }
+.h2-product-meta [data-mono], .rd-pop-rows [data-mono] { font-family: var(--rd-font-mono); }
+.h2-nowrap { white-space: nowrap; }
+.h2-buy-form .rd-notice-text, .h2-money-note .rd-notice-text { text-wrap: wrap; }
+.h2-pending-op { display: block; color: var(--rd-text-3); }
+.h2-alert-aux { margin: 4px 0 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: 18px; }
+.h2-target-note { display: flex; gap: 6px; align-items: flex-start; margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: 18px; color: var(--rd-warn); }
+.h2-target-note svg { flex: none; margin-top: 2px; }
