@@ -29,7 +29,8 @@ type Scope = { kind: typeof SCOPES[number]; groupIds?: string[] };
 type Selection = { month: string; scope: Scope; types: ExportType[] };
 type SubmitBody = Selection & { previewVersion: string; reason: string };
 type DecisionBody = { expectedVersion: number; reason: string; decision?: Exclude<Action, "WITHDRAW"> };
-type SavedExport = PendingMutationRecord & ({ action: "SUBMIT"; body: SubmitBody; selection: ExportQuery } | { action: Action; taskId: string; body: DecisionBody });
+type SavedExport = PendingMutationRecord & ({ action: "SUBMIT"; body: SubmitBody; selection: ExportQuery; acceptedRequestId?: string }
+  | { action: Action; taskId: string; body: DecisionBody; objectHidden?: boolean });
 const store = createPendingMutationStore<SavedExport>({
   storageKey: "nexion-support-performance-commands",
   retainExpiredRecords: true,
@@ -123,7 +124,7 @@ function parsePreview(value: unknown) {
     const item = object(value);
     const type = enumeration(item.type, EXPORT_TYPES);
     if (bool(item.requiresApproval) !== (type !== "SUMMARY")) invalid("export.approval");
-    const rows = nullableNumber(item.availableRows);
+    const rows = nullableNumber(item.availableRows), limit = integer(item.limit);
     const reasons = array(item.reasonCodes, text);
     const coverage = item.coverage === null ? null : enumeration(object(item.coverage).status, ["COMPLETE", "PARTIAL", "UNKNOWN", "FAILED"]);
     const status = enumeration(item.status, ["AVAILABLE", "EMPTY", "LIMIT_EXCEEDED", "READ_FAILED", "UNAVAILABLE"]);
@@ -133,18 +134,29 @@ function parsePreview(value: unknown) {
     if (stale) check = { state: "stale", rows };
     else if (status === "AVAILABLE") check = { state: "ok", rows, note: coverage === "PARTIAL" ? "部分数据还在核对" : undefined };
     else if (status === "EMPTY") check = { state: "empty", text: "这个月还没有记录。" };
-    else if (status === "LIMIT_EXCEEDED") check = { state: "over", text: `共 ${rows ?? "—"} 行，超过导出上限。` };
+    else if (status === "LIMIT_EXCEEDED") {
+      if (rows === null) return invalid("export.limitRows");
+      check = rows > limit ? { state: "over", limitKind: "rows", rows, text: `共 ${rows} 行，超过导出上限。` }
+        : { state: "over", limitKind: "file", rows, text: "文件大小超过本次导出限制。" };
+    }
     else if (status === "READ_FAILED") check = { state: "failed", text: "没加载出来。" };
     else check = { state: "unavailable", text: reasons.includes("EXPORT_GENERATION_UPGRADING") ? "数据正在升级，这一项暂时不能导出。"
       : reasons.includes("EXPORT_ROWS_UNVERIFIED") ? "新的一版还没核完，行数要等核完才知道。" : "这一项的数据暂时无法确认，暂时不能导出。" };
     // 看不到明细的记录（归属不明、或现在不在你能看的客户里）合成一行匿名小计；只用来写说明。
     const anonymous = typeof item.restrictedHistoryRows === "number" && item.restrictedHistoryRows > 0;
-    return { type, grain: GRAIN[type], limit: integer(item.limit), columns: columns(item.columns, type), check, reasons, anonymous };
+    return { type, grain: GRAIN[type], limit, columns: columns(item.columns, type), check, reasons, anonymous };
   });
   if (new Set(items.map(item => item.type)).size !== items.length) invalid("export.previewItems");
   return { version: text(row.previewVersion), window, scope: object(row.scope), items };
 }
 type Preview = ReturnType<typeof parsePreview>;
+
+function previewBlocked(preview: Preview | undefined) {
+  if (!preview) return undefined;
+  if (preview.items.some(item => item.reasons.includes("EXPORT_REFRESH_FAILED"))) return "这一版数据刷新没成功，暂时不能导出。关掉这个框，在页面上刷新成功后再导出。";
+  if (!preview.window) return "数据正在升级，这一版暂时不能导出。升级完、页面刷新后再导出。";
+  if (preview.items.some(item => item.reasons.includes("EXPORT_DATA_STALE"))) return STALE_BLOCKED;
+}
 
 function taskParser(operator: Operator) {
   return (value: unknown): ExportTask => {
@@ -160,7 +172,10 @@ function taskParser(operator: Operator) {
     const canReject = bool(reject.available) && operator.authorities.includes(APPROVE) && !mine;
     const reason = nullableText(approve.reasonCode);
     const approvalTime = row.approvedAt === null ? undefined : instant(row.approvedAt);
-    const failure = status === "FAILED" ? reasons.some(reason => /SCOPE|INELIGIBLE|PERMISSION/.test(reason)) ? "SCOPE_LOST_BEFORE_GENERATE" : "GENERATE_FAILED" : undefined;
+    const scopeLost = row.scope === null;
+    const failure = status !== "FAILED" ? undefined
+      : scopeLost && approvalTime && !reasons.length ? "SCOPE_HIDDEN"
+      : reasons.some(reason => /SCOPE|INELIGIBLE|PERMISSION/.test(reason)) ? "SCOPE_LOST_BEFORE_GENERATE" : "GENERATE_FAILED";
     return {
       taskId: id(row.taskId), version: integer(row.version), type, mine,
       requester: mine ? operator.name : NAME_PENDING, requesterRole: "",
@@ -175,7 +190,7 @@ function taskParser(operator: Operator) {
       canDownload: bool(row.canDownload) && mine && operator.authorities.includes(TYPES[type]),
       canApprove, canReject, canWithdraw: bool(row.canWithdraw) && mine && operator.authorities.includes(DETAIL),
       approveBlocked: canApprove ? undefined : reason === "EXPORT_SCOPE_CHANGED" || reason === "EXPORT_APPLICANT_INELIGIBLE" ? "申请人已没有这个范围的导出权限" : "当前不能批准",
-      scopeLost: row.scope === null,
+      scopeLost,
     };
   };
 }
@@ -183,7 +198,9 @@ function taskParser(operator: Operator) {
 const fingerprint = (query: ExportQuery) => JSON.stringify([query.month, query.scope, [...query.types].sort()]);
 const originalFields = (row: SavedExport) => ({ operationId: row.commandKey, createdAt: row.createdAt, expiresAt: row.expiresAt });
 const pendingDecision = (row: Extract<SavedExport, { taskId: string }>): PendingDecision =>
-  ({ ...originalFields(row), taskId: row.taskId, decision: row.action, reason: row.body.reason, at: businessStamp(row.createdAt) });
+  ({ ...originalFields(row), taskId: row.taskId, decision: row.action, objectHidden: row.objectHidden,
+    reason: row.objectHidden ? undefined : row.body.reason, at: businessStamp(row.createdAt) });
+const updateOriginal = (row: SavedExport) => { store.remember(row.fingerprint, row.commandKey, row); notifyPending(); };
 const forget = (row: SavedExport) => { store.forget(row.fingerprint, row.commandKey); notifyPending(); };
 const save = (slot: string, extra: Omit<Extract<SavedExport, { action: "SUBMIT" }>, keyof PendingMutationRecord> | Omit<Extract<SavedExport, { taskId: string }>, keyof PendingMutationRecord>) => {
   if (store.get(slot)) throw new ExportOutcomeUnknownError("请先查询原操作。");
@@ -288,15 +305,16 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
   let latest: { id: string; payload: Selection; preview: Preview } | undefined;
   let previewSequence = 0;
   const parseTask = taskParser(operator);
-  const parseBatch = (value: unknown): ExportSubmitted[] => {
+  const parseBatch = (value: unknown): { requestId: string; rows: ExportSubmitted[] } => {
     const row = object(value);
-    id(row.requestId);
-    return array(row.items, value => {
+    const requestId = id(row.requestId);
+    const rows = array(row.items, value => {
       const task = parseTask(value);
       if (!task.mine) invalid("export.batchOwner");
       const { type, taskId, state, rows, canDownload, mine, decidedBy, decidedAt, failure } = task;
       return { type, taskId, state, rows, canDownload, mine, decidedBy, decidedAt, failure };
     });
+    return { requestId, rows };
   };
   const mySubmit = () => store.list().find(row => row.action === "SUBMIT" && canRecover(row, operator.authorities));
   const readTask = (taskId: string) => read(`/${id(taskId)}`, value => {
@@ -328,7 +346,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
   };
   const deliverSubmit = async (record: Extract<SavedExport, { action: "SUBMIT" }>) => {
     try {
-      const result = await post("", record.body, parseBatch, record.commandKey);
+      const { rows: result } = await post("", record.body, parseBatch, record.commandKey);
       if (JSON.stringify(result.map(row => row.type).sort()) !== JSON.stringify([...record.body.types].sort())) invalid("export.batchTypes");
       forget(record);
       return result;
@@ -408,19 +426,14 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       return {
         months: options.months, month, since: options.months.length ? `自 ${businessStamp(Date.parse(options.months.at(-1)!.from))} 起` : "", scopes: Array.from(choices, ([value, item]) => ({ value, label: item.label, types: item.types })), scope,
         asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", downloader: operator.name, items: preview?.items ?? [],
-        selected: original ? selected : selected.filter(type => preview?.items.some(item => item.type === type && !["empty", "stale", "unavailable"].includes(item.check.state))),
-        blocked: !preview?.window ? "数据正在升级，这一版暂时不能导出。升级完、页面刷新后再导出。"
-          : preview.items.some(item => item.reasons.includes("EXPORT_REFRESH_FAILED")) ? "这一版数据刷新没成功，暂时不能导出。关掉这个框，在页面上刷新成功后再导出。"
-          : preview.items.some(item => item.reasons.includes("EXPORT_DATA_STALE")) ? STALE_BLOCKED : undefined,
+        selected: saved ? selected : selected.filter(type => preview?.items.some(item => item.type === type && !["empty", "stale", "unavailable"].includes(item.check.state))),
+        blocked: previewBlocked(preview),
         minReasonChars: options.minReasonChars, maxReasonChars: options.maxReasonChars,
       };
     },
     async check(query) {
       const preview = await requestPreview(query, true);
-      const blocked = !preview.window ? "数据正在升级，这一版暂时不能导出。升级完、页面刷新后再导出。"
-        : preview.items.some(item => item.reasons.includes("EXPORT_REFRESH_FAILED")) ? "这一版数据刷新没成功，暂时不能导出。关掉这个框，在页面上刷新成功后再导出。"
-          : preview.items.some(item => item.reasons.includes("EXPORT_DATA_STALE")) ? STALE_BLOCKED : undefined;
-      return { items: preview.items, asOf: preview.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", blocked };
+      return { items: preview.items, asOf: preview.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", blocked: previewBlocked(preview) };
     },
     async submit(query, reason) {
       const original = mySubmit();
@@ -437,7 +450,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     },
     pendingSubmit() {
       const original = mySubmit();
-      return original?.action === "SUBMIT" ? { ...originalFields(original), reason: original.body.reason, query: original.selection } : undefined;
+      return original?.action === "SUBMIT" ? { ...originalFields(original), reason: original.body.reason, query: original.selection, acceptedRequestId: original.acceptedRequestId } : undefined;
     },
     recoveredSubmit: () => draftsFor(operator)?.submit,
     recoveredDecision: (taskId, action) => draftsFor(operator)?.decisions.get(decisionDraftKey(taskId, action)),
@@ -450,10 +463,14 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       if (original?.action !== "SUBMIT") return { kind: "missing" };
       const found = await receipt("/command-receipt", original.commandKey);
       if (found.status === "SUCCEEDED") {
-        const rows = parseBatch(found.batch);
-        const visibleTypes = original.body.types.filter(type => operator.authorities.includes(TYPES[type]));
-        if (!rows.length || JSON.stringify(rows.map(row => row.type).sort()) !== JSON.stringify(visibleTypes.sort())) {
+        const { requestId, rows } = parseBatch(found.batch);
+        const visibleTypes = new Set(rows.map(row => row.type));
+        if (visibleTypes.size !== rows.length || rows.some(row => !original.body.types.includes(row.type))) {
           return { kind: "pending", expired: isRetryExpired(original) };
+        }
+        if (visibleTypes.size < original.body.types.length) {
+          if (original.acceptedRequestId !== requestId) updateOriginal({ ...original, acceptedRequestId: requestId });
+          return { kind: "partial", requestId, rows };
         }
         forget(original);
         return { kind: "matched", rows };
@@ -483,23 +500,33 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       const row = store.list().find(record => record.commandKey === pending.operationId);
       if (!row || row.action === "SUBMIT" || row.taskId !== pending.taskId || row.action !== pending.decision || !canRecover(row, operator.authorities)) return { kind: "failed", text: "找不到本标签页保存的原操作。" };
       const command = row.action === "WITHDRAW" ? "WITHDRAW" : "DECISION";
-      const found = await receipt(`/${row.taskId}/command-receipt?command=${command}`, row.commandKey);
-      if (found.status === "SUCCEEDED") {
-        const response = parseTask(found.task);
-        if (found.action !== row.action || found.acceptedVersion !== row.body.expectedVersion + 1 || response.taskId !== row.taskId) return { kind: "mismatch", text: "这条申请的状态对不上这次操作，继续核对，先保持锁定。" };
-        const task = await readTask(row.taskId);
-        if (task.version < response.version || task.state === "PENDING_APPROVAL") return { kind: "pending", text: "还没查到这次操作的结果，先保持锁定。" };
-        forget(row);
-        return { kind: "matched", task, text: "已查到这次操作。" };
+      const hidden = (): DecisionLookup => {
+        if (!row.objectHidden) updateOriginal({ ...row, objectHidden: true });
+        return { kind: "hidden", text: "当前无法查看这条申请，原操作继续保留。" };
+      };
+      try {
+        const found = await receipt(`/${row.taskId}/command-receipt?command=${command}`, row.commandKey);
+        if (found.status === "SUCCEEDED") {
+          const response = parseTask(found.task);
+          if (found.action !== row.action || found.acceptedVersion !== row.body.expectedVersion + 1 || response.taskId !== row.taskId) return { kind: "mismatch", text: "这条申请的状态对不上这次操作，继续核对，先保持锁定。" };
+          const task = await readTask(row.taskId);
+          if (task.version < response.version || task.state === "PENDING_APPROVAL") return { kind: "pending", text: "还没查到这次操作的结果，先保持锁定。" };
+          forget(row);
+          return { kind: "matched", task, text: "已查到这次操作。" };
+        }
+        if (found.status === "FAILED" || found.status === "CONFIRMED_NOT_EXECUTED") {
+          draftsFor(operator)?.decisions.set(decisionDraftKey(row.taskId, row.action), row.body.reason);
+          forget(row);
+          return { kind: "cleared", text: "这次操作未执行，原理由已保留，可以重新确认。" };
+        }
+        enumeration(found.status, ["UNKNOWN", "PROCESSING"]);
+        if (row.objectHidden) updateOriginal({ ...row, objectHidden: false });
+        if (isRetryExpired(row)) return { kind: "expired", text: RETRY_EXPIRED_TEXT };
+        return { kind: "pending", text: "还没查到这次操作的结果，先保持锁定，稍后再查。" };
+      } catch (error) {
+        if (exportTaskHidden(error)) return hidden();
+        throw error;
       }
-      if (found.status === "FAILED" || found.status === "CONFIRMED_NOT_EXECUTED") {
-        draftsFor(operator)?.decisions.set(decisionDraftKey(row.taskId, row.action), row.body.reason);
-        forget(row);
-        return { kind: "cleared", text: "这次操作未执行，原理由已保留，可以重新确认。" };
-      }
-      enumeration(found.status, ["UNKNOWN", "PROCESSING"]);
-      if (isRetryExpired(row)) return { kind: "expired", text: RETRY_EXPIRED_TEXT };
-      return { kind: "pending", text: "还没查到这次操作的结果，先保持锁定，稍后再查。" };
     },
     async download(taskId): Promise<ExportDownload> {
       const unavailable = (task: ExportTask): ExportDownload | undefined => {

@@ -107,8 +107,8 @@ export type ExportCheck =
   | { state: "empty"; text: string }
   /** 没加载出来（红字，旁边「重试」只重查这一项）。 */
   | { state: "failed"; text: string }
-  /** 超过上限：写实际行数；有更小的合法范围才提示改范围。 */
-  | { state: "over"; text: string }
+  /** 行数或导出文件过大。后端两种情况用同一原因码。 */
+  | { state: "over"; limitKind: "rows" | "file"; rows: number; text: string }
   /** 页面那一版刷新没成功：照写那一版检查过的行数，但不能选。 */
   | { state: "stale"; rows: number | null }
   /** 这一版这一项不能导出（新的一版没核完、数据升级中）：灰字写原因，不给重试；只有真读取失败才是 failed。 */
@@ -147,7 +147,7 @@ export type ExportTask = {
   /** 批准或驳回的人、时间、理由。 */
   decidedBy?: string; decidedAt?: string; decisionReason?: string;
   /** 已生成但现在不能下载、批准后生成失败这类原因。 */
-  failure?: "GENERATE_FAILED" | "SCOPE_LOST_BEFORE_GENERATE";
+  failure?: "GENERATE_FAILED" | "SCOPE_LOST_BEFORE_GENERATE" | "SCOPE_HIDDEN";
   canDownload: boolean; canApprove: boolean; canReject: boolean; canWithdraw: boolean;
   /** 批准不了的原因（只管批准，驳回另判，6j）。 */
   approveBlocked?: string;
@@ -157,18 +157,19 @@ export type ExportTask = {
 /** 批准、驳回没收到结果时记下的原操作（OP-91–96）。 */
 export type ExportOriginal = { operationId: string; createdAt: number; expiresAt: number };
 export type ExportDraft = { reason: string; query: ExportQuery };
-export type PendingSubmit = ExportDraft & ExportOriginal;
-export type PendingDecision = ExportOriginal & { taskId: string; decision: "APPROVE" | "REJECT" | "WITHDRAW"; reason: string; at: string };
+export type PendingSubmit = ExportDraft & ExportOriginal & { acceptedRequestId?: string };
+export type PendingDecision = ExportOriginal & { taskId: string; decision: "APPROVE" | "REJECT" | "WITHDRAW"; reason?: string; at: string; objectHidden?: boolean };
 /** 查询原操作的几种结果。 */
 export type DecisionLookup =
   | { kind: "matched"; task: ExportTask; text: string }
-  | { kind: "mismatch" | "pending" | "failed" | "expired" | "cleared"; text: string }
+  | { kind: "mismatch" | "pending" | "failed" | "expired" | "cleared" | "hidden"; text: string }
   | { kind: "not-received"; text: string };
 /** 这个账号在导出上能做什么。views 只有一个时不画分段。 */
 export type ExportPersona = { name: string; canExport: boolean; exportBlocked?: string; views: ("MINE" | "APPROVALS")[] };
 
 export type SubmitLookup =
   | { kind: "matched"; rows: ExportSubmitted[] }
+  | { kind: "partial"; requestId: string; rows: ExportSubmitted[] }
   | { kind: "pending"; expired: boolean }
   | { kind: "cleared"; draft: ExportDraft }
   | { kind: "missing" };
@@ -214,6 +215,11 @@ export function exportStatus(task: ExportSubmitted): { tone: "ok" | "warn" | "pr
 
 export function exportReceiptSummary(rows: readonly ExportSubmitted[]) {
   return "已查到这次提交，" + rows.map(row => `${EXPORT_LABEL[row.type]}：${exportStatus(row).label}`).join("，") + "。";
+}
+
+export const EXPORT_PARTIAL_RECEIPT = "原批已受理，原操作继续保留供核查。";
+export function exportVisibleReceiptSummary(rows: readonly ExportSubmitted[]) {
+  return rows.length ? "当前可见结果：" + rows.map(row => `${EXPORT_LABEL[row.type]}：${exportStatus(row).label}`).join("，") + "。" : "当前没有可见结果。";
 }
 
 export function exportDownloadMessage(kind: Exclude<ExportDownload["kind"], "downloaded">) {

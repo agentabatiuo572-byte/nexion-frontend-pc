@@ -236,34 +236,69 @@ function PerfAmount({ value, label, onClick }: { value: PerfValue | undefined; l
     sub={shown.state === "partial" && shown.observed !== null ? `已核 ${perfText({ state: "complete", value: shown.observed })}` : undefined} />;
 }
 const PERF_SINCE = "自 2026-11-20 起";
-export function AnalyticsTable({ data, currency, drill, openProfile, session, perf, month, groupId }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void; session?: CustomerSessionStart; perf: AnalyticsPerf; month: string; groupId?: SupportAnalyticsQuery["groupId"] }) {
+export function AnalyticsTable({ data, currency, drill, openProfile, session, perf, query, onSourceRefreshed }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void; session?: CustomerSessionStart; perf: AnalyticsPerf; query: AnalyticsQueryState; onSourceRefreshed: (data: SupportAnalyticsResponse) => void }) {
+  const { month, groupId } = query;
   const [agentId, setAgentId] = useState<string | null>(null);
   const agent = data.view === "AGENTS" && agentId ? data.records.find(row => row.accountId === agentId) : undefined;
   const accountId = agent?.accountId;
-  const [targetPeriod, setTargetPeriod] = useState<{ origin: SupportAnalyticsResponse; accountId: string; month: string; groupId: typeof groupId; amount: PerfValue }>();
+  const [targetPeriod, setTargetPeriod] = useState<{ origin: SupportAnalyticsResponse; accountId: string; month: string; groupId: typeof groupId }
+    & ({ status: "ready"; amount: PerfValue } | { status: "data-updated" })>();
+  const pairedSource = useRef<SupportAnalyticsResponse | null>(null);
+  function selectAgent(id: string | null) {
+    pairedSource.current = null;
+    setTargetPeriod(undefined);
+    setAgentId(id);
+  }
   useEffect(() => {
     const origin = data.performance?.window;
-    if (!accountId || data.generation !== "READY" || data.basis !== "CURRENT_CUSTOMER_HISTORY" || !origin) return;
+    if (!accountId || data.generation !== "READY" || data.basis !== "CURRENT_CUSTOMER_HISTORY" || !origin || pairedSource.current === data) return;
     const controller = new AbortController();
     const signal = controller.signal;
     void (async () => {
       const calendar = await analytics.months(signal);
       const selected = calendar.months.find(entry => entry.month === month);
       if (calendar.generation !== "READY" || !selected || signal.aborted) return;
-      const receipt = await analytics.query({ view: "AGENTS", basis: "PERIOD_EVENT", from: selected.from, to: selected.to,
+      const readPeriod = () => analytics.query({ view: "AGENTS", basis: "PERIOD_EVENT", from: selected.from, to: selected.to,
         agentId: accountId, groupId, currency: "USDT", pageNum: 1, pageSize: 100, signal }, "READY");
-      if (signal.aborted || receipt.view !== "AGENTS" || receipt.scopeSummary.mode !== data.scopeSummary.mode) return;
-      const window = receipt.performance?.window;
-      const record = receipt.records.find(row => row.accountId === accountId)?.periodPerformance;
-      if (!window || !record || window.month !== month || window.sourceVersion !== origin.sourceVersion
-        || window.asOf !== origin.asOf || !samePerformanceWindow(record.window, window)) return;
-      setTargetPeriod({ origin: data, accountId, month, groupId, amount: boardTotals(record).amount });
+      const validPeriod = (receipt: SupportAnalyticsResponse) => {
+        const window = receipt.performance?.window;
+        if (receipt.view !== "AGENTS" || receipt.scopeSummary.mode !== data.scopeSummary.mode || window?.month !== month) return;
+        const record = receipt.records.find(row => row.accountId === accountId)?.periodPerformance;
+        return record && samePerformanceWindow(record.window, window) ? record : undefined;
+      };
+      const sameGeneration = (period: NonNullable<ReturnType<typeof validPeriod>>, cumulative: typeof origin) =>
+        period.window.sourceVersion === cumulative.sourceVersion && period.window.asOf === cumulative.asOf;
+      const period = validPeriod(await readPeriod());
+      if (signal.aborted || !period) return;
+      const target = { origin: data, accountId, month, groupId };
+      if (sameGeneration(period, origin)) {
+        setTargetPeriod({ ...target, status: "ready", amount: boardTotals(period).amount });
+        return;
+      }
+      setTargetPeriod({ ...target, status: "data-updated" });
+      const sourceQuery = analyticsWireQuery({ ...query, pageNum: 1, expectedVersion: undefined }, []);
+      let fresh = await analytics.query({ ...sourceQuery, signal }, "READY");
+      if (signal.aborted || fresh.view !== "AGENTS" || fresh.scopeSummary.mode !== data.scopeSummary.mode) return;
+      if (query.pageNum > 1) {
+        if (fresh.versionState !== "READY" || !fresh.queryVersion) return;
+        fresh = await analytics.query({ ...sourceQuery, pageNum: query.pageNum, expectedVersion: fresh.queryVersion, signal }, "READY");
+      }
+      const freshWindow = fresh.performance?.window;
+      if (signal.aborted || fresh.view !== "AGENTS" || fresh.scopeSummary.mode !== data.scopeSummary.mode || !freshWindow) return;
+      const freshPeriod = validPeriod(await readPeriod());
+      if (signal.aborted) return;
+      if (freshPeriod && sameGeneration(freshPeriod, freshWindow)) {
+        pairedSource.current = fresh;
+        setTargetPeriod({ ...target, origin: fresh, status: "ready", amount: boardTotals(freshPeriod).amount });
+        onSourceRefreshed(fresh);
+      }
     })().catch(() => { /* The existing unavailable value covers an unsuccessful targeted read. */ });
     return () => controller.abort();
-  }, [data, accountId, month, groupId]);
+  }, [data, accountId, month, groupId, query, onSourceRefreshed]);
   // 这位客服所选月份的期间业绩额：有就写数，没有写「—」和原因（新版接口读成但没给这一项、升级中、旧版接口各一种说法）。
+  const targeted = targetPeriod?.origin === data && targetPeriod.accountId === accountId && targetPeriod.month === month && targetPeriod.groupId === groupId ? targetPeriod : undefined;
   const agentPeriod: PerfValue | undefined = agent && ((agent.periodPerformance?.window.month === month ? perf.agentPeriods?.[agent.accountId] : undefined)
-    ?? (targetPeriod?.origin === data && targetPeriod.accountId === accountId && targetPeriod.month === month && targetPeriod.groupId === groupId ? targetPeriod.amount : undefined)
+    ?? (targeted?.status === "ready" ? targeted.amount : targeted ? { state: "unavailable", reason: "数据已更新" } : undefined)
     ?? (data.generation === "READY" ? { state: "unavailable", reason: "暂时无法确认" } : data.generation === "UPGRADING" ? { state: "unavailable", reason: "数据正在升级" } : PERF_UNAVAILABLE_VALUE));
   if (!data.records.length) return <BlockState state="empty" title={data.total === null ? "还没数到记录，总数还在统计。" : "当前筛选下没有记录。"} />;
   const name = (row: Pick<SupportAnalyticsCustomer, "nickname" | "customerNo" | "customerId">) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
@@ -280,9 +315,9 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
       const customerCount = row.funds.customerCount !== undefined ? String(row.funds.customerCount) : row.current.firstConfirmed.confirmed !== null && row.current.firstNone.confirmed !== null && row.current.firstUnknown.confirmed !== null ? (BigInt(row.current.firstConfirmed.confirmed) + BigInt(row.current.firstNone.confirmed) + BigInt(row.current.firstUnknown.confirmed)).toString() : null;
       const group = data.scopeSummary.groups.find(g => g.groupId === row.account.groupId);
       const onlyAgent = (view: SupportAnalyticsView, extra: Partial<AnalyticsQueryState> = {}) => drill({ view, agentId: row.accountId, category: "BOUND", ...extra });
-      return <Tr key={row.accountId} selected={agentId === row.accountId}><Td><div className="sa-identity"><SupportAvatar name={row.displayName || "客服"} path={row.avatarRef ?? undefined} version={row.avatar?.version} /><div><Button variant="ghost" size="sm" title={row.displayName || "客服"} onClick={() => onlyAgent("CUSTOMERS")}>{row.displayName || "名称未同步"}</Button><span className="rd-note">{group?.name || (row.account.groupId === null ? "待分组" : "组名未同步")} · {role(row)}</span></div></div></Td><Td align="right"><Numeric value={customerCount} label="当前绑定客户" onClick={() => onlyAgent("CUSTOMERS")} /></Td><Td align="right"><CountValue count={row.current.activity.active} coverage={[row.current.activity.status, row.current.activity.window.status]} label={activeHead} onClick={() => onlyAgent("ACTIVITY", { filter: "WINDOW_ACTIVE" })} /></Td><Td align="right">{assets ? <CountValue count={row.current.devices.held} label="当前持有设备" onClick={() => onlyAgent("DEVICES", { basis: "CURRENT_ASSET" })} /> : <PerfAmount value={perf.agents[row.accountId]} label="当前客户累计业绩额" onClick={() => onlyAgent("CUSTOMERS")} />}</Td><Td sticky="end" fit><Button size="sm" onClick={() => setAgentId(row.accountId)}>查看统计</Button></Td></Tr>;
+      return <Tr key={row.accountId} selected={agentId === row.accountId}><Td><div className="sa-identity"><SupportAvatar name={row.displayName || "客服"} path={row.avatarRef ?? undefined} version={row.avatar?.version} /><div><Button variant="ghost" size="sm" title={row.displayName || "客服"} onClick={() => onlyAgent("CUSTOMERS")}>{row.displayName || "名称未同步"}</Button><span className="rd-note">{group?.name || (row.account.groupId === null ? "待分组" : "组名未同步")} · {role(row)}</span></div></div></Td><Td align="right"><Numeric value={customerCount} label="当前绑定客户" onClick={() => onlyAgent("CUSTOMERS")} /></Td><Td align="right"><CountValue count={row.current.activity.active} coverage={[row.current.activity.status, row.current.activity.window.status]} label={activeHead} onClick={() => onlyAgent("ACTIVITY", { filter: "WINDOW_ACTIVE" })} /></Td><Td align="right">{assets ? <CountValue count={row.current.devices.held} label="当前持有设备" onClick={() => onlyAgent("DEVICES", { basis: "CURRENT_ASSET" })} /> : <PerfAmount value={perf.agents[row.accountId]} label="当前客户累计业绩额" onClick={() => onlyAgent("CUSTOMERS")} />}</Td><Td sticky="end" fit><Button size="sm" onClick={() => selectAgent(row.accountId)}>查看统计</Button></Td></Tr>;
     })}</tbody></Table>
-    {agent && <Drawer open title="客服统计详情" sub={agent.displayName || `客服 ${agent.accountId}`} onClose={() => setAgentId(null)} footer={<div className="m1-drawer-actions"><Button type="button" onClick={() => setAgentId(null)}>返回统计列表</Button></div>}><Facts>
+    {agent && <Drawer open title="客服统计详情" sub={agent.displayName || `客服 ${agent.accountId}`} onClose={() => selectAgent(null)} footer={<div className="m1-drawer-actions"><Button type="button" onClick={() => selectAgent(null)}>返回统计列表</Button></div>}><Facts>
       <Fact k="当前组">{data.scopeSummary.groups.find(g => g.groupId === agent.account.groupId)?.name || "待分组"}</Fact>
       <Fact k="账号"><StatusTag tone={agent.account.accountState === "ENABLED" ? "ok" : "done"}>{agent.account.accountState === "ENABLED" ? "已启用" : agent.account.accountState === "DISABLED" ? "已停用" : "未知"}</StatusTag></Fact>
       <Fact k="资格">{agent.account.serviceQualification === "ENABLED" ? "专属客服资格有效" : agent.account.serviceQualification === "DISABLED" ? "资格暂停" : agent.account.serviceQualification === "REMOVED" ? "资格已移除" : "资格未知"}</Fact>
@@ -757,7 +792,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {section === "exports" && !!exportsPorts?.persona.views.length && <PerfExportRecords ports={exportsPorts} />}
     {exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts} initialMonth={queryState.month} initialScope={queryState.groupId ? `GROUP:${queryState.groupId}` : mode === "PERSONAL" ? "SELF" : mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL"} onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />}
     {isPersonal && showStatistics && <PeriodPerfPanel perf={perf.period} month={queryState.month} asOf={personalPeriod ? `${formatBusinessTimeCompact(personalPeriod.asOf, "—")}（${businessZone().label}）` : undefined}
-      status={personalPeriodError ? { error: personalPeriodError, onRetry: () => setPersonalPeriodRetry(value => value + 1) } : !personalPeriod && monthCalendar?.some(entry => entry.month === queryState.month) ? "loading" : undefined}
+      status={!monthCalendar ? calendarError ? { error: calendarError, onRetry: () => setCalendarRetry(value => value + 1) } : "loading"
+        : personalPeriodError ? { error: personalPeriodError, onRetry: () => setPersonalPeriodRetry(value => value + 1) }
+        : !personalPeriod && monthCalendar.some(entry => entry.month === queryState.month) ? "loading" : undefined}
       detail={{ loading: eventsOpen && !events, error: eventError || undefined }}
       monthControl={<span className="m1-group-scope"><span aria-hidden="true">月份</span><Select aria-label="业绩月份" value={queryState.month} onChange={month => change({ month })} options={(monthCalendar ?? []).map(({ month }) => ({ value: month, label: month }))} placeholder="加载后可选" /></span>}
       onDetail={personalPeriod?.performance?.period ? openEvents : undefined} />}
@@ -853,7 +890,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
           {!data.scopeSummary.groups.length && mode === "MANAGED" && <BlockState state="empty" title="当前没有负责组。" />}
         </> : <>{queryState.view === "CUSTOMERS" && <div className="sa-legend"><span>金额单位 {nexGridBrandText(currency)}</span><span><span className="sa-dot on" aria-hidden="true" />本统计期活跃</span><span><span className="sa-dot off" aria-hidden="true" />本统计期未活跃</span><span><span className="sa-cell-unknown">-</span> 数据还在同步</span><span>点客户名查看资料与记录</span></div>}
           {sessionError && <Notice tone="danger" action={<><Button size="sm" type="button" onClick={() => { const row = sessionError; setSessionError(null); openSessions(row); }}>查看会话记录</Button><Button size="sm" type="button" onClick={() => setSessionError(null)}>知道了</Button></>}>{customerName(sessionError)}：暂时无法核对接待状态，请稍后重试。</Notice>}
-          <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} perf={perf} month={queryState.month} groupId={queryState.groupId} /><footer className="sa-pager"><p>{data.total === null ? `第 ${queryState.pageNum} 页 · 共 — 条（已数到 ${data.observedTotal ?? "—"} 条）` : `第 ${queryState.pageNum} / ${Math.max(1, Math.ceil(data.total / data.pageSize))} 页 · 共 ${data.total} 条`}</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">这份数据还在变，暂时不能翻页；请刷新后重试。</p>}</>}
+          <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} perf={perf} query={queryState} onSourceRefreshed={setData} /><footer className="sa-pager"><p>{data.total === null ? `第 ${queryState.pageNum} 页 · 共 — 条（已数到 ${data.observedTotal ?? "—"} 条）` : `第 ${queryState.pageNum} / ${Math.max(1, Math.ceil(data.total / data.pageSize))} 页 · 共 ${data.total} 条`}</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">这份数据还在变，暂时不能翻页；请刷新后重试。</p>}</>}
       </>}
     </Panel>}
     {(showStatistics || periodDetail) && fundSource && <M1StatisticDetails key={`${periodDetail ?? fundMetric}:${fundSource.kind === "fund" ? fundSource.origin.asOf : ""}`} source={fundSource} onClose={() => { setFundMetric(null); setPeriodDetail(null); }} onInvalid={invalidateFund} />}

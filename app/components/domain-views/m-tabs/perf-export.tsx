@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Decision, Explain, Fact, Facts, Field, Fold, InlineRetry, Modal, Notice, Select, StatusTag, CheckGroup } from "@/app/components/rd";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { businessZone } from "@/lib/admin/business-time";
-import { EXPORT_LABEL, ExportOutcomeUnknownError, exportDownloadMessage, exportReceiptSummary, exportStatus, type ExportColumns, type ExportDialogData, type ExportDownload, type ExportItem, type ExportSubmitted, type ExportType, type PerfExportPorts } from "./perf-view";
+import { EXPORT_LABEL, EXPORT_PARTIAL_RECEIPT, ExportOutcomeUnknownError, exportDownloadMessage, exportVisibleReceiptSummary, exportReceiptSummary, exportStatus, type ExportColumns, type ExportDialogData, type ExportDownload, type ExportItem, type ExportSubmitted, type ExportType, type PerfExportPorts } from "./perf-view";
 import { isExportPermissionDenied, useExportClock } from "./perf-export-ports";
 import "./m1-export.css";
 
@@ -167,6 +167,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   const notReady = chosen.find(item => item.check.state !== "ok");
   // 要人处理的才出橙黄提示条：页面那一版刷新没成功、提交结果未知（VS-107）。
   const blockedReason = !data ? undefined
+    : original?.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT
     : unknown ? "提交后没收到结果，原来的选择和理由已保存。先查询原操作，不要再点提交。"
     : data.blocked;
   // 空、没勾选、正在检查、勾着的项没加载出来：那一项自己在内容区写清楚，这里只写进确认按钮的灰色原因，不另出提示条（VS-107，一件事只说一处）。
@@ -183,7 +184,12 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   const recovery = unknown && <div className="m1-export-recover"><Button size="sm" loading={querying} loadingText="正在查询…" onClick={() => {
         setQuerying(true); setLookupText(null);
         ports.lookupSubmit().then(outcome => {
-          if (outcome.kind === "pending") { setLookupText(outcome.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。"); return; }
+          if (outcome.kind === "pending") { if (!original?.acceptedRequestId) setLookupText(outcome.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。"); return; }
+          if (outcome.kind === "partial") {
+            setOriginal(ports.pendingSubmit());
+            setLookupText(exportVisibleReceiptSummary(outcome.rows));
+            return;
+          }
           if (outcome.kind === "missing") { setLookupText("找不到本标签页保存的原操作。"); return; }
           if (outcome.kind === "cleared") {
             setOriginal(undefined); setOriginalReason(outcome.draft.reason);
@@ -194,7 +200,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           setResult(outcome.rows);
         }, error => {
           if (isExportPermissionDenied(error)) { permissionLost(); return; }
-          setLookupText("这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
+          setLookupText(original?.acceptedRequestId ? "这次查询没连上，暂时无法核对当前可见结果。" : "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
         }).finally(() => setQuerying(false));
       }}>查询原操作</Button>{lookupText && lookupText !== RETRY_EXPIRED_TEXT && <span role="status">{lookupText}</span>}{expired && <span role="status">{RETRY_EXPIRED_TEXT} <ExportAuditLink /></span>}</div>;
   const content = !data && unknown ? recovery : loadFailed

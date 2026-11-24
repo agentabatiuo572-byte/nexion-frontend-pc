@@ -11,7 +11,7 @@ import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ExportAuditLink, ExportColumnsFold } from "./perf-export";
-import { EXPORT_LABEL, ExportOutcomeUnknownError, exportDownloadMessage, exportReceiptSummary, exportStatus, type DecisionLookup, type ExportDownload, type ExportTask, type PendingDecision, type PendingSubmit, type PerfExportPorts } from "./perf-view";
+import { EXPORT_LABEL, EXPORT_PARTIAL_RECEIPT, ExportOutcomeUnknownError, exportDownloadMessage, exportVisibleReceiptSummary, exportReceiptSummary, exportStatus, type DecisionLookup, type ExportDownload, type ExportTask, type PendingDecision, type PendingSubmit, type PerfExportPorts } from "./perf-view";
 import { exportDecisionConflict, exportTaskHidden, isExportPermissionDenied, useExportClock } from "./perf-export-ports";
 import "./m1-export.css";
 
@@ -145,6 +145,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
   const query = (p: PendingDecision) => {
     setLookup("loading");
     ports.lookupDecision(p).then(found => {
+      if (found.kind === "hidden") { forgetTaskRead(p.taskId); return; }
       setLookup(found);
       if (found.kind === "matched") put(found.task);
       if (found.kind === "cleared") setTaskRefresh(value => value + 1);
@@ -165,7 +166,10 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
       } else if (found.kind === "cleared") {
         setSettled(list => [{ key, label, text: found.text, taskId: p.taskId }, ...list]);
         setRefresh(value => value + 1);
-      } else stillUnknown(key, found.text);
+      } else {
+        if (found.kind === "hidden") forgetTaskRead(p.taskId);
+        stillUnknown(key, found.text);
+      }
       if (openId === p.taskId) setTaskRefresh(value => value + 1);
     }, error => {
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
@@ -184,36 +188,44 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
       if (found.kind === "matched") {
         setSettled(list => [{ key, label: "提交导出", text: exportReceiptSummary(found.rows), mine: true }, ...list]);
         setRefresh(value => value + 1);
+      } else if (found.kind === "partial") {
+        setAnswers(map => ({ ...map, [key]: { tag: acceptedTag, line: EXPORT_PARTIAL_RECEIPT + exportVisibleReceiptSummary(found.rows) } }));
+        setRefresh(value => value + 1);
       } else if (found.kind === "cleared") setSettled(list => [{ key, label: "提交导出", text: "这次提交没有执行，原理由已保留，可以重新导出。", mine: true }, ...list]);
-      else stillUnknown(key, found.kind === "missing" ? "找不到本标签页保存的原操作。"
+      else if (!original.acceptedRequestId) stillUnknown(key, found.kind === "missing" ? "找不到本标签页保存的原操作。"
         : found.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。");
     }, error => {
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
-      stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。");
+      if (!original.acceptedRequestId) stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。");
     }).finally(() => setQuerying(null));
   };
   const queryButton = (key: string, onClick: () => void) => <Button size="sm" loading={querying === key} loadingText="正在查询…" disabledReason={querying && querying !== key ? "等上一条查完" : undefined} onClick={onClick}>查询原结果</Button>;
   const unknownTag = <StatusTag tone="warn">结果未知</StatusTag>;
+  const acceptedTag = <StatusTag tone="ok">已受理</StatusTag>;
   const expiredResult = { tag: <StatusTag tone="warn">已过期</StatusTag>, line: RETRY_EXPIRED_TEXT };
   const recovery: RecoveryItem[] = [
     ...(pendingSubmit ? [{
       key: pendingSubmit.operationId, createdAt: pendingSubmit.createdAt, object: `提交导出 · ${pendingSubmit.query.month} · ${pendingSubmit.query.types.map(type => EXPORT_LABEL[type]).join("、")}`,
-      tag: unknownTag, line: `${businessStamp(pendingSubmit.createdAt)} 发出后没收到结果；先查询原结果，不要再点提交。`, result: now >= pendingSubmit.expiresAt ? expiredResult : answers[pendingSubmit.operationId],
+      tag: pendingSubmit.acceptedRequestId ? acceptedTag : unknownTag,
+      line: pendingSubmit.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT : `${businessStamp(pendingSubmit.createdAt)} 发出后没收到结果；先查询原结果，不要再点提交。`,
+      result: !pendingSubmit.acceptedRequestId && now >= pendingSubmit.expiresAt ? expiredResult : answers[pendingSubmit.operationId],
       actions: queryButton(pendingSubmit.operationId, () => querySubmit(pendingSubmit)), detail: <p>理由：{pendingSubmit.reason}</p>, tech: <TechInfo commandKey={pendingSubmit.operationId} />,
     }] : []),
     ...pending.map(p => ({
-      key: p.operationId, createdAt: p.createdAt, object: `${VERB[p.decision]}导出申请 ${p.taskId}`,
-      tag: unknownTag, line: `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`, result: now >= p.expiresAt ? expiredResult : answers[p.operationId],
-      actions: queryButton(p.operationId, () => queryOriginal(p)), detail: <p>理由：{p.reason}</p>, tech: <TechInfo commandKey={p.operationId} />,
+      key: p.operationId, createdAt: p.createdAt, object: p.objectHidden ? "导出操作" : `${VERB[p.decision]}导出申请 ${p.taskId}`,
+      tag: unknownTag, line: p.objectHidden ? `${p.at} 发出；当前无法查看这条申请，原操作继续保留。` : `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`,
+      result: now >= p.expiresAt ? expiredResult : p.objectHidden ? undefined : answers[p.operationId],
+      actions: queryButton(p.operationId, () => queryOriginal(p)), detail: p.reason && <p>理由：{p.reason}</p>, tech: <TechInfo commandKey={p.operationId} />,
     })),
   ];
+  const acceptedOriginals = pendingSubmit?.acceptedRequestId ? 1 : 0;
   const anyExpired = now >= (pendingSubmit?.expiresAt ?? Infinity) || pending.some(row => now >= row.expiresAt);
   const single = persona.views.length === 1;
   const sub = !rows ? undefined : view === "MINE" ? `本人提交的 · ${total} 条` : single ? `待我审批 · ${total} 条` : `共 ${total} 条`;
   const open = detail?.taskId === openId ? detail : null;
 
   return <>
-    <RecoveryPanel title={recoveryTitle(recovery.length)} label="结果未知的导出操作" items={recovery}
+    <RecoveryPanel title={recoveryTitle(recovery.length - acceptedOriginals, 0, 0, acceptedOriginals)} label="结果未知的导出操作" items={recovery}
       explain="提交导出、批准、驳回、撤回没收到结果时，原操作和理由存在这个浏览器标签页里。先按原操作查询，查到之前不要重做；关掉标签页这些记录就没了。"
       foot={anyExpired ? <ExportAuditLink /> : undefined} />
     {settled.map(row => <SettledLine key={row.key} label={row.label} text={row.text}
@@ -314,6 +326,7 @@ function TaskDrawer({ task, view, zone, rows, pending, now, lookup, downloadFail
     : reviewing && task.approveBlocked ? `批准不了：${task.approveBlocked}。驳回照常可以。`
     : task.scopeLost && task.state === "PENDING_APPROVAL" ? "恢复权限前这条不能批准；可以撤回。"
     : task.state === "PENDING_APPROVAL" && task.mine ? "还不能下载：没批准，文件还没生成。"
+    : task.failure === "SCOPE_HIDDEN" ? "当前无法查看申请范围，请先恢复权限。"
     : (task.state === "APPROVED" || task.state === "FAILED") && task.failure === "SCOPE_LOST_BEFORE_GENERATE" ? task.decidedAt ? "已批准，但生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。" : "生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。"
     : (task.state === "APPROVED" || task.state === "FAILED") && task.failure ? task.decidedAt ? "文件没生成出来，不能下载。批准记录还在；请重新导出，明细要重新审批。" : "文件没生成出来，不能下载。请重新导出。"
     : task.state === "APPROVED" ? "还不能下载：已批准，文件还在生成。生成好会变成「可下载」。"
