@@ -697,11 +697,6 @@ function thisYear(full: string) {
   return full.startsWith(year) ? full.slice(5) : full;
 }
 
-/** 队列第二行的提交时间放在单号前面，放不下时省略的是单号（必须改 6）。 */
-function queueTime(w: A2OperationRow) {
-  return thisYear(bizTime(w.rawTs, w.ts));
-}
-
 /** a2-client 没有 tsLabel 时按浏览器时区写成「11/08 14:30」；那种情况改按业务时区重写，有 tsLabel 时用它（a2-client.ts:378）。 */
 const BROWSER_STAMP = /^\d{2}\/\d{2} \d{2}:\d{2}$/;
 function logTime(log: A2AuditLogRow) {
@@ -2884,7 +2879,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {/* 1024 也要放下：对象多是系统键，名字里通常已经带着，列表不单列，抽屉和确认框里常显（DP-13）。 */}
           <Table label="待审批的操作" className="a2-queue" data-tight="">
             <thead><tr>
-              <Th sticky="start">审批单 · 提交时间（{zone}）</Th>
+              <Th sticky="start">审批单</Th>
               <Th>变更</Th>
               <Th icon={Users} tone="users">发起人</Th>
               <Th fit={!showActions}>标记</Th>
@@ -2906,8 +2901,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`}
-                        sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
+                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）`} /></Td>
                       <Td><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td fit={!showActions}><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
