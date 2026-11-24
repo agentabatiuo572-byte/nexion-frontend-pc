@@ -13,6 +13,7 @@ import { maskAuditActor } from "@/lib/admin/audit-actor";
 import {
   KIND_LABELS, Money, STATUS_META, StatusBadge, amountText, deviceEarningSource, isFriend, isGrouped, kindNames, operationLabel, timeText, userCode, zoneNote,
 } from "./f5-shared";
+import { F5RecoveryAmounts } from "../a-tabs/a2-f5-current";
 
 export type F5RowAction = { key: string; label: string; danger?: boolean; disabledReason?: string; onSelect: () => void };
 
@@ -82,7 +83,9 @@ export function F5Drawer({ row, rows, history, ledgerAllowed, coverageAllowed, l
     : meta?.text ?? "这个状态页面还不认识，请联系技术同事";
   const points: JudgmentRow[] = [
     { label: "现在", value: <StatusBadge status={row.status} explain={false} />, reason: nowText, state: meta?.tone === "warn" || meta?.tone === "danger" ? meta.tone : undefined },
-    { label: "金额", icon: Coins, tone: "money", value: <Money value={row.amt} currency={row.cur} />, reason: friend && groupMoney ? `整组 ${groupMoney}` : grouped ? "结算组里的一笔；同组另一种币（如有）是另一条记录" : undefined },
+    { label: "金额", icon: Coins, tone: "money", value: <Money value={row.amt} currency={row.cur} />, reason: row.status === "recovery_pending" && row.kind === "vrank_salary"
+      ? <span className="f5-trace-warn"><F5RecoveryAmounts id={row.id} /></span>
+      : friend && groupMoney ? `整组 ${groupMoney}` : grouped ? "结算组里的一笔；同组另一种币（如有）是另一条记录" : undefined },
     { label: "用户", icon: User, tone: "users", value: row.user, reason: KIND_LABELS[row.kind] ?? "未知奖励类型" },
     {
       label: "处置范围",

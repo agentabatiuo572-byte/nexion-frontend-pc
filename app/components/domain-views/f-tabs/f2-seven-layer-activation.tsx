@@ -11,11 +11,11 @@ import { CircleCheck, CircleHelp, Clock3, Hourglass, PauseCircle, Power, PowerOf
 import { Button, Explain, Notice, Panel, StatusTag } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { a2ActionText } from "@/lib/admin/operator-copy";
-import { Change, Fact, Facts, LAYERS, layerRate, num, type F2Confirm } from "./f2-shared";
+import { Change, Fact, Facts, LAYERS, f2Ranked, layerRate, num, type F2Confirm } from "./f2-shared";
 import { stamp } from "./f2-shared";
 import { F2_ACTIVATION_SLOT, F2_BOOTSTRAP_SLOT, F2_POLICY_SLOT, type F2Recovery } from "@/lib/admin/f2-approval";
 import { f4Decimal } from "@/lib/admin/f4-money";
-import { f2PctSum, parseF2BootstrapAfter } from "./f2-bootstrap-ticket";
+import { f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "./f2-bootstrap-ticket";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { F2_HISTORICAL_PARAM_NAMES } from "./f2-rates";
 import { FReleaseButton, F_PROPOSAL_CREATED_LINE, fProposalEndText } from "./f-release";
@@ -52,18 +52,24 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
   const canAudit = ctx.can("platform_a2_read");
   const supported = policy?.sevenLayerActivationContractVersion === 1;
   const action = !policy?.sevenLayerEnabled ? "ACTIVATE" : policy.sevenLayerPaused ? "RESUME" : "PAUSE";
-  const copy = ACTION_COPY[action];
+  const ranked = f2Ranked(ctx);
+  // 第 1、2 层按受益人等级后，启用时不再要求第 1 层是 10%（B83）；只改说法，检查在后端。
+  const copy = action === "ACTIVATE" && ranked ? { ...ACTION_COPY.ACTIVATE, check: "提交和批准时都会检查七层比例和系数是否配齐；批准时还检查兑付覆盖率不低于红线。" } : ACTION_COPY[action];
   const label = copy.label;
   const writeBlocked = ctx.f2WriteBlocked("f-seven-layer-activation");
-  const blocked = !!writeBlocked || busy || !policy || !!ctx.f2DirectPolicyError || !!ctx.f2ActivationPendingError && canAudit || !supported || !!ctx.f2ActivationPending || !!ctx.f2ActivationAttempt || submitted || recovering;
+  const checks = activationCheckRows(ctx);
+  const incomplete = action === "ACTIVATE" && checks.some(check => check.ok !== true);
+  const checkedReason = incomplete ? ctx.f2Loading ? "七层规则读取中" : ctx.f2Error ? "七层规则没读到"
+    : "配齐七层 USDT 比例和 UVT 系数并通过下方检查后才能启用" : undefined;
+  const blocked = !!writeBlocked || incomplete || busy || !policy || !!ctx.f2DirectPolicyError || !!ctx.f2ActivationPendingError && canAudit || !supported || !!ctx.f2ActivationPending || !!ctx.f2ActivationAttempt || submitted || recovering;
   const blockedReason = writeBlocked ?? (busy ? "正在读取结算状态"
     : ctx.f2DirectPolicyError || !policy ? "结算状态没读到，刷新后再试"
       : ctx.f2ActivationPendingError && canAudit ? "审批进度没读到，刷新后再试"
         : !supported ? "后台页面和系统版本对不上，暂时只能查看；请刷新后再试"
-          : ctx.f2ActivationPending ? "已有申请在等另一位管理员批准"
+          : ctx.f2ActivationPending ? "已有申请在等另一位超级管理员批准"
             : ctx.f2ActivationAttempt ? "上一次申请结果未知，先按原请求重试或去核对"
-              : submitted ? "刚提交的申请在等另一位管理员批准"
-                : recovering ? "正在按原请求重试" : undefined);
+              : submitted ? "刚提交的申请在等另一位超级管理员批准"
+                : recovering ? "正在按原请求重试" : checkedReason);
   const state = !policy ? null : !policy.sevenLayerEnabled ? "off" : policy.sevenLayerPaused ? "paused" : "running";
   const stateName = { off: "未启用", paused: "已暂停", running: "运行中" } as const;
 
@@ -73,18 +79,17 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
     openConfirm({
       slot: "f-seven-layer-activation",
       action: label, title: label, briefKind: action === "RESUME" ? "funds" : "config", amplify: action !== "PAUSE",
-      effect: <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才生效；批准前结算状态不变。">批准后生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled explain="另一位超级管理员在「操作记录与审批」批准后才生效；批准前结算状态不变。">批准后生效</StatusTag>,
       facts: <Facts>
         <Fact k="整体结算"><Change from={stateName[state]} to={copy.after} /></Fact>
         <Fact k="启用时间">{policy.cutoverAt ? `不变，仍是 ${stamp(policy.cutoverAt)}` : "批准时自动记下"}</Fact>
       </Facts>,
       statedBrief: { impact: copy.impact, check: copy.check },
       detail: copy.impact,
-      completionCopy: "批准人要是另一位管理员，需有审批批准权限和「团队奖励规则」权限；批准前结算状态不变。",
       coverageCheck: "批准时检查兑付覆盖率，低于红线不会执行。",
       coverageLead: action === "ACTIVATE" ? "启用后平台开始按七层比例付团队奖励" : "恢复后平台继续按七层比例付团队奖励",
       submit: async (reason) => { await ctx.changeF2SevenLayerActivation(action, revision, policyVersion, reason); },
-      done: "已提交审批，等另一位管理员批准",
+      done: "已提交，等待审批后执行",
     });
   }
 
@@ -92,30 +97,29 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
 
   return (
     <Panel className="f2-settle" aria-label="团队购买奖励结算状态" title="整体结算" icon={state === "off" ? PowerOff : state === "paused" ? PauseCircle : Power} tone={state === "running" ? "ok" : state ? "warn" : "role-other"}
-      sub={policy?.cutoverAt ? <>启用于 <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time></> : undefined}
-      explain="整体结算管新订单要不要按七层规则算团队奖励。启用、暂停、恢复都要另一位管理员批准，都不改比例、冷却和好友拆分。启用后不补发启用前的订单；暂停期间已在冷却的奖励、退款和解锁照常处理，恢复后只重新处理因这次暂停没算的订单；暂停和恢复不改启用时间。"
+      sub={policy?.cutoverAt && state !== "running" ? <>启用于 <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time></> : undefined}
+      explain={<><p>整体结算管新订单要不要按七层规则算团队奖励。启用、暂停、恢复都要另一位超级管理员批准，都不改比例、冷却和好友拆分。</p><p>启用后不补发启用前的订单；暂停后新订单的奖励先不算，已在冷却的奖励、退款和解锁照常处理；恢复后只重新处理因这次暂停没算的订单；暂停和恢复不改启用时间。</p></>}
       actions={allowed ? <Button variant={action === "PAUSE" ? "secondary" : "primary"} disabledReason={blockedReason} onClick={submit}>{label}</Button> : undefined}>
       <div className="f2-settle-body">
         <div className="f2-settle-state" role="status" aria-live="polite">
           {busy ? <span className="f2-settle-name" data-state="loading">正在读取…</span>
             : !state ? <span className="f2-settle-name" data-state="failed">读不到</span>
-              : <span className="f2-settle-name" data-state={state}>{stateName[state]}</span>}
-          <p className="f2-settle-what">
+              : <span className="f2-settle-name" data-state={state}>{stateName[state]}{state === "running" && policy?.cutoverAt && <span className="f2-settle-since"> · 启用于 <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time></span>}</span>}
+          {state !== "running" && <p className="f2-settle-what">
             {busy ? "结算状态读取中" : !state ? "结算状态读取失败，这部分没有判断。刷新后再看。"
-              : state === "off" ? "七层结算还没启用，按原来的规则结算。"
-                : state === "paused" ? "新订单的奖励先不算；冷却、退款、解锁照常。"
-                  : "新订单按下面「每层分多少」的比例计算团队奖励。"}
-          </p>
+              : state === "off" ? "七层结算还没启用：新订单按原来的规则结算，下表的比例启用后才生效。"
+                : "新订单的奖励先不算；冷却、退款、解锁照常。"}
+          </p>}
           {!allowed && <p className="f2-settle-note">只能查看：申请启用、暂停、恢复需有「团队奖励规则」和「发起审批」权限。</p>}
         </div>
-        {state === "off" && <ActivationChecks ctx={ctx} />}
+        {state === "off" && <ActivationChecks ctx={ctx} rows={checks} />}
       </div>
       {(pending || submitted || ctx.f2ActivationPendingError || (policy && !supported)) && <ul className="f2-alerts" aria-label="整体结算的申请">
-        {pending && <li><Notice tone="warn" title={<>{a2ActionText(pending.action)}<StatusTag tone="warn" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准；批准前结算状态不变，也不能再提交新的申请。">待审批</StatusTag></>}
+        {pending && <li><Notice tone="warn" title={<>{a2ActionText(pending.action)}<StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准；批准前结算状态不变，也不能再提交新的申请。">待审批</StatusTag></>}
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
-          <p>审批单 <span data-mono>{pending.id}</span>，等另一位管理员批准。</p>
+          <p>审批单 <span data-mono>{pending.id}</span>，等另一位超级管理员批准。</p>
         </Notice></li>}
-        {!pending && submitted && <li><Notice tone="warn" title="申请已提交，等另一位管理员批准"
+        {!pending && submitted && <li><Notice tone="warn" title="申请已提交，等另一位超级管理员批准"
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
           <p>批准前结算状态不变。批准后点页头「刷新」看最新状态。</p>
         </Notice></li>}
@@ -135,13 +139,15 @@ function attemptLabel(attempt: F2Recovery): { name: string; change: string } {
   if (slot === F2_POLICY_SLOT) return { name: "好友奖励政策", change: known ? "按原申请的政策内容" : plain };
   if (slot === F2_BOOTSTRAP_SLOT) {
     // 建单后用审批单上后端写的七层数；还没有审批单时用原请求里运营填的七层。
-    const rows = parseF2BootstrapAfter(spec.after);
+    const rows = parseF2BootstrapAfter(attempt.ticket?.after ?? spec.after);
     const layers: unknown = attempt.request?.command?.params?.layers;
     const sent = Array.isArray(layers) && layers.length === 7
       ? layers.map((layer) => f4Decimal(String((layer as { usdtPct?: unknown } | null)?.usdtPct ?? "").replace(/[%,]/g, ""))) : [];
     const valid = sent.filter((value): value is string => value !== null && !value.startsWith("-"));
-    const total = rows ? f2PctSum(rows.map((row) => row.usdtPct)) : valid.length === 7 ? f2PctSum(valid) : null;
-    return { name: "首次配置七层规则", change: total === null ? "原请求不完整，只能查询原结果" : `L1–L7 合计占订单 ${num(total)}%` };
+    const rates = rows ? rows.map(row => row.usdtPct) : valid.length === 7 ? valid : null;
+    const change = !rates ? "原请求不完整，只能查询原结果"
+      : f2BootstrapUsesRank(rates[0], rates[1]) ? "第 1、2 层按受益人等级，区间未知" : `L1–L7 合计占订单 ${num(f2PctSum(rates))}%`;
+    return { name: "首次配置七层规则", change };
   }
   const layer = /^f-config:F\.unilevel\.(nex\.)?(L[1-7])$/.exec(slot);
   if (layer) return { name: `${layer[2]} ${layer[1] ? "UVT 系数" : "USDT 比例"}`, change: plain };
@@ -200,7 +206,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
             <span className="f2-recovery-change">{change}{attempt.spec.reason !== "—" && <small title={attempt.spec.reason}>理由：{attempt.spec.reason}</small>}</span>
             <span className="f2-recovery-time">{businessStamp(attempt.createdAt)} 提交</span>
             <span>{attempt.ticket?.status === "pending"
-              ? <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准；批准前不生效。">待审批</StatusTag>
+              ? <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准；批准前不生效。">待审批</StatusTag>
               : attempt.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
                 : expired ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。">已过期</StatusTag>
                   : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>}</span>
@@ -220,27 +226,33 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
   );
 }
 
-/** 启用时后端检查的三条（D01）：只列现在读到的，不替后端下「能启用」的结论。 */
-function ActivationChecks({ ctx }: { ctx: FViewCtx }) {
+/** 启用入口和检查列表用同一组读回值。 */
+function activationCheckRows(ctx: FViewCtx) {
   const rates = ctx.f2Unilevel;
   const l1 = layerRate(rates, "L1");
   const allUsdt = LAYERS.every(level => rates.some(row => row.l === level && row.usdt !== null && row.usdt >= 0 && row.usdt <= 100));
   const allNex = LAYERS.every(level => rates.some(row => row.l === level && row.nex !== null && row.nex >= 0));
-  const unread = ctx.f2Loading ? "七层规则读取中" : ctx.f2Error ? "七层规则没读到" : null;
-  const rows = unread ? [
+  const unread = ctx.f2Loading ? "七层规则读取中" : ctx.f2Error ? "七层规则没读到" : ctx.f2PurchaseBaseRateSource === null ? "购买奖励比例来源没读到" : null;
+  const ranked = f2Ranked(ctx);
+  return unread ? [
     { key: "usdt", ok: null, label: "七层 USDT 比例都已配置", seen: unread },
     { key: "nex", ok: null, label: "七层 UVT 系数都已配置", seen: unread },
-    { key: "l1", ok: null, label: "第 1 层比例是 10%", seen: unread },
+    ...(ranked ? [] : [{ key: "l1", ok: null, label: "第 1 层比例是 10%", seen: unread }]),
   ] : [
     { key: "usdt", ok: allUsdt, label: "七层 USDT 比例都已配置", seen: allUsdt ? "L1–L7 都有" : LAYERS.filter(level => !rates.some(row => row.l === level && row.usdt !== null && row.usdt >= 0 && row.usdt <= 100)).join("、") },
     { key: "nex", ok: allNex, label: "七层 UVT 系数都已配置", seen: allNex ? "L1–L7 都有" : LAYERS.filter(level => !rates.some(row => row.l === level && row.nex !== null && row.nex >= 0)).join("、") },
-    { key: "l1", ok: !!l1 && l1.usdt === 10, label: "第 1 层比例是 10%", seen: l1 ? `第 1 层是 ${num(l1.usdt)}%` : "没有第 1 层规则" },
+    ...(ranked ? [] : [{ key: "l1", ok: !!l1 && l1.usdt === 10, label: "第 1 层比例是 10%", seen: l1 ? `第 1 层是 ${num(l1.usdt)}%` : "没有第 1 层规则" }]),
   ];
+}
+
+function ActivationChecks({ ctx, rows }: { ctx: FViewCtx; rows: ReturnType<typeof activationCheckRows> }) {
+  const rates = ctx.f2Unilevel;
+  const ranked = f2Ranked(ctx);
   return (
     <div className="f2-checks">
-      <p className="f2-checks-title">启用时会检查<Explain label="这三条怎么用" content={<>
-        <p>提交申请和另一位管理员批准时都会再查一遍，以那时的数据为准。这里只列现在读到的，不代表一定能启用。</p>
-        <p>没填的比例和系数也显示成 0，这里分不出「没填」和「填了 0」：三条都打勾也不代表一定能启用，以系统的检查为准。</p>
+      <p className="f2-checks-title">启用时会检查<Explain label={ranked ? "这两条怎么用" : "这三条怎么用"} content={<>
+        <p>提交申请和另一位超级管理员批准时都会再查一遍，以那时的数据为准。这里只列现在读到的，不代表一定能启用。</p>
+        <p>未配置和配置为 0 分开判断；以提交和批准时系统的检查为准。</p>
         {rates.length === 0 ? <p>七层都没规则时，先在「每层分多少」首次配置。</p>
           : LAYERS.some((level) => !layerRate(rates, level)) && <p>只缺几层时后台补不了，需要技术同事处理。</p>}
       </>} /></p>

@@ -1,3 +1,5 @@
+import type { F1PolicyEditor, submitF1Policy } from "@/lib/admin/f1-policy-change";
+import type { BusinessCalendarView } from "@/lib/admin/business-calendar-client";
 import type { F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
 import type { queryF3ConfigWrite } from "@/lib/admin/f3-config-write";
 import type { F3PayoutControlKey } from "@/lib/admin/f3-policy";
@@ -13,6 +15,7 @@ import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { DirectReferralPolicy, DirectReferralUpdate } from "@/lib/admin/direct-referral-policy";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
 import type { VRankBootstrapRow } from "@/lib/admin/vrank-bootstrap";
+import type { F1SalaryClaimsState, F1SalaryFilters, F1V8ReviewState } from "./f1-rank-types";
 import type { TeamFundApprovalValues } from "@/lib/admin/withdrawal-config-approval";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type {
@@ -105,6 +108,7 @@ export interface FViewCtx {
   refreshF1Approvals: () => Promise<void>;
   invalidateF1: (message?: string) => void;
   refreshF1: () => Promise<void>;
+  refreshF1Membership: () => Promise<void>;
   f1RewardValuation: string | null;
   f1Coverage: F1VRankOverview["coverage"];
   acceptF1PolicyOverview: (overview: F1VRankOverview) => void;
@@ -134,8 +138,30 @@ export interface FViewCtx {
   queryPromotions: (filters?: F1PromotionFilters, append?: boolean) => Promise<void>;
   queryPayouts: (filters?: F1PayoutFilters, append?: boolean) => Promise<void>;
   proposeVRankOverride: (userId: string, targetV: string, direction: "promote" | "rollback", reason: string) => Promise<void>;
+  // F1 B83 / B87 / B88
+  /** V8 审核名单（B88）。不传 = 这个后端没有名单接口，「V8 审核」页签不出现。 */
+  v8Review?: F1V8ReviewState;
+  queryV8Review?: (append?: boolean) => Promise<void>;
+  /** 后端的等级数据有没有 monthlySalaryUsdt 这个字段（B87）。不是 true = 旧后端：不出月薪行、「月薪」口径和「月薪领取」页签。字段在但这一级读不到时照常显示「—」。 */
+  f1SalaryFieldPresent?: boolean;
+  /** 月薪领取记录（B87-BE-04）。字段在但这里没传时，「月薪领取」页签显示没有月薪数据。 */
+  salaryClaims?: F1SalaryClaimsState;
+  querySalaryClaims?: (filters: F1SalaryFilters, cursor?: string) => Promise<void>;
+  /** 等级权益三项的写入：比例传百分数（如 "4.6"），月薪传 USDT。原操作查询和重试沿用同一个已保存请求。 */
+  submitVRankBenefit: (editor: F1PolicyEditor, value: string, reason: string, mode?: "submit" | "lookup" | "retry-original") => ReturnType<typeof submitF1Policy>;
+  f1BenefitCoverage?: { coverageRatio: number; redlinePct: number; redlineBreached: boolean };
+  teamBusinessCalendar: BusinessCalendarView | null;
   proposeVRankBootstrap: (ranks: VRankBootstrapRow[], reason: string) => Promise<void>;
   proposePayoutAction: (record: F1RewardPayout, action: "reissue" | "reverse", reason: string, usedVoucherClawback?: boolean) => Promise<void>;
+  // F2 B83
+  /** 七层规则回包的 purchaseBaseRateSource。"BENEFICIARY_RANK" 时第 1、2 层比例按受益人等级显示；没有这个字段时按旧的单一比例显示。 */
+  f2PurchaseBaseRateSource: "F2" | "BENEFICIARY_RANK" | null;
+  /** 九级好友购买奖励一级、二级比例里的最低和最高，百分数字符串（"4"、"5.5"）；读 F1 等级总览或 v-ranks。按等级但读不到时传 null，页面写「—」。 */
+  f2RankPurchaseRange: { l1: { min: string; max: string }; l2: { min: string; max: string } } | null;
+  f2RankRangeError: string | null;
+  f2RankRangeLoading: boolean;
+  refreshF2RankRange: () => Promise<void>;
+  refreshF2DirectPolicy: () => Promise<DirectReferralPolicy | null>;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
   f2Metrics: F2Metric[];
   f2PayoutStatistics?: F2PayoutStatistic[];
@@ -239,6 +265,7 @@ export interface FViewCtx {
   f5Overview: F5CommissionAuditOverview | null;
   f5AppliedQuery: F5CommissionQuery | null;
   f5NextQuery: F5CommissionQuery | null;
+  f5AppendError: string | null;
   f5Loading: boolean;
   f5Error: string | null;
   f5Proposals: FDomainAttempt[];

@@ -11,13 +11,26 @@ import {
   TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
-import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { F1PromotionRecord, F1RewardPayout, F1VRankRow } from "@/lib/admin/f1-client";
 import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_KEEP } from "@/lib/admin/config-help/f1-voucher";
 import type { FViewCtx } from "./types";
-import { ADMIN_APPROVER, PAYOUT_STATUS, PAYOUT_TYPES, payoutReward, rewardKind, type F1Confirm } from "./f1-shared";
+import { teamUserId } from "@/lib/admin/f-overview-contract";
+import { userCode } from "./f5-shared";
+import { SUPER_APPROVER, PAYOUT_STATUS, PAYOUT_TYPES, payoutReward, rewardKind, type F1Confirm } from "./f1-shared";
 
 const dash = (value: string) => value || "—";
+const EMPTY_PROMOTION = { userId: "", v: "", cohort: "", from: "", to: "" };
+const EMPTY_PAYOUT = { type: "", v: "", status: "", userId: "" };
+const hasFilter = (values: Record<string, string>) => Object.values(values).some((value) => value.trim() !== "");
+/** 自动评估记下的触发原因是后端代码（VRankPromotionContext.TriggerType），翻成业务话；人工调整写的是运营理由，原样显示。新代码要补进这里。 */
+const TRIGGER_REASON: Record<string, string> = {
+  SYSTEM_EVALUATION: "系统定时评估",
+  ORDER_PAID: "订单付款后评估",
+  MANUAL_OPERATION: "人工触发评估",
+  OTHER: "其他事件触发评估",
+};
+const reasonText = (value: string) => TRIGGER_REASON[value.trim()] ?? dash(value);
 const snapshotText = (snapshot: unknown) => {
   if (snapshot == null || snapshot === "") return "";
   if (typeof snapshot === "string") return snapshot;
@@ -25,7 +38,8 @@ const snapshotText = (snapshot: unknown) => {
 };
 
 export function F1PromotionHistory({ ctx, rows, canPromote, onOverride }: { ctx: FViewCtx; rows: F1VRankRow[]; canPromote: boolean; onOverride: () => void }) {
-  const [filters, setFilters] = useState({ userId: "", v: "", cohort: "", from: "", to: "" });
+  const [filters, setFilters] = useState(EMPTY_PROMOTION);
+  const [applied, setApplied] = useState(EMPTY_PROMOTION);
   const [openId, setOpenId] = useState<string | null>(null);
   const set = (key: keyof typeof filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
   const records = ctx.promotionRecords;
@@ -34,7 +48,8 @@ export function F1PromotionHistory({ ctx, rows, canPromote, onOverride }: { ctx:
   const moreCount = [filters.cohort, filters.from || filters.to].filter(Boolean).length;
   return (
     <>
-      <FilterBar onSubmit={() => void ctx.queryPromotions(filters)} querying={ctx.f1PromotionLoading}
+      <FilterBar onSubmit={() => { setApplied(filters); void ctx.queryPromotions({ ...filters, userId: teamUserId(filters.userId) ?? filters.userId.trim() }); }} querying={ctx.f1PromotionLoading}
+        canClear={hasFilter(filters) || hasFilter(applied)} onClear={() => { setFilters(EMPTY_PROMOTION); setApplied(EMPTY_PROMOTION); void ctx.queryPromotions(EMPTY_PROMOTION); }}
         more={<>
           <FilterField label="用户批次"><Input aria-label="晋升批次" value={filters.cohort} onChange={(event) => set("cohort", event.target.value)} placeholder="设备批次，包含即可" /></FilterField>
           <FilterField label="日期" wide><span className="rd-filter-range">
@@ -43,12 +58,12 @@ export function F1PromotionHistory({ ctx, rows, canPromote, onOverride }: { ctx:
             <Input aria-label="晋升结束日期" type="date" value={filters.to} onChange={(event) => set("to", event.target.value)} />
           </span></FilterField>
         </>} moreCount={moreCount}>
-        <FilterField><Input aria-label="晋升用户编号" value={filters.userId} onChange={(event) => set("userId", event.target.value)} placeholder="用户编号" inputMode="numeric" /></FilterField>
+        <FilterField grow><Input aria-label="晋升用户编码或系统编号" value={filters.userId} onChange={(event) => set("userId", event.target.value)} placeholder="用户编码或系统编号" /></FilterField>
         <FilterField><Select aria-label="晋升涉及等级" value={filters.v} onChange={(value) => set("v", value)}
           options={[{ value: "", label: "全部等级" }, ...rows.map((row) => ({ value: row.v, label: row.v }))]} /></FilterField>
       </FilterBar>
     <Panel title="晋升记录" icon={History} tone="role-3" flush
-      sub={`当前筛选 ${ctx.promotionTotal.toLocaleString("en-US")} 条`}
+      sub={`${hasFilter(applied) ? "当前筛选" : "共"} ${ctx.promotionTotal.toLocaleString("en-US")} 条`}
       explain="自动评估和人工调整都会留一条；按记录先后倒序，每次读 100 条。自动评估每次最多升一级；人工调整可以一次跨几级。"
       actions={canPromote ? <Button size="sm" icon={<UserCog size={14} aria-hidden />} onClick={onOverride}>人工调整等级</Button> : undefined}>
       <Table label="晋升记录" className="f1-table">
@@ -56,23 +71,24 @@ export function F1PromotionHistory({ ctx, rows, canPromote, onOverride }: { ctx:
         <thead><tr><Th>用户</Th><Th>等级变化</Th><Th>方式</Th><Th>触发原因</Th><Th>时间（{businessZone().label}）</Th></tr></thead>
         <tbody>
           {ctx.f1PromotionError ? <TableMessage columns={5} role="alert">晋升记录读取失败 · {ctx.f1PromotionError}</TableMessage>
-            : records.length === 0 ? ctx.f1PromotionLoading ? <TableLoading columns={5} /> : <TableMessage columns={5}>没有符合条件的晋升记录</TableMessage>
+            : records.length === 0 ? ctx.f1PromotionLoading ? <TableLoading columns={5} /> : hasFilter(applied) ? <TableMessage columns={5}>没有符合条件的晋升记录 <Button size="sm" onClick={() => { setFilters(EMPTY_PROMOTION); setApplied(EMPTY_PROMOTION); void ctx.queryPromotions(EMPTY_PROMOTION); }}>清除筛选</Button></TableMessage>
+              : <TableMessage columns={5}>还没有晋升记录；自动评估和人工调整等级后会各记一条</TableMessage>
               : records.map((record) => (
                 <Tr key={record.id} selected={record.id === openId} onOpen={() => setOpenId(record.id)}>
-                  <Td><Cell main={operatorNicknameText(record.nickname || "—")} sub={`用户 ${record.userId}`} title={record.nickname || undefined} /></Td>
+                  <Td><Cell main={operatorNicknameText(record.nickname || "—")} sub={<span data-mono="">{userCode(record.userId)}</span>} title={record.nickname || undefined} /></Td>
                   <Td><span className="f1-change">{dash(record.fromCode)}<ArrowRight size={13} aria-label="到" />{dash(record.toCode)}</span></Td>
                   <Td><Cell main={record.isManual ? <StatusTag tone="progress" icon={UserCog}>人工</StatusTag> : <StatusTag tone="neutral" icon={Cpu}>自动</StatusTag>}
                     sub={record.isManual ? dash(record.operator) : record.cohort ? `批次 ${record.cohort}` : undefined} /></Td>
-                  <Td grow><Cell main={dash(record.reason)} title={record.reason || undefined} /></Td>
+                  <Td grow><Cell main={reasonText(record.reason)} title={TRIGGER_REASON[record.reason.trim()] ? undefined : record.reason || undefined} /></Td>
                   <Td><Cell main={formatBusinessTimeCompact(record.createdAt, "—")} num /></Td>
                 </Tr>
               ))}
         </tbody>
       </Table>
       {ctx.promotionNextCursor && <div className="f1-more">
-        <Button size="sm" loading={ctx.f1PromotionLoading} onClick={() => void ctx.queryPromotions({ ...filters, cursor: ctx.promotionNextCursor }, true)}>加载更早记录</Button>
+        <Button size="sm" loading={ctx.f1PromotionLoading} onClick={() => void ctx.queryPromotions({ ...applied, userId: teamUserId(applied.userId) ?? applied.userId.trim(), cursor: ctx.promotionNextCursor }, true)}>加载更早记录</Button>
       </div>}
-      <Drawer open={!!current} onClose={() => setOpenId(null)} title="晋升记录" sub={current ? `用户 ${current.userId}` : undefined}
+      <Drawer open={!!current} onClose={() => setOpenId(null)} title="晋升记录" sub={current ? userCode(current.userId) : undefined}
         nav={{ onPrev: () => setOpenId(records[at - 1]?.id ?? null), onNext: () => setOpenId(records[at + 1]?.id ?? null), hasPrev: at > 0, hasNext: at >= 0 && at < records.length - 1 }}>
         {current && <PromotionDetail record={current} />}
       </Drawer>
@@ -85,15 +101,15 @@ function PromotionDetail({ record }: { record: F1PromotionRecord }) {
   const snapshot = snapshotText(record.snapshot);
   return <>
     <KeyValues rows={[
-      { key: "user", label: "用户", value: <>{operatorNicknameText(record.nickname || "—")} · {record.userId}</> },
+      { key: "user", label: "用户", value: <>{operatorNicknameText(record.nickname || "—")} · <span data-mono="">{userCode(record.userId)}</span></> },
       { key: "change", label: "等级变化", value: `${dash(record.fromCode)} → ${dash(record.toCode)}` },
       { key: "way", label: "方式", value: record.isManual ? "人工调整" : "自动评估" },
       { key: "operator", label: "操作人", value: dash(record.operator) },
       { key: "cohort", label: "用户批次", value: dash(record.cohort), explain: "这位用户最近使用的设备批次，不一定是这次晋升当时的批次。" },
-      { key: "reason", label: "触发原因", value: dash(record.reason) },
+      { key: "reason", label: "触发原因", value: reasonText(record.reason), explain: TRIGGER_REASON[record.reason.trim()] ? `系统记录的原因代码 ${record.reason.trim()}` : undefined },
       { key: "event", label: "触发事件", value: dash(record.triggerEventId), mono: !!record.triggerEventId },
       { key: "audit", label: "审计编号", value: dash(record.auditNo), mono: !!record.auditNo },
-      { key: "at", label: `时间（${businessZone().label}）`, value: formatBusinessTimeFull(record.createdAt, "—"), explain: "抽屉里写到秒，方便和操作记录、审计编号逐条对时间。" },
+      { key: "at", label: `时间（${businessZone().label}）`, value: formatBusinessTimeCompact(record.createdAt, "—") },
     ]} />
     <Fold inset title="当时的达标情况" summary={snapshot ? "评估时记下的原始数据" : "没有记录"}>
       {snapshot ? <pre className="f1-json">{snapshot}</pre> : <p className="f1-empty">这条记录没有达标快照。</p>}
@@ -104,8 +120,10 @@ function PromotionDetail({ record }: { record: F1PromotionRecord }) {
 export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm }: {
   ctx: FViewCtx; rows: F1VRankRow[]; canReissue: boolean; canReverse: boolean; openConfirm: (confirm: F1Confirm) => void;
 }) {
-  const [filters, setFilters] = useState({ type: "", v: "", status: "", userId: "" });
+  const [filters, setFilters] = useState(EMPTY_PAYOUT);
+  const [applied, setApplied] = useState(EMPTY_PAYOUT);
   const [openId, setOpenId] = useState<string | null>(null);
+  const clearPayouts = () => { setFilters(EMPTY_PAYOUT); setApplied(EMPTY_PAYOUT); void ctx.queryPayouts(EMPTY_PAYOUT); };
   const set = (key: keyof typeof filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
   const records = ctx.payoutRecords;
   const current = records.find((record) => record.payoutId === openId) ?? null;
@@ -146,11 +164,11 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
       coverageLead: kind === "fund" ? "重发会让平台再付一次这笔钱" : kind === "sku" ? "重发会恢复商品履约，按会让平台多付钱的操作检查"
         : kind === "voucher" ? "重发可能给用户新发一张券，按会让平台多付钱的操作检查" : "按会让平台多付钱的操作检查；这笔实际不会补发",
       coverageCheck: "提交时先检查兑付覆盖率；资金奖励在批准执行时再检查一次。",
-      effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有${action === "reissue" ? "重发" : "冲正"}奖励权限和审批批准权限）在「操作记录与审批」批准后才执行；批准前这笔记录不变。`}>批准后生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后才执行；批准前这笔记录不变。`}>批准后生效</StatusTag>,
       facts: <Facts>
         {kind === "fund" ? <Fact k="奖励" lead tone="role-2" unit={reward.unit}>{reward.main}</Fact> : <Fact k="奖励">{rewardText}</Fact>}
         <Fact k="发放单">{record.payoutId}</Fact>
-        <Fact k="用户">用户 {record.userId} · {dash(record.rankCode)}</Fact>
+        <Fact k="用户">{userCode(record.userId)} · {dash(record.rankCode)}</Fact>
         {action === "reissue" && kind === "fund" && <Fact k="收款人">{record.sponsorUserId ? `邀请人 ${record.sponsorUserId}（原单）` : "用户本人（原单没有邀请人）"}</Fact>}
         <Fact k="状态"><Change from={from} to={action === "reissue" ? "已重发" : "已冲正"} /></Fact>
       </Facts>,
@@ -202,31 +220,33 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
 
   return (
     <>
-      <FilterBar onSubmit={() => void ctx.queryPayouts(filters)} querying={ctx.f1PayoutLoading}
+      <FilterBar onSubmit={() => { setApplied(filters); void ctx.queryPayouts({ ...filters, userId: teamUserId(filters.userId) ?? filters.userId.trim() }); }} querying={ctx.f1PayoutLoading}
+        canClear={hasFilter(filters) || hasFilter(applied)} onClear={clearPayouts}
         more={<FilterField label="奖励类型"><Select aria-label="奖励类型" value={filters.type} onChange={(value) => set("type", value)}
           options={[{ value: "", label: "全部奖励" }, ...PAYOUT_TYPES.map((item) => ({ value: item.value, label: item.label }))]} /></FilterField>}
         moreCount={filters.type ? 1 : 0}>
-        <FilterField><Input aria-label="发放用户编号" value={filters.userId} onChange={(event) => set("userId", event.target.value)} placeholder="用户编号" inputMode="numeric" /></FilterField>
+        <FilterField grow><Input aria-label="发放用户编码或系统编号" value={filters.userId} onChange={(event) => set("userId", event.target.value)} placeholder="用户编码或系统编号" /></FilterField>
         <FilterField><Select aria-label="发放等级" value={filters.v} onChange={(value) => set("v", value)}
           options={[{ value: "", label: "全部等级" }, ...rows.map((row) => ({ value: row.v, label: row.v }))]} /></FilterField>
         <FilterField><Select aria-label="发放状态" value={filters.status} onChange={(value) => set("status", value)}
           options={[{ value: "", label: "全部状态" }, ...Object.entries(PAYOUT_STATUS).map(([value, item]) => ({ value, label: item.label }))]} /></FilterField>
       </FilterBar>
     <Panel title="奖励发放记录" icon={ReceiptText} tone="role-2" flush
-      sub={`当前筛选 ${ctx.payoutTotal.toLocaleString("en-US")} 条`}
+      sub={`${hasFilter(applied) ? "当前筛选" : "共"} ${ctx.payoutTotal.toLocaleString("en-US")} 条`}
       explain="每次有人升级、按模板发出的每一项奖励各一条。已冲正的可以重发，已发放、已重发、待发放的可以冲正，都要提交审批；发放失败的这页没有重试入口。">
       <Table label="奖励发放记录" className="f1-table">
         <colgroup><col className="f1-col-payout" /><col className="f1-col-reward" /><col className="f1-col-status" /><col className="f1-col-time" />{canAct && <col className="f1-col-act" />}</colgroup>
         <thead><tr><Th>发放单</Th><Th>等级 · 奖励</Th><Th>状态</Th><Th>时间（{businessZone().label}）</Th>{canAct && <Th align="right" sticky="end">操作</Th>}</tr></thead>
         <tbody>
           {ctx.f1PayoutError ? <TableMessage columns={cols} role="alert">发放记录读取失败 · {ctx.f1PayoutError}</TableMessage>
-            : records.length === 0 ? ctx.f1PayoutLoading ? <TableLoading columns={cols} /> : <TableMessage columns={cols}>没有符合条件的发放记录</TableMessage>
+            : records.length === 0 ? ctx.f1PayoutLoading ? <TableLoading columns={cols} /> : hasFilter(applied) ? <TableMessage columns={cols}>没有符合条件的发放记录 <Button size="sm" onClick={clearPayouts}>清除筛选</Button></TableMessage>
+              : <TableMessage columns={cols}>还没有发放记录；配了晋级奖励、有人升级后，每一项奖励各记一条</TableMessage>
               : records.map((record) => {
                 const reward = payoutReward(record);
                 const status = PAYOUT_STATUS[record.status];
                 return (
                   <Tr key={record.payoutId} selected={record.payoutId === openId} onOpen={() => setOpenId(record.payoutId)}>
-                    <Td><Cell main={<span data-mono>{record.payoutId}</span>} sub={`用户 ${record.userId}`} /></Td>
+                    <Td><Cell main={<span data-mono>{record.payoutId}</span>} sub={<span data-mono="">{userCode(record.userId)}</span>} /></Td>
                     <Td><Cell main={<span title={reward.raw}>{reward.main}{reward.unit && <small className="f1-unit"> {reward.unit}</small>}</span>} sub={`${dash(record.rankCode)} · ${record.rewardType.toUpperCase() === "USDT" || record.rewardType.toUpperCase() === "UVT" ? "资金" : PAYOUT_TYPES.find((item) => item.value === record.rewardType.toUpperCase())?.label ?? dash(record.rewardType)}`} /></Td>
                     <Td>{status ? <StatusTag tone={status.tone} icon={status.icon}>{status.label}</StatusTag> : <StatusTag tone="warn">状态未知</StatusTag>}</Td>
                     <Td><Cell main={formatBusinessTimeCompact(record.reversedAt || record.grantedAt, "—")} sub={record.reversedAt ? "冲正时间" : record.grantedAt ? "发放时间" : undefined} num /></Td>
@@ -237,7 +257,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
         </tbody>
       </Table>
       {ctx.payoutNextCursor && <div className="f1-more">
-        <Button size="sm" loading={ctx.f1PayoutLoading} onClick={() => void ctx.queryPayouts({ ...filters, cursor: ctx.payoutNextCursor }, true)}>加载更早记录</Button>
+        <Button size="sm" loading={ctx.f1PayoutLoading} onClick={() => void ctx.queryPayouts({ ...applied, userId: teamUserId(applied.userId) ?? applied.userId.trim(), cursor: ctx.payoutNextCursor }, true)}>加载更早记录</Button>
       </div>}
       <Drawer open={!!current} onClose={() => setOpenId(null)} title="奖励发放" sub={current?.payoutId}
         nav={{ onPrev: () => setOpenId(records[at - 1]?.payoutId ?? null), onNext: () => setOpenId(records[at + 1]?.payoutId ?? null), hasPrev: at > 0, hasNext: at >= 0 && at < records.length - 1 }}
@@ -256,15 +276,15 @@ function PayoutDetail({ record }: { record: F1RewardPayout }) {
     { key: "reward", label: "奖励", value: <span title={reward.raw}>{reward.main}{reward.unit && ` ${reward.unit}`}</span> },
     { key: "status", label: "状态", value: status ? <StatusTag tone={status.tone} icon={status.icon}>{status.label}</StatusTag> : "状态未知",
       explain: record.status === "FAILED" ? "发放失败的这页没有重试入口。" : undefined },
-    { key: "user", label: "用户", value: record.userId },
+    { key: "user", label: "用户", value: userCode(record.userId), mono: true },
     { key: "rank", label: "等级", value: dash(record.rankCode) },
-    { key: "sponsor", label: "邀请人", value: dash(record.sponsorUserId), explain: "UVT 奖励默认发给邀请人；没有邀请人时发给本人。" },
+    { key: "sponsor", label: "邀请人", value: dash(record.sponsorUserId), explain: "晋级 UVT 发给本人；以前的记录可能发给了邀请人。" },
     { key: "bill", label: "账单", value: dash(record.billId), mono: !!record.billId },
     { key: "event", label: "奖励记录", value: dash(record.commissionEventId), mono: !!record.commissionEventId, explain: "资金奖励对应的奖励记录；券、商品、自定义奖品没有。" },
     { key: "trigger", label: "触发事件", value: dash(record.triggerEventId), mono: !!record.triggerEventId },
     { key: "operator", label: "操作人", value: dash(record.operator) },
     { key: "reason", label: "原因", value: dash(record.reason) },
-    { key: "granted", label: `发放时间（${businessZone().label}）`, value: formatBusinessTimeFull(record.grantedAt, "—"), explain: "抽屉里写到秒，方便和账单、奖励记录逐条对时间。" },
-    { key: "reversed", label: `冲正时间（${businessZone().label}）`, value: formatBusinessTimeFull(record.reversedAt, "—") },
+    { key: "granted", label: `发放时间（${businessZone().label}）`, value: formatBusinessTimeCompact(record.grantedAt, "—") },
+    { key: "reversed", label: `冲正时间（${businessZone().label}）`, value: formatBusinessTimeCompact(record.reversedAt, "—") },
   ]} />;
 }

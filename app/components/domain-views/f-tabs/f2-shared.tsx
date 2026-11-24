@@ -9,8 +9,8 @@ import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { FViewCtx } from "./types";
-import { ColumnChart, Fact, Facts, Change } from "@/app/components/rd";
-import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
+import { ColumnChart, Explain, Fact, Facts, Change } from "@/app/components/rd";
+import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type IconName, type OperatorBriefKind } from "../design-kit";
 import { F2_DEPTH_GATE_LAYERS } from "@/lib/admin/f2-depth-gate";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { F2UnilevelRate } from "@/lib/admin/f1-client";
@@ -44,6 +44,15 @@ export function configuredValue(raw: string | undefined) {
   return value === "__UNCONFIGURED__" ? "" : value;
 }
 
+export function layerPauseState(raw: string | undefined): "on" | "off" | "unset" | "invalid" {
+  const flag = raw?.toLowerCase();
+  const configured = configuredValue(raw);
+  // Match UnilevelCommissionService.isLayerPaused, which trims only the numeric flag.
+  if (flag === "true" || flag === "on" || configured === "1") return "on";
+  if (configured === "off") return "off";
+  return configured ? "invalid" : "unset";
+}
+
 /** 去掉末尾补的 0，不舍入真实小数位；千分位只加在整数部分。 */
 export function num(value: number | string | null, minDecimals = 0) {
   if (value === null) return "—";
@@ -54,6 +63,34 @@ export function num(value: number | string | null, minDecimals = 0) {
   return decimals ? `${grouped}.${decimals}` : grouped;
 }
 
+/** 第 1、2 层是不是按受益人等级取比例（F2-RANK-WIRE：判定由逻辑项按回包设）。 */
+export const f2Ranked = (ctx: FViewCtx) => ctx.f2PurchaseBaseRateSource === "BENEFICIARY_RANK";
+
+/** 两个百分数字符串相加（按 4 位小数算，不出浮点尾巴）。 */
+export function pctAdd(a: string, b: string) {
+  const units = (value: string) => { const [whole, fraction = ""] = value.split("."); return Number(whole) * 10000 + Number(fraction.padEnd(4, "0").slice(0, 4)); };
+  const total = units(a) + units(b);
+  const whole = Math.floor(total / 10000), fraction = String(total % 10000).padStart(4, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : String(whole);
+}
+/** 百分数乘示例订单（1,000 USDT）分到多少 USDT：小数点右移一位，不走浮点。 */
+export function pctSample(pct: string) {
+  const [whole, fraction = ""] = pctAdd(pct, "0").split(".");
+  const shifted = `${whole}${fraction[0] ?? "0"}`.replace(/^0+(?=\d)/, "");
+  const rest = fraction.slice(1);
+  return rest ? `${shifted}.${rest}` : shifted;
+}
+
+/** 第 1、2 层按等级时：这一层的一段比例（九级最低到最高）；读不到时 null。 */
+export function rankedRange(ctx: FViewCtx, level: Layer) {
+  const range = ctx.f2RankPurchaseRange;
+  if (!range || (level !== "L1" && level !== "L2")) return null;
+  return level === "L1" ? range.l1 : range.l2;
+}
+/** 一段数：百分比写「4%–8%」，金额写「40–80 USDT」；两头一样只写一个。 */
+export const rangeText = (low: string, high: string, unit: "%" | "USDT" = "%") => low === high ? (unit === "%" ? `${num(low)}%` : `${num(low)} USDT`)
+  : unit === "%" ? `${num(low)}%–${num(high)}%` : `${num(low)}–${num(high)} USDT`;
+
 /** 示例订单里这一层按比例分到多少 USDT。 */
 export const sampleUsdt = (pct: number | null) => pct === null ? null : SAMPLE_ORDER * pct / 100;
 
@@ -62,7 +99,7 @@ export function layerRate(rates: F2UnilevelRate[], level: Layer) {
 }
 
 /** 七层按比例的对比柱图：确认框里看「现在」和「改后」每层各占订单多少。 */
-export function LayerCompare({ rates, level, next, field }: { rates: F2UnilevelRate[]; level: Layer; next: number | null; field: "usdt" | "nex" }) {
+export function LayerCompare({ rates, level, next, field, ranked }: { rates: F2UnilevelRate[]; level: Layer; next: number | null; field: "usdt" | "nex"; ranked?: boolean }) {
   const data = LAYERS.flatMap((layer) => {
     const row = layerRate(rates, layer);
     const before = row ? (field === "usdt" ? row.usdt : row.usdt === null || row.nex === null ? null : sampleUsdt(row.usdt)! * row.nex) : null;
@@ -72,7 +109,8 @@ export function LayerCompare({ rates, level, next, field }: { rates: F2UnilevelR
   const unit = field === "usdt" ? "%" : " UVT";
   return (
     <div className="f2-compare">
-      <p className="f2-compare-title">{field === "usdt" ? "每层占订单的比例" : `示例 ${num(SAMPLE_ORDER)} USDT 订单每层另发的 UVT`}</p>
+      <p className="f2-compare-title">{field === "usdt" ? ranked ? "第 3–7 层占订单的比例" : "每层占订单的比例" : ranked ? "第 3–7 层另发的 UVT（示例订单）" : `示例 ${num(SAMPLE_ORDER)} USDT 订单每层另发的 UVT`}
+        {ranked && <Explain label="图里有哪几层" content="第 1、2 层按受益人等级取比例，不在图里。" />}</p>
       <ColumnChart label={field === "usdt" ? "七层比例：现在和改后" : "七层另发 UVT：现在和改后"} height={120}
         series={[{ label: "现在", slot: "other" }, { label: "改后", slot: 4 }]}
         format={(value) => `${num(value)}${unit}`} data={data} />
@@ -102,7 +140,7 @@ export type F2Confirm = {
   briefKind: OperatorBriefKind;
   amplify: boolean;
   detail: ReactNode;
-  completionCopy: string;
+  completionCopy?: string;
   coverageCheck: string;
   coverageLead?: ReactNode;
   edit?: EditSpec;
@@ -113,6 +151,10 @@ export type F2Confirm = {
   confirmTone?: "primary" | "danger";
   confirmLabel?: string;
   effect?: ReactNode;
+  /** 标题前的图标；不传时照共用确认框的默认（VS-101）。 */
+  icon?: IconName;
+  /** 弹窗外层类名：f2-confirm 时事实块两项一行（DT-27）。 */
+  dialogClassName?: string;
   /** 原来的提交路径：外壳的写函数，原样调用。 */
   submit: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => Promise<void>;
   /** 提交成功后的提示；不传就不提示（提交函数自己提示了）。 */
@@ -121,33 +163,45 @@ export type F2Confirm = {
 
 /** 本页确认框。提交走 submit，失败交还给框（框里留着输入、显示原因或结果未知）。 */
 export function F2ConfirmModal({ spec, ctx, coverage, onClose, toast }: { spec: F2Confirm; ctx: FViewCtx; coverage?: { coverageRatio: number; redlinePct: number }; onClose: () => void; toast: (message: string) => void }) {
+  const original = ctx.f2ProposalRecord(spec.slot);
+  const recovering = !!original && !original.ticket;
   return (
     <OperationConfirmModal briefKind={spec.briefKind} action={spec.action} title={spec.title} detail={spec.detail}
       amplifies={spec.amplify} coverage={coverage} edit={spec.edit} businessForm={spec.businessForm}
-      facts={spec.facts} content={spec.content} statedBrief={spec.statedBrief} effect={spec.effect}
+      facts={spec.facts} content={spec.content} statedBrief={spec.statedBrief} effect={spec.effect} icon={spec.icon} className={spec.dialogClassName}
       completionCopy={spec.completionCopy} coverageCheck={spec.coverageCheck} coverageLead={spec.coverageLead}
       confirmTone={spec.confirmTone} confirmLabel={spec.confirmLabel ?? "提交审批"} reasonPlaceholder="例如：工单号、调整依据"
       getPendingReason={() => {
         const original = ctx.f2ProposalRecord(spec.slot);
         return original && !original.ticket ? original.spec.reason : undefined;
       }}
-      blockedReason={(() => {
-        const original = ctx.f2ProposalRecord(spec.slot);
-        return original && !original.ticket ? original.canRetry ? undefined : "上一次申请结果未知，先按原请求重试或去核对" : ctx.f2WriteBlocked(spec.slot);
-      })()}
+      blockedReason={recovering ? undefined : ctx.f2WriteBlocked(spec.slot)}
+      inlineApproval={{
+        resolve: () => undefined,
+        pending: recovering,
+        initialRecovery: original?.canRetry ? "retry" : "lookup",
+        queryOnly: recovering && !original.canRetry,
+        expired: recovering && original.expiresAt <= Date.now(),
+        expiredRequestRecovery: recovering && original.expiresAt <= Date.now() ? "query" : undefined,
+        recover: async () => {
+          if (!ctx.f2ProposalRecord(spec.slot)?.canQuery) throw new Error("当前账号没有查询原结果的权限。");
+          const ticket = await ctx.queryF2Proposal(spec.slot);
+          if (ticket) onClose();
+          return !!ticket;
+        },
+        retry: async () => { await ctx.retryF2Proposal(spec.slot); onClose(); },
+      }}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {
-        const original = ctx.f2ProposalRecord(spec.slot);
         try {
-          if (original && !original.ticket) await ctx.retryF2Proposal(spec.slot);
-          else await spec.submit(reason, newValue, businessValue);
+          await spec.submit(reason, newValue, businessValue);
         } catch (error) {
-          if (isA2OutcomeUncertainError(error)) throw new Error(displayAdminError("F2_PROPOSAL_OUTCOME_UNKNOWN"));
+          if (isA2OutcomeUncertainError(error)) throw new Error("申请结果未知，请先查询原结果。");
           // Keep the reviewed input and the actual rejection on this F2 surface.
           if (isPermissionDenied(error)) throw new Error(`提交失败：${displayAdminError(error)}`);
           throw error;
         }
-        if (!original && spec.done) toast(spec.done);
+        if (spec.done) toast(spec.done);
         onClose();
       }} />
   );

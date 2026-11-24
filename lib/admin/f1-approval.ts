@@ -29,11 +29,31 @@ export function f1ProposalAuthority(spec: ProposeSpec) {
   return spec.obj === "F.vrank.permanent" ? "network_f1_permanent_protection" : "network_f1_write";
 }
 
+export function isV8Promotion(spec: ProposeSpec | undefined) {
+  return spec?.command.op === "f_vrank_override" && spec.command.params.targetV === "V8" && spec.command.params.direction === "promote";
+}
+
+export function canSendF1Proposal(spec: ProposeSpec, authorities: readonly string[]) {
+  return authorities.includes(f1ProposalAuthority(spec))
+    && (spec.command.op === "f1_rank_policy_change" || authorities.includes("platform_a2_write")
+      || !isV8Promotion(spec) && authorities.includes("platform_a2_proposal_create"));
+}
+
+export const F1_PROPOSAL_LOOKUP_FIRST = "结果未知，可能已经建了审批单。请先查询原结果。";
+
+export function withF1ProposalLookupCopy(error: A2OutcomeUncertainError, copy = F1_PROPOSAL_LOOKUP_FIRST) {
+  return Object.assign(error, { message: copy, confirmCopy: copy });
+}
+
+function f1ProposalLookupError(copy: string, commandKey: string) {
+  return withF1ProposalLookupCopy(new A2OutcomeUncertainError(copy, commandKey), copy);
+}
+
 function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
   // 111e00cd OpsAuditCenterService.ticketMetadata returns command.op for F tickets.
   // Descriptors replace action/before/after; they are not request identity fields.
   if (!ticket.mine || !original.spec || ticket.obj !== original.spec.obj || ticket.operationCode !== original.spec.command.op) {
-    throw new A2OutcomeUncertainError("原审批单与保存的操作对不上，请到操作记录核对。", original.commandKey);
+    throw f1ProposalLookupError("原审批单与保存的操作对不上，请到操作记录核对。", original.commandKey);
   }
 }
 
@@ -43,7 +63,7 @@ export async function queryF1Proposal(adminId: number, original: FDomainAttempt)
   fCommands.remember(original.fingerprint, original.commandKey, { ...original, absent: false });
   const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
   if (!ticket) {
-    if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
+    if (original.received || original.ticket) throw f1ProposalLookupError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
     fCommands.remember(original.fingerprint, original.commandKey, { ...original, ticket: undefined, absent: true });
     return null;
   }
@@ -58,11 +78,10 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
   const current = actor(adminId);
   let original = listF1Proposals(adminId).find(row => row.fingerprint === slot);
   const recovering = !spec;
-  if (spec && original) throw new A2OutcomeUncertainError("请先查询保存的原操作。", original.commandKey);
+  if (spec && original) throw f1ProposalLookupError("请先查询保存的原操作。", original.commandKey);
   const intent = spec ?? original?.spec;
   if (!intent) throw new Error("原操作没有完整请求，请到操作记录核对。");
-  if (!current.authorities.includes(f1ProposalAuthority(intent))
-      || !current.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create")) throw new Error("ADMIN_PERMISSION_DENIED");
+  if (!canSendF1Proposal(intent, current.authorities)) throw new Error("ADMIN_PERMISSION_DENIED");
   if (!original) {
     const request = {
       action: intent.action, obj: intent.obj, beforeValue: intent.before, afterValue: intent.after,
@@ -78,12 +97,15 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
       throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
   }
+  if (recovering && !original.received && !original.ticket && original.absent !== true) {
+    throw new Error("请先查询原操作，确认查不到后再按原请求重试。");
+  }
   if (original.received || original.ticket) {
     const latest = await queryF1Proposal(adminId, original);
-    if (!latest) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
+    if (!latest) throw f1ProposalLookupError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
     return latest;
   }
-  if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
+  if (isRetryExpired(original)) throw f1ProposalLookupError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !fCommands.isDurablyStored(slot, original.commandKey)) throw new Error("原操作没有完整的持久记录，请到操作记录核对。");
   original.absent = false;
   fCommands.remember(slot, original.commandKey, original);
@@ -93,14 +115,14 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
     const failure = error as { httpStatus?: number; apiCode?: number };
     if (recovering || isF1PayoutSlot(slot) ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
         && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) fCommands.forget(slot, original.commandKey);
-    throw error;
+    throw isA2OutcomeUncertainError(error) ? withF1ProposalLookupCopy(error) : error;
   }
   fCommands.remember(slot, original.commandKey, { ...original, received: true, ticket: undefined, absent: false });
   checkTicket(original, ticket);
   // A POST replay returns the old receipt, never the current approval status.
   if (recovering) {
     const latest = await queryF1Proposal(adminId, { ...original, received: true });
-    if (!latest) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
+    if (!latest) throw f1ProposalLookupError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
     return latest;
   }
   fCommands.remember(slot, original.commandKey, { ...original, received: true, ticket, absent: false });
@@ -109,7 +131,7 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
 
 /** Call only from an explicit confirmation surface (R1-提案过期). */
 export async function releaseF1Proposal(adminId: number, original: FDomainAttempt) {
-  if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
+  if (original.received || original.ticket) throw f1ProposalLookupError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
   if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
   const ticket = await queryF1Proposal(adminId, original);
   if (ticket?.status === "pending") throw new Error("这张申请仍在等待审批。");

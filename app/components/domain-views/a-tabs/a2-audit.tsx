@@ -12,7 +12,7 @@ import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
 import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
-import { F2BootstrapReview, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
+import { F2BootstrapReview, f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_CLAWBACK, F1_VOUCHER_REVERSE_KEEP } from "@/lib/admin/config-help/f1-voucher";
@@ -643,8 +643,8 @@ function logDeltaText(delta: string) {
 }
 
 /** 动作名的显示：认得出的写中文；没收录的动作码写「未识别的操作」，原码在抽屉的技术信息里；本来就是中文的照写。 */
-function logActionShown(code: string) {
-  const text = logActionText(code);
+function logActionShown({ action: code, actionLabel }: A2AuditLogRow) {
+  const text = actionLabel ?? logActionText(code);
   return text === code && /^[A-Za-z][\w.:-]*$/.test(code) && /[_.:]|[a-z][A-Z]/.test(code) ? { text: "未识别的操作", raw: code } : { text };
 }
 
@@ -912,8 +912,9 @@ const CHANGE_LABELS: Record<string, string> = {
   activeDirectMin: "最低有效直接邀请", teamComputePointsMin: "最低团队算力点",
   enforce: "启用限制", quotaCap: "总配额", quotaSold: "已用配额", quotaPeriod: "配额周期",
   ranks: "会员等级", rankCode: "等级", titleCn: "中文头衔", titleEn: "英文头衔",
-  selfComputePoints: "自购算力点", directRefs: "直接邀请人数", teamComputePoints: "团队算力点",
-  requiredDownlineRank: "分支最低等级", requiredDownlineCount: "达标分支数", unilevelDepth: "团队购买奖励范围",
+  selfComputePoints: "自购算力点", directRefs: "一二级已购人数", teamComputePoints: "团队算力点",
+  requiredDownlineRank: "下级领导者最低等级", requiredDownlineCount: "下级领导者人数", unilevelDepth: "团队购买奖励范围",
+  purchaseL1Rate: "一级好友购买奖励比例", purchaseL2Rate: "二级好友购买奖励比例", monthlySalaryUsdt: "月薪（USDT）",
   peerBonusRate: "同级奖比例", leadershipVotes: "团队激励池票数", rewards: "晋升奖励",
 };
 // Only these three reward contracts override the shared product-field vocabulary.
@@ -2427,7 +2428,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           : w.type === "sos" ? "核对值班授权、影响范围和恢复条件，理由写清依据或工单号。"
             : i5Publish || w.operationCode === "i5_matrix_configure" ? "核对这次披露改了什么，理由写清版本依据。"
             : "核对修改前后的值和影响范围，理由写清依据或工单号。";
-    const amplifies = w.amplifies && !w.coverageCheckOnApproval;
+    // Older PC tickets marked every promotion as amplifying. V8 is the highest target,
+    // and the backend skips coverage for the promotion even on those retained tickets.
+    const v8Approval = w.operationCode === "f_vrank_override" && w.after.trim() === "V8";
+    const amplifies = w.amplifies && !w.coverageCheckOnApproval && !v8Approval;
     const k1 = k1TicketView(w);
     const k1Spec: FundSpec | undefined = k1 && (k1.kind === "release" ? {
       irreversible: true,
@@ -2450,6 +2454,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     });
     // F2 首次配置：七层逐行列出后端写在单上的数，不显示原文的修改前后。
     const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
+    const rankedBootstrap = f2BootstrapUsesRank(boot?.[0]?.usdtPct, boot?.[1]?.usdtPct);
     const bootSpec: FundSpec | undefined = boot && {
       irreversible: false,
       impact: "批准后七层规则一次建好；整体结算不会自动启用。",
@@ -2458,8 +2463,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       coverageLead: "启用结算后，平台按这些比例付团队奖励",
       coverageUnknown: "启用结算后，平台按这些比例付团队奖励；兑付覆盖率暂时读不到",
       coverageCheck: "批准时先查兑付覆盖率：低于红线就不建规则，审批单留着待审批。",
-      facts: <><Fact k="要建立">L1–L7 七层规则</Fact><Fact k="七层合计占订单">{`${f2PctSum(boot.map((row) => row.usdtPct))}%`}</Fact><Fact k="整体结算">不会自动启用，要另外申请</Fact></>,
-      extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" />,
+      facts: <><Fact k="要建立">L1–L7 七层规则</Fact><Fact k="七层合计占订单">{rankedBootstrap ? "第 1、2 层按受益人等级" : `${f2PctSum(boot.map((row) => row.usdtPct))}%`}</Fact><Fact k="整体结算">不会自动启用，要另外申请</Fact></>,
+      extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" ranked={rankedBootstrap ? null : undefined} />,
     };
     const fund = fundSpec(w) ?? k1Spec ?? bootSpec;
     const belowRedline = !!coverage && coverage.coverageRatio < coverage.redlinePct;
@@ -2898,7 +2903,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const k1 = k1TicketView(w);
                   const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
                   const mission = h3MissionView(w);
-                  const change = mission ? { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建" } : boot ? { main: `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? fBatchCell(batch.items, batch.count)
+                  const change = mission ? { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建" } : boot ? { main: f2BootstrapUsesRank(boot[0].usdtPct, boot[1].usdtPct) ? "第 1、2 层按受益人等级" : `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? fBatchCell(batch.items, batch.count)
                     : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w), a2TicketKey(w));
                   const name = actionName(w);
                   return (
@@ -2982,7 +2987,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     {hasApplied ? <>当前筛选下暂无操作记录 <Button size="sm" onClick={clearFilter}>清除筛选</Button></> : "暂无操作记录"}
                   </TableMessage>
                 ) : logPageRows.map((l) => {
-                  const act = logActionShown(l.action);
+                  const act = logActionShown(l);
                   const obj = logObject(l);
                   const e1Approved = e1ApprovedLog(l, e1Proposals);
                   const e1Sides = e1SkuLogSides(l) ?? e1Approved?.sides;
@@ -3219,7 +3224,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             </section>
             : shownBoot ? <section className="a2-change-review" aria-label="完整变更内容">
               <div className="a2-change-title">完整变更内容 · 七层<Explain label="技术信息" content={`修改前原文 ${shown.before || "—"} ｜ 修改后原文 ${shown.after}`} /></div>
-              <F2BootstrapReview rows={shownBoot} label="要建立的七层规则" />
+              <F2BootstrapReview rows={shownBoot} label="要建立的七层规则" ranked={f2BootstrapUsesRank(shownBoot[0].usdtPct, shownBoot[1].usdtPct) ? null : undefined} />
             </section>
             : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)
@@ -3241,7 +3246,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         nav={{ hasPrev: logIndex > 0, hasNext: logIndex >= 0 && logIndex < logPageRows.length - 1, onPrev: () => { if (logIndex > 0) setLogId(logPageRows[logIndex - 1].id); }, onNext: () => { if (logIndex >= 0 && logPageRows[logIndex + 1]) setLogId(logPageRows[logIndex + 1].id); } }}>
         {shownLog && <>
           <JudgmentPoints rows={[
-            { label: "动作", value: logActionShown(shownLog.action).text },
+            { label: "动作", value: logActionShown(shownLog).text },
             { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: logRoleText(shownLog.role) ? `${shownLog.actor} · ${logRoleText(shownLog.role)}` : shownLog.actor },
             // 对象是「类型 · 编号」，编号可能是整串 UUID：不用不换行的 a2-code，在「·」后面折行，不把抽屉撑出横向滚动。
             { label: "对象", value: F_BATCH_DIGEST.test(shownLog.obj) || fBatchLogItems(shownLog) ? "整批调整的团队参数" : [shownLogObject?.kind, shownLogObject?.id].filter(Boolean).join(" · ") },
@@ -3256,7 +3261,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <Fact k="IP"><span data-mono>{shownLog.ip}</span></Fact>
               <Fact k="请求编号"><span data-mono>{requestNo}</span></Fact>
               {/* 没翻成中文时「动作」已经是原码，不再写一遍（建议 8）。 */}
-              {logActionText(shownLog.action) !== shownLog.action || logActionShown(shownLog.action).raw ? <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact> : null}
+              {logActionShown(shownLog).text !== shownLog.action || logActionShown(shownLog).raw ? <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact> : null}
               {shownLogObject?.raw && !F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象原文"><span data-mono className="a2-long-code">{shownLogObject.raw}</span></Fact>}
               <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
               {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象摘要"><span data-mono>{shownLog.obj}</span></Fact>}

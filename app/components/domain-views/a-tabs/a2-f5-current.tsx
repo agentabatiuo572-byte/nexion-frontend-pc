@@ -66,6 +66,22 @@ const money = (record: F5CommissionRecord) => `${amountText(record.amount)} ${re
 const groupMoney = (record: F5CommissionRecord) => isFriend(record) && record.amountUSDT !== undefined && record.amountNEX !== undefined
   ? `整组 ${amountText(record.amountUSDT)} USDT + ${amountText(record.amountNEX)} UVT` : undefined;
 
+/** 冲正后余额不够时，已扣回和待追回各多少（等级月薪和结算组奖励才有，后端原值，不舍入）。 */
+function recoveryText(record: F5CommissionRecord) {
+  if (record.recoveredAmount === undefined && record.pendingRecoveryAmount === undefined) return undefined;
+  return `已扣回 ${record.recoveredAmount === undefined ? "—" : amountText(record.recoveredAmount)} · 待追回 ${record.pendingRecoveryAmount === undefined ? "—" : amountText(record.pendingRecoveryAmount)} ${record.currency}`;
+}
+
+/** F5 详情抽屉用：打开时按记录号重读这笔现在的已扣回、待追回；读不到时写原因并给重试。 */
+export function F5RecoveryAmounts({ id }: { id: string }) {
+  const [now] = useF5Current([id]);
+  useEffect(() => { readF5Current([id], true); }, [id]);
+  if (now.state === "loading") return <span className="rd-note">正在加载已扣回和待追回…</span>;
+  if (now.state === "missing") return <span>已扣回和待追回读不到：按记录号没有找到这笔</span>;
+  if (isUnread(now)) return <span>已扣回和待追回读不到：{UNREAD_TEXT[now.state]}{now.state === "failed" && <> {retry([id])}</>}</span>;
+  return recoveryText(now.record) ?? "已扣回和待追回：系统没有给出";
+}
+
 /** 一笔奖励现在的样子：金额、类型、用户一行，状态和「现在读到的」一行。 */
 function currentNode(now: F5Current, id: string): ReactNode {
   if (now.state === "loading") return <span className="a2-f5-now"><span className="rd-note">正在加载…</span></span>;
@@ -78,6 +94,7 @@ function currentNode(now: F5Current, id: string): ReactNode {
   return <span className="a2-f5-now">
     <span><span className="a2-amount">{money(record)}</span> · {KIND_LABELS[record.kind] ?? "未知奖励类型"} · 用户 <span data-mono className="a2-code">{record.user}</span></span>
     {group && <span className="a2-f5-sub">{group}</span>}
+    {recoveryText(record) && <span className="a2-f5-sub">{recoveryText(record)}</span>}
     <span className="a2-f5-sub"><StatusBadge status={record.status} explain={false} />{NOW_NOTE}</span>
   </span>;
 }
