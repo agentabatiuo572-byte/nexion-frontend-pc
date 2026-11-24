@@ -1,4 +1,4 @@
-import { supportRequest, supportObject as obj, parseSupportId as id, parseSupportCount as count, parseSupportPage as page, supportJson as json, supportQuery as query, parseSupportTime as time, supportWireId } from "./m-support-client.ts";
+import { supportClient, supportRequest, type SupportCustomerDetail, supportObject as obj, parseSupportId as id, parseSupportCount as count, parseSupportPage as page, supportJson as json, supportQuery as query, parseSupportTime as time, supportWireId } from "./m-support-client.ts";
 import { parseSupportCustomerStatistics, type SupportCustomerStatistics } from "./support-analytics-client.ts";
 import { parseSupportInvitationInviterDetail, type SupportInvitationInviterDetail } from "./invitation-read-contract.ts";
 export type SupportGroup = { status: "READY" | "UNKNOWN" | "FORBIDDEN" | "ERROR"; data: Record<string, unknown> | null; evaluatedAt: string };
@@ -8,6 +8,7 @@ export type SupportProfile = Record<"finance" | "devices" | "risk" | "annotation
   statistics: Omit<SupportGroup, "data"> & { data: SupportCustomerStatistics | null };
   actions: Record<string, { allowed: boolean }>;
 };
+export type SupportCustomerDetailWithProfile = Omit<SupportCustomerDetail, "profile"> & { profile?: SupportProfile };
 export type SupportKind = "TEXT" | "IMAGE" | "SKU" | "LINK";
 export type SupportLink = { type: "HOME" | "WALLET" | "SUPPORT"; params: Record<string, never> };
 export type BulkFilters = { accountState?: string; maintenanceState?: string; level?: string; tagIds?: string[]; registeredFrom?: string; registeredTo?: string; activityFrom?: string; activityTo?: string; depositMin?: string; depositMax?: string; withdrawalMin?: string; withdrawalMax?: string; currency?: string; includeUnknown?: boolean; keyword?: string };
@@ -113,6 +114,10 @@ export function parseRandomResult(v: unknown): RandomResult { const r = obj(v, "
 const bulk = "/support-workbench/bulk";
 const customer = (customerId: string) => `/support-workbench/customers/${id(customerId, "customer")}`;
 export const supportEnhancements = {
+  customerDetail: async (customerId: string): Promise<SupportCustomerDetailWithProfile> => {
+    const { profile, ...detail } = await supportClient.customerDetail(customerId);
+    return profile === undefined ? detail : { ...detail, profile: parseSupportProfile({ profile }) };
+  },
   profile: (customerId: string, signal?: AbortSignal) => supportRequest(`${customer(customerId)}/360`, parseSupportProfile, { signal }),
   devices: (customerId: string, pageNum: number, signal?: AbortSignal) => supportRequest(`${customer(customerId)}/devices${query({ pageNum, pageSize: 10 })}`, parseSupportGroup, { signal }),
   flows: (customerId: string, filters: { pageNum: number; currency?: string; status?: string; from?: string; to?: string }, signal?: AbortSignal) => supportRequest(`${customer(customerId)}/flows${query({ ...filters, pageSize: 10 })}`, parseSupportGroup, { signal }),

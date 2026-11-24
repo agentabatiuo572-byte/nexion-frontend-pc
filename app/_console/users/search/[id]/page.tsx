@@ -68,9 +68,8 @@ import {
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
 import { RecoveryPanel, SETTLED_REJECTED, receiptExplain, receiptFact, receiptRejected, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
-import { COUNT_LABELS, COUNTS_RULE, CountsExplain, CountsNotice, INVITER_SCOPE_NOTE, InviterValue, countText, type CountsView } from "@/app/components/invitation/invitation-view";
-import { inviterView, referralCountsView } from "@/app/components/invitation/wiring";
-import { fixtureCounts, fixtureInviter, inviteFixture } from "@/app/components/invitation/invite-fixture";
+import { COUNT_LABELS, COUNTS_RULE, CountsExplain, CountsNotice, InviterValue, countText, type CountsView } from "@/app/components/invitation/invitation-view";
+import { inviterDetailView, referralCountsView } from "@/app/components/invitation/wiring";
 
 /**
  * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、回收并记录置换和回收）共用一张表，槽位分命名空间。
@@ -285,8 +284,8 @@ function sectionFailed(section: User360Section | null | undefined) {
   return ["ERROR", "UNKNOWN", "UNAVAILABLE"].includes(asText(section?.sourceStatus, "READY").toUpperCase());
 }
 
-function teamSectionHeading() {
-  return document.getElementById("section-team")?.querySelector<HTMLElement>(":scope > details > summary");
+function referralHeading() {
+  return document.getElementById("hub-referral")?.querySelector<HTMLElement>(":scope > details > summary");
 }
 
 function auditDetail(row: JsonRecord) {
@@ -584,17 +583,17 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
 }) {
   if (!section) return null;
   const failed = !!failure || !!forceFailed || sectionFailed(section);
-  const body = failure
+  const body = loading
+    ? <BlockState state="loading" compact title={loading} />
+    : failure
     ? <BlockState state="error" compact title={failure} />
     : forceFailed || sectionFailed(section)
       ? <BlockState state="error" compact title={`${title}加载失败`} detail={sectionRetry?.detail}
           onRetry={sectionRetry?.onRetry ?? (() => window.location.reload())} retrying={sectionRetry?.retrying} />
-      : loading
-        ? <BlockState state="loading" compact title={loading} />
-        : <div className="rd-detail-block">{children}</div>;
+      : <div className="rd-detail-block">{children}</div>;
   return (
     <div id={id} className="rd-detail-block">
-      <Fold inset title={title} explain={explain} actions={actions} alert={failed || !!issue} alertTone={failed ? "danger" : issueTone} {...disclosure} summary={failed ? "加载失败" : loading ? "正在加载…" : issue ?? sub ?? disclosure?.summary ?? summary}>{body}</Fold>
+      <Fold inset title={title} explain={explain} actions={actions} alert={failed || !!issue} alertTone={failed ? "danger" : issueTone} {...disclosure} summary={loading ? "正在加载…" : failed ? "加载失败" : issue ?? sub ?? disclosure?.summary ?? summary}>{body}</Fold>
     </div>
   );
 }
@@ -692,12 +691,15 @@ export default function UserDetailPage() {
   /** 最近一次读用户资料是否被拒（403 等）：写成功后回读失败时，提示要按页面实际给的入口写。 */
   const readDenied = useRef(false);
   const referralRequest = useRef<AbortController | null>(null);
-  const teamHeadingTopBeforeRetry = useRef<number | null>(null);
+  const referralTopBeforeRetry = useRef<number | null>(null);
   const [referralRetrying, setReferralRetrying] = useState(false);
   const [referralError, setReferralError] = useState<string | null>(null);
   const [readAt, setReadAt] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
   const [actionPending, setActionPending] = useState<string | null>(null);
+  const [paymentWriteBusy, setPaymentWriteBusy] = useState(false);
+  const [notificationWriteBusy, setNotificationWriteBusy] = useState(false);
+  const writeBusy = actionPending !== null || paymentWriteBusy || notificationWriteBusy;
   const [paymentMethods, setPaymentMethods] = useState<UserPaymentMethodPage | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [includeUnbound, setIncludeUnbound] = useState(false);
@@ -822,32 +824,31 @@ export default function UserDetailPage() {
   }, [userKey, readKey, readProfile, denialMessage, denyRead, resetReferralRetry]);
 
   const retryReferral = async () => {
-    if (loading || actionPending || referralRequest.current || loadedKey.current !== readKey) return;
+    if (loading || writeBusy || referralRequest.current || loadedKey.current !== readKey) return;
     const controller = new AbortController();
     referralRequest.current = controller;
     const generation = requestGeneration.current;
     const active = () => generation === requestGeneration.current && currentReadKey.current === readKey && !controller.signal.aborted;
+    // Keep folds that were open or closed by default before replacing the data.
+    setOpenFolds(current => ({
+      security: securityAlert || securityFailed,
+      funds: fundsFailed || fundsAlert,
+      devices: devicesFailed || devicesAlert,
+      team: teamFailed || countsAlert,
+      records: recordsAlert || recordsFailed,
+      ...current,
+    }));
+    setOpenRecordList(current => current === undefined ? visibleRecordList : current);
     setReferralRetrying(true);
     try {
       const next = await readProfile(controller.signal);
       if (!active()) return;
-      teamHeadingTopBeforeRetry.current = teamSectionHeading()?.getBoundingClientRect().top ?? null;
-      // Keep folds that were open or closed by default before replacing the data.
-      setOpenFolds(current => ({
-        security: securityAlert || securityFailed,
-        funds: fundsFailed || fundsAlert,
-        devices: devicesFailed || devicesAlert,
-        team: teamFailed,
-        records: recordsAlert || recordsFailed,
-        ...current,
-      }));
-      setOpenRecordList(current => current === undefined ? visibleRecordList : current);
+      referralTopBeforeRetry.current = referralHeading()?.getBoundingClientRect().top ?? null;
       setActionConfirm(null);
       // The time evidence drawer reads by notification id and submits on its own, so it stays open like after a header refresh.
       setRecord(null);
       setDetail(next);
       setReadAt(businessClock(Date.now()));
-      setReloadTick(tick => tick + 1);
       setReferralError(null);
     } catch (error) {
       if (!active()) return;
@@ -1238,21 +1239,14 @@ export default function UserDetailPage() {
   const fundsAlert = withdrawalExceptions + withdrawalsWaiting > 0;
   const devicesFailed = failedSection(detail?.devices, detail?.earnings) || ledgerUnread && !!detail?.earnings;
   const devicesAlert = deviceExceptions > 0;
-  const fixture = inviteFixture(); // P2-b 删：夹具
-  // 一页只用一份人数状态：关键数字、推荐团队的数、团队与互动的摘要都读它，不各读各的字段（PRD §4.2）。接线规则见 invitation/wiring.ts（P2-b）。
-  const counts: CountsView = fixtureCounts(referralCountsView(detail?.referral), fixture, { onRetry: () => void retryReferral(), retrying: referralRetrying || loading || actionPending !== null });
-  // 数据异常、没读全是要人注意的事：团队与互动和推荐团队默认展开，原因常显（DP-03、DP-04）。
+  const referralRetry = { onRetry: () => void retryReferral(), retrying: referralRetrying || loading || writeBusy };
+  const referralSourceFailed = sectionFailed(detail?.referral) || !!referralError;
+  const counts: CountsView = referralRetrying ? { kind: "loading" }
+    : referralSourceFailed ? { kind: "failed", reason: referralError ?? displayAdminReadError(undefined) }
+    : referralCountsView(detail?.referral, referralRetry);
   const countsAlert = counts.kind === "anomaly" || counts.kind === "partial";
-  const referralFailed = sectionFailed(detail?.referral) || counts.kind === "failed";
-  // P2-b 接线（占位）：能点时后台详情开这个用户的详情页，客服完整档案开获准的客户档案；navigable 之外还要判目标页可达（PRD §4.5）。
-  const rawInviter = detail?.profile?.inviter;
-  const inviterCustomerId = (rawInviter as { customerId?: string | null } | undefined)?.customerId;
-  const inviterLink = rawInviter?.navigable
-    ? supportScope
-      ? inviterCustomerId ? { href: `/service/customers/${encodeURIComponent(inviterCustomerId)}` } : undefined
-      : rawInviter.userNo ? { href: `/users/search/${encodeURIComponent(rawInviter.userNo)}` } : undefined
-    : supportScope ? { scopeNote: INVITER_SCOPE_NOTE } : undefined;
-  const inviter = fixtureInviter(inviterView(rawInviter, inviterLink), fixture);
+  const referralFailed = counts.kind === "failed";
+  const inviter = inviterDetailView(detail?.profile?.inviter, supportScope, reach);
   const teamFailed = referralFailed || failedSection(detail?.engagement, detail?.vrank);
   const recordsFailed = failedSection(detail?.notifications, detail?.commerce);
   const failedPushCount = asNumber(detail?.notifications?.failedPushCount);
@@ -1272,10 +1266,10 @@ export default function UserDetailPage() {
   const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold, restoreKey: readKey });
   useEffect(() => { markSection.current = nav.mark; }, [nav.mark]);
   useLayoutEffect(() => {
-    const previousTop = teamHeadingTopBeforeRetry.current;
-    teamHeadingTopBeforeRetry.current = null;
+    const previousTop = referralTopBeforeRetry.current;
+    referralTopBeforeRetry.current = null;
     if (previousTop === null) return;
-    const heading = teamSectionHeading();
+    const heading = referralHeading();
     const scroller = heading?.closest("main");
     if (heading && scroller) scroller.scrollTop += heading.getBoundingClientRect().top - previousTop;
   }, [detail]);
@@ -1723,7 +1717,7 @@ export default function UserDetailPage() {
               {filteredSessions.length > C1_SESSION_PAGE_SIZE && <Pager label="登录记录" total={filteredSessions.length} page={sessionPage} pageSize={C1_SESSION_PAGE_SIZE} sizes={[C1_SESSION_PAGE_SIZE]} onPage={(page) => { setRecord(null); setSessionPage(Math.min(sessionPageCount, Math.max(1, page))); }} onPageSize={() => undefined} />}
             </Block>}
             {paymentSecurityPort && <div className="rd-detail-block">
-              <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick} canRelease={canReleasePayment}
+              <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick} canRelease={canReleasePayment} writeBlocked={referralRetrying} onWriteBusy={setPaymentWriteBusy}
                 onState={onPaymentSecurity} />
             </div>}
             {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError && `支付方式加载失败：${paymentError}`}
@@ -1796,7 +1790,7 @@ export default function UserDetailPage() {
           <Fold title="团队与互动" icon={Network} tone="role-3" summary={foldSummary("team", teamFailed || countsAlert, teamText)} alertTone={teamFailed ? "danger" : "warn"} {...foldProps("team", teamFailed || countsAlert)}>
             <Block id="hub-referral" title="推荐团队" {...listProps("member")} section={detail.referral} sub="成员最多 20 位"
               forceFailed={counts.kind === "failed"} loading={counts.kind === "loading" ? "正在加载推荐团队…" : undefined}
-              sectionRetry={{ detail: referralError ?? displayAdminReadError(undefined), onRetry: () => void retryReferral(), retrying: referralRetrying || loading || actionPending !== null }}
+              sectionRetry={{ detail: referralError ?? displayAdminReadError(undefined), ...referralRetry }}
               explain="下面最多列 20 位成员，是注册时记下的样本，不是完整名单；上面的人数另算，对不上是正常的。">
               {/* 四个人数加团队订单额，按同页列线铺开（PRD §4.2）；全部团队成员已是关键数字时不重复（DP-61）。口径只在「团队奖励范围内」旁的问号里。 */}
               <Values rows={[
@@ -1817,8 +1811,8 @@ export default function UserDetailPage() {
                 ["用户分层", asText(detail.vrank?.userLevel)],
                 ["团队等级", asText(detail.vrank?.currentRank)],
                 ...(detail.referral ? [] : [
-                  [COUNT_LABELS.total, `${numberLabel(detail.vrank?.teamSize)} 人`] as const,
-                  ["直接邀请", `${numberLabel(detail.vrank?.directCount)} 人`] as const,
+                  [COUNT_LABELS.total, countText(counts, "total")] as const,
+                  [COUNT_LABELS.direct, countText(counts, "direct")] as const,
                   ["团队订单额", amountText(detail.vrank?.teamVolumeUsd)] as const,
                 ]),
               ]} />
@@ -1900,7 +1894,7 @@ export default function UserDetailPage() {
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}
           userKey={userKey} notificationId={notificationEvidence.id} actorKey={session?.adminId == null ? undefined : String(session.adminId)}
-          canCorrect={canCorrectNotificationTime} onPendingChange={syncPending} onCorrected={() => {
+          canCorrect={canCorrectNotificationTime} writeBlocked={referralRetrying} onWriteBusy={setNotificationWriteBusy} onPendingChange={syncPending} onCorrected={() => {
             const text = `通知 ${notificationEvidence.id} 已按投递事实校正时间，已读状态保持不变。`;
             setWriteResult({ key: readKey, text, tone: "ok" });
             void load().then(refreshed => {

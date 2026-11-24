@@ -17,7 +17,6 @@ import {
 } from "@/app/components/rd";
 import { InviterCell } from "@/app/components/invitation/invitation-view";
 import { inviterView } from "@/app/components/invitation/wiring";
-import { fixtureInviter, inviteFixture } from "@/app/components/invitation/invite-fixture";
 import {
   exportUserProfilesCsv,
   fetchC1Overview,
@@ -673,7 +672,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
 
   // ---- 显示 ----
   const rows = shown?.records ?? [];
-  const fixture = inviteFixture(); // P2-b 删：夹具
+  const showInviter = rows.some(row => row.inviter !== undefined);
   const hasConditions = applied.seg !== "all" || applied.keyword !== "" || FILTER_KEYS.some((key) => applied.filters[key] !== "");
   const filtersChanged = riskTouched || FILTER_KEYS.some((key) => draftFilters[key] !== applied.filters[key]);
   const draftChanged = filtersChanged || (problem?.keyword === true && draftKeyword.trim() !== applied.keyword);
@@ -688,7 +687,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   const showDevice = shape.device;
   const columns = useTableColumns("c1-users", [
     { key: "user", label: "用户", locked: "第一列不能关" },
-    { key: "inviter", label: "邀请人", locked: "邀请人不能关" },
+    ...(showInviter ? [{ key: "inviter", label: "邀请人", locked: "邀请人不能关" }] : []),
     { key: "status", label: "状态 / 用户分层 · 团队等级", locked: "状态和等级不能关" },
     ...(canReadRisk ? [{ key: "risk", label: "风险", locked: "风险列不能关" }] : []),
     ...(showBalance ? [{ key: "balance", label: "USDT 余额", locked: "余额不能关" }] : []),
@@ -696,7 +695,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     ...(canOpenDetail ? [{ key: "action", label: "操作", locked: "操作列不能关" }] : []),
   ]);
   const deviceVisible = showDevice && columns.isVisible("device");
-  const columnCount = 3 + (canReadRisk ? 1 : 0) + (showBalance ? 1 : 0) + (deviceVisible ? 1 : 0) + (canOpenDetail ? 1 : 0);
+  const columnCount = 2 + Number(showInviter) + (canReadRisk ? 1 : 0) + (showBalance ? 1 : 0) + (deviceVisible ? 1 : 0) + (canOpenDetail ? 1 : 0);
   // 用表头的名字，新手才对得上（DT-14）。
   const hidden = [!canReadRisk && "风险", !showBalance && "USDT 余额", !showDevice && "设备"].filter(Boolean);
   const balances = rows.map((row) => rawAmount(row.walletUsdt));
@@ -845,7 +844,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       <Table label="用户列表" aria-busy={listLoading} data-tight="">
         <thead><tr>
           <Th sticky="start" icon={Users} tone="users" className="inv-col-quarter">用户</Th>
-          <Th className="inv-col-quarter">邀请人<Explain label="邀请人的说明" content="邀请这位用户注册的人。列表里不能点开，人数在用户资料里看。" /></Th>
+          {showInviter && <Th className="inv-col-quarter">邀请人<Explain label="邀请人的说明" content="邀请这位用户注册的人。列表里不能点开，人数在用户资料里看。" /></Th>}
           <Th>状态 / 用户分层 · 团队等级</Th>
           {canReadRisk && <Th icon={ShieldAlert} tone="risk"><Explain label="风险分怎么来" content="风险分取最近 24 小时内的评分，没有评分写「—」。">风险</Explain></Th>}
           {showBalance && <Th align="right" icon={Coins} tone="money"><Explain label="余额这一列的口径" content="钱包可用余额。">USDT 余额</Explain></Th>}
@@ -877,7 +876,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
                   <Cell title={nickname || userNo || undefined} main={nickname || (userNo ? <span data-mono>{userNo}</span> : "—")}
                     sub={nickname && userNo ? <span data-mono>{userNo}</span> : undefined} />
                 </Td>
-                <Td><InviterCell view={fixtureInviter(inviterView(row.inviter), fixture)} /></Td>
+                {showInviter && <Td><InviterCell view={inviterView(row.inviter)} /></Td>}
                 {/* 状态在上，用户分层和团队等级在下：加邀请人后仍是 6 列（PRD §4.1 方案一，ST-03 第 1 步）。 */}
                 <Td><Cell main={<StatusTag tone={status.tone} icon={status.icon}>{status.label}</StatusTag>} sub={`${textOf(row.userLevel)} · ${textOf(row.vRank)}`} /></Td>
                 {canReadRisk && (

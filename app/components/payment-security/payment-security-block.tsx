@@ -27,7 +27,7 @@ function stateTag(record: PaymentSecurityRecord) {
   return <StatusTag tone={record.state === "RELEASED" ? "ok" : "done"}>{stateText(record)}</StatusTag>;
 }
 
-export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canRelease, retryMissingRelease, onState }: {
+export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canRelease, retryMissingRelease, writeBlocked, onWriteBusy, onState }: {
   port: PaymentSecurityPort;
   userLabel: string;
   /** 页面刷新时变，这一块跟着重读。 */
@@ -35,6 +35,8 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   /** 有独立解除权限才给入口（OP-124）。能不能解除这一条还看后端 capability。 */
   canRelease: boolean;
   retryMissingRelease?: boolean;
+  writeBlocked?: boolean;
+  onWriteBusy?: (busy: boolean) => void;
   onState?: (state: PaymentSecurityState, pending: boolean) => void;
 }) {
   const session = useAdminAuth((state) => state.session), epoch = useAdminAuth((state) => state.authEpoch);
@@ -92,7 +94,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
             <div className="rd-toolbar">
               <Button size="sm" onClick={() => setSelected({ id: record.id, release: false })}>查看详情</Button>
               {record.state === "ACTIVE" && canRelease && <Button size="sm" variant="primary"
-                disabledReason={pending ? "有一笔解除结果未知，先查询原结果" : record.capabilities.releaseAllowed ? undefined : record.capabilities.disabledReason || "现在不能解除"}
+                disabled={writeBlocked} disabledReason={pending ? "有一笔解除结果未知，先查询原结果" : record.capabilities.releaseAllowed ? undefined : record.capabilities.disabledReason || "现在不能解除"}
                 onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</Button>}
             </div>
             {record.state === "ACTIVE" && canRelease && !pending && !record.capabilities.releaseAllowed && <p className="rd-toolbar-note">{record.capabilities.disabledReason || "现在不能解除"}</p>}
@@ -103,7 +105,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
             action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原结果</Button>} />}
         </div>
       </Fold>
-      {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} retryMissingRelease={retryMissingRelease} onClose={() => { setSelected(null); setPending(!!pendingPaymentRelease(owner, port.userId)); }} />}
+      {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} retryMissingRelease={retryMissingRelease} writeBlocked={writeBlocked} onWriteBusy={onWriteBusy} onClose={() => { setSelected(null); setPending(!!pendingPaymentRelease(owner, port.userId)); }} />}
     </>
   );
 }

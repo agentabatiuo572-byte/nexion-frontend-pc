@@ -1,16 +1,6 @@
-/**
- * P2-b 接线（占位）。P2-a 只把读到的字段直接对上显示状态，让 8131 上的真实数据能显示出来；
- * P2-b 按 PRD 补齐下面几条后替换这个文件，页面上的显示件（invitation-view.tsx）不用改：
- * - 邀请人能不能点：后端 navigable，且目标页对当前账号可达（PRD §4.5 第 3 条，CP-30、ST-58）。现在只看 navigable，页面据此传 href。
- * - 范围外（方案 A，§4.6）：客服读取里有邀请人但 navigable=false 时，问号写 INVITER_SCOPE_NOTE。现在客服各处按 navigable=false 传 scopeNote。
- * - 人数状态（§6.3）：FAILED 走读取失败；PARTIAL 且含 SOURCE_READ_FAILED 是没读全；UNKNOWN 且只有 GENERATION_UPGRADING 只写「—」；其余是数据异常。
- *   现在只认 AVAILABLE，其余一律写「—」、不提示（kind "absent"）。界面已备好 anomaly、partial、failed、loading 四种样子。
- * - 旧后端（§5 版本交叉）：没有 inviter 时不显示邀请人，没有 countStatus 时人数写「—」。现在 inviter 缺失返回 undefined，各页按 undefined 不画。
- */
-import type { InvitationInviter } from "@/lib/admin/invitation-read-contract";
+import type { InvitationInviter, InvitationInviterDetail, SupportInvitationInviterDetail } from "@/lib/admin/invitation-read-contract";
 import type { SupportCustomerStatistics } from "@/lib/admin/support-analytics-client";
-import { parseSupportProfile, type SupportProfile } from "@/lib/admin/m-support-enhancements";
-import type { CountsView, InviterView } from "./invitation-view";
+import { COUNTS_FAILED_REASON, INVITER_SCOPE_NOTE, type CountsView, type InviterView } from "./invitation-view";
 
 export function inviterView(inviter: InvitationInviter | undefined, link?: { href?: string; scopeNote?: string }): InviterView | undefined {
   if (!inviter) return undefined;
@@ -20,41 +10,75 @@ export function inviterView(inviter: InvitationInviter | undefined, link?: { hre
   return { kind: "unknown" };
 }
 
-const whole = (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0 ? value
-  : typeof value === "string" && /^\d+$/.test(value) ? Number(value) : null;
-
-function ready(status: unknown, direct: unknown, within: unknown, beyond: unknown, total: unknown): CountsView {
-  const values = [direct, within, beyond, total].map(whole);
-  if (status !== "AVAILABLE" || values.some((value) => value === null)) return { kind: "absent" };
-  const [d, w, b, t] = values as number[];
-  return { kind: "ready", direct: d, within: w, beyond: b, total: t };
+export function inviterDetailView(
+  inviter: InvitationInviterDetail | SupportInvitationInviterDetail | undefined,
+  supportScope: boolean,
+  reach: (href: string, read?: string) => boolean,
+): InviterView | undefined {
+  if (inviter?.state !== "PRESENT") return inviterView(inviter);
+  if (!inviter.navigable) {
+    return inviterView(inviter, supportScope ? { scopeNote: INVITER_SCOPE_NOTE } : undefined);
+  }
+  const target = supportScope ? "customerId" in inviter && inviter.customerId : inviter.userNo;
+  if (!target) return inviterView(inviter);
+  const base = supportScope ? "/service/customers" : "/users/search";
+  const href = `${base}/${encodeURIComponent(target)}`;
+  return inviterView(inviter, reach(href, supportScope ? undefined : "user_c1hub_read") ? { href } : undefined);
 }
 
-/** 后台详情：推荐团队区块的人数（referral 段，旧键 directCount、teamSize 已是新口径）。 */
-export function referralCountsView(section: { countStatus?: unknown; directCount?: unknown; withinRewardRange?: unknown; beyondRewardRange?: unknown; teamSize?: unknown } | null | undefined): CountsView {
-  return section ? ready(section.countStatus, section.directCount, section.withinRewardRange, section.beyondRewardRange, section.teamSize) : { kind: "absent" };
+export type CountsRetry = { onRetry: () => void; retrying: boolean };
+
+function whole(value: unknown) {
+  const number = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
+  return typeof number === "number" && Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
-/** 客服：统计组里的邀请人数（四项各带 status，同一次遍历，状态相同）。 */
-export function supportCountsView(invitations: SupportCustomerStatistics["invitations"] | undefined): CountsView {
-  if (!invitations?.withinRewardRange || !invitations.beyondRewardRange) return { kind: "absent" };
-  const { direct, withinRewardRange: within, beyondRewardRange: beyond, descendants } = invitations;
-  const status = [direct, within, beyond, descendants].every((count) => count.status === "AVAILABLE") ? "AVAILABLE" : "OTHER";
-  return ready(status, direct.confirmed, within.confirmed, beyond.confirmed, descendants.confirmed);
+function countsView(
+  status: string,
+  reasons: readonly string[],
+  values: readonly unknown[],
+  retry?: CountsRetry,
+): CountsView {
+  const failed: CountsView = { kind: "failed", reason: COUNTS_FAILED_REASON, ...retry };
+  if (status === "FAILED") return failed;
+  if (status === "PARTIAL" && reasons.includes("SOURCE_READ_FAILED")) return { kind: "partial", ...retry };
+  if (status === "UNKNOWN" && reasons.length === 1 && reasons[0] === "GENERATION_UPGRADING") return { kind: "absent" };
+  if (status !== "AVAILABLE") return { kind: "anomaly" };
+
+  const [direct, within, beyond, total] = values.map(whole);
+  if (direct == null || within == null || beyond == null || total == null || direct > within || within + beyond !== total) return failed;
+  return { kind: "ready", direct, within, beyond, total };
 }
 
-/**
- * 客服个人工作台的客户资料抽屉：客户资料接口带回的 profile 现在只透传（PR0），这里借客户资料（M3 同一个接口）的解析取身份组和统计组。
- * P2-b 把解析挪到读取处（m-support-client 的 detail()）后删掉这个函数。
- */
-export function drawerSupportProfile(profile: Record<string, unknown> | undefined): SupportProfile | undefined {
-  return profile ? parseSupportProfile({ profile }) : undefined;
+type ReferralCounts = {
+  countStatus?: string;
+  countReasons?: readonly string[];
+  directCount?: unknown;
+  withinRewardRange?: unknown;
+  beyondRewardRange?: unknown;
+  teamSize?: unknown;
+};
+
+/** 推荐团队人数的状态独立于区块的读取状态。 */
+export function referralCountsView(section: ReferralCounts | null | undefined, retry: CountsRetry): CountsView {
+  if (!section?.countStatus || section.withinRewardRange === undefined) return { kind: "absent" };
+  return countsView(section.countStatus, section.countReasons ?? [], [
+    section.directCount, section.withinRewardRange, section.beyondRewardRange, section.teamSize,
+  ], retry);
 }
 
-/**
- * 客服资料的等级：只写后端确证的那一项，缺哪个不写哪个，不把旧的 level 写成团队等级（PRD §6.6-5）。
- * 现在直接读身份组里的 vRank、userLevel 原值；P2-b 按 §6.6-5 接正式字段（含旧后端两项都没有的情况）。
- */
+/** 四个人数来自同一采样代。金额保留自己的状态。 */
+export function supportCountsView(invitations: SupportCustomerStatistics["invitations"] | undefined, retry?: CountsRetry): CountsView {
+  if (!invitations) return { kind: "absent" };
+  const { direct, withinRewardRange: within, beyondRewardRange: beyond, descendants, reasons } = invitations;
+  if (!within && !beyond) return { kind: "absent" };
+  if (!within || !beyond || [within, beyond, descendants].some(count => count.status !== direct.status)) {
+    return { kind: "failed", reason: COUNTS_FAILED_REASON, ...retry };
+  }
+  const counts = [direct, within, beyond, descendants];
+  return countsView(direct.status, reasons ?? [], counts.map(count => count.confirmed), retry);
+}
+
 export function supportLevels(identity: Record<string, unknown> | null | undefined): { userLevel?: string; vRank?: string } {
   const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : undefined;
   return { userLevel: text(identity?.userLevel), vRank: text(identity?.vRank) };
