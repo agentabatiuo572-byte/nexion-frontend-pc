@@ -1048,7 +1048,6 @@
 .e3p .e3p-ladder-head h3 { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
 .e3p .e3p-ladder-actions { display: inline-flex; flex-wrap: wrap; gap: var(--rd-space-2); margin-inline-start: auto; }
 .e3p .e3p-cuts { display: grid; gap: var(--rd-space-2); --rd-track-w: 100%; }
-.e3p-warn { display: block; margin-top: var(--rd-space-1); color: var(--rd-warn); }
 .e3p-manual { display: grid; gap: var(--rd-space-5); }
 .e3p-manual p { margin: 0; }
 .e3p-manual section { display: grid; gap: var(--rd-space-2); }
