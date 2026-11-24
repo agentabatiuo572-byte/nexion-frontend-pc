@@ -1079,7 +1079,8 @@ function ReviewDrawer({ cid, network, caseRow, canManage, adminId, busy, readBlo
   const net = caseRow?.proposedNetAmount ?? evidence?.proposedNetAmount;
   // 网络只用请求带的（工单按列表投影的 chainId）或证据读回的，不把缺省猜成 BEP20；两样都没有时，刷新证据前写「刷新证据后显示」（BUG-679）。
   const shownNetwork = evidence?.network ?? network;
-  const networkLabel = shownNetwork ? `USDT（${shownNetwork}）` : shownNetwork === null || evidence ? "网络待核实" : "刷新证据后显示";
+  // 证据读失败时和同组其他值一样写「—」（ST-34）；工单网络本身读不到时仍写「网络待核实」。
+  const networkLabel = shownNetwork ? `USDT（${shownNetwork}）` : shownNetwork === null ? "网络待核实" : error ? "—" : evidence ? "网络待核实" : "刷新证据后显示";
   // 证据摘要是核对用的长编号，系统已比对过，确认框里不放，在抽屉「链上证据」里看（OP-54、DP-30）。
   const caseFacts = caseRow && <Facts>
     <Fact k="净入账" lead tone="role-1" unit="USDT">{usdt(text(caseRow.proposedNetAmount))}</Fact>
