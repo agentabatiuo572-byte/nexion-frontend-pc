@@ -94,6 +94,7 @@ function Group({ title, note, summary, open, onOpenChange, group, failed, retry,
 type CustomerProfile = SupportProfile & { annotations: SupportGroup & { recoveredSystemTags?: unknown[] } };
 type ProfileGroup = Exclude<keyof SupportProfile, "actions" | "statistics">;
 type ProfileReadIntent = ProfileGroup | "initial" | "statistics" | "annotation-write";
+type AnnotationWrite = { completeReadback?: () => void };
 
 function isProfileGroup(intent: ProfileReadIntent): intent is ProfileGroup {
   return intent !== "initial" && intent !== "statistics" && intent !== "annotation-write";
@@ -154,16 +155,23 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   // A scope refresh revalidates the current customer without remounting the payment block.
   const paymentScope = `${adminShellSessionKey(session, epoch)}:${customerId}:${conversation?.id ?? ""}`;
   const profileScope = `${paymentScope}:${scopeVersion ?? ""}:${conversation?.ownerAdminId ?? ""}:${conversation?.assignmentId ?? ""}`;
-  const annotationWrite = useRef<object | null>(null);
+  const annotationWrite = useRef<AnnotationWrite | null>(null);
   const requestStamp = `${profileScope}:${reload}:${scopeDenied}`;
   const stamp = useRef(""), mounted = useRef(true); stamp.current = requestStamp;
   const profileReadSequence = useRef(0);
   const profileReadIntents = useRef(new Set<ProfileReadIntent>());
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const settleAnnotationReadback = () => {
+    const write = annotationWrite.current;
+    const complete = write?.completeReadback;
+    if (write) write.completeReadback = undefined;
+    complete?.();
+  };
   const revokeScope = () => {
     if (revokedScope.current === scopeKey) return;
     revokedScope.current = scopeKey; stamp.current += ":revoked";
     profileReadIntents.current.clear();
+    settleAnnotationReadback();
     setStatisticsRetrying(false); setStatisticsRetryError(""); setGroupReadErrors({});
     setProfile(null); setPaymentIdentity(null); setDeviceGroup(null); setFlowGroup(null); setMaintenance(null); setView360(false);
     setTag(""); setNote(""); annotationWrite.current = null; setWriting(false); setWriteError("");
@@ -189,10 +197,12 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     profileReadIntents.current.add(intent);
     if (intent === "statistics") setStatisticsRetrying(true);
 
-    const result = await supportEnhancements.profile(customerId, signal).then(
-      profile => ({ profile }),
-      failure => ({ failure }),
-    );
+    let result: { profile: SupportProfile } | { failure: unknown };
+    try {
+      result = { profile: await supportEnhancements.profile(customerId, signal) };
+    } catch (failure) {
+      result = { failure };
+    }
     if (!mounted.current || signal?.aborted || scope !== stamp.current || sequence !== profileReadSequence.current) return;
 
     // The latest response settles the whole set even when an earlier response has already arrived.
@@ -203,6 +213,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     const statistics = intents.has("statistics");
     const annotationReadback = intents.has("annotation-write");
     if (statistics) setStatisticsRetrying(false);
+    if (annotationReadback) settleAnnotationReadback();
 
     if ("failure" in result) {
       if (denied(result.failure)) return;
@@ -246,6 +257,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     return () => {
       controller.abort();
       profileReadIntents.current.clear();
+      settleAnnotationReadback();
       profileReadSequence.current++;
     };
   }, [customerId, epoch, reload, profileRetry, profileScope]);
@@ -299,7 +311,11 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const annotationScope = `${scopeKey}:${conversationId ?? ""}:${conversation?.ownerAdminId ?? ""}:${conversation?.assignmentId ?? ""}:${writable}`;
   const currentAnnotationScope = useRef(annotationScope); currentAnnotationScope.current = annotationScope;
   async function annotate(action: (id: string) => Promise<boolean>, clear: () => void, failureInDialog = false) {
-    if (revokedScope.current === scopeKey || stamp.current !== requestStamp || !conversationId || !writable || annotationsStale || annotationWrite.current || profileReadIntents.current.has("statistics")) return false; const saved = stamp.current, writeToken = {}; annotationWrite.current = writeToken; setWriting(true); setWriteError("");
+    if (revokedScope.current === scopeKey || stamp.current !== requestStamp || !conversationId || !writable || annotationsStale || annotationWrite.current || profileReadIntents.current.has("statistics")) return false;
+    const saved = stamp.current;
+    const writeToken: AnnotationWrite = {};
+    annotationWrite.current = writeToken;
+    setWriting(true); setWriteError("");
     const sameWriteScope = () => mounted.current && annotationWrite.current === writeToken && revokedScope.current !== scopeKey && currentAnnotationScope.current === annotationScope;
     let confirmed = false;
     try {
@@ -310,7 +326,13 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
         confirmed = true; clear();
         // A new message can advance the conversation version without changing
         // annotation ownership. Settle the receipt, but let the newer read win.
-        if (saved === stamp.current) await readProfile("annotation-write");
+        if (saved === stamp.current) {
+          // Wait for the readback intent to settle even if another request delivers its result.
+          await new Promise<void>(resolve => {
+            writeToken.completeReadback = resolve;
+            void readProfile("annotation-write");
+          });
+        }
       }
       return ok;
     } catch(e) {
