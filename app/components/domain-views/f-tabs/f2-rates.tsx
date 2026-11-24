@@ -13,7 +13,7 @@ import {
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { F2_DEPTH_GATE_RANKS, f2EnumGateSpec, parseF2DepthGateLayer, parseF2DepthGateRank } from "@/lib/admin/f2-depth-gate";
 import {
-  Change, Fact, Facts, LAYERS, LAYER_WHO, LayerCompare, SAMPLE_ORDER, configuredValue, f2Ranked, layerRate, num, pctAdd, pctSample, rangeText, rankedRange, rateMeaning, sampleUsdt, totalFacts,
+  Change, Fact, Facts, LAYERS, LAYER_WHO, LayerCompare, SAMPLE_ORDER, configuredValue, f2Ranked, layerPauseState, layerRate, num, pctAdd, pctSample, rangeText, rankedRange, rateMeaning, sampleUsdt, totalFacts,
   type F2Confirm, type Layer,
 } from "./f2-shared";
 import { F2Bootstrap, f2BootstrapFormShown, type F2BootstrapDraft } from "./f2-bootstrap";
@@ -76,14 +76,15 @@ function useF2Model(ctx: FViewCtx) {
     // an explicit percent suffix. Never apply unilevel percentRatio guessing.
     return key === "F.unilevel.mergeExitMaxPct" ? raw.replace(/%$/, "").replace(/,/g, "").trim() : raw;
   };
-  const paused = (level: Layer) => configuredValue(ctx.f2ConfigValues[`F.unilevel.${level}.paused`]);
+  const pauseValue = (level: Layer) => ctx.f2ConfigValues[`F.unilevel.${level}.paused`];
+  const paused = (level: Layer) => layerPauseState(pauseValue(level));
   const gateRaw = value("F.unilevel.depthGate");
   const rankRaw = value("F.unilevel.depthGateRank");
   const gate = gateRaw ? parseF2DepthGateLayer(gateRaw) : null;
   const rank = rankRaw ? parseF2DepthGateRank(rankRaw) : null;
   const capRaw = value("F.unilevel.mergeExitMaxPct");
   const cap = capRaw !== "" && Number.isFinite(Number(capRaw)) ? Number(capRaw) : null;
-  return { canRoyaltyRate, canPolicyAmplify, l1NexReadonly, l1NexStatus, value, paused, gate, rank, gateRaw, rankRaw, cap };
+  return { canRoyaltyRate, canPolicyAmplify, l1NexReadonly, l1NexStatus, value, pauseValue, paused, gate, rank, gateRaw, rankRaw, cap };
 }
 
 const effectTag = <StatusTag tone="progress" filled explain="另一位超级管理员在「操作记录与审批」批准后才生效；只影响之后新算的订单，已经算好的不重算。">批准后生效</StatusTag>;
@@ -101,7 +102,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
   if (ctx.f2Error) return <Panel title="每层分多少" icon={Layers} tone="role-4"><BlockState state="error" title="七层比例没读到，这部分没有判断" detail={ctx.f2Error} onRetry={() => void ctx.refreshF2()} /></Panel>;
   const gateLayer = m.gate?.legal ? LAYERS.indexOf(m.gate.normalized as Layer) : -1;
   const pausedLayers = LAYERS.filter((level) => m.paused(level) === "on");
-  const unsetPause = rates.length ? LAYERS.filter((level) => m.paused(level) === "") : [];
+  const unsetPause = rates.length ? LAYERS.filter((level) => m.paused(level) === "unset") : [];
   const complete = LAYERS.every(level => rates.some(row => row.l === level && row.usdt !== null && row.usdt <= 100));
   const activeSum = rates.filter((row) => m.paused(row.l as Layer) !== "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
   const pausedSum = rates.filter((row) => m.paused(row.l as Layer) === "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
@@ -213,8 +214,8 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
     businessForm: {
       kind: "multi-field",
       fields: LAYERS.map((level) => {
-        const raw = m.paused(level);
-        return { key: level, label: `${level} ${LAYER_WHO[level]}`, current: raw === "on" || raw === "off" ? raw : "", showDiff: true,
+        const pause = m.paused(level);
+        return { key: level, label: `${level} ${LAYER_WHO[level]}`, current: pause === "on" || pause === "off" ? pause : "", showDiff: true,
           inputKind: "select" as const, options: ["", "on", "off"], optionLabels: { "": "请选择", on: "暂停", off: "发放" } };
       }),
     },
@@ -271,7 +272,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         <tbody>
           {LAYERS.map((level, index) => {
             const rate = layerRate(rates, level);
-            const pausedRaw = m.paused(level);
+            const pause = m.paused(level);
             const direct = level === "L1";
             const gated = gateLayer >= 0 && index >= gateLayer;
             const usdtPending = pendingFor(ctx, `F.unilevel.${level}`);
@@ -280,12 +281,12 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
             const byRank = rankedLevel(level);
             const rng = byRank ? rankedRange(ctx, level) : null;
             return (
-              <tr key={level} data-paused={pausedRaw === "on" ? "" : undefined}>
+              <tr key={level} data-paused={pause === "on" ? "" : undefined}>
                 <Td><span className="f2-layer"><span className="f2-layer-chip" data-direct={direct ? "" : undefined}>{level}</span>{LAYER_WHO[level]}</span></Td>
                 <Td align="right">{noRateSource(level) ? <span className="f2-muted">—</span> : byRank ? <span className="f2-ranked"><strong>{rng ? rangeText(rng.min, rng.max) : "—"}</strong>
                   <span className="f2-ranked-sub">按受益人等级<Explain label={`${level} 比例为什么按等级`} content={rng ? rankedExplain : `${rankedExplain}九级比例这次没读到。`} /></span></span>
                   : rate?.usdt != null ? <span className="f2-rate">
-                  <RatioBar compact quiet label={`${level} 比例`} value={rate.usdt ?? 0} total={barMax || 1} valueText={`${num(rate.usdtText)}%`} tone={pausedRaw === "on" ? "role-other" : "role-4"} />
+                  <RatioBar compact quiet label={`${level} 比例`} value={rate.usdt ?? 0} total={barMax || 1} valueText={`${num(rate.usdtText)}%`} tone={pause === "on" ? "role-other" : "role-4"} />
                   <strong>{rate.usdt === null ? "未配置" : `${num(rate.usdtText)}%`}</strong>
                 </span> : <span className="f2-muted">未配置</span>}</Td>
                 <Td align="right">{noRateSource(level) ? <span className="f2-muted">—</span> : byRank ? rng ? <Cell num main={rangeText(pctSample(rng.min), pctSample(rng.max), "USDT")} /> : <span className="f2-muted">—</span>
@@ -297,9 +298,9 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
                   {byRank && ctx.f2DirectPolicy && !ctx.f2DirectPolicy.sevenLayerEnabled ? <StatusTag tone="neutral" icon={PowerOff} explain="整体结算启用后，这一层按受益人等级发放。">未启用</StatusTag>
                     : !rate ? <StatusTag tone="neutral" explain={`这一层还没有规则，没有规则时这一层不发。${rates.length === 0 ? "七层都没有时，用上面的「首次配置」。" : "后台补不了，需要技术同事处理。"}`}>没有规则</StatusTag>
                     : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的 ${rate.usdt === null ? "USDT 比例" : "UVT 系数"} 没配置，这页看不出这一层会怎么发。${(rate.usdt === null ? direct : nexLocked) ? "这一项后台不能改，需要技术同事处理。" : `点「${rate.usdt === null ? "改比例" : "改系数"}」补上，批准后生效。`}`}>规则不完整</StatusTag>
-                    : pausedRaw === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
-                    : pausedRaw === "off" ? <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>
-                      : pausedRaw ? <StatusTag tone="danger" explain={`存的是「${pausedRaw}」，不是暂停或发放。按层暂停里重新选一次。`}>配置无效</StatusTag>
+                    : pause === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
+                    : pause === "off" ? <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>
+                      : pause === "invalid" ? <StatusTag tone="danger" explain={`存的是「${configuredValue(m.pauseValue(level))}」，不是暂停或发放。按层暂停里重新选一次。`}>配置无效</StatusTag>
                         : <><StatusTag tone="neutral" icon={ShieldCheck} explain="这一层的暂停开关没配，结算按发放算。要停发到下面「按层暂停」设置。">发放中</StatusTag>{unsetPause.length < LAYERS.length && <span className="f2-muted">暂停开关未配</span>}</>}
                   {rate && gated && m.rank?.legal && <StatusTag tone="neutral" icon={Lock} explain={`上级要到 ${m.rank.normalized} 及以上才拿得到这一层；等级不够这一层记 0。`}>需 {m.rank.normalized}+</StatusTag>}
                   {(usdtPending || nexPending) && <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员批准；批准前这一层不变，也不能再提交。">待审批</StatusTag>}
@@ -321,7 +322,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       <ConfigList label="对七层一起起作用的设置">
         <ConfigRow name="按层暂停" what="把某几层的团队奖励停发，其余层照常" when="批准后，对之后新算的订单生效"
           effect="暂停的层记 0、不补发；不影响好友设备收益奖励，也不是整体结算暂停" note="七层一张审批单，每层按单独修改的权限核；缺哪层的权限，「设置」上会写明。"
-          value={LAYERS.every((level) => m.paused(level) === "") ? "未配置，七层都在发放" : pausedLayers.length ? `${pausedLayers.join("、")} 已暂停` : "七层都在发放"}
+          value={LAYERS.every((level) => m.paused(level) === "unset") ? "未配置，七层都在发放" : pausedLayers.length ? `${pausedLayers.join("、")} 已暂停` : "七层都在发放"}
           sub={pendingFor(ctx, "f-config-batch:F2") ? <StatusTag tone="warn" icon={Clock3}>待审批</StatusTag> : pausedLayers.length ? `其余 ${7 - pausedLayers.length} 层发放` : undefined}
           action={m.canPolicyAmplify ? <Button size="sm" aria-label="按 L1–L7 暂停" disabledReason={pendingFor(ctx, "f-config-batch:F2") ? "等另一位超级管理员批准" : ctx.f2WriteBlocked("f-config-batch:F2")} onClick={openPause}>设置</Button> : undefined} />
         <ParamRow ctx={ctx} m={m} paramKey="F.promo.weekMultiplier" openConfirm={openConfirm}

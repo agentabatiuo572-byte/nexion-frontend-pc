@@ -13,7 +13,7 @@ import { parseF2DepthGateLayer, parseF2DepthGateRank } from "@/lib/admin/f2-dept
 import { F2DirectPolicy } from "./f2-direct-policy";
 import { F2Layers, F2Legacy, F2Limits, F2Partner, F2Who } from "./f2-rates";
 import { F2RecoveryNotice, F2SevenLayerActivation } from "./f2-seven-layer-activation";
-import { F2ConfirmModal, LAYERS, configuredValue, f2Ranked, num, type F2Confirm } from "./f2-shared";
+import { F2ConfirmModal, LAYERS, configuredValue, f2Ranked, layerPauseState, num, type F2Confirm } from "./f2-shared";
 import type { FViewCtx } from "./types";
 import { amountDisplay } from "@/lib/format";
 
@@ -28,14 +28,15 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
   const policy = ctx.f2DirectPolicy;
   const rates = ctx.f2Unilevel;
   const cv = (key: string) => configuredValue(ctx.f2ConfigValues[key]);
+  const paused = (level: string) => layerPauseState(ctx.f2ConfigValues[`F.unilevel.${level}.paused`]);
   const ratesReady = !ctx.f2Loading && !ctx.f2Error;
   const gate = cv("F.unilevel.depthGate"), rank = cv("F.unilevel.depthGateRank");
   const gateBad = ratesReady && (!gate || !rank || !parseF2DepthGateLayer(gate).legal || !parseF2DepthGateRank(rank).legal);
   const coolingRaw = cv("F.cooldown");
   const coolingBad = ratesReady && !!coolingRaw && !(/^[+-]?\d+$/.test(coolingRaw) && Number(coolingRaw) >= 0 && Number(coolingRaw) <= 90);
   // 没配的层结算按发放算（后端缺省 off），不算异常；只有存了认不出的值才标出来。
-  const pauseBad = ratesReady && LAYERS.some((level) => { const raw = cv(`F.unilevel.${level}.paused`); return raw !== "" && !["on", "off"].includes(raw); });
-  const pauseUnset = ratesReady && rates.length > 0 && LAYERS.some((level) => cv(`F.unilevel.${level}.paused`) === "");
+  const pauseBad = ratesReady && LAYERS.some((level) => paused(level) === "invalid");
+  const pauseUnset = ratesReady && rates.length > 0 && LAYERS.some((level) => paused(level) === "unset");
   const sections: SectionNavItem[] = [
     { id: "layers", label: "每层分多少", alert: ratesReady && (rates.length === 0 || pauseBad) },
     { id: "who", label: "谁能拿到", alert: gateBad },
@@ -48,7 +49,7 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
   const canWrite = ctx.can("network_f2_royalty_rate") || ctx.can("network_f2_policy_amplify");
 
   const complete = LAYERS.every(level => rates.some(row => row.l === level && row.usdt !== null && row.usdt <= 100 && row.nex !== null));
-  const activeSum = rates.filter((row) => cv(`F.unilevel.${row.l}.paused`) !== "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
+  const activeSum = rates.filter((row) => paused(row.l) !== "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
   const pending = ctx.f2ActivationPending;
   const ranked = f2Ranked(ctx);
   const attempt = ctx.f2ActivationAttempt;

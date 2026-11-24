@@ -89,8 +89,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const canWithdrawV8 = useAdminAuth(({ session }) => !!session
     && session.authorities.includes("platform_a2_proposal_create")
     && canAccessResolvedPath(resolveVisibleDomains(session), "/platform/audit"));
-  const salaryPresent = ctx.f1SalaryFieldPresent === true || ctx.f1SalaryFieldPresent === undefined && !!ctx.f1Error && requestedView === "salary";
-  const view = requestedView === "v8" && !v8Review || requestedView === "salary" && !salaryPresent ? "ladder" : requestedView;
+  const salaryPresent = ctx.f1SalaryFieldPresent === true;
+  const salaryTabAvailable = ctx.f1SalaryFieldPresent !== false;
+  const view = requestedView === "v8" && !v8Review || requestedView === "salary" && !salaryTabAvailable ? "ladder" : requestedView;
   useEffect(() => {
     const read = () => {
       const query = new URLSearchParams(window.location.search);
@@ -200,7 +201,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     ...(v8Review ? [{ value: "v8" as const, label: "V8 审核", count: v8Count, countTone: "neutral" as const }] : []),
     { value: "promotions" as const, label: "晋升记录" },
     { value: "payouts" as const, label: "奖励发放记录" },
-    ...(salaryPresent ? [{ value: "salary" as const, label: "月薪领取" }] : []),
+    ...(salaryTabAvailable ? [{ value: "salary" as const, label: "月薪领取" }] : []),
     { value: "howto" as const, label: "App 等级说明" },
   ];
   const v8Ready = typeof v8Count === "number" && v8Count > 0 && view !== "v8";
@@ -228,7 +229,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       {tabBar}
       <div {...ids.panel(view)} className="f1-view">
         {view === "v8" && v8Review ? <F1V8Review ctx={ctx} state={v8Review} v8={undefined} canApprove={canApproveV8} onApprove={openV8Approve} />
-          : view === "salary" && salaryPresent ? <F1SalaryClaims ctx={ctx} rows={rows} />
+          : view === "salary" ? <F1SalaryClaims ctx={ctx} rows={rows} />
             : view === "promotions" ? <F1PromotionHistory ctx={ctx} rows={rows} canPromote={false} onOverride={() => {}} />
               : view === "payouts" ? <F1PayoutHistory ctx={ctx} rows={rows} canReissue={false} canReverse={false} openConfirm={setConfirm} />
                 : view === "howto" ? <F1RankHow key={howEpoch} ladder={rows} toast={ctx.toast} onPendingChange={() => setRecoveryEpoch(value => value + 1)} /> : body}
@@ -548,7 +549,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           {ladder}{detail}{shared}
         </>}
         {view === "v8" && v8Review && <F1V8Review ctx={ctx} state={v8Review} v8={rows.find((row) => row.v === "V8")} canApprove={canApproveV8} onApprove={openV8Approve} />}
-        {view === "salary" && salaryPresent && <F1SalaryClaims ctx={ctx} rows={rows} />}
+        {view === "salary" && <F1SalaryClaims ctx={ctx} rows={rows} />}
         {view === "promotions" && <F1PromotionHistory ctx={ctx} rows={rows} canPromote={canPromote} onOverride={openOverride} />}
         {view === "payouts" && <F1PayoutHistory ctx={ctx} rows={rows} canReissue={canReissue} canReverse={canReverse} openConfirm={setConfirm} />}
         {view === "howto" && <F1RankHow key={howEpoch} ladder={rows} toast={ctx.toast} onPendingChange={() => setRecoveryEpoch(value => value + 1)} />}

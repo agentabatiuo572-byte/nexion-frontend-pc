@@ -44,6 +44,15 @@ export function configuredValue(raw: string | undefined) {
   return value === "__UNCONFIGURED__" ? "" : value;
 }
 
+export function layerPauseState(raw: string | undefined): "on" | "off" | "unset" | "invalid" {
+  const flag = raw?.toLowerCase();
+  const configured = configuredValue(raw);
+  // Match UnilevelCommissionService.isLayerPaused, which trims only the numeric flag.
+  if (flag === "true" || flag === "on" || configured === "1") return "on";
+  if (configured === "off") return "off";
+  return configured ? "invalid" : "unset";
+}
+
 /** 去掉末尾补的 0，不舍入真实小数位；千分位只加在整数部分。 */
 export function num(value: number | string | null, minDecimals = 0) {
   if (value === null) return "—";
