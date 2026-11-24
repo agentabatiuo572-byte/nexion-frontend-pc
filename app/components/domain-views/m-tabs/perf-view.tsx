@@ -4,7 +4,7 @@
  * 显示件只认「有哪些东西、什么状态」，不认后端字段名：接线（perf-wiring.ts）把后端合同映射成这里的形状；
  */
 import { amountDisplay } from "@/lib/format";
-import { businessStamp } from "@/lib/admin/business-time";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 
 /** 一个业绩金额：核完了写数；没核完写已核小计和缺什么；读不到、不可用写「—」和原因。 */
 export type PerfValue =
@@ -253,6 +253,7 @@ export class ExportOutcomeUnknownError extends Error {
 
 export function exportPreviousReceipt(previous?: ExportVisibleReceipt) {
   if (!previous) return "";
-  const rows = previous.rows.map(row => `${EXPORT_LABEL[row.type]}：${exportStatus(row).label}`).join("，");
-  return ` 上次查询（${businessStamp(previous.checkedAt)}）：${rows || "没有可见结果"}。`;
+  // 只是上次查到的样子，写明时间，不当成现在的结果。
+  const rows = previous.rows.map(row => `${EXPORT_LABEL[row.type]}${exportStatus(row).label}`).join("、");
+  return `上次查询（${businessStamp(previous.checkedAt)}，${businessZone().label}）看到：${rows || "没有可见结果"}。`;
 }

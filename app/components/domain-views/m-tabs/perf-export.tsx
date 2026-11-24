@@ -172,22 +172,26 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   const notReady = chosen.find(item => item.check.state !== "ok");
   // 要人处理的才出橙黄提示条：页面那一版刷新没成功、提交结果未知（VS-107）。
   const differences = data?.restoration?.differences.map(change => {
-    if (change.field === "month") return `月份 ${change.original} 已不可选`;
-    if (change.field === "types") return `已不可选：${change.removed.map(type => EXPORT_LABEL[type]).join("、")}`;
+    // 恢复原申请时条件变了：逐项写原来是什么、现在差在哪；组名看得到就写名字，看不到写个数。
+    if (change.field === "month") return { k: "原月份", v: `${change.original}，现在不能选` };
+    if (change.field === "types") return { k: "去掉的内容", v: `${change.removed.map(type => EXPORT_LABEL[type]).join("、")}，现在不能导出` };
     const before = change.original.groupIds ?? [], after = change.current?.groupIds ?? [];
-    const removed = before.filter(id => !after.includes(id)).length, added = after.filter(id => !before.includes(id)).length;
-    return removed || added ? `负责组：减少 ${removed} 个，新增 ${added} 个` : "原范围已不可选";
+    const groupName = (id: string) => data?.scopes.find(choice => choice.value === `GROUP:${id}`)?.label;
+    const removed = before.filter(id => !after.includes(id)), added = after.filter(id => !before.includes(id));
+    const names = (ids: string[]) => ids.map(groupName).every(Boolean) ? ids.map(groupName).join("、") : `${ids.length} 个组`;
+    const kind = ({ SELF: "本人", MANAGED_GROUPS: "负责组", ALL: "全部范围" } as const)[change.original.kind];
+    return { k: "原范围", v: [before.length ? `${kind}（${names(before)}）` : kind, removed.length ? `少了 ${names(removed)}` : "", added.length ? `多了 ${names(added)}` : "", !removed.length && !added.length ? "现在不能选" : ""].filter(Boolean).join("；") };
   });
   const blockedReason = !data ? undefined
     : original?.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT
     : unknown ? "提交后没收到结果，原来的选择和理由已保存。先查询原操作，不要再点提交。"
-    : data.catalogState === "no-months" ? "暂无可导出月份。"
-    : differences?.length ? `原条件和现在不同。${differences.join("；")}。请重新选择。`
     : data.blocked;
   // 空、没勾选、正在检查、勾着的项没加载出来：那一项自己在内容区写清楚，这里只写进确认按钮的灰色原因，不另出提示条（VS-107，一件事只说一处）。
   const quietReason = blockedReason ? undefined
     : preview === "checking" ? "正在检查…"
     : preview === "failed" || !data ? "导出内容没加载出来"
+    : data.catalogState === "no-months" ? "暂无可导出月份"
+    : differences?.length ? "先在上面选好这次要用的条件"
     : !selectable.length && !notReady ? items[0]?.check.state === "empty" ? "这个月还没有记录" : "没有能导出的内容"
     : notReady ? notReady.check.state === "checking" ? "正在检查…" : notReady.check.state === "failed" ? `${EXPORT_LABEL[notReady.type]}没加载出来，先重试或取消这一项` : `${EXPORT_LABEL[notReady.type]}这次不能导出，先取消这一项`
     : (!chosen.length || chosen.length !== selected.length) ? "还没勾选导出内容" : chosen.some(item => item.check.state === "ok" && item.check.rows === null) ? "行数暂时无法确认" : undefined;
@@ -199,11 +203,11 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
         setQuerying(true); setLookupText(null);
         ports.lookupSubmit().then(outcome => {
           if (outcome.kind === "check-failed") {
-            setLookupText("本次查询失败，请重试。" + exportPreviousReceipt(outcome.previous));
+            setLookupText("这次查询失败，可以再点「查询原操作」。" + exportPreviousReceipt(outcome.previous));
             return;
           }
           if (outcome.kind === "pending") {
-            setLookupText(original?.acceptedRequestId ? "本次未查到可见结果。" + exportPreviousReceipt(outcome.previous)
+            setLookupText(original?.acceptedRequestId ? "这次没查到看得到的结果。" + exportPreviousReceipt(outcome.previous)
               : outcome.expired ? RETRY_EXPIRED_TEXT : "还没查到这次提交的结果，先保持锁定，稍后再查。");
             return;
           }
@@ -225,11 +229,15 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           setLookupText(original?.acceptedRequestId ? "这次查询没连上，暂时无法核对当前可见结果。" : "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
         }).finally(() => setQuerying(false));
       }}>查询原操作</Button>{lookupText && lookupText !== RETRY_EXPIRED_TEXT && <span role="status">{lookupText}</span>}{expired && <span role="status">{RETRY_EXPIRED_TEXT} <ExportAuditLink /></span>}</div>;
-  const content = !data && unknown ? recovery : loadFailed || (!unknown && data?.catalogState === "no-months")
-    ? <Notice tone="danger" action={<Button size="sm" onClick={load} loading={preview === "checking"}>重试</Button>}>{loadFailed ? "导出内容没加载出来，月份、范围和已填的理由都还在。" : "暂无可导出月份。"}</Notice>
+  const content = !data && unknown ? recovery : loadFailed
+    ? <Notice tone="danger" action={<Button size="sm" onClick={load} loading={preview === "checking"}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。</Notice>
+    // 没有已发布的一版：不是失败，写原因，给「刷新」重新读目录。
+    : !unknown && data?.catalogState === "no-months"
+    ? <Notice tone="done" title="暂无可导出月份" action={<Button size="sm" onClick={load} loading={preview === "checking"}>刷新</Button>}>业绩数据还没发布第一版，发布后才能导出。</Notice>
     : !data ? <p className="m1-export-loading" role="status">正在读取导出内容…</p>
     : <div className="m1-export">
       {recovery}
+      {differences?.length ? <Notice tone="warn" title="原来的条件和现在不同，请重新选择"><dl className="m1-export-diff">{differences.map(row => <div key={row.k}><dt>{row.k}</dt><dd>{row.v}</dd></div>)}</dl></Notice> : null}
       <div className="m1-export-scope">
         <Field label="月份" help={data.since}>{control => (data.months.length > 1 || !month && !!data.restoration)
           ? <Select {...control} aria-label="月份" value={month} options={data.months} onChange={changeMonth} disabled={unknown} />

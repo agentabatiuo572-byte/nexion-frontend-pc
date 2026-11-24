@@ -208,9 +208,9 @@ function fundsCoverage(funds: SupportAnalyticsResponse["funds"]): "COMPLETE" | "
   return states.some(state => state === "PARTIAL" || state === "READY") ? "PARTIAL" : "UNKNOWN";
 }
 const fundsSummary = {
-  COMPLETE: "客户与资金 · 已同步",
-  PARTIAL: "客户与资金 · 部分待核",
-  UNKNOWN: "客户与资金 · 暂待核实",
+  COMPLETE: "客户与资金 · 已核完",
+  PARTIAL: "客户与资金 · 有数据没核完",
+  UNKNOWN: "客户与资金 · 暂时无法确认",
 };
 function activityTime(value: string): string {
   return formatBusinessTimeCompact(value, "时间待核验");
@@ -252,14 +252,14 @@ type AgentStatisticsRead =
   | { status: "loading" | "refresh-required" | "error" | "missing" | "denied" }
   | { status: "ready"; subject: AgentSubject; amount: PerfValue };
 const agentReadReason = {
-  loading: "正在读取期间业绩…",
-  "refresh-required": "数据已更新，点「刷新」从第一页重新读取。",
-  error: "期间业绩读取失败，点「刷新」重试。",
-  missing: "暂时无法确认这位客服的统计，点「刷新」重试。",
-  denied: "已无权查看这位客服的统计。",
+  loading: "正在加载…",
+  "refresh-required": "数据已更新，点页头「刷新」从第一页重读。",
+  error: "期间业绩加载失败",
+  missing: "这位客服的资料暂时取不到",
+  denied: "你已没有这个组的查看权限",
 };
-function AgentStatisticsDrawer({ subject, read, month, currency, drill, onClose }: {
-  subject?: AgentSubject; read: AgentStatisticsRead; month: string; currency: Currency; drill: Drill; onClose: () => void;
+function AgentStatisticsDrawer({ subject, read, month, currency, drill, onClose, onRetry }: {
+  subject?: AgentSubject; read: AgentStatisticsRead; month: string; currency: Currency; drill: Drill; onClose: () => void; onRetry?: () => void;
 }) {
   const agent = subject?.agent, unit = nexGridBrandText(currency);
   const agentPeriod: PerfValue = read.status === "ready" ? read.amount : { state: "unavailable", reason: agentReadReason[read.status] };
@@ -273,8 +273,15 @@ function AgentStatisticsDrawer({ subject, read, month, currency, drill, onClose 
       <Fact k="持有设备"><CountValue count={agent.current.devices.held} label="当前设备" onClick={() => drill({ view: "DEVICES", agentId: agent.accountId, category: "BOUND", basis: "CURRENT_ASSET" })} /></Fact>
       <Fact k="客户累计充值" unit={unit}><MoneyValue money={agent.current.ownLifetime.find(x => x.currency === currency)?.deposits} label={`客户累计充值 ${unit}`} onClick={() => drill({ view: "FINANCE", agentId: agent.accountId, category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY" })} /></Fact>
       <Fact k="当前余额" unit={unit}><Numeric kind="amount" value={agent.funds.balances?.find(f => f.currency === currency)?.confirmedAmount ?? null} observed={agent.funds.balances?.find(f => f.currency === currency)?.observedAmount} label={`当前余额 ${unit}`} onClick={() => drill({ view: "CUSTOMERS", agentId: agent.accountId, category: "BOUND" })} /></Fact>
-    </> : <Fact k="期间业绩额">—<span className="m1-fact-reason">{perfNote(agentPeriod)}</span></Fact>}
-    </Facts></Drawer>;
+    </> : null}
+    </Facts>
+    {/* 读取的终态各有样子，不停在「正在加载」；没有身份时不露个人资料。 */}
+    {!agent && read.status === "error" && <BlockState state="error" title="客服统计加载失败" onRetry={onRetry} />}
+    {!agent && read.status === "refresh-required" && <BlockState state="empty" title="数据已更新" detail="点页头「刷新」从第一页重读。" />}
+    {!agent && read.status === "missing" && <BlockState state="empty" title="这位客服的资料暂时取不到" detail="返回统计列表，或点页头「刷新」再看。" />}
+    {!agent && read.status === "denied" && <BlockState state="denied" title="你已没有这个组的查看权限" />}
+    {!agent && read.status === "loading" && <BlockState state="loading" title="正在加载…" />}
+  </Drawer>;
 }
 function agentScopeDenied(cause: unknown) {
   if (!(cause instanceof SupportClientError)) return false;
@@ -355,7 +362,8 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
     return () => controller.abort();
   }, [selection, agentId, requiresPeriod, month, groupId, query, onSourceRefreshed, onSourceDenied]);
   const agentDrawer = selection && <AgentStatisticsDrawer read={read} subject={read.status === "ready" ? read.subject : read.status === "loading" ? selection.subject : undefined}
-    month={month} currency={currency} drill={drill} onClose={() => setSelection(null)} />;
+    month={month} currency={currency} drill={drill} onClose={() => setSelection(null)}
+    onRetry={() => { if (selection) { setRead({ status: "loading" }); setSelection({ ...selection }); } }} />;
   if (!data.records.length) return <><BlockState state="empty" title={data.total === null ? "还没数到记录，总数还在统计。" : "当前筛选下没有记录。"} />{agentDrawer}</>;
   const name = (row: Pick<SupportAnalyticsCustomer, "nickname" | "customerNo" | "customerId">) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
   const unit = nexGridBrandText(currency);
@@ -860,7 +868,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       onPage={number => { if (events.version) setEventPage({ number, version: events.version }); }}
       onClose={closeEvents} />}
     {showStatistics && <Panel className="sa-stats" icon={currentTab === "customers" ? Users : BarChart3} tone="role-1" title={isPersonal ? "本人客户画像" : currentTab === "customers" ? mode === "ALL" ? "全部客户" : "负责组客户" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}
-      sub={<>{selectedGroup?.name || (queryState.groupId ? "组名未同步" : isPersonal ? "本人当前客户" : mode === "ALL" ? "全部获准客服范围" : `全部负责组 · ${groups.length} 个`)}{queryState.basis === "CURRENT_ASSET" ? "" : ` · ${nexGridBrandText(currency)}`}{data ? <> · <AnalyticsFreshness asOf={data.asOf} label="" explain={false} onRefresh={() => refreshScope()} />{data.versionState === "READY" ? "" : " · 数据仍在同步"}</> : <> · {businessZone().label}</>}</>}
+      sub={<>{selectedGroup?.name || (queryState.groupId ? "组名未同步" : isPersonal ? "本人当前客户" : mode === "ALL" ? "全部获准客服范围" : `全部负责组 · ${groups.length} 个`)}{queryState.basis === "CURRENT_ASSET" ? "" : ` · ${nexGridBrandText(currency)}`}{data ? <> · <AnalyticsFreshness asOf={data.asOf} label="" explain={false} onRefresh={() => refreshScope()} />{data.versionState === "READY" || queryState.view === "FINANCE" ? "" : " · 数据仍在同步"}</> : <> · {businessZone().label}</>}</>}
       explain={isPersonal ? <><p>你现在名下的客户。累计业绩额是这位客户自 2026-11-20 22:57 起的入金减提现。</p><p>{caption}。统计约每分钟更新一次，刷新读最近算好的一版。</p></>
         : mode === "MANAGED" ? currentTab === "customers" ? <><p>只算你负责的组：{groups.map(g => g.name || "组名未同步").join("、") || "—"}。别的组、未分配和归属未知的业绩不在这里。</p><p>统计约每分钟更新一次，刷新读最近算好的一版。</p></>
           : <><p>只算你负责的组：{groups.map(g => g.name || "组名未同步").join("、") || "—"}。</p><p>别的组不在这里。</p><p>未分配和归属未知的业绩只有超级管理员能看。</p></>

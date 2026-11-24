@@ -56,3 +56,9 @@
 
 /* 导出框借用的多字段表单没有字段，只用它把「这次不能提交」的原因放进确认按钮的提示；空的表单块不占位。 */
 .rd-modal:has(.m1-export) .rd-business-form[data-business-form="multi-field"] { display: none; }
+
+/* 恢复原申请时条件变了：差异一行一项，名称弱、值强（VS-54）。 */
+.m1-export-diff { display: grid; gap: var(--rd-space-1); margin: var(--rd-space-1) 0 0; }
+.m1-export-diff > div { display: flex; gap: var(--rd-space-2); }
+.m1-export-diff dt { flex: 0 0 72px; color: var(--rd-text-3); }
+.m1-export-diff dd { margin: 0; color: var(--rd-text); }
