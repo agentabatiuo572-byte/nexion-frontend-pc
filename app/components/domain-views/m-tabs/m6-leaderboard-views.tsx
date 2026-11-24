@@ -9,7 +9,7 @@ import { ArrowRight, ListOrdered, Trophy } from "lucide-react";
 import { BlockState, Button, Cell, Explain, Fact, Facts, Notice, Panel, Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import type { SupportBoardCount, SupportBoardKey, SupportBoardQualification, SupportBoardRow } from "./support-leaderboard";
 import { amountDisplay } from "@/lib/format";
-import { perfFlowText, perfNote, perfText, type PerfTotals } from "./perf-view";
+import { PERF_UNAVAILABLE, perfFlowText, perfNote, perfText, type PerfTotals } from "./perf-view";
 
 /* ---------------- 名字和口径 ---------------- */
 
@@ -189,17 +189,19 @@ export function RankingTable({ board, state, month, perf, openId, privateRead, o
 }
 
 /** 暂定或缺数：格子第二行写短词，完整原因在 title 里（窄屏被切时悬停、聚焦能看全）。 */
+const PENDING_REASONS = ["成绩还在汇总", "参榜资料还在汇总"];
 function gapNote(metric: SupportBoardCount, fallback = "数据未同步") {
   if (metric.coverage === "complete") return {};
   const reason = metric.reason || fallback;
-  return metric.coverage === "partial" ? { sub: "待核", title: `待核：${reason}` } : { sub: reason, title: reason };
+  // 「没核完」全页一个说法：「待核」（和业绩额格、结论一致），完整原因在 title。
+  return metric.coverage === "partial" || PENDING_REASONS.includes(reason) ? { sub: "待核", title: `待核：${reason}` } : { sub: reason, title: reason };
 }
 
 /** 分页：覆盖不完整时不写总人数（M6-Q04），所以不用共用 Pager（它总写「共 N 条」）；样子和 Pager 一样。 */
 export function BoardPager({ page, pages, total, pageSize, onPage, onPageSize }: { page: number; pages: number; total?: number; pageSize: number; onPage: (page: number) => void; onPageSize: (size: number) => void }) {
   return <div className="rd-pager" data-list-pager="" data-list-label="全部排名">
     <span className="rd-pager-range">第 {page} / {pages} 页{total !== undefined ? ` · 共 ${total.toLocaleString("en-US")} 人` : ""}</span>
-    {total === undefined && <span className="rd-pager-note">参榜名单还在汇总，暂不写总人数</span>}
+    {total === undefined && <span className="rd-pager-note">参榜名单待核，暂不写总人数</span>}
     <div className="rd-pager-tools">
       <Select aria-label="全部排名每页条数" value={String(pageSize)} onChange={(value) => onPageSize(Number(value))} options={[5, 10, 20].map((size) => ({ value: String(size), label: `${size} 条/页` }))} />
       <Button size="sm" aria-label="全部排名 上一页" disabled={page <= 1} onClick={() => onPage(page - 1)}>上一页</Button>
@@ -223,7 +225,9 @@ export function PerformanceBody({ row, board, month, perf, stale, refreshFailed 
   refreshFailed: boolean;
 }) {
   const movement = movementText(row), reason = movementReason(row);
-  const gaps = [...new Set([perfNote(perf.amount), row.firstPayment.coverage === "complete" ? undefined : row.firstPayment.reason, row.customers.coverage === "complete" ? undefined : row.customers.reason].filter(Boolean))];
+  // 没核完的项写「…待核」，和表格、结论同一个说法；旧后端的「暂不可用」照写。
+  const amountGap = perf.amount.state === "complete" ? undefined : perf.amount.state === "unavailable" && perf.amount.reason === PERF_UNAVAILABLE ? "业绩额暂不可用" : perf.amount.state === "unavailable" && perf.amount.reason === "数据正在升级" ? "业绩额：数据正在升级" : "业绩额待核";
+  const gaps = [amountGap, row.firstPayment.coverage === "complete" ? undefined : "首充人数待核", row.customers.coverage === "complete" ? undefined : "当前绑定客户待核"].filter(Boolean);
   const amount = perfText(perf.amount), inflow = perfText(perf.inflow), withdrawal = perfText(perf.withdrawal);
   return <>
     <div className="m6-detail-who">
@@ -235,13 +239,13 @@ export function PerformanceBody({ row, board, month, perf, stale, refreshFailed 
     <div className="m6-lead"><span className="m6-lead-label">业绩额 · {month}</span><span className="m6-lead-value">{amount}{amount !== "—" && <small>USDT</small>}</span></div>
     <Facts>
       <Fact k="名次">{rankText(row)}</Fact>
-      <Fact k="名次变化">{movement ?? reason ?? "—"}</Fact>
+      <Fact k="名次变化">{movement ?? (reason && PENDING_REASONS.includes(reason) ? "待核" : reason) ?? "—"}</Fact>
       <Fact k="入金合计" unit={inflow === "—" ? undefined : "USDT"}>{inflow}</Fact>
       <Fact k="提现合计" unit={withdrawal === "—" ? undefined : "USDT"}>{withdrawal}</Fact>
       <Fact k="首充人数" unit={countShown(row.firstPayment) === "—" ? undefined : "人"}>{countShown(row.firstPayment)}</Fact>
       <Fact k="当前绑定客户" unit={countShown(row.customers) === "—" ? undefined : "人"}>{countShown(row.customers)}</Fact>
     </Facts>
-    {gaps.length > 0 && <Notice tone="done" title={board === "netContribution" ? "这位客服的成绩还没核完" : "部分成绩还没核完"}>{gaps.join("；")}。缺的数写「—」，不是 0。</Notice>}
+    {gaps.length > 0 && <Notice tone="done" title={board === "netContribution" ? "这位客服的成绩还没核完" : "部分成绩还没核完"}>{gaps.join("、")}。缺的数写「—」，不是 0。</Notice>}
     {(stale || refreshFailed) && <Notice tone="warn">显示的是上次发布的结果{refreshFailed ? "；榜单更新暂未成功，请稍后读取最新结果" : ""}。</Notice>}
   </>;
 }

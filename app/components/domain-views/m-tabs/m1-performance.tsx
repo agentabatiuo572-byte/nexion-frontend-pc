@@ -17,8 +17,12 @@ function statValue(value: PerfValue) { return perfText(value); }
 function statUnit(value: PerfValue, unit: string) { return value.state === "complete" ? unit : undefined; }
 
 /** 我的数据最上面的「期间业绩」：业绩额是这一屏唯一的大数，后面是入金、提现、期间首充；下面是入金构成和提现构成。 */
-export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail }: {
+export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail, status, detail }: {
   perf: PeriodPerf | { unavailable: string };
+  /** 期间业绩自己的加载和读取失败（不写成空态）。 */
+  status?: "loading" | { error: string; onRetry: () => void };
+  /** 「业绩明细」入口的加载和读取失败，写在入口处。 */
+  detail?: { loading: boolean; error?: string };
   month: string;
   /** 已经按「{时间}（北京时间）」写好的统计截至。 */
   asOf?: string;
@@ -29,8 +33,11 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail }: {
   return <Panel title="期间业绩" icon={BarChart3} tone="role-1" className="m1-perf-panel"
     explain="按所选月份里发生的入金和提现算。只算 USDT，越南盾只在导出文件里作参考。"
     sub={`${month} · USDT${asOf ? ` · 截至 ${asOf}` : ""}`}
-    actions={<div className="m1-perf-actions">{monthControl}{ready && onDetail && <Button icon={<ListChecks size={14} aria-hidden />} onClick={onDetail}>业绩明细</Button>}</div>}>
-    {!ready ? <BlockState state="empty" title={perf.unavailable} detail="名下客户和其他统计照常看。" /> : <>
+    actions={<div className="m1-perf-actions">{monthControl}{ready && onDetail && <Button icon={<ListChecks size={14} aria-hidden />} loading={detail?.loading} loadingText="正在加载…" onClick={onDetail}>业绩明细</Button>}</div>}>
+    {status === "loading" ? <BlockState state="loading" title="正在加载…" />
+      : status ? <BlockState state="error" title="期间业绩加载失败" detail={status.error} onRetry={status.onRetry} />
+      : !ready ? <BlockState state="empty" title={perf.unavailable} detail="名下客户和其他统计照常看。" /> : <>
+      {detail?.error && <BlockState state="error" compact title="业绩额明细加载失败" detail={detail.error} onRetry={onDetail} />}
       <StatBand label="期间业绩">
         <Stat lead label="业绩额 = 客户入金 − 客户提现" icon={Scale} tone="role-other" value={statValue(perf.totals.amount)} unit={statUnit(perf.totals.amount, "USDT")}
           sub={perfObservedText(perf.totals.amount, " USDT")} explain={AMOUNT_EXPLAIN} onOpen={onDetail} openLabel="查看业绩额明细" />
@@ -63,7 +70,16 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail }: {
   </Panel>;
 }
 
-const summaryText = (part: { amount: PerfValue; count: PerfCount; customers: PerfCount }) => <>{perfText(part.amount)}{part.amount.state === "complete" ? " USDT" : ""}<span className="m1-perf-count">（{perfCountText(part.count)} 条，{perfCountText(part.customers)} 位客户）</span></>;
+/** 合计没有数时只写「—」，不带「（— 条，— 位客户）」。 */
+const summaryText = (part: { amount: PerfValue; count: PerfCount; customers: PerfCount }) => part.amount.state !== "complete" ? <>—</>
+  : <>{perfText(part.amount)} USDT<span className="m1-perf-count">（{perfCountText(part.count)} 条，{perfCountText(part.customers)} 位客户）</span></>;
+/** 没有能显示的逐笔时写原因，不画空表头（ST-33）。 */
+function emptyEvents(events: PerfEvents) {
+  if (events.total.amount.state !== "complete") return { title: "这个月的记录还在核对", detail: "核完后点页头「刷新」再看。" };
+  const moved = events.restricted.count.state === "complete" && events.restricted.count.value > 0;
+  return moved ? { title: "现在名下的客户这个月没有记录", detail: "已转走客户的明细不显示，小计见上方。" }
+    : { title: "这个月还没有计入业绩的记录", detail: "名下客户有入金或提现后会显示在这里。" };
+}
 
 /** 业绩额明细：先三行核对「本月合计 = 现在名下的客户 + 已转走的客户」，再列能看的每一笔。 */
 export function PerfEventsDrawer({ events, page, pageSize, total, observedTotal, canContinue, loading, onPage, onClose }: {
@@ -72,7 +88,7 @@ export function PerfEventsDrawer({ events, page, pageSize, total, observedTotal,
 }) {
   const range = `统计区间 ${formatBusinessTimeCompact(events.from, "—")} 至 ${formatBusinessTimeCompact(events.to, "—")}（北京时间）`;
   return <Drawer open wide title="业绩额明细" sub="本人 · USDT" onClose={onClose}
-    footer={<div className="m1-perf-foot"><Button onClick={onClose}>关闭</Button><span className="m1-perf-pager"><Button size="sm" disabledReason={loading ? "正在加载…" : page === 1 ? "已经是第一页" : undefined} onClick={() => onPage(page - 1)}>上一页</Button>第 {page} / {total === null ? "—" : Math.max(1, Math.ceil(observedTotal / pageSize))} 页 · 共 {total ?? "—"} 条<Button size="sm" disabledReason={loading ? "正在加载…" : canContinue ? undefined : "已经是最后一页"} onClick={() => onPage(page + 1)}>下一页</Button></span></div>}>
+    footer={<div className="m1-perf-foot"><Button onClick={onClose}>关闭</Button>{events.rows.length > 0 && <span className="m1-perf-pager"><Button size="sm" disabledReason={loading ? "正在加载…" : page === 1 ? "已经是第一页" : undefined} onClick={() => onPage(page - 1)}>上一页</Button>第 {page} / {total === null ? "—" : Math.max(1, Math.ceil(observedTotal / pageSize))} 页 · 共 {total ?? "—"} 条<Button size="sm" disabledReason={loading ? "正在加载…" : canContinue ? undefined : "已经是最后一页"} onClick={() => onPage(page + 1)}>下一页</Button></span>}</div>}>
     <p className="rd-note">{range}</p>
     <Facts>
       <Fact k="本月合计">{summaryText(events.total)}</Fact>
@@ -82,7 +98,7 @@ export function PerfEventsDrawer({ events, page, pageSize, total, observedTotal,
     <Fold title="统计口径" summary="和期间业绩是同一份统计">
       <p>列出这段时间里在你名下发生的每一笔，按发生时的归属算。买设备、奖励只作参考，不计入业绩。</p>
     </Fold>
-    <Table label="业绩额明细" className="m1-perf-events"><thead><Tr><Th>时间（北京时间）</Th><Th>客户</Th><Th>类别</Th><Th align="right">业务金额</Th><Th align="right">计入业绩（USDT）</Th></Tr></thead><tbody>
+    {events.rows.length === 0 ? <BlockState state="empty" {...emptyEvents(events)} /> : <Table label="业绩额明细" className="m1-perf-events"><thead><Tr><Th>时间（北京时间）</Th><Th>客户</Th><Th>类别</Th><Th align="right">业务金额</Th><Th align="right">计入业绩（USDT）</Th></Tr></thead><tbody>
       {events.rows.map(row => <Tr key={row.id}>
         <Td><span className="sa-nowrap">{formatBusinessTimeCompact(row.at, "—")}</span></Td>
         <Td><Cell main={row.customer} sub={<span className="m-user-code">{row.customerNo}</span>} /></Td>
@@ -90,6 +106,6 @@ export function PerfEventsDrawer({ events, page, pageSize, total, observedTotal,
         <Td align="right"><Cell num main={row.business ?? "—"} /></Td>
         <Td align="right"><Cell num main={row.delta === null ? "—" : amountDisplay(row.delta)} /></Td>
       </Tr>)}
-    </tbody></Table>
+    </tbody></Table>}
   </Drawer>;
 }

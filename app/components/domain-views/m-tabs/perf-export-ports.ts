@@ -14,7 +14,11 @@ import { EXPORT_TYPES, ExportOutcomeUnknownError, type DecisionLookup, type Expo
 const PATH = "/support-workbench/performance-exports";
 const SUMMARY = "service_performance_export_summary", DETAIL = "service_performance_export_detail", APPROVE = "service_performance_export_approve";
 const TYPES = { SUMMARY, CUSTOMER_DETAIL: DETAIL, TRANSACTION_DETAIL: DETAIL } as const;
-const GRAIN = { SUMMARY: "一个客服在一个组一个月一行", CUSTOMER_DETAIL: "一位客户一个月一行", TRANSACTION_DETAIL: "一笔记录一行" };
+const GRAIN = { SUMMARY: "一位客服在一个组一个月一行", CUSTOMER_DETAIL: "一位客户在一位客服名下一个月一行", TRANSACTION_DETAIL: "一笔入金、提现或参考交易一行" };
+/** 申请人、审批人：后端给姓名之前不显示内部账号编号。 */
+const NAME_PENDING = "（姓名待补）";
+const COVERAGE_TEXT: Record<string, string> = { COMPLETE: "完整", PARTIAL: "部分数据还在核对", UNKNOWN: "暂时无法确认是否完整", FAILED: "核对没完成，文件可能缺数" };
+const STALE_BLOCKED = "这一版数据更新延迟，暂时不能导出。关掉这个框，在页面上刷新到最新一版后再导出。";
 const SCOPES = ["SELF", "MANAGED_GROUPS", "ALL"] as const;
 const STATES = ["PENDING_GENERATION", "PENDING_APPROVAL", "APPROVED", "REJECTED", "WITHDRAWN", "READY", "FAILED", "EXPIRED"] as const;
 const ACTIONS = ["APPROVE", "REJECT", "WITHDRAW"] as const;
@@ -125,11 +129,14 @@ function parsePreview(value: unknown) {
     const status = enumeration(item.status, ["AVAILABLE", "EMPTY", "LIMIT_EXCEEDED", "READ_FAILED", "UNAVAILABLE"]);
     const stale = reasons.includes("EXPORT_REFRESH_FAILED") || reasons.includes("EXPORT_DATA_STALE");
     let check: ExportCheck;
-    if (stale && rows !== null) check = { state: "stale", rows };
+    // 这一版不可用（刷新没成功、更新延迟）、没核完、升级中各写各的原因；只有真读取失败才给重试。
+    if (stale) check = { state: "stale", rows };
     else if (status === "AVAILABLE") check = { state: "ok", rows, note: coverage === "PARTIAL" ? "部分数据还在核对" : undefined };
     else if (status === "EMPTY") check = { state: "empty", text: "这个月还没有记录。" };
     else if (status === "LIMIT_EXCEEDED") check = { state: "over", text: `共 ${rows ?? "—"} 行，超过导出上限。` };
-    else check = { state: "failed", text: reasons.some(reason => reason === "EXPORT_GENERATION_UPGRADING" || reason === "EXPORT_ROWS_UNVERIFIED") ? "新的一版还没核完，行数要等核完才知道。" : "没加载出来。" };
+    else if (status === "READ_FAILED") check = { state: "failed", text: "没加载出来。" };
+    else check = { state: "unavailable", text: reasons.includes("EXPORT_GENERATION_UPGRADING") ? "数据正在升级，这一项暂时不能导出。"
+      : reasons.includes("EXPORT_ROWS_UNVERIFIED") ? "新的一版还没核完，行数要等核完才知道。" : "这一项暂时不能导出。" };
     return { type, grain: GRAIN[type], limit: integer(item.limit), columns: columns(item.columns, type), check, reasons };
   });
   if (new Set(items.map(item => item.type)).size !== items.length) invalid("export.previewItems");
@@ -154,13 +161,13 @@ function taskParser(operator: Operator) {
     const failure = status === "FAILED" ? reasons.some(reason => /SCOPE|INELIGIBLE|PERMISSION/.test(reason)) ? "SCOPE_LOST_BEFORE_GENERATE" : "GENERATE_FAILED" : undefined;
     return {
       taskId: id(row.taskId), version: integer(row.version), type, mine,
-      requester: mine ? operator.name : id(row.requesterId), requesterRole: "",
+      requester: mine ? operator.name : NAME_PENDING, requesterRole: "",
       scope: row.scope === null ? null : scopeTitle(row.scope), month: window?.month ?? null, asOf: window?.asOf ?? null,
       rows: nullableNumber(row.rowCount), columns: columns(row.columns, type),
-      coverage: row.coverage == null ? null : object(row.coverage).status === "PARTIAL" ? "部分数据还在核对" : null,
+      coverage: row.coverage == null ? null : COVERAGE_TEXT[String(object(row.coverage).status)] ?? null,
       requestReason: row.requestReason == null ? "" : text(row.requestReason), requestedAt: instant(row.requestedAt),
       state: status,
-      decidedBy: row.reviewerId === null ? undefined : id(row.reviewerId),
+      decidedBy: row.reviewerId === null ? undefined : id(row.reviewerId) === operator.id ? operator.name : NAME_PENDING,
       decidedAt: approvalTime ? businessStamp(Date.parse(approvalTime)) : undefined,
       decisionReason: row.decisionReason == null ? undefined : text(row.decisionReason), failure,
       canDownload: bool(row.canDownload) && mine && operator.authorities.includes(TYPES[type]),
@@ -401,14 +408,16 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", downloader: operator.name, items: preview?.items ?? [],
         selected: original ? selected : selected.filter(type => preview?.items.some(item => item.type === type && item.check.state !== "empty")),
         blocked: !preview?.window ? "数据正在升级，这一版暂时不能导出。升级完、页面刷新后再导出。"
-          : preview.items.some(item => item.reasons.includes("EXPORT_REFRESH_FAILED")) ? "这一版数据刷新没成功，暂时不能导出。关掉这个框，在页面上刷新成功后再导出。" : undefined,
+          : preview.items.some(item => item.reasons.includes("EXPORT_REFRESH_FAILED")) ? "这一版数据刷新没成功，暂时不能导出。关掉这个框，在页面上刷新成功后再导出。"
+          : preview.items.some(item => item.reasons.includes("EXPORT_DATA_STALE")) ? STALE_BLOCKED : undefined,
         minReasonChars: options.minReasonChars, maxReasonChars: options.maxReasonChars,
       };
     },
     async check(query) {
       const preview = await requestPreview(query, true);
       const blocked = !preview.window ? "数据正在升级，这一版暂时不能导出。升级完、页面刷新后再导出。"
-        : preview.items.some(item => item.reasons.includes("EXPORT_REFRESH_FAILED")) ? "这一版数据刷新没成功，暂时不能导出。关掉这个框，在页面上刷新成功后再导出。" : undefined;
+        : preview.items.some(item => item.reasons.includes("EXPORT_REFRESH_FAILED")) ? "这一版数据刷新没成功，暂时不能导出。关掉这个框，在页面上刷新成功后再导出。"
+          : preview.items.some(item => item.reasons.includes("EXPORT_DATA_STALE")) ? STALE_BLOCKED : undefined;
       return { items: preview.items, asOf: preview.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", blocked };
     },
     async submit(query, reason) {

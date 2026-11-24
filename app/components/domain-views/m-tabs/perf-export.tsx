@@ -150,12 +150,13 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
         return <li key={row.taskId} className="m1-export-result">
         <div className="m1-export-result-main">
           <div className="m1-export-result-head"><span className="m1-export-result-name">{EXPORT_LABEL[row.type]}</span><StatusTag tone={status.tone}>{status.label}</StatusTag></div>
-          <div className="m1-export-result-sub"><span data-mono="">{row.taskId}</span>{row.state === "READY" && row.canDownload ? ` · ${row.rows ?? "—"} 行 · CSV` : ` · ${status.line}`}</div>
+          <div className="m1-export-result-sub">{row.state === "READY" && row.canDownload ? `${row.rows === null ? "—" : num(row.rows)} 行 · CSV` : status.line}</div>
         </div>
         {row.state === "READY" && row.canDownload && downloadFailed?.taskId !== row.taskId && <Button size="sm" onClick={() => download(row.taskId)}>下载</Button>}
       </li>;
       })}</ul>
       {pending && <p className="rd-note">明细批准后才生成文件，生成好后在「导出记录」下载。</p>}
+      <Fold title="技术信息" summary="任务编号">{result.map(row => <p key={row.taskId} data-mono="">{EXPORT_LABEL[row.type]} · 任务编号 {row.taskId}</p>)}</Fold>
     </Modal>;
   }
 
@@ -173,7 +174,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     : preview === "checking" ? "正在检查…"
     : preview === "failed" || !data ? "导出内容没加载出来"
     : !selectable.length && !notReady ? items[0]?.check.state === "empty" ? "这个月还没有记录" : "没有能导出的内容"
-    : notReady ? notReady.check.state === "checking" ? "正在检查…" : `${EXPORT_LABEL[notReady.type]}没加载出来`
+    : notReady ? notReady.check.state === "checking" ? "正在检查…" : notReady.check.state === "failed" ? `${EXPORT_LABEL[notReady.type]}没加载出来` : `${EXPORT_LABEL[notReady.type]}这次不能导出`
     : (!chosen.length || chosen.length !== selected.length) ? "还没勾选导出内容" : chosen.some(item => item.check.state === "ok" && item.check.rows === null) ? "行数暂时无法确认" : undefined;
   // 没有能提交的项时不要求填理由，也不显示理由框（5f、5g）。
   const requireReason = unknown || !data || (!data.blocked && (selectable.length > 0 || !!notReady));
@@ -234,9 +235,11 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
               {check.state === "ok" && check.rows === null && <p className="m1-export-item-note">新的一版还没核完，行数要等核完才知道。</p>}
               {check.state === "ok" && check.note && <p className="m1-export-item-note">{check.note}</p>}
               {check.state === "empty" && <p className="m1-export-item-note">{check.text}</p>}
+              {check.state === "unavailable" && <p className="m1-export-item-note">{check.text}</p>}
+              {check.state === "ok" && item.type === "CUSTOMER_DETAIL" && <p className="m1-export-item-note">看不到明细的客户，记录合成一行匿名小计。</p>}
               {check.state === "over" && <p className="m1-export-item-note" data-tone="warn">{check.text}</p>}
               {check.state === "failed" && <p className="m1-export-item-error" role="alert">
-                {on ? "没加载出来。点「重试」，或取消勾选。" : dropped.includes(item.type) ? "没加载出来，这次不导出。" : check.text}
+                {on ? `${check.text}点「重试」，或取消勾选。` : dropped.includes(item.type) ? "没加载出来，这次不导出。" : check.text}
                 <InlineRetry onRetry={() => recheck(selected)} />
               </p>}
               {/* 列名展开只给勾着的项：打开时不用滚就看得到理由框（FP-5）；没勾的项看「N 列」的问号。 */}

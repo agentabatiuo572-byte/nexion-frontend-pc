@@ -9,7 +9,7 @@ import { OperationConfirmModal } from "@/app/components/domain-views/design-kit"
 import { RecoveryPanel, SettledLine, TechInfo, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ExportAuditLink, ExportColumnsFold } from "./perf-export";
 import { EXPORT_LABEL, ExportOutcomeUnknownError, exportDownloadMessage, exportReceiptSummary, exportStatus, type DecisionLookup, type ExportDownload, type ExportTask, type PendingDecision, type PendingSubmit, type PerfExportPorts } from "./perf-view";
 import { exportDecisionConflict, exportTaskHidden, isExportPermissionDenied, useExportClock } from "./perf-export-ports";
@@ -198,8 +198,8 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
   const recovery: RecoveryItem[] = [
     ...(pendingSubmit ? [{
       key: pendingSubmit.operationId, createdAt: pendingSubmit.createdAt, object: `提交导出 · ${pendingSubmit.query.month} · ${pendingSubmit.query.types.map(type => EXPORT_LABEL[type]).join("、")}`,
-      tag: unknownTag, line: "发出后没收到结果；先查询原结果，不要再点提交。", result: now >= pendingSubmit.expiresAt ? expiredResult : answers[pendingSubmit.operationId],
-      actions: queryButton(pendingSubmit.operationId, () => querySubmit(pendingSubmit)), detail: <p>理由：{pendingSubmit.reason}</p>,
+      tag: unknownTag, line: `${businessStamp(pendingSubmit.createdAt)} 发出后没收到结果；先查询原结果，不要再点提交。`, result: now >= pendingSubmit.expiresAt ? expiredResult : answers[pendingSubmit.operationId],
+      actions: queryButton(pendingSubmit.operationId, () => querySubmit(pendingSubmit)), detail: <p>理由：{pendingSubmit.reason}</p>, tech: <TechInfo commandKey={pendingSubmit.operationId} />,
     }] : []),
     ...pending.map(p => ({
       key: p.operationId, createdAt: p.createdAt, object: `${VERB[p.decision]}导出申请 ${p.taskId}`,
@@ -232,10 +232,10 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
           </Tr></thead><tbody>{rows.map(task => {
             const status = exportStatus(task);
             const reviewing = view === "APPROVALS" && task.state === "PENDING_APPROVAL";
-            const who = view === "APPROVALS" ? `${task.mine ? "你" : task.requester} · ` : "";
             return <Tr key={task.taskId} selected={openId === task.taskId} onOpen={() => setOpenId(task.taskId)}>
-              <Td><Cell main={EXPORT_LABEL[task.type]} sub={<span data-mono="">{task.taskId}</span>} /></Td>
-              <Td>{task.scopeLost ? "—" : <Cell main={`${who}${task.scope ?? "—"}`} sub={task.month ?? "—"} />}</Td>
+              {/* 申请人单独一行，范围列只写范围；任务编号写成「编号 40」，不和行数挨着。 */}
+              <Td><Cell main={EXPORT_LABEL[task.type]} sub={view === "APPROVALS" ? task.mine ? "你提交的" : `申请人 ${task.requester}` : <span data-mono="">编号 {task.taskId}</span>} /></Td>
+              <Td>{task.scopeLost ? "—" : <Cell main={task.scope ?? "—"} sub={task.month ?? "—"} />}</Td>
               <Td><Cell main={<StatusTag tone={status.tone}>{status.label}</StatusTag>} sub={reviewing && task.mine ? "你发起的，要另一位有审批权的管理员处理" : status.line} /></Td>
               <Td><span className="sa-nowrap">{formatBusinessTimeCompact(task.requestedAt, "—")}</span></Td>
               <Td align="right"><Cell num main={task.rows === null ? "—" : String(task.rows)} /></Td>
@@ -303,7 +303,7 @@ function TaskDrawer({ task, view, zone, rows, pending, now, lookup, downloadFail
     { label: "提交", sub: submitted, state: "done" as const },
     // 撤回的申请停在审批前：这一步写「已撤回」，不算走完。
     ...(DETAIL(task) ? [{ label: "审批", sub: task.state === "WITHDRAWN" ? "已撤回" : task.state === "PENDING_APPROVAL" ? reviewing ? "你" : "另一位审批人" : task.decidedAt ? `${task.decidedAt} ${task.state === "REJECTED" ? "驳回" : "批准"}` : "—", state: task.state === "PENDING_APPROVAL" ? "current" as const : task.state === "WITHDRAWN" ? "todo" as const : "done" as const }] : []),
-    { label: "生成文件", sub: task.state === "READY" || task.state === "EXPIRED" ? DETAIL(task) ? "已生成" : submitted : generating ? task.failure ? "没生成" : "进行中" : "批准后", state: generating ? "current" as const : task.state === "READY" || task.state === "EXPIRED" ? "done" as const : "todo" as const },
+    { label: "生成文件", sub: task.state === "READY" || task.state === "EXPIRED" ? DETAIL(task) ? "已生成" : submitted : task.state === "FAILED" ? "没生成" : generating ? task.failure ? "没生成" : "进行中" : "批准后", state: generating || task.state === "FAILED" ? "current" as const : task.state === "READY" || task.state === "EXPIRED" ? "done" as const : "todo" as const },
     { label: "下载", sub: task.mine ? "你本人" : "申请人", state: task.state === "READY" ? "current" as const : "todo" as const },
   ];
   const month = task.month ? `${task.month}（截至 ${task.asOf ? formatBusinessTimeCompact(task.asOf, "—") : "—"}，${zone}）` : "—";
@@ -314,8 +314,8 @@ function TaskDrawer({ task, view, zone, rows, pending, now, lookup, downloadFail
     : reviewing && task.approveBlocked ? `批准不了：${task.approveBlocked}。驳回照常可以。`
     : task.scopeLost && task.state === "PENDING_APPROVAL" ? "恢复权限前这条不能批准；可以撤回。"
     : task.state === "PENDING_APPROVAL" && task.mine ? "还不能下载：没批准，文件还没生成。"
-    : task.state === "APPROVED" && task.failure === "GENERATE_FAILED" ? "文件没生成出来，不能下载。批准记录还在；生成出错请重新导出，明细要重新审批。"
-    : task.state === "APPROVED" && task.failure === "SCOPE_LOST_BEFORE_GENERATE" ? "已批准，但生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。"
+    : (task.state === "APPROVED" || task.state === "FAILED") && task.failure === "SCOPE_LOST_BEFORE_GENERATE" ? task.decidedAt ? "已批准，但生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。" : "生成前你已没有这个范围的权限，文件没有生成。要导出请先恢复权限，再重新申请。"
+    : (task.state === "APPROVED" || task.state === "FAILED") && task.failure ? task.decidedAt ? "文件没生成出来，不能下载。批准记录还在；生成出错请重新导出，明细要重新审批。" : "文件没生成出来，不能下载。请重新导出。"
     : task.state === "APPROVED" ? "还不能下载：已批准，文件还在生成。生成好会变成「可下载」。"
     : task.state === "PENDING_GENERATION" ? "文件还在等待生成。"
     : task.state === "READY" && !task.canDownload ? "文件还在，但你现在没有这个范围的权限，不能下载。恢复权限、文件还在保留期内时，可以下载同一份。"
@@ -330,7 +330,7 @@ function TaskDrawer({ task, view, zone, rows, pending, now, lookup, downloadFail
         others={<>{task.canWithdraw && task.state === "PENDING_APPROVAL" && <Button disabledReason={pending ? "查询有结果前不能再撤回" : undefined} onClick={() => onConfirm("withdraw")}>撤回申请</Button>}<Button onClick={onClose}>关闭</Button></>}
         primary={task.state === "READY" && task.canDownload && !downloadFailed ? <Button variant="primary" onClick={onDownload}>下载</Button> : undefined} />;
 
-  return <Drawer open wide title={reviewing ? `审批${label}导出` : `${label}导出`} sub={<StatusTag tone={status.tone}>{status.label}</StatusTag>} onClose={onClose}
+  return <Drawer open title={reviewing ? `审批${label}导出` : `${label}导出`} sub={<StatusTag tone={status.tone}>{status.label}</StatusTag>} onClose={onClose}
     nav={{ onPrev: () => onNav(rows[index - 1].taskId), onNext: () => onNav(rows[index + 1].taskId), hasPrev: index > 0, hasNext: index >= 0 && index < rows.length - 1 }}
     footer={footer}>
     {pending && <Notice tone="warn" title={`${VERB[pending.decision]}结果未知`} actionBelow action={<>
@@ -351,7 +351,7 @@ function TaskDrawer({ task, view, zone, rows, pending, now, lookup, downloadFail
         <Fact k="范围、月份和行数">—</Fact>
       </> : <>
         {!task.mine && <Fact k="申请人">{task.requester}{task.requesterRole && `（${task.requesterRole}）`}</Fact>}
-        {task.state === "APPROVED" || (task.state === "READY" && DETAIL(task)) ? <><Fact k="谁批的">{task.decidedBy} · {task.decidedAt}</Fact><Fact k="批准理由">{task.decisionReason}</Fact></> : null}
+        {task.state === "APPROVED" || (task.state === "READY" && DETAIL(task)) || (task.state === "FAILED" && !!task.decidedAt) ? <><Fact k="谁批的">{task.decidedBy} · {task.decidedAt}</Fact><Fact k="批准理由">{task.decisionReason}</Fact></> : null}
         {task.state === "REJECTED" && <Fact k="驳回理由">{task.decisionReason}</Fact>}
         {task.state === "READY" && <><Fact k="文件">{label}（{task.rows ?? "—"} 行，{task.columns.total} 列，CSV）</Fact><Fact k="下载链接">每次获取后 24 小时内有效</Fact></>}
         <Fact k="范围">{task.scope ?? "—"}</Fact>

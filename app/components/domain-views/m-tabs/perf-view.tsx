@@ -37,8 +37,9 @@ export function perfObservedText(value: PerfValue, unit = ""): string | undefine
 /** 表格金额格第二行：入金和提现合计；没核完写已核小计；不可用写原因。 */
 export function perfFlowText(totals: PerfTotals): string {
   const { amount, inflow, withdrawal } = totals;
-  if (amount.state === "unavailable") return "暂不可用";
-  if (amount.state === "partial") return amount.observed === null ? amount.missing : `已核 ${amountDisplay(amount.observed)} · ${amount.missing}`;
+  // 「没核完」全页一个说法：「待核」；「暂不可用」只留给旧后端（新口径还没有能用的数据）。
+  if (amount.state === "unavailable") return amount.reason === PERF_UNAVAILABLE ? "暂不可用" : amount.reason === "数据正在升级" ? amount.reason : "待核";
+  if (amount.state === "partial") return amount.observed === null ? "待核" : `已核 ${amountDisplay(amount.observed)} · 待核`;
   return `入金 ${perfText(inflow)} · 提现 ${perfText(withdrawal)}`;
 }
 /** 读屏和悬停用的完整说法。 */
@@ -109,7 +110,9 @@ export type ExportCheck =
   /** 超过上限：写实际行数；有更小的合法范围才提示改范围。 */
   | { state: "over"; text: string }
   /** 页面那一版刷新没成功：照写那一版检查过的行数，但不能选。 */
-  | { state: "stale"; rows: number };
+  | { state: "stale"; rows: number | null }
+  /** 这一版这一项不能导出（新的一版没核完、数据升级中）：灰字写原因，不给重试；只有真读取失败才是 failed。 */
+  | { state: "unavailable"; text: string };
 export type ExportItem = { type: ExportType; grain: string; limit: number; columns: ExportColumns; check: ExportCheck };
 export type ExportChoice = { value: string; label: string };
 /** 导出确认框要的全部内容。月份、范围只有一个合法选项时写成只读值。 */
@@ -195,14 +198,13 @@ export interface PerfExportPorts {
 
 /** 两段状态：审批段和文件段。只有文件已生成且本人现在能取件时才写「可下载」。 */
 export function exportStatus(task: ExportSubmitted): { tone: "ok" | "warn" | "progress" | "neutral" | "done" | "danger"; label: string; line: string } {
-  const decider = task.decidedBy ? `${task.decidedBy}${task.decidedAt ? ` ${task.decidedAt}` : ""}` : "";
   switch (task.state) {
     case "PENDING_GENERATION": return { tone: "progress", label: "待生成", line: "文件还在等待生成" };
     case "PENDING_APPROVAL": return { tone: "warn", label: "待审批", line: task.mine ? "等另一位有审批权的管理员审批" : "等你审批" };
-    case "APPROVED": return task.failure === "GENERATE_FAILED" ? { tone: "danger", label: "已批准，执行失败", line: `${decider} 批准，文件没生成出来` }
+    case "APPROVED": return task.failure === "GENERATE_FAILED" ? { tone: "danger", label: "已批准，执行失败", line: `${task.decidedAt ? `${task.decidedAt} ` : ""}批准，文件没生成出来` }
       : { tone: "progress", label: "已批准", line: "文件生成中，生成好才能下载" };
     case "READY": return task.canDownload ? { tone: "ok", label: "可下载", line: "CSV 文件" } : { tone: "neutral", label: "已生成", line: "你现在不能下载" };
-    case "REJECTED": return { tone: "neutral", label: "已驳回", line: `${task.decidedBy ?? "审批人"} 驳回，理由见详情` };
+    case "REJECTED": return { tone: "neutral", label: "已驳回", line: "审批人驳回，理由见详情" };
     case "WITHDRAWN": return { tone: "done", label: "已撤回", line: task.mine ? "你撤回的" : "申请人撤回的" };
     case "EXPIRED": return { tone: "neutral", label: "已过期", line: "文件已过保留期，不能再下载" };
     case "FAILED": return { tone: "danger", label: task.decidedAt ? "已批准，执行失败" : "生成失败", line: "文件没生成出来" };

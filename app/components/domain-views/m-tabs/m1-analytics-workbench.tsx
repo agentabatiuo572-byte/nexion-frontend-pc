@@ -681,12 +681,12 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const current = data?.selectedCurrent ?? data?.scopeSummary.current, personnel = data?.scopeSummary.personnel;
   const scopeCurrent = scope.selectedCurrent ?? scope.scopeSummary.current;
   const deposits = queryState.basis === "PERIOD_EVENT" ? data?.scopeSummary.financial.currencies.find(x => x.currency === currency)?.deposits : current?.ownLifetime.find(x => x.currency === currency)?.deposits;
-  const withUnit = (value: PerfValue) => value.state === "complete" ? `${perfText(value)} USDT` : "—";
-  const boundText = data?.scopeSummary.bound == null ? "—" : String(data.scopeSummary.bound);
+  /** 折叠标题写结论，不重复里面的数字（DP-04、DP-61）。 */
+  const perfConclusion = (value: PerfValue) => value.state === "complete" ? "已核完" : value.state === "partial" ? "有数据没核完" : value.reason;
   const overviewSummary = !data || queryState.view !== "OVERVIEW" ? undefined
-    : queryState.basis === "PERIOD_EVENT" ? `期间业绩额 ${withUnit(perf.scope.period.amount)} · 入金 ${perfText(perf.scope.period.inflow)} · 提现 ${perfText(perf.scope.period.withdrawal)} · 当前客户 ${boundText} 位`
-    : queryState.basis === "CURRENT_ASSET" ? `持有设备 ${countValue((data.selectedCurrent ?? data.scopeSummary.current).devices.held) ?? "—"} 台 · 当前客户 ${boundText} 位`
-    : `当前客户累计业绩额 ${withUnit(perf.scope.current)} · 当前客户 ${boundText} 位`;
+    : queryState.basis === "PERIOD_EVENT" ? `期间业绩 · ${queryState.month} · ${perfConclusion(perf.scope.period.amount)}`
+    : queryState.basis === "CURRENT_ASSET" ? "按当前设备 · 不含业绩额"
+    : `当前客户累计 · ${perfConclusion(perf.scope.current)}`;
   const basisExplain = queryState.view === "OVERVIEW" ? "按发生时归属：组卡写这个月的业绩额，下面一行写当前客户累计。按现在的客户：只写当前客户累计。按当前设备：只写设备，不写业绩额。"
     : "客服表的当前客户累计业绩额总是按现在的客户算。选「按发生时归属」时，近 30 天活跃换成所选月份的活跃；选「按当前设备」时，累计业绩额那一列换成持有设备。";
   const basisField = <FilterField label={<span className="m1-field-label">统计规则<Explain label="统计规则的说明" content={basisExplain} /></span>}><Select aria-label="统计规则" value={queryState.basis ?? "CURRENT_CUSTOMER_HISTORY"} options={BASIS_OPTIONS.filter(x => queryState.view !== "FINANCE" || x.value !== "CURRENT_ASSET")} onChange={value => { const found = BASIS_OPTIONS.find(x => x.value === value && (queryState.view !== "FINANCE" || x.value !== "CURRENT_ASSET")); if (found) change({ basis: found.value }); }} /></FilterField>;
@@ -756,7 +756,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {!isPersonal && section === "mine" && <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} onTransfer={setTransferCustomer} transferRevision={transferRevision} />}
     {section === "exports" && !!exportsPorts?.persona.views.length && <PerfExportRecords ports={exportsPorts} />}
     {exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts} initialMonth={queryState.month} initialScope={queryState.groupId ? `GROUP:${queryState.groupId}` : mode === "PERSONAL" ? "SELF" : mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL"} onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />}
-    {isPersonal && showStatistics && <PeriodPerfPanel perf={perf.period} month={queryState.month} asOf={`${formatBusinessTimeCompact((personalPeriod ?? scope).asOf, "—")}（${businessZone().label}）`}
+    {isPersonal && showStatistics && <PeriodPerfPanel perf={perf.period} month={queryState.month} asOf={personalPeriod ? `${formatBusinessTimeCompact(personalPeriod.asOf, "—")}（${businessZone().label}）` : undefined}
+      status={personalPeriodError ? { error: personalPeriodError, onRetry: () => setPersonalPeriodRetry(value => value + 1) } : !personalPeriod && monthCalendar?.some(entry => entry.month === queryState.month) ? "loading" : undefined}
+      detail={{ loading: eventsOpen && !events, error: eventError || undefined }}
       monthControl={<span className="m1-group-scope"><span aria-hidden="true">月份</span><Select aria-label="业绩月份" value={queryState.month} onChange={month => change({ month })} options={(monthCalendar ?? []).map(({ month }) => ({ value: month, label: month }))} placeholder="加载后可选" /></span>}
       onDetail={personalPeriod?.performance?.period ? openEvents : undefined} />}
     {eventsOpen && events && <PerfEventsDrawer events={eventsPerf(events)} page={events.pageNum} pageSize={events.pageSize}
@@ -769,9 +771,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       explain={isPersonal ? <><p>你现在名下的客户。累计业绩额是这位客户自 2026-11-20 22:57 起的入金减提现。</p><p>{caption}。统计约每分钟更新一次，刷新读最近算好的一版。</p></>
         : mode === "MANAGED" ? currentTab === "customers" ? <><p>只算你负责的组：{groups.map(g => g.name || "组名未同步").join("、") || "—"}。别的组、未分配和归属未知的业绩不在这里。</p><p>统计约每分钟更新一次，刷新读最近算好的一版。</p></>
           : <><p>只算你负责的组：{groups.map(g => g.name || "组名未同步").join("、") || "—"}。</p><p>别的组不在这里。</p><p>未分配和归属未知的业绩只有超级管理员能看。</p></>
-        : <><p>期间业绩按所选月份里发生的业务和当时的归属算；当前客户累计按现在的客户算，自 2026-11-20 22:57 起。</p><p>{caption}。统计约每分钟更新一次，刷新读最近算好的一版。</p></>} explainLabel={`${isPersonal ? "本人客户画像" : currentTab === "customers" ? mode === "ALL" ? "全部客户" : "负责组客户" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}的说明`}
-      actions={!isPersonal && <div className="m1-group-scope"><span aria-hidden="true">负责组</span><Select aria-label="负责组范围" value={String(queryState.groupId ?? "")} onChange={value => change({ groupId: value || undefined })} options={[{ value: "", label: mode === "ALL" ? "全部获准范围" : "全部负责组" }, ...groups.map(g => ({ value: g.groupId, label: g.name || "组名未同步" }))]} /></div>}>
-      {(restoreNotice || eventError) && <Notice tone="warn" action={<Button size="sm" type="button" onClick={() => { setRestoreNotice(""); setEventError(""); }}>知道了</Button>}>{restoreNotice || eventError}</Notice>}
+        : <><p>期间业绩按所选月份里发生的业务和当时的归属算；当前客户累计按现在的客户算，自 2026-11-20 22:57 起。</p><p>{caption}。统计约每分钟更新一次，刷新读最近算好的一版。</p></>} explainLabel={`${isPersonal ? "本人客户画像" : currentTab === "customers" ? mode === "ALL" ? "全部客户" : "负责组客户" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}的说明`}>
+      {restoreNotice && <Notice tone="warn" action={<Button size="sm" type="button" onClick={() => setRestoreNotice("")}>知道了</Button>}>{restoreNotice}</Notice>}
       {(isPersonal || queryState.view !== "CUSTOMERS") && <PageTabs level={2} label="数据视角" value={queryState.view} items={DATASETS.filter(x => isPersonal ? !["OVERVIEW", "AGENTS"].includes(x.value) : x.value !== "CUSTOMERS")} onChange={value => change({ view: value, ...(value === "DEVICES" ? { basis: "CURRENT_ASSET" as const } : {}) })} />}
       <FilterBar onSubmit={() => change({ keyword: keyword.trim() || undefined })} querying={loading} action={queryState.view === "OVERVIEW" ? <></> : <Button type="submit">查询</Button>} onClear={() => { setKeyword(""); change({ groupId: undefined, agentId: undefined, basis: defaultBasis, keyword: undefined, firstState: "ALL", filter: "ALL", category: "ALL", sortKey: undefined, direction: undefined }); }} canClear={activeConditions.length > 0 || queryState.basis !== defaultBasis}
         sort={!isPersonal ? sortField : undefined}
@@ -784,6 +785,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         {isPersonal && sortField}
         {["CUSTOMERS", "ACTIVITY"].includes(queryState.view) && <><AnalyticsSelect label="首充状态" value={queryState.firstState ?? "ALL"} options={queryState.basis === "CURRENT_ASSET" ? [FIRST_OPTIONS[0]] : FIRST_OPTIONS} onChange={value => { const found = FIRST_OPTIONS.find(x => x.value === value); if (found) change({ firstState: found.value }); }} /></>}
 </>}>
+        {/* 负责组是范围控件：放在筛选条同一行最左（ST-15、ST-16）。 */}
+        {!isPersonal && <FilterField label="负责组"><Select aria-label="负责组范围" value={String(queryState.groupId ?? "")} onChange={value => change({ groupId: value || undefined })} options={[{ value: "", label: mode === "ALL" ? "全部获准范围" : "全部负责组" }, ...groups.map(g => ({ value: g.groupId, label: g.name || "组名未同步" }))]} /></FilterField>}
         {queryState.view === "OVERVIEW" && <>{basisField}{queryState.basis === "PERIOD_EVENT" && monthField}</>}
         {queryState.view !== "OVERVIEW" && <FilterField label={isPersonal || queryState.view !== "AGENTS" ? "客户" : "客服"} grow><Input value={keyword} maxLength={200} onChange={event => setKeyword(event.target.value)} placeholder={isPersonal || queryState.view !== "AGENTS" ? "客户名称或用户编码" : "客服名称"} aria-label={isPersonal || queryState.view !== "AGENTS" ? "查询客户名称或用户编码" : "查询客服名称"} /></FilterField>}
         {["CUSTOMERS", "ACTIVITY"].includes(queryState.view) && <AnalyticsSelect label="服务状态" value={queryState.filter ?? "ALL"} options={isPersonal ? PERSONAL_FILTER_OPTIONS : FILTER_OPTIONS} onChange={value => change({ filter: value as AnalyticsQueryState["filter"] })} />}
@@ -801,7 +804,6 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
               <Stat label="客户入金" tone="role-2" value={perfText(perf.scope.period.inflow)} unit={perf.scope.period.inflow.state === "complete" ? "USDT" : undefined} />
               <Stat label="客户提现" tone="role-4" value={perfText(perf.scope.period.withdrawal)} unit={perf.scope.period.withdrawal.state === "complete" ? "USDT" : undefined} />
             </> : <Stat label="当前客户累计业绩额" value={perfText(perf.scope.current)} unit={perf.scope.current.state === "complete" ? "USDT" : undefined} sub={perfNote(perf.scope.current)} />}
-            <Stat label="当前客户" value={data.scopeSummary.bound ?? "—"} unit={data.scopeSummary.bound == null ? undefined : "位"} />
           </StatBand>}
           <div className={`sa-metrics ${queryState.view === "OVERVIEW" ? "sa-metrics-overview" : ""}`} aria-label="所选范围汇总">
           {!isPersonal && <div><span>专属客服</span><CountValue count={personnel.serviceAccounts} label="专属客服" onClick={() => change({ view: "AGENTS" })} /></div>}

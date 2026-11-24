@@ -232,7 +232,7 @@ export function M6Leaderboard() {
   const locateAction = data && data.self.pageNum !== null ? <Button icon={<MapPin size={14} aria-hidden />} onClick={locate}>定位到我</Button> : undefined;
   const conclusion = !data
     ? denied ? <Conclusion state="unknown">业绩榜：这个账号看不到榜单</Conclusion>
-      : upgrading ? <Conclusion state="unknown">{BOARD_LABEL[board]}：{error}</Conclusion>
+      : upgrading ? <Conclusion state="unknown">{BOARD_LABEL[board]}：{error}，暂不排名次</Conclusion>
       : error ? <Conclusion state="unknown">业绩榜：读取失败，这部分没有判断</Conclusion>
       : <Conclusion state="unknown">正在读取业绩榜…</Conclusion>
     : perfMissing ? <Conclusion state="unknown">{BOARD_LABEL[board]}：{boardPerf.kind === "unavailable" ? boardPerf.reason : PERF_UNAVAILABLE}，暂不排名次</Conclusion>
@@ -249,8 +249,8 @@ export function M6Leaderboard() {
   const scopeSelect = scopeStale ? [] : options?.scopeOptions ?? [];
   const pages = data ? Math.max(1, Math.ceil(data.matched / data.pageSize)) : 1;
   const emptyText = !data ? undefined : query.keyword
-    ? <span className="m6-empty">{provisional ? "参榜资料还在汇总，" : ""}没有匹配「{query.keyword}」的客服。{data?.generation === "LEGACY" ? "按显示名或完整的客服账号编号查找。" : "按客服显示名查找。"}<button type="button" className="rd-link" onClick={clearSearch}>清除搜索</button></span>
-    : provisional ? "参榜资料还在汇总，暂无法显示完整榜单。请稍后重试。" : "当前范围暂无参榜客服。";
+    ? <span className="m6-empty">{provisional ? "参榜名单待核，" : ""}没有匹配「{query.keyword}」的客服。{data?.generation === "LEGACY" ? "按显示名或完整的客服账号编号查找。" : "按客服显示名查找。"}<button type="button" className="rd-link" onClick={clearSearch}>清除搜索</button></span>
+    : provisional ? "这一版参榜名单待核，核完后点「刷新」查看。" : "当前范围暂无参榜客服。";
   const detailIndex = visibleDetail ? rows.findIndex(row => row.id === visibleDetail.agentId) : -1;
   const detailName = visibleDetail ? detailRow?.name ?? [...rows, ...podiumRows, ...(selfRow ? [selfRow] : [])].find(row => row.id === visibleDetail.agentId)?.name : undefined;
   return <RdPage className="m6-page">
@@ -275,7 +275,8 @@ export function M6Leaderboard() {
         {board === "netContribution" && groupScope && <Notice tone="done">组榜按业绩发生时所在的组算：调组后以前的业绩仍算在原来的组，所以榜上可能有已经不在这个组的客服。</Notice>}
         {conflict ? <Notice tone="warn">榜单已更新，请刷新后重试。</Notice>
           : notice && !(ready && notice === "正在重新加载…") && <Notice tone={notice.startsWith("已") ? "ok" : "progress"}>{notice}</Notice>}
-        {data?.stale && <Notice tone="warn" title="当前显示上次发布的榜单" action={<Button size="sm" onClick={() => resetFirstPage("正在重新加载…")}>重新加载</Button>}>{data.refreshFailed ? "榜单更新暂未成功，请稍后读取最新结果。" : "榜单更新延迟，请稍后读取最新结果。"}</Notice>}
+        {/* 最新一版没发布成功、上一版还没过时限时也提示（R12）：数据截至在页头。 */}
+        {(data?.stale || data?.refreshFailed) && <Notice tone="warn" title="当前显示上次发布的榜单" action={<Button size="sm" onClick={() => resetFirstPage("正在重新加载…")}>重新加载</Button>}>{data.refreshFailed ? "榜单更新暂未成功，请稍后读取最新结果。" : "榜单更新延迟，请稍后读取最新结果。"}</Notice>}
         {conclusion}
         {!data && denied ? <BlockState state="denied" title="这个账号不能查看业绩榜"
             detail="请重新确认登录和客服权限；看榜要有客服工作台或专属会话的查看权限，并且是专属客服、客服主管或超级管理员。"
@@ -292,7 +293,9 @@ export function M6Leaderboard() {
                   {!!query.keyword && <Button variant="ghost" onClick={clearSearch}>清除搜索</Button>}
                 </form>}>
                 {/* 读取失败时查询控件（月份、币种、范围、搜索）照常留着，失败只在榜单这一块写（ST-15、ST-34）。 */}
-                {readFailed ? <BlockState state="error" title="榜单加载失败" detail={error} onRetry={allowed ? retry : undefined} retryLabel="重试" />
+                {/* 数据升级中是单独一个状态，不写成「加载失败」；结论已写「数据正在升级」，这里只写下一步。 */}
+                {upgrading ? <BlockState state="empty" title="名次和金额暂不显示" detail="升级完后点「刷新」查看新的一版。" onRetry={allowed ? reload : undefined} retryLabel="刷新" />
+                  : readFailed ? <BlockState state="error" title="榜单加载失败" detail={error} onRetry={allowed ? retry : undefined} retryLabel="重试" />
                   : perfMissing ? <BlockState state="empty" title={PERF_UNAVAILABLE} detail="名次和金额暂不显示；首充人数、当前绑定客户两个榜照常看。" />
                   : <RankingTable board={board} month={month} perf={perfOf} openId={visibleDetail?.agentId} privateRead={privateRead} onOpen={openDetail}
                   onCustomers={agentId => { const row = [...(data?.rows ?? []), ...(data?.podium?.rows ?? [])].find(row => row.id === agentId); if (row) customers(row); }}
