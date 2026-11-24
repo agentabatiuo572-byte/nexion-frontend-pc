@@ -235,7 +235,7 @@ const CHOICE_LABEL: Record<Closable, string> = { REJECTED: "后台拒绝", SUCCE
  * 核查结案：没有确定结果时只能按证据确认「已执行」，或留下「仍未知」的核查记录；
  * 查到后台拒绝的，可以按「后台拒绝」结案（后端只看原记录自己的回包，不要编号）。后端决定证据够不够。
  */
-export function FundClosureModal({ label, createdAt, facts, known, offer, onClose, onSubmit }: {
+export function FundClosureModal({ label, createdAt, facts, known, offer, blockedReason, onClose, onSubmit }: {
   label: string;
   createdAt: number;
   facts?: ReactNode;
@@ -243,6 +243,7 @@ export function FundClosureModal({ label, createdAt, facts, known, offer, onClos
   known?: boolean | ClosureBasis;
   /** 调用方直接给结论列表时用它，known 不再起作用（见 ClosureOffer）。 */
   offer?: ClosureOffer;
+  blockedReason?: string;
   onClose: () => void;
   onSubmit: (evidence: FundCommandEvidence) => Promise<void>;
 }) {
@@ -271,9 +272,9 @@ export function FundClosureModal({ label, createdAt, facts, known, offer, onClos
   const help = conclusion === "REJECTED" ? REJECTED_HELP : conclusion === "NOT_EXECUTED" ? ROLLBACK_HELP : conclusion === "STILL_UNKNOWN" ? "只留下这次核查记录，继续锁着，之后可以再核查。"
     : conclusion === "SUCCEEDED" && !fixed ? "操作记录里有这次请求的成功记录时选。确认后解除，不会再执行。" : undefined;
   return <Modal title="核查结案" icon={SearchCheck} tone="danger" sub={<IrreversibleTag>确认后不能撤销</IrreversibleTag>} busy={busy} dirty={!fixed && !!conclusion || !!reference || !!auditId} onClose={onClose}
-    footer={<><Button disabled={busy} onClick={onClose}>取消</Button><Button variant="danger" loading={busy} loadingText="提交中…" disabledReason={block} onClick={async () => {
+    footer={<><Button disabled={busy} onClick={onClose}>取消</Button><Button variant="danger" loading={busy} loadingText="提交中…" disabledReason={block ?? blockedReason} onClick={async () => {
       setTouched(true);
-      if (block || !conclusion) return;
+      if (block || blockedReason || !conclusion) return;
       setBusy(true); setError("");
       try {
         await onSubmit({ conclusion, evidenceReference: reference.trim(), ...(needsAudit && auditId.trim() ? { evidenceAuditId: Number(auditId.trim()) } : {}) });
@@ -303,6 +304,7 @@ export function FundClosureModal({ label, createdAt, facts, known, offer, onClos
         <Input aria-label="成功记录编号" className="fund-check-audit" inputMode="numeric" autoComplete="off" placeholder="例如 88123" value={auditId} disabled={busy} onChange={event => setAuditId(event.target.value)} />
       </Field>}
       {choices.length > 0 && <Check label={CLOSURE_ACK} checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} />}
+      {blockedReason && <p className="rd-toolbar-note">{blockedReason}</p>}
       {error && <Notice tone="danger">{error}</Notice>}
     </div>
   </Modal>;

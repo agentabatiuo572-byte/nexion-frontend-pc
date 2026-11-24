@@ -71,6 +71,8 @@ import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/component
 import { COUNT_LABELS, COUNTS_RULE, CountsExplain, CountsFacts, CountsNotice, CountsRetryButton, InviterValue, countText, useCountsRetryFocus, type CountsView } from "@/app/components/invitation/invitation-view";
 import { INVITATION_REREAD_BLOCK, inviterDetailView, referralCountsView } from "@/app/components/invitation/wiring";
 
+const STALE_PROFILE_WRITE_BLOCK = "资料没有刷新成功，刷新成功后再操作";
+
 /**
  * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、回收并记录置换和回收）共用一张表，槽位分命名空间。
  * 槽位带用户 ID 和目标 ID：命令号跨刷新存活，不带目标就会在切到下一个用户时复用上一个目标的号。
@@ -751,16 +753,16 @@ export default function UserDetailPage() {
 
   const onPaymentSecurity = useCallback((state: PaymentSecurityState, pending: boolean) => setPaymentSecurity({ state, pending }), []);
 
-  const resetReferralRetry = useCallback(() => {
+  const stopReferralRetry = useCallback(() => {
     referralRequest.current?.abort();
     referralRequest.current = null;
     setReferralRetrying(false);
-    setReferralError(null);
   }, []);
   const denyRead = useCallback((message: string) => {
     requestGeneration.current++;
     loadedKey.current = "";
-    resetReferralRetry();
+    stopReferralRetry();
+    setReferralError(null);
     setDetailKey(readKey);
     setDetail(null);
     setReadAt("");
@@ -772,7 +774,7 @@ export default function UserDetailPage() {
     setDenied(true);
     setError(message);
     setLoading(false);
-  }, [readKey, resetReferralRetry]);
+  }, [readKey, stopReferralRetry]);
   const readProfile = useCallback((signal?: AbortSignal) => supportScope
     ? fetchSupportCustomerFullProfile(userKey, signal)
     : fetchUser360(userKey, signal), [supportScope, userKey]);
@@ -787,14 +789,15 @@ export default function UserDetailPage() {
     if (currentReadKey.current !== readKey) return;
     const generation = ++requestGeneration.current;
     const active = () => generation === requestGeneration.current && currentReadKey.current === readKey && !signal?.aborted;
-    resetReferralRetry();
+    stopReferralRetry();
     setLoading(true);
     setError(null);
     setDenied(false);
     readDenied.current = false;
     setActionConfirm(null); setNotificationEvidence(null); setRecord(null);
     // 换用户、换账号时先清旧资料（C1-H02）。同一个用户刷新时旧资料留在屏幕上，写入口禁用，读失败再清。
-    if (loadedKey.current !== readKey) { setDetail(null); setPaymentMethods(null); setRevokeScan(null); setRevokeScanFailed(false); setOpenFolds({}); setOpenRecordList(undefined); }
+    // 已标为旧的资料在重读期间继续禁写，直到替换或清空这份资料（ST-36）。
+    if (loadedKey.current !== readKey) { setReferralError(null); setDetail(null); setPaymentMethods(null); setRevokeScan(null); setRevokeScanFailed(false); setOpenFolds({}); setOpenRecordList(undefined); }
     setDetailKey(readKey);
     if (!userKey) {
       setDetail(null);
@@ -807,6 +810,7 @@ export default function UserDetailPage() {
       if (active()) {
         loadedKey.current = readKey;
         setDetail(next);
+        setReferralError(null);
         setReadAt(businessClock(Date.now()));
         setReloadTick((tick) => tick + 1);
         return true;
@@ -818,6 +822,7 @@ export default function UserDetailPage() {
         else {
           loadedKey.current = "";
           setDetail(null);
+          setReferralError(null);
           setPaymentMethods(null);
           setError(displayAdminError(err));
         }
@@ -826,7 +831,7 @@ export default function UserDetailPage() {
       if (active()) setLoading(false);
     }
     return false;
-  }, [userKey, readKey, readProfile, denialMessage, denyRead, resetReferralRetry]);
+  }, [userKey, readKey, readProfile, denialMessage, denyRead, stopReferralRetry]);
 
   const retryReferral = async () => {
     if (loading || writeBusy || referralRequest.current || loadedKey.current !== readKey) return;
@@ -893,6 +898,8 @@ export default function UserDetailPage() {
   const nickname = asText(profile?.nickname, "用户详情");
   const displayNickname = userNicknameText(nickname, profile?.phoneMasked);
   const hasDetail = detail !== null;
+  const staleWriteReason = detailKey === readKey && hasDetail && referralError ? STALE_PROFILE_WRITE_BLOCK : undefined;
+  const profileWriteBlockedReason = staleWriteReason ?? (referralRetrying ? INVITATION_REREAD_BLOCK : undefined);
   const paymentSecurityPort = useMemo(() => {
     if (detailKey !== readKey || !hasDetail || !c3UserId) return null;
     return supportScope ? paymentSecurityPorts.support(c3UserId) : paymentSecurityPorts.global(c3UserId);
@@ -1001,6 +1008,7 @@ export default function UserDetailPage() {
   const resultLabel = (command: C1CommandInput) => command.kind === "replace" || command.kind === "recycle" ? `${deviceLabel(command).action} · ${deviceResult(command)}` : command.label;
   const execute = async (command: C1CommandInput) => {
     if (String(useAdminAuth.getState().session?.adminId) !== command.adminKey) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+    if (staleWriteReason) throw new Error(staleWriteReason);
     const slot = commandSlot(command);
     const saved = c1UserCommands.list().find(record => record.fingerprint === slot && record.adminKey === command.adminKey);
     const retained = saved?.commandKey;
@@ -1065,7 +1073,7 @@ export default function UserDetailPage() {
 
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。过期和查不到都不解除（OP-96、OP-153）。 */
   const retryPending = async (command: C1Command) => {
-    if (command.expiresAt <= Date.now()) return;
+    if (command.expiresAt <= Date.now() || staleWriteReason) return;
     const device = isDeviceCommand(command);
     if (device && (!canWriteC2 || command.legacy || busyReason || deviceRetryBlock(command))) return;
     if (!c1UserCommands.isDurablyStored(command.fingerprint, command.commandKey)) {
@@ -1125,6 +1133,7 @@ export default function UserDetailPage() {
 
   /** 核查结案：按原请求号交后端核对证据（同 A3、A4、D7）；结了案才解除，没结案的按新查到的结论显示。 */
   const closePending = async (command: C1Command, evidence: FundCommandEvidence) => {
+    if (staleWriteReason) throw new Error(staleWriteReason);
     const result = await queryUserDetailCommand(command, evidence);
     if (String(useAdminAuth.getState().session?.adminId) !== (command.adminKey || adminKey)) return;
     setPendingOutcomes((current) => ({ ...current, [command.commandKey]: { receipt: result.receipt } }));
@@ -1143,11 +1152,11 @@ export default function UserDetailPage() {
       : receiptRejected(result.receipt) ? "REJECTED" : "PROCESSED" }));
   };
 
-  const nicknameBlock = pendingCommands.some((command) => command.kind === "nickname") ? "重置昵称的结果未知，先到页面上方核对" : busyReason;
+  const nicknameBlock = pendingCommands.some((command) => command.kind === "nickname") ? "重置昵称的结果未知，先到页面上方核对" : busyReason ?? staleWriteReason;
   const methodBlock = (method: UserPaymentMethod) => pendingCommands.some((command) => command.methodId === method.id)
     ? "这张卡有结果未知的操作，先到页面上方核对"
     : paymentLoading ? "正在读取支付方式，读完再操作" : busyReason;
-  const deviceBlock = (deviceId: number) => pendingCommands.some((command) => command.deviceId === deviceId) ? "这台设备有结果未知的操作，先到页面上方核对" : busyReason;
+  const deviceBlock = (deviceId: number) => pendingCommands.some((command) => command.deviceId === deviceId) ? "这台设备有结果未知的操作，先到页面上方核对" : busyReason ?? staleWriteReason;
 
   const openNicknameReset = () => setActionConfirm({ briefKind: "record",
     action: `重置昵称 · ${displayNickname}`,
@@ -1500,8 +1509,8 @@ export default function UserDetailPage() {
         note: pendingNotes[command.fingerprint],
         actions: <>
           <Button size="sm" disabled={!!busyReason || checkingResult} onClick={() => void verifyPending(command)}>查询原结果</Button>
-          {closable && <Button size="sm" variant="danger-outline" disabled={!!busyReason} onClick={() => setClosingCommand(command)}>核查结案</Button>}
-          {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason ?? retryBlock} onClick={() => void retryPending(command)}>按原请求重试</Button>}
+          {closable && <Button size="sm" variant="danger-outline" disabled={!!busyReason} disabledReason={busyReason ? undefined : staleWriteReason} onClick={() => setClosingCommand(command)}>核查结案</Button>}
+          {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason ?? retryBlock ?? staleWriteReason} onClick={() => void retryPending(command)}>按原请求重试</Button>}
           {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
           {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
         </>,
@@ -1580,7 +1589,10 @@ export default function UserDetailPage() {
     ...(canWriteC1 ? [{ label: "操作", align: "right" as const, end: true, cell: (row: JsonRecord) => {
       const method = row as UserPaymentMethod;
       if (method.status !== "BOUND") return "—";
-      return <Cell full sub={methodBlock(method)} main={<Button size="sm" disabledReason={methodBlock(method) ?? (method.trialGuard ? "这张卡有历史试用关联记录，暂时不能解绑。" : undefined)} onClick={() => openUnbind(method)}>解绑</Button>} />;
+      const blocked = methodBlock(method);
+      const trialBlock = method.trialGuard ? "这张卡有历史试用关联记录，暂时不能解绑。" : undefined;
+      const visibleBlock = blocked ?? (trialBlock ? undefined : staleWriteReason);
+      return <Cell full sub={visibleBlock} main={<Button size="sm" disabledReason={visibleBlock ?? trialBlock} onClick={() => openUnbind(method)}>解绑</Button>} />;
     } }] : []),
   ];
 
@@ -1670,6 +1682,7 @@ export default function UserDetailPage() {
       {conclusion}
       {recoveryPanel}
       {writeResultNotice}
+      {inPageWrites && staleWriteReason && <p className="rd-toolbar-note">{staleWriteReason}</p>}
 
       {kpis.length > 0 && <StatBand label="关键数字">
         {kpis.map((kpi, index) => (
@@ -1724,7 +1737,7 @@ export default function UserDetailPage() {
               {filteredSessions.length > C1_SESSION_PAGE_SIZE && <Pager label="登录记录" total={filteredSessions.length} page={sessionPage} pageSize={C1_SESSION_PAGE_SIZE} sizes={[C1_SESSION_PAGE_SIZE]} onPage={(page) => { setRecord(null); setSessionPage(Math.min(sessionPageCount, Math.max(1, page))); }} onPageSize={() => undefined} />}
             </Block>}
             {paymentSecurityPort && <div className="rd-detail-block">
-              <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick} canRelease={canReleasePayment} writeBlockedReason={referralRetrying ? INVITATION_REREAD_BLOCK : undefined} onWriteBusy={setPaymentWriteBusy}
+              <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick} canRelease={canReleasePayment} writeBlockedReason={profileWriteBlockedReason} onWriteBusy={setPaymentWriteBusy}
                 onState={onPaymentSecurity} />
             </div>}
             {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError && `支付方式加载失败：${paymentError}`}
@@ -1887,6 +1900,7 @@ export default function UserDetailPage() {
           confirmLabel={actionConfirm.confirmLabel}
           confirmTone={actionConfirm.confirmTone}
           statedBrief={actionConfirm.statedBrief}
+          blockedReason={staleWriteReason}
           reasonMax={200}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason) => {
@@ -1895,7 +1909,7 @@ export default function UserDetailPage() {
           }}
         />
       )}
-      {closingCommand && <FundClosureModal label={resultLabel(closingCommand)} createdAt={closingCommand.createdAt} known={closureKnown(pendingOutcomes[closingCommand.commandKey])}
+      {closingCommand && <FundClosureModal label={resultLabel(closingCommand)} createdAt={closingCommand.createdAt} known={closureKnown(pendingOutcomes[closingCommand.commandKey])} blockedReason={staleWriteReason}
         facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(pendingOutcomes[closingCommand.commandKey]), "记录保留")}</Fact>}
         onClose={() => setClosingCommand(null)} onSubmit={(evidence) => closePending(closingCommand, evidence)} />}
       {releasing && <ReleaseModal label={resultLabel(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
@@ -1904,7 +1918,7 @@ export default function UserDetailPage() {
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}
           userKey={userKey} notificationId={notificationEvidence.id} actorKey={session?.adminId == null ? undefined : String(session.adminId)}
-          canCorrect={canCorrectNotificationTime} writeBlockedReason={referralRetrying ? INVITATION_REREAD_BLOCK : undefined} onWriteBusy={setNotificationWriteBusy} onPendingChange={syncPending} onCorrected={() => {
+          canCorrect={canCorrectNotificationTime} writeBlockedReason={profileWriteBlockedReason} onWriteBusy={setNotificationWriteBusy} onPendingChange={syncPending} onCorrected={() => {
             const text = `通知 ${notificationEvidence.id} 已按投递事实校正时间，已读状态保持不变。`;
             setWriteResult({ key: readKey, text, tone: "ok" });
             void load().then(refreshed => {
