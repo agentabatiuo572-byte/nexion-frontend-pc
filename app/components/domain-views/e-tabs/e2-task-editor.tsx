@@ -57,6 +57,10 @@ export function isE2ReasonRejection(code?: string) {
     || /^REASON_(?:TOO_SHORT_MIN|TOO_LONG_MAX)_[1-9][0-9]*$/.test(code ?? "");
 }
 
+export function e2EditorReasonRejection(outcome: E2TaskOutcome) {
+  return outcome.kind === "rejected" && isE2ReasonRejection(outcome.code) ? outcome.message : undefined;
+}
+
 const ENABLED_LIMIT = 200;
 const NAME_MAX = 128;
 /** 类型系数的十倍：向量计算 1.0 … 视频生成 1.5（B85）。 */
@@ -187,15 +191,15 @@ export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule,
   const firstError = (Object.keys(errors) as E2TaskField[]).map(field => errors[field]).find(Boolean);
   const formBlock = writeBlock ?? (!changed ? "没有修改" : firstError);
   const reasonLength = visibleReasonLength(state.reason);
+  const reasonRejected = e2EditorReasonRejection(outcome);
   const reasonBlock = e2EditorReasonBlock(state.reason, reasonRule);
-  const confirmBlock = formBlock ?? (outcome.kind === "conflict" ? "请先读取最新内容" : reasonBlock);
+  const confirmBlock = formBlock ?? (outcome.kind === "conflict" ? "请先读取最新内容" : reasonRejected ?? reasonBlock);
   const dirty = isE2TaskEditorDirty(state);
   const weightUp = before && validTaskWeight(draft.weight) && validTaskWeight(before.weight) && !sameWeight(draft.weight, before.weight)
     ? taskWeightMicros(draft.weight) > taskWeightMicros(before.weight) : null;
   const direction = weightUp === null || !task ? undefined : !task.enabled ? "这条任务已停用，现在不参加分配；启用后按新权重计算。"
     : "之后新派到这条任务时按新权重计算；每单实际多少，要和设备当时能接的其他任务一起算。";
   const range = levelWeightRange && `本等级启用的 ${levelWeightRange.count} 个任务：权重 ${formatWeight(levelWeightRange.min)}${sameWeight(levelWeightRange.min, levelWeightRange.max) ? "" : `–${formatWeight(levelWeightRange.max)}`}`;
-  const reasonRejected = outcome.kind === "rejected" && isE2ReasonRejection(outcome.code) ? outcome.message : undefined;
   const close = () => { if (!saving) onClose(); };
   const continueEditing = () => { onContinue(); set({ step: "form" }); };
   const leave = () => { if (saving) return; if (step === "leaving") continueEditing(); else if (dirty) set({ step: "leaving" }); else close(); };
@@ -288,7 +292,7 @@ export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule,
           : <Field label="操作理由" required hint={reasonRule.ready ? `至少 ${reasonRule.min} 字` : undefined} explain="记录这次调整的依据，随这次操作写入操作记录。"
             help={reasonRule.ready ? undefined : reasonBlock} error={reasonRejected ?? (reasonRule.ready && state.touched.reason ? reasonBlock : undefined)}>
             <Textarea rows={3} maxLength={400} count={reasonRule.ready ? `${reasonLength}/${reasonRule.max}` : undefined} placeholder="写清调整原因和依据" value={state.reason} disabled={saving || outcome.kind === "conflict"}
-              onChange={event => set({ reason: event.target.value, ...(reasonRejected ? { outcome: { kind: "none" } } : {}) })} onBlur={() => touch("reason")} />
+              onChange={event => set({ reason: event.target.value, ...(reasonRejected && event.target.value.trim() !== state.reason.trim() ? { outcome: { kind: "none" } } : {}) })} onBlur={() => touch("reason")} />
           </Field>}
         {outcome.kind === "conflict" && <Notice tone="warn" title="这条任务刚被别人改过，这次没有保存">
           <ConflictBar message="读取最新后，你改过的内容会保留，再核对一遍。" onRead={() => onReadLatest(state)} /></Notice>}

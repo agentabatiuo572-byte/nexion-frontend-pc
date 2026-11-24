@@ -26,7 +26,7 @@ import { checkE2Command, e2CommandLabel, e2Commands, e2CommandSettled, type E2Pe
 import { canInvestigateECommand, eCommandRollbackConfirmed } from "@/lib/admin/e-command-investigation";
 import { TechInfo, receiptOf } from "../recovery-panel";
 import { CommandClosureModal, CommandOutcomeLine, SettledCommandNotices, closureOpen, type CommandOutcome, type SettledCommand } from "./e-command-check";
-import { applyLatestE2Task, e2EditorReasonBlock, E2TaskEditor, formatWeight, isE2ReasonRejection, isE2TaskEditorDirty, openE2TaskEditor, type E2LevelWeightRange, type E2TaskEditorState, type E2TaskField } from "./e2-task-editor";
+import { applyLatestE2Task, e2EditorReasonBlock, e2EditorReasonRejection, E2TaskEditor, formatWeight, isE2ReasonRejection, isE2TaskEditorDirty, openE2TaskEditor, type E2LevelWeightRange, type E2TaskEditorState, type E2TaskField } from "./e2-task-editor";
 
 type Query = { code: string; taskClass: string; enabled: string; page: number; size: number; reset: boolean };
 type Read<T> = { state: "loading" | "ready" | "error"; data: T; error: string };
@@ -39,6 +39,16 @@ const TASK_RULES = "等级只决定跑什么任务，收益由商品的月收益
 const GENERATION = "系统生成同池唯一的英文名称，时长为 5 分钟整数倍：向量计算 30–60 分钟，语音处理 45–90 分钟，图像生成和大模型推理 60–120 分钟，模型微调和视频生成 90–120 分钟。新任务立即启用。";
 const RETRY_HELP = "先查询原结果。查不到时可重新发送保存的原请求，系统认得出是同一次提交，不会重复执行。";
 const MISSING_TASK_WEIGHT = "这条任务还没有权重，暂时不能编辑";
+const READ_BACK_ERRORS: Record<ReadScope, string> = {
+  all: "最新任务等级摘要和任务列表暂时读不到。",
+  pools: "任务列表已更新，最新任务等级摘要暂时读不到。",
+  tasks: "最新任务列表暂时读不到。",
+};
+
+function taskPoolReadError(cause: unknown) {
+  return cause instanceof TaskPoolApiError && !cause.reasonCode
+    ? "收到的数据不完整，已停止显示。" : displayAdminReadError(cause);
+}
 const EDIT_ERROR_FIELDS: Partial<Record<string, E2TaskField>> = {
   TASK_NAME_INVALID: "name", APP_TEXT_CHINESE_NOT_ALLOWED: "name", TASK_NAME_DUPLICATE: "name",
   TASK_CLASS_INVALID: "taskClass", TASK_DURATION_INVALID: "duration", TASK_WEIGHT_INVALID: "weight",
@@ -159,6 +169,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const editorPoolCode = editor && editor.outcome.kind !== "unknown" ? editor.pool.code : undefined;
   const editorReasonRule = useReasonRule(editor?.step === "confirm" && editor.outcome.kind !== "unknown");
   const legacyReasonRule = useReasonRule(!!dialog && !dialog.original);
+  useEffect(() => {
+    if (editorReasonRule.policy) {
+      setEditor(old => old && e2EditorReasonRejection(old.outcome) ? { ...old, outcome: { kind: "none" } } : old);
+    }
+  }, [editorReasonRule.policy]);
   const editorDirty = editor !== null && isE2TaskEditorDirty(editor);
   const afterEditorLeave = useRef<(() => void) | null>(null);
   const poolSequence = useRef(0), taskSequence = useRef(0), impactSequence = useRef(0), lastQuery = useRef("");
@@ -169,8 +184,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const rows = tasks.data.records;
   const syncPending = useCallback(() => setPending(e2Commands.list().filter(record => record.actorId === actorId)), [actorId]);
 
-  const refresh = useCallback(async (target: Query, scope: ReadScope = "all") => {
-    if (!ctx.canReadE2) return false;
+  const refresh = useCallback(async function read(target: Query, scope: ReadScope = "all"): Promise<ReadScope | null> {
+    if (!ctx.canReadE2) return null;
     const readPools = scope !== "tasks", readTasks = scope !== "pools";
     const poolSerial = readPools ? ++poolSequence.current : null;
     const taskSerial = readTasks ? ++taskSequence.current : null;
@@ -193,32 +208,34 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     if (permissionFailure) {
       setDenied(true); setPools({ state: "error", data: [], error: "这个账号没有这项读取权限" });
       setTasks({ state: "error", data: { records: [], total: 0 }, error: "这个账号没有这项读取权限" });
-      announcePermissionDenied(); return false;
+      announcePermissionDenied(); return null;
     }
+    const poolsFailed = poolResult?.status === "rejected";
+    let tasksFailed = taskResult?.status === "rejected";
     if (poolResult?.status === "fulfilled" && poolResult.value) {
       const data = poolResult.value;
       setPools({ state: "ready", data, error: "" });
       if (!target.code || !data.some(level => level.code === target.code)) {
         const first = { ...target, code: data[0].code, page: 1 };
         nextQueryRead.current = { target: first, scope: "tasks" };
-        setQuery(first); return false;
+        setQuery(first); return null;
       }
-    } else if (poolResult?.status === "rejected") setPools(old => ({ ...old, state: "error", error: displayAdminReadError(poolResult.reason) }));
+    } else if (poolsFailed) setPools(old => ({ ...old, state: "error", error: taskPoolReadError(poolResult.reason) }));
     if (taskResult?.status === "fulfilled" && taskResult.value) {
       const page = taskResult.value;
       const last = Math.max(1, Math.ceil(page.total / target.size));
       if (target.page > last) {
         const corrected = { ...target, page: last };
-        nextQueryRead.current = { target: corrected, scope: "tasks" };
-        setQuery(corrected); return false;
-      }
-      setTasks({ state: "ready", data: page, error: "" });
+        nextQueryRead.current = { target: corrected, scope: "started" };
+        setQuery(corrected);
+        tasksFailed = await read(corrected, "tasks") === "tasks";
+      } else setTasks({ state: "ready", data: page, error: "" });
     } else if (taskResult?.status === "rejected") {
-      const error = taskResult.reason instanceof TaskPoolApiError && !taskResult.reason.reasonCode
-        ? "任务列表暂时读不到，请重试。" : displayAdminReadError(taskResult.reason);
-      setTasks({ state: "error", data: { records: [], total: 0 }, error });
+      setTasks({ state: "error", data: { records: [], total: 0 }, error: taskPoolReadError(taskResult.reason) });
     } else if (taskResult) setTasks({ state: "ready", data: { records: [], total: 0 }, error: "" });
-    return poolResult?.status === "fulfilled" && taskResult?.status === "fulfilled" && taskResult.value !== null;
+    if (poolsFailed && tasksFailed) return "all";
+    if (poolsFailed) return "pools";
+    return tasksFailed ? "tasks" : null;
   }, [ctx.canReadE2]);
   useEffect(() => () => { poolSequence.current++; taskSequence.current++; }, [refresh]);
   useEffect(() => {
@@ -390,7 +407,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const reasonLength = visibleReasonLength(reason);
   const reasonBlock = e2EditorReasonBlock(reason, legacyReasonRule);
   const reasonRejected = isE2ReasonRejection(dialogErrorCode) ? dialogError : undefined;
-  const formBlock = (dialog?.kind === "random" ? randomBlock ?? randomCountBlock : writeBlock) ?? reasonBlock ??
+  const formBlock = (dialog?.kind === "random" ? randomBlock ?? randomCountBlock : writeBlock) ?? (reasonRejected || reasonBlock) ??
     (dialog?.kind === "status" && !dialog.tasks.length ? "没有可执行的任务"
       : dialog?.kind === "status" && !dialog.enabled && (!impact || impactLoading || impactError) ? "请先成功读取停用影响" : undefined);
 
@@ -415,7 +432,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         nextQueryRead.current = { target, scope: "started" };
         setQuery(target);
       }
-      if (!await refresh(target)) setReceipt(`${message}。操作已生效，最新任务列表暂时读不到。`);
+      const readFailure = await refresh(target);
+      if (readFailure) setReceipt(`${message}。操作已生效，${READ_BACK_ERRORS[readFailure]}`);
       document.getElementById("e2-task-heading")?.focus();
       if (edit) finishEditor();
     } catch (error) {
@@ -468,7 +486,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     const reason = state.reason.trim();
     const fields = { name: state.draft.name.trim(), taskClass: state.draft.taskClass,
       durationMinutes: Number(state.draft.duration), baseReward: state.draft.weight };
-    if (!validTaskEditFields(fields) || e2EditorReasonBlock(reason, editorReasonRule)) return;
+    if (!validTaskEditFields(fields) || e2EditorReasonRejection(state.outcome) || e2EditorReasonBlock(reason, editorReasonRule)) return;
     const common = { ...fields, idempotencyKey: state.key, reason };
     let request: TaskPoolEditCommand;
     if (state.mode === "update") {
@@ -724,7 +742,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             : <Field label="操作理由" required hint={legacyReasonRule.ready ? `至少 ${legacyReasonRule.min} 字` : undefined} explain="记录这次调整的依据，随这次操作写入操作记录。"
               help={legacyReasonRule.ready ? undefined : reasonBlock} error={reasonRejected || (legacyReasonRule.ready && touched.reason ? reasonBlock : undefined)}>
               <Textarea rows={3} maxLength={400} count={legacyReasonRule.ready ? `${reasonLength}/${legacyReasonRule.max}` : undefined} placeholder="例如：按本周运营计划补充候选任务" value={reason} disabled={saving}
-                onChange={event => { setReason(event.target.value); if (reasonRejected) { setDialogError(""); setDialogErrorCode(""); } }} onBlur={() => setTouched(old => ({ ...old, reason: true }))} /></Field>}
+                onChange={event => { setReason(event.target.value); if (reasonRejected && event.target.value.trim() !== reason.trim()) { setDialogError(""); setDialogErrorCode(""); } }} onBlur={() => setTouched(old => ({ ...old, reason: true }))} /></Field>}
           {dialogError && !reasonRejected && <Notice tone="danger">{dialogError}</Notice>}
           {dialog.kind === "status" && <Fold title="本次任务" summary={`${dialog.tasks.length} 个任务，展开核对完整名单`}><ul className="e2-command-tasks">{dialog.tasks.map(task => <li key={task.taskTypeId}>{task.name}</li>)}</ul></Fold>}
           <Fold title="执行摘要" summary="立即生效，不经审批"><p>{TASK_RULES}</p></Fold>
