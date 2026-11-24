@@ -110,16 +110,20 @@ export function E2TaskEditor({ state, onChange, writeBlock, toast, onSubmit, onR
   const minutes = durationOk(draft.duration) ? Number(draft.duration) : null;
   const reference = minutes === null ? null : referenceWeight(minutes, draft.taskClass);
   const before = task ? { name: task.name, taskClass: task.taskClass, duration: String(task.durationMinutes), weight: task.baseReward ?? "" } : null;
+  const nameChanged = !!before && draft.name.trim() !== before.name;
+  // 名称最长 128 个字符，放进三列对照会挤成窄条；改了名称时另起两行写全（VS-103「长文字上下排」）。
   const rows: DiffRow[] = before ? [
-    { key: "name", label: "名称", before: before.name, after: draft.name.trim() },
+    ...(nameChanged ? [] : [{ key: "name", label: "名称", before: before.name, after: draft.name.trim() }]),
     { key: "taskClass", label: "类型", before: TASK_CLASS_LABELS[before.taskClass], after: TASK_CLASS_LABELS[draft.taskClass] },
     { key: "duration", label: "时长", before: `${before.duration} 分钟`, after: `${draft.duration} 分钟` },
-    { key: "weight", label: "权重", before: before.weight ? formatWeight(before.weight) : "—", after: WEIGHT_PATTERN.test(draft.weight) ? formatWeight(draft.weight) : draft.weight },
+    { key: "weight", label: "权重", before: before.weight ? formatWeight(before.weight) : "—", after: !draft.weight ? "—" : WEIGHT_PATTERN.test(draft.weight) ? formatWeight(draft.weight) : draft.weight },
   ] : [];
+  // 列表还没带出权重时两边都是空，算没改。
+  const weightSame = !!before && (draft.weight === before.weight || sameWeight(draft.weight, before.weight));
   const changed = !before || draft.name.trim() !== before.name || draft.taskClass !== before.taskClass
-    || Number(draft.duration) !== Number(before.duration) || !sameWeight(draft.weight, before.weight);
+    || Number(draft.duration) !== Number(before.duration) || !weightSame;
   const firstError = (Object.keys(errors) as E2TaskField[]).map(field => errors[field]).find(Boolean);
-  const formBlock = writeBlock ?? firstError ?? (!changed ? "没有修改" : undefined);
+  const formBlock = writeBlock ?? (!changed ? "没有修改" : firstError);
   const reasonLength = Array.from(state.reason.trim()).length;
   const reasonReady = reasonLength >= 8 && reasonLength <= 200;
   const confirmBlock = formBlock ?? (outcome.kind === "conflict" ? "请先读取最新内容" : !reasonReady ? "请填写 8–200 字的操作理由" : undefined);
@@ -192,7 +196,8 @@ export function E2TaskEditor({ state, onChange, writeBlock, toast, onSubmit, onR
         {unknown && <Notice tone="warn" title={unknown.expired ? "已超过 24 小时，不能再重试" : "结果未知，原操作已冻结"}>
           {unknown.expired ? "原请求继续保留，请核对操作记录；这个等级仍暂停新操作。" : "只能按原请求重试：系统认得出是同一次提交，不会重复执行。"}</Notice>}
         <Facts><Fact k="任务等级">{pool.code} {pool.name}</Fact>
-          {task && (unknown || draft.name.trim() === task.name) && <Fact k="任务">{task.name}</Fact>}
+          {task && (unknown || !nameChanged) && <Fact k="任务">{task.name}</Fact>}
+          {task && !unknown && nameChanged && <><Fact k="现在名称">{task.name}</Fact><Fact k="改后名称" tone="progress">{draft.name.trim()}</Fact></>}
           {unknown && <Fact k="首次提交">{businessStamp(unknown.createdAt)} · {businessZoneText()}</Fact>}
           {mode === "create" && <>
             <Fact k="名称">{draft.name.trim()}</Fact>
