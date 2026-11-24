@@ -2,22 +2,22 @@
 
 import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
-import { HConflictReviewRequired, hConflictFields } from "@/lib/admin/h-conflict-review";
+import { ConfirmReadConflict, hConflictFields, type HConflictField, type PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import { compareH3Decimal, h3Decimal } from "@/lib/admin/h3-contract";
-import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
+import { isH4ReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Plus, Ticket, Trash2, Trophy } from "lucide-react";
 import type { HCtx } from "./types";
-import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, RAFFLE_SAVE_PENDING, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification } from "@/lib/admin/h4-mutations";
+import { fetchAdminRaffle, fetchAdminRaffles, parseAdminRaffle, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, RAFFLE_SAVE_PENDING, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Steps } from "@/app/components/rd";
 import { amountText, formatTime } from "./h4-promotion-ui";
-import { ApprovalFact, H4StaleNote, effectApproval, effectDirect } from "./h4-legacy-parts";
-import { H4ConflictCompare, h4ConflictGroups, type H4CompareSection, type H4ConflictGroup, type H4Overwrite } from "./h4-conflict-compare";
+import { ApprovalFact, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL, H4_OLD_RECORD_REJECTED, effectApproval, effectDirect } from "./h4-legacy-parts";
+import { H4ConflictCompare, h4ConflictGroups, type H4CompareSection, type H4ConflictGroup } from "./h4-conflict-compare";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 
 const empty = (): RaffleDraft => ({ id: "", titleZh: "", titleEn: "", titleVi: "", startsAt: "", drawAt: "", prizes: [] });
@@ -91,7 +91,7 @@ export function useH4RaffleReadback(ctx: HCtx) {
   return { read, operator, rows, loading, error, setError, readFailed, setReadFailed, draftReset, load, isActive };
 }
 
-export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: { ctx: HCtx; readback: ReturnType<typeof useH4RaffleReadback>; onApprovalCompleted?: () => Promise<void> }) {
+export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, reopenRejected }: { ctx: HCtx; readback: ReturnType<typeof useH4RaffleReadback>; onApprovalCompleted?: () => Promise<void>; reopenRejected: RefObject<H4ReopenRejected | null> }) {
   const { read, operator, rows, loading, error, setError, readFailed, setReadFailed, draftReset, load, isActive } = readback;
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [base, setBase] = useState<AdminRaffle | null>(null), [draft, setDraft] = useState<RaffleDraft | null>(null);
@@ -100,7 +100,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
   const [, pendingChanged] = useState(0);
   /** 保存被「别人先改过」拒绝、已重读后的提醒；只决定显示。 */
   const [stale, setStale] = useState("");
-  const conflictReview = useRef<HConflictReviewRequired | null>(null);
+  const [conflictFields, setConflictFields] = useState<HConflictField[] | null>(null);
   /** 合并后回到表单：放回了几项自己改的。只决定显示。 */
   const [merged, setMerged] = useState(0);
   useEffect(() => { setSaving(false); if (read) void load(); }, [read, operator]);
@@ -110,31 +110,64 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
     window.addEventListener("admin-h4-pending-changed", changed);
     return () => window.removeEventListener("admin-h4-pending-changed", changed);
   }, []);
-  const choose = (row: AdminRaffle | null, required = requiredLanguages) => { conflictReview.current = null; setStale(""); setMerged(0); setBase(row); setDraft(row ? editableRaffle(row, required) : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
-  const openRaffle = async (row: AdminRaffle | null) => {
+  const choose = (row: AdminRaffle | null, required = requiredLanguages) => { setConflictFields(null); setStale(""); setMerged(0); setBase(row); setDraft(row ? editableRaffle(row, required) : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
+  const openRaffle = async (row: AdminRaffle | null, closeRetry?: () => void) => {
     const required = await getRequiredContentLanguages();
+    if (closeRetry) {
+      if (!isActive()) return false;
+      closeRetry();
+    }
     setRequiredLanguages(required);
     choose(row, required);
+    if (closeRetry) setError(H4_OLD_RECORD_REJECTED);
+    return true;
   };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const saveBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0));
-  const save = (rebased?: { base: AdminRaffle; draft: RaffleDraft; enabled: boolean }) => {
-    if (conflictReview.current) { setError(displayAdminError(conflictReview.current)); return; }
-    const savedDraft = rebased?.draft ?? draft, previous = rebased?.base ?? base, nextEnabled = rebased?.enabled ?? (!!base && enabled);
+  const save = (restored?: { base: AdminRaffle | null; draft: RaffleDraft; enabled: boolean; rejection: PendingConfirmRejected }) => {
+    const previous = restored ? restored.base : base, savedDraft = restored?.draft ?? draft;
+    const nextEnabled = restored?.enabled ?? (!!base && enabled);
     if (savedDraft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${savedDraft.id}`)) return;
     setReadFailed(false);
-    if (!savedDraft || !write || !rebased && saving || (previous && (previous.status === "PROCESSING" || previous.status === "DRAWN" || (previous.status === "OPEN" && previous.totalEntries > 0)))) return;
-    const invalid = raffleDraftError(savedDraft, requiredLanguages); if (invalid) { setError(invalid); return; }
+    if (!savedDraft || !write || !restored && (saving || saveBlocked || conflictFields)) return;
+    const invalid = !restored && raffleDraftError(savedDraft, requiredLanguages); if (invalid) { setError(invalid); return; }
     const opening = nextEnabled && previous?.status === "DRAFT";
     const closing = !nextEnabled && previous?.status === "OPEN";
     const readVersion = h4ReadVersion("raffles");
+    const rereadConflict = () => h4ReadConflict(async () => {
+      const values = await load();
+      if (!values) throw new Error("最新的这一期也没读到");
+      const latest = values.rows.find(row => row.id === savedDraft.id) ?? await fetchAdminRaffle(savedDraft.id);
+      if (!isActive()) return;
+      if (!previous) {
+        if (latest) throw new ConfirmReadConflict(undefined, "RAFFLE_ALREADY_EXISTS");
+        ctx.openActionConfirm(null);
+        return;
+      }
+      if (!latest) throw new ConfirmReadConflict(undefined, restored ? H4_MISSING_ORIGINAL : "最新读取里没有这一期");
+      setBase(latest); setDraft(savedDraft); setEnabled(nextEnabled);
+      const comparable = (value: RaffleDraft, enabled: boolean) => ({ ...value,
+        prizes: Object.fromEntries(value.prizes.map(prize => [prizeKey(prize.id), prize])), enabled });
+      setConflictFields(hConflictFields(comparable(editableRaffle(previous, requiredLanguages), previous.status === "OPEN"),
+        comparable(editableRaffle(latest, requiredLanguages), latest.status === "OPEN"), comparable(savedDraft, nextEnabled), equalRaffleField));
+      setStale(savedDraft.titleZh || savedDraft.id);
+      ctx.openActionConfirm(null);
+    });
+    const rejected = (error: PendingConfirmRejected) => isH4ReadConflict(error) ? rereadConflict() : error;
     let originalKey: string | undefined;
-    ctx.openActionConfirm({ getPendingReason: () => h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
+    const pending = () => originalKey ? pendingH4Commands().find(record => record.commandKey === originalKey) : h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`);
+    ctx.openActionConfirm({ formKey: restored ? 0 : undefined, initialRejection: restored && rejected(restored.rejection), getPendingReason: () => pending()?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
+      getPendingRecovery: () => h4PendingConfirmRecovery(pending(), async () => {
+        if (opening) await onApprovalCompleted?.();
+        if (!await load(false, true)) throw new Error("已保存，但没读到最新数据");
+        ctx.openActionConfirm(null);
+      },
+        rejected),
       title: opening ? "开放抽奖报名" : closing ? "关闭报名回草稿" : previous ? "保存抽奖配置" : "保存抽奖草稿",
       effect: opening ? effectApproval("这一期") : effectDirect,
       detail: <>本期共 {seats(savedDraft.prizes)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
       facts: <>
-        {(rebased || merged > 0) && <H4StaleNote />}
+        {merged > 0 && <H4StaleNote />}
         <Facts>
           <Fact k="这一期">{savedDraft.titleZh || savedDraft.titleEn || "—"} · {savedDraft.id}</Fact>
           <Fact k="报名开始 → 开奖（北京时间）">{formatTime(savedDraft.startsAt, "Asia/Shanghai")} → {formatTime(savedDraft.drawAt, "Asia/Shanghai")}</Fact>
@@ -174,7 +207,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
             const problem = raffleDraftError(savedDraft, required);
             if (problem) throw new Error(problem);
             const submitted = raffleLocalizedDraft(savedDraft, required, "submit");
-            result = await saveAdminRaffle(submitted, previous?.revision ?? null, nextEnabled, reason, opening);
+            result = await saveAdminRaffle(submitted, previous?.revision ?? null, nextEnabled, reason, opening, previous);
           }
           await complete(result);
         } catch (cause) {
@@ -186,52 +219,53 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
               onUnknown: () => { ctx.closeConfirm?.(); setDraft(null); setBase(null); }, approver: "另一位超级管理员", holds: "这一期", extra: <Fact k="这一期">{savedDraft.titleZh || savedDraft.titleEn || "—"} · {savedDraft.id}</Fact> }));
             return;
           }
+          if (isH4ReadConflict(cause) && !originalKey) {
+            throw rereadConflict();
+          }
           if (isActive()) setError(displayAdminError(cause));
-          if (isHGrowthReadConflict(cause)) setStale(savedDraft.titleZh || savedDraft.id);
-          if (isHGrowthReadConflict(cause) && !originalKey) {
-            ctx.openActionConfirm(null);
-            const values = await load(), latest = values?.rows.find(row => row.id === savedDraft.id);
-            if (latest && previous) {
-              setBase(latest); setDraft(savedDraft); setEnabled(nextEnabled);
-              const comparable = (value: RaffleDraft, enabled: boolean) => ({ ...value,
-                prizes: Object.fromEntries(value.prizes.map(prize => [prizeKey(prize.id), prize])), enabled });
-              const fields = hConflictFields(comparable(editableRaffle(previous, requiredLanguages), previous.status === "OPEN"),
-                comparable(editableRaffle(latest, requiredLanguages), latest.status === "OPEN"), comparable(savedDraft, nextEnabled), equalRaffleField);
-              conflictReview.current = new HConflictReviewRequired(displayAdminError(cause), fields, () => {
-                conflictReview.current = null;
-                save({ base: latest, draft: savedDraft, enabled: nextEnabled });
-              });
-            }
-          } else if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)) { ctx.openActionConfirm(null); setDraft(null); setBase(null); await load(); }
+          if (originalKey && !h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)) { ctx.openActionConfirm(null); setDraft(null); setBase(null); await load(); }
           throw cause;
         }
         finally { originalKey = h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)?.commandKey; setSaving(false); }
       },
     });
   };
-  const close = () => { conflictReview.current = null; setDraft(null); setBase(null); setError(""); };
+  useLayoutEffect(() => {
+    reopenRejected.current = async (record, rejection, closeRetry) => {
+      if (!write || "proposal" in record.request) return false;
+      const body = JSON.parse(record.request.body) as RaffleDraft & { enabled?: boolean; expectedRevision?: number };
+      const { id } = body;
+      const creating = record.request.method === "POST";
+      const previous = record.opened ? parseAdminRaffle(record.opened) : null;
+      if (creating ? record.opened !== null : !previous || previous.id !== id || previous.revision !== body.expectedRevision) {
+        const latest = await load();
+        if (!latest) throw new ConfirmReadConflict(undefined, "最新的这一期也没读到");
+        const current = latest.rows.find(row => row.id === id) ?? await fetchAdminRaffle(id);
+        if (!isActive()) return false;
+        if (!creating && !current) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL);
+        return openRaffle(current, closeRetry);
+      }
+      if (!isActive()) return false;
+      const { titleZh, titleEn, titleVi, startsAt, drawAt, prizes } = body;
+      const draft = raffleLocalizedDraft({ id, titleZh, titleEn, titleVi, startsAt, drawAt, prizes }, requiredLanguages, "edit");
+      const enabled = body.enabled === true;
+      closeRetry();
+      choose(previous); setDraft(draft); setEnabled(enabled);
+      save({ base: previous, draft, enabled, rejection });
+      return true;
+    };
+    return () => { reopenRejected.current = null; };
+  });
+  const close = () => { setConflictFields(null); setDraft(null); setBase(null); setError(""); };
   // 三方对比：奖项逐项逐字段列，名称、金额、名额原样写，不舍入。
-  const review = base && draft ? conflictReview.current : null;
+  const review = base && draft ? conflictFields : null;
   const PRIZE_FIELD: Record<string, string> = { nameZh: "中文名称", nameEn: "英文名称", nameVi: "越南语名称", rewardType: "奖励类型", amount: "每名金额", productNo: "设备商品编号", quantity: "中奖名额", id: "奖项" };
   const prizeName = (id: string) => {
-    const leaf = review?.fields.find(field => field.path === `prizes.${prizeKey(id)}.nameZh`);
+    const leaf = review?.find(field => field.path === `prizes.${prizeKey(id)}.nameZh`);
     // 空名不算有名字：最新一份没写中文名时用你填的或打开时的名字。
     return [leaf?.latest, leaf?.mine, leaf?.opened].map(name => name == null ? "" : String(name).trim()).find(Boolean) || "未命名奖项";
   };
-  const submission = new Map<string, { latest: string; value: string }>();
-  if (review && draft && base) {
-    const submitted = raffleLocalizedDraft(draft, requiredLanguages, "submit");
-    const latestPrizes = new Map(base.prizes.map(prize => [prize.id, prize]));
-    for (const { suffix } of [RAFFLE_LANGUAGES.zh, RAFFLE_LANGUAGES.vi]) {
-      const title = `title${suffix}` as const, name = `name${suffix}` as const;
-      submission.set(title, { latest: base[title], value: submitted[title] });
-      for (const prize of submitted.prizes) {
-        const latest = latestPrizes.get(prize.id);
-        if (latest) submission.set(`prizes.${prizeKey(prize.id)}.${name}`, { latest: latest[name], value: prize[name] });
-      }
-    }
-  }
-  const compareGroups: H4ConflictGroup[] = review ? h4ConflictGroups(review.fields,
+  const compareGroups: H4ConflictGroup[] = review ? h4ConflictGroups(review,
     path => path.startsWith("prizes.") ? path.split(".").slice(0, 3).join(".") : path.split(".")[0],
     key => {
       const [, id, field] = key.split(".");
@@ -242,11 +276,9 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
       : key === "startsAt" || key === "drawAt" ? raw ? `${formatTime(raw as string, "Asia/Shanghai")}（北京时间）` : "未配置"
       : key.endsWith(".rewardType") ? raw === "DEVICE" ? "设备" : raw === undefined ? "—" : String(raw)
       : key.startsWith("prizes.") && raw === undefined ? "—"
-      : key.endsWith(".amount") ? (type => type === "DEVICE" ? `${Number(raw)} 台` : `${amountText(String(raw))} ${PRIZE_UNIT[type]}`)(review.fields.find(field => field.path === `${key.slice(0, -7)}.rewardType`)?.[which] as RafflePrize["rewardType"])
-      : raw === undefined || raw === null || raw === "" ? "—" : String(raw), { equal: equalRaffleField, submission }) : [];
-  // Identity sets are compared with the opened snapshot on both sides. Reordering is harmless;
-  // additions/deletions require the explicit whole-draft choice, never an implicit replacement.
-  const prizeFields = (id: string) => review?.fields.filter(field => field.path.startsWith(`prizes.${prizeKey(id)}.`)) ?? [];
+      : key.endsWith(".amount") ? (type => type === "DEVICE" ? `${Number(raw)} 台` : `${amountText(String(raw))} ${PRIZE_UNIT[type]}`)(review.find(field => field.path === `${key.slice(0, -7)}.rewardType`)?.[which] as RafflePrize["rewardType"])
+      : raw === undefined || raw === null || raw === "" ? "—" : String(raw)) : [];
+  const prizeFields = (id: string) => review?.filter(field => field.path.startsWith(`prizes.${prizeKey(id)}.`)) ?? [];
   /** 从对比数据里按奖项拼回某一份的奖项；那一份没有这一项时是 undefined。 */
   const prizeAt = (id: string, which: "opened" | "latest" | "mine") => {
     const leaves = prizeFields(id);
@@ -254,63 +286,46 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
     return Object.fromEntries(leaves.map(field => [field.path.split(".")[2], field[which]])) as unknown as RafflePrize;
   };
   const prizeChanges = (which: "latest" | "mine") => {
-    const ids = review?.fields.filter(field => /^prizes\.[^.]+\.id$/.test(field.path)) ?? [];
+    const ids = review?.filter(field => /^prizes\.[^.]+\.id$/.test(field.path)) ?? [];
     return {
       added: ids.filter(field => field.opened === undefined && field[which] !== undefined).map(field => String(field[which])),
       removed: ids.filter(field => field.opened !== undefined && field[which] === undefined).map(field => String(field.opened)),
     };
   };
   const structureChanges = { latest: prizeChanges("latest"), mine: prizeChanges("mine") };
-  const mergeBlocked = Object.values(structureChanges).some(change => change.added.length || change.removed.length);
   // 对比表按奖项分组：最新的顺序，然后是你新加的、两边都没有了的；增删过的奖项整项比一行。
   const prizeIds = [...new Set([...(base?.prizes.map(prize => prize.id) ?? []), ...(draft?.prizes.map(prize => prize.id) ?? []),
-    ...(review?.fields.filter(field => /^prizes\.[^.]+\.id$/.test(field.path)).map(field => String(field.opened)).filter(id => id !== "undefined") ?? [])])];
+    ...(review?.filter(field => /^prizes\.[^.]+\.id$/.test(field.path) && field.opened !== undefined).map(field => String(field.opened)) ?? [])])];
   const prizeSummary = (prize: RafflePrize | undefined) => prize ? `${prize.nameZh || prize.nameEn || "未命名"} ${prizeText(prize)} × ${prize.quantity}` : "没有这一项";
   const marks = (id: string) => [
     structureChanges.latest.added.includes(id) && "别人新加", structureChanges.latest.removed.includes(id) && "别人删了",
     structureChanges.mine.added.includes(id) && "你新加的", structureChanges.mine.removed.includes(id) && "你删了",
   ].filter((mark): mark is string => !!mark);
-  /** 增删过的奖项按整份提交后会怎样；没有别人的修改被换掉时为空。 */
-  const overwriteNote = (id: string) => {
-    const opened = prizeAt(id, "opened"), latest = prizeAt(id, "latest"), mine = prizeAt(id, "mine");
-    if (!marks(id).length) return "";
-    return latest && !opened && !mine ? "别人新加的，提交后删掉"
-      : !latest && opened && mine ? "别人删了，提交后恢复"
-      : latest && opened && !mine && prizeFields(id).some(field => field.changedByOther) ? "别人改过、你删了，提交后删掉" : "";
-  };
   const prizeSections: H4CompareSection[] = review ? [
     { key: "raffle", rows: compareGroups.filter(group => !group.key.startsWith("prizes.")) },
     ...prizeIds.map(id => {
       const opened = prizeAt(id, "opened"), latest = prizeAt(id, "latest"), mine = prizeAt(id, "mine"), tags = marks(id);
-      const rows = compareGroups.filter(group => group.key.startsWith(`prizes.${prizeKey(id)}.`)).map(group => ({ ...group, label: PRIZE_FIELD[group.key.split(".")[2]] ?? "其他" }));
-      const lost = overwriteNote(id);
+      const rows = compareGroups.filter(group => group.key.startsWith(`prizes.${prizeKey(id)}.`)
+        && (!tags.length || !!opened && (latest && !mine && group.byOther || mine && !latest && group.byMe)))
+        .map(group => ({ ...group, label: PRIZE_FIELD[group.key.split(".")[2]] ?? "其他" }));
       const fields = prizeFields(id);
       const whole = tags.length ? { opened: prizeSummary(opened), latest: prizeSummary(latest), byOther: fields.some(field => field.changedByOther), byMe: fields.some(field => field.changedByMe),
-        mine: <>{prizeSummary(mine)}{lost && <span className="h4-compare-lost">{`按我填的提交会${lost.slice(lost.lastIndexOf("提交后") + 3)}`}</span>}</> } : undefined;
+        mine: prizeSummary(mine) } : undefined;
       return { key: id, title: prizeName(id), tags: tags.map(mark => <StatusTag key={mark} tone={mark.startsWith("别人") ? "warn" : "neutral"}>{mark}</StatusTag>), rows, whole };
     }),
   ].filter((section: H4CompareSection) => section.rows.length || section.whole) : [];
-  // 整份按我填的提交时，会被换掉的别人的修改：增删过的奖项按整项说，其余逐项写「别人改成 → 提交后」。
-  const overwrites: H4Overwrite[] = review ? [
-    ...compareGroups.filter(group => group.overwritesOther && !prizeIds.some(id => marks(id).length && group.key.startsWith(`prizes.${prizeKey(id)}.`)))
-      .map(group => ({ key: group.key, label: group.label, latest: group.latest, submitted: group.submitted ?? group.mine })),
-    ...prizeIds.flatMap(id => { const note = overwriteNote(id); return note ? [{ key: `prize:${id}`, label: prizeName(id), note: `：${note}` }] : []; }),
-  ] : [];
-  const sideText = (side: { added: string[]; removed: string[] }) => [
-    side.removed.length && `删了${side.removed.map(id => `「${prizeName(id)}」`).join("")}`,
-    side.added.length && `加了${side.added.map(id => `「${prizeName(id)}」`).join("")}`,
-  ].filter(Boolean).join("，");
-  const structure = mergeBlocked ? <div className="h4-compare-structure">
-    <p><b>奖项有增删</b></p>
-    {sideText(structureChanges.latest) && <p>别人{sideText(structureChanges.latest)}。</p>}
-    {sideText(structureChanges.mine) && <p>你{sideText(structureChanges.mine)}。</p>}
-    <p>有增删时，系统不替你决定用哪份奖项表。可以按你填的整份提交，或关掉配置、重新打开最新的这一期再改。</p>
-  </div> : undefined;
+  const overlappingRemoval = (removed: string[], other: "latest" | "mine", changed: "changedByOther" | "changedByMe") =>
+    removed.some(id => prizeAt(id, other) && prizeFields(id).some(field => field[changed]));
+  const mergeBlockedReason = overlappingRemoval(structureChanges.mine.removed, "latest", "changedByOther") || overlappingRemoval(structureChanges.latest.removed, "mine", "changedByMe")
+    ? "同一个奖项一边被删除、一边被修改，不能合并。关闭后读取最新一期，再重新编辑。"
+    : saveBlocked || base?.status === "OPEN" && compareGroups.some(group => group.byMe && (group.key !== "enabled" || enabled)) ? "这一期不能再改" : undefined;
   // Latest configuration plus only the draft's changed fields, matched by prize id.
   const mergeConflict = () => {
-    if (!base || !draft || mergeBlocked) return;
+    if (!base || !draft || mergeBlockedReason) return;
     const latest = base, mine = draft, kept = compareGroups.filter(group => group.byMe);
     const next = editableRaffle(latest, requiredLanguages);
+    next.prizes = next.prizes.filter(prize => !structureChanges.mine.removed.includes(prize.id));
+    next.prizes.push(...mine.prizes.filter(prize => structureChanges.mine.added.includes(prize.id)));
     let nextEnabled = latest.status === "OPEN";
     for (const group of kept) {
       const [top, id, field] = group.key.split(".");
@@ -324,7 +339,6 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
     }
     choose(latest); setDraft(next); setEnabled(nextEnabled); setMerged(kept.length);
   };
-  const keepMine = () => { const current = conflictReview.current; if (!current) return; setError(""); current.confirm(); pendingChanged(v => v + 1); };
   const pendingSave = draft ? h4PendingFor(`H/h4_genesis_raffle/${draft.id}`) : undefined;
   const awaitingRead = draft ? confirmedH4Saves().find(record => record.scope === `H/h4_genesis_raffle/${draft.id}`) : undefined;
   const savedUnread = !!awaitingRead;
@@ -370,7 +384,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted }: 
         others={<Button disabled={saving} onClick={close}>取消</Button>}
         primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : savedUnread ? needsVerification ? "保存结果待核对；关掉后点「刷新」。" : "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : draft ? h4ApprovalLockedReason(`H/h4_genesis_raffle/${draft.id}`) : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
       {draft && <div className="h4-dialog-body">
-        {review && <H4ConflictCompare groups={compareGroups} sections={prizeSections} overwrites={overwrites} structure={structure} mergeDisabledReason={mergeBlocked ? "奖项有增删时不能合并。" : undefined} onMerge={mergeConflict} onKeepMine={keepMine} />}
+        {review && <H4ConflictCompare groups={compareGroups} sections={prizeSections} mergeDisabledReason={mergeBlockedReason} onMerge={mergeConflict} />}
         {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新的这一期，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
         <fieldset disabled={formLocked} className="h4-fieldset">
         {base && <Field label="开放报名" explain={enableBlocked ? (base.totalEntries > 0 ? "已有人报名，不能再关闭。" : "已开奖或正在开奖。") : "开放要另一位超级管理员批准；还没人报名时可以关回草稿。"}>

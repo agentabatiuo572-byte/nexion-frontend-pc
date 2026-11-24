@@ -7,18 +7,19 @@
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, blankCopiedContentLanguage } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import type { BusinessFormValue, EditComparison } from "../design-kit";
-import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
+import { useHConflictDraft, type RejectedH4Draft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
+import { ConfirmReadConflict, PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
-  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, Panel, RatioBar, ReleaseModal, Stat, StatBand, StatusTag,
+  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, Panel, RatioBar, Stat, StatBand, StatusTag,
   Table, Td, Th, Tr, type MoreMenuItem,
 } from "@/app/components/rd";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
   fetchH3QuestEvents,
   fetchH4EventCreateCandidates,
@@ -43,11 +44,11 @@ import { useUI } from "@/lib/store/ui";
 import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
-import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
+import { H4_EVENT_RULE_CODES, fetchEventRules, type EventRuleView } from "@/lib/admin/event-rules-client";
 import { EVENT_CONTENT_LOCALES, eventLocalizedContentGaps, eventRuleReadiness } from "@/lib/admin/event-rule-form";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
-import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4Command } from "@/lib/admin/h4-mutations";
-import { RAFFLE_SAVE_PENDING } from "@/lib/admin/genesis-raffle-client";
+import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, h4RetryBlockedReason, h4PendingConfirmRecovery, h4ReceiptRejection, isH4MediaCommand, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4Command, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
+import { fetchAdminRaffle, RAFFLE_SAVE_PENDING } from "@/lib/admin/genesis-raffle-client";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle, { useH4RaffleReadback } from "./h4-genesis-raffle";
@@ -56,7 +57,7 @@ import {
   ApprovalFact, EventCard, EventPreview, GuardCard, contentFieldsText, contentGaps, gapWeight, languageNames, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
   WHEEL_APP_KINDS, WHEEL_KIND_LABEL, WheelBar, WheelLegend, boolValue, effectApproval, effectByDirection, effectDirect, expiredTag, formStore,
   legacyName, lifecycleOf, numericValue, pendingTag, percentText, text, unknownTag, wheelLegacyNexTier, wheelPointsTier, wheelUnit,
-  type LegacyEvent, type LocaleCode, type WheelTier, actualRewardText, legacyRewardText, H4StaleNote } from "./h4-legacy-parts";
+  type LegacyEvent, type LocaleCode, type WheelTier, actualRewardText, legacyRewardText, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL } from "./h4-legacy-parts";
 
 type Model = H4Statistics & {
   events?: LegacyEvent[];
@@ -66,6 +67,31 @@ type Model = H4Statistics & {
   wheelGuards?: Array<{ key: string; label: string; value: string; note?: string }>;
   trackables?: Array<{ id: string; name: string; cond: string; join: string; done: string; claim: string; geo: string }>;
 };
+
+function unavailableOperation(objectLabel?: string) {
+  return new ConfirmReadConflict(undefined, objectLabel
+    ? `${objectLabel}已被别人改过，原来的操作现在不能再做；你填的内容没有提交，请按最新状态重新操作。`
+    : H4_MISSING_ORIGINAL);
+}
+
+function overviewObjectLabel(latest: Model, group: string | undefined, id: string | undefined) {
+  if (group === "events" && latest.events?.some(event => event.id === id)) return "这个活动";
+  if (group === "wheel-guards" && latest.wheelGuards?.some(guard => guard.key === id)) return "这个护栏";
+  if (group === "wheel-tiers") {
+    if (id === "probabilities" && latest.wheelTiers?.length) return "这个奖池";
+    if (latest.wheelTiers?.some(tier => tier.tier === id)) return "这个奖项";
+  }
+}
+
+function registeredObjectLabel(latest: Model, key?: string) {
+  if (!key) return;
+  const [opener, id] = JSON.parse(key) as [string, string?];
+  if (opener.startsWith("openEvent") || opener === "openLocalizedContent") return overviewObjectLabel(latest, "events", id);
+  if (opener === "openWheelBudget:1" || opener === "openWheelKill:1") {
+    return overviewObjectLabel(latest, "wheel-guards", opener === "openWheelBudget:1" ? "budget" : "kill");
+  }
+  return overviewObjectLabel(latest, "wheel-tiers", opener === "openWheelProbabilities:1" ? "probabilities" : id);
+}
 
 const GUARD_NAME: Record<string, string> = { budget: "每日真钱奖预算", cap: "各奖档每日库存", kill: "真钱奖发放开关" };
 const REWARD_PREVIEW_VALUE_ERRORS = new Set([
@@ -199,10 +225,33 @@ export type LegacySection = "events" | "plays" | "wheel";
 /** 输入框不带单位（共用改值框放不下长单位）、再确认里要写单位的改值框，按标题给单位，只用于显示。 */
 const RECONFIRM_UNIT: Record<string, string> = { 调整每日真钱奖预算: "USDT / 天" };
 
+function savedFields(body: Record<string, unknown>, keys = Object.keys(body)): BusinessFormValue {
+  return Object.fromEntries(keys.filter(key => body[key] === null || ["string", "number", "boolean"].includes(typeof body[key]))
+    .map(key => [key, String(body[key] ?? "")]));
+}
+
+function wheelDraftFields(body: Record<string, unknown>, tier?: string): BusinessFormValue {
+  const rows = typeof body.expectedSignature === "string" ? body.expectedSignature.split(";").map(row => row.split("|")) : [];
+  if (!tier) {
+    const mine = savedFields((body.probabilities ?? {}) as Record<string, unknown>);
+    for (const [id, , probability] of rows) if (mine[id] !== undefined && Number(mine[id]) === Number(probability)) delete mine[id];
+    return mine;
+  }
+  const mine = savedFields(body, ["rewardName", "rewardKind", "realOutflow", "rewardAmount", "voucherId", "dailyStock"]);
+  const opened = rows.find(row => row[0] === tier);
+  if (!opened || opened.length !== 8) return mine;
+  const [, name, , real, kind, amount, voucher, stock] = opened;
+  const before = { rewardName: name, rewardKind: kind, realOutflow: real === "true" ? "1" : "0", rewardAmount: amount, voucherId: voucher === "null" ? "" : voucher, dailyStock: stock };
+  return Object.fromEntries(Object.entries(mine).filter(([key, value]) => value !== before[key as keyof typeof before]
+    && (!(key === "rewardAmount" || key === "dailyStock") || Number(value) !== Number(before[key]))));
+}
+
 export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: HCtx; section: LegacySection; onSection: (section: LegacySection) => void }) {
   const { toast } = ctx;
   const adminId = useAdminAuth(state => state.session?.adminId);
   const activeRecovery = useRef<string | null>(null);
+  const reopenRule = useRef<H4ReopenRejected | null>(null);
+  const reopenRaffle = useRef<H4ReopenRejected | null>(null);
   /** 直接保存被判定要走审批：换成审批确认，值和理由沿用（H-改走审批）。 */
   const approvalReconfirm = (error: HApprovalRequired, req: ActionConfirmReq | ConfirmReq, reason: string, value?: string, businessValue?: BusinessFormValue, comparison?: EditComparison) => {
     const edit = "edit" in req ? req.edit : undefined;
@@ -230,56 +279,68 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       subject: changes && !creating && typeof req.action === "string" && req.action.includes(" · ") ? <Fact k="奖项">{req.action.slice(req.action.indexOf(" · ") + 3)}</Fact> : undefined,
       completed: async result => { await apply(result); } });
   };
-  const openActionConfirm = (req: ActionConfirmReq, getComparison?: () => EditComparison | undefined) => {
+  const openActionConfirm = (req: ActionConfirmReq, getComparison?: () => EditComparison | undefined, restored?: RejectedH4Draft) => {
     const version = h4ReadVersion("overview");
     const reopenedAfterConflict = conflictDraft.reopenedAfterConflict;
     const facts = req.facts;
     let retained: H4Command | undefined;
+    const original = () => pendingH4Commands().find(r => r.commandKey === retained?.commandKey);
     const opened: ActionConfirmReq = { ...req,
       facts: reopenedAfterConflict ? (value?: string) => <><H4StaleNote />{typeof facts === "function" ? facts(value) : facts}</> : facts,
-      blockedReason: req.blockedReason ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
-      getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
+      blockedReason: req.blockedReason ?? (version === undefined && !(req.edit?.review && conflictDraft.rejection) ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
+      getPendingReason: () => original()?.reason,
+      getPendingRecovery: () => h4PendingConfirmRecovery(original(), async () => {
+        if (!await refreshAll()) throw new Error("已保存，但没读到最新数据");
+        ctx.openActionConfirm(null);
+      }),
       run: async (reason, value, businessValue) => {
         if (retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) {
           try { if (!retained.acknowledged) await retryH4Command(retained); }
           finally { if (!pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) ctx.openActionConfirm(null); await reloadH4Approvals(); await reload(); }
           return;
         }
-        if (!req.edit?.review) assertH4Fresh("overview", version);
         const before = new Set(pendingH4Commands().map(r => r.commandKey));
         setStale(null);
-        try { await req.run(reason, value, businessValue); }
+        try {
+          if (!req.edit?.review) assertH4Fresh("overview", version);
+          await req.run(reason, value, businessValue);
+        }
         catch (cause) {
           if (cause instanceof HApprovalRequired) { ctx.openActionConfirm(null); ctx.openConfirm(approvalReconfirm(cause, req, reason, value, businessValue, getComparison?.())); return; }
-          if (!req.edit?.review && isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.openActionConfirm(null); await reload(); }
           throw cause;
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
       },
     };
-    ctx.openActionConfirm(req.edit?.review ? opened : conflictDraft.action(opened));
+    ctx.openActionConfirm(req.edit?.review && !conflictDraft.rejection && !restored ? opened : conflictDraft.action(opened, undefined, restored));
   };
   const openConfirm = (req: ConfirmReq) => {
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
-    ctx.openConfirm(conflictDraft.confirm({ ...req, freezePendingInput: true,
+    const original = () => pendingH4Commands().find(r => r.commandKey === retained?.commandKey);
+    ctx.openConfirm(conflictDraft.confirm({ ...req, freezePendingInput: true, replayPendingInput: true,
       content: conflictDraft.reopenedAfterConflict ? <><H4StaleNote />{req.content}</> : req.content,
       getPendingBlockReason: () => req.getPendingBlockReason?.() ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
-      getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
+      getPendingReason: () => original()?.reason,
+      getPendingRecovery: () => h4PendingConfirmRecovery(original(), async () => {
+        if (!await refreshAll()) throw new Error("已保存，但没读到最新数据");
+        ctx.closeConfirm?.();
+      }),
       run: async (reason, value) => {
         if (retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) {
           try { if (!retained.acknowledged) await retryH4Command(retained); }
           finally { if (!pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) ctx.closeConfirm?.(); await reloadH4Approvals(); await reload(); }
           return;
         }
-        assertH4Fresh("overview", version);
         const before = new Set(pendingH4Commands().map(r => r.commandKey));
         setStale(null);
-        try { return await req.run(reason, value); }
+        try {
+          assertH4Fresh("overview", version);
+          return await req.run(reason, value);
+        }
         catch (cause) {
           // 返回 false：原确认框不自己关，换成审批确认。
           if (cause instanceof HApprovalRequired) { ctx.openConfirm(approvalReconfirm(cause, req, reason, value)); return false; }
-          if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.closeConfirm?.(); await reload(); }
           throw cause;
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
@@ -300,14 +361,23 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const [model, setModel] = useState<Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const conflictDraft = useHConflictDraft(!loading && !error && h4ReadVersion("overview") !== undefined, { rebaseOnConflict: true });
+  const conflictDraft = useHConflictDraft(!loading && !error && h4ReadVersion("overview") !== undefined, {
+    readConflict: (afterRead, kind, req, key) => h4ReadConflict(async () => {
+      const latest = await reload();
+      if (!latest) throw new Error("既有活动与转盘没有读到");
+      const found = await afterRead(() => {
+        setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改");
+        if (kind === "action") ctx.openActionConfirm(null); else ctx.closeConfirm?.();
+      });
+      if (!found) throw unavailableOperation(registeredObjectLabel(latest, key));
+    }),
+  });
   const canReadA2 = ctx.can("platform_a2_read");
   // 已建成、等别人批的 H4 审批单只在审批中心里；这里读一次，好让运营在本页看到哪项在等批。
   const [h4Approvals, setH4Approvals] = useState<A2OperationRow[] | "error" | null>(null);
   const [lookupKey, setLookupKey] = useState("");
   /** 被「别人先改过」拒绝后，页面已重读；这条提醒留到运营关掉或下次提交。只决定显示。 */
   const [stale, setStale] = useState<string | null>(null);
-  const [releasing, setReleasing] = useState<H4Command | null>(null);
   const [rules, setRules] = useState<EventRuleView[] | null>(null);
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(EVENT_CONTENT_LOCALES);
   const [contentRefresh, setContentRefresh] = useState(0);
@@ -550,7 +620,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openEventFeatured = (event: LegacyEvent) => {
     if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const next = conflictDraft.intent === undefined ? !Boolean(event.featured) : conflictDraft.intent === "true";
-    if (next === Boolean(event.featured)) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "没有改动"); return; }
+    if (next === Boolean(event.featured) && !conflictDraft.rejection) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "没有改动"); return; }
     openConfirm({ rebaseValue: String(next), briefKind: "record",
       action: `${next ? "设为主推" : "取消主推"} · ${event.name}`,
       title: next ? "设为主推" : "取消主推",
@@ -563,6 +633,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       </Facts>,
       reason: true,
       okLabel: next ? "设为主推" : "取消主推",
+      getPendingBlockReason: next === Boolean(event.featured) ? () => "没有改动" : undefined,
       reasonPlaceholder: "例如：按运营排期调整首页主推",
       run: async (reason) => {
         if (await apply(await updateH4EventFeatured(event.id, next, Boolean(event.featured), reason))) toast(`${event.name} 主推状态已更新`);
@@ -631,7 +702,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     } finally { pendingDeleteChanged(value => value + 1); }
   };
   const openEventDelete = (event: LegacyEvent) => {
-    if (!canModuleWrite || loading || error || !isDeletableQuestEvent(event)) return;
+    if (!canModuleWrite || loading || error || !isDeletableQuestEvent(event) && !conflictDraft.rejection) return;
     openActionConfirm({ briefKind: "record",
       action: `删除活动 · ${event.name}`,
       title: "删除既有活动",
@@ -639,13 +710,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       detail: <>删除后活动从活动中心消失，已有的参与、奖励和操作记录仍保留。只能删除草稿或已结束的活动。</>,
       facts: <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="状态">{lifecycleOf(event, requiredLanguages).label}</Fact><Fact k="删除后">这个活动的玩法一起停掉；已有的参与、奖励和操作记录保留</Fact></Facts>,
       confirmLabel: "删除活动",
+      blockedReason: isDeletableQuestEvent(event) ? undefined : "只能删除草稿或已结束的活动",
       confirmTone: "danger",
       reasonPlaceholder: "例如：草稿建错了，按工单删除",
       run: reason => runEventDelete(event.id, event.deleteVersion!, reason),
     });
   };
 
-  const openCreateEvent = async () => {
+  const openCreateEvent = async (restored?: RejectedH4Draft) => {
     const request = ++createRequest.current;
     const dialogs = useUI.getState().dialogs;
     setLoadingCreateCandidates(true);
@@ -708,7 +780,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         if (!payload.id || !payload.name) return;
         if (await apply(await createH4QuestEvent(payload, reason))) toast(`活动「${payload.name}」已新建`);
       },
-    });
+    }, undefined, restored);
   };
 
   // ===== 转盘 =====
@@ -823,10 +895,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       facts: <>
         <Facts><Fact k="现在">{amountText(budgetNumber(current))} USDT / 天</Fact><Fact k="超过后">当天再抽中真钱奖改发 UVT 安慰奖</Fact><ApprovalFact amplify="调高预算" object="预算" /></Facts>
       </>,
-      amplifies: true,
       coverageLead: "调高预算会让转盘每天多发真钱",
       reasonPlaceholder: "例如：活动期放宽每日真钱奖预算",
-      edit: { kind: "number", current: budgetNumber(current), min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT" },
+      edit: { kind: "number", current: budgetNumber(current), amplifiesWhen: "increase", disallowCurrent: true, min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT" },
       run: async (reason, value) => {
         if (!value) return;
         if (await apply(await updateH4WheelGuard(guard.key, value, current, reason))) toast("转盘安全限制「每日实际奖励预算（美元）」已更新");
@@ -839,7 +910,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const current = text(guard.value);
     const on = killOn(current);
     const next = conflictDraft.intent ?? (on ? "关" : "开");
-    if (killOn(next) === on) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "没有改动"); return; }
+    if (killOn(next) === on && !conflictDraft.rejection) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "没有改动"); return; }
     const closing = next === "关", approval = !on && !closing;
     openActionConfirm({ rebaseValue: next, blockedReason: killOn(next) === on ? "没有改动" : undefined, briefKind: "config",
       action: `转盘安全限制 · 实际奖品发放开关`,
@@ -1080,25 +1151,86 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   // ===== 结果未知、待审批 =====
   const refreshAll = async () => {
     await reloadH4Approvals();
-    await reload();
+    const overview = await reload();
     const [rules] = await Promise.allSettled([import("@/lib/admin/event-rules-client").then(m => m.fetchEventRules()), raffleReadback.load(false, true)]);
     window.dispatchEvent(new CustomEvent("admin-h4-readback", { detail: {
       rules: rules.status === "fulfilled" ? rules.value : undefined, ruleError: rules.status === "rejected" ? displayAdminError(rules.reason) : "",
     } }));
+    return overview;
   };
   const lookupH4Command = async (record: H4Command) => {
     setLookupKey(record.commandKey);
     try {
-      const ticket = await queryH4Command(record);
-      if (!pendingH4Commands().some(row => row.commandKey === record.commandKey) && activeRecovery.current === record.commandKey) {
+      const result = await queryH4Command(record);
+      const rejection = result && "receipt" in result ? h4ReceiptRejection(result.receipt) : undefined;
+      if (rejection) { toast(displayAdminError(rejection), "warn"); return; }
+      const original = pendingH4Commands().find(row => row.commandKey === record.commandKey);
+      if (result && "ticket" in result && result.ticket === null) toast("暂未查到原审批单，原请求继续保留。", "warn");
+      if ((!original || original.acknowledged) && await refreshAll() && activeRecovery.current === record.commandKey) {
         activeRecovery.current = null; ctx.openActionConfirm(null);
       }
-      if (ticket === null) toast("暂未查到原审批单，原请求继续保留。", "warn");
-      await refreshAll();
-    } catch (cause) { toast(displayAdminError(cause), "warn"); }
+    } catch (cause) { toast(displayAdminReadError(cause), "warn"); }
     finally { setLookupKey(""); }
   };
+  const retryUpload = async (record: H4Command) => {
+    if (lookupKey || h4RetryBlockedReason(record)) return;
+    setLookupKey(record.commandKey);
+    try { await retryH4Command(record); }
+    catch (cause) { toast(displayAdminError(cause), "warn"); }
+    finally { setLookupKey(""); }
+  };
+  const recoverRejectedCommand = async (record: H4Command, cause: PendingConfirmRejected) => {
+    if ("proposal" in record.request) return;
+    const closeRetry = () => { activeRecovery.current = null; ctx.openActionConfirm(null); };
+    const [, area, group, target, field, contentField, language] = record.request.path.split("/").map(decodeURIComponent);
+    const body = JSON.parse(record.request.body) as Record<string, unknown>;
+    const method = record.request.method;
+    const unavailableAfterRead = async () => {
+      if (area === "event-rules") {
+        const latest = await fetchEventRules();
+        return unavailableOperation(latest.some(row => row.eventCode === group) ? "这个玩法" : undefined);
+      }
+      if (area === "genesis-raffle") {
+        const id = group ?? String(body.id);
+        return unavailableOperation(await fetchAdminRaffle(id) ? "这一期" : undefined);
+      }
+      const latest = await reload();
+      if (!latest) throw new ConfirmReadConflict(undefined, "既有活动与转盘没有读到");
+      const id = target ?? String(group === "wheel-guards" ? body.guardKey : group === "wheel-tiers" ? body.tierName : body.id);
+      return unavailableOperation(overviewObjectLabel(latest, group, id));
+    };
+    if (["EVENT_NOT_FOUND", "EVENT_RULE_NOT_FOUND", "WHEEL_TIER_NOT_FOUND", "WHEEL_GUARD_NOT_FOUND", "RAFFLE_NOT_FOUND"].some(code => code === cause.reasonCode)) throw await unavailableAfterRead();
+    const reopen = (parts: string[], draft: RejectedH4Draft = {}) =>
+      conflictDraft.reopen(JSON.stringify(parts), { ...draft, rejection: cause }, closeRetry);
+    let opened = false;
+    if (area === "event-rules" || area === "genesis-raffle") {
+      const opener = area === "event-rules" ? reopenRule.current : reopenRaffle.current;
+      opened = !!opener && await opener(record, cause, closeRetry);
+    } else if (group === "wheel-guards") {
+      if (!target) opened = reopen(["openCreateWheelGuard:1"], { business: savedFields(body) });
+      else if (target === "budget") opened = reopen(["openWheelBudget:1"], { value: String(body.value) });
+      else if (target === "kill") opened = reopen(["openWheelKill:1"], { intent: killOn(String(body.value)) ? "开" : "关" });
+    } else if (group === "wheel-tiers") {
+      if (!target) opened = reopen(["openCreateWheelTier:1"], { business: savedFields(body) });
+      else if (target === "probabilities") opened = reopen(["openWheelProbabilities:1"], { business: wheelDraftFields(body) });
+      else if (field === "retire") opened = reopen(["openRetirePointsTier:1", target]);
+      else if (method === "DELETE") opened = reopen(["openDeleteWheelTier:1", target]);
+      else opened = reopen(["openEditWheelTier:1", target], { business: wheelDraftFields(body, target) });
+    } else if (group === "events") {
+      if (!target) {
+        closeRetry();
+        await openCreateEvent({ business: savedFields(body), rejection: cause });
+        opened = true;
+      } else if (method === "DELETE") opened = reopen(["openEventDelete:1", target]);
+      else if (field === "reward") opened = reopen(["openEventReward:1", target], { value: String(body.value) });
+      else if (field === "featured") opened = reopen(["openEventFeatured:1", target], { intent: String(body.value) });
+      else if (field === "status") opened = reopen([body.value === "ongoing" ? "openEventStatus:2" : "openEventStatus:1", target]);
+      else if (field === "content") opened = reopen(["openLocalizedContent", target, contentField, language], { value: String(body.value ?? "") });
+    }
+    if (!opened) throw await unavailableAfterRead();
+  };
   const openResumeHICommand = (record: H4Command, subject: string) => {
+    if (h4RetryBlockedReason(record)) return;
     activeRecovery.current = record.commandKey;
     const expired = isRetryExpired(record);
     const approval = "proposal" in record.request;
@@ -1111,17 +1243,41 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       facts: <Facts><Fact k="原操作">{subject}</Fact>{change && <Fact k="原改动">{change}</Fact>}<Fact k="提交时间">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}（北京时间）</Fact><Fact k="原请求">内容和理由锁住，原样重发</Fact></Facts>,
       confirmLabel: "按原请求重试",
       getPendingReason: () => pendingH4Commands().some(r => r.commandKey === record.commandKey) ? record.reason : undefined,
+      getPendingRecovery: () => {
+        const recovery = h4PendingConfirmRecovery(pendingH4Commands().find(r => r.commandKey === record.commandKey), async () => {
+          if (!await refreshAll()) throw new Error("已保存，但没读到最新数据");
+          activeRecovery.current = null; ctx.openActionConfirm(null);
+        });
+        if (!recovery?.query) return recovery;
+        const query = recovery.query;
+        return { ...recovery, query: async () => {
+          try { await query(); }
+          catch (cause) {
+            if (!(cause instanceof PendingConfirmRejected)) throw cause;
+            await recoverRejectedCommand(record, cause);
+          }
+        } };
+      },
       run: async () => {
         if (activeRecovery.current !== record.commandKey || !pendingH4Commands().some(r => r.commandKey === record.commandKey)) throw new Error("H4_ORIGINAL_RESOLVED");
         try { await retryH4Command(record); }
         finally {
-          if (!pendingH4Commands().some(r => r.commandKey === record.commandKey) || h4CommandHasPendingTicket(record.commandKey)) { activeRecovery.current = null; ctx.openActionConfirm(null); }
-          await refreshAll();
+          const current = pendingH4Commands().find(r => r.commandKey === record.commandKey);
+          if (!current || current.acknowledged || h4CommandHasPendingTicket(record.commandKey)) {
+            activeRecovery.current = null; ctx.openActionConfirm(null);
+            await refreshAll();
+          }
         }
       },
     });
   };
   const hiRecords = pendingH4Commands().filter(r => !r.asset && (!r.acknowledged || "proposal" in r.request));
+  const nextExpiry = hiRecords.filter(record => !isRetryExpired(record)).reduce((at, record) => Math.min(at, record.expiresAt), Infinity);
+  useEffect(() => {
+    if (!Number.isFinite(nextExpiry)) return;
+    const timer = setTimeout(() => pendingDeleteChanged(v => v + 1), Math.max(1, nextExpiry - Date.now()));
+    return () => clearTimeout(timer);
+  }, [nextExpiry]);
   const h4Pending = [...new Map(h4TicketObservations().map(row => [row.id, row])).values()];
   const unknownCount = hiRecords.filter(r => !h4CommandHasPendingTicket(r.commandKey)).length;
   const confirmed = confirmedH4Saves();
@@ -1132,32 +1288,25 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       {hiRecords.map((record) => {
         const subject = hiCommandSubject(record, eventName);
         const expired = isRetryExpired(record);
-        const allowed = canRetryH4Command(record);
+        const media = isH4MediaCommand(record);
+        const retryBlocked = lookupKey ? media ? "正在处理原操作" : "正在查询" : h4RetryBlockedReason(record);
         const pending = h4CommandHasPendingTicket(record.commandKey);
         return <li key={record.commandKey}>
           <span className="h4-pending-what"><b>{subject}</b>{hiCommandChange(record) && <span className="h4-pending-change">{hiCommandChange(record)}</span>}</span>
           <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}</span>（北京时间）</span>
-          {pending ? pendingTag(subject) : expired ? expiredTag("proposal" in record.request ? "approval" : "direct") : unknownTag("proposal" in record.request ? "approval" : "direct")}
+          {pending ? pendingTag(subject) : expired ? expiredTag() : media ? <StatusTag tone="warn">结果未知</StatusTag> : unknownTag("proposal" in record.request ? "approval" : "direct")}
+          {expired && !pending && <span className="h4-pending-when">{RETRY_EXPIRED_TEXT}</span>}
           <span className="h4-pending-actions">
-            <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => void lookupH4Command(record)}>查询原结果</Button>
-            {!expired && !record.acknowledged && <Button size="sm" disabledReason={!allowed ? "没有这项修改的权限" : undefined} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>}
-            {expired && !record.acknowledged && "proposal" in record.request && <Button size="sm" variant="ghost" disabledReason={lookupKey ? "正在查询" : undefined} onClick={() => setReleasing(record)}>查无此单时解除</Button>}
+            {!media && <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => void lookupH4Command(record)}>查询原结果</Button>}
+            {!expired && !record.acknowledged && (media ? <>
+              <Button size="sm" disabledReason={retryBlocked} loading={lookupKey === record.commandKey} onClick={() => void retryUpload(record)}>按原操作重试</Button>
+              <span className="h4-pending-change">重新发送同一个文件，后台按原命令号去重，不会重复保存</span>
+            </> : <Button size="sm" disabledReason={retryBlocked} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>)}
           </span>
         </li>;
       })}
 
     </ul>}>关闭或刷新页面不会重新提交。</Notice>}
-    {releasing && <ReleaseModal label={<>{hiCommandSubject(releasing, eventName)}{hiCommandChange(releasing) ? ` · ${hiCommandChange(releasing)}` : ""}</>}
-      explain={<><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></>}
-      onCancel={() => setReleasing(null)} onConfirm={() => {
-        const record = releasing;
-        setReleasing(null);
-        setLookupKey(record.commandKey);
-        void releaseExpiredH4Proposal(record)
-          .then(() => { toast("已解除这条记录，可以重新提交修改。", "success"); return refreshAll(); })
-          .catch(cause => { toast(displayAdminError(cause), "warn"); return refreshAll(); })
-          .finally(() => setLookupKey(""));
-      }} />}
     {stale && <Notice tone="warn" title={`没有保存：别人先改过（${stale}）`} action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>{error ? "最新值没读到；重试读取成功后再核对，你填的还在。" : "已读到最新值，你填的还在，核对后再提交。"}</Notice>}
     {confirmed.length > 0 && <Notice tone="warn" title={raffleChecks.length ? RAFFLE_SAVE_PENDING : "已保存，但没读到最新数据"} action={<Button size="sm" loading={loading} onClick={() => void refreshAll()}>重新读取</Button>}>
       {raffleChecks.length > 0 && `${raffleChecks.map(record => `「${hiCommandSubject(record, eventName)}」`).join("、")}重新读取这一期后才能确认是否保存，之前不能再改。`}
@@ -1256,6 +1405,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     return null;
   };
   const contentEvent = contentId ? events.find((event) => event.id === contentId) : undefined;
+  const registerLocalized = (event: LegacyEvent, field: "name" | "description" | "rewardName", locale: LocaleCode) =>
+    conflictDraft.register(JSON.stringify(["openLocalizedContent", event.id, field, locale]),
+      () => openLocalizedContent(event.id, field, locale, text(event[field])));
+  for (const event of events) for (const field of ["name", "description", "rewardName"] as const) {
+    for (const locale of EVENT_CONTENT_LOCALES) registerLocalized(event, field, locale);
+  }
   const usedPayout = wheelDailyUsage?.realPayoutUsdt == null ? null : String(wheelDailyUsage.realPayoutUsdt);
   const budgetText = budget ? budgetNumber(text(budget.value, "")) : "";
   const budgetLeft = usedPayout !== null && budgetText ? decimalMinus(budgetText, usedPayout) : null;
@@ -1307,8 +1462,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     </div>
 
     <div hidden={sub !== "plays"} className="h4-tabpanel">
-      <H4EventRules ctx={ctx} requiredLanguages={requiredLanguages} eventContent={eventContent} contentRefresh={contentRefresh} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRules} />
-      <H4GenesisRaffle ctx={ctx} readback={raffleReadback} onApprovalCompleted={reloadH4Approvals} />
+      <H4EventRules ctx={ctx} requiredLanguages={requiredLanguages} eventContent={eventContent} contentRefresh={contentRefresh} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRules} reopenRejected={reopenRule} />
+      <H4GenesisRaffle ctx={ctx} readback={raffleReadback} onApprovalCompleted={reloadH4Approvals} reopenRejected={reopenRaffle} />
     </div>
 
     <div hidden={sub !== "wheel"} className="h4-tabpanel">
@@ -1426,8 +1581,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       {contentEvent && <EventPreview canEdit={canModuleWrite} requiredLanguages={requiredLanguages} copyReadiness={contentEvent.copyReadiness} requiresAll={allLocalesRequired(contentEvent)} opened={contentEvent.state !== "upcoming"} rewardFromRule={rewardFromRule(contentEvent)} authored={contentEvent.appUsesAuthoredRewardName} appNames={contentEvent.appRewardNames} lockedReason={h4ApprovalLockedReason(hiEventScope(contentEvent.id))}
         names={Object.fromEntries((["zh", "en", "vi"] as const).map((locale) => [locale, { name: localizedValue(contentEvent.id, "name", locale), description: localizedValue(contentEvent.id, "description", locale), rewardName: localizedValue(contentEvent.id, "rewardName", locale) }])) as Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>}
         original={{ name: text(contentEvent.name, ""), description: text(contentEvent.description, ""), rewardName: text(contentEvent.rewardName, "") }}
-        onEdit={(field, locale) => conflictDraft.register(JSON.stringify(["openLocalizedContent", contentEvent.id, field, locale]),
-          () => openLocalizedContent(contentEvent.id, field, locale, field === "name" ? contentEvent.name : field === "description" ? text(contentEvent.description) : text(contentEvent.rewardName)))} />}
+        onEdit={(field, locale) => registerLocalized(contentEvent, field, locale)} />}
     </Drawer>
   </div>;
 }

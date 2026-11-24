@@ -278,12 +278,15 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
   };
 }
 
-export function LeaveDialog({ guard, saveLabel, saveBlocked, onSave }: { guard: ReturnType<typeof useLeaveGuard>; saveLabel: string; saveBlocked?: string; onSave: () => void }) {
+export function LeaveDialog({ guard, saveLabel, discardLabel = "放弃改动", saveBlocked, onSave }: {
+  guard: Pick<ReturnType<typeof useLeaveGuard>, "asking" | "stay" | "discard" | "hide">;
+  saveLabel: string; discardLabel?: string; saveBlocked?: string; onSave: () => void;
+}) {
   if (!guard.asking) return null;
   return (
     <Modal title="有未保存的修改" icon={ShieldCheck} onClose={guard.stay} footer={<>
       <Button onClick={guard.stay}>继续编辑</Button>
-      <Button variant="danger-outline" onClick={guard.discard}>放弃改动</Button>
+      <Button variant="danger-outline" onClick={guard.discard}>{discardLabel}</Button>
       <Button variant="primary" disabledReason={saveBlocked} onClick={() => { guard.hide(); onSave(); }}>{saveLabel}后继续</Button>
     </>}><p>离开后这次的修改不会保留。</p></Modal>
   );

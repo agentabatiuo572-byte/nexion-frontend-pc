@@ -428,7 +428,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     ? Number((monthlyTargetUsdt * (1 + (monthlyTargetBandPct ?? 0) / 100) * 365 / 30 / price * 100).toFixed(4)) : skuNumU(f.shareYieldMax);
   const derivedBaseRate = isShare
     ? `${shareYieldMin != null && shareYieldMax != null && shareYieldMin > 0 && shareYieldMax >= shareYieldMin ? `参考年化 ${shareYieldMin}–${shareYieldMax}%` : "年化区间暂不可用"} · ${dailyEarnNEX.toLocaleString()} UVT/天`
-    : `$${dailyEarn.toFixed(2)}/d · ${dailyEarnNEX.toLocaleString()} UVT`;
+    : `${amountDisplay(dailyEarn)} USDT/日 · ${amountDisplay(dailyEarnNEX)} UVT`;
   const earningsUnchanged = existing
     && existing.monthlyTargetUsdt == null && monthlyTargetUsdt == null
     && existing.tier === f.tier

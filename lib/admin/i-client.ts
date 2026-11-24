@@ -9,8 +9,10 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { i4DraftReceiptFieldsMatch, parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
 import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview, validateI6CourseOptions } from "./i6-learning-contract";
 import { i6CourseRewardMatches } from "./i6-amount";
-import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundCommandInvestigation } from "./fund-command-investigation";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundCommandCanConcludeRejected, type FundCommandOrigin, type FundCommandEvidence, type FundCommandInvestigation } from "./fund-command-investigation";
 import { discoverECommand, investigateECommand } from "./e-command-investigation";
+import { fetchDirectCommandReceiptDetails } from "./direct-command-receipt";
+import { PendingConfirmRejected } from "./h-conflict-review";
 
 type ApiResult<T> = {
   code?: number;
@@ -718,16 +720,50 @@ export async function fetchI3CampaignOverview(): Promise<NotificationCampaignOve
   } };
 }
 
+const i3DraftReceiptState = new Map<string, "missing" | "processing">();
+export const isI3DraftCommand = (command: I3Command) => command.action === "create" || command.action === "draft";
+
+export function i3DraftRetryBlockedReason(command: I3Command): string | undefined {
+  if (!isI3DraftCommand(command)) return;
+  if (isRetryExpired(command)) return RETRY_EXPIRED_TEXT;
+  if (!command.original || command.action === "draft" && !command.snapshot) return "原操作记录不完整，只能查询核对，不能重试。";
+  const permission = i3RetryPermission(command);
+  if (permission) return permission;
+  const state = i3DraftReceiptState.get(command.commandKey);
+  return state === "missing" ? undefined : state === "processing" ? "原操作还在处理，请稍后再查。" : "先查询原结果，明确查不到后才能重试。";
+}
+
 export async function retryI3Command(saved: I3Command): Promise<void> {
   const command = pendingI3Commands().find((row) => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
+  const blocked = i3DraftRetryBlockedReason(command);
+  if (blocked) throw new Error(blocked);
+  i3DraftReceiptState.delete(command.commandKey);
   return sendI3Command(command, true);
 }
 
 export async function queryI3Command(saved: I3Command, evidence?: FundCommandEvidence) {
   const command = pendingI3Commands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  return queryIContentCommand(command, "content_i3_read", evidence);
+  i3DraftReceiptState.delete(command.commandKey);
+  const receipt = await queryIContentCommand(command, "content_i3_read", evidence);
+  if (!command.original || !isI3DraftCommand(command)) return { receipt };
+  if (receipt && !receipt.locked && (fundCommandCanConcludeRejected(receipt) || receipt.originalStatus === "CONFIRMED_REJECTED"
+    || receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed
+    || receipt.originalStatus === "FAILED" && (receipt.localTransactionRollbackConfirmed === true || receipt.businessState === "REJECTED"))) {
+    // Discovery proves the outcome; the same owner's status endpoint exposes the stored reason.
+    const detail = receipt.businessState === "REJECTED"
+      ? await fetchDirectCommandReceiptDetails(receipt.scope, command.commandKey, command.original.owner).catch(() => undefined) : undefined;
+    const reasonCode = detail?.state === "REJECTED" ? detail.businessMessage : undefined;
+    const reason = reasonCode ? formatAdminApiError(reasonCode, "") : "原操作没有保存草稿，你填的内容已保留。";
+    uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+    return { receipt, rejection: new PendingConfirmRejected(reason, reasonCode, receipt.businessCode ?? 0) };
+  }
+  if (!evidence && !isRetryExpired(command)) {
+    if (receipt === null) i3DraftReceiptState.set(command.commandKey, "missing");
+    else if (receipt.originalStatus === "PROCESSING") i3DraftReceiptState.set(command.commandKey, "processing");
+  }
+  return { receipt };
 }
 
 async function prepareI3Command(path: string, init: RequestInit, snapshot?: NotificationCampaignRow, formSnapshot?: I3FormSnapshot): Promise<void> {
