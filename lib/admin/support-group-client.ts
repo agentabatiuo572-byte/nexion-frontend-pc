@@ -1,6 +1,6 @@
 import { supportRequest, supportJson, supportObject, parseSupportId, parseSupportCount, parseSupportPage, parseSupportTime, supportWireId, SupportClientError, isIndeterminateSupportError } from "./m-support-client.ts";
-import { createPendingMutationStore, PENDING_MUTATION_TTL_MS, type PendingMutationRecord } from "./pending-mutation-store.ts";
-import { isExplicitRejection } from "./explicit-rejection";
+import { createPendingMutationStore, createPendingRecovery, PENDING_MUTATION_TTL_MS, type PendingMutationRecord } from "./pending-mutation-store.ts";
+import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 
 const BASE = "/support-agents/groups";
 const GROUP_STATES = ["ENABLED", "DISABLED", "ARCHIVED"] as const;
@@ -96,6 +96,11 @@ export function isInvitePending(record: GroupPendingRecord | InvitePendingRecord
 export function commandRejected(error: unknown): boolean { return isExplicitRejection(error); }
 // Unresolved evidence outlives the server's 24h replay window; session storage ends with the tab.
 export const groupPendingCommands = createPendingMutationStore<GroupPendingRecord | InvitePendingRecord>({ storageKey: "nexion-admin-support-group-commands-v1", ttlMs: Math.floor(Number.MAX_SAFE_INTEGER / 2), isValidRecord: r => Number.isSafeInteger(r.actorId) && r.actorId > 0 && !!r.intent && ["CREATE", "RENAME", "STATUS", "OWNER", "MEMBER", "QUALIFICATION", "INVITE_ISSUE", "INVITE_REVOKE"].includes(r.intent.kind) && !!r.intent.payload && (r.intent.kind === "INVITE_ISSUE" ? r.intent.payload.expectedVersion === null || Number.isSafeInteger(r.intent.payload.expectedVersion) : typeof r.intent.payload.reason === "string") && typeof r.label === "string" });
+export const qualificationRecovery = createPendingRecovery(groupPendingCommands, {
+  capability: () => "receipt",
+  canReplay: () => false,
+  explicitRejectionCode,
+});
 export function canReplayGroupCommand(record: Pick<PendingMutationRecord, "createdAt">, now = Date.now()): boolean { return now >= record.createdAt && now < record.createdAt + PENDING_MUTATION_TTL_MS; }
 function key(value: string): string { if (!value || value.length > 96 || /[\x00-\x20\x7f]/.test(value)) bad("key"); return value; }
 function groupNameInput(input: RenameGroupInput) { object(input, "name expectedVersion reason"); return { name: name(input.name), expectedVersion: positive(input.expectedVersion), reason: reason(input.reason) }; }

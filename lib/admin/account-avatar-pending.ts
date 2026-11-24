@@ -1,6 +1,9 @@
-import { createPendingMutationStore, isPendingCommandOwnedBy, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, isPendingCommandOwnedBy, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { avatarGender, avatarKey, parsePreparedAvatar, selfAvatarSaveInput, type AvatarGender, type AvatarScope, type PreparedAvatar, type SelfAvatarSave } from "@/lib/admin/account-avatar-contract";
 import { fetchDirectCommandReceipt } from "@/lib/admin/direct-command-receipt";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 
 export interface AvatarDraft extends PendingMutationRecord {
   actorId: number; scope: AvatarScope; kind: "DEFAULT" | "UPLOAD"; clientUploadId: string;
@@ -22,6 +25,19 @@ export const avatarDrafts = createPendingMutationStore<AvatarDraft>({
     } catch { return false; }
   },
 });
+export function canWriteA1Avatar(actorId: number | undefined) {
+  const { session, isAuthenticated, logoutPending, logoutUnknown } = useAdminAuth.getState();
+  return !!session && isAuthenticated && !logoutPending && !logoutUnknown && !session.passwordChangeRequired
+    && session.adminId === actorId && ["super", "superadmin"].includes(session.role)
+    && session.authorities.includes("platform_a1_read") && session.authorities.includes("platform_a1_write")
+    && canAccessResolvedPath(resolveVisibleDomains(session), "/platform/rbac");
+}
+
+export const a1AvatarPreparationRecovery = createPendingRecovery(avatarDrafts, {
+  capability: () => "replay",
+  canReplay: row => row.scope === "admin" && !row.asset && !row.cancelKey && canWriteA1Avatar(row.actorId),
+  explicitRejectionCode,
+});
 export const selfAvatarCommands = createPendingMutationStore<SelfAvatarPending>({
   storageKey: "nexion-self-avatar-save-v1", retainExpiredRecords: true,
   isValidRecord: row => {
@@ -40,7 +56,7 @@ export async function queryAvatarCancellation(draft: AvatarDraft) {
   if (draft.scope !== "admin" || !draft.asset || !draft.cancelKey) throw new Error("A1_AVATAR_CANCEL_QUERY_ONLY");
   const state = await fetchDirectCommandReceipt(`A1:AVATAR_CANCEL:${draft.actorId}:${draft.asset.assetId}`, draft.cancelKey, draft.actorId);
   if (state === "SUCCEEDED") avatarDrafts.forget(draft.fingerprint, draft.commandKey);
-  else if (state === "REJECTED" || state === "FAILED") rememberAvatarDraft({ ...draft, cancelKey: undefined }, true);
+  else if (state === "REJECTED" || state === "NOT_EXECUTED") rememberAvatarDraft({ ...draft, cancelKey: undefined }, true);
   return state;
 }
 export async function avatarFileHash(file: File): Promise<string> {

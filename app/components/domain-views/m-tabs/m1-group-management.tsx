@@ -4,8 +4,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
-import { accountVersion, canReplayGroupCommand, commandRejected, groupPendingCommands, inviteRevokeReason, isInvitePending, observedVersion, supportGroupClient, supportGroupReason, type GroupPendingRecord, type InviteCodeView, type InviteRevokeRecord, type QualificationKind, type QualificationStatus, type SupportGroup, type SupportGroupDirectory, type SupportGroupDetail, type SupportGroupMember, type SupportQualifications } from "@/lib/admin/support-group-client";
-import { Btn, Modal } from "../design-kit";
+import { accountVersion, canReplayGroupCommand, commandRejected, groupPendingCommands, inviteRevokeReason, isInvitePending, observedVersion, qualificationRecovery, supportGroupClient, supportGroupReason, type GroupPendingRecord, type InviteCodeView, type InviteRevokeRecord, type QualificationKind, type QualificationStatus, type SupportGroup, type SupportGroupDirectory, type SupportGroupDetail, type SupportGroupMember, type SupportQualifications } from "@/lib/admin/support-group-client";
+import { Btn, Modal, usePendingReplayDeadline } from "../design-kit";
+import { PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingRecoveryConclusion } from "@/lib/admin/pending-mutation-store";
 import { BlockState, Button, Change, Explain, Fact, Facts, Field, Fold, Input, MoreMenu, Notice, PageTabs, Panel, ReleaseModal, Select, StatusTag, Table, Th, Tr, Td, Textarea } from "@/app/components/rd";
 import { ChevronLeft, Network, SearchCheck, UsersRound } from "lucide-react";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
@@ -319,8 +320,52 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged, 
   const controllerRef = useRef<AbortController | null>(null), data = readAllowed && projection?.key === key ? projection.value : undefined, fact = data?.qualifications.find(q => q.kind === kind);
   useEffect(() => { setProjection(undefined); setReason(""); setError(""); setBusy(false); setStale(false); setPending(groupPendingCommands.list().find((r): r is GroupPendingRecord => !isInvitePending(r) && r.actorId === session?.adminId && r.intent.kind === "QUALIFICATION" && r.intent.targetId === adminId && r.intent.payload.qualificationKind === kind)); return () => controllerRef.current?.abort(); }, [key]);
   useEffect(() => { const controller = new AbortController(); setProjection(undefined); if (readAllowed) void supportGroupClient.qualifications(adminId, controller.signal).then(next => { if (!controller.signal.aborted && liveKey.current === key && authStamp() === identity) { setProjection({ key, value: next }); setStale(false); } }).catch(cause => { if (!controller.signal.aborted && liveKey.current === key) { setProjection(undefined); setError(errorText(cause)); } }); return () => controller.abort(); }, [readAllowed, key, refresh]);
-  const check = async () => { if (!pending || busy || !readAllowed) return; const saved = pending, controller = new AbortController(); controllerRef.current = controller; setBusy(true);
-    try { const receipt = await supportGroupClient.command(saved.commandKey, controller.signal); if (controller.signal.aborted || authStamp() !== identity || liveKey.current !== key) return; if (receipt.status === "SUCCEEDED" || receipt.status === "FAILED") { const next = await supportGroupClient.qualifications(adminId, controller.signal); if (controller.signal.aborted || authStamp() !== identity || liveKey.current !== key) return; groupPendingCommands.forget(saved.fingerprint, saved.commandKey); setPending(undefined); setProjection({ key, value: next }); if (saved.intent.kind === "QUALIFICATION") { setReason(saved.intent.payload.reason); setState(saved.intent.payload.state); } setStale(receipt.status === "FAILED"); onChanged(); setError(receipt.status === "SUCCEEDED" ? "原操作已成功，已读取当前账号资格。" : "原操作已明确失败，理由已保留；请重读预览后重新确认。"); } else if (authStamp() === identity) setError(canReplayGroupCommand(saved) ? "原操作结果未知，请稍后再查询原结果。" : expiredText()); } catch (cause) { if (authStamp() === identity && liveKey.current === key) { if ([401,403,404].includes(errorStatus(cause))) setProjection(undefined); setError("原操作和理由仍保留。" + errorText(cause)); } } finally { if (authStamp() === identity) setBusy(false); } };
+  const retryDeadline = pending && pending.createdAt + PENDING_MUTATION_TTL_MS;
+  usePendingReplayDeadline(retryDeadline);
+  const check = async () => {
+    if (!pending || busy || !readAllowed || pending.intent.kind !== "QUALIFICATION") return;
+    const saved = pending, intent = pending.intent, controller = new AbortController();
+    const active = () => !controller.signal.aborted && authStamp() === identity && liveKey.current === key;
+    controllerRef.current = controller;
+    setBusy(true);
+    try {
+      const original = await qualificationRecovery.query(saved, async (): Promise<{ conclusion: PendingRecoveryConclusion; current?: SupportQualifications }> => {
+        try {
+          const receipt = await supportGroupClient.command(saved.commandKey, controller.signal);
+          if (!active()) return { conclusion: "unknown" };
+          const succeeded = receipt.status === "SUCCEEDED";
+          const rejected = receipt.status === "CONFIRMED_REJECTED" || receipt.status === "CONFIRMED_NOT_EXECUTED";
+          if (!succeeded && !rejected) return { conclusion: "unknown" };
+          const current = await supportGroupClient.qualifications(adminId, controller.signal);
+          const currentFact = current.qualifications.find(row => row.kind === intent.payload.qualificationKind);
+          if (succeeded && (currentFact?.observationState !== "AVAILABLE" || currentFact.version === null
+            || currentFact.version <= intent.payload.expectedQualificationVersion)) return { conclusion: "unknown" };
+          return { conclusion: succeeded ? "succeeded" : "not-executed", current };
+        } catch (cause) {
+          if (cause instanceof SupportClientError && (cause.status === 404 || cause.apiCode === 404)
+            && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") return { conclusion: "not-found" };
+          throw cause;
+        }
+      });
+      if (!active() || !original) return;
+      if (!original.current || !qualificationRecovery.settleFromQuery(saved, original.conclusion)) {
+        setError(Date.now() >= saved.createdAt + PENDING_MUTATION_TTL_MS ? RETRY_EXPIRED_TEXT : "原操作结果未知，请稍后再查询原结果。");
+        return;
+      }
+      setPending(undefined);
+      setProjection({ key, value: original.current });
+      setReason("");
+      setState(intent.payload.state);
+      setStale(false);
+      onChanged();
+      setError(original.conclusion === "succeeded" ? "原操作已成功，已读取当前账号资格。" : "原操作未执行，请重新填写理由并确认。");
+    } catch (cause) {
+      if (active()) {
+        if ([401, 403, 404].includes(errorStatus(cause))) setProjection(undefined);
+        setError("原操作和理由仍保留。" + errorText(cause));
+      }
+    } finally { if (active()) setBusy(false); }
+  };
   const submit = async () => {
     if (!allowed || busy) return; let saved = pending, createdThisAttempt = false;
     const previous = saved ?? groupPendingCommands.list().find((r): r is GroupPendingRecord => !isInvitePending(r) && r.actorId === session?.adminId && r.intent.kind === "QUALIFICATION" && r.intent.targetId === adminId && r.intent.payload.qualificationKind === kind);
@@ -346,7 +391,7 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged, 
       {kind === "SUPERVISOR" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先将全部负责组（含归档组）移交给有效主管。</Notice>}{kind === "SERVICE" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先处理已有绑定客户并退出组；不会自动改派客户。</Notice>}
       <Field label="资格状态">{busy ? <p className="m1-field-value">{STATUS_TEXT[state]}</p> : <Select aria-label="资格状态" value={state} options={QUAL_OPTIONS} onChange={value => setState(value as QualificationStatus)} />}</Field>
       <Field label="操作理由" required help="请填写 8–200 字，将记入操作记录。">{control => <Textarea {...control} value={reason} disabled={busy} count={`${supportGroupReason(reason).length}/200`} onChange={e => setReason(e.target.value)} />}</Field></>}
-    {readAllowed && pending && <Notice tone="warn">{QUERY_PENDING_TEXT}{!canReplayGroupCommand(pending) && expiredText()}</Notice>}{allowed && !pending && stale && <Notice tone="warn">版本已变化，请重读当前资格并再次确认。理由已保留。</Notice>}{error && data && <Notice tone={resultTone}>{error}</Notice>}
+    {readAllowed && pending && <Notice tone="warn">{QUERY_PENDING_TEXT}{retryDeadline !== undefined && Date.now() >= retryDeadline && RETRY_EXPIRED_TEXT}</Notice>}{allowed && !pending && stale && <Notice tone="warn">版本已变化，请重读当前资格并再次确认。理由已保留。</Notice>}{error && data && <Notice tone={resultTone}>{error}</Notice>}
     </div>
   </Modal>;
 }

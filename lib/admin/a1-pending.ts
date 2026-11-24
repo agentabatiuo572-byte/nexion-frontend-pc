@@ -1,4 +1,7 @@
-import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord, type PendingRecoveryCapability, type PendingRecoveryConclusion } from "./pending-mutation-store";
+import { explicitRejectionCode } from "./explicit-rejection";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { createA1Account, resetA1AccountPassword, revokeA1AccountSession, registerA1Permission, type A1CreateAccountInput, type A1Operator, type A1RoleDefinition, type A1UpdateAccountInput } from "./a1-client";
 import { createA2OperationProposal, type A2OperationRow } from "./a2-client";
 import { a1Object, a1Text, parseA1Operator, parseA1Role } from "./a1-read-contract";
@@ -22,7 +25,7 @@ export type A1Request =
 export type A1Pending = PendingMutationRecord & {
   actorId: number; intent: A1Intent; snapshot: A1Snapshot; request: A1Request;
   confirmationReason: string; businessValue?: Record<string, string>;
-  ticket?: A2OperationRow; received?: boolean; proposalNotFound?: boolean;
+  ticket?: A2OperationRow; received?: boolean;
 };
 type LegacyCreation = PendingMutationRecord & { actorId: number; form: A1CreateAccountInput & { reason: string }; reason: string; operator: string };
 
@@ -105,12 +108,37 @@ export function a1IntentAuthority(intent: A1Intent) {
     : intent.kind === "session" || intent.kind === "logout" ? "platform_a1_account_sessions_revoke"
     : intent.kind === "permission" ? "platform_a1_rbac_grants_update" : "platform_a1_write";
 }
-export function queryA1DirectReceipt(record: A1Pending) {
+export function a1RecoveryCapability(record: A1Pending): PendingRecoveryCapability {
+  return record.request.kind === "session" ? "readback" : "receipt";
+}
+
+export const a1Recovery = createPendingRecovery<A1Pending>(a1PendingCommands, {
+  capability: a1RecoveryCapability,
+  explicitRejectionCode,
+  canReplay(record) {
+    const auth = useAdminAuth.getState(), session = auth.session;
+    return !!session && auth.isAuthenticated && !auth.logoutPending && !auth.logoutUnknown
+      && !session.passwordChangeRequired && session.adminId === record.actorId
+      && session.authorities.includes("platform_a1_read") && session.authorities.includes(a1IntentAuthority(record.intent))
+      && canAccessResolvedPath(resolveVisibleDomains(session), "/platform/rbac")
+      && (record.request.kind !== "proposal" || session.authorities.includes("platform_a2_write"))
+      && (!["create", "password", "session", "logout"].includes(record.intent.kind) || ["super", "superadmin"].includes(session.role))
+      && !record.received && !record.ticket;
+  },
+});
+
+export async function queryA1DirectReceipt(record: A1Pending): Promise<PendingRecoveryConclusion> {
   const kind = record.request.kind;
   const scope = kind === "create" ? `A1:ACCOUNT_CREATE:${record.actorId}`
     : kind === "password" ? `A1:ACCOUNT_PASSWORD_RESET:${record.actorId}`
       : kind === "permission" ? "A1_PERMISSION_REGISTER" : undefined;
-  return scope ? fetchDirectCommandReceipt(scope, record.commandKey, record.actorId) : Promise.resolve(null);
+  if (!scope) return "unknown";
+  const state = await fetchDirectCommandReceipt(scope, record.commandKey, record.actorId);
+  if (state === "NOT_FOUND") return "not-found";
+  if (state === "SUCCEEDED") return "succeeded";
+  if (state === "NOT_EXECUTED") return "not-executed";
+  if (state === "REJECTED") return "rejected";
+  return "unknown";
 }
 export async function sendA1Pending(record: A1Pending) {
   const request = record.request, key = record.commandKey;

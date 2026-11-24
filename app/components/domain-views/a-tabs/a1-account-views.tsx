@@ -317,17 +317,18 @@ export function AccountDetailDrawer({ account, roles, roleCodes, materialPermiss
 
 /* ---------- 改角色：选新角色并对照权限 ---------- */
 
-export function RoleChangeModal({ account, roles, options, codesByRole, effectiveSupers, recovery, onClose, onNext }: {
+export function RoleChangeModal({ account, roles, options, codesByRole, effectiveSupers, recovery, initialRole, onClose, onNext }: {
   account: A1Operator;
   roles: A1RoleDefinition[];
   options: { key: string; name: string; scope?: string }[];
   codesByRole: Record<string, string[]>;
   effectiveSupers: number;
   recovery: boolean;
+  initialRole?: string;
   onClose: () => void;
   onNext: (role: string) => void;
 }) {
-  const [picked, setPicked] = useState(account.role);
+  const [picked, setPicked] = useState(initialRole && options.some(role => role.key === initialRole) ? initialRole : account.role);
   const codesOf = (role: string) => role === "unassigned" || !role ? [] : codesByRole[role] ?? [];
   const before = useMemo(() => new Set(codesOf(account.role)), [account.role, codesByRole]);
   const after = useMemo(() => new Set(codesOf(picked)), [picked, codesByRole]);
@@ -514,18 +515,19 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
   );
 }
 
-export function EditAccountDrawer({ account, disabled, onClose, onSubmit }: {
+export function EditAccountDrawer({ account, disabled, initialForm, onClose, onSubmit }: {
   account: A1Operator;
   disabled?: boolean;
+  initialForm?: EditAccountForm;
   onClose: () => void;
   onSubmit: (form: EditAccountForm) => void;
 }) {
-  const [username, setUsername] = useState(account.username || "");
-  const [displayName, setDisplayName] = useState(operatorDisplayName(account));
-  const [email, setEmail] = useState(account.email || "");
+  const [username, setUsername] = useState(initialForm?.username ?? account.username ?? "");
+  const [displayName, setDisplayName] = useState(initialForm?.displayName ?? operatorDisplayName(account));
+  const [email, setEmail] = useState(initialForm ? initialForm.email ?? "" : account.email ?? "");
   const [reason, setReason] = useState("");
   const [avatarAssetId, setAvatarAssetId] = useState<string | undefined>(), [avatarBlocking, setAvatarBlocking] = useState(false);
-  const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(account.avatarGender ?? "UNSPECIFIED");
+  const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(initialForm?.avatarGender ?? account.avatarGender ?? "UNSPECIFIED");
   const [touched, setTouched] = useState(false);
   const usernameOk = isValidUsername(username);
   const emailOk = isValidEmail(email);

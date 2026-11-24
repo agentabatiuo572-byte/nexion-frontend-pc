@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { uploadA1Avatar, cancelA1Avatar, uploadAccountAvatar, prepareDefaultAccountAvatar, cancelAccountAvatar, fetchSelfAvatar, isA1OutcomeUncertainError, A1OutcomeUncertainError, type A1Operator } from "@/lib/admin/a1-client";
-import { avatarDrafts, avatarDraftFingerprint, avatarFileHash, rememberAvatarDraft, type AvatarDraft } from "@/lib/admin/account-avatar-pending";
+import { a1AvatarPreparationRecovery, avatarDrafts, avatarDraftFingerprint, avatarFileHash, canWriteA1Avatar, rememberAvatarDraft, type AvatarDraft } from "@/lib/admin/account-avatar-pending";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { type AvatarGender, type AvatarScope } from "@/lib/admin/account-avatar-contract";
 import { supportClient } from "@/lib/admin/m-support-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -10,6 +11,7 @@ import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { SupportAvatar } from "../m-tabs/support-avatar";
+import { usePendingReplayDeadline } from "../design-kit";
 import "./account-avatar-controls.css";
 
 export function AccountAvatarPicker({ account, targetId, name, disabled, scope = "admin", gender = "UNSPECIFIED", allowDefault = false, currentPath, currentVersion, onChange, onBlocking }: {
@@ -18,7 +20,7 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
   currentPath?: string; currentVersion?: number; onChange: (assetId?: string) => void; onBlocking: (blocking: boolean) => void;
 }) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
-  const canUpload = scope === "self" || session?.role === "super" || session?.role === "superadmin";
+  const canUpload = scope === "self" || canWriteA1Avatar(session?.adminId);
   const actorId = session?.adminId;
   const fingerprint = actorId ? avatarDraftFingerprint(actorId, scope, scope === "self" ? "self" : account?.id ?? targetId ?? "new") : "";
   const [draft, setDraft] = useState<AvatarDraft | null>(null), [file, setFile] = useState<File | null>(null), [url, setUrl] = useState("");
@@ -32,6 +34,9 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
     return () => { generation.current++; controller.current?.abort(); if (objectUrl.current) URL.revokeObjectURL(objectUrl.current); };
   }, [epoch, fingerprint]);
   const expired = Boolean(draft && Date.now() >= draft.expiresAt);
+  usePendingReplayDeadline(scope === "admin" ? draft?.expiresAt : undefined);
+  useSyncExternalStore(a1AvatarPreparationRecovery.subscribe, a1AvatarPreparationRecovery.getRevision, () => 0);
+  const replayBlock = scope === "admin" && draft?.commandOwnerId ? a1AvatarPreparationRecovery.state(draft).replayBlock : undefined;
   useEffect(() => {
     setAssetExpired(false);
     if (!draft?.asset) return;
@@ -61,6 +66,7 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
   }
   async function prepare(useDefault = false) {
     if (!actorId || !canUpload || disabled || busy || draft?.asset || draft?.cancelKey || expired) return;
+    if (scope === "admin" && !canWriteA1Avatar(actorId)) return;
     if (useDefault && !allowDefault || !useDefault && !file && draft?.kind !== "DEFAULT") return;
     const token = generation.current; setBusy(true); setError(""); onBlocking(true);
     let command = draft;
@@ -68,12 +74,22 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
     let sent = false;
     try {
       if (!command) command = { fingerprint, actorId, scope, kind: "DEFAULT", gender, clientUploadId: crypto.randomUUID(), commandKey: crypto.randomUUID(), createdAt: Date.now(), expiresAt: Date.now() + 86400000 };
-      command = rememberAvatarDraft(command, wasPending); setDraft(command);
+      if (!wasPending || scope === "self") command = rememberAvatarDraft(command, wasPending);
+      setDraft(command);
       if (scope === "self") await fetchSelfAvatar();
       if (!active(token)) return;
       const abort = new AbortController(); controller.current = abort;
-      sent = true;
-      const asset = command.kind === "DEFAULT" ? await prepareDefaultAccountAvatar(scope, command.gender!, command.clientUploadId, command.commandKey, abort.signal) : scope === "admin" ? await uploadA1Avatar(file!, command.clientUploadId, command.commandKey, abort.signal) : await uploadAccountAvatar("self", file!, command.clientUploadId, command.commandKey, abort.signal);
+      const send = (original: AvatarDraft) => {
+        if (original.kind === "UPLOAD" && (!file || original.fileHash !== command?.fileHash || original.fileMime !== file.type || original.fileName !== file.name)) {
+          throw new Error("AVATAR_COMMAND_INVALID");
+        }
+        sent = true;
+        return original.kind === "DEFAULT"
+          ? prepareDefaultAccountAvatar(scope, original.gender!, original.clientUploadId, original.commandKey, abort.signal)
+          : scope === "admin" ? uploadA1Avatar(file!, original.clientUploadId, original.commandKey, abort.signal)
+            : uploadAccountAvatar("self", file!, original.clientUploadId, original.commandKey, abort.signal);
+      };
+      const asset = await (scope === "admin" && wasPending ? a1AvatarPreparationRecovery.replay(command, send) : send(command));
       if (!active(token)) return;
       try { updateDraft(rememberAvatarDraft({ ...command, asset })); }
       catch (cause) { throw new A1OutcomeUncertainError("A1_AVATAR_RESPONSE_UNREADABLE", command.commandKey, { cause }); }
@@ -84,7 +100,8 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
           avatarDrafts.forget(command.fingerprint, command.commandKey);
           updateDraft(draft);
         }
-        if (command && (scope === "admin" && !wasPending ? !isA1OutcomeUncertainError(e) && isDeterministicRejection((e as { status?: number }).status ?? 0) : isExplicitRejection(e)) && (sent || !wasPending)) { avatarDrafts.forget(command.fingerprint, command.commandKey); updateDraft(null); resetFile(); }
+        const firstAdminRefusal = scope === "admin" && !wasPending && !isA1OutcomeUncertainError(e) && isDeterministicRejection((e as { status?: number }).status ?? 0);
+        if (command && (firstAdminRefusal || scope === "self" && isExplicitRejection(e)) && (sent || !wasPending)) { avatarDrafts.forget(command.fingerprint, command.commandKey); updateDraft(null); resetFile(); }
       }
     } finally { if (active(token)) setBusy(false); }
   }
@@ -128,13 +145,13 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
       </div>
     </div>
     {canUpload && allowDefault && !draft && !invalidSelection && <button type="button" className="l-btn" onClick={() => void prepare(true)}>按所选分类准备默认头像</button>}
-    {draft && <div className="account-avatar-actions">{!draft.asset && <button type="button" className="l-btn" disabled={expired || draft.kind === "UPLOAD" && !file} onClick={() => void prepare()}>{busy ? "正在准备…" : draft.kind === "DEFAULT" ? "重试获取默认头像" : "上传或重试"}</button>}
+    {draft && <div className="account-avatar-actions">{!draft.asset && <button type="button" className="l-btn" disabled={expired || !!replayBlock || draft.kind === "UPLOAD" && !file} onClick={() => void prepare()}>{busy ? "正在准备…" : draft.kind === "DEFAULT" ? "重试获取默认头像" : "上传或重试"}</button>}
       {scope === "admin" && draft.cancelKey
         ? <p>取消新头像的结果未知，不能再取消一次。请到页面上方「账号原操作」点「查询原结果」。</p>
         : <button type="button" className="l-btn" disabled={expired || Boolean(!draft.asset && avatarDrafts.list().some(row => row.commandKey === draft.commandKey))} onClick={() => void clear()}>{draft.cancelKey ? "重试取消头像" : "取消新头像"}</button>}
       {draft.kind === "UPLOAD" && !file && !draft.asset && <p>上传结果未知，请选择首次上传的同一张图片后重试。</p>}
       {draft.asset && <small>新头像有效期至 {businessStamp(new Date(draft.asset.expiresAt).getTime())}（{businessZone().label}）</small>}
-      {(expired || assetExpired) && <p role="alert">{expired ? "重试期限已过，请联系管理员核对结果。" : "新头像已过期，请取消后重新选择。"}</p>}</div>}
+      {(expired || assetExpired) && <p role="alert">{expired ? scope === "admin" ? RETRY_EXPIRED_TEXT : "重试期限已过，请联系管理员核对结果。" : "新头像已过期，请取消后重新选择。"}</p>}</div>}
     {invalidSelection && !draft && <button type="button" className="l-btn" onClick={() => void clear()}>取消失败的头像选择</button>}{error && <p role="alert">{error}</p>}
   </fieldset>;
 }
