@@ -22,6 +22,7 @@ import {
   assertF5Overview,
   assertF5ActionAvailability,
   F5_KINDS,
+  F5_LEGACY_KINDS,
   F5_STATUSES,
 } from "@/lib/admin/f-overview-contract";
 
@@ -468,6 +469,7 @@ interface BackendF5CommissionAuditOverview {
   pendingCalculationCount: number | string;
   summary: BackendF5Summary;
   commissionKinds: BackendF5CommissionKind[];
+  suspendableKinds?: string[];
   commissionFilters: BackendF5Filter[];
   commissionEvents: BackendF5CommissionEvent[];
   statusDistribution: BackendF5StatusItem[];
@@ -1169,11 +1171,12 @@ export type F5LayerRatioComparison = {
   currency: string;
   available: true;
   reason: null;
+  basis?: "CURRENT_ACTIVE_UNILEVEL_USDT_RATE" | "ORDER_SETTLEMENT_SNAPSHOT";
   layers: Array<{ layer: number; actualPct: string; theoreticalPct: string; deviation: string }>;
 } | {
   currency: string;
   available: false;
-  reason: "F5_LAYER_RATIO_THEORY_UNAVAILABLE" | "F5_LAYER_RATIO_LAYER_UNAVAILABLE" | "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE";
+  reason: "F5_LAYER_RATIO_THEORY_UNAVAILABLE" | "F5_LAYER_RATIO_LAYER_UNAVAILABLE" | "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE" | "F5_LAYER_RATIO_SNAPSHOT_UNAVAILABLE";
   layers: null;
   theoreticalPct: null;
   deviation: null;
@@ -1224,6 +1227,7 @@ export interface F5CommissionAuditOverview {
   pendingCalculationCount: number;
   summary: F5CommissionSummary;
   commissionKinds: F5CommissionKind[];
+  suspendableKinds: readonly string[];
   commissionFilters: F5CommissionFilter[];
   commissionEvents: F5CommissionEvent[];
   statusDistribution: F5StatusDistribution[];
@@ -1878,6 +1882,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       frozenCount: toNumber(summary.frozenCount),
     },
     commissionKinds,
+    suspendableKinds: data.suspendableKinds ?? F5_LEGACY_KINDS,
     commissionFilters,
     commissionEvents,
     statusDistribution: data.statusDistribution.map((item) => ({
