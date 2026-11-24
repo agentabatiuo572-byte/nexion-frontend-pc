@@ -51,6 +51,7 @@ export function H4ConflictCompare({ groups, sections, onMerge, mergeDisabledReas
   onMerge: () => void; mergeDisabledReason?: string;
 }) {
   const mine = groups.filter(group => group.byMe).length;
+  const same = (sections ?? [{ key: "all", rows: groups }]).every(section => !section.whole && !section.rows.length);
   const row = (group: H4ConflictGroup) => <tr key={group.key}>
     <th scope="row"><span className="h4-compare-name">{group.label}</span>
       {group.byOther && group.byMe ? <StatusTag tone="warn">两边都改了</StatusTag>
@@ -63,7 +64,7 @@ export function H4ConflictCompare({ groups, sections, onMerge, mergeDisabledReas
   </tr>;
   return <Notice tone="warn" title="没有保存：你编辑时，别人先保存过">
     <div className="h4-compare">
-      <table className="h4-compare-table" aria-label="三份值的差别">
+      {same ? <p>最新内容和你打开时一样，可以直接重新确认。</p> : <table className="h4-compare-table" aria-label="三份值的差别">
         <thead><tr><th scope="col">项</th><th scope="col">你打开时</th><th scope="col">别人改成</th><th scope="col">你填的</th></tr></thead>
         {(sections ?? [{ key: "all", rows: groups }]).map(section => section.whole
           ? <tbody key={section.key}><tr data-whole="">
@@ -74,11 +75,11 @@ export function H4ConflictCompare({ groups, sections, onMerge, mergeDisabledReas
             {section.title && <tr className="h4-compare-section"><th scope="rowgroup" colSpan={4}><span>{section.title}</span>{section.tags}</th></tr>}
             {section.rows.map(row)}
           </tbody>)}
-      </table>
+      </table>}
       <div className="h4-compare-choices">
         <div className="h4-compare-choice">
           <Button variant="primary" size="sm" disabledReason={mergeDisabledReason} onClick={onMerge}>合并后再核对</Button>
-          <p>{mergeDisabledReason ?? `表单换成最新配置，再放回你改的 ${mine} 项；核对后点「保存配置」。`}</p>
+          <p>{mergeDisabledReason ?? (mine ? `表单换成最新配置，再放回你改的 ${mine} 项；核对后点「保存配置」。` : <>表单换成最新配置；<span className="rd-keep">核对后点「保存配置」。</span></>)}</p>
         </div>
       </div>
     </div>

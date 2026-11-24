@@ -625,12 +625,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     openConfirm({ rebaseValue: String(next), briefKind: "record",
       action: `${next ? "设为主推" : "取消主推"} · ${event.name}`,
       title: next ? "设为主推" : "取消主推",
+      statedBrief: next
+        ? { impact: "只改 App 活动页的主推位，不发奖、不改奖励；已经有别的主推活动时会被拒绝，先取消那一个。", check: "核对活动和主推前后，理由写清排期或工单号。" }
+        : { impact: "只改 App 活动页的主推位，不发奖、不改奖励。", check: "核对活动和主推前后，理由写清排期或工单号。" },
       effect: effectDirect,
       detail: <>同时只能有一个进行中的主推活动。</>,
       content: <Facts>
         <Fact k="活动">{eventName(event.id)}</Fact>
         <Fact k="主推"><Change from={event.featured ? "是" : "否"} to={next ? "是" : "否"} /></Fact>
-        <Fact k="影响">只改 App 活动页的主推位，不发奖、不改奖励{!next ? "" : "；已经有别的主推活动时会被拒绝，先取消那一个"}</Fact>
       </Facts>,
       reason: true,
       okLabel: next ? "设为主推" : "取消主推",
@@ -712,9 +714,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     openActionConfirm({ briefKind: "record",
       action: `删除活动 · ${event.name}`,
       title: "删除既有活动",
+      statedBrief: { impact: "活动从活动中心消失，这个活动的玩法一起停掉；已有的参与、奖励和操作记录保留。", check: "确认是草稿或已结束的活动，理由写清依据。" },
       effect: <IrreversibleTag />,
       detail: <>删除后活动从活动中心消失，已有的参与、奖励和操作记录仍保留。只能删除草稿或已结束的活动。</>,
-      facts: <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="状态">{lifecycleOf(event, requiredLanguages).label}</Fact><Fact k="删除后">这个活动的玩法一起停掉；已有的参与、奖励和操作记录保留</Fact></Facts>,
+      facts: <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="状态">{lifecycleOf(event, requiredLanguages).label}</Fact></Facts>,
       confirmLabel: "删除活动",
       blockedReason: isDeletableQuestEvent(event) ? undefined : "只能删除草稿或已结束的活动",
       confirmTone: "danger",
@@ -1090,6 +1093,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     openActionConfirm({ briefKind: "record",
       action: `删除转盘奖项 · ${tierName}`,
       title: "删除转盘奖项",
+      statedBrief: { impact: "这一档从奖池和奖项列表里移除，已抽中的记录不变。", check: "确认这一档概率已是 0%，理由写清依据。" },
       effect: <><StatusTag tone="progress" filled>多数立即生效</StatusTag><IrreversibleTag /></>,
       detail: probability === 0
         ? <>删除后至少还要保留 2 个奖项。</>
@@ -1246,6 +1250,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const change = hiCommandChange(record);
     ctx.openActionConfirm({ briefKind: "record",
       action: `核对原操作 · ${subject}`, title: "按原请求重试",
+      statedBrief: { impact: approval
+        ? expired ? "原申请已超过 24 小时，只查询原审批单，不会重发。" : "先按原申请查审批单；查不到才原样重发，不会建第二张单。理由沿用原操作。"
+        : "按原请求原样重发，不会重复执行。理由沿用原操作。", check: "核对原操作和提交时间；内容和理由不能改。" },
       detail: approval
         ? expired ? <>原申请已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原申请查审批单；查不到才原样重发，不会建第二张单。理由沿用原操作。</>
         : <>按原请求原样重发，不会重复执行。理由沿用原操作。</>,
