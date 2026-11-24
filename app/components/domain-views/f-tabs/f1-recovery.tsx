@@ -24,6 +24,8 @@ type State = "unknown" | "received" | "pending" | "expired";
 type Row = { key: string; name: string; change: ReactNode; submittedAt?: number; state: State; direct?: boolean; actions: ReactNode };
 
 /** 等级说明所在页签的名字，和 f1-vrank 的页签一致。 */
+/** 恢复面板上的门槛名（新口径）；记进操作记录的名字仍用 f1ConditionLabels。 */
+const CONDITION_NAME: Record<string, string> = { selfBuy: "自购算力点", teamGv: "团队算力点", directRefs: "一二级已购人数", legCount: "下级领导者人数", legRank: "下级领导者最低等级" };
 const HOW_TAB = "App 等级说明";
 const UNIT: Record<string, string> = { selfBuy: " 点", teamGv: " 点", directRefs: " 人", legCount: " 个", legRank: "" };
 const thresholdText = (field: string, raw: string | undefined) => raw === undefined || raw === "" ? "—" : raw === "NONE" ? "未设置" : `${formatF1ExactAmount(raw)}${UNIT[field] ?? ""}`;
@@ -105,7 +107,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
       if (isF1PolicyInFlight(record.commandKey)) continue;
       const { editor, form, values, approval } = record.original;
       const field = editor.field;
-      const name = `${editor.row.v} · ${editor.action === "threshold" ? f1ConditionLabels[field!] : editor.action === "reward_add" ? "添加奖励" : editor.action === "reward_remove" ? "移除奖励" : "编辑奖励"}`;
+      const name = `${editor.row.v} · ${editor.action === "threshold" ? (CONDITION_NAME[field!] ?? f1ConditionLabels[field!]) : editor.action === "reward_add" ? "添加奖励" : editor.action === "reward_remove" ? "移除奖励" : "编辑奖励"}`;
       const oldReward = editor.reward ? f1RewardPolicyLabel(editor.reward, ctx) : "奖励";
       const change: ReactNode = editor.action === "threshold" ? <Change from={thresholdText(field!, editor.row[field!])} to={thresholdText(field!, form.value?.trim())} />
         : editor.action === "reward_add" ? `添加 ${rewardLabel(values.reward, ctx)}`

@@ -912,8 +912,8 @@ const CHANGE_LABELS: Record<string, string> = {
   activeDirectMin: "最低有效直接邀请", teamComputePointsMin: "最低团队算力点",
   enforce: "启用限制", quotaCap: "总配额", quotaSold: "已用配额", quotaPeriod: "配额周期",
   ranks: "会员等级", rankCode: "等级", titleCn: "中文头衔", titleEn: "英文头衔",
-  selfComputePoints: "自购算力点", directRefs: "直接邀请人数", teamComputePoints: "团队算力点",
-  requiredDownlineRank: "分支最低等级", requiredDownlineCount: "达标分支数", unilevelDepth: "团队购买奖励范围",
+  selfComputePoints: "自购算力点", directRefs: "一二级已购人数", teamComputePoints: "团队算力点",
+  requiredDownlineRank: "下级领导者最低等级", requiredDownlineCount: "下级领导者人数", unilevelDepth: "团队购买奖励范围",
   peerBonusRate: "同级奖比例", leadershipVotes: "团队激励池票数", rewards: "晋升奖励",
 };
 // Only these three reward contracts override the shared product-field vocabulary.

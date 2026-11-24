@@ -102,6 +102,7 @@ export function F1BenefitConfirm({ row, field, ctx, onClose }: { row: F1RankRowV
     : !session?.authorities.includes("network_f1_write") ? "当前账号没有这项操作的权限，请关闭弹窗后重新核对。" : undefined;
 
   return <OperationConfirmModal
+    icon="sliders"
     briefKind={(values) => direction(values.value ?? "") === 1 ? "funds" : "config"}
     action={`调整 ${row.v} 等级权益 · ${name}`}
     title={`调整 ${row.v} 的${name}`}

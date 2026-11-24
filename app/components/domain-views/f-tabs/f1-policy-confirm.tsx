@@ -6,7 +6,7 @@
  * 标题写动作和对象，标签写哪个方向要批准，事实写现在的值和相邻等级，填写项用 rd 的控件。
  */
 import { useState } from "react";
-import { CircleHelp, LockOpen, ShieldCheck, Zap } from "lucide-react";
+import { CircleHelp, Clock3, LockOpen, ShieldCheck, Zap } from "lucide-react";
 import { Change, DiffField, Fact, Facts, Field, Input, KeepText, Notice, Select, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
@@ -170,6 +170,14 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     return raw === undefined ? undefined : `${row.v} ${valueLabel(raw)}`;
   };
   const prev = neighbor(-1), next = neighbor(1);
+  // 门槛：填了改动后，生效标签跟方向变（VS-106）：放宽要批准，收紧立即生效。只改显示，判断用 f1PolicyNeedsApproval，提交路径不变。
+  const conditionEffect = (values: BusinessFormValue) => {
+    const text = (values.value ?? "").trim();
+    if (!baselineReady || !text || text === (editor.row[editor.field!] ?? "") || f1PolicyInputError(editor, values, ctx.voucherOptions, ctx.skuOptions)) return effect;
+    return f1PolicyNeedsApproval(editor, values)
+      ? <StatusTag tone="progress" filled icon={Clock3}>批准后生效</StatusTag>
+      : <StatusTag tone="progress" filled icon={Zap}>立即生效</StatusTag>;
+  };
   const effect = opening.pending
     ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。">结果未知</StatusTag>
     : remove ? <StatusTag tone="progress" filled icon={Zap}>立即生效</StatusTag>
@@ -198,9 +206,10 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
 
   return <OperationConfirmModal
     briefKind="config"
+    icon={isCondition ? "sliders" : undefined}
     action={action}
     title={title}
-    effect={effect}
+    effect={isCondition && !opening.pending ? conditionEffect : effect}
     facts={facts}
     statedBrief={statedBrief}
     confirmLabel={remove ? "确认移除" : "确认修改"}

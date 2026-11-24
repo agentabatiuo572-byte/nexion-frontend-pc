@@ -14,7 +14,7 @@ import { ADMIN_APPROVER, type F1Confirm } from "./f1-shared";
 
 const NUMBERS = [
   ["teamComputePoints", "团队算力点", "点"], ["selfComputePoints", "自购算力点", "点"],
-  ["directRefs", "直接邀请人数", "人"], ["requiredDownlineCount", "达标分支数", "个"],
+  ["directRefs", "一二级已购人数", "人"], ["requiredDownlineCount", "下级领导者人数", "个"],
   ["leadershipVotes", "团队激励池票数", "票"],
 ] as const;
 const REQUIRED: (keyof VRankBootstrapDraft)[] = ["titleCn", "titleEn", "selfComputePoints", "directRefs", "teamComputePoints", "requiredDownlineCount", "unilevelDepth", "peerBonusPercent", "leadershipVotes"];
@@ -46,7 +46,7 @@ export function F1VrankBootstrap({ ctx, openConfirm }: { ctx: FViewCtx; openConf
         content: <div className="rd-impact">
           <div className="rd-impact-title">九级的晋升条件</div>
           <Table label="九级的晋升条件">
-            <thead><tr><Th>等级</Th><Th>头衔</Th><Th align="right">团队算力点</Th><Th align="right">自购算力点</Th><Th align="right">直接邀请</Th><Th>达标分支</Th><Th align="right">票数</Th></tr></thead>
+            <thead><tr><Th>等级</Th><Th>头衔</Th><Th align="right">团队算力点</Th><Th align="right">自购算力点</Th><Th align="right">一二级已购</Th><Th>下级领导者</Th><Th align="right">票数</Th></tr></thead>
             <tbody>{ranks.map((rank) => <tr key={rank.rankCode}>
               <Td>{rank.rankCode}</Td><Td>{rank.titleCn}</Td>
               <Td align="right">{rank.teamComputePoints.toLocaleString("en-US")}</Td><Td align="right">{rank.selfComputePoints.toLocaleString("en-US")}</Td>
@@ -115,8 +115,8 @@ export function F1VrankBootstrap({ ctx, openConfirm }: { ctx: FViewCtx; openConf
                 <Input inputMode="numeric" value={current[key]} placeholder="请填写" onChange={(event) => change(key, event.target.value)} />
               </Field>
             ))}
-            <Field label="分支最低等级" hint={current.rankCode === "V0" ? "V0 没有更低的等级" : "低于本级"}>
-              {(control) => <Select {...control} aria-label="分支最低等级" value={current.requiredDownlineRank} onChange={(value) => change("requiredDownlineRank", value)}
+            <Field label="下级领导者最低等级" hint={current.rankCode === "V0" ? "V0 没有更低的等级" : "低于本级"}>
+              {(control) => <Select {...control} aria-label="下级领导者最低等级" value={current.requiredDownlineRank} onChange={(value) => change("requiredDownlineRank", value)}
                 options={[{ value: "", label: "不要求" }, ...bootstrapRankCodes.slice(0, active).map((code) => ({ value: code, label: code }))]} />}
             </Field>
             <Field label="团队购买奖励范围" required>
@@ -129,7 +129,7 @@ export function F1VrankBootstrap({ ctx, openConfirm }: { ctx: FViewCtx; openConf
           </div>
         </fieldset>
         <div className="rd-toolbar" data-end="">
-          <span className="rd-toolbar-note">达标分支数大于 0 时要选分支最低等级；为 0 时选「不要求」。</span>
+          <span className="rd-toolbar-note">下级领导者人数大于 0 时要选最低等级；为 0 时选「不要求」。</span>
           <Button icon={<ChevronLeft size={14} aria-hidden />} disabledReason={active === 0 ? "已经是第一级" : undefined} onClick={() => setActive(active - 1)}>上一级</Button>
           {active < 8 && <Button icon={<ChevronRight size={14} aria-hidden />} onClick={() => setActive(active + 1)}>下一级</Button>}
           <Button variant="primary" onClick={review}>核对并提交全部等级</Button>

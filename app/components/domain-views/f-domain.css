@@ -973,10 +973,9 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f1-page .f1-text-list > span { white-space: nowrap; }
 /* 下级领导者设了人数没设最低等级：值橙黄（要人处理）。 */
 .f1-page .f1-warn-text { font-weight: var(--rd-weight-medium); color: var(--rd-warn); }
-/* 页签行：右端一行可审核提示，不单占一行；「V8 审核」的数字是可审核人数，不是待办，用中性色（跟进 15）。 */
+/* 页签行：右端一行可审核提示，不单占一行。 */
 .f1-page .f1-tabs-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
 .f1-page .f1-tabs-note { margin: 0; color: var(--rd-text-2); white-space: nowrap; }
-.f1-page .f1-tab-count:not([data-zero]) { color: var(--rd-text-2); }
 /* V8 名单表头名称后面一行弱字写 V8 的要求。 */
 .f1-page .f1-v8-table .f1-th-req { display: block; font-weight: 400; color: var(--rd-text-3); white-space: nowrap; }
 /* 月薪领取表金额列收窄，金额和领取时间之间留 40，不读成一串。 */

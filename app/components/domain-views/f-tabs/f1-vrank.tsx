@@ -17,6 +17,7 @@ import {
   Segments, Stat, StatBand, StatusTag, useTabIds,
 } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { f1ConditionLabels, listF1PolicyOperations, pendingF1Policy, type F1ConditionField, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
 import { fetchUserProfilesPage } from "@/lib/admin/user360-client";
@@ -83,6 +84,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const [benefit, setBenefit] = useState<{ row: F1RankRowView; field: F1BenefitField } | null>(null);
   const v8Review = ctx.v8Review;
   const canApproveV8 = canPromote && ctx.can("platform_a2_write");
+  // F1-RANK-WIRE：逻辑项按等级数据里有没有 monthlySalaryUsdt 设 ctx.f1SalaryFieldPresent；没有就整套月薪都不出。
+  const salaryPresent = ctx.f1SalaryFieldPresent === true;
+  const lenses = salaryPresent ? LENSES : LENSES.filter((item) => item.value !== "salary");
   const [howEpoch, setHowEpoch] = useState(0);
   const [, setRecoveryEpoch] = useState(0);
 
@@ -185,7 +189,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     </StatBand>
   );
 
-  const lensInfo = LENSES.find((item) => item.value === lens)!;
+  const lensInfo = lenses.find((item) => item.value === lens) ?? lenses[0];
   const lensValue = (row: F1RankRowView): number | null => {
     if (lens === "pop") return row.pop;
     const raw = lens === "l1" ? ratePct(row.purchaseL1Rate) : lens === "salary" ? row.monthlySalaryUsdt?.trim() : row[lens];
@@ -216,7 +220,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     <Panel title="九级阶梯" icon={Layers3} tone="role-3" sub={`柱高：${lensInfo.label}`}
       explain={<><p>点一级看它的晋升条件、晋级奖励和等级权益。九根柱同一个刻度，数小的几级会贴底，具体看柱上的数；为 0 的不画柱。</p>
         <p>看门槛和权益时，数字后面的「×3」是这一级是上一级的几倍。门槛一般逐级变高；月薪和比例可以不涨，×1 以下不一定是填错。</p></>}>
-      <div className="f1-lens"><Segments label="柱高口径" value={lens} items={LENSES.map(({ value, label }) => ({ value, label }))} onChange={setLens} /></div>
+      <div className="f1-lens"><Segments label="柱高口径" value={lensInfo.value} items={lenses.map(({ value, label }) => ({ value, label }))} onChange={setLens} /></div>
       <div className="f1-ladder-wrap"><div className="f1-ladder" role="tablist" aria-label="会员等级">
         {rows.map((row, i) => {
           const value = lensValue(row);
@@ -258,7 +262,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const detail = <RankDetail row={selected} rows={rows} ctx={ctx} rewards={rewardsOf(selected.v)} title={titlesByLevel[selected.v] ?? selected.label}
     panel={ladderIds.panel(selected.v)} canWrite={canWrite} pendingOf={pendingOf} hasPendingApproval={pendingApprovalRanks.has(selected.v)}
     onThreshold={openThreshold} onBenefit={(field) => setBenefit({ row: selected, field })}
-    onGoV8={v8Review ? () => setView("v8") : undefined}
+    onGoV8={v8Review ? () => setView("v8") : undefined} salaryPresent={salaryPresent}
     onReward={(action, reward) => setPolicyEditor({ row: selected, action, reward, valuation: ctx.f1RewardValuation })}
     />;
 
@@ -466,10 +470,10 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const v8Count = v8Review ? v8Review.error ? "—" : v8Review.pendingReviewCount ?? undefined : undefined;
   const tabs = [
     { value: "ladder" as const, label: "等级与奖励" },
-    ...(v8Review ? [{ value: "v8" as const, label: <>V8 审核{v8Count !== undefined && <span className="rd-tab-count f1-tab-count" data-zero={v8Count === 0 || v8Count === "—" ? "" : undefined}>{v8Count}</span>}</> }] : []),
+    ...(v8Review ? [{ value: "v8" as const, label: "V8 审核", count: v8Count, countTone: "neutral" as const }] : []),
     { value: "promotions" as const, label: "晋升记录" },
     { value: "payouts" as const, label: "奖励发放记录" },
-    { value: "salary" as const, label: "月薪领取" },
+    ...(salaryPresent ? [{ value: "salary" as const, label: "月薪领取" }] : []),
     { value: "howto" as const, label: "App 等级说明" },
   ];
   const v8Ready = typeof v8Count === "number" && v8Count > 0 && view !== "v8";
@@ -488,7 +492,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       <div {...ids.panel(view)} className="f1-view">
         {view === "ladder" && <>{ladder}{detail}{shared}</>}
         {view === "v8" && v8Review && <F1V8Review ctx={ctx} state={v8Review} v8={rows.find((row) => row.v === "V8")} canApprove={canApproveV8} onApprove={openV8Approve} />}
-        {view === "salary" && <F1SalaryClaims ctx={ctx} rows={rows} />}
+        {view === "salary" && salaryPresent && <F1SalaryClaims ctx={ctx} rows={rows} />}
         {view === "promotions" && <F1PromotionHistory ctx={ctx} rows={rows} canPromote={canPromote} onOverride={openOverride} />}
         {view === "payouts" && <F1PayoutHistory ctx={ctx} rows={rows} canReissue={canReissue} canReverse={canReverse} openConfirm={setConfirm} />}
         {view === "howto" && <F1RankHow key={howEpoch} ladder={rows} toast={ctx.toast} onPendingChange={() => setRecoveryEpoch(value => value + 1)} />}
@@ -500,7 +504,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 }
 
 /** 选中一级的详情：上排晋升条件 | 等级权益，下排晋级奖励 | 这一级的其他设置（画板 A1、A5）。 */
-function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf, hasPendingApproval, onThreshold, onBenefit, onReward, onGoV8 }: {
+function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf, hasPendingApproval, onThreshold, onBenefit, onReward, onGoV8, salaryPresent }: {
   row: F1RankRowView;
   rows: F1RankRowView[];
   ctx: FViewCtx;
@@ -514,12 +518,15 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
   onBenefit: (field: F1BenefitField) => void;
   onReward: (action: "reward_add" | "reward_update" | "reward_remove", reward?: OpsVRankRewardItem) => void;
   onGoV8?: () => void;
+  salaryPresent: boolean;
 }) {
   const index = rows.findIndex((item) => item.v === row.v);
   const prev = index > 0 ? rows[index - 1] : undefined;
   const next = index < rows.length - 1 ? rows[index + 1] : undefined;
   const total = rows.reduce((sum, item) => sum + item.pop, 0);
   const top = row.v === "V8";
+  // 「操作记录与审批」这个账号进得去才给链接（ST-58）。
+  const canOpenA2 = useAdminAuth((state) => !!state.session && canAccessResolvedPath(resolveVisibleDomains(state.session), "/platform/audit"));
   const legCount = row.legCount ?? "0";
   const legBroken = Number(legCount) > 0 && (row.legRank ?? "NONE") === "NONE";
   // 这一级有待审批单：条件、权益、晋级奖励同一个审批锁，按钮都禁用并写原因（B83 同一套锁）。
@@ -601,7 +608,8 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
     <Panel {...panel} className="f1-detail" title={<>{row.v}<span className="f1-detail-title">{title}</span></>} explainLabel={`${row.v} 的说明`}
       sub={`${fmt(row.pop)} 人 · 占 ${pct(row.pop, total)}`} icon={Layers3} tone="role-3"
       explain={top ? "左边是升到 V8 要满足什么，右边是 V8 拿什么。V8 不自动晋级，审核后人工升级。" : "左边是升到这一级要满足什么，右边是升到这一级拿什么。用户每次被评估最多升一级，所以不能跳过这一级。"}>
-      {hasPendingApproval && <Notice tone="warn" title={`${row.v} 有一张待审批的申请`}>批准、驳回或撤回前，这一级的条件、权益和晋级奖励都改不了。</Notice>}
+      {hasPendingApproval && <Notice tone="warn" title={`${row.v} 有一张待审批的申请`}
+        action={canOpenA2 ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批查看 →</Link> : undefined}>批准、驳回或撤回前，这一级的条件、权益和晋级奖励都改不了。</Notice>}
       <div className="rd-split f1-detail-split">
         <Panel plain headingLevel={3} title="晋升条件" icon={Lock} tone="role-4" sub={top ? "4 项数值 · 2 项人工审核" : `${needCount} 项`}
           explain={top
@@ -649,10 +657,10 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
               action={onGoV8 ? <span className="f1-row-actions"><button type="button" className="rd-link" onClick={onGoV8}>去 V8 审核 →</button></span> : undefined} />}
           </ConfigList>
         </Panel>
-        <Panel plain headingLevel={3} className="f1-benefits" title="等级权益" icon={Sparkles} tone="role-1" sub={top ? "4 项" : "3 项"}
+        <Panel plain headingLevel={3} className="f1-benefits" title="等级权益" icon={Sparkles} tone="role-1" sub={`${(salaryPresent ? 3 : 2) + (top ? 1 : 0)} 项`}
           explain={top
-            ? "V8 的月薪、好友买设备时的奖励比例照常可调；另外 5 项是 App 展示的固定文案，这里只读。调高月薪或比例要提交审批，调低确认后立即生效。"
-            : "这一级的用户每个月能领的月薪，和好友买设备时给这一级的奖励比例。调高是增加资金，要提交审批；调低确认后立即生效。"}>
+            ? `V8 的${salaryPresent ? "月薪、" : ""}好友买设备时的奖励比例照常可调；另外 5 项是 App 展示的固定文案，这里只读。调高要提交审批，调低确认后立即生效。`
+            : `${salaryPresent ? "这一级的用户每个月能领的月薪，和" : ""}好友买设备时给这一级的奖励比例。调高是增加资金，要提交审批；调低确认后立即生效。`}>
           <ConfigList label={`${row.v} 等级权益`}>
             {benefitRow("purchaseL1Rate", "好友购买奖励 · 一级", {
               what: "一级好友买设备时，按这个比例给奖励。", where: "App 我的等级 › 等级权益；好友奖励说明",
@@ -666,7 +674,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
               effect: `调高要提交审批，${SUPER_APPROVER}批准后生效，提交和批准时检查兑付覆盖率；调低确认后立即生效。`,
               note: "发放记录在「奖励记录核对」记为团队购买奖励，行内写第 2 层。",
             })}
-            {benefitRow("monthlySalaryUsdt", "月薪", {
+            {salaryPresent && benefitRow("monthlySalaryUsdt", "月薪", {
               what: "这一级每个自然月可领一次的 USDT。", where: "App 我的等级 › 月薪",
               when: "改了从下个月起按新金额；这个月已到这一级的人仍按原金额，这个月才升上来的按升级那天的金额。",
               effect: `调高要提交审批，${SUPER_APPROVER}批准后生效，提交和批准时检查兑付覆盖率；调低确认后立即生效。可以填 0（这一级不发）。`,

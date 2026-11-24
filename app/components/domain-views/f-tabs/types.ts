@@ -139,7 +139,9 @@ export interface FViewCtx {
   /** V8 审核名单（B88）。不传 = 这个后端没有名单接口，「V8 审核」页签不出现。 */
   v8Review?: F1V8ReviewState;
   queryV8Review?: (append?: boolean) => Promise<void>;
-  /** 月薪领取记录（B87-BE-04）。不传 = 读不到月薪，「月薪领取」页签显示没有月薪数据。 */
+  /** 后端的等级数据有没有 monthlySalaryUsdt 这个字段（B87）。不是 true = 旧后端：不出月薪行、「月薪」口径和「月薪领取」页签。字段在但这一级读不到时照常显示「—」。 */
+  f1SalaryFieldPresent?: boolean;
+  /** 月薪领取记录（B87-BE-04）。字段在但这里没传时，「月薪领取」页签显示没有月薪数据。 */
   salaryClaims?: F1SalaryClaimsState;
   querySalaryClaims?: (filters: F1SalaryFilters, cursor?: string) => Promise<void>;
   /** 等级权益三项的写入：比例传百分数（如 "4.6"），月薪传 USDT。调高走 A2、调低直接保存由实现决定。不传 = 提交还没接上。 */
