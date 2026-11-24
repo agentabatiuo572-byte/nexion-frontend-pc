@@ -1033,12 +1033,27 @@ function cregisCommandLabel(path: string) {
 
 type ConfirmFn = (spec: { kind: OperatorBriefKind; action: string; title: string; detail: string; path: string; body?: Record<string, unknown>; confirmLabel: string; danger?: boolean; effect: ReactNode; facts?: ReactNode; completion: string }) => void;
 
+type ReviewEvidence = ExceptionRow & { network: "BEP20" | "ERC20"; evidenceHash: string };
+
+function parseReviewEvidence(value: unknown, cid: string, network?: FundsNetwork): ReviewEvidence {
+  const row = value && typeof value === "object" && !Array.isArray(value) ? value as ExceptionRow : null;
+  if (!row || (row.network !== "BEP20" && row.network !== "ERC20") || row.cid !== cid
+      || typeof row.evidenceHash !== "string" || !/^[0-9a-f]{64}$/i.test(row.evidenceHash)
+      || row.providerMatched !== true || row.chainMatched !== true) {
+    throw new Error("收到的数据不完整，已停止显示");
+  }
+  if (network && row.network !== network) {
+    throw new Error("读到的证据和这笔充值的网络对不上，请刷新证据后再核对。");
+  }
+  return { ...row, network: row.network, evidenceHash: row.evidenceHash };
+}
+
 /** 入金复核：按 CID 核验证据，有已知网络时一起传；工单由另一位管理员复核入账或拒绝（D1-A30～A32）。 */
 function ReviewDrawer({ cid, network, caseRow, canManage, adminId, busy, readBlock, onClose, confirm, approval }: ReviewTarget & {
   canManage: boolean; adminId?: number; busy: boolean; readBlock?: string;
   onClose: () => void; confirm: ConfirmFn; approval: ReactNode;
 }) {
-  const [evidence, setEvidence] = useState<ExceptionRow | null>(null);
+  const [evidence, setEvidence] = useState<ReviewEvidence | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const sequence = useRef(0);
@@ -1049,11 +1064,7 @@ function ReviewDrawer({ cid, network, caseRow, canManage, adminId, busy, readBlo
     setLoading(true); setError(""); setEvidence(null);
     try {
       if (network === null) throw new Error("工单的网络待核实，请刷新工单列表后再打开。");
-      const next = await financeAdminRequest<ExceptionRow>(`/cregis/review-evidence/${cid}${networkQuery}`);
-      const evidenceNetwork = reportedReviewNetwork(next);
-      if (network && evidenceNetwork !== undefined && evidenceNetwork !== network) {
-        throw new Error("读到的证据和这笔充值的网络对不上，请刷新证据后再核对。");
-      }
+      const next = parseReviewEvidence(await financeAdminRequest<unknown>(`/cregis/review-evidence/${cid}${networkQuery}`), cid, network);
       if (current === sequence.current) setEvidence(next);
     } catch (failure) {
       if (current === sequence.current) setError(displayAdminReadError(failure));
@@ -1061,14 +1072,13 @@ function ReviewDrawer({ cid, network, caseRow, canManage, adminId, busy, readBlo
   }, [cid, network, networkQuery]);
   // 发起时直接核验；打开已有工单时等人点「刷新证据」，复核前必须读最新的（D1-A32）。
   useEffect(() => { if (!caseRow) void load(); return () => { sequence.current++; }; }, [load, caseRow]);
-  const matches = !!evidence && String(evidence.cid) === cid;
   const own = caseRow ? String(caseRow.makerId) === String(adminId) : false;
-  const sameEvidence = matches && !!caseRow && String(evidence?.evidenceHash) === String(caseRow.evidenceHash);
-  const proposeBlock = readBlock ?? d1PendingObjectReason(proposalPath, { cid }) ?? (loading ? "正在核验证据" : !matches ? "证据没读到，先点「刷新证据」" : undefined);
+  const sameEvidence = !!evidence && !!caseRow && evidence.evidenceHash === caseRow.evidenceHash;
+  const proposeBlock = readBlock ?? d1PendingObjectReason(proposalPath, { cid }) ?? (loading ? "正在核验证据" : !evidence ? "证据没读到，先点「刷新证据」" : undefined);
   const decideBlock = own ? "这是你发起的，需要另一位管理员处理" : readBlock ?? (caseRow ? d1PendingObjectReason(`/cregis/review-cases/${text(caseRow.id)}/decision`) : undefined) ?? (loading ? "正在核验证据" : !evidence ? "先点「刷新证据」" : !sameEvidence ? "证据和发起时不一致，不能复核" : undefined);
   const net = caseRow?.proposedNetAmount ?? evidence?.proposedNetAmount;
   // 网络只用请求带的（工单按列表投影的 chainId）或证据读回的，不把缺省猜成 BEP20；两样都没有时，刷新证据前写「刷新证据后显示」（BUG-679）。
-  const shownNetwork = network === null ? null : (evidence ? reportedReviewNetwork(evidence) : undefined) ?? network;
+  const shownNetwork = evidence?.network ?? network;
   const networkLabel = shownNetwork ? `USDT（${shownNetwork}）` : shownNetwork === null || evidence ? "网络待核实" : "刷新证据后显示";
   // 证据摘要是核对用的长编号，系统已比对过，确认框里不放，在抽屉「链上证据」里看（OP-54、DP-30）。
   const caseFacts = caseRow && <Facts>
@@ -1108,7 +1118,7 @@ function ReviewDrawer({ cid, network, caseRow, canManage, adminId, busy, readBlo
       { label: "网络", value: networkLabel },
       { label: "用户", value: text(caseRow?.userId ?? evidence?.userId) },
       { label: "证据", state: !evidence ? "warn" : evidence.providerMatched && evidence.chainMatched ? undefined : "danger",
-        value: !evidence ? (caseRow ? "还没刷新证据" : "正在核验") : `收款服务${evidence.providerMatched ? "匹配" : "未匹配"} · 链上${evidence.chainMatched ? "匹配" : "未匹配"}`,
+        value: error ? "—" : !evidence ? (caseRow ? "还没刷新证据" : "正在核验") : `收款服务${evidence.providerMatched ? "匹配" : "未匹配"} · 链上${evidence.chainMatched ? "匹配" : "未匹配"}`,
         reason: evidence ? `核对时间 ${time(evidence.checkedAt)}` : undefined },
       ...(caseRow ? [{ label: "发起", value: `管理员 ${text(caseRow.makerId)}${own ? "（你）" : ""}`, reason: text(caseRow.reason), state: own ? "warn" as const : undefined }] : []),
     ]} />
