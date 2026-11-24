@@ -21,6 +21,8 @@ import type { F5Recovery, FViewCtx } from "./types";
 import { amountDisplay } from "@/lib/format";
 
 export const KIND_LABELS = F5_KIND_LABELS;
+const kindCountFormatter = new Intl.NumberFormat("zh-CN-u-nu-hanidec");
+export const kindCountLabel = (count: number) => `${kindCountFormatter.format(count)}类`;
 
 /** 服务端七个状态标题到状态码的精确对应（协议，不改）。 */
 export const STATUS_BY_LABEL: Record<string, string> = {

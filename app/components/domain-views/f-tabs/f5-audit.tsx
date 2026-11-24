@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * F5 奖励记录核对（改版）。首屏：一句结论 → 奖励走到哪一步（七个状态一条路）→ 八类奖励；下面五个页签：
+ * F5 奖励记录核对（改版）。首屏：一句结论 → 奖励走到哪一步（七个状态一条路）→ 各类奖励；下面五个页签：
  * 奖励流水（筛选、勾选补发、点行看详情）、等价格、异常样本、暂停名单、处置历史。
  * 读取、筛选、翻批、导出和七个处置都调用 F 域外壳原有的函数，请求和改版前一样；这里只管排版和文字。
  */
@@ -22,7 +22,7 @@ import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
-  APPROVER, KIND_LABELS, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, deviceEarningSource, isFriend, isGrouped, knownRejection,
+  APPROVER, KIND_LABELS, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, deviceEarningSource, isFriend, isGrouped, kindCountLabel, knownRejection,
   statusName, timeText, userCode, zoneNote, F5ConfirmHost, Money, F5RecoveryNotice, type F5Confirm, type F5RecoveryRow,
 } from "./f5-shared";
 import { F5KindTiles, F5StatusFlow } from "./f5-overview";
@@ -650,7 +650,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
   return (
     <div className="f5-page">
-      <PageHeader pageId="F5" title="奖励记录核对" summary="核对八类团队奖励的每一笔，处置有问题的记录。"
+      <PageHeader pageId="F5" title="奖励记录核对" summary={`核对${data ? kindCountLabel(data.commissionKinds.length) : ""}团队奖励的每一笔，处置有问题的记录。`}
         readOnly={anyWrite ? undefined : "你只能查看；处置奖励需要对应的处置权限"} />
       {conclusion()}
       <F5RecoveryNotice rows={recoveryRows} />

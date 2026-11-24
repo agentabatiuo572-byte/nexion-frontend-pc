@@ -507,7 +507,7 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
     kinds.length === F5_LEGACY_KINDS.length ? F5_LEGACY_KINDS : F5_KINDS,
     "key",
   ));
-  if (row.suspendableKinds !== undefined || kinds.length === F5_KINDS.length) {
+  if (row.suspendableKinds !== undefined) {
     const suspendable = array(row, "suspendableKinds", "F5");
     if (suspendable.some((kind) => typeof kind !== "string" || !F5_LEGACY_KINDS.includes(kind))
         || new Set(suspendable).size !== suspendable.length) invalid("F5", "suspendableKinds");
