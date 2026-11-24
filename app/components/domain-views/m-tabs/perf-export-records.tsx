@@ -120,7 +120,8 @@ function TaskDrawer({ task, view, zone, rows, pending, lookup, retryRejected, do
   const approved = task.state === "APPROVED" || task.state === "READY" && DETAIL(task) || task.state === "EXPIRED" && DETAIL(task);
   const steps = [
     { label: "提交", sub: submitted, state: "done" as const },
-    ...(DETAIL(task) ? [{ label: "审批", sub: task.state === "PENDING_APPROVAL" ? reviewing ? "你" : "另一位审批人" : task.decidedAt ? `${task.decidedAt} ${task.state === "REJECTED" ? "驳回" : "批准"}` : "—", state: task.state === "PENDING_APPROVAL" ? "current" as const : "done" as const }] : []),
+    // 撤回的申请停在审批前：这一步写「已撤回」，不算走完。
+    ...(DETAIL(task) ? [{ label: "审批", sub: task.state === "WITHDRAWN" ? "已撤回" : task.state === "PENDING_APPROVAL" ? reviewing ? "你" : "另一位审批人" : task.decidedAt ? `${task.decidedAt} ${task.state === "REJECTED" ? "驳回" : "批准"}` : "—", state: task.state === "PENDING_APPROVAL" ? "current" as const : task.state === "WITHDRAWN" ? "todo" as const : "done" as const }] : []),
     { label: "生成文件", sub: task.state === "READY" || task.state === "EXPIRED" ? DETAIL(task) ? "已生成" : submitted : task.state === "APPROVED" ? task.failure ? "没生成" : "进行中" : "批准后", state: task.state === "APPROVED" ? "current" as const : task.state === "READY" || task.state === "EXPIRED" ? "done" as const : "todo" as const },
     { label: "下载", sub: task.mine ? "你本人" : "申请人", state: task.state === "READY" ? "current" as const : "todo" as const },
   ];
