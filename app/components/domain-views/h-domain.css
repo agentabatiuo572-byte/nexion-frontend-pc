@@ -678,6 +678,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h2-buy-check .h2-buy-reason { font-size: var(--rd-text-aux); color: var(--rd-text-2); }
 .h2-product-meta [data-mono], .rd-pop-rows [data-mono] { font-family: var(--rd-font-mono); }
 .h2-nowrap { white-space: nowrap; }
+.rd-pop:has(.h2-nowrap) { max-width: 480px; }  /* 技术信息里的操作编号整串不断开，气泡放宽到放得下 */
 .h2-buy-form .rd-notice-text, .h2-money-note .rd-notice-text { text-wrap: wrap; }
 .h2-pending-op { display: block; color: var(--rd-text-3); }
 .h2-alert-aux { margin: 4px 0 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: 18px; }

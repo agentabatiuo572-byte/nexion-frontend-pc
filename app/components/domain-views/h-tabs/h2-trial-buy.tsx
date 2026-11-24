@@ -213,11 +213,11 @@ export function BuySection({ ctx, list, invalid, trialTargetNo, blocked, reach, 
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       statedBrief: { impact: "之后发起的购买按新清单，进行中的试用也一样", check: "核对新增和移除，理由写清调整原因和依据。" },
       facts: (
-        <>
+        <div className="rd-stack">
           <DiffList rows={rows} restTitle="其余设备" />
           <Facts><Fact k="改后共">{after.value === "未添加" ? "0 款" : after.value}{after.sub && <> · {after.sub}</>}</Fact></Facts>
           {added.length > 0 && <div className="h2-money-note"><Notice tone="neutral">{MONEY_LINE}</Notice></div>}
-        </>
+        </div>
       ),
       initialReason: lastReason || undefined,
       blockedReason: blocked,
