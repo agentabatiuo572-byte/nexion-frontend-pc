@@ -163,22 +163,20 @@ export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel,
   busy: boolean;
   failure: Error | null;
   disabled?: boolean;
-  /** 从结果未知恢复：确认就是按原请求重试。expired 时只能读回核对；blockedReason 是明确查不到之前不能重试的原因。 */
-  retry?: { expired: boolean; blockedReason?: string; onQuery?: () => Promise<void> };
+  /** 从结果未知恢复：确认就是按原请求重试。expired 时只能读回核对。 */
+  retry?: { expired: boolean };
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const publish = faq.status === "draft";
   const unknown = isOutcomeUnknownError(failure);
   const action = publish ? "发布" : "下架";
-  const [querying, setQuerying] = useState(false);
   return (
     <Modal title={publish ? "发布这条问答" : "下架这条问答"} icon={publish ? Upload : Archive}
       sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} busy={busy} onClose={onCancel}
       footer={<>
-        <Button disabled={busy || querying} onClick={onCancel}>取消</Button>
-        {retry?.onQuery && <Button disabled={busy || querying} loading={querying} onClick={() => { setQuerying(true); void retry.onQuery!().finally(() => setQuerying(false)); }}>查询原结果</Button>}
-        <Button variant="primary" loading={busy} disabled={disabled || querying} disabledReason={retry && !disabled ? retry.blockedReason : undefined} onClick={onConfirm}>{retry || unknown ? "按原请求重试" : `确认${action}`}</Button>
+        <Button disabled={busy} onClick={onCancel}>取消</Button>
+        <Button variant="primary" loading={busy} disabled={disabled} onClick={onConfirm}>{retry || unknown ? "按原请求重试" : `确认${action}`}</Button>
       </>}>
       <Facts>
         <Fact k="问题"><span className="m4-fact-text">{faq.question}</span></Fact>
