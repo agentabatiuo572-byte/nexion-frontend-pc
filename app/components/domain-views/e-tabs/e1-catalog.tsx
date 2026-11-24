@@ -427,7 +427,6 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
             <div className="e1-product-name"><h2>{canWrite ? <E1MiddleText text={s.name} /> : <button className="rd-link e1-detail-link" aria-label={`商品资料 ${s.name}`} onClick={() => openDetail(s)}><E1MiddleText text={s.name} /></button>}</h2><StatusTag tone={s.status === "off" ? "done" : "neutral"} icon={s.status === "on" ? CheckCircle2 : s.status === "off" ? Archive : FileText}>{e1Value(s.status)}</StatusTag></div>
             <div className="e1-product-id"><span title={s.id}>{s.id}</span><span>{operatorSkuTier(s.tier ?? "")}</span>{hasUnsupportedSeries(s) ? <StatusTag tone="warn" icon={ShieldAlert}>{skuSeriesText(s.seriesCode)}</StatusTag> : <span>{skuSeriesText(s.seriesCode)} 系列</span>}{s.lifecycle === "legacy" && <StatusTag tone="done" icon={Archive}>已停产</StatusTag>}</div>
             <div className="e1-product-price"><strong><E1Amount value={s.price} /> <small>USD</small></strong></div>
-            {s.tagline && <div className="e1-tagline" title={nexGridBrandText(s.tagline)}>{nexGridBrandText(s.tagline)}</div>}
           </div>
         </div>
         <div className="e1-product-levels"><div className="e1-value-line"><span className="e1-muted">任务等级</span>{s.allowedPoolCodes?.length === 0 && <StatusTag tone={s.status === "on" ? "warn" : "neutral"} icon={ShieldAlert}>未配置任务等级</StatusTag>}</div>{s.allowedPoolCodes == null ? <span className="e1-muted">— · 任务等级未读取</span> : <LevelStrip label={`${s.name}任务等级`} levels={E1_LEVELS} selectedKeys={s.allowedPoolCodes} />}</div>
