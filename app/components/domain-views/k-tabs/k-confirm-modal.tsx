@@ -151,7 +151,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       <div className="field rd-reason-field">
         {/* 字段名强，下限跟在后面，上限在框角的字数里，各写一处（VS-104、VS-105）。 */}
         <label htmlFor={`${fieldId}-reason`}>
-          {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span>{!req.recoveryUi && <span className="rd-form-hint">{!policySettled ? "正在加载，稍候即可提交。" : policyBlocked ? POLICY_FAILED_TEXT : `至少 ${reasonMin} 字`}</span>}</> : <>备注<span className="rd-form-hint">{req.remarkHint ?? "选填，最多 200 字"}</span></>}
+          {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span>{!(req.recoveryUi && pendingReason !== undefined) && <span className="rd-form-hint">{!policySettled ? "正在加载，稍候即可提交。" : policyBlocked ? POLICY_FAILED_TEXT : `至少 ${reasonMin} 字`}</span>}</> : <>备注<span className="rd-form-hint">{req.remarkHint ?? "选填，最多 200 字"}</span></>}
         </label>
         <div className={`rd-reason-box${req.recoveryUi && pendingReason !== undefined ? " k-reason-locked" : ""}`}>
           <textarea
@@ -168,7 +168,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         {req.recoveryUi && pendingReason !== undefined && <p className="k-locked-hint">保存的原理由，重试时原样发送，不能修改</p>}
         {req.reason && !(req.recoveryUi && pendingReason !== undefined) && policySettled && !policyBlocked && !reasonOk && (attempted || reasonLeft) ? (
           <div className="rd-form-error">{reasonShort}</div>
-        ) : req.recoveryUi && req.reason && pendingReason === undefined && <div className="rd-form-help">{!policySettled ? "正在加载，稍候即可提交。" : policyBlocked ? POLICY_FAILED_TEXT : `至少 ${reasonMin} 字`}</div>}
+        ) : null}
       </div>
       </fieldset>
     </Modal>
