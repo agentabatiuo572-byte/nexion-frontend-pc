@@ -19,6 +19,8 @@ import type { F5Recovery, FViewCtx } from "./types";
 import { FReleaseButton } from "./f-release";
 import { canRetryF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
+import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
+import { readF5Filters, readF5Tab, replaceTeamFilterParams, type F5Tab } from "@/lib/admin/team-filter-url";
 import { teamUserId } from "@/lib/admin/f-overview-contract";
 import { isPreviousMonthSalaryClaim } from "@/lib/admin/business-calendar-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -31,7 +33,6 @@ import { F5KindTiles, F5StatusFlow } from "./f5-overview";
 import { F5Drawer, type F5RowAction } from "./f5-drawer";
 import { F5AnomalyList, F5HistoryList, F5PendingList, F5SuspensionList } from "./f5-lists";
 
-type Tab = "records" | "pending" | "anomalies" | "suspensions" | "history";
 const STATUS_ORDER = ["cooling", "unlocked", "withdrawn", "frozen", "reversed", "recovery_pending", "rejected"];
 const SETTLED = ["reversed", "withdrawn", "rejected", "recovery_pending"];
 
@@ -49,6 +50,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const canReadL4 = reach("/analytics/operations", "bi_l4_read");
   const canReadA2 = reach("/platform/audit", "platform_a2_read");
   const canReadA4 = reach("/platform/events");
+  const canReadSalary = reach("/network/v-rank", "network_f1_read");
   const [kind, setKind] = useState("");
   const [currency, setCurrency] = useState("");
   const [userId, setUserId] = useState("");
@@ -56,17 +58,41 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const [cohort, setCohort] = useState("");
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
-  // 列表现在用的是哪组条件（只给页面显示用：已生效的筛选、等价格是否返回）。外壳首次读取不带条件。
+  // 已应用条件独立于正在编辑的草稿，并在翻批时保持不变。
   const [applied, setApplied] = useState<F5CommissionQuery>({});
-  const [tab, setTab] = useState<Tab>("records");
+  const [tab, setActiveTab] = useState<F5Tab>("records");
+  const setTab = (next: F5Tab) => {
+    setActiveTab(next);
+    replaceTeamFilterParams({ tab: next === "records" ? undefined : next });
+  };
+  useEffect(() => {
+    const read = () => {
+      const params = new URLSearchParams(window.location.search);
+      const next = readF5Filters(params);
+      const nextTab = readF5Tab(params);
+      setApplied(next);
+      setKind(next.kind ?? "");
+      setCurrency(next.currency ?? "");
+      setUserId(next.userId ?? "");
+      setCohort(next.cohort ?? "");
+      setStatus(next.status ?? "");
+      setActiveTab(nextTab);
+      setSelected([]);
+      replaceTeamFilterParams({ tab: nextTab === "records" ? undefined : nextTab });
+    };
+    read();
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
+  }, []);
   const [openId, setOpenId] = useState<string | null>(null);
   // 九类奖励折叠组开着没有放在这里：筛选后重读数据时卡片会重新挂载，不能因此自己收起。
   const [kindsOpen, setKindsOpen] = useState(false);
   const [confirm, setConfirm] = useState<F5Confirm | null>(null);
   const tabIds = useTabIds();
-  const { f5Overview: data, f5AppliedQuery, f5NextQuery, f5Loading: loading, f5Error: error } = ctx;
+  const { f5Overview: data, f5AppliedQuery, f5NextQuery, f5AppendError, f5Loading: loading, f5Error: error } = ctx;
   const suspendableKinds = data?.suspendableKinds ?? [];
   const reissueAvailable = canReissue && !error && !!data;
+  const busyText = "奖励记录正在更新";
   const exportBlockedReason = loading ? "奖励记录正在更新，暂不能导出"
     : !f5AppliedQuery || !data || error ? "奖励记录未成功读取，重试后才能导出"
       : data.total === 0 ? "当前结果没有可导出的奖励记录" : undefined;
@@ -97,6 +123,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   });
   const load = (next: F5CommissionQuery) => {
     setApplied(next);
+    replaceTeamFilterParams({ kind: next.kind, currency: next.currency, userId: next.userId, cohort: next.cohort, status: next.status });
     void ctx.refreshF5(next);
   };
 
@@ -229,6 +256,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
   const reverse = (row: F5CommissionEvent, recovery?: F5Recovery) => {
     const friend = isFriend(row);
+    const salary = row.kind === "vrank_salary";
     const tracksRecovery = isGrouped(row) || row.kind === "vrank_salary";
     const after = tracksRecovery ? "已冲正或待追回" : "已冲正";
     setConfirm({
@@ -247,20 +275,24 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           ? <Fact k="用户余额" tone="warn">已入账的部分按现在的余额扣回，扣不够的记为待追回，不会扣成负数</Fact>
           : <Fact k="用户余额" tone="warn">已转进钱包的才扣回；余额不够时这次冲正整个失败，什么都不改<Explain label="没有结算组的旧奖励怎么收回" content="还没转进钱包的，只关掉待发记录，不扣余额。余额不够不会记成待追回，冲正会失败，要等余额够了再提交。" /></Fact>}
         <Fact k="之后">{friend ? "好友奖励冲正后不能补发" : "可以勾选申请补发，批准时再核补发条件"}</Fact>
+        {salary && (row.claimNo || canReadSalary) && <Fact k="月薪领取号">{row.claimNo
+          ? <span data-mono>{row.claimNo}</span>
+          : <Link className="rd-link" href={`/network/v-rank?tab=salary&userId=${encodeURIComponent(row.user)}`} prefetch={false}>去月薪领取记录查询</Link>}</Fact>}
         <Fact k="谁来批准">{approverText("冲正权限")}</Fact>
       </Facts>,
       businessForm: {
         kind: "multi-field",
         fields: [
-          { key: "refundRef", label: "凭证单号", inputKind: "text", required: true, wide: true, placeholder: "关联订单号、等级发放单号或客服工单号",
-            explain: "系统只核对这个编号存在：这笔奖励的订单号、等级奖励的发放单号，或任意一张没删除的客服工单号。不核对工单是不是这位用户的，请自己确认和这笔奖励有关。" },
+          { key: "refundRef", label: "凭证单号", inputKind: "text", required: true, wide: true, placeholder: salary ? "这笔月薪的领取号或关联客服工单号" : "关联订单号、等级发放单号或客服工单号",
+            explain: salary ? "填这次月薪的领取号，或与这笔月薪有关的客服工单号。"
+              : "系统只核对这个编号存在：这笔奖励的订单号、等级奖励的发放单号，或任意一张没删除的客服工单号。不核对工单是不是这位用户的，请自己确认和这笔奖励有关。" },
         ],
       },
       submit: async (reason, value) => {
         const refundRef = value?.refundRef?.trim();
         if (!refundRef) throw new Error("请填写有效的单号");
         await ctx.reverseF5Commission(row.id, refundRef, reason);
-        ctx.toast(`${row.id} 冲正已提交，等待审批`);
+        ctx.toast("已提交，等待审批后执行");
       },
     });
   };
@@ -495,6 +527,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   })));
 
   const blockedRecord = (row: F5CommissionEvent) => {
+    if (loading) return busyText;
+    if (error) return "奖励记录未成功读取，重试后才能处理";
     const pending = [...ctx.f5ApprovalRows, ...ctx.f5Proposals.flatMap(original => original.ticket ? [original.ticket] : [])]
       .some(ticket => ticket.status === "pending" && (ticket.obj === row.auditKey || ticket.obj.split(",").includes(row.id)));
     const retained = ctx.f5Proposals.some(original => original.f5Snapshot?.row?.id === row.id
@@ -572,8 +606,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const kindOptions = [{ value: "", label: "全部类型" }, ...(data?.commissionKinds ?? []).map((item) => ({ value: item.key, label: KIND_LABELS[item.key] ?? item.lbl }))];
   const statusOptions = [{ value: "", label: "全部状态" }, ...STATUS_ORDER.map((item) => ({ value: item, label: STATUS_META[item].name }))];
   const currencyOptions = [{ value: "", label: "全部币种" }, { value: "USDT", label: "USDT" }, { value: "UVT", label: "UVT" }];
-  const moreCount = (currency ? 1 : 0) + (cohort ? 1 : 0);
-  const busyText = "奖励记录正在更新";
+  const moreCount = Number(!!applied.currency) + Number(!!applied.cohort);
   const recordCounts = loading && data ? "正在更新，暂不能查询或处理"
     : data ? data.total === events.length ? `共 ${data.total.toLocaleString("en-US")} 笔 · 时间为${zoneNote()}` : `共 ${data.total.toLocaleString("en-US")} 笔符合条件 · 这一批 ${events.length} 笔 · 时间为${zoneNote()}` : undefined;
 
@@ -602,7 +635,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         {reissueAvailable && selectedRows.length > 0 && (
           <BatchBar summary={`已勾选 ${selectedRows.length} 笔已冲正的记录`} hint="只能勾选这一批里已冲正、不是好友奖励、来源没有退款的记录；改筛选会清掉勾选。">
             <Button size="sm" onClick={() => setSelected([])}>取消勾选</Button>
-            <Button size="sm" variant="primary" onClick={() => reissue()}>批量补发</Button>
+            <Button size="sm" variant="primary" disabledReason={selectedRows.map(blockedRecord).find(Boolean)} onClick={() => reissue()}>批量补发</Button>
           </BatchBar>
         )}
           <Table label="奖励流水" className="f5-table f5-record-table" aria-busy={loading} data-select={canReissue ? "" : undefined} data-actions={rowWrite ? "" : undefined}>
@@ -635,7 +668,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                         <Tr key={row.id} selected={openRow?.id === row.id} onOpen={() => setOpenId(row.id)} data-group={groupPos(index)}>
                           {canReissue && <Td>{row.status === "reversed" && <Checkbox aria-label={`选择 ${row.id}`} disabled={!selectable} title={blockedPick} checked={selected.includes(row.id)} onChange={(event) => setSelected((old) => event.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))} />}</Td>}
                           <Td><Cell main={<button type="button" className="rd-cell-link" data-mono="" aria-haspopup="dialog" aria-label={`查看奖励 ${row.id}`} onClick={() => setOpenId(row.id)}>{row.id}</button>}
-                            sub={<>{kindName(row.kind)}{row.settlementNo ? <span className="f5-group-tag">双币组</span> : null}{salary?.claimNo ? <span className="f5-sans"> · <span data-mono="" title={`月薪领取的领取号 ${salary.claimNo}`}>{salary.claimNo}</span></span> : null}</>} /></Td>
+                            sub={<>{kindName(row.kind)}{row.settlementNo ? <span className="f5-group-tag">{compareDecimal(row.amountUSDT ?? "", "0") === 1 && compareDecimal(row.amountNEX ?? "", "0") === 1 ? "双币组" : "结算组"}</span> : null}{salary?.claimNo ? <span className="f5-sans"> · <span data-mono="" title={`月薪领取的领取号 ${salary.claimNo}`}>{salary.claimNo}</span></span> : null}</>} /></Td>
                           <Td><Cell mono main={row.user} sub={<span className="f5-sans">{source}</span>} /></Td>
                           <Td align="right"><Cell num main={<Money value={row.amt} currency={row.cur} />} /></Td>
                           <Td className="f5-col-time"><Cell num main={timeText(row.settledAt)} /></Td>
@@ -646,11 +679,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                     })}
             </tbody>
           </Table>
-        {data && (f5NextQuery || applied.cursor) && (
+        {data && (f5NextQuery || events.length > 20) && (
           <div className="f5-batch-nav">
-            <span>这一批 {events.length} 笔，按新到旧</span>
-            {applied.cursor && <Button size="sm" icon={<RotateCcw size={14} aria-hidden />} onClick={() => load({ ...applied, cursor: undefined })}>回到第一批</Button>}
-            {f5NextQuery && <Button size="sm" onClick={() => load(f5NextQuery)}>下一批</Button>}
+            <span>{f5AppendError ?? `已加载 ${events.length} 笔，按新到旧`}</span>
+            {events.length > 20 && <Button size="sm" disabled={loading} icon={<RotateCcw size={14} aria-hidden />} onClick={() => { setSelected([]); load(applied); }}>回到第一批</Button>}
+            {f5NextQuery && <Button size="sm" disabled={loading} onClick={() => void ctx.refreshF5(f5NextQuery)}>{f5AppendError ? "重试" : "下一批"}</Button>}
           </div>
         )}
       </Panel>
@@ -676,19 +709,19 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         action={<Button size="sm" disabled={loading} onClick={() => void ctx.refreshF5(applied)}>重新读取</Button>}>
         {ctx.f5ApprovalReadError}读到之前，页面可能没标出已有待批单的记录。
       </Notice>}
-      <fieldset className="f5-fieldset" disabled={loading} aria-busy={loading}>
+      <fieldset className="f5-fieldset" aria-busy={loading}>
         <div className="f5-stack">
         {data && <>
           <F5StatusFlow data={data} statusFilter={applied.status ?? ""} onStatus={applyStatusFilter} pendingCount={pendingCount} onPending={() => setTab("pending")} />
           <F5KindTiles data={data} kindFilter={applied.kind ?? ""} onKind={applyKindFilter} open={kindsOpen} onOpenChange={setKindsOpen} />
         </>}
         <div className="f5-tabs">
-          <PageTabs label="奖励记录内容" value={tab} onChange={setTab} ids={tabIds} items={data ? tabItems : tabItems.slice(0, 1)} />
+          <PageTabs label="奖励记录内容" value={tab} onChange={setTab} ids={tabIds} items={data || tab !== "records" ? tabItems : tabItems.slice(0, 1)} />
           <div {...tabIds.panel(tab)} className="rd-tab-pane">
             {tab === "records" && recordsPanel}
             {tab === "pending" && data && <F5PendingList rows={data.pendingCalculations} count={data.pendingCalculationCount} statusFiltered={statusFiltered} />}
-            {tab === "anomalies" && data && <F5AnomalyList rows={data.anomalies} comparisons={data.layerRatioComparisons} sigma={data.configValues.commissionAnomalySigma} ratio={data.configValues.layerRatioAnomalyPct} canWrite={canWrite} onAdjust={() => editThreshold()} />}
-            {tab === "suspensions" && data && <F5SuspensionList rows={data.activeSuspensions} canSuspend={canSuspend} onResume={item => resume(item)} />}
+            {tab === "anomalies" && data && <F5AnomalyList rows={data.anomalies} comparisons={data.layerRatioComparisons} sigma={data.configValues.commissionAnomalySigma} ratio={data.configValues.layerRatioAnomalyPct} canWrite={canWrite && !loading} onAdjust={() => editThreshold()} />}
+            {tab === "suspensions" && data && <F5SuspensionList rows={data.activeSuspensions} canSuspend={canSuspend && !loading} onResume={item => resume(item)} />}
             {tab === "history" && data && <F5HistoryList rows={data.operationHistory} />}
           </div>
         </div>

@@ -7,7 +7,7 @@
  */
 import { useState } from "react";
 import { CircleHelp, Clock3, Lock, LockOpen, Zap } from "lucide-react";
-import { DiffField, Fact, Facts, NumberInput, StatusTag } from "@/app/components/rd";
+import { Change, DiffField, Fact, Facts, NumberInput, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { amountDisplay } from "@/lib/format";
 import { OperationConfirmModal, type BusinessFormValue } from "../design-kit";
@@ -19,6 +19,7 @@ import { compareDecimal, ratePct, F1_BENEFIT_NAMES as NAME, f1BenefitInputError 
 import { pendingF1Policy, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { h4ReadConflict } from "../h-tabs/h4-legacy-parts";
 
 /** 现在的值，按填写的单位：比例是百分数，月薪是 USDT。 */
 export function benefitValue(row: F1VRankRow, field: F1BenefitField): string | undefined {
@@ -88,7 +89,9 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
   };
   const facts = (_value?: string, values?: BusinessFormValue) => {
     const next = values?.value ?? "";
+    const opened = benefitValue(requested.row, field);
     return <Facts>
+      {revision > 0 && opened && direction(opened) !== 0 && <Fact k="刚被改过"><Change from={shown(field, opened)} to={shown(field, current)} /></Fact>}
       {neighbors && <Fact k="相邻等级">{neighbors}</Fact>}
       <Fact k="这一级人数">{row.v} {row.pop.toLocaleString("en-US")} 人</Fact>
       {field === "monthlySalaryUsdt" && direction(next) === -1 && <Fact k="能否改回" tone="warn">
@@ -117,17 +120,15 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
           throw new Error("没有保存：这一级有申请在等审批，批准、驳回或撤回后再改。");
         }
         if (code === "VRANK_POLICY_VERSION_CONFLICT" || code === "A2_CONFIRMATION_REQUIRED" || code === "VRANK_POLICY_REVISION_REQUIRED") {
-          const active = await fetchF1VRankOverview().catch(() => null);
-          const latest = active?.rows.find(item => item.v === row.v);
-          if (active && latest) {
+          throw h4ReadConflict(async () => {
+            const active = await fetchF1VRankOverview();
+            const latest = active.rows.find(item => item.v === row.v);
+            if (!latest?.policyRevision || benefitValue(latest, field) === undefined) throw new Error("请先成功重新读取会员等级。");
             setBaseline({ ...requested, row: latest });
             setRevision(current => current + 1);
             ctx.acceptF1PolicyOverview(active);
-            throw new Error(code === "VRANK_POLICY_VERSION_CONFLICT"
-              ? "没有保存：别人刚改过这一级，页面已重读；核对后再确认。"
-              : "没有保存：已按刚读到的值重算，核对后再提交。");
-          }
-          ctx.invalidateF1("请先成功重新读取会员等级。");
+            return true;
+          });
         }
       }
       throw error;
@@ -186,8 +187,7 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
       queryOnly: !!original?.original.approval && original.absent !== true,
       disabledReason,
       // 生效方式只写在标题下的标签里，不再加一条同义横幅（DT-12）；批准前按原值写在影响句里。
-      resolve: (values) => direction(values.value ?? "") === 1 && !session?.authorities.some(authority => authority === "platform_a2_proposal_create" || authority === "platform_a2_write")
-        ? { disabledReason: "当前账号没有发起审批的权限。" } : undefined,
+      resolve: () => undefined,
       recover: () => submit("lookup"),
       retry: async () => { await submit("retry-original"); },
       renderForm: (values, change, locked) => {

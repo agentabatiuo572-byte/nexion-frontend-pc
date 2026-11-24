@@ -108,6 +108,7 @@ export interface FViewCtx {
   refreshF1Approvals: () => Promise<void>;
   invalidateF1: (message?: string) => void;
   refreshF1: () => Promise<void>;
+  refreshF1Membership: () => Promise<void>;
   f1RewardValuation: string | null;
   f1Coverage: F1VRankOverview["coverage"];
   acceptF1PolicyOverview: (overview: F1VRankOverview) => void;
@@ -154,9 +155,13 @@ export interface FViewCtx {
   proposePayoutAction: (record: F1RewardPayout, action: "reissue" | "reverse", reason: string, usedVoucherClawback?: boolean) => Promise<void>;
   // F2 B83
   /** 七层规则回包的 purchaseBaseRateSource。"BENEFICIARY_RANK" 时第 1、2 层比例按受益人等级显示；没有这个字段时按旧的单一比例显示。 */
-  f2PurchaseBaseRateSource?: string;
+  f2PurchaseBaseRateSource: "F2" | "BENEFICIARY_RANK" | null;
   /** 九级好友购买奖励一级、二级比例里的最低和最高，百分数字符串（"4"、"5.5"）；读 F1 等级总览或 v-ranks。按等级但读不到时传 null，页面写「—」。 */
-  f2RankPurchaseRange?: { l1: { min: string; max: string }; l2: { min: string; max: string } } | null;
+  f2RankPurchaseRange: { l1: { min: string; max: string }; l2: { min: string; max: string } } | null;
+  f2RankRangeError: string | null;
+  f2RankRangeLoading: boolean;
+  refreshF2RankRange: () => Promise<void>;
+  refreshF2DirectPolicy: () => Promise<DirectReferralPolicy | null>;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
   f2Metrics: F2Metric[];
   f2PayoutStatistics?: F2PayoutStatistic[];
@@ -258,6 +263,7 @@ export interface FViewCtx {
   f5Overview: F5CommissionAuditOverview | null;
   f5AppliedQuery: F5CommissionQuery | null;
   f5NextQuery: F5CommissionQuery | null;
+  f5AppendError: string | null;
   f5Loading: boolean;
   f5Error: string | null;
   f5Proposals: FDomainAttempt[];

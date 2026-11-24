@@ -8,7 +8,8 @@ import { useRef, useState, type ReactNode } from "react";
 import { BadgeDollarSign, CircleCheck, Clock3, Coins, Gift, Package, RotateCcw, Ticket, TriangleAlert, Undo2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
-import { listF1Proposals, f1ProposalAuthority } from "@/lib/admin/f1-approval";
+import { listF1Proposals, canSendF1Proposal, isV8Promotion } from "@/lib/admin/f1-approval";
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { F1RewardPayout } from "@/lib/admin/f1-client";
@@ -139,8 +140,9 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
   const existing = original();
   const session = useAdminAuth(state => state.session);
   const canRetry = !existing || !!existing.spec && !!session && session.adminId === owner
-    && session.authorities.includes(f1ProposalAuthority(existing.spec))
-    && session.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create");
+    && canSendF1Proposal(existing.spec, session.authorities);
+  const v8QueryOnly = !!existing && (confirm.v8Review || isV8Promotion(existing.spec))
+    && (existing.absent !== true || !!existing.received || !!existing.ticket || !canRetry);
   return (
     <OperationConfirmModal
       briefKind={confirm.briefKind}
@@ -167,8 +169,8 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
         dialogClassName: confirm.dialogClassName,
         resolve: () => undefined,
         pending: !!confirm.recoverOriginal && !!existing,
-        initialRecovery: "retry",
-        queryOnly: !!confirm.v8Review && !!existing && existing.absent !== true,
+        initialRecovery: v8QueryOnly ? "lookup" : "retry",
+        queryOnly: v8QueryOnly,
         expired: !!existing && existing.expiresAt <= Date.now(),
         expiredRequestRecovery: existing && existing.expiresAt <= Date.now() ? "query" : undefined,
         disabledReason: submitted.current && !canRetry ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined,
@@ -192,6 +194,9 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
           onClose();
         } catch (error) {
           // 错误交回确认框，由框里显示（没权限时框关掉、外壳提示），不再另弹轻提示，免得同一句同屏两次。
+          if ((confirm.v8Review || isV8Promotion(original()?.spec)) && isA2OutcomeUncertainError(error)) {
+            throw Object.assign(error, { confirmCopy: "结果未知，可能已经建了审批单。请先查询原结果。" });
+          }
           throw error;
         }
       }}

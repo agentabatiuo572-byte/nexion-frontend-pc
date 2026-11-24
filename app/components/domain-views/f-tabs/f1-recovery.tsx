@@ -12,7 +12,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { f1ProposalAuthority, isF1PayoutSlot } from "@/lib/admin/f1-approval";
+import { canSendF1Proposal, isF1PayoutSlot, isV8Promotion } from "@/lib/admin/f1-approval";
 import { f1ConditionLabels, formatF1ExactAmount, isF1PolicyInFlight, listF1PolicyOperations, queryF1PolicyOperation, releaseF1PolicyProposal, type F1PolicyEditor, type F1PolicyReward } from "@/lib/admin/f1-policy-change";
 import { F1_BENEFIT_NAMES, isF1BenefitField, ratePct } from "@/lib/admin/f1-rank-benefit";
 import { isF1RankHowInFlight, pendingF1RankHow, queryF1RankHow } from "@/lib/admin/f1-rank-how-save";
@@ -54,7 +54,11 @@ function ordinaryLabel(original: FDomainAttempt): { name: string; change: ReactN
     try { count = Object.keys(JSON.parse(spec?.after ?? "{}") as object).length; } catch { /* 坏的原内容只显示不完整 */ }
     return { name: "各级头衔", change: spec && count ? `设置 ${count} 级头衔` : "原请求不完整，只能查询原结果" };
   }
-  if (slot.startsWith("f-vrank-override:")) return { name: `人工调整等级 · 用户 ${id}`, change: spec ? `${spec.amplifies ? "升级" : "降级"}到 ${spec.after}` : "原请求不完整，只能查询原结果" };
+  if (slot.startsWith("f-vrank-override:")) {
+    const { direction, targetV } = spec?.command.params ?? {};
+    const valid = (direction === "promote" || direction === "rollback") && typeof targetV === "string" && /^V[0-8]$/.test(targetV);
+    return { name: `人工调整等级 · 用户 ${id}`, change: valid ? `${direction === "promote" ? "升级" : "降级"}到 ${targetV}` : "原请求不完整，只能查询原结果" };
+  }
   if (isF1PayoutSlot(slot)) {
     const action = spec?.command.params.action;
     const clawback = spec?.command.params.usedVoucherClawback;
@@ -89,9 +93,9 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
     const { name, change } = ordinaryLabel(original);
     const expired = isRetryExpired(original);
     const state: State = original.ticket?.status === "pending" ? "pending" : original.received ? "received" : expired ? "expired" : "unknown";
-    const canRetry = !!original.spec && !!original.request && !original.received && !original.ticket && !expired;
-    const retryBlock = original.spec && !(session.authorities.includes(f1ProposalAuthority(original.spec))
-      && session.authorities.some((a) => a === "platform_a2_write" || a === "platform_a2_proposal_create")) ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined;
+    const canRetry = !!original.spec && !!original.request && !original.received && !original.ticket && !expired
+      && (!isV8Promotion(original.spec) || original.absent === true && canSendF1Proposal(original.spec, session.authorities));
+    const retryBlock = original.spec && !canSendF1Proposal(original.spec, session.authorities) ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined;
     rows.push({
       key: original.commandKey, name, change, submittedAt: original.createdAt, state,
       actions: <>

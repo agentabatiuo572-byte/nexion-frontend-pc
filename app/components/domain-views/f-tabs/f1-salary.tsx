@@ -4,7 +4,7 @@
  * F1「月薪领取」页签（画板 C1、C2、C3）：月薪领取记录，按用户、月份、等级查，按领取时间倒序，游标每批 100 条。
  * 不传（这个后端读不到月薪）时整块写没有月薪数据，查询条不出现。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Banknote } from "lucide-react";
 import { BlockState, Button, Cell, Drawer, FilterBar, FilterField, Input, KeyValues, Panel, Select, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessDay, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -14,6 +14,9 @@ import type { F1VRankRow } from "@/lib/admin/f1-client";
 import { amountDisplay } from "@/lib/format";
 import type { FViewCtx } from "./types";
 import type { F1SalaryClaim, F1SalaryFilters } from "./f1-rank-types";
+import { replaceTeamFilterParams } from "@/lib/admin/team-filter-url";
+
+const SALARY_RANKS = ["V2", "V3", "V4", "V5", "V6", "V7", "V8"];
 
 /** 近 12 个月（业务时区），本月在前。 */
 function recentMonths(today: string): string[] {
@@ -33,9 +36,26 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1VRankRow[
   const query = ctx.querySalaryClaims;
   const lateClaim = (claim: F1SalaryClaim) => isPreviousMonthSalaryClaim(ctx.teamBusinessCalendar, claim.month, claim.claimedAt);
   const today = growthTeamDate(ctx.teamBusinessCalendar, Date.now()) ?? businessDay();
+  const months = recentMonths(today);
+  const monthsRef = useRef(months);
+  monthsRef.current = months;
+  const stateRef = useRef(state);
+  stateRef.current = state;
   useEffect(() => {
-    if (state && !state.loaded && query) void query(state.filters);
-  }, [query, state]);
+    if (!query) return;
+    const read = () => {
+      const params = new URLSearchParams(window.location.search);
+      const user = params.get("userId") ?? "", month = params.get("month") ?? "", rank = params.get("rankCode") ?? "";
+      const filters = { user: teamUserId(user) ? user : "", month: monthsRef.current.includes(month) ? month : "", rank: SALARY_RANKS.includes(rank) ? rank : "" };
+      replaceTeamFilterParams({ userId: filters.user, month: filters.month, rankCode: filters.rank });
+      setDraft(filters);
+      const previous = stateRef.current;
+      if (!previous?.loaded || filters.user !== previous.filters.user || filters.month !== previous.filters.month || filters.rank !== previous.filters.rank) void query(filters);
+    };
+    read();
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
+  }, [query]);
   if (!state || !ctx.querySalaryClaims) {
     return <Panel title="月薪领取记录" icon={Banknote} tone="role-1"
       explain="用户每领一次月薪记一条，领到的直接进可用余额，不冷却。">
@@ -49,6 +69,7 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1VRankRow[
     if (invalidUser) return;
     const filters = { ...next, user: next.user.trim() };
     setDraft(filters);
+    replaceTeamFilterParams({ userId: filters.user, month: filters.month, rankCode: filters.rank });
     void ctx.querySalaryClaims!(filters);
   };
   const read = ctx.querySalaryClaims;
@@ -58,7 +79,7 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1VRankRow[
     applied.month && { key: "month", label: `月薪月份 ${applied.month}`, onRemove: () => run({ ...applied, month: "" }) },
     applied.rank && { key: "rank", label: `等级 ${applied.rank}`, onRemove: () => run({ ...applied, rank: "" }) },
   ].filter(Boolean) as { key: string; label: string; onRemove: () => void }[];
-  const salaryRanks = rows.filter((row) => Number(row.v.slice(1)) >= 2);
+  const salaryRanks = rows.length ? rows.map(row => row.v).filter(rank => SALARY_RANKS.includes(rank)) : SALARY_RANKS;
   const items = state.items;
   const current = items.find((item) => item.claimNo === openNo) ?? null;
   const at = current ? items.indexOf(current) : -1;
@@ -67,9 +88,9 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1VRankRow[
       <FilterField grow><Input aria-label="领取用户编码或系统编号" placeholder="用户编码或系统编号" value={draft.user}
         onChange={(event) => { setDraft({ ...draft, user: event.target.value }); setQueryError(false); }} /></FilterField>
       <FilterField><Select aria-label="月薪月份" value={draft.month} onChange={(value) => setDraft({ ...draft, month: value })}
-        options={[{ value: "", label: "全部月份" }, ...recentMonths(today).map((month) => ({ value: month, label: month }))]} /></FilterField>
+        options={[{ value: "", label: "全部月份" }, ...months.map((month) => ({ value: month, label: month }))]} /></FilterField>
       <FilterField><Select aria-label="月薪等级" value={draft.rank} onChange={(value) => setDraft({ ...draft, rank: value })}
-        options={[{ value: "", label: "全部等级" }, ...salaryRanks.map((row) => ({ value: row.v, label: row.v }))]} /></FilterField>
+        options={[{ value: "", label: "全部等级" }, ...salaryRanks.map(rank => ({ value: rank, label: rank }))]} /></FilterField>
     </FilterBar>
     <Panel title="月薪领取记录" icon={Banknote} tone="role-1" flush sub={items.length ? `已加载 ${items.length} 条` : undefined}
       explain={<><p>用户每领一次记一条，一个月最多一条；等级是这个月到达过的最高等级。</p>

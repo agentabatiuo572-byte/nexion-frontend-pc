@@ -154,6 +154,8 @@ export type F2Confirm = {
 
 /** 本页确认框。提交走 submit，失败交还给框（框里留着输入、显示原因或结果未知）。 */
 export function F2ConfirmModal({ spec, ctx, coverage, onClose, toast }: { spec: F2Confirm; ctx: FViewCtx; coverage?: { coverageRatio: number; redlinePct: number }; onClose: () => void; toast: (message: string) => void }) {
+  const original = ctx.f2ProposalRecord(spec.slot);
+  const recovering = !!original && !original.ticket;
   return (
     <OperationConfirmModal briefKind={spec.briefKind} action={spec.action} title={spec.title} detail={spec.detail}
       amplifies={spec.amplify} coverage={coverage} edit={spec.edit} businessForm={spec.businessForm}
@@ -164,23 +166,33 @@ export function F2ConfirmModal({ spec, ctx, coverage, onClose, toast }: { spec: 
         const original = ctx.f2ProposalRecord(spec.slot);
         return original && !original.ticket ? original.spec.reason : undefined;
       }}
-      blockedReason={(() => {
-        const original = ctx.f2ProposalRecord(spec.slot);
-        return original && !original.ticket ? original.canRetry ? undefined : "上一次申请结果未知，先按原请求重试或去核对" : ctx.f2WriteBlocked(spec.slot);
-      })()}
+      blockedReason={recovering ? undefined : ctx.f2WriteBlocked(spec.slot)}
+      inlineApproval={{
+        resolve: () => undefined,
+        pending: recovering,
+        initialRecovery: original?.canRetry ? "retry" : "lookup",
+        queryOnly: recovering && !original.canRetry,
+        expired: recovering && original.expiresAt <= Date.now(),
+        expiredRequestRecovery: recovering && original.expiresAt <= Date.now() ? "query" : undefined,
+        recover: async () => {
+          if (!ctx.f2ProposalRecord(spec.slot)?.canQuery) throw new Error("当前账号没有查询原结果的权限。");
+          const ticket = await ctx.queryF2Proposal(spec.slot);
+          if (ticket) onClose();
+          return !!ticket;
+        },
+        retry: async () => { await ctx.retryF2Proposal(spec.slot); onClose(); },
+      }}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {
-        const original = ctx.f2ProposalRecord(spec.slot);
         try {
-          if (original && !original.ticket) await ctx.retryF2Proposal(spec.slot);
-          else await spec.submit(reason, newValue, businessValue);
+          await spec.submit(reason, newValue, businessValue);
         } catch (error) {
-          if (isA2OutcomeUncertainError(error)) throw new Error(displayAdminError("F2_PROPOSAL_OUTCOME_UNKNOWN"));
+          if (isA2OutcomeUncertainError(error)) throw new Error("申请结果未知，请先查询原结果。");
           // Keep the reviewed input and the actual rejection on this F2 surface.
           if (isPermissionDenied(error)) throw new Error(`提交失败：${displayAdminError(error)}`);
           throw error;
         }
-        if (!original && spec.done) toast(spec.done);
+        if (spec.done) toast(spec.done);
         onClose();
       }} />
   );

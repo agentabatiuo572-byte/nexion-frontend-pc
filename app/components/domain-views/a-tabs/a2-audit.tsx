@@ -12,7 +12,7 @@ import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
 import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
-import { F2BootstrapReview, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
+import { F2BootstrapReview, f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_CLAWBACK, F1_VOUCHER_REVERSE_KEEP } from "@/lib/admin/config-help/f1-voucher";
@@ -2454,7 +2454,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     });
     // F2 首次配置：七层逐行列出后端写在单上的数，不显示原文的修改前后。
     const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
-    const rankedBootstrap = boot?.[0]?.usdtPct === "0" && boot?.[1]?.usdtPct === "0";
+    const rankedBootstrap = f2BootstrapUsesRank(boot?.[0]?.usdtPct, boot?.[1]?.usdtPct);
     const bootSpec: FundSpec | undefined = boot && {
       irreversible: false,
       impact: "批准后七层规则一次建好；整体结算不会自动启用。",
@@ -2901,7 +2901,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const k1 = k1TicketView(w);
                   const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
                   const mission = h3MissionView(w);
-                  const change = mission ? { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建" } : boot ? { main: `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? fBatchCell(batch.items, batch.count)
+                  const change = mission ? { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建" } : boot ? { main: f2BootstrapUsesRank(boot[0].usdtPct, boot[1].usdtPct) ? "第 1、2 层按受益人等级" : `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? fBatchCell(batch.items, batch.count)
                     : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w), a2TicketKey(w));
                   const name = actionName(w);
                   return (
@@ -3222,7 +3222,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             </section>
             : shownBoot ? <section className="a2-change-review" aria-label="完整变更内容">
               <div className="a2-change-title">完整变更内容 · 七层<Explain label="技术信息" content={`修改前原文 ${shown.before || "—"} ｜ 修改后原文 ${shown.after}`} /></div>
-              <F2BootstrapReview rows={shownBoot} label="要建立的七层规则" />
+              <F2BootstrapReview rows={shownBoot} label="要建立的七层规则" ranked={f2BootstrapUsesRank(shownBoot[0].usdtPct, shownBoot[1].usdtPct) ? null : undefined} />
             </section>
             : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)

@@ -29,6 +29,16 @@ export function f1ProposalAuthority(spec: ProposeSpec) {
   return spec.obj === "F.vrank.permanent" ? "network_f1_permanent_protection" : "network_f1_write";
 }
 
+export function isV8Promotion(spec: ProposeSpec | undefined) {
+  return spec?.command.op === "f_vrank_override" && spec.command.params.targetV === "V8" && spec.command.params.direction === "promote";
+}
+
+export function canSendF1Proposal(spec: ProposeSpec, authorities: readonly string[]) {
+  return authorities.includes(f1ProposalAuthority(spec))
+    && (spec.command.op === "f1_rank_policy_change" || authorities.includes("platform_a2_write")
+      || !isV8Promotion(spec) && authorities.includes("platform_a2_proposal_create"));
+}
+
 function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
   // 111e00cd OpsAuditCenterService.ticketMetadata returns command.op for F tickets.
   // Descriptors replace action/before/after; they are not request identity fields.
@@ -61,9 +71,8 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
   if (spec && original) throw new A2OutcomeUncertainError("请先查询保存的原操作。", original.commandKey);
   const intent = spec ?? original?.spec;
   if (!intent) throw new Error("原操作没有完整请求，请到操作记录核对。");
-  const v8Promotion = intent.command.op === "f_vrank_override" && intent.command.params.targetV === "V8" && intent.command.params.direction === "promote";
-  if (!current.authorities.includes(f1ProposalAuthority(intent))
-      || !current.authorities.some(a => a === "platform_a2_write" || !v8Promotion && a === "platform_a2_proposal_create")) throw new Error("ADMIN_PERMISSION_DENIED");
+  const v8Promotion = isV8Promotion(intent);
+  if (!canSendF1Proposal(intent, current.authorities)) throw new Error("ADMIN_PERMISSION_DENIED");
   if (!original) {
     const request = {
       action: intent.action, obj: intent.obj, beforeValue: intent.before, afterValue: intent.after,

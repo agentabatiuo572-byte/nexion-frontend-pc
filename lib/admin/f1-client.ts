@@ -2021,6 +2021,9 @@ async function f1Request<T>(
       // Preserve JSON decimal lexemes before parsing the rest of the overview.
       result = JSON.parse(raw.replace(/("(?:purchaseL1Rate|purchaseL2Rate|monthlySalaryUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
+    } else if (path === "/direct-referral-policy?schemaVersion=2" && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("level2RatePct"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
     } else if (path.startsWith("/reward-payouts") && !isWrite) {
       const raw = await response.text();
       // Preserve DECIMAL(18,6) before JSON.parse can round a JSON number.

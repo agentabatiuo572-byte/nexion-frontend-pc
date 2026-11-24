@@ -67,6 +67,7 @@ import { f5ConfirmationSlot, listF5Proposals, queryF5Proposal, releaseF5Proposal
 import { listF5AnomalyWrites, queryF5Anomaly, sendF5Anomaly } from "@/lib/admin/f5-anomaly-write";
 import { F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
 import { fetchBusinessCalendar, type BusinessCalendarView } from "@/lib/admin/business-calendar-client";
+import { readF5Filters, replaceTeamFilterParams } from "@/lib/admin/team-filter-url";
 import { listF1PolicyOperations, queryF1PolicyOperation, submitF1Policy } from "@/lib/admin/f1-policy-change";
 import { pendingConfigApproval, submitConfigApproval, teamFundApprovalAuthority, type TeamFundApprovalValues } from "@/lib/admin/withdrawal-config-approval";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
@@ -161,6 +162,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   });
   const salaryGeneration = useRef(0);
   const [f2RankRange, setF2RankRange] = useState<FViewCtx["f2RankPurchaseRange"]>(null);
+  const [f2RankRangeError, setF2RankRangeError] = useState<string | null>(null);
+  const [f2RankRangeLoading, setF2RankRangeLoading] = useState(false);
+  const f2PolicyGeneration = useRef(0);
+  const f2RangeGeneration = useRef(0);
   const bDomain = useBDomainDashboard(tab === "F1" && B_DASHBOARD_READ_AUTHORITIES.every(authority => session?.authorities.includes(authority)));
   const f1BenefitCoverage = bDomain.hasData && !bDomain.error && bDomain.ledger.valuationReliable
     ? { coverageRatio: bDomain.ledger.coverageRatio, redlinePct: bDomain.ledger.redlinePct, redlineBreached: bDomain.ledger.redlineBreached }
@@ -216,6 +221,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   } | null>(null);
   const [f5Loading, setF5Loading] = useState(tab === "F5");
   const [f5Error, setF5Error] = useState<string | null>(null);
+  const [f5AppendError, setF5AppendError] = useState<string | null>(null);
   const [f5Proposals, setF5Proposals] = useState<FDomainAttempt[]>([]);
   const [f5AnomalyWrites, setF5AnomalyWrites] = useState<FDirectAttempt[]>([]);
   const [f5ApprovalRows, setF5ApprovalRows] = useState<A2OperationRow[]>([]);
@@ -239,7 +245,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       f1PromotionGeneration.current += 1;
       f1PayoutGeneration.current += 1;
     }
-    if (tab !== "F2") f2Generation.current += 1;
+    if (tab !== "F2") { f2Generation.current += 1; f2PolicyGeneration.current += 1; f2RangeGeneration.current += 1; }
     if (tab !== "F3") f3Generation.current += 1;
     if (tab !== "F4") f4Generation.current += 1;
     if (tab !== "F5") {
@@ -315,54 +321,17 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     return () => { active = false; };
   }, [tab, session?.adminId]);
 
-  const refreshF1 = useCallback(async () => {
+  const refreshF1Membership = useCallback(async () => {
     const request = ++f1Generation.current;
-    const promotionRequest = ++f1PromotionGeneration.current;
-    const payoutRequest = ++f1PayoutGeneration.current;
     setF1Loading(true);
-    setF1PromotionLoading(true);
-    setF1PayoutLoading(true);
     setF1Error(null);
-    setF1PromotionError(null);
-    setF1PayoutError(null);
     try {
-      const [overview, promotions, payouts] = await Promise.allSettled([
-        fetchF1VRankOverview(),
-        fetchF1PromotionLog(),
-        fetchF1RewardPayouts(),
-      ]);
-      if (request !== f1Generation.current) return;
-      if (overview.status === "fulfilled") setF1Overview(overview.value);
-      else {
-        setF1Overview(null);
-        setF1Error(errorMessage(overview.reason));
-      }
-      if (promotionRequest === f1PromotionGeneration.current) {
-        if (promotions.status === "fulfilled") setF1Promotions(promotions.value);
-        else setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
-        if (promotions.status === "rejected") setF1PromotionError(errorMessage(promotions.reason));
-      }
-      if (payoutRequest === f1PayoutGeneration.current) {
-        if (payouts.status === "fulfilled") setF1Payouts(payouts.value);
-        else setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
-        if (payouts.status === "rejected") setF1PayoutError(errorMessage(payouts.reason));
-      }
+      const overview = await fetchF1VRankOverview();
+      if (request === f1Generation.current) setF1Overview(overview);
     } catch (error) {
-      if (request !== f1Generation.current) return;
-      setF1Overview(null);
-      setF1Error(errorMessage(error));
-      if (promotionRequest === f1PromotionGeneration.current) {
-        setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
-        setF1PromotionError(errorMessage(error));
-      }
-      if (payoutRequest === f1PayoutGeneration.current) {
-        setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
-        setF1PayoutError(errorMessage(error));
-      }
+      if (request === f1Generation.current) setF1Error(errorMessage(error));
     } finally {
       if (request === f1Generation.current) setF1Loading(false);
-      if (promotionRequest === f1PromotionGeneration.current) setF1PromotionLoading(false);
-      if (payoutRequest === f1PayoutGeneration.current) setF1PayoutLoading(false);
     }
   }, []);
 
@@ -400,9 +369,54 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   }, []);
 
+  const refreshF1 = useCallback(async () => {
+    await Promise.all([refreshF1Membership(), queryF1Promotions(), queryF1Payouts()]);
+  }, [refreshF1Membership, queryF1Promotions, queryF1Payouts]);
+
   useEffect(() => {
     if (tab === "F1") void refreshF1();
   }, [refreshF1, tab]);
+
+  const refreshF2RankRange = useCallback(async () => {
+    const request = ++f2RangeGeneration.current;
+    setF2RankRangeLoading(true);
+    setF2RankRangeError(null);
+    setF2RankRange(null);
+    try {
+      const range = f2RankPurchaseRange(await fetchF2PublicRankRates());
+      if (!range) throw new Error("九级比例未读完整");
+      if (request === f2RangeGeneration.current) setF2RankRange(range);
+    } catch (error) {
+      if (request === f2RangeGeneration.current) setF2RankRangeError(errorMessage(error));
+    } finally {
+      if (request === f2RangeGeneration.current) setF2RankRangeLoading(false);
+    }
+  }, []);
+
+  const refreshF2DirectPolicy = useCallback(async () => {
+    const request = ++f2PolicyGeneration.current;
+    f2RangeGeneration.current += 1;
+    setF2DirectPolicyLoading(true);
+    setF2DirectPolicyError(null);
+    setF2RankRange(null);
+    setF2RankRangeError(null);
+    setF2RankRangeLoading(false);
+    try {
+      const policy = await fetchF2DirectReferralPolicy();
+      if (request !== f2PolicyGeneration.current) return null;
+      setF2DirectPolicy(policy);
+      if (policy.sevenLayerReference.purchaseBaseRateSource === "BENEFICIARY_RANK") void refreshF2RankRange();
+      return policy;
+    } catch (error) {
+      if (request === f2PolicyGeneration.current) {
+        setF2DirectPolicy(null);
+        setF2DirectPolicyError(errorMessage(error));
+      }
+      return null;
+    } finally {
+      if (request === f2PolicyGeneration.current) setF2DirectPolicyLoading(false);
+    }
+  }, [refreshF2RankRange]);
 
   const refreshF2 = useCallback(async () => {
     setF2Proposals(session ? listF2Proposals(session.adminId) : []);
@@ -410,22 +424,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const request = ++f2Generation.current;
     setF2Loading(true);
     setF2Error(null);
-    setF2DirectPolicyLoading(true);
-    setF2DirectPolicyError(null);
     setF2ActivationPendingLoading(true);
     setF2ActivationPendingError(null);
     try {
       const [overview, policy, audit] = await Promise.allSettled([
-        fetchF2RatesOverview(), fetchF2DirectReferralPolicy(),
+        fetchF2RatesOverview(), refreshF2DirectPolicy(),
         canReadA2 ? fetchA2Overview({ domain: "F" }, true) : Promise.resolve(null),
       ]);
       if (request !== f2Generation.current) return null;
-      const ranked = policy.status === "fulfilled" && policy.value.sevenLayerReference.purchaseBaseRateSource === "BENEFICIARY_RANK";
-      const rankRows = ranked ? await fetchF2PublicRankRates().catch(() => []) : [];
-      if (request !== f2Generation.current) return null;
-      setF2RankRange(ranked ? f2RankPurchaseRange(rankRows) : null);
-      if (policy.status === "fulfilled") setF2DirectPolicy(policy.value);
-      else { setF2DirectPolicy(null); setF2DirectPolicyError(errorMessage(policy.reason)); }
       if (overview.status === "fulfilled") setF2Overview(overview.value);
       else { setF2Overview(null); setF2Error(errorMessage(overview.reason)); }
       const observed = session ? listF2Proposals(session.adminId).filter(row => row.ticket) : [];
@@ -449,9 +455,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF2Error(errorMessage(error));
       return null;
     } finally {
-      if (request === f2Generation.current) { setF2Loading(false); setF2DirectPolicyLoading(false); setF2ActivationPendingLoading(false); }
+      if (request === f2Generation.current) { setF2Loading(false); setF2ActivationPendingLoading(false); }
     }
-  }, [canReadA2, session?.adminId]);
+  }, [canReadA2, session?.adminId, refreshF2DirectPolicy]);
 
   useEffect(() => {
     if (tab === "F2") void refreshF2();
@@ -700,20 +706,32 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const refreshF5 = useCallback(async (query: F5CommissionQuery = f5Query.current) => {
     const request = ++f5Generation.current;
     const owner = useAdminAuth.getState().session?.adminId;
-    f5Query.current = query;
+    const append = !!query.cursor;
+    const base = { ...query, cursor: undefined };
+    if (!append) f5Query.current = base;
     const originals = owner === undefined ? [] : listF5Proposals(owner);
     setF5Proposals(originals);
     setF5AnomalyWrites(owner === undefined ? [] : listF5AnomalyWrites(owner));
     setF5Loading(true);
     setF5Error(null);
+    setF5AppendError(null);
     const [overview, queue, ...lookups] = await Promise.allSettled([
       fetchF5CommissionAuditOverview(query),
       canReadA2 ? fetchA2Overview({ domain: "F" }, true) : Promise.resolve(null),
       ...originals.map(row => queryF5Proposal(owner!, row)),
     ]);
     if (request !== f5Generation.current || owner !== useAdminAuth.getState().session?.adminId) return;
-    if (overview.status === "fulfilled") setF5Page({ overview: overview.value, query,
-      nextQuery: overview.value.nextCursor ? { ...query, cursor: overview.value.nextCursor } : null });
+    if (overview.status === "fulfilled") {
+      const page = overview.value;
+      setF5Page(current => {
+        const items = append && current ? [...current.overview.commissionEvents, ...page.commissionEvents] : page.commissionEvents;
+        return {
+          overview: { ...page, commissionEvents: [...new Map(items.map(row => [row.id, row])).values()] },
+          query: base,
+          nextQuery: page.nextCursor ? { ...base, cursor: page.nextCursor } : null,
+        };
+      });
+    } else if (append) setF5AppendError(errorMessage(overview.reason));
     else { setF5Page(null); setF5Error(errorMessage(overview.reason)); }
     const audit = queue.status === "fulfilled" ? queue.value as Awaited<ReturnType<typeof fetchA2Overview>> | null : null;
     setF5ApprovalRows([...(audit?.operationQueue ?? []), ...lookups.flatMap(row => row.status === "fulfilled" && row.value ? [row.value as A2OperationRow] : [])]);
@@ -779,17 +797,28 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   useEffect(() => {
-    if (tab === "F5") void refreshF5();
+    if (tab !== "F5") return;
+    const read = () => {
+      const filters = readF5Filters(new URLSearchParams(window.location.search));
+      replaceTeamFilterParams({ ...filters, cursor: undefined, limit: undefined });
+      void refreshF5({ ...filters, limit: "20" });
+    };
+    read();
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
   }, [refreshF5, tab]);
 
   const f2Tickets = [...f2ApprovalRows, ...f2Proposals.flatMap(row => row.ticket ? [row.ticket] : [])];
   const f2Pending = (key: string) => f2PendingFor(f2Tickets, key);
   const f2Record = (slot: string) => session ? f2ProposalRecord(session.adminId, slot) : undefined;
+  const f2BaseRateSource = f2DirectPolicyLoading || f2DirectPolicyError || !f2DirectPolicy
+    ? null : f2DirectPolicy.sevenLayerReference.purchaseBaseRateSource ?? "F2";
   const f2WriteBlocked = (slot: string): string | undefined => {
     if (slot !== F2_ACTIVATION_SLOT && (f2Loading || f2Error || !f2Overview)) return "七层比例没读到，这部分没有判断";
     // An empty active read is only a candidate: the server also checks hidden historical rows.
-    if ([F2_ACTIVATION_SLOT, F2_POLICY_SLOT, F2_BOOTSTRAP_SLOT, "f-config:F.unilevel.nex.L1"].includes(slot)
-        && (f2DirectPolicyLoading || f2DirectPolicyError || !f2DirectPolicy)) return "好友奖励政策没读到，暂不能改";
+    if ([F2_ACTIVATION_SLOT, F2_POLICY_SLOT, F2_BOOTSTRAP_SLOT, "f-config:F.unilevel.nex.L1", "f-config:F.unilevel.L2"].includes(slot)
+        && f2BaseRateSource === null) return "好友奖励政策没读到，暂不能改";
+    if (slot === "f-config:F.unilevel.L2" && f2BaseRateSource === "BENEFICIARY_RANK") return "第 2 层比例按受益人等级，在团队等级晋升设置";
     if (slot === F2_BOOTSTRAP_SLOT && f2Overview?.unilevel.length) return displayAdminError("F2_UNILEVEL_RULES_ALREADY_CONFIGURED");
     if (slot === "f-config-batch:F2") {
       const issue = fBatchIssueText(Array.from({ length: 7 }, (_, i) => `F.unilevel.L${i + 1}.paused`), session?.authorities ?? []);
@@ -798,7 +827,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const key = slot.startsWith("f-config:") ? slot.slice(9) : slot;
     if (f2Pending(key)) return "等另一位管理员批准";
     const layer = key.match(/^F\.unilevel\.(?:nex\.)?(L[1-7])$/)?.[1];
-    if (f2Proposals.some(row => !row.ticket && (row.fingerprint === slot || layer && row.spec.target?.type === "unilevel_rule" && row.spec.target.id === layer))) return "上一次申请结果未知，先按原请求重试或去核对";
+    if (f2Proposals.some(row => !row.ticket && (row.fingerprint === slot || layer && row.spec.target?.type === "unilevel_rule" && row.spec.target.id === layer))) return "上一次申请结果未知，请先查询原结果";
     return undefined;
   };
   const markF2Loading = () => {
@@ -848,7 +877,6 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const original = current && listF1Proposals(current.adminId).find(row => row.fingerprint === slot);
     if (!current || !original) throw new Error("原操作已处理，请重新读取后再操作。");
     f1Generation.current += 1;
-    setF1Overview(null);
     setF1Loading(true);
     let resolved = false;
     try {
@@ -897,10 +925,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
   // F 域 5 写函数统一改 A2 propose:按 key 分发到 4 polymorphic op(commit afe51f2)。
   const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string, expectedVersion?: number, amplifies?: boolean, expectedMaterialRevision?: number, snapshot?: F3ConfirmationSnapshot) => {
-    if (key === "F.unilevel.nex.L1") {
-      const current = await fetchF2DirectReferralPolicy();
-      setF2DirectPolicy(current);
-      if (current.sevenLayerEnabled && current.purchaseSplit.enabled) throw new Error("DIRECT_REFERRAL_L1_NEX_READONLY");
+    if (key === "F.unilevel.nex.L1" || key === "F.unilevel.L2") {
+      const current = await refreshF2DirectPolicy();
+      if (!current) throw new Error("好友奖励政策没读到，暂不能改");
+      if (key === "F.unilevel.L2" && current.sevenLayerReference.purchaseBaseRateSource === "BENEFICIARY_RANK") throw new Error("第 2 层比例按受益人等级，在团队等级晋升设置");
+      if (key === "F.unilevel.nex.L1" && current.sevenLayerEnabled && current.purchaseSplit.enabled) throw new Error("DIRECT_REFERRAL_L1_NEX_READONLY");
     }
     const op = resolveFOp(key);
     const def = findHighOp(op);
@@ -1075,9 +1104,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f1ProposalEpoch,
     recoverF1,
     refreshF1Approvals,
+    refreshF1Membership,
     invalidateF1: (message) => {
       f1Generation.current += 1;
-      setF1Overview(null);
       setF1Loading(false);
       setF1Error(message ?? "原操作正在核对，请重新读取后再发起新修改。");
     },
@@ -1223,8 +1252,12 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f2Metrics: f2Overview?.metrics ?? [],
     f2PayoutStatistics: f2Overview?.payoutStatistics,
     f2DirectPolicy,
-    f2PurchaseBaseRateSource: f2DirectPolicy?.sevenLayerReference.purchaseBaseRateSource,
+    f2PurchaseBaseRateSource: f2BaseRateSource,
     f2RankPurchaseRange: f2RankRange,
+    f2RankRangeError,
+    f2RankRangeLoading,
+    refreshF2RankRange,
+    refreshF2DirectPolicy,
     f2SevenLayerRevision: f2Overview?.sevenLayerRevision ?? null,
     f2DirectPolicyLoading,
     f2DirectPolicyError,
@@ -1425,6 +1458,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f5Overview: f5Page?.overview ?? null,
     f5AppliedQuery: f5Page?.query ?? null,
     f5NextQuery: f5Page?.nextQuery ?? null,
+    f5AppendError,
     f5Loading,
     f5Error,
     f5Proposals,

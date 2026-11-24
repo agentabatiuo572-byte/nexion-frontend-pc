@@ -9,6 +9,8 @@ import Link from "next/link";
 import { Clock3, HandCoins, ShoppingCart, Smartphone } from "lucide-react";
 import { BlockState, Button, DiffList, Explain, Field, Notice, NumberInput, Panel, RatioBar, Segments, StatusTag, type DiffRow } from "@/app/components/rd";
 import { directReferralAmplifies, directReferralSplitIssue, directReferralSummary, validateDirectReferralUpdate, type DirectReferralPolicy, type DirectReferralUpdate } from "@/lib/admin/direct-referral-policy";
+import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
+import { f4Decimal } from "@/lib/admin/f4-money";
 import { Fact, Facts, f2Ranked, num, rangeText, type F2Confirm } from "./f2-shared";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
@@ -30,7 +32,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
   const level2Now = policy?.deviceEarning.level2RatePct;
   const hasLevel2 = level2Now !== undefined;
   const level2 = draft?.deviceEarning.level2RatePct;
-  const level2Changed = hasLevel2 && level2 !== undefined && level2 !== level2Now;
+  const level2Changed = hasLevel2 && level2 !== undefined && compareDecimal(f4Decimal(level2) ?? "", level2Now) !== 0;
   const ranked = f2Ranked(ctx);
   const range = ranked ? ctx.f2RankPurchaseRange : undefined;
   const canOpenF1 = useAdminAuth((state) => !!state.session && canAccessResolvedPath(resolveVisibleDomains(state.session), "/network/v-rank"));
@@ -40,7 +42,9 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
   const busy = ctx.f2DirectPolicyLoading;
   const stale = !!draft && !!policy && (draft.expectedVersion !== policy.policyVersion || draft.expectedSevenLayerRevision !== policy.sevenLayerRevision || (ctx.f2SevenLayerRevision !== null && ctx.f2SevenLayerRevision !== policy.sevenLayerRevision));
   const invalid = draft && policy ? validateDirectReferralUpdate(draft) || directReferralSplitIssue(policy, draft) : null;
-  const changed = !!draft && !!policy && (JSON.stringify(draft.purchaseSplit) !== JSON.stringify(policy.purchaseSplit) || JSON.stringify(draft.deviceEarning) !== JSON.stringify(policy.deviceEarning));
+  const deviceChanged = !!draft && !!policy && (level2Changed
+    || JSON.stringify({ ...draft.deviceEarning, level2RatePct: undefined }) !== JSON.stringify({ ...policy.deviceEarning, level2RatePct: undefined }));
+  const changed = !!draft && !!policy && (JSON.stringify(draft.purchaseSplit) !== JSON.stringify(policy.purchaseSplit) || deviceChanged);
   const disabled = !!ctx.f2WriteBlocked("f-direct-referral-policy") || !allowed || busy || !!ctx.f2DirectPolicyError || !policy || !draft || stale || !policy.sevenLayerEnabled;
   const reset = async () => {
     const latest = await ctx.refreshF2();
@@ -53,15 +57,14 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
     { key: "splitUsdt", label: "好友购买奖励 · USDT / UVT", before: `${pct(before.purchaseSplit.usdtSharePct)} / ${pct(100 - before.purchaseSplit.usdtSharePct)}`, after: `${pct(after.purchaseSplit.usdtSharePct)} / ${pct(100 - after.purchaseSplit.usdtSharePct)}` },
     { key: "device", label: "好友设备收益奖励", before: onOff(before.deviceEarning.enabled), after: onOff(after.deviceEarning.enabled) },
     { key: "deviceTotal", label: hasLevel2 ? "好友设备收益奖励 · 一级比例" : "好友设备收益奖励 · 总比例", before: pct(before.deviceEarning.totalRatePct), after: pct(after.deviceEarning.totalRatePct) },
-    ...(hasLevel2 ? [{ key: "deviceL2", label: "好友设备收益奖励 · 二级比例", before: pct(before.deviceEarning.level2RatePct ?? NaN), after: pct(after.deviceEarning.level2RatePct ?? NaN) }] : []),
+    ...(hasLevel2 ? [{ key: "deviceL2", label: "好友设备收益奖励 · 二级比例", before: `${before.deviceEarning.level2RatePct}%`, after: `${after.deviceEarning.level2RatePct}%` }] : []),
     { key: "deviceUsdt", label: "好友设备收益奖励 · USDT / UVT", before: `${pct(before.deviceEarning.usdtSharePct)} / ${pct(100 - before.deviceEarning.usdtSharePct)}`, after: `${pct(after.deviceEarning.usdtSharePct)} / ${pct(100 - after.deviceEarning.usdtSharePct)}` },
     { key: "deviceCool", label: "好友设备收益奖励 · 冷却", before: `${before.deviceEarning.coolingDays} 天`, after: `${after.deviceEarning.coolingDays} 天` },
   ];
   const submit = () => {
     if (disabled || !draft || !policy || invalid || !changed) return;
-    const value = structuredClone(draft), reference = policy.sevenLayerReference, l2After = value.deviceEarning.level2RatePct ?? NaN;
+    const value = structuredClone(draft), reference = policy.sevenLayerReference, l2After = value.deviceEarning.level2RatePct;
     const splitChanged = JSON.stringify(value.purchaseSplit) !== JSON.stringify(policy.purchaseSplit);
-    const deviceChanged = JSON.stringify(value.deviceEarning) !== JSON.stringify(policy.deviceEarning);
     const scope = splitChanged && deviceChanged ? "之后发生的购买和设备收益" : splitChanged ? "之后发生的购买" : "之后的设备收益";
     const amplify = directReferralAmplifies(policy, value);
     openConfirm({
@@ -76,7 +79,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
       </Facts>,
       content: <div className="rd-stack">
         <DiffList rows={rows(policy, value)} restTitle="其余设置" />
-        {level2Changed && <p className="f2-diff-note">{`改后：好友的好友的设备每产生 100 USDT 收益，平台另给 ${num(l2After)} USDT 等值，拆法和一级一样。`}</p>}
+        {level2Changed && <p className="f2-diff-note">{`改后：好友的好友的设备每产生 100 USDT 收益，平台另给 ${l2After} USDT 等值，拆法和一级一样。`}</p>}
       </div>,
       statedBrief: { impact: `另一位管理员批准后生效，只算${scope}；批准前按原政策执行，已经算好的不变。${splitChanged ? "开启拆分后第 1 层的好友购买奖励按比例发 USDT 和 UVT，不再另加旧 UVT。" : ""}`, check: "提交前重读一次政策，已被别人改过就不提交；批准时再核对一次，调高方向检查兑付覆盖率。" },
       detail: `修改前：${directReferralSummary(policy)}。修改后：${directReferralSummary(value)}。（政策版本 ${policy.policyVersion}）`,
@@ -114,10 +117,11 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
       explain={ranked ? "购买拆分（只影响第 1 层）和设备收益奖励一起提交审批、一起生效。购买奖励的比例按受益人等级，在团队等级晋升设置。"
         : "好友购买奖励怎么拆成 USDT 和 UVT、好友有设备收益时平台另给邀请人多少，这两项是一组：一起提交审批、批准后一起生效。只影响直接邀请的好友（第 1 层），L2–L7 不变。"}>
       {busy && !draft ? <BlockState state="loading" title="好友奖励政策读取中" />
-        : ctx.f2DirectPolicyError && !draft ? <BlockState state="error" title="好友奖励政策没读到，这部分没有判断" detail={ctx.f2DirectPolicyError} onRetry={() => void ctx.refreshF2()} />
+        : ctx.f2DirectPolicyError && !draft ? <BlockState state="error" title="好友奖励政策没读到，这部分没有判断" detail={ctx.f2DirectPolicyError} onRetry={() => void ctx.refreshF2DirectPolicy()} />
           : <>
             <div className="f2-policy-notes">
-              {ctx.f2DirectPolicyError && <Notice tone="danger" title="好友奖励政策没读到">{ctx.f2DirectPolicyError} 已填的内容还在，可以刷新重试。</Notice>}
+              {ctx.f2DirectPolicyError && <Notice tone="danger" title="好友奖励政策没读到"
+                action={<Button size="sm" loading={busy} onClick={() => void ctx.refreshF2DirectPolicy()}>重试</Button>}>{ctx.f2DirectPolicyError} 已填的内容还在，可以刷新重试。</Notice>}
               {!allowed && <Notice tone="neutral" title="只能查看">改好友奖励政策需有「团队奖励比例」权限。</Notice>}
               {policy && !policy.sevenLayerEnabled && <Notice tone="neutral" title="整体结算启用后才能改">现在只能查看；启用后刷新页面即可修改。</Notice>}
               {policy && !policy.configured && <Notice tone="neutral" title="还没设置">下面的数字是默认占位，不代表正在生效；好友购买奖励现在不拆分，按第 1 层的 UVT 系数仍可能另发 UVT。</Notice>}
@@ -140,7 +144,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
                     </dl>
                     <p className="f2-mirror-note">按受益人的等级取<Explain label="比例按等级取的说明" content="每一级的一级、二级比例在「团队等级晋升」里按级设置，这里只显示九级里最低到最高。受益人每次按自己当时的等级取比例。" />{f1Link}</p>
                   </> : <dl className="f2-policy-ref">
-                    <div><dt>第 1 层比例</dt><dd aria-label="好友购买奖励 L1 奖励比例（只读）">{ref?.baseRatePct == null ? "未配置" : `${num(ref.baseRatePct)}%`}</dd></div>
+                    <div><dt>第 1 层比例</dt><dd aria-label="好友购买奖励 L1 奖励比例（只读）">{ctx.f2PurchaseBaseRateSource === null ? "—" : ref?.baseRatePct == null ? "未配置" : `${num(ref.baseRatePct)}%`}</dd></div>
                   </dl>}
                 </div>
                 <div className="f2-pair">
@@ -179,7 +183,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
                   </Field>
                   {hasLevel2 && <Field label="二级比例" help="0–100%" explain="好友的好友的设备每产生一笔收益，按这个比例给邀请人的邀请人。调高算平台多付钱，批准时检查兑付覆盖率。">
                     <NumberInput aria-label="好友设备收益奖励二级比例 (%)" unit="%" min={0} max={100} step={0.01} disabled={lock}
-                      value={Number.isFinite(level2) ? level2 : ""} onChange={(event) => setRule("deviceEarning", { level2RatePct: numberOf(event.target.value) })} />
+                      value={level2 ?? ""} onChange={(event) => setRule("deviceEarning", { level2RatePct: event.target.value })} />
                   </Field>}
                 </div>
                 {share("deviceEarning", "好友设备收益奖励")}

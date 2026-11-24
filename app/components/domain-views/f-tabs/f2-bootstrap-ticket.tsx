@@ -4,6 +4,7 @@
  * F2 待审批和 A2 列表、详情、批准框都从这里拆成七行，不在前端重算；格式对不上返回 undefined，页面照原文显示。
  */
 import { Cell, Table, Td, Th } from "@/app/components/rd";
+import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { LAYERS, LAYER_WHO, SAMPLE_ORDER, num, pctAdd, pctSample, rangeText } from "./f2-shared";
 
 /** 第 1、2 层按受益人等级时传九级最低、最高（百分数字符串）；读不到传 null；不传就按单一比例显示（A2 审批页照旧）。 */
@@ -23,6 +24,11 @@ export function parseF2BootstrapAfter(after: string | undefined): F2BootstrapRow
     rows.push({ layer: `L${match[1]}`, usdtPct: match[2], nexPerUsd: match[3] });
   }
   return rows;
+}
+
+/** The retained PC request writes zero placeholders for L1/L2. Fixed-rate requests require L1=10. */
+export function f2BootstrapUsesRank(first: string | null | undefined, second: string | null | undefined) {
+  return !!first && !!second && compareDecimal(first, "0") === 0 && compareDecimal(second, "0") === 0;
 }
 
 /** 两个不带符号的小数相乘，按整数算，不经浮点；去掉末尾 0。 */
@@ -74,7 +80,7 @@ export function F2BootstrapReview({ rows, label = "七层规则", ranked }: { ro
             const lo = rng ? pctSample(rng.min) : null, hi = rng ? pctSample(rng.max) : null;
             return <tr key={row.layer}>
               <Td>{row.layer} {LAYER_WHO[LAYERS[index]]}</Td>
-              <Td align="right"><span className="f2-ranked"><strong>{rng ? rangeText(rng.min, rng.max) : "—"}</strong><span className="f2-ranked-sub">按受益人等级</span></span></Td>
+              <Td align="right"><span className="f2-ranked"><strong>{rng ? rangeText(rng.min, rng.max) : "区间未知"}</strong><span className="f2-ranked-sub">按受益人等级</span></span></Td>
               <Td align="right">{num(row.nexPerUsd)}</Td>
               <Td align="right">{lo && hi ? <Cell num main={rangeText(lo, hi, "USDT")} sub={`另发 ${rangeText(f2DecimalTimes(lo, row.nexPerUsd), f2DecimalTimes(hi, row.nexPerUsd), "USDT").replace(/ USDT$/, "")} UVT`} /> : "—"}</Td>
             </tr>;

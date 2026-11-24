@@ -86,7 +86,10 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const canApproveV8 = useAdminAuth(({ session }) => !!session
     && session.authorities.includes("network_f1_promote_user")
     && session.authorities.includes("platform_a2_write"));
-  const salaryPresent = ctx.f1SalaryFieldPresent === true;
+  const canWithdrawV8 = useAdminAuth(({ session }) => !!session
+    && session.authorities.includes("platform_a2_proposal_create")
+    && canAccessResolvedPath(resolveVisibleDomains(session), "/platform/audit"));
+  const salaryPresent = ctx.f1SalaryFieldPresent === true || ctx.f1SalaryFieldPresent === undefined && !!ctx.f1Error && requestedView === "salary";
   const view = requestedView === "v8" && !v8Review || requestedView === "salary" && !salaryPresent ? "ladder" : requestedView;
   useEffect(() => {
     const read = () => {
@@ -103,7 +106,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const writeQuery = (key: string, value: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set(key, value);
-    window.history.replaceState(null, "", url);
+    window.history.replaceState(window.history.state, "", url);
   };
   const setView = (value: View) => { setRequestedView(value); writeQuery("tab", value); };
   const lenses = salaryPresent ? LENSES : LENSES.filter((item) => item.value !== "salary");
@@ -141,22 +144,99 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   </Fragment>;
   const recovery = <F1RecoveryNotice ctx={ctx} onOpenPolicy={setPolicyEditor} onRankHowChecked={() => setHowEpoch((value) => value + 1)} />;
 
+  const rewardsOf = (v: string): OpsVRankRewardItem[] => ctx.rewards[v] ?? [];
+  // V8 审核：审核通过走现有人工改级（A2 审批），用户、目标 V8、方向升级预先填好（画板 B5）。升 V8 不查兑付覆盖率，所以不按放大算、不出覆盖率块。
+  const openV8Approve = (candidate: F1V8Candidate, recoverOriginal = false) => {
+    if (!recoverOriginal && (ctx.f1Loading || ctx.f1Error)) return;
+    const v7 = rows.find((row) => row.v === "V7");
+    const v8 = rows.find((row) => row.v === "V8");
+    const v8Rewards = rewardsOf("V8");
+    const lead = v8Rewards.length === 1 && (v8Rewards[0].type === "usdt" || v8Rewards[0].type === "uvt") ? rewardText(v8Rewards[0], ctx) : undefined;
+    const name = candidate.nickname || candidate.userCode;
+    const rate = (row: F1VRankRow | undefined, key: "purchaseL1Rate" | "purchaseL2Rate") => row ? ratePct(row[key]) : undefined;
+    const l1 = [rate(v7, "purchaseL1Rate"), rate(v8, "purchaseL1Rate")], l2 = [rate(v7, "purchaseL2Rate"), rate(v8, "purchaseL2Rate")];
+    const salary = [v7?.monthlySalaryUsdt?.trim(), v8?.monthlySalaryUsdt?.trim()];
+    setConfirm({
+      proposalSlot: `f-vrank-override:${candidate.userId}`,
+      v8Review: true,
+      recoverOriginal,
+      action: "手动调整会员等级",
+      title: `V8 审核通过 · ${name}`,
+      briefKind: "config",
+      confirmLabel: "提交审批",
+      effect: <StatusTag tone="progress" filled icon={Clock3} explain={`${ADMIN_APPROVER}（需有人工调级权限和审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
+      statedBrief: { impact: `另一位有人工调级权限的管理员批准后，${name}升到 V8；批准前还是 V7，名单里这一行显示待审批。`, check: "核对推荐信和官方审核；理由写推荐信来自哪位 V8、官方审核的依据。" },
+      facts: <Facts>
+        {lead
+          ? <Fact k="V8 晋级奖励 · 发给本人" lead>{lead.main}{lead.unit && <span className="rd-fact-unit">{lead.unit}</span>}<small className="f1-lead-note">以前领过 V8 晋级奖励的不再发</small></Fact>
+          : <Fact k="V8 晋级奖励 · 发给本人">{v8Rewards.length ? `${v8Rewards.map((item) => rewardLine(item, ctx)).join("、")}；以前领过的不再发` : "没有晋级奖励"}</Fact>}
+        <Fact k="用户">{candidate.nickname || "—"} · <span data-mono="">{candidate.userCode}</span></Fact>
+        <Fact k="等级"><Change from="V7" to="V8" /></Fact>
+        <Fact k="邀请人">{candidate.inviterCode ? <>{candidate.inviterNickname || "—"} · <span data-mono="">{candidate.inviterCode}</span></> : "—"}</Fact>
+        {l1[0] && l1[1] && l2[0] && l2[1] && <Fact k="好友购买奖励">一级 <Change from={`${l1[0]}%`} to={`${l1[1]}%`} /> · 二级 <Change from={`${l2[0]}%`} to={`${l2[1]}%`} /></Fact>}
+        {salary[0] && salary[1] && <Fact k="月薪"><Change from={amountDisplay(salary[0])} to={`${amountDisplay(salary[1])} USDT`} />，批准后次日起；本月已领的不补差</Fact>}
+        <Fact k="能否收回">{canWithdrawV8 && "批准前可在「操作记录与审批」撤回；"}批准后奖励不收回，之后人工降级也不收回</Fact>
+      </Facts>,
+      reasonPlaceholder: "写推荐信来自哪位 V8、官方审核的依据",
+      dialogClassName: "f1-policy-confirm f1-v8-confirm",
+      detail: "人工把这位用户升到 V8，提交后需在「操作记录与审批」批准才执行。",
+      submit: async (reason) => {
+        try { await ctx.proposeVRankOverride(candidate.userId, "V8", "promote", reason); }
+        catch (error) {
+          if ((error as { backendMessage?: string }).backendMessage === "OBJECT_ALREADY_PENDING") {
+            throw new Error("没有提交：这位用户已有一张改级单在等审批，处理完再提交。");
+          }
+          throw error;
+        }
+        await ctx.queryV8Review?.();
+      },
+      done: "已提交，等待审批后执行",
+    });
+  };
+
+  const v8Count = v8Review ? v8Review.error ? "—" : v8Review.pendingReviewCount ?? undefined : undefined;
+  const tabs = [
+    { value: "ladder" as const, label: "等级与奖励" },
+    ...(v8Review ? [{ value: "v8" as const, label: "V8 审核", count: v8Count, countTone: "neutral" as const }] : []),
+    { value: "promotions" as const, label: "晋升记录" },
+    { value: "payouts" as const, label: "奖励发放记录" },
+    ...(salaryPresent ? [{ value: "salary" as const, label: "月薪领取" }] : []),
+    { value: "howto" as const, label: "App 等级说明" },
+  ];
+  const v8Ready = typeof v8Count === "number" && v8Count > 0 && view !== "v8";
+
+  const tabBar = <div className="f1-tabs-row">
+    <PageTabs label="团队等级晋升" value={view} items={tabs} onChange={setView} ids={ids} />
+    {v8Ready && <p className="f1-tabs-note">{v8Count} 位 V7 已满足 V8 数值条件，可审核 · <button type="button" className="rd-link" onClick={() => setView("v8")}>去 V8 审核 →</button></p>}
+  </div>;
+
   if (rows.length === 0) {
     const body = ctx.f1Loading
       ? <><Conclusion state="unknown">正在读取会员等级…</Conclusion>{recovery}<Panel title="九级阶梯"><BlockState state="loading" title="正在读取会员等级" /></Panel></>
       : ctx.f1Error
         ? <><Conclusion state="danger">会员等级读取失败，这部分没有判断</Conclusion>
           {recovery}
-          <Panel title="九级阶梯"><BlockState state="error" title="会员等级读取失败" detail={ctx.f1Error} onRetry={() => void ctx.refreshF1()} /></Panel></>
+          <Panel title="九级阶梯"><BlockState state="error" title="会员等级读取失败" detail={ctx.f1Error} onRetry={() => void ctx.refreshF1Membership()} /></Panel></>
         : canWrite
           ? <>{recovery}<F1VrankBootstrap ctx={ctx} openConfirm={setConfirm} /></>
           : <><Conclusion state="neutral" icon={Layers3}>还没有建立会员等级</Conclusion>
             {recovery}
             <Panel title="九级阶梯"><BlockState state="empty" title="还没有建立会员等级" detail="有修改权限的同事可以发起首次配置，另一位管理员批准后这里才会出现九级。" /></Panel></>;
-    return <div className="f1-page">{header}{body}{dialogs}</div>;
+    if (!ctx.f1Error && !ctx.f1Loading) return <div className="f1-page">{header}{body}{dialogs}</div>;
+    return <div className="f1-page">{header}
+      {view === "v8" || view === "salary" ? recovery : null}
+      {tabBar}
+      <div {...ids.panel(view)} className="f1-view">
+        {view === "v8" && v8Review ? <F1V8Review ctx={ctx} state={v8Review} v8={undefined} canApprove={canApproveV8} onApprove={openV8Approve} />
+          : view === "salary" && salaryPresent ? <F1SalaryClaims ctx={ctx} rows={rows} />
+            : view === "promotions" ? <F1PromotionHistory ctx={ctx} rows={rows} canPromote={false} onOverride={() => {}} />
+              : view === "payouts" ? <F1PayoutHistory ctx={ctx} rows={rows} canReissue={false} canReverse={false} openConfirm={setConfirm} />
+                : view === "howto" ? <F1RankHow key={howEpoch} ladder={rows} toast={ctx.toast} onPendingChange={() => setRecoveryEpoch(value => value + 1)} /> : body}
+      </div>
+      {dialogs}
+    </div>;
   }
 
-  const rewardsOf = (v: string): OpsVRankRewardItem[] => ctx.rewards[v] ?? [];
   const selected = rows.find((row) => row.v === picked) ?? rows.find((row) => row.v === "V1") ?? rows[0];
   const total = rows.reduce((sum, row) => sum + row.pop, 0);
   const v0Pop = rows.find((row) => row.v === "V0")?.pop ?? 0;
@@ -286,7 +366,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 
   const openThreshold = (row: F1VRankRow, field: F1ConditionField) => setPolicyEditor({ row, action: "threshold", field, valuation: ctx.f1RewardValuation });
   const detail = <RankDetail row={selected} rows={rows} ctx={ctx} rewards={rewardsOf(selected.v)} title={titlesByLevel[selected.v] ?? selected.label}
-    panel={ladderIds.panel(selected.v)} canWrite={canWrite} pendingOf={pendingOf} hasPendingApproval={pendingApprovalRanks.has(selected.v)}
+    panel={ladderIds.panel(selected.v)} canWrite={canWrite} pendingOf={pendingOf} hasPendingApproval={pendingApprovalRanks.has(selected.v)} hasUnknownOperation={rowPending(selected) > 0}
     onThreshold={openThreshold} onBenefit={(field) => setPolicyEditor({ row: selected, action: "threshold", field, valuation: ctx.f1RewardValuation })}
     onGoV8={v8Review ? () => setView("v8") : undefined} salaryPresent={salaryPresent}
     onReward={(action, reward) => setPolicyEditor({ row: selected, action, reward, valuation: ctx.f1RewardValuation })}
@@ -361,19 +441,19 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           when="提交审批，另一位管理员批准后生效；之后每次评估用户时按新设置判断，不是批准时扫描全部用户。"
           effect="开启：下一次评估没达标也保留现在的等级，不会把已经降级的人恢复，人工降级不受这项限制。关闭：降到实际达到的等级，团队激励池票数按所在等级算，已发的奖励不收回。"
           action={canProtect ? <span className="f1-row-actions">
-            {permanent !== "on" && <Button size="sm" onClick={() => openProtection("on")}>开启保护</Button>}
-            {permanent !== "off" && <Button size="sm" variant="danger-outline" onClick={() => openProtection("off")}>{permanent === "unset" ? "设为关闭" : "关闭保护"}</Button>}
+            {permanent !== "on" && <Button size="sm" disabled={ctx.f1Loading || !!ctx.f1Error} onClick={() => openProtection("on")}>开启保护</Button>}
+            {permanent !== "off" && <Button size="sm" variant="danger-outline" disabled={ctx.f1Loading || !!ctx.f1Error} onClick={() => openProtection("off")}>{permanent === "unset" ? "设为关闭" : "关闭保护"}</Button>}
           </span> : undefined} />
         <ConfigRow name="奖品名称" value={prizeName ? <span className="f1-strong">{prizeName}</span> : <span className="f1-weak">未配置</span>}
           what="会员等级奖品的显示名字，不影响奖励和晋升。"
           where="这页显示；这个名字也会发给 App，App 现在没有地方显示它。没配置时发默认名。"
           when="提交审批，另一位管理员批准后生效。"
-          action={canWrite ? <Button size="sm" onClick={openPrize}>{prizeName ? "修改" : "配置"}</Button> : undefined} />
+          action={canWrite ? <Button size="sm" disabled={ctx.f1Loading || !!ctx.f1Error} onClick={openPrize}>{prizeName ? "修改" : "配置"}</Button> : undefined} />
         <ConfigRow name="各级头衔" value={<span className="f1-strong">已设置 {titleCount}/{rows.length} 级</span>}
           what="每一级的称呼，只用于显示，不影响奖励和晋升。"
           where="这页的等级卡和发给 App 的等级名；App 现在只显示 V0–V8，不显示头衔。"
           when="提交审批，另一位管理员批准后生效；每一级都要填。"
-          action={canWrite ? <Button size="sm" onClick={openTitles}>设置头衔</Button> : undefined} />
+          action={canWrite ? <Button size="sm" disabled={ctx.f1Loading || !!ctx.f1Error} onClick={openTitles}>设置头衔</Button> : undefined} />
         <ConfigRow name="团队激励池" value={leadership
           ? <span className="f1-strong">{leadership.unlockRank > 0 ? `从 V${leadership.unlockRank} 起有票数` : "没有等级有票数"}</span>
           : <span className="f1-weak">—</span>}
@@ -455,78 +535,18 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
-  // V8 审核：审核通过走现有人工改级（A2 审批），用户、目标 V8、方向升级预先填好（画板 B5）。升 V8 不查兑付覆盖率，所以不按放大算、不出覆盖率块。
-  const openV8Approve = (candidate: F1V8Candidate, recoverOriginal = false) => {
-    const v7 = rows.find((row) => row.v === "V7");
-    const v8 = rows.find((row) => row.v === "V8");
-    const v8Rewards = rewardsOf("V8");
-    const lead = v8Rewards.length === 1 && (v8Rewards[0].type === "usdt" || v8Rewards[0].type === "uvt") ? rewardText(v8Rewards[0], ctx) : undefined;
-    const name = candidate.nickname || candidate.userCode;
-    const rate = (row: F1VRankRow | undefined, key: "purchaseL1Rate" | "purchaseL2Rate") => row ? ratePct(row[key]) : undefined;
-    const l1 = [rate(v7, "purchaseL1Rate"), rate(v8, "purchaseL1Rate")], l2 = [rate(v7, "purchaseL2Rate"), rate(v8, "purchaseL2Rate")];
-    const salary = [v7?.monthlySalaryUsdt?.trim(), v8?.monthlySalaryUsdt?.trim()];
-    setConfirm({
-      proposalSlot: `f-vrank-override:${candidate.userId}`,
-      v8Review: true,
-      recoverOriginal,
-      action: "手动调整会员等级",
-      title: `V8 审核通过 · ${name}`,
-      briefKind: "config",
-      confirmLabel: "提交审批",
-      effect: <StatusTag tone="progress" filled icon={Clock3} explain={`${ADMIN_APPROVER}（需有人工调级权限和审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
-      statedBrief: { impact: `另一位有人工调级权限的管理员批准后，${name}升到 V8；批准前还是 V7，名单里这一行显示待审批。`, check: "核对推荐信和官方审核；理由写推荐信来自哪位 V8、官方审核的依据。" },
-      facts: <Facts>
-        {lead
-          ? <Fact k="V8 晋级奖励 · 发给本人" lead>{lead.main}{lead.unit && <span className="rd-fact-unit">{lead.unit}</span>}<small className="f1-lead-note">以前领过 V8 晋级奖励的不再发</small></Fact>
-          : <Fact k="V8 晋级奖励 · 发给本人">{v8Rewards.length ? `${v8Rewards.map((item) => rewardLine(item, ctx)).join("、")}；以前领过的不再发` : "没有晋级奖励"}</Fact>}
-        <Fact k="用户">{candidate.nickname || "—"} · <span data-mono="">{candidate.userCode}</span></Fact>
-        <Fact k="等级"><Change from="V7" to="V8" /></Fact>
-        <Fact k="邀请人">{candidate.inviterCode ? <>{candidate.inviterNickname || "—"} · <span data-mono="">{candidate.inviterCode}</span></> : "—"}</Fact>
-        {l1[0] && l1[1] && l2[0] && l2[1] && <Fact k="好友购买奖励">一级 <Change from={`${l1[0]}%`} to={`${l1[1]}%`} /> · 二级 <Change from={`${l2[0]}%`} to={`${l2[1]}%`} /></Fact>}
-        {salary[0] && salary[1] && <Fact k="月薪"><Change from={amountDisplay(salary[0])} to={`${amountDisplay(salary[1])} USDT`} />，批准后次日起；本月已领的不补差</Fact>}
-        <Fact k="能否收回">批准前可在「操作记录与审批」撤回；批准后奖励不收回，之后人工降级也不收回</Fact>
-      </Facts>,
-      reasonPlaceholder: "写推荐信来自哪位 V8、官方审核的依据",
-      dialogClassName: "f1-policy-confirm f1-v8-confirm",
-      detail: "人工把这位用户升到 V8，提交后需在「操作记录与审批」批准才执行。",
-      submit: async (reason) => {
-        try { await ctx.proposeVRankOverride(candidate.userId, "V8", "promote", reason); }
-        catch (error) {
-          if ((error as { backendMessage?: string }).backendMessage === "OBJECT_ALREADY_PENDING") {
-            throw new Error("没有提交：这位用户已有一张改级单在等审批，处理完再提交。");
-          }
-          throw error;
-        }
-        await ctx.queryV8Review?.();
-      },
-      done: "已提交，等待审批后执行",
-    });
-  };
-
-  const v8Count = v8Review ? v8Review.error ? "—" : v8Review.pendingReviewCount ?? undefined : undefined;
-  const tabs = [
-    { value: "ladder" as const, label: "等级与奖励" },
-    ...(v8Review ? [{ value: "v8" as const, label: "V8 审核", count: v8Count, countTone: "neutral" as const }] : []),
-    { value: "promotions" as const, label: "晋升记录" },
-    { value: "payouts" as const, label: "奖励发放记录" },
-    ...(salaryPresent ? [{ value: "salary" as const, label: "月薪领取" }] : []),
-    { value: "howto" as const, label: "App 等级说明" },
-  ];
-  const v8Ready = typeof v8Count === "number" && v8Count > 0 && view !== "v8";
-
   return (
     <div className="f1-page">
       {header}
       {conclusion}
       {recovery}
-      {ctx.f1Error && <Notice tone="danger" title="刚才重新读取失败，下面是上一次读到的内容" action={<Button size="sm" onClick={() => void ctx.refreshF1()}>重试</Button>}>{ctx.f1Error}</Notice>}
       {stats}
-      <div className="f1-tabs-row">
-        <PageTabs label="团队等级晋升" value={view} items={tabs} onChange={setView} ids={ids} />
-        {v8Ready && <p className="f1-tabs-note">{v8Count} 位 V7 已满足 V8 数值条件，可审核 · <button type="button" className="rd-link" onClick={() => setView("v8")}>去 V8 审核 →</button></p>}
-      </div>
+      {tabBar}
       <div {...ids.panel(view)} className="f1-view">
-        {view === "ladder" && <>{ladder}{detail}{shared}</>}
+        {view === "ladder" && <>
+          {ctx.f1Error && <Notice tone="danger" title="刚才重新读取失败，下面是上一次读到的内容" action={<Button size="sm" onClick={() => void ctx.refreshF1Membership()}>重试</Button>}>{ctx.f1Error}</Notice>}
+          {ladder}{detail}{shared}
+        </>}
         {view === "v8" && v8Review && <F1V8Review ctx={ctx} state={v8Review} v8={rows.find((row) => row.v === "V8")} canApprove={canApproveV8} onApprove={openV8Approve} />}
         {view === "salary" && salaryPresent && <F1SalaryClaims ctx={ctx} rows={rows} />}
         {view === "promotions" && <F1PromotionHistory ctx={ctx} rows={rows} canPromote={canPromote} onOverride={openOverride} />}
@@ -540,7 +560,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 }
 
 /** 选中一级的详情：上排晋升条件 | 等级权益，下排晋级奖励 | 这一级的其他设置（画板 A1、A5）。 */
-function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf, hasPendingApproval, onThreshold, onBenefit, onReward, onGoV8, salaryPresent }: {
+function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf, hasPendingApproval, hasUnknownOperation, onThreshold, onBenefit, onReward, onGoV8, salaryPresent }: {
   row: F1VRankRow;
   rows: F1VRankRow[];
   ctx: FViewCtx;
@@ -550,6 +570,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
   canWrite: boolean;
   pendingOf: (editor: Omit<F1PolicyEditor, "valuation">) => unknown;
   hasPendingApproval: boolean;
+  hasUnknownOperation: boolean;
   onThreshold: (row: F1VRankRow, field: F1ConditionField) => void;
   onBenefit: (field: F1BenefitField) => void;
   onReward: (action: "reward_add" | "reward_update" | "reward_remove", reward?: OpsVRankRewardItem) => void;
@@ -568,7 +589,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
   // 这一级有待审批单：条件、权益、晋级奖励同一个审批锁，按钮都禁用并写原因（B83 同一套锁）。
   const lock = hasPendingApproval ? "等审批结果：批准、驳回或撤回后再改"
     : ctx.f1Loading || ctx.f1Error ? "请先成功重新读取会员等级。"
-    : [ "purchaseL1Rate", "purchaseL2Rate", "monthlySalaryUsdt" ].some(field => isF1BenefitField(field) && pendingOf({ row, action: "threshold", field }))
+    : hasUnknownOperation
       ? "这一级有结果未知的原操作，请先查询原结果。" : undefined;
 
   const single = (field: "selfBuy" | "teamGv" | "directRefs", source: F1VRankRow | undefined) => {
