@@ -395,7 +395,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
       </Table>
       <Fold title="怎么填" summary={`名称 ${APP_VISIBLE_TEXT_HINT}，最多 ${NAME_MAX} 个字符；权重是 1 起的整数`} inset>
         <ul className="hc-help">
-          <li>名称写进新交付的设备，App 订单和设备详情里可见，要用英文。</li>
+          <li>名称写进新交付的设备，显示在 App 订单和设备详情里。</li>
           <li>权重越大，分到的新设备越多；停用的机房也要留着权重，重新启用后按这个权重分配。</li>
           <li>已交付的设备不会因为改名、停用或调权重而换机房。</li>
         </ul>
