@@ -187,10 +187,9 @@ export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule,
   const dirty = isE2TaskEditorDirty(state);
   const weightUp = before && validTaskWeight(draft.weight) && validTaskWeight(before.weight) && !sameWeight(draft.weight, before.weight)
     ? taskWeightMicros(draft.weight) > taskWeightMicros(before.weight) : null;
-  const direction = weightUp === null || !task ? undefined : !task.enabled ? `这条任务已停用，现在不参加分配；启用后会比调整前分得${weightUp ? "多" : "少"}一些。`
-    : weightUp ? "调高后，这条任务在同等级里分得更多，其他任务相应少一些。" : "调低后，这条任务在同等级里分得更少，其他任务相应多一些。";
+  const direction = weightUp === null || !task ? undefined : !task.enabled ? `这条任务已停用，现在不参加分配；启用后，它相对同等级其他任务的权重比调整前${weightUp ? "高" : "低"}。`
+    : weightUp ? "调高后，这条任务相对同等级其他启用任务的权重变高。" : "调低后，这条任务相对同等级其他启用任务的权重变低。";
   const range = levelWeightRange && `本等级启用的 ${levelWeightRange.count} 个任务：权重 ${formatWeight(levelWeightRange.min)}${sameWeight(levelWeightRange.min, levelWeightRange.max) ? "" : `–${formatWeight(levelWeightRange.max)}`}`;
-  const otherChanged = rows.some(row => row.before !== row.after);
   const reasonRejected = outcome.kind === "rejected" && outcome.code === "REASON_LENGTH_INVALID" ? outcome.message : undefined;
   const close = () => { if (!saving) onClose(); };
   const continueEditing = () => { onContinue(); set({ step: "form" }); };
@@ -276,7 +275,7 @@ export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule,
             <Fact k="新增后">{draft.enabled ? "立即启用" : "先不启用"}</Fact>
           </>}
         </Facts>
-        {mode === "update" && (otherChanged || !nameChanged) && <DiffList rows={rows} restTitle="其余内容" />}
+        {mode === "update" && <DiffList rows={rows} restTitle="其余内容" emptyNote={nameChanged ? "只改了名称" : undefined} />}
         {direction && <p className="e2-editor-note">{direction}</p>}
         {!unknown && <Notice tone="neutral">{mode === "update" ? "只影响之后新派的任务；已派出的按派出时的时长和收益完成。"
           : draft.enabled ? "确认后加入当前等级，供之后新派的任务使用。" : "确认后先加为停用，不参加派单；在任务表启用后才会派。"}</Notice>}

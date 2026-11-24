@@ -641,7 +641,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         if (!rejected.includes(releasing.commandKey) || isRetryExpired(releasing)) return;
         e2Commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); close(); void refresh();
       }}>确认解除</Button></>}>
-      <div className="rd-stack"><ReleaseBody label={`${releasing.pool.code} ${releasing.pool.name} · ${e2CommandLabel(releasing)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只删掉这条原操作记录，不算核查结案。" /><Facts><Fact k="首次提交">{businessStamp(releasing.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{releasing.request.body.reason}</Fact></Facts></div>
+      <div className="rd-stack"><ReleaseBody label={`${releasing.pool.code} ${releasing.pool.name} · ${e2CommandLabel(releasing)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只删掉本页保存的这条记录，不写入操作记录，也不算核查结案。" /><Facts><Fact k="首次提交">{businessStamp(releasing.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{releasing.request.body.reason}</Fact></Facts></div>
     </Modal> : dialog && <Modal title={originalExpired ? "原操作已过重试时限" : dialog.original ? "核对原操作" : dialog.kind === "random" ? "随机添加任务" : dialog.enabled ? "批量启用任务" : "批量停用任务"}
       icon={dialog.kind === "random" ? Plus : ClipboardList} tone={dialog.kind === "status" && !dialog.enabled ? "danger" : "neutral"}
       sub={dialog.original ? undefined : <StatusTag tone="progress" filled>立即生效</StatusTag>} busy={saving} dirty={!!dialog.original || !!reason || count !== "10" || classes.length > 0} onClose={close}
@@ -657,7 +657,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             outcome={outcomes[dialog.original.commandKey]} canClose={canInvestigate} />}
           <Facts><Fact k="任务等级">{dialog.pool.code} {dialog.pool.name}</Fact>
             {dialog.original && <><Fact k="原操作">{e2CommandLabel(dialog.original)}</Fact><Fact k="首次提交">{businessStamp(dialog.original.createdAt)} · {businessZoneText()} · {dialog.original.actorName}</Fact></>}
-            {dialog.kind === "status" && <Fact k={dialog.enabled ? "本次启用" : "本次停用"}>{dialog.tasks.length} 个任务</Fact>}
+            {dialog.kind === "status" && <Fact k={dialog.enabled ? "本次启用" : "本次停用"}>{dialog.tasks.length} 个任务 · 整批一起生效，有一个改不了就都不改</Fact>}
             {dialog.kind === "random" && dialog.original && <><Fact k="任务数量">{dialog.original.request.kind === "random" ? dialog.original.request.body.count : "—"} 个</Fact><Fact k="限定类型">{dialog.original.request.kind === "random" && dialog.original.request.body.taskClasses ? dialog.original.request.body.taskClasses.map(value => TASK_CLASS_LABELS[value]).join("、") : "不限类型"}</Fact></>}
           </Facts>
           {!dialog.original && (dialog.kind === "random" || dialog.enabled) && <Notice tone="neutral">{dialog.kind === "random" ? "生成后立即加入当前等级，仅影响之后新派的任务。" : "只影响之后新派的任务，不改当前单。"}</Notice>}
