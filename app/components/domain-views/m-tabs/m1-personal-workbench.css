@@ -12,7 +12,10 @@
 .m1-recent-list>li{display:grid;grid-template-columns:minmax(100px,1fr) minmax(100px,2fr) auto;align-items:center;gap:12px;padding-block:12px;border-bottom:1px solid var(--rd-line)}
 .m1-recent-list>li>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m1-personal-table{table-layout:fixed;width:100%}
-.m1-personal-table col:nth-child(1){width:27%}.m1-personal-table col:nth-child(2){width:17%}.m1-personal-table col:nth-child(3){width:12%}.m1-personal-table col:nth-child(4){width:17%}.m1-personal-table col:nth-child(5){width:14%}.m1-personal-table col:nth-child(6){width:13%}
+/* 客户、邀请人、上次活动、账户 / 维护、待办、操作（PRD §4.3，画布 05）。 */
+.m1-personal-table col:nth-child(1){width:22%}.m1-personal-table col:nth-child(2){width:16%}.m1-personal-table col:nth-child(3){width:19%}.m1-personal-table col:nth-child(4){width:13%}.m1-personal-table col:nth-child(5){width:15%}.m1-personal-table col:nth-child(6){width:15%}
+/* 1024：上次活动（2026-11-17 19:24）一行放下，头像收起后客户列让出宽度。 */
+@media(max-width:1100px){.m1-personal-table col:nth-child(1){width:19%}.m1-personal-table col:nth-child(2){width:15%}.m1-personal-table col:nth-child(3){width:21%}.m1-personal-table col:nth-child(4){width:13%}.m1-personal-table col:nth-child(5){width:16%}.m1-personal-table col:nth-child(6){width:16%}}
 .m1-personal-table :is(th,td){white-space:normal;overflow:hidden}
 .m1-personal-table .rd-note{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .m1-customer-name>div{display:flex;flex-direction:column;min-width:0}
@@ -62,3 +65,8 @@ span.m1-tile-value{cursor:default}
 .m1-personal .rd-fold-body>.rd-notice{margin-bottom:12px}
 .m1-nowrap{white-space:nowrap}
 .m1-tiles>li>span:first-child{text-wrap:balance}
+/* 资料重读时底栏左边常显一句为什么不能操作（OP-126）。 */
+.m1-drawer-actions > .rd-toolbar-note, .rd-modal-foot > .rd-toolbar-note { margin: 0 auto 0 0; }
+/* 抽屉里人数这一组：包一层好接焦点，间距和抽屉正文一样（gap 12）；读到后程序聚焦时给焦点环（CP-05）。 */
+.m1-counts-scope { display: flex; flex-direction: column; gap: 12px; min-width: 0; border-radius: var(--rd-radius-control); }
+.m1-counts-scope:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }

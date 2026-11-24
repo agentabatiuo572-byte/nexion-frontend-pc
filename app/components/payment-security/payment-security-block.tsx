@@ -27,7 +27,7 @@ function stateTag(record: PaymentSecurityRecord) {
   return <StatusTag tone={record.state === "RELEASED" ? "ok" : "done"}>{stateText(record)}</StatusTag>;
 }
 
-export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canRelease, retryMissingRelease, onState }: {
+export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canRelease, retryMissingRelease, writeBlockedReason, onWriteBusy, onState }: {
   port: PaymentSecurityPort;
   userLabel: string;
   /** 页面刷新时变，这一块跟着重读。 */
@@ -35,6 +35,8 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   /** 有独立解除权限才给入口（OP-124）。能不能解除这一条还看后端 capability。 */
   canRelease: boolean;
   retryMissingRelease?: boolean;
+  writeBlockedReason?: string;
+  onWriteBusy?: (busy: boolean) => void;
   onState?: (state: PaymentSecurityState, pending: boolean) => void;
 }) {
   const session = useAdminAuth((state) => state.session), epoch = useAdminAuth((state) => state.authEpoch);
@@ -92,10 +94,11 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
             <div className="rd-toolbar">
               <Button size="sm" onClick={() => setSelected({ id: record.id, release: false })}>查看详情</Button>
               {record.state === "ACTIVE" && canRelease && <Button size="sm" variant="primary"
-                disabledReason={pending ? "有一笔解除结果未知，先查询原结果" : record.capabilities.releaseAllowed ? undefined : record.capabilities.disabledReason || "现在不能解除"}
+                disabledReason={pending ? "有一笔解除结果未知，先查询原结果" : record.capabilities.releaseAllowed ? writeBlockedReason : record.capabilities.disabledReason || "现在不能解除"}
                 onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</Button>}
             </div>
-            {record.state === "ACTIVE" && canRelease && !pending && !record.capabilities.releaseAllowed && <p className="rd-toolbar-note">{record.capabilities.disabledReason || "现在不能解除"}</p>}
+            {/* 不能解除的原因常显在按钮下（OP-126）：后端不让解除优先，其次是资料正在重读；结果未知由下面的提示条说。 */}
+            {record.state === "ACTIVE" && canRelease && !pending && (!record.capabilities.releaseAllowed || writeBlockedReason) && <p className="rd-toolbar-note">{!record.capabilities.releaseAllowed ? record.capabilities.disabledReason || "现在不能解除" : writeBlockedReason}</p>}
           </>}
           {summary && !record && <p className="rd-detail-empty">历史处置记录仍保留。</p>}
           {summary && <p className="rd-toolbar-note">查询时间 {formatBusinessTimeCompact(summary.observedAt, "暂无记录")}</p>}
@@ -103,7 +106,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
             action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原结果</Button>} />}
         </div>
       </Fold>
-      {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} retryMissingRelease={retryMissingRelease} onClose={() => { setSelected(null); setPending(!!pendingPaymentRelease(owner, port.userId)); }} />}
+      {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} retryMissingRelease={retryMissingRelease} writeBlockedReason={writeBlockedReason} onWriteBusy={onWriteBusy} onClose={() => { setSelected(null); setPending(!!pendingPaymentRelease(owner, port.userId)); }} />}
     </>
   );
 }

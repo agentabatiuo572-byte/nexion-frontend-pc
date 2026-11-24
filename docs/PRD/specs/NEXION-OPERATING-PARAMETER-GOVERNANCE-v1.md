@@ -168,7 +168,7 @@ legalMarketGate / claimIds / userDisclosureVersion
 | PAR-097 | `withdrawal.fee_min_usdt` | DECIMAL/USDT | 旧最低网络费；现行提现费用不再使用 | C3/new-intent snapshot | LEGACY_COMPAT |
 | PAR-098 | `withdrawal.fee_max_usdt` | DECIMAL/USDT | 旧最高网络费；现行提现费用不再使用 | C3/new-intent snapshot | LEGACY_COMPAT |
 | PAR-099 | `withdrawal.nex_fee_offset_rate` | DECIMAL/比例 | D5 NEX 抵扣率；相关代币功能仍受合规门禁 | C3/new-intent snapshot | ACTIVE_FACT / CANONICAL |
-| PAR-100 | `withdrawal.min_usdt` | DECIMAL/USDT | USDT 最低提现额本轮固定 20 USDT，D5 无配置入口；可配置能力另排需求 | C3/new-intent | ACTIVE_FACT / CANONICAL |
+| PAR-100 | `withdrawal.min_usdt` | INTEGER/USDT | D5「额度和时效」设置链上最低提现额，缺失时由迁移预置 20 USDT，0 表示不限；调高立即生效，调低经审批生效 | D5/链上提现新单 | ACTIVE_FACT / CANONICAL |
 | PAR-101 | `withdrawal.trc20.enabled` | BOOLEAN | TRC20 网络可用性 | C4/dynamic | ACTIVE_FACT / CANONICAL |
 | PAR-102 | `withdrawal.erc20.enabled` | BOOLEAN | ERC20 网络可用性 | C4/dynamic | ACTIVE_FACT / CANONICAL |
 | PAR-103 | `withdrawal.d5.version` | INTEGER | D5 参数变更版本；当前仅锁定/递增 canonical，尚无持续 mirror 比较任务 | C3/dynamic | ACTIVE_FACT / DRIFT-SENTINEL IMPLEMENTATION GAP |

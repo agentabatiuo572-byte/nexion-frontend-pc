@@ -8,6 +8,7 @@ export const H1_DIAL_LIMITS = {
   questBonusMultiplier: { min: 1, max: 4 },
   withdrawPenaltyFeeRate: { min: 0, max: 100 },
   withdrawCooldownDays: { min: 0, max: 90 },
+  complianceReviewThresholdUsdt: { min: 1, max: 999999999999 },
   binaryDailyCap: { min: 0, max: 50000 },
   complianceHoldEnabled: { min: 0, max: 1 },
 } as const;
@@ -25,6 +26,10 @@ export function h1DialIssue(key: string, value: string): string | undefined {
   const next = Number(value);
   const limits = H1_DIAL_LIMITS[key as keyof typeof H1_DIAL_LIMITS] ?? H1_DIAL_LIMITS.newUserBonusMultiplier;
   if (key === "withdrawCooldownDays") return Number.isInteger(next) && next >= limits.min && next <= limits.max ? undefined : "到账审查窗口须为 0–90 的整数天；0 天也要人工审查";
+  if (key === "complianceReviewThresholdUsdt") {
+    return Number.isInteger(next) && next >= limits.min && next <= limits.max
+      ? undefined : formatAdminApiError("H1_COMPLIANCE_THRESHOLD_INVALID", "合规大额线须为正整数");
+  }
   // B4-BE-05 changes new saves only. Keep the shared read minimum at zero for historical snapshots.
   if (key === "binaryDailyCap") return next > 0 && next <= limits.max ? undefined : formatAdminApiError("H1_BINARY_DAILY_CAP_INVALID", "H1_BINARY_DAILY_CAP_INVALID");
   return next >= limits.min && next <= limits.max ? undefined : "加成须为 1–4 倍";

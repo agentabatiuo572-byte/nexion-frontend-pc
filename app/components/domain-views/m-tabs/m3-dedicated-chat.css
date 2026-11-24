@@ -39,7 +39,10 @@
 .m3s-more { min-width: 0; }
 .m3s-more .rd-select { max-width: 100%; min-width: 0; padding-left: var(--rd-space-2); background: transparent; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .m3s-more[data-on] .rd-select { background: var(--rd-control); color: var(--rd-text); font-weight: var(--rd-weight-medium); }
-.m3s-row-note { flex: none; margin: 0; padding: var(--rd-space-1) var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m3s-row-note { flex: none; display: flex; align-items: baseline; min-width: 0; margin: 0; padding: var(--rd-space-1) var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: nowrap; }
+/* 一行写完，只在客户名字里省略（ST-04）；前后的字和「看全部」不缩。 */
+.m3s-row-note-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.m3s-row-note .rd-link-button { flex: none; margin-left: var(--rd-space-1); }
 .m3s-batch { display: flex; align-items: center; gap: var(--rd-space-2); flex-wrap: wrap; padding: var(--rd-space-2); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); font-size: var(--rd-text-aux); }
 .m3s-batch > [role="status"] { flex: 1; min-width: 80px; color: var(--rd-text-2); }
 .m3s-rows { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: var(--rd-space-1) var(--rd-space-2); display: flex; flex-direction: column; gap: 2px; }

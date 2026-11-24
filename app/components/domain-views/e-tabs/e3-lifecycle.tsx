@@ -123,13 +123,6 @@ function capacityAt(policy: Record<string, string>, month: number) {
     * factor(3) ** Math.max(month - mid, 0));
 }
 const curveOf = (policy: Record<string, string>, months: number) => Array.from({ length: months + 1 }, (_, month) => capacityAt(policy, month));
-/** 第一个超过 100% 的月份；App 目前拒绝显示这种产能（E3-DEC-03）。 */
-function overHundred(policy: Record<string, string>, months: number) {
-  const curve = curveOf(policy, Math.max(months, num(policy["E.device.stageMidEnd"]) + 12));
-  const month = curve.findIndex((value) => value > 100.000001);
-  return month < 0 ? null : { month, value: curve[month] };
-}
-const OVER_HUNDRED = "App 目前不接受超过 100% 的产能";
 
 export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const reach = useReach();
@@ -304,15 +297,11 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : LEGACY_LOCKED : !e3Proposals.allowed(batch) ? "没有发起审批的权限，修改要先提交审批" : undefined}>{label}</Button>
     : undefined;
 
-  // ── 产能的预览：改后第几个月是多少，超过 100% 时写 App 现状 ──
+  // ── 产能的预览：改后第几个月是多少 ──
   const keyMonths = [...new Set([s1, s2, cyc])];
   const capPreview = (key: string) => (value: string) => {
     const next = { ...policy, [key]: value };
-    const over = overHundred(next, cyc);
-    return <>
-      <span>改后第 {keyMonths.join("、")} 月：{keyMonths.map((m) => capText(capacityAt(next, m))).join("、")}（现在 {keyMonths.map((m) => capText(capacityAt(policy, m))).join("、")}）。只对参与下降的 {declining.length} 类商品生效。</span>
-      {over && <span className="e3p-warn" role="status">{OVER_HUNDRED}：按这个值，第 {over.month} 月起超过 100%（{capText(over.value)}）。</span>}
-    </>;
+    return <span>改后第 {keyMonths.join("、")} 月：{keyMonths.map((m) => capText(capacityAt(next, m))).join("、")}（现在 {keyMonths.map((m) => capText(capacityAt(policy, m))).join("、")}）。只对参与下降的 {declining.length} 类商品生效。</span>;
   };
   const capFacts = (key: string, stage: string) => <Facts><Fact k="改的是">{stage}</Fact><Fact k="影响谁">参与逐月下降的 {declining.length} 类商品的设备；免递减的始终 100%</Fact></Facts>;
   const bandSingle = (band: 1 | 2 | 3) => {
@@ -428,8 +417,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             coverageLead: "这次改动会让某些月份的产能变高，平台多付任务收益",
             facts: <Facts><Fact k="现在">前期到第 {s1} 月，中期到第 {s2} 月，图上画 {cyc} 个月</Fact><Fact k="影响谁">参与逐月下降的 {declining.length} 类商品的设备</Fact></Facts>,
             fields: [
-              { key: "early", paramKey: "E.device.stageEarlyEnd", label: "前期截止月", inputKind: "number", placeholder: "3", explain: "前期从第 1 月到这个月。",
-                warning: (v) => { const over = overHundred({ ...policy, "E.device.stageEarlyEnd": v.early, "E.device.stageMidEnd": v.mid }, num(v.total)); return over ? `${OVER_HUNDRED}：第 ${over.month} 月起超过 100%。` : undefined; } },
+              { key: "early", paramKey: "E.device.stageEarlyEnd", label: "前期截止月", inputKind: "number", placeholder: "3", explain: "前期从第 1 月到这个月。" },
               { key: "mid", paramKey: "E.device.stageMidEnd", label: "中期截止月", inputKind: "number", placeholder: "8", explain: "中期从前期之后到这个月；后期从下一个月开始。" },
               { key: "total", paramKey: "E.device.cycleMonths", label: "曲线显示月数", inputKind: "number", placeholder: "12", explain: "这页的产能图画多少个月，不影响用户的产能。" },
             ],
