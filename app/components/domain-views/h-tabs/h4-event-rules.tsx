@@ -88,7 +88,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   const load = async (preserve = false) => {
     const own = ++generation.current; setLoading(true); setError("");
     try { const values = await fetchEventRules(); if (own === generation.current) { setRuleRows(values); setReadFailed(false); if (!preserve) { setSelected(null); setDraft(null); } return values; } return null; }
-    catch (cause) { if (own === generation.current) { setReadFailed(true); setError(displayAdminError(cause)); } return null; }
+    catch (cause) { if (own === generation.current) { setReadFailed(true); setError(displayAdminReadError(cause)); } return null; }
     finally { if (own === generation.current) setLoading(false); }
   };
   useEffect(() => {
@@ -107,7 +107,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     if (selected?.kind !== "seasonal" || !canRead || !canReadVouchers) return;
     setVoucherLoading(true);
     fetchEventVouchers().then(values => { if (alive) setVouchers(values); })
-      .catch(cause => { if (alive) setVoucherError(displayAdminError(cause)); })
+      .catch(cause => { if (alive) setVoucherError(displayAdminReadError(cause)); })
       .finally(() => { if (alive) setVoucherLoading(false); });
     return () => { alive = false; };
   }, [selected?.eventCode, selected?.kind, canRead, canReadVouchers, operator, voucherRetry]);
