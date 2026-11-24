@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
 import { fDirectSettledText, fProposalEndText } from "./f-tabs/f-release";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { lookupOriginalProposal, proposalRetryBlockedReason } from "@/lib/admin/proposal-recovery";
 import { f4HeadCapAmplifies, f4MoneyAmplifies, f4MonthlyCap } from "@/lib/admin/f4-money";
 import { f4WeeklyCronIssue } from "@/lib/admin/f4-settlement-config";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -55,13 +56,13 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { createA2CommandKey, fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { type FDomainAttempt, commandAttempts, F2_ACTIVATION_SLOT, F2_POLICY_SLOT, F2_BOOTSTRAP_SLOT, f2PendingFor, f2ProposalRecord, listF2Proposals, queryF2Proposal, releaseF2Proposal, sendF2Proposal, type F2Recovery } from "@/lib/admin/f2-approval";
 import { F3_SETTLEMENT_SLOT, f3ConfigSlot, f3PayoutControlSpec, f3PendingFor, listF3Proposals, queryF3Proposal, releaseF3Proposal, sendF3Proposal, settlementSpec, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
-import { listF3ConfigWrites, pendingF3ConfigWrite, queryF3ConfigWrite, sendF3ConfigWrite } from "@/lib/admin/f3-config-write";
+import { listF3ConfigWrites, pendingF3ConfigWrite, queryF3ConfigWrite, releaseRejectedF3ConfigWrite, sendF3ConfigWrite } from "@/lib/admin/f3-config-write";
 import { isF3PayoutControlKey, planF3PayoutControl, type F3PayoutControlKey } from "@/lib/admin/f3-policy";
 import { listF1Proposals, queryF1Proposal, releaseF1Proposal, sendF1Proposal } from "@/lib/admin/f1-approval";
-import { canRetryF4Proposal, F4_POLICY_SLOT, f4PendingFor, f4PolicySpec, listF4Proposals, matchesF4Confirmation, queryF4Proposal, sendF4Proposal, type F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
-import { canRetryF4Policy, listF4PolicyWrites, queryF4Policy, sendF4Policy } from "@/lib/admin/f4-policy-write";
+import { F4_POLICY_SLOT, f4PendingFor, f4PolicySpec, f4ProposalRetryBlockedReason, listF4Proposals, matchesF4Confirmation, queryF4Proposal, releaseF4RejectedProposal, sendF4Proposal, type F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
+import { canRetryF4Policy, listF4PolicyWrites, queryF4Policy, releaseRejectedF4Policy, sendF4Policy } from "@/lib/admin/f4-policy-write";
 import { f5ConfirmationSlot, listF5Proposals, queryF5Proposal, releaseF5Proposal, sendF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
-import { listF5AnomalyWrites, queryF5Anomaly, sendF5Anomaly } from "@/lib/admin/f5-anomaly-write";
+import { listF5AnomalyWrites, queryF5Anomaly, releaseRejectedF5Anomaly, sendF5Anomaly } from "@/lib/admin/f5-anomaly-write";
 import { F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { listF1PolicyOperations, queryF1PolicyOperation } from "@/lib/admin/f1-policy-change";
@@ -403,11 +404,15 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const recoverF3 = async (original: FDomainAttempt, mode: "query" | "retry" | "release" = "query") => {
     const owner = useAdminAuth.getState().session?.adminId;
     if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    if (mode === "release") {
+      releaseF3Proposal(owner, original);
+      setF3Proposals(listF3Proposals(owner));
+      return null;
+    }
     setF3Overview(null); setF3Loading(true); setF3ReadEpoch(value => value + 1);
     try {
-      const ticket = mode === "release" ? (await releaseF3Proposal(owner, original), null)
-        : mode === "retry" ? await sendF3Proposal(owner, original.fingerprint)
-        : await queryF3Proposal(owner, original);
+      const ticket = mode === "retry" ? await sendF3Proposal(owner, original.fingerprint)
+        : await lookupOriginalProposal(original, () => queryF3Proposal(owner, original));
       if (ticket) {
         setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请刷新后核对。");
         setActionConfirm(null);
@@ -479,6 +484,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     } finally {
       if (owner === useAdminAuth.getState().session?.adminId) await refreshF3();
     }
+  };
+
+  const releaseF3PayoutControl = async (key: F3PayoutControlKey) => {
+    const owner = useAdminAuth.getState().session?.adminId;
+    if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    releaseRejectedF3ConfigWrite(owner, key);
+    setF3ConfigWrites(listF3ConfigWrites(owner));
   };
 
   const refreshF4VoteProjection = useCallback(async () => {
@@ -554,6 +566,16 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const recoverF4: FViewCtx["recoverF4"] = async (record, mode) => {
     const owner = useAdminAuth.getState().session?.adminId;
     if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    if (mode === "release") {
+      if (record.kind === "proposal") {
+        releaseF4RejectedProposal(owner, record.original.commandKey);
+        setF4Proposals(listF4Proposals(owner));
+      } else {
+        releaseRejectedF4Policy(owner, record.original.commandKey);
+        setF4PolicyWrites(listF4PolicyWrites(owner));
+      }
+      return true;
+    }
     const original = record.kind === "proposal" ? listF4Proposals(owner).find(row => row.commandKey === record.original.commandKey)
       : listF4PolicyWrites(owner).find(row => row.commandKey === record.original.commandKey);
     if (!original) { setActionConfirm(null); return true; }
@@ -571,10 +593,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           const result = await queryF4Policy(owner, original as FDirectAttempt);
           resolved = result.settled;
           if (resolved) setToast(fDirectSettledText(result.receipt!.originalStatus));
-          else note({ tone: "warn", text: isRetryExpired(original) ? "这次没查到结论，结果仍未知；已过 24 小时，到操作记录与审批核对。" : "这次没查到结论，结果仍未知；可以稍后再查。" });
+          else note({ tone: "warn", text: isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "这次没查到结论，结果仍未知；可以稍后再查。" });
         }
       } else {
-        const ticket = mode === "retry" ? await sendF4Proposal(owner, original.fingerprint) : await queryF4Proposal(owner, original);
+        const ticket = mode === "retry" ? await sendF4Proposal(owner, original.fingerprint)
+          : await lookupOriginalProposal(original, () => queryF4Proposal(owner, original));
         resolved = !!ticket;
         if (mode === "query") {
           if (!ticket) note({ tone: "warn", text: isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "没查到原审批单，可以稍后再查。" });
@@ -647,11 +670,20 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
     const original = (record.kind === "proposal" ? listF5Proposals(owner) : listF5AnomalyWrites(owner)).find(row => row.commandKey === record.original.commandKey);
     if (!original) return true;
+    if (mode === "release") {
+      if (record.kind === "proposal") {
+        releaseF5Proposal(owner, original);
+        setF5Proposals(listF5Proposals(owner));
+      } else {
+        releaseRejectedF5Anomaly(owner, original.commandKey);
+        setF5AnomalyWrites(listF5AnomalyWrites(owner));
+      }
+      return true;
+    }
     f5Generation.current += 1;
     setF5Page(null); setF5Loading(true);
     try {
       if (record.kind === "anomaly") {
-        if (mode === "release") throw new Error("直接保存的原操作只能核对，不能解除记录。");
         if (mode === "retry") await sendF5Anomaly(owner);
         else {
           const result = await queryF5Anomaly(owner, original as FDirectAttempt);
@@ -668,11 +700,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         }
         return true;
       }
-      const ticket = mode === "release" ? (await releaseF5Proposal(owner, original), null)
-        : mode === "retry" ? await sendF5Proposal(owner, original.fingerprint) : await queryF5Proposal(owner, original);
+      const ticket = mode === "retry" ? await sendF5Proposal(owner, original.fingerprint)
+        : await lookupOriginalProposal(original, () => queryF5Proposal(owner, original));
       if (ticket) setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请核对奖励记录。");
       else if (mode === "query") setToast("没有查到原审批单，不能据此认定没有提交。");
-      return mode === "release" || !!ticket;
+      return !!ticket;
     } finally { await refreshF5(); }
   };
 
@@ -747,7 +779,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const policy = listF1PolicyOperations(current.adminId).filter(row => row.original.approval);
     const results = await Promise.allSettled([
       ...(current.authorities.includes("platform_a2_read") ? [fetchA2Overview({}, true)] : []),
-      ...policy.map(row => queryF1PolicyOperation(current.adminId, row.commandKey)),
+      ...policy.map(row => queryF1PolicyOperation(current.adminId, row.commandKey, false)),
       ...listF1Proposals(current.adminId).filter(row => row.spec).map(row => queryF1Proposal(current.adminId, row)),
     ]);
     if (useAdminAuth.getState().session?.adminId !== current.adminId) return;
@@ -762,19 +794,19 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const current = useAdminAuth.getState().session;
     const original = current && listF1Proposals(current.adminId).find(row => row.fingerprint === slot);
     if (!current || !original) throw new Error("原操作已处理，请重新读取后再操作。");
+    if (mode === "release") {
+      releaseF1Proposal(current.adminId, original);
+      setF1ProposalEpoch(value => value + 1);
+      return true;
+    }
     f1Generation.current += 1;
     setF1Overview(null);
     setF1Loading(true);
     let resolved = false;
     try {
-      if (mode === "release") {
-        await releaseF1Proposal(current.adminId, original);
-        resolved = true;
-      } else {
-        const ticket = mode === "query" ? await queryF1Proposal(current.adminId, original) : await sendF1Proposal(current.adminId, slot);
-        resolved = !!ticket;
-        if (ticket) setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请刷新后核对。");
-      }
+      const ticket = mode === "query" ? await lookupOriginalProposal(original, () => queryF1Proposal(current.adminId, original)) : await sendF1Proposal(current.adminId, slot);
+      resolved = !!ticket;
+      if (ticket) setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请刷新后核对。");
       return resolved;
     } finally {
       if (resolved || !listF1Proposals(current.adminId).some(row => row.commandKey === original.commandKey)) setF1ReadEpoch(value => value + 1);
@@ -1142,18 +1174,15 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF2Overview(null); setF2DirectPolicy(null); setF2ApprovalRows([]);
       try {
         // 查到什么由恢复区那一行原地写，这里不再另弹轻提示。
-        return await queryF2Proposal(session.adminId, original);
+        return await lookupOriginalProposal(original, () => queryF2Proposal(session.adminId, original));
       } finally { await refreshF2(); setF2Proposals(listF2Proposals(session.adminId)); }
     },
     releaseF2Proposal: async slot => {
       if (!session) throw new Error("ADMIN_PERMISSION_DENIED");
       const original = f2Record(slot);
       if (!original) return;
-      setF2ReadEpoch(value => value + 1);
-      markF2Loading();
-      setF2Overview(null); setF2DirectPolicy(null); setF2ApprovalRows([]);
-      try { await releaseF2Proposal(session.adminId, original); }
-      finally { await refreshF2(); setF2Proposals(listF2Proposals(session.adminId)); }
+      releaseF2Proposal(session.adminId, original);
+      setF2Proposals(listF2Proposals(session.adminId));
     },
     recoverF2SevenLayerActivation: () => sendF2(F2_ACTIVATION_SLOT),
     bootstrapF2Unilevel: async (layers, reason) => {
@@ -1236,7 +1265,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f3Loading,
     f3Error,
     refreshF3,
-    getF3PayoutControlPending, submitF3PayoutControl, recoverF3PayoutControl,
+    getF3PayoutControlPending, submitF3PayoutControl, recoverF3PayoutControl, releaseF3PayoutControl,
     updateF3Config: async (key, value, reason, amplifies, snapshot) => {
       if (isF3PayoutControlKey(key)) await submitF3PayoutControl(key, value, reason, snapshot);
       else await proposeFConfig("F3", key, value, reason, undefined, amplifies, undefined, snapshot);
@@ -1471,6 +1500,15 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         businessForm={mc.businessForm}
         initialReason={mc.f4Snapshot ? f4PendingReason() : teamApproval?.source === "F3" ? f3FundPending?.spec?.reason : undefined}
         getPendingReason={mc.f4Snapshot ? f4PendingReason : teamApproval?.source === "F3" ? () => listF3Proposals(session!.adminId).find(row => row.spec?.command.op === "f3_binary_settle")?.spec?.reason : undefined}
+        getPendingRecovery={mc.f4Snapshot ? () => {
+          const original = f4PendingOriginal();
+          if (!original) return;
+          const record = "f4Request" in original ? { kind: "policy" as const, original }
+            : { kind: "proposal" as const, original: original as FDomainAttempt };
+          return { expiresAt: original.expiresAt, blockedReason: record.kind === "proposal" ? f4ProposalRetryBlockedReason(record.original)
+            : proposalRetryBlockedReason(record.original) ?? (!canRetryF4Policy(record.original) ? "原操作记录不完整或权限已变化，只能查询原结果。" : undefined),
+            queryOnlyAfterExpiry: true, query: async () => { await recoverF4(record, "query"); } };
+        } : undefined}
         getPendingBusinessValue={mc.f4Snapshot ? () => f4PendingOriginal()?.f4Snapshot?.businessValue : teamApproval?.source === "F3" && f3FundPending?.spec ? () => {
           const values = f3FundPending.spec!.command.params.values as TeamFundApprovalValues["F3"];
           return { ownerUserId: String(values.ownerUserId), settlementDate: values.settlementDate };
@@ -1479,9 +1517,6 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           ...teamApproval,
           resolve: teamApproval?.resolve ?? (() => undefined),
           dialogClassName: teamApproval ? "team-fund-confirm f4-policy-confirm" : undefined,
-          pending: !!f4ModalRecord,
-          initialRecovery: "retry",
-          expired: !!f4ModalRecord && (f4ModalRecord.kind === "proposal" ? !canRetryF4Proposal(f4ModalRecord.original) : !canRetryF4Policy(f4ModalRecord.original)),
           expiredRequestRecovery: f4ModalRecord && isRetryExpired(f4ModalRecord.original) ? "query" : undefined,
           recover: async () => {
             const original = f4ModalRecord ?? (() => {
@@ -1498,7 +1533,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           expired: !!pendingTeamApproval && (pendingTeamApproval.expiresAt <= Date.now() || teamApproval.source === "F3" && (!f3FundPending?.request || !!f3FundPending?.received)),
           expiredRequestRecovery: teamApproval.source === "F3" && pendingTeamApproval && isRetryExpired(pendingTeamApproval) ? "query" : undefined,
           disabledReason: mc.teamApprovalOwner === session?.adminId && canSubmitTeamApproval(teamApproval.source)
-            ? undefined : "当前账号没有这项操作的权限，请关闭弹窗后重新核对。",
+            ? f3FundPending && teamApproval.source === "F3" ? proposalRetryBlockedReason(f3FundPending, f3FundPending.received || !!f3FundPending.ticket) : undefined
+            : "当前账号没有这项操作的权限，请关闭弹窗后重新核对。",
           recover: () => submitTeamApproval(teamApproval.source, null, "", true, mc.teamApprovalOwner),
           retry: async () => { await submitTeamApproval(teamApproval.source, null, "", "retry-original", mc.teamApprovalOwner); },
         } : undefined}

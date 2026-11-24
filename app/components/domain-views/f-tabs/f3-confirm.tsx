@@ -10,7 +10,7 @@ import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, t
 import type { FViewCtx } from "./types";
 import { canRetryF3Proposal, listF3Proposals } from "@/lib/admin/f3-approval";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { proposalRetryBlockedReason } from "@/lib/admin/proposal-recovery";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /** 审批人叫法照「全站-审批人叫法」：F3 单项配置批准要另一位有这项业务权限和审批批准权限的管理员，不要求超级管理员。 */
@@ -69,25 +69,12 @@ export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; c
       initialReason={original?.spec?.reason}
       getPendingReason={() => saved()?.spec?.reason}
       getPendingBusinessValue={() => businessValue}
-      inlineApproval={{
-        resolve: () => undefined,
-        pending: !!original,
-        initialRecovery: "retry",
-        expired: !!original && !canRetryF3Proposal(original),
-        expiredRequestRecovery: original && isRetryExpired(original) ? "query" : undefined,
-        recover: async () => {
-          const record = saved();
-          if (!record) { onClose(); return true; }
-          const ticket = await ctx.recoverF3(record);
-          if (ticket) { onClose(); return true; }
-          return false;
-        },
-        retry: async () => {
-          const record = saved();
-          if (!record) { onClose(); return; }
-          try { await ctx.recoverF3(record, "retry"); onClose(); }
-          catch (error) { if (!saved()) onClose(); throw error; }
-        },
+      getPendingRecovery={() => {
+        const record = saved();
+        return record && { expiresAt: record.expiresAt, queryOnlyAfterExpiry: true,
+          blockedReason: proposalRetryBlockedReason(record, record.received || !!record.ticket)
+            ?? (!canRetryF3Proposal(record) ? "原操作记录不完整或权限已变化，只能查询原结果。" : undefined),
+          query: async () => { if (await ctx.recoverF3(record)) onClose(); } };
       }}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {

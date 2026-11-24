@@ -1,8 +1,9 @@
 import { createA2CommandKey } from "./a2-client";
 import { fetchF4AmbassadorPolicy, updateF4AmbassadorPolicy, type F4AmbassadorPolicyUpdate } from "./f1-client";
 import { fDirectCommands, F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "./f1-stable-write";
-import { hasPersistedPendingCommandOwner, isRetryExpired } from "./pending-mutation-store";
-import { isExplicitRejection } from "./explicit-rejection";
+import { hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT } from "./pending-mutation-store";
+import { explicitRejectionCode } from "./explicit-rejection";
+import { beginProposalRetry, lookupOriginalReceipt, releaseRejectedProposal } from "./proposal-recovery";
 import { isDeterministicRejection } from "./outcome-classification";
 import type { F4ConfirmationSnapshot } from "./f4-approval";
 import { useAdminAuth } from "../store/admin-auth";
@@ -41,8 +42,9 @@ export async function sendF4Policy(adminId: number, policy?: F4AmbassadorPolicyU
       fDirectCommands.forget(slot, key); throw new Error("F4_OPERATION_STORAGE_UNAVAILABLE");
     }
   }
-  if (isRetryExpired(original)) throw new F1OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
+  if (isRetryExpired(original)) throw new F1OutcomeUncertainError(RETRY_EXPIRED_TEXT, original.commandKey);
   if (!original.f4Request || !fDirectCommands.isDurablyStored(original.fingerprint, original.commandKey)) throw new Error("F4_PROPOSAL_ORIGINAL_INCOMPLETE");
+  if (recovering) beginProposalRetry(original);
   const { reason: savedReason, operator, ...values } = original.f4Request;
   try {
     // A replayed policy is historical evidence only. The caller always rereads.
@@ -52,7 +54,9 @@ export async function sendF4Policy(adminId: number, policy?: F4AmbassadorPolicyU
     }
   } catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
-    if (recovering ? isExplicitRejection(error) : !isF1OutcomeUncertainError(error)
+    const rejection = recovering ? explicitRejectionCode(error) : undefined;
+    if (rejection) fDirectCommands.remember(original.fingerprint, original.commandKey, { ...original, retryRejection: rejection });
+    if (!recovering && !isF1OutcomeUncertainError(error)
       && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) {
       fDirectCommands.forget(original.fingerprint, original.commandKey);
     }
@@ -66,8 +70,14 @@ export async function queryF4Policy(adminId: number, original: FDirectAttempt, e
   const auth = useAdminAuth.getState();
   if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== adminId || original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
   const query = () => queryOriginalCommand(original, policyRoute, String(adminId), evidence);
-  const receipt = evidence ? await query() : await query().catch(() => null);
+  const receipt = evidence ? await query() : await lookupOriginalReceipt(original, query);
   const settled = fundCommandSettled(receipt);
   if (settled) fDirectCommands.forget(original.fingerprint, original.commandKey);
   return { receipt, settled, current: await fetchF4AmbassadorPolicy() };
+}
+
+export function releaseRejectedF4Policy(adminId: number, commandKey: string) {
+  if (useAdminAuth.getState().session?.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+  releaseRejectedProposal(listF4PolicyWrites(adminId).find(row => row.commandKey === commandKey),
+    row => fDirectCommands.forget(row.fingerprint, row.commandKey));
 }

@@ -5,6 +5,7 @@
  * 读、写、校验和共用的 PublishedContentEditor（kind="rankHow"）一样：GET/PUT /api/admin/teams/rank-policy，
  * 正文、状态、语言、理由的规则和提交内容逐字不变。共用编辑器别的页面还在用，这里只换 F1 的样子。
  */
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenText, CircleHelp, Plus, RefreshCw, ShieldCheck, Smartphone, Trash2 } from "lucide-react";
 import { BlockState, Button, Explain, Fact, Facts, Field, Fold, Input, KeepText, Modal, Notice, Panel, Segments, StatusTag, Textarea } from "@/app/components/rd";
@@ -199,6 +200,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
   // 结果未知时编辑器里是原提交，不是后端现在的内容：状态行写原提交，不写成当前状态。
   const original = unknown && session ? pendingF1RankHow(session.adminId) : undefined;
   const howSave = comparison ? original : undefined;
+  const expired = !!original && isRetryExpired(original);
   const statusLine = original ? <span className="f1-how-status">
     <StatusTag tone="warn" icon={CircleHelp}>原提交</StatusTag>
     <span>{original.document.status === "PUBLISHED" ? "保存并发布" : "保存草稿"}</span>
@@ -218,12 +220,12 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
       actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void (unknown ? checkOriginal() : refresh())}>重新读取</Button>}>
       {unknown && <Notice tone="warn" title="保存结果未知" actionBelow
         action={<><Button size="sm" loading={loading} disabled={!!releasing} onClick={() => void checkOriginal()}>重新读取核对</Button>
-          {comparison && howSave && <Button size="sm" variant="ghost" disabled={loading || !!releasing} onClick={() => setReleasing("open")}>解除原操作记录</Button>}</>}>
-        {comparison
+          {comparison && howSave && !expired && <Button size="sm" variant="ghost" disabled={loading || !!releasing} onClick={() => setReleasing("open")}>解除原操作记录</Button>}</>}>
+        {expired ? <p>{RETRY_EXPIRED_TEXT}</p> : comparison
           ? <p>{`现在的内容和原提交对不上：修订号应为 ${comparison.revision.expected}，实际是 ${comparison.revision.current}，内容${comparison.contentMatches ? "相同" : "不同"}。核对后可以解除。`}</p>
           : <p>提交时没收到确定结果，可能已经保存。不能按原内容重发，先刷新核对；你填的内容还在下面。</p>}
       </Notice>}
-      {releasing && comparison && howSave && <Modal title="解除原操作记录" icon={ShieldCheck} busy={releasing === "busy"} onClose={() => setReleasing(null)}
+      {releasing && comparison && howSave && !expired && <Modal title="解除原操作记录" icon={ShieldCheck} busy={releasing === "busy"} onClose={() => setReleasing(null)}
         footer={<><Button disabled={releasing === "busy"} onClick={() => setReleasing(null)}>取消</Button>
           <Button variant="primary" loading={releasing === "busy"} onClick={() => void release()}>确认解除</Button></>}>
         <div className="rd-stack rd-release-body">

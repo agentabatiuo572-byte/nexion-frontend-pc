@@ -14,7 +14,8 @@ import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { f4Decimal } from "@/lib/admin/f4-money";
 import { canRetryF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { proposalRetryBlockedReason } from "@/lib/admin/proposal-recovery";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { F5CommissionEvent } from "@/lib/admin/f1-client";
 import type { F5Recovery, FViewCtx } from "./types";
@@ -198,7 +199,6 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
       return resolved;
     } finally { if (!getOriginal()) onClose(); }
   };
-  const retryable = original && (original.kind === "proposal" ? canRetryF5Proposal(original.original) : canRetryF5Anomaly(original.original));
   const canReadCoverage = useAdminAuth(({ session }) => session?.authorities.some(authority => ["overview_b1_read", "finance_d3_read", "bi_l3_read"].includes(authority)) ?? false);
   const needsReliableCoverage = confirm.snapshot?.action === "reissue"
     || confirm.snapshot?.action === "unlock" && !!confirm.snapshot.row && !isGrouped(confirm.snapshot.row);
@@ -230,16 +230,16 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
         return saved?.kind === "proposal" ? saved.original.request?.reason : saved?.original.f5Request?.reason;
       }}
       getPendingBusinessValue={savedValue}
-      inlineApproval={confirm.snapshot ? {
-        resolve: () => undefined,
-        pending: !!original,
-        initialRecovery: original?.kind === "proposal" && (original.original.ticket || original.original.received) ? "lookup" : "retry",
-        expired: original ? isRetryExpired(original.original) : false,
-        expiredRequestRecovery: original && isRetryExpired(original.original) ? "query" : undefined,
-        disabledReason: original && !retryable ? "原操作当前只能查询原结果。" : undefined,
-        recover: () => recover("query"),
-        retry: async () => { await recover("retry"); },
-      } : undefined}
+      getPendingRecovery={() => {
+        const saved = getOriginal();
+        if (!saved) return;
+        const record = saved.original;
+        const retryable = saved.kind === "proposal" ? canRetryF5Proposal(saved.original) : canRetryF5Anomaly(saved.original);
+        return { expiresAt: record.expiresAt, queryOnlyAfterExpiry: true,
+          blockedReason: proposalRetryBlockedReason(record, saved.kind === "proposal" && (saved.original.received || !!saved.original.ticket || !!saved.original.f5TicketId))
+            ?? (!retryable ? "原操作记录不完整或权限已变化，只能查询原结果。" : undefined),
+          query: async () => { await recover("query"); } };
+      }}
       onClose={onClose}
       onConfirm={async (reason, _newValue, businessValue) => {
         try {
@@ -276,13 +276,11 @@ export function F5RecoveryNotice({ rows }: { rows: readonly F5RecoveryRow[] }) {
   const timed = rows.some((row) => row.submittedAt !== undefined);
   const tag = (state: F5RecoveryRow["state"], direct: boolean) => state === "unknown"
     ? <StatusTag tone="warn" icon={CircleHelp} explain={direct
-      ? "提交时没收到结果，可能已经保存。查询只拿现在的标准作对照；24 小时内也可以按原请求重试，系统认得出是同一次提交。"
-      : "提交时没收到结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，系统认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>
+      ? "提交时没收到结果，可能已经保存。明确查不到原结果后，24 小时内可按原请求重试。"
+      : "提交时没收到结果，可能已经建了审批单。先查询原结果，明确查不到才可在 24 小时内按原请求重试。"}>结果未知</StatusTag>
     : state === "pending"
       ? <StatusTag tone="warn" icon={Clock3} explain={`等${APPROVER}在「操作记录与审批」批准。批准前这笔奖励不变，同一对象不能再提交别的处置。`}>待审批</StatusTag>
-      : <StatusTag tone="neutral" icon={Hourglass} explain={direct
-        ? "原请求超过 24 小时，不能再重试。查询只看现在的标准，证明不了原操作有没有执行。"
-        : "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。"}>已过期</StatusTag>;
+      : <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
   return (
     <Notice tone="warn" title={<>{rows.every((row) => row.state === "pending") ? `${rows.length} 个处置在等批准` : `有 ${rows.length} 个处置还没有结论`}<Explain label="原操作怎么处理" content="这些处置提交时没收到确定结果，或还在等批准。有结论前不要换个办法重做同一件事。" /></>}>
       <ul className="f5-recovery" aria-label="还没有结论的处置">

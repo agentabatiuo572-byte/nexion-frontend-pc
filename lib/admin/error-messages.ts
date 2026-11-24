@@ -2085,7 +2085,6 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H8_PROPOSAL_RECEIPT_INVALID: "返回的审批单和原请求对不上，结果未知；请保留原申请并查询原结果。",
   H8_PROPOSAL_STATUS_UNREADABLE: "申请已建单，批没批准还没查到；请查询原结果，不要重新发起。",
   H8_DIRECT_RESULT_REQUIRES_AUDIT: "当前设置不能证明原修改的结果；请到「操作记录与审批」核对，原请求继续保留。",
-  H8_PROPOSAL_RELEASE_FORBIDDEN: "尚不能解除原申请；仅过期且查询明确查无原单时，才可确认解除。",
   H8_RESULT_UNKNOWN: "提交结果未知，完整原请求已保留；请查询原结果或按原请求重试。",
   H8_RESPONSE_INVALID: "奖励数据不完整或格式不符，当前不能核对；请重新读取，持续失败请联系值班人员。",
   H8_PRODUCTION_OVERVIEW_FORBIDDEN_IN_SANDBOX: "当前验收沙箱禁止读取正式奖励数据；请在正式运行环境核对。",

@@ -1,8 +1,9 @@
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
+import { beginProposalRetry, releaseRejectedProposal } from "./proposal-recovery";
 import { isDeterministicRejection } from "./outcome-classification";
-import { hasPersistedPendingCommandOwner, isRetryExpired } from "./pending-mutation-store";
+import { hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT } from "./pending-mutation-store";
 import type { F5CommissionAuditOverview, F5CommissionEvent } from "./f1-client";
 import type { ProposeSpec } from "./propose-or-execute";
 import { roleLabel } from "../nav/console-nav";
@@ -75,7 +76,7 @@ export async function queryF5Proposal(adminId: number, original: FDomainAttempt)
   // Fingerprint-only pre-upgrade records remain GET-only; exact-key GET is maker scoped.
   if (original.spec) checkTicket(original, ticket);
   else if (!ticket.mine) throw new A2OutcomeUncertainError("原审批单发起人对不上，请核对。", original.commandKey);
-  if (ticket.status === "pending") fCommands.remember(original.fingerprint, original.commandKey, { ...original, f5TicketId: ticket.id, received: true, ticket, absent: false });
+  if (ticket.status === "pending") fCommands.remember(original.fingerprint, original.commandKey, { ...original, f5TicketId: ticket.id, received: true, ticket, absent: false, retryRejection: undefined });
   else fCommands.forget(original.fingerprint, original.commandKey);
   return ticket;
 }
@@ -116,8 +117,10 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
       throw new Error("F5_OPERATION_STORAGE_UNAVAILABLE");
     }
   }
-  if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
+  if (isRetryExpired(original)) throw new A2OutcomeUncertainError(RETRY_EXPIRED_TEXT, original.commandKey);
   if (!original.request || !fCommands.isDurablyStored(slot, original.commandKey)) throw new Error("F5_OPERATION_ORIGINAL_INCOMPLETE");
+  if (recovering && original.f5TicketId) throw new Error("原申请已建单，请查询原结果。");
+  if (recovering) beginProposalRetry(original);
   original.absent = false;
   fCommands.remember(slot, original.commandKey, original);
   if (!original.received && !original.ticket) {
@@ -125,7 +128,9 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
     try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
     catch (error) {
       const failure = error as { httpStatus?: number; apiCode?: number };
-      if (recovering ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
+      const rejection = recovering ? explicitRejectionCode(error) : undefined;
+      if (rejection) fCommands.remember(slot, original.commandKey, { ...original, retryRejection: rejection });
+      if (!recovering && !isA2OutcomeUncertainError(error)
         && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) fCommands.forget(slot, original.commandKey);
       throw error;
     }
@@ -145,11 +150,7 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
   return ticket;
 }
 
-/** Requires the visual layer's explicit confirmation after authoritative expired absence. */
-export async function releaseF5Proposal(adminId: number, original: FDomainAttempt) {
-  if (original.received || original.ticket || original.f5TicketId) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
-  if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
-  const ticket = await queryF5Proposal(adminId, original);
-  if (ticket?.status === "pending") throw new Error("OBJECT_ALREADY_PENDING");
-  if (!ticket) fCommands.forget(original.fingerprint, original.commandKey);
+export function releaseF5Proposal(adminId: number, original: FDomainAttempt) {
+  actor(adminId);
+  releaseRejectedProposal(listF5Proposals(adminId).find(row => row.commandKey === original.commandKey), row => fCommands.forget(row.fingerprint, row.commandKey));
 }

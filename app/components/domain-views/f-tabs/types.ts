@@ -210,6 +210,7 @@ export interface FViewCtx {
   recoverF3PayoutControl: (key: F3PayoutControlKey, mode: "query" | "retry") => Promise<
     ({ kind: "query" } & Awaited<ReturnType<typeof queryF3ConfigWrite>>) | { kind: "retry"; updated: F3PayoutControlUpdate }
   >;
+  releaseF3PayoutControl: (key: F3PayoutControlKey) => Promise<void>;
   updateF3Config: (key: string, value: string, reason: string, amplifies?: boolean, snapshot?: F3ConfirmationSnapshot) => Promise<void>;
   // -- 领导奖池/硬件配额/大使/榜单(F4)· 读 + 配置写入 --
   f4Overview: F4LeadershipPoolOverview | null;
@@ -226,7 +227,7 @@ export interface FViewCtx {
   f4QueryNotes: Record<string, { tone: "warn" | "danger"; text: string }>;
   f4PolicyWrites: FDirectAttempt[];
   f4ApprovalRows: A2OperationRow[];
-  recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry") => Promise<boolean>;
+  recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry" | "release") => Promise<boolean>;
   refreshF4: () => Promise<void>;
   submitF4Proposal: (slot: string, spec: import("@/lib/admin/propose-or-execute").ProposeSpec) => Promise<void>;
   updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number, expectedMaterialRevision?: number) => Promise<void>;

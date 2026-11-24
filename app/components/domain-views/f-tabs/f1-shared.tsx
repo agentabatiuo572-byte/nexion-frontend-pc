@@ -9,6 +9,7 @@ import { BadgeDollarSign, CircleCheck, Clock3, Coins, Gift, Package, RotateCcw, 
 import type { LucideIcon } from "lucide-react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
 import { listF1Proposals, f1ProposalAuthority } from "@/lib/admin/f1-approval";
+import { proposalRetryBlockedReason } from "@/lib/admin/proposal-recovery";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { F1RewardPayout } from "@/lib/admin/f1-client";
@@ -157,17 +158,14 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
       edit={confirm.edit}
       businessForm={confirm.businessForm}
       getPendingReason={() => submitted.current ? original()?.request?.reason : undefined}
+      getPendingRecovery={() => {
+        const record = submitted.current ? original() : undefined;
+        return record && { expiresAt: record.expiresAt, queryOnlyAfterExpiry: true, blockedReason: !canRetry
+          ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : proposalRetryBlockedReason(record, record.received || !!record.ticket),
+          query: async () => { if (await ctx.recoverF1(slot.current, "query")) onClose(); } };
+      }}
       getPendingBusinessValue={() => submitted.current && original() ? originalValues.current : undefined}
       blockedReason={!submitted.current && existing ? "这项操作有保存的原申请，请先查询原结果。" : undefined}
-      inlineApproval={{
-        resolve: () => undefined,
-        initialRecovery: "retry",
-        expired: !!existing && existing.expiresAt <= Date.now(),
-        expiredRequestRecovery: existing && existing.expiresAt <= Date.now() ? "query" : undefined,
-        disabledReason: submitted.current && !canRetry ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined,
-        recover: async () => { const resolved = await ctx.recoverF1(slot.current, "query"); if (resolved) onClose(); return resolved; },
-        retry: async () => { await ctx.recoverF1(slot.current, "retry"); onClose(); },
-      }}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {
         const recovering = submitted.current && !!original();

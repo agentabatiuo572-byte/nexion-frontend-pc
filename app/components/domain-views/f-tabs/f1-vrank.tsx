@@ -95,7 +95,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       onPendingChange={() => setRecoveryEpoch(value => value + 1)} />}
     {confirm && <F1ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
   </Fragment>;
-  const recovery = <F1RecoveryNotice ctx={ctx} onOpenPolicy={setPolicyEditor} onRankHowChecked={() => setHowEpoch((value) => value + 1)} />;
+  const recovery = <F1RecoveryNotice ctx={ctx} onOpenPolicy={setPolicyEditor} onPolicyReleased={() => setRecoveryEpoch(value => value + 1)}
+    onRankHowChecked={() => setHowEpoch(value => value + 1)} />;
 
   if (rows.length === 0) {
     const body = ctx.f1Loading

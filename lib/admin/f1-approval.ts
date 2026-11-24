@@ -1,8 +1,9 @@
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
+import { beginProposalRetry, releaseRejectedProposal } from "./proposal-recovery";
 import { isDeterministicRejection } from "./outcome-classification";
-import { isRetryExpired } from "./pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "./pending-mutation-store";
 import type { ProposeSpec } from "./propose-or-execute";
 import { roleLabel } from "../nav/console-nav";
 import { useAdminAuth } from "../store/admin-auth";
@@ -48,7 +49,7 @@ export async function queryF1Proposal(adminId: number, original: FDomainAttempt)
     return null;
   }
   checkTicket(original, ticket);
-  if (ticket.status === "pending") fCommands.remember(original.fingerprint, original.commandKey, { ...original, received: true, ticket, absent: false });
+  if (ticket.status === "pending") fCommands.remember(original.fingerprint, original.commandKey, { ...original, received: true, ticket, absent: false, retryRejection: undefined });
   else fCommands.forget(original.fingerprint, original.commandKey);
   return ticket;
 }
@@ -83,16 +84,19 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
     if (!latest) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
     return latest;
   }
-  if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
+  if (isRetryExpired(original)) throw new A2OutcomeUncertainError(RETRY_EXPIRED_TEXT, original.commandKey);
   if (!original.request || !fCommands.isDurablyStored(slot, original.commandKey)) throw new Error("原操作没有完整的持久记录，请到操作记录核对。");
+  if (recovering) beginProposalRetry(original);
   original.absent = false;
   fCommands.remember(slot, original.commandKey, original);
   let ticket: A2OperationRow;
   try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
   catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
-    if (recovering || isF1PayoutSlot(slot) ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
-        && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) fCommands.forget(slot, original.commandKey);
+    const rejection = recovering ? explicitRejectionCode(error) : undefined;
+    if (rejection) fCommands.remember(slot, original.commandKey, { ...original, retryRejection: rejection });
+    if (!recovering && (isF1PayoutSlot(slot) ? !!explicitRejectionCode(error) : !isA2OutcomeUncertainError(error)
+        && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode))) fCommands.forget(slot, original.commandKey);
     throw error;
   }
   fCommands.remember(slot, original.commandKey, { ...original, received: true, ticket: undefined, absent: false });
@@ -107,11 +111,7 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
   return ticket;
 }
 
-/** Call only from an explicit confirmation surface (R1-提案过期). */
-export async function releaseF1Proposal(adminId: number, original: FDomainAttempt) {
-  if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
-  if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
-  const ticket = await queryF1Proposal(adminId, original);
-  if (ticket?.status === "pending") throw new Error("这张申请仍在等待审批。");
-  if (!ticket) fCommands.forget(original.fingerprint, original.commandKey);
+export function releaseF1Proposal(adminId: number, original: FDomainAttempt) {
+  actor(adminId);
+  releaseRejectedProposal(listF1Proposals(adminId).find(row => row.commandKey === original.commandKey), row => fCommands.forget(row.fingerprint, row.commandKey));
 }

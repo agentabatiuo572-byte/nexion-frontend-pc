@@ -6,6 +6,7 @@
  * 设置行和确认框只做样子，提交、查询、重试都调 F 域上下文现成的函数（submitF3PayoutControl、
  * recoverF3PayoutControl、recoverF3），方向用 planF3PayoutControl 判断，和提交时一致。
  */
+import { proposalRetryBlockedReason } from "@/lib/admin/proposal-recovery";
 import { ArrowLeftRight, CalendarClock, CalendarOff, CircleHelp, Clock3, Hourglass } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Change, ConfigRow, Fact, Facts, StatusTag } from "@/app/components/rd";
@@ -17,7 +18,7 @@ import { pendingF3ConfigWrite } from "@/lib/admin/f3-config-write";
 import { F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY, f3PayoutControlAuthority, f3PlatformCapPct, planF3PayoutControl, type F3PayoutControlKey } from "@/lib/admin/f3-policy";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { PERMISSION_DENIED_TEXT } from "@/lib/admin/operation-confirm-error";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -150,9 +151,9 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
   const queryOnly = !!original && !expired && !canRetryF3Proposal(original);
   const canWriteProposal = canPropose && ctx.can(f3PayoutControlAuthority(key));
   const recoveryText = direct
-    ? expired ? "超过 24 小时，只能查询原结果" : "可能已经生效；先查询原结果"
+    ? expired ? RETRY_EXPIRED_TEXT : "可能已经生效；先查询原结果"
     : original?.ticket?.status === "pending" ? `审批单在等${SUPER}批准；批准前不生效`
-      : expired ? "超过 24 小时，只能查询原审批单"
+      : expired ? RETRY_EXPIRED_TEXT
         : queryOnly && !canWriteProposal ? PERMISSION_DENIED_TEXT
           : original?.received ? "原申请建过单，批没批准还没查到，请继续查询"
             : "可能已经建了审批单；先查询原结果";
@@ -246,41 +247,35 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
       }}
       initialReason={direct?.f3Request?.reason ?? original?.spec?.reason}
       getPendingReason={() => ownDirect()?.f3Request?.reason ?? ownProposal()?.spec?.reason}
-      inlineApproval={{
-        resolve: () => undefined,
-        pending: mode !== "new",
-        initialRecovery: "retry",
-        expired,
-        queryOnly,
-        expiredRequestRecovery: expired ? "query" : undefined,
-        recover: async () => {
-          if (ownDirect()) {
-            const found = await ctx.recoverF3PayoutControl(key, "query");
-            const result = found.kind === "query" ? found.result : "SUCCEEDED";
-            if (result === "SUCCEEDED") { ctx.toast(`${name}的原操作已生效`); onClose(); return true; }
-            if (result === "REJECTED" || result === "NOT_EXECUTED") { ctx.toast(`${name}的原操作没有执行，设置没变`); onClose(); return true; }
-            throw new Error(isRetryExpired(ownDirect() ?? direct!) ? "还没查到原操作的结果，可以稍后再查。" : "还没查到原操作的结果，可以稍后再查或按原内容重试。");
-          }
-          const record = ownProposal();
-          if (!record) { onClose(); return true; }
-          if (await ctx.recoverF3(record)) { onClose(); return true; }
-          return false;
-        },
-        retry: async () => {
-          if (ownDirect()) {
-            await ctx.recoverF3PayoutControl(key, "retry");
-            ctx.toast(`${name}已按原内容生效`);
-            onClose();
-            return;
-          }
-          const record = ownProposal();
-          if (!record) { onClose(); return; }
-          try { await ctx.recoverF3(record, "retry"); onClose(); }
-          catch (error) { if (!ownProposal()) onClose(); throw error; }
-        },
+      getPendingRecovery={() => {
+        const pendingDirect = ownDirect(), pendingProposal = ownProposal();
+        const pending = pendingDirect ?? pendingProposal;
+        return pending && { expiresAt: pending.expiresAt, queryOnlyAfterExpiry: true,
+          blockedReason: proposalRetryBlockedReason(pending, pendingProposal?.received || !!pendingProposal?.ticket)
+            ?? (pendingProposal && !canRetryF3Proposal(pendingProposal) ? PERMISSION_DENIED_TEXT : undefined),
+          query: async () => {
+            if (pendingDirect) {
+              const found = await ctx.recoverF3PayoutControl(key, "query");
+              const result = found.kind === "query" ? found.result : "SUCCEEDED";
+              if (result === "SUCCEEDED") { ctx.toast(`${name}的原操作已生效`); onClose(); }
+              if (result === "REJECTED" || result === "NOT_EXECUTED") { ctx.toast(`${name}的原操作没有执行，设置没变`); onClose(); }
+            } else if (pendingProposal && await ctx.recoverF3(pendingProposal)) onClose();
+          } };
       }}
       onClose={onClose}
       onConfirm={async (reason, newValue) => {
+        if (ownDirect()) {
+          await ctx.recoverF3PayoutControl(key, "retry");
+          ctx.toast(`${name}已按原内容生效`);
+          onClose();
+          return;
+        }
+        const pending = ownProposal();
+        if (pending) {
+          await ctx.recoverF3(pending, "retry");
+          onClose();
+          return;
+        }
         if (mode !== "new") { onClose(); return; }
         const value = auto ? autoNow ? "off" : "on" : newValue ?? "";
         const result = await ctx.submitF3PayoutControl(key, value, reason, snapshot).catch((error: unknown) => {

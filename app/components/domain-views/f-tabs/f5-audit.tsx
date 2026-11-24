@@ -5,6 +5,7 @@
  * 奖励流水（筛选、勾选补发、点行看详情）、等价格、异常样本、暂停名单、处置历史。
  * 读取、筛选、翻批、导出和七个处置都调用 F 域外壳原有的函数，请求和改版前一样；这里只管排版和文字。
  */
+import { proposalRetryBlockedReason } from "@/lib/admin/proposal-recovery";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Download, ListChecks, RotateCcw } from "lucide-react";
@@ -471,8 +472,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       direct: record.kind === "anomaly",
       actions: <>
         <Button size="sm" onClick={() => { void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原结果</Button>
-        {retryable && <Button size="sm" onClick={() => openOriginal(record)}>按原请求重试</Button>}
-        {record.kind === "proposal" && isRetryExpired(original) && record.original.absent && !ticket && !record.original.received && !record.original.f5TicketId
+        {retryable && <Button size="sm" disabledReason={proposalRetryBlockedReason(original, record.kind === "proposal" && !!record.original.f5TicketId)} onClick={() => openOriginal(record)}>按原请求重试</Button>}
+        {original.retryRejection
           && <FReleaseButton label={saved?.name ?? spec?.action ?? "奖励处置"} toast={ctx.toast} onRelease={() => ctx.recoverF5(record, "release")} />}
       </>,
     };

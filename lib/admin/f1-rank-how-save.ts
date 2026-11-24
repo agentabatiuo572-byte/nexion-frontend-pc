@@ -1,5 +1,5 @@
 import { createA2CommandKey } from "./a2-client";
-import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 import { fetchRankHowPolicyAdmin, updateRankHowPolicyAdmin, type PublishedContentDocument } from "./published-content-client";
 import { isDeterministicRejection, OutcomeUnknownError } from "./outcome-classification";
 import { useAdminAuth } from "../store/admin-auth";
@@ -50,8 +50,12 @@ export async function queryF1RankHow(adminId: number) {
 /** Call only after operator confirmation. Re-read before releasing; never resend this non-deduplicated write. */
 export async function releaseF1RankHow(adminId: number) {
   const original = pendingF1RankHow(adminId);
+  if (original && isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
   const result = await queryF1RankHow(adminId);
-  if (!result.matched && original) saves.forget(original.fingerprint, original.commandKey);
+  if (!result.matched && original) {
+    if (isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
+    saves.forget(original.fingerprint, original.commandKey);
+  }
   return { ...result, released: !result.matched };
 }
 

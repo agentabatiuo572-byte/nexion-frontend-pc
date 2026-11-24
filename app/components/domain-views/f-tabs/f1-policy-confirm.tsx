@@ -12,6 +12,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { fetchF1VRankOverview } from "@/lib/admin/f1-client";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
+import { proposalRetryBlockedReason } from "@/lib/admin/proposal-recovery";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import {
@@ -211,11 +212,14 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     businessFormRevision={baselineRevision}
     getPendingReason={() => pending()?.original.reason}
     getPendingBusinessValue={() => pending()?.original.form}
+    getPendingRecovery={() => {
+      const saved = pending();
+      return saved && { expiresAt: saved.expiresAt, queryOnlyAfterExpiry: true,
+        blockedReason: proposalRetryBlockedReason(saved, saved.received || !!saved.ticket) ?? disabledReason,
+        query: async () => { await submit("", {}, "lookup"); } };
+    }}
     inlineApproval={{
       dialogClassName: "f1-policy-confirm",
-      pending: !!opening.pending,
-      initialRecovery: "retry",
-      expired: !!opening.pending && opening.pending.expiresAt <= Date.now(),
       expiredRequestRecovery: opening.pending && opening.pending.expiresAt <= Date.now() ? "query" : undefined,
       disabledReason,
       resolve: (values) => baselineReady && f1PolicyNeedsApproval(editor, values) ? {
@@ -231,7 +235,6 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
         </div>,
       } : undefined,
       recover: (reason, values) => submit(reason, values, "lookup"),
-      retry: async () => { await submit("", {}, "retry-original"); },
       renderForm: (values, change, locked) => {
         if (remove && opening.pending) return <Notice tone="warn" title="原请求结果未知">内容和理由已锁定，只能查询原结果或按原内容重试。</Notice>;
         const changeField = (key: string, value: string) => change({ ...values, [key]: value });

@@ -9,6 +9,7 @@ export interface F2ActivationAttempt extends PendingMutationRecord {
   ticket?: A2OperationRow;
   received?: boolean;
   absent?: boolean;
+  retryRejection?: string;
 }
 
 // Keep existing evidence. Old records without a complete request are query-only.

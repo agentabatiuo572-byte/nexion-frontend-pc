@@ -20,6 +20,7 @@ import { applicationStage } from "./f4-quota";
 import { F4Pool } from "./f4-pool";
 import { F4Quota } from "./f4-quota";
 import { F4Leaderboard, leaderboardState } from "./f4-leaderboard";
+import { FReleaseButton } from "./f-release";
 import { F4RecoveryNotice, count, decimalText, settleCadenceNote, unknownTag, usdt, stamp, type F4RecoveryRow, moneyText } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
@@ -88,7 +89,8 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         : confirm?.statedBrief?.impact ?? legacy?.change ?? "—";
     return {
       key: original.commandKey,
-      line: ctx.f4QueryNotes[original.commandKey],
+      line: ctx.f4QueryNotes[original.commandKey] ?? (original.retryRejection
+        ? { tone: "warn", text: "重试被明确拒绝，核对原操作的结果后可以解除。" } : undefined),
       name: confirm?.name ?? legacy?.name ?? "调整区域大使申请规则",
       change,
       submittedAt: original.createdAt,
@@ -96,9 +98,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       expired: isRetryExpired(original),
       tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>
         : record.kind === "proposal" && record.original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
-          : isRetryExpired(original) ? <StatusTag tone="neutral" icon={Hourglass} explain={record.kind === "proposal"
-            ? RETRY_EXPIRED_TEXT
-            : "原请求超过 24 小时，不能再重试。查询只读取现在的规则，证明不了原操作有没有执行。"}>已过期</StatusTag>
+          : isRetryExpired(original) ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
             : unknownTag(record.kind === "proposal" ? "approval" : "direct"),
       actions: <>
         <Button size="sm" onClick={() => {
@@ -106,6 +106,8 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
             ctx.openActionConfirm({ ...confirm, edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
           } else void ctx.recoverF4(record, "query").catch(() => undefined); // 查询失败的原因已写在这一行
         }}>查询原结果</Button>
+        {original.retryRejection
+          && <FReleaseButton label={confirm?.name ?? legacy?.name ?? "原申请"} toast={ctx.toast} onRelease={() => ctx.recoverF4(record, "release")} />}
       </>,
     };
   });

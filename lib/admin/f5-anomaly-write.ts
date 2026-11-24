@@ -1,8 +1,9 @@
 import { createA2CommandKey } from "./a2-client";
 import { fetchF5CommissionAuditOverview, updateF5AnomalyConfig } from "./f1-client";
 import { fDirectCommands, F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "./f1-stable-write";
-import { hasPersistedPendingCommandOwner, isRetryExpired } from "./pending-mutation-store";
-import { isExplicitRejection } from "./explicit-rejection";
+import { hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT } from "./pending-mutation-store";
+import { explicitRejectionCode } from "./explicit-rejection";
+import { beginProposalRetry, lookupOriginalReceipt, releaseRejectedProposal } from "./proposal-recovery";
 import { isDeterministicRejection } from "./outcome-classification";
 import type { F5ConfirmationSnapshot } from "./f5-approval";
 import { useAdminAuth } from "../store/admin-auth";
@@ -41,8 +42,9 @@ export async function sendF5Anomaly(adminId: number, values?: { commissionAnomal
       throw new Error("F5_OPERATION_STORAGE_UNAVAILABLE");
     }
   }
-  if (isRetryExpired(original)) throw new F1OutcomeUncertainError("原操作已超过 24 小时，只能读回核对。", original.commandKey);
+  if (isRetryExpired(original)) throw new F1OutcomeUncertainError(RETRY_EXPIRED_TEXT, original.commandKey);
   if (!original.f5Request || !fDirectCommands.isDurablyStored(original.fingerprint, original.commandKey)) throw new Error("F5_OPERATION_ORIGINAL_INCOMPLETE");
+  if (recovering) beginProposalRetry(original);
   const request = original.f5Request;
   try {
     const receipt = await updateF5AnomalyConfig(request.commissionAnomalySigma, request.layerRatioAnomalyPct, request.reason, request.operator, original.commandKey);
@@ -50,7 +52,9 @@ export async function sendF5Anomaly(adminId: number, values?: { commissionAnomal
       || Number(receipt.layerRatioAnomalyPct) !== request.layerRatioAnomalyPct) throw new F1OutcomeUncertainError("保存后返回的内容和原请求对不上，请继续核对。", original.commandKey);
   } catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
-    if (recovering ? isExplicitRejection(error) : !isF1OutcomeUncertainError(error)
+    const rejection = recovering ? explicitRejectionCode(error) : undefined;
+    if (rejection) fDirectCommands.remember(original.fingerprint, original.commandKey, { ...original, retryRejection: rejection });
+    if (!recovering && !isF1OutcomeUncertainError(error)
       && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) fDirectCommands.forget(original.fingerprint, original.commandKey);
     throw error;
   }
@@ -62,8 +66,14 @@ export async function queryF5Anomaly(adminId: number, original: FDirectAttempt, 
   const auth = useAdminAuth.getState();
   if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== adminId || original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
   const query = () => queryOriginalCommand(original.commandOrigin ? { ...original, commandOrigin: { ...original.commandOrigin, originalPath: anomalyRoute.originalPath } } : original, anomalyRoute, String(adminId), evidence);
-  const receipt = evidence ? await query() : await query().catch(() => null);
+  const receipt = evidence ? await query() : await lookupOriginalReceipt(original, query);
   const settled = fundCommandSettled(receipt);
   if (settled) fDirectCommands.forget(original.fingerprint, original.commandKey);
   return { receipt, settled, current: await fetchF5CommissionAuditOverview() };
+}
+
+export function releaseRejectedF5Anomaly(adminId: number, commandKey: string) {
+  if (useAdminAuth.getState().session?.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+  releaseRejectedProposal(listF5AnomalyWrites(adminId).find(row => row.commandKey === commandKey),
+    row => fDirectCommands.forget(row.fingerprint, row.commandKey));
 }
