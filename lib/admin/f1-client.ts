@@ -2051,8 +2051,11 @@ async function f1Request<T>(
     } else if (path.startsWith("/commissions") && !isWrite) {
       const raw = await response.text();
       // Keep each monetary JSON lexeme before binary floating point can round it.
-      result = JSON.parse(raw.replace(/("(?:usdt|nex|amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|coverageRatio|redlinePct|actualPct|theoreticalPct|deviation)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+      result = JSON.parse(raw.replace(/("(?:usdt|nex|amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|recoveredAmount|pendingRecoveryAmount|coverageRatio|redlinePct|actualPct|theoreticalPct|deviation)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
+    } else if (isWrite && /^\/commissions\/[^/]+\/reverse$/.test(path)) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:recoveredAmount|pendingRecoveryAmount)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
     } else result = (await response.json()) as ApiResult<T>;
   } catch {
     bodyUnreadable = true;
@@ -2266,8 +2269,25 @@ export async function fetchF4LeaderboardDisqualificationReadiness(limit = 50): P
     }) };
 }
 
+type F5RecoveryAmounts = {
+  recoveredAmount?: string;
+  pendingRecoveryAmount?: string;
+};
+
+function readF5RecoveryAmounts(row: Record<string, unknown>): F5RecoveryAmounts {
+  const amounts: F5RecoveryAmounts = { recoveredAmount: undefined, pendingRecoveryAmount: undefined };
+  for (const key of ["recoveredAmount", "pendingRecoveryAmount"] as const) {
+    const value = row[key];
+    if (value == null) continue;
+    const decimal = typeof value === "string" ? f4Decimal(value) : null;
+    if (decimal === null || decimal.startsWith("-")) throw new Error(`F5_OVERVIEW_RESPONSE_INVALID:commission.${key}`);
+    amounts[key] = decimal;
+  }
+  return amounts;
+}
+
 /** Current reward facts for approval review; never a snapshot of the proposal or an execution preview. */
-export type F5CommissionRecord = F5ActionAvailability & {
+export type F5CommissionRecord = F5ActionAvailability & F5RecoveryAmounts & {
   commissionId: string;
   eventId: number;
   userId: number;
@@ -2315,6 +2335,7 @@ export async function fetchF5CommissionByBusinessId(commissionId: string): Promi
   }
   return { status: "found", record: { commissionId: row.commissionId, eventId: row.eventId, userId: row.userId,
     user: row.user as string, kind: row.kind, currency: row.currency, status: row.status, version: row.version, ...amounts,
+    ...readF5RecoveryAmounts(row),
     canUnlock: row.canUnlock as boolean | undefined, unlockBlockedReason: row.unlockBlockedReason as string | null | undefined,
     canReverse: row.canReverse as boolean | undefined, reverseBlockedReason: row.reverseBlockedReason as string | null | undefined,
     groupStatus: row.groupStatus as string | undefined } };
@@ -2496,23 +2517,30 @@ export async function downloadF5RedactedCsv(
   });
 }
 
+export type F5CommissionReverseReceipt = Record<string, unknown> & F5RecoveryAmounts;
+
 export async function reverseF5Commission(
   commissionId: string,
   refundRef: string,
   reason: string,
   operator: string,
-) {
+): Promise<F5CommissionReverseReceipt> {
   // 指纹一律不含 reason:理由是审计元数据,不是意图。运营在「结果未知」后补一句理由再点是极自然的
   // 动作,若理由进指纹就会换新号 → 同一笔动作被执行两次。改理由复用旧号最坏只是审计记的是原措辞。
   return f1StableWrite(`f5-reverse|${commissionId}`, JSON.stringify([refundRef, operator]),
-    (commandKey) => f1Request<Record<string, unknown>>(
-      `/commissions/${encodeURIComponent(commissionId)}/reverse`,
-      {
+    async (commandKey) => {
+      const receipt = await f1Request<Record<string, unknown>>(`/commissions/${encodeURIComponent(commissionId)}/reverse`, {
         method: "POST",
         body: JSON.stringify({ refundRef, reason, operator }),
         stableIdempotencyKey: commandKey,
-      },
-    ));
+      });
+      if (receipt == null) return receipt;
+      try {
+        return { ...receipt, ...readF5RecoveryAmounts(receipt) };
+      } catch {
+        throw new F1OutcomeUncertainError(formatAdminApiError(undefined, "F1_RESPONSE_UNREADABLE"), commandKey);
+      }
+    });
 }
 
 export async function reissueF5Commissions(
