@@ -164,6 +164,11 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
       },
         rejected),
       title: opening ? "开放抽奖报名" : closing ? "关闭报名回草稿" : previous ? "保存抽奖配置" : "保存抽奖草稿",
+      // 影响写这次保存的真实后果（OP-53）：开放、关闭、存草稿各不相同；开放中的一期后端不让直接改。
+      statedBrief: opening ? { impact: "批准后这一期开放报名，用户可以用抽奖券报名。", check: "核对时间、奖项和名额，理由写清依据。" }
+        : closing ? { impact: "这一期马上回到草稿，用户不能再报名。", check: "确认还没人报名，理由写清依据。" }
+        : previous && previous.status !== "DRAFT" ? { impact: "开放中的一期不能直接改：先关闭报名回草稿，改好再申请开放。", check: "核对这一期现在的状态。" }
+        : { impact: previous ? "只保存这一期的配置，仍是草稿，不对用户开放。" : "新的一期存成草稿，不对用户开放。", check: "核对时间、奖项和名额，理由写清依据。" },
       effect: opening ? effectApproval("这一期") : effectDirect,
       detail: <>本期共 {seats(savedDraft.prizes)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
       facts: <>
@@ -176,7 +181,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
           {nextEnabled && <Fact k="之后能不能改">还没人报名时可以关闭回草稿再改；有人报名后奖项和时间锁定，也不能再关闭</Fact>}
           {closing && <Fact k="关闭后">回到草稿，用户不能再报名；改好后可以再申请开放</Fact>}
           {!previous && <Fact k="保存后">新的一期先是草稿，不对用户开放；保存后再打开它申请开放</Fact>}
-          {opening && <ApprovalFact amplify="从草稿开放报名" object="这一期" />}
+          {opening && <ApprovalFact amplify="开放报名" object="这一期" />}
         </Facts>
       </>,
       confirmLabel: opening ? "提交审批" : previous ? "保存配置" : "保存草稿",

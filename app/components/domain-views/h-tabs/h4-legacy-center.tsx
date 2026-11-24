@@ -470,7 +470,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       ? <>{!reviewedCopy && <Fact k="现在的奖励">{legacyRewardText(text(activity.reward))}{legacyName(activity.reward).legacy && <LegacyNameTag where="奖励文字" />}</Fact>}
         <Fact k="改的是">这页登记的奖励文字</Fact><Fact k="App 上">{activity.appRewardNames ? <>显示「{activity.appRewardNames.zh || "—"}」，按玩法规则写，不随这里改</> : "每种语言显示填的奖项名，没填的显示玩法规则摘要"}</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
       : activity.appRewardNames && <Fact k="App 现在显示">{activity.appRewardNames.zh || "—"}</Fact>}
-      {approvalRequired && <ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" />}
+      {approvalRequired && <ApprovalFact amplify="这次修改" object="奖励" />}
     </Facts>;
     const rewardReview = ({ preview, comparison }: NonNullable<typeof reviewed>) => ({
       comparison,
@@ -582,6 +582,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     openConfirm({ briefKind: "config",
       action: `活动状态 · ${event.name}`,
       title: opening ? "开放活动" : "结束活动",
+      statedBrief: opening
+        ? { impact: "开放后不能改回草稿，只能结束。", check: "核对活动和各语言文字都已就绪，理由写清依据。" }
+        : { impact: "结束后用户不能再参加，也不能再开放。", check: "确认要结束的是这个活动，理由写清依据。" },
       effect: opening ? effectByDirection() : <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
       detail: <>当前状态 <b>{lifecycleOf(event, requiredLanguages).label}</b>。</>,
       content: <>
@@ -591,7 +594,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           {opening
             ? <Fact k="开放后">用户可以在 App 上参加，按活动奖励发放</Fact>
             : <Fact k="结束后">用户不能再参加；同时停掉这个活动的玩法、取消主推。已有的参与和奖励记录保留，结束后不能再开放</Fact>}
-          {opening && <ApprovalFact amplify="没有玩法规则又有正奖励的活动" object="活动" />}
+          {opening && <ApprovalFact amplify="没配玩法、开放后直接发钱的活动" object="活动" />}
         </Facts>
         {opening && missing.length > 0 && <Notice tone="warn" title={`还缺 ${missing.length} 项翻译，补齐后才能开放`}>{missing.map(({ locale, field }, index) => <span key={`${locale}-${field}`} className="rd-keep">{`${LOCALE_NAME[locale]}${FIELD_NAME[field]}${index < missing.length - 1 ? "、" : "。"}`}</span>)}<span className="rd-keep">到卡片底部逐格补。</span></Notice>}
       </>,
@@ -664,6 +667,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     openActionConfirm({ initialReason: draft?.reason, briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
       title: `编辑${LOCALE_NAME[locale]}${FIELD_NAME[field]}`,
+      // 影响按这一格的真实写法（OP-53）：改英文会带上照抄英文的中文、越南语；清空副本会清这种语言照抄英文的整组。
+      statedBrief: hidden ? { impact: "只改这页登记的文字，用户看到的不变。", check: "核对语言和拼写，理由写清依据。" }
+        : locale === "en" ? { impact: "只改英文这一格；中文、越南语照抄英文的，这一格跟着改。", check: "核对拼写，理由写清依据。" }
+        : clearable ? { impact: "只改这一格；选「清空已存副本」时，这种语言照抄英文的名称、说明和奖项名一起清空。", check: "核对语言和拼写，理由写清依据。" }
+        : { impact: `只改${LOCALE_NAME[locale]}这一格，其他语言不动。`, check: "核对语言和拼写，理由写清依据。" },
       effect: effectDirect,
       detail: hidden ? <>只在这页登记，不影响开放和开启玩法。</>
         : requiresAll ? required.includes(locale) ? <>{languageNames(required)}的{contentFieldsText(authored)}<span className="rd-keep">填齐，活动才能开放、玩法才能开启。</span></> : <>{LOCALE_NAME[locale]}可以不填，空着时 App 显示英文。</>
@@ -856,9 +864,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     openActionConfirm({ briefKind: "config",
       action: "新建转盘安全限制",
       title: "新建转盘护栏",
+      statedBrief: { impact: "建好后转盘按它拦真钱奖：开关关着或当天超预算，改发 UVT 安慰奖。", check: "核对护栏类型和值：预算填 USDT 金额，开关填开或关。" },
       effect: effectByDirection(),
       detail: <>每种护栏只能建一条。</>,
-      facts: <Facts><ApprovalFact amplify="首次设正数预算或首次开启真钱奖" object="转盘" /></Facts>,
+      facts: <Facts><ApprovalFact amplify="设了预算或开启真钱奖" object="转盘" /></Facts>,
       reasonPlaceholder: "例如：上线前补齐转盘护栏",
       businessForm: {
         kind: "multi-field",
@@ -915,13 +924,16 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     openActionConfirm({ rebaseValue: next, blockedReason: killOn(next) === on ? "没有改动" : undefined, briefKind: "config",
       action: `转盘安全限制 · 实际奖品发放开关`,
       title: closing ? "关闭真钱奖发放" : "开启真钱奖发放",
+      statedBrief: closing
+        ? { impact: "马上停发真钱奖，抽中的用户改拿 UVT 安慰奖。", check: "确认要停发真钱奖，理由写清触发原因。" }
+        : { impact: "批准后按预算和覆盖率发真钱奖；批准前抽中的仍拿 UVT 安慰奖。", check: "核对覆盖率和今天的预算，理由写清依据。" },
       effect: approval ? effectApproval("开关") : effectDirect,
       detail: <>当前值 <b>{on ? "开" : "关"}</b>。如果别人刚改过，需要刷新后再改。</>,
       facts: <>
         <Facts>
           <Fact k="真钱奖发放"><Change from={on ? "开" : "关"} to={next} /></Fact>
           <Fact k={closing ? "关闭后" : "开启后"}>{closing ? "抽中 USDT 改发 UVT 安慰奖，已发的不变" : "抽中 USDT 按预算和覆盖率发真钱"}</Fact>
-          {approval && <ApprovalFact amplify="从关到开" object="开关" />}
+          {approval && <ApprovalFact amplify="开启真钱奖" object="开关" />}
         </Facts>
       </>,
       confirmLabel: closing ? "关闭真钱奖" : "提交审批",
@@ -1017,7 +1029,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       statedBrief: { impact: "生效后下一次抽奖就按新内容发，已经抽中的不变。", check: "核对奖型、发真钱、每次数量和每日库存。" },
       effect: effectByDirection(),
       detail: <>编辑奖项名称、奖励类型、是否发真钱。概率请在「改奖池 / 概率」里统一调，保证加起来是 100%。</>,
-      facts: tierFacts(tier, <ApprovalFact amplify="换奖型、提高数量、放宽库存，或收紧 UVT 库存使安慰奖变多" object="奖池" />),
+      facts: tierFacts(tier, <ApprovalFact amplify="让转盘多发奖的修改（如提高数量、放宽库存）" object="奖池" />),
       amplifies: true,
       coverageLead: "这一档会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案调整这一档奖品",
@@ -1085,7 +1097,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       detail: probability === 0
         ? <>删除后至少还要保留 2 个奖项。</>
         : <>请先在「改奖池 / 概率」把这个奖项的概率调成 0%，再删除。</>,
-      facts: tierFacts(tier, probability === 0 ? <ApprovalFact amplify="删除后 UVT 安慰奖会变多" object="奖池" /> : null),
+      facts: tierFacts(tier, probability === 0 ? <ApprovalFact amplify="删了会让 UVT 安慰奖变多的奖项" object="奖池" /> : null),
       confirmLabel: "删除奖项",
       confirmTone: "danger",
       reasonPlaceholder: "例如：这一档已下线，按工单删除",

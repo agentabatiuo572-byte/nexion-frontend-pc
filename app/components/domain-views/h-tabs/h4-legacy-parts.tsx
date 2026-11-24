@@ -137,7 +137,7 @@ export function expiredTag() {
 /** 走审批的修改在框里常显怎么生效：哪个方向要批、谁来批、批准前什么不变。 */
 /** 一行写清哪个方向要批准、谁来批；放进确认框的 Facts 里。 */
 export function ApprovalFact({ amplify, object }: { amplify: string; object: string }) {
-  return <Fact k="要批准的">{amplify}：另一位超级管理员批准前{object}不变</Fact>;
+  return <Fact k="审批">{amplify}<span className="rd-keep">要另一位超级管理员批准，</span><span className="rd-keep">批准前{object}不变</span></Fact>;
 }
 export const effectDirect = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 export const effectByDirection = (amplify = "让平台多付钱的修改") => <><StatusTag tone="progress" filled>调低立即生效</StatusTag><StatusTag tone="neutral" explain={`${amplify}要另一位超级管理员（需有审批批准权限）批准，批准前什么都不变；其余确认后立即生效。提交时由系统判断方向。`}>调高要批准</StatusTag></>;

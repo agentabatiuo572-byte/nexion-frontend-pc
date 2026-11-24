@@ -217,6 +217,11 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       },
         rejected),
       title: firstOpen ? "开启玩法" : next.enabled ? "保存玩法配置" : "保存关闭状态",
+      // 影响写这次保存的真实后果（OP-53）：第一次开启、关闭、只存草稿各不相同。
+      statedBrief: firstOpen ? { impact: "批准后玩法开启、活动对用户开放；玩法和时间从此固定，只能关闭。", check: "核对玩法、时间和平台最多付，理由写清依据。" }
+        : base.enabled && !next.enabled ? { impact: "玩法马上关闭，关了不能再开。", check: "确认要关的是这个玩法，理由写清依据。" }
+        : next.enabled ? { impact: "玩法继续开着，参与条件和时间不变。", check: "核对玩法和时间，理由写清依据。" }
+        : { impact: "只保存配置，玩法仍关着，用户看不到变化。", check: "核对参与条件和时间，理由写清依据。" },
       effect: firstOpen ? effectApproval("玩法") : effectDirect,
       detail: <>更新本活动的参与条件、奖励及有效期。{next.enabled ? "启用后符合条件的用户可参与；保存时会检查配置与奖励预算。" : "保存后活动保持关闭，不发放新奖励。"}</>,
       facts: <>
@@ -368,7 +373,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       {review && <H4ConflictCompare groups={compareGroups} onMerge={mergeConflict} mergeDisabledReason={mergeLocked ? "玩法和时间已固定，只可关闭活动；关闭后不能重新开启" : undefined} />}
       {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新配置，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
       <fieldset disabled={lockedForm} className="h4-fieldset">
-      {!ended(selected) && !readiness.ready && <Notice tone="warn" title="还没就绪">{readinessGapParts(readiness).map(part => <div key={part}>{part}</div>)}</Notice>}
+      {!ended(selected) && !readiness.ready && <Notice tone="warn" title="还没就绪">{readinessGapParts(readiness).map(part => <div key={part}>{part.split("、").map((item, index, all) => <span key={index} className="rd-keep">{item}{index < all.length - 1 ? "、" : ""}</span>)}</div>)}</Notice>}
       <Facts>
         <Fact k="玩法">{PLAY_SENTENCE[playKey({ kind: selected.kind, rules: draft.rules })] ?? "—"}</Fact>
         {(ended(selected) || readiness.ready) && <Fact k="就绪" tone={readiness.ready ? "ok" : "warn"}>{ended(selected) ? "活动已结束，参与条件与有效期保持原配置" : "配置已满足开启条件"}</Fact>}
