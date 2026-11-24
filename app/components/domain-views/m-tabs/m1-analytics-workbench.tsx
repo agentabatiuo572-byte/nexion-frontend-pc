@@ -37,9 +37,11 @@ import type { MCtx } from "./types";
 import "./m1-analytics-workbench.css";
 import { amountDisplay } from "@/lib/format";
 import { PERF_UNAVAILABLE_VALUE, perfNote, perfText, type AnalyticsPerf, type PerfValue } from "./perf-view";
-import { analyticsPerf } from "./perf-wiring";
-import { analyticsFixtureClient, analyticsPerfFixture, perfFixture } from "./perf-fixture"; // 接线删：夹具
+import { analyticsPerf, exportPorts } from "./perf-wiring";
+import { analyticsFixtureClient, analyticsPerfFixture, exportFixturePorts, perfFixture } from "./perf-fixture"; // 接线删：夹具
 import { PerfEventsDrawer, PeriodPerfPanel } from "./m1-performance";
+import { PerfExportDialog } from "./perf-export";
+import { PerfExportRecords } from "./perf-export-records";
 import { InviterCell } from "@/app/components/invitation/invitation-view";
 import { inviterView, supportCountsView } from "@/app/components/invitation/wiring";
 
@@ -50,14 +52,16 @@ const M3CustomerProfile = dynamic(() => import("./m3-customer-profile").then(m =
 
 type Permission = "agent" | "supervisor" | "superadmin";
 /** M-41: one tab row per role. Agents: home / my-customers / my-data; supervisors and the super admin: data / customers / pool / team (+ mine for a supervisor with a seat). */
-type M1Tab = "home" | "my-customers" | "my-data" | "data" | "customers" | "pool" | "team" | "mine";
-type Section = "personal" | "stats" | "pool" | "team" | "mine";
-const TAB_LABEL: Record<M1Tab, string> = { home: "工作台", "my-customers": "我的客户", "my-data": "我的数据", data: "数据", customers: "客户", pool: "待分配", team: "客服与分组", mine: "我的客户" };
-function roleTabs(personal: boolean, canMine: boolean): M1Tab[] {
-  return personal ? ["home", "my-customers", "my-data"] : ["data", "pool", "customers", "team", ...(canMine ? ["mine" as const] : [])];
+type M1Tab = "home" | "my-customers" | "my-data" | "data" | "customers" | "pool" | "team" | "mine" | "exports";
+type Section = "personal" | "stats" | "pool" | "team" | "mine" | "exports";
+const TAB_LABEL: Record<M1Tab, string> = { home: "工作台", "my-customers": "我的客户", "my-data": "我的数据", data: "数据", customers: "客户", pool: "待分配", team: "客服与分组", mine: "我的客户", exports: "导出记录" };
+// 「导出记录」页签只在有导出读写口时出现（审批入口按已定的甲）；接线前只有开发夹具给，生产页签不变。
+function roleTabs(personal: boolean, canMine: boolean, withExports = false): M1Tab[] {
+  const tabs: M1Tab[] = personal ? ["home", "my-customers", "my-data"] : ["data", "pool", "customers", "team", ...(canMine ? ["mine" as const] : [])];
+  return withExports ? [...tabs, "exports"] : tabs;
 }
-function entryTab(personal: boolean, canMine: boolean): M1Tab {
-  const tabs = roleTabs(personal, canMine), wanted = new URLSearchParams(window.location.search).get("view");
+function entryTab(personal: boolean, canMine: boolean, withExports = false): M1Tab {
+  const tabs = roleTabs(personal, canMine, withExports), wanted = new URLSearchParams(window.location.search).get("view");
   return tabs.find(tab => tab === wanted) ?? tabs[0];
 }
 type Count = SupportAnalyticsResponse["selectedCurrent"]["firstConfirmed"];
@@ -296,6 +300,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [fixtureKind] = useState(() => perfFixture()?.m1);
   const analytics = useMemo(() => fixtureKind ? analyticsFixtureClient(fixtureKind) : supportAnalyticsClient, [fixtureKind]);
   const perf: AnalyticsPerf = useMemo(() => fixtureKind ? analyticsPerfFixture(fixtureKind) : analyticsPerf(), [fixtureKind]);
+  const [exportsPorts] = useState(() => exportFixturePorts() ?? exportPorts()); // 接线删：夹具（只留 exportPorts()）
+  const [exportOpen, setExportOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
   useEffect(() => { const update = () => setRecoveryRevision(n => n + 1); window.addEventListener("m1-pending-changed", update); window.addEventListener("nexion-payment-security-updated", update); return () => { window.removeEventListener("m1-pending-changed", update); window.removeEventListener("nexion-payment-security-updated", update); }; }, []);
   const authSession = useAdminAuth(state => state.session);
@@ -436,9 +442,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       const personal = next.scopeSummary.mode === "PERSONAL";
       if (agentId !== undefined) setSection("stats");
       else if (!remembered) {
-        const tab = entryTab(personal, next.scopeSummary.mode === "MANAGED" && Boolean(readModes?.includes("PERSONAL")));
+        const tab = entryTab(personal, next.scopeSummary.mode === "MANAGED" && Boolean(readModes?.includes("PERSONAL")), !!exportsPorts);
         if (tab === "customers") restored.view = "CUSTOMERS";
-        setSection(personal ? tab === "my-data" ? "stats" : "personal" : tab === "data" || tab === "customers" ? "stats" : tab as Section);
+        setSection(personal ? tab === "my-data" ? "stats" : tab === "exports" ? "exports" : "personal" : tab === "data" || tab === "customers" ? "stats" : tab as Section);
         if (personal) setPersonalView(tab === "my-customers" ? "customers" : "dashboard");
       } else setSection(current => personal === (current === "personal") || current === "stats" ? current : personal ? "personal" : "stats");
       setScope(next); setQueryState(restored);
@@ -543,24 +549,28 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const leaderboardReachable = !!authSession && (scope || readModes?.length || authSession.role === "super" || authSession.role === "superadmin") && authSession.authorities.some(code => code === "service_m1_read" || code === "service_m3_read") && canAccessResolvedPath(visible, "/service/leaderboard");
   const personalHeader = scope?.scopeSummary.mode === "PERSONAL";
   // 主管和超管：页头次按钮是会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
-  const header = <PageHeader pageId="M1" title="客服工作台" summary={noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
+  // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
+  const exportsOnly = !!exportsPorts && noScopedContent;
+  const header = <PageHeader pageId="M1" title="客服工作台" summary={exportsOnly ? exportsPorts.persona.views.includes("MINE") ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
+    {exportsPorts && (exportsPorts.persona.canExport || exportsPorts.persona.exportBlocked) && <Button disabledReason={exportsPorts.persona.exportBlocked} onClick={() => setExportOpen(true)}>导出业绩</Button>}
     {scope?.scopeSummary.mode === "MANAGED" && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}
     {scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
     {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{!noScopedContent && <Button onClick={() => refreshScope()}>刷新</Button>}
   </>} />;
   const related = !personalHeader && leaderboardReachable && <nav className="rd-links" aria-label="相关页面"><span>相关页面</span><a className="rd-link" href="/service/leaderboard" onClick={event => { event.preventDefault(); router.push("/service/leaderboard"); }}>业绩榜</a></nav>;
-  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError}>{header}<Panel><BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" : scopeError || "正在核对当前可见范围…"} detail={noScopedContent ? "主管负责的组由超级管理员在「客服与分组」里设置。" : undefined} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重新核对范围" /></Panel>{noScopedContent && related}</section>;
+  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>{header}{exportsOnly ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} /><PerfExportRecords ports={exportsPorts} /></> : <Panel><BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" : scopeError || "正在核对当前可见范围…"} detail={noScopedContent ? "主管负责的组由超级管理员在「客服与分组」里设置。" : undefined} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重新核对范围" /></Panel>}{noScopedContent && related}</section>;
 
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
   const leadPermission: Permission = mode === "ALL" ? "superadmin" : "supervisor";
-  const tabs = roleTabs(isPersonal, canMine);
-  const currentTab: M1Tab = isPersonal
+  const tabs = roleTabs(isPersonal, canMine, !!exportsPorts);
+  const currentTab: M1Tab = section === "exports" ? "exports" : isPersonal
     ? section === "stats" ? "my-data" : personalView === "customers" ? "my-customers" : "home"
     : section === "stats" ? queryState.view === "CUSTOMERS" ? "customers" : "data" : section === "personal" ? "data" : section;
   function openTab(tab: M1Tab) {
     // Group changes in 客服与分组 feed the scope (group chips, names); re-read it once the supervisor leaves that tab.
     if (section === "team" && tab !== "team" && teamChanged.current) { teamChanged.current = false; setScope(null); setScopeRetry(n => n + 1); }
     const url = new URL(window.location.href); url.searchParams.set("view", tab); window.history.replaceState(null, "", url);
+    if (tab === "exports") { setSection("exports"); return; }
     if (tab === "home" || tab === "my-customers") { setSection("personal"); setPersonalView(tab === "home" ? "dashboard" : "customers"); return; }
     if (tab === "mine") { setSection("mine"); setPersonalView("customers"); return; }
     if (tab === "pool" || tab === "team") { setSection(tab); return; }
@@ -626,7 +636,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {!(isPersonal && currentTab === "home") && navigation}
 <TransferPendingNotes key={transferRevision} onOpen={setTransferCustomer} />
 {transferNotice && <Notice tone="ok" action={<Button size="sm" type="button" onClick={() => setTransferNotice("")}>知道了</Button>}>{transferNotice}</Notice>}
-{isPersonal && <div hidden={section === "stats"}><M1PersonalWorkbench permission="agent" ctx={ctx} view={personalView} active={section !== "stats"} onViewChange={next => { setSection("personal"); setPersonalView(next); }}
+{isPersonal && <div hidden={section === "stats" || section === "exports"}><M1PersonalWorkbench permission="agent" ctx={ctx} view={personalView} active={section !== "stats" && section !== "exports"} onViewChange={next => { setSection("personal"); setPersonalView(next); }}
   onBrowseCustomers={filter => { if (queryState.view === "CUSTOMERS" && queryState.basis === "CURRENT_CUSTOMER_HISTORY" && queryState.filter === filter) { setSection("stats"); return; } drill({ view: "CUSTOMERS", category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY", filter, firstState: "ALL", keyword: undefined }); }}
   navigation={currentTab === "home" ? navigation : undefined} primarySummary={<section className="sa-personal-summary" aria-label="本人客户与期间业绩">
     <div className="sa-personal-head"><h3>期间业绩</h3><Explain label="期间业绩的说明" content={<>{queryState.month} · {nexGridBrandText(currency)} · {businessZoneText()}；绑定与活跃按当前客户统计，首充和净贡献按所选自然月统计。</>} /><div className="sa-personal-period-controls"><AnalyticsSelect label="业绩自然月" value={queryState.month} options={monthOptions} onChange={month => change({ month })} /><AnalyticsSelect label="业绩币种" value={currency} options={[{ value: "USDT", label: "USDT" }, { value: "UVT", label: "UVT" }]} onChange={value => { if (value === "USDT" || value === "UVT") change({ currency: value }); }} /></div></div>
@@ -649,6 +659,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       setKeyword(""); setSection("stats"); setScope(null); setScopeRetry(n => n + 1);
     }} />}
     {!isPersonal && section === "mine" && <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} onTransfer={setTransferCustomer} transferRevision={transferRevision} />}
+    {section === "exports" && exportsPorts && <PerfExportRecords ports={exportsPorts} />}
+    {exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts} onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />}
     {isPersonal && showStatistics && <PeriodPerfPanel perf={perf.period} month={queryState.month} asOf={`${formatBusinessTimeCompact((personalPeriod ?? scope).asOf, "—")}（${businessZone().label}）`}
       monthControl={<span className="m1-group-scope"><span aria-hidden="true">月份</span><Select aria-label="业绩月份" value={queryState.month} onChange={month => change({ month })} options={(monthCalendar ?? []).map(({ month }) => ({ value: month, label: month }))} placeholder="加载后可选" /></span>}
       onDetail={perf.events ? () => setEventsOpen(true) : undefined} />}

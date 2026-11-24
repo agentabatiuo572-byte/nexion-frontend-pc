@@ -5,7 +5,7 @@
  * 开关：只有构建时设了 NEXT_PUBLIC_SUPPORT_PERF_FIXTURE=1 才可能生效；正常构建里 ENABLED 恒为 false，perfFixture() 恒返回 null，
  * 页面走生产路径：照旧发旧请求，新口径一律显示「业绩数据暂不可用」。
  * 生效时在浏览器 localStorage 写「nexion-dev-support-perf-fixture」选状态，例如
- *   {"m6":"ready"}、{"m6":"provisional"}
+ *   {"m6":"ready"}、{"m6":"provisional"}、{"m1":"supervisor","export":"5a"}（导出和审批见 ExportScenario）
  * 夹具开着时，打开了夹具的那一块不发读请求（数据全部来自这里），写操作只在内存里造回包，不发请求。
  *
  * 数字只用交接 §5 和「验收修订」的样本（A、B、F、G、H），同一块画板里的数互相对得上；状态只造后端合同能产生的。
@@ -15,7 +15,7 @@ import type { SupportBoardKey, SupportBoardMovement, SupportBoardRow } from "./s
 import type { SupportAnalyticsAgent, SupportAnalyticsCustomer, SupportAnalyticsMonth, SupportAnalyticsQuery, SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import type { SupportProfile } from "@/lib/admin/m-support-enhancements";
-import type { AnalyticsPerf, PerfTotals, PerfValue } from "./perf-view";
+import { EXPORT_TYPES, ExportOutcomeUnknownError, type AnalyticsPerf, type DecisionLookup, type ExportCheck, type ExportChoice, type ExportColumns, type ExportDialogData, type ExportItem, type ExportPersona, type ExportQuery, type ExportSubmitted, type ExportTask, type ExportType, type PendingDecision, type PerfExportPorts, type PerfTotals, type PerfValue } from "./perf-view";
 
 const ENABLED = process.env.NEXT_PUBLIC_SUPPORT_PERF_FIXTURE === "1";
 const STORAGE_KEY = "nexion-dev-support-perf-fixture";
@@ -29,6 +29,12 @@ export type PerfFixture = {
   profile?: "B";
   /** 数据很长：客服名、组名、客户名换成长的，看省略和折行（数字不变）。 */
   long?: boolean;
+  /** 导出和审批的状态，见 ExportScenario。 */
+  export?: ExportScenario;
+  /** 下一次写操作的回包：被拒或结果未知。 */
+  write?: "rejected" | "unknown";
+  /** 「查询原操作」查到什么。 */
+  lookup?: DecisionLookup["kind"];
 };
 
 export function perfFixture(): PerfFixture | null {
@@ -125,8 +131,8 @@ export function leaderboardDetailFixture(fixture: BoardFixture, agentId: string)
 /* ---------------- 客服工作台（样本 A、F、G、H） ---------------- */
 
 /** 客服工作台的样本：agentA 是专属客服 Xu Jia 的样本 A（2a、2b），agentG 是同一个月 09:00 有一类入金没核完（2c）；
- * agentB 是专属客服 Sun Qing 的样本 B（4，两类直付和银行卡充值）；supervisor 是华东主管 Zhou Ming（3b、3c、3g），super 是超级管理员（3a、3e、3f），nogroup 是没有负责组的主管 Zhao Min（3d）。 */
-export type M1FixtureKind = "agentA" | "agentG" | "agentB" | "supervisor" | "super" | "nogroup";
+ * agentB 是专属客服 Sun Qing 的样本 B（4，两类直付和银行卡充值）；agentEmpty 是新来的专属客服 He Tian，这个月还没有记录（5f）；supervisor 是华东主管 Zhou Ming（3b、3c、3g），super 是超级管理员（3a、3e、3f），nogroup 是没有负责组的主管 Zhao Min（3d）。 */
+export type M1FixtureKind = "agentA" | "agentG" | "agentB" | "agentEmpty" | "supervisor" | "super" | "nogroup";
 
 type Resp = SupportAnalyticsResponse;
 type Cnt = Resp["selectedCurrent"]["firstConfirmed"];
@@ -192,6 +198,7 @@ function world(kind: M1FixtureKind): FixtureWorld {
     ];
     return { mode: "PERSONAL", asOf, customers, agents: [], groups: [], bound: 2, scopeCurrent: current({ first: 2, none: 0, devices: 2, active: 2, inactive: 0, deposits: "20" }), personnel: personnel(1), first: 2 };
   }
+  if (kind === "agentEmpty") return { mode: "PERSONAL", asOf, customers: [], agents: [], groups: [], bound: 0, scopeCurrent: current({ first: 0, none: 0, devices: 0, active: 0, inactive: 0 }), personnel: personnel(1), first: 0 };
   if (kind === "agentA" || kind === "agentG") {
     const partial = kind === "agentG";
     const customers: CustomerSeed[] = [
@@ -263,6 +270,14 @@ export function analyticsPerfFixture(kind: M1FixtureKind): AnalyticsPerf {
       withdrawals: ["TRC20", "BEP20", "ERC20", "越南银行卡"].map(label => ({ label, walletDebited: usdt("0"), fee: usdt("0"), received: usdt("0") })),
     },
     customers, agents: {}, groups: {}, scope: { period: totals("150", "150", "0"), current: usdt("150") },
+  };
+  if (kind === "agentEmpty") return {
+    period: {
+      totals: totals("0", "0", "0"), first: { state: "complete", value: 0 }, firstSplit: { deposits: 0, purchases: 0 },
+      inflow: [...["链上充值", "越南银行卡充值", "链上购机直付", "银行卡购机直付"].map(label => ({ label, value: usdt("0") })), { label: "其中本期更正", value: usdt("0"), sub: true }],
+      withdrawals: ["TRC20", "BEP20", "ERC20", "越南银行卡"].map(label => ({ label, walletDebited: usdt("0"), fee: usdt("0"), received: usdt("0") })),
+    },
+    customers, agents: {}, groups: {}, scope: { period: totals("0", "0", "0"), current: usdt("0") },
   };
   if (kind === "agentA" || kind === "agentG") {
     const partial = kind === "agentG";
@@ -339,5 +354,223 @@ export function profileFixture(): SupportProfile {
     finance: { status: "READY", evaluatedAt, data: { byCurrency: [finance("USDT", "20"), finance("UVT", "0")] } },
     devices: unknown, risk: unknown, annotations: unknown, service: unknown,
     actions: { resetPassword: { allowed: true }, freeze: { allowed: true }, unfreeze: { allowed: false }, adjustBalance: { allowed: true } },
+  };
+}
+
+/* ---------------- 导出和审批（第二批）：5a–5h、6a–6l ---------------- */
+
+/**
+ * 导出的状态，和 m1 / m6 一起写进 localStorage，例如 {"m1":"supervisor","export":"5a"}。
+ * 5a 主管三项都能选；5b 超管这一版有几项不能选；5c 勾了的逐笔记录没加载出来（取消勾选就是 5h）；5e 专属客服本人只有汇总；
+ * 5f 这个月没有记录；5g 页面这一版刷新没成功；6a 主管的申请（点开一条是 6b，撤回是 6g，下载失败用 6h）；6f 已批准、文件在生成；
+ * 6c 超管待我审批（批准 6d、驳回 6e）；6i 批准结果未知；6j 批准不了、驳回照常；6k 只有审批权；6l 申请人已没有这个范围；
+ * more 是没画的几种状态（已驳回、已过期、执行失败、已生成但不能下载）。
+ * write：下一次写操作的回包，rejected 被拒、unknown 结果未知；不写就成功（导出汇总可下载、明细待审批）。
+ * lookup：「查询原操作」查到什么，默认对上了这次（matched）。
+ */
+export type ExportScenario = "5a" | "5b" | "5c" | "5e" | "5f" | "5g" | "6a" | "6c" | "6f" | "6h" | "6i" | "6j" | "6k" | "6l" | "more";
+
+const GRAIN: Record<ExportType, string> = { SUMMARY: "一位客服在一个组一个月一行", CUSTOMER_DETAIL: "一位客户在一位客服名下一个月一行", TRANSACTION_DETAIL: "一笔入金、提现或参考交易一行" };
+const LIMIT: Record<ExportType, number> = { SUMMARY: 5000, CUSTOMER_DETAIL: 5000, TRANSACTION_DETAIL: 100000 };
+const groupsOf = (rows: [string, string[]][]) => rows.map(([name, columns]) => ({ name, columns }));
+const SUMMARY_GROUPS = groupsOf([
+  ["客服和组", ["客服", "组", "统计截至时的组主管"]], ["月份", ["月份"]], ["业绩额", ["业绩额"]],
+  ["入金", ["入金合计", "链上充值", "越南银行卡充值", "链上购机直付", "银行卡购机直付", "本期更正合计", "链上充值更正", "越南银行卡充值更正", "链上购机直付更正", "银行卡购机直付更正"]],
+  ["提现", ["提现合计", ...["TRC20", "BEP20", "ERC20", "越南银行卡"].flatMap(n => [`${n}${n === "越南银行卡" ? "" : " "}钱包扣款`, `${n}${n === "越南银行卡" ? "" : " "}手续费`, `${n}${n === "越南银行卡" ? "" : " "}客户到手`])]],
+  ["越南盾参考", ["越南银行卡充值到账（越南盾）", "银行卡购机直付到账（越南盾）", "越南银行卡提现到账（越南盾）", "越南银行卡入金更正（越南盾）"]],
+  ["不计入业绩的参考", ["买设备", "退款", "人工加款", "奖励到账"]],
+  ["人数", ["月末绑定客户", "本月新绑定", "本月有入金", "本月有提现", "本月首充", "本月业绩为负"]],
+  ["说明", ["统计截至", "时区", "数据覆盖", "缺口原因"]],
+]);
+const CUSTOMER_GROUPS = groupsOf([
+  ["客户", ["用户编码", "昵称（打码）", "当时的客服", "这个月在这位客服名下的绑定时间段"]], ["月份", ["月份"]],
+  ["入金", ["链上充值", "越南银行卡充值", "链上购机直付", "银行卡购机直付", "本期更正"]],
+  ["提现", ["TRC20 钱包扣款", "BEP20 钱包扣款", "ERC20 钱包扣款", "越南银行卡钱包扣款"]],
+  ["参考", ["买设备", "退款"]], ["业绩额", ["业绩额"]], ["累计业绩额", ["累计业绩额（本月写到统计截至）"]],
+  ["说明", ["统计截至", "时区", "数据覆盖", "缺口原因"]],
+]);
+const TRANSACTION_GROUPS = groupsOf([
+  ["时间", ["生效时间", "发生时间"]], ["客户和归属", ["用户编码", "当时的客服", "当时的组"]], ["类别", ["类别", "参考类别", "渠道", "网络"]],
+  ["单号", ["业务单号", "原单号"]], ["金额", ["业务原金额", "原币种", "进位调整", "总实付", "计入业绩的增减额", "钱包扣款", "手续费", "通道费", "网络费", "客户到手"]],
+  ["越南盾", ["越南盾金额"]], ["状态", ["来源状态", "状态", "缺口原因"]],
+]);
+/** 预检回来的列（导出框）。 */
+const PREVIEW_COLUMNS: Record<ExportType, ExportColumns> = {
+  SUMMARY: { total: 46, summary: "客服和组 3 · 月份 1 · 业绩额 1 · 入金 10 · 提现 13 · 越南盾参考 4 · 不计入业绩的参考 4 · 人数 6 · 说明 4。", groups: SUMMARY_GROUPS },
+  CUSTOMER_DETAIL: { total: 22, summary: "客户 4 · 月份 1 · 入金 5 · 提现 4 · 参考 2 · 业绩额 1 · 累计业绩额 1 · 说明 4；不含手机号。", groups: CUSTOMER_GROUPS },
+  TRANSACTION_DETAIL: { total: 25, summary: "时间 2 · 客户和归属 3 · 类别 4 · 单号 2 · 金额 10 · 越南盾 1 · 状态 3。", groups: TRANSACTION_GROUPS },
+};
+/** 提交时冻结的列（导出记录、审批）。 */
+const FROZEN_COLUMNS: Record<ExportType, ExportColumns> = {
+  SUMMARY: PREVIEW_COLUMNS.SUMMARY,
+  CUSTOMER_DETAIL: { ...PREVIEW_COLUMNS.CUSTOMER_DETAIL, summary: "客户 4 · 月份 1 · 入金 5 · 提现 4 · 参考 2 · 业绩额 1 · 累计业绩额 1（本月写到统计截至）· 说明 4；不含手机号。列名写在文件第一行。" },
+  TRANSACTION_DETAIL: { ...PREVIEW_COLUMNS.TRANSACTION_DETAIL, summary: "时间 2 · 客户和归属 3 · 类别 4 · 单号 2 · 金额 10 · 越南盾 1 · 状态 3。列名写在文件第一行。" },
+};
+const exportItem = (type: ExportType, check: ExportCheck, grain = GRAIN[type]): ExportItem => ({ type, grain, limit: LIMIT[type], columns: PREVIEW_COLUMNS[type], check });
+/** 华东专属服务组 2026-11 截至 14:20 这一版的行数（画布 5a）。 */
+const EAST_ROWS: Record<ExportType, number> = { SUMMARY: 2, CUSTOMER_DETAIL: 2, TRANSACTION_DETAIL: 3 };
+const EMPTY_TEXT = "这个月还没有记录，你名下客户有入金或提现后才会有。";
+const REASON_A = "核对华东组 11 月业绩，发财务对账，工单 CS-1124-07";
+const ASOF_1420 = "2026-11-24 14:20";
+const ASOF_0900 = "2026-11-24 09:00";
+const ONE_MONTH: ExportChoice[] = [{ value: "2026-11", label: "2026-11" }];
+
+function exportPersona(s: ExportScenario): ExportPersona {
+  if (s === "5b" || s === "6c" || s === "6i" || s === "6j") return { name: "Local Backup Admin", canExport: true, views: ["APPROVALS", "MINE"] };
+  if (s === "5e") return { name: "Wang Ke", canExport: true, views: ["MINE"] };
+  if (s === "5f") return { name: "He Tian", canExport: true, views: ["MINE"] };
+  if (s === "6k") return { name: "Gao Lan", canExport: false, views: ["APPROVALS"] };
+  if (s === "6l") return { name: "Zhou Ming", canExport: false, exportBlocked: "没有负责的组，暂时不能导出", views: ["MINE"] };
+  return { name: "Zhou Ming", canExport: true, views: ["MINE"] };
+}
+
+function dialogData(s: ExportScenario): ExportDialogData {
+  const base = { months: ONE_MONTH, month: "2026-11", since: "自 2026-11-20 22:57 起", asOf: ASOF_1420 };
+  if (s === "5b") return { ...base, asOf: ASOF_0900, scopes: [{ value: "ALL", label: "全部范围（含未分配、归属未知）" }], scope: "ALL", downloader: "你本人（Local Backup Admin）", selected: ["SUMMARY"],
+    items: [
+      exportItem("SUMMARY", { state: "ok", rows: 6, note: "越南银行卡充值还没核完：文件写已核小计和缺口。" }),
+      exportItem("CUSTOMER_DETAIL", { state: "failed", text: "这一项没加载出来。" }),
+      exportItem("TRANSACTION_DETAIL", { state: "over", text: "126,480 行，超过上限，本月暂时不能导出。" }),
+    ] };
+  if (s === "5e") return { ...base, scopes: [{ value: "SELF", label: "本人（Wang Ke）" }], scope: "SELF", downloader: "你本人（Wang Ke）", selected: ["SUMMARY"],
+    items: [exportItem("SUMMARY", { state: "ok", rows: 1 }, "本人在一个组一个月一行")] };
+  if (s === "5f") return { ...base, scopes: [{ value: "SELF", label: "本人（He Tian）" }], scope: "SELF", downloader: "你本人（He Tian）", selected: [],
+    items: [exportItem("SUMMARY", { state: "empty", text: EMPTY_TEXT }, "本人在一个组一个月一行")] };
+  const supervisor = { ...base, scopes: [{ value: "301", label: "华东专属服务组" }, { value: "SELF", label: "本人（Zhou Ming）" }], scope: "301", downloader: "你本人（Zhou Ming）" };
+  if (s === "5g") return { ...supervisor, asOf: ASOF_0900, selected: [], blocked: "这一版数据刷新没成功，暂时不能导出。关掉这个框，在页面上刷新成功后再导出。",
+    items: EXPORT_TYPES.map(type => exportItem(type, { state: "stale", rows: EAST_ROWS[type] })) };
+  if (s === "5c") return { ...supervisor, selected: [...EXPORT_TYPES],
+    items: EXPORT_TYPES.map(type => exportItem(type, type === "TRANSACTION_DETAIL" ? { state: "failed", text: "没加载出来。" } : { state: "ok", rows: EAST_ROWS[type] })) };
+  return { ...supervisor, selected: ["SUMMARY"], items: EXPORT_TYPES.map(type => exportItem(type, { state: "ok", rows: EAST_ROWS[type] })) };
+}
+
+function exportTask(seq: string, type: ExportType, o: Partial<ExportTask> = {}): ExportTask {
+  return { taskId: `PE20261124-${seq}`, type, requester: "Zhou Ming", requesterRole: "客服主管", mine: true, scope: "华东专属服务组", month: "2026-11", asOf: "2026-11-24T06:20:00Z",
+    rows: EAST_ROWS[type], columns: FROZEN_COLUMNS[type], coverage: "完整", requestReason: REASON_A, requestedAt: "2026-11-24T06:26:00Z",
+    state: "PENDING_APPROVAL", canDownload: false, canReview: false, canWithdraw: true, ...o };
+}
+const APPROVED_BY = { decidedBy: "Local Backup Admin", decidedAt: "14:32", decisionReason: "已核对范围和用途，同意导出给财务对账" };
+function exportTasks(s: ExportScenario, view: "MINE" | "APPROVALS"): ExportTask[] {
+  const lost = { scope: null, month: null, rows: null, asOf: null, coverage: null, scopeLost: true };
+  if (s === "6l") return [
+    exportTask("0011", "SUMMARY", { ...lost, state: "READY", canWithdraw: false }),
+    exportTask("0012", "CUSTOMER_DETAIL", lost), exportTask("0013", "TRANSACTION_DETAIL", lost),
+    exportTask("0004", "TRANSACTION_DETAIL", { ...lost, state: "WITHDRAWN", canWithdraw: false, requestedAt: "2026-11-24T02:40:00Z" }),
+  ];
+  if (s === "6c" || s === "6i" || s === "6j" || s === "6k") {
+    const others = [
+      exportTask("0012", "CUSTOMER_DETAIL", { mine: false, canWithdraw: false, canReview: true, approveBlocked: s === "6j" ? "申请人已没有这个范围的导出权限" : undefined }),
+      exportTask("0013", "TRANSACTION_DETAIL", { mine: false, canWithdraw: false, canReview: true }),
+    ];
+    if (s === "6k") return view === "APPROVALS" ? others : [];
+    const own = exportTask("0009", "TRANSACTION_DETAIL", { requester: "Local Backup Admin", requesterRole: "超级管理员", scope: "全部范围", rows: 8, requestedAt: "2026-11-24T05:50:00Z", canReview: false });
+    return view === "APPROVALS" ? [...others, own] : [own];
+  }
+  const mine = [
+    exportTask("0011", "SUMMARY", { state: "READY", canDownload: true, canWithdraw: false }),
+    exportTask("0012", "CUSTOMER_DETAIL", s === "6f" ? { state: "APPROVED", canWithdraw: false, ...APPROVED_BY } : {}),
+    exportTask("0013", "TRANSACTION_DETAIL"),
+    exportTask("0004", "TRANSACTION_DETAIL", { state: "WITHDRAWN", canWithdraw: false, requestedAt: "2026-11-24T02:40:00Z" }),
+  ];
+  if (s !== "more") return mine;
+  return [
+    exportTask("0008", "TRANSACTION_DETAIL", { state: "REJECTED", canWithdraw: false, decidedBy: "Local Backup Admin", decidedAt: "11:05", decisionReason: "逐笔记录里有业务单号，请写清接收人后重新申请", requestedAt: "2026-11-24T02:50:00Z" }),
+    exportTask("0007", "SUMMARY", { state: "EXPIRED", canWithdraw: false, requestedAt: "2026-11-20T15:10:00Z" }),
+    exportTask("0006", "CUSTOMER_DETAIL", { state: "APPROVED", failure: "GENERATE_FAILED", canWithdraw: false, ...APPROVED_BY, requestedAt: "2026-11-24T06:26:00Z" }),
+    exportTask("0005", "SUMMARY", { state: "READY", canDownload: false, canWithdraw: false, requestedAt: "2026-11-23T10:00:00Z" }),
+  ];
+}
+
+const LOOKUP_TEXT: Record<DecisionLookup["kind"], string> = {
+  matched: "已查到这次批准：14:32 已批准，文件在生成。",
+  mismatch: "这条申请现在是「已批准」，但对不上是不是这次批准的结果，继续核对，先保持锁定；可以再查询，或到「操作记录与审批」核对这次操作。",
+  pending: "还没查到这次批准的结果，保持锁定，稍后再查。",
+  "not-received": "系统确认没收到这次批准。可以按原操作重试：同一个理由，不会多批一次。",
+  expired: "已超过可重试时限，不能再重试，请到「操作记录与审批」核对这次操作",
+  failed: "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。",
+};
+const wait = (ms = 500) => new Promise(resolve => setTimeout(resolve, ms));
+
+/** 夹具开着时导出和审批走这里：读和写都只在内存里，不发请求。 */
+export function exportFixturePorts(): PerfExportPorts | null {
+  const f = perfFixture();
+  const s = f?.export;
+  if (!s) return null;
+  const store: Record<"MINE" | "APPROVALS", ExportTask[]> = { MINE: exportTasks(s, "MINE"), APPROVALS: exportTasks(s, "APPROVALS") };
+  let pending: PendingDecision[] = s === "6i" ? [{ taskId: "PE20261124-0012", decision: "APPROVE", reason: APPROVED_BY.decisionReason, operationId: "7f3a9c2e-1b4d-4e8a-9c61-2d5e8f0a4b13", at: "14:32" }] : [];
+  let retried = false, downloadFailed = s === "6h", nextWrite = f?.write;
+  const outcome = () => { const w = nextWrite; nextWrite = undefined; return w; };
+  const replace = (task: ExportTask) => { for (const view of ["MINE", "APPROVALS"] as const) store[view] = store[view].map(row => row.taskId === task.taskId ? task : row); return task; };
+  // 被拒（409 EXPORT_SCOPE_CHANGED 一类）：接线后由错误码翻成这句。
+  const rejectWrite = () => new Error("这条申请的范围变了，刷新后再看。");
+  const make = (q: ExportQuery): ExportSubmitted[] => {
+    const seq: Record<ExportType, string> = { SUMMARY: "0011", CUSTOMER_DETAIL: "0012", TRANSACTION_DETAIL: "0013" };
+    const made = q.types.map(type => exportTask(seq[type], type, type === "SUMMARY" ? { state: "READY", canDownload: true, canWithdraw: false } : {}));
+    store.MINE = [...made, ...store.MINE.filter(row => !made.some(m => m.taskId === row.taskId))];
+    return made.map(task => ({ type: task.type, taskId: task.taskId, state: task.state === "READY" ? "READY" as const : "PENDING_APPROVAL" as const, rows: task.rows }));
+  };
+  return {
+    persona: exportPersona(s),
+    open: async () => { await wait(); return dialogData(s); },
+    check: async (q: ExportQuery) => {
+      await wait(800);
+      const data = dialogData(s);
+      return q.types.map(type => {
+        if (q.scope === "SELF" && s !== "5e" && s !== "5f") return exportItem(type, { state: "empty", text: EMPTY_TEXT });
+        const found = data.items.find(item => item.type === type) ?? exportItem(type, { state: "ok", rows: EAST_ROWS[type] });
+        // 5c：逐笔记录点「重试」后查到了。
+        if (s === "5c" && type === "TRANSACTION_DETAIL") { const ok = retried; retried = true; return ok ? exportItem(type, { state: "ok", rows: EAST_ROWS[type] }) : found; }
+        return found;
+      });
+    },
+    submit: async (q: ExportQuery) => {
+      await wait();
+      const w = outcome();
+      if (w === "unknown") throw new ExportOutcomeUnknownError("提交后没收到结果，原来的选择和理由已保存。先查询原操作，不要再点提交。");
+      if (w === "rejected") throw new Error("这一版数据变了，重新检查后再提交。");
+      return make(q);
+    },
+    lookupSubmit: async (q: ExportQuery) => {
+      await wait();
+      return f?.lookup && f.lookup !== "matched" ? null : make(q);
+    },
+    tasks: async (view: "MINE" | "APPROVALS") => { await wait(300); return store[view]; },
+    decide: async (task: ExportTask, decision: "APPROVE" | "REJECT", reason: string) => {
+      await wait();
+      const w = outcome() ?? (s === "6i" && decision === "APPROVE" && !pending.length ? "unknown" : undefined);
+      if (w === "unknown") {
+        pending = [{ taskId: task.taskId, decision, reason, operationId: "7f3a9c2e-1b4d-4e8a-9c61-2d5e8f0a4b13", at: "14:32" }];
+        throw new ExportOutcomeUnknownError(`${decision === "APPROVE" ? "批准" : "驳回"}后没收到结果，原操作和理由已保存。先查询原操作。`);
+      }
+      if (w === "rejected") throw rejectWrite();
+      pending = pending.filter(p => p.taskId !== task.taskId);
+      return replace({ ...task, state: decision === "APPROVE" ? "APPROVED" : "REJECTED", canReview: false, canWithdraw: false, decidedBy: exportPersona(s).name, decidedAt: "14:32", decisionReason: reason });
+    },
+    lookupDecision: async (p: PendingDecision) => {
+      await wait();
+      const kind = f?.lookup ?? "matched";
+      const task = [...store.APPROVALS, ...store.MINE].find(row => row.taskId === p.taskId);
+      if (kind === "matched" && task) {
+        pending = pending.filter(row => row.taskId !== p.taskId);
+        if (p.decision === "WITHDRAW") return { kind, task: replace({ ...task, state: "WITHDRAWN", canWithdraw: false }), text: "已查到这次撤回：这条申请已撤回。" };
+        return { kind, task: replace({ ...task, state: p.decision === "APPROVE" ? "APPROVED" : "REJECTED", canReview: false, canWithdraw: false, decidedBy: exportPersona(s).name, decidedAt: p.at, decisionReason: p.reason }), text: LOOKUP_TEXT.matched };
+      }
+      return { kind: kind === "matched" ? "pending" : kind, text: LOOKUP_TEXT[kind === "matched" ? "pending" : kind] } as DecisionLookup;
+    },
+    withdraw: async (task: ExportTask, reason: string) => {
+      await wait();
+      const w = outcome();
+      if (w === "unknown") {
+        pending = [{ taskId: task.taskId, decision: "WITHDRAW", reason, operationId: "3c8e51d0-6a2f-4b97-8e14-90d2b7c5a6f1", at: "14:40" }];
+        throw new ExportOutcomeUnknownError("撤回后没收到结果，原操作和理由已保存。先查询原操作，不要再点撤回。");
+      }
+      if (w === "rejected") throw rejectWrite();
+      return replace({ ...task, state: "WITHDRAWN", canWithdraw: false, decisionReason: reason });
+    },
+    download: async () => {
+      await wait();
+      if (downloadFailed) { downloadFailed = false; throw new Error("EXPORT_DOWNLOAD_INCOMPLETE"); }
+    },
+    pendingDecisions: () => pending,
   };
 }

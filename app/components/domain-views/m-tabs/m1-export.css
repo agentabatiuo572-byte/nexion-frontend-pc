@@ -1,0 +1,54 @@
+/* 客服业绩的导出确认框、导出记录和审批（M1「导出记录」页签；业绩榜和我的数据打开同一个导出框）。只用 --rd-* 令牌。 */
+
+/* 导出确认框：月份、范围两列；下面一行只读事实是弱标签加值，不长得像能改的字段（VS-54、VS-104）。 */
+.m1-export { display: flex; flex-direction: column; gap: var(--rd-space-4); }
+.m1-export-scope { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-4); }
+.m1-export-static { display: flex; align-items: center; min-height: var(--rd-control-h); color: var(--rd-text); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }
+.m1-export-fixed { display: flex; flex-wrap: wrap; gap: var(--rd-space-1) var(--rd-space-5); margin: 0; color: var(--rd-text); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m1-export-fixed em { margin-right: var(--rd-space-2); color: var(--rd-text-3); font-style: normal; }
+.m1-export-loading { margin: 0; color: var(--rd-text-3); }
+
+/* 导出内容：每项一行，勾选框在左；不能选的项打不了勾，原因写在这一项下面。 */
+.m1-export-items { display: flex; flex-direction: column; }
+.m1-export-item { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--rd-space-3); padding: var(--rd-space-3) 0; border-top: 1px solid var(--rd-line); }
+.m1-export-item:first-child { border-top: 0; padding-top: var(--rd-space-1); }
+.m1-export-item > .rd-check { margin-top: 3px; }
+.m1-export-item-main { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; }
+.m1-export-item-head { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-3); }
+.m1-export-item-name { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.m1-export-item[data-state="failed"] .m1-export-item-name, .m1-export-item[data-state="over"] .m1-export-item-name, .m1-export-item[data-state="empty"] .m1-export-item-name, .m1-export-item[data-state="stale"] .m1-export-item-name { color: var(--rd-text-3); }
+.m1-export-item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
+.m1-export-item-cols { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+.m1-export-item-note { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m1-export-item-error { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-2); margin: 0; color: var(--rd-danger); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m1-export-item .rd-fold { margin-top: var(--rd-space-1); }
+
+/* 列名：一组一行，组名在左。 */
+.m1-export-cols { display: flex; flex-direction: column; gap: var(--rd-space-2); margin: 0; }
+.m1-export-cols > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--rd-space-3); }
+.m1-export-cols dt { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m1-export-cols dd { display: flex; flex-wrap: wrap; gap: var(--rd-space-1) var(--rd-space-3); margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+
+/* 提交后的结果：一项一行，编号等宽。 */
+.m1-export-results { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.m1-export-result { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-3); padding: var(--rd-space-3) 0; border-top: 1px solid var(--rd-line); }
+.m1-export-result:first-child { border-top: 0; padding-top: 0; }
+.m1-export-result-main { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; }
+.m1-export-result-head { display: flex; align-items: center; gap: var(--rd-space-2); }
+.m1-export-result-name { font-weight: var(--rd-weight-medium); }
+.m1-export-result-sub { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+
+/* 导出记录：表上方一句写清现在看不到什么（6l）；列宽固定，操作列收窄。 */
+.m1-export-lost { margin: 0 0 var(--rd-space-3); color: var(--rd-text-2); }
+.m1-export-table { table-layout: fixed; }
+.m1-export-table th:nth-child(1) { width: 16%; }
+.m1-export-table th:nth-child(2) { width: 20%; }
+.m1-export-table th:nth-child(3) { width: 31%; }
+.m1-export-table th:nth-child(4) { width: 16%; }
+.m1-export-table th:nth-child(5) { width: 7%; }
+
+/* 导出内容一项占一整行（共用勾选组默认两列）。 */
+.m1-export .rd-check-grid { display: flex; flex-direction: column; }
+
+/* 提交结果未知：「查询原操作」和查到什么写在框最上面。 */
+.m1-export-recover { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-3); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }

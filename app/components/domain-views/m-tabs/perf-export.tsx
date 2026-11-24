@@ -1,0 +1,184 @@
+"use client";
+/**
+ * 导出业绩的确认框（画板 5a–5h）：业绩榜、我的数据、主管工作台三处同一个框（OP-41）。
+ * 用共用的 OperationConfirmModal：理由规则、提交中锁定、失败留表单都在它里面；这里只给月份、范围、导出内容和按钮上的字。
+ * 读写都走 PerfExportPorts（接线前只有开发夹具给）。
+ */
+import { useEffect, useRef, useState } from "react";
+import { Button, Decision, Explain, Fact, Facts, Field, Fold, InlineRetry, Modal, Notice, Select, StatusTag, CheckGroup } from "@/app/components/rd";
+import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
+import { businessZone } from "@/lib/admin/business-time";
+import { EXPORT_LABEL, ExportOutcomeUnknownError, type ExportColumns, type ExportDialogData, type ExportItem, type ExportSubmitted, type ExportType, type PerfExportPorts } from "./perf-view";
+import "./m1-export.css";
+
+const num = (n: number) => n.toLocaleString("en-US");
+const DETAIL_TYPES: readonly ExportType[] = ["CUSTOMER_DETAIL", "TRANSACTION_DETAIL"];
+
+/** 「查看 N 个列名」：预检回来的（导出框）或提交时冻结的（审批）真实列名，按组排。 */
+export function ExportColumnsFold({ columns, summary }: { columns: ExportColumns; summary: string }) {
+  return <Fold title={`查看 ${columns.total} 个列名`} summary={summary} inset>
+    <dl className="m1-export-cols">{columns.groups.map(group => <div key={group.name}><dt>{group.name}</dt><dd>{group.columns.map(column => <span key={column} className="m1-export-col">{column}</span>)}</dd></div>)}</dl>
+  </Fold>;
+}
+
+export function PerfExportDialog({ ports, onClose, onRecords }: { ports: PerfExportPorts; onClose: () => void; onRecords?: () => void }) {
+  const [data, setData] = useState<ExportDialogData | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [month, setMonth] = useState("");
+  const [scope, setScope] = useState("");
+  const [items, setItems] = useState<ExportItem[]>([]);
+  const [selected, setSelected] = useState<ExportType[]>([]);
+  /** 勾着时没加载出来、后来取消勾选的项：写「这次不导出」。 */
+  const [dropped, setDropped] = useState<ExportType[]>([]);
+  const [result, setResult] = useState<ExportSubmitted[] | null>(null);
+  const [downloadFailed, setDownloadFailed] = useState<string | null>(null);
+  /** 提交没收到结果：选择和理由都锁住，只给「查询原操作」（OP-91–96）。 */
+  const [unknown, setUnknown] = useState(false);
+  const [lookupText, setLookupText] = useState<string | null>(null);
+  const [querying, setQuerying] = useState(false);
+  const [found, setFound] = useState<string | null>(null);
+  const checkGeneration = useRef(0);
+  const zone = businessZone().label;
+
+  const load = () => {
+    setLoadFailed(false);
+    ports.open().then(next => {
+      setData(next); setMonth(next.month); setScope(next.scope); setItems(next.items); setSelected(next.selected);
+    }, () => setLoadFailed(true));
+  };
+  useEffect(load, [ports]);
+
+  /** 重新检查这几项（只读）。只认最后一次检查的结果；没查到的这一项写没加载出来。 */
+  const recheck = (types: readonly ExportType[], next = { month, scope }) => {
+    if (!types.length) return;
+    const generation = ++checkGeneration.current;
+    setItems(rows => rows.map(row => types.includes(row.type) ? { ...row, check: { state: "checking" } } : row));
+    ports.check({ month: next.month, scope: next.scope, types: [...types] }).then(found => {
+      if (generation !== checkGeneration.current) return;
+      setItems(rows => rows.map(row => found.find(item => item.type === row.type) ?? row));
+    }, () => {
+      if (generation !== checkGeneration.current) return;
+      setItems(rows => rows.map(row => types.includes(row.type) ? { ...row, check: { state: "failed", text: "没加载出来。" } } : row));
+    });
+  };
+  const toggle = (item: ExportItem) => {
+    const on = selected.includes(item.type);
+    const next = on ? selected.filter(type => type !== item.type) : [...selected, item.type];
+    setSelected(next);
+    if (on && item.check.state === "failed") setDropped(rows => [...rows, item.type]);
+    if (!on) setDropped(rows => rows.filter(type => type !== item.type));
+    // 取消勾选没加载出来的一项后，马上对剩下勾着的重新检查，用这次的结果提交（5h）。
+    if (on && item.check.state !== "ok") recheck(next);
+  };
+  const changeScope = (value: string) => { setScope(value); setDropped([]); recheck(items.map(row => row.type), { month, scope: value }); };
+  const changeMonth = (value: string) => { setMonth(value); setDropped([]); recheck(items.map(row => row.type), { month: value, scope }); };
+
+  if (result) {
+    const pending = result.some(row => row.state === "PENDING_APPROVAL");
+    const scopeLabel = data?.scopes.find(row => row.value === scope)?.label ?? "—";
+    const download = (taskId: string) => { setDownloadFailed(null); ports.download(taskId).catch(() => setDownloadFailed(taskId)); };
+    return <Modal title={`已提交 ${result.length} 项导出`} onClose={onClose}
+      footer={<Decision others={onRecords && <Button onClick={onRecords}>去导出记录</Button>} primary={<Button variant="primary" onClick={onClose}>知道了</Button>} />}>
+      <Facts>
+        <Fact k="范围">{scopeLabel}</Fact>
+        <Fact k="月份">{month}（截至 {data?.asOf}，{zone}）</Fact>
+      </Facts>
+      {found && <Notice tone="ok">{found}</Notice>}
+      {downloadFailed && <Notice tone="warn" title="下载没有完成" actionBelow action={<Button size="sm" onClick={() => download(downloadFailed)}>重新获取下载链接</Button>}>文件还在，重新获取下载链接再下，不会重新生成。</Notice>}
+      <ul className="m1-export-results">{result.map(row => <li key={row.taskId} className="m1-export-result">
+        <div className="m1-export-result-main">
+          <div className="m1-export-result-head"><span className="m1-export-result-name">{EXPORT_LABEL[row.type]}</span>{row.state === "READY" ? <StatusTag tone="ok">可下载</StatusTag> : <StatusTag tone="warn">待审批</StatusTag>}</div>
+          <div className="m1-export-result-sub"><span data-mono="">{row.taskId}</span>{row.state === "READY" ? ` · ${row.rows ?? "—"} 行 · CSV` : " · 等另一位有审批权的管理员审批"}</div>
+        </div>
+        {row.state === "READY" && <Button size="sm" onClick={() => download(row.taskId)}>下载</Button>}
+      </li>)}</ul>
+      {pending && <p className="rd-note">明细批准后才生成文件，生成好后在「导出记录」下载。</p>}
+    </Modal>;
+  }
+
+  const selectable = items.filter(item => item.check.state === "ok");
+  const chosen = items.filter(item => selected.includes(item.type));
+  const hasSummary = selected.includes("SUMMARY"), hasDetail = selected.some(type => DETAIL_TYPES.includes(type));
+  const confirmLabel = hasSummary && hasDetail ? "导出汇总并提交明细审批" : hasDetail ? "提交审批" : "提交导出";
+  const notReady = chosen.find(item => item.check.state !== "ok");
+  const blockedReason = !data ? undefined
+    : unknown ? "提交后没收到结果，原来的选择和理由已保存。先查询原操作，不要再点提交。"
+    : data.blocked ? data.blocked
+    : !selectable.length && !notReady ? items[0]?.check.state === "empty" ? "这个月还没有记录" : "没有能导出的内容"
+    : notReady ? notReady.check.state === "checking" ? "正在检查…" : `${EXPORT_LABEL[notReady.type]}没加载出来`
+    : !chosen.length ? "还没勾选导出内容" : undefined;
+  // 没有能提交的项时不要求填理由，也不显示理由框（5f、5g）。
+  const requireReason = !data || (!data.blocked && (selectable.length > 0 || !!notReady));
+  const scopeLabel = data?.scopes.find(row => row.value === scope)?.label ?? "—";
+
+  const content = loadFailed
+    ? <Notice tone="danger" action={<Button size="sm" onClick={load}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。</Notice>
+    : !data ? <p className="m1-export-loading" role="status">正在读取导出内容…</p>
+    : <div className="m1-export">
+      {unknown && <div className="m1-export-recover"><Button size="sm" loading={querying} loadingText="正在查询…" onClick={() => {
+        setQuerying(true); setLookupText(null);
+        ports.lookupSubmit({ month, scope, types: selected }).then(rows => {
+          if (!rows) { setLookupText("还没查到这次提交的结果，先保持锁定，稍后再查。"); return; }
+          const ready = rows.filter(row => row.state === "READY").map(row => EXPORT_LABEL[row.type]), waiting = rows.filter(row => row.state !== "READY").map(row => EXPORT_LABEL[row.type]);
+          setFound(`已查到这次提交：${[ready.length ? `${ready.join("、")}可下载` : "", waiting.length ? `${waiting.join("、")}待审批` : ""].filter(Boolean).join("，")}。`);
+          setResult(rows);
+        }, () => setLookupText("这次查询没连上，原操作还没确定。稍后再点「查询原操作」。")).finally(() => setQuerying(false));
+      }}>查询原操作</Button>{lookupText && <span role="status">{lookupText}</span>}</div>}
+      <div className="m1-export-scope">
+        <Field label="月份" help={data.since}>{control => data.months.length > 1
+          ? <Select {...control} aria-label="月份" value={month} options={data.months} onChange={changeMonth} disabled={unknown} />
+          : <div id={control.id} className="m1-export-static">{month}</div>}</Field>
+        <Field label="范围">{control => data.scopes.length > 1
+          ? <Select {...control} aria-label="范围" value={scope} options={data.scopes} onChange={changeScope} disabled={unknown} />
+          : <div id={control.id} className="m1-export-static">{scopeLabel}</div>}</Field>
+      </div>
+      <p className="m1-export-fixed">
+        <span><em>统计截至</em>{data.asOf}（{zone}）</span>
+        <span><em>币种</em>USDT，越南盾只作参考列</span>
+        <span><em>下载人</em>{data.downloader}</span>
+      </p>
+      <CheckGroup legend="导出内容" summary={`已选 ${selected.length} 项`}>
+        <div className="m1-export-items">{items.map(item => {
+          const on = selected.includes(item.type), label = EXPORT_LABEL[item.type], check = item.check;
+          const rows = check.state === "ok" || check.state === "stale" ? check.rows : null;
+          const meta = check.state === "empty" ? item.grain
+            : check.state === "checking" ? `${item.grain} · 正在检查…`
+            : `${item.grain}${rows !== null ? ` · ${num(rows)} 行` : ""} · 上限 ${num(item.limit)} 行（拟设）`;
+          const showColumns = check.state === "ok" || check.state === "stale";
+          return <div key={item.type} className="m1-export-item" data-state={check.state}>
+            <input type="checkbox" className="rd-check" aria-label={label} checked={on} disabled={unknown || (!on && check.state !== "ok")} onChange={() => toggle(item)} />
+            <div className="m1-export-item-main">
+              <div className="m1-export-item-head"><span className="m1-export-item-name">{label}</span>
+                {check.state === "ok" && <StatusTag tone="neutral">{DETAIL_TYPES.includes(item.type) ? "批准后才能下载" : "提交后就能下载"}</StatusTag>}</div>
+              <div className="m1-export-item-meta">{meta}
+                {showColumns && <span className="m1-export-item-cols">{item.columns.total} 列<Explain label={`${label}有哪些列`} content={item.columns.summary} /></span>}</div>
+              {check.state === "ok" && check.rows === null && <p className="m1-export-item-note">新的一版还没核完，行数要等核完才知道。</p>}
+              {check.state === "ok" && check.note && <p className="m1-export-item-note">{check.note}</p>}
+              {check.state === "empty" && <p className="m1-export-item-note">{check.text}</p>}
+              {check.state === "over" && <p className="m1-export-item-note" data-tone="warn">{check.text}</p>}
+              {check.state === "failed" && <p className="m1-export-item-error" role="alert">
+                {on ? "没加载出来。点「重试」，或取消勾选。" : dropped.includes(item.type) ? "没加载出来，这次不导出。" : check.text}
+                <InlineRetry onRetry={() => recheck([item.type])} />
+              </p>}
+              {/* 列名展开只给勾着的项：打开时不用滚就看得到理由框（FP-5）；没勾的项看「N 列」的问号。 */}
+              {check.state === "ok" && on && <ExportColumnsFold columns={item.columns} summary="这次检查的列" />}
+            </div>
+          </div>;
+        })}</div>
+      </CheckGroup>
+    </div>;
+
+  const effect = hasSummary || hasDetail ? <>{hasSummary && <StatusTag tone="progress" filled>汇总立即生成</StatusTag>}{hasDetail && <StatusTag tone="progress" filled>明细批准后生成</StatusTag>}</> : undefined;
+  return <OperationConfirmModal briefKind="export" title="导出业绩" action="导出客服业绩" detail={`${month} · ${scopeLabel}`}
+    effect={effect} content={content} confirmLabel={confirmLabel} blockedReason={blockedReason} requireReason={requireReason}
+    reasonPlaceholder="写清导出用途和接收人，例如：对账工单号、发给谁"
+    onClose={onClose}
+    onConfirm={async reason => {
+      try {
+        setResult(await ports.submit({ month, scope, types: selected }, reason));
+      } catch (error) {
+        if (!(error instanceof ExportOutcomeUnknownError)) throw error;
+        setUnknown(true);
+      }
+    }} />;
+}

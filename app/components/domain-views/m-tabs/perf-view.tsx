@@ -89,3 +89,117 @@ export type AnalyticsPerf = {
   /** 只有超级管理员才有：不在负责组里的业绩。 */
   attribution?: { unassigned: PerfValue; unknown: PerfValue };
 };
+
+/* ───────── 导出（第二批）：导出确认框、导出记录、审批 ───────── */
+
+export type ExportType = "SUMMARY" | "CUSTOMER_DETAIL" | "TRANSACTION_DETAIL";
+export const EXPORT_LABEL: Record<ExportType, string> = { SUMMARY: "业绩汇总", CUSTOMER_DETAIL: "客户明细", TRANSACTION_DETAIL: "逐笔记录" };
+export const EXPORT_TYPES: readonly ExportType[] = ["SUMMARY", "CUSTOMER_DETAIL", "TRANSACTION_DETAIL"];
+/** 一份文件的列：总数、问号里的分组列数、展开看的真实列名（预检回来的，或提交时冻结的）。 */
+export type ExportColumns = { total: number; summary: string; groups: { name: string; columns: string[] }[] };
+/** 一项这次检查的结果。只有 ok 能勾；其余打不了勾，原因写在这一项下面。 */
+export type ExportCheck =
+  /** rows 为 null：新的一版没核完，不写行数。note：部分覆盖时缺什么、文件里怎么写（灰字）。 */
+  | { state: "ok"; rows: number | null; note?: string }
+  | { state: "checking" }
+  /** 这个月没有记录（灰字，不是警告）。 */
+  | { state: "empty"; text: string }
+  /** 没加载出来（红字，旁边「重试」只重查这一项）。 */
+  | { state: "failed"; text: string }
+  /** 超过上限：写实际行数；有更小的合法范围才提示改范围。 */
+  | { state: "over"; text: string }
+  /** 页面那一版刷新没成功：照写那一版检查过的行数，但不能选。 */
+  | { state: "stale"; rows: number };
+export type ExportItem = { type: ExportType; grain: string; limit: number; columns: ExportColumns; check: ExportCheck };
+export type ExportChoice = { value: string; label: string };
+/** 导出确认框要的全部内容。月份、范围只有一个合法选项时写成只读值。 */
+export type ExportDialogData = {
+  months: ExportChoice[]; month: string; since: string;
+  scopes: ExportChoice[]; scope: string;
+  /** 统计截至，写到分钟（业务时区），时区由页面写。 */
+  asOf: string;
+  downloader: string;
+  /** 这个账号能导出的几项；没有权限的不在里面（OP-124）。 */
+  items: ExportItem[];
+  /** 打开时默认勾的项。 */
+  selected: ExportType[];
+  /** 整框暂时不能申请的原因（页面那一版刷新没成功、数据升级中）。 */
+  blocked?: string;
+};
+export type ExportQuery = { month: string; scope: string; types: ExportType[] };
+export type ExportSubmitted = { type: ExportType; taskId: string; state: "READY" | "PENDING_APPROVAL"; rows: number | null };
+
+export type ExportTaskState = "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "WITHDRAWN" | "READY" | "FAILED" | "EXPIRED";
+/** 导出记录里的一条。scope、month、rows 为 null 时这些现在看不到（申请人已没有这个范围）。 */
+export type ExportTask = {
+  taskId: string; type: ExportType;
+  /** 申请人姓名；requesterRole 是括号里的角色。mine：是不是当前账号提交的。 */
+  requester: string; requesterRole: string; mine: boolean;
+  scope: string | null; month: string | null; asOf: string | null;
+  rows: number | null; columns: ExportColumns;
+  coverage: string | null; requestReason: string; requestedAt: string;
+  state: ExportTaskState;
+  /** 批准或驳回的人、时间、理由。 */
+  decidedBy?: string; decidedAt?: string; decisionReason?: string;
+  /** 已生成但现在不能下载、批准后生成失败这类原因。 */
+  failure?: "GENERATE_FAILED" | "SCOPE_LOST_BEFORE_GENERATE";
+  canDownload: boolean; canReview: boolean; canWithdraw: boolean;
+  /** 批准不了的原因（只管批准，驳回另判，6j）。 */
+  approveBlocked?: string;
+  /** 申请人已没有这个范围（6l）。 */
+  scopeLost?: boolean;
+};
+/** 批准、驳回没收到结果时记下的原操作（OP-91–96）。 */
+export type PendingDecision = { taskId: string; decision: "APPROVE" | "REJECT" | "WITHDRAW"; reason: string; operationId: string; at: string };
+/** 查询原操作的几种结果。 */
+export type DecisionLookup =
+  | { kind: "matched"; task: ExportTask; text: string }
+  | { kind: "mismatch" | "pending" | "failed" | "expired"; text: string }
+  | { kind: "not-received"; text: string };
+/** 这个账号在导出上能做什么。views 只有一个时不画分段。 */
+export type ExportPersona = { name: string; canExport: boolean; exportBlocked?: string; views: ("MINE" | "APPROVALS")[] };
+
+/** 导出和审批的读写口。接线时换成新 client（交接 §2.3 的 E 路由）；显示件只认这些函数。 */
+export interface PerfExportPorts {
+  persona: ExportPersona;
+  /** GET E/options + POST E/preview（只读）。 */
+  open(): Promise<ExportDialogData>;
+  /** POST E/preview（只读），只查这几项。 */
+  check(query: ExportQuery): Promise<ExportItem[]>;
+  /** POST E（Idempotency-Key）。 */
+  submit(query: ExportQuery, reason: string): Promise<ExportSubmitted[]>;
+  /** 提交没收到结果时按原申请键查（GET E?requestKey=）：查到原申请给它的各项，查不到给 null。 */
+  lookupSubmit(query: ExportQuery): Promise<ExportSubmitted[] | null>;
+  /** GET E?view=。 */
+  tasks(view: "MINE" | "APPROVALS"): Promise<ExportTask[]>;
+  /** POST E/{taskId}/decision（Idempotency-Key），回读后的任务。 */
+  decide(task: ExportTask, decision: "APPROVE" | "REJECT", reason: string): Promise<ExportTask>;
+  /** 按原操作号查（GET E/{taskId} 核 reviewerId 和版本）。 */
+  lookupDecision(pending: PendingDecision): Promise<DecisionLookup>;
+  /** POST E/{taskId}/withdraw（Idempotency-Key）。 */
+  withdraw(task: ExportTask, reason: string): Promise<ExportTask>;
+  /** POST E/{taskId}/download-token，再 GET E/{taskId}/file（带 X-Download-Token）。 */
+  download(taskId: string): Promise<void>;
+  /** 页面上开着的那条待确认（结果未知）。 */
+  pendingDecisions(): PendingDecision[];
+}
+
+/** 两段状态：审批段和文件段。只有文件已生成且本人现在能取件时才写「可下载」。 */
+export function exportStatus(task: ExportTask): { tone: "ok" | "warn" | "progress" | "neutral" | "done" | "danger"; label: string; line: string } {
+  const decider = task.decidedBy ? `${task.decidedBy}${task.decidedAt ? ` ${task.decidedAt}` : ""}` : "";
+  switch (task.state) {
+    case "PENDING_APPROVAL": return { tone: "warn", label: "待审批", line: task.mine ? "等另一位有审批权的管理员审批" : "等你审批" };
+    case "APPROVED": return task.failure === "GENERATE_FAILED" ? { tone: "danger", label: "已批准，执行失败", line: `${decider} 批准，文件没生成出来` }
+      : { tone: "progress", label: "已批准", line: "文件生成中，生成好才能下载" };
+    case "READY": return task.canDownload ? { tone: "ok", label: "可下载", line: "CSV 文件" } : { tone: "neutral", label: "已生成", line: "你现在不能下载" };
+    case "REJECTED": return { tone: "neutral", label: "已驳回", line: `${task.decidedBy ?? "审批人"} 驳回，理由见详情` };
+    case "WITHDRAWN": return { tone: "done", label: "已撤回", line: task.mine ? "你撤回的" : "申请人撤回的" };
+    case "EXPIRED": return { tone: "neutral", label: "已过期", line: "文件已过保留期，不能再下载" };
+    case "FAILED": return { tone: "danger", label: "生成失败", line: "文件没生成出来" };
+  }
+}
+
+/** 写操作没收到结果（断网、超时、回包读不出来）。名字以 OutcomeUnknownError 结尾，共用确认框按「结果未知」写橙黄、不当成失败。 */
+export class ExportOutcomeUnknownError extends Error {
+  constructor(message: string) { super(message); this.name = "ExportOutcomeUnknownError"; }
+}

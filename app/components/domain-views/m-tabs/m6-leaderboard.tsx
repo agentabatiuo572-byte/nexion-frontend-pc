@@ -16,8 +16,9 @@ import { BlockState, Button, Conclusion, Decision, Drawer, Explain, FilterBar, F
 import type { SupportBoardKey, SupportBoardQuery, SupportBoardRow } from "./support-leaderboard";
 import { BOARD_DEFINITION, BOARD_LABEL, BoardPager, PerformanceBody, Podium, RankingPanel, RankingTable, amountPlaces, amountText, countText } from "./m6-leaderboard-views";
 import { PERF_UNAVAILABLE, type PerfTotals } from "./perf-view";
-import { leaderboardPerf, type BoardPerf } from "./perf-wiring";
-import { leaderboardDetailFixture, leaderboardFixture, perfFixture } from "./perf-fixture"; // 接线删：夹具
+import { exportPorts, leaderboardPerf, type BoardPerf } from "./perf-wiring";
+import { exportFixturePorts, leaderboardDetailFixture, leaderboardFixture, perfFixture } from "./perf-fixture"; // 接线删：夹具
+import { PerfExportDialog } from "./perf-export";
 import "./m6-leaderboard.css";
 
 function status(error: unknown): number | undefined {
@@ -41,6 +42,9 @@ function acceptedQuery(data: LeaderboardPage, query: LeaderboardQuery): Leaderbo
 /** Public aggregates have their own lifecycle; entering M6 never mounts the private M1/M3 hooks. */
 export function M6Leaderboard() {
   const router = useRouter();
+  // 页头「导出业绩」：有导出读写口才出现（接线前只有开发夹具给），框和我的数据、主管工作台是同一个（OP-41）。
+  const [exportsPorts] = useState(() => exportFixturePorts() ?? exportPorts()); // 接线删：夹具（只留 exportPorts()）
+  const [exportOpen, setExportOpen] = useState(false);
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
   const authenticated = useAdminAuth(state => state.isAuthenticated), logoutPending = useAdminAuth(state => state.logoutPending), logoutUnknown = useAdminAuth(state => state.logoutUnknown);
   const identity = adminShellSessionKey(session, epoch) + "|" + JSON.stringify(session?.menuNodes ?? null) + `|${authenticated}|${logoutPending}|${logoutUnknown}`;
@@ -240,7 +244,10 @@ export function M6Leaderboard() {
   return <RdPage className="m6-page">
     <div ref={containerRef} className="m6-body">
       <PageHeader pageId="M6" title="业绩榜" summary="看客服团队这个月谁做得好、我排第几。"
-        actions={<Button icon={<RefreshCw size={14} aria-hidden />} disabled={!allowed} onClick={reload}>刷新</Button>}
+        actions={<>
+          {exportsPorts && (exportsPorts.persona.canExport || exportsPorts.persona.exportBlocked) && <Button disabledReason={exportsPorts.persona.exportBlocked} onClick={() => setExportOpen(true)}>导出业绩</Button>}
+          <Button icon={<RefreshCw size={14} aria-hidden />} disabled={!allowed} onClick={reload}>刷新</Button>
+        </>}
         meta={data ? `数据截至 ${asOf(data)} · 每 10 分钟发布一次` : undefined} />
       <PageTabs label="榜单" ids={tabs} value={board} onChange={(next: SupportBoardKey) => changeQuery({ ...currentQuery, board: next })}
         items={(["netContribution", "firstPayment", "customers"] as const).map(key => ({ value: key, label: BOARD_LABEL[key], disabled: !options && !readFailed && key !== board }))} />
@@ -294,6 +301,7 @@ export function M6Leaderboard() {
           : detailRow && <PerformanceBody row={withPhoto(detailRow)} board={board} month={visibleDetail.data.referenceMonth} perf={perfOf(detailRow.id)}
             stale={visibleDetail.data.stale} refreshFailed={visibleDetail.data.refreshFailed} />}
       </Drawer>}
+      {exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts} onClose={() => setExportOpen(false)} onRecords={() => router.push("/service/overview?view=exports")} />}
     </div>
   </RdPage>;
 }
