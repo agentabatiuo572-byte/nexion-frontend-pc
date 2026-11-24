@@ -14,8 +14,8 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
-import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, sendTaskPoolCommand, TaskPoolApiError,
-  type DisableImpact, type PoolTask, type TaskClass, type TaskPool } from "@/lib/admin/task-pool-client";
+import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, sendTaskPoolCommand, TaskPoolApiError, taskPoolTaskPath, validTaskEditFields,
+  type DisableImpact, type PoolTask, type TaskClass, type TaskPool, type TaskPoolEditCommand } from "@/lib/admin/task-pool-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Select } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
@@ -24,7 +24,7 @@ import { checkE2Command, e2CommandLabel, e2Commands, type E2Pending } from "./e2
 import { canInvestigateECommand, eCommandSettled } from "@/lib/admin/e-command-investigation";
 import { TechInfo, receiptOf } from "../recovery-panel";
 import { CommandClosureModal, CommandOutcomeLine, SettledCommandNotices, closureOpen, type CommandOutcome, type SettledCommand } from "./e-command-check";
-import { E2TaskEditor, formatWeight, openE2TaskEditor, type E2TaskEditorState } from "./e2-task-editor";
+import { applyLatestE2Task, E2TaskEditor, formatWeight, openE2TaskEditor, validE2EditorReason, type E2TaskEditorState, type E2TaskField } from "./e2-task-editor";
 
 type Query = { code: string; taskClass: string; enabled: string; page: number; size: number; reset: boolean };
 type Read<T> = { state: "loading" | "ready" | "error"; data: T; error: string };
@@ -35,6 +35,19 @@ const MINUTES = [{ value: 0, text: "0" }, { value: 60, text: "60" }, { value: 12
 const TASK_RULES = "等级只决定跑什么任务，收益由商品的月收益目标决定。当前任务保持原配置，修改只影响之后的新任务。每级最多 200 个启用任务、300 个任务（含停用）。";
 const GENERATION = "系统生成同池唯一的英文名称，时长为 5 分钟整数倍：向量计算 30–60 分钟，语音处理 45–90 分钟，图像生成和大模型推理 60–120 分钟，模型微调和视频生成 90–120 分钟。新任务立即启用。";
 const RETRY_HELP = "重新发送保存的原请求，系统认得出是同一次提交，不会另加一批。这不是只读查询。";
+const EDIT_ERROR_FIELDS: Partial<Record<string, E2TaskField>> = {
+  TASK_NAME_INVALID: "name", APP_TEXT_CHINESE_NOT_ALLOWED: "name", TASK_NAME_DUPLICATE: "name",
+  TASK_CLASS_INVALID: "taskClass", TASK_DURATION_INVALID: "duration", TASK_WEIGHT_INVALID: "weight",
+};
+
+function frozenEditor(record: E2Pending, command: TaskPoolEditCommand, message?: string): E2TaskEditorState {
+  const task = command.kind === "update" ? record.tasks[0] : null;
+  const { body } = command;
+  return { ...openE2TaskEditor(command.kind, record.pool, task, record.commandKey), step: "confirm", reason: body.reason,
+    draft: { name: body.name, taskClass: body.taskClass, duration: String(body.durationMinutes), weight: body.baseReward,
+      enabled: command.kind === "create" ? command.body.enabled : command.previousEnabled },
+    outcome: { kind: "unknown", createdAt: record.createdAt, expired: isRetryExpired(record), message } };
+}
 
 function readQuery(params: URLSearchParams): Query {
   const code = params.get("pool") ?? "", taskClass = params.get("taskClass") ?? "", enabled = params.get("enabled") ?? "";
@@ -62,7 +75,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const [pending, setPending] = useState<E2Pending[]>([]);
   const [rejected, setRejected] = useState<string[]>([]);
   const [dialog, setDialog] = useState<PoolDialog | null>(null);
-  const [releasing, setReleasing] = useState(false);
+  const [releasing, setReleasing] = useState<E2Pending | null>(null);
   const [count, setCount] = useState("10");
   const [classes, setClasses] = useState<TaskClass[]>([]);
   const [reason, setReason] = useState("");
@@ -179,24 +192,33 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     if (!pool || writeBlock) return;
     const target: PoolDialog = { kind, enabled, pool, key: crypto.randomUUID(), tasks: kind === "status" ? selectedRows.filter(row => row.enabled !== enabled) : [] };
     setCount("10"); setClasses([]); setReason(""); setTouched({ count: false, reason: false });
-    setDialogError(""); setDialogErrorCode(""); setImpact(null); setImpactAt(null); setImpactError(""); setReleasing(false); setDialog(target);
+    setDialogError(""); setDialogErrorCode(""); setImpact(null); setImpactAt(null); setImpactError(""); setReleasing(null); setDialog(target);
     if (kind === "status" && !enabled) void readImpact(target);
   }
   function viewOriginal(record: E2Pending) {
-    setDialog({ kind: record.request.kind, enabled: record.request.kind === "status" ? record.request.body.enabled : true,
+    const { request } = record;
+    if (request.kind === "create" || request.kind === "update") {
+      setEditor(frozenEditor(record, request));
+      return;
+    }
+    setDialog({ kind: request.kind, enabled: request.kind === "status" ? request.body.enabled : true,
       pool: record.pool, key: record.commandKey, tasks: record.tasks, original: record });
-    setImpact(record.impact); setImpactAt(record.impactAt); setImpactError(""); setDialogError(""); setDialogErrorCode(""); setReleasing(false);
+    setImpact(record.impact); setImpactAt(record.impactAt); setImpactError(""); setDialogError(""); setDialogErrorCode(""); setReleasing(null);
   }
-  function close() { if (!busy.current) { impactSequence.current++; setDialog(null); setReleasing(false); } }
+  function close() { if (!busy.current) { impactSequence.current++; setDialog(null); setReleasing(null); } }
   /** 单条编辑、新增：抽屉开着（含「改动还没保存」）时不另开一个。 */
   function openEditor(mode: E2TaskEditorState["mode"], row: PoolTask | null) {
     if (!pool || writeBlock || editor) return;
     setEditor(openE2TaskEditor(mode, pool, row));
   }
-  function retryBlock(record: E2Pending) {
+  function retryBlock(record: E2Pending, retry = true) {
+    const outcome = outcomes[record.commandKey];
+    const edit = record.request.kind === "create" || record.request.kind === "update";
     return !ctx.canWriteE2 ? "当前账号没有任务池修改权限" : actorId !== record.actorId ? "仅原操作者可以重试"
       : isRetryExpired(record) ? RETRY_EXPIRED_TEXT
-        : !e2Commands.isDurablyStored(record.fingerprint, record.commandKey) ? "原操作没有完整持久保存，不能重试" : undefined;
+        : !e2Commands.isDurablyStored(record.fingerprint, record.commandKey) ? "原操作没有完整持久保存，不能重试"
+          : retry && edit && rejected.includes(record.commandKey) ? "先核对原结果，再决定是否解除原操作记录"
+            : retry && edit && (!outcome || !("receipt" in outcome) || outcome.receipt !== null) ? "请先查询原结果" : undefined;
   }
   const countReady = /^\d+$/.test(count) && Number(count) >= 1 && Number(count) <= 50;
   const reasonLength = Array.from(reason.trim()).length;
@@ -205,33 +227,107 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     : dialog?.kind === "status" && !dialog.tasks.length ? "没有可执行的任务" : dialog?.kind === "status" && !dialog.enabled && (!impact || impactLoading || impactError) ? "请先成功读取停用影响" : undefined);
 
   async function send(record: E2Pending, retry: boolean) {
-    if (busy.current || retryBlock(record)) return;
+    if (busy.current || retryBlock(record, retry)) return;
+    const { request } = record;
+    const edit = request.kind === "create" || request.kind === "update";
     busy.current = true; setSaving(true); setDialogError(""); setPendingNote("");
+    if (edit) setEditor(old => ({ ...(old?.key === record.commandKey ? old : frozenEditor(record, request)), saving: true }));
     try {
-      const result = await sendTaskPoolCommand(record.request);
+      const result = await sendTaskPoolCommand(request);
       e2Commands.forget(record.fingerprint, record.commandKey); syncPending();
-      const message = "created" in result ? `已添加 ${result.created.length} 个任务`
+      const message = "task" in result ? request.kind === "create" ? "已新增任务" : "已修改任务"
+        : "created" in result ? `已添加 ${result.created.length} 个任务`
         : result.updated === 0 ? `所选任务已是${record.request.kind === "status" && record.request.body.enabled ? "启用" : "停用"}状态，本次未新增状态变更`
           : `已${record.request.kind === "status" && record.request.body.enabled ? "启用" : "停用"} ${result.updated} 个任务`;
-      setDialog(null); setSelected([]); setReceipt(""); ctx.toast(message);
+      if (edit) setEditor(null);
+      else setDialog(null);
+      setSelected([]); setReceipt(""); ctx.toast(message);
       if (!await refresh()) setReceipt(`${message}。操作已生效，最新任务列表暂时读不到。`);
       document.getElementById("e2-task-heading")?.focus();
     } catch (error) {
-      const explicit = isExplicitRejection(error) && !(error instanceof TaskPoolApiError && error.reasonCode === "TASK_POOL_IDEMPOTENCY_CONFLICT");
-      const firstRejection = !retry && error instanceof TaskPoolApiError && error.initialRejection;
+      const code = error instanceof TaskPoolApiError ? error.reasonCode : "";
+      const explicit = isExplicitRejection(error) && code !== "TASK_POOL_IDEMPOTENCY_CONFLICT" && !code.startsWith("IDEMPOTENCY_");
+      const firstRejection = !retry && (edit ? explicit : error instanceof TaskPoolApiError && error.initialRejection);
       if (firstRejection) {
         e2Commands.forget(record.fingerprint, record.commandKey); syncPending();
-        setDialog(old => old ? { ...old, key: crypto.randomUUID() } : old);
-        setDialogError(displayAdminError(error));
+        if (edit) {
+          const field = EDIT_ERROR_FIELDS[code];
+          setEditor(old => old && { ...old, key: crypto.randomUUID(), step: field ? "form" : "confirm",
+            outcome: request.kind === "update" && code === "TASK_TYPE_VERSION_CONFLICT" && error instanceof TaskPoolApiError && error.status === 409
+              ? { kind: "conflict" } : { kind: "rejected", field, message: displayAdminError(error), code } });
+        } else {
+          setDialog(old => old ? { ...old, key: crypto.randomUUID() } : old);
+          setDialogError(displayAdminError(error));
+        }
       } else {
-        syncPending(); viewOriginal(record);
+        syncPending();
+        if (edit) {
+          setOutcomes(old => { const next = { ...old }; delete next[record.commandKey]; return next; });
+          setEditor(frozenEditor(record, request, code ? displayAdminError(error) : undefined));
+        } else viewOriginal(record);
         setDialogError("");
         if (retry && explicit) setRejected(old => [...old.filter(key => key !== record.commandKey), record.commandKey]);
         else setRejected(old => old.filter(key => key !== record.commandKey));
       }
-      setDialogErrorCode(error instanceof TaskPoolApiError ? error.reasonCode : "");
-      if (isPermissionDenied(error) || error instanceof TaskPoolApiError && [401, 403].includes(error.status ?? error.httpStatus ?? 0)) { announcePermissionDenied(); if (!firstRejection) setDialog(null); }
-    } finally { busy.current = false; setSaving(false); }
+      if (!edit) setDialogErrorCode(code);
+      if (isPermissionDenied(error) || error instanceof TaskPoolApiError && [401, 403].includes(error.status ?? error.httpStatus ?? 0)) {
+        announcePermissionDenied();
+        if (edit) setEditor(null);
+        else if (!firstRejection) setDialog(null);
+      }
+    } finally {
+      busy.current = false; setSaving(false);
+      if (edit) setEditor(old => old && { ...old, saving: false });
+    }
+  }
+
+  async function submitEditor(state: E2TaskEditorState) {
+    if (!session || busy.current || !ctx.canWriteE2 || state.step !== "confirm" || state.outcome.kind === "conflict"
+      || state.outcome.kind === "unknown" || (state.mode === "create" ? createBlock : writeBlock) || state.pool.code !== pool?.code) return;
+    const fingerprint = `pool|${state.pool.code}`;
+    if (e2Commands.get(fingerprint)) return;
+    const reason = state.reason.trim();
+    const fields = { name: state.draft.name.trim(), taskClass: state.draft.taskClass,
+      durationMinutes: Number(state.draft.duration), baseReward: state.draft.weight };
+    if (!validTaskEditFields(fields) || !validE2EditorReason(reason)) return;
+    const common = { ...fields, idempotencyKey: state.key, reason };
+    let request: TaskPoolEditCommand;
+    if (state.mode === "update") {
+      if (!state.task) return;
+      request = { kind: "update", method: "POST", path: taskPoolTaskPath(pool.code, state.task.taskTypeId),
+        previousEnabled: state.task.enabled, body: { ...common, expectedVersion: state.task.version } };
+    } else {
+      if (state.draft.enabled && pool.enabledCount >= 200) return;
+      request = { kind: "create", method: "POST", path: taskPoolTaskPath(pool.code), body: { ...common, enabled: state.draft.enabled } };
+    }
+    try {
+      e2Commands.remember(fingerprint, state.key, { actorId, actorName: session.operator, pool, request,
+        tasks: state.task ? [state.task] : [], impact: null, impactAt: null });
+      if (e2Commands.isDurablyStored(fingerprint, state.key)) {
+        const record = e2Commands.list().find(item => item.commandKey === state.key);
+        if (record) { syncPending(); await send(record, false); return; }
+      }
+      e2Commands.forget(fingerprint, state.key);
+    } catch (error) {
+      if (isPermissionDenied(error)) announcePermissionDenied();
+    }
+    setEditor(old => old && { ...old, outcome: { kind: "rejected", message: "浏览器存不下这次操作，没有提交。" } });
+  }
+
+  async function readLatestEditor(state: E2TaskEditorState) {
+    if (busy.current || !state.task || state.outcome.kind !== "conflict" || !ctx.canReadE2) return;
+    busy.current = true; setEditor({ ...state, saving: true });
+    try {
+      // The unfiltered list can include the entire pool, even if the task changed type or status.
+      const result = await fetchPoolTasks(state.pool.code, { pageSize: 300 });
+      const latest = result.records.find(task => task.taskTypeId === state.task?.taskTypeId);
+      if (!latest || latest.version <= state.task.version) throw new Error("暂时没加载到这条任务的最新内容，请重试。");
+      setEditor(applyLatestE2Task(state, latest, state.pool));
+    } catch (error) {
+      if (isPermissionDenied(error) || error instanceof TaskPoolApiError && [401, 403].includes(error.status ?? error.httpStatus ?? 0)) {
+        announcePermissionDenied(); setEditor(null);
+      } else setEditor({ ...state, saving: false, outcome: { kind: "conflict", message: displayAdminReadError(error) } });
+    } finally { busy.current = false; }
   }
   async function submit() {
     if (!dialog || formBlock || busy.current || !session) return;
@@ -255,11 +351,13 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   function showOutcome(record: E2Pending, outcome: CommandOutcome) {
     if ("receipt" in outcome && outcome.receipt && eCommandSettled(outcome.receipt)) {
       const status = outcome.receipt.originalStatus;
+      setEditor(old => old?.key === record.commandKey ? null : old);
       setSettled(rows => [...rows.filter(row => row.key !== record.commandKey), { key: record.commandKey, label: `${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}`, status }]);
     } else setOutcomes(values => ({ ...values, [record.commandKey]: outcome }));
   }
   const originalExpired = !!dialog?.original && isRetryExpired(dialog.original);
   const originalRejected = !!dialog?.original && rejected.includes(dialog.original.commandKey);
+  const editorOriginal = editor?.outcome.kind === "unknown" ? pending.find(record => record.commandKey === editor.key) : undefined;
 
   if (!ctx.canReadE2 || denied) return <><BlockState state="denied" title="无权限访问" detail="这个账号没有任务池读取权限，请从侧栏返回有权查看的页面。" /><Button onClick={() => window.history.back()}>返回</Button></>;
   return <>
@@ -277,7 +375,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} onClick={() => { viewOriginal(record); void send(record, true); }}>按原请求重试</Button>}
         <Button size="sm" disabled={saving} onClick={() => viewOriginal(record)}>查看原操作</Button>
         {canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <Button size="sm" variant="danger-outline" disabled={saving} onClick={() => setClosing(record)}>核查结案</Button>}
-        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} onClick={() => { viewOriginal(record); setReleasing(true); }}>解除原操作记录</Button>}
+        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} onClick={() => {
+          setEditor(null);
+          if (record.request.kind === "random" || record.request.kind === "status") viewOriginal(record);
+          setReleasing(record);
+        }}>解除原操作记录</Button>}
         <Explain label="原样重试的说明" content={RETRY_HELP} /></>}>
       <p>首次提交 {businessStamp(record.createdAt)} · {businessZoneText()}</p>
       {/* 过期后下一步只说一处：查过的由下面的结论句说（含核查结案），没查过的先查询。 */}
@@ -352,20 +454,25 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           onPage={page => { setSelected([]); setQuery(old => ({ ...old, page })); }} onPageSize={size => { setSelected([]); setQuery(old => ({ ...old, size, page: 1 })); }} />}
       </Panel>
     </section>
-    {editor && <E2TaskEditor state={editor} onChange={setEditor} writeBlock={writeBlock} toast={ctx.toast}
-      onSubmit={async () => { /* 待 Codex 接入：新增 POST /task-pools/{code}/tasks、修改 POST /task-pools/{code}/tasks/{taskTypeId}（contract-b85-be03），先存再发，按回包设置 editor.outcome。 */ }}
-      onReadLatest={async () => { /* 待 Codex 接入：被别人改过后读这条任务的最新内容，自己改过的项保留、其余取最新、理由清空，outcome 设为 latest。 */ }}
-      onRetry={async () => { /* 待 Codex 接入：结果未知时用存下的原请求原样重试。 */ }} />}
-    {dialog && <Modal title={releasing ? "解除原操作记录" : originalExpired ? "原操作已过重试时限" : dialog.original ? "核对原操作" : dialog.kind === "random" ? "随机添加任务" : dialog.enabled ? "批量启用任务" : "批量停用任务"}
-      icon={releasing ? ShieldCheck : dialog.kind === "random" ? Plus : ClipboardList} tone={!releasing && dialog.kind === "status" && !dialog.enabled ? "danger" : "neutral"}
-      sub={releasing || dialog.original ? undefined : <StatusTag tone="progress" filled>立即生效</StatusTag>} busy={saving} dirty={!!dialog.original || !!reason || count !== "10" || classes.length > 0} onClose={close}
-      footer={releasing && dialog.original ? <><Button onClick={() => setReleasing(false)}>返回</Button><Button variant="primary" onClick={() => { e2Commands.forget(dialog.original!.fingerprint, dialog.original!.commandKey); syncPending(); close(); void refresh(); }}>确认解除</Button></>
-        : <><Button disabled={saving} onClick={close}>{dialog.original ? "收起" : "取消"}</Button>
-          {originalRejected && !originalExpired ? <Button variant="primary" disabled={saving} onClick={() => setReleasing(true)}>解除原操作记录</Button>
+    {editor && <E2TaskEditor state={editor} onChange={setEditor} writeBlock={editor.outcome.kind === "unknown"
+      ? editorOriginal ? retryBlock(editorOriginal) : "原操作没有完整持久保存，不能重试"
+      : editor.mode === "create" ? createBlock : writeBlock} toast={ctx.toast}
+      onSubmit={submitEditor} onReadLatest={readLatestEditor}
+      onRetry={async state => { if (editorOriginal?.commandKey === state.key) await send(editorOriginal, true); }} />}
+    {releasing ? <Modal title="解除原操作记录" icon={ShieldCheck} tone="neutral" busy={saving} dirty onClose={close}
+      footer={<><Button onClick={() => setReleasing(null)}>返回</Button><Button variant="primary" onClick={() => {
+        if (!rejected.includes(releasing.commandKey) || isRetryExpired(releasing)) return;
+        e2Commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); close(); void refresh();
+      }}>确认解除</Button></>}>
+      <div className="rd-stack"><ReleaseBody label={`${releasing.pool.code} ${releasing.pool.name} · ${e2CommandLabel(releasing)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只删掉这条原操作记录，不算核查结案。" /><Facts><Fact k="首次提交">{businessStamp(releasing.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{releasing.request.body.reason}</Fact></Facts></div>
+    </Modal> : dialog && <Modal title={originalExpired ? "原操作已过重试时限" : dialog.original ? "核对原操作" : dialog.kind === "random" ? "随机添加任务" : dialog.enabled ? "批量启用任务" : "批量停用任务"}
+      icon={dialog.kind === "random" ? Plus : ClipboardList} tone={dialog.kind === "status" && !dialog.enabled ? "danger" : "neutral"}
+      sub={dialog.original ? undefined : <StatusTag tone="progress" filled>立即生效</StatusTag>} busy={saving} dirty={!!dialog.original || !!reason || count !== "10" || classes.length > 0} onClose={close}
+      footer={<><Button disabled={saving} onClick={close}>{dialog.original ? "收起" : "取消"}</Button>
+          {dialog.original && originalRejected && !originalExpired ? <Button variant="primary" disabled={saving} onClick={() => setReleasing(dialog.original!)}>解除原操作记录</Button>
             : !originalExpired && <Button variant={dialog.kind === "status" && !dialog.enabled ? "danger" : "primary"} loading={saving} loadingText="提交中…" disabledReason={dialog.original ? retryBlock(dialog.original) : formBlock}
               onClick={() => { if (dialog.original) void send(dialog.original, true); else { setTouched({ count: true, reason: true }); void submit(); } }}>{dialog.original ? "按原请求重试" : dialog.kind === "random" ? "确认添加并生效" : dialog.enabled ? "确认启用" : "确认停用"}</Button>}</>}>
-      {releasing && dialog.original ? <div className="rd-stack"><ReleaseBody label={`${dialog.pool.code} ${dialog.pool.name} · ${e2CommandLabel(dialog.original)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只删掉这条原操作记录，不算核查结案。" /><Facts><Fact k="首次提交">{businessStamp(dialog.original.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{dialog.original.request.body.reason}</Fact></Facts></div>
-        : <div className="rd-stack">
+      <div className="rd-stack">
           {dialog.original && <Notice tone="warn" title={originalExpired ? "已超过 24 小时，不能再重试" : originalRejected ? "按原请求重试被明确拒绝" : "结果未知，原操作已冻结"}>
             {originalExpired ? "原请求继续保留，请核对操作记录；这个等级仍暂停新操作。" : originalRejected ? "先查询原结果，再决定是否解除原操作记录；这次拒绝不会自动清除它。" : retryBlock(dialog.original) ?? "只能按原请求重试：系统认得出是同一次提交，不会重复执行。"}
           </Notice>}
@@ -392,7 +499,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           {dialog.kind === "status" && <Fold title="本次任务" summary={`${dialog.tasks.length} 个任务，展开核对完整名单`}><ul className="e2-command-tasks">{dialog.tasks.map(task => <li key={task.taskTypeId}>{task.name}</li>)}</ul></Fold>}
           <Fold title="执行摘要" summary="立即生效，不经审批"><p>{TASK_RULES}</p></Fold>
           <Fold title="技术信息" summary="任务池与请求编号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="请求编号"><span data-mono className="e2-request-key">{dialog.key}</span><Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("请求编号已复制"), () => setDialogError("复制失败，请选中完整编号复制。")); }}>复制编号</Button></Fact>{dialogErrorCode && <Fact k="原错误码">{dialogErrorCode}</Fact>}</Facts><p><KeepText text={GENERATION} /></p></Fold>
-        </div>}
+        </div>
     </Modal>}
   </>;
 }

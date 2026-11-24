@@ -1,6 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { TASK_CLASSES } from "@/lib/admin/task-classes";
+import { appVisibleTextError } from "@/lib/admin/content-language-rules";
 
 export type TaskClass = typeof TASK_CLASSES[number];
 export interface PoolProduct { productKey: string; productName: string; state: "PUBLISHED" | "DRAFT" | "DELISTED_WITH_DEVICES" }
@@ -12,9 +13,11 @@ export interface TaskPool {
 export interface PoolTask {
   taskTypeId: string; name: string; taskClass: TaskClass; durationMinutes: number;
   enabled: boolean; version: number; effectiveAt: string;
-  /** 权重，六位小数字符串，只用于显示。待接入：DEVICE 列表回包的解析接上后才有值（B85-BE-03）。 */
+  /** 旧随机添加回执和旧待确认快照可能没有权重。 */
   baseReward?: string;
+  asset?: "USDT" | "UVT";
 }
+export interface DevicePoolTask extends PoolTask { baseReward: string; asset: "USDT" }
 export interface PhonePoolTask extends PoolTask { baseReward: string; asset: "USDT" | "UVT" }
 export interface PoolTaskPage<T = PoolTask> { records: T[]; total: number }
 export interface DisableImpact { productsLosingAllTasks: Pick<PoolProduct, "productKey" | "productName">[]; devicesAffected: number }
@@ -22,8 +25,15 @@ export interface RandomTaskInput { count: number; taskClasses?: TaskClass[]; ide
 export interface TaskStatusInput { taskTypeIds: string[]; enabled: boolean; idempotencyKey: string; reason: string }
 export interface RandomTaskResult { created: PoolTask[]; pool: TaskPool }
 export interface TaskStatusResult { updated: number; pool: TaskPool }
+export interface TaskEditFields { name: string; taskClass: TaskClass; durationMinutes: number; baseReward: string }
+export interface CreateTaskInput extends TaskEditFields { enabled: boolean; idempotencyKey: string; reason: string }
+export interface UpdateTaskInput extends TaskEditFields { expectedVersion: number; idempotencyKey: string; reason: string }
+export interface TaskEditResult { task: DevicePoolTask; pool: TaskPool }
+export type TaskPoolEditCommand = { kind: "create"; method: "POST"; path: string; body: CreateTaskInput }
+  | { kind: "update"; method: "POST"; path: string; body: UpdateTaskInput; previousEnabled: boolean };
 export type TaskPoolCommand = { kind: "random"; method: "POST"; path: string; body: RandomTaskInput }
-  | { kind: "status"; method: "POST"; path: string; body: TaskStatusInput };
+  | { kind: "status"; method: "POST"; path: string; body: TaskStatusInput }
+  | TaskPoolEditCommand;
 export interface PoolLimitErrorData { limit: number; enabled?: number; total?: number; requested: number }
 export type TaskPoolErrorCode = "TASK_POOL_FORMAT_RETIRED" | "TASK_POOL_KIND_FORBIDDEN" | "TASK_POOL_ENABLED_LIMIT" | "TASK_POOL_TOTAL_LIMIT" | "TASK_POOL_IDEMPOTENCY_CONFLICT" | "TASK_TYPE_NOT_IN_POOL";
 
@@ -37,6 +47,18 @@ const POOL_ERRORS: Record<string, string> = {
   MONTHLY_TARGET_POOL_INELIGIBLE: "任务池含不符合月收益规则的启用任务，整批未修改。请联系设备负责人核对任务配置。",
   PAGE_INVALID: "页码或每页条数无效，请重新选择后读取。",
   TASK_CLASS_INVALID: "任务类型无效，请从六种类型中重新选择。",
+  TASK_NAME_INVALID: "任务名称要填 1–128 个字符。",
+  APP_TEXT_CHINESE_NOT_ALLOWED: "任务名称不能包含中文，请改成英文。",
+  TASK_NAME_DUPLICATE: "这个等级已有同名任务，请换个名称。",
+  TASK_DURATION_INVALID: "时长要填 5–120 分钟，且是 5 的倍数。",
+  TASK_WEIGHT_INVALID: "权重要大于 0，整数最多 12 位，小数最多 6 位。",
+  TASK_TYPE_VERSION_REQUIRED: "请关闭后重新加载任务，再编辑。",
+  TASK_TYPE_VERSION_CONFLICT: "这条任务刚被别人改过，请加载最新内容。",
+  TASK_TYPE_NOT_IN_POOL: "这个等级没有这条任务，请刷新后核对。",
+  TASK_POOL_KIND_FORBIDDEN: "请从对应的设备或手机任务页面操作。",
+  REASON_LENGTH_INVALID: "请填写 8–200 字的操作理由。",
+  IDEMPOTENCY_KEY_REQUIRED: "这次操作无法核对，请保留原记录并联系值班人员。",
+  IDEMPOTENCY_KEY_INVALID: "这次操作无法核对，请保留原记录并联系值班人员。",
   TASK_POOL_COUNT_INVALID: "任务数量要填 1–50 的整数。",
   TASK_POOL_KIND_INVALID: "任务池类别无效，请刷新任务池页面后重试。",
   TASK_POOL_NOT_FOUND: "这个任务等级不存在，请刷新后重新选择。",
@@ -54,6 +76,23 @@ const POOL_ERRORS: Record<string, string> = {
   IDEMPOTENCY_KEY_CONFLICT: "原请求和这次的内容对不上，请先查询原结果，不要另发一批。",
   TASK_POOL_IDEMPOTENCY_CONFLICT: "这次的内容和原请求不一致，请先查询原结果，不要重新发起。",
 };
+
+export function validTaskWeight(value: unknown): value is string {
+  return typeof value === "string" && /^\d{1,12}(?:\.\d{1,6})?$/.test(value) && /[1-9]/.test(value);
+}
+
+export function validTaskEditFields(body: TaskEditFields): boolean {
+  return typeof body.name === "string" && body.name === body.name.trim() && body.name.length > 0
+    && Array.from(body.name).length <= 128 && !appVisibleTextError(body.name, "任务名称")
+    && TASK_CLASSES.includes(body.taskClass) && Number.isInteger(body.durationMinutes)
+    && body.durationMinutes >= 5 && body.durationMinutes <= 120 && body.durationMinutes % 5 === 0
+    && validTaskWeight(body.baseReward);
+}
+
+export function taskPoolTaskPath(code: string, taskTypeId?: string): string {
+  const collection = `/task-pools/${encodeURIComponent(code)}/tasks`;
+  return taskTypeId === undefined ? collection : `${collection}/${encodeURIComponent(taskTypeId)}`;
+}
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("任务池数据格式不完整，请刷新重试。");
@@ -101,6 +140,21 @@ function task(value: unknown): PoolTask {
   return { taskTypeId: string(row.taskTypeId), name: string(row.name), taskClass: row.taskClass as TaskClass, durationMinutes: integer(row.durationMinutes),
     enabled: row.enabled, version: integer(row.version), effectiveAt: string(row.effectiveAt) };
 }
+function deviceTask(value: unknown): DevicePoolTask {
+  const parsed = task(value);
+  const { baseReward, asset } = record(value);
+  if (parsed.durationMinutes <= 0 || parsed.durationMinutes > 120 || parsed.version < 1
+    || !validTaskWeight(baseReward) || !/\.\d{6}$/.test(baseReward) || asset !== "USDT") {
+    throw new Error("任务数据不完整，请刷新重试。");
+  }
+  return { ...parsed, baseReward, asset };
+}
+
+function randomTask(value: unknown): PoolTask {
+  const row = record(value);
+  // Retained success replies from before B85 may omit the weight projection.
+  return row.baseReward === undefined && row.asset === undefined ? task(row) : deviceTask(row);
+}
 
 async function request(path: string, method = "GET", body?: object): Promise<unknown> {
   const response = await guardedFetch(`/api/admin/devices${path}`, { method, cache: "no-store",
@@ -125,7 +179,8 @@ async function request(path: string, method = "GET", body?: object): Promise<unk
         message = `${code === "TASK_POOL_ENABLED_LIMIT" ? "启用任务" : "任务总数"}上限为 ${limit} 个${current == null ? "" : `，当前 ${current} 个`}，本次 ${requested} 个。${code === "TASK_POOL_ENABLED_LIMIT" ? "请减少数量或先停用部分任务。" : "请减少数量；总量已满时请联系任务池负责人。"}`;
       } catch { throw new TaskPoolApiError("任务池返回的错误说明不完整，请保留原操作核对。", status, response.status, code, envelope.data); }
     }
-    const unknown = !status || status < 400 || status >= 500 || [401, 403, 408, 425, 429].includes(status)
+    const unknown = response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
+      || !status || status < 400 || status >= 500 || [401, 403, 408, 425, 429].includes(status)
       || !code || code.startsWith("IDEMPOTENCY_") || code === "TASK_POOL_IDEMPOTENCY_CONFLICT";
     // Keep the original strict verdict for retries and every other caller.
     const initialRejection = Number.isInteger(envelope.code) && Number(envelope.code) < 500 && !!code
@@ -147,6 +202,7 @@ export async function fetchTaskPools(kind: TaskPool["kind"] = "DEVICE"): Promise
 }
 export interface PoolTaskQuery { taskClass?: string; enabled?: string; pageNum?: number; pageSize?: number }
 export function fetchPoolTasks(code: "PHONE", query?: PoolTaskQuery): Promise<PoolTaskPage<PhonePoolTask>>;
+export function fetchPoolTasks(code: "L1" | "L2" | "L3" | "L4", query?: PoolTaskQuery): Promise<PoolTaskPage<DevicePoolTask>>;
 export function fetchPoolTasks(code: string, query?: PoolTaskQuery): Promise<PoolTaskPage>;
 export async function fetchPoolTasks(code: string, query: PoolTaskQuery = {}): Promise<PoolTaskPage> {
   const params = new URLSearchParams({ pageNum: String(query.pageNum ?? 1), pageSize: String(query.pageSize ?? 20) });
@@ -154,12 +210,9 @@ export async function fetchPoolTasks(code: string, query: PoolTaskQuery = {}): P
   if (query.enabled) params.set("enabled", query.enabled);
   const raw = record(await request(`/task-pools/${encodeURIComponent(code)}/tasks?${params}`));
   if (!Array.isArray(raw.records)) throw new Error("任务列表不完整，请刷新重试。");
-  const records = raw.records.map(value => {
+  const records = raw.records.map<PoolTask>(value => {
+    if (code !== "PHONE") return deviceTask(value);
     const parsed = task(value);
-    if (code !== "PHONE") {
-      if (parsed.durationMinutes <= 0 || parsed.durationMinutes > 120 || parsed.version < 1) throw new Error("任务时长或版本数据不完整，请刷新重试。");
-      return parsed;
-    }
     const row = record(value);
     if (row.asset !== "USDT" && row.asset !== "UVT") throw new Error("手机任务奖励资产无效，请刷新重试。");
     return { ...parsed, baseReward: decimal(row.baseReward), asset: row.asset };
@@ -169,20 +222,37 @@ export async function fetchPoolTasks(code: string, query: PoolTaskQuery = {}): P
 export async function randomPoolTasks(code: string, input: RandomTaskInput): Promise<RandomTaskResult> {
   return sendTaskPoolCommand({ kind: "random", path: `/task-pools/${encodeURIComponent(code)}/random-tasks`, method: "POST", body: input }) as Promise<RandomTaskResult>;
 }
+export async function createPoolTask(code: string, input: CreateTaskInput): Promise<TaskEditResult> {
+  return sendTaskPoolCommand({ kind: "create", path: taskPoolTaskPath(code), method: "POST", body: input });
+}
+export async function updatePoolTask(code: string, taskTypeId: string, input: UpdateTaskInput, previousEnabled: boolean): Promise<TaskEditResult> {
+  return sendTaskPoolCommand({ kind: "update", path: taskPoolTaskPath(code, taskTypeId), method: "POST", body: input, previousEnabled });
+}
 /** E2 recovery passes the durable original method, path and body, including omitted fields. */
-export async function sendTaskPoolCommand(command: TaskPoolCommand): Promise<RandomTaskResult | TaskStatusResult> {
+export function sendTaskPoolCommand(command: TaskPoolEditCommand): Promise<TaskEditResult>;
+export function sendTaskPoolCommand(command: TaskPoolCommand): Promise<RandomTaskResult | TaskStatusResult | TaskEditResult>;
+export async function sendTaskPoolCommand(command: TaskPoolCommand): Promise<RandomTaskResult | TaskStatusResult | TaskEditResult> {
   const response = await request(command.path, command.method, command.body);
   try {
     const raw = record(response);
     const pool = parseTaskPool(raw.pool);
-    if (command.path !== `/task-pools/${encodeURIComponent(pool.code)}/${command.kind === "random" ? "random-tasks" : "tasks/status"}` || pool.kind !== "DEVICE") throw new Error("任务结果不完整。");
+    if (pool.kind !== "DEVICE") throw new Error("任务结果不完整。");
+    if (command.kind === "create" || command.kind === "update") {
+      const saved = deviceTask(raw.task);
+      const matches = command.kind === "create"
+        ? command.path === taskPoolTaskPath(pool.code) && saved.taskTypeId.startsWith("DT-") && saved.version === 1 && saved.enabled === command.body.enabled
+        : command.path === taskPoolTaskPath(pool.code, saved.taskTypeId) && saved.version === command.body.expectedVersion + 1 && saved.enabled === command.previousEnabled;
+      if (!matches) throw new Error("任务结果不完整。");
+      return { task: saved, pool };
+    }
+    if (command.path !== `/task-pools/${encodeURIComponent(pool.code)}/${command.kind === "random" ? "random-tasks" : "tasks/status"}`) throw new Error("任务结果不完整。");
     if (command.kind === "status") {
       const updated = integer(raw.updated);
       if (updated > command.body.taskTypeIds.length) throw new Error("任务状态结果不完整。");
       return { updated, pool };
     }
     if (!Array.isArray(raw.created) || raw.created.length !== command.body.count) throw new Error("新增任务结果不完整。");
-    const created = raw.created.map(task);
+    const created = raw.created.map(randomTask);
     if (new Set(created.map(row => row.taskTypeId)).size !== created.length
       || created.some(row => !row.enabled || row.durationMinutes <= 0 || row.durationMinutes > 120)) throw new Error("新增任务结果不完整。");
     return { created, pool };

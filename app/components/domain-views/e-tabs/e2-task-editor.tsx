@@ -4,31 +4,31 @@
  * 抽屉不挡下面的任务表（PG-37：权重要对照同等级其他任务边看边填）。
  *
  * 状态全在一个值里（E2TaskEditorState），由 E2Tasks 持有：打开、填写、确认、提交中、被拒、被别人改过、
- * 读到最新、结果未知都只改这一个值。请求、去重、结果未知的保存和恢复「待 Codex 接入」：
- * 提交走 onSubmit，读最新走 onReadLatest，结果未知的原样重试走 onRetry，三者现在都是空实现。
+ * 读到最新、结果未知都只改这一个值。E2Tasks 负责提交、持久保存和恢复原操作。
  */
 import "./e2-task-editor.css";
 import { ClipboardList, Pencil, Plus } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
 import { Button, Change, Check, ConflictBar, Decision, DiffList, Drawer, Fact, Facts, Field, Fold, Input, Modal, Notice,
   NumberInput, Select, StatusTag, TaskClassTag, Textarea, type DiffRow } from "@/app/components/rd";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
+import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { businessStamp, businessZoneText } from "@/lib/admin/business-time";
 import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
-import type { PoolTask, TaskClass, TaskPool } from "@/lib/admin/task-pool-client";
+import { validTaskWeight, type PoolTask, type TaskClass, type TaskPool } from "@/lib/admin/task-pool-client";
 
 export type E2TaskField = "name" | "taskClass" | "duration" | "weight";
 export interface E2TaskDraft { name: string; taskClass: TaskClass; duration: string; weight: string; enabled: boolean }
-/** 提交后的样子。待 Codex 接入：按接口回包设置。 */
 export type E2TaskOutcome =
   | { kind: "none" }
   /** 明确被拒。带 field 的回到抽屉写在这一项下面（OP-15），不带的留在确认框（OP-81）。 */
   | { kind: "rejected"; message: string; field?: E2TaskField; code?: string }
   /** 这条任务已被别人改过（409 TASK_TYPE_VERSION_CONFLICT）：框不关，读最新（OP-97）。 */
-  | { kind: "conflict" }
+  | { kind: "conflict"; message?: string }
   /** 读到最新后回到抽屉：别人改了什么；yours 是自己也改过、保留下来的值。 */
   | { kind: "latest"; changes: { field: E2TaskField; label: string; from: string; to: string; yours?: string }[] }
   /** 结果未知：内容冻结，只能按原请求重试（OP-93、OP-94）。 */
-  | { kind: "unknown"; createdAt: number; expired?: boolean };
+  | { kind: "unknown"; createdAt: number; expired?: boolean; message?: string };
 export interface E2TaskEditorState {
   mode: "create" | "update";
   pool: TaskPool;
@@ -44,9 +44,12 @@ export interface E2TaskEditorState {
   outcome: E2TaskOutcome;
 }
 
+export function validE2EditorReason(reason: string) {
+  return visibleReasonLength(reason) >= 8 && Array.from(reason.trim()).length <= 200;
+}
+
 const ENABLED_LIMIT = 200;
 const NAME_MAX = 128;
-const WEIGHT_PATTERN = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/;
 /** 类型系数的十倍：向量计算 1.0 … 视频生成 1.5（B85）。 */
 const CLASS_FACTOR: Record<TaskClass, number> = { EM: 10, SP: 11, IG: 12, LL: 13, FT: 14, VG: 15 };
 
@@ -64,47 +67,76 @@ export function referenceWeight(minutes: number, taskClass: TaskClass) {
   const fraction = String(micro % 1_000_000).padStart(6, "0").replace(/0+$/, "");
   return `${Math.floor(micro / 1_000_000)}${fraction ? `.${fraction}` : ""}`;
 }
-const sameWeight = (a: string, b: string) => WEIGHT_PATTERN.test(a) && WEIGHT_PATTERN.test(b) && formatWeight(a) === formatWeight(b);
+function weightMicros(raw: string) {
+  const [whole, fraction = ""] = raw.split(".");
+  return BigInt(whole + fraction.padEnd(6, "0"));
+}
+const sameWeight = (a: string, b: string) => validTaskWeight(a) && validTaskWeight(b) && weightMicros(a) === weightMicros(b);
 const durationOk = (value: string) => /^\d+$/.test(value) && Number(value) >= 5 && Number(value) <= 120 && Number(value) % 5 === 0;
 
-export function openE2TaskEditor(mode: "create" | "update", pool: TaskPool, task: PoolTask | null): E2TaskEditorState {
+function taskDraft(task: PoolTask): E2TaskDraft {
+  return { name: task.name, taskClass: task.taskClass, duration: String(task.durationMinutes), weight: task.baseReward ? trimWeight(task.baseReward) : "", enabled: task.enabled };
+}
+
+export function openE2TaskEditor(mode: "create" | "update", pool: TaskPool, task: PoolTask | null, key = crypto.randomUUID()): E2TaskEditorState {
   return {
-    mode, pool, task, step: "form", reason: "", saving: false, outcome: { kind: "none" }, key: crypto.randomUUID(),
+    mode, pool, task, step: "form", reason: "", saving: false, outcome: { kind: "none" }, key,
     touched: { name: false, taskClass: false, duration: false, weight: false, reason: false },
-    draft: task ? { name: task.name, taskClass: task.taskClass, duration: String(task.durationMinutes), weight: task.baseReward ? trimWeight(task.baseReward) : "", enabled: task.enabled }
+    draft: task ? taskDraft(task)
       : { name: "", taskClass: "EM", duration: "", weight: "", enabled: pool.enabledCount < ENABLED_LIMIT },
   };
+}
+
+export function applyLatestE2Task(state: E2TaskEditorState, task: PoolTask, pool: TaskPool): E2TaskEditorState {
+  const before = taskDraft(state.task!);
+  const draft = taskDraft(task);
+  const changes: Extract<E2TaskOutcome, { kind: "latest" }>["changes"] = [];
+  const fields: { field: E2TaskField; label: string; format: (value: string) => string; equal: (a: string, b: string) => boolean }[] = [
+    { field: "name", label: "名称", format: value => value, equal: (a, b) => a.trim() === b.trim() },
+    { field: "taskClass", label: "类型", format: value => TASK_CLASS_LABELS[value as TaskClass], equal: (a, b) => a === b },
+    { field: "duration", label: "时长", format: value => `${value} 分钟`, equal: (a, b) => Number(a) === Number(b) },
+    { field: "weight", label: "权重", format: formatWeight, equal: sameWeight },
+  ];
+  function rebaseField<K extends E2TaskField>(field: K, label: string, format: (value: string) => string, equal: (a: string, b: string) => boolean) {
+    const yours = state.draft[field];
+    const changed = !equal(before[field], yours);
+    if (!equal(before[field], draft[field])) {
+      changes.push({ field, label, from: format(before[field]), to: format(draft[field]), ...(changed ? { yours: format(yours) } : {}) });
+    }
+    if (changed) draft[field] = yours;
+  }
+  for (const { field, label, format, equal } of fields) rebaseField(field, label, format, equal);
+  return { ...state, task, pool, draft, reason: "", touched: { ...state.touched, reason: false }, step: "form", saving: false, outcome: { kind: "latest", changes } };
 }
 
 function fieldErrors(draft: E2TaskDraft): Partial<Record<E2TaskField, string>> {
   const name = draft.name.trim();
   return {
     name: !name ? "请填写任务名称" : appVisibleTextError(name, "任务名称") ?? ([...name].length > NAME_MAX ? `任务名称最多 ${NAME_MAX} 个字符` : undefined),
+    taskClass: TASK_CLASSES.includes(draft.taskClass) ? undefined : "任务类型无效，请从六种类型中重新选择。",
     duration: durationOk(draft.duration) ? undefined : "时长要填 5–120 分钟，5 的倍数",
-    weight: WEIGHT_PATTERN.test(draft.weight) && /[1-9]/.test(draft.weight) ? undefined : "权重要大于 0，最多 6 位小数",
+    weight: validTaskWeight(draft.weight) ? undefined : "权重要大于 0，最多 6 位小数",
   };
 }
 
 export function E2TaskEditor({ state, onChange, writeBlock, toast, onSubmit, onReadLatest, onRetry }: {
   state: E2TaskEditorState;
-  onChange: (next: E2TaskEditorState | null) => void;
+  onChange: Dispatch<SetStateAction<E2TaskEditorState | null>>;
   /** 页面级的不能写原因（只读、本等级有结果未知的操作、数据不新鲜）。 */
   writeBlock?: string;
   toast: (message: string) => void;
-  /** 待 Codex 接入：发送新增或修改，按回包改 state.outcome。 */
   onSubmit: (state: E2TaskEditorState) => Promise<void>;
-  /** 待 Codex 接入：被别人改过后读最新，回到抽屉，自己改过的项保留、理由清空（OP-97）。 */
   onReadLatest: (state: E2TaskEditorState) => Promise<void>;
-  /** 待 Codex 接入：结果未知时按原请求重试。 */
   onRetry: (state: E2TaskEditorState) => Promise<void>;
 }) {
   const { mode, pool, task, draft, step, outcome, saving } = state;
-  const set = (patch: Partial<E2TaskEditorState>) => onChange({ ...state, ...patch });
+  const set = (patch: Partial<E2TaskEditorState>) => onChange(current => current?.key === state.key ? { ...current, ...patch } : current);
   const edit = (patch: Partial<E2TaskDraft>, field?: E2TaskField) => set({
     draft: { ...draft, ...patch },
     outcome: outcome.kind === "rejected" && outcome.field && outcome.field === field ? { kind: "none" } : outcome,
   });
-  const touch = (field: E2TaskField | "reason") => set({ touched: { ...state.touched, [field]: true } });
+  const touch = (field: E2TaskField | "reason") => onChange(current => current?.key === state.key
+    ? { ...current, touched: { ...current.touched, [field]: true } } : current);
   const errors = fieldErrors(draft);
   const shown = (field: E2TaskField) => outcome.kind === "rejected" && outcome.field === field ? outcome.message : state.touched[field] ? errors[field] : undefined;
   const minutes = durationOk(draft.duration) ? Number(draft.duration) : null;
@@ -116,7 +148,7 @@ export function E2TaskEditor({ state, onChange, writeBlock, toast, onSubmit, onR
     ...(nameChanged ? [] : [{ key: "name", label: "名称", before: before.name, after: draft.name.trim() }]),
     { key: "taskClass", label: "类型", before: TASK_CLASS_LABELS[before.taskClass], after: TASK_CLASS_LABELS[draft.taskClass] },
     { key: "duration", label: "时长", before: `${before.duration} 分钟`, after: `${draft.duration} 分钟` },
-    { key: "weight", label: "权重", before: before.weight ? formatWeight(before.weight) : "—", after: !draft.weight ? "—" : WEIGHT_PATTERN.test(draft.weight) ? formatWeight(draft.weight) : draft.weight },
+    { key: "weight", label: "权重", before: before.weight ? formatWeight(before.weight) : "—", after: !draft.weight ? "—" : validTaskWeight(draft.weight) ? formatWeight(draft.weight) : draft.weight },
   ] : [];
   // 列表还没带出权重时两边都是空，算没改。
   const weightSame = !!before && (draft.weight === before.weight || sameWeight(draft.weight, before.weight));
@@ -124,12 +156,12 @@ export function E2TaskEditor({ state, onChange, writeBlock, toast, onSubmit, onR
     || Number(draft.duration) !== Number(before.duration) || !weightSame;
   const firstError = (Object.keys(errors) as E2TaskField[]).map(field => errors[field]).find(Boolean);
   const formBlock = writeBlock ?? (!changed ? "没有修改" : firstError);
-  const reasonLength = Array.from(state.reason.trim()).length;
-  const reasonReady = reasonLength >= 8 && reasonLength <= 200;
+  const reasonLength = visibleReasonLength(state.reason);
+  const reasonReady = validE2EditorReason(state.reason);
   const confirmBlock = formBlock ?? (outcome.kind === "conflict" ? "请先读取最新内容" : !reasonReady ? "请填写 8–200 字的操作理由" : undefined);
   const dirty = changed && mode === "update" || mode === "create" && !!(draft.name || draft.duration || draft.weight);
-  const weightUp = before && WEIGHT_PATTERN.test(draft.weight) && WEIGHT_PATTERN.test(before.weight) && !sameWeight(draft.weight, before.weight)
-    ? Number(draft.weight) > Number(before.weight) : null;
+  const weightUp = before && validTaskWeight(draft.weight) && validTaskWeight(before.weight) && !sameWeight(draft.weight, before.weight)
+    ? weightMicros(draft.weight) > weightMicros(before.weight) : null;
   const direction = weightUp === null ? undefined : weightUp ? "调高后，这条任务在同等级里分得更多，其他任务相应少一些。" : "调低后，这条任务在同等级里分得更少，其他任务相应多一些。";
   const close = () => { if (!saving) onChange(null); };
   const leave = () => { if (saving) return; if (step === "leaving") set({ step: "form" }); else if (dirty) set({ step: "leaving" }); else close(); };
@@ -219,7 +251,7 @@ export function E2TaskEditor({ state, onChange, writeBlock, toast, onSubmit, onR
           </Field>}
         {outcome.kind === "conflict" && <Notice tone="warn" title="这条任务刚被别人改过，这次没有保存">
           <ConflictBar message="读取最新后，你改过的内容会保留，再核对一遍。" onRead={() => onReadLatest(state)} /></Notice>}
-        {outcome.kind === "rejected" && !outcome.field && <Notice tone="danger">{outcome.message}</Notice>}
+        {(outcome.kind === "rejected" && !outcome.field || outcome.kind === "conflict" || outcome.kind === "unknown") && outcome.message && <Notice tone="danger">{outcome.message}</Notice>}
         <Fold title="执行摘要" summary="立即生效，不经审批"><p>{mode === "update" ? "每次修改都会留下记录。两人同时改同一条时，后提交的会被拒，要读取最新后再改。"
           : "每级最多启用 200 个、共 300 个任务（含停用）。同一等级里任务名称不能重名。"}</p></Fold>
         <Fold title="技术信息" summary="任务池与请求编号"><Facts><Fact k="任务池">{pool.code}</Fact>
