@@ -269,7 +269,7 @@ export type PendingRecoveryState = {
 
 /** Opt in per command family. The caller interprets its endpoint and proves business facts. */
 export function createPendingRecovery<T extends PendingMutationRecord>(
-  store: PendingMutationStore<T>,
+  store: Pick<PendingMutationStore<T>, "list" | "isDurablyStored" | "forget" | "markReplayRejected">,
   options: {
     capability: (record: T) => PendingRecoveryCapability;
     canReplay: (record: T) => boolean;

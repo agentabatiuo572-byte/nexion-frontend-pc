@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { uploadA1Avatar, cancelA1Avatar, uploadAccountAvatar, prepareDefaultAccountAvatar, cancelAccountAvatar, fetchSelfAvatar, isA1OutcomeUncertainError, A1OutcomeUncertainError, type A1Operator } from "@/lib/admin/a1-client";
-import { a1AvatarPreparationRecovery, avatarDrafts, avatarDraftFingerprint, avatarFileHash, canWriteA1Avatar, rememberAvatarDraft, type AvatarDraft } from "@/lib/admin/account-avatar-pending";
+import { a1AvatarCancellation, a1AvatarCancellationRecovery, a1AvatarPreparationRecovery, avatarDrafts, avatarDraftFingerprint, avatarFileHash, canWriteA1Avatar, queryAvatarCancellation, rememberAvatarDraft, replayAvatarCancellation, type AvatarDraft } from "@/lib/admin/account-avatar-pending";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { type AvatarGender, type AvatarScope } from "@/lib/admin/account-avatar-contract";
 import { supportClient } from "@/lib/admin/m-support-client";
@@ -34,7 +34,10 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
     return () => { generation.current++; controller.current?.abort(); if (objectUrl.current) URL.revokeObjectURL(objectUrl.current); };
   }, [epoch, fingerprint]);
   const expired = Boolean(draft && Date.now() >= draft.expiresAt);
-  usePendingReplayDeadline(scope === "admin" ? draft?.expiresAt : undefined);
+  const cancellation = draft ? a1AvatarCancellation(draft) : undefined;
+  const cancellationState = cancellation && a1AvatarCancellationRecovery.state(cancellation);
+  usePendingReplayDeadline(scope === "admin" ? cancellationState?.expiresAt ?? draft?.expiresAt : undefined);
+  useSyncExternalStore(a1AvatarCancellationRecovery.subscribe, a1AvatarCancellationRecovery.getRevision, () => 0);
   useSyncExternalStore(a1AvatarPreparationRecovery.subscribe, a1AvatarPreparationRecovery.getRevision, () => 0);
   const replayBlock = scope === "admin" && draft?.commandOwnerId ? a1AvatarPreparationRecovery.state(draft).replayBlock : undefined;
   useEffect(() => {
@@ -106,14 +109,26 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
     } finally { if (active(token)) setBusy(false); }
   }
   async function clear() {
-    if (busy || disabled || expired) return;
+    if (busy || disabled || (scope === "admin" && !canWriteA1Avatar(actorId))) return;
+    if (cancellation) {
+      if (a1AvatarCancellationRecovery.state(cancellation).replayBlock) return;
+      const token = generation.current;
+      setBusy(true); setError("");
+      try {
+        await replayAvatarCancellation(cancellation);
+        if (active(token)) { updateDraft(null); resetFile(); setInvalidSelection(false); }
+      } catch (cause) { if (active(token)) setError(displayAdminError(cause)); }
+      finally { if (active(token)) setBusy(false); }
+      return;
+    }
+    if (expired) return;
     if (draft && !draft.asset && avatarDrafts.list().some(row => row.commandKey === draft.commandKey)) { setError("头像准备结果未知，请先重试；当前头像保持不变。"); return; }
     if (!draft?.asset) { updateDraft(null); resetFile(); setInvalidSelection(false); setError(""); onBlocking(false); return; }
-    if (scope === "admin" && draft.cancelKey) { setError(displayAdminError(new Error("A1_AVATAR_CANCEL_QUERY_ONLY"))); return; }
     let sent = false;
     const token = generation.current; setBusy(true); setError(""); onBlocking(true);
     try {
-      const command = rememberAvatarDraft({ ...draft, cancelKey: draft.cancelKey ?? crypto.randomUUID() }, Boolean(draft.cancelKey)); setDraft(command);
+      const command = rememberAvatarDraft({ ...draft, cancelKey: draft.cancelKey ?? crypto.randomUUID(),
+        cancelCreatedAt: scope === "admin" ? Date.now() : undefined }, Boolean(draft.cancelKey)); setDraft(command);
       if (scope === "self") {
         const snapshot = await fetchSelfAvatar();
         if (!active(token)) return;
@@ -128,12 +143,25 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
       if (active(token)) {
         const refused = !isA1OutcomeUncertainError(e) && isDeterministicRejection((e as { status?: number }).status ?? 0);
         if (scope === "admin" && (!sent || refused)) {
-          avatarDrafts.remember(draft.fingerprint, draft.commandKey, { ...draft, cancelKey: undefined });
-          updateDraft({ ...draft, cancelKey: undefined });
+          avatarDrafts.remember(draft.fingerprint, draft.commandKey, { ...draft, cancelKey: undefined, cancelCreatedAt: undefined });
+          updateDraft(draft);
         }
         setError(displayAdminError(scope === "admin" && sent && !refused ? new Error("A1_AVATAR_CANCEL_QUERY_ONLY") : e));
       }
     }
+    finally { if (active(token)) setBusy(false); }
+  }
+  async function checkCancellation() {
+    if (!cancellation || busy || disabled) return;
+    const token = generation.current;
+    setBusy(true); setError("");
+    try {
+      const state = await queryAvatarCancellation(cancellation);
+      if (!active(token)) return;
+      if (state === "SUCCEEDED" || state === "REJECTED" || state === "NOT_EXECUTED") {
+        updateDraft(avatarDrafts.list().find(row => row.commandKey === cancellation.draftKey) ?? null);
+      } else if (state !== "NOT_FOUND") setError(displayAdminError(new Error("A1_AVATAR_CANCEL_QUERY_ONLY")));
+    } catch (cause) { if (active(token)) setError(displayAdminError(cause)); }
     finally { if (active(token)) setBusy(false); }
   }
   return <fieldset className="account-avatar-controls" disabled={disabled || busy}><legend>账号头像</legend>
@@ -146,12 +174,14 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
     </div>
     {canUpload && allowDefault && !draft && !invalidSelection && <button type="button" className="l-btn" onClick={() => void prepare(true)}>按所选分类准备默认头像</button>}
     {draft && <div className="account-avatar-actions">{!draft.asset && <button type="button" className="l-btn" disabled={expired || !!replayBlock || draft.kind === "UPLOAD" && !file} onClick={() => void prepare()}>{busy ? "正在准备…" : draft.kind === "DEFAULT" ? "重试获取默认头像" : "上传或重试"}</button>}
-      {scope === "admin" && draft.cancelKey
-        ? <p>取消新头像的结果未知，不能再取消一次。请到页面上方「账号原操作」点「查询原结果」。</p>
+      {cancellation
+        ? <><button type="button" className="l-btn" disabled={!!cancellationState?.busy} onClick={() => void checkCancellation()}>查询原结果</button>
+          {!cancellationState?.replayRejection && <button type="button" className="l-btn" disabled={!!cancellationState?.replayBlock} onClick={() => void clear()}>重试取消头像</button>}</>
         : <button type="button" className="l-btn" disabled={expired || Boolean(!draft.asset && avatarDrafts.list().some(row => row.commandKey === draft.commandKey))} onClick={() => void clear()}>{draft.cancelKey ? "重试取消头像" : "取消新头像"}</button>}
       {draft.kind === "UPLOAD" && !file && !draft.asset && <p>上传结果未知，请选择首次上传的同一张图片后重试。</p>}
       {draft.asset && <small>新头像有效期至 {businessStamp(new Date(draft.asset.expiresAt).getTime())}（{businessZone().label}）</small>}
-      {(expired || assetExpired) && <p role="alert">{expired ? scope === "admin" ? RETRY_EXPIRED_TEXT : "重试期限已过，请联系管理员核对结果。" : "新头像已过期，请取消后重新选择。"}</p>}</div>}
+      {(cancellationState?.expired ?? expired) && <p role="alert">{scope === "admin" ? RETRY_EXPIRED_TEXT : "重试期限已过，请联系管理员核对结果。"}</p>}
+      {assetExpired && !(cancellationState?.expired ?? expired) && <p role="alert">新头像已过期，请取消后重新选择。</p>}</div>}
     {invalidSelection && !draft && <button type="button" className="l-btn" onClick={() => void clear()}>取消失败的头像选择</button>}{error && <p role="alert">{error}</p>}
   </fieldset>;
 }

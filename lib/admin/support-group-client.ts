@@ -1,6 +1,8 @@
 import { supportRequest, supportJson, supportObject, parseSupportId, parseSupportCount, parseSupportPage, parseSupportTime, supportWireId, SupportClientError, isIndeterminateSupportError } from "./m-support-client.ts";
 import { createPendingMutationStore, createPendingRecovery, PENDING_MUTATION_TTL_MS, type PendingMutationRecord } from "./pending-mutation-store.ts";
 import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 
 const BASE = "/support-agents/groups";
 const GROUP_STATES = ["ENABLED", "DISABLED", "ARCHIVED"] as const;
@@ -86,19 +88,41 @@ export type MoveGroupInput = { targetGroupId: string | null; expectedMemberVersi
 export type QualificationInput = { qualificationKind: QualificationKind; state: QualificationStatus; expectedQualificationVersion: number; expectedAccountVersion: number; reason: string };
 type GroupIntent = { kind: "CREATE"; payload: CreateGroupInput } | { kind: "RENAME"; targetId: string; payload: RenameGroupInput } | { kind: "STATUS"; targetId: string; payload: StatusGroupInput } | { kind: "OWNER"; targetId: string; payload: OwnerGroupInput } | { kind: "MEMBER"; targetId: string; payload: MoveGroupInput } | { kind: "QUALIFICATION"; targetId: string; payload: QualificationInput };
 export type GroupPendingRecord = PendingMutationRecord & { actorId: number; intent: GroupIntent; label: string };
+export type QualificationPending = GroupPendingRecord & { intent: Extract<GroupIntent, { kind: "QUALIFICATION" }> };
 // B8 invite-code writes share the group command store: frozen payload plus key until the original command is settled.
 type InviteIntent = { kind: "INVITE_ISSUE"; payload: { expectedVersion: number | null } } | { kind: "INVITE_REVOKE"; targetId: string; payload: { expectedVersion: number; reason: string; code: string; name: string } };
 export type InvitePendingRecord = PendingMutationRecord & { actorId: number; intent: InviteIntent; label: string };
 export type InviteIssueRecord = InvitePendingRecord & { intent: Extract<InviteIntent, { kind: "INVITE_ISSUE" }> };
 export type InviteRevokeRecord = InvitePendingRecord & { intent: Extract<InviteIntent, { kind: "INVITE_REVOKE" }> };
 export function isInvitePending(record: GroupPendingRecord | InvitePendingRecord): record is InvitePendingRecord { return record.intent.kind === "INVITE_ISSUE" || record.intent.kind === "INVITE_REVOKE"; }
+export function isQualificationPending(record: GroupPendingRecord | InvitePendingRecord): record is QualificationPending { return record.intent.kind === "QUALIFICATION"; }
 /** Only a coded, explicit command rejection can release unresolved evidence. */
 export function commandRejected(error: unknown): boolean { return isExplicitRejection(error); }
 // Unresolved evidence outlives the server's 24h replay window; session storage ends with the tab.
 export const groupPendingCommands = createPendingMutationStore<GroupPendingRecord | InvitePendingRecord>({ storageKey: "nexion-admin-support-group-commands-v1", ttlMs: Math.floor(Number.MAX_SAFE_INTEGER / 2), isValidRecord: r => Number.isSafeInteger(r.actorId) && r.actorId > 0 && !!r.intent && ["CREATE", "RENAME", "STATUS", "OWNER", "MEMBER", "QUALIFICATION", "INVITE_ISSUE", "INVITE_REVOKE"].includes(r.intent.kind) && !!r.intent.payload && (r.intent.kind === "INVITE_ISSUE" ? r.intent.payload.expectedVersion === null || Number.isSafeInteger(r.intent.payload.expectedVersion) : typeof r.intent.payload.reason === "string") && typeof r.label === "string" });
-export const qualificationRecovery = createPendingRecovery(groupPendingCommands, {
+export function canManageSupportQualifications(session: { role: string; authorities: string[] } | null) {
+  return !!session && ["SUPERADMIN", "SUPER_ADMIN", "SUPER"].includes(session.role.toUpperCase())
+    && session.authorities.includes("platform_a1_read") && session.authorities.includes("platform_a1_write");
+}
+export const qualificationRecovery = createPendingRecovery<QualificationPending>({
+  ...groupPendingCommands,
+  // Other group records share this journal and have their own retention rules.
+  list: () => groupPendingCommands.list().filter(isQualificationPending).map(record => ({
+    ...record, expiresAt: record.createdAt + PENDING_MUTATION_TTL_MS,
+  })),
+}, {
   capability: () => "receipt",
-  canReplay: () => false,
+  canReplay(record) {
+    const { session, isAuthenticated, logoutPending, logoutUnknown } = useAdminAuth.getState();
+    if (!session || !isAuthenticated || logoutPending || logoutUnknown || session.passwordChangeRequired
+      || session.adminId !== record.actorId || !canManageSupportQualifications(session)
+      || !canAccessResolvedPath(resolveVisibleDomains(session), "/platform/rbac")) return false;
+    try {
+      id(record.intent.targetId);
+      key(record.commandKey);
+      return qualificationWriteBody(record.intent.payload).reason === record.intent.payload.reason;
+    } catch { return false; }
+  },
   explicitRejectionCode,
 });
 export function canReplayGroupCommand(record: Pick<PendingMutationRecord, "createdAt">, now = Date.now()): boolean { return now >= record.createdAt && now < record.createdAt + PENDING_MUTATION_TTL_MS; }
@@ -106,6 +130,14 @@ function key(value: string): string { if (!value || value.length > 96 || /[\x00-
 function groupNameInput(input: RenameGroupInput) { object(input, "name expectedVersion reason"); return { name: name(input.name), expectedVersion: positive(input.expectedVersion), reason: reason(input.reason) }; }
 function changedGroup(value: unknown, target: string, expectedVersion: number, matches: (group: SupportGroup) => boolean) { const result = parseSupportGroup(value); if (result.id !== target || result.version <= expectedVersion || !matches(result)) bad("writeAcknowledgement"); return result; }
 function parseQualificationWrites(value: unknown, target: string) { return unique(array(value, value => { const q = object(value, "id adminId qualificationKind state version startsAt"); if (id(q.adminId) !== target) bad("qualificationIdentity"); return { id: id(q.id), adminId: target, kind: enumeration(q.qualificationKind, ["SERVICE", "SUPERVISOR"] as const), state: enumeration(q.state, QUAL_STATES), version: positive(q.version), startsAt: text(q.startsAt) }; }), q => q.kind); }
+function qualificationWriteBody(input: QualificationInput) {
+  object(input, "qualificationKind state expectedQualificationVersion expectedAccountVersion reason");
+  return {
+    qualificationKind: enumeration(input.qualificationKind, ["SERVICE", "SUPERVISOR"] as const),
+    state: enumeration(input.state, QUAL_STATES), expectedQualificationVersion: count(input.expectedQualificationVersion),
+    expectedAccountVersion: count(input.expectedAccountVersion), reason: reason(input.reason),
+  };
+}
 export const supportGroupClient = {
   groups(signal?: AbortSignal): Promise<SupportGroupDirectory[]> { return supportRequest(BASE, value => unique(array(value, parseGroupDirectory), g => g.id), { signal }); },
   detail(groupId: string, signal?: AbortSignal): Promise<SupportGroupDetail> { const target = id(groupId); return supportRequest(`${BASE}/${target}`, value => { const result = parseGroupDetail(value); if (result.group.id !== target) bad("detailIdentity"); return result; }, { signal }); },
@@ -131,5 +163,5 @@ export const supportGroupClient = {
     const body = { expectedVersion: positive(input.expectedVersion), reason: detail.normalized };
     return supportRequest(`/support-agents/${target}/invite-code/revoke`, value => { const result = inviteCodeView(value, true); if (result.code !== null) bad("revokeAcknowledgement"); return result; }, supportJson("POST", body, key(commandKey), signal));
   },
-  setSupportQualification(adminId: string, input: QualificationInput, commandKey: string, signal?: AbortSignal) { const target = id(adminId); object(input, "qualificationKind state expectedQualificationVersion expectedAccountVersion reason"); const body = { qualificationKind: enumeration(input.qualificationKind, ["SERVICE", "SUPERVISOR"] as const), state: enumeration(input.state, QUAL_STATES), expectedQualificationVersion: count(input.expectedQualificationVersion), expectedAccountVersion: count(input.expectedAccountVersion), reason: reason(input.reason) }; return supportRequest(`/support-agents/${target}/qualification`, value => { const rows = parseQualificationWrites(value, target), changed = rows.find(q => q.kind === body.qualificationKind); if (!changed || changed.state !== body.state || changed.version <= body.expectedQualificationVersion) bad("qualificationAcknowledgement"); return rows; }, { ...supportJson("PATCH", body, key(commandKey), signal), preserveUnknownOutcome: true }); },
+  setSupportQualification(adminId: string, input: QualificationInput, commandKey: string, signal?: AbortSignal) { const target = id(adminId), body = qualificationWriteBody(input); return supportRequest(`/support-agents/${target}/qualification`, value => { const rows = parseQualificationWrites(value, target), changed = rows.find(q => q.kind === body.qualificationKind); if (!changed || changed.state !== body.state || changed.version <= body.expectedQualificationVersion) bad("qualificationAcknowledgement"); return rows; }, { ...supportJson("PATCH", body, key(commandKey), signal), preserveUnknownOutcome: true }); },
 };

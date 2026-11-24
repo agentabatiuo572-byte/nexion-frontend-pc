@@ -26,13 +26,13 @@ import {
 } from "@/lib/admin/a1-client";
 import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
 import { fetchA8PermissionDetail } from "@/lib/admin/a8-client";
-import { groupPendingCommands, isInvitePending, type GroupPendingRecord } from "@/lib/admin/support-group-client";
+import { groupPendingCommands, isQualificationPending, qualificationRecovery } from "@/lib/admin/support-group-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx, ActionConfirmReq } from "./types";
 import { usePendingReplayDeadline, type BusinessFormValue } from "../design-kit";
 import { pendingReplayReason } from "../recovery-panel";
 import { RETRY_EXPIRED_TEXT, type PendingRecoveryConclusion } from "@/lib/admin/pending-mutation-store";
-import { a1AvatarPreparationRecovery, avatarDrafts, avatarDraftFingerprint, queryAvatarCancellation } from "@/lib/admin/account-avatar-pending";
+import { a1AvatarCancellation, a1AvatarCancellationRecovery, a1AvatarPreparationRecovery, avatarDrafts, avatarDraftFingerprint, queryAvatarCancellation, replayAvatarCancellation } from "@/lib/admin/account-avatar-pending";
 import { AVATAR_GENDER_OPTIONS } from "@/lib/admin/account-avatar-contract";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { SupportQualificationEditor, canManageSupportQualifications } from "../m-tabs/m1-group-management";
@@ -139,9 +139,14 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   useEffect(() => { setPendingOperations(a1PendingCommands.list().filter(r => r.actorId === currentAdminId)); }, [currentAdminId]);
   useSyncExternalStore(a1Recovery.subscribe, a1Recovery.getRevision, () => 0);
   useSyncExternalStore(a1AvatarPreparationRecovery.subscribe, a1AvatarPreparationRecovery.getRevision, () => 0);
+  useSyncExternalStore(a1AvatarCancellationRecovery.subscribe, a1AvatarCancellationRecovery.getRevision, () => 0);
+  useSyncExternalStore(qualificationRecovery.subscribe, qualificationRecovery.getRevision, () => 0);
+  const qualificationPending = groupPendingCommands.list().filter(isQualificationPending).filter(record => record.actorId === currentAdminId);
   const pendingAvatars = avatarDrafts.list().filter(row => row.actorId === currentAdminId && row.scope === "admin" && (!row.asset || row.cancelKey));
-  usePendingReplayDeadline([...pendingOperations, ...pendingAvatars].reduce<number | undefined>((first, record) =>
-    record.expiresAt <= Date.now() ? first : Math.min(first ?? record.expiresAt, record.expiresAt), undefined));
+  const recoveryDeadlines = [...pendingOperations, ...pendingAvatars.map(draft => a1AvatarCancellation(draft) ?? draft)].map(record => record.expiresAt);
+  recoveryDeadlines.push(...qualificationPending.map(record => qualificationRecovery.state(record).expiresAt));
+  usePendingReplayDeadline(recoveryDeadlines.reduce<number | undefined>((first, deadline) =>
+    deadline <= Date.now() ? first : Math.min(first ?? deadline, deadline), undefined));
   const creationPendingCount = pendingOperations.filter(r => r.intent.kind === "create").length;
   const restoring = useRef<A1Pending | null>(null);
   const submitting = useRef<{ intent: A1Intent; snapshot: A1Snapshot; reason: string; businessValue?: BusinessFormValue } | null>(null);
@@ -1307,39 +1312,63 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       </>,
     };
   });
-  const qualificationPending = groupPendingCommands.list().filter((r): r is GroupPendingRecord => !isInvitePending(r) && r.actorId === currentAdminId && r.intent.kind === "QUALIFICATION");
   for (const record of qualificationPending) {
-    if (record.intent.kind !== "QUALIFICATION") continue;
     const intent = record.intent;
-    recoveryRows.push({ key: record.commandKey, name: record.label, change: intent.payload.state, submittedAt: record.createdAt, tag: Date.now() >= record.createdAt + 86400000 ? expiredTag(RETRY_EXPIRED_TEXT) : unknownTag("direct", "提交时没收到确定结果，资格可能已经改了。这里只能查询：点「查询原结果」核对当前资格。"), actions: <Button size="sm" onClick={() => setQualificationTarget({ id: intent.targetId, kind: intent.payload.qualificationKind })}>查询原结果</Button> });
+    const status = qualificationRecovery.state(record);
+    const open = () => setQualificationTarget({ id: intent.targetId, kind: intent.payload.qualificationKind });
+    recoveryRows.push({ key: record.commandKey, name: record.label, change: intent.payload.state, submittedAt: record.createdAt,
+      tag: status.expired ? expiredTag(RETRY_EXPIRED_TEXT) : unknownTag("direct", "提交时没收到确定结果，资格可能已经改了。请查询原结果。"),
+      actions: <>
+        <Button size="sm" disabled={!!status.busy} onClick={open}>查询原结果</Button>
+        {!status.expired && !status.replayRejection && <Button size="sm" variant="primary"
+          disabledReason={!overviewReady || governanceFrozen ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : pendingReplayReason(status, errorMessage(new Error("A1_OPERATION_FORBIDDEN")))}
+          onClick={open}>按原请求重试</Button>}
+        {status.replayRejection && <Button size="sm" disabled={!!status.busy}
+          onClick={() => confirmLocalRelease(record, record.label, () => qualificationRecovery.releaseRejectedReplay(record))}>解除原操作记录</Button>}
+      </>,
+    });
   }
+  const readAfterAvatarCancellation = async () => {
+    recoveryStarted();
+    setAvatarRecovery(null);
+    reloadPending();
+    if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+    requireActor(null, false);
+  };
   for (const draft of pendingAvatars) {
     const target = draft.fingerprint.split(":")[2] ?? "new";
-    const replay = a1AvatarPreparationRecovery.state(draft);
+    const cancellation = a1AvatarCancellation(draft);
+    const replay = cancellation ? a1AvatarCancellationRecovery.state(cancellation) : a1AvatarPreparationRecovery.state(draft);
     const avatarRetryBlock = pendingReplayReason(replay, errorMessage(new Error("A1_OPERATION_FORBIDDEN")));
-    recoveryRows.push({ key: draft.cancelKey ?? draft.commandKey, name: draft.cancelKey ? "取消账号头像" : "准备账号头像", change: <>{draft.kind === "UPLOAD" ? draft.fileName ?? "上传的图片" : "随机默认头像"} · {target === "new" ? "新建账号" : <>账号编号 <span data-mono>{target}</span></>}</>, submittedAt: draft.createdAt,
+    const name = cancellation ? "取消账号头像" : "准备账号头像";
+    recoveryRows.push({ key: cancellation?.commandKey ?? draft.commandKey, name, change: <>{draft.kind === "UPLOAD" ? draft.fileName ?? "上传的图片" : "随机默认头像"} · {target === "new" ? "新建账号" : <>账号编号 <span data-mono>{target}</span></>}</>,
+      submittedAt: cancellation?.createdAt ?? draft.createdAt,
       tag: replay.expired ? expiredTag(RETRY_EXPIRED_TEXT)
-        : unknownTag("direct", draft.cancelKey
-          ? "提交时没收到确定结果，取消可能已经生效。取消不能重试，可以查询原结果：查到就解除，没查到时记录保留。"
+        : unknownTag("direct", cancellation
+          ? avatarRetryBlock ?? "提交时没收到确定结果，取消可能已经生效。"
           : "提交时没收到确定结果，头像可能已经准备好。24 小时内可以点「处理原头像」按原请求重试，上传的要选同一张图片。"),
       actions: <>
-        <Button size="sm" onClick={() => void (async () => {
+        <Button size="sm" disabled={!!replay.busy} onClick={() => void (async () => {
           requireActor(null, false);
-          if (draft.cancelKey) {
-            const state = await queryAvatarCancellation(draft);
+          if (cancellation) {
+            const state = await queryAvatarCancellation(cancellation);
             if (state === "SUCCEEDED" || state === "REJECTED" || state === "NOT_EXECUTED") {
-              recoveryStarted(); setAvatarRecovery(null); reloadPending();
-              if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
-              requireActor(null, false);
+              await readAfterAvatarCancellation();
               toast(state === "SUCCEEDED" ? "查到原结果：新头像已取消，记录已解除。" : "查到原结果：取消没有执行，准备好的新头像还在。");
-            } else toast("没查到取消的结果，记录保留。稍后再查；一直查不到请联系值班人员核对。");
+            } else toast("没查到取消的结果，原记录继续保留。");
             return;
           }
           if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
           toast(errorMessage(new Error("A1_AVATAR_READBACK_ONLY")));
         })().catch(error => toast(errorMessage(error)))}>查询原结果</Button>
-        {!draft.cancelKey && !replay.expired && !replay.replayRejection && <Button size="sm" variant="primary" disabledReason={avatarRetryBlock} onClick={() => setAvatarRecovery(target)}>处理原头像</Button>}
-        {replay.replayRejection && <Button size="sm" onClick={() => confirmLocalRelease(draft, "准备账号头像", () => a1AvatarPreparationRecovery.releaseRejectedReplay(draft))}>解除原操作记录</Button>}
+        {!replay.expired && !replay.replayRejection && (cancellation
+          ? <Button size="sm" variant="primary" disabledReason={avatarRetryBlock} onClick={() => void (async () => {
+            await replayAvatarCancellation(cancellation);
+            await readAfterAvatarCancellation();
+          })().catch(error => toast(errorMessage(error)))}>按原请求重试</Button>
+          : <Button size="sm" variant="primary" disabledReason={avatarRetryBlock} onClick={() => setAvatarRecovery(target)}>处理原头像</Button>)}
+        {replay.replayRejection && <Button size="sm" disabled={!!replay.busy} onClick={() => confirmLocalRelease(cancellation ?? draft, name, () => cancellation
+          ? a1AvatarCancellationRecovery.releaseRejectedReplay(cancellation) : a1AvatarPreparationRecovery.releaseRejectedReplay(draft))}>解除原操作记录</Button>}
       </>,
     });
   }
