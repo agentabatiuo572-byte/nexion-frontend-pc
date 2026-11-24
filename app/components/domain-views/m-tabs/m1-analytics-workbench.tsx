@@ -149,16 +149,23 @@ function activeAnalyticsConditions(state: AnalyticsQueryState, groups: SupportAn
   if (state.direction !== undefined) conditions.push({ key: "direction", label: `顺序：${state.direction === "ASC" ? "从低到高 / 从早到晚" : "从高到低 / 从近到远"}`, remove: { direction: undefined } });
   return conditions;
 }
+function analyticsResponseStatus(error: SupportClientError) {
+  return error.status >= 200 && error.status < 300 ? error.apiCode : error.status;
+}
 export function analyticsErrorText(error: unknown): string {
   if (error instanceof AnalyticsEntryError) return error.message;
+  if (error instanceof Error && (error.message === "CONTENT_API_MALFORMED_RESPONSE" || error.message.startsWith("SUPPORT_CONTRACT_MALFORMED:"))) {
+    return ADMIN_ERROR_MESSAGES.CONTENT_API_MALFORMED_RESPONSE;
+  }
   if (error instanceof SupportClientError) {
-    if (error.backendMessage === "SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE") return "统计来源暂不可用，请稍后重试。";
+    if (error.backendMessage === "SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE") return ADMIN_ERROR_MESSAGES.SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE;
     if (error.backendMessage && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error);
-    if (error.status === 401) return "登录已失效，请重新登录。";
-    if (error.status === 403) return "当前范围已无查看权限，请重新核对负责范围。";
-    if (error.status === 404) return "统计入口暂不可用，请联系技术人员核对服务。";
-    if (error.status === 409) return "数据或权限有变化，请从第一页重新加载。";
-    if (error.status === 503) return "统计来源暂不可用，请稍后重试。";
+    const status = analyticsResponseStatus(error);
+    if (status === 401) return "登录已失效，请重新登录。";
+    if (status === 403) return "当前范围已无查看权限，请重新核对负责范围。";
+    if (status === 404) return "统计入口暂不可用，请联系技术人员核对服务。";
+    if (status === 409) return "数据或权限有变化，请从第一页重新加载。";
+    if (status === 503) return ADMIN_ERROR_MESSAGES.SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE;
   }
   return "统计资料暂时无法确认，请重试。";
 }
@@ -249,12 +256,12 @@ const PERF_SINCE = "自 2026-11-20 起";
 type AgentRow = Extract<SupportAnalyticsResponse, { view: "AGENTS" }>["records"][number];
 type AgentSubject = { agent: AgentRow; groupName?: string };
 type AgentStatisticsRead =
-  | { status: "loading" | "refresh-required" | "error" | "missing" | "denied" }
+  | { status: "loading" | "refresh-required" | "missing" | "denied" }
+  | { status: "error"; detail: string }
   | { status: "ready"; subject: AgentSubject; amount: PerfValue };
 const agentReadReason = {
   loading: "正在加载…",
   "refresh-required": "数据已更新，点页头「刷新」从第一页重读。",
-  error: "期间业绩加载失败",
   missing: "这位客服的资料暂时取不到",
   denied: "你已没有这个组的查看权限",
 };
@@ -262,7 +269,7 @@ function AgentStatisticsDrawer({ subject, read, month, currency, drill, onClose,
   subject?: AgentSubject; read: AgentStatisticsRead; month: string; currency: Currency; drill: Drill; onClose: () => void; onRetry?: () => void;
 }) {
   const agent = subject?.agent, unit = nexGridBrandText(currency);
-  const agentPeriod: PerfValue = read.status === "ready" ? read.amount : { state: "unavailable", reason: agentReadReason[read.status] };
+  const agentPeriod: PerfValue = read.status === "ready" ? read.amount : { state: "unavailable", reason: read.status === "error" ? read.detail : agentReadReason[read.status] };
   return <Drawer open title="客服统计详情" sub={agent ? agent.displayName || `客服 ${agent.accountId}` : undefined} onClose={onClose} footer={<div className="m1-drawer-actions"><Button type="button" onClick={onClose}>返回统计列表</Button></div>}><Facts>
     {agent ? <>
       <Fact k="当前组">{subject?.groupName || "待分组"}</Fact>
@@ -276,7 +283,7 @@ function AgentStatisticsDrawer({ subject, read, month, currency, drill, onClose,
     </> : null}
     </Facts>
     {/* 读取的终态各有样子，不停在「正在加载」；没有身份时不露个人资料。 */}
-    {!agent && read.status === "error" && <BlockState state="error" title="客服统计加载失败" onRetry={onRetry} />}
+    {!agent && read.status === "error" && <BlockState state="error" title="客服统计加载失败" detail={read.detail} onRetry={onRetry} />}
     {!agent && read.status === "refresh-required" && <BlockState state="empty" title="数据已更新" detail="点页头「刷新」从第一页重读。" />}
     {!agent && read.status === "missing" && <BlockState state="empty" title="这位客服的资料暂时取不到" detail="返回统计列表，或点页头「刷新」再看。" />}
     {!agent && read.status === "denied" && <BlockState state="denied" title="你已没有这个组的查看权限" />}
@@ -285,11 +292,10 @@ function AgentStatisticsDrawer({ subject, read, month, currency, drill, onClose,
 }
 function agentScopeDenied(cause: unknown) {
   if (!(cause instanceof SupportClientError)) return false;
-  const status = cause.status >= 200 && cause.status < 300 ? cause.apiCode : cause.status;
-  return status === 401 || status === 403 || status === 404
-    && ["SUPPORT_GROUP_NOT_FOUND", "SUPPORT_AGENT_NOT_FOUND"].includes(cause.backendMessage ?? "");
+  const status = analyticsResponseStatus(cause);
+  return status === 401 || status === 403 || status === 404 && cause.backendMessage === "SUPPORT_GROUP_NOT_FOUND";
 }
-export function AnalyticsTable({ data, currency, drill, openProfile, session, perf, query, onSourceRefreshed, onSourceDenied }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void; session?: CustomerSessionStart; perf: AnalyticsPerf; query: AnalyticsQueryState; onSourceRefreshed: (data: SupportAnalyticsResponse) => void; onSourceDenied: () => void }) {
+export function AnalyticsTable({ data, currency, drill, openProfile, session, perf, query, onSourceRefreshed, onSourceDenied, onAgentMissing }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void; session?: CustomerSessionStart; perf: AnalyticsPerf; query: AnalyticsQueryState; onSourceRefreshed: (data: SupportAnalyticsResponse) => void; onSourceDenied: () => void; onAgentMissing: (accountId: string) => void }) {
   const { month, groupId } = query;
   const [selection, setSelection] = useState<{ subject: AgentSubject; origin: SupportAnalyticsResponse } | null>(null);
   const [read, setRead] = useState<AgentStatisticsRead>({ status: "loading" });
@@ -308,7 +314,7 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
     if (!agentId || !origin || !originWindow || !requiresPeriod) return;
     const controller = new AbortController();
     const signal = controller.signal;
-    type Result = { read: AgentStatisticsRead; source?: SupportAnalyticsResponse };
+    type Result = { read: AgentStatisticsRead; source?: SupportAnalyticsResponse; targetRemoved?: boolean };
     const readTarget = async (): Promise<Result> => {
       const calendar = await analytics.months(signal);
       const selected = calendar.months.find(entry => entry.month === month);
@@ -351,16 +357,21 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
     };
     void readTarget().catch((cause): Result => {
       if (agentScopeDenied(cause)) return { read: { status: "denied" } };
-      if (cause instanceof SupportClientError && (cause.status === 409 || cause.apiCode === 409)) return { read: { status: "refresh-required" } };
-      return { read: { status: "error" } };
+      if (cause instanceof SupportClientError) {
+        const status = analyticsResponseStatus(cause);
+        if (status === 404 && cause.backendMessage === "SUPPORT_AGENT_NOT_FOUND") return { read: { status: "missing" }, targetRemoved: true };
+        if (status === 409) return { read: { status: "refresh-required" } };
+      }
+      return { read: { status: "error", detail: analyticsErrorText(cause) } };
     }).then(result => {
       if (signal.aborted) return;
       setRead(result.read);
       if (result.read.status === "denied") onSourceDenied();
+      if (result.targetRemoved) onAgentMissing(agentId);
       if (result.source) onSourceRefreshed(result.source);
     });
     return () => controller.abort();
-  }, [selection, agentId, requiresPeriod, month, groupId, query, onSourceRefreshed, onSourceDenied]);
+  }, [selection, agentId, requiresPeriod, month, groupId, query, onSourceRefreshed, onSourceDenied, onAgentMissing]);
   const agentDrawer = selection && <AgentStatisticsDrawer read={read} subject={read.status === "ready" ? read.subject : read.status === "loading" ? selection.subject : undefined}
     month={month} currency={currency} drill={drill} onClose={() => setSelection(null)}
     onRetry={() => { if (selection) { setRead({ status: "loading" }); setSelection({ ...selection }); } }} />;
@@ -439,7 +450,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [section, setSection] = useState<Section>("stats"), [personalView, setPersonalView] = useState<PersonalWorkbenchView>("dashboard");
   const lastDataView = useRef<SupportAnalyticsView>("OVERVIEW");
   const [profileId, setProfileId] = useState<string | null>(null);
-  const [agentScopeLost, setAgentScopeLost] = useState(false);
+  const [agentDrawerStatus, setAgentDrawerStatus] = useState<"denied" | "missing" | null>(null);
   const [periodDetail, setPeriodDetail] = useState<SupportAnalyticsDetailView | null>(null);
   const [personalPeriodRetry, setPersonalPeriodRetry] = useState(0);
   const [fundMetric, setFundMetric] = useState<FundMetric | null>(null);
@@ -653,7 +664,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     }
   }, [scope, exportsPorts, section, isPersonal]);
   const change: Drill = changes => {
-    setAgentScopeLost(false);
+    setAgentDrawerStatus(null);
     controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setFundMetric(null); setError("");
     if (changes.month !== undefined || changes.currency !== undefined) closeEvents();
     const basis = scope?.generation !== "LEGACY" && changes.basis === undefined
@@ -661,7 +672,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     setQueryState(previous => changeAnalyticsQuery(previous, basis ? { ...changes, basis } : changes));
   };
   function refreshScope(invalidated = false, targeted = false) {
-    setAgentScopeLost(false);
+    setAgentDrawerStatus(null);
     closeEvents();
     targetedRefresh.current = targeted;
     setFundMetric(null);
@@ -675,9 +686,20 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   }
   const invalidateAgentScope = useCallback(() => {
     refreshScope(true);
-    setAgentScopeLost(true);
+    setAgentDrawerStatus("denied");
   }, [queryState]);
-  const deniedAgentDrawer = agentScopeLost && <AgentStatisticsDrawer read={{ status: "denied" }} month={queryState.month} currency={queryState.currency ?? "USDT"} drill={change} onClose={() => setAgentScopeLost(false)} />;
+  const reloadAfterMissingAgent = useCallback((accountId: string) => {
+    controllerRef.current?.abort();
+    generation.current++;
+    setData(null);
+    setAgentDrawerStatus("missing");
+    setQueryState(previous => ({
+      ...previous,
+      agentId: String(previous.agentId) === accountId ? undefined : previous.agentId,
+      pageNum: 1, expectedVersion: undefined,
+    }));
+  }, []);
+  const unavailableAgentDrawer = agentDrawerStatus && <AgentStatisticsDrawer read={{ status: agentDrawerStatus }} month={queryState.month} currency={queryState.currency ?? "USDT"} drill={change} onClose={() => setAgentDrawerStatus(null)} />;
   function reloadFirstPage() { change({}); setRetry(n => n + 1); }
   function closeTransfer(keepCustomer = false) {
     const url = new URL(window.location.href); url.searchParams.delete("action"); if (!keepCustomer) url.searchParams.delete("customerId"); window.history.replaceState(null, "", url);
@@ -746,7 +768,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{!noScopedContent && <Button onClick={() => refreshScope()}>刷新</Button>}
   </>} />;
   const related = !personalHeader && leaderboardReachable && <nav className="rd-links" aria-label="相关页面"><span>相关页面</span><a className="rd-link" href="/service/leaderboard" onClick={event => { event.preventDefault(); router.push("/service/leaderboard"); }}>业绩榜</a></nav>;
-  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>{header}{exportsOnly ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} /><PerfExportRecords ports={exportsPorts} /></> : <Panel><BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" : scopeError || "正在核对当前可见范围…"} detail={noScopedContent ? "主管负责的组由超级管理员在「客服与分组」里设置。" : undefined} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重新核对范围" /></Panel>}{noScopedContent && related}{deniedAgentDrawer}</section>;
+  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>{header}{exportsOnly ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} /><PerfExportRecords ports={exportsPorts} /></> : <Panel><BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" : scopeError || "正在核对当前可见范围…"} detail={noScopedContent ? "主管负责的组由超级管理员在「客服与分组」里设置。" : undefined} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重新核对范围" /></Panel>}{noScopedContent && related}{unavailableAgentDrawer}</section>;
 
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
   const leadPermission: Permission = mode === "ALL" ? "superadmin" : "supervisor";
@@ -755,7 +777,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     ? section === "stats" ? "my-data" : personalView === "customers" ? "my-customers" : "home"
     : section === "stats" ? queryState.view === "CUSTOMERS" ? "customers" : "data" : section === "personal" ? "data" : section;
   function openTab(tab: M1Tab) {
-    setAgentScopeLost(false);
+    setAgentDrawerStatus(null);
     // Group changes in 客服与分组 feed the scope (group chips, names); re-read it once the supervisor leaves that tab.
     if (section === "team" && tab !== "team" && teamChanged.current) { teamChanged.current = false; setScope(null); setScopeRetry(n => n + 1); }
     restoreExports.current = false;
@@ -960,10 +982,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
           {!data.scopeSummary.groups.length && mode === "MANAGED" && <BlockState state="empty" title="当前没有负责组。" />}
         </> : <>{queryState.view === "CUSTOMERS" && <div className="sa-legend"><span>金额单位 {nexGridBrandText(currency)}</span><span><span className="sa-dot on" aria-hidden="true" />本统计期活跃</span><span><span className="sa-dot off" aria-hidden="true" />本统计期未活跃</span><span><span className="sa-cell-unknown">-</span> 数据还在同步</span><span>点客户名查看资料与记录</span></div>}
           {sessionError && <Notice tone="danger" action={<><Button size="sm" type="button" onClick={() => { const row = sessionError; setSessionError(null); openSessions(row); }}>查看会话记录</Button><Button size="sm" type="button" onClick={() => setSessionError(null)}>知道了</Button></>}>{customerName(sessionError)}：暂时无法核对接待状态，请稍后重试。</Notice>}
-          <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} perf={perf} query={queryState} onSourceRefreshed={setData} onSourceDenied={invalidateAgentScope} /><footer className="sa-pager"><p>{data.total === null ? `第 ${queryState.pageNum} 页 · 共 — 条（已数到 ${data.observedTotal ?? "—"} 条）` : `第 ${queryState.pageNum} / ${Math.max(1, Math.ceil(data.total / data.pageSize))} 页 · 共 ${data.total} 条`}</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">这份数据还在变，暂时不能翻页；请刷新后重试。</p>}</>}
+          <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} perf={perf} query={queryState} onSourceRefreshed={setData} onSourceDenied={invalidateAgentScope} onAgentMissing={reloadAfterMissingAgent} /><footer className="sa-pager"><p>{data.total === null ? `第 ${queryState.pageNum} 页 · 共 — 条（已数到 ${data.observedTotal ?? "—"} 条）` : `第 ${queryState.pageNum} / ${Math.max(1, Math.ceil(data.total / data.pageSize))} 页 · 共 ${data.total} 条`}</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">这份数据还在变，暂时不能翻页；请刷新后重试。</p>}</>}
       </>}
     </Panel>}
-    {deniedAgentDrawer}
+    {unavailableAgentDrawer}
     {(showStatistics || periodDetail) && fundSource && <M1StatisticDetails key={`${periodDetail ?? fundMetric}:${fundSource.kind === "fund" ? fundSource.origin.asOf : ""}`} source={fundSource} onClose={() => { setFundMetric(null); setPeriodDetail(null); }} onInvalid={invalidateFund} />}
     {sessionBusy && <SessionBusyDialog customer={customerName(sessionBusy.row)} hold={sessionBusy.hold} onClose={() => setSessionBusy(null)} onRead={() => { const row = sessionBusy.row; setSessionBusy(null); openSessions(row); }} />}
     {transferCustomer && <CustomerTransferDialog key={transferCustomer} customerId={transferCustomer} mode={mode === "ALL" ? "ALL" : "MANAGED"} onClose={() => closeTransfer()} onDone={notice => { closeTransfer(); setTransferNotice(notice); setTransferRevision(n => n + 1); setRetry(n => n + 1); }} onOpenOwn={canMine ? () => { closeTransfer(true); openTab("mine"); } : undefined} />}

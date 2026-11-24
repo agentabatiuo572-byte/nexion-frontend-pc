@@ -217,7 +217,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
     }] : []),
     ...pending.map(p => ({
       key: p.operationId, createdAt: p.createdAt, object: p.objectHidden ? "导出操作" : `${VERB[p.decision]}导出申请 ${p.taskId}`,
-      tag: unknownTag, line: p.objectHidden ? `${p.at} 发出；这条申请现在不在你能看的范围内，原操作继续保留，可以再查询。` : `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`,
+      tag: unknownTag, line: p.objectHidden ? `${p.at} 发出；原操作继续保留，可以再查询。` : `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`,
       result: now >= p.expiresAt ? expiredResult : p.objectHidden ? undefined : answers[p.operationId],
       actions: queryButton(p.operationId, () => queryOriginal(p)), detail: p.reason && <p>理由：{p.reason}</p>, tech: <TechInfo commandKey={p.operationId} />,
     })),

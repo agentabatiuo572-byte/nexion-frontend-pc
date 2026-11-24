@@ -30,7 +30,7 @@ type Scope = Selection["scope"];
 type SubmitBody = Selection & { previewVersion: string; reason: string };
 type DecisionBody = { expectedVersion: number; reason: string; decision?: Exclude<Action, "WITHDRAW"> };
 type SavedExport = PendingMutationRecord & ({ action: "SUBMIT"; body: SubmitBody; selection: ExportQuery; acceptedRequestId?: string }
-  | { action: Action; taskId: string; body: DecisionBody; objectHidden?: boolean });
+  | { action: Action; taskId: string; body: DecisionBody });
 const store = createPendingMutationStore<SavedExport>({
   storageKey: "nexion-support-performance-commands",
   retainExpiredRecords: true,
@@ -200,21 +200,11 @@ const uncheckedItems = (types: readonly ExportType[]) => types.map(type => ({
 }));
 const fingerprint = (query: ExportQuery) => JSON.stringify([query.month, query.scope, [...query.types].sort()]);
 const originalFields = (row: SavedExport) => ({ operationId: row.commandKey, createdAt: row.createdAt, expiresAt: row.expiresAt });
-const pendingDecision = (row: Extract<SavedExport, { taskId: string }>): PendingDecision =>
-  ({ ...originalFields(row), taskId: row.taskId, decision: row.action, objectHidden: row.objectHidden,
-    reason: row.objectHidden ? undefined : row.body.reason, at: businessStamp(row.createdAt) });
 type SavedDecision = Extract<SavedExport, { taskId: string }>;
 const decisionLane = (row: SavedDecision): View => row.action === "WITHDRAW" ? "MINE" : "APPROVALS";
-function setDecisionVisibility(matches: (row: SavedDecision) => boolean, visible: boolean) {
-  let changed = false;
-  for (const row of store.list()) {
-    if (row.action === "SUBMIT" || !matches(row) || Boolean(row.objectHidden) === !visible) continue;
-    const next: SavedDecision = { ...row, objectHidden: !visible };
-    store.remember(row.fingerprint, row.commandKey, next);
-    changed = true;
-  }
-  if (changed) notifyPending();
-}
+const pendingDecision = (row: SavedDecision, visible: boolean): PendingDecision =>
+  ({ ...originalFields(row), taskId: row.taskId, decision: row.action, objectHidden: !visible,
+    reason: visible ? row.body.reason : undefined, at: businessStamp(row.createdAt) });
 function restoredDraft(row: Extract<SavedExport, { action: "SUBMIT" }>): ExportDraft {
   const { month, scope, types, reason } = row.body;
   return { reason, query: row.selection, selection: { month, scope, types } };
@@ -257,10 +247,8 @@ export function exportTaskHidden(error: unknown) {
     || status === 403 && ["EXPORT_TASK_NOT_FOUND", "EXPORT_SCOPE_CHANGED", "EXPORT_APPLICANT_INELIGIBLE"].includes(error.backendMessage ?? "");
 }
 
-function hideDeniedTasks(error: unknown, matches: (row: SavedDecision) => boolean) {
-  const denied = exportTaskHidden(error) || isExportPermissionDenied(error);
-  if (denied) setDecisionVisibility(matches, false);
-  return denied;
+export function exportPreviewChanged(error: unknown) {
+  return error instanceof SupportClientError && apiStatus(error) === 409 && error.backendMessage === "EXPORT_PREVIEW_CHANGED";
 }
 
 function outcomeUnknown(error: unknown) {
@@ -273,7 +261,6 @@ function outcomeUnknown(error: unknown) {
 
 function writeError(error: unknown) {
   if (isExportPermissionDenied(error)) return new Error("ADMIN_PERMISSION_DENIED", { cause: error });
-  if (error instanceof SupportClientError && error.backendMessage === "EXPORT_PREVIEW_CHANGED") return new Error("这一版数据变了，重新检查后再提交。");
   return error;
 }
 
@@ -304,9 +291,6 @@ export function usePerformanceExportPorts(): PerfExportPorts | null | undefined 
       canReview ? available("APPROVALS") : Promise.resolve(null),
     ] as const).then(([options, mine, approvals]) => {
       if (signal.aborted) return;
-      setDecisionVisibility(row => !canRecover(row, session.authorities), false);
-      if (mine.status === "rejected") hideDeniedTasks(mine.reason, row => decisionLane(row) === "MINE");
-      if (approvals.status === "rejected") hideDeniedTasks(approvals.reason, row => decisionLane(row) === "APPROVALS");
       const views: View[] = [];
       const keep = (result: PromiseSettledResult<View | null>, lane: View, wanted: boolean) => {
         if (result.status === "fulfilled") return result.value === lane;
@@ -338,6 +322,15 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
   let months: string[] = [];
   let restoration: { kind: "conditions-changed"; differences: ExportConditionDifference[] } | undefined;
   let lastVisible: (ExportVisibleReceipt & { operationId: string }) | undefined;
+  // A persisted operation preserves intent, never proof of this session's object access.
+  const visibleDecisions = new Set<string>();
+  const setTaskVisible = (taskId: string, visible: boolean) => {
+    if (visible === visibleDecisions.has(taskId)) return;
+    if (visible) visibleDecisions.add(taskId);
+    else visibleDecisions.delete(taskId);
+    notifyPending();
+  };
+  const accessDenied = (error: unknown) => exportTaskHidden(error) || isExportPermissionDenied(error);
   const parseTask = taskParser(operator);
   const parseBatch = (value: unknown): { requestId: string; rows: ExportSubmitted[] } => {
     const row = object(value);
@@ -354,10 +347,10 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
   const readTask = (taskId: string) => read(`/${id(taskId)}`, value => {
     const task = parseTask(value);
     if (task.taskId !== taskId) invalid("export.taskIdentity");
-    if (!task.scopeLost) setDecisionVisibility(row => row.taskId === taskId, true);
+    setTaskVisible(taskId, !task.scopeLost);
     return task;
   }).catch(error => {
-    hideDeniedTasks(error, row => row.taskId === taskId);
+    if (accessDenied(error)) setTaskVisible(taskId, false);
     throw error;
   });
   const requestPreview = async (query: ExportQuery, includeOthers = false) => {
@@ -389,10 +382,11 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       forget(record);
       return result;
     } catch (error) {
-      if (outcomeUnknown(error)) throw new ExportOutcomeUnknownError("提交后没收到结果，请查询原操作。");
-      const drafts = draftsFor(operator);
-      if (drafts && error instanceof SupportClientError && error.backendMessage === "EXPORT_PREVIEW_CHANGED") {
-        drafts.submit = restoredDraft(record);
+      if (exportPreviewChanged(error)) {
+        const drafts = draftsFor(operator);
+        if (drafts) drafts.submit = restoredDraft(record);
+      } else if (outcomeUnknown(error)) {
+        throw new ExportOutcomeUnknownError("提交后没收到结果，请查询原操作。");
       }
       forget(record);
       throw writeError(error);
@@ -565,10 +559,13 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       return read(`?view=${view}&pageNum=${page}&pageSize=${pageSize}`, value => {
         const row = object(value);
         if (integer(row.pageNum) !== page || integer(row.pageSize) !== pageSize) invalid("export.taskPage");
-        const hidden = new Set(store.list().flatMap(record => record.action !== "SUBMIT" && record.objectHidden ? [record.taskId] : []));
-        return { rows: array(row.records, parseTask).filter(task => !hidden.has(task.taskId)), total: integer(row.total) };
+        return { rows: array(row.records, parseTask), total: integer(row.total) };
       }, signal).catch(error => {
-        if (!signal?.aborted) hideDeniedTasks(error, row => decisionLane(row) === view);
+        if (!signal?.aborted && accessDenied(error)) {
+          for (const record of store.list()) {
+            if (record.action !== "SUBMIT" && decisionLane(record) === view) setTaskVisible(record.taskId, false);
+          }
+        }
         throw error;
       });
     },
@@ -580,7 +577,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       if (!row || row.action === "SUBMIT" || row.taskId !== pending.taskId || row.action !== pending.decision) return { kind: "failed", text: "找不到本标签页保存的原操作。" };
       const command = row.action === "WITHDRAW" ? "WITHDRAW" : "DECISION";
       const hidden = (): DecisionLookup => {
-        setDecisionVisibility(record => record.taskId === row.taskId, false);
+        setTaskVisible(row.taskId, false);
         return { kind: "hidden", text: "这条申请现在不在你能看的范围内，原操作继续保留。" };
       };
       if (!canRecover(row, operator.authorities)) return hidden();
@@ -589,6 +586,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         if (found.status === "SUCCEEDED") {
           const response = parseTask(found.task);
           if (found.action !== row.action || found.acceptedVersion !== row.body.expectedVersion + 1 || response.taskId !== row.taskId) return { kind: "mismatch", text: "这条申请的状态对不上这次操作，继续核对，先保持锁定。" };
+          setTaskVisible(row.taskId, !response.scopeLost);
           const task = await readTask(row.taskId);
           if (task.version < response.version || task.state === "PENDING_APPROVAL") return { kind: "pending", text: "还没查到这次操作的结果，先保持锁定。" };
           forget(row);
@@ -600,11 +598,10 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
           return { kind: "cleared", text: "这次操作未执行，原理由已保留，可以重新确认。" };
         }
         enumeration(found.status, ["UNKNOWN", "PROCESSING"]);
-        setDecisionVisibility(record => record.taskId === row.taskId, true);
         if (isRetryExpired(row)) return { kind: "expired", text: RETRY_EXPIRED_TEXT };
         return { kind: "pending", text: "还没查到这次操作的结果，先保持锁定，稍后再查。" };
       } catch (error) {
-        if (exportTaskHidden(error) || isExportPermissionDenied(error)) return hidden();
+        if (accessDenied(error)) return hidden();
         throw error;
       }
     },
@@ -654,7 +651,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         }
       }
     },
-    pendingDecisions: () => store.list().flatMap(record => record.action === "SUBMIT"
-      || !record.objectHidden && (!canRecover(record, operator.authorities) || !views.includes(decisionLane(record))) ? [] : [pendingDecision(record)]),
+    pendingDecisions: () => store.list().flatMap(record => record.action === "SUBMIT" ? []
+      : [pendingDecision(record, canRecover(record, operator.authorities) && visibleDecisions.has(record.taskId))]),
   };
 }

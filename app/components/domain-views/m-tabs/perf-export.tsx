@@ -13,7 +13,7 @@ import { Button, Decision, Explain, Fact, Facts, Field, Fold, InlineRetry, Modal
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { businessZone } from "@/lib/admin/business-time";
 import { EXPORT_LABEL, EXPORT_PARTIAL_RECEIPT, ExportOutcomeUnknownError, exportDownloadMessage, exportVisibleReceiptSummary, exportPreviousReceipt, exportReceiptSummary, exportStatus, type ExportColumns, type ExportDialogData, type ExportDownload, type ExportItem, type ExportSubmitted, type ExportType, type PerfExportPorts } from "./perf-view";
-import { isExportPermissionDenied, useExportClock } from "./perf-export-ports";
+import { exportPreviewChanged, isExportPermissionDenied, useExportClock } from "./perf-export-ports";
 import "./m1-export.css";
 
 const num = (n: number) => n.toLocaleString("en-US");
@@ -83,6 +83,15 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     });
   };
   useEffect(() => { load(); return () => { checkGeneration.current++; }; }, [ports]);
+
+  const restoreDraft = (reason: string) => {
+    setOriginal(undefined);
+    setOriginalReason(reason);
+    setData(null);
+    setItems([]);
+    setConfirmationRevision(value => value + 1);
+    load();
+  };
 
   /** 重新检查这几项（只读）。只认最后一次检查的结果；没查到的这一项写没加载出来。 */
   const recheck = (types: readonly ExportType[], next = { month, scope }, edited = false) => {
@@ -218,8 +227,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           }
           if (outcome.kind === "missing") { setLookupText("找不到本标签页保存的原操作。"); return; }
           if (outcome.kind === "cleared") {
-            setOriginal(undefined); setOriginalReason(outcome.draft.reason);
-            setConfirmationRevision(value => value + 1); load();
+            restoreDraft(outcome.draft.reason);
             return;
           }
           setFound(true);
@@ -304,6 +312,12 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
         if (isExportPermissionDenied(error)) {
           ports.invalidateAccess();
           throw error;
+        }
+        if (exportPreviewChanged(error)) {
+          const draft = ports.recoveredSubmit();
+          if (!draft) throw error;
+          restoreDraft(draft.reason);
+          return;
         }
         if (!(error instanceof ExportOutcomeUnknownError)) {
           recheck(selected);
