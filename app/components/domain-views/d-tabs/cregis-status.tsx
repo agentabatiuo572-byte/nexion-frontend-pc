@@ -29,8 +29,7 @@ import { amountDisplay } from "@/lib/format";
 
 type ExceptionRow = Record<string, unknown>;
 type FundsNetwork = "BEP20" | "ERC20" | "TRC20";
-type ReviewTarget = { cid: string; network: FundsNetwork; caseRow?: never }
-  | { cid: string; network: FundsNetwork | null | undefined; caseRow: ExceptionRow };
+type ReviewTarget = { cid: string; network?: FundsNetwork | null; caseRow?: ExceptionRow };
 const FUNDS_NETWORKS: FundsNetwork[] = ["BEP20", "ERC20", "TRC20"];
 const networkName = { BEP20: "BNB Smart Chain", ERC20: "Ethereum", TRC20: "TRON" };
 type NetworkSwitch = { network: FundsNetwork; depositEnabled: boolean; version: number;
@@ -393,7 +392,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const [review, setReview] = useState<ReviewTarget | null>(null);
   const [claim, setClaim] = useState<ClaimSource | null>(null);
   const [recoveredChallenge, setRecoveredChallenge] = useState<RecoveredChallenge | null>(null);
-  const [manualReview, setManualReview] = useState<{ cid: string; network?: Exclude<FundsNetwork, "TRC20"> }>({ cid: "" });
+  const [manualCid, setManualCid] = useState("");
   const [childKey, setChildKey] = useState(0);
   const sequence = useRef(0);
   const [switchPending, setSwitchPending] = useState<D1PendingCommand[]>([]);
@@ -645,19 +644,17 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const entryAction = (item: ExceptionEntry): { label: string; block?: string; run: () => void } | null => {
     if (!canManage) return null;
     if (item.queue === "heldDeposits" && item.row.status === "REVIEW_HOLD" && item.row.cid != null) {
-      const network = reportedReviewNetwork(item.row);
-      const block = readBlock ?? (network ? undefined : "网络待核实，刷新异常列表后再试");
-      return { label: "入金复核", block, run: () => { if (!block && network) setReview({ cid: String(item.row.cid), network }); } };
+      const network = reportedReviewNetwork(item.row) ?? undefined;
+      return { label: "入金复核", block: readBlock, run: () => { if (!readBlock) setReview({ cid: String(item.row.cid), network }); } };
     }
     const source = claimSource(item);
     if (source) return { label: "认领或退款", block: readBlock, run: () => setClaim(source) };
     return null;
   };
   const openReviewCase = (row: ExceptionRow) => setReview({ cid: String(row.cid), network: reportedReviewNetwork(row), caseRow: row });
-  const manualReviewBlock = readBlock ?? (!/^[1-9]\d{0,18}$/.test(manualReview.cid)
-    ? "先填 CID，只能是数字" : !manualReview.network ? "先选择网络" : undefined);
+  const manualReviewBlock = readBlock ?? (/^[1-9]\d{0,18}$/.test(manualCid) ? undefined : "先填 CID，只能是数字");
   const openManualReview = () => {
-    if (!manualReviewBlock && manualReview.network) setReview({ cid: manualReview.cid, network: manualReview.network });
+    if (!manualReviewBlock) setReview({ cid: manualCid });
   };
   const pools = FUNDS_NETWORKS.map(network => ({ network, pool: data ? poolOf(data, network) : undefined }));
   const connected = data?.mode === "PROVIDER" || data?.mode === "provider";
@@ -790,7 +787,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
         explain="需要人工复核的入金先冻结：一位管理员核验证据后发起，另一位管理员复核后入账。未归属的入金和链上重组的入金不在这里处理，保持冻结待核查。">
         <div className="rd-stack">
           {canManage && <div className="rd-toolbar">
-            <FilterField label="按 CID 发起"><Input data-search aria-label="待审核 CID" placeholder="CID" inputMode="numeric" value={manualReview.cid} onChange={(event) => setManualReview({ ...manualReview, cid: event.target.value.trim() })} /></FilterField>
+            <FilterField label="按 CID 发起"><Input data-search aria-label="待审核 CID" placeholder="CID" inputMode="numeric" value={manualCid} onChange={(event) => setManualCid(event.target.value.trim())} /></FilterField>
             <Button size="sm" disabledReason={manualReviewBlock} onClick={openManualReview}>实时核验证据</Button>
           </div>}
           {openCases.length === 0 ? <p className="rd-note">现在没有待复核的入金工单。</p> : <Table label="入金复核工单">
@@ -1033,7 +1030,7 @@ function cregisCommandLabel(path: string) {
 
 type ConfirmFn = (spec: { kind: OperatorBriefKind; action: string; title: string; detail: string; path: string; body?: Record<string, unknown>; confirmLabel: string; danger?: boolean; effect: ReactNode; facts?: ReactNode; completion: string }) => void;
 
-/** 入金复核：按网络和 CID 核验证据；工单由另一位管理员复核入账或拒绝（D1-A30～A32）。 */
+/** 入金复核：按 CID 核验证据，有已知网络时一起传；工单由另一位管理员复核入账或拒绝（D1-A30～A32）。 */
 function ReviewDrawer({ cid, network, caseRow, canManage, adminId, busy, readBlock, onClose, confirm, approval }: ReviewTarget & {
   canManage: boolean; adminId?: number; busy: boolean; readBlock?: string;
   onClose: () => void; confirm: ConfirmFn; approval: ReactNode;
@@ -1051,7 +1048,7 @@ function ReviewDrawer({ cid, network, caseRow, canManage, adminId, busy, readBlo
       if (network === null) throw new Error("工单的网络待核实，请刷新工单列表后再打开。");
       const next = await financeAdminRequest<ExceptionRow>(`/cregis/review-evidence/${cid}${networkQuery}`);
       const evidenceNetwork = reportedReviewNetwork(next);
-      if (evidenceNetwork !== undefined && evidenceNetwork !== (network ?? "BEP20")) {
+      if (network && evidenceNetwork !== undefined && evidenceNetwork !== network) {
         throw new Error("读到的证据和这笔充值的网络对不上，请刷新证据后再核对。");
       }
       if (current === sequence.current) setEvidence(next);
