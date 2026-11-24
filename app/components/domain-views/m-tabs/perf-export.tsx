@@ -101,9 +101,12 @@ export function PerfExportDialog({ ports, onClose, onRecords }: { ports: PerfExp
   const hasSummary = selected.includes("SUMMARY"), hasDetail = selected.some(type => DETAIL_TYPES.includes(type));
   const confirmLabel = hasSummary && hasDetail ? "导出汇总并提交明细审批" : hasDetail ? "提交审批" : "提交导出";
   const notReady = chosen.find(item => item.check.state !== "ok");
+  // 要人处理的才出橙黄提示条：页面那一版刷新没成功、提交结果未知（VS-107）。
   const blockedReason = !data ? undefined
     : unknown ? "提交后没收到结果，原来的选择和理由已保存。先查询原操作，不要再点提交。"
-    : data.blocked ? data.blocked
+    : data.blocked;
+  // 空、没勾选、正在检查、勾着的项没加载出来：那一项自己在内容区写清楚，这里只写进确认按钮的灰色原因，不另出提示条（VS-107，一件事只说一处）。
+  const quietReason = !data || blockedReason ? undefined
     : !selectable.length && !notReady ? items[0]?.check.state === "empty" ? "这个月还没有记录" : "没有能导出的内容"
     : notReady ? notReady.check.state === "checking" ? "正在检查…" : `${EXPORT_LABEL[notReady.type]}没加载出来`
     : !chosen.length ? "还没勾选导出内容" : undefined;
@@ -171,6 +174,10 @@ export function PerfExportDialog({ ports, onClose, onRecords }: { ports: PerfExp
   const effect = hasSummary || hasDetail ? <>{hasSummary && <StatusTag tone="progress" filled>汇总立即生成</StatusTag>}{hasDetail && <StatusTag tone="progress" filled>明细批准后生成</StatusTag>}</> : undefined;
   return <OperationConfirmModal briefKind="export" title="导出业绩" action="导出客服业绩" detail={`${month} · ${scopeLabel}`}
     effect={effect} content={content} confirmLabel={confirmLabel} blockedReason={blockedReason} requireReason={requireReason}
+    // 共用框没有「只灰按钮、不出提示条」的属性：借多字段表单的跨字段校验，field 指向页面自己画的「导出内容」，
+    // 共用框不在别处再写这句，只把它放进确认按钮的灰色原因。表单本身没有字段，页面样式里收起（m1-export.css）。
+    // businessFormRevision 让共用框每次重读这份表单（原因跟着勾选、检查结果变）。
+    businessForm={{ kind: "multi-field", fields: [], feedback: () => quietReason ? { invalid: true, message: quietReason, field: "items" } : { invalid: false, message: "" } }} businessFormRevision={0}
     reasonPlaceholder="写清导出用途和接收人，例如：对账工单号、发给谁"
     onClose={onClose}
     onConfirm={async reason => {
