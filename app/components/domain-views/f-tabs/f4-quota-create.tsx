@@ -62,7 +62,7 @@ export function F4QuotaCreate({ data, ctx, onClose }: { data: F4LeadershipPoolOv
         <Fact k="谁来批">{`${APPROVER}，不能是提交人`}</Fact>
         <Fact k="需有权限">购机名额修改权限；批准人还要有审批批准权限</Fact>
       </Facts>}
-      content={!noSkus && takenNames.length > 0 ? <Notice tone="neutral" title="一个商品只能有一个名额档位">{`${takenNames.join("、")} 已有档位，不在可选范围里。`}<span className="rd-keep">要改，到它那一行点「调额度」。</span></Notice> : undefined}
+      content={!noSkus && takenNames.length > 0 ? <Notice tone="neutral" title="一个商品只能有一个名额档位">{takenNames.map((name, index) => <span key={index} className="rd-keep">{`${name}${index < takenNames.length - 1 ? "、" : ""}`}</span>)}{" 已有档位，不在可选范围里。"}<span className="rd-keep">要改，到它那一行点「调额度」。</span></Notice> : undefined}
       blockedReason={catalogError ? !ctx.can("device_e1_read") ? "需要商品查看权限才能选商品，请联系管理员开通" : catalogError : (noSkus ? "商品清单没读到，暂时选不了商品；刷新这页后再试" : !free.length ? "在售商品都已经有名额档位" : undefined)}
       statedBrief={(values) => ({
         impact: values.productNo && WHOLE.test((values.monthlyQuota ?? "").trim())

@@ -523,7 +523,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             : <Fact k="结束后">用户不能再参加；同时停掉这个活动的玩法、取消主推。已有的参与和奖励记录保留，结束后不能再开放</Fact>}
           {opening && <ApprovalFact amplify="没有玩法规则又有正奖励的活动" object="活动" />}
         </Facts>
-        {opening && missing.length > 0 && <Notice tone="warn" title={`还缺 ${missing.length} 项翻译，补齐后才能开放`}>{missing.map(({ locale, field }) => `${LOCALE_NAME[locale]}${FIELD_NAME[field]}`).join("、")}。<span className="rd-keep">到卡片底部逐格补。</span></Notice>}
+        {opening && missing.length > 0 && <Notice tone="warn" title={`还缺 ${missing.length} 项翻译，补齐后才能开放`}>{missing.map(({ locale, field }, index) => <span key={`${locale}-${field}`} className="rd-keep">{`${LOCALE_NAME[locale]}${FIELD_NAME[field]}${index < missing.length - 1 ? "、" : "。"}`}</span>)}<span className="rd-keep">到卡片底部逐格补。</span></Notice>}
       </>,
       reason: true,
       // 本地检查会拦下时按钮直接灰着写原因，不再像能提交；拦截条件和 run 里的检查不变。
