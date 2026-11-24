@@ -1,7 +1,7 @@
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { parseTaskPool, taskPoolTaskPath, validTaskEditFields, validTaskWeight, type DisableImpact, type PoolTask, type TaskPool, type TaskPoolCommand } from "@/lib/admin/task-pool-client";
 import { TASK_CLASSES } from "@/lib/admin/task-classes";
-import { discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence } from "@/lib/admin/e-command-investigation";
+import { discoverECommand, investigateECommand, eCommandRollbackConfirmed, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 
 export type E2Pending = PendingMutationRecord & {
   actorId: string;
@@ -72,10 +72,14 @@ export function e2CommandLabel(record: E2Pending) {
     : `${request.body.enabled ? "批量启用" : "批量停用"} ${request.body.taskTypeIds.length} 个任务`;
 }
 
+export function e2CommandSettled(receipt: ECommandInvestigation | null) {
+  return eCommandSettled(receipt) || eCommandRollbackConfirmed(receipt);
+}
+
 export async function checkE2Command(record: E2Pending, evidence?: ECommandEvidence) {
   const locator = { commandKey: record.commandKey, originalMethod: record.request.method,
     originalPath: `/api/admin/devices${record.request.path}`, originalAdminId: record.actorId };
   const receipt = evidence ? await investigateECommand(record, locator, evidence) : await discoverECommand(locator);
-  if (eCommandSettled(receipt)) e2Commands.forget(record.fingerprint, record.commandKey);
+  if (e2CommandSettled(receipt)) e2Commands.forget(record.fingerprint, record.commandKey);
   return receipt;
 }

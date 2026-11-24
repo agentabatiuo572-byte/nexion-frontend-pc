@@ -167,6 +167,10 @@ export function eCommandSettled(receipt: ECommandInvestigation | null) {
     && /^A6_ROLE_(?:CREATE:[A-Z0-9_-]{1,64}|UPDATE:[1-9]\d*)$/.test(receipt.scope);
 }
 
+export function eCommandRollbackConfirmed(receipt: ECommandInvestigation | null) {
+  return receipt?.originalStatus === "FAILED" && !receipt.locked && receipt.localTransactionRollbackConfirmed === true;
+}
+
 /** A batch is resolved only when every original target has exactly one retained item result. */
 export function eCommandBatchResolved(receipt: ECommandInvestigation | null, targets: readonly string[]) {
   if (eCommandResult(receipt) !== "BATCH_RESULT" || !receipt?.batch) return false;

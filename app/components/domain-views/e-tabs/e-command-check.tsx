@@ -4,12 +4,12 @@ import { SearchCheck, ShieldCheck } from "lucide-react";
 import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, KeepText, Modal, Notice, Select, StatusTag, Textarea, type StateTone, type Tone } from "@/app/components/rd";
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { eCommandClosureOffer, eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
+import { eCommandClosureOffer, eCommandResult, eCommandRollbackConfirmed, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, closureLine, offerNotice, type ClosureOffer, closureConflict, closureTime, receiptExplain, receiptRejected, type ClosureBasis } from "../recovery-panel";
 
 /** The last authoritative lookup of one original command; `receipt: null` means the backend found no bound record. */
 export type CommandOutcome = { receipt: ECommandInvestigation | null } | { error: string };
-export type SettledCommand = { key: string; label: string; status: ECommandInvestigation["originalStatus"] };
+export type SettledCommand = { key: string; label: string; status: ECommandInvestigation["originalStatus"] | "ROLLED_BACK" };
 type Conclusion = ECommandEvidence["conclusion"];
 
 const CONCLUSION_TEXT: Partial<Record<ECommandEvidence["conclusion"], string>> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知", REJECTED: "后台拒绝" };
@@ -30,26 +30,30 @@ export function closureOpen(outcome: CommandOutcome | undefined, expired: boolea
  * 标签和资金页的面板同一组叫法（查询失败、没有查到、还在执行、记为失败、仍未知、后台拒绝、已处理）。
  * canClose：这个账号能不能核查结案；不能的，要结案的那几句改说找有调查权限的超级管理员。
  */
-function view(outcome: CommandOutcome, expired: boolean, canClose = true): { tone: Tone & ("ok" | "warn" | "progress" | "neutral" | "done" | "danger"); title: string; text: string } {
+function view(outcome: CommandOutcome, expired: boolean, canClose = true, retryOnMissingOnly = false): { tone: Tone & ("ok" | "warn" | "progress" | "neutral" | "done" | "danger"); title: string; text: string } {
   if ("error" in outcome) return { tone: "danger", title: "查询失败", text: outcome.error };
   const receipt = outcome.receipt;
   if (!receipt) return { tone: "warn", title: "没有查到", text: expired
     ? "原请求可能没送到，查不到不等于没执行。记录保留，请到操作记录与审批核对。"
     : "原请求可能没送到，查不到不等于没执行。记录保留，可以按原请求重试，不会重复执行。" };
-  if (receipt.originalStatus === "PROCESSING") return { tone: "progress", title: "还在执行", text: expired ? "原操作还在执行，稍后再查；不要重复提交。" : "原操作还在执行，过一会儿再查询；现在重试不会重复执行，也拿不到新结果。" };
+  if (receipt.originalStatus === "PROCESSING") return { tone: "progress", title: "还在执行", text: expired || retryOnMissingOnly ? "原操作还在执行，稍后再查；不要重复提交。" : "原操作还在执行，过一会儿再查询；现在重试不会重复执行，也拿不到新结果。" };
   if (receipt.originalStatus === "CONFIRMED_REJECTED") return { tone: "done", title: "已结案", text: "核查确认是后台拒绝，记录已解除。" };
+  if (eCommandRollbackConfirmed(receipt)) return { tone: "done", title: "确认未执行", text: "原操作没有生效，请按当前状态重新核对。" };
   if (receiptRejected(receipt)) return { tone: "warn", title: "后台拒绝", text: expired
     ? canClose ? "后台拒绝了，不保证没有改动；已过 24 小时，可按「后台拒绝」结案。" : "后台拒绝了，不保证没有改动；请有调查权限的超级管理员核查结案。"
-    : "后台拒绝了，不保证没有改动；按原请求重试可看原因，不会重复执行。" };
+    : retryOnMissingOnly ? "后台拒绝了，暂时无法确认是否有改动。请继续核对原结果。"
+      : "后台拒绝了，不保证没有改动；按原请求重试可看原因，不会重复执行。" };
   // 过期的记为失败、仍未知：按结案框能选的结论说下一步（closureLine）。
   const step = closureLine(eCommandClosureOffer(outcome, expired), receipt, canClose);
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", title: "记为失败", text: expired
     ? step!
-    : "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" };
+    : retryOnMissingOnly ? "系统记为失败，暂时无法确认是否生效。请继续核对原结果。"
+      : "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(eCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", title: "已处理", text: expired
     ? canClose ? "后台已处理，看不出成没成；已过 24 小时，需要核查结案。" : "后台已处理，看不出成没成；请有调查权限的超级管理员核查结案。"
-    : "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" };
+    : retryOnMissingOnly ? "后台已处理，暂时无法确认是否生效。请继续核对原结果。"
+      : "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" };
   return { tone: "warn", title: "仍未知", text: (receipt.originalStatus === "UNKNOWN" ? step : undefined) ?? (!canClose ? "原操作处理到一半中断了；请有调查权限的超级管理员核查结案。"
     : expired ? "原操作处理到一半中断了；已过 24 小时，需要按证据核查结案。" : "原操作处理到一半中断了，重试也拿不到新结果；需要按证据核查结案。") };
 }
@@ -65,9 +69,9 @@ export function commandOutcomeSummary(outcome: CommandOutcome | undefined, expir
  * One block under a pending notice: what the backend says about the original command.
  * `summarized` means the row already shows the tag and sentence (commandOutcomeSummary); only the longer notes stay here.
  */
-export function CommandOutcomeLine({ outcome, expired, summarized, canClose = true }: { outcome?: CommandOutcome; expired: boolean; summarized?: boolean; canClose?: boolean }) {
+export function CommandOutcomeLine({ outcome, expired, summarized, canClose = true, retryOnMissingOnly = false }: { outcome?: CommandOutcome; expired: boolean; summarized?: boolean; canClose?: boolean; retryOnMissingOnly?: boolean }) {
   if (!outcome) return null;
-  const shown = view(outcome, expired, canClose);
+  const shown = view(outcome, expired, canClose, retryOnMissingOnly);
   const receipt = "receipt" in outcome ? outcome.receipt : null;
   const last = receipt?.investigation;
   const more = receiptExplain(receipt);
@@ -89,7 +93,8 @@ export function ClosureContact() {
 export function SettledCommandNotices({ items, onDismiss }: { items: SettledCommand[]; onDismiss: (key: string) => void }) {
   return <>{items.map(item => {
     const text = item.status === "CONFIRMED_REJECTED" ? { title: "核查确认是后台拒绝", body: SETTLED_REJECTED.replace(/^核查确认是后台拒绝，/, "") }
-      : item.status === "CONFIRMED_NOT_EXECUTED" ? { title: "核查确认未执行", body: "原操作没有执行，记录已解除，可以重新发起。" }
+      : item.status === "ROLLED_BACK" ? { title: "确认未执行", body: "原操作没有生效，记录已解除，可以重新确认。" }
+        : item.status === "CONFIRMED_NOT_EXECUTED" ? { title: "核查确认未执行", body: "原操作没有执行，记录已解除，可以重新发起。" }
       : item.status === "CONFIRMED_SUCCEEDED" ? { title: "核查确认已执行", body: "超级管理员按证据确认原操作已执行，记录已解除，不再重试。结果以刷新后的状态为准。" }
         : { title: "原操作已完成", body: "原操作已执行，记录已解除，不要再做一次。结果以刷新后的状态为准。" };
     return <Notice key={item.key} tone="done" title={<>{item.label} · <span className="rd-keep">{text.title}</span></>} action={<Button size="sm" onClick={() => onDismiss(item.key)}>知道了</Button>}>{text.body}</Notice>;

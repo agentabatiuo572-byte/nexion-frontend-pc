@@ -2,7 +2,7 @@
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ClipboardList, Plus, RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
 import { BatchBar, BlockState, Button, Cell, Check, CheckGroup, Checkbox, Conclusion, Explain, Fact, Facts, Field,
   FilterBar, FilterField, Fold, KeepText, LevelStrip, Modal, Notice, NumberInput, PageHeader, Pager, Panel, RatioBar,
@@ -13,6 +13,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
 import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, sendTaskPoolCommand, TaskPoolApiError, taskPoolTaskPath, validTaskEditFields,
   type DisableImpact, type PoolTask, type TaskClass, type TaskPool, type TaskPoolEditCommand } from "@/lib/admin/task-pool-client";
@@ -20,11 +21,11 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Select } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
 import { FIXED_DEVICE_LEVELS } from "./task-type-policy";
-import { checkE2Command, e2CommandLabel, e2Commands, type E2Pending } from "./e2-pending";
-import { canInvestigateECommand, eCommandSettled } from "@/lib/admin/e-command-investigation";
+import { checkE2Command, e2CommandLabel, e2Commands, e2CommandSettled, type E2Pending } from "./e2-pending";
+import { canInvestigateECommand, eCommandRollbackConfirmed } from "@/lib/admin/e-command-investigation";
 import { TechInfo, receiptOf } from "../recovery-panel";
 import { CommandClosureModal, CommandOutcomeLine, SettledCommandNotices, closureOpen, type CommandOutcome, type SettledCommand } from "./e-command-check";
-import { applyLatestE2Task, E2TaskEditor, formatWeight, openE2TaskEditor, validE2EditorReason, type E2TaskEditorState, type E2TaskField } from "./e2-task-editor";
+import { applyLatestE2Task, e2EditorReasonBlock, E2TaskEditor, formatWeight, isE2TaskEditorDirty, openE2TaskEditor, type E2TaskEditorState, type E2TaskField } from "./e2-task-editor";
 
 type Query = { code: string; taskClass: string; enabled: string; page: number; size: number; reset: boolean };
 type Read<T> = { state: "loading" | "ready" | "error"; data: T; error: string };
@@ -34,7 +35,7 @@ const PRODUCT_STATES = { PUBLISHED: "已发布", DRAFT: "草稿", DELISTED_WITH_
 const MINUTES = [{ value: 0, text: "0" }, { value: 60, text: "60" }, { value: 120, text: "120" }];
 const TASK_RULES = "等级只决定跑什么任务，收益由商品的月收益目标决定。当前任务保持原配置，修改只影响之后的新任务。每级最多 200 个启用任务、300 个任务（含停用）。";
 const GENERATION = "系统生成同池唯一的英文名称，时长为 5 分钟整数倍：向量计算 30–60 分钟，语音处理 45–90 分钟，图像生成和大模型推理 60–120 分钟，模型微调和视频生成 90–120 分钟。新任务立即启用。";
-const RETRY_HELP = "重新发送保存的原请求，系统认得出是同一次提交，不会另加一批。这不是只读查询。";
+const RETRY_HELP = "先查询原结果。查不到时可重新发送保存的原请求，系统认得出是同一次提交，不会重复执行。";
 const EDIT_ERROR_FIELDS: Partial<Record<string, E2TaskField>> = {
   TASK_NAME_INVALID: "name", APP_TEXT_CHINESE_NOT_ALLOWED: "name", TASK_NAME_DUPLICATE: "name",
   TASK_CLASS_INVALID: "taskClass", TASK_DURATION_INVALID: "duration", TASK_WEIGHT_INVALID: "weight",
@@ -64,6 +65,7 @@ function readQuery(params: URLSearchParams): Query {
 
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const params = useSearchParams();
+  const router = useRouter();
   const session = useAdminAuth(state => state.session);
   const actorId = session ? String(session.adminId) : "";
   const [query, setQuery] = useState(() => readQuery(new URLSearchParams(params.toString())));
@@ -93,6 +95,9 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const [impactLoading, setImpactLoading] = useState(false);
   const [impactError, setImpactError] = useState("");
   const [editor, setEditor] = useState<E2TaskEditorState | null>(null);
+  const editorReasonRule = useReasonRule(editor?.step === "confirm" && editor.outcome.kind !== "unknown");
+  const editorDirty = editor !== null && isE2TaskEditorDirty(editor);
+  const afterEditorLeave = useRef<(() => void) | null>(null);
   const sequence = useRef(0), impactSequence = useRef(0), lastQuery = useRef("");
   const busy = useRef(false);
   const tabIds = useTabIds();
@@ -155,6 +160,55 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     return () => window.removeEventListener("popstate", pop);
   }, []);
 
+  const leaveEditorThen = useCallback((next: () => void) => {
+    if (busy.current) return;
+    if (editorDirty) {
+      afterEditorLeave.current = next;
+      setEditor(current => current && { ...current, step: "leaving" });
+    } else {
+      setEditor(null);
+      next();
+    }
+  }, [editorDirty]);
+
+  useEffect(() => {
+    if (!editorDirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    const intercept = (event: MouseEvent) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!link || link.target && link.target !== "_self" || link.hasAttribute("download") || link.origin !== window.location.origin
+        || link.pathname === window.location.pathname) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const href = `${link.pathname}${link.search}${link.hash}`;
+      leaveEditorThen(() => router.push(href));
+    };
+    window.addEventListener("beforeunload", warn);
+    document.addEventListener("click", intercept, true);
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("click", intercept, true);
+    };
+  }, [editorDirty, leaveEditorThen, router]);
+
+  function finishEditor() {
+    const next = afterEditorLeave.current;
+    afterEditorLeave.current = null;
+    setEditor(null);
+    next?.();
+  }
+
+  function selectPool(code: string, focus = false) {
+    const select = () => {
+      setSelected([]);
+      setQuery(old => ({ ...old, code, page: 1 }));
+      if (focus) document.getElementById(tabIds.tab(code))?.focus();
+    };
+    if (code === query.code) select();
+    else leaveEditorThen(select);
+  }
+
   const readingTasks = tasks.state === "loading" || lastQuery.current !== JSON.stringify(query);
   const fresh = pools.state === "ready" && !readingTasks && tasks.state === "ready" && !!pool;
   const locked = pending.some(record => record.pool.code === query.code);
@@ -213,12 +267,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   }
   function retryBlock(record: E2Pending, retry = true) {
     const outcome = outcomes[record.commandKey];
-    const edit = record.request.kind === "create" || record.request.kind === "update";
     return !ctx.canWriteE2 ? "当前账号没有任务池修改权限" : actorId !== record.actorId ? "仅原操作者可以重试"
       : isRetryExpired(record) ? RETRY_EXPIRED_TEXT
         : !e2Commands.isDurablyStored(record.fingerprint, record.commandKey) ? "原操作没有完整持久保存，不能重试"
-          : retry && edit && rejected.includes(record.commandKey) ? "先核对原结果，再决定是否解除原操作记录"
-            : retry && edit && (!outcome || !("receipt" in outcome) || outcome.receipt !== null) ? "请先查询原结果" : undefined;
+          : retry && rejected.includes(record.commandKey) ? "先核对原结果，再决定是否解除原操作记录"
+            : retry && (!outcome || !("receipt" in outcome) || outcome.receipt !== null) ? "查不到原结果后才可重试" : undefined;
   }
   const countReady = /^\d+$/.test(count) && Number(count) >= 1 && Number(count) <= 50;
   const reasonLength = Array.from(reason.trim()).length;
@@ -244,10 +297,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       setSelected([]); setReceipt(""); ctx.toast(message);
       if (!await refresh()) setReceipt(`${message}。操作已生效，最新任务列表暂时读不到。`);
       document.getElementById("e2-task-heading")?.focus();
+      if (edit) finishEditor();
     } catch (error) {
       const code = error instanceof TaskPoolApiError ? error.reasonCode : "";
       const explicit = isExplicitRejection(error) && code !== "TASK_POOL_IDEMPOTENCY_CONFLICT" && !code.startsWith("IDEMPOTENCY_");
-      const firstRejection = !retry && (edit ? explicit : error instanceof TaskPoolApiError && error.initialRejection);
+      const firstRejection = !retry && explicit;
       if (firstRejection) {
         e2Commands.forget(record.fingerprint, record.commandKey); syncPending();
         if (edit) {
@@ -261,8 +315,9 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         }
       } else {
         syncPending();
+        setOutcomes(old => { const next = { ...old }; delete next[record.commandKey]; return next; });
         if (edit) {
-          setOutcomes(old => { const next = { ...old }; delete next[record.commandKey]; return next; });
+          afterEditorLeave.current = null;
           setEditor(frozenEditor(record, request, code ? displayAdminError(error) : undefined));
         } else viewOriginal(record);
         setDialogError("");
@@ -272,7 +327,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       if (!edit) setDialogErrorCode(code);
       if (isPermissionDenied(error) || error instanceof TaskPoolApiError && [401, 403].includes(error.status ?? error.httpStatus ?? 0)) {
         announcePermissionDenied();
-        if (edit) setEditor(null);
+        if (edit) { afterEditorLeave.current = null; setEditor(null); }
         else if (!firstRejection) setDialog(null);
       }
     } finally {
@@ -289,7 +344,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     const reason = state.reason.trim();
     const fields = { name: state.draft.name.trim(), taskClass: state.draft.taskClass,
       durationMinutes: Number(state.draft.duration), baseReward: state.draft.weight };
-    if (!validTaskEditFields(fields) || !validE2EditorReason(reason)) return;
+    if (!validTaskEditFields(fields) || e2EditorReasonBlock(reason, editorReasonRule)) return;
     const common = { ...fields, idempotencyKey: state.key, reason };
     let request: TaskPoolEditCommand;
     if (state.mode === "update") {
@@ -325,7 +380,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       setEditor(applyLatestE2Task(state, latest, state.pool));
     } catch (error) {
       if (isPermissionDenied(error) || error instanceof TaskPoolApiError && [401, 403].includes(error.status ?? error.httpStatus ?? 0)) {
-        announcePermissionDenied(); setEditor(null);
+        announcePermissionDenied(); afterEditorLeave.current = null; setEditor(null);
       } else setEditor({ ...state, saving: false, outcome: { kind: "conflict", message: displayAdminReadError(error) } });
     } finally { busy.current = false; }
   }
@@ -347,13 +402,46 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   }
 
   const canInvestigate = canInvestigateECommand("device_e2_read");
+  function restoreDraft(record: E2Pending) {
+    const { request } = record;
+    const key = crypto.randomUUID();
+    if (request.kind === "create" || request.kind === "update") {
+      setEditor({ ...frozenEditor(record, request), key, outcome: { kind: "none" } });
+      return;
+    }
+    const enabled = request.kind === "random" || request.body.enabled;
+    const target: PoolDialog = { key, kind: request.kind, pool: record.pool, enabled, tasks: record.tasks };
+    setReason(request.body.reason);
+    setCount(request.kind === "random" ? String(request.body.count) : "10");
+    setClasses(request.kind === "random" ? request.body.taskClasses ?? [] : []);
+    setTouched({ count: false, reason: false });
+    setImpact(null); setImpactAt(null); setImpactError(""); setDialogError(""); setDialogErrorCode("");
+    setDialog(target);
+    if (!enabled) void readImpact(target);
+  }
+
   /** A settled command leaves the pending list; its authoritative outcome stays visible until dismissed. */
   function showOutcome(record: E2Pending, outcome: CommandOutcome) {
-    if ("receipt" in outcome && outcome.receipt && eCommandSettled(outcome.receipt)) {
-      const status = outcome.receipt.originalStatus;
+    if ("receipt" in outcome && outcome.receipt && e2CommandSettled(outcome.receipt)) {
+      const rolledBack = eCommandRollbackConfirmed(outcome.receipt);
+      const status = rolledBack ? "ROLLED_BACK" : outcome.receipt.originalStatus;
       setEditor(old => old?.key === record.commandKey ? null : old);
+      setDialog(old => old?.original?.commandKey === record.commandKey ? null : old);
       setSettled(rows => [...rows.filter(row => row.key !== record.commandKey), { key: record.commandKey, label: `${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}`, status }]);
+      if (rolledBack && ctx.canWriteE2 && actorId === record.actorId) restoreDraft(record);
     } else setOutcomes(values => ({ ...values, [record.commandKey]: outcome }));
+  }
+  async function queryOriginal(record: E2Pending) {
+    setQuery(old => old.code === record.pool.code && old.page === 1 ? old : { ...old, code: record.pool.code, page: 1 });
+    setPendingNote("正在查询原等级现在的情况；现在的数量和状态证明不了原操作的结果，原操作记录继续保留。");
+    setOutcomes(old => { const next = { ...old }; delete next[record.commandKey]; return next; });
+    try {
+      const original = await checkE2Command(record);
+      syncPending();
+      showOutcome(record, { receipt: original });
+    } catch (cause) { showOutcome(record, { error: displayAdminReadError(cause) }); }
+    if (query.code === record.pool.code && query.page === 1) await refresh();
+    setPendingNote("");
   }
   const originalExpired = !!dialog?.original && isRetryExpired(dialog.original);
   const originalRejected = !!dialog?.original && rejected.includes(dialog.original.commandKey);
@@ -367,11 +455,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       actions={<Button icon={<RefreshCw size={16} />} loading={pools.state === "loading" || tasks.state === "loading"} onClick={() => void refresh()}>刷新</Button>} />
     <Conclusion state={pools.state !== "ready" ? "unknown" : noCandidates > 0 || emptyLevels.length === FIXED_DEVICE_LEVELS.length ? "warn" : emptyLevels.length ? "neutral" : "ok"}
       explain="按同一次读取的四个等级联合判断：商品所有已发布等级都没有启用任务，才计入没有候选的商品。草稿不计入，不代表当前单已停止。"
-      action={pools.state === "ready" && emptyLevels.length > 0 && emptyLevels[0].code !== query.code ? <Button size="sm" onClick={() => setQuery(old => ({ ...old, code: emptyLevels[0].code, page: 1 }))}>查看 {emptyLevels[0].code} {emptyLevels[0].name}</Button> : undefined}>{conclusion}</Conclusion>
+      action={pools.state === "ready" && emptyLevels.length > 0 && emptyLevels[0].code !== query.code ? <Button size="sm" onClick={() => selectPool(emptyLevels[0].code)}>查看 {emptyLevels[0].code} {emptyLevels[0].name}</Button> : undefined}>{conclusion}</Conclusion>
     {query.reset && <Notice tone="warn" action={<Button size="sm" onClick={() => setQuery(old => ({ ...old, reset: false }))}>知道了</Button>}>网址里无效的查询条件已重置。</Notice>}
     {receipt && <Notice tone={receipt.includes("读不到") ? "warn" : "ok"} action={<Button size="sm" onClick={() => void refresh()}>刷新</Button>}>{receipt}</Notice>}
     {pending.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}，结果未知`}
-      actionBelow action={<><Button size="sm" disabled={saving} onClick={async () => { setQuery(old => ({ ...old, code: record.pool.code, page: 1 })); setPendingNote("正在查询原等级现在的情况；现在的数量和状态证明不了原操作的结果，原操作记录继续保留。"); try { const receipt = await checkE2Command(record); syncPending(); showOutcome(record, { receipt }); } catch (cause) { showOutcome(record, { error: displayAdminReadError(cause) }); } if (query.code === record.pool.code && query.page === 1) await refresh(); setPendingNote("已查到原等级现在的情况；现在的数量和状态证明不了原操作的结果，原操作记录继续保留。"); }}>查询原结果</Button>
+      actionBelow action={<><Button size="sm" disabled={saving} onClick={() => leaveEditorThen(() => void queryOriginal(record))}>查询原结果</Button>
         {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} onClick={() => { viewOriginal(record); void send(record, true); }}>按原请求重试</Button>}
         <Button size="sm" disabled={saving} onClick={() => viewOriginal(record)}>查看原操作</Button>
         {canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <Button size="sm" variant="danger-outline" disabled={saving} onClick={() => setClosing(record)}>核查结案</Button>}
@@ -385,7 +473,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       {/* 过期后下一步只说一处：查过的由下面的结论句说（含核查结案），没查过的先查询。 */}
       {!(isRetryExpired(record) && outcomes[record.commandKey]) && <p>{isRetryExpired(record) ? "超过 24 小时不能再重试，先查询原结果。" : "原对象、内容和理由已保留。这个等级暂停新操作。"}</p>}
       {pendingNote && !outcomes[record.commandKey] && <p>{pendingNote}</p>}
-      <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} canClose={canInvestigate} />
+      <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} canClose={canInvestigate} retryOnMissingOnly />
       {outcomes[record.commandKey] && <p><TechInfo commandKey={record.commandKey} receipt={receiptOf(outcomes[record.commandKey])} /></p>}
     </Notice>)}
     <SettledCommandNotices items={settled} onDismiss={key => setSettled(rows => rows.filter(row => row.key !== key))} />
@@ -394,7 +482,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       facts={<Fact k="原理由">{closing.request.body.reason}</Fact>} onClose={() => setClosing(null)} onSubmit={async evidence => {
         const receipt = await checkE2Command(closing, evidence);
         syncPending(); showOutcome(closing, { receipt }); setClosing(null);
-        if (eCommandSettled(receipt)) await refresh();
+        if (e2CommandSettled(receipt)) await refresh();
         else ctx.toast("核查结论已记录，原操作仍是结果未知，继续锁定。");
       }} />}
     {pools.state === "error" && <BlockState state="error" title={pools.data.length ? "任务等级读取失败，以下是上次读到的数据，暂不能操作" : "任务等级读取失败"} detail={pools.error} onRetry={() => void refresh()} />}
@@ -407,10 +495,10 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           label="启用任务" value={loaded ? String(level.enabledCount) : <span className="rd-skeleton">　　</span>} unit={loaded ? "个" : undefined}
           sub={loaded ? `共 ${level.taskCount} 个` : <span className="rd-skeleton">　　　</span>} tone="role-2" selected={current} selectedText="当前等级"
           surface={ready && level.enabledCount === 0 ? "warn" : undefined}
-          onOpen={loaded ? () => { setSelected([]); setQuery(old => ({ ...old, code: card.code, page: 1 })); } : undefined}
+          onOpen={loaded ? () => selectPool(card.code) : undefined}
           openLabel={`${card.code} ${card.name}，启用 ${loaded ? level.enabledCount : "未知"} 个，共 ${loaded ? level.taskCount : "未知"} 个${current ? "，当前等级" : ""}`}
           role="tab" id={tabIds.tab(card.code)} aria-selected={current} aria-controls="e2-current-tasks" tabIndex={current || !query.code && index === 0 ? 0 : -1}
-          onKeyDown={event => { const next = nextTabValue(pools.data.map(item => item.code), query.code, event.key); if (next === null) return; event.preventDefault(); setQuery(old => ({ ...old, code: next, page: 1 })); document.getElementById(tabIds.tab(next))?.focus(); }}>
+          onKeyDown={event => { const next = nextTabValue(pools.data.map(item => item.code), query.code, event.key); if (next === null) return; event.preventDefault(); selectPool(next, true); }}>
           <div className="e2-card-ratio">{!loaded ? <RatioBar state="loading" label="启用占比" value={0} total={1} valueText="正在读取" />
             : level.enabledCount === 0 ? <StatusTag tone="warn" icon={TriangleAlert}>{level.taskCount === 0 ? "还没有任务" : "没有启用的任务"}</StatusTag>
               : <RatioBar label="启用占比" value={level.enabledCount} total={level.taskCount} valueText={level.enabledCount === level.taskCount ? `全部启用，共 ${level.taskCount} 个` : `启用 ${level.enabledCount} 个，共 ${level.taskCount} 个`} tone="role-2" />}</div>
@@ -454,7 +542,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           onPage={page => { setSelected([]); setQuery(old => ({ ...old, page })); }} onPageSize={size => { setSelected([]); setQuery(old => ({ ...old, size, page: 1 })); }} />}
       </Panel>
     </section>
-    {editor && <E2TaskEditor state={editor} onChange={setEditor} writeBlock={editor.outcome.kind === "unknown"
+    {editor && <E2TaskEditor state={editor} onChange={setEditor} onClose={finishEditor} onContinue={() => { afterEditorLeave.current = null; }}
+      reasonRule={editorReasonRule} writeBlock={editor.outcome.kind === "unknown"
       ? editorOriginal ? retryBlock(editorOriginal) : "原操作没有完整持久保存，不能重试"
       : editor.mode === "create" ? createBlock : writeBlock} toast={ctx.toast}
       onSubmit={submitEditor} onReadLatest={readLatestEditor}

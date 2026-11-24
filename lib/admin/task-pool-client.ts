@@ -1,5 +1,4 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { TASK_CLASSES } from "@/lib/admin/task-classes";
 import { appVisibleTextError } from "@/lib/admin/content-language-rules";
 
@@ -40,7 +39,7 @@ export type TaskPoolErrorCode = "TASK_POOL_FORMAT_RETIRED" | "TASK_POOL_KIND_FOR
 /** Preserve the wire verdict: translated copy never decides whether a command can be released. */
 export class TaskPoolApiError extends Error {
   constructor(message: string, readonly status?: number, readonly httpStatus?: number,
-    readonly reasonCode = "", readonly data?: unknown, readonly unknownOutcome = true, readonly initialRejection = false) { super(message); }
+    readonly reasonCode = "", readonly data?: unknown, readonly unknownOutcome = true) { super(message); }
 }
 
 const POOL_ERRORS: Record<string, string> = {
@@ -79,6 +78,11 @@ const POOL_ERRORS: Record<string, string> = {
 
 export function validTaskWeight(value: unknown): value is string {
   return typeof value === "string" && /^\d{1,12}(?:\.\d{1,6})?$/.test(value) && /[1-9]/.test(value);
+}
+
+export function taskWeightMicros(value: string): bigint {
+  const [whole, fraction = ""] = value.split(".");
+  return BigInt(whole + fraction.padEnd(6, "0"));
 }
 
 export function validTaskEditFields(body: TaskEditFields): boolean {
@@ -182,12 +186,7 @@ async function request(path: string, method = "GET", body?: object): Promise<unk
     const unknown = response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
       || !status || status < 400 || status >= 500 || [401, 403, 408, 425, 429].includes(status)
       || !code || code.startsWith("IDEMPOTENCY_") || code === "TASK_POOL_IDEMPOTENCY_CONFLICT";
-    // Keep the original strict verdict for retries and every other caller.
-    const initialRejection = Number.isInteger(envelope.code) && Number(envelope.code) < 500 && !!code
-      && !code.startsWith("IDEMPOTENCY_") && code !== "TASK_POOL_IDEMPOTENCY_CONFLICT"
-      && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() !== "unknown"
-      && isDeterministicRejection(response.status, Number(envelope.code));
-    throw new TaskPoolApiError(message, status, response.status, code, envelope.data, unknown, initialRejection);
+    throw new TaskPoolApiError(message, status, response.status, code, envelope.data, unknown);
   }
   return envelope.data;
 }
@@ -239,10 +238,14 @@ export async function sendTaskPoolCommand(command: TaskPoolCommand): Promise<Ran
     if (pool.kind !== "DEVICE") throw new Error("任务结果不完整。");
     if (command.kind === "create" || command.kind === "update") {
       const saved = deviceTask(raw.task);
+      const { name, taskClass, durationMinutes, baseReward } = command.body;
       const matches = command.kind === "create"
         ? command.path === taskPoolTaskPath(pool.code) && saved.taskTypeId.startsWith("DT-") && saved.version === 1 && saved.enabled === command.body.enabled
         : command.path === taskPoolTaskPath(pool.code, saved.taskTypeId) && saved.version === command.body.expectedVersion + 1 && saved.enabled === command.previousEnabled;
-      if (!matches) throw new Error("任务结果不完整。");
+      if (!matches || saved.name !== name || saved.taskClass !== taskClass || saved.durationMinutes !== durationMinutes
+        || !validTaskWeight(baseReward) || taskWeightMicros(saved.baseReward) !== taskWeightMicros(baseReward)) {
+        throw new Error("任务结果不完整。");
+      }
       return { task: saved, pool };
     }
     if (command.path !== `/task-pools/${encodeURIComponent(pool.code)}/${command.kind === "random" ? "random-tasks" : "tasks/status"}`) throw new Error("任务结果不完整。");

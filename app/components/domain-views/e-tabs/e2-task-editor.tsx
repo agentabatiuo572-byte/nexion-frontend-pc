@@ -13,9 +13,10 @@ import { Button, Change, Check, ConflictBar, Decision, DiffList, Drawer, Fact, F
   NumberInput, Select, StatusTag, TaskClassTag, Textarea, type DiffRow } from "@/app/components/rd";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
+import type { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { businessStamp, businessZoneText } from "@/lib/admin/business-time";
 import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
-import { validTaskWeight, type PoolTask, type TaskClass, type TaskPool } from "@/lib/admin/task-pool-client";
+import { taskWeightMicros, validTaskWeight, type PoolTask, type TaskClass, type TaskPool } from "@/lib/admin/task-pool-client";
 
 export type E2TaskField = "name" | "taskClass" | "duration" | "weight";
 export interface E2TaskDraft { name: string; taskClass: TaskClass; duration: string; weight: string; enabled: boolean }
@@ -44,8 +45,10 @@ export interface E2TaskEditorState {
   outcome: E2TaskOutcome;
 }
 
-export function validE2EditorReason(reason: string) {
-  return visibleReasonLength(reason) >= 8 && Array.from(reason.trim()).length <= 200;
+export function e2EditorReasonBlock(reason: string, rule: ReturnType<typeof useReasonRule>): string | undefined {
+  if (!rule.ready) return rule.error || "正在加载，稍候即可提交。";
+  if (!rule.ok(reason)) return rule.hint(reason);
+  if (Array.from(reason.trim()).length > 200) return "操作理由最多 200 个字符，请缩短后重试。";
 }
 
 const ENABLED_LIMIT = 200;
@@ -67,15 +70,24 @@ export function referenceWeight(minutes: number, taskClass: TaskClass) {
   const fraction = String(micro % 1_000_000).padStart(6, "0").replace(/0+$/, "");
   return `${Math.floor(micro / 1_000_000)}${fraction ? `.${fraction}` : ""}`;
 }
-function weightMicros(raw: string) {
-  const [whole, fraction = ""] = raw.split(".");
-  return BigInt(whole + fraction.padEnd(6, "0"));
-}
-const sameWeight = (a: string, b: string) => validTaskWeight(a) && validTaskWeight(b) && weightMicros(a) === weightMicros(b);
+const sameWeight = (a: string, b: string) => validTaskWeight(a) && validTaskWeight(b) && taskWeightMicros(a) === taskWeightMicros(b);
 const durationOk = (value: string) => /^\d+$/.test(value) && Number(value) >= 5 && Number(value) <= 120 && Number(value) % 5 === 0;
 
 function taskDraft(task: PoolTask): E2TaskDraft {
   return { name: task.name, taskClass: task.taskClass, duration: String(task.durationMinutes), weight: task.baseReward ? trimWeight(task.baseReward) : "", enabled: task.enabled };
+}
+
+function draftChanged(task: PoolTask, draft: E2TaskDraft) {
+  const weight = task.baseReward ?? "";
+  return draft.name.trim() !== task.name || draft.taskClass !== task.taskClass
+    || Number(draft.duration) !== task.durationMinutes || !(draft.weight === weight || sameWeight(draft.weight, weight));
+}
+
+export function isE2TaskEditorDirty(state: E2TaskEditorState) {
+  if (state.outcome.kind === "unknown") return false;
+  const { task, draft, pool } = state;
+  return !!state.reason || (task ? draftChanged(task, draft)
+    : !!(draft.name || draft.duration || draft.weight) || draft.taskClass !== "EM" || draft.enabled !== (pool.enabledCount < ENABLED_LIMIT));
 }
 
 export function openE2TaskEditor(mode: "create" | "update", pool: TaskPool, task: PoolTask | null, key = crypto.randomUUID()): E2TaskEditorState {
@@ -119,9 +131,12 @@ function fieldErrors(draft: E2TaskDraft): Partial<Record<E2TaskField, string>> {
   };
 }
 
-export function E2TaskEditor({ state, onChange, writeBlock, toast, onSubmit, onReadLatest, onRetry }: {
+export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule, writeBlock, toast, onSubmit, onReadLatest, onRetry }: {
   state: E2TaskEditorState;
   onChange: Dispatch<SetStateAction<E2TaskEditorState | null>>;
+  onClose: () => void;
+  onContinue: () => void;
+  reasonRule: ReturnType<typeof useReasonRule>;
   /** 页面级的不能写原因（只读、本等级有结果未知的操作、数据不新鲜）。 */
   writeBlock?: string;
   toast: (message: string) => void;
@@ -150,21 +165,20 @@ export function E2TaskEditor({ state, onChange, writeBlock, toast, onSubmit, onR
     { key: "duration", label: "时长", before: `${before.duration} 分钟`, after: `${draft.duration} 分钟` },
     { key: "weight", label: "权重", before: before.weight ? formatWeight(before.weight) : "—", after: !draft.weight ? "—" : validTaskWeight(draft.weight) ? formatWeight(draft.weight) : draft.weight },
   ] : [];
-  // 列表还没带出权重时两边都是空，算没改。
-  const weightSame = !!before && (draft.weight === before.weight || sameWeight(draft.weight, before.weight));
-  const changed = !before || draft.name.trim() !== before.name || draft.taskClass !== before.taskClass
-    || Number(draft.duration) !== Number(before.duration) || !weightSame;
+  const changed = !task || draftChanged(task, draft);
   const firstError = (Object.keys(errors) as E2TaskField[]).map(field => errors[field]).find(Boolean);
   const formBlock = writeBlock ?? (!changed ? "没有修改" : firstError);
   const reasonLength = visibleReasonLength(state.reason);
-  const reasonReady = validE2EditorReason(state.reason);
-  const confirmBlock = formBlock ?? (outcome.kind === "conflict" ? "请先读取最新内容" : !reasonReady ? "请填写 8–200 字的操作理由" : undefined);
-  const dirty = changed && mode === "update" || mode === "create" && !!(draft.name || draft.duration || draft.weight);
+  const reasonBlock = e2EditorReasonBlock(state.reason, reasonRule);
+  const confirmBlock = formBlock ?? (outcome.kind === "conflict" ? "请先读取最新内容" : reasonBlock);
+  const dirty = isE2TaskEditorDirty(state);
   const weightUp = before && validTaskWeight(draft.weight) && validTaskWeight(before.weight) && !sameWeight(draft.weight, before.weight)
-    ? weightMicros(draft.weight) > weightMicros(before.weight) : null;
+    ? taskWeightMicros(draft.weight) > taskWeightMicros(before.weight) : null;
   const direction = weightUp === null ? undefined : weightUp ? "调高后，这条任务在同等级里分得更多，其他任务相应少一些。" : "调低后，这条任务在同等级里分得更少，其他任务相应多一些。";
-  const close = () => { if (!saving) onChange(null); };
-  const leave = () => { if (saving) return; if (step === "leaving") set({ step: "form" }); else if (dirty) set({ step: "leaving" }); else close(); };
+  const close = () => { if (!saving) onClose(); };
+  const continueEditing = () => { onContinue(); set({ step: "form" }); };
+  const leave = () => { if (saving) return; if (step === "leaving") continueEditing(); else if (dirty) set({ step: "leaving" }); else close(); };
+  const cancelConfirm = () => { onContinue(); set({ step: "form", reason: "", touched: { ...state.touched, reason: false } }); };
   const toConfirm = () => {
     const touched = { ...state.touched, name: true, taskClass: true, duration: true, weight: true };
     onChange({ ...state, touched, step: formBlock ? state.step : "confirm" });
@@ -178,7 +192,7 @@ export function E2TaskEditor({ state, onChange, writeBlock, toast, onSubmit, onR
       explain={step === "leaving" ? undefined : mode === "create" ? "按填的名称、类型、时长和权重加一条任务，确认后立即生效。"
         : "改名称、类型、时长和权重，确认后立即生效。不能换等级：要放到别的等级，就在那个等级新增一条，再停用这条。"}
       footer={step === "leaving"
-        ? <Decision others={<><Button onClick={() => set({ step: "form" })}>继续编辑</Button><Button variant="danger-outline" onClick={close}>放弃改动并返回</Button></>}
+        ? <Decision others={<><Button onClick={continueEditing}>继续编辑</Button><Button variant="danger-outline" onClick={close}>放弃改动并返回</Button></>}
           primary={<Button variant="primary" disabledReason={formBlock} onClick={toConfirm}>保存并立即生效</Button>} />
         : <Decision explain="下一步核对改动、填写操作理由，确认后立即生效。" others={<Button disabled={saving} onClick={leave}>取消</Button>}
           primary={<Button variant="primary" disabledReason={formBlock} onClick={toConfirm}>{mode === "create" ? "新增任务" : "保存修改"}</Button>} />}>
@@ -218,10 +232,10 @@ export function E2TaskEditor({ state, onChange, writeBlock, toast, onSubmit, onR
     {(step === "confirm" || unknown) && <Modal title={unknown ? unknown.expired ? "原操作已过重试时限" : "核对原操作" : label}
       icon={unknown ? ClipboardList : mode === "create" ? Plus : Pencil} busy={saving} dirty={!unknown && !!state.reason}
       sub={unknown ? undefined : <StatusTag tone="progress" filled>立即生效</StatusTag>}
-      onClose={() => { if (saving) return; if (unknown) close(); else set({ step: "form", reason: "", touched: { ...state.touched, reason: false } }); }}
+      onClose={() => { if (saving) return; if (unknown) close(); else cancelConfirm(); }}
       footer={unknown ? <><Button disabled={saving} onClick={close}>收起</Button>
           {!unknown.expired && <Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={writeBlock} onClick={() => void onRetry(state)}>按原请求重试</Button>}</>
-        : <><Button disabled={saving} onClick={() => set({ step: "form", reason: "", touched: { ...state.touched, reason: false } })}>取消</Button>
+        : <><Button disabled={saving} onClick={cancelConfirm}>取消</Button>
           <Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={saving ? undefined : confirmBlock}
             onClick={() => { set({ touched: { ...state.touched, reason: true } }); if (!confirmBlock) void onSubmit(state); }}>{mode === "create" ? "确认新增" : "确认修改"}</Button></>}>
       <div className="rd-stack">
@@ -244,9 +258,9 @@ export function E2TaskEditor({ state, onChange, writeBlock, toast, onSubmit, onR
         {!unknown && <Notice tone="neutral">{mode === "update" ? "只影响之后新派的任务，正在做的任务按原来的金额结算。"
           : draft.enabled ? "确认后加入当前等级，供之后新派的任务使用。" : "确认后先加为停用，不参加派单；在任务表启用后才会派。"}</Notice>}
         {unknown ? <Facts><Fact k="原操作理由">{state.reason.trim()}</Fact></Facts>
-          : <Field label="操作理由" required hint="至少 8 字" explain="记录这次调整的依据，随这次操作写入操作记录。"
-            error={state.touched.reason && !reasonReady ? "请填写 8–200 字的操作理由" : undefined}>
-            <Textarea rows={3} maxLength={400} count={`${reasonLength}/200`} placeholder="写清调整原因和依据" value={state.reason} disabled={saving || outcome.kind === "conflict"}
+          : <Field label="操作理由" required hint={reasonRule.ready ? `至少 ${reasonRule.min} 字` : undefined} explain="记录这次调整的依据，随这次操作写入操作记录。"
+            help={reasonRule.ready ? undefined : reasonBlock} error={reasonRule.ready && state.touched.reason ? reasonBlock : undefined}>
+            <Textarea rows={3} maxLength={400} count={reasonRule.ready ? `${reasonLength}/${reasonRule.max}` : undefined} placeholder="写清调整原因和依据" value={state.reason} disabled={saving || outcome.kind === "conflict"}
               onChange={event => set({ reason: event.target.value })} onBlur={() => touch("reason")} />
           </Field>}
         {outcome.kind === "conflict" && <Notice tone="warn" title="这条任务刚被别人改过，这次没有保存">
