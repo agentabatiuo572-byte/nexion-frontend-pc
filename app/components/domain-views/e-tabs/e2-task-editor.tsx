@@ -188,6 +188,10 @@ export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule,
 
   return <>
     {!unknown && <Drawer open onClose={leave} busy={saving} icon={mode === "create" ? Plus : Pencil}
+      onInteractOutside={event => {
+        const target = event.detail.originalEvent.target;
+        if (dirty && target instanceof Element && target.closest(".e2-levels [role=tab], [data-e2-switch-pool], a[href]")) event.preventDefault();
+      }}
       title={step === "leaving" ? "任务改动还没保存" : mode === "create" ? "新增任务" : "编辑任务"} sub={`${pool.code} ${pool.name}`}
       explain={step === "leaving" ? undefined : mode === "create" ? "按填的名称、类型、时长和权重加一条任务，确认后立即生效。"
         : "改名称、类型、时长和权重，确认后立即生效。不能换等级：要放到别的等级，就在那个等级新增一条，再停用这条。"}
