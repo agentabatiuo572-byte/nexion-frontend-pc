@@ -3968,6 +3968,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const reviewBlock = editReview?.kind === "loading" ? "正在读取…" : editReview?.kind === "conflict" ? "请先读取最新" : editReview?.kind === "error" ? editReview.message : undefined;
   const sameAsCurrent = !!spec?.disallowCurrent && !!newVal.trim() && (newVal.trim() === spec.current?.trim() || (kind === "number" && compareEditDecimals(newVal, spec.current ?? "") === 0));
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
+  // 对象状态变了或已不在：框里只留橙黄提示和「取消」（VS-107），不再画过期的改动和理由框。
+  const finalConflict = !!readConflict && !readConflict.review && readConflict.final;
   const canConfirm = !blockedReason && !readConflict && !readingConflict && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason && !pendingRecovery?.blockedReason
     : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && (!editReview || !!readyReview) && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
       && (!inlineApproval || !approvalRecovery || !!approval));
@@ -4221,7 +4223,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
             {submitting ? inlineApproval?.recoverLabel ? "读取中…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原结果"}
           </Btn>
         )}
-        {!approvalOnlyLookup && (surface ? (
+        {!approvalOnlyLookup && !finalConflict && (surface ? (
           <RdButton variant={confirmTone} loading={submitting || readingConflict} loadingText={readingConflict ? "正在读取…" : "提交中…"}
             disabledReason={canConfirm || submitting || readingConflict ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
             onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>
@@ -4234,13 +4236,13 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         ))}
       </>}>
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
-      <fieldset disabled={submitting || readingConflict} className="rd-contents" style={{ display: "contents" }}>
+      {finalConflict ? <div className="rd-confirm-alert" role="alert"><RdNotice tone="warn">{submitError}</RdNotice></div> : <fieldset disabled={submitting || readingConflict} className="rd-contents" style={{ display: "contents" }}>
       {(!approval || rdApproval) && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
       {!surface && content}
       {readConflict?.review && <div className="rd-confirm-alert" ref={submitError ? undefined : submitAlertRef}>{readConflict.review.renderNotice(() => void readLatestConflict())}</div>}
-      {surface ? (blockedReason || submitError) && (
-        // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。
-        <div className="rd-confirm-alert" ref={submitAlertRef}><RdNotice tone={blockedReason || approvalRecovery || submitUnknown ? "warn" : "danger"}>{keepCommandKey(blockedReason || submitError)}</RdNotice></div>
+      {surface ? (blockedReason && !readConflict?.review || submitError) && (
+        // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。框里已有「读取最新」提示时不再另说一遍（VS-107）。
+        <div className="rd-confirm-alert" ref={submitAlertRef}><RdNotice tone={blockedReason && !readConflict?.review || approvalRecovery || submitUnknown ? "warn" : "danger"}>{keepCommandKey(blockedReason && !readConflict?.review ? blockedReason : submitError)}</RdNotice></div>
       ) : blockedReason
         ? <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{blockedReason}</div>
         : submitError && <div className="alertbar warn" role="alert" ref={submitAlertRef} style={{ marginBottom: 16 }}>{submitError}</div>}
@@ -4421,7 +4423,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           </div>
         )}
       </div>}
-      </fieldset>
+      </fieldset>}
     </Modal>
   );
 }

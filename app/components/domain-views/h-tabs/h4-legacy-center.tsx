@@ -74,7 +74,7 @@ type Model = H4Statistics & {
 function unavailableOperation(objectLabel?: string) {
   return new ConfirmReadConflict(undefined, objectLabel
     ? `${objectLabel}已被别人改过，原来的操作现在不能再做；你填的内容没有提交，请按最新状态重新操作。`
-    : H4_MISSING_ORIGINAL);
+    : H4_MISSING_ORIGINAL, true);
 }
 
 function overviewObjectLabel(latest: Model, group: string | undefined, id: string | undefined) {
@@ -293,7 +293,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       blockedReason: req.blockedReason ?? (version === undefined && !(req.edit?.review && conflictDraft.rejection) ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => original()?.reason,
       getPendingRecovery: () => h4PendingConfirmRecovery(original(), async () => {
-        if (!await refreshAll()) throw new Error("已保存，但没读到最新数据");
+        if (!await refreshAll()) throw new Error("已保存，但最新数据加载失败");
         ctx.openActionConfirm(null);
       }),
       run: async (reason, value, businessValue) => {
@@ -326,7 +326,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       getPendingBlockReason: () => req.getPendingBlockReason?.() ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => original()?.reason,
       getPendingRecovery: () => h4PendingConfirmRecovery(original(), async () => {
-        if (!await refreshAll()) throw new Error("已保存，但没读到最新数据");
+        if (!await refreshAll()) throw new Error("已保存，但最新数据加载失败");
         ctx.closeConfirm?.();
       }),
       run: async (reason, value) => {
@@ -369,7 +369,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const conflictDraft = useHConflictDraft(!loading && !error && h4ReadVersion("overview") !== undefined, {
     readConflict: (afterRead, kind, req, key) => h4ReadConflict(async () => {
       const latest = await reload();
-      if (!latest) throw new Error("既有活动与转盘没有读到");
+      if (!latest) throw new Error("既有活动与转盘加载失败");
       const found = await afterRead(() => {
         setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改");
         if (kind === "action") ctx.openActionConfirm(null); else ctx.closeConfirm?.();
@@ -513,7 +513,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
               reviewed = undefined;
               const latest = await reload();
               signal.throwIfAborted();
-              if (!latest) throw new Error("既有活动与转盘没有读到");
+              if (!latest) throw new Error("既有活动与转盘加载失败");
               const refreshed = latest.events?.find(row => row.id === event.id);
               if (!refreshed) throw new Error("最新读取里没有这项活动");
               if (lifecycleOf(refreshed, requiredLanguages).key === "ended") throw new Error("已结束的活动不能改奖励");
@@ -782,7 +782,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       action: `删除活动 · ${event.name}`,
       title: "删除既有活动",
       statedBrief: { impact: "活动从活动中心消失，这个活动的玩法一起停掉；已有的参与、奖励和操作记录保留。", check: "确认是草稿或已结束的活动，理由写清依据。" },
-      effect: <IrreversibleTag />,
+      effect: <>{effectDirect}<IrreversibleTag /></>,
       detail: <>删除后活动从活动中心消失，已有的参与、奖励和操作记录仍保留。只能删除草稿或已结束的活动。</>,
       facts: <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="状态">{lifecycleOf(event, requiredLanguages).label}</Fact></Facts>,
       confirmLabel: "删除活动",
@@ -1174,15 +1174,18 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const tierName = text(tier.tier);
     if (wheelCommandBlocks("h4_wheel_tier_delete", tierName)) return;
     const probability = numericValue(tier.prob);
+    // 只决定显示：和提交时同一判断，删了让 UVT 安慰奖变多才走审批，其余立即删除。
+    const needsApproval = probability === 0 && !boolValue(tier.real) && text(tier.kind).toLowerCase() === "uvt"
+      && increasesUvtFallback(model?.wheelTiers ?? [], tier, false);
     openActionConfirm({ briefKind: "record",
       action: `删除转盘奖项 · ${tierName}`,
       title: "删除转盘奖项",
       statedBrief: { impact: "这一档从奖池和奖项列表里移除，已抽中的记录不变。", check: "确认这一档概率已是 0%，理由写清依据。" },
-      effect: <><StatusTag tone="progress" filled>多数立即生效</StatusTag><IrreversibleTag /></>,
+      effect: <>{needsApproval ? effectApproval("奖池") : effectDirect}<IrreversibleTag /></>,
       detail: probability === 0
         ? <>删除后至少还要保留 2 个奖项。</>
         : <>请先在「改奖池 / 概率」把这个奖项的概率调成 0%，再删除。</>,
-      facts: tierFacts(tier, probability === 0 ? <ApprovalFact amplify="删了会让 UVT 安慰奖变多的奖项" object="奖池" /> : null),
+      facts: tierFacts(tier, needsApproval ? <ApprovalFact amplify="这次删除会让 UVT 安慰奖变多，" object="奖池" /> : null),
       confirmLabel: "删除奖项",
       confirmTone: "danger",
       reasonPlaceholder: "例如：这一档已下线，按工单删除",
@@ -1294,7 +1297,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         return unavailableOperation(await fetchAdminRaffle(id) ? "这一期" : undefined);
       }
       const latest = await reload();
-      if (!latest) throw new ConfirmReadConflict(undefined, "既有活动与转盘没有读到");
+      if (!latest) throw new ConfirmReadConflict(undefined, "既有活动与转盘加载失败");
       const id = target ?? String(group === "wheel-guards" ? body.guardKey : group === "wheel-tiers" ? body.tierName : body.id);
       return unavailableOperation(overviewObjectLabel(latest, group, id));
     };
@@ -1347,7 +1350,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       getPendingReason: () => pendingH4Commands().some(r => r.commandKey === record.commandKey) ? record.reason : undefined,
       getPendingRecovery: () => {
         const recovery = h4PendingConfirmRecovery(pendingH4Commands().find(r => r.commandKey === record.commandKey), async () => {
-          if (!await refreshAll()) throw new Error("已保存，但没读到最新数据");
+          if (!await refreshAll()) throw new Error("已保存，但最新数据加载失败");
           activeRecovery.current = null; ctx.openActionConfirm(null);
         });
         if (!recovery?.query) return recovery;
@@ -1404,8 +1407,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           <span className="h4-pending-actions">
             {!media && <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => void lookupH4Command(record)}>查询原结果</Button>}
             {!expired && !record.acknowledged && (media ? <>
-              <Button size="sm" disabledReason={retryBlocked} loading={lookupKey === record.commandKey} onClick={() => void retryUpload(record)}>按原操作重试</Button>
-              <span className="h4-pending-change">重新发送同一个文件，后台按原命令号去重，不会重复保存</span>
+              <Button size="sm" disabledReason={retryBlocked} loading={lookupKey === record.commandKey} onClick={() => void retryUpload(record)}>按原请求重试</Button>
+              <span className="h4-pending-change">重新发送同一个文件，不会重复保存。</span>
             </> : <Button size="sm" disabledReason={retryBlocked} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>)}
           </span>
         </li>;
@@ -1413,7 +1416,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
     </ul>}>关闭或刷新页面不会重新提交。</Notice>}
     {stale && <Notice tone="warn" title={`没有保存：别人先改过（${stale}）`} action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>{error ? "最新值没读到；重试读取成功后再核对，你填的还在。" : "已读到最新值，你填的还在，核对后再提交。"}</Notice>}
-    {confirmed.length > 0 && <Notice tone="warn" title={raffleChecks.length ? RAFFLE_SAVE_PENDING : "已保存，但没读到最新数据"} action={<Button size="sm" loading={loading} onClick={() => void refreshAll()}>重新读取</Button>}>
+    {confirmed.length > 0 && <Notice tone="warn" title={raffleChecks.length ? RAFFLE_SAVE_PENDING : "已保存，但最新数据加载失败"} action={<Button size="sm" loading={loading} onClick={() => void refreshAll()}>重新读取</Button>}>
       {raffleChecks.length > 0 && `${raffleChecks.map(record => `「${hiCommandSubject(record, eventName)}」`).join("、")}重新读取这一期后才能确认是否保存，之前不能再改。`}
       {savedUnread.length > 0 && `${savedUnread.map(record => `「${hiCommandSubject(record, eventName)}」`).join("、")}已保存，不用重新提交。重新读取成功后才能再改。`}
     </Notice>}
@@ -1436,7 +1439,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   </>;
 
   if (loading && !model) return <>{recovery}<BlockState state="loading" title="正在加载既有活动与转盘" /></>;
-  if (error || !model) return <>{recovery}<BlockState state="error" title="既有活动与转盘没有读到" detail={error ?? "没有收到数据，请重试；一直失败请联系值班同事。"} onRetry={() => void reload()} retryLabel="重试读取 · 既有活动与转盘" /></>;
+  if (error || !model) return <>{recovery}<BlockState state="error" title="既有活动与转盘加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班同事。"} onRetry={() => void reload()} retryLabel="重试读取 · 既有活动与转盘" /></>;
 
   const events = model.events ?? [];
   const tiers = model.wheelTiers ?? [];

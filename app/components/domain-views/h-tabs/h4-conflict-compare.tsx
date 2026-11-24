@@ -64,7 +64,7 @@ export function H4ConflictCompare({ groups, sections, onMerge, mergeDisabledReas
   </tr>;
   return <Notice tone="warn" title="没有保存：你编辑时，别人先保存过">
     <div className="h4-compare">
-      {same ? <p>最新内容和你打开时一样，可以直接重新确认。</p> : <table className="h4-compare-table" aria-label="三份值的差别">
+      {same ? <p>最新内容和你打开时一样，没有要合并的差别。</p> : <table className="h4-compare-table" aria-label="三份值的差别">
         <thead><tr><th scope="col">项</th><th scope="col">你打开时</th><th scope="col">别人改成</th><th scope="col">你填的</th></tr></thead>
         {(sections ?? [{ key: "all", rows: groups }]).map(section => section.whole
           ? <tbody key={section.key}><tr data-whole="">

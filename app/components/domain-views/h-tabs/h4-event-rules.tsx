@@ -170,7 +170,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     let verifiedVersion: number | undefined;
     const missingRule = () => new ConfirmReadConflict({
       readLatest: async () => {
-        if (!await load()) throw new Error("玩法规则没有读到");
+        if (!await load()) throw new Error("玩法规则加载失败");
         ctx.openActionConfirm(null);
       },
       renderNotice: readLatest => <Notice tone="warn" title="最新读取里没有这项活动"
@@ -212,9 +212,9 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     };
     const rereadConflict = () => h4ReadConflict(async () => {
       const values = await load(true);
-      if (!values) throw new Error("玩法规则没有读到");
+      if (!values) throw new Error("玩法规则加载失败");
       const latest = values.find(row => row.eventCode === base.eventCode);
-      if (!latest) throw restored ? new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL) : missingRule();
+      if (!latest) throw restored ? new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL, true) : missingRule();
       compareLatest(latest);
     });
     const rejected = (error: PendingConfirmRejected) => error.reasonCode === "EVENT_NOT_FOUND" || error.reasonCode === "EVENT_RULE_NOT_FOUND"
@@ -224,7 +224,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     ctx.openActionConfirm({ formKey: restored ? 0 : undefined, initialRejection: restored && rejected(restored.rejection), getPendingReason: () => pending()?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
       getPendingRecovery: () => h4PendingConfirmRecovery(pending(), async () => {
         await onApprovalCompleted?.();
-        if (!await load()) throw new Error("已保存，但没读到最新数据");
+        if (!await load()) throw new Error("已保存，但最新数据加载失败");
         ctx.openActionConfirm(null);
       },
         rejected),
@@ -312,10 +312,10 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       const base = record.opened ? parseEventRule(record.opened) : undefined;
       if (!base || base.eventCode !== code || base.revision !== body.expectedRevision) {
         const values = await load(true);
-        if (!values) throw new ConfirmReadConflict(undefined, "玩法规则没有读到");
+        if (!values) throw new ConfirmReadConflict(undefined, "玩法规则加载失败");
         const latest = values.find(row => row.eventCode === code);
         if (operator !== currentAdminOperator()) return false;
-        if (!latest) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL);
+        if (!latest) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL, true);
         closeRetry();
         choose(latest); setError(H4_OLD_RECORD_REJECTED);
         return true;
@@ -338,10 +338,10 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   const review = selected && draft ? conflictFields : null;
   const compareGroups: H4ConflictGroup[] = review && selected ? h4ConflictGroups(review,
     path => path.startsWith("rules.") ? path.split(".").slice(0, 2).join(".") : path.split(".")[0],
-    key => key === "enabled" ? "开放状态" : key === "startsAt" ? "开始时间" : key === "endsAt" ? "结束时间"
+    key => key === "enabled" ? "开放状态" : key === "startsAt" ? "开始时间（北京时间）" : key === "endsAt" ? "结束时间（北京时间）"
       : eventRuleFields({ kind: selected.kind, rules: eventRuleDraftRules(selected) }).find(field => `rules.${field.key}` === key)?.label ?? "其他参数",
     (key, raw) => key === "enabled" ? raw === true ? "开启" : raw === false ? "关闭" : "—"
-      : key === "startsAt" || key === "endsAt" ? `${formatTime(raw as string | null, "Asia/Shanghai")}${raw ? "（北京时间）" : ""}`
+      : key === "startsAt" || key === "endsAt" ? formatTime(raw as string | null, "Asia/Shanghai")
       : key === "rules.regions" ? eventRegionText(raw).split("\n").join("；") || "—"
       : key === "rules.weekdays" ? Array.isArray(raw) && raw.length ? (raw as number[]).map(day => `周${"一二三四五六日"[day - 1] ?? "?"}`).join("、") : "—"
       : raw === undefined || raw === null || raw === "" ? "—" : Array.isArray(raw) ? raw.join("、") : String(raw)) : [];
@@ -454,7 +454,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     explain={<><p>每个内置活动背后是一类玩法：规则参数、开关、开放时间。先保存完整配置，就绪后再开启。</p><p>第一次开启要另一位超级管理员批准；开启后玩法和时间固定，只能关闭，关闭后不能再开。玩法开着没有，和「既有活动」卡上的状态是两件事，分别看。</p><p>App 支持的活动，「既有活动」里写的奖励只是展示文字，实际按这里的规则发。</p></>}
     actions={<Button disabledReason={loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的配置" : undefined} onClick={() => void load()}>刷新</Button>}>
     {loading ? <BlockState state="loading" title="正在加载活动规则" />
-      : !rows.length && error ? <BlockState state="error" title="玩法规则没有读到" detail={error} onRetry={() => void load()} />
+      : !rows.length && error ? <BlockState state="error" title="玩法规则加载失败" detail={error} onRetry={() => void load()} />
       : !rows.length ? <BlockState state="empty" title="暂无活动规则" />
       : <div className="h4-cards">{rows.map(row => {
         const supported = !!EVENT_KIND_LABELS[row.kind];

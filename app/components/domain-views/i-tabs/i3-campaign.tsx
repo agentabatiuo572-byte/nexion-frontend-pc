@@ -781,9 +781,11 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         briefKind: "content",
         action: `保存草稿 · ${trimmedName}`,
         title: "保存草稿",
+        effect: <StatusTag tone="neutral" filled>保存为草稿，不发送</StatusTag>,
+        facts: <Facts><Fact k="草稿">{trimmedName}</Fact></Facts>,
         detail: "还没排期，不会发给任何人。",
         statedBrief: { impact: "只保存为草稿：不会发给任何人，用户现在看到的内容不变。", check: "核对标题、正文、受众和预算。" },
-        reviewedFacts: draftChanges?.length ? <Facts>{draftChanges.map(([label, before, after]) =>
+        reviewedFacts: draftChanges?.length ? <Facts>{!draftChanges.some(([label]) => label === "名称") && <Fact k="草稿">{trimmedName}</Fact>}{draftChanges.map(([label, before, after]) =>
           <Fact key={label} k={label}><Change from={before || "—"} to={after || "—"} /></Fact>)}</Facts> : undefined,
         confirmLabel: "保存草稿",
         run: async reason => {
@@ -1457,7 +1459,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
     <Drawer open wide data-i3-form="" busy={submitting} onClose={onClose} title={editing ? "编辑通知草稿" : "新建通知"} sub={editing ? editing.name : "保存为草稿，不会发给任何人"} icon={FilePen} tone="role-3"
       explain="左边填，右边看 App 里的样子。保存后是草稿；之后在卡片上点「排期」或「立即发送」才会发出。"
       footer={<Decision note={missing.length ? `还缺：${missing.join("、")}` : over.length ? `${over.map((l) => LANG_NAME[l]).join("、")}的内容超长，删减后才能保存` : undefined}
-        primary={<Button variant="primary" loading={submitting} disabledReason={blocked} onClick={onSubmit}>{frozen ? "按原请求重试" : editing ? "保存修改" : "保存草稿"}</Button>}
+        primary={<Button variant="primary" loading={submitting} disabledReason={blocked} onClick={onSubmit}>{frozen ? "按原请求重试" : "保存草稿"}</Button>}
         others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
         <div className="i3-form">

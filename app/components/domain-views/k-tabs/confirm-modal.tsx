@@ -31,6 +31,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const shownError = req.initialError ?? error;
   const [readConflict, setReadConflict] = useState<ConfirmReadConflict | null>(() => rejection instanceof ConfirmReadConflict ? rejection : null);
   const [readingConflict, setReadingConflict] = useState(false);
+  // 对象状态变了或已不在：框里只留橙黄提示和「取消」（VS-107），不再画过期的改动和理由框。
+  const finalConflict = !!readConflict && !readConflict.review && readConflict.final;
   // 刚打开不报错：字数不够等失焦或点过提交才用警告色（DP-06）。
   const [attempted, setAttempted] = useState(false);
   const [reasonLeft, setReasonLeft] = useState(false);
@@ -143,7 +145,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         <>
           <Btn disabled={submitting || readingConflict} onClick={onClose}>取消</Btn>
           {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>查询原结果</Btn>}
-          {surface ? (
+          {finalConflict ? null : surface ? (
             <RdButton
               variant={req.confirmTone ?? "primary"}
               loading={submitting || readingConflict}
@@ -169,7 +171,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
     >
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
       {readConflict?.review && <div className="rd-confirm-alert">{readConflict.review.renderNotice(() => void readLatestConflict())}</div>}
-      <fieldset disabled={submitting || !!readConflict || pendingReason !== undefined} className="rd-contents">
+      {finalConflict ? <div className="rd-confirm-alert" role="alert"><Notice tone="warn">{shownError}</Notice></div> : <fieldset disabled={submitting || !!readConflict || pendingReason !== undefined} className="rd-contents">
       {shownError && (surface
         ? <div className="rd-confirm-alert"><Notice tone="danger">{shownError}</Notice></div>
         : <div role="alert" className="tint danger">{shownError}</div>)}
@@ -252,7 +254,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           <div className={surface ? "rd-form-error" : "tiny k-confirm-count"} data-ok={reasonOk ? "" : undefined}>{reasonShort}</div>
         )}
       </div>
-      </fieldset>
+      </fieldset>}
     </Modal>
   );
 }

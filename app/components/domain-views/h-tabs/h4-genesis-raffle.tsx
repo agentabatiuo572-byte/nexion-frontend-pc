@@ -146,7 +146,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
     const readVersion = h4ReadVersion("raffles");
     const rereadConflict = () => h4ReadConflict(async () => {
       const values = await load();
-      if (!values) throw new Error("最新的这一期也没读到");
+      if (!values) throw new Error("最新的这一期加载失败");
       const latest = values.rows.find(row => row.id === savedDraft.id) ?? await fetchAdminRaffle(savedDraft.id);
       if (!isActive()) return;
       if (!previous) {
@@ -169,7 +169,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
     ctx.openActionConfirm({ formKey: restored ? 0 : undefined, initialRejection: restored && rejected(restored.rejection), getPendingReason: () => pending()?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
       getPendingRecovery: () => h4PendingConfirmRecovery(pending(), async () => {
         if (opening) await onApprovalCompleted?.();
-        if (!await load(false, true)) throw new Error("已保存，但没读到最新数据");
+        if (!await load(false, true)) throw new Error("已保存，但最新数据加载失败");
         ctx.openActionConfirm(null);
       },
         rejected),
@@ -256,10 +256,10 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
       const previous = record.opened ? parseAdminRaffle(record.opened) : null;
       if (creating ? record.opened !== null : !previous || previous.id !== id || previous.revision !== body.expectedRevision) {
         const latest = await load();
-        if (!latest) throw new ConfirmReadConflict(undefined, "最新的这一期也没读到");
+        if (!latest) throw new ConfirmReadConflict(undefined, "最新的这一期加载失败");
         const current = latest.rows.find(row => row.id === id) ?? await fetchAdminRaffle(id);
         if (!isActive()) return false;
-        if (!creating && !current) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL);
+        if (!creating && !current) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL, true);
         return openRaffle(current, closeRetry);
       }
       if (!isActive()) return false;
@@ -287,10 +287,10 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
     key => {
       const [, id, field] = key.split(".");
       if (key.startsWith("prizes.")) return `${prizeName(decodeURIComponent(id))} · ${PRIZE_FIELD[field] ?? "其他"}`;
-      return ({ enabled: "开放报名", titleZh: "抽奖名称 · 中文", titleEn: "抽奖名称 · 英文", titleVi: "抽奖名称 · 越南语", startsAt: "报名开始", drawAt: "开奖时间", id: "本期编号" } as Record<string, string>)[key] ?? "其他";
+      return ({ enabled: "开放报名", titleZh: "抽奖名称 · 中文", titleEn: "抽奖名称 · 英文", titleVi: "抽奖名称 · 越南语", startsAt: "报名开始（北京时间）", drawAt: "开奖时间（北京时间）", id: "本期编号" } as Record<string, string>)[key] ?? "其他";
     },
     (key, raw, which) => key === "enabled" ? raw === true ? "开放" : raw === false ? "关闭" : "—"
-      : key === "startsAt" || key === "drawAt" ? raw ? `${formatTime(raw as string, "Asia/Shanghai")}（北京时间）` : "未配置"
+      : key === "startsAt" || key === "drawAt" ? raw ? formatTime(raw as string, "Asia/Shanghai") : "未配置"
       : key.endsWith(".rewardType") ? raw === "DEVICE" ? "设备" : raw === undefined ? "—" : String(raw)
       : key.startsWith("prizes.") && raw === undefined ? "—"
       : key.endsWith(".amount") ? (type => type === "DEVICE" ? `${Number(raw)} 台` : `${amountText(String(raw))} ${PRIZE_UNIT[type]}`)(review.find(field => field.path === `${key.slice(0, -7)}.rewardType`)?.[which] as RafflePrize["rewardType"])

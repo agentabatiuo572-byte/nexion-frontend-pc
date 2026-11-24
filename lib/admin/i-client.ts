@@ -655,6 +655,9 @@ export function i3RetryPermission(command: I3Command): string | undefined {
   return undefined;
 }
 
+/** 结果未知时确认框里的那一句，和 H4 同一种写法：不说「不要重复提交」，按框里的按钮说怎么做。 */
+const I3_RESULT_UNKNOWN = "结果未知，可能已经生效：先查询原结果，查不到再按原请求重试。";
+
 async function sendI3Command(command: I3Command, retry: boolean): Promise<void> {
   if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
   if (useAdminAuth.getState().session?.adminId !== command.original.owner) throw new Error("登录身份已变更，请重新打开页面。");
@@ -668,11 +671,11 @@ async function sendI3Command(command: I3Command, retry: boolean): Promise<void> 
       body: command.original.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
     payload = parseI3Json(await response.text()) as ApiResult<unknown>;
   } catch {
-    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError(I3_RESULT_UNKNOWN), { commandKey: command.commandKey });
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isInteger(payload.code)
     || payload.message !== undefined && typeof payload.message !== "string") {
-    throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError(I3_RESULT_UNKNOWN), { commandKey: command.commandKey });
   }
   if (!response.ok || payload.code !== 0 || response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
     const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
@@ -683,7 +686,7 @@ async function sendI3Command(command: I3Command, retry: boolean): Promise<void> 
       uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
       throw Object.assign(failure, { rejectedCommand: retry ? undefined : command });
     }
-    throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError(I3_RESULT_UNKNOWN), { commandKey: command.commandKey });
   }
   // A historical receipt resolves this command only; the page must read current state separately.
   let valid = false;

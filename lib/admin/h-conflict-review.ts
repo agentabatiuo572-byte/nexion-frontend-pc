@@ -32,7 +32,7 @@ export class ConfirmReadConflict extends Error {
     readLatest: () => Promise<boolean | void>;
     renderNotice: (readLatest: () => void) => ReactNode;
     preserveReason?: boolean;
-  }, message = "H4_REFRESH_REQUIRED") {
+  }, message = "H4_REFRESH_REQUIRED", /** 对象状态变了或已不在：框里只留提示和「取消」，不再显示过期的改动和理由框。 */ public readonly final = false) {
     super(message);
   }
 }
