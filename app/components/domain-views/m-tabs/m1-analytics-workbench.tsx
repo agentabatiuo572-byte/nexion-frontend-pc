@@ -793,6 +793,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const personalFinancial = personalPeriod?.scopeSummary.financial;
   const selectedGroup = queryState.groupId === undefined ? undefined : scope.scopeSummary.groups.find(g => g.groupId === String(queryState.groupId));
   const groups = scope.scopeSummary.groups;
+  const isCustomerStatistics = queryState.view === "CUSTOMERS";
   const defaultBasis = queryState.view === "DEVICES" ? "CURRENT_ASSET"
     : queryState.view === "OVERVIEW" && scope.generation !== "LEGACY" ? "PERIOD_EVENT" : "CURRENT_CUSTOMER_HISTORY";
   const activeConditions = activeAnalyticsConditions(queryState, groups, defaultBasis, isPersonal);
@@ -926,7 +927,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         : <div className="sa-state" role="status">正在加载统计月份…</div>)}
       {queryState.basis === "PERIOD_EVENT" && monthCalendar?.length === 0 && <BlockState state="empty" title={calendarGeneration === "UPGRADING" ? "数据正在升级" : PERF_UNAVAILABLE_VALUE.reason} onRetry={() => setCalendarRetry(n => n + 1)} />}
       {loading && <div className="sa-state" role="status">正在加载…<Button type="button" size="sm" onClick={() => { controllerRef.current?.abort(); generation.current++; setLoading(false); setCancelled(true); setData(null); }}>取消读取</Button></div>}
-      {error ? <BlockState state="error" title={error} onRetry={reloadFirstPage} retryLabel={error.includes("第一页") ? "从第一页重新加载" : "重试"} /> : cancelled && <div className="sa-state" role="status">已取消加载，筛选条件不变。<Button type="button" size="sm" onClick={reloadFirstPage}>重试</Button></div>}
+      {error ? <BlockState state="error" title={isCustomerStatistics ? "客户统计加载失败" : error} detail={isCustomerStatistics ? error : undefined}
+        onRetry={reloadFirstPage} retryLabel={error.includes("第一页") ? "从第一页重新加载" : "重试"} /> : cancelled && <div className="sa-state" role="status">已取消加载，筛选条件不变。<Button type="button" size="sm" onClick={reloadFirstPage}>重试</Button></div>}
       {data && current && personnel && <>
         {(queryState.view === "OVERVIEW" || queryState.view === "FINANCE") && <Fold title="经营概况" summary={overviewSummary ?? fundsSummary[fundsCoverage(data.funds)]} explain={queryState.view === "OVERVIEW" && queryState.basis === "PERIOD_EVENT" && perf.attribution ? "业绩按所选月份发生时的归属算。当时还没分组的客服的业绩算给客服本人、不进组，所以组卡和下面两类加起来比总额少；在业绩榜里能看到。" : caption}>
           {queryState.view === "OVERVIEW" && queryState.basis !== "CURRENT_ASSET" && <StatBand label="经营概况">

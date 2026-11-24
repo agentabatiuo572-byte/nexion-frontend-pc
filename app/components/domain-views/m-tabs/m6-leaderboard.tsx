@@ -315,7 +315,7 @@ export function M6Leaderboard() {
         footer={<Decision
           others={<><Button onClick={closeDetail}>关闭</Button>{visibleDetail.error && <Button onClick={() => openDetail(visibleDetail.agentId)}>重试</Button>}</>}
           primary={detailRow && privateRead && detailRow.canViewCustomers ? <Button variant="primary" onClick={() => customers(detailRow)}>查看当前绑定客户</Button> : undefined} />}>
-        {!visibleDetail.data ? <Notice tone={visibleDetail.error ? "danger" : "progress"}>{visibleDetail.error ?? "正在加载成绩…"}</Notice>
+        {!visibleDetail.data ? <Notice tone={visibleDetail.error ? "danger" : "progress"} title={visibleDetail.error ? "公开成绩加载失败" : undefined}>{visibleDetail.error ?? "正在加载成绩…"}</Notice>
           : detailRow && <PerformanceBody row={withPhoto(detailRow)} board={board} month={visibleDetail.data.referenceMonth} perf={detailRow.performance ? boardTotals(detailRow.performance) : perfOf(detailRow.id)}
             stale={visibleDetail.data.stale} refreshFailed={visibleDetail.data.refreshFailed} />}
       </Drawer>}
