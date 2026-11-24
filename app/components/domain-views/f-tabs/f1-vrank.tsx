@@ -453,6 +453,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         <Fact k="能否收回">批准前可在「操作记录与审批」撤回；批准后奖励不收回，之后人工降级也不收回</Fact>
       </Facts>,
       reasonPlaceholder: "写推荐信来自哪位 V8、官方审核的依据",
+      dialogClassName: "f1-policy-confirm f1-v8-confirm",
       detail: "人工把这位用户升到 V8，提交后需在「操作记录与审批」批准才执行。",
       submit: async (reason) => {
         await ctx.proposeVRankOverride(candidate.userId, "V8", "promote", reason);

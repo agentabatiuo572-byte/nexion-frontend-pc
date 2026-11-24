@@ -120,6 +120,8 @@ export type F1Confirm = {
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
   reasonPlaceholder?: string;
+  /** 框的样式类（比如 F1 修改框的两项一行事实块）。 */
+  dialogClassName?: string;
   /** 提交：调用 ctx 上现成的函数，成功后由外壳关框。 */
   submit: (reason: string, businessValue?: BusinessFormValue, newValue?: string) => Promise<void>;
   /** 成功后的提示；不传就不提示（提交函数自己提示了）。 */
@@ -160,6 +162,7 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
       getPendingBusinessValue={() => submitted.current && original() ? originalValues.current : undefined}
       blockedReason={!submitted.current && existing ? "这项操作有保存的原申请，请先查询原结果。" : undefined}
       inlineApproval={{
+        dialogClassName: confirm.dialogClassName,
         resolve: () => undefined,
         initialRecovery: "retry",
         expired: !!existing && existing.expiresAt <= Date.now(),

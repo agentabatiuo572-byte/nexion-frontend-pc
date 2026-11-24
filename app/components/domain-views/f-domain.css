@@ -991,3 +991,5 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .rd-modal.f1-policy-confirm .rd-facts > .rd-fact:last-child:nth-child(odd) { grid-column: 1 / -1; }
 /* V8 审核通过框：关键数字下面一行弱字「以前领过的不再发」。 */
 .rd-fact[data-lead] .f1-lead-note { display: block; margin-top: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
+/* V8 审核通过框：前四项（关键数字、用户、等级、邀请人）两项一行，后面的长事实各占满一行。 */
+.rd-modal.f1-v8-confirm .rd-facts > .rd-fact:nth-child(n+5) { grid-column: 1 / -1; }
