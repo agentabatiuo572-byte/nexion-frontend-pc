@@ -21,6 +21,7 @@ import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { f1ConditionLabels, listF1PolicyOperations, pendingF1Policy, type F1ConditionField, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
 import { fetchUserProfilesPage } from "@/lib/admin/user360-client";
+import { isF1BenefitField } from "@/lib/admin/f1-rank-benefit";
 import { pendingF1RankHow } from "@/lib/admin/f1-rank-how-save";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
@@ -33,7 +34,7 @@ import { F1PromotionHistory, F1PayoutHistory } from "./f1-history";
 import { F1BenefitConfirm, benefitValue } from "./f1-benefit-confirm";
 import { F1V8Review } from "./f1-v8-review";
 import { F1SalaryClaims } from "./f1-salary";
-import { V8_PERKS, V8_TERMS, ratePct, type F1BenefitField, type F1RankRowView, type F1V8Candidate } from "./f1-rank-types";
+import { V8_PERKS, V8_TERMS, ratePct, type F1BenefitField, type F1V8Candidate } from "./f1-rank-types";
 import { amountDisplay } from "@/lib/format";
 import { F1RankHow } from "./f1-rank-how";
 import { ADMIN_APPROVER, F1ConfirmHost, REWARD_KIND, SUPER_APPROVER, rewardKind, rewardLine, rewardText, type F1Confirm } from "./f1-shared";
@@ -67,7 +68,7 @@ const fmtText = (value: string) => /^\d+$/.test(value) ? value.replace(/\B(?=(\d
 const levelNo = (code: string) => Number(code.replace(/^V/, ""));
 
 export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
-  const rows: F1RankRowView[] = ctx.vrankRows;
+  const rows: F1VRankRow[] = ctx.vrankRows;
   const owner = useAdminAuth((state) => state.session?.adminId);
   const canWrite = ctx.can("network_f1_write");
   const canProtect = ctx.can("network_f1_permanent_protection");
@@ -76,23 +77,46 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const canReverse = ctx.can("network_f1_reward_reverse");
   const ids = useTabIds();
   const ladderIds = useTabIds();
-  const [view, setView] = useState<View>("ladder");
+  const [requestedView, setRequestedView] = useState<View>("ladder");
   const [lens, setLens] = useState<Lens>("pop");
   const [picked, setPicked] = useState<string | null>(null);
   const [policyEditor, setPolicyEditor] = useState<F1PolicyEditor | null>(null);
   const [confirm, setConfirm] = useState<F1Confirm | null>(null);
-  const [benefit, setBenefit] = useState<{ row: F1RankRowView; field: F1BenefitField } | null>(null);
   const v8Review = ctx.v8Review;
-  const canApproveV8 = canPromote && ctx.can("platform_a2_write");
-  // F1-RANK-WIRE：逻辑项按等级数据里有没有 monthlySalaryUsdt 设 ctx.f1SalaryFieldPresent；没有就整套月薪都不出。
+  const canApproveV8 = useAdminAuth(({ session }) => !!session
+    && session.authorities.includes("network_f1_promote_user")
+    && session.authorities.includes("platform_a2_write"));
   const salaryPresent = ctx.f1SalaryFieldPresent === true;
+  const view = requestedView === "v8" && !v8Review || requestedView === "salary" && !salaryPresent ? "ladder" : requestedView;
+  useEffect(() => {
+    const read = () => {
+      const query = new URLSearchParams(window.location.search);
+      const next = query.get("tab");
+      const rank = query.get("rank");
+      setRequestedView(next === "v8" || next === "salary" || next === "promotions" || next === "payouts" || next === "howto" ? next : "ladder");
+      setPicked(rank && /^V[0-8]$/.test(rank) ? rank : null);
+    };
+    read();
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
+  }, []);
+  const writeQuery = (key: string, value: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set(key, value);
+    window.history.replaceState(null, "", url);
+  };
+  const setView = (value: View) => { setRequestedView(value); writeQuery("tab", value); };
   const lenses = salaryPresent ? LENSES : LENSES.filter((item) => item.value !== "salary");
   const [howEpoch, setHowEpoch] = useState(0);
   const [, setRecoveryEpoch] = useState(0);
 
   const overrideRead = useRef(0);
-  useEffect(() => { setConfirm(null); setPolicyEditor(null); setBenefit(null); }, [ctx.f1ReadEpoch]);
-  const pendingApprovalRanks: ReadonlySet<string> = new Set(ctx.f1ApprovalRanks);
+  useEffect(() => { setConfirm(null); setPolicyEditor(null); }, [ctx.f1ReadEpoch]);
+  const policyOperations = owner === undefined ? [] : listF1PolicyOperations(owner);
+  const pendingApprovalRanks: ReadonlySet<string> = new Set([
+    ...ctx.f1ApprovalRanks,
+    ...policyOperations.filter(record => record.ticket?.status === "pending").map(record => record.original.values.rank),
+  ]);
   const readOnly = !(canWrite || canProtect || canPromote || canReissue || canReverse)
     ? "你只能查看；这个账号没有修改等级、发起审批或处理奖励的权限。" : undefined;
   const header = (
@@ -105,12 +129,15 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       readOnly={readOnly} />
   );
   const dialogs = <Fragment key="f1-dialogs">
-    {policyEditor && <F1PolicyConfirm
-      key={`${policyEditor.row.v}:${policyEditor.action}:${policyEditor.field ?? policyEditor.reward?.id ?? "new"}:${policyEditor.recoveryCommandKey ?? "edit"}`}
-      editor={policyEditor} ctx={ctx} pendingApproval={pendingApprovalRanks.has(policyEditor.row.v)} onClose={() => setPolicyEditor(null)}
-      onPendingChange={() => setRecoveryEpoch(value => value + 1)} />}
+    {policyEditor && (isF1BenefitField(policyEditor.field)
+      ? <F1BenefitConfirm key={`${policyEditor.row.v}:${policyEditor.field}:${policyEditor.recoveryCommandKey ?? "edit"}`}
+        editor={policyEditor} field={policyEditor.field} ctx={ctx} onClose={() => setPolicyEditor(null)}
+        onPendingChange={() => setRecoveryEpoch(value => value + 1)} />
+      : <F1PolicyConfirm
+        key={`${policyEditor.row.v}:${policyEditor.action}:${policyEditor.field ?? policyEditor.reward?.id ?? "new"}:${policyEditor.recoveryCommandKey ?? "edit"}`}
+        editor={policyEditor} ctx={ctx} pendingApproval={pendingApprovalRanks.has(policyEditor.row.v)} onClose={() => setPolicyEditor(null)}
+        onPendingChange={() => setRecoveryEpoch(value => value + 1)} />)}
     {confirm && <F1ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
-    {benefit && <F1BenefitConfirm key={`${benefit.row.v}:${benefit.field}`} row={benefit.row} field={benefit.field} ctx={ctx} onClose={() => setBenefit(null)} />}
   </Fragment>;
   const recovery = <F1RecoveryNotice ctx={ctx} onOpenPolicy={setPolicyEditor} onRankHowChecked={() => setHowEpoch((value) => value + 1)} />;
 
@@ -160,7 +187,6 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     try { return pendingF1Policy(owner, { ...editor, valuation: ctx.f1RewardValuation }) ?? undefined; }
     catch { return undefined; }
   };
-  const policyOperations = owner === undefined ? [] : listF1PolicyOperations(owner);
   const rowPending = (row: F1VRankRow) => policyOperations.filter(item => !item.ticket && item.original.values.rank === row.v).length;
   const pendingByRow = Object.fromEntries(rows.map((row) => [row.v, rowPending(row)]));
   const pendingTotal = Object.values(pendingByRow).reduce((sum, n) => sum + n, 0);
@@ -190,12 +216,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   );
 
   const lensInfo = lenses.find((item) => item.value === lens) ?? lenses[0];
-  const lensValue = (row: F1RankRowView): number | null => {
+  const lensValue = (row: F1VRankRow): number | null => {
     if (lens === "pop") return row.pop;
     const raw = lens === "l1" ? ratePct(row.purchaseL1Rate) : lens === "salary" ? row.monthlySalaryUsdt?.trim() : row[lens];
     return raw !== undefined && /^\d+(\.\d+)?$/.test(raw) ? Number(raw) : null;
   };
-  const lensText = (row: F1RankRowView, value: number | null) => {
+  const lensText = (row: F1VRankRow, value: number | null) => {
     if (value === null) return "—";
     if (lens === "pop") return fmt(value);
     if (lens === "l1") return `${ratePct(row.purchaseL1Rate)}%`;
@@ -203,7 +229,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     return lens === "salary" ? amountDisplay(row.monthlySalaryUsdt!.trim()) : fmt(value);
   };
   const lensMax = Math.max(1, ...rows.map((row) => lensValue(row) ?? 0));
-  const select = (code: string) => { setPicked(code); };
+  const select = (code: string) => { setPicked(code); writeQuery("rank", code); };
   const onLadderKey = (event: KeyboardEvent<HTMLButtonElement>) => {
     const codes = rows.map((row) => row.v);
     const at = codes.indexOf(selected.v);
@@ -261,7 +287,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const openThreshold = (row: F1VRankRow, field: F1ConditionField) => setPolicyEditor({ row, action: "threshold", field, valuation: ctx.f1RewardValuation });
   const detail = <RankDetail row={selected} rows={rows} ctx={ctx} rewards={rewardsOf(selected.v)} title={titlesByLevel[selected.v] ?? selected.label}
     panel={ladderIds.panel(selected.v)} canWrite={canWrite} pendingOf={pendingOf} hasPendingApproval={pendingApprovalRanks.has(selected.v)}
-    onThreshold={openThreshold} onBenefit={(field) => setBenefit({ row: selected, field })}
+    onThreshold={openThreshold} onBenefit={(field) => setPolicyEditor({ row: selected, action: "threshold", field, valuation: ctx.f1RewardValuation })}
     onGoV8={v8Review ? () => setView("v8") : undefined} salaryPresent={salaryPresent}
     onReward={(action, reward) => setPolicyEditor({ row: selected, action, reward, valuation: ctx.f1RewardValuation })}
     />;
@@ -359,6 +385,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     </Panel>
   );
 
+  const skipsOverrideCoverage = (values: BusinessFormValue) => values.targetV === "V8" && values.direction === "promote";
   const openOverride = () => {
     overrideRead.current += 1;
     const proposalSlot = (values?: BusinessFormValue) => `f-vrank-override:${values?.userId?.trim() ?? ""}`;
@@ -383,7 +410,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       proposalSlot,
       action: "手动调整会员等级",
       title: "人工调整等级",
-      briefKind: (value) => value.direction !== "rollback" && (ctx.rewards[value.targetV] ?? []).some((reward) => reward.type === "usdt" || reward.type === "uvt") ? "funds" : "config",
+      briefKind: (value) => !skipsOverrideCoverage(value) && value.direction !== "rollback" && (ctx.rewards[value.targetV] ?? []).some((reward) => reward.type === "usdt" || reward.type === "uvt") ? "funds" : "config",
       amplify: true,
       confirmLabel: "提交审批",
       effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有人工调级权限和审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
@@ -406,6 +433,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       businessForm: {
         kind: "multi-field",
         requireAnyChange: false,
+        amplifies: (values) => !skipsOverrideCoverage(values),
         onFieldChange: (field, next) => { if (field === "userId") void readUserRank(next); return next; },
         fields: [
           { key: "userId", label: "用户编号", inputKind: "text", required: true, placeholder: "请输入用户编号", pattern: "^[1-9]\\d*$", patternMessage: "用户编号须为正整数" },
@@ -428,17 +456,19 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   };
 
   // V8 审核：审核通过走现有人工改级（A2 审批），用户、目标 V8、方向升级预先填好（画板 B5）。升 V8 不查兑付覆盖率，所以不按放大算、不出覆盖率块。
-  const openV8Approve = (candidate: F1V8Candidate) => {
+  const openV8Approve = (candidate: F1V8Candidate, recoverOriginal = false) => {
     const v7 = rows.find((row) => row.v === "V7");
     const v8 = rows.find((row) => row.v === "V8");
     const v8Rewards = rewardsOf("V8");
     const lead = v8Rewards.length === 1 && (v8Rewards[0].type === "usdt" || v8Rewards[0].type === "uvt") ? rewardText(v8Rewards[0], ctx) : undefined;
     const name = candidate.nickname || candidate.userCode;
-    const rate = (row: F1RankRowView | undefined, key: "purchaseL1Rate" | "purchaseL2Rate") => row ? ratePct(row[key]) : undefined;
+    const rate = (row: F1VRankRow | undefined, key: "purchaseL1Rate" | "purchaseL2Rate") => row ? ratePct(row[key]) : undefined;
     const l1 = [rate(v7, "purchaseL1Rate"), rate(v8, "purchaseL1Rate")], l2 = [rate(v7, "purchaseL2Rate"), rate(v8, "purchaseL2Rate")];
     const salary = [v7?.monthlySalaryUsdt?.trim(), v8?.monthlySalaryUsdt?.trim()];
     setConfirm({
       proposalSlot: `f-vrank-override:${candidate.userId}`,
+      v8Review: true,
+      recoverOriginal,
       action: "手动调整会员等级",
       title: `V8 审核通过 · ${name}`,
       briefKind: "config",
@@ -460,8 +490,14 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       dialogClassName: "f1-policy-confirm f1-v8-confirm",
       detail: "人工把这位用户升到 V8，提交后需在「操作记录与审批」批准才执行。",
       submit: async (reason) => {
-        await ctx.proposeVRankOverride(candidate.userId, "V8", "promote", reason);
-        void ctx.queryV8Review?.();
+        try { await ctx.proposeVRankOverride(candidate.userId, "V8", "promote", reason); }
+        catch (error) {
+          if ((error as { backendMessage?: string }).backendMessage === "OBJECT_ALREADY_PENDING") {
+            throw new Error("没有提交：这位用户已有一张改级单在等审批，处理完再提交。");
+          }
+          throw error;
+        }
+        await ctx.queryV8Review?.();
       },
       done: "已提交，等待审批后执行",
     });
@@ -505,8 +541,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 
 /** 选中一级的详情：上排晋升条件 | 等级权益，下排晋级奖励 | 这一级的其他设置（画板 A1、A5）。 */
 function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf, hasPendingApproval, onThreshold, onBenefit, onReward, onGoV8, salaryPresent }: {
-  row: F1RankRowView;
-  rows: F1RankRowView[];
+  row: F1VRankRow;
+  rows: F1VRankRow[];
   ctx: FViewCtx;
   rewards: OpsVRankRewardItem[];
   title: string;
@@ -530,7 +566,10 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
   const legCount = row.legCount ?? "0";
   const legBroken = Number(legCount) > 0 && (row.legRank ?? "NONE") === "NONE";
   // 这一级有待审批单：条件、权益、晋级奖励同一个审批锁，按钮都禁用并写原因（B83 同一套锁）。
-  const lock = hasPendingApproval ? "等审批结果：批准、驳回或撤回后再改" : undefined;
+  const lock = hasPendingApproval ? "等审批结果：批准、驳回或撤回后再改"
+    : ctx.f1Loading || ctx.f1Error ? "请先成功重新读取会员等级。"
+    : [ "purchaseL1Rate", "purchaseL2Rate", "monthlySalaryUsdt" ].some(field => isF1BenefitField(field) && pendingOf({ row, action: "threshold", field }))
+      ? "这一级有结果未知的原操作，请先查询原结果。" : undefined;
 
   const single = (field: "selfBuy" | "teamGv" | "directRefs", source: F1VRankRow | undefined) => {
     const raw = source?.[field];
@@ -542,9 +581,9 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
     if (source.legCount === "0") return "不要求";
     return !source.legRank || source.legRank === "NONE" ? `${fmtText(source.legCount)} 个 · 最低等级未设置` : `${fmtText(source.legCount)} 个 ${source.legRank}`;
   };
-  const near = (text: (source: F1RankRowView) => string | undefined) =>
+  const near = (text: (source: F1VRankRow) => string | undefined) =>
     [prev && text(prev) !== undefined ? `${prev.v} ${text(prev)}` : undefined, next && text(next) !== undefined ? `${next.v} ${text(next)}` : undefined].filter(Boolean).join(" · ") || undefined;
-  const mini = (value: (source: F1RankRowView) => number) => {
+  const mini = (value: (source: F1VRankRow) => number) => {
     const values = rows.map(value);
     const max = Math.max(1, ...values);
     return (
@@ -573,11 +612,12 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
   const benefitRow = (field: F1BenefitField, name: string, info: { what: string; where?: string; when: string; effect: string; note?: ReactNode }) => {
     const value = benefitValue(row, field);
     const salary = field === "monthlySalaryUsdt";
-    const text = (source: F1RankRowView) => {
+    const text = (source: F1VRankRow) => {
       const raw = benefitValue(source, field);
       if (raw === undefined) return undefined;
       return salary ? Number(raw) === 0 ? "不发" : `${amountDisplay(raw)} USDT` : `${raw}%`;
     };
+    const pending = pendingOf({ row, action: "threshold", field });
     const fixed = salary && (row.v === "V0" || row.v === "V1");
     if (fixed) return <ConfigRow key={field} name={name} what="V2 起才有月薪。"
       value={<span className="f1-th"><span className="f1-weak">不发</span>{value !== undefined && mini((source) => numeric(benefitValue(source, field)))}</span>}
@@ -587,8 +627,9 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
         ? <span className="f1-weak">—</span>
         : <span className="f1-th"><span className={text(row) === "不发" ? "f1-weak" : "f1-strong"}>{text(row)}</span>{mini((source) => numeric(benefitValue(source, field)))}</span>}
       sub={value === undefined ? "暂时读不到" : near(text)}
-      action={value !== undefined && canWrite ? (describedBy) => <span className="f1-row-actions">
-        <Button size="sm" aria-describedby={describedBy} aria-label={`调整 ${row.v} ${name}`} disabledReason={lock} onClick={() => onBenefit(field)}>调整</Button>
+      action={pending || value !== undefined && canWrite ? (describedBy) => <span className="f1-row-actions">
+        {pending ? unknownTag : null}
+        <Button size="sm" aria-describedby={describedBy} aria-label={`${pending ? "查看原操作" : "调整"} ${row.v} ${name}`} disabledReason={pending ? undefined : lock} onClick={() => onBenefit(field)}>{pending ? "查看原操作" : "调整"}</Button>
       </span> : undefined} />;
   };
 

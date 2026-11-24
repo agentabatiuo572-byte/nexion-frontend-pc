@@ -1,5 +1,5 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { setBusinessZone } from "@/lib/admin/business-time";
+import { parseBusinessTime, setBusinessZone } from "@/lib/admin/business-time";
 
 /** R-1: A3 业务时区. GET is open to every signed-in console; changes are super-admin only. */
 export type BusinessZoneOption = { countryCode: string | null; countryName: string; zoneId: string; label: string };
@@ -57,4 +57,28 @@ export async function scheduleBusinessZone(input: { countryCode: string | null; 
 
 export async function cancelBusinessZone(versionId: number, reason: string, idempotencyKey: string) {
   return request("/cancel", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ versionId, reason: reason.trim() }) });
+}
+
+/** The team calendar applies the zone that was in force at the instant being classified. */
+export function growthTeamDate(calendar: BusinessCalendarView | null, timestamp: number): string | undefined {
+  if (!calendar || !Number.isFinite(timestamp)) return undefined;
+  let zone = calendar.trackZones.GROWTH_TEAM;
+  let effectiveAt = -Infinity;
+  for (const version of calendar.history) {
+    if (version.track !== "GROWTH_TEAM" && version.track !== "GLOBAL") continue;
+    const at = parseBusinessTime(version.effectiveStorageAt);
+    if (at <= timestamp && at > effectiveAt) {
+      effectiveAt = at;
+      zone = version.zoneId;
+    }
+  }
+  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(timestamp);
+}
+
+export function isPreviousMonthSalaryClaim(calendar: BusinessCalendarView | null, month: string, claimedAt: string): boolean {
+  const claimedDate = growthTeamDate(calendar, parseBusinessTime(claimedAt));
+  if (!claimedDate?.endsWith("-01")) return false;
+  const [year, claimMonth] = claimedDate.split("-").map(Number);
+  const previousMonth = claimMonth === 1 ? `${year - 1}-12` : `${year}-${String(claimMonth - 1).padStart(2, "0")}`;
+  return month === previousMonth;
 }

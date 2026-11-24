@@ -135,14 +135,14 @@ export async function queryF2Proposal(adminId: number, original: F2Recovery) {
 }
 
 /** Persist the exact request before POST. Replay never rebuilds current inputs. */
-export async function sendF2Proposal(adminId: number, slot: string, spec?: ProposeSpec) {
+export async function sendF2Proposal(adminId: number, slot: string, spec?: ProposeSpec, ranked = false) {
   let original = f2ProposalRecord(adminId, slot);
   const current = requireWriter(adminId, slot, spec ?? original?.spec);
   const recovering = !spec;
   if (spec && original) throw new Error("F2_PROPOSAL_UNRESOLVED");
   if (!original) {
     if (!spec) throw new Error("F2_PROPOSAL_ORIGINAL_MISSING");
-    if (spec.command.op === "f_unilevel_bootstrap") validateF2UnilevelBootstrap(spec.command.params);
+    if (spec.command.op === "f_unilevel_bootstrap") validateF2UnilevelBootstrap(spec.command.params, ranked);
     const request = {
       action: spec.action, obj: spec.obj, beforeValue: spec.before, afterValue: spec.after,
       operator: current.operator || current.username, operatorRole: roleLabel(current.role),

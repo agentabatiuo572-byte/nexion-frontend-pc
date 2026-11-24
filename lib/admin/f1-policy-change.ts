@@ -11,6 +11,7 @@ import type { OpsVRankRewardItem, VRankRewardType } from "./platform-types";
 import { fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
 import { isOriginalCommandOrigin, queryOriginalCommand, type OriginalCommandRoute } from "./original-command-query";
 import { formatAdminApiError } from "./error-messages";
+import { compareDecimal, f1BenefitInputError, f1BenefitWriteValue, isF1BenefitField, type F1BenefitField } from "./f1-rank-benefit";
 
 export type F1ConditionField = "selfBuy" | "teamGv" | "directRefs" | "legCount" | "legRank";
 export type F1PolicyAction = "threshold" | "reward_add" | "reward_update" | "reward_remove";
@@ -18,10 +19,10 @@ export type F1PolicyForm = Record<string, string>;
 export type F1PolicyReward = { type: VRankRewardType; amount?: string; voucherId?: string; skuId?: string; custom?: string };
 export type F1PolicyValues = {
   rank: string; expectedRevision: string; action: F1PolicyAction;
-  field?: F1ConditionField; value?: string; rewardId?: string; reward?: F1PolicyReward;
+  field?: F1ConditionField | F1BenefitField; value?: string; rewardId?: string; reward?: F1PolicyReward;
 };
 export type F1PolicyEditor = {
-  row: F1VRankRow; action: F1PolicyAction; field?: F1ConditionField;
+  row: F1VRankRow; action: F1PolicyAction; field?: F1ConditionField | F1BenefitField;
   reward?: OpsVRankRewardItem; valuation: string | null;
   recoveryCommandKey?: string;
   approvalRequired?: boolean;
@@ -66,6 +67,16 @@ export function f1PolicyInputError(editor: F1PolicyEditor, form: F1PolicyForm, v
   if (editor.action === "reward_remove") return undefined;
   if (editor.action === "threshold") {
     const value = form.value?.trim() ?? "";
+    if (isF1BenefitField(editor.field)) {
+      const field = editor.field;
+      if (field === "monthlySalaryUsdt" && !/^V[2-8]$/.test(editor.row.v)) return "V2 起才有月薪。";
+      const error = f1BenefitInputError(field, value);
+      if (error) return error;
+      const direction = compareDecimal(f1BenefitWriteValue(field, value), editor.row[field] ?? "");
+      if (direction === undefined) return "当前等级权益读不到，请重新加载。";
+      if (direction === 0) return "新值和现在一样，改了才能保存。";
+      return undefined;
+    }
     if (editor.field === "legRank") {
       if (value !== "NONE" && (!/^V[0-8]$/.test(value) || Number(value.slice(1)) >= Number(editor.row.v.slice(1)))) return "分支等级须低于当前等级。";
     } else {
@@ -95,6 +106,7 @@ export function f1PolicyNeedsApproval(editor: F1PolicyEditor, form: F1PolicyForm
   if (editor.approvalRequired) return true;
   if (editor.action === "threshold") {
     const field = editor.field!, oldValue = editor.row[field] ?? "", proposed = form.value?.trim() ?? "";
+    if (isF1BenefitField(field)) return compareDecimal(f1BenefitWriteValue(field, proposed), oldValue) === 1;
     if (field !== "legCount" && field !== "legRank") {
       return /^\d+$/.test(proposed) && /^\d+$/.test(oldValue) && BigInt(proposed) < BigInt(oldValue);
     }
@@ -183,9 +195,14 @@ export async function submitF1Policy(
       ...(form.rtype === "sku" ? { skuId: form.skuId } : {}),
       ...(form.rtype === "custom" ? { custom: form.custom.trim() } : {}),
     };
+    const benefit = editor.action === "threshold" && isF1BenefitField(editor.field) ? editor.field : undefined;
+    if (benefit) {
+      const error = f1PolicyInputError(editor, form, [], []);
+      if (error) throw new Error(error);
+    }
     const values: F1PolicyValues = {
       rank: editor.row.v, expectedRevision: editor.row.policyRevision!, action: editor.action,
-      ...(editor.action === "threshold" ? { field: editor.field, value: form.value.trim() } : {}),
+      ...(editor.action === "threshold" ? { field: editor.field, value: benefit ? f1BenefitWriteValue(benefit, form.value) : form.value.trim() } : {}),
       ...(editor.reward ? { rewardId: editor.reward.id } : {}),
       ...(editor.action === "reward_add" || editor.action === "reward_update" ? { reward } : {}),
     };
@@ -265,7 +282,7 @@ export async function submitF1Policy(
       }
       // A saved successful receipt settles the command even after its retry window.
       attempts.forget(fingerprint, key);
-      acknowledgement = original.editor.action === "threshold" ? "晋升条件已更新，下一轮评估使用新值" : original.editor.action === "reward_remove" ? "奖励已移除，历史发放记录保留" : "奖励模板已更新，后续发放使用新值";
+      acknowledgement = original.editor.action === "threshold" ? isF1BenefitField(original.editor.field) ? "等级权益已更新，立即生效" : "晋升条件已更新，下一轮评估使用新值" : original.editor.action === "reward_remove" ? "奖励已移除，历史发放记录保留" : "奖励模板已更新，后续发放使用新值";
     }
   } catch (error) {
     const saved = record();

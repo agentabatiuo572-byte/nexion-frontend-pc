@@ -16,7 +16,7 @@ import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import {
   f1ConditionLabels, f1PolicyInitialForm, f1PolicyInputError, f1PolicyNeedsApproval,
-  formatF1ExactAmount, isF1FundReward, pendingF1Policy, submitF1Policy, type F1PolicyEditor,
+  formatF1ExactAmount, isF1FundReward, pendingF1Policy, submitF1Policy, type F1PolicyEditor, type F1ConditionField,
 } from "@/lib/admin/f1-policy-change";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { FViewCtx } from "./types";
@@ -61,13 +61,14 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
   const editor = opening.pending?.original.editor ?? baseline;
   const form = opening.pending?.original.form ?? f1PolicyInitialForm(editor);
   const isCondition = editor.action === "threshold", remove = editor.action === "reward_remove";
-  const fieldLabel = isCondition ? f1ConditionLabels[editor.field!] : "奖励";
+  const condition = editor.field as F1ConditionField;
+  const fieldLabel = isCondition ? f1ConditionLabels[condition] : "奖励";
   const currentLabel = !baselineReady ? "—" : isCondition ? valueLabel(editor.row[editor.field!] ?? "")
     : editor.reward ? f1RewardPolicyLabel(editor.reward, ctx) : "尚未配置";
   // 记进操作记录的名字，和改版前一样。
   const action = remove && opening.pending ? `${editor.row.v} · 核对原移除操作` : isCondition ? `调整 ${editor.row.v} 晋升条件 · ${fieldLabel}`
     : `${editor.row.v} · ${remove ? "移除奖励" : editor.action === "reward_add" ? "新增奖励" : "编辑奖励"}`;
-  const title = opening.pending ? `${editor.row.v} 的原操作` : isCondition ? `调整 ${editor.row.v} 的${DISPLAY[editor.field!] ?? fieldLabel}`
+  const title = opening.pending ? `${editor.row.v} 的原操作` : isCondition ? `调整 ${editor.row.v} 的${DISPLAY[condition] ?? fieldLabel}`
     : remove ? `移除 ${editor.row.v} 的奖励` : editor.action === "reward_add" ? `给 ${editor.row.v} 添加奖励` : `编辑 ${editor.row.v} 的奖励`;
   const disabledReason = opening.error ?? (!opening.pending && (!baselineReady || ctx.f1Loading || ctx.f1Error || ctx.vrankRows.length === 0) ? "请先成功重新读取会员等级。" : undefined) ?? (session?.adminId !== owner || !session?.authorities.includes("network_f1_write")
     ? "当前账号没有这项操作的权限，请关闭弹窗后重新核对。"
@@ -186,7 +187,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
         : `增加资金奖励（加金额、改成资金、按 UVT 现价折算后变多）要提交审批，${SUPER_APPROVER}（需有审批批准权限）批准后才生效。其余改动确认后立即生效。`}>
         {isCondition ? "调低要批准 · 调高立即生效" : "增加资金要批准 · 其余立即生效"}</StatusTag>;
   // 第一次被拒后已按重读的当前值重算：值或估值变了时说一句，免得运营以为还是打开时的值（红色那句是按旧值判断的）。
-  const withUnit = (raw: string) => `${valueLabel(raw)}${UNIT[editor.field!] ? ` ${UNIT[editor.field!]}` : ""}`;
+  const withUnit = (raw: string) => `${valueLabel(raw)}${UNIT[condition] ? ` ${UNIT[condition]}` : ""}`;
   const changes = !opening.pending && baselineReady && baselineRevision > 0 ? isCondition
     ? [(requested.row[editor.field!] ?? "") !== (editor.row[editor.field!] ?? "") && `打开时 ${withUnit(requested.row[editor.field!] ?? "")}，现在 ${withUnit(editor.row[editor.field!] ?? "")}`]
     : [requested.reward && editor.reward && f1RewardPolicyLabel(requested.reward, ctx) !== currentLabel && `打开时 ${f1RewardPolicyLabel(requested.reward, ctx)}，现在 ${currentLabel}`,
@@ -261,7 +262,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
             ? <StatusTag tone="warn" icon={LockOpen}>放宽，要批准</StatusTag>
             : <StatusTag tone="neutral" icon={ShieldCheck}>收紧或不变，立即生效</StatusTag> : undefined;
           return <>
-            <DiffField before={currentLabel} unit={baselineReady ? UNIT[editor.field!] : undefined} hint={editor.field === "legRank" ? "选比这一级低的等级，或者「未设置」" : RANGE[editor.field!]}
+            <DiffField before={currentLabel} unit={baselineReady ? UNIT[condition] : undefined} hint={editor.field === "legRank" ? "选比这一级低的等级，或者「未设置」" : RANGE[editor.field!]}
               state={state} error={(values.value ?? "").trim() !== "" ? inputError : undefined}
               note={editor.field === "legCount" || editor.field === "legRank" ? "人数为 0 时不看这一项；大于 0 时要同时设好比这一级低的最低等级，否则这一项一律判不满足。" : undefined}>
               {(control) => editor.field === "legRank"

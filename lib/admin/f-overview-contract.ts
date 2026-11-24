@@ -149,6 +149,105 @@ function uniqueCodes(
   return codes;
 }
 
+/** Both admin searches accept the public U code or its underlying positive system ID. */
+export function teamUserId(value: string): string | null {
+  const match = /^U?(\d+)$/i.exec(value.trim());
+  if (!match) return null;
+  const id = match[1].replace(/^0+/, "");
+  return id && (id.length < 19 || id.length === 19 && id <= "9223372036854775807") ? id : null;
+}
+
+export type F5SalaryFields = {
+  salaryMonth?: string;
+  salaryRank?: string;
+  claimNo?: string;
+  claimedAt?: string;
+};
+
+export function parseF5SalaryFields(event: F5SalaryFields & { kind?: string | null }): F5SalaryFields {
+  if (event.kind !== "vrank_salary") return {};
+  const fields: F5SalaryFields = {};
+  if (event.salaryMonth != null) {
+    const month = text(event.salaryMonth, "F5", "salaryMonth");
+    if (!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(month)) invalid("F5", "salaryMonth");
+    fields.salaryMonth = month;
+  }
+  if (event.salaryRank != null) {
+    const rank = text(event.salaryRank, "F5", "salaryRank");
+    if (!/^V[2-8]$/.test(rank)) invalid("F5", "salaryRank");
+    fields.salaryRank = rank;
+  }
+  if (event.claimNo != null) fields.claimNo = text(event.claimNo, "F5", "claimNo");
+  if (event.claimedAt != null) {
+    const claimedAt = text(event.claimedAt, "F5", "claimedAt");
+    if (!claimedAt.endsWith("Z") || !Number.isFinite(Date.parse(claimedAt))) invalid("F5", "claimedAt");
+    fields.claimedAt = claimedAt;
+  }
+  return fields;
+}
+
+export function rankPurchaseRate(value: unknown): string | undefined {
+  if (typeof value !== "string" || !/^(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)$/.test(value)) return undefined;
+  return value;
+}
+
+export type F1SalaryFilters = { user: string; month: string; rank: string };
+export const F1_EMPTY_SALARY_FILTERS: F1SalaryFilters = { user: "", month: "", rank: "" };
+
+export function parseF1SalaryClaims(value: unknown) {
+  const page = record(value, "F1", "salaryClaims");
+  return {
+    nextCursor: page.nextCursor === null ? null : String(positiveInteger(page.nextCursor, "F1", "nextCursor")),
+    items: array(page, "items", "F1").map(value => {
+      const row = record(value, "F1", "salaryClaim");
+      const amount = row.amountUsdt;
+      if (typeof amount !== "string" || !/^\d{1,12}(?:\.\d{1,6})?$/.test(amount)) invalid("F1", "salaryClaim.amountUsdt");
+      const month = text(row.month, "F1", "salaryClaim.month");
+      const rankCode = text(row.rankCode, "F1", "salaryClaim.rankCode");
+      if (!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(month) || !/^V[2-8]$/.test(rankCode)) invalid("F1", "salaryClaim.period");
+      const claimedAt = text(row.claimedAt, "F1", "salaryClaim.claimedAt");
+      if (!claimedAt.endsWith("Z") || !Number.isFinite(Date.parse(claimedAt))) invalid("F1", "salaryClaim.claimedAt");
+      return {
+        claimNo: text(row.claimNo, "F1", "salaryClaim.claimNo"),
+        billNo: text(row.billId, "F1", "salaryClaim.billId"),
+        userId: String(positiveInteger(row.userId, "F1", "salaryClaim.userId")),
+        userCode: text(row.userNo, "F1", "salaryClaim.userNo"),
+        nickname: typeof row.nickname === "string" ? row.nickname : "",
+        month, rankCode, amountUsdt: amount, claimedAt,
+      };
+    }),
+  };
+}
+
+export function parseF1V8Review(value: unknown) {
+  const page = record(value, "F1", "v8Review");
+  const nextCursor = page.nextCursor;
+  if (nextCursor !== null && (typeof nextCursor !== "string" || !/^[01]:[1-9]\d*$/.test(nextCursor))) invalid("F1", "nextCursor");
+  return {
+    nextCursor,
+    pendingReviewCount: nonNegativeInteger(page.pendingReviewCount, "F1", "pendingReviewCount"),
+    items: array(page, "items", "F1").map(value => {
+      const row = record(value, "F1", "v8Candidate");
+      if (row.currentRank !== "V7" || typeof row.pendingV8Proposal !== "boolean"
+        || row.pendingV8Proposal !== (typeof row.pendingV8ProposalCreatedAt === "string")) invalid("F1", "v8Candidate.status");
+      return {
+        userId: String(positiveInteger(row.userId, "F1", "v8Candidate.userId")),
+        userCode: text(row.userCode, "F1", "v8Candidate.userCode"),
+        nickname: typeof row.nickname === "string" ? row.nickname : "",
+        currentRank: row.currentRank,
+        selfComputePoints: String(nonNegativeInteger(row.selfComputePoints, "F1", "v8Candidate.selfComputePoints")),
+        teamComputePoints: String(nonNegativeInteger(row.teamComputePoints, "F1", "v8Candidate.teamComputePoints")),
+        directRefs: String(nonNegativeInteger(row.directRefs, "F1", "v8Candidate.directRefs")),
+        qualifiedDownlineCount: String(nonNegativeInteger(row.qualifiedDownlineCount, "F1", "v8Candidate.qualifiedDownlineCount")),
+        inviterCode: typeof row.inviterCode === "string" ? row.inviterCode : "",
+        inviterNickname: typeof row.inviterNickname === "string" ? row.inviterNickname : "",
+        pendingV8Proposal: row.pendingV8Proposal,
+        pendingV8ProposalCreatedAt: typeof row.pendingV8ProposalCreatedAt === "string" ? row.pendingV8ProposalCreatedAt : undefined,
+      };
+    }),
+  };
+}
+
 export function assertF1Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F1");
   domain(row, "F1");

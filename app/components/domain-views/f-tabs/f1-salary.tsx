@@ -2,55 +2,56 @@
 
 /**
  * F1「月薪领取」页签（画板 C1、C2、C3）：月薪领取记录，按用户、月份、等级查，按领取时间倒序，游标每批 100 条。
- * F1-RANK-WIRE：数据来自 ctx.salaryClaims，查询调 ctx.querySalaryClaims(filters, cursor)（B87-BE-04）。
  * 不传（这个后端读不到月薪）时整块写没有月薪数据，查询条不出现。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Banknote } from "lucide-react";
 import { BlockState, Button, Cell, Drawer, FilterBar, FilterField, Input, KeyValues, Panel, Select, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessDay, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { growthTeamDate, isPreviousMonthSalaryClaim } from "@/lib/admin/business-calendar-client";
+import { F1_EMPTY_SALARY_FILTERS as EMPTY, teamUserId } from "@/lib/admin/f-overview-contract";
+import type { F1VRankRow } from "@/lib/admin/f1-client";
 import { amountDisplay } from "@/lib/format";
 import type { FViewCtx } from "./types";
-import type { F1RankRowView, F1SalaryClaim, F1SalaryFilters } from "./f1-rank-types";
-
-const EMPTY: F1SalaryFilters = { user: "", month: "", rank: "" };
+import type { F1SalaryClaim, F1SalaryFilters } from "./f1-rank-types";
 
 /** 近 12 个月（业务时区），本月在前。 */
-function recentMonths(): string[] {
-  const [year, month] = businessDay(0).slice(0, 7).split("-").map(Number);
+function recentMonths(today: string): string[] {
+  const [year, month] = today.slice(0, 7).split("-").map(Number);
   return Array.from({ length: 12 }, (_, i) => {
     const at = new Date(Date.UTC(year, month - 1 - i, 1));
     return `${at.getUTCFullYear()}-${String(at.getUTCMonth() + 1).padStart(2, "0")}`;
   });
 }
 
-/** 领取时间（业务时区）不在月薪那个月：只会是 1 号领上个月。由月份和领取时间比出来，不要新字段。 */
-const lateClaim = (claim: F1SalaryClaim) => {
-  const at = formatBusinessTimeCompact(claim.claimedAt, "");
-  return at !== "" && at.slice(0, 7) !== claim.month;
-};
-
-export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1RankRowView[] }) {
-  const [draft, setDraft] = useState<F1SalaryFilters>(EMPTY);
-  const [applied, setApplied] = useState<F1SalaryFilters>(EMPTY);
+export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1VRankRow[] }) {
+  const [draft, setDraft] = useState<F1SalaryFilters>(() => ctx.salaryClaims?.filters ?? EMPTY);
+  const [queryError, setQueryError] = useState(false);
   const [openNo, setOpenNo] = useState<string | null>(null);
   const state = ctx.salaryClaims;
   const zone = businessZone().label;
-  // 第一次打开这个页签读一次（不带条件）；之后只在点「查询」、移除条件、加载更早记录时读。
-  const opened = useRef(false);
+  const query = ctx.querySalaryClaims;
+  const lateClaim = (claim: F1SalaryClaim) => isPreviousMonthSalaryClaim(ctx.teamBusinessCalendar, claim.month, claim.claimedAt);
+  const today = growthTeamDate(ctx.teamBusinessCalendar, Date.now()) ?? businessDay();
   useEffect(() => {
-    if (opened.current || !ctx.querySalaryClaims || !ctx.salaryClaims) return;
-    opened.current = true;
-    if (ctx.salaryClaims.items.length === 0 && !ctx.salaryClaims.loading) void ctx.querySalaryClaims(EMPTY);
-  }, [ctx.querySalaryClaims, ctx.salaryClaims]);
+    if (state && !state.loaded && query) void query(state.filters);
+  }, [query, state]);
   if (!state || !ctx.querySalaryClaims) {
     return <Panel title="月薪领取记录" icon={Banknote} tone="role-1"
       explain="用户每领一次月薪记一条，领到的直接进可用余额，不冷却。">
       <BlockState state="empty" title="现在没有月薪数据" detail="这里还读不到各级月薪和领取记录；读到后会按领取时间倒序列出。" />
     </Panel>;
   }
-  const query = ctx.querySalaryClaims;
-  const run = (next: F1SalaryFilters) => { setApplied(next); setDraft(next); void query(next); };
+  const applied = state.filters;
+  const run = (next: F1SalaryFilters) => {
+    const invalidUser = !!next.user.trim() && teamUserId(next.user) === null;
+    setQueryError(invalidUser);
+    if (invalidUser) return;
+    const filters = { ...next, user: next.user.trim() };
+    setDraft(filters);
+    void ctx.querySalaryClaims!(filters);
+  };
+  const read = ctx.querySalaryClaims;
   const hasFilter = !!(applied.user || applied.month || applied.rank);
   const chips = [
     applied.user && { key: "user", label: `用户 ${applied.user}`, onRemove: () => run({ ...applied, user: "" }) },
@@ -62,11 +63,11 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1RankRowVi
   const current = items.find((item) => item.claimNo === openNo) ?? null;
   const at = current ? items.indexOf(current) : -1;
   return <>
-    <FilterBar onSubmit={() => run(draft)} querying={state.loading} onClear={() => run(EMPTY)} canClear={hasFilter} applied={chips}>
+    <FilterBar onSubmit={() => run(draft)} querying={state.loading} onClear={() => run(EMPTY)} canClear={hasFilter} applied={chips} notice={queryError ? "查询条件有误：请填用户编码或正整数系统编号。这次没有查询。" : undefined}>
       <FilterField grow><Input aria-label="领取用户编码或系统编号" placeholder="用户编码或系统编号" value={draft.user}
-        onChange={(event) => setDraft({ ...draft, user: event.target.value })} /></FilterField>
+        onChange={(event) => { setDraft({ ...draft, user: event.target.value }); setQueryError(false); }} /></FilterField>
       <FilterField><Select aria-label="月薪月份" value={draft.month} onChange={(value) => setDraft({ ...draft, month: value })}
-        options={[{ value: "", label: "全部月份" }, ...recentMonths().map((month) => ({ value: month, label: month }))]} /></FilterField>
+        options={[{ value: "", label: "全部月份" }, ...recentMonths(today).map((month) => ({ value: month, label: month }))]} /></FilterField>
       <FilterField><Select aria-label="月薪等级" value={draft.rank} onChange={(value) => setDraft({ ...draft, rank: value })}
         options={[{ value: "", label: "全部等级" }, ...salaryRanks.map((row) => ({ value: row.v, label: row.v }))]} /></FilterField>
     </FilterBar>
@@ -80,7 +81,7 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1RankRowVi
           <Th className="f1-col-time">领取时间（{zone}）</Th><Th align="right" sticky="end">操作</Th>
         </tr></thead>
         <tbody>
-          {state.error && items.length === 0 ? <TableMessage columns={6} role="alert">月薪领取记录读取失败 · {state.error} <Button size="sm" onClick={() => void query(applied)}>重试</Button></TableMessage>
+          {state.error && items.length === 0 ? <TableMessage columns={6} role="alert">月薪领取记录读取失败 · {state.error} <Button size="sm" onClick={() => void read(applied)}>重试</Button></TableMessage>
             : items.length === 0 ? state.loading ? <TableLoading columns={6} />
               : hasFilter ? <TableMessage columns={6}>没有符合条件的月薪领取记录 <Button size="sm" onClick={() => run(EMPTY)}>清除筛选</Button></TableMessage>
                 : <TableMessage columns={6}>还没有人领过月薪；V2 及以上的用户在 App 领取后会出现在这里</TableMessage>
@@ -98,7 +99,7 @@ export function F1SalaryClaims({ ctx, rows }: { ctx: FViewCtx; rows: F1RankRowVi
       </Table>
       {items.length > 0 && (state.nextCursor || state.error) && <div className="f1-more">
         {state.error && <span className="f1-more-error" role="alert">没有加载到更早记录 · {state.error}</span>}
-        <Button size="sm" loading={state.loading} onClick={() => void query(applied, state.nextCursor ?? undefined)}>{state.error ? "重试" : "加载更早记录"}</Button>
+        <Button size="sm" loading={state.loading} onClick={() => void read(applied, state.nextCursor ?? undefined)}>{state.error ? "重试" : "加载更早记录"}</Button>
       </div>}
       <Drawer open={!!current} onClose={() => setOpenNo(null)} title="月薪领取" icon={Banknote} tone="role-1"
         sub={current ? <span data-mono="">{current.claimNo}</span> : undefined}

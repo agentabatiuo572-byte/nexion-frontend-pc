@@ -3,25 +3,30 @@
 /**
  * F1「V8 审核」页签（画板 A6、A7）：已满足 V8 数值条件的 V7。不是待办：审核不通过的不用处理，留在名单里，系统也不会自动升 V8。
  * 「审核通过」走现有人工改级（A2 审批），用户、目标等级 V8、方向升级预先填好（确认框在 f1-vrank 里开）。
- * F1-RANK-WIRE：名单数据来自 ctx.v8Review（B88-BE-02），加载更多调 ctx.queryV8Review(true)。
  */
-import { CircleCheck, Hourglass, UserCheck } from "lucide-react";
+import { CircleCheck, CircleHelp, Hourglass, UserCheck } from "lucide-react";
 import { BlockState, Button, Cell, Panel, StatusTag, Table, TableLoading, Td, Th, Tr } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fmtNum } from "@/lib/format";
 import type { FViewCtx } from "./types";
-import type { F1RankRowView, F1V8Candidate, F1V8ReviewState } from "./f1-rank-types";
+import type { F1VRankRow } from "@/lib/admin/f1-client";
+import type { F1V8Candidate, F1V8ReviewState } from "./f1-rank-types";
 
 const num = (raw: string) => /^\d+$/.test(raw.trim()) ? fmtNum(Number(raw)) : raw.trim() || "—";
 
 export function F1V8Review({ ctx, state, v8, canApprove, onApprove }: {
   ctx: FViewCtx;
   state: F1V8ReviewState;
-  v8: F1RankRowView | undefined;
+  v8: F1VRankRow | undefined;
   canApprove: boolean;
-  onApprove: (candidate: F1V8Candidate) => void;
+  onApprove: (candidate: F1V8Candidate, recoverOriginal?: boolean) => void;
 }) {
   const rows = state.items;
+  const unknownUsers = new Set(ctx.f1Proposals.flatMap(row => {
+    const command = row.spec?.command;
+    return !row.ticket && command?.op === "f_vrank_override" && command.params.targetV === "V8" && command.params.direction === "promote"
+      ? [String(command.params.userId)] : [];
+  }));
   const sent = rows.filter((row) => row.pendingV8Proposal).length;
   const zone = businessZone().label;
   const req = (text: string | undefined) => text ? <span className="f1-th-req">≥ {text}</span> : null;
@@ -57,7 +62,10 @@ export function F1V8Review({ ctx, state, v8, canApprove, onApprove }: {
                   <Td align="right"><Cell num main={`${num(row.directRefs)} 人`} /></Td>
                   <Td align="right"><Cell num main={v8?.legRank && v8.legRank !== "NONE" ? `${num(row.qualifiedDownlineCount)} 个 ${v8.legRank} 及以上` : num(row.qualifiedDownlineCount)} /></Td>
                   <Td><Cell mono main={row.inviterCode || "—"} sub={row.inviterCode ? <span className="f5-sans">{row.inviterNickname || "—"}</span> : undefined} /></Td>
-                  <Td align="right" sticky="end" data-fit="">{row.pendingV8Proposal
+                  <Td align="right" sticky="end" data-fit="">{unknownUsers.has(row.userId)
+                    ? <Cell main={<StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原内容重试。">结果未知</StatusTag>}
+                      sub={<Button size="sm" onClick={() => onApprove(row, true)}>查看原操作</Button>} />
+                    : row.pendingV8Proposal
                     ? <Cell main={<StatusTag tone="progress" icon={Hourglass}>待审批</StatusTag>}
                       sub={row.pendingV8ProposalCreatedAt ? <span className="f5-sans">已提交 {formatBusinessTimeCompact(row.pendingV8ProposalCreatedAt, "—")}</span> : undefined} />
                     : canApprove

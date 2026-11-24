@@ -258,7 +258,7 @@ function PayoutDetail({ record }: { record: F1RewardPayout }) {
       explain: record.status === "FAILED" ? "发放失败的这页没有重试入口。" : undefined },
     { key: "user", label: "用户", value: record.userId },
     { key: "rank", label: "等级", value: dash(record.rankCode) },
-    { key: "sponsor", label: "邀请人", value: dash(record.sponsorUserId), explain: "UVT 奖励默认发给邀请人；没有邀请人时发给本人。" },
+    { key: "sponsor", label: "邀请人", value: dash(record.sponsorUserId), explain: "晋级 UVT 发给本人；以前的记录可能发给了邀请人。" },
     { key: "bill", label: "账单", value: dash(record.billId), mono: !!record.billId },
     { key: "event", label: "奖励记录", value: dash(record.commissionEventId), mono: !!record.commissionEventId, explain: "资金奖励对应的奖励记录；券、商品、自定义奖品没有。" },
     { key: "trigger", label: "触发事件", value: dash(record.triggerEventId), mono: !!record.triggerEventId },

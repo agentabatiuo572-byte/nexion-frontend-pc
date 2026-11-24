@@ -914,6 +914,7 @@ const CHANGE_LABELS: Record<string, string> = {
   ranks: "会员等级", rankCode: "等级", titleCn: "中文头衔", titleEn: "英文头衔",
   selfComputePoints: "自购算力点", directRefs: "一二级已购人数", teamComputePoints: "团队算力点",
   requiredDownlineRank: "下级领导者最低等级", requiredDownlineCount: "下级领导者人数", unilevelDepth: "团队购买奖励范围",
+  purchaseL1Rate: "一级好友购买奖励比例", purchaseL2Rate: "二级好友购买奖励比例", monthlySalaryUsdt: "月薪（USDT）",
   peerBonusRate: "同级奖比例", leadershipVotes: "团队激励池票数", rewards: "晋升奖励",
 };
 // Only these three reward contracts override the shared product-field vocabulary.
@@ -2427,7 +2428,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           : w.type === "sos" ? "核对值班授权、影响范围和恢复条件，理由写清依据或工单号。"
             : i5Publish || w.operationCode === "i5_matrix_configure" ? "核对这次披露改了什么，理由写清版本依据。"
             : "核对修改前后的值和影响范围，理由写清依据或工单号。";
-    const amplifies = w.amplifies && !w.coverageCheckOnApproval;
+    // Older PC tickets marked every promotion as amplifying. V8 is the highest target,
+    // and the backend skips coverage for the promotion even on those retained tickets.
+    const v8Approval = w.operationCode === "f_vrank_override" && w.after.trim() === "V8";
+    const amplifies = w.amplifies && !w.coverageCheckOnApproval && !v8Approval;
     const k1 = k1TicketView(w);
     const k1Spec: FundSpec | undefined = k1 && (k1.kind === "release" ? {
       irreversible: true,
@@ -2450,6 +2454,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     });
     // F2 首次配置：七层逐行列出后端写在单上的数，不显示原文的修改前后。
     const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
+    const rankedBootstrap = boot?.[0]?.usdtPct === "0" && boot?.[1]?.usdtPct === "0";
     const bootSpec: FundSpec | undefined = boot && {
       irreversible: false,
       impact: "批准后七层规则一次建好；整体结算不会自动启用。",
@@ -2458,8 +2463,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       coverageLead: "启用结算后，平台按这些比例付团队奖励",
       coverageUnknown: "启用结算后，平台按这些比例付团队奖励；兑付覆盖率暂时读不到",
       coverageCheck: "批准时先查兑付覆盖率：低于红线就不建规则，审批单留着待审批。",
-      facts: <><Fact k="要建立">L1–L7 七层规则</Fact><Fact k="七层合计占订单">{`${f2PctSum(boot.map((row) => row.usdtPct))}%`}</Fact><Fact k="整体结算">不会自动启用，要另外申请</Fact></>,
-      extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" />,
+      facts: <><Fact k="要建立">L1–L7 七层规则</Fact><Fact k="七层合计占订单">{rankedBootstrap ? "第 1、2 层按受益人等级" : `${f2PctSum(boot.map((row) => row.usdtPct))}%`}</Fact><Fact k="整体结算">不会自动启用，要另外申请</Fact></>,
+      extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" ranked={rankedBootstrap ? null : undefined} />,
     };
     const fund = fundSpec(w) ?? k1Spec ?? bootSpec;
     const belowRedline = !!coverage && coverage.coverageRatio < coverage.redlinePct;

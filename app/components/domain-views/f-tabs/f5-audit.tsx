@@ -19,10 +19,12 @@ import type { F5Recovery, FViewCtx } from "./types";
 import { FReleaseButton } from "./f-release";
 import { canRetryF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
+import { teamUserId } from "@/lib/admin/f-overview-contract";
+import { isPreviousMonthSalaryClaim } from "@/lib/admin/business-calendar-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
-  APPROVER, KIND_LABELS, type F5SalaryRowWire, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, deviceEarningSource, isFriend, isGrouped, kindCountLabel, knownRejection,
+  APPROVER, KIND_LABELS, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, deviceEarningSource, isFriend, isGrouped, kindCountLabel, knownRejection,
   reissueOutcome, statusName, timeText, userCode, zoneNote, F5ConfirmHost, Money, F5RecoveryNotice, type F5Confirm, type F5RecoveryRow,
 } from "./f5-shared";
 import { F5KindTiles, F5StatusFlow } from "./f5-overview";
@@ -50,6 +52,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const [kind, setKind] = useState("");
   const [currency, setCurrency] = useState("");
   const [userId, setUserId] = useState("");
+  const [userQueryError, setUserQueryError] = useState(false);
   const [cohort, setCohort] = useState("");
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -87,7 +90,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const query = (): F5CommissionQuery => ({
     kind: kind || undefined,
     currency: currency || undefined,
-    userId: userId.trim() || undefined,
+    userId: teamUserId(userId) ?? undefined,
     cohort: cohort.trim() || undefined,
     status: status || undefined,
     limit: "20",
@@ -100,10 +103,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const applyKindFilter = (selectedKind: string) => {
     const nextKind = applied.kind === selectedKind ? "" : selectedKind;
     setKind(nextKind);
-    setCurrency(""); setUserId(""); setCohort(""); setStatus("");
     setSelected([]);
     setTab("records");
-    load({ kind: nextKind || undefined, limit: "20" });
+    load({ ...applied, kind: nextKind || undefined, cursor: undefined, limit: "20" });
   };
 
   const applyStatusFilter = (selectedStatus: string) => {
@@ -115,8 +117,15 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     load({ status: nextStatus || undefined, limit: "20" });
   };
 
-  const submitFilters = () => { setSelected([]); load(query()); };
+  const submitFilters = () => {
+    const invalidUser = !!userId.trim() && teamUserId(userId) === null;
+    setUserQueryError(invalidUser);
+    if (invalidUser) return;
+    setSelected([]);
+    load(query());
+  };
   const clearFilters = () => {
+    setUserQueryError(false);
     setKind(""); setCurrency(""); setUserId(""); setCohort(""); setStatus(""); setSelected([]);
     load({ kind: undefined, currency: undefined, userId: undefined, cohort: undefined, status: undefined, limit: "20" });
   };
@@ -522,11 +531,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const pendingCount = data && !statusFiltered ? data.pendingCalculationCount : undefined;
 
   const appliedChips = [
-    applied.kind ? { key: "kind", label: kindName(applied.kind), onRemove: () => { setKind(""); setSelected([]); load({ ...query(), kind: undefined, cursor: undefined }); } } : null,
-    applied.status ? { key: "status", label: statusName(applied.status), onRemove: () => { setStatus(""); setSelected([]); load({ ...query(), status: undefined, cursor: undefined }); } } : null,
-    applied.currency ? { key: "currency", label: applied.currency, onRemove: () => { setCurrency(""); setSelected([]); load({ ...query(), currency: undefined, cursor: undefined }); } } : null,
-    applied.userId ? { key: "user", label: `用户 ${userCode(applied.userId)}`, onRemove: () => { setUserId(""); setSelected([]); load({ ...query(), userId: undefined, cursor: undefined }); } } : null,
-    applied.cohort ? { key: "cohort", label: `${applied.cohort} 注册`, onRemove: () => { setCohort(""); setSelected([]); load({ ...query(), cohort: undefined, cursor: undefined }); } } : null,
+    applied.kind ? { key: "kind", label: kindName(applied.kind), onRemove: () => { setKind(""); setSelected([]); load({ ...applied, kind: undefined, cursor: undefined }); } } : null,
+    applied.status ? { key: "status", label: statusName(applied.status), onRemove: () => { setStatus(""); setSelected([]); load({ ...applied, status: undefined, cursor: undefined }); } } : null,
+    applied.currency ? { key: "currency", label: applied.currency, onRemove: () => { setCurrency(""); setSelected([]); load({ ...applied, currency: undefined, cursor: undefined }); } } : null,
+    applied.userId ? { key: "user", label: `用户 ${userCode(applied.userId)}`, onRemove: () => { setUserId(""); setSelected([]); load({ ...applied, userId: undefined, cursor: undefined }); } } : null,
+    applied.cohort ? { key: "cohort", label: `${applied.cohort} 注册`, onRemove: () => { setCohort(""); setSelected([]); load({ ...applied, cohort: undefined, cursor: undefined }); } } : null,
   ].filter((chip): chip is { key: string; label: string; onRemove: () => void } => chip !== null);
 
   const conclusion = () => {
@@ -572,6 +581,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     <div className="f5-records">
       <FilterBar onSubmit={submitFilters} querying={loading} onClear={clearFilters} canClear={hasDraft || appliedChips.length > 0}
         applied={appliedChips.length ? appliedChips : undefined}
+        notice={userQueryError ? "查询条件有误：请填用户编码或正整数系统编号。这次没有查询。" : undefined}
         more={<>
           <FilterField label="币种"><Select aria-label="全部币种" value={currency} onChange={setCurrency} options={currencyOptions} /></FilterField>
           <FilterField label="注册月份"><Input aria-label="用户群" type="month" title="按收款用户的注册月份筛选" value={cohort} onChange={(event) => setCohort(event.target.value)} /></FilterField>
@@ -579,7 +589,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         moreCount={moreCount}>
         <FilterField><Select aria-label="奖励类型" value={kind} onChange={setKind} options={kindOptions} /></FilterField>
         <FilterField><Select aria-label="奖励状态" value={status} onChange={setStatus} options={statusOptions} /></FilterField>
-        <FilterField grow><Input aria-label="用户编号" placeholder="用户编号，只填数字" inputMode="numeric" value={userId} onChange={(event) => setUserId(event.target.value.replace(/\D/g, ""))} /></FilterField>
+        <FilterField grow><Input aria-label="用户编码或系统编号" placeholder="用户编码或系统编号" value={userId} onChange={(event) => { setUserId(event.target.value); setUserQueryError(false); }} /></FilterField>
       </FilterBar>
       <Panel flush icon={ListChecks} tone="role-1" title="奖励流水" className="f5-records-panel"
         sub={[recordCounts, canExport ? exportBlockedReason : undefined].filter(Boolean).join(" · ") || undefined}
@@ -615,8 +625,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                       const selectable = !blockedRecord(row) && canReissue && row.status === "reversed" && !isFriend(row) && !row.reversalRecorded;
                       const blockedPick = blockedRecord(row) ?? (row.status === "reversed" && !selectable ? isFriend(row) ? "好友奖励不能补发" : row.reversalRecorded ? "已退款的记录不能补发" : undefined : undefined);
                       // 等级月薪写「月份 · 等级」；设备收益写和受益人的关系；购买奖励（好友购买、团队购买）写「来自 U… · 第 N 层」。
-                      const salary = row.kind === "vrank_salary" ? row as typeof row & F5SalaryRowWire : null;
-                      const source = salary ? [salary.salaryMonth, salary.salaryRank].filter(Boolean).join(" · ") || "—"
+                      const salary = row.kind === "vrank_salary" ? row : null;
+                      const lateClaim = salary?.salaryMonth && salary.claimedAt && isPreviousMonthSalaryClaim(ctx.teamBusinessCalendar, salary.salaryMonth, salary.claimedAt);
+                      const source = salary ? [salary.salaryMonth, salary.salaryRank, lateClaim ? "1 号领上月" : null].filter(Boolean).join(" · ") || "—"
                         : row.kind === "direct_device_earning" ? `${deviceEarningSource(row.layer)}${row.sourceUserId ? ` ${userCode(row.sourceUserId)}` : ""}`
                         : [row.sourceUserId ? `来自 ${userCode(row.sourceUserId)}` : "", row.layer ? `第 ${row.layer} 层` : ""].filter(Boolean).join(" · ") || "—";
                       const items = rowActions(row);

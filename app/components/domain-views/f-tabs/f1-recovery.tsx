@@ -14,6 +14,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { f1ProposalAuthority, isF1PayoutSlot } from "@/lib/admin/f1-approval";
 import { f1ConditionLabels, formatF1ExactAmount, isF1PolicyInFlight, listF1PolicyOperations, queryF1PolicyOperation, releaseF1PolicyProposal, type F1PolicyEditor, type F1PolicyReward } from "@/lib/admin/f1-policy-change";
+import { F1_BENEFIT_NAMES, isF1BenefitField, ratePct } from "@/lib/admin/f1-rank-benefit";
 import { isF1RankHowInFlight, pendingF1RankHow, queryF1RankHow } from "@/lib/admin/f1-rank-how-save";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { f1RewardPolicyLabel } from "./f1-policy-confirm";
@@ -27,7 +28,7 @@ type Row = { key: string; name: string; change: ReactNode; submittedAt?: number;
 /** 恢复面板上的门槛名（新口径）；记进操作记录的名字仍用 f1ConditionLabels。 */
 const CONDITION_NAME: Record<string, string> = { selfBuy: "自购算力点", teamGv: "团队算力点", directRefs: "一二级已购人数", legCount: "下级领导者人数", legRank: "下级领导者最低等级" };
 const HOW_TAB = "App 等级说明";
-const UNIT: Record<string, string> = { selfBuy: " 点", teamGv: " 点", directRefs: " 人", legCount: " 个", legRank: "" };
+const UNIT: Record<string, string> = { purchaseL1Rate: "%", purchaseL2Rate: "%", monthlySalaryUsdt: " USDT", selfBuy: " 点", teamGv: " 点", directRefs: " 人", legCount: " 个", legRank: "" };
 const thresholdText = (field: string, raw: string | undefined) => raw === undefined || raw === "" ? "—" : raw === "NONE" ? "未设置" : `${formatF1ExactAmount(raw)}${UNIT[field] ?? ""}`;
 
 function stateTag(state: State, direct: boolean) {
@@ -107,9 +108,10 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
       if (isF1PolicyInFlight(record.commandKey)) continue;
       const { editor, form, values, approval } = record.original;
       const field = editor.field;
-      const name = `${editor.row.v} · ${editor.action === "threshold" ? (CONDITION_NAME[field!] ?? f1ConditionLabels[field!]) : editor.action === "reward_add" ? "添加奖励" : editor.action === "reward_remove" ? "移除奖励" : "编辑奖励"}`;
+      const benefit = isF1BenefitField(field);
+      const name = `${editor.row.v} · ${editor.action === "threshold" ? (benefit ? F1_BENEFIT_NAMES[field] : CONDITION_NAME[field!] ?? f1ConditionLabels[field!]) : editor.action === "reward_add" ? "添加奖励" : editor.action === "reward_remove" ? "移除奖励" : "编辑奖励"}`;
       const oldReward = editor.reward ? f1RewardPolicyLabel(editor.reward, ctx) : "奖励";
-      const change: ReactNode = editor.action === "threshold" ? <Change from={thresholdText(field!, editor.row[field!])} to={thresholdText(field!, form.value?.trim())} />
+      const change: ReactNode = editor.action === "threshold" ? <Change from={thresholdText(field!, benefit && field !== "monthlySalaryUsdt" ? ratePct(editor.row[field]) : editor.row[field!])} to={thresholdText(field!, form.value?.trim())} />
         : editor.action === "reward_add" ? `添加 ${rewardLabel(values.reward, ctx)}`
           : editor.action === "reward_remove" ? `移除 ${oldReward}`
             : <Change from={oldReward} to={rewardLabel(values.reward, ctx)} />;

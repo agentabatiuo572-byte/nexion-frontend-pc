@@ -35,6 +35,9 @@ import {
   fetchF1PromotionLog,
   fetchF1RewardPayouts,
   fetchF1VRankOverview,
+  fetchF1V8Review,
+  fetchF1SalaryClaims,
+  fetchF2PublicRankRates,
   removeF1VRankReward,
   updateF1VRankReward,
   updateF1VRankThreshold,
@@ -63,8 +66,8 @@ import { canRetryF4Policy, listF4PolicyWrites, queryF4Policy, sendF4Policy } fro
 import { f5ConfirmationSlot, listF5Proposals, queryF5Proposal, releaseF5Proposal, sendF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import { listF5AnomalyWrites, queryF5Anomaly, sendF5Anomaly } from "@/lib/admin/f5-anomaly-write";
 import { F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
-import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
-import { listF1PolicyOperations, queryF1PolicyOperation } from "@/lib/admin/f1-policy-change";
+import { fetchBusinessCalendar, type BusinessCalendarView } from "@/lib/admin/business-calendar-client";
+import { listF1PolicyOperations, queryF1PolicyOperation, submitF1Policy } from "@/lib/admin/f1-policy-change";
 import { pendingConfigApproval, submitConfigApproval, teamFundApprovalAuthority, type TeamFundApprovalValues } from "@/lib/admin/withdrawal-config-approval";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry";
@@ -81,7 +84,12 @@ import { F3Binary } from "./f-tabs/f3-binary";
 import { F4Ops } from "./f-tabs/f4-ops";
 import { F5Audit } from "./f-tabs/f5-audit";
 import { operationConfirmPlainMessage } from "@/lib/admin/operation-confirm-error";
-import { directReferralAmplifies, directReferralSummary, validateDirectReferralUpdate, type DirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
+import { directReferralAmplifies, directReferralSplitIssue, directReferralSummary, validateDirectReferralUpdate, type DirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
+import { F1_EMPTY_SALARY_FILTERS } from "@/lib/admin/f-overview-contract";
+import { f2RankPurchaseRange } from "@/lib/admin/f1-rank-benefit";
+import { useBDomainDashboard } from "@/lib/admin/b-client";
+import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
+import type { F1SalaryClaimsState, F1SalaryFilters, F1V8ReviewState } from "./f-tabs/f1-rank-types";
 import "./f-tabs/f2-design.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
@@ -145,6 +153,18 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       teamApprovalOwner: spec.teamApproval ? session?.adminId : undefined,
       f4Owner: spec.f4Snapshot ? session?.adminId : undefined,
     });
+  const [teamBusinessCalendar, setTeamBusinessCalendar] = useState<BusinessCalendarView | null>(null);
+  const [v8Review, setV8Review] = useState<F1V8ReviewState>();
+  const v8Generation = useRef(0);
+  const [salaryClaims, setSalaryClaims] = useState<F1SalaryClaimsState>({
+    items: [], nextCursor: null, filters: F1_EMPTY_SALARY_FILTERS, loaded: false, loading: false, error: null,
+  });
+  const salaryGeneration = useRef(0);
+  const [f2RankRange, setF2RankRange] = useState<FViewCtx["f2RankPurchaseRange"]>(null);
+  const bDomain = useBDomainDashboard(tab === "F1" && B_DASHBOARD_READ_AUTHORITIES.every(authority => session?.authorities.includes(authority)));
+  const f1BenefitCoverage = bDomain.hasData && !bDomain.error && bDomain.ledger.valuationReliable
+    ? { coverageRatio: bDomain.ledger.coverageRatio, redlinePct: bDomain.ledger.redlinePct, redlineBreached: bDomain.ledger.redlineBreached }
+    : undefined;
   const [f1ReadEpoch, setF1ReadEpoch] = useState(0);
   const [f1ApprovalRanks, setF1ApprovalRanks] = useState<string[]>([]);
   const [f1ProposalEpoch, setF1ProposalEpoch] = useState(0);
@@ -236,6 +256,64 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4Generation.current += 1;
     f5Generation.current += 1;
   }, []);
+
+  const queryV8Review = useCallback(async (cursor?: string) => {
+    const request = ++v8Generation.current;
+    setV8Review(current => current && { ...current, loading: true, error: null });
+    try {
+      const page = await fetchF1V8Review(cursor);
+      if (request !== v8Generation.current) return;
+      setV8Review(current => ({
+        ...page,
+        items: cursor && current ? [...current.items, ...page.items.filter(row => !current.items.some(item => item.userId === row.userId))] : page.items,
+        loading: false, error: null,
+      }));
+    } catch (error) {
+      if (request !== v8Generation.current) return;
+      if ((error as { status?: number }).status === 404) {
+        setV8Review(undefined);
+      } else {
+        setV8Review(current => ({
+          items: cursor ? current?.items ?? [] : [], nextCursor: cursor ?? null,
+          pendingReviewCount: cursor ? current?.pendingReviewCount ?? null : null, loading: false, error: errorMessage(error),
+        }));
+      }
+    }
+  }, []);
+
+  const querySalaryClaims = useCallback(async (filters: F1SalaryFilters, cursor?: string) => {
+    const request = ++salaryGeneration.current;
+    setSalaryClaims(current => ({ ...current, filters, loaded: true, loading: true, error: null,
+      ...(cursor ? {} : { items: [], nextCursor: null }),
+    }));
+    try {
+      const page = await fetchF1SalaryClaims(filters, cursor);
+      if (request !== salaryGeneration.current) return;
+      setSalaryClaims(current => ({
+        ...current, ...page, loading: false,
+        items: cursor ? [...current.items, ...page.items.filter(row => !current.items.some(item => item.claimNo === row.claimNo))] : page.items,
+      }));
+    } catch (error) {
+      if (request === salaryGeneration.current) setSalaryClaims(current => ({ ...current, loading: false, error: errorMessage(error) }));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab !== "F1") return;
+    void queryV8Review();
+    return () => { v8Generation.current += 1; salaryGeneration.current += 1; };
+  }, [tab, session?.adminId, queryV8Review]);
+
+  useEffect(() => {
+    if (tab !== "F1" && tab !== "F5") return;
+    let active = true;
+    void fetchBusinessCalendar().then(calendar => {
+      if (active) setTeamBusinessCalendar(calendar);
+    }, () => {
+      if (active) setTeamBusinessCalendar(null);
+    });
+    return () => { active = false; };
+  }, [tab, session?.adminId]);
 
   const refreshF1 = useCallback(async () => {
     const request = ++f1Generation.current;
@@ -342,6 +420,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         canReadA2 ? fetchA2Overview({ domain: "F" }, true) : Promise.resolve(null),
       ]);
       if (request !== f2Generation.current) return null;
+      const ranked = policy.status === "fulfilled" && policy.value.sevenLayerReference.purchaseBaseRateSource === "BENEFICIARY_RANK";
+      const rankRows = ranked ? await fetchF2PublicRankRates().catch(() => []) : [];
+      if (request !== f2Generation.current) return null;
+      setF2RankRange(ranked ? f2RankPurchaseRange(rankRows) : null);
       if (policy.status === "fulfilled") setF2DirectPolicy(policy.value);
       else { setF2DirectPolicy(null); setF2DirectPolicyError(errorMessage(policy.reason)); }
       if (overview.status === "fulfilled") setF2Overview(overview.value);
@@ -722,7 +804,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const markF2Loading = () => {
     setF2Loading(true); setF2DirectPolicyLoading(true); setF2ActivationPendingLoading(true);
   };
-  const sendF2 = async (slot: string, spec?: ProposeSpec) => {
+  const sendF2 = async (slot: string, spec?: ProposeSpec, ranked = false) => {
     if (!session) throw new Error("ADMIN_PERMISSION_DENIED");
     if (spec) {
       const blocked = f2WriteBlocked(slot);
@@ -736,7 +818,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF2ApprovalRows([]);
     }
     try {
-      const ticket = await sendF2Proposal(session.adminId, slot, spec);
+      const ticket = await sendF2Proposal(session.adminId, slot, spec, ranked);
       setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请刷新后核对。");
     } finally {
       if (!spec) await refreshF2();
@@ -783,6 +865,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (resolved || !listF1Proposals(current.adminId).some(row => row.commandKey === original.commandKey)) setF1ReadEpoch(value => value + 1);
       await refreshF1();
       await refreshF1Approvals();
+      if (slot.startsWith("f-vrank-override:")) await queryV8Review();
     }
   };
 
@@ -998,7 +1081,25 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF1Loading(false);
       setF1Error(message ?? "原操作正在核对，请重新读取后再发起新修改。");
     },
-    refreshF1: async () => { await Promise.all([refreshF1(), refreshF1Approvals()]); },
+    refreshF1: async () => {
+      await Promise.all([refreshF1(), refreshF1Approvals(), queryV8Review(),
+        ...(salaryClaims.loaded ? [querySalaryClaims(salaryClaims.filters)] : []),
+      ]);
+    },
+    v8Review,
+    queryV8Review: async append => {
+      if (!append || v8Review?.nextCursor) await queryV8Review(append ? v8Review?.nextCursor ?? undefined : undefined);
+    },
+    f1SalaryFieldPresent: f1Overview?.salaryFieldPresent,
+    salaryClaims,
+    querySalaryClaims,
+    teamBusinessCalendar,
+    f1BenefitCoverage,
+    submitVRankBenefit: async (editor, value, reason, mode = "submit") => {
+      const current = useAdminAuth.getState().session;
+      if (!current || current.adminId !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+      return submitF1Policy(current, editor, { value }, reason, mode);
+    },
     f1RewardValuation: f1Overview?.rewardValuationUsdtPerUvt ?? null,
     f1Coverage: f1Overview?.coverage,
     acceptF1PolicyOverview: (overview) => {
@@ -1072,7 +1173,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         before: "当前等级",
         after: targetV,
         type: "fund",
-        amplifies: direction === "promote",
+        amplifies: direction === "promote" && targetV !== "V8",
         gate: { roles: [] },
         gateLabel: def.gateLabel,
         reason,
@@ -1122,6 +1223,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f2Metrics: f2Overview?.metrics ?? [],
     f2PayoutStatistics: f2Overview?.payoutStatistics,
     f2DirectPolicy,
+    f2PurchaseBaseRateSource: f2DirectPolicy?.sevenLayerReference.purchaseBaseRateSource,
+    f2RankPurchaseRange: f2RankRange,
     f2SevenLayerRevision: f2Overview?.sevenLayerRevision ?? null,
     f2DirectPolicyLoading,
     f2DirectPolicyError,
@@ -1171,7 +1274,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         action: def.action, obj: "unilevel_bootstrap/current", before: "无 UNILEVEL 规则", after: "L1–L7",
         type: "fund", amplifies: true, gate: { roles: [] }, gateLabel: def.gateLabel,
         reason, sourceDomain: "F2", command: def.buildCommand({ layers }), target: def.buildTarget({}),
-      });
+      }, current.sevenLayerReference.purchaseBaseRateSource === "BENEFICIARY_RANK");
     },
     changeF2SevenLayerActivation: async (action, expectedSevenLayerRevision, expectedPolicyVersion, reason) => {
       if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("你没有申请团队购买奖励结算的权限。");
@@ -1194,6 +1297,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       const current = await fetchF2DirectReferralPolicy();
       setF2DirectPolicy(current);
       if (current.policyVersion !== policy.expectedVersion || current.sevenLayerRevision !== policy.expectedSevenLayerRevision) throw new Error("好友奖励或团队购买奖励规则已被修改，请刷新后再确认（已填写的内容会保留）。");
+      const splitIssue = directReferralSplitIssue(current, policy);
+      if (splitIssue) throw new Error(splitIssue);
       const def = findHighOp("f_direct_referral_policy");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_direct_referral_policy");
       await proposeStable("f-direct-referral-policy", JSON.stringify([policy, reason]), {

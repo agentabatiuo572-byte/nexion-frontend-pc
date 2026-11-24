@@ -105,6 +105,8 @@ export type F1Confirm = {
   /** 记进操作记录的名字，和旧页面一样。 */
   action: string;
   proposalSlot?: string | ((value?: BusinessFormValue) => string);
+  v8Review?: boolean;
+  recoverOriginal?: boolean;
   title: ReactNode;
   briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind);
   detail: ReactNode;
@@ -131,7 +133,7 @@ export type F1Confirm = {
 export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; ctx: FViewCtx; onClose: () => void }) {
   const [owner] = useState(() => useAdminAuth.getState().session?.adminId);
   const slot = useRef(typeof confirm.proposalSlot === "string" ? confirm.proposalSlot : "");
-  const submitted = useRef(false);
+  const submitted = useRef(!!confirm.recoverOriginal);
   const originalValues = useRef<BusinessFormValue | undefined>(undefined);
   const original = () => owner === undefined ? undefined : listF1Proposals(owner).find(row => row.fingerprint === slot.current);
   const existing = original();
@@ -164,7 +166,9 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
       inlineApproval={{
         dialogClassName: confirm.dialogClassName,
         resolve: () => undefined,
+        pending: !!confirm.recoverOriginal && !!existing,
         initialRecovery: "retry",
+        queryOnly: !!confirm.v8Review && !!existing && existing.absent !== true,
         expired: !!existing && existing.expiresAt <= Date.now(),
         expiredRequestRecovery: existing && existing.expiresAt <= Date.now() ? "query" : undefined,
         disabledReason: submitted.current && !canRetry ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined,

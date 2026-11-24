@@ -61,8 +61,9 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
   if (spec && original) throw new A2OutcomeUncertainError("请先查询保存的原操作。", original.commandKey);
   const intent = spec ?? original?.spec;
   if (!intent) throw new Error("原操作没有完整请求，请到操作记录核对。");
+  const v8Promotion = intent.command.op === "f_vrank_override" && intent.command.params.targetV === "V8" && intent.command.params.direction === "promote";
   if (!current.authorities.includes(f1ProposalAuthority(intent))
-      || !current.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create")) throw new Error("ADMIN_PERMISSION_DENIED");
+      || !current.authorities.some(a => a === "platform_a2_write" || !v8Promotion && a === "platform_a2_proposal_create")) throw new Error("ADMIN_PERMISSION_DENIED");
   if (!original) {
     const request = {
       action: intent.action, obj: intent.obj, beforeValue: intent.before, afterValue: intent.after,
@@ -77,6 +78,9 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
       fCommands.forget(slot, key);
       throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
+  }
+  if (v8Promotion && recovering && !original.received && !original.ticket && !original.absent) {
+    throw new Error("请先查询原操作，确认查不到后再按原请求重试。");
   }
   if (original.received || original.ticket) {
     const latest = await queryF1Proposal(adminId, original);

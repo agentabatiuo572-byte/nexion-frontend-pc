@@ -91,6 +91,11 @@ function backendPath(parts: string[], method: string) {
     // canonical backend suffix: /users/{userId}/commission/suspend
     return `/api/admin/users/${parts[2]}/commission/suspend`;
   }
+  if (method === "GET") {
+    const read = parts.join("/");
+    if (read === "v8-review-candidates" || read === "ranks/salary/claims") return `/api/admin/teams/${read}`;
+    if (read === "public-v-ranks") return "/api/config/v-ranks";
+  }
   if (parts.length === 1 && parts[0] === "promotion-log") {
     return "/api/admin/teams/promotion-log";
   }
