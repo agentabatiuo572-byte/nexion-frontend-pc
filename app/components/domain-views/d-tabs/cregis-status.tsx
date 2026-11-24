@@ -198,7 +198,7 @@ const ALERT_KIND: Record<string, string> = {
   PROVIDER_ORPHAN: "收款服务有记录、平台没有", PLATFORM_ORPHAN: "平台有记录、收款服务没有", UNRESOLVED_EXPOSURE: "待处理资金过多",
   MANUAL_EMERGENCY_OFF: "管理员紧急停用", CREGIS_SWITCH_EMERGENCY_OFF: "紧急停用", REFUND_LATE_EVIDENCE: "退款后链上证据又变化", AUTO_FORWARD_UNKNOWN: "自动归集结果未知",
 };
-const cregisStateText = (value: unknown) => ({ IDLE: "暂无地址在创建", BUSY: "正在创建地址", BLOCKED: "风险暂停", DISABLED: "未接入收款服务", MISSING: "开关设置缺失", UNKNOWN: "创建结果待核实", PROVISIONING: "地址创建中", VERIFYING: "地址核对中", UNATTRIBUTED_HOLD: "未归属充值待处理", RETIRED_HOLD: "停用地址充值待处理", DUST_HOLD: "低额充值待处理", REVIEW_HOLD: "充值待审核", REORG_INVESTIGATING: "链重组调查中", PROVIDER_CONFLICT_HOLD: "收款服务与链上记录冲突待处理", PROVIDER_MISSING: "收款服务缺单待核对", CHAIN_MISMATCH_HOLD: "链上记录不符待核对", RUNNING: "对账中", COMPLETE: "完整对账完成", INCOMPLETE: "对账未完成", MAKER_DONE: "待另一位管理员复核", RESOLVED: "复核处理完成", REJECTED: "已驳回" } as Record<string,string>)[String(value)] ?? "状态待核实";
+const cregisStateText = (value: unknown) => ({ IDLE: "暂无地址在创建", BUSY: "正在创建地址", BLOCKED: "风险暂停", DISABLED: "未接入收款服务", MISSING: "开关设置缺失", UNKNOWN: "创建结果待核实", PROVISIONING: "地址创建中", VERIFYING: "地址核对中", UNATTRIBUTED_HOLD: "未归属充值待处理", RETIRED_HOLD: "停用地址充值待处理", DUST_HOLD: "低额充值待处理", REVIEW_HOLD: "待人工复核", REORG_INVESTIGATING: "链重组调查中", PROVIDER_CONFLICT_HOLD: "收款服务与链上记录冲突待处理", PROVIDER_MISSING: "收款服务缺单待核对", CHAIN_MISMATCH_HOLD: "链上记录不符待核对", RUNNING: "对账中", COMPLETE: "完整对账完成", INCOMPLETE: "对账未完成", MAKER_DONE: "待另一位管理员复核", RESOLVED: "复核处理完成", REJECTED: "已驳回" } as Record<string,string>)[String(value)] ?? "状态待核实";
 const SEVERITY: Record<string, [string, StateTone]> = { P0: ["紧急", "danger"], P1: ["严重", "danger"], P2: ["警告", "warn"], P3: ["提示", "neutral"] };
 function rowNetwork(row: { network?: unknown; chainId?: unknown; chain_id?: unknown }): FundsNetwork | null {
   if (row.network === "BEP20" || row.network === "ERC20" || row.network === "TRC20") return row.network;
@@ -646,7 +646,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     if (!canManage) return null;
     if (item.queue === "heldDeposits" && item.row.status === "REVIEW_HOLD" && item.row.cid != null) {
       const network = reportedReviewNetwork(item.row);
-      const block = readBlock ?? (network ? undefined : "网络待核实，请刷新异常记录后重试");
+      const block = readBlock ?? (network ? undefined : "网络待核实，刷新异常列表后再试");
       return { label: "入金复核", block, run: () => { if (!block && network) setReview({ cid: String(item.row.cid), network }); } };
     }
     const source = claimSource(item);
@@ -787,7 +787,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       </Panel>
       {data && <Fold title="入金复核工单" icon={ShieldCheck} tone="role-2" summary={`待复核 ${openCases.length}${data.openReviewCaseCount != null && data.openReviewCaseCount > openCases.length ? ` / 共 ${data.openReviewCaseCount}` : ""}`}
         alert={openCases.some(row => !isMaker(row, session?.adminId))} defaultOpen={openCases.some(row => !isMaker(row, session?.adminId))}
-        explain="需要复核的入金先冻结，一位管理员核验证据后发起复核，另一位管理员复核后入账。找不到对应订单的资金或链上交易重组时，须保持冻结并核查。">
+        explain="需要人工复核的入金先冻结：一位管理员核验证据后发起，另一位管理员复核后入账。未归属的入金和链上重组的入金不在这里处理，保持冻结待核查。">
         <div className="rd-stack">
           {canManage && <div className="rd-toolbar">
             <FilterField label="按 CID 发起"><Input data-search aria-label="待审核 CID" placeholder="CID" inputMode="numeric" value={manualReview.cid} onChange={(event) => setManualReview({ ...manualReview, cid: event.target.value.trim() })} /></FilterField>
@@ -1048,11 +1048,11 @@ function ReviewDrawer({ cid, network, caseRow, canManage, adminId, busy, readBlo
     const current = ++sequence.current;
     setLoading(true); setError(""); setEvidence(null);
     try {
-      if (network === null) throw new Error("工单网络待核实，请刷新工单后重试。");
+      if (network === null) throw new Error("工单的网络待核实，请刷新工单列表后再打开。");
       const next = await financeAdminRequest<ExceptionRow>(`/cregis/review-evidence/${cid}${networkQuery}`);
       const evidenceNetwork = reportedReviewNetwork(next);
       if (evidenceNetwork !== undefined && evidenceNetwork !== (network ?? "BEP20")) {
-        throw new Error("证据网络与请求不一致，请刷新证据后核对。");
+        throw new Error("读到的证据和这笔充值的网络对不上，请刷新证据后再核对。");
       }
       if (current === sequence.current) setEvidence(next);
     } catch (failure) {
@@ -1065,27 +1065,31 @@ function ReviewDrawer({ cid, network, caseRow, canManage, adminId, busy, readBlo
   const own = caseRow ? String(caseRow.makerId) === String(adminId) : false;
   const sameEvidence = matches && !!caseRow && String(evidence?.evidenceHash) === String(caseRow.evidenceHash);
   const proposeBlock = readBlock ?? d1PendingObjectReason(proposalPath, { cid }) ?? (loading ? "正在核验证据" : !matches ? "证据没读到，先点「刷新证据」" : undefined);
-  const decideBlock = own ? "发起人不能复核自己的工单" : readBlock ?? (caseRow ? d1PendingObjectReason(`/cregis/review-cases/${text(caseRow.id)}/decision`) : undefined) ?? (loading ? "正在核验证据" : !evidence ? "先点「刷新证据」" : !sameEvidence ? "证据和发起时不一致，不能复核" : undefined);
+  const decideBlock = own ? "这是你发起的，需要另一位管理员处理" : readBlock ?? (caseRow ? d1PendingObjectReason(`/cregis/review-cases/${text(caseRow.id)}/decision`) : undefined) ?? (loading ? "正在核验证据" : !evidence ? "先点「刷新证据」" : !sameEvidence ? "证据和发起时不一致，不能复核" : undefined);
   const net = caseRow?.proposedNetAmount ?? evidence?.proposedNetAmount;
+  // 网络只用请求带的（工单按列表投影的 chainId）或证据读回的，不把缺省猜成 BEP20；两样都没有时，刷新证据前写「刷新证据后显示」（BUG-679）。
+  const shownNetwork = network === null ? null : (evidence ? reportedReviewNetwork(evidence) : undefined) ?? network;
+  const networkLabel = shownNetwork ? `USDT（${shownNetwork}）` : shownNetwork === null || evidence ? "网络待核实" : "刷新证据后显示";
+  // 证据摘要是核对用的长编号，系统已比对过，确认框里不放，在抽屉「链上证据」里看（OP-54、DP-30）。
   const caseFacts = caseRow && <Facts>
     <Fact k="净入账" lead tone="role-1" unit="USDT">{usdt(text(caseRow.proposedNetAmount))}</Fact>
     <Fact k="毛额">{usdt(text(caseRow.grossAmount))} USDT</Fact>
+    {shownNetwork && <Fact k="网络">{networkLabel}</Fact>}
     <Fact k="用户">{text(caseRow.userId)}</Fact>
     <Fact k="地址">{text(caseRow.address)}</Fact>
     <Fact k="交易">{text(caseRow.txid)}</Fact>
     <Fact k="发起理由">{text(caseRow.reason)}</Fact>
-    <Fact k="证据摘要">{text(caseRow.evidenceHash)}</Fact>
   </Facts>;
   return <Drawer open onClose={onClose} title={caseRow ? "入金复核工单" : "入金复核"} sub={`CID ${cid}`} icon={ShieldCheck} tone="role-2" busy={busy}
     footer={canManage ? caseRow
       ? <Decision note={decideBlock}
-        danger={<Button variant="danger-outline" disabledReason={own ? "发起人不能复核自己的工单" : readBlock} onClick={() => confirm({ kind: "record",
-          action: `拒绝入金复核 #${text(caseRow.id)}`, title: "拒绝入金复核", confirmLabel: "确认拒绝", effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, facts: caseFacts,
-          detail: `CID ${cid} · 证据 ${text(caseRow.evidenceHash)}`, completion: "拒绝后这笔入金保持冻结，不入账。",
+        danger={<Button variant="danger-outline" disabledReason={own ? "这是你发起的，需要另一位管理员处理" : readBlock} onClick={() => confirm({ kind: "record",
+          action: `拒绝入金复核 #${text(caseRow.id)}`, title: `拒绝入金复核 · CID ${cid}`, confirmLabel: "确认拒绝", effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, facts: caseFacts,
+          detail: "", completion: "拒绝后这笔入金保持冻结，不入账。",
           path: `/cregis/review-cases/${text(caseRow.id)}/decision`, body: { expectedVersion: caseRow.version, decision: "REJECT" } })}>拒绝</Button>}
         others={<Button variant="ghost" loading={loading} onClick={() => void load()}>刷新证据</Button>}
         primary={<Button variant="primary" disabledReason={decideBlock} onClick={() => confirm({ kind: "funds",
-          action: `复核入账 CID ${cid}`, title: "复核入账", confirmLabel: "确认复核", danger: true,
+          action: `复核入账 CID ${cid}`, title: `复核入账 · CID ${cid}`, confirmLabel: "确认复核", danger: true,
           effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>, facts: caseFacts,
           detail: `交易 ${text(caseRow.txid)}，毛额 ${amount(caseRow.grossAmount)} USDT，净入账 ${amount(caseRow.proposedNetAmount)} USDT 给用户 ${text(caseRow.userId)}。请独立核对地址、发起理由与证据。`,
           completion: "确认后立即把净额入账到用户钱包，不能撤销。",
@@ -1093,14 +1097,15 @@ function ReviewDrawer({ cid, network, caseRow, canManage, adminId, busy, readBlo
       : <Decision note={proposeBlock}
         others={<Button variant="ghost" loading={loading} onClick={() => void load()}>刷新证据</Button>}
         primary={<Button variant="primary" disabledReason={proposeBlock} onClick={() => evidence && confirm({ kind: "funds",
-          action: "提交入金复核", title: "提交入金复核", confirmLabel: "提交审批", effect: approval,
-          facts: <Facts><Fact k="净入账" lead tone="role-1" unit="USDT">{usdt(text(evidence.proposedNetAmount))}</Fact><Fact k="CID">{cid}</Fact><Fact k="用户">{text(evidence.userId)}</Fact><Fact k="证据摘要">{text(evidence.evidenceHash)}</Fact></Facts>,
-          detail: `CID ${cid} · 证据 ${text(evidence.evidenceHash)}。需另一位管理员复核。`, completion: "提交后需另一位管理员复核才生效。",
+          action: "提交入金复核", title: `提交入金复核 · CID ${cid}`, confirmLabel: "提交审批", effect: approval,
+          facts: <Facts><Fact k="净入账" lead tone="role-1" unit="USDT">{usdt(text(evidence.proposedNetAmount))}</Fact><Fact k="网络">{networkLabel}</Fact><Fact k="用户">{text(evidence.userId)}</Fact></Facts>,
+          detail: "", completion: "提交后需另一位管理员复核才生效。",
           path: proposalPath, body: { cid, evidenceHash: evidence.evidenceHash } })}>提交入金复核</Button>} />
       : undefined}>
     {error && <BlockState state="error" title="证据核验失败" detail={error} onRetry={() => void load()} />}
     <JudgmentPoints loading={loading} rows={[
       { label: "净入账", icon: Coins, tone: "money", value: net == null ? "—" : `${usdt(text(net))} USDT`, reason: `毛额 ${usdt(text(caseRow?.grossAmount ?? evidence?.grossAmount))} · 手续费 ${evidence?.feeAmount != null ? usdt(text(evidence.feeAmount)) : caseRow?.feeAmount != null ? usdt(text(caseRow.feeAmount)) : "未提供"}` },
+      { label: "网络", value: networkLabel },
       { label: "用户", value: text(caseRow?.userId ?? evidence?.userId) },
       { label: "证据", state: !evidence ? "warn" : evidence.providerMatched && evidence.chainMatched ? undefined : "danger",
         value: !evidence ? (caseRow ? "还没刷新证据" : "正在核验") : `收款服务${evidence.providerMatched ? "匹配" : "未匹配"} · 链上${evidence.chainMatched ? "匹配" : "未匹配"}`,
