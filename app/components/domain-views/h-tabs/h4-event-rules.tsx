@@ -17,7 +17,7 @@ import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4Pend
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatTime } from "./h4-promotion-ui";
-import { ApprovalFact, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL, LOCALE_NAME, effectApproval, effectDirect, type LocaleCode } from "./h4-legacy-parts";
+import { ApprovalFact, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL, H4_OLD_RECORD_REJECTED, LOCALE_NAME, effectApproval, effectDirect, type LocaleCode } from "./h4-legacy-parts";
 import { H4ConflictCompare, h4ConflictGroups, type H4ConflictGroup } from "./h4-conflict-compare";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { amountDisplay } from "@/lib/format";
@@ -124,7 +124,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
   }, []);
   const patchRule = (key: string, value: unknown) => setDraft(current => current ? { ...current, rules: { ...current.rules, [key]: value } } : current);
-  const save = (restored?: { base: EventRuleView; draft: EventRuleChange; rejection: PendingConfirmRejected; originalKnown: boolean }) => {
+  const save = (restored?: { base: EventRuleView; draft: EventRuleChange; rejection: PendingConfirmRejected }) => {
     const base = restored?.base ?? selected, input = restored?.draft ?? draft;
     if (base && confirmedH4Saves().some(record => record.scope === `H/h4_event_rule/${base.eventCode}`)) return;
     if (!base || !input || !canWrite || !restored && (saving || conflictFields)) return;
@@ -203,18 +203,13 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       if (!values) throw new Error("玩法规则没有读到");
       const latest = values.find(row => row.eventCode === base.eventCode);
       if (!latest) throw restored ? new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL) : missingRule();
-      if (restored && !restored.originalKnown) {
-        choose(latest); setDraft(next); setRegions(eventRegionText(next.rules.regions));
-        setError(displayAdminError(restored.rejection)); ctx.openActionConfirm(null);
-        return;
-      }
       compareLatest(latest);
     });
     const rejected = (error: PendingConfirmRejected) => error.reasonCode === "EVENT_NOT_FOUND" || error.reasonCode === "EVENT_RULE_NOT_FOUND"
       ? missingRule() : isH4ReadConflict(error) ? rereadConflict() : error;
     let originalKey: string | undefined;
     const pending = () => originalKey ? pendingH4Commands().find(record => record.commandKey === originalKey) : h4PendingFor(`H/h4_event_rule/${base.eventCode}`);
-    ctx.openActionConfirm({ formKey: restored ? 0 : undefined, initialRejection: restored && (restored.originalKnown ? rejected(restored.rejection) : rereadConflict()), getPendingReason: () => pending()?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
+    ctx.openActionConfirm({ formKey: restored ? 0 : undefined, initialRejection: restored && rejected(restored.rejection), getPendingReason: () => pending()?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
       getPendingRecovery: () => h4PendingConfirmRecovery(pending(), async () => {
         await onApprovalCompleted?.();
         if (!await load()) throw new Error("已保存，但没读到最新数据");
@@ -295,19 +290,22 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       if (!canWrite || "proposal" in record.request) return false;
       const code = decodeURIComponent(record.request.path.split("/")[2]);
       const body = JSON.parse(record.request.body) as EventRuleChange & { expectedRevision: number };
-      const saved = record.opened ? parseEventRule(record.opened) : selected;
-      const opened = saved?.eventCode === code && saved.revision === body.expectedRevision ? saved : undefined;
-      let base = opened ?? ruleRows?.find(row => row.eventCode === code);
-      if (!base) {
+      const base = record.opened ? parseEventRule(record.opened) : undefined;
+      if (!base || base.eventCode !== code || base.revision !== body.expectedRevision) {
         const values = await load(true);
-        if (!values) throw new Error("玩法规则没有读到");
-        base = values.find(row => row.eventCode === code);
+        if (!values) throw new ConfirmReadConflict(undefined, "玩法规则没有读到");
+        const latest = values.find(row => row.eventCode === code);
+        if (operator !== currentAdminOperator()) return false;
+        if (!latest) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL);
+        closeRetry();
+        choose(latest); setError(H4_OLD_RECORD_REJECTED);
+        return true;
       }
-      if (operator !== currentAdminOperator() || !base) return false;
+      if (operator !== currentAdminOperator()) return false;
       const draft = { enabled: body.enabled, startsAt: body.startsAt, endsAt: body.endsAt, rules: body.rules };
       closeRetry();
       choose(base); setDraft(draft); setRegions(eventRegionText(draft.rules.regions));
-      save({ base, draft, rejection, originalKnown: base.revision === body.expectedRevision });
+      save({ base, draft, rejection });
       return true;
     };
     return () => { reopenRejected.current = null; };

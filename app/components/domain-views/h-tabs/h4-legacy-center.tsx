@@ -44,11 +44,11 @@ import { useUI } from "@/lib/store/ui";
 import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
-import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
+import { H4_EVENT_RULE_CODES, fetchEventRules, type EventRuleView } from "@/lib/admin/event-rules-client";
 import { EVENT_CONTENT_LOCALES, eventLocalizedContentGaps, eventRuleReadiness } from "@/lib/admin/event-rule-form";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
 import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, h4RetryBlockedReason, h4PendingConfirmRecovery, h4ReceiptRejection, isH4MediaCommand, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4Command, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
-import { RAFFLE_SAVE_PENDING } from "@/lib/admin/genesis-raffle-client";
+import { fetchAdminRaffle, RAFFLE_SAVE_PENDING } from "@/lib/admin/genesis-raffle-client";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle, { useH4RaffleReadback } from "./h4-genesis-raffle";
@@ -67,6 +67,31 @@ type Model = H4Statistics & {
   wheelGuards?: Array<{ key: string; label: string; value: string; note?: string }>;
   trackables?: Array<{ id: string; name: string; cond: string; join: string; done: string; claim: string; geo: string }>;
 };
+
+function unavailableOperation(objectLabel?: string) {
+  return new ConfirmReadConflict(undefined, objectLabel
+    ? `${objectLabel}已被别人改过，原来的操作现在不能再做；你填的内容没有提交，请按最新状态重新操作。`
+    : H4_MISSING_ORIGINAL);
+}
+
+function overviewObjectLabel(latest: Model, group: string | undefined, id: string | undefined) {
+  if (group === "events" && latest.events?.some(event => event.id === id)) return "这个活动";
+  if (group === "wheel-guards" && latest.wheelGuards?.some(guard => guard.key === id)) return "这个护栏";
+  if (group === "wheel-tiers") {
+    if (id === "probabilities" && latest.wheelTiers?.length) return "这个奖池";
+    if (latest.wheelTiers?.some(tier => tier.tier === id)) return "这个奖项";
+  }
+}
+
+function registeredObjectLabel(latest: Model, key?: string) {
+  if (!key) return;
+  const [opener, id] = JSON.parse(key) as [string, string?];
+  if (opener.startsWith("openEvent") || opener === "openLocalizedContent") return overviewObjectLabel(latest, "events", id);
+  if (opener === "openWheelBudget:1" || opener === "openWheelKill:1") {
+    return overviewObjectLabel(latest, "wheel-guards", opener === "openWheelBudget:1" ? "budget" : "kill");
+  }
+  return overviewObjectLabel(latest, "wheel-tiers", opener === "openWheelProbabilities:1" ? "probabilities" : id);
+}
 
 const GUARD_NAME: Record<string, string> = { budget: "每日真钱奖预算", cap: "各奖档每日库存", kill: "真钱奖发放开关" };
 const REWARD_PREVIEW_VALUE_ERRORS = new Set([
@@ -337,13 +362,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const conflictDraft = useHConflictDraft(!loading && !error && h4ReadVersion("overview") !== undefined, {
-    readConflict: (afterRead, kind, req) => h4ReadConflict(async () => {
-      if (!await reload()) throw new Error("既有活动与转盘没有读到");
+    readConflict: (afterRead, kind, req, key) => h4ReadConflict(async () => {
+      const latest = await reload();
+      if (!latest) throw new Error("既有活动与转盘没有读到");
       const found = await afterRead(() => {
         setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改");
         if (kind === "action") ctx.openActionConfirm(null); else ctx.closeConfirm?.();
       });
-      if (!found) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL);
+      if (!found) throw unavailableOperation(registeredObjectLabel(latest, key));
     }),
   });
   const canReadA2 = ctx.can("platform_a2_read");
@@ -1155,13 +1181,25 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
   const recoverRejectedCommand = async (record: H4Command, cause: PendingConfirmRejected) => {
     if ("proposal" in record.request) return;
-    if (["EVENT_NOT_FOUND", "EVENT_RULE_NOT_FOUND", "WHEEL_TIER_NOT_FOUND", "WHEEL_GUARD_NOT_FOUND", "RAFFLE_NOT_FOUND"].some(code => code === cause.reasonCode)) {
-      throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL);
-    }
     const closeRetry = () => { activeRecovery.current = null; ctx.openActionConfirm(null); };
     const [, area, group, target, field, contentField, language] = record.request.path.split("/").map(decodeURIComponent);
     const body = JSON.parse(record.request.body) as Record<string, unknown>;
     const method = record.request.method;
+    const unavailableAfterRead = async () => {
+      if (area === "event-rules") {
+        const latest = await fetchEventRules();
+        return unavailableOperation(latest.some(row => row.eventCode === group) ? "这个玩法" : undefined);
+      }
+      if (area === "genesis-raffle") {
+        const id = group ?? String(body.id);
+        return unavailableOperation(await fetchAdminRaffle(id) ? "这一期" : undefined);
+      }
+      const latest = await reload();
+      if (!latest) throw new ConfirmReadConflict(undefined, "既有活动与转盘没有读到");
+      const id = target ?? String(group === "wheel-guards" ? body.guardKey : group === "wheel-tiers" ? body.tierName : body.id);
+      return unavailableOperation(overviewObjectLabel(latest, group, id));
+    };
+    if (["EVENT_NOT_FOUND", "EVENT_RULE_NOT_FOUND", "WHEEL_TIER_NOT_FOUND", "WHEEL_GUARD_NOT_FOUND", "RAFFLE_NOT_FOUND"].some(code => code === cause.reasonCode)) throw await unavailableAfterRead();
     const reopen = (parts: string[], draft: RejectedH4Draft = {}) =>
       conflictDraft.reopen(JSON.stringify(parts), { ...draft, rejection: cause }, closeRetry);
     let opened = false;
@@ -1189,7 +1227,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       else if (field === "status") opened = reopen([body.value === "ongoing" ? "openEventStatus:2" : "openEventStatus:1", target]);
       else if (field === "content") opened = reopen(["openLocalizedContent", target, contentField, language], { value: String(body.value ?? "") });
     }
-    if (!opened) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL);
+    if (!opened) throw await unavailableAfterRead();
   };
   const openResumeHICommand = (record: H4Command, subject: string) => {
     if (h4RetryBlockedReason(record)) return;

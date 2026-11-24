@@ -23,7 +23,7 @@ function reviewPendingConflict(getRecovery: ActionConfirmReq["getPendingRecovery
 
 /** Bind recovery to the operation constructing this request, never a previous click. */
 export function useHConflictDraft(ready: boolean, { readConflict }: {
-  readConflict?: (afterRead: (beforeOpen: () => void) => Promise<boolean>, kind: "action" | "confirm", request: ActionConfirmReq | ConfirmReq) => ConfirmReadConflict;
+  readConflict?: (afterRead: (beforeOpen: () => void) => Promise<boolean>, kind: "action" | "confirm", request: ActionConfirmReq | ConfirmReq, key?: string) => ConfirmReadConflict;
 } = {}) {
   const openers = useRef(new Map<string, () => void>());
   openers.current.clear();
@@ -82,11 +82,11 @@ export function useHConflictDraft(ready: boolean, { readConflict }: {
       const rebase = (reason: string, value?: string, business?: BusinessFormValue) => {
         const initial = business ? initBusinessForm(request.businessForm) : undefined;
         const changes = initial && business ? Object.fromEntries(Object.entries(business).filter(([field, input]) => input !== initial[field])) : business;
-        return readConflict?.(beforeOpen => new Promise(done => retain(key, reason, value, changes, request.rebaseValue, { beforeOpen, done })), "action", request);
+        return readConflict?.(beforeOpen => new Promise(done => retain(key, reason, value, changes, request.rebaseValue, { beforeOpen, done })), "action", request, key);
       };
       const rejection = draft?.rejection;
       const initialRejection = rejection && !request.edit?.review && isH4ReadConflict(rejection)
-        ? readConflict?.(beforeOpen => new Promise(done => retain(key, "", draft.value, draft.business, draft.intent, { beforeOpen, done })), "action", request) : rejection;
+        ? readConflict?.(beforeOpen => new Promise(done => retain(key, "", draft.value, draft.business, draft.intent, { beforeOpen, done })), "action", request, key) : rejection;
       return { ...request, ...(draft ? { formKey: revision, initialReason: draft.reason ?? "", initialRejection,
         edit: request.edit ? { ...request.edit, initialValue: draft.value } : undefined,
         getPendingBusinessValue: () => {
@@ -113,7 +113,7 @@ export function useHConflictDraft(ready: boolean, { readConflict }: {
       const key = opening.current;
       const draft = restoring.current ? saved.current : undefined;
       let attempted: { reason: string; value?: string } | undefined;
-      const rebase = (reason: string, value?: string) => readConflict?.(beforeOpen => new Promise(done => retain(key, reason, value, undefined, request.rebaseValue, { beforeOpen, done })), "confirm", request);
+      const rebase = (reason: string, value?: string) => readConflict?.(beforeOpen => new Promise(done => retain(key, reason, value, undefined, request.rebaseValue, { beforeOpen, done })), "confirm", request, key);
       const rejection = draft?.rejection;
       return { ...request, ...(readConflict ? { getPendingRecovery: reviewPendingConflict(request.getPendingRecovery,
         error => attempted ? rebase(attempted.reason, attempted.value) ?? error : error) } : {}), ...(draft ? { initialReason: draft.reason ?? "", formKey: revision,
