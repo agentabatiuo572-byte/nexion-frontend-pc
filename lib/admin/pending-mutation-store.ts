@@ -16,6 +16,8 @@ export interface PendingMutationRecord {
   expiresAt: number;
   /** Authenticated submitter, stamped on every capture; page metadata cannot override it. */
   commandOwnerId?: number;
+  /** A replay got a definitive refusal. Preserve this evidence until local release. */
+  replayRejection?: string;
 }
 
 /** 记录里除四个公共字段之外的调用方自定义元数据(如 d-client 的 base/path/method/body)。 */
@@ -35,6 +37,7 @@ export interface PendingMutationStore<T extends PendingMutationRecord> {
   forget(fingerprint: string, commandKey?: string): void;
   /** Current submitter's usable records; unreadable/unattributed evidence stays stored. */
   list(): T[];
+  markReplayRejected(fingerprint: string, commandKey: string, code: string): void;
 }
 
 function isBaseRecord(value: unknown, commandKey: string, now: number, retainExpiredRecords = false): value is PendingMutationRecord {
@@ -215,6 +218,7 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
         commandKey,
         createdAt,
         expiresAt: createdAt + ttlMs,
+        ...(previous?.replayRejection ? { replayRejection: previous.replayRejection } : {}),
       } as T;
       writeAll(persisted);
     },
@@ -238,6 +242,141 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
     },
     list() {
       return Object.entries(readAll()).filter(([key, record]) => visible(record, key)).map(([, record]) => capped(record));
+    },
+    markReplayRejected(fingerprint, commandKey, code) {
+      const persisted = readAll();
+      const record = persisted[commandKey];
+      if (!record || !visible(record, commandKey) || record.fingerprint !== fingerprint) return;
+      persisted[commandKey] = { ...record, replayRejection: code };
+      writeAll(persisted);
+    },
+  };
+}
+
+export type PendingRecoveryCapability = "receipt" | "replay" | "readback";
+export type PendingRecoveryConclusion = "succeeded" | "not-executed" | "rejected" | "unknown" | "not-found";
+export type PendingReplayBlock = "missing" | "readback-only" | "replay-rejected" | "expired" | "busy" | "unavailable" | "needs-not-found";
+
+export type PendingRecoveryState = {
+  capability: PendingRecoveryCapability;
+  conclusion: PendingRecoveryConclusion;
+  busy: "query" | "replay" | undefined;
+  expiresAt: number;
+  expired: boolean;
+  replayBlock?: PendingReplayBlock;
+  replayRejection?: string;
+};
+
+/** Opt in per command family. The caller interprets its endpoint and proves business facts. */
+export function createPendingRecovery<T extends PendingMutationRecord>(
+  store: PendingMutationStore<T>,
+  options: {
+    capability: (record: T) => PendingRecoveryCapability;
+    canReplay: (record: T) => boolean;
+    explicitRejectionCode: (error: unknown) => string | undefined;
+  },
+) {
+  const observations = new Map<string, { conclusion: PendingRecoveryConclusion; busy?: "query" | "replay" }>();
+  const listeners = new Set<() => void>();
+  let revision = 0;
+  const recordKey = (record: T) => JSON.stringify([record.commandOwnerId, record.fingerprint, record.commandKey, record.createdAt]);
+  const current = (record: T) => store.list().find(row => recordKey(row) === recordKey(record));
+  const notify = () => {
+    revision++;
+    listeners.forEach(listener => listener());
+  };
+  const publish = (key: string, observation: { conclusion: PendingRecoveryConclusion; busy?: "query" | "replay" }) => {
+    observations.set(key, observation);
+    notify();
+  };
+  const settle = (record: T) => {
+    store.forget(record.fingerprint, record.commandKey);
+    observations.delete(recordKey(record));
+    notify();
+  };
+  const state = (original: T): PendingRecoveryState => {
+    const record = current(original);
+    const capability = options.capability(record ?? original);
+    const observation = observations.get(recordKey(original));
+    const conclusion = observation?.conclusion ?? "unknown";
+    const busy = observation?.busy;
+    const expiresAt = record?.expiresAt ?? original.expiresAt;
+    const expired = isRetryExpired({ expiresAt });
+    const replayRejection = record?.replayRejection;
+    const replayBlock = !record ? "missing"
+      : replayRejection ? "replay-rejected"
+        : expired ? "expired"
+          : capability === "readback" ? "readback-only"
+            : busy ? "busy"
+              : !options.canReplay(record) || !store.isDurablyStored(record.fingerprint, record.commandKey) ? "unavailable"
+                : capability === "receipt" && conclusion !== "not-found" ? "needs-not-found"
+                  : undefined;
+    return { capability, conclusion, busy, expiresAt, expired, replayBlock, replayRejection };
+  };
+  return {
+    state,
+    getRevision: () => revision,
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    async query<R extends { conclusion: PendingRecoveryConclusion }>(original: T, read: (record: T) => Promise<R>): Promise<R | undefined> {
+      const record = current(original);
+      if (!record) return;
+      const key = recordKey(record);
+      if (observations.get(key)?.busy === "replay") return;
+      const reading = { conclusion: "unknown", busy: "query" } as const;
+      publish(key, reading);
+      try {
+        const result = await read(record);
+        if (!current(record) || observations.get(key) !== reading) return;
+        if (result.conclusion === "not-found" && options.capability(record) !== "receipt") {
+          publish(key, { conclusion: "unknown" });
+          return;
+        }
+        publish(key, { conclusion: result.conclusion });
+        return result;
+      } catch (error) {
+        if (observations.get(key) !== reading) return;
+        publish(key, { conclusion: "unknown" });
+        throw error;
+      }
+    },
+    async replay<R>(original: T, send: (record: T) => Promise<R>): Promise<R> {
+      const record = current(original);
+      if (!record || state(record).replayBlock) throw new Error("PENDING_REPLAY_BLOCKED");
+      const key = recordKey(record);
+      publish(key, { conclusion: "unknown", busy: "replay" });
+      try {
+        return await send(record);
+      } catch (error) {
+        const code = options.explicitRejectionCode(error);
+        if (code) store.markReplayRejected(record.fingerprint, record.commandKey, code);
+        throw error;
+      } finally {
+        publish(key, { conclusion: "unknown" });
+      }
+    },
+    /** Only exact success or terminal nonexecution from the latest query can settle. */
+    settleFromQuery(original: T, expected: PendingRecoveryConclusion) {
+      const record = current(original);
+      if (!record) return false;
+      const conclusion = observations.get(recordKey(record))?.conclusion;
+      if (conclusion !== expected || (conclusion !== "succeeded" && conclusion !== "not-executed" && conclusion !== "rejected")) return false;
+      settle(record);
+      return true;
+    },
+    /** An acknowledged write can be settled after the caller checks its result. */
+    settleAcknowledged(original: T) {
+      const record = current(original);
+      if (record) settle(record);
+    },
+    /** OP-93(8): call only after the operator has manually checked the original result. */
+    releaseRejectedReplay(original: T) {
+      const record = current(original);
+      if (!record?.replayRejection || observations.get(recordKey(record))?.busy) return false;
+      settle(record);
+      return true;
     },
   };
 }
