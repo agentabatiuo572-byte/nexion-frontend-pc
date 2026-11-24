@@ -1,7 +1,7 @@
 "use client";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, Ban, Boxes, CheckCircle2, CircleDot, Clock3, FastForward, FileText, ImageIcon, PackageCheck, PackagePlus, PackageX, ShieldAlert, ShieldCheck, SlidersHorizontal } from "lucide-react";
-import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Facts, Fact, FilterBar, Fold, IconButton, Input, JudgmentPoints, LevelStrip, MoreMenu, Notice, Panel, RatioBar, ScaleBar, Segments, Select, StageLine, Stat, StatBand, StatusTag, Table, Th, Tr, Td } from "@/app/components/rd";
+import { BlockState, Button, Cell, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Facts, Fact, FilterBar, Fold, IconButton, Input, JudgmentPoints, LevelStrip, MoreMenu, Notice, Panel, RatioBar, ScaleBar, Segments, Select, StageLine, Stat, StatBand, StatusTag, Table, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, datacenterNameText } from "@/lib/admin/brand-copy";
 import { SKU_BADGE_OPTIONS, SKU_TAGLINE_LABELS, skuBadgeKind, skuBadgeReviewText } from "@/lib/admin/e1-product-copy";
 import { operatorSkuTier } from "@/lib/admin/e-operator-display";
@@ -487,7 +487,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
             const archiveBlock = writeBlock({ op: "phase-archive", phaseId: ph.p }) || (phases.filter(p => p.status !== "archived").length <= 1 ? "至少保留一个启用阶段" : skus.some(s => resolveE1PhaseId(phases, s.unlock) === ph.p) || releases.some(g => resolveE1PhaseId(phases, g.phase) === ph.p) ? "商品或上架条件仍引用此阶段" : ctx.locked("device_phase", ph.p) ? "此对象有待审批或待核对的操作" : undefined);
             return <Tr key={ph.p}>
               <Td><div className="e1-table-stack"><strong>{phaseLabel(ph.p)}</strong><span className="e1-phase-code" data-mono>编号 {ph.p}{ph.p === phaseCur && <StatusTag tone="progress" icon={CircleDot}>当前</StatusTag>}</span></div></Td>
-              <Td>{ph.meta ? <Explain label={`${phaseLabel(ph.p)}完整门槛说明`} content={ph.meta}><span className="e1-table-text">{ph.meta}</span></Explain> : "—"}</Td><Td>{ph.skus ? <Explain label={`${phaseLabel(ph.p)}完整商品标签`} content={ph.skus}><span className="e1-table-text">{ph.skus}</span></Explain> : "—"}</Td><Td><div className="e1-table-stack"><span>排序 {ph.sortOrder ?? "—"}</span><StatusTag tone={ph.status === "archived" ? "done" : "ok"} icon={ph.status === "archived" ? Archive : CheckCircle2}>{ph.status === "archived" ? "已归档" : "已启用"}</StatusTag></div></Td>
+              <Td>{ph.meta ? <Cell main={ph.meta} title={ph.meta} /> : "—"}</Td><Td>{ph.skus ? <Cell main={ph.skus} title={ph.skus} /> : "—"}</Td><Td><div className="e1-table-stack"><span>排序 {ph.sortOrder ?? "—"}</span><StatusTag tone={ph.status === "archived" ? "done" : "ok"} icon={ph.status === "archived" ? Archive : CheckCircle2}>{ph.status === "archived" ? "已归档" : "已启用"}</StatusTag></div></Td>
               {canWrite && <Td sticky="end" data-fit=""><div className="e1-table-actions"><Button size="sm" disabledReason={writeBlock({ op: "phase-save" }) || (ctx.locked("device_phase", ph.p) ? "此对象有待审批或待核对的操作" : undefined)} onClick={() => openPhaseEditor(ph)}>编辑</Button><Button size="sm" variant="danger-outline" disabledReason={archiveBlock} onClick={() => archivePhase(ph)}>删除</Button></div>{archiveBlock && <span className="e1-action-reason">{archiveBlock}</span>}</Td>}
             </Tr>;
           })}</tbody></Table>}

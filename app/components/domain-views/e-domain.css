@@ -879,8 +879,6 @@
 .e1-phase-table .e1-action-reason { margin-top: var(--rd-space-1); }
 .e1-phase-code { display: flex; align-items: center; gap: var(--rd-space-2); }
 /* 门槛说明、商品标签：一行，放不下末尾省略，点问号看全文（03 ST-04，BUG-666）。 */
-.e1-phase-table td .rd-explain[data-term] { max-width: 100%; }
-.e1-table-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 @container (max-width: 900px) {
   .e1-plan-table :is(th, td):first-child { width: 28%; }
   .e1-plan-table :is(th, td):nth-child(2) { width: 13%; }

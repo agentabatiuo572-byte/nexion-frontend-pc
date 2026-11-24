@@ -380,8 +380,8 @@ export function PlatformParamsRegistry() {
                       <tbody>
                         {groupRows.map((row) => (
                           <Tr key={row.canonicalKey}>
-                            <Td><Cell full
-                              main={<span className="a5-name">{operatorCopyText(row.displayName)}<Explain label={`${operatorCopyText(row.displayName)}的说明`} content={operatorCopyText(row.description)} /></span>}
+                            <Td><Cell title={`${operatorCopyText(row.displayName)}\n${row.canonicalKey}`}
+                              main={<span className="a5-name"><span className="rd-cell-clip">{operatorCopyText(row.displayName)}</span><Explain label={`${operatorCopyText(row.displayName)}的说明`} content={operatorCopyText(row.description)} /></span>}
                               sub={<span data-mono>{row.canonicalKey}</span>} /></Td>
                             <Td>{valueCell(row)}</Td>
                             <Td>{statusCell(row)}</Td>
