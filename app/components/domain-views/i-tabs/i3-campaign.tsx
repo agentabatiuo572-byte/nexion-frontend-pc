@@ -13,17 +13,17 @@ import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLa
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Trash2, Users } from "lucide-react";
-import { BlockState, Button, Change, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Change, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { pendingI3Commands, queryI3Command, retryI3Command, i3RetryPermission, i3DraftRetryBlockedReason, isI3DraftCommand, parseI3Json, fetchI3CampaignOverview, I3_WALLET_CTA, I3_RETIRED_WALLET_CTA, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, releaseExpiredI3Cap, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
+import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { isIConflictRejection, useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
 import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
@@ -226,9 +226,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const [recovering, setRecovering] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closing, setClosing] = useState<I3Command | null>(null);
-  /** 按原请求查过、后端明确没有这张审批单的保留上限申请（过期后可以确认解除）。 */
+  /** 保留上限申请已查询，但暂未找到对应审批单。 */
   const [absentCaps, setAbsentCaps] = useState<Record<string, true>>({});
-  const [releasing, setReleasing] = useState<I3CapCommand | null>(null);
   const [requiresReload, setRequiresReload] = useState(false);
   const recoveryInFlight = useRef(false);
   const active = useRef(true);
@@ -987,27 +986,17 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       </> })),
     ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: `${TIER[row.tier as TierK].label}优先级`,
       change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), submitted: !!row.receiptKnown,
-      note: !row.receiptKnown && absentCaps[row.commandKey]
-        ? `按原请求查不到这张审批单，说明没建成；${isRetryExpired(row) ? "可以确认解除。" : "24 小时内可以按原请求重试。"}`
-        : row.receiptKnown ? "审批单已建，批没批准还没查到；点「查询原结果」看当前状态。" : undefined,
+      note: isRetryExpired(row) ? RETRY_EXPIRED_TEXT
+        : row.receiptKnown ? "审批单已建，批没批准还没查到；点「查询原结果」看当前状态。"
+          : absentCaps[row.commandKey] ? "按原请求查不到这张审批单，24 小时内可以按原请求重试。" : undefined,
       actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button>
         {!isRetryExpired(row) && !row.receiptKnown && <Button size="sm" disabledReason={!row.request ? "原操作记录不完整，只能查询核对，不能重试。" : capPermission} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原请求重试</Button>}
-        {!row.receiptKnown && isRetryExpired(row) && absentCaps[row.commandKey] && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(row)}>确认解除</Button>}
       </> })),
   ];
   const pendingCapRows = pendingCaps.filter((row) => row.ticketStatus === "pending").map((row) => ({ key: row.commandKey, tier: `${TIER[row.tier as TierK].label}优先级`,
     change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt,
     actions: <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button> }));
-  const releaseCap = async (record: I3CapCommand) => {
-    setReleasing(null);
-    try {
-      await releaseExpiredI3Cap(record);
-      setAbsentCaps((prev) => { const next = { ...prev }; delete next[record.commandKey]; return next; });
-      toast("已解除这条记录；需要的话可以重新提交调整");
-    } catch (error) { toast(displayAdminError(error)); }
-    syncPending();
-  };
   const drawerOriginal = pending.find((row) => row.commandKey === drawerPendingKey);
   const draftSaveBlocked = submitting ? "正在保存…" : drawerPendingKey ? drawerOriginal && i3DraftRetryBlockedReason(drawerOriginal)
     : lockReason(editing?.id ?? "create") ?? (!AUDIENCE_CATALOG ? "受众目录没读到，不能保存；刷新页面后再试"
@@ -1098,9 +1087,6 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         }} />}
       {conflictUi}
       <I3PendingCapNotice rows={pendingCapRows} link={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>到操作记录与审批看</Link> : undefined} />
-      {releasing && <ReleaseModal label={`调整${TIER[releasing.tier as TierK].label}优先级保留上限 · ${releasing.before} → ${releasing.after} 条`}
-        explain="原申请超过 24 小时，按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
-        onCancel={() => setReleasing(null)} onConfirm={() => void releaseCap(releasing)} />}
       {!data ? contentLoading ? <BlockState state="loading" title="通知活动加载中…" /> : <BlockState state="error" title="通知活动读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void actions.reloadIContent()} /> : <>
       {conclusion}
 
@@ -1463,7 +1449,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
         others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
         <div className="i3-form">
-          {frozen && <Notice tone="warn" title="结果未知">原请求已冻结。先在页面上方查询原结果，明确查不到后才能按原请求重试。</Notice>}
+          {frozen && <Notice tone="warn" title="结果未知">原请求已锁定，不能再改。先在页面上方查询原结果，明确查不到后才能按原请求重试。</Notice>}
           {saveError && <Notice tone="danger" title="草稿没有保存">{saveError}</Notice>}
           <section className="i3-form-section" aria-labelledby="i3-f-base">
             <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>

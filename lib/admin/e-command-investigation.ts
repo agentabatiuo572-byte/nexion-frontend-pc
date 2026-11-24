@@ -132,6 +132,7 @@ export function eCommandResult(receipt: ECommandInvestigation | null): ECommandR
     return receipt.batch ? "BATCH_RESULT" : "BUSINESS_RESULT_UNAVAILABLE";
   // Verified callbacks return only success or throw. H3 redrive proves requeue, not delivery.
   // A4 retention is excluded: failing to acquire its lock is also a normal return.
+  // E2_POOL_CREATE/UPDATE use the E2 investigation paths above, but require a business verdict until their backend callbacks are verified.
   const successOnly = receipt.scope === "A2_COMMAND" || receipt.scope === "E6_PHONE_RISK_SETTINGS" || receipt.scope === "F5_COMMISSION_ANOMALY_CONFIG"
     || purchasePaymentPolicyScope(receipt.scope)
     || receipt.scope === "D1_HDPAY_MANUAL_CREDIT"
@@ -164,6 +165,10 @@ export function eCommandSettled(receipt: ECommandInvestigation | null) {
   // its FAILED reply is saved only after rollback. A committed nonzero reply is different.
   return result === "SUCCEEDED" || result === "NOT_EXECUTED" || result === "REJECTED" && receipt?.originalStatus === "FAILED"
     && /^A6_ROLE_(?:CREATE:[A-Z0-9_-]{1,64}|UPDATE:[1-9]\d*)$/.test(receipt.scope);
+}
+
+export function eCommandRollbackConfirmed(receipt: ECommandInvestigation | null) {
+  return receipt?.originalStatus === "FAILED" && !receipt.locked && receipt.localTransactionRollbackConfirmed === true;
 }
 
 /** A batch is resolved only when every original target has exactly one retained item result. */

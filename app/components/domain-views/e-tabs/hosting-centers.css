@@ -2,9 +2,9 @@
 .hc-back { display: inline-flex; align-items: center; gap: var(--rd-space-1); background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }
 .hc-page { container-type: inline-size; }
 
+/* 机房名一行，放不下末尾省略，悬停和聚焦看全文（03 ST-04，BUG-666）；宽屏先给足列宽。 */
 .hc-table td:first-child { min-width: 280px; }
-.hc-table td:first-child .rd-cell { max-width: 360px; }
-.hc-table td:first-child .rd-cell-main { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
+.hc-table td:first-child .rd-cell { max-width: 480px; }
 .hc-share { display: flex; align-items: center; gap: var(--rd-space-3); }
 .hc-share > :first-child { flex: 1 1 auto; min-width: 120px; max-width: none; }
 .hc-share-num { flex: none; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--rd-text); }

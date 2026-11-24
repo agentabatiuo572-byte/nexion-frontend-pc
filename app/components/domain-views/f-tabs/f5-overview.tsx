@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * F5 首屏的两张图：奖励走到哪一步（七个状态排成一条路，冻结和冲正是岔路），八类奖励。
+ * F5 首屏的两张图：奖励走到哪一步（七个状态排成一条路，冻结和冲正是岔路），各类奖励。
  * 数的都是全部记录，不跟下方筛选变（D01）。金额只画后端给了的：冷却中、已解锁和合计有金额，其余只有笔数。
  */
 import type { ReactNode } from "react";
@@ -9,7 +9,7 @@ import { ArrowDown, ArrowRight, ArrowUp, Check, Layers3, Route } from "lucide-re
 import { Fold, Panel, RatioBar, Table, Td, Th, Tr } from "@/app/components/rd";
 import type { F5CommissionAuditOverview } from "@/lib/admin/f1-client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { KIND_LABELS, STATUS_BY_LABEL, STATUS_META, splitMoneyLabel } from "./f5-shared";
+import { KIND_LABELS, STATUS_BY_LABEL, STATUS_META, kindCountLabel, splitMoneyLabel } from "./f5-shared";
 
 type Money = { usdt: string; uvt: string } | null;
 
@@ -88,7 +88,7 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
       sub={<>全部记录 · {totalCount.toLocaleString("en-US")} 笔{total && <> · 合计 {total.usdt} USDT · {total.uvt} UVT</>}</>}
       explain={<>
         <p>数的是全部记录，不跟下方筛选变。点一个状态只看这个状态，再点一次取消。</p>
-        <p>合计是八类、所有状态的金额相加，含已冲正和已拒绝，不是实际发出的钱；两种币分开算。</p>
+        <p>合计是{kindCountLabel(data.commissionKinds.length)}、所有状态的金额相加，含已冲正和已拒绝，不是实际发出的钱；两种币分开算。</p>
         <p>有到期时间的到期后系统解锁，不是好友奖励的也能申请提前解锁。已提现表示记录已结束，这页不核出款。</p>
         <p>冷却中、已解锁、已冻结一般都能冲正，没有结算组的旧已冻结记录除外；补发会生成一笔新记录，原记录不变。</p>
         <p>只有冷却中和已解锁有金额，其余状态只有笔数。</p>
@@ -151,12 +151,12 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
   );
 }
 
-/** 八类奖励：每类的笔数和两种币金额；条是这一类占全部笔数的多少（按笔数算，不按金额）。点一类筛下方列表。 */
+/** 各类奖励：每类的笔数和两种币金额；条是这一类占全部笔数的多少（按笔数算，不按金额）。点一类筛下方列表。 */
 export function F5KindTiles({ data, kindFilter, onKind }: { data: F5CommissionAuditOverview; kindFilter: string; onKind: (kind: string) => void }) {
   const counts = data.commissionKinds.map((item) => Number.parseInt(item.ct, 10) || 0);
   const total = counts.reduce((sum, value) => sum + value, 0);
   return (
-    <Panel icon={Layers3} tone="role-1" title="八类奖励" sub="全部记录"
+    <Panel icon={Layers3} tone="role-1" title={`${kindCountLabel(data.commissionKinds.length)}奖励`} sub="全部记录"
       explain="每类的笔数和两种币的金额，算全部记录，不跟下方筛选变。条是这一类占全部笔数的比例，按笔数算，不按金额。">
       <div className="f5-kinds">
         {data.commissionKinds.map((item, index) => {

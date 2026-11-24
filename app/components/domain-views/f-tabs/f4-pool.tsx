@@ -98,19 +98,22 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
     return `${count(row.eligibleCount)} 人${perVote === null ? "" : ` · 每人约 ${usdt(times(row.votesPerMember, perVote))} USDT`}`;
   };
 
-  const openSettle = () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "settle", overview: data, policy: ctx.f4AmbassadorPolicy }));
+  const settleSnapshot = { action: "settle", overview: data, policy: ctx.f4AmbassadorPolicy };
+  const openSettle = () => ctx.openActionConfirm(f4Confirmation(ctx, settleSnapshot));
 
   const voteButton = (row: F4LeadershipPoolOverview["voteWeights"][number]) => {
     const paramKey = row.configKey || `F.pool.votes.${row.v}`;
     if (!canEditVotes) return undefined;
-    return <Button size="sm" aria-label={`调整 ${row.v} 票数，当前 ${row.votes} 票`} onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, { action: paramKey, overview: data, policy: ctx.f4AmbassadorPolicy }))}>改票数</Button>;
+    const snapshot = { action: paramKey, overview: data, policy: ctx.f4AmbassadorPolicy };
+    return <Button size="sm" aria-label={`调整 ${row.v} 票数，当前 ${row.votes} 票`} disabledReason={ctx.f4ExpiredReason(snapshot)} onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, snapshot))}>改票数</Button>;
   };
 
-  const paramRow = (spec: { name: string; value: string; sub?: ReactNode; mono?: boolean; what: string; when: string; effect: string; note?: string; allowed: boolean; open: () => void }) => (
-    <ConfigRow key={spec.name} name={spec.name} what={spec.what} when={spec.when} effect={spec.effect} note={spec.note} sub={spec.sub}
+  const paramRow = (spec: { name: string; value: string; sub?: ReactNode; mono?: boolean; what: string; when: string; effect: string; note?: string; allowed: boolean; action: string }) => {
+    const snapshot = { action: spec.action, overview: data, policy: ctx.f4AmbassadorPolicy };
+    return <ConfigRow key={spec.name} name={spec.name} what={spec.what} when={spec.when} effect={spec.effect} note={spec.note} sub={spec.sub}
       value={spec.mono ? <span data-mono>{spec.value}</span> : spec.value}
-      action={spec.allowed ? <Button size="sm" onClick={spec.open}>调整</Button> : undefined} />
-  );
+      action={spec.allowed ? <Button size="sm" disabledReason={ctx.f4ExpiredReason(snapshot)} onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, snapshot))}>调整</Button> : undefined} />;
+  };
 
   return (
     <div className="f4-stack">
@@ -119,7 +122,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
           <p>已结算的一周显示实际发出的金额；还没结算时按本周已付款成交额 × 奖池比例估算，不超过本月剩余额度，保留 6 位小数。</p>
           <p>估算不是已经发的钱，批准执行时会重新计算。</p>
         </>}
-        actions={canFund ? <Button variant="primary" disabledReason={operable ? undefined : blockedCopy} onClick={openSettle}>提前结算本周池</Button> : undefined}>
+        actions={canFund ? <Button variant="primary" disabledReason={operable ? ctx.f4ExpiredReason(settleSnapshot) : blockedCopy} onClick={openSettle}>提前结算本周池</Button> : undefined}>
         {!operable && <Notice tone="warn" title="提前结算已暂停"
           action={<Button size="sm" loading={ctx.f4Loading} onClick={() => void ctx.refreshF4()}>刷新设置</Button>}>{blockedCopy}</Notice>}
         <div className="f4-pool-hero">
@@ -163,24 +166,24 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
             what: "每周已付款成交额里放进团队激励池的百分比，可填 0–30%。",
             when: "批准后，还没结算的估算和之后的结算按新比例算；已发的不重算。",
             effect: "调高会多发钱，提交前看兑付覆盖率。",
-            open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.ratio", overview: data, policy: ctx.f4AmbassadorPolicy })) })}
+            action: "F.pool.ratio" })}
           {paramRow({ name: "每月上限", value: capEff, allowed: canWrite,
             what: "团队激励池一个月最多发多少，按自然月累计。",
             when: "批准后影响这个月还没结算的部分，已发的不追回。",
             effect: "本周估算不会超过「上限 − 本月已发」。",
             note: "填 0 或正数，比如 1000、50K；格式不对提交不了。",
-            open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.monthlyCap", overview: data, policy: ctx.f4AmbassadorPolicy })) })}
+            action: "F.pool.monthlyCap" })}
           {paramRow({ name: "自动结算时间", value: settleCronText, sub: cadence ? <span className="f4-cadence" data-tone={cadence.tone}>{cadence.text}</span> : undefined, allowed: canWrite,
             what: "到这个时间自动结算最近一个已结束的周。",
             when: `批准后的下一次命中就按新时间。按${data.settlementZone?.label ?? "—"}解析；「下次自动结算」换算成了${zoneNote()}。`,
             note: settleCron ? `保存的原文：${settleCron}` : undefined,
             effect: "不影响已经结算的周。",
-            open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.settleCron", overview: data, policy: ctx.f4AmbassadorPolicy })) })}
+            action: "F.pool.settleCron" })}
           {paramRow({ name: "参与等级", value: unlockLabel, allowed: canWrite,
             what: "达到这个等级、且等级票数大于 0 才能分团队激励池，可选 V1–V8。",
             when: "批准后按结算那一刻的值；已发的不追溯。",
             effect: "调高参与人数变少，调低参与人数变多。",
-            open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.unlockVRank", overview: data, policy: ctx.f4AmbassadorPolicy })) })}
+            action: "F.pool.unlockVRank" })}
           <ConfigRow name="设置版本" what="上面几项都合法时系统生成的版本号，只读。" value={<span data-mono>{configVersionEff}</span>} />
         </ConfigList>
       </Panel>

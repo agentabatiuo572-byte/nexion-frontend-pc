@@ -264,7 +264,7 @@ export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
   return (
     <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<>
       <p>{DIRECT_RECOVERY_INTRO}</p>
-      <p>保留上限的申请过期后，按原请求明确查不到这张单，说明没建成，可以确认解除。</p>
+      <p>保留上限的申请过期后，仍可查询原结果。查不到审批单时，继续保留原记录和对象锁。</p>
     </>} /></>}>
       <ul className="i3-recovery" aria-label="结果未知的操作">
         {(all ? rows : rows.slice(0, 3)).map((row) => (

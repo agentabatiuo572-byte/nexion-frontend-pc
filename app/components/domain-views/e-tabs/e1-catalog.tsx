@@ -1,7 +1,7 @@
 "use client";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, Ban, Boxes, CheckCircle2, CircleDot, Clock3, FastForward, FileText, ImageIcon, PackageCheck, PackagePlus, PackageX, ShieldAlert, ShieldCheck, SlidersHorizontal } from "lucide-react";
-import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Facts, Fact, FilterBar, Fold, IconButton, Input, JudgmentPoints, LevelStrip, MoreMenu, Notice, Panel, RatioBar, ScaleBar, Segments, Select, StageLine, Stat, StatBand, StatusTag, Table, Th, Tr, Td } from "@/app/components/rd";
+import { BlockState, Button, Cell, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Facts, Fact, FilterBar, Fold, IconButton, Input, JudgmentPoints, LevelStrip, MoreMenu, Notice, Panel, RatioBar, ScaleBar, Segments, Select, StageLine, Stat, StatBand, StatusTag, Table, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, datacenterNameText } from "@/lib/admin/brand-copy";
 import { SKU_BADGE_OPTIONS, SKU_TAGLINE_LABELS, skuBadgeKind, skuBadgeReviewText } from "@/lib/admin/e1-product-copy";
 import { operatorSkuTier } from "@/lib/admin/e-operator-display";
@@ -60,8 +60,9 @@ export function E1Amount({ value, precision, unit }: { value: number | string | 
   return <span className="e1-decimal" title={`${raw}${unit ? ` ${unit}` : ""}`} aria-label={`${raw}${unit ? ` ${unit}` : ""}`}>{e1Amount(value)}{unit && ` ${unit}`}</span>;
 }
 
-function E1MiddleText({ text, tail = 8 }: { text: string; tail?: number }) {
-  return <span className="e1-middle-text" title={text}><span>{text.slice(0, -tail)}</span><span>{text.slice(-tail)}</span></span>;
+/** clip：放在表格 Cell 里时给省略的那段加 rd-cell-clip，Cell 量到截断才给键盘入口和全文气泡（ST-04）。 */
+function E1MiddleText({ text, tail = 8, clip }: { text: string; tail?: number; clip?: boolean }) {
+  return <span className="e1-middle-text" title={clip ? undefined : text}><span className={clip ? "rd-cell-clip" : undefined}>{text.slice(0, -tail)}</span><span>{text.slice(-tail)}</span></span>;
 }
 
 export function E1TargetRange({ sku, label }: { sku: OpsSku; label?: ReactNode }) {
@@ -427,7 +428,6 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
             <div className="e1-product-name"><h2>{canWrite ? <E1MiddleText text={s.name} /> : <button className="rd-link e1-detail-link" aria-label={`商品资料 ${s.name}`} onClick={() => openDetail(s)}><E1MiddleText text={s.name} /></button>}</h2><StatusTag tone={s.status === "off" ? "done" : "neutral"} icon={s.status === "on" ? CheckCircle2 : s.status === "off" ? Archive : FileText}>{e1Value(s.status)}</StatusTag></div>
             <div className="e1-product-id"><span title={s.id}>{s.id}</span><span>{operatorSkuTier(s.tier ?? "")}</span>{hasUnsupportedSeries(s) ? <StatusTag tone="warn" icon={ShieldAlert}>{skuSeriesText(s.seriesCode)}</StatusTag> : <span>{skuSeriesText(s.seriesCode)} 系列</span>}{s.lifecycle === "legacy" && <StatusTag tone="done" icon={Archive}>已停产</StatusTag>}</div>
             <div className="e1-product-price"><strong><E1Amount value={s.price} /> <small>USD</small></strong></div>
-            {s.tagline && <div className="e1-tagline" title={nexGridBrandText(s.tagline)}>{nexGridBrandText(s.tagline)}</div>}
           </div>
         </div>
         <div className="e1-product-levels"><div className="e1-value-line"><span className="e1-muted">任务等级</span>{s.allowedPoolCodes?.length === 0 && <StatusTag tone={s.status === "on" ? "warn" : "neutral"} icon={ShieldAlert}>未配置任务等级</StatusTag>}</div>{s.allowedPoolCodes == null ? <span className="e1-muted">— · 任务等级未读取</span> : <LevelStrip label={`${s.name}任务等级`} levels={E1_LEVELS} selectedKeys={s.allowedPoolCodes} />}</div>
@@ -470,7 +470,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
             const lock = ctx.locked("device_generation_gate", g.id);
             const forceBlock = !state.declaredPhase || state.phaseConflict || !state.eligibilityReady || !state.phaseReached ? state.blockers.join("；") : undefined;
             return <Tr key={g.id} mark={planSku === g.id ? "hit" : undefined}>
-              <Td><div className="e1-table-stack"><strong><E1MiddleText text={g.name} /></strong><span data-mono><E1MiddleText text={g.id} tail={10} /></span></div></Td>
+              <Td><Cell main={<strong><E1MiddleText text={g.name} clip /></strong>} sub={<span data-mono><E1MiddleText text={g.id} tail={10} clip /></span>} title={`${g.name}\n${g.id}`} /></Td>
               <Td align="right"><div className="e1-table-stack"><span>{presentation.effectiveLabel}</span>{g.phaseOffset ? <Explain label={`${g.name}完整开放月份`} content={presentation.adjustmentLabel}><span className="e1-muted">{g.phaseOffset > 0 ? "推迟" : "提前"} {Math.abs(g.phaseOffset)} 个月</span></Explain> : <span className="e1-muted">{presentation.adjustmentLabel}</span>}</div></Td>
               <Td><div className="e1-table-stack">{!available ? <span className="e1-muted">商品目录未读取，开放状态待核对</span> : <><StatusTag tone={state.unlocked ? "ok" : needsAttention ? "warn" : "neutral"} icon={state.unlocked ? CheckCircle2 : needsAttention ? ShieldAlert : Clock3} explain={state.blockers.length ? state.blockers.join("；") : undefined}>{state.unlocked ? "已开放" : "尚未开放"}</StatusTag>{g.forceUnlock ? <StatusTag tone="neutral" icon={FastForward} explain={`批准人 ${g.forceUnlockApprovedBy || "未记录"}；批准时间 ${g.forceUnlockApprovedAt ? g.forceUnlockApprovedAt.replace("T", " ") : "未记录"}；操作记录 ${g.forceUnlockAuditId || "未记录"}`}>强制提前</StatusTag> : !state.unlocked && <span className={needsAttention ? "e1-card-warning" : "e1-muted"}>{needsAttention ? state.blockers[0] : !state.phaseReached ? `待${phaseLabel(g.phase)}` : `距开放 ${Math.max(0, state.effectiveMonth - platformMonth)} 个月`}</span>}</>}</div></Td>
               <Td><span className="e1-phase-name" title={phaseLabel(g.phase)}>{phaseLabel(g.phase)}</span></Td><Td><StatusTag tone={g.eligibility ? "ok" : "warn"} icon={g.eligibility ? ShieldCheck : ShieldAlert}>{g.eligibility ? "已补齐" : "未补录"}</StatusTag></Td>
@@ -488,7 +488,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
             const archiveBlock = writeBlock({ op: "phase-archive", phaseId: ph.p }) || (phases.filter(p => p.status !== "archived").length <= 1 ? "至少保留一个启用阶段" : skus.some(s => resolveE1PhaseId(phases, s.unlock) === ph.p) || releases.some(g => resolveE1PhaseId(phases, g.phase) === ph.p) ? "商品或上架条件仍引用此阶段" : ctx.locked("device_phase", ph.p) ? "此对象有待审批或待核对的操作" : undefined);
             return <Tr key={ph.p}>
               <Td><div className="e1-table-stack"><strong>{phaseLabel(ph.p)}</strong><span className="e1-phase-code" data-mono>编号 {ph.p}{ph.p === phaseCur && <StatusTag tone="progress" icon={CircleDot}>当前</StatusTag>}</span></div></Td>
-              <Td>{ph.meta ? <Explain label={`${phaseLabel(ph.p)}完整门槛说明`} content={ph.meta}><span className="e1-table-text">{ph.meta}</span></Explain> : "—"}</Td><Td>{ph.skus ? <Explain label={`${phaseLabel(ph.p)}完整商品标签`} content={ph.skus}><span className="e1-table-text">{ph.skus}</span></Explain> : "—"}</Td><Td><div className="e1-table-stack"><span>排序 {ph.sortOrder ?? "—"}</span><StatusTag tone={ph.status === "archived" ? "done" : "ok"} icon={ph.status === "archived" ? Archive : CheckCircle2}>{ph.status === "archived" ? "已归档" : "已启用"}</StatusTag></div></Td>
+              <Td>{ph.meta ? <Cell main={ph.meta} title={ph.meta} /> : "—"}</Td><Td>{ph.skus ? <Cell main={ph.skus} title={ph.skus} /> : "—"}</Td><Td><div className="e1-table-stack"><span>排序 {ph.sortOrder ?? "—"}</span><StatusTag tone={ph.status === "archived" ? "done" : "ok"} icon={ph.status === "archived" ? Archive : CheckCircle2}>{ph.status === "archived" ? "已归档" : "已启用"}</StatusTag></div></Td>
               {canWrite && <Td sticky="end" data-fit=""><div className="e1-table-actions"><Button size="sm" disabledReason={writeBlock({ op: "phase-save" }) || (ctx.locked("device_phase", ph.p) ? "此对象有待审批或待核对的操作" : undefined)} onClick={() => openPhaseEditor(ph)}>编辑</Button><Button size="sm" variant="danger-outline" disabledReason={archiveBlock} onClick={() => archivePhase(ph)}>删除</Button></div>{archiveBlock && <span className="e1-action-reason">{archiveBlock}</span>}</Td>}
             </Tr>;
           })}</tbody></Table>}

@@ -166,6 +166,8 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
     ctx.openActionConfirm(f4Confirmation(ctx, { action: "approve", overview: ctx.f4Overview!, policy: ctx.f4AmbassadorPolicy, application, material: packet ?? undefined }));
   };
   const reject = () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "reject", overview: ctx.f4Overview!, policy: ctx.f4AmbassadorPolicy, application, material: packet ?? undefined }));
+  // 原申请超过 24 小时还没结论时，批准和驳回都按禁用写原因（BUG-684）。
+  const expiredReason = ctx.f4ExpiredReason({ action: "approve", overview: ctx.f4Overview!, policy: ctx.f4AmbassadorPolicy, application, material: packet ?? undefined });
 
   const reviewWritable = (stageKey: "BUSINESS" | "FINANCE", index: number) => !!packet && operable
     && (stageKey === "BUSINESS" ? packet.canReviewBusiness : packet.canReviewFinance) === true && ctx.can(F4_MATERIAL_PERMISSIONS[index].code);
@@ -177,9 +179,9 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
       explain="核验结论直接记录到当前这一版材料，不批准预算。批准和驳回要另一位管理员批准；核验过这一版材料的人不能做最终批准。申请人补交材料会形成新的一版，旧结论要重新核验。"
       footer={<Decision
         note={!final && !ctx.can("network_f4_ambassador_approve") ? "当前账号没有大使最终批准权限，只能查看和核验。" : final ? "这份申请已经处理，只能查看。" : undefined}
-        danger={!final && ctx.can("network_f4_ambassador_approve") ? <Button variant="danger-outline" disabledReason={operable ? undefined : loading ? "正在读取材料" : pending ? "有一次核验结果未知，先处理它" : "材料没读到，刷新后再试"} onClick={reject}>驳回申请</Button> : undefined}
+        danger={!final && ctx.can("network_f4_ambassador_approve") ? <Button variant="danger-outline" disabledReason={operable ? expiredReason : loading ? "正在读取材料" : pending ? "有一次核验结果未知，先处理它" : "材料没读到，刷新后再试"} onClick={reject}>驳回申请</Button> : undefined}
         others={<Button onClick={onClose}>关闭</Button>}
-        primary={!final && ctx.can("network_f4_ambassador_approve") ? <Button variant="primary" disabledReason={canProposeApproval ? undefined : !operable ? (loading ? "正在读取材料" : pending ? "有一次核验结果未知，先处理它" : "材料没读到，刷新后再试") : proposalBlockers[0] ?? "还不满足批准条件"} onClick={approve}>发起批准</Button> : undefined} />}>
+        primary={!final && ctx.can("network_f4_ambassador_approve") ? <Button variant="primary" disabledReason={canProposeApproval ? expiredReason : !operable ? (loading ? "正在读取材料" : pending ? "有一次核验结果未知，先处理它" : "材料没读到，刷新后再试") : proposalBlockers[0] ?? "还不满足批准条件"} onClick={approve}>发起批准</Button> : undefined} />}>
       <div className="f4-materials" aria-busy={loading}>
         {recoveryNotice && <Notice tone="progress">{recoveryNotice}</Notice>}
         {pending && (() => {

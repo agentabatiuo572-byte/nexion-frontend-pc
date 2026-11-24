@@ -21,6 +21,8 @@ import type { F5Recovery, FViewCtx } from "./types";
 import { amountDisplay } from "@/lib/format";
 
 export const KIND_LABELS = F5_KIND_LABELS;
+const kindCountFormatter = new Intl.NumberFormat("zh-CN-u-nu-hanidec");
+export const kindCountLabel = (count: number) => `${kindCountFormatter.format(count)}类`;
 
 /** 服务端七个状态标题到状态码的精确对应（协议，不改）。 */
 export const STATUS_BY_LABEL: Record<string, string> = {
@@ -53,7 +55,14 @@ export function StatusBadge({ status, explain = true }: { status: string; explai
 }
 
 export const isFriend = (row: Pick<F5CommissionEvent, "kind">) => row.kind === "direct_purchase" || row.kind === "direct_device_earning";
+export const deviceEarningSource = (layer: number | string | undefined) => Number(layer) === 2 ? "好友的好友" : "好友";
 export const isGrouped = (row: Pick<F5CommissionEvent, "settlementNo" | "kind">) => isFriend(row) || !!row.settlementNo;
+
+export function reissueOutcome(kind: string, coolingDays?: number) {
+  if (kind !== "network" && kind !== "binary") return "批准后立即解锁";
+  if (coolingDays === undefined) return "批准后进入冷却期";
+  return coolingDays > 0 ? `批准后进入冷却期，${coolingDays} 天后可解锁` : "批准后进入冷却期，批准时到期";
+}
 
 /** 用户编码：U 加 8 位数字，和后端给的 user 一个写法。编号不加千分位。 */
 export const userCode = (id: number | string | undefined | null) => {

@@ -112,7 +112,7 @@ const approvalTag = (note: string, extra?: string) => (
   <StatusTag tone="progress" filled explain={`提交到「操作记录与审批」，另一位管理员批准后执行。${note}${extra ?? ""}`}>批准后生效</StatusTag>
 );
 const directTag = () => <StatusTag tone="progress" filled explain="填写理由并确认后立即生效，保留操作记录。">立即生效</StatusTag>;
-const approverFact = (authority: string) => <Fact k="批准人">另一位管理员，需有批准审批单的权限和{authority}</Fact>;
+const approverFact = (authority: string) => <Fact k="谁来批">另一位管理员，需有批准审批单的权限和{authority}</Fact>;
 const roleFact = (name: string, code: string) => <Fact k="角色">{name} <span className="a6-code" data-mono>{code}</span></Fact>;
 const describeOriginal = (original: A6Original) => original.kind === "a6-create" ? original.input.roleCode
   : original.kind === "a6-update" ? `${original.role.roleName} → ${original.input.roleName ?? original.role.roleName}`

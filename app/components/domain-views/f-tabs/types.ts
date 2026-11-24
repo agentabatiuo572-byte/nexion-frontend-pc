@@ -225,8 +225,10 @@ export interface FViewCtx {
   /** 恢复区每一行最近一次查询原结果查到了什么，按原请求编号。 */
   f4QueryNotes: Record<string, { tone: "warn" | "danger"; text: string }>;
   f4PolicyWrites: FDirectAttempt[];
+  /** 这项操作有超过 24 小时的原记录时给原因：入口按禁用显示，和 I3 一样（BUG-684）。只看记录，不改原有拦截。 */
+  f4ExpiredReason: (snapshot: F4ConfirmationSnapshot) => string | undefined;
   f4ApprovalRows: A2OperationRow[];
-  recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry" | "release") => Promise<boolean>;
+  recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry") => Promise<boolean>;
   refreshF4: () => Promise<void>;
   submitF4Proposal: (slot: string, spec: import("@/lib/admin/propose-or-execute").ProposeSpec) => Promise<void>;
   updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number, expectedMaterialRevision?: number) => Promise<void>;
@@ -235,6 +237,7 @@ export interface FViewCtx {
   proposeF4LeaderboardPayout: (period: "today" | "week" | "month" | "allTime", reason: string) => Promise<void>;
   // -- 佣金事件审计(F5)· 读 + 处置状态写入 --
   f5Overview: F5CommissionAuditOverview | null;
+  f5AppliedQuery: F5CommissionQuery | null;
   f5NextQuery: F5CommissionQuery | null;
   f5Loading: boolean;
   f5Error: string | null;

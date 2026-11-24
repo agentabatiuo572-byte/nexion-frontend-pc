@@ -14,7 +14,7 @@ import { ConfirmReadConflict, PendingConfirmRejected } from "@/lib/admin/h-confl
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
+import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Lock, LockOpen, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
   BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, Panel, RatioBar, Stat, StatBand, StatusTag,
   Table, Td, Th, Tr, type MoreMenuItem,
@@ -988,19 +988,23 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openWheelBudget = (guard: { key: string; label: string; value: string }) => {
     if (h4Blocked(`H/h4_wheel_guard/${guard.key}`)) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const current = text(guard.value);
+    const raises = (value?: string) => value !== undefined && h4WheelGuardAmplifies("budget", value, current);
     openActionConfirm({ briefKind: "config",
       action: `转盘安全限制 · 每日实际奖励预算（美元）`,
       title: "调整每日真钱奖预算",
       statedBrief: { impact: "保存后按新预算拦当天的真钱奖。", check: "核对新预算的金额和单位。" },
-      effect: effectByDirection(),
+      // 还没填新值时两条路都写；填了只写这次真走的那一条，审批行也只在调高时出现（VS-103、VS-106，BUG-682 第 2 条）。
+      effect: (_form: BusinessFormValue, edited?: string) => edited === undefined ? effectByDirection() : raises(edited) ? effectApproval("预算") : effectDirect,
       detail: <>当前值 <b>{current}</b>。如果别人刚改过，需要刷新后再改。</>,
-      facts: <>
-        <Facts><Fact k="现在">{amountText(budgetNumber(current))} USDT / 天</Fact><Fact k="超过后">当天再抽中真钱奖改发 UVT 安慰奖</Fact><ApprovalFact amplify="调高预算" object="预算" /></Facts>
+      facts: (value?: string) => <>
+        <Facts><Fact k="现在">{amountText(budgetNumber(current))} USDT / 天</Fact><Fact k="超过后">当天再抽中真钱奖改发 UVT 安慰奖</Fact>{raises(value) && <ApprovalFact amplify="调高预算" object="预算" />}</Facts>
       </>,
       coverageLead: "调高预算会让转盘每天多发真钱",
       reasonPlaceholder: "例如：活动期放宽每日真钱奖预算",
       confirmLabelForValue: value => value !== undefined && h4WheelGuardAmplifies("budget", value, current) ? "提交审批" : "确认提交",
-      edit: { kind: "number", current: budgetNumber(current), amplifiesWhen: "increase", disallowCurrent: true, min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT" },
+      edit: { kind: "number", current: budgetNumber(current), amplifiesWhen: "increase", disallowCurrent: true, min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT",
+        direction: value => raises(value) ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="neutral" icon={Lock}>收紧</StatusTag>,
+        preview: value => `改成 ${amountText(value)} USDT：每天的真钱奖最多发到这个数。` },
       run: async (reason, value) => {
         if (!value) return;
         if (await apply(await updateH4WheelGuard(guard.key, value, current, reason))) toast("转盘安全限制「每日实际奖励预算（美元）」已更新");
@@ -1069,11 +1073,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           const decimal = tiers.every((tier) => /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(probabilityText(tier, values).trim()));
           const total = tiers.reduce((sum, tier) => sum + Math.round(Number(probabilityText(tier, values)) * 10000), 0) / 10000;
           const invalid = !decimal || total !== 100;
-          return { message: `概率合计 ${Number(total.toFixed(4))}%；${!decimal ? "概率请填写普通十进制数字，不支持科学计数法" : invalid ? "所有奖项的概率加起来必须等于 100%" : "合计符合 100% 要求"}。`, invalid };
+          // 合计已经写在上面的对比里，对了不再重复；不对时只在这里说一次（VS-105、DT-12，BUG-682 第 9 条）。
+          return { message: !decimal ? "概率请填写普通十进制数字，不支持科学计数法。" : invalid ? "各档概率加起来要正好 100%。" : "", invalid };
         },
-        hint: fixed.length
-          ? `历史积分档只读：${fixed.map((tier) => `${text(tier.tier)} ${numericValue(tier.prob)}%`).join("、")}。所有奖项合计须为 100%。`
-          : "所有奖项一起提交，加起来要等于 100%。",
+        hint: fixed.length ? `历史积分档只读：${fixed.map((tier) => `${text(tier.tier)} ${numericValue(tier.prob)}%`).join("、")}。` : undefined,
         requireAnyChange: true,
         // 只在调高方向提示多发奖（OP-55），和编辑奖项一样。
         amplifies: draft => amplifies(tier => Number(probabilityText(tier, draft))),
@@ -1489,7 +1492,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const gapsClosed = gapGroup(gapsByEvent.filter(row => row.event.state === "upcoming"));
   const gapsOpen = gapGroup(gapsByEvent.filter(row => row.event.state !== "upcoming"));
   const gapCount = gapsClosed.count + gapsOpen.count;
-  const gapNames = (rows: typeof gapsByEvent) => rows.slice(0, 6).map((row) => eventName(row.event.id)).join("、") + (rows.length > 6 ? ` 等 ${rows.length} 个` : "");
   const ruleOf = (id: string) => rules?.find((rule) => rule.eventCode === id);
   const wheelPending = h4Pending.some((row) => row.obj === "ACTIVE_POOL");
   const eventPending = (id: string) => h4ApprovalPending(hiEventScope(id)) || h4ApprovalPending(`H/h4_event_rule/${id}`);
@@ -1577,10 +1579,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       <Panel id="h4l-events" title="既有活动" icon={Gift} tone="role-3" sub={`共 ${events.length} 个`}
         explain={<><p>平台内置的运营活动，一张卡一个：名称和说明、奖励、地区、时间、参与情况。卡底部改各语言的文字，右下角开放、结束、主推和删除。</p><p>同时只能有一个进行中的主推活动。时间来自「七类玩法」里这个活动的开放时间。</p></>}
         actions={<Button icon={<Plus size={14} aria-hidden />} loading={loadingCreateCandidates} disabledReason={!canModuleWrite ? "没有新建既有活动的权限" : undefined} onClick={() => void openCreateEvent()}>新建既有活动</Button>}>
-        {gapCount > 0 && <Notice tone="warn" title={`有 ${gapCount} 项翻译没填，点卡片底部的「翻译没填」逐格补`}>
-          {gapsClosed.count > 0 && <p>补齐才能开放：{gapNames(gapsClosed.rows)}</p>}
-          {gapsOpen.count > 0 && <p>已开放，App 上正显示英文或原文：{gapNames(gapsOpen.rows)}</p>}
-        </Notice>}
         {events.length === 0 ? <BlockState state="empty" title="还没有既有活动" detail="点右上角「新建既有活动」登记一个。" />
           : <div className="h4-cards">{events.map((event) => <EventCard key={event.id} event={event}
             en={{ name: localizedValue(event.id, "name", "en"), description: localizedValue(event.id, "description", "en"), rewardName: localizedValue(event.id, "rewardName", "en") }}

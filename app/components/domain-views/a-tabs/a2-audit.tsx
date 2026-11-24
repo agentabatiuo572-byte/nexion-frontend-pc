@@ -19,7 +19,7 @@ import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_
 import { fmtConfigPct, fmtPct, amountDisplay } from "@/lib/format";
 import { f4MonthlyCap } from "@/lib/admin/f4-money";
 import { fConfigSpec, fConfigValue, type FConfigSpec } from "./a2-f-config";
-import { F5CurrentFact, F5CurrentValue, F5ReissueReadings, readF5Current } from "./a2-f5-current";
+import { F5CurrentFact, F5CurrentValue, F5ReissueOutcome, F5ReissueReadings, readF5Current } from "./a2-f5-current";
 import { A2I5DisclosureReview } from "./a2-i5-disclosure-review";
 import { A2RoleGrantsChange, isRoleGrantsTicket, roleGrantsSummary } from "./a2-role-grants";
 
@@ -2339,7 +2339,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         coverageCheck: cover?.check,
         facts: <>
           {fund.ids.length === 1 && <F5CurrentFact id={fund.ids[0]} />}
-          <Fact k="补发后">团队购买、团队平衡重新冷却；其余四类马上解锁</Fact>
+          <Fact k="补发后"><F5ReissueOutcome ids={fund.ids} /></Fact>
           <Fact k="能不能撤回">不能；新记录可以再冲正</Fact>
         </>,
         lead: undefined,
@@ -2348,12 +2348,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
     if (fund.kind === "f5Reverse") return {
       irreversible: true,
-      impact: "批准后收回这笔奖励，状态改为已冲正。",
+      impact: "批准后收回这笔奖励。",
       completion: undefined,
       check: "核对这笔奖励和发起理由，理由写清收回的原因。",
-      detail: "余额不够时：属于结算组的奖励扣不够的记为待追回；其他奖励整次失败，什么都不改。",
+      detail: "余额不足时，结算组奖励和等级月薪扣不够的部分记为待追回。其余没有结算组的旧奖励整次冲正失败。",
       coverageLead: undefined, coverageUnknown: undefined, coverageCheck: undefined,
-      facts: <>{fund.eventId && <F5CurrentFact id={fund.eventId} />}<Fact k="状态"><Change from={changeBefore(w)} to={changeAfter(w)} /></Fact><Fact k="凭证单号">申请单里没有，批准时系统再核对</Fact></>,
+      facts: <>{fund.eventId && <F5CurrentFact id={fund.eventId} />}<Fact k="状态"><Change from={changeBefore(w)} to="按收回结果显示" /></Fact><Fact k="凭证单号">申请单里没有，批准时系统再核对</Fact></>,
       lead: undefined,
     };
     const from = F5_STATE_FROM[fund.state] ?? "批准时的状态";
@@ -2856,10 +2856,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return w.sos || w.amplifies || pendingTicketIds.has(w.id) ? <span className="rd-row-actions">{tags}</span> : TYPE_NAME[w.type];
   };
 
+  // 重试读到后焦点落在这一块的标题「待审批」页签上（BUG-677）。
+  const pendingTitle = { get current() { return document.getElementById(tabIds.panel("pending")["aria-labelledby"]); } };
   const pendingTab = (
     <>
       {mainError && !main ? (
-        <BlockState state="error" title="审批单读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
+        <BlockState state="error" title="审批单读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} afterRetryFocus={pendingTitle} />
       ) : <>
         {/* 待审批是数量不是状态，按角色色；应急、资金类只给图标底上色，数字正文色（必须改 4，同提现审核）。 */}
         <StatBand label="待审批汇总" fit>
@@ -3223,7 +3225,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
             : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}
-                facts={f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>
+                facts={shownFund?.kind === "f5Reissue" ? <Fact k="补发后"><F5ReissueOutcome ids={shownFund.ids} /></Fact>
+                  : f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>
                 <A2I5DisclosureReview key={shown.id} ticket={shown} />
               </A2ChangeReview>}
           {reissueList(shown, true)}
