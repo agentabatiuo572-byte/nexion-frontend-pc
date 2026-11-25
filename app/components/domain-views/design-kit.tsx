@@ -11,6 +11,7 @@ import { Fragment, isValidElement, useCallback, useEffect, useId, useMemo, useRe
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { ConfirmReadConflict, PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import { RETRY_EXPIRED_TEXT, type PendingRecoveryState } from "@/lib/admin/pending-mutation-store";
 import { useUI, type ToastKind } from "@/lib/store/ui";
@@ -4089,6 +4090,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         await onConfirm(submitReason, submittedValue || (emptyChosen && spec?.emptyOption ? "" : undefined), activeBusinessForm ? businessValue : undefined);
       }
     } catch (error) {
+      // 会话失效已交外壳；此时确认框无需重复显示提交错误。
+      if (useAdminAuth.getState().logoutPending) return;
       // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
       if (closeOnPermissionDenied(error)) return;
       if (error instanceof ConfirmReadConflict) {

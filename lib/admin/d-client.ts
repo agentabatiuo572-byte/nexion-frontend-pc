@@ -903,9 +903,10 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       if (localBankReadAuth || method !== "GET" && method !== "HEAD" && init?.bankManualAuthEpoch !== undefined) {
-        // Do not start an uncoordinated logout whose late Set-Cookie can clear
-        // a later login. Local signOut preserves this owner's uncertain command.
-        useAdminAuth.getState().signOut();
+        // Keep the local recovery verdict. If the shell already owns logout,
+        // leave its gate and the journal owner in place while this request settles.
+        const auth = useAdminAuth.getState();
+        if (!auth.logoutPending) auth.signOut();
         const commandKey = headers.get("Idempotency-Key");
         if (commandKey && method !== "GET") throw new DOutcomeUnknownError(commandKey);
         throw new AdminAuthEpochChangedError();
