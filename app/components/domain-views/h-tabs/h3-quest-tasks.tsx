@@ -188,7 +188,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     type: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2";
     resumed?: { key: string; draft: NonNullable<ReturnType<typeof missionDrafts.get>> };
   } | null>(null);
-  const openMission = (type: NonNullable<typeof creating>["type"]) => setCreating({ type });
+  const openMission = (editor: NonNullable<typeof creating>) => setCreating(current => current ?? editor);
+  const missionEditorOpen = creating ? "请先关闭当前任务抽屉" : undefined;
   const tabIds = useTabIds();
 
 
@@ -389,12 +390,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     } as H3ActionConfirmReq);
   };
 
-  const runCreateMission = (missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2", subject: string, bv: H3MissionForm) => {
+  const runCreateMission = (editor: NonNullable<typeof creating>, subject: string, bv: H3MissionForm) => {
+    const { type: missionType } = editor;
     const refusal = h3MissionCreationRefusal(missionType, bv.missionCode?.trim() ?? "");
     if (refusal) { toast(displayAdminError(new Error(refusal))); return; }
     const reward = /^\d+$/.test(bv.rewardPoints?.trim() ?? "") ? bv.rewardPoints.trim() : null;
     const approval = Number(bv.rewardPoints) > 0;
-    const editor = creating;
     // 同编号已有新建申请：后端给的事实写清楚；拦截本身仍在提交处（mutations.blocked）。
     const code = String(bv.missionCode ?? "").trim();
     const creation = model?.pendingMissionCreations?.find((item) => item.missionCode === code);
@@ -431,7 +432,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         if (!missionCode || !missionName) return;
         const owner = operatorId();
         const consume = () => {
-          const resumed = editor?.resumed;
+          const resumed = editor.resumed;
           if (resumed?.draft.form.missionCode === missionCode) missionDrafts.consume(owner, resumed.key, resumed.draft);
         };
         try {
@@ -1021,8 +1022,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       change: <>{form.missionCode} · {changeOf(command.change)}</>,
       submittedAt: command.createdAt,
       tag: <StatusTag tone="done">{{ rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[status]}</StatusTag>,
-      actions: canModuleWrite ? <Button size="sm" disabledReason={!fresh.current ? "请先成功刷新用户任务数据" : undefined}
-        onClick={() => setCreating({ type, resumed: { key, draft } })}>继续编辑</Button> : undefined,
+      actions: canModuleWrite ? <Button size="sm" disabledReason={missionEditorOpen ?? (!fresh.current ? "请先成功刷新用户任务数据" : undefined)}
+        onClick={() => openMission({ type, resumed: { key, draft } })}>继续编辑</Button> : undefined,
     });
   }
   const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
@@ -1119,10 +1120,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         />
       </Fragment>);
   // 新建任务抽屉同理：旧操作收尾后的重读失败时不卸掉，提示没读到、读到前不能进下一步。
-  const missionDrawer = creating && <H3MissionFormDrawer key="h3-mission-drawer" missionType={creating.type} onClose={() => setCreating(null)}
+  const missionDrawer = creating && <H3MissionFormDrawer key={creating.resumed?.key ?? "h3-mission-drawer"} missionType={creating.type} onClose={() => setCreating(null)}
     initial={creating.resumed?.draft.form}
     readFailed={error ? { retrying: loading, onRetry: () => void refresh().catch(cause => toast(displayAdminError(cause))) } : undefined}
-    onReview={(bv) => runCreateMission(creating.type, creating.type === "DAY_ONE" ? "新手任务" : creating.type === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />;
+    onReview={(bv) => runCreateMission(creating, creating.type === "DAY_ONE" ? "新手任务" : creating.type === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />;
 
   if (loading && !model) return <div className="h3-page">{header}{recovery}{confirmModal}{releaseModal}<BlockState state="loading" title="用户任务读取中…" /></div>;
   if (error || !model) return (
@@ -1404,7 +1405,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Panel>
       <Panel title="新手任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
           explain="用户注册时拿到的是那一刻已启用、绑定了完成条件的新手任务；做完全部才能领奖。之后改任务不影响已经注册的用户。"
-          actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => openMission("DAY_ONE")}>新建新手任务</Button> : undefined}>
+          actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={missionEditorOpen} onClick={() => openMission({ type: "DAY_ONE" })}>新建新手任务</Button> : undefined}>
           <H3CreationList rows={creationsOf(["DAY_ONE"])} typeLabel={typeLabel} auditHref={auditHref} />
           <div className="h3-tasks-layout">
           {cards("dayOne", dayOne)}
@@ -1477,7 +1478,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Panel>
       <Panel title="每周任务" icon={ListChecks} tone="role-2" sub={`一档 ${t1.length} 个 · 二档 ${t2.length} 个 · 已启用 ${t1Active.length + t2Active.length} 个`}
           explain="每周发布时，把那一刻已启用、绑定了完成条件的任务冻结成这一周的任务。之后改任务只影响之后发布的。"
-          actions={canModuleWrite ? <><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => openMission("WEEKLY_T1")}>新建一档</Button><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => openMission("WEEKLY_T2")}>新建二档</Button></> : undefined}>
+          actions={canModuleWrite ? <><Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={missionEditorOpen} onClick={() => openMission({ type: "WEEKLY_T1" })}>新建一档</Button><Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={missionEditorOpen} onClick={() => openMission({ type: "WEEKLY_T2" })}>新建二档</Button></> : undefined}>
           <H3CreationList rows={creationsOf(["WEEKLY_T1", "WEEKLY_T2"])} typeLabel={typeLabel} auditHref={auditHref} />
           <div className="h3-tasks-layout"><div className="h3-tier-groups">
           <div className="h3-sub-head">

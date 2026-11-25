@@ -6,7 +6,7 @@ import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "./pending-mutation-store";
 import type { ProposeSpec } from "./propose-or-execute";
-import type { TrustSectionVersionView, TrustSectionView } from "./i-client";
+import type { TrustDisclosureOverview, TrustSectionVersionView, TrustSectionView } from "./i-client";
 import { parseI4SectionVersion } from "./i4-trust-contract";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
@@ -78,6 +78,7 @@ export const i4SectionRecovery = createPendingRecovery({ ...pending, list: pendi
 export async function queryI4SectionCommand(saved: I4SectionCommand): Promise<A2OperationRow | null> {
   const original = pendingI4SectionCommands().find(row => row.commandKey === saved.commandKey);
   if (!original) throw new Error("原操作已处理，请重新读取后再操作。");
+  if (original.ticketStatus === "approved") throw new Error("审批单已批准，请重新读取当前版块。");
   const result = await i4SectionRecovery.query(original, async () => {
     const ticket = await fetchA2ProposalByKey(original.commandKey, true);
     if (!ticket) {
@@ -95,9 +96,19 @@ export async function queryI4SectionCommand(saved: I4SectionCommand): Promise<A2
     return { conclusion: ticket.status === "pending" ? "unknown" : ticket.status === "approved" ? "succeeded" : "not-executed", ticket } as const;
   });
   if (!result) return null;
-  if (result.ticket?.status === "pending") pending.remember(original.fingerprint, original.commandKey, { ...original, receiptKnown: true, ticketStatus: "pending" });
+  if (result.ticket?.status === "pending" || result.ticket?.status === "approved") {
+    pending.remember(original.fingerprint, original.commandKey, { ...original, receiptKnown: true, ticketStatus: result.ticket.status });
+  }
   else if (result.ticket) i4SectionRecovery.settleFromQuery(original, result.conclusion);
   return result.ticket;
+}
+
+/** Only a current read of the original object can settle an already approved command. */
+export function settleI4ApprovedSections(overview: TrustDisclosureOverview, commandKeys: readonly string[]) {
+  const settled = pendingI4SectionCommands().filter(record => record.ticketStatus === "approved"
+    && commandKeys.includes(record.commandKey) && overview.trustSections.some(section => section.key === record.sectionKey));
+  for (const record of settled) i4SectionRecovery.settleAcknowledged(record);
+  return settled.length > 0;
 }
 
 async function send(original: I4SectionCommand, retry: boolean) {
@@ -145,6 +156,8 @@ export async function retryI4SectionCommand(original: I4SectionCommand, observe?
 }
 
 export function releaseRejectedI4Section(original: I4SectionCommand) {
+  if (pendingI4SectionCommands().some(row => row.commandKey === original.commandKey && row.ticketStatus === "approved"))
+    throw new Error("审批单已批准，请重新读取当前版块。");
   if (!i4SectionRecovery.releaseRejectedReplay(original)) throw new Error("原操作记录继续保留，请查询原结果。");
 }
 

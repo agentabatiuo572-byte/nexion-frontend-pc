@@ -28,7 +28,7 @@ import { isOptionalTrustLinkField } from "@/lib/admin/trust-section-validation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { pendingI4DraftCommands, queryI4DraftReceipt, retryI4DraftCommand, i4DraftRecovery, i4DraftRetryBlockedReason, i4DraftPermission, fetchI4PublishedSnapshot, fetchI4TrustOverview, type I4DraftCommand, type TrustDisclosureOverview } from "@/lib/admin/i-client";
 import { useRecoveryQueryErrors } from "@/lib/admin/use-recovery-query-errors";
-import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseRejectedI4Section, i4SectionRecovery, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
+import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseRejectedI4Section, i4SectionRecovery, retryI4SectionCommand, i4SectionPermission, settleI4ApprovedSections, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
 import { TRUST_DOCUMENT_NAMES } from "@/lib/admin/trust-documents-client";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
 import { i4AppFieldIssue, i4DraftMatchesPublishedFields, i4DraftOmittedTranslations, i4FieldValueIssue, i4HasEnglishFields, i4OmittedTranslations } from "@/lib/admin/i4-trust-contract";
@@ -115,6 +115,7 @@ function trustDraftUnchanged(editor: DraftEditor, fields: DraftEditor["fields"],
 
 const APPROVER = "另一位管理员";
 const PENDING_REASON = "有申请等另一位管理员处理，批准、驳回、撤回或过期后才能再改";
+const APPROVED_READBACK_REQUIRED = "审批单已批准，请先重新读取当前版块。";
 const FINANCE_LABEL: Record<string, string> = { tvlOnChain: "链上资产总值", mrrValue: "月度收入", mrrDelta: "月度收入变化", activeAccountsValue: "活跃账户数", activeAccountsDelta: "活跃账户变化", devicesOnlineValue: "在线设备数", devicesOnlineDelta: "在线设备变化", payoutsProcessedValue: "累计处理付款", payoutsProcessedDelta: "付款金额变化", "footnote.zh": "中文数据说明", "footnote.vi": "越南语数据说明", "footnote.en": "英文数据说明" };
 
 export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | null }) {
@@ -187,7 +188,10 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const latest = useRef({ data, errorText, contentLoading, mustRead, draftEditor, editorCommandKey });
   latest.current = { data, errorText, contentLoading, mustRead, draftEditor, editorCommandKey };
   const syncCommands = () => { setDraftCommands(pendingI4DraftCommands()); setSectionCommands(pendingI4SectionCommands()); setDocumentCommands(pendingI4DocumentCommands()); };
-  useEffect(() => { syncCommands(); }, []);
+  useEffect(() => {
+    syncCommands();
+    if (pendingI4SectionCommands().some(record => record.ticketStatus === "approved")) void reloadSectionFacts();
+  }, []);
   useEffect(() => {
     if (!data || data === invalidatedData.current || contentLoading || errorText) return;
     setMustRead(false);
@@ -199,7 +203,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   }, [data, contentLoading, errorText]);
   useEffect(() => {
     for (const record of pendingI4SectionCommands()) {
-      if (record.receiptKnown && !i4SectionRecovery.state(record).busy) {
+      if (record.receiptKnown && record.ticketStatus !== "approved" && !i4SectionRecovery.state(record).busy) {
         void checkSectionTicket(record).catch(() => undefined);
       }
     }
@@ -228,6 +232,13 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       && ["published", "superseded", "PUBLISHED", "SUPERSEDED"].includes(row.status)
       && (row.version !== section.v || section.status.toLowerCase() === "archived"))
     .map((row) => row.version);
+  const reloadSectionFacts = async () => {
+    const approvedKeys = pendingI4SectionCommands().filter(record => record.ticketStatus === "approved").map(record => record.commandKey);
+    const read = await actions.reloadIContent();
+    if (read.ok && read.data.trustDisclosure && approvedKeys.length
+      && settleI4ApprovedSections(read.data.trustDisclosure, approvedKeys)) syncCommands();
+    return read;
+  };
   const rereadAfterResolution = async (sectionKeys: string[], commandKeys: string[]) => {
     invalidatedData.current = latest.current.data;
     setMustRead(true);
@@ -241,7 +252,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       ctx.closeActionConfirm(confirmation.request);
       sectionConfirm.current = null;
     }
-    return actions.reloadIContent();
+    return reloadSectionFacts();
   };
   const reportReadback = (message: string, read: Awaited<ReturnType<typeof actions.reloadIContent>>) => {
     if (!read.superseded) toast(read.ok ? message : `${message}；当前状态读取失败。请刷新信任版块。${read.reason}`, read.ok ? "success" : "warn");
@@ -251,10 +262,11 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       const ticket = await approvalQuery.read(record.commandKey, () => queryI4SectionCommand(record));
       rememberPublication(record, ticket?.status);
       if (ticket && ticket.status !== "pending") {
+        if (ticket.status === "approved") syncCommands();
         const result = await rereadAfterResolution([record.sectionKey], [record.commandKey]);
         const read: typeof result = result.ok && !result.data.trustDisclosure?.trustSections.some(section => section.key === record.sectionKey)
           ? { ok: false, reason: "没读到这个信任版块。" } as const : result;
-        if (!read.superseded && !read.ok) {
+        if (ticket.status !== "approved" && !read.superseded && !read.ok) {
           const reason = read.reason;
           setSectionReadErrors(current => ({ ...current, [record.commandKey]: { record, status: ticket.status, reason } }));
         }
@@ -267,7 +279,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     const current = latest.current;
     if (conflictReview.blockedReason()) return conflictReview.blockedReason();
     if (!current.data || current.contentLoading || current.errorText || current.mustRead) return "请先成功重新读取最新内容后再修改。";
-    if (pendingI4DraftCommands().some(row => row.sectionKey === key) || pendingI4SectionCommands().some(row => row.sectionKey === key)) return "此对象有原操作尚未核清，请先查询原结果。";
+    const sectionCommand = pendingI4SectionCommands().find(row => row.sectionKey === key);
+    if (sectionCommand?.ticketStatus === "approved") return APPROVED_READBACK_REQUIRED;
+    if (sectionCommand || pendingI4DraftCommands().some(row => row.sectionKey === key)) return "此对象有原操作尚未核清，请先查询原结果。";
     if (current.data.pendingTrustSectionKeys.includes(key)) return PENDING_REASON;
     const section = current.data.trustSections.find(row => row.key === key);
     if (!section) return "版块内容已被修改，请刷新后重试";
@@ -313,6 +327,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   };
   const draftRetryProblem = (record: I4DraftCommand) => replayReadProblem(record) ?? i4DraftRetryBlockedReason(record);
   const sectionRetryBlocked = (record: I4SectionCommand) => {
+    if (record.ticketStatus === "approved") return APPROVED_READBACK_REQUIRED;
     const state = i4SectionRecovery.state(record);
     if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
     if (state.expired) return RETRY_EXPIRED_TEXT;
@@ -389,7 +404,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void actions.reloadIContent();
+      if (document.visibilityState === "visible") void reloadSectionFacts();
     }, 10_000);
     return () => window.clearInterval(timer);
   }, [actions]);
@@ -410,7 +425,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const refresh = () => {
     setRefreshing(true);
     readSnapshot();
-    void actions.reloadIContent().finally(() => setRefreshing(false));
+    void reloadSectionFacts().finally(() => setRefreshing(false));
   };
 
   const liveTrustStatus = (s: TrustSection): string => s.status;
@@ -890,6 +905,10 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     if (inFlight.current) return;
     inFlight.current = true; setRecovering(record.commandKey);
     try {
+      if (record.ticketStatus === "approved") {
+        await rereadAfterResolution([record.sectionKey], [record.commandKey]);
+        return;
+      }
       const ticket = await checkSectionTicket(record);
       if (!ticket || ticket.status === "pending") toast(ticket ? "已提交，等待审批后执行" : !record.receiptKnown && isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。");
     } catch (error) { toast(displayAdminError(error)); }
@@ -955,6 +974,13 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
             else void recoverDraft(record, true);
           }}>按原请求重试</Button></> })),
     ...sectionCommands.map(record => {
+      if (record.ticketStatus === "approved") return {
+        key: record.commandKey, kind: "open" as const, name: approvalName(record), change: approvalChange(record),
+        submittedAt: timeText(new Date(record.createdAt).toISOString()),
+        tag: <StatusTag tone="ok">{TICKET_STATUS.approved}</StatusTag>,
+        note: errorText ? `当前状态读取失败。${errorText}` : "待读当前版块。",
+        actions: <Button size="sm" loading={refreshing} onClick={refresh}>重新加载</Button>,
+      };
       const pending = record.ticketStatus === "pending";
       const releasable = !!i4SectionRecovery.state(record).replayRejection;
       return { key: record.commandKey, kind: pending ? "pending" as const : record.receiptKnown ? "submitted" as const : "unknown" as const,
