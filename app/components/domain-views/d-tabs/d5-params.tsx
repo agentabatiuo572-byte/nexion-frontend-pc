@@ -12,7 +12,7 @@ import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { useReach } from "@/lib/nav/use-reach";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { fmtConfigPct } from "@/lib/format";
 import Link from "next/link";
@@ -58,7 +58,7 @@ import {
   isD5MinimumUsdt,
   type D5Params as D5ParamData,
 } from "@/lib/admin/d-client";
-import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
 import { d5Trc20ReplayBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL } from "@/lib/admin/trc20-closed";
@@ -70,8 +70,7 @@ import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRec
 import {
   configApprovalOriginalInput,
   pendingConfigApproval,
-  refreshWithdrawalApprovalReceipt,
-  withdrawalApprovalStatusText,
+  useWithdrawalApprovals,
   releaseConfigApproval,
   releaseRejectedWithdrawalApproval,
   submitWithdrawalConfigApproval,
@@ -658,7 +657,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const canBalanceWrite = can("finance_d5_balance_max_write");
   const canFeeWrite = can("finance_d5_fee_write");
   const canWriteAny = canDailyWrite || canBalanceWrite || canFeeWrite;
-  // 待批总览要 A2 读权；按命令号查自己发起的原单，发起审批权也行（后端 A2AccessPolicy、WithdrawalConfigApproval.canReadOwnProposal）。
+  // 按原号恢复结果未知的本人单时，发起审批权也可查询。
   const canQuery = can("platform_a2_read");
   const canLookupOwn = canReadOwnRecoveryProposal(authorities);
   const proposeBlock = withdrawalApprovalDisabledReason(authorities);
@@ -668,16 +667,13 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const [error, setError] = useState("");
   const [readAt, setReadAt] = useState("");
   const requestId = useRef(0);
-  const [approvals, setApprovals] = useState<{ state: "loading" | "ready" | "failed"; rows: A2OperationRow[] }>({ state: "loading", rows: [] });
-  const approvalsRequestId = useRef(0);
-  const [ownApproval, setOwnApproval] = useState<WithdrawalApprovalReceipt | null>(null);
+  const approvals = useWithdrawalApprovals("D5", session?.adminId, authorities);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [leaveAsk, setLeaveAsk] = useState<false | "close" | "refresh">(false);
   const [phaseOpen, setPhaseOpen] = useState(false);
   const [tightenPending, setTightenPending] = useState<TightenRecord[]>([]);
   const [loosenPending, setLoosenPending] = useState<ReturnType<typeof pendingConfigApproval>>(undefined);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [retryRejected, setRetryRejected] = useState<string[]>([]);
   const [queryMissing, setQueryMissing] = useState<string[]>([]);
   const [recovering, setRecovering] = useState("");
   const [releasing, setReleasing] = useState<ReleaseTarget | null>(null);
@@ -715,43 +711,23 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     }
   }, []);
 
-  /** 有没有放宽在等批准。读不到时不说「没有」（决定 5）。审批单的 operationCode 是空的，按动作名认。 */
-  const loadApprovals = useCallback(async () => {
-    if (!canQuery) return;
-    const id = ++approvalsRequestId.current;
-    setApprovals((current) => ({ ...current, state: "loading" }));
-    try {
-      const overview = await fetchA2Overview({ domain: "D" });
-      if (id !== approvalsRequestId.current) return;
-      setApprovals({ state: "ready", rows: overview.operationQueue.filter((row) => row.status === "pending" && row.action === "放宽提现参数") });
-    } catch {
-      if (id === approvalsRequestId.current) setApprovals({ state: "failed", rows: [] });
-    }
-  }, [canQuery]);
-
   useEffect(() => {
     void load();
     return () => { requestId.current += 1; };
   }, [load]);
-  useEffect(() => { void loadApprovals(); }, [loadApprovals]);
   useEffect(() => syncPending(), [syncPending]);
 
   const reloadAll = () => {
     void load();
-    void loadApprovals();
-    if (ownApproval?.ticket.status === "pending" && canLookupOwn) {
-      void refreshWithdrawalApprovalReceipt("D5", ownApproval).then(result => {
-        setOwnApproval(current => current === ownApproval ? result : current);
-      });
-    }
+    approvals.refreshApprovals();
   };
 
   const applyApproval = (result: WithdrawalApprovalReceipt & { acknowledgement: string }) => {
-    setOwnApproval(result);
+    approvals.registerReceipt(result);
     syncPending();
     toast(result.acknowledgement, "success");
     void load(true);
-    void loadApprovals();
+    void approvals.loadQueue();
   };
 
   const coverageBlock = params && (!params.coverageReliable
@@ -759,17 +735,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     : params.coverageRatio < params.redlinePct
       ? `放宽已暂停：兑付覆盖率 ${pct(params.coverageRatio)}，低于红线 ${fmtConfigPct(params.redlinePct)}`
       : undefined);
-  // 待批列表读到了就以列表为准；读不到（没权限、读取中、读取失败）才用这次会话登记的单。
-  const ownPending = approvals.state !== "ready" && ownApproval?.ticket.status === "pending" ? ownApproval.ticket : null;
-  /** 这张单按原号重读没读到：还按等批准挡放宽，但不说它现在一定在等（ST-36）。 */
-  const ownStale = !!ownPending && !!ownApproval?.unverified;
-  const ownSettled = ownApproval && ownApproval.ticket.status !== "pending" ? ownApproval.ticket : null;
-  const pendingApproval = approvals.state === "ready" ? approvals.rows : ownPending ? [ownPending] : [];
-  const pendingTitle = ownStale ? "放宽单的最新状态没读到，先按等批准处理" : `有 ${pendingApproval.length} 项放宽等批准`;
+  const { pendingRows: pendingApproval, stale: ownStale, pendingTitle, loadQueue: loadApprovals } = approvals;
   /** 放宽现在为什么提交不了，从上往下取第一条。 */
   const loosenBlock = proposeBlock
     ?? (loosenPending ? "上一次放宽的结果未知，先到上方查询原结果" : undefined)
-    ?? (ownStale ? "放宽单的最新状态没读到，点「刷新」读到后再提交" : pendingApproval.length ? "已有放宽等批准，批准、驳回或撤回后才能再提交" : undefined)
+    ?? approvals.blockReason
     ?? coverageBlock
     ?? undefined;
 
@@ -931,7 +901,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
 
   /** 按原操作重试：同命令号、同内容、同理由（OP-94）。只有成功才解除待确认。 */
   const retryTighten = async (record: TightenRecord) => {
-    if (record.expiresAt <= Date.now()) { syncPending(); return; }
+    if (record.expiresAt <= Date.now() || record.replayRejection) { syncPending(); return; }
     if (!commandAuthorities(record.changes).every(can)) { note(record.commandKey, NO_WRITE); return; }
     const block = tightenReplayBlock(record, params);
     if (block) { note(record.commandKey, block); return; }
@@ -940,7 +910,6 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       note(record.commandKey, "浏览器里查不到这条记录，本次没有发送。记录继续保留，请到操作记录与审批核对。");
       return;
     }
-    setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
     note(record.commandKey, "");
     setRecovering(record.commandKey);
     try {
@@ -951,9 +920,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       // 后端明确拒绝了这次重试才给「解除待确认」；本地出错、登录、权限、限流不算（F03、OP-153）。
-      if (isExplicitRejection(cause)) {
+      const rejection = explicitRejectionCode(cause);
+      if (rejection) {
         note(record.commandKey, `重试被拒绝：${sentence(errorText(cause))}这说明不了原操作的结果，原操作继续保留。`);
-        setRetryRejected((current) => [...current, record.commandKey]);
+        tightenCommands.markReplayRejected(record.fingerprint, record.commandKey, rejection);
+        syncPending();
       } else {
         note(record.commandKey, `重试没有完成：${sentence(errorText(cause))}结果还是未知，记录继续保留。`);
       }
@@ -1101,7 +1072,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       const replayBlock = tightenReplayBlock(record, params);
       // 原请求改 TRC20 确认费，或读不到它提交时的原费率：只能查询，写明为什么和下一步（OP-93、OP-126）。
       const replayReason = replayReasonFor(replayBlock);
-      const retryDisabled = !commandAuthorities(record.changes).every(can) ? NO_WRITE : replayReason;
+      const retryDisabled = record.replayRejection ? "重试已被拒绝，请核实后解除"
+        : !commandAuthorities(record.changes).every(can) ? NO_WRITE : replayReason;
       // 改版前没存出处的记录按当前账号查，queryD5DirectCommand 再核原操作人。
       const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D5") };
       // 查到记为失败时，「可能已经生效」不再写。
@@ -1115,7 +1087,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
             onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
           {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryDisabled} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
-          {!expired && !replayBlock && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
+          {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
         </>,
         detail: <>
           <p>{`改动：${describeChanges(record.changes)}。${failed ? "" : "可能已经生效，"}有结果前这页不能再修改。`}{expired && !outcome && expiredNext(target)}</p>
@@ -1126,8 +1098,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   ];
   const pendingNotices = <>
     <FundRecoveryPanel rows={pendingRows} link={auditLink || undefined} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
-    {!params && ownPending && <Notice tone="warn">{ownStale ? `放宽单 ${ownPending.id} 的最新状态没读到，先按等批准处理。` : `放宽单 ${ownPending.id} 已提交，等另一位超级管理员批准，批准前参数不变。`}</Notice>}
-    {ownSettled && <Notice tone="neutral">放宽单 {ownSettled.id} {withdrawalApprovalStatusText(ownSettled)}{ownSettled.status === "approved" ? "，当前值以这页读到的为准。" : "，这张单没有生效。"}</Notice>}
+    {approvals.ownNotice && (!params || approvals.terminal) && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}</Notice>}
     {closing && loosenRecord && <FundClosureModal label="放宽提现参数" createdAt={loosenRecord.createdAt} offer={eCommandClosureOffer(investigationResults[loosenRecord.commandKey], isRetryExpired(loosenRecord))} facts={loosenRecord.values ? <Fact k="改动">{describeChanges(loosenRecord.values)}</Fact> : undefined}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(loosenRecord, evidence); setClosing(false); }} />}
     {directClosing && <CommandClosureModal label={editTitle(directClosing.label.replace(/^调整提现参数 · /, ""))} commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
@@ -1211,7 +1182,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const coverageLine = <KeepText text={p.coverageReliable ? `${coverageText}。` : `读到的兑付覆盖率 ${pct(p.coverageRatio)} 不可靠，红线 ${fmtConfigPct(p.redlinePct)}。`} />;
   const poolHint = reach("/finance/pool") ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款核对</Link> : "去资金储备与应付款核对";
   const coverageExplain = COVERAGE_RULE;
-  const approvalLine = (row: A2OperationRow) => `审批单 ${row.id} · ${row.operator} · ${row.rawTs ? `${formatBusinessTimeFull(row.rawTs, row.ts)}（${zone}）` : row.ts}提交`;
+  const approvalLine = (row: typeof pendingApproval[number]) => row.operator && row.ts
+    ? `审批单 ${row.id} · ${row.operator} · ${row.rawTs ? `${formatBusinessTimeFull(row.rawTs, row.ts)}（${zone}）` : row.ts}提交`
+    : `审批单 ${row.id}`;
   const networks = networkView(p);
   const reconLink = reach("/finance/recon") && <Link className="rd-link" href="/finance/recon" prefetch={false}>去充值与收款对账核对</Link>;
   const j1Link = reach("/emergency/kill-switch", "emergency_j1_read") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关</Link>;
@@ -1233,12 +1206,12 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       ? <Conclusion state="warn" lead hint={<>{networks.outage}。{outageNext} {coverageLine}</>} explain={NETWORK_RULE}>App、H5 用户现在不能发起 USDT 提现</Conclusion>
       : pendingApproval.length
         ? <Conclusion state="warn" hint={<>{pendingApproval.map(approvalLine).join("；")}。{reach(auditHref, "platform_a2_read") && <><Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批查看</Link> </>}{coverageLine}</>} explain={APPROVAL_NOTE}>
-          {ownStale ? pendingTitle : `${pendingTitle}，批准前当前值不变`}
+          {ownStale || approvals.checking ? pendingTitle : `${pendingTitle}，批准前当前值不变`}
         </Conclusion>
         : networks.unknown.length > 0
           ? <Conclusion state="warn" hint={<>配置照常显示，实际状态未知的网络请到「网络和费用」核对原因。{coverageLine}</>} explain={NETWORK_RULE}>部分提现网络的实际状态暂未知</Conclusion>
         : <Conclusion state="ok" explain={coverageExplain}>
-          {canWriteAny ? `${approvals.state === "ready" && networks.known && networks.blocked.length === 0 ? "没有要处理的事，" : ""}${proposeBlock ? "" : "放宽可以提交。"}${coverageText}` : coverageText}
+          {canWriteAny ? `${approvals.queueKnown && !approvals.terminal && networks.known && networks.blocked.length === 0 ? "没有要处理的事，" : ""}${proposeBlock ? "" : "放宽可以提交。"}${coverageText}` : coverageText}
         </Conclusion>;
   // 结论句没说到的都用不了、等批准和读不到审批，单独一条（DT-12：同一件事只说一处）。
   const secondary = <>
@@ -1246,13 +1219,13 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <Notice tone="warn" title="App、H5 用户现在不能发起 USDT 提现">{networks.outage}。{outageNext}</Notice>
     )}
     {pendingApproval.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || networks.outage) && (
-      <Notice tone="warn" title={pendingTitle}>{pendingApproval.map(approvalLine).join("；")}。{ownStale ? "点「刷新」再读。" : "批准前当前值不变。"}{auditLink && <> {auditLink}</>}</Notice>
+      <Notice tone="warn" title={pendingTitle}>{pendingApproval.map(approvalLine).join("；")}。{approvals.pendingDetail}{auditLink && <> {auditLink}</>}</Notice>
     )}
     {networks.unknown.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || pendingApproval.length > 0) && (
       <Notice tone="warn" title="部分提现网络的实际状态暂未知">配置照常显示，请到「网络和费用」核对原因。</Notice>
     )}
-    {canQuery && approvals.state === "failed" && (
-      <Notice tone="neutral" title="审批状态暂时读不到">有没有放宽在等批准现在不知道，到操作记录与审批核对。{auditLink && <> {auditLink}</>}</Notice>
+    {canQuery && approvals.queueState === "failed" && (
+      <Notice tone="neutral" title="待批列表暂时读不到">点「刷新」再读。{auditLink && <> {auditLink}</>}</Notice>
     )}
   </>;
 

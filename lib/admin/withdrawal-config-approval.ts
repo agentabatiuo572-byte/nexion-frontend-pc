@@ -1,8 +1,10 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fundCommandOrigin, type FundCommandOrigin } from "./fund-command-investigation";
 import {
   A2OutcomeUncertainError,
   createA2CommandKey,
   createA2OperationProposal,
+  fetchA2Overview,
   fetchA2ProposalByKey,
   isA2OutcomeUncertainError,
   type A2OperationRow,
@@ -72,16 +74,18 @@ type ApprovalScope = { objectId: string; field: string };
 export type H8ConfigApprovalInput = [{ key: string; value: string; expectedVersion: number }, string];
 export type G4ConfigApprovalInput = [{ paramKey: "dividend"; value: string; decisionRef: string; expectedRevision: string }, string];
 
-/** unverified：这次按原号没读到最新状态，ticket 还是上次读到的样子，不能当成现在的事实（ST-36）。 */
-export type WithdrawalApprovalReceipt = { commandKey: string; ticket: A2OperationRow; unverified?: true };
+export type WithdrawalApprovalReceipt = { commandKey: string; ticket: A2OperationRow };
 const TICKET_STATUS_TEXT = { pending: "等另一位超级管理员批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" } as const;
-export const withdrawalApprovalStatusText = (ticket: A2OperationRow) => TICKET_STATUS_TEXT[ticket.status];
 export const WITHDRAWAL_CONFIG_READ_FAILED = "当前配置暂时没读到，点「刷新」再看";
 
-/** 建单回包和按原号查到的单用同一条规则认：本人发起、对象和动作都是这张放宽单。 */
-function requireOwnWithdrawalTicket(source: WithdrawalApprovalSource, ticket: A2OperationRow, commandKey: string) {
+function matchesWithdrawalTicket(source: WithdrawalApprovalSource, ticket: A2OperationRow) {
   const { action, op } = commands[source];
-  if (!ticket.mine || ticket.obj !== "current" || ticket.action !== action || ticket.operationCode && ticket.operationCode !== op) {
+  return ticket.obj === "current" && ticket.action === action && (!ticket.operationCode || ticket.operationCode === op);
+}
+
+/** 建单回包和原号查询都须核实本人、对象和动作。 */
+function requireOwnWithdrawalTicket(source: WithdrawalApprovalSource, ticket: A2OperationRow, commandKey: string) {
+  if (!ticket.mine || !matchesWithdrawalTicket(source, ticket)) {
     throw new A2OutcomeUncertainError("查到的审批单和原申请对不上，请继续核对。", commandKey);
   }
   return ticket;
@@ -92,10 +96,143 @@ async function fetchOwnWithdrawalApproval(source: WithdrawalApprovalSource, comm
   return ticket && requireOwnWithdrawalTicket(source, ticket, commandKey);
 }
 
-/** 按原号重读这张单：读到就换成最新状态（含已批准、已驳回、已撤回、已过期）；没读到只标「未核实」。 */
-export async function refreshWithdrawalApprovalReceipt(source: WithdrawalApprovalSource, receipt: WithdrawalApprovalReceipt): Promise<WithdrawalApprovalReceipt> {
-  const ticket = await fetchOwnWithdrawalApproval(source, receipt.commandKey).catch(() => null);
-  return ticket?.id === receipt.ticket.id ? { commandKey: receipt.commandKey, ticket } : { ...receipt, unverified: true };
+type SavedWithdrawalReceipt = { source: WithdrawalApprovalSource; commandKey: string; ticketId: string };
+type OwnWithdrawalApproval = {
+  storageKey: string;
+  receipt: SavedWithdrawalReceipt;
+  ticket: A2OperationRow | null;
+  checking: boolean;
+};
+type WithdrawalApprovalQueue = {
+  adminId?: number;
+  state: "loading" | "ready" | "failed";
+  rows: A2OperationRow[];
+  retrying?: boolean;
+};
+type PendingWithdrawalRow = Pick<A2OperationRow, "id"> & Partial<Pick<A2OperationRow, "operator" | "ts" | "rawTs">>;
+const EMPTY_WITHDRAWAL_QUEUE: WithdrawalApprovalQueue = { state: "loading", rows: [] };
+const WITHDRAWAL_APPROVAL_PENDING = "等另一位超级管理员批准，批准前参数不变。";
+
+function readSavedWithdrawalReceipt(key: string, source: WithdrawalApprovalSource): SavedWithdrawalReceipt | null {
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(key) ?? "null");
+    if (stored?.source === source && typeof stored.commandKey === "string" && stored.commandKey
+      && typeof stored.ticketId === "string" && stored.ticketId) return stored;
+  } catch { /* 页面仍可显示本次成功的回执。 */ }
+  return null;
+}
+
+function saveWithdrawalReceipt(key: string, receipt: SavedWithdrawalReceipt | null) {
+  try {
+    if (receipt) window.sessionStorage.setItem(key, JSON.stringify(receipt));
+    else window.sessionStorage.removeItem(key);
+  } catch { /* 回执存储失败不改变建单结果。 */ }
+}
+
+/** 原号查到就覆盖同号行。查不到时只有完整列表可以解除本人的放宽限制。 */
+function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWithdrawalApproval | null) {
+  const queueKnown = queue.state === "ready";
+  const ownId = own?.receipt.ticketId;
+  const ticket = own?.ticket;
+  const terminal = ticket && ticket.status !== "pending" ? ticket : null;
+  const rows = queue.rows.flatMap(row => {
+    if (row.id !== ownId) return [row];
+    if (terminal || (!ticket && !queueKnown)) return [];
+    return [ticket ?? row];
+  });
+  const listed = rows.some(row => row.id === ownId);
+  const checking = !!own?.checking && !listed;
+  const stale = !!own && !ticket && !own.checking && !queueKnown;
+  const pendingRows: PendingWithdrawalRow[] = [...rows];
+  if (ownId && !listed && (ticket?.status === "pending" || checking || stale)) {
+    pendingRows.push(ticket ?? { id: ownId });
+  }
+  const hasPending = pendingRows.length > 0;
+  const pendingTitle = checking ? "正在读取放宽单状态…"
+    : stale ? "放宽单的最新状态没读到，先按等批准处理" : `有 ${pendingRows.length} 项放宽等批准`;
+  const ownNotice = terminal
+    ? `放宽单 ${terminal.id} ${TICKET_STATUS_TEXT[terminal.status]}${terminal.status === "approved" ? "，当前值以这页读到的为准。" : "，这张单没有生效。"}`
+    : ownId && (listed || pendingRows.some(row => row.id === ownId))
+      ? checking ? `正在读取放宽单 ${ownId} 的状态…`
+        : stale ? `放宽单 ${ownId} 的最新状态没读到，先按等批准处理，点「刷新」再读。`
+          : `放宽单 ${ownId} 已提交，${WITHDRAWAL_APPROVAL_PENDING}${queueKnown ? "" : "点「刷新」看最新状态。"}`
+      : null;
+  const blockReason = checking ? "正在读取放宽单状态，读到后再提交放宽"
+    : stale ? "放宽单的最新状态没读到，点「刷新」读到后再提交"
+      : hasPending ? "已有放宽等批准，批准、驳回或撤回后才能再提交" : undefined;
+  return {
+    rows, pendingRows, queueKnown, terminal, checking, stale, pendingTitle, ownNotice, blockReason,
+    showOwnNotice: !!ownNotice && !listed,
+    pendingDetail: checking ? "" : stale ? "点「刷新」再读。" : "批准前当前值不变。",
+    queueLine: WITHDRAWAL_APPROVAL_PENDING,
+  };
+}
+
+export function useWithdrawalApprovals(source: WithdrawalApprovalSource, adminId: number | undefined, authorities: readonly string[]) {
+  const canReadQueue = authorities.includes("platform_a2_read");
+  const canReadOwn = canReadOwnRecoveryProposal(authorities);
+  const storageKey = adminId === undefined ? "" : `nexion-admin-withdrawal-approval-receipt:${adminId}:${source}`;
+  const [queue, setQueue] = useState(EMPTY_WITHDRAWAL_QUEUE);
+  const [ownState, setOwn] = useState<OwnWithdrawalApproval | null>(null);
+  const own = ownState?.storageKey === storageKey ? ownState : null;
+  const readSeq = useRef(0);
+  const queueSeq = useRef(0);
+
+  const loadQueue = useCallback(async () => {
+    if (!canReadQueue || adminId === undefined) return;
+    const seq = ++queueSeq.current;
+    setQueue(current => ({
+      adminId, state: "loading",
+      rows: source === "D7" && current.adminId === adminId ? current.rows : [],
+      retrying: current.adminId === adminId && (current.state === "failed" || current.retrying),
+    }));
+    try {
+      const overview = await fetchA2Overview({ domain: "D" }, true);
+      if (overview.operationQueueInvalidCount) throw new Error("A2_APPROVAL_QUEUE_INCOMPLETE");
+      if (seq !== queueSeq.current) return;
+      setQueue({ adminId, state: "ready", rows: overview.operationQueue.filter(row => row.status === "pending" && matchesWithdrawalTicket(source, row)) });
+    } catch {
+      if (seq === queueSeq.current) setQueue({ adminId, state: "failed", rows: [] });
+    }
+  }, [adminId, canReadQueue, source]);
+
+  const readOwn = useCallback(async (receipt: SavedWithdrawalReceipt) => {
+    const seq = ++readSeq.current;
+    setOwn({ storageKey, receipt, ticket: null, checking: canReadOwn });
+    if (!canReadOwn) return;
+    const found = await fetchOwnWithdrawalApproval(source, receipt.commandKey).catch(() => null);
+    if (seq !== readSeq.current) return;
+    const ticket = found?.id === receipt.ticketId ? found : null;
+    if (ticket && ticket.status !== "pending") saveWithdrawalReceipt(storageKey, null);
+    setOwn({ storageKey, receipt, ticket, checking: false });
+  }, [canReadOwn, source, storageKey]);
+
+  useEffect(() => {
+    void loadQueue();
+    return () => { queueSeq.current += 1; };
+  }, [loadQueue]);
+  useEffect(() => {
+    const saved = storageKey ? readSavedWithdrawalReceipt(storageKey, source) : null;
+    if (saved) void readOwn(saved);
+    return () => { readSeq.current += 1; };
+  }, [readOwn, source, storageKey]);
+
+  const registerReceipt = (result: WithdrawalApprovalReceipt) => {
+    if (!storageKey) return;
+    const receipt = { source, commandKey: result.commandKey, ticketId: result.ticket.id };
+    readSeq.current += 1;
+    saveWithdrawalReceipt(storageKey, result.ticket.status === "pending" ? receipt : null);
+    setOwn({ storageKey, receipt, ticket: result.ticket, checking: false });
+  };
+  const refreshApprovals = () => {
+    void loadQueue();
+    if (own && (!own.ticket || own.ticket.status === "pending")) void readOwn(own.receipt);
+  };
+  const visibleQueue = canReadQueue && queue.adminId === adminId ? queue : EMPTY_WITHDRAWAL_QUEUE;
+  return {
+    ...resolveWithdrawalApprovals(visibleQueue, own), queueState: visibleQueue.state, queueRetrying: !!visibleQueue.retrying,
+    loadQueue, registerReceipt, refreshApprovals,
+  };
 }
 
 function approvalSlot(sourceDomain: keyof typeof commands, adminId: string | number, scope?: ApprovalScope) {
