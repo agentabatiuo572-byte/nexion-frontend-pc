@@ -731,6 +731,8 @@ export default function UserDetailPage() {
   const [revokeScan, setRevokeScan] = useState<UserPaymentMethod[] | null>(null);
   const [revokeScanFailed, setRevokeScanFailed] = useState(false);
   const paymentReadSeq = useRef(0);
+  // 表里现在画的是哪个条件读到的行：换了条件、新的还在读时，表格先占位，不显示旧条件的行（03 ST-32）。
+  const [paymentShownKey, setPaymentShownKey] = useState("");
   const [paymentSecurity, setPaymentSecurity] = useState<{ state: PaymentSecurityState; pending: boolean }>({ state: "loading", pending: false });
   const [openFolds, setOpenFolds] = useState<Record<string, boolean>>({});
   const [openRecordList, setOpenRecordList] = useState<RecordKind | "audit" | null>();
@@ -962,7 +964,7 @@ export default function UserDetailPage() {
     };
     const [listed, scanned] = await Promise.allSettled([fetchUserPaymentMethods(userId, includeUnbound, paymentPage, 10), scan()]);
     if (seq !== paymentReadSeq.current) return;
-    if (listed.status === "fulfilled") { setPaymentMethods(listed.value); setPaymentError(null); } else setPaymentError(displayAdminReadError(listed.reason));
+    if (listed.status === "fulfilled") { setPaymentMethods(listed.value); setPaymentShownKey(`${includeUnbound}|${paymentPage}`); setPaymentError(null); } else setPaymentError(displayAdminReadError(listed.reason));
     setRevokeScan(scanned.status === "fulfilled" ? scanned.value : null);
     setRevokeScanFailed(scanned.status === "rejected");
     setPaymentLoading(false);
@@ -989,7 +991,8 @@ export default function UserDetailPage() {
   const auditEntries = useMemo(() => toAuditEntries(detail?.audit), [detail?.audit]);
   // 超过 5 条只先列最近 5 条，其余收在「查看全部」后面（VS-109）；和时间线同样按时间排，再取前 5 条。
   const auditRecent = useMemo(() => [...auditEntries].sort((a, b) => parseBusinessTime(b.at) - parseBusinessTime(a.at)).slice(0, 5), [auditEntries]);
-  const methods = useMemo(() => paymentMethods?.items ?? [], [paymentMethods]);
+  const paymentConditionStale = paymentLoading && paymentShownKey !== `${includeUnbound}|${paymentPage}`;
+  const methods = useMemo(() => paymentConditionStale ? [] : paymentMethods?.items ?? [], [paymentConditionStale, paymentMethods]);
   const unfinishedRevokes = useMemo(() => (revokeScan ?? []).filter(revokeUnfinished), [revokeScan]);
   const devices = useMemo(() => asArray(detail?.devices?.records), [detail?.devices?.records]);
   const deposits = useMemo(() => asArray(detail?.deposits?.records), [detail?.deposits?.records]);
@@ -1427,7 +1430,7 @@ export default function UserDetailPage() {
     ledgerUnread && "账单流水",
     (failedSection(detail.deposits, detail.withdrawals, detail.financial, detail.account) || latestFundsFailed) && "资金",
     failedSection(detail.devices, detail.earnings) && "设备与收益",
-    teamFailed && "团队与互动",
+    teamFailed && !referralRetrying && "团队与互动",
     recordsFailed && "记录",
     detail.financial?.totalsStatus === "ERROR" && "累计金额",
     detail.risk && !riskAuthorityReady && !supportScope && "风险分",
@@ -1444,7 +1447,7 @@ export default function UserDetailPage() {
     detail.commerce && "最近 50 单订单",
     detail.notifications && "通知推送失败",
   ].filter((value): value is string => !!value);
-  const checking = paymentSecurityPort && (paymentSecurity.state === "loading" || paymentSecurity.state === "reloading") || !supportScope && (paymentRereading || !paymentMethods && !paymentFailed || !revokeScan && !revokeFailed);
+  const checking = paymentSecurityPort && (paymentSecurity.state === "loading" || paymentSecurity.state === "reloading") || !supportScope && (paymentRereading || !paymentMethods && !paymentFailed || !revokeScan && !revokeFailed) || referralRetrying;
   const firstIssue = issues.find((issue) => issue.go);
   const firstGo = firstIssue?.go;
   const c2Link = canReadC2 && !supportScope
@@ -1469,7 +1472,7 @@ export default function UserDetailPage() {
         : unreadable.length > 0
           ? <Conclusion state="unknown" hint={`${unreadText}，这部分没有判断。${paymentScopeNote}`} explain={checkedExplain}>账户正常，{unreadCount}</Conclusion>
           : checking
-            ? <Conclusion state="unknown" hint={paymentScopeNote || undefined}>{paymentSecurity.state === "reloading" ? "账户正常，正在重新加载支付安全…" : "账户正常，正在核对其余项目…"}</Conclusion>
+            ? <Conclusion state="unknown" hint={paymentScopeNote || undefined}>{paymentSecurity.state === "reloading" ? "已读到的项目没发现问题，正在重新加载支付安全…" : "已读到的项目没发现问题，正在核对其余项目…"}</Conclusion>
             // 结果未确认在下面的提示里写一次，这里不写「没发现问题」，也不再说一遍（VS-105）。
             : pendingCount > 0
               ? paymentScopeNote ? <Conclusion state="unknown" explain={checkedExplain}>{paymentScopeNote}</Conclusion> : null
