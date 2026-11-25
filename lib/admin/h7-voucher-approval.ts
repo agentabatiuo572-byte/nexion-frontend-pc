@@ -2,7 +2,7 @@ import {
   A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey,
   isA2OutcomeUncertainError, type A2OperationRow,
 } from "./a2-client";
-import { createPendingMutationStore, createPendingRecovery, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, isRetryExpired, ORIGINAL_UNKNOWN_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 import { explicitRejectionCode } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
 import { requireH7Actor } from "./h7-voucher-mutation";
@@ -105,7 +105,7 @@ export async function submitH7VoucherApproval(session: AdminSession, input: H7Vo
   if (mode === "lookup") return previous ? lookup(previous) : null;
   requireProposalActor(session.adminId, previous?.proposal?.command.op ?? input.op);
   if (previous) {
-    if (mode !== "retry") throw new Error("原操作待确认，请查询原操作。");
+    if (mode !== "retry") throw new Error(ORIGINAL_UNKNOWN_TEXT);
     await h7ApprovalRecovery.replay(previous, original => send(session, original, original.commandKey, slot, original));
     return readSubmitted(slot, previous.commandKey);
   }

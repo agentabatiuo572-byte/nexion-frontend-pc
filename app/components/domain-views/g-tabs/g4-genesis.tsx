@@ -47,7 +47,7 @@ import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
 import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4-tier-confirm";
 import { canRetryG4DirectCommand, g4DirectAuthority, g4DirectCommandExpired, g4DirectObject, listG4DirectCommands, subscribeG4DirectCommands, g4DirectCommandVersion, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { canProposeGParam, useGParamApproval } from "@/lib/admin/use-g-param-approval";
+import { canProposeGParam, gParamApprovalFeedback, useGParamApproval } from "@/lib/admin/use-g-param-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, unknownTag } from "./g-recovery";
 import { G4_PARAM_NAME, G4RecoveryNotice, g4Amount, g4ParamValueText, g4Plain, g4RecoveryTag, type G4ExtraRecovery } from "./g4-recovery";
@@ -247,7 +247,7 @@ function G4GenesisPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [readFailed, setReadFailed] = useState(false);
-  const paramApproval = useGParamApproval("G4", toast, setError, async () => { await readCurrentOverview(); }, invalidateOverview);
+  const paramApproval = useGParamApproval("G4", toast, setError, async (keepPendingConfirm) => { await readCurrentOverview(keepPendingConfirm); }, invalidateOverview);
   const [refreshError, setRefreshError] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [nodeDrawer, setNodeDrawer] = useState<string | null>(null);
@@ -267,9 +267,9 @@ function G4GenesisPage() {
       || listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === "tiers")) ? current : null);
     setFirstDividend(current => session && pendingConfigApproval("G4", session.adminId) ? current : null);
   }
-  async function readCurrentOverview() {
+  async function readCurrentOverview(keepPendingConfirm = false) {
     invalidateOverview();
-    openActionConfirm(null);
+    if (!keepPendingConfirm) openActionConfirm(null);
     try {
       const active = await fetchG4GenesisOverview(nodePageNo, nodePageSize);
       setOverview(active); setLockedParams({}); setReadFailed(false); setRefreshError("");
@@ -369,15 +369,18 @@ function G4GenesisPage() {
         setLockedParams(rows => ({ ...rows, [key.slice(6)]: messageOf(err) }));
       }
       if (!approvalFallback || !(err instanceof G4CatalogApprovalRequiredError)) {
-        const message = messageOf(err);
+        const uncertain = isA2OutcomeUncertainError(err);
+        const approvalMessage = !uncertain || paramApproval.record(key.slice(key.indexOf(":") + 1))?.commandKey === err.commandKey
+          ? gParamApprovalFeedback(err) : undefined;
+        const message = approvalMessage ?? messageOf(err);
         setError(message);
-        toast(isA2OutcomeUncertainError(err) ? message : `操作失败 · ${message}`);
+        toast(approvalMessage ?? (uncertain ? message : `操作失败 · ${message}`));
       }
       throw err;
     } finally {
       setBusyKey(null);
     }
-  }, [nodePageNo, nodePageSize, toast]);
+  }, [nodePageNo, nodePageSize, paramApproval, toast]);
 
   const selectedNode = useMemo(() => {
     if (!overview || !nodeDrawer) return null;
@@ -395,6 +398,8 @@ function G4GenesisPage() {
       businessForm={mc.businessForm}
       reasonMax={mc.reasonMax}
       getPendingReason={() => (mc.directObject && session ? listG4DirectCommands(session.adminId).find(row => g4DirectObject(row) === mc.directObject) : undefined)?.body ? JSON.parse(listG4DirectCommands(session!.adminId).find(row => g4DirectObject(row) === mc.directObject)!.body).reason : mc.getPendingReason?.()}
+      getPendingRecovery={() => mc.approvalObject === undefined ? undefined
+        : paramApproval.getPendingRecovery(mc.approvalObject, () => openActionConfirm(null))}
       getPendingBusinessValue={() => {
         const saved = mc.directObject && session ? listG4DirectCommands(session.adminId).find(row => g4DirectObject(row) === mc.directObject) : undefined;
         return saved ? Object.fromEntries(Object.entries(JSON.parse(saved.body)).map(([key, value]) => [key, String(value)])) : mc.getPendingBusinessValue?.();
@@ -494,7 +499,7 @@ function G4GenesisPage() {
         session={session} epoch={epoch} requested={tierConfirm.change}
         canStartNew={(version) => canStartNew("finprod_g4_price_write") && latest.current.overview!.tiersVersion === version
           && !listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === "tiers")}
-        readActive={readCurrentOverview}
+        readActive={() => readCurrentOverview()}
         onRecoveryStart={invalidateOverview}
         onRecoverDirect={command => recoverDirect(command, true)}
         onError={recoverRejectedApproval}
@@ -523,7 +528,7 @@ function G4GenesisPage() {
         session={session} epoch={epoch} expectedRevision={firstDividend.expectedRevision}
         canStartNew={() => canStartNew("finprod_g4_dividend_rate_write")
           && Number(latest.current.overview!.params.find(row => row.key === "dividend")?.value) === 0}
-        readActive={readCurrentOverview}
+        readActive={() => readCurrentOverview()}
         onRecoveryStart={invalidateOverview}
         onError={recoverRejectedApproval}
         onClose={() => setFirstDividend(null)}
@@ -698,9 +703,7 @@ function G4GenesisPage() {
             {original && <Fact k="原申请"><Change from={currentText} to={originalValue === undefined ? "—" : g4ParamValueText(param.key, originalValue)} /></Fact>}
             {pendingRaise && <Fact k="原调高申请" tone="warn"><Change from={currentText} to={pendingRaiseValue === undefined ? "—" : g4ParamValueText("dividend", pendingRaiseValue)} /> 待审批{pendingRaise.ticket ? `（${pendingRaise.ticket.id}）` : ""}</Fact>}
             <Fact k="什么时候生效" tone={dir === "loose" ? "warn" : undefined}>{original
-              ? original.ticket?.status === "pending"
-                ? "审批单在等另一位超级管理员批准；批准前参数不变"
-                : "原申请结果未知：24 小时内可以按原操作重试，不会重复建单"
+              ? "已查不到原审批单，确认后按保存的原申请重试。"
               : tighteningDividend
                 ? "这次只能调低或保持不变，确认后立即生效；原调高申请还在，但比例变了，批准时会被拒绝，不会覆盖这次的值"
                 : dir === "loose"
@@ -761,6 +764,7 @@ function G4GenesisPage() {
         { key: "decisionRef", label: "产品或财务决策编号", current: "", inputKind: "text", required: true, help: "3–128 字，写产品或财务决议的编号" },
       ] } : undefined,
       getPendingReason: tighteningDividend ? undefined : () => paramApproval.getPendingReason(param.key),
+      approvalObject: tighteningDividend ? undefined : param.key,
       getPendingBusinessValue: tighteningDividend ? undefined : () => paramApproval.getPendingBusinessValue(param.key),
       run: async (reason, value, businessValue) => {
         const saved = paramApproval.record(param.key);

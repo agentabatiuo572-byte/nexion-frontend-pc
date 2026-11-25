@@ -1,7 +1,7 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { buildRoleStatusPayload, normalizeProposalTicket, type A2ProposalTicket } from "@/lib/admin/platform-contracts";
+import { buildRoleStatusPayload, normalizeProposalTicket, PlatformReadError, type A2ProposalTicket } from "@/lib/admin/platform-contracts";
 import { normalizeA6Detail as strictA6Detail, normalizeA6Overview as strictA6Overview } from "@/lib/admin/rbac-contracts";
 
 interface ApiResult<T> {
@@ -87,7 +87,11 @@ async function a6Request<T>(path: string, init?: RequestInit & { idempotencyPref
         || outcomeStaysUnknown(response.status, result?.code))) {
       throw uncertain();
     }
-    throw new Error(formatAdminApiError(result?.message, `A6_REQUEST_FAILED_${response.status}`));
+    const message = formatAdminApiError(result?.message, `A6_REQUEST_FAILED_${response.status}`);
+    if (!init?.method || init.method === "GET") {
+      throw new PlatformReadError(message, response.ok ? result?.code ?? response.status : response.status);
+    }
+    throw new Error(message);
   }
   return result.data as T;
 }

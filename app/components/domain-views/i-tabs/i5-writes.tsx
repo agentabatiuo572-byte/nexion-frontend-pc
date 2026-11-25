@@ -523,8 +523,9 @@ export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继�
   if (!guard.asking) return null;
   return (
     <Modal title="有未保存的修改" icon={ShieldCheck} onClose={guard.stay} footer={<>
+      {/* 危险和主按钮分开放：放弃靠左，继续编辑和保存靠右，和决定区同一种排法（DP-40、VS-25、OP-150）。 */}
+      <Button className="rd-leave-discard" variant="danger-outline" onClick={guard.discard}>放弃改动并返回</Button>
       <Button ref={stayButton} onClick={guard.stay}>继续编辑</Button>
-      <Button variant="danger-outline" onClick={guard.discard}>放弃改动并返回</Button>
       <Button ref={saveButton} variant="primary" disabledReason={saveBlocked} onClick={() => onSave(guard.startSave())}>{saveName}</Button>
     </>}><p>离开后这次的修改不会保留。</p>
       {/* 保存按钮不能点时原因常显，不只放在悬停提示里（OP-126）。 */}

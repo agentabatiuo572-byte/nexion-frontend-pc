@@ -7,6 +7,9 @@ export const DIV_BASE_FORMULA = /platform daily volume \* (\d+(?:\.\d+)?)% \/ (\
 export const DIV_BASE_TEXT = "平台每日交易量 × $1% ÷ $2 节点";
 export const divBaseFormulaText = (text: string) => text.replace(DIV_BASE_FORMULA, DIV_BASE_TEXT);
 
+export const G_PARAM_APPROVAL_RECOVERY = "审批申请先点「查询原操作」。明确查不到原申请、未满 24 小时且仍有发起权限，才可「按原操作重试」。";
+export const G_PARAM_RECOVERY = `${G_PARAM_APPROVAL_RECOVERY}直接修改点「读取当前配置」核对，有原操作权限且未满 24 小时才可重试。`;
+
 /** Only for system-owned display labels. Never use for request values or authored content. */
 export function operatorCopyText(value: string): string {
   return nexGridBrandText(value)
