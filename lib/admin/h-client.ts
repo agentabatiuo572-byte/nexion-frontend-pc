@@ -362,6 +362,8 @@ export async function updateH2TrialBuyList(input: BuyListWrite) {
     }
     if (error.status === 403 || error.apiCode === 403) return { kind: "forbidden" } as const;
     if (error.apiMessage === "TRIAL_OPTIONS_VERSION_CONFLICT") return { kind: "conflict" } as const;
+    // The same number with other content: an operation is recorded under it, so this answer settles nothing here.
+    if (error.apiMessage === "TRIAL_OPTIONS_REQUEST_CHANGED") return { kind: "unknown" } as const;
     if (error.apiMessage === "TRIAL_OPTIONS_PRODUCT_UNAVAILABLE") {
       const { productNo, reason } = error.details ?? {};
       const refused = typeof productNo === "string" && input.productNos.includes(productNo) ? productNo : undefined;

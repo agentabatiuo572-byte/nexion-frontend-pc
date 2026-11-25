@@ -711,13 +711,15 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           setBuyReplayConflict(true);
           break;
         case "rejected":
-        case "accountMismatch":
           recordBuyRejection(record, ownerId, outcome.message);
-          if (outcome.kind === "accountMismatch") announcePermissionDenied();
+          break;
+        // A refusal about who is asking says nothing about the original operation: the record stays, with no release.
+        case "accountMismatch":
+        case "forbidden":
+          setBuyRetryDenied(record.commandKey);
+          handleBuySessionStop("forbidden", ownerId);
           break;
         case "unauthenticated":
-        case "forbidden":
-          if (outcome.kind === "forbidden") setBuyRetryDenied(record.commandKey);
           handleBuySessionStop(outcome.kind, ownerId);
           break;
         case "unknown":
@@ -1012,6 +1014,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         pendingBuyLists.forget(buyPending.fingerprint, buyPending.commandKey);
         setReleasingBuyList(undefined);
         syncBuyPending();
+        toast("已解除原操作记录，后台的结果和锁定不变", "success");
       }} />
   );
   const legacyReleasing = legacyApprovals.find(record => record.commandKey === legacyReleaseKey);
@@ -1075,8 +1078,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       {/* 一切正常时一句话、不放大，和其他页的结论条一个样子（VS-23）；有异常时下面的提示条就是结论。 */}
       {loading
         ? <Conclusion state="unknown">{READING}</Conclusion>
-        : issues.length === 0 && pending.length === 0 && legacyApprovals.length === 0 && (buyInvalid || buyPending)
-          ? <Conclusion state="unknown">{buyInvalid ? "试用正常开放；其他可购买设备暂时无法判断" : "试用正常开放；其他可购买设备有一次修改结果未知"}</Conclusion>
+        : issues.length === 0 && pending.length === 0 && legacyApprovals.length === 0 && (buyInvalid || buyPending || buyReplayConflict)
+          ? <Conclusion state="unknown">{buyInvalid ? "试用正常开放；其他可购买设备暂时无法判断" : buyPending ? "试用正常开放；其他可购买设备有一次修改结果未知" : "试用正常开放；其他可购买设备要读取最新后再调整"}</Conclusion>
         : issues.length === 0 && pending.length === 0 && legacyApprovals.length === 0 && <Conclusion state="ok">{Number(stats.activeSessions) > 0 ? "试用正常开放，进行中的试用由系统自动结束，没有要处理的事" : "试用正常开放，没有要处理的事"}</Conclusion>}
 
       {issues.map((issue) => <Notice key={issue.key} tone={issue.tone} title={issue.title}>{issue.body}</Notice>)}
