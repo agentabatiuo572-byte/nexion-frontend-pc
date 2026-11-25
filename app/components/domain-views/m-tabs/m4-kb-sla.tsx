@@ -958,26 +958,26 @@ function FaqModal({
   };
   return (
     <Modal
-      title={row ? "编辑问答" : "新建问答"}
+      title={gone ? "查看拟改内容" : row ? "编辑问答" : "新建问答"}
       icon={row ? Pencil : Plus}
       className="m4-faq-form"
       wide
       busy={pending}
-      dirty={dirty}
+      dirty={dirty && !gone}
       sub={<>
-        {live ? <StatusTag tone="progress" filled>{row?.status === "published" && status === "draft" ? "保存后立即下架" : "保存后立即生效"}</StatusTag> : <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>}
+        {gone ? null : live ? <StatusTag tone="progress" filled>{row?.status === "published" && status === "draft" ? "保存后立即下架" : "保存后立即生效"}</StatusTag> : <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>}
         {row && <span className="m4-form-id"><span data-mono="">{row.id} · 第 {row.version} 版</span>{authorOf(row.id) && <> · {authorOf(row.id)} 改</>}</span>}
       </>}
       onClose={onClose}
       returnFocus={returnFocus}
       footer={
         <>
-          <Button disabled={pending} onClick={onClose}>取消</Button>
+          <Button disabled={pending} onClick={onClose}>{gone ? "关闭" : "取消"}</Button>
           {recovery && <Button variant={recoveryBindings?.state?.replayBlock && !info?.rejected ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={pending} disabledReason={recoveryBindings?.query ? undefined : "当前账号没有知识库查看权限"}
             onClick={() => { setFailure(null); void recoveryBindings?.query?.(); }}>查询原结果</Button>}
-          {info?.rejected ? <Button onClick={info.release}>核实后解除</Button>
-            : <Button variant={recovery && recoveryBindings?.state?.replayBlock ? "secondary" : "primary"} data-proof="support-faq-save" loading={pending && !querying} loadingText="提交中…" disabled={disabled || gone}
-              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : gone ? "这条问答已不在列表里，不能保存" : disabled ? "问答正在读取或没读到，读到后再保存" : reasonRule.blocked} onClick={save}>{recovery ? "按原请求重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
+          {gone ? null : info?.rejected ? <Button onClick={info.release}>核实后解除</Button>
+            : <Button variant={recovery && recoveryBindings?.state?.replayBlock ? "secondary" : "primary"} data-proof="support-faq-save" loading={pending && !querying} loadingText="提交中…" disabled={disabled}
+              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : disabled ? "问答正在读取或没读到，读到后再保存" : reasonRule.blocked} onClick={save}>{recovery ? "按原请求重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
         </>
       }
     >
@@ -997,10 +997,10 @@ function FaqModal({
         <div className="m4-form-fields">
           <div className="rd-form-grid" data-cols="2" data-dense="">
             <Field label="显示位置" explain="帮助中心：App 里「我的 › 帮助中心」。Nova 智能问答已在 App 下线，选它用户看不到。">
-              <Segments label="显示位置" value={surface} onChange={setSurface} items={SURFACES.map((value) => ({ value, label: surfaceName(value), disabled: pending || Boolean(recovery) }))} />
+              <Segments label="显示位置" value={surface} onChange={setSurface} items={SURFACES.map((value) => ({ value, label: surfaceName(value), disabled: pending || Boolean(recovery) || gone }))} />
             </Field>
             <Field label="语言">
-              {(control) => <Select disabled={pending || Boolean(recovery)} {...control} aria-label="问答语言" value={language} onChange={setLanguage}
+              {(control) => <Select disabled={pending || Boolean(recovery) || gone} {...control} aria-label="问答语言" value={language} onChange={setLanguage}
                 options={[...M4_LANGUAGES.map((option) => ({ value: option.code, label: option.name })), ...(M4_LANGUAGES.some((option) => option.code === language) ? [] : [{ value: language, label: language }])]} />}
             </Field>
           </div>
@@ -1011,25 +1011,25 @@ function FaqModal({
             <ReachList faq={{ surface, language }} label={status === "published" ? "保存后谁读得到" : "发布后谁读得到"} />
           </section>
           <Field label="问题" required error={show("question")}>
-            {(control) => <Textarea disabled={pending || Boolean(recovery)} {...control} data-proof="support-faq-question" rows={1} value={question} count={`${question.trim().length}/160`} onChange={(e) => setQuestion(e.target.value)} placeholder="用户会怎么问，就怎么写。例如：提现审核要多久？" />}
+            {(control) => <Textarea disabled={pending || Boolean(recovery)} readOnly={gone} {...control} data-proof="support-faq-question" rows={1} value={question} count={`${question.trim().length}/160`} onChange={(e) => setQuestion(e.target.value)} placeholder="用户会怎么问，就怎么写。例如：提现审核要多久？" />}
           </Field>
           <Field label="回答" required error={show("answer")}>
-            {(control) => <Textarea disabled={pending || Boolean(recovery)} {...control} className="m4-answer" data-proof="support-faq-answer" rows={5} value={answer} count={`${answer.trim().length}/4000`} onChange={(e) => setAnswer(e.target.value)} placeholder={"写清用户自己能做的步骤；换行会原样显示。\n例如：提现提交后一般 24 小时内审核完成。"} />}
+            {(control) => <Textarea disabled={pending || Boolean(recovery)} readOnly={gone} {...control} className="m4-answer" data-proof="support-faq-answer" rows={5} value={answer} count={`${answer.trim().length}/4000`} onChange={(e) => setAnswer(e.target.value)} placeholder={"写清用户自己能做的步骤；换行会原样显示。\n例如：提现提交后一般 24 小时内审核完成。"} />}
           </Field>
           <div className="rd-form-grid" data-cols="3" data-dense="">
             <Field label="分类">
-              {(control) => <Select disabled={pending || Boolean(recovery)} {...control} aria-label="问答分类" value={category} onChange={(value) => setCategory(value as SupportFaq["category"])} options={FAQ_CATEGORY_OPTIONS.map((c) => ({ value: c, label: catCN(c) }))} />}
+              {(control) => <Select disabled={pending || Boolean(recovery) || gone} {...control} aria-label="问答分类" value={category} onChange={(value) => setCategory(value as SupportFaq["category"])} options={FAQ_CATEGORY_OPTIONS.map((c) => ({ value: c, label: catCN(c) }))} />}
             </Field>
             <Field label="排序" hint="小值靠前" explain="0–999999 的整数，从小到大排。同值时本页后更新的在前，帮助中心的顺序可能不同。" error={show("sort")}>
-              {(control) => <NumberInput disabled={pending || Boolean(recovery)} {...control} min={0} max={999999} step={1} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />}
+              {(control) => <NumberInput disabled={pending || Boolean(recovery) || gone} {...control} min={0} max={999999} step={1} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />}
             </Field>
             <Field label="发布状态">
-              <Segments label="发布状态" value={status} onChange={setStatus} items={[{ value: "published", label: "已发布", disabled: pending || Boolean(recovery) }, { value: "draft", label: "草稿", disabled: pending || Boolean(recovery) }]} />
+              <Segments label="发布状态" value={status} onChange={setStatus} items={[{ value: "published", label: "已发布", disabled: pending || Boolean(recovery) || gone }, { value: "draft", label: "草稿", disabled: pending || Boolean(recovery) || gone }]} />
             </Field>
           </div>
-          <Field label="操作理由" required hint={recovery ? undefined : reasonRule.hint} error={!recovery && (tried || reason) ? reasonRule.fieldError : undefined}>
-            {(control) => <Textarea disabled={pending || Boolean(recovery)} {...control} data-proof="support-faq-reason" rows={2} value={reason} count={reasonRule.count} onChange={(e) => setReason(e.target.value)} placeholder="例如：帮助中心提现板块补齐" />}
-          </Field>
+          {!gone && <Field label="操作理由" required hint={recovery ? undefined : reasonRule.hint} error={!recovery && (tried || reason) ? reasonRule.fieldError : undefined}>
+            {(control) => <Textarea disabled={pending || Boolean(recovery)} readOnly={gone} {...control} data-proof="support-faq-reason" rows={2} value={reason} count={reasonRule.count} onChange={(e) => setReason(e.target.value)} placeholder="例如：帮助中心提现板块补齐" />}
+          </Field>}
         </div>
         <aside className="m4-form-preview" aria-label="帮助中心里大概这样">
           <h3 className="m4-block-title">帮助中心里大概这样<Explain label="预览怎么来的" content="按 App 帮助中心的排版近似画出：问题一行，展开是回答，换行原样保留。实际字号和折行以 App 为准。" /></h3>

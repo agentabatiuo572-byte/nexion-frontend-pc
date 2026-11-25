@@ -58,6 +58,10 @@ import type { RoleTone, StateTone } from "./tone";
 import { useDialogFeedback } from "../kit/dialog-feedback";
 import { ToastHost } from "../kit/toast-host";
 
+/** 点到的是页面上的控件（页签、按钮、链接、输入项）。 */
+const onPageControl = (target: EventTarget | null) => target instanceof Element
+  && target.closest('button, a[href], [role="tab"], input, select, textarea, label, summary') !== null;
+
 /** 列表里的行和页面控件才算点到外面；提示条、浮层不在这些区域里，点它们不关抽屉。 */
 function dismissesDrawer(target: EventTarget | null) {
   return target instanceof Element && target.closest("main, aside, header") !== null && target.closest("tr[data-clickable]") === null;
@@ -104,7 +108,7 @@ export interface DrawerNav {
   hasNext: boolean;
 }
 
-export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-other", nav, footer, busy = false, wide = false, children, ...rest }: Omit<ComponentProps<typeof Dialog.Content>, "title"> & {
+export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-other", nav, footer, busy = false, wide = false, keepOnControls = false, children, ...rest }: Omit<ComponentProps<typeof Dialog.Content>, "title"> & {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
@@ -118,6 +122,8 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
   footer?: ReactNode;
   busy?: boolean;
   wide?: boolean;
+  /** 抽屉有没保存的改动、页面自己管离开时传 true：点外面的控件由控件自己先问再去，不顺手关抽屉；点空白处照旧。 */
+  keepOnControls?: boolean;
 }) {
   const surface = useRdSurface();
   const focus = useFocusHandoff(open);
@@ -146,7 +152,8 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
             closedByOutsideClick.current = false;
           }}
           onPointerDownOutside={(event) => {
-            if (busy || !dismissesDrawer(event.detail.originalEvent.target)) event.preventDefault();
+            const target = event.detail.originalEvent.target;
+            if (busy || !dismissesDrawer(target) || keepOnControls && onPageControl(target)) event.preventDefault();
             else closedByOutsideClick.current = true;
           }}
           onFocusOutside={(event) => event.preventDefault()}

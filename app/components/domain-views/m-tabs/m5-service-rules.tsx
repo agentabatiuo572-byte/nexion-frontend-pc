@@ -19,7 +19,7 @@ import { pendingReplayReason } from "../recovery-panel";
 import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
 import { useToast } from "../design-kit";
 import { useMOperationReason } from "./m-operation-reason";
-import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
+import { useH4EditGuard, useH4Editor } from "../h-tabs/h4-edit-guard";
 
 export type MSupportPermission = "superadmin" | "supervisor" | "agent";
 type RuleDraft = { dormantDays: string; maintenanceDays: string; activityWindowDays: string; inheritanceMode: SupportRules["inheritanceMode"]; maxInheritanceDepth: string; unboundAssignmentMode?: SupportRules["unboundAssignmentMode"] };
@@ -88,9 +88,6 @@ const errorText = displayAdminError;
 /** OP-153：过了 24 小时，查不到原操作并读到最新规则才解除。 */
 const EXPIRED_LINE = "已超过 24 小时，不能再重试。再查询一次：查不到、并读到最新规则，这条记录就解除。";
 
-/** 核实解除后还没保存的拟改内容：切走再回来接着合并（OP-97）；只在这个标签页，只给本人。 */
-const releasedRules = new Map<number, RulePendingRecord>();
-
 export function M5ServiceRules({ permission, onSummary }: { permission: MSupportPermission; onSummary?: (summary: M5RulesSummary) => void }) {
   const reach = useReach();
   const adminId = useAdminAuth((state) => state.session?.adminId);
@@ -112,10 +109,12 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const [releasing, setReleasing] = useState(false);
   const [, toast] = useToast();
   const preserveDraft = useRef(false);
-  const [kept, setKept] = useState(() => adminId === undefined ? undefined : releasedRules.get(adminId));
-  const releasedRecord = useRef<RulePendingRecord | null>(kept ?? null);
-  const dropKept = () => { if (adminId !== undefined) releasedRules.delete(adminId); releasedRecord.current = null; setKept(undefined); };
-  const discardDraft = useRecoveryDraftDiscard();
+  const releasedRecord = useRef<RulePendingRecord | null>(null);
+  /** 解除后的拟改内容还没合到最新规则上：离开会丢，算没保存。 */
+  const [awaiting, setAwaiting] = useState(false);
+  /** 从离开框去保存时，保存成功后接着去的地方；取消、被拒、结果未知都作废。 */
+  const afterSave = useRef<(() => void) | undefined>(undefined);
+  const editGuard = useH4EditGuard();
   const rereading = useRef(false);
   const [rereadBusy, setRereadBusy] = useState(false);
   const [releasedFrom, setReleasedFrom] = useState<SupportRules>();
@@ -127,6 +126,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     setDraft(rebaseRuleDraft(value, record.before, record.payload));
     setReleasedFrom(record.before);
     releasedRecord.current = null;
+    setAwaiting(false);
   }
   const command = useM5ManagementCommand({
     store: ruleCommands, canQuery, canWrite,
@@ -137,17 +137,17 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
       expiry: "after-missing",
       canRelease,
       onLocalRelease: (record, rejection) => {
-        releasedRules.set(record.actorId, record);
-        setKept(record);
         const base = latest ?? current;
         const needsLatest = rejection === "SUPPORT_RULES_VERSION_CONFLICT" && (!base || base.version <= record.payload.expectedVersion);
         if (needsLatest) {
           releasedRecord.current = record;
+          setAwaiting(true);
         } else if (base && !readUnavailable) {
           setCurrent(base);
           applyReleasedRules(base, record);
         } else {
           releasedRecord.current = record;
+          setAwaiting(true);
           setDraft(null);
         }
         setLatest(null); setConflict(needsLatest); setReason(""); setConfirm(false); setError("");
@@ -155,14 +155,18 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
       readAfterExpiry: async () => {
         const value = await supportClient.rules();
         return () => {
-          dropKept();
           preserveDraft.current = false; setReleasedFrom(undefined);
           setCurrent(value); setDraft(toDraft(value)); setReason(""); setLatest(null);
           setSaved(false); setConflict(false); setReadUnavailable(false); setConfirm(false); setError("");
         };
       },
     },
-    onSuccess: () => { preserveDraft.current = false; setReleasedFrom(undefined); setConfirm(false); setSaved(true); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); setReason(""); },
+    onSuccess: () => {
+      const next = afterSave.current;
+      afterSave.current = undefined;
+      preserveDraft.current = false; setReleasedFrom(undefined); setConfirm(false); setSaved(true); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); setReason("");
+      next?.();
+    },
     onRefusal: (cause, recovered, payload) => {
       setError(errorText(cause));
       if (recovered) { preserveDraft.current = true; setDraft(toDraft({ ...payload, version: payload.expectedVersion })); setConfirm(false); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); }
@@ -210,8 +214,8 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
       setError(errorText(new SupportClientError(422, 422, "SUPPORT_RULES_INVALID"))); return;
     }
     setSaved(false);
-    dropKept();
     await command.run("submit", { ...parsed, expectedVersion: current.version, reason: reason.trim() }, current);
+    afterSave.current = undefined;
   }
 
   function reviewLatest() {
@@ -238,6 +242,20 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     } catch (cause) { if (actor === actorStamp()) setError(displayAdminReadError(cause)); }
     finally { rereading.current = false; setRereadBusy(false); }
   }
+
+  const closeConfirm = () => { afterSave.current = undefined; setConfirm(false); };
+  useH4Editor(permission === "agent" ? null : {
+    scope: "M5/service-rules",
+    dirty: canWrite && !retry && !command.submitting && Boolean(current) && (awaiting || Boolean(draft) && JSON.stringify(draft) !== JSON.stringify(toDraft(current!))),
+    saveName: "保存并立即生效",
+    saveReason: editGuard.otherDirty("M5/service-rules") ? "欢迎语也有没保存的改动，先分别保存" : !editable ? "先读取最新规则再保存" : !parsed ? "有填写不对的项，先改正" : undefined,
+    close: () => {
+      releasedRecord.current = null;
+      setAwaiting(false); setReleasedFrom(undefined); setLatest(null); setConflict(false); setConfirm(false); setReason(""); setError("");
+      setDraft(current ? toDraft(current) : null);
+    },
+    save: after => { afterSave.current = after; releaseOpener.current = null; setConfirm(true); },
+  });
 
   const checkPending = () => command.run("query");
   const restore = () => {
@@ -311,9 +329,6 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         {saved && <Notice tone="ok">已保存。</Notice>}
         {!loading && (!current || readUnavailable) && <BlockState state="error" title="服务规则加载失败" detail={`${error ? `${error} ` : ""}暂时不能查看和保存。`} onRetry={() => setReload((n) => n + 1)} />}
         {(error || command.message) && !readUnavailable && !confirm && !conflict && !retry && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{command.message || error}</Notice>}
-        {kept && draft && current && !retry && !conflict && <Notice tone="neutral" title="解除前填的内容已带回，还没保存" action={<Button size="sm" variant="ghost" disabled={saving}
-          onClick={() => discardDraft.ask(() => { dropKept(); setReleasedFrom(undefined); setDraft(toDraft(current)); setReason(""); })}>放弃这份草稿</Button>}>核对后重新填写理由再保存。</Notice>}
-        {discardDraft.dialog}
         {draft && current && !(readUnavailable && !retry) && <div className="m5-form">
           <Field label="新客户怎么分" help={draft.unboundAssignmentMode === "AUTO_RANDOM"
             ? "第一次发消息时，分给可接单的客服里负载最低的；没人可接就继续等。"
@@ -350,15 +365,15 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
             <span className="rd-toolbar-note">{retry ? "上次保存结果未知，先处理它" : command.submitting ? "提交中…" : changed.length > 0 ? `改了 ${changed.length} 项，还没保存` : "没有改动"}</span>
             <Button ref={formAction} variant="primary" icon={<Save size={14} aria-hidden />} disabled={permission !== "superadmin" || (retry ? false : !editable || !parsed || changed.length === 0)}
               disabledReason={!retry && editable && changed.length === 0 ? "还没有改动" : !retry && editable && !parsed ? "有填写不对的项，先改正" : undefined}
-              onClick={() => { if (retry) restore(); else { releaseOpener.current = null; setConfirm(true); } }}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
+              onClick={() => { if (retry) restore(); else { afterSave.current = undefined; releaseOpener.current = null; setConfirm(true); } }}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
           </div>}
         </div>}
         {reach("/service/overview", "service_m1_read") && <p className="m5-link-line">还在等分配的客户可以手动分：<a className="rd-link" href="/service/overview?view=pool">到客服工作台「待分配」</a></p>}
       </Panel>
-      {confirm && !(retry && releasing) && original && confirmed && permission === "superadmin" && <Modal title={confirmedChanges.length === 1 ? `修改${LABELS[confirmedChanges[0]]}` : "保存服务规则"} icon={Route} busy={saving} wide returnFocus={returnFocus} onClose={() => { if (!saving) setConfirm(false); }}
+      {confirm && !(retry && releasing) && original && confirmed && permission === "superadmin" && <Modal title={confirmedChanges.length === 1 ? `修改${LABELS[confirmedChanges[0]]}` : "保存服务规则"} icon={Route} busy={saving} wide returnFocus={returnFocus} onClose={() => { if (!saving) closeConfirm(); }}
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
         footer={<>
-          <Button disabled={saving} onClick={() => setConfirm(false)}>取消</Button>
+          <Button disabled={saving} onClick={closeConfirm}>取消</Button>
           {retry && canQuery && <Button variant={command.canReplay || replayRefused ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
           {retry && replayRefused ? canRelease && <Button disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>
             : <Button variant={retry && !command.canReplay ? "secondary" : "primary"} loading={saving && !querying} loadingText="提交中…" disabled={!canWrite || (retry ? !command.canReplay : !canConfirm || Boolean(latest)) || saving}

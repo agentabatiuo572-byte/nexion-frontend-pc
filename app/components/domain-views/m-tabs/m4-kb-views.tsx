@@ -230,7 +230,7 @@ export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
     submitting > 0 && "提交中…", drafts > 0 && `${drafts} 个操作可继续处理`, stopped > 0 && `${stopped} 个操作不能继续`].filter(Boolean).join("，");
   return (
     <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时还没结论的，由有调查权限的超级管理员核查结案。有结论前这条问答不能再改。</p></>} /></>}>
-      <div ref={box}><ul className="m4-pending" aria-label="结果未知的操作">
+      <div ref={box}><ul className="m4-pending" aria-label="待处理的操作">
         {(all ? ordered : ordered.slice(0, 3)).map((row) => (
           <li key={row.key}>
             <span className="m4-pending-name">{row.question}</span>

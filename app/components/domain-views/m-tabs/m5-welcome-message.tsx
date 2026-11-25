@@ -13,7 +13,7 @@ import { pendingReplayReason } from "../recovery-panel";
 import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
 import { useToast } from "../design-kit";
 import { useMOperationReason } from "./m-operation-reason";
-import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
+import { useH4EditGuard, useH4Editor } from "../h-tabs/h4-edit-guard";
 import { createPendingMutationStore, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { isM5ManagementPayload } from "@/lib/admin/m5-management-record";
@@ -50,9 +50,6 @@ const errorText = displayAdminError;
 const EXPIRED_LINE = "已超过 24 小时，不能再重试。「加载最新内容」读到后这条记录就解除，改过的文字留作草稿。";
 
 /** B16: the one welcome copy a new user receives from their dedicated advisor (or in the unassigned state) right after registration. */
-/** 解除后还没保存的拟改文字：切走再回来接着合并（OP-97）；只在这个标签页，只给本人。 */
-const releasedWelcome = new Map<number, WelcomePendingRecord>();
-
 export function M5WelcomeMessage({ permission, onSummary }: { permission: MSupportPermission; onSummary?: (summary: M5WelcomeSummary) => void }) {
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const authorities = useAdminAuth((state) => state.session?.authorities);
@@ -79,10 +76,12 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const [lang, setLang] = useState<SupportWelcomeLanguage>("zh");
   const [releasing, setReleasing] = useState(false);
   const [, toast] = useToast();
-  const [kept, setKept] = useState(() => adminId === undefined ? undefined : releasedWelcome.get(adminId));
-  const releasedRecord = useRef<WelcomePendingRecord | null>(kept ?? null);
-  const dropKept = () => { if (adminId !== undefined) releasedWelcome.delete(adminId); releasedRecord.current = null; setKept(undefined); };
-  const discardDraft = useRecoveryDraftDiscard();
+  const releasedRecord = useRef<WelcomePendingRecord | null>(null);
+  /** 解除后的拟改文字还没合到最新内容上：离开会丢，算没保存。 */
+  const [awaiting, setAwaiting] = useState(false);
+  /** 从离开框去保存时，保存成功后接着去的地方；取消、被拒、结果未知都作废。 */
+  const afterSave = useRef<(() => void) | undefined>(undefined);
+  const editGuard = useH4EditGuard();
   const rereading = useRef(false);
   const [rereadBusy, setRereadBusy] = useState(false);
   const [releasedFrom, setReleasedFrom] = useState<WelcomeBefore>();
@@ -94,6 +93,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
     setDraft({ ...mapSingleContentText(value.texts, required, "edit"), ...record.before?.editedTexts });
     setReleasedFrom(record.before);
     releasedRecord.current = null;
+    setAwaiting(false);
   }
   const command = useM5ManagementCommand({
     store: welcomeCommands, canQuery, canWrite,
@@ -103,17 +103,17 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
       expiry: "load-latest",
       canLoadLatest, canRelease,
       onLocalRelease: (record, rejection) => {
-        releasedWelcome.set(record.actorId, record);
-        setKept(record);
         const base = latest ?? current;
         const needsLatest = rejection === "SUPPORT_WELCOME_VERSION_CONFLICT" && (!base || base.version <= record.payload.expectedVersion);
         if (needsLatest) {
           releasedRecord.current = record;
+          setAwaiting(true);
         } else if (base && !readUnavailable) {
           setCurrent(base);
           applyReleasedWelcome(base, requiredLanguages, record);
         } else {
           releasedRecord.current = record;
+          setAwaiting(true);
           setDraft(null);
         }
         setLatest(null); setConflict(needsLatest); setReason(""); setConfirm(false); setError("");
@@ -121,15 +121,10 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
       readAfterExpiry: async record => {
         const [value, required] = await Promise.all([supportWelcomeMessageClient.read(), getRequiredContentLanguages()]);
         return () => {
-          dropKept();
           refused.current = undefined;
           setRequiredLanguages(required);
           setCurrent(value);
-          if (record.before?.editedTexts) {
-            releasedWelcome.set(record.actorId, record);
-            setKept(record);
-            applyReleasedWelcome(value, required, record);
-          }
+          if (record.before?.editedTexts) applyReleasedWelcome(value, required, record);
           else {
             // OP-153 keeps the old text as a draft on the explicit expiry read.
             setDraft(record.payload.texts);
@@ -140,7 +135,12 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         };
       },
     },
-    onSuccess: () => { refused.current = undefined; setReleasedFrom(undefined); setConfirm(false); setLoading(true); setReadUnavailable(true); setSaved(true); setReason(""); setReload(n => n + 1); },
+    onSuccess: () => {
+      const next = afterSave.current;
+      afterSave.current = undefined;
+      refused.current = undefined; setReleasedFrom(undefined); setConfirm(false); setLoading(true); setReadUnavailable(true); setSaved(true); setReason(""); setReload(n => n + 1);
+      next?.();
+    },
     onRefusal: (cause, recovered, payload, before) => {
       setError(errorText(cause));
       if (recovered) {
@@ -204,10 +204,10 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         return;
       }
       setSaved(false);
-      dropKept();
       const edited = changedLanguages(mapSingleContentText(current.texts, requiredLanguages, "edit"), draft);
       const editedTexts = Object.fromEntries(edited.map(key => [key, draft[key]])) as Partial<SupportWelcomeTexts>;
       await command.run("submit", { expectedVersion: current.version, texts, reason: reason.trim() }, { ...current, editedTexts });
+      afterSave.current = undefined;
     } finally { setCheckingLanguages(false); }
   }
 
@@ -238,6 +238,22 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
     } catch (cause) { if (actor === actorStamp()) setError(displayAdminReadError(cause)); }
     finally { rereading.current = false; setRereadBusy(false); }
   }
+
+  const closeConfirm = () => { afterSave.current = undefined; setConfirm(false); };
+  useH4Editor({
+    scope: "M5/welcome",
+    dirty: canWrite && !retry && !command.submitting && Boolean(current)
+      && (awaiting || Boolean(draft) && JSON.stringify(draft) !== JSON.stringify(mapSingleContentText(current!.texts, requiredLanguages, "edit"))),
+    saveName: "保存并立即生效",
+    saveReason: editGuard.otherDirty("M5/welcome") ? "服务规则也有没保存的改动，先分别保存" : !editable ? "先加载最新内容再保存" : !valid ? "有填写不对的项，先改正" : undefined,
+    close: () => {
+      refused.current = undefined;
+      releasedRecord.current = null;
+      setAwaiting(false); setReleasedFrom(undefined); setLatest(null); setConflict(false); setConfirm(false); setReason(""); setError("");
+      setDraft(current ? mapSingleContentText(current.texts, requiredLanguages, "edit") : null);
+    },
+    save: after => { afterSave.current = after; setConfirm(true); },
+  });
 
   const checkPending = () => command.run("query");
   const reloadAfterExpiry = () => command.run("load-latest");
@@ -295,9 +311,6 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           onRetry={loadExpired ? () => void reloadAfterExpiry() : () => setReload((n) => n + 1)}
           retryLabel={loadExpired ? "加载最新内容" : undefined} retrying={loadExpired && saving} />}
         {(error || command.message) && !readUnavailable && !confirm && !conflict && !retry && <Notice tone={errorTone}>{command.message || error}</Notice>}
-        {kept && draft && current && !retry && !conflict && <Notice tone="neutral" title="解除前填的文字已带回，还没保存" action={<Button size="sm" variant="ghost" disabled={saving}
-          onClick={() => discardDraft.ask(() => { dropKept(); setReleasedFrom(undefined); setDraft(mapSingleContentText(current.texts, requiredLanguages, "edit")); setReason(""); })}>放弃这份草稿</Button>}>核对后重新填写理由再保存。</Notice>}
-        {discardDraft.dialog}
         {current && shownTexts && !(readUnavailable && !retry) && <div className="m5-welcome-body">
           <div className="m5-welcome-edit">
             <LocaleTabs label="欢迎语语言" value={lang} onChange={setLang}
@@ -342,13 +355,13 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           <span className="rd-toolbar-note">{retry ? "上次保存结果未知，先处理它" : command.submitting ? "提交中…" : changed.length > 0 ? `改了${changed.map((key) => LANGUAGES.find((item) => item.key === key)?.label).join("、")}，还没保存` : "没有改动"}</span>
           <Button ref={formAction} variant="primary" icon={<Save size={14} aria-hidden />} disabled={retry ? false : !editable || !valid || changed.length === 0}
             disabledReason={!retry && editable && changed.length === 0 ? "还没有改动" : !retry && editable && !valid ? "内容未通过校验：请检查英文和必填语言是否已填、每种语言不超过 500 字，以及修改理由，再提交。" : undefined}
-            onClick={() => retry ? restore() : setConfirm(true)}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
+            onClick={() => { if (retry) restore(); else { afterSave.current = undefined; setConfirm(true); } }}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
         </div>}
       </Panel>
-      {confirm && !(retry && releasing) && original && draft && permission === "superadmin" && <Modal title="保存新用户欢迎语" icon={MessageCircleHeart} wide busy={saving} returnFocus={returnFocus} onClose={() => { if (!saving) setConfirm(false); }}
+      {confirm && !(retry && releasing) && original && draft && permission === "superadmin" && <Modal title="保存新用户欢迎语" icon={MessageCircleHeart} wide busy={saving} returnFocus={returnFocus} onClose={() => { if (!saving) closeConfirm(); }}
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
         footer={<>
-          <Button disabled={saving} onClick={() => setConfirm(false)}>取消</Button>
+          <Button disabled={saving} onClick={closeConfirm}>取消</Button>
           {retry && canQuery && <Button variant={command.canReplay || replayRefused || retryExpired ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
           {retry && replayRefused && canRelease && <Button disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>}
           {retry && retryExpired ? loadExpired && <Button variant="primary" loading={saving && !querying} disabled={saving} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>
