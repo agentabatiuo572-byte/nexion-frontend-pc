@@ -138,7 +138,7 @@ export function expiredTag(note = "原请求超过 24 小时，不能再重试�
 
 /** 原操作的审批单在等批准：和其他页恢复条上的「待审批」同一个样子。 */
 export function approvalPendingTag() {
-  return <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准，批准前不执行。">待审批</StatusTag>;
+  return <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」批准后才执行。">待审批</StatusTag>;
 }
 
 export function A1RecoveryNotice({ title, rows }: { title: ReactNode; rows: A1RecoveryRow[] }) {
