@@ -70,6 +70,8 @@ function dismissesDrawer(target: EventTarget | null) {
 
 /** 每个开过的弹窗、抽屉关掉后焦点该回哪。从另一个框里打开的框，原按钮跟着那个框一起没了时（离开框里点「…后继续」打开的保存确认），接着问那个框（BUG-710）。 */
 const handoffs = new WeakMap<Element, () => HTMLElement | null>();
+/** 能打字的输入框类型；其余（勾选、单选、日期、文件等）算点选。 */
+const TEXT_INPUT = /^(text|search|email|tel|url|password|number)$/;
 /** 打开者那一行已经不在时接焦点的稳定外框：表格外框、面板、页签面板。 */
 const STABLE_FRAME = ".rd-table-scroll, .rd-panel, [role=tabpanel]";
 /** 最上层还开着的弹窗或抽屉，不含正在关的这个。 */
@@ -294,6 +296,8 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
   const focus = useFocusHandoff(true, returnFocus);
   const feedbackId = useDialogFeedback();
   const typed = useRef(false);
+  /** 点选类控件（勾选、下拉、日期）动过。 */
+  const picked = useRef(false);
   // 失焦时校验提示换掉帮助文字（删了节点），Radix 的焦点圈在焦点换手途中看到删除，会把焦点拉回外框（BUG-536）；记下本来要去的控件，送过去。
   const focusTarget = useRef<HTMLElement | null>(null);
   // 填过内容后按 Esc 一直不关，只提示要关请点 ×（OP-46）；接着打字就收起提示。
@@ -314,9 +318,10 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           aria-describedby={undefined}
           onInput={(event) => {
             if (event.target instanceof Element && event.target.matches(SEARCH_INPUT)) return;
-            // 删空了就不算填过内容：Esc 和点空白照常关（OP-46「Esc 关闭空框」）。只读、禁用的框和勾选项不算。
-            typed.current = [...event.currentTarget.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")]
-              .some((field) => !field.matches(SEARCH_INPUT) && !field.readOnly && !field.disabled && field.type !== "checkbox" && field.type !== "radio" && field.value.trim() !== "");
+            // 勾选、下拉、日期这类点选动过一次就一直算填过内容；文字框按现在有没有字算，删空了 Esc 和点空白照常关（OP-46「Esc 关闭空框」）。
+            if (!(event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement && TEXT_INPUT.test(event.target.type))) picked.current = true;
+            typed.current = picked.current || [...event.currentTarget.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")]
+              .some((field) => !field.matches(SEARCH_INPUT) && !field.readOnly && !field.disabled && (field instanceof HTMLTextAreaElement || TEXT_INPUT.test(field.type)) && field.value.trim() !== "");
             setEscHinted(false);
           }}
           onBlur={(event) => { focusTarget.current = event.relatedTarget instanceof HTMLElement ? event.relatedTarget : null; }}
