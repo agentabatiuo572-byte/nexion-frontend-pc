@@ -9,8 +9,8 @@ import { useState, type ReactNode } from "react";
 import { Button, Change } from "@/app/components/rd";
 import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { divBaseFormulaText } from "@/lib/admin/operator-copy";
-import type { GParamRecovery, useGParamApproval } from "@/lib/admin/use-g-param-approval";
+import { divBaseFormulaText, G_PARAM_APPROVAL_RECOVERY, G_PARAM_RECOVERY } from "@/lib/admin/operator-copy";
+import { gParamApprovalFeedback, type GParamRecovery, type useGParamApproval } from "@/lib/admin/use-g-param-approval";
 import { amountDisplay } from "@/lib/format";
 
 /** 九个参数在这页的固定叫法（和参数行、确认框标题一致）。 */
@@ -57,7 +57,7 @@ export function g4ParamValueText(key: string, raw: string | undefined) {
 export const G4_DIVIDEND_PENDING_NOTE = "批准前仍是原比例；这期间仍可以把比例调低，调低立即生效，原调高申请批准时会因为比例变了被拒绝。";
 
 export function g4RecoveryTag(record: Pick<GParamRecovery, "status">, batch = false, obj?: string) {
-  if (record.status === "unknown") return unknownTag("approval");
+  if (record.status === "unknown") return unknownTag("approval", G_PARAM_APPROVAL_RECOVERY);
   if (record.status === "pending") return pendingTag(batch ? "批准前不付款；批准时按原批次的待付明细发放。"
     : obj === "dividend" ? G4_DIVIDEND_PENDING_NOTE : "批准前参数不变；这一项被审批锁住，调高调低都改不了。");
   if (record.status === "expired") return expiredTag("approval");
@@ -84,7 +84,7 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
       if (retry) await approval.retry(obj);
       else if (!await approval.query(obj)) toast("暂未查到原审批单，原记录继续保留。");
     } catch (error) {
-      toast(displayAdminError(error));
+      toast(gParamApprovalFeedback(error) ?? displayAdminError(error));
     } finally {
       setBusy(false);
     }
@@ -120,9 +120,9 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
   ];
   return <GRecoveryNotice label="原操作" rows={rows}
     title={`${waiting ? "在等审批的原申请" : "还没有结论的原操作"} · ${total} 项`}
-    lead={waiting ? waitingLead : `这些操作先只能核对（走审批的查询原操作，直接修改的读取当前配置），或在 24 小时内按原操作重试，不能改成别的值${dividendWaiting ? "（每日收益比例的调高申请在等批准时，仍可直接调低）" : ""}；其他照常可改。`}
+    lead={waiting ? waitingLead : `走审批的先查询原操作，查无且符合条件才可重试。直接修改可读取当前配置核对。有结论前不能改成别的值${dividendWaiting ? "（每日收益比例的调高申请在等批准时，仍可直接调低）" : ""}。其他参数照常可改。`}
     explain={<>
-      <p>这里列你在这台电脑上提交过、还没处理完的原操作：参数修改、每日收益比例、补发收益、价格档位，以及直接生效但没收到结果的修改。走审批的可以查询原审批单；直接修改的只能读取当前配置核对，现在的值证明不了原操作成没成。两种都可以在 24 小时内按原操作重试，不能改值。</p>
+      <p>这里列你在这台电脑上提交过、还没处理完的参数修改、每日收益比例、补发收益和价格档位。{G_PARAM_RECOVERY}现在的配置值证明不了原直接修改是否生效。</p>
       <p>补发收益按原批次号恢复，不会换成今天的批次。要改成别的值，等原操作有结论后再发起新修改。</p>
     </>} />;
 }

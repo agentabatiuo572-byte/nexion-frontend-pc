@@ -225,7 +225,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     : queueError ? "可能存在待批单，读不到审批队列。" : undefined;
   const settlementBlocked = commands.find(record => record.kind === "settlement");
   const settlementPermission = !!session?.authorities.some(code => code === "platform_a2_proposal_create" || code === "platform_a2_write");
-  const settleWriteBlock = settlementBlocked ? isRetryExpired(settlementBlocked) ? RETRY_EXPIRED_TEXT : "有一笔结算原操作待确认，请先查询原操作。"
+  const settleWriteBlock = settlementBlocked ? isRetryExpired(settlementBlocked) ? RETRY_EXPIRED_TEXT : "有一笔结算原操作结果未知，请先查询原操作。"
     : !settlementPermission ? "当前账号没有提交审批的权限。" : undefined;
   const freshBlocked = !readReady || loading ? displayAdminError(new Error("H8_OVERVIEW_REQUIRED")) : undefined;
 

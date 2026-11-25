@@ -20,7 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
 import { fDirectSettledText, fProposalEndText } from "./f-tabs/f-release";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, ORIGINAL_UNKNOWN_TEXT, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, f4PeriodPrize, f4PoolRatio, f4MoneyAmplifies, f4MonthlyCap, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
 import { f4WeeklyCronIssue } from "@/lib/admin/f4-settlement-config";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -1514,7 +1514,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4PolicyWrites,
     f4ExpiredReason: (snapshot) => {
       const record = [...f4Proposals, ...f4PolicyWrites].find(row => matchesF4Confirmation(row, snapshot));
-      return record ? isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "有原操作待确认，请先查询原操作。" : undefined;
+      return record ? isRetryExpired(record) ? RETRY_EXPIRED_TEXT : ORIGINAL_UNKNOWN_TEXT : undefined;
     },
     f4ApprovalRows,
     recoverF4,

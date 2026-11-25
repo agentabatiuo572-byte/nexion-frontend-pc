@@ -9,6 +9,7 @@ import { rankPurchaseRate } from "@/lib/admin/f-overview-contract";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import { parsePhoneProposalView, type PhoneProposalView } from "@/lib/admin/phone-calibration-client";
 import { readE4Money } from "./e4-refund-amount";
+import { readWithdrawalProposalChanges, type WithdrawalProposalChanges } from "./withdrawal-proposal-changes";
 import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client";
 import { fetchA8Permissions, type A8Permission } from "@/lib/admin/a8-client";
 import { permLabel, menuLabel } from "@/lib/admin/rbac-labels";
@@ -108,6 +109,7 @@ interface BackendTicket {
   objDisplayName?: string | null;
   beforeValue?: string | null;
   afterValue?: string | null;
+  changes?: unknown;
   phoneCalibrationProposal?: string | null;
   coverageCheckOnApproval?: boolean | null;
   operationCode?: string | null;
@@ -275,6 +277,8 @@ export interface A2OperationRow {
   objDisplayName?: string;
   before: string;
   after: string;
+  /** Absent for legacy tickets. Null means a structured snapshot was present but unreadable. */
+  withdrawalChanges?: WithdrawalProposalChanges | null;
   operator: string;
   operatorRole: string;
   type: A2OperationType;
@@ -701,6 +705,8 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     } catch { phoneCalibrationError = "手机规则申请的详情加载失败，不能执行；可取消后重新提交。"; }
   }
   const roleGrantsDiff = readRoleGrantsDiff(ticket.roleGrantsDiff);
+  const withdrawalSource = ticket.operationCode === "d5_withdrawal_limits" || !ticket.operationCode && ticket.action === "放宽提现参数" ? "D5"
+    : ticket.operationCode === "d7_payout_vnd_config" || !ticket.operationCode && ticket.action === "放宽越南盾提现参数" ? "D7" : undefined;
   return {
     roleGrantsDiff,
     roleGrantsReview: roleGrantsDiff ? roleGrantsReview(roleGrantsDiff) : null,
@@ -731,6 +737,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     objDisplayName: ticket.objDisplayName?.trim() || undefined,
     before: ticket.beforeValue?.trim() || "—",
     after: ticket.afterValue?.trim() || "—",
+    ...(withdrawalSource && ticket.changes != null ? { withdrawalChanges: readWithdrawalProposalChanges(withdrawalSource, ticket.changes) } : {}),
     operator: ticket.operator?.trim() || "系统",
     operatorRole: ticket.operatorRole?.trim() || "super",
     type: normalizeType(ticket.type),
@@ -825,6 +832,15 @@ async function normalizeOverview(data: BackendOverview | null | undefined): Prom
   };
 }
 
+/** Jackson emits BigDecimal as JSON numbers. Keep the lexemes in B102's flat array of changes and network maps. */
+function preserveWithdrawalChangeNumbers(text: string) {
+  return text.replace(/("changes"\s*:\s*\[(?:[^"\[\]]|"(?:\\.|[^"\\])*")*\])|"(?:\\.|[^"\\])*"/g, (token, changes: string | undefined) => {
+    if (!changes) return token;
+    return changes.replace(/("(?:before|after|trc20|bep20|erc20)"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])|"(?:\\.|[^"\\])*"/g,
+      (match, key: string | undefined, number: string | undefined) => key ? `${key}"${number}"` : match);
+  });
+}
+
 async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean | "proposal"; f5Status?: boolean; f4Payout?: boolean }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
@@ -849,7 +865,10 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     }
     throw error;
   }
-  const result = (await response.text().then(text => JSON.parse(text.replace(/("(?:originalAmountUsdt|refundAmountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"'))).catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(text => {
+    const exactMoney = text.replace(/("(?:originalAmountUsdt|refundAmountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"');
+    return JSON.parse(preserveWithdrawalChangeNumbers(exactMoney));
+  }).catch(() => null)) as ApiResult<T> | null;
   // 41a552fa checks coverage before the first F4 payout write. Other 503s remain unknown.
   const f4PayoutCoverageRefusal = init?.f4Payout === true && response.status === 503
     && result?.code === 503 && result.message === "COVERAGE_SNAPSHOT_UNAVAILABLE";
