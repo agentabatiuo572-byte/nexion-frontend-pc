@@ -11,7 +11,7 @@ import { BarChart3, Users } from "lucide-react";
 import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
 import { supportPerformanceAnalyticsClient as analytics, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
-import { canReadPerformanceExportApprovals, PERFORMANCE_EXPORT_DETAIL, PERFORMANCE_EXPORT_SUMMARY, sameCoveredPerformance, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
+import { PERFORMANCE_EXPORT_DETAIL, PERFORMANCE_EXPORT_SUMMARY, sameCoveredPerformance, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
 import { isSupportSessionExpired, SupportClientError, supportClient, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -39,7 +39,7 @@ import "./m1-analytics-workbench.css";
 import { amountDisplay } from "@/lib/format";
 import { PERF_UNAVAILABLE_VALUE, perfNote, perfText, type AnalyticsPerf, type PerfValue } from "./perf-view";
 import { analyticsPerf, boardTotals, eventsPerf } from "./perf-wiring";
-import { usePerformanceExportPorts } from "./perf-export-ports";
+import { NO_EXPORT_GROUP_REASON, usePerformanceExportPorts } from "./perf-export-ports";
 import { AnalyticsReadDenied, PerfEventsDrawer, PeriodPerfPanel } from "./m1-performance";
 import { PerfExportDialog } from "./perf-export";
 import { PerfExportRecords } from "./perf-export-records";
@@ -494,14 +494,14 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const readModes = authSession?.supportReadModes;
   const canMine = scope?.scopeSummary.mode === "MANAGED" && Boolean(readModes?.includes("PERSONAL"));
   const noScopedContent = scope?.scopeSummary.mode === "MANAGED" && scope.scopeSummary.groups.length === 0 && !canMine;
-  const approvalOnly = readModes?.length === 0 && !!authSession
-    && canReadPerformanceExportApprovals(authSession.authorities)
-    && !authSession.authorities.some(code => code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL);
-  const exportViews = exportsPorts?.persona.views;
+  const noStatisticsMode = readModes?.length === 0;
+  const statisticsUnavailable = noStatisticsMode || scopeDenied;
+  const exportViews = statisticsUnavailable ? exportsPorts?.persona.verifiedViews : exportsPorts?.persona.views;
   const hasMyExports = exportViews?.includes("MINE");
   const hasExportApprovals = exportViews?.includes("APPROVALS");
-  const exportsOnly = (approvalOnly || noScopedContent)
-    && (hasExportApprovals || hasMyExports && exportsPorts?.persona.mineTotal !== 0);
+  const exportsOnly = statisticsUnavailable ? !!exportViews?.length
+    : noScopedContent && (hasExportApprovals || hasMyExports && exportsPorts?.persona.mineTotal !== 0);
+  const exportReadFailed = statisticsUnavailable && !exportsOnly && !!exportsPorts?.persona.views.length;
   const showStatistics = Boolean(scope && !noScopedContent && section === "stats");
   const statisticsCalendar = queryState.basis === "PERIOD_EVENT" ? monthCalendar : null;
   const fundSource = useMemo<StatisticSource | null>(() => {
@@ -550,7 +550,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     return () => controller.abort();
   }, [needsCalendar, scopeRetry, calendarRetry]);
   useEffect(() => {
-    if (approvalOnly) return;
+    if (noStatisticsMode) return;
     const controller = new AbortController(); scopeControllerRef.current = controller; entryStatistics.current = null; if (!targetedRefresh.current) setScope(null); targetedRefresh.current = false; setScopeError(""); setScopeDenied(false); setData(null); setProfileId(null);
     (async () => {
       const agentId = analyticsEntryAgent(window.location.search);
@@ -621,7 +621,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       else setScopeError(analyticsErrorText(cause));
     });
     return () => controller.abort();
-  }, [scopeRetry, entryReadMode, approvalOnly]);
+  }, [scopeRetry, entryReadMode, noStatisticsMode]);
   useEffect(() => {
     const invalidate = (event: Event) => refreshScope(true, Boolean((event as CustomEvent<{ customerId?: string }>).detail?.customerId));
     window.addEventListener("support-scope-invalidated", invalidate);
@@ -788,17 +788,19 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const personalHeader = scope?.scopeSummary.mode === "PERSONAL";
   // 主管和超管：页头次按钮是会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
-  const exportDisabledReason = exportsPorts?.persona.exportBlocked;
-  const exportAccessPending = (noScopedContent || approvalOnly) && exportsPorts === undefined;
+  const canRequestExports = authSession?.authorities.some(code => code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL);
+  const exportDisabledReason = noScopedContent && canRequestExports ? NO_EXPORT_GROUP_REASON : exportsPorts?.persona.exportBlocked;
+  const exportAccessPending = (noScopedContent || statisticsUnavailable) && exportsPorts === undefined;
   const guideId = exportsOnly ? hasMyExports && hasExportApprovals ? "M1-export-both" : hasMyExports ? "M1-export-mine" : "M1-export-approvals"
     : noScopedContent && !exportAccessPending ? "M1-no-group" : undefined;
   const refreshWorkbench = () => {
     if (exportsOnly) setExportRecordsRefresh(revision => revision + 1);
-    else if (approvalOnly) setExportScopeRevision(revision => revision + 1);
+    else if (exportReadFailed) exportsPorts?.invalidateAccess();
+    else if (noStatisticsMode) setExportScopeRevision(revision => revision + 1);
     else refreshScope();
   };
   const header = <PageHeader pageId="M1" guideId={guideId} title="客服工作台" summary={exportsOnly ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} readOnly={noScopedContent ? exportDisabledReason : undefined} actions={<>
-    {!scopeDenied && (exportsPorts?.persona.canExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
+    {!statisticsUnavailable && (exportsPorts?.persona.canExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
     {!noScopedContent && scope?.scopeSummary.mode === "MANAGED" && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}
     {!noScopedContent && scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
     {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{(exportsOnly || (!noScopedContent && !exportAccessPending)) && <Button loading={!!exportsOnly && exportRecordsRefreshing} onClick={refreshWorkbench}>刷新</Button>}
@@ -807,14 +809,14 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const exportDialog = exportOpen && exportsPorts && scope && !scopeDenied && <PerfExportDialog ports={exportsPorts}
     initialMonth={queryState.month} initialScope={queryState.groupId ? `GROUP:${queryState.groupId}` : scope.scopeSummary.mode === "PERSONAL" ? "SELF" : scope.scopeSummary.mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL"}
     onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />;
-  if (!scope || noScopedContent) return <section className="sa-workbench" aria-busy={exportAccessPending || !scope && !approvalOnly && !scopeDenied && !scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>
+  if (!scope || noScopedContent || statisticsUnavailable) return <section className="sa-workbench" aria-busy={exportAccessPending || !scope && !statisticsUnavailable && !scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>
     {header}
-    {exportsOnly && exportsPorts ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
-      <PerfExportRecords ports={exportsPorts} refreshKey={exportRecordsRefresh} onRefreshingChange={setExportRecordsRefreshing} /></>
+    {exportsOnly && exportsPorts && exportViews ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
+      <PerfExportRecords ports={{ ...exportsPorts, persona: { ...exportsPorts.persona, views: exportViews } }} refreshKey={exportRecordsRefresh} onRefreshingChange={setExportRecordsRefreshing} /></>
       : <Panel>{noScopedContent && !exportAccessPending ? <BlockState state="empty" title="你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" detail="主管负责的组由超级管理员在「客服与分组」里设置。" />
-        : scopeDenied || approvalOnly && !exportAccessPending ? <AnalyticsReadDenied /> : <BlockState state={scopeError ? "error" : "loading"}
-          title={scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
-          onRetry={scopeError ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重试" />}</Panel>}
+        : statisticsUnavailable && !exportAccessPending && !exportReadFailed ? <AnalyticsReadDenied /> : <BlockState state={scopeError || exportReadFailed ? "error" : "loading"}
+          title={exportReadFailed ? "导出记录加载失败" : scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
+          onRetry={exportReadFailed ? refreshWorkbench : scopeError ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重试" />}</Panel>}
     {noScopedContent && !exportsOnly && exportsPorts && <PerfExportRecords ports={exportsPorts} recoveryOnly />}
     {scopeDenied && related}
     {unavailableAgentDrawer}

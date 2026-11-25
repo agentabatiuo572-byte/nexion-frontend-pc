@@ -138,7 +138,7 @@ export type ExportDialogData = {
   minReasonChars: number; maxReasonChars: number;
 };
 export type ExportQuery = { month: string; scope: string; types: ExportType[] };
-export type ExportSubmitted = Pick<ExportTask, "type" | "taskId" | "state" | "rows" | "canDownload" | "mine" | "decidedBy" | "decidedAt" | "failure">;
+export type ExportSubmitted = Pick<ExportTask, "type" | "taskId" | "state" | "rows" | "canDownload" | "mine" | "decidedBy" | "decidedAt" | "failure" | "scopeLost">;
 
 export type ExportTaskState = "PENDING_GENERATION" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "WITHDRAWN" | "READY" | "FAILED" | "EXPIRED";
 /** 导出记录里的一条。scope、month、rows 为 null 时这些现在看不到（申请人已没有这个范围）。 */
@@ -180,16 +180,22 @@ export type DecisionLookup =
   | { kind: "mismatch" | "pending" | "failed" | "expired" | "cleared" | "hidden"; text: string }
   | { kind: "not-received"; text: string };
 /** 这个账号在导出上能做什么。views 只有一个时不画分段。 */
-export type ExportPersona = { name: string; canExport: boolean; exportBlocked?: string; views: ("MINE" | "APPROVALS")[]; mineTotal?: number };
+export type ExportPersona = {
+  name: string; canExport: boolean; exportBlocked?: string;
+  views: ("MINE" | "APPROVALS")[];
+  verifiedViews: ExportPersona["views"];
+  mineTotal?: number;
+};
 
 export type ExportVisibleReceipt = { rows: ExportSubmitted[]; checkedAt: number };
-export type SubmitLookup =
+export type SubmitLookup = (
   | { kind: "matched"; rows: ExportSubmitted[] }
   | ({ kind: "partial"; requestId: string } & ExportVisibleReceipt)
   | { kind: "pending"; expired: boolean; previous?: ExportVisibleReceipt }
-  | { kind: "check-failed"; previous?: ExportVisibleReceipt }
-  | { kind: "cleared"; draft: ExportDraft }
-  | { kind: "missing" };
+  | { kind: "check-failed" }
+  | { kind: "cleared" }
+  | { kind: "missing" }
+) & { originalScopeLabel?: string };
 
 export type ExportDownload =
   | { kind: "downloaded" }

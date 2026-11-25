@@ -66,10 +66,14 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
   const visibilityRead = useMemo(() => pendingSubmit && { selection: pendingSubmit.selection, read: ports.canShowOriginalSubmit },
     [pendingSubmit, ports.canShowOriginalSubmit, refreshKey]);
   const [visibleSubmit, setVisibleSubmit] = useState<typeof visibilityRead>();
-  const hidePendingScope = !visibilityRead || visibleSubmit !== visibilityRead;
+  const [receiptVisibility, setReceiptVisibility] = useState<{ key: string; refreshKey: number; visible: boolean }>();
   const [answers, setAnswers] = useState<Record<string, { tag: ReactNode; line: string }>>({});
   const [querying, setQuerying] = useState<string | null>(null);
   const [settled, setSettled] = useState<{ key: string; label: string; text: string; taskId?: string; mine?: boolean }[]>([]);
+  const verifiedReceipt = receiptVisibility && receiptVisibility.key === pendingSubmit?.operationId && receiptVisibility.refreshKey === refreshKey
+    ? receiptVisibility : undefined;
+  const hidePendingScope = !pendingSubmit || querying === pendingSubmit.operationId
+    || (verifiedReceipt ? !verifiedReceipt.visible : !visibilityRead || visibleSubmit !== visibilityRead);
   const now = useExportClock([pendingSubmit, ...pending]);
 
   useEffect(() => {
@@ -228,7 +232,15 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
   const querySubmit = (original: PendingSubmit) => {
     const key = original.operationId;
     setQuerying(key);
+    setReceiptVisibility({ key, refreshKey, visible: false });
+    setAnswers(map => {
+      const next = { ...map };
+      delete next[key];
+      return next;
+    });
     ports.lookupSubmit().then(found => {
+      const visible = found.originalScopeLabel !== undefined;
+      setReceiptVisibility({ key, refreshKey, visible });
       if (found.kind === "matched") {
         setSettled(list => [{ key, label: "提交导出", text: exportReceiptSummary(found.rows), mine: true }, ...list]);
         setRefresh(value => value + 1);
@@ -239,11 +251,11 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
         setRefresh(value => value + 1);
         if (recoveryOnly && found.rows.length) ports.invalidateAccess();
       } else if (found.kind === "check-failed" || found.kind === "pending" && original.acceptedRequestId) {
-        const line = (found.kind === "check-failed" ? "这次查询失败。" : "这次没查到看得到的结果。") + (hidePendingScope ? "" : exportPreviousReceipt(found.previous));
+        const line = found.kind === "check-failed" ? "这次查询失败。" : "这次没查到看得到的结果。" + exportPreviousReceipt(found.previous);
         if (original.acceptedRequestId) setAnswers(map => ({ ...map, [key]: { tag: acceptedTag, line: EXPORT_PARTIAL_RECEIPT + line } }));
         else stillUnknown(key, line);
       } else if (found.kind === "cleared") setSettled(list => [{ key, label: "提交导出",
-        text: hidePendingScope ? "这次提交没有执行。" : "这次提交没有执行，原理由已保留，可以重新导出。", mine: !hidePendingScope }, ...list]);
+        text: visible ? "这次提交没有执行，原理由已保留，可以重新导出。" : "这次提交没有执行。", mine: visible }, ...list]);
       else if (!original.acceptedRequestId) stillUnknown(key, found.kind === "missing" ? "找不到本标签页保存的原操作。"
         : found.expired ? "还没查到这次提交的结果。" : "还没查到这次提交的结果，先保持锁定，稍后再查。");
     }, error => {
