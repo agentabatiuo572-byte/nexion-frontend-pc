@@ -25,7 +25,6 @@ import {
 } from "@/app/components/rd";
 import {
   fetchH8ReferralRewards,
-  h8EffectiveAt,
   fetchH8SettlementEligibility,
   h8EffectiveRewardReference,
   h8RewardParamAmplifies,
@@ -946,11 +945,7 @@ function timesText(per: string | number | undefined, count: number, decimals: nu
 }
 
 function effectiveTimeText(value: string) {
-  try {
-    return `${formatBusinessTimeCompact(h8EffectiveAt(value), "—")}（${businessZone().label}）`;
-  } catch (error) {
-    return displayAdminReadError(error);
-  }
+  return Date.parse(value) === 0 ? "无效的旧时间" : `${formatBusinessTimeCompact(value, "—")}（${businessZone().label}）`;
 }
 
 function valueText(param: H8Param, value: string | undefined) {

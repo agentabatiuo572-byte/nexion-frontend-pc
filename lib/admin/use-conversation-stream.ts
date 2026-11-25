@@ -27,10 +27,10 @@ export function useConversationStream({onEvent,onReconnectSnapshot,onScopeInvali
       socket:url=>{const native=new WebSocket(url);const adapter:RealtimeSocket={onopen:null,onmessage:null,onclose:null,onerror:null,send:data=>native.send(data),close:()=>native.close()};native.onopen=()=>adapter.onopen?.();native.onmessage=e=>adapter.onmessage?.({data:String(e.data)});native.onclose=e=>adapter.onclose?.({code:e.code});native.onerror=()=>adapter.onerror?.();return adapter;},
       ticket:async signal=>{
         const response=await fetch('/api/admin/content/conversations/realtime-ticket',{method:'POST',credentials:'same-origin',cache:'no-store',signal});
-        const result=await response.json();
+        const result=await response.json().catch(()=>null);
         // 取票也是客服侧的请求出口：会话失效同样交外壳重新登录（BUG-715）。
         if(isAdminAuthFailure(response.status,result?.message)||result?.code===401)resetAdminSession();
-        if(!response.ok||result.code!==0)throw Object.assign(new Error('CONVERSATION_AUTH_FAILED'),{status:response.ok?result.code:response.status});
+        if(!response.ok||result?.code!==0)throw Object.assign(new Error('CONVERSATION_AUTH_FAILED'),{status:response.ok?result?.code:response.status});
         return result.data;
       },
       reconcile:signal=>reconcile.current(signal),
