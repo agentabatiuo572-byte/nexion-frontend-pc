@@ -145,8 +145,6 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
       effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后，七层规则一次建好；结算要另外申请启用。`}>批准后生效</StatusTag>,
       facts: <Facts>
         <Fact k="要建立">L1–L7 七层规则</Fact>
-        <Fact k="七层合计占订单">{ranked ? sumRange ? `${rangeText(sumRange.low, sumRange.high)}，示例 ${num(SAMPLE_ORDER)} USDT 订单分出 ${rangeText(pctSample(sumRange.low), pctSample(sumRange.high), "USDT")}` : "—"
-          : `${num(rawSum)}%，示例 ${num(SAMPLE_ORDER)} USDT 订单分出 ${num(f2SampleUsdt(rawSum))} USDT`}</Fact>
         <Fact k="整体结算">不会自动启用，要另外申请</Fact>
         <Fact k="谁来批">另一位超级管理员</Fact>
         <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f2_royalty_rate)}</Fact>
@@ -216,7 +214,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
           <div><dt>奖励总额上限</dt><dd data-empty={cap === null ? "" : undefined}>{cap === null ? "未配置" : `${num(cap)}%`}</dd></div>
         </dl>}
       </Figure>}
-      {limitIssue && <Notice tone="warn" title={limitIssue}>{filledAll ? F2_APP_LIMIT_COPY : "App 会读不到团队奖励配置。填齐后仍可以提交。"}</Notice>}
+      {limitIssue && <Notice tone="warn" title={limitIssue}>{`App 会读不到团队奖励配置。${issues.length ? "填齐后仍可以提交" : "核对后仍可以提交"}。`}</Notice>}
       <div className="rd-toolbar" data-end="">
         {blocked && <span className="f2-boot-error" role="alert">{blocked}</span>}
         <Button onClick={() => setDraft(null)}>取消</Button>

@@ -266,7 +266,7 @@ function V8PromotionRewardFact() {
 }
 
 /** 批准后 App 读不到团队奖励配置：首次配置单看票上的七层；单层比例单只带这一层，其余各层按现在读到的算（OP-69）。 */
-const F2_LIMIT_APPROVE_COPY = "批准后 App 会读不到团队奖励配置。";
+const F2_LIMIT_APPROVE_COPY = "App 最多读到合计 25%，批准后会读不到团队奖励配置。";
 function F2LayerLimitNotice({ level, after }: { level: string; after: string }) {
   const readerId = useAdminAuth((s) => s.session?.authorities.includes("network_f2_read") ? s.session.adminId : undefined);
   const [read, setRead] = useState<{ readerId: number; known: boolean; issue?: string }>();
@@ -281,7 +281,7 @@ function F2LayerLimitNotice({ level, after }: { level: string; after: string }) 
     }).catch(() => { if (active) setRead({ readerId, known: false }); });
     return () => { active = false; };
   }, [readerId, level, after]);
-  if (readerId !== undefined && read?.readerId !== readerId) return null;
+  if (readerId !== undefined && read?.readerId !== readerId) return <Notice tone="neutral" title="正在加载七层现在的比例…" />;
   if (readerId === undefined || !read?.known) return <Notice tone="neutral" title="没读到七层现在的比例，看不出批准后会不会超过 App 读取上限 25%" />;
   return read.issue ? <Notice tone="warn" title={read.issue}>{F2_LIMIT_APPROVE_COPY}</Notice> : null;
 }
@@ -2442,7 +2442,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         coverageCheck: cover?.check,
         // 一组值（各榜奖池、头衔、门槛）逐项比，放「完整变更内容」；单个值一行写在事实区。
         facts: item?.json ? undefined : change,
-        extra: f2RateLevel(fund) && <F2LayerLimitNotice level={f2RateLevel(fund)!} after={w.after} />,
+        extra: f2RateLevel(fund) && <F2LayerLimitNotice key={w.id} level={f2RateLevel(fund)!} after={w.after} />,
         lead: undefined,
         review: !!item?.json,
       };
@@ -3376,7 +3376,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   : f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>
                 <A2I5DisclosureReview key={shown.id} ticket={shown} />
               </A2ChangeReview>}
-          {shownFund?.kind === "fConfig" && f2RateLevel(shownFund) && <F2LayerLimitNotice level={f2RateLevel(shownFund)!} after={shown.after} />}
+          {shownFund?.kind === "fConfig" && f2RateLevel(shownFund) && <F2LayerLimitNotice key={shown.id} level={f2RateLevel(shownFund)!} after={shown.after} />}
           {reissueList(shown, true)}
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}

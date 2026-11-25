@@ -56,11 +56,11 @@ export const f2SampleUsdt = (pct: string) => f2DecimalTimes(pct, String(SAMPLE_O
 
 /** App 对七层原始配置的读取上限（commission-config-api.ts）。 */
 export const F2_APP_TOTAL_LIMIT = 25;
-export const F2_APP_LIMIT_COPY = "App 会读不到团队奖励配置。核对后仍可以提交。";
-/** 七层原始比例合计超过 App 读取上限时的提示标题，合计数在旁边已有，不重复；partial = 还没填齐。 */
+export const F2_APP_LIMIT_COPY = "App 最多读到合计 25%，会读不到团队奖励配置。核对后仍可以提交。";
+/** 七层原始比例合计超过 App 读取上限时的提示标题，合计数和上限数在正文或图上，不重复；partial = 还没填齐。 */
 export function f2AppLimitIssue(pcts: readonly string[], partial = false) {
   return pcts.reduce((sum, pct) => sum + Number(pct), 0) > F2_APP_TOTAL_LIMIT + 0.000001
-    ? `${partial ? "已填的" : "七层"}原始比例合计超过 App 读取上限 ${F2_APP_TOTAL_LIMIT}%` : undefined;
+    ? `${partial ? "已填的" : "七层"}原始比例合计超过 App 读取上限` : undefined;
 }
 
 /** 七层逐行核对：确认框、A2 详情和批准框共用。只用 rd 组件，A2 页没有 F2 的样式表。 */
