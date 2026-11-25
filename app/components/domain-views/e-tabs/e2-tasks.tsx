@@ -289,8 +289,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       next();
     }
   }, [editorDirty]);
-  // 浏览器后退和点链接一样先问（OP-29）；放弃或保存后要去的地方，等退回原记录再去。
-  const leaveHistory = useHistoryBackGuard(editorDirty, leaveEditorThen);
+  // 浏览器后退和点链接一样先问（OP-29）。
+  useHistoryBackGuard(editorDirty, leaveEditorThen);
 
   useEffect(() => {
     if (!editorDirty) return;
@@ -316,7 +316,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   function finishEditor() {
     const next = afterEditorLeave.current;
     afterEditorLeave.current = null;
-    leaveHistory(() => { setEditor(null); next?.(); });
+    setEditor(null);
+    next?.();
   }
 
   function selectPool(code: string, focus = false) {

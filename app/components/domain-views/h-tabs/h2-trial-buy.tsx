@@ -13,7 +13,7 @@ import { TipSide } from "@/app/components/rd/button";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import type { updateH2TrialBuyList } from "@/lib/admin/h-client";
-import { buyProductReason, LISTING_BLOCKED, type BuyDevice, type BuyList, type BuyListWrite } from "@/lib/admin/h2-trial-purchase";
+import { buyProductReason, LISTING_BLOCKED, readH2BuyDevices, type BuyDevice, type BuyList, type BuyListWrite } from "@/lib/admin/h2-trial-purchase";
 import { isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
@@ -23,6 +23,8 @@ export type BuyListDraft = Omit<BuyListWrite, "requestNo" | "confirmedActorId"> 
   added: string[];
   removed: string[];
   nextNames: string[];
+  // Local-only baseline for reviewing a rejected replay. Older pending writes lack it.
+  review?: { before: BuyDevice[]; added: BuyDevice[] };
 };
 
 export type BuyListPending = PendingMutationRecord & BuyListDraft & Pick<BuyListWrite, "requestNo" | "confirmedActorId">;
@@ -121,9 +123,9 @@ function refocusDrawer() {
 }
 
 /** 版本冲突读到最新后，别人改了什么写在同一个框里（OP-97）。 */
-function changedByOthers(before: BuyList, latest: BuyList) {
-  const names = (from: BuyList, against: BuyList) => from.items
-    .filter((item) => !against.items.some((other) => other.productNo === item.productNo)).map(productName).join("、");
+function changedByOthers(before: BuyDevice[], latest: BuyDevice[]) {
+  const names = (from: BuyDevice[], against: BuyDevice[]) => from
+    .filter((item) => !against.some((other) => other.productNo === item.productNo)).map(productName).join("、");
   const added = names(latest, before);
   const removed = names(before, latest);
   return added || removed ? `别人已改：${[added && `新增 ${added}`, removed && `移除 ${removed}`].filter(Boolean).join("，")}` : undefined;
@@ -151,7 +153,7 @@ function rebaseSelection(latest: BuyList, added: BuyDevice[], removed: BuyDevice
   return { base, selection: [...selection] };
 }
 
-export function BuySection({ ctx, list, readError, trialTargetNo, blocked, reading, reach, leaveGuard, onReload, onSubmit }: {
+export function BuySection({ ctx, list, readError, trialTargetNo, blocked, reading, reach, leaveGuard, replayReview, onReload, onSubmit }: {
   ctx: HCtx;
   list?: BuyList;
   /** 收到了这块数据但形状不对：显示区块错误卡，不显示成空清单（ST-34）。 */
@@ -164,6 +166,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   reach: ReturnType<typeof useReach>;
   /** 抽屉里有没保存的改动时是一个「先问再做」，页头刷新走它（OP-30）；没有改动时是 null。 */
   leaveGuard: RefObject<((next: () => void) => void) | null>;
+  replayReview: RefObject<((record: BuyListPending, latest: BuyList) => void) | null>;
   onReload: (requireList?: boolean) => Promise<BuyList | undefined>;
   onSubmit: (input: BuyListDraft) => Promise<BuyListSubmitResult>;
 }) {
@@ -187,8 +190,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const draftBlock = blocked ?? (invalidPicked ? INVALID_PICKED : changed ? undefined : "勾选和现在一样，没有要保存的改动");
 
   const dirty = !!draftBase && changed;
-  // 浏览器后退和换页一样先问（OP-29）；放弃或保存后要去的地方，等退回原记录再去。
-  const leaveHistory = useHistoryBackGuard(dirty, (resume) => { afterLeave.current = resume; setLeaving(true); });
+  // 浏览器后退和换页一样先问（OP-29）。
+  useHistoryBackGuard(dirty, (resume) => { afterLeave.current = resume; setLeaving(true); });
   const openDrawer = () => {
     // 抽屉开着时「调整」仍可用键盘点到：有改动先问，不重置勾选。
     if (dirty) { afterLeave.current = undefined; setLeaving(true); return; }
@@ -198,7 +201,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const continueEditing = () => { afterLeave.current = undefined; setLeaving(false); };
   // 关闭、Esc、点抽屉外、取消：有改动先问（OP-29）。
   const leaveDrawer = () => { if (leaving) continueEditing(); else if (changed) { afterLeave.current = undefined; setLeaving(true); } else closeDrawer(); };
-  const discard = () => { const next = afterLeave.current; leaveHistory(() => { closeDrawer(); next?.(); }); };
+  const discard = () => { const next = afterLeave.current; closeDrawer(); next?.(); };
   useEffect(() => {
     if (!dirty) return;
     const leaveThen = (next: () => void) => { afterLeave.current = next; setLeaving(true); };
@@ -280,6 +283,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         added: added.map(productName),
         removed: removed.map(productName),
         nextNames: next.map(productName),
+        review: { before: base.items, added },
       });
       if (outcome.kind === "stopped") { closeDrawer(); return; }
       if (outcome.kind === "conflict") {
@@ -288,7 +292,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
           readLatest: async () => {
             const { base: latest, selection } = await readReview();
             setLastReason("");
-            if (!showConfirm(latest, selection, "", undefined, changedByOthers(base, latest))) ctx.openActionConfirm(null);
+            if (!showConfirm(latest, selection, "", undefined, changedByOthers(base.items, latest.items))) ctx.openActionConfirm(null);
             return false;
           },
           renderNotice: (readLatest) => (
@@ -314,7 +318,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       }
       // 从「还没保存」里选了保存：存好后接着做原来要做的（换页，或整页刷新，刷新自带读回）。
       const proceed = afterLeave.current;
-      if (proceed) leaveHistory(() => { closeDrawer(); proceed(); });
+      if (proceed) { closeDrawer(); proceed(); }
       else {
         closeDrawer();
         await onReload().catch(() => undefined);
@@ -347,6 +351,21 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       run: send,
     });
     return true;
+  };
+
+  replayReview.current = (record, latest) => {
+    const before = readH2BuyDevices(record.review?.before);
+    const added = readH2BuyDevices(record.review?.added);
+    if (!before || !added) return;
+    const removed = before.filter(item => !record.productNos.includes(item.productNo));
+    const review = rebaseSelection(latest, added, removed);
+    afterLeave.current = undefined;
+    setLeaving(false);
+    setLastReason("");
+    setRejected(undefined);
+    setDraftBase(review.base);
+    setPicked(review.selection);
+    showConfirm(review.base, review.selection, "", undefined, changedByOthers(before, latest.items));
   };
 
   const openConfirm = () => {
