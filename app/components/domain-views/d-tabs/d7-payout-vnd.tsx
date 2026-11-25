@@ -726,7 +726,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     return { key: approval.commandKey, title: "放宽提交", record: approval, outcome, createdAt: approval.createdAt, expired, canRetry: !expired && !confirmed && !retryDisabled,
       canQuery: canQueryOriginal, copy: { missingOrigin: "只能查审批单进度，查不了更细的执行结果。" },
       status: confirmed ? WITHDRAWAL_SUBMISSION_CONFIRMED
-        : outcome && "error" in outcome ? { tone: "danger", label: expired ? "已过期" : "查询失败", line: withdrawalReplayReadError(outcome.error) }
+        : outcome && "error" in outcome ? { tone: "danger", label: expired ? "已过期" : "查询失败", line: `${expired ? "已超过 24 小时，不能再重试。" : ""}${withdrawalReplayReadError(outcome.error)}` }
         : approval.withdrawalStillProcessing ? WITHDRAWAL_COMMAND_PROCESSING
           : !expired && !canQueryOriginal ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，请有权限的同事核对。" }
           : !expired && !outcome && retryDisabled ? { tone: "warn", label: "结果未知", line: retryDisabled } : undefined,

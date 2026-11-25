@@ -1079,7 +1079,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           // TRC20 确认费的限制排在查询失败前面：查询再成功也解不开它，要一直看得到（OP-126）。
           : loosenReplayBlock && !expired && !processing
           ? queryOnlyStatus(loosenReplayBlock, fundRecoveryStatus({ record: loosenRecord, outcome: investigationResults[key], expired, canRetry: false, canQuery: canLookupOwn, copy }), canLookupOwn, queryMissing.includes(key))
-          : outcome && "error" in outcome ? { tone: "danger", label: expired ? "已过期" : "查询失败", line: withdrawalReplayReadError(outcome.error) }
+          : outcome && "error" in outcome ? { tone: "danger", label: expired ? "已过期" : "查询失败", line: `${expired ? "已超过 24 小时，不能再重试。" : ""}${withdrawalReplayReadError(outcome.error)}` }
           : processing ? WITHDRAWAL_COMMAND_PROCESSING
           : !expired && !canLookupOwn ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，请有权限的同事核对。" }
           : !expired && !outcome && retryDisabled ? { tone: "warn", label: "结果未知", line: retryDisabled } : undefined,
