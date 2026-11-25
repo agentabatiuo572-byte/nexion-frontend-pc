@@ -24,9 +24,10 @@ import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
+import { useHConflictDraft, type RejectedH4Draft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ConfirmReq, HCtx } from "./types";
@@ -113,6 +114,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const toast = shellCtx.toast;
   const canModuleWrite = shellCtx.can("growth_h3_write");
   const fresh = useRef(false);
+  const recoveryDrafts = useRef(new Map<string, RejectedH4Draft>());
+  const recoveryDraftKey = (target: string, action: string) => JSON.stringify([useAdminAuth.getState().session?.adminId, target, action]);
   const confirmation = useRef<{ action: string; title: string; target?: string; editValue?: string; businessValue?: Record<string, string>; commandKey?: string; finish: () => void } | null>(null);
   const openActionConfirm = (req: H3ActionConfirmReq | null) => {
     if (!req) { setMc(null); return; }
@@ -120,7 +123,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       toast("请先查询原结果并成功刷新用户任务数据，再发起新的修改。");
       return;
     }
-    req = conflictDraft.action(req, () => !!(confirmation.current?.target && mutations.record(confirmation.current.target)));
+    const draftKey = req.target ? recoveryDraftKey(req.target, String(req.action)) : undefined;
+    const draft = draftKey ? recoveryDrafts.current.get(draftKey) : undefined;
+    req = conflictDraft.action(req, () => !!(confirmation.current?.target && mutations.record(confirmation.current.target)), draft);
     const attempt = { action: String(req.action), title: String(req.title ?? req.action), target: req.target } as NonNullable<typeof confirmation.current>;
     confirmation.current = attempt;
     const editor = creating;
@@ -130,6 +135,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         attempt.editValue = value; attempt.businessValue = businessValue;
         confirmation.current = attempt;
         await req.run(reason, value, businessValue);
+        if (draftKey) recoveryDrafts.current.delete(draftKey);
       },
     };
     attempt.finish = () => {
@@ -189,9 +195,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     }
   };
 
-  const mutations = useH3Mutations(toast, async (commandKey) => {
+  const mutations = useH3Mutations(toast, async (commandKey, draft) => {
     fresh.current = false;
     if (commandKey && confirmation.current?.commandKey === commandKey) confirmation.current.finish();
+    if (draft && (draft.change.editValue !== undefined || draft.change.businessValue)) {
+      const { target, action, editValue, businessValue } = draft.change;
+      recoveryDrafts.current.set(recoveryDraftKey(target, action), { value: editValue, business: businessValue });
+    }
     await reload();
     await region.reload();
   }, () => fresh.current, model);

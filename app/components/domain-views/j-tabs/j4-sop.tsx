@@ -142,6 +142,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const current = useRef({ data, contentLoading, contentError, authorities });
   current.current = { data, contentLoading, contentError, authorities };
   const activeConfirmation = useRef<{ slot: string; restored: boolean } | null>(null);
+  const executionDrafts = useRef(new Map<string, Pick<ExecuteDraft, "triggerBasis" | "triggerContext">>());
+  const executeDraftKey = (code: string, emergency: boolean) => `${session?.adminId}:${code}:${emergency}`;
   const formSequence = useRef(0);
   const syncPending = () => {
     setPending(listJ4PendingCommands());
@@ -161,9 +163,15 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       if (row) {
         setVerifiedProposals((previous) => ({ ...previous, [record.commandKey]: row }));
         if (row.status !== "pending") {
+          const { playbook, emergency, fields } = record.sopProposal.context;
+          const key = executeDraftKey(playbook.code, emergency);
+          if (row.status === "approved") executionDrafts.current.delete(key);
+          else executionDrafts.current.set(key, { triggerBasis: fields.triggerBasis, triggerContext: fields.triggerContext });
           toast(J4_PROPOSAL_END[row.status], row.status === "approved" ? "success" : "warn");
-          openActionConfirm(null);
-          activeConfirmation.current = null;
+          if (activeConfirmation.current?.slot === record.fingerprint) {
+            openActionConfirm(null);
+            activeConfirmation.current = null;
+          }
           await actions.reloadJEmergency();
         }
       } else {
@@ -718,12 +726,13 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   // 覆盖率低于红线时恰恰最需要执行(SOP-02 对账缺口/SOP-03 挤兑),不可被 B1 禁放行锁死(对齐 J1「熔断方向不前置 B1」)。
   const openExecute = (p: Playbook, isEmer: boolean, draft?: ExecuteDraft) => {
     if (!executionGate(p).canExecute) return;
+    const saved = executionDrafts.current.get(executeDraftKey(p.code, isEmer));
     setPrepare({
       playbook: p,
       emergency: isEmer,
       draft: draft ?? {
-        triggerBasis: p.scene === "监管点名" ? "监管点名" : (p.scene === "舆情挤兑" || p.scene === "资金异常" ? "挤兑风险" : "安全事件"),
-        triggerContext: "",
+        triggerBasis: saved?.triggerBasis ?? (p.scene === "监管点名" ? "监管点名" : (p.scene === "舆情挤兑" || p.scene === "资金异常" ? "挤兑风险" : "安全事件")),
+        triggerContext: saved?.triggerContext ?? "",
         confirmed: p.seq.map(() => false),
       },
     });
@@ -776,6 +785,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         if (p.seq.some((_, index) => businessValue[`stepConfirm.${index}`] !== "true")) {
           throw new Error("请逐项确认全部动作后再提交执行");
         }
+        executionDrafts.current.delete(executeDraftKey(p.code, isEmer));
         const stepConfirmations = p.seq.map((step, index) => ({
           step: index + 1,
           domain: step.dom,

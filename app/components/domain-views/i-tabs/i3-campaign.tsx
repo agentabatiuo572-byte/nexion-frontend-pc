@@ -240,6 +240,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const conflictView = useIConflictView(conflictReview.review);
   /** 核对冲突后重开确认框时带回的理由和新值，只给紧接着打开的那一个框用。 */
   const prefill = useRef<{ reason: string; value?: string } | null>(null);
+  const capDrafts = useRef(new Map<string, string>());
+  const capDraftKey = (tier: string) => `${session?.adminId}:${tier}`;
   const reviewConflict = (error: unknown, requested: NonNullable<typeof conflictReview.review>["requested"], readLatest?: NotificationCampaignOverview) =>
     conflictReview.reject(error, requested, async () => {
       const latest = readLatest ?? await fetchI3CampaignOverview();
@@ -283,7 +285,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       setReadAt(Date.now());
       if (data !== readBarrier.current) setRequiresReload(false);
       // Current ticket reads can both establish and revoke this page's local pending observation.
-      if (canQueryI3Cap()) void Promise.allSettled(pendingI3CapCommands().map(queryI3CapCommand)).then(syncPending);
+      if (canQueryI3Cap()) void Promise.allSettled(pendingI3CapCommands().map(readCapOriginal)).then(syncPending);
     }
   }, [data, contentLoading, errorText]);
   const lockReason = (id: string) => newMutationReason || (!canWriteI3 ? "当前账号没有这项操作权限，请查询原结果。" : undefined)
@@ -313,6 +315,14 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     syncPending();
     await actions.reloadIContent();
   };
+  async function readCapOriginal(record: I3CapCommand) {
+    const ticket = await queryI3CapCommand(record);
+    if (ticket && ticket.status !== "pending") {
+      if (ticket.status !== "approved" && record.request) capDrafts.current.set(capDraftKey(record.tier), record.after);
+      await refreshAfterMutation(record);
+    }
+    return ticket;
+  }
   const runBackend = async (task: Promise<void>, ok: string) => {
     await task;
     await refreshAfterMutation();
@@ -588,6 +598,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     edit: {
       kind: "number",
       current: cap.match(/\d+/)?.[0] ?? "",
+      initialValue: restored ? undefined : capDrafts.current.get(capDraftKey(tier)),
       unit: "条",
       min: 1,
       max: 10000,
@@ -598,6 +609,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     run: async (reason, v) => {
       if (!v) return false;
       const ticket = await proposeI3Cap(tier, cap, v, reason);
+      capDrafts.current.delete(capDraftKey(tier));
       syncPending();
       toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
       return true;
@@ -951,10 +963,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     recoveryInFlight.current = true; setRecovering(record.commandKey);
     try {
       if ("tier" in record) {
-        const ticket = await queryI3CapCommand(record);
+        const ticket = await readCapOriginal(record);
         if (ticket) {
           toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
-          if (ticket.status !== "pending") await refreshAfterMutation(record);
         } else if (ticket === null) {
           toast("没有查到原审批单，原操作记录继续保留。");
         }

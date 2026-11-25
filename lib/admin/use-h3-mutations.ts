@@ -125,7 +125,7 @@ function retryBlocked(record: H3PendingCommand) {
 }
 
 /** H3-only transport and recovery. The page owns all existing form markup. */
-export function useH3Mutations(toast: (message: string) => void, settled: (commandKey?: string) => Promise<void>, isFresh: () => boolean, model: H3Model | null) {
+export function useH3Mutations(toast: (message: string) => void, settled: (commandKey?: string, draft?: H3PendingCommand) => Promise<void>, isFresh: () => boolean, model: H3Model | null) {
   const session = useAdminAuth(s => s.session);
   const adminId = session?.adminId;
   const operator = session?.operator || session?.username || "";
@@ -177,7 +177,9 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
     const { ticket } = result;
     if (!ticket) { if (!quiet) toast("暂未查到原审批单，原请求继续保留。"); return null; }
     if (ticket.status === "pending") { retain({ ...r, acknowledged: true, ticket: undefined }); confirmedTickets.current.set(r.commandKey, ticket); update(); }
-    else { h3Recovery.settleFromQuery(r, result.conclusion); await settled(r.commandKey); }
+    else if (h3Recovery.settleFromQuery(r, result.conclusion)) {
+      await settled(r.commandKey, result.conclusion === "not-executed" ? r : undefined);
+    }
     if (!quiet) toast(`审批单${({ pending: "待审批", approved: "已批准", rejected: "被拒", expired: "已过期", withdrawn: "已撤回" })[ticket.status]}：${ticket.before} → ${ticket.after}`);
     return ticket;
   };
