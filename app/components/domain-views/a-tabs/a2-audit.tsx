@@ -640,24 +640,36 @@ function phoneScheduledAt(w: A2OperationRow) {
 }
 
 /** 批准后什么时候生效、会怎样：标题下的标签、执行摘要的影响、抽屉底部说明用同一份（M3、M6）。 */
-/** 商品编辑单改了展示基础销量、购买动态时的实际效果，和商品页送审确认框同一句（e1DisplayEffect）。按审批对照里的前后值比，只改这两项时补一句售价、任务等不变。冻结的前值不含累计销量，所以写「累计销量 + 基础值」。 */
+/** 审批对照里比较前后值用：空值、空字符串、缺这个键算同一个值，数字和数字字符串按数值比（显示规则 6）。 */
+const e1ReviewValue = (value: unknown): unknown => value === undefined || value === null || value === "" ? null
+  : typeof value === "string" && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value)
+    : Array.isArray(value) ? value.map(e1ReviewValue)
+      : isRecord(value) ? Object.fromEntries(Object.keys(value).sort().map(key => [key, e1ReviewValue(value[key])])) : value;
+
+/** 商品编辑单改了展示基础销量、购买动态时的实际效果，句子和商品页送审确认框同一个函数（e1DisplayEffect）。冻结的前值不含累计销量，所以写「累计销量 + 基础值」；后端在后侧写入的 sold 不算改动。 */
 function e1DisplayChange(w: Pick<A2OperationRow, "operationCode" | "before" | "after">) {
   if (w.operationCode !== "e1_sku_update") return "";
   const { b, a } = reviewPair(w.before, w.after, w.operationCode);
   if (b?.kind !== "object" || a?.kind !== "object") return "";
-  const changed = [...new Set([...Object.keys(b.value), ...Object.keys(a.value)])].filter(key => !same(b.value[key] ?? null, a.value[key] ?? null));
-  const base = changed.includes("displaySoldBase") && typeof a.value.displaySoldBase === "number" ? a.value.displaySoldBase : undefined;
+  const changed = [...new Set([...Object.keys(b.value), ...Object.keys(a.value)])]
+    .filter(key => key !== "sold" && !same(e1ReviewValue(b.value[key]), e1ReviewValue(a.value[key])));
+  const base = changed.includes("displaySoldBase") ? Number(e1ReviewValue(a.value.displaySoldBase) ?? 0) : undefined;
   const live = changed.includes("liveActivityVisible") && typeof a.value.liveActivityVisible === "boolean" ? a.value.liveActivityVisible : undefined;
-  return e1DisplayEffect({ base, live }, changed.every(key => key === "displaySoldBase" || key === "liveActivityVisible"));
+  const raw = parseReview(w.after);
+  const status = raw?.kind === "object" ? raw.value.status : undefined;
+  return e1DisplayEffect({ base, live, liveAfter: a.value.liveActivityVisible !== false, listed: status === undefined || status === null || status === "on" },
+    changed.every(key => key === "displaySoldBase" || key === "liveActivityVisible"));
 }
 
-function monthlyTargetChange(w: Pick<A2OperationRow, "action" | "before" | "after">) {
-  if (w.action !== "调整设备型号") return null;
+function monthlyTargetChange(w: Pick<A2OperationRow, "action" | "before" | "after" | "operationCode">) {
+  // B97 起商品编辑单叫「编辑商品 · 名称」，按操作类型和月目标前后值认（显示规则 7）。
+  const e1Update = w.operationCode === "e1_sku_update";
+  if (w.action !== "调整设备型号" && !e1Update) return null;
   const before = parseReview(w.before), after = parseReview(w.after);
   if (after?.kind !== "object") return null;
   const was = before?.kind === "object" ? before.value : {};
   if (after.value.clearMonthlyTarget === true) return "close";
-  return ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => !same(was[key] ?? null, after.value[key] ?? null)) ? "target" : null;
+  return ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => e1Update ? !same(e1ReviewValue(was[key]), e1ReviewValue(after.value[key])) : !same(was[key] ?? null, after.value[key] ?? null)) ? "target" : null;
 }
 
 function approvalTiming(w: A2OperationRow) {
@@ -2588,6 +2600,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     // 摘要标题行只放得下 20 字左右，长了会折出孤字（D10）；细节写在「说明」和事实区。
     const impact = scheduled || monthlyTargetChange(w) ? timing.impact
       : j4 ? "逐步执行，失败时可能只执行了一部分。"
+        // 新增商品批准后只是草稿（显示规则 5）；覆盖率检查提示另在事实区。
+        : w.operationCode === "e1_sku_create" ? "批准后创建商品草稿，上架前 App / H5 Lite 上看不到。"
         : coverageMode === "onApproval" ? "先查兑付覆盖率，够了才执行，不够不动。"
           : g3 ? "按生效时间执行，改线上配置。"
             // 发布只封存这一版，用户看哪版由 I5 的生效版本决定（i5-disclosures 发布框同一说法）。
@@ -2598,7 +2612,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               : w.type === "acct" ? "立即执行，改账号或权限；失败不改原值。"
                 : w.type === "sos" ? "立即执行，停用或恢复业务；失败不改原值。"
                   : "立即执行，改线上配置；失败不改原值。";
-    const e1Display = scheduled || monthlyTargetChange(w) ? "" : e1DisplayChange(w);
+    const e1Display = scheduled ? "" : e1DisplayChange(w);
     const shownImpact = !e1Display ? impact : e1Display.endsWith("设备不变。") ? e1Display : `${impact}${e1Display}`;
     const check = isRefund ? "核对退款金额、订单和发起理由，理由写清依据或工单号。"
       : isFunds ? "核对对象、变更前后和发起理由，理由写清依据或工单号。"

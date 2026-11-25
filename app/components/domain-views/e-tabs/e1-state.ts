@@ -241,11 +241,18 @@ export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuFo
   });
 }
 
-/** 展示基础销量、购买动态改了以后在 App / H5 Lite 上的实际效果；送审确认框和审批批准框用同一句。累计销量读不到时写「累计销量 + 基础值」。 */
-export function e1DisplayEffect(change: { base?: number; sold?: number; live?: boolean }, onlyDisplay: boolean): string {
-  const parts = [
-    change.base !== undefined && `「累计已售」按${change.sold === undefined ? `累计销量 + ${e1Number(change.base)}` : ` ${e1Number(change.sold + change.base)}`} 件计`,
-    change.live !== undefined && `${change.base === undefined ? " 上" : ""}这件商品${change.live ? "显示" : "不显示"}商品图左下角的购买动态`,
-  ].filter(Boolean);
-  return parts.length ? `批准后，App / H5 Lite${parts.join("，")}。${onlyDisplay ? "售价、任务、已有订单和设备不变。" : ""}` : "";
+/**
+ * 展示基础销量、购买动态改了以后在 App / H5 Lite 上的实际效果；送审确认框和审批批准框共用这一个函数（显示规则 1–4）。
+ * base：改后的展示基础销量（改了才传）；sold：累计销量，读不到时写「累计销量 + 基础值」；live：改后的开关（改了才传）；
+ * liveAfter：批准后购买动态开不开；listed：商品在售（status 为 on）。onlyDisplay：只改了这两项，末尾补「不变」那句。
+ */
+export function e1DisplayEffect(change: { base?: number; sold?: number; live?: boolean; liveAfter: boolean; listed: boolean }, onlyDisplay: boolean): string {
+  if (change.base === undefined && change.live === undefined) return "";
+  const total = change.base === undefined ? "" : change.sold === undefined ? `累计销量 + ${e1Number(change.base)}` : e1Number(change.sold + change.base);
+  return [
+    change.listed ? "批准后，" : "批准后保存，商品上架后，",
+    change.base !== undefined && `App / H5 Lite 商品详情的「累计已售」按 ${total} 件计${change.liveAfter ? "，商品图左下角的购买动态按同一个数推算" : ""}。`,
+    change.live !== undefined && `这件商品${change.live ? "显示" : "不显示"}商品图左下角的购买动态。`,
+    onlyDisplay && "售价、任务、已有订单和设备不变。",
+  ].filter(Boolean).join("");
 }

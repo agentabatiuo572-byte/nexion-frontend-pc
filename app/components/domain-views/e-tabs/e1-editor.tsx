@@ -504,7 +504,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
             {form.inventoryMode !== "UNLIMITED" && field("stock", "库存", { number: true, min: 0, max: 2147483647, step: 1, required: true, help: "0 表示售罄，不会自动下架" })}
           </div>
           <div className="rd-form-grid">
-            <Field label="累计销量" explain={<><p>已付款订单等交易累计的真实销量，系统自动维护，这里不能改。</p><p>展示基础销量只改 App 上看到的数，销量统计、库存和配额各按原来的算法，不受它影响。</p></>}><Input aria-label="累计销量" value={original?.sold == null ? original ? "— · 未读取" : "0" : e1Number(original.sold)} readOnly /></Field>
+            <Field label="累计销量" explain={<><p>已付款订单等交易累计的真实销量，系统自动维护，这里不能改。</p><p>展示基础销量只改 App / H5 Lite 上看到的数，销量统计、库存和配额各按原来的算法，不受它影响。</p></>}><Input aria-label="累计销量" value={original?.sold == null ? original ? "— · 未读取" : "0" : e1Number(original.sold)} readOnly /></Field>
             {field("displaySoldBase", "展示基础销量", { number: true, unit: "件", min: 0, max: E1_DISPLAY_SOLD_BASE_MAX, step: 1, disabled: !displayControlsSupported, required: displayControlsSupported, hint: "0–9,999,999",
               help: displayControlsSupported && !displaySoldBaseError && (!original || original.sold != null) ? `批准后，App / H5 Lite「累计已售」按 ${e1Number((original?.sold ?? 0) + Number(form.displaySoldBase))} 件计` : undefined,
               explain: <><p>「累计已售」= 累计销量 + 这个数。只用于展示，不计入销量统计、库存和配额。填整数，0 表示不加。</p><p>显示位置：App / H5 Lite 商城 › 商品详情，价格下方；商品图左下角的「在看」「24h 售出」「30 分钟售出」也按这个合计推算。</p><p>满 100 件后 App 按档位显示，如 3,014 显示为 3.0K+。</p><p>随这次修改提交审批，批准后生效。</p></> })}
