@@ -3,55 +3,162 @@
 /**
  * A3 说明内容：开发者接口文档（W06）和六类业务说明（W07）。
  * 共用的 PublishedContentEditor（F1、I5 也在用）不动；这里按它 developerDocs 分支和 published-how-content-editor.tsx 的逻辑重画界面：
- * 读取、刷新（说明有改动时原生确认）、新增语言的格式检查、理由长度、「没有变化不提交」、请求体都和旧写法一样。
+ * 两类编辑器用修订号决定恢复草稿或展示只读对照。
  * 新的只有：编辑和「App 上的样子」并排、保存时选「保存草稿」还是「发布」（等于旧的状态下拉选好再保存）、理由放进确认框。
  * 新内容命令由页面共用store保存原body/key；旧未发键记录仍只读核对，不给它补键重发。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Archive, BookOpenText, Code2, FileText, Plus, RefreshCw, Smartphone, Trash2, TriangleAlert } from "lucide-react";
-import { BlockState, Button, Change, DiffList, Explain, Fact, Facts, Field, Fold, IconButton, Input, KeepText, Modal, MoreMenu, Notice, PageTabs, Panel, Segments, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
-import { type A3Command, type A3RecoveryProps } from "@/lib/admin/a3-mutations";
+import { BlockState, Button, DiffList, Explain, Field, Fold, IconButton, Input, KeepText, Modal, MoreMenu, Notice, PageTabs, Panel, Segments, Select, StatusTag, Table, Td, Textarea, Th, Tr, useTabIds } from "@/app/components/rd";
+import { a3HasOriginalReceipt, type A3Command, type A3RecoveryProps } from "@/lib/admin/a3-mutations";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { displayAdminError } from "@/lib/admin/error-messages";
-import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 
+import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
+import { CONFLICT_READ_FAILED, READBACK_FAILED, row, same, text, useContentEditor, useDraftRefresh, type A3ContentRead, type A3ContentReads, type ContentDocument, type Mode, type Row } from "./a3-content-editor";
+
 export type A3ContentSummary = { unsaved: number };
-export type A3ContentRead = { nonce: number; value: PublishedContentDocument | PublishedHowContentDocument };
 type ContentRetry = { disabledReason?: string; busy: boolean; run: () => void };
-type ContentRecoveryProps = { retry: (record: A3Command) => ContentRetry | undefined };
-type Mode = "DRAFT" | "PUBLISHED";
+type ContentRecoveryProps = {
+  retry: (record: A3Command) => ContentRetry | undefined;
+  feedback: (record: A3Command) => { detail: string; next: string } | undefined;
+};
 type Toast = (text: string, kind?: "success" | "error" | "warn" | "info") => void;
-type Row = Record<string, unknown>;
-const row = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
-const text = (value: unknown) => typeof value === "string" ? value : "";
 function list(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
 function blocks(value: unknown): Row[] { return Array.isArray(value) ? value.map(row) : []; }
 
 const LANGUAGE_LABELS: Record<string, string> = { zh: "中文", "zh-cn": "简体中文", en: "英语", vi: "越南语", id: "印尼语", ms: "马来语", fil: "菲律宾语", ru: "俄语", kk: "哈萨克语", uz: "乌兹别克语" };
 const localeName = (key: string) => LANGUAGE_LABELS[key] ?? key;
 const STATUS_NAME: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "已发布", UNPUBLISHED: "已撤下公开版本" };
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-/** 一种语言里哪几部分和最新版本不同；只在一边有就直说。 */
-function localeParts(mine: unknown, latest: unknown, parts: Array<[string, (value: Row) => unknown]>) {
-  if (mine === undefined) return "最新版本有，你这边删掉了";
-  if (latest === undefined) return "你新加的，最新版本没有";
-  return parts.filter(([, pick]) => !same(pick(row(mine)), pick(row(latest)))).map(([name]) => name).join("、") + "不同";
-}
-const DOC_PARTS: Array<[string, (value: Row) => unknown]> = [["请求示例", (v) => row(v.example).request], ["响应示例", (v) => row(v.example).response], ["接口列表", (v) => v.endpoints], ["事件列表", (v) => v.events]];
+const SAVE_BEFORE_PUBLISH = "有未保存的改动，先保存草稿";
+const INVALID_CONTENT = "先补齐提示中的内容";
+const bounded = (value: unknown, max: number) => Boolean(text(value).trim()) && text(value).length <= max;
 
-/** 版本冲突后的提示：你留着的修改和刚读到的最新版本差在哪，重读和重新提交在哪。 */
-function ConflictNotice({ ready, latestRevision, rows, error, loading, onReread, submitHint }: {
-  ready: boolean; latestRevision?: number; rows: Array<{ key: string; label: string; text: ReactNode }>; error: string | null; loading: boolean; onReread: () => void; submitHint: string;
+function docsLocaleIssues(value: unknown) {
+  const { endpoints, events, example } = row(value);
+  return [
+    (list(endpoints).length === 0 || list(endpoints).length > 100) && "接口须有 1–100 项",
+    list(endpoints).some(item => !bounded(row(item).method, 16) || !bounded(row(item).path, 256)) && "接口的方法或路径有误",
+    (list(events).length === 0 || list(events).length > 100) && "事件须有 1–100 项",
+    list(events).some(item => !bounded(item, 128)) && "事件名称有误",
+    (!bounded(row(example).request, 10000) || !bounded(row(example).response, 10000)) && "请求或响应示例有误",
+  ].filter(Boolean).join("；");
+}
+
+function howLocaleIssues(value: unknown) {
+  const items = blocks(row(value).blocks);
+  if (items.length === 0) return "至少保留一个内容块";
+  if (items.length > 200) return "单种语言最多 200 个内容块";
+  if (new Set(items.map(item => text(item.id).trim())).size !== items.length) return "内容块标识不能重复";
+  const invalid = items.findIndex(item => {
+    if (!bounded(item.id, 64) || !bounded(item.title, 256) || !bounded(item.body, 20000)) return true;
+    if (item.kind === "list" && (!list(item.items).length || list(item.items).length > 50 || list(item.items).some(value => !bounded(value, 2000)))) return true;
+    if (item.kind === "ruleRef") {
+      const ref = row(item.ref);
+      return ref.source !== "canonical" || !/^[A-Za-z0-9_.:-]{3,160}$/.test(text(ref.key)) || !bounded(ref.version, 128)
+        || !text(item.body).includes("{value}");
+    }
+    return !Object.hasOwn(KIND_NAME, text(item.kind)) || Object.hasOwn(item, "ref");
+  });
+  return invalid < 0 ? "" : `第 ${invalid + 1} 个内容块有必填内容缺失或格式有误`;
+}
+
+
+type DraftControls = {
+  dirty: boolean;
+  discard: () => void;
+  saveBlocked?: string;
+  save: (saved: () => void) => void;
+};
+
+function referenceFields(value: ContentDocument) {
+  const fields: Array<[string, unknown]> = [["文档版本", value.version], ["状态", STATUS_NAME[value.status]]];
+  if ("locales" in value) {
+    for (const [key, locale] of Object.entries(value.locales)) {
+      const name = localeName(key);
+      fields.push([`${name} · 请求示例`, row(locale.example).request], [`${name} · 响应示例`, row(locale.example).response],
+        [`${name} · 接口列表`, locale.endpoints], [`${name} · 事件列表`, locale.events]);
+    }
+  } else {
+    for (const [key, entry] of Object.entries(value.contents)) {
+      const page = PAGE_LABELS[key] ?? key;
+      for (const [field, content] of Object.entries(entry)) {
+        if (field !== "locales") fields.push([`${page} · ${field === "version" ? "本页版本" : field}`, content]);
+      }
+      for (const [language, locale] of Object.entries(row(entry.locales))) {
+        const prefix = `${page} · ${localeName(language)}`;
+        for (const [field, content] of Object.entries(row(locale))) {
+          if (field !== "blocks" || !Array.isArray(content) || !content.length) {
+            fields.push([`${prefix} · ${field}`, content]);
+            continue;
+          }
+          content.forEach((block, i) => {
+            const label = `${prefix} · 内容块 ${i + 1}`;
+            const names: Record<string, string> = { id: "块标识", kind: "类型", title: "标题", body: "正文", items: "列表项", ref: "规则引用" };
+            for (const [key, value] of Object.entries(row(block))) fields.push([`${label} · ${names[key] ?? key}`, value]);
+          });
+        }
+      }
+    }
+  }
+  return new Map(fields);
+}
+
+function ReferenceValue({ value }: { value: unknown }) {
+  if (value === undefined) return "—";
+  const full = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  if (full.length <= 120 && !full.includes("\n")) return <span>{full || "（空）"}</span>;
+  return <Fold inset title="展开完整值" summary=""><pre className="a3-json">{full}</pre></Fold>;
+}
+
+function ReferenceNotice({ baseline, readAt, input, discard, retry, error, readReady, readError }: {
+  baseline: ContentDocument; readAt: number; input: ContentDocument; discard: () => void; retry: () => void;
+  error?: string | null; readReady: boolean; readError?: string | null;
 }) {
-  return <Notice tone="warn" title="别人刚保存过，你的修改没有保存" action={<Button size="sm" loading={loading} onClick={onReread}>重新读取</Button>}>
-    {ready
-      ? <>已读到最新版本，你改的都还在。{rows.length ? `和最新版本不同的有 ${rows.length} 处，核对后${submitHint}：` : "你改的和最新版本一样，不用再提交。"}
-        {rows.length > 0 && <div className="a3-conflict-diff"><Facts>{rows.map((item) => <Fact key={item.key} k={item.label}>{item.text}</Fact>)}</Facts></div>}</>
-      : loading ? "正在加载最新版本，你改的都还在。"
-        : <>最新版本没读到，你改的都还在；先重新读取再核对。{error?.includes("；") ? <span className="rd-note"> {error.split("；").slice(1).join("；")}</span> : null}</>}
+  const current = referenceFields(baseline);
+  const previous = referenceFields(input);
+  const labels = new Set([...current.keys(), ...previous.keys()]);
+  return <Notice tone="warn" title={readReady ? "你上次的修改没有保存成功，最新版本已被别人改过"
+    : readError ? "你上次的修改没有保存成功，最新版本暂时读不到" : "你上次的修改没有保存成功，正在读取最新版本"}
+    action={<>
+      <Button size="sm" onClick={discard}>放弃我上次的内容</Button>
+      {readError && <Button size="sm" onClick={retry}>重试</Button>}
+    </>}>
+    <p>{readReady ? `编辑器里是最新版本（修订 ${baseline.revision}）。你上次的内容在下面，对照后可以在最新版本上重新修改。`
+      : readError ? `显示的是 ${businessStamp(readAt)}（${businessZone().label}）读到的修订 ${baseline.revision}，最新版本没读到：${readError}`
+      : `下面的对照基于上次读取的修订 ${baseline.revision}。`}</p>
+    {error && <p>{error}</p>}
+    <Fold inset defaultOpen title="你上次的内容（只读）" summary="">
+      <Table label="你上次的内容（只读）">
+        <thead><tr><Th>字段</Th><Th>{readReady ? "最新" : "上次读取"}</Th><Th>我上次</Th></tr></thead>
+        <tbody>{[...labels].map(label => <Tr key={label}><Td>{label}</Td><Td><ReferenceValue value={current.get(label)} /></Td>
+          <Td><ReferenceValue value={previous.get(label)} /></Td></Tr>)}</tbody>
+      </Table>
+    </Fold>
   </Notice>;
 }
+
+function ContentNotices<D extends ContentDocument>({ editor, onRefresh }: {
+  editor: ReturnType<typeof useContentEditor<D>>; onRefresh: () => void;
+}) {
+  const { reference, referenceError, baselineRead, mode, direct, readReady, readbackError, compareError, error, notice, remainingIntent, dirty, loading, refresh, discardReference } = editor;
+  if (reference && baselineRead) return <ReferenceNotice baseline={baselineRead.value} readAt={baselineRead.readAt}
+    input={reference.input} discard={discardReference} retry={onRefresh}
+    error={compareError} readReady={readReady} readError={readReady ? null : error} />;
+  if (direct) return <Notice tone="warn" title={readReady ? "上次的内容对照未保存" : CONFLICT_READ_FAILED}
+    action={<Button size="sm" loading={loading} onClick={() => void refresh()}>{readReady ? "重试" : "重新读取最新版本"}</Button>}>{compareError}</Notice>;
+  if (readbackError) return <Notice tone="warn" title={READBACK_FAILED}
+    action={<Button size="sm" loading={loading} onClick={() => void refresh()}>重新读取</Button>}>{readbackError}</Notice>;
+  if (referenceError) return <Notice tone="warn">{referenceError}</Notice>;
+  if (mode) return null;
+  if (error) return <Notice tone="danger">{error}</Notice>;
+  if (!notice) return null;
+  return <Notice tone="warn" title={notice}>
+    {remainingIntent === "PUBLISHED" && !dirty ? "原发布尚未完成，核对后可重新确认发布。" : dirty ? "上次的输入已放回编辑器，核对后可重新保存草稿。" : "最新内容已读回。"}
+  </Notice>;
+}
+
 /** 种子版本号带内部前缀 default-，写给人看时去掉；输入框里还是原值。 */
 const versionName = (version: string) => version.replace(/^default-/, "") || "—";
 const statusOf = (status: string): Mode => status === "UNPUBLISHED" ? "DRAFT" : status as Mode;
@@ -62,13 +169,17 @@ function publicLine(doc: { status: string; hasPublishedVersion?: boolean }) {
   return doc.hasPublishedVersion ? "草稿，App 仍读之前的公开版" : "草稿，还没有公开版";
 }
 
-export function A3Content({ commands, recovery, onRecovered, nonce, docsNonce, toast, onSummary, contentRead, ...release }: A3RecoveryProps & ContentRecoveryProps & { contentRead?: A3ContentRead; docsNonce: number; toast: Toast; onSummary: (summary: A3ContentSummary) => void }) {
+export function A3Content({ commands, recovery, onRecovered, toast, onSummary, contentReads, ...release }: Omit<A3RecoveryProps, "nonce"> & ContentRecoveryProps & { contentReads: A3ContentReads; toast: Toast; onSummary: (summary: A3ContentSummary) => void }) {
   const ids = useTabIds();
   const [tab, setTab] = useState<"docs" | "how">("how");
-  useEffect(() => { if (contentRead) setTab("locales" in contentRead.value ? "docs" : "how"); }, [contentRead]);
-  const docsRead = contentRead?.nonce === docsNonce && "locales" in contentRead.value ? contentRead.value : undefined;
-  const howRead = contentRead?.nonce === nonce && "contents" in contentRead.value ? contentRead.value : undefined;
+  const selectedRead = contentReads.selected && contentReads[contentReads.selected];
+  useEffect(() => { if (selectedRead && contentReads.selected) setTab(contentReads.selected); }, [selectedRead, contentReads.selected]);
   const [dirty, setDirty] = useState({ docs: false, how: false });
+  const drafts = useRef<Partial<Record<"docs" | "how", DraftControls>>>({});
+  const switcher = useRef<EditorSwitch | null>(null);
+  const discard = useCallback(() => { Object.values(drafts.current).forEach(draft => { if (draft?.dirty) draft.discard(); }); }, []);
+  const leave = useLeaveGuard(dirty.docs || dirty.how, discard, switcher, () => Object.values(drafts.current).some(draft => draft.dirty));
+  const active = dirty[tab] ? tab : dirty.docs ? "docs" : "how";
   const markDocs = useCallback((value: boolean) => setDirty((current) => current.docs === value ? current : { ...current, docs: value }), []);
   const markHow = useCallback((value: boolean) => setDirty((current) => current.how === value ? current : { ...current, how: value }), []);
   useEffect(() => { onSummary({ unsaved: Number(dirty.docs) + Number(dirty.how) }); }, [dirty, onSummary]);
@@ -77,8 +188,11 @@ export function A3Content({ commands, recovery, onRecovered, nonce, docsNonce, t
       { value: "how", label: "业务说明（6 页）", count: dirty.how ? "未保存" : undefined },
       { value: "docs", label: "开发者接口文档", count: dirty.docs ? "未保存" : undefined },
     ]} />
-    <div {...ids.panel("how")} hidden={tab !== "how"}><HowContent commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={nonce} current={howRead} toast={toast} onDirty={markHow} {...release} /></div>
-    <div {...ids.panel("docs")} hidden={tab !== "docs"}><DeveloperDocs commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={docsNonce} current={docsRead} toast={toast} onDirty={markDocs} {...release} /></div>
+    <div {...ids.panel("how")} hidden={tab !== "how"}><HowContent commands={commands} recovery={recovery} onRecovered={onRecovered} incoming={contentReads.how} toast={toast} onDirty={markHow} drafts={drafts.current} {...release} /></div>
+    <div {...ids.panel("docs")} hidden={tab !== "docs"}><DeveloperDocs commands={commands} recovery={recovery} onRecovered={onRecovered} incoming={contentReads.docs} toast={toast} onDirty={markDocs} drafts={drafts.current} {...release} /></div>
+    <LeaveDialog guard={leave} saveLabel="保存草稿"
+      saveBlocked={dirty.docs && dirty.how ? "两类内容都有未保存的修改，请先保存其中一类" : drafts.current[active]?.saveBlocked}
+      onSave={saved => drafts.current[active]?.save(saved)} />
   </div>;
 }
 
@@ -107,13 +221,13 @@ function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, r
   </Modal>;
 }
 
-const SAVE_UNKNOWN_NOTE = <>没收到结果时别再点一次：页面会留下这次提交，<KeepText text="24 小时内可以按原操作重试。" /></>;
+const SAVE_UNKNOWN_NOTE = <>没收到结果时，先查询原操作。明确查无且未超过 24 小时，才可按原操作重试。</>;
 /** 原提交框里还没有对比结果时：能重试的说重试会怎样，不能重试的说查询会怎样。 */
-function OriginalNote({ expired, retryable }: { expired: boolean; retryable: boolean }) {
-  if (expired) return <>已超过 24 小时，不能再重试。可用「读取当前内容」核对现值，原操作记录和修改锁保留，请到操作记录与审批核对。</>;
-  return retryable
-    ? <>重试按原提交的内容、方式和理由再发一次：<KeepText text="已经保存过的不会重复保存，也不会盖掉别人后来的修改。" /></>
-    : <>可用「读取当前内容」核对现值，原操作记录和修改锁保留，请到操作记录与审批核对。</>;
+function OriginalNote({ record, retry }: { record: A3Command; retry?: ContentRetry }) {
+  if (!a3HasOriginalReceipt(record)) return <>可用「读取当前内容」核对现值，原操作记录和修改锁保留，请到操作记录与审批核对。</>;
+  if (isRetryExpired(record)) return <>已超过 24 小时，不能再重试。可查询原操作，记录和修改锁保留。</>;
+  if (!retry || retry.disabledReason) return SAVE_UNKNOWN_NOTE;
+  return <>重试按原提交的内容、方式和理由再发一次：<KeepText text="已经保存过的不会重复保存，也不会盖掉别人后来的修改。" /></>;
 }
 
 function Preview({ title, children }: { title: string; children: ReactNode }) {
@@ -125,51 +239,36 @@ function Preview({ title, children }: { title: string; children: ReactNode }) {
 
 /* ────────────────── 开发者接口文档（W06） ────────────────── */
 
-function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: currentRead, toast, onDirty, retry }: A3RecoveryProps & ContentRecoveryProps & { current?: PublishedContentDocument; toast: Toast; onDirty: (value: boolean) => void }) {
-  const session = useAdminAuth((state) => state.session);
-  const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
-  const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
-  const [loadedDocument, setDocument] = useState<PublishedContentDocument | null>(null);
-  const [loadedBaseline, setBaseline] = useState<PublishedContentDocument | null>(null);
-  const [locale, setLocale] = useState("en");
+type ContentEditorProps = Omit<A3RecoveryProps, "nonce"> & ContentRecoveryProps & {
+  incoming?: A3ContentRead; toast: Toast; onDirty: (value: boolean) => void; drafts: Partial<Record<"docs" | "how", DraftControls>>;
+};
+
+const isDocs = (value: ContentDocument): value is PublishedContentDocument => "locales" in value;
+const isHow = (value: ContentDocument): value is PublishedHowContentDocument => "contents" in value;
+
+function DeveloperDocs({ commands, recovery, onRecovered, incoming, toast, onDirty, retry, feedback, drafts }: ContentEditorProps) {
+  const editor = useContentEditor({ kind: "docs", readLatest: fetchDeveloperDocsAdmin, matches: isDocs, commands, recovery, onRecovered, incoming, toast });
+  const { canRead, canWrite, original, document, baseline, loading, saving, mode, reason, setReason, error, readReady,
+    hasChanges, dirty, commonBlocked, setDocument, setError, refresh } = editor;
+  const locales = document?.locales;
+  const [selectedLocale, setLocale] = useState("en");
+  const locale = locales && Object.hasOwn(locales, selectedLocale) ? selectedLocale : Object.keys(locales ?? {})[0] ?? "en";
   const [newLocale, setNewLocale] = useState("");
   const [addingLocale, setAddingLocale] = useState(false);
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<Mode | null>(null);
-  const [readReady, setReadReady] = useState(false);
-  const conflictDraft = useRef(false);
-  const original = commands.find("docs");
-  const savedForm = original?.original.kind === "docs" ? original.original : null;
-  const document = mode && savedForm ? savedForm.document : loadedDocument;
-  const baseline = mode && savedForm ? savedForm.baseline : loadedBaseline;
-  useEffect(() => {
-    if (recovery?.original.kind !== "docs") return;
-    setReason(recovery.reason); setMode(recovery.original.mode); setError(null); onRecovered();
-  }, [recovery, onRecovered]);
-  const refresh = useCallback(async (current?: PublishedContentDocument) => {
-    if (!canRead) return;
-    setReadReady(false); setLoading(true);
-    if (!commands.find("docs")) setMode(null);
-    if (!conflictDraft.current) setError(null);
-    try {
-      const value = current ?? await fetchDeveloperDocsAdmin();
-      if (!commands.find("docs")) setMode(null);
-      setDocument(draft => conflictDraft.current && draft ? { ...draft, revision: value.revision } : value);
-      setBaseline(value);
-      if (!conflictDraft.current) { setLocale(Object.keys(value.locales)[0] ?? "en"); setReason(""); }
-      setReadReady(true);
-    } catch (cause) {
-      if (!conflictDraft.current) { setDocument(null); setBaseline(null); }
-      setError(previous => conflictDraft.current && previous ? `${previous}；${displayAdminError(cause)}` : displayAdminError(cause));
-    }
-    finally { setLoading(false); }
-  }, [canRead]);
-  useEffect(() => { void refresh(currentRead); }, [refresh, nonce]);
-  const hasChanges = useMemo(() => JSON.stringify(document) !== JSON.stringify(baseline), [document, baseline]);
-  useEffect(() => { onDirty(hasChanges); }, [hasChanges, onDirty]);
+  useEffect(() => { onDirty(dirty); }, [dirty, onDirty]);
+  const localeErrors = Object.entries(document?.locales ?? {}).map(([lang, value]) => ({ lang, detail: docsLocaleIssues(value) })).filter(item => item.detail);
+  const languageCount = Object.keys(document?.locales ?? {}).length;
+  const invalid = !bounded(document?.version, 64) || languageCount === 0 || languageCount > 10 || localeErrors.length > 0;
+  const saveBlocked = (target: Mode) => commonBlocked
+    ?? (target === "PUBLISHED" && dirty ? SAVE_BEFORE_PUBLISH : invalid ? INVALID_CONTENT
+      : !hasChanges && target === statusOf(baseline?.status ?? "") ? "内容没有变化，无需提交。" : undefined);
+  const beginSave = (target: Mode, saved?: () => void) => {
+    if (canWrite && !saveBlocked(target)) editor.beginSave(target, saved);
+  };
+  const draftRefresh = useDraftRefresh(dirty, () => void refresh());
+  useLayoutEffect(() => {
+    drafts.docs = { dirty, saveBlocked: saveBlocked("DRAFT"), save: saved => beginSave("DRAFT", saved), discard: editor.discardDraft };
+  });
   if (!canRead) return <BlockState state="denied" title="没有查看开发者接口文档的权限" />;
   if (loading && !document) return <BlockState state="loading" title="正在加载发布内容…" />;
   if (!document) return <BlockState state="error" title="公开内容状态尚未确认，请刷新重试。" detail={error ?? undefined} onRetry={() => void refresh()} />;
@@ -190,61 +289,29 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
     const next = { ...document.locales }; delete next[locale]; const nextLocale = Object.keys(next)[0];
     setDocument({ ...document, locales: next }); setLocale(nextLocale);
   };
-  /** 选「保存草稿」或「发布」就是旧状态下拉选好的那个值；状态变了也算有变化。 */
-  const canSave = (target: Mode) => hasChanges || target !== statusOf(baseline?.status ?? document.status);
-  const save = async (target: Mode) => {
-    if (!canWrite || original || loading || saving || !readReady) return;
-    if (reason.trim().length < 8 || reason.trim().length > 500) { setError("变更理由需为 8–500 个字符。"); return; }
-    if (!canSave(target)) { setError("内容没有变化，无需提交。"); return; }
-    setSaving(true); setError(null);
-    try {
-      const payload = { ...document, status: target };
-      const record = commands.capture({ original: { kind: "docs", document: payload, baseline: baseline!, mode: target },
-        path: "/api/admin/developer/docs", method: "PUT", body: JSON.stringify({ ...payload, expectedRevision: payload.revision, revision: undefined, reason: reason.trim() }),
-        reason: reason.trim(), name: "开发者接口文档", change: `${STATUS_NAME[baseline!.status]} → ${STATUS_NAME[target]} · ${document.version}` });
-      await commands.send(record);
-      conflictDraft.current = false;
-      setReadReady(false); setReason(""); setMode(null);
-      toast(target === "PUBLISHED" ? "开发者接口文档已发布" : "草稿已保存，App 读到的不变", "success");
-      await refresh();
-    } catch (cause) {
-      setError(displayAdminError(cause));
-      if ((cause as { reasonCode?: string }).reasonCode === "DEVELOPER_DOCS_VERSION_CONFLICT" && !commands.find("docs")) {
-        conflictDraft.current = true; setReadReady(false); setMode(null);
-        await refresh();
-      }
-    }
-    finally { setSaving(false); }
-  };
-
   const localeKeys = Object.keys(document.locales);
   const current = row(document.locales[locale]);
   const example = row(current.example); const endpoints = list(current.endpoints).map(row); const events = list(current.events).map(text);
   const disabled = !canWrite || loading || saving || Boolean(original) || !readReady;
   const setExample = (key: string, next: string) => updateLocale({ ...current, example: { ...example, [key]: next } });
   const changedLocales = baseline ? [...new Set([...Object.keys(document.locales), ...Object.keys(baseline.locales)])].filter((key) => JSON.stringify(document.locales[key]) !== JSON.stringify(baseline.locales[key])) : [];
-  const empties = [endpoints.length === 0 && "接口列表是空的", events.filter((item) => item.trim()).length === 0 && "事件列表没有内容", (!text(example.request).trim() || !text(example.response).trim()) && "请求或响应示例是空的"].filter(Boolean) as string[];
+  const localeError = localeErrors.find(item => item.lang === locale);
+  const savedContent = baseline ?? document;
+  const originalFeedback = original && feedback(original);
 
   return <div className="rd-tab-stack" data-testid="published-content-developerDocs">
     {canWrite && <div className="rd-toolbar a3-savebar" data-end="">
-      <span className="rd-toolbar-note" data-tone={hasChanges ? "warn" : undefined}>{hasChanges ? `有未保存的修改：${changedLocales.map(localeName).join("、") || "版本"}` : "没有未保存的修改"}</span>
-      <Button disabledReason={original ? "结果未知" : loading || !readReady ? "正在加载" : saving ? "正在保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
-      <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在加载" : saving ? "正在保存" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
+      <span className="rd-toolbar-note" data-tone={dirty ? "warn" : undefined}>{dirty ? `有未保存的修改：${changedLocales.map(localeName).join("、") || "版本或状态"}` : "没有未保存的修改"}</span>
+      <Button disabledReason={saveBlocked("DRAFT")} onClick={() => beginSave("DRAFT")}>保存草稿…</Button>
+      <Button variant="primary" disabledReason={saveBlocked("PUBLISHED")} onClick={() => beginSave("PUBLISHED")}>发布…</Button>
     </div>}
-    {conflictDraft.current && !mode
-      ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh()} submitHint="点上方「保存草稿…」或「发布…」重新提交"
-        rows={baseline ? [
-          ...(document.version !== baseline.version ? [{ key: "version", label: "正文版本", text: <Change from={baseline.version || "空"} to={document.version || "空"} /> }] : []),
-          ...[...new Set([...Object.keys(baseline.locales), ...localeKeys])].filter((key) => !same(document.locales[key], baseline.locales[key]))
-            .map((key) => ({ key, label: localeName(key), text: localeParts(document.locales[key], baseline.locales[key], DOC_PARTS) })),
-        ] : []} />
-      : error && !mode && <Notice tone="danger">{error}</Notice>}
-    <Panel title="开发者接口文档" icon={Code2} tone="role-2" sub={`${publicLine(document)} · 正文版本 ${versionName(document.version)}`}
+    <ContentNotices editor={editor} onRefresh={draftRefresh.request} />
+    <Panel title="开发者接口文档" icon={Code2} tone="role-2" sub={`${publicLine(savedContent)} · 正文版本 ${versionName(savedContent.version)}`}
       explain={<>
         <p>App 开发者页读取的接口示例、接口列表和事件。保存草稿不改 App 读到的内容，发布后才替换。</p>
         <p>还没发布过自己的版本时，App 读的是系统自带的默认文档。</p>
       </>}
-      actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void refresh()}>刷新</Button>}>
+      actions={!editor.direct && !editor.readbackError && <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => draftRefresh.request()}>刷新</Button>}>
       <div className="rd-toolbar a3-locale-bar">
         <Segments label="内容语言" value={locale} onChange={(value) => setLocale(String(value))} items={localeKeys.map((key) => ({ value: key, label: localeName(key), tone: changedLocales.includes(key) ? "progress" as const : undefined }))} />
         {canWrite && <span className="rd-row-actions">
@@ -281,7 +348,9 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
             </div>)}
             {!disabled && events.length < 100 && <div><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => updateLocale({ ...current, events: [...events, ""] })}>新增事件</Button></div>}
           </fieldset>
-          {empties.length > 0 && <Notice tone="warn" title="这种语言还不完整">{empties.join("；")}。接口、事件至少各一项，示例不能空，不补齐保存不了。</Notice>}
+          {localeError && <Notice tone="warn" title="这种语言还不完整">{localeError.detail}。</Notice>}
+          {localeErrors.filter(item => item.lang !== locale).map(item => <Notice key={item.lang} tone="warn" title={localeName(item.lang)}>{item.detail}。</Notice>)}
+          {(!bounded(document.version, 64) || languageCount < 1 || languageCount > 10) && <Notice tone="warn">正文版本必填，须有 1–10 种语言。</Notice>}
         </div>
         <Preview title="开发者文档">
           <div className="a3-doc-preview" data-user-content="">
@@ -300,15 +369,16 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
     </Panel>
 
 
-    {mode && <SaveModal mode={mode} title={mode === "PUBLISHED" ? "发布开发者接口文档" : "保存开发者接口文档草稿"} busy={saving} locked={Boolean(original)} retry={original ? retry(original) : undefined} error={error} reason={original?.reason ?? reason} onReason={setReason} reasonMin={8}
-      onCancel={() => setMode(null)} onConfirm={() => void save(mode)}
+    <LeaveDialog guard={draftRefresh.dialog} saveLabel="保存草稿" saveBlocked={saveBlocked("DRAFT")} onSave={saved => beginSave("DRAFT", saved)} />
+    {mode && <SaveModal mode={mode} title={mode === "PUBLISHED" ? "发布开发者接口文档" : "保存开发者接口文档草稿"} busy={saving} locked={Boolean(original)} retry={original ? retry(original) : undefined} error={originalFeedback ? originalFeedback.detail : error} reason={original?.reason ?? reason} onReason={setReason} reasonMin={8}
+      onCancel={editor.cancelSave} onConfirm={() => void editor.save(mode, saveBlocked(mode), "开发者接口文档", "/api/admin/developer/docs")}
       facts={<DiffList rows={[
         { key: "status", label: "状态", before: STATUS_NAME[baseline?.status ?? ""] ?? "—", after: mode === "DRAFT" && baseline?.hasPublishedVersion ? "草稿，公开版不变" : STATUS_NAME[mode] },
         { key: "version", label: "正文版本", before: baseline?.version || "—", after: document.version || "—" },
         { key: "locales", label: "语言", before: Object.keys(baseline?.locales ?? {}).map(localeName).join("、") || "—", after: localeKeys.map(localeName).join("、") || "—" },
         { key: "content", label: "有改动的语言", before: "—", after: changedLocales.map(localeName).join("、") || "—" },
       ]} />}
-      extra={<Notice tone="neutral">{original ? <OriginalNote expired={isRetryExpired(original)} retryable={Boolean(retry(original))} /> : SAVE_UNKNOWN_NOTE}</Notice>} />}
+      extra={<Notice tone="neutral">{originalFeedback ? originalFeedback.next : original ? <OriginalNote record={original} retry={retry(original)} /> : SAVE_UNKNOWN_NOTE}</Notice>} />}
   </div>;
 }
 
@@ -318,11 +388,6 @@ const PAGE_LABELS: Record<string, string> = { "genesis-how": "创世节点说明
 const KEYS = ["genesis-how", "wallet-exchange-how", "wallet-repurchase-how", "team-binary-how", "team-commissions-how", "team-unilevel-how"] as const;
 const KIND_NAME: Record<string, string> = { text: "正文", list: "列表", callout: "提示说明", ruleRef: "引用系统规则" };
 const RETIRED = "wallet-repurchase-how";
-function initialDocument(): PublishedHowContentDocument {
-  const contents: Record<string, Record<string, unknown>> = {};
-  for (const key of KEYS) contents[key] = { locales: { en: { blocks: [{ id: "intro", kind: "text", title: key, body: "" }] } } };
-  return { version: "draft-local", status: "DRAFT", contents, revision: 0, source: "server", configKey: "how-it-works.published" };
-}
 /** 奖励明细说明里花括号的内容由 App 打开时按当前规则填（App commissions-how-content.ts）；认不出的那一块 App 显示「说明暂时无法加载」。 */
 const APP_FILLED_PAGE = "team-commissions-how";
 const APP_TOKENS: Record<string, string> = {
@@ -343,74 +408,75 @@ function previewText(page: string, value: string): ReactNode {
 const hasAppToken = (blocks: Row[]) => blocks.some((block) => [block.title, block.body, ...list(block.items)].some((value) => /\{[A-Za-z]+\}/.test(text(value))));
 const refBlocksOf = (entry: unknown) => Object.values(row(row(entry).locales)).flatMap((locale) => blocks(row(locale).blocks)).filter((block) => block.kind === "ruleRef");
 
-function HowContent({ commands, recovery, onRecovered, nonce, current: currentRead, toast, onDirty, retry }: A3RecoveryProps & ContentRecoveryProps & { current?: PublishedHowContentDocument; toast: Toast; onDirty: (value: boolean) => void }) {
-  const session = useAdminAuth((state) => state.session);
-  const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
-  const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
-  const [loadedDocument, setDocument] = useState<PublishedHowContentDocument | null>(null);
-  const [loadedBaseline, setBaseline] = useState<PublishedHowContentDocument | null>(null);
-  const [key, setKey] = useState<(typeof KEYS)[number]>(KEYS[0]);
-  const [locale, setLocale] = useState("en");
+function changedHowPageLabel(page: string, before: Row | undefined, after: Row | undefined) {
+  const label = PAGE_LABELS[page];
+  if (!before && after) return `${label}（新增页面）`;
+  const latestLocales = row(before?.locales);
+  const additions = Object.entries(row(after?.locales)).flatMap(([locale, value]) => {
+    if (!Object.hasOwn(latestLocales, locale)) return [`新增语言：${localeName(locale)}`];
+    const latestIds = new Set(blocks(row(latestLocales[locale]).blocks).map(block => block.id));
+    const addedIds = blocks(row(value).blocks).filter(block => !latestIds.has(block.id)).map(block => text(block.id)).filter(Boolean);
+    return addedIds.length ? [`${localeName(locale)}新增内容块：${addedIds.join("、")}`] : [];
+  });
+  return additions.length ? `${label}（${additions.join("，")}）` : label;
+}
+
+function HowContent({ commands, recovery, onRecovered, incoming, toast, onDirty, retry, feedback, drafts }: ContentEditorProps) {
+  const editor = useContentEditor({ kind: "how", readLatest: fetchHowContentAdmin, matches: isHow, commands, recovery, onRecovered, incoming, toast });
+  const { canRead, canWrite, original, document, baseline, loading, saving, mode, reason, setReason, error, readReady,
+    hasChanges, dirty, commonBlocked, setDocument, setError, refresh } = editor;
+  const [selectedPage, setKey] = useState<(typeof KEYS)[number]>(KEYS[0]);
+  const key = selectedPage;
+  useEffect(() => {
+    if (baseline) setKey(current => baseline.contents[current] ? current : KEYS.find(item => baseline.contents[item]) ?? current);
+  }, [baseline]);
+  const pageLocales = row(row(document?.contents[key]).locales);
+  const [selectedLocale, setLocale] = useState("en");
+  const locale = Object.hasOwn(pageLocales, selectedLocale) ? selectedLocale : Object.keys(pageLocales)[0] ?? "en";
   const [newLocale, setNewLocale] = useState("");
   const [addingLocale, setAddingLocale] = useState(false);
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<Mode | null>(null);
-  const [readReady, setReadReady] = useState(false);
-  const conflictDraft = useRef(false);
-  const original = commands.find("how");
-  const savedForm = original?.original.kind === "how" ? original.original : null;
-  const document = mode && savedForm ? savedForm.document : loadedDocument;
-  const baseline = mode && savedForm ? savedForm.baseline : loadedBaseline;
-  useEffect(() => {
-    if (recovery?.original.kind !== "how") return;
-    setReason(recovery.reason); setMode(recovery.original.mode); setError(null); onRecovered();
-  }, [recovery, onRecovered]);
-  const busyRef = useRef(false);
   const identitySequence = useRef(0);
   const identities = useRef(new WeakMap<Row, { block: string; items: string[] }>());
   const contentHeading = useRef<HTMLHeadingElement | null>(null);
-  const stateRef = useRef({ document, baseline, key, locale });
-  stateRef.current = { document, baseline, key, locale };
-  const refresh = useCallback(async (confirmDiscard = true, current?: PublishedHowContentDocument) => {
-    if (!canRead || busyRef.current) return;
-    const previous = stateRef.current;
-    if (!conflictDraft.current && confirmDiscard && JSON.stringify(previous.document) !== JSON.stringify(previous.baseline)
-      && !window.confirm("刷新会丢弃尚未保存的说明内容，是否继续？")) return;
-    setReadReady(false); busyRef.current = true; setLoading(true);
-    if (!commands.find("how")) setMode(null);
-    if (!conflictDraft.current) setError(null);
-    try {
-      const value = current ?? await fetchHowContentAdmin();
-      if (!commands.find("how")) setMode(null);
-      const next = Object.keys(value.contents).length ? value : { ...initialDocument(), ...value, contents: initialDocument().contents };
-      const nextKey = next.contents[previous.key] ? previous.key : KEYS.find(item => next.contents[item]) ?? KEYS[0];
-      const locales = row(row(next.contents[nextKey]).locales);
-      setDocument(draft => conflictDraft.current && draft ? { ...draft, revision: next.revision } : next);
-      setBaseline(next); setReadReady(true);
-      if (!conflictDraft.current) {
-        setKey(nextKey);
-        setLocale(locales[previous.locale] ? previous.locale : Object.keys(locales)[0] ?? "en");
-      }
-    }
-    catch (cause) { setError(previous => conflictDraft.current && previous ? `${previous}；${displayAdminError(cause)}` : displayAdminError(cause)); }
-    finally { busyRef.current = false; setLoading(false); }
-  }, [canRead]);
-  useEffect(() => { void refresh(false, currentRead); }, [refresh, nonce]);
-  const current = row(row(document?.contents[key]).locales)[locale];
+  const current = pageLocales[locale];
   const currentBlocks = blocks(row(current).blocks);
-  const hasChanges = useMemo(() => JSON.stringify(document) !== JSON.stringify(baseline), [document, baseline]);
-  useEffect(() => { onDirty(hasChanges); }, [hasChanges, onDirty]);
+  useEffect(() => { onDirty(dirty); }, [dirty, onDirty]);
+  const contentEntries = Object.entries(document?.contents ?? {});
+  const localeErrors = contentEntries.flatMap(([page, entry]) => {
+    const locales = Object.entries(row(entry.locales));
+    if (locales.length === 0 || locales.length > 10) return [{ page, lang: "", detail: "单页须有 1–10 种语言" }];
+    return locales.map(([lang, value]) => ({ page, lang, detail: howLocaleIssues(value) })).filter(item => item.detail);
+  });
+  const invalid = !bounded(document?.version, 64) || localeErrors.length > 0 || contentEntries.length === 0
+    || contentEntries.some(([, entry]) => Object.hasOwn(entry, "version") && !bounded(entry.version, 64));
+  /** A3-PD01：发布检查覆盖全部页面、语言的标题、正文、列表项。 */
+  const placeholderSpots = contentEntries.flatMap(([page, entry]) => Object.entries(row(entry.locales)).flatMap(([lang, locale]) =>
+    blocks(row(locale).blocks).flatMap((block, index) => {
+      const parts = [text(block.title).includes("{value}") && "标题", text(block.body).includes("{value}") && "正文",
+        list(block.items).some(value => text(value).includes("{value}")) && "列表项"].filter(Boolean);
+      return parts.length ? [`${PAGE_LABELS[page] ?? page} · ${localeName(lang)} · 第 ${index + 1} 块的${parts.join("、")}`] : [];
+    })));
+  const spotsShown = placeholderSpots.slice(0, 3), spotsMore = placeholderSpots.length - spotsShown.length;
+  const saveBlocked = (target: Mode) => commonBlocked
+    ?? (target === "PUBLISHED" && dirty ? SAVE_BEFORE_PUBLISH : invalid ? INVALID_CONTENT
+      : target === "PUBLISHED" && placeholderSpots.length ? "还有没替换的占位符，不能发布"
+      : target === "PUBLISHED" && KEYS.some(page => !document?.contents[page]) ? "先补齐六页内容"
+      : !hasChanges && target === statusOf(baseline?.status ?? "") ? "内容没有变化，无需提交。" : undefined);
+  const beginSave = (target: Mode, saved?: () => void) => {
+    if (canWrite && !saveBlocked(target)) editor.beginSave(target, saved);
+  };
+  const draftRefresh = useDraftRefresh(dirty, () => void refresh());
+  useLayoutEffect(() => {
+    drafts.how = { dirty, saveBlocked: saveBlocked("DRAFT"), save: saved => beginSave("DRAFT", saved), discard: editor.discardDraft };
+  });
   if (!canRead) return <BlockState state="denied" title="没有查看业务说明的权限" />;
   if (loading && !document) return <BlockState state="loading" title="读取说明内容中…" />;
   if (!document) return <BlockState state="error" title="说明内容加载失败" detail={<>{error} 读不到不等于没有内容：App 可能仍在显示之前发布的或系统自带的说明。</>} onRetry={() => void refresh()} />;
 
   const locked = !canWrite || loading || saving || Boolean(original) || !readReady;
-  const patchLocale = (next: Row) => { if (!document || locked || busyRef.current) return; const entry = row(document.contents[key]); const locales = row(entry.locales); setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [locale]: next } } } }); };
-  const patchEntryVersion = (next: string) => { if (!document || locked || busyRef.current) return; const entry = row(document.contents[key]); setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, version: next } } }); };
-  const addLocale = () => { if (!document || locked || busyRef.current) return; const normalized = newLocale.trim().toLowerCase().replace("_", "-"); if (!/^(?:[a-z]{2}|fil)(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setError("语言代码格式无效，例如 en、zh、vi 或 zh-cn。"); return; } const entry = row(document.contents[key]); const locales = row(entry.locales); if (locales[normalized]) { setLocale(normalized); setNewLocale(""); setAddingLocale(false); return; } if (Object.keys(locales).length >= 10) { setError("单页最多 10 种语言。"); return; } setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [normalized]: { blocks: [{ id: "intro", kind: "text", title: key, body: "" }] } } } } }); setLocale(normalized); setNewLocale(""); setError(null); setAddingLocale(false); };
+  const patchLocale = (next: Row) => { if (!document || locked) return; const entry = row(document.contents[key]); const locales = row(entry.locales); setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [locale]: next } } } }); };
+  const patchEntryVersion = (next: string) => { if (!document || locked) return; const entry = row(document.contents[key]); setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, version: next } } }); };
+  const addLocale = () => { if (!document || locked) return; const normalized = newLocale.trim().toLowerCase().replace("_", "-"); if (!/^(?:[a-z]{2}|fil)(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setError("语言代码格式无效，例如 en、zh、vi 或 zh-cn。"); return; } const entry = row(document.contents[key]); const locales = row(entry.locales); if (locales[normalized]) { setLocale(normalized); setNewLocale(""); setAddingLocale(false); return; } if (Object.keys(locales).length >= 10) { setError("单页最多 10 种语言。"); return; } setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [normalized]: { blocks: [{ id: "intro", kind: "text", title: key, body: "" }] } } } } }); setLocale(normalized); setNewLocale(""); setError(null); setAddingLocale(false); };
   // UI identity is independent of the editable business ID and never enters the API payload.
   const nextIdentity = (kind: string) => `how-${kind}-${++identitySequence.current}`;
   const identityOf = (item: Row) => {
@@ -430,13 +496,13 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
     patchLocale({ ...row(current), blocks: currentBlocks.map((item, i) => i === index ? next : item) });
   };
   const removeBlock = (index: number) => {
-    if (locked || busyRef.current || currentBlocks.length <= 1) return;
+    if (locked || currentBlocks.length <= 1) return;
     patchLocale({ ...row(current), blocks: currentBlocks.filter((_, i) => i !== index) });
     contentHeading.current?.focus();
   };
   const removeListItem = (index: number, itemIndex: number) => {
     const item = currentBlocks[index];
-    if (locked || busyRef.current || !Array.isArray(item.items) || item.items.length <= 1) return;
+    if (locked || !Array.isArray(item.items) || item.items.length <= 1) return;
     patchBlock(index, { items: item.items.filter((_, i) => i !== itemIndex) }, false,
       identityOf(item).items.filter((_, i) => i !== itemIndex));
     contentHeading.current?.focus();
@@ -450,84 +516,35 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
   };
   const addBlock = () => {
     if (!current || currentBlocks.length >= 200) return;
-    let number = currentBlocks.length + 1;
-    while (currentBlocks.some(item => item.id === `block-${number}`)) number++;
-    patchLocale({ ...row(current), blocks: [...currentBlocks, { id: `block-${number}`, kind: "text", title: "", body: "" }] });
+    patchLocale({ ...row(current), blocks: [...currentBlocks, { id: `block-${crypto.randomUUID()}`, kind: "text", title: "", body: "" }] });
   };
-  const canSave = (target: Mode) => hasChanges || target !== statusOf(baseline?.status ?? document.status);
-  const save = async (target: Mode) => {
-    if (!document || locked || busyRef.current) return;
-    if (reason.trim().length < 8 || reason.trim().length > 500) { setError("变更理由需至少 8 个字符。"); return; }
-    if (target === "PUBLISHED" && publishBlockedReasons.length) { setError(`还有没替换的占位符，不能发布：${spotsShown.join("；")}${spotsMore ? ` 等 ${spotsMore + spotsShown.length} 处` : ""}`); return; }
-    if (!canSave(target)) { setError("内容没有变化，无需提交。"); return; }
-    busyRef.current = true; setSaving(true); setError(null);
-    try {
-      const payload = { ...document, status: target };
-      const record = commands.capture({ original: { kind: "how", document: payload, baseline: baseline!, mode: target },
-        path: "/api/admin/content/how-it-works", method: "PUT", body: JSON.stringify({ ...payload, expectedRevision: payload.revision, revision: undefined, reason: reason.trim() }),
-        reason: reason.trim(), name: "业务说明", change: `${STATUS_NAME[baseline!.status]} → ${STATUS_NAME[target]} · ${document.version}` });
-      await commands.send(record);
-      conflictDraft.current = false;
-      setReadReady(false); setReason(""); setMode(null);
-      toast(target === "PUBLISHED" ? "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
-      busyRef.current = false;
-      await refresh(false);
-    }
-    catch (cause) {
-      if ((cause as { reasonCode?: string }).reasonCode === "HOW_CONTENT_VERSION_CONFLICT" && !commands.find("how")) {
-        setError(displayAdminError(cause));
-        conflictDraft.current = true; setReadReady(false); setMode(null); busyRef.current = false;
-        await refresh(false);
-      } else setError(`${displayAdminError(cause)}；当前未保存内容已保留。刷新会丢弃本地修改，请先核对并保留需要的内容。`);
-    }
-    finally { busyRef.current = false; setSaving(false); }
-  };
-
   const pageChanged = (item: string) => JSON.stringify(document.contents[item]) !== JSON.stringify(baseline?.contents[item]);
   const changedPages = KEYS.filter(pageChanged);
   const refPages = KEYS.filter((item) => refBlocksOf(document.contents[item]).length > 0);
-  /** A3-PD01：和后端发布检查一样查全部页面、语言的标题、正文、列表项；草稿不受影响。每处写哪一页、哪种语言、第几块的哪几部分。 */
-  const placeholderSpots = Object.entries(document.contents).flatMap(([page, entry]) => Object.entries(row(entry.locales)).flatMap(([lang, locale]) =>
-    blocks(row(locale).blocks).flatMap((block, index) => {
-      const parts = [text(block.title).includes("{value}") && "标题", text(block.body).includes("{value}") && "正文",
-        list(block.items).some(value => text(value).includes("{value}")) && "列表项"].filter(Boolean);
-      return parts.length ? [`${PAGE_LABELS[page] ?? page} · ${localeName(lang)} · 第 ${index + 1} 块的${parts.join("、")}`] : [];
-    })));
-  const publishBlockedReasons = placeholderSpots;
-  const spotsShown = placeholderSpots.slice(0, 3), spotsMore = placeholderSpots.length - spotsShown.length;
   const entry = row(document.contents[key]);
   const localeKeys = Object.keys(row(entry.locales));
   const entryVersion = text(entry.version);
 
+  const savedContent = baseline ?? document;
+  const originalFeedback = original && feedback(original);
   return <div className="rd-tab-stack" data-testid="published-content-how">
     {canWrite && <div className="rd-toolbar a3-savebar" data-end="">
-      <span className="rd-toolbar-note" data-tone={hasChanges ? "warn" : undefined}>{hasChanges ? `有未保存的修改：${changedPages.map((item) => PAGE_LABELS[item]).join("、") || "文档版本或状态"}` : "没有未保存的修改"}</span>
-      <Button disabledReason={original ? "结果未知" : locked ? "正在加载或保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
-      <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在加载或保存" : publishBlockedReasons.length ? "还有没替换的占位符，不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
+      <span className="rd-toolbar-note" data-tone={dirty ? "warn" : undefined}>{dirty ? `有未保存的修改：${changedPages.map((item) => PAGE_LABELS[item]).join("、") || "文档版本或状态"}` : "没有未保存的修改"}</span>
+      <Button disabledReason={saveBlocked("DRAFT")} onClick={() => beginSave("DRAFT")}>保存草稿…</Button>
+      <Button variant="primary" disabledReason={saveBlocked("PUBLISHED")} onClick={() => beginSave("PUBLISHED")}>发布…</Button>
     </div>}
-    {conflictDraft.current && !mode
-      ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh(false)} submitHint="点上方「保存草稿…」或「发布…」重新提交"
-        rows={baseline ? [
-          ...(document.version !== baseline.version ? [{ key: "version", label: "文档版本", text: <Change from={baseline.version || "空"} to={document.version || "空"} /> }] : []),
-          ...changedPages.map((item) => {
-            const mineLocales = row(row(document.contents[item]).locales), latestLocales = row(row(baseline.contents[item]).locales);
-            const locales = [...new Set([...Object.keys(latestLocales), ...Object.keys(mineLocales)])].filter((key) => !same(mineLocales[key], latestLocales[key]));
-            const versionDiffers = !same(row(document.contents[item]).version, row(baseline.contents[item]).version);
-            return { key: item, label: PAGE_LABELS[item] ?? item, text: [versionDiffers && "本页版本不同", ...locales.map((key) => `${localeName(key)}：${localeParts(mineLocales[key], latestLocales[key], [["内容块", (v) => v.blocks]])}`)].filter(Boolean).join("；") || "页面设置不同" };
-          }),
-        ] : []} />
-      : error && !mode && <Notice tone="danger">{error}</Notice>}
+    <ContentNotices editor={editor} onRefresh={draftRefresh.request} />
     {placeholderSpots.length > 0 && <Notice tone="danger" title={`${placeholderSpots.length} 处还有没替换的占位符，现在不能发布`}>
       {spotsShown.map((spot) => <span key={spot} className="a3-check-line">{spot}</span>)}
       {spotsMore > 0 && <span className="a3-check-line">还有 {spotsMore} 处</span>}
       <span className="a3-check-line">把占位符（如 {"{value}"}）换成实际文字，或删掉那一块，再发布；保存草稿不受影响。</span>
     </Notice>}
-    <Panel title="业务说明内容" icon={BookOpenText} tone="role-4" sub={`6 页 · ${publicLine(document)} · 文档版本 ${versionName(document.version)}`}
+    <Panel title="业务说明内容" icon={BookOpenText} tone="role-4" sub={`6 页 · ${publicLine(savedContent)} · 文档版本 ${versionName(savedContent.version)}`}
       explain={<>
         <p>App 的「怎么玩」「规则说明」读这六页内容；锁定计划说明的入口已退役，内容仍一起维护。六页一起保存、一起发布，发布时六页都要有内容。</p>
         <p>还没发布过自己的版本时，App 读的是系统自带的默认说明。</p>
       </>}
-      actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabledReason={saving ? "正在保存" : undefined} onClick={() => void refresh()}>刷新</Button>}>
+      actions={!editor.direct && !editor.readbackError && <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabledReason={saving ? "正在保存" : undefined} onClick={() => draftRefresh.request()}>刷新</Button>}>
       <div className="a3-pages" role="group" aria-label="内容页面">
         {KEYS.map((item) => {
           const pageEntry = row(document.contents[item]);
@@ -565,6 +582,10 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
         <div className="rd-form-stack">
           <h3 className="a3-blocks-title" ref={contentHeading} tabIndex={-1}>内容块 · {currentBlocks.length} 个</h3>
           {!current && <p className="rd-note">本页尚无所选语言内容，请先新增语言。</p>}
+          {localeErrors.map(item => <Notice key={`${item.page}/${item.lang}`} tone="warn"
+            title={item.page === key && item.lang === locale ? "这种语言还不完整" : [PAGE_LABELS[item.page], item.lang && localeName(item.lang)].filter(Boolean).join(" · ")}>{item.detail}。</Notice>)}
+          {(!bounded(document.version, 64) || contentEntries.some(([, entry]) => Object.hasOwn(entry, "version") && !bounded(entry.version, 64)))
+            && <Notice tone="warn">文档版本必填，已填写的本页版本须有 1–64 字。</Notice>}
           {currentBlocks.map((item, index) => <Fold key={identityOf(item).block} inset title={`${index + 1}. ${text(item.title) || "未填标题"}`} summary={`${KIND_NAME[text(item.kind)] ?? text(item.kind)} · ${text(item.id) || "未填标识"}`}
             alert={item.kind === "ruleRef"}>
             <div className="rd-form-stack">
@@ -611,16 +632,17 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
     </Panel>
 
 
-    {mode && <SaveModal mode={mode} title={mode === "PUBLISHED" ? "发布业务说明" : "保存业务说明草稿"} busy={saving} locked={Boolean(original)} retry={original ? retry(original) : undefined} error={error} reason={original?.reason ?? reason} onReason={setReason} reasonMin={8}
-      onCancel={() => setMode(null)} onConfirm={() => void save(mode)}
+    <LeaveDialog guard={draftRefresh.dialog} saveLabel="保存草稿" saveBlocked={saveBlocked("DRAFT")} onSave={saved => beginSave("DRAFT", saved)} />
+    {mode && <SaveModal mode={mode} title={mode === "PUBLISHED" ? "发布业务说明" : "保存业务说明草稿"} busy={saving} locked={Boolean(original)} retry={original ? retry(original) : undefined} error={originalFeedback ? originalFeedback.detail : error} reason={original?.reason ?? reason} onReason={setReason} reasonMin={8}
+      onCancel={editor.cancelSave} onConfirm={() => void editor.save(mode, saveBlocked(mode), "业务说明", "/api/admin/content/how-it-works")}
       facts={<DiffList rows={[
         { key: "status", label: "状态", before: STATUS_NAME[baseline?.status ?? ""] ?? "—", after: mode === "DRAFT" && baseline?.hasPublishedVersion ? "草稿，公开版不变" : STATUS_NAME[mode] },
         { key: "version", label: "文档版本", before: baseline?.version || "—", after: document.version || "—" },
-        { key: "pages", label: "有改动的页面", before: "—", after: changedPages.map((item) => PAGE_LABELS[item]).join("、") || "—" },
+        { key: "pages", label: "有改动的页面", before: "—", after: changedPages.map((item) => changedHowPageLabel(item, baseline?.contents[item], document.contents[item])).join("、") || "—" },
       ]} />}
       extra={<>
         {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="规则引用块发布不了">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，系统会拒绝这次发布。先删掉这些块，或改成「正文」写上实际文字。</Notice>}
-        <Notice tone="neutral">{original ? <OriginalNote expired={isRetryExpired(original)} retryable={Boolean(retry(original))} /> : <>六页一起保存。{SAVE_UNKNOWN_NOTE}</>}<Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>
+        <Notice tone="neutral">{originalFeedback ? originalFeedback.next : original ? <OriginalNote record={original} retry={retry(original)} /> : <>六页一起保存。{SAVE_UNKNOWN_NOTE}</>}<Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>
       </>} />}
   </div>;
 }

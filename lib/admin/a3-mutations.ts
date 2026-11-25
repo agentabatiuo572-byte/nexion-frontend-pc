@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -10,7 +10,8 @@ import { isOperatingLanguageList, matchesSavedDownload, parsePlatformExperienceC
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, parseDeveloperDocs, parseHowContent, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { FundCommandOrigin, FundCommandEvidence } from "./fund-command-investigation";
-import { a3ParamCommandOrigin, a3ParamCommandRoutes, queryA3ParamCommand, queryA3ConfigCommand } from "./a3-command-query";
+import { a3ParamCommandOrigin, a3ParamCommandRoutes, queryA3ParamCommand, queryA3ConfigCommand, queryA3ContentCommand } from "./a3-command-query";
+import { A3_CONTENT_COMMANDS, eCommandRollbackConfirmed } from "./e-command-investigation";
 import { isOriginalCommandOrigin } from "./original-command-query";
 import { currentRecoveryActor } from "./abe-recovery-access";
 
@@ -22,6 +23,7 @@ export type A3Original =
   | { kind: "experience"; config: PlatformExperienceConfig; baseline: PlatformExperienceConfig }
   | { kind: "docs"; document: PublishedContentDocument; baseline: PublishedContentDocument; mode: "DRAFT" | "PUBLISHED" }
   | { kind: "how"; document: PublishedHowContentDocument; baseline: PublishedHowContentDocument; mode: "DRAFT" | "PUBLISHED" };
+export type A3ContentOriginal = Extract<A3Original, { kind: "docs" | "how" }>;
 export type A3Command = PendingMutationRecord & {
   commandOrigin?: FundCommandOrigin;
   original: A3Original;
@@ -33,15 +35,22 @@ export type A3Command = PendingMutationRecord & {
   change: string;
   /** Present only when this content request actually sends its explicit command key. */
   contentCommandActor?: number;
+  directContentConflict?: true;
+  contentRetryFeedback?: { kind: "unknown" | "readback-failed"; detail: string };
 };
 const PATHS: Record<A3Original["kind"], string> = {
   flag: "/api/admin/platform/config", param: "/api/admin/platform/config",
   schedule: "/api/admin/platform/business-calendar", cancel: "/api/admin/platform/business-calendar/cancel",
-  experience: "/api/admin/platform/config/experience", docs: "/api/admin/developer/docs", how: "/api/admin/content/how-it-works",
+  experience: "/api/admin/platform/config/experience", docs: A3_CONTENT_COMMANDS.docs.path, how: A3_CONTENT_COMMANDS.how.path,
 };
+export const isA3ContentCommand = (record: A3Command): record is A3Command & { original: A3ContentOriginal } =>
+  record.original.kind === "docs" || record.original.kind === "how";
 export const a3Deduplicates = (record: Pick<A3Command, "original" | "contentCommandActor">) => record.original.kind !== "docs" && record.original.kind !== "how"
   || record.contentCommandActor !== undefined;
-export const a3HasOriginalReceipt = (record: A3Command) => ["param", "flag", "experience"].includes(record.original.kind);
+export const a3HasOriginalReceipt = (record: A3Command) => isA3ContentCommand(record) ? a3Deduplicates(record) : ["param", "flag", "experience"].includes(record.original.kind);
+export const a3ContentVersionConflict = (reason?: string) => reason === "DEVELOPER_DOCS_VERSION_CONFLICT" || reason === "HOW_CONTENT_VERSION_CONFLICT";
+const readContent = (kind: A3ContentOriginal["kind"]) => kind === "docs" ? fetchDeveloperDocsAdmin() : fetchHowContentAdmin();
+class A3ContentReadbackError extends OutcomeUnknownError {}
 export type A3ContentComparison = {
   revision: { submitted: number; expected: number; current: number; matches: boolean };
   version: { submitted: string; current: string; matches: boolean };
@@ -101,10 +110,15 @@ const commands = createPendingMutationStore<A3Command>({
     try {
       return validOriginal(record.original) && record.path === PATHS[record.original.kind]
         && (record.contentCommandActor === undefined || ["docs", "how"].includes(record.original.kind)
-          && Number.isSafeInteger(record.contentCommandActor) && record.contentCommandActor > 0)
+          && Number.isSafeInteger(record.contentCommandActor) && record.contentCommandActor > 0
+          && record.contentCommandActor === record.commandOwnerId)
         && record.method === (record.original.kind === "cancel" ? "POST" : "PUT")
         && typeof record.body === "string" && object(JSON.parse(record.body)) && typeof record.reason === "string"
         && typeof record.name === "string" && typeof record.change === "string"
+        && (record.contentRetryFeedback === undefined || isA3ContentCommand(record)
+          && ["unknown", "readback-failed"].includes(record.contentRetryFeedback.kind)
+          && typeof record.contentRetryFeedback.detail === "string")
+        && (record.directContentConflict === undefined || record.directContentConflict === true && isA3ContentCommand(record))
         && (record.commandOrigin === undefined || record.original.kind === "param" && isOriginalCommandOrigin(record.commandOrigin, a3ParamCommandRoutes.A3))
         && record.fingerprint === (record.commandOrigin ? `${record.commandOrigin.originalAdminId}:${a3Slot(record.original)}`
           : record.contentCommandActor === undefined ? a3Slot(record.original) : `${record.contentCommandActor}:${a3Slot(record.original)}`);
@@ -116,7 +130,7 @@ const recovery = createPendingRecovery(commands, {
   capability: record => a3HasOriginalReceipt(record) ? "receipt" : a3Deduplicates(record) ? "replay" : "readback",
   canReplay: record => {
     const actor = currentRecoveryActor(record.commandOwnerId);
-    return !!actor && actor.authorities.includes("platform_a3_write")
+    return !record.directContentConflict && !!actor && actor.authorities.includes("platform_a3_write")
       && (record.original.kind !== "param" && record.original.kind !== "flag" || actor.role === "superadmin");
   },
   explicitRejectionCode: error => {
@@ -159,24 +173,52 @@ export function useA3Commands() {
   };
   const queryOriginal = async (record: A3Command, evidence?: FundCommandEvidence) => {
     const original = record.original;
-    if (original.kind !== "param" && original.kind !== "flag" && original.kind !== "experience"
+    if (record.directContentConflict || !a3HasOriginalReceipt(record) || evidence && isA3ContentCommand(record) && !isRetryExpired(record)
       || find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
     const read = async () => {
+      if (original.kind === "docs" || original.kind === "how") {
+        const result = await queryA3ContentCommand(record, original.kind, String(actorId), evidence);
+        const status = result.receipt?.originalStatus;
+        const terminal = status === "CONFIRMED_NOT_EXECUTED" || status === "CONFIRMED_REJECTED";
+        const rollback = eCommandRollbackConfirmed(result.receipt);
+        const replayRejected = !!recovery.state(record).replayRejection;
+        if (replayRejected && !isRetryExpired(record) && !terminal) {
+          return { ...result, settled: false, conclusion: "unknown", current: undefined, restoreDraft: false } as const;
+        }
+        const restoreDraft = terminal || !isRetryExpired(record) && !replayRejected
+          && (result.rejected || rollback);
+        const conclusion = status === "CONFIRMED_NOT_EXECUTED" || restoreDraft && rollback ? "not-executed"
+          : restoreDraft || result.rejected ? "rejected"
+            : result.settled ? "succeeded" : result.receipt ? "unknown" : "not-found";
+        // B101 still fences new writes for FAILED, even with a rollback marker.
+        if (!result.settled && !restoreDraft) return { ...result, conclusion, current: undefined, restoreDraft } as const;
+        const details = await readContent(original.kind).then(current => ({ current }), error => ({ current: undefined, readError: displayAdminReadError(error) }));
+        return { ...result, ...details, settled: Boolean(details.current), conclusion, restoreDraft } as const;
+      }
+      if (original.kind === "schedule" || original.kind === "cancel") throw new Error("A3_ORIGINAL_UNRESOLVED");
       const result = original.kind === "param"
         ? await queryA3ParamCommand(record, "A3", String(actorId), original.row.key, evidence)
         : await queryA3ConfigCommand(record, original, String(actorId), evidence);
-      return { ...result, conclusion: result.receipt ? "unknown" : "not-found" } as const;
+      return { ...result, current: undefined, restoreDraft: false, conclusion: result.receipt ? "unknown" : "not-found" } as const;
     };
     const result = evidence ? await read() : await recovery.query(record, read);
-    if (!result) throw new Error("A3_ORIGINAL_UNRESOLVED");
-    if (result.settled) { commands.forget(record.fingerprint, record.commandKey); sync(); }
+    if (!result || find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
+    if (result.settled && !isA3ContentCommand(record)) { recovery.settleAcknowledged(record); sync(); }
     return result;
+  };
+  const readPendingContent = async (record: A3Command & { original: A3ContentOriginal }) => {
+    const owns = () => !!currentRecoveryActor(record.commandOwnerId)?.authorities.includes("platform_a3_read")
+      && find(record.fingerprint)?.commandKey === record.commandKey;
+    if (!owns()) throw new Error("A3_ORIGINAL_UNRESOLVED");
+    const current = await readContent(record.original.kind);
+    if (!owns()) throw new Error("A3_ORIGINAL_UNRESOLVED");
+    return current;
   };
   const queryContent = async (record: A3Command) => {
     const original = record.original;
-    if (original.kind !== "docs" && original.kind !== "how" || find(record.fingerprint)?.commandKey !== record.commandKey)
+    if (original.kind !== "docs" && original.kind !== "how" || a3HasOriginalReceipt(record) || find(record.fingerprint)?.commandKey !== record.commandKey)
       throw new Error("A3_ORIGINAL_UNRESOLVED");
-    const current = original.kind === "docs" ? await fetchDeveloperDocsAdmin() : await fetchHowContentAdmin();
+    const current = await readContent(original.kind);
     if (find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
     const comparison: A3ContentComparison = {
       revision: { submitted: original.document.revision, expected: original.document.revision + 1, current: current.revision, matches: current.revision === original.document.revision + 1 },
@@ -185,14 +227,22 @@ export function useA3Commands() {
       contentMatches: contentJSON("locales" in current ? current.locales : current.contents)
         === contentJSON(original.kind === "docs" ? original.document.locales : original.document.contents),
     };
-    // An expired record needs evidence about the original operation, beyond a current-value comparison.
-    const matched = !isRetryExpired(record) && comparison.revision.matches && comparison.version.matches && comparison.status.matches && comparison.contentMatches;
-    if (matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
-    return { current, comparison, matched };
+    return { current, comparison };
   };
   const send = async (record: A3Command, retry = false) => {
     try {
       return retry ? await recovery.replay(record, saved => submit(saved, true)) : await submit(record, false);
+    } catch (error) {
+      if (retry && isA3ContentCommand(record) && error instanceof OutcomeUnknownError) {
+        const saved = find(record.fingerprint);
+        if (saved?.commandKey === record.commandKey) {
+          commands.remember(saved.fingerprint, saved.commandKey, { ...saved, contentRetryFeedback: {
+            kind: error instanceof A3ContentReadbackError ? "readback-failed" : "unknown",
+            detail: error.message,
+          } });
+        }
+      }
+      throw error;
     } finally { sync(); }
   };
   const submit = async (record: A3Command, retry: boolean) => {
@@ -223,8 +273,16 @@ export function useA3Commands() {
         const status = response.ok && apiCode !== undefined && apiCode >= 400 && apiCode < 500 ? apiCode : response.status;
         const error = Object.assign(new Error(formatAdminApiError(reasonCode, `A3_REQUEST_FAILED_${response.status}`)), { status, reasonCode, apiCode });
         if (retry && explicitRejectionCode(error)) throw error;
-        if (!retry && !isIdempotencyOutcomeOpen(reasonCode) && isDeterministicRejection(response.status, error.apiCode)) {
+        // The cross-command A3 fence runs before inserting this new key.
+        const blockedBeforeClaim = !retry && isA3ContentCommand(record)
+          && status === 409 && reasonCode === "IDEMPOTENCY_ORIGINAL_OPERATION_REQUIRES_INVESTIGATION";
+        if (!retry && isA3ContentCommand(record) && status === 409 && a3ContentVersionConflict(reasonCode)) {
+          commands.remember(record.fingerprint, record.commandKey, { ...record, directContentConflict: true });
+          throw error;
+        }
+        if (blockedBeforeClaim || !retry && !isIdempotencyOutcomeOpen(reasonCode) && isDeterministicRejection(response.status, error.apiCode)) {
           commands.forget(record.fingerprint, record.commandKey);
+          if (blockedBeforeClaim) throw new Error("这次保存没有开始。请有调查权限的超级管理员到「操作记录与审批」核查占用此内容的原操作。");
           throw error;
         }
         throw new OutcomeUnknownError(error.message);
@@ -261,14 +319,22 @@ export function useA3Commands() {
           break;
         }
       }
-      commands.forget(record.fingerprint, record.commandKey); sync();
+      const current = retry && isA3ContentCommand(record) ? await readContent(record.original.kind).catch(error => {
+        throw new A3ContentReadbackError(displayAdminReadError(error));
+      }) : undefined;
+      if (!isPendingCommandOwnedBy(record)) throw new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN");
+      if (!current) commands.forget(record.fingerprint, record.commandKey);
+      return current;
     } catch (error) {
       sync();
-      if ((retry && explicitRejectionCode(error)) || !commands.list().some(item => item.commandKey === record.commandKey)) throw error;
+      const saved = find(record.fingerprint);
+      if (retry && explicitRejectionCode(error) || saved?.directContentConflict || saved?.commandKey !== record.commandKey) throw error;
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN", { cause: error });
     }
   };
-  return { pending, find, capture, send, queryOriginal, queryContent, sync, recoveryState: recovery.state, releaseSnapshot: recovery.releaseSnapshot,
+  return { pending, find, capture, send, queryOriginal, queryContent, readPendingContent, sync, recoveryState: recovery.state,
+    settleContent: (record: A3Command) => { const settled = recovery.settleAcknowledged(record); sync(); return settled; },
+    releaseSnapshot: recovery.releaseSnapshot,
     releaseRejected: (record: A3Command) => !!currentRecoveryActor(record.commandOwnerId) && recovery.releaseRejectedReplay(record) };
 }
 export type A3Commands = ReturnType<typeof useA3Commands>;
