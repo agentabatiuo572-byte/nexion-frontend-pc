@@ -11,7 +11,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { datacenterNameText } from "@/lib/admin/brand-copy";
 import { businessClock, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, inspectE1StoreDisplayControls, type E1BundleDiscount, type E1GenerationGateData } from "@/lib/admin/e1-client";
-import { fetchE3Snapshot } from "@/lib/admin/e3-client";
+import { fetchE3Params } from "@/lib/admin/e3-client";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
@@ -131,7 +131,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const productRead = useCatalogSource(fetchE1Products, policy);
   const gateRead = useCatalogSource(fetchE1GenerationGates, policy);
   const discountRead = useCatalogSource(fetchE1Discount, policy);
-  const earlyRead = useCatalogSource(fetchE3Snapshot, { ...policy, allowed: canRead && canReadE3 });
+  const earlyRead = useCatalogSource(fetchE3Params, { ...policy, allowed: canRead && canReadE3 });
   const { request: readProducts, value: products, error, loading } = productRead;
   const { request: readGates, value: gates, error: gatesError } = gateRead;
   const { request: readDiscount, value: discount, error: discountError } = discountRead;
@@ -151,7 +151,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
 
   const readAt = productRead.readAt && businessClock(productRead.readAt);
   const { skus, invalidSkus: invalid } = useMemo(() => inspectE1StoreDisplayControls(products ?? { skus: [], invalidSkus: [] }, gates), [products, gates]);
-  const early = canReadE3 ? earlyRead.value?.params ?? {} : {};
+  const early = canReadE3 ? earlyRead.value ?? {} : {};
   const earlyError = canReadE3 ? earlyRead.error : "当前账号没有抢先购关联设置的读取权限";
   const earlyReady = canReadE3 && !earlyError && ["开", "关"].includes(early["E.release.earlyAccess.enabled"]) && ["7", "14", "30", "60", "90"].includes(early["E.release.earlyAccess.leadDays"]);
   const gatesLoading = gateRead.loading && !gates, discountLoading = discountRead.loading && !discount, earlyLoading = earlyRead.loading && !earlyReady;
@@ -566,7 +566,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     if (reviewingSku && edit) {
       setSkuConflict({ nonce: edit.nonce, latest: latestSku ?? null });
     } else {
-      setConflictLatest({ sku: latestSku ?? undefined, gates: latest.gates, discount: latest.discount, early: latest.early?.params });
+      setConflictLatest({ sku: latestSku ?? undefined, gates: latest.gates, discount: latest.discount, early: latest.early ?? undefined });
     }
   };
   const acceptConflictRevision = () => {
