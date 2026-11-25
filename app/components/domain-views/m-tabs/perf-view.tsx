@@ -132,6 +132,7 @@ export type ExportDialogData = {
   blocked?: string;
   /** 结果未知的原操作用的范围现在不在可选范围里：月份、范围、内容和理由都不回显，只留查询（OP-132）。 */
   originalHidden?: boolean;
+  recoveredReason?: string;
   catalogState: "ready" | "no-months";
   restoration?: { kind: "conditions-changed"; differences: ExportConditionDifference[] };
   minReasonChars: number; maxReasonChars: number;
@@ -201,7 +202,7 @@ export interface PerfExportPorts {
   check(query: ExportQuery, edited?: boolean): Promise<Pick<ExportDialogData, "items" | "asOf" | "blocked" | "restoration">>;
   submit(query: ExportQuery, reason: string): Promise<ExportSubmitted[]>;
   pendingSubmit(): PendingSubmit | undefined;
-  recoveredSubmit(): ExportDraft | undefined;
+  canShowOriginalSubmit(selection: ExportSelection, signal: AbortSignal): Promise<boolean>;
   recoveredDecision(taskId: string, decision: PendingDecision["decision"]): string | undefined;
   subscribePending(update: () => void): () => void;
   lookupSubmit(): Promise<SubmitLookup>;

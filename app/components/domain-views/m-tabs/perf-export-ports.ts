@@ -129,6 +129,14 @@ function parseOptions(value: unknown) {
 }
 type Options = ReturnType<typeof parseOptions>;
 
+function visibleOriginalScope(options: Options, selection: Selection, authorities: readonly string[]) {
+  const { scope, types } = selection;
+  return options.scopes.find(current => current.kind === scope.kind && current.blocked === null
+    && types.every(type => current.allowed.includes(type) && authorities.includes(TYPES[type]))
+    && (scope.kind !== "MANAGED_GROUPS" || !!scope.groupIds?.length
+      && scope.groupIds.every(groupId => current.groups.some(group => group.id === groupId))));
+}
+
 function parsePreview(value: unknown) {
   const row = object(value);
   const window = row.window === null ? null : performanceWindow(row.window);
@@ -483,14 +491,14 @@ function exportPorts(operator: Operator, views: View[], invalidateAccess: () => 
         } else choices.set(scope.kind, { scope: { kind: scope.kind }, label: scopeLabels[scope.kind], types });
       }
       const original = mySubmit();
-      const drafts = draftsFor(operator);
-      // 一个范围都选不了时，留着的草稿用不上，也不再回显原范围和理由。
-      if (!choices.size && drafts) delete drafts.submit;
-      const draft = drafts?.submit;
-      const saved = original?.action === "SUBMIT" ? original.selection : draft?.query;
-      const originalHidden = original?.action === "SUBMIT" && !choices.has(original.selection.scope);
+      const pending = original?.action === "SUBMIT" ? original : undefined;
+      const pendingScope = pending && visibleOriginalScope(options, pending.body, operator.authorities);
+      const originalHidden = !!pending && !pendingScope;
+      const retained = draftsFor(operator)?.submit;
+      const draft = !pending && retained && visibleOriginalScope(options, retained.selection, operator.authorities) ? retained : undefined;
+      const saved = pendingScope ? pending?.selection : draft?.query;
       const differences: ExportConditionDifference[] = [];
-      if (!original && draft) {
+      if (draft) {
         const approved = choices.get(draft.query.scope);
         const originalScope = draft.selection.scope;
         if (!months.includes(draft.selection.month)) differences.push({ field: "month", original: draft.selection.month });
@@ -509,18 +517,23 @@ function exportPorts(operator: Operator, views: View[], invalidateAccess: () => 
       }
       const defaultMonth = options.months.find(month => month.value === initial?.month)?.value ?? months[0] ?? "";
       const defaultScope = initial?.scope && choices.has(initial.scope) ? initial.scope : choices.keys().next().value ?? "";
-      const month = originalHidden || differences.some(diff => diff.field === "month") ? "" : draft && !original ? draft.selection.month : saved?.month ?? defaultMonth;
+      const month = originalHidden || differences.some(diff => diff.field === "month") ? "" : draft ? draft.selection.month : saved?.month ?? defaultMonth;
       const scope = originalHidden || differences.some(diff => diff.field === "scope") ? "" : saved?.scope ?? defaultScope;
       const types = choices.get(scope)?.types ?? [];
       const selected = originalHidden || differences.some(diff => diff.field === "types") ? []
-        : original?.action === "SUBMIT" ? original.body.types : draft?.selection.types
+        : pending ? pending.body.types : draft?.selection.types
           ?? (types.includes("SUMMARY") ? ["SUMMARY" as const] : []);
-      const preview = !original && !restoration && month && scope && types.length ? await requestPreview({ month, scope, types: selected }, true) : undefined;
+      const preview = !pending && !restoration && month && scope && types.length ? await requestPreview({ month, scope, types: selected }, true) : undefined;
+      const frozenGroups = pending?.body.scope.groupIds ?? [];
+      const frozenLabel = pendingScope && pendingScope.kind === "MANAGED_GROUPS" && frozenGroups.length < pendingScope.groups.length
+        ? pendingScope.groups.filter(group => frozenGroups.includes(group.id)).map(group => group.name).join("、") : undefined;
       return {
-        months: options.months, month, since: options.months.length ? `自 ${businessStamp(Date.parse(options.months.at(-1)!.from))} 起` : "", scopes: Array.from(choices, ([value, item]) => ({ value, label: item.label, types: item.types })), scope,
-        asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", downloader: operator.name, items: preview?.items ?? (restoration ? uncheckedItems(types) : []),
+        months: options.months, month, since: options.months.length ? `自 ${businessStamp(Date.parse(options.months.at(-1)!.from))} 起` : "",
+        scopes: Array.from(choices, ([value, item]) => ({ value, label: value === scope && frozenLabel ? frozenLabel : item.label, types: item.types })), scope,
+        asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", downloader: operator.name,
+        items: preview?.items ?? uncheckedItems(pendingScope ? selected : restoration ? types : []),
         selected: saved ? selected : selected.filter(type => preview?.items.some(item => item.type === type && !["empty", "stale", "unavailable"].includes(item.check.state))),
-        blocked: previewBlocked(preview), restoration, originalHidden,
+        blocked: previewBlocked(preview), restoration, originalHidden, recoveredReason: draft?.reason,
         catalogState: months.length ? "ready" : "no-months",
         minReasonChars: options.minReasonChars, maxReasonChars: options.maxReasonChars,
       };
@@ -552,7 +565,10 @@ function exportPorts(operator: Operator, views: View[], invalidateAccess: () => 
       const original = mySubmit();
       return original?.action === "SUBMIT" ? { ...originalFields(original), ...restoredDraft(original), acceptedRequestId: original.acceptedRequestId } : undefined;
     },
-    recoveredSubmit: () => draftsFor(operator)?.submit,
+    async canShowOriginalSubmit(selection, signal) {
+      const options = await read("/options", parseOptions, signal);
+      return !!visibleOriginalScope(options, selection, operator.authorities);
+    },
     recoveredDecision: (taskId, action) => draftsFor(operator)?.decisions.get(decisionDraftKey(taskId, action)),
     subscribePending(update) {
       pendingListeners.add(update);

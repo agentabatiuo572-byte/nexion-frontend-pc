@@ -810,7 +810,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   if (!scope || noScopedContent) return <section className="sa-workbench" aria-busy={exportAccessPending || !scope && !approvalOnly && !scopeDenied && !scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>
     {header}
     {exportsOnly && exportsPorts ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
-      <PerfExportRecords ports={exportsPorts} refreshKey={exportRecordsRefresh} onRefreshingChange={setExportRecordsRefreshing} hidePendingScope={noScopedContent} /></>
+      <PerfExportRecords ports={exportsPorts} refreshKey={exportRecordsRefresh} onRefreshingChange={setExportRecordsRefreshing} /></>
       : <Panel>{noScopedContent && !exportAccessPending ? <BlockState state="empty" title="你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" detail="主管负责的组由超级管理员在「客服与分组」里设置。" />
         : scopeDenied || approvalOnly && !exportAccessPending ? <AnalyticsReadDenied /> : <BlockState state={scopeError ? "error" : "loading"}
           title={scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}

@@ -35,12 +35,11 @@ function exportListLocation(views: readonly View[]): { view: View; page: number 
   return { view, page: Number.isSafeInteger(page) && (page - 1) * 10 <= 2_147_483_647 ? page : 1 };
 }
 
-export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, recoveryOnly = false, hidePendingScope = recoveryOnly }: {
+export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, recoveryOnly = false }: {
   ports: PerfExportPorts;
   refreshKey?: number;
   onRefreshingChange?: (refreshing: boolean) => void;
   recoveryOnly?: boolean;
-  hidePendingScope?: boolean;
 }) {
   const persona = ports.persona;
   const zone = businessZone().label;
@@ -64,10 +63,23 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
   const [downloadFailed, setDownloadFailed] = useState<{ taskId: string; outcome: Exclude<ExportDownload, { kind: "downloaded" }> } | null>(null);
   // 待确认面板：本标签页存着的原操作（提交导出、批准、驳回、撤回），审批成功但回包丢了、任务已不在列表里时也能从这里查。
   const [pendingSubmit, setPendingSubmit] = useState(() => ports.pendingSubmit());
+  const visibilityRead = useMemo(() => pendingSubmit && { selection: pendingSubmit.selection, read: ports.canShowOriginalSubmit },
+    [pendingSubmit, ports.canShowOriginalSubmit, refreshKey]);
+  const [visibleSubmit, setVisibleSubmit] = useState<typeof visibilityRead>();
+  const hidePendingScope = !visibilityRead || visibleSubmit !== visibilityRead;
   const [answers, setAnswers] = useState<Record<string, { tag: ReactNode; line: string }>>({});
   const [querying, setQuerying] = useState<string | null>(null);
   const [settled, setSettled] = useState<{ key: string; label: string; text: string; taskId?: string; mine?: boolean }[]>([]);
   const now = useExportClock([pendingSubmit, ...pending]);
+
+  useEffect(() => {
+    if (!visibilityRead) return;
+    const controller = new AbortController();
+    void visibilityRead.read(visibilityRead.selection, controller.signal).then(visible => {
+      if (visible && !controller.signal.aborted) setVisibleSubmit(visibilityRead);
+    }, () => { /* 未读到当前权限时，继续遮蔽原操作内容。 */ });
+    return () => controller.abort();
+  }, [visibilityRead]);
 
   useEffect(() => {
     const sync = () => { setPendingSubmit(ports.pendingSubmit()); setPending(ports.pendingDecisions()); };
@@ -227,11 +239,11 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
         setRefresh(value => value + 1);
         if (recoveryOnly && found.rows.length) ports.invalidateAccess();
       } else if (found.kind === "check-failed" || found.kind === "pending" && original.acceptedRequestId) {
-        const line = (found.kind === "check-failed" ? "这次查询失败。" : "这次没查到看得到的结果。") + exportPreviousReceipt(found.previous);
+        const line = (found.kind === "check-failed" ? "这次查询失败。" : "这次没查到看得到的结果。") + (hidePendingScope ? "" : exportPreviousReceipt(found.previous));
         if (original.acceptedRequestId) setAnswers(map => ({ ...map, [key]: { tag: acceptedTag, line: EXPORT_PARTIAL_RECEIPT + line } }));
         else stillUnknown(key, line);
       } else if (found.kind === "cleared") setSettled(list => [{ key, label: "提交导出",
-        text: hidePendingScope ? "这次提交没有执行。" : "这次提交没有执行，原理由已保留，可以重新导出。", mine: true }, ...list]);
+        text: hidePendingScope ? "这次提交没有执行。" : "这次提交没有执行，原理由已保留，可以重新导出。", mine: !hidePendingScope }, ...list]);
       else if (!original.acceptedRequestId) stillUnknown(key, found.kind === "missing" ? "找不到本标签页保存的原操作。"
         : found.expired ? "还没查到这次提交的结果。" : "还没查到这次提交的结果，先保持锁定，稍后再查。");
     }, error => {
