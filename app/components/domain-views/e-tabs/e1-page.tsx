@@ -680,7 +680,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? undefined : readAt ? <>{readAt} 读取<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></> : "正在加载目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<>{onOpenHosting && <Button id="e1-hosting-entry" icon={<Server size={14} aria-hidden />} onClick={onOpenHosting}>托管机房</Button>}<Button icon={<RefreshCw size={14} />} disabled={refreshInProgress} loading={refreshInProgress} onClick={() => void refreshFromHeader()}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={skuReadBlock || (edit ? "请先完成当前商品草稿" : undefined)} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
     {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
       {receipt && error && <Notice tone="warn" title="申请已提交，目录暂时读不到"><p>{receipt.obj} · 审批单 {receipt.id}</p></Notice>}
-      <RecoveryPanel tone={recovery.length === waitingReceipts.length ? "progress" : "warn"} title={recoveryTitle(unknownCount, waitingReceipts.length, verifiedDrafts.length)}
+      <RecoveryPanel tone={recovery.length === waitingReceipts.length ? "progress" : "warn"} title={recoveryTitle(unknownCount, waitingReceipts.length, verifiedDrafts.length)} label="商品管理的修改"
         explain="有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined} items={recovery} />
       <E1Catalog ctx={ctx} />
     </>}
