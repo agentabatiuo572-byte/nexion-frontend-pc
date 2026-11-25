@@ -132,11 +132,11 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
       </div>
       {(pending || submitted || ctx.f2ActivationPendingError || (policy && !supported)) && <ul className="f2-alerts" aria-label="整体结算的申请">
         {pending && <li><Notice tone="warn" title={<>{a2ActionText(pending.action)}<StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准；批准前结算状态不变，也不能再提交新的申请。">待审批</StatusTag></>}
-          action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
+          action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看 →</Link> : undefined}>
           <p>审批单 <span data-mono>{pending.id}</span>，等另一位超级管理员批准。</p>
         </Notice></li>}
         {!pending && submitted && <li><Notice tone="warn" title="申请已提交，等另一位超级管理员批准"
-          action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
+          action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看 →</Link> : undefined}>
           <p>批准前结算状态不变。批准后点页头「刷新」看最新状态。</p>
         </Notice></li>}
         {ctx.f2ActivationPendingError && <li><Notice tone="warn" title="审批进度没读到">{ctx.f2ActivationPendingError === "审批进度没读到" ? canAudit ? "点页头「刷新」重读；读到之前不能提交整体结算的申请。" : "这个账号没有查看审批的权限。" : <>{ctx.f2ActivationPendingError}{canAudit && "点页头「刷新」重读。"}</>}</Notice></li>}
@@ -248,7 +248,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering, drafts }: { c
         })}
       </ul>
       {attempts.length > 3 && <div className="fund-rows-foot"><Button size="sm" variant="ghost" onClick={() => setAll((value) => !value)}>{all ? "只看前 3 条" : `展开全部 ${attempts.length} 条`}</Button></div>}
-      <p className="f2-recovery-zone">提交时间为{businessZone().label}{canAudit && <> · <Link className="rd-link" href="/platform/audit">去操作记录与审批核对</Link></>}</p>
+      <p className="f2-recovery-zone">提交时间为{businessZone().label}{canAudit && <> · <Link className="rd-link" href="/platform/audit">去操作记录与审批核对 →</Link></>}</p>
       {error && <Notice tone="danger" title="按原操作重试没有成功">{error.text}</Notice>}
     </Notice></div>
   );

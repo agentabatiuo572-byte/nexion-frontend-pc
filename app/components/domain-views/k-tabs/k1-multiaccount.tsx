@@ -1662,7 +1662,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   // 待审收益和账户组是两件事，但同一屏只留一条结论：收益写进结论第二行，按钮跟在结论右边（VS-23）。
   const earningsTodo = pendingEntries.length > 0 ? (entriesAtLimit ? `已读到的 ${PROTECTED_ENTRY_LIMIT} 条里有 ${pendingEntries.length} 笔等人工审核，实际可能更多` : `${pendingEntries.length} 笔收益等人工审核`) : undefined;
   const earningsTip = <Explain label="待审核收益怎么处理" content="这些收益要人工放行，不会到期自动放行。" />;
-  const earningsAction = <Button size="sm" onClick={() => setTab("earnings")}>{canRelease ? "去处理" : "去查看"}</Button>;
+  const earningsAction = <Button size="sm" onClick={() => setTab("earnings")}>{canRelease ? "去处理 →" : "去查看 →"}</Button>;
   const conclusionHint = (next?: string) => earningsTodo ? <>{next} {earningsTodo}{earningsTip}</> : next;
   const conclusionAction = earningsTodo ? earningsAction : undefined;
   const conclusion = !statKnown("activeClusters") || !statKnown("frozenClusters")

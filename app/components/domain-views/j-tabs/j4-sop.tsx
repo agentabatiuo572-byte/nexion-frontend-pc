@@ -987,7 +987,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const visibleActive = overviewUnavailable ? [] : active;
   // 审批来源读不到时，等批准的申请不能显示成 0 张。
   const queueNotice = queueFailed && <Notice tone="warn" title="等批准的执行申请没读到">
-    「操作记录与审批」暂时读不到，这里先不显示等批准的申请，不代表没有。{reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J" prefetch={false}>去操作记录与审批查看</Link></>}
+    「操作记录与审批」暂时读不到，这里先不显示等批准的申请，不代表没有。{reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J" prefetch={false}>去操作记录与审批查看 →</Link></>}
   </Notice>;
   const activePanel = (visibleActive.length > 0 || pendingProposals.length > 0) && (
     <Panel title={overviewUnavailable ? "等批准的执行申请" : "正在执行"} icon={Workflow} tone="role-3"

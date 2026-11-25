@@ -505,7 +505,7 @@ export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
           note="这里只读，和好友奖励政策一起改"
           value={deviceCooling ?? (ctx.f2DirectPolicy ? "未配置" : "—")}
           sub={<StatusTag tone="neutral" icon={Clock3}>只读</StatusTag>}
-          action={<a className="rd-link f2-nowrap" href="#f2-friend">去好友奖励政策</a>} />
+          action={<a className="rd-link f2-nowrap" href="#f2-friend">去好友奖励政策 →</a>} />
       </ConfigList>
     </Panel>
   );

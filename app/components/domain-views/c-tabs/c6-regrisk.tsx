@@ -642,7 +642,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     ),
     remarkHint: "选填",
     reasonPlaceholder: "不用填写，备注不会保存",
-    okLabel: "去修改",
+    okLabel: "去修改 →",
     run: () => {
       router.push(text(guard.suggestedPath, k1Path));
     },
@@ -753,7 +753,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       <Fold title="短信验证码参数" icon={KeyRound} tone="role-other"
         summary={otpParams.length ? `${otpParams.length} 项：${otpParams.map((param) => `${operatorCopyText(text(param.name))} ${text(param.value)}`).join(" · ")}` : "暂无短信验证码设置"}
         explain="只显示当前值，修改请到「异常套利与刷量排查」。注册、登录、找回密码共用同一手机号的发送额度。"
-        actions={reach(K2_PATH) ? <Link className="rd-link" href="/risk/abuse" prefetch={false}>去修改</Link> : undefined}>
+        actions={reach(K2_PATH) ? <Link className="rd-link" href="/risk/abuse" prefetch={false}>去修改 →</Link> : undefined}>
         {otpParams.length > 0
           ? <ConfigList label="短信验证码参数">{otpParams.map(otpMirrorRow)}</ConfigList>
           : <BlockState compact state="empty" title="暂无短信验证码设置" />}
@@ -770,7 +770,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
                 what="注册和绑定时的多账户限制"
                 effect="当前值和修改都在「多账户风险排查」"
                 value={<span className="c6-elsewhere">在多账户风险排查设置</span>}
-                action={reach(text(guard.suggestedPath, k1Path)) ? <Button size="sm" onClick={() => k1Confirm(guard)}>去修改</Button> : undefined}
+                action={reach(text(guard.suggestedPath, k1Path)) ? <Button size="sm" onClick={() => k1Confirm(guard)}>去修改 →</Button> : undefined}
               />
             ))}
           </ConfigList>

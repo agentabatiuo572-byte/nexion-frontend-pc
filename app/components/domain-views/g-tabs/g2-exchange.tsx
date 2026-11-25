@@ -695,7 +695,7 @@ function G2ExchangePage() {
   const pauseAction = overview && (emergencyPaused !== true || pendingPause
     ? (allowed("finprod_g2_swap_toggle") || pendingPause) && <Button variant="danger-outline" size="sm" icon={<PauseCircle size={14} aria-hidden />}
       disabledReason={busyKey ? "正在处理上一项，稍候再操作" : !pendingPause && (loading || readFailed || rereadPending) ? "当前值没读到，重新加载后再改" : !pendingPause ? switchBlockedReason : undefined} onClick={() => toggleSwap()}>紧急暂停兑换</Button>
-    : reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>{disclosureBlocked ? "去「紧急停用开关」恢复兑换开关" : "去「紧急停用开关」恢复"}</Link>);
+    : reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>{disclosureBlocked ? "去「紧急停用开关」恢复兑换开关 →" : "去「紧急停用开关」恢复 →"}</Link>);
   const header = (
     <PageHeader pageId="G2" title="兑换额度与规则"
       summary="管 UVT 和 USDT 兑换的额度、手续费和排队。"
@@ -1451,7 +1451,7 @@ function G2ExchangePage() {
       <Fold title="地区封锁" icon={Globe2} tone="role-other"
         summary={geoBlocked.length ? `${fmtCount(geoBlocked.length)} 个地区 · ${geoBlocked.map((row) => row.cc).join(" / ")}` : "没有封锁的地区"}
         explain={<><p>在「地区访问限制」页修改，这里只能查看。用户发起兑换时按访问来源的国家拦截。</p><p>处理排队时，一单先过兑换开关、风险披露闸门、用户、钱包和额度检查，再看用户资料里的国家：被封锁的取消，有预占的退回；前面没过的留在队列。</p><p>改封锁地区本身不会马上取消已经在排队的单。</p></>}
-        actions={reach("/emergency/geo-block", "emergency_j2_read") ? <Link className="rd-link" href="/emergency/geo-block" prefetch={false}>去「地区访问限制」</Link> : undefined}>
+        actions={reach("/emergency/geo-block", "emergency_j2_read") ? <Link className="rd-link" href="/emergency/geo-block" prefetch={false}>去「地区访问限制」 →</Link> : undefined}>
         {geoBlocked.length === 0
           ? <BlockState state="empty" compact title="没有封锁的地区" detail="这里只列「地区访问限制」里状态是封锁的地区。" />
           : <Table label="封锁的地区" className="g2x-geo-table">

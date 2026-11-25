@@ -528,7 +528,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           sub={leadership ? `票数最多的前 ${fmt(leadership.topN)} 人占全池票数 ${leadership.topConcentrationPct}%` : "读不到激励池摘要"}
           what="每级票数决定这一级在激励池里分多少。" note="这里只读，票数在「奖励池、名额与排行榜」改。"
           effect="「从 V几 起」是最低一个票数大于 0 的等级；前 N 人占比按票数算，不是人数占比，也不是分到的钱的占比。"
-          action={<Link className="rd-link" href="/network/leadership-pool" prefetch={false}>去改票数</Link>} />
+          action={<Link className="rd-link" href="/network/leadership-pool" prefetch={false}>去改票数 →</Link>} />
       </ConfigList>
     </Panel>
   );

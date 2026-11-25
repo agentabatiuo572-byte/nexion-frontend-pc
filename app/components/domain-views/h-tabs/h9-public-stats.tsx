@@ -550,7 +550,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   /** 排名的结果未知提醒在排名那一块里；切到别的块时，在页面上方给一个入口。 */
   const rankPending = pendingH9Command("rank");
   const unresolved = [pending && (pending.original ? moduleLabel(pending.original.display.module) : "主配置"), rankPending && "设备预估排名"].filter(Boolean).join("、");
-  const rankJump = rankPending && module !== "rank" ? <Button size="sm" onClick={() => setModule("rank")}>去设备预估排名处理</Button> : undefined;
+  const rankJump = rankPending && module !== "rank" ? <Button size="sm" onClick={() => setModule("rank")}>去设备预估排名处理 →</Button> : undefined;
 
   const header = (
     <PageHeader pageId="H9" title="首页与网络展示设置" summary="管 App 首页和网络页给用户看的展示数字。"
@@ -839,7 +839,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       ? <Conclusion state="warn" action={rankJump}>{unresolved}的保存还没有结论：先处理上方的记录，有结论前不能再保存</Conclusion>
       : savedTick
       ? <Conclusion state="ok">首页数字{values.homeDisplayEnabled ? "增长中" : "已暂停"}，设备预估排名{rank.state === "ready" ? rank.config.enabled ? "已开启" : "已关闭" : rank.state === "failed" ? "读取失败" : "读取中"}；没有要处理的事</Conclusion>
-      : <Conclusion state="warn" action={module !== "network" ? <Button size="sm" onClick={() => setModule("network")}>去看注册人数</Button> : undefined}>网络脉搏注册人数只配了月增长率，App 上有的位置显示「不可用」</Conclusion>)}
+      : <Conclusion state="warn" action={module !== "network" ? <Button size="sm" onClick={() => setModule("network")}>去看注册人数 →</Button> : undefined}>网络脉搏注册人数只配了月增长率，App 上有的位置显示「不可用」</Conclusion>)}
     {cards}
     {homeModule}
     {networkModule}

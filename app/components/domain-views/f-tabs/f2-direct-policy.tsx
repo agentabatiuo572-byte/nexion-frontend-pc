@@ -148,7 +148,7 @@ export function F2DirectPolicy({ ctx, openConfirm, continuation }: { ctx: FViewC
               {policy?.nexUsdtPrice === null && <Notice tone="warn" title="UVT 价格读不到">开了拆分的奖励，USDT 和 UVT 会一起等价格恢复后再算，不会先发 USDT。</Notice>}
               {stale && <Notice tone="warn" title="政策刚被别人改过">你填的内容还在。点「放弃修改并刷新」读最新的政策后重新填写。</Notice>}
               {submitted && <Notice tone="warn" title={<>已提交，等另一位超级管理员批准<StatusTag tone="warn" icon={Clock3}>待审批</StatusTag></>}
-                action={ctx.can("platform_a2_read") ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
+                action={ctx.can("platform_a2_read") ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看 →</Link> : undefined}>
                 批准前仍按原政策执行，批准后点页头「刷新」看新政策。这组在批准前锁住。
               </Notice>}
             </div>

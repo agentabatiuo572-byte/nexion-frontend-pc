@@ -1548,7 +1548,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           onOpen={() => pickFilter("unbound")} openLabel="只看未绑定两步验证的账号" selected={filter === "unbound"} selectedText="已筛选" aria-pressed={filter === "unbound"} />
         <Stat icon={ClipboardCheck} tone="role-3" label="待审批的账号变更" value={pending === undefined || pending === null ? "—" : String(pending)} unit={pending === undefined || pending === null ? undefined : "件"}
           explain="资料、角色、两步验证、启停、撤销全部登录的申请都算在内。只有早期少数缺少申请内容的旧申请不计，所以可能比「操作记录与审批」里少几件。"
-          href="/platform/audit" openLabel="去操作记录与审批" />
+          href="/platform/audit" openLabel="去操作记录与审批 →" />
         <Stat icon={MonitorSmartphone} tone="role-3" label="在线登录" value={stats ? stats.activeSessions.toLocaleString("en-US") : "—"} unit={stats ? "个" : undefined}
           sub={`${onlineAccounts} 个账号在线`}
           explain="一个账号在几台设备上登录就算几个，不是在线人数。" />

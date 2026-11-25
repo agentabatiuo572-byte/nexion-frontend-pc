@@ -1468,11 +1468,11 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
     {pendingNotices}
     {(canCreate || canApprove) && coverageBelow && overviewCoverage && <Notice tone="danger" title={`兑付覆盖率 ${pct(overviewCoverage.ratio)}，低于红线 ${fmtConfigPct(overviewCoverage.redline)}`}
-      action={canReadPool ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款</Link> : undefined}>
+      action={canReadPool ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link> : undefined}>
       增加余额的提交和批准都已停用，扣减照常。
     </Notice>}
     {(canCreate || canApprove) && coverageUnknown && <Notice tone="warn"
-      action={canReadPool ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款</Link> : undefined}>
+      action={canReadPool ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link> : undefined}>
       兑付覆盖率暂时算不出来，现在不能增加用户余额。扣减照常。
     </Notice>}
 

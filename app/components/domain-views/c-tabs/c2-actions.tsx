@@ -1551,7 +1551,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         : pendingDeletions > 0 ? (
           <Conclusion state="warn" lead icon={Inbox} explain={conclusionExplain}
             hint={[deletionCounts.data!.requested > 0 ? `${deletionCounts.data!.requested} 个待审核` : "", deletionCounts.data!.inReview > 0 ? `${deletionCounts.data!.inReview} 个审核中` : ""].filter(Boolean).join("、") + "。"}
-            action={<button type="button" className="rd-link rd-link-button" onClick={goDeletions}>去处理</button>}>
+            action={<button type="button" className="rd-link rd-link-button" onClick={goDeletions}>去处理 →</button>}>
             <b>{pendingDeletions.toLocaleString("en-US")}</b> 个注销申请等处理
           </Conclusion>
         ) : <Conclusion state="neutral" icon={Info} explain={conclusionExplain}>没有等处理的注销申请</Conclusion>;
@@ -1796,7 +1796,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const drawerNote = context.loading && !ctxData ? undefined : primaryBlock ?? (canRevoke ? revokeBlock : undefined);
   const hasFooter = Boolean(primaryKind) || canRevoke || moreItems.length > 0;
   const accountFooter = shown && hasFooter && (
-    <Decision note={drawerNote ? <>{drawerNote}{primaryBlock === K1_BLOCK && canOpenK1 && <> <Link className="rd-link" href={K1_PATH} prefetch={false}>去多账户风险排查</Link></>}{primaryBlock === CREGIS_BLOCK && canOpenD1 && <> <Link className="rd-link" href={D1_PATH} prefetch={false}>去充值与收款对账</Link></>}</> : undefined}
+    <Decision note={drawerNote ? <>{drawerNote}{primaryBlock === K1_BLOCK && canOpenK1 && <> <Link className="rd-link" href={K1_PATH} prefetch={false}>去多账户风险排查 →</Link></>}{primaryBlock === CREGIS_BLOCK && canOpenD1 && <> <Link className="rd-link" href={D1_PATH} prefetch={false}>去充值与收款对账 →</Link></>}</> : undefined}
       others={<>
         {canRevoke && <Button icon={<LogOut size={14} aria-hidden />} disabled={busy} disabledReason={revokeBlock} onClick={() => ctxData && revokeAll(ctxData)}>退出全部设备</Button>}
         {moreItems.length > 0 && <MoreMenu label="更多操作" items={moreItems} disabled={busy} />}

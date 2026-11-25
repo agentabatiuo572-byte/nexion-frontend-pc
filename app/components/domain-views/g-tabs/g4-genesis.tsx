@@ -561,7 +561,7 @@ function G4GenesisPage() {
     ? allowed("finprod_g4_market_toggle") && <Button variant="danger-outline" size="sm" icon={<PauseCircle size={14} aria-hidden />}
       disabledReason={busyKey || refreshError || readFailed || directRecord("market-status") ? "正在处理上一项或页面要重新读取，稍候再操作" : undefined}
       onClick={() => runMarketSwitch()}>紧急暂停</Button>
-    : reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去「紧急停用开关」恢复</Link>);
+    : reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去「紧急停用开关」恢复 →</Link>);
   const header = (
     <PageHeader pageId="G4" title="创世节点销售与收益"
       summary="管创世节点的总量、档位价、每日分红和展示开关。"
@@ -1409,7 +1409,7 @@ function G4GenesisPage() {
             <p>两者并存时 App 显示「暂未开放」；市场开放和没有暂停都满足，用户才可能买卖。</p>
             <p>封锁地区在「地区访问限制」修改。节点转让后，之后新建的分红批次发给新持有人。</p>
           </>}
-          actions={reach("/emergency/geo-block", "emergency_j2_read") ? <Link className="rd-link" href="/emergency/geo-block" prefetch={false}>去「地区访问限制」</Link> : undefined}>
+          actions={reach("/emergency/geo-block", "emergency_j2_read") ? <Link className="rd-link" href="/emergency/geo-block" prefetch={false}>去「地区访问限制」 →</Link> : undefined}>
           <ConfigList label="市场开关">
             <ConfigRow key="marketOpen" name="创世市场"
               what="暂未开放时用户能浏览和查看持仓，不能购买和转让"
@@ -1426,7 +1426,7 @@ function G4GenesisPage() {
               when="这页只能暂停（页面右上角）；恢复要去「紧急停用开关」"
               value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{marketOn ? "未暂停" : "已暂停"}</span></span>
                 <span className="g4x-dir">{marketOn ? "暂停在页面右上角" : "这页只能暂停"}</span></span>}
-              action={!marketOn && reach("/emergency/kill-switch") ? <Link className="rd-link g4x-nowrap" href="/emergency/kill-switch" prefetch={false}>去「紧急停用开关」恢复</Link> : undefined} />
+              action={!marketOn && reach("/emergency/kill-switch") ? <Link className="rd-link g4x-nowrap" href="/emergency/kill-switch" prefetch={false}>去「紧急停用开关」恢复 →</Link> : undefined} />
             {showcaseEnabledParam && (
               <ConfigRow key="showcase" name="App 商城展示"
                 what="App 商城里显示不显示创世节点入口"

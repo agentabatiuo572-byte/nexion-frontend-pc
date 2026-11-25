@@ -495,7 +495,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         : <Conclusion state="neutral" icon={Scale} explain="结算记录在结算后才有；这一期会发多少，要到结算时按当时的订单额、比例和上限算。">
             团队平衡奖励在发放，{PERIOD_TEXT[periodEff]?.when ?? "按周期结算"}；还没有结算记录</Conclusion>;
 
-  const capAction = <button type="button" className="rd-link f3-nowrap" onClick={() => ctx.nav("H")}>去运营阶段设置</button>;
+  const capAction = <button type="button" className="rd-link f3-nowrap" onClick={() => ctx.nav("H")}>去运营阶段设置 →</button>;
 
   return (
     <div className="f3-page">
@@ -550,7 +550,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <p>点一行看这一期结算后剩下的订单额、结算方式、发起人和批准人，审批单可以直接点过去。</p>
         </>}
         actions={<>
-          <Link className="rd-link" href="/network/commissions" prefetch={false}>去补发 / 冲正</Link>
+          <Link className="rd-link" href="/network/commissions" prefetch={false}>去补发 / 冲正 →</Link>
           {(canSettle || settlePending) && <Button size="sm" variant="primary" onClick={() => openSettlement()}>{settlePending ? "查看原手动结算" : "手动结算"}</Button>}
         </>}>
         <FilterBar

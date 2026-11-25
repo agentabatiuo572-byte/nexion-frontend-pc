@@ -1695,7 +1695,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               <span className="i6-pending-what">{row.action.split(" · ")[0]} · {courseTitle(row.obj)}{row.mine ? <small>你发起的</small> : null}</span>
               <span className="i6-pending-change"><Change from={approvalValue(row.before)} to={approvalValue(row.after)} /></span>
               <span className="i6-pending-at">{row.rawTs ? `${formatBusinessTimeCompact(row.rawTs, row.ts)} 提交` : row.ts}</span>
-              {reach(auditHref, "platform_a2_read") ? <Link className="rd-link" href={auditHref} prefetch={false}>去审批中心看</Link> : <span />}
+              {reach(auditHref, "platform_a2_read") ? <Link className="rd-link" href={auditHref} prefetch={false}>去审批中心看 →</Link> : <span />}
             </li>), ...ordinaryItems, ...drafts.map(([key, draft]) => <li key={key}>
               <StatusTag tone="neutral">草稿已保留</StatusTag>
               <span className="i6-pending-what">新建课程 · {draft.slug}</span>
@@ -1812,7 +1812,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       { label: "变量", value: sm.placeholders.length ? <span className="i6-mono">{sm.placeholders.join("、")}</span> : "无" },
       ...(sm.versionCreatedAt || sm.versionUpdatedAt ? [{ label: "这一版", value: (([created, updated]) => created === updated
         ? `创建 ${created}（${BJ}）` : <>创建 {created}<br />更新 {updated}（{BJ}）</>)([sm.versionCreatedAt, sm.versionUpdatedAt].map((at) => formatBusinessTimeCompact(at, "—"))) }] : []),
-      ...(i1 ? [{ label: "来源", value: <>页面文案对比测试发布同步{i1Reachable ? <> · <Link className="rd-link" href="/content/copy-ab" prefetch={false}>去页面文案对比测试</Link></> : null}</> }] : []),
+      ...(i1 ? [{ label: "来源", value: <>页面文案对比测试发布同步{i1Reachable ? <> · <Link className="rd-link" href="/content/copy-ab" prefetch={false}>去页面文案对比测试 →</Link></> : null}</> }] : []),
     ] : [];
     const drawerFooter = !sm || !canWriteI6 ? undefined : copyEditor
       ? <Decision note={copyEditor.tried && editorBlocked ? editorBlocked : undefined}

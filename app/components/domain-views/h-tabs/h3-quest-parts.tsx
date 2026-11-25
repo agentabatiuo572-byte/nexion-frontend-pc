@@ -253,7 +253,7 @@ export function H3PendingLine({ approval, format, auditHref, label }: { approval
       {label && <span className="h3-pending-label">{label}</span>}
       {lockedTag()}
       <span>读不出申请内容</span>
-      {auditHref && <Link className="rd-link" href={auditHref} prefetch={false}>去核对</Link>}
+      {auditHref && <Link className="rd-link" href={auditHref} prefetch={false}>去核对 →</Link>}
     </span>;
   }
   // 现在的值就在这一项旁边，行里只写申请改成什么；提交时的原值放说明里。

@@ -896,7 +896,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
               when={row.id === "recoverGate" ? "只读，跟随备付金红线" : "保存后立即生效，只影响之后的自动关停"}
               value={row.id === "recoverGate" ? "跟随红线" : unitText(row.v, row.unit)}
               action={row.id === "recoverGate"
-                ? (reach("/overview/dual-ledger") ? <Link className="rd-link" href="/overview/dual-ledger" prefetch={false} title="恢复门槛跟随备付金红线，如需调整请前往备付金页面">去看红线</Link> : undefined)
+                ? (reach("/overview/dual-ledger") ? <Link className="rd-link" href="/overview/dual-ledger" prefetch={false} title="恢复门槛跟随备付金红线，如需调整请前往备付金页面">去看红线 →</Link> : undefined)
                 : canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={blockOf(`sla:${row.id}`)} onClick={() => adjEmer(row)}>调整</Button> : undefined} />
           ))}
         </ConfigList>
@@ -922,7 +922,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
                   : rule.thresholdSource === "DEFAULT" ? <>{ruleValue(rule)} <StatusTag tone="neutral" explain="这条阈值还没保存过，现在按系统默认值判断；第一次保存后按你存的值。">默认值</StatusTag></> : ruleValue(rule)}
                 action={rule.adjustable && canWrite
                   ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={blockOf(`rule:${rule.id}`)} onClick={() => adjRule(rule)}>调整</Button>
-                  : source && reach(source) ? <Link className="rd-link" href={source} prefetch={false} title={rule.refTitle}>去设置</Link> : undefined} />
+                  : source && reach(source) ? <Link className="rd-link" href={source} prefetch={false} title={rule.refTitle}>去设置 →</Link> : undefined} />
             );
           })}
         </ConfigList>

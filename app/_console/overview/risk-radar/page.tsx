@@ -68,11 +68,11 @@ const QUEUE_TRIAGE: Record<string, keyof typeof TRIAGE> = {
 
 /** 五项分诊的按钮名：写去哪一页。 */
 const TRIAGE_LABEL: Record<DimensionKey, string> = {
-  bankrun: "去提现审核",
-  "abnormal-accounts": "去多账户风险排查",
-  "withdraw-backlog": "去提现审核",
-  "kill-switches": "去紧急停用开关",
-  coverage: "去资金与应付款总览",
+  bankrun: "去提现审核 →",
+  "abnormal-accounts": "去多账户风险排查 →",
+  "withdraw-backlog": "去提现审核 →",
+  "kill-switches": "去紧急停用开关 →",
+  coverage: "去资金与应付款总览 →",
 };
 
 const STATUS_TEXT = { handled: "已处理", resolved: "已解决" } as const;

@@ -64,7 +64,7 @@ export function F2Bootstrap({ ctx, openConfirm, draft, setDraft, cap }: {
   const canAudit = ctx.can("platform_a2_read");
   const pending = ctx.f2BootstrapPending;
   const original = ctx.f2ProposalRecord(F2_BOOTSTRAP_SLOT);
-  const auditLink = canAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批查看</Link> : undefined;
+  const auditLink = canAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批查看 →</Link> : undefined;
 
   if (pending) {
     const rows = parseF2BootstrapAfter(pending.after);

@@ -302,7 +302,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         <Fact k="之后">{friend ? "好友奖励冲正后不能补发" : "可以勾选申请补发，批准时再核补发条件"}</Fact>
         {salary && (row.claimNo || canReadSalary) && <Fact k="月薪领取号">{row.claimNo
           ? <span data-mono>{row.claimNo}</span>
-          : <Link className="rd-link" href={`/network/v-rank?tab=salary&userId=${encodeURIComponent(row.user)}`} prefetch={false}>去月薪领取记录查询</Link>}</Fact>}
+          : <Link className="rd-link" href={`/network/v-rank?tab=salary&userId=${encodeURIComponent(row.user)}`} prefetch={false}>去月薪领取记录查询 →</Link>}</Fact>}
         <Fact k="谁来批准">{approverText("冲正权限")}</Fact>
       </Facts>,
       businessForm: {

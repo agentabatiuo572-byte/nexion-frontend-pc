@@ -168,7 +168,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
       });
     };
     return <Modal title={`已提交 ${result.length} 项导出`} onClose={onClose}
-      footer={<Decision others={onRecords && <Button onClick={onRecords}>去导出记录</Button>} primary={<Button variant="primary" onClick={onClose}>知道了</Button>} />}>
+      footer={<Decision others={onRecords && <Button onClick={onRecords}>去导出记录 →</Button>} primary={<Button variant="primary" onClick={onClose}>知道了</Button>} />}>
       <Facts>
         <Fact k="范围">{resultScopeLabel}</Fact>
         <Fact k="月份">{resultMonth}</Fact>

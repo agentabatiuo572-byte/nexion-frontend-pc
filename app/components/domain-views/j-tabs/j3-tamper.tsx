@@ -693,10 +693,10 @@ function J3AccountRow({ account: a, feedK4, zone, userRef, pathName, canViewK1, 
       <Td sticky="end">
         <span className="j3-next">
           {canFreezeC2 && alerting
-            ? <Link className="rd-link" href={{ pathname: "/users/actions", query: { userCode: a.userCode, source: "J3" } }} title={`${a.userCode} · 去账户操作冻结或解冻`}>去账户操作处理</Link>
+            ? <Link className="rd-link" href={{ pathname: "/users/actions", query: { userCode: a.userCode, source: "J3" } }} title={`${a.userCode} · 去账户操作冻结或解冻`}>去账户操作处理 →</Link>
             : <span className="j3-off" aria-disabled="true" title="这个账号没有账户操作的冻结权限">去账户操作处理</span>}
           {a.cluster && (canViewK1 && alerting
-            ? <Link className="rd-link" href={{ pathname: "/risk/multi-account", query: { focusClusterId: a.cluster, source: "J3" } }} title={`${a.cluster} · 查看关联账户组`}>去多账户排查</Link>
+            ? <Link className="rd-link" href={{ pathname: "/risk/multi-account", query: { focusClusterId: a.cluster, source: "J3" } }} title={`${a.cluster} · 查看关联账户组`}>去多账户排查 →</Link>
             : <span className="j3-off" aria-disabled="true" title="这个账号没有多账户风险排查的权限">去多账户排查</span>)}
         </span>
       </Td>

@@ -834,7 +834,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
       <Panel title="每位发多少" icon={Gift} tone="role-4" sub={`第 ${data.rhythmMonth} 月加成`}
           explain="新人两项乘运营阶段设置里当月的新用户加成，邀请人一项乘当月的邀请加成。加成换月或在运营阶段设置被改后，实际发放跟着变。"
-          actions={phaseHref ? <Link className="rd-link" href="/growth/phase" prefetch={false}>去运营阶段设置看加成</Link> : undefined}>
+          actions={phaseHref ? <Link className="rd-link" href="/growth/phase" prefetch={false}>去运营阶段设置看加成 →</Link> : undefined}>
           <div className="h8-cards" data-long={longAmounts ? "" : undefined}><StatBand cards label="三项奖励">{AMOUNT_PARAMS.map(amountCard)}</StatBand></div>
         </Panel>
         <Panel title="开关和发放方式" icon={SlidersHorizontal} tone="role-4">

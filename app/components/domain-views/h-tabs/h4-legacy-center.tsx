@@ -1554,7 +1554,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             <span className="h4-pending-what"><b>{row.action} · {subject}</b></span>
             <span className="h4-pending-when">{row.mine ? "你发起的" : "别人发起的"}</span>
             {pendingTag(subject)}
-            <a className="rd-link" href="/platform/audit">去操作记录与审批</a>
+            <a className="rd-link" href="/platform/audit">去操作记录与审批 →</a>
           </li>;
         })}
       </ul>}>
@@ -1618,7 +1618,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const wheelEvent = text(event.kind).toLowerCase() === "wheel";
     return [
       ...(!wheelEvent ? [{ key: "reward", label: "修改奖励", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : rules === null ? "玩法规则没读到，判断不了改奖励的后果。到「玩法与抽奖」刷新「七类玩法」后再改。" : ended ? "已结束的活动不能改奖励" : lockedReason, onSelect: conflictDraft.register(JSON.stringify(["openEventReward:1", event.id]), () => openEventReward(event)) }]
-        : [{ key: "wheel", label: "去转盘奖池改奖品", onSelect: () => go("wheel", "h4l-wheel") }]),
+        : [{ key: "wheel", label: "去转盘奖池改奖品 →", onSelect: () => go("wheel", "h4l-wheel") }]),
       ...(!ended && event.state === "ongoing" ? [{ key: "featured", label: event.featured ? "取消主推" : "设为主推", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : lockedReason, onSelect: conflictDraft.register(JSON.stringify(["openEventFeatured:1", event.id]), () => openEventFeatured(event)) }] : []),
       { key: "content", label: "App 上的文字", onSelect: () => setContentId(event.id) },
       ...(!ended && event.state !== "ended" ? [{ key: "end", label: "结束活动", danger: true, disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : lockedReason, onSelect: conflictDraft.register(JSON.stringify(["openEventStatus:1", event.id]), () => openEventStatus(event, "ended")) }] : []),

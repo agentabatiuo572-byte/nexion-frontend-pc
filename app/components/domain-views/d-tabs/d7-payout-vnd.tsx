@@ -815,7 +815,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
           detail={<>
             <p>{loadError?.message === WITHDRAWAL_CONFIG_READ_FAILED
               ? loadError.message : <>读不到参数，页面不显示旧值。点「重试」，一直失败请联系财务值班人员。{loadError && <Explain label="失败原因" content={loadError.message} />}</>}</p>
-            {loadError?.code === "D7_D6_SOURCE_UNAVAILABLE" && canReachFx && <p><Link className="rd-link" href="/finance/fx-rate" prefetch={false}>去汇率设置</Link></p>}
+            {loadError?.code === "D7_D6_SOURCE_UNAVAILABLE" && canReachFx && <p><Link className="rd-link" href="/finance/fx-rate" prefetch={false}>去汇率设置 →</Link></p>}
           </>} />}
       {releaseModal}
     </>;
@@ -825,7 +825,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const liveInverted = isPayoutVndInverted(config.buySpreadPct, config.sellSpreadPct);
   const editBlock = direct.length > 0 || approval && !approval.withdrawalSubmissionConfirmed ? LOCKED : loading ? READING : undefined;
   const nothingToDo = queueKnown && direct.length === 0 && !approval && !approvals.blockReason && !approvals.ownNotice;
-  const fxLink = canReachFx && <Link className="rd-link" href="/finance/fx-rate" prefetch={false} onClick={guard("/finance/fx-rate")}>去修改</Link>;
+  const fxLink = canReachFx && <Link className="rd-link" href="/finance/fx-rate" prefetch={false} onClick={guard("/finance/fx-rate")}>去修改 →</Link>;
 
   const row = (key: Key) => {
     const help = PAYOUT_VND_HELP[key];

@@ -1119,7 +1119,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
             ]} />
             {freezeBlocked && (
               <Notice tone="warn" title="冻结前要先标记可疑"
-                action={reach("/risk/multi-account", "risk_k1_read") ? <Link className="rd-link" href="/risk/multi-account">去多账户风险排查</Link> : undefined}>
+                action={reach("/risk/multi-account", "risk_k1_read") ? <Link className="rd-link" href="/risk/multi-account">去多账户风险排查 →</Link> : undefined}>
                 这组账户在「多账户风险排查」标记为可疑后，才能在这里提交冻结。
               </Notice>
             )}

@@ -1311,7 +1311,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         sub={`另有 ${all.filter((task) => taskStatusOf(task) === "paused" && taskUnbound(task)).length} 个停用的还没绑定`}
         explain="已启用、但没有启用的完成条件的任务。停用的任务启用前要先绑定，没绑定时启用会被拒绝。" />
       <Stat tone="role-4" icon={Sparkles} label="任务加成（运营阶段设置）" value={h1Value ?? "—"} unit={h1Value ? "倍" : undefined}
-        sub={currentPhase ? `现在是 ${currentPhase} · 只读` : "当前阶段没读到"} href={canPhase ? "/growth/phase" : undefined} openLabel="去运营阶段设置"
+        sub={currentPhase ? `现在是 ${currentPhase} · 只读` : "当前阶段没读到"} href={canPhase ? "/growth/phase" : undefined} openLabel="去运营阶段设置 →"
         explain="新手任务和每周任务的奖励都乘它，在「运营阶段设置」改。新手任务在用户注册时、每周任务在发布时定下倍数，之后改不影响已发出的。" />
       {hasH3OperatingStats(model.h3Stats) ? <H3OperatingStat stats={model.h3Stats} onOpen={() => {
         setStatsOpen(true);
@@ -1332,8 +1332,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <li key={item.key} data-tone={item.tone}>
           {item.tone === "warn" ? <CircleAlert size={16} aria-hidden /> : <CalendarClock size={16} aria-hidden />}
           <span>{item.title}</span>
-          {item.go ? <Button size="sm" variant="ghost" onClick={() => item.go && setTab(item.go)}>去看</Button>
-            : item.href && <Link className="rd-link" href={item.href} prefetch={false}>去核对</Link>}
+          {item.go ? <Button size="sm" variant="ghost" onClick={() => item.go && setTab(item.go)}>去看 →</Button>
+            : item.href && <Link className="rd-link" href={item.href} prefetch={false}>去核对 →</Link>}
         </li>
       ))}
     </ul>
@@ -1547,7 +1547,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const weeklyTab = (
     <div {...tabIds.panel("weekly")} className="h3-tabpanel">
       <Panel title="每周奖励怎么算" icon={Sparkles} tone="role-4" sub={currentPhase ? `现在是 ${currentPhase}` : "当前阶段没读到"}
-        actions={canPhase ? <Link className="rd-link" href="/growth/phase" prefetch={false}>去运营阶段设置改任务加成</Link> : undefined}
+        actions={canPhase ? <Link className="rd-link" href="/growth/phase" prefetch={false}>去运营阶段设置改任务加成 →</Link> : undefined}
         explain="每周任务发布时，把基础奖励、运营阶段设置的任务加成、这里的每周阶段倍率一起冻结；用户领取时按冻结的乘积到账，向下保留 6 位小数。之后改设置不影响已发布的。">
         <WeeklyFormula rows={formulaRows} h1={h1Value} h1Phase={currentPhase} weekly={weeklyValue} weeklyPhase={currentPhase}
           h1Link={null} />

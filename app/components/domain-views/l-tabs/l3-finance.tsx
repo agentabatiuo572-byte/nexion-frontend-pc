@@ -644,7 +644,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const zone = coverageUnavailable ? "unknown" : noLiability ? "ok" : coverage < redLine ? "danger" : coverage === redLine || coverage <= healthyLine ? "warn" : "ok";
   const coverageTone = zone === "danger" ? "danger" : zone === "warn" ? "warn" : zone === "ok" ? "ok" : "neutral";
   const overviewName = findByPath(OVERVIEW_PAGE)?.l2.name ?? "资金与应付款总览";
-  const overviewLink = reach(OVERVIEW_PAGE) ? <Link className="rd-link" href={OVERVIEW_PAGE}>去「{overviewName}」看处理建议</Link> : null;
+  const overviewLink = reach(OVERVIEW_PAGE) ? <Link className="rd-link" href={OVERVIEW_PAGE}>去「{overviewName}」看处理建议 →</Link> : null;
   const conclusionExplain = <><p>兑付覆盖率 = 可用储备 ÷ 应付款，和「{overviewName}」是同一个数。低于红线时提现审核不能放行，低于健康线算警戒。</p><p>这页只能查看和导出，不会改账。</p></>;
   const conclusion = zone === "unknown"
     ? coverageUnread

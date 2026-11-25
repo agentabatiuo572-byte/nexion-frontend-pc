@@ -589,7 +589,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
             action={canManageBankConfig ? <Button size="sm" disabledReason={readingReason ?? (vietQr ? d1PendingObjectReason("/vietqr/config") : "银行卡支付参数没读到，刷新后再试")} onClick={editPerTxLimit}>调整</Button> : undefined} />
           <ConfigRow name="最低充值金额" what="银行卡充值的最低金额" where="App 充值页 › 银行卡支付「单笔限额」" effect="只限制充值，不限制订单付款"
             value="在「订单付款 › 付款手续费」里设置"
-            action={<Button size="sm" onClick={() => onGo("payments")}>去设置</Button>} />
+            action={<Button size="sm" onClick={() => onGo("payments")}>去设置 →</Button>} />
           <ConfigRow name="USDT 链上充值" what="收款地址分配、入账和异常处理由 USDT 收款开关控制"
             value="在「USDT 充值」看" sub="BEP20、ERC20、TRC20"
             action={<Button size="sm" onClick={() => onGo("usdt")}>查看实际状态</Button>} />

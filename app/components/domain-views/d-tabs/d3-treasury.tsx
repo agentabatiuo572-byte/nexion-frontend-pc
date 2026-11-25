@@ -680,7 +680,7 @@ export function D3Treasury() {
   const mainState = loading && !main ? <BlockState state="loading" title="正在读取资金数据…" /> : null;
   const tier = main?.reserve.waterLevel.tier;
   const fundAlarm = tier === "DANGER" || tier === "WARNING";
-  const fundConclusion = main ? <FundConclusion main={main} emergencyLink={crossLink("/emergency/kill-switch", "去紧急停用开关")} withdrawalsLink={crossLink("/finance/withdrawals", "去提现审核")} /> : null;
+  const fundConclusion = main ? <FundConclusion main={main} emergencyLink={crossLink("/emergency/kill-switch", "去紧急停用开关 →")} withdrawalsLink={crossLink("/finance/withdrawals", "去提现审核 →")} /> : null;
 
   const asOf = main?.reserve.asOf;
   const header = (

@@ -1228,11 +1228,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const coverageText = `兑付覆盖率 ${pct(p.coverageRatio)}，红线 ${fmtConfigPct(p.redlinePct)}`;
   // 覆盖率、红线和可不可靠每个状态都留一处读数（D5-V10，F05）：结论句没写的，写在第二行。
   const coverageLine = <KeepText text={p.coverageReliable ? `${coverageText}。` : `读到的兑付覆盖率 ${pct(p.coverageRatio)} 不可靠，红线 ${fmtConfigPct(p.redlinePct)}。`} />;
-  const poolHint = reach("/finance/pool") ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款核对</Link> : "去资金储备与应付款核对";
+  const poolHint = reach("/finance/pool") ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款核对 →</Link> : "去资金储备与应付款核对";
   const coverageExplain = COVERAGE_RULE;
   const networks = networkView(p);
-  const reconLink = reach("/finance/recon") && <Link className="rd-link" href="/finance/recon" prefetch={false}>去充值与收款对账核对</Link>;
-  const j1Link = reach("/emergency/kill-switch", "emergency_j1_read") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关</Link>;
+  const reconLink = reach("/finance/recon") && <Link className="rd-link" href="/finance/recon" prefetch={false}>去充值与收款对账核对 →</Link>;
+  const j1Link = reach("/emergency/kill-switch", "emergency_j1_read") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关 →</Link>;
   const networkSection = <Link className="rd-link" href="?section=network" prefetch={false} onClick={(event) => { event.preventDefault(); nav.select("network"); }}>网络和费用</Link>;
   // 都用不了的下一步按原因走：这页关的回这页开，提现开关去紧急停用开关，出款侧的去对账页（DP-42）。
   const outageNext = networks.byConfig
@@ -1461,7 +1461,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             <div id={nav.anchor("phase")}>
               <Fold title="随运营阶段变化的设置" icon={CalendarRange} tone="role-other" summary={phaseSummary}
                 explain="只能查看，修改请到「运营阶段设置」"
-                actions={reach("/growth/phase") ? <Link className="rd-link" href="/growth/phase" prefetch={false}>去运营阶段设置</Link> : undefined}
+                actions={reach("/growth/phase") ? <Link className="rd-link" href="/growth/phase" prefetch={false}>去运营阶段设置 →</Link> : undefined}
                 open={phaseOpen} onOpenChange={setPhaseOpen}>
                 <ConfigList label="随运营阶段变化的设置">
                   <ConfigRow name={H.currentPhase.label} what={H.currentPhase.what} when={H.currentPhase.when} value={`${p.currentPhase} · 第 ${p.currentMonth} 月`} />

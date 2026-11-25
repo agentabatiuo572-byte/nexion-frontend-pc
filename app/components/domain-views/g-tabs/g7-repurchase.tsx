@@ -854,7 +854,7 @@ function G7RepurchasePage() {
                   <span className="g7x-value"><span className="g7x-value-num" data-empty={phase ? undefined : ""}>{phase?.value ?? (operatorCopyText(overview.phaseGate.value) || "—")}</span></span>
                   <span className="g7x-dir">{phase ? phase.month : "跟随运营阶段"}</span>
                 </span>}
-                action={phaseHref ? <Link className="rd-link g7x-nowrap" href="/growth/phase" prefetch={false}>去运营阶段设置</Link> : undefined} />
+                action={phaseHref ? <Link className="rd-link g7x-nowrap" href="/growth/phase" prefetch={false}>去运营阶段设置 →</Link> : undefined} />
           </ConfigList>
         </Panel>
       </div>
