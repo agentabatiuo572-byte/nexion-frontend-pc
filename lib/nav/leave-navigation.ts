@@ -16,6 +16,8 @@ export function isPageNavigationBlockedByModal() {
 
 /** 命令面板不开在打开着的弹窗上，焦点留在弹窗里（02 OP-46）；有草稿守卫时沿用它的放行条件（H4 限额子框）。 */
 export function isCommandPaletteBlockedByModal() {
+  // 原生模态 dialog（H4 日期时间选择器用 showModal 打开）同样算打开着的弹窗。
+  if (document.querySelector("dialog:modal")) return true;
   return guard ? guard.modalBlocksNavigation() : !!document.querySelector('.rd-modal[data-state="open"]');
 }
 
