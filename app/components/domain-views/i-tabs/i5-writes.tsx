@@ -306,7 +306,7 @@ export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继�
       <Button ref={saveButton} variant="primary" disabledReason={saveBlocked} onClick={() => onSave(guard.startSave())}>{saveName}</Button>
     </>}><p>离开后这次的修改不会保留。</p>
       {/* 保存按钮不能点时原因常显，不只放在悬停提示里（OP-126）。 */}
-      {saveBlocked && <p>现在不能保存：{saveBlocked.replace(/[。.]$/, "")}。</p>}</Modal>
+      {saveBlocked && <Notice tone="warn">现在不能保存：{saveBlocked.replace(/[。.]$/, "")}。</Notice>}</Modal>
   );
 }
 
