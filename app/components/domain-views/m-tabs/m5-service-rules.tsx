@@ -246,9 +246,10 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const closeConfirm = () => { afterSave.current = undefined; setConfirm(false); };
   useH4Editor(permission === "agent" ? null : {
     scope: "M5/service-rules",
-    dirty: canWrite && !retry && !command.submitting && Boolean(current) && (awaiting || Boolean(draft) && JSON.stringify(draft) !== JSON.stringify(toDraft(current!))),
+    // 提交等待中也算没保存：确认框还开着，后退由它管（OP-33、OP-34）。
+    dirty: canWrite && !retry && (awaiting || Boolean(current && draft) && JSON.stringify(draft) !== JSON.stringify(toDraft(current!))),
     saveName: "保存并立即生效",
-    saveReason: editGuard.otherDirty("M5/service-rules") ? "欢迎语也有没保存的改动，先分别保存" : !editable ? "先读取最新规则再保存" : !parsed ? "有填写不对的项，先改正" : undefined,
+    saveReason: editGuard.otherDirty("M5/service-rules") ? "欢迎语也有没保存的改动，先分别保存" : !editable ? "先读取最新规则再保存" : !parsed ? "有填写不对的项，先改正" : changed.length === 0 ? "没有能保存的改动" : undefined,
     close: () => {
       releasedRecord.current = null;
       setAwaiting(false); setReleasedFrom(undefined); setLatest(null); setConflict(false); setConfirm(false); setReason(""); setError("");

@@ -242,10 +242,11 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const closeConfirm = () => { afterSave.current = undefined; setConfirm(false); };
   useH4Editor({
     scope: "M5/welcome",
-    dirty: canWrite && !retry && !command.submitting && Boolean(current)
-      && (awaiting || Boolean(draft) && JSON.stringify(draft) !== JSON.stringify(mapSingleContentText(current!.texts, requiredLanguages, "edit"))),
+    // 提交等待中也算没保存：确认框还开着，后退由它管（OP-33、OP-34）。
+    dirty: canWrite && !retry && (awaiting || Boolean(current && draft)
+      && JSON.stringify(draft) !== JSON.stringify(mapSingleContentText(current!.texts, requiredLanguages, "edit"))),
     saveName: "保存并立即生效",
-    saveReason: editGuard.otherDirty("M5/welcome") ? "服务规则也有没保存的改动，先分别保存" : !editable ? "先加载最新内容再保存" : !valid ? "有填写不对的项，先改正" : undefined,
+    saveReason: editGuard.otherDirty("M5/welcome") ? "服务规则也有没保存的改动，先分别保存" : !editable ? "先加载最新内容再保存" : !valid ? "有填写不对的项，先改正" : changed.length === 0 ? "没有能保存的改动" : undefined,
     close: () => {
       refused.current = undefined;
       releasedRecord.current = null;

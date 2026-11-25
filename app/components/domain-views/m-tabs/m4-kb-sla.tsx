@@ -1005,11 +1005,11 @@ function FaqModal({
             </Field>
           </div>
           {surface === "Nova" && <Notice tone="warn">Nova 智能问答已在 App 下线，放在这里的问答用户看不到。</Notice>}
-          {translationCount > 0 && <Notice tone="warn">改成{languageName(language)}保存后，这条附带的 {translationCount} 种翻译会被清掉。</Notice>}
-          <section aria-label={status === "published" ? "保存后谁读得到" : "发布后谁读得到"}>
+          {!gone && translationCount > 0 && <Notice tone="warn">改成{languageName(language)}保存后，这条附带的 {translationCount} 种翻译会被清掉。</Notice>}
+          {!gone && <section aria-label={status === "published" ? "保存后谁读得到" : "发布后谁读得到"}>
             <h3 className="m4-block-title">{status === "published" ? "保存后谁读得到" : "发布后谁读得到"}</h3>
             <ReachList faq={{ surface, language }} label={status === "published" ? "保存后谁读得到" : "发布后谁读得到"} />
-          </section>
+          </section>}
           <Field label="问题" required error={show("question")}>
             {(control) => <Textarea disabled={pending || Boolean(recovery)} readOnly={gone} {...control} data-proof="support-faq-question" rows={1} value={question} count={`${question.trim().length}/160`} onChange={(e) => setQuestion(e.target.value)} placeholder="用户会怎么问，就怎么写。例如：提现审核要多久？" />}
           </Field>
