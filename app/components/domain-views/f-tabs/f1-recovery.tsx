@@ -3,16 +3,17 @@
 /**
  * F1 全页的原操作恢复区：等级读取中、读取失败、还没建等级时也显示。
  * 三种原记录都只从本机保存的原内容拼：普通申请（ctx.f1Proposals）、门槛和奖励的修改（listF1PolicyOperations）、App 等级说明的保存（pendingF1RankHow）。
- * 按钮只调用已备好的恢复函数：查询只读，按原请求重试先开一个确认框，过期并且后端明确没有这张审批单时才给「解除待确认」。
+ * 查询只读。重试被明确拒绝后，人工核实才可以解除本地记录。
  */
-import { useState, type ReactNode } from "react";
+import { usePendingReplayDeadline } from "../design-kit";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { CircleHelp, Clock3, Hourglass, RotateCcw } from "lucide-react";
 import { Button, Change, Decision, Fact, Facts, KeepText, Modal, Notice, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { canSendF1Proposal, F1_PROPOSAL_LOOKUP_FIRST, isF1PayoutSlot } from "@/lib/admin/f1-approval";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { canRetryF1Proposal, f1ProposalRecovery, F1_PROPOSAL_LOOKUP_FIRST, isF1PayoutSlot } from "@/lib/admin/f1-approval";
 import { canRetryF1PolicyProposal, f1ConditionLabels, formatF1ExactAmount, isF1PolicyInFlight, listF1PolicyOperations, queryF1PolicyOperation, releaseF1PolicyProposal, type F1PolicyEditor, type F1PolicyReward } from "@/lib/admin/f1-policy-change";
 import { F1_BENEFIT_NAMES, isF1BenefitField, ratePct } from "@/lib/admin/f1-rank-benefit";
 import { isF1RankHowInFlight, pendingF1RankHow, queryF1RankHow } from "@/lib/admin/f1-rank-how-save";
@@ -27,16 +28,13 @@ type Row = { key: string; name: string; change: ReactNode; submittedAt?: number;
 /** 等级说明所在页签的名字，和 f1-vrank 的页签一致。 */
 /** 恢复面板上的门槛名（新口径）；记进操作记录的名字仍用 f1ConditionLabels。 */
 const CONDITION_NAME: Record<string, string> = { selfBuy: "自购算力点", teamGv: "团队算力点", directRefs: "一二级已购人数", legCount: "下级领导者人数", legRank: "下级领导者最低等级" };
-const HOW_TAB = "App 等级说明";
 const UNIT: Record<string, string> = { purchaseL1Rate: "%", purchaseL2Rate: "%", monthlySalaryUsdt: " USDT", selfBuy: " 点", teamGv: " 点", directRefs: " 人", legCount: " 个", legRank: "" };
 const thresholdText = (field: string, raw: string | undefined) => raw === undefined || raw === "" ? "—" : raw === "NONE" ? "未设置" : `${formatF1ExactAmount(raw)}${UNIT[field] ?? ""}`;
 
 function stateTag(state: State, direct: boolean, canRetryProposal: boolean) {
   if (state === "pending") return <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>;
   if (state === "received") return <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>;
-  if (state === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain={direct
-    ? "原请求超过 24 小时，不能再重试。查询只读取当前内容，证明不了原操作有没有执行，到「操作记录与审批」核对。"
-    : "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。"}>已过期</StatusTag>;
+  if (state === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
   return <StatusTag tone="warn" icon={CircleHelp} explain={direct
     ? "提交时没收到确定结果，可能已经保存。先查询原结果；有结论前不要换个办法重做。"
     : canRetryProposal ? "没查到原审批单，可以按原内容和理由重试。" : F1_PROPOSAL_LOOKUP_FIRST}>结果未知</StatusTag>;
@@ -84,6 +82,8 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
   const [retrying, setRetrying] = useState<{ original: FDomainAttempt; name: string; change: ReactNode } | null>(null);
   const [busy, setBusy] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  usePendingReplayDeadline(retrying?.original.expiresAt);
+  useSyncExternalStore(f1ProposalRecovery.subscribe, f1ProposalRecovery.getRevision, f1ProposalRecovery.getRevision);
   if (!session) return null;
   const owner = session.adminId;
   const toast = ctx.toast;
@@ -93,14 +93,13 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
     const { name, change } = ordinaryLabel(original);
     const expired = isRetryExpired(original);
     const state: State = original.ticket?.status === "pending" ? "pending" : original.received ? "received" : expired ? "expired" : "unknown";
-    const canRetry = !!original.spec && !!original.request && !original.received && !original.ticket && !expired
-      && original.absent === true && canSendF1Proposal(original.spec, session.authorities);
+    const canRetry = canRetryF1Proposal(original);
     rows.push({
       key: original.commandKey, name, change, submittedAt: original.createdAt, state, canRetryProposal: canRetry,
       actions: <>
         <Button size="sm" onClick={() => void ctx.recoverF1(original.fingerprint, "query").catch((error) => toast(displayAdminError(error)))}>查询原结果</Button>
         {canRetry && <Button size="sm" onClick={() => { setRetryError(null); setRetrying({ original, name, change }); }}>按原请求重试</Button>}
-        {expired && original.absent && !original.ticket && !original.received && <FReleaseButton label={name} toast={toast} onRelease={() => ctx.recoverF1(original.fingerprint, "release")} />}
+        {original.replayRejection && <FReleaseButton label={name} toast={toast} onRelease={() => ctx.recoverF1(original.fingerprint, "release")} />}
       </>,
     });
   }
@@ -130,7 +129,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
               if (result?.active) ctx.acceptF1PolicyOverview(result.active); else void ctx.refreshF1();
             }, (error) => toast(displayAdminError(error)))}>查询原结果</Button>
             : <Button size="sm" onClick={() => onOpenPolicy({ ...editor, recoveryCommandKey: record.commandKey })}>查看原操作</Button>}
-          {approval && expired && record.absent && !record.ticket && !record.received && <FReleaseButton label={name} toast={toast}
+          {record.replayRejection && <FReleaseButton label={name} toast={toast}
             onRelease={async () => { await releaseF1PolicyProposal(owner, record.commandKey); await ctx.refreshF1(); }} />}
         </>,
       });
@@ -142,9 +141,9 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
     key: howSave.commandKey, name: `App 等级说明 · ${howSave.document.status === "PUBLISHED" ? "保存并发布" : "保存草稿"}`,
     // 1024 下这格窄：版本号和「· N 种语言」各自整段换行，不留两个字的孤行。
     change: <KeepText text={`版本号 ${howSave.document.version || "—"} · ${Object.keys(howSave.document.locales).length} 种语言`} phrases={[`版本号 ${howSave.document.version || "—"}`, `· ${Object.keys(howSave.document.locales).length} 种语言`]} />,
-    submittedAt: howSave.createdAt, state: "unknown", direct: true,
+    submittedAt: howSave.createdAt, state: isRetryExpired(howSave) ? "expired" : "unknown", direct: true,
     actions: <Button size="sm" onClick={() => void queryF1RankHow(owner).then((result) => {
-      toast(result.matched ? "已核对：现在的等级说明就是原提交的内容" : `和原提交对不上，保存结果仍未知；到「${HOW_TAB}」核对后可以解除`);
+      toast(result.matched ? "已核对：现在的等级说明就是原提交的内容" : `和原提交对不上，保存结果仍未知；到操作记录与审批核对`);
       onRankHowChecked();
     }, (error) => toast(displayAdminError(error)))}>重新读取核对</Button>,
   });
@@ -152,7 +151,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
   if (!rows.length && !policyBroken) return null;
   const open = rows.filter((row) => row.state !== "pending").length;
   const retry = async () => {
-    if (!retrying) return;
+    if (!retrying || !canRetryF1Proposal(retrying.original)) return;
     setBusy(true); setRetryError(null);
     try { await ctx.recoverF1(retrying.original.fingerprint, "retry"); setRetrying(null); }
     catch (error) { setRetryError(displayAdminError(error)); }
@@ -167,14 +166,14 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
           <span className="f1-recovery-change">{row.change}</span>
           <span className="f1-recovery-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
           <span>{stateTag(row.state, !!row.direct, !!row.canRetryProposal)}</span>
-          <span className="f1-recovery-actions">{row.actions}</span>
+          <span className="f1-recovery-actions">{row.actions}{row.state === "expired" && <span>{RETRY_EXPIRED_TEXT}</span>}</span>
         </li>)}
       </ul>}
       {rows.some((row) => row.submittedAt !== undefined) && <p className="f1-recovery-zone">提交时间为{businessZone().label}</p>}
     </Notice></div>
     {retrying && <Modal title="按原请求重试" icon={RotateCcw} busy={busy} onClose={() => setRetrying(null)}
       footer={<Decision others={<Button disabled={busy} onClick={() => setRetrying(null)}>返回</Button>}
-        primary={<Button variant="primary" loading={busy} onClick={() => void retry()}>按原请求重试</Button>} />}>
+        primary={<Button variant="primary" loading={busy} disabledReason={canRetryF1Proposal(retrying.original) ? undefined : isRetryExpired(retrying.original) ? RETRY_EXPIRED_TEXT : "原操作当前无法重试。"} onClick={() => void retry()}>按原请求重试</Button>} />}>
       <div className="rd-stack">
         <Facts>
           <Fact k="原操作">{retrying.name}</Fact>
@@ -183,6 +182,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
           <Fact k="提交时间">{businessStamp(retrying.original.createdAt)}（{businessZone().label}）</Fact>
         </Facts>
         <p>用原内容和原理由再提交一次，不能改，不会建第二张审批单。</p>
+        {isRetryExpired(retrying.original) && <Notice tone="warn">{RETRY_EXPIRED_TEXT}</Notice>}
         {retryError && <Notice tone="danger" title="重试没有成功">{retryError}</Notice>}
       </div>
     </Modal>}

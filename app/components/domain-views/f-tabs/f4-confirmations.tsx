@@ -7,7 +7,7 @@ import { ambassadorBucketLabel } from "@/lib/admin/f4-ambassador-display";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
-import { f4Decimal, f4HeadCapAmplifies, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrizes } from "@/lib/admin/f4-money";
+import { f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
 import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules } from "./f4-payout-preview";
@@ -41,8 +41,10 @@ const POOL_FUND = "奖池资金类调整";
 const F4_WRITE = "奖励池、名额与排行榜 · 池配额大使榜 - 常规写";
 const LEADERBOARD_CONTROL = "排行榜控制(暂停/取消资格)";
 function approvalRows(permission: string) {
-  // 「」权限的管理员」放在一起，名字长时在名字里折行，末行不留孤字（D10、TL-01）。
-  return [{ key: "approver", label: "谁来批", value: <>另一位有审批批准权限和「{permission}<span className="rd-keep">」权限的管理员</span></> }];
+  return [
+    { key: "approver", label: "谁来批", value: "另一位超级管理员" },
+    { key: "approvalPermissions", label: "需有权限", value: <>审批批准权限和「{permission}<span className="rd-keep">」权限</span></> },
+  ];
 }
 function approvalFacts(permission: string) {
   return approvalRows(permission).map((row) => <Fact key={row.key} k={row.label}>{row.value}</Fact>);
@@ -97,12 +99,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
   const top5MaxPct = data.configValues["F.pool.top5MaxPct"]?.trim() || "60";
   const periodPrizeRaw = data.configValues["F.pool.periodPrize"] ?? "";
   const periodPrizes = f4PeriodPrizes(periodPrizeRaw);
-  const currentPeriodPrize = (key: Period) => {
-    const configured = periodPrizes?.[key === "all" ? "allTime" : key];
-    if (configured !== undefined) return configured;
-    const liveAmount = board.paused ? undefined : data.leaderboardComputePointPeriods?.[key]?.poolUsdText ?? data.leaderboardComputePointPeriods?.[key]?.poolUsd;
-    return liveAmount === undefined ? "" : String(liveAmount);
-  };
+  const currentPeriodPrize = (key: Period) => periodPrizes?.[key === "all" ? "allTime" : key] ?? "";
   const ppToday = currentPeriodPrize("today");
   const ppWeek = currentPeriodPrize("week");
   const ppMonth = currentPeriodPrize("month");
@@ -164,7 +161,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     }
     case action === "F.pool.ratio": {
       spec = { briefKind: "config", name: "调整团队激励池比例", amplify: true, op: "param", paramKey: "F.pool.ratio",
-              edit: { kind: "text", current: data.poolRatio, unit: "%" },
+              edit: { kind: "text", current: data.poolRatio, unit: "%", amplifiesWhen: value => f4PoolRatioIncreases(data.configValues["F.pool.ratio"], value) },
               title: "调整团队激励池比例", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，还没结算的这周估算和之后每次结算按新比例放钱；已经发的不重算。", check: "只接受 0–30 的百分数：5 表示 5%，0.05 表示 0.05%。" },
               completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
@@ -326,10 +323,10 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
                 title: "各榜奖池（USDT）",
                 hint: "填 0 或正数。调高会多发钱，先看兑付覆盖率。",
                 fields: [
-                  { key: "today", label: "日榜", current: ppToday, inputKind: "number", min: 0 },
-                  { key: "week", label: "周榜", current: ppWeek, inputKind: "number", min: 0 },
-                  { key: "month", label: "月榜", current: ppMonth, inputKind: "number", min: 0 },
-                  { key: "allTime", label: "总榜", current: ppAllTime, inputKind: "number", min: 0 },
+                  { key: "today", label: "日榜", current: ppToday, mustChoose: true, inputKind: "number", min: 0 },
+                  { key: "week", label: "周榜", current: ppWeek, mustChoose: true, inputKind: "number", min: 0 },
+                  { key: "month", label: "月榜", current: ppMonth, mustChoose: true, inputKind: "number", min: 0 },
+                  { key: "allTime", label: "总榜", current: ppAllTime, mustChoose: true, inputKind: "number", min: 0 },
                 ],
               },
               detail: `各榜奖池 · 当前 日 ${prizeShown(ppToday)} / 周 ${prizeShown(ppWeek)} / 月 ${prizeShown(ppMonth)} / 总 ${prizeShown(ppAllTime)} USDT。`,
@@ -379,21 +376,21 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       break;
     }
     case action === "F.pool.top1MaxPct": {
-      spec = { briefKind: "config", name: "调整第 1 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct",
-              edit: { kind: "number", current: top1MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top1MaxPct", data.configValues["F.pool.top1MaxPct"], value) },
+      spec = { briefKind: "config", name: "调整第 1 名占比告警阈值", op: "param", paramKey: "F.pool.top1MaxPct",
+              edit: { kind: "number", current: top1MaxPct, unit: "%" },
               title: "调整第 1 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，之后排行榜派奖时第 1 名最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "只能填 0–100。" },
+              statedBrief: { impact: "批准后，之后排行榜派奖时第 1 名超过这个比例时记录告警，奖金额按名次权重计算。", check: "只能填 0–100。" },
               completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
-              detail: `第 1 名最多能分到排行榜奖池的百分比 · 当前 ${top1MaxPct}%。` };
+              detail: `第 1 名占比的告警阈值 · 当前 ${top1MaxPct}%。` };
       break;
     }
     case action === "F.pool.top5MaxPct": {
-      spec = { briefKind: "config", name: "调整前 5 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct",
-              edit: { kind: "number", current: top5MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top5MaxPct", data.configValues["F.pool.top5MaxPct"], value) },
+      spec = { briefKind: "config", name: "调整前 5 名占比告警阈值", op: "param", paramKey: "F.pool.top5MaxPct",
+              edit: { kind: "number", current: top5MaxPct, unit: "%" },
               title: "调整前 5 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，之后排行榜派奖时前 5 名合计最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "只能填 0–100。" },
+              statedBrief: { impact: "批准后，之后排行榜派奖时前 5 名合计超过这个比例时记录告警，奖金额按名次权重计算。", check: "只能填 0–100。" },
               completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
-              detail: `前 5 名合计最多能分到排行榜奖池的百分比 · 当前 ${top5MaxPct}%。` };
+              detail: `前 5 名合计占比的告警阈值 · 当前 ${top5MaxPct}%。` };
       break;
     }
     case action === "approve": {
@@ -414,8 +411,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
         <Fact k="认可金额">{packet!.financeReview.recognizedBudgetUsdt == null ? "尚未认可" : `${moneyText(packet!.financeReview.recognizedBudgetUsdt)} USDT`}</Fact>
         <Fact k="类别">{ambassadorBucketLabel(packet!.bucket)}</Fact>
         <Fact k="材料">第 {packet!.materialRevision} 版 · 业务核验和财务核验都已通过</Fact>
-        {/* 谁来批一行写完，和别的页同一个叫法；不再铺一段后端校验条件（BUG-682 第 4 条）。 */}
-        <Fact k="谁来批">另一位有审批批准权限和「区域大使审批」权限的管理员，不能核验过这一版材料</Fact>
+        <Fact k="谁来批">另一位超级管理员</Fact>
+        <Fact k="需有权限">审批批准权限和「区域大使审批」权限。不能核验过这一版材料。</Fact>
       </Facts>,
       detail: `${ambassadorBucketLabel(packet!.bucket)} · 申请金额 ${money(packet!.budgetUsdt)} · 认可金额 ${money(packet!.financeReview.recognizedBudgetUsdt)} · 材料 V${packet!.materialRevision}。业务核验与财务核验均已通过。本次仅开通所选类别的申请额度。`,
     };
@@ -431,7 +428,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     },
     completionCopy: "批准前这份申请不变。",
     facts: <Facts>
-      <Fact k="谁来批">另一位有审批批准权限和「区域大使审批」权限的管理员</Fact>
+      <Fact k="谁来批">另一位超级管理员</Fact>
+      <Fact k="需有权限">审批批准权限和「区域大使审批」权限</Fact>
     </Facts>,
     detail: "驳回这一份申请，提交审批后由另一位有权限的管理员执行。",
   };

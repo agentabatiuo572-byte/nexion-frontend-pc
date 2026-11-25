@@ -4,6 +4,9 @@
  * F2 团队奖励设置的共用小件：层名、取值、示例金额、七层对比图、本页确认框。
  * 只排界面：读的数和提交函数都来自外壳 ctx，请求内容和判断照旧。
  */
+import { f2Recovery } from "@/lib/admin/f2-approval";
+import { fConfirmRecovery } from "./f-recovery-state";
+import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import type { ReactNode } from "react";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -176,25 +179,20 @@ export function F2ConfirmModal({ spec, ctx, coverage, onClose, toast }: { spec: 
         return original && !original.ticket ? original.spec.reason : undefined;
       }}
       blockedReason={recovering ? undefined : ctx.f2WriteBlocked(spec.slot)}
-      inlineApproval={{
-        resolve: () => undefined,
-        pending: recovering,
-        initialRecovery: original?.canRetry ? "retry" : "lookup",
-        queryOnly: recovering && !original.canRetry,
-        expired: recovering && original.expiresAt <= Date.now(),
-        expiredRequestRecovery: recovering && original.expiresAt <= Date.now() ? "query" : undefined,
-        recover: async () => {
-          if (!ctx.f2ProposalRecord(spec.slot)?.canQuery) throw new Error("当前账号没有查询原结果的权限。");
+      getPendingRecovery={() => {
+        const record = ctx.f2ProposalRecord(spec.slot);
+        return record && fConfirmRecovery(f2Recovery, record, record.canQuery ? async () => {
           const ticket = await ctx.queryF2Proposal(spec.slot);
-          if (ticket) onClose();
-          return !!ticket;
-        },
-        retry: async () => { await ctx.retryF2Proposal(spec.slot); onClose(); },
+          if (!ticket) return;
+          if (["rejected", "withdrawn", "expired"].includes(ticket.status)) throw new PendingConfirmRejected("原申请没有执行，请核对后重新确认。");
+          onClose();
+        } : undefined);
       }}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {
         try {
-          await spec.submit(reason, newValue, businessValue);
+          if (ctx.f2ProposalRecord(spec.slot)) await ctx.retryF2Proposal(spec.slot);
+          else await spec.submit(reason, newValue, businessValue);
         } catch (error) {
           if (isA2OutcomeUncertainError(error)) throw new Error("申请结果未知，请先查询原结果。");
           // Keep the reviewed input and the actual rejection on this F2 surface.

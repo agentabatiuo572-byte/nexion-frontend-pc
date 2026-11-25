@@ -1,6 +1,6 @@
+import { activeRecoveryActor, createFProposalRecovery } from "./f-proposal-recovery";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
-import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
 import { hasPersistedPendingCommandOwner, isRetryExpired } from "./pending-mutation-store";
 import type { F5CommissionAuditOverview, F5CommissionEvent } from "./f1-client";
@@ -48,12 +48,6 @@ export function f5ProposalAuthority(spec: ProposeSpec) {
         : spec.command.params.value === "unlocked" ? "network_f5_commission_release" : "network_f5_commission_freeze";
 }
 
-export function canRetryF5Proposal(original: FDomainAttempt) {
-  const auth = useAdminAuth.getState();
-  return auth.isAuthenticated && !auth.logoutPending && !!auth.session && auth.session.adminId === original.adminId && !!original.spec && !!original.request
-    && !original.ticket && !original.received && !isRetryExpired(original) && auth.session.authorities.includes(f5ProposalAuthority(original.spec));
-}
-
 function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
   // 111e00cd ticketMetadata returns persisted command.op for every F ticket.
   // Delegated descriptors rewrite action/before/after, but preserve canonical obj.
@@ -62,22 +56,24 @@ function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
   }
 }
 
+export const f5ProposalRecovery = createFProposalRecovery<FDomainAttempt>(fCommands, row => {
+  const session = activeRecoveryActor(row.adminId, "network_f5_read");
+  return !!session && !!row.spec && session.authorities.includes(f5ProposalAuthority(row.spec));
+});
+
+export const canRetryF5Proposal = (original: FDomainAttempt) => !f5ProposalRecovery.state(original).replayBlock;
+
 export async function queryF5Proposal(adminId: number, original: FDomainAttempt) {
-  actor(adminId); // The endpoint judges read grants independently from the POST grant.
-  if (original.adminId !== undefined && original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-  fCommands.remember(original.fingerprint, original.commandKey, { ...original, f5TicketId: original.ticket?.id ?? original.f5TicketId, absent: false });
-  const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
-  if (!ticket) {
-    if (original.received || original.ticket || original.f5TicketId) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
-    fCommands.remember(original.fingerprint, original.commandKey, { ...original, ticket: undefined, absent: true });
-    return null;
-  }
-  // Fingerprint-only pre-upgrade records remain GET-only; exact-key GET is maker scoped.
-  if (original.spec) checkTicket(original, ticket);
-  else if (!ticket.mine) throw new A2OutcomeUncertainError("原审批单发起人对不上，请核对。", original.commandKey);
-  if (ticket.status === "pending") fCommands.remember(original.fingerprint, original.commandKey, { ...original, f5TicketId: ticket.id, received: true, ticket, absent: false });
-  else fCommands.forget(original.fingerprint, original.commandKey);
-  return ticket;
+  actor(adminId);
+  return f5ProposalRecovery.queryTicket(original, async record => {
+    if (record.adminId !== undefined && record.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    const ticket = await fetchA2ProposalByKey(record.commandKey, true, "f");
+    if (!activeRecoveryActor(adminId, "network_f5_read")) throw new Error("ADMIN_PERMISSION_DENIED");
+    if (!ticket && (record.received || record.ticket || record.f5TicketId)) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", record.commandKey);
+    if (ticket && record.spec) checkTicket(record, ticket);
+    else if (ticket && !ticket.mine) throw new A2OutcomeUncertainError("原审批单发起人对不上，请核对。", record.commandKey);
+    return ticket;
+  }, (record, ticket) => fCommands.remember(record.fingerprint, record.commandKey, { ...record, f5TicketId: ticket.id, received: true, ticket, absent: false }));
 }
 
 export function f5Targets(spec: ProposeSpec) {
@@ -118,14 +114,15 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !fCommands.isDurablyStored(slot, original.commandKey)) throw new Error("F5_OPERATION_ORIGINAL_INCOMPLETE");
-  original.absent = false;
-  fCommands.remember(slot, original.commandKey, original);
   if (!original.received && !original.ticket) {
     let ticket: A2OperationRow;
-    try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
+    try {
+    const send = (record: FDomainAttempt) => createA2OperationProposal(record.request!, record.commandKey, "proposal");
+    ticket = recovering ? await f5ProposalRecovery.replay(original, send) : await send(original);
+  }
     catch (error) {
       const failure = error as { httpStatus?: number; apiCode?: number };
-      if (recovering ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
+      if (!recovering && !isA2OutcomeUncertainError(error)
         && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) fCommands.forget(slot, original.commandKey);
       throw error;
     }
@@ -145,11 +142,7 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
   return ticket;
 }
 
-/** Requires the visual layer's explicit confirmation after authoritative expired absence. */
 export async function releaseF5Proposal(adminId: number, original: FDomainAttempt) {
-  if (original.received || original.ticket || original.f5TicketId) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
-  if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
-  const ticket = await queryF5Proposal(adminId, original);
-  if (ticket?.status === "pending") throw new Error("OBJECT_ALREADY_PENDING");
-  if (!ticket) fCommands.forget(original.fingerprint, original.commandKey);
+  actor(adminId);
+  if (!f5ProposalRecovery.releaseRejectedReplay(original)) throw new Error("PENDING_RELEASE_BLOCKED");
 }

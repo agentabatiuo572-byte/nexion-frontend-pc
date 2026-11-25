@@ -55,12 +55,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
   const top5MaxPct = data.configValues["F.pool.top5MaxPct"]?.trim() || "60";
   const periodPrizeRaw = data.configValues["F.pool.periodPrize"] ?? "";
   const periodPrizes = f4PeriodPrizes(periodPrizeRaw);
-  const currentPeriodPrize = (key: Period) => {
-    const configured = periodPrizes?.[key === "all" ? "allTime" : key];
-    if (configured !== undefined) return configured;
-    const liveAmount = board.paused ? undefined : data.leaderboardComputePointPeriods?.[key]?.poolUsdText ?? data.leaderboardComputePointPeriods?.[key]?.poolUsd;
-    return liveAmount === undefined ? "" : String(liveAmount);
-  };
+  const currentPeriodPrize = (key: Period) => periodPrizes?.[key === "all" ? "allTime" : key] ?? "";
   const ppToday = currentPeriodPrize("today");
   const ppWeek = currentPeriodPrize("week");
   const ppMonth = currentPeriodPrize("month");
@@ -132,13 +127,13 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
       </Panel>
 
       <Panel title="奖池和上榜规则" icon={SlidersHorizontal} tone="role-4" sub="批准后生效 · 金额 USDT"
-        explain="奖池决定每期发多少钱，上榜门槛决定谁能排名，头部占比限制前几名最多拿多少。这里的头部占比只约束排行榜派奖，不影响团队激励池怎么分。">
+        explain="奖池决定每期发多少钱，上榜门槛决定谁能排名，头部占比超过阈值时记录告警。排行榜奖金按名次权重计算。">
         <ConfigList label="排行榜设置">
           {paramRow({ name: "各榜奖池", value: `日 ${prizeShown(ppToday)} · 周 ${prizeShown(ppWeek)} · 月 ${prizeShown(ppMonth)} · 总 ${prizeShown(ppAllTime)}`, allowed: canFund,
             what: "日、周、月、总榜每期发多少，四个一起提交。",
             when: "批准后，日、周、月榜从下一次还没结算的周期起用新金额，总榜在人工派奖时读；已发的不改。",
             effect: "调高会多发钱，提交前看兑付覆盖率。周榜如果另设了大于 0 的覆盖额，以覆盖额为准。",
-            note: periodPrizes ? undefined : "四榜奖池的设置没读到或读不懂，这里显示的是榜单现在用的金额（周榜是生效后的金额）；读不到的写「—」。",
+            note: periodPrizes ? undefined : "四榜奖池未配置或格式有误。",
             action: "F.pool.periodPrize" })}
           {paramRow({ name: "周榜奖池覆盖额", value: data.leaderboardPoolLabel ? `本周实际生效 ${prizeText(data.leaderboardPoolLabel)} USDT` : "—", allowed: canFund,
             what: "只给周榜用的奖池金额，大于 0 时代替四榜奖池里的周榜金额。",
@@ -151,15 +146,15 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             when: "批准后从还没结算的周期起用；暂停期间的榜仍按暂停时的门槛。",
             effect: "调高上榜的人变少。",
             action: "F.leaderboard.minComputePoints" })}
-          {paramRow({ name: "第 1 名最高占比", value: data.configValues["F.pool.top1MaxPct"]?.trim() ? `${top1MaxPct}%` : "未设置（按 25%）", allowed: canFund,
-            what: "排行榜派奖时第 1 名最多拿到奖池的百分比，0–100。只约束排行榜派奖。",
+          {paramRow({ name: "第 1 名占比告警阈值", value: data.configValues["F.pool.top1MaxPct"]?.trim() ? `${top1MaxPct}%` : "未设置（按 25%）", allowed: canFund,
+            what: "排行榜派奖时第 1 名占奖池超过这个比例就告警，范围 0–100%。",
             when: "批准后对还没结算的榜生效，已发的不追回。",
-            effect: "超出上限的部分不再分给别人。调高会多发钱给第 1 名。",
+            effect: "奖金按名次权重计算。",
             action: "F.pool.top1MaxPct" })}
-          {paramRow({ name: "前 5 名最高占比", value: data.configValues["F.pool.top5MaxPct"]?.trim() ? `${top5MaxPct}%` : "未设置（按 60%）", allowed: canFund,
-            what: "排行榜派奖时前 5 名合计最多拿到奖池的百分比，0–100。只约束排行榜派奖。",
+          {paramRow({ name: "前 5 名占比告警阈值", value: data.configValues["F.pool.top5MaxPct"]?.trim() ? `${top5MaxPct}%` : "未设置（按 60%）", allowed: canFund,
+            what: "排行榜派奖时前 5 名合计占奖池超过这个比例就告警，范围 0–100%。",
             when: "批准后对还没结算的榜生效，已发的不追回。",
-            effect: "超出上限的部分不再分给别人。和第 1 名上限各自独立，系统不检查两者的大小关系。",
+            effect: "两项告警独立判断，奖金按名次权重计算。",
             action: "F.pool.top5MaxPct" })}
         </ConfigList>
       </Panel>

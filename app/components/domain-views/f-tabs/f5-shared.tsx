@@ -4,6 +4,9 @@
  * F5 奖励记录核对的共用小件：状态和类型的名字、金额和时间的写法、确认框外壳、原操作提醒。
  * 只管怎么显示；提交调用 ctx 上和旧页面相同的函数、相同的参数。
  */
+import { useRef } from "react";
+import { fConfirmRecovery } from "./f-recovery-state";
+import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import type { ReactNode } from "react";
 import { CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Snowflake, TriangleAlert, Undo2, Wallet, type LucideIcon } from "lucide-react";
 import { Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
@@ -12,9 +15,10 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { f4Decimal } from "@/lib/admin/f4-money";
-import { canRetryF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
-import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { f5ProposalRecovery, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
+import { f5AnomalyRecovery } from "@/lib/admin/f5-anomaly-write";
+import { f5ExportRecovery, pendingF5Export } from "@/lib/admin/f5-export-operation";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { F5CommissionEvent } from "@/lib/admin/f1-client";
 import type { F5Recovery, FViewCtx } from "./types";
@@ -163,6 +167,7 @@ export function knownRejection(row: F5CommissionEvent, action: "release" | "reve
 export type F5Confirm = {
   snapshot?: F5ConfirmationSnapshot;
   recovery?: F5Recovery;
+  exportOperation?: true;
   /** 记进操作记录的名字，和旧页面一样。 */
   action: string;
   title: ReactNode;
@@ -199,16 +204,17 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
     return typeof params.refundRef === "string" ? { refundRef: params.refundRef }
       : Array.isArray(params.kinds) ? { kinds: params.kinds.join(",") } : undefined;
   };
+  const restoreDraft = useRef(false);
   const recover = async (mode: "query" | "retry") => {
     const saved = getOriginal();
-    if (!saved) { onClose(); return true; }
-    try {
-      const resolved = await ctx.recoverF5(saved, mode);
-      if (resolved) onClose();
-      return resolved;
-    } finally { if (!getOriginal()) onClose(); }
+    if (!saved) { onClose(); return; }
+    const result = await ctx.recoverF5(saved, mode);
+    if (result === "restore") {
+      restoreDraft.current = true;
+      throw new PendingConfirmRejected("原操作没有执行，请核对后重新确认。");
+    }
+    if (result) onClose();
   };
-  const retryable = original && (original.kind === "proposal" ? canRetryF5Proposal(original.original) : canRetryF5Anomaly(original.original));
   const canReadCoverage = useAdminAuth(({ session }) => session?.authorities.some(authority => ["overview_b1_read", "finance_d3_read", "bi_l3_read"].includes(authority)) ?? false);
   const needsReliableCoverage = confirm.snapshot?.action === "reissue"
     || confirm.snapshot?.action === "unlock" && !!confirm.snapshot.row && !isGrouped(confirm.snapshot.row);
@@ -236,24 +242,26 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
       reasonPlaceholder={confirm.reasonPlaceholder ?? "例如：工单号、核对依据"}
       businessForm={confirm.businessForm}
       getPendingReason={() => {
+        if (confirm.exportOperation) return pendingF5Export()?.f5ExportRequest?.reason;
         const saved = getOriginal();
         return saved?.kind === "proposal" ? saved.original.request?.reason : saved?.original.f5Request?.reason;
       }}
       getPendingBusinessValue={savedValue}
-      inlineApproval={confirm.snapshot ? {
-        resolve: () => undefined,
-        pending: !!original,
-        initialRecovery: original?.kind === "proposal" && (original.original.ticket || original.original.received) ? "lookup" : "retry",
-        expired: original ? isRetryExpired(original.original) : false,
-        expiredRequestRecovery: original && isRetryExpired(original.original) ? "query" : undefined,
-        disabledReason: original && !retryable ? "原操作当前只能查询原结果。" : undefined,
-        recover: () => recover("query"),
-        retry: async () => { await recover("retry"); },
-      } : undefined}
+      getPendingRecovery={() => {
+        if (confirm.exportOperation) {
+          const saved = pendingF5Export();
+          return saved && fConfirmRecovery(f5ExportRecovery, saved);
+        }
+        const saved = getOriginal();
+        if (!saved) return undefined;
+        return saved.kind === "proposal" ? fConfirmRecovery(f5ProposalRecovery, saved.original, () => recover("query"))
+          : fConfirmRecovery(f5AnomalyRecovery, saved.original, () => recover("query"));
+      }}
       onClose={onClose}
       onConfirm={async (reason, _newValue, businessValue) => {
         try {
           if (getOriginal()) { await recover("retry"); return; }
+          if (confirm.recovery && !restoreDraft.current) throw new Error("PENDING_REPLAY_BLOCKED");
           ctx.prepareF5Confirmation(confirm.snapshot ? { ...confirm.snapshot, name: confirm.action } : undefined);
           await confirm.submit(reason, businessValue);
           onClose();
@@ -277,6 +285,7 @@ export type F5RecoveryRow = {
   state: "unknown" | "pending" | "expired";
   /** 直接保存（异常预警标准）：没有审批单，提示不能说审批单。 */
   direct?: boolean;
+  exportOperation?: boolean;
   actions?: ReactNode;
 };
 
@@ -284,15 +293,15 @@ export type F5RecoveryRow = {
 export function F5RecoveryNotice({ rows }: { rows: readonly F5RecoveryRow[] }) {
   if (!rows.length) return null;
   const timed = rows.some((row) => row.submittedAt !== undefined);
-  const tag = (state: F5RecoveryRow["state"], direct: boolean) => state === "unknown"
-    ? <StatusTag tone="warn" icon={CircleHelp} explain={direct
-      ? "提交时没收到结果，可能已经保存。查询只拿现在的标准作对照；24 小时内也可以按原请求重试，系统认得出是同一次提交。"
+  const tag = ({ state, direct, exportOperation }: F5RecoveryRow) => state === "unknown"
+    ? <StatusTag tone="warn" icon={CircleHelp} explain={exportOperation
+      ? "提交时没收到下载结果。原请求保存完整时，24 小时内可按原请求重试。"
+      : direct
+      ? "提交时没收到结果。先核对原操作回执；明确查无后，才可以在 24 小时内按原请求重试。"
       : "提交时没收到结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，系统认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>
     : state === "pending"
       ? <StatusTag tone="warn" icon={Clock3} explain={`等${APPROVER}在「操作记录与审批」批准。批准前这笔奖励不变，同一对象不能再提交别的处置。`}>待审批</StatusTag>
-      : <StatusTag tone="neutral" icon={Hourglass} explain={direct
-        ? "原请求超过 24 小时，不能再重试。查询只看现在的标准，证明不了原操作有没有执行。"
-        : "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。"}>已过期</StatusTag>;
+      : <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
   return (
     <Notice tone="warn" title={<>{rows.every((row) => row.state === "pending") ? `${rows.length} 个处置在等批准` : `有 ${rows.length} 个处置还没有结论`}<Explain label="原操作怎么处理" content="这些处置提交时没收到确定结果，或还在等批准。有结论前不要换个办法重做同一件事。" /></>}>
       <ul className="f5-recovery" aria-label="还没有结论的处置">
@@ -301,7 +310,7 @@ export function F5RecoveryNotice({ rows }: { rows: readonly F5RecoveryRow[] }) {
             <span className="f5-recovery-name">{row.name}</span>
             <span className="f5-recovery-change">{row.change}</span>
             <span className="f5-recovery-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
-            <span>{tag(row.state, !!row.direct)}</span>
+            <span>{tag(row)}</span>
             <span className="f5-recovery-actions">{row.actions}</span>
           </li>
         ))}

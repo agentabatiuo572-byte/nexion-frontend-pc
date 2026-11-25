@@ -5,6 +5,11 @@
  * 这页管三件事：团队激励池、购机名额与大使申请、排行榜。首屏三张卡回答「现在有什么在等我」，也是三块内容的页签。
  * 读取、提交和原请求恢复由 f-view 接线；保留已搭建的界面和确认内容。
  */
+import { F4QuotaCreate } from "./f4-quota-create";
+import { FReleaseButton } from "./f-release";
+import { canRetryF4Proposal } from "@/lib/admin/f4-approval";
+import { canRetryF4Policy } from "@/lib/admin/f4-policy-write";
+import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { AlertTriangle, ArrowRight, CircleHelp, Clock3, Hourglass, ListChecks, RefreshCw } from "lucide-react";
 import { BlockState, Button, Conclusion, PageHeader, RatioBar, Stat, StatBand, StatusTag, useTabIds } from "@/app/components/rd";
@@ -52,6 +57,7 @@ function legacyF4(spec: ProposeSpec, nameOf: (key: string) => string | undefined
 
 export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommissions: () => void }) {
   const [section, setSection] = useState<Section>("pool");
+  const [quotaOriginal, setQuotaOriginal] = useState<FDomainAttempt>();
   const [materialApplication, setMaterialApplication] = useState<F4AmbassadorApplication | null>(null);
   const actorId = useAdminAuth((state) => state.session?.adminId);
   const ids = useTabIds();
@@ -77,7 +83,9 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
   const recoveryRows: F4RecoveryRow[] = recoveries.map(record => {
     const original = record.original;
     const spec = record.kind === "proposal" ? record.original.spec : undefined;
-    const confirm = original.f4Snapshot ? f4Confirmation(ctx, original.f4Snapshot) : undefined;
+    const quota = spec?.command.op === "f4_quota_tier_create";
+    const confirm = original.f4Snapshot && !quota ? f4Confirmation(ctx, original.f4Snapshot) : undefined;
+    const retryable = record.kind === "proposal" ? canRetryF4Proposal(record.original) : canRetryF4Policy(record.original);
     const legacy = spec && legacyF4(spec, legacyName);
     const snapshot = original.f4Snapshot;
     const form = confirm?.businessForm;
@@ -95,7 +103,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         const expired = isRetryExpired(original) ? { tone: "warn" as const, text: RETRY_EXPIRED_TEXT } : undefined;
         return note && expired && !note.text.includes(expired.text) ? { tone: note.tone, text: `${note.text} ${expired.text}` } : note ?? expired;
       })(),
-      name: confirm?.name ?? legacy?.name ?? "调整区域大使申请规则",
+      name: quota ? "新建购机名额档位" : confirm?.name ?? legacy?.name ?? "调整区域大使申请规则",
       change,
       submittedAt: original.createdAt,
       pending: record.kind === "proposal" && record.original.ticket?.status === "pending",
@@ -106,10 +114,17 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
             : unknownTag(record.kind === "proposal" ? "approval" : "direct"),
       actions: <>
         <Button size="sm" onClick={() => {
-          if (confirm && original.f4Snapshot) {
+          if (quota && record.kind === "proposal" && record.original.request) setQuotaOriginal(record.original);
+          else if (confirm && original.f4Snapshot) {
             ctx.openActionConfirm({ ...confirm, edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
           } else void ctx.recoverF4(record, "query").catch(() => undefined); // 查询失败的原因已写在这一行
         }}>查询原结果</Button>
+        {retryable && (quota || confirm) && <Button size="sm" onClick={() => {
+          if (quota && record.kind === "proposal") setQuotaOriginal(record.original);
+          else if (confirm && original.f4Snapshot) ctx.openActionConfirm({ ...confirm,
+            edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
+        }}>按原请求重试</Button>}
+        {original.replayRejection && <FReleaseButton label={confirm?.name ?? legacy?.name ?? "原操作"} toast={ctx.toast} onRelease={() => ctx.recoverF4(record, "release")} />}
       </>,
     };
   });
@@ -121,7 +136,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       change: `材料第 ${record.input.expectedMaterialRevision} 版 · ${record.input.decision === "PASSED" ? "通过" : "需补材料"}`,
       submittedAt: record.createdAt,
       expired: isRetryExpired(record),
-      line: isRetryExpired(record) ? { tone: "warn" as const, text: "原请求超过 24 小时，只能查询，不能再重试。" } : undefined,
+      line: isRetryExpired(record) ? { tone: "warn" as const, text: RETRY_EXPIRED_TEXT } : undefined,
       tag: isRetryExpired(record) ? <StatusTag tone="neutral" icon={Hourglass}>已过期</StatusTag> : unknownTag("direct"),
       actions: application
         ? <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>
@@ -129,6 +144,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
     };
   }));
   const recoveryNotice = <F4RecoveryNotice rows={recoveryRows} />;
+  const quotaModal = quotaOriginal && <F4QuotaCreate data={data ?? undefined} ctx={ctx} original={quotaOriginal} onClose={() => setQuotaOriginal(undefined)} />;
   const materialDrawer = materialApplication && <F4AmbassadorMaterials application={materialApplication} ctx={ctx} onClose={() => setMaterialApplication(null)} />;
 
   const header = (
@@ -160,7 +176,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         {recoveryNotice}
         <BlockState state="empty" title="暂无团队激励池数据" />
       </>}
-      {materialDrawer}
+      {materialDrawer}{quotaModal}
     </div>;
   }
 
@@ -269,7 +285,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         {section === "quota" && <F4Quota ctx={ctx} data={data} onOpenMaterials={setMaterialApplication} />}
         {section === "board" && <F4Leaderboard ctx={ctx} data={data} />}
       </div>
-      {materialDrawer}
+      {materialDrawer}{quotaModal}
     </div>
   );
 }

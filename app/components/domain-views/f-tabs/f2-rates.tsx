@@ -87,10 +87,13 @@ function useF2Model(ctx: FViewCtx) {
   return { canRoyaltyRate, canPolicyAmplify, l1NexReadonly, l1NexStatus, value, pauseValue, paused, gate, rank, gateRaw, rankRaw, cap };
 }
 
-// 权限名照后台「权限清单」写（BUG-709 已修）；F2 的申请后端只认另一位超级管理员（BUG-704、OP-67），所以「谁来批」只写超管，权限名留给配置说明用。
+// 权限名照后台「权限清单」写（BUG-709 已修）；F2 的申请后端只认另一位超级管理员（BUG-704、OP-67），批准权限单独显示。
 const RATE_PERMISSION = "团队奖励设置 · L1-L7 团队购买奖励比例放宽";
 const POLICY_PERMISSION = "Partner 档位与费率杠杆参数";
-const approvalFacts = (_perm: string) => <Fact k="谁来批">另一位超级管理员</Fact>;
+const approvalFacts = (perm: string) => <>
+  <Fact k="谁来批">另一位超级管理员</Fact>
+  <Fact k="需有权限">审批批准权限和「{perm}」权限</Fact>
+</>;
 const effectTag = <StatusTag tone="progress" filled explain="另一位超级管理员在「操作记录与审批」批准后才生效；只影响之后新算的订单，已经算好的不重算。">批准后生效</StatusTag>;
 const COVERAGE_CHECK = "批准时检查兑付覆盖率，低于红线不会执行。";
 
@@ -155,6 +158,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         const anyPaused = LAYERS.some((item) => m.paused(item) === "on");
         const lower = next !== undefined && !!current && Number(next) < Number(current);
         return <Facts>
+          {approvalFacts(RATE_PERMISSION)}
           {lower && <Fact k="这次">调低，平台每笔订单少付</Fact>}
           {layerPaused ? <Fact k="批准后的比例">{next === undefined || !rateMeaning(next) ? (current ? `现在是 ${num(current)}%` : "未配置") : `${num(next)}%，恢复这一层后每 100 USDT 订单发 ${num(next)} USDT`}</Fact>
             : <Fact k="批准后实际执行">{next === undefined ? (current ? `现在是 ${rateMeaning(current)}` : "未配置") : rateMeaning(next) ?? "—"}</Fact>}
@@ -193,6 +197,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
           return <LayerCompare rates={drawn} level={level} next={value} field="nex" ranked={ranked} />;
         } },
       facts: (next) => <Facts>
+        {approvalFacts(RATE_PERMISSION)}
         {next !== undefined && current && Number(next) < Number(current) && <Fact k="这次">调低，平台每笔订单少发 UVT</Fact>}
         {rankedLevel(level) ? (() => {
           const rng = rankedRange(ctx, level);
@@ -224,6 +229,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       }),
     },
     statedBrief: { impact: "七层一起提交，批准后一起生效。暂停的层，之后新算的订单这一层记 0、不补发；已经算好的不变。不影响好友设备收益奖励，也不是整体结算暂停。", check: "整组一次写入，有一项失败整组都不改。" },
+    facts: <Facts>{approvalFacts(POLICY_PERMISSION)}</Facts>,
     detail: "L1–L7 一起提交审批，批准后只影响之后的购买奖励，不影响好友设备收益奖励。",
     coverageCheck: COVERAGE_CHECK,
     submit: async (reason, _next, values) => {
@@ -503,6 +509,7 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
       ],
     },
     statedBrief: { impact: "批准后保存新的四档门槛；目前只保存门槛，不会自动开通权益，也不影响任何奖励。", check: "系统检查四个都是数字且逐档不降低。" },
+    facts: <Facts>{approvalFacts(POLICY_PERMISSION)}</Facts>,
     detail: `合作伙伴权益门槛 · ${partnerState} · 不影响任何奖励。`,
     coverageCheck: COVERAGE_CHECK,
     submit: async (reason, _next, bv) => {

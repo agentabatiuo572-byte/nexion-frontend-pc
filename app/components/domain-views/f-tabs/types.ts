@@ -104,7 +104,7 @@ export interface FViewCtx {
   f1ProposalEpoch: number;
   f1ApprovalRanks: string[];
   f1Proposals: FDomainAttempt[];
-  recoverF1: (slot: string, mode: "query" | "retry" | "release") => Promise<boolean>;
+  recoverF1: (slot: string, mode: "query" | "retry" | "release") => Promise<boolean | "restore">;
   refreshF1Approvals: () => Promise<void>;
   invalidateF1: (message?: string) => void;
   refreshF1: () => Promise<void>;
@@ -233,7 +233,7 @@ export interface FViewCtx {
   submitF3PayoutControl: (key: F3PayoutControlKey, value: string, reason: string, snapshot?: F3ConfirmationSnapshot) => Promise<
     { kind: "unchanged" } | { kind: "proposal"; ticket: A2OperationRow } | { kind: "direct"; updated: F3PayoutControlUpdate }
   >;
-  recoverF3PayoutControl: (key: F3PayoutControlKey, mode: "query" | "retry") => Promise<
+  recoverF3PayoutControl: (key: F3PayoutControlKey, mode: "query" | "retry" | "release") => Promise<
     ({ kind: "query" } & Awaited<ReturnType<typeof queryF3ConfigWrite>>) | { kind: "retry"; updated: F3PayoutControlUpdate }
   >;
   updateF3Config: (key: string, value: string, reason: string, amplifies?: boolean, snapshot?: F3ConfirmationSnapshot) => Promise<void>;
@@ -254,9 +254,9 @@ export interface FViewCtx {
   /** 这项操作有超过 24 小时的原记录时给原因：入口按禁用显示，和 I3 一样（BUG-684）。只看记录，不改原有拦截。 */
   f4ExpiredReason: (snapshot: F4ConfirmationSnapshot) => string | undefined;
   f4ApprovalRows: A2OperationRow[];
-  recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry") => Promise<boolean>;
-  refreshF4: () => Promise<void>;
-  submitF4Proposal: (slot: string, spec: import("@/lib/admin/propose-or-execute").ProposeSpec) => Promise<void>;
+  recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry" | "release") => Promise<boolean>;
+  refreshF4: () => Promise<F4LeadershipPoolOverview | undefined>;
+  submitF4Proposal: (slot: string, spec: import("@/lib/admin/propose-or-execute").ProposeSpec, snapshot?: F4ConfirmationSnapshot) => Promise<void>;
   updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number, expectedMaterialRevision?: number) => Promise<void>;
   updateF4AmbassadorPolicy: (policy: F4AmbassadorPolicyUpdate, reason: string) => Promise<boolean>;
   proposeF4Settlement: (reason: string) => Promise<void>;
@@ -275,7 +275,7 @@ export interface FViewCtx {
   f5ReadEpoch: number;
   prepareF5Confirmation: (snapshot: F5ConfirmationSnapshot | undefined) => void;
   getF5Operation: (snapshot: F5ConfirmationSnapshot) => F5Recovery | undefined;
-  recoverF5: (record: F5Recovery, mode: "query" | "retry" | "release") => Promise<boolean>;
+  recoverF5: (record: F5Recovery, mode: "query" | "retry" | "release") => Promise<boolean | "restore">;
   refreshF5: (query?: F5CommissionQuery) => Promise<void>;
   exportF5Commissions: (
     query: F5CommissionQuery,

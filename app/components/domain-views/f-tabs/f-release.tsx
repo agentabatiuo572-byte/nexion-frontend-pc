@@ -1,14 +1,10 @@
 "use client";
 
-/**
- * F 域五页共用的「解除原操作记录」入口（决定 R1-提案过期）：只给走审批的原申请，过期并且按原请求查询后端明确没有这张审批单时才出现。
- * 按钮打开 rd 的解除框，确认后调页面传进来的解除函数（函数里会再查一次原审批单）。直接保存的原操作不用这个入口。
- */
 import { useState, type ReactNode } from "react";
 import { Button, ReleaseModal } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
 
-export const RELEASE_EXPLAIN = "原申请已超过 24 小时，按原请求查不到这张审批单：申请没建成，之后也不会再建成。解除前会再查一次。";
+export const RELEASE_EXPLAIN = "原请求重试已被拒绝。请先核实原操作结果。解除只清本标签页的记录，不发送请求，也不进入操作记录。";
 
 export function FReleaseButton({ label, onRelease, toast }: { label: ReactNode; onRelease: () => Promise<unknown>; toast: (message: string) => void }) {
   const [open, setOpen] = useState(false);

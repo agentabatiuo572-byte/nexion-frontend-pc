@@ -903,9 +903,10 @@ export interface F4LeaderboardPayoutPreview {
   prizePoolUsdt: string; minComputePoints: string; topN: number; top1MaxPct: string; top5MaxPct: string;
   // Not returned when the pool is absent; absence must not be turned into zero.
   candidateCount?: number; rankedCount?: number; paidCount?: number;
-  amountBeforeCaps?: string; payableAmount?: string; reducedByCaps?: string;
+  payableAmount?: string;
+  concentrationWarnings: ("top1MaxPct" | "top5MaxPct")[];
   rows: { rank: number; userId: number; userNo: string; computePoints: string;
-    amountBeforeCaps: string; amount: string; limitedBy: ("top1MaxPct" | "top5MaxPct")[] }[];
+    amount: string }[];
 }
 export interface F4LeaderboardDisqualificationReadiness {
   period: "week"; periodKey: string; rankingMetric: "COMPUTE_POINTS"; minComputePoints: string;
@@ -2228,28 +2229,27 @@ export async function fetchF4LeaderboardPayoutPreview(period: F4PayoutPeriod, pe
   if (row.period !== period || typeof row.periodKey !== "string" || !row.periodKey
     || typeof row.paused !== "boolean" || typeof row.alreadySettled !== "boolean"
     || typeof row.available !== "boolean" || typeof row.reason !== "string"
-    || row.rankingMetric !== "COMPUTE_POINTS" || !Array.isArray(row.rows)) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+    || row.rankingMetric !== "COMPUTE_POINTS" || !Array.isArray(row.rows)
+    || !Array.isArray(row.concentrationWarnings)
+    || !row.concentrationWarnings.every(key => key === "top1MaxPct" || key === "top5MaxPct")) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
   const preview: F4LeaderboardPayoutPreview = {
     period, periodKey: row.periodKey, paused: row.paused, alreadySettled: row.alreadySettled,
     available: row.available, reason: row.reason, rankingMetric: "COMPUTE_POINTS",
     prizePoolUsdt: f4LeaderboardDecimal(row.prizePoolUsdt), minComputePoints: f4LeaderboardDecimal(row.minComputePoints),
     topN: f4LeaderboardCount(row.topN, 1), top1MaxPct: f4LeaderboardDecimal(row.top1MaxPct), top5MaxPct: f4LeaderboardDecimal(row.top5MaxPct),
+    concentrationWarnings: row.concentrationWarnings,
     rows: row.rows.map(value => {
       const entry = f4LeaderboardRecord(value);
-      if (typeof entry.userNo !== "string" || !entry.userNo || !Array.isArray(entry.limitedBy)
-        || !entry.limitedBy.every(cap => cap === "top1MaxPct" || cap === "top5MaxPct")) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+      if (typeof entry.userNo !== "string" || !entry.userNo) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
       return { rank: f4LeaderboardCount(entry.rank, 1), userId: f4LeaderboardCount(entry.userId, 1), userNo: entry.userNo,
-        computePoints: f4LeaderboardDecimal(entry.computePoints), amountBeforeCaps: f4LeaderboardDecimal(entry.amountBeforeCaps),
-        amount: f4LeaderboardDecimal(entry.amount), limitedBy: entry.limitedBy as ("top1MaxPct" | "top5MaxPct")[] };
+        computePoints: f4LeaderboardDecimal(entry.computePoints), amount: f4LeaderboardDecimal(entry.amount) };
     }),
   };
   if (row.reason !== "F4_LEADERBOARD_POOL_NOT_CONFIGURED") {
     preview.candidateCount = f4LeaderboardCount(row.candidateCount);
     preview.rankedCount = f4LeaderboardCount(row.rankedCount);
     preview.paidCount = f4LeaderboardCount(row.paidCount);
-    preview.amountBeforeCaps = f4LeaderboardDecimal(row.amountBeforeCaps);
     preview.payableAmount = f4LeaderboardDecimal(row.payableAmount);
-    preview.reducedByCaps = f4LeaderboardDecimal(row.reducedByCaps);
   }
   return preview;
 }
@@ -2441,83 +2441,72 @@ export interface F5ExportReceipt {
  * size, checksum, BOM/header and row count before exposing the artifact to the operator.
  */
 export async function downloadF5RedactedCsv(
-  query: F5CommissionQuery,
+  filters: F5CommissionQuery,
   reason: string,
+  commandKey: string,
 ): Promise<F5ExportReceipt> {
-  const filters = {
-    kind: query.kind?.trim() || undefined,
-    currency: query.currency?.trim() || undefined,
-    // Keep BIGINT identifiers as decimal text; converting through JS Number can silently target
-    // a different user above 2^53. Jackson validates/coerces the exact decimal into Long.
-    userId: query.userId?.trim() || undefined,
-    cohort: query.cohort?.trim() || undefined,
-    status: query.status?.trim() || undefined,
-  };
-  // Export filters define the operation intent. The reason is audit metadata; including it in
-  // the fingerprint would mint a new command after an unknown outcome when wording is edited.
-  const fingerprint = JSON.stringify([filters]);
-  return f1StableWrite("f5-export", fingerprint, async (commandKey) => {
-    let response: Response;
+  let response: Response;
+  try {
+    response = await guardedFetch("/api/admin/teams/commissions/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
+      body: JSON.stringify({ ...filters, reason }),
+      cache: "no-store",
+    });
+  } catch {
+    throw new F1OutcomeUncertainError(
+      formatAdminApiError(undefined, "F1_REQUEST_OUTCOME_UNKNOWN"), commandKey,
+    );
+  }
+
+  if (isAdminAuthFailure(response.status)) resetAdminSession();
+  if (!response.ok) {
+    let message: string | undefined;
     try {
-      response = await guardedFetch("/api/admin/teams/commissions/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
-        body: JSON.stringify({ ...filters, reason }),
-        cache: "no-store",
-      });
+      message = ((await response.json()) as ApiResult<never>)?.message;
     } catch {
+      // handled as a stable generic error below
+    }
+    if (outcomeStaysUnknown(response.status)) {
       throw new F1OutcomeUncertainError(
-        formatAdminApiError(undefined, "F1_REQUEST_OUTCOME_UNKNOWN"), commandKey,
+        formatAdminApiError(message, `F1_REQUEST_FAILED_${response.status}`), commandKey,
       );
     }
+    throw Object.assign(new Error(formatAdminApiError(message, `F1_REQUEST_FAILED_${response.status}`)), {
+      status: response.status, backendMessage: message,
+    });
+  }
 
-    if (isAdminAuthFailure(response.status)) resetAdminSession();
-    if (!response.ok) {
-      let message: string | undefined;
-      try {
-        message = ((await response.json()) as ApiResult<never>)?.message;
-      } catch {
-        // handled as a stable generic error below
-      }
-      if (outcomeStaysUnknown(response.status)) {
-        throw new F1OutcomeUncertainError(
-          formatAdminApiError(message, `F1_REQUEST_FAILED_${response.status}`), commandKey,
-        );
-      }
-      throw new Error(formatAdminApiError(message, `F1_REQUEST_FAILED_${response.status}`));
-    }
+  const exportId = response.headers.get("X-Export-Id")?.trim() ?? "";
+  const rowCount = Number(response.headers.get("X-Export-Row-Count"));
+  const byteSize = Number(response.headers.get("X-Export-Byte-Size"));
+  const expectedSha = response.headers.get("X-Export-Sha256")?.trim().toLowerCase() ?? "";
+  const redacted = response.headers.get("X-Export-Redacted") === "true";
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|)(?:"([^"]+)"|([^;]+))/i);
+  const filename = (filenameMatch?.[1] ?? filenameMatch?.[2] ?? "").trim();
+  const content = await response.arrayBuffer();
+  let actualSha: string;
+  try {
+    ({ sha256: actualSha } = await verifyF5CsvArtifact(content, {
+      exportId, rowCount, byteSize, expectedSha, redacted, filename,
+    }));
+  } catch {
+    throw new F1OutcomeUncertainError(
+      formatAdminApiError(undefined, "F1_RESPONSE_UNREADABLE"), commandKey,
+    );
+  }
 
-    const exportId = response.headers.get("X-Export-Id")?.trim() ?? "";
-    const rowCount = Number(response.headers.get("X-Export-Row-Count"));
-    const byteSize = Number(response.headers.get("X-Export-Byte-Size"));
-    const expectedSha = response.headers.get("X-Export-Sha256")?.trim().toLowerCase() ?? "";
-    const redacted = response.headers.get("X-Export-Redacted") === "true";
-    const disposition = response.headers.get("Content-Disposition") ?? "";
-    const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|)(?:"([^"]+)"|([^;]+))/i);
-    const filename = (filenameMatch?.[1] ?? filenameMatch?.[2] ?? "").trim();
-    const content = await response.arrayBuffer();
-    let actualSha: string;
-    try {
-      ({ sha256: actualSha } = await verifyF5CsvArtifact(content, {
-        exportId, rowCount, byteSize, expectedSha, redacted, filename,
-      }));
-    } catch {
-      throw new F1OutcomeUncertainError(
-        formatAdminApiError(undefined, "F1_RESPONSE_UNREADABLE"), commandKey,
-      );
-    }
-
-    const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
-    const href = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = href;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(href);
-    return { exportId, rowCount, byteSize, sha256: actualSha, redacted: true, filename };
-  });
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(href);
+  return { exportId, rowCount, byteSize, sha256: actualSha, redacted: true, filename };
 }
 
 export type F5CommissionReverseReceipt = Record<string, unknown> & F5RecoveryAmounts;

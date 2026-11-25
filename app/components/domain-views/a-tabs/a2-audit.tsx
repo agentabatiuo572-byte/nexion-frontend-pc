@@ -11,6 +11,7 @@ import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCo
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
+import { fConfigAuthority } from "@/lib/admin/f-config-batch";
 import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
 import { F2BootstrapReview, f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
@@ -173,14 +174,43 @@ function approvalCoverageCopy(w: A2OperationRow) {
     : w.operationCode === "j1_gate_resume" ? J1_RESTORE_COVERAGE_COPY : isK1ClusterTicket(w) ? K1_CLUSTER_COVERAGE_COPY : COVERAGE_ON_APPROVAL_COPY;
 }
 
+function f2F4ApprovalPermissions(w: A2OperationRow): string | undefined {
+  const op = w.operationCode;
+  if (w.ambassadorMaterialProposal) return "审批批准权限和「区域大使审批」权限";
+  if (["f_unilevel_bootstrap", "f_direct_referral_policy"].includes(op ?? "")) return "审批批准权限和团队奖励比例权限";
+  if (op === "f_seven_layer_activation") return "审批批准权限和团队奖励放大策略权限";
+  if (["f4_pool_settle", "f4_leaderboard_period_payout"].includes(op ?? "")) return "审批批准权限和「奖池资金类调整」权限";
+  if (!["f_config", "f_ui_config", "f_unilevel_rule", "f_config_batch"].includes(op ?? "")) return undefined;
+  const keys = fBatchTicket(w)?.items?.map(item => item.key) ?? w.obj.split(",").map(key => key.trim());
+  const isF2F4 = keys.some(key => /^(?:F\.(?:unilevel|promo|peer|influence|royalty|partner|sunset|pool|quota|ambassador|leaderboard)\.|F\.cooldown$)/.test(key)
+    || ["directRoyaltyPct", "networkRoyaltyPct", "maxCombinedOutflowPct", "minPayoutUsdt", "rankWindowDays", "hardwareQuotaPerRank"].includes(key));
+  if (!isF2F4) return undefined;
+  const permissions = new Set(keys.map(key => key.startsWith("F.pool.votes.") ? "network_f4_pool_fund"
+    : key === "F.binary.autoSettle" ? "network_f3_engine_pause" : fConfigAuthority(key)));
+  const labels: Record<string, string> = {
+    network_f2_royalty_rate: "团队奖励比例",
+    network_f2_policy_amplify: "团队奖励放大策略",
+    network_f2_write: "团队奖励设置修改",
+    network_f4_pool_fund: "奖池资金类调整",
+    network_f4_write: "奖励池、名额与排行榜 · 常规写",
+    network_f4_leaderboard_control: "排行榜控制",
+    network_f4_ambassador_approve: "区域大使审批",
+  };
+  const named = [...permissions].map(code => code && labels[code]);
+  return named.every(Boolean)
+    ? `审批批准权限和「${named.join("」「")}」权限`
+    : "审批批准权限和这张单各项对应的业务权限";
+}
+
+const F4_PAYOUT_REVIEW_REQUIRED = "这张单按旧规则提交。请先撤回或驳回，再查看新预览并重新提交。";
+
 function approvalExecutorLabel(w: A2OperationRow) {
+  if (f2F4ApprovalPermissions(w)) return "另一位超级管理员";
   if (["a6_role_status_update", "a6_role_disable", "a6_role_delete", "a6_role_grants_update"].includes(w.operationCode ?? ""))
     return "另一位有审批批准权限和对应业务权限的管理员";
   if (w.operationCode === "h1_phase_dial") return "另一位有审批批准权限和运营阶段修改权限的超级管理员";
   // AuditReplayBusinessPermissionGuard.validateJ1RestoreChecker：超级管理员，且有审批批准权限和业务开关恢复权限。
   if (w.operationCode === "j1_gate_resume") return "另一位有审批批准权限和业务开关恢复权限的超级管理员";
-  // AuditReplayBusinessPermissionGuard.requiredAuthority：首次配置要审批批准权限和团队奖励比例权限，不要求超级管理员。
-  if (w.operationCode === "f_unilevel_bootstrap") return "另一位有审批批准权限和团队奖励比例权限的管理员";
   // K1RiskApproval.validateChecker：有效超级管理员且有审批批准权限，不能是提交人。
   if (w.operationCode === "k1_release_param" || w.operationCode === "k1_earnings_release") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "c2_session_revoke_all" || !w.operationCode && w.action.startsWith("强制登出 · ")) return "另一位有审批批准权限和退出全部设备权限的超级管理员";
@@ -196,10 +226,8 @@ function approvalExecutorLabel(w: A2OperationRow) {
     "首次发布奖励课程", "发布奖励课程版本", "回滚至有奖励的课程版本"].includes(w.action)) return "另一位有审批批准权限的超级管理员";
   if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位超级管理员（需有商品修改权限）";
   if (w.action === "发布规则任务") return "另一位有审批批准权限和任务池修改权限的管理员";
-  return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
-    ? "另一位具有审批和大使批准权限、且未参与本版材料核验的管理员"
-    // 后端存的「门槛者」只是占位叫法（A2-BE-02）；只改显示，请求里带的值不动。
-    : w.roleGate === "超管" ? "另一位超级管理员" : w.roleGate === "门槛者" ? "另一位有审批批准权限和对应业务权限的管理员" : w.roleGate;
+  // 后端存的「门槛者」只是占位叫法（A2-BE-02）。
+  return w.roleGate === "超管" ? "另一位超级管理员" : w.roleGate === "门槛者" ? "另一位有审批批准权限和对应业务权限的管理员" : w.roleGate;
 }
 
 function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
@@ -2254,6 +2282,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         {!objectLead && <Fact k="对象">{objectNode(w)}</Fact>}
         <Fact k="发起人">{`${w.operator} · ${roleText(w.operatorRole)}`}</Fact>
         {kind === "approve" && <Fact k="发起理由">{keepCodes(w.reason)}</Fact>}
+        {kind === "approve" && f2F4ApprovalPermissions(w) && <>
+          <Fact k="谁来批">{approvalExecutorLabel(w)}</Fact>
+          <Fact k="需有权限">{f2F4ApprovalPermissions(w)}{w.ambassadorMaterialProposal?.applicationDecision === "APPROVE" && "。不能核验过这一版材料。"}</Fact>
+        </>}
         {timing && <Fact k="生效时间">{timing}</Fact>}
       </Facts>
     );
@@ -2273,7 +2305,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       impact: fund.period === "总榜" ? "批准后按那一刻的总榜重新计算，真实入账给上榜的人。" : "批准后按那一刻的排行榜重新计算，真实入账给上榜的人。",
       completion: F4_COVERAGE_COPY,
       check: "核对这次实发、名单和发起理由，理由写清依据或工单号。",
-      detail: "派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。",
+      detail: "派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。按旧规则提交的单须先撤回或驳回，再看新预览后重新提交。",
       coverageLead: "这次派奖按算出的金额真实发钱",
       coverageUnknown: "这次派奖按算出的金额真实发钱，兑付覆盖率暂时读不到",
       coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
@@ -2473,9 +2505,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       title: "批准审批单",
       action: <>确认执行 · {w.id}({fBatchTicket(w) || w.operationCode === "j1_gate_resume" ? actionName(w) : a2ActionText(w.action)})</>,
       effect: <>{subject(w)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
-      detail: fund ? <>{fund.detail}谁能批准：{approvalExecutorLabel(w)}。</> : j4
+      detail: fund ? <>{fund.detail}{!f2F4ApprovalPermissions(w) && `谁能批准：${approvalExecutorLabel(w)}。`}</> : j4
         ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
-        : w.coverageCheckOnApproval ? <>{approvalCoverageCopy(w)}</> : <>谁能批准：{approvalExecutorLabel(w)}。{decisionRule(w).backendChecks && `${BACKEND_CHECKS_NOTE}。`}</>,
+        : w.coverageCheckOnApproval ? <>{approvalCoverageCopy(w)}</> : <>{!f2F4ApprovalPermissions(w) && `谁能批准：${approvalExecutorLabel(w)}。`}{decisionRule(w).backendChecks && `${BACKEND_CHECKS_NOTE}。`}</>,
       completionCopy: fund?.completion,
       // 派奖、结算：这一次的结果放在关键信息层（和发起人那边同一块），审批单信息放在后面。
       facts: fund?.lead ?? ticketFacts(w, "approve", fund?.facts),
@@ -2516,6 +2548,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           const outcome = await runDecision("approve", w, reason);
           if (outcome === "ok") { decisionToast("approve", w.id); setTicketId(null); }
         } catch (cause) {
+          if (w.operationCode === "f4_leaderboard_period_payout" && backendCode(cause) === "F4_LEADERBOARD_PAYOUT_REVIEW_REQUIRED") {
+            openActionConfirm({ ...approveRequest(w), blockedReason: F4_PAYOUT_REVIEW_REQUIRED });
+            throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
+          }
           const stale = staleReason(w, "approve", cause);
           if (stale) openActionConfirm({ ...approveRequest(w), blockedReason: stale });
           // 共用的说法对直接编辑、演练都成立；审批这里还要写下一步（M8）。
@@ -3134,8 +3170,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     ...(shownBoot ? [{ label: "批准后", value: "七层规则一次建好；整体结算不会自动启用，要另外申请" }] : []),
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
     { label: "发起理由", value: keepCodes(shown.reason) },
-    { label: shown.retiredOperation ? "原执行权限" : "谁能批准", value: approvalExecutorLabel(shown),
+    { label: shown.retiredOperation ? "原执行权限" : f2F4ApprovalPermissions(shown) ? "谁来批" : "谁能批准", value: approvalExecutorLabel(shown),
       reason: !shown.retiredOperation && decisionRule(shown).backendChecks ? BACKEND_CHECKS_NOTE : undefined },
+    ...(f2F4ApprovalPermissions(shown) ? [{ label: "需有权限", value: `${f2F4ApprovalPermissions(shown)}${shown.ambassadorMaterialProposal?.applicationDecision === "APPROVE" ? "。不能核验过这一版材料。" : ""}` }] : []),
     ...(shownBlock ? [{ label: "不能批准的原因", state: "warn" as const, value: shownBlock }] : []),
     ...(shownTiming ? [{ label: "生效时间", value: shownTiming }] : []),
   ] : [];

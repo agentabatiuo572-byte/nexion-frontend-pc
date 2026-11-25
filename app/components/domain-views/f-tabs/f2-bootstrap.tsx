@@ -144,6 +144,8 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
         <Fact k="七层合计占订单">{ranked ? sumRange ? `${rangeText(sumRange.low, sumRange.high)}，示例 ${num(SAMPLE_ORDER)} USDT 订单分出 ${rangeText(pctSample(sumRange.low), pctSample(sumRange.high), "USDT")}` : "—"
           : `${num(sum)}%，示例 ${num(SAMPLE_ORDER)} USDT 订单分出 ${num(f2SampleUsdt(sum))} USDT`}</Fact>
         <Fact k="整体结算">不会自动启用，要另外申请</Fact>
+        <Fact k="谁来批">另一位超级管理员</Fact>
+        <Fact k="需有权限">审批批准权限和团队奖励比例权限</Fact>
       </Facts>,
       content: <div className="rd-stack">
         {over && <Notice tone="warn" title={overTitle}>{F2_APP_LIMIT_COPY}</Notice>}

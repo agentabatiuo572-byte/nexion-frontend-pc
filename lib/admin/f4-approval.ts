@@ -1,8 +1,8 @@
+import { activeRecoveryActor, createFProposalRecovery } from "./f-proposal-recovery";
 import { fConfigBatchPermissionIssue, fConfigObjectMatches } from "./f-config-batch";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
 import { configApprovalAttempts, configApprovalOriginalInput } from "./withdrawal-config-approval";
-import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
 import { hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT } from "./pending-mutation-store";
 import type { F4AmbassadorApplication, F4AmbassadorMaterialPacket, F4AmbassadorPolicy, F4AmbassadorPolicyUpdate, F4LeadershipPoolOverview } from "./f1-client";
@@ -34,7 +34,7 @@ export function matchesF4Confirmation(row: Pick<FDomainAttempt, "fingerprint" | 
 const fundSlot = (adminId: number) => `${adminId}:F4`;
 const isFund = (row: FDomainAttempt) => /^\d+:F4$/.test(row.fingerprint);
 const isF4Slot = (slot: string) => /^f-config:F\.(?:pool|quota|ambassador|leaderboard)\./.test(slot)
-  || /^f4-(?:settle|leaderboard):/.test(slot) || slot === "f-config-batch:F4";
+  || /^f4-(?:settle|leaderboard|quota-create):/.test(slot) || slot === "f-config-batch:F4";
 
 export function f4PolicySpec(values: F4AmbassadorPolicyUpdate, reason: string): ProposeSpec {
   return { action: "提高区域大使申请预算", obj: "default", before: "—", after: "—", type: "fund", amplifies: true,
@@ -77,7 +77,7 @@ function actor(adminId: number) {
   return auth.session;
 }
 
-export function canRetryF4Proposal(original: FDomainAttempt) {
+function hasF4ProposalWrite(original: FDomainAttempt) {
   const session = useAdminAuth.getState().session;
   return !!session && original.adminId === session.adminId && !!original.request && !!original.spec
     && !original.received && !original.ticket && !isRetryExpired(original)
@@ -101,20 +101,31 @@ async function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
   }
 }
 
+export const f4ProposalRecovery = createFProposalRecovery<FDomainAttempt>({
+  list: () => {
+    const owner = useAdminAuth.getState().session?.adminId;
+    return owner === undefined ? [] : listF4Proposals(owner);
+  },
+  isDurablyStored: (slot, key) => (/^\d+:F4$/.test(slot) ? configApprovalAttempts : fCommands).isDurablyStored(slot, key),
+  markReplayRejected: (slot, key, code) => (/^\d+:F4$/.test(slot) ? configApprovalAttempts : fCommands).markReplayRejected(slot, key, code),
+  forget: (slot, key) => (/^\d+:F4$/.test(slot) ? configApprovalAttempts : fCommands).forget(slot, key),
+}, row => {
+  const session = activeRecoveryActor(row.adminId, "network_f4_read");
+  return !!session && hasF4ProposalWrite(row);
+});
+
+export const canRetryF4Proposal = (original: FDomainAttempt) => !f4ProposalRecovery.state(original).replayBlock;
+
 export async function queryF4Proposal(adminId: number, original: FDomainAttempt) {
-  actor(adminId); // Read permission is adjudicated by the endpoint, independently of write grants.
-  if (original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-  remember({ ...original, absent: false });
-  const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
-  if (!ticket) {
-    if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
-    remember({ ...original, ticket: undefined, absent: true });
-    return null;
-  }
-  await checkTicket(original, ticket);
-  if (ticket.status === "pending") remember({ ...original, received: true, ticket, absent: false });
-  else forget(original);
-  return ticket;
+  actor(adminId);
+  return f4ProposalRecovery.queryTicket(original, async record => {
+    if (record.adminId !== undefined && record.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    const ticket = await fetchA2ProposalByKey(record.commandKey, true, "f");
+    if (!activeRecoveryActor(adminId, "network_f4_read")) throw new Error("ADMIN_PERMISSION_DENIED");
+    if (!ticket && (record.received || record.ticket)) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", record.commandKey);
+    if (ticket) await checkTicket(record, ticket);
+    return ticket;
+  }, (record, ticket) => remember({ ...record, received: true, ticket, absent: false }));
 }
 
 export async function sendF4Proposal(adminId: number, slot: string, spec?: ProposeSpec, snapshot?: F4ConfirmationSnapshot) {
@@ -145,14 +156,15 @@ export async function sendF4Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new A2OutcomeUncertainError(RETRY_EXPIRED_TEXT, original.commandKey);
   if (!original.request || !storeFor(original).isDurablyStored(original.fingerprint, original.commandKey)) throw new Error("F4_PROPOSAL_ORIGINAL_INCOMPLETE");
-  original.absent = false;
-  remember(original);
   if (original.received || original.ticket) return queryReceived(adminId, original);
   let ticket: A2OperationRow;
-  try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
+  try {
+    const send = (record: FDomainAttempt) => createA2OperationProposal(record.request!, record.commandKey, "proposal");
+    ticket = recovering ? await f4ProposalRecovery.replay(original, send) : await send(original);
+  }
   catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
-    if (recovering ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
+    if (!recovering && !isA2OutcomeUncertainError(error)
       && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) forget(original);
     throw error;
   }

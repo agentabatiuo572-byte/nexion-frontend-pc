@@ -4,11 +4,13 @@
  * F1 团队等级晋升几个文件共用的文字和确认框外壳。
  * 只管怎么写给运营看：奖励怎么写、发放状态叫什么、审批人怎么称呼；不发请求、不判断权限。
  */
+import { fConfirmRecovery } from "./f-recovery-state";
+import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import { useRef, useState, type ReactNode } from "react";
 import { BadgeDollarSign, CircleCheck, Clock3, Coins, Gift, Package, RotateCcw, Ticket, TriangleAlert, Undo2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
-import { listF1Proposals, canSendF1Proposal, withF1ProposalLookupCopy } from "@/lib/admin/f1-approval";
+import { listF1Proposals, f1ProposalRecovery, withF1ProposalLookupCopy } from "@/lib/admin/f1-approval";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
@@ -141,10 +143,6 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
   const originalValues = useRef<BusinessFormValue | undefined>(undefined);
   const original = () => owner === undefined ? undefined : listF1Proposals(owner).find(row => row.fingerprint === slot.current);
   const existing = original();
-  const session = useAdminAuth(state => state.session);
-  const canSend = !existing || !!existing.spec && !!session && session.adminId === owner
-    && canSendF1Proposal(existing.spec, session.authorities);
-  const queryOnly = !!existing && (existing.absent !== true || !!existing.received || !!existing.ticket || !existing.request || !canSend);
   return (
     <OperationConfirmModal
       briefKind={confirm.briefKind}
@@ -167,18 +165,19 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
       getPendingReason={() => submitted.current ? original()?.request?.reason : undefined}
       getPendingBusinessValue={() => submitted.current && original() ? originalValues.current : undefined}
       blockedReason={!submitted.current && existing ? "这项操作有保存的原申请，请先查询原结果。" : undefined}
-      inlineApproval={{
-        dialogClassName: confirm.dialogClassName,
-        resolve: () => undefined,
-        pending: !!confirm.recoverOriginal && !!existing,
-        initialRecovery: queryOnly ? "lookup" : "retry",
-        queryOnly,
-        expired: !!existing && existing.expiresAt <= Date.now(),
-        expiredRequestRecovery: existing && existing.expiresAt <= Date.now() ? "query" : undefined,
-        disabledReason: submitted.current && !canSend ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined,
-        recover: async () => { const resolved = await ctx.recoverF1(slot.current, "query"); if (resolved) onClose(); return resolved; },
-        retry: async () => { await ctx.recoverF1(slot.current, "retry"); onClose(); },
+      getPendingRecovery={() => {
+        const record = submitted.current ? original() : undefined;
+        return record && fConfirmRecovery(f1ProposalRecovery, record, async () => {
+          const resolved = await ctx.recoverF1(slot.current, "query");
+          if (!resolved) return;
+          if (resolved === "restore") {
+            submitted.current = false;
+            throw new PendingConfirmRejected("原操作没有执行，请核对后重新确认。");
+          }
+          onClose();
+        });
       }}
+      className={confirm.dialogClassName}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {
         const recovering = submitted.current && !!original();

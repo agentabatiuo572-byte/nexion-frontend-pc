@@ -7,6 +7,7 @@
  * 请求仍使用原配置与结算合同；完整原请求、确认快照和恢复由 F 域上下文提供。
  * 筛选/分页保留，配置确认框从保存的原快照恢复，成员分组见 f3-placements。
  */
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -25,7 +26,7 @@ import { f3PauseState, f3SpilloverState, isF3PayoutControlKey, validF3Threshold 
 import { F3_GV_RESET_PARAM_KEY, type F3Settlement } from "@/lib/admin/f1-client";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { F3_BATCH_SLOT, f3ConfigSlot, f3PendingFor, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
-import { pendingPlacement, forgetPlacement } from "@/lib/admin/f3-placements-client";
+import { pendingPlacement } from "@/lib/admin/f3-placements-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
@@ -212,9 +213,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     if (!placementOriginal || placementChecking || useAdminAuth.getState().session?.adminId !== adminId) return;
     setPlacementChecking(true);
     try {
-      const result = await recoverPlacement(placementOriginal.intent);
+      const result = await recoverPlacement(adminId!, placementOriginal.intent);
       if (useAdminAuth.getState().session?.adminId !== adminId) return;
-      if (result.resolved) forgetPlacement(adminId!);
       ctx.toast(result.message);
     } catch (error) { ctx.toast(displayAdminError(error)); }
     finally { setPlacementChecking(false); }
@@ -230,7 +230,6 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     setConfirm(current => {
       if (!current) return current;
       const record = ctx.f3Proposals.find(row => row.fingerprint === current.slot);
-      if (current.original && !record) return null;
       return record && !current.original ? { ...current, original: record } : current;
     });
   }, [ctx.f3Proposals]);
@@ -336,9 +335,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     ? <StatusTag tone="warn" icon={Clock3} explain={`等${approver}在「操作记录与审批」批准；批准前不生效。`}>待审批</StatusTag>
     : original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
       : original.expiresAt <= Date.now()
-        ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除这条记录。">已过期</StatusTag>
+        ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>;
-  const release = (original: FDomainAttempt, label: ReactNode) => original.expiresAt <= Date.now() && original.absent && !original.ticket && !original.received
+  const release = (original: FDomainAttempt, label: ReactNode) => original.replayRejection
     ? <FReleaseButton label={label} toast={ctx.toast} onRelease={() => ctx.recoverF3(original, "release")} /> : null;
   const payoutDirects = F3_PAYOUT_KEYS.flatMap((key) => ctx.getF3PayoutControlPending(key).directWrite ?? []);
   const recoveryCount = (settlePending ? 1 : 0) + configProposals.length + payoutDirects.length + (showPlacementRecovery ? 1 : 0);
@@ -383,7 +382,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="f3-recovery-change">{line.change}</span>
           <span className="f3-recovery-time">{businessStamp(direct.createdAt)} 提交</span>
           <span className="f3-recovery-state">{line.tag}</span>
-          <span className="f3-recovery-actions"><Button size="sm" onClick={() => setPayout({ key: direct.f3Request!.key, direct })}>查询原结果</Button></span>
+          <span className="f3-recovery-actions"><Button size="sm" onClick={() => setPayout({ key: direct.f3Request!.key, direct })}>查询原结果</Button>{direct.replayRejection && <FReleaseButton label={line.name} toast={ctx.toast} onRelease={() => ctx.recoverF3PayoutControl(direct.f3Request!.key, "release")} />}</span>
         </li>; })}
         {showPlacementRecovery && placementOriginal && <li>
           <span className="f3-recovery-name">成员分组</span>
@@ -424,7 +423,6 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       {!showReadState && conclusion}
       {recovery}
       {showReadState ? <>
-        {configConfirm}
         {ctx.f3Loading
           ? <BlockState state="loading" title="正在读取团队平衡奖励…" />
           : <BlockState state="error" title="团队平衡奖励数据加载失败" detail={ctx.f3Error ?? undefined} onRetry={() => void ctx.refreshF3()} retryLabel="重新加载" />}
@@ -625,9 +623,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         onPrev: () => { const i = pager.pageRows.indexOf(openRow!); if (i > 0) setOpenRow(pager.pageRows[i - 1]); },
         onNext: () => { const i = pager.pageRows.indexOf(openRow!); if (i >= 0 && i < pager.pageRows.length - 1) setOpenRow(pager.pageRows[i + 1]); },
       }} />
-      {configConfirm}
       </>}
-      {payout && <F3PayoutConfirm key={`${payout.key}:${payout.direct?.commandKey ?? payout.original?.commandKey ?? "new"}`} open={payout} ctx={ctx} onClose={() => setPayout(null)} />}
+      {configConfirm}
+      {payout && <F3PayoutConfirm key={`${payout.key}:${payout.direct?.commandKey ?? payout.original?.commandKey ?? "new"}`} open={payout} ctx={ctx} onClose={() => setPayout(null)} onReconfirm={value => setPayout({ key: payout.key, recoveredValue: value })} />}
     </div>
   );
 }

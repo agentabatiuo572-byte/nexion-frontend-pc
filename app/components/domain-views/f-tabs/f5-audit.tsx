@@ -19,6 +19,7 @@ import type { F5Recovery, FViewCtx } from "./types";
 import { FReleaseButton } from "./f-release";
 import { canRetryF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
+import { f5ExportRecovery, pendingF5Export } from "@/lib/admin/f5-export-operation";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { readF5Filters, readF5Tab, replaceTeamFilterParams, type F5Tab } from "@/lib/admin/team-filter-url";
 import { teamUserId } from "@/lib/admin/f-overview-contract";
@@ -89,6 +90,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   // 九类奖励折叠组开着没有放在这里：筛选后重读数据时卡片会重新挂载，不能因此自己收起。
   const [kindsOpen, setKindsOpen] = useState(false);
   const [confirm, setConfirm] = useState<F5Confirm | null>(null);
+  const [, refreshExport] = useState(0);
+  const originalExport = pendingF5Export();
   const tabIds = useTabIds();
   const { f5Overview: data, f5AppliedQuery, f5NextQuery, f5AppendError, f5Loading: loading, f5Error: error } = ctx;
   const suspendableKinds = data?.suspendableKinds ?? [];
@@ -110,7 +113,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       if (!current) return null;
       const saved = current.snapshot ? ctx.getF5Operation(current.snapshot) : undefined;
       if (saved) return current.recovery ? current : { ...current, recovery: saved };
-      return current.recovery || loading ? null : current;
+      return !current.recovery && !current.exportOperation && loading ? null : current;
     });
   }, [ctx.f5ReadEpoch, loading, ctx.f5Proposals, ctx.f5AnomalyWrites]);
 
@@ -457,9 +460,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
-  const exportAllFiltered = () => {
-    if (exportBlockedReason || !f5AppliedQuery) return;
-    const filters = f5AppliedQuery;
+  const exportAllFiltered = (original = pendingF5Export()) => {
+    const filters = original ? original.f5ExportRequest?.filters : f5AppliedQuery;
+    if (!filters || !original && exportBlockedReason) return;
     const scope = [
       filters.kind ? kindName(filters.kind) : "",
       filters.currency ?? "",
@@ -468,7 +471,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       filters.status ? statusName(filters.status) : "",
     ].filter(Boolean);
     setConfirm({
-      action: "导出当前筛选的全部奖励", title: "导出筛选结果", briefKind: "export", confirmLabel: "导出 CSV",
+      action: "导出当前筛选的全部奖励", title: "导出筛选结果", briefKind: "export", confirmLabel: "导出 CSV", exportOperation: true,
       effect: <StatusTag tone="neutral">只生成文件，不改数据</StatusTag>,
       completionCopy: "不改奖励和余额，提交后直接生成文件。",
       statedBrief: { impact: "按已应用且读取成功的筛选条件导出全部匹配的记录，敏感信息已隐藏", check: "核对筛选条件，理由写清导出用途。" },
@@ -483,8 +486,10 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         <Fact k="留痕">每生成一次记一条审计</Fact>
       </Facts>,
       submit: async (reason) => {
-        const receipt = await ctx.exportF5Commissions(filters, reason);
-        ctx.toast(`已下载 ${receipt.filename} · 共 ${receipt.rowCount} 行`);
+        try {
+          const receipt = await ctx.exportF5Commissions(filters, reason);
+          ctx.toast(`已下载 ${receipt.filename} · 共 ${receipt.rowCount} 行`);
+        } finally { refreshExport(value => value + 1); }
       },
     });
   };
@@ -521,12 +526,24 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       state: ticket?.status === "pending" ? "pending" : isRetryExpired(original) ? "expired" : "unknown",
       direct: record.kind === "anomaly",
       actions: <>
-        <Button size="sm" onClick={() => { void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原结果</Button>
+        <Button size="sm" onClick={() => { if (saved && !ticket) openOriginal(record); else void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原结果</Button>
         {retryable && <Button size="sm" onClick={() => openOriginal(record)}>按原请求重试</Button>}
-        {record.kind === "proposal" && isRetryExpired(original) && record.original.absent && !ticket && !record.original.received && !record.original.f5TicketId
+        {original.replayRejection
           && <FReleaseButton label={saved?.name ?? spec?.action ?? "奖励处置"} toast={ctx.toast} onRelease={() => ctx.recoverF5(record, "release")} />}
       </>,
     };
+  });
+  if (originalExport) recoveryRows.push({
+    key: originalExport.commandKey, name: "导出筛选结果", submittedAt: originalExport.createdAt, exportOperation: true,
+    state: isRetryExpired(originalExport) ? "expired" : "unknown",
+    change: originalExport.f5ExportRequest ? "原筛选条件和理由已保留。" : "原请求不完整，请在操作记录与审批核对。",
+    actions: <>
+      {originalExport.f5ExportRequest && <Button size="sm" onClick={() => exportAllFiltered(originalExport)}>查看原操作</Button>}
+      {originalExport.replayRejection && <FReleaseButton label="导出筛选结果" toast={ctx.toast} onRelease={async () => {
+        if (!f5ExportRecovery.releaseRejectedReplay(originalExport)) throw new Error("PENDING_REPLAY_BLOCKED");
+        refreshExport(value => value + 1);
+      }} />}
+    </>,
   });
   const ownTicketIds = new Set(ctx.f5Proposals.flatMap(row => row.ticket ? [row.ticket.id] : row.f5TicketId ? [row.f5TicketId] : []));
   const pendingTickets = ctx.f5ApprovalRows.filter((ticket, index, rows) => ticket.mine && ticket.status === "pending"
@@ -646,7 +663,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           <p>导出使用已应用且读取成功的筛选条件，包含全部匹配记录。</p>
           {canReissue && <p>行首勾选已冲正的记录，可以一起补发；好友奖励、来源已经退款的不能勾。</p>}
         </>}
-        actions={canExport ? <Button size="sm" icon={<Download size={14} aria-hidden />} disabled={!!exportBlockedReason} onClick={exportAllFiltered}>导出筛选结果</Button> : undefined}>
+        actions={canExport ? <Button size="sm" icon={<Download size={14} aria-hidden />} disabled={!!exportBlockedReason || !!originalExport} onClick={() => exportAllFiltered()}>导出筛选结果</Button> : undefined}>
         {reissueAvailable && selectedRows.length > 0 && (
           <BatchBar summary={`已勾选 ${selectedRows.length} 笔已冲正的记录`} hint="只能勾选这一批里已冲正、不是好友奖励、来源没有退款的记录；改筛选会清掉勾选。">
             <Button size="sm" onClick={() => setSelected([])}>取消勾选</Button>

@@ -1,3 +1,5 @@
+import { compareDecimal } from "./f1-rank-benefit";
+
 /** Preserve decimal lexemes across JSON and display; never round money via Number. */
 export function f4Decimal(value: string | number): string | null {
   const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(String(value).trim());
@@ -11,17 +13,14 @@ export function f4Decimal(value: string | number): string | null {
   return `${match[1] === "-" && /[1-9]/.test(digits) ? "-" : ""}${whole.replace(/^0+(?=\d)/, "")}${fraction ? `.${fraction}` : ""}`;
 }
 
-/** top1/top5 use percentage points, matching OpsTeamService.parseDecimal.
- * An unconfigured cap is compared with its settlement default (25 / 60), as the backend does since f066d719. */
-export function f4HeadCapAmplifies(key: "F.pool.top1MaxPct" | "F.pool.top5MaxPct", stored: string | undefined, value: string): boolean {
-  const current = stored?.trim() ? stored : key === "F.pool.top1MaxPct" ? "25" : "60";
-  const before = f4Decimal(current.replace(/[%,]/g, "")) ?? "0";
-  const after = f4Decimal(value.replace(/[%,]/g, "")) ?? "0";
-  const [beforeWhole, beforeFraction = ""] = before.split(".");
-  const [afterWhole, afterFraction = ""] = after.split(".");
-  const scale = Math.max(beforeFraction.length, afterFraction.length);
-  return BigInt(afterWhole + afterFraction.padEnd(scale, "0"))
-    > BigInt(beforeWhole + beforeFraction.padEnd(scale, "0"));
+/** Pool ratios are percentage points. Missing or invalid configuration cannot settle. */
+export function f4PoolRatioIncreases(stored: string | undefined, value: string): boolean {
+  const read = (text: string) => {
+    const parsed = f4Decimal(text.trim().replace(/%$/, ""));
+    return parsed !== null && Number(parsed) >= 0 && Number(parsed) <= 30 ? parsed : null;
+  };
+  const after = read(value);
+  return after !== null && compareDecimal(after, read(stored ?? "") ?? "0") === 1;
 }
 
 export function f4MonthlyCap(raw: string): string | null {

@@ -88,6 +88,8 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
       action: "好友奖励设置整组调整", title: "提交好友奖励政策", briefKind: "config", amplify, icon: "sliders", dialogClassName: "f2-confirm",
       effect: <StatusTag tone="progress" filled icon={Clock3} explain="另一位超级管理员在「操作记录与审批」批准后生效；好友购买奖励和设备收益奖励一起提交、一起生效，批准前按原政策执行。">批准后生效</StatusTag>,
       facts: <Facts>
+        <Fact k="谁来批">另一位超级管理员</Fact>
+        <Fact k="需有权限">审批批准权限和团队奖励比例权限</Fact>
         <Fact k="购买冷却">{reference.coolingDays === null ? "未配置" : `${reference.coolingDays} 天`}</Fact>
         <Fact k="第 1 层另发 UVT">{reference.legacyNexPerUsd === null ? "未配置" : `${num(reference.legacyNexPerUsd)} UVT / 1 USDT`}</Fact>
         {ranked ? <Fact k="好友购买奖励比例">{range ? `一级 ${rangeText(range.l1.min, range.l1.max)}、二级 ${rangeText(range.l2.min, range.l2.max)}，按受益人等级` : "按受益人等级"}</Fact>
