@@ -26,6 +26,26 @@ function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+export const E1_DISPLAY_SOLD_BASE_MAX = 9_999_999;
+
+export function isE1DisplaySoldBase(value: unknown): value is number {
+  return isNonNegativeInteger(value) && value <= E1_DISPLAY_SOLD_BASE_MAX;
+}
+
+export function e1SkuDisplayControlInvalidFields(value: {
+  displaySoldBase?: unknown;
+  liveActivityVisible?: unknown;
+}, required: boolean): string[] {
+  const invalid: string[] = [];
+  if ((required || value.displaySoldBase !== undefined) && !isE1DisplaySoldBase(value.displaySoldBase)) {
+    invalid.push("displaySoldBase");
+  }
+  if ((required || value.liveActivityVisible !== undefined) && typeof value.liveActivityVisible !== "boolean") {
+    invalid.push("liveActivityVisible");
+  }
+  return invalid;
+}
+
 function isOptionalString(value: unknown) {
   return value === undefined || value === null || typeof value === "string";
 }

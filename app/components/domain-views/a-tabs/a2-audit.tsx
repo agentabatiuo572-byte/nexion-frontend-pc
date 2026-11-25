@@ -999,7 +999,7 @@ const CHANGE_LABELS: Record<string, string> = {
   warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格", computePoints: "每件算力点",
   dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
   monthlyTargetUsdt: "月收益目标", monthlyTargetBandPct: "允许波动", clearMonthlyTarget: "关闭月收益目标",
-  baseRate: "收益说明", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
+  baseRate: "收益说明", sold: "累计销量", displaySoldBase: "展示基础销量", liveActivityVisible: "显示购买动态", stock: "库存", rating: "评分", reviews: "评价数",
   aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
   aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
   lifecycle: "生命周期", supersededBy: "后继商品", tradeinDiscount: "换新折扣", unlockPhase: "解锁阶段",

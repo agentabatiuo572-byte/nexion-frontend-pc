@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { RefreshCw, RotateCcw, SearchCheck, Server } from "lucide-react";
 import { BlockState, Button, Change, ConflictBar, DiffList, Explain, Facts, Fact, Fold, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
@@ -10,7 +10,7 @@ import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-erro
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { datacenterNameText } from "@/lib/admin/brand-copy";
 import { businessClock, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, type E1CatalogSnapshot, type E1BundleDiscount, type E1GenerationGateData, type E1InvalidSku } from "@/lib/admin/e1-client";
+import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, inspectE1StoreDisplayControls, type E1CatalogSnapshot, type E1BundleDiscount, type E1GenerationGateData } from "@/lib/admin/e1-client";
 import { fetchE3Snapshot } from "@/lib/admin/e3-client";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
@@ -76,9 +76,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const reach = useReach();
   const canOpenAudit = reach("/platform/audit", "platform_a2_read");
   const forceUnlock = authorities.includes("device_e1_generation_gate_force_unlock"), forceLock = authorities.includes("device_e1_generation_gate_force_lock");
-  const [skus, setSkus] = useState<OpsSku[]>([]);
-  const [invalid, setInvalid] = useState<E1InvalidSku[]>([]);
+  const [products, setProducts] = useState<Pick<E1CatalogSnapshot, "skus" | "invalidSkus">>({ skus: [], invalidSkus: [] });
   const [gates, setGates] = useState<E1GenerationGateData | null>(null);
+  const { skus, invalidSkus: invalid } = useMemo(() => inspectE1StoreDisplayControls(products, gates), [products, gates]);
   const [discount, setDiscount] = useState<E1BundleDiscount | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,12 +136,12 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   }, [actor]);
   const storeFor = (record: E1Pending) => record.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
   useEffect(syncPending, [syncPending]);
-  const refreshProducts = useCallback(async () => {
+  const refreshProducts = useCallback(async (pairedGates?: Promise<E1GenerationGateData | null>) => {
     setLoading(true); setError(null);
     try {
-      const result = await fetchE1Products();
-      setSkus(result.skus); setInvalid(result.invalidSkus); setReadAt(businessClock(Date.now())); return result;
-    } catch (failure) { setError(displayAdminReadError(failure)); setSkus([]); setInvalid([]); return null; }
+      const [result] = await Promise.all([fetchE1Products(), pairedGates]);
+      setProducts(result); setReadAt(businessClock(Date.now())); return result;
+    } catch (failure) { setError(displayAdminReadError(failure)); setProducts({ skus: [], invalidSkus: [] }); return null; }
     finally { setLoading(false); }
   }, []);
   const refreshGates = useCallback(async () => {
@@ -157,8 +157,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     finally { setDiscountLoading(false); }
   }, []);
   const refresh = useCallback(async (): Promise<E1CatalogSnapshot | undefined> => {
-    const [products, nextGates, nextDiscount] = await Promise.all([refreshProducts(), refreshGates(), refreshDiscount()]);
-    if (products && nextGates && nextDiscount) return { ...products, gates: nextGates, bundleDiscount: nextDiscount };
+    const gatesRequest = refreshGates();
+    const [products, nextGates, nextDiscount] = await Promise.all([refreshProducts(gatesRequest), gatesRequest, refreshDiscount()]);
+    if (products && nextGates && nextDiscount) return { ...inspectE1StoreDisplayControls(products, nextGates), gates: nextGates, bundleDiscount: nextDiscount };
   }, [refreshProducts, refreshGates, refreshDiscount]);
   const refreshEarly = useCallback(async () => {
     setEarlyLoading(true); setEarlyError(null);
@@ -422,6 +423,11 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     if (mc.op === "sku-save" && mc.sku) {
       if (gates?.skuReviewContractVersion !== 1) throw new Error("商品审核暂时不可用，请刷新后重试；已填写的内容会保留");
       const sku = mc.sku, old = mc.beforeSku, changes = e1SkuDiff(old, sku, mc.form).filter(r => r.before !== r.after);
+      const displayControlsSupported = gates.storeDisplayControlsSupported === true;
+      if (displayControlsSupported !== (mc.gates?.storeDisplayControlsSupported === true)
+        || displayControlsSupported && (sku.displaySoldBase === undefined || sku.liveActivityVisible === undefined)) {
+        throw new Error("商品审核暂时不可用，请刷新后重试；已填写的内容会保留");
+      }
       op = old ? "e1_sku_update" : "e1_sku_create"; obj = sku.id;
       context = { ...sku, skuId: sku.id, computePoints: mc.form?.computePoints.trim() || sku.computePoints };
       for (const key of ["price", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", ...sku.monthlyTargetUsdt == null ? ["dailyEarn", "shareYieldMin", "shareYieldMax"] as const : []] as const) {
@@ -495,7 +501,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     if (reviewingSku && edit) {
       const products = await refreshProducts();
       if (!products) throw new Error("目录暂时读不到");
-      setSkuConflict({ nonce: edit.nonce, latest: products.skus.find(sku => sku.id === mc.sku?.id) ?? null });
+      setSkuConflict({ nonce: edit.nonce, latest: inspectE1StoreDisplayControls(products, gates).skus.find(sku => sku.id === mc.sku?.id) ?? null });
     } else {
       const snapshot = await refresh();
       if (!snapshot) throw new Error("目录暂时读不到");

@@ -13,6 +13,7 @@ export interface SkuProposalSummary {
 
 interface FieldDescriptor {
   label: string;
+  omitWhenMissing?: boolean;
   derived?: boolean;
   targetDerived?: boolean;
   read: (sku: OpsSku) => unknown;
@@ -66,6 +67,8 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "月收益目标（USDT）", read: (sku) => sku.monthlyTargetUsdt, format: money, equal: numberEqual },
   { label: "允许波动", read: (sku) => sku.monthlyTargetBandPct, format: (value) => value == null ? "未设置" : `±${number(value)}%`, equal: numberEqual },
   { label: "每件算力点", read: (sku) => sku.computePoints, format: number, equal: numberEqual },
+  { label: "展示基础销量", read: (sku) => sku.displaySoldBase, format: number, omitWhenMissing: true },
+  { label: "显示购买动态", read: (sku) => sku.liveActivityVisible, format: (value) => value === undefined ? "未设置" : yesNo(value), omitWhenMissing: true },
   { label: "允许试用", read: (sku) => sku.trialEligible, format: yesNo, equal: (a, b) => Boolean(a) === Boolean(b) },
   { label: "商品 ID", read: (sku) => sku.id, format: text, equal: stringEqual },
   { label: "商品名称", read: (sku) => sku.name, format: text, equal: stringEqual },
@@ -126,6 +129,7 @@ export function summarizeSkuProposal(
     if (!includeDerived && (field.derived || field.targetDerived && (beforeSku.monthlyTargetUsdt != null || afterSku.monthlyTargetUsdt != null))) return [];
     const before = field.read(beforeSku);
     const after = field.read(afterSnapshot);
+    if (field.omitWhenMissing && after === undefined) return [];
     const equal = field.equal ? field.equal(before, after) : Object.is(before, after);
     return equal ? [] : [{
       label: field.label,
