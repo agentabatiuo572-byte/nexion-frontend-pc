@@ -598,7 +598,9 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     return {
       key: record.commandKey, name: record.action, object: `「${record.voucherName}」`, change: directChange(record), submittedAt: record.createdAt,
       // 重试不能点的原因常显在这一行，不只放在悬停里（OP-126）。
-      note: editor?.recoveryNote ?? rowNote(undefined, rejected, state.expired) ?? (editor || record.context.kind === "status" ? blocked : undefined),
+      // 重试被明确拒绝后表单已锁：后端的原因后面接着写唯一的出口，不等刷新后才出现。
+      note: editor?.recoveryNote && rejected && editor.recoveryNote !== RETRY_REJECTED_NEXT ? `${editor.recoveryNote}${RETRY_REJECTED_NEXT}`
+        : editor?.recoveryNote ?? rowNote(undefined, rejected, state.expired) ?? (editor || record.context.kind === "status" ? blocked : undefined),
       tag: rejected ? rejectedTag() : state.expired ? expiredTag() : unknownTag("direct"),
       original: editor ? { reason: record.reason, commandKey: record.commandKey } : undefined,
       actions: <>

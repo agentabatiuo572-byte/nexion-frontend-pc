@@ -156,13 +156,13 @@ export function mergeEdits<T>(base: T, mine: T, latest: T): Merged<T> {
 }
 
 /** 「读取最新」之后写在编辑器最上面：别人改了哪、哪里两边都改了要核对（OP-97 第 2 步）。name 把路径换成人话，内部字段返回空。 */
-export function MergeNotice({ report, name, children }: { report: MergeReport | null; name: (path: string[]) => string | null; children?: ReactNode }) {
+export function MergeNotice({ report, name, title = "已读取最新内容，你的修改还在", children }: { report: MergeReport | null; name: (path: string[]) => string | null; title?: string; children?: ReactNode }) {
   if (!report) return null;
   const names = (paths: string[][]) => [...new Set(paths.flatMap((path) => name(path) ?? []))].join("、");
   const theirs = names(report.theirs);
   const clashes = names(report.clashes);
   return (
-    <Notice tone="warn" title="已读取最新内容，你的修改还在">
+    <Notice tone="warn" title={title}>
       {theirs ? `别人改了：${theirs}，已换成最新。` : clashes ? "" : "别人这次没有改这里的内容。"}
       {clashes && ` 这几处你和别人都改了，现在是你的版本，请核对：${clashes}。`}
       {children}
