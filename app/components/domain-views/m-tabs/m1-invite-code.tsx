@@ -10,6 +10,7 @@ import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import { isSupportSelfAccountMismatch } from "@/lib/admin/support-self-contract";
 import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure, refreshSupportAccess, reportSupportSelfReadMismatch, reportSupportSelfWriteMismatch, SELF_READ_SESSION_CHANGED, SELF_SESSION_CHANGED } from "@/lib/admin/support-self-session";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { beijing } from "./m1-statistic-details";
 import "./m1-invite-code.css";
 import { Button, Notice, Fact, Facts, Fold, Explain, IrreversibleTag, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
@@ -144,7 +145,8 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
       toast(success);
     } catch (cause) {
       if (isSupportAccessFailure(cause)) clearDenied(cause);
-      else setError(displayAdminReadError(cause));
+      else setError(cause instanceof Error && cause.message === "ADMIN_SESSION_INVALID"
+        ? "当前登录账号信息读取失败，请重新核对。" : displayAdminReadError(cause));
     }
   };
   const releaseRejected = (record: InviteIssueRecord) => {
@@ -334,7 +336,7 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
     {!denied && (pending ? <>
       <Notice tone="warn" action={<><Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : pending.receiptAccountPending ? "重新核对" : terminal ? "刷新邀请码" : "查询原操作"}</Button>{!terminal && (pending.replayRejection
         ? <VerifiedReleaseButton disabled={busy} onClick={() => releaseRejected(pending)} />
-        : unresolved && canReplayGroupCommand(pending) && <Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>按原操作重试</Button>)}</>}>{pending.receiptAccountPending ? "已收到原操作结果，正在核对当前账号。" : terminal === "SUCCEEDED" ? `邀请码已${inviteAction}，最新的邀请码暂时读不到。` : terminal === "FAILED" ? "原操作没有生效，当前邀请码暂时读不到。" : pending.replayRejection ? `按原操作重试已被拒绝。原操作结果仍需核实。${displayAdminError(pending.replayRejection)}` : `上次${inviteAction}邀请码结果未知；查到结果前不能复制，也不显示链接和二维码。`}</Notice>
+        : unresolved && canReplayGroupCommand(pending) && <Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>按原操作重试</Button>)}</>}>{pending.receiptAccountPending ? (busy ? "已收到原操作结果，正在核对当前账号。" : "已收到原操作结果，当前登录账号还没核对上。") : terminal === "SUCCEEDED" ? `邀请码已${inviteAction}，最新的邀请码暂时读不到。` : terminal === "FAILED" ? "原操作没有生效，当前邀请码暂时读不到。" : pending.replayRejection ? `按原操作重试已被拒绝。原操作结果仍需核实。${displayAdminError(pending.replayRejection)}` : `上次${inviteAction}邀请码结果未知（提交时间：${beijing(new Date(pending.createdAt).toISOString())}，北京时间）；查到结果前不能复制，也不显示链接和二维码。`}</Notice>
     </> : readFailed ? <>
       <Notice tone="danger" action={<Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" onClick={() => setReload(n => n + 1)}>重试</Button>}>暂时无法读取邀请码，请重试。</Notice>
     </> : !view ? <p className="m1-invite-note m1-invite-muted" role="status">正在加载邀请码…</p>
