@@ -180,8 +180,8 @@ export function lifecycleOf(event: LegacyEvent, requiredLanguages: readonly Loca
 
 export function unknownTag(kind: "approval" | "direct") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "approval"
-    ? "没收到确定结果，审批单可能已经建成。先查询原结果，查不到再按原请求重试，不会建第二张单。"
-    : "没收到确定结果，可能已经生效。先查询原结果，明确查不到后才能按原请求重试。"}>结果未知</StatusTag>;
+    ? "没收到确定结果，审批单可能已经建成。先查询原结果，查不到再按原操作重试，不会建第二张单。"
+    : "没收到确定结果，可能已经生效。先查询原结果，明确查不到后才能按原操作重试。"}>结果未知</StatusTag>;
 }
 export function pendingTag(object: string) {
   return <StatusTag tone="warn" icon={Clock3} explain={`等另一位超级管理员在「操作记录与审批」批准。批准、驳回或撤回之前，${object}不能再改，调低和关闭也不行。`}>待审批</StatusTag>;

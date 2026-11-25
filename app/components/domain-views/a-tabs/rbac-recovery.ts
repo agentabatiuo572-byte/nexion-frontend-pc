@@ -26,10 +26,10 @@ export function rbacOutcomeView(outcome: RbacOutcome, { expired, canRetry, canCl
   if (state === "PROCESSING") return { tone: "progress", label: "还在执行", line: "稍后再查，执行完之前不要重试。" };
   // 仍未知、过期的记为失败：读到详细结果时按结案框能选的结论说（结不了案时指向行上的技术信息）。
   const step = receipt ? closureLine(eCommandClosureRequests(receipt, expired), receipt, canClose) : undefined;
-  if (state === "UNKNOWN") return { tone: "warn", label: "仍未知", line: step ?? (expired ? "系统也没有结果；已过 24 小时，到操作记录与审批核对。" : "系统也没有结果；24 小时内可以按原请求重试。") };
+  if (state === "UNKNOWN") return { tone: "warn", label: "仍未知", line: step ?? (expired ? "系统也没有结果；已过 24 小时，到操作记录与审批核对。" : "系统也没有结果；24 小时内可以按原操作重试。") };
   // 查询成功、原操作记为失败：只有过期的会留在这里（24 小时内的查到失败即解除）。
   if (state === "FAILED" && expired && step) return { tone: "neutral", label: "记为失败", line: step };
-  if (state === "NOT_FOUND") return { tone: "warn", label: "没有查到", line: expired ? "查不到不等于没执行，到操作记录与审批核对，不要另做一次。" : "查不到不等于没执行；按原请求重试不会重复执行。" };
+  if (state === "NOT_FOUND") return { tone: "warn", label: "没有查到", line: expired ? "查不到不等于没执行，到操作记录与审批核对，不要另做一次。" : "查不到不等于没执行；按原操作重试不会重复执行。" };
   return { tone: "danger", label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" };
 }
 

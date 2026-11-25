@@ -114,8 +114,8 @@ function PendingCommands({ items, auditReachable }: { items: readonly B1PendingC
   const recoveryInstruction = items.some(item => item.queryLabel)
     ? "请按各条提示核对。"
     : "先查询原结果；";
-  // 只剩旧的储备注入记录时这页只能查询，不写「按原请求重试」（OP-95）。
-  const retryNote = items.some(item => item.onRetry) ? "24 小时内只能按原请求重试，不能改值。" : "";
+  // 只剩旧的储备注入记录时这页只能查询，不写「按原操作重试」（OP-95）。
+  const retryNote = items.some(item => item.onRetry) ? "24 小时内只能按原操作重试，不能改值。" : "";
   return (
     <RecoveryPanel title={recoveryTitle(items.length - waiting, waiting)} tone="warn" explainLabel="结果未知怎么处理"
       explain={`这些操作发出后没收到明确结果，可能已经生效。${recoveryInstruction}${retryNote}有结果前，红线和健康线不能再提交。`}
@@ -127,7 +127,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B1PendingC
           {item.queryHref && <Link className="rd-link" href={item.queryHref} prefetch={false}>{item.queryHrefLabel}</Link>}
           {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
           {item.onDiscard && <Button size="sm" onClick={item.onDiscard}>放弃这份草稿</Button>}
-          {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原请求重试</Button>}
+          {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原操作重试</Button>}
           {item.onRelease && <Button size="sm" onClick={item.onRelease}>解除原操作记录</Button>}
         </>,
         detail: <><p>{item.body}</p><p>{item.note}</p></>,
@@ -494,7 +494,7 @@ export default function DualLedgerPage() {
   const readCurrentForWrite = async (record: B1PendingWrite) => {
     if (await refreshB1()) setToast(record.expiresAt <= Date.now()
       ? "已读取现在的值。现在的值说明不了原操作成没成，记录继续保留。"
-      : "已读取现在的值。说明不了原操作成没成，可以按原请求重试，不会重复执行。");
+      : "已读取现在的值。说明不了原操作成没成，可以按原操作重试，不会重复执行。");
   };
   const queryApproval = async () => {
     if (!session || !pendingApproval) return;
@@ -502,7 +502,7 @@ export default function DualLedgerPage() {
     try {
       const result = await submitB1ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, readActive, "query");
       setVerifiedPendingKey(result?.ticket.status === "pending" ? pendingApproval.commandKey : null);
-      setToast(result?.acknowledgement ?? (expired ? RETRY_EXPIRED_TEXT : "暂未查到原审批单，可以按原请求重试，不会建第二张。"));
+      setToast(result?.acknowledgement ?? (expired ? RETRY_EXPIRED_TEXT : "暂未查到原审批单，可以按原操作重试，不会建第二张。"));
       if (result && result.ticket.status !== "pending") {
         setActionConfirm(current => current?.idempotencyKey === pendingApproval.commandKey ? null : current);
       }
@@ -556,12 +556,12 @@ export default function DualLedgerPage() {
       object: record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理",
       tag: { tone: "warn", label: expired ? "已过期" : "结果未知" },
       line: record.kind === "injection" ? `${expired ? RETRY_EXPIRED_TEXT : ""}${injectionNotes[record.commandKey] ?? (expired ? "" : canReadInjectionReceipt ? "可能已经登记，先查询原结果。" : "这个账号查不了原结果，请有权限的同事核对。")}`
-        : recovery.replayRejection ? "按原请求重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经生效，先查询原结果。",
+        : recovery.replayRejection ? "按原操作重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经生效，先查询原结果。",
       body: `${record.kind === "threshold" ? [["红线", record.facts.redlinePct, Number(record.form.redlinePct)], ["健康线", record.facts.healthyPct, Number(record.form.healthyPct)]]
         .map(([name, from, to]) => `${name} ${from === to ? `${fmtConfigPct(Number(to))}（不变）` : `${fmtConfigPct(Number(from))} → ${fmtConfigPct(Number(to))}`}`).join(" · ") : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"} ${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
       expired,
       note: injection ? injectionPage ? "原操作记录继续保留。" : "储备注入 · 无权限。原操作记录继续保留。"
-        : expired ? "当前值仅供核对，原操作记录继续保留。" : "24 小时内只能按原请求重试，不能改值。",
+        : expired ? "当前值仅供核对，原操作记录继续保留。" : "24 小时内只能按原操作重试，不能改值。",
       onRetry: !recovery.replayBlock ? () => recoverWrite(record) : undefined,
       onRelease: record.kind !== "injection" && recovery.replayRejection ? () => setReleasing(record) : undefined,
       queryLabel: record.kind !== "injection" && expired ? READ_CURRENT_VALUE : undefined,
@@ -579,11 +579,11 @@ export default function DualLedgerPage() {
       commandKey: pendingApproval.commandKey,
       object: "降低红线的审批",
       tag: verified ? { tone: "warn", label: "待审批" } : { tone: "warn", label: expired ? "已过期" : "结果未知" },
-      line: verified ? "等另一位超级管理员批准，批准前红线不变。" : recovery.replayRejection ? "按原请求重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经提交，先查询原结果。",
+      line: verified ? "等另一位超级管理员批准，批准前红线不变。" : recovery.replayRejection ? "按原操作重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经提交，先查询原结果。",
       body: `红线 ${fmtConfigPct(pendingApproval.values.redlinePct)} · 健康线 ${fmtConfigPct(pendingApproval.values.healthyPct)} · ${timeText(new Date(pendingApproval.createdAt).toISOString())}提交`,
       expired,
       note: verified ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
-        : expired ? RETRY_EXPIRED_TEXT : "先查询原审批单；按原请求重试不会建第二张单。",
+        : expired ? RETRY_EXPIRED_TEXT : "先查询原审批单；按原操作重试不会建第二张单。",
       onRetry: verified || recovery.replayBlock ? undefined : recoverApproval,
       onQuery: () => void queryApproval(),
       onRelease: recovery.replayRejection && !pendingApproval.received && !pendingApproval.b1Ticket ? () => setReleasing("approval") : undefined,

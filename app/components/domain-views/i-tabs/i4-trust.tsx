@@ -969,7 +969,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           : <span title={`SHA256 ${record.document.sha256}`}>{`换下 ${record.document.fileName} · 指纹 ${shortSha(record.document.sha256)}`}</span>,
         submittedAt: timeText(new Date(record.createdAt).toISOString()), tag: materialRejected(record) ? rejectedTag() : unknownTag("document"),
         note: materialQuery.errors[record.commandKey] ?? (upload ? "这页不能重发这次上传。原上传成功的话后台留着结果，点「查询原结果」查到就解除记录；查不到就对照现在用的文件指纹和上传时间。"
-          : materialRejected(record) ? RETRY_REJECTED_NEXT : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "先点「查询原结果」；明确查不到，再到这份资料的「恢复默认」里按原请求重试。"),
+          : materialRejected(record) ? RETRY_REJECTED_NEXT : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "先点「查询原结果」；明确查不到，再到这份资料的「恢复默认」里按原操作重试。"),
         actions: <><Button size="sm" onClick={() => {
           void readMaterialOriginal(record).then(result => {
             setDocumentRecovery({ kind: "lookup", key: record.commandKey, settled: result.settled, observation: result.current, error: result.error });
@@ -1001,7 +1001,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
             if (record.action === "delete" && record.snapshot) deleteSectionDraft(record.snapshot, record);
             else if (record.input) { setEditorCommandKey(record.commandKey); setDraftEditor({ ...record.input, mode: record.action === "create" ? "create" : "edit", sectionKey: record.sectionKey, revision: record.input.expectedRevision, reason: record.reason, published: record.snapshot }); }
             else void recoverDraft(record, true);
-          }}>按原请求重试</Button>}
+          }}>按原操作重试</Button>}
         {draftRejected(record) && <VerifiedReleaseButton disabled={!!recovering || !!i4DraftRecovery.state(record).busy} onClick={() => release.ask({ operation: DRAFT_OPERATION[record.action], target: `${sectionName(record.sectionKey)} · ${record.version}`,
           getSnapshot: i4DraftRecovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => {
             const released = i4DraftRecovery.releaseRejectedReplay(record);
@@ -1027,7 +1027,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           : approvalQuery.errors[record.commandKey] ?? (rejected ? RETRY_REJECTED_NEXT : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : undefined),
         actions: <><Button size="sm" loading={recovering === record.commandKey} onClick={() => void recoverSection(record)}>查询原结果</Button>
           {!record.receiptKnown && !pending && !releasable && <Button size="sm" disabledReason={sectionRetryBlocked(record)}
-            onClick={() => restoreSection(record)}>按原请求重试</Button>}
+            onClick={() => restoreSection(record)}>按原操作重试</Button>}
           {rejected && <VerifiedReleaseButton disabled={!!recovering || !!i4SectionRecovery.state(record).busy} onClick={() => release.ask({ operation: SECTION_OPERATION[record.action], target: `${sectionName(record.sectionKey)} · ${approvalChange(record)}`,
             getSnapshot: i4SectionRecovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => { try { releaseRejectedI4Section(record); } finally { syncCommands(); } } })} />}</> };
     }),
@@ -1468,7 +1468,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         footer={draftEditor && <Decision
           note={editorUnchanged ? NO_DRAFT_CHANGES : editorMissing.length ? `还缺：${editorMissing.join("、")}` : undefined}
           others={<Button disabled={savingDraft} onClick={() => { setDraftEditor(null); setEditorCommandKey(null); }}>取消</Button>}
-          primary={<Button variant="primary" data-trust-draft-editor="direct-save" loading={savingDraft} disabledReason={editorCommandKey ? (() => { const record = draftCommands.find(row => row.commandKey === editorCommandKey); return record ? draftRetryProblem(record) : "请查询原结果"; })() : newSectionReason(draftEditor.sectionKey) ?? (editorUnchanged ? NO_DRAFT_CHANGES : undefined)} onClick={() => void saveSectionDraft()}>{editorCommandKey ? "按原请求重试" : "保存草稿"}</Button>} />}>
+          primary={<Button variant="primary" data-trust-draft-editor="direct-save" loading={savingDraft} disabledReason={editorCommandKey ? (() => { const record = draftCommands.find(row => row.commandKey === editorCommandKey); return record ? draftRetryProblem(record) : "请查询原结果"; })() : newSectionReason(draftEditor.sectionKey) ?? (editorUnchanged ? NO_DRAFT_CHANGES : undefined)} onClick={() => void saveSectionDraft()}>{editorCommandKey ? "按原操作重试" : "保存草稿"}</Button>} />}>
         {draftEditor && <>
           <div className="i4-doc-effect"><StatusTag tone="neutral" filled explain="保存草稿直接写，不走审批；用户看到的内容不变，提交发布并批准后才公开。">不改公开内容</StatusTag></div>
           <DraftEditorBody editor={draftEditor} requiredLanguages={requiredLanguages} frozen={savingDraft || !!editorCommandKey} onChange={setDraftEditor}

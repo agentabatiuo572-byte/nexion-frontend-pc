@@ -47,7 +47,7 @@ function ownConfirmCopy(error: unknown): string | undefined {
 /** 不带「命令号：…」的同一句话：给轻提示和页面提示用，它们没有「技术信息」可收编号（全站-标识外露）。 */
 export function operationConfirmPlainMessage(error: unknown): string {
   const uncertain = outcomeUncertainDetail(error);
-  if (uncertain?.isA2) return ownConfirmCopy(error) ?? "结果未知，可能已经提交成功。不要关框、不要改内容，按原请求重试，或到「操作记录与审批」核对。";
+  if (uncertain?.isA2) return ownConfirmCopy(error) ?? "结果未知，可能已经提交成功。不要关框、不要改内容，按原操作重试，或到「操作记录与审批」核对。";
   if (uncertain) {
     // 没带 confirmCopy 的照旧指向操作记录与审批。
     // 刻意不承诺「系统会复用同一命令号自动去重」:携带命令号的错误族里,只有走持久 store 的面

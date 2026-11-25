@@ -433,7 +433,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       if (saved && replayKey !== saved.commandKey) throw new Error("原操作待确认，请查询原结果。");
       if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
       if (saved && (saved.commandKey !== providedCommandKey || saved.geo.body !== init?.body)) {
-        throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
+        throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原操作重试或查询原结果");
       }
       if (!saved) {
         if (!geoContext || typeof init?.body !== "string") throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
@@ -454,7 +454,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       if (saved && replayKey !== saved.commandKey) throw new Error("原操作待确认，请查询原结果。");
       if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
       if (saved && (saved.commandKey !== providedCommandKey || saved.tamper.body !== init?.body)) {
-        throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
+        throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原操作重试或查询原结果");
       }
       if (!saved) {
         if (!tamperContext || typeof init?.body !== "string") throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
@@ -477,7 +477,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       isOriginalRetry = !!saved;
       if (saved && replayKey !== saved.commandKey) throw new Error("原操作待确认，请查询原结果。");
       if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
-      if (saved && (saved.commandKey !== providedCommandKey || saved.sop.body !== init?.body)) throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
+      if (saved && (saved.commandKey !== providedCommandKey || saved.sop.body !== init?.body)) throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原操作重试或查询原结果");
       const commandKey = providedCommandKey || idempotencyKey();
       if (!saved) {
         if (!sopContext || typeof init?.body !== "string") throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
@@ -564,7 +564,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       throw error;
     }
     // 5xx 的通用中文是给读取失败写的（请稍后重新加载）；写入没收到确定结果时换成结果未知的说法。
-    throw Object.assign(new EmergencyOutcomeUncertainError(res.status >= 500 ? "结果未知：没收到确定结果，原操作可能已经生效。请查询原结果，或按原请求重试。" : error.message), { reasonCode: payload.message });
+    throw Object.assign(new EmergencyOutcomeUncertainError(res.status >= 500 ? "结果未知：没收到确定结果，原操作可能已经生效。请查询原结果，或按原操作重试。" : error.message), { reasonCode: payload.message });
   }
   if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
     || (requestFailed && (outcomeStaysUnknown(res.status, payload.code) || isIdempotencyOutcomeOpen(payload.message)

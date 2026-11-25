@@ -489,13 +489,13 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const outcome = investigationResults[pending.commandKey];
     const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
     return { key: pending.commandKey, title: what, record: target, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !retryBlock,
-      canQuery: pending.proposal ? canQueryOriginal : undefined, copy: { where: "调整历史", missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
+      canQuery: pending.proposal ? canQueryOriginal : undefined, copy: { where: "调整历史", missingOrigin: "只能按操作编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
       actions: <>
         {pending.proposal && canQueryOriginal && <FundCheckButtons record={pending} lookupWithoutOrigin outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupProposal(pending)} onClose={() => setClosing(true)} />}
         {!pending.proposal && <FundCheckButtons record={target} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupDirect(pending)} onClose={() => setClosing(true)} />}
-        {!expired && <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>}
+        {!expired && <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原操作重试</Button>}
         {retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>,
       detail: <>

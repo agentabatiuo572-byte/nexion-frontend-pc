@@ -94,7 +94,7 @@ export interface B3Dashboard {
 
 export class B3OutcomeUnknownError extends Error {
   constructor(public readonly commandKey: string) {
-    super("视图保存结果未知，可能已经生效。请先刷新核对；按原请求重试不会重复保存。");
+    super("视图保存结果未知，可能已经生效。请先刷新核对；按原操作重试不会重复保存。");
     this.name = "B3OutcomeUnknownError";
   }
 }

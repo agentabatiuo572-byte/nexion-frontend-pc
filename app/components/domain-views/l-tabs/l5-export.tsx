@@ -446,7 +446,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       if (!(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read"))) {
         const canWrite = record.action === "approve" ? canApproveTask(record.task) : ctx.canAccessReportType?.(record.task.reportType, record.task.pii);
         const step = isRetryExpired(record) ? "已过 24 小时不能再重试，请有导出任务查看权限的同事核对。"
-          : canWrite ? "24 小时内可以按原请求重试。" : "请有导出任务查看权限的同事核对。";
+          : canWrite ? "24 小时内可以按原操作重试。" : "请有导出任务查看权限的同事核对。";
         notify.warn(record.task.id, `${!original ? "查询失败，这不代表没执行" : "还没查出原结果的结论"}，原请求继续保留；${step}`);
         return;
       }
@@ -474,7 +474,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
           onClick={() => void queryTask(record)}>查询原结果</Button>
         {!expired && <Button size="sm" disabledReason={!canWrite ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : undefined}
           onClick={() => record.action === "approve" ? requestApproveTask(record.task, record.requester, record)
-            : void sendTaskAction(record.task, record.action, record.requester, record.request.reason, record).catch(error => toast(displayAdminError(error), "error"))}>按原请求重试</Button>}
+            : void sendTaskAction(record.task, record.action, record.requester, record.request.reason, record).catch(error => toast(displayAdminError(error), "error"))}>按原操作重试</Button>}
       </>,
     };
   });

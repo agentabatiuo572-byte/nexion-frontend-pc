@@ -199,7 +199,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
         setPending(record);
         if (querying && error instanceof SupportClientError && error.status === 404 && error.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") setReceiptMissing(!record.denied);
         setMessage(querying ? `暂时查不到原结果；你填的内容和原请求都还在。${displayAdminError(error)}`
-          : recovery ? mUnknownText(displayAdminError(error)) : `结果未知：请查询原结果，或按原请求重试。${displayAdminError(error)}`);
+          : recovery ? mUnknownText(displayAdminError(error)) : `结果未知：请查询原结果，或按原操作重试。${displayAdminError(error)}`);
       }
     } finally {
       running.current = false;

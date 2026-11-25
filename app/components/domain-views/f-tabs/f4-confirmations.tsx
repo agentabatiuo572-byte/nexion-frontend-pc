@@ -381,7 +381,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
       spec = { briefKind: "config", name: "调整上榜最低奖励（已停用）", op: "param", paramKey: "F.leaderboard.minUsd",
               edit: { kind: "number", current: data.configValues["F.leaderboard.minUsd"] ?? "0", unit: "USDT" },
               title: "调整上榜最低奖励（已停用）", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "这一项已经停用，排名不再看它；要改门槛请用「上榜门槛」（算力点）。", check: "按原请求重试会被拒绝，不会生效。" },
+              statedBrief: { impact: "这一项已经停用，排名不再看它；要改门槛请用「上榜门槛」（算力点）。", check: "按原操作重试会被拒绝，不会生效。" },
               completionCopy: approvalCopy, facts: <Facts>{approvalFacts(F4_WRITE)}</Facts>,
               detail: "旧的 USDT 上榜门槛已停用，只能查询原申请的结果。" };
       break;

@@ -298,8 +298,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const openedData = data;
     let pendingKey: string | undefined;
     const original = () => pendingI2Commands().find((row) => row.commandKey === pendingKey);
-    // 结果未知后框里冻结的是原请求，主按钮和别处一样叫「按原请求重试」（全站-结果未知叫法）。
-    const confirmation: ConfirmReq = { ...req, get okLabel() { return pendingKey ? "按原请求重试" : req.okLabel; }, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason, getPendingRecovery: () => pendingRecovery(original()),
+    // 结果未知后框里冻结的是原请求，主按钮和别处一样叫「按原操作重试」（全站-结果未知叫法）。
+    const confirmation: ConfirmReq = { ...req, get okLabel() { return pendingKey ? "按原操作重试" : req.okLabel; }, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason, getPendingRecovery: () => pendingRecovery(original()),
       run: async (reason, value) => {
         if (pendingKey) {
           const record = original();
@@ -1074,7 +1074,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         {target ? <FundCheckButtons record={target} outcome={outcomes[row.commandKey]} expired={expired} busy={!!checking || !!recovering} checking={checking === row.commandKey}
           onCheck={query} onClose={() => setClosing(row)} />
           : <Button size="sm" loading={checking === row.commandKey} disabled={!!checking} disabledReason={!canReadI2 ? "当前账号没有读取权限" : recovering ? "等当前操作完成" : undefined} onClick={query}>查询原结果</Button>}
-        {!expired && !rejected && <Button size="sm" disabled={!!checking} disabledReason={retryBlocked} onClick={() => void restore(row)}>按原请求重试</Button>}
+        {!expired && !rejected && <Button size="sm" disabled={!!checking} disabledReason={retryBlocked} onClick={() => void restore(row)}>按原操作重试</Button>}
         {rejected && <VerifiedReleaseButton disabled={!!checking || !!recovering || !!busy} onClick={() => release.ask({ operation: row.action, target: <>{unknownObject(row)}{unknownChange(row) && ` · ${unknownChange(row)}`}</>,
           getSnapshot: i2Recovery.releaseSnapshot(row), createdAt: row.createdAt, release: () => {
             const released = i2Recovery.releaseRejectedReplay(row);

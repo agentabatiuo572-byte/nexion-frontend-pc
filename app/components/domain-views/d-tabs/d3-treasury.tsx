@@ -356,7 +356,7 @@ export function D3Treasury() {
       setUnknownTick((tick) => tick + 1);
       if (rejected || isPermissionDenied(err) || retained && !isDOutcomeUnknownError(err)) throw err;
       onUnknown?.();
-      toast("结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。", "warn");
+      toast("结果未知，不要重复操作。到页面上方查询原结果，或按原操作重试。", "warn");
       return;
     }
     forget();
@@ -728,11 +728,11 @@ export function D3Treasury() {
       record,
       title: "可能已经入账",
       body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}。</>,
-      hint: "按原请求重试不会重复登记。",
+      hint: "按原操作重试不会重复登记。",
       expiresAt: record.expiresAt,
       allowed: canInject,
       auditHref: `/platform/audit?domain=D&object=${encodeURIComponent(record.voucherNo)}`,
-      retryTitle: "按原请求重试储备注入",
+      retryTitle: "按原操作重试储备注入",
       retryEffect: "立即生效",
       rows: [
         { key: "amount", label: "金额", value: amountText(Number(record.amount)), lead: true, unit: "USDT" },
@@ -749,11 +749,11 @@ export function D3Treasury() {
       commandKey: forecastRecord.commandKey,
       record: forecastRecord,
       title: "可能已经保存",
-      hint: "按原请求重试不会重复保存。",
+      hint: "按原操作重试不会重复保存。",
       expiresAt: forecastRecord.expiresAt,
       allowed: canConfig && originalOwner(savedForecast),
       auditHref: "/platform/audit?domain=D",
-      retryTitle: "按原请求重试保存预测设置",
+      retryTitle: "按原操作重试保存预测设置",
       retryEffect: effectiveText(),
       rows: [
         { key: "version", label: "基于版本", value: `v${savedForecast.expectedVersion}` },
@@ -770,11 +770,11 @@ export function D3Treasury() {
       commandKey: record.commandKey,
       record,
       title: "导出任务可能已经生成",
-      hint: "文件可能没有下载下来；按原请求重试不会多记一次。",
+      hint: "文件可能没有下载下来；按原操作重试不会多记一次。",
       expiresAt: record.expiresAt,
       allowed: (record.exportKind === "liabilities" ? canExportLiabilities : canExportReconciliation) && originalOwner(record),
       auditHref: "/platform/audit?domain=D",
-      retryTitle: "按原请求重试导出",
+      retryTitle: "按原操作重试导出",
       retryEffect: "立即生效",
       rows: [
         { key: "kind", label: "内容", value: EXPORT_LABEL[record.exportKind] },
@@ -805,14 +805,14 @@ export function D3Treasury() {
           return { key: item.commandKey, title: item.label, record: item.investigationRecord, outcome: investigationResults[item.commandKey], createdAt: item.investigationRecord.createdAt, expired, canRetry: !expired && item.allowed,
             actions: <>
               <FundCheckButtons record={item.investigationRecord} outcome={investigationResults[item.commandKey]} expired={expired} onCheck={() => void verifyPending(item)} onClose={() => setClosing(item)} />
-              <Button size="sm" disabledReason={expired ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原请求重试</Button>
+              <Button size="sm" disabledReason={expired ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原操作重试</Button>
               {item.allowed && retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>解除待确认</Button>}
             </>,
             detail: <>
               <p>{found === "FAILED" ? "" : `${item.title}。`}{item.body}{expired ? "" : item.hint}</p>
               {pendingNotes[item.commandKey] && <p><KeepText text={pendingNotes[item.commandKey]} /></p>}
-              <Fold inset title="原操作完整内容" summary="原请求编号、完整内容和提交时间">
-                <p className="rd-note d3-raw" data-mono>原请求编号 {item.commandKey}</p>
+              <Fold inset title="原操作完整内容" summary="操作编号、完整内容和提交时间">
+                <p className="rd-note d3-raw" data-mono>操作编号 {item.commandKey}</p>
                 <pre className="rd-note d3-raw">{JSON.stringify(item.record, null, 2)}</pre>
                 <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(JSON.stringify(item.record, null, 2)).then(() => toast("已复制原操作记录", "success"), () => toast("复制失败，请手动选择原操作记录", "error"))}>复制原操作记录</Button>
               </Fold>
@@ -946,7 +946,7 @@ export function D3Treasury() {
           sub={<StatusTag tone="progress" filled>{retry.retryEffect}</StatusTag>}
           busy={retrying}
           onClose={() => setRetry(null)}
-          footer={<><Button disabled={retrying} onClick={() => setRetry(null)}>取消</Button><Button variant="primary" loading={retrying} loadingText="提交中…" onClick={() => void runRetry()}>按原请求重试</Button></>}
+          footer={<><Button disabled={retrying} onClick={() => setRetry(null)}>取消</Button><Button variant="primary" loading={retrying} loadingText="提交中…" onClick={() => void runRetry()}>按原操作重试</Button></>}
         >
           <div className="rd-stack">
             <Facts>{retry.rows.map((row) => <Fact key={row.key} k={row.label} lead={row.lead} tone={row.lead ? "role-1" : undefined} unit={row.unit}>{row.value}</Fact>)}</Facts>

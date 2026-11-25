@@ -190,7 +190,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
       try { ticket = await createA2OperationProposal(original.proposal, original.commandKey, true); }
       catch (failure) {
         if (original.ticket || !isExplicitRejection(failure)) {
-          throw new A2OutcomeUncertainError("原档位申请结果未知，请查询原结果，或按原请求重试。", original.commandKey);
+          throw new A2OutcomeUncertainError("原档位申请结果未知，请查询原结果，或按原操作重试。", original.commandKey);
         }
         attempts.forget(slot(session.adminId), original.commandKey);
         if (hadPending) { onClose(); await onError(failure); }

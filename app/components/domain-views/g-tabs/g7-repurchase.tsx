@@ -388,7 +388,7 @@ function G7RepurchasePage() {
           tag: recoveryTag(record), ticket: record.ticket?.id,
           actions: <>
             <Button size="sm" disabled={recoverBusy} aria-label={`查询${name}的原结果`} onClick={() => void recover(key, false)}>查询原结果</Button>
-            {record.canRetry && <Button size="sm" disabled={recoverBusy} aria-label={`按原请求重试${name}`} onClick={() => void recover(key, true)}>按原请求重试</Button>}
+            {record.canRetry && <Button size="sm" disabled={recoverBusy} aria-label={`按原操作重试${name}`} onClick={() => void recover(key, true)}>按原操作重试</Button>}
           </>,
         };
       }),
@@ -403,7 +403,7 @@ function G7RepurchasePage() {
           tag: g7DirectCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"),
           actions: <>
             <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`查询${name}的原结果`} onClick={() => void readDirectCommand(direct)}>查询原结果</Button>
-            {retry && <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`按原请求重试${name}`} onClick={retry}>按原请求重试</Button>}
+            {retry && <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`按原操作重试${name}`} onClick={retry}>按原操作重试</Button>}
           </>,
         };
       }),
@@ -413,7 +413,7 @@ function G7RepurchasePage() {
       title={`参数修改的原操作 · ${rows.length} 项`}
       lead={waiting
         ? "有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。"
-        : "这些参数先只能查询原结果或在 24 小时内按原请求重试，不能改成别的值；其他参数照常可改。"}
+        : "这些参数先只能查询原结果或在 24 小时内按原操作重试，不能改成别的值；其他参数照常可改。"}
       explain={<>
         <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，和直接生效但没收到结果的修改。原操作只能查询，或在 24 小时内按原内容重试，不能改值。</p>
         <p>要改成别的值，等原操作有结论后再发起新修改。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
@@ -566,7 +566,7 @@ function G7RepurchasePage() {
     openActionConfirm({ briefKind: "config",
       confirmLabelForValue: (value) => loosens(value) ? "提交审批" : "确认修改",
       action: `调整锁定计划参数 · ${label}`,
-      title: directRecovery ? `${label} · 按原请求重试` : original ? `${label}的原申请` : `调整${label}`,
+      title: directRecovery ? `${label} · 按原操作重试` : original ? `${label}的原申请` : `调整${label}`,
       directRecovery,
       detail: <>{copy?.what ?? operatorCopyText(param.sub)}。{param.key === "lottery" ? "保存时检查奖池核对编号至少 3 个字，且本月已发张数加新的每单张数不超过创世奖池月容量。" : copy?.note}</>,
       effect: copy?.loosen
@@ -653,7 +653,7 @@ function G7RepurchasePage() {
           if (paramApproval.record(param.key) || directRecord(param.key)) coveredErrors.current.add(messageOf(err));
           setError(messageOf(err));
           if (saved && !paramApproval.record(saved.request.obj)) openActionConfirm(null);
-          // 框开着时错误只写在框里；按原请求重试被拒、框随后关掉并重读（下面 finally）时，才用轻提示说一次。
+          // 框开着时错误只写在框里；按原操作重试被拒、框随后关掉并重读（下面 finally）时，才用轻提示说一次。
           if (savedDirect && !paramApproval.record(param.key) && !directRecord(param.key)) toast(`操作失败 · ${messageOf(err)}`);
           throw err;
         } finally {
@@ -763,7 +763,7 @@ function G7RepurchasePage() {
           {lockedNames.join("、")}被一张审批单锁住，现在改不了</Conclusion>
       : originalCount > 0
       ? <Conclusion state="warn" icon={Clock3}
-          hint="在下面逐条查询原结果；24 小时内也可以按原请求重试。"
+          hint="在下面逐条查询原结果；24 小时内也可以按原操作重试。"
           explain="提交过的参数修改还没有确定结论：有的在等另一位超级管理员审批，有的没收到结果。有结论之前这几项不能改成别的值，其他参数照常可改。">
           有 {fmtCount(originalCount)} 项参数修改还没有结论</Conclusion>
       : <Conclusion state="neutral" icon={Lock}

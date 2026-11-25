@@ -259,7 +259,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         syncPending();
         await actions.reloadJEmergency().catch(() => undefined);
         if (unknown) {
-          toast("结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。", "warn");
+          toast("结果未知，不要重复操作。到页面上方查询原结果，或按原操作重试。", "warn");
           return;
         }
         // 确认框留着时原因写在框里，重试的原因写在待确认条上，都不再弹同一句；权限层的 403 由确认框提示并关框（OP-132）。
@@ -425,7 +425,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   };
 
   const visibleRestores = pendingRestores.filter((record) => record.fingerprint.startsWith(`${session?.adminId}:`));
-  /** 恢复申请按原请求重试：先按原请求查审批单，查不到且在 24 小时内才用原内容再建（submitRestore 的原有流程）。 */
+  /** 恢复申请按原操作重试：先按原请求查审批单，查不到且在 24 小时内才用原内容再建（submitRestore 的原有流程）。 */
   const retryRestore = (record: RestoreAttempt) => {
     const gate = data?.activeGates.find((row) => row.key === record.input.obj)
       ?? { key: record.input.obj, name: record.input.action.replace(/^恢复业务开关 · /, ""), amplifies: record.input.amplifies };
@@ -437,10 +437,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       actions: <>
         <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={checkingRestore !== null || !!submitting} checking={submitting === record.fingerprint}
           onCheck={() => void checkInvestigation(record).catch(() => undefined)} onClose={() => setClosing(record)} />
-        {!expired && <Button size="sm" loading={checkingRestore === record.input.obj} disabled={checkingRestore !== null || !!submitting} disabledReason={canResume ? undefined : RETRY_DENIED} onClick={() => retryRestore(record)}>按原请求重试</Button>}
+        {!expired && <Button size="sm" loading={checkingRestore === record.input.obj} disabled={checkingRestore !== null || !!submitting} disabledReason={canResume ? undefined : RETRY_DENIED} onClick={() => retryRestore(record)}>按原操作重试</Button>}
       </>,
       detail: <>
-        <p>提交恢复审批不会打开业务。按原请求重试会先核对原审批单，已建的不会重复建。</p>
+        <p>提交恢复审批不会打开业务。按原操作重试会先核对原审批单，已建的不会重复建。</p>
         {pendingNotes[record.fingerprint] && <p><KeepText text={pendingNotes[record.fingerprint]} /></p>}
       </>,
       tech: `理由 ${record.input.reason}` };
@@ -452,7 +452,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       actions: <>
         <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!submitting} checking={submitting === record.fingerprint}
           onCheck={() => void verifyPending(record)} onClose={() => setClosing(record)} />
-        {!expired && <Button size="sm" disabled={!!submitting} disabledReason={canRetry(record) ? undefined : RETRY_DENIED} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+        {!expired && <Button size="sm" disabled={!!submitting} disabledReason={canRetry(record) ? undefined : RETRY_DENIED} onClick={() => void retryPending(record)}>按原操作重试</Button>}
       </>,
       detail: pendingNotes[record.fingerprint] ? <p><KeepText text={pendingNotes[record.fingerprint]} /></p> : undefined,
       tech: `理由 ${record.reason}` };

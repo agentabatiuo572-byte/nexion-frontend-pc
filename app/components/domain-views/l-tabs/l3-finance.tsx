@@ -441,12 +441,12 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           ? <>申请已创建（报表号 {outcome.reportId}），审批状态没有读到。点「查询原结果」再查，不会重新提交。</>
           : pendingDetail && isRetryExpired(pendingDetail)
             ? <>申请可能已经提交。已超过 24 小时，只能核对：{canOpenExportPage ? exportPageLink(`到「${exportPageName}」看有没有这条待放行的申请`) : <>请找有「{exportPageName}」权限的同事核对</>}。</>
-            : <>申请可能已经提交。先{canOpenExportPage ? <>点「查询原结果」到「{exportPageName}」看有没有</> : <>请有「{exportPageName}」权限的同事核对</>}；没有的话，24 小时内可以按原请求重试，不会重复申请。</>}</p>
+            : <>申请可能已经提交。先{canOpenExportPage ? <>点「查询原结果」到「{exportPageName}」看有没有</> : <>请有「{exportPageName}」权限的同事核对</>}；没有的话，24 小时内可以按原操作重试，不会重复申请。</>}</p>
         {pendingDetail && <span className="rd-toolbar">
           {pendingDetail.reportId
             ? <Button size="sm" loading={detailExporting} disabledReason={canQueryDetail ? undefined : formatAdminApiError("L3_DETAIL_QUERY_PERMISSION", "L3_DETAIL_QUERY_PERMISSION")} onClick={() => void queryDetail(pendingDetail)}>查询原结果</Button>
             : canOpenExportPage && <Link className="rd-link" href={EXPORT_PAGE}>查询原结果</Link>}
-          <Button size="sm" loading={detailExporting} disabledReason={pendingDetail.reportId ? formatAdminApiError("L3_DETAIL_QUERY_REQUIRED", "L3_DETAIL_QUERY_REQUIRED") : isRetryExpired(pendingDetail) ? RETRY_EXPIRED_TEXT : !ctx.canExportFinanceDetail ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : undefined} onClick={() => openDetailExport(pendingDetail)}>按原请求重试</Button>
+          <Button size="sm" loading={detailExporting} disabledReason={pendingDetail.reportId ? formatAdminApiError("L3_DETAIL_QUERY_REQUIRED", "L3_DETAIL_QUERY_REQUIRED") : isRetryExpired(pendingDetail) ? RETRY_EXPIRED_TEXT : !ctx.canExportFinanceDetail ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : undefined} onClick={() => openDetailExport(pendingDetail)}>按原操作重试</Button>
         </span>}
       </Notice>
     );

@@ -1125,7 +1125,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         impact: form.role === "support"
           ? "确认后马上建好启用的账号，显示一次 20 位临时密码；首次登录先绑定两步验证再改密码。客服账号自动有专属客服资格（未分组）。"
           : "确认后马上建好启用的账号，显示一次 20 位临时密码；首次登录先绑定两步验证再改密码。",
-        check: "登录名或邮箱已被占用、角色不可用时会提示失败；按原请求重试不会建第二个账号。",
+        check: "登录名或邮箱已被占用、角色不可用时会提示失败；按原操作重试不会建第二个账号。",
       },
       run: async (reason) => {
         const result = await submitRequest({ kind: "create", input: {
@@ -1367,13 +1367,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       submittedAt: record.createdAt,
       note: replayRejection ? `后台已拒绝重试，请先核实原操作。${expired ? RETRY_EXPIRED_TEXT : ""}` : expired ? RETRY_EXPIRED_TEXT
         : record.ticket?.status === "pending" ? undefined : record.received ? "请查询原结果，核对当前业务记录。"
-          : retryBlock ?? (capability === "replay" ? "按原请求重试会重新发送一次。" : undefined),
+          : retryBlock ?? (capability === "replay" ? "按原操作重试会重新发送一次。" : undefined),
       tag: record.ticket?.status === "pending" ? <StatusTag tone="warn">待审批</StatusTag>
         : expired ? expiredTag(RETRY_EXPIRED_TEXT)
         : unknownTag(request.kind === "proposal" ? "approval" : "direct", retryBlock ?? "提交时没收到确定结果，可能已经生效。"),
       actions: <>
         <Button size="sm" disabledReason={mutatingAction || busy ? "正在核对原操作，请稍候。" : undefined} onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原结果</Button>
-        {!record.ticket && !record.received && !expired && !replayRejection && capability !== "readback" && <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原请求重试</Button>}
+        {!record.ticket && !record.received && !expired && !replayRejection && capability !== "readback" && <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原操作重试</Button>}
         {replayRejection && <Button size="sm" disabled={!!busy} onClick={() => confirmLocalRelease(record, name, () => a1Recovery.releaseRejectedReplay(record))}>解除原操作记录</Button>}
       </>,
     };
@@ -1413,7 +1413,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <Button size="sm" disabled={!!status.busy} onClick={open}>查询原结果</Button>
         {!status.expired && !status.replayRejection && <Button size="sm" variant="primary"
           disabledReason={!overviewReady || governanceFrozen ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : pendingReplayReason(status, errorMessage(new Error("A1_OPERATION_FORBIDDEN")))}
-          onClick={open}>按原请求重试</Button>}
+          onClick={open}>按原操作重试</Button>}
         {status.replayRejection && <Button size="sm" disabled={!!status.busy}
           onClick={() => confirmLocalRelease(record, record.label, () => qualificationRecovery.releaseRejectedReplay(record))}>解除原操作记录</Button>}
       </>,
@@ -1438,7 +1438,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       tag: replay.expired ? expiredTag(RETRY_EXPIRED_TEXT)
         : unknownTag("direct", cancellation
           ? avatarRetryBlock ?? "提交时没收到确定结果，取消可能已经生效。"
-          : "提交时没收到确定结果，头像可能已经准备好。24 小时内可以点「处理原头像」按原请求重试，上传的要选同一张图片。"),
+          : "提交时没收到确定结果，头像可能已经准备好。24 小时内可以点「处理原头像」按原操作重试，上传的要选同一张图片。"),
       actions: <>
         <Button size="sm" disabled={!!replay.busy} onClick={() => void (async () => {
           requireActor(null, false);
@@ -1457,7 +1457,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           ? <Button size="sm" variant="primary" disabledReason={avatarRetryBlock} onClick={() => void (async () => {
             await replayAvatarCancellation(cancellation);
             await readAfterAvatarCancellation();
-          })().catch(error => toast(errorMessage(error)))}>按原请求重试</Button>
+          })().catch(error => toast(errorMessage(error)))}>按原操作重试</Button>
           : <Button size="sm" variant="primary" disabledReason={avatarRetryBlock} onClick={() => setAvatarRecovery(target)}>处理原头像</Button>)}
         {replay.replayRejection && <Button size="sm" disabled={!!replay.busy} onClick={() => confirmLocalRelease(cancellation ?? draft, name, () => cancellation
           ? a1AvatarCancellationRecovery.releaseRejectedReplay(cancellation) : a1AvatarPreparationRecovery.releaseRejectedReplay(draft))}>解除原操作记录</Button>}
@@ -1508,7 +1508,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           const retryable = states.filter(({ retryBlock }) => !retryBlock).length;
           const queryOnly = creations.length - waiting - expired - rejected - retryable;
           const hints = [
-            retryable && `${retryable} 个可按原请求重试`,
+            retryable && `${retryable} 个可按原操作重试`,
             queryOnly && `${queryOnly} 个需查询或核对原操作`,
             rejected && `${rejected} 个重试被拒，需人工核实`,
             expired && `${expired} 个已过期`,
