@@ -121,6 +121,9 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
     onCloseAutoFocus: (event: Event) => {
       event.preventDefault();
       const self = content.current;
+      // 关掉的时候焦点已经在另一个还开着的框里（旧抽屉退出动画还没完，新抽屉已经打开并接了焦点）：不动它。
+      const holder = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>(".rd-modal, .rd-drawer") : null;
+      if (holder && holder !== self && holder.getAttribute("data-state") === "open") return;
       const top = openOverlay(self);
       // 都找不到时回到还开着的最上层框，不落到页面上。
       const next = latest.current() ?? top;

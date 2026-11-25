@@ -36,10 +36,10 @@ function focusFrame(frame: HTMLElement) {
 }
 /**
  * 按过「重试」、还没有结果的那一次。有的页面重读时把这一块换成加载占位（卸下），仍失败时再挂一块新的：
- * 新挂上的失败块要同时满足两条才算同一块：标识相同（retryKey；没传时用标题文字），并且在原来那一块所在的区域里（region：卸下时还挂着的最近一层外框）。
- * 同一面板里另一项读取的失败块标识不同，不会接走这次的交接（BUG-710 F02）。新的这一块有「重试」才接；焦点掉在页面上、或还停在交接的那一层时把它交回「重试」。30 秒内有效，用一次就清掉。
+ * 新挂上的失败块在原来那一块所在的区域里（region：卸下时还挂着的最近一层外框）就算同一块；失败原因变了、标题跟着变也认（很多页面拿错误原因当标题）。
+ * 同一个面板里有两项各自读取的失败块时，两块都传 retryKey，标识不同就不会接走对方的交接（BUG-710 F02，A8 对照表）。新的这一块有「重试」才接；焦点掉在页面上、或还停在交接的那一层时把它交回「重试」。30 秒内有效，用一次就清掉。
  */
-let pendingRetry: { key: string; at: number; region?: HTMLElement; landing?: HTMLElement } | null = null;
+let pendingRetry: { key?: string; at: number; region?: HTMLElement; landing?: HTMLElement } | null = null;
 const RETRY_FOCUS_MS = 30_000;
 
 export function BlockState({ state, title, detail, onRetry, retrying, retryLabel = "重试", compact, afterRetryFocus, retryKey }: {
@@ -53,7 +53,7 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
   compact?: boolean;
   /** 按「重试」读到之后焦点去哪：这一块的标题。不传时交给还挂着的最近一层外框。 */
   afterRetryFocus?: RefObject<HTMLElement | null>;
-  /** 这一块的固定标识：重读前后失败原因不同、标题会变时传，认出重读后新挂上的失败块还是这一块。不传时用标题文字。 */
+  /** 这一块的固定标识：同一个区域里有别的读取也会挂失败块时传，免得接走对方的交接。不传时只按区域认。 */
   retryKey?: string;
 }) {
   const failed = state === "error";
@@ -66,7 +66,7 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
   focusAfter.current = afterRetryFocus;
   /** 按「重试」那一刻这一块的外框，由近到远；这一块卸下后从里面找还挂着的一层接焦点。 */
   const frames = useRef<HTMLElement[]>([]);
-  const key = retryKey ?? (typeof title === "string" ? title : "");
+  const key = retryKey;
   const retry = onRetry && (() => {
     armed.current = { at: Date.now(), started: false, target: afterRetryFocus };
     pendingRetry = { key, at: Date.now() };

@@ -206,11 +206,11 @@ export default function A8Permissions() {
         <Panel flush icon={Users} title="角色权限对照表"
           sub={rolesReady && records.length > 0 && grants.length > 0 ? `本页 ${records.length} 项权限 × ${grants.length} 个角色` : countText}
           explain={`横向是角色，纵向是列表当前页的${!loading && !loadError ? ` ${records.length} 项` : ""}权限，打勾表示该角色有这项权限。包括已停用的角色。翻页只换行，角色的授权不重新读取；要最新的就收起再展开。`}>
-          {loading ? <BlockState state="loading" title="加载中…" /> : loadError ? <BlockState state="error" title="权限列表加载失败" detail={loadError} onRetry={() => setReloadKey((value) => value + 1)} /> : <>
+          {loading ? <BlockState state="loading" title="加载中…" /> : loadError ? <BlockState state="error" title="权限列表加载失败" detail={loadError} retryKey="a8-records" onRetry={() => setReloadKey((value) => value + 1)} /> : <>
           {matrixLoading ? (
               <BlockState state="loading" title="正在加载…" detail="要逐个读取每个角色的授权，角色多时要等几秒。" />
             ) : matrixError ? (
-              <BlockState state="error" title="各角色的权限加载失败，对照表暂不可信。" detail={matrixError} onRetry={() => setMatrixReloadKey((value) => value + 1)} />
+              <BlockState state="error" title="各角色的权限加载失败，对照表暂不可信。" detail={matrixError} retryKey="a8-matrix" onRetry={() => setMatrixReloadKey((value) => value + 1)} />
             ) : !grants || grants.length === 0 ? (
               <BlockState state="empty" title="没有可展示的角色" />
             ) : records.length === 0 ? (
