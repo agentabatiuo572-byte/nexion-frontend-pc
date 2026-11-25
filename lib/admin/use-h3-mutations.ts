@@ -183,7 +183,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
     if (!ticket) { if (!quiet) toast("暂未查到原审批单，原请求继续保留。"); return null; }
     if (ticket.status === "pending") { retain({ ...r, acknowledged: true, ticket: undefined }); confirmedTickets.current.set(r.commandKey, ticket); update(); }
     else if (h3Recovery.settleFromQuery(r, result.conclusion)) {
-      await settled(r.commandKey, result.conclusion === "not-executed" ? r : undefined);
+      await settled(r.commandKey, result.conclusion === "not-executed" ? { ...r, ticket } : undefined);
     }
     if (!quiet) toast(`审批单${({ pending: "待审批", approved: "已批准", rejected: "被拒", expired: "已过期", withdrawn: "已撤回" })[ticket.status]}：${ticket.before} → ${ticket.after}`);
     return ticket;

@@ -95,8 +95,23 @@ type DraftEditor = {
   expectedSectionStatus: string;
   published?: TrustSectionVersion;
   editBaseline?: TrustSectionVersion;
-  resumedDraft?: { desired: NonNullable<I4DraftCommand["input"]>; before?: TrustSectionVersion };
+  resumedDraft?: { desired: NonNullable<I4DraftCommand["input"]>; before?: TrustSectionVersion; submitted?: true };
 };
+
+const trustDraftFieldsForSubmit = (fields: DraftEditor["fields"], required: readonly OperatingLanguageCode[]) =>
+  mapTrustSectionLanguageFields(fields.map(({ key, label, value }) => ({
+    key: key.trim(), label: label.trim(), value: value.trim(),
+  })), required, "submit");
+
+const NO_DRAFT_CHANGES = "没有改动";
+function trustDraftUnchanged(editor: DraftEditor, fields: DraftEditor["fields"], required: readonly OperatingLanguageCode[]) {
+  const base = editor.editBaseline;
+  if (editor.mode !== "edit" || !base || editor.description.trim() !== base.description.trim()
+    || editor.structure.trim() !== base.structure.trim()) return false;
+  const baseline = trustDraftFieldsForSubmit(base.fields, required);
+  return fields.length === baseline.length && fields.every(field =>
+    baseline.some(row => row.key === field.key && row.label === field.label && row.value === field.value));
+}
 
 const APPROVER = "另一位管理员";
 const PENDING_REASON = "有申请等另一位管理员处理，批准、驳回、撤回或过期后才能再改";
@@ -107,7 +122,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const session = useAdminAuth((state) => state.session);
   const publicationDrafts = useTerminalDrafts<string>();
   const materialDrafts = useTerminalDrafts<I4DocumentUploadDraft>();
-  const trustDrafts = useTerminalDrafts<{ desired: NonNullable<I4DraftCommand["input"]>; before?: TrustSectionVersion }>();
+  const trustDrafts = useTerminalDrafts<NonNullable<DraftEditor["resumedDraft"]>>();
   const approvalQuery = useRecoveryQueryErrors();
   const materialQuery = useRecoveryQueryErrors();
   const retainTrustDraft = (record: I4DraftCommand) => {
@@ -117,6 +132,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     trustDrafts.remember(record.original.owner, record.action === "create" ? `new:${record.sectionKey}` : `${record.sectionKey}:${record.version}`, {
       desired: { version, description, structure, fields, expectedRevision, expectedSectionVersion, expectedSectionStatus },
       before: baseline,
+      submitted: true,
     });
   };
   const rememberPublication = (record: I4SectionCommand, status?: string) => {
@@ -147,12 +163,15 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       return latest;
     });
   const conflictView = useIConflictView(conflictReview.review);
-  /** 核对冲突后重开确认框时带回的理由、所选版本和数据来源，只用一次。 */
-  const prefill = useRef<{ key: string; reason: string; value?: string; dataSource?: string } | null>(null);
+  /** 核对冲突后重开确认框时带回所选版本和数据来源，只用一次。 */
+  const prefill = useRef<{ key: string; value?: string; dataSource?: string } | null>(null);
   const [draftCommands, setDraftCommands] = useState<I4DraftCommand[]>([]);
   const [draftOutcomes, setDraftOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closingDraft, setClosingDraft] = useState<I4DraftCommand | null>(null);
   const [sectionCommands, setSectionCommands] = useState<I4SectionCommand[]>([]);
+  const [sectionReadErrors, setSectionReadErrors] = useState<Record<string, {
+    record: I4SectionCommand; status: A2OperationRow["status"]; reason: string;
+  }>>({});
   const [documentCommands, setDocumentCommands] = useState<I4DocumentCommand[]>([]);
   const [documentRecovery, setDocumentRecovery] = useState<{ key: string; settled: boolean; observation?: I4DocumentCommand["observation"]; error?: string } | null>(null);
   const [recovering, setRecovering] = useState<string | null>(null);
@@ -170,22 +189,20 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const syncCommands = () => { setDraftCommands(pendingI4DraftCommands()); setSectionCommands(pendingI4SectionCommands()); setDocumentCommands(pendingI4DocumentCommands()); };
   useEffect(() => { syncCommands(); }, []);
   useEffect(() => {
-    if (data && data !== invalidatedData.current && !contentLoading && !errorText) setMustRead(false);
+    if (!data || data === invalidatedData.current || contentLoading || errorText) return;
+    setMustRead(false);
+    setSectionReadErrors(current => {
+      const remaining = Object.entries(current).filter(([, { record }]) =>
+        !data.trustSections.some(section => section.key === record.sectionKey));
+      return remaining.length === Object.keys(current).length ? current : Object.fromEntries(remaining);
+    });
   }, [data, contentLoading, errorText]);
   useEffect(() => {
-    let active = true;
-    const originals = pendingI4SectionCommands().filter(row => row.receiptKnown);
-    void Promise.allSettled(originals.map(async record => {
-      const ticket = await approvalQuery.read(record.commandKey, () => queryI4SectionCommand(record));
-      rememberPublication(record, ticket?.status);
-      return ticket;
-    })).then(results => {
-      if (!active) return;
-      syncCommands();
-      const closedKeys = results.flatMap((result, index) => result.status === "fulfilled" && result.value && result.value.status !== "pending" ? [originals[index]] : []);
-      if (closedKeys.length) void rereadAfterResolution(closedKeys.map(row => row.sectionKey), closedKeys.map(row => row.commandKey));
-    });
-    return () => { active = false; };
+    for (const record of pendingI4SectionCommands()) {
+      if (record.receiptKnown && !i4SectionRecovery.state(record).busy) {
+        void checkSectionTicket(record).catch(() => undefined);
+      }
+    }
   }, [data]);
   useEffect(() => {
     const expiry = [...draftCommands, ...sectionCommands, ...documentCommands].filter(row => !isRetryExpired(row)).reduce((at, row) => Math.min(at, row.expiresAt), Infinity);
@@ -226,8 +243,26 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     }
     return actions.reloadIContent();
   };
-  const reportReadback = (message: string, read: Awaited<ReturnType<typeof actions.reloadIContent>>) =>
-    toast(read.ok ? message : `${message}；当前状态读取失败。请刷新信任版块。${read.reason}`, read.ok ? "success" : "warn");
+  const reportReadback = (message: string, read: Awaited<ReturnType<typeof actions.reloadIContent>>) => {
+    if (!read.superseded) toast(read.ok ? message : `${message}；当前状态读取失败。请刷新信任版块。${read.reason}`, read.ok ? "success" : "warn");
+  };
+  const checkSectionTicket = async (record: I4SectionCommand) => {
+    try {
+      const ticket = await approvalQuery.read(record.commandKey, () => queryI4SectionCommand(record));
+      rememberPublication(record, ticket?.status);
+      if (ticket && ticket.status !== "pending") {
+        const result = await rereadAfterResolution([record.sectionKey], [record.commandKey]);
+        const read: typeof result = result.ok && !result.data.trustDisclosure?.trustSections.some(section => section.key === record.sectionKey)
+          ? { ok: false, reason: "没读到这个信任版块。" } as const : result;
+        if (!read.superseded && !read.ok) {
+          const reason = read.reason;
+          setSectionReadErrors(current => ({ ...current, [record.commandKey]: { record, status: ticket.status, reason } }));
+        }
+        reportReadback(`${sectionName(record.sectionKey)} · 审批单${TICKET_STATUS[ticket.status]}`, read);
+      }
+      return ticket;
+    } finally { syncCommands(); }
+  };
   const newSectionReason = (key: string, proposing = false): string | undefined => {
     const current = latest.current;
     if (conflictReview.blockedReason()) return conflictReview.blockedReason();
@@ -291,7 +326,6 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     const carried = !original && prefill.current?.key === key ? prefill.current : null;
     prefill.current = null;
     const confirmation: ActionConfirmReq = { ...req,
-      initialReason: carried?.reason,
       edit: req.edit && carried?.value ? { ...req.edit, initialValue: carried.value } : req.edit,
       blockedReason: original ? undefined : req.blockedReason ?? newSectionReason(key, proposing),
       getPendingReason: () => saved()?.reason,
@@ -419,28 +453,28 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   };
 
   // ---------- I4 信任版块动作 ----------
-  const mergeTrustDraft = (base: DraftEditor, saved: NonNullable<DraftEditor["resumedDraft"]>) => {
+  const mergeTrustDraft = (base: DraftEditor, saved: NonNullable<DraftEditor["resumedDraft"]>, required: readonly OperatingLanguageCode[]) => {
     const { desired, before } = saved;
+    const plannedFields = saved.submitted ? mapTrustSectionLanguageFields(desired.fields, required, "load") : desired.fields;
     if (!before) {
       const unchanged = base.mode === "edit" && desired.expectedRevision === base.revision
         || base.mode === "create" && desired.expectedSectionVersion === base.expectedSectionVersion && desired.expectedSectionStatus === base.expectedSectionStatus;
-      if (unchanged) return { ...base, version: desired.version, description: desired.description, structure: desired.structure, fields: desired.fields, reason: "" };
+      if (unchanged) return { ...base, version: desired.version, description: desired.description, structure: desired.structure, fields: plannedFields, reason: "" };
       toast("原草稿缺少修改前的内容，已显示最新版本。请对照原拟稿重新选择要改的字段。", "warn");
       return { ...base, reason: "" };
     }
     const merged = rebaseTerminalDraft({ description: before.description, structure: before.structure },
       { description: desired.description, structure: desired.structure }, { description: base.description, structure: base.structure });
-    const currentFields = (base.editBaseline ?? base.published)?.fields ?? base.fields;
+    const previousFields = mapTrustSectionLanguageFields(before.fields, required, "load");
     const changed = new Set<string>();
     const mine = new Set<string>();
     const conflicted = new Set<string>();
     const fields = base.fields.map(field => {
-      const previous = before.fields.find(row => row.key === field.key);
-      const planned = desired.fields.find(row => row.key === field.key);
-      const read = currentFields.find(row => row.key === field.key) ?? field;
-      if (JSON.stringify(previous) !== JSON.stringify(read)) changed.add(field.label);
+      const previous = previousFields.find(row => row.key === field.key);
+      const planned = plannedFields.find(row => row.key === field.key);
+      if (previous?.label !== field.label || previous?.value !== field.value) changed.add(field.label);
       if (!previous || !planned) return field;
-      const result = rebaseTerminalDraft(previous, planned, read);
+      const result = rebaseTerminalDraft(previous, planned, field);
       if (result.mine.length) mine.add(field.label);
       if (result.overlap.length) conflicted.add(field.label);
       return { ...result.value, key: field.key };
@@ -450,9 +484,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     return { ...base, ...merged.value, version: base.mode === "create" ? desired.version : base.version, fields, reason: "" };
   };
   const trustDraftKey = (base: DraftEditor) => base.mode === "create" ? `new:${base.sectionKey}` : `${base.sectionKey}:${base.version}`;
-  const reopenTrustDraft = (base: DraftEditor) => {
+  const reopenTrustDraft = (base: DraftEditor, required: readonly OperatingLanguageCode[]) => {
     const saved = trustDrafts.get(session?.adminId, trustDraftKey(base));
-    return saved ? { ...mergeTrustDraft(base, saved), resumedDraft: saved } : base;
+    return saved ? { ...mergeTrustDraft(base, saved, required), resumedDraft: saved } : base;
   };
   const rebaseOpenDraft = (editor: DraftEditor, overview: TrustDisclosureOverview, required: readonly OperatingLanguageCode[]) => {
     const section = overview.trustSections.find(row => row.key === editor.sectionKey);
@@ -469,14 +503,13 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       toast("草稿和当前的内容模板不一致，已保留输入，请核对最新模板。", "warn");
       return null;
     }
-    const rebased = mergeTrustDraft({ ...editor, description: draft?.description ?? section.desc, structure: draft?.structure ?? section.struct,
+    return mergeTrustDraft({ ...editor, description: draft?.description ?? section.desc, structure: draft?.structure ?? section.struct,
       fields: mapTrustSectionLanguageFields(baseline.fields, required, "load"), revision: draft?.revision, editBaseline: draft, published,
       expectedSectionVersion: section.version, expectedSectionStatus: section.status },
       { before: editor.editBaseline ?? editor.published, desired: {
         version: editor.version, description: editor.description, structure: editor.structure, fields: editor.fields,
         expectedRevision: editor.revision, expectedSectionVersion: editor.expectedSectionVersion, expectedSectionStatus: editor.expectedSectionStatus,
-      } });
-    return { ...rebased, reason: editor.reason };
+      } }, required);
   };
   const createSectionDraft = async (s: TrustSection) => {
     const blocked = newSectionReason(s.key);
@@ -497,7 +530,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       structure: s.struct,
       reason: "日常维护信任版块草稿",
       fields: mapTrustSectionLanguageFields(fields, required, "load"), expectedSectionVersion: s.v, expectedSectionStatus: s.status, published: currentVersionOf(s),
-    }));
+    }, required));
   };
 
   const editSectionDraft = async (draft: TrustSectionVersion) => {
@@ -522,7 +555,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       editBaseline: draft,
       reason: "日常维护信任版块草稿",
       fields: mapTrustSectionLanguageFields(draft.fields, required, "load"), expectedSectionVersion: section!.v, expectedSectionStatus: section!.status, published: currentVersionOf(section!),
-    }));
+    }, required));
   };
 
   const saveSectionDraft = async () => {
@@ -562,9 +595,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         setDraftEditor(editor => editor === draftEditor ? rebased : editor);
         return;
       }
-      const fields = mapTrustSectionLanguageFields(draftEditor.fields.map(field => ({
-        key: field.key.trim(), label: field.label.trim(), value: field.value.trim(),
-      })), required, "submit");
+      const fields = trustDraftFieldsForSubmit(draftEditor.fields, required);
       const authored = draftEditor.fields.flatMap(field => {
         const localized = localizedTrustSectionField(field.key);
         return localized && field.value.trim() ? [localized.language] : [];
@@ -579,6 +610,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       // The App contract applies at publication; drafts retain the backend authoring contract.
       const existingDraft = draftEditor.editBaseline;
       if (i4DraftOmittedTranslations(draftEditor.published?.fields ?? [], existingDraft?.fields ?? [], fields)) { toast("这次保存会删掉已有译文，请留着现在公开版本的每一项内容后再保存。"); return; }
+      if (trustDraftUnchanged(draftEditor, fields, required)) { toast(NO_DRAFT_CHANGES); return; }
       const payload = {
         version: draftEditor.version,
         description: draftEditor.description.trim(),
@@ -858,10 +890,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     if (inFlight.current) return;
     inFlight.current = true; setRecovering(record.commandKey);
     try {
-      const ticket = await approvalQuery.read(record.commandKey, () => queryI4SectionCommand(record));
-      rememberPublication(record, ticket?.status);
-      if (ticket && ticket.status !== "pending") reportReadback(`审批单${TICKET_STATUS[ticket.status]}`, await rereadAfterResolution([record.sectionKey], [record.commandKey]));
-      else toast(ticket ? "已提交，等待审批后执行" : !record.receiptKnown && isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。");
+      const ticket = await checkSectionTicket(record);
+      if (!ticket || ticket.status === "pending") toast(ticket ? "已提交，等待审批后执行" : !record.receiptKnown && isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。");
     } catch (error) { toast(displayAdminError(error)); }
     finally { inFlight.current = false; setRecovering(null); syncCommands(); }
   };
@@ -886,7 +916,17 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     } finally { syncCommands(); }
   };
   const shortSha = (sha: string) => `${sha.slice(0, 12)}…`;
+  const approvalName = (record: I4SectionCommand) =>
+    `${sectionName(record.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[record.action]}`;
+  const approvalChange = (record: I4SectionCommand) => `${record.before} → ${record.after === "archived" ? "已下架" : record.after}`;
   const recoveryRows: RecoveryRow[] = [
+    ...Object.values(sectionReadErrors).map(({ record, status, reason }) => ({
+      key: record.commandKey, kind: "open" as const, name: approvalName(record), change: approvalChange(record),
+      submittedAt: timeText(new Date(record.createdAt).toISOString()),
+      tag: <StatusTag tone={status === "approved" ? "ok" : "done"}>{TICKET_STATUS[status]}</StatusTag>,
+      note: `当前状态读取失败。${reason}`,
+      actions: <Button size="sm" loading={refreshing} onClick={refresh}>重新加载</Button>,
+    })),
     ...documentCommands.map(record => {
       const file = record.file;
       const upload = record.mode === "upload";
@@ -918,8 +958,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       const pending = record.ticketStatus === "pending";
       const releasable = !!i4SectionRecovery.state(record).replayRejection;
       return { key: record.commandKey, kind: pending ? "pending" as const : record.receiptKnown ? "submitted" as const : "unknown" as const,
-        name: `${sectionName(record.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[record.action]}`,
-        change: `${record.before} → ${record.after === "archived" ? "已下架" : record.after}`, submittedAt: timeText(new Date(record.createdAt).toISOString()),
+        name: approvalName(record), change: approvalChange(record), submittedAt: timeText(new Date(record.createdAt).toISOString()),
         tag: pending ? <StatusTag tone="progress" icon={Hourglass}>等另一位批准</StatusTag> : record.receiptKnown ? <StatusTag tone="neutral" icon={Hourglass}>已提交，状态未查到</StatusTag> : unknownTag(),
         note: approvalQuery.errors[record.commandKey] ?? (releasable ? "重试已被拒绝，请核对原操作。" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT
           : !pending && record.receiptKnown ? "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" : undefined),
@@ -991,7 +1030,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     let rebuild: (() => void) | undefined;
     // 删草稿直接执行；发布、回滚、下架都是提交审批。
     const lead = !editorAtReject && rejected ? rejected.action === "delete" ? "别人先改了，这次没删除。" : "别人先改了，这次没提交审批。" : undefined;
-    const carry = (extra?: { value?: string; dataSource?: string }) => { prefill.current = { key, reason: conflict.requested.reason, ...extra }; };
+    const carry = (extra?: { value?: string; dataSource?: string }) => { prefill.current = { key, ...extra }; };
     if (editorAtReject) {
       columns = ["现在", "你填的"];
       rebuildLabel = "按最新的重新填写";
@@ -1005,7 +1044,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         conflictRow("内容结构", nowDraft?.structure ?? nowCurrent?.structure, editorAtReject.structure),
         ...(nowDraft ? [conflictRow("草稿最近保存", saved(nowDraft), "你在改的")] : []),
         ...(templateChanged ? [{ label: "内容模板", left: `${nowCurrent!.fields.length} 项内容`, right: `${editorAtReject.fields.length} 项内容`, changed: true }] : [])]),
-        ...fieldRows(base, editorAtReject.fields)];
+        ...fieldRows(mapTrustSectionLanguageFields(base, requiredLanguages, "load"), editorAtReject.fields)];
       note = templateChanged ? "内容模板变了：你填的内容和译文原样留着，不会自动删；保存前对照现在公开的版本核对。" : "你填的内容留在编辑框里，保存时按最新的版本提交。";
       rebuild = latestData && section && (editorAtReject.mode === "create" || nowDraft) ? () => {
         const rebased = rebaseOpenDraft(editorAtReject, latestData, requiredLanguages);
@@ -1225,6 +1264,11 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
 
   // ---------- 编辑抽屉 ----------
   const editorSection = draftEditor ? TRUST_SECTIONS.find((item) => item.key === draftEditor.sectionKey) : undefined;
+  const editorUnchanged = !!draftEditor && !editorCommandKey
+    && editorSection?.v === draftEditor.expectedSectionVersion && editorSection.status === draftEditor.expectedSectionStatus
+    && currentVersionOf(editorSection)?.revision === draftEditor.published?.revision
+    && draftsOf(draftEditor.sectionKey).some(row => row.version === draftEditor.version && row.revision === draftEditor.revision)
+    && trustDraftUnchanged(draftEditor, trustDraftFieldsForSubmit(draftEditor.fields, requiredLanguages), requiredLanguages);
   const editorMissing = draftEditor ? [
     !/^v[1-9][0-9]{0,8}$/.test(draftEditor.version) && "版本号（v 加数字）",
     !draftEditor.description.trim() && "版块说明",
@@ -1366,9 +1410,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         title={draftEditor?.mode === "edit" ? "编辑草稿" : "新建草稿"}
         sub={draftEditor ? `${sectionName(draftEditor.sectionKey)}${draftEditor.mode === "edit" ? ` · ${draftEditor.version}` : ""}` : undefined}
         footer={draftEditor && <Decision
-          note={editorMissing.length ? `还缺：${editorMissing.join("、")}` : undefined}
+          note={editorUnchanged ? NO_DRAFT_CHANGES : editorMissing.length ? `还缺：${editorMissing.join("、")}` : undefined}
           others={<Button disabled={savingDraft} onClick={() => { setDraftEditor(null); setEditorCommandKey(null); }}>取消</Button>}
-          primary={<Button variant="primary" data-trust-draft-editor="direct-save" loading={savingDraft} disabledReason={editorCommandKey ? (() => { const record = draftCommands.find(row => row.commandKey === editorCommandKey); return record ? draftRetryProblem(record) : "请查询原结果"; })() : draftEditor ? newSectionReason(draftEditor.sectionKey) : undefined} onClick={() => void saveSectionDraft()}>{editorCommandKey ? "按原请求重试" : "保存草稿"}</Button>} />}>
+          primary={<Button variant="primary" data-trust-draft-editor="direct-save" loading={savingDraft} disabledReason={editorCommandKey ? (() => { const record = draftCommands.find(row => row.commandKey === editorCommandKey); return record ? draftRetryProblem(record) : "请查询原结果"; })() : newSectionReason(draftEditor.sectionKey) ?? (editorUnchanged ? NO_DRAFT_CHANGES : undefined)} onClick={() => void saveSectionDraft()}>{editorCommandKey ? "按原请求重试" : "保存草稿"}</Button>} />}>
         {draftEditor && <>
           <div className="i4-doc-effect"><StatusTag tone="neutral" filled explain="保存草稿直接写，不走审批；用户看到的内容不变，提交发布并批准后才公开。">不改公开内容</StatusTag></div>
           <DraftEditorBody editor={draftEditor} requiredLanguages={requiredLanguages} frozen={savingDraft || !!editorCommandKey} onChange={setDraftEditor}

@@ -215,7 +215,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     } finally { setChecking(null); }
     if (settled) {
       const read = await refreshAfterMutation(record);
-      if (!read.ok) toast(`原操作已核对；当前状态读取失败。请刷新推送数据。${read.reason}`, "warn");
+      if (!read.superseded && !read.ok) toast(`原操作已核对；当前状态读取失败。请刷新推送数据。${read.reason}`, "warn");
       return;
     }
     await actions.reloadIContent();
@@ -248,7 +248,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       throw new Error(failText(error));
     }
     const read = await refreshAfterMutation(record);
-    toast(read.ok ? `${record.action} · ${record.object}` : `原请求已写入；当前状态读取失败。请刷新推送数据。${read.reason}`, read.ok ? "success" : "warn");
+    if (!read.superseded) toast(read.ok ? `${record.action} · ${record.object}` : `原请求已写入；当前状态读取失败。请刷新推送数据。${read.reason}`, read.ok ? "success" : "warn");
   };
   const pendingRecovery = (record?: I2Command) => {
     if (!record) return;
@@ -370,7 +370,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const runBackend = (task: Promise<void>, ok: string, onSuccess?: () => void) => task
       .then(() => refreshAfterMutation())
       .then(read => {
-        toast(read.ok ? ok : `${ok}；当前状态读取失败。请刷新推送数据。${read.reason}`, read.ok ? "success" : "warn");
+        if (!read.superseded) toast(read.ok ? ok : `${ok}；当前状态读取失败。请刷新推送数据。${read.reason}`, read.ok ? "success" : "warn");
         onSuccess?.();
       });
 
@@ -738,13 +738,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   // ── 真实事件的五类概率:一次编辑全部类型，不静默改动另一类。──
   const [distDrawer, setDistDrawer] = useState(false);
   const [distDraft, setDistDraft] = useState<Record<string, string>>({});
-  const [distReason, setDistReason] = useState("");
   const [distBase, setDistBase] = useState<Record<string, string>>({});
   const openedDistribution = useRef<ReturnType<typeof distributionDrafts.get>>(undefined);
   const distributionValues = (rows: typeof SOCIAL_DIST) => Object.fromEntries(rows.map(item => [item.key, String(item.pct)]));
   const distributionLabels = (rows: typeof SOCIAL_DIST) => Object.fromEntries(rows.map(item => [item.key, operatorCopyText(item.name)]));
   const openDistDrawer = () => {
-    setDistReason("");
     const saved = distributionDrafts.get(session?.adminId, "distribution");
     openedDistribution.current = saved;
     const latest = distributionValues(SOCIAL_DIST);
@@ -772,7 +770,6 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     if (!distDraftValid || !distributionChanged) return;
     const saved = openedDistribution.current;
     openConfirm({ briefKind: "config",
-    initialReason: distReason,
     errorHandled: true,
     action: <>保存 业务动态事件概率分布</>,
     title: "保存事件概率",
@@ -802,9 +799,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         throw error;
       });
     },
-    }, reason => {
+    }, () => {
       const latest = latestRead.current?.socialDistribution;
-      if (latest) { recheckDistribution(latest); setDistReason(reason); }
+      if (latest) recheckDistribution(latest);
     });
   };
 
@@ -825,7 +822,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           rows={orderDist(latest).map((item) => conflictRow(operatorCopyText(item.name), `${Number(item.pct)}%`, distDraft[item.key] === undefined ? "—" : `${Number(distDraft[item.key])}%`))}
           note="理由会带进确认框；核对后再点「保存概率」。"
           onReread={() => void conflictReview.reread()} onClose={conflictView.hide}
-          onRebuild={() => finish(() => { recheckDistribution(latest); setDistReason(conflict.requested.reason); setDistDrawer(true); })} onDiscard={() => finish(() => setDistDrawer(false))} />
+          onRebuild={() => finish(() => { recheckDistribution(latest); setDistDrawer(true); })} onDiscard={() => finish(() => setDistDrawer(false))} />
       : <IConflictPending subject={subject} onOpen={conflictView.show} />;
   })();
 

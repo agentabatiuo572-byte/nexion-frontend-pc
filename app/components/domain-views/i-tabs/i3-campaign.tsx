@@ -321,7 +321,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     return actions.reloadIContent();
   };
   const reportReadback = (message: string, read: Awaited<ReturnType<typeof refreshAfterMutation>>) => {
-    if (active.current && read) toast(read.ok ? message : `${message}；当前状态读取失败。请刷新通知数据。${read.reason}`, read.ok ? "success" : "warn");
+    if (active.current && read && !read.superseded) toast(read.ok ? message : `${message}；当前状态读取失败。请刷新通知数据。${read.reason}`, read.ok ? "success" : "warn");
   };
   const capStatusMessage = (ticket: NonNullable<Awaited<ReturnType<typeof queryI3CapCommand>>>) =>
     ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`;

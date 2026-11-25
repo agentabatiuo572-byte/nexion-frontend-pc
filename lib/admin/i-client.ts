@@ -1947,7 +1947,10 @@ export type IContentData = {
 
 export type IContentErrorKey = "copyAb" | "nova" | "campaigns" | "trustDisclosure" | "disclosures" | "i18nLearning";
 
-export type IContentReadResult = { ok: true } | { ok: false; reason: string };
+export type IContentReadResult =
+  | { ok: true; data: IContentData; superseded?: false }
+  | { ok: false; superseded?: false; reason: string }
+  | { ok: false; superseded: true };
 
 export type IContentActions = {
   reloadIContent: () => Promise<IContentReadResult>;

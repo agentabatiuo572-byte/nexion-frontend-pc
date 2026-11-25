@@ -374,6 +374,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       if (commandKey && confirmation?.commandKey() === commandKey) confirmation.finish();
     }
     const read = await actions.reloadIContent();
+    if (read.superseded) return;
     if (!read.ok) toast(`${message}；当前状态读取失败。请刷新${view === "learn" ? "课程" : "文案"}数据。${read.reason}`, "warn");
     updateRecovery(value => value + 1);
   };

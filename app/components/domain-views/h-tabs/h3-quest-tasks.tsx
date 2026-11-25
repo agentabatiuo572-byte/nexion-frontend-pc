@@ -117,7 +117,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const canModuleWrite = shellCtx.can("growth_h3_write");
   const fresh = useRef(false);
   const recoveryDrafts = useRef(new Map<string, RejectedH4Draft>());
-  const missionDrafts = useTerminalDrafts<H3MissionForm>();
+  const missionDrafts = useTerminalDrafts<{
+    command: H3PendingCommand; type: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2"; form: H3MissionForm;
+  }>();
   const regionDrafts = useTerminalDrafts<TerminalDraft<H3WeeklyRegionMapping[]> & { revision?: number }>();
   const operatorId = () => useAdminAuth.getState().session?.adminId;
   const regionObject = "growth.h3.weekly-region-policy";
@@ -182,8 +184,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const [tab, setTab] = useState<Tab>("dayOne");
   const [detail, setDetail] = useState<{ list: ListKey; code: string } | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
-  const [creating, setCreating] = useState<{ type: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2"; resumed?: H3MissionForm } | null>(null);
-  const openMission = (type: NonNullable<typeof creating>["type"]) => setCreating({ type, resumed: missionDrafts.get(operatorId(), type) });
+  const [creating, setCreating] = useState<{
+    type: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2";
+    resumed?: { key: string; draft: NonNullable<ReturnType<typeof missionDrafts.get>> };
+  } | null>(null);
+  const openMission = (type: NonNullable<typeof creating>["type"]) => setCreating({ type });
   const tabIds = useTabIds();
 
 
@@ -213,11 +218,14 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       const { op, params } = draft.request.body.command;
       if (op === "h3_mission_create") {
         const value = params.values as Partial<Record<string, unknown>> | undefined;
-        if (value && typeof value.missionType === "string" && typeof value.missionCode === "string" && typeof value.missionName === "string"
+        const type = value?.missionType;
+        if (value && (type === "DAY_ONE" || type === "WEEKLY_T1" || type === "WEEKLY_T2")
+          && value.missionCode === draft.change.target && typeof value.missionName === "string"
           && typeof value.rewardPoints === "number" && typeof value.category === "string" && typeof value.actionRoute === "string") {
-          missionDrafts.remember(draft.adminId, value.missionType, {
-            missionCode: value.missionCode, missionName: value.missionName, rewardPoints: String(value.rewardPoints),
-            category: value.category, actionRoute: value.actionRoute,
+          missionDrafts.remember(draft.adminId, JSON.stringify([draft.commandKey, value.missionCode]), {
+            command: draft, type,
+            form: { missionCode: value.missionCode, missionName: value.missionName, rewardPoints: String(value.rewardPoints),
+              category: value.category, actionRoute: value.actionRoute },
           });
         }
       } else if (op === "h3_weekly_region_policy" && Array.isArray(params.mappings)
@@ -423,7 +431,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         if (!missionCode || !missionName) return;
         const owner = operatorId();
         const consume = () => {
-          if (editor?.resumed?.missionCode === missionCode) missionDrafts.consume(owner, missionType, editor.resumed);
+          const resumed = editor?.resumed;
+          if (resumed?.draft.form.missionCode === missionCode) missionDrafts.consume(owner, resumed.key, resumed.draft);
         };
         try {
           await runWrite({ store: "mission", path: "/quest-events/missions", method: "POST", target: missionCode,
@@ -1002,10 +1011,24 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         {releasable(original) && <Button size="sm" variant="ghost" onClick={() => setReleasing(original)}>解除原操作记录</Button>}</>,
     };
   });
+  const terminalMissions = missionDrafts.entries(operatorId());
+  for (const [key, draft] of terminalMissions) {
+    const { command, form, type } = draft;
+    const status = command.ticket?.status;
+    if (status !== "rejected" && status !== "withdrawn" && status !== "expired") continue;
+    recoveryRows.push({
+      key: command.commandKey, name: command.change.action,
+      change: <>{form.missionCode} · {changeOf(command.change)}</>,
+      submittedAt: command.createdAt,
+      tag: <StatusTag tone="done">{{ rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[status]}</StatusTag>,
+      actions: canModuleWrite ? <Button size="sm" disabledReason={!fresh.current ? "请先成功刷新用户任务数据" : undefined}
+        onClick={() => setCreating({ type, resumed: { key, draft } })}>继续编辑</Button> : undefined,
+    });
+  }
   const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
   const pendingCount = mutations.records.filter(r => r.ticket).length;
   const builtCount = mutations.records.filter(r => !r.ticket && r.acknowledged).length;
-  const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；");
+  const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`, terminalMissions.length && `${terminalMissions.length} 个草稿可继续编辑`].filter(Boolean).join("；");
   const recovery = recoveryRows.length > 0 && (
     <Notice tone="warn" title={<>{recoveryTitle}<Explain label="原操作怎么处理" content={<>
       <p>结果未知：提交时没收到确定结果，可能已经生效。审批申请先查询原结果，明确查不到才能重试。直接修改的「按原请求重试」会重新发送一次。过了 24 小时只能查询。</p>
@@ -1097,7 +1120,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Fragment>);
   // 新建任务抽屉同理：旧操作收尾后的重读失败时不卸掉，提示没读到、读到前不能进下一步。
   const missionDrawer = creating && <H3MissionFormDrawer key="h3-mission-drawer" missionType={creating.type} onClose={() => setCreating(null)}
-    initial={creating.resumed}
+    initial={creating.resumed?.draft.form}
     readFailed={error ? { retrying: loading, onRetry: () => void refresh().catch(cause => toast(displayAdminError(cause))) } : undefined}
     onReview={(bv) => runCreateMission(creating.type, creating.type === "DAY_ONE" ? "新手任务" : creating.type === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />;
 
