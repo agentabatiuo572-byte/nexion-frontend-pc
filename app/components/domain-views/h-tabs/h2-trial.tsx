@@ -665,7 +665,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       if (outcome.kind !== "unknown") pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
       // 首发就被账号核对拒绝：后端没有执行，不留待确认。
       if (outcome.kind === "accountMismatch") {
-        toast(outcome.message, "warn");
+        toast("确认账号与当前登录账号不符，这次没有保存。", "warn");
         announcePermissionDenied();
         return { kind: "stopped" };
       }
