@@ -4,6 +4,7 @@ import { SearchCheck, ShieldCheck } from "lucide-react";
 import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, KeepText, Modal, Notice, Select, StatusTag, Textarea, type StateTone, type Tone } from "@/app/components/rd";
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { eCommandClosureOffer, eCommandResult, eCommandRollbackConfirmed, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, closureLine, offerNotice, type ClosureOffer, closureConflict, closureTime, receiptExplain, receiptRejected, type ClosureBasis } from "../recovery-panel";
 
@@ -33,8 +34,9 @@ export function closureOpen(outcome: CommandOutcome | undefined, expired: boolea
 function view(outcome: CommandOutcome, expired: boolean, canClose = true, retryOnMissingOnly = false): { tone: Tone & ("ok" | "warn" | "progress" | "neutral" | "done" | "danger"); title: string; text: string } {
   if ("error" in outcome) return { tone: "danger", title: "查询失败", text: outcome.error };
   const receipt = outcome.receipt;
+  // 过期：三件事都写上（OP-153）——已超过 24 小时、不能再重试、去操作记录与审批核对。
   if (!receipt) return { tone: "warn", title: "没有查到", text: expired
-    ? "原请求可能没送到，查不到不等于没执行。记录保留，请到操作记录与审批核对。"
+    ? `${RETRY_EXPIRED_TEXT}这次没查到原请求，查不到不等于没执行，记录保留。`
     : "原请求可能没送到，查不到不等于没执行。记录保留，可以按原请求重试，不会重复执行。" };
   if (receipt.originalStatus === "PROCESSING") return { tone: "progress", title: "还在执行", text: expired || retryOnMissingOnly ? "原操作还在执行，稍后再查；不要重复提交。" : "原操作还在执行，过一会儿再查询；现在重试不会重复执行，也拿不到新结果。" };
   if (receipt.originalStatus === "CONFIRMED_REJECTED") return { tone: "done", title: "已结案", text: "核查确认是后台拒绝，记录已解除。" };
