@@ -247,9 +247,30 @@ function isV8PromotionTicket(w: A2OperationRow) {
   return isV8PromotionAction(w.operationCode, w.action) && w.after.trim() === "V8";
 }
 
+/** H5 的服务端前后值摘要有三种格式，分别来自 B72-BE-02 前后及签到倍率。 */
+function h5PowerUpAmplifies(w: A2OperationRow) {
+  const read = (text: string) => {
+    const match = /^连签 ([1-9]\d{0,2}) 天(?:；(?:签到倍率：([0-9]+(?:\.[0-9]{1,4})?)|备注：[\s\S]*))?$/.exec(text);
+    if (!match || Number(match[1]) > 365) return undefined;
+    const multiplier = match[2] === undefined ? undefined : Number(match[2]);
+    if (multiplier !== undefined && (multiplier <= 0 || multiplier >= 100000000)) return undefined;
+    return { day: Number(match[1]), multiplier };
+  };
+  const before = read(w.before);
+  const after = read(w.after);
+  if (!before || !after) return undefined;
+  if (before.multiplier === undefined && after.multiplier === undefined) return false;
+  if (before.multiplier === undefined || after.multiplier === undefined) return undefined;
+  return after.day < before.day || after.multiplier > before.multiplier;
+}
+
 function approvalCoverageMode(w: A2OperationRow) {
   // 旧票在 V8 晋升时也标记为放大，回放时仍免查覆盖率。
   if (isV8PromotionTicket(w)) return undefined;
+  if (w.operationCode === "h5_power_up_config") {
+    const amplifies = h5PowerUpAmplifies(w);
+    if (amplifies !== undefined) return amplifies ? "amplifies" : undefined;
+  }
   if (w.coverageCheckOnApproval) return "onApproval";
   if (w.amplifies) return "amplifies";
 }
@@ -2625,6 +2646,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : i5Publish ? "用户看到的版本不变，生效版本另行审批。"
             // F1 奖励发放按奖励类型影响不同（商品、自定义奖励不动钱），实际影响写在改动里。
             : w.operationCode === "f_reward_payout_action" ? "立即执行，影响见改动；失败不改原值。"
+            : w.operationCode === "h5_power_up_config" && h5PowerUpAmplifies(w) === false ? "立即执行，改成长权益设置；失败不改原值。"
             : isFunds ? "立即执行，改资金或账目；失败不改原值。"
               : w.type === "acct" ? "立即执行，改账号或权限；失败不改原值。"
                 : w.type === "sos" ? "立即执行，停用或恢复业务；失败不改原值。"
@@ -3063,12 +3085,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /** 有结果未确认的操作时这一行也标出来，滚下去看不到上方的待确认条也知道（建议 4）。 */
   const markers = (w: A2OperationRow) => {
+    const amplifies = (w.operationCode === "h5_power_up_config" ? h5PowerUpAmplifies(w) : undefined) ?? w.amplifies;
     const tags = <>
       {pendingTicketIds.has(w.id) && <StatusTag tone="warn" explain={PENDING_LOCK}>结果未知</StatusTag>}
       {w.sos && <StatusTag tone="danger" icon={Siren}>应急</StatusTag>}
-      {w.amplifies && (enablesAutoPayout(fundTicket(w)) ? <StatusTag tone="warn" icon={Coins}>批准时查覆盖率</StatusTag> : <StatusTag tone="warn" icon={Flame}>多付钱</StatusTag>)}
+      {amplifies && (enablesAutoPayout(fundTicket(w)) ? <StatusTag tone="warn" icon={Coins}>批准时查覆盖率</StatusTag> : <StatusTag tone="warn" icon={Flame}>多付钱</StatusTag>)}
     </>;
-    return w.sos || w.amplifies || pendingTicketIds.has(w.id) ? <span className="rd-row-actions">{tags}</span> : TYPE_NAME[w.type];
+    return w.sos || amplifies || pendingTicketIds.has(w.id) ? <span className="rd-row-actions">{tags}</span> : TYPE_NAME[w.type];
   };
 
   // 重试读到后焦点落在这一块的标题「待审批」页签上（BUG-677）。

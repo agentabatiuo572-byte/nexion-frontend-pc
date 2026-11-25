@@ -125,7 +125,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       if (result) onDone({ ...result, recovered });
       return !!result;
     } catch (failure) {
-      if (g3MarketFailureCode(failure) === "G3_POLICY_APPROVAL_REQUIRED") {
+      if (!recovered && g3MarketFailureCode(failure) === "G3_POLICY_APPROVAL_REQUIRED") {
         const latest = await fetchG3MarketReadOverview();
         ensureOwner(false);
         if (change.action === "curve-cell") {
@@ -185,10 +185,12 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       dialogClassName: `g3m-confirm${schedule ? " g3m-schedule-confirm" : ""}`,
       fieldLayout: "compact",
       pending: !!pending,
-      initialRecovery: pending?.request.kind === "approval" ? "lookup" : "retry",
+      initialRecovery: pending?.request.kind === "approval" && !pending.replayRejection ? "lookup" : "retry",
       expired,
       expiredRequestRecovery: expiredRecovery,
-      disabledReason: expiredRecovery === "reload" ? G3_EXPIRED_DIRECT_READ : expired && pending?.request.kind === "direct"
+      queryOnly: !!pending?.replayRejection,
+      disabledReason: pending?.replayRejection ? "请核实原操作的结果后解除记录。"
+        : expiredRecovery === "reload" ? G3_EXPIRED_DIRECT_READ : expired && pending?.request.kind === "direct"
         ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项不能按原请求查询结果，请到「操作记录与审批」核对。"
         : pending && !canWriteG3MarketChange(session, change) ? "你没有修改这一项的权限。" : undefined,
       resolve: (_business, value) => {

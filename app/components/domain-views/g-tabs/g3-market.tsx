@@ -38,11 +38,14 @@ import {
   executeG3MarketChange, canWriteG3MarketChange, g3MarketCommandExpired, g3MarketFailureCode, g3MarketObjectKey,
   g3MarketObjectReadState, g3MarketReadBlockedCode, g3RuntimeApproval,
   G3_ENVIRONMENT_FORBIDDEN, listG3MarketCommands, pendingG3MarketCommand, refreshG3MarketApprovals,
+  G3ReplayRejectedError, g3ReplayRejection, g3ReleaseSnapshot, releaseG3RejectedCommand,
   type G3MarketChange, type G3DirectChange, type G3ReviewedChange, type G3PendingCommand, type G3CommandResult,
 } from "@/lib/admin/g3-market-command";
 import { OperationConfirmModal, useToast, type EditSpec, type OperatorBriefKind } from "../design-kit";
 import { G3_EXPIRED_DIRECT_READ, G3MarketConfirm, G3_TUNING_FORBIDDEN } from "./g3-market-confirm";
 import { G3ScheduleResult } from "./g3-schedule-result";
+import { TechInfo } from "../recovery-panel";
+import { rejectedTag, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 
 /** 本页的共用确认框请求：action 照旧是记进操作记录的名字，title 只写动作和对象（VS-101）。 */
 type G3ConfirmReq = {
@@ -362,6 +365,7 @@ export function G3Market() {
 
 function G3MarketEditor() {
   const [toastNode, toast] = useToast();
+  const verifiedRelease = useVerifiedRelease(toast);
   const reach = useReach();
   const session = useAdminAuth((state) => state.session);
   const epoch = useAdminAuth((state) => state.authEpoch);
@@ -378,9 +382,9 @@ function G3MarketEditor() {
     OBJECT_STATES[g3MarketObjectKey(row.change)] = row.ticketId
       ? { kind: "approval", detail: `原审批单 ${row.ticketId} 在等另一位超级管理员批准，批准前不生效。`,
         verification: verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "current", observedAt: verifiedApprovals[row.commandKey] ?? row.createdAt }
-      : { kind: "unknown", detail: row.request.kind === "approval"
+      : { kind: "unknown", detail: g3ReplayRejection(row) ?? (row.request.kind === "approval"
         ? "提交时没收到确定结果，可能已提交审批。打开这一项查询原操作，24 小时内也可以按原操作重试。"
-        : "提交时没收到确定结果，可能已经生效。点「查看原操作」读取当前配置核对，24 小时内也可以按原操作重试。", verification: "current", observedAt: row.createdAt };
+        : "提交时没收到确定结果，可能已经生效。点「查看原操作」读取当前配置核对，24 小时内也可以按原操作重试。"), verification: "current", observedAt: row.createdAt };
   }
   for (const state of overview?.objectStates ?? []) {
     const keys = state.target.type === "nex_market_curve"
@@ -549,8 +553,7 @@ function G3MarketEditor() {
       setRereadPending(true); void reload(true);
       return true;
     } catch (err) {
-      const message = messageOf(err);
-      setError(message);
+      if (!(err instanceof G3ReplayRejectedError)) setError(messageOf(err));
       // 确认框开着、框里已写这句，不再另弹轻提示。
       throw err;
     } finally {
@@ -598,27 +601,42 @@ function G3MarketEditor() {
       if (change.action === "control" && change.key === "pin") return value === "未钉住" ? "不固定" : value;
       return value;
     };
+    const rejection = g3ReplayRejection(row);
     return {
       key: row.commandKey, name, submittedAt: row.createdAt, ticket: row.ticketId ?? undefined,
-      state: row.ticketId ? verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "approval" : "unknown",
-      change: <Change from={show(change.current)} to={show(row.value)} />,
+      state: row.ticketId ? verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "approval" : rejection ? "replay-rejected" : "unknown",
+      change: <><Change from={show(change.current)} to={show(row.value)} />
+        {rejection && <span className="rd-note"> · {rejection} <TechInfo commandKey={row.commandKey} /></span>}</>,
       tag: row.ticketId
         ? verifiedApprovals[row.commandKey] === undefined
           ? <ObjectTag state={{ kind: "approval", verification: "last-observation", observedAt: row.createdAt,
               detail: `原审批单 ${row.ticketId} 在等另一位超级管理员批准，批准前不生效。` }} />
           : pendingTag("这次申请批准前不生效。")
-        : g3MarketCommandExpired(row) ? expiredTag(row.request.kind === "approval" ? "approval" : "direct")
+        : rejection ? rejectedTag() : g3MarketCommandExpired(row) ? expiredTag(row.request.kind)
           : unknownTag(row.request.kind === "approval" ? "approval" : "direct"),
       actions: row.ticketId
         ? <Button size="sm" aria-label={`查询${name}的原操作`} onClick={() => void refreshKnownApprovals()}>查询原操作</Button>
-        : <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>{row.request.kind === "direct" ? "查看原操作" : g3MarketCommandExpired(row) ? "查询原操作" : "查询或重试"}</Button>,
+        : <>
+          <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>{row.request.kind === "direct" ? "查看原操作" : rejection || g3MarketCommandExpired(row) ? "查询原操作" : "查询或重试"}</Button>
+          {rejection && session && <VerifiedReleaseButton disabled={!!busyKey} onClick={() => verifiedRelease.ask({
+            operation: name, target: <Change from={show(change.current)} to={show(row.value)} />, targetLabel: "改动",
+            createdAt: row.createdAt, getSnapshot: () => g3ReleaseSnapshot(session.adminId, row),
+            release: () => {
+              const released = releaseG3RejectedCommand(session.adminId, row);
+              syncCommands();
+              return released;
+            },
+          })} />}
+        </>,
     };
   });
   const recoveryNotice = <GRecoveryNotice label="价格的原操作" rows={recoveryRows}
     title={`价格的原操作 · ${recoveryRows.length} 项`}
     lead={commandRows.every((row) => row.ticketId)
       ? "这些申请在等另一位超级管理员审批：点「查询原操作」看结论；有结论之前不要换个值重新提交。"
-      : "点「查询原操作」或「查看原操作」核对；没有审批单的原操作 24 小时内也可以按原操作重试。有结论之前不要换个值重新提交。"}
+      : commandRows.some(row => !row.ticketId && row.replayRejection)
+        ? "重试被拒的记录继续保留。核实原操作的结果后，可以解除这条记录。"
+        : "点「查询原操作」或「查看原操作」核对；没有审批单的原操作 24 小时内也可以按原操作重试。有结论之前不要换个值重新提交。"}
     explain={<>
       <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的提高申请，和直接保存但没收到结果的修改。原操作只能查询或按原操作重试，不能改值。</p>
       <p>表里同一项也带着标记。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
@@ -706,10 +724,12 @@ function G3MarketEditor() {
           getPendingReason={() => session ? pendingG3MarketCommand(session.adminId, confirm.change)?.reason : undefined}
           inlineApproval={{
             pending: !!pendingDirect,
-            initialRecovery: pendingRuntimeApproval ? "lookup" : "retry",
+            initialRecovery: pendingRuntimeApproval && !pendingDirect.replayRejection ? "lookup" : "retry",
             expired: !!pendingDirect && g3MarketCommandExpired(pendingDirect),
             expiredRequestRecovery: directPastDeadline ? pendingRuntimeApproval ? "query" : "reload" : undefined,
-            disabledReason: directPastDeadline && !pendingRuntimeApproval ? G3_EXPIRED_DIRECT_READ
+            queryOnly: !!pendingDirect?.replayRejection,
+            disabledReason: pendingDirect?.replayRejection ? "请核实原操作的结果后解除记录。"
+              : directPastDeadline && !pendingRuntimeApproval ? G3_EXPIRED_DIRECT_READ
               : pendingDirect && !pendingRuntimeApproval && g3MarketCommandExpired(pendingDirect)
               ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项查不了原结果，请到「操作记录与审批」核对。"
               : pendingDirect && session && !canWriteG3MarketChange(session, pendingDirect.change, pendingDirect.value, pendingRuntimeApproval) ? "你没有修改这一项的权限。" : undefined,
@@ -739,6 +759,7 @@ function G3MarketEditor() {
           onConfirm={(reason, newValue) => executeConfirmedChange("submit", reason, newValue).then(() => undefined)}
         />
       )}
+      {verifiedRelease.dialog}
   </>;
 
   const canWriteAny = ["finprod_g3_write", "finprod_g3_curve_target_price_write", "finprod_g3_curve_pump_prob_write", "finprod_g3_override_price_write", "finprod_g3_engine_pause_toggle"].some(allowed);

@@ -3,7 +3,8 @@ import {
   fetchA2ProposalByKey,
 } from "./a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
+import { displayAdminError } from "./error-messages";
 import {
   fetchG3MarketReadOverview, g3LegacyCommands, g3OverrideWriteRefusal, submitG3MarketCommand,
   type G3CurveField, type G3ReadOverview, type G3OverrideKey, type serializeG3Frames,
@@ -126,6 +127,35 @@ export function pendingG3MarketCommand(adminId: number, change: G3MarketChange) 
   return listG3MarketCommands(adminId).find(row => !row.ticketId && g3MarketObjectKey(row.change) === g3MarketObjectKey(change));
 }
 
+export function g3ReplayRejection(command?: G3PendingCommand) {
+  if (command?.ticketId || !command?.replayRejection) return undefined;
+  const reason = displayAdminError(new Error(command.replayRejection)).replace(/^没有执行：/, "");
+  return `重试被拒绝：${reason} 请核实原操作的结果。`;
+}
+
+export class G3ReplayRejectedError extends Error {
+  constructor(command: G3PendingCommand, readonly code: string) {
+    super(g3ReplayRejection({ ...command, replayRejection: code }));
+  }
+}
+
+function currentRejectedCommand(adminId: number, original: G3PendingCommand) {
+  const row = pendingG3MarketCommand(adminId, original.change);
+  return row?.commandKey === original.commandKey && row.replayRejection ? row : undefined;
+}
+
+export function g3ReleaseSnapshot(adminId: number, original: G3PendingCommand) {
+  const row = currentRejectedCommand(adminId, original);
+  return row ? JSON.stringify(row) : undefined;
+}
+
+export function releaseG3RejectedCommand(adminId: number, original: G3PendingCommand) {
+  const row = currentRejectedCommand(adminId, original);
+  if (!row) return false;
+  (row.legacy ? g3LegacyCommands : commands).forget(row.fingerprint, row.commandKey);
+  return !currentRejectedCommand(adminId, original);
+}
+
 export function g3MarketCommandExpired(command: PendingMutationRecord) {
   return Date.now() < command.createdAt || Date.now() >= command.expiresAt;
 }
@@ -168,6 +198,7 @@ export function canWriteG3MarketChange(session: AdminSession, change: G3MarketCh
 }
 
 export function g3MarketFailureCode(error: unknown): string {
+  if (error instanceof G3ReplayRejectedError) return error.code;
   return error && typeof error === "object" && "backendMessage" in error ? String(error.backendMessage ?? "") : "";
 }
 
@@ -206,6 +237,8 @@ export async function executeG3MarketChange(
   }
   ensureOwner(mode !== "lookup");
   if (mode !== "submit" && !previous) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
+  const replayRejection = g3ReplayRejection(previous);
+  if (mode !== "lookup" && replayRejection) throw new Error(replayRejection);
   if (previous && mode === "submit" && (previous.value !== value.trim() || previous.reason !== reason.trim())) {
     throw new A2OutcomeUncertainError("请查询原操作，或使用原配置和原理由重试。", previous.commandKey);
   }
@@ -315,7 +348,12 @@ export async function executeG3MarketChange(
     forget();
     return { active, acknowledgement: command.change.action === "curve-cell" ? "价格计划已保存，当前价格不变；后续推进到该日生效" : command.change.action === "current-price" ? "当前价格已立即发布，下次自动切换仍按计划执行" : "运行时间已保存，后续按排程推进，本次不当场修改价格" };
   } catch (failure) {
-    if (isExplicitRejection(failure)) {
+    const rejection = explicitRejectionCode(failure);
+    if (rejection) {
+      if (previous) {
+        store.markReplayRejected(command.fingerprint, key, rejection);
+        throw new G3ReplayRejectedError(command, rejection);
+      }
       forget();
       throw failure;
     }
