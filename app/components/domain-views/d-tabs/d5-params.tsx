@@ -64,6 +64,7 @@ import {
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
+import { withdrawalProposalChanges } from "@/lib/admin/withdrawal-proposal-changes";
 import { d5Trc20ReplayBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL } from "@/lib/admin/trc20-closed";
 import { fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
@@ -86,6 +87,7 @@ import {
   withdrawalApprovalDisabledReason,
   rememberWithdrawalProcessing,
   WITHDRAWAL_COMMAND_PROCESSING,
+  type PendingWithdrawalRow,
   type WithdrawalReplayObservation,
   type WithdrawalProposalLookup,
   WITHDRAWAL_CONFIG_READ_FAILED,
@@ -501,7 +503,7 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
   };
 }
 
-/** 一组改动逐项的名字和值：待确认条上的一句话（describeChanges）和放宽单的前后值（ProposalFacts）共用。 */
+/** 待确认条上核对原请求里的各项改动。 */
 function changeParts(changes: Record<string, unknown>): [string, string][] {
   const parts: [string, string][] = [];
   const n = (value: unknown) => Number(value);
@@ -526,50 +528,18 @@ function describeChanges(changes: Record<string, unknown>) {
   return changeParts(changes).map(([label, value]) => `${label} ${value}`).join("；") || "提现参数";
 }
 
-/** 放宽单上后端记的前后值（OpsFinanceService.previewWithdrawalLimits）：「{字段=值, …}」，网络两项是「[TRC20=…, BEP20=…, ERC20=…]」。读不懂就返回 null，不拼半截。 */
-const TICKET_FIELDS = new Set(["dailyLimitCount", "balanceMaxRatio", "minUsdt", "smallAmountThresholdUsd", "payoutSlaHours",
-  "addressEffectiveDelayHours", "addressChangeCooldownDays", "networkConfirmFeeUsd", "networkEnabled", "nexFeeOffsetRate"]);
-function ticketChanges(text: string | undefined) {
-  const body = /^\{(.+)\}$/.exec(text?.trim() ?? "")?.[1];
-  if (!body) return null;
-  const changes: Record<string, unknown> = {};
-  for (const part of body.split(/, (?![^[]*\])/)) {
-    const [, key, value] = /^(\w+)=(.+)$/.exec(part) ?? [];
-    if (!key || !TICKET_FIELDS.has(key)) return null;
-    const nets = /^\[(.+)\]$/.exec(value)?.[1];
-    if (nets === undefined) {
-      if (!Number.isFinite(Number(value))) return null;
-      changes[key] = value;
-      continue;
-    }
-    const pairs = new Map(nets.split(", ").map((item) => item.split("=") as [string, string]));
-    const byNet: Record<string, unknown> = {};
-    for (const net of NETWORKS) {
-      const raw = pairs.get(NET_LABEL[net]);
-      if (key === "networkEnabled" ? raw !== "true" && raw !== "false" : !Number.isFinite(Number(raw))) return null;
-      byNet[net] = key === "networkEnabled" ? raw === "true" : raw;
-    }
-    changes[key] = byNet;
-  }
-  return changes;
-}
-
 /**
  * 放宽单拟改的值，紧跟在审批单那一行下面（OP-63）：前是提交时的值，后是拟改的值；读不懂写「没读到」，不留空。
  * settled：单子已有结论（批准、驳回、撤回、过期），拟改值不再用待生效的蓝（VS-103）。
  */
-function ProposalFacts({ rows, settled }: { rows: readonly { id: string; before?: string; after?: string }[]; settled?: boolean }) {
+function ProposalFacts({ rows, settled }: { rows: readonly PendingWithdrawalRow[]; settled?: boolean }) {
   if (!rows.length) return null;
   return <div className="d-proposal"><Facts>{rows.flatMap((row) => {
-    const before = ticketChanges(row.before);
-    const after = ticketChanges(row.after);
+    const changes = withdrawalProposalChanges("D5", row);
     const head = rows.length > 1 ? [<Fact key={`${row.id}:id`} k="审批单">{row.id}</Fact>] : [];
-    if (!before || !after) return [...head, <Fact key={`${row.id}:none`} k="拟改值">没读到</Fact>];
-    const from = new Map(changeParts(before));
-    // 只列改了的项（和越南盾一样）；摘要里一组字段整组带上时，没变的不列。
-    const changed = changeParts(after).filter(([label, value]) => from.get(label) !== value);
-    return [...head, ...(changed.length ? changed : changeParts(after)).map(([label, value]) => (
-      <Fact key={`${row.id}:${label}`} k={label}><Change from={from.get(label) ?? "—"} to={value} settled={settled} /></Fact>
+    if (!changes) return [...head, <Fact key={`${row.id}:none`} k="拟改值">没读到</Fact>];
+    return [...head, ...changes.facts.map(({ key, label, before, after }) => (
+      <Fact key={`${row.id}:${key}`} k={label}><Change from={before} to={after} settled={settled} /></Fact>
     ))];
   })}</Facts></div>;
 }

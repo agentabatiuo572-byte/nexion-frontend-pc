@@ -26,6 +26,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { loadPayoutVndConfig, updatePayoutVndConfig } from "@/lib/admin/payout-vnd-client";
+import { withdrawalProposalChanges, type WithdrawalProposalChanges } from "@/lib/admin/withdrawal-proposal-changes";
 import {
   PAYOUT_VND_FIELDS, derivePayoutVndRates, isPayoutVndInverted, vndText,
   type PayoutVndConfig, type PayoutVndValues, type PayoutVndWritableField,
@@ -179,43 +180,24 @@ function uncertainDetail(error: Error) {
   return (error.message.match(/（([^（）]*)）$/)?.[1] ?? "").replace(/[。；]$/, "");
 }
 
-/** 放宽单上后端记的前后值（PayoutVndConfigService.previewValues）：「vN spread=… ttl=… tol=… rate=… minFee=… maxFee=… minAmt=… maxAmt=…」，强制保存倒挂价时末尾加 forceInverted。读不懂就返回 null。 */
-const TICKET_KEYS: Record<string, Key> = { spread: "sellSpreadPct", ttl: "quoteTtlMinWithdraw", tol: "requoteTolerancePct", rate: "feeRatePct",
-  minFee: "feeMinUsd", maxFee: "feeMaxUsd", minAmt: "minAmountUsd", maxAmt: "maxAmountUsd" };
-function ticketValues(text: string | undefined) {
-  const match = /^v\d+((?: [A-Za-z]+=-?\d+(?:\.\d+)?)+)( forceInverted)?$/.exec(text?.trim() ?? "");
-  if (!match) return null;
-  const values: Partial<Record<Key, number>> = {};
-  for (const pair of match[1].trim().split(" ")) {
-    const [name, value] = pair.split("=");
-    if (!TICKET_KEYS[name]) return null;
-    values[TICKET_KEYS[name]] = Number(value);
-  }
-  return KEYS.every((key) => values[key] !== undefined) ? { values: values as Record<Key, number>, forced: !!match[2] } : null;
-}
-
 /**
  * 放宽单拟改的值（OP-63）：前是提交时的值，后是拟改的值，只列改了的项；读不懂写「没读到」，不留空。
  * settled：单子已有结论（批准、驳回、撤回、过期），拟改值不再用待生效的蓝（VS-103）。
  */
-function proposalFacts(row: { before?: string; after?: string }, settled = false) {
-  const before = ticketValues(row.before);
-  const after = ticketValues(row.after);
-  if (!before || !after) return <div className="d-proposal"><Facts><Fact k="拟改值">没读到</Fact></Facts></div>;
+function proposalFacts(changes: WithdrawalProposalChanges | null, settled = false) {
+  if (!changes) return <div className="d-proposal"><Facts><Fact k="拟改值">没读到</Fact></Facts></div>;
   return <div className="d-proposal"><Facts>
-    {KEYS.filter((key) => before.values[key] !== after.values[key]).map((key) => (
-      <Fact key={key} k={PAYOUT_VND_FIELDS[key].label}><Change from={valueText(key, before.values[key])} to={valueText(key, after.values[key])} settled={settled} /></Fact>
+    {changes.facts.map(({ key, label, before, after }) => (
+      <Fact key={key} k={label}><Change from={before} to={after} settled={settled} /></Fact>
     ))}
-    {after.forced && <Fact k="倒挂价" tone="warn">强制保存</Fact>}
+    {changes.forced && <Fact k="倒挂价" tone="warn">强制保存</Fact>}
   </Facts></div>;
 }
 
 /** 待批行上的一句：改了哪几项，前后值点开这一行看。 */
-function proposalLine(row: { before?: string; after?: string }) {
-  const before = ticketValues(row.before);
-  const after = ticketValues(row.after);
-  if (!before || !after) return "拟改值没读到。";
-  return `拟改 ${KEYS.filter((key) => before.values[key] !== after.values[key]).map((key) => PAYOUT_VND_FIELDS[key].label).join("、")}。`;
+function proposalLine(changes: WithdrawalProposalChanges | null) {
+  if (!changes) return "拟改值没读到。";
+  return `拟改 ${changes.facts.map(({ label }) => label).join("、")}。`;
 }
 
 function valuesSummary(values: PayoutVndValues) {
@@ -843,16 +825,17 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
   const ownTicket = approvals.terminal ?? approvals.pendingRows.find((row) => row.id === approvals.ownId);
   const ownApprovalNotice = approvals.ownNotice && (!config || approvals.showOwnNotice)
-    && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}{ownTicket && proposalFacts(ownTicket, !!approvals.terminal)}</Notice>;
+    && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}{ownTicket && proposalFacts(withdrawalProposalChanges("D7", ownTicket), !!approvals.terminal)}</Notice>;
   const visibleQueueRows = config ? queueRows : queueRows.filter(row => row.id !== approvals.ownId || !approvals.ownNotice);
   const queuePanel = <RecoveryPanel title={recoveryTitle(0, visibleQueueRows.length)} tone="warn" label="等待批准的放宽单"
     foot={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批查看</Link> : undefined}
     items={visibleQueueRows.map((ticket) => {
       const stale = approvals.queueRowStale(ticket.id);
+      const changes = withdrawalProposalChanges("D7", ticket);
       return { key: ticket.id, object: `放宽单 ${ticket.id}`, tag: <StatusTag tone="warn">{stale ? "上次待审批" : "待审批"}</StatusTag>,
-        line: `${proposalLine(ticket)}${stale ? "上次读取的结果，正在刷新待批列表。" : approvals.queueLine}`,
+        line: `${proposalLine(changes)}${stale ? "上次读取的结果，正在刷新待批列表。" : approvals.queueLine}`,
         // 读不懂时这一行已经写了「拟改值没读到」，展开后不再写一遍（DT-12）。
-        detail: ticketValues(ticket.before) && ticketValues(ticket.after) ? proposalFacts(ticket) : undefined };
+        detail: changes ? proposalFacts(changes) : undefined };
     })} />;
   const queueReadNotice = (queueState === "failed" || approvals.queueRetrying)
     && <Notice tone="warn" title="待批列表加载失败" action={<InlineRetry onRetry={() => void loadQueue()} retrying={approvals.queueRetrying} />}>{approvals.queueError}</Notice>;
