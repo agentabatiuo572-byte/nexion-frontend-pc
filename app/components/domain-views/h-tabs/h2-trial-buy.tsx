@@ -325,7 +325,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
             <ConfigList>
               <ConfigRow name="其他可购买设备" what={ROW_HELP.what} where={ROW_HELP.where} when={ROW_HELP.when} effect={ROW_HELP.effect}
                 value={<>{value}{sub && <> · <span className="h2-buy-sub">{sub}</span></>}</>}
-                action={canWrite ? (describedBy) => <Button size="sm" aria-label="调整 其他可购买设备" aria-describedby={describedBy} disabledReason={blocked} onClick={openDrawer}>调整</Button> : undefined} />
+                action={canWrite ? (describedBy) => <Button size="sm" data-h2-editor-leave aria-label="调整 其他可购买设备" aria-describedby={describedBy} disabledReason={blocked} onClick={openDrawer}>调整</Button> : undefined} />
             </ConfigList>
             {items.length > 0 && <p className="h2-buy-order">按售价从低到高</p>}
             <div className="h2-buy-table">
@@ -357,7 +357,13 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         )}
       </Panel>
 
-      <Drawer open={!!draftBase} onClose={leaveDrawer} title={leaving ? "清单改动还没保存" : "调整其他可购买设备"} sub="保存后立即生效" icon={SlidersHorizontal} tone="neutral"
+      <Drawer open={!!draftBase} onClose={leaveDrawer}
+        onInteractOutside={(event) => {
+          const target = event.detail.originalEvent.target;
+          // 这几处自己会先问，不再走「点抽屉外」，免得两次提示互相抵消（触屏上点外部在 click 之后才到）。
+          if (dirty && target instanceof Element && target.closest("[data-h2-editor-leave], a[href]")) event.preventDefault();
+        }}
+        title={leaving ? "清单改动还没保存" : "调整其他可购买设备"} sub="保存后立即生效" icon={SlidersHorizontal} tone="neutral"
         footer={leaving
           ? <Decision note={note}
             others={<><Button size="md" onClick={continueEditing}>继续编辑</Button><Button variant="danger-outline" size="md" onClick={discard}>放弃改动并返回</Button></>}

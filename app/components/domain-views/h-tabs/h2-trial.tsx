@@ -836,7 +836,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       guideContent={getH2PageGuide(showBuySection, canWrite, canCancel)}
       meta={model ? <span className="rd-toolbar">
         <span>{readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新</span>
-        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => { const refresh = () => void reload(); if (buyLeaveGuard.current) buyLeaveGuard.current(refresh); else refresh(); }}>刷新</Button>
+        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} data-h2-editor-leave onClick={() => { const refresh = () => void reload(); if (buyLeaveGuard.current) buyLeaveGuard.current(refresh); else refresh(); }}>刷新</Button>
       </span> : undefined}
       readOnly={model && !canWrite ? (writePermissionName ? `你只能查看；修改需要「${writePermissionName}」权限` : "你只能查看；修改试用设置要有这页的修改权限。") : undefined}
     />
