@@ -2290,7 +2290,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               <span className="i6-muted">线上 {versionCourse.v}；新版本先存草稿，发布后整体替换。时间为{BJ}。</span>
               {canWriteI7 && <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={editorOpening.blocked ?? (versionsLoading ? "版本列表还在读取" : versionsError ? "版本列表没有读到" : undefined)} onClick={() => newCourseVersion(versionCourse)}>新版本草稿</Button>}
             </div>
-            {versionsError ? <BlockState state="error" title="版本列表没有读到" detail={versionsError} onRetry={() => setVersionsRetry((value) => value + 1)} />
+            {versionsError ? <BlockState state="error" title="版本列表加载失败" detail={versionsError} onRetry={() => setVersionsRetry((value) => value + 1)} />
               : <Table label="课程版本">
                 <thead><tr><Th>版本</Th><Th>状态</Th><Th>中文标题</Th><Th align="right">学完发</Th><Th>更新时间</Th><Th align="right">操作</Th></tr></thead>
                 <tbody>

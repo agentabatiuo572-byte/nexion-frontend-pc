@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandOrigin } from "./fund-command-investigation";
+import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandOrigin, type FundInvestigationOutcome } from "./fund-command-investigation";
 import {
   A2OutcomeUncertainError,
   createA2CommandKey,
@@ -168,16 +168,21 @@ function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWith
         : stale ? `放宽单 ${ownId} 的最新状态没读到，先按等批准处理，点「刷新」再读。`
           : `放宽单 ${ownId} 已提交，${WITHDRAWAL_APPROVAL_PENDING}${queueKnown ? "" : "点「刷新」看最新状态。"}`
       : null;
-  const blockReason = checking ? "正在读取放宽单状态，读到后再提交放宽"
-    : stale ? "放宽单的最新状态没读到，点「刷新」读到后再提交"
-      : canReadQueue && !queueKnown && (!ticket || (!!terminal && !terminalThisRead) || staleRows)
-        ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在读取待批列表，读到后再提交放宽"
-        : hasPending ? "已有放宽等批准，批准、驳回或撤回后才能再提交" : undefined;
+  const pendingBlock = "已有放宽等批准，批准、驳回或撤回后才能再提交";
+  const blockReason = ticket?.status === "pending" ? pendingBlock
+    : own?.checking ? "正在读取放宽单状态，读到后再提交放宽"
+      : stale ? "放宽单的最新状态没读到，点「刷新」读到后再提交"
+        : canReadQueue && !queueKnown
+          ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在读取待批列表，读到后再提交放宽"
+          : hasPending ? pendingBlock : undefined;
+  const pendingOnTighten = pendingRows[0];
   return {
     rows, pendingRows, ownId, queueKnown, terminal, checking, stale, pendingTitle, ownNotice, blockReason, queueRowStale,
     showOwnNotice: !!ownNotice && (!!terminal || !listed),
     pendingDetail: checking ? "" : stale ? "点「刷新」再读。" : "批准前当前值不变。",
     queueLine: WITHDRAWAL_APPROVAL_PENDING,
+    pendingOnTighten,
+    pendingUnverified: !!pendingOnTighten && (checking || stale || queueRowStale(pendingOnTighten.id)),
   };
 }
 
@@ -324,6 +329,47 @@ export const WITHDRAWAL_SUBMISSION_CONFIRMED = {
   label: "审批已提交",
   line: "审批单号暂时没读到。继续查询原结果，核对审批单号和状态。",
 } as const;
+
+export const WITHDRAWAL_REPLAY_QUERY_REQUIRED = "先查询原结果，查到结论后才能决定是否按原请求重试。";
+export const WITHDRAWAL_REPLAY_RESEND = "按原请求重试会重发原内容，已成功的不会重复执行。";
+
+/** 直接写只在尚未查询或查询失败时阻止重试，查到的回执按原有规则处理。 */
+export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean) {
+  if (!canInvestigate) return undefined;
+  if (!outcome) return WITHDRAWAL_REPLAY_QUERY_REQUIRED;
+  if ("error" in outcome) return withdrawalReplayReadError(outcome.error);
+}
+
+/** 放宽须先按原号明确查不到审批单；能读命令回执的账号还要先查过一次（读失败不算）。查到回执后不另外挡：已建单、处理中由各自的标记挡，其余按原号重试取回当时的结果。 */
+export function withdrawalApprovalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean, proposalMissing: boolean) {
+  if (!proposalMissing && !(canInvestigate && outcome && "error" in outcome)) {
+    return "先查询原结果，确认查不到原审批单后才能按原请求重试。";
+  }
+  return withdrawalReplayQueryBlock(outcome, canInvestigate);
+}
+
+export function withdrawalReplayReadError(error: string) {
+  return `查询没有成功：${error.replace(/[。！]+$/, "")}。请再点「查询原结果」。`;
+}
+
+/** 有回执时交给通用状态显示；没有回执时说明当前的查询或重试路径。 */
+export function withdrawalDirectRecoveryStatus(outcome: FundInvestigationOutcome | undefined, options: {
+  canInvestigate: boolean; expired: boolean; processing?: true; retryDisabled?: string;
+}) {
+  if (outcome && "error" in outcome) return {
+    tone: "danger" as const, label: options.expired ? "已过期" : "查询失败",
+    line: `${options.expired ? "已超过 24 小时，不能再重试。" : ""}${withdrawalReplayReadError(outcome.error)}`,
+  };
+  if (outcome && "receipt" in outcome && outcome.receipt) return undefined;
+  if (options.processing) return WITHDRAWAL_COMMAND_PROCESSING;
+  if (options.expired || outcome) return undefined;
+  if (!options.retryDisabled && !options.canInvestigate) {
+    return { tone: "warn" as const, label: "结果未知", line: WITHDRAWAL_REPLAY_RESEND };
+  }
+  if (options.retryDisabled === WITHDRAWAL_REPLAY_QUERY_REQUIRED) {
+    return { tone: "warn" as const, label: "结果未知", line: WITHDRAWAL_REPLAY_QUERY_REQUIRED };
+  }
+}
 
 /** 通用命令回执证明已建单时，仍须用原号查审批单本身。 */
 export async function checkWithdrawalApprovalCommand(record: ConfigAttempt, evidence?: FundCommandEvidence) {
