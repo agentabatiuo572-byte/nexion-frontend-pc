@@ -310,7 +310,7 @@ export function useB5Radar() {
     stream.addEventListener("radar", onRadar);
     stream.onerror = () => {
       const closed = stream.readyState === EventSource.CLOSED;
-      setStreamWarning(closed ? "实时连接断开了；页面每 30 秒自动刷新。" : "实时连接正在重连；页面先显示最近一次的数据，每 30 秒自动刷新。");
+      setStreamWarning(closed ? "自动更新断开了；页面每 30 秒刷新一次。" : "自动更新正在重连；页面先显示最近一次的数据，每 30 秒刷新一次。");
       // EventSource doesn't expose HTTP status. Confirm a closed stream through the guarded read.
       if (closed) void fetchB5Radar().catch(() => undefined);
     };

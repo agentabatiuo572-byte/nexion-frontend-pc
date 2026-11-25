@@ -290,6 +290,14 @@ function canRecover(record: SavedExport, authorities: readonly string[]) {
     : authorities.includes(record.action === "WITHDRAW" ? DETAIL : APPROVE);
 }
 
+function exportAvailability(options: Options | null | undefined) {
+  return {
+    canExport: options === undefined || options?.scopes.some(scope => scope.blocked === null && scope.allowed.length > 0) === true,
+    exportBlocked: options?.scopes.some(scope => scope.blocked === "NO_MANAGED_GROUP") && !options.scopes.some(scope => scope.blocked === null)
+      ? "没有负责的组，暂时不能导出" : undefined,
+  };
+}
+
 export function usePerformanceExportPorts(scopeRevision = 0): PerfExportPorts | null | undefined {
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
   const active = useAdminAuth(state => state.isAuthenticated && !state.logoutPending && !state.logoutUnknown);
@@ -331,18 +339,22 @@ export function usePerformanceExportPorts(scopeRevision = 0): PerfExportPorts | 
     });
     return () => controller.abort();
   }, [authorized, canRequest, canReview, key, revision]);
+  const views = access?.key === key ? access.views : undefined;
+  const operations = useMemo(() => {
+    if (!authorized || !session || !views) return;
+    return exportPorts({ id: String(session.adminId), epoch, name, authorities: session.authorities }, views,
+      () => { setAccess(null); setRevision(value => value + 1); },
+      options => setAccess(current => current?.key === key && current.views === views ? { ...current, options } : current));
+  }, [authorized, epoch, key, name, views]);
   return useMemo(() => {
-    if (!authorized || !session || !canRequest && !canReview) return null;
-    if (access?.key !== key) return undefined;
-    if (access.options === null && !access.views.length) return null;
-    return exportPorts({ id: String(session.adminId), epoch, name, authorities: session.authorities }, access.options, access.views, access.mineTotal, () => {
-      setAccess(null);
-      setRevision(value => value + 1);
-    });
-  }, [authorized, canRequest, canReview, epoch, key, name, access]);
+    if (!authorized || !canRequest && !canReview) return null;
+    if (!operations || !access || !views) return undefined;
+    if (access.options === null && !views.length) return null;
+    return { ...operations, persona: { name, views, mineTotal: access.mineTotal, ...exportAvailability(access.options) } };
+  }, [authorized, canRequest, canReview, operations, access, views, name]);
 }
 
-function exportPorts(operator: Operator, initialOptions: Options | null | undefined, views: View[], mineTotal: number | undefined, invalidateAccess: () => void): PerfExportPorts {
+function exportPorts(operator: Operator, views: View[], invalidateAccess: () => void, updateOptions: (options: Options) => void): Omit<PerfExportPorts, "persona"> {
   let choices = new Map<string, { scope: Scope; label: string; types: ExportType[] }>();
   let latest: { id: string; payload: Selection; preview: Preview } | undefined;
   let previewSequence = 0;
@@ -454,14 +466,11 @@ function exportPorts(operator: Operator, initialOptions: Options | null | undefi
     return deliverDecision(record);
   };
   return {
-    persona: {
-      name: operator.name, views, mineTotal, canExport: initialOptions === undefined || initialOptions?.scopes.some(scope => scope.blocked === null && scope.allowed.length > 0) === true,
-      exportBlocked: initialOptions?.scopes.some(scope => scope.blocked === "NO_MANAGED_GROUP") && !initialOptions.scopes.some(scope => scope.blocked === null) ? "没有负责的组，暂时不能导出" : undefined,
-    },
     invalidateAccess,
     async open(initial) {
       latest = undefined;
       const options = await read("/options", parseOptions);
+      updateOptions(options);
       choices = new Map();
       months = options.months.map(month => month.value);
       restoration = undefined;

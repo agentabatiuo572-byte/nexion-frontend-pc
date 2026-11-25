@@ -86,7 +86,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
       setLoadError(displayAdminReadError(error)); setPreview("failed");
     });
   };
-  useEffect(() => { load(); return () => { checkGeneration.current++; }; }, [ports]);
+  useEffect(() => { load(); return () => { checkGeneration.current++; }; }, [ports.open]);
 
   /** 用户自己点整框「重试」或「刷新」：上一次的「这次没有提交」不再挂着。 */
   const retryLoad = () => { setVersionChanged(false); load(); };

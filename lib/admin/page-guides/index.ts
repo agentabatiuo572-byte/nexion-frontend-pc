@@ -16,6 +16,16 @@ export interface PageGuideContent {
   keep?: readonly string[];
 }
 
+const EXPORT_RECORDS_PURPOSE = "看自己提交的业绩导出，或审批别人的明细申请。";
+const MY_EXPORTS_TASK = {
+  title: "看自己提交的",
+  steps: ["在「我的申请」点一条看内容和进度", "等审批的可以撤回；生成后按页面显示下载，没了原范围的只能看编号和状态"],
+};
+const EXPORT_APPROVALS_TASK = {
+  title: "审批明细申请",
+  steps: ["在「待我审批」点一条，核对申请人、范围、月份和理由", "批准或驳回都要填理由；自己提交的要另一位有审批权的管理员处理"],
+};
+
 const PAGE_GUIDES: Record<string, PageGuideContent> = {
   "A3-app-versions": {
     purpose: "管理 Android 和 iOS 的更新提示与最低支持版本。",
@@ -1262,6 +1272,14 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     ],
     more: "这页只能查看，不发奖、不处罚、不改名次。系统每 10 分钟发布一版；刷新只加载最新发布的一版。名次按精确业绩额从高到低排，相同的并列，下一名跳过。名次变化和上一业务日最后一版比；改成业绩额的第一天不比较。范围只列出这个账号现在能看的。",
   },
+  "M1-no-group": {
+    purpose: "设置负责组后，这里显示组里的客服和客户。",
+    tasks: [{ title: "为什么看不到内容", steps: ["这个账号没有负责的组，也没有本人客户", "请超级管理员在「客服与分组」里设置负责组"] }],
+    terms: [],
+  },
+  "M1-export-mine": { purpose: EXPORT_RECORDS_PURPOSE, tasks: [MY_EXPORTS_TASK], terms: [] },
+  "M1-export-approvals": { purpose: EXPORT_RECORDS_PURPOSE, tasks: [EXPORT_APPROVALS_TASK], terms: [] },
+  "M1-export-both": { purpose: EXPORT_RECORDS_PURPOSE, tasks: [MY_EXPORTS_TASK, EXPORT_APPROVALS_TASK], terms: [] },
   M1: {
     purpose: "先处理客户待办，再核对分配、分组和维护记录。",
     tasks: [

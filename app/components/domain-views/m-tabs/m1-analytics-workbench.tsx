@@ -428,6 +428,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [bulkRecovery, setBulkRecovery] = useState(false);
   const [exportScopeRevision, setExportScopeRevision] = useState(0);
   const [exportRecordsRefresh, setExportRecordsRefresh] = useState(0);
+  const [exportRecordsRefreshing, setExportRecordsRefreshing] = useState(false);
   const exportsPorts = usePerformanceExportPorts(exportScopeRevision);
   const [exportOpen, setExportOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
@@ -497,8 +498,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     && canReadPerformanceExportApprovals(authSession.authorities)
     && !authSession.authorities.some(code => code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL);
   const exportViews = exportsPorts?.persona.views;
+  const hasMyExports = exportViews?.includes("MINE");
+  const hasExportApprovals = exportViews?.includes("APPROVALS");
   const exportsOnly = (approvalOnly || noScopedContent)
-    && (exportViews?.includes("APPROVALS") || exportViews?.includes("MINE") && exportsPorts?.persona.mineTotal !== 0);
+    && (hasExportApprovals || hasMyExports && exportsPorts?.persona.mineTotal !== 0);
   const showStatistics = Boolean(scope && !noScopedContent && section === "stats");
   const statisticsCalendar = queryState.basis === "PERIOD_EVENT" ? monthCalendar : null;
   const fundSource = useMemo<StatisticSource | null>(() => {
@@ -787,16 +790,18 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
   const exportDisabledReason = exportsPorts?.persona.exportBlocked;
   const exportAccessPending = (noScopedContent || approvalOnly) && exportsPorts === undefined;
+  const guideId = exportsOnly ? hasMyExports && hasExportApprovals ? "M1-export-both" : hasMyExports ? "M1-export-mine" : "M1-export-approvals"
+    : noScopedContent && !exportAccessPending ? "M1-no-group" : undefined;
   const refreshWorkbench = () => {
     if (exportsOnly) setExportRecordsRefresh(revision => revision + 1);
     else if (approvalOnly) setExportScopeRevision(revision => revision + 1);
     else refreshScope();
   };
-  const header = <PageHeader pageId="M1" title="客服工作台" summary={exportsOnly ? exportViews?.includes("MINE") ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} readOnly={noScopedContent ? exportDisabledReason : undefined} actions={<>
+  const header = <PageHeader pageId="M1" guideId={guideId} title="客服工作台" summary={exportsOnly ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} readOnly={noScopedContent ? exportDisabledReason : undefined} actions={<>
     {!scopeDenied && (exportsPorts?.persona.canExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
     {!noScopedContent && scope?.scopeSummary.mode === "MANAGED" && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}
     {!noScopedContent && scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
-    {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{(exportsOnly || (!noScopedContent && !exportAccessPending)) && <Button onClick={refreshWorkbench}>刷新</Button>}
+    {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{(exportsOnly || (!noScopedContent && !exportAccessPending)) && <Button loading={!!exportsOnly && exportRecordsRefreshing} onClick={refreshWorkbench}>刷新</Button>}
   </>} />;
   const related = !personalHeader && leaderboardReachable && <nav className="rd-links" aria-label="相关页面"><span>相关页面</span><a className="rd-link" href="/service/leaderboard" onClick={event => { event.preventDefault(); router.push("/service/leaderboard"); }}>业绩榜</a></nav>;
   const exportDialog = exportOpen && exportsPorts && scope && !scopeDenied && <PerfExportDialog ports={exportsPorts}
@@ -805,11 +810,12 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   if (!scope || noScopedContent) return <section className="sa-workbench" aria-busy={exportAccessPending || !scope && !approvalOnly && !scopeDenied && !scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>
     {header}
     {exportsOnly && exportsPorts ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
-      <PerfExportRecords ports={exportsPorts} refreshKey={exportRecordsRefresh} /></>
+      <PerfExportRecords ports={exportsPorts} refreshKey={exportRecordsRefresh} onRefreshingChange={setExportRecordsRefreshing} hidePendingScope={noScopedContent} /></>
       : <Panel>{noScopedContent && !exportAccessPending ? <BlockState state="empty" title="你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" detail="主管负责的组由超级管理员在「客服与分组」里设置。" />
         : scopeDenied || approvalOnly && !exportAccessPending ? <AnalyticsReadDenied /> : <BlockState state={scopeError ? "error" : "loading"}
           title={scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
           onRetry={scopeError ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重试" />}</Panel>}
+    {noScopedContent && !exportsOnly && exportsPorts && <PerfExportRecords ports={exportsPorts} recoveryOnly />}
     {scopeDenied && related}
     {unavailableAgentDrawer}
     {exportDialog}

@@ -70,10 +70,13 @@ import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRec
 import {
   configApprovalOriginalInput,
   pendingConfigApproval,
+  refreshWithdrawalApprovalReceipt,
   releaseConfigApproval,
   releaseRejectedWithdrawalApproval,
   submitWithdrawalConfigApproval,
   withdrawalApprovalDisabledReason,
+  WITHDRAWAL_CONFIG_READ_FAILED,
+  type WithdrawalApprovalReceipt,
 } from "@/lib/admin/withdrawal-config-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { DCtx } from "./types";
@@ -665,6 +668,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const [readAt, setReadAt] = useState("");
   const requestId = useRef(0);
   const [approvals, setApprovals] = useState<{ state: "loading" | "ready" | "failed"; rows: A2OperationRow[] }>({ state: "loading", rows: [] });
+  const [ownApproval, setOwnApproval] = useState<WithdrawalApprovalReceipt | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [leaveAsk, setLeaveAsk] = useState<false | "close" | "refresh">(false);
   const [phaseOpen, setPhaseOpen] = useState(false);
@@ -691,7 +695,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   }, []);
 
   // 刷新时清空并显示加载，失败不留旧值（D5-S04，失败关闭）。
-  const load = useCallback(async () => {
+  const load = useCallback(async (afterApproval = false) => {
     const id = ++requestId.current;
     setLoading(true);
     setParams(null);
@@ -703,7 +707,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         setReadAt(businessClock(Date.now()));
       }
     } catch (err) {
-      if (id === requestId.current) setError(errorText(err));
+      if (id === requestId.current) setError(afterApproval ? WITHDRAWAL_CONFIG_READ_FAILED : errorText(err));
     } finally {
       if (id === requestId.current) setLoading(false);
     }
@@ -731,6 +735,19 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const reloadAll = () => {
     void load();
     void loadApprovals();
+    if (ownApproval?.ticket.status === "pending" && canLookupOwn) {
+      void refreshWithdrawalApprovalReceipt("D5", ownApproval).then(result => {
+        setOwnApproval(current => current === ownApproval ? result : current);
+      });
+    }
+  };
+
+  const applyApproval = (result: WithdrawalApprovalReceipt & { acknowledgement: string }) => {
+    setOwnApproval(result);
+    syncPending();
+    toast(result.acknowledgement, "success");
+    void load(true);
+    void loadApprovals();
   };
 
   const coverageBlock = params && (!params.coverageReliable
@@ -738,7 +755,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     : params.coverageRatio < params.redlinePct
       ? `放宽已暂停：兑付覆盖率 ${pct(params.coverageRatio)}，低于红线 ${fmtConfigPct(params.redlinePct)}`
       : undefined);
-  const pendingApproval = approvals.state === "ready" ? approvals.rows : [];
+  const ownPending = ownApproval?.ticket.status === "pending" ? ownApproval.ticket : null;
+  const queuePending = approvals.state === "ready" ? approvals.rows : [];
+  const pendingApproval = ownPending && !queuePending.some(row => row.id === ownPending.id) ? [ownPending, ...queuePending] : queuePending;
   /** 放宽现在为什么提交不了，从上往下取第一条。 */
   const loosenBlock = proposeBlock
     ?? (loosenPending ? "上一次放宽的结果未知，先到上方查询原结果" : undefined)
@@ -859,14 +878,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       run: async (reason) => {
         try {
           if (loosens) {
-            const result = await submitWithdrawalConfigApproval("D5", session, d5WithdrawalLimitsValues(changes, p.version), reason, fetchD5WithdrawalParams);
-            syncPending();
-            if (result) {
-              applySnapshot(result.active);
-              toast(result.acknowledgement, "success");
-            }
+            const result = await submitWithdrawalConfigApproval("D5", session, d5WithdrawalLimitsValues(changes, p.version), reason);
+            if (result) applyApproval(result);
             closeDrawer();
-            void loadApprovals();
             return;
           }
           const outcome = await sendTighten({ label: `调整提现参数 · ${label}`, changes, expectedVersion: p.version, reason, operator: OPERATOR(),
@@ -940,7 +954,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  /** 放宽的原审批单：查询或原样重试都走同一个命令号。查到就回读并清掉记录（OP-95）。 */
+  /** 放宽的原审批单：先按原号核对建单结果，再单独读取当前配置（OP-87、OP-95）。 */
   const recoverLoosen = async (mode: "lookup" | "retry") => {
     if (!session || !loosenPending) return;
     const key = loosenPending.commandKey;
@@ -950,16 +964,13 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     note(key, "");
     setRecovering(key);
     try {
-      const result = await submitWithdrawalConfigApproval("D5", session, null, "", fetchD5WithdrawalParams, mode === "lookup" ? true : "retry-original");
-      syncPending();
+      const result = await submitWithdrawalConfigApproval("D5", session, null, "", mode === "lookup" ? true : "retry-original");
       if (!result) {
         setQueryMissing((current) => [...current, key]);
         note(key, loosenReplayBlock ? "暂未查到原审批单，可稍后再查。" : "暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
         return;
       }
-      applySnapshot(result.active);
-      toast(result.acknowledgement, "success");
-      void loadApprovals();
+      applyApproval(result);
     } catch (cause) {
       syncPending();
       if (mode === "retry" && isExplicitRejection(cause)) return;
@@ -1107,6 +1118,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   ];
   const pendingNotices = <>
     <FundRecoveryPanel rows={pendingRows} link={auditLink || undefined} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
+    {!params && ownPending && <Notice tone="warn">放宽单 {ownPending.id} 已提交，等另一位超级管理员批准，批准前参数不变。</Notice>}
     {closing && loosenRecord && <FundClosureModal label="放宽提现参数" createdAt={loosenRecord.createdAt} offer={eCommandClosureOffer(investigationResults[loosenRecord.commandKey], isRetryExpired(loosenRecord))} facts={loosenRecord.values ? <Fact k="改动">{describeChanges(loosenRecord.values)}</Fact> : undefined}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(loosenRecord, evidence); setClosing(false); }} />}
     {directClosing && <CommandClosureModal label={editTitle(directClosing.label.replace(/^调整提现参数 · /, ""))} commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
@@ -1176,7 +1188,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     return <>
       {header}
       {pendingNotices}
-      <BlockState state="error" title="提现参数加载失败" detail={<>提现参数加载失败，旧值已清空，修改已暂停。{error && <> {error.replace(/^提现参数/, "")}</>}</>} onRetry={refresh} />
+      <BlockState state="error" title="提现参数加载失败" detail={error === WITHDRAWAL_CONFIG_READ_FAILED
+        ? error : <>提现参数加载失败，旧值已清空，修改已暂停。{error && <> {error.replace(/^提现参数/, "")}</>}</>} onRetry={refresh} />
       {releaseModal}
     </>;
   }

@@ -804,7 +804,7 @@ type FinanceRequestInit = RequestInit & {
   preparationNetwork?: PreparationNetwork;
 };
 
-async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw", path: string, init?: FinanceRequestInit & { retainOnSuccess?: boolean }) {
+async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw", path: string, init?: FinanceRequestInit & { retainOnSuccess?: boolean; localBankReadAuth?: boolean }) {
   assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
@@ -880,9 +880,9 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     }
   }
   let response: Response;
+  const localBankReadAuth = method === "GET" && init?.localBankReadAuth === true;
   try {
-    const readOwnAuth = method === "GET" && init?.bankManualAuthEpoch !== undefined;
-    const send = readOwnAuth ? fetchAdminReadWithLocalAuth : guardedFetch;
+    const send = localBankReadAuth ? fetchAdminReadWithLocalAuth : guardedFetch;
     response = await send(`/api/admin/${base}${path}`, {
       ...init,
       headers,
@@ -902,7 +902,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
-      if (init?.bankManualAuthEpoch !== undefined) {
+      if (localBankReadAuth || method !== "GET" && method !== "HEAD" && init?.bankManualAuthEpoch !== undefined) {
         // Do not start an uncoordinated logout whose late Set-Cookie can clear
         // a later login. Local signOut preserves this owner's uncertain command.
         useAdminAuth.getState().signOut();
@@ -2225,7 +2225,7 @@ export async function fetchD1TopupFlows(params: { status?: string; userId?: numb
 }
 
 export async function fetchD1BankOrders(params: { paymentRail?: string; status?: string; settlementStatus?: string; keyword?: string; pageNum?: number; pageSize?: number }, bankManualAuthEpoch = adminAuthLifecycleEpoch()) {
-  const page = requireD1BankOrdersPage(await apiRequest<unknown>("finance", `/vietqr/orders${buildQuery(params)}`, { bankManualAuthEpoch }));
+  const page = requireD1BankOrdersPage(await apiRequest<unknown>("finance", `/vietqr/orders${buildQuery(params)}`, { bankManualAuthEpoch, localBankReadAuth: true }));
   assertD1BankManualAuthEpoch(bankManualAuthEpoch);
   return page;
 }
