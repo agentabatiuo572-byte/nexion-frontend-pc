@@ -54,9 +54,9 @@ export function f2PctSum(values: readonly string[]) {
 /** 示例订单里这一层分到的 USDT（订单 × 比例 ÷ 100）。 */
 export const f2SampleUsdt = (pct: string) => f2DecimalTimes(pct, String(SAMPLE_ORDER / 100));
 
-/** App 和 Lite 现在只接受七层合计不超过 25% 的配置（proto-app commission-config-api.ts:146、159–160）。 */
+/** App 对七层原始配置的读取上限（commission-config-api.ts）。 */
 export const F2_APP_TOTAL_LIMIT = 25;
-export const F2_APP_LIMIT_COPY = "App 目前只接受合计不超过 25% 的配置，超过会导致 App 读不出团队奖励配置。";
+export const F2_APP_LIMIT_COPY = "原始比例合计超过 25% 时，App 读不出团队奖励配置。";
 
 /** 七层逐行核对：确认框、A2 详情和批准框共用。只用 rd 组件，A2 页没有 F2 的样式表。 */
 export function F2BootstrapReview({ rows, label = "七层规则", ranked }: { rows: readonly F2BootstrapRow[]; label?: string; ranked?: F2RankedRange }) {
