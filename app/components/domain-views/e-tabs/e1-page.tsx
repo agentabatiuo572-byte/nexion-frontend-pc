@@ -48,6 +48,18 @@ const recoveryFor = (original: E1Pending) => original.fingerprint.startsWith("sk
 type Confirmation = McSpec & Partial<E1SkuReview> & { initialBusinessValues?: Record<string, string>; gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
 type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; reading?: boolean; readError?: string };
 type E1Readback = Pick<E1Receipt, "commandKey" | "object">;
+type CatalogReadResult = { skus?: OpsSku[]; snapshot?: E1CatalogSnapshot; earlyRead: boolean };
+type CatalogReadRequest = {
+  readback?: E1Readback;
+  conflict?: boolean;
+  resolve: (result: CatalogReadResult) => void;
+};
+type CatalogReadRound = { requests: CatalogReadRequest[]; canReadE3: boolean };
+
+async function readSource<T>(request: Promise<T>) {
+  try { return { value: await request, error: null }; }
+  catch (failure) { return { value: null, error: displayAdminReadError(failure) }; }
+}
 
 function proposalNeedsCatalog({ before, command: { op, params } }: ProposeSpec): boolean {
   switch (op) {
@@ -106,7 +118,6 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const [gates, setGates] = useState<E1GenerationGateData | null>(null);
   const { skus, invalidSkus: invalid } = useMemo(() => inspectE1StoreDisplayControls(products ?? { skus: [], invalidSkus: [] }, gates), [products, gates]);
   const [discount, setDiscount] = useState<E1BundleDiscount | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [readAt, setReadAt] = useState("");
   const [receipts, setReceipts] = useState<E1Receipt[]>([]);
@@ -115,15 +126,14 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const receipt = receipts.at(-1);
   const [businessValues, setBusinessValues] = useState<Record<string, string>>({});
   const [mediaSending, setMediaSending] = useState("");
-  const [gatesLoading, setGatesLoading] = useState(true), [gatesError, setGatesError] = useState<string | null>(null);
-  const [discountLoading, setDiscountLoading] = useState(true), [discountError, setDiscountError] = useState<string | null>(null);
+  const [gatesError, setGatesError] = useState<string | null>(null);
+  const [discountError, setDiscountError] = useState<string | null>(null);
   const [early, setEarly] = useState<Record<string, string>>({});
   const [earlyError, setEarlyError] = useState<string | null>(null);
-  const [earlyLoading, setEarlyLoading] = useState(true);
   const [edit, setEdit] = useState<E1EditRequest | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
-  const [readbacks, setReadbacks] = useState<E1Readback[]>([]);
-  const [refreshPhase, setRefreshPhase] = useState<"idle" | "checking" | "ready" | "reading">("idle");
+  const [reads, setReads] = useState<{ active: CatalogReadRound | null; queued: CatalogReadRequest[] }>({ active: null, queued: [] });
+  const [checkingReceipts, setCheckingReceipts] = useState(false);
   const [pending, setPending] = useState<E1Pending[]>([]);
   const [verifiedDrafts, setVerifiedDrafts] = useState<E1Pending[]>([]);
   const discardRecovery = useRecoveryDraftDiscard();
@@ -164,58 +174,54 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   }, [actor]);
   const storeFor = (record: E1Pending) => record.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
   useEffect(syncPending, [syncPending]);
-  const refreshProducts = useCallback(async (pairedGates?: Promise<E1GenerationGateData | null>) => {
-    setLoading(true); setError(null);
-    try {
-      const [result] = await Promise.all([fetchE1Products(), pairedGates]);
-      setProducts(result); setReadAt(businessClock(Date.now())); return result;
-    } catch (failure) { setError(displayAdminReadError(failure)); setProducts(null); return null; }
-    finally { setLoading(false); }
-  }, []);
-  const refreshGates = useCallback(async () => {
-    setGatesLoading(true); setGatesError(null);
-    try { const result = await fetchE1GenerationGates(); setGates(result); return result; }
-    catch (failure) { setGates(null); setGatesError(displayAdminReadError(failure)); return null; }
-    finally { setGatesLoading(false); }
-  }, []);
-  const refreshDiscount = useCallback(async () => {
-    setDiscountLoading(true); setDiscountError(null);
-    try { const result = await fetchE1Discount(); setDiscount(result); return result; }
-    catch (failure) { setDiscount(null); setDiscountError(displayAdminReadError(failure)); return null; }
-    finally { setDiscountLoading(false); }
-  }, []);
-  const refresh = useCallback(async (): Promise<E1CatalogSnapshot | undefined> => {
-    // A full read started after these approvals also satisfies their queued readbacks.
-    setReadbacks(rows => rows.length ? [] : rows);
-    const gatesRequest = refreshGates();
-    const [products, nextGates, nextDiscount] = await Promise.all([refreshProducts(gatesRequest), gatesRequest, refreshDiscount()]);
-    if (products && nextGates && nextDiscount) return { ...inspectE1StoreDisplayControls(products, nextGates), gates: nextGates, bundleDiscount: nextDiscount };
-  }, [refreshProducts, refreshGates, refreshDiscount]);
-  const refreshEarly = useCallback(async () => {
-    setEarlyLoading(true); setEarlyError(null);
-    if (!canReadE3) { setEarly({}); setEarlyError("当前账号没有抢先购关联设置的读取权限"); setEarlyLoading(false); return; }
-    try { const snapshot = await fetchE3Snapshot(); setEarly(snapshot.params); }
-    catch (failure) { setEarly({}); setEarlyError(displayAdminReadError(failure)); }
-    finally { setEarlyLoading(false); }
-  }, [canReadE3]);
-  useEffect(() => { if (canRead) { void refresh(); void refreshEarly(); } }, [canRead, refresh, refreshEarly]);
-  useEffect(() => {
-    if (!canRead || loading || refreshPhase === "checking" || refreshPhase === "reading") return;
-    if (readbacks.length) {
-      if (edit || confirmation || readbacks.some(row => row.commandKey === sending.current)) {
-        if (refreshPhase === "ready") setRefreshPhase("idle");
-        return;
-      }
-    } else if (refreshPhase !== "ready") return;
+  const reloadCatalog = useCallback((options: Pick<CatalogReadRequest, "readback" | "conflict"> = {}) =>
+    new Promise<CatalogReadResult>(resolve => {
+      const request = { ...options, resolve };
+      setReads(current => ({ ...current, queued: [...current.queued, request] }));
+    }), []);
+  useEffect(() => { if (canRead) void reloadCatalog(); }, [canRead, canReadE3, reloadCatalog]);
 
-    // The read in progress takes over the write lock from the queued objects.
-    setRefreshPhase("reading");
-    void Promise.all([refresh(), refreshEarly()]).finally(() => setRefreshPhase("idle"));
-  }, [canRead, loading, refreshPhase, readbacks, edit, confirmation, busy, refresh, refreshEarly]);
-  const queueReadback = (readback: E1Readback) => {
-    setReadbacks(rows => rows.some(row => row.commandKey === readback.commandKey) ? rows : [...rows, readback]);
-  };
-  const earlyReady = !earlyLoading && !earlyError && ["开", "关"].includes(early["E.release.earlyAccess.enabled"]) && ["7", "14", "30", "60", "90"].includes(early["E.release.earlyAccess.leadDays"]);
+  // Receipt checks from one header click join its batch. Only an explicit conflict
+  // read can run inside the confirmation that needs the new version (OP-97).
+  const readyToRead = reads.queued.length > 0 && !checkingReceipts
+    && (!confirmation || reads.queued.some(request => request.conflict));
+  useEffect(() => {
+    if (!canRead || reads.active || !readyToRead) return;
+    if (reads.queued.some(request => request.readback?.commandKey === sending.current)) return;
+    setReads(current => current === reads
+      ? { active: { requests: current.queued, canReadE3 }, queued: [] }
+      : current);
+  }, [canRead, canReadE3, reads, readyToRead, busy]);
+
+  const round = reads.active;
+  useEffect(() => {
+    if (!round) return;
+    async function readBatch(batch: CatalogReadRound) {
+      setError(null); setGatesError(null); setDiscountError(null); setEarlyError(null);
+      const [products, gates, discount, early] = await Promise.all([
+        readSource(fetchE1Products()), readSource(fetchE1GenerationGates()), readSource(fetchE1Discount()),
+        batch.canReadE3 ? readSource(fetchE3Snapshot()) : { value: null, error: "当前账号没有抢先购关联设置的读取权限" },
+      ]);
+      setProducts(products.value); setError(products.error);
+      setGates(gates.value); setGatesError(gates.error);
+      setDiscount(discount.value); setDiscountError(discount.error);
+      setEarly(early.value?.params ?? {}); setEarlyError(early.error);
+      if (products.value) setReadAt(businessClock(Date.now()));
+
+      const catalog = products.value && inspectE1StoreDisplayControls(products.value, gates.value);
+      const snapshot = catalog && gates.value && discount.value
+        ? { ...catalog, gates: gates.value, bundleDiscount: discount.value } : undefined;
+      const result = { skus: catalog?.skus, snapshot, earlyRead: !batch.canReadE3 || !!early.value };
+      setReads(current => ({ ...current, active: null }));
+      batch.requests.forEach(request => request.resolve(result));
+    }
+    void readBatch(round);
+  }, [round]);
+
+  const loading = !!round || readyToRead || (!products && !error);
+  const readbacks = [...(round?.requests ?? []), ...reads.queued].flatMap(request => request.readback ?? []);
+  const earlyReady = canReadE3 && !earlyError && ["开", "关"].includes(early["E.release.earlyAccess.enabled"]) && ["7", "14", "30", "60", "90"].includes(early["E.release.earlyAccess.leadDays"]);
+  const gatesLoading = loading && !gates, discountLoading = loading && !discount, earlyLoading = loading && !earlyReady;
   const catalogIncomplete = !error && skus.length === 0 && invalid.length > 0;
   const catalogReadBlock = loading || error || catalogIncomplete ? CATALOG_READ_BLOCK : undefined;
   const skuReadbackPending = (id?: string) => !!id && readbacks.some(row => row.object === `device_sku|${id}` || row.object === `device_generation_gate|${id}`);
@@ -236,6 +242,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const skuMediaBlock = (skuId?: string, draftId?: string) =>
     actor && e1PendingMediaFor(actor, skuId, draftId) ? E1_PENDING_MEDIA : undefined;
   const readBlock: E1CatalogContext["writeBlockedReason"] = (input, values) => {
+    if (loading) return CATALOG_READ_BLOCK;
     switch (input.op) {
       case "sku-save": return skuCatalogReadBlock(input.target) ?? (gatesReadBlock ? "商品编辑需要开放阶段和审核契约，请先读取开放阶段" : edit?.unlock ? phaseBlock : undefined);
       case "sku-delete": return skuCatalogReadBlock(input.target) ?? skuMediaBlock(input.target);
@@ -269,7 +276,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       case "param": return gatesReadBlock ?? (gates?.releases.some(gate => gate.id === input.generationGateId && gate.forceUnlock) ? phaseBlock : undefined);
       case "generation-gate-archive": return gatesReadBlock;
       case "bundle-discount": return discountReadBlock;
-      case "early-access": return earlyReady ? undefined : "当前设置未读取，请先重新读取抢先购设置";
+      case "early-access":
+        if (readbacks.some(row => row.object === "device_release_early_access|trade-in")) return CATALOG_READ_BLOCK;
+        return earlyReady ? undefined : "当前设置未读取，请先重新读取抢先购设置";
       default: return undefined;
     }
   };
@@ -287,7 +296,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       if (!result || result.id !== receipt.id) throw new Error("没有查到这张审批单的进度，请稍后再查，或到操作记录与审批核对");
       setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row, status: result.status } : row));
       if (result.status !== "pending" && receipt.status === "pending") {
-        queueReadback(receipt);
+        void reloadCatalog({ readback: receipt });
         toast(endToast(receipt.action, receipt.id, result.status));
       }
     } catch (failure) {
@@ -298,11 +307,12 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   };
   const waitingReceipts = receipts.filter(row => row.status === "pending");
   const refreshFromHeader = async () => {
-    setRefreshPhase("checking");
-    await Promise.all(waitingReceipts.map(refreshReceipt));
-    setRefreshPhase("ready");
+    setCheckingReceipts(true);
+    try { await Promise.all(waitingReceipts.map(refreshReceipt)); }
+    finally { setCheckingReceipts(false); }
+    return reloadCatalog();
   };
-  const refreshInProgress = loading || refreshPhase !== "idle";
+  const refreshInProgress = loading || checkingReceipts;
   const openReceipt = (id: string) => {
     const receipt = receipts.find(row => row.id === id);
     if (!receipt) return;
@@ -371,7 +381,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       sku: skus.find(s => s.id === input.target), gates, discount, early: { ...early } });
   };
   const retryReadBlock = (record: E1Pending) => {
-    if (readbacks.some(row => row.object === e1Object(record.spec))) return CATALOG_READ_BLOCK;
+    if (loading || readbacks.some(row => row.object === e1Object(record.spec))) return CATALOG_READ_BLOCK;
     if (catalogReadBlock && proposalNeedsCatalog(record.spec)) return catalogReadBlock;
     const { params } = record.spec.command;
     if (gates?.storeDisplayControlsSupported !== true && params && ("displaySoldBase" in params || "liveActivityVisible" in params)) {
@@ -415,8 +425,6 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       toast(`已提交，等待审批后执行 · 审批单 ${result.id}`);
       setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status }]);
       closeOwnEditor();
-      const latest = await refresh();
-      if (!latest) toast("申请已提交，部分目录或关联设置未读取完整");
     } catch (failure) {
       const response = failure as { httpStatus?: number; apiCode?: number; backendMessage?: string; message?: string };
       const firstRejection = !record.receivedTicketId && !retry && !isA2OutcomeUncertainError(failure) && response.httpStatus !== undefined
@@ -437,6 +445,8 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       // Throw the original error so OperationConfirmModal keeps reason and fields.
       throw failure;
     } finally { sending.current = ""; setBusy(""); syncPending(); }
+    const latest = await reloadCatalog();
+    if (!latest.snapshot || !latest.earlyRead) toast("申请已提交，部分目录或关联设置未读取完整");
   };
   const submit = async (spec: ProposeSpec) => {
     if (!canWrite || !actor || sending.current) throw new Error("正在提交或账号没有提交权限，本次没有提交");
@@ -478,7 +488,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       if (full) {
         const spec = full.spec;
         const object = e1Object(spec);
-        if (row.status !== "pending" && readback) queueReadback({ commandKey: full.commandKey, object });
+        if (row.status !== "pending" && readback) void reloadCatalog({ readback: { commandKey: full.commandKey, object } });
         setReceipts(rows => [...rows.filter(receipt => receipt.object !== object), { ...spec, id: row.id, commandKey: record.commandKey, object, status: row.status }]);
         if (row.status === "pending") storeFor(full).remember(full.fingerprint, full.commandKey, { ...full, receivedTicketId: row.id, ticket: { id: row.id, status: "pending" } });
         else if (result?.conclusion === "rejected") storeFor(full).remember(full.fingerprint, full.commandKey, { ...full, ticket: undefined, verifiedNotExecuted: true });
@@ -577,14 +587,13 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const canAcceptRevision = reviewingSku ? !!latestConflictSku?.updatedAt && latestConflictSku.updatedAt !== mc?.beforeSku?.updatedAt
     : !mc?.sku || !!latestConflictSku;
   const readConflict = async () => {
+    const latest = await reloadCatalog({ conflict: true });
     if (reviewingSku && edit) {
-      const products = await refreshProducts();
-      if (!products) throw new Error("目录暂时读不到");
-      setSkuConflict({ nonce: edit.nonce, latest: inspectE1StoreDisplayControls(products, gates).skus.find(sku => sku.id === mc.sku?.id) ?? null });
+      if (!latest.skus) throw new Error("目录暂时读不到");
+      setSkuConflict({ nonce: edit.nonce, latest: latest.skus.find(sku => sku.id === mc.sku?.id) ?? null });
     } else {
-      const snapshot = await refresh();
-      if (!snapshot) throw new Error("目录暂时读不到");
-      setConflictLatest(snapshot);
+      if (!latest.snapshot) throw new Error("目录暂时读不到");
+      setConflictLatest(latest.snapshot);
     }
   };
   const acceptConflictRevision = () => {
@@ -626,9 +635,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (mc.sku ? e1Object(r.spec) === `device_sku|${mc.sku.id}` : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
   const ctx: E1CatalogContext = {
     skus, canWriteE1: canWrite, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, catalogIncomplete, e1InitialLoading: loading && (!products || catalogIncomplete), skuReadbackPending,
-    e1Gates: gates, e1BundleDiscount: discount, currentPhase, refreshE1: async () => { await refreshProducts(); },
-    pE: k => early[k] ?? "—", earlyReady, earlyLoading, earlyError, refreshEarly: () => void refreshEarly(),
-    gatesLoading, gatesError, discountLoading, discountError, refreshGates: () => void refreshGates(), refreshDiscount: () => void refreshDiscount(), writeBlockedReason: readBlock,
+    e1Gates: gates, e1BundleDiscount: discount, currentPhase, refreshE1: () => reloadCatalog(),
+    pE: k => early[k] ?? "—", earlyReady, earlyLoading, earlyError,
+    gatesLoading, gatesError, discountLoading, discountError, writeBlockedReason: readBlock,
     pendingProposal: id => receipts.find(row => row.status === "pending" && ["device_sku", "device_generation_gate"].some(type => row.object === `${type}|${id}`)),
     openPending: openReceipt,
     readPending: id => { receipts.filter(row => row.status === "pending" && ["device_sku", "device_generation_gate"].some(type => row.object === `${type}|${id}`)).forEach(row => { void refreshReceipt(row); }); },
