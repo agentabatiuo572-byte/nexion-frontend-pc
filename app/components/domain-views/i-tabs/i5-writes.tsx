@@ -194,6 +194,7 @@ export function withConflict(ctx: Pick<ICtx, "openActionConfirm" | "closeActionC
 
 /** 列表和详情的入口通过它换编辑对象，先过编辑器的未保存保护。 */
 export type EditorSwitch = { attempt: (next: () => void) => void };
+export type LeaveSaveContinuation = (() => void) & { cancel?: () => void };
 
 type HistoryEntry = { key: string; index: number; sameDocument: boolean };
 type HistoryTraversal = Event & {
@@ -223,11 +224,14 @@ type LeaveEditor = LeaveOptions & { ask: (decision: LeaveDecision) => void };
 const leaveEditors = new Set<LeaveEditor>();
 let stopLeaveGuard: (() => void) | undefined;
 
+function leaveModalBlocksNavigation(editor = [...leaveEditors].at(-1)) {
+  return !!editor && !!document.querySelector('.rd-modal[data-state="open"]') && !editor.allowOverModal?.();
+}
+
 function askToLeave(resume: () => void) {
   const editors = [...leaveEditors];
   const editor = editors.pop();
-  if (!editor) return;
-  if (document.querySelector('.rd-modal[data-state="open"]') && !editor.allowOverModal?.()) return;
+  if (!editor || leaveModalBlocksNavigation(editor)) return;
   const saves = editors.flatMap(other => other.getSave?.() ?? []);
   const saveNext = (index: number, saved: () => void) => {
     const save = saves[index];
@@ -474,7 +478,7 @@ function guardNavigation(router: ReturnType<typeof useRouter>) {
   };
   const stopHistory = navigation ? guardHistory(navigation) : nexionHistoryCursor && guardLegacyHistory(nexionHistoryCursor);
   const ask = (navigate: PageNavigation) => askToLeave(() => resumePageNavigation(navigate));
-  const unregister = registerNavigationGuard(ask);
+  const unregister = registerNavigationGuard(ask, leaveModalBlocksNavigation);
   const intercept = (event: MouseEvent) => {
     const link = leaveLink(event);
     if (!link) return;
@@ -513,20 +517,21 @@ export function keepDraftForLeaveLink(event: CustomEvent<{ originalEvent: Event 
  * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。
  */
 export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>, hasUnsavedAfterSave?: () => boolean, preparingSave = false) {
-  const [asking, setAsking] = useState(false);
+  const [phase, setPhase] = useState<"editing" | "asking" | "saving">("editing");
+  const asking = phase === "asking";
   const nextAction = useRef<(() => void) | null>(null);
   const navigation = useRef<LeaveDecision | null>(null);
   const save = useRef<LeaveSave | undefined>(undefined);
-  useNavigationLeaveGuard(dirty || preparingSave, decision => {
+  useNavigationLeaveGuard(dirty || preparingSave || phase === "saving", decision => {
     if (asking || nextAction.current || preparingSave) return;
     navigation.current = decision;
     nextAction.current = decision.resume;
-    setAsking(true);
+    setPhase("asking");
   }, { discard: close, getSave: () => save.current });
   useEffect(() => {
     switcher.current = { attempt: (next) => {
       if (asking || nextAction.current || preparingSave) return;
-      if (dirty) { nextAction.current = next; setAsking(true); }
+      if (dirty) { nextAction.current = next; setPhase("asking"); }
       else { close(); next(); }
     } };
     return () => { switcher.current = null; };
@@ -534,7 +539,7 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
   const stay = () => {
     navigation.current = null;
     nextAction.current = null;
-    setAsking(false);
+    setPhase("editing");
   };
   return {
     asking,
@@ -542,7 +547,7 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
     otherSaveBlocked: navigation.current?.saveBlocked,
     registerSave: (action: LeaveSave) => { save.current = action; },
     /** 普通关闭：只关这个编辑器，不带上次要去的地方。 */
-    askClose: () => { if (asking || nextAction.current || preparingSave) return; if (dirty) setAsking(true); else close(); },
+    askClose: () => { if (asking || nextAction.current || preparingSave) return; if (dirty) setPhase("asking"); else close(); },
     stay,
     discard: () => {
       const next = nextAction.current;
@@ -552,30 +557,39 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
       next?.();
     },
     /** 只有保存有了确定的成功结果，才继续这次导航。 */
-    startSave: () => {
+    startSave: (retainSave = false): LeaveSaveContinuation => {
       const next = nextAction.current;
       const decision = navigation.current;
-      stay();
-      return () => {
+      const ownsTarget = retainSave && next !== null;
+      if (ownsTarget) setPhase("saving");
+      else stay();
+      const cancel = () => { if (ownsTarget && nextAction.current === next) stay(); };
+      const saved = () => {
+        if (ownsTarget && nextAction.current !== next) return;
         // 保存成功后另一份草稿还没存（A3 两类内容）：不直接走，重新问一次（A3QI-F03）。
         if (hasUnsavedAfterSave?.()) {
           navigation.current = decision;
           nextAction.current = next;
-          setAsking(true);
+          setPhase("asking");
           return;
         }
-        if (decision) decision.saveOthers(decision.resume);
-        else next?.();
+        const continueNavigation = () => { cancel(); next?.(); };
+        if (decision) decision.saveOthers(continueNavigation);
+        else continueNavigation();
       };
+      return Object.assign(saved, { cancel });
     },
   };
 }
 
 /** saveName 是保存按钮的完整名字（「保存并立即生效」这类不带「后继续」的，OP-29）；不传时是「{saveLabel}后继续」。 */
-export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继续`, saveBlocked, onSave }: {
+export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继续`, saveBlocked, retainSave, onSave }: {
   guard: Pick<ReturnType<typeof useLeaveGuard>, "asking" | "stay" | "discard" | "startSave">
     & Partial<Pick<ReturnType<typeof useLeaveGuard>, "otherSaveBlocked" | "registerSave">>;
-  saveLabel?: string; saveName?: string; saveBlocked?: string; onSave: (saved: () => void) => void;
+  saveLabel?: string; saveName?: string; saveBlocked?: string;
+  /** The editor calls saved or cancel when its save continuation settles. */
+  retainSave?: boolean;
+  onSave: (saved: LeaveSaveContinuation) => void;
 }) {
   guard.registerSave?.({ blocked: saveBlocked, run: onSave });
   saveBlocked ??= guard.otherSaveBlocked;
@@ -595,7 +609,7 @@ export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继�
       {/* 危险和主按钮分开放：放弃靠左，继续编辑和保存靠右，和决定区同一种排法（DP-40、VS-25、OP-150）。 */}
       <Button className="rd-leave-discard" variant="danger-outline" onClick={guard.discard}>放弃改动并返回</Button>
       <Button ref={stayButton} onClick={guard.stay}>继续编辑</Button>
-      <Button ref={saveButton} variant="primary" disabledReason={saveBlocked} onClick={() => onSave(guard.startSave())}>{saveName}</Button>
+      <Button ref={saveButton} variant="primary" disabledReason={saveBlocked} onClick={() => onSave(guard.startSave(retainSave))}>{saveName}</Button>
     </>}><p>离开后这次的修改不会保留。</p>
       {/* 保存按钮不能点时原因常显，不只放在悬停提示里（OP-126）。 */}
       {saveBlocked && <Notice tone="warn">现在不能保存：{saveBlocked.replace(/[。.]$/, "")}。</Notice>}</Modal>
