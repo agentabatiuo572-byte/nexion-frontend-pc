@@ -228,9 +228,11 @@ export interface V8PromotionBenefits {
   monthlySalaryUsdt?: string;
 }
 
+export type V8PromotionReward = OpsVRankRewardItem & { voucherName?: string; skuName?: string };
+
 interface V8PromotionSnapshot {
   originalRank: string;
-  v8Rewards?: OpsVRankRewardItem[];
+  v8Rewards?: V8PromotionReward[];
   v7?: V8PromotionBenefits;
   v8?: V8PromotionBenefits;
 }
@@ -435,7 +437,7 @@ function isSnapshotRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function isSnapshotReward(value: unknown): value is OpsVRankRewardItem {
+function isSnapshotReward(value: unknown): value is OpsVRankRewardItem & Record<string, unknown> {
   if (!isSnapshotRecord(value) || typeof value.id !== "string" || !value.id.trim()) return false;
   switch (value.type) {
     case "usdt":
@@ -464,7 +466,12 @@ function readV8PromotionSnapshot(value: unknown): V8PromotionSnapshot | undefine
   if (typeof originalRank !== "string" || !/^V[0-8]$/.test(originalRank)
     || (v8Rewards != null && !Array.isArray(v8Rewards))
     || (v7 != null && !isSnapshotRecord(v7)) || (v8 != null && !isSnapshotRecord(v8))) return undefined;
-  const rewards = v8Rewards?.every(isSnapshotReward) ? v8Rewards : undefined;
+  const rewardName = (name: unknown) => typeof name === "string" ? name.trim() || undefined : undefined;
+  const rewards = v8Rewards?.every(isSnapshotReward) ? v8Rewards.map(reward => ({
+    ...reward,
+    voucherName: rewardName(reward.voucherName),
+    skuName: rewardName(reward.skuName),
+  })) : undefined;
   const from = v7 ? readSnapshotBenefits(v7) : undefined;
   const to = v8 ? readSnapshotBenefits(v8) : undefined;
   return rewards || from || to ? { originalRank, v8Rewards: rewards, v7: from, v8: to } : undefined;

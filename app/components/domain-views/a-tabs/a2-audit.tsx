@@ -277,9 +277,9 @@ function V8PromotionRewardFact() {
 
 function v8PromotionFacts(ticket: A2OperationRow) {
   const snapshot = ticket.v8PromotionSnapshot;
-  return snapshot
-    ? <V8PromotionFacts rewards={snapshot.v8Rewards} v7={snapshot.v7} v8={snapshot.v8} snapshot />
-    : <V8PromotionRewardFact />;
+  if (!snapshot) return <V8PromotionRewardFact />;
+  const fromV7 = snapshot.originalRank === "V7";
+  return <V8PromotionFacts rewards={snapshot.v8Rewards} v7={fromV7 ? snapshot.v7 : undefined} v8={fromV7 ? snapshot.v8 : undefined} snapshot />;
 }
 
 /** 批准后 App 读不到团队奖励配置：首次配置单看票上的七层；单层比例单只带这一层，其余各层按现在读到的算（OP-69）。 */
@@ -2566,7 +2566,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const i5Publish = w.operationCode === "i5_disclosure_publish" || w.operationCode === "i4_disclosure_publish";
     // 一行放得下（必须改 14）；时点只写在「生效时间」一处（建议 8）。
     // 摘要标题行只放得下 20 字左右，长了会折出孤字（D10）；细节写在「说明」和事实区。
-    const impact = scheduled || monthlyTargetChange(w) ? timing.impact
+    const impact = v8Promotion ? "批准后立即升到 V8；首次到达 V8 的晋级奖励按批准时的配置发给本人，以前到过 V8 的不再发。"
+      : scheduled || monthlyTargetChange(w) ? timing.impact
       : j4 ? "逐步执行，失败时可能只执行了一部分。"
         : coverageMode === "onApproval" ? "先查兑付覆盖率，够了才执行，不够不动。"
           : g3 ? "按生效时间执行，改线上配置。"
@@ -3448,10 +3449,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             { label: "发起人", icon: Users, tone: "users", value: shownActors?.proposer ?? "—" },
             { label: "处理人", value: shownActors ? `${shownActors.role} ${shownActors.actor}` : historyActorText(shownHistory.chain) },
             { label: "处理时间", value: bizTime(shownHistory.t, shownHistory.t) },
-            { label: historyNote.label, value: historyNote.text },
+            { label: historyV8Ticket ? "处理理由" : historyNote.label, value: historyNote.text },
           ]} />
           {historyV8Ticket && <A2ChangeReview before={changeBefore(historyV8Ticket)} after={changeAfter(historyV8Ticket)}
-            operationCode={reviewOperation(historyV8Ticket)} amountKey={a2TicketKey(historyV8Ticket)} facts={v8PromotionFacts(historyV8Ticket)} />}
+            operationCode={reviewOperation(historyV8Ticket)} amountKey={a2TicketKey(historyV8Ticket)} facts={<>
+              <Fact k="对象">{objectNode(historyV8Ticket)}</Fact>
+              <Fact k="发起理由">{keepCodes(historyV8Ticket.reason)}</Fact>
+              {v8PromotionFacts(historyV8Ticket)}
+            </>} />}
           {voucherResult && <section className="a2-change-review" aria-label="实际结果">
             <div className="a2-change-title">实际结果<Explain label="实际结果说明" content="批准执行时系统记下的券处置和扣款，不是申请时的选择。" /></div>
             {voucherResult.state === "available" ? <Facts>
