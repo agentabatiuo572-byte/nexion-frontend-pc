@@ -266,7 +266,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     if (confirmation.current?.commandKey === commandKey) confirmation.current.finish();
   };
   const mutations = useH3Mutations(toast, async (commandKey, draft, read = true) => {
-    fresh.current = false;
+    if (read) fresh.current = false;
     if (commandKey) finishConfirmation(commandKey);
     if (draft && (draft.change.editValue !== undefined || draft.change.businessValue)) {
       const { target, action, editValue, businessValue } = draft.change;
@@ -296,12 +296,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       await reload(commandKey === undefined);
       await region.reload();
     }
-  }, async (records, refresh) => {
-    const tasks = refresh || records.some(record => record.store !== "region") ? reload() : undefined;
+  }, async (records) => {
+    const tasks = records.some(record => record.store !== "region") ? reload() : undefined;
     const request = taskReadSequence.current;
-    const rules = refresh || records.some(record => record.store === "region") ? region.reload() : undefined;
+    const rules = records.some(record => record.store === "region") ? region.reload() : undefined;
     const [latest, policy] = await Promise.all([tasks, rules]);
-    const complete = (count: number | undefined, length: number) => count === undefined || count === length;
     return (record) => {
       if (record.store === "region") return policy ? "found" : "unreadable";
       if (request !== taskReadSequence.current) return "superseded";
@@ -309,6 +308,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       const target = record.change.target;
       const weekly = [...latest.weeklyTier1, ...latest.weeklyTier2];
       const { dayOneTaskCount, weeklyTier1Count, weeklyTier2Count, monthlyMissionCount } = latest.h3Stats;
+      // 一个任务都没有时后端不带计数；有任务时计数要和列表一致，才凭「列表里没有」结案（ST-37）。
+      const noTasks = ![...latest.dayOneTasks, ...weekly, ...latest.monthlyMissions].length
+        && [dayOneTaskCount, weeklyTier1Count, weeklyTier2Count, monthlyMissionCount].every(count => !count);
+      const complete = (count: number | undefined, length: number) => noTasks || count === length;
       const weeklyComplete = complete(weeklyTier1Count, latest.weeklyTier1.length) && complete(weeklyTier2Count, latest.weeklyTier2.length);
       if (record.store === "mission") {
         if ([...latest.dayOneTasks, ...weekly].some(task => codeOf(task) === target)) return "found";
@@ -333,7 +336,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     setRefreshing(true);
     openMc.current = null; setMc(null); shellCtx.closeConfirm?.();
     try {
-      const results = await mutations.refreshTickets();
+      // 任务和地区先读，不等审批查询；查到有已批准的再按它们读一次。
+      const [, , results] = await Promise.all([reload(), region.reload(), mutations.refreshTickets()]);
       for (const result of results) if (result.status === "rejected") toast(displayAdminError(result.reason));
     } finally {
       refreshInFlight.current = false;

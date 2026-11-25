@@ -136,7 +136,7 @@ function retryBlocked(record: H3PendingCommand) {
 export function useH3Mutations(
   toast: (message: string) => void,
   settled: (commandKey?: string, draft?: H3PendingCommand, refresh?: boolean) => Promise<void>,
-  readApproved: (records: readonly H3PendingCommand[], refresh: boolean) => Promise<(record: H3PendingCommand) => ApprovedFact>,
+  readApproved: (records: readonly H3PendingCommand[]) => Promise<(record: H3PendingCommand) => ApprovedFact>,
   finish: (commandKey: string) => void,
   isFresh: (record?: H3PendingCommand) => boolean,
   model: H3Model | null,
@@ -176,7 +176,7 @@ export function useH3Mutations(
     for (const record of approved) approvedReads.current.set(record.commandKey, request);
     update();
     try {
-      const factOf = await readApproved(approved, refresh);
+      const factOf = await readApproved(approved);
       for (const record of approved) {
         if (approvedReads.current.get(record.commandKey) !== request) continue;
         const fact = factOf(record);
@@ -357,14 +357,11 @@ export function useH3Mutations(
           update();
         }) : Promise.resolve();
       const originals = records().filter(record => record.request.kind !== "direct");
-      if (!originals.length) {
-        const [overview] = await Promise.allSettled([lookup, settleApproved([], true)]);
-        return [overview];
-      }
       const [overview] = await Promise.allSettled([lookup]);
       // A later exact-key verdict supersedes the earlier overview observation.
       const outcomes = await Promise.allSettled(originals.map(record => query(record, true)));
-      await settleApproved(records().filter(record => record.ticketStatus === "approved"), true);
+      const approved = records().filter(record => record.ticketStatus === "approved");
+      if (approved.length) await settleApproved(approved, true);
       return [overview, ...outcomes];
     },
     async retry(r: H3PendingCommand) {

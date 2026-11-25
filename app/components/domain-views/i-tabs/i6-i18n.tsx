@@ -352,6 +352,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
   const [courseEditor, setCourseEditor] = useState<CourseEditorState | null>(null);
   const editorOpening = useEditorOpening(!!courseEditor || !!copyEditor, message => toast(message, "warn"));
+  // 保存时比的是点保存那一刻开着的编辑器；打开文案编辑要等读取，等的时候详情关了或换了条就不打开。
+  const editors = useRef({ copyEditor, courseEditor });
+  editors.current = { copyEditor, courseEditor };
+  const messageView = useRef({ key: selectedMessageKey, open: messageDrawer });
+  messageView.current = { key: selectedMessageKey, open: messageDrawer };
   const courseEditorOpen = useRef(false);
   courseEditorOpen.current = !!courseEditor;
   const [courseVersions, setCourseVersions] = useState<LearningCourseVersionView[]>([]);
@@ -438,7 +443,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const blocked = newWriteProblem(scope);
     if (blocked) { toast(blocked, "warn"); return; }
     const openedData = latest.current.content.i18nLearning;
-    const openedCopyEditor = copyEditor, openedCourseEditor = courseEditor;
+    const { copyEditor: openedCopyEditor, courseEditor: openedCourseEditor } = editors.current;
     const finish = () => {
       ctx.closeActionConfirm(confirmation);
       setCopyEditor(current => current === openedCopyEditor ? null : current);
@@ -1770,6 +1775,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         ? issue.samples.map(key => MESSAGES.find(message => message.messageKey === key)).find(Boolean)
         : sm;
       if (!target) return;
+      const from = messageView.current;
       await editorOpening.run(`edit-copy:${target.messageKey}`, async () => {
         const required = await getRequiredContentLanguages();
         return () => {
@@ -1783,7 +1789,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           if (saved && !merged && saved.version !== target.version) toast("原草稿缺少修改前的内容，已显示最新版本，请重新选择拟改项。", "warn");
           setCopyEditor({ mode, issue, ...(merged?.value ?? (saved?.version === target.version ? saved?.desired : undefined) ?? base), tried: false });
         };
-      });
+      }, () => messageView.current.key === from.key && messageView.current.open === from.open);
     };
     const whenSeen = !sm ? "—" : sm.status === "published" ? "已在远程文案里；App 下次拉取时用它"
       : sm.status === "draft" ? "草稿，用户看不到；发布后 App 下次拉取时换上" : sm.status === "archived" ? "已撤下远程文案；App 拉到新文案包后改用自带文字" : "—";

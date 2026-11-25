@@ -347,7 +347,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const canClose = canSubmit && eCommandClosureRequests(receipt, expired).conclusions.length > 0;
   const retry = canConfigure && !readBlocked && !expired && !!command && !jEmergencyRetryBlocked(command);
   const processedView = processed && (command || expired) ? processedStatus({
-    expired, canRetry: retry, canClose, canRelease: rejected, canReachAudit: reach("/platform/audit", "platform_a2_read"), legacy: !!saved?.legacy, receipt,
+    expired, canRetry: retry, canClose, canRelease: rejected, canReachAudit: reach("/platform/audit", "platform_a2_read"), closable: !saved?.legacy, legacy: !!saved?.legacy, receipt,
   }) : undefined;
   const recoveryRows: FundRecoveryRow[] = saved ? [{
     key: outcomeKey ?? "j3-legacy",

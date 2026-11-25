@@ -19,8 +19,10 @@ export const SETTLED_OTHER = "后台已处理原请求，记录已解除；页�
  * 回执是「已处理」、记录还没解除时这一行怎么说；查到的是后台拒绝（receipt）时换成「后台拒绝」那一档。
  * more 是展开后的说明，和资金页面板同一档的一样（receiptExplain）。
  */
-export function processedStatus({ expired, canRetry, canClose, canRelease = false, canReachAudit, legacy, receipt }: {
-  expired: boolean; canRetry: boolean; canClose: boolean; canRelease?: boolean; canReachAudit?: boolean; legacy?: boolean; receipt?: ECommandInvestigation | null;
+export function processedStatus({ expired, canRetry, canClose, canRelease = false, canReachAudit, closable = true, legacy, receipt }: {
+  expired: boolean; canRetry: boolean; canClose: boolean; canRelease?: boolean; canReachAudit?: boolean;
+  /** 这种记录过期后能不能核查结案；改版前的旧记录有的只能查。 */
+  closable?: boolean; legacy?: boolean; receipt?: ECommandInvestigation | null;
 }): { tone: StateTone; label: string; line: string; more?: string } {
   const more = receiptExplain(receipt);
   const rejected = receiptRejected(receipt);
@@ -29,7 +31,7 @@ export function processedStatus({ expired, canRetry, canClose, canRelease = fals
   if (expired && canReachAudit !== undefined) {
     const next = canRelease ? RETRY_REJECTED_NEXT
       : canClose ? "可以核查结案。"
-        : canReachAudit ? "请到操作记录与审批核对。" : "请有调查权限的超级管理员核查结案。";
+        : canReachAudit ? "请到操作记录与审批核对。" : closable ? "请有调查权限的超级管理员核查结案。" : "请有操作记录与审批查看权限的同事核对。";
     return { tone: "warn", label, line: `已超过 24 小时，不能再重试。${result}${next}`, more };
   }
   if (rejected && (legacy || canRetry && !expired)) return { ...rejectedStatus({ expired, canRetry, canClose, legacy }), more };
@@ -41,6 +43,7 @@ export function processedStatus({ expired, canRetry, canClose, canRelease = fals
   const next = canRelease ? RETRY_REJECTED_NEXT
     : canRetry && !expired ? "按原请求重试可确认，不会重复执行。"
       : canClose ? "可以核查结案。"
-        : canReachAudit === false ? "请有调查权限的超级管理员核查结案。" : "请到操作记录与审批核对。";
+        : canReachAudit !== false ? "请到操作记录与审批核对。"
+          : closable ? "现在只能查询；超过 24 小时后由有调查权限的超级管理员核查结案。" : "请有操作记录与审批查看权限的同事核对。";
   return { tone: "warn", label, line: `${result}${next}`, more };
 }
