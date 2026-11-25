@@ -54,9 +54,12 @@ export function hApprovalReconfirm(error: HApprovalRequired, look: {
   completed?: (result: unknown) => Promise<void>;
   hasPending: () => boolean;
   onUnknown: () => void;
+  pendingRecovery?: ConfirmReq["getPendingRecovery"];
+  retryPending?: () => Promise<void>;
   /** Exact business-form facts for the visual confirmation handoff. */
   changes?: HApprovalChange[];
 }): HApprovalReconfirmReq {
+  let attemptedPending = false;
   return {
     // Conflict rebuilds use nonnegative revisions; approval confirmations use negatives.
     formKey: --opened,
@@ -78,15 +81,25 @@ export function hApprovalReconfirm(error: HApprovalRequired, look: {
     </Facts></>,
     reason: true,
     freezePendingInput: true,
+    replayPendingInput: !!look.retryPending,
     initialReason: look.reason,
-    getPendingReason: () => look.reason,
+    getPendingReason: () => !look.pendingRecovery || look.hasPending() ? look.reason : undefined,
+    getPendingRecovery: look.pendingRecovery,
+    getPendingBlockReason: () => look.pendingRecovery?.()?.blockedReason,
     okLabel: "提交审批",
     run: async () => {
       let result: unknown;
-      try { result = await error.confirm(); }
+      try {
+        if (look.retryPending && (attemptedPending || look.hasPending())) {
+          if (!look.hasPending()) return false;
+          result = await look.retryPending();
+        } else {
+          result = await error.confirm();
+        }
+      }
       catch (cause) {
-        // Recovery belongs to the persisted original request on the page, not this frozen dialog.
-        if (look.hasPending() || isOutcomeUnknownError(cause) || isA2OutcomeUncertainError(cause)) look.onUnknown();
+        attemptedPending ||= look.hasPending();
+        if (!look.pendingRecovery && (look.hasPending() || isOutcomeUnknownError(cause) || isA2OutcomeUncertainError(cause))) look.onUnknown();
         throw cause;
       }
       await look.completed?.(result);
