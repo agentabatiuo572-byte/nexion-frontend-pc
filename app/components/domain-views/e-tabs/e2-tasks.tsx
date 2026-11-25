@@ -2,7 +2,7 @@
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { ClipboardList, Plus, RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
 import { BatchBar, BlockState, Button, Cell, Check, CheckGroup, Checkbox, Conclusion, Explain, Fact, Facts, Field,
   FilterBar, FilterField, Fold, KeepText, LevelStrip, Modal, Notice, NumberInput, PageHeader, Pager, Panel, RatioBar,
@@ -21,8 +21,7 @@ import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, sendTaskPoolCommand
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Select } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
-import { useHistoryBackGuard, warnAboutUnsavedChanges } from "../i-tabs/i5-writes";
-import { registerNavigationGuard } from "@/lib/nav/leave-navigation";
+import { useHistoryBackGuard, usePageLeaveGuard, warnAboutUnsavedChanges } from "../i-tabs/i5-writes";
 import { FIXED_DEVICE_LEVELS } from "./task-type-policy";
 import { checkE2Command, e2CommandLabel, e2Commands, e2CommandSettled, type E2Pending } from "./e2-pending";
 import { canInvestigateECommand, eCommandRollbackConfirmed } from "@/lib/admin/e-command-investigation";
@@ -135,7 +134,6 @@ function readQuery(params: URLSearchParams): Query {
 
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const params = useSearchParams();
-  const router = useRouter();
   const session = useAdminAuth(state => state.session);
   const actorId = session ? String(session.adminId) : "";
   const [query, setQuery] = useState(() => readQuery(new URLSearchParams(params.toString())));
@@ -292,29 +290,14 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   }, [editorDirty]);
   // 浏览器后退和点链接一样先问（OP-29）。
   useHistoryBackGuard(editorDirty, leaveEditorThen);
+  usePageLeaveGuard(editorDirty, leaveEditorThen, true);
 
   useEffect(() => {
     if (!editorDirty) return;
-    const unregisterNavigation = registerNavigationGuard(leaveEditorThen);
     const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
-    const intercept = (event: MouseEvent) => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
-      if (!link || link.target && link.target !== "_self" || link.hasAttribute("download") || link.origin !== window.location.origin
-        || link.pathname === window.location.pathname) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const href = `${link.pathname}${link.search}${link.hash}`;
-      leaveEditorThen(() => router.push(href));
-    };
     window.addEventListener("beforeunload", warn);
-    document.addEventListener("click", intercept, true);
-    return () => {
-      unregisterNavigation();
-      window.removeEventListener("beforeunload", warn);
-      document.removeEventListener("click", intercept, true);
-    };
-  }, [editorDirty, leaveEditorThen, router]);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [editorDirty]);
 
   function finishEditor() {
     const next = afterEditorLeave.current;

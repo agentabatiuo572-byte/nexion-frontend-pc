@@ -37,7 +37,7 @@ export function CommandPalette({ domains, showHome, open, onOpenChange, triggerR
       // Close the palette's focus scope before the leave dialog captures its opener.
       flushSync(() => onOpenChange(false));
       triggerRef.current?.focus();
-      requestPageNavigation(path, (href) => router.push(href));
+      requestPageNavigation(path, router);
     },
     [router, onOpenChange, triggerRef],
   );

@@ -12,10 +12,12 @@ import { StatusTag } from '@/app/components/rd';
 import { PromotionRightsDialog } from './h4-promotion-policies';
 import { PromotionBanner } from './h4-promotion-banner';
 import { Amount, EditorSummary } from './h4-promotion-board';
+import { usePageLeaveGuard } from '../i-tabs/i5-writes';
 import { newPurchaseRule, changeRewardType, promotionRewardTypes, changeTemplate, dateInput, limitText, policyKey, policyLabel, policyRef, utcInput, parsePromotionNumericInput, promotionInputText, promotionChoiceError, promotionBudgetComparison, promotionDraftForRequest, promotionPublicText, type PromotionNumericKind } from '@/lib/admin/promotion-form';
 import { Button, Card, ConfirmCommand, Dialog, Field, Notice, PromotionSteps, ReadError, Summary, Table, TEMPLATE_LABELS, text, labelState, rewardText, promotionAssetText, formatTime } from './h4-promotion-ui';
 type NumericInputs = Record<string, string>;
 type NumericBinding = {raw?: string; onRaw: (raw: string) => void};
+type ExitTarget = 'detail' | 'review' | { resume: () => void };
 function NumericField({label, kind, value, binding, onChange, hint, inline = false}: {
     label: string; kind: PromotionNumericKind; value: string | number | null | undefined;
     binding: NumericBinding; onChange: (value: string | number | null) => void; hint?: ReactNode; inline?: boolean;
@@ -164,7 +166,7 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
     const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
     const [conflict, setConflict] = useState<{ error: PromotionApiError; latest: Promotion | null } | null>(null);
     const [removeRule,setRemoveRule]=useState<DraftPurchaseRule|null>(null), [limitsOpen,setLimitsOpen]=useState(false), [combinationOpen,setCombinationOpen]=useState(false), [policiesOpen,setPoliciesOpen]=useState(false), [nextStep,setNextStep]=useState<number|null>(null);
-    const version = activity.current!, [draft, setDraft] = useState<Draft>(() => structuredClone(version.draft)), [step, setStep] = useState(initialStep), [language, setLanguage] = useState<'zh' | 'en' | 'vi'>('zh'), [rule, setRule] = useState<DraftPurchaseRule | null>(null), [saving, setSaving] = useState(false), [template, setTemplate] = useState<Template | null>(null), [preview, setPreview] = useState<AudiencePreview | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [budgetOpen, setBudgetOpen] = useState(false), [publicOpen, setPublicOpen] = useState(false), [exitTarget, setExitTarget] = useState<'detail' | 'review' | null>(null);
+    const version = activity.current!, [draft, setDraft] = useState<Draft>(() => structuredClone(version.draft)), [step, setStep] = useState(initialStep), [language, setLanguage] = useState<'zh' | 'en' | 'vi'>('zh'), [rule, setRule] = useState<DraftPurchaseRule | null>(null), [saving, setSaving] = useState(false), [template, setTemplate] = useState<Template | null>(null), [preview, setPreview] = useState<AudiencePreview | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [budgetOpen, setBudgetOpen] = useState(false), [publicOpen, setPublicOpen] = useState(false), [exitTarget, setExitTarget] = useState<ExitTarget | null>(null);
     const [buyerLimit, setBuyerLimit] = useState<Limit | null>(version.draft.perPersonLimit?.buyer || null), [inviterLimit, setInviterLimit] = useState<Limit | null>(version.draft.perPersonLimit?.directInviter || null);
     const [templatePickerOpen, setTemplatePickerOpen] = useState(false), [limitInputs, setLimitInputs] = useState<NumericInputs>({});
     const [bannerUploading, setBannerUploading] = useState(false);
@@ -181,6 +183,9 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
     const limitsIncomplete = !!buyerLimit !== !!inviterLimit;
     const [initialDraft, setInitialDraft] = useState(version.draft);
     const dirty = !!conflict || bannerUploading || limitsFormatInvalid || JSON.stringify(draft) !== JSON.stringify(initialDraft);
+    usePageLeaveGuard(dirty, (resume) => {
+        if (!bannerUploading && !saving) setExitTarget({ resume });
+    });
     const localPreview = promotionPublicText(draft, requiredLanguages, 'submit');
     const currLanguageRequired = requiredLanguages.includes(language);
     const englishCopy = language !== 'en' && currLanguageRequired && isEnglishCopy(
@@ -218,8 +223,20 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
         setExitTarget(target);
     else
         target === 'detail' ? onBack() : onReview(); };
+    const finishExit = (target: ExitTarget | null) => {
+        if (target === 'review') onReview();
+        else if (target === 'detail') onBack();
+        else if (target) {
+            setExitTarget(null);
+            target.resume();
+        }
+    };
     const discardAndLeave = async (target = exitTarget) => {
-        if (busy) return;
+        if (busy || !target) return;
+        if (typeof target === 'object') {
+            finishExit(target);
+            return;
+        }
         setBusy(true);
         const request = {};
         discardRequest.current = request;
@@ -228,7 +245,7 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
             await onSaved();
             if (discardRequest.current !== request) return;
             setExitTarget(null);
-            target === 'review' ? onReview() : onBack();
+            finishExit(target);
         } catch (cause) { setError(cause); }
         finally { setBusy(false); }
     };
@@ -289,10 +306,7 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
         setConflict(current => current ? { ...current, latest } : current);
         if (!latest.current || latest.current.version !== version.version || latest.current.state !== 'DRAFT') throw new Error('PROMOTION_VERSION_NOT_CURRENT');
         return null;
-    }} writeAllowed={!readOnly && !bannerUploading && !limitsIncomplete && (!conflict?.latest || reviewCanSave)} title="保存活动草稿" intent={{ operation: 'saveDraft', targetId: activity.activityId, path: `/promotions/${activity.activityId}/draft`, method: 'PUT' }} body={{ expectedVersion: reviewCanSave ? reviewedVersion!.version : version.version, expectedRevision: reviewCanSave ? reviewedVersion!.revision : version.revision, draft: promotionDraftForRequest(draft) }} onClose={() => { setSaving(false); setNextStep(null); }} onSuccess={async (_result, isCurrent) => { const saved = await onSaved(isCurrent() ? nextStep??undefined : undefined); if (!isCurrent()) return; if (saved?.current) { setConflict(null); setActivity(saved); const editable = editablePromotionDraft(saved.current.draft, requiredLanguages); setDraft(editable); setInitialDraft(editable); setBuyerLimit(saved.current.draft.perPersonLimit?.buyer || null); setInviterLimit(saved.current.draft.perPersonLimit?.directInviter || null); setLimitInputs({}); setPreview(null); } if(nextStep!==null)setStep(nextStep); setNextStep(null); setSaving(false); if (exitTarget === 'review')
-        onReview();
-    else if (exitTarget === 'detail')
-        onBack(); }}><Summary rows={[['活动', draft.name || '未命名草稿'], ['候选版本', `v${version.version}`], ['影响', '仅保存候选配置，已发布规则不变']]}/></ConfirmCommand>}
+    }} writeAllowed={!readOnly && !bannerUploading && !limitsIncomplete && (!conflict?.latest || reviewCanSave)} title="保存活动草稿" intent={{ operation: 'saveDraft', targetId: activity.activityId, path: `/promotions/${activity.activityId}/draft`, method: 'PUT' }} body={{ expectedVersion: reviewCanSave ? reviewedVersion!.version : version.version, expectedRevision: reviewCanSave ? reviewedVersion!.revision : version.revision, draft: promotionDraftForRequest(draft) }} onClose={() => { setSaving(false); setNextStep(null); }} onSuccess={async (_result, isCurrent) => { const saved = await onSaved(isCurrent() ? nextStep??undefined : undefined); if (!isCurrent()) return; if (saved?.current) { setConflict(null); setActivity(saved); const editable = editablePromotionDraft(saved.current.draft, requiredLanguages); setDraft(editable); setInitialDraft(editable); setBuyerLimit(saved.current.draft.perPersonLimit?.buyer || null); setInviterLimit(saved.current.draft.perPersonLimit?.directInviter || null); setLimitInputs({}); setPreview(null); } if(nextStep!==null)setStep(nextStep); setNextStep(null); setSaving(false); finishExit(exitTarget); }}><Summary rows={[['活动', draft.name || '未命名草稿'], ['候选版本', `v${version.version}`], ['影响', '仅保存候选配置，已发布规则不变']]}/></ConfirmCommand>}
     {templatePickerOpen && <Dialog title="选择活动模板" onClose={() => setTemplatePickerOpen(false)}><p>模板只创建配置结构，业务金额、资格、预算与政策均由运营明确填写。</p><div className="actions" style={{marginTop: 18}}>{Object.entries(TEMPLATE_LABELS).map(([value, label]) => <Button key={value} disabled={readOnly} onClick={() => { setTemplatePickerOpen(false); if (value !== draft.template) setTemplate(value as Template); }}>{label}</Button>)}</div></Dialog>}
     {template && <Dialog title="切换活动模板" onClose={() => setTemplate(null)} footer={<><Button onClick={() => setTemplate(null)}>取消</Button><Button kind="primary" onClick={() => { setDraft(changeTemplate(draft, template)); setBuyerLimit(null); setInviterLimit(null); setLimitInputs({}); setPreview(null); setTemplate(null); }}>确认清空并切换</Button></>}><Notice title="不兼容配置将清空" kind="warn">人群、购买规则、奖励、限额、预算与政策需重新选择。名称、时间和公开说明保留。</Notice></Dialog>}
     {exitTarget && !saving && !limitsOpen && <Dialog title="配置尚未保存" onClose={() => setExitTarget(null)} footer={<><Button onClick={() => setExitTarget(null)}>继续编辑</Button><Button onClick={() => void discardAndLeave()}>放弃改动并返回</Button><Button kind="primary" disabled={readOnly||bannerUploading||limitsIncomplete||limitsFormatInvalid} onClick={requestSave}>保存后继续</Button></>}>{conflict ? <Notice title="别人改过这个活动" kind="warn">放弃改动后回到活动，再编辑时打开的是别人保存的内容。</Notice> : <Notice title="输入已保留">先保存草稿再进入下一页；试算和审核始终使用已保存版本。</Notice>}{limitFormatNotice}</Dialog>}
