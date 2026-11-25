@@ -239,3 +239,6 @@
 /* 提示行末尾的去处（如「查看逐笔结果」）：文字链接，不把这一行撑高。 */
 .fund-settled > button.rd-link { flex: none; padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
 .fund-check-audit { width: 200px; max-width: 100%; font-variant-numeric: tabular-nums; }
+
+/* 共用离开框：「放弃改动并返回」靠左，和右边的「继续编辑」、保存主按钮隔开（DP-40、VS-25）。 */
+.rd-modal-foot > .rd-leave-discard { margin-right: auto; }

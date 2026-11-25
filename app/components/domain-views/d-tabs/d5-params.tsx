@@ -27,8 +27,10 @@ import {
   Decision,
   DiffList,
   Drawer,
+  Change,
   Explain,
   Fact,
+  Facts,
   Field,
   Fold,
   InlineRetry,
@@ -499,24 +501,72 @@ function evaluate(editing: Editing, p: D5ParamData, can: (authority: string) => 
   };
 }
 
+/** 一组改动逐项的名字和值：待确认条上的一句话（describeChanges）和放宽单的前后值（ProposalFacts）共用。 */
+function changeParts(changes: Record<string, unknown>): [string, string][] {
+  const parts: [string, string][] = [];
+  const n = (value: unknown) => Number(value);
+  if (changes.dailyLimitCount !== undefined) parts.push(["每日提现次数", `${n(changes.dailyLimitCount)} 次`]);
+  const ratio = changes.maxBalanceRatio ?? changes.balanceMaxRatio;
+  if (ratio !== undefined) parts.push(["余额可提上限", `${num(n(ratio) * 100)}%`]);
+  if (changes.minUsdt !== undefined) parts.push(["最低提现额", minimumUsd(n(changes.minUsdt))]);
+  if (changes.smallAmountThresholdUsd !== undefined) parts.push(["小额免审线", usd(n(changes.smallAmountThresholdUsd))]);
+  if (changes.payoutSlaHours !== undefined) parts.push(["到账时效", `${n(changes.payoutSlaHours)} 小时`]);
+  if (changes.addressEffectiveDelayHours !== undefined) parts.push(["新地址生效等待", `${n(changes.addressEffectiveDelayHours)} 小时`]);
+  if (changes.addressChangeCooldownDays !== undefined) parts.push(["地址再次更换间隔", `${n(changes.addressChangeCooldownDays)} 天`]);
+  const fees = changes.networkConfirmFeeUsd as Record<Net, unknown> | undefined;
+  if (fees) parts.push(["网络确认费", NETWORKS.map((net) => `${NET_LABEL[net]} ${usd(n(fees[net]))}`).join("、")]);
+  const enabled = changes.networkEnabled as Record<Net, unknown> | undefined;
+  if (enabled) parts.push(["提现网络", NETWORKS.map((net) => `${NET_LABEL[net]} ${enabled[net] ? "开启" : "关闭"}`).join("、")]);
+  if (changes.nexFeeOffsetRate !== undefined) parts.push(["UVT 抵扣率", `${num(n(changes.nexFeeOffsetRate))} USDT / UVT`]);
+  return parts;
+}
+
 /** 一组改动写成一句话：待确认条上看得懂发出去的是什么。 */
 function describeChanges(changes: Record<string, unknown>) {
-  const parts: string[] = [];
-  const n = (value: unknown) => Number(value);
-  if (changes.dailyLimitCount !== undefined) parts.push(`每日提现次数 ${n(changes.dailyLimitCount)} 次`);
-  const ratio = changes.maxBalanceRatio ?? changes.balanceMaxRatio;
-  if (ratio !== undefined) parts.push(`余额可提上限 ${num(n(ratio) * 100)}%`);
-  if (changes.minUsdt !== undefined) parts.push(`最低提现额 ${minimumUsd(n(changes.minUsdt))}`);
-  if (changes.smallAmountThresholdUsd !== undefined) parts.push(`小额免审线 ${usd(n(changes.smallAmountThresholdUsd))}`);
-  if (changes.payoutSlaHours !== undefined) parts.push(`到账时效 ${n(changes.payoutSlaHours)} 小时`);
-  if (changes.addressEffectiveDelayHours !== undefined) parts.push(`新地址生效等待 ${n(changes.addressEffectiveDelayHours)} 小时`);
-  if (changes.addressChangeCooldownDays !== undefined) parts.push(`地址再次更换间隔 ${n(changes.addressChangeCooldownDays)} 天`);
-  const fees = changes.networkConfirmFeeUsd as Record<Net, unknown> | undefined;
-  if (fees) parts.push(`网络确认费 ${NETWORKS.map((net) => `${NET_LABEL[net]} ${usd(n(fees[net]))}`).join("、")}`);
-  const enabled = changes.networkEnabled as Record<Net, unknown> | undefined;
-  if (enabled) parts.push(`提现网络 ${NETWORKS.map((net) => `${NET_LABEL[net]} ${enabled[net] ? "开启" : "关闭"}`).join("、")}`);
-  if (changes.nexFeeOffsetRate !== undefined) parts.push(`UVT 抵扣率 ${num(n(changes.nexFeeOffsetRate))} USDT / UVT`);
-  return parts.join("；") || "提现参数";
+  return changeParts(changes).map(([label, value]) => `${label} ${value}`).join("；") || "提现参数";
+}
+
+/** 放宽单上后端记的前后值（OpsFinanceService.previewWithdrawalLimits）：「{字段=值, …}」，网络两项是「[TRC20=…, BEP20=…, ERC20=…]」。读不懂就返回 null，不拼半截。 */
+const TICKET_FIELDS = new Set(["dailyLimitCount", "balanceMaxRatio", "minUsdt", "smallAmountThresholdUsd", "payoutSlaHours",
+  "addressEffectiveDelayHours", "addressChangeCooldownDays", "networkConfirmFeeUsd", "networkEnabled", "nexFeeOffsetRate"]);
+function ticketChanges(text: string | undefined) {
+  const body = /^\{(.+)\}$/.exec(text?.trim() ?? "")?.[1];
+  if (!body) return null;
+  const changes: Record<string, unknown> = {};
+  for (const part of body.split(/, (?![^[]*\])/)) {
+    const [, key, value] = /^(\w+)=(.+)$/.exec(part) ?? [];
+    if (!key || !TICKET_FIELDS.has(key)) return null;
+    const nets = /^\[(.+)\]$/.exec(value)?.[1];
+    if (nets === undefined) {
+      if (!Number.isFinite(Number(value))) return null;
+      changes[key] = value;
+      continue;
+    }
+    const pairs = new Map(nets.split(", ").map((item) => item.split("=") as [string, string]));
+    const byNet: Record<string, unknown> = {};
+    for (const net of NETWORKS) {
+      const raw = pairs.get(NET_LABEL[net]);
+      if (key === "networkEnabled" ? raw !== "true" && raw !== "false" : !Number.isFinite(Number(raw))) return null;
+      byNet[net] = key === "networkEnabled" ? raw === "true" : raw;
+    }
+    changes[key] = byNet;
+  }
+  return changes;
+}
+
+/** 放宽单拟改的值，紧跟在审批单那一行下面（OP-63）：前是提交时的值，后是拟改的值；读不懂写「没读到」，不留空。 */
+function ProposalFacts({ rows }: { rows: readonly { id: string; before?: string; after?: string }[] }) {
+  if (!rows.length) return null;
+  return <Facts>{rows.flatMap((row) => {
+    const before = ticketChanges(row.before);
+    const after = ticketChanges(row.after);
+    const head = rows.length > 1 ? [<Fact key={`${row.id}:id`} k="审批单">{row.id}</Fact>] : [];
+    if (!before || !after) return [...head, <Fact key={`${row.id}:none`} k="拟改值">没读到</Fact>];
+    const from = new Map(changeParts(before));
+    return [...head, ...changeParts(after).map(([label, value]) => (
+      <Fact key={`${row.id}:${label}`} k={label}><Change from={from.get(label) ?? "—"} to={value} /></Fact>
+    ))];
+  })}</Facts>;
 }
 
 /** 收紧（直接生效）的原操作。结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。版本可能已变，确认前整页不能再改。 */
@@ -975,7 +1025,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         // 这一路的结果单独记：没查成时行上常显原因，查无才和通用核查一起算「没有查到」。
         setProposalLookups(current => ({ ...current, [key]: lookup }));
         if (lookup.state === "failed") {
-          if (loosenPending.withdrawalSubmissionConfirmed) note(key, `暂时读不到原审批单：${lookup.reason}。请稍后再查。`);
+          if (loosenPending.withdrawalSubmissionConfirmed) note(key, `原审批单加载失败：${lookup.reason}。稍后再点「查询原操作」。`);
           return;
         }
         if (!loosenPending.withdrawalSubmissionConfirmed) note(key, loosenPending.expiresAt <= Date.now()
@@ -991,7 +1041,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     } catch (cause) {
       syncPending();
       if (mode === "retry" && isExplicitRejection(cause)) return;
-      if (loosenPending.withdrawalSubmissionConfirmed) note(key, "暂时读不到原审批单，请稍后再查。");
+      if (loosenPending.withdrawalSubmissionConfirmed) note(key, "原审批单加载失败，稍后再点「查询原操作」。");
       else if (isA2OutcomeUncertainError(cause)) {
         // 原因写在括号里；只取中文说明，码不上屏。
         const detail = cause.message.match(/（([^（）]*[\u4e00-\u9fa5][^（）]*)）$/)?.[1];
@@ -1154,9 +1204,10 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         tech: `版本 v${record.expectedVersion} ｜ 理由 ${record.reason}` };
     }),
   ];
+  const ownTicket = approvals.terminal ?? pendingApproval.find((row) => row.id === approvals.ownId);
   const pendingNotices = <>
     <FundRecoveryPanel rows={pendingRows} link={auditLink || undefined} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
-    {approvals.ownNotice && (!params || approvals.terminal) && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}</Notice>}
+    {approvals.ownNotice && (!params || approvals.terminal) && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}{ownTicket && <ProposalFacts rows={[ownTicket]} />}</Notice>}
     {closing && loosenRecord && <FundClosureModal label="放宽提现参数" createdAt={loosenRecord.createdAt} offer={eCommandClosureOffer(investigationResults[loosenRecord.commandKey], isRetryExpired(loosenRecord))} facts={loosenRecord.values ? <Fact k="改动">{describeChanges(loosenRecord.values)}</Fact> : undefined}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(loosenRecord, evidence); setClosing(false); }} />}
     {directClosing && <CommandClosureModal label={editTitle(directClosing.label.replace(/^调整提现参数 · /, ""))} commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
@@ -1225,7 +1276,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   );
   const queueRowsOutsideConfig = approvals.rows.filter(row => row.id !== approvals.ownId || !approvals.ownNotice);
   const queueNoticeOutsideConfig = queueRowsOutsideConfig.length > 0 && (
-    <Notice tone="warn" title={pendingTitle}>{queueRowsOutsideConfig.map(approvalLine).join("；")}。{approvals.pendingDetail}{auditLink && <> {auditLink}</>}</Notice>
+    <Notice tone="warn" title={pendingTitle}>{queueRowsOutsideConfig.map(approvalLine).join("；")}。<ProposalFacts rows={queueRowsOutsideConfig} />{approvals.pendingDetail}{auditLink && <> {auditLink}</>}</Notice>
   );
 
   if (loading && !params) {
@@ -1274,7 +1325,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       : networks.outage
       ? <Conclusion state="warn" lead hint={<>{networks.outage}。{outageNext} {coverageLine}</>} explain={NETWORK_RULE}>App、H5 用户现在不能发起 USDT 提现</Conclusion>
       : pendingApproval.length
-        ? <Conclusion state="warn" hint={<>{pendingApproval.map(approvalLine).join("；")}。{reach(auditHref, "platform_a2_read") && <><Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批查看</Link> </>}{coverageLine}</>} explain={APPROVAL_NOTE}>
+        ? <Conclusion state="warn" hint={<>{pendingApproval.map(approvalLine).join("；")}。<ProposalFacts rows={pendingApproval} />{reach(auditHref, "platform_a2_read") && <><Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批查看</Link> </>}{coverageLine}</>} explain={APPROVAL_NOTE}>
           {ownStale || approvals.checking ? pendingTitle : `${pendingTitle}，批准前当前值不变`}
         </Conclusion>
         : networks.unknown.length > 0
@@ -1288,7 +1339,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <Notice tone="warn" title="App、H5 用户现在不能发起 USDT 提现">{networks.outage}。{outageNext}</Notice>
     )}
     {pendingApproval.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || networks.outage) && (
-      <Notice tone="warn" title={pendingTitle}>{pendingApproval.map(approvalLine).join("；")}。{approvals.pendingDetail}{auditLink && <> {auditLink}</>}</Notice>
+      <Notice tone="warn" title={pendingTitle}>{pendingApproval.map(approvalLine).join("；")}。<ProposalFacts rows={pendingApproval} />{approvals.pendingDetail}{auditLink && <> {auditLink}</>}</Notice>
     )}
     {networks.unknown.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || pendingApproval.length > 0) && (
       <Notice tone="warn" title="部分提现网络的实际状态暂未知">配置照常显示，请到「网络和费用」核对原因。</Notice>

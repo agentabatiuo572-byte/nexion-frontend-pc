@@ -179,6 +179,42 @@ function uncertainDetail(error: Error) {
   return (error.message.match(/（([^（）]*)）$/)?.[1] ?? "").replace(/[。；]$/, "");
 }
 
+/** 放宽单上后端记的前后值（PayoutVndConfigService.previewValues）：「vN spread=… ttl=… tol=… rate=… minFee=… maxFee=… minAmt=… maxAmt=…」，强制保存倒挂价时末尾加 forceInverted。读不懂就返回 null。 */
+const TICKET_KEYS: Record<string, Key> = { spread: "sellSpreadPct", ttl: "quoteTtlMinWithdraw", tol: "requoteTolerancePct", rate: "feeRatePct",
+  minFee: "feeMinUsd", maxFee: "feeMaxUsd", minAmt: "minAmountUsd", maxAmt: "maxAmountUsd" };
+function ticketValues(text: string | undefined) {
+  const match = /^v\d+((?: [A-Za-z]+=-?\d+(?:\.\d+)?)+)( forceInverted)?$/.exec(text?.trim() ?? "");
+  if (!match) return null;
+  const values: Partial<Record<Key, number>> = {};
+  for (const pair of match[1].trim().split(" ")) {
+    const [name, value] = pair.split("=");
+    if (!TICKET_KEYS[name]) return null;
+    values[TICKET_KEYS[name]] = Number(value);
+  }
+  return KEYS.every((key) => values[key] !== undefined) ? { values: values as Record<Key, number>, forced: !!match[2] } : null;
+}
+
+/** 放宽单拟改的值（OP-63）：前是提交时的值，后是拟改的值，只列改了的项；读不懂写「没读到」，不留空。 */
+function proposalFacts(row: { before?: string; after?: string }) {
+  const before = ticketValues(row.before);
+  const after = ticketValues(row.after);
+  if (!before || !after) return <Facts><Fact k="拟改值">没读到</Fact></Facts>;
+  return <Facts>
+    {KEYS.filter((key) => before.values[key] !== after.values[key]).map((key) => (
+      <Fact key={key} k={PAYOUT_VND_FIELDS[key].label}><Change from={valueText(key, before.values[key])} to={valueText(key, after.values[key])} /></Fact>
+    ))}
+    {after.forced && <Fact k="倒挂价" tone="warn">强制保存</Fact>}
+  </Facts>;
+}
+
+/** 待批行上的一句：改了哪几项，前后值点开这一行看。 */
+function proposalLine(row: { before?: string; after?: string }) {
+  const before = ticketValues(row.before);
+  const after = ticketValues(row.after);
+  if (!before || !after) return "拟改值没读到。";
+  return `拟改 ${KEYS.filter((key) => before.values[key] !== after.values[key]).map((key) => PAYOUT_VND_FIELDS[key].label).join("、")}。`;
+}
+
 function valuesSummary(values: PayoutVndValues) {
   return KEYS.map((key) => `${PAYOUT_VND_FIELDS[key].label} ${valueText(key, values[key])}`).join("、");
 }
@@ -638,7 +674,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       // 这一路的结果单独记：没查成时行上常显原因，查无才和通用核查一起算「没有查到」。
       setProposalLookups(current => ({ ...current, [key]: lookup }));
       if (lookup.state === "failed") {
-        if (approval.withdrawalSubmissionConfirmed) note(key, `暂时读不到原审批单：${lookup.reason}。请稍后再查。`);
+        if (approval.withdrawalSubmissionConfirmed) note(key, `原审批单加载失败：${lookup.reason}。稍后再点「查询原操作」。`);
         return;
       }
       if (!approval.withdrawalSubmissionConfirmed) note(key, isRetryExpired(approval)
@@ -646,7 +682,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         : "没有查到原审批单，原记录继续保留。");
       return true;
     } catch (cause) {
-      note(key, approval.withdrawalSubmissionConfirmed ? "暂时读不到原审批单，请稍后再查。"
+      note(key, approval.withdrawalSubmissionConfirmed ? "原审批单加载失败，稍后再点「查询原操作」。"
         : isA2OutcomeUncertainError(cause) && isRetryExpired(approval)
         ? `暂时没查到原审批单，不代表没有提交。${canReachAudit ? "请到「操作记录与审批」核对，不要重复提交。" : "核对后交财务负责人处理，不要重复提交。"}`
         : `查询没有成功：${isA2OutcomeUncertainError(cause) ? uncertainDetail(cause) || "结果仍未知" : reasonOf(displayAdminError(cause))}。记录继续保留。`);
@@ -802,15 +838,16 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     />
   );
 
+  const ownTicket = approvals.terminal ?? approvals.pendingRows.find((row) => row.id === approvals.ownId);
   const ownApprovalNotice = approvals.ownNotice && (!config || approvals.showOwnNotice)
-    && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}</Notice>;
+    && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}{ownTicket && proposalFacts(ownTicket)}</Notice>;
   const visibleQueueRows = config ? queueRows : queueRows.filter(row => row.id !== approvals.ownId || !approvals.ownNotice);
   const queuePanel = <RecoveryPanel title={recoveryTitle(0, visibleQueueRows.length)} tone="warn" label="等待批准的放宽单"
     foot={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批查看</Link> : undefined}
     items={visibleQueueRows.map((ticket) => {
       const stale = approvals.queueRowStale(ticket.id);
       return { key: ticket.id, object: `放宽单 ${ticket.id}`, tag: <StatusTag tone="warn">{stale ? "上次待审批" : "待审批"}</StatusTag>,
-        line: stale ? "上次读取的结果，正在刷新待批列表。" : approvals.queueLine };
+        line: `${proposalLine(ticket)}${stale ? "上次读取的结果，正在刷新待批列表。" : approvals.queueLine}`, detail: proposalFacts(ticket) };
     })} />;
   const queueReadNotice = (queueState === "failed" || approvals.queueRetrying)
     && <Notice tone="warn" title="待批列表加载失败" action={<InlineRetry onRetry={() => void loadQueue()} retrying={approvals.queueRetrying} />}>{approvals.queueError}</Notice>;
@@ -892,7 +929,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       {header}
 
       {!config.providerReady
-        ? <Conclusion state="warn" hint="请联系技术人员检查商户设置和服务状态。" explain="已放行的提现暂时不会发给 HDPay。参数还能修改。">HDPay 设置不可用，用户现在不能发起新的银行卡提现</Conclusion>
+        ? <Conclusion state="warn" hint="请联系值班人员检查商户设置和服务状态。" explain="已放行的提现暂时不会发给 HDPay。参数还能修改。">HDPay 设置不可用，用户现在不能发起新的银行卡提现</Conclusion>
         : <Conclusion state={nothingToDo ? "ok" : "neutral"} explain={canReadQueue ? READY_EXPLAIN : `${READY_EXPLAIN}这个账号看不到待批列表，可刷新查看本标签页提交的放宽单。`}>
           {nothingToDo ? "HDPay 打款设置已配置，没有要处理的事" : "HDPay 打款设置已配置"}
         </Conclusion>}
