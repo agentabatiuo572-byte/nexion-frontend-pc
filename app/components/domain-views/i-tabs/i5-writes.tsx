@@ -282,7 +282,7 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
 }
 
 /** saveName 是保存按钮的完整名字（「保存并立即生效」这类不带「后继续」的，OP-29）；不传时是「{saveLabel}后继续」。 */
-export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继续`, discardLabel = "放弃改动", saveBlocked, onSave }: {
+export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继续`, discardLabel = "放弃改动并返回", saveBlocked, onSave }: {
   guard: Pick<ReturnType<typeof useLeaveGuard>, "asking" | "stay" | "discard" | "startSave">;
   saveLabel?: string; saveName?: string; discardLabel?: string; saveBlocked?: string; onSave: (saved: () => void) => void;
 }) {
