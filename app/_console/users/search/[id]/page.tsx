@@ -1283,7 +1283,7 @@ export default function UserDetailPage() {
     ? { id, label: `${name} · 加载失败` }
     : count ? { id, label: `${name} ${count}`, alert: true } : { id, label: waiting ? `${name} · ${waiting}` : name };
   const sections: SectionNavItem[] = [
-    securityPresent && navItem("security", "安全", securityFailed, securityIssues > 0 ? `${securityIssues} 项` : "", paymentSecurity.pending ? "解除结果未知" : ""),
+    securityPresent && navItem("security", "安全", securityFailed, securityIssues > 0 ? `${securityIssues} 项` : "", paymentSecurity.pending ? "解除结果未知" : paymentSecurity.state === "reloading" ? "正在重新加载" : ""),
     fundsPresent && navItem("funds", "资金", fundsFailed, withdrawalExceptions > 0 ? `${withdrawalExceptions} 笔` : "", withdrawalsWaiting > 0 ? `${withdrawalsWaiting} 笔待处理` : ""),
     devicesPresent && navItem("devices", "设备与收益", devicesFailed, deviceExceptions > 0 ? `${deviceExceptions} 台` : ""),
     // 推荐团队整块重读在途时页签不写「加载失败」，和块里只留「重试中…」一致（ST-30，R26）。
@@ -1334,8 +1334,9 @@ export default function UserDetailPage() {
       <RdPage>
         <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
         {writeResultNotice}
+        {/* 无权限卡也用同一个 key：重试回 403 时这一块不卸下，焦点留在这张卡上，不掉到整页外框（BUG-746）。 */}
         {denied
-          ? <BlockState state="denied" title="无权限访问" detail={error} />
+          ? <BlockState key="profile-read" state="denied" title="无权限访问" detail={error} />
           : <BlockState key="profile-read" retryKey="page-1330" state="error" title={`${supportScope ? "客户资料" : "用户详情"}加载失败`} detail={error} onRetry={() => void load()} afterRetryFocus={PROFILE_FIRST_BLOCK} />}
       </RdPage>
     );
@@ -1431,7 +1432,7 @@ export default function UserDetailPage() {
     detail.commerce && "最近 50 单订单",
     detail.notifications && "通知推送失败",
   ].filter((value): value is string => !!value);
-  const checking = paymentSecurityPort && paymentSecurity.state === "loading" || !supportScope && (!paymentMethods && !paymentError || !revokeScan && !revokeScanFailed);
+  const checking = paymentSecurityPort && (paymentSecurity.state === "loading" || paymentSecurity.state === "reloading") || !supportScope && (!paymentMethods && !paymentError || !revokeScan && !revokeScanFailed);
   const firstIssue = issues.find((issue) => issue.go);
   const firstGo = firstIssue?.go;
   const c2Link = canReadC2 && !supportScope
@@ -1456,7 +1457,7 @@ export default function UserDetailPage() {
         : unreadable.length > 0
           ? <Conclusion state="unknown" hint={`${unreadText}，这部分没有判断。${paymentScopeNote}`} explain={checkedExplain}>账户正常，{unreadCount}</Conclusion>
           : checking
-            ? <Conclusion state="unknown" hint={paymentScopeNote || undefined}>账户正常，正在核对其余项目…</Conclusion>
+            ? <Conclusion state="unknown" hint={paymentScopeNote || undefined}>{paymentSecurity.state === "reloading" ? "账户正常，正在重新加载支付安全…" : "账户正常，正在核对其余项目…"}</Conclusion>
             // 结果未确认在下面的提示里写一次，这里不写「没发现问题」，也不再说一遍（VS-105）。
             : pendingCount > 0
               ? paymentScopeNote ? <Conclusion state="unknown" explain={checkedExplain}>{paymentScopeNote}</Conclusion> : null
@@ -1631,7 +1632,7 @@ export default function UserDetailPage() {
       : joined([
         detail.sessions && `在线登录设备 ${numberLabel(summary.activeSessionCount)}`,
         detail.sessions && `两步验证${summary.twoFactorEnabled ? "开启" : "关闭"}`,
-        paymentSecurity.state === "clear" ? "支付密码无异常" : paymentSecurity.state === "loading" && "正在加载…",
+        paymentSecurity.state === "clear" ? "支付密码无异常" : (paymentSecurity.state === "loading" || paymentSecurity.state === "reloading") && "正在加载…",
         !supportScope && paymentCount !== null && `支付方式 ${paymentCount} 张`,
       ]);
   const fundsIssue = joined([withdrawalExceptions > 0 && `${withdrawalExceptions} 笔提现异常`, withdrawalsWaiting > 0 && `${withdrawalsWaiting} 笔提现等待处理`]);

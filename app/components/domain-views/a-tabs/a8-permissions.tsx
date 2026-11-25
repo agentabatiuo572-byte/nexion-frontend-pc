@@ -64,12 +64,12 @@ export default function A8Permissions() {
     let cancelled = false;
     setLoading(true);
     setLoadError(null);
-    setResult(null);
+    // 翻页、换筛选时不先清上一份：表格换成占位，分页条留着上一份的总数、翻页禁用（ST-13、ST-32）。读失败才清。
     fetchA8Permissions({ pageNum, pageSize, keyword, domain, permType })
       .then((data) => { if (!cancelled) setResult(data); })
       .catch((err) => {
         // 失败只写在列表那一块的失败卡里，不再弹提示条（ST-34、ST-57）。
-        if (!cancelled) setLoadError(displayAdminReadError(err));
+        if (!cancelled) { setResult(null); setLoadError(displayAdminReadError(err)); }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -130,7 +130,8 @@ export default function A8Permissions() {
     setDetailCode(null);
   };
 
-  const records = result?.records ?? [];
+  // 加载中表格是占位：上一份的行不显示，也不给抽屉的上一条、下一条用。
+  const records = loading ? [] : result?.records ?? [];
   const total = result?.total ?? 0;
   const filtered = keyword !== "" || keywordInput.trim() !== "" || domain !== "ALL" || permType !== "ALL";
   const clearFilters = () => { setKeywordInput(""); setDomain("ALL"); setPermType("ALL"); setPageNum(1); };
@@ -168,9 +169,10 @@ export default function A8Permissions() {
     );
   };
 
-  const countText = loading ? "正在统计…" : loadError ? "数量没读到" : `共 ${total} 条`;
+  const countText = loading ? "正在加载…" : loadError ? "数量没读到" : `共 ${total} 条`;
 
-  const conclusion = loading && !result ? null : loadError ? (
+  // 首次加载不写结论；翻页、换筛选在途时写在途，不拿上一份的数说现在的筛选（CP-90）。
+  const conclusion = loading ? result && <Conclusion state="unknown" icon={KeyRound}>正在加载权限列表…</Conclusion> : loadError ? (
     <Conclusion state="unknown" icon={KeyRound}>权限列表没读到，这页没有判断</Conclusion>
   ) : (
     <Conclusion state="neutral" icon={KeyRound}

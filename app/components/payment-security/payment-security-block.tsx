@@ -14,7 +14,8 @@ import { PaymentPasswordApiError, pendingPaymentRelease, type PaymentSecurityPor
 import type { PaymentSecurityRecord, PaymentSecuritySummary } from "@/lib/admin/payment-password-contract";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
-export type PaymentSecurityState = "loading" | "failed" | "denied" | "clear" | "exception";
+/** reloading：读失败后正在重读，结果回来前不算失败也不算没事，页面结论和分区导航写在途（ST-30、ST-31，BUG-746）。 */
+export type PaymentSecurityState = "loading" | "reloading" | "failed" | "denied" | "clear" | "exception";
 
 const message = (failure: unknown) => failure instanceof Error ? failure.message : "支付安全信息未确认，请重新加载。";
 const actionText = (record: PaymentSecurityRecord) => record.type === "PAYMENT_PASSWORD_EXCEPTION" ? "解除异常标记" : "解除锁定";
@@ -77,7 +78,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   }, [load, owner, reloadKey]);
   const record = summary?.record;
   // 状态未确认的记录不算没事。
-  const state: PaymentSecurityState = error ? "failed" : denied ? "denied" : loading ? "loading" : record?.state === "UNKNOWN" ? "failed" : record?.state === "ACTIVE" ? "exception" : "clear";
+  const state: PaymentSecurityState = error ? loading ? "reloading" : "failed" : denied ? "denied" : loading ? "loading" : record?.state === "UNKNOWN" ? "failed" : record?.state === "ACTIVE" ? "exception" : "clear";
   const showPending = pending && !denied;
   useEffect(() => { onState?.(state, showPending); }, [onState, state, showPending]);
   if (!session) return null;

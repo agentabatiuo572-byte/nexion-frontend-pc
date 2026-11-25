@@ -48,7 +48,7 @@
 import { Children, Fragment, isValidElement, useEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, ShieldCheck, X, type LucideIcon } from "lucide-react";
-import { focusFrame } from "./block-state";
+import { focusFrame, releaseOnLeave } from "./block-state";
 import { Button, IconButton, TipSide } from "./button";
 import { Explain } from "./explain";
 import { Fact, Facts } from "./facts";
@@ -180,11 +180,8 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
         if (frame.matches(".rd-page")) break;
         if (!frame.isConnected || !frame.matches(STABLE_FRAME) || !focusFrame(frame)) continue;
         // 这是临时落点：带 data-retry-landing，页面自己「焦点没去处才补位」的逻辑把它当成还没去处，照样放回原卡（h4-legacy-parts）。
-        // 原本就能 Tab 到的外框（表格滚动区）只在停留期间带这个标记，离开就撤掉，不影响它平时的焦点框。
-        if (!frame.hasAttribute("data-retry-landing")) {
-          frame.setAttribute("data-retry-landing", "");
-          frame.addEventListener("blur", () => frame.removeAttribute("data-retry-landing"), { once: true });
-        }
+        // 标记只在焦点停在这里时有，离开就撤：原本没有 tabindex 的外框连临时加的 tabindex 一起撤（focusFrame），原本就能 Tab 到的外框（表格滚动区）只撤标记，不影响它平时的焦点框（BUG-746）。
+        if (!frame.hasAttribute("data-retry-landing")) { frame.setAttribute("data-retry-landing", ""); releaseOnLeave(frame, false); }
         return;
       }
     },
