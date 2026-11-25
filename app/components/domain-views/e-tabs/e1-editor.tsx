@@ -206,9 +206,15 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
       displaySoldBase: restored.mediaSku.displaySoldBase === undefined ? next.displaySoldBase : restored.form.displaySoldBase ?? String(restored.mediaSku.displaySoldBase),
       liveActivityVisible: restored.mediaSku.liveActivityVisible === undefined ? next.liveActivityVisible : restored.form.liveActivityVisible ?? String(restored.mediaSku.liveActivityVisible),
     };
+    const mediaDraftForm = request.mediaDraftForm && { ...next, ...request.mediaDraftForm };
+    if (!sku && displayControlsSupported && mediaDraftForm?.displaySoldBase === "" && mediaDraftForm.liveActivityVisible === "") {
+      // 旧服务停用两项时都留空。有开关值的草稿仍按原输入恢复。
+      mediaDraftForm.displaySoldBase = next.displaySoldBase;
+      mediaDraftForm.liveActivityVisible = next.liveActivityVisible;
+    }
     const merge = restored?.baseline && restoredForm && sku ? mergeSkuRevision(restored.baseline, sku, restoredForm, skuMedia(restored.mediaSku)) : null;
     const m = merge ? merge.mergedMedia : restored ? skuMedia(restored.mediaSku) : originalMedia;
-    setOriginal(sku); setForm(merge?.merged ?? restoredForm ?? { ...next, ...request.mediaDraftForm }); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
+    setOriginal(sku); setForm(merge?.merged ?? restoredForm ?? mediaDraftForm ?? next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
     setMedia(m); setInitialMedia(imageIdentity(originalMedia)); setErrors({}); setTouched(new Set()); setLeave(false); setMediaError("");
     fileRef.current = null;
     setMediaPending(e1MediaCommands.list().find(r => r.commandKey === request.mediaCommandKey && r.actorId === actor && ownsMedia(r, request)) ?? null);

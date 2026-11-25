@@ -305,8 +305,16 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       edit: params && input.edit && input.op === "param" ? { ...input.edit, initialValue: String(params.value) } : input.edit,
       sku: skus.find(s => s.id === input.target), gates, discount, early: { ...early } });
   };
+  const displayControlsRetryBlock = (record: E1Pending) => {
+    const { params } = record.spec.command;
+    if (gates?.storeDisplayControlsSupported !== true && params && ("displaySoldBase" in params || "liveActivityVisible" in params)) {
+      return "当前服务未声明支持展示基础销量和购买动态，暂不能按原操作重试，可查询原结果。";
+    }
+  };
   const send = async (record: E1Pending, retry: boolean) => {
     if (!canWrite || !actor || record.actorId !== actor || sending.current) throw new Error("账号、权限或提交状态不允许重试，请先核对原操作");
+    const blocked = retry ? displayControlsRetryBlock(record) : undefined;
+    if (blocked) throw new Error(blocked);
     const recovery = recoveryFor(record);
     const ownConfirmation = !retry ? confirmation : null;
     const ownEditor = ownConfirmation?.op === "sku-save" ? edit : null;
@@ -562,16 +570,18 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     ...pending.filter(record => record.commandKey !== busy).map(record => {
       const recovery = recoveryFor(record).state(record);
       const canRelease = !!recovery.replayRejection && !record.receivedTicketId;
+      const displayRetryBlock = displayControlsRetryBlock(record);
       const retryDisabledReason = !canWrite ? "当前账号不能重试"
         : busy ? "正在提交原操作"
           : recovery.expired ? RETRY_EXPIRED_TEXT
             : record.receivedTicketId ? "审批单已经建了，只能查询"
-              : recovery.replayBlock ? RETRY_REQUIRES_LOOKUP : undefined;
+              : displayRetryBlock ?? (recovery.replayBlock ? RETRY_REQUIRES_LOOKUP : undefined);
       const state = record.receivedTicketId ? { tag: "进度没读到", line: RECOVERY_LINE.created, more: "点「查询原结果」再查。" }
         : canRelease ? { tag: "重试被拒绝", line: RECOVERY_LINE.refused, more: "解除前先核对原操作有没有生效。" }
           : recovery.expired ? { tag: "结果未知", line: RETRY_EXPIRED_TEXT, more: "原记录继续保留。" }
-            : recovery.conclusion === "not-found" ? { tag: "结果未知", line: RECOVERY_LINE.absent, more: "重试不会重复建单。" }
-              : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "重试只发原内容和原理由。" };
+            : displayRetryBlock ? { tag: "结果未知", line: displayRetryBlock, more: "原记录继续保留。" }
+              : recovery.conclusion === "not-found" ? { tag: "结果未知", line: RECOVERY_LINE.absent, more: "重试不会重复建单。" }
+                : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "重试只发原内容和原理由。" };
       return { key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
         tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? recovery.replayRejection ?? record.retryRejection,
         actions: <>
