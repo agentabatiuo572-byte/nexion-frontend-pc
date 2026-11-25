@@ -1,3 +1,4 @@
+import { compareDecimal } from "./f1-rank-benefit";
 import { useSyncExternalStore } from "react";
 import type { F4AmbassadorApplication, F4AmbassadorReviewInput } from "./f1-client";
 import type { F1PolicyRecord } from "./f1-policy-change";
@@ -74,6 +75,12 @@ export function settleFReconfirmation<T extends PendingMutationRecord>(
   if (settled) acknowledgeFReconfirmation(original);
   if (preserve) notify();
   return settled;
+}
+
+export function unchangedFNumber(value: string | null, current: string | null | undefined) {
+  if (value == null || current == null) return undefined;
+  return compareDecimal(value.trim().replace(/^\./, "0."), current.trim().replace(/^\./, "0.")) === 0
+    ? "和现在的设置一样，无需提交" : undefined;
 }
 
 export function rebaseFValues<T extends Record<string, string>>(baseline: T, intended: Partial<T>, latest: T, equal: (left: string, right: string, key: string) => boolean = Object.is): T {

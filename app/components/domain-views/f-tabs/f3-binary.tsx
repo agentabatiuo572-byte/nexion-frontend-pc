@@ -7,7 +7,7 @@
  * 请求仍使用原配置与结算合同；完整原请求、确认快照和恢复由 F 域上下文提供。
  * 筛选/分页保留，配置确认框从保存的原快照恢复，成员分组见 f3-placements。
  */
-import { rebaseFValues, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { rebaseFValues, unchangedFNumber, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -780,7 +780,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
   const openThreshold = (): F3Confirm => ({
     action: "调整每组订单额门槛", title: "调整每组订单额门槛", briefKind: "config",
     effect: approvalTag("配置"),
-    edit: { kind: "number", label: "改后的门槛", current: thresholdCurrent, unit: "USDT", min: 0.000001, max: 5000, maxDecimals: 6, amplifiesWhen: "decrease", hint: "大于 0、不超过 5,000，最多 6 位小数" },
+    edit: { kind: "number", label: "改后的门槛", validate: value => unchangedFNumber(value, thresholdCurrent), current: thresholdCurrent, unit: "USDT", min: 0.000001, max: 5000, maxDecimals: 6, amplifiesWhen: "decrease", hint: "大于 0、不超过 5,000，最多 6 位小数" },
     facts: (value) => <>
       <Facts>
         <Fact k="每组订单额门槛">{value === undefined ? text(thresholdText) : <Change from={text(thresholdText)} to={`${fmtDecimal(value)} USDT`} />}</Fact>
@@ -806,7 +806,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
   const openRate = (): F3Confirm => ({
     action: "调整匹配比例", title: "调整匹配比例", briefKind: "config",
     effect: approvalTag("配置"),
-    edit: { kind: "number", label: "改后的比例（填 1 就是 1%）", current: ratePercent ?? "", unit: "%", min: 0.0000000001, max: 20, maxDecimals: 10, amplifiesWhen: "increase", hint: "大于 0、不超过 20，最多 10 位小数" },
+    edit: { kind: "number", label: "改后的比例（填 1 就是 1%）", validate: value => unchangedFNumber(value, ratePercent), current: ratePercent ?? "", unit: "%", min: 0.0000000001, max: 20, maxDecimals: 10, amplifiesWhen: "increase", hint: "大于 0、不超过 20，最多 10 位小数" },
     facts: (value) => <>
       <Facts>
         <Fact k="匹配比例">{value === undefined ? rateEff : <Change from={rateEff} to={`${value}%`} />}</Fact>

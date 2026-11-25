@@ -89,6 +89,8 @@ export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; c
             return;
           }
           if (confirm.original) { onClose(); return; }
+          const issue = newValue !== undefined && confirm.edit?.validate?.(newValue);
+          if (issue) throw new Error(issue);
           await ctx.runFContinuation(confirm.draft?.commandKey, () => confirm.submit(reason, businessValue, newValue));
           if (confirm.done) ctx.toast(confirm.done);
           onClose();

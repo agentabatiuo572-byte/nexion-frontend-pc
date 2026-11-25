@@ -21,6 +21,7 @@ import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { fetchF4AmbassadorMaterials, type F4AmbassadorApplication } from "@/lib/admin/f1-client";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { equalF4PolicyValue, f4PolicyValues } from "./f4-policy-confirm";
 import { f4Confirmation } from "./f4-confirmations";
 import { F4AmbassadorMaterials, materialReviewAttempts } from "./f4-ambassador-materials";
 import { applicationStage } from "./f4-quota";
@@ -166,7 +167,11 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       if (snapshot.action === "F.leaderboard.paused" && value !== "on" && value !== "off") return;
       const latest = { ...snapshot, overview: data, policy: ctx.f4AmbassadorPolicy, application, material: snapshot.material,
         businessValue: undefined, value: typeof value === "string" ? value : undefined };
-      try { return f4Confirmation(ctx, latest); } catch { return undefined; }
+      if (snapshot.action === "policy" && snapshot.policy && latest.policy) {
+        const before = f4PolicyValues(snapshot.policy), now = f4PolicyValues(latest.policy);
+        latest.policyConflict = Object.keys(before).some(key => key in now && !equalF4PolicyValue(before[key], now[key], key)) ? before : undefined;
+      }
+      try { return f4Confirmation(ctx, latest, snapshot); } catch { return undefined; }
     };
     const current = quota ? undefined : getSpec();
     const quotaReady = quota && allowed && !!data && !ctx.f4Loading && !ctx.f4Error;

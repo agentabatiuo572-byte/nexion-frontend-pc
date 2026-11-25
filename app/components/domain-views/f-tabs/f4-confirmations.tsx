@@ -10,6 +10,8 @@ import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usd
 import { fApprovalPermissionText, F_APPROVAL_PERMISSION_NAMES } from "@/lib/admin/f-approval-names";
 import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
+import { unchangedFNumber } from "@/lib/admin/f-reconfirmation";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
 import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules } from "./f4-payout-preview";
 import type { FViewCtx, McSpec } from "./types";
@@ -75,7 +77,7 @@ function prizeText(label: string) {
 }
 
 
-export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot): McSpec {
+export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, previous?: F4ConfirmationSnapshot): McSpec {
   const { overview: data, action, policy, application, material: packet } = snapshot;
   const period = snapshot.period ?? "week";
   const settlement = validateF4SettlementConfig({ status: data.settlementConfigStatus, unavailableKey: data.settlementConfigUnavailableKey, configVersion: data.configVersion, ratio: data.configValues["F.pool.ratio"], monthlyCap: data.configValues["F.pool.monthlyCap"], unlockVRank: data.configValues["F.pool.unlockVRank"], settleCron: data.configValues["F.pool.settleCron"] });
@@ -203,11 +205,16 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       break;
     }
     case action.startsWith("F.quota.tier."): {
+      const previousQuota = previous?.overview.quotaRows.find(row => (row.quotaCode || row.id) === (quota.quotaCode || quota.id));
+      const amount = (row: typeof quota) => row.monthlyQuota === undefined ? String(row.cap) : row.monthlyQuota ?? "";
+      const before = previousQuota && amount(previousQuota);
+      const current = amount(quota);
+      const quotaChanged = before !== undefined && before !== current && compareDecimal(before, current) !== 0;
       spec = { briefKind: "config",
     name: `${quota.name} 月额度调整`, op: "param",
     paramKey: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`,
     expectedVersion: quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? undefined : Number(quota.monthlyQuota),
-    edit: { kind: "number", current: quota.monthlyQuota === undefined ? String(quota.cap) : quota.monthlyQuota ?? "", unit: "台",
+    edit: { kind: "number", current, unit: "台",
       preview: (value) => {
         if (!/^\d+$/.test(value.trim())) return null;
         const next = Number(value), now = quota.monthlyQuota === undefined ? quota.cap : Number(quota.monthlyQuota);
@@ -223,6 +230,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     },
     completionCopy: approvalCopy,
     facts: <KeyValues rows={[
+      ...(quotaChanged ? [{ key: "monthlyQuota", label: "他人修改 · 月额度", value: `${before ? count(Number(before)) + " 台" : "未配置"} → ${current ? count(Number(current)) + " 台" : "未配置"}` }] : []),
       { key: "used", label: "本月已用", value: `${count(quota.current)} 台` },
       ...((quota.pendingThisMonth ?? 0) > 0 ? [{ key: "pending", label: "其中待付款", value: `${count(quota.pendingThisMonth ?? 0)} 台` }] : []),
       ...(quota.status === 0 ? [{ key: "paused", label: "状态", value: "已暂停：调额度不会恢复销售" }] : []),
@@ -440,6 +448,16 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     }
     case action === "policy": spec = f4PolicyConfirmation(ctx, policy!, snapshot.policyConflict); break;
     default: throw new Error("F4_PROPOSAL_ORIGINAL_INCOMPLETE");
+  }
+  const edit = spec.edit;
+  if (edit) {
+    const money = action === "F.pool.monthlyCap" || action === "F.leaderboard.poolUsd";
+    const normalize = money ? f4MonthlyCap : action === "F.pool.ratio" ? f4PoolRatio : (value: string) => value;
+    if (money || action === "F.pool.ratio" || edit.kind === "number") {
+      const hasDefault = ["F.pool.top1MaxPct", "F.pool.top5MaxPct", "F.leaderboard.minUsd", "F.leaderboard.minComputePoints"].includes(action);
+      const current = normalize((hasDefault || money || action === "F.pool.ratio" ? data.configValues[action] : edit.current) ?? "");
+      spec.edit = { ...edit, validate: value => edit.validate?.(value) ?? unchangedFNumber(normalize(value), current) };
+    }
   }
   return { ...spec, f4Snapshot: snapshot };
 }

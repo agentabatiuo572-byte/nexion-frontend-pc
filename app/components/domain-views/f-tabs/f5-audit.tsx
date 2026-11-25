@@ -439,7 +439,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
-  const editThreshold = (snapshot?: F5ConfirmationSnapshot, recovery?: F5Recovery) => {
+  const editThreshold = (snapshot?: F5ConfirmationSnapshot, recovery?: F5Recovery, previous?: F5ConfirmationSnapshot) => {
     const sigma = snapshot?.sigma ?? data?.configValues.commissionAnomalySigma ?? "3";
     const ratio = snapshot?.ratio ?? data?.configValues.layerRatioAnomalyPct ?? "20";
     setConfirm({
@@ -450,8 +450,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       statedBrief: { impact: "保存后马上按新标准重新挑异常样本，以前的样本也按新标准重算", check: "核对两个数，理由写清为什么调整。" },
       detail: "数字越小，挑出的异常越多。",
       facts: <Facts>
-        <Fact k="金额偏离">{sigma} 倍标准差</Fact>
-        <Fact k="层比例偏离">{ratio}%</Fact>
+        <Fact k="金额偏离">{previous?.sigma !== undefined && compareDecimal(previous.sigma, sigma) !== 0 && `他人修改：${previous.sigma} → `}{sigma} 倍标准差</Fact>
+        <Fact k="层比例偏离">{previous?.ratio !== undefined && compareDecimal(previous.ratio, ratio) !== 0 && `他人修改：${previous.ratio}% → `}{ratio}%</Fact>
         <Fact k="保存后">马上按新标准重新挑异常样本，不改奖励金额和状态</Fact>
       </Facts>,
       businessForm: {
@@ -602,7 +602,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         const before = { sigma: snapshot.sigma!, ratio: snapshot.ratio! };
         const wanted = { sigma: String(request.commissionAnomalySigma), ratio: String(request.layerRatioAnomalyPct) };
         const initial = rebaseFValues(before, wanted, { sigma, ratio }, (a, b) => a === b || compareDecimal(a, b) === 0);
-        editThreshold();
+        editThreshold(undefined, undefined, snapshot);
         setConfirm(current => current && { ...current, draft: original, initial });
       }}>继续修改</Button> : <span>请核对当前设置和操作权限</span>,
     });

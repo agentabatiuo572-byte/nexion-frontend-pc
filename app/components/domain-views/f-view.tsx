@@ -1780,6 +1780,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             if (original) { await recoverF4(original, "retry"); return; }
             if (mc.f4Recovery) throw new Error("PENDING_REPLAY_BLOCKED");
             if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额与排行榜加载失败，请刷新后再操作。");
+            const issue = newVal !== undefined && mc.edit?.validate?.(newVal);
+            if (issue) throw new Error(issue);
             f4Submission.current = { ...mc.f4Snapshot, value: newVal ?? mc.fixedVal, businessValue, continuedFrom: mc.draft?.commandKey };
           }
           if (teamApproval?.source === "F3") {

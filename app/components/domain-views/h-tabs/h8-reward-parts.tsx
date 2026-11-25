@@ -52,7 +52,7 @@ export function Amount({ value, unit, decimals }: { value: string | number | und
  * 一笔奖励的去向：注册 → 风控筛选 → 结算审批 → 进钱包或先冻结。
  * 看它能判断：用户说没收到新人礼时，卡在哪一步、该去哪查。
  */
-export function RewardFlow({ pending, blocked, settled, mode, gateUnset }: { pending: ReactNode; blocked: ReactNode; settled: ReactNode; mode: string; gateUnset?: boolean }) {
+export function RewardFlow({ pending, blocked, settled, mode }: { pending: ReactNode; blocked: ReactNode; settled: ReactNode; mode: string }) {
   return (
     <ol className="h8-flow" aria-label="一笔奖励的去向">
       <li className="h8-flow-step">
@@ -60,11 +60,11 @@ export function RewardFlow({ pending, blocked, settled, mode, gateUnset }: { pen
         <div className="h8-flow-body">
           <span className="h8-flow-title">新人注册
             <Explain label="哪些注册会进入结算" content={<>
-              <p>{gateUnset ? "生效时间还没设过，不按注册时间筛；正式、没结算过、没被风控拦下的账号都会进入结算。改金额、改发放方式或启用奖励后，生效时间改成那一刻，之前注册的不再进入结算。" : "生效时间起（含这一刻）注册的正式账号才会进入结算，之前注册的不再进入结算。"}</p>
+              <p>生效时间起（含这一刻）注册的正式账号才会进入结算，之前注册的不再进入结算。</p>
               <p>没有邀请人的新人也有新人礼；这时邀请人那一份不发。</p>
             </>} />
           </span>
-          <span className="h8-flow-sub">{gateUnset ? "不按注册时间筛" : "生效时间起注册的"}，有没有邀请人都算</span>
+          <span className="h8-flow-sub">生效时间起注册的，有没有邀请人都算</span>
         </div>
       </li>
       <li className="h8-flow-step">

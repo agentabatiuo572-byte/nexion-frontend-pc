@@ -25,6 +25,7 @@ import {
 } from "@/app/components/rd";
 import {
   fetchH8ReferralRewards,
+  h8EffectiveAt,
   fetchH8SettlementEligibility,
   h8EffectiveRewardReference,
   h8RewardParamAmplifies,
@@ -106,7 +107,7 @@ const yesNo = (value: boolean | null, yes: string, no: string, unknown = "未知
 function EligibilityDetail({ value }: { value: H8SettlementEligibility }) {
   return <>
     <p>注册 {value.registeredAt ? formatBusinessTimeCompact(value.registeredAt, "—") : "时间未知"}（{businessZone().label}）</p>
-    <p>生效时间 {Date.parse(value.effectiveAt) === 0 ? "未设置" : formatBusinessTimeCompact(value.effectiveAt, "—")}</p>
+    <p>生效时间 {formatBusinessTimeCompact(value.effectiveAt, "—")}</p>
     <p>钱包{yesNo(value.walletPresent, "已开", "没有")} · 风控{yesNo(value.riskBlocked, "拦下了", "没拦")} · {yesNo(value.settled, "已结算", "没结算", "结算未知")}</p>
     <p>新人礼{yesNo(value.freezeGift, "会先冻结", "不冻结")} · 冻结中 {value.frozenGiftCount === null ? "未知" : `${value.frozenGiftCount} 份`} · 首笔实付{yesNo(value.firstPaidOrder, "有", "没有")}</p>
     <p>这是现在的情况，批准执行时再核对。</p>
@@ -332,7 +333,12 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const unit = numeric ? param.unit : "";
     const multiplierName = param.key === "inviter.nex" ? "邀请加成" : "新用户加成";
     const pendingCount = countText(snapshot.pending);
-    const gateNow = gateText(snapshot.effectiveAt);
+    const gateNow = effectiveTimeText(snapshot.effectiveAt);
+    const before = draft?.original?.overview.params;
+    const otherChanges = before ? [ENABLED_PARAM, ...PARAMS].flatMap(field => {
+      const from = valueText(field, String(before[field.key])), to = valueText(field, String(snapshot.params[field.key]));
+      return from === to ? [] : [<Fact key={field.key} k={`他人修改 · ${paramTitle(field)}`}><Change from={from} to={to} /></Fact>];
+    }) : [];
     const resetFact = (when = "保存或批准") => `${when}后，现在等结算的 ${pendingCount} 位不再进入结算`;
     const approvalCopy = numeric
       ? "批准前仍按原金额发；批准时按那时的当月加成重算，并检查兑付覆盖率。"
@@ -375,10 +381,10 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           <p>{loosenName}会让平台多付钱：先提交审批，{APPROVER}在「操作记录与审批」批准后才生效，你自己不能批。</p>
           <p>{tightenName}或不变：确认后立即保存。</p>
         </>}>{numeric ? "调高要批准 · 调低立即生效" : "放宽要批准 · 改回立即生效"}</StatusTag>,
-      facts: numeric || isEnabled ? <Facts>
-        {isEnabled
-          ? <Fact k="奖励开关"><Change from={current} to={enabling ? "已启用" : "已停用"} /></Fact>
-          : <Fact k="改的是">{numeric ? `${WHO[param.key].per}的${param.label} 基础额` : "新人礼发放方式"}</Fact>}
+      facts: numeric || isEnabled || otherChanges.length ? <Facts>
+        {otherChanges}
+        {isEnabled && <Fact k="奖励开关"><Change from={current} to={enabling ? "已启用" : "已停用"} /></Fact>}
+        {numeric && <Fact k="改的是">{WHO[param.key].per}的{param.label} 基础额</Fact>}
         {numeric && <Fact k="当月加成">第 {snapshot.rhythmMonth} 月{multiplierName} {multiplierText(multiplier)}，在运营阶段设置改</Fact>}
         {numeric && <Fact k="生效时间"><Change from={gateNow} to="保存或批准那一刻" /></Fact>}
         {numeric && <Fact k="等结算的注册">{resetFact()}</Fact>}
@@ -750,7 +756,6 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const submitTarget = conflictDraft.register("settle:target", () => settle(targetUserId));
   const zone = businessZone().label;
   const effectiveAtText = formatBusinessTimeFull(data.effectiveAt, "—");
-  const gateUnset = Date.parse(data.effectiveAt) === 0;
   const modeLabel = LOCK_MODE_LABELS[String(data.params["newcomer.lockMode"])] ?? "—";
   const pending = Number(data.pending ?? 0);
   const allZero = AMOUNT_PARAMS.every((param) => Number(data.effectiveRewards[param.key]) === 0);
@@ -855,16 +860,14 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
             <ConfigRow name="生效时间"
               what="这个时间起（含这一刻）注册的新人才进入结算"
               effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样时不改）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前注册、还没结算的新人，不再进入结算。</p></>}
-              value={gateUnset
-                ? <span className="h8-time" title={`系统记录的原值 ${data.effectiveAt}`}>未设置</span>
-                : <span className="h8-time" title={`${effectiveAtText}（${zone}）`}>{formatBusinessTimeCompact(data.effectiveAt, "—")}<small>{zone}</small></span>} />
+              value={<span className="h8-time" title={`${effectiveAtText}（${zone}）`}>{formatBusinessTimeCompact(data.effectiveAt, "—")}<small>{zone}</small></span>} />
           </ConfigList>
         </Panel>
 
       <Panel title="结算" icon={Route} tone="role-3" sub={`待结算 ${countText(pending)} 位`}
         explain="不会自动结算。批量和指定新人两种结算都只提交审批，另一位管理员批准后才发；同一时间只能有一张结算审批单。"
         actions={canSettle ? <Button variant="primary" disabledReason={settleWriteBlock ?? freshBlocked ?? settleBlock} onClick={conflictDraft.register("settle:batch", () => settle())}>批量结算</Button> : undefined}>
-        <RewardFlow gateUnset={gateUnset} pending={`${countText(pending)} 位`} blocked={`${countText(data.blockedByK2)} 位`} settled={`${countText(data.settled)} 位`} mode={modeLabel} />
+        <RewardFlow pending={`${countText(pending)} 位`} blocked={`${countText(data.blockedByK2)} 位`} settled={`${countText(data.settled)} 位`} mode={modeLabel} />
         <div className="h8-settle-foot">
           {canSettle ? (
             <form className="h8-target" onSubmit={(event) => { event.preventDefault(); if (!settleWriteBlock && readReady && data.enabled && targetUserValid) submitTarget(); }}>
@@ -942,9 +945,12 @@ function timesText(per: string | number | undefined, count: number, decimals: nu
   return amountText(`${total / BigInt(1000000)}.${String(total % BigInt(1000000)).padStart(6, "0")}`, decimals);
 }
 
-/** 生效时间的写法：后端的初始值 1970-01-01T00:00:00Z 是历史种子的无效起点。 */
-function gateText(effectiveAt: string) {
-  return Date.parse(effectiveAt) === 0 ? "未设置" : `${formatBusinessTimeCompact(effectiveAt, "—")}（${businessZone().label}）`;
+function effectiveTimeText(value: string) {
+  try {
+    return `${formatBusinessTimeCompact(h8EffectiveAt(value), "—")}（${businessZone().label}）`;
+  } catch (error) {
+    return displayAdminReadError(error);
+  }
 }
 
 function valueText(param: H8Param, value: string | undefined) {

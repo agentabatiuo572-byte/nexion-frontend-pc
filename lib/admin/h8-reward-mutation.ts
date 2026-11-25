@@ -1,7 +1,7 @@
 import { acknowledgeFReconfirmation, settleFReconfirmation, type FReconfirmationLink } from "./f-reconfirmation";
 import { activeRecoveryActor } from "./f-proposal-recovery";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, A2OutcomeUncertainError, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
-import { createH8CommandKey, growthRequest, h8RewardParamAmplifies, h8RewardParamValid, parseH8ReferralRewardOverview, type H8ReferralRewardOverview, type H8RewardParamKey } from "./h-client";
+import { createH8CommandKey, growthRequest, h8RewardParamAmplifies, h8RewardParamValid, parseH8RewardSnapshot, type H8ReferralRewardOverview, type H8RewardParamKey } from "./h-client";
 import { explicitRejectionCode } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingCommandOwner, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
@@ -25,7 +25,7 @@ const PARAM_KEYS: H8RewardParamKey[] = ["enabled", "newcomer.usdt", "newcomer.ne
 /** sessionStorage is an input boundary. Legacy key-only records remain query-only evidence. */
 function validOriginal(original: H8Original) {
   try {
-    parseH8ReferralRewardOverview(original.overview);
+    parseH8RewardSnapshot(original.overview);
     if (typeof original.body !== "string") return false;
     if (original.kind === "direct") {
       const body = JSON.parse(original.body);

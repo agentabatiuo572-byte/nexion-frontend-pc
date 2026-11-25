@@ -968,7 +968,14 @@ function h8IsoInstant(value: unknown, field: string): string {
   return text;
 }
 
-export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardOverview {
+export function h8EffectiveAt(value: unknown, field = "effectiveAt") {
+  const instant = h8IsoInstant(value, field);
+  if (Date.parse(instant) === 0) throw new Error("H8_EFFECTIVE_AT_INVALID");
+  return instant;
+}
+
+/** A frozen journal is historical evidence, even when its start date needs correction. */
+export function parseH8RewardSnapshot(value: unknown): H8ReferralRewardOverview {
   const root = h8Record(value, "root");
   const params = h8Record(root.params, "params");
   const effective = h8Record(root.effectiveRewards, "effectiveRewards");
@@ -1045,6 +1052,12 @@ export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardO
   };
 }
 
+export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardOverview {
+  const overview = parseH8RewardSnapshot(value);
+  h8EffectiveAt(overview.effectiveAt);
+  return overview;
+}
+
 export async function fetchH8ReferralRewards(cursor = ""): Promise<H8ReferralRewardOverview> {
   const query = cursor ? `?cursor=${encodeURIComponent(cursor)}&pageSize=20` : "?pageSize=20";
   return parseH8ReferralRewardOverview(await growthRequest<unknown>(`/referral-rewards${query}`));
@@ -1060,7 +1073,7 @@ export async function fetchH8SettlementEligibility(invitedUserId: number): Promi
   };
   return {
     invitedUserId: h8PositiveCount(row.invitedUserId, "eligibility.invitedUserId"),
-    effectiveAt: h8IsoInstant(row.effectiveAt, "eligibility.effectiveAt"),
+    effectiveAt: h8EffectiveAt(row.effectiveAt, "eligibility.effectiveAt"),
     configReady: boolean("configReady")!,
     registeredAt: row.registeredAt === null ? null : h8IsoInstant(row.registeredAt, "eligibility.registeredAt"),
     walletPresent: boolean("walletPresent", true), settled: boolean("settled", true),
