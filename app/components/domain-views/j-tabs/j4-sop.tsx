@@ -1226,12 +1226,13 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const notify = emergency.notifyTemplates ?? [];
   const notifyFold = (
     <Fold title="通知活动候选" icon={Megaphone} tone="role-other"
-      summary={emergency.notifyTemplatesError ? "读不到" : ctx.notifyTemplatesLoading ? "正在加载…" : notify.length === 0 ? "没有已排期的通知活动" : `${count(notify.length)} 个已排期`}
+      summary={emergency.notifyTemplatesError ? "读不到" : ctx.notifyTemplatesLoading ? notify.length ? `${count(notify.length)} 个已排期 · 正在刷新…` : "正在加载…" : notify.length === 0 ? "没有已排期的通知活动" : `${count(notify.length)} 个已排期`}
       alert={Boolean(emergency.notifyTemplatesError)}
       explain="预案的「发送通知活动」这一步只能选已排期的通知活动。这里只列候选，不能新建通知；新建和排期在「通知活动」页。">
       {emergency.notifyTemplatesError
         ? <BlockState retryKey="j4-sop-1235" state="error" compact title="通知活动读不到" detail={`${emergency.notifyTemplatesError} 预案和执行记录不受影响。`} onRetry={() => void ctx.reloadJ4NotifyTemplates()} retrying={ctx.notifyTemplatesLoading} />
-        : ctx.notifyTemplatesLoading
+        // 刷新时保留已读到的候选表，只在还没有结果时显示加载占位（ST-32）。
+        : ctx.notifyTemplatesLoading && notify.length === 0
           ? <BlockState state="loading" compact title="正在加载通知活动候选…" />
         : notify.length === 0
           ? <BlockState state="empty" compact title="没有已排期的通知活动" detail="要在预案里发通知，先到「通知活动」安排。" />

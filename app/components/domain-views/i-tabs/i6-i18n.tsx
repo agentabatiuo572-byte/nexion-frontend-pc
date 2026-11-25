@@ -1993,7 +1993,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               </div>;
             })}
           </section>
-          <Fold inset title="历史版本" icon={History} summary={messageVersionsError ? "读取失败" : messageVersionsLoading ? "读取中" : `${count(messageVersions.length)} 个版本 · 时间为${BJ}`}
+          <Fold inset title="历史版本" icon={History} alert={Boolean(messageVersionsError)} summary={messageVersionsError ? "读取失败" : messageVersionsLoading ? "读取中" : `${count(messageVersions.length)} 个版本 · 时间为${BJ}`}
             explain="回滚是把旧版本的三语复制成新版本发布，旧记录不改；当前还有草稿时不能回滚。">
             {messageVersionsError ? <BlockState retryKey="i6-message-versions" state="error" title="词条历史版本加载失败" detail={messageVersionsError}
               onRetry={() => setMessageVersionsRetry((value) => value + 1)} /> : <Table label="历史版本">
