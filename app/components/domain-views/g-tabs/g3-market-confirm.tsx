@@ -21,6 +21,7 @@ export const G3_TUNING_FORBIDDEN = "当前环境不允许人工改现价和上�
  */
 export const G3_TUNING_FORBIDDEN_REJECTED = "没有执行：当前环境不允许人工改现价和上涨概率，这不是账号权限问题，换账号也一样。要调价请改七天计划的目标价。";
 export const G3_EXPIRED_DIRECT_READ = "原操作已过期，不能重发。请读取当前配置核对，原记录会保留。";
+export const G3_READBACK_NOTE = "已读到当前配置。仅凭现值不能确认原操作结果，原记录继续保留。";
 
 function price(value: number) {
   return amountDisplay(value, 8);
@@ -125,7 +126,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       if (result) onDone({ ...result, recovered });
       return !!result;
     } catch (failure) {
-      if (g3MarketFailureCode(failure) === "G3_POLICY_APPROVAL_REQUIRED") {
+      if (!recovered && g3MarketFailureCode(failure) === "G3_POLICY_APPROVAL_REQUIRED") {
         const latest = await fetchG3MarketReadOverview();
         ensureOwner(false);
         if (change.action === "curve-cell") {
@@ -185,10 +186,12 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       dialogClassName: `g3m-confirm${schedule ? " g3m-schedule-confirm" : ""}`,
       fieldLayout: "compact",
       pending: !!pending,
-      initialRecovery: pending?.request.kind === "approval" ? "lookup" : "retry",
+      initialRecovery: pending?.request.kind === "approval" && !pending.replayRejection ? "lookup" : "retry",
       expired,
       expiredRequestRecovery: expiredRecovery,
-      disabledReason: expiredRecovery === "reload" ? G3_EXPIRED_DIRECT_READ : expired && pending?.request.kind === "direct"
+      queryOnly: !!pending?.replayRejection,
+      disabledReason: pending?.replayRejection ? "请核实原操作的结果后解除记录。"
+        : expiredRecovery === "reload" ? G3_EXPIRED_DIRECT_READ : expired && pending?.request.kind === "direct"
         ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项不能按原请求查询结果，请到「操作记录与审批」核对。"
         : pending && !canWriteG3MarketChange(session, change) ? "你没有修改这一项的权限。" : undefined,
       resolve: (_business, value) => {
@@ -201,7 +204,8 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
         };
       },
       recoverLabel: expiredRecovery === "reload" || pending?.request.kind === "direct" ? "读取当前配置" : undefined,
-      recover: expiredRecovery === "reload" ? readCurrent : () => execute("lookup"),
+      readbackNote: pending?.request.kind === "direct" ? G3_READBACK_NOTE : undefined,
+      recover: pending?.request.kind === "direct" ? readCurrent : () => execute("lookup"),
       retry: () => execute("retry").then(() => undefined),
     }}
     onClose={onClose}
