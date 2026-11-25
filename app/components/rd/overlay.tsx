@@ -75,8 +75,8 @@ const handoffs = new WeakMap<Element, () => HTMLElement | null>();
 const PICK_ROLES = '[role="option"], [role="radio"], [role="switch"], [role="menuitemradio"]';
 /** 能打字的输入框类型；其余（勾选、单选、日期、文件等）算点选。 */
 const TEXT_INPUT = /^(text|search|email|tel|url|password|number)$/;
-/** 打开者那一行已经不在时接焦点的稳定外框：表格外框、面板、页签面板。 */
-const STABLE_FRAME = ".rd-table-scroll, .rd-panel, [role=tabpanel]";
+/** 打开者那一行已经不在时接焦点的稳定外框：表格外框、面板、页签面板，以及有名字的区块（卡片墙这类 section）。 */
+const STABLE_FRAME = '.rd-table-scroll, .rd-panel, [role=tabpanel], section[aria-label], [role="region"][aria-label]';
 /** 最上层还开着的弹窗或抽屉，不含正在关的这个。 */
 const openOverlay = (except: Element | null) => [...document.querySelectorAll<HTMLElement>('.rd-modal[data-state="open"], .rd-drawer[data-state="open"]')].filter((node) => node !== except).at(-1) ?? null;
 
