@@ -3094,6 +3094,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       {pendingTicketIds.has(w.id) && <StatusTag tone="warn" explain={PENDING_LOCK}>结果未知</StatusTag>}
       {w.sos && <StatusTag tone="danger" icon={Siren}>应急</StatusTag>}
       {amplifies && (enablesAutoPayout(fundTicket(w)) ? <StatusTag tone="warn" icon={Coins}>批准时查覆盖率</StatusTag> : <StatusTag tone="warn" icon={Flame}>多付钱</StatusTag>)}
+      {/* 覆盖率挡住批准时原因常显在行里，不只放在「批准」按钮的提示上（OP-126）。 */}
+      {canDecide(w, "approve") && h5ApproveBlock(w) && <span className="rd-weak">{h5ApproveBlock(w)}</span>}
     </>;
     return w.sos || amplifies || pendingTicketIds.has(w.id) ? <span className="rd-row-actions">{tags}</span> : TYPE_NAME[w.type];
   };
