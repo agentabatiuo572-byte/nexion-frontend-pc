@@ -1651,6 +1651,13 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     } finally { if (uploadControllerRef.current === controller) uploadControllerRef.current = null; }
   };
 
+  const [convRetrying, setConvRetrying] = useState(false), [convError, setConvError] = useState("");
+  const retryConversations = async () => {
+    setConvRetrying(true); setConvError("");
+    try { await ctx.refreshConversations(); }
+    catch (cause) { setConvError(displayAdminReadError(cause)); }
+    finally { setConvRetrying(false); }
+  };
   const serviceStatus = !conversationsAvailable ? "会话服务暂不可用，请检查连接后重试。" : lostAccess ? "当前会话权限已变化，请刷新列表。" : "";
   const title = userNicknameText(selected?.customer || selected?.profile?.nickname || (selected?.customerId ? `客户 ${selected.customerId}` : firstDetail?.displayName || (requestedCustomerIdValid && requestedCustomerId ? `客户 ${requestedCustomerId}` : "会话消息")), selected?.profile?.phone);
   const checkActionReady = async (conversation: SessionConvo) => {
@@ -2072,7 +2079,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     { key: "archive", label: "批量归档", disabledReason: !canWriteM3 ? "当前账号只能查看会话" : !filtered.some(row => row.ownerAdminId === adminId && !row.archived && !row.pendingReplyCount) ? "这个列表里没有能归档的客户：只能归档本人客户，有待回复的要先回复" : undefined, onSelect: () => setArchiveMode(true) },
   ];
   const alertsOn = alertPrefs.sound || alertPrefs.desktop;
-  const baseBlocked = !canWriteM3 ? "当前账号只能查看会话" : qualificationUnknown ? reviewScopeError ? "当前可见范围没读到，重试后再操作" : "正在确认你的专属客服身份" : undefined;
+  const baseBlocked = !canWriteM3 ? "当前账号只能查看会话" : scopeDenied ? "当前账号看不到客户会话" : qualificationUnknown ? reviewScopeError ? "当前可见范围没读到，重试后再操作" : "正在确认你的专属客服身份" : undefined;
   const noOwnCustomers = hasOwn ? undefined : !myAgent ? "当前账号不是专属客服，没有本人客户" : ownCustomers === 0 ? "你名下还没有客户。客户分配给你之后才能用，分配情况看「客服工作台」" : undefined;
   // 新建要有本人客户；已有批次和待确认的原操作照样能进去查（OP-93）。
   const bulkBlocked = hasBulkPending(adminId) || (bulkBatches ?? 0) > 0 ? undefined : baseBlocked ?? (bulkBatches === 0 ? noOwnCustomers : undefined);
@@ -2104,9 +2111,9 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       guideExtra={<p>{guideRole}</p>} />
     {banner}
     {streamLost && !reconnectExhausted && <Notice tone="warn">连接已断开，正在重连；下面是最近一次的数据</Notice>}
-    {!conversationsAvailable
-      ? ctx.contentLoading ? <Conclusion state="unknown">正在加载会话…</Conclusion> : <Panel><BlockState state="error" title="会话加载失败" detail={serviceStatus} onRetry={() => void ctx.refreshConversations()} /></Panel>
-      : scopeDenied ? <BlockState state="denied" title="当前账号看不到客户会话" detail="这页只给客服、客服主管和超级管理员用。需要查看会话，请联系管理员调整账号。" />
+    {scopeDenied ? <BlockState state="denied" title="当前账号看不到客户会话" detail="这页只给客服、客服主管和超级管理员用。需要查看会话，请联系管理员调整账号。" />
+      : !conversationsAvailable
+      ? ctx.contentLoading && !convRetrying ? <Conclusion state="unknown">正在加载会话…</Conclusion> : <Panel><BlockState state="error" title="会话加载失败" detail={convError || ctx.pget("I.session.conversationsError") || serviceStatus} onRetry={() => void retryConversations()} retrying={convRetrying} /></Panel>
       : reviewScopeError
         ? <Panel><BlockState state="error" title="当前可见范围加载失败" detail={reviewScopeError} onRetry={() => { setReviewScopeError(""); setScopeRetry(value => value + 1); }} /></Panel>
         : qualificationUnknown
@@ -2186,7 +2193,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             </div>;
           })}
         </div>
-        {(query.trim() || listLimit < filtered.length) && <div className="m3s-inbox-foot"><span>{query.trim() ? `搜到 ${filtered.length} 位` : ""}</span>{listLimit < filtered.length && <Button size="sm" variant="ghost" onClick={() => setListLimit(n => n + LIST_CHUNK)}>加载更多</Button>}</div>}
+        {(query.trim() || listLimit < filtered.length) && <div className="m3s-inbox-foot"><span>{query.trim() ? `搜到 ${countsRead ? filtered.length : "—"} 位` : ""}</span>{listLimit < filtered.length && <Button size="sm" variant="ghost" onClick={() => setListLimit(n => n + LIST_CHUNK)}>加载更多</Button>}</div>}
       </div>
 
       <div ref={chatColumnRef} className="m3s-chat">

@@ -522,7 +522,8 @@ export default function DualLedgerPage() {
       if (result === "SUCCEEDED") {
         setToast("查到原结果：已登记储备注入。");
         await refreshB1();
-      } else show(result === "NOT_FOUND" ? "没查到原回执，原记录继续保留。"
+      } else if (result === "REJECTED" || result === "NOT_EXECUTED") setToast(result === "REJECTED" ? "查到原结果：后台拒绝了这次登记，没有登记储备注入。" : "查到原结果：核查确认没有执行，没有登记储备注入。");
+      else show(result === "NOT_FOUND" ? "没查到原回执，原记录继续保留。"
         : result === "PROCESSING" ? "原操作仍在处理，稍后再查。"
           : "这次查询没有确认已登记，原记录继续保留。");
     } catch (error) { show(displayAdminReadError(error)); }

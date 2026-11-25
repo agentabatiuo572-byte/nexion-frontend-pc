@@ -9,7 +9,7 @@ import { supportEnhancements, parseBulkJob, type BulkFilters, type BulkCandidate
 import { supportClient, SupportClientError, isIndeterminateSupportError } from "@/lib/admin/m-support-client";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { Modal } from "../design-kit";
 import { Button, Check, Explain, Fact, Facts, Field, Fold, Input, Notice, Pager, RecordList, Select, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
@@ -65,7 +65,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const [draftOwner,setDraftOwner]=useState(0);
   const [image,setImage]=useState<{file:File;url:string;id:string;key:string;hash:string;assetId?:string;ttlSeconds:number|null;assetExpiresAt?:number}|null>(null),[uploading,setUploading]=useState(false),[uploadError,setUploadError]=useState("");
   const [job,setJob]=useState<BulkJob|null>(null),[jobs,setJobs]=useState<BulkJob[]|null>(null),[jobsTotal,setJobsTotal]=useState(0),[jobsPage,setJobsPage]=useState(1),[jobsError,setJobsError]=useState("");
-  const [recipients,setRecipients]=useState<BulkRecipient[]|null>(null),[recipientTotal,setRecipientTotal]=useState(0),[recipientPage,setRecipientPage]=useState(1),[resultRetry,setResultRetry]=useState(0),[resultError,setResultError]=useState("");
+  const [recipients,setRecipients]=useState<BulkRecipient[]|null>(null),[recipientTotal,setRecipientTotal]=useState(0),[recipientPage,setRecipientPage]=useState(1),[resultRetry,setResultRetry]=useState(0),[jobsRetry,setJobsRetry]=useState(0),[resultError,setResultError]=useState("");
   const [pending,setPending]=useState<Stored|null>(null),[mutationAction,setMutationAction]=useState<"cancel"|"retry"|null>(null),[mutationReason,setMutationReason]=useState("");
   const generation=useRef(0),stamp=useRef("");stamp.current=`${scopeKey}:${generation.current}`;
   const queryKey=JSON.stringify([scopeKey,filters,page]),requestKey=useRef(queryKey);requestKey.current=queryKey;
@@ -132,9 +132,9 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   },[query,scopeKey]);
   useEffect(()=>{
     const controller=new AbortController(),owner=stamp.current;setJobs(null);setJobsError("");
-    supportEnhancements.bulkJobs(jobsPage,controller.signal).then(p=>{if(!controller.signal.aborted&&owner===stamp.current){setJobs(p.records);setJobsTotal(p.total);}}).catch(e=>{if(!controller.signal.aborted&&owner===stamp.current)setJobsError(displayAdminError(e));});
+    supportEnhancements.bulkJobs(jobsPage,controller.signal).then(p=>{if(!controller.signal.aborted&&owner===stamp.current){setJobs(p.records);setJobsTotal(p.total);}}).catch(e=>{if(!controller.signal.aborted&&owner===stamp.current)setJobsError(displayAdminReadError(e));});
     return()=>controller.abort();
-  },[jobsPage,resultRetry,scopeKey]);
+  },[jobsPage,resultRetry,jobsRetry,scopeKey]);
   useEffect(()=>{
     if(!job)return;const controller=new AbortController(),owner=stamp.current;let timer:ReturnType<typeof setTimeout>|undefined;
     const read=async()=>{const results=await Promise.allSettled([supportEnhancements.bulkJob(job.batchId,controller.signal),supportEnhancements.bulkRecipients(job.batchId,recipientPage,controller.signal)]);if(controller.signal.aborted||owner!==stamp.current)return;
@@ -317,7 +317,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       {!recipients?<p role="status">逐客明细暂未读取</p>:<Table label="逐客结果"><thead><tr><Th>客户</Th><Th>结果</Th><Th>原因</Th><Th>原会话</Th></tr></thead><tbody>{recipients.map((r,i)=><Tr key={r.customerId+":"+i}><Td>{customerName(r.customerId)}</Td><Td><StatusTag tone={recipientTone(r)}>{r.resultCertainty==="UNKNOWN"?"结果未知":stateText[r.state]??"未知"}</StatusTag></Td><Td>{r.failureCode?{...conversationReasonText,SUPPORT_ASSIGNMENT_CHANGED:"客户已转绑，本次不再发送",SUPPORT_MAINTENANCE_STOPPED:"客户已停止维护",SUPPORT_AGENT_UNAVAILABLE:"专属客服当前不可发送",RESULT_UNKNOWN:"需核对原提交结果",SUPPORT_BULK_PAYLOAD_REVIEW_REQUIRED:"原内容需核对，暂不自动重发"}[r.failureCode]??"执行未通过，请核对客户与原消息":"—"}{r.retryable?" · 可核对重试":""}</Td><Td>{r.conversationNo?<a className="rd-link" href={`/service/sessions?conversationNo=${encodeURIComponent(r.conversationNo)}`}>打开原客户会话</a>:"—"}</Td></Tr>)}</tbody></Table>}
       {recipientTotal>0&&<Pager label="逐客结果" total={recipientTotal} page={recipientPage} pageSize={10} sizes={[10]} onPage={setRecipientPage} onPageSize={()=>undefined}/>}</>}
     </>}
-    <Fold inset title="已提交批次" explain="关闭后可以在这里恢复查看。" open={historyOpen} onOpenChange={setHistoryOpen} summary={jobsError?"加载失败":jobs?`${jobsTotal} 批`:"正在加载…"}>{jobsError?<div role="alert" className="m-bulk-row"><span>{jobsError}</span><Button size="sm" onClick={()=>setResultRetry(n=>n+1)}>重试</Button></div>:!jobs?<p role="status">正在加载…</p>:<>{!jobs.length&&<p role="status">暂无已提交批次，提交群发后会显示在这里。</p>}{jobs.map(j=><div className="m-bulk-row" key={j.batchId}><span>{stateText[j.state]??"未知"} · {j.frozenCount} 位{j.counts.failed>0?` · 失败 ${j.counts.failed}`:""}</span><Button size="sm" disabled={Boolean(pending)||busy} onClick={()=>{setJob(j);setStep(4);setRecipientPage(1);setHistoryOpen(false);}}>查看结果</Button></div>)}{jobsTotal>0&&<Pager label="已提交批次" total={jobsTotal} page={jobsPage} pageSize={10} sizes={[10]} onPage={setJobsPage} onPageSize={()=>undefined}/>}</>}</Fold>
+    <Fold inset title="已提交批次" explain="关闭后可以在这里恢复查看。" open={historyOpen} onOpenChange={setHistoryOpen} summary={jobsError?"加载失败":jobs?`${jobsTotal} 批`:"正在加载…"}>{jobsError?<div role="alert" className="m-bulk-row"><span>已提交批次加载失败。{jobsError}</span><Button size="sm" onClick={()=>setJobsRetry(n=>n+1)}>重试</Button></div>:!jobs?<p role="status">正在加载…</p>:<>{!jobs.length&&<p role="status">暂无已提交批次，提交群发后会显示在这里。</p>}{jobs.map(j=><div className="m-bulk-row" key={j.batchId}><span>{stateText[j.state]??"未知"} · {j.frozenCount} 位{j.counts.failed>0?` · 失败 ${j.counts.failed}`:""}</span><Button size="sm" disabled={Boolean(pending)||busy} onClick={()=>{setJob(j);setStep(4);setRecipientPage(1);setHistoryOpen(false);}}>查看结果</Button></div>)}{jobsTotal>0&&<Pager label="已提交批次" total={jobsTotal} page={jobsPage} pageSize={10} sizes={[10]} onPage={setJobsPage} onPageSize={()=>undefined}/>}</>}</Fold>
     </div>
   </Modal>;
 }

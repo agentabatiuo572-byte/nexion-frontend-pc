@@ -110,6 +110,7 @@ export async function queryB1InjectionReceipt(record: B1PendingWrite) {
     throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
   }
   const result = await fetchDirectCommandReceipt("D3_RESERVE_INJECTION", record.commandKey, actor.adminId);
-  if (result === "SUCCEEDED") b1Recovery.settleAcknowledged(record);
+  // 查到明确结论才结案：已登记，或后台明确拒绝、核查确认没有执行。
+  if (result === "SUCCEEDED" || result === "REJECTED" || result === "NOT_EXECUTED") b1Recovery.settleAcknowledged(record);
   return result;
 }
