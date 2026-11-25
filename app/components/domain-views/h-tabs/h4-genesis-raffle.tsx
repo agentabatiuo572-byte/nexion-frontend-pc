@@ -134,7 +134,9 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
       choose(row, required);
       if (closeRetry) setError(H4_OLD_RECORD_REJECTED);
     };
-    // 等语言的时候另一个抽屉可能已经打开：按现在的样子再问一次（OP-29）。
+    // 等语言的时候运营已经在别的确认框或离开框里了：先让那边做完，这次打开作废。
+    if (!closeRetry && document.querySelector('.rd-modal[data-state="open"]')) return false;
+    // 另一个抽屉可能已经打开：按现在的样子再问一次（OP-29）。
     leave.attempt(open);
     return true;
   };
