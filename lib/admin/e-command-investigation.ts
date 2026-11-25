@@ -378,7 +378,9 @@ function parseReceipt(value: unknown, locator: ECommandLocator, options: EComman
     || row.originalTarget !== null && typeof row.originalTarget !== "string"
     || row.originalTargets !== null && typeof row.originalTargets !== "string"
     || !["PROCESSING", "UNKNOWN", "SUCCEEDED", "FAILED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus))
-    || row.locked !== (["PROCESSING", "UNKNOWN"].includes(String(row.originalStatus)) || !!a3Content && row.originalStatus === "FAILED")
+    || (a3Content && row.originalStatus === "FAILED"
+      ? row.locked !== true && !(row.locked === false && row.localTransactionRollbackConfirmed === true)
+      : row.locked !== ["PROCESSING", "UNKNOWN"].includes(String(row.originalStatus)))
     || row.newOperationAllowed !== (row.originalStatus === "CONFIRMED_NOT_EXECUTED")) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   if (row.businessCode !== undefined && row.businessCode !== null
     && (!Number.isInteger(row.businessCode) || Number(row.businessCode) < -2147483648 || Number(row.businessCode) > 2147483647)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");

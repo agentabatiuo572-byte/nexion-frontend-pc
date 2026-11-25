@@ -18,7 +18,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { a3Deduplicates, a3HasOriginalReceipt, isA3ContentCommand, useA3Commands, type A3Command, type A3ContentComparison } from "@/lib/admin/a3-mutations";
+import { a3ContentVersionConflict, a3Deduplicates, a3HasOriginalReceipt, isA3ContentCommand, useA3Commands, type A3Command, type A3ContentComparison } from "@/lib/admin/a3-mutations";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { fetchPlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -40,20 +40,20 @@ import type { ACtx } from "./types";
 import { A3Calendar, type A3CalendarSummary } from "./a3-calendar";
 import { A3Experience } from "./a3-experience";
 import { AppVersionManager } from "./app-version-manager";
-import { A3Content, type A3ContentRead, type A3ContentReads, type A3ContentSummary } from "./a3-content";
+import { A3Content, type A3ContentSummary } from "./a3-content";
+import type { A3ContentRead, A3ContentReads, ContentCommand } from "./a3-content-editor";
 
 type TabKey = "switches" | "calendar" | "experience" | "content" | "status";
-type OriginalOutcome = FundInvestigationOutcome & { rejectionReason?: string; readError?: string };
-const contentVersionConflict = (reason?: string) => reason === "DEVELOPER_DOCS_VERSION_CONFLICT" || reason === "HOW_CONTENT_VERSION_CONFLICT";
+type OriginalOutcome = FundInvestigationOutcome & { rejectionReason?: string; readError?: string; conclusion?: string };
 
 function contentFailure(reason?: string) {
-  if (contentVersionConflict(reason)) return "原操作没有保存：内容版本已变。";
+  if (a3ContentVersionConflict(reason)) return "原操作没有保存：内容版本已变。";
   return reason ? `原操作没有保存。${displayAdminError(reason)}` : "原操作没有保存。";
 }
 
 function contentReadFailure(outcome: OriginalOutcome) {
   const receipt = receiptOf(outcome);
-  if (receipt?.originalStatus === "CONFIRMED_NOT_EXECUTED") return "核查确认原操作未执行。";
+  if (outcome.conclusion === "not-executed" || receipt?.originalStatus === "CONFIRMED_NOT_EXECUTED") return "核查确认原操作未执行。";
   if (receipt?.originalStatus === "CONFIRMED_REJECTED" || receiptRejected(receipt)) return contentFailure(outcome.rejectionReason);
   return "原操作已执行。";
 }
@@ -166,15 +166,26 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   const [originalClosing, setOriginalClosing] = useState<A3Command | null>(null);
   const [checks, setChecks] = useState<Record<string, A3ContentComparison>>({});
   const [contentReads, setContentReads] = useState<A3ContentReads>({});
+  const [handoffErrors, setHandoffErrors] = useState<Record<string, string | undefined>>({});
+  const [releaseReadErrors, setReleaseReadErrors] = useState<Record<string, string | undefined>>({});
   const verifiedRelease = useVerifiedRelease(toast);
   const dropCheck = (key: string) => setChecks(({ [key]: _, ...rest }) => rest);
   const onRecovered = useCallback(() => setRecovery(null), []);
   const showCurrentContent = (kind: "docs" | "how", value: A3ContentRead["value"], failed?: A3ContentRead["failed"], afterApply?: () => void) => {
-    const read: A3ContentRead = { value, failed, onApplied: () => {
-      setContentReads(current => current[kind] === read ? { ...current, [kind]: undefined } : current);
+    const key = failed?.record.commandKey;
+    const applied = () => {
+      setContentReads(current => current[kind]?.onApplied === applied ? { ...current, [kind]: undefined } : current);
+      if (key) setHandoffErrors(current => ({ ...current, [key]: undefined }));
       afterApply?.();
-    } };
+    };
+    const read: A3ContentRead = { value, failed, onApplied: applied,
+      onFailed: key ? reason => setHandoffErrors(current => ({ ...current, [key]: reason })) : undefined };
     setContentReads(current => ({ ...current, [kind]: read, selected: kind }));
+  };
+  const retryHandoff = (record: ContentCommand) => {
+    const kind = record.original.kind;
+    setHandoffErrors(value => ({ ...value, [record.commandKey]: undefined }));
+    setContentReads(value => value[kind] ? { ...value, [kind]: { ...value[kind]! }, selected: kind } : value);
   };
   const overviewReady = useRef(false);
   const current = useRef({ overview, session });
@@ -353,20 +364,21 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     const expired = isRetryExpired(record);
     const receipt = receiptOf(outcome);
     if (outcome?.readError) return {
-      tone: "danger" as const, label: "最新内容加载失败", detail: `${contentReadFailure(outcome)}${outcome.readError}`,
-      next: "记录和修改锁保留，请再次查询原操作。",
+      tone: "danger" as const, label: "最新内容加载失败",
+      detail: `${outcome.conclusion === "succeeded" ? "原操作已执行，最新内容暂时读不到。" : contentReadFailure(outcome)}${outcome.readError}`,
+      next: outcome.conclusion === "succeeded" ? "记录和修改锁保留，请重新读取。" : "记录和修改锁保留，请再次查询原操作。",
     };
     if (record.replayRejection && (!outcome || !receipt || receiptRejected(receipt))) return {
-      tone: "warn" as const, label: "重试被拒", detail: contentVersionConflict(record.replayRejection) ? "内容版本已变。" : displayAdminError(record.replayRejection),
-      next: expired && receipt ? "请再次查询原操作，有调查权限的超级管理员可按回执和证据核查结案。"
+      tone: "warn" as const, label: "重试被拒", detail: a3ContentVersionConflict(record.replayRejection) ? "内容版本已变。" : displayAdminError(record.replayRejection),
+      next: expired ? "已超过 24 小时，请查询原操作，由有调查权限的超级管理员核查结案。"
         : "记录和修改锁保留。请核实原操作结果，再用「核实后解除」。",
     };
     const retryFeedback = record.contentRetryFeedback;
     const queryError = outcome && "error" in outcome ? outcome.error : undefined;
     if (retryFeedback?.kind === "readback-failed" && (!outcome || queryError !== undefined)) return {
       tone: "danger" as const, label: "最新内容加载失败",
-      detail: queryError === undefined ? `原操作已执行。${retryFeedback.detail}` : `原操作已执行。本次查询原操作失败。${queryError}`,
-      next: "记录和修改锁保留，请再次查询原操作。",
+      detail: queryError === undefined ? `原操作已执行，最新内容暂时读不到。${retryFeedback.detail}` : `原操作已执行。本次查询原操作失败。${queryError}`,
+      next: "记录和修改锁保留，请重新读取。",
     };
     if (!outcome && retryFeedback?.kind === "unknown") return {
       tone: "warn" as const, label: "重试结果未知", detail: displayAdminError(retryFeedback.detail),
@@ -396,12 +408,45 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   };
   const applyContentResult = (record: A3Command, result: Awaited<ReturnType<typeof commands.queryOriginal>>) => {
     if (!isA3ContentCommand(record) || !result.current) return;
-    const failure = result.restoreDraft ? { original: record.original, reason: contentReadFailure(result) } : undefined;
+    const status = result.receipt?.originalStatus;
+    const failure = result.restoreDraft ? { record, reason: contentReadFailure(result),
+      closed: status === "CONFIRMED_NOT_EXECUTED" || status === "CONFIRMED_REJECTED" } : undefined;
     showCurrentContent(record.original.kind, result.current, failure, () => {
       if (commands.settleContent(record) && !failure) notify.success(record.name, "原操作已执行，记录已解除。");
     });
     setRecovery(null);
     if (failure) pickTab("content");
+  };
+  const readExecutedContent = async (record: ContentCommand) => {
+    setQuerying(record.commandKey);
+    try {
+      const current = await commands.readPendingContent(record);
+      showCurrentContent(record.original.kind, current, undefined, () => {
+        if (commands.settleContent(record)) notify.success(record.name, "原操作已执行，记录已解除。");
+      });
+    } catch (error) {
+      setOriginalOutcomes(value => ({ ...value, [record.commandKey]: {
+        receipt: receiptOf(value[record.commandKey]), conclusion: "succeeded", readError: displayAdminReadError(error),
+      } }));
+    } finally { setQuerying(null); }
+  };
+  const readRejectedReplay = async (record: ContentCommand) => {
+    if (isRetryExpired(record) || !commands.releaseSnapshot(record)()) return;
+    setQuerying(record.commandKey);
+    setReleaseReadErrors(value => ({ ...value, [record.commandKey]: undefined }));
+    try {
+      const current = await commands.readPendingContent(record);
+      if (isRetryExpired(record)) return;
+      showCurrentContent(record.original.kind, current, { record, reason: "上次的重试被拒，已核实原操作结果。" }, () => {
+        if (!isRetryExpired(record) && commands.releaseRejected(record)) {
+          dropCheck(record.commandKey); commands.sync();
+          toast("已解除这条记录。", "success");
+        }
+      });
+      pickTab("content");
+    } catch (error) {
+      setReleaseReadErrors(value => ({ ...value, [record.commandKey]: displayAdminReadError(error) }));
+    } finally { setQuerying(null); }
   };
   const queryOriginal = async (record: A3Command) => {
     setQuerying(record.commandKey);
@@ -471,7 +516,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       }
     } finally { setMutating(null); }
   };
-  const contentRetry = (record: A3Command) => a3HasOriginalReceipt(record) && !isRetryExpired(record)
+  const contentRetry = (record: A3Command) => !record.directContentConflict && a3HasOriginalReceipt(record) && !isRetryExpired(record)
     ? { disabledReason: mutating ? "正在提交" : pendingReplayReason(commands.recoveryState(record), "当前不能重试原操作。"),
       busy: mutating === record.commandKey, run: () => void retryContent(record) }
     : undefined;
@@ -483,12 +528,16 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   const legacyContentTag = (record: A3Command) => isRetryExpired(record)
     ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时，不能再重试。可用「读取当前内容」核对现值，原操作记录和修改锁保留。">已过期</StatusTag>
     : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经保存。可用「读取当前内容」核对现值。原操作记录和修改锁保留，请到操作记录与审批核对。">结果未知</StatusTag>;
-  const recoveryRows: GRecoveryRow[] = commands.pending.map(record => {
+  const recoveryRows: GRecoveryRow[] = commands.pending.filter(record => !record.directContentConflict).map(record => {
     const outcome = originalOutcomes[record.commandKey];
     const feedback = replayFeedback(record, outcome);
     const contentCommand = isA3ContentCommand(record);
     const applying = contentCommand && Boolean(contentReads[record.original.kind]);
-    const shown = applying ? { tone: "progress" as const, label: "等待内容读取", line: "正在把读回结果交给编辑器，记录暂时保留。", more: undefined }
+    const handoffError = handoffErrors[record.commandKey];
+    const releaseReadError = releaseReadErrors[record.commandKey];
+    const shown = handoffError || releaseReadError ? { tone: "warn" as const, label: "上次的内容尚未交接",
+      line: "记录和修改锁保留。", more: handoffError ?? releaseReadError }
+      : applying ? { tone: "progress" as const, label: "等待内容读取", line: "正在把读回结果交给编辑器，记录暂时保留。", more: undefined }
       : feedback ? { ...feedback, line: feedback.next, more: feedback.detail } : outcome && originalShown(record, outcome);
     const hasReceiptLookup = a3HasOriginalReceipt(record);
     const isCalendar = record.original.kind === "schedule" || record.original.kind === "cancel";
@@ -496,7 +545,9 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     const receipt = receiptOf(outcome);
     const expired = isRetryExpired(record);
     const closable = canCloseOriginal(record, outcome);
-    const releaseReplayRejection = state.replayRejection && (!receipt || contentCommand && !expired && receiptRejected(receipt));
+    const releaseReplayRejection = state.replayRejection && (contentCommand ? !expired : !receipt);
+    const retryTransfer = contentCommand && handoffError && (!expired || contentReads[record.original.kind]?.failed?.closed);
+    const knownExecuted = contentCommand && (record.contentRetryFeedback?.kind === "readback-failed" || outcome?.conclusion === "succeeded" && outcome.readError);
     const retryReason = applying ? shown?.line : mutating ? "正在提交" : querying === record.commandKey ? "正在查询原操作"
       : state.replayBlock === "replay-rejected" ? `重试被拒：${displayAdminError(new Error(state.replayRejection!))}`
       : state.replayBlock === "needs-not-found" ? receipt ? shown?.line ?? "已查到原回执，请到操作记录与审批核对。"
@@ -510,9 +561,28 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         : <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时，不能再重试。先查询原操作；查到的，按证据核查结案。">已过期</StatusTag>
         : hasReceiptLookup ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果。先查询原操作，明确查无后才能重试。">结果未知</StatusTag> : unknownTag("direct"),
     actions: <>
-      <Button size="sm" loading={querying === record.commandKey} disabled={applying || !!mutating} onClick={() => void queryOriginal(record)}>{contentCommand && !hasReceiptLookup ? "读取当前内容" : isCalendar ? "读取当前日历" : "查询原操作"}</Button>
-      {closable && <Button size="sm" variant="danger-outline" disabled={applying || !!querying} onClick={() => setOriginalClosing(record)}>核查结案</Button>}
-      {releaseReplayRejection && <VerifiedReleaseButton disabled={applying || !!querying || !!mutating} onClick={() => verifiedRelease.ask({ operation: record.name, target: record.change, createdAt: record.createdAt, getSnapshot: commands.releaseSnapshot(record), release: () => { const released = commands.releaseRejected(record); if (released) dropCheck(record.commandKey); commands.sync(); return released; } })} />}
+      <Button size="sm" loading={querying === record.commandKey} disabled={applying && !handoffError || !!mutating}
+        onClick={() => {
+          if (retryTransfer) retryHandoff(record);
+          else if (contentCommand && releaseReadError && !expired) void readRejectedReplay(record);
+          else if (knownExecuted) void readExecutedContent(record);
+          else void queryOriginal(record);
+        }}>{retryTransfer || releaseReadError && !expired ? "重试" : knownExecuted ? "重新读取" : contentCommand && !hasReceiptLookup ? "读取当前内容" : isCalendar ? "读取当前日历" : "查询原操作"}</Button>
+      {closable && <Button size="sm" variant="danger-outline" disabled={applying && !handoffError || !!querying} onClick={() => setOriginalClosing(record)}>核查结案</Button>}
+      {releaseReplayRejection && !releaseReadError && <VerifiedReleaseButton disabled={applying || !!querying || !!mutating} onClick={() => verifiedRelease.ask({
+        operation: record.name, target: record.change, createdAt: record.createdAt, getSnapshot: commands.releaseSnapshot(record),
+        release: () => {
+          if (contentCommand) {
+            if (isRetryExpired(record)) return false;
+            void readRejectedReplay(record);
+            return "pending";
+          }
+          const released = commands.releaseRejected(record);
+          if (released) dropCheck(record.commandKey);
+          commands.sync();
+          return released;
+        },
+      })} />}
       {a3Deduplicates(record) && !expired && <Button size="sm" disabledReason={retryReason}
         onClick={() => void recoverOriginal(record)}>按原操作重试</Button>}
       {contentCommand && hasReceiptLookup && (expired || shown)
@@ -680,7 +750,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   );
 
   const calendarValue = calendar?.zone ?? (calendar?.failed ? "—" : "…");
-  const contentLead = commands.pending.filter(isA3ContentCommand).map(record => {
+  const contentLead = commands.pending.filter(isA3ContentCommand).filter(record => !record.directContentConflict).map(record => {
     const check = checks[record.commandKey];
     const docs = record.original.kind === "docs";
     const code = receiptCodeTech(receiptOf(originalOutcomes[record.commandKey]));
@@ -766,7 +836,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       <div {...ids.panel("switches")} hidden={tab !== "switches"}>{switchesPanel}</div>
       <div {...ids.panel("calendar")} hidden={tab !== "calendar"}><A3Calendar commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={calendarNonce} onSummary={setCalendar} toast={toast} /></div>
       <div {...ids.panel("experience")} hidden={tab !== "experience"}><A3Experience commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={experienceNonce} toast={toast} /></div>
-      <div {...ids.panel("content")} hidden={tab !== "content"}><A3Content commands={commands} recovery={recovery} onRecovered={onRecovered} toast={toast} onSummary={setContent}
+      <div {...ids.panel("content")} hidden={tab !== "content"}><A3Content key={session?.adminId} commands={commands} recovery={recovery} onRecovered={onRecovered} toast={toast} onSummary={setContent}
         contentReads={contentReads} retry={contentRetry} feedback={record => {
           const state = replayFeedback(record, originalOutcomes[record.commandKey]);
           return state && { detail: `${state.label}：${state.detail}`, next: state.next };
