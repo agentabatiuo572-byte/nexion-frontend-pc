@@ -68,7 +68,7 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "允许波动", read: (sku) => sku.monthlyTargetBandPct, format: (value) => value == null ? "未设置" : `±${number(value)}%`, equal: numberEqual },
   { label: "每件算力点", read: (sku) => sku.computePoints, format: number, equal: numberEqual },
   { label: "展示基础销量", read: (sku) => sku.displaySoldBase, format: number, omitWhenMissing: true },
-  { label: "显示购买动态", read: (sku) => sku.liveActivityVisible, format: (value) => value === undefined ? "未设置" : yesNo(value), omitWhenMissing: true },
+  { label: "显示购买动态", read: (sku) => sku.liveActivityVisible, format: (value) => value === undefined ? "未设置" : value ? "开" : "关", omitWhenMissing: true },
   { label: "允许试用", read: (sku) => sku.trialEligible, format: yesNo, equal: (a, b) => Boolean(a) === Boolean(b) },
   { label: "商品 ID", read: (sku) => sku.id, format: text, equal: stringEqual },
   { label: "商品名称", read: (sku) => sku.name, format: text, equal: stringEqual },

@@ -1214,6 +1214,8 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
     return "未设置";
   }
   if (key?.startsWith("taglineTranslations.")) return String(value);
+  // 「显示购买动态」和商品页确认框一样写开／关；其他布尔项照旧写是／否。
+  if (key === "liveActivityVisible" && typeof value === "boolean") return value ? "开" : "关";
   if (typeof value === "boolean") return value ? "是" : "否";
   if (key === "monthlyTargetUsdt") return `${grouped(String(value))} USDT`;
   if (key === "monthlyTargetBandPct") return `±${grouped(String(value))}%`;
