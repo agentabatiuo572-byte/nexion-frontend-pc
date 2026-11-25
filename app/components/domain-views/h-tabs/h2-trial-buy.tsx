@@ -159,7 +159,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const dirty = !!draftBase && changed;
   const openDrawer = () => {
     // 抽屉开着时「调整」仍可用键盘点到：有改动先问，不重置勾选。
-    if (dirty) { setLeaving(true); return; }
+    if (dirty) { afterLeave.current = undefined; setLeaving(true); return; }
     setPicked(items.map((item) => item.productNo)); setLastReason(""); setRejected(undefined); setDraftBase(list);
   };
   const closeDrawer = () => { afterLeave.current = undefined; setLeaving(false); setDraftBase(undefined); };
