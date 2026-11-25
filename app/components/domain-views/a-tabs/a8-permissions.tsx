@@ -102,9 +102,15 @@ export default function A8Permissions() {
 
   // keyword debounce 300ms（ST-17）
   useEffect(() => {
-    const t = setTimeout(() => { setKeyword(keywordInput.trim()); setPageNum(1); }, 300);
+    // 关键词真变了才回第 1 页：页面刚打开时这里也会跑一次，不能把已经翻到的页打回去。
+    const t = setTimeout(() => {
+      const next = keywordInput.trim();
+      if (next === keyword) return;
+      setKeyword(next);
+      setPageNum(1);
+    }, 300);
     return () => clearTimeout(t);
-  }, [keywordInput]);
+  }, [keywordInput, keyword]);
 
   const openDetail = (code: string) => {
     if (!code) return;
