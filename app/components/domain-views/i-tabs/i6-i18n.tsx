@@ -344,6 +344,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [messageVersions, setMessageVersions] = useState<I18nMessagePairView[]>([]);
   messagesRead.current = messageVersions;
   const [messageVersionsLoading, setMessageVersionsLoading] = useState(false);
+  const [messageVersionsError, setMessageVersionsError] = useState<string | null>(null);
+  const [messageVersionsRetry, setMessageVersionsRetry] = useState(0);
   const [versionCourseId, setVersionCourseId] = useState("");
   const [courseTab, setCourseTab] = useState<"content" | "quiz" | "versions">("content");
   const [courseLang, setCourseLang] = useState<Lang>("en");
@@ -617,8 +619,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const { missingLocales, messageVariables, variablesMatch, qualityIssues, publicationIssues } = messagePublication(selectedMessage);
   useEffect(() => {
     const messageKey = selectedMessage?.messageKey;
+    setMessageVersions([]);
+    setMessageVersionsError(null);
     if (view !== "i18n" || !messageKey) {
-      setMessageVersions([]);
       setMessageVersionsLoading(false);
       return;
     }
@@ -627,14 +630,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     actions.fetchI6MessageVersions(messageKey)
       .then((versions) => { if (active) setMessageVersions(versions); })
       .catch((error) => {
-        if (active) {
-          setMessageVersions([]);
-          toast(`词条版本加载失败:${displayAdminReadError(error)}`);
-        }
+        if (active) setMessageVersionsError(displayAdminReadError(error));
       })
       .finally(() => { if (active) setMessageVersionsLoading(false); });
     return () => { active = false; };
-  }, [actions, toast, selectedMessage?.messageKey, content.i18nLearning, view]);
+  }, [actions, selectedMessage?.messageKey, content.i18nLearning, view, messageVersionsRetry]);
   const statusLabel = (status?: string) => ({ draft: "草稿", published: "已发布", archived: "已归档" }[status ?? ""] ?? "状态未知");
 
   /* ============ I6 actions ============ */
@@ -1993,9 +1993,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               </div>;
             })}
           </section>
-          <Fold inset title="历史版本" icon={History} summary={messageVersionsLoading ? "读取中" : `${count(messageVersions.length)} 个版本 · 时间为${BJ}`}
+          <Fold inset title="历史版本" icon={History} summary={messageVersionsError ? "读取失败" : messageVersionsLoading ? "读取中" : `${count(messageVersions.length)} 个版本 · 时间为${BJ}`}
             explain="回滚是把旧版本的三语复制成新版本发布，旧记录不改；当前还有草稿时不能回滚。">
-            <Table label="历史版本">
+            {messageVersionsError ? <BlockState retryKey="i6-message-versions" state="error" title="词条历史版本加载失败" detail={messageVersionsError}
+              onRetry={() => setMessageVersionsRetry((value) => value + 1)} /> : <Table label="历史版本">
               <thead><tr><Th>版本</Th><Th>状态</Th><Th>三语</Th><Th>更新时间</Th><Th align="right">操作</Th></tr></thead>
               <tbody>
                 {messageVersionsLoading && <TableLoading columns={5} rows={2} />}
@@ -2016,7 +2017,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 })}
                 {!messageVersionsLoading && messageVersions.length === 0 && <TableMessage columns={5}>暂无历史版本</TableMessage>}
               </tbody>
-            </Table>
+            </Table>}
             {compareTarget && <CompareRows beforeLabel={`${compareTarget.version}（旧）`} afterLabel={`${sm.version}（现在）`}
               rows={LANGS.map((item) => ({ key: item.key, label: item.label, before: langValue(compareTarget, item.key), after: langValue(sm, item.key) }))} />}
           </Fold>

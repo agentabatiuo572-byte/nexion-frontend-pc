@@ -78,10 +78,9 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
     setContentError(null);
     try {
       const j3State = readJ3LocationState();
-      const nextEmergency = tab === "J3"
+      const next = await (tab === "J3"
         ? fetchJEmergencyOverviews(tab, j3State.window, j3State.page, j3State.pageSize)
-        : fetchJEmergencyOverviews(tab);
-      const [next] = await Promise.all([nextEmergency, tab === "J4" ? reloadJ4NotifyTemplates() : undefined]);
+        : fetchJEmergencyOverviews(tab));
       setEmergency(next);
       return next;
     } catch (error) {
@@ -91,16 +90,22 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
     } finally {
       setContentLoading(false);
     }
-  }, [tab, reloadJ4NotifyTemplates]);
+  }, [tab]);
+
+  const reloadJEmergencyPage = useCallback(() => {
+    const main = reloadJEmergency();
+    if (tab === "J4") void reloadJ4NotifyTemplates();
+    return main;
+  }, [tab, reloadJEmergency, reloadJ4NotifyTemplates]);
 
   useEffect(() => {
-    void reloadJEmergency().catch(() => undefined);
-  }, [reloadJEmergency]);
+    void reloadJEmergencyPage().catch(() => undefined);
+  }, [reloadJEmergencyPage]);
 
   const actions = useMemo(
     () => ({
       ...jEmergencyActions,
-      reloadJEmergency,
+      reloadJEmergency: reloadJEmergencyPage,
       loadJ3TamperPage: async (window: "24h" | "7d" | "30d", page: number, pageSize: number) => {
         const tamper = await jEmergencyActions.loadJ3TamperPage(window, page, pageSize);
         persistJ3LocationState(window, tamper.accountPage.page, tamper.accountPage.pageSize);
@@ -108,7 +113,7 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
         return tamper;
       },
     }),
-    [reloadJEmergency],
+    [reloadJEmergencyPage],
   );
 
   const ctx: JCtx = {
@@ -121,6 +126,7 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
     actions,
     contentLoading,
     contentError,
+    retryJ4Playbooks: () => void reloadJEmergency().catch(() => undefined),
     reloadJ4NotifyTemplates,
     notifyTemplatesLoading,
   };

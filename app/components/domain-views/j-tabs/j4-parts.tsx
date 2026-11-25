@@ -203,8 +203,6 @@ export type EditorSpec = {
   scenes: string[];
   owners?: string[];
   nameHint: string;
-  notifyTemplates: JNotifyTemplateOption[];
-  notifyTemplatesError?: string;
   actionOptions: J4ActionOption[];
   rollbackOptions: J4RollbackOption[];
   current?: { name: string; scene: string; owner: string; sla: string; emergencyTrack: boolean; actionSeq: string; notifyCampaignNo?: string; notifyTemplate?: string; rollback?: string; drillRequired?: boolean };
@@ -272,7 +270,14 @@ function optionLine(item: J4ActionOption, target: string) {
 const TARGET_HINT: Record<string, string> = { J2: "两位国家代码，例如 US", C2: "用户数字编号，例如 123", K1: "账户组编号，例如 cluster-001", I5: "地区:版本，例如 VN:v1.2" };
 const TARGET_PLACEHOLDER: Record<string, string> = { J2: "国家代码，如 US", C2: "用户编号，如 123", K1: "如 cluster-001", I5: "如 VN:v1.2" };
 
-export function PlaybookEditor({ spec, onClose, blockedReason }: { spec: EditorSpec; onClose: () => void; blockedReason?: string }) {
+export function PlaybookEditor({ spec, onClose, blockedReason, notifyTemplates, notifyTemplatesError, notifyTemplatesLoading }: {
+  spec: EditorSpec;
+  onClose: () => void;
+  blockedReason?: string;
+  notifyTemplates: JNotifyTemplateOption[];
+  notifyTemplatesError?: string;
+  notifyTemplatesLoading: boolean;
+}) {
   const [draft, setDraft] = useState<PlaybookDraft>(() => spec.draft ?? initialDraft(spec));
   const [actionSearch, setActionSearch] = useState("");
   const [targets, setTargets] = useState<Record<string, string>>({});
@@ -284,7 +289,7 @@ export function PlaybookEditor({ spec, onClose, blockedReason }: { spec: EditorS
   const actionQuery = actionSearch.trim().toLowerCase();
   const shownActions = spec.actionOptions.filter((item) => !actionQuery || (item.searchText ?? `${item.label} ${item.description ?? ""}`).toLowerCase().includes(actionQuery)).slice(0, 8);
   const notifyQuery = draft.notifySearch.trim().toLowerCase();
-  const shownNotify = spec.notifyTemplates.filter((item) => !notifyQuery || (item.searchText ?? `${item.label} ${item.meta ?? ""}`).toLowerCase().includes(notifyQuery)).slice(0, 8);
+  const shownNotify = notifyTemplates.filter((item) => !notifyQuery || (item.searchText ?? `${item.label} ${item.meta ?? ""}`).toLowerCase().includes(notifyQuery)).slice(0, 8);
   const rollbackQuery = draft.rollbackSearch.trim().toLowerCase();
   const shownRollback = spec.rollbackOptions.filter((item) => !rollbackQuery || (item.searchText ?? `${item.label} ${item.scene ?? ""} ${item.riskLevel ?? ""} ${item.plan}`).toLowerCase().includes(rollbackQuery)).slice(0, 8);
   const selectedRollback = spec.rollbackOptions.find((item) => item.plan === draft.rollback || item.value === draft.rollbackTemplate);
@@ -378,18 +383,20 @@ export function PlaybookEditor({ spec, onClose, blockedReason }: { spec: EditorS
       </section>
 
       <Field label="通知活动" required={hasNotifyStep} hint="步骤里有「发送通知活动」时必选"
-        help={spec.notifyTemplatesError && draft.notifyCampaignNo ? <>已绑定 <span data-mono="">{draft.notifyCampaignNo}</span>：候选读不到不代表绑定不存在。</> : undefined}
+        help={notifyTemplatesError && draft.notifyCampaignNo ? <>已绑定 <span data-mono="">{draft.notifyCampaignNo}</span>：候选读不到不代表绑定不存在。</> : undefined}
         explain="只能选已排期的通知活动。保存预案不会新建或发送通知；正式执行到这一步时才按活动设定的受众发送。">
-        {(control) => spec.notifyTemplatesError
+        {(control) => notifyTemplatesLoading
+          ? <Notice tone="neutral">正在加载通知活动候选…</Notice>
+          : notifyTemplatesError
           ? <Notice tone="warn">通知活动读不到或没有查看权限，其他步骤不受影响；要发通知请联系管理员。</Notice>
-          : spec.notifyTemplates.length === 0
+          : notifyTemplates.length === 0
             ? <Notice tone="neutral">没有已排期的通知活动。先到「通知活动」安排，或不加发送通知这一步。</Notice>
             : <div data-proof="sop-i3-notify-template-select">
               <SearchSelect {...control} aria-label="通知活动" placeholder="搜索通知名称、编号、优先级或受众" value={draft.notifySearch}
                 onChange={(value) => set({ notifySearch: value, notifyCampaignNo: "", notifyTemplate: "" })}
                 options={shownNotify.map((item) => ({ value: item.value, label: notifyLabelText(item.label), extra: item.campaignNo }))}
                 selected={draft.notifyCampaignNo || undefined} empty="没有匹配的通知活动"
-                onSelect={(value) => { const item = spec.notifyTemplates.find((row) => row.value === value); if (item) set({ notifyCampaignNo: item.value, notifyTemplate: item.label, notifySearch: notifyLabelText(item.label) }); }} />
+                onSelect={(value) => { const item = notifyTemplates.find((row) => row.value === value); if (item) set({ notifyCampaignNo: item.value, notifyTemplate: item.label, notifySearch: notifyLabelText(item.label) }); }} />
             </div>}
       </Field>
 

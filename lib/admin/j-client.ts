@@ -1859,7 +1859,7 @@ function normalizeSop(raw: unknown): SopOverview {
 function normalizeNotifyTemplates(raw: unknown): JNotifyTemplateOption[] {
   const data = rec(raw);
   const priority: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
-  return rows<Record<string, unknown>>(data.campaigns)
+  return requiredRecordRows(data.campaigns, "sop.notifyTemplates.campaigns")
     .map((row) => {
       const campaignNo = str(row.id, str(row.campaignNo));
       const name = str(row.name, campaignNo);
@@ -1899,7 +1899,12 @@ export async function fetchJTamperOverview(window: "24h" | "7d" | "30d" = "24h",
 }
 
 export async function fetchJ4NotifyTemplateOptions(): Promise<JNotifyTemplateOption[]> {
-  return contentApiRequest("/campaigns/overview").then(normalizeNotifyTemplates);
+  const data = await contentApiRequest("/campaigns/overview");
+  try {
+    return normalizeNotifyTemplates(data);
+  } catch (error) {
+    throw new Error("收到的通知活动候选数据不完整，已停止显示。请重新读取。", { cause: error });
+  }
 }
 
 export async function fetchJEmergencyOverviews(tab: "J1" | "J2" | "J3" | "J4",
@@ -1914,8 +1919,14 @@ export async function fetchJEmergencyOverviews(tab: "J1" | "J2" | "J3" | "J4",
       return { geoBlock: await apiRequest("/geo-block").then(normalizeGeo) };
     case "J3":
       return { tamper: await fetchJTamperOverview(j3Window, j3AccountPage, j3AccountPageSize) };
-    case "J4":
-      return { sop: await apiRequest("/sop/playbooks").then(normalizeSop) };
+    case "J4": {
+      const data = await apiRequest("/sop/playbooks");
+      try {
+        return { sop: normalizeSop(data) };
+      } catch (error) {
+        throw new Error("J4_RESPONSE_INVALID", { cause: error });
+      }
+    }
   }
 }
 

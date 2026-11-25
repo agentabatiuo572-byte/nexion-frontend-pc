@@ -424,8 +424,6 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       draft: (() => { const saved = authoringDrafts.get(session?.adminId, "POST /sop/playbooks"); return saved && savedPlaybookDraft(saved.desired); })(),
       scenes: (data.scenes ?? []).filter((item) => item !== "全部"),
       nameHint: "例如：监管点名快速止血",
-      notifyTemplates: emergency.notifyTemplates ?? [],
-      notifyTemplatesError: emergency.notifyTemplatesError,
       actionOptions: data?.actionOptions ?? [],
       rollbackOptions: data?.rollbackOptions ?? [],
       onNext: (draft) => { setEditor(null); confirmCreate(draft); },
@@ -663,8 +661,6 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const editorBase = (): Omit<EditorSpec, "mode" | "onNext"> => ({
     scenes: (data?.scenes ?? []).filter((item) => item !== "全部"),
     nameHint: "例如：监管点名快速止血",
-    notifyTemplates: emergency.notifyTemplates ?? [],
-    notifyTemplatesError: emergency.notifyTemplatesError,
     actionOptions: data?.actionOptions ?? [],
     rollbackOptions: data?.rollbackOptions ?? [],
   });
@@ -1033,7 +1029,9 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const editorReadProblem = contentError || contentLoading || !data ? READING : !contractReady ? NOT_READY : undefined;
   const renderPage = (body: ReactNode, trace?: ReactNode) => <div className="j4-page">
     {body}
-    {editor && <PlaybookEditor spec={editor} onClose={() => setEditor(null)} blockedReason={editorReadProblem} />}
+    {editor && <PlaybookEditor spec={editor} onClose={() => setEditor(null)} blockedReason={editorReadProblem}
+      notifyTemplates={emergency.notifyTemplates ?? []} notifyTemplatesError={emergency.notifyTemplatesError}
+      notifyTemplatesLoading={ctx.notifyTemplatesLoading} />}
     {prepare && <ExecutePrepare playbook={prepare.playbook} emergency={prepare.emergency} draft={prepare.draft} blockedReason={editorReadProblem}
       onClose={() => setPrepare(null)}
       onNext={(draft) => {
@@ -1048,7 +1046,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       {header()}
       {recovery}
       {activePanel}
-      <BlockState retryKey="j4-sop-1051" state="error" title="当前无法确认最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} />
+      <BlockState retryKey="j4-sop-1051" state="error" title="应急预案加载失败" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={ctx.retryJ4Playbooks} retrying={contentLoading} />
     </>);
   }
   if (!data) {
@@ -1057,7 +1055,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       {recovery}
       {activePanel}
       {contentLoading
-        ? <BlockState state="loading" title="应急预案数据加载中" detail="正在加载预案、执行记录和通知活动" />
+        ? <BlockState state="loading" title="应急预案数据加载中" detail="正在加载预案和执行记录" />
         : <BlockState state="empty" title="暂无 应急预案数据" detail="点右上角「刷新」重新读取。" />}
     </>);
   }
@@ -1228,11 +1226,13 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const notify = emergency.notifyTemplates ?? [];
   const notifyFold = (
     <Fold title="通知活动候选" icon={Megaphone} tone="role-other"
-      summary={emergency.notifyTemplatesError ? "读不到" : notify.length === 0 ? "没有已排期的通知活动" : `${count(notify.length)} 个已排期`}
+      summary={emergency.notifyTemplatesError ? "读不到" : ctx.notifyTemplatesLoading ? "正在加载…" : notify.length === 0 ? "没有已排期的通知活动" : `${count(notify.length)} 个已排期`}
       alert={Boolean(emergency.notifyTemplatesError)}
       explain="预案的「发送通知活动」这一步只能选已排期的通知活动。这里只列候选，不能新建通知；新建和排期在「通知活动」页。">
       {emergency.notifyTemplatesError
         ? <BlockState retryKey="j4-sop-1235" state="error" compact title="通知活动读不到" detail={`${emergency.notifyTemplatesError} 预案和执行记录不受影响。`} onRetry={() => void ctx.reloadJ4NotifyTemplates()} retrying={ctx.notifyTemplatesLoading} />
+        : ctx.notifyTemplatesLoading
+          ? <BlockState state="loading" compact title="正在加载通知活动候选…" />
         : notify.length === 0
           ? <BlockState state="empty" compact title="没有已排期的通知活动" detail="要在预案里发通知，先到「通知活动」安排。" />
           : <Table label="通知活动候选" className="j4-notify-table">

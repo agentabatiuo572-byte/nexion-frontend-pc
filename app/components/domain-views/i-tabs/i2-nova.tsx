@@ -24,7 +24,7 @@ import {
 } from "../../../../lib/admin/nova-cadence";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -892,7 +892,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       })
       .catch((error) => {
         if (!active) return;
-        const message = `事件列表加载失败:${displayAdminReadError(error)}`;
+        const message = `事件列表加载失败:${displayAdminError(error)}`;
         setEventRead({ source: data, type: eventTypeFilter, status: eventStatusFilter, page: eventPage, error: message });
         toast(message);
       })
@@ -958,7 +958,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     setEventBusy("preview");
     actions.previewI2SocialEvent(previewLanguage)
       .then((value) => setSample({ value, lang: previewLanguage, at: Date.now() }))
-      .catch((error) => toast(`抽样失败:${displayAdminReadError(error)}`))
+      .catch((error) => toast(`抽样失败:${displayAdminError(error)}`))
       .finally(() => setEventBusy(null));
   };
   const STATUS_COPY = {
