@@ -7,7 +7,7 @@
 import { useState, type ReactNode } from "react";
 import { Bot, BookOpenText, CheckCircle2, CircleHelp, EyeOff, FilePen, Headset, Pencil, Smartphone, Trash2, Upload, Archive } from "lucide-react";
 import { Button, Change, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Modal, Notice, StatusTag, type DrawerNav, type StateTone } from "@/app/components/rd";
-import { OPEN_RESULT_LABELS } from "../recovery-panel";
+import { OPEN_RESULT_LABELS, useFreshFirst } from "../recovery-panel";
 import { M_RECOVERY_INTRO, mNoticeTone } from "@/lib/admin/m-recovery-copy";
 import { MAuditLink } from "./m-release";
 import type { FaqRecoveryInfo } from "./m4-kb-sla";
@@ -218,13 +218,14 @@ export type M4PendingRow = { key: string; question: string; change: ReactNode; s
  */
 export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
   const [all, setAll] = useState(false);
+  const { ordered, box } = useFreshFirst(rows.map((row) => ({ ...row, createdAt: row.submittedAt })));
   if (rows.length === 0) return null;
   const open = rows.filter((row) => OPEN_RESULT_LABELS.includes(row.status.label)).length;
   const title = [rows.length - open > 0 && `${rows.length - open} 个操作结果未知`, open > 0 && `${open} 个操作还没结案`].filter(Boolean).join("，");
   return (
     <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时还没结论的，由有调查权限的超级管理员核查结案。有结论前这条问答不能再改。</p></>} /></>}>
-      <ul className="m4-pending" aria-label="结果未知的操作">
-        {(all ? rows : rows.slice(0, 3)).map((row) => (
+      <div ref={box}><ul className="m4-pending" aria-label="结果未知的操作">
+        {(all ? ordered : ordered.slice(0, 3)).map((row) => (
           <li key={row.key}>
             <span className="m4-pending-name">{row.question}</span>
             <span className="m4-pending-change">{row.change}</span>
@@ -234,7 +235,7 @@ export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
             <span className="m4-pending-note" role="status">{row.note}</span>
           </li>
         ))}
-      </ul>
+      </ul></div>
       {rows.length > 3 && <Button size="sm" variant="ghost" onClick={() => setAll((value) => !value)}>{all ? "只看前 3 条" : `显示全部 ${rows.length} 条`}</Button>}
       <p className="m4-pending-zone">提交时间为{businessZone().label}</p>
     </Notice>
