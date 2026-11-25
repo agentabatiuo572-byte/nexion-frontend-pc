@@ -328,7 +328,7 @@ export function F2Layers({ ctx, openConfirm, bootDraft, setBootDraft }: { ctx: F
                     : pause === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
                     : pause === "off" ? settle === "unknown" ? <StatusTag tone="neutral" explain="整体结算状态没读到，这里只显示逐层设置。">已设为发放</StatusTag> : <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>
                       : pause === "invalid" ? <StatusTag tone="danger" explain={`存的是「${configuredValue(m.pauseValue(level))}」，不是暂停或发放。按层暂停里重新选一次。`}>配置无效</StatusTag>
-                        : <>{settle === "unknown" ? <StatusTag tone="neutral" explain="整体结算状态没读到，这里只显示逐层设置。">已设为发放</StatusTag> : <StatusTag tone="neutral" icon={ShieldCheck} explain="这一层的暂停开关没配，结算按发放算。要停发到下面「按层暂停」设置。">发放中</StatusTag>}{unsetPause.length < LAYERS.length && <span className="f2-muted">暂停开关未配</span>}</>}
+                        : settle === "unknown" ? <StatusTag tone="neutral" explain="整体结算状态没读到；没配暂停开关时，结算默认按发放处理。">暂停开关未配</StatusTag> : <><StatusTag tone="neutral" icon={ShieldCheck} explain="这一层的暂停开关没配，结算按发放算。要停发到下面「按层暂停」设置。">发放中</StatusTag>{unsetPause.length < LAYERS.length && <span className="f2-muted">暂停开关未配</span>}</>}
                   {rate && gated && m.rank?.legal && <StatusTag tone="neutral" icon={Lock} explain={`上级要到 ${m.rank.normalized} 及以上才拿得到这一层；等级不够这一层记 0。`}>需 {m.rank.normalized}+</StatusTag>}
                   {(usdtPending || nexPending) && <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员批准；批准前这一层不变，也不能再提交。">待审批</StatusTag>}
                 </span></Td>
