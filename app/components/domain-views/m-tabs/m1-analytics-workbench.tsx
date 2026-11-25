@@ -12,7 +12,7 @@ import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
 import { supportPerformanceAnalyticsClient as analytics, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
 import { sameCoveredPerformance, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
-import { SupportClientError, supportClient, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
+import { isSupportSessionExpired, SupportClientError, supportClient, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -40,7 +40,7 @@ import { amountDisplay } from "@/lib/format";
 import { PERF_UNAVAILABLE_VALUE, perfNote, perfText, type AnalyticsPerf, type PerfValue } from "./perf-view";
 import { analyticsPerf, boardTotals, eventsPerf } from "./perf-wiring";
 import { usePerformanceExportPorts } from "./perf-export-ports";
-import { PerfEventsDrawer, PeriodPerfPanel } from "./m1-performance";
+import { AnalyticsReadDenied, PerfEventsDrawer, PeriodPerfPanel } from "./m1-performance";
 import { PerfExportDialog } from "./perf-export";
 import { PerfExportRecords } from "./perf-export-records";
 import { InviterCell } from "@/app/components/invitation/invitation-view";
@@ -292,7 +292,7 @@ function AgentStatisticsDrawer({ subject, read, month, currency, drill, onClose,
 function agentScopeDenied(cause: unknown) {
   if (!(cause instanceof SupportClientError)) return false;
   const status = analyticsResponseStatus(cause);
-  return status === 401 || status === 403 || status === 404 && cause.backendMessage === "SUPPORT_GROUP_NOT_FOUND";
+  return status === 403 || status === 404 && cause.backendMessage === "SUPPORT_GROUP_NOT_FOUND";
 }
 export function AnalyticsTable({ data, currency, drill, openProfile, session, perf, query, onSourceRefreshed, onSourceDenied, onAgentMissing }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void; session?: CustomerSessionStart; perf: AnalyticsPerf; query: AnalyticsQueryState; onSourceRefreshed: (data: SupportAnalyticsResponse) => void; onSourceDenied: () => void; onAgentMissing: (accountId: string) => void }) {
   const { month, groupId } = query;
@@ -354,7 +354,8 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
       if (!sameGeneration(fresh.window, source.performance!.window)) return { read: { status: "refresh-required" } };
       return { read: fresh, source };
     };
-    void readTarget().catch((cause): Result => {
+    void readTarget().catch((cause): Result | undefined => {
+      if (isSupportSessionExpired(cause)) return;
       if (agentScopeDenied(cause)) return { read: { status: "denied" } };
       if (cause instanceof SupportClientError) {
         const status = analyticsResponseStatus(cause);
@@ -363,7 +364,7 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
       }
       return { read: { status: "error", detail: analyticsErrorText(cause) } };
     }).then(result => {
-      if (signal.aborted) return;
+      if (signal.aborted || !result) return;
       setRead(result.read);
       if (result.read.status === "denied") onSourceDenied();
       if (result.targetRemoved) onAgentMissing(agentId);
@@ -456,6 +457,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [monthCalendar, setMonthCalendar] = useState<SupportAnalyticsMonth[] | null>(null);
   const [calendarGeneration, setCalendarGeneration] = useState<"LEGACY" | "READY" | "UPGRADING">();
   const [calendarError, setCalendarError] = useState(""), [calendarRetry, setCalendarRetry] = useState(0);
+  const [calendarDenied, setCalendarDenied] = useState(false);
   const [personalPeriod, setPersonalPeriod] = useState<SupportAnalyticsResponse | null>(null), [personalPeriodError, setPersonalPeriodError] = useState("");
   const perf = useMemo(() => analyticsPerf(data, personalPeriod), [data, personalPeriod]);
   const adminId = useAdminAuth(state => state.session?.adminId);
@@ -497,6 +499,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const readModes = useAdminAuth(state => state.session?.supportReadModes);
   // A session hint only chooses the requested projection. The response still resolves current authority.
   const noReadableServiceScope = readModes?.length === 0 && authSession?.role !== "super" && authSession?.role !== "superadmin";
+  // 本来就没有负责的组（会话里没有可读范围），或只剩导出记录的账号：照定稿 3d、6k、6l；其余 403 才是查看权限被收回（ST-38）。
   const noScopedContent = scopeDenied && (noReadableServiceScope || !!exportsPorts?.persona.views.length);
   const entryReadMode = readModes?.includes("ALL") ? "ALL" : readModes?.includes("MANAGED") ? "MANAGED" : readModes?.includes("PERSONAL") ? "PERSONAL" : "ALL";
   const needsCalendar = Boolean(scope && (isPersonal || queryState.basis === "PERIOD_EVENT"));
@@ -515,19 +518,27 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     if (scope?.scopeSummary.mode !== "PERSONAL" || !monthCalendar?.some(month => month.month === queryState.month)) return () => controller.abort();
     void analytics.query({ view: "OVERVIEW", basis: "PERIOD_EVENT", ...analyticsMonthWindow(queryState.month, monthCalendar), currency: queryState.currency ?? "USDT", pageSize: 1, signal: controller.signal }, scope.generation)
       .then(next => { if (!controller.signal.aborted && next.scopeSummary.mode === "PERSONAL") setPersonalPeriod(next); })
-      .catch(cause => { if (!controller.signal.aborted) setPersonalPeriodError(analyticsErrorText(cause)); });
+      .catch(cause => {
+        if (controller.signal.aborted || isSupportSessionExpired(cause)) return;
+        if (cause instanceof SupportClientError && analyticsResponseStatus(cause) === 403) { setScope(null); setScopeDenied(true); }
+        else setPersonalPeriodError(analyticsErrorText(cause));
+      });
     return () => controller.abort();
   }, [scope, queryState.month, queryState.currency, monthCalendar, personalPeriodRetry]);
   useEffect(() => {
     const controller = new AbortController();
-    setMonthCalendar(null); setCalendarGeneration(undefined); setCalendarError("");
+    setMonthCalendar(null); setCalendarGeneration(undefined); setCalendarError(""); setCalendarDenied(false);
     if (!needsCalendar) return () => controller.abort();
     void analytics.months(controller.signal).then(({ months, generation }) => {
       if (controller.signal.aborted) return;
       setMonthCalendar(months); setCalendarGeneration(generation);
       if (months[0]) setQueryState(previous => months.some(month => month.month === previous.month) ? previous : changeAnalyticsQuery(previous, { month: months[0].month }));
     })
-      .catch(cause => { if (!controller.signal.aborted) setCalendarError(analyticsErrorText(cause)); });
+      .catch(cause => {
+        if (controller.signal.aborted || isSupportSessionExpired(cause)) return;
+        if (cause instanceof SupportClientError && analyticsResponseStatus(cause) === 403) setCalendarDenied(true);
+        else setCalendarError(analyticsErrorText(cause));
+      });
     return () => controller.abort();
   }, [needsCalendar, scopeRetry, calendarRetry]);
   useEffect(() => {
@@ -591,7 +602,12 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         if (personal) setPersonalView(tab === "my-customers" ? "customers" : "dashboard");
       } else setSection(current => current === "exports" || personal === (current === "personal") || current === "stats" ? current : personal ? "personal" : "stats");
       setScope(next); setQueryState(restored);
-    }).catch(cause => { if (!controller.signal.aborted) { setScope(null); setScopeDenied(cause instanceof SupportClientError && cause.status === 403); setScopeError(analyticsErrorText(cause)); } });
+    }).catch(cause => {
+      if (controller.signal.aborted || isSupportSessionExpired(cause)) return;
+      setScope(null);
+      if (cause instanceof SupportClientError && analyticsResponseStatus(cause) === 403) setScopeDenied(true);
+      else setScopeError(analyticsErrorText(cause));
+    });
     return () => controller.abort();
   }, [scopeRetry, entryReadMode]);
   useEffect(() => {
@@ -615,13 +631,14 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       if (next.scopeSummary.mode !== scope?.scopeSummary.mode) { setScope(null); setScopeRetry(n => n + 1); return; }
       setData(next);
     }).catch(cause => {
-      if (controller.signal.aborted || current !== generation.current) return;
+      if (controller.signal.aborted || current !== generation.current || isSupportSessionExpired(cause)) return;
       setData(null); setError(analyticsErrorText(cause));
       if (cause instanceof SupportClientError && (cause.status === 409 || cause.apiCode === 409)) {
         setEventsOpen(false); setFundMetric(null); setProfileId(null);
         if (queryState.expectedVersion) setQueryState(previous => changeAnalyticsQuery(previous, {}));
       }
-      if (cause instanceof SupportClientError && [401, 403].includes(cause.status)) { setScope(null); setScopeError(analyticsErrorText(cause)); }
+      // 已经进来以后查看权限被收回：和首次读取一样显示无权限，不说成加载失败（ST-38）。
+      if (cause instanceof SupportClientError && analyticsResponseStatus(cause) === 403) { setScope(null); setScopeDenied(true); }
     }).finally(() => { if (!controller.signal.aborted && current === generation.current) setLoading(false); });
     return () => { controller.abort(); generation.current++; };
   }, [showStatistics, queryState, retry, scope?.scopeSummary.mode, scope?.generation, statisticsCalendar]);
@@ -639,7 +656,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         || !sameCoveredPerformance(next.totals, period)) throw new Error("SUPPORT_CONTRACT_MALFORMED:performance.eventReconciliation");
       setEvents(next);
     }).catch(cause => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || isSupportSessionExpired(cause)) return;
       setEvents(null);
       if (cause instanceof SupportClientError && (cause.status === 409 || cause.apiCode === 409) && !eventPairRetried.current) {
         eventPairRetried.current = true;
@@ -728,7 +745,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       if (controller.signal.aborted) return;
       setSessionCheck(null);
       if (hold.state === "OTHER") setSessionBusy({ row, hold }); else openSessions(row);
-    }).catch(() => { if (!controller.signal.aborted) { setSessionCheck(null); setSessionError(row); } });
+    }).catch(cause => { if (!controller.signal.aborted && !isSupportSessionExpired(cause)) { setSessionCheck(null); setSessionError(row); } });
   } };
   const customerName = (row: SupportAnalyticsCustomer) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
   function page(number: number) {
@@ -767,7 +784,17 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{!noScopedContent && <Button onClick={() => refreshScope()}>刷新</Button>}
   </>} />;
   const related = !personalHeader && leaderboardReachable && <nav className="rd-links" aria-label="相关页面"><span>相关页面</span><a className="rd-link" href="/service/leaderboard" onClick={event => { event.preventDefault(); router.push("/service/leaderboard"); }}>业绩榜</a></nav>;
-  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>{header}{exportsOnly ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} /><PerfExportRecords ports={exportsPorts} /></> : <Panel><BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" : scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={noScopedContent ? "主管负责的组由超级管理员在「客服与分组」里设置。" : scopeError || undefined} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重试" /></Panel>}{noScopedContent && related}{unavailableAgentDrawer}</section>;
+  if (!scope) return <section className="sa-workbench" aria-busy={!scopeDenied && !scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>
+    {header}
+    {exportsOnly ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
+      <PerfExportRecords ports={exportsPorts} /></>
+      : <Panel>{noScopedContent ? <BlockState state="empty" title="你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" detail="主管负责的组由超级管理员在「客服与分组」里设置。" />
+        : scopeDenied ? <AnalyticsReadDenied /> : <BlockState state={scopeError ? "error" : "loading"}
+          title={scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
+          onRetry={scopeError ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重试" />}</Panel>}
+    {scopeDenied && related}
+    {unavailableAgentDrawer}
+  </section>;
 
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
   const leadPermission: Permission = mode === "ALL" ? "superadmin" : "supervisor";
@@ -864,7 +891,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     <div className="sa-personal-head"><h3>期间业绩</h3><Explain label="期间业绩的说明" content={<>{queryState.month} · {nexGridBrandText(currency)} · {businessZoneText()}；绑定与活跃按当前客户统计，首充和净贡献按所选自然月统计。</>} /><div className="sa-personal-period-controls"><AnalyticsSelect label="业绩自然月" value={queryState.month} options={monthOptions} onChange={month => change({ month })} /><AnalyticsSelect label="业绩币种" value={currency} options={[{ value: "USDT", label: "USDT" }, { value: "UVT", label: "UVT" }]} onChange={value => { if (value === "USDT" || value === "UVT") change({ currency: value }); }} /></div></div>
     <p className="sa-personal-asof"><AnalyticsFreshness asOf={scope.asOf} label="客户统计" onRefresh={() => refreshScope()} />{personalPeriod && <AnalyticsFreshness asOf={personalPeriod.asOf} label="期间业绩" onRefresh={() => refreshScope()} />}</p>
     {/* 月份目录读不到时写错误卡：哪块读不到、原因、重试（ST-34、ST-35，BUG-650）。 */}
-    {!monthCalendar && (calendarError ? <BlockState state="error" compact title="业绩月份加载失败" detail={calendarError} onRetry={() => setCalendarRetry(n => n + 1)} retryLabel="重试" />
+    {!monthCalendar && (calendarDenied ? <AnalyticsReadDenied compact /> : calendarError ? <BlockState state="error" compact title="业绩月份加载失败" detail={calendarError} onRetry={() => setCalendarRetry(n => n + 1)} retryLabel="重试" />
       : <p className="sa-state" role="status">正在加载业绩月份…</p>)}
     {personalPeriodError && <p className="sa-state" role="alert">{personalPeriodError}<Button type="button" onClick={() => refreshScope()}>重新加载业绩</Button></p>}
     <div className="sa-personal-primary-metrics" data-secondary="">
@@ -884,7 +911,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {section === "exports" && !!exportsPorts?.persona.views.length && <PerfExportRecords ports={exportsPorts} />}
     {exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts} initialMonth={queryState.month} initialScope={queryState.groupId ? `GROUP:${queryState.groupId}` : mode === "PERSONAL" ? "SELF" : mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL"} onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />}
     {isPersonal && showStatistics && <PeriodPerfPanel perf={perf.period} month={queryState.month} asOf={personalPeriod ? `${formatBusinessTimeCompact(personalPeriod.asOf, "—")}（${businessZone().label}）` : undefined}
-      status={!monthCalendar ? calendarError ? { title: "业绩月份加载失败", error: calendarError, onRetry: () => setCalendarRetry(value => value + 1) } : "loading"
+      status={!monthCalendar ? calendarDenied ? "denied" : calendarError ? { title: "业绩月份加载失败", error: calendarError, onRetry: () => setCalendarRetry(value => value + 1) } : "loading"
         : personalPeriodError ? { error: personalPeriodError, onRetry: () => setPersonalPeriodRetry(value => value + 1) }
         : !personalPeriod && monthCalendar.some(entry => entry.month === queryState.month) ? "loading" : undefined}
       detail={{ loading: eventsOpen && !events, error: eventError || undefined }}
@@ -923,7 +950,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         {["CUSTOMERS", "ACTIVITY"].includes(queryState.view) && <AnalyticsSelect label="服务状态" value={queryState.filter ?? "ALL"} options={isPersonal ? PERSONAL_FILTER_OPTIONS : FILTER_OPTIONS} onChange={value => change({ filter: value as AnalyticsQueryState["filter"] })} />}
       </FilterBar>
       </div>
-      {queryState.basis === "PERIOD_EVENT" && !monthCalendar && (calendarError ? <BlockState state="error" compact title="统计月份加载失败" detail={calendarError} onRetry={() => setCalendarRetry(n => n + 1)} retryLabel="重试" />
+      {queryState.basis === "PERIOD_EVENT" && !monthCalendar && (calendarDenied ? <AnalyticsReadDenied compact /> : calendarError ? <BlockState state="error" compact title="统计月份加载失败" detail={calendarError} onRetry={() => setCalendarRetry(n => n + 1)} retryLabel="重试" />
         : <div className="sa-state" role="status">正在加载统计月份…</div>)}
       {queryState.basis === "PERIOD_EVENT" && monthCalendar?.length === 0 && <BlockState state="empty" title={calendarGeneration === "UPGRADING" ? "数据正在升级" : PERF_UNAVAILABLE_VALUE.reason} onRetry={() => setCalendarRetry(n => n + 1)} />}
       {loading && <div className="sa-state" role="status">正在加载…<Button type="button" size="sm" onClick={() => { controllerRef.current?.abort(); generation.current++; setLoading(false); setCancelled(true); setData(null); }}>取消读取</Button></div>}

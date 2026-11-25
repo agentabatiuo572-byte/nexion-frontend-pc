@@ -14,6 +14,7 @@ import { OperationConfirmModal } from "@/app/components/domain-views/design-kit"
 import { businessZone } from "@/lib/admin/business-time";
 import { EXPORT_LABEL, EXPORT_PARTIAL_RECEIPT, ExportOutcomeUnknownError, exportDownloadMessage, exportVisibleReceiptSummary, exportPreviousReceipt, exportReceiptSummary, exportStatus, type ExportColumns, type ExportDialogData, type ExportDownload, type ExportItem, type ExportSubmitted, type ExportType, type PerfExportPorts } from "./perf-view";
 import { exportPreviewChanged, isExportPermissionDenied, useExportClock } from "./perf-export-ports";
+import { isSupportSessionExpired } from "@/lib/admin/m-support-client";
 import "./m1-export.css";
 
 const num = (n: number) => n.toLocaleString("en-US");
@@ -79,7 +80,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
       setData(next); setMonth(next.month); setScope(next.scope); setItems(next.items); setSelected(next.selected);
       setPreview("ready");
     }, error => {
-      if (generation !== checkGeneration.current) return;
+      if (generation !== checkGeneration.current || isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
       setLoadFailed(true); setPreview("failed");
     });
@@ -115,7 +116,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
       setData(previous => previous && { ...previous, asOf: found.asOf, blocked: found.blocked, restoration: found.restoration });
       setPreview("ready");
     }, error => {
-      if (generation !== checkGeneration.current) return;
+      if (generation !== checkGeneration.current || isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
       setPreview("failed");
       setItems(rows => rows.map(row => ({ ...row, check: { state: "failed", text: "没加载出来。" } })));
@@ -145,7 +146,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
       setDownloadFailed(null);
       const generation = checkGeneration.current;
       void ports.download(taskId).then(outcome => {
-        if (generation !== checkGeneration.current || outcome.kind === "downloaded") return;
+        if (generation !== checkGeneration.current || outcome.kind === "downloaded" || outcome.sessionExpired) return;
         if (outcome.permissionDenied) { permissionLost(); return; }
         setDownloadFailed({ taskId, outcome });
         setResult(rows => rows?.map(row => row.taskId !== taskId ? row : {
@@ -239,6 +240,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           setFound(true);
           setResult(outcome.rows);
         }, error => {
+          if (isSupportSessionExpired(error)) return;
           if (isExportPermissionDenied(error)) { permissionLost(); return; }
           setLookupText(original?.acceptedRequestId ? "这次查询没连上，暂时无法核对当前可见结果。" : "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
         }).finally(() => setQuerying(false));
@@ -317,6 +319,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
       try {
         setResult(await ports.submit({ month, scope, types: selected }, reason));
       } catch (error) {
+        if (isSupportSessionExpired(error)) return;
         if (isExportPermissionDenied(error)) {
           ports.invalidateAccess();
           throw error;

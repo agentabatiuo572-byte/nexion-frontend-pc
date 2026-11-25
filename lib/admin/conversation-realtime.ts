@@ -117,7 +117,8 @@ export class ConversationRealtime {
               this.scheduleSync(epoch,0);break;
             case 'presence':if(f.conversationNo===this.watched)this.options.presence?.(f);break;
             case 'error':{
-              const denied=f.code===401||f.code===403;
+              // 401 是登录或票据失效：按普通断开重新取票，取票遇 401 再交外壳（BUG-715）。
+              const denied=f.code===403;
               this.disconnect(true,denied,denied?"当前账号无权接入实时通道":"实时通道返回错误");
               break;
             }

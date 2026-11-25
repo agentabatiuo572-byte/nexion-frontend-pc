@@ -25,7 +25,6 @@ import {
 } from "@/app/components/rd";
 import {
   fetchH8ReferralRewards,
-  h8EffectiveAt,
   fetchH8SettlementEligibility,
   h8EffectiveRewardReference,
   h8RewardParamAmplifies,
@@ -745,9 +744,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     {recoveryNotice}
     {savedUnreadNotice}
     {staleNotice}
-    <BlockState state="error" title="新人礼与邀请奖励读取失败"
-      detail={<>页面不显示任何旧数据。<Explain label="失败原因" content={error ?? "没有收到数据。"} /></>}
-      retryLabel="重新加载" onRetry={() => void load()} />
+    <BlockState state="error" title="新人礼与邀请奖励加载失败" detail={error ?? "没有收到数据。"} onRetry={() => void load()} />
     {confirmModal}
   </div>;
 
@@ -946,11 +943,7 @@ function timesText(per: string | number | undefined, count: number, decimals: nu
 }
 
 function effectiveTimeText(value: string) {
-  try {
-    return `${formatBusinessTimeCompact(h8EffectiveAt(value), "—")}（${businessZone().label}）`;
-  } catch (error) {
-    return displayAdminReadError(error);
-  }
+  return Date.parse(value) === 0 ? "无效的旧时间" : `${formatBusinessTimeCompact(value, "—")}（${businessZone().label}）`;
 }
 
 function valueText(param: H8Param, value: string | undefined) {
