@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { displayAdminError } from "./error-messages";
+import { displayAdminError, displayAdminReadError } from "./error-messages";
+import { M_RECOVERY, mQueryFailedText, mRejectedReason, mUnknownText } from "./m-recovery-copy";
 import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
 import { SupportClientError } from "./m-support-client";
@@ -133,8 +134,9 @@ export function useM5ManagementCommand<T, B, R>(options: {
             options.onSuccess();
           } else if (verdict.conclusion === "not-found") {
             if (recovery.expiry === "after-missing" && isRetryExpired(saved)) await loadLatest();
-            else setMessage(isRetryExpired(saved) ? RETRY_EXPIRED_TEXT : "还没查到原操作的结果，原请求已保留。");
-          } else setMessage("原操作结果未知，请稍后再查询原结果。");
+            // Text only: the row and dialog add what to do next from the recovery state.
+            else setMessage(isRetryExpired(saved) || recovery.controller.state(saved).replayRejection ? M_RECOVERY.notFoundShort : "");
+          } else setMessage(M_RECOVERY.unsettled);
         } else {
           if (action === "replay") {
             await recovery.controller.replay(saved, original => options.write(original.payload, original.commandKey));
@@ -171,10 +173,11 @@ export function useM5ManagementCommand<T, B, R>(options: {
       if (!current()) return;
       if (recovery && action !== "submit") {
         setPending(record);
-        setMessage(action === "load-latest" ? displayAdminError(error)
-          : recovery.controller.state(record).replayRejection ? `重试被拒绝，原操作已保留。\n${displayAdminError(error)}`
-            : action === "query" ? `暂时查不到原结果；你填的内容和原请求都还在。${displayAdminError(error)}`
-              : `结果未知：请查询原结果。${displayAdminError(error)}`);
+        const state = recovery.controller.state(record);
+        setMessage(action === "load-latest" ? `最新内容没读到，记录和你填的内容都还在。${displayAdminReadError(error)}`
+          : action === "query" ? state.conclusion === "not-found"
+            ? `没有查到原操作，最新规则也没读到，记录和你填的内容都还在。${displayAdminReadError(error)}` : mQueryFailedText(displayAdminReadError(error))
+            : state.replayRejection ? mRejectedReason(displayAdminError(error)) : mUnknownText(displayAdminError(error)));
         return;
       }
       const rejected = action === "submit" && error instanceof SupportClientError
@@ -192,7 +195,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
         setPending(record);
         if (querying && error instanceof SupportClientError && error.status === 404 && error.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") setReceiptMissing(!record.denied);
         setMessage(querying ? `暂时查不到原结果；你填的内容和原请求都还在。${displayAdminError(error)}`
-          : `结果未知：请查询原结果，或按原请求重试。${displayAdminError(error)}`);
+          : recovery ? mUnknownText(displayAdminError(error)) : `结果未知：请查询原结果，或按原请求重试。${displayAdminError(error)}`);
       }
     } finally {
       running.current = false;

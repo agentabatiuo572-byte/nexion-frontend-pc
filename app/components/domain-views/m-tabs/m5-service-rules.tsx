@@ -6,7 +6,7 @@ import { Route, Save, Tags } from "lucide-react";
 import { BlockState, Button, DiffList, Fact, Facts, Field, Modal, Notice, NumberInput, Panel, Segments, StatusTag, Textarea } from "@/app/components/rd";
 import { supportClient, m5ManagementClient, SupportClientError, type SupportRules } from "../../../../lib/admin/m-support-client";
 import { businessStamp, businessZone } from "../../../../lib/admin/business-time";
-import { createPendingMutationStore, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT } from "../../../../lib/admin/pending-mutation-store";
+import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { isM5ManagementPayload } from "@/lib/admin/m5-management-record";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
@@ -14,6 +14,10 @@ import "./m-support-admin.css";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { createM5ManagementRecovery, useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use-m5-management-command";
 import { M5PendingWrites, type M5RulesSummary } from "./m5-views";
+import { M_RECOVERY_INTRO, M_RELEASED_TEXT, mNoticeTone, mRecoveryView } from "@/lib/admin/m-recovery-copy";
+import { pendingReplayReason } from "../recovery-panel";
+import { MAuditLink, MReleaseModal } from "./m-release";
+import { useToast } from "../design-kit";
 
 export type MSupportPermission = "superadmin" | "supervisor" | "agent";
 type RuleDraft = { dormantDays: string; maintenanceDays: string; activityWindowDays: string; inheritanceMode: SupportRules["inheritanceMode"]; maxInheritanceDepth: string; unboundAssignmentMode?: SupportRules["unboundAssignmentMode"] };
@@ -69,6 +73,8 @@ function labelValue(key: Field, value: SupportRules[Field]): string {
 }
 
 const errorText = displayAdminError;
+/** OP-153：过了 24 小时，查不到原操作并读到最新规则才解除。 */
+const EXPIRED_LINE = "已超过 24 小时，不能再重试。再查询一次：查不到、并读到最新规则，这条记录就解除。";
 
 export function M5ServiceRules({ permission, onSummary }: { permission: MSupportPermission; onSummary?: (summary: M5RulesSummary) => void }) {
   const reach = useReach();
@@ -86,6 +92,8 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const [confirm, setConfirm] = useState(false);
   const [reason, setReason] = useState("");
   const [reload, setReload] = useState(0);
+  const [releasing, setReleasing] = useState(false);
+  const [, toast] = useToast();
   const preserveDraft = useRef(false);
   const command = useM5ManagementCommand({
     store: ruleCommands, canQuery: Boolean(authorities?.includes("service_m1_read")), canWrite,
@@ -202,24 +210,36 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     maintenanceDays: "距上次维护满这么多天，客户进专属客服的主动维护待办。改天数不会补记维护。",
     activityWindowDays: "统计活跃客户时往回看几天，和沉睡分开算，不能大于沉睡天数。",
   };
+  const view = retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: EXPIRED_LINE });
+  const replayRefused = Boolean(command.recoveryState?.replayRejection);
+  const querying = command.recoveryState?.busy === "query";
+  const replayReason = saving || !command.recoveryState ? undefined : !canWrite ? "只有超级管理员能改服务规则" : retryExpired ? EXPIRED_LINE : pendingReplayReason(command.recoveryState, "当前账号不能重试这次保存。");
   const changeText = retry && original ? confirmedChanges.map((field) => `${LABELS[field]} ${beforeLabel(field)} → ${labelValue(field, retry.payload[field as keyof typeof retry.payload] as SupportRules[Field])}`).join("；") : "";
 
   return (
     <section className="m5-rules" aria-label="服务规则">
-      {retry && <M5PendingWrites rows={[{
+      {retry && view && <M5PendingWrites explain={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时不能再重试：查不到原操作、并读到最新规则，这条记录就解除。有结论前服务规则不能再改。</p></>} rows={[{
         key: retry.key, name: "服务规则", change: changeText || "规则保存", submittedAt, expired: retryExpired,
+        status: view, note: <>{view.line}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
         actions: <>
-          <Button size="sm" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void checkPending()}>查询原结果</Button>
-          {!retryExpired && <Button size="sm" variant="primary" disabled={saving || !command.canReplay} onClick={restore}>按原请求重试</Button>}
+          <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} disabledReason={authorities?.includes("service_m1_read") ? undefined : "当前账号没有客服工作台查看权限"} onClick={() => void checkPending()}>查询原结果</Button>
+          {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原请求重试</Button>}
+          {replayRefused && <Button size="sm" variant="ghost" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => setReleasing(true)}>核实后解除</Button>}
         </>,
       }]} />}
+      {retry && releasing && <MReleaseModal target={{ action: "保存服务规则", object: changeText || "服务规则", createdAt: retry.createdAt, rejection: command.recoveryState?.replayRejection }}
+        where="被拒说明不了原操作有没有生效，先核实。" onCancel={() => setReleasing(false)} onConfirm={() => {
+          const released = command.releaseRejectedReplay();
+          setReleasing(false);
+          toast(released ? M_RELEASED_TEXT : "这条记录刚有变化，没有解除，请看最新状态。", released ? "success" : "warn");
+        }} />}
       <Panel icon={Route} tone="role-3" title="分配与继承规则" sub={current && !readUnavailable ? `第 ${current.version} 版` : undefined}
         explain="保存后立即生效。已有的绑定不会重排；继承只看之后注册的用户；还在等分配的客户按新的方式和时长继续处理。">
         {permission === "supervisor" && <Notice tone="neutral">只有超级管理员能改服务规则，你现在只能查看。</Notice>}
         {loading && !current && <BlockState state="loading" title="正在读取服务规则…" />}
         {saved && <Notice tone="ok">已保存。</Notice>}
         {!loading && (!current || readUnavailable) && <BlockState state="error" title="服务规则读不到，暂时不能查看和保存" detail={error || undefined} onRetry={() => setReload((n) => n + 1)} />}
-        {(error || command.message) && !readUnavailable && !confirm && !conflict && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{command.message || error}</Notice>}
+        {(error || command.message) && !readUnavailable && !confirm && !conflict && !retry && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{command.message || error}</Notice>}
         {draft && current && !(readUnavailable && !retry) && <div className="m5-form">
           <Field label="新客户怎么分" help={draft.unboundAssignmentMode === "AUTO_RANDOM"
             ? "第一次发消息时，分给可接单的客服里负载最低的；没人可接就继续等。"
@@ -260,25 +280,28 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         </div>}
         {reach("/service/overview", "service_m1_read") && <p className="m5-link-line">还在等分配的客户可以手动分：<a className="rd-link" href="/service/overview?view=pool">到客服工作台「待分配」</a></p>}
       </Panel>
-      {confirm && original && confirmed && permission === "superadmin" && <Modal title={confirmedChanges.length === 1 ? `修改${LABELS[confirmedChanges[0]]}` : "保存服务规则"} icon={Route} busy={saving} wide onClose={() => { if (!saving) setConfirm(false); }}
+      {confirm && !(retry && releasing) && original && confirmed && permission === "superadmin" && <Modal title={confirmedChanges.length === 1 ? `修改${LABELS[confirmedChanges[0]]}` : "保存服务规则"} icon={Route} busy={saving} wide onClose={() => { if (!saving) setConfirm(false); }}
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
         footer={<>
-          <Button disabled={saving} onClick={() => setConfirm(false)}>返回</Button>
-          <Button variant="primary" loading={saving} disabled={!canWrite || (retry ? !command.canReplay : !canConfirm || Boolean(latest)) || saving}
-            disabledReason={saving ? undefined : retryExpired ? RETRY_EXPIRED_TEXT : !retry && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>
+          <Button disabled={saving} onClick={() => setConfirm(false)}>取消</Button>
+          {retry && <Button variant={command.canReplay || replayRefused ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} disabledReason={authorities?.includes("service_m1_read") ? undefined : "当前账号没有客服工作台查看权限"} onClick={() => void checkPending()}>查询原结果</Button>}
+          {retry && replayRefused ? <Button disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => setReleasing(true)}>核实后解除</Button>
+            : <Button variant={retry && !command.canReplay ? "secondary" : "primary"} loading={saving && !querying} disabled={!canWrite || (retry ? !command.canReplay : !canConfirm || Boolean(latest)) || saving}
+              disabledReason={saving ? undefined : retry ? replayReason : !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>}
         </>}>
         <DiffList rows={confirmedChanges.map((field) => ({ key: field, label: LABELS[field], before: beforeLabel(field), after: labelValue(field, confirmed[field]) }))} />
         <Facts>
           <Fact k="影响谁">之后注册的用户、之后发消息的客户、还在等分配的客户</Fact>
           <Fact k="不变的">已有的绑定；改天数不补记维护</Fact>
         </Facts>
-        {retry && <Notice tone="warn" title="结果未知" action={<Button size="sm" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void checkPending()}>查询原结果</Button>}>
-          {retryExpired ? RETRY_EXPIRED_TEXT : `上次保存在 ${businessStamp(submittedAt)}（${businessZone().label}）提交，可能已经生效。先查询原结果，或按原请求重试，不会重复执行。`}
+        {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
+          <p>{view.line}</p>
+          <p>上次保存在 {businessStamp(submittedAt)}（{businessZone().label}）提交，内容已锁定。</p>
         </Notice>}
-        <Field label="操作理由" required hint="8–200 字">
+        <Field label="操作理由" required hint="至少 8 字">
           {(control) => <Textarea {...control} rows={3} value={reason} maxLength={200} disabled={saving || Boolean(retry)} count={`${reason.trim().length}/200`} placeholder="例如：客服人手调整，新客户改为主管分配" onChange={(event) => setReason(event.target.value)} />}
         </Field>
-        {(error || command.message) && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{command.message || error}</Notice>}
+        {(retry ? error : error || command.message) && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{(retry ? "" : command.message) || error}</Notice>}
       </Modal>}
     </section>
   );

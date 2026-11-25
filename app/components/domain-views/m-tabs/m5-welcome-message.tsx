@@ -8,7 +8,11 @@ import { businessStamp, businessZone, formatBusinessTime } from "../../../../lib
 import { MessageCircleHeart, Save } from "lucide-react";
 import { BlockState, Button, Explain, Fact, Facts, Field, LocaleTabs, Modal, Notice, Panel, StatusTag, Textarea } from "@/app/components/rd";
 import { M5PendingWrites, type M5WelcomeSummary } from "./m5-views";
-import { createPendingMutationStore, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT } from "../../../../lib/admin/pending-mutation-store";
+import { M_RECOVERY_INTRO, M_RELEASED_TEXT, mNoticeTone, mRecoveryView } from "@/lib/admin/m-recovery-copy";
+import { pendingReplayReason } from "../recovery-panel";
+import { MAuditLink, MReleaseModal } from "./m-release";
+import { useToast } from "../design-kit";
+import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { isM5ManagementPayload } from "@/lib/admin/m5-management-record";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
@@ -40,6 +44,8 @@ function changedLanguages(before: SupportWelcomeTexts, after: SupportWelcomeText
 }
 
 const errorText = displayAdminError;
+/** OP-153：过了 24 小时，主动加载最新内容就解除，改过的文字留作草稿。 */
+const EXPIRED_LINE = "已超过 24 小时，不能再重试。「加载最新内容」读到后这条记录就解除，改过的文字留作草稿。";
 
 /** B16: the one welcome copy a new user receives from their dedicated advisor (or in the unassigned state) right after registration. */
 export function M5WelcomeMessage({ permission, onSummary }: { permission: MSupportPermission; onSummary?: (summary: M5WelcomeSummary) => void }) {
@@ -62,6 +68,8 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const [reload, setReload] = useState(0);
   const refused = useRef<{ actor: string; attempted: SupportWelcomeTexts; before?: WelcomeBefore } | undefined>(undefined);
   const [lang, setLang] = useState<SupportWelcomeLanguage>("zh");
+  const [releasing, setReleasing] = useState(false);
+  const [, toast] = useToast();
   const command = useM5ManagementCommand({
     store: welcomeCommands, canQuery: Boolean(authorities?.includes("service_m1_read")), canWrite,
     fingerprint: fingerprintOf, write: m5ManagementClient.welcome, query: m5ManagementClient.welcomeCommand,
@@ -181,17 +189,31 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const submittedAt = retry ? retry.expiresAt - PENDING_MUTATION_TTL_MS : 0;
   const updatedText = current?.updatedAt ? formatBusinessTime(current.updatedAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : null;
   const errorTone = /查不到|还在处理|仍在处理|24 小时/.test(error) ? "warn" : "danger";
+  const view = retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: EXPIRED_LINE });
+  const replayRefused = Boolean(command.recoveryState?.replayRejection);
+  const querying = command.recoveryState?.busy === "query";
+  const canQuery = Boolean(authorities?.includes("service_m1_read"));
+  const replayReason = saving || !command.recoveryState ? undefined : !canWrite ? "只有超级管理员能改欢迎语" : retryExpired ? EXPIRED_LINE : pendingReplayReason(command.recoveryState, "当前账号不能重试这次保存。");
+  const changeText = retry ? `改了${(retry.before ? changedLanguages(retry.before.texts, retry.payload.texts) : LANGUAGES.map(item => item.key)).map((key) => LANGUAGES.find((item) => item.key === key)?.label).join("、") || "内容"}` : "";
 
   return (
     <section className="m5-welcome" aria-label="新用户欢迎语">
-      {retry && <M5PendingWrites rows={[{
-        key: retry.key, name: "新用户欢迎语", submittedAt, expired: retryExpired,
-        change: `改了${(retry.before ? changedLanguages(retry.before.texts, retry.payload.texts) : LANGUAGES.map(item => item.key)).map((key) => LANGUAGES.find((item) => item.key === key)?.label).join("、") || "内容"}`,
+      {retry && view && <M5PendingWrites explain={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时不能再重试：「加载最新内容」读到后这条记录就解除，改过的文字留作草稿。有结论前欢迎语不能再改。</p></>} rows={[{
+        key: retry.key, name: "新用户欢迎语", submittedAt, expired: retryExpired, change: changeText,
+        status: view, note: <>{view.line}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
         actions: <>
-          <Button size="sm" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void checkPending()}>查询原结果</Button>
-          {!retryExpired && <Button size="sm" variant="primary" disabled={saving || !command.canReplay} onClick={restore}>按原请求重试</Button>}
+          <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} disabledReason={canQuery ? undefined : "当前账号没有客服工作台查看权限"} onClick={() => void checkPending()}>查询原结果</Button>
+          {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原请求重试</Button>}
+          {loadExpired && <Button size="sm" variant="primary" loading={saving && !querying} disabled={saving} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>}
+          {replayRefused && <Button size="sm" variant="ghost" disabled={saving || !canQuery} onClick={() => setReleasing(true)}>核实后解除</Button>}
         </>,
       }]} />}
+      {retry && releasing && <MReleaseModal target={{ action: "保存新用户欢迎语", object: changeText, createdAt: retry.createdAt, rejection: command.recoveryState?.replayRejection }}
+        where="被拒说明不了原操作有没有生效，先核实。" onCancel={() => setReleasing(false)} onConfirm={() => {
+          const released = command.releaseRejectedReplay();
+          setReleasing(false);
+          toast(released ? M_RELEASED_TEXT : "这条记录刚有变化，没有解除，请看最新状态。", released ? "success" : "warn");
+        }} />}
       <Panel icon={MessageCircleHeart} tone="role-3" title="新用户欢迎语" sub={current && !readUnavailable ? `第 ${current.version} 版` : undefined}
         explain="新用户注册后在客服对话里收到的第一条消息：已经有专属客服的以这位客服的名义发，还没有的显示「待分配」。用户语言是中文收中文、越南语收越南语，其他语言都收英语。">
         {permission !== "superadmin" && <Notice tone="neutral">只有超级管理员能改欢迎语，你现在只能查看。</Notice>}
@@ -200,7 +222,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         {!loading && (!current || readUnavailable) && <BlockState state="error" title="新用户欢迎语读不到" detail="暂时不能查看和修改。"
           onRetry={loadExpired ? () => void reloadAfterExpiry() : () => setReload((n) => n + 1)}
           retryLabel={loadExpired ? "加载最新内容" : undefined} retrying={loadExpired && saving} />}
-        {(error || command.message) && !readUnavailable && !confirm && !conflict && <Notice tone={errorTone}>{command.message || error}</Notice>}
+        {(error || command.message) && !readUnavailable && !confirm && !conflict && !retry && <Notice tone={errorTone}>{command.message || error}</Notice>}
         {current && shownTexts && !(readUnavailable && !retry) && <div className="m5-welcome-body">
           <div className="m5-welcome-edit">
             <LocaleTabs label="欢迎语语言" value={lang} onChange={setLang}
@@ -247,12 +269,14 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
             onClick={() => retry ? restore() : setConfirm(true)}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
         </div>}
       </Panel>
-      {confirm && original && draft && permission === "superadmin" && <Modal title="保存新用户欢迎语" icon={MessageCircleHeart} wide busy={saving} onClose={() => { if (!saving) setConfirm(false); }}
+      {confirm && !(retry && releasing) && original && draft && permission === "superadmin" && <Modal title="保存新用户欢迎语" icon={MessageCircleHeart} wide busy={saving} onClose={() => { if (!saving) setConfirm(false); }}
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
         footer={<>
-          <Button disabled={saving} onClick={() => setConfirm(false)}>返回</Button>
-          {retry && retryExpired && <Button disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>}
-          <Button variant="primary" loading={saving} disabled={!canWrite || (retry ? !command.canReplay : !canConfirm) || saving} disabledReason={saving ? undefined : retryExpired ? RETRY_EXPIRED_TEXT : !retry && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>
+          <Button disabled={saving} onClick={() => setConfirm(false)}>取消</Button>
+          {retry && <Button variant={command.canReplay || replayRefused || retryExpired ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} disabledReason={canQuery ? undefined : "当前账号没有客服工作台查看权限"} onClick={() => void checkPending()}>查询原结果</Button>}
+          {retry && replayRefused && <Button disabled={saving || !canQuery} onClick={() => setReleasing(true)}>核实后解除</Button>}
+          {retry && retryExpired ? <Button variant="primary" loading={saving && !querying} disabled={saving || !canQuery} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>
+            : !(retry && replayRefused) && <Button variant={retry && !command.canReplay ? "secondary" : "primary"} loading={saving && !querying} disabled={!canWrite || (retry ? !command.canReplay : !canConfirm) || saving} disabledReason={saving ? undefined : retry ? replayReason : !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>}
         </>}>
         <div className="m5-wdiff">
           {(retry ? retry.before ? changedLanguages(retry.before.texts, retry.payload.texts) : LANGUAGES.map(item => item.key) : changed).map((key) => <div key={key} className="m5-wdiff-row">
@@ -265,13 +289,14 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           <Fact k="谁会收到">之后注册的新用户</Fact>
           <Fact k="不变的">已经注册的用户不会再收到；已发出的欢迎语不改</Fact>
         </Facts>
-        {retry && <Notice tone="warn" title="结果未知" action={<Button size="sm" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void checkPending()}>查询原结果</Button>}>
-          {retryExpired ? RETRY_EXPIRED_TEXT : `上次保存在 ${businessStamp(submittedAt)}（${businessZone().label}）提交，可能已经生效。先查询原结果，或按原请求重试，不会重复执行。`}
+        {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
+          <p>{view.line}</p>
+          <p>上次保存在 {businessStamp(submittedAt)}（{businessZone().label}）提交，内容已锁定。</p>
         </Notice>}
-        <Field label="操作理由" required hint="8–200 字">
+        <Field label="操作理由" required hint="至少 8 字">
           {(control) => <Textarea {...control} rows={3} value={reason} maxLength={200} disabled={saving || Boolean(retry)} count={`${reason.trim().length}/200`} placeholder="例如：活动期间欢迎语加上新手指引" onChange={(event) => setReason(event.target.value)} />}
         </Field>
-        {(error || command.message) && <Notice tone={errorTone}>{command.message || error}</Notice>}
+        {(retry ? error : error || command.message) && <Notice tone={errorTone}>{(retry ? "" : command.message) || error}</Notice>}
       </Modal>}
     </section>
   );
