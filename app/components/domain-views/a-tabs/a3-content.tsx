@@ -11,6 +11,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { Archive, BookOpenText, Code2, FileText, Plus, RefreshCw, Smartphone, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, DiffList, Explain, Field, Fold, IconButton, Input, KeepText, Modal, MoreMenu, Notice, PageTabs, Panel, Segments, Select, StatusTag, Table, Td, Textarea, Th, Tr, useTabIds } from "@/app/components/rd";
 import { a3HasOriginalReceipt, type A3Command, type A3RecoveryProps } from "@/lib/admin/a3-mutations";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 
@@ -111,18 +112,23 @@ function ReferenceValue({ value }: { value: unknown }) {
   return <Fold inset title="展开完整值" summary=""><pre className="a3-json">{full}</pre></Fold>;
 }
 
-function ReferenceNotice({ baseline, input, discard, error, readReady, readError }: {
-  baseline: ContentDocument; input: ContentDocument; discard: () => void; error?: string | null; readReady: boolean; readError?: string | null;
+function ReferenceNotice({ baseline, readAt, input, discard, retry, error, readReady, readError }: {
+  baseline: ContentDocument; readAt: number; input: ContentDocument; discard: () => void; retry: () => void;
+  error?: string | null; readReady: boolean; readError?: string | null;
 }) {
   const current = referenceFields(baseline);
   const previous = referenceFields(input);
   const labels = new Set([...current.keys(), ...previous.keys()]);
   return <Notice tone="warn" title={readReady ? "你上次的修改没有保存成功，最新版本已被别人改过"
     : readError ? "你上次的修改没有保存成功，最新版本暂时读不到" : "你上次的修改没有保存成功，正在读取最新版本"}
-    action={<Button size="sm" onClick={discard}>放弃我上次的内容</Button>}>
+    action={<>
+      <Button size="sm" onClick={discard}>放弃我上次的内容</Button>
+      {readError && <Button size="sm" onClick={retry}>重试</Button>}
+    </>}>
     <p>{readReady ? `编辑器里是最新版本（修订 ${baseline.revision}）。你上次的内容在下面，对照后可以在最新版本上重新修改。`
+      : readError ? `显示的是 ${businessStamp(readAt)}（${businessZone().label}）读到的修订 ${baseline.revision}，最新版本没读到：${readError}`
       : `下面的对照基于上次读取的修订 ${baseline.revision}。`}</p>
-    {(readError || error) && <p>{readError && `${readError} 请点「刷新」重新读取。`} {error}</p>}
+    {error && <p>{error}</p>}
     <Fold inset defaultOpen title="你上次的内容（只读）" summary="">
       <Table label="你上次的内容（只读）">
         <thead><tr><Th>字段</Th><Th>{readReady ? "最新" : "上次读取"}</Th><Th>我上次</Th></tr></thead>
@@ -133,9 +139,12 @@ function ReferenceNotice({ baseline, input, discard, error, readReady, readError
   </Notice>;
 }
 
-function ContentNotices<D extends ContentDocument>({ editor }: { editor: ReturnType<typeof useContentEditor<D>> }) {
-  const { reference, referenceError, baseline, mode, direct, readReady, readbackError, compareError, error, notice, remainingIntent, dirty, loading, refresh, discardReference } = editor;
-  if (reference && baseline) return <ReferenceNotice baseline={baseline} input={reference.input} discard={discardReference}
+function ContentNotices<D extends ContentDocument>({ editor, onRefresh }: {
+  editor: ReturnType<typeof useContentEditor<D>>; onRefresh: () => void;
+}) {
+  const { reference, referenceError, baselineRead, mode, direct, readReady, readbackError, compareError, error, notice, remainingIntent, dirty, loading, refresh, discardReference } = editor;
+  if (reference && baselineRead) return <ReferenceNotice baseline={baselineRead.value} readAt={baselineRead.readAt}
+    input={reference.input} discard={discardReference} retry={onRefresh}
     error={compareError} readReady={readReady} readError={readReady ? null : error} />;
   if (direct) return <Notice tone="warn" title={readReady ? "上次的内容对照未保存" : CONFLICT_READ_FAILED}
     action={<Button size="sm" loading={loading} onClick={() => void refresh()}>{readReady ? "重试" : "重新读取最新版本"}</Button>}>{compareError}</Notice>;
@@ -296,7 +305,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, incoming, toast, onDir
       <Button disabledReason={saveBlocked("DRAFT")} onClick={() => beginSave("DRAFT")}>保存草稿…</Button>
       <Button variant="primary" disabledReason={saveBlocked("PUBLISHED")} onClick={() => beginSave("PUBLISHED")}>发布…</Button>
     </div>}
-    <ContentNotices editor={editor} />
+    <ContentNotices editor={editor} onRefresh={draftRefresh.request} />
     <Panel title="开发者接口文档" icon={Code2} tone="role-2" sub={`${publicLine(savedContent)} · 正文版本 ${versionName(savedContent.version)}`}
       explain={<>
         <p>App 开发者页读取的接口示例、接口列表和事件。保存草稿不改 App 读到的内容，发布后才替换。</p>
@@ -524,7 +533,7 @@ function HowContent({ commands, recovery, onRecovered, incoming, toast, onDirty,
       <Button disabledReason={saveBlocked("DRAFT")} onClick={() => beginSave("DRAFT")}>保存草稿…</Button>
       <Button variant="primary" disabledReason={saveBlocked("PUBLISHED")} onClick={() => beginSave("PUBLISHED")}>发布…</Button>
     </div>}
-    <ContentNotices editor={editor} />
+    <ContentNotices editor={editor} onRefresh={draftRefresh.request} />
     {placeholderSpots.length > 0 && <Notice tone="danger" title={`${placeholderSpots.length} 处还有没替换的占位符，现在不能发布`}>
       {spotsShown.map((spot) => <span key={spot} className="a3-check-line">{spot}</span>)}
       {spotsMore > 0 && <span className="a3-check-line">还有 {spotsMore} 处</span>}

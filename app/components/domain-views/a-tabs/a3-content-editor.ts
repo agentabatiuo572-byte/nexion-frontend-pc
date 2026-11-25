@@ -82,7 +82,8 @@ export function useContentEditor<D extends ContentDocument>({
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
   const [loadedDocument, setDocument] = useState<D | null>(null);
-  const [loadedBaseline, setBaseline] = useState<D | null>(null);
+  const [baselineRead, setBaselineRead] = useState<{ value: D; readAt: number } | null>(null);
+  const loadedBaseline = baselineRead?.value ?? null;
   const [referenceState, setReferenceState] = useState<{ owner: number; value?: Reference | null; error?: string }>();
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -131,7 +132,7 @@ export function useContentEditor<D extends ContentDocument>({
     const input = failed?.record.original.document;
     const canRestore = input && matches(input) && !failed.record.directContentConflict
       && input.revision > 0 && input.revision === value.revision;
-    setBaseline(value);
+    setBaselineRead({ value, readAt: Date.now() });
     setDocument(canRestore ? { ...input, status: value.status } : value);
     setMode(null); setReason(""); setError(null);
     setIntent(canRestore ? failed.record.original.mode : null);
@@ -267,7 +268,7 @@ export function useContentEditor<D extends ContentDocument>({
       } else setError(displayAdminError(cause));
     } finally { setSaving(false); }
   };
-  return { canRead, canWrite, document, baseline, original, loading, saving, mode, reason, setReason, error, notice,
+  return { canRead, canWrite, document, baseline, baselineRead, original, loading, saving, mode, reason, setReason, error, notice,
     readReady, dirty, hasChanges, remainingIntent, commonBlocked, direct, readbackError, compareError, reference, referenceError,
     beginSave, cancelSave, discardReference, discardDraft, save, setDocument, setError, refresh };
 }
