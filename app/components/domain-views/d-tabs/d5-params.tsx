@@ -554,8 +554,11 @@ function ticketChanges(text: string | undefined) {
   return changes;
 }
 
-/** 放宽单拟改的值，紧跟在审批单那一行下面（OP-63）：前是提交时的值，后是拟改的值；读不懂写「没读到」，不留空。 */
-function ProposalFacts({ rows }: { rows: readonly { id: string; before?: string; after?: string }[] }) {
+/**
+ * 放宽单拟改的值，紧跟在审批单那一行下面（OP-63）：前是提交时的值，后是拟改的值；读不懂写「没读到」，不留空。
+ * settled：单子已有结论（批准、驳回、撤回、过期），拟改值不再用待生效的蓝（VS-103）。
+ */
+function ProposalFacts({ rows, settled }: { rows: readonly { id: string; before?: string; after?: string }[]; settled?: boolean }) {
   if (!rows.length) return null;
   return <Facts>{rows.flatMap((row) => {
     const before = ticketChanges(row.before);
@@ -566,7 +569,7 @@ function ProposalFacts({ rows }: { rows: readonly { id: string; before?: string;
     // 只列改了的项（和越南盾一样）；摘要里一组字段整组带上时，没变的不列。
     const changed = changeParts(after).filter(([label, value]) => from.get(label) !== value);
     return [...head, ...(changed.length ? changed : changeParts(after)).map(([label, value]) => (
-      <Fact key={`${row.id}:${label}`} k={label}><Change from={from.get(label) ?? "—"} to={value} /></Fact>
+      <Fact key={`${row.id}:${label}`} k={label}><Change from={from.get(label) ?? "—"} to={value} settled={settled} /></Fact>
     ))];
   })}</Facts>;
 }
@@ -1209,7 +1212,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const ownTicket = approvals.terminal ?? pendingApproval.find((row) => row.id === approvals.ownId);
   const pendingNotices = <>
     <FundRecoveryPanel rows={pendingRows} link={auditLink || undefined} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
-    {approvals.ownNotice && (!params || approvals.terminal) && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}{ownTicket && <ProposalFacts rows={[ownTicket]} />}</Notice>}
+    {approvals.ownNotice && (!params || approvals.terminal) && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}{ownTicket && <ProposalFacts rows={[ownTicket]} settled={!!approvals.terminal} />}</Notice>}
     {closing && loosenRecord && <FundClosureModal label="放宽提现参数" createdAt={loosenRecord.createdAt} offer={eCommandClosureOffer(investigationResults[loosenRecord.commandKey], isRetryExpired(loosenRecord))} facts={loosenRecord.values ? <Fact k="改动">{describeChanges(loosenRecord.values)}</Fact> : undefined}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(loosenRecord, evidence); setClosing(false); }} />}
     {directClosing && <CommandClosureModal label={editTitle(directClosing.label.replace(/^调整提现参数 · /, ""))} commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}

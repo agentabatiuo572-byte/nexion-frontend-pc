@@ -194,14 +194,17 @@ function ticketValues(text: string | undefined) {
   return KEYS.every((key) => values[key] !== undefined) ? { values: values as Record<Key, number>, forced: !!match[2] } : null;
 }
 
-/** 放宽单拟改的值（OP-63）：前是提交时的值，后是拟改的值，只列改了的项；读不懂写「没读到」，不留空。 */
-function proposalFacts(row: { before?: string; after?: string }) {
+/**
+ * 放宽单拟改的值（OP-63）：前是提交时的值，后是拟改的值，只列改了的项；读不懂写「没读到」，不留空。
+ * settled：单子已有结论（批准、驳回、撤回、过期），拟改值不再用待生效的蓝（VS-103）。
+ */
+function proposalFacts(row: { before?: string; after?: string }, settled = false) {
   const before = ticketValues(row.before);
   const after = ticketValues(row.after);
   if (!before || !after) return <Facts><Fact k="拟改值">没读到</Fact></Facts>;
   return <Facts>
     {KEYS.filter((key) => before.values[key] !== after.values[key]).map((key) => (
-      <Fact key={key} k={PAYOUT_VND_FIELDS[key].label}><Change from={valueText(key, before.values[key])} to={valueText(key, after.values[key])} /></Fact>
+      <Fact key={key} k={PAYOUT_VND_FIELDS[key].label}><Change from={valueText(key, before.values[key])} to={valueText(key, after.values[key])} settled={settled} /></Fact>
     ))}
     {after.forced && <Fact k="倒挂价" tone="warn">强制保存</Fact>}
   </Facts>;
@@ -840,7 +843,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
   const ownTicket = approvals.terminal ?? approvals.pendingRows.find((row) => row.id === approvals.ownId);
   const ownApprovalNotice = approvals.ownNotice && (!config || approvals.showOwnNotice)
-    && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}{ownTicket && proposalFacts(ownTicket)}</Notice>;
+    && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}{ownTicket && proposalFacts(ownTicket, !!approvals.terminal)}</Notice>;
   const visibleQueueRows = config ? queueRows : queueRows.filter(row => row.id !== approvals.ownId || !approvals.ownNotice);
   const queuePanel = <RecoveryPanel title={recoveryTitle(0, visibleQueueRows.length)} tone="warn" label="等待批准的放宽单"
     foot={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批查看</Link> : undefined}
