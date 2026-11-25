@@ -18,6 +18,8 @@ type Release = {
   operation: ReactNode;
   /** 对象和改动；操作名里已经写了对象时不传。 */
   target?: ReactNode;
+  /** target 那一行的名称，默认「对象」；操作名里已有对象、这里只写改了什么时传「改动」。 */
+  targetLabel?: string;
   createdAt: number;
   /** 只调现成的解除；返回 false 或抛错说明记录还留着。 */
   release: () => boolean | void;
@@ -48,7 +50,7 @@ export function useVerifiedRelease(toast: (message: string, kind?: "success" | "
       <div className="rd-stack">
         <Facts>
           <Fact k="原操作">{current.operation}</Fact>
-          {current.target && <Fact k="对象">{current.target}</Fact>}
+          {current.target && <Fact k={current.targetLabel ?? "对象"}>{current.target}</Fact>}
           <Fact k="发出时间">{`${businessStamp(current.createdAt)}（${businessZone().label}）`}</Fact>
         </Facts>
         <p><KeepText text="重试被拒绝不等于原操作没生效，请先到操作记录与审批核对。" /></p>

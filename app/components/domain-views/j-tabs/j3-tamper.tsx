@@ -362,7 +362,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}
       {canConfigure && !expired && !!command && !rejected && <Button size="sm" disabled={checking} disabledReason={readBlocked ?? jEmergencyRetryBlocked(command)} onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
-      {command && rejected && <VerifiedReleaseButton disabled={checking} onClick={() => release.ask({ operation: "修改告警设置", target: savedChange(saved), createdAt: command.createdAt,
+      {command && rejected && <VerifiedReleaseButton disabled={checking} onClick={() => release.ask({ operation: "修改告警设置", target: savedChange(saved), targetLabel: "改动", createdAt: command.createdAt,
         release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(command); if (released) setConfigOpen(null); syncSaved(); return released; } })} />}
     </>,
     detail: <p>{savedChange(saved)}。</p>,

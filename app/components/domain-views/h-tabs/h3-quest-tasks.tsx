@@ -1015,7 +1015,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       actions: <><Button size="sm" onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>查询原结果</Button>
         {!original.ticket && !original.acknowledged && !isRetryExpired(original) && !releasable(original)
           && <Button size="sm" disabledReason={mutations.retryBlocked(original)} onClick={() => openRecovery(original)}>按原请求重试</Button>}
-        {releasable(original) && <VerifiedReleaseButton onClick={() => release.ask({ operation: original.change.action, target: changeOf(original.change),
+        {releasable(original) && <VerifiedReleaseButton onClick={() => release.ask({ operation: original.change.action, target: changeOf(original.change), targetLabel: "改动",
           createdAt: original.createdAt, release: () => mutations.releaseRejected(original) })} />}</>,
     };
   });
@@ -1026,7 +1026,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     if (status !== "rejected" && status !== "withdrawn" && status !== "expired") continue;
     recoveryRows.push({
       key: command.commandKey, name: command.change.action,
-      change: <>{form.missionCode} · {changeOf(command.change)}</>,
+      change: <><span data-mono="">{form.missionCode}</span>{changeOf(command.change)}</>,
       submittedAt: command.createdAt,
       tag: <StatusTag tone="done">{{ rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[status]}</StatusTag>,
       actions: <>{canModuleWrite && <Button size="sm" disabledReason={missionEditorOpen ?? (!fresh.current ? "请先成功刷新用户任务数据" : undefined)}
@@ -1094,7 +1094,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           reasonMax={mc.reasonMax}
           initialReason={mc.initialReason}
           getPendingReason={mc.getPendingReason}
-          getPendingRecovery={() => savedForConfirm && recoveryFor(savedForConfirm)}
+          getPendingRecovery={() => savedForConfirm && { ...recoveryFor(savedForConfirm), query: undefined }} /* 框里已有原操作的「查询原结果」，不再出第二个 */
           getPendingBusinessValue={mc.getPendingBusinessValue}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
           onClose={() => setMc(current => current === mc ? null : current)}
