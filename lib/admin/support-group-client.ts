@@ -3,7 +3,7 @@ import { createPendingMutationStore, createPendingRecovery, PENDING_MUTATION_TTL
 import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
-import { EXPECTED_ADMIN_ID_HEADER } from "./support-self-contract";
+import { EXPECTED_ADMIN_ID_HEADER, verifySupportSelfReadOwner } from "./support-self-contract";
 
 const BASE = "/support-agents/groups";
 const GROUP_STATES = ["ENABLED", "DISABLED", "ARCHIVED"] as const;
@@ -58,8 +58,10 @@ export function parseGroupDetail(value: unknown) {
 export type SupportGroupDetail = ReturnType<typeof parseGroupDetail>;
 // B8: code null = no valid code; link is share.baseUrl + code and null when sharing is unconfigured.
 // Codes are case-insensitive (shown upper-case); version and issuedAt may be null, and the write that needs a version checks it.
-function inviteCodeView(value: unknown, withLink: boolean) {
-  const r = object(value, withLink ? "code link version issuedAt" : "code version issuedAt"), code = r.code === null ? null : text(r.code).toUpperCase(), version = r.version === null ? null : positive(r.version), issuedAt = r.issuedAt === null ? null : parseSupportTime(r.issuedAt, "group.inviteCode.issuedAt"), link = !withLink || r.link === null ? null : nonempty(r.link);
+function inviteCodeView(value: unknown, withLink: boolean, ownerAdminId?: number) {
+  if (ownerAdminId !== undefined) verifySupportSelfReadOwner(value, ownerAdminId);
+  const fields = withLink ? "code link version issuedAt" : "code version issuedAt";
+  const r = object(value, ownerAdminId === undefined ? fields : `${fields} ownerAdminId`), code = r.code === null ? null : text(r.code).toUpperCase(), version = r.version === null ? null : positive(r.version), issuedAt = r.issuedAt === null ? null : parseSupportTime(r.issuedAt, "group.inviteCode.issuedAt"), link = !withLink || r.link === null ? null : nonempty(r.link);
   if (code !== null && !/^CS[A-Z0-9]{6}$/.test(code) || link !== null && (code === null || !link.toUpperCase().includes(code))) bad("inviteCode");
   return { code, link, version, issuedAt };
 }
@@ -92,7 +94,7 @@ export type GroupPendingRecord = PendingMutationRecord & { actorId: number; inte
 export type QualificationPending = GroupPendingRecord & { intent: Extract<GroupIntent, { kind: "QUALIFICATION" }> };
 // B8 invite-code writes share the group command store: frozen payload plus key until the original command is settled.
 type InviteRecord = PendingMutationRecord & { actorId: number; label: string };
-export type InviteIssueRecord = InviteRecord & { intent: { kind: "INVITE_ISSUE"; payload: { expectedVersion: number | null } }; acknowledged?: true; receiptStatus?: "SUCCEEDED" | "FAILED" };
+export type InviteIssueRecord = InviteRecord & { intent: { kind: "INVITE_ISSUE"; payload: { expectedVersion: number | null } }; acknowledged?: true; receiptStatus?: "SUCCEEDED" | "FAILED"; receiptAccountPending?: boolean };
 export type InviteRevokeRecord = InviteRecord & { intent: { kind: "INVITE_REVOKE"; targetId: string; payload: { expectedVersion: number; reason: string; code: string; name: string } } };
 export type InvitePendingRecord = InviteIssueRecord | InviteRevokeRecord;
 export function isInvitePending(record: GroupPendingRecord | InvitePendingRecord): record is InvitePendingRecord { return record.intent.kind === "INVITE_ISSUE" || record.intent.kind === "INVITE_REVOKE"; }
@@ -153,7 +155,11 @@ export const supportGroupClient = {
   transferSupportGroupOwner(groupId: string, input: OwnerGroupInput, commandKey: string, signal?: AbortSignal) { const target = id(groupId), ownerId = id(input.supervisorAdminId); object(input, "supervisorAdminId expectedVersion reason"); const body = { supervisorAdminId: supportWireId(ownerId, "group.owner"), expectedVersion: positive(input.expectedVersion), reason: reason(input.reason) }; return supportRequest(`${BASE}/${target}/owner`, value => changedGroup(value, target, body.expectedVersion, g => g.supervisorAdminId === ownerId), supportJson("PATCH", body, key(commandKey), signal)); },
   moveSupportGroupMember(adminId: string, input: MoveGroupInput, commandKey: string, signal?: AbortSignal) { const target = id(adminId); object(input, "targetGroupId expectedMemberVersion sourceGroupVersion targetGroupVersion reason"); const targetGroupId = input.targetGroupId === null ? null : id(input.targetGroupId), body = { targetGroupId: targetGroupId === null ? null : supportWireId(targetGroupId, "group.target"), expectedMemberVersion: count(input.expectedMemberVersion), sourceGroupVersion: input.sourceGroupVersion === null ? null : positive(input.sourceGroupVersion), targetGroupVersion: input.targetGroupVersion === null ? null : positive(input.targetGroupVersion), reason: reason(input.reason) }; if (body.targetGroupId !== null && body.targetGroupVersion === null || body.targetGroupId === null && body.targetGroupVersion !== null) bad("targetVersion"); return supportRequest(`${BASE}/members/${target}`, value => { const r = object(value, "member boundCustomers"), m = object(r.member, "id agentAdminId groupId version startsAt"); if (id(m.agentAdminId) !== target || nullableId(m.groupId) !== targetGroupId || positive(m.version) <= body.expectedMemberVersion) bad("moveIdentity"); return { member: { id: id(m.id), adminId: target, groupId: nullableId(m.groupId), version: positive(m.version), startsAt: text(m.startsAt) }, boundCustomers: count(r.boundCustomers) }; }, supportJson("PATCH", body, key(commandKey), signal)); },
   inviteCode(adminId: string, signal?: AbortSignal): Promise<InviteCodeView> { return supportRequest(`/support-agents/${id(adminId)}/invite-code`, value => inviteCodeView(value, true), { signal }); },
-  selfInviteCode(signal?: AbortSignal): Promise<InviteCodeView> { return supportRequest("/support-agents/self/invite-code", value => inviteCodeView(value, true), { signal }); },
+  selfInviteCode(expectedAdminId: number, signal?: AbortSignal): Promise<InviteCodeView> {
+    return supportRequest("/support-agents/self/invite-code", value => inviteCodeView(value, true, expectedAdminId), {
+      signal, headers: { [EXPECTED_ADMIN_ID_HEADER]: String(expectedAdminId) },
+    });
+  },
   /** expectedVersion null generates the first code; the current version resets it (old code revoked). */
   issueSelfInviteCode(expectedVersion: number | null, commandKey: string, expectedAdminId: number): Promise<InviteCodeView> {
     const body = { expectedVersion: expectedVersion === null ? null : positive(expectedVersion) };

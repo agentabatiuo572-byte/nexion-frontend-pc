@@ -27,7 +27,7 @@ type UploadPending = PendingMutationRecord & { actorId: number; clientUploadId: 
 const uploads = createPendingMutationStore<UploadPending>({ storageKey: "nexion-support-bulk-attachment-v1", retainExpiredRecords: true, isValidRecord: r => Number.isSafeInteger(r.actorId) && typeof r.clientUploadId === "string" && typeof r.hash === "string" && typeof r.fileName === "string" && typeof r.fileMime === "string" });
 const commands=createPendingMutationStore<Stored>({storageKey:"nexion-support-bulk-pending",retainExpiredRecords:true,isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.payload?.selectionId)});
 const mutationLabel = (action: Stored["action"]) => action === "cancel" ? "取消未提交项" : "核对并重试失败项";
-const replayFailure = (record: Stored) => `「${mutationLabel(record.action)}」的同号重试被拒绝。${displayAdminError(record.replayRejection)}原操作结果仍需核实。`;
+const replayFailure = (record: Stored) => `「${record.action ? mutationLabel(record.action) : "提交群发"}」的同号重试被拒绝。${displayAdminError(record.replayRejection)}原操作结果仍需核实。`;
 const isBulkAccessFailure = (error: unknown) => isSupportScopeDenial(error) || isSupportSessionExpired(error) || isSupportAccessFailure(error);
 const conversationReasonText:Record<string,string>={
   // Kept for batches created before closed conversations were included (D-6); customer threads are now resumed.
@@ -127,7 +127,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     if(old.replayRejection&&old.batchId&&old.action){
       setRecoveryBatchId(old.batchId);setMutationFailure(replayFailure(old));setStep(4);
     }else{
-      setStep(3);setError(isRetryExpired(old)?RETRY_EXPIRED_TEXT:"原操作结果未知，请先查询原操作。");
+      setStep(3);setError(old.replayRejection ? replayFailure(old) : isRetryExpired(old) ? RETRY_EXPIRED_TEXT : "原操作结果未知，请先查询原操作。");
     }
   },[scopeKey]);
   useEffect(()=>{if(!actorId)return;try{const saved=JSON.parse(sessionStorage.getItem(`nexion-bulk-draft:${actorId}`)??"{}");setText(typeof saved.text==="string"?saved.text:"");setIntent(saved.intent==="MAINTENANCE"?"MAINTENANCE":"SERVICE");}catch{setError("群发草稿暂不能恢复，请在本页核对。");}setDraftOwner(actorId);},[actorId,epoch]);
@@ -341,12 +341,12 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       setError("");setResultError("");setHistoryOpen(false);setStep(4);setResultRetry(n=>n+1);
       return;
     }
-    setSubmitFailed(true);setError(reason);
+    setSubmitFailed(true);setError(replayRefusal ? replayFailure({...record,replayRejection:replayRefusal}) : reason);
   }
-  function releaseRejectedMutation(record: Stored) {
+  function releaseRejected(record: Stored) {
     const currentRecord = () => commands.list().find(row => row.commandKey === record.commandKey && row.actorId === actorId && row.replayRejection);
     verifiedRelease.ask({
-      operation: mutationLabel(record.action), target: record.batchId, targetLabel: "原批次", createdAt: record.createdAt,
+      operation: record.action ? mutationLabel(record.action) : "提交群发", target: record.batchId, targetLabel: "原批次", createdAt: record.createdAt,
       getSnapshot: () => {
         const current = currentRecord();
         return current && JSON.stringify(current);
@@ -354,7 +354,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       release: () => {
         commands.forget(record.fingerprint, record.commandKey);
         if (currentRecord()) return false;
-        setPending(null);setMutationFailure("");setNotReceived(false);
+        setPending(null);setMutationFailure("");setError("");setNotReceived(false);
         return true;
       },
     });
@@ -378,7 +378,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       const recovered=recover?await supportClient.command(record.commandKey).catch(e=>{if(e instanceof SupportClientError&&(e.status===200?e.apiCode:e.status)===404&&e.backendMessage==="SUPPORT_COMMAND_NOT_FOUND")return null;throw e;}):null;
       if(saved!==stamp.current)return;
       if(record.replayRejection&&recovered?.status!=="SUCCEEDED"&&recovered?.status!=="FAILED"){
-        setMutationFailure(replayFailure(record)+(recovered?"已查到原操作，仍未取得结论。":"暂时查不到原结果。"));
+        (record.action ? setMutationFailure : setError)(replayFailure(record)+(recovered?"已查到原操作，仍未取得结论。":"暂时查不到原结果。"));
         return;
       }
       if(recovered&&recovered.status!=="SUCCEEDED"&&recovered.status!=="FAILED"){setError("发送结果仍未知，请稍后再查询原操作。");return;}
@@ -402,14 +402,19 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       if(saved!==stamp.current)return;commands.forget(record.fingerprint,record.commandKey);setPending(null);setJob(next);setRecoveryBatchId(null);setMutationFailure("");setStep(4);setHistoryOpen(false);setRecipientPage(1);setMutationAction(null);setMutationReason("");setResultRetry(n=>n+1);window.dispatchEvent(new Event("support-todo-changed"));
     }catch(e){
       if(saved!==stamp.current)return;
-      if(isBulkAccessFailure(e)){
+      const status = e instanceof SupportClientError ? e.status === 200 ? e.apiCode : e.status : undefined;
+      if(submitted ? isSupportSessionExpired(e) || status === 403 : isBulkAccessFailure(e)){
         if(submitted&&!recover&&isSupportWriteBeforeAuthFailure(e))commands.forget(record.fingerprint,record.commandKey);
         closeForAccessFailure(e);
         return;
       }
-      const refusal=submitted?explicitRejectionCode(e):undefined;
-      if(refusal&&(!recover||record.action&&record.batchId))rejectSubmission(record,displayAdminError(e),recover?refusal:undefined);
-      else if(record.replayRejection)setMutationFailure(replayFailure(record)+displayAdminReadError(e));
+      // The create endpoint can only reject a missing attachment before queueing.
+      // SUPPORT_BULK_NOT_FOUND can also come from its post-write batch readback.
+      const missingAttachment = submitted && !record.action && status === 404
+        && e instanceof SupportClientError && e.backendMessage === "ATTACHMENT_NOT_FOUND";
+      const refusal = missingAttachment ? "ATTACHMENT_NOT_FOUND" : submitted && status !== 404 ? explicitRejectionCode(e) : undefined;
+      if(refusal&&(!recover||record.action&&record.batchId||missingAttachment))rejectSubmission(record,displayAdminError(e),recover?refusal:undefined);
+      else if(record.replayRejection)(record.action ? setMutationFailure : setError)(replayFailure(record)+displayAdminReadError(e));
       else setError(displayAdminError(e));
     }finally{if(saved===stamp.current)setBusy(false);}
   }
@@ -430,7 +435,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const cancelBlocked=job&&(job.actorId!==actorId?"只有发起人能操作这个批次":!canWrite?"当前账号只能查看":batchReadBlock??(!job.counts.pending?"没有未提交的客户":pending?"先查询原操作":undefined));
   const retryBlocked=job&&(job.actorId!==actorId?"只有发起人能操作这个批次":!canWrite?"当前账号只能查看":batchReadBlock??(!(job.counts.failed||job.counts.unknown)?"没有失败或结果未知的客户":pending?"先查询原操作":undefined));
   const mutationBlocked=mutationAction==="cancel"?cancelBlocked:retryBlocked;
-  const rejectedMutation = pending?.replayRejection ? pending : null;
+  const rejectedCommand = pending?.replayRejection ? pending : null;
   return <><Modal title="圈选客户群发" icon="users" wide busy={busy||uploading} onClose={onClose} footer={<div className="m-admin-toolbar"><Button disabled={busy||uploading} onClick={onClose}>{step===4?"知道了":"取消"}</Button>{!historyOpen&&<>{step>1&&step<4&&!pending&&<Button disabled={busy} onClick={()=>setStep(n=>n-1)}>上一步</Button>}{step===1&&!createBlocked&&<Button variant="primary" disabledReason={!selected.size?"先勾选客户":undefined} disabled={busy||previewDenied||Boolean(pending)} onClick={()=>void freeze()}>{busy?"核对名单…":"下一步：编写内容"}</Button>}{step===2&&<Button variant="primary" disabledReason={uploadPending?"先核对原图片上传结果":(image?!image.assetId:!text.trim())?(image?"先上传图片":"先写发送内容"):undefined} onClick={()=>{setStep(3);setAck(false);setPreviewList("included");}}>下一步：确认名单</Button>}{step===3&&!pending&&<Button variant="primary" disabled={busy} disabledReason={!ready&&!busy?"先写操作理由并勾选核对":undefined} onClick={()=>void submit()}>{busy?"提交中…":"确认提交群发"}</Button>}</>}{pending&&notReceived&&!isRetryExpired(pending)&&!pending.readOnlyRecovery&&!pending.replayRejection&&<Button disabled={busy} onClick={()=>void submit(true,true)}>按原操作重试</Button>}{pending&&<Button variant="primary" disabled={busy} onClick={()=>void submit(true)}>查询原操作</Button>}</div>}>
     <div className="ui-support-workflow ui-support-contact-picker rd-stack"><Steps label="群发步骤" items={["圈选客户","编写内容","确认提交","逐客结果"].map((title,index) => ({ label: title, state: step > index + 1 ? "done" as const : step === index + 1 ? submitFailed && step === 3 ? "failed" as const : "current" as const : "todo" as const }))}/><p className="rd-sr-only" role="status">第 {step} 步：{["","圈选客户","编写内容","确认提交","逐客结果"][step]}</p>{error&&!(pending&&isRetryExpired(pending)&&error===RETRY_EXPIRED_TEXT)&&<Notice tone={pending?"warn":"danger"}>{error}</Notice>}{uploadPending && <Notice tone="warn">原图片上传结果未知。请选择同一张图片后按原操作重试；超过图片有效期或 24 小时，请联系管理员核对。</Notice>}
     {!historyOpen&&<>
@@ -455,7 +460,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       {selection&&excluded(selection)}
     </>}</>}
     {step===2&&selection&&<><p className="m-bulk-head">名单已确定，共 {selection.count} 位 <Explain label="返回修改" content="内容返回修改时保留。"/></p><Field label="本条消息用途" explain="普通服务不计维护；联系维护仅在消息成功提交后计一次，后续新的有效活动才形成成功维护。群发不清待回复。">{control=><Select {...control} aria-label="本条消息用途" value={intent} onChange={value=>setIntent(value as "SERVICE"|"MAINTENANCE")} options={[{value:"SERVICE",label:"普通服务"},{value:"MAINTENANCE",label:"联系维护"}]}/>}</Field><SupportContentTools ctx={ctx} disabled={uploading || Boolean(uploadPending)} onInsert={insert} onSelect={v=>{if(image)URL.revokeObjectURL(image.url);setImage(null);setChoice(v);if(!text.trim())setText(v.kind==="SKU"?"推荐商品："+v.name:"查看："+v.name);}}/>{choice&&<div className="m-bulk-row"><span>已选：{choice.name}</span><Button size="sm" onClick={()=>setChoice(null)}>取消推荐</Button></div>}<Field label="发送文案">{control=><Textarea {...control} ref={composerRef} aria-label="群发文案" rows={4} maxLength={10000} value={text} onChange={e=>setText(e.target.value)}/>}</Field><Field label="群发图片">{control=><><input {...control} ref={fileRef} type="file" hidden accept="image/jpeg,image/png" disabled={uploading} onChange={e=>{void chooseFile(e.target.files?.[0]);e.target.value="";}}/><div><Button size="sm" disabled={uploading} onClick={()=>fileRef.current?.click()}>选择图片</Button></div></>}</Field>{image&&<div><img src={image.url} alt="群发图片预览" className="rd-thumb"/><p>{image.assetId?"已上传，尚未发送":uploading?"正在上传…":"尚未上传"}</p><div className="m-bulk-row-tools"><Button size="sm" disabled={uploading||Boolean(image.assetId)} onClick={()=>void upload()}>上传或重试图片</Button><Button size="sm" disabled={uploading || Boolean(uploadPending)} onClick={()=>{URL.revokeObjectURL(image.url);setImage(null);}}>移除图片</Button></div></div>}{uploadError&&<p role="alert">{uploadError}</p>}{excluded(selection)}</>}
-    {step===3&&<>{pending?<div className="rd-stack"><Notice tone="warn">{isRetryExpired(pending)?RETRY_EXPIRED_TEXT:"已保存原操作号，查询和重试使用完全相同的名单及内容。"}</Notice><Facts><Fact k="原操作">{pending.action === "cancel" ? "取消未提交项" : pending.action === "retry" ? "核对重试失败项" : "创建群发批次"}</Fact><Fact k={pending.batchId ? "原批次" : "原名单快照"}><span data-mono>{pending.batchId ?? pending.payload.selectionId}</span></Fact><Fact k="原理由">{pending.mutation?.reason ?? pending.payload.reason}</Fact>{pending.mutation && <Fact k="原批次版本">{pending.mutation.expectedVersion}</Fact>}{!pending.action && !pending.readOnlyRecovery && <><Fact k="原用途">{pending.payload.intent === "MAINTENANCE" ? "联系维护" : "普通服务"}</Fact><Fact k="原发送内容"><span className="rd-pre">{pending.payload.content}</span></Fact></>}</Facts><Fold inset title="技术信息" summary="操作编号与内容编号"><Facts><Fact k="操作编号"><span data-mono>{pending.commandKey}</span></Fact>{pending.payload.assetId && <Fact k="原图片编号"><span data-mono>{pending.payload.assetId}</span></Fact>}</Facts></Fold></div>:selection&&<><Facts><Fact k="发送给" lead unit="位客户">{selection.count}</Fact><Fact k="发送身份">当前专属客服本人</Fact><Fact k="用途">{intent==="SERVICE"?"普通服务":"联系维护"}</Fact><Fact k="内容类型">{image?"图片":choice?.kind==="SKU"?"商品推荐":choice?.kind==="LINK"?"页面链接":"文字"}</Fact><Fact k="发送内容"><span className="rd-pre">{text}</span>{choice&&<div>{choice.name}</div>}{image&&<img src={image.url} alt="确认群发图片" className="rd-thumb"/>}</Fact><Fact k="预览有效期至">{formatBusinessTimeCompact(selection.expiresAt)}（{businessZone().label}）<Explain label="预览过期怎么办" content="过期请返回选人重新核对。"/></Fact></Facts><Fold inset title="发送名单" open={previewList === "included"} onOpenChange={open=>setPreviewList(open ? "included" : "")} summary={`${selection.count} 位`}><RecordList label="发送名单" records={recipientRecords(selection)}/></Fold>{excluded(selection)}<Field label="操作理由" required hint={`至少 ${reasonRule.min} 字`} error={reasonLeft?reasonRule.hint(reason)||undefined:undefined}>{control=><Textarea {...control} rows={3} value={reason} maxLength={reasonRule.max} disabled={busy} count={`${visibleReasonLength(reason)}/${reasonRule.max}`} onChange={e=>setReason(e.target.value)} onBlur={()=>setReasonLeft(true)}/>}</Field><Check label="已核对名单、当前专属客服、用途和内容，确认逐客独立发送。" checked={ack} disabled={busy} onChange={e=>setAck(e.target.checked)}/></>}</>}
+    {step===3&&<>{pending?<div className="rd-stack"><Notice tone="warn">{isRetryExpired(pending)?RETRY_EXPIRED_TEXT:"已保存原操作号，查询和重试使用完全相同的名单及内容。"}</Notice><Facts><Fact k="原操作">{pending.action === "cancel" ? "取消未提交项" : pending.action === "retry" ? "核对重试失败项" : "创建群发批次"}</Fact><Fact k={pending.batchId ? "原批次" : "原名单快照"}><span data-mono>{pending.batchId ?? pending.payload.selectionId}</span></Fact><Fact k="原理由">{pending.mutation?.reason ?? pending.payload.reason}</Fact>{pending.mutation && <Fact k="原批次版本">{pending.mutation.expectedVersion}</Fact>}{!pending.action && !pending.readOnlyRecovery && <><Fact k="原用途">{pending.payload.intent === "MAINTENANCE" ? "联系维护" : "普通服务"}</Fact><Fact k="原发送内容"><span className="rd-pre">{pending.payload.content}</span></Fact></>}</Facts><Fold inset title="技术信息" summary="操作编号与内容编号"><Facts><Fact k="操作编号"><span data-mono>{pending.commandKey}</span></Fact>{pending.payload.assetId && <Fact k="原图片编号"><span data-mono>{pending.payload.assetId}</span></Fact>}</Facts>{pending.replayRejection&&<VerifiedReleaseButton disabled={busy} onClick={()=>releaseRejected(pending)} />}</Fold></div>:selection&&<><Facts><Fact k="发送给" lead unit="位客户">{selection.count}</Fact><Fact k="发送身份">当前专属客服本人</Fact><Fact k="用途">{intent==="SERVICE"?"普通服务":"联系维护"}</Fact><Fact k="内容类型">{image?"图片":choice?.kind==="SKU"?"商品推荐":choice?.kind==="LINK"?"页面链接":"文字"}</Fact><Fact k="发送内容"><span className="rd-pre">{text}</span>{choice&&<div>{choice.name}</div>}{image&&<img src={image.url} alt="确认群发图片" className="rd-thumb"/>}</Fact><Fact k="预览有效期至">{formatBusinessTimeCompact(selection.expiresAt)}（{businessZone().label}）<Explain label="预览过期怎么办" content="过期请返回选人重新核对。"/></Fact></Facts><Fold inset title="发送名单" open={previewList === "included"} onOpenChange={open=>setPreviewList(open ? "included" : "")} summary={`${selection.count} 位`}><RecordList label="发送名单" records={recipientRecords(selection)}/></Fold>{excluded(selection)}<Field label="操作理由" required hint={`至少 ${reasonRule.min} 字`} error={reasonLeft?reasonRule.hint(reason)||undefined:undefined}>{control=><Textarea {...control} rows={3} value={reason} maxLength={reasonRule.max} disabled={busy} count={`${visibleReasonLength(reason)}/${reasonRule.max}`} onChange={e=>setReason(e.target.value)} onBlur={()=>setReasonLeft(true)}/>}</Field><Check label="已核对名单、当前专属客服、用途和内容，确认逐客独立发送。" checked={ack} disabled={busy} onChange={e=>setAck(e.target.checked)}/></>}</>}
     {step===4&&job&&<><Facts><Fact k="批次状态">{stateText[job.state]??"未知"}<Explain label="执行结束是什么意思" content="执行结束不代表全部成功，逐客结果看下面。"/></Fact><Fact k="批次"><span data-mono="">{job.batchId}</span></Fact><Fact k="名单">共 {job.frozenCount} 位 · 当前可读 {job.visibleCount} 位</Fact><Fact k="发送内容">{job.contentRestricted?"客户归属已变化，部分内容、附件和明细受限；不显示旧缓存。":job.content}</Fact></Facts>
       <div className="m-bulk-counts"><span>总数 <b>{job.counts.total}</b></span>{job.counts.failed>0&&<StatusTag tone="danger">失败 {job.counts.failed}</StatusTag>}{job.counts.unknown>0&&<StatusTag tone="warn">结果未知 {job.counts.unknown}</StatusTag>}<span>已提交 <b>{job.counts.sent}</b></span>{job.counts.failed===0&&<span>失败 <b>0</b></span>}<span>跳过 <b>{job.counts.skipped}</b></span><span>取消 <b>{job.counts.cancelled}</b></span><span>待处理（已知）<b>{job.counts.pending-job.counts.unknown}</b></span></div>
       <div className="m-bulk-row"><Button size="sm" onClick={()=>setResultRetry(n=>n+1)}>刷新原批次</Button><span className="m-bulk-row-tools"><Button size="sm" disabledReason={cancelBlocked||undefined} onClick={()=>setMutationAction("cancel")}>取消未提交项</Button><Button size="sm" disabledReason={retryBlocked||undefined} onClick={()=>setMutationAction("retry")}>核对并重试失败项</Button></span></div>
@@ -464,9 +469,9 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       {!recipients?<p role="status">逐客明细暂未读取</p>:<Table label="逐客结果"><thead><tr><Th>客户</Th><Th>结果</Th><Th>原因</Th><Th>原会话</Th></tr></thead><tbody>{recipients.map((r,i)=><Tr key={r.customerId+":"+i}><Td>{customerName(r.customerId)}</Td><Td><StatusTag tone={recipientTone(r)}>{r.resultCertainty==="UNKNOWN"?"结果未知":stateText[r.state]??"未知"}</StatusTag></Td><Td>{r.failureCode?{...conversationReasonText,SUPPORT_ASSIGNMENT_CHANGED:"客户已转绑，本次不再发送",SUPPORT_MAINTENANCE_STOPPED:"客户已停止维护",SUPPORT_AGENT_UNAVAILABLE:"专属客服当前不可发送",RESULT_UNKNOWN:"需核对原提交结果",SUPPORT_BULK_PAYLOAD_REVIEW_REQUIRED:"原内容需核对，暂不自动重发"}[r.failureCode]??"执行未通过，请核对客户与原消息":"—"}{r.retryable?" · 可核对重试":""}</Td><Td>{r.conversationNo?<a className="rd-link" href={`/service/sessions?conversationNo=${encodeURIComponent(r.conversationNo)}`}>打开原客户会话</a>:"—"}</Td></Tr>)}</tbody></Table>}
       {recipientTotal>0&&<Pager label="逐客结果" total={recipientTotal} page={recipientPage} pageSize={10} sizes={[10]} onPage={setRecipientPage} onPageSize={()=>undefined}/>}</>}
     {step===4&&!job&&(mutationFailure||resultError)&&<Notice tone="danger" action={resultError ? <Button size="sm" onClick={()=>setResultRetry(n=>n+1)}>刷新原批次</Button> : undefined}>{mutationFailure}{resultError&&` ${resultError}`}</Notice>}
-    {step===4&&rejectedMutation&&<Fold inset title="技术信息" summary="原操作编号">
-      <Facts><Fact k="操作编号"><span data-mono>{rejectedMutation.commandKey}</span></Fact></Facts>
-      <VerifiedReleaseButton disabled={busy} onClick={()=>releaseRejectedMutation(rejectedMutation)} />
+    {step===4&&rejectedCommand&&<Fold inset title="技术信息" summary="原操作编号">
+      <Facts><Fact k="操作编号"><span data-mono>{rejectedCommand.commandKey}</span></Fact></Facts>
+      <VerifiedReleaseButton disabled={busy} onClick={()=>releaseRejected(rejectedCommand)} />
     </Fold>}
     </>}
     <Fold inset title="已提交批次" explain="关闭后可以在这里恢复查看。" open={historyOpen} onOpenChange={setHistoryOpen} summary={jobsError?"加载失败":jobs?`${jobsTotal} 批`:"正在加载…"}>{jobsError?<div role="alert" className="m-bulk-row"><span>已提交批次加载失败。{jobsError}</span><Button size="sm" onClick={()=>setJobsRetry(n=>n+1)}>重试</Button></div>:!jobs?<p role="status">正在加载…</p>:<>{!jobs.length&&<p role="status">暂无已提交批次，提交群发后会显示在这里。</p>}{jobs.map(j=><div className="m-bulk-row" key={j.batchId}><span>{stateText[j.state]??"未知"} · {j.frozenCount} 位{j.counts.failed>0?` · 失败 ${j.counts.failed}`:""}</span><Button size="sm" disabled={Boolean(pending)||busy} onClick={()=>{setJob(j);setRecoveryBatchId(null);setMutationFailure("");setStep(4);setRecipientPage(1);setHistoryOpen(false);}}>查看结果</Button></div>)}{jobsTotal>0&&<Pager label="已提交批次" total={jobsTotal} page={jobsPage} pageSize={10} sizes={[10]} onPage={setJobsPage} onPageSize={()=>undefined}/>}</>}</Fold>

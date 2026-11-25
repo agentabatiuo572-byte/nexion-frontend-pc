@@ -11,7 +11,7 @@ import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isSupportSelfAccountMismatch } from "@/lib/admin/support-self-contract";
-import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure, reportSupportSelfWriteMismatch } from "@/lib/admin/support-self-session";
+import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure, reportSupportSelfReadMismatch, reportSupportSelfWriteMismatch } from "@/lib/admin/support-self-session";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { usePendingReplayDeadline } from "../design-kit";
 import "./account-avatar-controls.css";
@@ -92,9 +92,10 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
     return () => clearTimeout(timer);
   }, [draft?.asset?.assetId, draft?.asset?.expiresAt]);
   const active = (token: number) => token === generation.current && useAdminAuth.getState().session?.adminId === actorId;
-  const clearSelfMismatch = () => {
+  const clearSelfMismatch = (sent: boolean) => {
     onSelfIdentityChanged?.();
-    reportSupportSelfWriteMismatch();
+    if (sent) reportSupportSelfWriteMismatch();
+    else reportSupportSelfReadMismatch();
   };
   async function choose(nextFile?: File) {
     if (!nextFile || !canUpload || disabled || busy || draft?.asset || draft?.kind === "DEFAULT" || draft?.cancelKey || expired) return;
@@ -130,7 +131,7 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
       if (!command) command = { fingerprint, actorId, scope, kind: "DEFAULT", gender, clientUploadId: crypto.randomUUID(), commandKey: crypto.randomUUID(), createdAt: Date.now(), expiresAt: Date.now() + 86400000 };
       const abort = new AbortController(); controller.current = abort;
       if (scope === "self") {
-        await fetchSelfAvatar(abort.signal);
+        await fetchSelfAvatar(actorId, abort.signal);
         if (!await checkSupportSelfSession(actorId, abort.signal)) { onSelfIdentityChanged?.(); return; }
       }
       if (!active(token)) return;
@@ -161,7 +162,7 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
         const selfMismatch = scope === "self" && isSupportSelfAccountMismatch(e);
         const selfRefusal = scope === "self" && isExplicitRejection(e) && (!selfMismatch || !wasPending);
         if (command && (firstAdminRefusal || selfRefusal) && (sent || !wasPending)) { avatarDrafts.forget(command.fingerprint, command.commandKey); updateDraft(null); resetFile(); }
-        if (selfMismatch) clearSelfMismatch();
+        if (selfMismatch) clearSelfMismatch(sent);
         else if (scope === "self" && isSupportAccessFailure(e)) onSelfAccessDenied?.(e);
       }
     } finally { if (active(token)) setBusy(false); }
@@ -187,7 +188,7 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
     const token = generation.current; setBusy(true); setError(""); onBlocking(true);
     try {
       if (scope === "self") {
-        const snapshot = await fetchSelfAvatar();
+        const snapshot = await fetchSelfAvatar(draft.actorId);
         if (!active(token)) return;
         if (!await checkSupportSelfSession(draft.actorId)) { onSelfIdentityChanged?.(); return; }
         if (!active(token)) return;
@@ -209,7 +210,7 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
         }
         const selfMismatch = scope === "self" && isSupportSelfAccountMismatch(e);
         if (scope === "self" && !draft.cancelKey && (!sent || selfMismatch || isSupportWriteBeforeAuthFailure(e))) updateDraft(rememberAvatarDraft(draft));
-        if (selfMismatch) clearSelfMismatch();
+        if (selfMismatch) clearSelfMismatch(sent);
         else if (scope === "self" && isSupportAccessFailure(e)) onSelfAccessDenied?.(e);
         setError(displayAdminError(scope === "admin" && sent && !refused ? new Error("A1_AVATAR_CANCEL_QUERY_ONLY") : e));
       }

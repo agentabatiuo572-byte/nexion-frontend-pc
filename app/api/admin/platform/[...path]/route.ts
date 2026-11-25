@@ -236,10 +236,10 @@ async function proxy(request: Request, context: RouteContext) {
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   if (avatarRoute && hasBody) {
     try { avatarKey(idempotencyKey ?? ""); } catch { return jsonError(422, "AVATAR_COMMAND_INVALID"); }
-    if (avatarRoute.self) {
-      const expectedAdminId = request.headers.get(EXPECTED_ADMIN_ID_HEADER);
-      if (expectedAdminId) headers.set(EXPECTED_ADMIN_ID_HEADER, expectedAdminId);
-    }
+  }
+  if (avatarRoute?.self && (hasBody || request.method === "GET" && path.join("/") === "accounts/self/avatar")) {
+    const expectedAdminId = request.headers.get(EXPECTED_ADMIN_ID_HEADER);
+    if (expectedAdminId) headers.set(EXPECTED_ADMIN_ID_HEADER, expectedAdminId);
   }
   const avatarUpload = avatarRoute?.upload === true;
   const avatarRead = avatarRoute?.read === true;

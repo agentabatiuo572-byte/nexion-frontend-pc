@@ -42,3 +42,7 @@ export function reportSupportSelfWriteMismatch() {
   toast.warn(SELF_SESSION_CHANGED);
   announcePermissionDenied();
 }
+
+export function reportSupportSelfReadMismatch() {
+  announcePermissionDenied();
+}

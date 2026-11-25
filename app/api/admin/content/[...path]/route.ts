@@ -106,7 +106,7 @@ async function proxy(request: Request, context: RouteContext) {
   const idempotencyKey = request.headers.get(IDEMPOTENCY_KEY_HEADER);
   if (contentType) headers.set("Content-Type", contentType);
   if (idempotencyKey) headers.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey);
-  if (request.method === "POST" && path.join("/") === "support-agents/self/invite-code") {
+  if ((request.method === "GET" || request.method === "POST") && path.join("/") === "support-agents/self/invite-code") {
     const expectedAdminId = request.headers.get(EXPECTED_ADMIN_ID_HEADER);
     if (expectedAdminId) headers.set(EXPECTED_ADMIN_ID_HEADER, expectedAdminId);
   }

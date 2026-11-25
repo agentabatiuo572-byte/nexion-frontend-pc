@@ -2,7 +2,7 @@ import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outco
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { accountAvatarFields, avatarBase, avatarGender, avatarId, avatarKey, parsePreparedAvatar, parseSelfAvatarSnapshot, selfAvatarSaveInput, type AvatarGender, type AvatarScope, type SelfAvatarSave } from "@/lib/admin/account-avatar-contract";
 import { parseA1Created, parseA1Operator, parseA1Overview, parseA1PasswordReset, parseA1Permission } from "./a1-read-contract";
-import { EXPECTED_ADMIN_ID_HEADER } from "./support-self-contract";
+import { EXPECTED_ADMIN_ID_HEADER, verifySupportSelfReadOwner } from "./support-self-contract";
 export type { AvatarGender, SelfAvatarSnapshot, SelfAvatarSave } from "@/lib/admin/account-avatar-contract";
 
 export type GrantCell = "-" | "R" | "M" | "C";
@@ -248,8 +248,10 @@ export async function cancelAccountAvatar(scope: AvatarScope, assetId: string, k
   const result = await a1Request<unknown>(`${avatarBase(scope)}/${avatarId(assetId)}`, { method: "DELETE", headers: avatarWriteHeaders(avatarKey(key), expectedAdminId), idempotencyPrefix: "avatar-cancel", retryTransport: false });
   try { return parsePreparedAvatar(result, scope, "CANCELLED"); } catch (cause) { throw new A1OutcomeUncertainError("A1_AVATAR_RESPONSE_UNREADABLE", key, { cause }); }
 }
-export async function fetchSelfAvatar(signal?: AbortSignal) {
-  return parseSelfAvatarSnapshot(await a1Request<unknown>("/accounts/self/avatar", { signal }));
+export async function fetchSelfAvatar(expectedAdminId: number, signal?: AbortSignal) {
+  const value = await a1Request<unknown>("/accounts/self/avatar", { signal, headers: { [EXPECTED_ADMIN_ID_HEADER]: String(expectedAdminId) } });
+  verifySupportSelfReadOwner(value, expectedAdminId);
+  return parseSelfAvatarSnapshot(value);
 }
 export async function saveSelfAvatar(input: SelfAvatarSave, key: string, expectedAdminId: number, signal?: AbortSignal) {
   const result = await a1Request<unknown>("/accounts/self/avatar", { method: "PATCH", body: JSON.stringify(selfAvatarSaveInput(input)), headers: avatarWriteHeaders(avatarKey(key), expectedAdminId), idempotencyPrefix: "avatar-self-save", retryTransport: false, signal });

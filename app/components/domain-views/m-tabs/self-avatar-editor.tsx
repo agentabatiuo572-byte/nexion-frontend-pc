@@ -9,7 +9,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import { isSupportSelfAccountMismatch } from "@/lib/admin/support-self-contract";
-import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure, refreshSupportAccess, reportSupportSelfWriteMismatch, SELF_READ_SESSION_CHANGED } from "@/lib/admin/support-self-session";
+import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure, refreshSupportAccess, reportSupportSelfReadMismatch, reportSupportSelfWriteMismatch, SELF_READ_SESSION_CHANGED } from "@/lib/admin/support-self-session";
 import { AccountAvatarPicker } from "../a-tabs/account-avatar-picker";
 import { usePendingReplayDeadline } from "../design-kit";
 import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
@@ -96,10 +96,20 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
     clearPrivateAvatar();
     refreshSupportAccess(error);
   };
-  async function readCurrent(expectedActorId: number, token: number, signal: AbortSignal) {
-    const current = await fetchSelfAvatar(signal);
+  async function readCurrent(expectedActorId: number, token: number, signal: AbortSignal, beforeWrite = false) {
+    let current: SelfAvatarSnapshot;
+    try {
+      current = await fetchSelfAvatar(expectedActorId, signal);
+    } catch (cause) {
+      if (!isSupportSelfAccountMismatch(cause)) throw cause;
+      if (!signal.aborted && active(token)) {
+        clearPrivateAvatar();
+        reportSupportSelfReadMismatch();
+      }
+      return null;
+    }
     if (!active(token)) return null;
-    if (!await checkSupportSelfSession(expectedActorId, signal, SELF_READ_SESSION_CHANGED)) {
+    if (!await checkSupportSelfSession(expectedActorId, signal, beforeWrite ? undefined : SELF_READ_SESSION_CHANGED)) {
       if (!signal.aborted) clearPrivateAvatar();
       return null;
     }
@@ -131,11 +141,8 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
     let sent = false, saved = false;
     try {
       if (!active(token) || record.actorId !== actorId) return false;
-      const current = firstAttempt?.current ?? await fetchSelfAvatar(abort.signal); if (!active(token)) return false;
-      if (!firstAttempt && !await checkSupportSelfSession(record.actorId, abort.signal)) {
-        clearPrivateAvatar();
-        return true;
-      }
+      const current = firstAttempt?.current ?? await readCurrent(record.actorId, token, abort.signal, true);
+      if (!current) return true;
       if (!active(token)) return false;
       if (!firstAttempt) setSnapshot(current);
       setAllowed(true);
@@ -241,10 +248,10 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
       run: async reason => {
         if (!active(confirmationGeneration)) return false;
         const abort = new AbortController(); controller.current = abort; setBusy(true); setError("");
-        let current: SelfAvatarSnapshot;
+        let current: SelfAvatarSnapshot | null;
         try {
-          current = await fetchSelfAvatar(abort.signal);
-          if (!await checkSupportSelfSession(actorId, abort.signal)) { clearPrivateAvatar(); return true; }
+          current = await readCurrent(actorId, confirmationGeneration, abort.signal, true);
+          if (!current) return true;
         }
         catch (e) {
           if (!active(confirmationGeneration)) return false;
