@@ -402,18 +402,24 @@ function fBatchLogItems(log: { obj: string; delta: string }): FBatchItem[] | und
   return items && (F_BATCH_DIGEST.test(log.obj) || log.obj === items.map((item) => item.key).join(",")) ? items : undefined;
 }
 /**
- * E1 商品提案的操作记录：拆出冻结的前后值，按审批单详情展示。提案日志没有操作码，B97 新建的前侧只冻结两项展示默认值。
+ * E1 商品提案的操作记录：拆出冻结的前后值，按审批单详情展示。日志没有商品操作码，B97 新建的前侧只冻结两项展示默认值。
  */
-function e1SkuLogSides(log: Pick<A2AuditLogRow, "action" | "domain" | "delta">): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
+function e1SkuLogSides(log: Pick<A2AuditLogRow, "action" | "domain" | "resourceType" | "delta">): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
   const isSku = (text: string) => {
     try { const value: unknown = JSON.parse(text); return isRecord(value) && typeof value.skuId === "string"; } catch { return false; }
   };
   if (log.delta.startsWith("— → ") && isSku(log.delta.slice(4))) return { before: "", after: log.delta.slice(4), operationCode: "e1_sku_create" };
-  for (let at = log.delta.indexOf("} → {"); at >= 0; at = log.delta.indexOf("} → {", at + 1)) {
-    const before = log.delta.slice(0, at + 1), after = log.delta.slice(at + 4);
+  const proposal = log.action === "A2_OPERATION_PROPOSED" && log.domain === "E";
+  // 后端的决定记录直接提供 " -> "，域可能由动作和对象推断。
+  const decision = log.resourceType === "A2_OPERATION"
+    && ["A2_OPERATION_APPROVED", "A2_OPERATION_REJECTED", "A2_OPERATION_WITHDRAWN"].includes(log.action);
+  for (const boundary of log.delta.matchAll(/\} (→|->) \{/g)) {
+    const arrow = boundary[1] === "→";
+    if (!arrow && !decision) continue;
+    const before = log.delta.slice(0, boundary.index + 1), after = log.delta.slice(boundary.index + boundary[0].length - 1);
     if (!isSku(after)) continue;
-    if (isSku(before)) return { before, after, operationCode: "e1_sku_update" };
-    if (log.action === "A2_OPERATION_PROPOSED" && log.domain === "E") {
+    if (arrow && isSku(before)) return { before, after, operationCode: "e1_sku_update" };
+    if (proposal || decision) {
       const defaults = parseReview(before);
       if (defaults?.kind === "object" && Object.keys(defaults.value).length === 2
         && defaults.value.displaySoldBase === 0 && defaults.value.liveActivityVisible === true) {
