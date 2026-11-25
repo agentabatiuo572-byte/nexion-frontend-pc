@@ -1,7 +1,7 @@
 import { h3QuestConfigWriteRefusal } from "./h3-contract";
 import { h5RuleWriteRefusal } from "./h5-contract";
 import { parseH4StatisticsJson, readH4Statistics } from "./h4-statistics";
-import { h4CommandRequest, markH4Read } from "./h4-mutations";
+import { h4CommandRequest } from "./h4-mutations";
 import { validEventCopyReadiness, type EventCopyReadiness } from "./event-rule-form";
 import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isAdminAuthFailure } from "@/lib/admin/auth-session";
@@ -420,11 +420,9 @@ export function validateH4OverviewEvents(events: unknown) {
 
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
   if (section === "tasks") return growthRequest<Record<string, any>>("/quest-events/tasks");
-  markH4Read("overview", false);
   const result = await growthRequest<Record<string, any>>("/quest-events/events-overview");
   validateH4OverviewEvents(result.events);
   Object.assign(result, readH4Statistics(result));
-  markH4Read("overview", true);
   return result;
 }
 
