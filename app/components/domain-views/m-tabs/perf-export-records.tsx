@@ -13,6 +13,7 @@ import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 import { ExportAuditLink, ExportColumnsFold } from "./perf-export";
 import { EXPORT_LABEL, EXPORT_PARTIAL_RECEIPT, ExportOutcomeUnknownError, exportDownloadMessage, exportVisibleReceiptSummary, exportPreviousReceipt, exportReceiptSummary, exportStatus, type DecisionLookup, type ExportDownload, type ExportTask, type PendingDecision, type PendingSubmit, type PerfExportPorts } from "./perf-view";
 import { exportDecisionConflict, exportTaskHidden, isExportPermissionDenied, useExportClock } from "./perf-export-ports";
+import { isSupportSessionExpired } from "@/lib/admin/m-support-client";
 import "./m1-export.css";
 
 type View = "MINE" | "APPROVALS";
@@ -99,7 +100,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
       if (page > lastPage) { setPage(lastPage); return; }
       setRows(result.rows); setTotal(result.total);
     }, error => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
       setReadError(true);
     });
@@ -114,7 +115,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
     ports.task(openId).then(task => {
       if (active) { setDetail(task); setDetailStatus(null); }
     }, error => {
-      if (!active) return;
+      if (!active || isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
       if (exportTaskHidden(error)) { forgetTaskRead(openId); return; }
       setDetailStatus("error");
@@ -129,7 +130,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
   const download = (task: ExportTask) => {
     setDownloadFailed(null);
     void ports.download(task.taskId).then(outcome => {
-      if (outcome.kind === "downloaded") return;
+      if (outcome.kind === "downloaded" || outcome.sessionExpired) return;
       if (outcome.permissionDenied) { permissionLost(); return; }
       setDownloadFailed({ taskId: task.taskId, outcome });
       setRows(list => list?.flatMap(row => row.taskId !== task.taskId ? [row] : outcome.task ? [outcome.task] : []) ?? null);
@@ -150,6 +151,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
       if (found.kind === "matched") put(found.task);
       if (found.kind === "cleared") setTaskRefresh(value => value + 1);
     }, error => {
+      if (isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
       if (exportTaskHidden(error)) { forgetTaskRead(p.taskId); return; }
       setLookup({ kind: "failed", text: "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。" });
@@ -173,6 +175,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
       }
       if (openId === p.taskId) setTaskRefresh(value => value + 1);
     }, error => {
+      if (isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
       if (exportTaskHidden(error)) {
         forgetTaskRead(p.taskId);
@@ -200,6 +203,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
       else if (!original.acceptedRequestId) stillUnknown(key, found.kind === "missing" ? "找不到本标签页保存的原操作。"
         : found.expired ? "还没查到这次提交的结果。" : "还没查到这次提交的结果，先保持锁定，稍后再查。");
     }, error => {
+      if (isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
       if (!original.acceptedRequestId) stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。");
     }).finally(() => setQuerying(null));
@@ -286,6 +290,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
         try {
           put(kind === "withdraw" ? await ports.withdraw(task, reason) : await ports.decide(task, kind === "approve" ? "APPROVE" : "REJECT", reason));
         } catch (error) {
+          if (isSupportSessionExpired(error)) return;
           if (isExportPermissionDenied(error)) {
             clearPrivateRead();
             ports.invalidateAccess();

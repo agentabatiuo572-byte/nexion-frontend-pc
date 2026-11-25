@@ -9,7 +9,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, type SupportProfile, type SupportGroup, type SupportFinanceFieldStatus } from "@/lib/admin/m-support-enhancements";
 import { perfText } from "./perf-view";
 import { profilePerf } from "./perf-wiring";
-import { supportClient, SupportClientError, isSupportScopeDenial, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, isSupportScopeDenial, isSupportSessionExpired, supportCustomerNotFound, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { Icon, Modal } from "../design-kit";
@@ -205,14 +205,17 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     setTag(""); setNote(""); annotationWrite.current = null; setWriting(false); setWriteError("");
     setError(message);
   };
-  const denied = (cause: unknown) => {
-    if (cause instanceof SupportClientError
-      && (cause.status === 401 || cause.status === 200 && cause.apiCode === 401)) {
-      revokeScope(displayAdminReadError(cause));
+  const denied = (cause: unknown, fromRead = false) => {
+    if (isSupportSessionExpired(cause)) {
+      if (!fromRead) revokeScope(displayAdminReadError(cause));
       return true;
     }
     if (!isSupportScopeDenial(cause)) return false;
-    if (revokedScope.current !== scopeKey) { revokeScope(); ctx.invalidateScope(conversation?.id, customerId); }
+    if (revokedScope.current !== scopeKey) {
+      revokeScope();
+      ctx.invalidateScope(conversation?.id, customerId, fromRead && source === "M3" && supportCustomerNotFound(cause)
+        ? { text: "你没有查看这位客户的权限", page: "M3" } : undefined);
+    }
     return true;
   };
   // 资料卡的「重试」只重读 /360；设备、流水、维护记录各有自己的读取和参数，读成的不重来（ST-35，复审 F04）。范围被收回时各块都已清空，才全部重读。
@@ -255,7 +258,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
         ctx.invalidateScope(conversation?.id, customerId);
         return;
       }
-      if (denied(failure)) return;
+      if (denied(failure, true)) return;
       const reason = displayAdminReadError(result.failure);
       if (initial) {
         setPaymentIdentity(null);
@@ -326,19 +329,23 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController(), saved = stamp.current; setDeviceGroup(null); setPageError(e => ({ ...e, devices: "" }));
-    supportEnhancements.devices(customerId, devicePage, controller.signal).then(g => { if (!controller.signal.aborted && saved === stamp.current) setDeviceGroup(g); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setPageError(v => ({ ...v, devices: displayAdminError(e) })); });
+    supportEnhancements.devices(customerId, devicePage, controller.signal).then(g => { if (!controller.signal.aborted && saved === stamp.current) setDeviceGroup(g); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e, true)) setPageError(v => ({ ...v, devices: displayAdminError(e) })); });
     return () => controller.abort();
   }, [customerId, epoch, devicePage, pageRetry, reload, profileScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController(), saved = stamp.current; setFlowGroup(null); setPageError(e => ({ ...e, flows: "" }));
-    supportEnhancements.flows(customerId, { pageNum: flowPage, currency: currency || undefined, status: flowStatus || undefined, from: from ? businessDayStart(from) : undefined, to: to ? businessDayStart(to) : undefined }, controller.signal).then(g => { if (!controller.signal.aborted && saved === stamp.current) setFlowGroup(g); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setPageError(v => ({ ...v, flows: displayAdminError(e) })); });
+    supportEnhancements.flows(customerId, { pageNum: flowPage, currency: currency || undefined, status: flowStatus || undefined, from: from ? businessDayStart(from) : undefined, to: to ? businessDayStart(to) : undefined }, controller.signal)
+      .then(g => { if (!controller.signal.aborted && saved === stamp.current) setFlowGroup(g); })
+      .catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e, true)) setPageError(v => ({ ...v, flows: displayAdminError(e) })); });
     return () => controller.abort();
   }, [customerId, epoch, flowPage, currency, flowStatus, from, to, pageRetry, reload, profileScope]);
   useEffect(() => {
     if (revokedScope.current === scopeKey) return;
     const controller = new AbortController(), saved = stamp.current; setMaintenance(null); setMaintenanceError("");
-    supportClient.maintenanceHistory(customerId, { pageNum: maintenancePage, pageSize: 10, signal: controller.signal }).then(v => { if (!controller.signal.aborted && saved === stamp.current) setMaintenance(v); }).catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e)) setMaintenanceError(displayAdminError(e)); });
+    supportClient.maintenanceHistory(customerId, { pageNum: maintenancePage, pageSize: 10, signal: controller.signal })
+      .then(v => { if (!controller.signal.aborted && saved === stamp.current) setMaintenance(v); })
+      .catch(e => { if (!controller.signal.aborted && saved === stamp.current && !denied(e, true)) setMaintenanceError(displayAdminError(e)); });
     return () => controller.abort();
   }, [customerId, epoch, maintenancePage, reload, profileScope]);
   useEffect(() => { setDevicePage(1); setFlowPage(1); setHistoryPage(1); setTicketPage(1); setMaintenancePage(1); setView360(false); setTag(""); setNote(""); annotationWrite.current = null; setWriting(false); setWriteError(""); }, [customerId, epoch]);

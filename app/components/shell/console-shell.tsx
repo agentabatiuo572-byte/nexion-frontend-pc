@@ -19,6 +19,7 @@ import { AdminAuthEpochChangedError, adminAuthLifecycleEpoch, installAdminAuthFe
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { PERMISSION_DENIED_EVENT, PERMISSION_DENIED_TEXT } from "@/lib/admin/operation-confirm-error";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
+import { ADMIN_SESSION_EXPIRED_EVENT } from "@/lib/admin/auth-session";
 import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
 import { ALL_L2, canAccessResolvedPath, defaultConsolePath, isRedesignedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { useAdminTheme } from "@/app/components/rd/theme-switch";
@@ -125,6 +126,11 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const bootstrapAttemptRef = useRef(0);
   const bootstrapReadRef = useRef<{ epoch: number } | null>(null);
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const onSessionExpired = () => useAdminAuth.getState().beginLogout();
+    window.addEventListener(ADMIN_SESSION_EXPIRED_EVENT, onSessionExpired);
+    return () => window.removeEventListener(ADMIN_SESSION_EXPIRED_EVENT, onSessionExpired);
+  }, []);
   useEffect(() => {
     const media = window.matchMedia("(max-width: 640px)");
     const update = () => { setNarrow(media.matches); if (!media.matches) setMobileNavOpen(false); };

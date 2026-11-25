@@ -16,11 +16,15 @@ const AMOUNT_EXPLAIN = "所选月份里你名下客户的入金减提现，可�
 function statValue(value: PerfValue) { return perfText(value); }
 function statUnit(value: PerfValue, unit: string) { return value.state === "complete" ? unit : undefined; }
 
+export function AnalyticsReadDenied({ compact = false }: { compact?: boolean }) {
+  return <BlockState state="denied" compact={compact} title="无权限访问" detail="这个账号没有业绩统计的读取权限，需要时联系超级管理员。" />;
+}
+
 /** 我的数据最上面的「期间业绩」：业绩额是这一屏唯一的大数，后面是入金、提现、期间首充；下面是入金构成和提现构成。 */
 export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail, status, detail }: {
   perf: PeriodPerf | { unavailable: string };
   /** 期间业绩自己的加载和读取失败（不写成空态）。 */
-  status?: "loading" | { title?: string; error: string; onRetry: () => void };
+  status?: "loading" | "denied" | { title?: string; error: string; onRetry: () => void };
   /** 「业绩明细」入口的加载和读取失败，写在入口处。 */
   detail?: { loading: boolean; error?: string };
   month: string;
@@ -35,6 +39,7 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail, sta
     sub={`${month} · USDT${asOf ? ` · 截至 ${asOf}` : ""}`}
     actions={<div className="m1-perf-actions">{monthControl}{ready && onDetail && <Button icon={<ListChecks size={14} aria-hidden />} loading={detail?.loading} loadingText="正在加载…" onClick={onDetail}>业绩明细</Button>}</div>}>
     {status === "loading" ? <BlockState state="loading" title="正在加载…" />
+      : status === "denied" ? <AnalyticsReadDenied />
       : status ? <BlockState state="error" title={status.title ?? "期间业绩加载失败"} detail={status.error} onRetry={status.onRetry} />
       : !ready ? <BlockState state="empty" title={perf.unavailable} detail="名下客户和其他统计照常看。" /> : <>
       {detail?.error && <BlockState state="error" compact title="业绩额明细加载失败" detail={detail.error} onRetry={onDetail} />}
