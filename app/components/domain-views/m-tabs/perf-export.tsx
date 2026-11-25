@@ -5,6 +5,7 @@
  * 读写都走 PerfExportPorts。
  */
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -39,7 +40,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
 }) {
   const [initial] = useState({ month: initialMonth, scope: initialScope });
   const [data, setData] = useState<ExportDialogData | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [month, setMonth] = useState("");
   const [scope, setScope] = useState("");
   const [items, setItems] = useState<ExportItem[]>([]);
@@ -59,6 +60,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   const [lookupText, setLookupText] = useState<string | null>(null);
   const [querying, setQuerying] = useState(false);
   const [found, setFound] = useState(false);
+  const [hiddenSettled, setHiddenSettled] = useState(false);
   const [preview, setPreview] = useState<"checking" | "ready" | "failed">("checking");
   const checkGeneration = useRef(0);
   const editedConditions = useRef(false);
@@ -72,7 +74,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
 
   const load = () => {
     editedConditions.current = false;
-    setLoadFailed(false);
+    setLoadError("");
     setPreview("checking");
     const generation = ++checkGeneration.current;
     ports.open(initial).then(next => {
@@ -82,10 +84,10 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     }, error => {
       if (generation !== checkGeneration.current || isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
-      setLoadFailed(true); setPreview("failed");
+      setLoadError(displayAdminReadError(error)); setPreview("failed");
     });
   };
-  useEffect(() => { load(); return () => { checkGeneration.current++; }; }, [ports]);
+  useEffect(() => { load(); return () => { checkGeneration.current++; }; }, [ports.open]);
 
   /** 用户自己点整框「重试」或「刷新」：上一次的「这次没有提交」不再挂着。 */
   const retryLoad = () => { setVersionChanged(false); load(); };
@@ -200,6 +202,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   });
   const blockedReason = !data ? undefined
     : original?.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT
+    : hiddenSettled ? "这次提交没有执行"
     : unknown ? "提交后没收到结果，原来的选择和理由已保存。先查询原操作，不要再点提交。"
     : data.blocked;
   // 空、没勾选、正在检查、勾着的项没加载出来：那一项自己在内容区写清楚，这里只写进确认按钮的灰色原因，不另出提示条（VS-107，一件事只说一处）。
@@ -212,7 +215,9 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     : notReady ? notReady.check.state === "checking" ? "正在检查…" : notReady.check.state === "failed" ? `${EXPORT_LABEL[notReady.type]}没加载出来，先重试或取消这一项` : `${EXPORT_LABEL[notReady.type]}这次不能导出，先取消这一项`
     : (!chosen.length || chosen.length !== selected.length) ? "还没勾选导出内容" : chosen.some(item => item.check.state === "ok" && item.check.rows === null) ? "行数暂时无法确认" : undefined;
   // 没有能提交的项时不要求填理由，也不显示理由框（5f、5g）。
-  const requireReason = unknown || !data || (!data.blocked && (selectable.length > 0 || notReady?.check.state === "failed" || notReady?.check.state === "checking"));
+  /** 原操作的范围现在看不到了：原来的月份、范围、内容和理由都收起，只留「查询原操作」。 */
+  const originalHidden = unknown && !!data?.originalHidden;
+  const requireReason = !originalHidden && (unknown || !data || (!data.blocked && (selectable.length > 0 || notReady?.check.state === "failed" || notReady?.check.state === "checking")));
   const scopeLabel = data?.scopes.find(row => row.value === scope)?.label ?? "—";
 
   const recovery = unknown && <div className="m1-export-recover"><Button size="sm" loading={querying} loadingText="正在查询…" onClick={() => {
@@ -234,6 +239,8 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           }
           if (outcome.kind === "missing") { setLookupText("找不到本标签页保存的原操作。"); return; }
           if (outcome.kind === "cleared") {
+            // 原范围已经不能选：只说结论，不把原来的月份、范围和理由铺回表单（和导出记录的待确认区一样）。
+            if (originalHidden) { setHiddenSettled(true); return; }
             restoreDraft(outcome.draft.reason);
             return;
           }
@@ -245,8 +252,11 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           setLookupText(original?.acceptedRequestId ? "这次查询没连上，暂时无法核对当前可见结果。" : "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
         }).finally(() => setQuerying(false));
       }}>查询原操作</Button>{lookupText && lookupText !== RETRY_EXPIRED_TEXT && <span role="status">{lookupText}</span>}{expired && <span role="status">{RETRY_EXPIRED_TEXT} <ExportAuditLink /></span>}</div>;
-  const content = !data && unknown ? recovery : loadFailed
-    ? <Notice tone="danger" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。</Notice>
+  const content = !data && unknown ? recovery
+    : originalHidden ? hiddenSettled ? <Notice tone="done">这次提交没有执行。</Notice>
+      : <><Notice tone="neutral">原来那次导出用的范围你现在不能选，月份、范围和理由不再显示。可以查询原操作的结果。</Notice>{recovery}</>
+    : loadError
+    ? <Notice tone="danger" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。{loadError}</Notice>
     // 没有已发布的一版：不是失败，写原因，给「刷新」重新读目录。
     : !unknown && data?.catalogState === "no-months"
     ? <Notice tone="done" title="暂无可导出月份" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>刷新</Button>}>业绩数据还没发布第一版，发布后才能导出。</Notice>
@@ -306,7 +316,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     </div>;
 
   const effect = hasSummary || hasDetail ? <>{hasSummary && <StatusTag tone="progress" filled>汇总立即生成</StatusTag>}{hasDetail && <StatusTag tone="progress" filled>明细批准后生成</StatusTag>}</> : undefined;
-  return <OperationConfirmModal key={confirmationRevision} briefKind="export" title="导出业绩" action="导出客服业绩" detail={`${month} · ${scopeLabel}`}
+  return <OperationConfirmModal key={confirmationRevision} briefKind="export" title="导出业绩" action="导出客服业绩" detail={originalHidden ? "原操作" : `${month} · ${scopeLabel}`}
     effect={effect} content={content} initialReason={originalReason} reasonReadOnly={unknown} reasonMin={data?.minReasonChars} reasonMax={data?.maxReasonChars} confirmLabel={confirmLabel} blockedReason={blockedReason} requireReason={requireReason}
     // 共用框没有「只灰按钮、不出提示条」的属性：借多字段表单的跨字段校验，field 指向页面自己画的「导出内容」，
     // 共用框不在别处再写这句，只把它放进确认按钮的灰色原因。表单本身没有字段，页面样式里收起（m1-export.css）。

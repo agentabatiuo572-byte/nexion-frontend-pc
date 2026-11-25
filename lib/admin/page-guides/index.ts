@@ -16,6 +16,16 @@ export interface PageGuideContent {
   keep?: readonly string[];
 }
 
+const EXPORT_RECORDS_PURPOSE = "看自己提交的业绩导出，或审批别人的明细申请。";
+const MY_EXPORTS_TASK = {
+  title: "看自己提交的",
+  steps: ["在「我的申请」点一条看内容和进度", "等审批的可以撤回；生成后按页面显示下载，没了原范围的只能看编号和状态"],
+};
+const EXPORT_APPROVALS_TASK = {
+  title: "审批明细申请",
+  steps: ["在「待我审批」点一条，核对申请人、范围、月份和理由", "批准或驳回都要填理由；自己提交的要另一位有审批权的管理员处理"],
+};
+
 const PAGE_GUIDES: Record<string, PageGuideContent> = {
   "A3-app-versions": {
     purpose: "管理 Android 和 iOS 的更新提示与最低支持版本。",
@@ -998,7 +1008,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     purpose: "管新人礼和邀请奖励：每位发多少、怎么发、结算到哪一步。",
     tasks: [
       { title: "改金额、开关或发放方式", steps: ["在「每位发多少」或「开关和发放方式」点那一项的「调整」「启用」「停用」", "调高金额、启用、改成「符合资格就直接发」会让平台多付钱，提交审批，另一位超级管理员批准后生效", "调低、停用、改回「先过风险检查再发」确认后立即保存"] },
-      { title: "给等待结算的新人发奖励", steps: ["在「结算」点「批量结算」，填这一批最多几位；或填新人用户编号，看清能不能结，再点「给这位新人结算」", "核对人数和每位金额，填理由，点「提交结算审批」", "另一位管理员在「操作记录与审批」批准后才发，结果到账本核对"] },
+      { title: "给等待结算的新人发奖励", steps: ["在「结算」点「批量结算」，填这一批最多几位；或填新人用户编号，看清能不能结，再点「给这位新人结算」", "核对人数和每位金额，填理由，点「提交结算审批」", "另一位超级管理员在「操作记录与审批」批准后才发，结果到账本核对"] },
       { title: "用户说没收到新人礼", steps: ["对照「结算」里的四步：还没结算、被风控拦下，还是已结算但冻结", "已结算的新人礼可能冻结到首笔实付订单", "到「账本与账单核对」看钱包和账本"] },
     ],
     terms: [
@@ -1262,12 +1272,21 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     ],
     more: "这页只能查看，不发奖、不处罚、不改名次。系统每 10 分钟发布一版；刷新只加载最新发布的一版。名次按精确业绩额从高到低排，相同的并列，下一名跳过。名次变化和上一业务日最后一版比；改成业绩额的第一天不比较。范围只列出这个账号现在能看的。",
   },
+  "M1-no-group": {
+    purpose: "设置负责组后，这里显示组里的客服和客户。",
+    tasks: [{ title: "为什么看不到内容", steps: ["这个账号没有负责的组，也没有本人客户", "请超级管理员在「客服与分组」里设置负责组"] }],
+    terms: [],
+  },
+  "M1-export-mine": { purpose: EXPORT_RECORDS_PURPOSE, tasks: [MY_EXPORTS_TASK], terms: [] },
+  "M1-export-approvals": { purpose: EXPORT_RECORDS_PURPOSE, tasks: [EXPORT_APPROVALS_TASK], terms: [] },
+  "M1-export-both": { purpose: EXPORT_RECORDS_PURPOSE, tasks: [MY_EXPORTS_TASK, EXPORT_APPROVALS_TASK], terms: [] },
   M1: {
     purpose: "先处理客户待办，再核对分配、分组和维护记录。",
     tasks: [
       { title: "处理本人待办", steps: ["从四格待办打开对应客户名单", "点客户卡的回复或联系维护，到专属会话继续处理", "需要核对客户时，点姓名打开资料"] },
       { title: "分配与交接客户", steps: ["主管在待分配选择明确客户，或从专属会话正式转绑", "核对原归属、目标和完整名单，填写理由", "结果未知时先查询原结果，不要另发一次"] },
       { title: "核对统计依据", steps: ["在数据或我的数据选择范围和统计规则", "看期间业绩，或展开经营概况、维护进展", "点数字查同一期间和范围的明细"] },
+      { title: "看、撤回和审批业绩导出", steps: ["打开「导出记录」：「我的申请」看自己提交的，「待我审批」处理别人的明细申请", "点一条看内容和进度；等审批的可以撤回，生成后在这里下载", "没有负责组、只剩导出记录或审批权的账号，这页只显示「导出记录」"] },
     ],
     terms: [
       { name: "待办客户", text: "同一客户只算一次；三类待办会重叠，不能相加。" },

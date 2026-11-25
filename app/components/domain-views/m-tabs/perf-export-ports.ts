@@ -9,15 +9,26 @@ import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { performanceEnum as enumeration, performanceInstant as instant, performanceInteger as integer, performanceList as array, performanceMalformed as invalid, performanceObject as object, performanceText as text, performanceWindow, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
+import { PERFORMANCE_EXPORT_SUMMARY as SUMMARY, PERFORMANCE_EXPORT_DETAIL as DETAIL, PERFORMANCE_EXPORT_APPROVE as APPROVE } from "@/lib/admin/support-performance-contract";
+import { normalizeSessionRole } from "@/lib/admin/session-role";
+import { ROLE_LABEL, roleLabel } from "@/lib/nav/console-nav";
 import { EXPORT_TYPES, ExportOutcomeUnknownError, type DecisionLookup, type ExportCheck, type ExportColumns, type ExportDownload, type ExportDraft, type ExportConditionDifference, type ExportSelection, type ExportVisibleReceipt, type ExportOriginal, type ExportPersona, type ExportQuery, type ExportSubmitted, type ExportTask, type ExportType, type PendingDecision, type PerfExportPorts, type SubmitLookup } from "./perf-view";
 
 const PATH = "/support-workbench/performance-exports";
-const SUMMARY = "service_performance_export_summary", DETAIL = "service_performance_export_detail", APPROVE = "service_performance_export_approve";
 const TYPES = { SUMMARY, CUSTOMER_DETAIL: DETAIL, TRANSACTION_DETAIL: DETAIL } as const;
 const GRAIN = { SUMMARY: "一位客服在一个组一个月一行", CUSTOMER_DETAIL: "一位客户在一位客服名下一个月一行", TRANSACTION_DETAIL: "一笔入金、提现或参考交易一行" };
-/** 申请人、审批人：后端给姓名之前不显示内部账号编号。 */
-/** 后端还没给发起人、审批人的姓名（只给账号编号）：先写账号编号，审批人能到「运营账号与权限」核对是谁（OP-69）。 */
 const namePending = (adminId: string) => `账号 ${adminId}（姓名待补）`;
+const optionalName = (value: unknown) => typeof value === "string" ? value.trim() : "";
+
+function requesterRoleLabel(value: unknown) {
+  const raw = optionalName(value);
+  if (!raw) return "";
+  const alias = { 超管: "superadmin", 配置管理员: "config", 内容: "content", 增长: "growth", super: "superadmin" } as Record<string, string>;
+  const code = normalizeSessionRole(alias[raw] ?? raw);
+  const label = roleLabel(code);
+  if (label !== code || Object.values(ROLE_LABEL).includes(raw) || raw === "财务主管" || raw === "风控主管") return label;
+  return "";
+}
 const COVERAGE_TEXT: Record<string, string> = { COMPLETE: "完整", PARTIAL: "部分数据还在核对", UNKNOWN: "暂时无法确认是否完整", FAILED: "核对没完成" };
 const STALE_BLOCKED = "这一版数据更新延迟，暂时不能导出。关掉这个框，在页面上刷新到最新一版后再导出。";
 const SCOPES = ["SELF", "MANAGED_GROUPS", "ALL"] as const;
@@ -164,7 +175,8 @@ function taskParser(operator: Operator) {
     const row = object(value);
     const type = enumeration(row.type, EXPORT_TYPES);
     const status = enumeration(row.status, STATES);
-    const mine = id(row.requesterId) === operator.id;
+    const requesterId = id(row.requesterId);
+    const mine = requesterId === operator.id;
     const reasons = array(row.reasonCodes, text);
     const window = row.window === null ? null : performanceWindow(row.window);
     const capabilities = object(row.decisionCapabilities);
@@ -174,18 +186,25 @@ function taskParser(operator: Operator) {
     const reason = nullableText(approve.reasonCode);
     const approvalTime = row.approvedAt === null ? undefined : instant(row.approvedAt);
     const scopeLost = row.scope === null;
+    const requesterName = scopeLost ? "" : optionalName(row.requesterName);
+    const requesterRole = requesterName ? requesterRoleLabel(row.requesterRole) : "";
+    const requester = requesterName ? [requesterName, requesterRole].filter(Boolean).join(" · ")
+      : mine ? operator.name : namePending(requesterId);
+    const reviewerId = row.reviewerId == null ? undefined : id(row.reviewerId);
+    const reviewerName = scopeLost ? "" : optionalName(row.reviewerName);
+    const decidedBy = reviewerName || (reviewerId ? reviewerId === operator.id ? operator.name : namePending(reviewerId) : undefined);
     const failure = status !== "FAILED" ? undefined
       : scopeLost ? "SCOPE_HIDDEN"
       : reasons.some(reason => reason === "EXPORT_SCOPE_CHANGED" || reason === "EXPORT_APPLICANT_INELIGIBLE") ? "SCOPE_LOST_BEFORE_GENERATE" : "GENERATE_FAILED";
     return {
       taskId: id(row.taskId), version: integer(row.version), type, mine,
-      requester: mine ? operator.name : namePending(String(id(row.requesterId))), requesterRole: "",
+      requester, hasRequesterName: !!requesterName,
       scope: row.scope === null ? null : scopeTitle(row.scope), month: window?.month ?? null, asOf: window?.asOf ?? null,
       rows: nullableNumber(row.rowCount), columns: columns(row.columns, type),
       coverage: row.coverage == null ? null : COVERAGE_TEXT[String(object(row.coverage).status)] ?? null,
       requestReason: row.requestReason == null ? "" : text(row.requestReason), requestedAt: instant(row.requestedAt),
       state: status,
-      decidedBy: row.reviewerId === null ? undefined : id(row.reviewerId) === operator.id ? operator.name : namePending(String(id(row.reviewerId))),
+      decidedBy,
       decidedAt: approvalTime ? businessStamp(Date.parse(approvalTime)) : undefined,
       decisionReason: row.decisionReason == null ? undefined : text(row.decisionReason), failure,
       canDownload: bool(row.canDownload) && mine && operator.authorities.includes(TYPES[type]),
@@ -271,12 +290,20 @@ function canRecover(record: SavedExport, authorities: readonly string[]) {
     : authorities.includes(record.action === "WITHDRAW" ? DETAIL : APPROVE);
 }
 
-export function usePerformanceExportPorts(): PerfExportPorts | null | undefined {
+function exportAvailability(options: Options | null | undefined) {
+  return {
+    canExport: options === undefined || options?.scopes.some(scope => scope.blocked === null && scope.allowed.length > 0) === true,
+    exportBlocked: options?.scopes.some(scope => scope.blocked === "NO_MANAGED_GROUP") && !options.scopes.some(scope => scope.blocked === null)
+      ? "没有负责的组，暂时不能导出" : undefined,
+  };
+}
+
+export function usePerformanceExportPorts(scopeRevision = 0): PerfExportPorts | null | undefined {
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
   const active = useAdminAuth(state => state.isAuthenticated && !state.logoutPending && !state.logoutUnknown);
-  const [access, setAccess] = useState<{ key: string; options: Options | null; views: View[] } | null>(null);
+  const [access, setAccess] = useState<{ key: string; options: Options | null | undefined; views: View[]; mineTotal?: number } | null>(null);
   const [revision, setRevision] = useState(0);
-  const key = `${session?.adminId}:${epoch}:${session?.authorities.join(",")}`;
+  const key = `${session?.adminId}:${epoch}:${session?.authorities.join(",")}:${scopeRevision}`;
   const authorized = active && !!session && !session.passwordChangeRequired
     && session.authorities.some(code => code === "service_m1_read" || code === "service_m3_read");
   const canRequest = !!session && (session.authorities.includes(SUMMARY) || session.authorities.includes(DETAIL));
@@ -286,7 +313,11 @@ export function usePerformanceExportPorts(): PerfExportPorts | null | undefined 
     const controller = new AbortController();
     if (!authorized || !session || !canRequest && !canReview) return;
     const signal = controller.signal;
-    const available = (view: View) => read(`?view=${view}&pageNum=1&pageSize=1`, value => { array(object(value).records, object); return view; }, signal);
+    const available = (view: View) => read(`?view=${view}&pageNum=1&pageSize=1`, value => {
+      const row = object(value);
+      array(row.records, object);
+      return integer(row.total);
+    }, signal);
     void Promise.allSettled([
       canRequest ? read("/options", parseOptions, signal) : Promise.resolve(null),
       canRequest ? available("MINE") : Promise.resolve(null),
@@ -294,30 +325,36 @@ export function usePerformanceExportPorts(): PerfExportPorts | null | undefined 
     ] as const).then(([options, mine, approvals]) => {
       if (signal.aborted) return;
       const views: View[] = [];
-      const keep = (result: PromiseSettledResult<View | null>, lane: View, wanted: boolean) => {
-        if (result.status === "fulfilled") return result.value === lane;
+      const keep = (result: PromiseSettledResult<number | null>, wanted: boolean) => {
+        if (result.status === "fulfilled") return result.value !== null;
         const status = result.reason instanceof SupportClientError ? apiStatus(result.reason) : undefined;
         return wanted && !isExportPermissionDenied(result.reason)
           && (status === undefined || status === 408 || status >= 500);
       };
-      if (keep(mine, "MINE", canRequest)) views.push("MINE");
-      if (keep(approvals, "APPROVALS", canReview)) views.push("APPROVALS");
-      setAccess({ key, options: options.status === "fulfilled" ? options.value : null, views });
+      if (keep(mine, canRequest)) views.push("MINE");
+      if (keep(approvals, canReview)) views.push("APPROVALS");
+      const exportOptions = options.status === "fulfilled" ? options.value : isExportPermissionDenied(options.reason) ? null : undefined;
+      setAccess({ key, options: exportOptions, views,
+        mineTotal: mine.status === "fulfilled" ? mine.value ?? undefined : undefined });
     });
     return () => controller.abort();
   }, [authorized, canRequest, canReview, key, revision]);
+  const views = access?.key === key ? access.views : undefined;
+  const operations = useMemo(() => {
+    if (!authorized || !session || !views) return;
+    return exportPorts({ id: String(session.adminId), epoch, name, authorities: session.authorities }, views,
+      () => { setAccess(null); setRevision(value => value + 1); },
+      options => setAccess(current => current?.key === key && current.views === views ? { ...current, options } : current));
+  }, [authorized, epoch, key, name, views]);
   return useMemo(() => {
-    if (!authorized || !session || !canRequest && !canReview) return null;
-    if (access?.key !== key) return undefined;
-    if (!access.options && !access.views.length) return null;
-    return exportPorts({ id: String(session.adminId), epoch, name, authorities: session.authorities }, access.options, access.views, () => {
-      setAccess(null);
-      setRevision(value => value + 1);
-    });
-  }, [authorized, canRequest, canReview, epoch, key, name, access]);
+    if (!authorized || !canRequest && !canReview) return null;
+    if (!operations || !access || !views) return undefined;
+    if (access.options === null && !views.length) return null;
+    return { ...operations, persona: { name, views, mineTotal: access.mineTotal, ...exportAvailability(access.options) } };
+  }, [authorized, canRequest, canReview, operations, access, views, name]);
 }
 
-function exportPorts(operator: Operator, initialOptions: Options | null, views: View[], invalidateAccess: () => void): PerfExportPorts {
+function exportPorts(operator: Operator, views: View[], invalidateAccess: () => void, updateOptions: (options: Options) => void): Omit<PerfExportPorts, "persona"> {
   let choices = new Map<string, { scope: Scope; label: string; types: ExportType[] }>();
   let latest: { id: string; payload: Selection; preview: Preview } | undefined;
   let previewSequence = 0;
@@ -429,14 +466,11 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     return deliverDecision(record);
   };
   return {
-    persona: {
-      name: operator.name, views, canExport: initialOptions?.scopes.some(scope => scope.blocked === null && scope.allowed.length > 0) ?? false,
-      exportBlocked: initialOptions?.scopes.some(scope => scope.blocked === "NO_MANAGED_GROUP") && !initialOptions.scopes.some(scope => scope.blocked === null) ? "没有负责组" : undefined,
-    },
     invalidateAccess,
     async open(initial) {
       latest = undefined;
       const options = await read("/options", parseOptions);
+      updateOptions(options);
       choices = new Map();
       months = options.months.map(month => month.value);
       restoration = undefined;
@@ -449,8 +483,12 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         } else choices.set(scope.kind, { scope: { kind: scope.kind }, label: scopeLabels[scope.kind], types });
       }
       const original = mySubmit();
-      const draft = draftsFor(operator)?.submit;
+      const drafts = draftsFor(operator);
+      // 一个范围都选不了时，留着的草稿用不上，也不再回显原范围和理由。
+      if (!choices.size && drafts) delete drafts.submit;
+      const draft = drafts?.submit;
       const saved = original?.action === "SUBMIT" ? original.selection : draft?.query;
+      const originalHidden = original?.action === "SUBMIT" && !choices.has(original.selection.scope);
       const differences: ExportConditionDifference[] = [];
       if (!original && draft) {
         const approved = choices.get(draft.query.scope);
@@ -471,10 +509,10 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       }
       const defaultMonth = options.months.find(month => month.value === initial?.month)?.value ?? months[0] ?? "";
       const defaultScope = initial?.scope && choices.has(initial.scope) ? initial.scope : choices.keys().next().value ?? "";
-      const month = differences.some(diff => diff.field === "month") ? "" : draft && !original ? draft.selection.month : saved?.month ?? defaultMonth;
-      const scope = differences.some(diff => diff.field === "scope") ? "" : saved?.scope ?? defaultScope;
+      const month = originalHidden || differences.some(diff => diff.field === "month") ? "" : draft && !original ? draft.selection.month : saved?.month ?? defaultMonth;
+      const scope = originalHidden || differences.some(diff => diff.field === "scope") ? "" : saved?.scope ?? defaultScope;
       const types = choices.get(scope)?.types ?? [];
-      const selected = differences.some(diff => diff.field === "types") ? []
+      const selected = originalHidden || differences.some(diff => diff.field === "types") ? []
         : original?.action === "SUBMIT" ? original.body.types : draft?.selection.types
           ?? (types.includes("SUMMARY") ? ["SUMMARY" as const] : []);
       const preview = !original && !restoration && month && scope && types.length ? await requestPreview({ month, scope, types: selected }, true) : undefined;
@@ -482,7 +520,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         months: options.months, month, since: options.months.length ? `自 ${businessStamp(Date.parse(options.months.at(-1)!.from))} 起` : "", scopes: Array.from(choices, ([value, item]) => ({ value, label: item.label, types: item.types })), scope,
         asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", downloader: operator.name, items: preview?.items ?? (restoration ? uncheckedItems(types) : []),
         selected: saved ? selected : selected.filter(type => preview?.items.some(item => item.type === type && !["empty", "stale", "unavailable"].includes(item.check.state))),
-        blocked: previewBlocked(preview), restoration,
+        blocked: previewBlocked(preview), restoration, originalHidden,
         catalogState: months.length ? "ready" : "no-months",
         minReasonChars: options.minReasonChars, maxReasonChars: options.maxReasonChars,
       };
