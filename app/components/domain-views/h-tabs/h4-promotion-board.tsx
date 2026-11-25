@@ -119,7 +119,7 @@ export function PendingList({ items, onOpen }: { items: PendingPromotion[]; onOp
         <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(p.createdAt).toISOString(), 'Asia/Shanghai')}</span>（北京时间）</span>
         <StatusTag tone="warn">{p.receipt ? '已成功，待读回' : '结果未知'}</StatusTag>
         <Button size="sm" onClick={() => onOpen(p)}>查询原结果</Button>
-    </li>)}</ul>}>关闭或刷新页面不会重新提交。先查询原结果，查不到时才可以按原请求重试。</Notice>;
+    </li>)}</ul>}>关闭或刷新页面不会重新提交。先查询原结果，查不到时才可以按原操作重试。</Notice>;
 }
 
 /** 首屏：一句结论 + 四个数 + 等我处理。数都来自列表接口的 summary 和这一页的活动。 */

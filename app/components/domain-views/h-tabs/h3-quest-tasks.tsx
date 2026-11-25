@@ -1073,7 +1073,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const c = original.change;
     const saved = () => originalFor({ target: c.target, commandKey: original.commandKey });
     const request: H3ActionConfirmReq = { briefKind: "config", action: c.action, title: c.title, detail: changeOf(c),
-      facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原请求">{changeOf(c)}</Fact></Facts>,
+      facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原改动">{changeOf(c)}</Fact></Facts>,
       initialReason: c.reason, getPendingReason: () => saved()?.change.reason,
       getPendingRecovery: () => recoveryFor(saved()),
       run: async () => { await mutations.retry(original); },
@@ -1117,7 +1117,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         : rejected ? rejectedTag() : isRetryExpired(original) ? expiredTag() : unknownTag(approval ? "approval" : "direct"),
       actions: <><Button size="sm" disabled={approved && (refreshing || mutations.approvedReading(original.commandKey))} onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>{approved ? "重新读取" : "查询原结果"}</Button>
         {!original.ticket && !original.acknowledged && !isRetryExpired(original) && !releasable(original)
-          && <Button size="sm" disabledReason={mutations.retryBlocked(original)} onClick={() => openRecovery(original)}>按原请求重试</Button>}
+          && <Button size="sm" disabledReason={mutations.retryBlocked(original)} onClick={() => openRecovery(original)}>按原操作重试</Button>}
         {rejected && <VerifiedReleaseButton disabled={!!state.busy} onClick={() => release.ask({ operation: original.change.action, target: changeOf(original.change), targetLabel: "改动",
           getSnapshot: mutations.recovery.releaseSnapshot(original), createdAt: original.createdAt, release: () => mutations.releaseRejected(original) })} />}</>,
     };
@@ -1144,7 +1144,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, approvedCount && `${approvedCount} 个申请已批准，待读当前值`, builtCount && `${builtCount} 个申请没查到进度`, terminalMissions.length && `${terminalMissions.length} 个草稿可继续修改`].filter(Boolean).join("；");
   const recovery = recoveryRows.length > 0 && (
     <Notice tone="warn" title={<>{recoveryTitle}<Explain label="原操作怎么处理" content={<>
-      <p>结果未知：提交时没收到确定结果，可能已经生效。审批申请先查询原结果，明确查不到才能重试。直接修改的「按原请求重试」会重新发送一次。过了 24 小时只能查询。</p>
+      <p>结果未知：提交时没收到确定结果，可能已经生效。审批申请先查询原结果，明确查不到才能重试。直接修改的「按原操作重试」会重新发送一次。过了 24 小时只能查询。</p>
       <p>重试被拒绝：核实原操作的结果后可以解除，只清这个标签页里的记录。</p>
       <p>待审批、已建单：申请已经建好，点「查询原结果」看审批进度，不会重发。</p>
       <p>结果确认之前，这页不能再改同一项。</p>

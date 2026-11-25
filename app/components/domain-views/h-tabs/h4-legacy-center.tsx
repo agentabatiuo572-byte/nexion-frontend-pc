@@ -1460,15 +1460,15 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const approval = "proposal" in record.request;
     const change = hiCommandChange(record);
     const request: ActionConfirmReq = { briefKind: "record",
-      action: `核对原操作 · ${subject}`, title: "按原请求重试",
+      action: `核对原操作 · ${subject}`, title: "按原操作重试",
       statedBrief: { impact: approval
         ? expired ? "原申请已超过 24 小时，只查询原审批单，不会重发。" : "先按原申请查审批单；查不到才原样重发，不会建第二张单。理由沿用原操作。"
-        : "按原请求原样重发，不会重复执行。理由沿用原操作。", check: "核对原操作和提交时间；内容和理由不能改。" },
+        : "原样重发，不会重复执行。理由沿用原操作。", check: "核对原操作和提交时间；内容和理由不能改。" },
       detail: approval
         ? expired ? <>原申请已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原申请查审批单；查不到才原样重发，不会建第二张单。理由沿用原操作。</>
-        : <>按原请求原样重发，不会重复执行。理由沿用原操作。</>,
-      facts: <Facts><Fact k="原操作">{subject}</Fact>{change && <Fact k="原改动">{change}</Fact>}<Fact k="提交时间">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}（北京时间）</Fact><Fact k="原请求">内容和理由锁住，原样重发</Fact></Facts>,
-      confirmLabel: "按原请求重试",
+        : <>原样重发，不会重复执行。理由沿用原操作。</>,
+      facts: <Facts><Fact k="原操作">{subject}</Fact>{change && <Fact k="原改动">{change}</Fact>}<Fact k="提交时间">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}（北京时间）</Fact><Fact k="重发内容">内容和理由锁住，原样重发</Fact></Facts>,
+      confirmLabel: "按原操作重试",
       getPendingReason: () => pendingH4Commands().some(r => r.commandKey === record.commandKey) ? record.reason : undefined,
       getPendingRecovery: () => {
         const pending = pendingH4Commands().find(r => r.commandKey === record.commandKey);
@@ -1525,9 +1525,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           <span className="h4-pending-actions">
             {!media && <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => terminal ? void refreshSavedCommands([record], record.approvalTicket?.status === "approved") : void lookupH4Command(record)}>{terminal ? "重新读取" : rejection ? "继续处理" : "查询原结果"}</Button>}
             {!expired && !record.acknowledged && !rejection && (media ? <>
-              <Button size="sm" disabledReason={retryBlocked} loading={lookupKey === record.commandKey} onClick={() => void retryUpload(record)}>按原请求重试</Button>
+              <Button size="sm" disabledReason={retryBlocked} loading={lookupKey === record.commandKey} onClick={() => void retryUpload(record)}>按原操作重试</Button>
               <span className="h4-pending-change">重新发送同一个文件，不会重复保存。</span>
-            </> : <Button size="sm" disabledReason={retryBlocked} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>)}
+            </> : <Button size="sm" disabledReason={retryBlocked} onClick={() => openResumeHICommand(record, subject)}>按原操作重试</Button>)}
             {h4ReleaseSnapshot(record) !== undefined && <VerifiedReleaseButton disabled={!!lookupKey} onClick={() => release.ask({
               operation: subject, target: hiCommandChange(record), targetLabel: "改动", createdAt: record.createdAt,
               getSnapshot: () => h4ReleaseSnapshot(record), release: () => releaseH4RejectedReplay(record),

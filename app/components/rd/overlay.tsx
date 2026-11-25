@@ -44,7 +44,7 @@
  *
  * 框里直接放的 Facts 自动带关键信息区的底。解除待确认全站一个样子，用 ReleaseModal，页面只传原操作的名字和核对说明。
  */
-import { Children, Fragment, isValidElement, useEffect, useRef, useState, type ComponentProps, type ReactNode, type CSSProperties } from "react";
+import { Children, Fragment, isValidElement, useEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, ShieldCheck, X, type LucideIcon } from "lucide-react";
 import { Button, IconButton, TipSide } from "./button";
@@ -65,6 +65,28 @@ const onPageControl = (target: EventTarget | null) => target instanceof Element
 /** 列表里的行和页面控件才算点到外面；提示条、浮层不在这些区域里，点它们不关抽屉。 */
 function dismissesDrawer(target: EventTarget | null) {
   return target instanceof Element && target.closest("main, aside, header") !== null && target.closest("tr[data-clickable]") === null;
+}
+
+/**
+ * 抽屉不是模态（CP-66、ST-56）：Tab 走到头回到页面，不在抽屉里绕圈。Radix 的焦点圈总是首尾相接，这里先接过来：
+ * 往后走到打开抽屉的控件后面那一个，往前回到打开它的控件；找不到打开者时去页面的第一个或最后一个。
+ */
+const TABBABLE = 'a[href], button, input, select, textarea, summary, [tabindex]';
+const tabbable = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter((node) => node.tabIndex >= 0 && !node.matches(":disabled") && node.getClientRects().length > 0);
+function tabOutOfDrawer(event: KeyboardEvent<HTMLDivElement>, opener: HTMLElement | null) {
+  if (event.defaultPrevented || event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
+  const inside = tabbable(event.currentTarget);
+  if (inside.length && document.activeElement !== (event.shiftKey ? inside[0] : inside.at(-1))) return;
+  // Radix 的焦点守卫（看不见的 span）不算页面控件；被抽屉整个盖住的控件也跳过，免得焦点落到看不见的地方（CP-05）。
+  const edge = event.currentTarget.getBoundingClientRect().left;
+  const page = tabbable(document).filter((node) => !node.closest(".rd-drawer, .rd-modal") && !node.hasAttribute("data-radix-focus-guard") && node.getBoundingClientRect().left < edge);
+  const from = opener?.isConnected ? opener : null;
+  const after = from ? page.filter((node) => from.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) : [];
+  // 折叠里的表格这类元素量得到尺寸却接不了焦点：依次试，落下了才算。
+  for (const node of event.shiftKey ? [from, ...page.slice().reverse()] : [...after, ...page]) {
+    node?.focus();
+    if (node && document.activeElement === node) { event.preventDefault(); return; }
+  }
 }
 
 /** 每个开过的弹窗、抽屉关掉后焦点该回哪。从另一个框里打开的框，原按钮跟着那个框一起没了时（离开框里点「…后继续」打开的保存确认），接着问那个框（BUG-710）。 */
@@ -148,7 +170,7 @@ export interface DrawerNav {
   hasNext: boolean;
 }
 
-export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-other", nav, footer, busy = false, wide = false, keepOnControls = false, children, ...rest }: Omit<ComponentProps<typeof Dialog.Content>, "title"> & {
+export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-other", nav, footer, busy = false, wide = false, keepOnControls = false, children, onKeyDown, ...rest }: Omit<ComponentProps<typeof Dialog.Content>, "title"> & {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
@@ -203,6 +225,11 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
             }
           }}
           onFocusOutside={(event) => event.preventDefault()}
+          onKeyDown={(event) => {
+            onKeyDown?.(event);
+            // 提交中全部锁住，焦点照旧圈在抽屉里（OP-33）。
+            if (!busy) tabOutOfDrawer(event, focus.previous.current);
+          }}
         >
           <div className="rd-drawer-head">
             {icon && <IconTile tone={tone} icon={icon} size={28} />}

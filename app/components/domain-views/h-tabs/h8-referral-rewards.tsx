@@ -628,7 +628,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           <Button size="sm" aria-label={`查询${param ? paramTitle(param) : "结算"}的原结果`}
             onClick={() => { recover(); }}>查询原结果</Button>
           {canRetryH8RewardCommand(record) && (record.kind === "settlement" ? canSettle : canWrite)
-            && <Button size="sm" onClick={() => recover()}>按原请求重试</Button>}
+            && <Button size="sm" onClick={() => recover()}>按原操作重试</Button>}
           {record.replayRejection && <Button size="sm" variant="ghost" onClick={() => setReleasing(record)}>核实后解除</Button>}
           {record.kind !== "param-approval" && reach("/platform/audit", "platform_a2_read")
             && <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link>}

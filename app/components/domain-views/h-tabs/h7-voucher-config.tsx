@@ -212,7 +212,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const openAdd = () => { if (blockNew()) return; setForm({ initial: initialForm(), key: Date.now() }); };
   const openEdit = (v: OpsVoucher) => { if (blockNew(v.id)) return; setForm({ voucher: v, initial: initialForm(v, toDateInput), key: Date.now() }); };
   const replayReadProblem = (id: string, creating = false) => !fresh.current || !creating && !currentData.current.some(voucher => voucher.id === id)
-    ? "请先成功刷新代金券，再按原请求重试。" : undefined;
+    ? "请先成功刷新代金券，再按原操作重试。" : undefined;
   const queryDirect = async (record: H7DirectMutation) => {
     requireH7Actor(record.adminId, false);
     await h7DirectRecovery.query(record, async () => { await reload(true); return { conclusion: "unknown" }; });
@@ -400,7 +400,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       }
       try {
         if (!original() && mode === "submit") assertNew(input.voucherId);
-        if (wasRetained && mode === "retry" && replayReadProblem(input.voucherId)) throw new Error("请先成功刷新代金券，再按原请求重试。");
+        if (wasRetained && mode === "retry" && replayReadProblem(input.voucherId)) throw new Error("请先成功刷新代金券，再按原操作重试。");
         const lookup = submitH7VoucherApproval(session, input, reason, mode);
         syncPending();
         const ticket = await lookup;
@@ -521,7 +521,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         ticket: record.ticket?.id,
         actions: <>
           <Button size="sm" onClick={() => openDisposition(record, "lookup")}>查询原结果</Button>
-          {!expired && !record.ticket && !record.acknowledged && !releasable(record) && <Button size="sm" disabledReason={approvalRetryReason(record)} onClick={() => openDisposition(record, "retry")}>按原请求重试</Button>}
+          {!expired && !record.ticket && !record.acknowledged && !releasable(record) && <Button size="sm" disabledReason={approvalRetryReason(record)} onClick={() => openDisposition(record, "retry")}>按原操作重试</Button>}
           {rejected && <VerifiedReleaseButton disabled={!!h7ApprovalRecovery.state(record).busy} onClick={() => release.ask({ operation: H7_VOUCHER_ACTIONS[record.op], target: <>「{record.voucherName}」{approvalChange(record)}</>,
             getSnapshot: h7ApprovalRecovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => { try { releaseRejectedH7VoucherApproval(record); } finally { syncPending(); } } })} />}
         </>,
@@ -533,7 +533,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         note: rowNote(undefined, rejected, isRetryExpired(record)),
         tag: rejected ? rejectedTag() : isRetryExpired(record) ? expiredTag() : unknownTag("direct"), actions: <>
           <Button size="sm" onClick={() => openDirectRecovery(record, "lookup")}>查询原结果</Button>
-          {!isRetryExpired(record) && !rejected && <Button size="sm" disabledReason={directRecovery(record.voucherId).disabledReason} onClick={() => openDirectRecovery(record)}>按原请求重试</Button>}
+          {!isRetryExpired(record) && !rejected && <Button size="sm" disabledReason={directRecovery(record.voucherId).disabledReason} onClick={() => openDirectRecovery(record)}>按原操作重试</Button>}
           {rejected && <VerifiedReleaseButton disabled={!!h7DirectRecovery.state(record).busy} onClick={() => release.ask({ operation: record.action, target: <>「{record.voucherName}」{directChange(record)}</>,
             getSnapshot: h7DirectRecovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => { const released = h7DirectRecovery.releaseRejectedReplay(record); syncPending(); return released; } })} />}
         </> };
@@ -546,7 +546,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     <H7RecoveryNotice title={[unknownCount && `${unknownCount} 个操作结果未知`, pendingCount && `${pendingCount} 个申请在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；")} rows={recoveryRows}
       explain={<>
         <p>原操作（哪张券、做了什么、理由）保存在这个浏览器标签页里。</p>
-        <p>结果未知：提交时没收到确定结果。审批申请先查询原结果，明确查不到才能重试。直接修改的「按原请求重试」会重新发送一次。过了 24 小时只能查询。</p>
+        <p>结果未知：提交时没收到确定结果。审批申请先查询原结果，明确查不到才能重试。直接修改的「按原操作重试」会重新发送一次。过了 24 小时只能查询。</p>
         <p>重试被拒绝：核实原操作的结果后可以解除，只清这个标签页里的记录。</p>
         <p>新增、编辑、暂停、投放的「查询原结果」只是重读现在的券，证明不了原操作成没成。删除和作废查的是原审批单。</p>
         <p>结果确认之前，这张券不能再改。</p>

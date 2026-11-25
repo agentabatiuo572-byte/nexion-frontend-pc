@@ -177,8 +177,8 @@ export type H7RecoveryRow = { key: string; name: string; object: ReactNode; chan
 
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
-    ? "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。"
-    : "提交时没收到确定结果，可能已经建了审批单。先查询原结果；明确查不到、没过 24 小时才能按原请求重试，不会建第二张。"}>结果未知</StatusTag>;
+    ? "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原操作重试，不会重复执行。"
+    : "提交时没收到确定结果，可能已经建了审批单。先查询原结果；明确查不到、没过 24 小时才能按原操作重试，不会建第二张。"}>结果未知</StatusTag>;
 }
 
 /** 后端读到的审批锁：读得出单子就写是哪张、谁什么时候提交的；四项都是空的只说明有锁。 */
