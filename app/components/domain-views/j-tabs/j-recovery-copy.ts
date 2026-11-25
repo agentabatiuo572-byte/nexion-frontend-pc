@@ -30,7 +30,7 @@ export function processedStatus({ expired, canRetry, canClose, canRelease = fals
     const next = canRelease ? RETRY_REJECTED_NEXT
       : canClose ? "可以核查结案。"
         : canReachAudit ? "请到操作记录与审批核对。" : "请有调查权限的超级管理员核查结案。";
-    return { tone: "warn", label, line: `已超过 24 小时，不能再重试。${next}${result}`, more };
+    return { tone: "warn", label, line: `已超过 24 小时，不能再重试。${result}${next}`, more };
   }
   if (rejected && (legacy || canRetry && !expired)) return { ...rejectedStatus({ expired, canRetry, canClose, legacy }), more };
   if (legacy) {

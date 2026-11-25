@@ -23,7 +23,8 @@ export function useEditorOpening(occupied: boolean, warn: (message: string) => v
     setOpening(key);
     try {
       const apply = await prepare();
-      if (useAdminAuth.getState().session?.adminId !== owner || !stillCurrent() || editorOpen.current) {
+      if (useAdminAuth.getState().session?.adminId !== owner || !stillCurrent()) return;
+      if (editorOpen.current) {
         warn(EDITOR_BUSY);
         return;
       }
