@@ -945,9 +945,7 @@ function FaqModal({
     answer: !answer.trim() ? "请写回答" : answer.trim().length > 4000 ? `超出 ${answer.trim().length - 4000} 字，后台最多收 4000 字` : "",
     sort: !Number.isInteger(sortValue) || sortValue < 0 || sortValue > 999999 ? "填 0–999999 的整数" : "",
   };
-  // 后端按去掉首尾空白后的长度（含中间的空格）最多 200 收，前端取更严的一边（OP-16）。
-  const reasonTooLong = reason.trim().length > 200 ? `理由连同中间的空格最多 200 个字符，现在 ${reason.trim().length} 个` : undefined;
-  const blocking = Boolean(errors.question || errors.answer || errors.sort || !reasonRule.ok || reasonTooLong);
+  const blocking = Boolean(errors.question || errors.answer || errors.sort || !reasonRule.ok);
   const show = (key: keyof typeof errors) => (tried ? errors[key] : "") || undefined;
   const live = row?.status === "published" || status === "published";
   const unknown = isOutcomeUnknownError(failure);
@@ -986,7 +984,7 @@ function FaqModal({
             onClick={() => { setFailure(null); void recoveryBindings?.query?.(); }}>查询原结果</Button>}
           {gone ? null : info?.rejected ? <Button onClick={info.release}>核实后解除</Button>
             : <Button variant={recovery && recoveryBindings?.state?.replayBlock ? "secondary" : "primary"} data-proof="support-faq-save" loading={pending && !querying} loadingText="提交中…" disabled={disabled}
-              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : disabled ? "问答正在读取或没读到，读到后再保存" : reasonRule.blocked ?? reasonTooLong} onClick={save}>{recovery ? "按原请求重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
+              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : disabled ? "问答正在读取或没读到，读到后再保存" : reasonRule.blocked} onClick={save}>{recovery ? "按原请求重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
         </>
       }
     >
@@ -1036,7 +1034,7 @@ function FaqModal({
               <Segments label="发布状态" value={status} onChange={setStatus} items={[{ value: "published", label: "已发布", disabled: pending || Boolean(recovery) || gone }, { value: "draft", label: "草稿", disabled: pending || Boolean(recovery) || gone }]} />
             </Field>
           </div>
-          {!gone && <Field label="操作理由" required hint={recovery ? undefined : reasonRule.hint} error={!recovery && (tried || reason) ? reasonRule.fieldError ?? reasonTooLong : undefined}>
+          {!gone && <Field label="操作理由" required hint={recovery ? undefined : reasonRule.hint} error={!recovery && (tried || reason) ? reasonRule.fieldError : undefined}>
             {(control) => <Textarea disabled={pending || Boolean(recovery)} readOnly={gone} {...control} data-proof="support-faq-reason" rows={2} value={reason} count={reasonRule.count} onChange={(e) => setReason(e.target.value)} placeholder="例如：帮助中心提现板块补齐" />}
           </Field>}
         </div>
