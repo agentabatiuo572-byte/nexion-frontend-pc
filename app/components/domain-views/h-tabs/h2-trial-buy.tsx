@@ -102,7 +102,7 @@ export function BuyListPendingNotice({ record, canWrite, onRetry, onRelease, ret
       <KeepText text="可能已经生效，重试成功或核对清楚前，这项不能再改。" />
       <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canWrite ? " 这个账号已没有这项权限，不能重试。" : rejection ? " 请核对原操作的结果再解除。" : " 按原操作重试不会重复执行。"} />
       {auditLink && <> {auditLink}</>}
-      <Explain label="技术信息" rows={[
+      <Explain label="技术信息" side="bottom" align="end" rows={[
         { k: "操作编号", v: <span data-mono="" className="h2-nowrap">{record.commandKey}</span> },
         { k: "改后清单", v: record.nextNames.length > 0 ? record.nextNames.join("、") : "空" },
         { k: "理由", v: record.reason },
