@@ -488,8 +488,8 @@ export function D3Treasury() {
       action: "调整应付款预测设置",
       title: "保存预测设置",
       revision,
-      // 从离开框点「保存预测设置后继续」打开的：打开它的是被拦下的侧栏链接，取消后回到这块表单的保存按钮，不跳到侧栏（BUG-710 N06）。
-      returnFocus: saved ? () => document.querySelector<HTMLElement>(".d3-savebar button[data-variant=\"primary\"]") : undefined,
+      // 关掉后都回到这块表单的保存按钮：从离开框点「保存预测设置后继续」打开时，打开它的是被拦下的侧栏链接，取消后不能跳到侧栏；别人先改过、在框里重开的那一次也一样（BUG-710 N06）。
+      returnFocus: () => document.querySelector<HTMLElement>(".d3-savebar button[data-variant=\"primary\"]"),
       detail: `预测 ${values.forecastWindow.replace("d", " 天")}，创世节点收益${values.genesisIncluded ? "计入" : "不计入"}。不改历史数据，也不改兑付覆盖率；今日概览的可覆盖天数会跟着变。`,
       facts: (
         <div className="rd-stack">
