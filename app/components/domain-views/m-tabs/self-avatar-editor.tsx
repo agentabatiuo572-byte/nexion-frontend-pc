@@ -5,6 +5,7 @@ import { fetchSelfAvatar, saveSelfAvatar, type SelfAvatarSnapshot } from "@/lib/
 import { currentAdminSession } from "@/lib/admin/auth-client";
 import { avatarDrafts, avatarDraftFingerprint, selfAvatarCommands, selfAvatarSaveRecovery, type SelfAvatarPending } from "@/lib/admin/account-avatar-pending";
 import { AVATAR_GENDER_OPTIONS, type AvatarGender } from "@/lib/admin/account-avatar-contract";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
@@ -200,6 +201,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
     const expectedVersion = snapshot.accountVersion, previousAssetId = snapshot.assetId;
     setVersionNotice("");
     const versionConflict = () => new ConfirmReadConflict({
+      preserveReason: true,
       renderNotice: readLatest => <Notice tone="warn" action={<Button type="button" size="sm" onClick={readLatest}>读取最新</Button>}>账号资料已变化，请读取最新头像资料，再核对并确认。</Notice>,
       readLatest: async () => {
         const abort = new AbortController();
@@ -257,7 +259,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
       <div className="account-avatar-controls m1-avatar-editor">
       {busy && <p className="rd-note" role="status">正在核对头像资料…</p>}{(error || versionNotice) && <Notice tone={error ? "danger" : "neutral"}>{error || versionNotice}</Notice>}
       {!allowed && !busy && !pending?.acknowledged && <div><Button type="button" onClick={() => void read()}>重新核对本人资格与头像</Button></div>}
-      {pending && <Notice tone="warn" title={pending.acknowledged ? "头像已保存，最新的头像暂时读不到。" : pending.replayRejection ? "按原操作重试已被拒绝，请先核实原保存结果。" : "上次保存头像的结果还没确认，请先查询结果。"} actionBelow action={<>
+      {pending && <Notice tone="warn" title={pending.acknowledged ? "头像已保存，最新的头像暂时读不到。" : pending.replayRejection ? "按原操作重试已被拒绝，请先核实原保存结果。" : `上次保存头像（${businessStamp(pending.createdAt)} ${businessZone().label}提交）的结果还没确认，请先查询结果。`} actionBelow action={<>
         <Button ref={queryButton} size="sm" type="button" disabled={busy} onClick={() => void read()}>{pending.acknowledged ? "刷新头像" : "查询保存结果"}</Button>
         {pending.replayRejection ? <VerifiedReleaseButton disabled={busy} onClick={() => askRelease(pending)} /> : !pending.acknowledged &&
           <Button size="sm" type="button" disabled={busy || !allowed || Boolean(selfAvatarSaveRecovery.state(pending).replayBlock)} onClick={() => void submit(pending)}>使用原资料与命令重试</Button>}

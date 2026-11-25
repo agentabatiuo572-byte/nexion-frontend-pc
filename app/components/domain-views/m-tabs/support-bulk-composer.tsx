@@ -154,6 +154,17 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
         supportEnhancements.bulkRecipients(resultBatchId,recipientPage,controller.signal),
       ]);
       if(controller.signal.aborted||owner!==stamp.current)return;
+      // 两次读取各自按当时的权限查。同轮有拒绝就丢弃整份结果，批次编号只保留给只读刷新。
+      const readDenied=(reason:unknown)=>reason instanceof SupportClientError&&[401,403,404].includes(reason.status);
+      if(batch.status==="rejected"&&readDenied(batch.reason)||items.status==="rejected"&&readDenied(items.reason)){
+        keepRecipients=false;
+        recipientsScope.current=null;
+        setJob(null);setRecoveryBatchId(resultBatchId);
+        setRecipients(null);setRecipientTotal(0);
+        setMutationAction(null);setMutationReason("");
+        setResultError("没有查看这个批次的权限。");
+        return;
+      }
       const currentBatch=batch.status==="fulfilled"&&batch.value.batchId===resultBatchId?batch.value:null;
       let failure="";
       if(currentBatch){
@@ -168,16 +179,13 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
         });
         if(["QUEUED","RUNNING"].includes(currentBatch.state))timer=setTimeout(()=>void read(),3000);
       }else failure=batch.status==="rejected"?displayAdminError(batch.reason):"批次资料与当前查询不一致，请重新读取。";
-      // 同一轮里任一读取被权限拒绝（无权、对象不可见）：逐客行和总数都清掉，同轮另一项读到的逐客行也不用（RR02，两次读取各自按当时的权限查）。
-      const readDenied=(reason:unknown)=>reason instanceof SupportClientError&&[401,403,404].includes(reason.status);
-      const denied=batch.status==="rejected"&&readDenied(batch.reason)||items.status==="rejected"&&readDenied(items.reason);
-      if(items.status==="fulfilled"&&!denied){
+      if(items.status==="fulfilled"){
         recipientsScope.current=recipientKey;
         setRecipients(items.value.records);setRecipientTotal(items.value.total);
       }else{
-        // 批次读回说可见范围收窄了（客户转绑、内容受限），或读取被拒绝：旧的逐客行不再留。暂时读失败且范围没变才沿用。
-        if(!keepRecipients||currentBatch?.contentRestricted||denied){setRecipients(null);if(denied)setRecipientTotal(0);}
-        if(items.status==="rejected")failure ||= displayAdminError(items.reason);
+        // 暂时读失败且批次可见范围没变时，才沿用已有逐客行。
+        if(!keepRecipients||currentBatch?.contentRestricted)setRecipients(null);
+        failure ||= displayAdminError(items.reason);
       }
       if(currentBatch)keepRecipients=false;
       setResultError(failure);
@@ -380,7 +388,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       {(mutationFailure||resultError)&&<Notice tone="danger">{mutationFailure}{resultError&&` 结果加载失败，以上为上次已核对值：${resultError}`}</Notice>}
       {!recipients?<p role="status">逐客明细暂未读取</p>:<Table label="逐客结果"><thead><tr><Th>客户</Th><Th>结果</Th><Th>原因</Th><Th>原会话</Th></tr></thead><tbody>{recipients.map((r,i)=><Tr key={r.customerId+":"+i}><Td>{customerName(r.customerId)}</Td><Td><StatusTag tone={recipientTone(r)}>{r.resultCertainty==="UNKNOWN"?"结果未知":stateText[r.state]??"未知"}</StatusTag></Td><Td>{r.failureCode?{...conversationReasonText,SUPPORT_ASSIGNMENT_CHANGED:"客户已转绑，本次不再发送",SUPPORT_MAINTENANCE_STOPPED:"客户已停止维护",SUPPORT_AGENT_UNAVAILABLE:"专属客服当前不可发送",RESULT_UNKNOWN:"需核对原提交结果",SUPPORT_BULK_PAYLOAD_REVIEW_REQUIRED:"原内容需核对，暂不自动重发"}[r.failureCode]??"执行未通过，请核对客户与原消息":"—"}{r.retryable?" · 可核对重试":""}</Td><Td>{r.conversationNo?<a className="rd-link" href={`/service/sessions?conversationNo=${encodeURIComponent(r.conversationNo)}`}>打开原客户会话</a>:"—"}</Td></Tr>)}</tbody></Table>}
       {recipientTotal>0&&<Pager label="逐客结果" total={recipientTotal} page={recipientPage} pageSize={10} sizes={[10]} onPage={setRecipientPage} onPageSize={()=>undefined}/>}</>}
-    {step===4&&!job&&mutationFailure&&<Notice tone="danger" action={resultError ? <Button size="sm" onClick={()=>setResultRetry(n=>n+1)}>刷新原批次</Button> : undefined}>{mutationFailure}{resultError&&` 原批次暂时读不到：${resultError}`}</Notice>}
+    {step===4&&!job&&(mutationFailure||resultError)&&<Notice tone="danger" action={resultError ? <Button size="sm" onClick={()=>setResultRetry(n=>n+1)}>刷新原批次</Button> : undefined}>{mutationFailure}{resultError&&` ${resultError}`}</Notice>}
     </>}
     <Fold inset title="已提交批次" explain="关闭后可以在这里恢复查看。" open={historyOpen} onOpenChange={setHistoryOpen} summary={jobsError?"加载失败":jobs?`${jobsTotal} 批`:"正在加载…"}>{jobsError?<div role="alert" className="m-bulk-row"><span>已提交批次加载失败。{jobsError}</span><Button size="sm" onClick={()=>setJobsRetry(n=>n+1)}>重试</Button></div>:!jobs?<p role="status">正在加载…</p>:<>{!jobs.length&&<p role="status">暂无已提交批次，提交群发后会显示在这里。</p>}{jobs.map(j=><div className="m-bulk-row" key={j.batchId}><span>{stateText[j.state]??"未知"} · {j.frozenCount} 位{j.counts.failed>0?` · 失败 ${j.counts.failed}`:""}</span><Button size="sm" disabled={Boolean(pending)||busy} onClick={()=>{setJob(j);setRecoveryBatchId(null);setMutationFailure("");setStep(4);setRecipientPage(1);setHistoryOpen(false);}}>查看结果</Button></div>)}{jobsTotal>0&&<Pager label="已提交批次" total={jobsTotal} page={jobsPage} pageSize={10} sizes={[10]} onPage={setJobsPage} onPageSize={()=>undefined}/>}</>}</Fold>
     </div>

@@ -5,6 +5,7 @@ import qrcode from "qrcode-generator";
 import { canReplayGroupCommand, commandRejected, groupPendingCommands, isInvitePending, supportGroupClient, type InviteCodeView, type InviteIssueRecord } from "@/lib/admin/support-group-client";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import "./m1-invite-code.css";
@@ -26,7 +27,7 @@ function errorText(error: unknown): string {
   if (error instanceof SupportClientError) {
     if (error.status === 401) return "登录已失效，请重新登录后重试。";
     if (error.status === 403) return "当前账号没有有效的个人服务资格，不能管理邀请码。";
-    if (error.status === 409) return "邀请码刚被修改过，已重新读取，请核对后再操作。";
+    if (error.status === 409 && error.backendMessage === "SUPPORT_INVITE_VERSION_CONFLICT") return "邀请码已变化，请读取最新邀请码后再确认。";
   }
   // 走到这里的都是后端明确拒绝（结果未知另有处理），不是连接问题：按错误码写原因（TX-12、TX-13）。
   return displayAdminError(error);
@@ -124,13 +125,31 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
         if (recovering) setError("重试的结果仍然未知，原操作已保留，请稍后再查询或重试。");
         return;
       }
-      const stale = cause instanceof SupportClientError && cause.status === 409;
+      const stale = cause instanceof SupportClientError && cause.status === 409 && cause.backendMessage === "SUPPORT_INVITE_VERSION_CONFLICT";
       if (recovering) settle(record, null);
       else {
         groupPendingCommands.forget(record.fingerprint, record.commandKey);
+        if (stale && fromConfirm) {
+          setReadFailed(true);
+          throw new ConfirmReadConflict({
+            renderNotice: readLatest => <Notice tone="warn" action={<Button type="button" size="sm" onClick={readLatest}>读取最新</Button>}>{errorText(cause)}</Notice>,
+            readLatest: async () => {
+              try {
+                const current = await supportGroupClient.selfInviteCode();
+                setView(current); setReadFailed(false);
+                if (current.code === null) setConfirming(false);
+                return true;
+              } catch (error) {
+                if (!invitePermissionDenied(error)) throw error;
+                clearDenied(error);
+                return false;
+              }
+            },
+          });
+        }
         if (stale) { setView(null); setReload(n => n + 1); }
       }
-      if (fromConfirm && !stale) throw new Error(errorText(cause));
+      if (fromConfirm) throw new Error(errorText(cause));
       setConfirming(false);
       setError(errorText(cause));
     } finally { setBusy(false); }
@@ -204,7 +223,10 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
     facts={<Facts><Fact k="当前邀请码"><span data-mono>{view.code}</span></Fact></Facts>}
     effect={<><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>}
     confirmTone="danger" confirmLabel="确认重置" returnFocus={() => resetButton.current}
-    onClose={() => { setConfirming(false); setError(""); }} onConfirm={() => issue(true)} />;
+    onClose={() => {
+      setConfirming(false); setError("");
+      if (readFailed) { setView(null); setReload(n => n + 1); }
+    }} onConfirm={() => issue(true)} />;
 
   return <section className="m1-invite" aria-label="我的邀请码">
     {confirmBox}
