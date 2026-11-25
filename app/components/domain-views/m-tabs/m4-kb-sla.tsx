@@ -497,7 +497,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     if (!record) return failure && !isOutcomeUnknownError(failure) ? <Notice tone="danger" title="没有删除"><p>{failure.message}</p></Notice> : null;
     if (writeInFlight.current && !m4FaqRecovery.state(record).busy) return null;
     const { view, gone, rejected } = recoveryInfo(record);
-    return <Notice tone={mNoticeTone(view)} title={view.label} action={rejected ? <Button size="sm" onClick={() => { ctx.closeActionConfirm?.(); setReleasing(record); }}>核实后解除</Button> : undefined}>
+    return <Notice tone={mNoticeTone(view)} title={view.label} actionBelow action={rejected ? <Button size="sm" onClick={() => { ctx.closeActionConfirm?.(); setReleasing(record); }}>核实后解除</Button> : undefined}>
       <p>{gone && goneText(record)}{view.line}</p>
       {failure?.message && !m4FaqRecovery.state(record).busy && <p>{failure.message}</p>}
     </Notice>;
@@ -572,7 +572,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
           const released = faqRecoveryBindings(releasing).releaseRejectedReplay();
           setReleasing(null);
           if (released) putOutcome(releasing.commandKey);
-          toast(released ? M_RELEASED_TEXT : "这条记录刚有变化，没有解除，请看最新状态。", released ? "success" : "warn");
+          toast(released ? recoveryInfo(releasing).gone ? `已解除这条记录。${GONE_TEXT}` : M_RELEASED_TEXT : "这条记录刚有变化，没有解除，请看最新状态。", released ? "success" : "warn");
         }} />}
 
       {loading ? <Conclusion state="unknown">正在读取问答…</Conclusion>

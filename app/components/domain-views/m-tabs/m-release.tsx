@@ -49,7 +49,10 @@ export function MReleaseModal({ target, where, onCancel, onConfirm }: {
         <Fact k="发出时间">{businessStamp(target.createdAt)}（{businessZone().label}）</Fact>
         {reason && <Fact k="拒绝原因">{reason}</Fact>}
       </Facts>
-      <p className="m-release-text">解除后可以重新提交，原操作不再重试，也不会撤销。只清这个标签页里的记录，不进操作记录。</p>
+      <div className="m-release-text">
+        <p>解除后可以重新提交，原操作不再重试，也不会撤销。</p>
+        <p>只清这个标签页里的记录，不进操作记录。</p>
+      </div>
       <p className="m-release-text">{where} <MAuditLink /></p>
       <Check label="已核实原操作的结果" checked={checked} onChange={(event) => setChecked(event.target.checked)} />
     </Modal>

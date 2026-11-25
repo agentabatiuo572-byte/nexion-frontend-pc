@@ -232,7 +232,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
   if (releasing && pending) return <TransferRelease record={pending} onCancel={() => setReleasing(false)} onReleased={() => setReleasing(false)} />;
   return <Modal title="正式转绑客户" icon="users" busy={saving} onClose={onClose} footer={footer}><div className="m1-transfer-form">
     {pending ? <>
-      {view && <Notice tone={mNoticeTone(view)} title={view.label} action={recoveryState?.replayRejection || recoveryState?.expired ? <MAuditLink /> : undefined}><p>{view.line}</p><p>原转绑已锁定，不能修改。</p></Notice>}
+      {view && <Notice tone={mNoticeTone(view)} title={view.label} actionBelow action={recoveryState?.replayRejection || recoveryState?.expired ? <MAuditLink /> : undefined}><p>{view.line}</p><p>原转绑已锁定，不能修改。</p></Notice>}
       <Facts><Fact k="客户">{pending.customerName ?? customerId}</Fact><Fact k="专属客服变更"><Change from={pending.fromName ?? "原专属客服"} to={pending.targetName ?? `专属客服 ${pending.payload.targetAgentAdminId}`} /></Fact><Fact k="理由">{pending.payload.reason}</Fact></Facts><Fold inset title="技术信息" summary="原请求编号与绑定版本"><Facts><Fact k="原请求编号"><span data-mono>{pending.commandKey}</span></Fact><Fact k="绑定版本">{String(pending.payload.customers[0].expectedVersion)}</Fact></Facts></Fold>
     </> : denied ? <Notice tone="danger">{denied}</Notice>
       : loadError ? <BlockState state="error" title={loadError} onRetry={() => setReload((value) => value + 1)} />

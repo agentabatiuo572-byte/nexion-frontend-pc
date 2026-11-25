@@ -200,7 +200,7 @@ export function M4StatusConfirm({ faq, busy, disabled, disabledReason, failure, 
       {!publish && <p className="m4-confirm-note">问答留在列表里，随时可以重新发布。已经发给客户的回答不会撤回；App 里已打开的帮助页可能过几分钟才更新。</p>}
       <p className="m4-confirm-note">操作记录会记下这次{publish ? "发布" : "下架"}，理由固定写「{publish ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档"}」。</p>
       {failure && !unknown && <Notice tone="danger" title="没有成功"><p>{failure?.message}</p></Notice>}
-      {info && <Notice tone={mNoticeTone(info.view)} title={info.view.label} action={info.gone || info.rejected ? <MAuditLink /> : undefined}>
+      {info && <Notice tone={mNoticeTone(info.view)} title={info.view.label} actionBelow action={info.gone || info.rejected ? <MAuditLink /> : undefined}>
         <p>{info.gone && "这条问答已不在列表里。"}{info.view.line}</p>
         {unknown && failure?.message && <p>{failure.message}</p>}
       </Notice>}
