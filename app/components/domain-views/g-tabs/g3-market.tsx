@@ -380,7 +380,7 @@ function G3MarketEditor() {
         verification: verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "current", observedAt: verifiedApprovals[row.commandKey] ?? row.createdAt }
       : { kind: "unknown", detail: row.request.kind === "approval"
         ? "提交时没收到确定结果，可能已提交审批。打开这一项查询原操作，24 小时内也可以按原操作重试。"
-        : "提交时没收到确定结果，可能已经生效。打开这一项读取当前配置核对，24 小时内也可以按原操作重试。", verification: "current", observedAt: row.createdAt };
+        : "提交时没收到确定结果，可能已经生效。点「查看原操作」读取当前配置核对，24 小时内也可以按原操作重试。", verification: "current", observedAt: row.createdAt };
   }
   for (const state of overview?.objectStates ?? []) {
     const keys = state.target.type === "nex_market_curve"
@@ -611,14 +611,14 @@ function G3MarketEditor() {
           : unknownTag(row.request.kind === "approval" ? "approval" : "direct"),
       actions: row.ticketId
         ? <Button size="sm" aria-label={`查询${name}的原操作`} onClick={() => void refreshKnownApprovals()}>查询原操作</Button>
-        : <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>{g3MarketCommandExpired(row) ? row.request.kind === "direct" ? "读取当前配置" : "查询原操作" : "查询或重试"}</Button>,
+        : <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>{row.request.kind === "direct" ? "查看原操作" : g3MarketCommandExpired(row) ? "查询原操作" : "查询或重试"}</Button>,
     };
   });
   const recoveryNotice = <GRecoveryNotice label="价格的原操作" rows={recoveryRows}
     title={`价格的原操作 · ${recoveryRows.length} 项`}
     lead={commandRows.every((row) => row.ticketId)
       ? "这些申请在等另一位超级管理员审批：点「查询原操作」看结论；有结论之前不要换个值重新提交。"
-      : "点「查询原操作」或打开那一项核对；没有审批单的原操作 24 小时内也可以按原操作重试。有结论之前不要换个值重新提交。"}
+      : "点「查询原操作」或「查看原操作」核对；没有审批单的原操作 24 小时内也可以按原操作重试。有结论之前不要换个值重新提交。"}
     explain={<>
       <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的提高申请，和直接保存但没收到结果的修改。原操作只能查询或按原操作重试，不能改值。</p>
       <p>表里同一项也带着标记。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
