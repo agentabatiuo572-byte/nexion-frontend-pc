@@ -1260,9 +1260,11 @@ export default function UserDetailPage() {
   // 能看登录安全的角色 sessions 总在，这时 security 是空就是这一项读失败了，后端把它写成 false，不能当没问题（DP-65）。
   const securityUnread = !!detail?.sessions && detail.security == null;
   const securityAlert = paymentSecurity.state === "exception" || paymentSecurity.pending || summary.locked === true || unfinishedRevokes.length > 0;
-  const securityFailed = paymentSecurity.state === "failed" || !!paymentError || revokeScanFailed || securityUnread;
+  // 支付方式重读在途时不算失败（03 ST-30）：读完仍失败才回到失败。
+  const paymentFailed = !!paymentError && !paymentLoading;
+  const securityFailed = paymentSecurity.state === "failed" || paymentFailed || revokeScanFailed || securityUnread;
   // 支付安全重读在途时「安全」组不收起：页头「刷新」、更新事件触发的重读不经过「重试」，没手动展开过的组不先收起再展开（BUG-746）。颜色仍只按异常和失败。
-  const securityKeepOpen = securityAlert || securityFailed || paymentSecurity.state === "reloading";
+  const securityKeepOpen = securityAlert || securityFailed || !!paymentError || paymentSecurity.state === "reloading";
   const latestFundsFailed = detail?.latestDepositStatus === "ERROR" || detail?.latestWithdrawalStatus === "ERROR";
   const fundsFailed = failedSection(detail?.deposits, detail?.withdrawals, detail?.financial, detail?.account) || ledgerUnread || latestFundsFailed;
   const fundsAlert = withdrawalExceptions + withdrawalsWaiting > 0;
@@ -1413,7 +1415,7 @@ export default function UserDetailPage() {
   const unreadable = [
     securityUnread && "账号锁定和两步验证",
     paymentSecurity.state === "failed" && "支付安全",
-    paymentError && "支付方式",
+    paymentFailed && "支付方式",
     !paymentError && revokeScanFailed && "支付方式的撤销状态",
     ledgerUnread && "账单流水",
     (failedSection(detail.deposits, detail.withdrawals, detail.financial, detail.account) || latestFundsFailed) && "资金",
@@ -1435,7 +1437,7 @@ export default function UserDetailPage() {
     detail.commerce && "最近 50 单订单",
     detail.notifications && "通知推送失败",
   ].filter((value): value is string => !!value);
-  const checking = paymentSecurityPort && (paymentSecurity.state === "loading" || paymentSecurity.state === "reloading") || !supportScope && (!paymentMethods && !paymentError || !revokeScan && !revokeScanFailed);
+  const checking = paymentSecurityPort && (paymentSecurity.state === "loading" || paymentSecurity.state === "reloading") || !supportScope && (!paymentMethods && !paymentFailed || !revokeScan && !revokeScanFailed);
   const firstIssue = issues.find((issue) => issue.go);
   const firstGo = firstIssue?.go;
   const c2Link = canReadC2 && !supportScope
@@ -1629,7 +1631,7 @@ export default function UserDetailPage() {
   // 摘要只给收起时看，展开后下面有同样的数（DP-61）。有异常时只写异常。
   const foldSummary = (group: string, alert: boolean, text: string) => (openFolds[group] ?? alert) ? "" : text;
   const securityText = securityFailed
-    ? joined([securityUnread && "账号锁定和两步验证暂时无法确认", paymentSecurity.state === "failed" && "支付安全暂时无法确认", paymentError && "支付方式加载失败", !paymentError && revokeScanFailed && "撤销状态加载失败"])
+    ? joined([securityUnread && "账号锁定和两步验证暂时无法确认", paymentSecurity.state === "failed" && "支付安全暂时无法确认", paymentFailed && "支付方式加载失败", !paymentError && revokeScanFailed && "撤销状态加载失败"])
     : securityAlert
       ? joined([summary.locked === true && "账号已锁定", paymentSecurity.state === "exception" && "支付密码有异常", paymentSecurity.pending && "支付密码解除结果未知", unfinishedRevokes.length > 0 && `${unfinishedRevokes.length} 张卡仍可能被扣款`])
       : joined([
