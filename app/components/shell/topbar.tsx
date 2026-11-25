@@ -20,6 +20,7 @@ import { useServicePendingCount } from "./use-service-badges";
 import { useSupportUnreadTotal } from "@/lib/admin/support-alerts";
 import { B_DASHBOARD_READ_AUTHORITIES, M_CONTENT_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
+import { selfAvatarCommands } from "@/lib/admin/account-avatar-pending";
 import { currentAdminSession } from "@/lib/admin/auth-client";
 import { supportIdentityLabel } from "@/lib/admin/session-role";
 import { ThemeToggle } from "@/app/components/rd/theme-switch";
@@ -37,6 +38,16 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
   // 后端只给有专属客服或客服主管资格的账号换本人头像（客服或超管角色，PERSONAL、MANAGED 两种读法就是这两种资格）；只有 ALL 的超管不显示入口（OP-124）。
   const canChangeAvatar = supportReadModes?.some((mode) => mode === "PERSONAL" || mode === "MANAGED") ?? false;
   const [avatarOpen, setAvatarOpen] = useState(false);
+  // 上次保存本人头像结果未知：菜单项后面标出来（只读已有的待确认记录，头像编辑器改记录时会发 m1-pending-changed）。
+  const adminId = useAdminAuth((s) => s.session?.adminId);
+  const [avatarPending, setAvatarPending] = useState(false);
+  useEffect(() => {
+    if (!canChangeAvatar) return;
+    const read = () => setAvatarPending(selfAvatarCommands.list().some((row) => row.actorId === adminId));
+    read();
+    window.addEventListener("m1-pending-changed", read);
+    return () => window.removeEventListener("m1-pending-changed", read);
+  }, [canChangeAvatar, adminId, open]);
   const [loggingOut, setLoggingOut] = useState(false);
   const logoutAttemptRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -121,6 +132,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
               <button type="button" onClick={() => { setOpen(false); setAvatarOpen(true); }} className="rd-account-action">
                 <UserRoundPen size={14} aria-hidden />
                 更换本人头像
+                {avatarPending && <span className="rd-account-pending">结果待确认</span>}
               </button>
             )}
             <button type="button" onClick={handleSignOut} disabled={loggingOut} className="rd-account-action">

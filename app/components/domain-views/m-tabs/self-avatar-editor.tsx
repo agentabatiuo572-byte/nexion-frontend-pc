@@ -30,8 +30,10 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
   // 放在上面那个重置之后：挂上先清空，再打开。
   useEffect(() => { if (launch) { setOpen(true); void read(); } }, []);
-  const opened = useRef(false);
+  const opened = useRef(false), queryButton = useRef<HTMLButtonElement>(null), pendingFocused = useRef(false);
   useEffect(() => { if (open) opened.current = true; else if (launch && opened.current) onClosed?.(); }, [open]);
+  // 从账号菜单打开、上次保存结果未知时，核对完落在「查询保存结果」上（OP-93）。
+  useEffect(() => { if (launch && open && pending && !busy && !pendingFocused.current && queryButton.current) { pendingFocused.current = true; queryButton.current.focus(); } }, [launch, open, pending, busy]);
   const complete = (record: SelfAvatarPending, current: SelfAvatarSnapshot) => {
     selfAvatarCommands.forget(record.fingerprint, record.commandKey);
     avatarDrafts.forget(avatarDraftFingerprint(record.actorId, "self", "self"));
@@ -72,6 +74,8 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
         // Read failure cannot decide whether an earlier write succeeded.
         if (sent && !saved && isExplicitRejection(e)) {
           selfAvatarCommands.forget(record.fingerprint, record.commandKey); setPending(null); setAllowed(false);
+          // 从确认框发起时把明确拒绝交给确认框：框不关，原因写在框里（OP-81、OP-82）；抽屉里的原因照旧。
+          if (!recovering) throw e;
         }
       }
       return false;
@@ -99,7 +103,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
       <div className="account-avatar-controls m1-avatar-editor">
       {busy && <p className="rd-note" role="status">正在核对头像资料…</p>}{error && <Notice tone="danger">{error}</Notice>}
       {!allowed && !busy && <div><Button type="button" onClick={() => void read()}>重新核对本人资格与头像</Button></div>}
-      {pending && <Notice tone="warn" title="上次保存头像的结果还没确认，请先查询结果。" actionBelow action={<><Button size="sm" type="button" disabled={busy} onClick={() => void read()}>查询保存结果</Button><Button size="sm" type="button" disabled={busy || !allowed || Date.now() >= pending.expiresAt} onClick={() => void submit(pending)}>使用原资料与命令重试</Button></>}>{Date.now() >= pending.expiresAt && <p>原命令已超过安全重试窗口，只能查询结果；请联系管理员核对。</p>}</Notice>}
+      {pending && <Notice tone="warn" title="上次保存头像的结果还没确认，请先查询结果。" actionBelow action={<><Button ref={queryButton} size="sm" type="button" disabled={busy} onClick={() => void read()}>查询保存结果</Button><Button size="sm" type="button" disabled={busy || !allowed || Date.now() >= pending.expiresAt} onClick={() => void submit(pending)}>使用原资料与命令重试</Button></>}>{Date.now() >= pending.expiresAt && <p>原命令已超过安全重试窗口，只能查询结果；请联系管理员核对。</p>}</Notice>}
       {snapshot && <><Field label="默认头像分类" explain="只用于下一次明确准备默认头像；不会修改本人资料中的性别或立即换图。"><Select aria-label="默认头像分类" value={gender} options={AVATAR_GENDER_OPTIONS} disabled={!allowed || busy || Boolean(pending) || blocking} onChange={value => setGender(value as AvatarGender)} /></Field>
         <AccountAvatarPicker key={`${actorId}:${epoch}`} scope="self" name={name} gender={gender} allowDefault currentPath={snapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined} currentVersion={snapshot.avatarVersion} disabled={!allowed || busy || Boolean(pending)} onChange={setAssetId} onBlocking={setBlocking} />
       </>}
