@@ -879,7 +879,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
           : command.key.startsWith("I.session.advisor.policy.") ? `${command.beforeValue} → ${body.value}`
             : `${statusName(body.expectedStatus)} → ${statusName(body.status)} · ${command.text}`;
     return { key: record.commandKey, name: command?.action.split(" · admin.")[0] ?? "结果未知", change, submittedAt: record.createdAt, expired: isRetryExpired(record), actions: <>
-      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>查询原操作</Button>
+      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>读取当前内容</Button>
       {command && !isRetryExpired(record) && <Button size="sm" variant="primary" disabled={writePending || !canRetry(command)} onClick={() => recover(record)}>按原操作重试</Button>}
     </> };
   });

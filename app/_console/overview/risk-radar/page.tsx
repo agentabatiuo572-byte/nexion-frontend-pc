@@ -111,7 +111,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
       {items.map((item) => (
         <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
           action={<span className="b5-row-actions">
-            {item.onQuery && <Button size="sm" onClick={item.onQuery}>查询原操作</Button>}
+            {item.onQuery && <Button size="sm" onClick={item.onQuery}>读取当前值</Button>}
             {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
             {item.onDiscard && <Button size="sm" onClick={item.onDiscard}>放弃这份草稿</Button>}
             {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原操作重试</Button>}
@@ -807,7 +807,7 @@ export default function RiskRadarPage() {
               {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
               {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
                 ? approvalReleasable ? "按原操作重试被拒绝，核对结果后可以解除原操作记录。" : "可能已经建了审批单。先点「查询原操作」；查不到时 24 小时内可以按原操作重试，不会建第二张单。"
-                : thresholdUnknown ? "可能已经生效。可以按原操作重试，不会重复执行；也可以关掉后点「查询原操作」。" : thresholdError}</Notice>}
+                : thresholdUnknown ? "可能已经生效。可以按原操作重试，不会重复执行；也可以关掉后点「读取当前值」。" : thresholdError}</Notice>}
               {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="审批单结果未知">{approvalReleasable ? "按原操作重试被拒绝，核对结果后可以解除原操作记录。" : "先点「查询原操作」查原审批单；查到了就不用再提交。"}</Notice>}
               {otherThresholdChanges.length > 0 && <Notice tone="neutral" title="别人改了什么">{otherThresholdChanges.join(" · ")}</Notice>}
               <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} beforeLabel={recovering ? "提交时" : undefined} label="黄线改成" hint="5%–50%" state={yellowDirection}
@@ -869,7 +869,7 @@ export default function RiskRadarPage() {
               <>
                 {subscriptionOriginal && subscriptionUnknown && (
                   <Notice tone="warn" title="结果未知，可能已经生效">
-                    下面是提交时的内容，已锁定。按原操作重试只发这一份，不会重复执行；也可以关掉后点「查询原操作」。
+                    下面是提交时的内容，已锁定。按原操作重试只发这一份，不会重复执行；也可以关掉后点「读取当前值」。
                   </Notice>
                 )}
                 {subscriptionConflict && (() => {
@@ -944,7 +944,7 @@ export default function RiskRadarPage() {
                 <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={200} rows={3} placeholder="8–200 字，例如：已核实、工单号" count={`${statusReason.trim().length} / 200`} onChange={(event) => setStatusReason(event.target.value)} />
               </Field>
               {statusError && <Notice tone={statusUnknown ? "warn" : "danger"} title={statusUnknown ? "结果未知，可能已经生效" : "没有标记成功"}>
-                {statusUnknown ? "理由已锁住，只能按原操作重试；也可以关掉后点「查询原操作」，看这条的处理进度变了没有。" : statusError}
+                {statusUnknown ? "理由已锁住，只能按原操作重试；也可以关掉后点「读取当前值」，看这条的处理进度变了没有。" : statusError}
               </Notice>}
             </div>
           </Modal>

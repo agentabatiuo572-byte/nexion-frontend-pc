@@ -541,7 +541,7 @@ async function submitThresholdApproval<T, S extends "B1" | "B5">(
   catch { activeReadFailed = true; }
   if (!activeReadFailed && result.conclusion === "succeeded") bThresholdRecovery.settleFromQuery(original, "succeeded");
   return { active, activeReadFailed, ticket, acknowledgement: ticket.status === "pending"
-    ? `已提交审批 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : " · 等待另一位超级管理员批准"}`
+    ? `已提交，等待审批后执行 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : ""}`
     : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果${activeReadFailed ? "；数据没读到，暂不能再改" : ""}` };
 }
 
@@ -711,11 +711,11 @@ async function submitConfigApprovalTicket(
     acknowledgement: previous && lookupOnly && withdrawalApproval
       ? `已找到原审批单 ${ticket.id} · ${TICKET_STATUS_TEXT[ticket.status]}`
       : previous && lookupOnly && domain === "F"
-      ? `已找到原审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位超管批准" : " · 请在操作记录查看处理结果"}`
+      ? `已找到原审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位超级管理员批准" : " · 请在操作记录查看处理结果"}`
       : previous && previous.input !== input
       ? `已找到原审批单 ${ticket.id}，本次输入未提交。请核对当前配置后重新操作。`
       : ticket.status === "pending"
-        ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超管批准`
+        ? `已提交，等待审批后执行 · 审批单 ${ticket.id}`
         : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果`,
   };
 }

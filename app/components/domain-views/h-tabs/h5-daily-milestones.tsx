@@ -166,7 +166,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const refresh = async () => {
     setMc(null);
     const results = await mutations.refreshTickets();
-    for (const result of results) if (result.status === "rejected") toast(displayAdminError(result.reason));
+    for (const result of results) if (result.status === "rejected") toast(displayAdminReadError(result.reason));
     await reload();
   };
   useEffect(() => {

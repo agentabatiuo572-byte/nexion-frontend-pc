@@ -540,7 +540,7 @@ function G4GenesisPage() {
       key: command.commandKey, name: directName(command),
       change: directChangeText(command), submittedAt: command.createdAt,
       tag: g4DirectCommandExpired(command) ? expiredTag("direct") : unknownTag("direct"),
-      action: <><Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, false).catch(() => undefined); }}>查询原操作</Button>{canRetryG4DirectCommand(command) && <Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, true).catch(() => undefined); }}>按原操作重试</Button>}</>,
+      action: <><Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, false).catch(() => undefined); }}>读取当前配置</Button>{canRetryG4DirectCommand(command) && <Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, true).catch(() => undefined); }}>按原操作重试</Button>}</>,
     })), ...(!overview && tierPending ? [{
       key: "tiers", name: "价格档位", change: "档位修改的原申请（扩容或未售涨价）",
       tag: <StatusTag tone="warn" icon={Clock3}>结果未知</StatusTag>,

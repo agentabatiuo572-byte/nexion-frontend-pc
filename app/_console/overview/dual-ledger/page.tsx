@@ -556,7 +556,7 @@ export default function DualLedgerPage() {
       object: record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理",
       tag: { tone: "warn", label: expired ? "已过期" : "结果未知" },
       line: record.kind === "injection" ? `${expired ? RETRY_EXPIRED_TEXT : ""}${injectionNotes[record.commandKey] ?? (expired ? "" : canReadInjectionReceipt ? "可能已经登记，先查询原操作。" : "这个账号查不了原结果，请有权限的同事核对。")}`
-        : recovery.replayRejection ? "按原操作重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经生效，先查询原操作。",
+        : recovery.replayRejection ? "按原操作重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经生效，先读取当前值核对。",
       body: `${record.kind === "threshold" ? [["红线", record.facts.redlinePct, Number(record.form.redlinePct)], ["健康线", record.facts.healthyPct, Number(record.form.healthyPct)]]
         .map(([name, from, to]) => `${name} ${from === to ? `${fmtConfigPct(Number(to))}（不变）` : `${fmtConfigPct(Number(from))} → ${fmtConfigPct(Number(to))}`}`).join(" · ") : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"} ${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
       expired,
@@ -564,7 +564,7 @@ export default function DualLedgerPage() {
         : expired ? "当前值仅供核对，原操作记录继续保留。" : "24 小时内只能按原操作重试，不能改值。",
       onRetry: !recovery.replayBlock ? () => recoverWrite(record) : undefined,
       onRelease: record.kind !== "injection" && recovery.replayRejection ? () => setReleasing(record) : undefined,
-      queryLabel: record.kind !== "injection" && expired ? READ_CURRENT_VALUE : undefined,
+      queryLabel: record.kind !== "injection" ? READ_CURRENT_VALUE : undefined,
       queryHref: injectionPage ? "/finance/pool" : undefined,
       queryHrefLabel: "去资金储备与应付款 →",
       onQuery: injection ? canReadInjectionReceipt ? () => void queryInjection(record) : undefined

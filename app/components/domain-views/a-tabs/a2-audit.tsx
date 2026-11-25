@@ -912,7 +912,7 @@ const RECOVERY_HINT: Record<A2CommandKind, string> = {
   approve: "可以查询这次批准的结果，或按原操作重试，不会重复执行。",
   reject: "可以查询这次驳回的结果，或按原操作重试，不会重复执行。",
   withdraw: "可以查询这次撤回的结果，或按原操作重试，不会重复执行。",
-  param: "查询只能看到现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
+  param: "读到的是现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
   retention: "查询只能看到最近一次手动清理。可以按原操作重试，不会重复清理。",
   export: "查询只能看到有没有这次的导出记录。可以按原操作重试，按当时的条件重新下载。",
 };
@@ -2977,7 +2977,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       // 查询的回答已在 result 里替换这一行的结论；noteKey 只让回答变了时自动展开，不在展开内容里再写一遍。
       noteKey: note?.text,
       actions: <>
-        <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原操作</Button>
+        <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>{record.kind === "param" ? "读取当前值" : "查询原操作"}</Button>
         <Button size="sm" disabled={!!submitting} disabledReason={retryBlock(record)} onClick={() => void retryPending(record)}>按原操作重试</Button>
         {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>,

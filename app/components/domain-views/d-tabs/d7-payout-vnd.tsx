@@ -1,5 +1,5 @@
 "use client";
-import { APPROVAL_REPLAY_RELEASE, canReadOwnRecoveryProposal, currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
+import { APPROVAL_REPLAY_RELEASE, APPROVAL_REPLAY_RELEASE_NO_AUDIT, canReadOwnRecoveryProposal, currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
@@ -741,7 +741,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         <p>{confirmed ? "审批已提交，查到审批单状态后再提交放宽。"
           : <>可能已生成审批单，这组参数有结果前不能再改。{expired && !outcome && (canQueryOriginal ? expiredNext(approval) : EXPIRED_NO_QUERY)}</>}</p>
         {!expired && approvalBlocked && <p>{approvalBlocked}</p>}
-        {approval.replayRejection && <p>重试没有成功：{reasonOf(displayAdminError(new Error(approval.replayRejection)))}。 {APPROVAL_REPLAY_RELEASE}</p>}
+        {approval.replayRejection && <p>重试没有成功：{reasonOf(displayAdminError(new Error(approval.replayRejection)))}。 {canReachAudit ? APPROVAL_REPLAY_RELEASE : APPROVAL_REPLAY_RELEASE_NO_AUDIT}</p>}
         {notes[approval.commandKey] && <p>{notes[approval.commandKey]}</p>}
       </>,
       tech: original };
@@ -750,7 +750,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />;
   const releaseModal = <>
     {releasing && <ReleaseModal label={releasing.kind === "approval" ? "放宽提交" : "参数修改"} onCancel={() => setReleasing(null)} onConfirm={releasePending}
-      explain={releasing.kind === "approval" ? APPROVAL_REPLAY_RELEASE : "重试被拒说明不了原操作的结果，先查询原操作。解除后原操作不再重试。"} />}
+      explain={releasing.kind === "approval" ? canReachAudit ? APPROVAL_REPLAY_RELEASE : APPROVAL_REPLAY_RELEASE_NO_AUDIT : "重试被拒说明不了原操作的结果，先查询原操作。解除后原操作不再重试。"} />}
     {directClosing && <CommandClosureModal label="参数修改" commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
       offer={eCommandClosureOffer(investigationResults[directClosing.commandKey], isRetryExpired(directClosing))} facts={<Fact k="提交的值">{valuesSummary(directClosing.values).split("、").map((item, index, all) => <span key={item} className="rd-keep">{item}{index < all.length - 1 ? "、" : ""}</span>)}</Fact>}
       onClose={() => setDirectClosing(null)} onSubmit={async evidence => {

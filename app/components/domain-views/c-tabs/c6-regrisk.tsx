@@ -305,7 +305,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   // Restore from the saved request even when the overview cannot be loaded.
   const pendingNotices = pending.length > 0 && (
-    <Notice tone="warn" title={<>有 {pending.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，系统认得出是同一次提交，不会重复执行；超过 24 小时只能查询原操作。「查询原操作」读的是现在的规则，证明不了原操作有没有执行。有结论前这一项不能再改。" /></>}>
+    <Notice tone="warn" title={<>有 {pending.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，系统认得出是同一次提交，不会重复执行；超过 24 小时只能读取当前规则核对。「读取当前规则」读的是现在的规则，证明不了原操作有没有执行。有结论前这一项不能再改。" /></>}>
       <ul className="c6-pending" aria-label="结果未知的操作">
         {pending.map((record) => {
           const complete = isCompleteC6Command(record);
@@ -315,13 +315,13 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
               <span className="c6-pending-name">{record.label ?? pendingLabel(record.fingerprint)}</span>
               <span className="c6-pending-time">{businessStamp(record.createdAt)} 提交</span>
               <span>{!complete
-                ? <StatusTag tone="neutral" icon={CircleHelp} explain="这条是旧页面留下的记录，没有保存原请求，不能重试。">只能查询原操作</StatusTag>
+                ? <StatusTag tone="neutral" icon={CircleHelp} explain="这条是旧页面留下的记录，没有保存原请求，不能重试。">只能读取当前规则</StatusTag>
                 : expired
                   ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试。">已过期</StatusTag>
                   : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
               <span className="c6-pending-actions">
-                <Button size="sm" loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void loadData()}>查询原操作</Button>
-                {complete && !expired && <Button size="sm" variant="primary" disabledReason={busy ? "正在提交，请稍候" : !canWrite ? "你没有修改权限，只能查询原操作" : undefined} onClick={() => void perform(record)}>按原操作重试</Button>}
+                <Button size="sm" loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void loadData()}>读取当前规则</Button>
+                {complete && !expired && <Button size="sm" variant="primary" disabledReason={busy ? "正在提交，请稍候" : !canWrite ? "你没有修改权限，只能读取当前规则核对" : undefined} onClick={() => void perform(record)}>按原操作重试</Button>}
               </span>
             </li>
           );

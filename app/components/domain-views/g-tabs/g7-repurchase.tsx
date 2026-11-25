@@ -402,7 +402,7 @@ function G7RepurchasePage() {
           change: <Change from={direct.currentValue === undefined ? "原值未知" : paramValueText(direct.paramKey, direct.currentValue)} to={paramValueText(direct.paramKey, direct.input.value)} />,
           tag: g7DirectCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"),
           actions: <>
-            <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`查询${name}的原操作`} onClick={() => void readDirectCommand(direct)}>查询原操作</Button>
+            <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`读取${name}的当前配置`} onClick={() => void readDirectCommand(direct)}>读取当前配置</Button>
             {retry && <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`按原操作重试${name}`} onClick={retry}>按原操作重试</Button>}
           </>,
         };

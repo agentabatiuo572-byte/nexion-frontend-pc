@@ -27,7 +27,7 @@ import {
 import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
 import { fetchA8PermissionDetail } from "@/lib/admin/a8-client";
 import { groupPendingCommands, isQualificationPending, qualificationRecovery } from "@/lib/admin/support-group-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import type { ACtx, ActionConfirmReq } from "./types";
 import { usePendingReplayDeadline, type BusinessFormValue } from "../design-kit";
 import { pendingReplayReason } from "../recovery-panel";
@@ -220,11 +220,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         setPermissionDiffReady(true);
       } catch (error) {
         setPermissionCodesByRole({});
-        setPermissionDiffError(`角色权限没有读到：${errorMessage(error)}`);
+        setPermissionDiffError(`角色权限没有读到：${displayAdminReadError(error)}`);
       }
       return data;
     } catch (error) {
-      setLoadError(errorMessage(error));
+      setLoadError(displayAdminReadError(error));
       return null;
     } finally {
       if (!quiet) {
@@ -1482,7 +1482,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         {header}
         {recovery}
         <Conclusion state="warn" icon={ShieldCheck}>运营账号没有读到，安全状况这部分没有判断</Conclusion>
-        <BlockState state="error" title="运营账号没有读到" detail={loadError || "请重试，持续失败请联系值班人员。"} onRetry={() => void refreshOverview()} retryLabel="重试" />
+        <BlockState state="error" title="运营账号加载失败" detail={loadError || "请重试，持续失败请联系值班人员。"} onRetry={() => void refreshOverview()} retryLabel="重试" />
       </div>
     );
   }
