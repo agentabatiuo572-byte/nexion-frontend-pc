@@ -64,7 +64,7 @@ export function F1PromotionHistory({ ctx, rows, canPromote, onOverride }: { ctx:
       </FilterBar>
     <Panel title="晋升记录" icon={History} tone="role-3" flush
       sub={`${hasFilter(applied) ? "当前筛选" : "共"} ${ctx.promotionTotal.toLocaleString("en-US")} 条`}
-      explain="自动评估和人工调整都会留一条；按记录先后倒序，每次读 100 条。自动评估每次最多升一级；人工调整可以一次跨几级。"
+      explain="自动评估和人工调整都会留一条；按记录先后倒序，每次读 100 条。自动评估每次最多升一级、最高到 V7，V8 由运营审核后人工升级；人工调整可以一次跨几级。"
       actions={canPromote ? <Button size="sm" icon={<UserCog size={14} aria-hidden />} onClick={onOverride}>人工调整等级</Button> : undefined}>
       <Table label="晋升记录" className="f1-table">
         <colgroup><col className="f1-col-user" /><col className="f1-col-change" /><col className="f1-col-way" /><col className="f1-col-reason" /><col className="f1-col-time" /></colgroup>

@@ -229,7 +229,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     statedBrief={statedBrief}
     confirmLabel={remove ? "确认移除" : "确认修改"}
     confirmLabelForValue={isCondition ? (_value, values) => values && baselineReady && f1PolicyNeedsApproval(editor, values) ? "提交审批" : "确认修改" : undefined}
-    detail={isCondition ? `当前${fieldLabel}为 ${currentLabel}。修改只影响后续晋升评估，已晋升的记录保留。`
+    detail={isCondition ? `当前${DISPLAY[condition] ?? fieldLabel}为 ${currentLabel}。修改只影响后续晋升评估，已晋升的记录保留。`
       : remove ? `移除奖励「${currentLabel}」后停止后续发放，已发奖励与账本记录保留。`
       : `当前奖励：${currentLabel}。修改奖励模板，后续发放使用新值；已发奖励与账本记录保留。`}
     coverage={ctx.f1Coverage}
@@ -280,7 +280,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
               state={state} error={(values.value ?? "").trim() !== "" ? inputError : undefined}
               note={editor.field === "legCount" || editor.field === "legRank" ? "人数为 0 时不看这一项；大于 0 时还要设好最低等级，否则判不满足。" : undefined}>
               {(control) => editor.field === "legRank"
-                ? <Select {...control} aria-label={fieldLabel} value={values.value ?? ""} disabled={locked} onChange={(value) => changeField("value", value)}
+                ? <Select {...control} aria-label={DISPLAY[condition] ?? fieldLabel} value={values.value ?? ""} disabled={locked} onChange={(value) => changeField("value", value)}
                   options={["NONE", ...ctx.vrankRows.filter((row) => Number(row.v.slice(1)) < Number(editor.row.v.slice(1))).map((row) => row.v)].map((item) => ({ value: item, label: item === "NONE" ? "未设置" : item }))} />
                 : <Input {...control} inputMode="numeric" value={values.value ?? ""} disabled={locked} onChange={(event) => changeField("value", event.target.value)} />}
             </DiffField>
