@@ -78,6 +78,7 @@ function originalI6Proposal(saved: HIRewardCommand): HIRewardCommand & { payload
 /** A POST receipt may be a historical pending response; only this authoritative lookup sets a pending marker. */
 export const i6CourseRecovery = createPendingRecovery({ ...commands, list: pendingHIRewardCommands }, {
   capability: () => "receipt",
+  hasApproval: record => !!record.receiptKnown || record.ticketStatus === "pending",
   canReplay: (record: HIRewardCommand) => {
     try { return !record.receiptKnown && !i6CourseProposalPermission(record) && !!originalI6Proposal(record); } catch { return false; }
   },

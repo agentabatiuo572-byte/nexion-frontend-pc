@@ -21,6 +21,7 @@ type Release = {
   /** target 那一行的名称，默认「对象」；操作名里已有对象、这里只写改了什么时传「改动」。 */
   targetLabel?: string;
   createdAt: number;
+  getSnapshot: () => string | undefined;
   /** 只调现成的解除；返回 false 或抛错说明记录还留着。 */
   release: () => boolean | void;
 };
@@ -32,18 +33,24 @@ export function VerifiedReleaseButton({ disabled, onClick }: { disabled?: boolea
 
 /** 重试被明确拒绝后的本地人工解除（OP-93 第 8 条）：写清是哪一条，勾选已核实才能确认；不发请求。 */
 export function useVerifiedRelease(toast: (message: string, kind?: "success" | "warn") => void) {
-  const [current, setCurrent] = useState<Release | null>(null);
+  const [current, setCurrent] = useState<(Release & { snapshot: string }) | null>(null);
   const [verified, setVerified] = useState(false);
   const close = () => setCurrent(null);
+  const changed = () => toast("这条记录刚有变化，没有解除，请看最新状态。", "warn");
   return {
-    ask: (next: Release) => { setVerified(false); setCurrent(next); },
+    ask: (next: Release) => {
+      const snapshot = next.getSnapshot();
+      if (snapshot === undefined) { changed(); return; }
+      setVerified(false);
+      setCurrent({ ...next, snapshot });
+    },
     dialog: current && <Modal title="解除原操作记录" icon={ShieldCheck} dirty={verified} onClose={close} footer={<>
       <Button onClick={close}>取消</Button>
       <Button variant="primary" disabledReason={verified ? undefined : "请先勾选「我已核实原操作的结果」"} onClick={() => {
         close();
         try {
-          if (current.release() === false) throw new Error("原操作记录继续保留，请查询原结果。");
-          toast("已解除这条记录，可以重新提交。", "success");
+          if (current.snapshot !== current.getSnapshot() || current.release() === false) { changed(); return; }
+          toast("已解除这条记录。", "success");
         } catch (error) { toast(displayAdminError(error), "warn"); }
       }}>确认解除</Button>
     </>}>
@@ -54,7 +61,7 @@ export function useVerifiedRelease(toast: (message: string, kind?: "success" | "
           <Fact k="发出时间">{`${businessStamp(current.createdAt)}（${businessZone().label}）`}</Fact>
         </Facts>
         <p><KeepText text="重试被拒绝不等于原操作没生效，请先到操作记录与审批核对。" /></p>
-        <p><KeepText text="解除后可以重新提交，原操作不再重试，也不会被撤销。只清这个标签页里的记录，不进操作记录。" /></p>
+        <p><KeepText text="解除后这一项可以重新操作（以当时的数据和权限为准），原操作不再重试，也不会撤销。只清这个标签页里的记录，不进操作记录。" /></p>
         <Check label="我已核实原操作的结果" checked={verified} onChange={(event) => setVerified(event.target.checked)} />
       </div>
     </Modal>,

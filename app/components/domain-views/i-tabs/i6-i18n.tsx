@@ -350,6 +350,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     return required;
   };
   const [courseEditor, setCourseEditor] = useState<CourseEditorState | null>(null);
+  const courseEditorOpen = useRef(false);
+  courseEditorOpen.current = !!courseEditor;
   const [courseVersions, setCourseVersions] = useState<LearningCourseVersionView[]>([]);
   versionsRead.current = courseVersions;
   const [versionsLoading, setVersionsLoading] = useState(false);
@@ -1057,6 +1059,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       return;
     }
     await readRequiredLanguages();
+    if (draftKey && (!saved || newCourseDrafts.get(useAdminAuth.getState().session?.adminId, draftKey) !== saved)) return;
     const spec = courseSpec("create");
     setCourseEditor({ spec, initial: saved, title: "新建课程", sub: "存成草稿，用户看不到",
       save: (form) => confirmI6(`course:${form.slug.trim()}`, { briefKind: "config",
@@ -1552,9 +1555,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         {canInvestigateECommand(record.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") && eCommandClosureOffer(ordinaryOutcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ordinaryBusy} onClick={() => setClosingOrdinary(record)}>核查结案</Button>}
         {!i6Recovery.state(record).replayRejection && <Button size="sm" variant="primary" disabledReason={ordinaryBusy ? "正在处理另一项" : ordinaryRetryProblem(record)}
           onClick={() => void retryOrdinary(record)}>按原请求重试</Button>}
-        {i6Recovery.state(record).replayRejection && <VerifiedReleaseButton disabled={!!ordinaryBusy} onClick={() => release.ask({ operation: record.label,
+        {i6Recovery.state(record).replayRejection && <VerifiedReleaseButton disabled={!!ordinaryBusy || !!i6Recovery.state(record).busy} onClick={() => release.ask({ operation: record.label,
           target: <>{record.target && <>{courseOf(record) ? nexGridBrandText(courseOf(record)!.titleZh || courseOf(record)!.title) : <span className="i6-mono">{record.target}</span>} </>}{ordinaryChange(record)}</>,
-          createdAt: record.createdAt, release: () => { const released = i6Recovery.releaseRejectedReplay(record); updateRecovery(value => value + 1); return released; } })} />}
+          getSnapshot: i6Recovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => { const released = i6Recovery.releaseRejectedReplay(record); updateRecovery(value => value + 1); return released; } })} />}
       </span>
       <span className="i6-pending-note">{shown.line} <TechInfo commandKey={record.commandKey} receipt={receiptOf(ordinaryOutcomes[record.commandKey])} /></span>
     </li>;
@@ -1617,7 +1620,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   const confirmation: ActionConfirmReq = { briefKind: "record",
                   action: `核对原操作 · ${label}`,
                   title: "按原请求重试",
-                  detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>刚查过，没有这张审批单；确认后按原内容再提交一次，不会重复建单。理由沿用原操作。</>,
+                  detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>刚查过，没查到这张审批单；确认后按原内容再提交一次，不会重复建单。理由沿用原操作。</>,
                   effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
                   statedBrief: { impact: "按原内容再提交一次，不会建第二张审批单。", check: "核对是哪门课、哪个版本。" },
                   facts: <Facts><Fact k="原操作">{label}</Fact><Fact k="改动">{change(record) ?? "—"}</Fact><Fact k="提交时间">{businessStamp(record.createdAt)}（{BJ}）</Fact></Facts>,
@@ -1639,12 +1642,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   recoveryConfirm.current = { commandKey: () => record.commandKey, finish: () => ctx.closeActionConfirm(confirmation) };
                   openActionConfirm(confirmation);
                 }}>按原请求重试</Button>}
-                {replayRejected && !record.receiptKnown && record.ticketStatus !== "pending" && <VerifiedReleaseButton disabled={!!lookupKey} onClick={() => release.ask({ operation: label, target: change(record), targetLabel: "改动", createdAt: record.createdAt,
+                {replayRejected && !record.receiptKnown && record.ticketStatus !== "pending" && <VerifiedReleaseButton disabled={!!lookupKey || !!i6CourseRecovery.state(record).busy} onClick={() => release.ask({ operation: label, target: change(record), targetLabel: "改动", getSnapshot: i6CourseRecovery.releaseSnapshot(record), createdAt: record.createdAt,
                   release: () => { try { releaseRejectedI6Course(record); } finally { updateRecovery(value => value + 1); } } })} />}
                 </span>
                 {approvalQuery.errors[record.commandKey] && <span className="i6-pending-note">{approvalQuery.errors[record.commandKey]}</span>}
-                {record.receiptKnown && record.ticketStatus !== "pending" && <span className="i6-pending-note">审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。</span>}
-                {replayRejected && !record.receiptKnown && record.ticketStatus !== "pending" ? <span className="i6-pending-note">{RETRY_REJECTED_NEXT}</span>
+                {record.receiptKnown || record.ticketStatus === "pending" ? <span className="i6-pending-note">审批单已经建了，点「查询原结果」看状态。</span>
+                  : replayRejected ? <span className="i6-pending-note">{RETRY_REJECTED_NEXT}</span>
                   : expired && <span className="i6-pending-note">{RETRY_EXPIRED_TEXT}</span>}
               </li>;
             }), ...approvals.map((row) => <li key={row.id}>
@@ -1658,7 +1661,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               <span className="i6-pending-what">新建课程 · {draft.slug}</span>
               <span className="i6-pending-act"><Button size="sm" disabledReason={!canWriteI7 ? "当前账号只能查看" : newWriteProblem(`course:${draft.slug}`)}
                 onClick={() => void newCrs(key)}>继续修改</Button>
-                <Button size="sm" variant="ghost" onClick={() => discardRecovery.ask(() => newCourseDrafts.forget(session?.adminId, key))}>放弃这份草稿</Button></span>
+                <Button size="sm" variant="ghost" disabled={!!courseEditor} onClick={() => discardRecovery.ask(() => {
+                  const owner = useAdminAuth.getState().session?.adminId;
+                  if (courseEditorOpen.current || owner !== session?.adminId) return;
+                  newCourseDrafts.consume(owner, key, draft);
+                })}>放弃这份草稿</Button></span>
             </li>)];
         return <Panel title="等批准和结果未知的课程操作" icon={TriangleAlert} tone="warn" sub={`${rows.length} 项 · 时间为${BJ}`}
           explain={<><p>有奖励的课程发布、发布新版本、回滚和调奖，都要另一位超级管理员批准；批准前课程不变。</p><p>发布、回滚在等批准时，这门课不能再提交发布或回滚；调奖单独审批，不受它拦。两张都批准时，后执行的那张可能因课程已变而失败。</p><p>{ordinaryExplain}</p></>}

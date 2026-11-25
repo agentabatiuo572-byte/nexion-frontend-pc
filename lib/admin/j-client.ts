@@ -214,6 +214,7 @@ function j2WriteAuthority(path: string) {
 
 export const jEmergencyRecovery = createPendingRecovery(emergencyCommands, {
   capability: record => record.geo || record.tamper || record.sop || record.sopProposal ? "receipt" : "readback",
+  hasApproval: record => !!record.sopProposal?.accepted,
   canReplay: record => {
     const auth = useAdminAuth.getState(), grants = auth.session?.authorities;
     if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || auth.session?.passwordChangeRequired || !grants) return false;

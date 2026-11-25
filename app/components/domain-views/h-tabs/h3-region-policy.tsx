@@ -87,6 +87,7 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
           setPendingReview(false);
         }
       }
+      return rules.value;
     } catch (cause) {
       if (request === generation.current) setError(displayAdminReadError(cause));
     } finally {

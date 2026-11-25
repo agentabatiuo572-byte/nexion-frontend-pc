@@ -611,6 +611,9 @@ export type PendingConfirmRecovery = {
   expiresAt: number;
   blockedReason?: string;
   query?: () => Promise<void>;
+  queryOnly?: boolean;
+  queryLabel?: string;
+  statusText?: string;
   state?: PendingRecoveryState;
   subscribe?: (listener: () => void) => () => void;
   getRevision?: () => number;
@@ -4006,7 +4009,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
   // 对象状态变了或已不在：框里只留橙黄提示和「取消」（VS-107），不再画过期的改动和理由框。
   const finalConflict = !!readConflict && !readConflict.review && readConflict.final;
-  const canConfirm = !blockedReason && !readConflict && !readingConflict && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason && !pendingRecovery?.blockedReason && !pendingRecovery?.state?.replayBlock
+  const canConfirm = !blockedReason && !readConflict && !readingConflict && !pendingRecovery?.queryOnly && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason && !pendingRecovery?.blockedReason && !pendingRecovery?.state?.replayBlock
     : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && (!editReview || !!readyReview) && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
       && (!inlineApproval || !approvalRecovery || !!approval));
   const showReasonError = !reasonOk && !retryApproval && (!surface || attempted || reasonLeft);
@@ -4182,7 +4185,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
     }
   };
-  const pendingReasonHelp = pendingRecovery?.state?.expired ? RETRY_EXPIRED_TEXT
+  const pendingReasonHelp = pendingRecovery?.statusText ?? (pendingRecovery?.state?.expired ? RETRY_EXPIRED_TEXT
     : pendingRecovery?.state && pendingRecovery.blockedReason ? pendingRecovery.blockedReason
     : pendingRecovery?.state?.capability === "replay" ? "按原请求重试会重新发送一次。"
     : inlineApproval?.expiredRequestRecovery === "reload"
@@ -4190,7 +4193,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     : inlineApproval?.expiredRequestRecovery === "query"
       ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
       : inlineApproval?.queryOnly ? "只能查询原结果，不能重发。"
-        : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。";
+        : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。");
   const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : needsEditPreview && !editReview ? "下一步" : readyReview?.confirmLabel ?? (approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined, businessValue) ?? confirmLabel);
   // 放大提示固定在关键信息层，先于所有填写项。
   const coverageFirst = surface && (!approval || rdApproval);
@@ -4235,13 +4238,13 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : titleIcon ?? (spec ? "sliders" : "shield")} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={finalConflict ? undefined : readyReview?.effect ?? (rdApproval ? effectiveEffect ?? <RdStatusTag tone="progress" filled explain={completionCopy}>批准后生效</RdStatusTag> : effectiveEffect)} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName, dialogClass].filter(Boolean).join(" ")} busy={submitting || readingConflict} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
       footer={<>
         <Btn disabled={submitting || readingConflict} onClick={handleClose}>取消</Btn>
-        {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>查询原结果</Btn>}
+        {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>{pendingRecovery.queryLabel ?? "查询原结果"}</Btn>}
         {approvalRecovery && recoverApproval && (
           <Btn variant={approvalRecovery === "lookup" ? "primary" : undefined} disabled={submitting} onClick={() => void handleApprovalLookup()}>
             {submitting ? inlineApproval?.recoverLabel ? "读取中…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原结果"}
           </Btn>
         )}
-        {!approvalOnlyLookup && pendingRecovery?.state?.capability !== "readback" && !finalConflict && (surface ? (
+        {!approvalOnlyLookup && !pendingRecovery?.queryOnly && pendingRecovery?.state?.capability !== "readback" && !finalConflict && (surface ? (
           <RdButton variant={confirmTone} loading={submitting || readingConflict} loadingText={readingConflict ? "正在读取…" : "提交中…"}
             disabledReason={canConfirm || submitting || readingConflict ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
             onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>

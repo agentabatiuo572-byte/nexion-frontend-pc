@@ -56,6 +56,7 @@ export const i3CapRecovery = createPendingRecovery({
   list: pendingI3CapCommands,
 }, {
   capability: () => "receipt",
+  hasApproval: record => !!record.receiptKnown,
   canReplay: record => !!record.request && !record.receiptKnown && !i3CapPermission(),
   explicitRejectionCode,
 });

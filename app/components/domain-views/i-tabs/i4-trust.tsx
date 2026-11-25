@@ -182,6 +182,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const [recovering, setRecovering] = useState<string | null>(null);
   useSyncExternalStore(i4SectionRecovery.subscribe, i4SectionRecovery.getRevision, i4SectionRecovery.getRevision);
   useSyncExternalStore(i4DraftRecovery.subscribe, i4DraftRecovery.getRevision, i4DraftRecovery.getRevision);
+  useSyncExternalStore(i4DocumentRecovery.subscribe, i4DocumentRecovery.getRevision, i4DocumentRecovery.getRevision);
+  const materialReads = useRef(new Map<string, number>());
   const release = useVerifiedRelease(toast);
   const sectionConfirm = useRef<{ key: string; request: ActionConfirmReq; commandKey: () => string | undefined } | null>(null);
   const inFlight = useRef(false);
@@ -927,6 +929,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     else if (record.action === "archive") archiveSection(section, record);
   };
   const readMaterialOriginal: typeof queryI4DocumentCommand = async (record, evidence) => {
+    const reads = materialReads.current;
+    reads.set(record.commandKey, (reads.get(record.commandKey) ?? 0) + 1);
     try {
       const result = await queryI4DocumentCommand(record, evidence);
       if (result.draft) materialDrafts.remember(record.owner, record.document.slot, result.draft);
@@ -936,7 +940,12 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     } catch (error) {
       materialQuery.fail(record.commandKey, error);
       throw error;
-    } finally { syncCommands(); }
+    } finally {
+      const remaining = (reads.get(record.commandKey) ?? 1) - 1;
+      if (remaining) reads.set(record.commandKey, remaining);
+      else reads.delete(record.commandKey);
+      syncCommands();
+    }
   };
   const materialRejected = (record: I4DocumentCommand) => !!i4DocumentRecovery.state(record).replayRejection;
   const draftRejected = (record: I4DraftCommand) => !!i4DraftRecovery.state(record).replayRejection;
@@ -966,8 +975,19 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
             setDocumentRecovery({ key: record.commandKey, settled: result.settled, observation: result.current, error: result.error });
           }, () => undefined);
         }}>查询原结果</Button>
-          {materialRejected(record) && <VerifiedReleaseButton onClick={() => release.ask({ operation: "恢复默认文件", target: `${TRUST_DOCUMENT_NAMES[record.document.slot]} · 换下 ${record.document.fileName}`,
-            createdAt: record.createdAt, release: () => { const released = i4DocumentRecovery.releaseRejectedReplay(record); syncCommands(); return released; } })} />}</> };
+          {materialRejected(record) && <VerifiedReleaseButton disabled={materialReads.current.has(record.commandKey) || !!i4DocumentRecovery.state(record).busy}
+            onClick={() => {
+              const snapshot = i4DocumentRecovery.releaseSnapshot(record);
+              release.ask({ operation: "恢复默认文件", target: `${TRUST_DOCUMENT_NAMES[record.document.slot]} · 换下 ${record.document.fileName}`,
+                getSnapshot: () => materialReads.current.has(record.commandKey) ? undefined : snapshot(),
+                createdAt: record.createdAt,
+                release: () => {
+                  const released = i4DocumentRecovery.releaseRejectedReplay(record);
+                  if (released) setDocumentRecovery({ key: record.commandKey, settled: true });
+                  syncCommands();
+                  return released;
+                } });
+            }} />}</> };
     }),
     ...draftCommands.map(record => ({ key: record.commandKey, kind: OPEN_RESULT_LABELS.includes(draftStatus(record, draftOutcomes[record.commandKey]).label) ? "open" as const : "unknown" as const,
       name: `${sectionName(record.sectionKey)} · ${DRAFT_OPERATION[record.action]}`,
@@ -982,8 +1002,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
             else if (record.input) { setEditorCommandKey(record.commandKey); setDraftEditor({ ...record.input, mode: record.action === "create" ? "create" : "edit", sectionKey: record.sectionKey, revision: record.input.expectedRevision, reason: record.reason, published: record.snapshot }); }
             else void recoverDraft(record, true);
           }}>按原请求重试</Button>}
-        {draftRejected(record) && <VerifiedReleaseButton disabled={!!recovering} onClick={() => release.ask({ operation: DRAFT_OPERATION[record.action], target: `${sectionName(record.sectionKey)} · ${record.version}`,
-          createdAt: record.createdAt, release: () => {
+        {draftRejected(record) && <VerifiedReleaseButton disabled={!!recovering || !!i4DraftRecovery.state(record).busy} onClick={() => release.ask({ operation: DRAFT_OPERATION[record.action], target: `${sectionName(record.sectionKey)} · ${record.version}`,
+          getSnapshot: i4DraftRecovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => {
             const released = i4DraftRecovery.releaseRejectedReplay(record);
             if (released && latest.current.editorCommandKey === record.commandKey) { setDraftEditor(null); setEditorCommandKey(null); }
             syncCommands();
@@ -1003,13 +1023,13 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       return { key: record.commandKey, kind: pending ? "pending" as const : record.receiptKnown ? "submitted" as const : "unknown" as const,
         name: approvalName(record), change: approvalChange(record), submittedAt: timeText(new Date(record.createdAt).toISOString()),
         tag: pending ? <StatusTag tone="progress" icon={Hourglass}>等另一位批准</StatusTag> : record.receiptKnown ? <StatusTag tone="neutral" icon={Hourglass}>已提交，状态未查到</StatusTag> : rejected ? rejectedTag() : unknownTag("approval"),
-        note: approvalQuery.errors[record.commandKey] ?? (rejected ? RETRY_REJECTED_NEXT : isRetryExpired(record) ? RETRY_EXPIRED_TEXT
-          : !pending && record.receiptKnown ? "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" : undefined),
+        note: pending || record.receiptKnown ? ["审批单已经建了，点「查询原结果」看状态。", approvalQuery.errors[record.commandKey]].filter(Boolean).join(" ")
+          : approvalQuery.errors[record.commandKey] ?? (rejected ? RETRY_REJECTED_NEXT : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : undefined),
         actions: <><Button size="sm" loading={recovering === record.commandKey} onClick={() => void recoverSection(record)}>查询原结果</Button>
           {!record.receiptKnown && !pending && !releasable && <Button size="sm" disabledReason={sectionRetryBlocked(record)}
             onClick={() => restoreSection(record)}>按原请求重试</Button>}
-          {rejected && <VerifiedReleaseButton disabled={!!recovering} onClick={() => release.ask({ operation: SECTION_OPERATION[record.action], target: `${sectionName(record.sectionKey)} · ${approvalChange(record)}`,
-            createdAt: record.createdAt, release: () => { try { releaseRejectedI4Section(record); } finally { syncCommands(); } } })} />}</> };
+          {rejected && <VerifiedReleaseButton disabled={!!recovering || !!i4SectionRecovery.state(record).busy} onClick={() => release.ask({ operation: SECTION_OPERATION[record.action], target: `${sectionName(record.sectionKey)} · ${approvalChange(record)}`,
+            getSnapshot: i4SectionRecovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => { try { releaseRejectedI4Section(record); } finally { syncCommands(); } } })} />}</> };
     }),
   ];
   const releaseModal = <>{closingDraft && <FundClosureModal label={`${sectionName(closingDraft.sectionKey)} · ${closingDraft.version}`} createdAt={closingDraft.createdAt}

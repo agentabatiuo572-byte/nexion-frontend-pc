@@ -228,6 +228,8 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const release = useVerifiedRelease(toast);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const latestOutcomes = useRef(outcomes);
+  latestOutcomes.current = outcomes;
   const [settled, setSettled] = useState<{ key: string; label: string; status: string }[]>([]);
   const [checking, setChecking] = useState<string | null>(null);
   const [closing, setClosing] = useState<{ record: SlotAttemptRecord; label: string; change: ReactNode } | null>(null);
@@ -309,11 +311,13 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       {canClose && <Button size="sm" variant="danger-outline" disabled={!!checking} onClick={() => setClosing({ record, label, change })}>核查结案</Button>}
     </>;
   };
-  /** 回执是「已处理」而记录没解除：看不出成没成，靠重试原请求或核查结案确认。 */
   const processedOf = (record: SlotAttemptRecord, expired: boolean, retry: boolean, legacy?: boolean) => {
-    const outcome = outcomes[record.commandKey];
+    const outcome = latestOutcomes.current[record.commandKey];
     if (!outcome || !("receipt" in outcome) || outcome.receipt?.originalStatus !== "SUCCEEDED") return undefined;
-    return processedStatus({ expired, canRetry: retry, canClose: fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit, legacy, receipt: outcome.receipt });
+    const canClose = fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit
+      && eCommandClosureRequests(outcome.receipt, expired).conclusions.length > 0;
+    const canRelease = !legacy && !!jEmergencyRecovery.state(record).replayRejection;
+    return processedStatus({ expired, canRetry: retry, canClose, canRelease, legacy, receipt: outcome.receipt });
   };
   const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
     const input = JSON.parse(record.geo.body) as J2CommandBody;
@@ -333,16 +337,18 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         })();
     const expired = isRetryExpired(record);
     const slotLabel = record.geo.context.label;
-    const rejected = !!jEmergencyRecovery.state(record).replayRejection;
+    const state = jEmergencyRecovery.state(record);
+    const rejected = !!state.replayRejection;
+    const retry = !expired && canRetry(record) && !jEmergencyRetryBlocked(record);
     return {
       key: record.commandKey, title: <span title={typeof change === "string" ? `${slotLabel} · ${change}` : undefined}>{slotLabel} · {change}</span>,
       record: investigationRecord(record, adminId), outcome: outcomes[record.commandKey],
-      createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record) && !jEmergencyRetryBlocked(record), canQuery: true,
-      status: processedOf(record, expired, canRetry(record)) ?? replayRejectedStatus(rejected, outcomes[record.commandKey]),
+      createdAt: record.createdAt, expired, canRetry: retry, canQuery: true,
+      status: processedOf(record, expired, retry) ?? replayRejectedStatus(rejected, outcomes[record.commandKey]),
       actions: <>
         {queryButtons(record, slotLabel, change)}
         {!expired && !rejected && <Button size="sm" disabled={!!checking} disabledReason={retryReadReason(record) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
-        {rejected && <VerifiedReleaseButton disabled={!!checking} onClick={() => release.ask({ operation: slotLabel, target: change, targetLabel: "改动", createdAt: record.createdAt,
+        {rejected && <VerifiedReleaseButton disabled={!!checking || !!state.busy} onClick={() => release.ask({ operation: slotLabel, target: change, targetLabel: "改动", getSnapshot: jEmergencyRecovery.releaseSnapshot(record), createdAt: record.createdAt,
           release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(record); if (released) closeOriginalConfirm(record); syncPending(); return released; } })} />}
       </>,
       detail: pendingNotes[record.commandKey] ? <p><KeepText text={pendingNotes[record.commandKey]} /></p> : undefined,
@@ -454,7 +460,9 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         const record = original();
         if (!record) return;
         const state = jEmergencyRecovery.state(record);
-        return { state, expiresAt: state.expiresAt, blockedReason: retryReadReason(record) ?? jEmergencyRetryBlocked(record),
+        const blocked = retryReadReason(record) ?? jEmergencyRetryBlocked(record);
+        return { state, expiresAt: state.expiresAt, blockedReason: blocked,
+          statusText: processedOf(record, state.expired, !blocked && canRetry(record))?.line,
           subscribe: jEmergencyRecovery.subscribe, getRevision: jEmergencyRecovery.getRevision, query: () => queryOriginal(record) };
       },
       getPendingBusinessValue: () => {

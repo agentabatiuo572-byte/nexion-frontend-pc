@@ -1050,7 +1050,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原结果</Button>
         {canInvestigateECommand("content_i3_read") && eCommandClosureOffer(outcomes[row.commandKey], isRetryExpired(row)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(row)}>核查结案</Button>}
         {!isRetryExpired(row) && !i3Recovery.state(row).replayRejection && <Button size="sm" disabledReason={campaignRetryProblem(row)} onClick={() => restore(row)}>按原请求重试</Button>}
-        {i3Recovery.state(row).replayRejection && <VerifiedReleaseButton disabled={!!recovering} onClick={() => release.ask({ operation: campaignOperation(row), target: <>{row.name}{row.action !== "create" && row.action !== "draft" && row.change && ` · ${row.change}`}</>, createdAt: row.createdAt, release: () => {
+        {i3Recovery.state(row).replayRejection && <VerifiedReleaseButton disabled={!!recovering || !!i3Recovery.state(row).busy} onClick={() => release.ask({ operation: campaignOperation(row), target: <>{row.name}{row.action !== "create" && row.action !== "draft" && row.change && ` · ${row.change}`}</>, getSnapshot: i3Recovery.releaseSnapshot(row), createdAt: row.createdAt, release: () => {
           const released = i3Recovery.releaseRejectedReplay(row);
           if (released && recoveryEditors.current.drawer === row.commandKey) { setNewOpen(false); setEditing(null); setDrawerPendingKey(null); }
           if (released && recoveryEditors.current.schedule === row.commandKey) { setScheduleRow(null); setSchedulePendingKey(null); }
@@ -1061,13 +1061,13 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: `${TIER[row.tier as TierK].label}优先级`,
       change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), submitted: !!row.receiptKnown,
       status: capRejected(row) && !row.receiptKnown ? RETRY_REJECTED_STATUS : undefined,
-      note: capQuery.errors[row.commandKey] ?? (capRejected(row) && !row.receiptKnown ? RETRY_REJECTED_NEXT : isRetryExpired(row) ? RETRY_EXPIRED_TEXT
-        : row.receiptKnown ? "审批单已建，批没批准还没查到；点「查询原结果」看当前状态。"
+      note: row.receiptKnown ? ["审批单已经建了，点「查询原结果」看状态。", capQuery.errors[row.commandKey]].filter(Boolean).join(" ")
+        : capQuery.errors[row.commandKey] ?? (capRejected(row) ? RETRY_REJECTED_NEXT : isRetryExpired(row) ? RETRY_EXPIRED_TEXT
           : i3CapRecovery.state(row).conclusion === "not-found" ? "按原请求查不到这张审批单，24 小时内可以按原请求重试。" : undefined),
       actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button>
         {!isRetryExpired(row) && !row.receiptKnown && !capRejected(row) && <Button size="sm" disabledReason={capRetryProblem(row)} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原请求重试</Button>}
-        {capRejected(row) && !row.receiptKnown && <VerifiedReleaseButton disabled={!!recovering} onClick={() => release.ask({ operation: "调整通知保留数量", target: `${TIER[row.tier as TierK].label}优先级 · ${row.before} → ${row.after} 条`, createdAt: row.createdAt,
+        {capRejected(row) && !row.receiptKnown && <VerifiedReleaseButton disabled={!!recovering || !!i3CapRecovery.state(row).busy} onClick={() => release.ask({ operation: "调整通知保留数量", target: `${TIER[row.tier as TierK].label}优先级 · ${row.before} → ${row.after} 条`, getSnapshot: i3CapRecovery.releaseSnapshot(row), createdAt: row.createdAt,
           release: () => { const released = i3CapRecovery.releaseRejectedReplay(row); syncPending(); return released; } })} />}
       </> })),
   ];

@@ -69,6 +69,7 @@ export function pendingI4SectionCommands(): I4SectionCommand[] {
 
 export const i4SectionRecovery = createPendingRecovery({ ...pending, list: pendingI4SectionCommands }, {
   capability: () => "receipt",
+  hasApproval: record => !!record.receiptKnown || record.ticketStatus === "pending" || record.ticketStatus === "approved",
   canReplay: (record: I4SectionCommand) => {
     try { return !!record.request && !!record.snapshot && !record.receiptKnown && !i4SectionPermission(record.sectionKey, record.snapshot.section.highSensitivity); } catch { return false; }
   },

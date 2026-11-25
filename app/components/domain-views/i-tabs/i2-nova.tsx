@@ -32,7 +32,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { fetchI2NovaOverview, type NovaOverview, i2Recovery, i2RetryBlockedReason, pendingI2Commands, queryI2Command, retryI2Command, type I2Command, type NovaSocialEventSampleView, type NovaTemplateView } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { isConfirmedNonExecution, rebaseTerminalDraft, useTerminalDrafts, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundRecoveryStatus, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -631,6 +631,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
   const [tplDrawer, setTplDrawer] = useState(false);
+  const draftEditorOpen = useRef(false);
+  draftEditorOpen.current = novaDrawer || tplDrawer;
   const [openedTemplateDraft, setOpenedTemplateDraft] = useState<string | null>(null);
   const [editTplSnapshot, setEditTplSnapshot] = useState<NovaTemplateView | null>(null);
   const openedTemplateEdit = useRef<ReturnType<typeof templateDrafts.get>>(undefined);
@@ -640,6 +642,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     setRequiredLanguages(await getRequiredContentLanguages());
     const firstChannel = novas.find((n) => !NOVA_TPLS.some((t) => t.ch === n.key))?.key ?? "";
     const saved = draftKey ? newTemplateDrafts.get(session?.adminId, draftKey) : undefined;
+    if (draftKey && !saved) return;
     if (saved && (!novas.some(n => n.key === saved.channel) || NOVA_TPLS.some(t => t.ch === saved.channel) || lockReason(`channel:${saved.channel}`))) {
       toast("当前频道不能新建这份模板，请刷新并核对原频道。", "warn");
       return;
@@ -1041,18 +1044,23 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const target = investigationRecord(row);
     const query = () => { void queryOriginal(row).catch((error) => toast(displayAdminError(error))); };
     const retryBlocked = recovering ? "等当前操作完成" : retryReason(row);
-    const rejected = !!i2Recovery.state(row).replayRejection;
+    const { replayRejection, busy } = i2Recovery.state(row);
+    const rejected = !!replayRejection;
+    const status = fundRecoveryStatus({
+      record: target, outcome: outcomes[row.commandKey], expired, canRetry: !retryBlocked, canQuery: canReadI2,
+      status: target ? replayRejectedStatus(rejected, outcomes[row.commandKey]) : { tone: "warn", label: expired ? "已过期" : "结果未知", line: "这条记录不完整，查不了原结果，只能重读现在的状态核对。" },
+    });
     return {
       key: row.commandKey, title: <span title={label}>{label}</span>, record: target, outcome: outcomes[row.commandKey], createdAt: row.createdAt, expired,
       canRetry: !retryBlocked, canQuery: canReadI2,
-      status: target ? replayRejectedStatus(rejected, outcomes[row.commandKey]) : { tone: "warn", label: expired ? "已过期" : "结果未知", line: "这条记录不完整，查不了原结果，只能重读现在的状态核对。" },
+      status: replayRejection ? { ...status, line: `${displayAdminError(new Error(replayRejection))} ${status.line}` } : status,
       actions: <>
         {target ? <FundCheckButtons record={target} outcome={outcomes[row.commandKey]} expired={expired} busy={!!checking || !!recovering} checking={checking === row.commandKey}
           onCheck={query} onClose={() => setClosing(row)} />
           : <Button size="sm" loading={checking === row.commandKey} disabled={!!checking} disabledReason={!canReadI2 ? "当前账号没有读取权限" : recovering ? "等当前操作完成" : undefined} onClick={query}>查询原结果</Button>}
         {!expired && !rejected && <Button size="sm" disabled={!!checking} disabledReason={retryBlocked} onClick={() => void restore(row)}>按原请求重试</Button>}
-        {rejected && <VerifiedReleaseButton disabled={!!checking || !!recovering} onClick={() => release.ask({ operation: row.action, target: <>{unknownObject(row)}{unknownChange(row) && ` · ${unknownChange(row)}`}</>,
-          createdAt: row.createdAt, release: () => {
+        {rejected && <VerifiedReleaseButton disabled={!!checking || !!recovering || !!busy} onClick={() => release.ask({ operation: row.action, target: <>{unknownObject(row)}{unknownChange(row) && ` · ${unknownChange(row)}`}</>,
+          getSnapshot: i2Recovery.releaseSnapshot(row), createdAt: row.createdAt, release: () => {
             const released = i2Recovery.releaseRejectedReplay(row);
             if (released && recoveryEditors.current.drawer === row.commandKey) closeDrawer();
             syncPending();
@@ -1065,17 +1073,23 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const draftRows = settledRows.filter(row => newChannelDrafts.get(session?.adminId, row.key) || newTemplateDrafts.get(session?.adminId, row.key));
   const unknownNotice = <>
     <FundRecoveryPanel rows={[]} settled={allDrafts ? draftRows : draftRows.slice(0, 3)}
-      settledAction={row => <>
+      settledAction={row => {
+        const owner = session?.adminId;
+        const channelDraft = newChannelDrafts.get(owner, row.key);
+        const templateDraft = newTemplateDrafts.get(owner, row.key);
+        return <>
         <Button size="sm" disabledReason={newMutationReason} onClick={() => {
-          if (newChannelDrafts.get(session?.adminId, row.key)) openNewNova(row.key);
+          if (channelDraft) openNewNova(row.key);
           else void newTpl(row.key);
         }}>继续修改</Button>
-        <Button size="sm" variant="ghost" onClick={() => discardRecovery.ask(() => {
-          newChannelDrafts.forget(session?.adminId, row.key);
-          newTemplateDrafts.forget(session?.adminId, row.key);
+        <Button size="sm" variant="ghost" disabled={novaDrawer || tplDrawer} onClick={() => discardRecovery.ask(() => {
+          if (draftEditorOpen.current || useAdminAuth.getState().session?.adminId !== owner
+            || newChannelDrafts.get(owner, row.key) !== channelDraft || newTemplateDrafts.get(owner, row.key) !== templateDraft) return;
+          newChannelDrafts.consume(owner, row.key, channelDraft);
+          newTemplateDrafts.consume(owner, row.key, templateDraft);
           setSettledRows((current) => current.filter((item) => item.key !== row.key));
         })}>放弃这份草稿</Button>
-      </>} />
+      </>; }} />
     {draftRows.length > 3 && <div className="i-recovery-more"><Button size="sm" variant="ghost" onClick={() => setAllDrafts((open) => !open)}>{allDrafts ? "只看前 3 条" : `显示全部 ${draftRows.length} 条`}</Button></div>}
     {release.dialog}{discardRecovery.dialog}
     <FundRecoveryPanel rows={recoveryRows}

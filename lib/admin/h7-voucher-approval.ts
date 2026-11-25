@@ -65,6 +65,7 @@ function requireProposalActor(adminId: number, op: string) {
 
 export const h7ApprovalRecovery = createPendingRecovery(attempts, {
   capability: () => "receipt",
+  hasApproval: record => !!(record.ticket || record.acknowledged),
   canReplay: record => {
     const adminId = useAdminAuth.getState().session?.adminId;
     if (adminId === undefined || record.fingerprint !== `${adminId}:${record.voucherId}` || !record.proposal || record.acknowledged) return false;

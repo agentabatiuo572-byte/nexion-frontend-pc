@@ -109,6 +109,15 @@ function approverFacts(show: boolean) {
 }
 const immediate = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 
+function recoveryStatusText(record: H3PendingCommand, expired: boolean, rejected?: string) {
+  const status = record.ticketStatus ?? record.ticket?.status;
+  if (status === "approved") return "审批单已批准，请重新读取当前值。";
+  if (status === "pending") return "原申请待审批，点「查询原结果」看状态。";
+  if (record.acknowledged) return "审批单已经建了，点「查询原结果」看状态。";
+  if (rejected) return expired ? `${RETRY_EXPIRED_TEXT} ${RETRY_REJECTED_NEXT}` : RETRY_REJECTED_NEXT;
+  return expired ? RETRY_EXPIRED_TEXT : undefined;
+}
+
 export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const [mc, setMc] = useState<H3ActionConfirmReq | null>(null);
   // 页签自己关框时记下来：框关了才需要轻提示，框开着错误就写在框里。
@@ -133,7 +142,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const recoveryFor = (record?: H3PendingCommand) => {
     if (!record) return;
     const state = mutations.recovery.state(record);
+    const ticketStatus = record.ticketStatus ?? record.ticket?.status;
+    const queryOnly = !!(record.acknowledged || ticketStatus);
     return { state, expiresAt: state.expiresAt, blockedReason: mutations.retryBlocked(record),
+      queryOnly, queryLabel: ticketStatus === "approved" ? "重新读取" : undefined,
+      statusText: recoveryStatusText(record, state.expired, state.replayRejection),
       subscribe: mutations.recovery.subscribe, getRevision: mutations.recovery.getRevision,
       query: async () => {
         try { await mutations.query(record); }
@@ -229,10 +242,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     fresh.current = false;
     setLoading(true);
     try {
-      setModel(parseH3Model(await fetchH3QuestEvents("tasks")));
+      const latest = parseH3Model(await fetchH3QuestEvents("tasks"));
+      setModel(latest);
       fresh.current = true;
       setError(null);
       setReadAt(Date.now());
+      return latest;
     } catch (err) {
       setError(displayAdminReadError(err));
       if (reportQueryError) throw err;
@@ -241,9 +256,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     }
   };
 
+  const finishConfirmation = (commandKey: string) => {
+    if (confirmation.current?.commandKey === commandKey) confirmation.current.finish();
+  };
   const mutations = useH3Mutations(toast, async (commandKey, draft) => {
     fresh.current = false;
-    if (commandKey && confirmation.current?.commandKey === commandKey) confirmation.current.finish();
+    if (commandKey) finishConfirmation(commandKey);
     if (draft && (draft.change.editValue !== undefined || draft.change.businessValue)) {
       const { target, action, editValue, businessValue } = draft.change;
       recoveryDrafts.current.set(recoveryDraftKey(target, action), { value: editValue, business: businessValue });
@@ -270,7 +288,21 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     }
     await reload(commandKey === undefined);
     await region.reload();
-  }, record => fresh.current && (record?.store !== "region" || region.isReady()), model);
+  }, async (record) => {
+    if (record.store === "region") return !!await region.reload();
+    const latest = await reload();
+    if (!latest) return false;
+    const target = record.change.target;
+    if (record.store === "mission") {
+      return [...latest.dayOneTasks, ...latest.weeklyTier1, ...latest.weeklyTier2].some(task => codeOf(task) === target);
+    }
+    if (target === "dayOne.triReward") return h3HasConfigValue(latest.dayOneTriReward);
+    if (target.startsWith("weekly.mult.")) {
+      return latest.weeklyMultipliers.some(row => `weekly.mult.${cleanPhaseKey(row.p)}` === target && h3HasConfigValue(row.mult));
+    }
+    return [...latest.weeklyTier1, ...latest.weeklyTier2].some(task => `mission.${codeOf(task)}.reward` === target && decimalOf(task.reward) !== null)
+      || latest.monthlyMissions.some(task => `monthly.${codeOf(task)}.reward` === target && decimalOf(task.reward) !== null);
+  }, finishConfirmation, record => fresh.current && (record?.store !== "region" || region.isReady()), model);
   const refresh = async () => {
     openMc.current = null; setMc(null); shellCtx.closeConfirm?.();
     await reload();
@@ -1031,18 +1063,21 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const releasable = (original: H3PendingCommand) => !!mutations.recovery.state(original).replayRejection;
   const recoveryRows: H3RecoveryRow[] = mutations.records.map(original => {
     const approval = original.request.kind !== "direct";
-    const rejected = releasable(original) && !original.ticket && !original.acknowledged;
+    const state = mutations.recovery.state(original);
+    const approved = original.ticketStatus === "approved";
+    const pending = original.ticketStatus === "pending" || original.ticket?.status === "pending";
+    const rejected = !!state.replayRejection && !original.ticket && !original.acknowledged;
     return {
       key: original.commandKey, name: original.change.action, change: changeOf(original.change),
-      note: mutations.queryErrors[original.commandKey] ?? (rejected ? RETRY_REJECTED_NEXT : isRetryExpired(original) && !original.ticket && !original.acknowledged ? RETRY_EXPIRED_TEXT : undefined),
+      note: mutations.queryErrors[original.commandKey] ?? recoveryStatusText(original, state.expired, state.replayRejection),
       submittedAt: original.createdAt,
-      tag: original.ticket ? pendingTag(original.store === "region" ? REGION_APPROVER : undefined) : original.acknowledged ? acknowledgedTag()
+      tag: approved ? <StatusTag tone="ok">已批准</StatusTag> : pending ? pendingTag(original.store === "region" ? REGION_APPROVER : undefined) : original.acknowledged ? acknowledgedTag()
         : rejected ? rejectedTag() : isRetryExpired(original) ? expiredTag() : unknownTag(approval ? "approval" : "direct"),
-      actions: <><Button size="sm" onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>查询原结果</Button>
+      actions: <><Button size="sm" onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>{approved ? "重新读取" : "查询原结果"}</Button>
         {!original.ticket && !original.acknowledged && !isRetryExpired(original) && !releasable(original)
           && <Button size="sm" disabledReason={mutations.retryBlocked(original)} onClick={() => openRecovery(original)}>按原请求重试</Button>}
-        {rejected && <VerifiedReleaseButton onClick={() => release.ask({ operation: original.change.action, target: changeOf(original.change), targetLabel: "改动",
-          createdAt: original.createdAt, release: () => mutations.releaseRejected(original) })} />}</>,
+        {rejected && <VerifiedReleaseButton disabled={!!state.busy} onClick={() => release.ask({ operation: original.change.action, target: changeOf(original.change), targetLabel: "改动",
+          getSnapshot: mutations.recovery.releaseSnapshot(original), createdAt: original.createdAt, release: () => mutations.releaseRejected(original) })} />}</>,
     };
   });
   const terminalMissions = missionDrafts.entries(operatorId());
@@ -1061,9 +1096,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     });
   }
   const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
-  const pendingCount = mutations.records.filter(r => r.ticket).length;
-  const builtCount = mutations.records.filter(r => !r.ticket && r.acknowledged).length;
-  const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`, terminalMissions.length && `${terminalMissions.length} 个草稿可继续修改`].filter(Boolean).join("；");
+  const pendingCount = mutations.records.filter(r => r.ticketStatus === "pending").length;
+  const approvedCount = mutations.records.filter(r => r.ticketStatus === "approved").length;
+  const builtCount = mutations.records.filter(r => !r.ticketStatus && r.acknowledged).length;
+  const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, approvedCount && `${approvedCount} 个申请已批准，待读当前值`, builtCount && `${builtCount} 个申请没查到进度`, terminalMissions.length && `${terminalMissions.length} 个草稿可继续修改`].filter(Boolean).join("；");
   const recovery = recoveryRows.length > 0 && (
     <Notice tone="warn" title={<>{recoveryTitle}<Explain label="原操作怎么处理" content={<>
       <p>结果未知：提交时没收到确定结果，可能已经生效。审批申请先查询原结果，明确查不到才能重试。直接修改的「按原请求重试」会重新发送一次。过了 24 小时只能查询。</p>

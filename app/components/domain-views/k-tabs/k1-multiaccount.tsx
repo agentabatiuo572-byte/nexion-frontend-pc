@@ -154,6 +154,7 @@ function k1CanReplay(record: K1PendingCommand) {
 
 const k1Recovery = createPendingRecovery(pendingCommands, {
   capability: record => record.kind === "cluster" && !record.clusterProposal || record.kind === "registration-param" ? "readback" : "receipt",
+  hasApproval: record => !!(record.clusterReceipt || record.approval?.pendingTicketId || record.approval?.acknowledged),
   canReplay: k1CanReplay, explicitRejectionCode,
 });
 
@@ -1829,7 +1830,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
               {record.kind === "registration-param" && canReadAudit && <Link className="rd-link" href={auditLink(record.target)}>到操作记录与审批核对</Link>}
               {record.kind !== "registration-param" && !expired && !record.approval?.acknowledged && !record.clusterReceipt && !rejected && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
-              {rejected && <VerifiedReleaseButton disabled={Boolean(retrying || checking)} onClick={() => verifiedRelease.ask({ operation: title, target: record.kind === "entry" ? <>收益记录 <span data-mono>{record.target}</span></> : undefined, createdAt: record.createdAt,
+              {rejected && <VerifiedReleaseButton disabled={Boolean(retrying || checking || k1Recovery.state(record).busy)} onClick={() => verifiedRelease.ask({ operation: title, target: record.kind === "entry" ? <>收益记录 <span data-mono>{record.target}</span></> : undefined, getSnapshot: k1Recovery.releaseSnapshot(record), createdAt: record.createdAt,
                 release: () => { const released = k1Recovery.releaseRejectedReplay(record); syncPending(); return released; } })} />}
             </>,
             detail: approval ? <>

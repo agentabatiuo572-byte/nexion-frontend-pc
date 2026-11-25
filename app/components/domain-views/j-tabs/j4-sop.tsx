@@ -308,7 +308,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     return <FundCheckButtons record={investigationRecord(record)} outcome={kind === "resume" && receipt?.originalStatus === "FAILED" && !eCommandCanRequestResumeRollback(receipt) ? undefined : outcome} expired={isRetryExpired(record)} busy={busy} checking={checking === record.commandKey}
       onCheck={() => void queryOriginal(record, label)} onClose={() => setClosing({ record, label, kind, change })} />;
   };
-  const askRelease = (record: SlotAttemptRecord, operation: string, target: ReactNode) => release.ask({ operation, target, createdAt: record.createdAt,
+  const askRelease = (record: SlotAttemptRecord, operation: string, target: ReactNode) => release.ask({ operation, target, getSnapshot: jEmergencyRecovery.releaseSnapshot(record), createdAt: record.createdAt,
     release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(record); if (released) closeOriginalConfirm(record); syncPending(); return released; } });
   const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
     const context = record.sop.context;
@@ -327,7 +327,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       actions: <>
         {checkButtons(record, label, context.kind, change)}
         {!expired && !rejected && <Button size="sm" disabled={busy} disabledReason={retryReadReason(context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
-        {rejected && <VerifiedReleaseButton disabled={busy} onClick={() => askRelease(record, operationNames[context.kind], contextName(context))} />}
+        {rejected && <VerifiedReleaseButton disabled={busy || !!jEmergencyRecovery.state(record).busy} onClick={() => askRelease(record, operationNames[context.kind], contextName(context))} />}
       </>,
       detail: <>
         {change && <p>{"execution" in context ? <>执行 {change}</> : change}</p>}
@@ -351,7 +351,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       actions: <>
         <Button size="sm" disabled={busy} onClick={() => void queryProposal(record)}>查询原结果</Button>
         {!expired && !record.sopProposal.accepted && !rejected && <Button size="sm" disabled={busy} disabledReason={retryReadReason(record.sopProposal.context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreProposal(record)}>按原请求重试</Button>}
-        {rejected && !record.sopProposal.accepted && <VerifiedReleaseButton disabled={busy} onClick={() => askRelease(record, operationNames.execute, contextName(record.sopProposal.context))} />}
+        {rejected && !record.sopProposal.accepted && <VerifiedReleaseButton disabled={busy || !!jEmergencyRecovery.state(record).busy} onClick={() => askRelease(record, operationNames.execute, contextName(record.sopProposal.context))} />}
       </>,
       detail: <>
         <p>{`${record.sopProposal.context.emergency ? "应急通道" : "常规通道"} · ${record.sopProposal.context.fields.triggerBasis} · ${record.sopProposal.context.playbook.seq.length} 步`}</p>

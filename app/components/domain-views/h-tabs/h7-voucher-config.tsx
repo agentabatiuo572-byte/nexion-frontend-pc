@@ -259,6 +259,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     if (!original) return;
     const state = h7DirectRecovery.state(original);
     return { state, expiresAt: state.expiresAt, blockedReason: directRecovery(id).disabledReason,
+      statusText: state.expired && state.replayRejection ? `${RETRY_EXPIRED_TEXT} ${RETRY_REJECTED_NEXT}` : undefined,
       subscribe: h7DirectRecovery.subscribe, getRevision: h7DirectRecovery.getRevision };
   };
 
@@ -450,6 +451,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         if (!saved) return;
         const state = h7ApprovalRecovery.state(saved);
         return { state, expiresAt: state.expiresAt, blockedReason: replayReadProblem(input.voucherId) ?? (state.expired ? RETRY_EXPIRED_TEXT : state.replayRejection ? RETRY_REJECTED_TEXT : state.replayBlock ? "请查询原结果" : undefined),
+          statusText: state.expired && state.replayRejection && !saved.acknowledged ? `${RETRY_EXPIRED_TEXT} ${RETRY_REJECTED_NEXT}` : undefined,
           subscribe: h7ApprovalRecovery.subscribe, getRevision: h7ApprovalRecovery.getRevision };
       },
       inlineApproval: {
@@ -511,8 +513,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         actions: <>
           <Button size="sm" onClick={() => openDisposition(record, "lookup")}>查询原结果</Button>
           {!expired && !record.ticket && !record.acknowledged && !releasable(record) && <Button size="sm" disabledReason={replayReadProblem(record.voucherId) ?? (!canWrite || !canRetryH7VoucherApproval(record) ? "请查询原结果" : undefined)} onClick={() => openDisposition(record, "retry")}>按原请求重试</Button>}
-          {rejected && <VerifiedReleaseButton onClick={() => release.ask({ operation: H7_VOUCHER_ACTIONS[record.op], target: <>「{record.voucherName}」{approvalChange(record)}</>,
-            createdAt: record.createdAt, release: () => { try { releaseRejectedH7VoucherApproval(record); } finally { syncPending(); } } })} />}
+          {rejected && <VerifiedReleaseButton disabled={!!h7ApprovalRecovery.state(record).busy} onClick={() => release.ask({ operation: H7_VOUCHER_ACTIONS[record.op], target: <>「{record.voucherName}」{approvalChange(record)}</>,
+            getSnapshot: h7ApprovalRecovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => { try { releaseRejectedH7VoucherApproval(record); } finally { syncPending(); } } })} />}
         </>,
       };
     }),
@@ -523,8 +525,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         tag: rejected ? rejectedTag() : isRetryExpired(record) ? expiredTag() : unknownTag("direct"), actions: <>
           <Button size="sm" onClick={() => openDirectRecovery(record, "lookup")}>查询原结果</Button>
           {!isRetryExpired(record) && !rejected && <Button size="sm" disabledReason={directRecovery(record.voucherId).disabledReason} onClick={() => openDirectRecovery(record)}>按原请求重试</Button>}
-          {rejected && <VerifiedReleaseButton onClick={() => release.ask({ operation: record.action, target: <>「{record.voucherName}」{directChange(record)}</>,
-            createdAt: record.createdAt, release: () => { const released = h7DirectRecovery.releaseRejectedReplay(record); syncPending(); return released; } })} />}
+          {rejected && <VerifiedReleaseButton disabled={!!h7DirectRecovery.state(record).busy} onClick={() => release.ask({ operation: record.action, target: <>「{record.voucherName}」{directChange(record)}</>,
+            getSnapshot: h7DirectRecovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => { const released = h7DirectRecovery.releaseRejectedReplay(record); syncPending(); return released; } })} />}
         </> };
     }),
   ];
