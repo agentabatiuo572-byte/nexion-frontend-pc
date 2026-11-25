@@ -561,7 +561,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       const userId = values.userId?.trim() ?? "";
       currentRank = undefined;
       const readable = /^[1-9]\d*$/.test(userId) && Number.isSafeInteger(Number(userId)) && ctx.can("user_c1_read");
-      setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current, facts: <Facts><Fact k="现在的等级">{readable ? "正在读取" : "这页读不到；批准时按当时的等级核对方向"}</Fact></Facts> } : current);
+      setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current, facts: <Facts><Fact k="现在的等级">{readable ? "正在加载…" : "这页读不到；批准时按当时的等级核对方向"}</Fact></Facts> } : current);
       let rank: string | undefined;
       if (readable) {
         try {

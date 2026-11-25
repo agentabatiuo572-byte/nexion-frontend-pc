@@ -123,7 +123,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
   const rawSum = f2PctSum(rawRates.filter((value): value is string => value !== null));
   const rawSumNumber = Number(rawSum);
   // App checks the sum of the stored rates, including the zero placeholders for ranked L1/L2.
-  const limitIssue = sourceUnknown ? undefined : f2AppLimitIssue(rawRates.filter((value): value is string => value !== null));
+  const limitIssue = sourceUnknown ? undefined : f2AppLimitIssue(rawRates.filter((value): value is string => value !== null), !filledAll);
   // 按等级时合计是一段：已填的第 3 层起加上第 1、2 层九级最低、最高。
   const l1 = ranked ? rankedRange(ctx, "L1") : null, l2 = ranked ? rankedRange(ctx, "L2") : null;
   const sumRange = ranked && l1 && l2 ? { low: pctAdd(pctAdd(rawSum, l1.min), l2.min), high: pctAdd(pctAdd(rawSum, l1.max), l2.max) } : null;
@@ -152,7 +152,6 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
         <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f2_royalty_rate)}</Fact>
       </Facts>,
       content: <div className="rd-stack">
-        {limitIssue && <Notice tone="warn" title={limitIssue}>{F2_APP_LIMIT_COPY}</Notice>}
         <F2BootstrapReview rows={rows} label="要建立的七层规则" ranked={ranked ? ctx.f2RankPurchaseRange ?? null : undefined} />
       </div>,
       statedBrief: { impact: "批准后七层规则一次建好；整体结算不会自动启用，要另外申请。", check: ranked ? "逐层核对下表；第 1、2 层按受益人等级。" : "逐层核对下表；第 1 层固定 10%。" },
@@ -217,7 +216,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
           <div><dt>奖励总额上限</dt><dd data-empty={cap === null ? "" : undefined}>{cap === null ? "未配置" : `${num(cap)}%`}</dd></div>
         </dl>}
       </Figure>}
-      {limitIssue && <Notice tone="warn" title={limitIssue}>{F2_APP_LIMIT_COPY}</Notice>}
+      {limitIssue && <Notice tone="warn" title={limitIssue}>{filledAll ? F2_APP_LIMIT_COPY : "App 会读不到团队奖励配置。填齐后仍可以提交。"}</Notice>}
       <div className="rd-toolbar" data-end="">
         {blocked && <span className="f2-boot-error" role="alert">{blocked}</span>}
         <Button onClick={() => setDraft(null)}>取消</Button>

@@ -14,10 +14,10 @@ import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
 import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText } from "@/lib/admin/f-approval-names";
 import { fConfigAuthority } from "@/lib/admin/f-config-batch";
 import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
-import { F2BootstrapReview, f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
+import { F2BootstrapReview, f2AppLimitIssue, f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
-import { fetchF1VRankOverview } from "@/lib/admin/f1-client";
+import { fetchF1VRankOverview, fetchF2RatesOverview } from "@/lib/admin/f1-client";
 import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_CLAWBACK, F1_VOUCHER_REVERSE_KEEP } from "@/lib/admin/config-help/f1-voucher";
 import { fmtConfigPct, fmtPct, amountDisplay } from "@/lib/format";
 import { f4MonthlyCap } from "@/lib/admin/f4-money";
@@ -265,6 +265,26 @@ function V8PromotionRewardFact() {
   return <Fact k="V8 晋级奖励 · 首次到达发给本人">{reward && reward.readerId === readerId ? reward.text : "—"}</Fact>;
 }
 
+/** 批准后 App 读不到团队奖励配置：首次配置单看票上的七层；单层比例单只带这一层，其余各层按现在读到的算（OP-69）。 */
+const F2_LIMIT_APPROVE_COPY = "批准后 App 会读不到团队奖励配置。";
+function F2LayerLimitNotice({ level, after }: { level: string; after: string }) {
+  const readerId = useAdminAuth((s) => s.session?.authorities.includes("network_f2_read") ? s.session.adminId : undefined);
+  const [read, setRead] = useState<{ readerId: number; known: boolean; issue?: string }>();
+  useEffect(() => {
+    if (readerId === undefined) return;
+    let active = true;
+    void fetchF2RatesOverview().then((overview) => {
+      if (!active) return;
+      const rates = overview.unilevel;
+      setRead({ readerId, known: rates.length === 7, issue: rates.length === 7 ? f2AppLimitIssue(rates.map((row) => row.l === level ? after.trim().replace(/%$/, "") : row.usdtText ?? "0")) : undefined });
+    }).catch(() => { if (active) setRead({ readerId, known: false }); });
+    return () => { active = false; };
+  }, [readerId, level, after]);
+  if (readerId !== undefined && read?.readerId !== readerId) return null;
+  if (readerId === undefined || !read?.known) return <Notice tone="neutral" title="没读到七层现在的比例，看不出批准后会不会超过 App 读取上限 25%" />;
+  return read.issue ? <Notice tone="warn" title={read.issue}>{F2_LIMIT_APPROVE_COPY}</Notice> : null;
+}
+
 function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
   return w.mine || (!!username && username === w.operator);
 }
@@ -433,6 +453,8 @@ const F2_POLICY_COVERAGE = "批准时先查兑付覆盖率：读不到或低于�
 // F3 自动发放、全平台封顶：批准时读不到覆盖率也拦（BinarySettlementPolicyProvider.currentCoverageBlock）；其余放宽类 F 键只比红线（OpsTeamService.coverageBelowRedline），读不到不拦。
 const F3_PAYOUT_COVERAGE = "批准时先查兑付覆盖率：读不到或低于红线就不改，审批单留着待审批。";
 /** 开启自动发放：没有「调高、调低」的方向，不按「多付钱」写。 */
+/** 改 F2 单层 USDT 比例的单：返回是哪一层。 */
+const f2RateLevel = (fund: FundTicket | undefined) => fund?.kind === "fConfig" ? /^F\.unilevel\.(L[1-7])$/.exec(fund.key)?.[1] : undefined;
 const enablesAutoPayout = (fund: FundTicket | undefined) => fund?.kind === "fConfig" && fund.spec?.payoutControlAmplification === "enable";
 function coverageFacts(w: { operationCode?: string | null; obj?: string; after?: string; action?: string }) {
   const fund = fundTicket(w);
@@ -2419,6 +2441,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         coverageCheck: cover?.check,
         // 一组值（各榜奖池、头衔、门槛）逐项比，放「完整变更内容」；单个值一行写在事实区。
         facts: item?.json ? undefined : change,
+        extra: f2RateLevel(fund) && <F2LayerLimitNotice level={f2RateLevel(fund)!} after={w.after} />,
         lead: undefined,
         review: !!item?.json,
       };
@@ -2573,7 +2596,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       coverageUnknown: "启用结算后，平台按这些比例付团队奖励；兑付覆盖率暂时读不到",
       coverageCheck: "批准时先查兑付覆盖率：低于红线就不建规则，审批单留着待审批。",
       facts: <><Fact k="要建立">L1–L7 七层规则</Fact><Fact k="七层合计占订单">{rankedBootstrap ? "第 1、2 层按受益人等级" : `${f2PctSum(boot.map((row) => row.usdtPct))}%`}</Fact><Fact k="整体结算">不会自动启用，要另外申请</Fact></>,
-      extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" ranked={rankedBootstrap ? null : undefined} />,
+      extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" ranked={rankedBootstrap ? null : undefined} limitCopy={F2_LIMIT_APPROVE_COPY} />,
     };
     const fund = fundSpec(w) ?? k1Spec ?? bootSpec;
     const belowRedline = !!coverage && coverage.coverageRatio < coverage.redlinePct;
@@ -3341,7 +3364,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             </section>
             : shownBoot ? <section className="a2-change-review" aria-label="完整变更内容">
               <div className="a2-change-title">完整变更内容 · 七层<Explain label="技术信息" content={`修改前原文 ${shown.before || "—"} ｜ 修改后原文 ${shown.after}`} /></div>
-              <F2BootstrapReview rows={shownBoot} label="要建立的七层规则" ranked={f2BootstrapUsesRank(shownBoot[0].usdtPct, shownBoot[1].usdtPct) ? null : undefined} />
+              <F2BootstrapReview rows={shownBoot} label="要建立的七层规则" ranked={f2BootstrapUsesRank(shownBoot[0].usdtPct, shownBoot[1].usdtPct) ? null : undefined} limitCopy={F2_LIMIT_APPROVE_COPY} />
             </section>
             : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)
@@ -3352,6 +3375,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   : f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>
                 <A2I5DisclosureReview key={shown.id} ticket={shown} />
               </A2ChangeReview>}
+          {shownFund?.kind === "fConfig" && f2RateLevel(shownFund) && <F2LayerLimitNotice level={f2RateLevel(shownFund)!} after={shown.after} />}
           {reissueList(shown, true)}
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}

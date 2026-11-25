@@ -116,12 +116,12 @@ function f2LayerEditors(ctx: FViewCtx) {
       slot: `f-config:F.unilevel.${level}`,
       action: `调整 ${level} USDT 奖励比例`, title: `调整 ${level}（${LAYER_WHO[level]}）的 USDT 比例`, briefKind: "config", amplify: true, dialogClassName: "f2-confirm",
       effect: effectTag,
-      edit: { kind: "number", current, min: 0, unit: "%", amplifiesWhen: "increase",
+      edit: { kind: "number", current, min: 0, unit: "%", amplifiesWhen: "increase", disallowCurrent: true,
         validate: (next) => (next.trim().split(".")[1]?.replace(/0+$/, "").length ?? 0) > 4 ? "最多 4 位小数（末尾的 0 不算），多了不能提交" : undefined,
         hint: "填百分数：0.5 就是 0.5%，最多 4 位小数",
         preview: (next) => <>
           {layerPaused && <p className="f2-edit-note">{`要发放，到「按层暂停」恢复 ${level}。`}</p>}
-          {limitIssue(next) && <Notice tone="warn" title={limitIssue(next)!}>{F2_APP_LIMIT_COPY}</Notice>}
+          {limitIssue(next) && <Notice tone="warn" title={limitIssue(next)}>{F2_APP_LIMIT_COPY}</Notice>}
           {rates.length ? <LayerCompare rates={sourcesUseFirstTwo ? rates.filter(row => !rankedLevel(row.l as Layer) && !noRateSource(row.l as Layer)) : rates} level={level} next={next || current ? Number(next || current) : null} field="usdt" ranked={ranked} /> : null}
         </> },
       facts: (next) => {
