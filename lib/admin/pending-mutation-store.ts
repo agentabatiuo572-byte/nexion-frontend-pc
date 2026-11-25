@@ -7,6 +7,8 @@
 export const PENDING_MUTATION_TTL_MS = 24 * 60 * 60 * 1000;
 /** OP-96：过了接口的重试时限，原号不能再用，记录不删。解除只在后端明确拒绝后才有。 */
 export const RETRY_EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对。";
+/** 原操作结果未知时挡住新操作的一句。恢复条标题和行内标签都叫「结果未知」，禁用原因同一个叫法（08 DT-14）。 */
+export const ORIGINAL_UNKNOWN_TEXT = "原操作结果未知，请先查询原操作。";
 export const isRetryExpired = (record: { expiresAt: number }) => Date.now() >= record.expiresAt;
 
 export interface PendingMutationRecord {

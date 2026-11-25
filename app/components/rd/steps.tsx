@@ -34,7 +34,7 @@ export function Steps({ label, items }: { label: string; items: readonly { label
   return (
     <ol className="rd-steps" aria-label={label}>
       {items.map((item, index) => (
-        <li key={index} className="rd-step" data-state={item.state} aria-current={item.state === "current" ? "step" : undefined}>
+        <li key={index} className="rd-step" data-state={item.state} aria-current={item.state === "current" || item.state === "failed" ? "step" : undefined}>
           <span className="rd-step-mark">{item.state === "done" ? <Check size={13} strokeWidth={2.4} aria-hidden /> : item.state === "failed" ? <><X size={13} strokeWidth={2.4} aria-hidden /><span className="rd-sr-only">没走成：</span></> : index + 1}</span>
           <span className="rd-step-label">{item.label}</span>
           {item.sub !== undefined && <span className="rd-step-sub">{item.sub}</span>}

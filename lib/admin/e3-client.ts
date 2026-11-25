@@ -229,16 +229,26 @@ async function e3Request<T>(path: string, init?: RequestInit & { idempotencyPref
   return result.data as T;
 }
 
+function overviewParams(overview: BackendE3Overview) {
+  if (!overview?.config || typeof overview.config !== "object" || Array.isArray(overview.config)) {
+    throw new Error("E3_READ_MODEL_INVALID");
+  }
+  return frontendParams(overview.config);
+}
+
+export async function fetchE3Params(): Promise<Record<string, string>> {
+  return overviewParams(await e3Request<BackendE3Overview>("/e3/overview"));
+}
+
 export async function fetchE3Snapshot(): Promise<E3Snapshot> {
   const [overview, tradein] = await Promise.all([
     e3Request<BackendE3Overview>("/e3/overview"),
     e3Request<BackendTradeinOverview>("/e3/tradein/overview"),
   ]);
 
-  if (!overview || !overview.config || typeof overview.config !== "object" || Array.isArray(overview.config)
-    || !tradein || !Array.isArray(tradein.txStats)) throw new Error("E3_READ_MODEL_INVALID");
+  if (!tradein || !Array.isArray(tradein.txStats)) throw new Error("E3_READ_MODEL_INVALID");
   return {
-    params: frontendParams(overview.config),
+    params: overviewParams(overview),
     stats: {
       averageAgeMonths: tradein.averageAgeMonths === null ? null : toNumber(tradein.averageAgeMonths),
       cliffDeviceCount: toNumber(tradein.cliffDeviceCount, true),

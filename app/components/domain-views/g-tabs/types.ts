@@ -13,6 +13,7 @@ export type ActionConfirmReq = {
   reasonMax?: number;
   getPendingReason?: () => string | undefined;
   getPendingBusinessValue?: () => BusinessFormValue | undefined;
+  approvalObject?: string;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 

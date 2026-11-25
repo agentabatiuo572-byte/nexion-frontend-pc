@@ -90,10 +90,10 @@ type GroupIntent = { kind: "CREATE"; payload: CreateGroupInput } | { kind: "RENA
 export type GroupPendingRecord = PendingMutationRecord & { actorId: number; intent: GroupIntent; label: string };
 export type QualificationPending = GroupPendingRecord & { intent: Extract<GroupIntent, { kind: "QUALIFICATION" }> };
 // B8 invite-code writes share the group command store: frozen payload plus key until the original command is settled.
-type InviteIntent = { kind: "INVITE_ISSUE"; payload: { expectedVersion: number | null } } | { kind: "INVITE_REVOKE"; targetId: string; payload: { expectedVersion: number; reason: string; code: string; name: string } };
-export type InvitePendingRecord = PendingMutationRecord & { actorId: number; intent: InviteIntent; label: string };
-export type InviteIssueRecord = InvitePendingRecord & { intent: Extract<InviteIntent, { kind: "INVITE_ISSUE" }> };
-export type InviteRevokeRecord = InvitePendingRecord & { intent: Extract<InviteIntent, { kind: "INVITE_REVOKE" }> };
+type InviteRecord = PendingMutationRecord & { actorId: number; label: string };
+export type InviteIssueRecord = InviteRecord & { intent: { kind: "INVITE_ISSUE"; payload: { expectedVersion: number | null } }; acknowledged?: true };
+export type InviteRevokeRecord = InviteRecord & { intent: { kind: "INVITE_REVOKE"; targetId: string; payload: { expectedVersion: number; reason: string; code: string; name: string } } };
+export type InvitePendingRecord = InviteIssueRecord | InviteRevokeRecord;
 export function isInvitePending(record: GroupPendingRecord | InvitePendingRecord): record is InvitePendingRecord { return record.intent.kind === "INVITE_ISSUE" || record.intent.kind === "INVITE_REVOKE"; }
 export function isQualificationPending(record: GroupPendingRecord | InvitePendingRecord): record is QualificationPending { return record.intent.kind === "QUALIFICATION"; }
 /** Only a coded, explicit command rejection can release unresolved evidence. */

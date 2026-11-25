@@ -1,6 +1,6 @@
 "use client";
 import { canReadOwnRecoveryProposal } from "@/lib/admin/abe-recovery-access";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, ORIGINAL_UNKNOWN_TEXT } from "@/lib/admin/pending-mutation-store";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -1000,7 +1000,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const sendCommand = async (extra: K1PendingExtra, send: (key: string) => Promise<unknown>, done: () => Promise<void>, recovering: boolean) => {
     const scope = `${extra.kind}|${extra.target}`;
     const retained = pendingCommands.get(scope);
-    if (!!retained !== recovering) throw new Error("原操作待确认，请查询原操作。");
+    if (!!retained !== recovering) throw new Error(ORIGINAL_UNKNOWN_TEXT);
     const key = retained ?? newK1CommandKey();
     const original = pendingCommands.list().find(row => row.fingerprint === scope && row.commandKey === key);
     const base = "/api/admin/risk/multi-account/", target = encodeURIComponent(extra.target);

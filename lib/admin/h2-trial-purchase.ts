@@ -66,7 +66,7 @@ function readDevice(raw: unknown): BuyDevice | undefined {
   };
 }
 
-function readRows(raw: unknown): BuyDevice[] | undefined {
+export function readH2BuyDevices(raw: unknown): BuyDevice[] | undefined {
   if (!Array.isArray(raw)) return;
   const rows: BuyDevice[] = [];
   const ids = new Set<string>();
@@ -97,8 +97,8 @@ export function readH2TrialPurchase(raw: Record<string, unknown>) {
     .every((value) => value === undefined)) return {};
 
   const target = readDevice(currentTrialProduct);
-  const items = readRows(otherPurchaseProducts);
-  const candidates = readRows(purchaseCandidates);
+  const items = readH2BuyDevices(otherPurchaseProducts);
+  const candidates = readH2BuyDevices(purchaseCandidates);
   const byProductNo = new Map(candidates?.map((candidate) => [candidate.productNo, candidate]));
   const consistent = items?.every((item) => {
     const candidate = byProductNo.get(item.productNo);

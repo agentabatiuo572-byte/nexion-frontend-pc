@@ -205,7 +205,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const directRecord = (id: string) => adminId === undefined ? undefined : pendingH7VoucherMutations(adminId).find(r => r.voucherId === id);
   const blockNew = (id?: string) => !canWrite ? "你只能查看；新增、编辑和处置代金券要有这页的修改权限。"
     : !fresh.current ? loading ? "正在加载最新数据，读完再操作" : "读取失败，读到最新数据后才能新增"
-      : (id ? directRecord(id) : directUnknown.some(record => record.context.kind === "create")) ? "已有原操作待确认，请先处理原操作。"
+      : (id ? directRecord(id) : directUnknown.some(record => record.context.kind === "create")) ? "原操作结果未知，请先处理原操作。"
         : id && adminId !== undefined && pendingH7VoucherApprovals(adminId).some(r => r.voucherId === id) ? pendingH7VoucherApprovals(adminId).some(r => r.voucherId === id && r.ticket) ? "这张券已有等批准的申请，审批结束前不能再提交" : LOCAL_PENDING
         : id && currentData.current.find(v => v.id === id)?.pendingApproval ? "这张券已有等批准的申请，审批结束前不能再提交" : undefined;
   const assertNew = (id?: string) => {
@@ -231,7 +231,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const readDirectConfiguration = async (record: H7DirectMutation) => {
     requireH7Actor(record.adminId, false);
     await h7DirectRecovery.query(record, async () => {
-      if (!await reload()) throw new Error("代金券暂时没有读到，请重试。");
+      if (!await reload()) throw new Error("代金券加载失败，请再点「读取当前配置」。");
       setForm(current => current?.commandKey === record.commandKey
         ? { ...current, recoveryNote: "已读取当前代金券，原操作结果仍未确认。" } : current);
       return { conclusion: "unknown" };
@@ -241,7 +241,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     const payload = await reload();
     const latest = payload?.vouchers.find(voucher => voucher.id === editor.voucher?.id);
     if (!latest || !editor.voucher) {
-      const detail = payload ? "最新列表中找不到这张券。" : "最新代金券暂时没有读到。";
+      const detail = payload ? "最新列表中找不到这张券。" : "最新代金券加载失败，请再点「读取最新」。";
       setForm(current => current?.key === editor.key ? { ...current, conflictError: detail } : current);
       throw new Error(detail);
     }
@@ -269,7 +269,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     return new ConfirmReadConflict({
     readLatest: async () => {
       const payload = await reload();
-      if (!payload) throw new Error("最新代金券暂时没有读到，请再点「读取最新」。");
+      if (!payload) throw new Error("最新代金券加载失败，请再点「读取最新」。");
       const latest = payload.vouchers.find(row => row.id === voucher.id);
       if (!latest) throw new ConfirmReadConflict(undefined, `最新列表中找不到这张券，这次没有${label}。`, true);
       if (latest.status !== voucher.status) {

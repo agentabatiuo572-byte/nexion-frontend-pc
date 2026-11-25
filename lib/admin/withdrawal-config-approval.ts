@@ -118,7 +118,8 @@ type WithdrawalApprovalQueue = {
   /** 读取失败的原因：回包缺字段时写数据不完整（ST-37），其余按读取口吻（ST-34）。 */
   error?: string;
 };
-type PendingWithdrawalRow = Pick<A2OperationRow, "id"> & Partial<Pick<A2OperationRow, "operator" | "ts" | "rawTs">>;
+export type PendingWithdrawalRow = Pick<A2OperationRow, "id">
+  & Partial<Pick<A2OperationRow, "operator" | "ts" | "rawTs" | "before" | "after" | "withdrawalChanges">>;
 const EMPTY_WITHDRAWAL_QUEUE: WithdrawalApprovalQueue = { readId: 0, state: "loading", rows: [] };
 const WITHDRAWAL_APPROVAL_PENDING = "等另一位超级管理员批准，批准前参数不变。";
 
