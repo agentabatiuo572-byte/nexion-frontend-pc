@@ -219,7 +219,7 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
     <Panel title="设备预估排名" icon={Trophy} tone="role-4" sub={data ? `排名设置 v${data.version} · 单独保存` : undefined}
       explain="独立的一套设置：自己的版本、自己保存，不受本页其他块影响。App 用首页数字增长的在线设备数和这里的档位估一个排名；这不是真实榜单，不影响收益和奖励。">
       {loading && !data && <BlockState state="loading" title="设备预估排名正在加载…" />}
-      {!loading && !data && <BlockState state="error" title="设备预估排名读取失败" detail={`${error} 这一块看不到也改不了，其余五块不受影响。`} onRetry={() => void load()} />}
+      {!loading && !data && <BlockState state="error" title="设备预估排名加载失败" detail={`${error} 这一块看不到也改不了，其余五块不受影响。`} onRetry={() => void load()} />}
       {data && <>
         <AppPreview where="App 首页 · 网络脉搏" explain="App 拿系统记录的手机算力和这些档位比，估一个名次（参考，不是真实榜单）。在线设备不在 1–10,000,000 台之间时显示「暂不可用」；没有手机算力时显示「未排名」。">
           <div className="h9-rank-state">

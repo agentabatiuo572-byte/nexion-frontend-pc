@@ -524,7 +524,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
 
   const switchesPanel = !overview ? (
     loading ? <BlockState state="loading" title="正在加载开关和门槛…" />
-      : <BlockState state="error" title="开关和门槛读取失败" detail={loadError ?? undefined} onRetry={() => void refreshOverview()} />
+      : <BlockState state="error" title="开关和门槛加载失败" detail={loadError ?? undefined} onRetry={() => void refreshOverview()} />
   ) : (
     <div className="rd-tab-stack">
       <Panel title="全平台开关" icon={ToggleLeft} tone="role-other" sub={`${featureFlags.length} 个 · 时间按${businessZone().label}`}
@@ -595,7 +595,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
 
   const statusPanel = !overview ? (
     loading ? <BlockState state="loading" title="正在加载应急状态和运行状况…" />
-      : <BlockState state="error" title="应急状态和运行状况读取失败" detail={<>{loadError} 读不到时不能当作正常。</>} onRetry={() => void refreshOverview()} />
+      : <BlockState state="error" title="应急状态和运行状况加载失败" detail={<>{loadError} 读不到时不能当作正常。</>} onRetry={() => void refreshOverview()} />
   ) : (
     <div className="rd-tab-stack">
       <Panel title="紧急停用和地区限制" icon={Siren} tone="role-other" sub={`${gates.length} 项 · 只读`}

@@ -1223,7 +1223,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       {staleNotice}
       {confirmModal}
       {releaseModal}
-      <BlockState state="error" title="用户任务读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改。`} retryLabel="重试读取" onRetry={() => void refresh().catch(cause => toast(displayAdminError(cause)))} />
+      <BlockState state="error" title="用户任务加载失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改。`} retryLabel="重试读取" onRetry={() => void refresh().catch(cause => toast(displayAdminError(cause)))} />
       {missionDrawer}
     </div>
   );

@@ -276,7 +276,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
       explain={<><p>用户实付 = 订单金额 + 订单金额 × 手续费比例 + 每笔固定费 + 网络费（仅 USDT）。全部填 0 表示免费。</p><p>新手续费只用于之后发起的付款，已下单的按原费用。没配置的付款方式，用户在付款弹窗里看不到。</p><p>USDT 手续费只用于试用转购买、升级置换、扩容等；普通购买的 USDT 先充值再用余额付，只收充值手续费。</p><p>银行卡和 USDT 付款不需要支付密码。钱包余额付款不收手续费，要输入支付密码。</p></>}
       actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=D">修改历史</Link> : undefined}>
       {policyLoading && !policy ? <BlockState state="loading" title="正在加载付款手续费…" />
-        : policyError ? <BlockState state="error" title="付款手续费读取失败" detail={policyError} onRetry={() => void loadPolicy()} />
+        : policyError ? <BlockState state="error" title="付款手续费加载失败" detail={policyError} onRetry={() => void loadPolicy()} />
           : policy && <div className="rd-stack">
             {!canEdit && <p className="rd-note">只有超级管理员能改付款手续费。</p>}
             {canEdit && !policy.constraints && <p className="rd-note">暂时拿不到可填范围，只能查看，不能修改。</p>}
@@ -395,7 +395,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
         {auditReachable && intentNo && <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(intentNo)}`}>到「操作记录与审批」查看处理过程</Link>}
       </>}
       primary={canReconcile ? <Button variant="primary" disabledReason={block} onClick={revalidate}>重新核对到账</Button> : undefined} />}>
-    {error ? <BlockState state="error" title="付款详情读取失败" detail={error} onRetry={() => void load()} />
+    {error ? <BlockState state="error" title="付款详情加载失败" detail={error} onRetry={() => void load()} />
       : <JudgmentPoints loading={loading || !r} rows={r ? [
         { label: "用户实付", icon: Coins, tone: "money", value: `${usdt(r.totalUsdt)} USDT`, reason: `订单 ${usdt(r.subtotalUsdt)} · 手续费 ${usdt(r.channelFeeUsdt)} · 网络费 ${usdt(r.networkConfirmFeeUsdt)}` },
         { label: "用户", icon: User, tone: "users", value: r.userId, reason: `${kindText[r.kind] ?? "用途待确认"} · ${methodText[r.paymentMethod]}` },

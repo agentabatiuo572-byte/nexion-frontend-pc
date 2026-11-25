@@ -283,7 +283,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       : ctx.f1Error
         ? <><Conclusion state="unknown" hint="点页头「刷新」重试；其他页签照常能看。">会员等级：暂时无法判断</Conclusion>
           {recovery}
-          <Panel title="九级阶梯"><BlockState state="error" title="会员等级读取失败" detail={ctx.f1Error} onRetry={() => void ctx.refreshF1Membership()} /></Panel></>
+          <Panel title="九级阶梯"><BlockState state="error" title="会员等级加载失败" detail={ctx.f1Error} onRetry={() => void ctx.refreshF1Membership()} /></Panel></>
         : canWrite
           ? <>{recovery}<F1VrankBootstrap key={bootstrapDraft?.original.commandKey ?? "bootstrap"} ctx={ctx} continuation={bootstrapDraft} openConfirm={setConfirm} /></>
           : <><Conclusion state="neutral" icon={Layers3}>还没有建立会员等级</Conclusion>

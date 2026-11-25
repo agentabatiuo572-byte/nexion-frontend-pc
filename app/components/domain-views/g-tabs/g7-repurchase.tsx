@@ -685,7 +685,7 @@ function G7RepurchasePage() {
       <>
         {header}
         {recoveryNotice()}
-        <BlockState state="error" title="锁定计划数据读取失败"
+        <BlockState state="error" title="锁定计划数据加载失败"
           detail={error || "没有收到数据。"}
           onRetry={() => void reload()} />
         {confirmModal}

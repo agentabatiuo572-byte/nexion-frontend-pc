@@ -270,7 +270,7 @@ export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; can
         <p>修改要提交审批，{REGION_APPROVER}批准后，每个用户从他自己的下一周开始按新规则；本周已开始的不变。团队和财务的周期不受影响。</p>
       </>}>
       {loading && !policy && <BlockState state="loading" title="地区规则正在加载…" />}
-      {error && <BlockState state="error" title="地区规则读取失败" detail={`${error} · 读到之前不能编辑。`} onRetry={() => void reload()} />}
+      {error && <BlockState state="error" title="地区规则加载失败" detail={`${error} · 读到之前不能编辑。`} onRetry={() => void reload()} />}
       {pending && <Notice tone="warn" title="区号规则的修改在等批准">
         <p>{`${REGION_APPROVER}批准前仍按下面的规则；批准后刷新这里核对。`}{canReadA2 ? "" : "你没有查看审批的权限，请让有权限的同事核对结果。"}</p>
         {canReadA2 && canAudit && <p><Link className="rd-link" href="/platform/audit" prefetch={false}>查看审批进度</Link></p>}

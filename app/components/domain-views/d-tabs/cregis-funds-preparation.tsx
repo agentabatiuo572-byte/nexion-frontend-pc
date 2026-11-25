@@ -188,7 +188,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
     {error && config && <Notice tone="warn">{error}</Notice>}
     {loading && !config ? <BlockState state="loading" title="正在加载资金准备记录…" />
       : unconfigured ? <BlockState state="empty" title={configurationTitle(network)} detail={`请联系管理员核对 ${network} 的收款服务项目和钱包地址配置，配好后点「刷新」。`} />
-      : !config ? <BlockState state="error" title="资金准备读取失败" detail={error} onRetry={() => void refresh()} />
+      : !config ? <BlockState state="error" title="资金准备加载失败" detail={error} onRetry={() => void refresh()} />
         : <div className="rd-stack">
           <p className="rd-note">只保存准备单和复核意见，不会转出资金。</p>
           <ConfigList label="准备地址">

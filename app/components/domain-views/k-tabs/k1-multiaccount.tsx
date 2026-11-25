@@ -1931,7 +1931,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           sub={protectedEntries.length ? `待审核 ${pendingEntries.length} 笔 · 已锁定 ${lockedEntries} 笔${entriesAtLimit ? ` · 最多显示 ${PROTECTED_ENTRY_LIMIT} 条` : ""} · 时间均为${businessZone().label}` : undefined}
           explain="人工放行要写理由，另一位超级管理员批准后才放行。追回过的，金额下面写原金额和已追回。">
           {protectedEntriesError ? (
-            <BlockState state="error" title="收益记录读取失败" detail={`${protectedEntriesError}当前不提供人工放行入口。`} onRetry={() => void refreshProtectedEntries()} retrying={protectedEntriesLoading} />
+            <BlockState state="error" title="收益记录加载失败" detail={`${protectedEntriesError}当前不提供人工放行入口。`} onRetry={() => void refreshProtectedEntries()} retrying={protectedEntriesLoading} />
           ) : (
             <Table label="待审核或已锁定的收益">
               <thead>

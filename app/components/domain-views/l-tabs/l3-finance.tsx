@@ -518,7 +518,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     {ctx.biLoading
       ? <BlockState state="loading" title="正在加载本期收入、提现、储备和到期…" />
       : ctx.biError
-        ? <BlockState state="error" title="财务数据读取失败，不显示旧数据" detail={`${ctx.biError} 可以改上面的周期再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
+        ? <BlockState state="error" title="财务数据加载失败，不显示旧数据" detail={`${ctx.biError} 可以改上面的周期再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
         : <BlockState state="empty" title="这次没有读到财务数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />}
   </>);
 

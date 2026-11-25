@@ -1095,7 +1095,7 @@ function G2ExchangePage() {
         {header}
         {operationNotice}
         {recoveryNotice()}
-        <BlockState state="error" title="兑换数据读取失败"
+        <BlockState state="error" title="兑换数据加载失败"
           detail={overviewReadError || "没有收到数据。"}
           onRetry={() => void reload()} />
         {confirmModal}

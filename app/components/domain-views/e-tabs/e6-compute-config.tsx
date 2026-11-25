@@ -55,7 +55,7 @@ function E6Content({ctx}:{ctx:EViewCtx}) {
       {ctx.canReadE2&&<><div {...ids.panel("tasks")} hidden={tab!=="tasks"} className="e6-tab"><PhoneTasksSection ctx={ctx}/></div><div {...ids.panel("tiers")} hidden={tab!=="tiers"} className="e6-tab"><PhoneTiersSection ctx={ctx}/></div></>}
       {ctx.canReadE5&&<div {...ids.panel("phones")} hidden={tab!=="phones"} className="e6-tab"><E6PhoneDevices ctx={ctx}/></div>}
       {ctx.canReadE6&&<div {...ids.panel("calibration")} hidden={tab!=="calibration"} className="e6-tab">
-        {ctx.e6Error&&<BlockState state="error" title="设备配置读取失败" detail={ctx.e6Error} retryLabel="重试" onRetry={()=>void ctx.refreshE6()}/>}
+        {ctx.e6Error&&<BlockState state="error" title="设备配置加载失败" detail={ctx.e6Error} retryLabel="重试" onRetry={()=>void ctx.refreshE6()}/>}
         <div className="rd-config-layout"><div className="rd-config-grid"><div className="rd-config-rail"><SectionNav label="校准与风控主题" items={sections} nav={nav}/></div><div className="rd-config-groups e6-config-groups">
           <div id="phone-calibration"><PhoneCalibrationPanel ctx={ctx} onPendingCount={setPendingCount}/></div>
           <div id="section-risk"><PhoneRiskSection canWrite={ctx.canWriteE6} toast={ctx.toast}/></div>

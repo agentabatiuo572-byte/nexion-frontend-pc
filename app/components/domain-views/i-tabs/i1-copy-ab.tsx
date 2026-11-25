@@ -1260,7 +1260,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         {contentLoading && !errorText
           ? <BlockState state="loading" title="正在加载文案数据…" />
           : errorText
-            ? <BlockState state="error" title="文案数据读取失败" detail={errorText} onRetry={() => void reload()} retrying={reloading} />
+            ? <BlockState state="error" title="文案数据加载失败" detail={errorText} onRetry={() => void reload()} retrying={reloading} />
             : <BlockState state="empty" title="暂无文案数据" detail="没有读到文案位置和文案。" />}
       </>
     );

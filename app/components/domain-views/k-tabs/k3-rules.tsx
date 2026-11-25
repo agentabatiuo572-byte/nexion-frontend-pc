@@ -575,7 +575,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     })}
     {acknowledgedReadFailure && <Notice tone="ok" title="原操作已成功">{acknowledgedReadFailure}</Notice>}
     {!canRead ? <BlockState state="denied" title="无权查看提现风险规则" detail="需要提现风险规则查看权限，请联系管理员核对。" />
-      : ctx.contentError ? <BlockState state="error" title="提现风险规则读取失败" detail={readError} onRetry={() => void reload().catch(() => undefined)} />
+      : ctx.contentError ? <BlockState state="error" title="提现风险规则加载失败" detail={readError} onRetry={() => void reload().catch(() => undefined)} />
       : ctx.contentLoading || !overview ? <><div className="k3-cover-loading" aria-label="正在加载四类检查">{DECLARED_DIMENSIONS.map((name) => <div key={name} className="rd-skeleton" />)}</div><Panel title="规则总表" flush><Table label="规则总表"><tbody><TableLoading columns={6} /></tbody></Table>{lastRulePage && lastRulePage.total > 0 && <Pager label="规则总表" total={lastRulePage.total} page={lastRulePage.pageNum} pageSize={lastRulePage.pageSize} sizes={[5, 10, 20]} loading onPage={(page) => setQuery({ rulePage: page })} onPageSize={(size) => setQuery({ rulePage: 1, rulePageSize: size })} />}</Panel></>
       : <>
         {invalidActive && <Notice tone="warn">生效规则包含历史放行或未知格式条件，请由风控负责人核查；只按原权限停用、归档。</Notice>}

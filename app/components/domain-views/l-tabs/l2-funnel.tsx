@@ -549,7 +549,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     {ctx.biLoading
       ? <BlockState state="loading" title="正在加载这批用户的转化…" />
       : ctx.biError
-        ? <BlockState state="error" title="转化数据读取失败，不显示旧数据" detail={`${ctx.biError} 请先重新加载；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
+        ? <BlockState state="error" title="转化数据加载失败，不显示旧数据" detail={`${ctx.biError} 请先重新加载；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
         : <BlockState state="empty" title="这次没有读到转化数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />}
   </>);
 

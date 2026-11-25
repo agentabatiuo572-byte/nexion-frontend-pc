@@ -404,7 +404,7 @@ export default function FunnelPage() {
         {filterBar}
         <Conclusion state="unknown">{error ? "用户转化：读取失败，暂时无法判断" : "用户转化：正在加载"}</Conclusion>
         {error
-          ? <BlockState state="error" title="转化数据读取失败，不显示旧数据" detail={displayAdminReadError(error)} onRetry={() => void reload()} />
+          ? <BlockState state="error" title="转化数据加载失败，不显示旧数据" detail={displayAdminReadError(error)} onRetry={() => void reload()} />
           : <BlockState state="loading" title="正在加载这批用户的转化…" />}
       </RdPage>
     );

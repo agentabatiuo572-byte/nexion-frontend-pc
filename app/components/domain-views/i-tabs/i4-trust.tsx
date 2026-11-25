@@ -1165,7 +1165,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="loading" title="正在加载信任中心数据…" /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} {...materialDraftProps} /></>;
   }
   if (!data) {
-    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="error" title="信任中心读取失败" detail={errorText ?? "暂无信任中心数据"} onRetry={refresh} retrying={refreshing} /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} {...materialDraftProps} /></>;
+    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="error" title="信任中心加载失败" detail={errorText ?? "暂无信任中心数据"} onRetry={refresh} retrying={refreshing} /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} {...materialDraftProps} /></>;
   }
 
   // ---------- 首屏结论 ----------

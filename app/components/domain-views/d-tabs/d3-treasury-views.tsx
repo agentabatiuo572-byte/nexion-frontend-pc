@@ -228,7 +228,7 @@ function MaturityPanel({ maturity, loading, error, onRetry }: { maturity: D3Matu
   if (!maturity) {
     return (
       <Panel title="哪天要付的钱最多" icon={CalendarClock} tone="role-3" data-testid="b2-maturity-chart">
-        {loading ? <BlockState state="loading" title="正在加载到期预测…" /> : <BlockState state="error" title="到期预测读取失败，不显示旧数据" detail={error} onRetry={onRetry} />}
+        {loading ? <BlockState state="loading" title="正在加载到期预测…" /> : <BlockState state="error" title="到期预测加载失败，不显示旧数据" detail={error} onRetry={onRetry} />}
       </Panel>
     );
   }

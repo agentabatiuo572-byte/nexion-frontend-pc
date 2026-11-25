@@ -804,7 +804,7 @@ export default function DualLedgerPage() {
         <span className="rd-toolbar-note b1-window-note">{currentExposure && latest ? `截至 ${latest.date} · 共 ${exposureSeries.length} 天${axisWan ? " · 纵轴单位 万 USDT" : ""}` : exposureError ? "没有读到" : currentExposure ? "这段时间没有点" : "正在加载…"}</span>
       </div>
       {exposureError ? (
-        <BlockState state="error" title="差额走势读取失败，已暂停显示" detail={`${exposureError} 切换时间范围或刷新页面会重新读取。`} />
+        <BlockState state="error" title="差额走势加载失败，已暂停显示" detail={`${exposureError} 切换时间范围或刷新页面会重新读取。`} />
       ) : exposureLoading ? (
         <BlockState state="loading" title="正在加载差额走势…" />
       ) : currentExposure?.valuationReliable === false ? (
@@ -1017,7 +1017,7 @@ export default function DualLedgerPage() {
         <Conclusion state="unknown" icon={ShieldQuestion}>{loading ? "资金状态：正在加载" : "资金状态：暂时无法判断"}</Conclusion>
         {loading
           ? <BlockState state="loading" title="正在加载储备、应付款和覆盖率…" />
-          : <BlockState state="error" title="资金数据读取失败，不显示旧数据" detail={bDomain.error ? displayAdminReadError(bDomain.error) : undefined} onRetry={refreshB1} />}
+          : <BlockState state="error" title="资金数据加载失败，不显示旧数据" detail={bDomain.error ? displayAdminReadError(bDomain.error) : undefined} onRetry={refreshB1} />}
         {discardRecovery.dialog}
         <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />{unregisteredNotices}
         {dialog}

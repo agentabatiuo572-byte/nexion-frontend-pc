@@ -676,7 +676,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           <Th control><Checkbox aria-label="选择本页全部任务" disabled={!!writeBlock || !rows.length} checked={rows.length > 0 && selected.length === rows.length} indeterminate={selected.length > 0 && selected.length < rows.length}
             onChange={event => setSelected(event.target.checked ? rows.map(row => row.taskTypeId) : [])} /></Th>
           <Th>任务名称</Th><Th>类型</Th><Th align="right">时长</Th><Th align="right" className="e2-gap"><Explain label="权重的说明" content="不是每单的钱。派单时，这条任务和设备当时能接的其他启用任务按权重比例分收益，权重越高分得越多。">权重</Explain></Th><Th className="e2-gap">状态<Explain label="任务启用状态的说明" content="已启用的任务可参加新派单；停用的不再参加新派单，停用不会取消当前单。" /></Th>{ctx.canWriteE2 && <Th sticky="end" fit>操作</Th>}
-        </tr></thead><tbody>{readingTasks ? <TableLoading columns={columns} /> : tasks.state === "error" ? <TableMessage columns={columns} role="alert"><BlockState retryKey="e2-tasks-679" state="error" title="任务读取失败" detail={tasks.error} onRetry={() => void refresh(query, "tasks")} /></TableMessage>
+        </tr></thead><tbody>{readingTasks ? <TableLoading columns={columns} /> : tasks.state === "error" ? <TableMessage columns={columns} role="alert"><BlockState retryKey="e2-tasks-679" state="error" title="任务加载失败" detail={tasks.error} onRetry={() => void refresh(query, "tasks")} /></TableMessage>
           : !query.code && pools.state === "error" ? <TableMessage columns={columns}>任务等级读取成功后，再读取任务列表。</TableMessage>
           : rows.length ? rows.map(row => <Tr key={row.taskTypeId} selected={selected.includes(row.taskTypeId)}><Td><Checkbox aria-label={`选择 ${row.name}`} title={writeBlock} disabled={!!writeBlock} checked={selected.includes(row.taskTypeId)} onChange={event => setSelected(event.target.checked ? [...selected, row.taskTypeId] : selected.filter(id => id !== row.taskTypeId))} /></Td>
             <Td><Cell full main={row.name} title={row.name} /></Td><Td><TaskClassTag taskClass={row.taskClass} /></Td>
@@ -729,7 +729,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           </Facts>
           {!dialog.original && (dialog.kind === "random" || dialog.enabled) && <Notice tone="neutral">{dialog.kind === "random" ? "生成后立即加入当前等级，仅影响之后新派的任务；整批一起生效，有一个加不了就都不加。" : "只影响之后新派的任务，不改当前单。"}</Notice>}
           {dialog.kind === "status" && !dialog.enabled && <>{impactLoading ? <BlockState state="loading" title="正在计算停用影响…" />
-            : impactError ? <BlockState state="error" title="停用影响读取失败" detail={impactError} onRetry={() => void readImpact(dialog)} retryLabel="重新计算影响" />
+            : impactError ? <BlockState state="error" title="停用影响加载失败" detail={impactError} onRetry={() => void readImpact(dialog)} retryLabel="重新计算影响" />
               : impact && <>{dialog.original && <p className="rd-aux">首次读取的影响 · {impactAt ? businessStamp(impactAt) : "—"} · {businessZoneText()}</p>}
                 {impact.productsLosingAllTasks.length > 0 ? <Notice tone="warn" title="以下商品将没有可用任务"><ul className="e2-command-tasks">{impact.productsLosingAllTasks.map(item => <li key={item.productKey}>{item.productName}</li>)}</ul>
                   <Facts><Fact lead tone="warn" k="影响设备" unit={<>台<Explain label="影响设备的口径" content="按商品全部已发布等级判断候选。设备数统计已激活且未停用、状态合格的非手机生产设备；正在完成当前单的设备也计入，停用不会取消当前单。不等于设备管理列表总数。影响按读取时算，提交时设备数可能变化。" /></>}>{impact.devicesAffected}</Fact></Facts><p>停用不会取消当前单，当前单结束后等待配置；停跑期间不计收益、不补发。<Explain label="当前单什么时候不会完成" content="历史截止时间之前开始、还没入账的旧单例外：会被取消，不发收益。这和停用无关。" /></p>

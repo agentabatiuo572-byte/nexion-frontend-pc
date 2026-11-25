@@ -689,7 +689,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
 
   // ---------- 读取状态 ----------
   if (contentLoading && !data) return <BlockState state="loading" title="正在加载风险披露数据…" />;
-  if (!data) return <BlockState state="error" title="风险披露读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void refresh()} retrying={refreshing} />;
+  if (!data) return <BlockState state="error" title="风险披露加载失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void refresh()} retrying={refreshing} />;
 
   /** 同一个版本全页一个词一个颜色（VS-23）：映射已发布、版本可读、引用没有异常才写生效中，其余写真实状态；封存但没切换的写已发布。 */
   const versionState = (row: DisclosureVersionItemView): { text: string; tone: StateTone } => {

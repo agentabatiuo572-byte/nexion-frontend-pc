@@ -607,7 +607,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       {ctx.biLoading
         ? <BlockState state="loading" title="正在加载设备、任务、团队和各阶段的数…" />
         : ctx.biError
-          ? <BlockState state="error" title="运营数据读取失败，不显示旧数据" detail={`${ctx.biError} 可以换一个时间段再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
+          ? <BlockState state="error" title="运营数据加载失败，不显示旧数据" detail={`${ctx.biError} 可以换一个时间段再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
           : waitingCustom
             ? <BlockState state="empty" title="选好开始和结束日期，点「应用日期」后读取" detail="自定义日期按业务日算，含首尾两天。" />
             : <BlockState state="empty" title="这次没有读到运营数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />}

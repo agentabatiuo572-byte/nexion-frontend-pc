@@ -932,7 +932,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     </div>
 
     <Drawer open={alertsOpen} onClose={() => setAlertsOpen(false)} title="最近对账与告警" icon={BellRing} tone={alertCount > 0 ? "danger" : "role-other"}>
-      {!data ? <BlockState state="error" title="收款状态读取失败" detail={error} onRetry={() => void refresh()} /> : <>
+      {!data ? <BlockState state="error" title="收款状态加载失败" detail={error} onRetry={() => void refresh()} /> : <>
         <JudgmentPoints rows={[
           { label: "未解除告警", state: alertCount > 0 ? "danger" : undefined, value: `${alertCount} 条`, reason: alerts.length < alertCount ? `显示前 ${alerts.length} 条` : undefined },
           ...FUNDS_NETWORKS.map(network => ({ label: `${network} 完整对账`, value: reconLatest(network) ? `${time(reconLatest(network))}（${zone}）` : "尚无" })),

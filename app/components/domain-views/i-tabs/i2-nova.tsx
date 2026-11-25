@@ -1131,7 +1131,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   }
   if (!data) {
     return <>{header}{unknownNotice}{conflictUi}{contentError
-      ? <BlockState state="error" title="推送数据读取失败" detail={contentError} onRetry={() => void actions.reloadIContent()} />
+      ? <BlockState state="error" title="推送数据加载失败" detail={contentError} onRetry={() => void actions.reloadIContent()} />
       : <BlockState state="empty" title="暂无推送数据" />}</>;
   }
 

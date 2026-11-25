@@ -567,8 +567,8 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
         onManualCredit={(order, onSettled) => openBankManualCredit(order, async () => { await Promise.all([onSettled(), loadOverview()]); })} />
       <Fold title="银行卡支付设置" icon={Settings2} tone="role-4" summary={bankSummary}
         alert={!!overviewError || !!vietQrError || bankChannels.some(channel => !channel.enabled)} alertTone={overviewError || vietQrError ? "danger" : "warn"}>
-        {overviewError && <BlockState state="error" compact title="充值通道读取失败" detail={overviewError} onRetry={() => void loadOverview()} />}
-        {vietQrError && <BlockState state="error" compact title="银行卡支付参数读取失败" detail={vietQrError} onRetry={() => void loadOverview()} />}
+        {overviewError && <BlockState state="error" compact title="充值通道加载失败" detail={overviewError} onRetry={() => void loadOverview()} />}
+        {vietQrError && <BlockState state="error" compact title="银行卡支付参数加载失败" detail={vietQrError} onRetry={() => void loadOverview()} />}
         <ConfigList label="银行卡支付设置">
           {bankChannels.map(channel => {
             const name = depositChannelText(channel.code) ?? channel.id;
@@ -607,7 +607,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
         </Notice>
       )}
       {overviewError && !overview
-        ? <BlockState state="error" title="今日入账和对账差异读取失败" detail={overviewError} onRetry={() => void loadOverview()} />
+        ? <BlockState state="error" title="今日入账和对账差异加载失败" detail={overviewError} onRetry={() => void loadOverview()} />
         : <StatBand label="今日充值">
           <Stat tone="role-1" icon={Coins} label="今日入账" value={overview ? usdt(overview.ledgerTotal) : "—"} unit={overview ? "USDT" : undefined}
             explain="今天对账记录里平台已入账的充值合计，只算 USDT，按业务日算。和上面的历史累计无关。" />
@@ -621,7 +621,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       <Fold title="对账差异" icon={Scale} tone="role-2" summary={reconSummary} alert={hasDiff} open={reconOpen ?? hasDiff} onOpenChange={setReconOpen}
         explain="支付商记录和平台账目按通道比对，今天的数。有数据后会自动对比；没有数据不代表已经对上。">
         {overviewLoading && !overview ? <BlockState state="loading" title="正在加载对账差异…" />
-          : !overview ? <BlockState state="error" title="对账差异读取失败" detail={overviewError} onRetry={() => void loadOverview()} />
+          : !overview ? <BlockState state="error" title="对账差异加载失败" detail={overviewError} onRetry={() => void loadOverview()} />
             : reconRows.length === 0 ? <BlockState state="empty" title="今天还没有支付商流水或入账记录。有数据后会自动对比；没有数据不代表已经对上。" />
               : <Table label="对账差异">
                 <thead><tr><Th>通道</Th><Th align="right">支付商（USDT）</Th><Th align="right">平台（USDT）</Th><Th>差异</Th>{canReconcile && <Th sticky="end" align="right">操作</Th>}</tr></thead>

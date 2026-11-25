@@ -230,7 +230,7 @@ export function A3Calendar({ commands, recovery, onRecovered, nonce, onSummary, 
 
   return <div className="rd-tab-stack" data-testid="business-calendar-config">
     {!view && (loading || !error ? <BlockState state="loading" title="正在加载业务日历…" />
-      : <BlockState state="error" title="业务日历读取失败" detail={<>{error} 读到之前，后台时间按北京时间显示。</>} onRetry={() => void refresh()} />)}
+      : <BlockState state="error" title="业务日历加载失败" detail={<>{error} 读到之前，后台时间按北京时间显示。</>} onRetry={() => void refresh()} />)}
     {view && <>
     {error && !formOpen && !cancelOpen && <Notice tone="danger">{error}</Notice>}
     {success && <Notice tone="ok">{success}</Notice>}

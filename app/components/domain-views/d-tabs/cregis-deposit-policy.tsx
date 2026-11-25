@@ -209,7 +209,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
       {error && <Notice tone="warn">{error}</Notice>}
       {message && <Notice tone="progress">{message}</Notice>}
       {loading && !policy ? <BlockState state="loading" title="正在加载充值规则…" />
-        : !policy ? <BlockState state="error" title="充值规则读取失败" detail={error} onRetry={() => void refresh()} />
+        : !policy ? <BlockState state="error" title="充值规则加载失败" detail={error} onRetry={() => void refresh()} />
           : <ConfigList label="USDT 共同充值规则">
             <ConfigRow name="最低充值额" what="USDT 充值的最低金额" when="超级管理员批准后生效" where="App 充值页 › USDT 链上「最低充值」" effect="低于它的到账不自动入账"
               value={`${usdt(policy.minDepositUsdt)} USDT`} />

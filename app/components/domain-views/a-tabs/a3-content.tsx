@@ -426,7 +426,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
   useEffect(() => { onDirty(hasChanges); }, [hasChanges, onDirty]);
   if (!canRead) return <BlockState state="denied" title="没有查看业务说明的权限" />;
   if (loading && !document) return <BlockState state="loading" title="读取说明内容中…" />;
-  if (!document) return <BlockState state="error" title="说明内容读取失败" detail={<>{error} 读不到不等于没有内容：App 可能仍在显示之前发布的或系统自带的说明。</>} onRetry={() => void refresh()} />;
+  if (!document) return <BlockState state="error" title="说明内容加载失败" detail={<>{error} 读不到不等于没有内容：App 可能仍在显示之前发布的或系统自带的说明。</>} onRetry={() => void refresh()} />;
 
   const locked = !canWrite || loading || saving || Boolean(original) || !readReady;
   const patchLocale = (next: Row) => { if (!document || locked || busyRef.current) return; const entry = row(document.contents[key]); const locales = row(entry.locales); setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [locale]: next } } } }); };

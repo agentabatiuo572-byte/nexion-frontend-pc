@@ -1170,7 +1170,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         }} />}
       {conflictUi}
       <I3PendingCapNotice rows={pendingCapRows} link={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>到操作记录与审批看</Link> : undefined} />
-      {!data ? contentLoading ? <BlockState state="loading" title="正在加载通知活动…" /> : <BlockState state="error" title="通知活动读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void actions.reloadIContent()} /> : <>
+      {!data ? contentLoading ? <BlockState state="loading" title="正在加载通知活动…" /> : <BlockState state="error" title="通知活动加载失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void actions.reloadIContent()} /> : <>
       {conclusion}
 
       <StatBand label="通知活动概况">

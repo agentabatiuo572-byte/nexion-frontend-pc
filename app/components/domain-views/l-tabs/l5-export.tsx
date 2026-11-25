@@ -489,7 +489,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       {ctx.biLoading
         ? <BlockState state="loading" title="正在加载导出任务、统计和规则…" />
         : ctx.biError
-          ? <BlockState state="error" title="导出数据读取失败" detail={`${ctx.biError} 创建、放行和下载先关着。请重新加载；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
+          ? <BlockState state="error" title="导出数据加载失败" detail={`${ctx.biError} 创建、放行和下载先关着。请重新加载；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
           : <BlockState state="empty" title="这次没有读到导出数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />}
     </>
   );
@@ -823,7 +823,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <div className="l5-list-tools">
           <Segments<number> label="导出任务状态筛选" value={filter} items={segItems} onChange={selectFilter} />
         </div>
-        {taskError && <BlockState state="error" title="导出任务读取失败，不显示旧列表" detail={`${taskError} 可以换个状态再读，或点页头「刷新」。`} />}
+        {taskError && <BlockState state="error" title="导出任务加载失败，不显示旧列表" detail={`${taskError} 可以换个状态再读，或点页头「刷新」。`} />}
         {!taskError && pendingTasks.length > 0 && (
           <section className="l5-pending" aria-label="等待放行">
             <h3 className="l5-sub-title">等待放行 <span className="l5-weak">这一页 {pendingTasks.length} 份{pending > pendingTasks.length ? `，共 ${pending} 份` : ""} · 时间为{businessZone().label}</span></h3>
@@ -902,7 +902,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
             <div className="l5-create-head"><IconTile tone="role-3" icon={ScrollText} size={28} /><h3 id="l5-create-reg">当前披露快照</h3><Explain label="当前披露快照是什么" content={`按「${i5Name}」当前生效的版本，生成给监管看的汇总报告，不含单个用户明细。`} /></div>
             <RouteFacts rows={[["进任务列表", "进"], ["要放行", "不用"], ["拿到文件", "生成后在任务列表下载", true]]} />
             {regulatoryLoading && <BlockState compact state="loading" title="正在加载可用的地区和版本…" />}
-            {!regulatoryLoading && regulatoryError && <BlockState compact state="error" title="披露版本读取失败" detail={regulatoryError} onRetry={() => void ctx.reloadBi?.()} />}
+            {!regulatoryLoading && regulatoryError && <BlockState compact state="error" title="披露版本加载失败" detail={regulatoryError} onRetry={() => void ctx.reloadBi?.()} />}
             {!regulatoryLoading && !regulatoryError && disclosures.length === 0 && <p className="l5-create-types">还没有 7 章齐全的当前版本，到「{i5Name}」发布后再来</p>}
             {!regulatoryLoading && !regulatoryError && disclosures.length > 0 && (
               <Fold inset title="可用地区" summary={`${disclosures.length} 个`}>

@@ -236,7 +236,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
       })()}
       {error && !(preserveDraft.current && error === CONFLICT) && <Notice tone={document ? "warn" : "danger"}>{error}</Notice>}
       {loading && !document ? <BlockState state="loading" title="正在加载等级说明" />
-        : !document ? <BlockState state="error" title="等级说明读取失败，现在的状态没确认" detail={error ?? undefined} onRetry={() => void refresh()} />
+        : !document ? <BlockState state="error" title="等级说明加载失败，现在的状态没确认" detail={error ?? undefined} onRetry={() => void refresh()} />
           : <>
             <div className="f1-how-head">{statusLine}</div>
             <div className="rd-split f1-how" data-detail="" data-preview="">

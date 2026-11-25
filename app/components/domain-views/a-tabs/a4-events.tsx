@@ -1370,7 +1370,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         {ticketNotice}
         {registryModal}
         <Panel title="用户行为事件">
-          <BlockState state="error" title="事件数据读取失败" detail={<><p>{loadError}</p><p>为避免误判，页面已停止展示和写入。</p></>}
+          <BlockState state="error" title="事件数据加载失败" detail={<><p>{loadError}</p><p>为避免误判，页面已停止展示和写入。</p></>}
             onRetry={() => void refreshOverview()} />
         </Panel>
       </div>

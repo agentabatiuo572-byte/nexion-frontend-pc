@@ -166,7 +166,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
 
   if (!canRead) return <BlockState state="denied" title="没有查看 App 分享与下载的权限" />;
   if (loading && !config) return <BlockState state="loading" title="正在加载 App 分享与下载…" />;
-  if (!config) return <BlockState state="error" title="App 分享与下载读取失败" detail={<>{error} 读不到时不显示旧表单，免得按旧值保存。</>} onRetry={() => void refresh()} />;
+  if (!config) return <BlockState state="error" title="App 分享与下载加载失败" detail={<>{error} 读不到时不显示旧表单，免得按旧值保存。</>} onRetry={() => void refresh()} />;
 
   const patchChannel = (index: number, patch: Record<string, unknown>) => {
     setConfig({ ...config, channels: config.channels.map((channel, rowIndex) => rowIndex === index ? { ...channel, ...patch } : channel) });

@@ -3024,7 +3024,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const pendingTab = (
     <>
       {mainError && !main ? (
-        <BlockState state="error" title="审批单读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} afterRetryFocus={pendingTitle} />
+        <BlockState state="error" title="审批单加载失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} afterRetryFocus={pendingTitle} />
       ) : <>
         {/* 待审批是数量不是状态，按角色色；应急、资金类只给图标底上色，数字正文色（必须改 4，同提现审核）。 */}
         <StatBand label="待审批汇总" fit>
@@ -3204,7 +3204,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const orderedParams = [...mechanismParams].sort((a, b) => (PARAM_ORDER.indexOf(a.key) + 1 || 99) - (PARAM_ORDER.indexOf(b.key) + 1 || 99));
   const schemaNow = schemaVersion(mechanismParams.find((p) => p.key === "schema")?.value);
   const settingsTab = mainError && !main ? (
-    <BlockState retryKey="a2-audit-3198" state="error" title="机制设置读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
+    <BlockState retryKey="a2-audit-3198" state="error" title="机制设置加载失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
   ) : !main ? (
     <BlockState state="loading" title="正在加载机制设置…" />
   ) : (

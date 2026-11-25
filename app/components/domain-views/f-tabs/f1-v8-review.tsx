@@ -37,7 +37,7 @@ export function F1V8Review({ ctx, state, v8, canApprove, onApprove }: {
       explain={<><p>名单里是已满足 V8 数值条件的 V7。核对推荐信、做完官方审核后点「审核通过」；审核不通过的不用处理，系统不会自动升 V8。</p>
         <p>驳回或撤回后回到名单，原因在「操作记录与审批」看；已提交的人数值掉下去也不会自动撤单。</p></>}>
       {state.error && rows.length === 0
-        ? <BlockState state="error" title="V8 审核名单读取失败" detail={state.error} onRetry={ctx.queryV8Review ? () => void ctx.queryV8Review!() : undefined} retrying={state.loading} />
+        ? <BlockState state="error" title="V8 审核名单加载失败" detail={state.error} onRetry={ctx.queryV8Review ? () => void ctx.queryV8Review!() : undefined} retrying={state.loading} />
         : rows.length === 0 && !state.loading
           ? <BlockState state="empty" title="还没有 V7 满足 V8 数值条件" detail="V1–V8 各级数值条件都满足的 V7 会列在这里；系统不会自动升到 V8。" />
           : <Table label="已满足 V8 数值条件" className="f1-table f1-v8-table">
