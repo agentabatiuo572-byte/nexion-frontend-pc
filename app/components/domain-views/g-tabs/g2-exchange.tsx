@@ -46,7 +46,8 @@ import { summarizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { gParamApprovalFeedback, useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
+import { expiredTag, GRecoveryNotice, GRejectedRelease, GReplayRejectionNote, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
+import { rejectedTag } from "../verified-release";
 import { amountDisplay } from "@/lib/format";
 
 const OPERATOR = currentAdminOperator;
@@ -258,6 +259,7 @@ function paramValueText(key: string, raw: string | undefined, display?: string) 
 
 /** 原申请记录的状态：标签、色调和气泡（G 域五页同一写法）。 */
 function recoveryTag(record: GParamRecovery) {
+  if (record.replayRejection && !record.ticket) return rejectedTag();
   if (record.status === "unknown") return unknownTag("approval", G_PARAM_APPROVAL_RECOVERY);
   if (record.status === "pending") return pendingTag();
   if (record.status === "expired") return expiredTag("approval");
@@ -503,12 +505,16 @@ function G2ExchangePage() {
         const params = record.request.command.params as { value?: unknown; expectedValue?: unknown };
         const to = paramValueText(key, typeof params.value === "string" ? params.value : undefined);
         const from = typeof params.expectedValue === "string" ? paramValueText(key, params.expectedValue) : undefined;
+        const change = from ? <Change from={from} to={to} /> : <>申请改成 {to}</>;
+        const rejected = record.replayRejection && !record.ticket;
         return {
           key: record.commandKey, name: paramName(key), submittedAt: record.createdAt, ticket: record.ticket?.id, tag: recoveryTag(record),
-          change: from ? <Change from={from} to={to} /> : <>申请改成 {to}</>,
+          change: <>{change}{rejected && <GReplayRejectionNote record={record} />}</>,
           actions: <>
             <Button size="sm" disabled={recoverBusy} aria-label={`查询${paramName(key)}的原操作`} onClick={() => void recover(key, false)}>查询原操作</Button>
             {record.canRetry && <Button size="sm" disabled={recoverBusy} aria-label={`按原操作重试${paramName(key)}`} onClick={() => void recover(key, true)}>按原操作重试</Button>}
+            {rejected && <GRejectedRelease record={record} name={paramName(key)} target={change} disabled={recoverBusy} toast={toast}
+              getSnapshot={() => paramApproval.rejectedSnapshot(record)} release={() => paramApproval.releaseRejected(record)} />}
           </>,
         };
       }),

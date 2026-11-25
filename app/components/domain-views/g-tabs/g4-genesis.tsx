@@ -45,17 +45,21 @@ import { configApprovalOriginalInput, pendingConfigApproval } from "@/lib/admin/
 import G4AdminOperations, { G4_CONFIGS, g4ConfigValueShown, g4Count, type G4ConfirmReq } from "./g4-admin-operations";
 import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
 import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4-tier-confirm";
-import { canRetryG4DirectCommand, g4DirectAuthority, g4DirectCommandExpired, g4DirectObject, listG4DirectCommands, subscribeG4DirectCommands, g4DirectCommandVersion, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
+import { canRetryG4DirectCommand, g4DirectAuthority, g4DirectCommandExpired, g4DirectObject, g4DividendRejectionSnapshot, isG4DividendRerun, listG4DirectCommands, releaseG4DividendRejection, subscribeG4DirectCommands, g4DirectCommandVersion, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { canProposeGParam, gParamApprovalFeedback, useGParamApproval } from "@/lib/admin/use-g-param-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { expiredTag, unknownTag } from "./g-recovery";
+import { expiredTag, GRejectedRelease, GReplayRejectionNote, unknownTag } from "./g-recovery";
+import { rejectedTag } from "../verified-release";
+import { replayRejectionText } from "@/lib/admin/retry-rejected";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { G4_PARAM_NAME, G4RecoveryNotice, g4Amount, g4ParamValueText, g4Plain, g4RecoveryTag, type G4ExtraRecovery } from "./g4-recovery";
 
 /** 系列当前价的名字：名称列窄时在括号前折行，不把「计价）」单独留在一行。 */
 const PRICE_NAME = <>系列当前价<span>（分红计价）</span></>;
 
 const OPERATOR = currentAdminOperator;
+const G4_DIVIDEND_REPLAY_HINT = "可按原操作重试。会用原编号重新发送，靠幂等保护，不会重复执行。";
 
 function messageOf(error: unknown) {
   return displayAdminError(error);
@@ -387,6 +391,8 @@ function G4GenesisPage() {
     return overview.nodes.find((node) => node.id === nodeDrawer) || null;
   }, [overview, nodeDrawer]);
 
+  const pendingDirect = () => mc?.directObject && session
+    ? listG4DirectCommands(session.adminId).find(row => g4DirectObject(row) === mc.directObject) : undefined;
   const confirmModal = mc && (
     <OperationConfirmModal briefKind={mc.briefKind}
       action={mc.action}
@@ -397,11 +403,23 @@ function G4GenesisPage() {
       edit={mc.edit}
       businessForm={mc.businessForm}
       reasonMax={mc.reasonMax}
-      getPendingReason={() => (mc.directObject && session ? listG4DirectCommands(session.adminId).find(row => g4DirectObject(row) === mc.directObject) : undefined)?.body ? JSON.parse(listG4DirectCommands(session!.adminId).find(row => g4DirectObject(row) === mc.directObject)!.body).reason : mc.getPendingReason?.()}
-      getPendingRecovery={() => mc.approvalObject === undefined ? undefined
-        : paramApproval.getPendingRecovery(mc.approvalObject, () => openActionConfirm(null))}
+      getPendingReason={() => {
+        const saved = pendingDirect();
+        return saved ? JSON.parse(saved.body).reason : mc.getPendingReason?.();
+      }}
+      getPendingRecovery={() => {
+        const saved = pendingDirect();
+        if (saved && isG4DividendRerun(saved)) {
+          const retryAllowed = canRetryG4DirectCommand(saved);
+          return { expiresAt: saved.expiresAt, queryOnly: !retryAllowed,
+            statusText: replayRejectionText(saved) ?? (g4DirectCommandExpired(saved) ? RETRY_EXPIRED_TEXT
+              : retryAllowed ? G4_DIVIDEND_REPLAY_HINT : "当前没有重试权限，原记录继续保留。") };
+        }
+        return mc.approvalObject === undefined ? undefined
+          : paramApproval.getPendingRecovery(mc.approvalObject, () => openActionConfirm(null));
+      }}
       getPendingBusinessValue={() => {
-        const saved = mc.directObject && session ? listG4DirectCommands(session.adminId).find(row => g4DirectObject(row) === mc.directObject) : undefined;
+        const saved = pendingDirect();
         return saved ? Object.fromEntries(Object.entries(JSON.parse(saved.body)).map(([key, value]) => [key, String(value)])) : mc.getPendingBusinessValue?.();
       }}
       effect={mc.effect}
@@ -415,9 +433,9 @@ function G4GenesisPage() {
       reasonPlaceholder={mc.reasonPlaceholder}
       onClose={() => openActionConfirm(null)}
       onConfirm={async (reason, newValue, businessValue) => {
-        const saved = mc.directObject && session ? listG4DirectCommands(session.adminId).find(row => g4DirectObject(row) === mc.directObject) : undefined;
+        const saved = pendingDirect();
         if (saved) { await recoverDirect(saved, true); return; }
-        if (mc.directObject && !paramApproval.record(mc.directObject.replace(/^params\//, ""))
+        if (mc.directObject && !paramApproval.record(mc.approvalObject ?? mc.directObject.replace(/^params\//, ""))
           && !canStartNew(g4DirectAuthority({ path: `/nex/genesis/${mc.directObject}`, method: "PATCH", body: "" }))) {
           openActionConfirm(null);
           throw new Error("页面要先重新读取成功并核对权限，才能发起新修改。");
@@ -469,7 +487,7 @@ function G4GenesisPage() {
     setBusyKey(`original:${command.commandKey}`);
     // A replay receipt contains the original overview, never the current view.
     invalidateOverview();
-    if (retry) { openActionConfirm(null); setTierConfirm(null); }
+    if (retry && !isG4DividendRerun(command)) { openActionConfirm(null); setTierConfirm(null); }
     let verdict = false;
     try {
       if (retry) {
@@ -541,12 +559,23 @@ function G4GenesisPage() {
       />}
   </>;
   const recoveryNotice = (extra: G4ExtraRecovery[] = []) => <G4RecoveryNotice approval={paramApproval} toast={toast} extra={[
-    ...directRecords.map(command => ({
-      key: command.commandKey, name: directName(command),
-      change: directChangeText(command), submittedAt: command.createdAt,
-      tag: g4DirectCommandExpired(command) ? expiredTag("direct") : unknownTag("direct"),
-      action: <><Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, false).catch(() => undefined); }}>读取当前配置</Button>{canRetryG4DirectCommand(command) && <Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, true).catch(() => undefined); }}>按原操作重试</Button>}</>,
-    })), ...(!overview && tierPending ? [{
+    ...directRecords.map(command => {
+      const name = directName(command);
+      const change = directChangeText(command);
+      const canRetry = canRetryG4DirectCommand(command);
+      return {
+        key: command.commandKey, name, submittedAt: command.createdAt,
+        change: <>{change}{command.replayRejection ? <GReplayRejectionNote record={command} />
+          : isG4DividendRerun(command) && canRetry && <span className="rd-note"> · {G4_DIVIDEND_REPLAY_HINT}</span>}</>,
+        tag: command.replayRejection ? rejectedTag() : g4DirectCommandExpired(command) ? expiredTag("direct") : unknownTag("direct"),
+        action: <>
+          <Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, false).catch(() => undefined); }}>读取当前配置</Button>
+          {canRetry && <Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, true).catch(() => undefined); }}>按原操作重试</Button>}
+          {command.replayRejection && <GRejectedRelease record={command} name={name} target={change} disabled={!!busyKey} toast={toast}
+            getSnapshot={() => g4DividendRejectionSnapshot(command)} release={() => releaseG4DividendRejection(command)} />}
+        </>,
+      };
+    }), ...(!overview && tierPending ? [{
       key: "tiers", name: "价格档位", change: "档位修改的原申请（扩容或未售涨价）",
       tag: <StatusTag tone="warn" icon={Clock3}>结果未知</StatusTag>,
       action: <Button size="sm" disabled={!!busyKey} onClick={() => setTierConfirm({ epoch })}>查询原操作</Button>,
@@ -957,6 +986,7 @@ function G4GenesisPage() {
     const original = await paramApproval.open(dividend.batchNo);
     if (original === false) return;
     openActionConfirm({ briefKind: "funds", directObject: `dividend-batches/${encodeURIComponent(dividend.batchNo)}/rerun`,
+      approvalObject: dividend.batchNo,
       action: `重新发放今日收益 ${dividend.batchNo}`,
       title: original ? "补发收益的原申请" : "重新发放今日收益",
       detail: "按这一批的真实待付明细发放：没发成功的（待发、失败）按原用户、原金额补，已发的不重复发；今天还没有批次时按合格持仓新建这一批。",
@@ -1007,7 +1037,7 @@ function G4GenesisPage() {
             decisionRef: businessValue?.decisionRef, expectedRevision: state.expectedRevision,
             approvalRequired: !state.completed && Number(state.amountUsdt) > 0 },
           () => rerunG4GenesisDividendBatch(dividend.batchNo, reason, OPERATOR(), businessValue?.decisionRef));
-          if ("direct" in result) toast("已重新发放，只补了没发成功的");
+          if ("direct" in result) toast("已核对该批次，没有新增付款。");
         }, "");
       },
     });
@@ -1152,7 +1182,7 @@ function G4GenesisPage() {
 
   // 今天的分红：先看有没有补发原申请，再看发了没有、收益门开没开。后端没有每天自动发放的任务（已提后端），不写成会自动发。
   const dividendState: { text: string; tone: "ok" | "warn" | "neutral" | "done"; sub: string; icon: typeof Coins } = batchRecord
-    ? { text: batchRecord.status === "pending" ? "补发待审批" : batchRecord.status === "unknown" ? "补发结果未知" : { approved: "补发已批准", rejected: "补发已驳回", withdrawn: "补发已撤回", expired: "补发已过期" }[batchRecord.status], tone: "warn", sub: `批次 ${dividend.batchNo}`, icon: Clock3 }
+    ? { text: batchRecord.replayRejection && !batchRecord.ticket ? "补发重试被拒绝" : batchRecord.status === "pending" ? "补发待审批" : batchRecord.status === "unknown" ? "补发结果未知" : { approved: "补发已批准", rejected: "补发已驳回", withdrawn: "补发已撤回", expired: "补发已过期" }[batchRecord.status], tone: "warn", sub: `批次 ${dividend.batchNo}`, icon: Clock3 }
     : dividend.paidCount > 0
       ? { text: "已发", tone: "ok", sub: `${fmtNumber(dividend.paidCount, 0)} 个节点 · ${g4Amount(dividend.paidAmountUsdt)} USDT`, icon: Coins }
       : !overview.emissionGate.open
@@ -1234,7 +1264,8 @@ function G4GenesisPage() {
   }) : [];
 
   const marketDisabledReason = busy ? busyReason : directRecord("market-open-state") ? "上次修改结果未知，先在页面上方读取当前配置核对，或按原操作重试" : marketClosed && !overview.catalogAvailable ? "节点系列和价格档位不完整，补齐后才能恢复开放" : undefined;
-  const rerunDisabledReason = directRecord(`dividend-batches/${encodeURIComponent(dividend.batchNo)}/rerun`) ? "上次修改结果未知，先在页面上方读取当前配置核对，或按原操作重试" : busyKey ? "正在处理上一项，稍候再操作"
+  const directRerun = directRecord(`dividend-batches/${encodeURIComponent(dividend.batchNo)}/rerun`);
+  const rerunDisabledReason = directRerun ? replayRejectionText(directRerun) ?? "上次补发结果未知，请在页面上方核对原操作" : busyKey ? "正在处理上一项，稍候再操作"
     : !paramApproval.record(dividend.batchNo) && refreshError ? "页面要先重新读取成功，才能再发"
       : !paramApproval.record(dividend.batchNo) && !overview.emissionGate.open ? "「运营阶段设置」里的开始发放收益还没开，不能发放"
         : !paramApproval.record(dividend.batchNo) && !dividend.batchNo ? "今天的批次号还没有，暂时不能发放" : undefined;

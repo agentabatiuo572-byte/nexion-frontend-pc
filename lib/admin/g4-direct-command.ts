@@ -1,7 +1,8 @@
 import { createA2CommandKey, A2OutcomeUncertainError } from "./a2-client";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationRecord } from "./pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { replayRejectionText } from "./retry-rejected";
 
 export type G4DirectRequest = {
   path: string;
@@ -25,6 +26,10 @@ function changed() { version += 1; listeners.forEach(listener => listener()); }
 export function g4DirectObject(request: G4DirectRequest) {
   if (request.path.startsWith("/nex/genesis/tiers")) return "tiers";
   return request.path.replace("/nex/genesis/", "");
+}
+
+export function isG4DividendRerun(request: G4DirectRequest) {
+  return request.method === "POST" && /^dividend-batches\/[^/]+\/rerun$/.test(g4DirectObject(request));
 }
 
 export function listG4DirectCommands(adminId: number): G4DirectCommand[] {
@@ -63,8 +68,20 @@ export function g4DirectAuthority(request: G4DirectRequest) {
 
 export function canRetryG4DirectCommand(command: G4DirectCommand) {
   const auth = useAdminAuth.getState();
-  return !g4DirectCommandExpired(command) && auth.isAuthenticated && !auth.logoutPending
+  return !command.replayRejection && !g4DirectCommandExpired(command) && auth.isAuthenticated && !auth.logoutPending
     && auth.session?.adminId === command.adminId && auth.session.authorities.includes(g4DirectAuthority(command));
+}
+
+export function g4DividendRejectionSnapshot(command: G4DirectCommand) {
+  if (!isG4DividendRerun(command)) return undefined;
+  return listG4DirectCommands(command.adminId).find(record => record.commandKey === command.commandKey)?.replayRejection;
+}
+
+export function releaseG4DividendRejection(command: G4DirectCommand) {
+  if (!g4DividendRejectionSnapshot(command)) return false;
+  commands.forget(command.fingerprint, command.commandKey);
+  changed();
+  return !listG4DirectCommands(command.adminId).some(record => record.commandKey === command.commandKey);
 }
 
 /** Submission and recovery both send the saved bytes. A current GET is never a verdict. */
@@ -76,6 +93,7 @@ export async function executeG4DirectCommand<T>(request: G4DirectRequest, send: 
   const object = g4DirectObject(request);
   let original = listG4DirectCommands(adminId).find(record => g4DirectObject(record) === object);
   if (saved && original?.commandKey !== saved.commandKey) throw new Error("原操作已结束，请重新读取当前状态。");
+  if (original?.replayRejection) throw new Error(replayRejectionText(original));
   if (original && !saved && (original.body !== request.body || original.method !== request.method || original.path !== request.path)) {
     throw new A2OutcomeUncertainError("这一项有结果未知的原操作，请查询或按原操作重试，不能改值或理由。", original.commandKey);
   }
@@ -102,8 +120,10 @@ export async function executeG4DirectCommand<T>(request: G4DirectRequest, send: 
     changed();
     return result;
   } catch (error) {
-    if (isExplicitRejection(error)) {
-      commands.forget(command.fingerprint, command.commandKey);
+    const code = explicitRejectionCode(error);
+    if (code) {
+      if (saved && isG4DividendRerun(command)) commands.markReplayRejected(command.fingerprint, command.commandKey, code);
+      else commands.forget(command.fingerprint, command.commandKey);
       changed();
       throw error;
     }

@@ -7,7 +7,8 @@
  */
 import { useState, type ReactNode } from "react";
 import { Button, Change } from "@/app/components/rd";
-import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
+import { expiredTag, GRecoveryNotice, GRejectedRelease, GReplayRejectionNote, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
+import { rejectedTag } from "../verified-release";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { divBaseFormulaText, G_PARAM_APPROVAL_RECOVERY, G_PARAM_RECOVERY } from "@/lib/admin/operator-copy";
 import { gParamApprovalFeedback, type GParamRecovery, type useGParamApproval } from "@/lib/admin/use-g-param-approval";
@@ -56,7 +57,8 @@ export function g4ParamValueText(key: string, raw: string | undefined) {
 /** 每日收益比例的调高申请在等批准时，仍可直接调低（立即生效）；调低后原申请批准时后端按当前值已变拒绝。其他参数待审批时调高调低都改不了。 */
 export const G4_DIVIDEND_PENDING_NOTE = "批准前仍是原比例；这期间仍可以把比例调低，调低立即生效，原调高申请批准时会因为比例变了被拒绝。";
 
-export function g4RecoveryTag(record: Pick<GParamRecovery, "status">, batch = false, obj?: string) {
+export function g4RecoveryTag(record: Pick<GParamRecovery, "status" | "ticket" | "replayRejection">, batch = false, obj?: string) {
+  if (record.replayRejection && !record.ticket) return rejectedTag();
   if (record.status === "unknown") return unknownTag("approval", G_PARAM_APPROVAL_RECOVERY);
   if (record.status === "pending") return pendingTag(batch ? "批准前不付款；批准时按原批次的待付明细发放。"
     : obj === "dividend" ? G4_DIVIDEND_PENDING_NOTE : "批准前参数不变；这一项被审批锁住，调高调低都改不了。");
@@ -107,12 +109,16 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
       const name = batch ? "补发收益" : G4_PARAM_NAME[obj] ?? obj;
       const to = typeof params.value === "string" ? g4ParamValueText(obj, params.value) : "—";
       const from = typeof params.expectedValue === "string" ? g4ParamValueText(obj, params.expectedValue) : undefined;
+      const change = batch ? <>批次 <span data-mono>{obj}</span></> : from ? <Change from={from} to={to} /> : <>申请改成 {to}</>;
+      const rejected = record.replayRejection && !record.ticket;
       return {
         key: record.commandKey, name, submittedAt: record.createdAt, tag: g4RecoveryTag(record, batch, obj), ticket: record.ticket?.id,
-        change: batch ? <>批次 <span data-mono>{obj}</span></> : from ? <Change from={from} to={to} /> : <>申请改成 {to}</>,
+        change: <>{change}{rejected && <GReplayRejectionNote record={record} />}</>,
         actions: <>
           <Button size="sm" disabled={busy} aria-label={`查询${name}${batch ? ` ${obj}` : ""}的原操作`} onClick={() => void recover(obj, false)}>查询原操作</Button>
           {record.canRetry && <Button size="sm" disabled={busy} aria-label={`按原操作重试${name}${batch ? ` ${obj}` : ""}`} onClick={() => void recover(obj, true)}>按原操作重试</Button>}
+          {rejected && <GRejectedRelease record={record} name={name} target={change} disabled={busy} toast={toast}
+            getSnapshot={() => approval.rejectedSnapshot(record)} release={() => approval.releaseRejected(record)} />}
         </>,
       };
     }),
