@@ -229,8 +229,8 @@ export function A3Calendar({ commands, recovery, onRecovered, nonce, onSummary, 
   );
 
   return <div className="rd-tab-stack" data-testid="business-calendar-config">
-    {!view && (loading || !error ? <BlockState state="loading" title="正在读取业务日历…" />
-      : <BlockState state="error" title="业务日历读取失败" detail={<>{error} 读到之前，后台时间按北京时间显示。</>} onRetry={() => void refresh()} />)}
+    {!view && (loading || !error ? <BlockState state="loading" title="正在加载业务日历…" />
+      : <BlockState state="error" title="业务日历加载失败" detail={<>{error} 读到之前，后台时间按北京时间显示。</>} onRetry={() => void refresh()} />)}
     {view && <>
     {error && !formOpen && !cancelOpen && <Notice tone="danger">{error}</Notice>}
     {success && <Notice tone="ok">{success}</Notice>}
@@ -242,8 +242,8 @@ export function A3Calendar({ commands, recovery, onRecovered, nonce, onSummary, 
         <p>不跟着变的：后台存的时间（北京时间）、登录过期、转盘（UTC 零点重置）、越南银行日和「USDT 提现参数」的单日限额（越南时间）。</p>
       </>}
       actions={canWrite ? (pending
-        ? <Button size="sm" variant="danger-outline" icon={<CalendarX2 size={14} aria-hidden />} disabledReason={original ? "结果未知" : !readReady ? "正在读取" : saving ? "正在提交" : undefined} onClick={() => { setError(null); setSuccess(null); setCancelOpen(true); }}>撤销这次安排</Button>
-        : <Button size="sm" variant="primary" icon={<CalendarPlus size={14} aria-hidden />} disabledReason={original ? "结果未知" : !readReady ? "正在读取" : undefined} onClick={openForm}>安排新的业务时区</Button>)
+        ? <Button size="sm" variant="danger-outline" icon={<CalendarX2 size={14} aria-hidden />} disabledReason={original ? "结果未知" : !readReady ? "正在加载" : saving ? "正在提交" : undefined} onClick={() => { setError(null); setSuccess(null); setCancelOpen(true); }}>撤销这次安排</Button>
+        : <Button size="sm" variant="primary" icon={<CalendarPlus size={14} aria-hidden />} disabledReason={original ? "结果未知" : !readReady ? "正在加载" : undefined} onClick={openForm}>安排新的业务时区</Button>)
         : <span className="rd-note">只有超级管理员能安排和撤销</span>}>
       {!view.unified && growthZone && <Notice tone="neutral">现在增长与团队按{zoneLabel(growthZone)}（{offsetOf(growthZone)}），其他模块按{view.currentZoneLabel}（{view.currentOffset}）。下一次安排对两组模块同时生效，生效后统一。</Notice>}
       {timeline}

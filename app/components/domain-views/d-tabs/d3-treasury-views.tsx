@@ -228,7 +228,7 @@ function MaturityPanel({ maturity, loading, error, onRetry }: { maturity: D3Matu
   if (!maturity) {
     return (
       <Panel title="哪天要付的钱最多" icon={CalendarClock} tone="role-3" data-testid="b2-maturity-chart">
-        {loading ? <BlockState state="loading" title="正在读取到期预测…" /> : <BlockState state="error" title="到期预测读取失败，不显示旧数据" detail={error} onRetry={onRetry} />}
+        {loading ? <BlockState state="loading" title="正在加载到期预测…" /> : <BlockState state="error" title="到期预测加载失败，不显示旧数据" detail={error} onRetry={onRetry} />}
       </Panel>
     );
   }
@@ -514,7 +514,7 @@ export function FlowTab({ history }: { history: { data: B2LiquidityHistory | nul
     {history.error && !history.data && <BlockState state="error" title="资金流历史暂不可用" detail={history.error} onRetry={history.reload} />}
     <div className="rd-split" data-even="">
       <Panel title="这几天钱是进多还是出多" sub={flowsEmpty ? `近 ${flows.length} 天` : `近 ${flows.length || 8} 天 · 万 USDT`} explain="按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。" icon={ArrowDownUp} tone="role-2" data-testid="b2-fund-flow-history">
-        {pending ? <BlockState state="loading" title="正在读取资金流…" />
+        {pending ? <BlockState state="loading" title="正在加载资金流…" />
           : !history.data ? <p className="rd-note">资金流图暂不可用</p>
           : flowsEmpty ? <BlockState state="empty" title={`近 ${flows.length} 天没有资金进出`} />
           : activeFlows.length === 1 ? <BlockState state="empty" title={`只有 ${activeFlows[0].label} 有资金进出`} detail={`流入 ${wan(activeFlows[0].inflowWan)}，流出 ${wan(activeFlows[0].outflowWan)}`} />
@@ -523,7 +523,7 @@ export function FlowTab({ history }: { history: { data: B2LiquidityHistory | nul
               data={flows.map((row) => ({ key: row.label, tick: row.label, values: [row.inflowWan, row.outflowWan] }))} />}
       </Panel>
       <Panel title="每个月新增入金有多少" sub={monthsEmpty ? `近 ${months.length} 个月` : `近 ${months.length || 8} 个月 · 万 USDT`} explain="只算用户成功充值，财务注入的储备不算。" icon={Coins} tone="role-2" data-testid="b2-monthly-inflow-history">
-        {pending ? <BlockState state="loading" title="正在读取新增入金…" />
+        {pending ? <BlockState state="loading" title="正在加载新增入金…" />
           : !history.data ? <p className="rd-note">新增入金图暂不可用</p>
           : monthsEmpty ? <BlockState state="empty" title={`近 ${months.length} 个月没有新增入金`} detail="这里只算用户成功充值，财务注入的储备不算。" />
           : activeMonths.length === 1 ? <BlockState state="empty" title={`只有 ${activeMonths[0].label} 有新增入金`} detail={wan(activeMonths[0].amountWan)} />

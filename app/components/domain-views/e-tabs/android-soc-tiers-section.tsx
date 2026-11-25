@@ -67,7 +67,7 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
   }
 
   const chipMissing = chipForm && (!chipForm.chip.socKey ? "请填写芯片编号" : !chipForm.chip.name.trim() ? "请填写芯片名称" : !chipForm.chip.manufacturer.trim() ? "请填写厂商" : !chipForm.aliases.trim() ? "至少填写一个已核验标识" : undefined);
-  const actions = canWrite && <div className="e6-hw-actions"><Button disabled={!editable || loading || !!chipForm || importOpen} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入芯片预设"}</Button>
+  const actions = canWrite && <div className="e6-hw-actions"><Button disabled={!editable || loading || !!chipForm || importOpen} onClick={() => void loadPresets()}>{loading ? "正在加载预设…" : "载入芯片预设"}</Button>
     <Button disabled={!editable} onClick={() => { const rule = blankAndroidRule(rules, iosRuleIds); focusTier.current = rule.id; setOpenTiers(old => new Set(old).add(rule.id)); onChange([...rules, rule], removals); }}>新增芯片档</Button></div>;
 
   return <fieldset className="ios-model-rules e6-hw-directory" aria-label="Android 芯片档">
@@ -79,7 +79,7 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
       explain="只补草稿中缺少的芯片档、芯片和标识，不改已有的区间、启停和归档。加入草稿后仍需试算和提交审批。"
       onClose={()=>{setImportOpen(false);setPresets(null);}} footer={<Decision primary={presets && <Button variant="primary" disabledReason={!editable ? "硬件草稿暂不可修改" : presets.plan.tiers.length + presets.plan.chips.length + presets.plan.aliases.length === 0 && !(presets.restore && presets.plan.removed.length) ? "没有可加入草稿的内容" : undefined} onClick={applyPresets}>加入草稿</Button>} others={<Button onClick={()=>{setImportOpen(false);setPresets(null);}}>取消</Button>}/> }>
       <div className="rd-form-stack e6-hw-drawer" aria-label="Android 芯片预设导入预览">
-        {!presets ? <BlockState state={loading?"loading":"error"} title={loading?"正在读取预设…":"预设加载失败"} detail={error} onRetry={loading?undefined:()=>void loadPresets()}/> : <>
+        {!presets ? <BlockState state={loading?"loading":"error"} title={loading?"正在加载预设…":"预设加载失败"} detail={error} onRetry={loading?undefined:()=>void loadPresets()}/> : <>
           <Facts><Fact k="新增芯片" lead unit="颗">{presets.plan.chips.length}</Fact><Fact k="新增芯片档">{presets.plan.tiers.length} 档</Fact><Fact k="补充标识">{presets.plan.aliases.length} 个</Fact><Fact k="标识冲突" tone={presets.plan.conflicts.length ? "warn" : undefined}>{presets.plan.conflicts.length} 项</Fact><Fact k="目录版本">{presets.catalog.catalogVersion}</Fact><Fact k="核验日期">{presets.catalog.verifiedOn}</Fact></Facts>
           {presets.plan.conflicts.length > 0 && <Notice tone="warn" title="标识冲突"><ul className="e6-hw-list">{presets.plan.conflicts.map(conflict => <li key={conflict}>{conflict}</li>)}</ul></Notice>}
           <Fold title="将新增芯片档" summary={`${presets.plan.tiers.length} 档`} inset defaultOpen={presets.plan.tiers.length > 0}><ul className="e6-hw-list">{presets.plan.tiers.map(tier => <li key={tier.id}><strong>{tier.name}</strong><span>{formatRange(tier)}</span></li>)}</ul>{!presets.plan.tiers.length && <p>没有待新增芯片档。</p>}</Fold>

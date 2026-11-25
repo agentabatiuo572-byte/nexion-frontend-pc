@@ -87,10 +87,10 @@ const canSendTo = (convo: SessionConvo, adminId: number) => convo.status !== "tr
   && convo.ownerAdminId === adminId;
 const conversationStateLabel = (status: SessionConvo["status"]) => status === "open" ? "进行中" : status === "transferred" ? "已转出 · 只读" : "已结束";
 const lostPermission = (cause: unknown) => cause != null && typeof cause === "object" && "status" in cause && (cause.status === 403 || cause.status === 404);
-/** 消息发送结果未知时的几句：和全站同一套说法（先查询原结果；按原操作重试不会重复发送）。 */
-const MESSAGE_UNKNOWN = "发送结果未知。先查询原结果；确认没发出再按原操作重试，不会重复发送。";
+/** 消息发送结果未知时的几句：和全站同一套说法（先查询原操作；按原操作重试不会重复发送）。 */
+const MESSAGE_UNKNOWN = "发送结果未知。先查询原操作；确认没发出再按原操作重试，不会重复发送。";
 /** 结果未知提示条的标题已经说了「结果未知」，正文只写下一步。 */
-const MESSAGE_UNKNOWN_NEXT = "先查询原结果；确认没发出再按原操作重试，不会重复发送。";
+const MESSAGE_UNKNOWN_NEXT = "先查询原操作；确认没发出再按原操作重试，不会重复发送。";
 const MESSAGE_STILL_UNKNOWN = "刚查过，结果还没出来；这条记录继续保留，稍后再查。";
 const MESSAGE_FAILED = "这条消息没发出，原文已放回输入框，可以改了再发。";
 /** 原槽已有新稿时原文另存一份（failedDraftCopies），提示条换这句。 */
@@ -155,7 +155,7 @@ function PrivateImage({ id, onRevoked }: { id: string; onRevoked: () => void }) 
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [id, retry]);
   if (error) return <span role="alert">图片暂无法查看：{error} <Button size="sm" onClick={() => setRetry((value) => value + 1)}>重试</Button></span>;
-  if (!url) return <span>图片加载中…</span>;
+  if (!url) return <span>正在加载图片…</span>;
   return <>
     <button type="button" className="m3s-image" aria-label="放大查看图片" onClick={() => setZoomed(true)}><img src={url} alt="会话图片" /></button>
     {zoomed && <RdModal wide title="查看图片" icon={ImageIcon} onClose={() => setZoomed(false)}><img className="m3s-image-full" src={url} alt="会话图片" /></RdModal>}
@@ -1911,7 +1911,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       setTimeoutPolicy(saved?.policy ?? conflictBaseline ?? policy);
       setTimeoutPending(saved);
       const savedRow = saved ? [...pendingTimeoutPolicies.list(), ...pendingMessages.list()].find(row => row.commandKey === saved.key) : undefined;
-      if (saved) { setTimeoutLatest(policy); setTimeoutInput(saved.input); setTimeoutError(savedRow && isRetryExpired(savedRow) ? RETRY_EXPIRED_TEXT : "上次保存结果未知，请先查询原结果。"); }
+      if (saved) { setTimeoutLatest(policy); setTimeoutInput(saved.input); setTimeoutError(savedRow && isRetryExpired(savedRow) ? RETRY_EXPIRED_TEXT : "上次保存结果未知，请先查询原操作。"); }
       else if (timeoutConflict) { setTimeoutLatest(policy); }
     } catch (cause) {
       if (stamp === timeoutIdentityRef.current) {
@@ -1937,7 +1937,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   };
   const saveTimeout = async (input: TimeoutInput) => {
     if (!timeoutPolicy || !canTimeout || !canReadTimeout || timeoutSaving || timeoutConflict || timeoutPending) return false;
-    try { if (readTimeoutCommand()) { setTimeoutError("上次保存结果未知，请先查询原结果。"); return false; } }
+    try { if (readTimeoutCommand()) { setTimeoutError("上次保存结果未知，请先查询原操作。"); return false; } }
     catch { setTimeoutError("上次的修改记录读不到，暂时不能再改。"); return false; }
     const command = { key: newKey(), input, policy: timeoutPolicy, operator: session?.operator || session?.username || "unknown-admin" };
     pendingTimeoutPolicies.remember(timeoutSlot, command.key, { payload: JSON.stringify(command) });
@@ -1966,7 +1966,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         if (status === 403) await revokeTimeoutWrite(stamp);
         else if (status === 409 && cause.backendMessage === "M3_TIMEOUT_POLICY_STALE") { setTimeoutConflict(true); setTimeoutError("设置刚被别人改过，你填写的内容还在；请看最新设置后重新确认。"); await refreshTimeoutLatest(); }
         else setTimeoutError(displayAdminError(cause));
-      } else { setTimeoutPending(command); setTimeoutError("保存结果未知，请查询原结果；不会重复提交。"); }
+      } else { setTimeoutPending(command); setTimeoutError("保存结果未知，请查询原操作；不会重复提交。"); }
       return false;
     } finally { if (stamp === timeoutIdentityRef.current) setTimeoutSaving(false); }
   };
@@ -2060,7 +2060,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     ...recoveries.map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt, object: customerLabel(originalCustomer(entry.locator)), tag: null,
       line: entry.first || entry.reply ? "只能查询结果" : isRedacted(entry) ? "已不能接待，只能查询结果" : "原记录不全，只能查询结果",
       detail: <p>发出时间：{businessStamp(entry.row.createdAt)}</p>, tech: sendTech(entry.row.commandKey),
-      actions: <Button size="sm" disabled={flights.current.has(`${scopeIdentity}:${originalCustomer(entry.locator) ?? entry.row.commandKey}`)} onClick={() => void queryRecovery(entry)}>查询原结果</Button> })),
+      actions: <Button size="sm" disabled={flights.current.has(`${scopeIdentity}:${originalCustomer(entry.locator) ?? entry.row.commandKey}`)} onClick={() => void queryRecovery(entry)}>查询原操作</Button> })),
     ...otherSends.filter(entry => originalCustomer(entry.locator) !== targetCustomer).map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt,
       object: customerLabel(originalCustomer(entry.locator)), tag: null, line: entry.first ? "首次联系，打开后查询或重试" : "打开原会话后查询或重试",
       detail: <p>发出时间：{businessStamp(entry.row.createdAt)}</p>, tech: sendTech(entry.row.commandKey),
@@ -2232,8 +2232,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           </div>
         </header>
         {(sessionEndRecoveries.length > 0 && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
-          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "current").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}` : holdEndRejected.has(record.commandKey) ? "这次接待的结束被拒绝了，原记录还在；核对后可以解除原操作记录。" : "这次接待的结束结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>)}
-          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "unconfirmed").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{record.sessionRef ? isRetryExpired(record) ? `还不能确认这条结束记录是哪一次接待的，可以查原结果；${RETRY_EXPIRED_TEXT}` : "还不能确认这条结束记录是哪一次接待的，可以查原结果；点「结束会话」会先按它核对，可能按原操作重试。" : `这条结束记录没记下是哪一次接待，只能查原结果；查清之前，这次接待可能结束不了。${isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}` : ""}`}</Notice>)}
+          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "current").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原操作</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}` : holdEndRejected.has(record.commandKey) ? "这次接待的结束被拒绝了，原记录还在；核对后可以解除原操作记录。" : "这次接待的结束结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>)}
+          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "unconfirmed").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原操作</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{record.sessionRef ? isRetryExpired(record) ? `还不能确认这条结束记录是哪一次接待的，可以查原结果；${RETRY_EXPIRED_TEXT}` : "还不能确认这条结束记录是哪一次接待的，可以查原结果；点「结束会话」会先按它核对，可能按原操作重试。" : `这条结束记录没记下是哪一次接待，只能查原结果；查清之前，这次接待可能结束不了。${isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}` : ""}`}</Notice>)}
           {!holdEnding && <RecoveryPanel tone="neutral" label="之前接待的结束记录" title={`之前的接待留下 ${sessionEndRecoveries.filter(record => record.instanceState === "historical").length} 条结束记录`} explainLabel="这些记录是什么"
             explain={`之前接待里点过「结束会话」、还没确认结果的记录。只能查原结果，不会重发，也不影响这次接待。时间为${businessZone().label}。`}
             items={sessionEndRecoveries.filter(record => record.instanceState === "historical").map(record => {
@@ -2245,7 +2245,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
                 line: rejected ? "结束被拒绝，核实后可以解除这条记录。" : isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}` : "结果未知，只能查原结果。",
                 detail: <p>发出时间：{businessStamp(record.createdAt)}</p>,
                 tech: <Fold inset title="技术信息" summary="操作编号"><Facts><Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact></Facts></Fold>,
-                actions: <><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{rejected && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</> };
+                actions: <><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原操作</Button>{rejected && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</> };
             })} />}
           {serviceStatus && conversationsAvailable && <Notice tone="danger">{serviceStatus}</Notice>}
           {actionResult && <Notice tone="progress" action={<Button size="sm" onClick={() => setActionResult("")}>知道了</Button>}>{actionResult}</Notice>}
@@ -2259,7 +2259,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           {messagePages.hasMore && <Button size="sm" variant="ghost" className="m3s-older" disabled={messagePages.loading} onClick={loadOlderMessages}>向上加载更早10条</Button>}
           {messagePages.loading && paneMessages && <span className="m3s-sync" role="status">{messagePages.failed === "older" ? "正在加载更早的10条消息…" : "正在核对新消息…"}</span>}
           {selected && !paneMessages
-            ? conversationError ? <BlockState state="error" title="会话详情加载失败" detail={conversationError} retryLabel="重新加载详情" onRetry={() => { void messagePages.retry(); }} /> : <BlockState state="loading" title="正在加载会话消息…" />
+            ? conversationError ? <BlockState state="error" title="会话详情加载失败" detail={conversationError} onRetry={() => { void messagePages.retry(); }} /> : <BlockState state="loading" title="正在加载会话消息…" />
             : selected && paneMessages?.length
               ? paneMessages.map((message, index) => { const day = messageDay(message.ts); return <div key={message.id ?? `${message.ts}-${index}`} data-m3-message-id={message.id}>{day && day !== messageDay(paneMessages[index - 1]?.ts ?? 0) && <div className="m3s-day"><span>{day}</span></div>}<SupportMessage message={message} previous={paneMessages[index - 1]} newlyArrived={message.id !== undefined && newMessageIds.has(message.id)} customerId={String(selected.customerId)} customerAvatarRef={selected.customerAvatarRef} customerName={title} onRevoked={() => ctx.invalidateScope(selected.id, String(selected.customerId))} /></div>; })
               : !conversationsAvailable ? <p className="m3s-blank">读不到消息</p> : <BlockState state="empty" title={requestedCustomerId ? "尚无进行中会话。核对归属后即可发送首次联系。" : selected ? historyComplete ? "这段会话尚无消息。" : "历史消息还没加载完，请稍候或点重试。" : "选择会话后查看消息。"} />}
@@ -2328,11 +2328,11 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           {(failedNotice || !busy && (pending || firstPending)) && <Notice tone={pending || firstPending || sendError.includes("未知") ? "warn" : "danger"}
             actionBelow={!busy && Boolean(pending || firstPending)} title={!busy && activeEntry && (pending || firstPending) ? <>这条消息发送结果未知<span className="m3s-notice-meta">{businessStamp(activeEntry.row.createdAt)} 发出 · {zoneLabel}</span></> : undefined}
             action={<>{sendError.startsWith("消息已发送") && <Button size="sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</Button>}
-              {(pending || firstPending) && <Button size="sm" disabled={busy} onClick={() => void send(pending?.kind ?? "TEXT", "query")}>查询原结果</Button>}
+              {(pending || firstPending) && <Button size="sm" disabled={busy} onClick={() => void send(pending?.kind ?? "TEXT", "query")}>查询原操作</Button>}
               {(pending || firstPending) && canRetryActiveSend && <Button size="sm" disabled={busy} disabledReason={sendRetryExpired ? RETRY_EXPIRED_TEXT : sendRetryQueryBlock} onClick={() => void send(pending?.kind ?? "TEXT", "retry")}>按原操作重试</Button>}
             </>}>
             {!busy && (pending || firstPending) && (!sendError || sendError === MESSAGE_UNKNOWN)
-              ? !canRetryActiveSend ? "只能查询结果" : sendRetryExpired ? "超过 24 小时不能再重试，先查询原结果。" : MESSAGE_UNKNOWN_NEXT
+              ? !canRetryActiveSend ? "只能查询结果" : sendRetryExpired ? "超过 24 小时不能再重试，先查询原操作。" : MESSAGE_UNKNOWN_NEXT
               : failedNotice || MESSAGE_UNKNOWN}
             {firstRecoveryText && firstRecoveryText.trim() !== draft.trim() && <div className="m3s-original" tabIndex={0} aria-label="首次联系的原文"><span>首次联系的原文</span><p>{firstRecoveryText}</p></div>}
           </Notice>}

@@ -302,7 +302,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         <Fact k="之后">{friend ? "好友奖励冲正后不能补发" : "可以勾选申请补发，批准时再核补发条件"}</Fact>
         {salary && (row.claimNo || canReadSalary) && <Fact k="月薪领取号">{row.claimNo
           ? <span data-mono>{row.claimNo}</span>
-          : <Link className="rd-link" href={`/network/v-rank?tab=salary&userId=${encodeURIComponent(row.user)}`} prefetch={false}>去月薪领取记录查询</Link>}</Fact>}
+          : <Link className="rd-link" href={`/network/v-rank?tab=salary&userId=${encodeURIComponent(row.user)}`} prefetch={false}>去月薪领取记录查询 →</Link>}</Fact>}
         <Fact k="谁来批准">{approverText("冲正权限")}</Fact>
       </Facts>,
       businessForm: {
@@ -543,7 +543,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     const change = saved?.row && ["freeze", "unlock", "unfreeze", "reverse"].includes(saved.action) ? `${statusName(saved.row.status)} → ${statusName(nextStatus)}`
       : saved?.action === "reissue" ? "每笔生成一条新记录，原记录保持已冲正"
         : saved?.action === "suspend" || saved?.action === "resume" ? `${((spec?.command.params.kinds ?? []) as string[]).map(kindName).join("、")} → ${saved.action === "suspend" ? "暂停中" : "恢复"}`
-          : request ? `金额偏离 ${saved?.sigma ?? "—"} → ${request.commissionAnomalySigma}；层比例 ${saved?.ratio ?? "—"}% → ${request.layerRatioAnomalyPct}%` : "原请求不完整，只能查询原结果。";
+          : request ? `金额偏离 ${saved?.sigma ?? "—"} → ${request.commissionAnomalySigma}；层比例 ${saved?.ratio ?? "—"}% → ${request.layerRatioAnomalyPct}%` : "原请求不完整，只能查询原操作。";
     return { key: original.commandKey,
       name: saved?.name ?? spec?.action ?? (record.kind === "anomaly" ? "调整异常预警标准" : "奖励处置"),
       change: `${change}${!ticket && record.kind === "proposal" && record.original.received ? " · 原申请建过单，批没批准还没查到" : ""}`,
@@ -551,7 +551,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       state: ticket?.status === "pending" ? "pending" : isRetryExpired(original) ? "expired" : "unknown",
       direct: record.kind === "anomaly",
       actions: <>
-        <Button size="sm" onClick={() => { if (saved && !ticket) openOriginal(record); else void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原结果</Button>
+        <Button size="sm" onClick={() => { if (saved && !ticket) openOriginal(record); else void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原操作</Button>
         {retryable && <Button size="sm" onClick={() => openOriginal(record)}>按原操作重试</Button>}
         {original.replayRejection
           && <FReleaseButton label={saved?.name ?? spec?.action ?? "奖励处置"} toast={ctx.toast} onRelease={() => ctx.recoverF5(record, "release")} />}
@@ -575,7 +575,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     && ["f_commission_status", "f5_commission_reverse", "f5_commission_reissue", "f5_commission_suspension"].includes(ticket.operationCode ?? "")
     && !ownTicketIds.has(ticket.id) && rows.findIndex(other => other.id === ticket.id) === index);
   recoveryRows.push(...pendingTickets.map(ticket => ({ key: ticket.id, name: ticket.action, change: `${ticket.before} → ${ticket.after}`, state: "pending" as const,
-    actions: <Button size="sm" onClick={() => { void ctx.refreshF5(applied); }}>查询原结果</Button>,
+    actions: <Button size="sm" onClick={() => { void ctx.refreshF5(applied); }}>查询原操作</Button>,
   })));
 
   const blockedRecord = (row: F5CommissionEvent) => {
@@ -729,7 +729,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       <p>异常样本从最近 200 条奖励里挑出来；待追回、已冻结算全部记录，这三项不跟下方筛选变。等价格跟着类型、用户和注册月份筛选变，选了状态时不显示。</p>
       <p>提交的处置要{APPROVER}在「操作记录与审批」批准；这页显示读到的本人待审批申请。</p>
     </>;
-    const approvals = awaiting && canReadA2 ? <span className="f5-awaiting">{awaiting} 条处置待审批 · <Link className="rd-link" href="/platform/audit?domain=F" prefetch={false}>去操作记录与审批 →</Link></span> : undefined;
+    const approvals = awaiting && canReadA2 ? <span className="f5-awaiting">{awaiting} 条处置待审批 · <Link className="rd-link" href="/platform/audit?domain=F" prefetch={false}>去操作记录与审批 →</Link></span> : undefined;
     if (!parts.length) return <Conclusion state="ok" hint={hint} explain={explain} action={approvals}>没有异常样本、待追回和冻结中的奖励</Conclusion>;
     return <Conclusion state="warn" hint={hint} explain={explain}
       action={<>{anomalies ? <Button size="sm" onClick={() => setTab("anomalies")}>看异常样本</Button> : null}

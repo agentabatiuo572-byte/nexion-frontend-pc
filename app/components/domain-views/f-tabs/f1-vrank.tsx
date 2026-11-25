@@ -274,16 +274,16 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 
   const tabBar = <>
     <div className="f1-tabs-row"><PageTabs label="团队等级晋升" value={view} items={tabs} onChange={setView} ids={ids} /></div>
-    {v8Ready && <p className="f1-tabs-note">有 V7 已满足 V8 数值条件，等审核 · <button type="button" className="rd-link" onClick={() => setView("v8")}>去 V8 审核 →</button></p>}
+    {v8Ready && <p className="f1-tabs-note">有 V7 已满足 V8 数值条件，等审核 · <button type="button" className="rd-link" onClick={() => setView("v8")}>去 V8 审核 →</button></p>}
   </>;
 
   if (rows.length === 0) {
     const body = ctx.f1Loading
-      ? <><Conclusion state="unknown">正在读取会员等级…</Conclusion>{recovery}<Panel title="九级阶梯"><BlockState state="loading" title="正在读取会员等级" /></Panel></>
+      ? <><Conclusion state="unknown">正在加载会员等级…</Conclusion>{recovery}<Panel title="九级阶梯"><BlockState state="loading" title="正在加载会员等级" /></Panel></>
       : ctx.f1Error
         ? <><Conclusion state="unknown" hint="点页头「刷新」重试；其他页签照常能看。">会员等级：暂时无法判断</Conclusion>
           {recovery}
-          <Panel title="九级阶梯"><BlockState state="error" title="会员等级读取失败" detail={ctx.f1Error} onRetry={() => void ctx.refreshF1Membership()} /></Panel></>
+          <Panel title="九级阶梯"><BlockState state="error" title="会员等级加载失败" detail={ctx.f1Error} onRetry={() => void ctx.refreshF1Membership()} /></Panel></>
         : canWrite
           ? <>{recovery}<F1VrankBootstrap key={bootstrapDraft?.original.commandKey ?? "bootstrap"} ctx={ctx} continuation={bootstrapDraft} openConfirm={setConfirm} /></>
           : <><Conclusion state="neutral" icon={Layers3}>还没有建立会员等级</Conclusion>
@@ -528,7 +528,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           sub={leadership ? `票数最多的前 ${fmt(leadership.topN)} 人占全池票数 ${leadership.topConcentrationPct}%` : "读不到激励池摘要"}
           what="每级票数决定这一级在激励池里分多少。" note="这里只读，票数在「奖励池、名额与排行榜」改。"
           effect="「从 V几 起」是最低一个票数大于 0 的等级；前 N 人占比按票数算，不是人数占比，也不是分到的钱的占比。"
-          action={<Link className="rd-link" href="/network/leadership-pool" prefetch={false}>去改票数</Link>} />
+          action={<Link className="rd-link" href="/network/leadership-pool" prefetch={false}>去改票数 →</Link>} />
       </ConfigList>
     </Panel>
   );
@@ -695,7 +695,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
   const lock = hasPendingApproval ? "等审批结果：批准、驳回或撤回后再改"
     : ctx.f1Loading || ctx.f1Error ? "请先成功重新读取会员等级。"
     : hasUnknownOperation
-      ? "这一级有结果未知的原操作，请先查询原结果。" : undefined;
+      ? "这一级有结果未知的原操作，请先查询原操作。" : undefined;
 
   const single = (field: "selfBuy" | "teamGv" | "directRefs", source: F1VRankRow | undefined) => {
     const raw = source?.[field];
@@ -724,7 +724,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
     );
   };
   const numeric = (raw: string | undefined) => raw !== undefined && /^\d+(\.\d+)?$/.test(raw) ? Number(raw) : 0;
-  const unknownTag = <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原内容重试。">结果未知</StatusTag>;
+  const unknownTag = <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原操作重试。">结果未知</StatusTag>;
   const evalWhen = top ? "保存后，之后评估时按新值判断谁进「V8 审核」名单；不会自动升到 V8，不重算已有等级。" : "保存后，之后每次评估用户时按新值算；不重算已有等级，不补发历史奖励。";
   const needCount = [row.selfBuy, row.teamGv, row.directRefs, legCount].filter((raw) => raw !== undefined && raw !== "0").length;
 
@@ -776,7 +776,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
       sub={`${fmt(row.pop)} 人 · 占 ${pct(row.pop, total)}`} icon={Layers3} tone="role-3"
       explain={top ? "左边是升到 V8 要满足什么，右边是 V8 拿什么。V8 不自动晋级，审核后人工升级。" : "左边是升到这一级要满足什么，右边是升到这一级拿什么。用户每次被评估最多升一级，所以不能跳过这一级。"}>
       {hasPendingApproval && <Notice tone="warn" title={`${row.v} 有一张待审批的申请`}
-        action={canOpenA2 ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批查看 →</Link> : undefined}>批准、驳回或撤回前，这一级的条件、权益和晋级奖励都改不了。</Notice>}
+        action={canOpenA2 ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批查看 →</Link> : undefined}>批准、驳回或撤回前，这一级的条件、权益和晋级奖励都改不了。</Notice>}
       <div className="rd-split f1-detail-split">
         <Panel plain headingLevel={3} title="晋升条件" icon={Lock} tone="role-4" sub={top ? "4 项数值 · 2 项人工审核" : `${needCount} 项`}
           explain={top
@@ -821,7 +821,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
             })()}
             {top && <ConfigRow name="审核时另看" what="两项都是 App 展示的固定文案，系统不记录。" where="App 我的等级 › V8 晋升条件"
               note="推荐信来自哪位 V8、官方审核的依据，写进「审核通过」的理由。" value={<span className="f1-text-value">{V8_TERMS.join("、")}</span>}
-              action={onGoV8 ? <span className="f1-row-actions"><button type="button" className="rd-link" onClick={onGoV8}>去 V8 审核 →</button></span> : undefined} />}
+              action={onGoV8 ? <span className="f1-row-actions"><button type="button" className="rd-link" onClick={onGoV8}>去 V8 审核 →</button></span> : undefined} />}
           </ConfigList>
         </Panel>
         <Panel plain headingLevel={3} className="f1-benefits" title="等级权益" icon={Sparkles} tone="role-1" sub={`${(salaryPresent ? 3 : 2) + (top ? 1 : 0)} 项`}
@@ -877,7 +877,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
                       <span className="f1-reward-kind">
                         {REWARD_KIND[kind].name} · 发给晋级本人
                         {stale && <StatusTag tone="warn" icon={TriangleAlert} explain="它已不在现在可发的券或商品里（停用、过期、发完或下架）。升到这一级时可能发不出；编辑时要重新选。">现在不可发</StatusTag>}
-                        {pending ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果。点「查看原操作」查询或按原内容重试。">结果未知</StatusTag> : null}
+                        {pending ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果。点「查看原操作」查询或按原操作重试。">结果未知</StatusTag> : null}
                       </span>
                     </span>
                     {canWrite && <span className="f1-row-actions">

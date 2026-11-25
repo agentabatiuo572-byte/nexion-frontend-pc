@@ -387,7 +387,7 @@ function G7RepurchasePage() {
           change: from ? <Change from={from} to={to} /> : <>申请改成 {to}</>,
           tag: recoveryTag(record), ticket: record.ticket?.id,
           actions: <>
-            <Button size="sm" disabled={recoverBusy} aria-label={`查询${name}的原结果`} onClick={() => void recover(key, false)}>查询原结果</Button>
+            <Button size="sm" disabled={recoverBusy} aria-label={`查询${name}的原操作`} onClick={() => void recover(key, false)}>查询原操作</Button>
             {record.canRetry && <Button size="sm" disabled={recoverBusy} aria-label={`按原操作重试${name}`} onClick={() => void recover(key, true)}>按原操作重试</Button>}
           </>,
         };
@@ -402,7 +402,7 @@ function G7RepurchasePage() {
           change: <Change from={direct.currentValue === undefined ? "原值未知" : paramValueText(direct.paramKey, direct.currentValue)} to={paramValueText(direct.paramKey, direct.input.value)} />,
           tag: g7DirectCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"),
           actions: <>
-            <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`查询${name}的原结果`} onClick={() => void readDirectCommand(direct)}>查询原结果</Button>
+            <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`读取${name}的当前配置`} onClick={() => void readDirectCommand(direct)}>读取当前配置</Button>
             {retry && <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`按原操作重试${name}`} onClick={retry}>按原操作重试</Button>}
           </>,
         };
@@ -413,9 +413,9 @@ function G7RepurchasePage() {
       title={`参数修改的原操作 · ${rows.length} 项`}
       lead={waiting
         ? "有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。"
-        : "这些参数先只能查询原结果或在 24 小时内按原操作重试，不能改成别的值；其他参数照常可改。"}
+        : "这些参数先只能核对（走审批的查询原操作，直接修改的读取当前配置），或在 24 小时内按原操作重试，不能改成别的值；其他参数照常可改。"}
       explain={<>
-        <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，和直接生效但没收到结果的修改。原操作只能查询，或在 24 小时内按原内容重试，不能改值。</p>
+        <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，和直接生效但没收到结果的修改。走审批的可以查询原审批单；直接修改的只能读取当前配置核对，现在的值证明不了原操作成没成。两种都可以在 24 小时内按原操作重试，不能改值。</p>
         <p>要改成别的值，等原操作有结论后再发起新修改。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
       </>} />;
   };
@@ -541,11 +541,11 @@ function G7RepurchasePage() {
               ? <Fact k="原申请"><Change from={currentText} to={originalValue ? paramValueText(param.key, originalValue) : "—"} /></Fact>
               : directRecovery ? <Fact k="提交时">{currentText}</Fact> : param.key === "presets" && <Fact k="现在">{currentText}</Fact>}
             <Fact k="什么时候生效">{directRecovery
-              ? "提交结果未知，可能已经执行。可以查询原结果，或在 24 小时内按原内容重试，不会重复执行。"
+              ? "提交结果未知，可能已经执行。可以在页面上方读取当前配置核对（现在的值证明不了原操作成没成），或在 24 小时内按原操作重试，不会重复执行。"
               : original
               ? original.ticket?.status === "pending"
                 ? "审批单在等另一位超级管理员批准；批准前参数不变，这一项被锁住"
-                : "原申请结果还没确认：有效期内按原内容重试，不会重复建单"
+                : "原申请结果还没确认：有效期内按原操作重试，不会重复建单"
               : !copy?.loosen
                 ? "确认后立即生效"
                 : loose === true
@@ -570,13 +570,13 @@ function G7RepurchasePage() {
       directRecovery,
       detail: <>{copy?.what ?? operatorCopyText(param.sub)}。{param.key === "lottery" ? "保存时检查奖池核对编号至少 3 个字，且本月已发张数加新的每单张数不超过创世奖池月容量。" : copy?.note}</>,
       effect: copy?.loosen
-        ? <StatusTag tone="neutral" icon={ArrowLeftRight} explain={directRecovery ? "提交结果未知，可能已经执行。可以查询原结果，或在 24 小时内按原内容重试，不会重复执行。" : <>
+        ? <StatusTag tone="neutral" icon={ArrowLeftRight} explain={directRecovery ? "提交结果未知，可能已经执行。可以在页面上方读取当前配置核对（现在的值证明不了原操作成没成），或在 24 小时内按原操作重试，不会重复执行。" : <>
           <p>{paysMore(param.key) ? `${copy.loosen}会让平台多付钱：` : `${copy.loosen}按规则也要审批（目前只记倍率、不发好友奖励）：`}先提交审批，另一位超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
           <p>{copy.tighten}确认后立即生效。</p>
         </>}>{directRecovery ? "结果未知" : <>{copy.loosen}要批准 · {copy.tighten}立即生效</>}</StatusTag>
         : <StatusTag tone="progress" filled>{directRecovery ? "结果未知" : "立即生效"}</StatusTag>,
       facts,
-      statedBrief: { impact: "改的是之后新开的订单用的规则，已有订单按下单时的规则。", check: directRecovery ? "提交结果未知，可能已经执行。可以查询原结果，或在 24 小时内按原内容重试，不会重复执行。" : "核对新值和方向；理由写清依据或工单号。" },
+      statedBrief: { impact: "改的是之后新开的订单用的规则，已有订单按下单时的规则。", check: directRecovery ? "提交结果未知，可能已经执行。可以在页面上方读取当前配置核对（现在的值证明不了原操作成没成），或在 24 小时内按原操作重试，不会重复执行。" : "核对新值和方向；理由写清依据或工单号。" },
       coverageLead: <span className="g7x-lead"><KeepText text={paysMore(param.key) ? `${copy?.loosen ?? "放宽"}${label}会让平台多付钱，要另一位超级管理员批准` : `${copy?.loosen ?? "调高"}${label}要另一位超级管理员批准；系统目前不发好友奖励，不会马上多付钱`} /></span>,
       coverageCheck: "提交审批时和批准时各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: param.key === "presets"
@@ -674,7 +674,7 @@ function G7RepurchasePage() {
       <>
         {header}
         {recoveryNotice()}
-        <BlockState state="loading" title="正在读取锁定计划…" />
+        <BlockState state="loading" title="正在加载锁定计划…" />
         {confirmModal}
       </>
     );
@@ -685,9 +685,9 @@ function G7RepurchasePage() {
       <>
         {header}
         {recoveryNotice()}
-        <BlockState state="error" title="锁定计划数据读取失败"
-          detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={error || "没有收到数据。"} /></>}
-          retryLabel="重新加载" onRetry={() => void reload()} />
+        <BlockState state="error" title="锁定计划数据加载失败"
+          detail={error || "没有收到数据。"}
+          onRetry={() => void reload()} />
         {confirmModal}
       </>
     );
@@ -711,7 +711,7 @@ function G7RepurchasePage() {
     const direct = directRecord(param.key);
     const recovery = record ? records.find((row) => row.commandKey === record.commandKey) : undefined;
     const editable = canEdit(param.key);
-    const disabledReason = busy ? "正在处理上一项，稍候再操作" : readFailed && !record && !direct ? "当前值没读到，重新加载后再改"
+    const disabledReason = busy ? "正在处理上一项，稍候再操作" : readFailed && !record && !direct ? "当前值没读到，重试成功后再改"
       : lockedParams[param.key] && !record && !direct ? lockedParams[param.key].message : undefined;
     return (
       <ConfigRow key={param.key} name={name}
@@ -763,7 +763,7 @@ function G7RepurchasePage() {
           {lockedNames.join("、")}被一张审批单锁住，现在改不了</Conclusion>
       : originalCount > 0
       ? <Conclusion state="warn" icon={Clock3}
-          hint="在下面逐条查询原结果；24 小时内也可以按原操作重试。"
+          hint="在下面逐条核对：走审批的查询原操作，直接修改的读取当前配置；24 小时内也可以按原操作重试。"
           explain="提交过的参数修改还没有确定结论：有的在等另一位超级管理员审批，有的没收到结果。有结论之前这几项不能改成别的值，其他参数照常可改。">
           有 {fmtCount(originalCount)} 项参数修改还没有结论</Conclusion>
       : <Conclusion state="neutral" icon={Lock}
@@ -854,7 +854,7 @@ function G7RepurchasePage() {
                   <span className="g7x-value"><span className="g7x-value-num" data-empty={phase ? undefined : ""}>{phase?.value ?? (operatorCopyText(overview.phaseGate.value) || "—")}</span></span>
                   <span className="g7x-dir">{phase ? phase.month : "跟随运营阶段"}</span>
                 </span>}
-                action={phaseHref ? <Link className="rd-link g7x-nowrap" href="/growth/phase" prefetch={false}>去运营阶段设置</Link> : undefined} />
+                action={phaseHref ? <Link className="rd-link g7x-nowrap" href="/growth/phase" prefetch={false}>去运营阶段设置 →</Link> : undefined} />
           </ConfigList>
         </Panel>
       </div>
@@ -918,7 +918,7 @@ function G7RepurchasePage() {
           </tbody>
         </Table>
         {hasMore && nextCursor !== null && <div className="g7x-more">
-          <Button size="sm" loading={loadingMore} loadingText="读取中…" disabledReason={loading ? "正在重新读取" : undefined} onClick={() => void loadMore()}>加载更多</Button>
+          <Button size="sm" loading={loadingMore} loadingText="正在加载…" disabledReason={loading ? "正在重新读取" : undefined} onClick={() => void loadMore()}>加载更多</Button>
         </div>}
       </Panel>
 

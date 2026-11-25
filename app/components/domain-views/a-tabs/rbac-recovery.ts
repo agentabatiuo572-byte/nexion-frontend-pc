@@ -4,7 +4,7 @@ import { eCommandCanConcludeRejected, eCommandClosureRequests, type ECommandEvid
 import { SETTLED_REJECTED, closureLine, receiptExplain, rejectedStatus } from "../recovery-panel";
 
 /**
- * A6、A7 直写记录「查询原结果」后留在这一行的结论（记录还保留时）。
+ * A6、A7 直写记录「查询原操作」后留在这一行的结论（记录还保留时）。
  * state 是最小状态（ERROR＝这次没查成）；receipt 是被拒时再读的详细结果，没读到是 undefined。
  */
 export type RbacOutcome = { state: DirectCommandReceiptState | "ERROR"; receipt?: ECommandInvestigation | null };

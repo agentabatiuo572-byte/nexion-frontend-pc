@@ -27,7 +27,7 @@ import {
 import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
 import { fetchA8PermissionDetail } from "@/lib/admin/a8-client";
 import { groupPendingCommands, isQualificationPending, qualificationRecovery } from "@/lib/admin/support-group-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import type { ACtx, ActionConfirmReq } from "./types";
 import { usePendingReplayDeadline, type BusinessFormValue } from "../design-kit";
 import { pendingReplayReason } from "../recovery-panel";
@@ -220,11 +220,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         setPermissionDiffReady(true);
       } catch (error) {
         setPermissionCodesByRole({});
-        setPermissionDiffError(`角色权限没有读到：${errorMessage(error)}`);
+        setPermissionDiffError(`角色权限没有读到：${displayAdminReadError(error)}`);
       }
       return data;
     } catch (error) {
-      setLoadError(errorMessage(error));
+      setLoadError(displayAdminReadError(error));
       return null;
     } finally {
       if (!quiet) {
@@ -515,7 +515,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         await refreshOverview(true);
       }
       reloadPending();
-      if (isA1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。原请求已保留，请查询原结果。" });
+      if (isA1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。原请求已保留，请查询原操作。" });
       throw error;
     } finally { accountWriteInFlight.current = false; setMutatingAction(null); }
     if (useAdminAuth.getState().session?.adminId !== record.actorId) throw new Error("A1_SESSION_CHANGED");
@@ -1366,13 +1366,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         : intent.kind === "permission" ? `${intent.draft.code} · ${intent.draft.name}` : operatorDisplayLabel(intent.account),
       submittedAt: record.createdAt,
       note: replayRejection ? `后台已拒绝重试，请先核实原操作。${expired ? RETRY_EXPIRED_TEXT : ""}` : expired ? RETRY_EXPIRED_TEXT
-        : record.ticket?.status === "pending" ? undefined : record.received ? "请查询原结果，核对当前业务记录。"
+        : record.ticket?.status === "pending" ? undefined : record.received ? "请查询原操作，核对当前业务记录。"
           : retryBlock ?? (capability === "replay" ? "按原操作重试会重新发送一次。" : undefined),
       tag: record.ticket?.status === "pending" ? <StatusTag tone="warn">待审批</StatusTag>
         : expired ? expiredTag(RETRY_EXPIRED_TEXT)
         : unknownTag(request.kind === "proposal" ? "approval" : "direct", retryBlock ?? "提交时没收到确定结果，可能已经生效。"),
       actions: <>
-        <Button size="sm" disabledReason={mutatingAction || busy ? "正在核对原操作，请稍候。" : undefined} onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原结果</Button>
+        <Button size="sm" disabledReason={mutatingAction || busy ? "正在核对原操作，请稍候。" : undefined} onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原操作</Button>
         {!record.ticket && !record.received && !expired && !replayRejection && capability !== "readback" && <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原操作重试</Button>}
         {replayRejection && <Button size="sm" disabled={!!busy} onClick={() => confirmLocalRelease(record, name, () => a1Recovery.releaseRejectedReplay(record))}>解除原操作记录</Button>}
       </>,
@@ -1398,7 +1398,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       note: authorities.includes("platform_a8_read") ? PERMISSION_VERIFICATION_UNAVAILABLE : PERMISSION_VERIFICATION_NOT_ALLOWED,
       tag: <StatusTag tone="ok">已登记</StatusTag>,
       actions: <Button size="sm" disabledReason={busy ? "正在核对原操作，请稍候。" : undefined}
-        onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原结果</Button>,
+        onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原操作</Button>,
     });
   }
   for (const record of qualificationPending) {
@@ -1408,9 +1408,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     recoveryRows.push({ key: record.commandKey, name: record.label, change: intent.payload.state, submittedAt: record.createdAt,
       note: status.expired ? RETRY_EXPIRED_TEXT : !overviewReady || governanceFrozen ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED"))
         : pendingReplayReason(status, errorMessage(new Error("A1_OPERATION_FORBIDDEN"))),
-      tag: status.expired ? expiredTag(RETRY_EXPIRED_TEXT) : unknownTag("direct", "提交时没收到确定结果，资格可能已经改了。请查询原结果。"),
+      tag: status.expired ? expiredTag(RETRY_EXPIRED_TEXT) : unknownTag("direct", "提交时没收到确定结果，资格可能已经改了。请查询原操作。"),
       actions: <>
-        <Button size="sm" disabled={!!status.busy} onClick={open}>查询原结果</Button>
+        <Button size="sm" disabled={!!status.busy} onClick={open}>查询原操作</Button>
         {!status.expired && !status.replayRejection && <Button size="sm" variant="primary"
           disabledReason={!overviewReady || governanceFrozen ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : pendingReplayReason(status, errorMessage(new Error("A1_OPERATION_FORBIDDEN")))}
           onClick={open}>按原操作重试</Button>}
@@ -1452,7 +1452,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           }
           if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
           toast(errorMessage(new Error("A1_AVATAR_READBACK_ONLY")));
-        })().catch(error => toast(errorMessage(error)))}>查询原结果</Button>
+        })().catch(error => toast(errorMessage(error)))}>查询原操作</Button>
         {!replay.expired && !replay.replayRejection && (cancellation
           ? <Button size="sm" variant="primary" disabledReason={avatarRetryBlock} onClick={() => void (async () => {
             await replayAvatarCancellation(cancellation);
@@ -1482,7 +1482,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         {header}
         {recovery}
         <Conclusion state="warn" icon={ShieldCheck}>运营账号没有读到，安全状况这部分没有判断</Conclusion>
-        <BlockState state="error" title="运营账号没有读到" detail={loadError || "请重试，持续失败请联系值班人员。"} onRetry={() => void refreshOverview()} retryLabel="重试" />
+        <BlockState state="error" title="运营账号加载失败" detail={loadError || "请重试，持续失败请联系值班人员。"} onRetry={() => void refreshOverview()} retryLabel="重试" />
       </div>
     );
   }
@@ -1548,7 +1548,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           onOpen={() => pickFilter("unbound")} openLabel="只看未绑定两步验证的账号" selected={filter === "unbound"} selectedText="已筛选" aria-pressed={filter === "unbound"} />
         <Stat icon={ClipboardCheck} tone="role-3" label="待审批的账号变更" value={pending === undefined || pending === null ? "—" : String(pending)} unit={pending === undefined || pending === null ? undefined : "件"}
           explain="资料、角色、两步验证、启停、撤销全部登录的申请都算在内。只有早期少数缺少申请内容的旧申请不计，所以可能比「操作记录与审批」里少几件。"
-          href="/platform/audit" openLabel="去操作记录与审批" />
+          href="/platform/audit" openLabel="去操作记录与审批 →" />
         <Stat icon={MonitorSmartphone} tone="role-3" label="在线登录" value={stats ? stats.activeSessions.toLocaleString("en-US") : "—"} unit={stats ? "个" : undefined}
           sub={`${onlineAccounts} 个账号在线`}
           explain="一个账号在几台设备上登录就算几个，不是在线人数。" />

@@ -64,7 +64,7 @@ export function statusSentence(input: {
   if (input.tier === "DANGER") return { state: "danger", strong: true, aboutFund: true, text: days ? `资金告警：储备只够付${days.replace("可覆盖 ", "")}` : "资金告警：储备只够付不到 7 天", hint: advice ?? undefined };
   if (input.urgentRows > 0) return { state: "danger", text: `有紧急风险，先看待处理${also(pendingRows - input.urgentRows)}` };
   // 上面三句是告警，读到就说。下面的要等这一屏读完，不说半句，也不先说没事（F07）。
-  if (input.loading) return { state: "unknown", text: "正在读取今天的状况…" };
+  if (input.loading) return { state: "unknown", text: "正在加载今天的状况…" };
   if (input.fundFailed) return { state: "warn", fundFailed: true, text: `资金数据读取失败，状态不确定${also(pendingRows)}` };
   if (input.pressure === "danger") return { state: "danger", aboutRisk: true, text: "提现压力到红线，先看风险与开关", explain: "近 24 小时提现申请或待提现总额占储备的比例到了红线。" };
   if (input.withdrawClosed) {

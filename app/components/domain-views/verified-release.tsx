@@ -26,7 +26,7 @@ type Release = {
   release: () => boolean | void;
 };
 
-/** 恢复行上的「核实后解除」：和「查询原结果」排在一起、放最后，弱一档。 */
+/** 恢复行上的「核实后解除」：和「查询原操作」排在一起、放最后，弱一档。 */
 export function VerifiedReleaseButton({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {
   return <Button size="sm" variant="ghost" disabled={disabled} onClick={onClick}>核实后解除</Button>;
 }

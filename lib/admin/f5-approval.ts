@@ -53,7 +53,7 @@ function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
   // 111e00cd ticketMetadata returns persisted command.op for every F ticket.
   // Delegated descriptors rewrite action/before/after, but preserve canonical obj.
   if (!ticket.mine || !original.spec || ticket.obj !== original.spec.obj || ticket.operationCode !== original.spec.command.op) {
-    throw new A2OutcomeUncertainError("原审批单与保存的操作对不上，请查询原结果。", original.commandKey);
+    throw new A2OutcomeUncertainError("原审批单与保存的操作对不上，请查询原操作。", original.commandKey);
   }
 }
 
@@ -113,7 +113,7 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
       throw new Error("F5_OPERATION_STORAGE_UNAVAILABLE");
     }
   }
-  if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
+  if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原操作。", original.commandKey);
   if (!original.request || !fCommands.isDurablyStored(slot, original.commandKey)) throw new Error("F5_OPERATION_ORIGINAL_INCOMPLETE");
   if (!original.received && !original.ticket) {
     let ticket: A2OperationRow;

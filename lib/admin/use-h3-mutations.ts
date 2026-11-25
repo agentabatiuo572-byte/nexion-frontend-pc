@@ -129,7 +129,7 @@ function retryBlocked(record: H3PendingCommand) {
   const state = h3Recovery.state(record);
   if (state.replayRejection) return RETRY_REJECTED_TEXT;
   if (state.expired) return RETRY_EXPIRED_TEXT;
-  return state.replayBlock ? "请查询原结果" : undefined;
+  return state.replayBlock ? "请查询原操作" : undefined;
 }
 
 /** H3-only transport and recovery. The page owns all existing form markup. */
@@ -162,13 +162,13 @@ export function useH3Mutations(
   const forget = (r: H3PendingCommand) => { h3CommandStorage.forget(r.store, r); confirmedTickets.current.delete(r.commandKey); update(); };
   const retain = (r: H3PendingCommand) => {
     h3CommandStorage.remember(r.store, r); update();
-    if (!h3CommandStorage.durable(r.store, r)) throw new Error("浏览器存不下这次操作的完整内容，本次没有发送。请保留原记录并查询原结果。");
+    if (!h3CommandStorage.durable(r.store, r)) throw new Error("浏览器存不下这次操作的完整内容，本次没有发送。请保留原记录并查询原操作。");
   };
   const checkTicket = (r: H3PendingCommand, ticket: A2OperationRow) => {
     // 111e00cd OpsAuditCenterService.ticketMetadata includes persisted command.op.
     const op = r.request.kind === "approval" ? r.request.body.command.op : "h3_weekly_region_policy";
     if (!ticket.mine || ticket.obj !== r.change.target || ticket.operationCode !== op
-      || !["pending", "approved", "rejected", "expired", "withdrawn"].includes(ticket.status)) throw new OutcomeUnknownError("审批单与保存的原申请不符，原操作继续保留，请查询原结果。");
+      || !["pending", "approved", "rejected", "expired", "withdrawn"].includes(ticket.status)) throw new OutcomeUnknownError("审批单与保存的原申请不符，原操作继续保留，请查询原操作。");
   };
   const settleApproved = async (approved: H3PendingCommand[], refresh = false) => {
     const request = Symbol();
@@ -261,7 +261,7 @@ export function useH3Mutations(
     requireActor(true, r.request.kind === "approval" ? r.request.body.command.op : undefined);
     if (recovering && !isFresh(r)) throw new Error("请先成功刷新用户任务数据，再按原操作重试。");
     if (isRetryExpired(r)) throw new Error(RETRY_EXPIRED_TEXT);
-    if (r.request.kind === "legacy-region" || r.acknowledged) throw new Error("申请已建单或缺少完整原申请，请查询原结果。");
+    if (r.request.kind === "legacy-region" || r.acknowledged) throw new Error("申请已建单或缺少完整原申请，请查询原操作。");
     try { retain(r); } catch (error) { if (!recovering) forget(r); throw error; }
     try {
       if (r.request.kind === "approval") {
@@ -277,7 +277,7 @@ export function useH3Mutations(
         if (result?.domain !== "H3" || !updated || (r.store === "config" ? updated.key !== body.key
           : r.store === "binding" ? updated.bindingCode !== code || updated.action !== expectedAction
             : (r.request.path === "/quest-events/missions" ? updated.missionCode !== body.missionCode || updated.missionType !== body.missionType : updated.taskCode !== code || updated.taskKind !== body.taskKind && !r.request.path.endsWith("/presentation")) || updated.action !== expectedAction)) {
-          throw new OutcomeUnknownError("保存后返回的内容和原修改对不上，原操作继续保留，请查询原结果。");
+          throw new OutcomeUnknownError("保存后返回的内容和原修改对不上，原操作继续保留，请查询原操作。");
         }
       }
     } catch (error) {
@@ -289,7 +289,7 @@ export function useH3Mutations(
         throw error;
       }
       // Keep the key in storage, not in the shared A2 error renderer's operator copy.
-      throw new OutcomeUnknownError(isOutcomeUnknownError(error) ? error.message : "结果未知，请查询原结果。");
+      throw new OutcomeUnknownError(isOutcomeUnknownError(error) ? error.message : "结果未知，请查询原操作。");
     }
     if (r.request.kind === "approval") {
       const acknowledged = { ...r, acknowledged: true, ticket: undefined };
@@ -304,7 +304,7 @@ export function useH3Mutations(
   const readSubmitted = async (record: H3PendingCommand) => {
     const saved = currentH3Commands().find(row => row.commandKey === record.commandKey);
     const current = saved && await query(saved);
-    if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原结果，原操作继续保留。");
+    if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原操作，原操作继续保留。");
     if (current.status === "pending") await settled(record.commandKey);
   };
   const run = async (write: H3Write, reason: string, approvalConfirmed = false, onCommand?: (commandKey: string) => void) => {
@@ -312,7 +312,7 @@ export function useH3Mutations(
     const refusal = write.configKey === undefined ? undefined : h3QuestConfigWriteRefusal(write.configKey);
     if (refusal) throw new Error(refusal);
     if (!isFresh()) throw new Error("请先成功刷新用户任务数据，再发起新的修改。");
-    if (blocked(write.change.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
+    if (blocked(write.change.target)) throw new Error("这一项有未结束的原操作，请先查询原操作。");
     const change = { ...write.change, reason };
     const proposal = (approval: boolean): Proposal | undefined => {
       if (!approval) return undefined;
@@ -374,7 +374,7 @@ export function useH3Mutations(
       if (r.request.kind === "approval") await readSubmitted(r);
     },
     releaseRejected(r: H3PendingCommand) {
-      if (!h3Recovery.releaseRejectedReplay(r)) throw new Error("原操作记录继续保留，请查询原结果。");
+      if (!h3Recovery.releaseRejectedReplay(r)) throw new Error("原操作记录继续保留，请查询原操作。");
       update();
     },
     run,

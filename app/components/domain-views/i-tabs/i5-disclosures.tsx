@@ -76,7 +76,7 @@ function disclosureLanguageMissing(editor: Editor, language: Lang) {
 }
 
 const TAB_LABEL: Record<TabKey, string> = { disclosure: "风险披露", legal: "法律条款", privacy: "隐私政策" };
-const READING = "正在读取最新数据，读完再操作";
+const READING = "正在加载最新数据，读完再操作";
 const STALE = "数据没有读到最新，重新读取后再操作";
 const IN_APPROVAL = "这一项有审批中的操作，批准或驳回后再提交";
 const APPROVER = "另一位有审批权限的管理员";
@@ -688,8 +688,8 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   };
 
   // ---------- 读取状态 ----------
-  if (contentLoading && !data) return <BlockState state="loading" title="风险披露数据加载中…" />;
-  if (!data) return <BlockState state="error" title="风险披露读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void refresh()} retrying={refreshing} />;
+  if (contentLoading && !data) return <BlockState state="loading" title="正在加载风险披露数据…" />;
+  if (!data) return <BlockState state="error" title="风险披露加载失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void refresh()} retrying={refreshing} />;
 
   /** 同一个版本全页一个词一个颜色（VS-23）：映射已发布、版本可读、引用没有异常才写生效中，其余写真实状态；封存但没切换的写已发布。 */
   const versionState = (row: DisclosureVersionItemView): { text: string; tone: StateTone } => {

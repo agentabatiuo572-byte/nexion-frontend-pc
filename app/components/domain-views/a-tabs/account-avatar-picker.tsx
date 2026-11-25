@@ -216,7 +216,7 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
     {canUpload && allowDefault && !draft && !invalidSelection && <button type="button" className="l-btn" onClick={() => void prepare(true)}>按所选分类准备默认头像</button>}
     {draft && <div className="account-avatar-actions">{!draft.asset && <button type="button" className="l-btn" disabled={expired || !!replayBlock || draft.kind === "UPLOAD" && !file} onClick={() => void prepare()}>{busy ? "正在准备…" : draft.kind === "DEFAULT" ? "重试获取默认头像" : "上传或重试"}</button>}
       {cancellation
-        ? <><button type="button" className="l-btn" disabled={!!cancellationState?.busy} onClick={() => void checkCancellation()}>查询原结果</button>
+        ? <><button type="button" className="l-btn" disabled={!!cancellationState?.busy} onClick={() => void checkCancellation()}>查询原操作</button>
           {!cancellationState?.replayRejection && <button type="button" className="l-btn" disabled={!!cancellationState?.replayBlock} onClick={() => void clear()}>重试取消头像</button>}</>
         : <button type="button" className="l-btn" disabled={expired || Boolean(!draft.asset && avatarDrafts.list().some(row => row.commandKey === draft.commandKey))} onClick={() => void clear()}>{draft.cancelKey ? "重试取消头像" : "取消新头像"}</button>}
       {draft.kind === "UPLOAD" && !file && !draft.asset && <p>上传结果未知，请选择首次上传的同一张图片后重试。</p>}

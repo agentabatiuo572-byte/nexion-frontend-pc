@@ -297,7 +297,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       if (canQueryI3Cap()) void Promise.allSettled(pendingI3CapCommands().map(record => readCapOriginal(record))).then(syncPending);
     }
   }, [data, contentLoading, errorText]);
-  const lockReason = (id: string) => newMutationReason || (!canWriteI3 ? "当前账号没有这项操作权限，请查询原结果。" : undefined)
+  const lockReason = (id: string) => newMutationReason || (!canWriteI3 ? "当前账号没有这项操作权限，请查询原操作。" : undefined)
     || (pending.some((row) => !row.original || row.target === id) ? "此对象有结果未知的原操作，请先到页面上方核对。" : undefined);
   const requireNewMutation = (openedData = data) => {
     if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
@@ -1048,7 +1048,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       submittedAt: row.createdAt, expired: isRetryExpired(row),
       status: i3Status(row, outcomes[row.commandKey]), note: <>{i3Status(row, outcomes[row.commandKey]).line} <TechInfo commandKey={row.commandKey} receipt={receiptOf(outcomes[row.commandKey])} /></>,
       actions: <>
-        <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原结果</Button>
+        <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原操作</Button>
         {canInvestigateECommand("content_i3_read") && eCommandClosureOffer(outcomes[row.commandKey], isRetryExpired(row)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(row)}>核查结案</Button>}
         {!isRetryExpired(row) && !i3Recovery.state(row).replayRejection && <Button size="sm" disabledReason={campaignRetryProblem(row)} onClick={() => restore(row)}>按原操作重试</Button>}
         {i3Recovery.state(row).replayRejection && <VerifiedReleaseButton disabled={!!recovering || !!i3Recovery.state(row).busy} onClick={() => release.ask({ operation: campaignOperation(row), target: <>{row.name}{row.action !== "create" && row.action !== "draft" && row.change && ` · ${row.change}`}</>, getSnapshot: i3Recovery.releaseSnapshot(row), createdAt: row.createdAt, release: () => {
@@ -1062,11 +1062,11 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: `${TIER[row.tier as TierK].label}优先级`,
       change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), submitted: !!row.receiptKnown,
       status: capRejected(row) && !row.receiptKnown ? RETRY_REJECTED_STATUS : undefined,
-      note: row.receiptKnown ? ["审批单已经建了，点「查询原结果」看状态。", capQuery.errors[row.commandKey]].filter(Boolean).join(" ")
+      note: row.receiptKnown ? ["审批单已经建了，点「查询原操作」看状态。", capQuery.errors[row.commandKey]].filter(Boolean).join(" ")
         : capQuery.errors[row.commandKey] ?? (capRejected(row) ? RETRY_REJECTED_NEXT : isRetryExpired(row) ? RETRY_EXPIRED_TEXT
           : i3CapRecovery.state(row).conclusion === "not-found" ? "按原请求查不到这张审批单，24 小时内可以按原操作重试。" : undefined),
       actions: <>
-        <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button>
+        <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原操作</Button>
         {!isRetryExpired(row) && !row.receiptKnown && !capRejected(row) && <Button size="sm" disabledReason={capRetryProblem(row)} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原操作重试</Button>}
         {capRejected(row) && !row.receiptKnown && <VerifiedReleaseButton disabled={!!recovering || !!i3CapRecovery.state(row).busy} onClick={() => release.ask({ operation: "调整通知保留数量", target: `${TIER[row.tier as TierK].label}优先级 · ${row.before} → ${row.after} 条`, getSnapshot: i3CapRecovery.releaseSnapshot(row), createdAt: row.createdAt,
           release: () => { const released = i3CapRecovery.releaseRejectedReplay(row); syncPending(); return released; } })} />}
@@ -1075,7 +1075,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const pendingCapRows = pendingCaps.filter((row) => row.ticketStatus === "pending").map((row) => ({ key: row.commandKey, tier: `${TIER[row.tier as TierK].label}优先级`,
     change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt,
     note: capQuery.errors[row.commandKey],
-    actions: <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button> }));
+    actions: <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原操作</Button> }));
   const drawerOriginal = pending.find((row) => row.commandKey === drawerPendingKey);
   const draftSaveBlocked = submitting ? "正在保存…" : drawerPendingKey ? drawerOriginal && (replayReadProblem(drawerOriginal) ?? i3DraftRetryBlockedReason(drawerOriginal))
     : lockReason(editing?.id ?? "create") ?? (!AUDIENCE_CATALOG ? "受众目录没读到，不能保存；刷新页面后再试"
@@ -1170,7 +1170,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         }} />}
       {conflictUi}
       <I3PendingCapNotice rows={pendingCapRows} link={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>到操作记录与审批看</Link> : undefined} />
-      {!data ? contentLoading ? <BlockState state="loading" title="通知活动加载中…" /> : <BlockState state="error" title="通知活动读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void actions.reloadIContent()} /> : <>
+      {!data ? contentLoading ? <BlockState state="loading" title="正在加载通知活动…" /> : <BlockState state="error" title="通知活动加载失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void actions.reloadIContent()} /> : <>
       {conclusion}
 
       <StatBand label="通知活动概况">
@@ -1245,7 +1245,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               return (
                 <CapCard key={tier} tier={tier} cap={row.cap} policy={operatorCopyText(row.policy)} locked={row.locked}
                   pending={(() => { const item = pendingCaps.find((p) => p.tier === tier && p.ticketStatus === "pending"); return item ? `${item.after} 条` : undefined; })()}
-                  action={!row.locked && showCapAdjust ? <Button size="sm" aria-label={`调整${TIER[tier].label}优先级保留上限`} disabledReason={capPermission || newMutationReason || (pendingCaps.some((item) => item.tier === tier) ? (pendingCaps.some((item) => item.tier === tier && item.ticketStatus === "pending") ? "这一档有申请等另一位批准，批准或驳回后才能再调。" : pendingCaps.some((item) => item.tier === tier && item.receiptKnown) ? "这一档的申请已提交，审批状态还没查到；先点「查询原结果」。" : "这一档有结果未知的申请，先点「查询原结果」。") : undefined)} onClick={() => adjustCap(tier, cap)}>调整</Button> : undefined} />
+                  action={!row.locked && showCapAdjust ? <Button size="sm" aria-label={`调整${TIER[tier].label}优先级保留上限`} disabledReason={capPermission || newMutationReason || (pendingCaps.some((item) => item.tier === tier) ? (pendingCaps.some((item) => item.tier === tier && item.ticketStatus === "pending") ? "这一档有申请等另一位批准，批准或驳回后才能再调。" : pendingCaps.some((item) => item.tier === tier && item.receiptKnown) ? "这一档的申请已提交，审批状态还没查到；先点「查询原操作」。" : "这一档有结果未知的申请，先点「查询原操作」。") : undefined)} onClick={() => adjustCap(tier, cap)}>调整</Button> : undefined} />
               );
             })}
           </div>}
@@ -1532,7 +1532,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
         others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
         <div className="i3-form">
-          {frozen && <Notice tone="warn" title={frozenTitle(blocked, "结果未知")}>原请求已锁定，不能再改。{frozenNextStep(blocked, "先在页面上方查询原结果")}</Notice>}
+          {frozen && <Notice tone="warn" title={frozenTitle(blocked, "结果未知")}>原请求已锁定，不能再改。{frozenNextStep(blocked, "先在页面上方查询原操作")}</Notice>}
           {saveError && <Notice tone="danger" title="草稿没有保存">{saveError}</Notice>}
           <section className="i3-form-section" aria-labelledby="i3-f-base">
             <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>

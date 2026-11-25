@@ -85,7 +85,7 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
       routeCommands.forget(fingerprint, commandKey); onDone();
     } catch (cause) {
       if (stamp !== actorStamp() || !mounted.current) return;
-      setPending(record); setVersions(null); setError("调整结果未知，原内容和理由已保留，请查询原结果。");
+      setPending(record); setVersions(null); setError("调整结果未知，原内容和理由已保留，请查询原操作。");
     } finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   }
   async function check() {
@@ -104,7 +104,7 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
     } catch (cause) { if (stamp === actorStamp() && mounted.current) setError("暂时查不到原调整结果，原内容和理由已保留。"); }
     finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   }
-  if (pending) return <Modal title="组范围调整结果未知" icon={Users} busy={busy} onClose={onClose} footer={<><Button size="sm" disabled={busy} onClick={onClose}>返回</Button><Button variant="primary" disabled={busy} onClick={() => void check()}>查询原结果</Button></>}><Notice tone="warn">有一次调整结果未知，原客户和内容已锁定。</Notice><Facts><Fact k="客户">{m1CustomerCode(pending.item.customerId)}</Fact><Fact k="原组">{groups.find(g => g.id === pending.item.routeGroupId)?.name || "未分组"}</Fact><Fact k="目标组">{groups.find(g => g.id === pending.payload.targetGroupId)?.name || "未分组"}</Fact><Fact k="原理由">{pending.payload.reason}</Fact></Facts><Fold title="技术信息" summary="操作编号和版本"><Facts><Fact k="操作编号">{pending.commandKey}</Fact><Fact k="路由版本">{pending.payload.expectedRouteVersion}</Fact><Fact k="源组版本">{pending.payload.sourceGroupVersion ?? "—"}</Fact><Fact k="目标组版本">{pending.payload.targetGroupVersion ?? "—"}</Fact></Facts></Fold>{error && <Notice tone="danger">{error}</Notice>}</Modal>;
+  if (pending) return <Modal title="组范围调整结果未知" icon={Users} busy={busy} onClose={onClose} footer={<><Button size="sm" disabled={busy} onClick={onClose}>返回</Button><Button variant="primary" disabled={busy} onClick={() => void check()}>查询原操作</Button></>}><Notice tone="warn">有一次调整结果未知，原客户和内容已锁定。</Notice><Facts><Fact k="客户">{m1CustomerCode(pending.item.customerId)}</Fact><Fact k="原组">{groups.find(g => g.id === pending.item.routeGroupId)?.name || "未分组"}</Fact><Fact k="目标组">{groups.find(g => g.id === pending.payload.targetGroupId)?.name || "未分组"}</Fact><Fact k="原理由">{pending.payload.reason}</Fact></Facts><Fold title="技术信息" summary="操作编号和版本"><Facts><Fact k="操作编号">{pending.commandKey}</Fact><Fact k="路由版本">{pending.payload.expectedRouteVersion}</Fact><Fact k="源组版本">{pending.payload.sourceGroupVersion ?? "—"}</Fact><Fact k="目标组版本">{pending.payload.targetGroupVersion ?? "—"}</Fact></Facts></Fold>{error && <Notice tone="danger">{error}</Notice>}</Modal>;
   if (requiresFreshPool) return <Modal title="返回客户池重新确认" icon={Users} onClose={() => onDone()} footer={<><Button size="sm" onClick={() => onDone()}>返回</Button></>}><Notice tone="danger">{error}</Notice></Modal>;
   return <Modal title="调整待绑定客户组范围" icon={Users} busy={busy} onClose={onClose} footer={<><Button size="sm" disabled={busy} onClick={onClose}>返回</Button><Button variant="primary" disabled={busy} disabledReason={!canSave ? "选一个不同的目标组，填 8–200 字理由；分组资料读完后才能提交" : undefined} onClick={() => void save()}>确认调整</Button></>}>
     <div className="m1-command-form">
@@ -112,7 +112,7 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
     <p className="rd-note">调整范围后仍须明确分配给专属客服。</p>
     <Field label="目标组"><Select aria-label="目标客服组" value={targetId} disabled={busy || Boolean(pending)} onChange={setTargetId} options={[{ value: "", label: "未分组" }, ...groups.filter(g => g.status === "ENABLED").map(g => ({ value: g.id, label: g.name }))]} /></Field>
     <Field label="调整理由" required help="请填写 8–200 字，将记入操作记录。"><Textarea value={reason} maxLength={200} count={`${reasonLength}/200`} disabled={busy || Boolean(pending)} onChange={event => setReason(event.target.value)} /></Field>
-    {pending ? <Button size="sm" disabled={busy} onClick={() => void check()}>查询原结果</Button> : !versions && !error ? <p className="rd-note" role="status">正在加载分组资料…</p> : null}
+    {pending ? <Button size="sm" disabled={busy} onClick={() => void check()}>查询原操作</Button> : !versions && !error ? <p className="rd-note" role="status">正在加载分组资料…</p> : null}
     {error && <Notice tone="danger" action={!pending && !requiresFreshPool ? <Button size="sm" disabled={busy} onClick={() => setReload(n => n + 1)}>重读组资料</Button> : undefined}>{error}</Notice>}
     </div>
   </Modal>;
@@ -124,7 +124,7 @@ function errorText(error: unknown, reading = false): string {
     return status === 401 ? "登录已失效，请重新登录后读取待分配资料。" : status === 403 ? "当前账号无权读取待分配资料，请核对获准范围。" : "待分配资料读取失败，请重新读取。";
   }
   if (error instanceof Error && "backendMessage" in error && typeof error.backendMessage === "string" && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error);
-  if (isIndeterminateSupportError(error)) return "分配结果未知，请查询原结果。";
+  if (isIndeterminateSupportError(error)) return "分配结果未知，请查询原操作。";
   const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
   if (status === 401) return "登录已失效，请重新登录。";
   if (status === 403) return "当前账号无权查看或分配待绑定客户。";
@@ -296,7 +296,7 @@ export function M1SupervisorPool({ permission, initialGroupId, toast }: { permis
       if (actor !== actorStamp()) return;
       if (!acknowledged && isExplicitRejection(cause)) { poolCommands.forget(fingerprint, command.key); setError(errorText(cause)); setReload(n => n + 1); return; }
       setPending(command); setSelected(new Map()); setTarget(null); setConfirm(false); setPool(null); setAgents(null);
-      setError("分配结果未知，原操作已保留，请查询原结果。");
+      setError("分配结果未知，原操作已保留，请查询原操作。");
     } finally { assignmentInFlight.current = false; setSaving(false); }
   }
 
@@ -326,12 +326,12 @@ export function M1SupervisorPool({ permission, initialGroupId, toast }: { permis
   if (permission === "agent") return <Panel title="待分配"><BlockState state="empty" title="只有客服主管或超级管理员能查看待分配客户。" /></Panel>;
   if (scopeError) return <Panel title="待分配"><BlockState state="error" title="分配范围加载失败" detail={scopeError} onRetry={() => setScopeReload(n => n + 1)} /></Panel>;
   if (!scope) return <Panel title="待分配"><BlockState state="loading" title="正在加载分配范围…" /></Panel>;
-  if (pending) return <Panel className="m1-pool-pending" title="上次分配结果未知" icon={Users} tone="warn"><Notice tone="warn" action={<Button size="sm" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}>有一次分配结果未知，先查询原结果，查到后才能继续。</Notice><Facts><Fact k="原目标专属客服">{poolCommands.list().find(r => r.commandKey === pending.key)?.target.name || pending.payload.targetAgentAdminId}</Fact><Fact k="原分配原因">{pending.payload.reason}</Fact><Fact k="原名单">{pending.payload.customers.length} 位</Fact></Facts><Fold title="原名单与命令" summary="保留原对象与版本"><p data-mono>{pending.key}</p><Table label="原分配名单"><thead><Tr><Th>客户</Th><Th>原版本</Th></Tr></thead><tbody>{pending.payload.customers.map(c => <Tr key={c.id}><Td>{m1CustomerCode(c.id)}</Td><Td>{c.expectedVersion}</Td></Tr>)}</tbody></Table></Fold>{error && <Notice tone="danger">{error}</Notice>}</Panel>;
+  if (pending) return <Panel className="m1-pool-pending" title="上次分配结果未知" icon={Users} tone="warn"><Notice tone="warn" action={<Button size="sm" disabled={saving} onClick={() => void checkPending()}>查询原操作</Button>}>有一次分配结果未知，先查询原操作，查到后才能继续。</Notice><Facts><Fact k="原目标专属客服">{poolCommands.list().find(r => r.commandKey === pending.key)?.target.name || pending.payload.targetAgentAdminId}</Fact><Fact k="原分配原因">{pending.payload.reason}</Fact><Fact k="原名单">{pending.payload.customers.length} 位</Fact></Facts><Fold title="原名单与命令" summary="保留原对象与版本"><p data-mono>{pending.key}</p><Table label="原分配名单"><thead><Tr><Th>客户</Th><Th>原版本</Th></Tr></thead><tbody>{pending.payload.customers.map(c => <Tr key={c.id}><Td>{m1CustomerCode(c.id)}</Td><Td>{c.expectedVersion}</Td></Tr>)}</tbody></Table></Fold>{error && <Notice tone="danger">{error}</Notice>}</Panel>;
   if (!readableScope) return <Panel title="待分配"><BlockState state="empty" title={groupId === undefined ? "当前没有可管理的客服组，请先在组管理中建立或接管组。" : "所选组不在当前授权范围，请重新选择。"} />{groupId !== undefined && <div className="m1-pool-back"><Button size="sm" disabled={Boolean(pending)} onClick={() => setGroupId(undefined)}>返回授权范围</Button></div>}</Panel>;
   return <section className="m1-pool" aria-label="待绑定客户池">
     <Panel title="待分配" sub={pool ? `共 ${pool.total} 位 · 北京时间` : "尚未读取"} explain="明确选择客户后分配，最多 100 位。忙碌或离线不会自动改派。未选客户及已有团队成员保持原归属。">
       {failedReason !== null && <Notice tone="warn">原分配没有成功，理由已保留；请按最新资料重新选择并预览。</Notice>}
-      {scope.mode === "ALL" && isSuper && adminId && routeCommands.list().some(row => row.actorId === adminId) && <Notice tone="warn" action={<Button size="sm" onClick={() => setRouteItem(routeCommands.list().find(row => row.actorId === adminId)!.item)}>查询原结果</Button>}>有一次组范围调整结果未知。</Notice>}
+      {scope.mode === "ALL" && isSuper && adminId && routeCommands.list().some(row => row.actorId === adminId) && <Notice tone="warn" action={<Button size="sm" onClick={() => setRouteItem(routeCommands.list().find(row => row.actorId === adminId)!.item)}>查询原操作</Button>}>有一次组范围调整结果未知。</Notice>}
       {adminId && hasPendingRandomAssignment(adminId) && <Notice tone="warn" action={<Button size="sm" onClick={() => setRandomCustomers([])}>查询上次随机分配结果</Button>}>上次随机分配结果未知，不能另发分配。</Notice>}
       <FilterBar onSubmit={() => { setPage(1); setKeyword(keywordInput.trim()); }} onClear={() => { setKeywordInput(""); setKeyword(""); setReasonFilter(""); setPage(1); }} canClear={Boolean(keyword || reasonFilter)} action={<Button type="submit">搜索</Button>}>
         <FilterField label="分配范围"><Select aria-label="选择客服组" value={String(groupId ?? "")} disabled={saving || Boolean(randomCustomers)} onChange={value => { setGroupId(value ? Number(value) : undefined); setPage(1); setAgentPage(1); setPool(null); setAgents(null); setSelected(new Map()); setStaleIds(new Set()); setTarget(null); setAssignmentReason(""); setFailedReason(null); setConfirm(false); }} options={[{ value: "", label: scope.mode === "ALL" ? "全部授权组及未分组客户" : "全部主管管理组" }, ...scope.groups.map(group => ({ value: group.id, label: group.name }))]} /></FilterField>
@@ -362,7 +362,7 @@ export function M1SupervisorPool({ permission, initialGroupId, toast }: { permis
       setRouteItem(null); setPool(null); setSelected(new Map()); setTarget(null); setReload(n => n + 1);
       if (applied) toast("原组范围调整已生效。", "success");
     }} />}
-    {confirm && <Modal title="确认分配客户" icon={Users} wide busy={saving} onClose={() => { if (!saving) setConfirm(false); }} footer={<><Button type="button" size="sm" disabled={saving} onClick={() => setConfirm(false)}>返回</Button><Button type="button" variant="primary" disabled={saving} disabledReason={pending ? "先查询原结果" : !canSubmit ? "请选择有效专属客服并填写 8–200 字原因" : undefined} onClick={() => void assign()}>{saving ? "分配中…" : pending ? "等待原命令结果" : `确认分配 ${assignmentCustomers.length} 位`}</Button></>}>
+    {confirm && <Modal title="确认分配客户" icon={Users} wide busy={saving} onClose={() => { if (!saving) setConfirm(false); }} footer={<><Button type="button" size="sm" disabled={saving} onClick={() => setConfirm(false)}>返回</Button><Button type="button" variant="primary" disabled={saving} disabledReason={pending ? "先查询原操作" : !canSubmit ? "请选择有效专属客服并填写 8–200 字原因" : undefined} onClick={() => void assign()}>{saving ? "分配中…" : pending ? "等待原命令结果" : `确认分配 ${assignmentCustomers.length} 位`}</Button></>}>
       <div className="m1-command-form">
       <section className="m1-assign-customers" aria-label="本次分配的客户"><h3>本次分配 <b>{assignmentCustomers.length}</b> 位客户</h3><ul>{assignmentCustomers.map((item) => <li key={item.customerId}><span data-mono>{m1CustomerCode(item.customerId)}</span><span>{POOL_REASONS[item.reason]}</span></li>)}</ul><p className="rd-note">只分配下列选中的客户，其他客户不变。之后这些客户邀请的新用户会跟随同一位专属客服。</p></section>
       {staleIds.size > 0 && <Notice tone="warn" action={<Button type="button" size="sm" onClick={() => setReload((n) => n + 1)}>刷新本页预览</Button>}>{staleIds.size} 位已选客户的资料变了，需要刷新。已选的还在，刷新本页或取消这些客户后再确认。</Notice>}
@@ -375,7 +375,7 @@ export function M1SupervisorPool({ permission, initialGroupId, toast }: { permis
       {target && !targetFresh && <Notice tone="danger">已选专属客服不在当前有效名单或资料已变化，请返回相应页重新选择。</Notice>}
       {target && <p className="rd-note">专属客服当前{target.busy ? "忙碌" : "可接待"}；忙碌或离线不会自动改派。绑定人数没有额外上限。</p>}
       <Field label="分配原因" required help={reasonLeft && !reasonOk ? undefined : "请填写 8–200 字，将记入操作记录。"} error={reasonLeft && !reasonOk ? "请填写 8–200 字的分配原因。" : undefined}>{control => <Textarea {...control} value={assignmentReason} maxLength={200} disabled={saving || Boolean(pending)} count={`${assignmentReason.trim().length}/200`} onBlur={() => setReasonLeft(true)} onChange={event => setAssignmentReason(event.target.value)} placeholder="说明本次分配的原因" />}</Field>
-      {pending && <Notice tone="warn" action={<Button type="button" size="sm" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}>上次提交结果未知；客户范围和目标专属客服已锁定。</Notice>}
+      {pending && <Notice tone="warn" action={<Button type="button" size="sm" disabled={saving} onClick={() => void checkPending()}>查询原操作</Button>}>上次提交结果未知；客户范围和目标专属客服已锁定。</Notice>}
       {error && <Notice tone="danger">{error}</Notice>}
       </div>
     </Modal>}

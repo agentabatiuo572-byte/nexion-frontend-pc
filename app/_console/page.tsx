@@ -277,7 +277,7 @@ export default function CommandCenter() {
   ) : (
     <div className="cc-fundline" data-tone={fundReady ? "ok" : undefined}>
       <ShieldCheck size={16} aria-hidden />
-      {fundReady ? <Explain label="资金安全怎么看" content={fundExplain}>{fundText}</Explain> : <span>正在读取资金安全…</span>}
+      {fundReady ? <Explain label="资金安全怎么看" content={fundExplain}>{fundText}</Explain> : <span>正在加载资金安全…</span>}
       {fundReady && (
         <button type="button" className="cc-fundline-toggle" aria-expanded={fundOpen} onClick={() => (fundOpen ? folds.setOpen("fund", false) : openFold("fund", "fund"))}>
           {fundOpen ? "收起明细" : "展开明细"}
@@ -320,7 +320,7 @@ export default function CommandCenter() {
                   : <Explain label="运营阶段是什么" content="平台按运营阶段调整提现冷却、奖励加成这些参数，这里写现在是哪个阶段、这轮运营的第几个月。在运营阶段设置里调整，这页只显示。">{phaseText}</Explain>}
               </span>
             )}
-            <span>{clock ? `${clock} 读取（${businessZone().label}）` : "正在读取…"}</span>
+            <span>{clock ? `${clock} 读取（${businessZone().label}）` : "正在加载…"}</span>
             <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={firstScreenLoading} onClick={refresh}>刷新</Button>
           </span>
         )}

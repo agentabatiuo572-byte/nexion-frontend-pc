@@ -216,8 +216,8 @@ export function G1Staking() {
     return (
       <RdPage>
         {header}
-        <Conclusion state="unknown">质押数据：正在读取</Conclusion>
-        <BlockState state="loading" title="质押数据加载中…" />
+        <Conclusion state="unknown">质押数据：正在加载</Conclusion>
+        <BlockState state="loading" title="正在加载质押数据…" />
       </RdPage>
     );
   }
@@ -232,7 +232,7 @@ export function G1Staking() {
           : (
             <>
               <Conclusion state="unknown">质押数据没读到，这页现在没有判断</Conclusion>
-              <BlockState state="error" title="质押数据加载失败" detail={error || "没有收到数据，请重试；一直失败请联系值班同事。"} onRetry={() => void reload()} retryLabel="重新加载" />
+              <BlockState state="error" title="质押数据加载失败" detail={error || "没有收到数据，请重试；一直失败请联系值班同事。"} onRetry={() => void reload()} />
             </>
           )}
       </RdPage>

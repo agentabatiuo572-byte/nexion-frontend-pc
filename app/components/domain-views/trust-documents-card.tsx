@@ -133,7 +133,7 @@ export function TrustDocumentsCard() {
                 </td>
               </tr>
             ))}
-            {!documents.length && <tr><td colSpan={7}><div className="itint">{loading ? "资料文件加载中…" : "暂无资料文件，请刷新。"}</div></td></tr>}
+            {!documents.length && <tr><td colSpan={7}><div className="itint">{loading ? "正在加载资料文件…" : "暂无资料文件，请刷新。"}</div></td></tr>}
           </tbody>
         </table>
       </div>

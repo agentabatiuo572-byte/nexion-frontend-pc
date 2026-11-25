@@ -107,7 +107,7 @@ function contentRetryBlocked(state: PendingRecoveryState, permission?: string) {
   if (state.expired) return RETRY_EXPIRED_TEXT;
   if (permission) return permission;
   if (state.replayBlock === "readback-only") return "原操作记录不完整，只能查询核对，不能重试。";
-  return state.replayBlock ? "先查询原结果，明确查不到后才能重试。" : undefined;
+  return state.replayBlock ? "先查询原操作，明确查不到后才能重试。" : undefined;
 }
 
 async function readContentRecovery(record: RecoverableContent, authority: FundCommandOrigin["readAuthority"], scope: string | undefined,
@@ -252,7 +252,7 @@ export function i6RetryPermission(command: I6Command): string | undefined {
   const auth = useAdminAuth.getState(), session = auth.session;
   const permissions = command.operation.startsWith("message-") || ["rescan", "integrity-fix"].includes(command.operation)
     ? ["content_i6_write"] : ["content_i7_write", ...(["course-publish", "version-publish", "version-rollback"].includes(command.operation) ? ["content_i7_course_reward_adjust"] : [])];
-  if (!auth.isAuthenticated || auth.logoutPending || !session || !permissions.every(permission => session.authorities.includes(permission))) return "当前账号没有这项操作权限，请查询原结果。";
+  if (!auth.isAuthenticated || auth.logoutPending || !session || !permissions.every(permission => session.authorities.includes(permission))) return "当前账号没有这项操作权限，请查询原操作。";
   if (!command.original) return "原操作记录不完整，只能查询核对，不能重试。";
   return undefined;
 }
@@ -313,9 +313,9 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
     response = await guardedFetch(`/api/admin/content${command.original!.path}`, { method: command.original!.method,
       body: command.original!.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
     payload = parseI6Json(await response.text()) as ApiResult<unknown>;
-  } catch { throw uncertain("结果未知，请查询原结果。"); }
+  } catch { throw uncertain("结果未知，请查询原操作。"); }
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isInteger(payload.code)
-    || payload.message !== undefined && typeof payload.message !== "string") throw uncertain("原操作的返回内容无法核实，请保留记录并查询原结果。");
+    || payload.message !== undefined && typeof payload.message !== "string") throw uncertain("原操作的返回内容无法核实，请保留记录并查询原操作。");
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message);
   if (!response.ok || payload.code !== 0 || unknown) {
     const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
@@ -363,7 +363,7 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
       }
     }
   } catch { /* An unreadable success is still an unresolved original. */ }
-  if (!valid) throw uncertain("原操作的返回内容无法核实，请保留记录并查询原结果。");
+  if (!valid) throw uncertain("原操作的返回内容无法核实，请保留记录并查询原操作。");
   uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
   return payload.data;
 }
@@ -392,7 +392,7 @@ async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6Co
   } else if (command.operation === "version-draft" && command.snapshot?.courseVersion) {
     validateI6CourseOptions(command.input, command.snapshot.courseVersion.payload);
   }
-  if (pendingI6Commands().some(row => row.scope === "unknown" || row.scope === command.scope)) throw new Error("此对象有结果未知的原操作，请先查询原结果。");
+  if (pendingI6Commands().some(row => row.scope === "unknown" || row.scope === command.scope)) throw new Error("此对象有结果未知的原操作，请先查询原操作。");
   uncertainCommandKeys.remember(fingerprint, commandKey, { i6 });
   if (!uncertainCommandKeys.isDurablyStored(fingerprint, commandKey)) {
     uncertainCommandKeys.forget(fingerprint, commandKey);
@@ -502,7 +502,7 @@ export async function queryI4DraftCommand(saved: I4DraftCommand, evidence?: Fund
 export function i4DraftPermission(): string | undefined {
   const auth = useAdminAuth.getState();
   return !auth.isAuthenticated || auth.logoutPending || !auth.session?.authorities.includes("content_i4_write")
-    ? "当前账号没有草稿维护权限，请查询原结果。" : undefined;
+    ? "当前账号没有草稿维护权限，请查询原操作。" : undefined;
 }
 
 async function i4DeletionMatches(command: I4DraftCommand) {
@@ -528,9 +528,9 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
     response = await guardedFetch(`/api/admin/content${command.original.path}`, { method: command.original.method,
       body: command.original.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
     payload = await response.json();
-  } catch { throw new OutcomeUnknownError("结果未知，请查询原结果。"); }
+  } catch { throw new OutcomeUnknownError("结果未知，请查询原操作。"); }
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isInteger(payload.code)
-    || payload.message !== undefined && typeof payload.message !== "string") throw new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。");
+    || payload.message !== undefined && typeof payload.message !== "string") throw new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原操作。");
   if (!response.ok || payload.code !== 0 || response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
     const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
     const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
@@ -555,7 +555,7 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
         && i4DraftReceiptFieldsMatch(command.input!.fields, row.fields, command.snapshot?.fields);
     }
   } catch { valid = false; }
-  if (!valid) throw new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。");
+  if (!valid) throw new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原操作。");
   uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
 }
 
@@ -719,7 +719,7 @@ export function pendingI3Commands(): I3Command[] {
 }
 
 export function i3RetryPermission(command: I3Command): string | undefined {
-  if (!i1CanWrite("content_i3_write")) return "当前账号没有这项操作权限，请查询原结果。";
+  if (!i1CanWrite("content_i3_write")) return "当前账号没有这项操作权限，请查询原操作。";
   // The execution permission is checked again server-side. Legacy action records without an original tier cannot prove this prerequisite.
   if (["schedule", "send-now", "cancel"].includes(command.action)) {
     if (!command.snapshot) return "原操作记录不完整，只能查询核对，不能重试。";
@@ -729,7 +729,7 @@ export function i3RetryPermission(command: I3Command): string | undefined {
 }
 
 /** 结果未知时确认框里的那一句，和 H4 同一种写法：不说「不要重复提交」，按框里的按钮说怎么做。 */
-const I3_RESULT_UNKNOWN = "结果未知，可能已经生效，请先查询原结果。";
+const I3_RESULT_UNKNOWN = "结果未知，可能已经生效，请先查询原操作。";
 
 async function sendI3Command(command: I3Command, retry: boolean): Promise<void> {
   if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
@@ -784,7 +784,7 @@ async function sendI3Command(command: I3Command, retry: boolean): Promise<void> 
       }
     } catch { /* Unreadable success is still unknown; retain the original request. */ }
   }
-  if (!valid) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  if (!valid) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原操作。"), { commandKey: command.commandKey });
   uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
 }
 
@@ -978,7 +978,7 @@ function i2ReceiptMatches(command: I2Command, data: unknown): boolean {
 async function sendI2Command(command: I2Command, retry: boolean): Promise<unknown> {
   if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
   if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
-  if (!i1CanWrite("content_i2_write")) throw new Error("当前账号没有这项操作权限，请查询原结果。");
+  if (!i1CanWrite("content_i2_write")) throw new Error("当前账号没有这项操作权限，请查询原操作。");
   if (!uncertainCommandKeys.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
   let response: Response, payload: ApiResult<unknown>;
   try {
@@ -986,11 +986,11 @@ async function sendI2Command(command: I2Command, retry: boolean): Promise<unknow
       body: command.original.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
     payload = await response.json() as ApiResult<unknown>;
   } catch {
-    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原结果。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原操作。"), { commandKey: command.commandKey });
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || typeof payload.code !== "number"
     || payload.message !== undefined && typeof payload.message !== "string") {
-    throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原操作。"), { commandKey: command.commandKey });
   }
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message);
   if (!response.ok || payload.code !== 0 || unknown) {
@@ -1003,7 +1003,7 @@ async function sendI2Command(command: I2Command, retry: boolean): Promise<unknow
     }
     throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey, status: response.status, reasonCode: payload.message });
   }
-  if (!i2ReceiptMatches(command, payload.data)) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  if (!i2ReceiptMatches(command, payload.data)) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原操作。"), { commandKey: command.commandKey });
   uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
   return payload.data;
 }
@@ -1011,7 +1011,7 @@ async function sendI2Command(command: I2Command, retry: boolean): Promise<unknow
 export const i2Recovery = contentRecovery(pendingI2Commands, () => !!useAdminAuth.getState().session?.authorities.includes("content_i2_write"));
 export function i2RetryBlockedReason(command: I2Command) {
   return contentRetryBlocked(i2Recovery.state(command),
-    i1CanWrite("content_i2_write") ? undefined : "当前账号没有这项操作权限，请查询原结果。");
+    i1CanWrite("content_i2_write") ? undefined : "当前账号没有这项操作权限，请查询原操作。");
 }
 
 function i2ReceiptScope({ path, method }: I1Original) {
@@ -1047,7 +1047,7 @@ async function prepareI2Command(path: string, init: RequestInit, before?: Record
     commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i2_read") };
   const command = readI2Command({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i2: original });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
-  if (!i1CanWrite("content_i2_write")) throw new Error("当前账号没有这项操作权限，请查询原结果。");
+  if (!i1CanWrite("content_i2_write")) throw new Error("当前账号没有这项操作权限，请查询原操作。");
   if (pendingI2Commands().some((row) => !row.original || row.target === command.target
     || path === "/nova/channels" && row.original.method === "POST" && row.original.path === path
       && row.object.trim() === command.object.trim())) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");
@@ -1192,7 +1192,7 @@ async function i1ReceiptMatches(command: I1Command, data: unknown) {
 
 async function finishI1Receipt(command: I1Command, data: unknown) {
   const matches = await i1ReceiptMatches(command, data).catch(() => false);
-  if (!matches) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  if (!matches) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原操作。"), { commandKey: command.commandKey });
   uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
   return data;
 }
@@ -1201,7 +1201,7 @@ async function sendI1Command(command: I1Command, retry: boolean): Promise<unknow
   if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
   if (command.readbackReceipt) return finishI1Receipt(command, command.readbackReceipt.data);
   if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
-  if (!i1CanWrite(command.permission)) throw new Error("当前账号没有这项操作权限，请查询原结果。");
+  if (!i1CanWrite(command.permission)) throw new Error("当前账号没有这项操作权限，请查询原操作。");
   if (!uncertainCommandKeys.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
   let response: Response, payload: ApiResult<unknown>;
   try {
@@ -1209,13 +1209,13 @@ async function sendI1Command(command: I1Command, retry: boolean): Promise<unknow
       body: command.original.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
     payload = await response.json() as ApiResult<unknown>;
   } catch {
-    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原结果或按原操作重试。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原操作或按原操作重试。"), { commandKey: command.commandKey });
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原操作。"), { commandKey: command.commandKey });
   }
   if ((payload.code !== undefined && typeof payload.code !== "number") || (payload.message !== undefined && typeof payload.message !== "string")) {
-    throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原操作。"), { commandKey: command.commandKey });
   }
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message);
   if (!response.ok || payload.code !== 0 || unknown) {
@@ -1252,7 +1252,7 @@ async function prepareI1Command(path: string, init: RequestInit) {
     commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i1_read") };
   const command = readI1Command({ fingerprint, commandKey: key, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i1: original });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
-  if (!i1CanWrite(command.permission)) throw new Error("当前账号没有这项操作权限，请查询原结果。");
+  if (!i1CanWrite(command.permission)) throw new Error("当前账号没有这项操作权限，请查询原操作。");
   if (pendingI1Commands().some((row) => !row.original || row.target === command.target)) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");
   uncertainCommandKeys.remember(fingerprint, key, { i1: original });
   if (!uncertainCommandKeys.isDurablyStored(fingerprint, key)) {

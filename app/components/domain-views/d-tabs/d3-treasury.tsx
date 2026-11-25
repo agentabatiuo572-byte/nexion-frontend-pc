@@ -356,7 +356,7 @@ export function D3Treasury() {
       setUnknownTick((tick) => tick + 1);
       if (rejected || isPermissionDenied(err) || retained && !isDOutcomeUnknownError(err)) throw err;
       onUnknown?.();
-      toast("结果未知，不要重复操作。到页面上方查询原结果，或按原操作重试。", "warn");
+      toast("结果未知，不要重复操作。到页面上方查询原操作，或按原操作重试。", "warn");
       return;
     }
     forget();
@@ -561,7 +561,7 @@ export function D3Treasury() {
   const submitExport = async (kind: ExportKind, reason: string, operator = OPERATOR(), originalKey?: string) => {
     if (!main || loading) throw new Error("资金数据没读到或正在刷新，读完再导出。");
     const scope = exportScope(kind);
-    if (!originalKey && pendingKeys.get(scope)) throw new Error("上次导出结果未知，先到页面上方查询原结果");
+    if (!originalKey && pendingKeys.get(scope)) throw new Error("上次导出结果未知，先到页面上方查询原操作");
     const key = originalKey ?? treasuryCommandKey(scope, { exportKind: kind, reason, operator, ownerAdminId: session?.adminId,
       commandOrigin: fundCommandOrigin("POST", `/api/admin/treasury/${kind === "reconciliation" ? "reconciliation" : "liabilities"}/export`, "finance_d3_read") });
     await sendCommand({
@@ -674,13 +674,13 @@ export function D3Treasury() {
   });
 
   const dataBlocked = !main ? "资金数据没读到，刷新后再试" : loading ? "正在刷新，稍等" : undefined;
-  const exportBlocked = (kind: ExportKind) => (unknownCommands.exports.some((record) => record.exportKind === kind) ? "上次导出结果未知，先到页面上方查询原结果" : dataBlocked);
+  const exportBlocked = (kind: ExportKind) => (unknownCommands.exports.some((record) => record.exportKind === kind) ? "上次导出结果未知，先到页面上方查询原操作" : dataBlocked);
   const mainFailed = canReadMain && !main && !loading;
   // 读取失败只在页签上方写一条，带重新加载（VS-107）。
-  const mainState = loading && !main ? <BlockState state="loading" title="正在读取资金数据…" /> : null;
+  const mainState = loading && !main ? <BlockState state="loading" title="正在加载资金数据…" /> : null;
   const tier = main?.reserve.waterLevel.tier;
   const fundAlarm = tier === "DANGER" || tier === "WARNING";
-  const fundConclusion = main ? <FundConclusion main={main} emergencyLink={crossLink("/emergency/kill-switch", "去紧急停用开关")} withdrawalsLink={crossLink("/finance/withdrawals", "去提现审核")} /> : null;
+  const fundConclusion = main ? <FundConclusion main={main} emergencyLink={crossLink("/emergency/kill-switch", "去紧急停用开关 →")} withdrawalsLink={crossLink("/finance/withdrawals", "去提现审核 →")} /> : null;
 
   const asOf = main?.reserve.asOf;
   const header = (
@@ -835,7 +835,7 @@ export function D3Treasury() {
         )
         : (
           <>
-            {loading && <Conclusion state="unknown">资金状态：正在读取</Conclusion>}
+            {loading && <Conclusion state="unknown">资金状态：正在加载</Conclusion>}
             {mainState}
           </>
         ))}

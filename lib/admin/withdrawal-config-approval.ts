@@ -162,22 +162,22 @@ function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWith
   const hasPending = pendingRows.length > 0;
   const queueRowStale = (id: string) => !queueKnown && (id !== ticket?.id || !!terminal);
   const staleRows = rows.some(row => queueRowStale(row.id));
-  const pendingTitle = checking ? "正在读取放宽单状态…"
+  const pendingTitle = checking ? "正在加载放宽单状态…"
     : stale ? "放宽单的最新状态没读到，先按等批准处理"
       : staleRows ? "待批列表正在刷新，部分记录来自上次读取" : `有 ${pendingRows.length} 项放宽等批准`;
   const ownNotice = terminal
     ? `放宽单 ${terminal.id} ${TICKET_STATUS_TEXT[terminal.status]}${terminal.status === "approved" ? "，当前值以这页读到的为准。" : "，这张单没有生效。"}`
     : ownId && (listed || pendingRows.some(row => row.id === ownId))
-      ? checking ? `正在读取放宽单 ${ownId} 的状态…`
+      ? checking ? `正在加载放宽单 ${ownId} 的状态…`
         : stale ? `放宽单 ${ownId} 的最新状态没读到，先按等批准处理，点「刷新」再读。`
           : `放宽单 ${ownId} 已提交，${WITHDRAWAL_APPROVAL_PENDING}${queueKnown ? "" : "点「刷新」看最新状态。"}`
       : null;
   const pendingBlock = "已有放宽等批准，批准、驳回或撤回后才能再提交";
   const blockReason = ticket?.status === "pending" ? pendingBlock
-    : own?.checking ? "正在读取放宽单状态，读到后再提交放宽"
+    : own?.checking ? "正在加载放宽单状态，读到后再提交放宽"
       : stale ? "放宽单的最新状态没读到，点「刷新」读到后再提交"
         : canReadQueue && !queueKnown
-          ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在读取待批列表，读到后再提交放宽"
+          ? queue.state === "failed" ? "待批列表加载失败，重试后再提交放宽" : "正在加载待批列表，读到后再提交放宽"
           : hasPending ? pendingBlock : undefined;
   const pendingOnTighten = pendingRows[0];
   return {
@@ -330,15 +330,15 @@ export function rememberWithdrawalProcessing<T extends PendingMutationRecord & W
 }
 
 export const WITHDRAWAL_COMMAND_PROCESSING = {
-  tone: "progress", label: "还在执行", line: "上次查询显示仍在处理，请稍后查询原结果。",
+  tone: "progress", label: "还在执行", line: "上次查询显示仍在处理，请稍后查询原操作。",
 } as const;
 export const WITHDRAWAL_SUBMISSION_CONFIRMED = {
   tone: "progress",
   label: "审批已提交",
-  line: "审批单号暂时没读到。继续查询原结果，核对审批单号和状态。",
+  line: "审批单号暂时没读到。继续查询原操作，核对审批单号和状态。",
 } as const;
 
-export const WITHDRAWAL_REPLAY_QUERY_REQUIRED = "先查询原结果，查到结论后才能决定是否按原操作重试。";
+export const WITHDRAWAL_REPLAY_QUERY_REQUIRED = "先查询原操作，查到结论后才能决定是否按原操作重试。";
 export const WITHDRAWAL_REPLAY_RESEND = "按原操作重试会重发原内容，已成功的不会重复执行。";
 
 /** 直接写只在尚未查询或查询失败时阻止重试，查到的回执按原有规则处理。 */
@@ -351,13 +351,13 @@ export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | u
 /** 放宽须先按原号明确查不到审批单；能读命令回执的账号还要先查过一次（读失败不算）。查到回执后不另外挡：已建单、处理中由各自的标记挡，其余按原号重试取回当时的结果。 */
 export function withdrawalApprovalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean, proposalMissing: boolean) {
   if (!proposalMissing && !(canInvestigate && outcome && "error" in outcome)) {
-    return "先查询原结果，确认查不到原审批单后才能按原操作重试。";
+    return "先查询原操作，确认查不到原审批单后才能按原操作重试。";
   }
   return withdrawalReplayQueryBlock(outcome, canInvestigate);
 }
 
 export function withdrawalReplayReadError(error: string) {
-  return `查询没有成功：${error.replace(/[。！]+$/, "")}。请再点「查询原结果」。`;
+  return `查询没有成功：${error.replace(/[。！]+$/, "")}。请再点「查询原操作」。`;
 }
 
 /** 有回执时交给通用状态显示；没有回执时说明当前的查询或重试路径。 */
@@ -586,7 +586,7 @@ async function submitThresholdApproval<T, S extends "B1" | "B5">(
   catch { activeReadFailed = true; }
   if (!activeReadFailed && result.conclusion === "succeeded") bThresholdRecovery.settleFromQuery(original, "succeeded");
   return { active, activeReadFailed, ticket, acknowledgement: ticket.status === "pending"
-    ? `已提交审批 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : " · 等待另一位超级管理员批准"}`
+    ? `已提交，等待审批后执行 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : ""}`
     : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果${activeReadFailed ? "；数据没读到，暂不能再改" : ""}` };
 }
 
@@ -637,7 +637,7 @@ async function submitConfigApprovalTicket(
   if (mode === "retry-original") {
     if (!previous) throw new Error("原审批申请已处理，请刷新页面后重新操作。");
     if (withdrawalApproval && previous.withdrawalSubmissionConfirmed) throw new Error("审批已提交，请继续查询原审批单。");
-    if (withdrawalApproval && previous.withdrawalStillProcessing) throw new Error("原请求仍在处理，请继续查询原结果。");
+    if (withdrawalApproval && previous.withdrawalStillProcessing) throw new Error("原请求仍在处理，请继续查询原操作。");
     if (withdrawalApproval && previous.replayRejection) throw new Error("重试已被拒绝，请核实后解除。");
     [values, reason] = configApprovalOriginalInput(sourceDomain, previous.input);
   }
@@ -756,11 +756,11 @@ async function submitConfigApprovalTicket(
     acknowledgement: previous && lookupOnly && withdrawalApproval
       ? `已找到原审批单 ${ticket.id} · ${TICKET_STATUS_TEXT[ticket.status]}`
       : previous && lookupOnly && domain === "F"
-      ? `已找到原审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位超管批准" : " · 请在操作记录查看处理结果"}`
+      ? `已找到原审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位超级管理员批准" : " · 请在操作记录查看处理结果"}`
       : previous && previous.input !== input
       ? `已找到原审批单 ${ticket.id}，本次输入未提交。请核对当前配置后重新操作。`
       : ticket.status === "pending"
-        ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超管批准`
+        ? `已提交，等待审批后执行 · 审批单 ${ticket.id}`
         : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果`,
   };
 }

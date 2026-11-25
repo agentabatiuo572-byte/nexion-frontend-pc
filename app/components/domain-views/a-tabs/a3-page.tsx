@@ -416,7 +416,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       }
     } catch {
       dropCheck(record.commandKey);
-      toast("没有解除：解除前的读取没有成功，原记录还在。稍后再查询原结果核对。", "error");
+      toast("没有解除：解除前的读取没有成功，原记录还在。稍后再查询原操作核对。", "error");
     } finally { setReleasing(null); }
   };
   const openRelease = useCallback((record: A3Command) => setReleasing({ record, busy: false }), []);
@@ -457,10 +457,10 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   };
   const isContent = (record: A3Command) => record.original.kind === "docs" || record.original.kind === "how";
   const contentTag = (record: A3Command) => isRetryExpired(record)
-    ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时，不能再重试。查询原结果会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。">已过期</StatusTag>
+    ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时，不能再重试。「读取当前内容」会和原提交对比：一致就算已保存，对不上时可以核对后解除。">已过期</StatusTag>
     : <StatusTag tone="warn" icon={CircleHelp} explain={a3Deduplicates(record)
-      ? "提交时没收到确定结果，可能已经保存。24 小时内可以按原操作重试，不会重复保存；查询原结果和原提交一致就算已保存。"
-      : "提交时没收到确定结果，可能已经保存。查询原结果会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。"}>结果未知</StatusTag>;
+      ? "提交时没收到确定结果，可能已经保存。24 小时内可以按原操作重试，不会重复保存；「读取当前内容」和原提交一致就算已保存。"
+      : "提交时没收到确定结果，可能已经保存。「读取当前内容」会和原提交对比：一致就算已保存，对不上时可以核对后解除。"}>结果未知</StatusTag>;
   const recoveryRows: GRecoveryRow[] = commands.pending.map(record => {
     const outcome = originalOutcomes[record.commandKey];
     const shown = outcome && originalShown(record, outcome);
@@ -471,9 +471,9 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     key: record.commandKey, name: record.name, change: isContent(record) ? record.change.replace(" · default-", " · ") : record.change, submittedAt: record.createdAt,
     tag: shown ? <StatusTag tone={shown.tone} explain={[shown.line, shown.more].filter(Boolean).join(" ")}>{shown.label}</StatusTag>
       : isContent(record) ? contentTag(record) : isRetryExpired(record) ? record.original.kind === "schedule" || record.original.kind === "cancel" ? expiredTag("direct")
-        : <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时，不能再重试。先查询原结果；查到的，按证据核查结案。">已过期</StatusTag> : unknownTag("direct"),
+        : <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时，不能再重试。先查询原操作；查到的，按证据核查结案。">已过期</StatusTag> : unknownTag("direct"),
     actions: <>
-      <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
+      <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>{isContent(record) ? "读取当前内容" : record.original.kind === "schedule" || record.original.kind === "cancel" ? "读取当前日历" : "查询原操作"}</Button>
       {closable && <Button size="sm" variant="danger-outline" disabled={!!querying} onClick={() => setOriginalClosing(record)}>核查结案</Button>}
       {checks[record.commandKey] && <Button size="sm" variant="ghost" disabled={querying === record.commandKey} onClick={() => openRelease(record)}>解除原操作记录…</Button>}
       {a3Deduplicates(record) && !isRetryExpired(record) && <Button size="sm" disabledReason={mutating ? "正在提交" : (record.original.kind === "experience" || record.original.kind === "docs" || record.original.kind === "how" ? canWriteExperience : session?.role === "superadmin") ? undefined : "你只能查看"}
@@ -500,7 +500,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     if (banner?.status === "on") issues.push({ key: "banner", tone: "warn", title: "维护公告横幅开着", sub: "后台顶部正在显示维护提示", open: "switches" });
     if (downGates.length) issues.push({ key: "gates", tone: "warn", title: `${downGates.length} 项被紧急停用或限制：${downGates.map((gate) => gate.name).join("、")}`, sub: "在紧急停用开关、地区访问限制处理", href: reach("/emergency/kill-switch") ? "/emergency/kill-switch" : undefined });
   }
-  if (recoveryRows.length) issues.push({ key: "recovery", tone: "warn", title: `${recoveryRows.length} 条原操作结果未知`, sub: "在页面上方逐条查询原结果" });
+  if (recoveryRows.length) issues.push({ key: "recovery", tone: "warn", title: `${recoveryRows.length} 条原操作结果未知`, sub: "在页面上方逐条核对" });
   if (calendar?.pending) issues.push({ key: "calendar", tone: "progress", title: `业务时区已安排：${calendar.pending}`, sub: "生效前可以撤销，看「业务日历」", open: "calendar" });
 
   const worst: "ok" | "warn" | "danger" | "unknown" | "neutral" = !overview ? "unknown"
@@ -508,7 +508,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       : issues.some((issue) => issue.tone === "warn") ? "warn"
         : issues.length ? "neutral" : "ok";
   const conclusionText = !overview
-    ? (loading ? "正在读取开关、门槛和运行状况…" : "开关、门槛和运行状况读取失败，这部分没有判断")
+    ? (loading ? "正在加载开关、门槛和运行状况…" : "开关、门槛和运行状况读取失败，这部分没有判断")
     : issues.length === 0 ? "系统配置：一切正常，没有要处理的事"
       : issues.length === 1 ? issues[0].title
         : <>系统配置：有 {issues.length} 件事要留意</>;
@@ -523,8 +523,8 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   /* ────────────────── 页签：开关与门槛 ────────────────── */
 
   const switchesPanel = !overview ? (
-    loading ? <BlockState state="loading" title="正在读取开关和门槛…" />
-      : <BlockState state="error" title="开关和门槛读取失败" detail={loadError ?? undefined} onRetry={() => void refreshOverview()} />
+    loading ? <BlockState state="loading" title="正在加载开关和门槛…" />
+      : <BlockState state="error" title="开关和门槛加载失败" detail={loadError ?? undefined} onRetry={() => void refreshOverview()} />
   ) : (
     <div className="rd-tab-stack">
       <Panel title="全平台开关" icon={ToggleLeft} tone="role-other" sub={`${featureFlags.length} 个 · 时间按${businessZone().label}`}
@@ -542,7 +542,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
               value={<StatusTag tone={on ? "warn" : flag.status === "off" ? "neutral" : "progress"} icon={on ? Megaphone : flag.status === "off" ? CircleOff : undefined}>{on ? "已开启" : flag.status === "off" ? "已关闭" : "部分开放"}</StatusTag>}
               sub={`最近变更 ${timeText(flag.lastChange)}`}
               action={flag.writable
-                ? <Button size="sm" loading={mutating === flag.key} disabledReason={commands.find(`flag:${flag.key}`) ? "结果未知" : !overviewReady.current ? "正在读取" : mutating && mutating !== flag.key ? "另一项正在提交" : undefined} onClick={() => flagChg(flag)}>{on ? "关闭" : "开启"}</Button>
+                ? <Button size="sm" loading={mutating === flag.key} disabledReason={commands.find(`flag:${flag.key}`) ? "结果未知" : !overviewReady.current ? "正在加载" : mutating && mutating !== flag.key ? "另一项正在提交" : undefined} onClick={() => flagChg(flag)}>{on ? "关闭" : "开启"}</Button>
                 : <span className="rd-note">只读</span>} />;
           })}
         </ConfigList>}
@@ -562,7 +562,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
                 <p>只有超级管理员能改，不走审批。系统里叫「{param.name}」。</p>
                 <p className="rd-note" data-mono>{param.key}</p>
               </>}
-              actions={param.writable ? <Button size="sm" loading={mutating === param.key} disabledReason={commands.find(`param:${param.key}`) ? "结果未知" : !overviewReady.current ? "正在读取" : mutating && mutating !== param.key ? "另一项正在提交" : undefined} onClick={() => paramChg(param)}>调整</Button> : <span className="rd-note">只读</span>}>
+              actions={param.writable ? <Button size="sm" loading={mutating === param.key} disabledReason={commands.find(`param:${param.key}`) ? "结果未知" : !overviewReady.current ? "正在加载" : mutating && mutating !== param.key ? "另一项正在提交" : undefined} onClick={() => paramChg(param)}>调整</Button> : <span className="rd-note">只读</span>}>
               <div className="a3-param-value" data-empty={value === null ? "" : undefined}>
                 <strong>{value === null ? (param.value || "—") : grouped(value)}</strong>
                 <span>{param.unit}</span>
@@ -594,8 +594,8 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   /* ────────────────── 页签：应急与运行（只读） ────────────────── */
 
   const statusPanel = !overview ? (
-    loading ? <BlockState state="loading" title="正在读取应急状态和运行状况…" />
-      : <BlockState state="error" title="应急状态和运行状况读取失败" detail={<>{loadError} 读不到时不能当作正常。</>} onRetry={() => void refreshOverview()} />
+    loading ? <BlockState state="loading" title="正在加载应急状态和运行状况…" />
+      : <BlockState state="error" title="应急状态和运行状况加载失败" detail={<>{loadError} 读不到时不能当作正常。</>} onRetry={() => void refreshOverview()} />
   ) : (
     <div className="rd-tab-stack">
       <Panel title="紧急停用和地区限制" icon={Siren} tone="role-other" sub={`${gates.length} 项 · 只读`}
@@ -604,8 +604,8 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
           <p>地区限制：封锁和受限名单都空着才算「没有限制」。风险披露的重新确认不在这里，请到「风险披露」查看。</p>
         </>}
         actions={<span className="rd-row-actions">
-          {reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关</Link>}
-          {reach("/emergency/geo-block", "emergency_j2_read") && <Link className="rd-link" href="/emergency/geo-block" prefetch={false}>去地区访问限制</Link>}
+          {reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关 →</Link>}
+          {reach("/emergency/geo-block", "emergency_j2_read") && <Link className="rd-link" href="/emergency/geo-block" prefetch={false}>去地区访问限制 →</Link>}
         </span>}>
         {gates.length === 0 ? <p className="rd-note">没有读到应急开关</p> : <ul className="a3-gates" aria-label="应急开关状态">
           {gates.map((gate) => {
@@ -677,7 +677,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void refreshOverview(); setCalendarNonce((value) => value + 1); }}>刷新</Button>} />
 
       <GRecoveryNotice title="有原操作结果未知" rows={recoveryRows}
-        explain={<><p>提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，不会重复执行；也可以先点「查询原结果」核对。</p><p>说明内容和开发者文档查询时会和现在的内容对比，一致就算已保存；对不上时，能重试的先按原操作重试，不能重试的可以核对后解除。</p></>}
+        explain={<><p>提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，不会重复执行；也可以先核对：参数、开关和体验设置点「查询原操作」查原结果，营业日历点「读取当前日历」看现在的排期。</p><p>说明内容和开发者文档点「读取当前内容」和原提交对比，一致就算已保存；对不上时，能重试的先按原操作重试，不能重试的可以核对后解除。</p></>}
         lead={contentLead.length ? contentLead : undefined} />
 
       {releasing && releaseModal(releasing.record, releasing.busy)}

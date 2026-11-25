@@ -37,7 +37,7 @@ export function F1V8Review({ ctx, state, v8, canApprove, onApprove }: {
       explain={<><p>名单里是已满足 V8 数值条件的 V7。核对推荐信、做完官方审核后点「审核通过」；审核不通过的不用处理，系统不会自动升 V8。</p>
         <p>驳回或撤回后回到名单，原因在「操作记录与审批」看；已提交的人数值掉下去也不会自动撤单。</p></>}>
       {state.error && rows.length === 0
-        ? <BlockState state="error" title="V8 审核名单读取失败" detail={state.error} onRetry={ctx.queryV8Review ? () => void ctx.queryV8Review!() : undefined} retrying={state.loading} />
+        ? <BlockState state="error" title="V8 审核名单加载失败" detail={state.error} onRetry={ctx.queryV8Review ? () => void ctx.queryV8Review!() : undefined} retrying={state.loading} />
         : rows.length === 0 && !state.loading
           ? <BlockState state="empty" title="还没有 V7 满足 V8 数值条件" detail="V1–V8 各级数值条件都满足的 V7 会列在这里；系统不会自动升到 V8。" />
           : <Table label="已满足 V8 数值条件" className="f1-table f1-v8-table">
@@ -60,10 +60,10 @@ export function F1V8Review({ ctx, state, v8, canApprove, onApprove }: {
                   <Td align="right"><Cell num main={v8?.legRank && v8.legRank !== "NONE" ? `${num(row.qualifiedDownlineCount)} 个 ${v8.legRank} 及以上` : num(row.qualifiedDownlineCount)} /></Td>
                   <Td><Cell mono main={row.inviterCode || "—"} sub={row.inviterCode ? <span className="f5-sans">{row.inviterNickname || "—"}</span> : undefined} /></Td>
                   <Td align="right" sticky="end" data-fit="">{unknownOverrides.has(row.userId)
-                    ? <Cell main={<StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原内容重试。">结果未知</StatusTag>}
+                    ? <Cell main={<StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原操作重试。">结果未知</StatusTag>}
                       sub={unknownOverrides.get(row.userId)?.params.targetV === "V8" && unknownOverrides.get(row.userId)?.params.direction === "promote"
                         ? <Button size="sm" onClick={() => onApprove(row, true)}>查看原操作</Button>
-                        : <Button size="sm" onClick={() => void ctx.recoverF1(`f-vrank-override:${row.userId}`, "query").catch(error => ctx.toast(error instanceof Error ? error.message : "原结果没读到"))}>查询原结果</Button>} />
+                        : <Button size="sm" onClick={() => void ctx.recoverF1(`f-vrank-override:${row.userId}`, "query").catch(error => ctx.toast(error instanceof Error ? error.message : "原结果没读到"))}>查询原操作</Button>} />
                     : row.pendingV8Proposal
                     ? <Cell main={<StatusTag tone="progress" icon={Hourglass}>待审批</StatusTag>}
                       sub={row.pendingV8ProposalCreatedAt ? <span className="f5-sans">已提交 {formatBusinessTimeCompact(row.pendingV8ProposalCreatedAt, "—")}</span> : undefined} />

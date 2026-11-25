@@ -94,7 +94,7 @@ export async function executeH1(row: H1Pending, onReceipt: (receipt: Partial<H1P
       else rememberH1({ ...current, state: explicit ? "rejected" : "unknown", retryRejected: retry && explicit,
         rejectionReason: explicit ? displayAdminError(error) : undefined });
       if (request.kind === "proposal" && isA2OutcomeUncertainError(error)) {
-        error.message = "提交结果未知，可能已经建了审批单，批准前参数不变。原内容和理由已保留，请查询原结果。";
+        error.message = "提交结果未知，可能已经建了审批单，批准前参数不变。原内容和理由已保留，请查询原操作。";
       }
       if (error instanceof Error && request.kind === "patch") {
         if (!explicit) error.message = `${request.label}结果未知。原内容和理由已保留，可以按原操作重试，不会重复执行。`;
