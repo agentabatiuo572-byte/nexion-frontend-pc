@@ -22,7 +22,7 @@ import { currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
 import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
 
-export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number };
+export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number; recovered?: { form: SkuForm; mediaSku: OpsSku } };
 export type E1SkuReview = {
   sku: OpsSku;
   beforeSku?: OpsSku;
@@ -163,9 +163,10 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (!request) return;
     const sku = request.sku, next = sku ? skuToForm(sku) : { ...EMPTY_SKU_FORM, allowedPoolCodes: [], unlock: gates?.phaseOrder[0] ?? "" };
     if (request.unlock !== undefined) next.unlock = request.unlock;
-    const m = skuMedia(sku);
-    setOriginal(sku); setForm(next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
-    setMedia(m); setInitialMedia(imageIdentity(m)); setErrors({}); setTouched(new Set()); setLeave(false); setMediaError("");
+    const originalMedia = skuMedia(sku);
+    const m = request.recovered ? skuMedia(request.recovered.mediaSku) : originalMedia;
+    setOriginal(sku); setForm(request.recovered?.form ?? next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
+    setMedia(m); setInitialMedia(imageIdentity(originalMedia)); setErrors({}); setTouched(new Set()); setLeave(false); setMediaError("");
     setMediaPending(e1MediaCommands.list().find(r => r.actorId === actor) ?? null);
     if (m?.assetId) void refreshPreview(m.assetId);
     void Promise.allSettled([canReadE2 ? fetchTaskPools() : Promise.resolve([]), fetchSkuDatacenterLabels()]).then(([p, l]) => {

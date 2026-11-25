@@ -1,10 +1,11 @@
 "use client";
-import { useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { compareEditDecimals, OperationConfirmModal } from "../design-kit";
 import { RotateCcw } from "lucide-react";
 import { Button, Notice } from "@/app/components/rd";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { isE6VerifiedDraft } from "@/lib/admin/e6-command";
 import { useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 
 /** E6 owns its funding explanation and persisted-command recovery feedback. */
@@ -21,6 +22,15 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
   // 首次提交被明确拒绝、没留原记录：同一份输入再点也会被拒，按钮停住，给「返回修改」。
   const [refused, setRefused] = useState<string>();
   const record = m.pending.find(r => r.scope === scope);
+  const originalKey = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (record) {
+      originalKey.current = record.commandKey;
+    } else if (m.records.some(item => item.commandKey === originalKey.current && isE6VerifiedDraft(item))) {
+      originalKey.current = undefined;
+      props.onClose();
+    }
+  }, [record, m.records, props.onClose]);
   const rejected = !!record && m.rejected.includes(record.commandKey);
   const refusalMessage = refusal?.message ?? refused;
   const blockedReason = props.blockedReason ?? (rejected ? "按原请求重试被明确拒绝，请关闭窗口，核对后解除这条记录。"

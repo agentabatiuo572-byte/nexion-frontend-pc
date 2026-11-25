@@ -28,7 +28,7 @@ import {
   fetchH3DeadOutboxRedrivePreview,
   pendingA4RegistryProposal,
   recoverA4RegistryProposal,
-  a4RegistryRecovery,
+  a4RegistryRecovery, a4RegistryHistory, discardA4RegistryDraft, type A4RegistryAttempt,
   registerA4DomainExtension,
   registerA4Schema,
   type A4DomainExtensionBatch,
@@ -45,7 +45,7 @@ import { FundClosureModal, closureKnown } from "../fund-command-check";
 import { SETTLED_REJECTED, SettledLine, receiptExplain, receiptFact, receiptRejected, rejectedStatus } from "../recovery-panel";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
-import { fetchA2ProposalByKey, fetchA2ReasonPolicy, type A2OperationRow } from "@/lib/admin/a2-client";
+import { fetchA2ReasonPolicy, type A2OperationRow } from "@/lib/admin/a2-client";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -79,6 +79,7 @@ const REGISTRY_OP_TEXT: Record<string, string> = { a4_schema_register: "登记�
 type RegistryConfirm = Pick<ActionConfirmReq, "action" | "detail" | "businessForm" | "briefKind" | "title" | "facts" | "statedBrief"> & {
   /** 审批提示下面的一句：批准前什么不变、批准后会怎样。 */
   completion?: string;
+  draftValues?: Record<string, string>;
   submit?: (actor: AdminSession, reason: string, value?: BusinessFormValue) => Promise<A2OperationRow>;
 };
 
@@ -157,6 +158,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   const [schemaLookupError, setSchemaLookupError] = useState<string | null>(null);
   const [schemaLookupNotFound, setSchemaLookupNotFound] = useState(false);
   const [registryConfirm, setRegistryConfirm] = useState<(RegistryConfirm & { adminId: number; epoch: number; retry?: boolean }) | null>(null);
+  const registryDraftKey = useRef<string | undefined>(undefined);
   const [registryTicket, setRegistryTicket] = useState<{ adminId: number; commandKey?: string; ticket: A2OperationRow } | null>(null);
   const [, setRegistryRevision] = useState(0);
   const schemaLookupSequence = useRef(0);
@@ -229,7 +231,11 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   const [naBatch, setNaBatch] = useState(false);
   const [batchForm, setBatchForm] = useState({ domain: "", event: "", producer: "", consumer: "" });
   const pendingRegistry = registryActor && pendingA4RegistryProposal(registryActor.adminId);
-  const currentRegistryTicket = registryTicket?.adminId === registryActor?.adminId ? registryTicket?.ticket : null;
+  const registryHistory = registryActor ? a4RegistryHistory(registryActor.adminId) : [];
+  const storedRegistryTicket = registryHistory.filter(row => !row.verifiedNotExecuted && row.ticket).at(-1);
+  const shownRegistryTicket = registryTicket?.adminId === registryActor?.adminId ? registryTicket
+    : storedRegistryTicket?.ticket && registryActor ? { adminId: registryActor.adminId, commandKey: storedRegistryTicket.commandKey, ticket: storedRegistryTicket.ticket } : null;
+  const currentRegistryTicket = shownRegistryTicket?.ticket ?? null;
   useEffect(() => {
     if (!pendingRegistry || Date.now() >= pendingRegistry.expiresAt) return;
     const timer = window.setTimeout(() => setRegistryRevision(value => value + 1), pendingRegistry.expiresAt - Date.now());
@@ -246,12 +252,12 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
     return current.session;
   };
 
-  const finishRegistry = (ticket: A2OperationRow & { a4CommandKey?: string }) => {
+  const finishRegistry = (ticket: A2OperationRow & { a4CommandKey?: string }, confirmToClose = registryConfirm) => {
     const actor = currentRegistryActor(false);
     setRegistryTicket({ adminId: actor.adminId, commandKey: ticket.a4CommandKey, ticket });
-    setRegistryConfirm(null);
-    setNaBatch(false);
-    if (ticket.status === "approved") void refreshOverview(true);
+    setRegistryConfirm(current => current === confirmToClose ? null : current);
+    if (naBatch && confirmToClose?.submit) setNaBatch(false);
+    if (ticket.status !== "pending") void refreshOverview(true);
   };
 
   const recoverRegistry = async (retry = false) => {
@@ -263,7 +269,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
       return true;
     } catch (error) {
       if (retry && !pendingA4RegistryProposal(adminId)) {
-        setRegistryConfirm(null);
+        setRegistryConfirm(current => current === registryConfirm ? null : current);
         await refreshOverview(true);
       }
       throw error;
@@ -271,13 +277,13 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   };
 
   const refreshRegistryTicket = async () => {
-    if (!registryTicket?.commandKey || registryTicket.adminId !== registryActor?.adminId) return;
+    if (!shownRegistryTicket?.commandKey || shownRegistryTicket.adminId !== registryActor?.adminId) return;
     try {
-      const ticket = await fetchA2ProposalByKey(registryTicket.commandKey, true, "a");
-      if (!ticket || !ticket.mine || ticket.obj !== registryTicket.ticket.obj || ticket.operationCode !== registryTicket.ticket.operationCode) {
-        throw new Error("A4_REGISTRY_RESULT_UNKNOWN");
-      }
-      setRegistryTicket({ ...registryTicket, ticket });
+      if (shownRegistryTicket.ticket.status !== "pending") return;
+      const ticket = await recoverA4RegistryProposal(shownRegistryTicket.adminId, false, shownRegistryTicket.commandKey);
+      if (!ticket) throw new Error("A4_REGISTRY_RESULT_UNKNOWN");
+      setRegistryTicket({ ...shownRegistryTicket, ticket });
+      if (ticket.status !== "pending") await refreshOverview(true);
     } catch (error) { toast(displayAdminError(error)); }
   };
 
@@ -579,10 +585,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
 
   /* ────────────────── 事件字段登记表 注册 ────────────────── */
 
-  const registerSchema = (prefillEventName = "") => {
+  const registerSchema = (prefillEventName = "", draft?: A4RegistryAttempt) => {
     if (!canWrite) { toast("你只有查看权限，不能登记事件"); return; }
     if (openRegistryRecovery()) return;
     checkNewWrite();
+    registryDraftKey.current = draft?.commandKey;
+    const params = draft?.input.command.params;
     const ownerDomains = SCHEMA_OWNER_DOMAINS.length ? SCHEMA_OWNER_DOMAINS : LEGACY_OWNER_DOMAINS;
     openRegistryConfirm({ briefKind: "config",
       action: "登记新事件或字段",
@@ -623,6 +631,11 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             optionLabels: { false: "不含", true: "含（不能登记）" } },
         ],
       },
+      draftValues: params ? {
+        eventName: String(params.eventName), ownerDomain: String(params.ownerDomain), producer: String(params.producer),
+        consumer: String(params.consumer), propName: String(params.propertyName), propType: String(params.propertyType),
+        samplingPolicy: String(params.samplingPolicy), version: liveSchemaVer, isServerAuthoritative: String(params.serverAuthoritative), isPII: String(params.pii),
+      } : undefined,
       submit: (actor, reason, bv) => {
         const ev = (bv?.eventName || "").trim();
         if (!ev) throw new Error("请填写事件名");
@@ -648,16 +661,19 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
 
   /* ────────────────── 登记 domain 扩展工单 ────────────────── */
 
-  const registerBatch = () => {
+  const registerBatch = (draft?: A4RegistryAttempt) => {
     if (!canWrite) { toast("你只有查看权限，不能登记"); return; }
     if (openRegistryRecovery()) return;
     checkNewWrite();
-    setBatchForm({ domain: "", event: "", producer: "", consumer: "" });
+    registryDraftKey.current = draft?.commandKey;
+    const params = draft?.input.command.params;
+    setBatchForm(params ? { domain: String(params.domainName), event: String(params.eventName).slice(String(params.domainName).length + 1),
+      producer: String(params.producer), consumer: String(params.consumer) } : { domain: "", event: "", producer: "", consumer: "" });
     setBatchTouched({});
     setNaBatch(true);
   };
 
-  const openSchemaPropertyExtension = (schema: A4Overview["schemaRegistrations"][number]) => {
+  const openSchemaPropertyExtension = (schema: A4Overview["schemaRegistrations"][number], draft?: A4RegistryAttempt) => {
     if (!canWrite) { toast("你只有查看权限，不能新增字段"); return; }
     if (openRegistryRecovery()) return;
     checkNewWrite();
@@ -671,6 +687,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       toast("事件目录版本获取失败，请刷新后重试");
       return;
     }
+    registryDraftKey.current = draft?.commandKey;
+    const params = draft?.input.command.params;
     const fields = propertyList(schemaSnapshot.properties);
     openRegistryConfirm({ briefKind: "config",
       action: `给已有事件新增字段 · ${schemaSnapshot.eventName}`,
@@ -701,6 +719,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           },
         ],
       },
+      draftValues: params ? { propertyName: String(params.propertyName), propertyType: String(params.propertyType) } : undefined,
       submit: (actor, reason, businessValue) => {
         const propertyName = String(businessValue?.propertyName ?? "").trim();
         const propertyType = String(businessValue?.propertyType ?? "").trim();
@@ -714,6 +733,14 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       },
     });
   };
+
+  const [propertyDraft, setPropertyDraft] = useState<{ draft: A4RegistryAttempt; schema: A4Overview["schemaRegistrations"][number] } | null>(null);
+  useEffect(() => {
+    if (!propertyDraft) return;
+    setPropertyDraft(null);
+    if (registryConfirm || naBatch || mutating || pendingRegistry || !canWrite) return;
+    openSchemaPropertyExtension(propertyDraft.schema, propertyDraft.draft);
+  }, [propertyDraft]);
 
   const resetSchemaLookup = (nextEventName: string) => {
     if (nextEventName === schemaLookupEventName) return;
@@ -968,6 +995,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           confirmLabel="提交审批"
           briefKind={registryConfirm.briefKind}
           businessForm={registryConfirm.businessForm}
+          getPendingBusinessValue={() => registryConfirm.draftValues}
           reasonMin={a2ReasonMin}
           reasonMax={200}
           getPendingReason={() => pendingA4RegistryProposal(registryConfirm.adminId)?.input.reason}
@@ -995,7 +1023,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             checkNewWrite();
             setMutating("registry-approval");
             try {
-              finishRegistry(await registryConfirm.submit(currentRegistryActor(), reason, businessValue));
+              const actor = currentRegistryActor();
+              const draftKey = registryDraftKey.current;
+              const ticket = await registryConfirm.submit(actor, reason, businessValue);
+              if (draftKey) discardA4RegistryDraft(actor.adminId, draftKey);
+              registryDraftKey.current = undefined;
+              finishRegistry(ticket);
             } finally {
               setMutating(null);
             }
@@ -1035,6 +1068,25 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         {registryRecoveryState?.replayRejection && !pendingRegistry.received && <Button size="sm" onClick={() => releaseRejectedRegistry(pendingRegistry.commandKey)}>解除原操作记录</Button>}
       </>,
     });
+  }
+  const restoreRegistryDraft = async (draft: A4RegistryAttempt) => {
+    if (registryConfirm || naBatch || mutating || pendingRegistry || !canWrite) return;
+    const { command, obj } = draft.input;
+    if (command.op === "a4_schema_register") registerSchema(obj, draft);
+    else if (command.op === "a4_domain_extension_register") registerBatch(draft);
+    else if (command.op === "a4_schema_property_add") {
+      try {
+        const schema = await fetchA4SchemaRegistration(obj);
+        if (schema.eventName !== obj) throw new Error("A4_ORIGINAL_RESULT_MISMATCH");
+        setPropertyDraft({ draft, schema });
+      } catch (error) { toast(displayAdminError(error)); }
+    }
+  };
+  for (const draft of registryHistory.filter(row => row.verifiedNotExecuted)) {
+    recoveryRows.push({ key: draft.commandKey, name: REGISTRY_OP_TEXT[draft.input.command.op],
+      change: draft.input.obj, submittedAt: draft.createdAt, tag: <StatusTag tone="neutral">未执行</StatusTag>,
+      actions: <Button size="sm" disabled={!!registryConfirm || naBatch || !!mutating || !!pendingRegistry || !canWrite}
+        onClick={() => void restoreRegistryDraft(draft)}>重新确认</Button> });
   }
   /** 清理的原号查询：只记下查到的结论给运营看；解不解除由 queryA4RetentionCommand 按后端结论决定。 */
   const queryRetention = async (record: A4Command, evidence?: ECommandEvidence) => {
@@ -1588,7 +1640,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       </Panel>
       <Panel title="接入批次" icon={Layers} tone="role-3" sub={`完成 ${batchDone} / ${batchTotal} 批`}
         explain="一个批次是一组要接入的模块或事件。登记新模块只建接入工单：接通要技术同事另做，也不会自动建事件。批次状态这里只能查看。"
-        actions={<Button size="sm" variant="primary" icon={<FilePlus2 size={14} aria-hidden />} disabledReason={writeBlocked} onClick={registerBatch}>登记新模块</Button>}>
+        actions={<Button size="sm" variant="primary" icon={<FilePlus2 size={14} aria-hidden />} disabledReason={writeBlocked} onClick={() => registerBatch()}>登记新模块</Button>}>
         <StatusDistributionBar label="接入批次按状态" selectedKey={batchFilter === "all" ? undefined : batchFilter}
           state={DOMAIN_EXTENSIONS.length ? "ready" : "empty"} emptyText="还没有接入批次"
           segments={(Object.keys(BATCH_STATE) as A4DomainExtensionBatch["state"][]).map((state) => ({

@@ -7,15 +7,22 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { phoneTime } from "../phone-replacement-receipt";
 import { phonePlatformLabel as platformLabel } from "@/lib/admin/phone-replacement-contract";
 import { RISK_CHECKS, RISK_CODE_LABELS, RISK_MODE_LABELS, fetchPhoneRisk, riskModeError, type PhoneRiskOverview, type PhoneRiskUpdate, type PhoneRiskMode } from "@/lib/admin/phone-risk-client";
-import { useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
+import { useE6DraftEditor, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 import { eReadError } from "./e-command-check";
 const draftOf=({settings:s}:PhoneRiskOverview):PhoneRiskUpdate=>({installModelLock:s.installModelLock,osVersion:s.osVersion,screenScale:s.screenScale,screenSize:s.screenSize,missingSignals:s.missingSignals,accountModelChurn:s.accountModelChurn,churnWindowDays:s.churnWindowDays,churnModelCount:s.churnModelCount,reason:""});
 export function PhoneRiskSection({canWrite,toast}:{canWrite:boolean;toast:(message:string,kind?:"warn")=>void}) {
   const m=useE6Mutations();
   const [overview,setOverview]=useState<PhoneRiskOverview|null>(null),[draft,setDraft]=useState<PhoneRiskUpdate|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false),[editor,setEditor]=useState(false),[confirming,setConfirming]=useState(false);
-  const live=useRef(true);
-  async function load(){setBusy(true);setError("");try{const next=await fetchPhoneRisk();if(live.current){setOverview(next);setDraft(draftOf(next));}return next;}catch(failure){if(live.current){setOverview(null);setError(eReadError(failure));}return null;}finally{if(live.current)setBusy(false);}}
+  const live=useRef(true), editing=useRef(false);
+  editing.current = editor;
+  async function load(){setBusy(true);setError("");try{const next=await fetchPhoneRisk();if(live.current){setOverview(next);if(!editing.current)setDraft(draftOf(next));}return next;}catch(failure){if(live.current){setOverview(null);setError(eReadError(failure));}return null;}finally{if(live.current)setBusy(false);}}
   useEffect(()=>{live.current=true;void load();const read=()=>void load();window.addEventListener("e6-read-risk",read);return()=>{live.current=false;window.removeEventListener("e6-read-risk",read);};},[]);
+  useE6DraftEditor(["risk"], editor || confirming, record => {
+    if (!canWrite || !overview || busy || record.scope !== "risk" || record.payload.kind !== "risk") return false;
+    setDraft({ ...record.payload.input, reason: "" });
+    setEditor(true);
+    return true;
+  });
   const saved=overview?draftOf(overview):null,validation=draft?riskModeError(draft):null;
   const changes=draft&&saved?[...RISK_CHECKS.filter(c=>draft[c.key]!==saved[c.key]).map(c=>({label:c.label,before:RISK_MODE_LABELS[saved[c.key]],after:RISK_MODE_LABELS[draft[c.key]]})),...(draft.churnWindowDays!==saved.churnWindowDays?[{label:"多机型统计窗口",before:`${saved.churnWindowDays} 天`,after:`${draft.churnWindowDays} 天`}]:[]),...(draft.churnModelCount!==saved.churnModelCount?[{label:"多机型数量阈值",before:`${saved.churnModelCount} 个`,after:`${draft.churnModelCount} 个`}]:[])]:[];
   const bypass=(s:PhoneRiskUpdate)=>s.missingSignals!=="ENFORCE"&&(s.osVersion==="ENFORCE"||s.screenScale==="ENFORCE");

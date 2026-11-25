@@ -14,7 +14,7 @@ import { E6PhoneDevices } from "./e6-phone-devices";
 import { PhoneReplacementPolicyPanel } from "./phone-replacement-policy-panel";
 import { PhoneCalibrationPanel } from "./phone-calibration-panel";
 import { PhoneRiskSection } from "./phone-risk-section";
-import { E6MutationProvider, E6PendingNotice, useE6Mutations, type E6Section } from "./e6-mutations";
+import { E6MutationProvider, useE6DraftEditor, useE6Mutations, type E6Section } from "./e6-mutations";
 import type { EViewCtx } from "./types";
 const TABS:readonly {value:E6Section;label:string}[]=[{value:"tasks",label:"手机任务"},{value:"tiers",label:"档位与收益"},{value:"phones",label:"用户手机"},{value:"calibration",label:"校准与风控"}];
 const SECTIONS=[{id:"rules",label:"档位分界"},{id:"hardware",label:"硬件规则"},{id:"pending",label:"待核验硬件"},{id:"trial",label:"试算与发布"},{id:"risk",label:"机型风控"},{id:"replacement",label:"换机规则"},{id:"estimate",label:"高级参数"},{id:"records",label:"记录与生效"}];
@@ -65,7 +65,15 @@ function E6Content({ctx}:{ctx:EViewCtx}) {
 }
 function E6Estimates({ctx}:{ctx:EViewCtx}) {
   const m=useE6Mutations();
-  const [edit,setEdit]=useState<{key:string;label:string;unit:string;value:string}|null>(null);
+  const [edit,setEdit]=useState<{key:string;label:string;unit:string;value:string;initialValue?:string}|null>(null);
+  useE6DraftEditor(["e6_compute_config"], !!edit, record => {
+    if (ctx.e6Loading || ctx.e6Error || !ctx.canWriteE6 || !m.canPropose || record.payload.kind !== "proposal") return false;
+    const { paramKey, value } = record.payload.input.command.params;
+    const param = ctx.e6Config?.yieldEstimate.find(item => e6YieldKey(item.key) === paramKey && record.scope === `param:${paramKey}`);
+    if (!param || typeof value !== "string") return false;
+    setEdit({ key: e6YieldKey(param.key), label: operatorCopyText(param.label), unit: operatorCopyText(param.unit), value: param.value, initialValue: value });
+    return true;
+  });
   const scope=edit?`param:${edit.key}`:"";
   const amplifiesWhen=edit?.key===e6YieldKey("topsBaseline")?"decrease":"increase";
   return <>
@@ -73,7 +81,7 @@ function E6Estimates({ctx}:{ctx:EViewCtx}) {
       <Panel plain title="收益估算参数" icon={Settings2} tone="role-4" data-proof="e6-yield-estimate"><div data-proof="e6-yield-estimate-params"><ConfigList label="收益估算参数">{ctx.e6Config.yieldEstimate.map(p=><ConfigRow key={p.key} name={operatorCopyText(p.label)} what="公共收益估算使用的参数" when="批准后发布公共配置" note="未证明参与现行结算；App 具体位置待确认。" effect="不追溯历史已结收益。" value={`${p.value} ${operatorCopyText(p.unit)}`} action={ctx.canWriteE6&&m.canPropose?<Button size="sm" disabledReason={m.locked(`param:${e6YieldKey(p.key)}`)?"这个参数有结果未知的原提案":undefined} onClick={()=>setEdit({key:e6YieldKey(p.key),label:operatorCopyText(p.label),unit:operatorCopyText(p.unit),value:p.value})}>调整</Button>:undefined}/>)}</ConfigList></div></Panel>
       <Fold title="在线系数与兼容项" summary="历史兼容值 · 只读" inset><ConfigList label="在线历史兼容值">{ctx.e6Config.coefficients.filter(c=>c.key!=="h5BaseFactor").map(c=><ConfigRow key={c.key} name={operatorCopyText(c.label)} value={`${c.value} ${operatorCopyText(c.unit)}`} what="退役的在线历史兼容值" when="只读，不参与任务收益" note={operatorCopyText(c.desc)} action={<span>已退役 · 只读</span>}/>)}</ConfigList><p>连续在线满额时长保留历史兼容值，不可修改，不参与任务收益计算。</p></Fold>
     </>}
-    {edit&&<E6ConfirmModal scope={scope} amplificationBasis={value=>`${edit.label}由 ${edit.value} ${edit.unit} ${amplifiesWhen==="decrease"?"降低":"增加"}至 ${value} ${edit.unit}，相同算力下的估算收益增加。`} briefKind="config" statedBrief={{impact:"批准后发布公共配置，不承诺参与现行手机结算。",check:"核对参数、原值、单位和理由；批准时执行业务与资金保护。"}} action={`调整${edit.label}`} reasonMin={8} reasonMax={200} detail="批准后发布到公共配置，不改变历史已结收益；本页不承诺实际手机结算采用。" completionCopy="请另一位有批准权和手机配置读权的管理员批准。" edit={{kind:"number",current:edit.value,unit:edit.unit,min:Number.MIN_VALUE,disallowCurrent:true,amplifiesWhen}} facts={<Facts><Fact k="参数">{edit.label}</Fact></Facts>} getPendingReason={()=>m.pendingReason(scope)} onClose={()=>setEdit(null)} onConfirm={async(reason,value)=>{
+    {edit&&<E6ConfirmModal scope={scope} amplificationBasis={value=>`${edit.label}由 ${edit.value} ${edit.unit} ${amplifiesWhen==="decrease"?"降低":"增加"}至 ${value} ${edit.unit}，相同算力下的估算收益增加。`} briefKind="config" statedBrief={{impact:"批准后发布公共配置，不承诺参与现行手机结算。",check:"核对参数、原值、单位和理由；批准时执行业务与资金保护。"}} action={`调整${edit.label}`} reasonMin={8} reasonMax={200} detail="批准后发布到公共配置，不改变历史已结收益；本页不承诺实际手机结算采用。" completionCopy="请另一位有批准权和手机配置读权的管理员批准。" edit={{kind:"number",current:edit.value,initialValue:edit.initialValue,unit:edit.unit,min:Number.MIN_VALUE,disallowCurrent:true,amplifiesWhen}} facts={<Facts><Fact k="参数">{edit.label}</Fact></Facts>} getPendingReason={()=>m.pendingReason(scope)} onClose={()=>setEdit(null)} onConfirm={async(reason,value)=>{
       const original=m.pending.find(r=>r.scope===scope);if(original)await m.send(original,true);else {const direction=compareEditDecimals(value??"",edit.value);if(!value||compareEditDecimals(value,"0")!==1||direction===undefined||direction===0)throw new Error("新值须大于 0 且不同于当前值。");const def=findHighOp("e6_compute_config")!,params={paramKey:edit.key,value};await m.proposal(scope,"calibration",{action:`调整${edit.label}`,obj:edit.key,beforeValue:`${edit.value} ${edit.unit}`,afterValue:`${value} ${edit.unit}`,type:def.type,amplifies:amplifiesWhen==="decrease"?direction<0:direction>0,reason,sourceDomain:"E6",command:def.buildCommand(params),target:def.buildTarget(params)});}setEdit(null);ctx.toast("已提交，等待审批后执行");await ctx.refreshE6();
     }}/>}
   </>;

@@ -6,7 +6,7 @@ import { Button, Cell, ColumnPicker, Conclusion, Explain, Fact, Facts, FilterBar
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { canActivateE5Device, canResumeE5UserDevicesFrom, pausedReasonText, type E5Device } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
-import { E6PendingNotice, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
+import { E6PendingNotice, useE6DraftEditor, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 import { e5StoppedNote } from "./e5-device-state";
 import { e6AmountPrecision } from "@/lib/admin/e6-decimal";
 import { E6Amount, E6OriginalValues } from "./e6-amount";
@@ -46,6 +46,18 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
     if(deactivatable&&ctx.canUnbindE5&&m.canPropose)add("unbind",undefined,true);
     return result;
   };
+  useE6DraftEditor(["activate", "deactivate", "pause", "resume", "e5_device_force_activate", "e5_device_unbind"], !!confirm, record => {
+    if (ctx.e5Loading || ctx.e5DeviceError || !canAct || record.payload.kind === "risk") return false;
+    const payload = record.payload;
+    const action = payload.kind === "device" ? payload.input.action : payload.input.command.op === "e5_device_unbind" ? "unbind" : "force";
+    const deviceId = payload.kind === "device" ? payload.input.deviceId : Number(payload.input.command.params.deviceId);
+    const device = ctx.e5Devices.find(item => item.deviceId === deviceId
+      && record.scope === (action === "pause" || action === "resume" ? `user:${item.userId}` : phoneScope(item)));
+    const available = device && items(device).find(item => item.key === action && !item.disabledReason);
+    if (!device || !available) return false;
+    setConfirm({ device, action });
+    return true;
+  });
   const scope=confirm?(confirm.action==="pause"||confirm.action==="resume"?`user:${confirm.device.userId}`:phoneScope(confirm.device)):"";
   const consequence=confirm?.action==="activate"?"激活后占用一个设备名额；每人最多 6 台，包含手机。":confirm?.action==="force"?"手机激活后占用一个名额；每人最多 6 台，包含手机。":confirm?.action==="deactivate"?"停用后不接新任务、不占名额，不退款；要再用可以申请强制激活。":confirm?.action==="unbind"?"手机不再归这位用户，后台不能再恢复；不退款，购入时间不变，解绑后没有收益。":confirm?.action==="pause"?"将暂停该用户全部设备（含手机）。停跑期间不计收益、不补发。":"只恢复运营手动暂停的设备；退款、注销、换机、离线、电量低等系统暂停保持不变。停跑期间收益不补发。";
   return <><E6PendingNotice section="phones" toast={ctx.toast} onRead={result=>{void ctx.refreshE5();if(result?.readbackFailed)ctx.toast("已提交成功，但重新读取失败，请刷新核对。","warn");}}/>

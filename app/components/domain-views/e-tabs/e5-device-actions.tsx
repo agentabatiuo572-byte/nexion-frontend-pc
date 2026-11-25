@@ -17,7 +17,7 @@ import { canActivateE5Device, canResumeE5UserDevicesFrom, fetchLegacyUnknownCand
 import { sameLegacyUnknownProof, type LegacyUnknownCandidate } from "@/lib/admin/legacy-unknown-resolution";
 import { canSendE5Command, e5Commands, e5Recovery, e5LegacyCommands, e5CommandBlocks, checkE5Command, queryE5Proposal, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
 import { canInvestigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
-import { e6Commands, type E6Pending } from "@/lib/admin/e6-command";
+import { e6Commands, isE6VerifiedDraft, type E6Pending } from "@/lib/admin/e6-command";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { BlockState, Button, Change, Check, Decision, Fact as RdFact, Facts, Fold, IconButton, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { usePendingReplayDeadline, OperationConfirmModal } from "../design-kit";
@@ -95,7 +95,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const sync = useCallback(() => {
     const saved = e5Commands.list().filter(r => r.actorId === actorId);
     setRecords(saved);
-    setPhonePending(e6Commands.list().filter(r => String(r.owner) === actorId && r.section === "phones"));
+    setPhonePending(e6Commands.list().filter(r => String(r.owner) === actorId && r.section === "phones" && !isE6VerifiedDraft(r)));
   }, [actorId]);
   const phoneBlocks = (device: E5Device, intent?: E5Intent) => phonePending.some(r => r.scope === `user:${device.userId}`
     || r.scope === `phone:${device.deviceId}:${device.userId}`

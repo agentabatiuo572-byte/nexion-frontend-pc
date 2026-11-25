@@ -23,3 +23,10 @@ export function nextRecoveryDeadline(records: readonly { expiresAt: number }[]) 
   const next = records.reduce((first, record) => record.expiresAt > now ? Math.min(first, record.expiresAt) : first, Infinity);
   return Number.isFinite(next) ? next : undefined;
 }
+
+/** Earlier pages saved the display text of an explicit replay rejection. */
+export function withLegacyReplayRejection<T extends { replayRejection?: string; retryRejection?: string }>(record: T): T {
+  return !record.replayRejection && record.retryRejection?.trim()
+    ? { ...record, replayRejection: record.retryRejection }
+    : record;
+}

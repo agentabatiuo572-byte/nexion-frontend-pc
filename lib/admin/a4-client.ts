@@ -387,7 +387,7 @@ export type A4SchemaRegistrationInput = {
 
 type A4RegistryActor = Pick<AdminSession, "adminId" | "operator" | "username" | "role">;
 type A4RegistryProposal = Parameters<typeof createA2OperationProposal>[0];
-type A4RegistryAttempt = PendingMutationRecord & { input: A4RegistryProposal; received?: boolean };
+export type A4RegistryAttempt = PendingMutationRecord & { input: A4RegistryProposal; received?: boolean; ticket?: Awaited<ReturnType<typeof createA2OperationProposal>>; verifiedNotExecuted?: true };
 const REGISTRY_STRING_FIELDS: Record<string, string[]> = {
   a4_schema_register: ["eventName", "ownerDomain", "producer", "consumer", "propertyName", "propertyType", "samplingPolicy", "expectedVersion"],
   a4_schema_property_add: ["eventName", "propertyName", "propertyType", "expectedVersion"],
@@ -419,13 +419,33 @@ export const a4RegistryRecovery = createPendingRecovery(registryAttempts, {
   explicitRejectionCode,
   canReplay: attempt => {
     const rights = currentRecoveryActor(attempt.fingerprint)?.authorities ?? [];
-    return !attempt.received && rights.includes("platform_a4_read") && rights.includes("platform_a4_write")
+    return !attempt.received && !attempt.verifiedNotExecuted && rights.includes("platform_a4_read") && rights.includes("platform_a4_write")
       && canCreateRecoveryProposal(rights);
   },
 });
 
 export function pendingA4RegistryProposal(adminId: number) {
-  return registryAttempts.list().find((row) => row.fingerprint === String(adminId));
+  return registryAttempts.list().find(row => row.fingerprint === String(adminId) && !row.verifiedNotExecuted && !row.ticket);
+}
+
+export function a4RegistryHistory(adminId: number) {
+  return registryAttempts.list().filter(row => row.fingerprint === String(adminId) && (row.ticket || row.verifiedNotExecuted));
+}
+
+export function discardA4RegistryDraft(adminId: number, commandKey: string) {
+  if (a4RegistryHistory(adminId).some(row => row.commandKey === commandKey && row.verifiedNotExecuted)) {
+    registryAttempts.forget(String(adminId), commandKey);
+  }
+}
+
+function observeRegistryTicket(attempt: A4RegistryAttempt, ticket: NonNullable<A4RegistryAttempt["ticket"]>) {
+  if (ticket.status === "approved") {
+    a4RegistryRecovery.settleAcknowledged(attempt);
+  } else {
+    registryAttempts.remember(attempt.fingerprint, attempt.commandKey, {
+      ...attempt, received: true, ticket, verifiedNotExecuted: ticket.status === "pending" ? undefined : true,
+    });
+  }
 }
 
 function validateRegistryTicket(ticket: Awaited<ReturnType<typeof createA2OperationProposal>>, attempt: A4RegistryAttempt) {
@@ -449,7 +469,7 @@ async function postRegistryProposal(attempt: A4RegistryAttempt, retry = false) {
     const current = retry ? await fetchA2ProposalByKey(attempt.commandKey, true, "a") : ticket;
     if (!current) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
     validateRegistryTicket(current, attempt);
-    a4RegistryRecovery.settleAcknowledged(attempt);
+    observeRegistryTicket(attempt, current);
     return { ...current, a4CommandKey: attempt.commandKey };
   } catch (error) {
     const failure = error as { status?: number; backendMessage?: string };
@@ -466,18 +486,22 @@ async function postRegistryProposal(attempt: A4RegistryAttempt, retry = false) {
   }
 }
 
-export async function recoverA4RegistryProposal(adminId: number, retryOriginal = false) {
-  const attempt = pendingA4RegistryProposal(adminId);
+export async function recoverA4RegistryProposal(adminId: number, retryOriginal = false, commandKey?: string) {
+  const attempt = commandKey ? registryAttempts.list().find(row => row.fingerprint === String(adminId)
+    && row.commandKey === commandKey && !row.verifiedNotExecuted) : pendingA4RegistryProposal(adminId);
   if (!attempt) return null;
   if (retryOriginal) return postRegistryProposal(attempt, true);
   const result = await a4RegistryRecovery.query(attempt, async original => {
     const ticket = await fetchA2ProposalByKey(original.commandKey, true, "a");
-    if (ticket) validateRegistryTicket(ticket, original);
+    if (ticket) {
+      validateRegistryTicket(ticket, original);
+      if (original.ticket && original.ticket.id !== ticket.id) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
+    }
     else if (original.received) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
-    return { ticket, conclusion: ticket ? "succeeded" : "not-found" } as const;
+    return { ticket, conclusion: !ticket ? "not-found" : ticket.status === "pending" ? "unknown" : ticket.status === "approved" ? "succeeded" : "rejected" } as const;
   });
   if (!result?.ticket) return null;
-  a4RegistryRecovery.settleFromQuery(attempt, result.conclusion);
+  observeRegistryTicket(attempt, result.ticket);
   return { ...result.ticket, a4CommandKey: attempt.commandKey };
 }
 

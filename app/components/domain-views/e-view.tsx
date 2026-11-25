@@ -53,7 +53,7 @@ import {
 } from "@/lib/admin/e5-client";
 import { fetchE6ComputeConfig, isE6ParamKey, type E6ComputeConfigView } from "@/lib/admin/e6-client";
 import { usePropose } from "@/lib/admin/use-propose";
-import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -95,13 +95,18 @@ const e4PendingCommands = createPendingMutationStore<E4PendingCommand>({
 });
 
 
+const currentE4Command = (orderNo: string) => e4PendingCommands.list().find(record => record.orderNo === orderNo && !record.verifiedNotExecuted);
+const e4Drafts = (orderNo: string, operation: string) => e4PendingCommands.list().filter(record =>
+  record.orderNo === orderNo && record.verifiedNotExecuted && record.spec.command.op === operation
+).reverse();
+
 const e4Recovery = createPendingRecovery(e4PendingCommands, {
   capability: () => "receipt",
   explicitRejectionCode,
   canReplay: record => {
     const rights = currentRecoveryActor(record.commandOwnerId)?.authorities ?? [];
     const write = record.spec.command.op === "e4_order_refund" ? "device_e4_order_refund" : "device_e4_write";
-    return !!record.request && record.request.obj === record.orderNo && !record.receivedTicketId && !record.creationConfirmed
+    return !record.verifiedNotExecuted && !!record.request && record.request.obj === record.orderNo && !record.receivedTicketId && !record.creationConfirmed
       && rights.includes("device_e4_read") && rights.includes(write) && canCreateRecoveryProposal(rights);
   },
 });
@@ -525,11 +530,19 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e4InvestigationResults, setE4InvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
   useSyncExternalStore(e4Recovery.subscribe, e4Recovery.getRevision, () => 0);
   const [e4Retrying, setE4Retrying] = useState("");
-  const syncE4Pending = useCallback(() => setE4Pending(e4PendingCommands.list()), []);
+  const syncE4Pending = useCallback(() => setE4Pending(e4PendingCommands.list().filter(record => !record.verifiedNotExecuted)), []);
   const e4ReceiptAttempts = commandAttempts.list().flatMap((record) => {
     const [op, orderNo] = record.fingerprint.split("|");
     return E4_APPROVAL_OPS.includes(op) && orderNo ? [{ ...record, orderNo }] : [];
   });
+  const preserveE4Draft = (record: E4PendingCommand, ticket?: A2OperationRow) => {
+    e4PendingCommands.remember(record.fingerprint, record.commandKey, {
+      ...record, verifiedNotExecuted: true,
+      ...(ticket ? { receivedTicketId: ticket.id, creationConfirmed: true, proposalStatus: ticket.status } : {}),
+    });
+    setActionConfirm(current => current?.orderId === record.orderNo
+      && `e4_${current.op.replaceAll("-", "_")}` === record.spec.command.op ? null : current);
+  };
   /** The original-key ticket is current progress; a POST receipt proves creation only. */
   const readE4CurrentProposal = async (record: E4PendingCommand, inspect = false) => {
     try {
@@ -552,7 +565,10 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       if (!result) return null;
       const { ticket } = result;
       if (!ticket) {
-        if (e4Recovery.settleFromQuery(record, result.conclusion)) await refreshE4();
+        if (result.conclusion === "not-executed" || result.conclusion === "rejected") {
+          preserveE4Draft(record);
+          await refreshE4();
+        }
         else noteE4Pending(record, "暂未查到原审批单，结果仍未知。记录继续保留。");
         syncE4Pending();
         return null;
@@ -562,9 +578,11 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       noteE4Pending(saved, "");
       if (ticket.status === "pending") {
         e4PendingCommands.remember(saved.fingerprint, saved.commandKey, { ...saved, receivedTicketId: ticket.id, creationConfirmed: true, proposalStatus: ticket.status });
-      } else {
+      } else if (ticket.status === "approved") {
         e4Recovery.settleFromQuery(saved, result.conclusion);
-        setActionConfirm(null); setSelOrder(null); setE4Detail(null);
+        setActionConfirm(current => current?.orderId === saved.orderNo ? null : current);
+      } else {
+        preserveE4Draft(saved, ticket);
       }
       syncE4Pending();
       await refreshE4();
@@ -641,6 +659,11 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     syncE4Pending();
     if (!e4PendingCommands.isDurablyStored(scope, key) || !createdTicket.mine || createdTicket.obj !== spec.obj
       || createdTicket.operationCode && createdTicket.operationCode !== spec.command.op) throw new A2OutcomeUncertainError("结果未知，请到「操作记录与审批」核对。", key);
+    if (!retained) {
+      const draft = e4Drafts(spec.obj, spec.command.op).find(record =>
+        Object.entries(record.spec.command.params).every(([field, value]) => spec.command.params[field] === value));
+      if (draft) e4PendingCommands.forget(draft.fingerprint, draft.commandKey);
+    }
     await readE4CurrentProposal(e4PendingCommands.list().find(row => row.fingerprint === scope && row.commandKey === key)!);
     return true;
   };
@@ -657,9 +680,8 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       setE4InvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (fundCommandSettled(receipt)) {
         if (receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED" || receipt!.originalStatus === "CONFIRMED_REJECTED") {
-          e4Recovery.settleFromQuery(record, result.conclusion);
+          preserveE4Draft(record);
           syncE4Pending();
-          setActionConfirm(null); setSelOrder(null); setE4Detail(null);
           await refreshE4();
         } else {
           const saved = e4PendingCommands.list().find(row => row.commandKey === record.commandKey && row.fingerprint === record.fingerprint) ?? record;
@@ -952,15 +974,25 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
             const original = e3Original();
             return original ? e3Proposals.confirmRecovery(original) : undefined;
           }
-          const original = mc.orderId ? e4PendingCommands.list().find(record => record.orderNo === mc.orderId) : undefined;
+          const original = mc.orderId ? currentE4Command(mc.orderId!) : undefined;
           if (!original) return;
           const state = e4Recovery.state(original);
           return { state, expiresAt: state.expiresAt, subscribe: e4Recovery.subscribe, getRevision: e4Recovery.getRevision,
             query: () => checkE4Pending(original) };
         }}
-        getPendingReason={e3Confirm ? () => e3Proposals.pendingReason(e3ConfirmKeys) : mc.orderId ? () => e4PendingCommands.list().find(record => record.orderNo === mc.orderId)?.spec.reason : undefined}
+        getPendingReason={e3Confirm ? () => e3Proposals.pendingReason(e3ConfirmKeys) : mc.orderId ? () => currentE4Command(mc.orderId!)?.spec.reason : undefined}
         getPendingBusinessValue={mc.orderId ? () => {
-          const original = e4PendingCommands.list().find(record => record.orderNo === mc.orderId);
+          const original = currentE4Command(mc.orderId!) ?? e4Drafts(mc.orderId!, `e4_${mc.op.replaceAll("-", "_")}`).find(record => {
+            const params = record.spec.command.params;
+            const fixedField = mc.op === "order-state" ? "state" : mc.op === "order-terminal" ? "terminalState" : "refundChannel";
+            if (mc.fixedVal && params[fixedField] !== mc.fixedVal) return false;
+            if (mc.businessForm?.kind !== "multi-field") return true;
+            return mc.businessForm.fields.every(field => {
+              const value = params[field.key];
+              if (field.visibleWhen && params[field.visibleWhen.key] !== field.visibleWhen.equals) return true;
+              return value == null || !field.options || field.options.includes(String(value));
+            });
+          });
           return original ? Object.fromEntries(Object.entries(original.spec.command.params).map(([key, value]) => [key, String(value)])) : undefined;
         } : e3Confirm && mc.paramKeys ? () => {
           const draft = e3Proposals.draft(e3ConfirmKeys);
@@ -999,7 +1031,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
             }
             if (!e3Proposals.allowed(e3Confirm === "param-multi") || e3Loading || e3Error || !e3Ready) throw new Error("FORBIDDEN");
           }
-          const original = mc.orderId ? e4PendingCommands.list().find(record => record.orderNo === mc.orderId) : undefined;
+          const original = mc.orderId ? currentE4Command(mc.orderId!) : undefined;
           if (original) {
             await sendE4Proposal(original.spec, original);
             setSelOrder(null);

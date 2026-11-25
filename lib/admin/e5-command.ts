@@ -3,7 +3,7 @@ import { createPendingMutationStore, createPendingRecovery, isPendingCommandOwne
 import { guardedFetch, formatAdminApiError } from "./error-messages";
 import { explicitRejectionCode } from "./explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "./outcome-classification";
-import { canCreateRecoveryProposal, currentRecoveryActor, recoveryQueryConclusion } from "./abe-recovery-access";
+import { withLegacyReplayRejection, canCreateRecoveryProposal, currentRecoveryActor, recoveryQueryConclusion } from "./abe-recovery-access";
 import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { E5Device } from "./e5-client";
@@ -53,7 +53,7 @@ export function canSendE5Command(record: E5Command) {
   return rights.includes("device_e5_write");
 }
 
-export const e5Recovery = createPendingRecovery(e5Commands, {
+export const e5Recovery = createPendingRecovery({ ...e5Commands, list: () => e5Commands.list().map(withLegacyReplayRejection) }, {
   capability: () => "receipt",
   explicitRejectionCode,
   canReplay: record => !record.receivedTicketId && !record.retryRejection && canSendE5Command(record),
