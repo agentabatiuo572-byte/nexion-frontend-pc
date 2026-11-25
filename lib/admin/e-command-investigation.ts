@@ -369,10 +369,14 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     && (!Number.isInteger(row.businessCode) || Number(row.businessCode) < -2147483648 || Number(row.businessCode) > 2147483647)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   if (row.localTransactionRollbackConfirmed !== undefined && typeof row.localTransactionRollbackConfirmed !== "boolean")
     throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  // An A2 proposal create stores the ticket body, which has no top-level code; the backend reports that
+  // completed command as SUCCEEDED (AdminCommandInvestigationService.receiptState). Only this exact origin may omit the zero code.
+  const a2ProposalCreated = row.scope === "A2_COMMAND" && locator.originalMethod === "POST"
+    && locator.originalPath === "/api/admin/platform/audit/operations" && row.businessCode === null;
   if (row.businessState !== undefined) {
     if (typeof row.businessState !== "string" || !["PROCESSING", "FAILED", "SUCCEEDED", "REJECTED", "UNKNOWN"].includes(row.businessState)
       || row.businessCode === undefined
-      || row.businessState === "SUCCEEDED" && (row.businessCode !== 0 || !["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(String(row.originalStatus)))
+      || row.businessState === "SUCCEEDED" && (row.businessCode !== 0 && !a2ProposalCreated || !["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(String(row.originalStatus)))
       || row.businessState === "REJECTED" && (row.businessCode === null || row.businessCode === 0 || !["FAILED", "SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus)))
       || row.businessState === "PROCESSING" && row.originalStatus !== "PROCESSING"
       || row.businessState === "FAILED" && row.originalStatus !== "FAILED") throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");

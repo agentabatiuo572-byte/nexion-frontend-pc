@@ -72,9 +72,10 @@ import {
   configApprovalOriginalInput,
   checkWithdrawalApprovalCommand,
   withdrawalApprovalReplayQueryBlock,
+  withdrawalApprovalLookupStatus,
   withdrawalDirectRecoveryStatus,
+  lookupWithdrawalApproval,
   withdrawalReplayQueryBlock,
-  withdrawalReplayReadError,
   pendingConfigApproval,
   useWithdrawalApprovals,
   releaseConfigApproval,
@@ -84,6 +85,7 @@ import {
   rememberWithdrawalProcessing,
   WITHDRAWAL_COMMAND_PROCESSING,
   type WithdrawalReplayObservation,
+  type WithdrawalProposalLookup,
   WITHDRAWAL_CONFIG_READ_FAILED,
   WITHDRAWAL_SUBMISSION_CONFIRMED,
   type WithdrawalApprovalReceipt,
@@ -686,6 +688,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const [loosenPending, setLoosenPending] = useState<ReturnType<typeof pendingConfigApproval>>(undefined);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [queryMissing, setQueryMissing] = useState<string[]>([]);
+  // 按原号查审批单这一路的结果，和通用核查（investigationResults）分开记。
+  const [proposalLookups, setProposalLookups] = useState<Partial<Record<string, WithdrawalProposalLookup>>>({});
   const [recovering, setRecovering] = useState("");
   const [releasing, setReleasing] = useState<ReleaseTarget | null>(null);
 
@@ -715,8 +719,10 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         setParams(next);
         setReadAt(businessClock(Date.now()));
       }
+      return next;
     } catch (err) {
       if (id === requestId.current) setError(afterApproval ? WITHDRAWAL_CONFIG_READ_FAILED : errorText(err));
+      return null;
     } finally {
       if (id === requestId.current) setLoading(false);
     }
@@ -816,10 +822,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
     try {
-      const next = await updateD5WithdrawalLimits(record.changes, record.expectedVersion, record.reason, record.operator, key, retry);
+      await updateD5WithdrawalLimits(record.changes, record.expectedVersion, record.reason, record.operator, key, retry);
       tightenCommands.forget(TIGHTEN_SCOPE);
       syncPending();
-      if (!retry && next) applySnapshot(next);
       return "done" as const;
     } catch (cause) {
       // 只有后端明确拒绝才丢号；读不懂、断开、本地出错都按结果未知留着（F03）。
@@ -875,8 +880,10 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           const outcome = await sendTighten({ label: `调整提现参数 · ${label}`, changes, expectedVersion: p.version, reason, operator: OPERATOR(),
             ...(changes.networkConfirmFeeUsd ? { trc20FeeBefore: p.networkConfirmFeeUsd.trc20 } : {}) });
           closeDrawer();
-          if (outcome === "unknown") toast(UNKNOWN_TOAST, "warn");
-          else toast(`${GROUP_TITLE[group]}已生效`, "success");
+          if (outcome === "unknown") { toast(UNKNOWN_TOAST, "warn"); return; }
+          // 写入后另读一次当前配置（OP-86）；读不到时仍说已生效，页面给「重试」（OP-87）。
+          const latest = await load(true);
+          toast(latest ? `${GROUP_TITLE[group]}已生效` : `${GROUP_TITLE[group]}已生效，最新参数暂时没读到`, latest ? "success" : "warn");
         } catch (cause) {
           syncPending();
           if (loosens && isA2OutcomeUncertainError(cause)) {
@@ -958,10 +965,25 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       || !loosenRecord?.values || !commandAuthorities(loosenRecord.values).every(can) || proposeBlock || loosenReplayBlock)) return;
     setQueryMissing(current => current.filter(saved => saved !== key));
     setInvestigationResults(current => ({ ...current, [key]: undefined }));
+    setProposalLookups(current => ({ ...current, [key]: undefined }));
     note(key, "");
     setRecovering(key);
     try {
-      const result = await submitWithdrawalConfigApproval("D5", session, null, "", mode === "lookup" ? true : "retry-original");
+      if (mode === "lookup") {
+        const lookup = await lookupWithdrawalApproval("D5", session);
+        if (!lookup) { syncPending(); return; }
+        if (lookup.state === "found") { applyApproval(lookup.result); return; }
+        // 这一路的结果单独记：没查成时行上常显原因，查无才和通用核查一起算「没有查到」。
+        setProposalLookups(current => ({ ...current, [key]: lookup }));
+        if (lookup.state === "failed") {
+          if (loosenPending.withdrawalSubmissionConfirmed) note(key, `暂时读不到原审批单：${lookup.reason}。请稍后再查。`);
+          return;
+        }
+        if (!loosenPending.withdrawalSubmissionConfirmed) note(key, loosenPending.expiresAt <= Date.now()
+          ? "原审批申请已过期，还没查到结果。请到操作记录核对，不要重复提交。" : "暂未查到原审批单，可稍后再查。");
+        return true;
+      }
+      const result = await submitWithdrawalConfigApproval("D5", session, null, "", "retry-original");
       if (!result) {
         if (!loosenPending.withdrawalSubmissionConfirmed) note(key, "暂未查到原审批单，可稍后再查。");
         return true;
@@ -1078,11 +1100,12 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         status: confirmed ? WITHDRAWAL_SUBMISSION_CONFIRMED
           // TRC20 确认费的限制排在查询失败前面：查询再成功也解不开它，要一直看得到（OP-126）。
           : loosenReplayBlock && !expired && !processing
-          ? queryOnlyStatus(loosenReplayBlock, fundRecoveryStatus({ record: loosenRecord, outcome: investigationResults[key], expired, canRetry: false, canQuery: canLookupOwn, copy }), canLookupOwn, queryMissing.includes(key))
-          : outcome && "error" in outcome ? { tone: "danger", label: expired ? "已过期" : "查询失败", line: withdrawalReplayReadError(outcome.error) }
-          : processing ? WITHDRAWAL_COMMAND_PROCESSING
+          ? queryOnlyStatus(loosenReplayBlock, withdrawalApprovalLookupStatus(proposalLookups[key], outcome, expired)
+            ?? fundRecoveryStatus({ record: loosenRecord, outcome: investigationResults[key], expired, canRetry: false, canQuery: canLookupOwn, copy }), canLookupOwn, queryMissing.includes(key))
+          : withdrawalApprovalLookupStatus(proposalLookups[key], outcome, expired)
+          ?? (processing ? WITHDRAWAL_COMMAND_PROCESSING
           : !expired && !canLookupOwn ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，请有权限的同事核对。" }
-          : !expired && !outcome && retryDisabled ? { tone: "warn", label: "结果未知", line: retryDisabled } : undefined,
+          : !expired && !outcome && retryDisabled ? { tone: "warn", label: "结果未知", line: retryDisabled } : undefined),
         actions: <>
           {canLookupOwn && <FundCheckButtons record={loosenRecord} canLookupOwnProposal={canLookupOwn} outcome={confirmed ? undefined : outcome} expired={expired} busy={!!recovering} checking={recovering === key}
             onCheck={() => void lookupLoosen()} onClose={() => setClosing(true)} />}
@@ -1122,7 +1145,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         actions: <>
           <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
             onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
-          {!expired && !processing && <Button size="sm" disabled={!!recovering} disabledReason={retryDisabled} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
+          {!expired && <Button size="sm" disabled={!!recovering} disabledReason={processing && !record.replayRejection ? WITHDRAWAL_COMMAND_PROCESSING.line : retryDisabled} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
           {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
         </>,
         detail: <>
@@ -1199,7 +1222,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     ? `审批单 ${row.id} · ${row.operator} · ${row.rawTs ? `${formatBusinessTimeFull(row.rawTs, row.ts)}（${zone}）` : row.ts}提交`
     : `审批单 ${row.id}`;
   const queueReadNotice = canQuery && (approvals.queueState === "failed" || approvals.queueRetrying) && (
-    <Notice tone="neutral" title="待批列表暂时读不到" action={<InlineRetry onRetry={() => void loadApprovals()} retrying={approvals.queueRetrying} />}>{auditLink}</Notice>
+    <Notice tone="neutral" title="待批列表暂时读不到" action={<InlineRetry onRetry={() => void loadApprovals()} retrying={approvals.queueRetrying} />}>{approvals.queueError}{auditLink && <> {auditLink}</>}</Notice>
   );
   const queueRowsOutsideConfig = approvals.rows.filter(row => row.id !== approvals.ownId || !approvals.ownNotice);
   const queueNoticeOutsideConfig = queueRowsOutsideConfig.length > 0 && (
