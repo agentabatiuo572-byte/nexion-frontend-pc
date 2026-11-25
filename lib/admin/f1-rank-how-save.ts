@@ -1,5 +1,5 @@
 import { createA2CommandKey } from "./a2-client";
-import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
 import { fetchRankHowPolicyAdmin, updateRankHowPolicyAdmin, type PublishedContentDocument } from "./published-content-client";
 import { isDeterministicRejection, OutcomeUnknownError } from "./outcome-classification";
 import { useAdminAuth } from "../store/admin-auth";
@@ -13,6 +13,11 @@ const saves = createPendingMutationStore<Original>({
     && !!row.document.locales && typeof row.document.locales === "object" && !Array.isArray(row.document.locales),
 });
 
+const rankHowRecovery = createPendingRecovery(saves, {
+  capability: () => "readback",
+  canReplay: () => false,
+  explicitRejectionCode: () => undefined,
+});
 export const pendingF1RankHow = (adminId: number) => saves.list().find(row => row.adminId === adminId);
 const inFlight = new Set<number>();
 export const isF1RankHowInFlight = (adminId: number) => inFlight.has(adminId);
@@ -35,25 +40,22 @@ export async function queryF1RankHow(adminId: number) {
   if (useAdminAuth.getState().session?.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
   const original = pendingF1RankHow(adminId);
   if (!original) return { current: await fetchRankHowPolicyAdmin(), matched: true, comparison: null };
-  const current = await fetchRankHowPolicyAdmin();
-  const comparison: F1RankHowComparison = {
-    revision: { submitted: original.document.revision, expected: original.document.revision + 1, current: current.revision, matches: current.revision === original.document.revision + 1 },
-    version: { submitted: original.document.version.trim(), current: current.version, matches: current.version === original.document.version.trim() },
-    status: { submitted: original.document.status, current: current.status, matches: current.status === original.document.status },
-    contentMatches: canonical(current.locales) === canonical(original.document.locales),
-  };
-  const matched = comparison.revision.matches && comparison.version.matches && comparison.status.matches && comparison.contentMatches;
-  if (matched) saves.forget(original.fingerprint, original.commandKey);
-  return { current, matched, comparison };
+  const result = await rankHowRecovery.query(original, async () => {
+    const current = await fetchRankHowPolicyAdmin();
+    const comparison: F1RankHowComparison = {
+      revision: { submitted: original.document.revision, expected: original.document.revision + 1, current: current.revision, matches: current.revision === original.document.revision + 1 },
+      version: { submitted: original.document.version.trim(), current: current.version, matches: current.version === original.document.version.trim() },
+      status: { submitted: original.document.status, current: current.status, matches: current.status === original.document.status },
+      contentMatches: canonical(current.locales) === canonical(original.document.locales),
+    };
+    const matched = comparison.revision.matches && comparison.version.matches && comparison.status.matches && comparison.contentMatches;
+    return { current, matched, comparison, conclusion: matched ? "succeeded" as const : "unknown" as const };
+  });
+  if (!result) throw new Error("PENDING_QUERY_UNAVAILABLE");
+  rankHowRecovery.settleFromQuery(original, result.conclusion);
+  return result;
 }
 
-/** Call only after operator confirmation. Re-read before releasing; never resend this non-deduplicated write. */
-export async function releaseF1RankHow(adminId: number) {
-  const original = pendingF1RankHow(adminId);
-  const result = await queryF1RankHow(adminId);
-  if (!result.matched && original) saves.forget(original.fingerprint, original.commandKey);
-  return { ...result, released: !result.matched };
-}
 
 /** This endpoint has CAS but no command deduplication. There is deliberately no retry API. */
 export async function saveF1RankHow(adminId: number, document: PublishedContentDocument, reason: string) {

@@ -5,16 +5,16 @@ import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { assignPlacement, readPlacements, rememberPlacement, pendingPlacement, forgetPlacement, PlacementError, type PlacementIntent, type PlacementPage, type PlacementStatus } from "@/lib/admin/f3-placements-client";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { assignPlacement, checkPlacement, readPlacements, rememberPlacement, pendingPlacement, forgetPlacement, PlacementError, type PlacementIntent, type PlacementPage, type PlacementStatus } from "@/lib/admin/f3-placements-client";
 import { CircleDashed, Eye, Users } from "lucide-react";
 import { Button, Cell, Explain, Panel, Fact, Facts, FilterBar, FilterField, Input, IrreversibleTag, Modal, Notice, Select, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 
 const stamp = () => { const s = useAdminAuth.getState(); return adminShellSessionKey(s.session, s.authEpoch); };
 
-export async function recoverPlacement(intent: PlacementIntent) {
-    const result = await readPlacements(intent.ownerUserId, "ALL", 1, intent.memberUserId);
-    const row = result.records.find(r => r.memberUserId === intent.memberUserId);
-    if (row?.leg) return { resolved: true, message: row.leg === intent.leg
+export async function recoverPlacement(adminId: number, intent: PlacementIntent) {
+    const { row, resolved } = await checkPlacement(adminId);
+    if (row?.leg) return { resolved, message: row.leg === intent.leg
       ? `已确认：成员 ${intent.memberUserId} 在用户 ${intent.ownerUserId} 的 ${row.leg} 组。`
       : `成员 ${intent.memberUserId} 已在用户 ${intent.ownerUserId} 的 ${row.leg} 组，不能改到 ${intent.leg} 组。` };
     return { resolved: false, message: row
@@ -60,10 +60,10 @@ export function F3Placements() {
     const key = stamp(), version = ++generation.current, intent = pending;
     working.current = true; setBusy(true); setError("");
     try {
-      const result = await recoverPlacement(intent);
+      const result = await recoverPlacement(adminId!, intent);
       if (!current(key, version)) return;
       setNotice(result.message);
-      if (result.resolved) { forgetPlacement(adminId!); keepPending(null); setData(null); }
+      if (result.resolved) { keepPending(null); setData(null); }
     } catch (e) { if (current(key, version)) setError(displayAdminError(e)); }
     finally { if (current(key, version)) { working.current = false; setBusy(false); } }
   }
@@ -91,14 +91,15 @@ export function F3Placements() {
       if (e instanceof PlacementError && e.outcome === "rejected" && e.status !== 409) { forgetPlacement(adminId!); keepPending(null); }
       else {
         try {
-          const result = await recoverPlacement(intent);
-          if (current(key, version)) { setNotice(result.message); if (result.resolved) { forgetPlacement(adminId!); keepPending(null); setError(""); } }
+          const result = await recoverPlacement(adminId!, intent);
+          if (current(key, version)) { setNotice(result.message); if (result.resolved) { keepPending(null); setError(""); } }
         } catch (readError) { if (current(key, version)) setError(displayAdminError(readError)); }
       }
     } finally { if (current(key, version)) { working.current = false; setBusy(false); } }
   }
 
   if (!canRead) return null;
+  const original = adminId === undefined ? undefined : pendingPlacement(adminId);
   const legTag = (leg: "A" | "B" | null) => leg
     ? <span className="f3-leg" data-leg={leg}>{leg} 组</span>
     : <StatusTag tone="neutral" icon={CircleDashed}>未分组</StatusTag>;
@@ -126,6 +127,7 @@ export function F3Placements() {
     {pending && <Notice tone="warn" title={<>分组结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经分好了。点「查询原结果」按原来的邀请人和成员重新读取；读到已在原来那一组就算完成，读到在另一组说明不能换。仍没分组时保留这条，不会自动再提交一次。" /></>}
       action={<Button size="sm" disabled={busy} onClick={() => void checkPending()}>查询原结果</Button>}>
       邀请人 {pending.ownerUserId} · 成员 {pending.memberUserId} → {pending.leg} 组
+      {original && isRetryExpired(original) && <p>{RETRY_EXPIRED_TEXT}</p>}
     </Notice>}
     {error && <div role="alert"><Notice tone="danger">{error}</Notice></div>}
     {notice && <div role="status"><Notice tone="neutral">{notice}</Notice></div>}

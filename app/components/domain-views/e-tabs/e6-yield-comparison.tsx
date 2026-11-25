@@ -11,7 +11,7 @@ import type { E2YieldComparison } from "@/lib/admin/e2-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { EViewCtx } from "./types";
 import { E6ConfirmModal } from "./e6-confirm-modal";
-import { useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
+import { useE6DraftEditor, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 import { E6Amount } from "./e6-amount";
 import "./e6-yield-comparison.css";
 
@@ -62,6 +62,17 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
       : candidates.status === "loading" ? "正在加载可选商品"
         : candidates.status === "error" ? "可选商品加载失败，请先重试"
           : !others(row).length ? "没有可替换的在售商品" : undefined;
+  useE6DraftEditor(["e6_onboarding_yield_sku"], !!pick || !!confirm, record => {
+    if (!ready || record.payload.kind !== "proposal") return false;
+    const { configKey, productNo } = record.payload.input.command.params;
+    const row = rows.find(item => item.configKey === configKey && scopeOf(item) === record.scope);
+    if (!row || blockReason(row)) return false;
+    const sku = others(row).find(item => item.id === productNo);
+    if (!sku) return false;
+    setConflict(null);
+    setPick({ row, skuId: sku.id });
+    return true;
+  });
   const columns = showActions ? 5 : 4;
   const candidatePrecision = (skus: OpsSku[]) => ({ usdt: e6AmountPrecision(skus.map(s => String(s.dailyEarn))), uvt: e6AmountPrecision(skus.map(s => String(s.dailyEarnNEX ?? ""))) });
 

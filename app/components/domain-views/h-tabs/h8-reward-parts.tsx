@@ -52,7 +52,7 @@ export function Amount({ value, unit, decimals }: { value: string | number | und
  * 一笔奖励的去向：注册 → 风控筛选 → 结算审批 → 进钱包或先冻结。
  * 看它能判断：用户说没收到新人礼时，卡在哪一步、该去哪查。
  */
-export function RewardFlow({ pending, blocked, settled, mode, gateUnset }: { pending: ReactNode; blocked: ReactNode; settled: ReactNode; mode: string; gateUnset?: boolean }) {
+export function RewardFlow({ pending, blocked, settled, mode }: { pending: ReactNode; blocked: ReactNode; settled: ReactNode; mode: string }) {
   return (
     <ol className="h8-flow" aria-label="一笔奖励的去向">
       <li className="h8-flow-step">
@@ -60,11 +60,11 @@ export function RewardFlow({ pending, blocked, settled, mode, gateUnset }: { pen
         <div className="h8-flow-body">
           <span className="h8-flow-title">新人注册
             <Explain label="哪些注册会进入结算" content={<>
-              <p>{gateUnset ? "生效时间还没设过，不按注册时间筛；正式、没结算过、没被风控拦下的账号都会进入结算。改金额、改发放方式或启用奖励后，生效时间改成那一刻，之前注册的不再进入结算。" : "生效时间起（含这一刻）注册的正式账号才会进入结算，之前注册的不再进入结算。"}</p>
+              <p>生效时间起（含这一刻）注册的正式账号才会进入结算，之前注册的不再进入结算。</p>
               <p>没有邀请人的新人也有新人礼；这时邀请人那一份不发。</p>
             </>} />
           </span>
-          <span className="h8-flow-sub">{gateUnset ? "不按注册时间筛" : "生效时间起注册的"}，有没有邀请人都算</span>
+          <span className="h8-flow-sub">生效时间起注册的，有没有邀请人都算</span>
         </div>
       </li>
       <li className="h8-flow-step">
@@ -123,6 +123,7 @@ export type H8RecoveryRow = {
   /** 本机记下这次提交的时间（毫秒）。 */
   submittedAt?: number;
   tag: ReactNode;
+  settled?: boolean;
   actions?: ReactNode;
 };
 
@@ -147,7 +148,7 @@ export function H8RecoveryNotice({ rows }: { rows: H8RecoveryRow[] }) {
   if (rows.length === 0) return null;
   const timed = rows.some((row) => row.submittedAt !== undefined);
   return (
-    <Notice tone="warn" title={<>还没有结论的原操作 · {rows.length} 项<Explain label="原操作怎么处理" content={<>
+    <Notice tone="warn" title={<>{rows.every(row => row.settled) ? "原操作未执行的草稿" : rows.some(row => row.settled) ? "原操作与草稿" : `还没有结论的原操作 · ${rows.length} 项`}<Explain label="原操作怎么处理" content={<>
       <p>这里列你在这个浏览器标签页里提交过、还没收到确定结果的修改和结算申请。</p>
       <p>原操作有结论之前，这一项不能改成别的值。有参数审批在等批时，别的项也只能收紧、不能放大。别人提交的审批单不在这里，到「操作记录与审批」看。</p>
     </>} /></>}>

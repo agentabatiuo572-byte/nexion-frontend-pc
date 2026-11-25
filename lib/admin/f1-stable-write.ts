@@ -1,8 +1,9 @@
 // 相对路径 + 显式 .ts 后缀,而非 `@/` 别名:本模块被 tests/f1-direct-pending-store-contract.test.mjs
 // 用 node --test 直接 import(同 stable-mutation.ts 惯例),node 不认 tsconfig 路径别名。
 import { createPendingMutationStore, createSlotAttemptStore, type SlotAttemptRecord } from "./pending-mutation-store.ts";
-import type { F4AmbassadorPolicyUpdate } from "./f1-client";
+import type { F4AmbassadorPolicyUpdate, F5CommissionQuery } from "./f1-client";
 import type { F4ConfirmationSnapshot } from "./f4-approval";
+import type { FReconfirmationLink } from "./f-reconfirmation";
 import type { F5ConfirmationSnapshot } from "./f5-approval";
 import type { FundCommandOrigin } from "./fund-command-investigation";
 import { isOriginalCommandOrigin } from "./original-command-query";
@@ -28,7 +29,7 @@ export function isF1OutcomeUncertainError(error: unknown): error is F1OutcomeUnc
     && typeof (error as Error & { commandKey?: unknown }).commandKey === "string";
 }
 
-export interface FDirectAttempt extends SlotAttemptRecord {
+export interface FDirectAttempt extends SlotAttemptRecord, FReconfirmationLink {
   commandOrigin?: FundCommandOrigin;
   adminId?: number;
   f3Request?: { key: F3PayoutControlKey; value: string; reason: string; operator: string };
@@ -36,6 +37,7 @@ export interface FDirectAttempt extends SlotAttemptRecord {
   f4Snapshot?: F4ConfirmationSnapshot;
   f5Snapshot?: F5ConfirmationSnapshot;
   f5Request?: { commissionAnomalySigma: number; layerRatioAnomalyPct: number; reason: string; operator: string };
+  f5ExportRequest?: { filters: F5CommissionQuery; reason: string };
 }
 
 export const f3DirectSlot = (adminId: number | undefined, key: F3PayoutControlKey) => `${adminId}:f3-config:${key}`;
@@ -45,7 +47,7 @@ export const f3DirectRoute = (key: F3PayoutControlKey) => ({
 
 export const fDirectCommands = createPendingMutationStore<FDirectAttempt>({
   storageKey: "nexion-admin-f-direct-commands-v1",
-  retainExpiredRecords: row => !!row.f3Request || /^(?:\d+:)?f4-ambassador-policy$/.test(row.fingerprint) || /^(?:\d+:)?f5-anomaly-config$/.test(row.fingerprint),
+  retainExpiredRecords: row => !!row.f3Request || row.fingerprint === "f5-export" || /^(?:\d+:)?f4-ambassador-policy$/.test(row.fingerprint) || /^(?:\d+:)?f5-anomaly-config$/.test(row.fingerprint),
   isValidRecord: row => typeof row.inputFingerprint === "string" && row.inputFingerprint.length > 0
     && (row.f3Request ? isF3PayoutControlKey(row.f3Request.key)
       && row.fingerprint === f3DirectSlot(row.adminId, row.f3Request.key)

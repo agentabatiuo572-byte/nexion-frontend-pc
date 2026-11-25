@@ -24,7 +24,7 @@ import { A2Audit } from "./a-tabs/a2-audit";
 import { A3Page } from "./a-tabs/a3-page";
 import { A4Events } from "./a-tabs/a4-events";
 import { A9DeveloperAccess } from "./a-tabs/a9-developer-access";
-import type { ACtx, ConfirmReq, ActionConfirmReq } from "./a-tabs/types";
+import type { ACtx, ConfirmReq, A4ActionConfirmReq } from "./a-tabs/types";
 import { fetchA1Overview } from "@/lib/admin/a1-client";
 import { fetchA3Overview } from "@/lib/admin/a3-client";
 import { fetchA4Overview } from "@/lib/admin/a4-client";
@@ -38,13 +38,14 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "A1", [meta.l2Id]);
   const [live, setLive] = useState("");
-  const [actionConfirmReq, setActionConfirm] = useState<ActionConfirmReq | null>(null);
+  const [actionConfirmReq, setActionConfirm] = useState<A4ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
 
   const ctx: ACtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
-    closeActionConfirm: () => setActionConfirm(null),
+    closeActionConfirm: slot => setActionConfirm(current => !slot || current?.recoverySlot === slot ? null : current),
+    actionConfirmOpen: !!actionConfirmReq || !!cf,
     openConfirm: setCf,
   };
 

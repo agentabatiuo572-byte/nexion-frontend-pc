@@ -6,24 +6,27 @@
  * 设置行和确认框只做样子，提交、查询、重试都调 F 域上下文现成的函数（submitF3PayoutControl、
  * recoverF3PayoutControl、recoverF3），方向用 planF3PayoutControl 判断，和提交时一致。
  */
+import { fConfirmRecovery } from "./f-recovery-state";
 import { ArrowLeftRight, CalendarClock, CalendarOff, CircleHelp, Clock3, Hourglass } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Change, ConfigRow, Fact, Facts, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import type { FViewCtx } from "./types";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { canRetryF3Proposal, f3ConfigSlot, listF3Proposals, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
-import { pendingF3ConfigWrite } from "@/lib/admin/f3-config-write";
+import { f3ProposalRecovery, f3ConfigSlot, listF3Proposals, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
+import { f3DirectRecovery, pendingF3ConfigWrite } from "@/lib/admin/f3-config-write";
 import { F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY, f3PayoutControlAuthority, f3PlatformCapPct, planF3PayoutControl, type F3PayoutControlKey } from "@/lib/admin/f3-policy";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { PERMISSION_DENIED_TEXT } from "@/lib/admin/operation-confirm-error";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 export const F3_PAYOUT_KEYS: readonly F3PayoutControlKey[] = [F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY];
 export const F3_PAYOUT_NAMES: Record<F3PayoutControlKey, string> = { [F3_AUTO_SETTLE_KEY]: "自动发放", [F3_PLATFORM_CAP_PCT_KEY]: "全平台封顶比例" };
 const SUPER = "另一位超级管理员";
+const QUEUE_UNREAD = "审批队列没有完整读到，请重试读取后再调整。";
+const PENDING_UNVERIFIED = "可能存在待批单，读不到审批队列。";
 
 /** 后端给的百分数文字去掉末尾 0，不舍入：33.333300 → 33.3333%。 */
 export const pctText = (raw: string) => `${raw.trim().replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")}%`;
@@ -36,7 +39,7 @@ export function payoutValueText(key: F3PayoutControlKey, raw: string) {
   return pct === null ? value || "—" : `${pct}%`;
 }
 
-export type F3PayoutOpen = { key: F3PayoutControlKey; snapshot?: F3ConfirmationSnapshot; original?: FDomainAttempt; direct?: FDirectAttempt };
+export type F3PayoutOpen = { draft?: FDomainAttempt | FDirectAttempt; key: F3PayoutControlKey; recoveredValue?: string; snapshot?: F3ConfirmationSnapshot; original?: FDomainAttempt; direct?: FDirectAttempt };
 
 const unknownTag = (direct: FDirectAttempt) => isRetryExpired(direct)
   ? <StatusTag tone="neutral" icon={Hourglass} explain="原操作超过 24 小时，不能再重试，只能查询原结果。">已过期</StatusTag>
@@ -70,28 +73,25 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
     const autoNow = cfg?.autoSettle;
     const capNow = cfg?.platformCapPct;
     const missing = unread || (auto ? autoNow == null : capNow == null);
-    const canLower = !auto && !!original && !direct && allowed && !missing && Number(capNow) > 0;
-    const valueTag = missing
+      const valueTag = missing
       ? <span className="f3-cfg-value" data-empty="">—</span>
       : auto
         ? autoNow ? <StatusTag tone="ok" icon={CalendarClock}>已开启</StatusTag> : <StatusTag tone="neutral" icon={CalendarOff}>已关闭</StatusTag>
         : <span className="f3-cfg-value">{pctText(capNow!)}</span>;
     const pendingTag = direct ? unknownTag(direct)
-      : original ? <StatusTag tone="warn" icon={CircleHelp} explain={canLower
-          ? "提交审批时没收到确定结果，可能已建审批单。在上方原操作列表查询；调低不受影响。"
-          : "提交审批时没收到确定结果，可能已经建了审批单。点「查看原申请」查询原结果。"}>结果未知</StatusTag>
+      : original ? <StatusTag tone="warn" icon={CircleHelp} explain={isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "提交审批时没收到确定结果，可能已经建了审批单。请查询原结果。"}>结果未知</StatusTag>
         : approval ? <StatusTag tone="warn" icon={Clock3}
             explain={`${auto ? "开启" : `调高到 ${payoutValueText(key, approval.after)}`}在等${SUPER}批准；批准前仍按现在的值。${auto ? "" : "现在调低会立即生效，之后这张调高不能再批准。"}`}>待审批</StatusTag>
           : null;
     const dir = missing ? "没读到，暂时不能改"
-      : canLower ? "调低立即生效"
-        : direct ? "先查清原操作再改"
+      : direct ? "先查清原操作再改"
         : original ? "先查清原申请再改"
-        : approval ? auto ? "开启在等批准，批准或驳回前不能再提交" : `调高到 ${payoutValueText(key, approval.after)} 在等批准；调低仍立即生效`
+        : approval ? auto ? autoNow ? "关闭立即生效，待批的放宽单会失效" : "开启在等批准，批准或驳回前不能再提交" : `调高到 ${payoutValueText(key, approval.after)} 在等批准；调低仍立即生效`
         : auto ? autoNow ? "关闭立即生效，手动照常" : `开启要${SUPER}批准` : "调高可能多付钱 · 调低立即生效";
     const disabledReason = missing ? "这一项没读到，重新加载后再改"
+      : auto && !autoNow && ctx.f3ApprovalReadError ? QUEUE_UNREAD
       : auto && !autoNow && approval ? "开启已在等审批，批准或驳回前不能再提交" : undefined;
-    const action = direct || (original && !canLower)
+    const action = direct || original
       ? <Button size="sm" onClick={() => onOpen({ key, snapshot, original, direct })}>{direct ? "查看原操作" : "查看原申请"}</Button>
       : allowed ? <Button size="sm" disabledReason={disabledReason}
           onClick={() => onOpen({ key, snapshot })}>{auto && !missing ? autoNow ? "关闭" : "开启" : "调整"}</Button>
@@ -147,7 +147,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
   };
   const originalValue = direct?.f3Request?.value ?? original?.spec?.after ?? "";
   const expired = direct ? isRetryExpired(direct) : !!original && isRetryExpired(original);
-  const queryOnly = !!original && !expired && !canRetryF3Proposal(original);
+  const queryOnly = !!original && !!f3ProposalRecovery.state(original).replayBlock;
   const canWriteProposal = canPropose && ctx.can(f3PayoutControlAuthority(key));
   const recoveryText = direct
     ? expired ? "超过 24 小时，只能查询原结果" : "可能已经生效；先查询原结果"
@@ -190,6 +190,8 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
     if (auto) return <Facts>
       <Fact k="自动发放"><Change from={autoNow ? "开" : "关"} to={autoNow ? "关" : "开"} /></Fact>
       {autoNow ? <>
+        {approval && <Fact k="已有待批" tone="warn">这次收紧会让待批的放宽单失效。</Fact>}
+        {!approval && ctx.f3ApprovalReadError && <Fact k="审批队列" tone="warn">{PENDING_UNVERIFIED}</Fact>}
         <Fact k="正在结算的这批">没结到的人也停下；已发的不收回</Fact>
         <Fact k="重新开启">要{SUPER}批准；关闭期间的周期不补发</Fact>
       </> : <>
@@ -207,7 +209,8 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
       <Facts>
         <Fact k="全平台封顶比例">{next === null || dir === undefined || dir === "unchanged" ? capText : <Change from={capText} to={`${next}%`} />}</Fact>
         {dir === "proposal" && !blockedRaise && <Fact k="批准前">仍按 {capText}</Fact>}
-        {approval && <Fact k="已有待批" tone="warn">调高到 {payoutValueText(key, approval.after)} 在等批准；调低后它不能再批准</Fact>}
+        {approval && <Fact k="已有待批" tone="warn">调高到 {payoutValueText(key, approval.after)} 在等批准。{dir === "direct" ? "这次收紧会让待批的放宽单失效。" : "同方向调高需等待这张单处理。"}</Fact>}
+        {dir === "direct" && !approval && ctx.f3ApprovalReadError && <Fact k="审批队列" tone="warn">{PENDING_UNVERIFIED}</Fact>}
         {dir === "proposal" && !blockedRaise && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，调高会被拦下</Fact>}
         <Fact k="已开始结算的期">剩下的人沿用原额度</Fact>
       </Facts>
@@ -231,59 +234,49 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
       coverage={snapshot?.coverage ?? ctx.f3Coverage}
       coverageLead={auto ? `开启后系统按周期自动发钱，要${SUPER}批准` : `调高封顶会让平台多付钱，要${SUPER}批准`}
       coverageCheck="批准时查兑付覆盖率，读不到或低于红线就不能批准。"
+      blockedReason={mode === "new" && auto && !autoNow && ctx.f3ApprovalReadError ? QUEUE_UNREAD : undefined}
       confirmLabel={auto ? autoNow ? "立即生效" : "提交审批" : "立即生效"}
       confirmLabelForValue={auto ? undefined : (value) => direction(typedCap(value)) === "proposal" ? "提交审批" : "立即生效"}
       edit={auto ? undefined : {
         kind: "number", label: "改后的封顶比例", current: mode === "new" ? capNow : undefined, unit: "%", min: 0, max: 100, maxDecimals: 10, ignoreTrailingDecimalZeros: true,
-        initialValue: mode === "new" ? undefined : originalValue.replace(/%$/, "").trim(),
+        initialValue: (mode === "new" ? open.recoveredValue : originalValue)?.replace(/%$/, "").trim(),
         disallowCurrent: true, hint: "0–100，最多 10 位小数",
         // 只有能提交的调高才提示多付钱；已有调高在等或原申请未知时调高被挡下，不提示。
-        amplifiesWhen: (value) => { rawTyped.current = value; return mode === "new" && !blockedRaise && direction(value) === "proposal"; },
+        amplifiesWhen: (value) => { rawTyped.current = value; return mode === "new" && !blockedRaise && !ctx.f3ApprovalReadError && direction(value) === "proposal"; },
         validate: (value) => f3PlatformCapPct(value) === null ? "填 0 到 100 的数，最多 10 位小数"
           : direction(value) !== "proposal" ? undefined
+            : ctx.f3ApprovalReadError ? QUEUE_UNREAD
             : approval ? "已有调高在等审批，批准或驳回前只能调低"
-              : originalProposal ? "原申请结果未知，查清前只能调低" : undefined,
+              : originalProposal ? "原申请结果未知，请先查询原结果" : undefined,
       }}
       initialReason={direct?.f3Request?.reason ?? original?.spec?.reason}
       getPendingReason={() => ownDirect()?.f3Request?.reason ?? ownProposal()?.spec?.reason}
-      inlineApproval={{
-        resolve: () => undefined,
-        pending: mode !== "new",
-        initialRecovery: "retry",
-        expired,
-        queryOnly,
-        expiredRequestRecovery: expired ? "query" : undefined,
-        recover: async () => {
-          if (ownDirect()) {
-            const found = await ctx.recoverF3PayoutControl(key, "query");
-            const result = found.kind === "query" ? found.result : "SUCCEEDED";
-            if (result === "SUCCEEDED") { ctx.toast(`${name}的原操作已生效`); onClose(); return true; }
-            if (result === "REJECTED" || result === "NOT_EXECUTED") { ctx.toast(`${name}的原操作没有执行，设置没变`); onClose(); return true; }
-            throw new Error(isRetryExpired(ownDirect() ?? direct!) ? "还没查到原操作的结果，可以稍后再查。" : "还没查到原操作的结果，可以稍后再查或按原内容重试。");
-          }
-          const record = ownProposal();
-          if (!record) { onClose(); return true; }
-          if (await ctx.recoverF3(record)) { onClose(); return true; }
-          return false;
-        },
-        retry: async () => {
-          if (ownDirect()) {
-            await ctx.recoverF3PayoutControl(key, "retry");
-            ctx.toast(`${name}已按原内容生效`);
+      getPendingRecovery={() => {
+        const direct = ownDirect();
+        if (direct) return fConfirmRecovery(f3DirectRecovery, direct, async () => {
+          const reply = await ctx.recoverF3PayoutControl(key, "query");
+          if (reply.kind !== "query") return;
+          if (reply.result === "SUCCEEDED") { ctx.toast(`${name}的原操作已生效`); onClose(); }
+          else if (reply.result === "REJECTED" || reply.result === "NOT_EXECUTED") {
+            ctx.toast("原操作未执行，已保留草稿。");
             onClose();
-            return;
           }
-          const record = ownProposal();
-          if (!record) { onClose(); return; }
-          try { await ctx.recoverF3(record, "retry"); onClose(); }
-          catch (error) { if (!ownProposal()) onClose(); throw error; }
-        },
+        });
+        const proposal = ownProposal();
+        return proposal && fConfirmRecovery(f3ProposalRecovery, proposal, async () => {
+          const ticket = await ctx.recoverF3(proposal);
+          if (!ticket) return;
+          onClose();
+        });
       }}
       onClose={onClose}
       onConfirm={async (reason, newValue) => {
-        if (mode !== "new") { onClose(); return; }
-        const value = auto ? autoNow ? "off" : "on" : newValue ?? "";
-        const result = await ctx.submitF3PayoutControl(key, value, reason, snapshot).catch((error: unknown) => {
+        if (ownDirect()) { await ctx.recoverF3PayoutControl(key, "retry"); onClose(); return; }
+        const ticket = ownProposal();
+        if (ticket) { await ctx.recoverF3(ticket, "retry"); onClose(); return; }
+        if (mode !== "new") throw new Error("PENDING_REPLAY_BLOCKED");
+        const value = auto ? open.recoveredValue ?? (autoNow ? "off" : "on") : newValue ?? "";
+        const result = await ctx.runFContinuation(open.draft?.commandKey, () => ctx.submitF3PayoutControl(key, value, reason, snapshot)).catch((error: unknown) => {
           // 直接生效的结果未知：这页有自己的查询和重试，提示指向框里的按钮，不指去操作记录与审批。
           if (isF1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。先点「查询原结果」核对。" });
           else if (isA2OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已建审批单。先点「查询原结果」；关框后在页面上方原操作列表也能查询。" });

@@ -414,7 +414,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       const publishReason = s.publishBlockReason === "PRODUCT_TEST_IDENTIFIER" ? "测试标识不能发布" : s.publishBlockReason === "PRODUCT_NO_EFFECTIVE_EARNINGS" ? "未配置有效收益" : s.publishBlockReason || "发布门未通过";
       const locked = ctx.locked("device_sku", s.id);
       const seriesReason = hasUnsupportedSeries(s) ? E1_MISSING_SERIES_REASON : undefined;
-      const onBlock = writeBlock({ op: "sku-status", status: s.status === "on" ? "off" : "on" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : s.status !== "on" && seriesReason ? seriesReason : s.publishBlocked === true ? publishReason : s.status !== "on" && s.publishBlocked === undefined ? "上架状态未知，请重新加载核对" : s.status !== "on" && !open ? blockers.join("；") : s.status !== "on" && !s.allowedPoolCodes?.length ? "上架前请至少选择一个任务等级" : s.status !== "on" && s.monthlyTargetUsdt == null ? "上架前请设置月收益目标" : s.status !== "on" && s.inventoryMode !== "UNLIMITED" && Number(s.stock) === 0 ? "库存为 0，商品已售罄" : undefined);
+      const onBlock = writeBlock({ op: "sku-status", target: s.id, status: s.status === "on" ? "off" : "on" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : s.status !== "on" && seriesReason ? seriesReason : s.publishBlocked === true ? publishReason : s.status !== "on" && s.publishBlocked === undefined ? "上架状态未知，请重新加载核对" : s.status !== "on" && !open ? blockers.join("；") : s.status !== "on" && !s.allowedPoolCodes?.length ? "上架前请至少选择一个任务等级" : s.status !== "on" && s.monthlyTargetUsdt == null ? "上架前请设置月收益目标" : s.status !== "on" && s.inventoryMode !== "UNLIMITED" && Number(s.stock) === 0 ? "库存为 0，商品已售罄" : undefined);
       const cardReasons = [...new Set([...blockers, ...(s.publishBlocked === true ? [publishReason] : []), ...(s.publishBlocked === undefined ? ["上架状态待核实"] : []), ...(seriesReason ? [seriesReason] : [])])];
       const proposal = ctx.pendingProposal(s.id);
       // 待审批时卡片底部已有「有变更待审批」入口，按钮旁不再写同一件事；不能点的原因仍在按钮提示里。
@@ -453,7 +453,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
           <MoreMenu label={`更多操作 ${s.name}`} items={[
             { key: "details", label: "商品资料", onSelect: () => afterMenu(() => openDetail(s)) },
             ...canWrite && s.status === "on" && (s.inventoryMode === "UNLIMITED" || Number(s.stock) > 0) && !open && !release && phaseCurrentKnown ? [{ key: "current-phase", label: "按当前阶段上架", disabledReason: writeBlock({ op: "sku-save" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined), onSelect: () => afterMenu(() => ctx.openSku(s.id, phaseCur)) }] : [],
-            ...canWrite ? [{ key: "delete", label: "删除", danger: true, disabledReason: writeBlock({ op: "sku-delete" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined), onSelect: () => afterMenu(() => ctx.delSku(s.id, s.name)) }] : [],
+            ...canWrite ? [{ key: "delete", label: "删除", danger: true, disabledReason: writeBlock({ op: "sku-delete", target: s.id }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined), onSelect: () => afterMenu(() => ctx.delSku(s.id, s.name)) }] : [],
           ]} />
         </div>}
       </article>;

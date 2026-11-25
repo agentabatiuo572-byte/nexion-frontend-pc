@@ -5,6 +5,8 @@
  * 启用前后端要检查的三条，以及这件事的待审批和结果未知。
  * 申请、恢复原申请的逻辑照旧：submitted、recovering 只在本页内存，原申请由外壳的专用存储保留。
  */
+import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText } from "@/lib/admin/f-approval-names";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useState } from "react";
 import Link from "next/link";
 import { CircleCheck, CircleHelp, Clock3, Hourglass, PauseCircle, Power, PowerOff, TriangleAlert } from "lucide-react";
@@ -13,7 +15,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { a2ActionText } from "@/lib/admin/operator-copy";
 import { Change, Fact, Facts, LAYERS, f2Ranked, layerRate, num, type F2Confirm } from "./f2-shared";
 import { stamp } from "./f2-shared";
-import { F2_ACTIVATION_SLOT, F2_BOOTSTRAP_SLOT, F2_POLICY_SLOT, type F2Recovery } from "@/lib/admin/f2-approval";
+import { F2_ACTIVATION_SLOT, F2_BOOTSTRAP_SLOT, F2_POLICY_SLOT, type F2Proposal, type F2Recovery } from "@/lib/admin/f2-approval";
 import { f4Decimal } from "@/lib/admin/f4-money";
 import { f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "./f2-bootstrap-ticket";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
@@ -44,6 +46,37 @@ const ACTION_COPY = {
   },
 } as const;
 
+export function f2ActivationDraftEditor(ctx: FViewCtx, intended: unknown): F2Confirm | undefined {
+  const policy = ctx.f2DirectPolicy;
+  if (!policy || policy.sevenLayerActivationContractVersion !== 1 || ctx.f2DirectPolicyError || ctx.f2DirectPolicyLoading) return;
+  const action = !policy.sevenLayerEnabled ? "ACTIVATE" : policy.sevenLayerPaused ? "RESUME" : "PAUSE";
+  if (intended !== action || action === "ACTIVATE" && activationCheckRows(ctx).some(check => check.ok !== true)) return;
+  const ranked = f2Ranked(ctx);
+  const copy = action === "ACTIVATE" && ranked ? { ...ACTION_COPY.ACTIVATE, check: "提交和批准时都会检查七层比例和系数是否配齐；批准时还检查兑付覆盖率不低于红线。" } : ACTION_COPY[action];
+  const label = copy.label;
+  const state = !policy.sevenLayerEnabled ? "off" : policy.sevenLayerPaused ? "paused" : "running";
+  const stateName = { off: "未启用", paused: "已暂停", running: "运行中" } as const;
+    const revision = policy.sevenLayerRevision, policyVersion = policy.policyVersion;
+  return {
+      slot: "f-seven-layer-activation",
+      action: label, title: label, briefKind: action === "RESUME" ? "funds" : "config", amplify: action !== "PAUSE",
+      effect: <StatusTag tone="progress" filled explain="另一位超级管理员在「操作记录与审批」批准后才生效；批准前结算状态不变。">批准后生效</StatusTag>,
+      facts: <Facts>
+        <Fact k="整体结算"><Change from={stateName[state]} to={copy.after} /></Fact>
+        <Fact k="启用时间">{policy.cutoverAt ? `不变，仍是 ${stamp(policy.cutoverAt)}` : "批准时自动记下"}</Fact>
+        <Fact k="谁来批">另一位超级管理员</Fact>
+        <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f2_policy_amplify)}</Fact>
+      </Facts>,
+      statedBrief: { impact: copy.impact, check: copy.check },
+      detail: copy.impact,
+      coverageCheck: "批准时检查兑付覆盖率，低于红线不会执行。",
+      coverageLead: action === "ACTIVATE" ? "启用后平台开始按七层比例付团队奖励" : "恢复后平台继续按七层比例付团队奖励",
+      submit: async (reason) => { await ctx.changeF2SevenLayerActivation(action, revision, policyVersion, reason); },
+      done: "已提交，等待审批后执行",
+  };
+
+}
+
 export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: FViewCtx; openConfirm: (spec: F2Confirm) => void; recovering: boolean }) {
   const policy = ctx.f2DirectPolicy;
   const submitted = !!ctx.f2ActivationPending;
@@ -52,10 +85,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
   const canAudit = ctx.can("platform_a2_read");
   const supported = policy?.sevenLayerActivationContractVersion === 1;
   const action = !policy?.sevenLayerEnabled ? "ACTIVATE" : policy.sevenLayerPaused ? "RESUME" : "PAUSE";
-  const ranked = f2Ranked(ctx);
-  // 第 1、2 层按受益人等级后，启用时不再要求第 1 层是 10%（B83）；只改说法，检查在后端。
-  const copy = action === "ACTIVATE" && ranked ? { ...ACTION_COPY.ACTIVATE, check: "提交和批准时都会检查七层比例和系数是否配齐；批准时还检查兑付覆盖率不低于红线。" } : ACTION_COPY[action];
-  const label = copy.label;
+  const label = ACTION_COPY[action].label;
   const writeBlocked = ctx.f2WriteBlocked("f-seven-layer-activation");
   const checks = activationCheckRows(ctx);
   const incomplete = action === "ACTIVATE" && checks.some(check => check.ok !== true);
@@ -74,23 +104,9 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
   const stateName = { off: "未启用", paused: "已暂停", running: "运行中" } as const;
 
   function submit() {
-    if (!allowed || blocked || !policy || !state) return;
-    const revision = policy.sevenLayerRevision, policyVersion = policy.policyVersion;
-    openConfirm({
-      slot: "f-seven-layer-activation",
-      action: label, title: label, briefKind: action === "RESUME" ? "funds" : "config", amplify: action !== "PAUSE",
-      effect: <StatusTag tone="progress" filled explain="另一位超级管理员在「操作记录与审批」批准后才生效；批准前结算状态不变。">批准后生效</StatusTag>,
-      facts: <Facts>
-        <Fact k="整体结算"><Change from={stateName[state]} to={copy.after} /></Fact>
-        <Fact k="启用时间">{policy.cutoverAt ? `不变，仍是 ${stamp(policy.cutoverAt)}` : "批准时自动记下"}</Fact>
-      </Facts>,
-      statedBrief: { impact: copy.impact, check: copy.check },
-      detail: copy.impact,
-      coverageCheck: "批准时检查兑付覆盖率，低于红线不会执行。",
-      coverageLead: action === "ACTIVATE" ? "启用后平台开始按七层比例付团队奖励" : "恢复后平台继续按七层比例付团队奖励",
-      submit: async (reason) => { await ctx.changeF2SevenLayerActivation(action, revision, policyVersion, reason); },
-      done: "已提交，等待审批后执行",
-    });
+    if (!allowed || blocked) return;
+    const editor = f2ActivationDraftEditor(ctx, action);
+    if (editor) openConfirm(editor);
   }
 
   const pending = ctx.f2ActivationPending;
@@ -131,8 +147,9 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
 }
 
 /** 原申请写成运营看得懂的名字和改动；配置键不上屏。 */
-function attemptLabel(attempt: F2Recovery): { name: string; change: string } {
+function attemptLabel(attempt: F2Proposal): { name: string; change: string } {
   const slot = attempt.fingerprint, spec = attempt.spec;
+  if (!spec) return { name: "团队奖励参数", change: "原请求不完整，只能查询原结果" };
   const known = spec.before !== "—" || spec.after !== "—";
   const plain = known ? `${spec.before} → ${spec.after}` : "原请求不完整，只能查询原结果";
   if (slot === F2_ACTIVATION_SLOT) return { name: a2ActionText(spec.action), change: known ? plain : "原请求不完整，只能查询原结果" };
@@ -164,7 +181,7 @@ function attemptLabel(attempt: F2Recovery): { name: string; change: string } {
 /**
  * 页面最上方的原申请逐条提醒（全站-结果未知叫法）：费率读取失败时也在。只列本人保存的原申请；按钮调用已有的恢复入口。
  */
-export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FViewCtx; recovering: boolean; setRecovering: (value: boolean) => void }) {
+export function F2RecoveryNotice({ ctx, recovering, setRecovering, drafts }: { ctx: FViewCtx; recovering: boolean; setRecovering: (value: boolean) => void; drafts: readonly { original: F2Proposal; edit?: () => void }[] }) {
   const [error, setError] = useState<{ query: boolean; text: string } | null>(null);
   // 只让点的那个按钮转圈：查询时别的行和「按原请求重试」只灰着，不显示「正在重试…」。
   const [active, setActive] = useState<string | null>(null);
@@ -175,7 +192,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
   const attempts = ctx.f2Proposals;
   const rank = (attempt: F2Recovery) => notes[attempt.commandKey]?.tone === "danger" ? 0 : attempt.ticket?.status === "pending" ? 2 : attempt.expiresAt <= Date.now() ? 0 : 1;
   const { ordered, box } = useFreshFirst([...attempts].sort((a, b) => rank(a) - rank(b)).map((attempt) => ({ attempt, key: attempt.commandKey, createdAt: attempt.createdAt })));
-  if (!attempts.length && !error) return null;
+  if (!attempts.length && !error && !drafts.length) return null;
   const canAudit = ctx.can("platform_a2_read");
   async function recover(attempt: F2Recovery, query: boolean) {
     if (recovering || (query ? !attempt.canQuery : !attempt.canRetry)) return;
@@ -185,7 +202,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
     try {
       if (!query) { await ctx.retryF2Proposal(attempt.fingerprint); return; }
       const ticket = await ctx.queryF2Proposal(attempt.fingerprint);
-      if (!ticket) note({ tone: "warn", text: attempt.expiresAt <= Date.now() ? "没查到原审批单。已过 24 小时，可以解除这条记录。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。" });
+      if (!ticket) note({ tone: "warn", text: attempt.expiresAt <= Date.now() ? RETRY_EXPIRED_TEXT : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。" });
       else if (ticket.status === "pending") note({ tone: "warn", text: "审批单已建，在等批准；批准前不生效。" });
       else ctx.toast(fProposalEndText(ticket.status));
     } catch (cause) {
@@ -196,7 +213,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
   }
   const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
   return (
-    <div ref={box}><Notice tone="warn" title={<>{open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
+    <div ref={box}><Notice tone="warn" title={<>{drafts.length ? attempts.length ? "原申请与草稿" : "原申请未执行的草稿" : open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
       <ul className="f2-recovery" aria-label="还没有结论的原申请">
         {(all ? ordered : ordered.slice(0, 3)).map(({ attempt }) => {
           const { name, change } = attemptLabel(attempt);
@@ -208,14 +225,25 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
             <span>{attempt.ticket?.status === "pending"
               ? <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准；批准前不生效。">待审批</StatusTag>
               : attempt.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
-                : expired ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。">已过期</StatusTag>
+                : expired ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
                   : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>}</span>
             <span className="f2-actions">
               {attempt.canQuery && <Button size="sm" loading={active === `${attempt.commandKey}:query`} disabled={recovering} onClick={() => void recover(attempt, true)}>查询原结果</Button>}
               {attempt.canRetry && !expired && <Button size="sm" loading={active === `${attempt.commandKey}:retry`} disabled={recovering} loadingText="正在重试…" onClick={() => void recover(attempt, false)}>按原请求重试</Button>}
               {attempt.canRelease && !attempt.ticket && <FReleaseButton label={name} toast={ctx.toast} onRelease={() => ctx.releaseF2Proposal(attempt.fingerprint)} />}
             </span>
+            {expired && notes[attempt.commandKey]?.text !== RETRY_EXPIRED_TEXT && <span className="f2-recovery-line">{RETRY_EXPIRED_TEXT}</span>}
             {notes[attempt.commandKey] && <span className="f2-recovery-line" role="status" data-tone={notes[attempt.commandKey].tone}>{notes[attempt.commandKey].text}</span>}
+          </li>;
+        })}
+        {drafts.map(({ original, edit }) => {
+          const { name, change } = attemptLabel(original);
+          return <li key={original.commandKey}>
+            <span className="f2-recovery-name">{name}</span>
+            <span className="f2-recovery-change">{change}</span>
+            <span className="f2-recovery-time">{businessStamp(original.createdAt)} 提交</span>
+            <span><StatusTag tone="neutral">原操作未执行</StatusTag></span>
+            <span className="f2-actions">{edit ? <Button size="sm" disabled={recovering} onClick={edit}>继续修改</Button> : "请核对当前设置和操作权限"}</span>
           </li>;
         })}
       </ul>

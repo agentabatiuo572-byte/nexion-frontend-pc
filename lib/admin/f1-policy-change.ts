@@ -1,16 +1,18 @@
+import { acknowledgeFReconfirmation, settleFReconfirmation, type FReconfirmationLink } from "./f-reconfirmation";
+import { activeRecoveryActor } from "./f-proposal-recovery";
+import { fDirectReceiptConclusion } from "./f-direct-recovery";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
-import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
 import { fetchF1VRankOverview, writeF1VRankPolicy, type F1VRankRow } from "./f1-client";
 import { isF1OutcomeUncertainError } from "./f1-stable-write";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
 import { findHighOp } from "./high-ops-registry";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import type { OpsVRankRewardItem, VRankRewardType } from "./platform-types";
-import { fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
+import { fundCommandOrigin, fundCommandResult, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
 import { isOriginalCommandOrigin, queryOriginalCommand, type OriginalCommandRoute } from "./original-command-query";
-import { formatAdminApiError } from "./error-messages";
 import { compareDecimal, f1BenefitInputError, f1BenefitWriteValue, isF1BenefitField, type F1BenefitField } from "./f1-rank-benefit";
 import { withF1ProposalLookupCopy } from "./f1-approval";
 
@@ -34,16 +36,29 @@ type OriginalCommand = {
   directExpectedRevision?: string;
 };
 
-export type F1PolicyRecord = PendingMutationRecord & { input: string; ticket?: A2OperationRow; received?: boolean; absent?: boolean; commandOrigin?: FundCommandOrigin };
+export type F1PolicyDraft = { record: F1PolicyRecord; form: F1PolicyForm };
 
-export function canRetryF1PolicyProposal(record: F1PolicyRecord) {
-  return record.absent === true && !record.received && !record.ticket && record.expiresAt > Date.now();
-}
+export type F1PolicyRecord = PendingMutationRecord & FReconfirmationLink & { input: string; ticket?: A2OperationRow; received?: boolean; absent?: boolean; commandOrigin?: FundCommandOrigin };
 
 const attempts = createPendingMutationStore<F1PolicyRecord>({
   storageKey: "nexion-admin-f1-policy-commands-v1", retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.input === "string",
 });
+export const f1PolicyRecovery = createPendingRecovery(attempts, {
+  capability: () => "receipt",
+  canReplay: record => {
+    const owner = Number(record.fingerprint.split(":")[0]);
+    const actor = activeRecoveryActor(owner, "network_f1_read");
+    if (!actor?.authorities.includes("network_f1_write") || record.received || record.ticket) return false;
+    try {
+      const { original } = originalF1Policy(owner, record);
+      return !original.approval || !!original.proposal;
+    } catch { return false; }
+  },
+  explicitRejectionCode,
+});
+export const canRetryF1PolicyProposal = (record: F1PolicyRecord) => !f1PolicyRecovery.state(record).replayBlock;
+
 const inFlight = new Set<string>();
 export const isF1PolicyInFlight = (commandKey: string) => inFlight.has(commandKey);
 const MONEY = /^(0|[1-9]\d{0,11})(?:\.\d{1,6})?$/;
@@ -148,7 +163,7 @@ function f1PolicyRoute(values: F1PolicyValues): OriginalCommandRoute {
     originalPath: values.action === "threshold" ? `${base}/thresholds/${encodeURIComponent(values.field!)}` : `${base}/rewards${values.action === "reward_add" ? "" : `/${encodeURIComponent(values.rewardId!)}`}`,
     readAuthority: "network_f1_read" };
 }
-function originalF1Policy(owner: number, record: F1PolicyRecord) {
+export function originalF1Policy(owner: number, record: F1PolicyRecord) {
   const original = JSON.parse(record.input) as OriginalCommand;
   if (!original.editor || slot(owner, original.editor) !== record.fingerprint || typeof original.reason !== "string"
     || !original.form || !original.values || typeof original.approval !== "boolean" || typeof original.operator !== "string"
@@ -178,6 +193,7 @@ export function pendingF1Removals(owner: number, rank: string) {
 export async function submitF1Policy(
   session: AdminSession, editor: F1PolicyEditor, form: F1PolicyForm, reason: string,
   mode: "submit" | "lookup" | "retry-original" = "submit",
+  continuedFrom?: string,
 ) {
   const fingerprint = slot(session.adminId, editor);
   const auth = useAdminAuth.getState();
@@ -231,7 +247,8 @@ export async function submitF1Policy(
       };
     }
     const route = !approval ? f1PolicyRoute(values) : undefined;
-    attempts.remember(fingerprint, key, { input: JSON.stringify(original), ...(route ? { commandOrigin: fundCommandOrigin(route.originalMethod, route.originalPath, route.readAuthority) } : {}) });
+    attempts.remember(fingerprint, key, { input: JSON.stringify(original), continuedFrom,
+      ...(route ? { commandOrigin: fundCommandOrigin(route.originalMethod, route.originalPath, route.readAuthority) } : {}) });
     if (!attempts.isDurablyStored(fingerprint, key)) {
       attempts.forget(fingerprint, key);
       throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
@@ -243,69 +260,79 @@ export async function submitF1Policy(
   if (mode === "submit") inFlight.add(key);
   try {
     if (original.approval) {
-      if (mode === "retry-original" && previous && !previous.received && !previous.ticket && !canRetryF1PolicyProposal(previous)) {
-        throw new Error("请先查询原操作，确认查不到且未过期后再按原请求重试。");
-      }
-      let ticket;
-      if (previous || mode === "lookup") {
-        // A failed read cannot revoke an earlier authoritative pending observation.
-        attempts.remember(fingerprint, key, { ...record(), absent: false });
-        ticket = await fetchA2ProposalByKey(key, true, "f");
-        if (!ticket) {
-          if (record().received || record().ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
-          attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: true });
+      const check = (ticket: A2OperationRow) => {
+        if (!ticket.mine || ticket.obj !== original.values.rank || ticket.operationCode !== "f1_rank_policy_change") {
+          throw new A2OutcomeUncertainError("原审批单对象或操作不符，请到操作记录核对。", key);
         }
-      }
-      if (mode === "lookup" && !ticket) return null;
-      if (!ticket && previous?.received) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
-      if (!ticket && previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期且暂未查到结果，请到操作记录核对，勿重复提交。", key);
-      if (!ticket) {
-        attempts.remember(fingerprint, key, { ...record(), absent: false });
-        if (!attempts.isDurablyStored(fingerprint, key)) throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+      };
+      if (mode !== "lookup" && !previous?.received && !previous?.ticket) {
+        if (!attempts.isDurablyStored(fingerprint, key)) throw new Error("F1_PROPOSAL_ORIGINAL_INCOMPLETE");
         posting = true;
-        ticket = await createA2OperationProposal(original.proposal!, key, "proposal");
+        const send = (record: F1PolicyRecord) => createA2OperationProposal(originalF1Policy(session.adminId, record).original.proposal!, record.commandKey, "proposal");
+        const receipt = previous ? await f1PolicyRecovery.replay(previous, send) : await send(record());
         posting = false;
-        attempts.remember(fingerprint, key, { ...record(), received: true });
-        // The receipt is historical on replay; always query its current status.
-        ticket = await fetchA2ProposalByKey(key, true, "f");
-        if (!ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
+        attempts.remember(fingerprint, key, { ...record(), received: true, absent: false });
+        check(receipt);
       }
-      if (!ticket.mine || ticket.obj !== original.values.rank || ticket.operationCode !== "f1_rank_policy_change") {
-        throw new A2OutcomeUncertainError("原审批单对象或操作不符，请到操作记录核对。", key);
+      const query = await f1PolicyRecovery.query(record(), async saved => {
+        const ticket = await fetchA2ProposalByKey(saved.commandKey, true, "f");
+        if (!activeRecoveryActor(session.adminId, "network_f1_read")) throw new Error("ADMIN_PERMISSION_DENIED");
+        if (!ticket && (saved.received || saved.ticket)) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
+        if (ticket) check(ticket);
+        return { ticket, conclusion: !ticket ? "not-found" as const : ticket.status === "pending" ? "unknown" as const
+          : ticket.status === "approved" ? "succeeded" as const : ticket.status === "rejected" ? "rejected" as const : "not-executed" as const };
+      });
+      if (!query) throw new Error("PENDING_QUERY_UNAVAILABLE");
+      if (!query.ticket) return null;
+      const { ticket } = query;
+      if (ticket.status === "pending") {
+        attempts.remember(fingerprint, key, { ...record(), ticket, received: true, absent: false });
+        acknowledgeFReconfirmation(record());
       }
-      if (ticket.status === "pending") attempts.remember(fingerprint, key, { ...record(), ticket, received: true, absent: false });
-      else attempts.forget(fingerprint, key);
+      else settleFReconfirmation(f1PolicyRecovery, record(), query.conclusion, "f1-policy");
+      const restoreDraft = query.conclusion === "rejected" || query.conclusion === "not-executed";
       const status = { pending: " · 等另一位超级管理员批准，当前配置未变", approved: " · 已批准", rejected: " · 已驳回", withdrawn: " · 已撤回", expired: " · 已过期" };
       acknowledgement = `审批单 ${ticket.id}${status[ticket.status]}`;
+      return { active: await fetchF1VRankOverview().catch(() => null), resolved: true, acknowledgement, restoreDraft };
+
     } else {
       if (!previous?.received) {
         // Reading current configuration cannot establish an unknown command's outcome.
         if (mode === "lookup") {
-          const result = await queryF1PolicyCommand(session.adminId, previous!).catch(() => null);
-          return { active: await fetchF1VRankOverview().catch(() => null), resolved: result?.settled === true, receipt: result?.receipt,
-            acknowledgement: result?.settled ? result.receipt!.originalStatus === "CONFIRMED_REJECTED" ? "核查确认是后台拒绝，记录已解除；不等于没有执行，要重做请按现在的状态重新发起。"
-              : result.receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED" ? formatAdminApiError("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED", "INVESTIGATION_RECEIPT_UNREADABLE")
-                : result.receipt!.originalStatus === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。"
-              : "已读取现在的配置；它证明不了原请求的结果，请保留原操作继续核对。" };
+          const result = await queryF1PolicyCommand(session.adminId, previous!);
+          if (result.conclusion === "not-found") return null;
+          const restoreDraft = result.conclusion === "not-executed" || result.conclusion === "rejected";
+          return { active: await fetchF1VRankOverview().catch(() => null), resolved: result.settled, restoreDraft,
+            acknowledgement: restoreDraft ? "已确认原操作未执行。请核对最新数据后重新确认。"
+              : result.settled ? "原操作已执行，记录已解除，不要再做一次。"
+                : "还没有原操作的确定结果，请保留原操作继续核对。" };
+
         }
         if (previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期，请到操作记录核对，勿重复提交。", key);
         if (!attempts.isDurablyStored(fingerprint, key)) throw new A2OutcomeUncertainError("原操作未能持久保存，当前不能重发。", key);
         posting = true;
         // Older saved values include the proposal revision, but their direct body never sent it.
-        await writeF1VRankPolicy(original.values, original.reason, original.operator, key, original.directExpectedRevision);
+        const send = (saved: F1PolicyRecord) => {
+          const { original } = originalF1Policy(session.adminId, saved);
+          return writeF1VRankPolicy(original.values, original.reason, original.operator, saved.commandKey, original.directExpectedRevision);
+        };
+        if (previous) await f1PolicyRecovery.replay(previous, send);
+        else await send(record());
         posting = false;
         attempts.remember(fingerprint, key, { ...record(), received: true });
       }
       // A saved successful receipt settles the command even after its retry window.
-      attempts.forget(fingerprint, key);
+      const saved = record();
+      f1PolicyRecovery.settleAcknowledged(saved);
+      acknowledgeFReconfirmation(saved);
       acknowledgement = original.editor.action === "threshold" ? isF1BenefitField(original.editor.field) ? "等级权益已更新，立即生效" : "晋升条件已更新，下一轮评估使用新值" : original.editor.action === "reward_remove" ? "奖励已移除，历史发放记录保留" : "奖励模板已更新，后续发放使用新值";
     }
   } catch (error) {
     const saved = record();
     const failure = error as { status?: number; httpStatus?: number; apiCode?: number; backendMessage?: string };
-    const rejected = posting && (previous ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error) && !isF1OutcomeUncertainError(error)
+    const rejected = posting && !previous && !isA2OutcomeUncertainError(error) && !isF1OutcomeUncertainError(error)
       && !failure.backendMessage?.startsWith("IDEMPOTENCY_")
-      && isDeterministicRejection(failure.httpStatus ?? failure.status ?? 0, failure.apiCode));
+      && isDeterministicRejection(failure.httpStatus ?? failure.status ?? 0, failure.apiCode);
     if (rejected) attempts.forget(fingerprint, key);
     else if (saved) {
       const uncertain = isA2OutcomeUncertainError(error) ? error
@@ -324,12 +351,21 @@ export async function submitF1Policy(
 }
 
 export async function queryF1PolicyCommand(owner: number, record: F1PolicyRecord, evidence?: FundCommandEvidence) {
-  const saved = originalF1Policy(owner, record);
-  if (saved.original.approval) throw new Error("INVESTIGATION_SCOPE_UNSUPPORTED");
-  const receipt = await queryOriginalCommand(saved, f1PolicyRoute(saved.original.values), String(owner), evidence);
-  const settled = fundCommandSettled(receipt);
-  if (settled) attempts.forget(record.fingerprint, record.commandKey);
-  return { receipt, settled };
+  const scopes = { threshold: "F1_VRANK_THRESHOLD_UPDATE", reward_add: "F1_VRANK_REWARD_ADD",
+    reward_update: "F1_VRANK_REWARD_UPDATE", reward_remove: "F1_VRANK_REWARD_REMOVE" };
+  const result = await f1PolicyRecovery.query(record, async saved => {
+    const original = originalF1Policy(owner, saved);
+    if (original.original.approval) throw new Error("INVESTIGATION_SCOPE_UNSUPPORTED");
+    if (!activeRecoveryActor(owner, "network_f1_read")) throw new Error("ADMIN_PERMISSION_DENIED");
+    const receipt = await queryOriginalCommand(original, f1PolicyRoute(original.original.values), String(owner), evidence);
+    const state = fundCommandResult(receipt);
+    const conclusion = state === "SUCCEEDED" ? "succeeded" : state === "REJECTED" ? "rejected"
+      : state === "NOT_EXECUTED" ? "not-executed" : evidence || receipt
+        ? "unknown" : await fDirectReceiptConclusion(scopes[original.original.values.action], saved.commandKey, owner);
+    return { receipt, conclusion };
+  });
+  if (!result) throw new Error("PENDING_QUERY_UNAVAILABLE");
+  return { ...result, settled: settleFReconfirmation(f1PolicyRecovery, record, result.conclusion, "f1-policy") };
 }
 
 /** Refresh saved pending approvals without treating a failed read as a pending verdict. */
@@ -341,13 +377,9 @@ export async function queryF1PolicyOperation(owner: number, commandKey: string) 
   return submitF1Policy(current, { ...saved.original.editor, recoveryCommandKey: commandKey }, {}, "", "lookup");
 }
 
-/** Exposed for the visual worker's explicit expired-proposal confirmation. */
 export async function releaseF1PolicyProposal(owner: number, commandKey: string) {
   const saved = listF1PolicyOperations(owner).find(item => item.commandKey === commandKey);
-  if (!saved || !saved.original.approval || saved.expiresAt > Date.now()) throw new Error("这条原操作不能解除，请先查询原结果。");
-  if (useAdminAuth.getState().session?.adminId !== owner) throw new Error("ADMIN_PERMISSION_DENIED");
-  if (saved.received || saved.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", commandKey);
-  const result = await queryF1PolicyOperation(owner, commandKey);
-  if (result) throw new Error("已找到原审批单，请核对它现在的处理结果。");
-  attempts.forget(saved.fingerprint, commandKey);
+  if (!saved || !activeRecoveryActor(owner, "network_f1_read") || !f1PolicyRecovery.releaseRejectedReplay(saved)) {
+    throw new Error("PENDING_RELEASE_BLOCKED");
+  }
 }

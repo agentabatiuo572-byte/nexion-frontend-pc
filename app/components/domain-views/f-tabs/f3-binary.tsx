@@ -7,6 +7,9 @@
  * 请求仍使用原配置与结算合同；完整原请求、确认快照和恢复由 F 域上下文提供。
  * 筛选/分页保留，配置确认框从保存的原快照恢复，成员分组见 f3-placements。
  */
+import { rebaseFValues, unchangedFNumber, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -21,11 +24,11 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useDataListPager } from "../design-kit";
-import { f3PauseState, f3SpilloverState, isF3PayoutControlKey, validF3Threshold } from "@/lib/admin/f3-policy";
+import { F3_AUTO_SETTLE_KEY, f3PayoutControlAuthority, f3PauseState, f3SpilloverState, isF3PayoutControlKey, validF3Threshold } from "@/lib/admin/f3-policy";
 import { F3_GV_RESET_PARAM_KEY, type F3Settlement } from "@/lib/admin/f1-client";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
-import { F3_BATCH_SLOT, f3ConfigSlot, f3PendingFor, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
-import { pendingPlacement, forgetPlacement } from "@/lib/admin/f3-placements-client";
+import { F3_SETTLEMENT_SLOT, F3_BATCH_SLOT, f3ConfigSlot, f3PendingFor, f3ProposalAuthority, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
+import { pendingPlacement } from "@/lib/admin/f3-placements-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
@@ -109,6 +112,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [cohortFilter, setCohortFilter] = useState("");
   const [view, setView] = useState<View>("teams");
+  const proposalDrafts = useFReconfirmations("F3");
+  const writeDrafts = useFReconfirmations("f3-write");
   const [confirm, setConfirm] = useState<F3Confirm | null>(null);
   const [payout, setPayout] = useState<F3PayoutOpen | null>(null);
   const [openRow, setOpenRow] = useState<F3Settlement | null>(null);
@@ -212,9 +217,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     if (!placementOriginal || placementChecking || useAdminAuth.getState().session?.adminId !== adminId) return;
     setPlacementChecking(true);
     try {
-      const result = await recoverPlacement(placementOriginal.intent);
+      const result = await recoverPlacement(adminId!, placementOriginal.intent);
       if (useAdminAuth.getState().session?.adminId !== adminId) return;
-      if (result.resolved) forgetPlacement(adminId!);
       ctx.toast(result.message);
     } catch (error) { ctx.toast(displayAdminError(error)); }
     finally { setPlacementChecking(false); }
@@ -224,16 +228,19 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     config: cfg, configValues: ctx.f3ConfigValues, dailyCap, coverage: ctx.f3Coverage,
     zoneId: growthZoneId, zoneLabel: zone,
   } : undefined;
-  useEffect(() => { setConfirm(current => current?.original ? current : null); }, [ctx.f3ReadEpoch]);
   useEffect(() => { setConfirm(null); setPayout(null); }, [adminId]);
   useEffect(() => {
     setConfirm(current => {
       if (!current) return current;
+      if (current.original && proposalDrafts.some(row => row.commandKey === current.original!.commandKey)) return null;
       const record = ctx.f3Proposals.find(row => row.fingerprint === current.slot);
-      if (current.original && !record) return null;
       return record && !current.original ? { ...current, original: record } : current;
     });
   }, [ctx.f3Proposals]);
+  useEffect(() => {
+    setPayout(current => current && (proposalDrafts.some(row => row.commandKey === current.original?.commandKey)
+      || writeDrafts.some(row => row.commandKey === current.direct?.commandKey)) ? null : current);
+  }, [proposalDrafts.length, writeDrafts.length]);
 
   const selectUser = (user: string) => {
     setSelectedUser(user);
@@ -247,18 +254,19 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     setSelectedUser("");
     setLookupText("");
   };
-  const openSettlement = () => {
-    const originalSnapshot = settlePending?.f3Snapshot ?? snapshot;
+  const openSettlement = (draft?: FDomainAttempt) => {
+    const originalSnapshot = (draft ? undefined : settlePending?.f3Snapshot) ?? snapshot;
+    const intended = draft?.request?.command.params.values as { ownerUserId?: number; settlementDate?: string } | undefined;
     const capText = originalSnapshot?.dailyCap.amountUsdt != null ? `${fmtDecimal(originalSnapshot.dailyCap.amountUsdt)} USDT` : null;
     const periodEff = originalSnapshot?.config.settlePeriod ?? "";
     const zone = originalSnapshot?.zoneLabel ?? "业务时区尚未确认";
     const fields = [
-      { key: "ownerUserId", label: "用户编号", inputKind: "number", min: 1, step: 1, pattern: "^[0-9]+$" },
-      { key: "settlementDate", label: `结算日（${zone}）`, inputKind: "text", pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", patternMessage: "结算日格式应为 YYYY-MM-DD", placeholder: "YYYY-MM-DD" },
+      { key: "ownerUserId", label: "用户编号", current: intended?.ownerUserId == null ? undefined : String(intended.ownerUserId), inputKind: "number", min: 1, step: 1, pattern: "^[0-9]+$" },
+      { key: "settlementDate", label: `结算日（${zone}）`, current: intended?.settlementDate, inputKind: "text", pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", patternMessage: "结算日格式应为 YYYY-MM-DD", placeholder: "YYYY-MM-DD" },
     ] as const;
     ctx.openActionConfirm({ briefKind: "funds",
       name: "手动结算团队平衡奖励",
-      f3Snapshot: originalSnapshot,
+      f3Snapshot: originalSnapshot, draft, f3RecoveryKey: draft ? undefined : settlePending?.commandKey,
       businessForm: { kind: "multi-field", fields: [...fields] },
       teamApproval: {
         source: "F3",
@@ -276,12 +284,12 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <Fact k="已经结算过">查回原记录，不重复发，也不按新设置重算</Fact>
           </Facts>
           <Field id="ownerUserId" label="邀请人用户编号" required>
-            <Input id="ownerUserId" name="ownerUserId" inputMode="numeric" autoComplete="off" disabled={locked} required value={value.ownerUserId ?? ""}
+            <Input id="ownerUserId" name="ownerUserId" inputMode="numeric" autoComplete="off" disabled={locked} readOnly={!!draft} required value={value.ownerUserId ?? ""}
               onChange={(event) => change({ ...value, ownerUserId: event.target.value })} />
           </Field>
           <Field id="settlementDate" label="结算日" required
             help={`按${zone}已经结束的一天；不是周期结算日的，批准时会被拦下`}>
-            <Input id="settlementDate" name="settlementDate" placeholder="YYYY-MM-DD" autoComplete="off" disabled={locked} required value={value.settlementDate ?? ""}
+            <Input id="settlementDate" name="settlementDate" placeholder="YYYY-MM-DD" autoComplete="off" disabled={locked} readOnly={!!draft} required value={value.settlementDate ?? ""}
               onChange={(event) => change({ ...value, settlementDate: event.target.value })} />
           </Field>
         </div>,
@@ -289,6 +297,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       run: async (reason, value) => {
         const ownerUserId = Number(value?.ownerUserId);
         const settlementDate = value?.settlementDate?.trim() ?? "";
+        if (draft && (ownerUserId !== intended?.ownerUserId || settlementDate !== intended?.settlementDate)) {
+          throw new Error("请从原草稿继续处理同一邀请人和结算日。");
+        }
         if (!Number.isSafeInteger(ownerUserId) || ownerUserId <= 0) throw new Error("请输入有效用户编号");
         const utcDate = new Date(`${settlementDate}T00:00:00Z`);
         if (!Number.isFinite(utcDate.valueOf()) || utcDate.toISOString().slice(0, 10) !== settlementDate) {
@@ -336,11 +347,12 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     ? <StatusTag tone="warn" icon={Clock3} explain={`等${approver}在「操作记录与审批」批准；批准前不生效。`}>待审批</StatusTag>
     : original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
       : original.expiresAt <= Date.now()
-        ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除这条记录。">已过期</StatusTag>
+        ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>;
-  const release = (original: FDomainAttempt, label: ReactNode) => original.expiresAt <= Date.now() && original.absent && !original.ticket && !original.received
+  const release = (original: FDomainAttempt, label: ReactNode) => original.replayRejection
     ? <FReleaseButton label={label} toast={ctx.toast} onRelease={() => ctx.recoverF3(original, "release")} /> : null;
   const payoutDirects = F3_PAYOUT_KEYS.flatMap((key) => ctx.getF3PayoutControlPending(key).directWrite ?? []);
+  const draftCount = proposalDrafts.length + writeDrafts.length;
   const recoveryCount = (settlePending ? 1 : 0) + configProposals.length + payoutDirects.length + (showPlacementRecovery ? 1 : 0);
   const recoveryOpen = [...(settlePending ? [settlePending] : []), ...configProposals].some((row) => row.ticket?.status !== "pending") || payoutDirects.length > 0 || showPlacementRecovery;
   const payoutKey = (original: FDomainAttempt) => { const key = original.fingerprint.replace(/^f-config:/, ""); return isF3PayoutControlKey(key) ? key : undefined; };
@@ -358,8 +370,51 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     const period = value("F.binary.settlePeriod"), residual = value("F.binary.residualPolicy");
     return period || residual ? `改为 ${[period, residual ? residualLabel(residual) : undefined].filter(Boolean).join(" · ")}` : "按原申请的结算周期和残额处理";
   };
-  const recovery = recoveryCount > 0 && (
-    <Notice tone="warn" title={<>{recoveryOpen ? `有 ${recoveryCount} 项原操作还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原操作怎么处理" content={<>
+  const payoutDraft = (key: F3PayoutOpen["key"], value: string, original: F3PayoutOpen["draft"]) => {
+    if (!snapshot || !ctx.can(f3PayoutControlAuthority(key))) return;
+    if (key === F3_AUTO_SETTLE_KEY && (value === "on") === (snapshot.config.autoSettle === true)) return;
+    const pending = ctx.getF3PayoutControlPending(key);
+    if (pending.directWrite || pending.originalProposal && !pending.approval) return;
+    return () => setPayout({ key, recoveredValue: value, snapshot, draft: original });
+  };
+  const draftEditor = (original: FDomainAttempt) => {
+    const frozen = original.f3Snapshot;
+    const spec = original.spec;
+    const params = original.request?.command.params;
+    if (!snapshot || ctx.f3Loading || ctx.f3Error || !spec || !params || !ctx.can(f3ProposalAuthority(original))) return;
+    if (original.fingerprint === F3_SETTLEMENT_SLOT || spec.command.op === "f3_binary_settle") {
+      return canSettle && !settlePending && params.values ? () => openSettlement(original) : undefined;
+    }
+    const key = payoutKey(original);
+    if (key && typeof params.value === "string") return payoutDraft(key, params.value, original);
+    if (!ctx.can("platform_a2_proposal_create") && !ctx.can("platform_a2_write") || !frozen) return;
+    const setting = original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : spec.obj;
+    if (!CONFIG_NAMES[setting] || f3PendingFor(ctx.f3ApprovalRows, setting)
+      || configProposals.some(row => row.fingerprint === original.fingerprint)) return;
+    if (setting === "F.binary.paused" && (params.value === "on") === binaryPaused) return;
+    const editor = f3ConfigurationConfirm(ctx, snapshot, setting);
+    const before = f3ConfigurationConfirm(ctx, frozen, setting);
+    if (editor.edit && typeof params.value === "string") {
+      const value = params.value.replace(/%$/, "");
+      if (editor.edit.options && !editor.edit.options.includes(value)) return;
+      const old = before.edit?.current;
+      const initialValue = old !== undefined && (old === value || compareDecimal(old, value) === 0) ? editor.edit.current : value;
+      return () => setConfirm({ ...editor, draft: original, edit: { ...editor.edit!, initialValue } });
+    }
+    if (setting === F3_BATCH_SLOT && Array.isArray(params.changes)) {
+      const formValues = (form: F3Confirm["businessForm"]) => form?.kind === "multi-field"
+        ? Object.fromEntries(form.fields.map(field => [field.key, field.current ?? ""])) : {};
+      const changes = params.changes as { key: string; value: string }[];
+      const initial = rebaseFValues(formValues(before.businessForm), {
+        period: changes.find(row => row.key === "F.binary.settlePeriod")?.value,
+        residual: changes.find(row => row.key === "F.binary.residualPolicy")?.value,
+      }, formValues(editor.businessForm));
+      return () => setConfirm({ ...editor, initial, draft: original });
+    }
+    if (setting === "F.binary.paused") return () => setConfirm({ ...editor, draft: original });
+  };
+  const recovery = recoveryCount + draftCount > 0 && (
+    <Notice tone="warn" title={<>{draftCount ? recoveryCount ? "原操作与草稿" : "原操作未执行的草稿" : recoveryOpen ? `有 ${recoveryCount} 项原操作还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原操作怎么处理" content={<>
       <p>原内容和理由只存在这个浏览器标签页，关掉标签页就没了。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。</p>
       <p>查到审批单只说明申请登记了，不等于已经发钱。关闭自动发放、调低全平台封顶比例和成员分组是直接生效的，查询看原操作有没有执行。</p>
     </>} /></>}>
@@ -369,7 +424,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="f3-recovery-change">{settleOriginal ? <>邀请人 {settleOriginal.ownerUserId} · <span className="rd-keep">结算日 {settleOriginal.settlementDate}</span></> : "原申请内容不完整，请到「操作记录与审批」核对"}</span>
           <span className="f3-recovery-time">{businessStamp(settlePending.createdAt)} 提交</span>
           <span className="f3-recovery-state">{proposalTag(settlePending, SETTLE_APPROVER)}</span>
-          <span className="f3-recovery-actions"><Button size="sm" onClick={openSettlement}>查询原结果</Button>{release(settlePending, "手动结算")}</span>
+          <span className="f3-recovery-actions"><Button size="sm" onClick={() => openSettlement()}>查询原结果</Button>{release(settlePending, "手动结算")}</span>
         </li>}
         {configProposals.map(original => <li key={original.commandKey}>
           <span className="f3-recovery-name">{configName(original)}</span>
@@ -383,8 +438,32 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="f3-recovery-change">{line.change}</span>
           <span className="f3-recovery-time">{businessStamp(direct.createdAt)} 提交</span>
           <span className="f3-recovery-state">{line.tag}</span>
-          <span className="f3-recovery-actions"><Button size="sm" onClick={() => setPayout({ key: direct.f3Request!.key, direct })}>查询原结果</Button></span>
+          <span className="f3-recovery-actions"><Button size="sm" onClick={() => setPayout({ key: direct.f3Request!.key, direct })}>查询原结果</Button>{direct.replayRejection && <FReleaseButton label={line.name} toast={ctx.toast} onRelease={() => ctx.recoverF3PayoutControl(direct.f3Request!.key, "release")} />}</span>
         </li>; })}
+        {proposalDrafts.map(({ original }) => {
+          const edit = draftEditor(original);
+          const settle = original.spec?.command.op === "f3_binary_settle";
+          const values = settle ? original.request?.command.params.values as { ownerUserId?: number; settlementDate?: string } : undefined;
+          return <li key={original.commandKey}>
+            <span className="f3-recovery-name">{settle ? "手动结算" : configName(original)}</span>
+            <span className="f3-recovery-change">{values ? `邀请人 ${values.ownerUserId} · 结算日 ${values.settlementDate}` : configChange(original)}</span>
+            <span className="f3-recovery-time">{businessStamp(original.createdAt)} 提交</span>
+            <span className="f3-recovery-state"><StatusTag tone="neutral">原操作未执行</StatusTag></span>
+            <span className="f3-recovery-actions">{edit ? <Button size="sm" onClick={edit}>继续修改</Button> : "请核对当前设置和权限"}</span>
+          </li>;
+        })}
+        {writeDrafts.map(({ original }) => {
+          if (!original.f3Request) return null;
+          const { key, value } = original.f3Request;
+          const edit = !ctx.f3Loading && !ctx.f3Error ? payoutDraft(key, value, original) : undefined;
+          return <li key={original.commandKey}>
+            <span className="f3-recovery-name">{F3_PAYOUT_NAMES[key]}</span>
+            <span className="f3-recovery-change">改为 {payoutValueText(key, value)}</span>
+            <span className="f3-recovery-time">{businessStamp(original.createdAt)} 提交</span>
+            <span className="f3-recovery-state"><StatusTag tone="neutral">原操作未执行</StatusTag></span>
+            <span className="f3-recovery-actions">{edit ? <Button size="sm" onClick={edit}>继续修改</Button> : "请核对当前设置和权限"}</span>
+          </li>;
+        })}
         {showPlacementRecovery && placementOriginal && <li>
           <span className="f3-recovery-name">成员分组</span>
           <span className="f3-recovery-change">邀请人 {placementOriginal.intent.ownerUserId} · 成员 {placementOriginal.intent.memberUserId} → {placementOriginal.intent.leg} 组</span>
@@ -398,7 +477,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   );
 
   const showReadState = rows.length === 0 && (ctx.f3Loading || !!ctx.f3Error);
-  const configConfirm = confirm && <F3ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />;
+  const configConfirm = confirm && <F3ConfirmHost key={confirm.draft?.commandKey ?? confirm.slot} confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />;
 
   const conclusion = binaryPaused
     ? <Conclusion state="warn" icon={PauseCircle} hint={canPause ? "恢复要提交审批；恢复后不会自动补结暂停期间的周期。" : "恢复要有暂停权限的同事提交审批。"}
@@ -424,12 +503,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       {!showReadState && conclusion}
       {recovery}
       {showReadState ? <>
-        {configConfirm}
         {ctx.f3Loading
           ? <BlockState state="loading" title="正在读取团队平衡奖励…" />
           : <BlockState state="error" title="团队平衡奖励数据加载失败" detail={ctx.f3Error ?? undefined} onRetry={() => void ctx.refreshF3()} retryLabel="重新加载" />}
       </> : <>
       {ctx.f3Error && <Notice tone="warn" title="团队平衡奖励数据刷新失败">{ctx.f3Error}</Notice>}
+      {ctx.f3ApprovalReadError && <Notice tone="warn" title="审批队列读取失败"
+        action={<Button size="sm" onClick={() => void ctx.refreshF3()}>重试读取</Button>}>{ctx.f3ApprovalReadError}</Notice>}
 
       <StatBand label="团队平衡奖励摘要">
         <Stat label="本月匹配订单额" icon={ArrowLeftRight} tone="role-2" value={amountText(ctx.f3Amounts?.monthlyMatchedUsdRaw, ctx.f3MonthlyMatchedUsd)} unit="USDT"
@@ -471,7 +551,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         </>}
         actions={<>
           <Link className="rd-link" href="/network/commissions" prefetch={false}>去补发 / 冲正</Link>
-          {(canSettle || settlePending) && <Button size="sm" variant="primary" onClick={openSettlement}>{settlePending ? "查看原手动结算" : "手动结算"}</Button>}
+          {(canSettle || settlePending) && <Button size="sm" variant="primary" onClick={() => openSettlement()}>{settlePending ? "查看原手动结算" : "手动结算"}</Button>}
         </>}>
         <FilterBar
           scope={<div className="rd-filter-scope-row"><Segments label="怎么看结算记录" value={view} onChange={setView} items={[{ value: "teams", label: "按邀请人" }, { value: "dates", label: "按结算日" }]} /></div>}
@@ -625,9 +705,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         onPrev: () => { const i = pager.pageRows.indexOf(openRow!); if (i > 0) setOpenRow(pager.pageRows[i - 1]); },
         onNext: () => { const i = pager.pageRows.indexOf(openRow!); if (i >= 0 && i < pager.pageRows.length - 1) setOpenRow(pager.pageRows[i + 1]); },
       }} />
-      {configConfirm}
       </>}
-      {payout && <F3PayoutConfirm key={`${payout.key}:${payout.direct?.commandKey ?? payout.original?.commandKey ?? "new"}`} open={payout} ctx={ctx} onClose={() => setPayout(null)} />}
+      {configConfirm}
+      {payout && <F3PayoutConfirm key={`${payout.key}:${payout.direct?.commandKey ?? payout.original?.commandKey ?? payout.draft?.commandKey ?? "new"}`} open={payout} ctx={ctx} onClose={() => setPayout(null)} />}
     </div>
   );
 }
@@ -700,7 +780,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
   const openThreshold = (): F3Confirm => ({
     action: "调整每组订单额门槛", title: "调整每组订单额门槛", briefKind: "config",
     effect: approvalTag("配置"),
-    edit: { kind: "number", label: "改后的门槛", current: thresholdCurrent, unit: "USDT", min: 0.000001, max: 5000, maxDecimals: 6, amplifiesWhen: "decrease", hint: "大于 0、不超过 5,000，最多 6 位小数" },
+    edit: { kind: "number", label: "改后的门槛", validate: value => unchangedFNumber(value, thresholdCurrent), current: thresholdCurrent, unit: "USDT", min: 0.000001, max: 5000, maxDecimals: 6, amplifiesWhen: "decrease", hint: "大于 0、不超过 5,000，最多 6 位小数" },
     facts: (value) => <>
       <Facts>
         <Fact k="每组订单额门槛">{value === undefined ? text(thresholdText) : <Change from={text(thresholdText)} to={`${fmtDecimal(value)} USDT`} />}</Fact>
@@ -726,7 +806,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
   const openRate = (): F3Confirm => ({
     action: "调整匹配比例", title: "调整匹配比例", briefKind: "config",
     effect: approvalTag("配置"),
-    edit: { kind: "number", label: "改后的比例（填 1 就是 1%）", current: ratePercent ?? "", unit: "%", min: 0.0000000001, max: 20, maxDecimals: 10, amplifiesWhen: "increase", hint: "大于 0、不超过 20，最多 10 位小数" },
+    edit: { kind: "number", label: "改后的比例（填 1 就是 1%）", validate: value => unchangedFNumber(value, ratePercent), current: ratePercent ?? "", unit: "%", min: 0.0000000001, max: 20, maxDecimals: 10, amplifiesWhen: "increase", hint: "大于 0、不超过 20，最多 10 位小数" },
     facts: (value) => <>
       <Facts>
         <Fact k="匹配比例">{value === undefined ? rateEff : <Change from={rateEff} to={`${value}%`} />}</Fact>

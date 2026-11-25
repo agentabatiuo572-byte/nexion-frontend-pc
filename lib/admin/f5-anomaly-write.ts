@@ -1,12 +1,20 @@
+import { acknowledgeFReconfirmation, settleFReconfirmation } from "./f-reconfirmation";
+
+export const F5_ANOMALY_UNCHANGED = "和现在的标准一样，无需提交。";
+
+export function f5AnomalyChanged(sigma: number, ratio: number, currentSigma: string, currentRatio: string) {
+  return sigma !== Number(currentSigma) || ratio !== Number(currentRatio);
+}
 import { createA2CommandKey } from "./a2-client";
-import { fetchF5CommissionAuditOverview, updateF5AnomalyConfig } from "./f1-client";
+import { updateF5AnomalyConfig } from "./f1-client";
 import { fDirectCommands, F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "./f1-stable-write";
-import { hasPersistedPendingCommandOwner, isRetryExpired } from "./pending-mutation-store";
-import { isExplicitRejection } from "./explicit-rejection";
+import { hasPersistedPendingCommandOwner } from "./pending-mutation-store";
+import { createFDirectRecovery, fDirectReceiptConclusion } from "./f-direct-recovery";
+import { activeRecoveryActor } from "./f-proposal-recovery";
 import { isDeterministicRejection } from "./outcome-classification";
 import type { F5ConfirmationSnapshot } from "./f5-approval";
 import { useAdminAuth } from "../store/admin-auth";
-import { fundCommandOrigin, fundCommandSettled, type FundCommandEvidence } from "./fund-command-investigation";
+import { fundCommandOrigin, fundCommandResult, type FundCommandEvidence } from "./fund-command-investigation";
 import { queryOriginalCommand } from "./original-command-query";
 
 const anomalyRoute = { originalMethod: "PUT", originalPath: "/api/admin/commissions/anomaly-config", readAuthority: "network_f5_read" } as const;
@@ -17,11 +25,10 @@ export function listF5AnomalyWrites(adminId: number) {
       || row.adminId === undefined && hasPersistedPendingCommandOwner(String(adminId)))).map(row => ({ ...row, adminId }));
 }
 
-export function canRetryF5Anomaly(original: FDirectAttempt) {
-  const auth = useAdminAuth.getState();
-  return auth.isAuthenticated && !auth.logoutPending && !!auth.session && auth.session.adminId === original.adminId
-    && auth.session.authorities.includes("network_f5_write") && !!original.f5Request && !isRetryExpired(original);
-}
+const SCOPE = "F5_COMMISSION_ANOMALY_CONFIG";
+export const f5AnomalyRecovery = createFDirectRecovery(fDirectCommands, () => SCOPE, original =>
+  !!original.f5Request && !!activeRecoveryActor(original.adminId, "network_f5_read")?.authorities.includes("network_f5_write"));
+export const canRetryF5Anomaly = (original: FDirectAttempt) => !f5AnomalyRecovery.state(original).replayBlock;
 
 export async function sendF5Anomaly(adminId: number, values?: { commissionAnomalySigma: number; layerRatioAnomalyPct: number; reason: string }, snapshot?: F5ConfirmationSnapshot) {
   const auth = useAdminAuth.getState();
@@ -33,7 +40,7 @@ export async function sendF5Anomaly(adminId: number, values?: { commissionAnomal
     if (!values) throw new Error("F5_OPERATION_ORIGINAL_INCOMPLETE");
     const request = { ...values, operator: auth.session.operator || auth.session.username };
     const slot = `${adminId}:f5-anomaly-config`, key = createA2CommandKey("f5-anomaly-config");
-    fDirectCommands.remember(slot, key, { adminId, f5Request: request, f5Snapshot: snapshot, inputFingerprint: JSON.stringify(request),
+    fDirectCommands.remember(slot, key, { adminId, f5Request: request, f5Snapshot: snapshot, inputFingerprint: JSON.stringify(request), continuedFrom: snapshot?.continuedFrom,
       commandOrigin: fundCommandOrigin(anomalyRoute.originalMethod, anomalyRoute.originalPath, anomalyRoute.readAuthority) });
     original = listF5AnomalyWrites(adminId)[0];
     if (!fDirectCommands.isDurablyStored(slot, key)) {
@@ -41,29 +48,40 @@ export async function sendF5Anomaly(adminId: number, values?: { commissionAnomal
       throw new Error("F5_OPERATION_STORAGE_UNAVAILABLE");
     }
   }
-  if (isRetryExpired(original)) throw new F1OutcomeUncertainError("原操作已超过 24 小时，只能读回核对。", original.commandKey);
   if (!original.f5Request || !fDirectCommands.isDurablyStored(original.fingerprint, original.commandKey)) throw new Error("F5_OPERATION_ORIGINAL_INCOMPLETE");
-  const request = original.f5Request;
-  try {
-    const receipt = await updateF5AnomalyConfig(request.commissionAnomalySigma, request.layerRatioAnomalyPct, request.reason, request.operator, original.commandKey);
+  const send = async (record: FDirectAttempt) => {
+    const request = record.f5Request!;
+    const receipt = await updateF5AnomalyConfig(request.commissionAnomalySigma, request.layerRatioAnomalyPct, request.reason, request.operator, record.commandKey);
     if (typeof receipt.operationNo !== "string" || !receipt.operationNo || Number(receipt.commissionAnomalySigma) !== request.commissionAnomalySigma
-      || Number(receipt.layerRatioAnomalyPct) !== request.layerRatioAnomalyPct) throw new F1OutcomeUncertainError("保存后返回的内容和原请求对不上，请继续核对。", original.commandKey);
+      || Number(receipt.layerRatioAnomalyPct) !== request.layerRatioAnomalyPct) throw new F1OutcomeUncertainError("保存后返回的内容和原请求对不上，请继续核对。", record.commandKey);
+  };
+  try {
+    if (recovering) await f5AnomalyRecovery.replay(original, send);
+    else await send(original);
   } catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
-    if (recovering ? isExplicitRejection(error) : !isF1OutcomeUncertainError(error)
+    if (!recovering && !isF1OutcomeUncertainError(error)
       && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) fDirectCommands.forget(original.fingerprint, original.commandKey);
     throw error;
   }
-  fDirectCommands.forget(original.fingerprint, original.commandKey);
+  f5AnomalyRecovery.settleAcknowledged(original);
+  acknowledgeFReconfirmation(original);
 }
 
 /** Current thresholds are comparison evidence, not a receipt proving that the original PUT did not execute. */
 export async function queryF5Anomaly(adminId: number, original: FDirectAttempt, evidence?: FundCommandEvidence) {
   const auth = useAdminAuth.getState();
   if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== adminId || original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-  const query = () => queryOriginalCommand(original.commandOrigin ? { ...original, commandOrigin: { ...original.commandOrigin, originalPath: anomalyRoute.originalPath } } : original, anomalyRoute, String(adminId), evidence);
-  const receipt = evidence ? await query() : await query().catch(() => null);
-  const settled = fundCommandSettled(receipt);
-  if (settled) fDirectCommands.forget(original.fingerprint, original.commandKey);
-  return { receipt, settled, current: await fetchF5CommissionAuditOverview() };
+  const query = (original: FDirectAttempt) => queryOriginalCommand(original.commandOrigin ? { ...original, commandOrigin: { ...original.commandOrigin, originalPath: anomalyRoute.originalPath } } : original, anomalyRoute, String(adminId), evidence);
+  const result = await f5AnomalyRecovery.query(original, async record => {
+    const receipt = await query(record);
+    const state = fundCommandResult(receipt);
+    const conclusion = state === "SUCCEEDED" ? "succeeded" : state === "REJECTED" ? "rejected"
+      : state === "NOT_EXECUTED" ? "not-executed" : evidence || receipt
+        ? "unknown" : await fDirectReceiptConclusion(SCOPE, record.commandKey, adminId);
+    return { conclusion, receipt };
+  });
+  if (!result) throw new Error("PENDING_QUERY_UNAVAILABLE");
+  const settled = settleFReconfirmation(f5AnomalyRecovery, original, result.conclusion, "f5-anomaly");
+  return { ...result, settled };
 }

@@ -77,7 +77,7 @@ export function e1Object(spec: ProposeSpec): string {
   return target ? `${target.type}|${target.id}` : `${spec.command.op}|${spec.obj}`;
 }
 
-export type E1Pending = PendingMutationRecord & { actorId: string; spec: ProposeSpec; receivedTicketId?: string; absent?: boolean; retryRejection?: string };
+export type E1Pending = PendingMutationRecord & { actorId: string; spec: ProposeSpec; verifiedNotExecuted?: true; ticket?: { id: string; status: "pending" }; skuForm?: SkuForm; skuBaseline?: OpsSku; operator?: string; operatorRole?: string; receivedTicketId?: string; absent?: boolean; retryRejection?: string };
 const validProposal = (row: E1Pending) => typeof row.actorId === "string" && !!row.actorId
   && typeof row.spec?.reason === "string" && row.spec.sourceDomain === "E1"
   && typeof row.spec?.obj === "string" && typeof row.spec?.command?.op === "string"
@@ -102,9 +102,12 @@ export const e1Pending = (actorId: string) => [...e1Commands.list(), ...e1Monthl
 export const forgetE1 = (row: E1Pending) => (row.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands).forget(row.fingerprint, row.commandKey);
 
 export type E1MediaPending = PendingMutationRecord & {
-  actorId: string; skuId: string; fileName: string; size: number; mime: string; digest: string;
+  actorId: string; skuId: string; draftId?: string; draftForm?: SkuForm; fileName: string; size: number; mime: string; digest: string;
   kind: "image" | "video"; params: { domain: string; usage: string; entityType: string; entityId: string; operator: string };
 };
+export function e1MediaHasOwner(record: E1MediaPending) {
+  return record.skuId ? record.params.entityId === record.skuId : !!record.draftId && !!record.draftForm;
+}
 export const e1MediaCommands = createPendingMutationStore<E1MediaPending>({
   storageKey: "nexion-admin-e1-media-commands-v1", retainExpiredRecords: true,
   isValidRecord: row => typeof row.actorId === "string" && !!row.actorId && typeof row.fileName === "string"
@@ -112,6 +115,12 @@ export const e1MediaCommands = createPendingMutationStore<E1MediaPending>({
     && typeof row.mime === "string" && typeof row.skuId === "string" && ["image", "video"].includes(row.kind)
     && row.params?.domain === "E" && row.params.entityType === "SKU" && typeof row.params.operator === "string",
 });
+
+export function e1PendingMediaFor(actorId: string, skuId?: string, draftId?: string) {
+  return e1MediaCommands.list().find(row => row.actorId === actorId && (skuId ? row.skuId === skuId
+    : !!draftId && !row.skuId && row.draftId === draftId));
+}
+export const E1_PENDING_MEDIA = "请从原上传记录打开核对。";
 
 export type E1Legacy = PendingMutationRecord & { inputFingerprint: string };
 /** Old slots have no reason/actor/envelope. Read only, never resolve or expire them. */

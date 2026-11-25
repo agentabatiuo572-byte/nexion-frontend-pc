@@ -1,3 +1,5 @@
+import { compareDecimal } from "./f1-rank-benefit";
+
 /** Preserve decimal lexemes across JSON and display; never round money via Number. */
 export function f4Decimal(value: string | number): string | null {
   const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(String(value).trim());
@@ -11,18 +13,21 @@ export function f4Decimal(value: string | number): string | null {
   return `${match[1] === "-" && /[1-9]/.test(digits) ? "-" : ""}${whole.replace(/^0+(?=\d)/, "")}${fraction ? `.${fraction}` : ""}`;
 }
 
-/** top1/top5 use percentage points, matching OpsTeamService.parseDecimal.
- * An unconfigured cap is compared with its settlement default (25 / 60), as the backend does since f066d719. */
-export function f4HeadCapAmplifies(key: "F.pool.top1MaxPct" | "F.pool.top5MaxPct", stored: string | undefined, value: string): boolean {
-  const current = stored?.trim() ? stored : key === "F.pool.top1MaxPct" ? "25" : "60";
-  const before = f4Decimal(current.replace(/[%,]/g, "")) ?? "0";
-  const after = f4Decimal(value.replace(/[%,]/g, "")) ?? "0";
-  const [beforeWhole, beforeFraction = ""] = before.split(".");
-  const [afterWhole, afterFraction = ""] = after.split(".");
-  const scale = Math.max(beforeFraction.length, afterFraction.length);
-  return BigInt(afterWhole + afterFraction.padEnd(scale, "0"))
-    > BigInt(beforeWhole + beforeFraction.padEnd(scale, "0"));
+/** LeadershipPoolConfigGuard accepts ordinary percentage points, from 0 through 30. */
+export function f4PoolRatio(value: string): string | null {
+  const text = value.trim();
+  if (!/^\d+(?:\.\d+)?%?$/.test(text)) return null;
+  const amount = f4Decimal(text.replace(/%$/, ""));
+  return amount !== null && compareDecimal(amount, "30") !== 1 ? amount : null;
 }
+
+export function f4PoolRatioIncreases(stored: string | undefined, value: string): boolean {
+  const after = f4PoolRatio(value);
+  return after !== null && compareDecimal(after, f4PoolRatio(stored ?? "") ?? "0") === 1;
+}
+
+export const F4_POOL_RATIO_INVALID = "请填 0–30 的普通百分数，例如 0.05 或 5%。";
+export const F4_PAYOUT_POOL_UNCONFIGURED = "总榜奖池未配置，请先配置各榜奖池。";
 
 export function f4MonthlyCap(raw: string): string | null {
   const text = raw.trim().toUpperCase().replace(/[$,]/g, "");
@@ -57,22 +62,31 @@ export function f4MoneyAmplifies(key: "F.pool.monthlyCap" | "F.leaderboard.poolU
     > BigInt(beforeWhole + beforeFraction.padEnd(scale, "0"));
 }
 
-export function f4PeriodPrizes(raw: string): Record<string, string> | null {
-  if (!raw.trim()) return null;
-  let parsed: unknown;
+const F4_PRIZE_PERIODS = ["today", "week", "month", "allTime"] as const;
+type PrizePeriod = (typeof F4_PRIZE_PERIODS)[number];
+
+function f4PrizeValues(raw: string) {
+  if (!raw.trim()) return {};
   try {
     const shape: unknown = JSON.parse(raw);
-    if (!shape || typeof shape !== "object" || Array.isArray(shape)
-      || !["today", "week", "month", "allTime"].every(key => typeof (shape as Record<string, unknown>)[key] === "number")) return null;
-    parsed = JSON.parse(raw.replace(/("(?:today|week|month|allTime)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'));
-  } catch { return null; }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const result: Record<string, string> = {};
-  for (const key of ["today", "week", "month", "allTime"]) {
-    const value = (parsed as Record<string, unknown>)[key];
-    const amount = typeof value === "string" ? f4Decimal(value) : null;
-    if (amount === null || amount.startsWith("-")) return null;
-    result[key] = amount;
-  }
-  return result;
+    if (!shape || typeof shape !== "object" || Array.isArray(shape)) return {};
+    const exact = JSON.parse(raw.replace(/("(?:today|week|month|allTime)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'));
+    const result: Partial<Record<PrizePeriod, string>> = {};
+    for (const key of F4_PRIZE_PERIODS) {
+      if (typeof (shape as Record<string, unknown>)[key] !== "number") continue;
+      const value = exact[key];
+      const amount = typeof value === "string" ? f4Decimal(value) : null;
+      if (amount !== null && !amount.startsWith("-")) result[key] = amount;
+    }
+    return result;
+  } catch { return {}; }
+}
+
+export function f4PeriodPrize(raw: string, period: PrizePeriod): string | undefined {
+  return f4PrizeValues(raw)[period];
+}
+
+export function f4PeriodPrizes(raw: string): Record<string, string> | null {
+  const values = f4PrizeValues(raw);
+  return F4_PRIZE_PERIODS.every(key => values[key] !== undefined) ? values as Record<string, string> : null;
 }

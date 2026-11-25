@@ -4,6 +4,7 @@
  * F2 团队奖励的七层和参数：每层分多少（主图）、谁能拿到、总量和冷却、合作伙伴权益、旧档位和旧参数。
  * 每个写入口打开本页确认框，提交仍调外壳原来的写函数，键、值和顺序照旧。
  */
+import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText } from "@/lib/admin/f-approval-names";
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, Clock3, Gauge, Layers, Lock, PauseCircle, PowerOff, ShieldCheck, Users } from "lucide-react";
@@ -62,7 +63,7 @@ const PARTNER_TIERS = [
 
 type Open = (spec: F2Confirm) => void;
 
-function useF2Model(ctx: FViewCtx) {
+function f2Model(ctx: FViewCtx) {
   const canRoyaltyRate = ctx.can("network_f2_royalty_rate");
   const canPolicyAmplify = ctx.can("network_f2_policy_amplify");
   const l1NexReadonly = !ctx.f2DirectPolicy || !!ctx.f2DirectPolicyError || ctx.f2DirectPolicyLoading || (ctx.f2DirectPolicy.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled);
@@ -87,55 +88,29 @@ function useF2Model(ctx: FViewCtx) {
   return { canRoyaltyRate, canPolicyAmplify, l1NexReadonly, l1NexStatus, value, pauseValue, paused, gate, rank, gateRaw, rankRaw, cap };
 }
 
-// 权限名照后台「权限清单」写（BUG-709 已修）；F2 的申请后端只认另一位超级管理员（BUG-704、OP-67），所以「谁来批」只写超管，权限名留给配置说明用。
-const RATE_PERMISSION = "团队奖励设置 · L1-L7 团队购买奖励比例放宽";
-const POLICY_PERMISSION = "Partner 档位与费率杠杆参数";
-const approvalFacts = (_perm: string) => <Fact k="谁来批">另一位超级管理员</Fact>;
+// 权限名照后台「权限清单」写（BUG-709 已修）；F2 的申请后端只认另一位超级管理员（BUG-704、OP-67），批准权限单独显示。
+const RATE_PERMISSION = F_APPROVAL_PERMISSION_NAMES.network_f2_royalty_rate;
+const POLICY_PERMISSION = F_APPROVAL_PERMISSION_NAMES.network_f2_policy_amplify;
+const approvalFacts = (perm: string) => <>
+  <Fact k="谁来批">另一位超级管理员</Fact>
+  <Fact k="需有权限">{fApprovalPermissionText(perm)}</Fact>
+</>;
 const effectTag = <StatusTag tone="progress" filled explain="另一位超级管理员在「操作记录与审批」批准后才生效；只影响之后新算的订单，已经算好的不重算。">批准后生效</StatusTag>;
 const COVERAGE_CHECK = "批准时检查兑付覆盖率，低于红线不会执行。";
 
-/* ───────────── 每层分多少 ───────────── */
-
-export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Open }) {
-  const m = useF2Model(ctx);
-  const rates = ctx.f2Unilevel;
-  // 首次配置填到一半时点刷新，草稿留着。
-  const [bootDraft, setBootDraft] = useState<F2BootstrapDraft | null>(null);
-  const canOpenF1 = useAdminAuth((state) => !!state.session && canAccessResolvedPath(resolveVisibleDomains(state.session), "/network/v-rank"));
-  if (ctx.f2Loading) return <Panel title="每层分多少" icon={Layers} tone="role-4"><BlockState state="loading" title="七层比例读取中" /></Panel>;
-  if (ctx.f2Error) return <Panel title="每层分多少" icon={Layers} tone="role-4"><BlockState state="error" title="七层比例没读到，这部分没有判断" detail={ctx.f2Error} onRetry={() => void ctx.refreshF2()} /></Panel>;
-  const gateLayer = m.gate?.legal ? LAYERS.indexOf(m.gate.normalized as Layer) : -1;
-  const pausedLayers = LAYERS.filter((level) => m.paused(level) === "on");
-  const unsetPause = rates.length ? LAYERS.filter((level) => m.paused(level) === "unset") : [];
-  const complete = LAYERS.every(level => rates.some(row => row.l === level && row.usdt !== null && row.usdt <= 100));
-  const activeSum = rates.filter((row) => m.paused(row.l as Layer) !== "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
-  const pausedSum = rates.filter((row) => m.paused(row.l as Layer) === "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
-  const barMax = Math.max(...rates.map((row) => row.usdt ?? 0), 0);
-  const promo = m.value("F.promo.weekMultiplier");
-  const missing = LAYERS.filter((level) => !layerRate(rates, level));
-  const partValues = LAYERS.some((level) => { const row = layerRate(rates, level); return !!row && (row.usdt === null || row.usdt > 100 || row.nex === null); });
-  const booting = rates.length === 0 && f2BootstrapFormShown(ctx, bootDraft);
-  // 第 1、2 层按受益人等级时（F2-RANK-WIRE），这两层没有单一比例：合计是一段，第 1、2 层取九级最低、最高，第 3 层起照存的比例。
-  const ranked = f2Ranked(ctx);
+function f2LayerEditors(ctx: FViewCtx) {
+  const m = f2Model(ctx), rates = ctx.f2Unilevel, ranked = f2Ranked(ctx);
   const sourceUnknown = ctx.f2PurchaseBaseRateSource === null;
   const sourcesUseFirstTwo = ranked || sourceUnknown;
   const noRateSource = (level: Layer) => sourceUnknown && (level === "L1" || level === "L2");
   const rankedLevel = (level: Layer) => ranked && (level === "L1" || level === "L2");
-  const othersSum = rates.filter((row) => m.paused(row.l as Layer) !== "on" && !rankedLevel(row.l as Layer)).reduce((sum, row) => pctAdd(sum, row.usdtText ?? "0"), "0");
-  const sumRange = ranked && ctx.f2RankPurchaseRange ? (["L1", "L2"] as const).filter((level) => m.paused(level) !== "on")
-    .reduce((sum, level) => ({ low: pctAdd(sum.low, rankedRange(ctx, level)!.min), high: pctAdd(sum.high, rankedRange(ctx, level)!.max) }), { low: othersSum, high: othersSum }) : null;
-  const sumHigh = sourceUnknown ? null : ranked ? (sumRange ? Number(sumRange.high) : null) : activeSum;
-  const rankedExplain = "第 1、2 层按受益人自己的等级取比例，九级比例在团队等级晋升设置；这里显示九级里最低到最高。";
-  const axisMax = Math.max(30, Math.ceil(Math.max(ranked ? Number(sumRange?.high ?? 0) : activeSum, m.cap ?? 0) / 10) * 10);
-  // 单层调整和首次配置是两件事：单层只改已有的行。
   const missingRuleCopy = `批准时只更新已有的规则，没有规则的层会执行失败。${rates.length === 0 ? "七层都没有规则时，请用「首次配置」。" : "缺整层规则后台补不了，需要技术同事处理。"}`;
-
-  const openRate = (level: Layer) => {
+  const rateEditor = (level: Layer): F2Confirm => {
     const rate = layerRate(rates, level);
     const current = rate?.usdtText ?? "";
     // 这一层在按层暂停里停着：改比例批准后也仍不发，说清楚要发放还得去恢复（D5）。
     const layerPaused = m.paused(level) === "on";
-    openConfirm({
+    return {
       slot: `f-config:F.unilevel.${level}`,
       action: `调整 ${level} USDT 奖励比例`, title: `调整 ${level}（${LAYER_WHO[level]}）的 USDT 比例`, briefKind: "config", amplify: true, dialogClassName: "f2-confirm",
       effect: effectTag,
@@ -155,6 +130,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         const anyPaused = LAYERS.some((item) => m.paused(item) === "on");
         const lower = next !== undefined && !!current && Number(next) < Number(current);
         return <Facts>
+          {approvalFacts(RATE_PERMISSION)}
           {lower && <Fact k="这次">调低，平台每笔订单少付</Fact>}
           {layerPaused ? <Fact k="批准后的比例">{next === undefined || !rateMeaning(next) ? (current ? `现在是 ${num(current)}%` : "未配置") : `${num(next)}%，恢复这一层后每 100 USDT 订单发 ${num(next)} USDT`}</Fact>
             : <Fact k="批准后实际执行">{next === undefined ? (current ? `现在是 ${rateMeaning(current)}` : "未配置") : rateMeaning(next) ?? "—"}</Fact>}
@@ -170,12 +146,12 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       coverageCheck: COVERAGE_CHECK, coverageLead: layerPaused ? "恢复这一层后，平台每笔订单多付钱" : "调高这一层，平台每笔订单多付钱",
       submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(`F.unilevel.${level}`, next, reason); },
       done: "已提交，等待审批后执行",
-    });
+    };
   };
-  const openNex = (level: Layer) => {
+  const nexEditor = (level: Layer): F2Confirm => {
     const rate = layerRate(rates, level);
     const current = rate?.nexText ?? "";
-    openConfirm({
+    return {
       slot: `f-config:F.unilevel.nex.${level}`,
       action: `调整 ${level} UVT 奖励系数`, title: `调整 ${level}（${LAYER_WHO[level]}）的 UVT 系数`, briefKind: "config", amplify: true, dialogClassName: "f2-confirm",
       effect: effectTag,
@@ -193,6 +169,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
           return <LayerCompare rates={drawn} level={level} next={value} field="nex" ranked={ranked} />;
         } },
       facts: (next) => <Facts>
+        {approvalFacts(RATE_PERMISSION)}
         {next !== undefined && current && Number(next) < Number(current) && <Fact k="这次">调低，平台每笔订单少发 UVT</Fact>}
         {rankedLevel(level) ? (() => {
           const rng = rankedRange(ctx, level);
@@ -209,9 +186,9 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多发 UVT",
       submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(`F.unilevel.nex.${level}`, next, reason); },
       done: "已提交，等待审批后执行",
-    });
+    };
   };
-  const openPause = () => openConfirm({
+  const pauseEditor = (): F2Confirm => ({
     slot: "f-config-batch:F2",
     action: "按 L1–L7 分别暂停", title: "按层暂停或恢复发放", briefKind: "config", amplify: false,
     effect: effectTag,
@@ -224,6 +201,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       }),
     },
     statedBrief: { impact: "七层一起提交，批准后一起生效。暂停的层，之后新算的订单这一层记 0、不补发；已经算好的不变。不影响好友设备收益奖励，也不是整体结算暂停。", check: "整组一次写入，有一项失败整组都不改。" },
+    facts: <Facts>{approvalFacts(POLICY_PERMISSION)}</Facts>,
     detail: "L1–L7 一起提交审批，批准后只影响之后的购买奖励，不影响好友设备收益奖励。",
     coverageCheck: COVERAGE_CHECK,
     submit: async (reason, _next, values) => {
@@ -232,6 +210,43 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       ctx.toast("已提交，等待审批后执行");
     },
   });
+  return { rateEditor, nexEditor, pauseEditor };
+}
+
+/* ───────────── 每层分多少 ───────────── */
+
+export function F2Layers({ ctx, openConfirm, bootDraft, setBootDraft }: { ctx: FViewCtx; openConfirm: Open; bootDraft: F2BootstrapDraft | null; setBootDraft: (value: F2BootstrapDraft | null) => void }) {
+  const m = f2Model(ctx);
+  const rates = ctx.f2Unilevel;
+  const canOpenF1 = useAdminAuth((state) => !!state.session && canAccessResolvedPath(resolveVisibleDomains(state.session), "/network/v-rank"));
+  if (ctx.f2Loading) return <Panel title="每层分多少" icon={Layers} tone="role-4"><BlockState state="loading" title="七层比例读取中" /></Panel>;
+  if (ctx.f2Error) return <Panel title="每层分多少" icon={Layers} tone="role-4"><BlockState state="error" title="七层比例没读到，这部分没有判断" detail={ctx.f2Error} onRetry={() => void ctx.refreshF2()} /></Panel>;
+  const gateLayer = m.gate?.legal ? LAYERS.indexOf(m.gate.normalized as Layer) : -1;
+  const pausedLayers = LAYERS.filter((level) => m.paused(level) === "on");
+  const unsetPause = rates.length ? LAYERS.filter((level) => m.paused(level) === "unset") : [];
+  const complete = LAYERS.every(level => rates.some(row => row.l === level && row.usdt !== null && row.usdt <= 100));
+  const activeSum = rates.filter((row) => m.paused(row.l as Layer) !== "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
+  const pausedSum = rates.filter((row) => m.paused(row.l as Layer) === "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
+  const barMax = Math.max(...rates.map((row) => row.usdt ?? 0), 0);
+  const promo = m.value("F.promo.weekMultiplier");
+  const missing = LAYERS.filter((level) => !layerRate(rates, level));
+  const partValues = LAYERS.some((level) => { const row = layerRate(rates, level); return !!row && (row.usdt === null || row.usdt > 100 || row.nex === null); });
+  const booting = rates.length === 0 && f2BootstrapFormShown(ctx, bootDraft);
+  // 第 1、2 层按受益人等级时（F2-RANK-WIRE），这两层没有单一比例：合计是一段，第 1、2 层取九级最低、最高，第 3 层起照存的比例。
+  const ranked = f2Ranked(ctx);
+  const sourceUnknown = ctx.f2PurchaseBaseRateSource === null;
+  const noRateSource = (level: Layer) => sourceUnknown && (level === "L1" || level === "L2");
+  const rankedLevel = (level: Layer) => ranked && (level === "L1" || level === "L2");
+  const othersSum = rates.filter((row) => m.paused(row.l as Layer) !== "on" && !rankedLevel(row.l as Layer)).reduce((sum, row) => pctAdd(sum, row.usdtText ?? "0"), "0");
+  const sumRange = ranked && ctx.f2RankPurchaseRange ? (["L1", "L2"] as const).filter((level) => m.paused(level) !== "on")
+    .reduce((sum, level) => ({ low: pctAdd(sum.low, rankedRange(ctx, level)!.min), high: pctAdd(sum.high, rankedRange(ctx, level)!.max) }), { low: othersSum, high: othersSum }) : null;
+  const sumHigh = sourceUnknown ? null : ranked ? (sumRange ? Number(sumRange.high) : null) : activeSum;
+  const rankedExplain = "第 1、2 层按受益人自己的等级取比例，九级比例在团队等级晋升设置；这里显示九级里最低到最高。";
+  const axisMax = Math.max(30, Math.ceil(Math.max(ranked ? Number(sumRange?.high ?? 0) : activeSum, m.cap ?? 0) / 10) * 10);
+  const { rateEditor, nexEditor, pauseEditor } = f2LayerEditors(ctx);
+  const openRate = (level: Layer) => openConfirm(rateEditor(level));
+  const openNex = (level: Layer) => openConfirm(nexEditor(level));
+  const openPause = () => openConfirm(pauseEditor());
 
   return (
     <Panel title="每层分多少" icon={Layers} tone="role-4" sub={`示例订单 ${num(SAMPLE_ORDER)} USDT`}
@@ -347,20 +362,15 @@ const PARAM_HELP: Record<string, { what: string; effect: string; hint?: string; 
   "F.unilevel.mergeExitMaxPct": { what: "一笔订单七层 USDT 奖励最多占订单的比例", effect: "超出时从 L1 往下分完为止；旧 UVT 系数另发的 UVT 不算在内", hint: "0–100%", perm: POLICY_PERMISSION, unit: "%" },
 };
 
-function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: ReturnType<typeof useF2Model>; paramKey: string; openConfirm: Open; shown?: ReactNode }) {
+function f2ParamEditor(ctx: FViewCtx, paramKey: string): F2Confirm {
   const help = PARAM_HELP[paramKey];
-  const param = ctx.f2Params.find((row) => row.key === paramKey);
-  const value = m.value(paramKey);
+  const value = f2Model(ctx).value(paramKey);
   const name = F2_HISTORICAL_PARAM_NAMES[paramKey];
   const enumSpec = f2EnumGateSpec(paramKey);
   const parsed = !value ? null : paramKey === "F.unilevel.depthGate" ? parseF2DepthGateLayer(value)
     : paramKey === "F.unilevel.depthGateRank" ? parseF2DepthGateRank(value) : null;
-  const promo = paramKey === "F.promo.weekMultiplier";
-  const merge = paramKey === "F.unilevel.mergeExitMaxPct";
-  const allowed = promo ? m.canRoyaltyRate : m.canPolicyAmplify;
-  const pending = pendingFor(ctx, paramKey);
-  const display = parsed && !parsed.legal ? null : shown ?? (value ? `${num(value)}${help.unit === "%" ? "%" : help.unit ? ` ${help.unit}` : ""}` : null);
-  const open = () => openConfirm({
+  const promo = paramKey === "F.promo.weekMultiplier", merge = paramKey === "F.unilevel.mergeExitMaxPct";
+  return {
     slot: `f-config:${paramKey}`,
     action: `${name}调整`, title: `调整${name.replace(/（.*）/, "")}`, briefKind: "config", amplify: promo,
     effect: effectTag,
@@ -376,7 +386,22 @@ function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: 
     coverageCheck: COVERAGE_CHECK, coverageLead: "调高倍率，每层都多付钱",
     submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(paramKey, next, reason); },
     done: "已提交，等待审批后执行",
-  });
+  };
+}
+
+function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: ReturnType<typeof f2Model>; paramKey: string; openConfirm: Open; shown?: ReactNode }) {
+  const help = PARAM_HELP[paramKey];
+  const param = ctx.f2Params.find((row) => row.key === paramKey);
+  const value = m.value(paramKey);
+  const name = F2_HISTORICAL_PARAM_NAMES[paramKey];
+  const enumSpec = f2EnumGateSpec(paramKey);
+  const parsed = !value ? null : paramKey === "F.unilevel.depthGate" ? parseF2DepthGateLayer(value)
+    : paramKey === "F.unilevel.depthGateRank" ? parseF2DepthGateRank(value) : null;
+  const promo = paramKey === "F.promo.weekMultiplier";
+  const allowed = promo ? m.canRoyaltyRate : m.canPolicyAmplify;
+  const pending = pendingFor(ctx, paramKey);
+  const display = parsed && !parsed.legal ? null : shown ?? (value ? `${num(value)}${help.unit === "%" ? "%" : help.unit ? ` ${help.unit}` : ""}` : null);
+  const open = () => openConfirm(f2ParamEditor(ctx, paramKey));
   return (
     <ConfigRow name={name.replace(/（L1–L7）|（占订单）/, "")} what={help.what} effect={help.effect} when="批准后，对之后新算的订单生效"
       note={[parsed && !parsed.legal ? enumSpec?.illegalCopy : null, !value ? SETTLEMENT_FALLBACK[paramKey] : null, help.note].filter(Boolean).join("；") || undefined}
@@ -390,7 +415,7 @@ function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: 
 /* ───────────── 谁能拿到 ───────────── */
 
 export function F2Who({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Open }) {
-  const m = useF2Model(ctx);
+  const m = f2Model(ctx);
   if (ctx.f2Loading || ctx.f2Error) return <Panel title="谁能拿到" icon={Users} tone="role-3">{ctx.f2Loading ? <BlockState state="loading" title="读取中" /> : <BlockState state="error" title="没读到，这部分没有判断" onRetry={() => void ctx.refreshF2()} />}</Panel>;
   const gateIndex = m.gate?.legal ? LAYERS.indexOf(m.gate.normalized as Layer) : -1;
   const gatedLayers = gateIndex >= 0 ? LAYERS.slice(gateIndex) : [];
@@ -419,17 +444,17 @@ export function F2Who({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Open }
 
 /* ───────────── 总量和冷却 ───────────── */
 
-export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Open }) {
-  const m = useF2Model(ctx);
-  if (ctx.f2Loading || ctx.f2Error) return <Panel title="总量和冷却" icon={Gauge} tone="role-1">{ctx.f2Loading ? <BlockState state="loading" title="读取中" /> : <BlockState state="error" title="没读到，这部分没有判断" onRetry={() => void ctx.refreshF2()} />}</Panel>;
+function f2CoolingValues(ctx: FViewCtx) {
   const coolingRaw = configuredValue(ctx.f2ConfigValues["F.cooldown"]);
   const coolingDays = /^[+-]?\d+$/.test(coolingRaw) && Number(coolingRaw) >= 0 && Number(coolingRaw) <= 90
     ? String(Number(coolingRaw)) : "";
-  const coolingParam = ctx.f2Params.find((p) => p.key === "F.cooldown");
   const coolingState = coolingDays !== "" ? `${coolingDays} 天` : coolingRaw ? "配置无效，请重新配置" : "未配置";
-  const pending = pendingFor(ctx, "F.cooldown");
-  const deviceCooling = ctx.f2DirectPolicy?.configured ? `${ctx.f2DirectPolicy.deviceEarning.coolingDays} 天` : null;
-  const openCooling = () => openConfirm({
+  return { coolingRaw, coolingDays, coolingState };
+}
+
+function f2CoolingEditor(ctx: FViewCtx): F2Confirm {
+  const { coolingRaw, coolingDays, coolingState } = f2CoolingValues(ctx);
+  return {
     slot: "f-config:F.cooldown",
     action: "购买与其他奖励冷却期调整", title: "调整购买与其他奖励的冷却期", briefKind: "config", amplify: true,
     effect: effectTag,
@@ -445,7 +470,16 @@ export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
     coverageCheck: COVERAGE_CHECK, coverageLead: "缩短冷却，钱更早能提",
     submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config("F.cooldown", next, reason); },
     done: "已提交，等待审批后执行",
-  });
+  };
+}
+
+export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Open }) {
+  const m = f2Model(ctx);
+  if (ctx.f2Loading || ctx.f2Error) return <Panel title="总量和冷却" icon={Gauge} tone="role-1">{ctx.f2Loading ? <BlockState state="loading" title="读取中" /> : <BlockState state="error" title="没读到，这部分没有判断" onRetry={() => void ctx.refreshF2()} />}</Panel>;
+  const { coolingRaw, coolingDays } = f2CoolingValues(ctx);
+  const pending = pendingFor(ctx, "F.cooldown");
+  const deviceCooling = ctx.f2DirectPolicy?.configured ? `${ctx.f2DirectPolicy.deviceEarning.coolingDays} 天` : null;
+  const openCooling = () => openConfirm(f2CoolingEditor(ctx));
   return (
     <Panel title="总量和冷却" icon={Gauge} tone="role-1" explain="一笔订单最多分出多少，奖励记入后多久能提。">
       <ConfigList label="总量和冷却">
@@ -468,12 +502,9 @@ export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
 
 /* ───────────── 合作伙伴权益 ───────────── */
 
-export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Open }) {
-  const m = useF2Model(ctx);
-  const [showTierDetails, setShowTierDetails] = useState(false);
-  if (ctx.f2Loading || ctx.f2Error) return <Panel title="合作伙伴权益" icon={ShieldCheck} tone="role-3">{ctx.f2Loading ? <BlockState state="loading" title="读取中" /> : <BlockState state="error" title="没读到，这部分没有判断" onRetry={() => void ctx.refreshF2()} />}</Panel>;
+function f2PartnerValues(raw: string | undefined) {
   // 兼容读取旧 bronze/silver/gold，提交时只写当前 standard/verified/premium/diamond。
-  const partnerTiersRaw = configuredValue(ctx.f2ConfigValues["F.partner.tiers"]);
+  const partnerTiersRaw = configuredValue(raw);
   let thresholds = ["", "", "", ""];
   if (partnerTiersRaw) {
     try {
@@ -484,11 +515,15 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
       }
     } catch { /* 无效快照明确显示未配置，不补业务默认值。 */ }
   }
-  const [ptStandard, ptVerified, ptPremium, ptDiamond] = thresholds;
   const partnerConfigured = thresholds.every((value) => value !== "");
   const partnerState = partnerConfigured ? `现在 ${thresholds.map((value) => `${num(value)} USD`).join(" / ")}` : partnerTiersRaw ? "配置无效，请重新配置" : "未配置";
-  const pending = pendingFor(ctx, "F.partner.tiers");
-  const open = () => openConfirm({
+  return { thresholds, partnerTiersRaw, partnerConfigured, partnerState };
+}
+
+function f2PartnerEditor(ctx: FViewCtx): F2Confirm {
+  const { thresholds, partnerState } = f2PartnerValues(ctx.f2ConfigValues["F.partner.tiers"]);
+  const [ptStandard, ptVerified, ptPremium, ptDiamond] = thresholds;
+  return {
     slot: "f-config:F.partner.tiers",
     action: "调整合作伙伴权益门槛", title: "调整合作伙伴权益门槛", briefKind: "config", amplify: false,
     effect: effectTag,
@@ -503,6 +538,7 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
       ],
     },
     statedBrief: { impact: "批准后保存新的四档门槛；目前只保存门槛，不会自动开通权益，也不影响任何奖励。", check: "系统检查四个都是数字且逐档不降低。" },
+    facts: <Facts>{approvalFacts(POLICY_PERMISSION)}</Facts>,
     detail: `合作伙伴权益门槛 · ${partnerState} · 不影响任何奖励。`,
     coverageCheck: COVERAGE_CHECK,
     submit: async (reason, _next, bv) => {
@@ -520,7 +556,16 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
       await ctx.updateF2Config("F.partner.tiers", JSON.stringify({ standard, verified, premium, diamond }), reason);
       ctx.toast("已提交，等待审批后执行");
     },
-  });
+  };
+}
+
+export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Open }) {
+  const m = f2Model(ctx);
+  const [showTierDetails, setShowTierDetails] = useState(false);
+  if (ctx.f2Loading || ctx.f2Error) return <Panel title="合作伙伴权益" icon={ShieldCheck} tone="role-3">{ctx.f2Loading ? <BlockState state="loading" title="读取中" /> : <BlockState state="error" title="没读到，这部分没有判断" onRetry={() => void ctx.refreshF2()} />}</Panel>;
+  const { thresholds, partnerTiersRaw, partnerConfigured } = f2PartnerValues(ctx.f2ConfigValues["F.partner.tiers"]);
+  const pending = pendingFor(ctx, "F.partner.tiers");
+  const open = () => openConfirm(f2PartnerEditor(ctx));
   return (
     <Panel title="合作伙伴权益" icon={ShieldCheck} tone="role-3" sub="四档门槛 · USD"
       explain="四档门槛不改任何奖励比例。权益说明里的名称只是规划，不代表已经开通。"
@@ -547,6 +592,26 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
 }
 
 /* ───────────── 旧档位和旧参数（只读） ───────────── */
+
+export function f2ConfigDraftEditor(ctx: FViewCtx, slot: string): F2Confirm | undefined {
+  const key = slot.replace(/^f-config:/, "");
+  const layer = /^F\.unilevel\.(nex\.)?(L[1-7])$/.exec(key);
+  if (layer) {
+    const level = layer[2] as Layer;
+    if (!layerRate(ctx.f2Unilevel, level) || !layer[1] && (level === "L1"
+      || level === "L2" && (f2Ranked(ctx) || ctx.f2PurchaseBaseRateSource === null))) return;
+    const editors = f2LayerEditors(ctx);
+    return layer[1] ? editors.nexEditor(level) : editors.rateEditor(level);
+  }
+  if (slot === "f-config-batch:F2") return f2LayerEditors(ctx).pauseEditor();
+  if (key === "F.partner.tiers") return f2PartnerEditor(ctx);
+  if (key === "F.cooldown") return f2CoolingEditor(ctx);
+  if (key in PARAM_HELP) return f2ParamEditor(ctx, key);
+}
+
+export function f2PartnerDraftValues(raw: string) {
+  return Object.fromEntries(f2PartnerValues(raw).thresholds.map((value, index) => [PARTNER_TIERS[index].key, value]));
+}
 
 export function F2Legacy({ ctx }: { ctx: FViewCtx }) {
   const legacyParams = ctx.f2Params.filter((param) => Object.hasOwn(F2_HISTORICAL_PARAM_NAMES, param.key) && !F2_VISIBLE_PARAM_KEYS.has(param.key));

@@ -1,6 +1,7 @@
 "use client";
 
-import { Field, Fold, Input, Notice, Table, Th, Tr, Td, Cell } from "@/app/components/rd";
+import { fApprovalPermissionText } from "@/lib/admin/f-approval-names";
+import { Fact, Facts, Field, Fold, Input, Notice, Table, Th, Tr, Td, Cell } from "@/app/components/rd";
 import { formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
 import type { F4AmbassadorPolicy, F4AmbassadorPolicyUpdate } from "@/lib/admin/f1-client";
 import { isF1OutcomeUncertainError } from "@/lib/admin/f1-stable-write";
@@ -8,9 +9,23 @@ import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import { decimalText, moneyText } from "./f4-shared";
 import type { FViewCtx, McSpec } from "./types";
+import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 
-export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy): McSpec {
-  let baseline = policy;
+export function f4PolicyValues(policy: F4AmbassadorPolicy): BusinessFormValue {
+  return {
+    policyVersion: policy.policyVersion, defaultBudgetUsdt: String(policy.defaultBudgetUsdt),
+    ...Object.fromEntries(policy.buckets.flatMap(bucket => [
+      [`${bucket.id}.title`, bucket.title], [`${bucket.id}.rule`, bucket.rule], [`${bucket.id}.range`, bucket.range],
+      [`${bucket.id}.min`, String(bucket.minBudgetUsdt)], [`${bucket.id}.max`, String(bucket.maxBudgetUsdt)],
+    ])),
+  };
+}
+
+const isAmount = (key: string) => key === "defaultBudgetUsdt" || /\.(min|max)$/.test(key);
+export const equalF4PolicyValue = (a: string, b: string, key: string) => a.trim() === b.trim()
+  || isAmount(key) && a.trim() !== "" && b.trim() !== "" && Number(a) === Number(b);
+
+export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy, conflict?: F4ConfirmationSnapshot["policyConflict"]): McSpec {
   let baselineReady = true;
   type Field = Extract<BusinessFormSpec, { kind: "multi-field" }>["fields"][number];
   const budget = { inputKind: "number", min: 100, max: 10_000, pattern: "^[0-9]+(?:\\.[0-9]+)?$", patternMessage: "预算须填写十进制金额" } as const;
@@ -30,8 +45,8 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
     return { bucket, name, fields };
   });
   const limits = () => [
-    { key: "defaultBudgetUsdt", label: "默认预算", before: baseline.defaultBudgetUsdt },
-    ...baseline.buckets.map(bucket => ({ key: `${bucket.id}.max`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} · 最高预算`, before: bucket.maxBudgetUsdt })),
+    { key: "defaultBudgetUsdt", label: "默认预算", before: policy.defaultBudgetUsdt },
+    ...policy.buckets.map(bucket => ({ key: `${bucket.id}.max`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} · 最高预算`, before: bucket.maxBudgetUsdt })),
   ];
   const changedLimits = (values: BusinessFormValue) => limits().flatMap((limit) => {
     const after = values[limit.key]?.trim();
@@ -39,28 +54,27 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
   });
   const requiresApproval = (changes: ReturnType<typeof changedLimits>) => changes.some(({ before, after }) => Number(after) > before);
   const formatAmount = (value: string | number) => `${decimalText(value)} USDT`;
-  // 版本冲突后 baseline 换成最新内容：逐项列出最新内容和草稿不同的地方。
-  const latestValue = (key: string): string => {
-    if (key === "policyVersion") return baseline.policyVersion;
-    if (key === "defaultBudgetUsdt") return String(baseline.defaultBudgetUsdt);
-    const [id, part] = key.split(".");
-    const bucket = baseline.buckets.find((item) => String(item.id) === id);
-    if (!bucket) return "";
-    return part === "title" ? bucket.title : part === "rule" ? bucket.rule : part === "range" ? bucket.range : String(part === "min" ? bucket.minBudgetUsdt : bucket.maxBudgetUsdt);
-  };
+  const baseline = f4PolicyValues(policy);
+  const changed = (values: BusinessFormValue) => Object.keys(baseline).some(key => !equalF4PolicyValue(values[key] ?? "", baseline[key], key));
   const allFields = [...mainFields, ...bucketRows.flatMap(({ fields }) => fields)];
-  const isAmount = (key: string) => key === "defaultBudgetUsdt" || /\.(min|max)$/.test(key);
   const show = (key: string, value: string) => value === "" ? "—" : isAmount(key) ? formatAmount(value) : value;
   const conflictNotice = (values: BusinessFormValue) => {
-    if (baseline.revision === policy.revision) return null;
-    const diff = allFields.filter((field) => (values[field.key] ?? "").trim() !== latestValue(field.key).trim()
-      && !(isAmount(field.key) && Number(values[field.key]) === Number(latestValue(field.key))));
+    if (!conflict) return null;
+    const openedWith = typeof conflict === "object" ? conflict : {};
+    const diff = allFields.flatMap(({ key, label }) => {
+      const latest = baseline[key];
+      const draft = (values[key] ?? "").trim();
+      const opened = openedWith[key];
+      const changedByOther = opened !== undefined && !equalF4PolicyValue(opened, latest, key);
+      if (!changedByOther && equalF4PolicyValue(draft, latest, key)) return [];
+      return [{ key, label, latest, draft, previous: changedByOther ? `他人修改前：${show(key, opened)}` : undefined }];
+    });
     return <Notice tone="warn" title="版本已变化，草稿已保留">
-      <p>{diff.length ? "有人先改了规则。下面是最新内容和你的草稿不同的项；保存会用草稿替换最新内容。" : "有人先改了规则，最新内容和你的草稿相同。"}</p>
+      <p>{changed(values) ? "有人先改了规则。请核对你在最新规则上改动的项目，重新填写理由。" : "最新规则已包含草稿的改动，无需提交。"}</p>
       {diff.length > 0 && <Table label="最新内容和草稿对比">
         <thead><tr><Th>项目</Th><Th>最新</Th><Th>你的草稿</Th></tr></thead>
-        <tbody>{diff.map((field) => <Tr key={field.key}>
-          <Td>{field.label}</Td><Td><Cell num={isAmount(field.key)} main={show(field.key, latestValue(field.key))} /></Td><Td><Cell num={isAmount(field.key)} main={show(field.key, (values[field.key] ?? "").trim())} /></Td>
+        <tbody>{diff.map(({ key, label, latest, draft, previous }) => <Tr key={key}>
+          <Td>{label}</Td><Td><Cell num={isAmount(key)} main={show(key, latest)} sub={previous} /></Td><Td><Cell num={isAmount(key)} main={show(key, draft)} /></Td>
         </Tr>)}</tbody>
       </Table>}
     </Notice>;
@@ -69,7 +83,8 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
   return { briefKind: "config",
     name: "调整区域大使申请规则",
     title: "调整大使申请规则",
-    businessForm: { kind: "multi-field", fields: [...mainFields, ...bucketRows.flatMap(({ fields }) => fields)], amplifies: values => requiresApproval(changedLimits(values)) },
+    businessForm: { kind: "multi-field", fields: allFields, amplifies: values => requiresApproval(changedLimits(values)),
+      requireAnyChange: changed },
     statedBrief: {
       impact: "保存后 App 的大使申请页下次打开或刷新就用新规则；已经提交的申请不按新规则改金额。",
       check: "只改文字、调低预算或调高最低预算时直接保存；调高默认预算或任一类的最高预算要另一位超级管理员批准。",
@@ -83,8 +98,9 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
         if (!requiresApproval(changes)) return undefined;
         return {
           heading: "提高预算 · 另一位超级管理员批准后生效",
-          completionCopy: "批准前 App 继续用现在的规则。提交和批准时都会检查兑付覆盖率，批准人还需有审批批准权限。",
+          completionCopy: "批准前 App 继续用现在的规则。提交和批准时都会检查兑付覆盖率，批准人需有对应审批权限。",
           comparison: <div className="f4-policy-diff">
+            <Facts><Fact k="谁来批">另一位超级管理员</Fact><Fact k="需有权限">{fApprovalPermissionText()}</Fact></Facts>
             <Table label="预算变更对比">
               <thead><tr><Th>预算</Th><Th align="right">现在</Th><Th align="right">改后</Th></tr></thead>
               <tbody>{changes.map(({ key, label, before, after }) => <Tr key={key}>
@@ -122,15 +138,15 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
     run: async (reason, values) => {
       if (!values) throw new Error("请填写完整");
       if (!baselineReady) {
-        baseline = await ctx.refreshF4PolicyBaseline();
-        baselineReady = true;
+        await ctx.refreshF4PolicyBaseline(policy, values);
         throw new Error("版本已变化，草稿已保留，请核对后再保存。");
       }
+      if (!changed(values)) throw new Error("现行规则已包含拟改值，无需提交。");
       const payload: F4AmbassadorPolicyUpdate = {
         policyVersion: values.policyVersion.trim(),
-        expectedRevision: baseline.revision,
+        expectedRevision: policy.revision,
         defaultBudgetUsdt: values.defaultBudgetUsdt.trim(),
-        buckets: baseline.buckets.map(({ id }) => ({
+        buckets: policy.buckets.map(({ id }) => ({
           id,
           title: values[`${id}.title`].trim(),
           rule: values[`${id}.rule`].trim(),
@@ -156,8 +172,7 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
         if (!isF1OutcomeUncertainError(error) && !isA2OutcomeUncertainError(error)
           && (error as { backendMessage?: string }).backendMessage === "AMBASSADOR_POLICY_VERSION_CONFLICT") {
           baselineReady = false;
-          baseline = await ctx.refreshF4PolicyBaseline();
-          baselineReady = true;
+          await ctx.refreshF4PolicyBaseline(policy, values);
         }
         throw error;
       }

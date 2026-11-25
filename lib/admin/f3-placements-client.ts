@@ -1,7 +1,8 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
-import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
+import { activeRecoveryActor } from "./f-proposal-recovery";
+import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
 
 export type PlacementStatus = "ALL" | "ASSIGNED" | "UNASSIGNED";
 export type Placement = {
@@ -22,6 +23,11 @@ const attempts = createPendingMutationStore<PlacementAttempt>({
   isValidRecord: row => id(row.adminId) && !!row.intent && id(row.intent.ownerUserId) && id(row.intent.memberUserId)
     && ["A", "B"].includes(row.intent.leg),
 });
+const placementRecovery = createPendingRecovery(attempts, {
+  capability: () => "readback",
+  canReplay: () => false,
+  explicitRejectionCode: () => undefined,
+});
 export const pendingPlacement = (adminId: number) => attempts.list().find(row => row.adminId === adminId);
 export function rememberPlacement(adminId: number, intent: PlacementIntent) {
   if (pendingPlacement(adminId)) throw new Error("F3_PLACEMENT_UNRESOLVED");
@@ -35,6 +41,19 @@ export function rememberPlacement(adminId: number, intent: PlacementIntent) {
 export function forgetPlacement(adminId: number) {
   const original = pendingPlacement(adminId);
   if (original) attempts.forget(original.fingerprint, original.commandKey);
+}
+export async function checkPlacement(adminId: number) {
+  const original = pendingPlacement(adminId);
+  if (!original || !activeRecoveryActor(adminId, "network_f3_read")) throw new Error("PENDING_QUERY_UNAVAILABLE");
+  const result = await placementRecovery.query(original, async ({ intent }) => {
+    const page = await readPlacements(intent.ownerUserId, "ALL", 1, intent.memberUserId);
+    if (!activeRecoveryActor(adminId, "network_f3_read")) throw new Error("PENDING_QUERY_UNAVAILABLE");
+    const row = page.records.find(member => member.memberUserId === intent.memberUserId);
+    const conclusion = row?.leg === intent.leg ? "succeeded" as const : row?.leg ? "not-executed" as const : "unknown" as const;
+    return { conclusion, row };
+  });
+  if (!result) throw new Error("PENDING_QUERY_UNAVAILABLE");
+  return { ...result, resolved: placementRecovery.settleFromQuery(original, result.conclusion) };
 }
 const invalid = () => new Error("分组信息加载不完整，请重新查询。");
 const uncertain = () => new PlacementError("分组结果未知，请稍后查看分组结果。", "unknown");

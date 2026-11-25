@@ -54,6 +54,7 @@ import type {
  * businessForm + run:复杂业务表单(如 V-Rank 奖励编辑)走 businessForm 渲染 + run 回调真写(对齐 H 域 voucher-config 范式)。
  */
 export interface McSpec {
+  blockedReason?: string;
   briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind);
   name: string;
   commandKey?: string;
@@ -72,7 +73,9 @@ export interface McSpec {
   expectedMaterialRevision?: number;
   teamApproval?: Pick<InlineOperationApproval, "resolve" | "renderForm"> & { source: keyof TeamFundApprovalValues };
   f3Snapshot?: F3ConfirmationSnapshot;
+  f3RecoveryKey?: string;
   f4Snapshot?: F4ConfirmationSnapshot;
+  draft?: import("@/lib/admin/pending-mutation-store").PendingMutationRecord;
   f4Recovery?: { kind: "proposal"; original: FDomainAttempt } | { kind: "policy"; original: FDirectAttempt };
   /** 以下只管确认框怎么显示，原样交给 OperationConfirmModal 的同名参数；不传时和原来一样。 */
   title?: ReactNode;
@@ -84,10 +87,11 @@ export interface McSpec {
   coverageLead?: ReactNode;
   coverageCheck?: string;
 }
-export type Mc = (McSpec & { teamApprovalOwner?: AdminSession["adminId"]; f4Owner?: AdminSession["adminId"] }) | null;
+export type Mc = (McSpec & { commandKey: string; teamApprovalOwner?: AdminSession["adminId"]; f4Owner?: AdminSession["adminId"] }) | null;
 
 /** 子视图上下文:打开 操作确认 / 跨域跳转 / toast。全部由 shell 注入,子视图无自有 store。 */
 export interface FViewCtx {
+  runFContinuation: <T>(commandKey: string | undefined, submit: () => T | Promise<T>) => Promise<T>;
   openActionConfirm: (m: McSpec) => void;
   nav: (domain: string) => void;
   toast: (msg: string) => void;
@@ -100,11 +104,10 @@ export interface FViewCtx {
   leadership: F1Leadership | null;
   f1Loading: boolean;
   f1Error: string | null;
-  f1ReadEpoch: number;
   f1ProposalEpoch: number;
   f1ApprovalRanks: string[];
   f1Proposals: FDomainAttempt[];
-  recoverF1: (slot: string, mode: "query" | "retry" | "release") => Promise<boolean>;
+  recoverF1: (slot: string, mode: "query" | "retry" | "release") => Promise<boolean | "restore">;
   refreshF1Approvals: () => Promise<void>;
   invalidateF1: (message?: string) => void;
   refreshF1: () => Promise<void>;
@@ -148,7 +151,7 @@ export interface FViewCtx {
   salaryClaims?: F1SalaryClaimsState;
   querySalaryClaims?: (filters: F1SalaryFilters, cursor?: string) => Promise<void>;
   /** 等级权益三项的写入：比例传百分数（如 "4.6"），月薪传 USDT。原操作查询和重试沿用同一个已保存请求。 */
-  submitVRankBenefit: (editor: F1PolicyEditor, value: string, reason: string, mode?: "submit" | "lookup" | "retry-original") => ReturnType<typeof submitF1Policy>;
+  submitVRankBenefit: (editor: F1PolicyEditor, value: string, reason: string, mode?: "submit" | "lookup" | "retry-original", continuedFrom?: string) => ReturnType<typeof submitF1Policy>;
   f1BenefitCoverage?: { coverageRatio: number; redlinePct: number; redlineBreached: boolean };
   teamBusinessCalendar: BusinessCalendarView | null;
   proposeVRankBootstrap: (ranks: VRankBootstrapRow[], reason: string) => Promise<void>;
@@ -181,10 +184,10 @@ export interface FViewCtx {
   f2PendingFor: (key: string) => string | null;
   f2WriteBlocked: (slot: string) => string | undefined;
   f2ProposalRecord: (slot: string) => F2Recovery | undefined;
-  retryF2Proposal: (slot: string) => Promise<void>;
+  retryF2Proposal: (slot: string) => Promise<A2OperationRow>;
   queryF2Proposal: (slot: string) => Promise<A2OperationRow | null>;
   releaseF2Proposal: (slot: string) => Promise<void>;
-  recoverF2SevenLayerActivation: () => Promise<void>;
+  recoverF2SevenLayerActivation: () => Promise<A2OperationRow>;
   changeF2SevenLayerActivation: (action: "ACTIVATE" | "PAUSE" | "RESUME", expectedSevenLayerRevision: number, expectedPolicyVersion: number, reason: string) => Promise<void>;
   bootstrapF2Unilevel: (layers: F2UnilevelBootstrapLayer[], reason: string) => Promise<void>;
   f2Unilevel: F2UnilevelRate[];
@@ -202,7 +205,6 @@ export interface FViewCtx {
   // -- 双轨结算引擎(F3)· 读 + 配置写入 --
   f3Proposals: FDomainAttempt[];
   f3ApprovalRows: A2OperationRow[];
-  f3ReadEpoch: number;
   recoverF3: (original: FDomainAttempt, mode?: "query" | "retry" | "release") => Promise<A2OperationRow | null>;
   f3Metrics: F3Metric[];
   f3Amounts?: F3RawAmounts;
@@ -224,6 +226,7 @@ export interface FViewCtx {
   f3DailyMatchUsd: number;
   f3Loading: boolean;
   f3Error: string | null;
+  f3ApprovalReadError?: string;
   refreshF3: () => Promise<void>;
   getF3PayoutControlPending: (key: F3PayoutControlKey) => {
     approval?: A2OperationRow;
@@ -233,7 +236,7 @@ export interface FViewCtx {
   submitF3PayoutControl: (key: F3PayoutControlKey, value: string, reason: string, snapshot?: F3ConfirmationSnapshot) => Promise<
     { kind: "unchanged" } | { kind: "proposal"; ticket: A2OperationRow } | { kind: "direct"; updated: F3PayoutControlUpdate }
   >;
-  recoverF3PayoutControl: (key: F3PayoutControlKey, mode: "query" | "retry") => Promise<
+  recoverF3PayoutControl: (key: F3PayoutControlKey, mode: "query" | "retry" | "release") => Promise<
     ({ kind: "query" } & Awaited<ReturnType<typeof queryF3ConfigWrite>>) | { kind: "retry"; updated: F3PayoutControlUpdate }
   >;
   updateF3Config: (key: string, value: string, reason: string, amplifies?: boolean, snapshot?: F3ConfirmationSnapshot) => Promise<void>;
@@ -243,8 +246,9 @@ export interface FViewCtx {
   refreshF4VoteProjection: () => Promise<void>;
   f4AmbassadorPolicy: F4AmbassadorPolicy | null;
   f4PolicyLoading: boolean;
+  f4PolicyAppliedUnread: boolean;
   retryF4AmbassadorPolicy: () => Promise<void>;
-  refreshF4PolicyBaseline: () => Promise<F4AmbassadorPolicy>;
+  refreshF4PolicyBaseline: (baseline: F4AmbassadorPolicy, values: Record<string, string>) => Promise<void>;
   f4Loading: boolean;
   f4Error: string | null;
   f4Proposals: FDomainAttempt[];
@@ -254,9 +258,9 @@ export interface FViewCtx {
   /** 这项操作有超过 24 小时的原记录时给原因：入口按禁用显示，和 I3 一样（BUG-684）。只看记录，不改原有拦截。 */
   f4ExpiredReason: (snapshot: F4ConfirmationSnapshot) => string | undefined;
   f4ApprovalRows: A2OperationRow[];
-  recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry") => Promise<boolean>;
-  refreshF4: () => Promise<void>;
-  submitF4Proposal: (slot: string, spec: import("@/lib/admin/propose-or-execute").ProposeSpec) => Promise<void>;
+  recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry" | "release") => Promise<boolean>;
+  refreshF4: () => Promise<F4LeadershipPoolOverview | undefined>;
+  submitF4Proposal: (slot: string, spec: import("@/lib/admin/propose-or-execute").ProposeSpec, snapshot?: F4ConfirmationSnapshot) => Promise<void>;
   updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number, expectedMaterialRevision?: number) => Promise<void>;
   updateF4AmbassadorPolicy: (policy: F4AmbassadorPolicyUpdate, reason: string) => Promise<boolean>;
   proposeF4Settlement: (reason: string) => Promise<void>;
@@ -270,16 +274,19 @@ export interface FViewCtx {
   f5Error: string | null;
   f5Proposals: FDomainAttempt[];
   f5AnomalyWrites: FDirectAttempt[];
+  f5AnomalyAppliedUnread: boolean;
   f5ApprovalRows: A2OperationRow[];
   f5ApprovalReadError: string | null;
   f5ReadEpoch: number;
   prepareF5Confirmation: (snapshot: F5ConfirmationSnapshot | undefined) => void;
   getF5Operation: (snapshot: F5ConfirmationSnapshot) => F5Recovery | undefined;
-  recoverF5: (record: F5Recovery, mode: "query" | "retry" | "release") => Promise<boolean>;
+  recoverF5: (record: F5Recovery, mode: "query" | "retry" | "release") => Promise<boolean | "restore">;
   refreshF5: (query?: F5CommissionQuery) => Promise<void>;
+  f5ExportBlocked: (filters: F5CommissionQuery) => string | undefined;
   exportF5Commissions: (
     query: F5CommissionQuery,
     reason: string,
+    originalKey?: string, onRemember?: (key: string | undefined) => void,
   ) => Promise<{ rowCount: number; filename: string; sha256: string }>;
   updateF5Config: (key: string, value: string, reason: string, expectedVersion: number) => Promise<void>;
   reverseF5Commission: (commissionId: string, refundRef: string, reason: string) => Promise<void>;

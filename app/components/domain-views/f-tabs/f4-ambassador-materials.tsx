@@ -8,9 +8,13 @@ import { SETTLED_REJECTED } from "../recovery-panel";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { F1OutcomeUncertainError, isF1OutcomeUncertainError } from "@/lib/admin/f1-stable-write";
-import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createFDirectRecovery, fDirectReceiptConclusion } from "@/lib/admin/f-direct-recovery";
+import { activeRecoveryActor } from "@/lib/admin/f-proposal-recovery";
+import { FReleaseButton } from "./f-release";
+import { fConfirmRecovery } from "./f-recovery-state";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
+import { acknowledgeFReconfirmation, settleFReconfirmation, useFReconfirmations, type FReconfirmationLink } from "@/lib/admin/f-reconfirmation";
 import { f4MaterialCommandOrigin, queryF4MaterialCommand } from "@/lib/admin/f4-material-command";
 import { isOriginalCommandOrigin } from "@/lib/admin/original-command-query";
 import type { FundCommandOrigin } from "@/lib/admin/fund-command-investigation";
@@ -25,7 +29,7 @@ import { count, stamp, unknownTag, zoneNote, moneyText } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import { f4Confirmation } from "./f4-confirmations";
 
-type PendingReview = PendingMutationRecord & { actorId: number; applicationId: number; input: F4AmbassadorReviewInput; application?: F4AmbassadorApplication; commandOrigin?: FundCommandOrigin };
+type PendingReview = PendingMutationRecord & FReconfirmationLink & { actorId: number; applicationId: number; input: F4AmbassadorReviewInput; application?: F4AmbassadorApplication; commandOrigin?: FundCommandOrigin };
 const reviewAttempts = createPendingMutationStore<PendingReview>({
   storageKey: "uvel-f4-ambassador-material-reviews", retainExpiredRecords: true,
   isValidRecord: (record) => Number.isSafeInteger(record.actorId) && Number.isSafeInteger(record.applicationId)
@@ -35,6 +39,11 @@ const reviewAttempts = createPendingMutationStore<PendingReview>({
     && isOriginalCommandOrigin(record.commandOrigin, { originalMethod: "POST", originalPath: `/api/admin/teams/ambassador-applications/${record.applicationId}/materials/review`, readAuthority: "network_f4_read" })
     && (record.commandOrigin === undefined || record.commandOrigin.originalAdminId === String(record.actorId)),
 });
+
+const materialScope = (record: PendingReview) => `F4_MATERIAL_REVIEW:${record.actorId}:${record.applicationId}`;
+const materialRecovery = createFDirectRecovery(reviewAttempts, materialScope, record =>
+  !!activeRecoveryActor(record.actorId, "network_f4_read")?.authorities.includes(record.input.stage === "BUSINESS"
+    ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review"));
 
 function money(value: number | string | null | undefined) {
   return value == null ? "尚未认可" : `${moneyText(value)} USDT`;
@@ -110,6 +119,9 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(() => reviewAttempts.list().find((item) => item.fingerprint === fingerprint));
   const pendingRef = useRef(pending);
+  const drafts = useFReconfirmations("f4-material").filter(({ original }) => original.actorId === actorId && original.applicationId === application.id);
+  const [draftKey, setDraftKey] = useState<string>();
+  const draft = drafts.find(item => item.commandKey === draftKey)?.original;
   const [confirmation, setConfirmation] = useState<Omit<F4AmbassadorReviewInput, "reason"> | null>(null);
   const refresh = useCallback(async () => {
     setLoading(true); setError(null); setPacket(null);
@@ -125,32 +137,29 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
   const queryOriginal = async () => {
     const original = pendingRef.current;
     if (!original || original.actorId !== useAdminAuth.getState().session?.adminId) throw new Error("登录账号已变化，请重新打开申请。");
-    const { outcome } = await queryF4MaterialCommand(original);
-    if (original.actorId !== useAdminAuth.getState().session?.adminId) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
-    if (outcome) {
-      reviewAttempts.forget(original.fingerprint, original.commandKey); pendingRef.current = undefined; setPending(undefined);
+    const observation = await materialRecovery.query(original, async record => {
+      const state = await fDirectReceiptConclusion(materialScope(record), record.commandKey, record.actorId);
+      if (state !== "unknown") return { conclusion: state };
+      const { outcome } = await queryF4MaterialCommand(record);
+      return { conclusion: outcome === "SUCCEEDED" ? "succeeded" as const
+        : outcome === "REJECTED" ? "rejected" as const : outcome === "NOT_EXECUTED" ? "not-executed" as const : "unknown" as const };
+    });
+    if (!observation) throw new Error("PENDING_QUERY_UNAVAILABLE");
+    const outcome = observation.conclusion;
+    if (settleFReconfirmation(materialRecovery, original, outcome, "f4-material")) {
+      pendingRef.current = undefined; setPending(undefined);
       setPacket(null); setConfirmation(null);
-      if (outcome === "SUCCEEDED") ctx.toast("材料核验已记录");
-      else if (outcome === "REJECTED") setRecoveryNotice(SETTLED_REJECTED);
+      if (outcome === "succeeded") ctx.toast("材料核验已记录");
+      else if (outcome === "rejected") setRecoveryNotice(SETTLED_REJECTED);
       else setRecoveryNotice(displayAdminError(new Error("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")));
       await refresh(); await ctx.refreshF4();
       return true;
     }
+    if (outcome === "not-found") return false;
     const next = await refresh();
     if (!next) throw new Error("材料没读到，刷新后再试");
     if (original.actorId !== useAdminAuth.getState().session?.adminId) throw new Error("登录账号已变化，请重新打开申请。");
-    const input = original.input;
-    // Every successful review is appended to the complete immutable history.
-    // An old revision/finished application plus no possible matching review proves non-execution.
-    // Old history rows may have no command key. Keep the existing non-execution proof for those records.
-    const closed = next.materialRevision > input.expectedMaterialRevision || next.approvalBlockers.includes("APPLICATION_NOT_PENDING");
-    if (closed && next.reviewHistory && !next.reviewHistory.some(review => review.materialRevision === input.expectedMaterialRevision
-      && review.stage === input.stage && review.status === input.decision && review.reason === input.reason.replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, ""))) {
-      reviewAttempts.forget(original.fingerprint, original.commandKey); pendingRef.current = undefined; setPending(undefined);
-      setConfirmation(null);
-      setRecoveryNotice(`原材料 V${input.expectedMaterialRevision} 的核验未执行，${next.materialRevision > input.expectedMaterialRevision ? "材料版本已变化，请核对当前材料后重新核验。" : "申请已处理，已刷新原申请。"}`);
-      await ctx.refreshF4();
-    } else setRecoveryNotice(displayAdminError(new Error("RBAC_READBACK_ONLY")));
+    setRecoveryNotice(displayAdminError(new Error("RBAC_READBACK_ONLY")));
     return true;
   };
   const operable = !!packet && !loading && !error && !pending;
@@ -172,6 +181,9 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
   const reviewWritable = (stageKey: "BUSINESS" | "FINANCE", index: number) => !!packet && operable
     && (stageKey === "BUSINESS" ? packet.canReviewBusiness : packet.canReviewFinance) === true && ctx.can(F4_MATERIAL_PERMISSIONS[index].code);
 
+  const draftWritable = (input: F4AmbassadorReviewInput) => !final && packet?.materialRevision === input.expectedMaterialRevision
+    && reviewWritable(input.stage, input.stage === "BUSINESS" ? 0 : 1);
+
   return <>
     <Drawer open onClose={onClose} icon={FileCheck2} tone="role-3"
       title={`大使申请 #${application.id}`}
@@ -189,8 +201,14 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
           const expired = isRetryExpired(pending);
           const revoked = !ctx.can(pending.input.stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review");
           return <Notice tone="warn" title={<>{pending.input.stage === "BUSINESS" ? "业务" : "财务"}核验结果未知{expired ? <StatusTag tone="neutral">已过期</StatusTag> : unknownTag("direct")}</>}
-          action={<Button size="sm" onClick={() => setConfirmation(pending.input)}>{expired || revoked ? "查询原结果" : "按原请求重试"}</Button>}>
-          {`材料第 ${pending.input.expectedMaterialRevision} 版 · ${pending.input.decision === "PASSED" ? "通过" : "需补材料"} · ${businessStamp(pending.createdAt)} 提交（${zoneNote()}）。${expired ? "原请求超过 24 小时，只能查询，不能再重试。" : revoked ? "这个账号已经没有这项核验权限，只能查询，不能再重试。" : "原内容和理由已保留，可以按原请求重试，不能改。"}`}
+          action={<>
+            <Button size="sm" onClick={() => setConfirmation(pending.input)}>{materialRecovery.state(pending).replayBlock ? "查询原结果" : "按原请求重试"}</Button>
+            {pending.replayRejection && <FReleaseButton label={`申请 #${application.id} 的核验`} toast={ctx.toast} onRelease={async () => {
+              if (!materialRecovery.releaseRejectedReplay(pending)) throw new Error("PENDING_RELEASE_BLOCKED");
+              pendingRef.current = undefined; setPending(undefined); setConfirmation(null);
+            }} />}
+          </>}>
+          {`材料第 ${pending.input.expectedMaterialRevision} 版 · ${pending.input.decision === "PASSED" ? "通过" : "需补材料"} · ${businessStamp(pending.createdAt)} 提交（${zoneNote()}）。${expired ? RETRY_EXPIRED_TEXT : revoked ? "这个账号已经没有这项核验权限，只能查询，不能再重试。" : materialRecovery.state(pending).replayRejection ? "原请求重试已被拒绝，请核实原操作结果。" : "原内容和理由已保留，请查询原结果。"}`}
         </Notice>;
         })()}
         <Steps label="申请进度" items={["提交材料", "业务核验", "财务核验", "最终批准"].map((label, index) => ({
@@ -234,7 +252,18 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
                 <ReviewCard title="业务核验" stage="BUSINESS" venue={packet.bucket === "venue"} review={packet.businessReview} />
                 <ReviewCard title="财务核验" stage="FINANCE" venue={packet.bucket === "venue"} review={packet.financeReview} />
               </div>
-              {!final && (["BUSINESS", "FINANCE"] as const).map((stageKey, index) => <ReviewForm key={`${packet.materialRevision}:${stageKey}`} packet={packet} stage={stageKey}
+              {drafts.map(({ original }) => <Notice key={original.commandKey} tone="neutral"
+                title={`第 ${original.input.expectedMaterialRevision} 版材料的${original.input.stage === "BUSINESS" ? "业务" : "财务"}核验未执行`}
+                action={draftWritable(original.input) && original.commandKey !== draftKey
+                  ? <Button size="sm" onClick={() => setDraftKey(original.commandKey)}>继续修改</Button> : undefined}>
+                <p>{original.input.decision === "PASSED" ? "通过" : "需补材料"}
+                  {original.input.verifiedAttendees != null && ` · 有效去重人数 ${original.input.verifiedAttendees}`}
+                  {original.input.recognizedBudgetUsdt != null && ` · 认可金额 ${original.input.recognizedBudgetUsdt} USDT`}
+                  {!!original.input.missingKinds?.length && ` · 缺件：${original.input.missingKinds.map(kind => packet.requirements.find(item => item.kind === kind)?.label ?? kind).join("、")}`}</p>
+                {!draftWritable(original.input) && <p>请核对当前材料版本、申请状态和核验权限。</p>}
+              </Notice>)}
+              {!final && (["BUSINESS", "FINANCE"] as const).map((stageKey, index) => <ReviewForm key={`${packet.materialRevision}:${stageKey}:${draft?.input.stage === stageKey ? draft.commandKey : ""}`} packet={packet} stage={stageKey}
+                initial={draft?.input.stage === stageKey && draftWritable(draft.input) ? draft.input : undefined}
                 writable={reviewWritable(stageKey, index)} onReview={setConfirmation} />)}
               {!final && !reviewWritable("BUSINESS", 0) && !reviewWritable("FINANCE", 1) && <p className="f4-muted">当前只能查看核验结果。记录核验要有对应的核验权限，并且材料已提交、申请还在待处理。</p>}
               {!final && proposalBlockers.length > 0 && <Notice tone="neutral" title="暂不能发起批准"><ul className="f4-list">{proposalBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></Notice>}
@@ -271,66 +300,69 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
       </Facts>}
       detail={`材料 V${confirmation.expectedMaterialRevision} · 结论：${confirmation.decision === "PASSED" ? "通过" : "需补材料"}`}
       confirmLabel="记录核验结论"
-      completionCopy={pending ? isRetryExpired(pending) || !ctx.can(pending.input.stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review")
-        ? "只能查询原结果：查到已经记下或确定没记下，都会解除这条记录；查不出就继续保留。"
-        : "按原请求重试：原版本、原结论和原理由不变，已经记录过的不会记两次。" : "核验结论和理由立即记录到这一版材料，不经审批。"}
+      completionCopy="核验结论和理由立即记录到这一版材料，不经审批。"
       getPendingReason={() => pendingRef.current?.input.reason}
-      inlineApproval={{
-        resolve: () => undefined,
-        pending: !!pending,
-        initialRecovery: "retry",
-        expired: !!pending && (isRetryExpired(pending) || !ctx.can(pending.input.stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review")),
-        expiredRequestRecovery: pending && isRetryExpired(pending) ? "query" : undefined,
-        recover: queryOriginal,
-      }}
+      getPendingRecovery={() => pendingRef.current && fConfirmRecovery(materialRecovery, pendingRef.current, queryOriginal)}
       onClose={() => setConfirmation(null)}
       onConfirm={async (reason) => {
         if (!actorId || useAdminAuth.getState().session?.adminId !== actorId) throw new Error("登录账号已变化，请重新打开申请。");
         const original = pendingRef.current;
         const authority = (original?.input ?? confirmation).stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review";
         if (!useAdminAuth.getState().session?.authorities.includes(authority)) throw new Error("ADMIN_PERMISSION_DENIED");
-        if (original && isRetryExpired(original)) { setPending({ ...original }); throw new F1OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey); }
         if (!original && (!packet || loading || error || final)) throw new Error("材料没读到，刷新后再试");
-        const attempt: PendingReview = original ?? { actorId, applicationId: application.id, input: { ...confirmation, reason }, fingerprint, commandOrigin: f4MaterialCommandOrigin(application.id),
-          commandKey: createA2CommandKey("f4-material-review"), createdAt: Date.now(), expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
-        reviewAttempts.remember(fingerprint, attempt.commandKey, { actorId, applicationId: application.id, input: attempt.input, application,
-          commandOrigin: attempt.commandOrigin });
-        if (!reviewAttempts.isDurablyStored(fingerprint, attempt.commandKey)) {
-          if (!original) reviewAttempts.forget(fingerprint, attempt.commandKey);
+        const continuesDraft = draft?.input.stage === confirmation.stage && draft.input.expectedMaterialRevision === confirmation.expectedMaterialRevision
+          && draft.input.decision === confirmation.decision;
+        const commandKey = original?.commandKey ?? createA2CommandKey("f4-material-review");
+        if (!original) reviewAttempts.remember(fingerprint, commandKey, { actorId, applicationId: application.id,
+          input: { ...confirmation, reason }, application, continuedFrom: continuesDraft ? draft.commandKey : undefined,
+          commandOrigin: f4MaterialCommandOrigin(application.id) });
+        const attempt = original ?? reviewAttempts.list().find(row => row.fingerprint === fingerprint && row.commandKey === commandKey);
+        if (!attempt || !reviewAttempts.isDurablyStored(fingerprint, commandKey)) {
+          if (!original) reviewAttempts.forget(fingerprint, commandKey);
           throw new Error(original ? "F4_OPERATION_RETRY_STORAGE_UNAVAILABLE" : "F4_OPERATION_STORAGE_UNAVAILABLE");
         }
         pendingRef.current = attempt; setPending(attempt);
+        const send = async (record: PendingReview) => {
+          const next = await reviewF4AmbassadorMaterials(record.applicationId, record.input, record.commandKey);
+          if (!next || next.applicationId !== record.applicationId || next.materialRevision !== record.input.expectedMaterialRevision) {
+            throw new F1OutcomeUncertainError("核验后读到的内容对不上，请刷新材料后继续原核验。", record.commandKey);
+          }
+        };
         try {
-          const next = await reviewF4AmbassadorMaterials(application.id, attempt.input, attempt.commandKey);
-          if (!next || next.applicationId !== application.id || next.materialRevision !== attempt.input.expectedMaterialRevision) throw new F1OutcomeUncertainError("核验后读到的内容对不上，请刷新材料后继续原核验。", attempt.commandKey);
-          reviewAttempts.forget(fingerprint, attempt.commandKey); pendingRef.current = undefined; setPending(undefined);
+          if (original) await materialRecovery.replay(original, send);
+          else await send(attempt);
+          materialRecovery.settleAcknowledged(attempt);
+          acknowledgeFReconfirmation(attempt);
+          if (attempt.continuedFrom) setDraftKey(undefined);
+          pendingRef.current = undefined; setPending(undefined);
           setPacket(null); setConfirmation(null); ctx.toast("材料核验已记录"); await refresh(); await ctx.refreshF4();
         } catch (cause) {
-          if (cause instanceof F4MaterialReviewNotAppliedError) {
+          if (!original && cause instanceof F4MaterialReviewNotAppliedError) {
             reviewAttempts.forget(fingerprint, attempt.commandKey); pendingRef.current = undefined; setPending(undefined);
             setRecoveryNotice(`原材料 V${attempt.input.expectedMaterialRevision} 的核验未执行，${cause.code === "MATERIAL_REVISION_STALE" ? "材料版本已变化，请核对当前材料后重新核验。" : "申请已处理，已刷新原申请。"}`);
             setConfirmation(null); await refresh(); await ctx.refreshF4(); return;
           }
           const failure = cause as { httpStatus?: number; apiCode?: number };
-          if (original ? isExplicitRejection(cause) : !isF1OutcomeUncertainError(cause)
+          if (!original && !isF1OutcomeUncertainError(cause)
             && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) {
             reviewAttempts.forget(fingerprint, attempt.commandKey); pendingRef.current = undefined; setPending(undefined);
-            if (original) { setConfirmation(null); await refresh(); await ctx.refreshF4(); }
           }
+          if (original) setPending(reviewAttempts.list().find(row => row.commandKey === original.commandKey));
           throw cause;
         }
       }} />}
   </>;
 }
 
-function ReviewForm({ packet, stage, writable, onReview }: {
+function ReviewForm({ packet, stage, writable, initial, onReview }: {
   packet: F4AmbassadorMaterialPacket; stage: "BUSINESS" | "FINANCE"; writable: boolean;
+  initial?: F4AmbassadorReviewInput;
   onReview: (input: Omit<F4AmbassadorReviewInput, "reason">) => void;
 }) {
-  const [decision, setDecision] = useState<"PASSED" | "NEEDS_MORE" | "">("");
-  const [attendees, setAttendees] = useState("");
-  const [recognized, setRecognized] = useState("");
-  const [missing, setMissing] = useState<string[]>([]);
+  const [decision, setDecision] = useState<"PASSED" | "NEEDS_MORE" | "">(initial?.decision ?? "");
+  const [attendees, setAttendees] = useState(initial?.verifiedAttendees == null ? "" : String(initial.verifiedAttendees));
+  const [recognized, setRecognized] = useState(initial?.recognizedBudgetUsdt ?? "");
+  const [missing, setMissing] = useState<string[]>(() => initial?.missingKinds?.filter(kind => packet.requirements.some(item => item.kind === kind)) ?? []);
   const [attempted, setAttempted] = useState(false);
   const business = stage === "BUSINESS";
   const venue = business && packet.bucket === "venue";

@@ -16,7 +16,7 @@ export function fConfigBatchTargetType(key: string) {
   return TEAM_RATE_KEYS.has(key) || TEAM_WRITE_KEYS.has(key) ? "team_config" : "ui_config";
 }
 
-function authorityFor(key: string): string | null {
+export function fConfigAuthority(key: string): string | null {
   if (TEAM_RATE_KEYS.has(key)) return "network_f2_royalty_rate";
   if (TEAM_WRITE_KEYS.has(key)) return "network_f2_write";
   if (["F.prize.name", "F.vrank.titles"].includes(key)) return "network_f1_write";
@@ -38,7 +38,7 @@ function authorityFor(key: string): string | null {
 
 export function fConfigBatchPermissionIssue(keys: readonly string[], authorities: readonly string[]): string | undefined {
   for (const key of keys) {
-    const authority = authorityFor(key.trim());
+    const authority = fConfigAuthority(key.trim());
     const code = authority === null ? "A2_BUSINESS_PERMISSION_UNMAPPED"
       : !authorities.includes(authority) ? "A2_BUSINESS_PERMISSION_DENIED" : undefined;
     if (code) return `${key} · ${formatAdminApiError(code, code)}`;
