@@ -65,7 +65,7 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     when: AT_PURCHASE,
     impact: "用户购买时按新比例算，进行中的试用也一样",
     how: "0–100 的百分比，0.5 就是减 0.5%，15 就是减 15%。",
-    howMore: "实际减的钱不超过「购买减价上限」，和试用收益抵扣、提前购买立减叠加。",
+    howMore: "实际减的钱不超过「购买减价上限」，和试用抵扣金、提前购买立减叠加。",
     where: "App 结算页「试用折扣」这一行",
     input: { unit: "%", min: 0, max: 100 },
     whatIf: (value) => (Number(value) === 0 ? "改成 0：用户购买时没有购买减价。" : `改成 ${value}：用户购买时售价减 ${value}%，不超过购买减价上限。`),
@@ -76,13 +76,13 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     when: AT_PURCHASE,
     impact: "用户购买时按新上限算，进行中的试用也一样",
     how: "0–1,000,000 USDT。",
-    howMore: "只管购买减价这一项，不管试用收益抵扣和提前购买立减。",
+    howMore: "只管购买减价这一项，不管试用抵扣金和提前购买立减。",
     where: "App 运行并检查试用状态时，剩余 24 小时内提示「现在购买最高抵」；试用详情也展示折扣上限",
     input: USDT_RANGE,
     whatIf: (value) => `改成 ${value}：购买减价最多减 ${value} USDT。`,
   },
   trialOffsetCapUSD: {
-    label: "试用收益抵购机款上限",
+    label: "试用抵扣金上限",
     what: "试用收益最多能抵多少购机款",
     when: "立即生效，按领取时的设置算",
     impact: "之后领取的试用按新上限，已领取的不变",
@@ -90,16 +90,16 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     howMore: "只管试用收益能抵多少，和购买减价、提前购买立减叠加。",
     where: "App 领取弹窗「最高」金额、我的 › 试用页规则",
     input: USDT_RANGE,
-    whatIf: (value) => (value.trim() === "" ? "不设上限：之后领取的试用，试用收益抵扣不封顶。" : `改成 ${value}：之后领取的试用，试用收益最多抵 ${value} USDT。`),
+    whatIf: (value) => (value.trim() === "" ? "不设上限：之后领取的试用，试用抵扣金不封顶。" : `改成 ${value}：之后领取的试用，试用收益最多抵 ${value} USDT。`),
   },
   graceDays: {
-    what: "试用到期后还能用抵扣金购买的天数",
+    what: "试用到期后还能用试用抵扣金购买的天数",
     when: "立即生效，只影响之后新领取或重新领取的试用",
     impact: "之后新领取或重新领取的试用，宽限期按新天数；已有试用按领取时的天数",
     how: "整数，0–30 天。",
     where: "App 试用详情宽限期的「收益保留」倒计时与到期时间",
     input: { unit: "天", min: 0, max: 30, step: 1 },
-    whatIf: (value) => (Number(value) === 0 ? "改成 0：之后新领取或重新领取的试用，到期后不能再用抵扣金购买。" : `改成 ${value}：之后新领取或重新领取的试用，到期后 ${value} 天内还能用抵扣金购买。`),
+    whatIf: (value) => (Number(value) === 0 ? "改成 0：之后新领取或重新领取的试用，到期后不能再用试用抵扣金购买。" : `改成 ${value}：之后新领取或重新领取的试用，到期后 ${value} 天内还能用试用抵扣金购买。`),
   },
   cooldownDays: {
     what: "试用取消或到期结束后多少天内不能再领",
@@ -143,6 +143,24 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   chargeFailRate: { what: "系统内部参数，页面不显示真实值", when: "只由系统判定，这里不能修改" },
 };
 
+const LEGACY_TRIAL_PARAM_COPY: Record<string, Partial<TrialParamHelp>> = {
+  discountRate: { howMore: "实际减的钱不超过「购买减价上限」，和试用收益抵扣、提前购买立减叠加。" },
+  discountCapUSD: { howMore: "只管购买减价这一项，不管试用收益抵扣和提前购买立减。" },
+  trialOffsetCapUSD: {
+    whatIf: (value) => (value.trim() === "" ? "不设上限：之后领取的试用，试用收益抵扣不封顶。" : `改成 ${value}：之后领取的试用，试用收益最多抵 ${value} USDT。`),
+  },
+  graceDays: {
+    what: "试用到期后还能用抵扣金购买的天数",
+    whatIf: (value) => (Number(value) === 0 ? "改成 0：之后新领取或重新领取的试用，到期后不能再用抵扣金购买。" : `改成 ${value}：之后新领取或重新领取的试用，到期后 ${value} 天内还能用抵扣金购买。`),
+  },
+};
+
+export function trialParamHelp(key: string, hasBuyList: boolean) {
+  const help = TRIAL_PARAM_HELP[key];
+  const legacy = LEGACY_TRIAL_PARAM_COPY[key];
+  return !hasBuyList && help && legacy ? { ...help, ...legacy } : help;
+}
+
 /** 常改参数，一屏约 6 项（DP-15）；其余可写的进高级设置。 */
 export const COMMON_TRIAL_PARAMS = ["trialProductId", "trialDays", "seatsLeftToday", "discountRate", "discountCapUSD", "trialOffsetCapUSD"] as const;
 
@@ -156,7 +174,7 @@ export const ADVANCED_TRIAL_GROUPS = [
 export const TRIAL_STATE_HELP: Record<string, string> = {
   idle: "用户还没开始这次试用。",
   active: "试用进行中，收益在累积，用户可以提前购买或取消。",
-  grace: "试用期已到，设备停止产出；宽限期内用户还能用抵扣金购买。这是正常状态，到期系统自动结束，不扣款，不用处理。",
+  grace: "试用期已到，设备停止产出；宽限期内用户还能用试用抵扣金购买。这是正常状态，到期系统自动结束，不扣款，不用处理。",
   extended: "这条试用延长过，到期时间以这条记录为准，不用处理。",
   cancelled: "已结束，没有转成购买。再次试用要等冷却期过去。",
   redeemed: "已结束，用户买下了设备。",

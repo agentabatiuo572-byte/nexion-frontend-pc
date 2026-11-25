@@ -20,6 +20,7 @@ import {
 } from "@/lib/admin/h-client";
 import { fetchA2Overview } from "@/lib/admin/a2-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { rebaseTerminalDraft, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { HCtx } from "./types";
@@ -29,7 +30,8 @@ const ZONE_NAMES: Record<string, string> = { "Asia/Ho_Chi_Minh": "越南时间",
 export const REGION_APPROVER = "另一位管理员";
 
 /** Read policy/A2 authority and preserve the draft baseline until an explicit submission. */
-export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType<typeof h3WeeklyRegionPolicyParams>, reason: string, before: string, after: string) => Promise<void>, commandState: () => { pending: boolean; blocked: boolean }) {
+export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType<typeof h3WeeklyRegionPolicyParams>, reason: string, before: string, after: string, baseline: H3WeeklyRegionMapping[]) => Promise<void>,
+  commandState: () => { pending: boolean; blocked: boolean }, recoveredDraft: () => (TerminalDraft<H3WeeklyRegionMapping[]> & { revision?: number }) | undefined) {
   const canRead = ctx.can("growth_h3_read");
   const canWrite = ctx.can("growth_h3_write");
   const [policy, setPolicy] = useState<H3WeeklyRegionPolicy | null>(null);
@@ -41,8 +43,24 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
   const [pendingReview, setPendingReview] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const generation = useRef(0);
+  const fresh = useRef(false);
+  const rebaseMappings = (beforeRows: H3WeeklyRegionMapping[], desiredRows: H3WeeklyRegionMapping[], currentRows: H3WeeklyRegionMapping[]) => {
+    const byCode = (rows: H3WeeklyRegionMapping[]) => Object.fromEntries(rows.map(row => [row.callingCode, row.zoneId]));
+    const before = byCode(beforeRows), desired = byCode(desiredRows), latest = byCode(currentRows);
+    const codes = new Set([...Object.keys(before), ...Object.keys(desired), ...Object.keys(latest)]);
+    const extend = (values: Record<string, string>) => Object.fromEntries([...codes].map(code => [code, values[code]]));
+    const rebased = rebaseTerminalDraft(extend(before), extend(desired), extend(latest));
+    for (const code of rebased.overlap) rebased.value[code] = latest[code];
+    if (rebased.others.length) {
+      const others = rebased.others.map(code => `${code} ${before[code] ?? "未设置"} → ${latest[code] ?? "未设置"}`);
+      const mine = rebased.mine.map(code => `${code} ${desired[code] ?? "移除"}`);
+      ctx.toast(`别人改过：${others.join("、")}。原拟改：${mine.join("、") || "无"}。${rebased.overlap.length ? `请重新选择 ${rebased.overlap.join("、")} 的规则。` : "请核对合并后的规则。"}`, "warn");
+    }
+    return Object.entries(rebased.value).filter(([, zoneId]) => zoneId).map(([callingCode, zoneId]) => ({ callingCode, zoneId }));
+  };
   const reload = async (rebase = false) => {
     const request = ++generation.current;
+    fresh.current = false;
     setLoading(true);
     try {
       const [rules, audit] = await Promise.allSettled([
@@ -52,7 +70,11 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
       if (request !== generation.current) return;
       if (rules.status === "rejected") throw rules.reason;
       setPolicy(rules.value);
-      if (rebase) setDraftBase(rules.value);
+      if (rebase) {
+        if (draftBase && draft) setDraft(rebaseMappings(draftBase.mappings, draft, rules.value.mappings));
+        setDraftBase(rules.value);
+      }
+      fresh.current = true;
       setError(null);
       if (audit.status === "rejected") {
         setReviewError("审批进度读取失败，请刷新后重试；暂不能再次提交。");
@@ -65,6 +87,7 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
           setPendingReview(false);
         }
       }
+      return rules.value;
     } catch (cause) {
       if (request === generation.current) setError(displayAdminReadError(cause));
     } finally {
@@ -82,6 +105,17 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
     || JSON.stringify(draftBase.nextActivation) !== JSON.stringify(policy.nextActivation));
   const describe = (rows: H3WeeklyRegionMapping[]) => rows.length
     ? rows.map(row => `${row.callingCode} → ${row.zoneId}`).join("；") : "全部区号使用越南时间";
+  const openEditor = () => {
+    if (!policy || commandBlocked || pending) return;
+    setDraftBase(policy);
+    const saved = recoveredDraft();
+    if (!saved?.before) {
+      if (saved && saved.revision !== policy.revision) ctx.toast("原区号规则缺少修改前的内容，已显示最新规则，请重新选择拟改项。", "warn");
+      setDraft((saved?.revision === policy.revision ? saved.desired : policy.mappings).map(row => ({ ...row })));
+      return;
+    }
+    setDraft(rebaseMappings(saved.before, saved.desired, policy.mappings));
+  };
   const submit = () => {
     if (!policy || !draftBase || !draft || invalid || loading || error || reviewError || pending || commandBlocked || staleDraft || !canWrite) return;
     const params = h3WeeklyRegionPolicyParams(draftBase, draft);
@@ -107,7 +141,7 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
       amplifies: true,
       run: async reason => {
         if (loading || error || reviewError || staleDraft || commandState().blocked) throw new Error("请先查询原结果并刷新地区规则，再发起新的修改。");
-        await submitProposal(params, reason, describe(draftBase.mappings), describe(params.mappings));
+        await submitProposal(params, reason, describe(draftBase.mappings), describe(params.mappings), draftBase.mappings);
         await reload();
         setDraft(null);
       },
@@ -115,7 +149,7 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
   };
   return {
     canRead, canWrite, canReadA2, policy, draft, setDraft, draftBase, setDraftBase, loading, error, reviewError,
-    invalid, commandBlocked, pending: !!pending, staleDraft: !!staleDraft, reload, submit,
+    invalid, commandBlocked, pending: !!pending, staleDraft: !!staleDraft, reload, submit, openEditor, isReady: () => fresh.current,
   };
 }
 
@@ -211,7 +245,7 @@ function ActualSummary({ actual }: { actual: H3ActualWeeklyAssignments }) {
 }
 
 export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; canAudit: boolean }) {
-  const { canRead, canWrite, canReadA2, policy, draft, setDraft, setDraftBase, draftBase, loading, error, reviewError, invalid, pending, commandBlocked, staleDraft, reload, submit } = region;
+  const { canRead, canWrite, canReadA2, policy, draft, setDraft, draftBase, loading, error, reviewError, invalid, pending, commandBlocked, staleDraft, reload, submit, openEditor } = region;
   if (!canRead) return null;
   const now = Date.now();
   const firstUnset = policy?.revision === 0 && !policy.nextActivation;
@@ -227,7 +261,7 @@ export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; can
   const actions = <>
     <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void reload()}>刷新</Button>
     {canWrite && !draft && policy && <Button size="sm" icon={<Pencil size={14} aria-hidden />} disabledReason={editBlock}
-      onClick={() => { setDraftBase(policy); setDraft(policy.mappings.map(row => ({ ...row }))); }}>编辑区号规则</Button>}
+      onClick={openEditor}>编辑区号规则</Button>}
   </>;
   return (
     <Panel title="每周从哪个时区切换" icon={Globe} tone="role-3" sub={sub} actions={actions} data-proof="h3-weekly-region"

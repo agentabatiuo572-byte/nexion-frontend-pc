@@ -1,5 +1,6 @@
 import { ADMIN_ERROR_MESSAGES, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { auditActionFieldLabel } from "./audit-action-names";
+import { H2_BUY_LIST_ACTION } from "./h2-trial-purchase";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
 import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
@@ -41,6 +42,7 @@ interface ApiResult<T> {
 }
 
 export class A2OutcomeUncertainError extends Error {
+  readonly queryMessage: string;
   constructor(message: string, public readonly commandKey: string) {
     // 命令号只留在 commandKey 上，不进句子（全站-标识外露）；机器码细节换成表里的中文，表里没有就不显示；
     // 网络、服务不可用这类说明本身就在说「结果未知／未确认」，不再重复一遍。
@@ -48,6 +50,7 @@ export class A2OutcomeUncertainError extends Error {
     const shown = /[一-鿿]/.test(raw) ? raw : ADMIN_ERROR_MESSAGES[raw] ?? "";
     const detail = /结果未知|未确认|是否已生效/.test(shown) ? "" : shown;
     super(`结果未知，可能已经提交。不要重新填写；查询原结果或按原请求重试，都不会重复提交。${detail ? `（${detail}）` : ""}`);
+    this.queryMessage = `结果未知，可能已经提交。不要重新填写，请查询原结果。${detail ? `（${detail}）` : ""}`;
     this.name = "A2OutcomeUncertainError";
   }
 }
@@ -354,6 +357,11 @@ function asAuditValue(value: unknown) {
   return typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))
     ? String(value)
     : asText(value);
+}
+
+function asTrialPurchaseAuditValue(value: unknown) {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return asAuditValue(value);
+  return value.length ? value.join("、") : "空清单";
 }
 
 function parseDetail(detailJson: string | null | undefined): Record<string, unknown> {
@@ -699,7 +707,8 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
   const obj = resolveA2AuditObject(detail.obj, detail.resource, log.resourceType, log.resourceId);
   const beforeVal = detail.before ?? detail.oldValue ?? detail.beforePrice ?? detail.fromStatus ?? detail.from;
   const afterVal = detail.after ?? detail.newValue ?? detail.afterPrice ?? detail.toStatus ?? detail.to;
-  const delta = asText(detail.delta, beforeVal != null || afterVal != null ? `${asAuditValue(beforeVal)} → ${asAuditValue(afterVal)}` : "—");
+  const formatValue = action === H2_BUY_LIST_ACTION ? asTrialPurchaseAuditValue : asAuditValue;
+  const delta = asText(detail.delta, beforeVal != null || afterVal != null ? `${formatValue(beforeVal)} → ${formatValue(afterVal)}` : "—");
   return {
     id: String(log.id ?? `${action}-${log.createdAt ?? Date.now()}`),
     ts: asText(detail.tsLabel, formatTime(log.createdAt)),

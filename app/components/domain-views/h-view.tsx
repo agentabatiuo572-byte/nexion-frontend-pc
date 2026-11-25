@@ -55,6 +55,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: HCtx = {
     toast: setToast,
     openActionConfirm: (req) => { openConfirm.current = req; setActionConfirm(req); },
+    currentActionConfirm: () => openConfirm.current,
     confirmOpen: !!mc,
     openConfirm: setCf,
     closeConfirm: (req) => setCf(current => !req || current === req ? null : current),
@@ -80,7 +81,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "H9" && <H9PublicStats ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal key={mc.formKey} initialReason={mc.initialReason} initialRejection={mc.initialRejection} briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} initialReason={mc.initialReason} initialRejection={mc.initialRejection} briefKind={mc.briefKind} icon={mc.icon}
           action={mc.action}
           title={mc.title}
           detail={mc.detail}
@@ -102,7 +103,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}
           getPendingReason={mc.inlineApproval || tab === "H4" || tab === "H9" ? mc.getPendingReason : undefined}
           getPendingRecovery={mc.getPendingRecovery}
-          blockedReason={tab === "H4" || tab === "H9" ? mc.blockedReason : undefined}
+          blockedReason={tab === "H2" || tab === "H4" || tab === "H9" ? mc.blockedReason : undefined}
           getPendingBusinessValue={tab === "H4" ? mc.getPendingBusinessValue : undefined}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
           onClose={() => setActionConfirm(current => current === mc ? null : current)}

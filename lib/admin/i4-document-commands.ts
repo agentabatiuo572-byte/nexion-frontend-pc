@@ -1,11 +1,15 @@
+import { displayAdminError } from "./error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createA2CommandKey } from "./a2-client";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
+import { RETRY_REJECTED_TEXT } from "./retry-rejected";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundCommandInvestigation } from "./fund-command-investigation";
 import { discoverECommand, investigateECommand } from "./e-command-investigation";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
-import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 import { fetchTrustDocuments, normalizeTrustDocument, restoreTrustDocumentBody, uploadTrustDocument, type TrustDocument, type TrustDocumentUpload } from "./trust-documents-client";
+import { isConfirmedNonExecution } from "./use-terminal-drafts";
 
 export type I4DocumentCommand = PendingMutationRecord & {
   owner: number; mode: "upload" | "restore"; document: TrustDocument; fields: TrustDocumentUpload; body: string;
@@ -19,7 +23,8 @@ const pending = createPendingMutationStore<I4DocumentCommand>({ storageKey: "nex
 
 // PDFs can exceed sessionStorage's entire quota. Persist the actual File in IndexedDB
 // before sending; only its metadata/hash and complete form go into the shared record.
-async function uploadFile(commandKey: string, operation: "save" | "delete", file?: File): Promise<void> {
+export type I4DocumentUploadDraft = { file: File | undefined; fields: Omit<TrustDocumentUpload, "reason"> };
+async function uploadFile(commandKey: string, operation: "save" | "delete" | "read", file?: File): Promise<File | undefined> {
   const database = await new Promise<IDBDatabase>((resolve, reject) => {
     const open = indexedDB.open("nexion-admin-i4-upload-files-v1", 1);
     open.onupgradeneeded = () => open.result.createObjectStore("files");
@@ -27,11 +32,13 @@ async function uploadFile(commandKey: string, operation: "save" | "delete", file
     open.onerror = () => reject(open.error);
   });
   try {
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction("files", "readwrite");
+    return await new Promise<File | undefined>((resolve, reject) => {
+      const transaction = database.transaction("files", operation === "read" ? "readonly" : "readwrite");
       const store = transaction.objectStore("files");
-      if (operation === "save") store.put(file, commandKey); else store.delete(commandKey);
-      transaction.oncomplete = () => resolve();
+      const read = operation === "read" ? store.get(commandKey) : undefined;
+      if (operation === "save") store.put(file, commandKey);
+      if (operation === "delete") store.delete(commandKey);
+      transaction.oncomplete = () => resolve(read?.result instanceof File ? read.result : undefined);
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -61,6 +68,19 @@ export function i4DocumentPermission(slot: TrustDocument["slot"]): string | unde
     ? undefined : "当前账号没有这份资料的发布权限，请重新读取核对。";
 }
 
+export const i4DocumentRecovery = createPendingRecovery({ ...pending, list: pendingI4DocumentCommands }, {
+  capability: record => record.mode === "restore" ? "receipt" : "readback",
+  canReplay: record => record.mode === "restore" && !i4DocumentPermission(record.document.slot),
+  explicitRejectionCode,
+});
+
+export function i4DocumentRetryBlocked(record: I4DocumentCommand) {
+  const state = i4DocumentRecovery.state(record);
+  if (state.replayRejection) return RETRY_REJECTED_TEXT;
+  if (state.expired) return RETRY_EXPIRED_TEXT;
+  return i4DocumentPermission(record.document.slot) ?? (state.replayBlock ? "请查询原结果" : undefined);
+}
+
 async function finish(command: I4DocumentCommand) {
   pending.forget(command.fingerprint, command.commandKey);
   if (command.file) await uploadFile(command.commandKey, "delete");
@@ -80,7 +100,7 @@ async function send(command: I4DocumentCommand, retry: boolean, file?: File): Pr
   } catch (error) {
     const failure = error as { status?: number; apiCode?: number };
     const rejected = retry ? isExplicitRejection(error) : !isOutcomeUnknownError(error) && isDeterministicRejection(failure.status ?? 0, failure.apiCode);
-    if (rejected) {
+    if (rejected && !retry) {
       await finish(command);
       if (!retry && error instanceof Error) Object.assign(error, { rejectedCommand: command });
     }
@@ -99,7 +119,7 @@ async function send(command: I4DocumentCommand, retry: boolean, file?: File): Pr
 export async function submitI4Document(document: TrustDocument, fields: TrustDocumentUpload, file?: File): Promise<void> {
   const permission = i4DocumentPermission(document.slot);
   if (permission) throw new Error(permission);
-  if (pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) throw new Error("这份资料有结果未知的原操作，请先重新读取核对。");
+  if (pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) throw new Error("这份资料有结果未知的原操作，请先查询原结果。");
   const owner = useAdminAuth.getState().session!.adminId;
   const commandKey = createA2CommandKey("i4-trust-document");
   const fingerprint = `${owner}|${document.slot}`;
@@ -124,7 +144,7 @@ export async function submitI4Document(document: TrustDocument, fields: TrustDoc
 export async function retryI4DocumentRestore(saved: I4DocumentCommand) {
   const command = pendingI4DocumentCommands().find(row => row.commandKey === saved.commandKey);
   if (!command || command.mode !== "restore") throw new Error("原操作已处理，请重新读取后再操作。");
-  await send(command, true);
+  await i4DocumentRecovery.replay(command, original => send(original, true));
 }
 
 /** Only an original receipt settles the command; current-file readback remains an observation. */
@@ -132,14 +152,38 @@ export async function queryI4DocumentCommand(saved: I4DocumentCommand, evidence?
   const command = pendingI4DocumentCommands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
   let receipt: FundCommandInvestigation | null = null;
+  let error: string | undefined;
   try {
-    const locator = { commandKey: command.commandKey, originalMethod: "POST" as const,
-      originalPath: `/api/admin/content/trust-documents/${command.document.slot}${command.mode === "restore" ? "/restore-default" : ""}`, originalAdminId: String(command.owner) };
-    receipt = command.commandOrigin ? await checkFundCommand(command, evidence)
-      : evidence ? await investigateECommand(command, locator, evidence, "content_i4_read") : await discoverECommand(locator);
-  } catch { /* Auxiliary receipt failures must not disable the existing file readback. */ }
-  if (fundCommandSettled(receipt)) { await finish(command); return { settled: true as const, receipt }; }
-  const current = (await fetchTrustDocuments()).find(row => row.slot === command.document.slot)!;
-  pending.remember(command.fingerprint, command.commandKey, { ...command, observation: current });
-  return { settled: false as const, receipt, current };
+    const result = await i4DocumentRecovery.query(command, async record => {
+      const locator = { commandKey: record.commandKey, originalMethod: "POST" as const,
+        originalPath: `/api/admin/content/trust-documents/${record.document.slot}${record.mode === "restore" ? "/restore-default" : ""}`, originalAdminId: String(record.owner) };
+      const original = record.commandOrigin ? await checkFundCommand(record, evidence)
+        : evidence ? await investigateECommand(record, locator, evidence, "content_i4_read") : await discoverECommand(locator);
+      if (fundCommandSettled(original)) return { receipt: original, conclusion: original?.originalStatus === "CONFIRMED_NOT_EXECUTED" ? "not-executed"
+        : original?.originalStatus === "CONFIRMED_REJECTED" ? "rejected" : "succeeded" } as const;
+      const status = !original && !evidence && record.mode === "restore"
+        ? await fetchDirectCommandReceipt("I4_TRUST_DOCUMENT", record.commandKey, record.owner) : undefined;
+      return { receipt: original, conclusion: status === "NOT_FOUND" ? "not-found" : "unknown" } as const;
+    });
+    if (result) {
+      receipt = result.receipt;
+      if (i4DocumentRecovery.settleFromQuery(command, result.conclusion)) {
+        let draft: I4DocumentUploadDraft | undefined;
+        if (command.file) {
+          if (isConfirmedNonExecution(receipt)) {
+            const { version, language, referenceNo, verifyUrl } = command.fields;
+            const file = await uploadFile(command.commandKey, "read").catch(() => undefined);
+            draft = { file, fields: { version, language, referenceNo, verifyUrl } };
+          }
+          await uploadFile(command.commandKey, "delete").catch(() => undefined);
+        }
+        return { settled: true as const, receipt, draft, error: undefined, current: undefined };
+      }
+    }
+  } catch (cause) { error = displayAdminError(cause); }
+  let current: TrustDocument | undefined;
+  try { current = (await fetchTrustDocuments()).find(row => row.slot === command.document.slot); }
+  catch (cause) { error ??= displayAdminError(cause); }
+  if (current && pendingI4DocumentCommands().some(row => row.commandKey === command.commandKey)) pending.remember(command.fingerprint, command.commandKey, { ...command, observation: current });
+  return { settled: false as const, receipt, current, error, draft: undefined };
 }

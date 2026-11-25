@@ -6,6 +6,7 @@ import { operatorDeviceStatus } from "@/lib/admin/e-operator-display";
 import { skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { isSkuTaglineTranslations, SKU_TAGLINE_LABELS, skuBadgeReviewText, type SkuTaglineTranslations } from "@/lib/admin/e1-product-copy";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, AUDIT_RESOURCE_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
+import { H2_BUY_LIST_ACTION } from "@/lib/admin/h2-trial-purchase";
 import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
 import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCopyText } from "@/lib/admin/operator-copy";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
@@ -143,6 +144,9 @@ const DOMAIN_NAMES: Record<A2AuditDomain, string> = {
 const FILTER_PARAMS = ["domain", "operator", "action", "object", "startTime", "endTime"] as const;
 type FilterKey = typeof FILTER_PARAMS[number];
 const FILTER_LABEL: Record<Exclude<FilterKey, "domain">, string> = { operator: "操作者", action: "动作", object: "对象", startTime: "开始", endTime: "结束" };
+function auditFilterValue(key: FilterKey, value?: string) {
+  return key === "action" && value === H2_BUY_LIST_ACTION ? A2_ACTION_NAMES[value] : value;
+}
 const LOG_PAGE_SIZES = [10, 20, 50] as const;
 
 /** 结果名按 TX-32：执行改批准、取消改驳回。已驳回不是失败，不用红（DT-13）。 */
@@ -2914,7 +2918,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const moreCount = (["action", "startTime", "endTime"] as const).filter((key) => appliedFilter[key]).length;
   const appliedChips = FILTER_PARAMS.filter((key) => appliedFilter[key]).map((key) => ({
     key,
-    label: key === "domain" ? `模块：${DOMAIN_NAMES[appliedFilter.domain as A2AuditDomain]}` : `${FILTER_LABEL[key]}：${appliedFilter[key]}`,
+    label: key === "domain" ? `模块：${DOMAIN_NAMES[appliedFilter.domain as A2AuditDomain]}` : `${FILTER_LABEL[key]}：${auditFilterValue(key, appliedFilter[key])}`,
     onRemove: () => removeCondition(key),
   }));
   const setDraft = (key: FilterKey, value: string) => {
@@ -2935,7 +2939,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   };
   const locateNotice = enteredFilter && sameFilter(enteredFilter, appliedFilter) && (
     <Notice tone={locatePending.length ? "warn" : "neutral"}>
-      已按「{appliedText(enteredFilter)}」筛选。
+      已按「{appliedText({ ...enteredFilter, action: auditFilterValue("action", enteredFilter.action) })}」筛选。
       {locatePending.length === 1 && <> 这个对象还有 1 条待审批 · <button type="button" className="rd-link" onClick={() => openTicketFromRecords(locatePending[0].id)}>打开审批单</button></>}
       {locatePending.length > 1 && <> 这个对象还有 {locatePending.length} 条待审批：{locatePending.slice(0, 3).map((w, index) => <span key={w.id}>{index > 0 && "、"}<button type="button" className="rd-link" onClick={() => openTicketFromRecords(w.id)}>{actionName(w)} {w.id}</button></span>)}{locatePending.length > 3 && " 等"}</>}
     </Notice>
@@ -3312,7 +3316,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const shownLogE1 = shownLog ? e1SkuLogSides(shownLog) ?? shownLogApproved?.sides : undefined;
   const logIndex = shownLog ? logPageRows.findIndex((l) => l.id === shownLog.id) : -1;
   const needIdem = shownLog ? shownLog.action.includes("withdraw") || shownLog.action.includes("balance") || shownLog.action.includes("operation_confirmed") : false;
-  const requestNo = shownLog ? shownLog.idempotencyKey || (needIdem ? "缺失" : "—") : "—";
+  const requestNo = shownLog?.action === H2_BUY_LIST_ACTION
+    ? shownLog.bizNo || "—"
+    : shownLog?.idempotencyKey || (needIdem ? "缺失" : "—");
   const shownLogObject = shownLog ? logObject(shownLog) : undefined;
 
   /* 审批结果抽屉 */

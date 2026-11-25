@@ -273,6 +273,7 @@ export function createPendingRecovery<T extends PendingMutationRecord>(
   options: {
     capability: (record: T) => PendingRecoveryCapability;
     canReplay: (record: T) => boolean;
+    hasApproval?: (record: T) => boolean;
     explicitRejectionCode: (error: unknown) => string | undefined;
   },
 ) {
@@ -313,8 +314,17 @@ export function createPendingRecovery<T extends PendingMutationRecord>(
                   : undefined;
     return { capability, conclusion, busy, expiresAt, expired, replayBlock, replayRejection };
   };
+  const releasable = (original: T) => {
+    const record = current(original);
+    return record?.replayRejection && !observations.get(recordKey(record))?.busy
+      && !options.hasApproval?.(record) ? record : undefined;
+  };
   return {
     state,
+    releaseSnapshot: (original: T) => () => {
+      const record = releasable(original);
+      return record ? JSON.stringify(record) : undefined;
+    },
     getRevision: () => revision,
     subscribe(listener: () => void) {
       listeners.add(listener);
@@ -369,12 +379,14 @@ export function createPendingRecovery<T extends PendingMutationRecord>(
     /** An acknowledged write can be settled after the caller checks its result. */
     settleAcknowledged(original: T) {
       const record = current(original);
-      if (record) settle(record);
+      if (!record) return false;
+      settle(record);
+      return true;
     },
     /** OP-93(8): call only after the operator has manually checked the original result. */
     releaseRejectedReplay(original: T) {
-      const record = current(original);
-      if (!record?.replayRejection || observations.get(recordKey(record))?.busy) return false;
+      const record = releasable(original);
+      if (!record) return false;
       settle(record);
       return true;
     },
