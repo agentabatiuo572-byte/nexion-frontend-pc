@@ -11,7 +11,7 @@ import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection
 import { isPermissionDenied } from "./operation-confirm-error";
 import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
-import { canReadOwnRecoveryProposal, currentRecoveryActor, sendRecoveredDraft } from "./abe-recovery-access";
+import { canCreateRecoveryProposal, canReadOwnRecoveryProposal, currentRecoveryActor, sendRecoveredDraft } from "./abe-recovery-access";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
@@ -76,9 +76,14 @@ function approvalSlot(sourceDomain: keyof typeof commands, adminId: string | num
 }
 
 export function withdrawalApprovalDisabledReason(authorities: readonly string[]) {
-  if (!authorities.includes("platform_a2_proposal_create") && !authorities.includes("platform_a2_write")) {
+  if (!canCreateRecoveryProposal(authorities)) {
     return "当前账号缺少发起审批的权限。";
   }
+}
+
+export function canManageD7Approval(authorities: readonly string[], values: ApprovalValues) {
+  return authorities.includes("finance_d7_manage")
+    && (!("forceInverted" in values) || values.forceInverted !== true || authorities.includes("finance_d7_force_inverted"));
 }
 
 export function pendingConfigApproval(sourceDomain: keyof typeof commands, adminId: string | number, scope?: ApprovalScope) {
@@ -89,6 +94,13 @@ export function pendingConfigApproval(sourceDomain: keyof typeof commands, admin
 /** 按原操作重试被明确拒绝、人核实过结果后解除本页的锁。不发请求，只删这一条原命令（OP-153）。 */
 export function releaseConfigApproval(sourceDomain: keyof typeof commands, adminId: string | number, commandKey: string, scope?: ApprovalScope) {
   attempts.forget(approvalSlot(sourceDomain, adminId, scope), commandKey);
+}
+
+export function releaseRejectedWithdrawalApproval(sourceDomain: "D5" | "D7", adminId: number, commandKey: string) {
+  const record = pendingConfigApproval(sourceDomain, adminId);
+  if (record?.commandKey !== commandKey || !record.replayRejection) return false;
+  releaseConfigApproval(sourceDomain, adminId, commandKey);
+  return true;
 }
 
 /** H8 uses this existing store instance so other domains' in-flight approvals stay intact. */
@@ -324,6 +336,7 @@ export async function submitConfigApproval<T>(
   if (lookupOnly && !previous) return null;
   if (mode === "retry-original") {
     if (!previous) throw new Error("原审批申请已处理，请刷新页面后重新操作。");
+    if (withdrawalApproval && previous.replayRejection) throw new Error("重试已被拒绝，请核实后解除。");
     [values, reason] = configApprovalOriginalInput(sourceDomain, previous.input);
   }
   const input = JSON.stringify([values, reason]);
@@ -381,6 +394,13 @@ export async function submitConfigApproval<T>(
     }
     if (!ticket) {
       if (!proposal) throw new Error("请填写完整后提交。");
+      if (withdrawalApproval && previous) {
+        const actor = currentRecoveryActor(session.adminId);
+        if (!actor || !canCreateRecoveryProposal(actor.authorities)
+          || sourceDomain === "D7" && (!values || !canManageD7Approval(actor.authorities, values)) || !canClearOnRejection) {
+          throw new Error("当前不能重试，请核对发起权限和原审批单。");
+        }
+      }
       if (sourceDomain === "D5" && previous) {
         const original = proposal.command.params.values;
         if (!original || typeof original !== "object" || JSON.stringify([original, proposal.reason]) !== previous.input) {
@@ -401,7 +421,11 @@ export async function submitConfigApproval<T>(
       throw new A2OutcomeUncertainError("原请求还没有结果，请稍后查询。", key);
     }
     if (withdrawalApproval) {
-      if (isExplicitRejection(error)) attempts.forget(slot, key);
+      const rejection = explicitRejectionCode(error);
+      if (rejection) {
+        if (previous) attempts.markReplayRejected(slot, key, rejection);
+        else attempts.forget(slot, key);
+      }
       else if (!previous && !isA2OutcomeUncertainError(error) && !isPermissionDenied(error)) {
         throw new A2OutcomeUncertainError("提交结果未知，请到操作记录里核对。", key);
       }

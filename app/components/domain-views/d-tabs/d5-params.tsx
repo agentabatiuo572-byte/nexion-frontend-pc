@@ -1,5 +1,5 @@
 "use client";
-import { canReadOwnRecoveryProposal } from "@/lib/admin/abe-recovery-access";
+import { APPROVAL_REPLAY_RELEASE, canReadOwnRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
@@ -71,6 +71,7 @@ import {
   configApprovalOriginalInput,
   pendingConfigApproval,
   releaseConfigApproval,
+  releaseRejectedWithdrawalApproval,
   submitWithdrawalConfigApproval,
   withdrawalApprovalDisabledReason,
 } from "@/lib/admin/withdrawal-config-approval";
@@ -943,8 +944,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const recoverLoosen = async (mode: "lookup" | "retry") => {
     if (!session || !loosenPending) return;
     const key = loosenPending.commandKey;
-    if (mode === "retry" && loosenReplayBlock) { note(key, loosenReplayBlock); return; }
-    if (mode === "lookup") setQueryMissing(current => current.filter(saved => saved !== key));
+    if (mode === "retry" && (loosenPending.expiresAt <= Date.now() || loosenPending.replayRejection || !queryMissing.includes(key)
+      || !loosenRecord?.values || !commandAuthorities(loosenRecord.values).every(can) || proposeBlock || loosenReplayBlock)) return;
+    setQueryMissing(current => current.filter(saved => saved !== key));
     note(key, "");
     setRecovering(key);
     try {
@@ -960,9 +962,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       void loadApprovals();
     } catch (cause) {
       syncPending();
-      if (mode === "retry" && isExplicitRejection(cause)) {
-        toast(errorText(cause), "warn");
-      } else if (isA2OutcomeUncertainError(cause)) {
+      if (mode === "retry" && isExplicitRejection(cause)) return;
+      if (isA2OutcomeUncertainError(cause)) {
         // 原因写在括号里；只取中文说明，码不上屏。
         const detail = cause.message.match(/（([^（）]*[\u4e00-\u9fa5][^（）]*)）$/)?.[1];
         note(key, `${detail ? sentence(detail) : ""}结果还是未知，记录继续保留。`);
@@ -1023,7 +1024,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const releasePending = (record: ReleaseTarget) => {
     setReleasing(null);
     // Local release only; evidence-based closure is the separate 核查结案 entry.
-    tightenCommands.forget(record.slot, record.commandKey);
+    if (record.loosen) {
+      if (!session || !releaseRejectedWithdrawalApproval("D5", session.adminId, record.commandKey)) return;
+    } else tightenCommands.forget(record.slot, record.commandKey);
     syncPending();
     toast("已解除本页这条原操作记录；系统里原操作的结果和锁定不变", "success");
   };
@@ -1047,25 +1050,29 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     ...(loosenRecord ? [(() => {
       const key = loosenRecord.commandKey;
       const expired = loosenRecord.expiresAt <= Date.now();
-      const needQuery = canLookupOwn && !queryMissing.includes(key);
-      const retryDisabled = !loosenRecord.values || !commandAuthorities(loosenRecord.values).every(can) || proposeBlock ? NO_WRITE : loosenReplayBlock;
+      const needQuery = !queryMissing.includes(key);
+      const retryDisabled = !loosenRecord.values || !commandAuthorities(loosenRecord.values).every(can) || proposeBlock ? NO_WRITE
+        : loosenRecord.replayRejection ? "重试已被拒绝，请核实后解除"
+          : loosenReplayBlock ?? (needQuery ? "先查询原结果，明确查不到审批单才能重试" : undefined);
       const expiredNote = expired && !investigationResults[key] ? canLookupOwn ? expiredNext(loosenRecord) : EXPIRED_NO_QUERY : "";
       const copy = { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" };
       return { key, title: "放宽提现参数", record: loosenRecord, outcome: investigationResults[key], createdAt: loosenRecord.createdAt, expired, canRetry: !expired && !retryDisabled,
         canQuery: canLookupOwn, copy,
         status: loosenReplayBlock && !expired
           ? queryOnlyStatus(loosenReplayBlock, fundRecoveryStatus({ record: loosenRecord, outcome: investigationResults[key], expired, canRetry: false, canQuery: canLookupOwn, copy }), canLookupOwn, queryMissing.includes(key))
-          : !canLookupOwn && !expired ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
+          : !canLookupOwn && !expired ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，请有权限的同事核对。" } : undefined,
         actions: <>
           {canLookupOwn && <FundCheckButtons record={loosenRecord} lookupWithoutOrigin outcome={investigationResults[key]} expired={expired} busy={!!recovering} checking={recovering === key}
             onCheck={() => void lookupLoosen()} onClose={() => setClosing(true)} />}
           {!expired && <Button size="sm" disabled={!!recovering}
-            disabledReason={retryDisabled ?? (needQuery ? "先查询原结果，明确查不到审批单才能重试" : undefined)}
+            disabledReason={retryDisabled}
             onClick={() => void recoverLoosen("retry")}>按原请求重试</Button>}
+          {loosenRecord.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: "放宽提现参数", slot: loosenRecord.fingerprint, commandKey: key, loosen: true })}>解除原操作记录</Button>}
         </>,
         detail: <>
           <p>{`改动：${loosenRecord.values ? describeChanges(loosenRecord.values) : "原内容读不到"}。审批单可能已经提交，批准前现在的值不变。有结果前不能再提交放宽，收紧照常。`}</p>
           {expiredNote && <p>{expiredNote}</p>}
+          {loosenRecord.replayRejection && <p>重试没有成功：{errorText(new Error(loosenRecord.replayRejection))} {APPROVAL_REPLAY_RELEASE}</p>}
           {notes[key] && <p>{notes[key]}</p>}
         </>,
         tech: loosenRecord.reason ? `理由 ${loosenRecord.reason}` : undefined };
@@ -1151,7 +1158,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
 
   const releaseModal = releasing && (
     <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒说明不了原操作的结果，先到操作记录核对它有没有生效。解除只清本页这条记录，不算核查结案；系统仍可能阻止再次提交。" />
+      explain={releasing.loosen ? APPROVAL_REPLAY_RELEASE : "重试被拒说明不了原操作的结果，先到操作记录核对它有没有生效。解除只清本页这条记录，不算核查结案；系统仍可能阻止再次提交。"} />
   );
 
   const sections: SectionNavItem[] = [

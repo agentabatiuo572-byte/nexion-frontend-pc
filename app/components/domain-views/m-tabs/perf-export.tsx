@@ -5,6 +5,7 @@
  * 读写都走 PerfExportPorts。
  */
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -39,7 +40,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
 }) {
   const [initial] = useState({ month: initialMonth, scope: initialScope });
   const [data, setData] = useState<ExportDialogData | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [month, setMonth] = useState("");
   const [scope, setScope] = useState("");
   const [items, setItems] = useState<ExportItem[]>([]);
@@ -72,7 +73,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
 
   const load = () => {
     editedConditions.current = false;
-    setLoadFailed(false);
+    setLoadError("");
     setPreview("checking");
     const generation = ++checkGeneration.current;
     ports.open(initial).then(next => {
@@ -82,7 +83,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     }, error => {
       if (generation !== checkGeneration.current || isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
-      setLoadFailed(true); setPreview("failed");
+      setLoadError(displayAdminReadError(error)); setPreview("failed");
     });
   };
   useEffect(() => { load(); return () => { checkGeneration.current++; }; }, [ports]);
@@ -245,8 +246,8 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           setLookupText(original?.acceptedRequestId ? "这次查询没连上，暂时无法核对当前可见结果。" : "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
         }).finally(() => setQuerying(false));
       }}>查询原操作</Button>{lookupText && lookupText !== RETRY_EXPIRED_TEXT && <span role="status">{lookupText}</span>}{expired && <span role="status">{RETRY_EXPIRED_TEXT} <ExportAuditLink /></span>}</div>;
-  const content = !data && unknown ? recovery : loadFailed
-    ? <Notice tone="danger" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。</Notice>
+  const content = !data && unknown ? recovery : loadError
+    ? <Notice tone="danger" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。{loadError}</Notice>
     // 没有已发布的一版：不是失败，写原因，给「刷新」重新读目录。
     : !unknown && data?.catalogState === "no-months"
     ? <Notice tone="done" title="暂无可导出月份" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>刷新</Button>}>业绩数据还没发布第一版，发布后才能导出。</Notice>

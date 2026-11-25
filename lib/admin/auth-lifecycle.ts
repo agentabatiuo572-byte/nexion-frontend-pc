@@ -104,6 +104,12 @@ async function guardedAdminRead(
   return response;
 }
 
+/** The bank manual recovery flow owns a local 401 transition and still needs the epoch guard. */
+export function fetchAdminReadWithLocalAuth(input: RequestInfo | URL, init?: RequestInit) {
+  const nativeFetch = lifecycleState().nativeFetch;
+  return nativeFetch && adminReadPath(input, init) ? guardedAdminRead(nativeFetch, input, init, undefined) : fetch(input, init);
+}
+
 /**
  * Installs one narrow generation guard for same-origin authenticated admin reads.
  * Login/logout mutations still use the native fetch path, so a failed server

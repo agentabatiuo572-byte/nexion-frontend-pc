@@ -1,7 +1,7 @@
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { parseBankEligibility, parseBankSettlement, readBankEvidence, type BankBeneficiaryEligibility, type BankSettlementEvidence } from "@/lib/admin/bank-payout-evidence";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
+import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError, fetchAdminReadWithLocalAuth } from "@/lib/admin/auth-lifecycle";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner } from "@/lib/admin/pending-mutation-store";
@@ -881,7 +881,9 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   }
   let response: Response;
   try {
-    response = await guardedFetch(`/api/admin/${base}${path}`, {
+    const readOwnAuth = method === "GET" && init?.bankManualAuthEpoch !== undefined;
+    const send = readOwnAuth ? fetchAdminReadWithLocalAuth : guardedFetch;
+    response = await send(`/api/admin/${base}${path}`, {
       ...init,
       headers,
       signal: init?.signal ?? AbortSignal.timeout(30_000),

@@ -21,7 +21,7 @@ async function request(path: string, method = "GET", body?: unknown, key?: strin
   if (epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
   const raw = await response.json().catch(() => null);
   if (epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
-  if (isAdminAuthFailure(response.status, raw?.message)) useAdminAuth.getState().signOut();
+  if (method !== "GET" && isAdminAuthFailure(response.status, raw?.message)) useAdminAuth.getState().signOut();
   if (!response.ok || raw?.code !== 0 || raw?.data == null) {
     const unknown = body !== undefined && (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || outcomeStaysUnknown(response.status, raw?.code)
       || raw?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || raw?.message === "IDEMPOTENCY_RESULT_UNKNOWN");

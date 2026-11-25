@@ -7,6 +7,8 @@ import {
 } from "./a2-client";
 import { findHighOp } from "./high-ops-registry";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
+import { canCreateRecoveryProposal, currentRecoveryActor } from "./abe-recovery-access";
+import { explicitRejectionCode } from "./explicit-rejection";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 
@@ -41,6 +43,17 @@ export function finishRetiredH2TrialChargeLookup(adminId: number, sid: string, c
   if (previous?.op === "h2_trial_charge") attempts.forget(previous.fingerprint, commandKey);
 }
 
+export function canRetryH2Cancellation(authorities: readonly string[]) {
+  return authorities.includes("growth_h2_session_cancel") && canCreateRecoveryProposal(authorities);
+}
+
+export function releaseRejectedH2Cancellation(adminId: number, commandKey: string) {
+  const record = pendingH2TrialApprovals(adminId).find(row => row.commandKey === commandKey);
+  if (record?.op !== "h2_trial_cancel" || !record.replayRejection) return false;
+  attempts.forget(record.fingerprint, commandKey);
+  return true;
+}
+
 export async function submitH2TrialApproval(
   session: AdminSession, input: H2TrialApprovalInput, reason: string, mode: H2TrialApprovalMode,
 ) {
@@ -60,6 +73,7 @@ export async function submitH2TrialApproval(
   }
   if (mode === "lookup" && !previous) return null;
   if (mode === "retry" && !previous) throw new Error("原审批申请已处理，请刷新后核对结果。");
+  if (mode !== "lookup" && previous?.replayRejection) throw new Error("重试已被拒绝，请核实后解除。");
   const original = previous ?? { ...input, reason };
   const action = `${H2_TRIAL_ACTIONS[original.op]} · ${original.sid}`;
   const key = previous?.commandKey ?? createA2CommandKey(original.op);
@@ -86,6 +100,10 @@ export async function submitH2TrialApproval(
 
   try {
     if (!ticket) {
+      if (previous) {
+        const actor = currentRecoveryActor(session.adminId);
+        if (!actor || !canRetryH2Cancellation(actor.authorities)) throw new Error("当前账号缺少取消试用或发起审批的权限。");
+      }
       const def = findHighOp(original.op)!;
       ticket = await createA2OperationProposal({
         action,
@@ -109,8 +127,9 @@ export async function submitH2TrialApproval(
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
       throw new A2OutcomeUncertainError("原审批申请还没有结果，请查询原结果。", key);
     }
-    if (!isA2OutcomeUncertainError(error)
-        && (!previous || !(error instanceof Error && "status" in error && [401, 403, 404].includes(Number(error.status))))) {
+    const rejection = explicitRejectionCode(error);
+    if (previous && rejection) attempts.markReplayRejected(slot, key, rejection);
+    else if (!previous && !isA2OutcomeUncertainError(error)) {
       attempts.forget(slot, key);
     }
     throw error;

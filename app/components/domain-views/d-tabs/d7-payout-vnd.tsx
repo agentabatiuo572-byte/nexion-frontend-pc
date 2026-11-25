@@ -1,5 +1,5 @@
 "use client";
-import { canReadOwnRecoveryProposal } from "@/lib/admin/abe-recovery-access";
+import { APPROVAL_REPLAY_RELEASE, canReadOwnRecoveryProposal, currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
@@ -37,7 +37,7 @@ import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { RecoveryPanel, recoveryTitle } from "../recovery-panel";
 import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
-import { configApprovalOriginalInput, pendingConfigApproval, releaseConfigApproval, submitConfigApproval, withdrawalApprovalDisabledReason } from "@/lib/admin/withdrawal-config-approval";
+import { canManageD7Approval, configApprovalOriginalInput, pendingConfigApproval, releaseConfigApproval, releaseRejectedWithdrawalApproval, submitConfigApproval, withdrawalApprovalDisabledReason } from "@/lib/admin/withdrawal-config-approval";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { ActionConfirmReq, DCtx } from "./types";
@@ -226,7 +226,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const [queryMissing, setQueryMissing] = useState<string[]>([]);
   const [recovering, setRecovering] = useState("");
   const [releasing, setReleasing] = useState<{ kind: "direct"; record: DirectRecord } | { kind: "approval"; commandKey: string } | null>(null);
-  const [approvalRejected, setApprovalRejected] = useState<string | null>(null);
   // 这次会话刚登记的放宽单。看不到审批列表的账号（财务主管）靠它知道单还在等批准（F2）。
   const [sentTicket, setSentTicket] = useState<A2OperationRow | null>(null);
   const [rereading, setRereading] = useState(false);
@@ -332,7 +331,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   };
   const refresh = () => {
     const run = () => {
-      setApprovalRejected(null);
       void reload();
       void loadQueue();
     };
@@ -606,9 +604,11 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     if (await checkProposalInvestigation(original).catch(() => undefined)) note(original.commandKey, "");
   };
   const releasePending = () => {
-    if (!releasing || releasing.kind !== "direct") return;
+    if (!releasing) return;
     // Local release only; evidence-based closure is the separate 核查结案 entry.
-    directCommands.forget(releasing.record.fingerprint, releasing.record.commandKey);
+    if (releasing.kind === "approval") {
+      if (!session || !releaseRejectedWithdrawalApproval("D7", session.adminId, releasing.commandKey)) return;
+    } else directCommands.forget(releasing.record.fingerprint, releasing.record.commandKey);
     syncPending(); setReleasing(null);
     toast("已解除本页这条原操作记录；系统里原操作的结果和锁定不变", "success");
   };
@@ -623,7 +623,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       const result = await submitConfigApproval("D7", session, null, "", loadPayoutVndConfig, true);
       if (!result) {
         setQueryMissing((current) => [...current, key]);
-        note(key, "没有查到原审批单。记录继续保留，可以按原请求重试。");
+        note(key, "没有查到原审批单，原记录继续保留。");
         return;
       }
       syncPending();
@@ -641,10 +641,20 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  /** 查不到原单后按原操作重试。明确拒绝时共用提交入口清除原记录。 */
+  const canRetryApproval = (rights: readonly string[]) => {
+    if (!approval || isRetryExpired(approval) || approval.replayRejection
+      || !queryMissing.includes(approval.commandKey) || withdrawalApprovalDisabledReason(rights)) return false;
+    try { return canManageD7Approval(rights, configApprovalOriginalInput("D7", approval.input)[0]); }
+    catch { return false; }
+  };
+
+  /** 查不到原单后按原操作重试。明确拒绝后保留原记录供核实。 */
   const retryApproval = async () => {
     if (!session || !approval) return;
+    const actor = currentRecoveryActor(session.adminId);
+    if (!actor || !canRetryApproval(actor.authorities)) return;
     const key = approval.commandKey;
+    setQueryMissing(current => current.filter(saved => saved !== key));
     setRecovering("approval-retry");
     note(key, "");
     try {
@@ -664,9 +674,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         return;
       }
       const message = reasonOf(errorCode(cause) === "OBJECT_ALREADY_PENDING" ? (canReachAudit ? PENDING_HERE : PENDING_ELSEWHERE) : displayAdminError(cause));
-      if (isExplicitRejection(cause)) {
-        setApprovalRejected(`${message}。这条记录已清除，要改请重新提交。`);
-      } else {
+      if (!isExplicitRejection(cause)) {
         // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
         note(key, `重试没有完成：${message}。记录继续保留，稍后再查询原结果或重试。`);
       }
@@ -707,7 +715,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const approvalRow = approval && ((): FundRecoveryRow => {
     const expired = isRetryExpired(approval);
     const missing = queryMissing.includes(approval.commandKey);
-    const showRetry = !expired && (missing || !canQueryOriginal);
+    const showRetry = canRetryApproval(authorities);
     let original: string;
     try {
       const [values, reason] = configApprovalOriginalInput("D7", approval.input);
@@ -715,16 +723,19 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     } catch (cause) {
       original = cause instanceof Error ? cause.message : "原审批内容读不到";
     }
-    return { key: approval.commandKey, title: "放宽提交", record: approval, outcome: investigationResults[approval.commandKey], createdAt: approval.createdAt, expired, canRetry: showRetry && canManage,
+    return { key: approval.commandKey, title: "放宽提交", record: approval, outcome: investigationResults[approval.commandKey], createdAt: approval.createdAt, expired, canRetry: showRetry,
       canQuery: canQueryOriginal, copy: { missingOrigin: "只能查审批单进度，查不了更细的执行结果。" },
-      status: !canQueryOriginal && !expired ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
+      status: !canQueryOriginal && !expired ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，请有权限的同事核对。" } : undefined,
       actions: <>
         {canQueryOriginal && <FundCheckButtons record={approval} lookupWithoutOrigin outcome={investigationResults[approval.commandKey]} expired={expired} busy={!!recovering} checking={recovering === "query" || recovering === approval.commandKey}
           onCheck={() => void lookupApproval()} onClose={() => setClosing(true)} />}
-        {showRetry && <Button size="sm" disabled={!!recovering} loading={recovering === "approval-retry"} disabledReason={canManage ? undefined : NO_WRITE} onClick={() => void retryApproval()}>按原请求重试</Button>}
+        {showRetry && <Button size="sm" disabled={!!recovering} loading={recovering === "approval-retry"} onClick={() => void retryApproval()}>按原请求重试</Button>}
+        {approval.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "approval", commandKey: approval.commandKey })}>解除原操作记录</Button>}
       </>,
       detail: <>
         <p>可能已生成审批单，这组参数有结果前不能再改。{expired ? investigationResults[approval.commandKey] ? "" : canQueryOriginal ? expiredNext(approval) : EXPIRED_NO_QUERY : missing ? "" : canQueryOriginal ? "查不到审批单再按原请求重试。" : ""}</p>
+        {!expired && approvalBlocked && <p>{approvalBlocked}</p>}
+        {approval.replayRejection && <p>重试没有成功：{reasonOf(displayAdminError(new Error(approval.replayRejection)))}。 {APPROVAL_REPLAY_RELEASE}</p>}
         {notes[approval.commandKey] && <p>{notes[approval.commandKey]}</p>}
       </>,
       tech: original };
@@ -732,8 +743,8 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const pendingPanel = <FundRecoveryPanel rows={[...directRows, ...(approvalRow ? [approvalRow] : [])]} link={auditLink || undefined}
     settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />;
   const releaseModal = <>
-    {releasing && <ReleaseModal label="参数修改" onCancel={() => setReleasing(null)} onConfirm={releasePending}
-      explain="重试被拒说明不了原操作的结果，先查询原结果。解除后原操作不再重试。" />}
+    {releasing && <ReleaseModal label={releasing.kind === "approval" ? "放宽提交" : "参数修改"} onCancel={() => setReleasing(null)} onConfirm={releasePending}
+      explain={releasing.kind === "approval" ? APPROVAL_REPLAY_RELEASE : "重试被拒说明不了原操作的结果，先查询原结果。解除后原操作不再重试。"} />}
     {directClosing && <CommandClosureModal label="参数修改" commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
       offer={eCommandClosureOffer(investigationResults[directClosing.commandKey], isRetryExpired(directClosing))} facts={<Fact k="提交的值">{valuesSummary(directClosing.values).split("、").map((item, index, all) => <span key={item} className="rd-keep">{item}{index < all.length - 1 ? "、" : ""}</span>)}</Fact>}
       onClose={() => setDirectClosing(null)} onSubmit={async evidence => {
@@ -792,7 +803,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const editBlock = direct.length > 0 || approval ? LOCKED : loading ? READING : undefined;
   // 「没有要处理的事」只在待批单读到了、读完了才说；看不到审批列表、读取中、读取失败都不下这个结论（F2）。
   const queueKnown = canReadQueue && queue.loaded && !queue.loading && !queue.failed;
-  const nothingToDo = queueKnown && direct.length === 0 && !approval && queue.rows.length === 0 && !approvalRejected && !sentTicket;
+  const nothingToDo = queueKnown && direct.length === 0 && !approval && queue.rows.length === 0 && !sentTicket;
   const showSentTicket = sentTicket && !queue.rows.some((row) => row.id === sentTicket.id) && sentTicket.status === "pending";
   const fxLink = canReachFx && <Link className="rd-link" href="/finance/fx-rate" prefetch={false} onClick={guard("/finance/fx-rate")}>去修改</Link>;
 
@@ -853,7 +864,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         </Conclusion>}
 
       {pendingPanel}
-      {approvalRejected && <Notice tone="danger" title="放宽提交被拒绝">{approvalRejected}</Notice>}
       <RecoveryPanel title={recoveryTitle(0, queue.rows.length)} tone="warn" label="等待批准的放宽单"
         foot={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批查看</Link> : undefined}
         items={queue.rows.map((ticket) => ({ key: ticket.id, object: `放宽单 ${ticket.id}`, tag: <StatusTag tone="warn">待审批</StatusTag>, line: "等另一位超级管理员批准，批准前当前参数不变。" }))} />

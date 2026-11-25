@@ -34,7 +34,7 @@ function exportListLocation(views: readonly View[]): { view: View; page: number 
   return { view, page: Number.isSafeInteger(page) && (page - 1) * 10 <= 2_147_483_647 ? page : 1 };
 }
 
-export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
+export function PerfExportRecords({ ports, refreshKey = 0 }: { ports: PerfExportPorts; refreshKey?: number }) {
   const persona = ports.persona;
   const zone = businessZone().label;
   const [location] = useState(() => exportListLocation(persona.views));
@@ -105,7 +105,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
       setReadError(true);
     });
     return () => controller.abort();
-  }, [ports, view, page, pageSize, refresh]);
+  }, [ports, view, page, pageSize, refresh, refreshKey]);
 
   useEffect(() => {
     setDetail(null); setDetailStatus(null);

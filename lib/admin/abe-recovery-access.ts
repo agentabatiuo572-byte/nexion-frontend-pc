@@ -15,6 +15,8 @@ export function canReadOwnRecoveryProposal(authorities: readonly string[]) {
   return authorities.includes("platform_a2_read") || canCreateRecoveryProposal(authorities);
 }
 
+export const APPROVAL_REPLAY_RELEASE = "先到操作记录与审批核实有没有建单；「解除原操作记录」只清本页这条记录，已经建的审批单不受影响。";
+
 export function recoveryQueryConclusion(state: string) {
   if (state === "NOT_FOUND") return "not-found";
   if (state === "SUCCEEDED" || state === "CONFIRMED_SUCCEEDED") return "succeeded";

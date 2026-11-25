@@ -1,5 +1,5 @@
 "use client";
-import { canReadOwnRecoveryProposal } from "@/lib/admin/abe-recovery-access";
+import { APPROVAL_REPLAY_RELEASE, canCreateRecoveryProposal, canReadOwnRecoveryProposal, currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
@@ -178,7 +178,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const canManage = authorities.includes("finance_d6_manage");
   const canReadApproval = authorities.includes("platform_a2_read");
   const canQueryOriginal = canReadOwnRecoveryProposal(authorities);
-  const proposalBlocked = !authorities.includes("platform_a2_proposal_create") && !authorities.includes("platform_a2_write") ? "这个账号没有发起审批的权限" : undefined;
+  const proposalBlocked = !canCreateRecoveryProposal(authorities) ? "这个账号没有发起审批的权限" : undefined;
   const [data, setData] = useState<D6FxQuote | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -275,8 +275,13 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
 
   /** 按原操作重试：同命令号、同内容、同理由、同版本号，不接受新输入（OP-94）。 */
   const retryPending = async (record: PendingFx) => {
-    if (record.expiresAt <= Date.now() || !canManage || record.replayRejection
-      || record.proposal && (!canQueryOriginal || proposalNotFound !== record.commandKey)) return;
+    if (record.expiresAt <= Date.now() || !canManage || record.replayRejection) return;
+    if (record.proposal) {
+      const actor = currentRecoveryActor(session?.adminId);
+      if (!actor?.authorities.includes("finance_d6_manage") || !canCreateRecoveryProposal(actor.authorities)
+        || proposalNotFound !== record.commandKey) return;
+      setProposalNotFound(undefined);
+    }
     if (!pendingFx.isDurablyStored(record.fingerprint, record.commandKey)) {
       setPendingNote("浏览器里查不到这条记录，本次没有发送。记录继续保留，请在调整历史里核对。");
       return;
@@ -477,7 +482,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const what = `把${param.label}改成 ${valueText(pending.param, pending.after)}`;
     const retryRejected = pending.replayRejection ? retryRejectedReason(new Error(pending.replayRejection)) : undefined;
     const retryBlock = expired ? "已超过 24 小时，不能再重试" : !canManage ? NO_WRITE : retryRejected ? RETRY_AGAIN
-      : pending.proposal && (!canQueryOriginal || proposalNotFound !== pending.commandKey) ? "先查询原结果，查不到才能重试" : undefined;
+      : pending.proposal ? proposalBlocked ?? (proposalNotFound !== pending.commandKey ? "先查询原结果，查不到才能重试" : undefined) : undefined;
     // 改版前没存出处的直接修改按当前账号查，queryD6DirectCommand 再核原操作人。
     const target = pending.proposal ? pending : { ...pending, commandOrigin: pending.commandOrigin ?? dConfigCommandOrigin("D6") };
     // 查到记为失败时，「可能已经提交」不再写。
@@ -497,7 +502,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         <p>{failed ? "" : "这次修改可能已经提交，"}已停止展示旧的买入价{data ? "，下面是重新读到的值" : ""}。有结果前不能再改。</p>
         {expired && !outcome && (pending.proposal && !canQueryOriginal ? <p>{EXPIRED_NO_QUERY}</p> : !fundInvestigationAccess(target).unavailableReason && <p>{fundInvestigationAccess(target).canSubmit ? EXPIRED_CLOSE_HERE : EXPIRED_CLOSE_OTHER}</p>)}
         {!expired && !canManage && <p>{NO_WRITE}。</p>}
-        {retryRejected && <p>重试没有成功：{retryRejected} {pending.proposal ? "先到操作记录与审批核实有没有建单；「解除原操作记录」只清本页这条记录，已经建的审批单不受影响。" : "「解除原操作记录」只清本页这条记录，不算核查结案；原操作没结案时系统仍会阻止新提交。"}</p>}
+        {retryRejected && <p>重试没有成功：{retryRejected} {pending.proposal ? APPROVAL_REPLAY_RELEASE : "「解除原操作记录」只清本页这条记录，不算核查结案；原操作没结案时系统仍会阻止新提交。"}</p>}
         {pendingNote && <p>{pendingNote}</p>}
       </>,
       tech: `原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}` };

@@ -426,7 +426,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const router = useRouter();
   const [, setRecoveryRevision] = useState(0);
   const [bulkRecovery, setBulkRecovery] = useState(false);
-  const exportsPorts = usePerformanceExportPorts();
+  const [exportScopeRevision, setExportScopeRevision] = useState(0);
+  const [exportRecordsRefresh, setExportRecordsRefresh] = useState(0);
+  const exportsPorts = usePerformanceExportPorts(exportScopeRevision);
   const [exportOpen, setExportOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
   const [events, setEvents] = useState<Awaited<ReturnType<typeof analytics.events>> | null>(null);
@@ -605,6 +607,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         setSection(personal ? tab === "my-data" ? "stats" : tab === "exports" ? "exports" : "personal" : tab === "data" || tab === "customers" ? "stats" : tab as Section);
         if (personal) setPersonalView(tab === "my-customers" ? "customers" : "dashboard");
       } else setSection(current => current === "exports" || personal === (current === "personal") || current === "stats" ? current : personal ? "personal" : "stats");
+      if (scopeRetry > 0 && next.scopeSummary.mode === "MANAGED" && next.scopeSummary.groups.length === 0 && !readModes?.includes("PERSONAL")) {
+        setExportScopeRevision(revision => revision + 1);
+      }
       setScope(next); setQueryState(restored);
     }).catch(cause => {
       if (controller.signal.aborted || isSupportSessionExpired(cause)) return;
@@ -780,26 +785,34 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const personalHeader = scope?.scopeSummary.mode === "PERSONAL";
   // 主管和超管：页头次按钮是会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
-  const exportDisabledReason = exportsPorts?.persona.exportBlocked
-    ?? (noScopedContent && exportsPorts?.persona.canExport ? "没有负责的组，暂时不能导出" : undefined);
+  const exportDisabledReason = exportsPorts?.persona.exportBlocked;
+  const exportAccessPending = (noScopedContent || approvalOnly) && exportsPorts === undefined;
+  const refreshWorkbench = () => {
+    if (exportsOnly) setExportRecordsRefresh(revision => revision + 1);
+    else if (approvalOnly) setExportScopeRevision(revision => revision + 1);
+    else refreshScope();
+  };
   const header = <PageHeader pageId="M1" title="客服工作台" summary={exportsOnly ? exportViews?.includes("MINE") ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} readOnly={noScopedContent ? exportDisabledReason : undefined} actions={<>
     {!scopeDenied && (exportsPorts?.persona.canExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
     {!noScopedContent && scope?.scopeSummary.mode === "MANAGED" && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}
     {!noScopedContent && scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
-    {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{!noScopedContent && !approvalOnly && <Button onClick={() => refreshScope()}>刷新</Button>}
+    {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{(exportsOnly || (!noScopedContent && !exportAccessPending)) && <Button onClick={refreshWorkbench}>刷新</Button>}
   </>} />;
   const related = !personalHeader && leaderboardReachable && <nav className="rd-links" aria-label="相关页面"><span>相关页面</span><a className="rd-link" href="/service/leaderboard" onClick={event => { event.preventDefault(); router.push("/service/leaderboard"); }}>业绩榜</a></nav>;
-  const exportAccessPending = (noScopedContent || approvalOnly) && exportsPorts === undefined;
+  const exportDialog = exportOpen && exportsPorts && scope && !scopeDenied && <PerfExportDialog ports={exportsPorts}
+    initialMonth={queryState.month} initialScope={queryState.groupId ? `GROUP:${queryState.groupId}` : scope.scopeSummary.mode === "PERSONAL" ? "SELF" : scope.scopeSummary.mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL"}
+    onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />;
   if (!scope || noScopedContent) return <section className="sa-workbench" aria-busy={exportAccessPending || !scope && !approvalOnly && !scopeDenied && !scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>
     {header}
     {exportsOnly && exportsPorts ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
-      <PerfExportRecords ports={exportsPorts} /></>
+      <PerfExportRecords ports={exportsPorts} refreshKey={exportRecordsRefresh} /></>
       : <Panel>{noScopedContent && !exportAccessPending ? <BlockState state="empty" title="你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" detail="主管负责的组由超级管理员在「客服与分组」里设置。" />
         : scopeDenied || approvalOnly && !exportAccessPending ? <AnalyticsReadDenied /> : <BlockState state={scopeError ? "error" : "loading"}
           title={scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
           onRetry={scopeError ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重试" />}</Panel>}
     {scopeDenied && related}
     {unavailableAgentDrawer}
+    {exportDialog}
   </section>;
 
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
@@ -915,7 +928,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     }} />}
     {!isPersonal && section === "mine" && <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} onTransfer={setTransferCustomer} transferRevision={transferRevision} />}
     {section === "exports" && !!exportsPorts?.persona.views.length && <PerfExportRecords ports={exportsPorts} />}
-    {exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts} initialMonth={queryState.month} initialScope={queryState.groupId ? `GROUP:${queryState.groupId}` : mode === "PERSONAL" ? "SELF" : mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL"} onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />}
+    {exportDialog}
     {isPersonal && showStatistics && <PeriodPerfPanel perf={perf.period} month={queryState.month} asOf={personalPeriod ? `${formatBusinessTimeCompact(personalPeriod.asOf, "—")}（${businessZone().label}）` : undefined}
       status={!monthCalendar ? calendarDenied ? "denied" : calendarError ? { title: "业绩月份加载失败", error: calendarError, onRetry: () => setCalendarRetry(value => value + 1) } : "loading"
         : personalPeriodError ? { error: personalPeriodError, onRetry: () => setPersonalPeriodRetry(value => value + 1) }

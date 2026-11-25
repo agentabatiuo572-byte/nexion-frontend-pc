@@ -290,12 +290,12 @@ function canRecover(record: SavedExport, authorities: readonly string[]) {
     : authorities.includes(record.action === "WITHDRAW" ? DETAIL : APPROVE);
 }
 
-export function usePerformanceExportPorts(): PerfExportPorts | null | undefined {
+export function usePerformanceExportPorts(scopeRevision = 0): PerfExportPorts | null | undefined {
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
   const active = useAdminAuth(state => state.isAuthenticated && !state.logoutPending && !state.logoutUnknown);
-  const [access, setAccess] = useState<{ key: string; options: Options | null; views: View[]; mineTotal?: number } | null>(null);
+  const [access, setAccess] = useState<{ key: string; options: Options | null | undefined; views: View[]; mineTotal?: number } | null>(null);
   const [revision, setRevision] = useState(0);
-  const key = `${session?.adminId}:${epoch}:${session?.authorities.join(",")}`;
+  const key = `${session?.adminId}:${epoch}:${session?.authorities.join(",")}:${scopeRevision}`;
   const authorized = active && !!session && !session.passwordChangeRequired
     && session.authorities.some(code => code === "service_m1_read" || code === "service_m3_read");
   const canRequest = !!session && (session.authorities.includes(SUMMARY) || session.authorities.includes(DETAIL));
@@ -325,7 +325,8 @@ export function usePerformanceExportPorts(): PerfExportPorts | null | undefined 
       };
       if (keep(mine, canRequest)) views.push("MINE");
       if (keep(approvals, canReview)) views.push("APPROVALS");
-      setAccess({ key, options: options.status === "fulfilled" ? options.value : null, views,
+      const exportOptions = options.status === "fulfilled" ? options.value : isExportPermissionDenied(options.reason) ? null : undefined;
+      setAccess({ key, options: exportOptions, views,
         mineTotal: mine.status === "fulfilled" ? mine.value ?? undefined : undefined });
     });
     return () => controller.abort();
@@ -333,7 +334,7 @@ export function usePerformanceExportPorts(): PerfExportPorts | null | undefined 
   return useMemo(() => {
     if (!authorized || !session || !canRequest && !canReview) return null;
     if (access?.key !== key) return undefined;
-    if (!access.options && !access.views.length) return null;
+    if (access.options === null && !access.views.length) return null;
     return exportPorts({ id: String(session.adminId), epoch, name, authorities: session.authorities }, access.options, access.views, access.mineTotal, () => {
       setAccess(null);
       setRevision(value => value + 1);
@@ -341,7 +342,7 @@ export function usePerformanceExportPorts(): PerfExportPorts | null | undefined 
   }, [authorized, canRequest, canReview, epoch, key, name, access]);
 }
 
-function exportPorts(operator: Operator, initialOptions: Options | null, views: View[], mineTotal: number | undefined, invalidateAccess: () => void): PerfExportPorts {
+function exportPorts(operator: Operator, initialOptions: Options | null | undefined, views: View[], mineTotal: number | undefined, invalidateAccess: () => void): PerfExportPorts {
   let choices = new Map<string, { scope: Scope; label: string; types: ExportType[] }>();
   let latest: { id: string; payload: Selection; preview: Preview } | undefined;
   let previewSequence = 0;
@@ -454,7 +455,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
   };
   return {
     persona: {
-      name: operator.name, views, mineTotal, canExport: initialOptions?.scopes.some(scope => scope.blocked === null && scope.allowed.length > 0) ?? false,
+      name: operator.name, views, mineTotal, canExport: initialOptions === undefined || initialOptions?.scopes.some(scope => scope.blocked === null && scope.allowed.length > 0) === true,
       exportBlocked: initialOptions?.scopes.some(scope => scope.blocked === "NO_MANAGED_GROUP") && !initialOptions.scopes.some(scope => scope.blocked === null) ? "没有负责的组，暂时不能导出" : undefined,
     },
     invalidateAccess,
