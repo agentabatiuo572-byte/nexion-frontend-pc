@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Activity, Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, Ban, Boxes, CheckCircle2, CircleDot, Clock3, FastForward, FileText, ImageIcon, PackageCheck, PackagePlus, PackageX, ShieldAlert, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { BlockState, Button, Cell, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Facts, Fact, FilterBar, Fold, IconButton, Input, JudgmentPoints, LevelStrip, MoreMenu, Notice, Panel, RatioBar, ScaleBar, Segments, Select, StageLine, Stat, StatBand, StatusTag, Table, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, datacenterNameText } from "@/lib/admin/brand-copy";
@@ -18,6 +18,8 @@ export const E1_MISSING_SERIES_REASON = "未设所属系列，编辑时先选系
 
 export type E1CatalogContext = Pick<EViewCtx, "skus" | "canWriteE1" | "e1InvalidSkus" | "e1Loading" | "e1Error" | "e1Gates" | "e1BundleDiscount" | "refreshE1" | "openSku" | "delSku" | "openActionConfirm" | "toast" | "pE"> & {
   catalogIncomplete: boolean;
+  e1InitialLoading: boolean;
+  skuReadbackPending: (id: string) => boolean;
   currentPhase: ReturnType<typeof e1CurrentPhase>;
   earlyReady: boolean; earlyLoading: boolean; earlyError: string | null; refreshEarly: () => void;
   gatesLoading: boolean; gatesError: string | null; discountLoading: boolean; discountError: string | null;
@@ -166,8 +168,10 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
   const [planOpen, setPlanOpen] = useState(false);
   const [planView, setPlanView] = useState("plan");
   const [planSku, setPlanSku] = useState("");
-  const [detail, setDetail] = useState<OpsSku | null>(null);
-  const openDetail = (sku: OpsSku) => { setDetail(sku); ctx.readPending(sku.id); };
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detail = skus.find(sku => sku.id === detailId);
+  const detailLoading = ctx.e1Loading || (detailId !== null && ctx.skuReadbackPending(detailId));
+  const openDetail = (id: string) => { setDetailId(id); ctx.readPending(id); };
   const [menuAction, setMenuAction] = useState<(() => void) | null>(null);
   useEffect(() => {
     if (!menuAction) return;
@@ -383,7 +387,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
   const unknown = skus.filter(s => s.publishBlocked === undefined).length, legacy = skus.filter(hasUnsupportedSeries).length;
   // 目录非空、每一行资料都有误时按读取不完整处理（ST-37）：不写 0、不给空目录引导，目录区放错误卡和有误的商品。
   const incomplete = ctx.catalogIncomplete;
-  const available = !ctx.e1Loading && !ctx.e1Error && !incomplete;
+  const available = !ctx.e1InitialLoading && !ctx.e1Error && !incomplete;
   const gated = releases.filter(g => !gateReadiness(g).unlocked).length;
   const knownSold = skus.filter(s => s.publishBlocked === false && s.sold != null);
   const soldValues = knownSold.map(s => e1Multiply(s.price, s.sold!));
@@ -416,7 +420,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       <Select aria-label="商品档位筛选" value={tier} onChange={setTier} options={[{ value: "all", label: "全部档位" }, ...["Entry", "Pro", "Flagship", "Share"].map(t => ({ value: t, label: operatorSkuTier(t) }))]} />
     </FilterBar>
     {skuLink && available && <Notice tone="neutral" title={filtered.some(s => s.id === skuLink) ? `已定位商品 ${skuLink}` : `没有找到商品 ${skuLink}`} />}
-    {ctx.e1Loading ? <BlockState state="loading" title="正在加载商品目录…" /> : ctx.e1Error ? <BlockState retryKey="e1-catalog-412" state="error" title="商品目录加载失败" detail={ctx.e1Error} onRetry={() => void ctx.refreshE1()} afterRetryFocus={E1_CATALOG_GRID} /> : incomplete ? <BlockState retryKey="e1-catalog-412" state="error" title="商品目录加载失败" detail={<>收到的数据不完整，已停止显示。资料有误的商品：<ul className="e1-invalid-list">{ctx.e1InvalidSkus.map(row => <li key={row.skuId}>{row.name} · {row.skuId} · 有误的资料：{[...new Set(row.invalidFields.map(field => E1_FIELD_LABELS[field] ?? "其他资料"))].join("、")}</li>)}</ul></>} onRetry={() => void ctx.refreshE1()} afterRetryFocus={E1_CATALOG_GRID} /> : !filtered.length ? <BlockState state="empty" title={skus.length ? "没有符合筛选条件的商品" : "尚未添加商品"} detail={skus.length ? <Button onClick={clear}>清除筛选</Button> : canWrite ? <Button disabledReason={writeBlock({ op: "sku-save" })} onClick={() => ctx.openSku()}>+ 新增商品</Button> : "当前账号只能查看商品"} /> : <section className="e1-catalog-grid" aria-label="商品目录">{filtered.map(s => {
+    {ctx.e1InitialLoading ? <BlockState state="loading" title="正在加载商品目录…" /> : ctx.e1Error ? <BlockState retryKey="e1-catalog-412" state="error" title="商品目录加载失败" detail={ctx.e1Error} onRetry={() => void ctx.refreshE1()} afterRetryFocus={E1_CATALOG_GRID} /> : incomplete ? <BlockState retryKey="e1-catalog-412" state="error" title="商品目录加载失败" detail={<>收到的数据不完整，已停止显示。资料有误的商品：<ul className="e1-invalid-list">{ctx.e1InvalidSkus.map(row => <li key={row.skuId}>{row.name} · {row.skuId} · 有误的资料：{[...new Set(row.invalidFields.map(field => E1_FIELD_LABELS[field] ?? "其他资料"))].join("、")}</li>)}</ul></>} onRetry={() => void ctx.refreshE1()} afterRetryFocus={E1_CATALOG_GRID} /> : !filtered.length ? <BlockState state="empty" title={skus.length ? "没有符合筛选条件的商品" : "尚未添加商品"} detail={skus.length ? <Button onClick={clear}>清除筛选</Button> : canWrite ? <Button disabledReason={writeBlock({ op: "sku-save" })} onClick={() => ctx.openSku()}>+ 新增商品</Button> : "当前账号只能查看商品"} /> : <section className="e1-catalog-grid" aria-label="商品目录">{filtered.map(s => {
       const { release, open, needsAttention, blockers } = ctx.e1Gates ? e1SkuOpening(s, ctx.e1Gates, phaseCur) : { open: !s.unlock, needsAttention: !!s.unlock, blockers: [], release: undefined };
       const publishReason = s.publishBlockReason === "PRODUCT_TEST_IDENTIFIER" ? "测试标识不能发布" : s.publishBlockReason === "PRODUCT_NO_EFFECTIVE_EARNINGS" ? "未配置有效收益" : s.publishBlockReason || "发布门未通过";
       const locked = ctx.locked("device_sku", s.id);
@@ -432,7 +436,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         <div className="e1-product-identity">
           <div className="e1-product-media"><SkuMediaThumb sku={s} />{s.badge && <span className="e1-badge" title={nexGridBrandText(skuBadgeReviewText(s.badge) ?? s.badge)}>{skuBadgeKind(s.badge) === "custom" ? nexGridBrandText(s.badge) : SKU_BADGE_OPTIONS.find(option => option.value === skuBadgeKind(s.badge))?.label}</span>}</div>
           <div className="e1-product-title">
-            <div className="e1-product-name"><h2>{canWrite ? <E1MiddleText text={s.name} /> : <button className="rd-link e1-detail-link" aria-label={`商品资料 ${s.name}`} onClick={() => openDetail(s)}><E1MiddleText text={s.name} /></button>}</h2><StatusTag tone={s.status === "off" ? "done" : "neutral"} icon={s.status === "on" ? CheckCircle2 : s.status === "off" ? Archive : FileText}>{e1Value(s.status)}</StatusTag></div>
+            <div className="e1-product-name"><h2>{canWrite ? <E1MiddleText text={s.name} /> : <button className="rd-link e1-detail-link" aria-label={`商品资料 ${s.name}`} onClick={() => openDetail(s.id)}><E1MiddleText text={s.name} /></button>}</h2><StatusTag tone={s.status === "off" ? "done" : "neutral"} icon={s.status === "on" ? CheckCircle2 : s.status === "off" ? Archive : FileText}>{e1Value(s.status)}</StatusTag></div>
             <div className="e1-product-id"><span title={s.id}>{s.id}</span><span>{operatorSkuTier(s.tier ?? "")}</span>{hasUnsupportedSeries(s) ? <StatusTag tone="warn" icon={ShieldAlert}>{skuSeriesText(s.seriesCode)}</StatusTag> : <span>{skuSeriesText(s.seriesCode)} 系列</span>}{s.lifecycle === "legacy" && <StatusTag tone="done" icon={Archive}>已停产</StatusTag>}</div>
             <div className="e1-product-price"><strong><E1Amount value={s.price} /> <small>USD</small></strong></div>
           </div>
@@ -456,10 +460,10 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
           {proposal && <Button size="sm" variant="ghost" onClick={() => ctx.openPending(proposal.id)}>有变更待审批 · {proposal.id}</Button>}
         </div>
         {canWrite && <div className="e1-product-actions">
-          {canWrite && <><Button size="sm" disabledReason={writeBlock({ op: "sku-save" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined)} onClick={() => ctx.openSku(s.id)} aria-label={`改价 / 编辑 ${s.name}`}>改价 / 编辑</Button><div className="e1-status-action"><Button size="sm" disabledReason={onBlock} aria-label={`${s.status === "on" ? "下架" : "上架"} ${s.name}`} onClick={() => ctx.openActionConfirm({ briefKind: "content", name: `${s.status === "on" ? "下架" : "上架"}商品 · ${s.name}`, op: "sku-status", target: s.id, status: s.status === "on" ? "off" : "on", detail: s.status === "on" ? "下架后从商城隐藏，不影响已售设备结算。" : "批准后按完整购买条件判断，不保证所有用户都能购买。" })}>{s.status === "on" ? "下架" : "上架"}</Button>{actionReason && <span className="e1-action-reason">{actionReason}</span>}</div></>}
+          {canWrite && <><Button size="sm" disabledReason={writeBlock({ op: "sku-save", target: s.id }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined)} onClick={() => ctx.openSku(s.id)} aria-label={`改价 / 编辑 ${s.name}`}>改价 / 编辑</Button><div className="e1-status-action"><Button size="sm" disabledReason={onBlock} aria-label={`${s.status === "on" ? "下架" : "上架"} ${s.name}`} onClick={() => ctx.openActionConfirm({ briefKind: "content", name: `${s.status === "on" ? "下架" : "上架"}商品 · ${s.name}`, op: "sku-status", target: s.id, status: s.status === "on" ? "off" : "on", detail: s.status === "on" ? "下架后从商城隐藏，不影响已售设备结算。" : "批准后按完整购买条件判断，不保证所有用户都能购买。" })}>{s.status === "on" ? "下架" : "上架"}</Button>{actionReason && <span className="e1-action-reason">{actionReason}</span>}</div></>}
           <MoreMenu label={`更多操作 ${s.name}`} items={[
-            { key: "details", label: "商品资料", onSelect: () => afterMenu(() => openDetail(s)) },
-            ...canWrite && s.status === "on" && (s.inventoryMode === "UNLIMITED" || Number(s.stock) > 0) && !open && !release && phaseCurrentKnown ? [{ key: "current-phase", label: "按当前阶段上架", disabledReason: writeBlock({ op: "sku-save" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined), onSelect: () => afterMenu(() => ctx.openSku(s.id, phaseCur)) }] : [],
+            { key: "details", label: "商品资料", onSelect: () => afterMenu(() => openDetail(s.id)) },
+            ...canWrite && s.status === "on" && (s.inventoryMode === "UNLIMITED" || Number(s.stock) > 0) && !open && !release && phaseCurrentKnown ? [{ key: "current-phase", label: "按当前阶段上架", disabledReason: writeBlock({ op: "sku-save", target: s.id }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined), onSelect: () => afterMenu(() => ctx.openSku(s.id, phaseCur)) }] : [],
             ...canWrite ? [{ key: "delete", label: "删除", danger: true, disabledReason: writeBlock({ op: "sku-delete", target: s.id }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined), onSelect: () => afterMenu(() => ctx.delSku(s.id, s.name)) }] : [],
           ]} />
         </div>}
@@ -508,7 +512,12 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         {(ctx.e1InvalidSkus.length > 0 || skus.some(s => s.publishBlocked === false && s.sold == null) || unknown > 0) && <Notice tone="warn" title="小计只含已知部分" />}
       </Fold>}
     </>
-    {detail && <Drawer open title="商品资料" sub={detail.name} icon={Boxes} onClose={() => setDetail(null)} footer={<Decision primary={canWrite && <Button variant="primary" disabledReason={writeBlock({ op: "sku-save" }) || (ctx.locked("device_sku", detail.id) ? "此对象有待审批或待核对的操作" : undefined)} onClick={() => { const id = detail.id; setDetail(null); ctx.openSku(id); }}>改价 / 编辑</Button>} others={<Button onClick={() => setDetail(null)}>关闭</Button>} />}>
+    {detailId && <Drawer open title="商品资料" sub={detail?.name ?? detailId} icon={Boxes} onClose={() => setDetailId(null)} footer={<Decision primary={canWrite && <Button variant="primary" disabledReason={writeBlock({ op: "sku-save", target: detailId }) || (!detail ? "原对象未读取到" : ctx.locked("device_sku", detailId) ? "此对象有待审批或待核对的操作，请先核对" : undefined)} onClick={() => { setDetailId(null); ctx.openSku(detailId); }}>改价 / 编辑</Button>} others={<Button onClick={() => setDetailId(null)}>关闭</Button>} />}>
+      {ctx.e1Error ? <BlockState retryKey="e1-sku-detail" state="error" title="商品资料加载失败" detail={ctx.e1Error} onRetry={ctx.refreshE1} />
+        : detailLoading ? <BlockState state="loading" title="正在加载商品资料…" />
+          : ctx.e1InvalidSkus.some(row => row.skuId === detailId) ? <BlockState retryKey="e1-sku-detail" state="error" title="商品资料加载失败" detail="收到的数据不完整，已停止显示" onRetry={ctx.refreshE1} />
+            : !detail ? <BlockState state="empty" title="原对象未读取到" /> : null}
+      {detail && <Activity mode={detailLoading ? "hidden" : "visible"}>
       <Facts><Fact k="售价" lead unit="USD"><E1Amount value={detail.price} /></Fact><Fact k="所属系列" tone={hasUnsupportedSeries(detail) ? "warn" : undefined}><E1SeriesValue sku={detail} /></Fact><Fact k="商城状态">{e1Value(detail.status)}</Fact><Fact k="任务等级">{detail.allowedPoolCodes?.join("、") || "未配置"}</Fact><Fact k="月收益目标">{detail.monthlyTargetUsdt == null ? "未设月收益目标" : <E1Amount value={detail.monthlyTargetUsdt} precision={e1TargetPrecision(detail)} unit="USDT/月" />}</Fact><Fact k="库存">{detail.inventoryMode === "UNLIMITED" ? "不限（非实物）" : `${e1Number(detail.stock)} 件`}</Fact>{e1QuotaLeftValue(detail) && <Fact k="剩余配额" tone={e1QuotaBlock(detail) ? "warn" : undefined}>{e1QuotaLeftValue(detail)}</Fact>}</Facts>
       {[
         { title: "基本信息", summary: "名称、编号与商品文案", keys: ["name", "id", "tier", "seriesCode", "status", "lifecycle", "tagline", "badge", "tag"] },
@@ -519,6 +528,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         {group.title === "收益与任务" && <Facts><Fact k="派生日均"><E1Amount value={detail.derivedDailyEarnUsdt} unit="USDT/天" /></Fact>{detail.tier === "Share" && detail.monthlyTargetUsdt != null && detail.monthlyTargetBandPct != null && <><Fact k="预估日收益下限"><E1Amount value={(Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).low) / 30).toFixed(6)} unit="USDT/天" /></Fact><Fact k="预估日收益上限"><E1Amount value={(Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).high) / 30).toFixed(6)} unit="USDT/天" /></Fact><Fact k="派生年奖励率下限"><E1Amount value={detail.derivedShareYieldMinPct} unit="%" /></Fact><Fact k="派生年奖励率上限"><E1Amount value={detail.derivedShareYieldMaxPct} unit="%" /></Fact></>}</Facts>}
       </Fold>)}
       <Fold inset title="策略与修订" summary={`策略版本 ${detail.productTaskPolicyVersion ?? "—"}`}><Facts><Fact k="任务策略版本">{e1Number(detail.productTaskPolicyVersion)}</Fact><Fact k="策略生效时间">{zonedTime(detail.productTaskPolicyEffectiveAt)}</Fact><Fact k="修订时间">{zonedTime(detail.updatedAt)}</Fact></Facts></Fold>
+      </Activity>}
     </Drawer>}
   </>;
 }
