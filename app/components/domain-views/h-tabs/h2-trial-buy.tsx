@@ -388,7 +388,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
                 const disabled = unavailable && !on;
                 const mark = on && !listed ? "新增" : !on && listed ? "移除" : "";
                 const reason = listed && candidate.appState === "hidden"
-                  ? `${hiddenText(candidate).replace(/^商城/, "")}，App 不显示；可以保留，重新上架后自动显示`
+                  ? `${hiddenText(candidate).replace(/^商城/, "")}，App 不显示；可以保留，${hiddenText(candidate) === "商城已下架" ? "重新上架" : "符合条件"}后自动显示`
                   : unavailable ? <>不能选：{buyProductReason(candidate.unavailableReason)}{reach(pricingHref(candidate.productNo)) && <> <Link className="rd-link" href={pricingHref(candidate.productNo)} prefetch={false}>到商品管理与上架条件查看</Link></>}</> : undefined;
                 return (
                   <div className="h2-buy-check" data-disabled={disabled ? "" : undefined} key={candidate.productNo}>
