@@ -27,6 +27,7 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { updatePrivacyPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { useReach } from "@/lib/nav/use-reach";
+import { registerNavigationGuard } from "@/lib/nav/leave-navigation";
 import type { ActionConfirmReq, ICtx } from "./types";
 import type { LegacyHistoryCursor } from "@/lib/nav/legacy-history";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled, type ECommandEvidence } from "@/lib/admin/e-command-investigation";
@@ -428,7 +429,7 @@ export function useHistoryBackGuard(active: boolean, onBack: (resume: () => void
 }
 
 /**
- * 有未保存内容时拦离开（OP-29）：侧栏、面包屑、命令面板都是链接，抓在捕获阶段；关窗口走浏览器提示；
+ * 有未保存内容时拦离开（OP-29）：侧栏、面包屑在点击捕获阶段拦截；命令面板走共用跳转请求；关窗口走浏览器提示；
  * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。浏览器后退走 useHistoryBackGuard。
  */
 export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>, hasUnsavedAfterSave?: () => boolean) {
@@ -451,6 +452,12 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
   }, [dirty, close, switcher]);
   useEffect(() => {
     if (!dirty) return;
+    const ask = (next: () => void) => {
+      historyBack.current = null;
+      nextAction.current = next;
+      setAsking(true);
+    };
+    const unregisterNavigation = registerNavigationGuard(ask);
     const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
     const intercept = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -459,13 +466,12 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
       if (link.pathname === window.location.pathname && link.search === window.location.search) return;
       event.preventDefault();
       event.stopPropagation();
-      historyBack.current = null;
-      nextAction.current = () => router.push(`${link.pathname}${link.search}${link.hash}`);
-      setAsking(true);
+      ask(() => router.push(`${link.pathname}${link.search}${link.hash}`));
     };
     window.addEventListener("beforeunload", warn);
     document.addEventListener("click", intercept, true);
     return () => {
+      unregisterNavigation();
       window.removeEventListener("beforeunload", warn);
       document.removeEventListener("click", intercept, true);
     };

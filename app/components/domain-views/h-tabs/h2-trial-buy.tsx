@@ -18,6 +18,7 @@ import { isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-
 import type { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
 import { useHistoryBackGuard, warnAboutUnsavedChanges } from "../i-tabs/i5-writes";
+import { registerNavigationGuard } from "@/lib/nav/leave-navigation";
 
 export type BuyListDraft = Omit<BuyListWrite, "requestNo" | "confirmedActorId"> & {
   added: string[];
@@ -218,6 +219,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     if (!dirty) return;
     const leaveThen = (next: () => void) => { afterLeave.current = next; setLeaving(true); };
     leaveGuard.current = leaveThen;
+    const unregisterNavigation = registerNavigationGuard(leaveThen);
     const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
     // 侧栏、面包屑和抽屉里的链接会换页：先问，放弃后再去。
     const intercept = (event: MouseEvent) => {
@@ -232,6 +234,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     window.addEventListener("beforeunload", warn);
     document.addEventListener("click", intercept, true);
     return () => {
+      unregisterNavigation();
       leaveGuard.current = null;
       window.removeEventListener("beforeunload", warn);
       document.removeEventListener("click", intercept, true);

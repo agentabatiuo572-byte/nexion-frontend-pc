@@ -22,6 +22,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Select } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
 import { useHistoryBackGuard, warnAboutUnsavedChanges } from "../i-tabs/i5-writes";
+import { registerNavigationGuard } from "@/lib/nav/leave-navigation";
 import { FIXED_DEVICE_LEVELS } from "./task-type-policy";
 import { checkE2Command, e2CommandLabel, e2Commands, e2CommandSettled, type E2Pending } from "./e2-pending";
 import { canInvestigateECommand, eCommandRollbackConfirmed } from "@/lib/admin/e-command-investigation";
@@ -294,6 +295,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
 
   useEffect(() => {
     if (!editorDirty) return;
+    const unregisterNavigation = registerNavigationGuard(leaveEditorThen);
     const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
     const intercept = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -308,6 +310,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     window.addEventListener("beforeunload", warn);
     document.addEventListener("click", intercept, true);
     return () => {
+      unregisterNavigation();
       window.removeEventListener("beforeunload", warn);
       document.removeEventListener("click", intercept, true);
     };
