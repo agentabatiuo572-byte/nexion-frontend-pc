@@ -1102,7 +1102,7 @@ function G3MarketEditor() {
           <p>改计划不改现价。推进到某一天（或固定到这一天）时，现价才按它的目标价发布。</p>
           <p>表里只放决定价格的目标价；上涨概率目前不影响公布价，波动幅度已停用，都在页面下方「目前不生效的参数」。</p>
         </>}>
-        {weeklyHold && <Notice tone="warn">{weeklyHold}</Notice>}
+        {weeklyHold && <div className="g3-plan-hold"><Notice tone="warn">{weeklyHold}</Notice></div>}
         <Figure width={560} stack="wide" graphic={planFigure}>
           {planTable}
         </Figure>

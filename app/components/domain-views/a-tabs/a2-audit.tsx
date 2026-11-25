@@ -3094,8 +3094,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       {pendingTicketIds.has(w.id) && <StatusTag tone="warn" explain={PENDING_LOCK}>结果未知</StatusTag>}
       {w.sos && <StatusTag tone="danger" icon={Siren}>应急</StatusTag>}
       {amplifies && (enablesAutoPayout(fundTicket(w)) ? <StatusTag tone="warn" icon={Coins}>批准时查覆盖率</StatusTag> : <StatusTag tone="warn" icon={Flame}>多付钱</StatusTag>)}
-      {/* 覆盖率挡住批准时原因常显在行里，不只放在「批准」按钮的提示上（OP-126）。 */}
-      {canDecide(w, "approve") && h5ApproveBlock(w) && <span className="rd-weak">{h5ApproveBlock(w)}</span>}
+      {/* 覆盖率挡住批准：行里标「暂不能批准」，完整原因和下一步常显在列表上方（OP-126）。 */}
+      {canDecide(w, "approve") && h5ApproveBlock(w) && <StatusTag tone="warn">暂不能批准</StatusTag>}
     </>;
     return w.sos || amplifies || pendingTicketIds.has(w.id) ? <span className="rd-row-actions">{tags}</span> : TYPE_NAME[w.type];
   };
@@ -3121,6 +3121,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         <FilterBar scope={<Segments label="审批单类型" value={qType} items={TYPE_ITEMS} onChange={(value) => { setQType(value); setQPage(1); }} />}
           sort={<FilterField><Select aria-label="发起人" value={qOperator} onChange={(value) => { setQOperator(value as QOperator); setQPage(1); }} options={OPERATOR_OPTIONS} /></FilterField>} />
 
+        {h5CoverageBlock && qPageRows.some(w => canDecide(w, "approve") && h5ApproveBlock(w)) && <Notice tone="warn">签到倍率提前解锁或调高倍率的单：{h5CoverageBlock}</Notice>}
         <Panel flush icon={ClipboardList} tone="role-3" title="待审批的操作" explain="应急在前，资金类其次，其余按提交时间从新到旧。">
           {/* 1024 也要放下：对象多是系统键，名字里通常已经带着，列表不单列，抽屉和确认框里常显（DP-13）。 */}
           <Table label="待审批的操作" className="a2-queue" data-tight="">
