@@ -42,7 +42,7 @@ const ROW_HELP = {
 };
 const TARGET_TIP = "勾上后，领了别款的用户也能用试用抵扣金买它";
 
-const priceNumber = (device: BuyDevice) => Number(device.priceUsdt ?? 0);
+const priceNumber = (device: BuyDevice) => device.priceUsdt === null ? Infinity : Number(device.priceUsdt);
 const byPrice = <T extends BuyDevice>(list: readonly T[]) => [...list].sort((a, b) => priceNumber(a) - priceNumber(b));
 /** 金额带千分位，不舍入，不补零（TX-20）。 */
 const price = (device: BuyDevice) => device.priceUsdt === null ? "—" : Number(device.priceUsdt).toLocaleString("en-US", { maximumFractionDigits: 6 });
@@ -50,7 +50,14 @@ const typeText = (device: BuyDevice) => device.productType === "SHARE" ? "云份
   : device.productType === "DEVICE" || device.productType === "SERVER" ? "实体设备" : "—";
 const stockText = (device: BuyDevice) => device.inventoryMode === "UNLIMITED" ? "不限"
   : device.stock === null ? "—" : device.stock.toLocaleString("en-US");
-const hiddenText = (device: BuyDevice) => buyProductReason(device.unavailableReason);
+const hiddenText = (device: BuyDevice) => buyProductReason(device.unavailableReason, device.status);
+const retainedRecovery = (device: BuyDevice) => {
+  if (device.unavailableReason === "PRODUCT_NOT_AVAILABLE") {
+    if (device.status === "PENDING") return "上架";
+    if (device.status === "OFF_SALE") return "重新上架";
+  }
+  return "符合条件";
+};
 const productName = (device: BuyDevice) => device.name || device.productNo;
 
 /** 配置行的值：数量写正文，不用处理的状态写次文字（PLAN R7）。 */
@@ -388,8 +395,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
                 const disabled = unavailable && !on;
                 const mark = on && !listed ? "新增" : !on && listed ? "移除" : "";
                 const reason = listed && candidate.appState === "hidden"
-                  ? `${hiddenText(candidate).replace(/^商城/, "")}，App 不显示；可以保留，${hiddenText(candidate) === "商城已下架" ? "重新上架" : "符合条件"}后自动显示`
-                  : unavailable ? <>不能选：{buyProductReason(candidate.unavailableReason)}{reach(pricingHref(candidate.productNo)) && <> <Link className="rd-link" href={pricingHref(candidate.productNo)} prefetch={false}>到商品管理与上架条件查看</Link></>}</> : undefined;
+                  ? `${hiddenText(candidate)}，App 不显示；可以保留，${retainedRecovery(candidate)}后自动显示`
+                  : unavailable ? <>不能选：{hiddenText(candidate)}{reach(pricingHref(candidate.productNo)) && <> <Link className="rd-link" href={pricingHref(candidate.productNo)} prefetch={false}>到商品管理与上架条件查看</Link></>}</> : undefined;
                 return (
                   <div className="h2-buy-check" data-disabled={disabled ? "" : undefined} key={candidate.productNo}>
                     <Check checked={on} disabled={disabled} onChange={(event) => toggle(candidate.productNo, event.currentTarget.checked)}

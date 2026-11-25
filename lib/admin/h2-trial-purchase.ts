@@ -30,9 +30,12 @@ export function isBuyListVersion(value: unknown): value is BuyListVersion {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
-export function buyProductReason(reason: unknown): string {
+export function buyProductReason(reason: unknown, status?: string | null): string {
   switch (reason) {
-    case "PRODUCT_NOT_AVAILABLE": return "商城已下架";
+    case "PRODUCT_NOT_AVAILABLE":
+      if (status === "PENDING") return "尚未上架";
+      if (status === "OFF_SALE") return "商城已下架";
+      return "商城当前不可用";
     case "PRODUCT_PRICE_INVALID": return "没有售价";
     case "PRODUCT_TYPE_UNSUPPORTED": return "这个类型不能用试用抵扣金购买";
     case "PRODUCT_CODE_MISMATCH": return "商品编号对不上";

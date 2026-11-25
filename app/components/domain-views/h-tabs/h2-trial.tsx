@@ -380,11 +380,14 @@ function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked
     });
   };
 
+  const targetStatus = currentTarget?.status ? TARGET_STATUS[currentTarget.status] : undefined;
+  const statusExplainsBlock = currentTarget?.unavailableReason === "PRODUCT_NOT_AVAILABLE"
+    && (currentTarget.status === "PENDING" || currentTarget.status === "OFF_SALE");
   // 名称这一列只放名称和提示图标（PG-46）；库存、阻断原因和入口是值的补充，排在值后面。
   const productLine = [
-    targetStatusUnknown ? "商城状态暂时无法判断" : currentTarget?.status && TARGET_STATUS[currentTarget.status],
+    targetStatusUnknown ? "商城状态暂时无法判断" : typeof targetStatus === "string" && targetStatus,
     !targetStatusUnknown && currentDisplayProduct && stockText(currentDisplayProduct),
-    currentTarget?.listingAllowed === false && buyProductReason(currentTarget.unavailableReason),
+    currentTarget?.listingAllowed === false && !statusExplainsBlock && buyProductReason(currentTarget.unavailableReason, currentTarget.status),
     productMissing && "不在可选列表",
     // 阻断原因要看得见，不只放在灰按钮的提示里（OP-126）。
     deadEndLead,

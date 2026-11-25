@@ -1,5 +1,6 @@
 import { ADMIN_ERROR_MESSAGES, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { auditActionFieldLabel } from "./audit-action-names";
+import { H2_BUY_LIST_ACTION } from "./h2-trial-purchase";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
 import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
@@ -356,6 +357,11 @@ function asAuditValue(value: unknown) {
     : asText(value);
 }
 
+function asTrialPurchaseAuditValue(value: unknown) {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return asAuditValue(value);
+  return value.length ? value.join("、") : "空清单";
+}
+
 function parseDetail(detailJson: string | null | undefined): Record<string, unknown> {
   if (!detailJson) return {};
   try {
@@ -699,7 +705,8 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
   const obj = resolveA2AuditObject(detail.obj, detail.resource, log.resourceType, log.resourceId);
   const beforeVal = detail.before ?? detail.oldValue ?? detail.beforePrice ?? detail.fromStatus ?? detail.from;
   const afterVal = detail.after ?? detail.newValue ?? detail.afterPrice ?? detail.toStatus ?? detail.to;
-  const delta = asText(detail.delta, beforeVal != null || afterVal != null ? `${asAuditValue(beforeVal)} → ${asAuditValue(afterVal)}` : "—");
+  const formatValue = action === H2_BUY_LIST_ACTION ? asTrialPurchaseAuditValue : asAuditValue;
+  const delta = asText(detail.delta, beforeVal != null || afterVal != null ? `${formatValue(beforeVal)} → ${formatValue(afterVal)}` : "—");
   return {
     id: String(log.id ?? `${action}-${log.createdAt ?? Date.now()}`),
     ts: asText(detail.tsLabel, formatTime(log.createdAt)),
