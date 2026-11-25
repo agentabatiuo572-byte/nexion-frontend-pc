@@ -560,9 +560,10 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       const request = ++overrideRead.current;
       const userId = values.userId?.trim() ?? "";
       currentRank = undefined;
-      setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current, facts: <Facts><Fact k="现在的等级">这页读不到；批准时按当时的等级核对方向</Fact></Facts> } : current);
+      const readable = /^[1-9]\d*$/.test(userId) && Number.isSafeInteger(Number(userId)) && ctx.can("user_c1_read");
+      setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current, facts: <Facts><Fact k="现在的等级">{readable ? "正在读取" : "这页读不到；批准时按当时的等级核对方向"}</Fact></Facts> } : current);
       let rank: string | undefined;
-      if (/^[1-9]\d*$/.test(userId) && Number.isSafeInteger(Number(userId)) && ctx.can("user_c1_read")) {
+      if (readable) {
         try {
           const page = await fetchUserProfilesPage({ userId, pageNum: 1, pageSize: 20 });
           // C1 filters by the internal ID but deliberately returns only the public userNo.
