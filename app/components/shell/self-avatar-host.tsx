@@ -17,7 +17,9 @@ export default function ShellSelfAvatar({ name, onClose }: { name: string; onClo
   return createPortal(
     <RdPage className="shell-self-avatar">
       <SelfAvatarEditor name={name} launch onClosed={onClose} onChanged={() => undefined}
-        ctx={{ toast, openActionConfirm: setConfirm, refreshContent: async () => undefined }} />
+        ctx={{ toast, openActionConfirm: setConfirm,
+          closeActionConfirm: request => setConfirm(current => current === request ? null : current),
+          refreshContent: async () => undefined }} />
       {confirm && <OperationConfirmModal action={confirm.action} title={confirm.title} detail={confirm.detail}
         reasonMin={confirm.reasonMin} reasonMax={confirm.reasonMax} briefKind={confirm.briefKind} effect={confirm.effect}
         confirmLabel={confirm.confirmLabel} confirmTone={confirm.confirmTone} blockedReason={confirm.blockedReason}
