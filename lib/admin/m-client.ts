@@ -529,6 +529,7 @@ export type MContentData = {
   ticketsAvailable: boolean;
   conversationsAvailable: boolean;
   conversationsError?: string;
+  conversationsDenied?: boolean;
   knowledgeAvailable: boolean;
   sessionTemplatesAvailable: boolean;
   loadWarnings: string[];
@@ -1788,9 +1789,9 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     let warning = "会话数据";
     try {
       const page = await fetchAllSupportConversations();
-      publish({ conversations: page.records.map(adaptConversation), conversationsAvailable: true, conversationsError: undefined });
+      publish({ conversations: page.records.map(adaptConversation), conversationsAvailable: true, conversationsError: undefined, conversationsDenied: false });
     } catch (error) {
-      publish({ conversations: [], conversationsAvailable: false, conversationsError: displayAdminReadError(error) }, warning);
+      publish({ conversations: [], conversationsAvailable: false, conversationsError: displayAdminReadError(error), conversationsDenied: error instanceof MContentReadError && error.status === 403 }, warning);
     }
   })();
 
@@ -2117,6 +2118,7 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     "I.support.ticketsAvailable": data.ticketsAvailable ? "1" : "0",
     "I.session.conversationsAvailable": data.conversationsAvailable ? "1" : "0",
     "I.session.conversationsError": data.conversationsError ?? "",
+    "I.session.conversationsDenied": data.conversationsDenied ? "1" : "0",
     "I.support.knowledgeAvailable": data.knowledgeAvailable ? "1" : "0",
     "I.session.templatesAvailable": data.sessionTemplatesAvailable ? "1" : "0",
     "I.session.advisor.policy.enabled": data.advisorPolicy.enabled,

@@ -150,6 +150,8 @@ export default function DualLedgerPage() {
   const [toastNode, setToast] = useToast();
   const discardRecovery = useRecoveryDraftDiscard();
   const [injectionNotes, setInjectionNotes] = useState<Record<string, string>>({});
+  /** 查到没有登记的旧注入：记录已结案，原输入留在这页供核对，关掉才收起。 */
+  const [unregistered, setUnregistered] = useState<{ record: B1PendingWrite; why: string }[]>([]);
   const [mc, setActionConfirm] = useState<Mc | null>(null);
   const [, setPendingRevision] = useState(0);
   const [needsRead, setNeedsRead] = useState(false);
@@ -518,17 +520,29 @@ export default function DualLedgerPage() {
     const show = (note: string) => setInjectionNotes(current => ({ ...current, [record.commandKey]: note }));
     show("正在查询原结果…");
     try {
-      const result = await queryB1InjectionReceipt(record);
+      const receipt = await queryB1InjectionReceipt(record), result = receipt.state;
       if (result === "SUCCEEDED") {
         setToast("查到原结果：已登记储备注入。");
         await refreshB1();
-      } else if (result === "REJECTED" || result === "NOT_EXECUTED") setToast(result === "REJECTED" ? "查到原结果：后台拒绝了这次登记，没有登记储备注入。" : "查到原结果：核查确认没有执行，没有登记储备注入。");
-      else show(result === "NOT_FOUND" ? "没查到原回执，原记录继续保留。"
+      } else if (result === "REJECTED" || result === "NOT_EXECUTED") {
+        const reason = receipt.state === "REJECTED" && receipt.businessMessage ? displayAdminError(new Error(receipt.businessMessage)) : "";
+        setUnregistered(rows => [...rows, { record, why: receipt.state === "REJECTED" ? `后台拒绝了这次登记。${reason}` : "核查确认没有执行。" }]);
+      } else show(result === "NOT_FOUND" ? "没查到原回执，原记录继续保留。"
         : result === "PROCESSING" ? "原操作仍在处理，稍后再查。"
           : "这次查询没有确认已登记，原记录继续保留。");
     } catch (error) { show(displayAdminReadError(error)); }
     finally { syncPending(); }
   };
+  const unregisteredNotices = unregistered.map(({ record, why }) => <Notice key={record.commandKey} tone="warn" title="没有登记储备注入" actionBelow
+    action={<>{reach("/finance/pool") && <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link>}
+      <Button size="sm" variant="ghost" onClick={() => setUnregistered(rows => rows.filter(row => row.record.commandKey !== record.commandKey))}>知道了</Button></>}>
+    <p>{why}要登记的，到资金储备与应付款重新登记。</p>
+    <Facts>
+      <Fact k="金额">{money(Number(record.form.amount))}</Fact>
+      <Fact k={record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"}><span data-mono>{record.form.voucher}</span></Fact>
+      <Fact k="理由">{(JSON.parse(record.body) as { reason: string }).reason}</Fact>
+    </Facts>
+  </Notice>);
   const pendingItems: B1PendingCommand[] = pendingWrites.map(record => {
     const expired = record.expiresAt <= Date.now();
     const recovery = b1Recovery.state(record);
@@ -1003,7 +1017,7 @@ export default function DualLedgerPage() {
           ? <BlockState state="loading" title="正在读取储备、应付款和覆盖率…" />
           : <BlockState state="error" title="资金数据读取失败，不显示旧数据" detail={bDomain.error ? displayAdminReadError(bDomain.error) : undefined} onRetry={refreshB1} retryLabel="重新读取" />}
         {discardRecovery.dialog}
-        <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
+        <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />{unregisteredNotices}
         {dialog}
         {releaseDialog}
         {toastNode}
@@ -1022,7 +1036,7 @@ export default function DualLedgerPage() {
           detail={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "九类应付款一项都没读到。重读一次；仍是空的请联系值班人员核对账本。" : "覆盖率走势少于 2 个点。重读一次；仍不足请联系值班人员。"}
           onRetry={refreshB1} retryLabel="重新读取" />
         {discardRecovery.dialog}
-        <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
+        <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />{unregisteredNotices}
         {dialog}
         {releaseDialog}
         {toastNode}
@@ -1034,7 +1048,7 @@ export default function DualLedgerPage() {
       {header(<>数据时间 {timeText(generatedAt)} · 打开页面和写入后读取<Explain label="数据时间说明" content="上面的储备、应付款、覆盖率和告警是同一次读取。差额走势是另一次读取，时间写在那一块里；写入后两块都会重读。" /></>, headerActions, readOnly)}
       {warningNotice}
       {discardRecovery.dialog}
-      <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
+      <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />{unregisteredNotices}
       {conclusion}
       {stats}
       <div className="rd-split" data-even="">

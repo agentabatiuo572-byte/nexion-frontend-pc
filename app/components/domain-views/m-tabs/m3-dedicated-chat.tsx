@@ -1651,13 +1651,16 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     } finally { if (uploadControllerRef.current === controller) uploadControllerRef.current = null; }
   };
 
-  const [convRetrying, setConvRetrying] = useState(false), [convError, setConvError] = useState("");
+  const [convRetrying, setConvRetrying] = useState(false), [convError, setConvError] = useState(""), [convDenied, setConvDenied] = useState(false);
   const retryConversations = async () => {
-    setConvRetrying(true); setConvError("");
+    setConvRetrying(true); setConvError(""); setConvDenied(false);
     try { await ctx.refreshConversations(); }
-    catch (cause) { setConvError(displayAdminReadError(cause)); }
+    catch (cause) { setConvError(displayAdminReadError(cause)); setConvDenied((cause as { status?: number }).status === 403); }
     finally { setConvRetrying(false); }
   };
+  useEffect(() => { if (conversationsAvailable) { setConvError(""); setConvDenied(false); } }, [conversationsAvailable]);
+  // 会话列表自己被拒（读权被收回）也是没有权限，不是加载失败（ST-38、ST-39）。
+  const readDenied = scopeDenied || !conversationsAvailable && (convDenied || ctx.pget("I.session.conversationsDenied") === "1");
   const serviceStatus = !conversationsAvailable ? "会话服务暂不可用，请检查连接后重试。" : lostAccess ? "当前会话权限已变化，请刷新列表。" : "";
   const title = userNicknameText(selected?.customer || selected?.profile?.nickname || (selected?.customerId ? `客户 ${selected.customerId}` : firstDetail?.displayName || (requestedCustomerIdValid && requestedCustomerId ? `客户 ${requestedCustomerId}` : "会话消息")), selected?.profile?.phone);
   const checkActionReady = async (conversation: SessionConvo) => {
@@ -2079,7 +2082,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     { key: "archive", label: "批量归档", disabledReason: !canWriteM3 ? "当前账号只能查看会话" : !filtered.some(row => row.ownerAdminId === adminId && !row.archived && !row.pendingReplyCount) ? "这个列表里没有能归档的客户：只能归档本人客户，有待回复的要先回复" : undefined, onSelect: () => setArchiveMode(true) },
   ];
   const alertsOn = alertPrefs.sound || alertPrefs.desktop;
-  const baseBlocked = !canWriteM3 ? "当前账号只能查看会话" : scopeDenied ? "当前账号看不到客户会话" : qualificationUnknown ? reviewScopeError ? "当前可见范围没读到，重试后再操作" : "正在确认你的专属客服身份" : undefined;
+  const baseBlocked = !canWriteM3 ? "当前账号只能查看会话" : readDenied ? "当前账号看不到客户会话" : qualificationUnknown ? reviewScopeError ? "当前可见范围没读到，重试后再操作" : "正在确认你的专属客服身份" : undefined;
   const noOwnCustomers = hasOwn ? undefined : !myAgent ? "当前账号不是专属客服，没有本人客户" : ownCustomers === 0 ? "你名下还没有客户。客户分配给你之后才能用，分配情况看「客服工作台」" : undefined;
   // 新建要有本人客户；已有批次和待确认的原操作照样能进去查（OP-93）。
   const bulkBlocked = hasBulkPending(adminId) || (bulkBatches ?? 0) > 0 ? undefined : baseBlocked ?? (bulkBatches === 0 ? noOwnCustomers : undefined);
@@ -2111,7 +2114,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       guideExtra={<p>{guideRole}</p>} />
     {banner}
     {streamLost && !reconnectExhausted && <Notice tone="warn">连接已断开，正在重连；下面是最近一次的数据</Notice>}
-    {scopeDenied ? <BlockState state="denied" title="当前账号看不到客户会话" detail="这页只给客服、客服主管和超级管理员用。需要查看会话，请联系管理员调整账号。" />
+    {readDenied ? <BlockState state="denied" title="当前账号看不到客户会话" detail="这页只给客服、客服主管和超级管理员用。需要查看会话，请联系管理员调整账号。" />
       : !conversationsAvailable
       ? ctx.contentLoading && !convRetrying ? <Conclusion state="unknown">正在加载会话…</Conclusion> : <Panel><BlockState state="error" title="会话加载失败" detail={convError || ctx.pget("I.session.conversationsError") || serviceStatus} onRetry={() => void retryConversations()} retrying={convRetrying} /></Panel>
       : reviewScopeError
@@ -2153,7 +2156,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             explain={pendingHelp} items={pendingItems} /></div>}
         {recoveryError && <div className="m3s-pending"><Notice tone={recoveryError.startsWith("查到了") ? "neutral" : "warn"} action={<Button size="sm" onClick={() => setRecoveryError("")}>知道了</Button>}>{recoveryError}</Notice></div>}
         <div ref={rowsRef} className="m3s-rows" onScroll={event => { const el = event.currentTarget; if (listLimit < filtered.length && el.scrollTop + el.clientHeight >= el.scrollHeight - 80) setListLimit(n => n + LIST_CHUNK); }}>
-          {!conversationsAvailable && <div className="m3s-empty"><p>读不到会话。</p></div>}
+          {!conversationsAvailable && <div className="m3s-empty"><p>{readDenied ? "看不到会话。" : ctx.contentLoading || convRetrying ? "正在加载会话…" : "读不到会话。"}</p></div>}
           {/* 一行写完：名字长就在名字里省略，悬停看 title、键盘聚焦「看全部」看气泡（ST-04）；名字是客户填的，标 data-user-content。 */}
           {openElsewhere && <p className="m3s-row-note" title={`打开的${title}不符合当前筛选`}>打开的<span className="m3s-row-note-name" data-user-content="">{title}</span>不符合当前筛选<FocusFullText text={`打开的${title}不符合当前筛选`} clipped={button => button.parentElement?.querySelector(".m3s-row-note-name")}><button type="button" className="rd-link rd-link-button" onClick={() => { setQuery(""); changeTab(selected?.archived ? "archived" : "all"); }}>{selected?.archived ? "看归档" : "看全部"}</button></FocusFullText></p>}
           {conversationsAvailable && !qualificationUnknown && filtered.length === 0 && <div className="m3s-empty">

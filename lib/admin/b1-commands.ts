@@ -9,7 +9,7 @@ import { createPendingMutationStore, createPendingRecovery, isRetryExpired, RETR
 
 import { explicitRejectionCode } from "./explicit-rejection";
 import { currentRecoveryActor } from "./abe-recovery-access";
-import { fetchDirectCommandReceipt } from "./direct-command-receipt";
+import { fetchDirectCommandReceiptDetails } from "./direct-command-receipt";
 
 export type B1CommandFacts = Pick<BLedger, "reserveUsd" | "valuationReliable" | "redlineBreached" | "coverageRatio" | "redlinePct" | "healthyPct" | "thresholdVersion"> & { generatedAt?: string };
 export interface B1PendingWrite extends PendingMutationRecord {
@@ -109,8 +109,8 @@ export async function queryB1InjectionReceipt(record: B1PendingWrite) {
     || !b1Commands.list().some(saved => saved.commandKey === record.commandKey && saved.kind === "injection")) {
     throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
   }
-  const result = await fetchDirectCommandReceipt("D3_RESERVE_INJECTION", record.commandKey, actor.adminId);
+  const receipt = await fetchDirectCommandReceiptDetails("D3_RESERVE_INJECTION", record.commandKey, actor.adminId);
   // 查到明确结论才结案：已登记，或后台明确拒绝、核查确认没有执行。
-  if (result === "SUCCEEDED" || result === "REJECTED" || result === "NOT_EXECUTED") b1Recovery.settleAcknowledged(record);
-  return result;
+  if (receipt.state === "SUCCEEDED" || receipt.state === "REJECTED" || receipt.state === "NOT_EXECUTED") b1Recovery.settleAcknowledged(record);
+  return receipt;
 }
