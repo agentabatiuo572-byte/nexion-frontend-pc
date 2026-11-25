@@ -176,6 +176,11 @@ async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
+    // Self-avatar callers hand session expiry to the shell and keep any
+    // earlier unresolved command. Preserve the proxy's write-before denial.
+    if (path.startsWith("/accounts/self/avatar") && (response.status === 401 || result?.code === 401)) {
+      throw Object.assign(new Error("登录已失效，请重新登录后再操作。"), { status: 401, backendMessage: result?.message });
+    }
     if (init?.idempotencyPrefix && (!result || !Number.isInteger(result.code) || result.code >= 500)) {
       throw new A1OutcomeUncertainError("A1_MUTATION_RESPONSE_UNREADABLE", commandKey);
     }

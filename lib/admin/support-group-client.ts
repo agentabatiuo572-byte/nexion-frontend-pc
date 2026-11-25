@@ -91,7 +91,7 @@ export type GroupPendingRecord = PendingMutationRecord & { actorId: number; inte
 export type QualificationPending = GroupPendingRecord & { intent: Extract<GroupIntent, { kind: "QUALIFICATION" }> };
 // B8 invite-code writes share the group command store: frozen payload plus key until the original command is settled.
 type InviteRecord = PendingMutationRecord & { actorId: number; label: string };
-export type InviteIssueRecord = InviteRecord & { intent: { kind: "INVITE_ISSUE"; payload: { expectedVersion: number | null } }; acknowledged?: true };
+export type InviteIssueRecord = InviteRecord & { intent: { kind: "INVITE_ISSUE"; payload: { expectedVersion: number | null } }; acknowledged?: true; receiptStatus?: "SUCCEEDED" | "FAILED" };
 export type InviteRevokeRecord = InviteRecord & { intent: { kind: "INVITE_REVOKE"; targetId: string; payload: { expectedVersion: number; reason: string; code: string; name: string } } };
 export type InvitePendingRecord = InviteIssueRecord | InviteRevokeRecord;
 export function isInvitePending(record: GroupPendingRecord | InvitePendingRecord): record is InvitePendingRecord { return record.intent.kind === "INVITE_ISSUE" || record.intent.kind === "INVITE_REVOKE"; }

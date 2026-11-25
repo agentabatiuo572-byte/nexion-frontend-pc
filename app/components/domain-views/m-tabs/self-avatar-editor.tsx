@@ -9,11 +9,11 @@ import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
-import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure, refreshSupportAccess } from "@/lib/admin/support-self-session";
 import { AccountAvatarPicker } from "../a-tabs/account-avatar-picker";
 import { usePendingReplayDeadline } from "../design-kit";
 import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
-import { Button, Drawer, Field, Notice, Select, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, Drawer, Field, Notice, Select, StatusTag } from "@/app/components/rd";
 import type { MCtx } from "./types";
 
 function avatarErrorIs(error: unknown, status: number, code: string) {
@@ -46,14 +46,16 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
   const [open, setOpen] = useState(false), [snapshot, setSnapshot] = useState<SelfAvatarSnapshot | null>(null), [allowed, setAllowed] = useState(false);
   const [gender, setGender] = useState<AvatarGender>("UNSPECIFIED"), [assetId, setAssetId] = useState<string | undefined>(), [blocking, setBlocking] = useState(false);
   const [pending, setPending] = useState<SelfAvatarPending | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const [readError, setReadError] = useState("");
   const [versionNotice, setVersionNotice] = useState("");
   const [pickerRevision, setPickerRevision] = useState(0);
+  const confirmRequest = useRef<Parameters<MCtx["openActionConfirm"]>[0] | null>(null);
   const verifiedRelease = useVerifiedRelease(ctx.toast);
   usePendingReplayDeadline(pending && !pending.acknowledged && !pending.replayRejection ? pending.expiresAt : undefined);
   const generation = useRef(0), controller = useRef<AbortController | null>(null);
   const active = (token: number) => generation.current === token && useAdminAuth.getState().session?.adminId === actorId && useAdminAuth.getState().authEpoch === epoch;
   useEffect(() => {
-    generation.current++; controller.current?.abort(); setOpen(false); setSnapshot(null); setAllowed(false); setAssetId(undefined); setBlocking(false); setBusy(false); setError(""); setVersionNotice("");
+    generation.current++; controller.current?.abort(); setOpen(false); setSnapshot(null); setAllowed(false); setAssetId(undefined); setBlocking(false); setBusy(false); setError(""); setReadError(""); setVersionNotice("");
     setPending(selfAvatarCommands.list().find(row => row.actorId === actorId) ?? null);
     if (onSnapshot) void read(true);
     return () => { generation.current++; controller.current?.abort(); };
@@ -85,11 +87,14 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
     ctx.toast("本人头像已读回确认。");
     void ctx.refreshContent().catch(() => ctx.toast("头像已保存，客服名单还没同步，请刷新名单。"));
   };
-  const permissionDenied = (error: unknown) => avatarErrorIs(error, 403, "AVATAR_SELF_FORBIDDEN") || isPermissionDenied(error);
-  const clearDenied = (error: unknown) => {
-    setVersionNotice("");
+  const clearPrivateAvatar = () => {
+    setVersionNotice(""); setReadError(""); setError("");
     setSnapshot(null); onSnapshot?.(null); setAssetId(undefined); setBlocking(false); setAllowed(false); setOpen(false);
-    ctx.toast(displayAdminError(error));
+    if (confirmRequest.current) ctx.closeActionConfirm?.(confirmRequest.current);
+  };
+  const clearDenied = (error: unknown) => {
+    clearPrivateAvatar();
+    refreshSupportAccess(error);
   };
   async function read(hydrate = false) {
     if (!actorId || (!hydrate && busy)) return;
@@ -103,6 +108,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
         ? await currentAdminSession({ signal: abort.signal }).then(result => result?.session.adminId === record.actorId, () => false)
         : true;
       if (!active(token)) return;
+      setReadError("");
       if (!hydrate && record && isCurrentAvatar(record, current) && sameAccount) complete(record, current);
       else if (!sameAccount) setError("登录账号可能已经变化，原保存记录先保留；请刷新页面核对。");
       else {
@@ -111,8 +117,8 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
       }
     } catch (e) {
       if (!active(token)) return;
-      if (permissionDenied(e)) { clearDenied(e); announcePermissionDenied(); }
-      else setError(displayAdminReadError(e));
+      if (isSupportAccessFailure(e)) clearDenied(e);
+      else if (!hydrate) setReadError(displayAdminReadError(e));
     }
     finally { if (active(token)) setBusy(false); }
   }
@@ -123,6 +129,11 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
     try {
       if (!active(token) || record.actorId !== actorId) return false;
       const current = firstAttempt?.current ?? await fetchSelfAvatar(abort.signal); if (!active(token)) return false;
+      if (!firstAttempt && !await checkSupportSelfSession(record.actorId, abort.signal)) {
+        clearPrivateAvatar();
+        return true;
+      }
+      if (!active(token)) return false;
       if (!firstAttempt) setSnapshot(current);
       setAllowed(true);
       if (current.assetId === record.input.assetId) { complete(record, current); return true; }
@@ -148,13 +159,12 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
       complete(record, readback); return true;
     } catch (e) {
       if (!active(token)) return false;
-      const denied = permissionDenied(e);
-      if (firstAttempt && !saved && (!sent || denied || isExplicitRejection(e))) {
+      if (firstAttempt && !saved && (!sent || isSupportWriteBeforeAuthFailure(e) || avatarErrorIs(e, 403, "AVATAR_SELF_FORBIDDEN") || isExplicitRejection(e))) {
         selfAvatarCommands.forget(record.fingerprint, record.commandKey);
         setPending(null);
       }
-      if (denied) {
-        clearDenied(e); announcePermissionDenied();
+      if (isSupportAccessFailure(e)) {
+        clearDenied(e);
         return true;
       }
       if (saved) {
@@ -216,10 +226,9 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
           ctx.closeActionConfirm?.(request);
           return true;
         } catch (e) {
-          if (active(confirmationGeneration) && permissionDenied(e)) {
+          if (active(confirmationGeneration) && isSupportAccessFailure(e)) {
             clearDenied(e);
-            // Let the existing confirm close and notify the shell during conflict recovery.
-            throw Object.assign(new Error(displayAdminError(e)), { reasonCode: "ADMIN_PERMISSION_DENIED" });
+            return false;
           }
           throw e;
         }
@@ -230,10 +239,13 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
         if (!active(confirmationGeneration)) return false;
         const abort = new AbortController(); controller.current = abort; setBusy(true); setError("");
         let current: SelfAvatarSnapshot;
-        try { current = await fetchSelfAvatar(abort.signal); }
+        try {
+          current = await fetchSelfAvatar(abort.signal);
+          if (!await checkSupportSelfSession(actorId, abort.signal)) { clearPrivateAvatar(); return true; }
+        }
         catch (e) {
           if (!active(confirmationGeneration)) return false;
-          if (permissionDenied(e)) { clearDenied(e); announcePermissionDenied(); return true; }
+          if (isSupportAccessFailure(e)) { clearDenied(e); return true; }
           setAllowed(false);
           throw new Error(`还没提交。${displayAdminReadError(e)} 可以再次确认。`);
         } finally { if (active(confirmationGeneration)) setBusy(false); }
@@ -252,20 +264,22 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
         return submit(record, { current, versionConflict });
       },
     };
+    confirmRequest.current = request;
     ctx.openActionConfirm(request);
   }
   return <>{!launch && <Button size="sm" className="avatar-control-button" disabled={!actorId || busy} onClick={() => { setOpen(true); void read(); }}>更换本人头像</Button>}
     {open && <Drawer open title="更换本人头像" sub={name} busy={busy} explain="仅具备有效客服或主管资格的本人可更换，不需要账号管理权限。" onClose={() => { if (!busy) setOpen(false); }} footer={<div className="m1-drawer-actions"><Button type="button" disabled={busy} onClick={() => setOpen(false)}>{launch ? "关闭" : "返回工作台"}</Button><Button type="button" variant="primary" disabledReason={busy ? "正在处理，稍候" : pending?.acknowledged ? "头像已保存，请先刷新核对" : pending ? "原头像保存结果未知，请先查询原操作" : !allowed ? "本人头像资料还没加载到，加载后才能保存" : blocking ? "图片还在准备，准备好才能保存" : !assetId ? "先选一张头像" : undefined} onClick={confirm}>确认保存本人头像</Button></div>}>
       <div className="account-avatar-controls m1-avatar-editor">
-      {busy && <p className="rd-note" role="status">正在核对头像资料…</p>}{(error || versionNotice) && <Notice tone={error ? "danger" : "neutral"}>{error || versionNotice}</Notice>}
-      {!allowed && !busy && !pending?.acknowledged && <div><Button type="button" onClick={() => void read()}>重新核对本人资格与头像</Button></div>}
+      {busy && !readError && <p className="rd-note" role="status">正在核对头像资料…</p>}{(error || versionNotice) && <Notice tone={error ? "danger" : "neutral"}>{error || versionNotice}</Notice>}
+      {readError && <BlockState state="error" title="本人头像资料加载失败" detail={readError} onRetry={() => void read()} retrying={busy} />}
+      {!allowed && !busy && !readError && !pending?.acknowledged && <div><Button type="button" onClick={() => void read()}>重新核对本人资格与头像</Button></div>}
       {pending && <Notice tone="warn" title={pending.acknowledged ? "头像已保存，最新的头像暂时读不到。" : pending.replayRejection ? "按原操作重试已被拒绝，请先核实原保存结果。" : `上次保存头像（${businessStamp(pending.createdAt)} ${businessZone().label}提交）的结果还没确认，请先查询结果。`} actionBelow action={<>
         <Button ref={queryButton} size="sm" type="button" disabled={busy} onClick={() => void read()}>{pending.acknowledged ? "刷新头像" : "查询保存结果"}</Button>
         {pending.replayRejection ? <VerifiedReleaseButton disabled={busy} onClick={() => askRelease(pending)} /> : !pending.acknowledged &&
           <Button size="sm" type="button" disabled={busy || !allowed || Boolean(selfAvatarSaveRecovery.state(pending).replayBlock)} onClick={() => void submit(pending)}>使用原资料与命令重试</Button>}
       </>}>{pending.replayRejection ? displayAdminError(pending.replayRejection) : !pending.acknowledged && Date.now() >= pending.expiresAt && <p>原命令已超过安全重试窗口，只能查询结果；请联系管理员核对。</p>}</Notice>}
       {snapshot && <><Field label="默认头像分类" explain="只用于下一次明确准备默认头像；不会修改本人资料中的性别或立即换图。"><Select aria-label="默认头像分类" value={gender} options={AVATAR_GENDER_OPTIONS} disabled={!allowed || busy || Boolean(pending) || blocking} onChange={value => setGender(value as AvatarGender)} /></Field>
-        <AccountAvatarPicker key={`${actorId}:${epoch}:${pickerRevision}`} scope="self" name={name} gender={gender} allowDefault currentPath={snapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined} currentVersion={snapshot.avatarVersion} disabled={!allowed || busy || Boolean(pending)} onChange={setAssetId} onBlocking={setBlocking} />
+        <AccountAvatarPicker key={`${actorId}:${epoch}:${pickerRevision}`} scope="self" name={name} gender={gender} allowDefault currentPath={snapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined} currentVersion={snapshot.avatarVersion} disabled={!allowed || busy || Boolean(pending)} onChange={setAssetId} onBlocking={setBlocking} onSelfAccessDenied={clearDenied} onSelfIdentityChanged={clearPrivateAvatar} />
       </>}
       </div>
     </Drawer>}

@@ -10,14 +10,16 @@ import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure } from "@/lib/admin/support-self-session";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { usePendingReplayDeadline } from "../design-kit";
 import "./account-avatar-controls.css";
 
-export function AccountAvatarPicker({ account, targetId, originalAssetId, name, disabled, scope = "admin", gender = "UNSPECIFIED", allowDefault = false, currentPath, currentVersion, onChange, onBlocking }: {
+export function AccountAvatarPicker({ account, targetId, originalAssetId, name, disabled, scope = "admin", gender = "UNSPECIFIED", allowDefault = false, currentPath, currentVersion, onChange, onBlocking, onSelfAccessDenied, onSelfIdentityChanged }: {
   /** 没有账号资料时（原头像的独立处理位置），按原记录里的账号编号对上同一条原记录。 */
   account?: A1Operator; targetId?: string; originalAssetId?: string; name: string; disabled?: boolean; scope?: AvatarScope; gender?: AvatarGender; allowDefault?: boolean;
   currentPath?: string; currentVersion?: number; onChange: (assetId?: string) => void; onBlocking: (blocking: boolean) => void;
+  onSelfAccessDenied?: (error: unknown) => void; onSelfIdentityChanged?: () => void;
 }) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const canUpload = scope === "self" || canWriteA1Avatar(session?.adminId);
@@ -104,7 +106,11 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
       const originalFile = draft ? new File([nextFile], draft.fileName!, { type: draft.fileMime }) : nextFile;
       resetFile(); setFile(originalFile); objectUrl.current = URL.createObjectURL(originalFile); setUrl(objectUrl.current); setInvalidSelection(false);
       if (!draft) setDraft({ fingerprint, actorId: actorId!, scope, kind: "UPLOAD", clientUploadId: crypto.randomUUID(), commandKey: crypto.randomUUID(), fileHash: hash, fileName: nextFile.name, fileMime: nextFile.type, createdAt: Date.now(), expiresAt: Date.now() + 86400000 });
-    } catch (e) { if (active(token)) setError(e instanceof Error && /^(图片|请选择|原上传)/.test(e.message) ? e.message : displayAdminError(e)); }
+    } catch (e) {
+      if (!active(token)) return;
+      if (scope === "self" && isSupportAccessFailure(e)) onSelfAccessDenied?.(e);
+      else setError(e instanceof Error && /^(图片|请选择|原上传)/.test(e.message) ? e.message : displayAdminError(e));
+    }
     finally { if (active(token)) setBusy(false); }
   }
   async function prepare(useDefault = false) {
@@ -117,11 +123,14 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
     let sent = false;
     try {
       if (!command) command = { fingerprint, actorId, scope, kind: "DEFAULT", gender, clientUploadId: crypto.randomUUID(), commandKey: crypto.randomUUID(), createdAt: Date.now(), expiresAt: Date.now() + 86400000 };
+      const abort = new AbortController(); controller.current = abort;
+      if (scope === "self") {
+        await fetchSelfAvatar(abort.signal);
+        if (!await checkSupportSelfSession(actorId, abort.signal)) { onSelfIdentityChanged?.(); return; }
+      }
+      if (!active(token)) return;
       if (!wasPending || scope === "self") command = rememberAvatarDraft(command, wasPending);
       setDraft(command);
-      if (scope === "self") await fetchSelfAvatar();
-      if (!active(token)) return;
-      const abort = new AbortController(); controller.current = abort;
       const send = (original: AvatarDraft) => {
         if (original.kind === "UPLOAD" && (!file || original.fileHash !== command?.fileHash || original.fileMime !== file.type || original.fileName !== file.name)) {
           throw new Error("AVATAR_COMMAND_INVALID");
@@ -139,12 +148,13 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
     } catch (e) {
       if (active(token)) {
         setError(displayAdminError(e));
-        if (command && !sent && !wasPending) {
+        if (command && !wasPending && (!sent || scope === "self" && isSupportWriteBeforeAuthFailure(e))) {
           avatarDrafts.forget(command.fingerprint, command.commandKey);
           updateDraft(draft);
         }
         const firstAdminRefusal = scope === "admin" && !wasPending && !isA1OutcomeUncertainError(e) && isDeterministicRejection((e as { status?: number }).status ?? 0);
         if (command && (firstAdminRefusal || scope === "self" && isExplicitRejection(e)) && (sent || !wasPending)) { avatarDrafts.forget(command.fingerprint, command.commandKey); updateDraft(null); resetFile(); }
+        if (scope === "self" && isSupportAccessFailure(e)) onSelfAccessDenied?.(e);
       }
     } finally { if (active(token)) setBusy(false); }
   }
@@ -168,13 +178,15 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
     let sent = false;
     const token = generation.current; setBusy(true); setError(""); onBlocking(true);
     try {
-      const command = rememberAvatarDraft({ ...draft, cancelKey: draft.cancelKey ?? crypto.randomUUID(),
-        cancelCreatedAt: scope === "admin" ? Date.now() : undefined }, Boolean(draft.cancelKey)); setDraft(command);
       if (scope === "self") {
         const snapshot = await fetchSelfAvatar();
         if (!active(token)) return;
-        if (snapshot.assetId === command.asset!.assetId) throw new Error("该头像已保存到本人账号，请刷新头像后再开始新的更换。");
+        if (snapshot.assetId === draft.asset.assetId) throw new Error("该头像已保存到本人账号，请刷新头像后再开始新的更换。");
+        if (!await checkSupportSelfSession(draft.actorId)) { onSelfIdentityChanged?.(); return; }
+        if (!active(token)) return;
       }
+      const command = rememberAvatarDraft({ ...draft, cancelKey: draft.cancelKey ?? crypto.randomUUID(),
+        cancelCreatedAt: scope === "admin" ? Date.now() : undefined }, Boolean(draft.cancelKey)); setDraft(command);
       sent = true;
       if (scope === "admin") await cancelA1Avatar(command.asset!.assetId, command.cancelKey!);
       else await cancelAccountAvatar("self", command.asset!.assetId, command.cancelKey!);
@@ -187,6 +199,8 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
           avatarDrafts.remember(draft.fingerprint, draft.commandKey, { ...draft, cancelKey: undefined, cancelCreatedAt: undefined });
           updateDraft(draft);
         }
+        if (scope === "self" && !draft.cancelKey && (!sent || isSupportWriteBeforeAuthFailure(e))) updateDraft(rememberAvatarDraft(draft));
+        if (scope === "self" && isSupportAccessFailure(e)) onSelfAccessDenied?.(e);
         setError(displayAdminError(scope === "admin" && sent && !refused ? new Error("A1_AVATAR_CANCEL_QUERY_ONLY") : e));
       }
     }
