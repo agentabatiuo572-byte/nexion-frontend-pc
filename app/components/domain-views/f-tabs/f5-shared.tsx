@@ -4,7 +4,6 @@
  * F5 奖励记录核对的共用小件：状态和类型的名字、金额和时间的写法、确认框外壳、原操作提醒。
  * 只管怎么显示；提交调用 ctx 上和旧页面相同的函数、相同的参数。
  */
-import { consumeFReconfirmation } from "@/lib/admin/f-reconfirmation";
 import { fConfirmRecovery } from "./f-recovery-state";
 import type { ReactNode } from "react";
 import { CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Snowflake, TriangleAlert, Undo2, Wallet, type LucideIcon } from "lucide-react";
@@ -266,9 +265,9 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
         try {
           if (getOriginal()) { await recover("retry"); return; }
           if (confirm.recovery) throw new Error("PENDING_REPLAY_BLOCKED");
-          ctx.prepareF5Confirmation(confirm.snapshot ? { ...confirm.snapshot, name: confirm.action } : undefined);
-          await confirm.submit(reason, businessValue);
-          if (confirm.draft) consumeFReconfirmation(confirm.draft);
+          ctx.prepareF5Confirmation(confirm.snapshot ? { ...confirm.snapshot, name: confirm.action, continuedFrom: confirm.draft?.commandKey } : undefined);
+          try { await confirm.submit(reason, businessValue); }
+          finally { ctx.prepareF5Confirmation(undefined); }
           onClose();
         } catch (error) {
           // 错误交回确认框，由框里显示（没权限时框关掉、外壳提示），不再另弹轻提示，免得同一句同屏两次。

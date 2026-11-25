@@ -1830,6 +1830,42 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
   };
 }
 
+function parseF5CommissionEvent(item: BackendF5CommissionEvent): F5CommissionEvent {
+  const id = asText(item.commissionId ?? item.id, "CM-UNKNOWN");
+  const userId = toNumber(item.userId);
+  return {
+    id,
+    eventId: toNumber(item.eventId, toNumber(id.replace(/^CM-/, ""))),
+    kind: asText(item.kind, "network"),
+    user: asText(item.user, userId > 0 ? `U${String(userId).padStart(8, "0")}` : "usr_unknown"),
+    userId,
+    amt: f4Decimal(item.amount!)!,
+    cur: asText(item.currency, "USDT"),
+    sourceUserId: item.sourceUserId == null ? undefined : toNumber(item.sourceUserId),
+    layer: item.layer == null ? undefined : toNumber(item.layer),
+    settledAt: asText(item.settledAt, "-"),
+    coolingDaysLeft: toNumber(item.coolingDaysLeft),
+    status: asText(item.status, "cooling"),
+    coolPct: toNumber(item.cooldownPercent),
+    coolLb: asText(item.cooldownLabel, "冷却中"),
+    state: asText(item.state, "计提"),
+    auditKey: asText(item.auditKey, `F.commission.${id}.status`),
+    version: toNumber(item.version),
+    frozenFromStatus: optionalText(item.frozenFromStatus),
+    ledgerBizNo: optionalText(item.ledgerBizNo),
+    ...parseF5SalaryFields(item),
+    unlockAt: item.unlockAt ?? undefined,
+    settlementNo: optionalText(item.settlementNo), sourceRef: optionalText(item.sourceRef), sourceDeviceId: optionalText(item.sourceDeviceId),
+    policyVersion: item.policyVersion == null ? undefined : toNumber(item.policyVersion),
+    basisUsdt: item.basisUsdt == null ? undefined : f4Decimal(item.basisUsdt)!, nexUsdtPrice: item.nexUsdtPrice == null ? undefined : f4Decimal(item.nexUsdtPrice)!,
+    amountUSDT: item.amountUSDT == null ? undefined : f4Decimal(item.amountUSDT)!, amountNEX: item.amountNEX == null ? undefined : f4Decimal(item.amountNEX)!,
+    recoveryPendingUSDT: item.recoveryPendingUSDT == null ? undefined : f4Decimal(item.recoveryPendingUSDT)!, recoveryPendingNEX: item.recoveryPendingNEX == null ? undefined : f4Decimal(item.recoveryPendingNEX)!,
+    reversalRecorded: item.reversalRecorded ?? undefined,
+    canUnlock: item.canUnlock, unlockBlockedReason: item.unlockBlockedReason,
+    canReverse: item.canReverse, reverseBlockedReason: item.reverseBlockedReason, groupStatus: item.groupStatus,
+  };
+}
+
 function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | undefined): F5CommissionAuditOverview {
   if (!data) throw new Error("F5_OVERVIEW_RESPONSE_INVALID:data");
   const summary = data.summary;
@@ -1846,41 +1882,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
     key: item.key,
     lbl: item.label,
   }));
-  const commissionEvents = data.commissionEvents.map((item) => {
-    const id = asText(item.commissionId ?? item.id, "CM-UNKNOWN");
-    const userId = toNumber(item.userId);
-    return {
-      id,
-      eventId: toNumber(item.eventId, toNumber(id.replace(/^CM-/, ""))),
-      kind: asText(item.kind, "network"),
-      user: asText(item.user, userId > 0 ? `U${String(userId).padStart(8, "0")}` : "usr_unknown"),
-      userId,
-      amt: f4Decimal(item.amount!)!,
-      cur: asText(item.currency, "USDT"),
-      sourceUserId: item.sourceUserId == null ? undefined : toNumber(item.sourceUserId),
-      layer: item.layer == null ? undefined : toNumber(item.layer),
-      settledAt: asText(item.settledAt, "-"),
-      coolingDaysLeft: toNumber(item.coolingDaysLeft),
-      status: asText(item.status, "cooling"),
-      coolPct: toNumber(item.cooldownPercent),
-      coolLb: asText(item.cooldownLabel, "冷却中"),
-      state: asText(item.state, "计提"),
-      auditKey: asText(item.auditKey, `F.commission.${id}.status`),
-      version: toNumber(item.version),
-      frozenFromStatus: optionalText(item.frozenFromStatus),
-      ledgerBizNo: optionalText(item.ledgerBizNo),
-      ...parseF5SalaryFields(item),
-      unlockAt: item.unlockAt ?? undefined,
-      settlementNo: optionalText(item.settlementNo), sourceRef: optionalText(item.sourceRef), sourceDeviceId: optionalText(item.sourceDeviceId),
-      policyVersion: item.policyVersion == null ? undefined : toNumber(item.policyVersion),
-      basisUsdt: item.basisUsdt == null ? undefined : f4Decimal(item.basisUsdt)!, nexUsdtPrice: item.nexUsdtPrice == null ? undefined : f4Decimal(item.nexUsdtPrice)!,
-      amountUSDT: item.amountUSDT == null ? undefined : f4Decimal(item.amountUSDT)!, amountNEX: item.amountNEX == null ? undefined : f4Decimal(item.amountNEX)!,
-      recoveryPendingUSDT: item.recoveryPendingUSDT == null ? undefined : f4Decimal(item.recoveryPendingUSDT)!, recoveryPendingNEX: item.recoveryPendingNEX == null ? undefined : f4Decimal(item.recoveryPendingNEX)!,
-      reversalRecorded: item.reversalRecorded ?? undefined,
-      canUnlock: item.canUnlock, unlockBlockedReason: item.unlockBlockedReason,
-      canReverse: item.canReverse, reverseBlockedReason: item.reverseBlockedReason, groupStatus: item.groupStatus,
-    };
-  });
+  const commissionEvents = data.commissionEvents.map(parseF5CommissionEvent);
   const pagination = data.pagination;
   const coverageRatioText = data.coverage?.coverageRatio == null ? null : f4Decimal(data.coverage.coverageRatio);
   const redlinePctText = data.coverage?.redlinePct == null ? null : f4Decimal(data.coverage.redlinePct);
@@ -2303,7 +2305,7 @@ export type F5CommissionRecord = F5ActionAvailability & F5RecoveryAmounts & {
   amountUSDT?: string;
   amountNEX?: string;
 };
-export type F5CommissionRead = { status: "found"; record: F5CommissionRecord } | { status: "not-found" };
+export type F5CommissionRead = { status: "found"; record: F5CommissionRecord; event: F5CommissionEvent } | { status: "not-found" };
 
 export async function fetchF5CommissionByBusinessId(commissionId: string): Promise<F5CommissionRead> {
   const id = commissionId.trim().toUpperCase();
@@ -2336,7 +2338,8 @@ export async function fetchF5CommissionByBusinessId(commissionId: string): Promi
     if (decimal === null || decimal.startsWith("-")) throw new Error(`F5_OVERVIEW_RESPONSE_INVALID:commission.${key}`);
     amounts[key] = decimal;
   }
-  return { status: "found", record: { commissionId: row.commissionId, eventId: row.eventId, userId: row.userId,
+  const event = parseF5CommissionEvent({ ...row, ...amounts } as BackendF5CommissionEvent);
+  return { status: "found", event, record: { commissionId: row.commissionId, eventId: row.eventId, userId: row.userId,
     user: row.user as string, kind: row.kind, currency: row.currency, status: row.status, version: row.version, ...amounts,
     ...readF5RecoveryAmounts(row),
     canUnlock: row.canUnlock as boolean | undefined, unlockBlockedReason: row.unlockBlockedReason as string | null | undefined,

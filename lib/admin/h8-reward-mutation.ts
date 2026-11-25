@@ -1,4 +1,4 @@
-import { settleFReconfirmation } from "./f-reconfirmation";
+import { acknowledgeFReconfirmation, settleFReconfirmation, type FReconfirmationLink } from "./f-reconfirmation";
 import { activeRecoveryActor } from "./f-proposal-recovery";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, A2OutcomeUncertainError, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { createH8CommandKey, growthRequest, h8RewardParamAmplifies, h8RewardParamValid, parseH8ReferralRewardOverview, type H8ReferralRewardOverview, type H8RewardParamKey } from "./h-client";
@@ -9,12 +9,12 @@ import { configApprovalAttempts, configApprovalOriginalInput, pendingConfigAppro
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
-export type H8Original = { overview: H8ReferralRewardOverview; body: string } & (
+export type H8Original = { overview: H8ReferralRewardOverview; body: string } & FReconfirmationLink & (
   | { kind: "direct"; paramKey: H8RewardParamKey; value: string; reason: string; operator: string }
   | { kind: "param-approval"; paramKey: H8RewardParamKey; value: string; request: Proposal }
   | { kind: "settlement"; invitedUserId?: number; limit: number; request: Proposal }
 );
-export type H8RewardCommand = PendingMutationRecord & {
+export type H8RewardCommand = PendingMutationRecord & FReconfirmationLink & {
   adminId: number; kind: H8Original["kind"]; paramKey?: H8RewardParamKey; value?: string;
   invitedUserId?: number; limit?: number;
   original?: H8Original; ticket?: A2OperationRow; acknowledged?: boolean;
@@ -68,7 +68,7 @@ export function pendingH8RewardCommands(adminId: number): H8RewardCommand[] {
   const result: H8RewardCommand[] = [];
   for (const record of commands.list()) {
     if (record.original && record.adminId === adminId) {
-      result.push({ ...record, adminId, kind: record.original.kind,
+      result.push({ ...record, adminId, kind: record.original.kind, continuedFrom: record.original.continuedFrom,
         ...(record.original.kind !== "settlement" ? { paramKey: record.original.paramKey, value: record.original.value }
           : { invitedUserId: record.original.invitedUserId, limit: record.original.limit }) });
     } else if (!record.original) {
@@ -91,6 +91,7 @@ export function pendingH8RewardCommands(adminId: number): H8RewardCommand[] {
     try { value = configApprovalOriginalInput("H8", record.input)[0].value; } catch { /* Query-only evidence still retains its original key. */ }
     result.push({ ...record, adminId, kind: "param-approval", paramKey,
       original: record.h8Original && validOriginal(record.h8Original) ? record.h8Original : undefined,
+      continuedFrom: record.h8Original?.continuedFrom,
       value,
       ticket: record.h8Ticket, acknowledged: record.h8Acknowledged });
   }
@@ -107,7 +108,7 @@ export function requireH8Actor(adminId: number, write?: "param" | "settlement") 
 
 export function createH8RewardCommand(adminId: number, original: H8Original): H8RewardCommand {
   const now = Date.now();
-  return { adminId, original, kind: original.kind,
+  return { adminId, original, kind: original.kind, continuedFrom: original.continuedFrom,
     ...(original.kind !== "settlement" ? { paramKey: original.paramKey, value: original.value } : {}),
     fingerprint: original.kind === "param-approval" ? `${adminId}:H8:current:${original.paramKey}`
       : original.kind === "direct" ? `${adminId}|param|${original.paramKey}` : `${adminId}|settle`,
@@ -197,7 +198,10 @@ export async function queryH8RewardCommand(record: H8RewardCommand) {
       : ticket.status === "rejected" ? "rejected" as const : ticket.status === "pending" ? "unknown" as const : "not-executed" as const };
   });
   if (!result) throw new Error("PENDING_QUERY_UNAVAILABLE");
-  if (result.ticket?.status === "pending") remember({ ...result.original, ticket: result.ticket, acknowledged: true }, "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE");
+  if (result.ticket?.status === "pending") {
+    remember({ ...result.original, ticket: result.ticket, acknowledged: true }, "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE");
+    acknowledgeFReconfirmation(result.original);
+  }
   else if (result.ticket) settleFReconfirmation(h8Recovery, result.original, result.conclusion, "H8");
   return result.ticket;
 }
@@ -251,6 +255,7 @@ export async function sendH8RewardCommand(record: H8RewardCommand, recovering = 
     const result = recovering ? await h8Recovery.replay(record, send) : await send(record);
     if (result) {
       h8Recovery.settleAcknowledged(record);
+      if (!result.unchanged) acknowledgeFReconfirmation(record);
       return result;
     }
   } catch (error) {

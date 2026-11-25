@@ -91,6 +91,7 @@ export type Mc = (McSpec & { commandKey: string; teamApprovalOwner?: AdminSessio
 
 /** 子视图上下文:打开 操作确认 / 跨域跳转 / toast。全部由 shell 注入,子视图无自有 store。 */
 export interface FViewCtx {
+  runFContinuation: <T>(commandKey: string | undefined, submit: () => T | Promise<T>) => Promise<T>;
   openActionConfirm: (m: McSpec) => void;
   nav: (domain: string) => void;
   toast: (msg: string) => void;
@@ -150,7 +151,7 @@ export interface FViewCtx {
   salaryClaims?: F1SalaryClaimsState;
   querySalaryClaims?: (filters: F1SalaryFilters, cursor?: string) => Promise<void>;
   /** 等级权益三项的写入：比例传百分数（如 "4.6"），月薪传 USDT。原操作查询和重试沿用同一个已保存请求。 */
-  submitVRankBenefit: (editor: F1PolicyEditor, value: string, reason: string, mode?: "submit" | "lookup" | "retry-original") => ReturnType<typeof submitF1Policy>;
+  submitVRankBenefit: (editor: F1PolicyEditor, value: string, reason: string, mode?: "submit" | "lookup" | "retry-original", continuedFrom?: string) => ReturnType<typeof submitF1Policy>;
   f1BenefitCoverage?: { coverageRatio: number; redlinePct: number; redlineBreached: boolean };
   teamBusinessCalendar: BusinessCalendarView | null;
   proposeVRankBootstrap: (ranks: VRankBootstrapRow[], reason: string) => Promise<void>;
@@ -225,6 +226,7 @@ export interface FViewCtx {
   f3DailyMatchUsd: number;
   f3Loading: boolean;
   f3Error: string | null;
+  f3ApprovalReadError?: string;
   refreshF3: () => Promise<void>;
   getF3PayoutControlPending: (key: F3PayoutControlKey) => {
     approval?: A2OperationRow;
@@ -244,8 +246,9 @@ export interface FViewCtx {
   refreshF4VoteProjection: () => Promise<void>;
   f4AmbassadorPolicy: F4AmbassadorPolicy | null;
   f4PolicyLoading: boolean;
+  f4PolicyAppliedUnread: boolean;
   retryF4AmbassadorPolicy: () => Promise<void>;
-  refreshF4PolicyBaseline: () => Promise<F4AmbassadorPolicy>;
+  refreshF4PolicyBaseline: (baseline: F4AmbassadorPolicy, values: Record<string, string>) => Promise<void>;
   f4Loading: boolean;
   f4Error: string | null;
   f4Proposals: FDomainAttempt[];
@@ -271,6 +274,7 @@ export interface FViewCtx {
   f5Error: string | null;
   f5Proposals: FDomainAttempt[];
   f5AnomalyWrites: FDirectAttempt[];
+  f5AnomalyAppliedUnread: boolean;
   f5ApprovalRows: A2OperationRow[];
   f5ApprovalReadError: string | null;
   f5ReadEpoch: number;

@@ -1,4 +1,4 @@
-import { settleFReconfirmation } from "./f-reconfirmation";
+import { acknowledgeFReconfirmation, settleFReconfirmation } from "./f-reconfirmation";
 import { createA2CommandKey } from "./a2-client";
 import { updateF4AmbassadorPolicy, type F4AmbassadorPolicyUpdate } from "./f1-client";
 import { fDirectCommands, F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "./f1-stable-write";
@@ -35,7 +35,7 @@ export async function sendF4Policy(adminId: number, policy?: F4AmbassadorPolicyU
     if (!policy || reason === undefined) throw new Error("F4_PROPOSAL_ORIGINAL_INCOMPLETE");
     const request = { ...policy, reason, operator: auth.session.operator || auth.session.username };
     const slot = `${adminId}:f4-ambassador-policy`, key = createA2CommandKey("f4-ambassador-policy");
-    fDirectCommands.remember(slot, key, { adminId, inputFingerprint: JSON.stringify(request), f4Request: request, f4Snapshot: snapshot,
+    fDirectCommands.remember(slot, key, { adminId, inputFingerprint: JSON.stringify(request), f4Request: request, f4Snapshot: snapshot, continuedFrom: snapshot?.continuedFrom,
       commandOrigin: fundCommandOrigin(policyRoute.originalMethod, policyRoute.originalPath, policyRoute.readAuthority) });
     original = listF4PolicyWrites(adminId)[0];
     if (!fDirectCommands.isDurablyStored(slot, key)) {
@@ -63,6 +63,7 @@ export async function sendF4Policy(adminId: number, policy?: F4AmbassadorPolicyU
     throw error;
   }
   f4PolicyRecovery.settleAcknowledged(original);
+  acknowledgeFReconfirmation(original);
 }
 
 /** Current policy remains a separate read when the original receipt cannot settle the command. */

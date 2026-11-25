@@ -254,10 +254,12 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       break;
     }
     case action === "F.leaderboard.paused": {
-      spec = { briefKind: board.paused ? "config" : "record", name: board.paused ? "恢复排行榜" : "暂停排行榜", op: "dispose", paramKey: "F.leaderboard.paused", fixedVal: board.paused ? "off" : "on",
-    title: board.paused ? "恢复排行榜" : "暂停排行榜", effect: approvalTag(),
-    confirmTone: board.paused ? "primary" : "danger", confirmLabel: board.paused ? "提交恢复" : "提交暂停",
-    statedBrief: board.paused ? {
+      const resumes = snapshot.value === "off" || snapshot.value !== "on" && board.paused;
+      spec = { briefKind: resumes ? "config" : "record", name: resumes ? "恢复排行榜" : "暂停排行榜", op: "dispose", paramKey: "F.leaderboard.paused", fixedVal: resumes ? "off" : "on",
+    title: resumes ? "恢复排行榜" : "暂停排行榜", effect: approvalTag(),
+    blockedReason: snapshot.value && board.paused === !resumes ? "排行榜已达到原草稿的状态，无需提交。" : undefined,
+    confirmTone: resumes ? "primary" : "danger", confirmLabel: resumes ? "提交恢复" : "提交暂停",
+    statedBrief: resumes ? {
       impact: "批准后四个榜恢复更新，之后到期的日、周、月榜照常自动派奖。暂停期间跳过的周期恢复后不会补发。",
       check: "榜单已在运行时会被拒绝。暂停那一刻的名次留作历史记录。",
     } : {
@@ -265,7 +267,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       check: "已经暂停时会被拒绝；四个榜的名次没存下来时整次不生效。",
     },
     completionCopy: approvalCopy, facts: <Facts>{approvalFacts(LEADERBOARD_CONTROL)}</Facts>,
-    detail: board.paused ? "恢复后榜单重新更新，之后的周期按当时的规则发奖。" : "暂停后榜单停在当前名次，榜单奖励暂停发放，团队激励池不受影响。",
+    detail: resumes ? "恢复后榜单重新更新，之后的周期按当时的规则发奖。" : "暂停后榜单停在当前名次，榜单奖励暂停发放，团队激励池不受影响。",
   };
       break;
     }
@@ -436,7 +438,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
   };
       break;
     }
-    case action === "policy": spec = f4PolicyConfirmation(ctx, policy!); break;
+    case action === "policy": spec = f4PolicyConfirmation(ctx, policy!, snapshot.policyConflict); break;
     default: throw new Error("F4_PROPOSAL_ORIGINAL_INCOMPLETE");
   }
   return { ...spec, f4Snapshot: snapshot };

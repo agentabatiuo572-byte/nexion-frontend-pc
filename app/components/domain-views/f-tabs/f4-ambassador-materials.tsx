@@ -14,7 +14,7 @@ import { activeRecoveryActor } from "@/lib/admin/f-proposal-recovery";
 import { FReleaseButton } from "./f-release";
 import { fConfirmRecovery } from "./f-recovery-state";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
-import { consumeFReconfirmation, settleFReconfirmation, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { acknowledgeFReconfirmation, settleFReconfirmation, useFReconfirmations, type FReconfirmationLink } from "@/lib/admin/f-reconfirmation";
 import { f4MaterialCommandOrigin, queryF4MaterialCommand } from "@/lib/admin/f4-material-command";
 import { isOriginalCommandOrigin } from "@/lib/admin/original-command-query";
 import type { FundCommandOrigin } from "@/lib/admin/fund-command-investigation";
@@ -29,7 +29,7 @@ import { count, stamp, unknownTag, zoneNote, moneyText } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import { f4Confirmation } from "./f4-confirmations";
 
-type PendingReview = PendingMutationRecord & { actorId: number; applicationId: number; input: F4AmbassadorReviewInput; application?: F4AmbassadorApplication; commandOrigin?: FundCommandOrigin };
+type PendingReview = PendingMutationRecord & FReconfirmationLink & { actorId: number; applicationId: number; input: F4AmbassadorReviewInput; application?: F4AmbassadorApplication; commandOrigin?: FundCommandOrigin };
 const reviewAttempts = createPendingMutationStore<PendingReview>({
   storageKey: "uvel-f4-ambassador-material-reviews", retainExpiredRecords: true,
   isValidRecord: (record) => Number.isSafeInteger(record.actorId) && Number.isSafeInteger(record.applicationId)
@@ -310,9 +310,12 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
         const authority = (original?.input ?? confirmation).stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review";
         if (!useAdminAuth.getState().session?.authorities.includes(authority)) throw new Error("ADMIN_PERMISSION_DENIED");
         if (!original && (!packet || loading || error || final)) throw new Error("材料没读到，刷新后再试");
+        const continuesDraft = draft?.input.stage === confirmation.stage && draft.input.expectedMaterialRevision === confirmation.expectedMaterialRevision
+          && draft.input.decision === confirmation.decision;
         const commandKey = original?.commandKey ?? createA2CommandKey("f4-material-review");
         if (!original) reviewAttempts.remember(fingerprint, commandKey, { actorId, applicationId: application.id,
-          input: { ...confirmation, reason }, application, commandOrigin: f4MaterialCommandOrigin(application.id) });
+          input: { ...confirmation, reason }, application, continuedFrom: continuesDraft ? draft.commandKey : undefined,
+          commandOrigin: f4MaterialCommandOrigin(application.id) });
         const attempt = original ?? reviewAttempts.list().find(row => row.fingerprint === fingerprint && row.commandKey === commandKey);
         if (!attempt || !reviewAttempts.isDurablyStored(fingerprint, commandKey)) {
           if (!original) reviewAttempts.forget(fingerprint, commandKey);
@@ -329,9 +332,8 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
           if (original) await materialRecovery.replay(original, send);
           else await send(attempt);
           materialRecovery.settleAcknowledged(attempt);
-          if (draft?.input.stage === confirmation.stage && draft.input.expectedMaterialRevision === confirmation.expectedMaterialRevision) {
-            consumeFReconfirmation(draft); setDraftKey(undefined);
-          }
+          acknowledgeFReconfirmation(attempt);
+          if (attempt.continuedFrom) setDraftKey(undefined);
           pendingRef.current = undefined; setPending(undefined);
           setPacket(null); setConfirmation(null); ctx.toast("材料核验已记录"); await refresh(); await ctx.refreshF4();
         } catch (cause) {

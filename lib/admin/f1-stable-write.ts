@@ -3,6 +3,7 @@
 import { createPendingMutationStore, createSlotAttemptStore, type SlotAttemptRecord } from "./pending-mutation-store.ts";
 import type { F4AmbassadorPolicyUpdate, F5CommissionQuery } from "./f1-client";
 import type { F4ConfirmationSnapshot } from "./f4-approval";
+import type { FReconfirmationLink } from "./f-reconfirmation";
 import type { F5ConfirmationSnapshot } from "./f5-approval";
 import type { FundCommandOrigin } from "./fund-command-investigation";
 import { isOriginalCommandOrigin } from "./original-command-query";
@@ -28,7 +29,7 @@ export function isF1OutcomeUncertainError(error: unknown): error is F1OutcomeUnc
     && typeof (error as Error & { commandKey?: unknown }).commandKey === "string";
 }
 
-export interface FDirectAttempt extends SlotAttemptRecord {
+export interface FDirectAttempt extends SlotAttemptRecord, FReconfirmationLink {
   commandOrigin?: FundCommandOrigin;
   adminId?: number;
   f3Request?: { key: F3PayoutControlKey; value: string; reason: string; operator: string };

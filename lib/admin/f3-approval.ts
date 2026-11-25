@@ -1,4 +1,5 @@
 import { activeRecoveryActor, createFProposalRecovery } from "./f-proposal-recovery";
+import { acknowledgeFReconfirmation } from "./f-reconfirmation";
 import { fConfigBatchPermissionIssue, fConfigObjectMatches } from "./f-config-batch";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
@@ -128,7 +129,7 @@ export function f3PayoutControlSpec(key: F3PayoutControlKey, before: string, val
 }
 
 /** Full request is saved before POST; retained retries never read current inputs. */
-export async function sendF3Proposal(adminId: number, slot: string, spec?: ProposeSpec, snapshot?: F3ConfirmationSnapshot) {
+export async function sendF3Proposal(adminId: number, slot: string, spec?: ProposeSpec, snapshot?: F3ConfirmationSnapshot, continuedFrom?: string) {
   const current = actor(adminId);
   const actualSlot = slot === F3_SETTLEMENT_SLOT ? fundSlot(adminId) : slot;
   let original = listF3Proposals(adminId).find(row => row.fingerprint === actualSlot);
@@ -150,7 +151,7 @@ export async function sendF3Proposal(adminId: number, slot: string, spec?: Propo
     };
     const commandKey = createA2CommandKey(slot.split(":")[0]);
     remember({ fingerprint: actualSlot, commandKey, createdAt: Date.now(), expiresAt: 0,
-      adminId, spec: intent, request, f3Snapshot: snapshot, inputFingerprint: JSON.stringify(request) });
+      adminId, spec: intent, request, f3Snapshot: snapshot, inputFingerprint: JSON.stringify(request), continuedFrom });
     original = listF3Proposals(adminId).find(row => row.commandKey === commandKey)!;
     if (!durable(original)) {
       forget(original);
@@ -177,6 +178,7 @@ export async function sendF3Proposal(adminId: number, slot: string, spec?: Propo
     return queryReceivedF3Proposal(adminId, { ...original, received: true });
   }
   remember({ ...original, received: true, ticket, absent: false });
+  acknowledgeFReconfirmation(original);
   return ticket;
 }
 

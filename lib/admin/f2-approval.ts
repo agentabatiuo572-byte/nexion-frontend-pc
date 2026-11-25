@@ -12,6 +12,7 @@ import type { F3ConfirmationSnapshot } from "./f3-approval";
 import type { F4ConfirmationSnapshot } from "./f4-approval";
 import type { F5ConfirmationSnapshot } from "./f5-approval";
 import { validateF2UnilevelBootstrap } from "./f2-unilevel-bootstrap";
+import { acknowledgeFReconfirmation, type FReconfirmationLink } from "./f-reconfirmation";
 
 export const F2_ACTIVATION_SLOT = "f-seven-layer-activation";
 export const F2_POLICY_SLOT = "f-direct-referral-policy";
@@ -24,7 +25,7 @@ export const F2_PARAM_KEYS = new Set([
 const isF2Slot = (slot: string) => slot === F2_POLICY_SLOT || slot === F2_BATCH_SLOT || slot === F2_BOOTSTRAP_SLOT
   || slot.startsWith("f-config:") && (F2_PARAM_KEYS.has(slot.slice(9)) || /^F\.unilevel\.(?:nex\.)?L[1-7]$/.test(slot.slice(9)));
 
-export interface FDomainAttempt extends SlotAttemptRecord {
+export interface FDomainAttempt extends SlotAttemptRecord, FReconfirmationLink {
   spec?: ProposeSpec;
   request?: Parameters<typeof createA2OperationProposal>[0];
   adminId?: number;
@@ -141,7 +142,7 @@ export async function queryF2Proposal(adminId: number, original: F2Recovery) {
 }
 
 /** Persist the exact request before POST. Replay never rebuilds current inputs. */
-export async function sendF2Proposal(adminId: number, slot: string, spec?: ProposeSpec, ranked = false, f2DirectBaseline?: FDomainAttempt["f2DirectBaseline"]) {
+export async function sendF2Proposal(adminId: number, slot: string, spec?: ProposeSpec, ranked = false, f2DirectBaseline?: FDomainAttempt["f2DirectBaseline"], continuedFrom?: string) {
   let original = f2ProposalRecord(adminId, slot);
   const current = requireWriter(adminId, slot, spec ?? original?.spec);
   const recovering = !spec;
@@ -156,8 +157,8 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
       reason: spec.reason, sourceDomain: spec.sourceDomain, command: spec.command, target: spec.target, targets: spec.targets,
     };
     const commandKey = createA2CommandKey(slot.split(":")[0]);
-    if (slot === F2_ACTIVATION_SLOT) f2ActivationAttempts.remember(slot, commandKey, { adminId, spec, request });
-    else fCommands.remember(slot, commandKey, { adminId, spec, request, inputFingerprint: JSON.stringify(request), f2DirectBaseline });
+    if (slot === F2_ACTIVATION_SLOT) f2ActivationAttempts.remember(slot, commandKey, { adminId, spec, request, continuedFrom });
+    else fCommands.remember(slot, commandKey, { adminId, spec, request, inputFingerprint: JSON.stringify(request), f2DirectBaseline, continuedFrom });
     original = f2ProposalRecord(adminId, slot)!;
     if (!storeFor(slot).isDurablyStored(slot, commandKey)) {
       forgetF2Proposal(original);
@@ -189,6 +190,7 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
     return latest;
   }
   remember({ ...original, spec: ticketSpec, ticket, received: true, absent: false });
+  acknowledgeFReconfirmation(original);
   return ticket;
 }
 

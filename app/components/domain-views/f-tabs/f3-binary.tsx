@@ -284,12 +284,12 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <Fact k="已经结算过">查回原记录，不重复发，也不按新设置重算</Fact>
           </Facts>
           <Field id="ownerUserId" label="邀请人用户编号" required>
-            <Input id="ownerUserId" name="ownerUserId" inputMode="numeric" autoComplete="off" disabled={locked} required value={value.ownerUserId ?? ""}
+            <Input id="ownerUserId" name="ownerUserId" inputMode="numeric" autoComplete="off" disabled={locked} readOnly={!!draft} required value={value.ownerUserId ?? ""}
               onChange={(event) => change({ ...value, ownerUserId: event.target.value })} />
           </Field>
           <Field id="settlementDate" label="结算日" required
             help={`按${zone}已经结束的一天；不是周期结算日的，批准时会被拦下`}>
-            <Input id="settlementDate" name="settlementDate" placeholder="YYYY-MM-DD" autoComplete="off" disabled={locked} required value={value.settlementDate ?? ""}
+            <Input id="settlementDate" name="settlementDate" placeholder="YYYY-MM-DD" autoComplete="off" disabled={locked} readOnly={!!draft} required value={value.settlementDate ?? ""}
               onChange={(event) => change({ ...value, settlementDate: event.target.value })} />
           </Field>
         </div>,
@@ -297,6 +297,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       run: async (reason, value) => {
         const ownerUserId = Number(value?.ownerUserId);
         const settlementDate = value?.settlementDate?.trim() ?? "";
+        if (draft && (ownerUserId !== intended?.ownerUserId || settlementDate !== intended?.settlementDate)) {
+          throw new Error("请从原草稿继续处理同一邀请人和结算日。");
+        }
         if (!Number.isSafeInteger(ownerUserId) || ownerUserId <= 0) throw new Error("请输入有效用户编号");
         const utcDate = new Date(`${settlementDate}T00:00:00Z`);
         if (!Number.isFinite(utcDate.valueOf()) || utcDate.toISOString().slice(0, 10) !== settlementDate) {
@@ -505,6 +508,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           : <BlockState state="error" title="团队平衡奖励数据加载失败" detail={ctx.f3Error ?? undefined} onRetry={() => void ctx.refreshF3()} retryLabel="重新加载" />}
       </> : <>
       {ctx.f3Error && <Notice tone="warn" title="团队平衡奖励数据刷新失败">{ctx.f3Error}</Notice>}
+      {ctx.f3ApprovalReadError && <Notice tone="warn" title="审批队列读取失败"
+        action={<Button size="sm" onClick={() => void ctx.refreshF3()}>重试读取</Button>}>{ctx.f3ApprovalReadError}</Notice>}
 
       <StatBand label="团队平衡奖励摘要">
         <Stat label="本月匹配订单额" icon={ArrowLeftRight} tone="role-2" value={amountText(ctx.f3Amounts?.monthlyMatchedUsdRaw, ctx.f3MonthlyMatchedUsd)} unit="USDT"

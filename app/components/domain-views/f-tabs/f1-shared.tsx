@@ -5,7 +5,7 @@
  * 只管怎么写给运营看：奖励怎么写、发放状态叫什么、审批人怎么称呼；不发请求、不判断权限。
  */
 import { fConfirmRecovery } from "./f-recovery-state";
-import { consumeFReconfirmation, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { useFReconfirmations } from "@/lib/admin/f-reconfirmation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BadgeDollarSign, CircleCheck, Clock3, Coins, Gift, Package, RotateCcw, Ticket, TriangleAlert, Undo2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -190,9 +190,8 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
             slot.current = typeof confirm.proposalSlot === "function" ? confirm.proposalSlot(businessValue) : confirm.proposalSlot ?? "";
             if (slotRecord()) throw new Error("这项操作有保存的原申请，请先查询原结果。");
             originalValues.current = businessValue;
-            try { await confirm.submit(reason, businessValue, newValue); }
+            try { await ctx.runFContinuation(confirm.draft?.commandKey, () => confirm.submit(reason, businessValue, newValue)); }
             finally { command.current = slotRecord()?.commandKey; }
-            if (confirm.draft) consumeFReconfirmation(confirm.draft);
           }
           if (!recovering && confirm.done) ctx.toast(confirm.done);
           onClose();

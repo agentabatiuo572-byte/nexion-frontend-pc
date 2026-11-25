@@ -1,4 +1,4 @@
-import { settleFReconfirmation } from "./f-reconfirmation";
+import { acknowledgeFReconfirmation, settleFReconfirmation } from "./f-reconfirmation";
 import { activeRecoveryActor } from "./f-proposal-recovery";
 import { createFDirectRecovery } from "./f-direct-recovery";
 import { useAdminAuth } from "../store/admin-auth";
@@ -30,7 +30,7 @@ function activeActor(adminId: number) {
   return auth.session;
 }
 
-export async function sendF3ConfigWrite(adminId: number, key: F3PayoutControlKey, input?: { value: string; reason: string }) {
+export async function sendF3ConfigWrite(adminId: number, key: F3PayoutControlKey, input?: { value: string; reason: string }, continuedFrom?: string) {
   const actor = activeActor(adminId);
   if (!actor.authorities.includes(f3PayoutControlAuthority(key))) throw new Error("ADMIN_PERMISSION_DENIED");
   const slot = f3DirectSlot(adminId, key);
@@ -40,7 +40,7 @@ export async function sendF3ConfigWrite(adminId: number, key: F3PayoutControlKey
     const request = { key, ...input, operator: actor.operator || actor.username };
     const commandKey = createA2CommandKey("f3-config");
     const route = f3DirectRoute(key);
-    fDirectCommands.remember(slot, commandKey, { adminId, f3Request: request, inputFingerprint: JSON.stringify(request),
+    fDirectCommands.remember(slot, commandKey, { adminId, f3Request: request, inputFingerprint: JSON.stringify(request), continuedFrom,
       commandOrigin: fundCommandOrigin(route.originalMethod, route.originalPath, route.readAuthority) });
     if (!fDirectCommands.isDurablyStored(slot, commandKey)) {
       fDirectCommands.forget(slot, commandKey);
@@ -58,6 +58,7 @@ export async function sendF3ConfigWrite(adminId: number, key: F3PayoutControlKey
   try {
     const updated = input ? await send(original) : await f3DirectRecovery.replay(original, send);
     f3DirectRecovery.settleAcknowledged(original);
+  acknowledgeFReconfirmation(original);
     return updated;
   } catch (error) {
     if (input && isExplicitRejection(error)) fDirectCommands.forget(slot, original.commandKey);

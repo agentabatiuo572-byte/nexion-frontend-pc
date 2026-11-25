@@ -15,7 +15,6 @@ import type { FViewCtx } from "./types";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { f3ProposalRecovery, f3ConfigSlot, listF3Proposals, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
 import { f3DirectRecovery, pendingF3ConfigWrite } from "@/lib/admin/f3-config-write";
-import { consumeFReconfirmation } from "@/lib/admin/f-reconfirmation";
 import { F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY, f3PayoutControlAuthority, f3PlatformCapPct, planF3PayoutControl, type F3PayoutControlKey } from "@/lib/admin/f3-policy";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
@@ -26,6 +25,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 export const F3_PAYOUT_KEYS: readonly F3PayoutControlKey[] = [F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY];
 export const F3_PAYOUT_NAMES: Record<F3PayoutControlKey, string> = { [F3_AUTO_SETTLE_KEY]: "自动发放", [F3_PLATFORM_CAP_PCT_KEY]: "全平台封顶比例" };
 const SUPER = "另一位超级管理员";
+const QUEUE_UNREAD = "审批队列没有完整读到，请重试读取后再调整。";
 
 /** 后端给的百分数文字去掉末尾 0，不舍入：33.333300 → 33.3333%。 */
 export const pctText = (raw: string) => `${raw.trim().replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")}%`;
@@ -88,6 +88,7 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
         : approval ? auto ? "开启在等批准，批准或驳回前不能再提交" : `调高到 ${payoutValueText(key, approval.after)} 在等批准；调低仍立即生效`
         : auto ? autoNow ? "关闭立即生效，手动照常" : `开启要${SUPER}批准` : "调高可能多付钱 · 调低立即生效";
     const disabledReason = missing ? "这一项没读到，重新加载后再改"
+      : ctx.f3ApprovalReadError && (!approval || auto && !autoNow) ? QUEUE_UNREAD
       : auto && !autoNow && approval ? "开启已在等审批，批准或驳回前不能再提交" : undefined;
     const action = direct || original
       ? <Button size="sm" onClick={() => onOpen({ key, snapshot, original, direct })}>{direct ? "查看原操作" : "查看原申请"}</Button>
@@ -230,6 +231,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
       coverage={snapshot?.coverage ?? ctx.f3Coverage}
       coverageLead={auto ? `开启后系统按周期自动发钱，要${SUPER}批准` : `调高封顶会让平台多付钱，要${SUPER}批准`}
       coverageCheck="批准时查兑付覆盖率，读不到或低于红线就不能批准。"
+      blockedReason={mode === "new" && ctx.f3ApprovalReadError && (!approval || auto && !autoNow) ? QUEUE_UNREAD : undefined}
       confirmLabel={auto ? autoNow ? "立即生效" : "提交审批" : "立即生效"}
       confirmLabelForValue={auto ? undefined : (value) => direction(typedCap(value)) === "proposal" ? "提交审批" : "立即生效"}
       edit={auto ? undefined : {
@@ -240,6 +242,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
         amplifiesWhen: (value) => { rawTyped.current = value; return mode === "new" && !blockedRaise && direction(value) === "proposal"; },
         validate: (value) => f3PlatformCapPct(value) === null ? "填 0 到 100 的数，最多 10 位小数"
           : direction(value) !== "proposal" ? undefined
+            : ctx.f3ApprovalReadError ? QUEUE_UNREAD
             : approval ? "已有调高在等审批，批准或驳回前只能调低"
               : originalProposal ? "原申请结果未知，请先查询原结果" : undefined,
       }}
@@ -270,13 +273,12 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
         if (ticket) { await ctx.recoverF3(ticket, "retry"); onClose(); return; }
         if (mode !== "new") throw new Error("PENDING_REPLAY_BLOCKED");
         const value = auto ? open.recoveredValue ?? (autoNow ? "off" : "on") : newValue ?? "";
-        const result = await ctx.submitF3PayoutControl(key, value, reason, snapshot).catch((error: unknown) => {
+        const result = await ctx.runFContinuation(open.draft?.commandKey, () => ctx.submitF3PayoutControl(key, value, reason, snapshot)).catch((error: unknown) => {
           // 直接生效的结果未知：这页有自己的查询和重试，提示指向框里的按钮，不指去操作记录与审批。
           if (isF1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。先点「查询原结果」核对。" });
           else if (isA2OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已建审批单。先点「查询原结果」；关框后在页面上方原操作列表也能查询。" });
           throw error;
         });
-        if (open.draft) consumeFReconfirmation(open.draft);
         ctx.toast(result.kind === "unchanged" ? "和现在一样，没有提交"
           : result.kind === "direct" ? auto ? "自动发放已关闭，立即生效" : `全平台封顶比例已改为 ${payoutValueText(key, value)}，立即生效`
             : auto ? "开启自动发放已提交审批，批准前仍是关闭" : `调高全平台封顶比例已提交审批，批准前仍按 ${capText}`);

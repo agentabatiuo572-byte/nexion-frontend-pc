@@ -1,6 +1,6 @@
 "use client";
 
-import { consumeFReconfirmation } from "@/lib/admin/f-reconfirmation";
+import { rebaseFValues } from "@/lib/admin/f-reconfirmation";
 import { fConfirmRecovery, pendingConfirmError } from "./f-tabs/f-recovery-state";
 import { fBatchIssueText } from "./f-tabs/f-batch-names";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -65,7 +65,7 @@ import { listF1Proposals, queryF1Proposal, releaseF1Proposal, sendF1Proposal } f
 import { f4ProposalRecovery, F4_POLICY_SLOT, f4PendingFor, f4PolicySpec, listF4Proposals, matchesF4Confirmation, queryF4Proposal, sendF4Proposal, type F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import { f4PolicyRecovery, listF4PolicyWrites, queryF4Policy, sendF4Policy } from "@/lib/admin/f4-policy-write";
 import { f5ConfirmationSlot, listF5Proposals, queryF5Proposal, releaseF5Proposal, sendF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
-import { f5AnomalyRecovery, listF5AnomalyWrites, queryF5Anomaly, sendF5Anomaly } from "@/lib/admin/f5-anomaly-write";
+import { f5AnomalyChanged, f5AnomalyRecovery, F5_ANOMALY_UNCHANGED, listF5AnomalyWrites, queryF5Anomaly, sendF5Anomaly } from "@/lib/admin/f5-anomaly-write";
 import { f5ExportReadBlock, submitF5Export } from "@/lib/admin/f5-export-operation";
 import { F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
 import { fetchBusinessCalendar, type BusinessCalendarView } from "@/lib/admin/business-calendar-client";
@@ -84,7 +84,8 @@ import { RdPage } from "@/app/components/rd";
 import { F2Page } from "./f-tabs/f2-page";
 
 import { F3Binary } from "./f-tabs/f3-binary";
-import { f4Confirmation } from "./f-tabs/f4-confirmations";
+import { f4Confirmation, leaderboardState } from "./f-tabs/f4-confirmations";
+import { equalF4PolicyValue, f4PolicyValues } from "./f-tabs/f4-policy-confirm";
 import { F4Ops } from "./f-tabs/f4-ops";
 import { F5Audit } from "./f-tabs/f5-audit";
 import { operationConfirmPlainMessage } from "@/lib/admin/operation-confirm-error";
@@ -148,6 +149,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const routeTab = FOLD[meta.l2Id] ?? "F2";
   const [tab, setTab] = useState(routeTab);
   const [mc, setActionConfirm] = useState<Mc>(null);
+  const continuation = useRef<string | undefined>(undefined);
+  const runFContinuation = async <T,>(commandKey: string | undefined, submit: () => T | Promise<T>) => {
+    if (!commandKey) return submit();
+    continuation.current = commandKey;
+    try { return await submit(); }
+    finally { if (continuation.current === commandKey) continuation.current = undefined; }
+  };
   const propose = (toast: (message: string) => void, spec: ProposeSpec) =>
     rawPropose(toast, { ...spec, commandKey: spec.commandKey ?? mc?.commandKey });
   const openActionConfirm = (spec: McSpec) => {
@@ -201,6 +209,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f2Error, setF2Error] = useState<string | null>(null);
   const [f3Proposals, setF3Proposals] = useState<FDomainAttempt[]>([]);
   const [f3ApprovalRows, setF3ApprovalRows] = useState<A2OperationRow[]>([]);
+  const f3Queue = useRef<{ owner?: number; rows: A2OperationRow[]; error?: string }>({ rows: [] });
   const f3SettlementSubmission = useRef<{
     modalKey: string;
     snapshot?: F3ConfirmationSnapshot;
@@ -214,6 +223,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f4VoteProjection, setF4VoteProjection] = useState<F4VoteProjectionRead>({ status: "idle" });
   const [f4AmbassadorPolicy, setF4AmbassadorPolicy] = useState<F4AmbassadorPolicy | null>(null);
   const [f4PolicyLoading, setF4PolicyLoading] = useState(false);
+  const [f4PolicyUnreadOwner, setF4PolicyUnreadOwner] = useState<number>();
   const [f4Loading, setF4Loading] = useState(tab === "F4");
   const [f4Error, setF4Error] = useState<string | null>(null);
   const [f4Proposals, setF4Proposals] = useState<FDomainAttempt[]>([]);
@@ -232,6 +242,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f5AppendError, setF5AppendError] = useState<string | null>(null);
   const [f5Proposals, setF5Proposals] = useState<FDomainAttempt[]>([]);
   const [f5AnomalyWrites, setF5AnomalyWrites] = useState<FDirectAttempt[]>([]);
+  const [f5AnomalyUnreadOwner, setF5AnomalyUnreadOwner] = useState<number>();
   const [f5ApprovalRows, setF5ApprovalRows] = useState<A2OperationRow[]>([]);
   const [f5ApprovalReadError, setF5ApprovalReadError] = useState<string | null>(null);
   const [f5ReadEpoch, setF5ReadEpoch] = useState(0);
@@ -484,7 +495,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setF3ConfigWrites(owner === undefined ? [] : listF3ConfigWrites(owner));
     const [overview, queue, , ...lookups] = await Promise.allSettled([
       fetchF3BinaryOverview(),
-      canReadA2 ? fetchA2Overview() : Promise.resolve(null),
+      canReadA2 ? fetchA2Overview({}, true) : Promise.resolve(null),
       Promise.allSettled(owner === undefined ? [] : listF3ConfigWrites(owner).filter(row => row.commandKey !== skipKey && row.f3Request)
         .map(row => queryF3ConfigWrite(owner, row.f3Request!.key))),
       ...originals.filter(row => row.commandKey !== skipKey).map(row => queryF3Proposal(owner!, row)),
@@ -492,8 +503,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (request !== f3Generation.current || owner !== useAdminAuth.getState().session?.adminId) return;
     if (overview.status === "fulfilled") setF3Overview(overview.value as F3BinaryOverview);
     else { setF3Overview(null); setF3Error(errorMessage(overview.reason)); }
-    const audit = queue.status === "fulfilled" ? queue.value as Awaited<ReturnType<typeof fetchA2Overview>> | null : null;
-    setF3ApprovalRows([...(audit?.operationQueue ?? []), ...lookups.flatMap(row => row.status === "fulfilled" && row.value ? [row.value as A2OperationRow] : [])]);
+    const audit = queue.status === "fulfilled" ? queue.value : null;
+    const queueError = queue.status === "rejected" ? displayAdminReadError(queue.reason)
+      : !audit ? "当前账号读不到审批队列。" : audit.operationQueueInvalidCount ? "审批队列返回不完整。" : undefined;
+    const observed = [...(audit?.operationQueue ?? []), ...lookups.flatMap(row => row.status === "fulfilled" && row.value ? [row.value] : [])];
+    const prior = queueError && f3Queue.current.owner === owner ? f3Queue.current.rows : [];
+    const rows = [...new Map([...prior, ...observed].map(row => [row.id, row])).values()];
+    f3Queue.current = { owner, rows, error: queueError };
+    setF3ApprovalRows(rows);
     if (owner !== undefined) {
       const retained = listF3Proposals(owner);
       setF3Proposals(retained);
@@ -538,7 +555,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!f3Overview || f3Loading || f3Error) throw new Error("团队平衡奖励读取失败，请重新读取后再操作。");
     const frame = slot === F3_SETTLEMENT_SLOT ? f3SettlementSubmission.current : undefined;
     try {
-      const ticket = await sendF3Proposal(owner, slot, spec, snapshot);
+      const ticket = await sendF3Proposal(owner, slot, spec, snapshot, continuation.current);
       setF3ApprovalRows(rows => [...rows, ticket]);
       setToast("已提交，等待审批后执行");
       return ticket;
@@ -575,13 +592,18 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (directWrite) throw new F1OutcomeUncertainError(displayAdminError("F1_REQUEST_OUTCOME_UNKNOWN"), directWrite.commandKey);
     const unresolved = listF3Proposals(current.adminId).find(row => row.fingerprint === f3ConfigSlot(key) && !row.ticket);
     if (unresolved) throw new Error(isRetryExpired(unresolved) ? RETRY_EXPIRED_TEXT : "原申请结果未知，请先查询原结果。");
+    const queue = f3Queue.current;
+    const knownPending = f3PendingFor(queue.rows, key) ?? pending.approval;
+    if (queue.owner !== current.adminId || queue.error && (plan.direction !== "direct" || !knownPending)) {
+      throw new Error("审批队列没有完整读到，请重试读取后再调整。");
+    }
     if (plan.direction === "proposal") {
-      if (pending.approval) throw new Error("OBJECT_ALREADY_PENDING");
+      if (knownPending) throw new Error("OBJECT_ALREADY_PENDING");
       const ticket = await sendF3(f3ConfigSlot(key), f3PayoutControlSpec(key, plan.before, plan.value, reason), snapshot);
       return { kind: "proposal", ticket } as const;
     }
     try {
-      const updated = await sendF3ConfigWrite(current.adminId, key, { value: plan.value, reason });
+      const updated = await sendF3ConfigWrite(current.adminId, key, { value: plan.value, reason }, continuation.current);
       if (current.adminId === useAdminAuth.getState().session?.adminId) await refreshF3();
       return { kind: "direct", updated } as const;
     } finally {
@@ -627,7 +649,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setF4PolicyLoading(true);
     try {
       const policy = await fetchF4AmbassadorPolicy();
-      if (current()) setF4AmbassadorPolicy(policy);
+      if (current()) {
+        setF4AmbassadorPolicy(policy);
+        setF4PolicyUnreadOwner(undefined);
+      }
       return policy;
     } catch (error) {
       if (current()) setF4AmbassadorPolicy(null);
@@ -637,7 +662,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   }, []);
 
-  const refreshF4 = useCallback(async (skipKey?: string) => {
+  const refreshF4 = useCallback(async (skipKey?: string, policyWritten = false) => {
     const request = ++f4Generation.current;
     const owner = useAdminAuth.getState().session?.adminId;
     const originals = owner === undefined ? [] : listF4Proposals(owner);
@@ -648,7 +673,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setF4Error(null);
     void refreshF4VoteProjection();
     if (!skipKey) setActionConfirm(current => current?.f4Snapshot && !current.f4Recovery ? null : current);
-    const [overview, , calendar, queue, , ...lookups] = await Promise.allSettled([
+    const [overview, policyRead, calendar, queue, policyReceipts, ...lookups] = await Promise.allSettled([
       fetchF4LeadershipPoolOverview(),
       readF4AmbassadorPolicy(),
       fetchBusinessCalendar(),
@@ -657,6 +682,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       ...originals.filter(row => row.commandKey !== skipKey).map(row => queryF4Proposal(owner!, row)),
     ]);
     if (request !== f4Generation.current || owner !== useAdminAuth.getState().session?.adminId) return;
+    if (policyRead.status === "rejected" && (policyWritten || policyReceipts.status === "fulfilled"
+      && policyReceipts.value.some(receipt => receipt.status === "fulfilled" && receipt.value.settled && receipt.value.conclusion === "succeeded"))) {
+      setF4PolicyUnreadOwner(owner);
+    }
     let latest: F4LeadershipPoolOverview | undefined;
     if (overview.status === "fulfilled") {
       const zoneId = calendar.status === "fulfilled" ? calendar.value.trackZones.GROWTH_TEAM : undefined;
@@ -703,15 +732,17 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setF4Overview(null); setF4AmbassadorPolicy(null); setF4Loading(true);
     setF4VoteProjection({ status: "idle" });
     let resolved = false;
+    let policyWritten = false;
     const note = (value?: { tone: "warn" | "danger"; text: string }) => setF4QueryNotes(({ [original.commandKey]: _, ...rest }) => value ? { ...rest, [original.commandKey]: value } : rest);
     note();
     try {
       if (record.kind === "policy") {
-        if (mode === "retry") { await sendF4Policy(owner); resolved = true; }
+        if (mode === "retry") { await sendF4Policy(owner); resolved = true; policyWritten = true; }
         else {
           const result = await queryF4Policy(owner, original as FDirectAttempt);
           resolved = result.settled;
           const restoreDraft = resolved && (result.conclusion === "not-executed" || result.conclusion === "rejected");
+          policyWritten = resolved && result.conclusion === "succeeded";
           if (restoreDraft) setToast("原操作未执行，已保留草稿。");
           else if (resolved) setToast(fDirectSettledText(result.receipt?.originalStatus ?? "SUCCEEDED"));
           else note({ tone: "warn", text: isRetryExpired(original) ? "这次没查到结论，结果仍未知；已过 24 小时，到操作记录与审批核对。" : "这次没查到结论，结果仍未知；可以稍后再查。" });
@@ -733,7 +764,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     } finally {
       if (resolved) setActionConfirm(current =>
         current?.f4Recovery?.original.commandKey === original.commandKey ? null : current);
-      await refreshF4(original.commandKey);
+      await refreshF4(original.commandKey, policyWritten);
     }
   };
 
@@ -756,7 +787,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   };
 
-  const refreshF5 = useCallback(async (query: F5CommissionQuery = f5Query.current, skipKey?: string) => {
+  const refreshF5 = useCallback(async (query: F5CommissionQuery = f5Query.current, skipKey?: string, anomalyWritten = false) => {
     const request = ++f5Generation.current;
     const owner = useAdminAuth.getState().session?.adminId;
     const append = !!query.cursor;
@@ -771,7 +802,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setF5Loading(true);
     setF5Error(null);
     setF5AppendError(null);
-    const [overview, queue, , ...lookups] = await Promise.allSettled([
+    const [overview, queue, anomalyReceipts, ...lookups] = await Promise.allSettled([
       fetchF5CommissionAuditOverview(query),
       canReadA2 ? fetchA2Overview({ domain: "F" }, true) : Promise.resolve(null),
       Promise.allSettled(directOriginals.filter(row => row.commandKey !== skipKey).map(row => queryF5Anomaly(owner!, row))),
@@ -782,6 +813,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       : append ? previousExportRead : { owner };
     if (overview.status === "fulfilled") {
       const page = overview.value;
+      setF5AnomalyUnreadOwner(undefined);
       setF5Page(current => {
         const items = append && current ? [...current.overview.commissionEvents, ...page.commissionEvents] : page.commissionEvents;
         return {
@@ -791,7 +823,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         };
       });
     } else if (append) setF5AppendError(displayAdminReadError(overview.reason));
-    else { setF5Page(null); setF5Error(displayAdminReadError(overview.reason)); }
+    else {
+      setF5Page(null); setF5Error(displayAdminReadError(overview.reason));
+      if (anomalyWritten || anomalyReceipts.status === "fulfilled"
+        && anomalyReceipts.value.some(receipt => receipt.status === "fulfilled" && receipt.value.settled && receipt.value.conclusion === "succeeded")) {
+        setF5AnomalyUnreadOwner(owner);
+      }
+    }
     const audit = queue.status === "fulfilled" ? queue.value as Awaited<ReturnType<typeof fetchA2Overview>> | null : null;
     setF5ApprovalRows([...(audit?.operationQueue ?? []), ...lookups.flatMap(row => row.status === "fulfilled" && row.value ? [row.value as A2OperationRow] : [])]);
     setF5ApprovalReadError(queue.status === "rejected" ? errorMessage(queue.reason)
@@ -818,9 +856,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     f5Generation.current += 1;
     setF5Page(null); setF5Loading(true);
+    let anomalyWritten = false;
     try {
       if (record.kind === "anomaly") {
-        if (mode === "retry") await sendF5Anomaly(owner);
+        if (mode === "retry") { await sendF5Anomaly(owner); anomalyWritten = true; }
         else {
           const result = await queryF5Anomaly(owner, original as FDirectAttempt);
           if (result.settled) {
@@ -828,6 +867,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
               setToast("原操作未执行，已保留草稿。");
               return "restore";
             }
+            anomalyWritten = result.conclusion === "succeeded";
             setToast("原操作已执行，记录已解除，不要再做一次。");
             return true;
           }
@@ -841,7 +881,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (ticket) setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请核对奖励记录。");
       else if (mode === "query") setToast("没有查到原审批单，不能据此认定没有提交。");
       return ticket && ["rejected", "withdrawn", "expired"].includes(ticket.status) ? "restore" : !!ticket;
-    } finally { await refreshF5(undefined, original.commandKey); }
+    } finally { await refreshF5(undefined, original.commandKey, anomalyWritten); }
   };
 
   const sendF5 = async (slot: string, spec: ProposeSpec) => {
@@ -911,7 +951,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF2ApprovalRows([]);
     }
     try {
-      const ticket = await sendF2Proposal(session.adminId, slot, spec, ranked, baseline);
+      const ticket = await sendF2Proposal(session.adminId, slot, spec, ranked, baseline, spec ? continuation.current : undefined);
       setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : fProposalEndText(ticket.status));
       return ticket;
     } finally {
@@ -974,7 +1014,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (!current || current.adminId !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
       if (!f1Overview || f1Loading || f1Error || slot === "f-vrank-bootstrap:current" && f1Overview.rows.length !== 0) throw new Error("会员等级读取失败，请重新读取后再操作。");
       try {
-        await sendF1Proposal(current.adminId, slot, spec);
+        await sendF1Proposal(current.adminId, slot, spec, continuation.current);
         setToast("已提交，等待审批后执行");
       } finally { setF1ProposalEpoch(value => value + 1); }
       return;
@@ -1152,6 +1192,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   const ctx: FViewCtx = {
+    runFContinuation,
     canSubmitTeamApproval,
     submitTeamApproval,
     openActionConfirm: (m) => {
@@ -1195,10 +1236,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     querySalaryClaims,
     teamBusinessCalendar,
     f1BenefitCoverage,
-    submitVRankBenefit: async (editor, value, reason, mode = "submit") => {
+    submitVRankBenefit: async (editor, value, reason, mode = "submit", continuedFrom) => {
       const current = useAdminAuth.getState().session;
       if (!current || current.adminId !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-      return submitF1Policy(current, editor, { value }, reason, mode);
+      return submitF1Policy(current, editor, { value }, reason, mode, continuedFrom);
     },
     f1RewardValuation: f1Overview?.rewardValuationUsdtPerUvt ?? null,
     f1Coverage: f1Overview?.coverage,
@@ -1443,6 +1484,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f3DailyMatchUsd: f3Overview?.dailyMatchUsd ?? 0,
     f3Loading,
     f3Error,
+    f3ApprovalReadError: f3Queue.current.owner === session?.adminId ? f3Queue.current.error : undefined,
     refreshF3,
     getF3PayoutControlPending, submitF3PayoutControl, recoverF3PayoutControl,
     updateF3Config: async (key, value, reason, amplifies, snapshot) => {
@@ -1454,13 +1496,16 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     refreshF4VoteProjection,
     f4AmbassadorPolicy,
     f4PolicyLoading,
+    f4PolicyAppliedUnread: f4PolicyUnreadOwner !== undefined && f4PolicyUnreadOwner === session?.adminId,
     retryF4AmbassadorPolicy: async () => { try { await readF4AmbassadorPolicy(); } catch { /* The rule block shows the read failure. */ } },
-    refreshF4PolicyBaseline: async () => {
-      setF4AmbassadorPolicy(null);
+    refreshF4PolicyBaseline: async (baseline, values) => {
       const policy = await readF4AmbassadorPolicy();
-      setActionConfirm(modal => modal?.f4Snapshot?.action === "policy"
-        ? { ...modal, f4Snapshot: { ...modal.f4Snapshot, policy } } : modal);
-      return policy;
+      setActionConfirm(modal => {
+        if (!modal?.f4Snapshot || modal.f4Snapshot.action !== "policy" || modal.f4Snapshot.policy !== baseline) return modal;
+        const businessValue = rebaseFValues(f4PolicyValues(baseline), values, f4PolicyValues(policy), equalF4PolicyValue);
+        const snapshot = { ...modal.f4Snapshot, policy, businessValue, policyConflict: true };
+        return { ...modal, ...f4Confirmation(ctx, snapshot), commandKey: createA2CommandKey("f-domain-action") };
+      });
     },
     f4Loading,
     f4Error,
@@ -1477,6 +1522,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     submitF4Proposal: sendF4,
     updateF4Config: async (key, value, reason, expectedVersion, expectedMaterialRevision) => {
       if (key === "F.pool.ratio" && f4PoolRatio(value) === null) throw new Error(F4_POOL_RATIO_INVALID);
+      if (key === "F.leaderboard.paused" && f4Overview && leaderboardState(f4Overview).paused === (value === "on")) {
+        throw new Error("排行榜已达到拟提交的状态，无需提交。");
+      }
       if (["F.pool.monthlyCap", "F.leaderboard.poolUsd"].includes(key) && f4MonthlyCap(value) === null) throw new Error("F4_POOL_MONEY_INVALID");
       if (key === "F.pool.settleCron") { const issue = f4WeeklyCronIssue(value); if (issue) throw new Error(issue); }
       const vote = f4Overview?.voteWeights.find((row) => (row.configKey || `F.pool.votes.${row.v}`) === key);
@@ -1506,7 +1554,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         if (records[0]) setActionConfirm(modal => modal?.f4Snapshot
           ? { ...modal, f4Snapshot: records[0].f4Snapshot ?? modal.f4Snapshot, f4Recovery: { kind: "policy", original: records[0] } } : modal);
       }
-      await refreshF4();
+      await refreshF4(undefined, saved);
       return saved;
     },
     proposeF4Settlement: async (reason) => {
@@ -1535,6 +1583,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f5Error,
     f5Proposals,
     f5AnomalyWrites,
+    f5AnomalyAppliedUnread: f5AnomalyUnreadOwner !== undefined && f5AnomalyUnreadOwner === session?.adminId,
     f5ApprovalRows,
     f5ApprovalReadError,
     f5ReadEpoch,
@@ -1635,11 +1684,15 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       const owner = useAdminAuth.getState().session?.adminId;
       if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
       if (!f5Page || f5Loading || f5Error) throw new Error("F5_CURRENT_DATA_REQUIRED");
+      const config = f5Page.overview.configValues;
+      if (!f5AnomalyChanged(sigma, layerRatio, config.commissionAnomalySigma, config.layerRatioAnomalyPct)) {
+        throw new Error(F5_ANOMALY_UNCHANGED);
+      }
       try {
         await sendF5Anomaly(owner, { commissionAnomalySigma: sigma, layerRatioAnomalyPct: layerRatio, reason }, f5Submission.current);
       } finally { setF5AnomalyWrites(listF5AnomalyWrites(owner)); }
       setF5Page(null);
-      await refreshF5();
+      await refreshF5(undefined, undefined, true);
     },
   };
 
@@ -1727,7 +1780,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             if (original) { await recoverF4(original, "retry"); return; }
             if (mc.f4Recovery) throw new Error("PENDING_REPLAY_BLOCKED");
             if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额与排行榜加载失败，请刷新后再操作。");
-            f4Submission.current = { ...mc.f4Snapshot, value: newVal, businessValue };
+            f4Submission.current = { ...mc.f4Snapshot, value: newVal ?? mc.fixedVal, businessValue, continuedFrom: mc.draft?.commandKey };
           }
           if (teamApproval?.source === "F3") {
             const settlement = pendingF3Settlement();
@@ -1736,7 +1789,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             f3SettlementSubmission.current = { modalKey: mc.commandKey, snapshot: mc.f3Snapshot };
           }
           if (mc.run) {
-            await mc.run(reason, businessValue, newVal);
+            const run = mc.run;
+            await runFContinuation(teamApproval?.source === "F3" ? mc.draft?.commandKey : undefined, () => run(reason, businessValue, newVal));
           } else if (mc.op === "param" && mc.paramKey) {
             if (!newVal) { setToast("请填写新值"); return; }
             const target = f1ThresholdTarget(mc.paramKey);
@@ -1789,7 +1843,6 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           } else {
             throw new Error("F_CONFIRM_SHAPE_UNKNOWN:" + (mc.op || mc.name)); // 未知确认形状必须响亮失败,禁静默假成功
           }
-          if (mc.draft) consumeFReconfirmation(mc.draft);
           setActionConfirm(null);
           } catch (error) {
             // 错误交回确认框，由框里显示（没权限时框关掉、外壳提示），不再另弹同一句轻提示。

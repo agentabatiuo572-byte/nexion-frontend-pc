@@ -6,7 +6,6 @@
  * 放大方向才出覆盖率提示，「现在 → 改后」，理由。
  */
 import { fConfirmRecovery } from "./f-recovery-state";
-import { consumeFReconfirmation } from "@/lib/admin/f-reconfirmation";
 import { useState } from "react";
 import { CircleHelp, Clock3, Lock, LockOpen, Zap } from "lucide-react";
 import { Change, DiffField, Fact, Facts, NumberInput, StatusTag } from "@/app/components/rd";
@@ -115,7 +114,7 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
     const sent = original ?? pending();
     let result;
     try {
-      result = await ctx.submitVRankBenefit(editor, value, reason, mode);
+      result = await ctx.submitVRankBenefit(editor, value, reason, mode, draft?.record.commandKey);
     } catch (error) {
       const saved = pending();
       setOriginal(saved);
@@ -152,7 +151,6 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
       onClose();
       return true;
     }
-    if (mode === "submit" && result.resolved && draft) consumeFReconfirmation(draft.record);
     if (mode === "submit") {
       const active = result.active?.rows.find(item => item.v === row.v);
       const saved = active && benefitValue(active, field);

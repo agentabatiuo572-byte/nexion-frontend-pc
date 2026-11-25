@@ -543,10 +543,14 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const skipsOverrideCoverage = (values: BusinessFormValue) => values.targetV === "V8" && values.direction === "promote";
   const openOverride = (draft?: FDomainAttempt, initial?: BusinessFormValue) => {
     overrideRead.current += 1;
-    const proposalSlot = (values?: BusinessFormValue) => `f-vrank-override:${values?.userId?.trim() ?? ""}`;
+    const fixedUser = draft && initial?.userId;
+    const fixedDirection = draft && initial?.direction;
+    let currentRank: string | undefined;
+    const proposalSlot = (values?: BusinessFormValue) => `f-vrank-override:${fixedUser ?? values?.userId?.trim() ?? ""}`;
     const readUserRank = async (values: BusinessFormValue) => {
       const request = ++overrideRead.current;
       const userId = values.userId?.trim() ?? "";
+      currentRank = undefined;
       setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current, facts: <Facts><Fact k="现在的等级">这页读不到；批准时按当时的等级核对方向</Fact></Facts> } : current);
       let rank: string | undefined;
       if (/^[1-9]\d*$/.test(userId) && Number.isSafeInteger(Number(userId)) && ctx.can("user_c1_read")) {
@@ -557,9 +561,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           if (profile?.vRank && /^V[0-8]$/.test(profile.vRank)) rank = profile.vRank;
         } catch { /* Read failure keeps the prepared unknown state; never infer V0. */ }
       }
-      if (overrideRead.current === request) setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current,
-        facts: <Facts><Fact k="现在的等级">{rank ?? "这页读不到；批准时按当时的等级核对方向"}</Fact></Facts>,
-      } : current);
+      if (overrideRead.current === request) {
+        currentRank = rank;
+        setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current,
+          facts: <Facts><Fact k="现在的等级">{rank ?? "这页读不到；批准时按当时的等级核对方向"}</Fact></Facts>,
+        } : current);
+      }
     };
     setConfirm({
       draft, initial, proposalSlot,
@@ -588,12 +595,20 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       businessForm: {
         kind: "multi-field",
         requireAnyChange: false,
+        feedback: draft ? values => values.targetV && values.targetV === currentRank
+          ? { invalid: true, field: "targetV", live: true, message: "这位用户已达到所选等级，无需提交。" }
+          : { invalid: false, message: "" } : undefined,
         amplifies: (values) => !skipsOverrideCoverage(values),
-        onFieldChange: (field, next) => { if (field === "userId") void readUserRank(next); return next; },
+        onFieldChange: (field, next) => {
+          if (field === "userId" && fixedUser) return { ...next, userId: fixedUser };
+          if (field === "direction" && fixedDirection) return { ...next, direction: fixedDirection };
+          if (field === "userId") void readUserRank(next);
+          return next;
+        },
         fields: [
           { key: "userId", label: "用户编号", inputKind: "text", required: true, placeholder: "请输入用户编号", pattern: "^[1-9]\\d*$", patternMessage: "用户编号须为正整数" },
           { key: "targetV", label: "目标等级", inputKind: "select", options: rows.map((row) => row.v), required: true, mustChoose: true },
-          { key: "direction", label: "调整方向", inputKind: "select", options: ["promote", "rollback"], optionLabels: { promote: "升级", rollback: "降级" }, required: true, mustChoose: true },
+          { key: "direction", label: "调整方向", inputKind: "select", options: fixedDirection ? [fixedDirection] : ["promote", "rollback"], optionLabels: { promote: "升级", rollback: "降级" }, required: true, mustChoose: true },
         ],
       },
       detail: "会改变用户的权益和之后的奖励资格。提交后需在「操作记录与审批」确认才生效。",
@@ -601,6 +616,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         const userId = values?.userId?.trim() ?? "";
         const targetV = values?.targetV?.trim() ?? "";
         const direction = values?.direction;
+        if (draft && (userId !== fixedUser || direction !== fixedDirection)) throw new Error("请从原草稿继续处理同一用户和调整方向。");
+        if (draft && targetV && targetV === currentRank) throw new Error("这位用户已达到所选等级，无需提交。");
         if (direction !== "rollback" && direction !== "promote") throw new Error("请选择调整方向");
         if (!/^[1-9]\d*$/.test(userId) || !Number.isSafeInteger(Number(userId))) throw new Error("用户编号须为正整数");
         if (!rows.some((row) => row.v === targetV)) throw new Error("目标等级无效");

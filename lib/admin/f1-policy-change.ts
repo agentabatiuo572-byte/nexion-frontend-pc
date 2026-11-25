@@ -1,4 +1,4 @@
-import { settleFReconfirmation } from "./f-reconfirmation";
+import { acknowledgeFReconfirmation, settleFReconfirmation, type FReconfirmationLink } from "./f-reconfirmation";
 import { activeRecoveryActor } from "./f-proposal-recovery";
 import { fDirectReceiptConclusion } from "./f-direct-recovery";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
@@ -38,7 +38,7 @@ type OriginalCommand = {
 
 export type F1PolicyDraft = { record: F1PolicyRecord; form: F1PolicyForm };
 
-export type F1PolicyRecord = PendingMutationRecord & { input: string; ticket?: A2OperationRow; received?: boolean; absent?: boolean; commandOrigin?: FundCommandOrigin };
+export type F1PolicyRecord = PendingMutationRecord & FReconfirmationLink & { input: string; ticket?: A2OperationRow; received?: boolean; absent?: boolean; commandOrigin?: FundCommandOrigin };
 
 const attempts = createPendingMutationStore<F1PolicyRecord>({
   storageKey: "nexion-admin-f1-policy-commands-v1", retainExpiredRecords: true,
@@ -193,6 +193,7 @@ export function pendingF1Removals(owner: number, rank: string) {
 export async function submitF1Policy(
   session: AdminSession, editor: F1PolicyEditor, form: F1PolicyForm, reason: string,
   mode: "submit" | "lookup" | "retry-original" = "submit",
+  continuedFrom?: string,
 ) {
   const fingerprint = slot(session.adminId, editor);
   const auth = useAdminAuth.getState();
@@ -246,7 +247,8 @@ export async function submitF1Policy(
       };
     }
     const route = !approval ? f1PolicyRoute(values) : undefined;
-    attempts.remember(fingerprint, key, { input: JSON.stringify(original), ...(route ? { commandOrigin: fundCommandOrigin(route.originalMethod, route.originalPath, route.readAuthority) } : {}) });
+    attempts.remember(fingerprint, key, { input: JSON.stringify(original), continuedFrom,
+      ...(route ? { commandOrigin: fundCommandOrigin(route.originalMethod, route.originalPath, route.readAuthority) } : {}) });
     if (!attempts.isDurablyStored(fingerprint, key)) {
       attempts.forget(fingerprint, key);
       throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
@@ -283,7 +285,10 @@ export async function submitF1Policy(
       if (!query) throw new Error("PENDING_QUERY_UNAVAILABLE");
       if (!query.ticket) return null;
       const { ticket } = query;
-      if (ticket.status === "pending") attempts.remember(fingerprint, key, { ...record(), ticket, received: true, absent: false });
+      if (ticket.status === "pending") {
+        attempts.remember(fingerprint, key, { ...record(), ticket, received: true, absent: false });
+        acknowledgeFReconfirmation(record());
+      }
       else settleFReconfirmation(f1PolicyRecovery, record(), query.conclusion, "f1-policy");
       const restoreDraft = query.conclusion === "rejected" || query.conclusion === "not-executed";
       const status = { pending: " · 等另一位超级管理员批准，当前配置未变", approved: " · 已批准", rejected: " · 已驳回", withdrawn: " · 已撤回", expired: " · 已过期" };
@@ -317,7 +322,9 @@ export async function submitF1Policy(
         attempts.remember(fingerprint, key, { ...record(), received: true });
       }
       // A saved successful receipt settles the command even after its retry window.
-      f1PolicyRecovery.settleAcknowledged(record());
+      const saved = record();
+      f1PolicyRecovery.settleAcknowledged(saved);
+      acknowledgeFReconfirmation(saved);
       acknowledgement = original.editor.action === "threshold" ? isF1BenefitField(original.editor.field) ? "等级权益已更新，立即生效" : "晋升条件已更新，下一轮评估使用新值" : original.editor.action === "reward_remove" ? "奖励已移除，历史发放记录保留" : "奖励模板已更新，后续发放使用新值";
     }
   } catch (error) {

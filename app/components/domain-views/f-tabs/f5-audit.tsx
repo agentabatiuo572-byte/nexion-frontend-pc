@@ -6,7 +6,7 @@
  * 读取、筛选、翻批、导出和七个处置都调用 F 域外壳原有的函数，请求和改版前一样；这里只管排版和文字。
  */
 import type { BusinessFormValue } from "../design-kit";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Download, ListChecks, RotateCcw } from "lucide-react";
 import {
@@ -15,12 +15,12 @@ import {
 } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import {  type F5CommissionEvent, type F5CommissionQuery } from "@/lib/admin/f1-client";
+import { fetchF5CommissionByBusinessId, type F5CommissionEvent, type F5CommissionQuery } from "@/lib/admin/f1-client";
 import type { F5Recovery, FViewCtx } from "./types";
 import { FReleaseButton } from "./f-release";
 import { rebaseFValues, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
 import { canRetryF5Proposal, f5ProposalAuthority, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
-import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
+import { canRetryF5Anomaly, f5AnomalyChanged, F5_ANOMALY_UNCHANGED } from "@/lib/admin/f5-anomaly-write";
 import { f5ExportRecovery, pendingF5Export } from "@/lib/admin/f5-export-operation";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { readF5Filters, readF5Tab, replaceTeamFilterParams, type F5Tab } from "@/lib/admin/team-filter-url";
@@ -92,12 +92,16 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   // 九类奖励折叠组开着没有放在这里：筛选后重读数据时卡片会重新挂载，不能因此自己收起。
   const [kindsOpen, setKindsOpen] = useState(false);
   const [confirm, setConfirm] = useState<F5Confirm | null>(null);
+  const [draftReadNotes, setDraftReadNotes] = useState<Record<string, string[]>>({});
+  const [draftReading, setDraftReading] = useState<string>();
   const proposalDrafts = useFReconfirmations("F5");
   const anomalyDrafts = useFReconfirmations("f5-anomaly");
   const [, refreshExport] = useState(0);
   const originalExport = pendingF5Export();
   const tabIds = useTabIds();
   const { f5Overview: data, f5AppliedQuery, f5NextQuery, f5AppendError, f5Loading: loading, f5Error: error } = ctx;
+  const draftReadContext = useRef({ confirm, data });
+  draftReadContext.current = { confirm, data };
   const suspendableKinds = data?.suspendableKinds ?? [];
   const reissueAvailable = canReissue && !error && !!data;
   const busyText = "奖励记录正在更新";
@@ -452,6 +456,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       </Facts>,
       businessForm: {
         kind: "multi-field",
+        feedback: values => f5AnomalyChanged(Number(values.sigma), Number(values.ratio), sigma, ratio)
+          ? { invalid: false, message: "" } : { invalid: true, field: "sigma", live: true, message: F5_ANOMALY_UNCHANGED },
         fields: [
           { key: "sigma", label: "金额偏离（倍标准差 σ）", current: sigma, inputKind: "number", min: 2, max: 5, step: 0.5, required: true, help: "2–5，步长 0.5；越小异常越多" },
           { key: "ratio", label: "L1–L7 比例偏离（%）", current: ratio, inputKind: "number", min: 10, max: 50, step: 1, required: true, help: "这里填 10–50 的整数；越小异常越多" },
@@ -604,9 +610,10 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   for (const { original } of proposalDrafts) {
     const snapshot = original.f5Snapshot, spec = original.spec;
     const params = original.request?.command.params;
-    const writable = snapshot && spec && data && !loading && !error && ctx.can(f5ProposalAuthority(spec));
-    const continueDraft = () => {
-      if (!snapshot || !data || !spec) return;
+    const writable = snapshot && spec && data && !loading && !error && ctx.can(f5ProposalAuthority(spec))
+      && !ctx.getF5Operation(snapshot);
+    const continueDraft = async () => {
+      if (!snapshot || !data || !spec || draftReadContext.current.confirm || draftReading) return;
       const { action } = snapshot;
       if (action === "resume") {
         const item = data.activeSuspensions.find(row => row.userId === snapshot.suspension?.userId && row.kind === snapshot.suspension.kind);
@@ -614,19 +621,36 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         resume(item);
       } else {
         const ids = snapshot.rows?.map(row => row.id) ?? (snapshot.row ? [snapshot.row.id] : []);
-        const rows = ids.flatMap(id => events.find(event => event.id === id) ?? []);
-        if (!rows.length || rows.length !== ids.length) { ctx.toast("请先在奖励流水中读取原记录。"); return; }
+        if (!ids.length) { ctx.toast("原操作的奖励编号不完整，请核对。"); return; }
+        const actor = useAdminAuth.getState().session?.adminId;
+        setDraftReading(original.commandKey);
+        const reads = await Promise.allSettled(ids.map(fetchF5CommissionByBusinessId));
+        setDraftReading(undefined);
+        if (actor !== useAdminAuth.getState().session?.adminId || data !== draftReadContext.current.data || draftReadContext.current.confirm) return;
+        const rows: F5CommissionEvent[] = [];
+        const notes: string[] = [];
+        reads.forEach((read, index) => {
+          const id = ids[index];
+          if (read.status === "rejected") notes.push(`${id} · 读取失败：${displayAdminError(read.reason)}`);
+          else if (read.value.status === "not-found") notes.push(`${id} · 找不到原奖励记录`);
+          else rows.push(read.value.event);
+        });
         if (action === "reissue") {
-          if (rows.some(row => blockedRecord(row) || isFriend(row) || row.reversalRecorded || row.status !== "reversed")) {
-            ctx.toast("原奖励记录当前不能补发，请核对。"); return;
+          for (const row of rows) {
+            const blocked = blockedRecord(row) ?? (isFriend(row) || row.reversalRecorded || row.status !== "reversed" ? "当前不能补发" : undefined);
+            if (blocked) notes.push(`${row.id} · ${blocked}`);
           }
-          reissue(rows, data.coolingPolicy);
+          if (!notes.length) reissue(rows, data.coolingPolicy);
         } else {
           const row = rows[0];
-          const option = rowActions(row).find(item => item.key === action);
-          if (!option || option.disabledReason) { ctx.toast(option?.disabledReason ?? "原奖励记录当前不能执行这项处置，请核对。"); return; }
-          option.onSelect();
+          if (row) {
+            const option = rowActions(row).find(item => item.key === action);
+            if (!option || option.disabledReason) notes.push(`${row.id} · ${option?.disabledReason ?? "当前不能执行原处置"}`);
+            else option.onSelect();
+          }
         }
+        setDraftReadNotes(current => ({ ...current, [original.commandKey]: notes }));
+        if (notes.length) return;
       }
       const initial: BusinessFormValue | undefined = typeof params?.refundRef === "string" ? { refundRef: params.refundRef }
         : Array.isArray(params?.kinds) && action === "suspend" ? { kinds: params.kinds.filter(kind => suspendableKinds.includes(kind)).join(",") } : undefined;
@@ -634,8 +658,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     };
     recoveryRows.push({
       key: original.commandKey, name: snapshot?.name ?? spec?.action ?? "奖励处置",
-      change: spec ? `${spec.before} → ${spec.after}` : "请核对原奖励记录", state: "settled", submittedAt: original.createdAt,
-      actions: writable ? <Button size="sm" onClick={continueDraft}>继续修改</Button>
+      change: <>{spec ? `${spec.before} → ${spec.after}` : "请核对原奖励记录"}{draftReadNotes[original.commandKey]?.map(note => <span key={note}> · {note}</span>)}</>,
+      state: "settled", submittedAt: original.createdAt,
+      actions: writable ? <Button size="sm" disabled={!!draftReading} onClick={() => void continueDraft()}>{draftReading === original.commandKey ? "正在核对原奖励" : "继续修改"}</Button>
         : <span>请核对当前奖励记录和操作权限</span>,
     });
   }
@@ -804,6 +829,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         readOnly={anyWrite ? undefined : "你只能查看；处置奖励需要对应的处置权限"} />
       {conclusion()}
       <F5RecoveryNotice rows={recoveryRows} />
+      {ctx.f5AnomalyAppliedUnread && <Notice tone="warn" title="异常标准已写入，最新状态暂时读不到"
+        action={<Button size="sm" disabled={loading} onClick={() => void ctx.refreshF5(applied)}>重试读取</Button>} />}
       {/* 审批进度没读全：和 F2 的审批读取警示一个样子，一行，不挡下面的业务概览。 */}
       {ctx.f5ApprovalReadError && <Notice tone="warn" title="审批进度没读到"
         action={<Button size="sm" disabled={loading} onClick={() => void ctx.refreshF5(applied)}>重试</Button>}>

@@ -7,7 +7,6 @@
 import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText } from "@/lib/admin/f-approval-names";
 import { useEffect, useRef, useState } from "react";
 import { f4ProposalRecovery, listF4Proposals } from "@/lib/admin/f4-approval";
-import { consumeFReconfirmation } from "@/lib/admin/f-reconfirmation";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -84,10 +83,12 @@ export function F4QuotaCreate({ data, ctx, onClose, original, draft }: { data?: 
       .map(entry => entry.fingerprint.slice("f4-quota-create:".length)),
     ...ctx.f4ApprovalRows.filter(row => row.operationCode === "f4_quota_tier_create" && row.status === "pending").map(row => row.obj),
   ]);
-  const free = frozenProduct ? [frozenProduct] : skuOptions.filter(sku => !taken.has(sku) && !pendingSkus.has(sku));
+  const eligible = skuOptions.filter(sku => !taken.has(sku) && !pendingSkus.has(sku));
+  const fixedProduct = frozenProduct ?? draftValues?.productNo;
+  const free = fixedProduct ? [fixedProduct] : eligible;
   const takenNames = (data?.quotaRows ?? []).filter(row => row.productNo).map(row => skuLabels[row.productNo] ?? row.name ?? row.productNo);
   const noSkus = !skuOptions.length;
-  const draftBlocked = draftValues && !free.includes(draftValues.productNo)
+  const draftBlocked = draftValues && !eligible.includes(draftValues.productNo)
     ? "原商品当前不能新建名额档位，请核对商品和名额列表。" : undefined;
   return (
     <OperationConfirmModal briefKind="config"
@@ -143,6 +144,7 @@ export function F4QuotaCreate({ data, ctx, onClose, original, draft }: { data?: 
         if (original) throw new Error("PENDING_REPLAY_BLOCKED");
         if (draftBlocked) throw new Error(draftBlocked);
         const productNo = values?.productNo;
+        if (draft && productNo !== draftValues?.productNo) throw new Error("请从原草稿继续处理同一商品。");
         if (!productNo || !skuOptions.includes(productNo)) throw new Error("F4_QUOTA_SKU_NOT_SELLABLE");
         if (taken.has(productNo)) throw new Error(QUOTA_CREATE_TAKEN);
         const problem = issue(values);
@@ -164,12 +166,11 @@ export function F4QuotaCreate({ data, ctx, onClose, original, draft }: { data?: 
               unlockMode: values.unlockMode, status: 1, sortOrder: 0,
             } } },
             target: { domain: "F", type: "hardware_quota_tier", id: productNo },
-          }, data ? { action: "quota-create", overview: data, policy: null, businessValue: values } : undefined);
+          }, data ? { action: "quota-create", overview: data, policy: null, businessValue: values, continuedFrom: draft?.commandKey } : undefined);
         } catch (error) {
           if ((error as { backendMessage?: string }).backendMessage === "F4_QUOTA_SKU_EXISTS") throw new Error(QUOTA_CREATE_TAKEN);
           throw error;
         }
-        if (draft) consumeFReconfirmation(draft);
         onClose();
         await ctx.refreshF4();
       }} />

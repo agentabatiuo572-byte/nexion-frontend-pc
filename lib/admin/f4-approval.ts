@@ -8,10 +8,11 @@ import { hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT } f
 import type { F4AmbassadorApplication, F4AmbassadorMaterialPacket, F4AmbassadorPolicy, F4AmbassadorPolicyUpdate, F4LeadershipPoolOverview } from "./f1-client";
 import type { ProposeSpec } from "./propose-or-execute";
 import { roleLabel } from "../nav/console-nav";
+import { acknowledgeFReconfirmation, type FReconfirmationLink } from "./f-reconfirmation";
 import { useAdminAuth } from "../store/admin-auth";
 
 /** Serializable facts used to reopen the existing confirmation without today's state. */
-export type F4ConfirmationSnapshot = {
+export type F4ConfirmationSnapshot = FReconfirmationLink & {
   action: string;
   overview: F4LeadershipPoolOverview;
   policy: F4AmbassadorPolicy | null;
@@ -19,6 +20,7 @@ export type F4ConfirmationSnapshot = {
   application?: F4AmbassadorApplication;
   material?: F4AmbassadorMaterialPacket;
   businessValue?: Record<string, string>;
+  policyConflict?: boolean;
   value?: string;
 };
 export const F4_POLICY_SLOT = "f4-ambassador-policy-approval";
@@ -148,7 +150,7 @@ export async function sendF4Proposal(adminId: number, slot: string, spec?: Propo
       command: intent.command, target: intent.target, targets: intent.targets };
     const commandKey = createA2CommandKey(slot.split(":")[0]);
     remember({ fingerprint: actualSlot, commandKey, createdAt: Date.now(), expiresAt: 0,
-      adminId, spec: intent, request, f4Snapshot: snapshot, inputFingerprint: JSON.stringify(request) });
+      adminId, spec: intent, request, f4Snapshot: snapshot, inputFingerprint: JSON.stringify(request), continuedFrom: snapshot?.continuedFrom });
     original = listF4Proposals(adminId).find(row => row.commandKey === commandKey)!;
     if (!storeFor(original).isDurablyStored(original.fingerprint, commandKey)) {
       forget(original); throw new Error("F4_OPERATION_STORAGE_UNAVAILABLE");
@@ -172,6 +174,7 @@ export async function sendF4Proposal(adminId: number, slot: string, spec?: Propo
   await checkTicket(original, ticket);
   if (recovering) return queryReceived(adminId, { ...original, received: true });
   remember({ ...original, received: true, ticket, absent: false });
+  acknowledgeFReconfirmation(original);
   return ticket;
 }
 

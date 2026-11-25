@@ -162,7 +162,10 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       if (!snapshot || !data || ctx.f4Loading || ctx.f4Error || !allowed
         || snapshot.action === "policy" && (ctx.f4PolicyLoading || !ctx.f4AmbassadorPolicy)
         || materialAction && application?.status.toUpperCase() !== "PENDING") return;
-      const latest = { ...snapshot, overview: data, policy: ctx.f4AmbassadorPolicy, application, material: snapshot.material, businessValue: undefined, value: undefined };
+      const value = snapshot.action === "F.leaderboard.paused" ? proposal?.command.params.value : undefined;
+      if (snapshot.action === "F.leaderboard.paused" && value !== "on" && value !== "off") return;
+      const latest = { ...snapshot, overview: data, policy: ctx.f4AmbassadorPolicy, application, material: snapshot.material,
+        businessValue: undefined, value: typeof value === "string" ? value : undefined };
       try { return f4Confirmation(ctx, latest); } catch { return undefined; }
     };
     const current = quota ? undefined : getSpec();

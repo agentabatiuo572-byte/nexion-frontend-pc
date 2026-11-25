@@ -6,7 +6,6 @@
  * 标题写动作和对象，标签写哪个方向要批准，事实写现在的值和相邻等级，填写项用 rd 的控件。
  */
 import { fConfirmRecovery, pendingConfirmError } from "./f-recovery-state";
-import { consumeFReconfirmation } from "@/lib/admin/f-reconfirmation";
 import { useState } from "react";
 import { CircleHelp, Clock3, LockOpen, Zap, Lock } from "lucide-react";
 import { Change, DiffField, Fact, Facts, Field, Input, KeepText, Notice, Select, StatusTag } from "@/app/components/rd";
@@ -96,7 +95,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     const previous = pending();
     if (mode !== "submit") ctx.invalidateF1();
     let result;
-    try { result = await submitF1Policy(current, editor, values, reason, mode); }
+    try { result = await submitF1Policy(current, editor, values, reason, mode, draft?.record.commandKey); }
     catch (error) {
       const failure = error as { httpStatus?: number; apiCode?: number; backendMessage?: string };
       const locked = failure.backendMessage === "OBJECT_LOCKED_BY_A2" || failure.backendMessage === "OBJECT_ALREADY_PENDING";
@@ -147,7 +146,6 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
       onClose();
       return true;
     }
-    if (mode === "submit" && result.resolved && draft) consumeFReconfirmation(draft.record);
     ctx.toast(result.acknowledgement);
     if (!result.resolved) throw new A2OutcomeUncertainError(result.acknowledgement, previous!.commandKey);
     onClose();

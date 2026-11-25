@@ -6,7 +6,7 @@
  * 调高金额、启用、改成「符合资格就直接发」提交审批，另一位超级管理员批准后生效；反方向确认后立即保存。
  * 两种结算都只提交审批，另一位管理员批准后才发。结果未知保存完整原请求和确认事实，恢复不依赖概览。
  */
-import { consumeFReconfirmation, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { useFReconfirmations } from "@/lib/admin/f-reconfirmation";
 import { fetchA2Overview } from "@/lib/admin/a2-client";
 import { fProposalEndText } from "@/app/components/domain-views/f-tabs/f-release";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
@@ -115,6 +115,7 @@ function EligibilityDetail({ value }: { value: H8SettlementEligibility }) {
 
 /** 参数的显示名（标题、提醒里用）。 */
 const paramTitle = (param: H8Param) => param.key === "enabled" ? "奖励开关" : param.key === "newcomer.lockMode" ? "新人礼发放方式" : `${param.label} 基础额`;
+const QUEUE_UNREAD = "审批队列没有完整读到，请重试读取后再调整。";
 
 export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const reach = useReach();
@@ -123,7 +124,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const canWrite = isSuperadmin || !!session?.authorities.includes("growth_h8_write");
   const canSettle = isSuperadmin || !!session?.authorities.includes("growth_h8_settle");
   const drafts = useFReconfirmations("H8");
-  const knownQueuePending = useRef(false);
+  const approvalQueue = useRef<{ owner?: number; pending: boolean; error?: string }>({ pending: false });
   const [data, setData] = useState<H8ReferralRewardOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -171,10 +172,18 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       const [next, queue] = await Promise.all([
         fetchH8ReferralRewards(cursor),
         !append && actor?.authorities.includes("platform_a2_read")
-          ? fetchA2Overview({}, true).catch(() => null) : null,
+          ? fetchA2Overview({}, true).then(value => ({ value }), error => ({ error: displayAdminReadError(error) })) : null,
       ]);
       if (request !== loadGeneration.current || actor?.adminId !== useAdminAuth.getState().session?.adminId) return false;
-      if (!append) knownQueuePending.current = queue?.operationQueue.some(row => row.status === "pending" && row.operationCode === "h8_reward_param_change") ?? false;
+      if (!append) {
+        const observed = queue && "value" in queue ? queue.value : undefined;
+        const error = queue && "error" in queue ? queue.error : !observed ? "当前账号读不到审批队列。"
+          : observed.operationQueueInvalidCount ? "审批队列返回不完整。" : undefined;
+        const prior = approvalQueue.current;
+        const pending = !!observed?.operationQueue.some(row => row.status === "pending" && row.operationCode === "h8_reward_param_change")
+          || (!!error && prior.owner === actor?.adminId && prior.pending);
+        approvalQueue.current = { owner: actor?.adminId, error, pending };
+      }
       setData((current) => append && current ? {
         ...next,
         recentSettlements: [...current.recentSettlements, ...next.recentSettlements],
@@ -209,7 +218,10 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const commands = session ? pendingH8RewardCommands(session.adminId) : [];
   const policyUnknown = session ? unresolvedH8Policy(session.adminId) : undefined;
   const policyBlocked = policyUnknown ? isRetryExpired(policyUnknown) ? RETRY_EXPIRED_TEXT : "奖励配置有原操作结果待确认，请先查询原结果。" : undefined;
-  const pendingPolicy = knownQueuePending.current || hasPendingH8Policy(commands);
+  const queue = approvalQueue.current;
+  const queueError = queue.owner === session?.adminId ? queue.error : undefined;
+  const pendingPolicy = queue.owner === session?.adminId && queue.pending || hasPendingH8Policy(commands);
+  const policyReadBlock = queueError && !pendingPolicy ? QUEUE_UNREAD : undefined;
   const settlementBlocked = commands.find(record => record.kind === "settlement");
   const settlementPermission = !!session?.authorities.some(code => code === "platform_a2_proposal_create" || code === "platform_a2_write");
   const settleWriteBlock = settlementBlocked ? isRetryExpired(settlementBlocked) ? RETRY_EXPIRED_TEXT : "有一笔结算原操作待确认，请先查询原结果。"
@@ -238,7 +250,12 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const request = confirmation.current;
     if (request && !recovering) request.commandKey = record.commandKey;
     try {
-      const result = await sendH8RewardCommand(record, recovering, knownQueuePending.current);
+      const latestQueue = approvalQueue.current;
+      const knownPending = latestQueue.owner === record.adminId
+        && (latestQueue.pending || hasPendingH8Policy(pendingH8RewardCommands(record.adminId)));
+      if (!recovering && record.kind !== "settlement" && (latestQueue.owner !== record.adminId
+        || latestQueue.error && (record.kind !== "direct" || !knownPending))) throw new Error(QUEUE_UNREAD);
+      const result = await sendH8RewardCommand(record, recovering, knownPending);
       // 重建后提交成功，「没有保存」的提示随之清掉（同 H3、H5）。
       setStale(null);
       await finishCommand(record, result);
@@ -271,7 +288,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     } finally { changed(); }
   };
   const editParam = (param: H8Param, fixedValue?: string, recovered?: H8RewardCommand, draft?: H8RewardCommand) => {
-    if (!session || !recovered && policyBlocked) return;
+    if (!session || !recovered && (policyBlocked || policyReadBlock)) return;
     if (fixedValue !== undefined) fixedValue = conflictDraft.intent ?? fixedValue;
     // 冲突后重建打开时留着「已被别人改过」的提示，普通打开才清掉。
     if (conflictDraft.business === undefined && conflictDraft.intent === undefined) setStale(null);
@@ -306,7 +323,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         target: { domain: "H", type: "h8_reward_policy", id: "current" },
       };
       return createH8RewardCommand(session.adminId, { kind: "param-approval", paramKey: param.key, value,
-        overview: snapshot, request, body: JSON.stringify(request) });
+        overview: snapshot, request, body: JSON.stringify(request), continuedFrom: draft?.commandKey });
     };
     const currentCommand = () => {
       const key = pending?.commandKey ?? confirmation.current?.commandKey;
@@ -400,11 +417,13 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
             heading: "请核对改后的值", disabledReason: numeric ? `基础额要在 0–${param.max.toLocaleString("zh-CN")} ${param.unit} 之间，最多 6 位小数。` : "请选择一种发放方式。",
             completionCopy: "还没有提交，改成允许范围内的值再继续。",
           };
+          if (!pending && direction(value) === "same") return { disabledReason: "改后的值和现行设置相同，无需提交。" };
           if (pending?.kind === "direct" || !pending && !h8RewardParamAmplifies(param.key, rawCurrent, value)) return undefined;
           return {
             heading: `会让平台多付钱，要${APPROVER}批准`,
             completionCopy: approvalCopy,
-            disabledReason: !pending && pendingPolicy ? displayAdminError(new Error("OBJECT_ALREADY_PENDING")) : numeric && h8EffectiveRewardReference(value, multiplier) === null
+            disabledReason: !pending && queueError ? QUEUE_UNREAD
+              : !pending && pendingPolicy ? displayAdminError(new Error("OBJECT_ALREADY_PENDING")) : numeric && h8EffectiveRewardReference(value, multiplier) === null
               ? "改后的实际发放超出允许范围，请核对基础额和当月加成。" : undefined,
           };
         },
@@ -458,19 +477,17 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         if (!currentRead.current.ready || currentRead.current.data !== snapshot) throw new Error("H8_OVERVIEW_REQUIRED");
         const value = storedValue(form ?? {});
         if (!h8RewardParamValid(param.key, value)) throw new Error("请填写允许范围内的基础额或选择有效模式。");
+        if (direction(value) === "same") throw new Error("改后的值和现行设置相同，无需提交。");
         if (h8RewardParamAmplifies(param.key, rawCurrent, value)) {
-          if (knownQueuePending.current || hasPendingH8Policy(pendingH8RewardCommands(session.adminId))) throw new Error("OBJECT_ALREADY_PENDING");
           await sendCommand(approvalCommand(value, reason), false);
-          if (draft) consumeFReconfirmation(draft);
           return;
         }
         const actor = requireH8Actor(session.adminId, "param");
         const operator = actor.operator || actor.username;
         const record = createH8RewardCommand(session.adminId, { kind: "direct", paramKey: param.key, value, reason, operator,
-          overview: snapshot, body: JSON.stringify({ key: param.key, value, expectedVersion, reason, operator }) });
+          overview: snapshot, body: JSON.stringify({ key: param.key, value, expectedVersion, reason, operator }), continuedFrom: draft?.commandKey });
         try {
           await sendCommand(record, false);
-          if (draft) consumeFReconfirmation(draft);
         }
         catch (error) {
           // The server's direction is authoritative if its live state requires A2.
@@ -576,8 +593,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         target: def.buildTarget({ limit, invitedUserId }),
       };
       await sendCommand(createH8RewardCommand(session.adminId, { kind: "settlement", overview: snapshot,
-        ...(targeted ? { invitedUserId } : {}), limit, request, body: JSON.stringify(request) }), false);
-      if (draft) consumeFReconfirmation(draft);
+        ...(targeted ? { invitedUserId } : {}), limit, request, body: JSON.stringify(request), continuedFrom: draft?.commandKey }), false);
     },
     });
   };
@@ -617,7 +633,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const original = record.original;
     if (!original) continue;
     const param = [ENABLED_PARAM, ...PARAMS].find(p => p.key === record.paramKey);
-    const writable = !freshBlocked && !!data && !error && (param ? canWrite && !policyBlocked
+    const writable = !freshBlocked && !!data && !error && (param ? canWrite && !policyBlocked && !policyReadBlock
       : canSettle && !settleWriteBlock && data.enabled && (record.invitedUserId !== undefined || data.pending > 0));
     recoveryRows.push({
       key: record.commandKey, name: param ? paramTitle(param) : record.invitedUserId !== undefined ? "给指定新人结算" : "批量结算",
@@ -784,7 +800,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="h8-card-foot">
           <span className="h8-dir">{recoveryByKey[param.key] ?? "调高要批准 · 调低立即生效"}</span>
-          {canWrite && <Button size="sm" aria-label={`调整${param.label}基础额`} disabledReason={policyBlocked ?? freshBlocked} onClick={conflictDraft.register(`param:${param.key}`, () => editParam(param))}>调整</Button>}
+          {canWrite && <Button size="sm" aria-label={`调整${param.label}基础额`} disabledReason={policyBlocked ?? policyReadBlock ?? freshBlocked} onClick={conflictDraft.register(`param:${param.key}`, () => editParam(param))}>调整</Button>}
         </div>
       </Stat>
     );
@@ -797,6 +813,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       {recoveryNotice}
       {savedUnreadNotice}
       {staleNotice}
+      {queueError && <Notice tone="warn" title="审批队列读取失败"
+        action={<Button size="sm" disabled={loading} onClick={() => void load()}>重试读取</Button>}>{queueError}</Notice>}
 
       <StatBand fit label="结算情况">
         <Stat lead icon={UserPlus} tone="role-3" label="等待结算" value={countText(pending)} unit="位"
@@ -825,14 +843,14 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
                 ? <StatusTag tone="ok" icon={Check}>已启用</StatusTag>
                 : <StatusTag tone="neutral" icon={Power}>已停用</StatusTag>}{recoveryByKey.enabled}</span>}
               action={canWrite ? (describedBy) => <Button size="sm" variant={data.enabled ? "danger-outline" : "secondary"} aria-describedby={describedBy}
-                disabledReason={policyBlocked ?? freshBlocked} onClick={conflictDraft.register("param:enabled", () => editParam(ENABLED_PARAM, String(!data.enabled)))}>{data.enabled ? "停用" : "启用"}</Button> : undefined} />
+                disabledReason={policyBlocked ?? policyReadBlock ?? freshBlocked} onClick={conflictDraft.register("param:enabled", () => editParam(ENABLED_PARAM, String(!data.enabled)))}>{data.enabled ? "停用" : "启用"}</Button> : undefined} />
             <ConfigRow name="发放方式"
               what="结算时怎么过风控"
               when={`改成「符合资格就直接发」要${APPROVER}批准；改回确认后立即保存`}
               effect={modeHelp(String(data.params["newcomer.lockMode"]))}
               note="两种方式都保留首购冻结；已冻结的礼包按当初的方式解冻。"
               value={<span className="h8-row-value">{modeLabel}{recoveryByKey["newcomer.lockMode"]}</span>}
-              action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={policyBlocked ?? freshBlocked} onClick={conflictDraft.register("param:mode", () => editParam(MODE_PARAM))}>调整</Button> : undefined} />
+              action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={policyBlocked ?? policyReadBlock ?? freshBlocked} onClick={conflictDraft.register("param:mode", () => editParam(MODE_PARAM))}>调整</Button> : undefined} />
             <ConfigRow name="生效时间"
               what="这个时间起（含这一刻）注册的新人才进入结算"
               effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样时不改）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前注册、还没结算的新人，不再进入结算。</p></>}

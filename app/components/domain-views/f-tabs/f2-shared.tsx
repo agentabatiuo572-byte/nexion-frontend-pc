@@ -6,7 +6,7 @@
  */
 import { f2Recovery } from "@/lib/admin/f2-approval";
 import { fConfirmRecovery } from "./f-recovery-state";
-import { consumeFReconfirmation, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { useFReconfirmations } from "@/lib/admin/f-reconfirmation";
 import { fProposalEndText } from "./f-release";
 import { useEffect, useRef, type ReactNode } from "react";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
@@ -208,9 +208,8 @@ export function F2ConfirmModal({ spec, ctx, coverage, onClose, toast }: { spec: 
             onClose();
             return;
           }
-          try { await spec.submit(reason, newValue, businessValue); }
+          try { await ctx.runFContinuation(spec.draft?.commandKey, () => spec.submit(reason, newValue, businessValue)); }
           finally { command.current = ctx.f2ProposalRecord(spec.slot)?.commandKey; }
-          if (spec.draft) consumeFReconfirmation(spec.draft);
         } catch (error) {
           if (isA2OutcomeUncertainError(error)) throw new Error("申请结果未知，请先查询原结果。");
           // Keep the reviewed input and the actual rejection on this F2 surface.

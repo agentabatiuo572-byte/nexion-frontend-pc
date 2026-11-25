@@ -1,5 +1,5 @@
 import type { F2Proposal } from "./f2-approval";
-import { settleFReconfirmation } from "./f-reconfirmation";
+import { acknowledgeFReconfirmation, settleFReconfirmation } from "./f-reconfirmation";
 import type { A2OperationRow } from "./a2-client";
 import { explicitRejectionCode } from "./explicit-rejection";
 import { createPendingRecovery, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
@@ -34,7 +34,10 @@ export function createFProposalRecovery<T extends ProposalRecord>(store: Recover
       });
       if (!result) throw new Error("PENDING_QUERY_UNAVAILABLE");
       const { record, ticket } = result.value;
-      if (ticket?.status === "pending") rememberPending(record, ticket);
+      if (ticket?.status === "pending") {
+        rememberPending(record, ticket);
+        if (store.isDurablyStored(record.fingerprint, record.commandKey)) acknowledgeFReconfirmation(record);
+      }
       else if (ticket) settleFReconfirmation(recovery, record, result.conclusion, scope);
       return ticket;
     },

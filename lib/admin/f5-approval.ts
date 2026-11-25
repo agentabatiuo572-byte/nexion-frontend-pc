@@ -6,10 +6,11 @@ import { hasPersistedPendingCommandOwner, isRetryExpired } from "./pending-mutat
 import type { F5CommissionAuditOverview, F5CommissionEvent } from "./f1-client";
 import type { ProposeSpec } from "./propose-or-execute";
 import { roleLabel } from "../nav/console-nav";
+import { acknowledgeFReconfirmation, type FReconfirmationLink } from "./f-reconfirmation";
 import { useAdminAuth } from "../store/admin-auth";
 
 /** Facts captured when the existing confirmation opens, never rebuilt from today's row. */
-export type F5ConfirmationSnapshot = {
+export type F5ConfirmationSnapshot = FReconfirmationLink & {
   name?: string;
   action: "freeze" | "unlock" | "unfreeze" | "reverse" | "reissue" | "suspend" | "resume" | "anomaly";
   row?: F5CommissionEvent;
@@ -105,7 +106,7 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
       amplifies: !!intent.amplifies, sos: !!intent.sos, roleGate: intent.gateLabel, reason: intent.reason, sourceDomain: intent.sourceDomain,
       command: intent.command, target: intent.target, targets: intent.targets };
     const key = createA2CommandKey(slot.split(":")[0]);
-    fCommands.remember(slot, key, { adminId, spec: intent, request, f5Snapshot: snapshot, inputFingerprint: JSON.stringify(request) });
+    fCommands.remember(slot, key, { adminId, spec: intent, request, f5Snapshot: snapshot, inputFingerprint: JSON.stringify(request), continuedFrom: snapshot?.continuedFrom });
     original = listF5Proposals(adminId).find(row => row.commandKey === key)!;
     if (!fCommands.isDurablyStored(slot, key)) {
       fCommands.forget(slot, key);
@@ -130,6 +131,7 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
     checkTicket(original, ticket);
     if (!recovering) {
       fCommands.remember(slot, original.commandKey, { ...original, f5TicketId: ticket.id, received: true, ticket, absent: false });
+      acknowledgeFReconfirmation(original);
       return ticket;
     }
     original = { ...original, f5TicketId: ticket.id, received: true };

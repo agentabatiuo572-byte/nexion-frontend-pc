@@ -1,4 +1,10 @@
-import { settleFReconfirmation } from "./f-reconfirmation";
+import { acknowledgeFReconfirmation, settleFReconfirmation } from "./f-reconfirmation";
+
+export const F5_ANOMALY_UNCHANGED = "现行异常标准已包含拟改值，无需提交。";
+
+export function f5AnomalyChanged(sigma: number, ratio: number, currentSigma: string, currentRatio: string) {
+  return sigma !== Number(currentSigma) || ratio !== Number(currentRatio);
+}
 import { createA2CommandKey } from "./a2-client";
 import { updateF5AnomalyConfig } from "./f1-client";
 import { fDirectCommands, F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "./f1-stable-write";
@@ -34,7 +40,7 @@ export async function sendF5Anomaly(adminId: number, values?: { commissionAnomal
     if (!values) throw new Error("F5_OPERATION_ORIGINAL_INCOMPLETE");
     const request = { ...values, operator: auth.session.operator || auth.session.username };
     const slot = `${adminId}:f5-anomaly-config`, key = createA2CommandKey("f5-anomaly-config");
-    fDirectCommands.remember(slot, key, { adminId, f5Request: request, f5Snapshot: snapshot, inputFingerprint: JSON.stringify(request),
+    fDirectCommands.remember(slot, key, { adminId, f5Request: request, f5Snapshot: snapshot, inputFingerprint: JSON.stringify(request), continuedFrom: snapshot?.continuedFrom,
       commandOrigin: fundCommandOrigin(anomalyRoute.originalMethod, anomalyRoute.originalPath, anomalyRoute.readAuthority) });
     original = listF5AnomalyWrites(adminId)[0];
     if (!fDirectCommands.isDurablyStored(slot, key)) {
@@ -59,6 +65,7 @@ export async function sendF5Anomaly(adminId: number, values?: { commissionAnomal
     throw error;
   }
   f5AnomalyRecovery.settleAcknowledged(original);
+  acknowledgeFReconfirmation(original);
 }
 
 /** Current thresholds are comparison evidence, not a receipt proving that the original PUT did not execute. */

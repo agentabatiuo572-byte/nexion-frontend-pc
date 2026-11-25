@@ -110,9 +110,12 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
     if (slot === F2_BOOTSTRAP_SLOT) {
       if (rates.length || !Array.isArray(params.layers) || params.layers.length !== LAYERS.length) return { original };
       const next = emptyF2BootstrapDraft();
+      const seen = new Set<Layer>();
       for (const layer of params.layers) {
-        if (!layer || !LAYERS.includes(layer.layer as Layer) || layer.usdtPct == null || layer.nexPerUsd == null) return { original };
-        next.cells[layer.layer as Layer] = { usdt: String(layer.usdtPct), nex: String(layer.nexPerUsd) };
+        const key = layer && Number.isInteger(layer.layerNo) ? LAYERS[layer.layerNo - 1] : undefined;
+        if (!key || seen.has(key) || typeof layer.usdtPct !== "string" || typeof layer.nexPerUsd !== "string") return { original };
+        seen.add(key);
+        next.cells[key] = { usdt: String(layer.usdtPct), nex: String(layer.nexPerUsd) };
       }
       return { original, edit: () => { setBootDraft({ ...next, original }); nav.select("layers"); } };
     }

@@ -27,6 +27,7 @@ type DraftOriginal = {
 };
 
 type DraftScope = keyof DraftOriginal;
+export type FReconfirmationLink = { continuedFrom?: string };
 type Draft<K extends DraftScope> = PendingMutationRecord & { scope: K; original: DraftOriginal[K] };
 const drafts = createPendingMutationStore<Draft<DraftScope>>({
   storageKey: "nexion-admin-f-reconfirmations-v1",
@@ -51,10 +52,17 @@ export function consumeFReconfirmation(original: PendingMutationRecord) {
   notify();
 }
 
+/** The linked original has an authoritative result. Only its selected predecessor can be removed. */
+export function acknowledgeFReconfirmation(original: PendingMutationRecord & FReconfirmationLink) {
+  if (!original.continuedFrom || original.continuedFrom === original.commandKey) return;
+  const prior = drafts.list().find(row => row.commandKey === original.continuedFrom);
+  if (prior) consumeFReconfirmation(prior);
+}
+
 /** All authoritative verdicts go through this before the recovery journal is released. */
 export function settleFReconfirmation<T extends PendingMutationRecord>(
   recovery: { state: (record: T) => PendingRecoveryState; settleFromQuery: (record: T, conclusion: PendingRecoveryConclusion) => boolean },
-  original: T & DraftOriginal[DraftScope],
+  original: T & DraftOriginal[DraftScope] & FReconfirmationLink,
   conclusion: PendingRecoveryConclusion,
   scope: DraftScope,
 ) {
@@ -63,6 +71,7 @@ export function settleFReconfirmation<T extends PendingMutationRecord>(
     && state.conclusion === conclusion && !state.busy && state.replayBlock !== "missing";
   if (preserve) drafts.remember(original.commandKey, original.commandKey, { scope, original });
   const settled = recovery.settleFromQuery(original, conclusion);
+  if (settled) acknowledgeFReconfirmation(original);
   if (preserve) notify();
   return settled;
 }

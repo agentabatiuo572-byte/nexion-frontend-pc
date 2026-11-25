@@ -1,4 +1,5 @@
 import { activeRecoveryActor, createFProposalRecovery } from "./f-proposal-recovery";
+import { acknowledgeFReconfirmation } from "./f-reconfirmation";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
 import { isExplicitRejection } from "./explicit-rejection";
@@ -78,7 +79,7 @@ export async function queryF1Proposal(adminId: number, original: FDomainAttempt)
 }
 
 /** All eight ordinary F1 proposals share the existing F-domain store. */
-export async function sendF1Proposal(adminId: number, slot: string, spec?: ProposeSpec) {
+export async function sendF1Proposal(adminId: number, slot: string, spec?: ProposeSpec, continuedFrom?: string) {
   const current = actor(adminId);
   let original = listF1Proposals(adminId).find(row => row.fingerprint === slot);
   const recovering = !spec;
@@ -94,7 +95,7 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
       reason: intent.reason, sourceDomain: intent.sourceDomain, command: intent.command, target: intent.target, targets: intent.targets,
     };
     const key = createA2CommandKey(slot.split(":")[0]);
-    fCommands.remember(slot, key, { adminId, spec: intent, request, inputFingerprint: JSON.stringify(request) });
+    fCommands.remember(slot, key, { adminId, spec: intent, request, inputFingerprint: JSON.stringify(request), continuedFrom });
     original = listF1Proposals(adminId).find(row => row.commandKey === key)!;
     if (!fCommands.isDurablyStored(slot, key)) {
       fCommands.forget(slot, key);
@@ -128,6 +129,7 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
     return latest;
   }
   fCommands.remember(slot, original.commandKey, { ...original, received: true, ticket, absent: false });
+  acknowledgeFReconfirmation(original);
   return ticket;
 }
 

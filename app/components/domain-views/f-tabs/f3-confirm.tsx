@@ -10,7 +10,6 @@ import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, t
 import type { FViewCtx } from "./types";
 import { f3ProposalRecovery, listF3Proposals } from "@/lib/admin/f3-approval";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
-import { consumeFReconfirmation } from "@/lib/admin/f-reconfirmation";
 import { fConfirmRecovery } from "./f-recovery-state";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -90,8 +89,7 @@ export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; c
             return;
           }
           if (confirm.original) { onClose(); return; }
-          await confirm.submit(reason, businessValue, newValue);
-          if (confirm.draft) consumeFReconfirmation(confirm.draft);
+          await ctx.runFContinuation(confirm.draft?.commandKey, () => confirm.submit(reason, businessValue, newValue));
           if (confirm.done) ctx.toast(confirm.done);
           onClose();
         } catch (error) {
