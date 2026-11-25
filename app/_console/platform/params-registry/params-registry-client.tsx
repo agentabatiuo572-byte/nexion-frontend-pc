@@ -129,8 +129,7 @@ export function PlatformParamsRegistry() {
     setErrorKind(null);
     try {
       const next = await fetchA5Registry();
-      // The registry reports failed J1/J2 reads on the emergency source.
-      // Unregistered config owners are reported separately on the config source.
+      // J1/J2 读取失败记在紧急状态来源，参数归属未登记记在系统参数来源。
       const emergencyFailed = next.sources.some((source) => source.key === "emergency" && source.status === "PARTIAL");
       setOverview(emergencyFailed ? null : next);
       if (emergencyFailed) setErrorKind("emergency");

@@ -529,7 +529,6 @@ function G3MarketEditor() {
       reconcileObservedAfterSave(change);
       // 按原请求恢复时，后端回放的是当时保存的回包，不是现在的读取：不拿它当当前概览，改为重读；
       // 重读失败只报读取失败，新修改继续不可用，原操作照常算完成。
-      // The write receipt is not applied as the current reading; the page rereads it.
       openActionConfirm(null);
       toast(recovered ? REREAD_TEXT : success);
       setRereadPending(true); void reload(true);
@@ -968,13 +967,16 @@ function G3MarketEditor() {
       {confirmationPanels}
 
       {error && !confirm && !UNKNOWN_TEXT.test(error) && <Notice tone="warn">{error}</Notice>}
-      {overviewError && overviewReadAt !== undefined && <Notice tone="warn"
-        title={`刷新失败，以下概览读取于 ${businessStamp(overviewReadAt)}（${businessZone().label}）`}
-        action={<Button size="sm" loading={overviewReading} onClick={() => void readOverview()}>重试</Button>}>
-        {overviewError} 最新概览读到后才能修改。
-      </Notice>}
+      {overviewError && overviewReadAt !== undefined ? (
+        <Notice tone="warn"
+          title={`${rereadPending ? "原操作已完成。刷新失败" : "刷新失败"}，以下概览读取于 ${businessStamp(overviewReadAt)}（${businessZone().label}）`}
+          action={<Button size="sm" loading={overviewReading} onClick={() => void readOverview()}>重试</Button>}>
+          {overviewError} 最新概览读到后才能修改。
+        </Notice>
+      ) : rereadPending && overviewReading && (
+        <Notice tone="progress" title={REREAD_TEXT}>读到最新价格之前，表里的修改先不可用。还有原记录的那一项照样能打开。</Notice>
+      )}
       {conclusion}
-      {rereadPending && <Notice tone="progress" title={REREAD_TEXT} action={<Button size="sm" loading={refreshing} onClick={() => void refresh()}>重新读取</Button>}>读到最新价格之前，表里的修改先不可用；还有原记录的那一项照样能打开。</Notice>}
 
       {recoveryNotice}
 
@@ -1038,7 +1040,8 @@ function G3MarketEditor() {
                 ? <BlockState state="loading" compact title="正在加载最近 24 小时价格…" />
                 : historyError
                 ? <BlockState retryKey="g3-market-1050" state="error" compact title="最近 24 小时价格加载失败" detail={<>这次没读到价格历史，不影响现价和七天计划；点「重试」再读一次。<Explain label="失败原因" content={historyError} /></>} onRetry={() => void readHistory()} retrying={historyLoading} />
-                : <BlockState state="empty" compact title="最近 24 小时没有价格记录" detail={paused ? "价格暂停期间不记录。" : "至少要有两个采样点才画走势。"} onRetry={() => void readHistory()} retryLabel="刷新" />}
+                : <BlockState state="empty" compact title={historyPoints.length === 1 ? "数据不足，暂时无法显示走势" : "最近 24 小时没有价格记录"}
+                  detail={historyPoints.length === 0 && paused ? "价格暂停期间不记录。" : undefined} onRetry={() => void readHistory()} retryLabel="刷新" />}
             </div>
           )}
         </Panel>

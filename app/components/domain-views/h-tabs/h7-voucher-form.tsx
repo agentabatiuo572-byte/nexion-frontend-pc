@@ -157,7 +157,7 @@ function fieldChanges(before: H7Voucher, after: H7Voucher) {
   });
 }
 
-/** Compare the submitted values, also retaining invalid input that needs correction. */
+/** 按实际提交的内容比较，也保留需要修正的原输入。 */
 export function voucherDraftKeys(base: H7FormValue, draft: H7FormValue, voucher?: H7Voucher) {
   const before = parseVoucher(base, "", 1, voucher);
   const after = parseVoucher(draft, "", 1, voucher);
@@ -173,10 +173,22 @@ export function rebaseVoucherForm(base: H7FormValue, draft: H7FormValue, opened:
   const mine = voucherDraftKeys(base, draft, opened);
   const theirs = fieldChanges(parseVoucher(base, "", 1, opened), parseVoucher(latest, "", 1, current));
   const value = { ...latest };
-  for (const key of mine) value[key] = draft[key];
+  const ownTypeChange = mine.has("type");
+  const latestType = theirs.includes("type") ? (current.type === "percent" ? "折扣券" : "满减券") : undefined;
+  const type = ownTypeChange ? draft.type : current.type;
+  const dropped: { field: string; value: string }[] = [];
+  for (const key of mine) {
+    if ((key === "amountUSD" && type !== "fixed") || (key === "percent" && type !== "percent")) {
+      mine.delete(key);
+      if (latestType && !ownTypeChange) dropped.push({ field: FIELD_LABEL[key], value: draft[key] });
+    } else value[key] = draft[key];
+  }
   const report = { theirs: [] as string[][], clashes: [] as string[][] };
-  for (const key of theirs) (mine.has(key) ? report.clashes : report.theirs).push([key]);
-  return { value, report };
+  for (const key of theirs) {
+    if (key === "type" && draft.type === current.type && ownTypeChange) report.theirs.push([key]);
+    else (mine.has(key) ? report.clashes : report.theirs).push([key]);
+  }
+  return { value, report: { ...report, latestType, dropped } };
 }
 
 /** 改了这些项，已发出还没用的券也按新值使用（领取记录不存券的定义）。 */
@@ -225,7 +237,7 @@ export function changedRows(before: H7FormValue, after: H7FormValue, skuLabels: 
     });
 }
 
-export function H7VoucherForm({ voucher, baseline, value, dirty, readFailed, conflict, mergeReport, recovery,
+export function H7VoucherForm({ voucher, baseline, value, dirty, readFailed, conflict, reading, mergeReport, recovery,
   blocked, busy, skuOptions, skuLabels, toMs, onChange, onClose, onReview }: {
   voucher?: H7Voucher;
   baseline: H7FormValue;
@@ -233,6 +245,7 @@ export function H7VoucherForm({ voucher, baseline, value, dirty, readFailed, con
   dirty: boolean;
   readFailed?: { retrying: boolean; onRetry: () => void; detail: string };
   conflict?: () => void;
+  reading: boolean;
   mergeReport?: ReturnType<typeof rebaseVoucherForm>["report"];
   recovery?: ReactNode;
   blocked?: string;
@@ -288,12 +301,17 @@ export function H7VoucherForm({ voucher, baseline, value, dirty, readFailed, con
         <div className="rd-split h7-form-split" data-detail="" data-preview="">
           <div className="h7-form">
             {recovery}
-            {conflict && !readFailed && <H4StaleNote readLatest={conflict} />}
+            {conflict && !readFailed && <H4StaleNote readLatest={conflict} reading={reading} />}
             {readFailed && <Notice tone="warn" title="最新数据没读到"
               action={<Button size="sm" loading={readFailed.retrying} onClick={readFailed.onRetry}>{conflict ? "读取最新" : "重试读取"}</Button>}>
               {readFailed.detail} 填的内容还在。
             </Notice>}
-            <MergeNotice report={mergeReport ?? null} name={([key]) => FIELD_LABEL[key] ?? null} />
+            <MergeNotice report={mergeReport ?? null} name={([key]) =>
+              key === "type" && mergeReport?.latestType ? `类型（对方改成${mergeReport.latestType}）` : FIELD_LABEL[key] ?? null}>
+              {mergeReport?.dropped.map(({ field, value }) => (
+                <p key={field}>对方已把类型改成{mergeReport.latestType}，你填的{field}={value || "（空）"}不再适用，没有带过来。</p>
+              ))}
+            </MergeNotice>
             <section className="h7-form-section" inert={locked} aria-labelledby="h7-f-face">
               <h3 id="h7-f-face" className="h7-form-title">券面</h3>
               <Field label="名称" required hint="最多 80 字" error={shown.name}>
