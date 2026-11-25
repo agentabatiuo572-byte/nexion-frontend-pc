@@ -1,6 +1,6 @@
 "use client";
 
-import { displayAdminReadError } from "@/lib/admin/error-messages";
+import { displayAdminReadError, supportContractReadError } from "@/lib/admin/error-messages";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -19,6 +19,7 @@ import { PERF_UNAVAILABLE, type PerfTotals } from "./perf-view";
 import { boardTotals, leaderboardPerf, type BoardPerf } from "./perf-wiring";
 import { usePerformanceExportPorts } from "./perf-export-ports";
 import { PERFORMANCE_VERSION } from "@/lib/admin/support-performance-contract";
+import { supportContractMalformed } from "@/lib/admin/m-support-read-contract";
 import { PerfExportDialog } from "./perf-export";
 import "./m6-leaderboard.css";
 
@@ -33,6 +34,8 @@ function scopeChanged(error: unknown): boolean {
 }
 function message(error: unknown): string {
   if (error instanceof LeaderboardUpgrading) return error.message;
+  const contractError = supportContractReadError(error);
+  if (contractError) return contractError;
   return status(error) === 403 || status(error) === 401 ? "当前账号不能查看此榜单，请重新确认登录和客服权限。"
     : versionChanged(error) ? "榜单已更新，或你能看的范围变了，请从第一页重新加载。"
       : error instanceof SupportClientError ? displayAdminReadError(error) : "榜单加载失败，请重试。";
@@ -126,7 +129,7 @@ export function M6Leaderboard() {
     const controller = new AbortController(); let active = true;
     setResult(undefined); setFailure(undefined); closeDetail();
     if (enabled) void supportLeaderboardClient.page(query, controller.signal).then(next => {
-      if (next.self.row && next.self.row.id !== String(session?.adminId)) throw new Error("本人成绩身份不一致");
+      if (next.self.row && next.self.row.id !== String(session?.adminId)) supportContractMalformed("leaderboard.selfIdentity");
       if (active && !controller.signal.aborted && liveKey.current === requestKey) { setResult({ key: requestKey, data: next }); setLastGood({ identity, data: next }); setScopeStale(false); }
     }).catch(cause => {
       if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
@@ -175,7 +178,7 @@ export function M6Leaderboard() {
     const sequence = ++detailSequence.current; setDetail({ key: requestKey, agentId });
     const bound = acceptedQuery(data, query);
     void supportLeaderboardClient.detail(agentId, bound, controller.signal).then(next => {
-      if (next.sourceVersion !== data.sourceVersion || next.definitionVersion !== data.definitionVersion || next.asOf !== data.asOf || next.referenceMonth !== data.referenceMonth || next.state !== data.state || next.candidateCoverage !== data.candidateCoverage) throw new Error("公开成绩版本信息不一致");
+      if (next.sourceVersion !== data.sourceVersion || next.definitionVersion !== data.definitionVersion || next.asOf !== data.asOf || next.referenceMonth !== data.referenceMonth || next.state !== data.state || next.candidateCoverage !== data.candidateCoverage) supportContractMalformed("leaderboard.detailSnapshot");
       if (!controller.signal.aborted && sequence === detailSequence.current && liveKey.current === requestKey) setDetail({ key: requestKey, agentId, data: next });
     }).catch(cause => {
       if (controller.signal.aborted || sequence !== detailSequence.current || liveKey.current !== requestKey) return;
@@ -312,7 +315,7 @@ export function M6Leaderboard() {
         footer={<Decision
           others={<><Button onClick={closeDetail}>关闭</Button>{visibleDetail.error && <Button onClick={() => openDetail(visibleDetail.agentId)}>重试</Button>}</>}
           primary={detailRow && privateRead && detailRow.canViewCustomers ? <Button variant="primary" onClick={() => customers(detailRow)}>查看当前绑定客户</Button> : undefined} />}>
-        {!visibleDetail.data ? <Notice tone={visibleDetail.error ? "danger" : "progress"}>{visibleDetail.error ?? "正在加载成绩…"}</Notice>
+        {!visibleDetail.data ? <Notice tone={visibleDetail.error ? "danger" : "progress"} title={visibleDetail.error ? "公开成绩加载失败" : undefined}>{visibleDetail.error ?? "正在加载成绩…"}</Notice>
           : detailRow && <PerformanceBody row={withPhoto(detailRow)} board={board} month={visibleDetail.data.referenceMonth} perf={detailRow.performance ? boardTotals(detailRow.performance) : perfOf(detailRow.id)}
             stale={visibleDetail.data.stale} refreshFailed={visibleDetail.data.refreshFailed} />}
       </Drawer>}

@@ -24,6 +24,13 @@ import {
   F5_KINDS,
   F5_LEGACY_KINDS,
   F5_STATUSES,
+  parseF1SalaryClaims,
+  parseF5SalaryFields,
+  teamUserId,
+  type F5SalaryFields,
+  parseF1V8Review,
+  rankPurchaseRate,
+  type F1SalaryFilters,
 } from "@/lib/admin/f-overview-contract";
 
 interface ApiResult<T> {
@@ -34,6 +41,9 @@ interface ApiResult<T> {
 
 interface BackendVRankRow {
   policyRevision?: string | null;
+  purchaseL1Rate?: string | null;
+  purchaseL2Rate?: string | null;
+  monthlySalaryUsdt?: string | null;
   v?: string | null;
   label?: string | null;
   selfBuy?: string | number | null;
@@ -406,7 +416,7 @@ export interface F5ActionAvailability {
   groupStatus?: string;
 }
 
-interface BackendF5CommissionEvent extends F5ActionAvailability {
+interface BackendF5CommissionEvent extends F5ActionAvailability, F5SalaryFields {
   unlockAt?: number | null;
   settlementNo?: string | null;
   sourceRef?: string | null;
@@ -491,6 +501,9 @@ interface BackendF5CommissionAuditOverview {
 
 export interface F1VRankRow {
   policyRevision?: string;
+  purchaseL1Rate?: string;
+  purchaseL2Rate?: string;
+  monthlySalaryUsdt?: string;
   v: string;
   label: string;
   selfBuy?: string;
@@ -525,6 +538,7 @@ export interface F1Leadership {
 }
 
 export interface F1VRankOverview {
+  salaryFieldPresent: boolean;
   rewardValuationUsdtPerUvt: string | null;
   rows: F1VRankRow[];
   monthlyPromotionCount: number | null;
@@ -1095,7 +1109,7 @@ export interface F5CommissionFilter {
   lbl: string;
 }
 
-export interface F5CommissionEvent extends F5ActionAvailability {
+export interface F5CommissionEvent extends F5ActionAvailability, F5SalaryFields {
   /** Grouped reads project settlement release_at; the shifted network event deadline is not returned. */
   unlockAt?: number;
   settlementNo?: string;
@@ -1340,6 +1354,10 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
       v,
       policyRevision: typeof row.policyRevision === "string" ? row.policyRevision : undefined,
       label: asText(row.label, v),
+      purchaseL1Rate: rankPurchaseRate(row.purchaseL1Rate),
+      purchaseL2Rate: rankPurchaseRate(row.purchaseL2Rate),
+      monthlySalaryUsdt: typeof row.monthlySalaryUsdt === "string" && /^\d{1,12}(?:\.\d{1,6})?$/.test(row.monthlySalaryUsdt)
+        ? row.monthlySalaryUsdt : undefined,
       selfBuy: row.selfBuy == null ? undefined : String(row.selfBuy),
       directRefs: row.directRefs == null ? undefined : String(row.directRefs),
       teamGv: row.teamGv == null ? undefined : String(row.teamGv),
@@ -1366,6 +1384,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
     : undefined;
   return {
     rows,
+    salaryFieldPresent: (data?.vrankRows ?? []).some(row => Object.hasOwn(row, "monthlySalaryUsdt")),
     rewardValuationUsdtPerUvt: typeof data?.rewardValuationUsdtPerUvt === "string" ? data.rewardValuationUsdtPerUvt : null,
     monthlyPromotionCount: typeof monthlyPromotionCount === "number"
       && Number.isSafeInteger(monthlyPromotionCount) && monthlyPromotionCount >= 0 ? monthlyPromotionCount : null,
@@ -1849,6 +1868,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       version: toNumber(item.version),
       frozenFromStatus: optionalText(item.frozenFromStatus),
       ledgerBizNo: optionalText(item.ledgerBizNo),
+      ...parseF5SalaryFields(item),
       unlockAt: item.unlockAt ?? undefined,
       settlementNo: optionalText(item.settlementNo), sourceRef: optionalText(item.sourceRef), sourceDeviceId: optionalText(item.sourceDeviceId),
       policyVersion: item.policyVersion == null ? undefined : toNumber(item.policyVersion),
@@ -1996,7 +2016,15 @@ async function f1Request<T>(
   let result: ApiResult<T> | null = null;
   let bodyUnreadable = false;
   try {
-    if (path.startsWith("/reward-payouts") && !isWrite) {
+    if (path === "/ranks" || path === "/public-v-ranks" || /^\/ranks\/V[0-8]\/(thresholds|rewards)(?:\/|$)/.test(path)) {
+      const raw = await response.text();
+      // Preserve JSON decimal lexemes before parsing the rest of the overview.
+      result = JSON.parse(raw.replace(/("(?:purchaseL1Rate|purchaseL2Rate|monthlySalaryUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
+    } else if (path === "/direct-referral-policy?schemaVersion=2" && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("level2RatePct"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+    } else if (path.startsWith("/reward-payouts") && !isWrite) {
       const raw = await response.text();
       // Preserve DECIMAL(18,6) before JSON.parse can round a JSON number.
       result = JSON.parse(raw.replace(/("amount"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
@@ -2026,8 +2054,11 @@ async function f1Request<T>(
     } else if (path.startsWith("/commissions") && !isWrite) {
       const raw = await response.text();
       // Keep each monetary JSON lexeme before binary floating point can round it.
-      result = JSON.parse(raw.replace(/("(?:usdt|nex|amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|coverageRatio|redlinePct|actualPct|theoreticalPct|deviation)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+      result = JSON.parse(raw.replace(/("(?:usdt|nex|amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|recoveredAmount|pendingRecoveryAmount|coverageRatio|redlinePct|actualPct|theoreticalPct|deviation)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
+    } else if (isWrite && /^\/commissions\/[^/]+\/reverse$/.test(path)) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:recoveredAmount|pendingRecoveryAmount)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
     } else result = (await response.json()) as ApiResult<T>;
   } catch {
     bodyUnreadable = true;
@@ -2085,7 +2116,7 @@ async function f1Request<T>(
       throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
     }
     const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
-    if (isF3ConfigWrite || /^\/commissions\/CM-\d+$/.test(path) || /^\/leadership-pool\/(?:payout-preview|disqualification-readiness)(?:\?|$)/.test(path) || path === "/leadership-pool/vote-projection" || path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
+    if (isF3ConfigWrite || /^\/commissions\/CM-\d+$/.test(path) || /^\/leadership-pool\/(?:payout-preview|disqualification-readiness)(?:\?|$)/.test(path) || path === "/leadership-pool/vote-projection" || path.startsWith("/ranks/") || path.startsWith("/v8-review-candidates") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status, httpStatus: response.status, apiCode: result?.code,
       backendMessage: result?.message, reasonCode: result?.message,
     });
@@ -2099,6 +2130,22 @@ export async function fetchF1VRankOverview() {
   const data = await f1Request<unknown>("/ranks");
   assertF1Overview(data);
   return normalizeOverview(data as BackendOverview);
+}
+
+export async function fetchF1V8Review(cursor?: string) {
+  return parseF1V8Review(await f1Request<unknown>(`/v8-review-candidates${queryString({ cursor })}`));
+}
+
+export async function fetchF1SalaryClaims(filters: F1SalaryFilters, cursor?: string) {
+  const query = queryString({ userId: teamUserId(filters.user) ?? undefined, month: filters.month, rankCode: filters.rank, cursor });
+  return parseF1SalaryClaims(await f1Request<unknown>(`/ranks/salary/claims${query}`));
+}
+
+export async function fetchF2PublicRankRates() {
+  const data = await f1Request<{ ranks?: Array<{ v: number; purchaseL1Rate?: string; purchaseL2Rate?: string }> }>("/public-v-ranks");
+  return Array.isArray(data?.ranks) ? data.ranks.map(row => ({
+    v: `V${row.v}`, purchaseL1Rate: rankPurchaseRate(row.purchaseL1Rate), purchaseL2Rate: rankPurchaseRate(row.purchaseL2Rate),
+  })) : [];
 }
 
 export async function fetchF1PromotionLog(filters: F1PromotionFilters = {}) {
@@ -2225,8 +2272,25 @@ export async function fetchF4LeaderboardDisqualificationReadiness(limit = 50): P
     }) };
 }
 
+type F5RecoveryAmounts = {
+  recoveredAmount?: string;
+  pendingRecoveryAmount?: string;
+};
+
+function readF5RecoveryAmounts(row: Record<string, unknown>): F5RecoveryAmounts {
+  const amounts: F5RecoveryAmounts = { recoveredAmount: undefined, pendingRecoveryAmount: undefined };
+  for (const key of ["recoveredAmount", "pendingRecoveryAmount"] as const) {
+    const value = row[key];
+    if (value == null) continue;
+    const decimal = typeof value === "string" ? f4Decimal(value) : null;
+    if (decimal === null || decimal.startsWith("-")) throw new Error(`F5_OVERVIEW_RESPONSE_INVALID:commission.${key}`);
+    amounts[key] = decimal;
+  }
+  return amounts;
+}
+
 /** Current reward facts for approval review; never a snapshot of the proposal or an execution preview. */
-export type F5CommissionRecord = F5ActionAvailability & {
+export type F5CommissionRecord = F5ActionAvailability & F5RecoveryAmounts & {
   commissionId: string;
   eventId: number;
   userId: number;
@@ -2274,6 +2338,7 @@ export async function fetchF5CommissionByBusinessId(commissionId: string): Promi
   }
   return { status: "found", record: { commissionId: row.commissionId, eventId: row.eventId, userId: row.userId,
     user: row.user as string, kind: row.kind, currency: row.currency, status: row.status, version: row.version, ...amounts,
+    ...readF5RecoveryAmounts(row),
     canUnlock: row.canUnlock as boolean | undefined, unlockBlockedReason: row.unlockBlockedReason as string | null | undefined,
     canReverse: row.canReverse as boolean | undefined, reverseBlockedReason: row.reverseBlockedReason as string | null | undefined,
     groupStatus: row.groupStatus as string | undefined } };
@@ -2455,23 +2520,30 @@ export async function downloadF5RedactedCsv(
   });
 }
 
+export type F5CommissionReverseReceipt = Record<string, unknown> & F5RecoveryAmounts;
+
 export async function reverseF5Commission(
   commissionId: string,
   refundRef: string,
   reason: string,
   operator: string,
-) {
+): Promise<F5CommissionReverseReceipt> {
   // 指纹一律不含 reason:理由是审计元数据,不是意图。运营在「结果未知」后补一句理由再点是极自然的
   // 动作,若理由进指纹就会换新号 → 同一笔动作被执行两次。改理由复用旧号最坏只是审计记的是原措辞。
   return f1StableWrite(`f5-reverse|${commissionId}`, JSON.stringify([refundRef, operator]),
-    (commandKey) => f1Request<Record<string, unknown>>(
-      `/commissions/${encodeURIComponent(commissionId)}/reverse`,
-      {
+    async (commandKey) => {
+      const receipt = await f1Request<Record<string, unknown>>(`/commissions/${encodeURIComponent(commissionId)}/reverse`, {
         method: "POST",
         body: JSON.stringify({ refundRef, reason, operator }),
         stableIdempotencyKey: commandKey,
-      },
-    ));
+      });
+      if (receipt == null) return receipt;
+      try {
+        return { ...receipt, ...readF5RecoveryAmounts(receipt) };
+      } catch {
+        throw new F1OutcomeUncertainError(formatAdminApiError(undefined, "F1_RESPONSE_UNREADABLE"), commandKey);
+      }
+    });
 }
 
 export async function reissueF5Commissions(

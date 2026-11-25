@@ -54,6 +54,7 @@ export function StatusBadge({ status, explain = true }: { status: string; explai
   return <StatusTag tone={meta.tone} icon={meta.icon} explain={explain ? meta.text : undefined}>{meta.name}</StatusTag>;
 }
 
+
 export const isFriend = (row: Pick<F5CommissionEvent, "kind">) => row.kind === "direct_purchase" || row.kind === "direct_device_earning";
 export const deviceEarningSource = (layer: number | string | undefined) => Number(layer) === 2 ? "好友的好友" : "好友";
 export const isGrouped = (row: Pick<F5CommissionEvent, "settlementNo" | "kind">) => isFriend(row) || !!row.settlementNo;

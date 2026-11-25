@@ -8,7 +8,8 @@ import { useRef, useState, type ReactNode } from "react";
 import { BadgeDollarSign, CircleCheck, Clock3, Coins, Gift, Package, RotateCcw, Ticket, TriangleAlert, Undo2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
-import { listF1Proposals, f1ProposalAuthority } from "@/lib/admin/f1-approval";
+import { listF1Proposals, canSendF1Proposal, withF1ProposalLookupCopy } from "@/lib/admin/f1-approval";
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { F1RewardPayout } from "@/lib/admin/f1-client";
@@ -93,9 +94,12 @@ export const PAYOUT_TYPES = [
   { value: "SKU", label: "商品" }, { value: "CUSTOM", label: "自定义奖品" },
 ] as const;
 
-/** 审批人叫法照「全站-审批人叫法」：门槛放宽、增加资金奖励由超级管理员批；其余 F1 审批由另一位管理员批。 */
+/**
+ * 审批人叫法，F1、F2 共用（02 OP-67）：走「操作记录与审批」的申请只有超级管理员能批；
+ * 人工调整等级（含 V8 审核通过）是登记的例外，由有人工调级权限的管理员批。
+ */
 export const SUPER_APPROVER = "另一位超级管理员";
-export const ADMIN_APPROVER = "另一位管理员";
+export const VRANK_APPROVER = "另一位有人工调级权限的管理员";
 
 /**
  * F1 自己开的确认框。请求和旧页面一样走 ctx 上现成的提交函数，确认框只多了标题、标签和事实这些样子。
@@ -105,6 +109,8 @@ export type F1Confirm = {
   /** 记进操作记录的名字，和旧页面一样。 */
   action: string;
   proposalSlot?: string | ((value?: BusinessFormValue) => string);
+  v8Review?: boolean;
+  recoverOriginal?: boolean;
   title: ReactNode;
   briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind);
   detail: ReactNode;
@@ -120,6 +126,8 @@ export type F1Confirm = {
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
   reasonPlaceholder?: string;
+  /** 框的样式类（比如 F1 修改框的两项一行事实块）。 */
+  dialogClassName?: string;
   /** 提交：调用 ctx 上现成的函数，成功后由外壳关框。 */
   submit: (reason: string, businessValue?: BusinessFormValue, newValue?: string) => Promise<void>;
   /** 成功后的提示；不传就不提示（提交函数自己提示了）。 */
@@ -129,14 +137,14 @@ export type F1Confirm = {
 export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; ctx: FViewCtx; onClose: () => void }) {
   const [owner] = useState(() => useAdminAuth.getState().session?.adminId);
   const slot = useRef(typeof confirm.proposalSlot === "string" ? confirm.proposalSlot : "");
-  const submitted = useRef(false);
+  const submitted = useRef(!!confirm.recoverOriginal);
   const originalValues = useRef<BusinessFormValue | undefined>(undefined);
   const original = () => owner === undefined ? undefined : listF1Proposals(owner).find(row => row.fingerprint === slot.current);
   const existing = original();
   const session = useAdminAuth(state => state.session);
-  const canRetry = !existing || !!existing.spec && !!session && session.adminId === owner
-    && session.authorities.includes(f1ProposalAuthority(existing.spec))
-    && session.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create");
+  const canSend = !existing || !!existing.spec && !!session && session.adminId === owner
+    && canSendF1Proposal(existing.spec, session.authorities);
+  const queryOnly = !!existing && (existing.absent !== true || !!existing.received || !!existing.ticket || !existing.request || !canSend);
   return (
     <OperationConfirmModal
       briefKind={confirm.briefKind}
@@ -160,11 +168,14 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
       getPendingBusinessValue={() => submitted.current && original() ? originalValues.current : undefined}
       blockedReason={!submitted.current && existing ? "这项操作有保存的原申请，请先查询原结果。" : undefined}
       inlineApproval={{
+        dialogClassName: confirm.dialogClassName,
         resolve: () => undefined,
-        initialRecovery: "retry",
+        pending: !!confirm.recoverOriginal && !!existing,
+        initialRecovery: queryOnly ? "lookup" : "retry",
+        queryOnly,
         expired: !!existing && existing.expiresAt <= Date.now(),
         expiredRequestRecovery: existing && existing.expiresAt <= Date.now() ? "query" : undefined,
-        disabledReason: submitted.current && !canRetry ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined,
+        disabledReason: submitted.current && !canSend ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined,
         recover: async () => { const resolved = await ctx.recoverF1(slot.current, "query"); if (resolved) onClose(); return resolved; },
         retry: async () => { await ctx.recoverF1(slot.current, "retry"); onClose(); },
       }}
@@ -185,6 +196,7 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
           onClose();
         } catch (error) {
           // 错误交回确认框，由框里显示（没权限时框关掉、外壳提示），不再另弹轻提示，免得同一句同屏两次。
+          if ((confirm.v8Review || original()) && isA2OutcomeUncertainError(error) && !("confirmCopy" in error)) throw withF1ProposalLookupCopy(error);
           throw error;
         }
       }}

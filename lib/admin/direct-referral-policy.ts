@@ -1,11 +1,16 @@
 import { parseStrictFiniteNumber } from "./strict-number.ts";
+import { compareDecimal } from "./f1-rank-benefit";
+import { f4Decimal } from "./f4-money";
 
 export interface DirectReferralRule {
   enabled: boolean;
   totalRatePct: number;
+  level2RatePct?: string;
   usdtSharePct: number;
   coolingDays: number;
 }
+
+export type PurchaseBaseRateSource = "F2" | "BENEFICIARY_RANK";
 
 export interface DirectReferralPolicy {
   schemaVersion: 2;
@@ -26,7 +31,7 @@ export interface DirectReferralPolicy {
   effectiveAt: string | null;
   nexUsdtPrice: number | null;
   sevenLayerRevision: number;
-  sevenLayerReference: { revision: number; baseRatePct: number | null; coolingDays: number | null; legacyNexPerUsd: number | null };
+  sevenLayerReference: { revision: number; baseRatePct: number | null; coolingDays: number | null; legacyNexPerUsd: number | null; purchaseBaseRateSource?: PurchaseBaseRateSource };
   purchaseSplit: { enabled: boolean; usdtSharePct: number };
   deviceEarning: DirectReferralRule;
 }
@@ -51,6 +56,12 @@ export function validateDirectReferralUpdate(value: DirectReferralUpdate): strin
   }
   const device = value.deviceEarning;
   if (!Number.isFinite(device.totalRatePct) || device.totalRatePct < 0 || device.totalRatePct > 100 || (device.enabled && device.totalRatePct === 0)) return "好友设备收益奖励：总比例填 0–100%，开启时要大于 0。";
+  const second = device.level2RatePct;
+  if (second !== undefined) {
+    const decimal = /^(?:\d+(?:\.\d+)?|\.\d+)$/.test(second) ? f4Decimal(second) : null;
+    const fraction = decimal?.split(".")[1] ?? "";
+    if (decimal === null || fraction.replace(/0+$/, "").length > 6 || compareDecimal(decimal, "100") === 1) return "好友设备收益奖励：二级比例填 0–100%，最多 6 位小数。";
+  }
   if (!Number.isInteger(device.coolingDays) || device.coolingDays < 0 || device.coolingDays > 365) return "好友设备收益奖励：冷却天数填 0–365 的整数。";
   return null;
 }
@@ -68,13 +79,20 @@ export function parseDirectReferralPolicy(value: unknown): DirectReferralPolicy 
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return invalid();
     const item = raw as Record<string, unknown>;
     if (typeof item.enabled !== "boolean") return invalid();
-    return { enabled: item.enabled, totalRatePct: number(item.totalRatePct), usdtSharePct: number(item.usdtSharePct), coolingDays: number(item.coolingDays) };
+    const rawSecond = item.level2RatePct;
+    const second = rawSecond === undefined ? undefined
+      : typeof rawSecond === "string" || typeof rawSecond === "number"
+        ? (f4Decimal(rawSecond) ?? invalid()).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")
+        : invalid();
+    return { enabled: item.enabled, totalRatePct: number(item.totalRatePct), usdtSharePct: number(item.usdtSharePct), coolingDays: number(item.coolingDays), level2RatePct: second };
   };
   if (row.source !== "server" || row.serverCanonical !== true || typeof row.sourceEnvironment !== "string" || !row.sourceEnvironment || typeof row.runId !== "string" || typeof row.configured !== "boolean") return invalid();
   if (row.schemaVersion !== 2 || (row.policySchemaVersion !== 1 && row.policySchemaVersion !== 2) || typeof row.purchaseSplitConfigured !== "boolean" || row.purchaseSplitConfigured !== (row.policySchemaVersion === 2) || !["DIRECT_ONLY_V1", "SEVEN_V2"].includes(String(row.settlementMode)) || typeof row.sevenLayerEnabled !== "boolean" || row.sevenLayerEnabled !== (row.settlementMode === "SEVEN_V2") || (row.sevenLayerEnabled && "purchase" in row)) return invalid();
   if (!row.purchaseSplit || typeof row.purchaseSplit !== "object" || Array.isArray(row.purchaseSplit) || !row.sevenLayerReference || typeof row.sevenLayerReference !== "object" || Array.isArray(row.sevenLayerReference)) return invalid();
   const split = row.purchaseSplit as Record<string, unknown>, ref = row.sevenLayerReference as Record<string, unknown>;
   if (typeof split.enabled !== "boolean" || Object.keys(split).some(key => !["enabled", "usdtSharePct"].includes(key))) return invalid();
+  const source = ref.purchaseBaseRateSource;
+  if (source !== undefined && source !== "F2" && source !== "BENEFICIARY_RANK") return invalid();
   const result: DirectReferralPolicy = {
     schemaVersion: 2, settlementMode: row.settlementMode as DirectReferralPolicy["settlementMode"], sevenLayerEnabled: row.sevenLayerEnabled,
     sevenLayerPaused: row.sevenLayerPaused === true, sevenLayerActivationContractVersion: row.sevenLayerActivationContractVersion === 1 ? 1 : null,
@@ -86,35 +104,55 @@ export function parseDirectReferralPolicy(value: unknown): DirectReferralPolicy 
     effectiveAt: date(row.effectiveAt),
     nexUsdtPrice: row.nexUsdtPrice === null ? null : number(row.nexUsdtPrice),
     sevenLayerRevision: number(row.sevenLayerRevision),
-    sevenLayerReference: { revision: number(ref.revision), baseRatePct: nullableNumber(ref.baseRatePct), coolingDays: nullableNumber(ref.coolingDays), legacyNexPerUsd: nullableNumber(ref.legacyNexPerUsd) },
+    sevenLayerReference: { revision: number(ref.revision), baseRatePct: nullableNumber(ref.baseRatePct), coolingDays: nullableNumber(ref.coolingDays), legacyNexPerUsd: nullableNumber(ref.legacyNexPerUsd), purchaseBaseRateSource: source },
     purchaseSplit: { enabled: split.enabled, usdtSharePct: number(split.usdtSharePct) }, deviceEarning: rule(row.deviceEarning),
   };
   if (validateDirectReferralUpdate({ ...result, expectedVersion: result.policyVersion, expectedSevenLayerRevision: result.sevenLayerRevision }) || (result.nexUsdtPrice !== null && result.nexUsdtPrice <= 0)) return invalid();
   const reference = result.sevenLayerReference;
   if (!result.purchaseSplitConfigured && (result.purchaseSplit.enabled || result.purchaseSplit.usdtSharePct !== 50)) return invalid();
   if (reference.revision !== result.sevenLayerRevision || (reference.coolingDays !== null && (!Number.isInteger(reference.coolingDays) || reference.coolingDays < 0 || reference.coolingDays > 90)) || (reference.legacyNexPerUsd !== null && reference.legacyNexPerUsd < 0) || (result.sevenLayerEnabled && result.cutoverAt === null)) return invalid();
-  if (result.configured ? result.policyVersion < 1 || result.effectiveAt === null : result.policyVersion !== 0 || result.effectiveAt !== null || result.purchaseSplit.enabled || result.purchaseSplit.usdtSharePct !== 50 || result.deviceEarning.enabled || result.deviceEarning.totalRatePct !== 0 || result.deviceEarning.usdtSharePct !== 50 || result.deviceEarning.coolingDays !== 0) return invalid();
+  if (result.configured ? result.policyVersion < 1 || result.effectiveAt === null : result.policyVersion !== 0 || result.effectiveAt !== null || result.purchaseSplit.enabled || result.purchaseSplit.usdtSharePct !== 50 || result.deviceEarning.enabled || result.deviceEarning.totalRatePct !== 0 || (result.deviceEarning.level2RatePct ?? "0") !== "0" || result.deviceEarning.usdtSharePct !== 50 || result.deviceEarning.coolingDays !== 0) return invalid();
   return result;
 }
 
 export function directReferralSummary(value: Pick<DirectReferralUpdate, "purchaseSplit" | "deviceEarning"> & { purchaseSplitConfigured?: boolean }): string {
   const split = value.purchaseSplit, device = value.deviceEarning;
-  return `好友购买奖励：${value.purchaseSplitConfigured === false ? `未设置拆分，全额发 USDT（另加旧 UVT 奖励）；默认比例 USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，尚未生效` : split.enabled ? `开启拆分，USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%` : `关闭拆分，全额发 USDT（另加旧 UVT 奖励）；已保存的比例 USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，关闭期间不生效`}；好友设备收益奖励：${device.enabled ? "开启" : "关闭"}，总比例 ${device.totalRatePct}%，USDT ${device.usdtSharePct}% / UVT ${100 - device.usdtSharePct}%，冷却 ${device.coolingDays} 天`;
+  return `好友购买奖励：${value.purchaseSplitConfigured === false ? `未设置拆分，全额发 USDT（另加旧 UVT 奖励）；默认比例 USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，尚未生效` : split.enabled ? `开启拆分，USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%` : `关闭拆分，全额发 USDT（另加旧 UVT 奖励）；已保存的比例 USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，关闭期间不生效`}；好友设备收益奖励：${device.enabled ? "开启" : "关闭"}，${device.level2RatePct === undefined ? `总比例 ${device.totalRatePct}%` : `一级比例 ${device.totalRatePct}%，二级比例 ${device.level2RatePct}%`}，USDT ${device.usdtSharePct}% / UVT ${100 - device.usdtSharePct}%，冷却 ${device.coolingDays} 天`;
 }
 
 export function directReferralAmplifies(before: DirectReferralPolicy, after: DirectReferralUpdate): boolean {
+  const decimals = (...values: (string | number)[]) => {
+    const parts = values.map(value => (f4Decimal(value) ?? "0").split("."));
+    const places = Math.max(...parts.map(([, fraction = ""]) => fraction.length));
+    const scale = BigInt(10) ** BigInt(places);
+    return { hundred: BigInt(100) * scale, values: parts.map(([whole, fraction = ""]) => BigInt(whole + fraction.padEnd(places, "0"))) };
+  };
   const oldSplit = before.purchaseSplit, nextSplit = after.purchaseSplit;
   if (oldSplit.enabled !== nextSplit.enabled || (nextSplit.enabled && oldSplit.usdtSharePct !== nextSplit.usdtSharePct)) {
-    const { baseRatePct, legacyNexPerUsd } = before.sevenLayerReference, price = before.nexUsdtPrice;
-    if (baseRatePct === null || legacyNexPerUsd === null || price === null) return true;
-    const payout = (split: DirectReferralUpdate["purchaseSplit"]) => split.enabled
-      ? [baseRatePct * split.usdtSharePct / 100, baseRatePct * (100 - split.usdtSharePct) / 100 / price]
-      : [baseRatePct, baseRatePct * legacyNexPerUsd];
-    const old = payout(oldSplit), next = payout(nextSplit);
-    if (next.some((amount, index) => amount > old[index])) return true;
+    if (oldSplit.enabled) return true;
+    const coefficient = before.sevenLayerReference.legacyNexPerUsd ?? 0;
+    const price = before.nexUsdtPrice;
+    if (price === null || coefficient === 0) return true;
+    const { hundred, values: [share, legacy, tokenPrice] } = decimals(nextSplit.usdtSharePct, coefficient, price);
+    if ((hundred - share) * (hundred / BigInt(100)) > BigInt(100) * legacy * tokenPrice) return true;
   }
   const old = before.deviceEarning, next = after.deviceEarning;
+  const spendsMore = (rate: string | number, oldRate: string | number) => {
+    const { hundred, values: [nextRate, beforeRate, nextShare, beforeShare] } = decimals(rate, oldRate, next.usdtSharePct, old.usdtSharePct);
+    return nextRate * nextShare > beforeRate * beforeShare
+      || nextRate * (hundred - nextShare) > beforeRate * (hundred - beforeShare);
+  };
   return next.enabled && (!old.enabled || next.coolingDays < old.coolingDays
-    || next.totalRatePct * next.usdtSharePct > old.totalRatePct * old.usdtSharePct
-    || next.totalRatePct * (100 - next.usdtSharePct) > old.totalRatePct * (100 - old.usdtSharePct));
+    || spendsMore(next.totalRatePct, old.totalRatePct)
+    || spendsMore(next.level2RatePct ?? 0, old.level2RatePct ?? 0));
+}
+
+export function directReferralSplitIssue(before: DirectReferralPolicy, after: DirectReferralUpdate): string | null {
+  if (!after.purchaseSplit.enabled) return null;
+  const reference = before.sevenLayerReference;
+  if (reference.purchaseBaseRateSource === "BENEFICIARY_RANK") {
+    return reference.coolingDays === null ? "购买冷却还没设置，先在上面「总量和冷却」里配好。" : null;
+  }
+  return reference.baseRatePct === null || reference.coolingDays === null
+    ? "第 1 层比例或购买冷却还没设置，先在上面「每层分多少」「总量和冷却」里配好。" : null;
 }

@@ -18,3 +18,15 @@
 
 .f2-page .f2-policy-bar { margin-top: 16px; }
 .f2-page .f2-policy-card[disabled] .f2-share-uvt output { color: var(--rd-text-3); }
+
+/* 好友购买奖励卡的只读镜像：不另铺底色（VS-72），下面一条线和可改的项分开；一级、二级比例按受益人等级时带去团队等级晋升的链接。 */
+.f2-page .f2-mirror { display: grid; gap: 8px; padding: 0 0 16px; border-bottom: 1px solid var(--rd-line); }
+.f2-page .f2-mirror-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.f2-page .f2-mirror-note .rd-link { margin-left: auto; font-size: var(--rd-text-aux); }
+/* 两张卡等高；卡里两项一行（开关 | 冷却天数，一级 | 二级比例，USDT | UVT 占比），不上下叠成一列（DT-27）。 */
+.f2-page .f2-policy-cards { align-items: stretch; }
+.f2-page .f2-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; align-items: start; }
+/* 停用拆分时占比只读一行弱字，不画条。 */
+.f2-page .f2-split-off { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.f2-page .f2-policy-bar { justify-content: flex-end; }
+.f2-diff-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }

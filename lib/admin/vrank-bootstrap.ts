@@ -37,14 +37,14 @@ export function buildVRankBootstrap(drafts: VRankBootstrapDraft[]) {
       return number;
     };
     const selfComputePoints = integer(draft.selfComputePoints, "自购算力点", Number.MAX_SAFE_INTEGER);
-    const directRefs = integer(draft.directRefs, "直接邀请人数", 2147483647);
+    const directRefs = integer(draft.directRefs, "一二级已购人数", 2147483647);
     const teamComputePoints = integer(draft.teamComputePoints, "团队算力点", Number.MAX_SAFE_INTEGER);
-    const requiredDownlineCount = integer(draft.requiredDownlineCount, "达标分支数", 2147483647);
+    const requiredDownlineCount = integer(draft.requiredDownlineCount, "下级领导者人数", 2147483647);
     const leadershipVotes = integer(draft.leadershipVotes, "团队激励池票数", 2147483647);
     const requiredDownlineRank = draft.requiredDownlineRank || null;
     if (requiredDownlineCount === 0 ? requiredDownlineRank !== null
       : requiredDownlineRank === null || !bootstrapRankCodes.slice(0, index).includes(requiredDownlineRank)) {
-      fail("有达标分支时请选择低于本级的分支等级；分支数为 0 时选择“不要求”");
+      fail("下级领导者人数大于 0 时请选择低于本级的最低等级；人数为 0 时选择“不要求”");
     }
     if (index > 0 && selfComputePoints + directRefs + teamComputePoints + requiredDownlineCount === 0) {
       fail("至少填写一项大于 0 的晋升条件");

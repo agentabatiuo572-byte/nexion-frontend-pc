@@ -4,7 +4,11 @@
  * F2 待审批和 A2 列表、详情、批准框都从这里拆成七行，不在前端重算；格式对不上返回 undefined，页面照原文显示。
  */
 import { Cell, Table, Td, Th } from "@/app/components/rd";
-import { LAYERS, LAYER_WHO, SAMPLE_ORDER, num } from "./f2-shared";
+import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
+import { LAYERS, LAYER_WHO, SAMPLE_ORDER, num, pctAdd, pctSample, rangeText } from "./f2-shared";
+
+/** 第 1、2 层按受益人等级时传九级最低、最高（百分数字符串）；读不到传 null；不传就按单一比例显示（A2 审批页照旧）。 */
+export type F2RankedRange = { l1: { min: string; max: string }; l2: { min: string; max: string } } | null;
 
 export type F2BootstrapRow = { layer: string; usdtPct: string; nexPerUsd: string };
 
@@ -20,6 +24,11 @@ export function parseF2BootstrapAfter(after: string | undefined): F2BootstrapRow
     rows.push({ layer: `L${match[1]}`, usdtPct: match[2], nexPerUsd: match[3] });
   }
   return rows;
+}
+
+/** The retained PC request writes zero placeholders for L1/L2. Fixed-rate requests require L1=10. */
+export function f2BootstrapUsesRank(first: string | null | undefined, second: string | null | undefined) {
+  return !!first && !!second && compareDecimal(first, "0") === 0 && compareDecimal(second, "0") === 0;
 }
 
 /** 两个不带符号的小数相乘，按整数算，不经浮点；去掉末尾 0。 */
@@ -50,8 +59,11 @@ export const F2_APP_TOTAL_LIMIT = 25;
 export const F2_APP_LIMIT_COPY = "App 目前只接受合计不超过 25% 的配置，超过会导致 App 读不出团队奖励配置。";
 
 /** 七层逐行核对：确认框、A2 详情和批准框共用。只用 rd 组件，A2 页没有 F2 的样式表。 */
-export function F2BootstrapReview({ rows, label = "七层规则" }: { rows: readonly F2BootstrapRow[]; label?: string }) {
-  const total = f2PctSum(rows.map((row) => row.usdtPct));
+export function F2BootstrapReview({ rows, label = "七层规则", ranked }: { rows: readonly F2BootstrapRow[]; label?: string; ranked?: F2RankedRange }) {
+  const byRank = ranked !== undefined;
+  const others = f2PctSum(rows.filter((_, index) => !byRank || index > 1).map((row) => row.usdtPct));
+  const total = byRank ? null : f2PctSum(rows.map((row) => row.usdtPct));
+  const span = byRank && ranked ? { low: pctAdd(pctAdd(others, ranked.l1.min), ranked.l2.min), high: pctAdd(pctAdd(others, ranked.l1.max), ranked.l2.max) } : null;
   return (
     <Table label={label}>
       <thead><tr>
@@ -63,6 +75,16 @@ export function F2BootstrapReview({ rows, label = "七层规则" }: { rows: read
       <tbody>
         {rows.map((row, index) => {
           const sample = f2SampleUsdt(row.usdtPct);
+          const rng = byRank && index < 2 ? ranked ? (index === 0 ? ranked.l1 : ranked.l2) : null : undefined;
+          if (rng !== undefined) {
+            const lo = rng ? pctSample(rng.min) : null, hi = rng ? pctSample(rng.max) : null;
+            return <tr key={row.layer}>
+              <Td>{row.layer} {LAYER_WHO[LAYERS[index]]}</Td>
+              <Td align="right"><span className="f2-ranked"><strong>{rng ? rangeText(rng.min, rng.max) : "区间未知"}</strong><span className="f2-ranked-sub">按受益人等级</span></span></Td>
+              <Td align="right">{num(row.nexPerUsd)}</Td>
+              <Td align="right">{lo && hi ? <Cell num main={rangeText(lo, hi, "USDT")} sub={`另发 ${rangeText(f2DecimalTimes(lo, row.nexPerUsd), f2DecimalTimes(hi, row.nexPerUsd), "USDT").replace(/ USDT$/, "")} UVT`} /> : "—"}</Td>
+            </tr>;
+          }
           return <tr key={row.layer}>
             <Td>{row.layer} {LAYER_WHO[LAYERS[index]]}</Td>
             <Td align="right"><strong>{num(row.usdtPct)}%</strong></Td>
@@ -72,9 +94,9 @@ export function F2BootstrapReview({ rows, label = "七层规则" }: { rows: read
         })}
         <tr>
           <Td><strong>七层合计</strong></Td>
-          <Td align="right"><strong>{num(total)}%</strong></Td>
+          <Td align="right"><strong>{total !== null ? `${num(total)}%` : span ? rangeText(span.low, span.high) : "—"}</strong></Td>
           <Td align="right">—</Td>
-          <Td align="right"><strong>{num(f2SampleUsdt(total))} USDT</strong></Td>
+          <Td align="right"><strong>{total !== null ? `${num(f2SampleUsdt(total))} USDT` : span ? rangeText(pctSample(span.low), pctSample(span.high), "USDT") : "—"}</strong></Td>
         </tr>
       </tbody>
     </Table>

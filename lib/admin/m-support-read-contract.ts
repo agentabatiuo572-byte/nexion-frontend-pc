@@ -5,6 +5,10 @@ export type MTicketAssigneeCandidate = {
 
 export type MSupportAgentFailureKind = "none" | "auth" | "permission" | "malformed" | "unavailable";
 
+export function supportContractMalformed(field: string): never {
+  throw new Error(`SUPPORT_CONTRACT_MALFORMED:${field}`);
+}
+
 export type M1SupportAgentOverviewPayload = {
   agents: Record<string, unknown>[];
   advisorAssignments: Record<string, unknown>[];

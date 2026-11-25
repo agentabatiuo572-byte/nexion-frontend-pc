@@ -12,8 +12,9 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { f1ProposalAuthority, isF1PayoutSlot } from "@/lib/admin/f1-approval";
-import { f1ConditionLabels, formatF1ExactAmount, isF1PolicyInFlight, listF1PolicyOperations, queryF1PolicyOperation, releaseF1PolicyProposal, type F1PolicyEditor, type F1PolicyReward } from "@/lib/admin/f1-policy-change";
+import { canSendF1Proposal, F1_PROPOSAL_LOOKUP_FIRST, isF1PayoutSlot } from "@/lib/admin/f1-approval";
+import { canRetryF1PolicyProposal, f1ConditionLabels, formatF1ExactAmount, isF1PolicyInFlight, listF1PolicyOperations, queryF1PolicyOperation, releaseF1PolicyProposal, type F1PolicyEditor, type F1PolicyReward } from "@/lib/admin/f1-policy-change";
+import { F1_BENEFIT_NAMES, isF1BenefitField, ratePct } from "@/lib/admin/f1-rank-benefit";
 import { isF1RankHowInFlight, pendingF1RankHow, queryF1RankHow } from "@/lib/admin/f1-rank-how-save";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { f1RewardPolicyLabel } from "./f1-policy-confirm";
@@ -21,14 +22,16 @@ import { FReleaseButton } from "./f-release";
 import type { FViewCtx } from "./types";
 
 type State = "unknown" | "received" | "pending" | "expired";
-type Row = { key: string; name: string; change: ReactNode; submittedAt?: number; state: State; direct?: boolean; actions: ReactNode };
+type Row = { key: string; name: string; change: ReactNode; submittedAt?: number; state: State; direct?: boolean; canRetryProposal?: boolean; actions: ReactNode };
 
 /** 等级说明所在页签的名字，和 f1-vrank 的页签一致。 */
+/** 恢复面板上的门槛名（新口径）；记进操作记录的名字仍用 f1ConditionLabels。 */
+const CONDITION_NAME: Record<string, string> = { selfBuy: "自购算力点", teamGv: "团队算力点", directRefs: "一二级已购人数", legCount: "下级领导者人数", legRank: "下级领导者最低等级" };
 const HOW_TAB = "App 等级说明";
-const UNIT: Record<string, string> = { selfBuy: " 点", teamGv: " 点", directRefs: " 人", legCount: " 个", legRank: "" };
+const UNIT: Record<string, string> = { purchaseL1Rate: "%", purchaseL2Rate: "%", monthlySalaryUsdt: " USDT", selfBuy: " 点", teamGv: " 点", directRefs: " 人", legCount: " 个", legRank: "" };
 const thresholdText = (field: string, raw: string | undefined) => raw === undefined || raw === "" ? "—" : raw === "NONE" ? "未设置" : `${formatF1ExactAmount(raw)}${UNIT[field] ?? ""}`;
 
-function stateTag(state: State, direct: boolean) {
+function stateTag(state: State, direct: boolean, canRetryProposal: boolean) {
   if (state === "pending") return <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>;
   if (state === "received") return <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>;
   if (state === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain={direct
@@ -36,7 +39,7 @@ function stateTag(state: State, direct: boolean) {
     : "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。"}>已过期</StatusTag>;
   return <StatusTag tone="warn" icon={CircleHelp} explain={direct
     ? "提交时没收到确定结果，可能已经保存。先查询原结果；有结论前不要换个办法重做。"
-    : "提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。"}>结果未知</StatusTag>;
+    : canRetryProposal ? "没查到原审批单，可以按原内容和理由重试。" : F1_PROPOSAL_LOOKUP_FIRST}>结果未知</StatusTag>;
 }
 
 /** 普通申请写成运营看得懂的名字和改动；配置键、原始 JSON 不上屏。 */
@@ -51,7 +54,11 @@ function ordinaryLabel(original: FDomainAttempt): { name: string; change: ReactN
     try { count = Object.keys(JSON.parse(spec?.after ?? "{}") as object).length; } catch { /* 坏的原内容只显示不完整 */ }
     return { name: "各级头衔", change: spec && count ? `设置 ${count} 级头衔` : "原请求不完整，只能查询原结果" };
   }
-  if (slot.startsWith("f-vrank-override:")) return { name: `人工调整等级 · 用户 ${id}`, change: spec ? `${spec.amplifies ? "升级" : "降级"}到 ${spec.after}` : "原请求不完整，只能查询原结果" };
+  if (slot.startsWith("f-vrank-override:")) {
+    const { direction, targetV } = spec?.command.params ?? {};
+    const valid = (direction === "promote" || direction === "rollback") && typeof targetV === "string" && /^V[0-8]$/.test(targetV);
+    return { name: `人工调整等级 · 用户 ${id}`, change: valid ? `${direction === "promote" ? "升级" : "降级"}到 ${targetV}` : "原请求不完整，只能查询原结果" };
+  }
   if (isF1PayoutSlot(slot)) {
     const action = spec?.command.params.action;
     const clawback = spec?.command.params.usedVoucherClawback;
@@ -86,14 +93,13 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
     const { name, change } = ordinaryLabel(original);
     const expired = isRetryExpired(original);
     const state: State = original.ticket?.status === "pending" ? "pending" : original.received ? "received" : expired ? "expired" : "unknown";
-    const canRetry = !!original.spec && !!original.request && !original.received && !original.ticket && !expired;
-    const retryBlock = original.spec && !(session.authorities.includes(f1ProposalAuthority(original.spec))
-      && session.authorities.some((a) => a === "platform_a2_write" || a === "platform_a2_proposal_create")) ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined;
+    const canRetry = !!original.spec && !!original.request && !original.received && !original.ticket && !expired
+      && original.absent === true && canSendF1Proposal(original.spec, session.authorities);
     rows.push({
-      key: original.commandKey, name, change, submittedAt: original.createdAt, state,
+      key: original.commandKey, name, change, submittedAt: original.createdAt, state, canRetryProposal: canRetry,
       actions: <>
         <Button size="sm" onClick={() => void ctx.recoverF1(original.fingerprint, "query").catch((error) => toast(displayAdminError(error)))}>查询原结果</Button>
-        {canRetry && <Button size="sm" disabledReason={retryBlock} onClick={() => { setRetryError(null); setRetrying({ original, name, change }); }}>按原请求重试</Button>}
+        {canRetry && <Button size="sm" onClick={() => { setRetryError(null); setRetrying({ original, name, change }); }}>按原请求重试</Button>}
         {expired && original.absent && !original.ticket && !original.received && <FReleaseButton label={name} toast={toast} onRelease={() => ctx.recoverF1(original.fingerprint, "release")} />}
       </>,
     });
@@ -105,9 +111,10 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
       if (isF1PolicyInFlight(record.commandKey)) continue;
       const { editor, form, values, approval } = record.original;
       const field = editor.field;
-      const name = `${editor.row.v} · ${editor.action === "threshold" ? f1ConditionLabels[field!] : editor.action === "reward_add" ? "添加奖励" : editor.action === "reward_remove" ? "移除奖励" : "编辑奖励"}`;
+      const benefit = isF1BenefitField(field);
+      const name = `${editor.row.v} · ${editor.action === "threshold" ? (benefit ? F1_BENEFIT_NAMES[field] : CONDITION_NAME[field!] ?? f1ConditionLabels[field!]) : editor.action === "reward_add" ? "添加奖励" : editor.action === "reward_remove" ? "移除奖励" : "编辑奖励"}`;
       const oldReward = editor.reward ? f1RewardPolicyLabel(editor.reward, ctx) : "奖励";
-      const change: ReactNode = editor.action === "threshold" ? <Change from={thresholdText(field!, editor.row[field!])} to={thresholdText(field!, form.value?.trim())} />
+      const change: ReactNode = editor.action === "threshold" ? <Change from={thresholdText(field!, benefit && field !== "monthlySalaryUsdt" ? ratePct(editor.row[field]) : editor.row[field!])} to={thresholdText(field!, form.value?.trim())} />
         : editor.action === "reward_add" ? `添加 ${rewardLabel(values.reward, ctx)}`
           : editor.action === "reward_remove" ? `移除 ${oldReward}`
             : <Change from={oldReward} to={rewardLabel(values.reward, ctx)} />;
@@ -115,6 +122,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
       const state: State = record.ticket?.status === "pending" ? "pending" : approval && record.received ? "received" : expired ? "expired" : "unknown";
       rows.push({
         key: record.commandKey, name, change, submittedAt: record.createdAt, state, direct: !approval,
+        canRetryProposal: approval && canRetryF1PolicyProposal(record) && session.authorities.includes("network_f1_write"),
         actions: <>
           {record.ticket
             ? <Button size="sm" onClick={() => void queryF1PolicyOperation(owner, record.commandKey).then((result) => {
@@ -158,7 +166,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
           <span className="f1-recovery-name">{row.name}</span>
           <span className="f1-recovery-change">{row.change}</span>
           <span className="f1-recovery-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
-          <span>{stateTag(row.state, !!row.direct)}</span>
+          <span>{stateTag(row.state, !!row.direct, !!row.canRetryProposal)}</span>
           <span className="f1-recovery-actions">{row.actions}</span>
         </li>)}
       </ul>}

@@ -4,11 +4,12 @@
  * F5 首屏的两张图：奖励走到哪一步（七个状态排成一条路，冻结和冲正是岔路），各类奖励。
  * 数的都是全部记录，不跟下方筛选变（D01）。金额只画后端给了的：冷却中、已解锁和合计有金额，其余只有笔数。
  */
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { ArrowDown, ArrowRight, ArrowUp, Check, Layers3, Route } from "lucide-react";
 import { Fold, Panel, RatioBar, Table, Td, Th, Tr } from "@/app/components/rd";
 import type { F5CommissionAuditOverview } from "@/lib/admin/f1-client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { amountDisplay } from "@/lib/format";
 import { KIND_LABELS, STATUS_BY_LABEL, STATUS_META, kindCountLabel, splitMoneyLabel } from "./f5-shared";
 
 type Money = { usdt: string; uvt: string } | null;
@@ -152,23 +153,41 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
 }
 
 /** 各类奖励：每类的笔数和两种币金额；条是这一类占全部笔数的多少（按笔数算，不按金额）。点一类筛下方列表。 */
-export function F5KindTiles({ data, kindFilter, onKind }: { data: F5CommissionAuditOverview; kindFilter: string; onKind: (kind: string) => void }) {
+/** 占全部笔数的比例，一位小数（TX-23），去掉 .0；不到 0.1% 写「<0.1%」。 */
+const sharePct = (count: number, total: number) => {
+  const value = (count / total) * 100;
+  return count > 0 && value < 0.05 ? "<0.1%" : `${value.toFixed(1).replace(/\.0$/, "")}%`;
+};
+
+export function F5KindTiles({ data, kindFilter, onKind, open, onOpenChange }: { data: F5CommissionAuditOverview; kindFilter: string; onKind: (kind: string) => void; open: boolean; onOpenChange: (open: boolean) => void }) {
   const counts = data.commissionKinds.map((item) => Number.parseInt(item.ct, 10) || 0);
   const total = counts.reduce((sum, value) => sum + value, 0);
+  const allOn = kindFilter === "";
+  // 单选组（CP-62）：Tab 只停在选中的那一格，方向键在格子之间移动焦点，回车或空格选中。
+  const moveFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
+    if (!step) return;
+    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    items[(at + step + items.length) % items.length]?.focus();
+    event.preventDefault();
+  };
   return (
-    <Panel icon={Layers3} tone="role-1" title={`${kindCountLabel(data.commissionKinds.length)}奖励`} sub="全部记录"
-      explain="每类的笔数和两种币的金额，算全部记录，不跟下方筛选变。条是这一类占全部笔数的比例，按笔数算，不按金额。">
-      <div className="f5-kinds">
+    <Fold icon={Layers3} tone="role-1" title={`${kindCountLabel(data.commissionKinds.length)}奖励`} open={open} onOpenChange={onOpenChange}
+      summary={`全部记录 · ${data.commissionKinds.length} 类${kindFilter ? ` · 正在看${KIND_LABELS[kindFilter] ?? "所选类型"}` : ""}`}
+      explain={<><p>每类的笔数和两种币的金额，算全部记录，不跟下方筛选变。条是这一类占全部笔数的比例，按笔数算，不按金额。</p>
+        <p>按现行七层规则：好友购买奖励只有购买拆分开启时的第 1 层；第 2 层和拆分停用时的第 1 层记为团队购买奖励，行内写第几层。以前按旧规则生成的记录保留当时的类型。点「全部类型」清除类型筛选。</p></>}>
+      <div className="f5-kinds" role="radiogroup" aria-label="按奖励类型筛选下方流水" onKeyDown={moveFocus}>
         {data.commissionKinds.map((item, index) => {
           const money = splitMoneyLabel(item.amt);
           const count = counts[index];
           const on = kindFilter === item.key;
           const name = KIND_LABELS[item.key] ?? item.lbl;
           return (
-            <button key={item.key} type="button" className="f5-kind" data-testid="f5-commission-kind-card" data-kind={item.key} aria-pressed={on}
+            <button key={item.key} type="button" className="f5-kind" data-testid="f5-commission-kind-card" data-kind={item.key} role="radio" aria-checked={on} tabIndex={on ? 0 : -1}
               aria-label={`${name} ${count} 笔，${on ? "再点一次取消筛选" : "点一下只看这一类"}`} onClick={() => onKind(item.key)}>
               <span className="f5-kind-head"><span className="f5-kind-name">{name}</span>{on && <span className="f5-node-on"><Check size={12} strokeWidth={2.4} aria-hidden />已筛选</span>}</span>
-              <span className="f5-kind-count" data-zero={count ? undefined : ""}>{count.toLocaleString("en-US")}<small>笔{total ? ` · 占 ${Math.round((count / total) * 100)}%` : ""}</small></span>
+              <span className="f5-kind-count" data-zero={count ? undefined : ""}>{count.toLocaleString("en-US")}<small>笔{total ? ` · 占 ${sharePct(count, total)}` : ""}</small></span>
               <RatioBar quiet label={`${name}占全部笔数`} value={count} total={total} valueText={`${count} 笔，全部 ${total} 笔`} tone="role-1"
                 state={total === 0 ? "empty" : "ready"} emptyText="还没有记录" />
               {money ? (
@@ -180,8 +199,13 @@ export function F5KindTiles({ data, kindFilter, onKind }: { data: F5CommissionAu
             </button>
           );
         })}
+        <button type="button" className="f5-kind" data-kind="all" role="radio" aria-checked={allOn} tabIndex={allOn ? 0 : -1}
+          aria-label={`全部类型，${allOn ? "现在看的是全部类型" : "点一下清除类型筛选"}`} onClick={() => onKind("")}>
+          <span className="f5-kind-head"><span className="f5-kind-name">全部类型</span></span>
+          <span className="f5-kind-money" data-empty="">{allOn ? "现在看的是全部类型" : "点一下清除类型筛选"}</span>
+        </button>
       </div>
-    </Panel>
+    </Fold>
   );
 }
 

@@ -93,7 +93,7 @@ export function listF2Proposals(adminId: number): F2Recovery[] {
         before: "—", after: "—", reason: "—", sourceDomain: "F2", type: "param", gate: { roles: [] }, gateLabel: "",
         command: { domain: "F", op: row.fingerprint === F2_BOOTSTRAP_SLOT ? "f_unilevel_bootstrap" : row.fingerprint === F2_POLICY_SLOT ? "f_direct_referral_policy" : row.fingerprint === F2_BATCH_SLOT ? "f_config_batch" : /^f-config:F\.unilevel\.(?:nex\.)?L[1-7]$/.test(row.fingerprint) ? "f_unilevel_rule" : "f_ui_config", params: {} } },
       canQuery: !!session && session.adminId === adminId && session.authorities.some(a => a === "platform_a2_read" || a === "platform_a2_proposal_create"),
-      canRetry: !isRetryExpired(row) && !!row.request && !row.ticket && !row.received && !!session && session.adminId === adminId
+      canRetry: row.absent === true && !isRetryExpired(row) && !!row.request && !row.ticket && !row.received && !!session && session.adminId === adminId
         && (row.spec?.command.op === "f_config_batch" ? !fConfigBatchPermissionIssue(row.spec.obj.split(","), session.authorities) : session.authorities.includes(f2ProposalAuthority(row.fingerprint)))
         && session.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create"),
       canRelease: isRetryExpired(row) && row.absent === true && !row.received && !row.ticket,
@@ -135,14 +135,14 @@ export async function queryF2Proposal(adminId: number, original: F2Recovery) {
 }
 
 /** Persist the exact request before POST. Replay never rebuilds current inputs. */
-export async function sendF2Proposal(adminId: number, slot: string, spec?: ProposeSpec) {
+export async function sendF2Proposal(adminId: number, slot: string, spec?: ProposeSpec, ranked = false) {
   let original = f2ProposalRecord(adminId, slot);
   const current = requireWriter(adminId, slot, spec ?? original?.spec);
   const recovering = !spec;
   if (spec && original) throw new Error("F2_PROPOSAL_UNRESOLVED");
   if (!original) {
     if (!spec) throw new Error("F2_PROPOSAL_ORIGINAL_MISSING");
-    if (spec.command.op === "f_unilevel_bootstrap") validateF2UnilevelBootstrap(spec.command.params);
+    if (spec.command.op === "f_unilevel_bootstrap") validateF2UnilevelBootstrap(spec.command.params, ranked);
     const request = {
       action: spec.action, obj: spec.obj, beforeValue: spec.before, afterValue: spec.after,
       operator: current.operator || current.username, operatorRole: roleLabel(current.role),
@@ -164,6 +164,7 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
     return latest;
   }
   if (isRetryExpired(original)) throw new Error("F2_PROPOSAL_RETRY_EXPIRED");
+  if (recovering && original.absent !== true) throw new Error("请先查询原操作，确认查不到后再按原请求重试。");
   if (!original.request) throw new Error("F2_PROPOSAL_ORIGINAL_INCOMPLETE");
   if (!storeFor(slot).isDurablyStored(slot, original.commandKey)) throw new Error(recovering ? "F2_PROPOSAL_RETRY_STORAGE_UNAVAILABLE" : "F2_PROPOSAL_STORAGE_UNAVAILABLE");
   original.absent = false;

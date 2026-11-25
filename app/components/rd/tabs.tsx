@@ -37,6 +37,8 @@ export interface PageTabItem<T extends string> {
   label: ReactNode;
   /** 读不到写「—」，数到上限写「50+」这类文字；0 和「—」弱化。 */
   count?: number | string;
+  /** 数字是不是要处理的事：默认 warn（橙黄，PG-52 的待处理数）；只是数量、不是待办的传 neutral（比如 F1「V8 审核」的可审核人数）。 */
+  countTone?: "warn" | "neutral";
   disabled?: boolean;
 }
 
@@ -72,7 +74,7 @@ export function PageTabs<T extends string>({ label, value, items, onChange, ids,
       {(item) => {
         const tab = byValue.get(item);
         // 读到 0 也写 0，弱文字色；读不到写「—」，也弱化：和读取中（不传 count）分得开（DT-23、VS-11）。
-        return <>{tab?.label}{tab?.count !== undefined ? <span className="rd-tab-count" data-zero={tab.count === 0 || tab.count === "—" ? "" : undefined}>{tab.count}</span> : null}</>;
+        return <>{tab?.label}{tab?.count !== undefined ? <span className="rd-tab-count" data-tone={tab.countTone === "neutral" ? "neutral" : undefined} data-zero={tab.count === 0 || tab.count === "—" ? "" : undefined}>{tab.count}</span> : null}</>;
       }}
     </TabGroup>
   );

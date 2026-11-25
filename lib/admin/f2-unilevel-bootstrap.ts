@@ -8,7 +8,7 @@ export interface F2UnilevelBootstrapLayer {
 }
 
 /** 028c16e3: validate new proposals without normalizing the retained command text. */
-export function validateF2UnilevelBootstrap(params: Record<string, unknown>) {
+export function validateF2UnilevelBootstrap(params: Record<string, unknown>, ranked = false) {
   if (params.expectedVersion !== 0 || !Array.isArray(params.layers) || params.layers.length !== 7) {
     throw new Error("F2_UNILEVEL_BOOTSTRAP_INVALID");
   }
@@ -33,8 +33,9 @@ export function validateF2UnilevelBootstrap(params: Record<string, unknown>) {
     }
     const rate = usdt.startsWith("-") ? BigInt(-1) : BigInt(usdtWhole) * BigInt(10000) + BigInt(fraction.padEnd(4, "0"));
     if (rate < BigInt(0) || rate > BigInt(1000000) || nex.startsWith("-")) invalidRates = true;
+    if (ranked && index < 2 && layer.usdtPct !== "0") throw new Error("F2_UNILEVEL_BOOTSTRAP_INVALID");
     if (index === 0) l1Rate = rate;
   }
   if (invalidRates) throw new Error("UNILEVEL_RULES_NOT_CONFIGURED");
-  if (l1Rate !== BigInt(100000)) throw new Error("F2_L1_DIRECT_RATE_FIXED_AT_10_PERCENT");
+  if (!ranked && l1Rate !== BigInt(100000)) throw new Error("F2_L1_DIRECT_RATE_FIXED_AT_10_PERCENT");
 }

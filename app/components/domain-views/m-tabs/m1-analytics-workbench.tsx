@@ -1,6 +1,6 @@
 "use client";
 import { m1CustomerCode } from "./m1-customer-code";
-import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminReadError, supportContractReadError } from "@/lib/admin/error-messages";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -154,12 +154,11 @@ function analyticsResponseStatus(error: SupportClientError) {
 }
 export function analyticsErrorText(error: unknown): string {
   if (error instanceof AnalyticsEntryError) return error.message;
-  if (error instanceof Error && (error.message === "CONTENT_API_MALFORMED_RESPONSE" || error.message.startsWith("SUPPORT_CONTRACT_MALFORMED:"))) {
-    return ADMIN_ERROR_MESSAGES.CONTENT_API_MALFORMED_RESPONSE;
-  }
+  const contractError = supportContractReadError(error);
+  if (contractError) return contractError;
   if (error instanceof SupportClientError) {
     if (error.backendMessage === "SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE") return ADMIN_ERROR_MESSAGES.SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE;
-    if (error.backendMessage && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error);
+    if (error.backendMessage && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminReadError(error);
     const status = analyticsResponseStatus(error);
     if (status === 401) return "登录已失效，请重新登录。";
     if (status === 403) return "当前范围已无查看权限，请重新核对负责范围。";
@@ -768,7 +767,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{!noScopedContent && <Button onClick={() => refreshScope()}>刷新</Button>}
   </>} />;
   const related = !personalHeader && leaderboardReachable && <nav className="rd-links" aria-label="相关页面"><span>相关页面</span><a className="rd-link" href="/service/leaderboard" onClick={event => { event.preventDefault(); router.push("/service/leaderboard"); }}>业绩榜</a></nav>;
-  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>{header}{exportsOnly ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} /><PerfExportRecords ports={exportsPorts} /></> : <Panel><BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" : scopeError || "正在核对当前可见范围…"} detail={noScopedContent ? "主管负责的组由超级管理员在「客服与分组」里设置。" : undefined} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重新核对范围" /></Panel>}{noScopedContent && related}{unavailableAgentDrawer}</section>;
+  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>{header}{exportsOnly ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} /><PerfExportRecords ports={exportsPorts} /></> : <Panel><BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" : scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={noScopedContent ? "主管负责的组由超级管理员在「客服与分组」里设置。" : scopeError || undefined} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重试" /></Panel>}{noScopedContent && related}{unavailableAgentDrawer}</section>;
 
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
   const leadPermission: Permission = mode === "ALL" ? "superadmin" : "supervisor";
@@ -794,6 +793,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const personalFinancial = personalPeriod?.scopeSummary.financial;
   const selectedGroup = queryState.groupId === undefined ? undefined : scope.scopeSummary.groups.find(g => g.groupId === String(queryState.groupId));
   const groups = scope.scopeSummary.groups;
+  const isCustomerStatistics = queryState.view === "CUSTOMERS";
   const defaultBasis = queryState.view === "DEVICES" ? "CURRENT_ASSET"
     : queryState.view === "OVERVIEW" && scope.generation !== "LEGACY" ? "PERIOD_EVENT" : "CURRENT_CUSTOMER_HISTORY";
   const activeConditions = activeAnalyticsConditions(queryState, groups, defaultBasis, isPersonal);
@@ -927,7 +927,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         : <div className="sa-state" role="status">正在加载统计月份…</div>)}
       {queryState.basis === "PERIOD_EVENT" && monthCalendar?.length === 0 && <BlockState state="empty" title={calendarGeneration === "UPGRADING" ? "数据正在升级" : PERF_UNAVAILABLE_VALUE.reason} onRetry={() => setCalendarRetry(n => n + 1)} />}
       {loading && <div className="sa-state" role="status">正在加载…<Button type="button" size="sm" onClick={() => { controllerRef.current?.abort(); generation.current++; setLoading(false); setCancelled(true); setData(null); }}>取消读取</Button></div>}
-      {error ? <BlockState state="error" title={error} onRetry={reloadFirstPage} retryLabel={error.includes("第一页") ? "从第一页重新加载" : "重试"} /> : cancelled && <div className="sa-state" role="status">已取消加载，筛选条件不变。<Button type="button" size="sm" onClick={reloadFirstPage}>重试</Button></div>}
+      {error ? <BlockState state="error" title={isCustomerStatistics ? "客户统计加载失败" : error} detail={isCustomerStatistics ? error : undefined}
+        onRetry={reloadFirstPage} retryLabel={error.includes("第一页") ? "从第一页重新加载" : "重试"} /> : cancelled && <div className="sa-state" role="status">已取消加载，筛选条件不变。<Button type="button" size="sm" onClick={reloadFirstPage}>重试</Button></div>}
       {data && current && personnel && <>
         {(queryState.view === "OVERVIEW" || queryState.view === "FINANCE") && <Fold title="经营概况" summary={overviewSummary ?? fundsSummary[fundsCoverage(data.funds)]} explain={queryState.view === "OVERVIEW" && queryState.basis === "PERIOD_EVENT" && perf.attribution ? "业绩按所选月份发生时的归属算。当时还没分组的客服的业绩算给客服本人、不进组，所以组卡和下面两类加起来比总额少；在业绩榜里能看到。" : caption}>
           {queryState.view === "OVERVIEW" && queryState.basis !== "CURRENT_ASSET" && <StatBand label="经营概况">

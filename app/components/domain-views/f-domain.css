@@ -490,6 +490,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f1-page .f1-how-card h4 { margin: 0 0 6px; font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
 .f1-page .f1-how-card p { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .f1-page .f1-how-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.f1-page .f1-how-slot { display: inline-block; margin: 0 2px; padding: 0 4px; border-radius: var(--rd-radius-tag); background: var(--rd-control); color: var(--rd-text); white-space: nowrap; }
 .f1-page .f1-how-save { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--rd-line); }
 
 /* 首次配置 */
@@ -828,7 +829,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f5-page .f5-node, .f5-page .f5-kind { display: flex; flex-direction: column; gap: 4px; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tile); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; text-align: left; }
 .f5-page button.f5-node, .f5-page button.f5-kind { cursor: pointer; }
 @media (hover: hover) and (pointer: fine) { .f5-page button.f5-node:hover, .f5-page button.f5-kind:hover { background: var(--rd-hover); } }
-.f5-page .f5-node[aria-pressed="true"], .f5-page .f5-kind[aria-pressed="true"] { background: var(--rd-selected); box-shadow: inset 0 -2px 0 var(--rd-brand-ink); }
+.f5-page .f5-node[aria-pressed="true"], .f5-page .f5-kind[aria-pressed="true"], .f5-page .f5-kind[aria-checked="true"] { background: var(--rd-selected); box-shadow: inset 0 -2px 0 var(--rd-brand-ink); }
 .f5-page .f5-node:focus-visible, .f5-page .f5-kind:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 .f5-page .f5-node:disabled, .f5-page .f5-kind:disabled { cursor: not-allowed; }
 .f5-page .f5-node-head, .f5-page .f5-kind-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -860,7 +861,8 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f5-page .f5-cool-table :is(th, td):is(:first-child, :nth-child(2)) { white-space: nowrap; }
 
 /* 八类奖励：四张一行，窄时两张一行 */
-.f5-page .f5-kinds { container: f5-kinds / inline-size; display: grid; align-items: stretch; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; --rd-track-w: 100%; }
+.f5-page .f5-kinds { container: f5-kinds / inline-size; display: grid; align-items: stretch; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; --rd-track-w: 100%; }
+@container f5-kinds (max-width: 960px) { .f5-page .f5-kinds { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @container f5-kinds (max-width: 560px) { .f5-page .f5-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* 页签和奖励流水 */
@@ -885,7 +887,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f5-page .f5-record-table tbody tr[data-group="single"] > td:first-child { box-shadow: inset 3px 0 0 var(--rd-line-strong); }
 .f5-page .f5-group-tag { display: inline-flex; align-items: center; height: 18px; margin-left: 6px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-role-1-bg); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: 18px; white-space: nowrap; }
 .f5-page .f5-money, .rd-drawer .f5-money, .rd-modal .f5-money { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.f5-page .f5-money-cur, .rd-drawer .f5-money-cur, .rd-modal .f5-money-cur { display: inline-block; min-width: 2.9em; text-align: left; color: var(--rd-text-2); }
+.f5-page .f5-money-cur, .rd-drawer .f5-money-cur, .rd-modal .f5-money-cur { display: inline-block; min-width: 2.9em; text-align: right; color: var(--rd-text-2); }
 .f5-page .f5-batch-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; padding: 12px var(--rd-panel-pad-x); border-top: 1px solid var(--rd-line); font-size: var(--rd-text-aux); color: var(--rd-text-2); }
 .f5-page .f5-batch-nav > span { margin-right: auto; }
 .f5-page .f5-links { flex-wrap: wrap; }
@@ -951,3 +953,49 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f4-payout-cap > span { display: block; }
 .f4-payout-table :is(th, td):first-child { padding-left: 12px; }
 .f4-payout-table :is(th, td):last-child { padding-right: 12px; }
+
+/* F1「我的等级」改版（画板 A1–A7、B1–B5、C1–C3）：详情上下两排、每排左右等宽两块，下排上面一条线隔开（DT-27）。 */
+.f1-page .f1-detail-split > .rd-panel:first-child, .f1-page .f1-detail-split > .rd-panel + .rd-panel { flex: 1 1 480px; }
+.f1-page .f1-detail-bottom { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--rd-line); }
+.f1-page .f1-detail-bottom .f1-rewards { grid-template-columns: minmax(0, 1fr); }
+.f1-page .f1-detail-bottom .f1-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
+/* 其他设置的值 500，不开通、未开放这类 0 值 400（VS-53）。 */
+.f1-page .f1-detail-bottom .f1-facts dd { font-weight: var(--rd-weight-medium); }
+.f1-page .f1-detail-bottom .f1-facts dd.f1-weak { font-weight: 400; }
+/* 等级权益：名称列放得下「好友购买奖励 · 一级」，名称不折行；一块金色（角色一），阶梯切到比例、月薪时柱也是金色（VS-41）。 */
+.f1-page .f1-benefits .rd-config-row { grid-template-columns: minmax(0, 232px) minmax(0, 1fr) auto; }
+.f1-page .f1-step-bar[data-lens="l1"], .f1-page .f1-step-bar[data-lens="salary"] { fill: var(--rd-chart-1); }
+.f1-page .f1-benefits .f1-mini rect[data-on] { fill: var(--rd-chart-1); }
+/* 阶梯卡数字后面一行弱字「×3」：这一级是上一级的几倍（DT-15）。 */
+.f1-page .f1-step-ratio { display: inline; margin-left: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* 详情里每一行的相邻等级都放第二行，0 值行和有值的行同一种排法（DT-27 混排）。 */
+.f1-page .f1-detail .rd-config-value small { flex-basis: 100%; }
+/* V8 两项条件、五项权益是文字值；权益只在名称之间换行。 */
+.f1-page .f1-text-value { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.f1-page .f1-text-list > span { white-space: nowrap; }
+/* 下级领导者设了人数没设最低等级：值橙黄（要人处理）。 */
+.f1-page .f1-warn-text { font-weight: var(--rd-weight-medium); color: var(--rd-warn); }
+/* 页签行：右端一行可审核提示，不单占一行。 */
+.f1-page .f1-tabs-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.f1-page .f1-tabs-note { margin: 0; color: var(--rd-text-2); white-space: nowrap; }
+/* V8 名单表头名称后面一行弱字写 V8 的要求。 */
+.f1-page .f1-v8-table .f1-th-req { display: block; font-weight: 400; color: var(--rd-text-3); white-space: nowrap; }
+/* 月薪领取表金额列收窄，金额和领取时间之间留 40，不读成一串。 */
+.f1-page .f1-salary-table .f1-col-amt { width: 120px; }
+.f1-page .f1-salary-table .f1-col-time { padding-left: 40px; }
+/* 加载更多失败：已有的行留着，原因写在按钮旁（ST-10）。 */
+.f1-page .f1-more-error { margin-right: 8px; color: var(--rd-danger); font-size: var(--rd-text-body); }
+/* 修改框的关键信息两项一行，名称在上、值在下，铺满这一块（DT-27）；单数时最后一项占满一行。 */
+.rd-modal.f1-policy-confirm .rd-modal-body .rd-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
+.rd-modal.f1-policy-confirm .rd-fact { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.rd-modal.f1-policy-confirm .rd-fact dt { line-height: var(--rd-lh-aux); }
+.rd-modal.f1-policy-confirm .rd-facts > .rd-fact:last-child:nth-child(odd) { grid-column: 1 / -1; }
+/* V8 审核通过框：关键数字下面一行弱字「以前领过的不再发」。 */
+.rd-fact[data-lead] .f1-lead-note { display: block; margin-top: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
+/* V8 审核通过框：前四项（关键数字、用户、等级、邀请人）两项一行，后面的长事实各占满一行。 */
+.rd-modal.f1-v8-confirm .rd-facts > .rd-fact:nth-child(n+5) { grid-column: 1 / -1; }
+
+/* VS-107：F1、F2 自己的确认框里，覆盖率够得上红线时是安静的一行（「会多付」那句保留橙黄小字和图标）；低于红线、读不到时组件给红框，不受影响。 */
+.rd-modal:is(.f1-policy-confirm, .f2-confirm) .rd-confirm-funding .rd-notice[data-tone="warn"] { padding: 0; border: 0; background: none; box-shadow: none; }
+.rd-modal:is(.f1-policy-confirm, .f2-confirm) .rd-confirm-funding .rd-notice[data-tone="warn"] .rd-notice-title { color: var(--rd-warn); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; }
+.rd-modal:is(.f1-policy-confirm, .f2-confirm) .rd-confirm-funding .rd-notice[data-tone="warn"] .rd-notice-icon { width: 14px; height: 14px; color: var(--rd-warn); }
