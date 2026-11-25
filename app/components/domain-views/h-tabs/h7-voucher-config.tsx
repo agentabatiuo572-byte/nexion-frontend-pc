@@ -21,7 +21,7 @@ import {
   fetchH7Vouchers, type H7Overview,
 } from "@/lib/admin/h-client";
 import {
-  H7_VOUCHER_ACTIONS, type H7VoucherApprovalAttempt,
+  H7_VOUCHER_ACTIONS, H7_VOUCHER_APPROVER as APPROVER, H7_VOUCHER_APPROVAL_PERMISSIONS, type H7VoucherApprovalAttempt,
   pendingH7VoucherApprovals,
   releaseRejectedH7VoucherApproval, h7ApprovalRecovery,
   submitH7VoucherApproval,
@@ -52,8 +52,6 @@ const VOUCHER_TITLE = { get current() { return document.querySelector<HTMLElemen
 
 type OpsVoucher = H7Voucher;
 
-/** 谁来批：后端要另一位超级管理员，同时有审批批准权限和代金券修改权限。 */
-const APPROVER = "另一位超级管理员";
 const LOCAL_PENDING = "这张券有结果未知的删除或作废申请，先处理页面上方的提醒";
 
 type Filter = "all" | "active" | "paused";
@@ -540,7 +538,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           </> : <Fact k="已使用">{`${countText(v.redeemedCount)} 张，不变`}</Fact>)}
           {v && <Fact k="券模板">{deletion ? <Change from={v.status === "active" ? "投放中" : "已暂停"} to="删除（批准后）" tone="danger" /> : `${v.status === "active" ? "投放中" : "已暂停"}，批准后不变`}</Fact>}
           <Fact k="谁来批">{`${APPROVER}，不能是提交人`}</Fact>
-          <Fact k="需有权限">审批权限和代金券修改权限</Fact>
+          <Fact k="需有权限">{H7_VOUCHER_APPROVAL_PERMISSIONS}</Fact>
         </Facts>
       ),
       initialReason: pending?.reason,
@@ -682,7 +680,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         <p>新增、编辑、暂停和投放只能读取当前配置，请到操作记录与审批核对原操作。删除和作废可以查询原审批单。</p>
         <p>结果确认之前，这张券不能再改。</p>
       </>}
-      link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />
+      link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>去操作记录与审批 →</Link> : undefined} />
   );
 
   const header = (
@@ -713,7 +711,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       blocked={formBlocked || undefined} busy={submittingForm} skuOptions={skuOptions} skuLabels={skuLabels} toMs={toMs}
       recovery={pendingForm && <H7RecoveryNotice title="原操作结果未知" rows={[directRecoveryRow(pendingForm, form)]}
         explain={H7_DIRECT_RETRY_COPY}
-        link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />}
+        link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>去操作记录与审批 →</Link> : undefined} />}
       conflict={form.conflict ? () => void readLatest(form).catch(() => {}) : undefined}
       reading={loading}
       mergeReport={form.conflict || error || form.conflictError || pendingForm ? undefined : form.mergeReport}
@@ -769,7 +767,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         <p>发出和使用是这页现有券的合计，按领取记录数算（不是人数）；删掉的券不再计入。</p>
         <p>有删除或作废在等批准的券，卡上标「待审批」，不论是谁提交的；审批结束前这张券不能再改。</p>
       </>}
-      action={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>看待批准的申请</Link> : undefined}>
+      action={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>去操作记录与审批 →</Link> : undefined}>
       {`${countText(activeN)} 张券在投放，共发出 ${countText(issuedSum)} 张，已用 ${countText(redeemedSum)} 张`}
       {expiredActive.length > 0 && `；${expiredActive.length} 张已过有效期但还是投放中，可以暂停`}
       {fullActive.length > 0 && `；${fullActive.length} 张已发完，用户领不到`}
