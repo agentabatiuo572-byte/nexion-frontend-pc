@@ -30,14 +30,14 @@ import {
   PAYOUT_VND_FIELDS, derivePayoutVndRates, isPayoutVndInverted, vndText,
   type PayoutVndConfig, type PayoutVndValues, type PayoutVndWritableField,
 } from "@/lib/admin/payout-vnd-contract";
-import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { RecoveryPanel, recoveryTitle } from "../recovery-panel";
 import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
-import { canManageD7Approval, configApprovalOriginalInput, pendingConfigApproval, useWithdrawalApprovals, releaseConfigApproval, releaseRejectedWithdrawalApproval, submitWithdrawalConfigApproval, withdrawalApprovalDisabledReason, WITHDRAWAL_CONFIG_READ_FAILED, type WithdrawalApprovalReceipt } from "@/lib/admin/withdrawal-config-approval";
+import { canManageD7Approval, checkWithdrawalApprovalCommand, configApprovalOriginalInput, pendingConfigApproval, useWithdrawalApprovals, releaseConfigApproval, releaseRejectedWithdrawalApproval, submitWithdrawalConfigApproval, withdrawalApprovalDisabledReason, rememberWithdrawalProcessing, WITHDRAWAL_COMMAND_PROCESSING, type WithdrawalReplayObservation, WITHDRAWAL_CONFIG_READ_FAILED, WITHDRAWAL_SUBMISSION_CONFIRMED, type WithdrawalApprovalReceipt } from "@/lib/admin/withdrawal-config-approval";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { ActionConfirmReq, DCtx } from "./types";
@@ -74,7 +74,7 @@ const PENDING_ELSEWHERE = "已有放宽单在等批准，等超级管理员处�
 
 /** 直接保存的原操作：结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。 */
 type DirectCommand = { values: PayoutVndValues; expectedVersion: number; reason: string; forceInverted: boolean };
-type DirectRecord = PendingMutationRecord & DirectCommand & { commandOrigin?: FundCommandOrigin };
+type DirectRecord = PendingMutationRecord & WithdrawalReplayObservation & DirectCommand & { commandOrigin?: FundCommandOrigin };
 const DIRECT_SCOPE = "config";
 
 const directCommands = createPendingMutationStore<DirectRecord>({
@@ -92,6 +92,7 @@ export async function queryD7DirectCommand(record: DirectRecord, evidence?: Fund
   if (!saved) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
   const result = await queryDConfigCommand(saved, "D7", evidence);
   if (result.settled) directCommands.forget(saved.fingerprint, saved.commandKey);
+  else rememberWithdrawalProcessing(directCommands, saved, result.receipt);
   return result;
 }
 
@@ -297,7 +298,8 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       : errorCount > 0 ? `有 ${errorCount} 项要修改`
       : undefined;
     const approvalReason = amplifies
-      ? approvalBlocked ?? approvals.blockReason ?? (coverageLow ? "兑付覆盖率低于红线，放宽提交不了。" : undefined)
+      ? approvalBlocked ?? (approval?.withdrawalSubmissionConfirmed ? "上一次放宽已提交，先到上方查询审批单" : approvals.blockReason)
+        ?? (coverageLow ? "兑付覆盖率低于红线，放宽提交不了。" : undefined)
       : undefined;
     const submitBlock = shared ?? (inverted ? (canForce ? "价格倒挂，默认不能保存" : "价格倒挂，默认不能保存。强制保存只有超级管理员能做") : approvalReason);
     const forceBlock = shared ?? approvalReason;
@@ -507,9 +509,11 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         setRecovering("");
         return;
       }
+      syncPending();
     } catch (cause) {
       // The current-values read remains available without a receipt conclusion.
-      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
+      const error = displayAdminError(cause);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
     }
     const latest = await reload();
     setRecovering("");
@@ -523,6 +527,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   /** 按原操作重试：同命令号、同内容、同理由（OP-94）。只有成功才解除；被明确拒绝后人核实过才能解除。 */
   const retryDirect = async (record: DirectRecord) => {
     if (isRetryExpired(record) || record.replayRejection) { syncPending(); return; }
+    if (record.withdrawalStillProcessing) return;
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!directCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
       note(record.commandKey, "浏览器里查不到这条记录，本次没有发送。记录继续保留，请先查询原结果。");
@@ -564,13 +569,14 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const checkProposalInvestigation = async (record: NonNullable<ReturnType<typeof pendingConfigApproval>>, evidence?: FundCommandEvidence) => {
     setRecovering(record.commandKey);
     try {
-      const receipt = await checkFundCommand(record, evidence);
+      const { receipt, settled: done } = await checkWithdrawalApprovalCommand(record, evidence);
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
-      if (fundCommandSettled(receipt)) {
+      if (done) {
         if (session) releaseConfigApproval("D7", session.adminId, record.commandKey);
         setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: "放宽提交", status: receipt!.originalStatus, proposal: true }]);
-        syncPending(); await reload(); await loadQueue();
+        await reload(); await loadQueue();
       }
+      syncPending();
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
@@ -581,11 +587,14 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   };
   /** 查询原结果：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
   const lookupApproval = async () => {
-    await queryApproval();
+    const missing = await queryApproval();
     const original = session ? pendingConfigApproval("D7", session.adminId) : undefined;
-    if (!original || fundInvestigationAccess(original).unavailableReason) return;
-    // 查到原请求的执行记录后，这一行按它写结论；审批单查询留下的「没查到、可以重试」会和结论打架，清掉。
-    if (await checkProposalInvestigation(original).catch(() => undefined)) note(original.commandKey, "");
+    if (!original || original.withdrawalSubmissionConfirmed) return;
+    if (fundInvestigationAccess(original).canRead && await checkProposalInvestigation(original).catch(() => undefined)) note(original.commandKey, "");
+    const latest = session ? pendingConfigApproval("D7", session.adminId) : undefined;
+    if (missing && latest?.commandKey === original.commandKey && !latest.withdrawalStillProcessing && !latest.withdrawalSubmissionConfirmed) {
+      setQueryMissing(current => [...current, latest.commandKey]);
+    }
   };
   const releasePending = () => {
     if (!releasing) return;
@@ -606,13 +615,13 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     try {
       const result = await submitWithdrawalConfigApproval("D7", session, null, "", true);
       if (!result) {
-        setQueryMissing((current) => [...current, key]);
-        note(key, "没有查到原审批单，原记录继续保留。");
-        return;
+        if (!approval.withdrawalSubmissionConfirmed) note(key, "没有查到原审批单，原记录继续保留。");
+        return true;
       }
       applyApproval(result, `已找到原审批单 ${result.ticket.id}，${PROPOSAL_STATUS[result.ticket.status]}`);
     } catch (cause) {
-      note(key, isA2OutcomeUncertainError(cause) && isRetryExpired(approval)
+      note(key, approval.withdrawalSubmissionConfirmed ? "暂时读不到原审批单，请稍后再查。"
+        : isA2OutcomeUncertainError(cause) && isRetryExpired(approval)
         ? `暂时没查到原审批单，不代表没有提交。${canReachAudit ? "请到「操作记录与审批」核对，不要重复提交。" : "核对后交财务负责人处理，不要重复提交。"}`
         : `查询没有成功：${isA2OutcomeUncertainError(cause) ? uncertainDetail(cause) || "结果仍未知" : reasonOf(displayAdminError(cause))}。记录继续保留。`);
     } finally {
@@ -621,7 +630,8 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   };
 
   const canRetryApproval = (rights: readonly string[]) => {
-    if (!approval || isRetryExpired(approval) || approval.replayRejection
+    if (!approval || isRetryExpired(approval) || approval.replayRejection || approval.withdrawalSubmissionConfirmed
+      || approval.withdrawalStillProcessing
       || !queryMissing.includes(approval.commandKey) || withdrawalApprovalDisabledReason(rights)) return false;
     try { return canManageD7Approval(rights, configApprovalOriginalInput("D7", approval.input)[0]); }
     catch { return false; }
@@ -668,16 +678,18 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D7") };
     // 查到记为失败时，「可能已经生效」不再写。
     const outcome = investigationResults[record.commandKey];
+    const processing = record.withdrawalStillProcessing;
     const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
-    return { key: record.commandKey, title: "参数修改", record: target, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !expired && !retryBlock,
+    return { key: record.commandKey, title: "参数修改", record: target, outcome, createdAt: record.createdAt, expired, canRetry: !expired && !retryBlock && !processing,
+      status: processing ? WITHDRAWAL_COMMAND_PROCESSING : undefined,
       actions: <>
         <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === `verify:${record.commandKey}`}
           onCheck={() => void verifyDirect(record)} onClose={() => setDirectClosing(record)} />
-        {!expired && <Button size="sm" disabled={!!recovering} loading={recovering === `retry:${record.commandKey}`} disabledReason={retryBlock} onClick={() => void retryDirect(record)}>按原请求重试</Button>}
+        {!expired && !processing && <Button size="sm" disabled={!!recovering} loading={recovering === `retry:${record.commandKey}`} disabledReason={retryBlock} onClick={() => void retryDirect(record)}>按原请求重试</Button>}
         {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "direct", record })}>解除原操作记录</Button>}
       </>,
       detail: <>
-        <p>{failed ? "" : "可能已经生效，"}这组参数有结果前不能再改。{expired ? outcome ? "" : expiredNext(target) : record.replayRejection ? "" : "按原请求重试会重发原内容，已成功的不会重复执行。"}</p>
+        <p>{failed ? "" : "可能已经生效，"}这组参数有结果前不能再改。{expired ? outcome ? "" : expiredNext(target) : record.replayRejection || processing ? "" : "按原请求重试会重发原内容，已成功的不会重复执行。"}</p>
         {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
       </>,
       tech: `原请求编号 ${record.commandKey} ｜ 发出时版本 v${record.expectedVersion} ｜ 理由 ${record.reason} ｜ 拟改值：${valuesSummary(record.values)}${record.forceInverted ? " ｜ 强制保存倒挂价" : ""}` };
@@ -686,6 +698,8 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const approvalRow = approval && ((): FundRecoveryRow => {
     const expired = isRetryExpired(approval);
     const missing = queryMissing.includes(approval.commandKey);
+    const confirmed = approval.withdrawalSubmissionConfirmed;
+    const outcome = investigationResults[approval.commandKey];
     const showRetry = canRetryApproval(authorities);
     let original: string;
     try {
@@ -694,17 +708,18 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     } catch (cause) {
       original = cause instanceof Error ? cause.message : "原审批内容读不到";
     }
-    return { key: approval.commandKey, title: "放宽提交", record: approval, outcome: investigationResults[approval.commandKey], createdAt: approval.createdAt, expired, canRetry: showRetry,
+    return { key: approval.commandKey, title: "放宽提交", record: approval, outcome, createdAt: approval.createdAt, expired, canRetry: showRetry,
       canQuery: canQueryOriginal, copy: { missingOrigin: "只能查审批单进度，查不了更细的执行结果。" },
-      status: !canQueryOriginal && !expired ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，请有权限的同事核对。" } : undefined,
+      status: confirmed ? WITHDRAWAL_SUBMISSION_CONFIRMED : approval.withdrawalStillProcessing ? WITHDRAWAL_COMMAND_PROCESSING : !canQueryOriginal && !expired ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，请有权限的同事核对。" } : undefined,
       actions: <>
-        {canQueryOriginal && <FundCheckButtons record={approval} lookupWithoutOrigin outcome={investigationResults[approval.commandKey]} expired={expired} busy={!!recovering} checking={recovering === "query" || recovering === approval.commandKey}
+        {canQueryOriginal && <FundCheckButtons record={approval} canLookupOwnProposal={canQueryOriginal} outcome={confirmed ? undefined : outcome} expired={expired} busy={!!recovering} checking={recovering === "query" || recovering === approval.commandKey}
           onCheck={() => void lookupApproval()} onClose={() => setClosing(true)} />}
         {showRetry && <Button size="sm" disabled={!!recovering} loading={recovering === "approval-retry"} onClick={() => void retryApproval()}>按原请求重试</Button>}
-        {approval.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "approval", commandKey: approval.commandKey })}>解除原操作记录</Button>}
+        {!confirmed && approval.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "approval", commandKey: approval.commandKey })}>解除原操作记录</Button>}
       </>,
       detail: <>
-        <p>可能已生成审批单，这组参数有结果前不能再改。{expired ? investigationResults[approval.commandKey] ? "" : canQueryOriginal ? expiredNext(approval) : EXPIRED_NO_QUERY : missing ? "" : canQueryOriginal ? "查不到审批单再按原请求重试。" : ""}</p>
+        <p>{confirmed ? "审批已提交，查到审批单状态后再提交放宽。"
+          : <>可能已生成审批单，这组参数有结果前不能再改。{expired ? outcome ? "" : canQueryOriginal ? expiredNext(approval) : EXPIRED_NO_QUERY : missing || approval.withdrawalStillProcessing ? "" : canQueryOriginal ? "查不到审批单再按原请求重试。" : ""}</>}</p>
         {!expired && approvalBlocked && <p>{approvalBlocked}</p>}
         {approval.replayRejection && <p>重试没有成功：{reasonOf(displayAdminError(new Error(approval.replayRejection)))}。 {APPROVAL_REPLAY_RELEASE}</p>}
         {notes[approval.commandKey] && <p>{notes[approval.commandKey]}</p>}
@@ -755,12 +770,24 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
   const ownApprovalNotice = approvals.ownNotice && (!config || approvals.showOwnNotice)
     && <Notice tone={approvals.terminal ? "neutral" : "warn"}>{approvals.ownNotice}</Notice>;
+  const visibleQueueRows = config ? queueRows : queueRows.filter(row => row.id !== approvals.ownId || !approvals.ownNotice);
+  const queuePanel = <RecoveryPanel title={recoveryTitle(0, visibleQueueRows.length)} tone="warn" label="等待批准的放宽单"
+    foot={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批查看</Link> : undefined}
+    items={visibleQueueRows.map((ticket) => {
+      const stale = approvals.queueRowStale(ticket.id);
+      return { key: ticket.id, object: `放宽单 ${ticket.id}`, tag: <StatusTag tone="warn">{stale ? "上次待审批" : "待审批"}</StatusTag>,
+        line: stale ? "上次读取的结果，正在刷新待批列表。" : approvals.queueLine };
+    })} />;
+  const queueReadNotice = (queueState === "failed" || approvals.queueRetrying)
+    && <Notice tone="warn" action={<InlineRetry onRetry={() => void loadQueue()} retrying={approvals.queueRetrying} />}>待批列表暂时读不到</Notice>;
 
   if (!config) {
     return <>
       {header}
       {pendingPanel}
+      {queuePanel}
       {ownApprovalNotice}
+      {queueReadNotice}
       {loading
         ? <BlockState state="loading" title="正在读取越南盾提现参数…" />
         // 资金页读取失败不留旧值（ST-36），写法和汇率设置一样：一句话加「失败原因」问号，汇率来源不可用时另起一行给去处。
@@ -776,7 +803,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
   const live = derivePayoutVndRates(config);
   const liveInverted = isPayoutVndInverted(config.buySpreadPct, config.sellSpreadPct);
-  const editBlock = direct.length > 0 || approval ? LOCKED : loading ? READING : undefined;
+  const editBlock = direct.length > 0 || approval && !approval.withdrawalSubmissionConfirmed ? LOCKED : loading ? READING : undefined;
   const nothingToDo = queueKnown && direct.length === 0 && !approval && !approvals.blockReason && !approvals.ownNotice;
   const fxLink = canReachFx && <Link className="rd-link" href="/finance/fx-rate" prefetch={false} onClick={guard("/finance/fx-rate")}>去修改</Link>;
 
@@ -837,11 +864,9 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         </Conclusion>}
 
       {pendingPanel}
-      <RecoveryPanel title={recoveryTitle(0, queueRows.length)} tone="warn" label="等待批准的放宽单"
-        foot={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批查看</Link> : undefined}
-        items={queueRows.map((ticket) => ({ key: ticket.id, object: `放宽单 ${ticket.id}`, tag: <StatusTag tone="warn">待审批</StatusTag>, line: approvals.queueLine }))} />
+      {queuePanel}
       {ownApprovalNotice}
-      {(queueState === "failed" || approvals.queueRetrying) && <Notice tone="warn" action={<InlineRetry onRetry={() => void loadQueue()} retrying={approvals.queueRetrying} />}>待批列表暂时读不到</Notice>}
+      {queueReadNotice}
 
       <StatBand label="越南盾报价">
         <Stat tone="role-2" icon={ArrowDownLeft} label="买入价" value={vndText(live.buy)} unit={RATE_UNIT}

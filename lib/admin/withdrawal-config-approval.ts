@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fundCommandOrigin, type FundCommandOrigin } from "./fund-command-investigation";
+import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandOrigin } from "./fund-command-investigation";
 import {
   A2OutcomeUncertainError,
   createA2CommandKey,
@@ -12,7 +12,7 @@ import {
 import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { isPermissionDenied } from "./operation-confirm-error";
 import { isBCommandRejection } from "./b-command-rejection";
-import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
 import { canCreateRecoveryProposal, canReadOwnRecoveryProposal, currentRecoveryActor, sendRecoveredDraft } from "./abe-recovery-access";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
@@ -24,10 +24,13 @@ import type { B5ThresholdFacts } from "./b5-commands";
 import { fetchD5WithdrawalParams } from "./d-client";
 import { d5Trc20ReplayBlock } from "./trc20-closed";
 
-export const configApprovalAttempts = createPendingMutationStore<PendingMutationRecord & Partial<FDomainAttempt> & {
+export type WithdrawalReplayObservation = { withdrawalStillProcessing?: true };
+
+export const configApprovalAttempts = createPendingMutationStore<PendingMutationRecord & WithdrawalReplayObservation & Partial<FDomainAttempt> & {
   input: string;
   commandOrigin?: FundCommandOrigin;
   withdrawalRequest?: Parameters<typeof createA2OperationProposal>[0];
+  withdrawalSubmissionConfirmed?: true;
   h8Original?: H8Original;
   h8Ticket?: A2OperationRow;
   h8Acknowledged?: boolean;
@@ -130,7 +133,7 @@ function saveWithdrawalReceipt(key: string, receipt: SavedWithdrawalReceipt | nu
 }
 
 /** 原号查到就覆盖同号行。查不到时只有完整列表可以解除本人的放宽限制。 */
-function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWithdrawalApproval | null) {
+function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWithdrawalApproval | null, canReadQueue: boolean) {
   const queueKnown = queue.state === "ready";
   const ownId = own?.receipt.ticketId;
   const ticket = own?.ticket;
@@ -148,8 +151,11 @@ function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWith
     pendingRows.push(ticket ?? { id: ownId });
   }
   const hasPending = pendingRows.length > 0;
+  const queueRowStale = (id: string) => !queueKnown && id !== ticket?.id;
+  const staleRows = rows.some(row => queueRowStale(row.id));
   const pendingTitle = checking ? "正在读取放宽单状态…"
-    : stale ? "放宽单的最新状态没读到，先按等批准处理" : `有 ${pendingRows.length} 项放宽等批准`;
+    : stale ? "放宽单的最新状态没读到，先按等批准处理"
+      : staleRows ? "待批列表正在刷新，部分记录来自上次读取" : `有 ${pendingRows.length} 项放宽等批准`;
   const ownNotice = terminal
     ? `放宽单 ${terminal.id} ${TICKET_STATUS_TEXT[terminal.status]}${terminal.status === "approved" ? "，当前值以这页读到的为准。" : "，这张单没有生效。"}`
     : ownId && (listed || pendingRows.some(row => row.id === ownId))
@@ -159,9 +165,11 @@ function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWith
       : null;
   const blockReason = checking ? "正在读取放宽单状态，读到后再提交放宽"
     : stale ? "放宽单的最新状态没读到，点「刷新」读到后再提交"
-      : hasPending ? "已有放宽等批准，批准、驳回或撤回后才能再提交" : undefined;
+      : canReadQueue && !queueKnown && (!ticket || staleRows)
+        ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在读取待批列表，读到后再提交放宽"
+        : hasPending ? "已有放宽等批准，批准、驳回或撤回后才能再提交" : undefined;
   return {
-    rows, pendingRows, queueKnown, terminal, checking, stale, pendingTitle, ownNotice, blockReason,
+    rows, pendingRows, ownId, queueKnown, terminal, checking, stale, pendingTitle, ownNotice, blockReason, queueRowStale,
     showOwnNotice: !!ownNotice && !listed,
     pendingDetail: checking ? "" : stale ? "点「刷新」再读。" : "批准前当前值不变。",
     queueLine: WITHDRAWAL_APPROVAL_PENDING,
@@ -230,7 +238,7 @@ export function useWithdrawalApprovals(source: WithdrawalApprovalSource, adminId
   };
   const visibleQueue = canReadQueue && queue.adminId === adminId ? queue : EMPTY_WITHDRAWAL_QUEUE;
   return {
-    ...resolveWithdrawalApprovals(visibleQueue, own), queueState: visibleQueue.state, queueRetrying: !!visibleQueue.retrying,
+    ...resolveWithdrawalApprovals(visibleQueue, own, canReadQueue), queueState: visibleQueue.state, queueRetrying: !!visibleQueue.retrying,
     loadQueue, registerReceipt, refreshApprovals,
   };
 }
@@ -262,7 +270,7 @@ export function releaseConfigApproval(sourceDomain: keyof typeof commands, admin
 
 export function releaseRejectedWithdrawalApproval(sourceDomain: WithdrawalApprovalSource, adminId: number, commandKey: string) {
   const record = pendingConfigApproval(sourceDomain, adminId);
-  if (record?.commandKey !== commandKey || !record.replayRejection) return false;
+  if (record?.commandKey !== commandKey || record.withdrawalSubmissionConfirmed || !record.replayRejection) return false;
   releaseConfigApproval(sourceDomain, adminId, commandKey);
   return true;
 }
@@ -291,6 +299,37 @@ type ThresholdApprovalValues = {
 };
 
 type ConfigAttempt = ReturnType<typeof attempts.list>[number];
+
+/** 已知仍在执行时，读取失败和刷新都不能恢复重试资格。 */
+export function rememberWithdrawalProcessing<T extends PendingMutationRecord & WithdrawalReplayObservation>(
+  store: PendingMutationStore<T>, record: T, receipt: FundCommandInvestigation | null,
+) {
+  const processing = receipt?.originalStatus === "PROCESSING" || fundCommandResult(receipt) === "PROCESSING";
+  if (processing === !!record.withdrawalStillProcessing || !processing && receipt?.originalStatus === "UNKNOWN") return;
+  store.remember(record.fingerprint, record.commandKey, { ...record, withdrawalStillProcessing: processing ? true : undefined });
+}
+
+export const WITHDRAWAL_COMMAND_PROCESSING = {
+  tone: "progress", label: "还在执行", line: "上次查询显示仍在处理，请稍后查询原结果。",
+} as const;
+export const WITHDRAWAL_SUBMISSION_CONFIRMED = {
+  tone: "progress",
+  label: "审批已提交",
+  line: "审批单号暂时没读到。继续查询原结果，核对审批单号和状态。",
+} as const;
+
+/** 通用命令回执证明已建单时，仍须用原号查审批单本身。 */
+export async function checkWithdrawalApprovalCommand(record: ConfigAttempt, evidence?: FundCommandEvidence) {
+  const receipt = await checkFundCommand(record, evidence);
+  const submitted = record.withdrawalSubmissionConfirmed || fundCommandResult(receipt) === "SUCCEEDED";
+  if (submitted && !record.withdrawalSubmissionConfirmed) {
+    attempts.remember(record.fingerprint, record.commandKey, { ...record, withdrawalSubmissionConfirmed: true });
+  } else if (!submitted && !fundCommandSettled(receipt)) {
+    rememberWithdrawalProcessing(attempts, record, receipt);
+  }
+  return { receipt, settled: !submitted && fundCommandSettled(receipt) };
+}
+
 export function pendingThresholdConfigApproval<T extends keyof ThresholdApprovalValues>(source: T, adminId: string | number) {
   const slot = approvalSlot(source, adminId);
   const record = attempts.list().find(row => row.fingerprint === slot && !row.bVerifiedNotExecuted);
@@ -499,6 +538,8 @@ async function submitConfigApprovalTicket(
   if (lookupOnly && !previous) return null;
   if (mode === "retry-original") {
     if (!previous) throw new Error("原审批申请已处理，请刷新页面后重新操作。");
+    if (withdrawalApproval && previous.withdrawalSubmissionConfirmed) throw new Error("审批已提交，请继续查询原审批单。");
+    if (withdrawalApproval && previous.withdrawalStillProcessing) throw new Error("原请求仍在处理，请继续查询原结果。");
     if (withdrawalApproval && previous.replayRejection) throw new Error("重试已被拒绝，请核实后解除。");
     [values, reason] = configApprovalOriginalInput(sourceDomain, previous.input);
   }

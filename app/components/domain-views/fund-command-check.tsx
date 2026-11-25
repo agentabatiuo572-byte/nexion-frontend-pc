@@ -211,12 +211,14 @@ export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, settl
 }
 
 /** 每行右侧的查询类按钮：查询原结果（只读）、核查结案（单独确认框）。按原请求重试由页面自己放在后面。 */
-export function FundCheckButtons({ record, outcome, expired, busy, checking, onCheck, onClose, lookupWithoutOrigin }: {
+export function FundCheckButtons({ record, outcome, expired, busy, checking, onCheck, onClose, lookupWithoutOrigin, canLookupOwnProposal }: {
   record: FundCommandRecord;
   /** 超过 24 小时：查到已处理完或记为失败也给核查结案（不能再重试，这是唯一的出路）。不传时只在仍未知时给。 */
   expired?: boolean;
   /** 没有原请求出处的旧审批记录：仍给「查询原结果」，页面只调查审批单的读取。 */
   lookupWithoutOrigin?: boolean;
+  /** 原发起人查票用该票种的原号查询权限。 */
+  canLookupOwnProposal?: boolean;
   outcome?: FundInvestigationOutcome;
   busy?: boolean;
   checking?: boolean;
@@ -226,8 +228,8 @@ export function FundCheckButtons({ record, outcome, expired, busy, checking, onC
   const access = fundInvestigationAccess(record);
   const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
   return <>
-    {(!access.unavailableReason || access.unavailableReason === "MISSING_ORIGIN" && lookupWithoutOrigin) && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={checking} disabled={busy}
-      disabledReason={access.unavailableReason ? undefined : fundReadBlock(record)} onClick={onCheck}>查询原结果</Button>}
+    {(canLookupOwnProposal || !access.unavailableReason || access.unavailableReason === "MISSING_ORIGIN" && lookupWithoutOrigin) && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={checking} disabled={busy}
+      disabledReason={canLookupOwnProposal || access.unavailableReason ? undefined : fundReadBlock(record)} onClick={onCheck}>查询原结果</Button>}
     {access.canSubmit && eCommandClosureRequests(receipt, !!expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={busy} onClick={onClose}>核查结案</Button>}
   </>;
 }

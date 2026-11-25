@@ -2802,6 +2802,7 @@ export async function updateD5WithdrawalLimits(
   operator: string,
   /** 页面自己保存的命令号；结果未知后按原操作重试时传同一个（OP-94）。 */
   commandKey?: string,
+  replay = false,
 ) {
   const payload = { ...d5WithdrawalLimitsValues(changes, expectedVersion), reason, operator };
   let data: Record<string, unknown>;
@@ -2820,6 +2821,17 @@ export async function updateD5WithdrawalLimits(
   }
   // An older same-key receipt can succeed with the pre-minimum response shape.
   if (commandKey && data.minUsdt === undefined && changes.minUsdt === undefined) {
+    if (replay) {
+      readWriteResult(commandKey, () => {
+        const fields = Object.keys(payload).filter(key => !["expectedVersion", "operator", "reason"].includes(key) && payload[key as keyof typeof payload] !== undefined);
+        if (d5Integer(data.version, "version", 0) !== expectedVersion + 1
+          || !Array.isArray(data.updatedFields) || data.updatedFields.length !== fields.length
+          || !fields.every(field => (data.updatedFields as unknown[]).includes(field))) {
+          throw new Error("D5_RESPONSE_INVALID");
+        }
+      });
+      return;
+    }
     try {
       return await fetchD5WithdrawalParams();
     } catch {
