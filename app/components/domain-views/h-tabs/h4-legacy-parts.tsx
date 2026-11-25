@@ -48,7 +48,8 @@ export function useH4DrawerFocus(open: boolean, panelId: string) {
     const settle = () => {
       // 抽屉还在收、或确认框比抽屉晚一步关（还在读最新）：等它们收完再看，最多 6 秒。
       if (document.querySelector(".rd-modal, .rd-drawer[data-state='closed']") && waits-- > 0) { timer = window.setTimeout(settle, 300); return; }
-      if (document.activeElement && document.activeElement !== document.body) return;
+      // 焦点停在共用弹层给的临时落点（data-retry-landing，原卡重画后找不到原按钮时）也算还没去处，照样放回原卡。
+      if (document.activeElement && document.activeElement !== document.body && !document.activeElement.hasAttribute("data-retry-landing")) return;
       const usable = (element: HTMLElement) => element.isConnected && element.getClientRects().length > 0 && !(element instanceof HTMLButtonElement && element.disabled);
       const panel = document.getElementById(panelId);
       // 提交成功后列表重读，卡片换了节点：按名字和编号找回那一张；列表还没读回来就再等。
