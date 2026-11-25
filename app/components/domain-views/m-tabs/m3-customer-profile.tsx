@@ -556,8 +556,10 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const accountLinks = canReadAccount ? [["提现记录", "hub-withdrawal"], ["设备明细", "hub-devices"]] as const : [];
   const canResetPassword = accountActions.some(([key]) => key === "resetPassword");
   const hasAccountEntry = accountActions.length + accountLinks.length > 0;
-  const passwordHelp = "这个账号不能重置密码。客户可以在 App 用验证码自己重设；要后台处理，请有「安全与登录设备」权限的同事办。";
-  const accountHelp = "这个账号不能办账户操作。冻结、恢复账户和调整余额，请有权限的同事到「账户操作」「余额与资产调整」办。";
+  const passwordWho = "客户可在 App 用验证码自己重设，或请有「安全与登录设备」权限的同事办。";
+  const accountWho = "请有权限的同事到「账户操作」「余额与资产调整」办。";
+  const passwordHelp = `这个账号不能重置密码。${passwordWho}`;
+  const accountHelp = `这个账号不能办账户操作。冻结、恢复账户、调整余额，${accountWho}`;
   const entry = detailSection || "基本信息";
   const opens = (title: string) => title.startsWith(entry);
   // 客户资料里的明细记录一次展开一组，避免上下堆叠列表（DP-67）。
@@ -647,8 +649,8 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       {accountActions.length > 0 && <div className="m3-profile-actions">
         {accountActions.map(([key,label,path])=><a key={key} className="rd-btn" data-variant={key === "freeze" ? "danger-outline" : "secondary"} data-size="sm" href={`${path}?userCode=${encodeURIComponent(String(identity?.userNo))}&userId=${encodeURIComponent(customerId)}${path==="/users/actions"?`&source=${source}`:""}&returnTo=${encodeURIComponent("/service/sessions?customerId="+customerId)}`}><span className="rd-btn-face">{label}</span></a>)}
       </div>}
-      {!canResetPassword && <p className="m-admin-muted">{passwordHelp}</p>}
-      {accountActions.length < 3 && <p className="m-admin-muted">{accountHelp}</p>}
+      {!canResetPassword && <p className="m-admin-muted m3-account-note">重置密码：{passwordWho}</p>}
+      {accountActions.length < 3 && <p className="m-admin-muted m3-account-note">冻结、恢复账户、调整余额：{accountWho}</p>}
     </Fold>}
     <small>资料更新时间：{dates(profile?.identity.evaluatedAt)}</small>
     </>}

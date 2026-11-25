@@ -463,7 +463,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_RULES_UNAVAILABLE: "服务规则暂不可读，无法生成随机预览。",
   SUPPORT_RANDOM_CONFIRM_INVALID: "随机确认缺少原预览或规则版本，请重新核对原预览。",
   SUPPORT_RANDOM_PREVIEW_NOT_FOUND: "找不到原随机预览；请先核对原操作的结果，再生成新预览。",
-  SUPPORT_RULES_VERSION_CONFLICT: "服务规则已变化，请重新读取原名单并生成新预览。",
+  SUPPORT_RULES_VERSION_CONFLICT: "服务规则刚被别人改过，请加载最新内容后重新操作。",
   SUPPORT_RANDOM_PREVIEW_EXPIRED: "原随机预览已过期，请读取原名单并生成新的快照。",
   SUPPORT_RANDOM_OPERATION_CONFLICT: "原随机分配状态有冲突，请查询原操作和每位客户的结果。",
   SUPPORT_RANDOM_PREVIEW_SCOPE_REQUIRED: "原随机预览缺少范围证据，请保留原记录并核查。",

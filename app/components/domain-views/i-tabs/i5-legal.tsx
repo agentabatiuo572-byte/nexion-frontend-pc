@@ -171,7 +171,9 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
     run: async (reason) => {
       const result = await writes.send({ target, label: `保存法律条款草稿 · ${scopeText} ${form.version}`, op: { kind: "legal-save", body: {
         locale: form.locale, jurisdiction: form.jurisdiction, version: form.version, effectiveAt: form.effectiveAt, title: form.title, summary: form.summary, sections: form.sections, expectedRevision: form.revision, reason,
-      } } });
+      } } })
+        // 被拒就作废要去的地方。
+        .catch((cause: unknown) => { after = undefined; throw cause; });
       setEditing(null);
       if (result === "done") { toast("草稿已保存，用户看到的条款不变", "success"); after?.(); }
     },
@@ -399,6 +401,6 @@ function LegalEditor({ initial, latest, base, sectionsBlocked, canPublish, block
         ))}
       </div>
     </Drawer>
-    <LeaveDialog guard={guard} saveLabel="保存草稿" saveBlocked={saveBlocked} onSave={() => onSave(form, guard.saved)} />
+    <LeaveDialog guard={guard} saveLabel="保存草稿" saveBlocked={saveBlocked} onSave={(saved) => onSave(form, saved)} />
   </>;
 }
