@@ -22,8 +22,8 @@ type Release = {
   targetLabel?: string;
   createdAt: number;
   getSnapshot: () => string | undefined;
-  /** 只调现成的解除；返回 false 或抛错说明记录还留着。 */
-  release: () => boolean | void;
+  /** 返回 pending 时，由调用方在读回和交接完成后解除、反馈。 */
+  release: () => boolean | void | "pending";
 };
 
 /** 恢复行上的「核实后解除」：和「查询原操作」排在一起、放最后，弱一档。 */
@@ -49,7 +49,10 @@ export function useVerifiedRelease(toast: (message: string, kind?: "success" | "
       <Button variant="primary" disabledReason={verified ? undefined : "请先勾选「我已核实原操作的结果」"} onClick={() => {
         close();
         try {
-          if (current.snapshot !== current.getSnapshot() || current.release() === false) { changed(); return; }
+          if (current.snapshot !== current.getSnapshot()) { changed(); return; }
+          const released = current.release();
+          if (released === "pending") return;
+          if (released === false) { changed(); return; }
           toast("已解除这条记录。", "success");
         } catch (error) { toast(displayAdminError(error), "warn"); }
       }}>确认解除</Button>

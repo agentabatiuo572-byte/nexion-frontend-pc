@@ -1,4 +1,6 @@
-import { fundCommandOrigin, fundCommandSettled, type FundCommandEvidence, type FundCommandRecord } from "./fund-command-investigation";
+import { fundCommandCanConcludeRejected, fundCommandOrigin, fundCommandSettled, type FundCommandEvidence, type FundCommandRecord } from "./fund-command-investigation";
+import { A3_CONTENT_COMMANDS } from "./e-command-investigation";
+import { fetchDirectCommandReceiptDetails } from "./direct-command-receipt";
 import { queryOriginalCommand } from "./original-command-query";
 import type { A3Original } from "./a3-mutations";
 
@@ -28,4 +30,18 @@ export async function queryA3ConfigCommand(record: FundCommandRecord, original: 
   const target = original.kind === "flag" ? `feature.${original.row.key}` : "A3_PLATFORM_EXPERIENCE";
   if (receipt && (receipt.scope !== scope || receipt.originalTarget !== target)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   return { receipt, settled: fundCommandSettled(receipt) };
+}
+
+export async function queryA3ContentCommand(record: FundCommandRecord, kind: keyof typeof A3_CONTENT_COMMANDS, owner: string, evidence?: FundCommandEvidence) {
+  const receipt = await queryOriginalCommand(record, {
+    originalMethod: "PUT", originalPath: A3_CONTENT_COMMANDS[kind].path, readAuthority: "platform_a3_read",
+  }, owner, evidence);
+  // The identity lookup includes the business code. Only the status endpoint projects the stored rejection message.
+  const rejected = fundCommandCanConcludeRejected(receipt);
+  const detail = receipt && (rejected || receipt.originalStatus === "CONFIRMED_REJECTED")
+    ? await fetchDirectCommandReceiptDetails(receipt.scope, record.commandKey, Number(owner)).catch(() => null) : null;
+  return {
+    receipt, settled: fundCommandSettled(receipt), rejected,
+    rejectionReason: detail?.state === "REJECTED" && detail.businessCode === receipt?.businessCode ? detail.businessMessage : undefined,
+  };
 }

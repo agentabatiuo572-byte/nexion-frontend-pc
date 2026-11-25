@@ -431,7 +431,7 @@ export function useHistoryBackGuard(active: boolean, onBack: (resume: () => void
  * 有未保存内容时拦离开（OP-29）：侧栏、面包屑、命令面板都是链接，抓在捕获阶段；关窗口走浏览器提示；
  * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。浏览器后退走 useHistoryBackGuard。
  */
-export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>) {
+export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>, hasUnsavedAfterSave?: () => boolean) {
   const router = useRouter();
   const [asking, setAsking] = useState(false);
   const nextAction = useRef<(() => void) | null>(null);
@@ -495,6 +495,13 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
       const back = historyBack.current;
       stay();
       return () => {
+        // 保存成功后另一份草稿还没存（A3 两类内容）：不直接走，重新问一次（A3QI-F03）。
+        if (hasUnsavedAfterSave?.()) {
+          historyBack.current = back;
+          nextAction.current = back ? back.resume : next;
+          setAsking(true);
+          return;
+        }
         if (back) back.saveOthers(back.resume);
         else next?.();
       };
