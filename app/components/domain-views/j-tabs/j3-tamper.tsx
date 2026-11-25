@@ -7,7 +7,7 @@ import { eCommandClosureOffer, eCommandClosureRequests } from "@/lib/admin/e-com
  * C2 账户操作和 K1 多账户风险排查。本页的写入口是导出脱敏报表（带审计的只读导出）和修改告警设置（直接生效）。
  * 配置恢复使用提交前保存的完整原请求；报表按只读导出的既定例外处理。
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import {
   ArrowDown, ArrowUp, CalendarDays, ChartColumn, Check, CircleHelp, CircleSlash, Download, FileDown, Gauge, ListChecks,
@@ -15,17 +15,20 @@ import {
 } from "lucide-react";
 import {
   BarList, BlockState, Button, Cell, ColumnChart, Conclusion, DiffField, Explain, Fact, Facts, Field, FilterBar, Fold, Modal,
-  Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr,
+  Notice, NumberInput, PageHeader, Panel, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr,
 } from "@/app/components/rd";
 import type { JCtx } from "./types";
+import { isConfirmedNonExecution, rebaseTerminalDraft, useTerminalDrafts, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, queryJ3Command, releaseExpiredJLegacyCommand, retryJ3Command } from "@/lib/admin/j-client";
-import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, queryJ3Command, settleJ3LegacyCommand, jEmergencyRecovery, jEmergencyRetryBlocked, retryJ3Command } from "@/lib/admin/j-client";
+import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
-import { SettledLine, receiptFact, receiptRejected } from "../recovery-panel";
+import { rejectedTag, replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
+import { frozenNextStep, frozenTitle, RETRY_REJECTED_TEXT } from "@/lib/admin/retry-rejected";
+import { SettledLine, receiptFact } from "../recovery-panel";
 import { CommandClosureModal, } from "../e-tabs/e-command-check";
-import { PROCESSED_IN_DIALOG, REJECTED_IN_DIALOG, SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
+import { SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
 import type { J3PendingCommand, TamperAccount, TamperAlertConfig, TamperOverview, TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
 import { createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
@@ -121,7 +124,7 @@ function outcomeText(outcome: FundInvestigationOutcome) {
   if ("error" in outcome) return `原结果没查到：${outcome.error}`;
   const status = outcome.receipt?.originalStatus;
   return !status ? "没有查到原修改的记录，查不到不等于没执行。"
-    : status === "SUCCEEDED" ? receiptRejected(outcome.receipt) ? REJECTED_IN_DIALOG : PROCESSED_IN_DIALOG
+    : status === "SUCCEEDED" ? ""
     : status === "PROCESSING" ? "原修改还在执行，稍后再查。"
       : status === "FAILED" ? "系统记录原修改失败了。"
         : "系统也没有结果，需要有调查权限的超级管理员核查结案。";
@@ -143,12 +146,14 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const alertUnavailable = alert?.threshold === null ? j3ErrorText(new Error(alert.unknownReason)) : undefined;
   const window = data?.window ?? "24h";
   const hasData = data?.hasData ?? false;
+  const configDrafts = useTerminalDrafts<TerminalDraft<Pick<J3PendingCommand["tamper"]["input"], "threshold" | "feedK4">>>();
   const [configOpen, setConfigOpen] = useState<null | { original: SavedConfig | null }>(null);
   const [exporting, setExporting] = useState(false);
   const [pendingReport, setPendingReport] = useState<TamperReport | null>(null);
   const [accountLoading, setAccountLoading] = useState(false);
+  useSyncExternalStore(jEmergencyRecovery.subscribe, jEmergencyRecovery.getRevision, jEmergencyRecovery.getRevision);
   const [saved, setSaved] = useState<SavedConfig | null>(null);
-  const [releasing, setReleasing] = useState<SavedConfig["legacy"] | null>(null);
+  const release = useVerifiedRelease(toast);
   const adminId = useAdminAuth((state) => String(state.session?.adminId ?? ""));
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [settled, setSettled] = useState<J3Settled[]>([]);
@@ -242,6 +247,10 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const recordOutcome = (command: J3PendingCommand, outcome: FundInvestigationOutcome, label: string) => {
     setOutcomes((current) => ({ ...current, [command.commandKey]: outcome }));
     if ("receipt" in outcome && fundCommandSettled(outcome.receipt)) {
+      if (command.commandOwnerId !== undefined && isConfirmedNonExecution(outcome.receipt)) {
+        const { threshold, feedK4, expectedThreshold, expectedFeedK4 } = command.tamper.input;
+        configDrafts.remember(command.commandOwnerId, ALERT_CONFIG_SLOT, { before: { threshold: expectedThreshold, feedK4: expectedFeedK4 }, desired: { threshold, feedK4 } });
+      }
       setSettled((current) => [...current.filter((item) => item.key !== command.commandKey), { key: command.commandKey, label, status: outcome.receipt!.originalStatus }]);
     }
   };
@@ -263,6 +272,27 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
         recordOutcome(command, { error: j3ErrorText(error) }, savedTitle(saved));
       } finally { setChecking(false); }
     }
+    if (saved?.legacy) {
+      const { record, store } = saved.legacy;
+      setChecking(true);
+      try {
+        if (record.commandOwnerId !== Number(adminId)) throw new Error("无法确认原操作人");
+        const receipt = await checkFundCommand({ ...record, commandOrigin: {
+          originalMethod: "PUT", originalPath: "/api/admin/emergency/tamper/alert-config",
+          originalAdminId: adminId, readAuthority: "emergency_j3_read",
+        } });
+        setOutcomes(current => ({ ...current, [record.commandKey]: { receipt } }));
+        if (fundCommandSettled(receipt)) {
+          if (store === "emergency") settleJ3LegacyCommand(record, receipt!);
+          else commandAttempt.forget(record.fingerprint, record.commandKey);
+          setSettled(current => [...current.filter(row => row.key !== record.commandKey),
+            { key: record.commandKey, label: savedTitle(saved), status: receipt!.originalStatus }]);
+          syncSaved();
+        }
+      } catch (error) {
+        setOutcomes(current => ({ ...current, [record.commandKey]: { error: j3ErrorText(error) } }));
+      } finally { setChecking(false); }
+    }
     void actions.reloadJEmergency().then((next) => {
       const now = next.tamper?.alertConfig;
       if (now?.threshold === null) toast("现在读到：告警阈值读不出。这是现在的状态，不能据此判断原修改成没成。", "info");
@@ -270,6 +300,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     }).catch(() => undefined);
   };
   const closeConfig = () => { setConfigOpen(null); syncSaved(); };
+  const readBlocked = ctx.contentLoading || ctx.contentError || accountLoading || alert?.threshold == null ? j3ErrorText(new Error("J3_LATEST_OVERVIEW_REQUIRED")) : undefined;
   const configBlocked = saved ? j3ErrorText(new Error("J3_ORIGINAL_CONFIG_PENDING"))
     : ctx.contentLoading || ctx.contentError || accountLoading ? j3ErrorText(new Error("J3_LATEST_OVERVIEW_REQUIRED")) : alertUnavailable ? "读不出现在的阈值，修好前不能修改" : undefined;
 
@@ -290,7 +321,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
         )}
         {canConfigure && alert && (
           <Button icon={<SlidersHorizontal size={14} aria-hidden />} disabledReason={configBlocked}
-            onClick={() => { if (readSavedConfig()) syncSaved(); else if (alert.threshold !== null) setConfigOpen({ original: null }); }}>修改告警设置</Button>
+            onClick={() => openCurrentConfig()}>修改告警设置</Button>
         )}
       </>}
       meta={<span className="rd-toolbar">
@@ -307,29 +338,36 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const command = saved?.command;
   const expired = !!saved && isRetryExpired(saved);
   const record = command ? investigationRecord(command, adminId) : null;
-  const outcome = command ? outcomes[command.commandKey] : undefined;
+  const outcomeKey = command?.commandKey ?? saved?.legacy?.record.commandKey;
+  const outcome = outcomeKey ? outcomes[outcomeKey] : undefined;
   const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
   const canSubmit = !!record && fundInvestigationAccess(record).canSubmit;
   const processed = receipt?.originalStatus === "SUCCEEDED";
+  const rejected = !!command && !!jEmergencyRecovery.state(command).replayRejection;
   const canClose = canSubmit && eCommandClosureRequests(receipt, expired).conclusions.length > 0;
+  const retry = canConfigure && !readBlocked && !expired && !!command && !jEmergencyRetryBlocked(command);
+  const processedView = processed && (command || expired) ? processedStatus({
+    expired, canRetry: retry, canClose, canRelease: rejected, canReachAudit: reach("/platform/audit", "platform_a2_read"), closable: !saved?.legacy, legacy: !!saved?.legacy, receipt,
+  }) : undefined;
   const recoveryRows: FundRecoveryRow[] = saved ? [{
-    key: command?.commandKey ?? "j3-legacy",
+    key: outcomeKey ?? "j3-legacy",
     title: savedTitle(saved),
     record: record ?? undefined,
     outcome,
     createdAt: saved.createdAt,
     expired,
-    canRetry: canConfigure && !expired && !!command,
+    canRetry: retry,
     canQuery: true,
-    status: saved.legacy ? expired
-      ? { tone: "neutral", label: "已过期", line: "改版前的旧记录查不了原结果；到操作记录与审批核对后，可以确认解除。" }
-      : { tone: "warn", label: "结果未知", line: "改版前的旧记录不能重试，查询只能看到现在的设置。" }
-      : processed ? processedStatus({ expired, canRetry: canConfigure, canClose: canSubmit, receipt }) : undefined,
+    status: processedView ?? (saved.legacy ? expired
+      ? { tone: "neutral", label: "已过期", line: RETRY_EXPIRED_TEXT }
+      : { tone: "warn", label: "结果未知", line: outcome && "error" in outcome ? outcome.error : "改版前的旧记录可核对原号和现在的设置。" }
+      : replayRejectedStatus(rejected, outcome)),
     actions: <>
       <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}
-      {canConfigure && !expired && !!command && <Button size="sm" disabled={checking} onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
-      {saved.legacy && expired && <Button size="sm" onClick={() => setReleasing(saved.legacy)}>确认解除</Button>}
+      {canConfigure && !expired && !!command && !rejected && <Button size="sm" disabled={checking} disabledReason={readBlocked ?? jEmergencyRetryBlocked(command)} onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
+      {command && rejected && <VerifiedReleaseButton disabled={checking || !!jEmergencyRecovery.state(command).busy} onClick={() => release.ask({ operation: "修改告警设置", target: savedChange(saved), targetLabel: "改动", getSnapshot: jEmergencyRecovery.releaseSnapshot(command), createdAt: command.createdAt,
+        release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(command); if (released) setConfigOpen(null); syncSaved(); return released; } })} />}
     </>,
     detail: <p>{savedChange(saved)}。</p>,
   }] : [];
@@ -337,7 +375,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const savedNotice = <>
     {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_OTHER}
       onDismiss={() => setSettled((current) => current.filter((row) => row.key !== item.key))} />)}
-    <FundRecoveryPanel rows={recoveryRows} />
+    <FundRecoveryPanel rows={recoveryRows} link={saved?.legacy && reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link> : undefined} />
     {closing && command && record && <CommandClosureModal label="修改告警设置" commandKey={command.commandKey} createdAt={command.createdAt} offer={eCommandClosureOffer(outcome, isRetryExpired(command))}
       facts={<>
         <Fact k="改动">{savedChange(saved!)}</Fact>
@@ -354,16 +392,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
           await actions.reloadJEmergency().catch(() => undefined);
         }
       }} />}
-    {releasing && <ReleaseModal label="告警设置 · 改版前的旧记录"
-      explain={<><p>改版前的旧记录没存原修改的内容，不能重试，也不能核查结案。</p><p>先到「操作记录与审批」核对原修改有没有生效。</p></>}
-      onCancel={() => setReleasing(null)} onConfirm={() => {
-        if (releasing.store === "emergency") releaseExpiredJLegacyCommand(releasing.record);
-        // The old page and client saved the same operation in both stores.
-        const record = commandAttempt.list().find((row) => row.fingerprint === ALERT_CONFIG_SLOT && row.commandKey === releasing.record.commandKey);
-        if (record && isRetryExpired(record)) commandAttempt.forget(record.fingerprint, record.commandKey);
-        setReleasing(null);
-        syncSaved();
-      }} />}
+    {release.dialog}
   </>;
 
   const reportNotice = retryableReport && (
@@ -377,8 +406,24 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   );
 
   const configContext = configOpen?.original?.command?.tamper.context ?? (alert?.threshold != null ? alert : null);
+  const savedDraft = configDrafts.get(Number(adminId), ALERT_CONFIG_SLOT);
+  const rebased = savedDraft?.before && alert?.threshold != null ? rebaseTerminalDraft(savedDraft.before, savedDraft.desired, { threshold: alert.threshold, feedK4: alert.feedK4 }) : undefined;
+  const openCurrentConfig = () => {
+    if (readSavedConfig()) { syncSaved(); return; }
+    if (alert?.threshold == null || readBlocked) return;
+    if (rebased?.others.length && savedDraft?.before) {
+      const label = { threshold: "告警阈值", feedK4: "计入风险评分" };
+      const current = { threshold: alert.threshold, feedK4: alert.feedK4 };
+      const describe = (fields: typeof rebased.mine, to: typeof current) => fields.map(field => `${label[field]} ${String(savedDraft.before![field])} → ${String(to[field])}`).join("、");
+      toast(`别人改过：${describe(rebased.others, current)}。你的拟改：${describe(rebased.mine, savedDraft.desired) || "无"}。请按最新值核对。`, "warn");
+    }
+    setConfigOpen({ original: null });
+  };
   const modal = configOpen && configContext && (
     <J3ConfigModal ctx={ctx} original={configOpen.original} context={configContext} onClose={closeConfig}
+      receiptStatus={configOpen.original?.command?.commandKey === command?.commandKey ? processedView : undefined}
+      draft={configOpen.original ? undefined : rebased?.value} readBlocked={readBlocked}
+      onSaved={() => configDrafts.forget(Number(adminId), ALERT_CONFIG_SLOT)}
       onOutcome={(pending, result) => recordOutcome(pending, result, configOpen.original ? savedTitle(configOpen.original) : "修改告警设置")}
       onPending={() => { const next = readSavedConfig(); setSaved(next); if (next?.command) setConfigOpen({ original: next }); }} />
   );
@@ -660,17 +705,20 @@ function J3AccountRow({ account: a, feedK4, zone, userRef, pathName, canViewK1, 
 }
 
 /** Recovery facts and requests come only from the submission-time record, including after a failed overview read. */
-function J3ConfigModal({ ctx, original, context, onClose, onPending, onOutcome }: { ctx: JCtx; original: SavedConfig | null; context: TamperAlertConfig; onClose: () => void; onPending: () => void;
+function J3ConfigModal({ ctx, original, context, draft, readBlocked, receiptStatus, onClose, onSaved, onPending, onOutcome }: {
+  ctx: JCtx; original: SavedConfig | null; context: TamperAlertConfig; draft?: Pick<J3PendingCommand["tamper"]["input"], "threshold" | "feedK4">;
+  readBlocked?: string; receiptStatus?: ReturnType<typeof processedStatus>; onClose: () => void; onSaved: () => void; onPending: () => void;
   onOutcome: (pending: J3PendingCommand, outcome: FundInvestigationOutcome) => void }) {
   const [current] = useState(context);
   const sevenDayAlertAccounts = current.sevenDayAlertAccounts;
-  const [thresholdText, setThresholdText] = useState(String(original?.threshold ?? current.threshold));
+  const [thresholdText, setThresholdText] = useState(String(original?.threshold ?? draft?.threshold ?? current.threshold));
   const threshold = Number(thresholdText);
-  const [feedK4, setFeedK4] = useState(original?.feedK4 ?? current.feedK4);
+  const [feedK4, setFeedK4] = useState(original?.feedK4 ?? draft?.feedK4 ?? current.feedK4);
   const [reason, setReason] = useState(original?.reason ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [touched, setTouched] = useState(false);
   const [pending, setPending] = useState(original?.command ?? null);
+  useSyncExternalStore(jEmergencyRecovery.subscribe, jEmergencyRecovery.getRevision, jEmergencyRecovery.getRevision);
   const unknownAt = pending?.createdAt ?? null;
   const [readBack, setReadBack] = useState<ReactNode>(null);
   const changed = threshold !== current.threshold || feedK4 !== current.feedK4;
@@ -683,7 +731,7 @@ function J3ConfigModal({ ctx, original, context, onClose, onPending, onOutcome }
   const feedChanged = feedK4 !== current.feedK4;
   const locked = unknownAt !== null || submitting;
   const submit = async () => {
-    if (submitting || !pending && !valid) return;
+    if (submitting || readBlocked || (pending ? !!jEmergencyRetryBlocked(pending) : !valid)) return;
     if (!useAdminAuth.getState().session?.authorities.includes("emergency_j3_alert_config")) {
       ctx.toast(j3ErrorText(new Error("ACCESS_DENIED")), "error");
       return;
@@ -717,6 +765,7 @@ function J3ConfigModal({ ctx, original, context, onClose, onPending, onOutcome }
       }
       return;
     }
+    onSaved();
     onClose();
     try {
       await ctx.actions.reloadJEmergency();
@@ -755,7 +804,7 @@ function J3ConfigModal({ ctx, original, context, onClose, onPending, onOutcome }
   };
 
   const canRetry = useAdminAuth((state) => state.session?.authorities.includes("emergency_j3_alert_config") ?? false);
-  const blocked = pending ? !canRetry ? j3ErrorText(new Error("ACCESS_DENIED")) : isRetryExpired(pending) ? RETRY_EXPIRED_TEXT : undefined
+  const blocked = pending ? readBlocked ?? (!canRetry ? j3ErrorText(new Error("ACCESS_DENIED")) : jEmergencyRetryBlocked(pending))
     : !changed ? "告警阈值和风险评分都没改"
     : !thresholdValid ? "告警阈值要填 1–100 的整数"
       : !previewAvailable ? "暂时算不出这个阈值的影响，不能提交。"
@@ -766,7 +815,8 @@ function J3ConfigModal({ ctx, original, context, onClose, onPending, onOutcome }
 
   return (
     <Modal title="修改告警设置" icon={SlidersHorizontal} busy={submitting} dirty={changed || reason.length > 0}
-      sub={unknownAt !== null ? <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag> : <StatusTag tone="progress" filled>立即生效</StatusTag>}
+      sub={receiptStatus ? <StatusTag tone={receiptStatus.tone}>{receiptStatus.label}</StatusTag>
+        : unknownAt !== null ? blocked === RETRY_REJECTED_TEXT ? rejectedTag() : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag> : <StatusTag tone="progress" filled>立即生效</StatusTag>}
       onClose={() => { if (!submitting) onClose(); }}
       footer={unknownAt !== null ? <>
         <Button disabled={submitting} onClick={onClose}>取消</Button>
@@ -778,9 +828,9 @@ function J3ConfigModal({ ctx, original, context, onClose, onPending, onOutcome }
           onClick={() => { setTouched(true); void submit(); }}>确认修改</Button>
       </>}>
       {unknownAt !== null && (
-        <Notice tone="warn" title="这次修改结果未知">
+        <Notice tone="warn" title={receiptStatus?.label ?? frozenTitle(blocked, "这次修改结果未知")}>
           <p>{businessStamp(unknownAt)}（{businessZone().label}）提交后没收到确定结果，可能已经生效。下面是这次提交的内容，不能再改。</p>
-          <p>可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。</p>
+          <p>{receiptStatus?.line ?? frozenNextStep(blocked)}</p>
           {readBack && <p>{readBack}</p>}
         </Notice>
       )}

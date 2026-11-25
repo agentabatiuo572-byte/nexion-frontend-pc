@@ -2,7 +2,7 @@
 
 /**
  * I2 的三个填写抽屉：频道、模板、事件概率。只画表单，表单值、校验结果和提交都由 i2-nova.tsx 传进来，
- * 提交内容和改版前一样（频道直接保存，模板和概率再进共用确认框写理由）。
+ * 频道、模板和概率都在共用确认框填写理由后保存。
  */
 import { englishCopyHint, isEnglishCopy, mapContentTitleBody } from "@/lib/admin/content-language-rules";
 import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
@@ -10,6 +10,7 @@ import { FileText, Percent, Radio } from "lucide-react";
 import { Button, Decision, Drawer, Field, Input, Notice, NumberInput, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatNovaDuration, NOVA_TIME_UNITS, type NovaTimeUnit } from "@/lib/admin/nova-cadence";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { frozenNextStep, frozenTitle } from "@/lib/admin/retry-rejected";
 import type { NovaOptionView, NovaSocialEventView } from "@/lib/admin/i-client";
 import { AppNotice, DistEditor, noticeCategory, DIST_SLOT, NO_SOURCE, PLACEHOLDERS, PLACEHOLDER_TEXT, RETIRED_PLACEHOLDER, cooldownSentence, placeholdersOf, previewText, tickSentence } from "./i2-parts";
 
@@ -64,7 +65,7 @@ export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, f
       footer={<Decision primary={<Button variant="primary" loading={saving} disabledReason={blocked} onClick={onSubmit}>{retry ? "按原请求重试" : editing ? "保存" : "新增频道"}</Button>} />}>
       <div className="rd-stack i2-form">
         {error && <Notice tone="danger" title={editing ? "没有保存" : "没有新增"}>{error}</Notice>}
-        {retry && <Notice tone="warn" title="结果未知">原请求已锁定，不能再改。可以在页面上方查询原结果，或按原请求重试。</Notice>}
+        {retry && <Notice tone="warn" title={frozenTitle(requestBlocked, "结果未知")}>原请求已锁定，不能再改。{frozenNextStep(requestBlocked, "先在页面上方查询原结果")}</Notice>}
         {!editing && !retry && <Notice tone="progress">新增后是停用的：先给它写好模板并发布，再启用。</Notice>}
         <Field label="频道名称" required>
           <Input disabled={locked} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：每周回顾" />
@@ -208,12 +209,14 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
   );
 }
 
-export function DistDrawer({ items, draft, setDraft, total, valid, onClose, onSubmit }: {
+export function DistDrawer({ items, draft, setDraft, total, valid, unchanged, needsRecheck, onClose, onSubmit }: {
   items: readonly { key: string; name: string; pct: number }[];
   draft: Record<string, string>;
   setDraft: (next: Record<string, string>) => void;
   total: number;
   valid: boolean;
+  unchanged: boolean;
+  needsRecheck: boolean;
   onClose: () => void;
   onSubmit: () => void;
 }) {
@@ -224,7 +227,7 @@ export function DistDrawer({ items, draft, setDraft, total, valid, onClose, onSu
         <p>五类一起保存，合计必须是 100%；改一类不会自动调别的类。</p>
       </>}
       footer={<Decision note={<span className="rd-toolbar-note" data-tone={valid ? undefined : "warn"}>{`合计 ${total}%`}</span>}
-        primary={<Button variant="primary" disabledReason={valid ? undefined : `每项填 0–100 的整数，合计要等于 100%（现在 ${total}%）`} onClick={onSubmit}>保存概率</Button>} />}>
+        primary={<Button variant="primary" disabledReason={needsRecheck ? undefined : valid ? (unchanged ? "五类都没有改动" : undefined) : `每项填 0–100 的整数，合计要等于 100%（现在 ${total}%）`} onClick={onSubmit}>保存概率</Button>} />}>
       <div className="rd-stack i2-form">
         <DistEditor items={items} values={draft} onChange={setDraft} />
         <div className="i2-dist-rows">

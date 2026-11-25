@@ -56,10 +56,14 @@ type Shown = { tone: StateTone; label: string; line: string; more?: string };
 /** 24 小时内重试原请求：后台对还在执行的返回「处理中」、对结果未知的返回「结果未知」，都不会再执行一次，也拿不到新结果。 */
 export const PROCESSING_LINE = "过一会儿再查询；现在重试不会重复执行，也拿不到新结果。";
 export const UNKNOWN_LINE = "系统也没有结果，重试也拿不到新结果；请按证据核查结案。";
+function lookupStatus(expired: boolean, result: Shown): Shown {
+  if (!expired) return result;
+  return { ...result, label: "已过期", line: `已超过 24 小时，不能再重试。${result.label}。${result.line}` };
+}
 export function unsettledLookupStatus(state: "NOT_FOUND" | "PROCESSING", expired: boolean, where = "操作记录与审批"): Shown {
-  return state === "NOT_FOUND"
+  return lookupStatus(expired, state === "NOT_FOUND"
     ? { tone: "warn", label: "没有查到", line: `查不到不等于没执行，先到${where}核对，不要另做一次。` }
-    : { tone: "progress", label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE };
+    : { tone: "progress", label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE });
 }
 const INTRO = "这些操作发出后没收到明确结果：直接生效的可能已经生效，走审批的可能已经提交了申请。先查询原结果；按原请求重试只会重发原内容，不会多做一次。有结果前，相关对象不能再操作。";
 
@@ -98,9 +102,9 @@ function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "ca
   if (!outcome) return row.expired
     ? { tone: "warn", label: "已过期", line: canQuery ? "超过 24 小时不能再重试，先查询原结果。" : `超过 24 小时不能再重试，到${where}核对。` }
     : { tone: "warn", label: "结果未知", line: canQuery ? `${maybe}，先查询原结果。` : block ? `${block}。` : `${maybe}，这个账号查不了原结果，到${where}核对。` };
-  if ("error" in outcome) return /只有原操作人或有调查权限/.test(outcome.error)
+  if ("error" in outcome) return lookupStatus(row.expired, /只有原操作人或有调查权限/.test(outcome.error)
     ? { tone: "danger", label: "没有查询权限", line: "请原操作人或有调查权限的超级管理员查询。" }
-    : { tone: "danger", label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" };
+    : { tone: "danger", label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" });
   const receipt = outcome.receipt;
   if (!receipt) return unsettledLookupStatus("NOT_FOUND", row.expired, where);
   if (receipt.originalStatus === "PROCESSING") return unsettledLookupStatus("PROCESSING", row.expired, where);
