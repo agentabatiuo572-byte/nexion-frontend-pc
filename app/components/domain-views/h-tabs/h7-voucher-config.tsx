@@ -582,7 +582,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     return <>{rows.slice(0, 2).map((row, i) => <span key={row.key}>{i > 0 && "；"}{row.label} <Change from={row.before} to={row.after} /></span>)}{rows.length > 2 && `；另 ${rows.length - 2} 项`}</>;
   };
   const releasable = (record: (typeof pendingApprovals)[number]) => !!h7ApprovalRecovery.state(record).replayRejection;
-  const rowNote = (error: string | undefined, rejected: boolean, expired: boolean) => error ?? (rejected ? RETRY_REJECTED_NEXT : expired ? RETRY_EXPIRED_TEXT : undefined);
+  // 重试被拒绝的记录过了 24 小时：两句都写（已过期不能再重试；核实后解除仍可用，OP-93 第 8 项、OP-153）。
+  const rowNote = (error: string | undefined, rejected: boolean, expired: boolean) => error ?? (rejected ? expired ? `${RETRY_EXPIRED_TEXT} ${RETRY_REJECTED_NEXT}` : RETRY_REJECTED_NEXT : expired ? RETRY_EXPIRED_TEXT : undefined);
   const approvalChange = (record: (typeof pendingApprovals)[number]) => record.op === "h7_voucher_delete" ? "删除券模板，已发出的券不收回"
     : `作废还没用的券${record.voucher ? `（提交时 ${countText(record.voucher.availableCount)} 张）` : ""}`;
   const directRecoveryRow = (record: H7DirectMutation, editor?: FormState): H7RecoveryRow => {
