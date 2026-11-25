@@ -1,4 +1,4 @@
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { isIdempotencyOutcomeOpen, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import {
@@ -200,6 +200,8 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     || (path.startsWith("/export/network?") && init?.method === "GET");
   const isNetworkGrant = /^\/exports\/L4TREE-[A-Z0-9]{8}\/download-token$/.test(path);
   const needsWriteReceipt = isReportCreation || isNetworkGrant;
+  const isDownloadGrant = /^\/exports\/[^/]+\/download-token$/.test(path);
+  const operation = needsWriteReceipt || isDownloadGrant || init?.method && init.method !== "GET" ? "write" : "read";
   let res: Response;
   try {
     res = await execute();
@@ -221,7 +223,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const status = needsWriteReceipt ? reportCreationStatus(res, payload) : res.status;
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    const error = new Error(formatAdminApiError(payload.message, `BI_API_${status}`, needsWriteReceipt || init?.method && init.method !== "GET" ? "write" : "read")) as Error & { code?: string; status: number; reasonCode?: string };
+    const error = new Error(formatAdminApiError(payload.message, `BI_API_${status}`, operation)) as Error & { code?: string; status: number; reasonCode?: string };
     error.code = payload.message;
     error.status = status;
     error.reasonCode = payload.message;
@@ -931,16 +933,20 @@ async function downloadReportFile(reportId: string, savedToken?: string) {
   const token = savedToken ?? (typeof issued?.downloadToken === "string" ? issued.downloadToken : "");
   if (!token) throw new Error("下载链接签发失败 · 请重新尝试");
   const query = new URLSearchParams({ token });
-  const res = await guardedFetch(`/api/admin/bi/exports/${encodeURIComponent(reportId)}/download?${query.toString()}`, { cache: "no-store" });
-  const contentType = res.headers.get("Content-Type") || "";
-  if (!res.ok || contentType.includes("application/json")) {
-    const payload = (await res.json().catch(() => null)) as ApiResult<unknown> | null;
-    throw new Error(formatAdminApiError(payload?.message, `BI_DOWNLOAD_${res.status}`));
+  try {
+    const res = await guardedFetch(`/api/admin/bi/exports/${encodeURIComponent(reportId)}/download?${query.toString()}`, { cache: "no-store" });
+    const contentType = res.headers.get("Content-Type") || "";
+    if (!res.ok || contentType.includes("application/json")) {
+      const payload = (await res.json().catch(() => null)) as ApiResult<unknown> | null;
+      throw new Error(formatAdminApiError(payload?.message, `BI_DOWNLOAD_${res.status}`, "read"));
+    }
+    return {
+      blob: await res.blob(),
+      fileName: filenameFromDisposition(res.headers.get("Content-Disposition"), `${reportId}.csv`),
+    };
+  } catch (error) {
+    throw new Error(displayAdminReadError(error));
   }
-  return {
-    blob: await res.blob(),
-    fileName: filenameFromDisposition(res.headers.get("Content-Disposition"), `${reportId}.csv`),
-  };
 }
 
 /** A recovered L4 file read reuses its received token; it never issues another grant. */

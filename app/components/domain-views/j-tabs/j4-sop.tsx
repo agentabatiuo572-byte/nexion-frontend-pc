@@ -1048,7 +1048,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       {header()}
       {recovery}
       {activePanel}
-      <BlockState retryKey="j4-sop-1051" state="error" title="当前无法确认最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} retryLabel="刷新" />
+      <BlockState retryKey="j4-sop-1051" state="error" title="当前无法确认最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} />
     </>);
   }
   if (!data) {
@@ -1232,7 +1232,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       alert={Boolean(emergency.notifyTemplatesError)}
       explain="预案的「发送通知活动」这一步只能选已排期的通知活动。这里只列候选，不能新建通知；新建和排期在「通知活动」页。">
       {emergency.notifyTemplatesError
-        ? <BlockState retryKey="j4-sop-1235" state="error" compact title="通知活动读不到" detail="可能没有查看权限或服务暂时不可用；预案和执行记录不受影响。" onRetry={reload} retrying={contentLoading} retryLabel="刷新" />
+        ? <BlockState retryKey="j4-sop-1235" state="error" compact title="通知活动读不到" detail={`${emergency.notifyTemplatesError} 预案和执行记录不受影响。`} onRetry={() => void ctx.reloadJ4NotifyTemplates()} retrying={ctx.notifyTemplatesLoading} />
         : notify.length === 0
           ? <BlockState state="empty" compact title="没有已排期的通知活动" detail="要在预案里发通知，先到「通知活动」安排。" />
           : <Table label="通知活动候选" className="j4-notify-table">

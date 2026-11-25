@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { FileCheck2, FilePen, FileText, Languages, Plus, Trash2 } from "lucide-react";
 import { BlockState, Button, Cell, Conclusion, Decision, DiffList, Drawer, Fact, Facts, Field, Fold, Input, Modal, MoreMenu, Notice, NumberInput, Panel, RecordList, Segments, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { businessClock } from "@/lib/admin/business-time";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { fetchPrivacyPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
 import type { TabHead } from "./i5-disclosures";
 import { LeaveDialog, MergeNotice, mergeEdits, useLeaveGuard, withConflict, WRITE_LOCKED, type EditorSwitch, type I5Writes, type MergeReport } from "./i5-writes";
@@ -49,7 +49,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
       setReadAt(businessClock(Date.now()));
     } catch (cause) {
       // 上次读到的 doc 留着给编辑器，页面按 error 不再显示它。清掉会卸载编辑器，丢未保存的输入（OP-97）。
-      setError(displayAdminError(cause));
+      setError(displayAdminReadError(cause));
     } finally {
       setLoading(false);
     }

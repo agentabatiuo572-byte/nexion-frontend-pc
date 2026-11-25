@@ -530,14 +530,15 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
     text = await res.text();
   } catch {
     const message = "应急控制服务连接中断，没收到完整的执行结果";
-    throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error(`${message}，请稍后重试`);
+    throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error("应急控制服务连接中断，没有读到完整数据，请稍后重试");
   }
   let payload: ApiResult<T> = {};
   try {
     payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   } catch {
     const message = `应急控制服务返回了无法确认的内容（HTTP ${res.status}）`;
-    throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error(`${message}，请稍后重试。`);
+    if (isWrite) throw new EmergencyOutcomeUncertainError(message);
+    throw new Error(path === "/sop/playbooks" ? "J4_RESPONSE_INVALID" : `${message}，请稍后重试。`);
   }
   if ((isJ1AutoRuleWrite || isJ4Write || path === "/sop/playbooks" || path.startsWith("/tamper/")) && (!payload || typeof payload !== "object" || Array.isArray(payload)
     || typeof payload.code !== "number" || payload.message !== undefined && typeof payload.message !== "string")) {
@@ -1913,16 +1914,8 @@ export async function fetchJEmergencyOverviews(tab: "J1" | "J2" | "J3" | "J4",
       return { geoBlock: await apiRequest("/geo-block").then(normalizeGeo) };
     case "J3":
       return { tamper: await fetchJTamperOverview(j3Window, j3AccountPage, j3AccountPageSize) };
-    case "J4": {
-      const [sop, notifyTemplatesResult] = await Promise.all([
-        apiRequest("/sop/playbooks").then(normalizeSop),
-        fetchJ4NotifyTemplateOptions().then(
-          (value) => ({ value, error: "" }),
-          (error: unknown) => ({ value: [] as JNotifyTemplateOption[], error: error instanceof Error ? error.message : "I3_NOTIFY_TEMPLATE_LOAD_FAILED" }),
-        ),
-      ]);
-      return { sop, notifyTemplates: notifyTemplatesResult.value, notifyTemplatesError: notifyTemplatesResult.error || undefined };
-    }
+    case "J4":
+      return { sop: await apiRequest("/sop/playbooks").then(normalizeSop) };
   }
 }
 

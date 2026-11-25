@@ -20,7 +20,7 @@ import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
 import { PaginationExemptionList, usePendingReplayDeadline } from "../design-kit";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues, i6HasCopyText } from "@/lib/admin/i6-copy-quality";
 import { useRecoveryQueryErrors } from "@/lib/admin/use-recovery-query-errors";
 import { hiCourseScope, hiCourseRewardScope, hiRewardProposal, i6CourseProposalPermission, pendingHIRewardCommand, pendingHIRewardCommands, queryI6CourseProposal, releaseRejectedI6Course, i6CourseRecovery, retryI6CourseProposal, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
@@ -555,7 +555,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       })
       .catch((error) => {
         if (active) {
-          setVersionsError(displayAdminError(error));
+          setVersionsError(displayAdminReadError(error));
         }
       })
       .finally(() => { if (active) setVersionsLoading(false); });
@@ -629,7 +629,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       .catch((error) => {
         if (active) {
           setMessageVersions([]);
-          toast(`词条版本加载失败:${displayAdminError(error)}`);
+          toast(`词条版本加载失败:${displayAdminReadError(error)}`);
         }
       })
       .finally(() => { if (active) setMessageVersionsLoading(false); });
@@ -888,7 +888,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     let target: LearningCourseVersionView | LearningCourseView | undefined;
     try { target = (await actions.fetchI7CourseVersions(c.id)).find(row => row.status === "DRAFT")
       ?? latest.current.content.i18nLearning?.courses.find(row => row.id === c.id); }
-    catch (error) { toast(displayAdminError(error), "warn"); return; }
+    catch (error) { toast(displayAdminReadError(error), "warn"); return; }
     if (!target) { toast("这门课没读到，请刷新后再核对。", "warn"); return; }
     const rawReward = "payload" in target ? target.payload.rewardNex : target.rewardNex;
     if (rawReward !== null && i6Amount(rawReward) === undefined) { toast("目标版本奖励读不到，本次未提交；请重新读取课程版本后核对。", "warn"); return; }
@@ -1205,7 +1205,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     await editorOpening.run(`new-course-version:${c.id}`, async () => {
       let nextVersion: string | undefined;
       try { nextVersion = await actions.fetchI7NextCourseVersion(c.id); }
-      catch (error) { toast(displayAdminError(error), "error"); return; }
+      catch (error) { toast(displayAdminReadError(error), "error"); return; }
       const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
         ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
       const required = await getRequiredContentLanguages();

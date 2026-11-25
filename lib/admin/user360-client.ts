@@ -735,7 +735,8 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     if (mutationFingerprint && !retryBlockedByAccess) pendingUserMutations.forget(mutationFingerprint);
     // classification-ok:这里的 5xx 判定只挑**错误文案**(不把后端原始消息透给运营),
     // 不参与「命令号要不要丢」的归类 —— 归类在上面一条,走共享谓词。
-    const serverMessage = response.status >= 500 ? "INTERNAL_SERVER_ERROR" : result?.message;
+    const invalidReadResponse = method === "GET" && response.status === 502 && result?.message === "USERS_RESPONSE_INVALID";
+    const serverMessage = response.status >= 500 && !invalidReadResponse ? "INTERNAL_SERVER_ERROR" : result?.message;
     throw Object.assign(new UsersRequestError(
       response.status,
       serverMessage,

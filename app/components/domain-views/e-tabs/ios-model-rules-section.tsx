@@ -3,7 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { FilePenLine, Smartphone } from "lucide-react";
 import "./phone-calibration-panel.css";
 import { Drawer, Decision, Button, Table, Th, Tr, Td, Explain, BlockState, Fold, Field, Input, Textarea, Check, Select, Facts, Fact, StatusTag, Notice, MoreMenu } from "@/app/components/rd";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { fetchIosModelPresets } from "@/lib/admin/phone-calibration-client";
 import { IOS_CATALOG_LABELS, IOS_CHANGE_LABELS, blankIosRule, diffIosRules, formatFacts, formatRange, iosRuleFormIssues, normalizeModel, planIosImport,
   type IosCatalogClass, type IosImportPlan, type IosModelPresetCatalog, type IosModelRule } from "@/lib/admin/ios-model-rules";
@@ -82,7 +82,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
       const plan = planIosImport(rules, result.models, androidRuleIds);
       setPresets({ catalog: result, plan, selected: new Set(plan.added.map(rule => rule.id)), fillFacts: false });
     } catch (failure) {
-      if (live.current) setError(displayAdminError(failure));
+      if (live.current) setError(displayAdminReadError(failure));
     } finally { if (live.current) setLoading(false); }
   }
   function applyImport() {
