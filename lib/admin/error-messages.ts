@@ -2725,7 +2725,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H7_REQUEST_STORAGE_UNAVAILABLE: "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。",
   H7_ORIGINAL_RESOLVED: "原请求已有明确结果，请刷新代金券后重新发起修改。",
   H7_RESULT_UNKNOWN: "这张券有结果未知的修改，请先查询页面上方的原结果，或在有效期内按原请求重试。",
-  H7_PROPOSAL_RELEASE_FORBIDDEN: "原申请尚不能解除，请查询原结果；只有过期且明确未建单的申请才能确认解除。",
+  H7_PROPOSAL_RELEASE_FORBIDDEN: "原申请还不能解除，请查询原结果；重试被明确拒绝并核实后才能解除。",
   PENDING_APPROVAL_PROJECTION_UNAVAILABLE: "待审批状态暂时无法读取，请重新加载；读到最新审批状态前不能修改代金券。",
   VOUCHER_BODY_REQUIRED: "代金券内容不完整，请重新核对填写内容后提交。",
   VOUCHER_ID_REQUIRED: "缺少代金券编号，请重新打开原操作；结果未知时请保留原请求并查询。",

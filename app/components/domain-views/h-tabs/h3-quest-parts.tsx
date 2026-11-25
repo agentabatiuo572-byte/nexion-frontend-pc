@@ -1,5 +1,4 @@
 "use client";
-import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
 /**
  * H3 用户任务管理的展示件：任务卡、首日时间线、每周奖励算式、阶段倍率格、App 上的样子、结果未知逐条提醒。
@@ -8,7 +7,7 @@ import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Archive, CircleAlert, CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Lock, Smartphone } from "lucide-react";
-import { Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
+import { Button, Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -209,7 +208,7 @@ export function TaskStatusTag({ task }: { task: QuestTask }) {
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
     ? "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。"
-    : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，不会建第二张。"}>结果未知</StatusTag>;
+    : "提交时没收到确定结果，可能已经建了审批单。先查询原结果；明确查不到、没过 24 小时才能按原请求重试，不会建第二张。"}>结果未知</StatusTag>;
 }
 
 export function pendingTag(approver = "另一位超级管理员", note = "批准前什么都不变；审批结束前这页不能再改这一项。") {
@@ -305,7 +304,7 @@ export function acknowledgedTag() {
 }
 
 export function expiredTag() {
-  return <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
+  return <StatusTag tone="neutral" icon={Hourglass}>已过期</StatusTag>;
 }
 
 // ===== 任务卡 =====
@@ -566,24 +565,28 @@ export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
 }
 
 // ===== 原操作逐条提醒：结果未知、待审批、已建单、已过期（和 G 域、H7 同一排法） =====
-export type H3RecoveryRow = { key: string; name: string; change: ReactNode; submittedAt?: number; tag: ReactNode; actions: ReactNode };
+export type H3RecoveryRow = { key: string; name: string; change: ReactNode; submittedAt?: number; tag: ReactNode; actions: ReactNode; note?: ReactNode };
 
 export function H3RecoveryList({ rows }: { rows: H3RecoveryRow[] }) {
+  // 多条时默认露出三条，其余点开再看，首屏留给任务（提示不盖正事）。
+  const [all, setAll] = useState(false);
   if (rows.length === 0) return null;
   const timed = rows.some((row) => row.submittedAt !== undefined);
   return (
     <>
       <ul className="h3-rec" aria-label="原操作">
-        {rows.map((row) => (
+        {(all ? rows : rows.slice(0, 3)).map((row) => (
           <li key={row.key}>
             <span className="h3-rec-name">{row.name}</span>
             <span className="h3-rec-change">{row.change}</span>
             <span className="h3-rec-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
             <span className="h3-rec-state">{row.tag}</span>
             <span className="h3-rec-actions">{row.actions}</span>
+            {row.note && <span className="h3-rec-note">{row.note}</span>}
           </li>
         ))}
       </ul>
+      {rows.length > 3 && <Button size="sm" variant="ghost" onClick={() => setAll((open) => !open)}>{all ? "只看前 3 条" : `显示全部 ${rows.length} 条`}</Button>}
       {timed && <p className="h3-rec-zone">提交时间为{businessZone().label}</p>}
     </>
   );

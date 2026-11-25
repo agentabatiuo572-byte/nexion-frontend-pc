@@ -2,6 +2,7 @@ import { displayAdminError } from "./error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createA2CommandKey } from "./a2-client";
 import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
+import { RETRY_REJECTED_TEXT } from "./retry-rejected";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundCommandInvestigation } from "./fund-command-investigation";
 import { discoverECommand, investigateECommand } from "./e-command-investigation";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
@@ -75,7 +76,7 @@ export const i4DocumentRecovery = createPendingRecovery({ ...pending, list: pend
 
 export function i4DocumentRetryBlocked(record: I4DocumentCommand) {
   const state = i4DocumentRecovery.state(record);
-  if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
+  if (state.replayRejection) return RETRY_REJECTED_TEXT;
   if (state.expired) return RETRY_EXPIRED_TEXT;
   return i4DocumentPermission(record.document.slot) ?? (state.replayBlock ? "请查询原结果" : undefined);
 }
@@ -118,7 +119,7 @@ async function send(command: I4DocumentCommand, retry: boolean, file?: File): Pr
 export async function submitI4Document(document: TrustDocument, fields: TrustDocumentUpload, file?: File): Promise<void> {
   const permission = i4DocumentPermission(document.slot);
   if (permission) throw new Error(permission);
-  if (pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) throw new Error("这份资料有结果未知的原操作，请先重新读取核对。");
+  if (pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) throw new Error("这份资料有结果未知的原操作，请先查询原结果。");
   const owner = useAdminAuth.getState().session!.adminId;
   const commandKey = createA2CommandKey("i4-trust-document");
   const fingerprint = `${owner}|${document.slot}`;

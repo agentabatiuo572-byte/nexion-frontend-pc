@@ -3,6 +3,7 @@ import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createPendingMutationStore, createPendingRecovery, createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { RETRY_REJECTED_TEXT } from "@/lib/admin/retry-rejected";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
@@ -226,7 +227,7 @@ export const jEmergencyRecovery = createPendingRecovery(emergencyCommands, {
 
 export function jEmergencyRetryBlocked(record: SlotAttemptRecord) {
   const state = jEmergencyRecovery.state(record);
-  if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
+  if (state.replayRejection) return RETRY_REJECTED_TEXT;
   if (state.expired) return RETRY_EXPIRED_TEXT;
   return state.replayBlock ? "请查询原结果" : undefined;
 }

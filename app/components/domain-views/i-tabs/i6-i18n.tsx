@@ -14,7 +14,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { Archive, BadgeCheck, BookOpen, CircleSlash, CodeXml, Eye, EyeOff, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { fetchI6LearningOverview, i6Recovery, i6RetryBlockedReason, pendingI6Commands, queryI6Receipt, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningQuizQuestionView, type LearningCourseVersionView, type LearningCourseView } from "@/lib/admin/i-client";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { PaginationExemptionList } from "../design-kit";
@@ -32,7 +32,10 @@ import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
 import { OPEN_RESULT_LABELS, TechInfo, receiptFact, receiptOf } from "../recovery-panel";
-import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
+import { CLOSURE_KEPT_TEXT, RECEIPT_RECOVERY_INTRO } from "../direct-recovery-copy";
+import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
+import { replayRejectedStatus, rejectedTag, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
+import { RETRY_REJECTED_NEXT, RETRY_REJECTED_TEXT } from "@/lib/admin/retry-rejected";
 import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isConfirmedNonExecution, rebaseTerminalDraft, useTerminalDrafts, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
@@ -248,7 +251,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [lookupKey, setLookupKey] = useState("");
   useSyncExternalStore(i6Recovery.subscribe, i6Recovery.getRevision, i6Recovery.getRevision);
   useSyncExternalStore(i6CourseRecovery.subscribe, i6CourseRecovery.getRevision, i6CourseRecovery.getRevision);
-  const [releasing, setReleasing] = useState<HIRewardCommand | null>(null);
+  const release = useVerifiedRelease(toast);
+  const discardRecovery = useRecoveryDraftDiscard();
   const [ordinaryBusy, setOrdinaryBusy] = useState("");
   const approvalQuery = useRecoveryQueryErrors();
   const courseDrafts = useTerminalDrafts<TerminalDraft<CourseForm> & { revision?: number }>();
@@ -391,7 +395,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const ordinaryRetryProblem = (record: I6Command) => recoveryReadProblem(record) ?? i6RetryBlockedReason(record);
   const courseRetryBlocked = (record: HIRewardCommand) => {
     const state = i6CourseRecovery.state(record);
-    if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
+    if (state.replayRejection) return RETRY_REJECTED_TEXT;
     if (state.expired) return RETRY_EXPIRED_TEXT;
     return recoveryReadProblem(record) ?? i6CourseProposalPermission(record) ?? (state.replayBlock ? "请查询原结果" : undefined);
   };
@@ -1530,7 +1534,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const courseOf = (record: I6Command) => record.scope.startsWith("course:") ? COURSES.find((course) => course.id === record.target) : undefined;
   /** 文案和课程原操作这一行怎么说：共用面板的标签和句子（查询失败的原因放标签问号里）。 */
   const ordinaryStatus = (record: I6Command, outcome: FundInvestigationOutcome | undefined) => {
-    const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canRetry: !ordinaryRetryProblem(record),
+    const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canRetry: !ordinaryRetryProblem(record), status: replayRejectedStatus(!!i6Recovery.state(record).replayRejection, outcome),
       canClose: canInvestigateECommand(record.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") });
     return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
   };
@@ -1546,8 +1550,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       <span className="i6-pending-act">
         <Button size="sm" disabled={!!ordinaryBusy && ordinaryBusy !== record.commandKey} loading={ordinaryBusy === record.commandKey} onClick={() => void queryOrdinary(record)}>查询原结果</Button>
         {canInvestigateECommand(record.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") && eCommandClosureOffer(ordinaryOutcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ordinaryBusy} onClick={() => setClosingOrdinary(record)}>核查结案</Button>}
-        <Button size="sm" variant="primary" disabledReason={ordinaryBusy ? "正在处理另一项" : ordinaryRetryProblem(record)}
-          onClick={() => void retryOrdinary(record)}>按原请求重试</Button>
+        {!i6Recovery.state(record).replayRejection && <Button size="sm" variant="primary" disabledReason={ordinaryBusy ? "正在处理另一项" : ordinaryRetryProblem(record)}
+          onClick={() => void retryOrdinary(record)}>按原请求重试</Button>}
+        {i6Recovery.state(record).replayRejection && <VerifiedReleaseButton disabled={!!ordinaryBusy} onClick={() => release.ask({ operation: record.label,
+          target: <>{record.target && <>{courseOf(record) ? nexGridBrandText(courseOf(record)!.titleZh || courseOf(record)!.title) : <span className="i6-mono">{record.target}</span>} </>}{ordinaryChange(record)}</>,
+          createdAt: record.createdAt, release: () => { const released = i6Recovery.releaseRejectedReplay(record); updateRecovery(value => value + 1); return released; } })} />}
       </span>
       <span className="i6-pending-note">{shown.line} <TechInfo commandKey={record.commandKey} receipt={receiptOf(ordinaryOutcomes[record.commandKey])} /></span>
     </li>;
@@ -1567,7 +1574,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       }
       else toast(CLOSURE_KEPT_TEXT, "warn");
     }} />;
-  const ordinaryExplain = DIRECT_RECOVERY_INTRO;
+  const ordinaryExplain = RECEIPT_RECOVERY_INTRO;
   const recoveryMore = (total: number) => total > 3
     ? <div className="i-recovery-more"><Button size="sm" variant="ghost" onClick={() => setRecoveryAll((open) => !open)}>{recoveryAll ? "只看前 3 条" : `显示全部 ${total} 条`}</Button></div> : null;
   const ordinaryRecovery = view === "i18n" && ordinaryItems.length > 0
@@ -1575,6 +1582,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       <ul className="i6-pending" aria-label="结果未知的文案操作">{recoveryAll ? ordinaryItems : ordinaryItems.slice(0, 3)}</ul>
       {recoveryMore(ordinaryItems.length)}
     </Panel> : null;
+  const recoveryDialogs = <>{release.dialog}{discardRecovery.dialog}</>;
   const courseApprovalRows = (Array.isArray(courseApprovals) ? courseApprovals : []).filter(row => !courseRecords.some(record =>
     record.ticketStatus === "pending" && record.payload.kind === "proposal"
     && record.payload.input.obj === row.obj && record.payload.input.command.op === row.operationCode));
@@ -1597,21 +1605,21 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               const replayRejected = !!i6CourseRecovery.state(record).replayRejection;
               const label = subject(record);
               return <li key={record.commandKey} role="status">
-                <StatusTag tone={record.ticketStatus === "pending" ? "progress" : expired || record.receiptKnown ? "neutral" : "warn"}>{record.ticketStatus === "pending" ? "等另一位批准" : record.receiptKnown ? "已提交，状态未查到" : expired ? "已超过 24 小时" : "结果未知"}</StatusTag>
+                {replayRejected && !record.receiptKnown && record.ticketStatus !== "pending" ? rejectedTag()
+                  : <StatusTag tone={record.ticketStatus === "pending" ? "progress" : expired || record.receiptKnown ? "neutral" : "warn"}>{record.ticketStatus === "pending" ? "等另一位批准" : record.receiptKnown ? "已提交，状态未查到" : expired ? "已超过 24 小时" : "结果未知"}</StatusTag>}
                 <span className="i6-pending-what">{label}</span>
                 <span className="i6-pending-change">{change(record)}</span>
                 <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
                 <span className="i6-pending-act">
                 <Button size="sm" disabled={!!lookupKey && lookupKey !== record.commandKey} loading={lookupKey === record.commandKey} onClick={() => void queryCourseOriginal(record)}>查询原结果</Button>
-                {replayRejected && <Button size="sm" variant="primary" disabled={!!lookupKey} onClick={() => setReleasing(record)}>确认解除</Button>}
-                {!queryOnly && <Button size="sm" variant="primary" disabled={!!lookupKey} disabledReason={courseRetryBlocked(record)}
+                {!queryOnly && !replayRejected && <Button size="sm" variant="primary" disabled={!!lookupKey} disabledReason={courseRetryBlocked(record)}
                   onClick={() => {
                   const confirmation: ActionConfirmReq = { briefKind: "record",
                   action: `核对原操作 · ${label}`,
                   title: "按原请求重试",
-                  detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原请求查审批单；查不到才按原请求原样重发，不会重复建单。理由沿用原操作。</>,
+                  detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>刚查过，没有这张审批单；确认后按原内容再提交一次，不会重复建单。理由沿用原操作。</>,
                   effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
-                  statedBrief: { impact: "先查原审批单，查不到才原样重发；不会建第二张单。", check: "核对是哪门课、哪个版本。" },
+                  statedBrief: { impact: "按原内容再提交一次，不会建第二张审批单。", check: "核对是哪门课、哪个版本。" },
                   facts: <Facts><Fact k="原操作">{label}</Fact><Fact k="改动">{change(record) ?? "—"}</Fact><Fact k="提交时间">{businessStamp(record.createdAt)}（{BJ}）</Fact></Facts>,
                   confirmLabel: "按原请求重试",
                   getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
@@ -1631,10 +1639,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   recoveryConfirm.current = { commandKey: () => record.commandKey, finish: () => ctx.closeActionConfirm(confirmation) };
                   openActionConfirm(confirmation);
                 }}>按原请求重试</Button>}
+                {replayRejected && <VerifiedReleaseButton disabled={!!lookupKey} onClick={() => release.ask({ operation: label, target: change(record), createdAt: record.createdAt,
+                  release: () => { try { releaseRejectedI6Course(record); } finally { updateRecovery(value => value + 1); } } })} />}
                 </span>
                 {approvalQuery.errors[record.commandKey] && <span className="i6-pending-note">{approvalQuery.errors[record.commandKey]}</span>}
                 {record.receiptKnown && record.ticketStatus !== "pending" && <span className="i6-pending-note">审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。</span>}
-                {expired && <span className="i6-pending-note">{RETRY_EXPIRED_TEXT}</span>}
+                {replayRejected && !record.receiptKnown && record.ticketStatus !== "pending" ? <span className="i6-pending-note">{RETRY_REJECTED_NEXT}</span>
+                  : expired && <span className="i6-pending-note">{RETRY_EXPIRED_TEXT}</span>}
               </li>;
             }), ...approvals.map((row) => <li key={row.id}>
               <StatusTag tone="progress">等另一位批准</StatusTag>
@@ -1646,7 +1657,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               <StatusTag tone="neutral">草稿已保留</StatusTag>
               <span className="i6-pending-what">新建课程 · {draft.slug}</span>
               <span className="i6-pending-act"><Button size="sm" disabledReason={!canWriteI7 ? "当前账号只能查看" : newWriteProblem(`course:${draft.slug}`)}
-                onClick={() => void newCrs(key)}>继续编辑</Button></span>
+                onClick={() => void newCrs(key)}>继续修改</Button>
+                <Button size="sm" variant="ghost" onClick={() => discardRecovery.ask(() => newCourseDrafts.forget(session?.adminId, key))}>放弃这份草稿</Button></span>
             </li>)];
         return <Panel title="等批准和结果未知的课程操作" icon={TriangleAlert} tone="warn" sub={`${rows.length} 项 · 时间为${BJ}`}
           explain={<><p>有奖励的课程发布、发布新版本、回滚和调奖，都要另一位超级管理员批准；批准前课程不变。</p><p>发布、回滚在等批准时，这门课不能再提交发布或回滚；调奖单独审批，不受它拦。两张都批准时，后执行的那张可能因课程已变而失败。</p><p>{ordinaryExplain}</p></>}
@@ -1656,24 +1668,15 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             {courseApprovals === "error" && <li><Notice tone="danger">审批进度读取失败，请点「刷新审批进度」重试。</Notice></li>}
           </ul>
           {recoveryMore(rows.length)}
-          {releasing && <ReleaseModal label={<>{subject(releasing)}{change(releasing)}</>}
-            explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。"
-            onCancel={() => setReleasing(null)} onConfirm={() => {
-              const record = releasing;
-              setReleasing(null);
-              try { releaseRejectedI6Course(record); toast("已解除，这门课可以重新提交"); }
-              catch (error) { toast(displayAdminError(error), "warn"); }
-              finally { updateRecovery(value => value + 1); }
-            }} />}
         </Panel>;
       })();
 
   /* ============ 读取中、读不到 ============ */
   if (contentLoading && !data) {
-    return <>{conflictUi}{ordinaryRecovery}{courseRecovery}{ordinaryClosure}<BlockState state="loading" title={view === "i18n" ? "正在加载文案…" : "正在加载课程…"} /></>;
+    return <>{conflictUi}{ordinaryRecovery}{courseRecovery}{ordinaryClosure}{recoveryDialogs}<BlockState state="loading" title={view === "i18n" ? "正在加载文案…" : "正在加载课程…"} /></>;
   }
   if (!data) {
-    return <>{conflictUi}{ordinaryRecovery}{courseRecovery}{ordinaryClosure}<BlockState state="error" title={view === "i18n" ? "文案没有读到" : "课程没有读到"} detail="点上方「重新加载」重试。" /></>;
+    return <>{conflictUi}{ordinaryRecovery}{courseRecovery}{ordinaryClosure}{recoveryDialogs}<BlockState state="error" title={view === "i18n" ? "文案没有读到" : "课程没有读到"} detail="点上方「重新加载」重试。" /></>;
   }
 
   /* ============ App 文案 ============ */
@@ -1776,7 +1779,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </Conclusion>
       {conflictUi}
       {ordinaryRecovery}
-      {ordinaryClosure}
+      {ordinaryClosure}{recoveryDialogs}
 
       <Panel title="三种语言齐不齐" icon={Languages} tone="role-2" sub={`共 ${count(total)} 条 · ${count(NAMESPACES.length)} 个模块`}
         explain="按每条文案现在的内容算（草稿也算）。「可上线」是系统算的：已发布、三语齐、变量一致且通过质量检查的才算。">
@@ -2092,7 +2095,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     <Conclusion state={conclusion.state} icon={conclusion.state === "ok" ? BadgeCheck : conclusion.state === "warn" ? TriangleAlert : GraduationCap} hint={conclusion.hint}>{conclusion.text}</Conclusion>
     {conflictUi}
     {courseRecovery}
-    {ordinaryClosure}
+    {ordinaryClosure}{recoveryDialogs}
     <StatBand label="课程概况">
       <Stat tone="role-2" icon={GraduationCap} label="在线课程" value={count(I6_STATS.coursesOnline)} unit="门" sub={`共 ${count(allCourses.length)} 门 · 草稿 ${count(counts.draft)} · 已下架 ${count(counts.archived)}`} />
       <Stat tone="role-1" icon={BookOpen} label="近 7 天学完发出" value={weeklyValue} unit="UVT"

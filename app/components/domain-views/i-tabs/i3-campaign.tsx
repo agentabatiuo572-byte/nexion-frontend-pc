@@ -30,6 +30,8 @@ import { canInvestigateECommand, eCommandClosureOffer } from "@/lib/admin/e-comm
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
 import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
 import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
+import { replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
+import { frozenNextStep, RETRY_REJECTED_NEXT, RETRY_REJECTED_STATUS } from "@/lib/admin/retry-rejected";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -193,6 +195,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const scheduleDrafts = useTerminalDrafts<string>();
   const campaignDrafts = useTerminalDrafts<DraftAttempt>();
   const capQuery = useRecoveryQueryErrors();
+  const release = useVerifiedRelease(toast);
   const isSuperadmin = session?.role === "superadmin";
   const authorities = session?.authorities ?? [];
   const canWriteI3 = isSuperadmin || authorities.includes("content_i3_write");
@@ -991,7 +994,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   /** 查过原结果的直接操作这一行怎么说：共用面板的标签和句子（查询失败的原因放标签问号里）。 */
   const i3Status = (record: I3Command, outcome: FundInvestigationOutcome | undefined) => {
     const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canClose: canInvestigateECommand("content_i3_read"),
-      canRetry: !campaignRetryProblem(record) });
+      canRetry: !campaignRetryProblem(record), status: replayRejectedStatus(!!i3Recovery.state(record).replayRejection, outcome) });
     return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
   };
   const query = async (record: I3Command | I3CapCommand, fromConfirm = false) => {
@@ -1036,24 +1039,36 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     }
     finally { recoveryInFlight.current = false; setRecovering(null); }
   };
+  const campaignOperation = (row: I3Command) => row.action === "delete" && row.snapshot?.status === "cancelled" ? "删除已取消的通知" : I3_ACTION[row.action];
+  const capRejected = (row: I3CapCommand) => !!i3CapRecovery.state(row).replayRejection;
   const recoveryRows: I3RecoveryRow[] = [
     // 新建和编辑草稿记下的变更是优先级代码和受众原文，不给运营看；这两类只写动作和通知名。
-    ...pending.map((row) => ({ key: row.commandKey, name: row.action === "delete" && row.snapshot?.status === "cancelled" ? "删除已取消的通知" : I3_ACTION[row.action], object: row.name, change: row.action === "create" || row.action === "draft" ? undefined : row.change,
+    ...pending.map((row) => ({ key: row.commandKey, name: campaignOperation(row), object: row.name, change: row.action === "create" || row.action === "draft" ? undefined : row.change,
       submittedAt: row.createdAt, expired: isRetryExpired(row),
       status: i3Status(row, outcomes[row.commandKey]), note: <>{i3Status(row, outcomes[row.commandKey]).line} <TechInfo commandKey={row.commandKey} receipt={receiptOf(outcomes[row.commandKey])} /></>,
       actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原结果</Button>
         {canInvestigateECommand("content_i3_read") && eCommandClosureOffer(outcomes[row.commandKey], isRetryExpired(row)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(row)}>核查结案</Button>}
-        {!isRetryExpired(row) && <Button size="sm" disabledReason={campaignRetryProblem(row)} onClick={() => restore(row)}>按原请求重试</Button>}
+        {!isRetryExpired(row) && !i3Recovery.state(row).replayRejection && <Button size="sm" disabledReason={campaignRetryProblem(row)} onClick={() => restore(row)}>按原请求重试</Button>}
+        {i3Recovery.state(row).replayRejection && <VerifiedReleaseButton disabled={!!recovering} onClick={() => release.ask({ operation: campaignOperation(row), target: <>{row.name}{row.action !== "create" && row.action !== "draft" && row.change && ` · ${row.change}`}</>, createdAt: row.createdAt, release: () => {
+          const released = i3Recovery.releaseRejectedReplay(row);
+          if (released && recoveryEditors.current.drawer === row.commandKey) { setNewOpen(false); setEditing(null); setDrawerPendingKey(null); }
+          if (released && recoveryEditors.current.schedule === row.commandKey) { setScheduleRow(null); setSchedulePendingKey(null); }
+          syncPending();
+          return released;
+        } })} />}
       </> })),
     ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: `${TIER[row.tier as TierK].label}优先级`,
       change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), submitted: !!row.receiptKnown,
-      note: capQuery.errors[row.commandKey] ?? (isRetryExpired(row) ? RETRY_EXPIRED_TEXT
+      status: capRejected(row) && !row.receiptKnown ? RETRY_REJECTED_STATUS : undefined,
+      note: capQuery.errors[row.commandKey] ?? (capRejected(row) && !row.receiptKnown ? RETRY_REJECTED_NEXT : isRetryExpired(row) ? RETRY_EXPIRED_TEXT
         : row.receiptKnown ? "审批单已建，批没批准还没查到；点「查询原结果」看当前状态。"
           : i3CapRecovery.state(row).conclusion === "not-found" ? "按原请求查不到这张审批单，24 小时内可以按原请求重试。" : undefined),
       actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button>
-        {!isRetryExpired(row) && !row.receiptKnown && <Button size="sm" disabledReason={capRetryProblem(row)} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原请求重试</Button>}
+        {!isRetryExpired(row) && !row.receiptKnown && !capRejected(row) && <Button size="sm" disabledReason={capRetryProblem(row)} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原请求重试</Button>}
+        {capRejected(row) && <VerifiedReleaseButton disabled={!!recovering} onClick={() => release.ask({ operation: "调整通知保留数量", target: `${TIER[row.tier as TierK].label}优先级 · ${row.before} → ${row.after} 条`, createdAt: row.createdAt,
+          release: () => { const released = i3CapRecovery.releaseRejectedReplay(row); syncPending(); return released; } })} />}
       </> })),
   ];
   const pendingCapRows = pendingCaps.filter((row) => row.ticketStatus === "pending").map((row) => ({ key: row.commandKey, tier: `${TIER[row.tier as TierK].label}优先级`,
@@ -1136,6 +1151,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       {header}
       {data && errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={contentLoading} onClick={() => void actions.reloadIContent()}>重新加载</Button>}>{`${errorText} 下面是上次读到的内容。`}</Notice>}
       <I3RecoveryNotice rows={recoveryRows} />
+      {release.dialog}
       {closing && <FundClosureModal label={`${I3_ACTION[closing.action]} · ${closing.name}`} createdAt={closing.createdAt}
         offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
         facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(outcomes[closing.commandKey]), "记录保留")}</Fact>}
@@ -1515,7 +1531,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
         others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
         <div className="i3-form">
-          {frozen && <Notice tone="warn" title="结果未知">原请求已锁定，不能再改。先在页面上方查询原结果，明确查不到后才能按原请求重试。</Notice>}
+          {frozen && <Notice tone="warn" title="结果未知">原请求已锁定，不能再改。{frozenNextStep(blocked, "先在页面上方查询原结果")}</Notice>}
           {saveError && <Notice tone="danger" title="草稿没有保存">{saveError}</Notice>}
           <section className="i3-form-section" aria-labelledby="i3-f-base">
             <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>

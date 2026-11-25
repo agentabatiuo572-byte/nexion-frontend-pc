@@ -13,7 +13,7 @@ import { useState, type ReactNode } from "react";
 import { BadgeCheck, CircleHelp, Coins, FileSearch, Landmark, ShieldCheck, Store, Users, type LucideIcon } from "lucide-react";
 import { Button, Explain, Field, IconTile, Input, LocaleTabs, Notice, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
+import { RECEIPT_RECOVERY_INTRO } from "../direct-recovery-copy";
 import { APP_FIELD_LIMIT, appBlanking, i4AppFieldIssue, i4HasEnglishFields } from "@/lib/admin/i4-trust-contract";
 export { APP_FIELD_LIMIT, APP_SECTION_ORDER, appBlanking } from "@/lib/admin/i4-trust-contract";
 
@@ -402,8 +402,10 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
 /** kind：结果未知、查到结果但还没结案、已建单但状态没查到、已查到在等批准。note：这一行下面的一句说明。 */
 export type RecoveryRow = { key: string; kind: "unknown" | "open" | "submitted" | "pending"; name: string; change: ReactNode; submittedAt?: string; tag: ReactNode; actions: ReactNode; note?: ReactNode };
 export const RECOVERY_PLACEHOLDER: RecoveryRow[] = [];
-export function unknownTag() {
-  return <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先「查询原结果」；24 小时内也可以「按原请求重试」，系统认得出是同一次提交，不会建第二张。">结果未知</StatusTag>;
+export function unknownTag(kind: "approval" | "document") {
+  return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "approval"
+    ? "提交时没收到确定结果，可能已经建了审批单。先「查询原结果」；明确查不到、没过 24 小时，才能按原请求重试，不会建第二张。"
+    : "提交时没收到确定结果，公开的文件可能已经换了。先「查询原结果」核对。"}>结果未知</StatusTag>;
 }
 export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
   // 多条时默认露出三条，其余点开再看，首屏留给版块（提示不盖正事）。
@@ -416,10 +418,10 @@ export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
   const title = [open > 0 && `${open} 项操作结果未知`, ended > 0 && `${ended} 项操作还没结案`, submitted > 0 && `${submitted} 张申请已提交，状态未查到`, pending > 0 && `${pending} 张申请等另一位批准`].filter(Boolean).join(" · ");
   return (
     <Notice tone={open + ended + submitted > 0 ? "warn" : "progress"} title={<>{title}<Explain label="这些操作怎么处理" content={<>
-      <p>结果未知：{DIRECT_RECOVERY_INTRO}</p>
-      <p>提交发布、回滚、下架走审批：24 小时内重试不会建第二张审批单。</p>
-      <p>申请过期后，按原请求查不到这张审批单，说明没建成，可以确认解除。</p>
-      <p>PDF 上传这页不能重发，点「查询原结果」核对。</p>
+      <p>{RECEIPT_RECOVERY_INTRO}</p>
+      <p>超过 24 小时只能查询，不能再重试；查不到结果的，到操作记录与审批核对。</p>
+      <p>重试被拒绝：核实原操作的结果后可以解除，只清这个标签页里的记录。</p>
+      <p>PDF 上传这页不能重发；恢复默认要到那份资料的「恢复默认」里重试。</p>
     </>} /></>}>
       <ul className="i4-recovery" aria-label="结果未知的操作">
         {(all ? rows : rows.slice(0, 3)).map((row) => (

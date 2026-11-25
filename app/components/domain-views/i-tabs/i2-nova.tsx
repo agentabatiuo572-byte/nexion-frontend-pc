@@ -33,6 +33,8 @@ import { fetchI2NovaOverview, type NovaOverview, i2Recovery, i2RetryBlockedReaso
 import { fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { isConfirmedNonExecution, rebaseTerminalDraft, useTerminalDrafts, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
+import { replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, useIConflictView } from "./i-conflict";
@@ -158,6 +160,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [checking, setChecking] = useState<string | null>(null);
   const [closing, setClosing] = useState<I2Command | null>(null);
   const [settledRows, setSettledRows] = useState<FundSettled[]>([]);
+  const release = useVerifiedRelease(toast);
+  const discardRecovery = useRecoveryDraftDiscard();
+  const [allDrafts, setAllDrafts] = useState(false);
   const settle = (record: I2Command, receipt: NonNullable<Awaited<ReturnType<typeof queryI2Command>>>) =>
     setSettledRows((current) => [...current.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: `${record.action} · ${unknownObject(record)}`, status: receipt.originalStatus }]);
   const restoreFields = <T extends object>(saved: TerminalDraft<T> | undefined, latest: T, labels: Record<string, string>, sameRevision = false): T => {
@@ -1036,25 +1041,43 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const target = investigationRecord(row);
     const query = () => { void queryOriginal(row).catch((error) => toast(displayAdminError(error))); };
     const retryBlocked = recovering ? "等当前操作完成" : retryReason(row);
+    const rejected = !!i2Recovery.state(row).replayRejection;
     return {
       key: row.commandKey, title: <span title={label}>{label}</span>, record: target, outcome: outcomes[row.commandKey], createdAt: row.createdAt, expired,
       canRetry: !retryBlocked, canQuery: canReadI2,
-      status: target ? undefined : { tone: "warn", label: expired ? "已过期" : "结果未知", line: "这条记录不完整，查不了原结果，只能重读现在的状态核对。" },
+      status: target ? replayRejectedStatus(rejected, outcomes[row.commandKey]) : { tone: "warn", label: expired ? "已过期" : "结果未知", line: "这条记录不完整，查不了原结果，只能重读现在的状态核对。" },
       actions: <>
         {target ? <FundCheckButtons record={target} outcome={outcomes[row.commandKey]} expired={expired} busy={!!checking || !!recovering} checking={checking === row.commandKey}
           onCheck={query} onClose={() => setClosing(row)} />
           : <Button size="sm" loading={checking === row.commandKey} disabled={!!checking} disabledReason={!canReadI2 ? "当前账号没有读取权限" : recovering ? "等当前操作完成" : undefined} onClick={query}>查询原结果</Button>}
-        {!expired && <Button size="sm" disabled={!!checking} disabledReason={retryBlocked} onClick={() => void restore(row)}>按原请求重试</Button>}
+        {!expired && !rejected && <Button size="sm" disabled={!!checking} disabledReason={retryBlocked} onClick={() => void restore(row)}>按原请求重试</Button>}
+        {rejected && <VerifiedReleaseButton disabled={!!checking || !!recovering} onClick={() => release.ask({ operation: row.action, target: <>{unknownObject(row)}{unknownChange(row) && ` · ${unknownChange(row)}`}</>,
+          createdAt: row.createdAt, release: () => {
+            const released = i2Recovery.releaseRejectedReplay(row);
+            if (released && recoveryEditors.current.drawer === row.commandKey) closeDrawer();
+            syncPending();
+            return released;
+          } })} />}
       </>,
       detail: unknownChange(row) ? <p>{unknownChange(row)}</p> : undefined,
     };
   });
+  const draftRows = settledRows.filter(row => newChannelDrafts.get(session?.adminId, row.key) || newTemplateDrafts.get(session?.adminId, row.key));
   const unknownNotice = <>
-    <FundRecoveryPanel rows={[]} settled={settledRows.filter(row => newChannelDrafts.get(session?.adminId, row.key) || newTemplateDrafts.get(session?.adminId, row.key))}
-      settledAction={row => <Button size="sm" disabledReason={newMutationReason} onClick={() => {
-        if (newChannelDrafts.get(session?.adminId, row.key)) openNewNova(row.key);
-        else void newTpl(row.key);
-      }}>继续编辑</Button>} />
+    <FundRecoveryPanel rows={[]} settled={allDrafts ? draftRows : draftRows.slice(0, 3)}
+      settledAction={row => <>
+        <Button size="sm" disabledReason={newMutationReason} onClick={() => {
+          if (newChannelDrafts.get(session?.adminId, row.key)) openNewNova(row.key);
+          else void newTpl(row.key);
+        }}>继续修改</Button>
+        <Button size="sm" variant="ghost" onClick={() => discardRecovery.ask(() => {
+          newChannelDrafts.forget(session?.adminId, row.key);
+          newTemplateDrafts.forget(session?.adminId, row.key);
+          setSettledRows((current) => current.filter((item) => item.key !== row.key));
+        })}>放弃这份草稿</Button>
+      </>} />
+    {draftRows.length > 3 && <div className="i-recovery-more"><Button size="sm" variant="ghost" onClick={() => setAllDrafts((open) => !open)}>{allDrafts ? "只看前 3 条" : `显示全部 ${draftRows.length} 条`}</Button></div>}
+    {release.dialog}{discardRecovery.dialog}
     <FundRecoveryPanel rows={recoveryRows}
       settled={settledRows.filter(row => !newChannelDrafts.get(session?.adminId, row.key) && !newTemplateDrafts.get(session?.adminId, row.key))}
       onDismissSettled={(key) => setSettledRows((current) => current.filter((item) => item.key !== key))} />

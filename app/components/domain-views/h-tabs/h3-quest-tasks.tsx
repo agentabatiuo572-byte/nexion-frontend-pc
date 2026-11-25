@@ -10,9 +10,11 @@ import {
 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag,
-  JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, Td, Th, Tr, useTabIds, type MoreMenuItem,
+  JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Panel, Stat, StatBand, StatusTag, Table, Td, Th, Tr, useTabIds, type MoreMenuItem,
 } from "@/app/components/rd";
 import { OperationConfirmModal, PaginationExemptionList } from "../design-kit";
+import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
+import { rejectedTag, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 import {
   fetchH3QuestEvents,
   type H3MissionKind,
@@ -22,6 +24,7 @@ import { compareH3Decimal, h3Decimal, h3HasConfigValue, h3MissionCreationRefusal
 import { fetchOperatingLanguages } from "@/lib/admin/platform-experience-client";
 import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin/use-h3-mutations";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { RETRY_REJECTED_NEXT } from "@/lib/admin/retry-rejected";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { useHConflictDraft, type RejectedH4Draft } from "@/lib/admin/use-h-conflict-draft";
@@ -112,8 +115,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   openMc.current = mc;
   // 保存被「别人先改过」拒绝：页面已重读，这里留住这次要改的内容，让运营和现值对照。
   const [stale, setStale] = useState<{ title: string; before: string; after: string } | null>(null);
-  const [releasing, setReleasing] = useState<H3PendingCommand | null>(null);
   const toast = shellCtx.toast;
+  const release = useVerifiedRelease(toast);
+  const discardRecovery = useRecoveryDraftDiscard();
   const canModuleWrite = shellCtx.can("growth_h3_write");
   const fresh = useRef(false);
   const recoveryDrafts = useRef(new Map<string, RejectedH4Draft>());
@@ -1001,15 +1005,18 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const releasable = (original: H3PendingCommand) => !!mutations.recovery.state(original).replayRejection;
   const recoveryRows: H3RecoveryRow[] = mutations.records.map(original => {
     const approval = original.request.kind !== "direct";
+    const rejected = releasable(original) && !original.ticket && !original.acknowledged;
     return {
-      key: original.commandKey, name: original.change.action, change: <>{changeOf(original.change)}{mutations.queryErrors[original.commandKey] && <p>{mutations.queryErrors[original.commandKey]}</p>}</>,
+      key: original.commandKey, name: original.change.action, change: changeOf(original.change),
+      note: mutations.queryErrors[original.commandKey] ?? (rejected ? RETRY_REJECTED_NEXT : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : undefined),
       submittedAt: original.createdAt,
       tag: original.ticket ? pendingTag(original.store === "region" ? REGION_APPROVER : undefined) : original.acknowledged ? acknowledgedTag()
-        : isRetryExpired(original) ? expiredTag() : unknownTag(approval ? "approval" : "direct"),
+        : rejected ? rejectedTag() : isRetryExpired(original) ? expiredTag() : unknownTag(approval ? "approval" : "direct"),
       actions: <><Button size="sm" onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>查询原结果</Button>
-        {!original.ticket && !original.acknowledged && !isRetryExpired(original)
+        {!original.ticket && !original.acknowledged && !isRetryExpired(original) && !releasable(original)
           && <Button size="sm" disabledReason={mutations.retryBlocked(original)} onClick={() => openRecovery(original)}>按原请求重试</Button>}
-        {releasable(original) && <Button size="sm" variant="ghost" onClick={() => setReleasing(original)}>解除原操作记录</Button>}</>,
+        {releasable(original) && <VerifiedReleaseButton onClick={() => release.ask({ operation: original.change.action, target: changeOf(original.change),
+          createdAt: original.createdAt, release: () => mutations.releaseRejected(original) })} />}</>,
     };
   });
   const terminalMissions = missionDrafts.entries(operatorId());
@@ -1022,32 +1029,26 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       change: <>{form.missionCode} · {changeOf(command.change)}</>,
       submittedAt: command.createdAt,
       tag: <StatusTag tone="done">{{ rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[status]}</StatusTag>,
-      actions: canModuleWrite ? <Button size="sm" disabledReason={missionEditorOpen ?? (!fresh.current ? "请先成功刷新用户任务数据" : undefined)}
-        onClick={() => openMission({ type, resumed: { key, draft } })}>继续编辑</Button> : undefined,
+      actions: <>{canModuleWrite && <Button size="sm" disabledReason={missionEditorOpen ?? (!fresh.current ? "请先成功刷新用户任务数据" : undefined)}
+        onClick={() => openMission({ type, resumed: { key, draft } })}>继续修改</Button>}
+        <Button size="sm" variant="ghost" disabledReason={missionEditorOpen} onClick={() => discardRecovery.ask(() => missionDrafts.forget(operatorId(), key))}>放弃这份草稿</Button></>,
     });
   }
   const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
   const pendingCount = mutations.records.filter(r => r.ticket).length;
   const builtCount = mutations.records.filter(r => !r.ticket && r.acknowledged).length;
-  const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`, terminalMissions.length && `${terminalMissions.length} 个草稿可继续编辑`].filter(Boolean).join("；");
+  const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`, terminalMissions.length && `${terminalMissions.length} 个草稿可继续修改`].filter(Boolean).join("；");
   const recovery = recoveryRows.length > 0 && (
     <Notice tone="warn" title={<>{recoveryTitle}<Explain label="原操作怎么处理" content={<>
       <p>结果未知：提交时没收到确定结果，可能已经生效。审批申请先查询原结果，明确查不到才能重试。直接修改的「按原请求重试」会重新发送一次。过了 24 小时只能查询。</p>
+      <p>重试被拒绝：核实原操作的结果后可以解除，只清这个标签页里的记录。</p>
       <p>待审批、已建单：申请已经建好，点「查询原结果」看审批进度，不会重发。</p>
       <p>结果确认之前，这页不能再改同一项。</p>
     </>} /></>}>
       <H3RecoveryList rows={recoveryRows} />
     </Notice>
   );
-  const releasingRow = releasing && recoveryRows.find(row => row.key === releasing.commandKey);
-  const releaseModal = releasing && <ReleaseModal label={<>{releasing.change.action}{releasingRow && <> · {releasingRow.change}</>}</>}
-    explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。"
-    onCancel={() => setReleasing(null)} onConfirm={() => {
-      const record = releasing;
-      setReleasing(null);
-      try { mutations.releaseRejected(record); toast("已解除这条记录，可以重新提交。"); }
-      catch (cause) { toast(displayAdminError(cause)); }
-    }} />;
+  const releaseModal = <>{release.dialog}{discardRecovery.dialog}</>;
   const staleNotice = stale && <Notice tone="warn" title={`没有保存：「${stale.title}」已被别人改过`}
     action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
     你打开时是 {shownValue(stale.before)}，要改成 {shownValue(stale.after)}。{error || !model ? "最新值没读到；重试读取成功后，会带着你填的内容重新打开。" : "已读到最新值，你填的还在，核对后再提交。"}

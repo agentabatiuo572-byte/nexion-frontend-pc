@@ -12,7 +12,7 @@ import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { BookOpen, Clock3, FlaskConical, History, ListChecks, Megaphone, MinusCircle, Pencil, Plus, RefreshCw, RotateCcw, ScanSearch, ShieldCheck, Siren, Square, TriangleAlert, Undo2, Workflow } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
@@ -27,6 +27,8 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
+import { RETRY_REJECTED_STATUS } from "@/lib/admin/retry-rejected";
 import { CommandClosureModal, RECOVERY_LINE } from "../e-tabs/e-command-check";
 import { processedStatus } from "./j-recovery-copy";
 import { receiptFact } from "../recovery-panel";
@@ -140,13 +142,12 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const [pending, setPending] = useState<J4PendingCommand[]>([]);
   const [proposals, setProposals] = useState<J4PendingProposal[]>([]);
   const [legacy, setLegacy] = useState<ReturnType<typeof listJ4LegacyCommands>>([]);
-  const [releasingDirect, setReleasingDirect] = useState<J4PendingCommand | null>(null);
+  const release = useVerifiedRelease(toast);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [verifiedProposals, setVerifiedProposals] = useState<Record<string, A2OperationRow>>({});
   const [queue, setQueue] = useState<A2OperationRow[]>([]);
   const [queueFailed, setQueueFailed] = useState(false);
   useSyncExternalStore(jEmergencyRecovery.subscribe, jEmergencyRecovery.getRevision, jEmergencyRecovery.getRevision);
-  const [releasing, setReleasing] = useState<J4PendingProposal | null>(null);
   /** 按原请求查到的结论只用来给运营看；解除与否由 queryJ4Command 按后端结论决定。 */
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [checking, setChecking] = useState<string | null>(null);
@@ -307,6 +308,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     return <FundCheckButtons record={investigationRecord(record)} outcome={kind === "resume" && receipt?.originalStatus === "FAILED" && !eCommandCanRequestResumeRollback(receipt) ? undefined : outcome} expired={isRetryExpired(record)} busy={busy} checking={checking === record.commandKey}
       onCheck={() => void queryOriginal(record, label)} onClose={() => setClosing({ record, label, kind, change })} />;
   };
+  const askRelease = (record: SlotAttemptRecord, operation: string, target: ReactNode) => release.ask({ operation, target, createdAt: record.createdAt,
+    release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(record); if (released) closeOriginalConfirm(record); syncPending(); return released; } });
   const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
     const context = record.sop.context;
     const label = `${operationNames[context.kind]} · ${contextName(context)}`;
@@ -315,15 +318,16 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       : context.kind === "drill" ? `${context.playbook.seq.length} 步` : "execution" in context ? <span data-mono="">{context.execution.executionId}</span> : "";
     const expired = isRetryExpired(record);
     const retry = !expired && canRetry(context) && !jEmergencyRetryBlocked(record);
+    const rejected = !!jEmergencyRecovery.state(record).replayRejection;
     return {
       key: record.commandKey, title: <span title={label}>{label}</span>, record: investigationRecord(record), outcome: outcomes[record.commandKey],
       createdAt: record.createdAt, expired, canRetry: retry, canQuery: true,
       // 记为失败、仍未知的那句由共用面板按结案框能选的结论说（含恢复核对结不了案、可按「未执行」结案）。
-      status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" } : undefined,
+      status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" } : replayRejectedStatus(rejected, outcomes[record.commandKey]),
       actions: <>
         {checkButtons(record, label, context.kind, change)}
-        {!expired && <Button size="sm" disabled={busy} disabledReason={retryReadReason(context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
-        {jEmergencyRecovery.state(record).replayRejection && <Button size="sm" disabled={busy} onClick={() => setReleasingDirect(record)}>确认解除</Button>}
+        {!expired && !rejected && <Button size="sm" disabled={busy} disabledReason={retryReadReason(context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {rejected && <VerifiedReleaseButton disabled={busy} onClick={() => askRelease(record, operationNames[context.kind], contextName(context))} />}
       </>,
       detail: <>
         {change && <p>{"execution" in context ? <>执行 {change}</> : change}</p>}
@@ -336,16 +340,18 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     const label = `${operationNames.execute} · ${contextName(record.sopProposal.context)}`;
     const expired = isRetryExpired(record);
     const missing = jEmergencyRecovery.state(record).conclusion === "not-found";
+    const rejected = !!jEmergencyRecovery.state(record).replayRejection;
     const retry = !expired && !record.sopProposal.accepted && canRetry(record.sopProposal.context) && !jEmergencyRetryBlocked(record);
     return {
       key: record.commandKey, title: <span title={label}>{label}</span>, createdAt: record.createdAt, expired, canRetry: retry,
       status: record.sopProposal.accepted ? { tone: "warn", label: "进度没读到", line: RECOVERY_LINE.created }
+        : rejected ? RETRY_REJECTED_STATUS
         : expired ? { tone: "warn", label: "结果未知", line: RETRY_EXPIRED_TEXT }
           : missing ? { tone: "warn", label: "结果未知", line: RECOVERY_LINE.absent } : { tone: "warn", label: "结果未知", line: RECOVERY_LINE.unknown },
       actions: <>
         <Button size="sm" disabled={busy} onClick={() => void queryProposal(record)}>查询原结果</Button>
-        {!expired && !record.sopProposal.accepted && <Button size="sm" disabled={busy} disabledReason={retryReadReason(record.sopProposal.context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreProposal(record)}>按原请求重试</Button>}
-        {jEmergencyRecovery.state(record).replayRejection && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>确认解除</Button>}
+        {!expired && !record.sopProposal.accepted && !rejected && <Button size="sm" disabled={busy} disabledReason={retryReadReason(record.sopProposal.context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreProposal(record)}>按原请求重试</Button>}
+        {rejected && <VerifiedReleaseButton disabled={busy} onClick={() => askRelease(record, operationNames.execute, contextName(record.sopProposal.context))} />}
       </>,
       detail: <>
         <p>{`${record.sopProposal.context.emergency ? "应急通道" : "常规通道"} · ${record.sopProposal.context.fields.triggerBasis} · ${record.sopProposal.context.playbook.seq.length} 步`}</p>
@@ -373,15 +379,6 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       detail: notes[record.commandKey] ? <p>{notes[record.commandKey]}</p> : undefined,
     };
   }));
-  const releaseOriginal = async (record: J4PendingProposal) => {
-    setReleasing(null);
-    try {
-      if (jEmergencyRecovery.releaseRejectedReplay(record)) toast("已解除这条记录；需要的话可以重新发起执行申请", "success");
-    } catch (error) {
-      noteError(record.commandKey, error);
-    }
-    syncPending();
-  };
   const closingOutcome = closing ? outcomes[closing.record.commandKey] : undefined;
   const closingLast = closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt?.investigation : null;
   const closingBasis = closureKnown(closingOutcome);
@@ -408,16 +405,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         onClose={() => setClosing(null)} onSubmit={submitClosure} />
       : <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} offer={eCommandClosureOffer(closingOutcome, isRetryExpired(closing.record))} facts={closureFacts}
         onClose={() => setClosing(null)} onSubmit={submitClosure} />)}
-    {releasing && <ReleaseModal label={`${operationNames.execute} · ${contextName(releasing.sopProposal.context)}`}
-      explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。"
-      onCancel={() => setReleasing(null)} onConfirm={() => void releaseOriginal(releasing)} />}
-    {releasingDirect && <ReleaseModal label={operationNames[releasingDirect.sop.context.kind]}
-      explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。"
-      onCancel={() => setReleasingDirect(null)} onConfirm={() => {
-        jEmergencyRecovery.releaseRejectedReplay(releasingDirect);
-        setReleasingDirect(null);
-        syncPending();
-      }} />}
+    {release.dialog}
   </>;
   const proposalRows = new Map([...queue, ...Object.values(verifiedProposals).filter((row) => row.status === "pending")].map((row) => [row.id, row]));
   const pendingProposals = [...proposalRows.values()].map((row) => {

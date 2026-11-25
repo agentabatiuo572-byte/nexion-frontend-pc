@@ -10,6 +10,7 @@ import { FileText, Percent, Radio } from "lucide-react";
 import { Button, Decision, Drawer, Field, Input, Notice, NumberInput, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatNovaDuration, NOVA_TIME_UNITS, type NovaTimeUnit } from "@/lib/admin/nova-cadence";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { frozenNextStep } from "@/lib/admin/retry-rejected";
 import type { NovaOptionView, NovaSocialEventView } from "@/lib/admin/i-client";
 import { AppNotice, DistEditor, noticeCategory, DIST_SLOT, NO_SOURCE, PLACEHOLDERS, PLACEHOLDER_TEXT, RETIRED_PLACEHOLDER, cooldownSentence, placeholdersOf, previewText, tickSentence } from "./i2-parts";
 
@@ -64,7 +65,7 @@ export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, f
       footer={<Decision primary={<Button variant="primary" loading={saving} disabledReason={blocked} onClick={onSubmit}>{retry ? "按原请求重试" : editing ? "保存" : "新增频道"}</Button>} />}>
       <div className="rd-stack i2-form">
         {error && <Notice tone="danger" title={editing ? "没有保存" : "没有新增"}>{error}</Notice>}
-        {retry && <Notice tone="warn" title="结果未知">原请求已锁定，不能再改。可以在页面上方查询原结果，或按原请求重试。</Notice>}
+        {retry && <Notice tone="warn" title="结果未知">原请求已锁定，不能再改。{frozenNextStep(requestBlocked, "先在页面上方查询原结果")}</Notice>}
         {!editing && !retry && <Notice tone="progress">新增后是停用的：先给它写好模板并发布，再启用。</Notice>}
         <Field label="频道名称" required>
           <Input disabled={locked} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：每周回顾" />

@@ -3,6 +3,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
 import { findHighOp } from "./high-ops-registry";
 import { explicitRejectionCode } from "./explicit-rejection";
+import { RETRY_REJECTED_TEXT } from "./retry-rejected";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "./pending-mutation-store";
 
@@ -61,7 +62,7 @@ export const i3CapRecovery = createPendingRecovery({
 
 export function i3CapRetryBlockedReason(record: I3CapCommand) {
   const state = i3CapRecovery.state(record);
-  if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
+  if (state.replayRejection) return RETRY_REJECTED_TEXT;
   if (state.expired) return RETRY_EXPIRED_TEXT;
   if (!record.request) return "原操作记录不完整，只能查询核对，不能重试。";
   return i3CapPermission() ?? (state.replayBlock ? "先查询原结果，明确查不到后才能重试。" : undefined);

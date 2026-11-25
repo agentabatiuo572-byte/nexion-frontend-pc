@@ -21,7 +21,7 @@ import { timeText } from "./i4-parts";
 import { IConflictModal, useIConflictView, type IConflictRow } from "./i-conflict";
 import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, type queryI4DocumentCommand, i4DocumentPermission, i4DocumentRecovery, i4DocumentRetryBlocked, type I4DocumentCommand, type I4DocumentUploadDraft } from "@/lib/admin/i4-document-commands";
 import { useIConflictReview, isIConflictRejection } from "@/lib/admin/i-conflict-review";
-import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { frozenNextStep } from "@/lib/admin/retry-rejected";
 
 // 原请求由 i4-document-commands 保存；编辑器仅持有输入，未知时冻结。
 export type I4DocumentEditor =
@@ -285,7 +285,7 @@ export function I4Documents({ onPendingChange, recovery, getDraft, queryOriginal
               const writable = canPublish(document.slot);
               const original = pendingI4DocumentCommands().find(row => row.document.slot === document.slot);
               const unreadable = !fresh || loading ? "请先成功重新读取最新资料后再修改。" : undefined;
-              const blocked = unreadable ?? (original ? "这份资料有结果未知的原操作，请先重新读取核对。" : undefined);
+              const blocked = unreadable ?? (original ? "这份资料有结果未知的原操作，请先查询原结果。" : undefined);
               return (
                 <article className="i4-doc" key={document.slot} aria-label={TRUST_DOCUMENT_NAMES[document.slot]}>
                   <header className="i4-doc-head">
@@ -323,16 +323,17 @@ export function I4Documents({ onPendingChange, recovery, getDraft, queryOriginal
         title={editor?.mode === "restore" ? "恢复默认文件" : "上传新版本"} sub={name} icon={editor?.mode === "restore" ? RotateCcw : Upload} tone="role-1"
         footer={editor && <Decision
           others={<Button onClick={close} disabled={saving}>取消</Button>}
-          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，先点「重新读取核对」。" : pendingDocument ? (!fresh || loading ? "请先成功重新读取最新资料后再修改。" : i4DocumentRetryBlocked(pendingDocument)) : RETRY_EXPIRED_TEXT) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : conflicted ? "先核对别人刚换上的文件" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : editor.mode === "restore" && editor.document.source === "DEFAULT" ? "现在已经是默认文件了，不用再恢复。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
+          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，先点「查询原结果」。" : pendingDocument ? (!fresh || loading ? "请先成功重新读取最新资料后再修改。" : i4DocumentRetryBlocked(pendingDocument)) : "原操作已处理，请关闭后重新打开。") : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : conflicted ? "先核对别人刚换上的文件" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : editor.mode === "restore" && editor.document.source === "DEFAULT" ? "现在已经是默认文件了，不用再恢复。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
         {editor && <div className="rd-stack i4-doc-editor">
           {editor.mode === "upload"
             ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；App 下次读取时换成这份，之后可以恢复成默认文件。</Notice>
             : !alreadyDefault && <Notice tone="warn" title="恢复后立即生效">不走审批；App 下次读取时改显示随系统发布的默认文件。</Notice>}
           {editorError && (pendingKey
             ? <Notice tone="warn" title={editor.mode === "upload" ? "上传结果未知" : "恢复结果未知"}
-              action={<Button size="sm" loading={loading} onClick={() => void readBack()}>重新读取核对</Button>} actionBelow>
+              action={<Button size="sm" loading={loading} onClick={() => void readBack()}>查询原结果</Button>} actionBelow>
               <p>{editorError}</p>
-              <p>{editor.mode === "upload" ? "这页不能重发这次上传。原上传成功的话后台留着结果，重新读取时查到就解除记录；查不到就对照原文件和现在用的文件。" : "重新读取，看卡片是不是已经变回默认文件；没变可以按原请求重试。"}</p>
+              <p>{editor.mode === "upload" ? "这页不能重发这次上传。原上传成功的话后台留着结果，查到就解除记录；查不到就对照原文件和现在用的文件。"
+                : frozenNextStep(pendingDocument && i4DocumentRetryBlocked(pendingDocument))}</p>
             </Notice>
             : conflicted
               ? <Notice tone="warn" title={editor.mode === "upload" ? "这次没有上传" : "这次没有恢复"}

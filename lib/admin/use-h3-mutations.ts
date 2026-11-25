@@ -12,6 +12,7 @@ import { growthRequest, h3CommandStorage, type H3CommandStore, type H3WeeklyRegi
 import { h3ConfigNeedsApproval } from "./h3-contract";
 import { findHighOp } from "./high-ops-registry";
 import { explicitRejectionCode } from "./explicit-rejection";
+import { RETRY_REJECTED_TEXT } from "./retry-rejected";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { useRecoveryQueryErrors } from "./use-recovery-query-errors";
 import { createPendingRecovery, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
@@ -123,7 +124,7 @@ function canWriteH3(op?: string) {
 
 function retryBlocked(record: H3PendingCommand) {
   const state = h3Recovery.state(record);
-  if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
+  if (state.replayRejection) return RETRY_REJECTED_TEXT;
   if (state.expired) return RETRY_EXPIRED_TEXT;
   return state.replayBlock ? "请查询原结果" : undefined;
 }

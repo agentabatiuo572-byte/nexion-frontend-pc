@@ -5,6 +5,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { I2_RETIRED_TEMPLATE_CTAS, I_DATA_UNREADABLE, parseIOverview, parseNotificationCampaign, parseNovaSocialEventPage, parseNovaSocialSample } from "@/lib/admin/i-overview-contract";
 import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type PendingRecoveryState } from "@/lib/admin/pending-mutation-store";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { RETRY_REJECTED_TEXT } from "@/lib/admin/retry-rejected";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { i4DraftReceiptFieldsMatch, parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
 import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview, validateI6CourseOptions } from "./i6-learning-contract";
@@ -102,7 +103,7 @@ function contentRecovery<T extends RecoverableContent>(list: () => T[], canRepla
 }
 
 function contentRetryBlocked(state: PendingRecoveryState, permission?: string) {
-  if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
+  if (state.replayRejection) return RETRY_REJECTED_TEXT;
   if (state.expired) return RETRY_EXPIRED_TEXT;
   if (permission) return permission;
   if (state.replayBlock === "readback-only") return "原操作记录不完整，只能查询核对，不能重试。";

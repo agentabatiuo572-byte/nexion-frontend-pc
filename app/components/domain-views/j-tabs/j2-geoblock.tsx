@@ -12,11 +12,12 @@ import { eCommandClosureOffer, eCommandClosureRequests } from "@/lib/admin/e-com
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, Globe2, Replace, Unplug, History, ListOrdered, Plus, Radar, RefreshCw, ShieldMinus, Siren, Waypoints } from "lucide-react";
-import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, KeepText, KeyValues, Notice, PageHeader, Pager, Panel, ReleaseModal, SearchSelect, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, KeepText, KeyValues, Notice, PageHeader, Pager, Panel, SearchSelect, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fetchJ2GeoHitDetails, fetchJ2GeoHitSummary, getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, queryJ2Command, jEmergencyRecovery, jEmergencyRetryBlocked, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoHitDetailPage, type GeoHitSummary, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
 import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
+import { replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 import { SettledLine, receiptFact } from "../recovery-panel";
 import { CommandClosureModal, } from "../e-tabs/e-command-check";
 import { SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
@@ -224,7 +225,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   useSyncExternalStore(jEmergencyRecovery.subscribe, jEmergencyRecovery.getRevision, jEmergencyRecovery.getRevision);
   const [pending, setPending] = useState<J2PendingCommand[]>([]);
   const [legacy, setLegacy] = useState<ReturnType<typeof listJ2LegacyCommands>>([]);
-  const [releasing, setReleasing] = useState<J2PendingCommand | null>(null);
+  const release = useVerifiedRelease(toast);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [settled, setSettled] = useState<{ key: string; label: string; status: string }[]>([]);
@@ -332,15 +333,17 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         })();
     const expired = isRetryExpired(record);
     const slotLabel = record.geo.context.label;
+    const rejected = !!jEmergencyRecovery.state(record).replayRejection;
     return {
       key: record.commandKey, title: <span title={typeof change === "string" ? `${slotLabel} · ${change}` : undefined}>{slotLabel} · {change}</span>,
       record: investigationRecord(record, adminId), outcome: outcomes[record.commandKey],
       createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record) && !jEmergencyRetryBlocked(record), canQuery: true,
-      status: processedOf(record, expired, canRetry(record)),
+      status: processedOf(record, expired, canRetry(record)) ?? replayRejectedStatus(rejected, outcomes[record.commandKey]),
       actions: <>
         {queryButtons(record, slotLabel, change)}
-        {!expired && <Button size="sm" disabled={!!checking} disabledReason={retryReadReason(record) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
-        {jEmergencyRecovery.state(record).replayRejection && <Button size="sm" disabled={!!checking} onClick={() => setReleasing(record)}>确认解除</Button>}
+        {!expired && !rejected && <Button size="sm" disabled={!!checking} disabledReason={retryReadReason(record) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {rejected && <VerifiedReleaseButton disabled={!!checking} onClick={() => release.ask({ operation: slotLabel, target: change, createdAt: record.createdAt,
+          release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(record); if (released) closeOriginalConfirm(record); syncPending(); return released; } })} />}
       </>,
       detail: pendingNotes[record.commandKey] ? <p><KeepText text={pendingNotes[record.commandKey]} /></p> : undefined,
     };
@@ -388,13 +391,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
           await actions.reloadJEmergency().catch(() => undefined);
         }
       }} />}
-    {releasing && <ReleaseModal label={slotName(releasing.fingerprint)}
-      explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。"
-      onCancel={() => setReleasing(null)} onConfirm={() => {
-        jEmergencyRecovery.releaseRejectedReplay(releasing);
-        setReleasing(null);
-        syncPending();
-      }} />}
+    {release.dialog}
   </>;
 
   function retryReadReason(record: J2PendingCommand) {

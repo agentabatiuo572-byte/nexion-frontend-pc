@@ -12,7 +12,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Clock3, Coins, Gift, ListChecks, Lock, LockOpen, Network, RefreshCw, ShieldAlert, ShieldCheck, SlidersHorizontal, Snowflake, Users, type LucideIcon } from "lucide-react";
 import { KeepText,
   BlockState, Button, Cell, Change, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffField, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, IrreversibleTag, JudgmentPoints, KeyValues,
-  ConflictBar, Modal, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, RecordList, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
+  ConflictBar, Modal, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, RecordList, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
   type ExplainRow, type JudgmentRow, type SectionNavItem, useTabIds
 } from "@/app/components/rd";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1RequestError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey, updateK1RegistrationParam } from "@/lib/admin/k-client";
@@ -28,6 +28,8 @@ import { K1_PARAM_HELP, type K1ParamHelp } from "@/lib/admin/config-help/k1-mult
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1ProtectedEntry, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
+import { RETRY_REJECTED_TEXT } from "@/lib/admin/retry-rejected";
 import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingCommandOwner, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
@@ -592,7 +594,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const [retrying, setRetrying] = useState("");
   const [checking, setChecking] = useState("");
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
-  const [releasing, setReleasing] = useState<K1PendingCommand | null>(null);
+  const verifiedRelease = useVerifiedRelease(ctx.toast);
   const [draftError, setDraftError] = useState<{ text: string; conflict: boolean } | null>(null);
   const [reasonPolicy, setReasonPolicy] = useState<ReasonPolicy>(null);
   const [reasonPolicyFailed, setReasonPolicyFailed] = useState(false);
@@ -1111,7 +1113,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const canQueryProposal = hasAuthority("risk_k1_read") && (hasAuthority("platform_a2_read") || hasAuthority("platform_a2_proposal_create") || canProposeRelease);
   const retryBlocked = (record: K1PendingCommand) => {
     const state = k1Recovery.state(record);
-    if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
+    if (state.replayRejection) return RETRY_REJECTED_TEXT;
     if (state.expired) return EXPIRED_TEXT;
     if (state.replayBlock === "readback-only") return "原操作只能查询核对。";
     if (record.clusterReceipt) return "审批单已建，请查询当前进度。";
@@ -1186,12 +1188,6 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     } finally { setChecking(""); }
   };
   const lookupPending = checkPending;
-  const releasePending = async (record: K1PendingCommand) => {
-    if (!k1Recovery.releaseRejectedReplay(record)) throw new Error("原操作记录继续保留，请查询原结果。");
-    setReleasing(null);
-    syncPending();
-    ctx.toast("已解除这条记录，可以重新提交。", "success");
-  };
 
   const pendingBlocks = new Set(pending.map((record) => `${PENDING_GROUP[record.kind]}:${record.target}`));
   const entryApprovalDisplay = (record: K1PendingCommand) => {
@@ -1809,6 +1805,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           const approval = record.approval;
           const note = pendingNotes[record.kind === "cluster" ? record.commandKey : record.fingerprint];
           const absent = k1Recovery.state(record).conclusion === "not-found";
+          const rejected = !!k1Recovery.state(record).replayRejection;
           // 已建单的放行金额用审批单快照，收益列表只用于告知当前读取状态。
           const observed = record.kind === "entry" ? entryApprovalDisplay(record) : undefined;
           const title = approvalTitle(record);
@@ -1817,8 +1814,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           const status = record.clusterReceipt ? record.clusterReceipt.pendingTicketId
             ? { tone: "warn" as const, label: "待审批", line: note || APPROVAL_LINE.pending }
             : { tone: "neutral" as const, label: "已建单", line: note || APPROVAL_LINE.created }
-            : !approval ? undefined : approval.pendingTicketId ? { tone: "warn" as const, label: "待审批", line: note || (confirmed ? `你确认时是 ${confirmed}，和审批单上的不同。` : APPROVAL_LINE.pending) }
+            : !approval ? replayRejectedStatus(rejected, outcome) : approval.pendingTicketId ? { tone: "warn" as const, label: "待审批", line: note || (confirmed ? `你确认时是 ${confirmed}，和审批单上的不同。` : APPROVAL_LINE.pending) }
             : approval.acknowledged ? { tone: "neutral" as const, label: "已建单", line: APPROVAL_LINE.created }
+              : rejected ? replayRejectedStatus(rejected, outcome)
               : absent && !(outcome && "receipt" in outcome && outcome.receipt) ? expired ? { tone: "warn" as const, label: "已过期", line: EXPIRED_TEXT } : { tone: "warn" as const, label: "结果未知", line: APPROVAL_LINE.absent } : undefined;
           const current = record.kind === "release-param" ? overview?.releaseParams.find(param => param.key === record.target) : undefined;
           return { key: record.fingerprint, title, record, outcome, createdAt: record.createdAt, expired, canRetry: !blocked,
@@ -1829,8 +1827,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 : <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
                   onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
               {record.kind === "registration-param" && canReadAudit && <Link className="rd-link" href={auditLink(record.target)}>到操作记录与审批核对</Link>}
-              {record.kind !== "registration-param" && !expired && !record.approval?.acknowledged && !record.clusterReceipt && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
-              {k1Recovery.state(record).replayRejection && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+              {record.kind !== "registration-param" && !expired && !record.approval?.acknowledged && !record.clusterReceipt && !rejected && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+              {rejected && <VerifiedReleaseButton disabled={Boolean(retrying || checking)} onClick={() => verifiedRelease.ask({ operation: title, createdAt: record.createdAt,
+                release: () => { const released = k1Recovery.releaseRejectedReplay(record); syncPending(); return released; } })} />}
             </>,
             detail: approval ? <>
               <p>{record.kind === "entry"
@@ -1846,7 +1845,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <p>提交人 {record.operator}；理由：{record.reason}</p>
               {note && !status?.line.includes(note) && !(expired && note.includes("重试")) && <p><KeepText text={note} /></p>}
             </> : <>
-              <p><KeepText text={expired ? EXPIRED_TEXT : `${RECOVERY_HINT[record.kind]}${blocked ?? ""}`} /></p>
+              <p><KeepText text={expired ? EXPIRED_TEXT : `${RECOVERY_HINT[record.kind]}${rejected ? "" : blocked ?? ""}`} /></p>
               {note && !status?.line.includes(note) && <p><KeepText text={note} /></p>}
             </>,
             tech: approval ? approval.pendingTicketId ? `审批单 ${approval.pendingTicketId}` : undefined : `操作人 ${record.operator} ｜ 理由 ${record.reason}` };
@@ -2234,7 +2233,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         );
       })()}
 
-      {releasing && <ReleaseModal label={approvalTitle(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => { void releasePending(releasing).catch(cause => ctx.toast(errorText(cause), "error")); }} explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。" />}
+      {verifiedRelease.dialog}
       {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} offer={eCommandClosureOffer(investigationResults[closing.commandKey], isRetryExpired(closing))}
         onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
     </>

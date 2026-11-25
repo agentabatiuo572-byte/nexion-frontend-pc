@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import {
   BarList, BlockState, Button, Cell, ColumnChart, Conclusion, DiffField, Explain, Fact, Facts, Field, FilterBar, Fold, Modal,
-  Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr,
+  Notice, NumberInput, PageHeader, Panel, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr,
 } from "@/app/components/rd";
 import type { JCtx } from "./types";
 import { isConfirmedNonExecution, rebaseTerminalDraft, useTerminalDrafts, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
@@ -24,6 +24,8 @@ import { useReach } from "@/lib/nav/use-reach";
 import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, queryJ3Command, settleJ3LegacyCommand, jEmergencyRecovery, jEmergencyRetryBlocked, retryJ3Command } from "@/lib/admin/j-client";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
+import { replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
+import { frozenNextStep } from "@/lib/admin/retry-rejected";
 import { SettledLine, receiptFact, receiptRejected } from "../recovery-panel";
 import { CommandClosureModal, } from "../e-tabs/e-command-check";
 import { PROCESSED_IN_DIALOG, REJECTED_IN_DIALOG, SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
@@ -151,7 +153,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const [accountLoading, setAccountLoading] = useState(false);
   useSyncExternalStore(jEmergencyRecovery.subscribe, jEmergencyRecovery.getRevision, jEmergencyRecovery.getRevision);
   const [saved, setSaved] = useState<SavedConfig | null>(null);
-  const [releasing, setReleasing] = useState<J3PendingCommand | null>(null);
+  const release = useVerifiedRelease(toast);
   const adminId = useAdminAuth((state) => String(state.session?.adminId ?? ""));
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [settled, setSettled] = useState<J3Settled[]>([]);
@@ -341,6 +343,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
   const canSubmit = !!record && fundInvestigationAccess(record).canSubmit;
   const processed = receipt?.originalStatus === "SUCCEEDED";
+  const rejected = !!command && !!jEmergencyRecovery.state(command).replayRejection;
   const canClose = canSubmit && eCommandClosureRequests(receipt, expired).conclusions.length > 0;
   const recoveryRows: FundRecoveryRow[] = saved ? [{
     key: outcomeKey ?? "j3-legacy",
@@ -354,12 +357,13 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     status: saved.legacy ? expired
       ? { tone: "neutral", label: "已过期", line: RETRY_EXPIRED_TEXT }
       : { tone: "warn", label: "结果未知", line: outcome && "error" in outcome ? outcome.error : "改版前的旧记录可核对原号和现在的设置。" }
-      : processed ? processedStatus({ expired, canRetry: canConfigure, canClose: canSubmit, receipt }) : undefined,
+      : processed ? processedStatus({ expired, canRetry: canConfigure, canClose: canSubmit, receipt }) : replayRejectedStatus(rejected, outcome),
     actions: <>
       <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}
-      {canConfigure && !expired && !!command && <Button size="sm" disabled={checking} disabledReason={readBlocked ?? jEmergencyRetryBlocked(command)} onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
-      {command && jEmergencyRecovery.state(command).replayRejection && <Button size="sm" onClick={() => setReleasing(command)}>确认解除</Button>}
+      {canConfigure && !expired && !!command && !rejected && <Button size="sm" disabled={checking} disabledReason={readBlocked ?? jEmergencyRetryBlocked(command)} onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
+      {command && rejected && <VerifiedReleaseButton disabled={checking} onClick={() => release.ask({ operation: "修改告警设置", target: savedChange(saved), createdAt: command.createdAt,
+        release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(command); if (released) setConfigOpen(null); syncSaved(); return released; } })} />}
     </>,
     detail: <p>{savedChange(saved)}。</p>,
   }] : [];
@@ -384,13 +388,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
           await actions.reloadJEmergency().catch(() => undefined);
         }
       }} />}
-    {releasing && <ReleaseModal label="告警设置"
-      explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。"
-      onCancel={() => setReleasing(null)} onConfirm={() => {
-        jEmergencyRecovery.releaseRejectedReplay(releasing);
-        setReleasing(null);
-        syncSaved();
-      }} />}
+    {release.dialog}
   </>;
 
   const reportNotice = retryableReport && (
@@ -826,7 +824,7 @@ function J3ConfigModal({ ctx, original, context, draft, readBlocked, onClose, on
       {unknownAt !== null && (
         <Notice tone="warn" title="这次修改结果未知">
           <p>{businessStamp(unknownAt)}（{businessZone().label}）提交后没收到确定结果，可能已经生效。下面是这次提交的内容，不能再改。</p>
-          <p>可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。</p>
+          <p>{frozenNextStep(blocked)}</p>
           {readBack && <p>{readBack}</p>}
         </Notice>
       )}
