@@ -228,8 +228,8 @@ function approvalExecutorLabel(w: A2OperationRow) {
 }
 
 function isV8PromotionTicket(w: A2OperationRow) {
-  // V8 是最高等级，目标为 V8 的人工调级一定是晋升。
-  return w.operationCode === "f_vrank_override" && w.after.trim() === "V8";
+  // F1 写入的动作后缀区分晋升和降级（可以选「降级」和 V8），只有晋升才免覆盖率。
+  return w.operationCode === "f_vrank_override" && w.after.trim() === "V8" && w.action.endsWith(" · 晋升至 V8");
 }
 
 function approvalCoverageMode(w: A2OperationRow) {
@@ -253,12 +253,12 @@ function V8PromotionRewardFact() {
         const { main, unit, missing } = rewardText(item, overview);
         return missing ? "—" : unit ? `${main} ${unit}` : main;
       });
-      setReward({ readerId, text: rewards.length ? `${rewards.join("、")}；以前领过的不再发` : "没有晋级奖励" });
+      setReward({ readerId, text: rewards.length ? `${rewards.join("、")}；以前到过 V8 的不再发` : "没有晋级奖励" });
     }).catch(() => { if (active) setReward(undefined); });
     return () => { active = false; };
   }, [readerId]);
 
-  return <Fact k="V8 晋级奖励 · 发给本人">{reward && reward.readerId === readerId ? reward.text : "—"}</Fact>;
+  return <Fact k="V8 晋级奖励 · 首次到达发给本人">{reward && reward.readerId === readerId ? reward.text : "—"}</Fact>;
 }
 
 function isCurrentOperator(w: A2OperationRow, username: string | undefined) {

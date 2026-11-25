@@ -619,6 +619,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         if (draft && (userId !== fixedUser || direction !== fixedDirection)) throw new Error("请从原草稿继续处理同一用户和调整方向。");
         if (draft && targetV && targetV === currentRank) throw new Error("这位用户已达到所选等级，无需提交。");
         if (direction !== "rollback" && direction !== "promote") throw new Error("请选择调整方向");
+        if (direction === "rollback" && targetV === "V8") throw new Error("V8 是最高等级，不能降级到 V8。");
         if (!/^[1-9]\d*$/.test(userId) || !Number.isSafeInteger(Number(userId))) throw new Error("用户编号须为正整数");
         if (!rows.some((row) => row.v === targetV)) throw new Error("目标等级无效");
         overrideRead.current += 1;

@@ -100,7 +100,7 @@ export function F2DirectPolicy({ ctx, openConfirm, continuation }: { ctx: FViewC
       </Facts>,
       content: <div className="rd-stack">
         <DiffList rows={rows(policy, value)} restTitle="其余设置" />
-        {level2Changed && <p className="f2-diff-note">{value.deviceEarning.enabled && Number(l2After) > 0 ? `改后：好友的好友的设备每产生 100 USDT 收益，平台另给 ${l2After} USDT 等值，拆法和一级一样。` : !value.deviceEarning.enabled ? `好友设备收益奖励改后仍停用，二级比例 ${l2After}% 在启用后才发。` : "改后：好友的好友的设备收益不再另发奖励。"}</p>}
+        {level2Changed && <p className="f2-diff-note">{value.deviceEarning.enabled && Number(l2After) > 0 ? `改后：好友的好友的设备每产生 100 USDT 收益，平台另给 ${l2After} USDT 等值，拆法和一级一样。` : !value.deviceEarning.enabled ? `好友设备收益奖励${policy.deviceEarning.enabled ? "改后停用" : "仍停用"}，二级比例 ${l2After}% 在启用后才发。` : "改后：好友的好友的设备收益不再另发奖励。"}</p>}
       </div>,
       statedBrief: { impact: `另一位超级管理员批准后，${impactOf(policy, value, splitChanged)}；批准前按原政策执行，已经算好的不变。`, check: amplify ? "提交时和批准时各查一次兑付覆盖率，低于红线不能提交、批准时也不会执行；提交前重读政策，已被别人改过就不提交。" : "提交前重读一次政策，已被别人改过就不提交；批准时再核对一次。" },
       detail: `修改前：${directReferralSummary(policy)}。修改后：${directReferralSummary(value)}。（政策版本 ${policy.policyVersion}）`,
@@ -179,7 +179,7 @@ export function F2DirectPolicy({ ctx, openConfirm, continuation }: { ctx: FViewC
                   </div>
                 </div>
                 {draft.purchaseSplit.enabled ? share("purchaseSplit", "好友购买奖励拆分")
-                  : <p className="f2-split-off">{Number.isFinite(draft.purchaseSplit.usdtSharePct) ? `启用后按 USDT ${num(draft.purchaseSplit.usdtSharePct)}%、UVT ${num(100 - draft.purchaseSplit.usdtSharePct)}% 拆；现在基础奖励全发 USDT，另按原系数加发 UVT` : "启用后按填的比例拆；现在基础奖励全发 USDT，另按原系数加发 UVT"}</p>}
+                  : <p className="f2-split-off">{policy?.purchaseSplit.enabled ? "批准后基础奖励改回全发 USDT，另按原系数加发 UVT" : Number.isFinite(draft.purchaseSplit.usdtSharePct) ? `启用后按 USDT ${num(draft.purchaseSplit.usdtSharePct)}%、UVT ${num(100 - draft.purchaseSplit.usdtSharePct)}% 拆；现在基础奖励全发 USDT，另按原系数加发 UVT` : "启用后按填的比例拆；现在基础奖励全发 USDT，另按原系数加发 UVT"}</p>}
               </fieldset>
               <fieldset className="f2-policy-card" disabled={lock}>
                 <legend><Smartphone size={16} aria-hidden />好友设备收益奖励</legend>

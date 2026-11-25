@@ -247,12 +247,16 @@ export function F2Layers({ ctx, openConfirm, bootDraft, setBootDraft }: { ctx: F
   const openRate = (level: Layer) => openConfirm(rateEditor(level));
   const openNex = (level: Layer) => openConfirm(nexEditor(level));
   const openPause = () => openConfirm(pauseEditor());
+  // 逐层设置只有整体结算启用且没暂停时才在发放；状态没读到时只说逐层设置，不说发放事实。
+  const policyNow = ctx.f2DirectPolicyError ? undefined : ctx.f2DirectPolicy;
+  const settle = !policyNow ? "unknown" : !policyNow.sevenLayerEnabled ? "off" : policyNow.sevenLayerPaused ? "paused" : "on";
+  const sendingNow = settle === "on";
 
   return (
     <Panel title="每层分多少" icon={Layers} tone="role-4" sub={`示例订单 ${num(SAMPLE_ORDER)} USDT`}
       explain={ranked ? "第 1 到 7 层的人买设备时，按层给上面的人发 USDT 奖励，另按系数加发 UVT。第 1、2 层的比例按受益人等级，在团队等级晋升设置。示例只按比例和系数算，不是真实订单。"
         : "好友（第 1 层）和好友的好友（第 2 层）……一直到第 7 层买设备时，按层给上面的人发 USDT 奖励，另按系数加发 UVT。示例金额只按比例和系数算，没算影响分、活动倍率、等级门槛和奖励总额上限，不是真实订单。"}>
-      {unsetPause.length > 0 && <Notice tone="neutral" title={unsetPause.length === LAYERS.length ? "按层暂停还没配置，七层都照常发放" : `${unsetPause.join("、")} 的暂停开关没配，照常发放`}
+      {unsetPause.length > 0 && <Notice tone="neutral" title={unsetPause.length === LAYERS.length ? `按层暂停还没配置${sendingNow ? "，七层都照常发放" : ""}` : `${unsetPause.join("、")} 的暂停开关没配${sendingNow ? "，照常发放" : ""}`}
         action={m.canPolicyAmplify && !pendingFor(ctx, "f-config-batch:F2") && !ctx.f2WriteBlocked("f-config-batch:F2") ? <Button size="sm" onClick={openPause}>去设置</Button> : undefined} />}
       {ctx.f2DirectPolicyError && <Notice tone="warn" title="购买奖励比例来源没读到"
         action={<Button size="sm" onClick={() => void ctx.refreshF2DirectPolicy()}>重试</Button>}>{ctx.f2DirectPolicyError}</Notice>}
@@ -310,13 +314,14 @@ export function F2Layers({ ctx, openConfirm, bootDraft, setBootDraft }: { ctx: F
                   <RatioBar compact quiet label={`${level} 比例`} value={rate.usdt ?? 0} total={barMax || 1} valueText={`${num(rate.usdtText)}%`} tone={pause === "on" ? "role-other" : "role-4"} />
                   <strong>{rate.usdt === null ? "未配置" : `${num(rate.usdtText)}%`}</strong>
                 </span> : <span className="f2-muted">未配置</span>}</Td>
-                <Td align="right">{noRateSource(level) ? <span className="f2-muted">—</span> : byRank ? rng ? <Cell num main={rangeText(pctSample(rng.min), pctSample(rng.max), "USDT")} sub={direct && ctx.f2DirectPolicy?.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled ? "按好友政策拆分" : undefined} /> : <span className="f2-muted">—</span>
-                  : rate?.usdt != null ? <Cell num main={`${num(sampleUsdt(rate.usdt))} USDT`} sub={direct && ctx.f2DirectPolicy?.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled ? "按好友政策拆分" : undefined} /> : <span className="f2-muted">—</span>}</Td>
+                <Td align="right">{noRateSource(level) ? <span className="f2-muted">—</span> : byRank ? rng ? <Cell num main={rangeText(pctSample(rng.min), pctSample(rng.max), "USDT")} sub={direct && ctx.f2DirectPolicy?.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled ? "拆分前等值，实际按好友政策拆分" : undefined} /> : <span className="f2-muted">—</span>
+                  : rate?.usdt != null ? <Cell num main={`${num(sampleUsdt(rate.usdt))} USDT`} sub={direct && ctx.f2DirectPolicy?.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled ? "拆分前等值，实际按好友政策拆分" : undefined} /> : <span className="f2-muted">—</span>}</Td>
                 <Td align="right">{rate?.nex != null ? <Cell num main={nexLocked ? <span className="f2-muted">{num(rate.nexText)}</span> : num(rate.nexText)} sub={nexLocked ? (ctx.f2DirectPolicy && !ctx.f2DirectPolicyError && !ctx.f2DirectPolicyLoading ? "已停用，改用拆分" : "暂不能改")
                   : noRateSource(level) ? "另发 — UVT" : byRank ? rng && rate.nexText !== null ? `另发 ${rangeText(f2DecimalTimes(pctSample(rng.min), rate.nexText), f2DecimalTimes(pctSample(rng.max), rate.nexText), "USDT").replace(/ USDT$/, "")} UVT` : "另发 — UVT"
                   : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">{rate ? "未配置" : "—"}</span>}</Td>
                 <Td><span className="f2-tags">
-                  {ctx.f2DirectPolicy && !ctx.f2DirectPolicy.sevenLayerEnabled && (byRank || (rate && rate.usdt !== null && rate.nex !== null && pause !== "on" && pause !== "invalid")) ? <StatusTag tone="neutral" icon={PowerOff} explain={byRank ? "整体结算启用后，这一层按受益人等级发放。" : "整体结算启用后，这一层按这里的比例发放。"}>未启用</StatusTag>
+                  {rate && (settle === "off" || settle === "paused") && (byRank || (rate.usdt !== null && rate.nex !== null && pause !== "on" && pause !== "invalid")) ? settle === "off" ? <StatusTag tone="neutral" icon={PowerOff} explain={byRank ? "整体结算启用后，这一层按受益人等级发放。" : "整体结算启用后，这一层按这里的比例发放。"}>未启用</StatusTag>
+                    : <StatusTag tone="warn" icon={PauseCircle} explain="整体结算已暂停，这一层先不算；恢复后按这里的设置发。">整体已暂停</StatusTag>
                     : !rate ? <StatusTag tone="neutral" explain={`这一层还没有规则，没有规则时这一层不发。${rates.length === 0 ? "七层都没有时，用上面的「首次配置」。" : "后台补不了，需要技术同事处理。"}`}>没有规则</StatusTag>
                     : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的 ${rate.usdt === null ? "USDT 比例" : "UVT 系数"} 没配置，这页看不出这一层会怎么发。${(rate.usdt === null ? direct : nexLocked) ? "这一项后台不能改，需要技术同事处理。" : `点「${rate.usdt === null ? "改比例" : "改系数"}」补上，批准后生效。`}`}>规则不完整</StatusTag>
                     : pause === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
@@ -343,8 +348,8 @@ export function F2Layers({ ctx, openConfirm, bootDraft, setBootDraft }: { ctx: F
       <ConfigList label="对七层一起起作用的设置">
         <ConfigRow name="按层暂停" what="把某几层的团队奖励停发，其余层照常" when="批准后，对之后新算的订单生效"
           effect="暂停的层记 0、不补发；不影响好友设备收益奖励，也不是整体结算暂停" note="七层一张审批单，每层按单独修改的权限核；缺哪层的权限，「设置」上会写明。"
-          value={ctx.f2DirectPolicy && !ctx.f2DirectPolicy.sevenLayerEnabled ? LAYERS.every((level) => m.paused(level) === "unset") ? "未配置，七层都设为发放" : pausedLayers.length ? `${pausedLayers.join("、")} 设为暂停` : "七层都设为发放" : LAYERS.every((level) => m.paused(level) === "unset") ? "未配置，七层都在发放" : pausedLayers.length ? `${pausedLayers.join("、")} 已暂停` : "七层都在发放"}
-          sub={pendingFor(ctx, "f-config-batch:F2") ? <StatusTag tone="warn" icon={Clock3}>待审批</StatusTag> : pausedLayers.length ? ctx.f2DirectPolicy && !ctx.f2DirectPolicy.sevenLayerEnabled ? `整体结算启用后，其余 ${7 - pausedLayers.length} 层发放` : `其余 ${7 - pausedLayers.length} 层发放` : undefined}
+          value={sendingNow ? LAYERS.every((level) => m.paused(level) === "unset") ? "未配置，七层都在发放" : pausedLayers.length ? `${pausedLayers.join("、")} 已暂停` : "七层都在发放" : LAYERS.every((level) => m.paused(level) === "unset") ? "未配置" : pausedLayers.length ? `${pausedLayers.join("、")} 设为暂停` : "没有设为暂停的层"}
+          sub={pendingFor(ctx, "f-config-batch:F2") ? <StatusTag tone="warn" icon={Clock3}>待审批</StatusTag> : pausedLayers.length ? settle === "on" ? `其余 ${7 - pausedLayers.length} 层发放` : settle === "off" ? `整体结算启用后，其余 ${7 - pausedLayers.length} 层发放` : settle === "paused" ? `整体结算恢复后，其余 ${7 - pausedLayers.length} 层发放` : undefined : undefined}
           action={m.canPolicyAmplify ? <Button size="sm" aria-label="按 L1–L7 暂停" disabledReason={pendingFor(ctx, "f-config-batch:F2") ? "等另一位超级管理员批准" : ctx.f2WriteBlocked("f-config-batch:F2")} onClick={openPause}>设置</Button> : undefined} />
         <ParamRow ctx={ctx} m={m} paramKey="F.promo.weekMultiplier" openConfirm={openConfirm}
           shown={promo ? `${num(promo)} 倍` : undefined} />
