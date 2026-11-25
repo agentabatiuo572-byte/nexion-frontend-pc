@@ -766,16 +766,23 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     setE5PageSizeState(pageSize);
     setE5Page(1);
   }, []);
+  const e5ListQuery = useMemo(() => tab === "E6" ? { pageNum: e5Page, pageSize: e5PageSize, keyword: e5Keyword } : {
+    pageNum: e5Page, pageSize: e5PageSize, keyword: e5Keyword, simState: e5StateFilter, source: e5SourceFilter, productCode: e5ProductFilter,
+  }, [tab, e5Page, e5PageSize, e5Keyword, e5StateFilter, e5SourceFilter, e5ProductFilter]);
+  const currentE5ListQuery = useRef(e5ListQuery);
+  currentE5ListQuery.current = e5ListQuery;
+  const e5ListSeq = useRef(0);
   const refreshE5 = useCallback(async () => {
+    const query = currentE5ListQuery.current;
+    const seq = ++e5ListSeq.current;
     setE5Loading(true);
     setE5DeviceError(null);
     setE5OverviewError(null);
     const [deviceResult, overviewResult] = await Promise.allSettled([
-      fetchE5Devices(tab === "E6" ? { pageNum: e5Page, pageSize: e5PageSize, keyword: e5Keyword } : {
-        pageNum: e5Page, pageSize: e5PageSize, keyword: e5Keyword, simState: e5StateFilter, source: e5SourceFilter, productCode: e5ProductFilter,
-      }, tab === "E6"),
+      fetchE5Devices(query, tab === "E6"),
       tab === "E5" ? fetchE5Overview() : Promise.resolve(null),
     ]);
+    if (seq !== e5ListSeq.current || query !== currentE5ListQuery.current) return false;
     if (deviceResult.status === "fulfilled") {
       setE5Devices(deviceResult.value.records);
       setE5Total(deviceResult.value.total);
@@ -794,8 +801,8 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     setE5Loading(false);
     return deviceResult.status === "fulfilled";
-  }, [tab, e5ProductFilter, e5Keyword, e5SourceFilter, e5Page, e5PageSize, e5StateFilter]);
-  useEffect(() => { if (tab === "E6" && canReadE5) void refreshE5(); }, [tab, canReadE5, refreshE5]);
+  }, [tab]);
+  useEffect(() => { if (tab === "E6" && canReadE5) void refreshE5(); }, [tab, canReadE5, e5ListQuery, refreshE5]);
   const runE5DeviceAction = useCallback(async (deviceId: number, action: "activate" | "deactivate", reason: string) => {
     const device = action === "activate"
       ? await activateE5Device(deviceId, false, reason, operator)

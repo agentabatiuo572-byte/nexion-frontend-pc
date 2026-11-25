@@ -18,7 +18,7 @@ import { fetchDirectCommandReceipt } from "@/lib/admin/direct-command-receipt";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { E2YieldComparison } from "@/lib/admin/e2-client";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused } from "@/lib/admin/e5-client";
+import { activateE5Device, deactivateE5Device, fetchE5Devices, setE5UserDevicesPaused } from "@/lib/admin/e5-client";
 import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskReceipt, type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 import { canInvestigateECommand, discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { Button, Explain, Notice, Fold, ReleaseModal, StatusTag, Fact } from "@/app/components/rd";
@@ -74,6 +74,22 @@ const draftAction = (payload: Payload) => payload.kind === "proposal" ? payload.
 type RefreshYieldBinding = () => Promise<E2YieldComparison[] | undefined>;
 type RefreshSection = (section: E6Section) => Promise<boolean>;
 const READBACK_FAILED = "当前数据没有重新读到，请重试读取。";
+
+/** Read the recorded phone independently of the table's current search and page. */
+export async function readE6CommandPhone(record: E6Pending) {
+  const { payload, scope } = record;
+  if (record.section !== "phones" || payload.kind === "risk") return;
+  const phone = /^phone:([1-9]\d*):([1-9]\d*)$/.exec(scope);
+  const deviceId = payload.kind === "device" ? payload.input.deviceId : Number(payload.input.command.params.deviceId);
+  const userId = payload.kind === "device" ? String(payload.input.userId) : phone?.[2];
+  const serial = payload.kind === "device" ? payload.input.serial : record.label.split(" · ").slice(1).join(" · ").trim();
+  if (!Number.isSafeInteger(deviceId) || deviceId <= 0 || !userId || !/^[1-9]\d*$/.test(userId)) return;
+  const userWide = payload.kind === "device" && (payload.input.action === "pause" || payload.input.action === "resume");
+  if (scope !== (userWide ? `user:${userId}` : `phone:${deviceId}:${userId}`)) return;
+  const latest = await fetchE5Devices({ userId, keyword: serial, pageNum: 1, pageSize: 10 }, true);
+  return latest.records.find(item => item.deviceId === deviceId && item.userId === userId && (!serial || item.serial === serial));
+}
+
 function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: RefreshSection, phoneWriteBlock?: string) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const owner = session!.adminId, rights = session!.authorities;
@@ -324,11 +340,19 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
     if (!visible("phones") || inFlight.current.has(record.commandKey)) return;
     begin(record.commandKey);
     try {
-      if (!await refreshSection("phones")) return;
+      const phone = await readE6CommandPhone(record);
       const current = currentRecord(record.commandKey);
-      if (current?.terminal === "approved") {
-        commands.forget(current.fingerprint, current.commandKey);
-        sync();
+      if (current?.terminal !== "approved" || !currentRecoveryActor(current.owner)?.authorities.includes("device_e5_read")) return;
+      if (!phone) {
+        setNotes(n => ({ ...n, [current.commandKey]: READBACK_FAILED }));
+        return;
+      }
+      commands.forget(current.fingerprint, current.commandKey);
+      sync();
+      await refreshSection("phones");
+    } catch (failure) {
+      if (currentRecord(record.commandKey)?.terminal === "approved") {
+        setNotes(n => ({ ...n, [record.commandKey]: eReadError(failure) }));
       }
     } finally { end(record.commandKey); }
   }
@@ -517,7 +541,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
           {r.payload.kind === "risk" && m.canRetry(r) && !refused && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.send(r, true).then(result => { riskDone("RETRIED"); window.dispatchEvent(new Event("e6-read-risk")); onRead?.(result); }).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
           {r.terminal && <Button size="sm" disabled={section === "phones" && m.isBusy(r.commandKey)} onClick={() => {
             if (section === "phones" && r.terminal === "approved") {
-              void m.rereadApprovedPhone(r).catch(failure => toast(eReadError(failure), "warn"));
+              void m.rereadApprovedPhone(r);
             } else { m.forget(r); onRead?.(); }
           }}>准备新变更</Button>}
           {(refused && !r.ticketId) && <Button size="sm" disabled={!refused && m.isBusy(r.commandKey)} onClick={() => m.setRelease(r)}>解除原操作记录</Button>}

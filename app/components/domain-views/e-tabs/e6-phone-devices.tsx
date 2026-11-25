@@ -4,9 +4,9 @@ import { Activity, AlertTriangle, Info, CircleMinus, MoreHorizontal, PauseCircle
 import { E6ConfirmModal } from "./e6-confirm-modal";
 import { Button, Cell, ColumnPicker, Conclusion, Explain, Fact, Facts, FilterBar, IconButton, Input, IrreversibleTag, MoreMenu, Pager, Panel, RatioBar, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type MoreMenuItem } from "@/app/components/rd";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { canActivateE5Device, canResumeE5UserDevicesFrom, fetchE5Devices, pausedReasonText, type E5Device } from "@/lib/admin/e5-client";
+import { canActivateE5Device, canResumeE5UserDevicesFrom, pausedReasonText, type E5Device } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
-import { E6PendingNotice, useE6DraftEditor, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
+import { E6PendingNotice, readE6CommandPhone, useE6DraftEditor, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 import { e5StoppedNote } from "./e5-device-state";
 import { e6AmountPrecision } from "@/lib/admin/e6-decimal";
 import { E6Amount, E6OriginalValues } from "./e6-amount";
@@ -54,16 +54,8 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
     if (readBlock || !canAct || record.payload.kind === "risk") return false;
     const payload = record.payload;
     const action = payload.kind === "device" ? payload.input.action : payload.input.command.op === "e5_device_unbind" ? "unbind" : "force";
-    const deviceId = payload.kind === "device" ? payload.input.deviceId : Number(payload.input.command.params.deviceId);
-    const userId = payload.kind === "device" ? String(payload.input.userId) : /^phone:\d+:(\d+)$/.exec(record.scope)?.[1];
-    const serial = payload.kind === "device" ? payload.input.serial : record.label.split(" · ").slice(1).join(" · ").trim();
-    if (!Number.isSafeInteger(deviceId) || !userId || !/^\d+$/.test(userId)) return false;
-    // Use a separate read, so recovering a device does not move the operator's current list.
-    const latest = await fetchE5Devices({ userId, keyword: serial, pageNum: 1, pageSize: 10 }, true);
+    const device = await readE6CommandPhone(record);
     if (!currentRecoveryActor(record.owner) || !stillAvailable() || confirmRef.current) return false;
-    const device = latest.records.find(item => item.deviceId === deviceId && item.userId === userId
-      && (!serial || item.serial === serial)
-      && record.scope === (action === "pause" || action === "resume" ? `user:${item.userId}` : phoneScope(item)));
     if (!device || !items(device).some(item => item.key === action && !item.disabledReason)) return false;
     setConfirm({ device, action });
     return true;
