@@ -11,6 +11,16 @@ export type G4DirectRequest = {
 };
 export type G4DirectCommand = PendingMutationRecord & G4DirectRequest & { adminId: number };
 
+export const G4_DIVIDEND_REPLAY_HINT = "按原操作重试会用原编号、原内容重新发送，不会重复执行；当前配置只能辅助核对。";
+
+export class G4DividendRerunOutcomeUncertainError extends Error {
+  readonly confirmCopy = `补发结果未知，可能已经提交。${G4_DIVIDEND_REPLAY_HINT}`;
+  constructor(public readonly commandKey: string) {
+    super(`补发结果未知，可能已经提交。${G4_DIVIDEND_REPLAY_HINT}`);
+    this.name = "G4DividendRerunOutcomeUncertainError";
+  }
+}
+
 // This is the existing G4 direct-command table, with a single owner. Historical
 // fingerprints also contain the complete request; keep their evidence and TTL.
 const commands = createPendingMutationStore<PendingMutationRecord & Partial<G4DirectRequest> & { adminId?: number }>({
@@ -128,7 +138,9 @@ export async function executeG4DirectCommand<T>(request: G4DirectRequest, send: 
       throw error;
     }
     changed();
-    const uncertain = new A2OutcomeUncertainError("", command.commandKey);
+    const uncertain = isG4DividendRerun(command)
+      ? new G4DividendRerunOutcomeUncertainError(command.commandKey)
+      : new A2OutcomeUncertainError("", command.commandKey);
     throw Object.assign(uncertain, { backendMessage: (error as { backendMessage?: string })?.backendMessage });
   }
 }
