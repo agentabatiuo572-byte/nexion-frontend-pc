@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandOrigin } from "./fund-command-investigation";
+import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandOrigin, type FundInvestigationOutcome } from "./fund-command-investigation";
 import {
   A2OutcomeUncertainError,
   createA2CommandKey,
@@ -168,16 +168,19 @@ function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWith
         : stale ? `放宽单 ${ownId} 的最新状态没读到，先按等批准处理，点「刷新」再读。`
           : `放宽单 ${ownId} 已提交，${WITHDRAWAL_APPROVAL_PENDING}${queueKnown ? "" : "点「刷新」看最新状态。"}`
       : null;
-  const blockReason = checking ? "正在读取放宽单状态，读到后再提交放宽"
-    : stale ? "放宽单的最新状态没读到，点「刷新」读到后再提交"
-      : canReadQueue && !queueKnown && (!ticket || (!!terminal && !terminalThisRead) || staleRows)
-        ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在读取待批列表，读到后再提交放宽"
+  const blockReason = canReadQueue && !queueKnown
+    ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在读取待批列表，读到后再提交放宽"
+    : checking ? "正在读取放宽单状态，读到后再提交放宽"
+      : stale ? "放宽单的最新状态没读到，点「刷新」读到后再提交"
         : hasPending ? "已有放宽等批准，批准、驳回或撤回后才能再提交" : undefined;
+  const pendingOnTighten = pendingRows[0];
   return {
     rows, pendingRows, ownId, queueKnown, terminal, checking, stale, pendingTitle, ownNotice, blockReason, queueRowStale,
     showOwnNotice: !!ownNotice && (!!terminal || !listed),
     pendingDetail: checking ? "" : stale ? "点「刷新」再读。" : "批准前当前值不变。",
     queueLine: WITHDRAWAL_APPROVAL_PENDING,
+    pendingOnTighten,
+    pendingUnverified: !!pendingOnTighten && (checking || stale || queueRowStale(pendingOnTighten.id)),
   };
 }
 
@@ -324,6 +327,17 @@ export const WITHDRAWAL_SUBMISSION_CONFIRMED = {
   label: "审批已提交",
   line: "审批单号暂时没读到。继续查询原结果，核对审批单号和状态。",
 } as const;
+
+/** A successful empty lookup is different from an unreadable receipt or a receipt with an unresolved outcome. */
+export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, proposalMissing = true) {
+  if (outcome && "error" in outcome) return withdrawalReplayReadError(outcome.error);
+  if (proposalMissing && outcome?.receipt === null) return undefined;
+  return "先查询原结果，确认查不到原操作后才能按原请求重试。";
+}
+
+export function withdrawalReplayReadError(error: string) {
+  return `原命令核查读取失败：${error.replace(/[。！]+$/, "")}。请重试查询原结果。`;
+}
 
 /** 通用命令回执证明已建单时，仍须用原号查审批单本身。 */
 export async function checkWithdrawalApprovalCommand(record: ConfigAttempt, evidence?: FundCommandEvidence) {
