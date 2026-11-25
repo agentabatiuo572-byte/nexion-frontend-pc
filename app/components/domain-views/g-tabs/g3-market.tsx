@@ -770,7 +770,7 @@ function G3MarketEditor() {
         {confirmationPanels}
         {recoveryNotice}
         {toastNode}
-        <BlockState state="error" title="UVT 价格读取失败"
+        <BlockState retryKey="g3-market-773" state="error" title="UVT 价格读取失败"
           detail={<>页面不显示任何旧价格。点「重新加载」；一直失败请联系值班同事。{error && <Explain label="失败原因" content={error} />}</>}
           retryLabel="重新加载" onRetry={() => void reload()} />
       </>
@@ -1047,7 +1047,7 @@ function G3MarketEditor() {
               {refreshing && !historyPoints.length
                 ? <BlockState state="loading" compact title="正在加载最近 24 小时价格…" />
                 : historyError
-                ? <BlockState state="error" compact title="最近 24 小时价格加载失败" detail={<>这次没读到价格历史，不影响现价和七天计划；点「重试」再读一次。<Explain label="失败原因" content={historyError} /></>} onRetry={() => void refresh()} retrying={refreshing} />
+                ? <BlockState retryKey="g3-market-1050" state="error" compact title="最近 24 小时价格加载失败" detail={<>这次没读到价格历史，不影响现价和七天计划；点「重试」再读一次。<Explain label="失败原因" content={historyError} /></>} onRetry={() => void refresh()} retrying={refreshing} />
                 : <BlockState state="empty" compact title="最近 24 小时没有价格记录" detail={paused ? "价格暂停期间不记录。" : "至少要有两个采样点才画走势。"} onRetry={() => void refresh()} retryLabel="刷新" />}
             </div>
           )}

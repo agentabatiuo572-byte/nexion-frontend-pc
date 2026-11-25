@@ -1327,7 +1327,7 @@ export default function UserDetailPage() {
         {writeResultNotice}
         {denied
           ? <BlockState state="denied" title="无权限访问" detail={error} />
-          : <BlockState state="error" title={`${supportScope ? "客户资料" : "用户详情"}加载失败：${error}`} onRetry={() => void load()} />}
+          : <BlockState retryKey="page-1330" state="error" title={`${supportScope ? "客户资料" : "用户详情"}加载失败：${error}`} onRetry={() => void load()} />}
       </RdPage>
     );
   }
@@ -1336,7 +1336,7 @@ export default function UserDetailPage() {
     return (
       <RdPage>
         <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
-        <BlockState state="error" title="客户资料加载失败，请重新加载。" onRetry={() => void load()} />
+        <BlockState retryKey="page-1339" state="error" title="客户资料加载失败，请重新加载。" onRetry={() => void load()} />
       </RdPage>
     );
   }

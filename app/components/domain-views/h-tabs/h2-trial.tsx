@@ -1037,7 +1037,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   }
 
   if (error || !model) {
-    return <>{header()}{pendingNotices}<BlockState state="error" title="试用数据加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班人员。"} onRetry={() => void reload()} retrying={loading} afterRetryFocus={H2_FIRST_SECTION} />{releaseModal}{releaseBuyListModal}{retiredChargeModal}</>;
+    return <>{header()}{pendingNotices}<BlockState retryKey="h2-trial-1040" state="error" title="试用数据加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班人员。"} onRetry={() => void reload()} retrying={loading} afterRetryFocus={H2_FIRST_SECTION} />{releaseModal}{releaseBuyListModal}{retiredChargeModal}</>;
   }
 
   const phaseHref = "/growth/phase";
@@ -1161,7 +1161,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               <Fold title="试用记录" icon={History} tone="role-3" summary={sessionsInvalid ? "试用记录加载失败" : `共 ${total} 条，平时不用处理`} alert={sessionsInvalid} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}
                 explain={<>宽限中是正常状态：到期系统自动结束，不扣款，不用处理。{canHandle && "强制取消只在怀疑刷试用时用，要提交审批。强制扣款已停用。"}</>}>
                 {canCharge && <Notice tone="neutral">{CHARGE_RESULT}。</Notice>}
-                {sessionsInvalid ? <BlockState state="error" title="试用记录加载失败" detail={BUY_READ_INVALID} retrying={loading} onRetry={() => void reload()} /> : <>
+                {sessionsInvalid ? <BlockState retryKey="h2-trial-1164" state="error" title="试用记录加载失败" detail={BUY_READ_INVALID} retrying={loading} onRetry={() => void reload()} /> : <>
                 <Table label="试用记录">
                   <thead>
                     <tr>
