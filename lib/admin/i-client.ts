@@ -69,8 +69,9 @@ export type I6CommandSnapshot = {
   featuredCourse?: LearningCourseView;
   stats?: I18nLearningStats;
 };
+type I2Original = I1Original & { before?: Record<string, string> };
 type ContentWriteRecord = PendingMutationRecord & { readbackReceipt?: { data: unknown } };
-type IContentPending = ContentWriteRecord & { i6?: I1Original & { snapshot?: I6CommandSnapshot }; i4?: I1Original & { snapshot?: TrustSectionVersionView }; i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
+type IContentPending = ContentWriteRecord & { i6?: I1Original & { snapshot?: I6CommandSnapshot }; i4?: I1Original & { snapshot?: TrustSectionVersionView; editBaseline?: TrustSectionVersionView }; i1?: I1Original; i2?: I2Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
 export type I1Command = ContentWriteRecord & {
   original?: I1Original;
   label: string;
@@ -429,6 +430,7 @@ export async function queryI6Command(saved: I6Command, evidence?: FundCommandEvi
 }
 
 export type I4DraftCommand = ContentWriteRecord & {
+  editBaseline?: TrustSectionVersionView;
   original?: I1Original;
   snapshot?: TrustSectionVersionView;
   action: "create" | "edit" | "delete";
@@ -462,7 +464,9 @@ function readI4DraftCommand(row: IContentPending): I4DraftCommand | undefined {
     return { ...fallback, original: { owner, method, path, body, commandOrigin }, reason: input.reason,
       version: action === "create" ? String(input.version) : parts[5],
       input: action === "delete" ? undefined : input as I4DraftCommand["input"],
-      snapshot: row.i4?.snapshot ? parseI4SectionVersion(row.i4.snapshot) : undefined };
+      snapshot: row.i4?.snapshot ? parseI4SectionVersion(row.i4.snapshot) : undefined,
+      editBaseline: row.i4?.editBaseline?.sectionKey === fallback.sectionKey && row.i4.editBaseline.revision === input.expectedRevision
+        ? parseI4SectionVersion(row.i4.editBaseline) : undefined };
   } catch { return fallback; }
 }
 
@@ -560,12 +564,12 @@ export async function retryI4DraftCommand(saved: I4DraftCommand): Promise<void> 
   return i4DraftRecovery.replay(original, record => sendI4DraftCommand(record, true));
 }
 
-async function prepareI4DraftCommand(path: string, init: RequestInit, snapshot?: TrustSectionVersionView): Promise<void> {
+async function prepareI4DraftCommand(path: string, init: RequestInit, snapshot?: TrustSectionVersionView, editBaseline?: TrustSectionVersionView): Promise<void> {
   const owner = useAdminAuth.getState().session?.adminId;
   if (!owner) throw new Error("请先登录后再提交。");
   const fingerprint = `${init.method}:${path}:${init.body}`;
   const commandKey = idempotencyKey();
-  const i4 = { owner, method: init.method!, path, body: String(init.body), snapshot,
+  const i4 = { owner, method: init.method!, path, body: String(init.body), snapshot, editBaseline,
     commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i4_read") };
   const command = readI4DraftCommand({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i4 });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
@@ -863,7 +867,7 @@ async function prepareI3Command(path: string, init: RequestInit, snapshot?: Noti
 }
 
 export type I2Command = PendingMutationRecord & {
-  original?: I1Original;
+  original?: I2Original;
   action: string;
   object: string;
   target: string;
@@ -932,7 +936,7 @@ function readI2Command(row: IContentPending): I2Command | undefined {
       else return fallback;
     } else return fallback;
     const commandOrigin = readICommandOrigin(row.i2, method, path, owner, "content_i2_read");
-    return { ...row, original: { owner, method, path, body, commandOrigin }, action, object, target, reason: input.reason, change, cadence };
+    return { ...row, original: { owner, method, path, body, commandOrigin, before: row.i2?.before && Object.values(row.i2.before).every(value => typeof value === "string") ? row.i2.before : undefined }, action, object, target, reason: input.reason, change, cadence };
   } catch { return fallback; }
 }
 
@@ -1033,12 +1037,12 @@ export async function queryI2Command(command: I2Command, evidence?: FundCommandE
   return result.receipt;
 }
 
-async function prepareI2Command(path: string, init: RequestInit) {
+async function prepareI2Command(path: string, init: RequestInit, before?: Record<string, string>) {
   const owner = useAdminAuth.getState().session?.adminId;
   if (owner === undefined) throw new Error("无法确认当前登录账号，请重新登录后再操作。");
   const fingerprint = `${init.method}:${path}:${init.body}`;
   const commandKey = idempotencyKey();
-  const original = { owner, method: init.method!, path, body: String(init.body),
+  const original = { owner, method: init.method!, path, body: String(init.body), before,
     commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i2_read") };
   const command = readI2Command({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i2: original });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
@@ -1963,11 +1967,11 @@ export type IContentActions = {
   stopI1Experiment: (experimentId: string, reason: string) => Promise<void>;
   adoptI1Experiment: (experimentId: string, reason: string) => Promise<void>;
   createI2NovaChannel: (body: Record<string, unknown>, reason: string) => Promise<void>;
-  updateI2NovaChannel: (key: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  updateI2NovaChannel: (key: string, body: Record<string, unknown>, reason: string, before?: Record<string, string>) => Promise<void>;
   updateI2NovaChannelStatus: (key: string, enabled: boolean, reason: string) => Promise<void>;
   deleteI2NovaChannel: (key: string, reason: string) => Promise<void>;
   createI2Template: (body: Record<string, unknown>, reason: string) => Promise<void>;
-  updateI2Template: (channel: string, body: Record<string, unknown>, reason: string, snapshot?: NovaTemplateView) => Promise<void>;
+  updateI2Template: (channel: string, body: Record<string, unknown>, reason: string, snapshot?: NovaTemplateView, before?: Record<string, string>) => Promise<void>;
   deleteI2Template: (channel: string, reason: string) => Promise<void>;
   updateI2TemplateStatus: (channel: string, status: string, reason: string, snapshot?: NovaTemplateView) => Promise<void>;
   updateI2Distribution: (items: { key: string; pct: number }[], expectedItems: { key: string; pct: number }[], reason: string) => Promise<void>;
@@ -1986,7 +1990,7 @@ export type IContentActions = {
   updateI3Cap: (tier: string, cap: string, expectedCap: string, reason: string) => Promise<void>;
   publishI4TrustSection: (sectionKey: string, body: { version: string; expectedRevision: number; expectedVersion: string; expectedStatus: string; dataSourceStatement: string; bilingualConfirmed: true }, reason: string) => Promise<void>;
   createI4TrustSectionDraft: (sectionKey: string, body: Record<string, unknown>, reason: string, snapshot?: TrustSectionVersionView) => Promise<void>;
-  updateI4TrustSectionDraft: (sectionKey: string, version: string, body: Record<string, unknown>, reason: string, snapshot?: TrustSectionVersionView) => Promise<void>;
+  updateI4TrustSectionDraft: (sectionKey: string, version: string, body: Record<string, unknown>, reason: string, snapshot?: TrustSectionVersionView, editBaseline?: TrustSectionVersionView) => Promise<void>;
   deleteI4TrustSectionDraft: (sectionKey: string, version: string, expectedRevision: number, reason: string, snapshot?: TrustSectionVersionView) => Promise<void>;
   rollbackI4TrustSection: (sectionKey: string, targetVersion: string, expectedVersion: string, expectedStatus: string, reason: string) => Promise<void>;
   archiveI4TrustSection: (sectionKey: string, expectedVersion: string, expectedStatus: string, reason: string) => Promise<void>;
@@ -2141,11 +2145,11 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   stopI1Experiment: (experimentId, reason) => apiRequest(`/copy-ab/experiments/${encodeURIComponent(experimentId)}/stop`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   adoptI1Experiment: (experimentId, reason) => apiRequest(`/copy-ab/experiments/${encodeURIComponent(experimentId)}/adopt`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   createI2NovaChannel: (body, reason) => apiRequest("/nova/channels", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI2NovaChannel: (key, body, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI2NovaChannel: (key, body, reason, before) => prepareI2Command(`/nova/channels/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }, before).then(() => undefined),
   updateI2NovaChannelStatus: (key, enabled, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ enabled }, reason)) }).then(() => undefined),
   deleteI2NovaChannel: (key, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   createI2Template: (body, reason) => apiRequest("/nova/templates", { method: "POST", body: i2TemplateWriteBody(body, reason) }).then(() => undefined),
-  updateI2Template: (channel, body, reason, snapshot) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: i2TemplateWriteBody(body, reason, snapshot) }).then(() => undefined),
+  updateI2Template: (channel, body, reason, snapshot, before) => prepareI2Command(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: i2TemplateWriteBody(body, reason, snapshot) }, before).then(() => undefined),
   deleteI2Template: (channel, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI2TemplateStatus: (channel, status, reason, snapshot) => {
     if (status === "PUBLISHED" && snapshot) validateI2TemplatePlaceholders({ ...snapshot }, snapshot.translations);
@@ -2177,7 +2181,7 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   updateI3Cap: (tier, cap, expectedCap, reason) => apiRequest(`/campaigns/caps/${encodeURIComponent(tier)}`, { method: "PATCH", body: JSON.stringify(withReason({ cap, expectedCap }, reason)) }).then(() => undefined),
   publishI4TrustSection: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   createI4TrustSectionDraft: (sectionKey, body, reason, snapshot) => prepareI4DraftCommand(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }, snapshot),
-  updateI4TrustSectionDraft: (sectionKey, version, body, reason, snapshot) => prepareI4DraftCommand(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }, snapshot),
+  updateI4TrustSectionDraft: (sectionKey, version, body, reason, snapshot, editBaseline) => prepareI4DraftCommand(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }, snapshot, editBaseline),
   deleteI4TrustSectionDraft: (sectionKey, version, expectedRevision, reason, snapshot) => prepareI4DraftCommand(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }, snapshot),
   rollbackI4TrustSection: (sectionKey, targetVersion, expectedVersion, expectedStatus, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ targetVersion, expectedVersion, expectedStatus }, reason)) }).then(() => undefined),
   archiveI4TrustSection: (sectionKey, expectedVersion, expectedStatus, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion, expectedStatus }, reason)) }).then(() => undefined),

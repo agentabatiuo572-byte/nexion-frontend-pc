@@ -106,22 +106,22 @@ async function send(original: I3CapCommand, retry: boolean) {
   pending.remember(original.fingerprint, original.commandKey, { ...original, receiptKnown: true });
 }
 
-async function readSubmitted(original: I3CapCommand): Promise<A2OperationRow> {
+async function readSubmitted(original: I3CapCommand, onResult?: (record: I3CapCommand, ticket: A2OperationRow) => void | Promise<void>): Promise<A2OperationRow> {
   try {
     const ticket = await queryI3CapCommand(original);
-    if (ticket) return ticket;
+    if (ticket) { await onResult?.(original, ticket); return ticket; }
   } catch (error) {
     throw Object.assign(new OutcomeUnknownError(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原结果"}`), { commandKey: original.commandKey });
   }
   throw Object.assign(new OutcomeUnknownError("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。"), { commandKey: original.commandKey });
 }
 
-export async function retryI3CapCommand(saved: I3CapCommand): Promise<A2OperationRow> {
+export async function retryI3CapCommand(saved: I3CapCommand, onResult?: (record: I3CapCommand, ticket: A2OperationRow) => void | Promise<void>): Promise<A2OperationRow> {
   await i3CapRecovery.replay(saved, original => send(original, true));
-  return readSubmitted(saved);
+  return readSubmitted(saved, onResult);
 }
 
-export async function proposeI3Cap(tier: string, before: string, after: string, reason: string): Promise<A2OperationRow> {
+export async function proposeI3Cap(tier: string, before: string, after: string, reason: string, onResult?: (record: I3CapCommand, ticket: A2OperationRow) => void | Promise<void>): Promise<A2OperationRow> {
   const permission = i3CapPermission();
   if (permission) throw new Error(permission);
   if (pendingI3CapCommands().some((row) => row.tier === tier)) throw new Error("此对象有原操作尚未核清，请先查询原结果。");
@@ -141,5 +141,5 @@ export async function proposeI3Cap(tier: string, before: string, after: string, 
     throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
   }
   await send(original, false);
-  return readSubmitted(original);
+  return readSubmitted(original, onResult);
 }

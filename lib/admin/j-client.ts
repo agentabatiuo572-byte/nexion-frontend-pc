@@ -266,7 +266,7 @@ export async function queryJ4Proposal(record: J4PendingProposal) {
   return result.row;
 }
 
-export async function submitJ4Proposal(input: J4ProposalInput, commandKey: string, context: Extract<J4CommandContext, { kind: "execute" }>) {
+export async function submitJ4Proposal(input: J4ProposalInput, commandKey: string, context: Extract<J4CommandContext, { kind: "execute" }>, observe?: (record: J4PendingProposal, row: A2OperationRow) => void) {
   if (getJ4PendingProposal(context.playbook.code)) throw new Error("J4_ORIGINAL_PENDING");
   const slot = j4ProposalSlot(context.playbook.code);
   const body = JSON.stringify(input);
@@ -277,7 +277,9 @@ export async function submitJ4Proposal(input: J4ProposalInput, commandKey: strin
   }
   const original = getJ4PendingProposal(context.playbook.code)!;
   await sendJ4Proposal(original, false);
-  return queryJ4Proposal(original);
+  const row = await queryJ4Proposal(original);
+  if (row) observe?.(original, row);
+  return row;
 }
 
 async function sendJ4Proposal(original: J4PendingProposal, recovering: boolean) {
@@ -335,6 +337,14 @@ async function queryEmergency(record: SlotAttemptRecord, authority: FundCommandO
   return result.receipt;
 }
 
+/** The older shared-journal record has no request snapshot and can only be settled by its receipt. */
+export function settleJ3LegacyCommand(record: SlotAttemptRecord, receipt: ECommandInvestigation) {
+  const saved = getJ3LegacyCommand();
+  if (saved?.commandKey !== record.commandKey || saved.commandOwnerId !== receipt.originalAdminId
+    || receipt.commandKey !== record.commandKey || receipt.scope !== "J3_ALERT_CONFIG"
+    || receipt.originalMethod !== "PUT" || receipt.originalPath !== "/api/admin/emergency/tamper/alert-config" || !fundCommandSettled(receipt)) return;
+  emergencyCommands.forget(saved.fingerprint, saved.commandKey);
+}
 export function queryJ3Command(record: SlotAttemptRecord, evidence?: FundCommandEvidence) {
   return queryEmergency(record, "emergency_j3_read", saved => saved.tamper ? "J3_ALERT_CONFIG" : undefined, evidence);
 }

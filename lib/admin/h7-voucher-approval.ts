@@ -57,9 +57,10 @@ const attempts = createPendingMutationStore<H7VoucherApprovalAttempt>({
 export function pendingH7VoucherApprovals(adminId: number) {
   return attempts.list().filter(record => record.fingerprint === `${adminId}:${record.voucherId}`);
 }
-function requireProposalActor(adminId: number) {
+function requireProposalActor(adminId: number, op: string) {
   const actor = requireH7Actor(adminId, true);
-  if (!actor.authorities.some(code => code === "platform_a2_write" || code === "platform_a2_proposal_create")) throw new Error("缺少提交审批权限");
+  if (!actor.authorities.includes("growth_h7_read") || !isH7VoucherApproval(op))
+    throw new Error("H7_MAKER_FORBIDDEN");
 }
 
 export const h7ApprovalRecovery = createPendingRecovery(attempts, {
@@ -67,7 +68,7 @@ export const h7ApprovalRecovery = createPendingRecovery(attempts, {
   canReplay: record => {
     const adminId = useAdminAuth.getState().session?.adminId;
     if (adminId === undefined || record.fingerprint !== `${adminId}:${record.voucherId}` || !record.proposal || record.acknowledged) return false;
-    try { requireProposalActor(adminId); return true; } catch { return false; }
+    try { requireProposalActor(adminId, record.proposal.command.op); return true; } catch { return false; }
   },
   explicitRejectionCode,
 });
@@ -99,7 +100,7 @@ export async function submitH7VoucherApproval(session: AdminSession, input: H7Vo
   const slot = `${session.adminId}:${input.voucherId}`;
   const previous = pendingH7VoucherApprovals(session.adminId).find(record => record.fingerprint === slot);
   if (mode === "lookup") return previous ? lookup(previous) : null;
-  requireProposalActor(session.adminId);
+  requireProposalActor(session.adminId, previous?.proposal?.command.op ?? input.op);
   if (previous) {
     if (mode !== "retry") throw new Error("原操作待确认，请查询原结果。");
     await h7ApprovalRecovery.replay(previous, original => send(session, original, original.commandKey, slot, original));
@@ -112,7 +113,7 @@ export async function submitH7VoucherApproval(session: AdminSession, input: H7Vo
 }
 
 async function send(session: AdminSession, original: H7VoucherApprovalInput & { reason: string }, key: string, slot: string, previous?: H7VoucherApprovalAttempt) {
-  requireProposalActor(session.adminId);
+  requireProposalActor(session.adminId, previous?.proposal?.command.op ?? original.op);
   const proposal: Proposal = previous?.proposal ?? {
     action: H7_VOUCHER_ACTIONS[original.op], obj: original.voucherId, beforeValue: "—", afterValue: "—",
     operator: session.operator || session.username, operatorRole: roleLabel(session.role), type: "param",
@@ -143,8 +144,12 @@ async function send(session: AdminSession, original: H7VoucherApprovalInput & { 
 async function readSubmitted(slot: string, key: string) {
   const record = attempts.list().find(row => row.fingerprint === slot && row.commandKey === key);
   if (record) {
-    const current = await lookup(record).catch(() => null);
-    if (current) return current;
+    try {
+      const current = await lookup(record);
+      if (current) return current;
+    } catch (error) {
+      throw new A2OutcomeUncertainError(`申请已建单，当前审批状态未读到：${error instanceof Error ? error.message : "请查询原结果"}`, key);
+    }
   }
   throw new A2OutcomeUncertainError("申请已建单，批没批准还没查到。请查询原结果。", key);
 }

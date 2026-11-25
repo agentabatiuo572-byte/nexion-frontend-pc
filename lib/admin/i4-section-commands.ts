@@ -128,27 +128,27 @@ async function send(original: I4SectionCommand, retry: boolean) {
   pending.remember(original.fingerprint, original.commandKey, { ...original, receiptKnown: true });
 }
 
-async function readSubmittedI4Section(original: I4SectionCommand): Promise<A2OperationRow> {
+async function readSubmittedI4Section(original: I4SectionCommand, observe?: (record: I4SectionCommand, ticket: A2OperationRow) => void): Promise<A2OperationRow> {
 
   try {
     const ticket = await queryI4SectionCommand(original);
-    if (ticket) return ticket;
+    if (ticket) { observe?.(original, ticket); return ticket; }
   } catch (error) {
     throw new OutcomeUnknownError(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原结果"}`);
   }
   throw new OutcomeUnknownError("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
 }
 
-export async function retryI4SectionCommand(original: I4SectionCommand) {
+export async function retryI4SectionCommand(original: I4SectionCommand, observe?: (record: I4SectionCommand, ticket: A2OperationRow) => void) {
   await i4SectionRecovery.replay(original, record => send(record, true));
-  return readSubmittedI4Section(original);
+  return readSubmittedI4Section(original, observe);
 }
 
 export function releaseRejectedI4Section(original: I4SectionCommand) {
   if (!i4SectionRecovery.releaseRejectedReplay(original)) throw new Error("原操作记录继续保留，请查询原结果。");
 }
 
-export async function proposeI4Section(spec: ProposeSpec, inputFingerprint: string, snapshot: I4ProposalSnapshot): Promise<A2OperationRow> {
+export async function proposeI4Section(spec: ProposeSpec, inputFingerprint: string, snapshot: I4ProposalSnapshot, observe?: (record: I4SectionCommand, ticket: A2OperationRow) => void): Promise<A2OperationRow> {
   const permission = i4SectionPermission(spec.obj, snapshot.section.highSensitivity);
   if (permission) throw new Error(permission);
   if (pendingI4SectionCommands().some(row => row.sectionKey === spec.obj)) throw new Error("此对象有原操作尚未核清，请先查询原结果。");
@@ -165,5 +165,5 @@ export async function proposeI4Section(spec: ProposeSpec, inputFingerprint: stri
   }
   const original = pendingI4SectionCommands().find(row => row.commandKey === commandKey)!;
   await send(original, false);
-  return readSubmittedI4Section(original);
+  return readSubmittedI4Section(original, observe);
 }

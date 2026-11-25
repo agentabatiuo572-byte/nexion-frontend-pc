@@ -19,7 +19,7 @@ import {
 } from "@/lib/admin/trust-documents-client";
 import { timeText } from "./i4-parts";
 import { IConflictModal, useIConflictView, type IConflictRow } from "./i-conflict";
-import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, queryI4DocumentCommand, i4DocumentPermission, i4DocumentRecovery, i4DocumentRetryBlocked, type I4DocumentCommand, type I4DocumentUploadDraft } from "@/lib/admin/i4-document-commands";
+import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, type queryI4DocumentCommand, i4DocumentPermission, i4DocumentRecovery, i4DocumentRetryBlocked, type I4DocumentCommand, type I4DocumentUploadDraft } from "@/lib/admin/i4-document-commands";
 import { useIConflictReview, isIConflictRejection } from "@/lib/admin/i-conflict-review";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
@@ -34,10 +34,10 @@ const fingerprint = (sha256?: string) => sha256 ? <span title={sha256}>{`${sha25
 /** 读回的事实写成一句：哪份文件、指纹、谁什么时候换上的。 */
 const observedText = (document: TrustDocument) => `${document.source === "UPLOADED" ? "上传的" : "默认的"} ${document.fileName} · 指纹 ${document.sha256.slice(0, 12)}… · ${document.updatedAt ? `${timeText(document.updatedAt)} ${document.updatedBy ?? ""}`.trim() : "没有上传记录"}`;
 
-export function I4Documents({ onPendingChange, recovery, getDraft, rememberDraft, forgetDraft }: {
-  onPendingChange: () => void; recovery: I4DocumentCommand | null;
+export function I4Documents({ onPendingChange, recovery, getDraft, queryOriginal, forgetDraft }: {
+  onPendingChange: () => void; recovery: { key: string; settled: boolean; observation?: TrustDocument; error?: string } | null;
   getDraft: (slot: TrustDocumentSlot) => I4DocumentUploadDraft | undefined;
-  rememberDraft: (owner: number, slot: TrustDocumentSlot, draft: I4DocumentUploadDraft) => void;
+  queryOriginal: typeof queryI4DocumentCommand;
   forgetDraft: (owner: number | undefined, slot: TrustDocumentSlot) => void;
 }) {
   const session = useAdminAuth((state) => state.session);
@@ -89,18 +89,11 @@ export function I4Documents({ onPendingChange, recovery, getDraft, rememberDraft
   }, []);
   useEffect(() => {
     if (!recovery) return;
-    if (!pendingI4DocumentCommands().some(row => row.commandKey === recovery.commandKey)) {
-      setEditor(null); setPendingKey(null); setFresh(false); void refresh();
-      return;
+    if (pendingKey === recovery.key) {
+      if (recovery.settled) { setEditor(null); setPendingKey(null); }
+      else if (recovery.error || recovery.observation) setEditorError(recovery.error ?? `刚读到现在用的：${observedText(recovery.observation!)}`);
     }
-    setConflicted(false);
-    setPendingKey(recovery.commandKey);
-    setEditor(recovery.mode === "upload" ? { mode: "upload", document: recovery.document, file: null, fields: recovery.fields }
-      : { mode: "restore", document: recovery.document, reason: recovery.fields.reason });
-    const observed = recovery.observation;
-    setEditorError((recovery.mode === "upload" ? "文件可能已经对外公开。" : "可能已经恢复。")
-      + (observed ? `上次读到现在用的：${observedText(observed)}` : ""));
-    if (observed) void refresh();
+    void refresh();
   }, [recovery]);
   if (!canRead) return null;
 
@@ -117,9 +110,11 @@ export function I4Documents({ onPendingChange, recovery, getDraft, rememberDraft
     } });
   };
   const openRestore = (document: TrustDocument) => {
-    if (!fresh || loading || i4DocumentPermission(document.slot) || pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) return;
-    setPendingKey(null); setEditorError(null); setEditorBaselineReady(true); setConflicted(false);
-    setEditor({ mode: "restore", document, reason: "" });
+    if (!fresh || loading || i4DocumentPermission(document.slot)) return;
+    const original = pendingI4DocumentCommands().find(row => row.document.slot === document.slot);
+    if (original && original.mode !== "restore") return;
+    setPendingKey(original?.commandKey ?? null); setEditorError(null); setEditorBaselineReady(true); setConflicted(false);
+    setEditor({ mode: "restore", document: original?.document ?? document, reason: original?.fields.reason ?? "" });
   };
   const preview = async (document: TrustDocument) => {
     // 先同步开窗避免被拦截；读取失败时关掉空窗，在面板里显示原因。
@@ -139,7 +134,7 @@ export function I4Documents({ onPendingChange, recovery, getDraft, rememberDraft
     if (!editor || submitting.current) return;
     if (pendingKey) {
       const original = pendingI4DocumentCommands().find(row => row.commandKey === pendingKey);
-      if (!original || original.mode !== "restore" || i4DocumentRetryBlocked(original)) return;
+      if (!original || original.mode !== "restore" || !fresh || loading || i4DocumentRetryBlocked(original)) return;
       submitting.current = true; setSaving(true);
       try { await retryI4DocumentRestore(original); setEditor(null); setPendingKey(null); setFresh(false); await refresh(); }
       catch (cause) {
@@ -198,14 +193,13 @@ export function I4Documents({ onPendingChange, recovery, getDraft, rememberDraft
       const original = pendingI4DocumentCommands().find(row => row.commandKey === pendingKey);
       if (original) {
         try {
-          const result = await queryI4DocumentCommand(original);
+          const result = await queryOriginal(original);
           if (result.settled) {
-            if (result.draft) rememberDraft(original.owner, original.document.slot, result.draft);
             setEditor(null); setPendingKey(null); setFresh(false);
             onPendingChange(); await refresh(); return;
           }
           const current = result.current;
-          setEditorError(`${original.mode === "upload" ? "文件可能已经对外公开。" : "可能已经恢复。"}刚读到现在用的：${observedText(current)}`);
+          setEditorError(result.error ?? (current ? `刚读到现在用的：${observedText(current)}` : "原操作结果仍未知，请查询原结果。"));
         } catch (cause) { setEditorError(displayAdminError(cause)); }
         onPendingChange();
       }
@@ -289,7 +283,9 @@ export function I4Documents({ onPendingChange, recovery, getDraft, rememberDraft
             {documents.map((document) => {
               const isUploaded = document.source === "UPLOADED";
               const writable = canPublish(document.slot);
-              const blocked = !fresh || loading ? "请先成功重新读取最新资料后再修改。" : pendingI4DocumentCommands().some(row => row.document.slot === document.slot) ? "这份资料有结果未知的原操作，请先重新读取核对。" : undefined;
+              const original = pendingI4DocumentCommands().find(row => row.document.slot === document.slot);
+              const unreadable = !fresh || loading ? "请先成功重新读取最新资料后再修改。" : undefined;
+              const blocked = unreadable ?? (original ? "这份资料有结果未知的原操作，请先重新读取核对。" : undefined);
               return (
                 <article className="i4-doc" key={document.slot} aria-label={TRUST_DOCUMENT_NAMES[document.slot]}>
                   <header className="i4-doc-head">
@@ -312,7 +308,7 @@ export function I4Documents({ onPendingChange, recovery, getDraft, rememberDraft
                       {document.verifyUrl && <a className="rd-link i4-doc-verify" href={document.verifyUrl} target="_blank" rel="noreferrer">官方查询<ExternalLink size={12} aria-hidden /></a>}
                     </span>
                     {writable && <span className="i4-doc-writes">
-                      {isUploaded && <Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={blocked} onClick={() => openRestore(document)}>恢复默认</Button>}
+                      {(isUploaded || original?.mode === "restore") && <Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={original?.mode === "restore" ? unreadable : blocked} onClick={() => openRestore(document)}>恢复默认</Button>}
                       <Button size="sm" icon={<Upload size={14} aria-hidden />} disabledReason={blocked} onClick={() => openUpload(document)}>上传新版本</Button>
                     </span>}
                   </footer>
@@ -327,7 +323,7 @@ export function I4Documents({ onPendingChange, recovery, getDraft, rememberDraft
         title={editor?.mode === "restore" ? "恢复默认文件" : "上传新版本"} sub={name} icon={editor?.mode === "restore" ? RotateCcw : Upload} tone="role-1"
         footer={editor && <Decision
           others={<Button onClick={close} disabled={saving}>取消</Button>}
-          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，先点「重新读取核对」。" : pendingDocument ? i4DocumentRetryBlocked(pendingDocument) : RETRY_EXPIRED_TEXT) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : conflicted ? "先核对别人刚换上的文件" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : editor.mode === "restore" && editor.document.source === "DEFAULT" ? "现在已经是默认文件了，不用再恢复。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
+          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，先点「重新读取核对」。" : pendingDocument ? (!fresh || loading ? "请先成功重新读取最新资料后再修改。" : i4DocumentRetryBlocked(pendingDocument)) : RETRY_EXPIRED_TEXT) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : conflicted ? "先核对别人刚换上的文件" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : editor.mode === "restore" && editor.document.source === "DEFAULT" ? "现在已经是默认文件了，不用再恢复。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
         {editor && <div className="rd-stack i4-doc-editor">
           {editor.mode === "upload"
             ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；App 下次读取时换成这份，之后可以恢复成默认文件。</Notice>

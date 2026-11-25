@@ -2,7 +2,7 @@
 
 /**
  * I2 的三个填写抽屉：频道、模板、事件概率。只画表单，表单值、校验结果和提交都由 i2-nova.tsx 传进来，
- * 提交内容和改版前一样（频道直接保存，模板和概率再进共用确认框写理由）。
+ * 频道、模板和概率都在共用确认框填写理由后保存。
  */
 import { englishCopyHint, isEnglishCopy, mapContentTitleBody } from "@/lib/admin/content-language-rules";
 import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
@@ -208,12 +208,13 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
   );
 }
 
-export function DistDrawer({ items, draft, setDraft, total, valid, onClose, onSubmit }: {
+export function DistDrawer({ items, draft, setDraft, total, valid, unchanged, onClose, onSubmit }: {
   items: readonly { key: string; name: string; pct: number }[];
   draft: Record<string, string>;
   setDraft: (next: Record<string, string>) => void;
   total: number;
   valid: boolean;
+  unchanged: boolean;
   onClose: () => void;
   onSubmit: () => void;
 }) {
@@ -224,7 +225,7 @@ export function DistDrawer({ items, draft, setDraft, total, valid, onClose, onSu
         <p>五类一起保存，合计必须是 100%；改一类不会自动调别的类。</p>
       </>}
       footer={<Decision note={<span className="rd-toolbar-note" data-tone={valid ? undefined : "warn"}>{`合计 ${total}%`}</span>}
-        primary={<Button variant="primary" disabledReason={valid ? undefined : `每项填 0–100 的整数，合计要等于 100%（现在 ${total}%）`} onClick={onSubmit}>保存概率</Button>} />}>
+        primary={<Button variant="primary" disabledReason={valid ? (unchanged ? "五类都没有改动" : undefined) : `每项填 0–100 的整数，合计要等于 100%（现在 ${total}%）`} onClick={onSubmit}>保存概率</Button>} />}>
       <div className="rd-stack i2-form">
         <DistEditor items={items} values={draft} onChange={setDraft} />
         <div className="i2-dist-rows">

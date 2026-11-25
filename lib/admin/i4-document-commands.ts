@@ -1,3 +1,4 @@
+import { displayAdminError } from "./error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createA2CommandKey } from "./a2-client";
 import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
@@ -150,6 +151,7 @@ export async function queryI4DocumentCommand(saved: I4DocumentCommand, evidence?
   const command = pendingI4DocumentCommands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
   let receipt: FundCommandInvestigation | null = null;
+  let error: string | undefined;
   try {
     const result = await i4DocumentRecovery.query(command, async record => {
       const locator = { commandKey: record.commandKey, originalMethod: "POST" as const,
@@ -174,11 +176,13 @@ export async function queryI4DocumentCommand(saved: I4DocumentCommand, evidence?
           }
           await uploadFile(command.commandKey, "delete").catch(() => undefined);
         }
-        return { settled: true as const, receipt, draft };
+        return { settled: true as const, receipt, draft, error: undefined, current: undefined };
       }
     }
-  } catch { /* Auxiliary receipt failures must not disable the existing file readback. */ }
-  const current = (await fetchTrustDocuments()).find(row => row.slot === command.document.slot)!;
-  if (pendingI4DocumentCommands().some(row => row.commandKey === command.commandKey)) pending.remember(command.fingerprint, command.commandKey, { ...command, observation: current });
-  return { settled: false as const, receipt, current };
+  } catch (cause) { error = displayAdminError(cause); }
+  let current: TrustDocument | undefined;
+  try { current = (await fetchTrustDocuments()).find(row => row.slot === command.document.slot); }
+  catch (cause) { error ??= displayAdminError(cause); }
+  if (current && pendingI4DocumentCommands().some(row => row.commandKey === command.commandKey)) pending.remember(command.fingerprint, command.commandKey, { ...command, observation: current });
+  return { settled: false as const, receipt, current, error, draft: undefined };
 }

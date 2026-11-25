@@ -28,7 +28,7 @@ import { useHConflictDraft, type RejectedH4Draft } from "@/lib/admin/use-h-confl
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
+import { useTerminalDrafts, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
 import type { H3WeeklyRegionMapping } from "@/lib/admin/h-client";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
@@ -118,7 +118,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const fresh = useRef(false);
   const recoveryDrafts = useRef(new Map<string, RejectedH4Draft>());
   const missionDrafts = useTerminalDrafts<H3MissionForm>();
-  const regionDrafts = useTerminalDrafts<H3WeeklyRegionMapping[]>();
+  const regionDrafts = useTerminalDrafts<TerminalDraft<H3WeeklyRegionMapping[]> & { revision?: number }>();
   const operatorId = () => useAdminAuth.getState().session?.adminId;
   const regionObject = "growth.h3.weekly-region-policy";
   const recoveryDraftKey = (target: string, action: string) => JSON.stringify([useAdminAuth.getState().session?.adminId, target, action]);
@@ -221,13 +221,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         }
       } else if (op === "h3_weekly_region_policy" && Array.isArray(params.mappings)
         && params.mappings.every(row => row && typeof row.callingCode === "string" && typeof row.zoneId === "string")) {
-        regionDrafts.remember(draft.adminId, regionObject, params.mappings.map(({ callingCode, zoneId }) => ({ callingCode, zoneId })));
-        region.setDraft(null);
+        regionDrafts.remember(draft.adminId, regionObject, { before: draft.change.regionBaseline,
+          desired: params.mappings.map(({ callingCode, zoneId }) => ({ callingCode, zoneId })), revision: typeof params.expectedRevision === "number" ? params.expectedRevision : undefined });
       }
     }
     await reload();
     await region.reload();
-  }, () => fresh.current, model);
+  }, record => fresh.current && (record?.store !== "region" || region.isReady()), model);
   const refresh = async () => {
     openMc.current = null; setMc(null); shellCtx.closeConfirm?.();
     await reload();
@@ -237,7 +237,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   };
   useEffect(() => { void refresh().catch(cause => toast(displayAdminError(cause))); }, []);
 
-  const runWrite = async (write: Omit<H3Write, "change"> & Pick<H3Write["change"], "target" | "before" | "after" | "success" | "rewardCurrency">, reason: string) => {
+  const runWrite = async (write: Omit<H3Write, "change"> & Pick<H3Write["change"], "target" | "before" | "after" | "success" | "rewardCurrency" | "regionBaseline">, reason: string) => {
     const attempt = confirmation.current;
     if (!attempt) throw new Error("请重新打开原操作。");
     const recovering = !!attempt.commandKey;
@@ -251,7 +251,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     }
     try {
       await mutations.run({ ...write, change: { target: write.target, action: attempt.action, title: attempt.title,
-        before: write.before, after: write.after, success: write.success, editValue: attempt.editValue, businessValue: attempt.businessValue, rewardCurrency: write.rewardCurrency } }, reason, false, commandKey => { attempt.commandKey = commandKey; });
+        before: write.before, after: write.after, success: write.success, editValue: attempt.editValue, businessValue: attempt.businessValue, rewardCurrency: write.rewardCurrency, regionBaseline: write.regionBaseline } }, reason, false, commandKey => { attempt.commandKey = commandKey; });
       setStale(null);
     } catch (error) {
       if (isHGrowthReadConflict(error)) {
@@ -263,10 +263,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       attempt.commandKey = mutations.record(write.target)?.commandKey;
     }
   };
-  const region = useH3RegionPolicy(ctx, async (params, reason, before, after) => {
+  const region = useH3RegionPolicy(ctx, async (params, reason, before, after, regionBaseline) => {
     const owner = operatorId();
     await runWrite({ store: "region", path: "", method: "POST", body: {}, target: regionObject,
-      before, after, regionParams: params, success: "已提交审批" }, reason);
+      before, after, regionParams: params, regionBaseline, success: "已提交审批" }, reason);
     regionDrafts.forget(owner, regionObject);
   }, () => ({ blocked: mutations.blocked(regionObject), pending: mutations.pendingApprovals.some(t => t.obj === regionObject && t.status === "pending") }),
   () => regionDrafts.get(operatorId(), regionObject));
@@ -973,7 +973,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const recoveryRows: H3RecoveryRow[] = mutations.records.map(original => {
     const approval = original.request.kind !== "direct";
     return {
-      key: original.commandKey, name: original.change.action, change: changeOf(original.change),
+      key: original.commandKey, name: original.change.action, change: <>{changeOf(original.change)}{mutations.queryErrors[original.commandKey] && <p>{mutations.queryErrors[original.commandKey]}</p>}</>,
       submittedAt: original.createdAt,
       tag: original.ticket ? pendingTag(original.store === "region" ? REGION_APPROVER : undefined) : original.acknowledged ? acknowledgedTag()
         : isRetryExpired(original) ? expiredTag() : unknownTag(approval ? "approval" : "direct"),

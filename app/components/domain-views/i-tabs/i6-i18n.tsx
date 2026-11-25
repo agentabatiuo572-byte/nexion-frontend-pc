@@ -21,6 +21,7 @@ import { PaginationExemptionList } from "../design-kit";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues, i6HasCopyText } from "@/lib/admin/i6-copy-quality";
+import { useRecoveryQueryErrors } from "@/lib/admin/use-recovery-query-errors";
 import { hiCourseScope, hiCourseRewardScope, hiRewardProposal, i6CourseProposalPermission, pendingHIRewardCommand, pendingHIRewardCommands, queryI6CourseProposal, releaseRejectedI6Course, i6CourseRecovery, retryI6CourseProposal, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -34,7 +35,7 @@ import { OPEN_RESULT_LABELS, TechInfo, receiptFact, receiptOf } from "../recover
 import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { isConfirmedNonExecution, useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
+import { isConfirmedNonExecution, rebaseTerminalDraft, useTerminalDrafts, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
 import { useReach } from "@/lib/nav/use-reach";
 import { I6_COURSE_REWARD_DECIMALS, i6Amount, i6RewardChange } from "@/lib/admin/i6-amount";
 import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, RETIRED_OPTIONS_VIEW_NOTE, RetiredOption, blockedText, categoryIcon, categoryLabel, copyFormMissing, courseFormMissing, courseFormState, mapCourseLanguages, durationText, NO_REWARD, nsLabel, rewardPerUser, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
@@ -249,9 +250,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   useSyncExternalStore(i6CourseRecovery.subscribe, i6CourseRecovery.getRevision, i6CourseRecovery.getRevision);
   const [releasing, setReleasing] = useState<HIRewardCommand | null>(null);
   const [ordinaryBusy, setOrdinaryBusy] = useState("");
-  const courseDrafts = useTerminalDrafts<CourseForm>();
+  const approvalQuery = useRecoveryQueryErrors();
+  const courseDrafts = useTerminalDrafts<TerminalDraft<CourseForm> & { revision?: number }>();
+  const messageDrafts = useTerminalDrafts<TerminalDraft<{ zh: string; vi: string; en: string }> & { version?: string }>();
   const rewardDrafts = useTerminalDrafts<string>();
   const retainCourseReward = (record: HIRewardCommand, ticket?: A2OperationRow | null) => {
+    approvalQuery.clear(record.commandKey);
     if (!ticket || ticket.status === "pending" || ticket.status === "approved" || record.payload.kind !== "proposal") return;
     const input = record.payload.input;
     if (input.command.op !== "i7_course_reward_adjust") return;
@@ -262,18 +266,21 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     if (!record.original || !["course-create", "course-draft", "version-create", "version-draft"].includes(record.operation)) return;
     // The wire payload has already passed the normal course schema.
     const input = record.input;
-    const owner = record.original.owner;
     const key = record.operation === "course-create" ? "new" : `${record.operation}:${record.target}${record.operation === "version-draft" ? ":" + record.version : ""}`;
-    const current = {
-      slug: record.target, version: record.version || undefined,
-      category: String(input.category), format: String(input.format), difficulty: String(input.difficulty),
-      duration: String(input.duration), reward: i6Amount(input.rewardNex) ?? null,
-      titleZh: String(input.titleZh ?? ""), titleVi: String(input.titleVi ?? ""), titleEn: String(input.titleEn ?? ""),
-      bodyZh: String(input.bodyZh ?? ""), bodyVi: String(input.bodyVi ?? ""), bodyEn: String(input.bodyEn ?? ""),
-      quizQuestions: input.quizQuestions as Course["quizQuestions"], passScore: Number(input.passScore),
-      retryLimit: Number(input.retryLimit), completionCondition: String(input.completionCondition ?? ""), rewardEvent: String(input.rewardEvent ?? ""),
-    };
-    courseDrafts.remember(owner, key, courseFormState({ ...courseSpec("edit"), current }));
+    const asForm = (payload: Record<string, unknown>, version: string) => courseFormState({ ...courseSpec("edit"), current: {
+      slug: record.target, version: version || undefined,
+      category: String(payload.category), format: String(payload.format), difficulty: String(payload.difficulty),
+      duration: String(payload.duration), reward: i6Amount(payload.rewardNex) ?? null,
+      titleZh: String(payload.titleZh ?? ""), titleEn: String(payload.titleEn ?? ""), titleVi: String(payload.titleVi ?? ""),
+      bodyZh: String(payload.bodyZh ?? ""), bodyEn: String(payload.bodyEn ?? ""), bodyVi: String(payload.bodyVi ?? ""),
+      quizQuestions: payload.quizQuestions as Course["quizQuestions"], passScore: Number(payload.passScore),
+      retryLimit: Number(payload.retryLimit), completionCondition: String(payload.completionCondition ?? ""), rewardEvent: String(payload.rewardEvent ?? ""),
+    } });
+    const savedVersion = record.snapshot?.courseVersion;
+    const savedCourse = record.snapshot?.course;
+    const snapshot = savedVersion?.payload ?? (savedCourse ? { ...savedCourse, difficulty: savedCourse.level } : undefined);
+    courseDrafts.remember(record.original.owner, key, { before: snapshot ? asForm(snapshot, savedVersion?.version ?? record.version) : undefined,
+      desired: asForm(input, record.version), revision: Number(input.expectedRevision) });
   };
   const [ordinaryOutcomes, setOrdinaryOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closingOrdinary, setClosingOrdinary] = useState<I6Command | null>(null);
@@ -285,7 +292,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     if (view !== "learn") return;
     const records = pendingHIRewardCommands().filter(record => record.scope.startsWith("I/"));
     const results = await Promise.allSettled(records.map(async record => {
-      const ticket = await queryI6CourseProposal(record);
+      const ticket = await approvalQuery.read(record.commandKey, () => queryI6CourseProposal(record));
       retainCourseReward(record, ticket);
       return ticket;
     }));
@@ -364,11 +371,22 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     await actions.reloadIContent();
     updateRecovery(value => value + 1);
   };
+  const recoveryReadProblem = (record: HIRewardCommand | I6Command) => {
+    const state = latest.current, data = state.content.i18nLearning;
+    if (!readReady.current || !data || state.contentLoading || state.contentError) return "请先成功重新读取数据，再按原请求重试。";
+    if ("payload" in record) {
+      const target = record.payload.kind === "proposal" ? record.payload.input.obj : undefined;
+      if (target && !data.courses.some(course => course.id === target))
+        return "请先读到这门课的当前数据。";
+    } else if (record.scope.startsWith("course:") && record.operation !== "course-create" && !data.courses.some(course => course.id === record.target)
+      || record.scope.startsWith("message:") && !data.messages.some(message => message.messageKey === record.target)) return "请先读到原操作对象的当前数据。";
+  };
+  const ordinaryRetryProblem = (record: I6Command) => recoveryReadProblem(record) ?? i6RetryBlockedReason(record);
   const courseRetryBlocked = (record: HIRewardCommand) => {
     const state = i6CourseRecovery.state(record);
     if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
     if (state.expired) return RETRY_EXPIRED_TEXT;
-    return i6CourseProposalPermission(record) ?? (state.replayBlock ? "请查询原结果" : undefined);
+    return recoveryReadProblem(record) ?? i6CourseProposalPermission(record) ?? (state.replayBlock ? "请查询原结果" : undefined);
   };
   const coursePendingRecovery = (record: HIRewardCommand, query: () => Promise<void>) => {
     const state = i6CourseRecovery.state(record);
@@ -377,13 +395,22 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
   const directPendingRecovery = (record: I6Command) => {
     const state = i6Recovery.state(record);
-    return { state, expiresAt: state.expiresAt, blockedReason: i6RetryBlockedReason(record),
+    return { state, expiresAt: state.expiresAt, blockedReason: ordinaryRetryProblem(record),
       subscribe: i6Recovery.subscribe, getRevision: i6Recovery.getRevision, query: () => queryOrdinary(record) };
+  };
+  const retryCourseProposal = async (record: HIRewardCommand) => {
+    const blocked = courseRetryBlocked(record);
+    if (blocked) throw new Error(blocked);
+    try { return await retryI6CourseProposal(record); }
+    catch (error) {
+      if (pendingHIRewardCommands().some(row => row.commandKey === record.commandKey && row.receiptKnown)) approvalQuery.fail(record.commandKey, error);
+      throw error;
+    }
   };
   const queryCourseOriginal = async (record: HIRewardCommand) => {
     setLookupKey(record.commandKey);
     try {
-      const ticket = await queryI6CourseProposal(record);
+      const ticket = await approvalQuery.read(record.commandKey, () => queryI6CourseProposal(record));
       retainCourseReward(record, ticket);
       toast(ticket ? ticketText(ticket) : "还没查到原审批单，记录继续保留。", "warn");
       if (ticket && ticket.status !== "pending") await finishRecovery(record.commandKey);
@@ -416,10 +443,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       run: async (reason, value, form) => {
         if (resolved) { ctx.closeActionConfirm(confirmation); throw new Error("原操作已处理，请重新打开修改入口。"); }
         if (original || proposal) {
+          const blocked = original ? ordinaryRetryProblem(original) : courseRetryBlocked(proposal!);
+          if (blocked) throw new Error(blocked);
           try {
             if (original) { await retryI6Command(original); toast(`${original.label} · 已核对原操作`); }
             else {
-              const ticket = await retryI6CourseProposal(proposal!);
+              const ticket = await retryCourseProposal(proposal!);
+              retainCourseReward(proposal!, ticket);
               toast(ticketText(ticket));
             }
             resolved = true;
@@ -454,6 +484,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           const key = (error as { commandKey?: string }).commandKey;
           original = key ? pendingI6Commands().find(row => row.commandKey === key) : undefined;
           proposal = key ? pendingHIRewardCommands().find(row => row.commandKey === key) : undefined;
+          if (proposal?.receiptKnown) approvalQuery.fail(proposal.commandKey, error);
           if (!original && !proposal && await conflictReview.reject(error, { scope, reason, value, form }, async () => {
             const overview = await fetchI6LearningOverview();
             const versions = scope.startsWith("course:") && overview.courses.some(course => course.id === scope.slice(7))
@@ -597,7 +628,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         remark = reason;
         if (resolved) { ctx.closeConfirm(confirmation); return false; }
         try {
-          if (original) await runBackend(retryI6Command(original), "检查完成，请看下表的问题");
+          if (original) {
+            const blocked = ordinaryRetryProblem(original);
+            if (blocked) throw new Error(blocked);
+            await runBackend(retryI6Command(original), "检查完成，请看下表的问题");
+          }
           else {
             const problem = newWriteProblem("rescan");
             if (problem) throw new Error(problem);
@@ -640,7 +675,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         return runBackend(actions.saveI6LocalizedDraft(messageKey, {
           ...await submittedMessageText(selectedMessage.placeholders, form),
           expectedVersion: selectedMessage.version,
-        }, reason), `${messageKey} 草稿已保存 · 当前发布版未被覆盖`).then(() => setCopyEditor(null));
+        }, reason, { message: data?.messages.find(row => row.messageKey === messageKey) }), `${messageKey} 草稿已保存 · 当前发布版未被覆盖`).then(() => {
+          messageDrafts.forget(session?.adminId, messageKey);
+          setCopyEditor(null);
+        });
       },
     });
 
@@ -900,9 +938,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           sourceDomain: "I7",
           command: def.buildCommand({ courseId: c.id, rewardNex: i6Amount(v) }),
           target: def.buildTarget({ courseId: c.id }),
-        } }, undefined, v, { course: current }).then(() => {
-          rewardDrafts.forget(session.adminId, c.id);
-          toast("已提交，等待审批后执行");
+        } }, undefined, v, { course: current }, retainCourseReward).then(result => {
+          if (result.kind === "proposal") {
+            if (result.ticket.status === "pending" || result.ticket.status === "approved") rewardDrafts.forget(session.adminId, c.id);
+            toast(ticketText(result.ticket));
+          }
         });
       },
     });
@@ -999,7 +1039,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const newCrs = async () => {
     await readRequiredLanguages();
     const spec = courseSpec("create");
-    setCourseEditor({ spec, initial: courseDrafts.get(session?.adminId, "new"), title: "新建课程", sub: "存成草稿，用户看不到",
+    setCourseEditor({ spec, initial: courseDrafts.get(session?.adminId, "new")?.desired, title: "新建课程", sub: "存成草稿，用户看不到",
       save: (form) => confirmI6(`course:${form.slug.trim()}`, { briefKind: "config",
         action: <>新建课程(存为草稿)</>,
         title: "保存新课程草稿",
@@ -1036,15 +1076,41 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     statedBrief: { impact: "更新这门课的草稿，用户看不到。", check: "三种语言和测验核对过。" },
     facts: courseDraftFacts(form, <Fact k="版本">{c.v}</Fact>),
     amplifies: false,
-    run: async (reason) => runBackend(actions.updateI7CourseDraft(c.id, await submittedCourse(courseSpec("edit"), form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`).then(() => finishCourseDraft(`course-draft:${c.id}`)),
+    run: async (reason) => runBackend(actions.updateI7CourseDraft(c.id, await submittedCourse(courseSpec("edit"), form, c.revision), reason, { course: data?.courses.find(row => row.id === c.id) }), `${nexGridBrandText(c.title)} 草稿已更新`).then(() => finishCourseDraft(`course-draft:${c.id}`)),
   }) });
+  const reopenedCourse = (key: string, spec: CourseSpec, revision?: number): CourseForm | undefined => {
+    const saved = courseDrafts.get(session?.adminId, key);
+    if (!saved) return;
+    const latest = courseFormState(spec);
+    if (!saved.before) {
+      if (revision !== undefined && saved.revision === revision) return { ...saved.desired, version: latest.version };
+      toast("原草稿缺少可核对的修改前内容，请在最新课程上重新选择拟改项。", "warn");
+      return;
+    }
+    const before = saved.before;
+    const intended: CourseForm = { ...saved.desired, version: latest.version };
+    const fields = new Set([...Object.keys(before), ...Object.keys(intended), ...Object.keys(latest)]);
+    const extend = (form: CourseForm) => Object.fromEntries([...fields].map(field => [field, form[field] ?? ""]));
+    const changes = rebaseTerminalDraft(extend(before), extend(intended), extend(latest));
+    const quiz = (field: string) => field.startsWith("quiz.") || ["quizCount", "passScore", "retries", "completionCond", "rewardEvent"].includes(field);
+    const mustChooseQuiz = changes.others.map(String).some(quiz) && changes.mine.map(String).some(quiz);
+    if (mustChooseQuiz) for (const field of fields) if (quiz(field)) changes.value[field] = latest[field] ?? "";
+    const labels: Record<string, string> = { titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题", bodyZh: "中文正文",
+      bodyEn: "英文正文", bodyVi: "越南语正文", category: "分类", format: "形式", difficulty: "难度", reward: "奖励", duration: "时长", version: "版本" };
+    const describe = (keys: string[]) => [...new Set(keys.map(field => quiz(field) ? "测验与发奖" : labels[field] ?? field))].join("、");
+    if (changes.others.length) {
+      toast(`别人改过：${describe(changes.others.map(String))}。你的拟改：${describe(changes.mine.map(String)) || "无"}。${mustChooseQuiz ? "请按最新题目重新选择测验与发奖设置。" : "请在最新版本核对拟改内容。"}`, "warn");
+    }
+    return changes.value;
+  };
   const finishCourseDraft = (key: string) => {
     courseDrafts.forget(session?.adminId, key);
     setCourseEditor(null);
   };
   const editCrs = async (c: Course) => {
     await readRequiredLanguages();
-    setCourseEditor({ ...editCrsState(c), initial: courseDrafts.get(session?.adminId, `course-draft:${c.id}`) });
+    const editor = editCrsState(c);
+    setCourseEditor({ ...editor, initial: reopenedCourse(`course-draft:${c.id}`, editor.spec, c.revision) });
   };
 
   const deleteCrs = (c: Course) => confirmI6(`course:${c.id}`, { briefKind: "record",
@@ -1083,7 +1149,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
       ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
     await readRequiredLanguages();
-    setCourseEditor({ courseId: c.id, spec: courseSpec("version-create", courseCurrent(c, nextVersion ?? `v${maxVersion + 1}`)), initial: courseDrafts.get(session?.adminId, `version-create:${c.id}`), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
+    const spec = courseSpec("version-create", courseCurrent(c, nextVersion ?? `v${maxVersion + 1}`));
+    setCourseEditor({ courseId: c.id, spec, initial: reopenedCourse(`version-create:${c.id}`, spec), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
       save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
         action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
         title: "保存新版本草稿",
@@ -1094,7 +1161,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         facts: courseDraftFacts(form, <Fact k="版本"><Change from={`${c.v}（线上）`} to={`${form.version}（草稿）`} /></Fact>),
         amplifies: false,
         run: async (reason) => runBackend(
-          actions.createI7CourseVersion(c.id, await submittedCourse(courseSpec("version-create"), form), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`).then(() => finishCourseDraft(`version-create:${c.id}`)),
+          actions.createI7CourseVersion(c.id, await submittedCourse(courseSpec("version-create"), form), reason, { course: data?.courses.find(row => row.id === c.id) }), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`).then(() => finishCourseDraft(`version-create:${c.id}`)),
       }),
     });
   };
@@ -1111,12 +1178,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       facts: courseDraftFacts(form, <Fact k="版本">{row.version}（草稿）</Fact>),
       amplifies: false,
       run: async (reason) => runBackend(
-        actions.updateI7CourseVersion(c.id, row.version, await submittedCourse(courseSpec("version-edit"), form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`).then(() => finishCourseDraft(`version-draft:${c.id}:${row.version}`)),
+        actions.updateI7CourseVersion(c.id, row.version, await submittedCourse(courseSpec("version-edit"), form, row.revision), reason, { courseVersion: row }), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`).then(() => finishCourseDraft(`version-draft:${c.id}:${row.version}`)),
     }),
   });
   const editCourseVersion = async (c: Course, row: LearningCourseVersionView) => {
     await readRequiredLanguages();
-    setCourseEditor({ ...editCourseVersionState(c, row), initial: courseDrafts.get(session?.adminId, `version-draft:${c.id}:${row.version}`) });
+    const editor = editCourseVersionState(c, row);
+    setCourseEditor({ ...editor, initial: reopenedCourse(`version-draft:${c.id}:${row.version}`, editor.spec, row.revision) });
   };
 
   const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => confirmI6(`course:${c.id}`, { briefKind: "record",
@@ -1385,6 +1453,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       default: return "原记录不完整";
     }
   };
+  const retainContentDraft = (record: I6Command) => {
+    retainCourseDraft(record);
+    if (record.operation !== "message-draft" || !record.original) return;
+    const { zh, vi, en, expectedVersion } = record.input;
+    const before = record.snapshot?.message;
+    messageDrafts.remember(record.original.owner, record.target, { desired: { zh: String(zh), en: String(en), vi: String(vi) },
+      before: before && { zh: before.zh, en: before.en, vi: before.vi }, version: String(expectedVersion) });
+  };
   const queryOrdinary = async (record: I6Command) => {
     setOrdinaryBusy(record.commandKey);
     try {
@@ -1397,16 +1473,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
       const receipt = receiptOf(outcome);
       if (eCommandSettled(receipt)) {
-        if (isConfirmedNonExecution(receipt)) retainCourseDraft(record);
-        const restoreCopy = record.operation === "message-draft" && (!copyEditor || selectedMessageKey === record.target)
-          && (receipt?.originalStatus === "CONFIRMED_NOT_EXECUTED" || receipt?.originalStatus === "CONFIRMED_REJECTED");
+        if (isConfirmedNonExecution(receipt)) retainContentDraft(record);
         toast(settledText({ status: receipt!.originalStatus }));
         await finishRecovery(record.commandKey);
-        if (restoreCopy) {
-          setSelectedMessageKey(record.target);
-          setMessageDrawer(true);
-          setCopyEditor({ mode: "edit", zh: String(record.input.zh), en: String(record.input.en), vi: String(record.input.vi), tried: false });
-        }
         return;
       }
       const overview = await fetchI6LearningOverview();
@@ -1419,6 +1488,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     finally { setOrdinaryBusy(""); updateRecovery((value) => value + 1); }
   };
   const retryOrdinary = async (record: I6Command) => {
+    if (ordinaryRetryProblem(record)) return;
     setOrdinaryBusy(record.commandKey);
     try {
       await retryI6Command(record);
@@ -1433,7 +1503,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const courseOf = (record: I6Command) => record.scope.startsWith("course:") ? COURSES.find((course) => course.id === record.target) : undefined;
   /** 文案和课程原操作这一行怎么说：共用面板的标签和句子（查询失败的原因放标签问号里）。 */
   const ordinaryStatus = (record: I6Command, outcome: FundInvestigationOutcome | undefined) => {
-    const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canRetry: !i6RetryBlockedReason(record),
+    const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canRetry: !ordinaryRetryProblem(record),
       canClose: canInvestigateECommand(record.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") });
     return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
   };
@@ -1449,7 +1519,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       <span className="i6-pending-act">
         <Button size="sm" disabled={!!ordinaryBusy && ordinaryBusy !== record.commandKey} loading={ordinaryBusy === record.commandKey} onClick={() => void queryOrdinary(record)}>查询原结果</Button>
         {canInvestigateECommand(record.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") && eCommandClosureOffer(ordinaryOutcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ordinaryBusy} onClick={() => setClosingOrdinary(record)}>核查结案</Button>}
-        <Button size="sm" variant="primary" disabledReason={ordinaryBusy ? "正在处理另一项" : i6RetryBlockedReason(record)}
+        <Button size="sm" variant="primary" disabledReason={ordinaryBusy ? "正在处理另一项" : ordinaryRetryProblem(record)}
           onClick={() => void retryOrdinary(record)}>按原请求重试</Button>
       </span>
       <span className="i6-pending-note">{shown.line} <TechInfo commandKey={record.commandKey} receipt={receiptOf(ordinaryOutcomes[record.commandKey])} /></span>
@@ -1464,7 +1534,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
       setClosingOrdinary(null); updateRecovery(value => value + 1);
       if (eCommandSettled(receipt)) {
-        if (isConfirmedNonExecution(receipt)) retainCourseDraft(record);
+        if (isConfirmedNonExecution(receipt)) retainContentDraft(record);
         toast(settledText({ status: receipt!.originalStatus }));
         await finishRecovery(record.commandKey);
       }
@@ -1520,7 +1590,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   getPendingRecovery: () => coursePendingRecovery(record, () => queryCourseOriginal(record)),
                   run: async () => {
                     try {
-                      const ticket = await retryI6CourseProposal(record);
+                      const ticket = await retryCourseProposal(record);
+                      retainCourseReward(record, ticket);
                       toast(ticketText(ticket));
                       await finishRecovery(record.commandKey);
                     } catch (error) {
@@ -1533,6 +1604,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   openActionConfirm(confirmation);
                 }}>按原请求重试</Button>}
                 </span>
+                {approvalQuery.errors[record.commandKey] && <span className="i6-pending-note">{approvalQuery.errors[record.commandKey]}</span>}
                 {record.receiptKnown && record.ticketStatus !== "pending" && <span className="i6-pending-note">审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。</span>}
                 {expired && <span className="i6-pending-note">{RETRY_EXPIRED_TEXT}</span>}
               </li>;
@@ -1634,7 +1706,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       if (!target) return;
       const required = await readRequiredLanguages();
       setSelectedMessageKey(target.messageKey);
-      setCopyEditor({ mode, issue, ...mapSingleContentText(target, required, "edit"), tried: false });
+      const base = mapSingleContentText(target, required, "edit");
+      const saved = mode === "edit" ? messageDrafts.get(session?.adminId, target.messageKey) : undefined;
+      const merged = saved?.before ? rebaseTerminalDraft(mapSingleContentText(saved.before, required, "edit"),
+        mapSingleContentText(saved.desired, required, "edit"), base) : undefined;
+      if (merged?.others.length) toast(`别人改过：${merged.others.map(key => LANGS.find(item => item.key === key)?.label).join("、")}。请核对你的拟改内容。`, "warn");
+      if (saved && !merged && saved.version !== target.version) toast("原草稿缺少修改前的内容，已显示最新版本，请重新选择拟改项。", "warn");
+      setCopyEditor({ mode, issue, ...(merged?.value ?? (saved?.version === target.version ? saved?.desired : undefined) ?? base), tried: false });
     };
     const whenSeen = !sm ? "—" : sm.status === "published" ? "已在远程文案里；App 下次拉取时用它"
       : sm.status === "draft" ? "草稿，用户看不到；发布后 App 下次拉取时换上" : sm.status === "archived" ? "已撤下远程文案；App 拉到新文案包后改用自带文字" : "—";

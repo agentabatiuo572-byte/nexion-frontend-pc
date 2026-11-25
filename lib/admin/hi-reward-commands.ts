@@ -132,11 +132,11 @@ async function sendI6CourseProposal(saved: HIRewardCommand, retry: boolean) {
   commands.remember(record.fingerprint, record.commandKey, { ...record, receiptKnown: true });
 }
 
-async function readSubmittedI6Course(record: HIRewardCommand): Promise<A2OperationRow> {
+async function readSubmittedI6Course(record: HIRewardCommand, observe?: (record: HIRewardCommand, ticket: A2OperationRow) => void): Promise<A2OperationRow> {
   const uncertain = (message: string) => Object.assign(new OutcomeUnknownError(message), { commandKey: record.commandKey });
   try {
     const ticket = await queryI6CourseProposal(record);
-    if (ticket) return ticket;
+    if (ticket) { observe?.(record, ticket); return ticket; }
   } catch (error) { throw uncertain(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原结果"}`); }
   throw uncertain("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
 }
@@ -151,7 +151,7 @@ export function releaseRejectedI6Course(record: HIRewardCommand) {
 }
 
 /** The complete envelope is saved before dispatch; an unresolved scope can only replay its original envelope. */
-export async function submitHIRewardCommand(scope: string, payload: Payload, form?: Record<string, string>, editValue?: string, snapshot?: I6CommandSnapshot) {
+export async function submitHIRewardCommand(scope: string, payload: Payload, form?: Record<string, string>, editValue?: string, snapshot?: I6CommandSnapshot, observe?: (record: HIRewardCommand, ticket: A2OperationRow) => void) {
   const session = useAdminAuth.getState().session;
   if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
   const previous = pendingHIRewardCommand(scope);
@@ -168,7 +168,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
       throw new Error("浏览器无法保存完整原操作，本次未发送；请允许会话存储后重试。");
     }
     await sendI6CourseProposal(draft, false);
-    return { kind: "proposal" as const, ticket: await readSubmittedI6Course(draft) };
+    return { kind: "proposal" as const, ticket: await readSubmittedI6Course(draft, observe) };
   }
   const original = previous?.payload ?? payload;
   const authorities = original.kind === "retire" ? ["growth_h4_wheel_pool_write"]

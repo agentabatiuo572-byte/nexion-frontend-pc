@@ -27,6 +27,7 @@ import {
   type H7VoucherApprovalInput,
   type H7VoucherApprovalMode,
 } from "@/lib/admin/h7-voucher-approval";
+import { useRecoveryQueryErrors } from "@/lib/admin/use-recovery-query-errors";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
@@ -98,6 +99,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   useSyncExternalStore(h7DirectRecovery.subscribe, h7DirectRecovery.getRevision, h7DirectRecovery.getRevision);
   const [pendingApprovals, setPendingApprovals] = useState<ReturnType<typeof pendingH7VoucherApprovals>>([]);
   const [directUnknown, setDirectUnknown] = useState<H7DirectMutation[]>([]);
+  const approvalQuery = useRecoveryQueryErrors();
   const fresh = useRef(false);
   const currentData = useRef<OpsVoucher[]>([]);
   const [data, setData] = useState<Omit<H7Overview, "stats"> & { stats?: H7Overview["stats"] }>({
@@ -115,7 +117,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
 
   useEffect(() => {
     const lookups = session ? pendingH7VoucherApprovals(session.adminId).map(record =>
-      submitH7VoucherApproval(session, record, record.reason, "lookup")) : [];
+      approvalQuery.read(record.commandKey, () => submitH7VoucherApproval(session, record, record.reason, "lookup"))) : [];
     syncPending();
     if (session) void Promise.allSettled(lookups).then(results => {
       if (useAdminAuth.getState().session?.adminId !== session.adminId) return;
@@ -204,11 +206,15 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   };
   const openAdd = () => { if (blockNew()) return; setForm({ initial: initialForm(), key: Date.now() }); };
   const openEdit = (v: OpsVoucher) => { if (blockNew(v.id)) return; setForm({ voucher: v, initial: initialForm(v, toDateInput), key: Date.now() }); };
+  const replayReadProblem = (id: string, creating = false) => !fresh.current || !creating && !currentData.current.some(voucher => voucher.id === id)
+    ? "请先成功刷新代金券，再按原请求重试。" : undefined;
   const queryDirect = async (record: H7DirectMutation) => {
     requireH7Actor(record.adminId, false);
-    await h7DirectRecovery.query(record, async () => { await reload(); return { conclusion: "unknown" }; });
+    await h7DirectRecovery.query(record, async () => { await reload(true); return { conclusion: "unknown" }; });
   };
   const executeDirect = async (record: H7DirectMutation, recovering: boolean) => {
+    const blocked = recovering ? replayReadProblem(record.voucherId, record.context.kind === "create") : undefined;
+    if (blocked) throw new Error(blocked);
     try {
       await sendH7VoucherMutation(record, recovering);
     } catch (cause) {
@@ -240,7 +246,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       const saved = directRecord(id);
       if (!saved) return;
       const state = h7DirectRecovery.state(saved);
-      return state.expired ? RETRY_EXPIRED_TEXT : state.replayRejection ? "重试已被拒绝，请核对原操作。" : state.replayBlock ? "请查询原结果" : undefined;
+      return replayReadProblem(id, saved.context.kind === "create") ?? (state.expired ? RETRY_EXPIRED_TEXT : state.replayRejection ? "重试已被拒绝，请核对原操作。" : state.replayBlock ? "请查询原结果" : undefined);
     },
     recover: async () => { const saved = directRecord(id); if (saved) await queryDirect(saved); return true; },
     retry: async () => { const saved = directRecord(id); if (!saved) throw new Error("H7_ORIGINAL_RESOLVED"); await executeDirect(saved, true); },
@@ -382,18 +388,23 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       }
       try {
         if (!original() && mode === "submit") assertNew(input.voucherId);
+        if (wasRetained && mode === "retry" && replayReadProblem(input.voucherId)) throw new Error("请先成功刷新代金券，再按原请求重试。");
         const lookup = submitH7VoucherApproval(session, input, reason, mode);
         syncPending();
         const ticket = await lookup;
+        const observed = pending?.commandKey ?? original()?.commandKey;
+        if (observed) approvalQuery.clear(observed);
         if (!ticket) return false;
         if (ticket.status === "pending") {
           toast(`已提交审批 · 审批单 ${ticket.id} · 等待${APPROVER}批准`);
         } else {
           toast(`已找到原审批单 ${ticket.id}，请在操作记录查看处理结果`);
         }
-        await reload();
+        await reload(true);
         return true;
       } catch (cause) {
+        const saved = original();
+        if (saved && (mode === "lookup" || saved.acknowledged)) approvalQuery.fail(saved.commandKey, cause);
         if (isHGrowthReadConflict(cause) || wasRetained && !original()) await reload();
         throw cause;
       } finally {
@@ -436,7 +447,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         const saved = original();
         if (!saved) return;
         const state = h7ApprovalRecovery.state(saved);
-        return { state, expiresAt: state.expiresAt, blockedReason: state.expired ? RETRY_EXPIRED_TEXT : state.replayRejection ? "重试已被拒绝，请核对原操作。" : state.replayBlock ? "请查询原结果" : undefined,
+        return { state, expiresAt: state.expiresAt, blockedReason: replayReadProblem(input.voucherId) ?? (state.expired ? RETRY_EXPIRED_TEXT : state.replayRejection ? "重试已被拒绝，请核对原操作。" : state.replayBlock ? "请查询原结果" : undefined),
           subscribe: h7ApprovalRecovery.subscribe, getRevision: h7ApprovalRecovery.getRevision };
       },
       inlineApproval: {
@@ -445,7 +456,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         get expiredRequestRecovery() { const saved = original(); return saved && isRetryExpired(saved) ? "query" : undefined; },
         get disabledReason() {
           const saved = original();
-          return !useAdminAuth.getState().session?.authorities.includes("growth_h7_write") || saved && !canRetryH7VoucherApproval(saved) ? "请查询原结果" : undefined;
+          return replayReadProblem(input.voucherId) ?? (!useAdminAuth.getState().session?.authorities.includes("growth_h7_write") || saved && !canRetryH7VoucherApproval(saved) ? "请查询原结果" : undefined);
         },
         initialRecovery: pending ? initialRecovery : undefined,
         resolve: () => ({
@@ -486,14 +497,14 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         key: record.commandKey,
         name: H7_VOUCHER_ACTIONS[record.op],
         object: `「${record.voucherName}」`,
-        change: record.op === "h7_voucher_delete" ? "删除券模板，已发出的券不收回"
-          : `作废还没用的券${record.voucher ? `（提交时 ${countText(record.voucher.availableCount)} 张）` : ""}`,
+        change: <>{record.op === "h7_voucher_delete" ? "删除券模板，已发出的券不收回"
+          : `作废还没用的券${record.voucher ? `（提交时 ${countText(record.voucher.availableCount)} 张）` : ""}`}{approvalQuery.errors[record.commandKey] && <p>{approvalQuery.errors[record.commandKey]}</p>}</>,
         submittedAt: record.createdAt,
         tag: record.ticket ? pendingTag() : record.acknowledged ? acknowledgedTag() : expired ? expiredTag() : unknownTag("approval"),
         ticket: record.ticket?.id,
         actions: <>
           <Button size="sm" onClick={() => openDisposition(record, "lookup")}>查询原结果</Button>
-          {!expired && !record.ticket && !record.acknowledged && <Button size="sm" disabledReason={!canWrite || !canRetryH7VoucherApproval(record) ? "请查询原结果" : undefined} onClick={() => openDisposition(record, "retry")}>按原请求重试</Button>}
+          {!expired && !record.ticket && !record.acknowledged && <Button size="sm" disabledReason={replayReadProblem(record.voucherId) ?? (!canWrite || !canRetryH7VoucherApproval(record) ? "请查询原结果" : undefined)} onClick={() => openDisposition(record, "retry")}>按原请求重试</Button>}
           {releasable(record) && <Button size="sm" variant="ghost" onClick={() => setReleasing(record)}>解除原操作记录</Button>}
         </>,
       };
