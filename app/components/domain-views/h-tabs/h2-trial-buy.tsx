@@ -24,15 +24,17 @@ export type BuyListDraft = Omit<BuyListWrite, "requestNo" | "confirmedActorId"> 
   nextNames: string[];
 };
 
-export type BuyListPending = PendingMutationRecord & BuyListDraft & Pick<BuyListWrite, "requestNo" | "confirmedActorId"> & {
-  retryRejection?: string;
-};
+export type BuyListPending = PendingMutationRecord & BuyListDraft & Pick<BuyListWrite, "requestNo" | "confirmedActorId">;
 export type BuyListSubmitResult = Exclude<Awaited<ReturnType<typeof updateH2TrialBuyList>>, { kind: "unauthenticated" | "forbidden" | "accountMismatch" }>
   | { kind: "stopped" };
 
 export const BUY_INTRO = "用户领的那台试用设备自动在他的清单里，不用添加；这里添加其他可以用试用抵扣金购买的设备。";
 const MONEY_LINE = "减价后的价格低于试用抵扣金时，抵不完的购后到账给用户。";
-const BUY_LOCKED = "这项有一次修改结果未知，先到页面上方处理";
+/** 这一项（清单或参数）有一次修改结果未知时，「调整」和提交的禁用原因。 */
+export const EDIT_LOCKED = "这项有一次修改结果未知，先到页面上方处理";
+export const UNKNOWN_TOAST = "结果未知，不要重复操作，到页面上方处理。";
+export const BUY_SAVED = "其他可购买设备 已更新";
+const INVALID_PICKED = "请先取消不能新增的设备";
 export const BUY_CONFLICT = "这份清单刚被别人改过，这次没有保存";
 export const BUY_READ_INVALID = "收到的数据不完整，已停止显示。";
 const ROW_HELP = {
@@ -90,7 +92,7 @@ export function BuyListPendingNotice({ record, canWrite, onRetry, onRelease, ret
     const timer = setTimeout(() => refreshDeadline((current) => current + 1), Math.max(1, record.expiresAt - Date.now()));
     return () => clearTimeout(timer);
   }, [expired, record.expiresAt]);
-  const rejection = record.retryRejection;
+  const rejection = record.replayRejection;
   const op = [record.added.length > 0 && `新增 ${record.added.join("、")}`, record.removed.length > 0 && `移除 ${record.removed.join("、")}`].filter(Boolean).join(" · ");
   return (
     <Notice tone="warn" title="调整其他可购买设备 · 结果未知"
@@ -181,7 +183,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const removed = draftItems.filter((item) => !picked.includes(item.productNo));
   const changed = added.length + removed.length > 0;
   const invalidPicked = candidates.some((item) => !item.selectable && added.includes(item.productNo));
-  const draftBlock = blocked ?? (invalidPicked ? "请先取消不能新增的设备" : changed ? undefined : "勾选和现在一样，没有要保存的改动");
+  const draftBlock = blocked ?? (invalidPicked ? INVALID_PICKED : changed ? undefined : "勾选和现在一样，没有要保存的改动");
 
   const dirty = !!draftBase && changed;
   const openDrawer = () => {
@@ -304,7 +306,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       }
       if (outcome.kind === "unknown") {
         closeDrawer();
-        ctx.toast("结果未知，不要重复操作，到页面上方处理。", "warn");
+        ctx.toast(UNKNOWN_TOAST, "warn");
         return;
       }
       // 从「还没保存」里选了保存：存好后接着做原来要做的（换页，或整页刷新，刷新自带读回）。
@@ -312,7 +314,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       closeDrawer();
       if (proceed) proceed();
       else await onReload().catch(() => undefined);
-      ctx.toast("其他可购买设备 已更新", "success");
+      ctx.toast(BUY_SAVED, "success");
     };
     ctx.openActionConfirm({
       formKey: ++formSequence.current,
@@ -350,7 +352,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   };
 
   const pricingHref = (no: string) => `/devices/pricing?sku=${encodeURIComponent(no)}`;
-  const note = invalidPicked ? "请先取消不能新增的设备" : [`改后共 ${picked.length} 款`, added.length > 0 && `新增 ${added.length} 款`, removed.length > 0 && `移除 ${removed.length} 款`].filter(Boolean).join(" · ");
+  const note = invalidPicked ? INVALID_PICKED : [`改后共 ${picked.length} 款`, added.length > 0 && `新增 ${added.length} 款`, removed.length > 0 && `移除 ${removed.length} 款`].filter(Boolean).join(" · ");
 
   return (
     <>
@@ -451,5 +453,3 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     </>
   );
 }
-
-export { BUY_LOCKED };

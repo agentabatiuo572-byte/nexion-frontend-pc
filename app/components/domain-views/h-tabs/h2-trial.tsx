@@ -6,7 +6,7 @@
  * 修改权 growth_h2_write、取消权 growth_h2_session_cancel、扣款权 growth_h2_session_charge 各判各的，没有就不显示按钮（OP-124）。
  * 强制取消提交审批，批准后执行；强制扣款已退役，历史申请仍可查询。参数修改直接生效，结果未知时保留原操作。
  */
-import { APPROVAL_REPLAY_RELEASE, canReadOwnRecoveryProposal, currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
+import { APPROVAL_REPLAY_RELEASE, canReadOwnRecoveryProposal, currentRecoveryActor, withLegacyReplayRejection } from "@/lib/admin/abe-recovery-access";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
@@ -40,7 +40,7 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useReach } from "@/lib/nav/use-reach";
 import type { EditSpec } from "../design-kit";
 import { AlertTriangle } from "lucide-react";
-import { BUY_CONFLICT, BUY_LOCKED, BUY_READ_INVALID, BuyListPendingNotice, BuySection, type BuyListDraft, type BuyListPending, type BuyListSubmitResult } from "./h2-trial-buy";
+import { BUY_CONFLICT, BUY_READ_INVALID, BUY_SAVED, BuyListPendingNotice, EDIT_LOCKED, UNKNOWN_TOAST, BuySection, type BuyListDraft, type BuyListPending, type BuyListSubmitResult } from "./h2-trial-buy";
 import type { HCtx } from "./types";
 
 /** 整页读取失败后按「重试」读到了：焦点落在第一块的标题，不落到整页外框（BUG-710）。 */
@@ -124,11 +124,14 @@ const STATE_TONE: Record<string, StateTone> = { dim: "done", ok: "ok", warn: "wa
 /** 读取中不能依据旧数据写入（ST-32）。 */
 const READING = "正在读取最新数据，读完再操作";
 const LOCKED = "这条记录有一次操作结果未知，先到页面上方处理";
-const PARAM_LOCKED = "这项有一次修改结果未知，先到页面上方处理";
 const APPROVAL_SENT = "已提交审批，超级管理员批准后执行，进度到「操作记录与审批」看。";
 // 后端的强制扣款走已退役的入口，固定回 410 TRIAL_EXPLICIT_PURCHASE_REQUIRED（AppTrialLifecycleService.redeemOnce）。
 const CHARGE_RESULT = "强制扣款已停用，用户要买请到 App 或 H5 试用页确认";
 const NO_WRITE = "这个账号已没有这项权限，请有权限的同事处理";
+const OWNER_UNKNOWN = "用户信息暂不可用";
+const NOT_STORED = "浏览器存不下这次操作，没有提交。换一个窗口再试。";
+const ORIGINAL_UNREADABLE = "浏览器里读不到原操作，这次没有发送。记录继续保留，请到操作记录与审批核对。";
+const RELEASED = "已解除原操作记录，后台的结果和锁定不变";
 // 每个审批框都一样的话，收进生效标签的提示图标（N09）。发起人不能批自己的单（后端 A2_MAKER_CHECKER_REQUIRED）。
 const APPROVAL_NOTE = "超级管理员批准后才执行，批准前这条记录不变。发起人不能批自己提交的单。";
 const PROPOSAL_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
@@ -161,7 +164,6 @@ const pendingBuyLists = createPendingMutationStore<BuyListPending>({
   isValidRecord: (record) => record.fingerprint === H2_BUY_LIST_OBJECT
     && record.requestNo === record.commandKey && record.confirmedActorId === record.commandOwnerId
     && isBuyListVersion(record.version) && nonBlank(record.reason)
-    && (record.retryRejection === undefined || nonBlank(record.retryRejection))
     && [record.productNos, record.added, record.removed, record.nextNames]
       .every((values) => Array.isArray(values) && values.every(nonBlank)),
 });
@@ -215,7 +217,7 @@ function knownTrialOwner(session: TrialSession): boolean {
 }
 
 function trialOwnerLabel(session: TrialSession): string {
-  if (!knownTrialOwner(session)) return "用户信息暂不可用";
+  if (!knownTrialOwner(session)) return OWNER_UNKNOWN;
   const name = typeof session.displayName === "string" ? operatorNicknameText(session.displayName.trim()) : "";
   return `用户编号 ${session.userId}${name ? ` · ${name}` : ""}`;
 }
@@ -455,7 +457,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const [buyLoading, setBuyLoading] = useState(false);
   const [catalogWritePermissionName, setCatalogWritePermissionName] = useState<string>();
   const buyPending = adminSession && isPendingCommandOwnedBy(pendingBuyList, adminSession.adminId) ? pendingBuyList : undefined;
-  const syncBuyPending = useCallback(() => setPendingBuyList(pendingBuyLists.list()[0]), []);
+  // 重试被拒只认存储层的 replayRejection；更早写进 retryRejection 的记录读出时并过来。
+  const syncBuyPending = useCallback(() => setPendingBuyList(pendingBuyLists.list().map(withLegacyReplayRejection)[0]), []);
   const reloadEpochRef = useRef(0);
   const buyLeaveGuard = useRef<((next: () => void) => void) | null>(null);
   const fullReadInProgress = useRef(true);
@@ -574,7 +577,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const buyRead = model?.buyList;
   const buyList = buyRead === "invalid" ? undefined : buyRead;
   const buyInvalid = buyRead === "invalid" || !!buyReadError;
-  const buyBlock = loading || buyLoading ? READING : buyPending ? BUY_LOCKED : buyReplayConflict || buyReadError ? "请先读取最新" : undefined;
+  const buyBlock = loading || buyLoading ? READING : buyPending ? EDIT_LOCKED : buyReplayConflict || buyReadError ? "请先读取最新" : undefined;
   const sessionsRead = model?.sessions ?? [];
   const sessionsInvalid = sessionsRead.some((session) => readH2SessionProducts(session) === "invalid");
   const sections: SectionNavItem[] = [
@@ -603,7 +606,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     pendingCommands.remember(scope, key, item);
     if (!pendingCommands.isDurablyStored(scope, key)) {
       if (!retained) pendingCommands.forget(scope, key);
-      throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+      throw new Error(NOT_STORED);
     }
     try {
       if (item.kind === "param") await updateH2TrialParam(item.paramKey, item.value, item.reason, key);
@@ -614,7 +617,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       syncPending();
       if (!unknown) throw cause;
       setCurrentSid(null);
-      toast("结果未知，不要重复操作，到页面上方处理。", "warn");
+      toast(UNKNOWN_TOAST, "warn");
       return;
     }
     pendingCommands.forget(scope);
@@ -638,12 +641,6 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     }
   };
 
-  const recordBuyRejection = (record: BuyListPending, ownerId: number, reason: string) => {
-    if (isPendingCommandOwnedBy(record, ownerId)) {
-      pendingBuyLists.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: reason });
-    }
-  };
-
   const submitBuyList = async (draft: BuyListDraft): Promise<BuyListSubmitResult> => {
     const ownerId = adminSession?.adminId;
     if (!ownerId || !canWrite) throw new Error("ADMIN_PERMISSION_DENIED");
@@ -655,14 +652,14 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     if (!readsAllowBuyWrite.current) throw new Error(READING);
     if (pendingBuyLists.get(H2_BUY_LIST_OBJECT)) {
       syncBuyPending();
-      throw new Error(BUY_LOCKED);
+      throw new Error(EDIT_LOCKED);
     }
     const commandKey = createH2CommandKey("h2-buy-list");
     pendingBuyLists.remember(H2_BUY_LIST_OBJECT, commandKey, { ...draft, requestNo: commandKey, confirmedActorId: ownerId });
     const record = pendingBuyLists.list().find((item) => item.commandKey === commandKey);
     if (!record || record.commandOwnerId !== ownerId || !pendingBuyLists.isDurablyStored(H2_BUY_LIST_OBJECT, commandKey)) {
       pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
-      throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+      throw new Error(NOT_STORED);
     }
     try {
       const outcome = await updateH2TrialBuyList(buyListWrite(record));
@@ -686,10 +683,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const retryBuyList = async (record: BuyListPending) => {
     if (isRetryExpired(record)) { syncBuyPending(); return; }
     const ownerId = record.commandOwnerId;
-    if (!ownerId || !canWrite || retryingBuyList || record.retryRejection || buyRetryDenied === record.commandKey
+    if (!ownerId || !canWrite || retryingBuyList || record.replayRejection || buyRetryDenied === record.commandKey
       || !isPendingCommandOwnedBy(record, adminSession?.adminId)) return;
     if (!pendingBuyLists.isDurablyStored(record.fingerprint, record.commandKey)) {
-      toast("浏览器里读不到原操作，这次没有发送。记录继续保留，请到操作记录与审批核对。", "warn");
+      toast(ORIGINAL_UNREADABLE, "warn");
       return;
     }
     setRetryingBuyList(true);
@@ -706,7 +703,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         case "saved":
           pendingBuyLists.forget(record.fingerprint, record.commandKey);
           await reloadBuyList().catch(() => undefined);
-          toast("其他可购买设备 已更新", "success");
+          toast(BUY_SAVED, "success");
           break;
         case "conflict":
           pendingBuyLists.forget(record.fingerprint, record.commandKey);
@@ -714,7 +711,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           setBuyReplayConflict(true);
           break;
         case "rejected":
-          recordBuyRejection(record, ownerId, outcome.message);
+          pendingBuyLists.markReplayRejected(record.fingerprint, record.commandKey, outcome.message);
           break;
         // A refusal about who is asking says nothing about the original operation: the record stays, with no release.
         case "accountMismatch":
@@ -726,7 +723,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           handleBuySessionStop(outcome.kind, ownerId);
           break;
         case "unknown":
-          toast("结果未知，不要重复操作，到页面上方处理。", "warn");
+          toast(UNKNOWN_TOAST, "warn");
           break;
       }
     } catch (cause) {
@@ -749,7 +746,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     }
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!pendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
-      notePending(record, "浏览器里读不到原操作，这次没有发送。记录继续保留，请到操作记录与审批核对。");
+      notePending(record, ORIGINAL_UNREADABLE);
       return;
     }
     notePending(record, "");
@@ -796,7 +793,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     pendingCommands.forget(record.fingerprint, record.commandKey);
     syncPending();
     setReleasing(null);
-    toast("已解除原操作记录，后台的结果和锁定不变", "success");
+    toast(RELEASED, "success");
   };
 
   const openSessionCancel = (session: TrialSession, stateLabel: string) => {
@@ -1010,14 +1007,14 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       请读取最新清单后再调整。
     </Notice>,
   );
-  const releaseBuyListModal = canRecoverBuyList && buyPending?.retryRejection && releasingBuyList === buyPending.commandKey && (
+  const releaseBuyListModal = canRecoverBuyList && buyPending?.replayRejection && releasingBuyList === buyPending.commandKey && (
     <ReleaseModal label="调整其他可购买设备" onCancel={() => setReleasingBuyList(undefined)}
       explain="这次解除只删除本地记录，不写入操作记录。"
       onConfirm={() => {
         pendingBuyLists.forget(buyPending.fingerprint, buyPending.commandKey);
         setReleasingBuyList(undefined);
         syncBuyPending();
-        toast("已解除原操作记录，后台的结果和锁定不变", "success");
+        toast(RELEASED, "success");
       }} />
   );
   const legacyReleasing = legacyApprovals.find(record => record.commandKey === legacyReleaseKey);
@@ -1029,7 +1026,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       if (!releaseRejectedH2Cancellation(adminSession.adminId, legacyReleasing.commandKey)) return;
       setLegacyApprovals(pendingH2TrialApprovals(adminSession.adminId));
       setLegacyReleaseKey(null);
-      toast("已解除原操作记录，后台的结果和锁定不变", "success");
+      toast(RELEASED, "success");
     }} />;
 
   if (loading && !model) {
@@ -1056,7 +1053,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
   const lockedSids = new Set([...pending.flatMap((record) => isProposal(record) ? [record.sid] : []), ...legacyApprovals.map((record) => record.sid)]);
   const lockedParams = new Set(pending.flatMap((record) => record.kind === "param" ? [record.paramKey] : []));
-  const paramBlock = (key: string) => loading ? READING : lockedParams.has(key) ? PARAM_LOCKED : undefined;
+  const paramBlock = (key: string) => loading ? READING : lockedParams.has(key) ? EDIT_LOCKED : undefined;
   const rows = sessions.map((session) => {
     const state = states.get(session.state);
     return { session, state, label: state?.label ?? session.state, tone: stateTone(state), terminal: TERMINAL_STATES.includes(session.state), owner: knownTrialOwner(session) };
@@ -1064,7 +1061,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const currentRow = current ? rows[currentIndex] : null;
   const sessionProducts = readH2SessionProducts(current);
   const sessionButtons = (row: (typeof rows)[number], variant: "row" | "drawer") => {
-    const reason = row.session.pendingApproval ? "这条试用已有待审批操作，审批结束后才能再次处理" : lockedSids.has(row.session.sid) ? LOCKED : loading ? READING : row.owner ? undefined : "用户信息暂不可用";
+    const reason = row.session.pendingApproval ? "这条试用已有待审批操作，审批结束后才能再次处理" : lockedSids.has(row.session.sid) ? LOCKED : loading ? READING : row.owner ? undefined : OWNER_UNKNOWN;
     return {
       cancel: canCancel && <Button variant="danger-outline" size={variant === "row" ? "sm" : "md"} disabledReason={reason} onClick={() => openSessionCancel(row.session, row.label)}>强制取消</Button>,
     };
