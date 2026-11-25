@@ -45,10 +45,10 @@ import { configApprovalOriginalInput, g4FirstDividendRejectionSnapshot, pendingC
 import G4AdminOperations, { G4_CONFIGS, g4ConfigValueShown, g4Count, type G4ConfirmReq } from "./g4-admin-operations";
 import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
 import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4-tier-confirm";
-import { canRetryG4DirectCommand, g4DirectAuthority, g4DirectCommandExpired, g4DirectObject, g4DividendRejectionSnapshot, G4DividendRerunOutcomeUncertainError, G4_DIVIDEND_REPLAY_HINT, isG4DividendRerun, listG4DirectCommands, releaseG4DividendRejection, subscribeG4DirectCommands, g4DirectCommandVersion, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
+import { canRetryG4DirectCommand, g4DirectAuthority, g4DirectCommandExpired, g4DirectObject, g4DividendRejectionSnapshot, G4DividendRerunOutcomeUncertainError, G4_DIVIDEND_REPLAY_HINT, G4_DIVIDEND_UNKNOWN, isG4DividendRerun, listG4DirectCommands, releaseG4DividendRejection, subscribeG4DirectCommands, g4DirectCommandVersion, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { canProposeGParam, gParamApprovalFeedback, useGParamApproval } from "@/lib/admin/use-g-param-approval";
-import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRejectedRelease, GReplayRejectionNote, unknownTag } from "./g-recovery";
 import { rejectedTag } from "../verified-release";
 import { replayRejectionText } from "@/lib/admin/retry-rejected";
@@ -309,15 +309,13 @@ function G4GenesisPage() {
       setNodePageNo(next.nodePage.page);
       setNodePageSize(next.nodePage.pageSize);
     } catch (err) {
-      if (refreshError) setRefreshError({ ...refreshError, message: displayAdminReadError(err) });
-      else {
-        setOverview(null);
-        setError(messageOf(err));
-      }
+      if (latest.current.overview) {
+        setRefreshError(previous => ({ message: displayAdminReadError(err), writeConfirmed: previous?.writeConfirmed ?? false }));
+      } else setError(messageOf(err));
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [nodePageNo, nodePageSize, refreshError]);
+  }, [nodePageNo, nodePageSize]);
 
   useEffect(() => {
     let cancelled = false;
@@ -413,6 +411,7 @@ function G4GenesisPage() {
         if (saved && isG4DividendRerun(saved)) {
           const retryAllowed = canRetryG4DirectCommand(saved);
           return { expiresAt: saved.expiresAt, queryOnly: !retryAllowed,
+            outcomeMessage: saved.replayRejection ? messageOf(saved.replayRejection) : G4_DIVIDEND_UNKNOWN,
             statusText: replayRejectionText(saved) ?? (g4DirectCommandExpired(saved) ? RETRY_EXPIRED_TEXT
               : retryAllowed ? G4_DIVIDEND_REPLAY_HINT : "当前没有重试权限，原记录继续保留。") };
         }
@@ -1298,7 +1297,7 @@ function G4GenesisPage() {
       {error && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {refreshError && <Notice tone="warn" title={refreshError.writeConfirmed ? "操作已成功，页面刷新失败" : "概览读取失败"}
         action={<Button size="sm" disabled={loading || !!busyKey} onClick={() => void reload()}>重试读取概览</Button>}>
-        <p>{refreshError.message} 下面是上次读取的数据，重新读取成功前暂不能修改。</p>
+        <p>{refreshError.message} 下面是 {businessStamp(overview.readAt)}（{businessZone().label}）读到的数据，重新读取成功前暂不能修改。</p>
       </Notice>}
       {conclusion}
       {!overview.catalogAvailable && (overview.seriesRecoveryRequired || overview.seriesInitializationAvailable

@@ -12,11 +12,12 @@ export type G4DirectRequest = {
 export type G4DirectCommand = PendingMutationRecord & G4DirectRequest & { adminId: number };
 
 export const G4_DIVIDEND_REPLAY_HINT = "按原操作重试会用原编号、原内容重新发送，不会重复执行；当前配置只能辅助核对。";
+export const G4_DIVIDEND_UNKNOWN = `补发结果未知，可能已经提交。${G4_DIVIDEND_REPLAY_HINT}`;
 
 export class G4DividendRerunOutcomeUncertainError extends Error {
-  readonly confirmCopy = `补发结果未知，可能已经提交。${G4_DIVIDEND_REPLAY_HINT}`;
+  readonly confirmCopy = G4_DIVIDEND_UNKNOWN;
   constructor(public readonly commandKey: string) {
-    super(`补发结果未知，可能已经提交。${G4_DIVIDEND_REPLAY_HINT}`);
+    super(G4_DIVIDEND_UNKNOWN);
     this.name = "G4DividendRerunOutcomeUncertainError";
   }
 }

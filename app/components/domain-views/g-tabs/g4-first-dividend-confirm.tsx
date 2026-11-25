@@ -66,7 +66,8 @@ export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readb
     requireCurrentMaker(false);
     if (!result) return false;
     onDone(result.active, result.ticket.status === "pending"
-      ? `审批单 ${result.ticket.id} · 等另一位超级管理员批准，尚未生效`
+      ? mode === true ? `审批单 ${result.ticket.id} · 等另一位超级管理员批准，尚未生效`
+        : `${result.acknowledgement} · 由另一位超级管理员批准`
       : `审批单 ${result.ticket.id} · ${G4_FIRST_DIVIDEND_TICKET_STATUS[result.ticket.status]}。当前比例已重新读取。`);
     return true;
   }
