@@ -17,7 +17,7 @@
  */
 "use client";
 
-import { forwardRef, useEffect, useRef, type ReactNode, type RefObject } from "react";
+import { forwardRef, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import { AlertTriangle, CheckCircle2, Clock3, Info, Loader2, ShieldAlert, type LucideIcon } from "lucide-react";
 import { Button } from "./button";
 import type { StateTone } from "./tone";
@@ -74,7 +74,8 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
     for (let frame = box.current?.parentElement; frame && frame !== document.body; frame = frame.parentElement) frames.current.push(frame);
     onRetry();
   });
-  useEffect(() => {
+  // 都放在布局阶段：节点一摘掉就接住焦点，不留到下一个任务，中间不会有一刻停在页面上（BUG-710 验收：D4 在途时采样到 body）。
+  useLayoutEffect(() => {
     const run = armed.current;
     if (!run) return;
     if (Date.now() - run.at > RETRY_FOCUS_MS) { armed.current = null; return; }
@@ -89,25 +90,27 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
     pendingRetry = null;
     if (failed && (inside || focusLost())) retryButton.current?.focus({ preventScroll: true });
   });
-  useEffect(() => {
+  useLayoutEffect(() => {
     // 重读时这一块被换掉、仍失败时在同一区域重新挂上：新的这一块接住焦点。
-    const pending = pendingRetry;
-    if (!failed || !retryButton.current || !pending || Date.now() - pending.at > RETRY_FOCUS_MS || pending.key !== key || !pending.region?.contains(box.current)) return;
-    pendingRetry = null;
-    if (focusLost() || document.activeElement === pending.landing) retryButton.current?.focus({ preventScroll: true });
+    // 放进微任务：同一次提交里卸下的旧块先记下区域（也在微任务里），再来认；都在这次提交的同一个任务里跑完。
+    queueMicrotask(() => {
+      const pending = pendingRetry;
+      if (!failed || !retryButton.current || !pending || Date.now() - pending.at > RETRY_FOCUS_MS || pending.key !== key || !pending.region?.contains(box.current)) return;
+      pendingRetry = null;
+      if (focusLost() || document.activeElement === pending.landing) retryButton.current?.focus({ preventScroll: true });
+    });
   // 只在挂上时看一次。
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => () => {
+  useLayoutEffect(() => () => {
     const run = armed.current;
     if (!run || Date.now() - run.at > RETRY_FOCUS_MS) return;
     // 这一块卸下（读到了，或重读时换成了别的占位）：焦点交给调用方给的标题；没给、或标题接不到，就交给还挂着的最近一层外框，接不到再往外一层。
     const target = focusAfter.current ?? run.target;
     const outer = frames.current;
-    // 卸下时就记区域（这时节点已经摘掉）：同一轮里在这里挂上的新失败块马上就能认出来。
-    if (pendingRetry) pendingRetry.region = outer.find((frame) => frame.isConnected);
-    // 这一轮的副作用跑完就交接（新内容已经挂上），不等下一帧：浏览器忙或窗口被遮住时一帧要等几百毫秒，这段时间焦点停在页面上。
+    // 布局阶段清理时外层可能还没摘掉：等这次提交做完（微任务，仍在同一个任务里，浏览器来不及采样或绘制）再记区域、交焦点。
     queueMicrotask(() => {
+      if (pendingRetry) pendingRetry.region = outer.find((frame) => frame.isConnected);
       if (!focusLost()) return;
       const heading = target?.current;
       const landing = [heading, ...outer].find((frame): frame is HTMLElement => !!frame && focusFrame(frame));
