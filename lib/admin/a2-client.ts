@@ -5,6 +5,8 @@ import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outco
 import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
 import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
 import { ambassadorApprovalBlocker } from "@/lib/admin/f4-ambassador-display";
+import { rankPurchaseRate } from "@/lib/admin/f-overview-contract";
+import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import { parsePhoneProposalView, type PhoneProposalView } from "@/lib/admin/phone-calibration-client";
 import { readE4Money } from "./e4-refund-amount";
 import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client";
@@ -83,6 +85,7 @@ export type A2RuleTaskAction = "CREATE" | "UPDATE" | "ENABLE" | "DISABLE";
 interface BackendTicket {
   roleGrantsDiff?: unknown;
   disclosureReview?: unknown;
+  v8PromotionSnapshot?: unknown;
   ruleTaskAction?: A2RuleTaskAction | null;
   approveDeniedCode?: number | null;
   approveDeniedMessage?: string | null;
@@ -219,11 +222,27 @@ type I5DisclosureReview = { jurisdiction: string; version: string } & (
   | { kind: "MATRIX"; expectedVersion: string; originalCountryCodes?: string[] | null; targetCountryCodes?: string[] | null }
 );
 
+export interface V8PromotionBenefits {
+  purchaseL1Rate?: string;
+  purchaseL2Rate?: string;
+  monthlySalaryUsdt?: string;
+}
+
+export type V8PromotionReward = OpsVRankRewardItem & { voucherName?: string; skuName?: string };
+
+interface V8PromotionSnapshot {
+  originalRank: string;
+  v8Rewards?: V8PromotionReward[];
+  v7?: V8PromotionBenefits;
+  v8?: V8PromotionBenefits;
+}
+
 export interface A2OperationRow {
   /** Persisted backend review only; null is unavailable, four empty arrays are a known empty diff. */
   roleGrantsDiff: A2RoleGrantsDiff | null;
   roleGrantsReview: A2RoleGrantsReview | null;
   disclosureReview?: I5DisclosureReview;
+  v8PromotionSnapshot?: V8PromotionSnapshot;
   ruleTaskAction?: A2RuleTaskAction;
   approveDeniedMessage?: string;
   rejectDeniedMessage?: string;
@@ -412,6 +431,50 @@ function readRoleGrantsDiff(value: unknown): A2RoleGrantsDiff | null {
     permissionCodesAdded: row.permissionCodesAdded, permissionCodesRemoved: row.permissionCodesRemoved,
     menuIdsAdded: row.menuIdsAdded, menuIdsRemoved: row.menuIdsRemoved,
   };
+}
+
+function isSnapshotRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isSnapshotReward(value: unknown): value is OpsVRankRewardItem & Record<string, unknown> {
+  if (!isSnapshotRecord(value) || typeof value.id !== "string" || !value.id.trim()) return false;
+  switch (value.type) {
+    case "usdt":
+    case "uvt":
+      return typeof value.amountText === "string" && /^\d{1,12}(?:\.\d{1,6})?$/.test(value.amountText)
+        && (value.amount === undefined || (typeof value.amount === "number" && Number.isFinite(value.amount)));
+    case "voucher": return typeof value.voucherId === "string" && !!value.voucherId.trim();
+    case "sku": return typeof value.skuId === "string" && !!value.skuId.trim();
+    case "custom": return typeof value.custom === "string" && !!value.custom.trim();
+    default: return false;
+  }
+}
+
+function readSnapshotBenefits(row: Record<string, unknown>): V8PromotionBenefits | undefined {
+  const rate = (value: unknown) => rankPurchaseRate(typeof value === "number" ? String(value) : value);
+  const purchaseL1Rate = rate(row.purchaseL1Rate);
+  const purchaseL2Rate = rate(row.purchaseL2Rate);
+  const monthlySalaryUsdt = typeof row.monthlySalaryUsdt === "string" && /^\d{1,12}(?:\.\d{1,6})?$/.test(row.monthlySalaryUsdt)
+    ? row.monthlySalaryUsdt : undefined;
+  return purchaseL1Rate || purchaseL2Rate || monthlySalaryUsdt ? { purchaseL1Rate, purchaseL2Rate, monthlySalaryUsdt } : undefined;
+}
+
+function readV8PromotionSnapshot(value: unknown): V8PromotionSnapshot | undefined {
+  if (!isSnapshotRecord(value)) return undefined;
+  const { originalRank, v8Rewards, v7, v8 } = value;
+  if (typeof originalRank !== "string" || !/^V[0-8]$/.test(originalRank)
+    || (v8Rewards != null && !Array.isArray(v8Rewards))
+    || (v7 != null && !isSnapshotRecord(v7)) || (v8 != null && !isSnapshotRecord(v8))) return undefined;
+  const rewardName = (name: unknown) => typeof name === "string" ? name.trim() || undefined : undefined;
+  const rewards = v8Rewards?.every(isSnapshotReward) ? v8Rewards.map(reward => ({
+    ...reward,
+    voucherName: rewardName(reward.voucherName),
+    skuName: rewardName(reward.skuName),
+  })) : undefined;
+  const from = v7 ? readSnapshotBenefits(v7) : undefined;
+  const to = v8 ? readSnapshotBenefits(v8) : undefined;
+  return rewards || from || to ? { originalRank, v8Rewards: rewards, v7: from, v8: to } : undefined;
 }
 
 function isDisclosureLanguageScope(value: unknown): value is string {
@@ -634,6 +697,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     roleGrantsDiff,
     roleGrantsReview: roleGrantsDiff ? roleGrantsReview(roleGrantsDiff) : null,
     disclosureReview: readI5DisclosureReview(ticket.disclosureReview, ticket.operationCode),
+    v8PromotionSnapshot: readV8PromotionSnapshot(ticket.v8PromotionSnapshot),
     ruleTaskAction: ticket.ruleTaskAction ?? undefined,
     approveDeniedMessage: ticket.approveDeniedMessage ? formatAdminApiError(ticket.approveDeniedMessage, "这个账号没有批准这张单的权限") : undefined,
     rejectDeniedMessage: ticket.rejectDeniedMessage ? formatAdminApiError(ticket.rejectDeniedMessage, "这个账号没有驳回这张单的权限") : undefined,
