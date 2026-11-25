@@ -239,6 +239,8 @@
    只用 --rd-* 令牌。七天计划：左边走势图、右边逐日表（Figure）；今天那一行用选中底，值和改的按钮挨着、右对齐。 */
 
 .g3m .g3-plan { table-layout: fixed; }
+/* 七天计划被原操作或审批单整份挡住时的常显原因：和下面走势图的最高刻度留出距离（OP-126）。 */
+.g3-plan-hold { margin-bottom: var(--rd-space-4); }
 .g3m .g3-plan th:nth-child(1) { width: 50%; }
 .g3m .g3-plan th:nth-child(2) { width: 50%; }
 .g3m :is(.g3-plan, .g3-vol) td { padding-block: 8px; }
