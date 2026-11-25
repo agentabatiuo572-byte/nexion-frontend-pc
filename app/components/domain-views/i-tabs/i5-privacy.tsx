@@ -231,7 +231,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
   const saveLabel = form.status === "PUBLISHED" ? "保存并发布" : form.status === "UNPUBLISHED" ? "保存并撤下" : "保存草稿";
   const close = guard.askClose;
   return <>
-    <Drawer open wide onClose={close} title="编辑隐私政策" sub={`正文版本 ${versionName(baseline.version) || "—"}`} icon={FilePen} tone="role-1"
+    <Drawer open wide onClose={close} onInteractOutside={guard.keepDraftForLeaveLink} title="编辑隐私政策" sub={`正文版本 ${versionName(baseline.version) || "—"}`} icon={FilePen} tone="role-1"
       footer={<Decision note={form.status === "DRAFT" ? "草稿保留当前公开版本。" : "保存后立即生效，请仅发布已审核正文。"}
         danger={<span className="rd-toolbar"><span className="rd-toolbar-note">保存后状态</span><Select aria-label="保存后状态" value={form.status} options={[
           { value: "DRAFT", label: "草稿" },

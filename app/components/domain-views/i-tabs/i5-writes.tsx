@@ -205,27 +205,29 @@ type BrowserNavigation = EventTarget & {
   entries: () => HistoryEntry[];
   traverseTo: (key: string) => { finished: Promise<unknown> };
 };
-type HistorySave = { blocked?: string; run: (saved: () => void) => void };
-type HistoryBack = {
+type LeaveSave = { blocked?: string; run: (saved: () => void) => void };
+type LeaveDecision = {
   resume: () => void;
   discardOthers: () => void;
   saveOthers: (saved: () => void) => void;
   saveBlocked?: string;
 };
-type HistoryEditor = {
-  ask: (back: HistoryBack) => void;
+type LeaveOptions = {
+  pathOnly?: boolean;
+  allowOverModal?: () => boolean;
   discard?: () => void;
-  getSave?: () => HistorySave | undefined;
+  getSave?: () => LeaveSave | undefined;
 };
+type LeaveEditor = LeaveOptions & { ask: (decision: LeaveDecision) => void };
 
-const historyEditors = new Set<HistoryEditor>();
-let stopHistoryGuard: (() => void) | undefined;
+const leaveEditors = new Set<LeaveEditor>();
+let stopLeaveGuard: (() => void) | undefined;
 
-function askHistoryBack(resume: () => void) {
-  if (document.querySelector('.rd-modal[data-state="open"]')) return;
-  const editors = [...historyEditors];
+function askToLeave(resume: () => void) {
+  const editors = [...leaveEditors];
   const editor = editors.pop();
   if (!editor) return;
+  if (document.querySelector('.rd-modal[data-state="open"]') && !editor.allowOverModal?.()) return;
   const saves = editors.flatMap(other => other.getSave?.() ?? []);
   const saveNext = (index: number, saved: () => void) => {
     const save = saves[index];
@@ -251,7 +253,7 @@ type HistoryBridge = {
 let historyBridge: HistoryBridge | undefined;
 let resumingDocumentBack = false;
 
-export function warnAboutUnsavedChanges(event: BeforeUnloadEvent) {
+function warnAboutUnsavedChanges(event: BeforeUnloadEvent) {
   if (resumingDocumentBack) return;
   event.preventDefault();
   event.returnValue = "";
@@ -376,9 +378,9 @@ function guardHistory(navigation: BrowserNavigation) {
     if (allowed === destination.key) { allowed = undefined; return; }
     if (restoring?.key === destination.key) return;
     const origin = navigation.currentEntry;
-    if (!origin || historyEditors.size === 0) return;
+    if (!origin || leaveEditors.size === 0) return;
 
-    const ask = () => askHistoryBack(() => {
+    const ask = () => askToLeave(() => {
       if (bridge?.extra === origin.key && bridge.base === destination.key) {
         releaseBridge(true);
         return;
@@ -425,7 +427,7 @@ function guardLegacyHistory(cursor: LegacyHistoryCursor) {
       event.stopImmediatePropagation();
       const { destination: target } = restoring;
       restoring = undefined;
-      askHistoryBack(() => {
+      askToLeave(() => {
         allowed = target;
         window.history.go(target - destination);
       });
@@ -438,107 +440,113 @@ function guardLegacyHistory(cursor: LegacyHistoryCursor) {
   return () => { cursor.onTraverse = undefined; };
 }
 
-/** Share one history decision across the drafts registered on this page. */
-export function useHistoryBackGuard(active: boolean, onBack: (resume: () => void, back: HistoryBack) => void, options?: Pick<HistoryEditor, "discard" | "getSave">) {
-  const latest = useRef({ onBack, options });
-  latest.current = { onBack, options };
+/** Links, the command palette and in-document history use the same draft decision. */
+export function useNavigationLeaveGuard(active: boolean, onLeave: (decision: LeaveDecision) => void, options?: LeaveOptions) {
+  const router = useRouter();
+  const latest = useRef({ onLeave, options });
+  latest.current = { onLeave, options };
+  const pathOnly = options?.pathOnly;
   useEffect(() => {
     if (!active) return;
-    const { navigation, nexionHistoryCursor } = window as Window & {
-      navigation?: BrowserNavigation;
-      nexionHistoryCursor?: LegacyHistoryCursor;
-    };
-    const editor: HistoryEditor = {
-      ask: back => latest.current.onBack(back.resume, back),
+    const editor: LeaveEditor = {
+      pathOnly,
+      ask: decision => latest.current.onLeave(decision),
+      allowOverModal: () => latest.current.options?.allowOverModal?.() ?? false,
       discard: () => latest.current.options?.discard?.(),
       getSave: () => latest.current.options?.getSave?.(),
     };
-    historyEditors.add(editor);
-    stopHistoryGuard ??= navigation ? guardHistory(navigation) : nexionHistoryCursor && guardLegacyHistory(nexionHistoryCursor);
+    leaveEditors.add(editor);
+    stopLeaveGuard ??= guardNavigation(router);
     return () => {
-      historyEditors.delete(editor);
-      if (historyEditors.size === 0) {
-        stopHistoryGuard?.();
-        stopHistoryGuard = undefined;
+      leaveEditors.delete(editor);
+      if (leaveEditors.size === 0) {
+        stopLeaveGuard?.();
+        stopLeaveGuard = undefined;
       }
-    };
-  }, [active]);
-}
-
-/** Route sidebar links and command palette selections through the same editor callback. */
-export function usePageLeaveGuard(active: boolean, onLeave: (resume: () => void) => void, pathOnly = false) {
-  const router = useRouter();
-  const latest = useRef(onLeave);
-  latest.current = onLeave;
-  useEffect(() => {
-    if (!active) return;
-    const ask = (navigate: PageNavigation) => latest.current(() => resumePageNavigation(navigate));
-    const unregister = registerNavigationGuard(ask);
-    const intercept = (event: MouseEvent) => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
-      if (!link || link.origin !== window.location.origin) return;
-      if (pathOnly ? (link.target && link.target !== "_self") || link.hasAttribute("download") : link.target === "_blank") return;
-      if (link.pathname === window.location.pathname && (pathOnly || link.search === window.location.search)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      ask(pageNavigation(router, `${link.pathname}${link.search}${link.hash}`));
-    };
-    document.addEventListener("click", intercept, true);
-    return () => {
-      unregister();
-      document.removeEventListener("click", intercept, true);
     };
   }, [active, pathOnly, router]);
 }
 
+function guardNavigation(router: ReturnType<typeof useRouter>) {
+  const { navigation, nexionHistoryCursor } = window as Window & {
+    navigation?: BrowserNavigation;
+    nexionHistoryCursor?: LegacyHistoryCursor;
+  };
+  const stopHistory = navigation ? guardHistory(navigation) : nexionHistoryCursor && guardLegacyHistory(nexionHistoryCursor);
+  const ask = (navigate: PageNavigation) => askToLeave(() => resumePageNavigation(navigate));
+  const unregister = registerNavigationGuard(ask);
+  const intercept = (event: MouseEvent) => {
+    const link = leaveLink(event);
+    if (!link) return;
+    event.preventDefault();
+    event.stopPropagation();
+    ask(pageNavigation(router, `${link.pathname}${link.search}${link.hash}`));
+  };
+  document.addEventListener("click", intercept, true);
+  window.addEventListener("beforeunload", warnAboutUnsavedChanges);
+  return () => {
+    unregister();
+    stopHistory?.();
+    document.removeEventListener("click", intercept, true);
+    window.removeEventListener("beforeunload", warnAboutUnsavedChanges);
+  };
+}
+
+function leaveLink(event: Event) {
+  if (event instanceof MouseEvent && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return;
+  const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+  if (!link || link.origin !== window.location.origin || link.target === "_blank") return;
+  const samePath = link.pathname === window.location.pathname;
+  const guarded = [...leaveEditors].some(({ pathOnly }) => pathOnly
+    ? !samePath && (!link.target || link.target === "_self") && !link.hasAttribute("download")
+    : !samePath || link.search !== window.location.search);
+  if (guarded) return link;
+}
+
+/** A page link gets its leave decision on click, before a drawer can ask to close itself. */
+export function keepDraftForLeaveLink(event: CustomEvent<{ originalEvent: Event }>) {
+  if (leaveLink(event.detail.originalEvent)) event.preventDefault();
+}
+
 /**
  * 有未保存内容时拦离开（OP-29）：侧栏、面包屑在点击捕获阶段拦截；命令面板走共用跳转请求；关窗口走浏览器提示；
- * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。浏览器后退走 useHistoryBackGuard。
+ * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。
  */
-export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>, hasUnsavedAfterSave?: () => boolean) {
+export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>, hasUnsavedAfterSave?: () => boolean, preparingSave = false) {
   const [asking, setAsking] = useState(false);
   const nextAction = useRef<(() => void) | null>(null);
-  const historyBack = useRef<HistoryBack | null>(null);
-  const save = useRef<HistorySave | undefined>(undefined);
-  useHistoryBackGuard(dirty, (resume, back) => {
-    historyBack.current = back;
-    nextAction.current = resume;
+  const navigation = useRef<LeaveDecision | null>(null);
+  const save = useRef<LeaveSave | undefined>(undefined);
+  useNavigationLeaveGuard(dirty || preparingSave, decision => {
+    if (asking || nextAction.current || preparingSave) return;
+    navigation.current = decision;
+    nextAction.current = decision.resume;
     setAsking(true);
   }, { discard: close, getSave: () => save.current });
   useEffect(() => {
     switcher.current = { attempt: (next) => {
-      if (dirty) { historyBack.current = null; nextAction.current = next; setAsking(true); }
+      if (asking || nextAction.current || preparingSave) return;
+      if (dirty) { nextAction.current = next; setAsking(true); }
       else { close(); next(); }
     } };
     return () => { switcher.current = null; };
-  }, [dirty, close, switcher]);
-  usePageLeaveGuard(dirty, (next) => {
-    historyBack.current = null;
-    nextAction.current = next;
-    setAsking(true);
-  });
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  }, [asking, dirty, close, preparingSave, switcher]);
   const stay = () => {
-    historyBack.current = null;
+    navigation.current = null;
     nextAction.current = null;
     setAsking(false);
   };
   return {
     asking,
-    historySaveBlocked: historyBack.current?.saveBlocked,
-    registerSave: (action: HistorySave) => { save.current = action; },
+    keepDraftForLeaveLink,
+    otherSaveBlocked: navigation.current?.saveBlocked,
+    registerSave: (action: LeaveSave) => { save.current = action; },
     /** 普通关闭：只关这个编辑器，不带上次要去的地方。 */
-    askClose: () => { stay(); if (dirty) setAsking(true); else close(); },
+    askClose: () => { if (asking || nextAction.current || preparingSave) return; if (dirty) setAsking(true); else close(); },
     stay,
     discard: () => {
       const next = nextAction.current;
-      historyBack.current?.discardOthers();
+      navigation.current?.discardOthers();
       stay();
       close();
       next?.();
@@ -546,17 +554,17 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
     /** 只有保存有了确定的成功结果，才继续这次导航。 */
     startSave: () => {
       const next = nextAction.current;
-      const back = historyBack.current;
+      const decision = navigation.current;
       stay();
       return () => {
         // 保存成功后另一份草稿还没存（A3 两类内容）：不直接走，重新问一次（A3QI-F03）。
         if (hasUnsavedAfterSave?.()) {
-          historyBack.current = back;
-          nextAction.current = back ? back.resume : next;
+          navigation.current = decision;
+          nextAction.current = next;
           setAsking(true);
           return;
         }
-        if (back) back.saveOthers(back.resume);
+        if (decision) decision.saveOthers(decision.resume);
         else next?.();
       };
     },
@@ -566,11 +574,11 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
 /** saveName 是保存按钮的完整名字（「保存并立即生效」这类不带「后继续」的，OP-29）；不传时是「{saveLabel}后继续」。 */
 export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继续`, saveBlocked, onSave }: {
   guard: Pick<ReturnType<typeof useLeaveGuard>, "asking" | "stay" | "discard" | "startSave">
-    & Partial<Pick<ReturnType<typeof useLeaveGuard>, "historySaveBlocked" | "registerSave">>;
+    & Partial<Pick<ReturnType<typeof useLeaveGuard>, "otherSaveBlocked" | "registerSave">>;
   saveLabel?: string; saveName?: string; saveBlocked?: string; onSave: (saved: () => void) => void;
 }) {
   guard.registerSave?.({ blocked: saveBlocked, run: onSave });
-  saveBlocked ??= guard.historySaveBlocked;
+  saveBlocked ??= guard.otherSaveBlocked;
   const stayButton = useRef<HTMLButtonElement>(null);
   const saveButton = useRef<HTMLButtonElement>(null);
   // 弹窗先聚焦外框，等它聚焦完再落到保存按钮；现在不能保存时落到「继续编辑」（CP-69）。

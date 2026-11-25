@@ -21,7 +21,7 @@ import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, sendTaskPoolCommand
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Select } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
-import { useHistoryBackGuard, usePageLeaveGuard, warnAboutUnsavedChanges } from "../i-tabs/i5-writes";
+import { useNavigationLeaveGuard } from "../i-tabs/i5-writes";
 import { FIXED_DEVICE_LEVELS } from "./task-type-policy";
 import { checkE2Command, e2CommandLabel, e2Commands, e2CommandSettled, type E2Pending } from "./e2-pending";
 import { canInvestigateECommand, eCommandRollbackConfirmed } from "@/lib/admin/e-command-investigation";
@@ -279,7 +279,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   }, []);
 
   const leaveEditorThen = useCallback((next: () => void) => {
-    if (busy.current) return;
+    if (busy.current || afterEditorLeave.current || (editor && editor.step !== "form")) return;
     if (editorDirty) {
       afterEditorLeave.current = next;
       setEditor(current => current && { ...current, step: "leaving" });
@@ -287,17 +287,9 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       setEditor(null);
       next();
     }
-  }, [editorDirty]);
+  }, [editor?.step, editorDirty]);
   // 浏览器后退和点链接一样先问（OP-29）。
-  useHistoryBackGuard(editorDirty, leaveEditorThen);
-  usePageLeaveGuard(editorDirty, leaveEditorThen, true);
-
-  useEffect(() => {
-    if (!editorDirty) return;
-    const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [editorDirty]);
+  useNavigationLeaveGuard(editorDirty, ({ resume }) => leaveEditorThen(resume), { pathOnly: true });
 
   function finishEditor() {
     const next = afterEditorLeave.current;

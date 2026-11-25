@@ -372,7 +372,7 @@ function LegalEditor({ initial, latest, base, sectionsBlocked, canPublish, block
   const publishBlocked = blockedReason ?? (isNew || dirty ? "先保存草稿，发布只发已保存的内容" : sectionsBlocked(form));
   const close = guard.askClose;
   return <>
-    <Drawer open wide onClose={close} title="法律条款草稿" sub={`${form.version} · ${localeName(form.locale)} · ${form.jurisdiction}`} icon={FilePen} tone="role-1"
+    <Drawer open wide onClose={close} onInteractOutside={guard.keepDraftForLeaveLink} title="法律条款草稿" sub={`${form.version} · ${localeName(form.locale)} · ${form.jurisdiction}`} icon={FilePen} tone="role-1"
       footer={<Decision explain="保存草稿不改变用户看到的条款。发布立即生效，不走审批。" others={<>
         <Button onClick={close}>取消</Button>
         <Button variant={canPublish ? "secondary" : "primary"} disabledReason={saveBlocked} onClick={() => onSave(form)}>保存草稿</Button>

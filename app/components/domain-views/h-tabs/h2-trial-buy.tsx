@@ -16,7 +16,7 @@ import { buyProductReason, LISTING_BLOCKED, readH2BuyDevices, type BuyDevice, ty
 import { isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
-import { useHistoryBackGuard, usePageLeaveGuard, warnAboutUnsavedChanges } from "../i-tabs/i5-writes";
+import { useNavigationLeaveGuard } from "../i-tabs/i5-writes";
 
 export type BuyListDraft = Omit<BuyListWrite, "requestNo" | "confirmedActorId"> & {
   added: string[];
@@ -200,10 +200,13 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const draftBlock = blocked ?? (invalidPicked ? INVALID_PICKED : changed ? undefined : NO_CHANGES);
 
   const dirty = !!draftBase && changed;
-  const leaveThen = useCallback((next: () => void) => { afterLeave.current = next; setLeaving(true); }, []);
+  const leaveThen = useCallback((next: () => void) => {
+    if (leaving || ctx.currentActionConfirm()) return;
+    afterLeave.current = next;
+    setLeaving(true);
+  }, [ctx, leaving]);
   // 浏览器后退和换页一样先问（OP-29）。
-  useHistoryBackGuard(dirty, leaveThen);
-  usePageLeaveGuard(dirty, leaveThen, true);
+  useNavigationLeaveGuard(dirty, ({ resume }) => leaveThen(resume), { pathOnly: true });
   const openDrawer = () => {
     // 抽屉开着时「调整」仍可用键盘点到：有改动先问，不重置勾选。
     if (dirty) { afterLeave.current = undefined; setLeaving(true); return; }
@@ -217,12 +220,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   useEffect(() => {
     if (!dirty) return;
     leaveGuard.current = leaveThen;
-    const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
-    window.addEventListener("beforeunload", warn);
-    return () => {
-      leaveGuard.current = null;
-      window.removeEventListener("beforeunload", warn);
-    };
+    return () => { leaveGuard.current = null; };
   }, [dirty, leaveGuard, leaveThen]);
   // 换成离开提示时，原来聚焦的勾选框没了。
   useEffect(refocusDrawer, [leaving]);

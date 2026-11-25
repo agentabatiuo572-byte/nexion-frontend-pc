@@ -140,7 +140,7 @@ export function useRead<T>(loader: () => Promise<T>, deps: DependencyList, enabl
     return { data, error, loading, reload: () => setTick(v => v + 1) };
 }
 /** 弹窗走 rd Modal；单条详情传 drawer 走右侧抽屉。关闭行为和原来一样：×、Esc、底栏「返回」都调 onClose。 */
-export function Dialog({ title, children, onClose, footer, wide = false, drawer = false, sub, danger = false }: {
+export function Dialog({ title, children, onClose, footer, wide = false, drawer = false, sub, danger = false, busy = false }: {
     title: string;
     children: ReactNode;
     onClose: () => void;
@@ -149,10 +149,11 @@ export function Dialog({ title, children, onClose, footer, wide = false, drawer 
     drawer?: boolean;
     sub?: ReactNode;
     danger?: boolean;
+    busy?: boolean;
 }) {
     const foot = <div className="h4-dialog-foot">{footer || <Button onClick={onClose}>返回</Button>}</div>;
     if (drawer) return <Drawer open onClose={onClose} title={title} sub={sub} wide={wide} footer={foot}><div className="h4-dialog-body">{children}</div></Drawer>;
-    return <Modal title={title} sub={sub} tone={danger ? 'danger' : 'neutral'} wide={wide} onClose={onClose} footer={foot}><div className="h4-dialog-body">{children}</div></Modal>;
+    return <Modal title={title} sub={sub} tone={danger ? 'danger' : 'neutral'} wide={wide} busy={busy} onClose={onClose} footer={foot}><div className="h4-dialog-body">{children}</div></Modal>;
 }
 export const PROMOTION_COMMAND_PERMISSIONS: Record<string, string> = {createPromotion: 'edit', saveDraft: 'edit', copyPromotion: 'edit', createDraftVersion: 'edit', submitPromotion: 'submit', withdrawPromotion: 'submit', approvePromotion: 'approve', rejectPromotion: 'approve', publishPromotion: 'publish', pausePromotion: 'pause', resumePromotion: 'pause', endPromotion: 'end', archivePromotion: 'archive', deletePromotion: 'archive', retryReward: 'reward_retry', reconcileReward: 'reward_reconcile', cancelReward: 'reward_cancel', reverseReward: 'reward_reverse', resolveReward: 'reward_resolve', createExport: 'metrics_export', createPolicy: 'policy_write', approvePolicy: 'policy_approve', revokePolicy: 'policy_approve'};
 export function ConfirmCommand({ title, intent, body, prepareBody, children, onClose, onSettled, onSuccess, onReload, onVersionConflict, conflictReview, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload', confirmLabel = '确认操作', danger = false, sub, evidenceNote, extraAction }: {
@@ -183,7 +184,7 @@ export function ConfirmCommand({ title, intent, body, prepareBody, children, onC
     sub?: ReactNode;
     evidenceNote?: ReactNode;
     /** 底栏「取消」右边的另一条出路（如冲突后不保存、返回活动）。 */
-    extraAction?: ReactNode;
+    extraAction?: (busy: boolean) => ReactNode;
 }) {
     const initial = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId)?.body as Record<string, unknown> | undefined;
     const policy = useRead(fetchA2ReasonPolicy, []), [reason, setReason] = useState(String(initial?.reason || '')), [evidence, setEvidence] = useState<string[]>(Array.isArray(initial?.evidenceRefs) ? initial.evidenceRefs : []), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [note, setNote] = useState(''), [version, setVersion] = useState(0), [upload, setUpload] = useState<Record<string, string>>({}), [uploadState, setUploadState] = useState<string>();
@@ -292,7 +293,7 @@ export function ConfirmCommand({ title, intent, body, prepareBody, children, onC
         : locked ? <RdNotice tone="warn" title="这次没有执行：你打开后，别人改过这个活动">{`点「重新加载并核对」，看清变了什么再决定要不要${confirmLabel}。`}</RdNotice>
         : reviewed;
     const conflictExplains = !!conflictBlock && (locked || !!conflictReview?.final);
-    return <Dialog title={title} sub={sub} danger={danger} onClose={onClose} wide={requireEvidence || !!conflictBlock} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{extraAction}{needsReload && onReload && !conflictReview?.final && <RdButton variant="primary" onClick={reload} disabled={busy || !!record}>{busy ? "正在加载…" : "重新加载并核对"}</RdButton>}{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '查询原操作'}</Button>{record.recoveryState === 'NOT_FOUND' && !isRetryExpired(record) && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>按原操作重试</Button>}</> : !locked && <RdButton variant={danger ? 'danger' : 'primary'} onClick={() => submit()} disabled={busy || needsReload || invalid || !writeAllowed}>{busy ? '正在提交…' : confirmLabel}</RdButton>}</>}>
+    return <Dialog title={title} sub={sub} danger={danger} busy={busy} onClose={onClose} wide={requireEvidence || !!conflictBlock} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{extraAction?.(busy)}{needsReload && onReload && !conflictReview?.final && <RdButton variant="primary" onClick={reload} disabled={busy || !!record}>{busy ? "正在加载…" : "重新加载并核对"}</RdButton>}{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '查询原操作'}</Button>{record.recoveryState === 'NOT_FOUND' && !isRetryExpired(record) && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>按原操作重试</Button>}</> : !locked && <RdButton variant={danger ? 'danger' : 'primary'} onClick={() => submit()} disabled={busy || needsReload || invalid || !writeAllowed}>{busy ? '正在提交…' : confirmLabel}</RdButton>}</>}>
     {conflictBlock}
     {record && <RdNotice tone="warn" title="结果未知">{record.receipt ? '原操作已经成功，当前只重读结果；不会再次提交。' : '原参数已锁定；查询前不会创建第二次操作。关闭后仍可在活动中心继续处理。'}</RdNotice>}
     <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}>{children}</fieldset>
