@@ -7,8 +7,11 @@ import { ambassadorBucketLabel } from "@/lib/admin/f4-ambassador-display";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
-import { f4Decimal, f4HeadCapAmplifies, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrizes } from "@/lib/admin/f4-money";
+import { fApprovalPermissionText, F_APPROVAL_PERMISSION_NAMES } from "@/lib/admin/f-approval-names";
+import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
+import { unchangedFNumber } from "@/lib/admin/f-reconfirmation";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
 import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules } from "./f4-payout-preview";
 import type { FViewCtx, McSpec } from "./types";
@@ -38,11 +41,13 @@ const POOL_UNLOCK_OPTIONS = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8"];
 /** A2 普通提案：批准前不变；「谁来批」按后端批准时实际检查的权限写（AuditReplayBusinessPermissionGuard），权限名照后台返回、和「权限清单」显示的一致。 */
 export const approvalCopy = "批准前保持现在的设置。";
 const POOL_FUND = "奖池资金类调整";
-const F4_WRITE = "奖励池、名额与排行榜 · 池配额大使榜 - 常规写";
+const F4_WRITE = F_APPROVAL_PERMISSION_NAMES.network_f4_write;
 const LEADERBOARD_CONTROL = "排行榜控制(暂停/取消资格)";
 function approvalRows(permission: string) {
-  // 「」权限的管理员」放在一起，名字长时在名字里折行，末行不留孤字（D10、TL-01）。
-  return [{ key: "approver", label: "谁来批", value: <>另一位有审批批准权限和「{permission}<span className="rd-keep">」权限的管理员</span></> }];
+  return [
+    { key: "approver", label: "谁来批", value: "另一位超级管理员" },
+    { key: "approvalPermissions", label: "需有权限", value: fApprovalPermissionText(permission) },
+  ];
 }
 function approvalFacts(permission: string) {
   return approvalRows(permission).map((row) => <Fact key={row.key} k={row.label}>{row.value}</Fact>);
@@ -72,7 +77,7 @@ function prizeText(label: string) {
 }
 
 
-export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot): McSpec {
+export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, previous?: F4ConfirmationSnapshot): McSpec {
   const { overview: data, action, policy, application, material: packet } = snapshot;
   const period = snapshot.period ?? "week";
   const settlement = validateF4SettlementConfig({ status: data.settlementConfigStatus, unavailableKey: data.settlementConfigUnavailableKey, configVersion: data.configVersion, ratio: data.configValues["F.pool.ratio"], monthlyCap: data.configValues["F.pool.monthlyCap"], unlockVRank: data.configValues["F.pool.unlockVRank"], settleCron: data.configValues["F.pool.settleCron"] });
@@ -97,16 +102,11 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
   const top5MaxPct = data.configValues["F.pool.top5MaxPct"]?.trim() || "60";
   const periodPrizeRaw = data.configValues["F.pool.periodPrize"] ?? "";
   const periodPrizes = f4PeriodPrizes(periodPrizeRaw);
-  const currentPeriodPrize = (key: Period) => {
-    const configured = periodPrizes?.[key === "all" ? "allTime" : key];
-    if (configured !== undefined) return configured;
-    const liveAmount = board.paused ? undefined : data.leaderboardComputePointPeriods?.[key]?.poolUsdText ?? data.leaderboardComputePointPeriods?.[key]?.poolUsd;
-    return liveAmount === undefined ? "" : String(liveAmount);
-  };
+  const currentPeriodPrize = (key: Period) => periodPrizes?.[key === "all" ? "allTime" : key] ?? "";
   const ppToday = currentPeriodPrize("today");
   const ppWeek = currentPeriodPrize("week");
   const ppMonth = currentPeriodPrize("month");
-  const ppAllTime = currentPeriodPrize("all");
+  const ppAllTime = f4PeriodPrize(periodPrizeRaw, "allTime") ?? "";
   const prizeShown = (value: string) => value === "" ? "—" : moneyText(value);
   const lbPool = current ? `${usdt(current.poolUsdText ?? current.poolUsd)} USDT` : "—";
 
@@ -164,7 +164,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     }
     case action === "F.pool.ratio": {
       spec = { briefKind: "config", name: "调整团队激励池比例", amplify: true, op: "param", paramKey: "F.pool.ratio",
-              edit: { kind: "text", current: data.poolRatio, unit: "%" },
+              edit: { kind: "text", current: data.poolRatio, unit: "%", validate: value => f4PoolRatio(value) === null ? F4_POOL_RATIO_INVALID : undefined, amplifiesWhen: value => f4PoolRatioIncreases(data.configValues["F.pool.ratio"], value) },
               title: "调整团队激励池比例", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，还没结算的这周估算和之后每次结算按新比例放钱；已经发的不重算。", check: "只接受 0–30 的百分数：5 表示 5%，0.05 表示 0.05%。" },
               completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
@@ -205,11 +205,16 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       break;
     }
     case action.startsWith("F.quota.tier."): {
+      const previousQuota = previous?.overview.quotaRows.find(row => (row.quotaCode || row.id) === (quota.quotaCode || quota.id));
+      const amount = (row: typeof quota) => row.monthlyQuota === undefined ? String(row.cap) : row.monthlyQuota ?? "";
+      const before = previousQuota && amount(previousQuota);
+      const current = amount(quota);
+      const quotaChanged = before !== undefined && before !== current && compareDecimal(before, current) !== 0;
       spec = { briefKind: "config",
     name: `${quota.name} 月额度调整`, op: "param",
     paramKey: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`,
     expectedVersion: quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? undefined : Number(quota.monthlyQuota),
-    edit: { kind: "number", current: quota.monthlyQuota === undefined ? String(quota.cap) : quota.monthlyQuota ?? "", unit: "台",
+    edit: { kind: "number", current, unit: "台",
       preview: (value) => {
         if (!/^\d+$/.test(value.trim())) return null;
         const next = Number(value), now = quota.monthlyQuota === undefined ? quota.cap : Number(quota.monthlyQuota);
@@ -225,6 +230,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     },
     completionCopy: approvalCopy,
     facts: <KeyValues rows={[
+      ...(quotaChanged ? [{ key: "monthlyQuota", label: "他人修改 · 月额度", value: `${before ? count(Number(before)) + " 台" : "未配置"} → ${current ? count(Number(current)) + " 台" : "未配置"}` }] : []),
       { key: "used", label: "本月已用", value: `${count(quota.current)} 台` },
       ...((quota.pendingThisMonth ?? 0) > 0 ? [{ key: "pending", label: "其中待付款", value: `${count(quota.pendingThisMonth ?? 0)} 台` }] : []),
       ...(quota.status === 0 ? [{ key: "paused", label: "状态", value: "已暂停：调额度不会恢复销售" }] : []),
@@ -256,10 +262,12 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       break;
     }
     case action === "F.leaderboard.paused": {
-      spec = { briefKind: board.paused ? "config" : "record", name: board.paused ? "恢复排行榜" : "暂停排行榜", op: "dispose", paramKey: "F.leaderboard.paused", fixedVal: board.paused ? "off" : "on",
-    title: board.paused ? "恢复排行榜" : "暂停排行榜", effect: approvalTag(),
-    confirmTone: board.paused ? "primary" : "danger", confirmLabel: board.paused ? "提交恢复" : "提交暂停",
-    statedBrief: board.paused ? {
+      const resumes = snapshot.value === "off" || snapshot.value !== "on" && board.paused;
+      spec = { briefKind: resumes ? "config" : "record", name: resumes ? "恢复排行榜" : "暂停排行榜", op: "dispose", paramKey: "F.leaderboard.paused", fixedVal: resumes ? "off" : "on",
+    title: resumes ? "恢复排行榜" : "暂停排行榜", effect: approvalTag(),
+    blockedReason: snapshot.value && board.paused === !resumes ? "排行榜已达到原草稿的状态，无需提交。" : undefined,
+    confirmTone: resumes ? "primary" : "danger", confirmLabel: resumes ? "提交恢复" : "提交暂停",
+    statedBrief: resumes ? {
       impact: "批准后四个榜恢复更新，之后到期的日、周、月榜照常自动派奖。暂停期间跳过的周期恢复后不会补发。",
       check: "榜单已在运行时会被拒绝。暂停那一刻的名次留作历史记录。",
     } : {
@@ -267,7 +275,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       check: "已经暂停时会被拒绝；四个榜的名次没存下来时整次不生效。",
     },
     completionCopy: approvalCopy, facts: <Facts>{approvalFacts(LEADERBOARD_CONTROL)}</Facts>,
-    detail: board.paused ? "恢复后榜单重新更新，之后的周期按当时的规则发奖。" : "暂停后榜单停在当前名次，榜单奖励暂停发放，团队激励池不受影响。",
+    detail: resumes ? "恢复后榜单重新更新，之后的周期按当时的规则发奖。" : "暂停后榜单停在当前名次，榜单奖励暂停发放，团队激励池不受影响。",
   };
       break;
     }
@@ -275,7 +283,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "funds",
     name: "发放总榜奖励",
     amplify: true,
-    title: "发放总榜奖励", effect: approvalTag(), confirmLabel: "提交审批",
+    title: "发放总榜奖励", blockedReason: ppAllTime === "" ? F4_PAYOUT_POOL_UNCONFIGURED : undefined, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后按执行那一刻的总榜，把总榜奖池按名次分给团队订单算力点最多的前 100 名（不足 100 名按实际人数），作为已解锁的 USDT 奖励真实入账。",
       check: "总榜派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。批准时先查兑付覆盖率，不够不发。",
@@ -284,7 +292,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     coverageLead: "这次派奖按算出的金额真实发钱",
     coverageCheck: "提交时按这里的数查一次。批准时系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
     facts: <div className="rd-stack">
-      <F4PayoutPreviewFacts pool={prizeShown(ppAllTime)} />
+      <F4PayoutPreviewFacts pool={ppAllTime === "" ? "未配置" : prizeShown(ppAllTime)} />
       <F4PayoutRules top1MaxPct={top1MaxPct} top5MaxPct={top5MaxPct} />
       <Facts>{approvalFacts(POOL_FUND)}</Facts>
     </div>,
@@ -326,10 +334,10 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
                 title: "各榜奖池（USDT）",
                 hint: "填 0 或正数。调高会多发钱，先看兑付覆盖率。",
                 fields: [
-                  { key: "today", label: "日榜", current: ppToday, inputKind: "number", min: 0 },
-                  { key: "week", label: "周榜", current: ppWeek, inputKind: "number", min: 0 },
-                  { key: "month", label: "月榜", current: ppMonth, inputKind: "number", min: 0 },
-                  { key: "allTime", label: "总榜", current: ppAllTime, inputKind: "number", min: 0 },
+                  { key: "today", label: "日榜", current: ppToday, mustChoose: true, inputKind: "number", min: 0 },
+                  { key: "week", label: "周榜", current: ppWeek, mustChoose: true, inputKind: "number", min: 0 },
+                  { key: "month", label: "月榜", current: ppMonth, mustChoose: true, inputKind: "number", min: 0 },
+                  { key: "allTime", label: "总榜", current: ppAllTime, mustChoose: true, inputKind: "number", min: 0 },
                 ],
               },
               detail: `各榜奖池 · 当前 日 ${prizeShown(ppToday)} / 周 ${prizeShown(ppWeek)} / 月 ${prizeShown(ppMonth)} / 总 ${prizeShown(ppAllTime)} USDT。`,
@@ -379,21 +387,21 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       break;
     }
     case action === "F.pool.top1MaxPct": {
-      spec = { briefKind: "config", name: "调整第 1 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct",
-              edit: { kind: "number", current: top1MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top1MaxPct", data.configValues["F.pool.top1MaxPct"], value) },
-              title: "调整第 1 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，之后排行榜派奖时第 1 名最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "只能填 0–100。" },
+      spec = { briefKind: "config", name: "调整第 1 名占比告警阈值", op: "param", paramKey: "F.pool.top1MaxPct",
+              edit: { kind: "number", current: top1MaxPct, unit: "%" },
+              title: "调整第 1 名占比告警阈值", effect: approvalTag(), confirmLabel: "提交审批",
+              statedBrief: { impact: "批准后，之后排行榜派奖时第 1 名超过这个比例时记录告警，奖金额按名次权重计算。", check: "只能填 0–100。" },
               completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
-              detail: `第 1 名最多能分到排行榜奖池的百分比 · 当前 ${top1MaxPct}%。` };
+              detail: `第 1 名占比的告警阈值 · 当前 ${top1MaxPct}%。` };
       break;
     }
     case action === "F.pool.top5MaxPct": {
-      spec = { briefKind: "config", name: "调整前 5 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct",
-              edit: { kind: "number", current: top5MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top5MaxPct", data.configValues["F.pool.top5MaxPct"], value) },
-              title: "调整前 5 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，之后排行榜派奖时前 5 名合计最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "只能填 0–100。" },
+      spec = { briefKind: "config", name: "调整前 5 名占比告警阈值", op: "param", paramKey: "F.pool.top5MaxPct",
+              edit: { kind: "number", current: top5MaxPct, unit: "%" },
+              title: "调整前 5 名合计占比告警阈值", effect: approvalTag(), confirmLabel: "提交审批",
+              statedBrief: { impact: "批准后，之后排行榜派奖时前 5 名合计超过这个比例时记录告警，奖金额按名次权重计算。", check: "只能填 0–100。" },
               completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
-              detail: `前 5 名合计最多能分到排行榜奖池的百分比 · 当前 ${top5MaxPct}%。` };
+              detail: `前 5 名合计占比的告警阈值 · 当前 ${top5MaxPct}%。` };
       break;
     }
     case action === "approve": {
@@ -414,8 +422,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
         <Fact k="认可金额">{packet!.financeReview.recognizedBudgetUsdt == null ? "尚未认可" : `${moneyText(packet!.financeReview.recognizedBudgetUsdt)} USDT`}</Fact>
         <Fact k="类别">{ambassadorBucketLabel(packet!.bucket)}</Fact>
         <Fact k="材料">第 {packet!.materialRevision} 版 · 业务核验和财务核验都已通过</Fact>
-        {/* 谁来批一行写完，和别的页同一个叫法；不再铺一段后端校验条件（BUG-682 第 4 条）。 */}
-        <Fact k="谁来批">另一位有审批批准权限和「区域大使审批」权限的管理员，不能核验过这一版材料</Fact>
+        <Fact k="谁来批">另一位超级管理员</Fact>
+        <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f4_ambassador_approve)}。不能核验过这一版材料。</Fact>
       </Facts>,
       detail: `${ambassadorBucketLabel(packet!.bucket)} · 申请金额 ${money(packet!.budgetUsdt)} · 认可金额 ${money(packet!.financeReview.recognizedBudgetUsdt)} · 材料 V${packet!.materialRevision}。业务核验与财务核验均已通过。本次仅开通所选类别的申请额度。`,
     };
@@ -431,14 +439,25 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     },
     completionCopy: "批准前这份申请不变。",
     facts: <Facts>
-      <Fact k="谁来批">另一位有审批批准权限和「区域大使审批」权限的管理员</Fact>
+      <Fact k="谁来批">另一位超级管理员</Fact>
+      <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f4_ambassador_approve)}</Fact>
     </Facts>,
     detail: "驳回这一份申请，提交审批后由另一位有权限的管理员执行。",
   };
       break;
     }
-    case action === "policy": spec = f4PolicyConfirmation(ctx, policy!); break;
+    case action === "policy": spec = f4PolicyConfirmation(ctx, policy!, snapshot.policyConflict); break;
     default: throw new Error("F4_PROPOSAL_ORIGINAL_INCOMPLETE");
+  }
+  const edit = spec.edit;
+  if (edit) {
+    const money = action === "F.pool.monthlyCap" || action === "F.leaderboard.poolUsd";
+    const normalize = money ? f4MonthlyCap : action === "F.pool.ratio" ? f4PoolRatio : (value: string) => value;
+    if (money || action === "F.pool.ratio" || edit.kind === "number") {
+      const hasDefault = ["F.pool.top1MaxPct", "F.pool.top5MaxPct", "F.leaderboard.minUsd", "F.leaderboard.minComputePoints"].includes(action);
+      const current = normalize((hasDefault || money || action === "F.pool.ratio" ? data.configValues[action] : edit.current) ?? "");
+      spec.edit = { ...edit, validate: value => edit.validate?.(value) ?? unchangedFNumber(normalize(value), current) };
+    }
   }
   return { ...spec, f4Snapshot: snapshot };
 }

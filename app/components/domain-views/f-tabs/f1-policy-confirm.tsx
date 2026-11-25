@@ -5,6 +5,7 @@
  * 提交、恢复、审批分支都在 lib/admin/f1-policy-change（submitF1Policy）里，和改版前一样；这里只管框里的样子：
  * 标题写动作和对象，标签写哪个方向要批准，事实写现在的值和相邻等级，填写项用 rd 的控件。
  */
+import { fConfirmRecovery, pendingConfirmError } from "./f-recovery-state";
 import { useState } from "react";
 import { CircleHelp, Clock3, LockOpen, Zap, Lock } from "lucide-react";
 import { Change, DiffField, Fact, Facts, Field, Input, KeepText, Notice, Select, StatusTag } from "@/app/components/rd";
@@ -16,8 +17,8 @@ import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import {
-  canRetryF1PolicyProposal, f1ConditionLabels, f1PolicyInitialForm, f1PolicyInputError, f1PolicyNeedsApproval,
-  formatF1ExactAmount, isF1FundReward, pendingF1Policy, submitF1Policy, type F1PolicyEditor, type F1ConditionField,
+  canRetryF1PolicyProposal, f1PolicyRecovery, f1ConditionLabels, f1PolicyInitialForm, f1PolicyInputError, f1PolicyNeedsApproval,
+  formatF1ExactAmount, isF1FundReward, pendingF1Policy, submitF1Policy, type F1PolicyDraft, type F1PolicyEditor, type F1ConditionField,
 } from "@/lib/admin/f1-policy-change";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { FViewCtx } from "./types";
@@ -46,7 +47,7 @@ export function f1RewardPolicyLabel(item: OpsVRankRewardItem, ctx: Pick<FViewCtx
   return safeCustomLabel(item.custom);
 }
 
-export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChange, pendingApproval = false }: { editor: F1PolicyEditor; ctx: FViewCtx; onClose: () => void; onPendingChange: () => void; pendingApproval?: boolean }) {
+export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChange, draft, pendingApproval = false }: { editor: F1PolicyEditor; ctx: FViewCtx; onClose: () => void; onPendingChange: () => void; draft?: F1PolicyDraft; pendingApproval?: boolean }) {
   const session = useAdminAuth((state) => state.session);
   const [owner] = useState(session?.adminId);
   const [opening, setOpening] = useState(() => {
@@ -62,7 +63,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
   const canWrite = session?.adminId === owner && !!session?.authorities.includes("network_f1_write");
   const proposalQueryOnly = !!opening.pending?.original.approval && (!canWrite || !canRetryF1PolicyProposal(opening.pending));
   const editor = opening.pending?.original.editor ?? baseline;
-  const form = opening.pending?.original.form ?? f1PolicyInitialForm(editor);
+  const form = opening.pending?.original.form ?? draft?.form ?? f1PolicyInitialForm(editor);
   const isCondition = editor.action === "threshold", remove = editor.action === "reward_remove";
   const condition = editor.field as F1ConditionField;
   const fieldLabel = isCondition ? f1ConditionLabels[condition] : "奖励";
@@ -85,7 +86,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
   };
   const submit = async (reason: string, values: BusinessFormValue, mode: "submit" | "lookup" | "retry-original") => {
     const current = requireSession(mode !== "lookup");
-    if (requested.recoveryCommandKey && pending()?.commandKey !== requested.recoveryCommandKey) throw new Error("原移除操作已处理，请关闭弹窗后核对当前奖励。");
+    if (opening.pending && requested.recoveryCommandKey && pending()?.commandKey !== requested.recoveryCommandKey) throw new Error("原移除操作已处理，请关闭弹窗后核对当前奖励。");
     if (mode === "submit") {
       if (!baselineReady) throw new Error("请先成功重新读取会员等级。");
       const error = f1PolicyInputError(editor, values, ctx.voucherOptions, ctx.skuOptions);
@@ -94,7 +95,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     const previous = pending();
     if (mode !== "submit") ctx.invalidateF1();
     let result;
-    try { result = await submitF1Policy(current, editor, values, reason, mode); }
+    try { result = await submitF1Policy(current, editor, values, reason, mode, draft?.record.commandKey); }
     catch (error) {
       const failure = error as { httpStatus?: number; apiCode?: number; backendMessage?: string };
       const locked = failure.backendMessage === "OBJECT_LOCKED_BY_A2" || failure.backendMessage === "OBJECT_ALREADY_PENDING";
@@ -140,6 +141,11 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     requireSession(false);
     if (result.active) ctx.acceptF1PolicyOverview(result.active);
     else ctx.invalidateF1(`${result.acknowledgement}；当前配置暂时读不到，重新读取后再发起新修改。`);
+    if ("restoreDraft" in result && result.restoreDraft) {
+      ctx.toast(result.acknowledgement);
+      onClose();
+      return true;
+    }
     ctx.toast(result.acknowledgement);
     if (!result.resolved) throw new A2OutcomeUncertainError(result.acknowledgement, previous!.commandKey);
     onClose();
@@ -232,13 +238,12 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     businessFormRevision={baselineRevision}
     getPendingReason={() => pending()?.original.reason}
     getPendingBusinessValue={() => pending()?.original.form}
+    getPendingRecovery={() => {
+      const original = pending();
+      return original && fConfirmRecovery(f1PolicyRecovery, original, () => submit("", {}, "lookup"));
+    }}
     inlineApproval={{
       dialogClassName: "f1-policy-confirm",
-      pending: !!opening.pending,
-      initialRecovery: proposalQueryOnly ? "lookup" : "retry",
-      queryOnly: proposalQueryOnly,
-      expired: !!opening.pending && opening.pending.expiresAt <= Date.now(),
-      expiredRequestRecovery: opening.pending && opening.pending.expiresAt <= Date.now() ? "query" : undefined,
       disabledReason,
       resolve: (values) => !isCondition && baselineReady && f1PolicyNeedsApproval(editor, values) ? {
         heading: isCondition ? "放宽晋升条件 · 批准后生效" : "增加资金奖励 · 批准后生效",
@@ -253,7 +258,6 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
         </div>,
       } : undefined,
       recover: (reason, values) => submit(reason, values, "lookup"),
-      retry: async () => { await submit("", {}, "retry-original"); },
       renderForm: (values, change, locked) => {
         if (remove && opening.pending) return <Notice tone="warn" title="原请求结果未知">内容和理由已锁定，只能查询原结果或按原内容重试。</Notice>;
         const changeField = (key: string, value: string) => change({ ...values, [key]: value });
@@ -299,6 +303,9 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
       },
     }}
     onClose={onClose}
-    onConfirm={async (reason, _edit, values) => { await submit(reason, values ?? {}, requested.recoveryCommandKey || opening.pending || pending() ? "retry-original" : "submit"); }}
+    onConfirm={async (reason, _edit, values) => {
+      try { await submit(reason, values ?? {}, pending() ? "retry-original" : "submit"); }
+      catch (error) { throw pending() ? pendingConfirmError(error) : error; }
+    }}
   />;
 }

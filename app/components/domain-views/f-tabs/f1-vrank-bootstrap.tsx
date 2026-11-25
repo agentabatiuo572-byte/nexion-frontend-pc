@@ -9,6 +9,7 @@ import Link from "next/link";
 import { CheckCircle2, ChevronLeft, ChevronRight, Circle, Layers3, ListChecks, RefreshCw } from "lucide-react";
 import { Button, Conclusion, Fact, Facts, Field, Input, Notice, Panel, Select, StatusTag, Table, Td, Th } from "@/app/components/rd";
 import { bootstrapRankCodes, buildVRankBootstrap, emptyVRankBootstrap, type VRankBootstrapDraft } from "@/lib/admin/vrank-bootstrap";
+import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import type { FViewCtx } from "./types";
 import { SUPER_APPROVER, type F1Confirm } from "./f1-shared";
 
@@ -21,10 +22,10 @@ const REQUIRED: (keyof VRankBootstrapDraft)[] = ["titleCn", "titleEn", "selfComp
 const filled = (draft: VRankBootstrapDraft) => REQUIRED.every((key) => draft[key].trim() !== "");
 const depthLabel = (value: string) => value === "0" ? "不开通" : value.replace("-", "–");
 
-export function F1VrankBootstrap({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: (confirm: F1Confirm) => void }) {
-  const [drafts, setDrafts] = useState(emptyVRankBootstrap);
+export function F1VrankBootstrap({ ctx, openConfirm, continuation }: { ctx: FViewCtx; openConfirm: (confirm: F1Confirm) => void; continuation?: { original: FDomainAttempt; drafts: VRankBootstrapDraft[] } }) {
+  const [drafts, setDrafts] = useState(() => continuation?.drafts ?? emptyVRankBootstrap());
   const [active, setActive] = useState(0);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(!!continuation);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
   const current = drafts[active];
@@ -37,6 +38,7 @@ export function F1VrankBootstrap({ ctx, openConfirm }: { ctx: FViewCtx; openConf
     try {
       const ranks = buildVRankBootstrap(drafts);
       openConfirm({
+        draft: continuation?.original,
         proposalSlot: "f-vrank-bootstrap:current",
         action: "首次配置会员等级", title: "首次配置会员等级", briefKind: "config", amplify: true, confirmLabel: "提交审批",
         effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后，九级一次建好；批准前这页仍是空的。`}>批准后生效</StatusTag>,

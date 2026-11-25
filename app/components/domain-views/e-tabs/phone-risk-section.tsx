@@ -7,15 +7,22 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { phoneTime } from "../phone-replacement-receipt";
 import { phonePlatformLabel as platformLabel } from "@/lib/admin/phone-replacement-contract";
 import { RISK_CHECKS, RISK_CODE_LABELS, RISK_MODE_LABELS, fetchPhoneRisk, riskModeError, type PhoneRiskOverview, type PhoneRiskUpdate, type PhoneRiskMode } from "@/lib/admin/phone-risk-client";
-import { useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
+import { useE6DraftEditor, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 import { eReadError } from "./e-command-check";
 const draftOf=({settings:s}:PhoneRiskOverview):PhoneRiskUpdate=>({installModelLock:s.installModelLock,osVersion:s.osVersion,screenScale:s.screenScale,screenSize:s.screenSize,missingSignals:s.missingSignals,accountModelChurn:s.accountModelChurn,churnWindowDays:s.churnWindowDays,churnModelCount:s.churnModelCount,reason:""});
 export function PhoneRiskSection({canWrite,toast}:{canWrite:boolean;toast:(message:string,kind?:"warn")=>void}) {
   const m=useE6Mutations();
   const [overview,setOverview]=useState<PhoneRiskOverview|null>(null),[draft,setDraft]=useState<PhoneRiskUpdate|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false),[editor,setEditor]=useState(false),[confirming,setConfirming]=useState(false);
-  const live=useRef(true);
-  async function load(){setBusy(true);setError("");try{const next=await fetchPhoneRisk();if(live.current){setOverview(next);setDraft(draftOf(next));}return next;}catch(failure){if(live.current){setOverview(null);setError(eReadError(failure));}return null;}finally{if(live.current)setBusy(false);}}
+  const live=useRef(true), editing=useRef(false);
+  editing.current = editor;
+  async function load(){setBusy(true);setError("");try{const next=await fetchPhoneRisk();if(live.current){setOverview(next);if(!editing.current)setDraft(draftOf(next));}return next;}catch(failure){if(live.current){setOverview(null);setError(eReadError(failure));}return null;}finally{if(live.current)setBusy(false);}}
   useEffect(()=>{live.current=true;void load();const read=()=>void load();window.addEventListener("e6-read-risk",read);return()=>{live.current=false;window.removeEventListener("e6-read-risk",read);};},[]);
+  useE6DraftEditor(["risk"], editor || confirming, record => {
+    if (!canWrite || !overview || busy || record.scope !== "risk" || record.payload.kind !== "risk") return false;
+    setDraft({ ...record.payload.input, reason: "" });
+    setEditor(true);
+    return true;
+  });
   const saved=overview?draftOf(overview):null,validation=draft?riskModeError(draft):null;
   const changes=draft&&saved?[...RISK_CHECKS.filter(c=>draft[c.key]!==saved[c.key]).map(c=>({label:c.label,before:RISK_MODE_LABELS[saved[c.key]],after:RISK_MODE_LABELS[draft[c.key]]})),...(draft.churnWindowDays!==saved.churnWindowDays?[{label:"多机型统计窗口",before:`${saved.churnWindowDays} 天`,after:`${draft.churnWindowDays} 天`}]:[]),...(draft.churnModelCount!==saved.churnModelCount?[{label:"多机型数量阈值",before:`${saved.churnModelCount} 个`,after:`${draft.churnModelCount} 个`}]:[])]:[];
   const bypass=(s:PhoneRiskUpdate)=>s.missingSignals!=="ENFORCE"&&(s.osVersion==="ENFORCE"||s.screenScale==="ENFORCE");
@@ -23,7 +30,7 @@ export function PhoneRiskSection({canWrite,toast}:{canWrite:boolean;toast:(messa
   const original=m.pending.find(r=>r.scope==="risk");
   async function finishSave(result?:E6WriteReceipt){setConfirming(false);setEditor(false);await load();if(result?.readbackFailed)toast("已提交成功，但重新读取失败，请刷新核对。","warn");else toast("机型风控设置已生效");}
   /** A retried original save may have been overtaken by a later save: report the original, then the current version separately. */
-  async function finishRetry(result?:E6WriteReceipt){setConfirming(false);setEditor(false);const current=await load();const original=result?.originalRiskResponse;const completed=`原保存已完成。${original?`原保存完成后的版本是 ${original.settings.revision}。`:""}`;if(result?.readbackFailed||!current)toast(`${completed}当前设置读取失败，请刷新核对。`,"warn");else toast(`${completed}当前读到版本 ${current.settings.revision}，以页面显示的设置为准。`);}
+  async function finishRetry(result?:E6WriteReceipt){setConfirming(false);setEditor(false);const current=result?.currentRiskResponse??await load();if(result?.currentRiskResponse){setOverview(current);setDraft(draftOf(result.currentRiskResponse));}const original=result?.originalRiskResponse;const completed=`原保存已完成。${original?`原保存完成后的版本是 ${original.settings.revision}。`:""}`;if(result?.readbackFailed||!current)toast(`${completed}当前设置读取失败，请刷新核对。`,"warn");else toast(`${completed}当前读到版本 ${current.settings.revision}，以页面显示的设置为准。`);}
   return <Panel title="机型风控" icon={ShieldCheck} tone="role-3" sub={overview?"保存后立即生效":undefined} explain={<>观察只记录命中；拦截使本次校准进入待核验，不分配算力、不能激活。已激活手机和历史结算不受影响。{overview?.settings.updatedAt&&<p>最近保存：{phoneTime(overview.settings.updatedAt)} · {overview.settings.reason??"未提供理由"}</p>}</>} actions={<>{overview&&<Button size="sm" disabled={busy} onClick={()=>void load()}>刷新</Button>}{canWrite&&<Button size="sm" disabledReason={!overview?"先读取当前风控设置":blocked?"原保存结果待核查，不能重复保存":undefined} onClick={()=>{setEditor(true);}}>修改风控设置</Button>}</>}>
     {!overview?<BlockState state={busy?"loading":"error"} title={busy?"正在读取风控设置…":"机型风控设置读取失败"} detail={error} onRetry={busy?undefined:()=>void load()}/>:<>
       {saved&&bypass(saved)&&<Notice tone="warn">「缺少系统或屏幕信息」为{RISK_MODE_LABELS[saved.missingSignals]}：不上报系统或屏幕的请求不会被系统版本、屏幕倍率的拦截挡下。新版 App 普及后再核对是否收紧。</Notice>}

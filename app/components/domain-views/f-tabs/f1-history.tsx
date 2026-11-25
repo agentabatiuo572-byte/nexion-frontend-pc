@@ -117,25 +117,7 @@ function PromotionDetail({ record }: { record: F1PromotionRecord }) {
   </>;
 }
 
-export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm }: {
-  ctx: FViewCtx; rows: F1VRankRow[]; canReissue: boolean; canReverse: boolean; openConfirm: (confirm: F1Confirm) => void;
-}) {
-  const [filters, setFilters] = useState(EMPTY_PAYOUT);
-  const [applied, setApplied] = useState(EMPTY_PAYOUT);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const clearPayouts = () => { setFilters(EMPTY_PAYOUT); setApplied(EMPTY_PAYOUT); void ctx.queryPayouts(EMPTY_PAYOUT); };
-  const set = (key: keyof typeof filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
-  const records = ctx.payoutRecords;
-  const current = records.find((record) => record.payoutId === openId) ?? null;
-  const at = current ? records.indexOf(current) : -1;
-  const canAct = canReissue || canReverse;
-  const cols = canAct ? 5 : 4;
-  const allowed = (record: F1RewardPayout) => ({
-    reissue: canReissue && record.status === "REVERSED",
-    reverse: canReverse && ["GRANTED", "REISSUED", "PENDING_GRANT"].includes(record.status),
-  });
-
-  const openAction = (record: F1RewardPayout, action: "reissue" | "reverse") => {
+export function f1PayoutConfirmation(ctx: FViewCtx, record: F1RewardPayout, action: "reissue" | "reverse"): F1Confirm {
     const kind = rewardKind(record.rewardType);
     const reward = payoutReward(record);
     const rewardText = reward.unit ? `${reward.main} ${reward.unit}` : reward.main;
@@ -153,7 +135,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
           : "只更新这笔发放记录的状态，不会补发或收回自定义奖品。";
     const voucherNote = kind === "voucher" && action === "reissue" ? F1_VOUCHER_REISSUE_UNAVAILABLE : "";
     const check = "核对发放单、用户和奖励；理由写清依据或工单号。";
-    openConfirm({
+    return {
       proposalSlot: `f-payout-action:${record.payoutId}`,
       action: `${action === "reissue" ? "重新发放" : "冲正"}奖励`,
       title: action === "reissue" ? "重发奖励" : "冲正奖励",
@@ -206,8 +188,28 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
         await ctx.proposePayoutAction(record, action, reason,
           voucherReverse && (choice === "true" || choice === "false") ? choice === "true" : undefined);
       },
-    });
-  };
+    };
+}
+
+export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm }: {
+  ctx: FViewCtx; rows: F1VRankRow[]; canReissue: boolean; canReverse: boolean; openConfirm: (confirm: F1Confirm) => void;
+}) {
+  const [filters, setFilters] = useState(EMPTY_PAYOUT);
+  const [applied, setApplied] = useState(EMPTY_PAYOUT);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const clearPayouts = () => { setFilters(EMPTY_PAYOUT); setApplied(EMPTY_PAYOUT); void ctx.queryPayouts(EMPTY_PAYOUT); };
+  const set = (key: keyof typeof filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
+  const records = ctx.payoutRecords;
+  const current = records.find((record) => record.payoutId === openId) ?? null;
+  const at = current ? records.indexOf(current) : -1;
+  const canAct = canReissue || canReverse;
+  const cols = canAct ? 5 : 4;
+  const allowed = (record: F1RewardPayout) => ({
+    reissue: canReissue && record.status === "REVERSED",
+    reverse: canReverse && ["GRANTED", "REISSUED", "PENDING_GRANT"].includes(record.status),
+  });
+
+  const openAction = (record: F1RewardPayout, action: "reissue" | "reverse") => openConfirm(f1PayoutConfirmation(ctx, record, action));
 
   const actions = (record: F1RewardPayout, size: "sm" | "md" = "sm") => {
     const can = allowed(record);

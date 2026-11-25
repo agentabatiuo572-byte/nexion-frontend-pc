@@ -5,7 +5,11 @@ import { isAdminAuthFailure, resetAdminSession } from "./auth-session";
 import { DOutcomeUnknownError, DRequestError } from "./d-client";
 import { formatAdminApiError, guardedFetch } from "./error-messages";
 import { isBCommandRejection } from "./b-command-rejection";
-import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+
+import { explicitRejectionCode } from "./explicit-rejection";
+import { currentRecoveryActor } from "./abe-recovery-access";
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 
 export type B1CommandFacts = Pick<BLedger, "reserveUsd" | "valuationReliable" | "redlineBreached" | "coverageRatio" | "redlinePct" | "healthyPct" | "thresholdVersion"> & { generatedAt?: string };
 export interface B1PendingWrite extends PendingMutationRecord {
@@ -39,14 +43,25 @@ export const b1Commands = createPendingMutationStore<B1PendingWrite>({
   },
 });
 
+export const b1Recovery = createPendingRecovery(b1Commands, {
+  capability: record => record.kind === "injection" ? "readback" : "replay",
+  explicitRejectionCode,
+  canReplay: record => {
+    const rights = currentRecoveryActor(record.adminId)?.authorities ?? [];
+    if (record.kind === "injection") return false;
+    const write = record.kind === "threshold" ? "overview_b1_redline_write" : "overview_b1_write";
+    return rights.includes("overview_b1_read") && rights.includes(write);
+  },
+});
+
 /** Sends the persisted bytes, never a new form draft or a replayed overview. */
-export async function executeB1Command(record: B1PendingWrite, retry = true) {
+async function sendOriginal(record: B1PendingWrite, retry: boolean) {
   if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
   if (!b1Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
     throw new Error("浏览器无法保存这次操作的记录，没有提交。请允许浏览器存储后重试。");
   }
   const path = record.kind === "threshold" ? "/dual-ledger/thresholds"
-    : record.kind === "injection" ? "/reserve-injection" : "/b-domain/alerts/coverage-redline/ack";
+    : "/b-domain/alerts/coverage-redline/ack";
   try {
     const response = await guardedFetch(`/api/admin/treasury${path}`, {
       method: record.kind === "threshold" ? "PATCH" : "POST",
@@ -73,15 +88,28 @@ export async function executeB1Command(record: B1PendingWrite, retry = true) {
       ? !data?.snapshot || !finite(data.snapshot.redlinePct) || !finite(data.snapshot.healthyPct)
         || !Number.isSafeInteger(data.snapshot.thresholdVersion) || data.snapshot.thresholdVersion < 0 || !data.thresholdUpdate
         || ["redlinePct", "healthyPct"].some(key => input[key] !== undefined && data.thresholdUpdate[key] !== data.snapshot[key])
-      : record.kind === "injection"
-        ? data?.injection?.voucherNo !== input.voucherNo || data.injection.amount !== Number(input.amount)
-          || !finite(data.injection.oldReserveUsd) || !finite(data.injection.newReserveUsd)
-        : data?.alertAck?.alertId !== "coverage-redline" || data.alertAck.acknowledged !== true) {
+      : data?.alertAck?.alertId !== "coverage-redline" || data.alertAck.acknowledged !== true) {
       throw new DOutcomeUnknownError(record.commandKey);
     }
-    b1Commands.forget(record.fingerprint, record.commandKey);
+    b1Recovery.settleAcknowledged(record);
   } catch (error) {
-    if (isBCommandRejection(error, retry)) b1Commands.forget(record.fingerprint, record.commandKey);
+    if (!retry && isBCommandRejection(error, false)) b1Commands.forget(record.fingerprint, record.commandKey);
     throw error;
   }
+}
+
+export function executeB1Command(record: B1PendingWrite, retry = true) {
+  if (record.kind === "injection") throw new Error("储备注入请到资金储备与应付款核对。");
+  return retry ? b1Recovery.replay(record, original => sendOriginal(original, true)) : sendOriginal(record, false);
+}
+
+export async function queryB1InjectionReceipt(record: B1PendingWrite) {
+  const actor = currentRecoveryActor(record.adminId);
+  if (record.kind !== "injection" || !actor?.authorities.includes("finance_d3_read")
+    || !b1Commands.list().some(saved => saved.commandKey === record.commandKey && saved.kind === "injection")) {
+    throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+  }
+  const result = await fetchDirectCommandReceipt("D3_RESERVE_INJECTION", record.commandKey, actor.adminId);
+  if (result === "SUCCEEDED") b1Recovery.settleAcknowledged(record);
+  return result;
 }

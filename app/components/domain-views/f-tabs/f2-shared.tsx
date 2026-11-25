@@ -4,7 +4,11 @@
  * F2 团队奖励设置的共用小件：层名、取值、示例金额、七层对比图、本页确认框。
  * 只排界面：读的数和提交函数都来自外壳 ctx，请求内容和判断照旧。
  */
-import type { ReactNode } from "react";
+import { f2Recovery } from "@/lib/admin/f2-approval";
+import { fConfirmRecovery } from "./f-recovery-state";
+import { useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { fProposalEndText } from "./f-release";
+import { useEffect, useRef, type ReactNode } from "react";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -144,6 +148,8 @@ export type F2Confirm = {
   coverageCheck: string;
   coverageLead?: ReactNode;
   edit?: EditSpec;
+  initial?: BusinessFormValue;
+  draft?: import("@/lib/admin/pending-mutation-store").PendingMutationRecord;
   businessForm?: BusinessFormSpec;
   facts?: ReactNode | ((value?: string) => ReactNode);
   content?: ReactNode;
@@ -164,37 +170,46 @@ export type F2Confirm = {
 /** 本页确认框。提交走 submit，失败交还给框（框里留着输入、显示原因或结果未知）。 */
 export function F2ConfirmModal({ spec, ctx, coverage, onClose, toast }: { spec: F2Confirm; ctx: FViewCtx; coverage?: { coverageRatio: number; redlinePct: number }; onClose: () => void; toast: (message: string) => void }) {
   const original = ctx.f2ProposalRecord(spec.slot);
+  const command = useRef(original?.commandKey);
+  const settled = useFReconfirmations("F2").some(row => row.commandKey === command.current);
   const recovering = !!original && !original.ticket;
+  const saved = () => {
+    const record = ctx.f2ProposalRecord(spec.slot);
+    return record?.commandKey === command.current ? record : undefined;
+  };
+  useEffect(() => { if (settled) onClose(); }, [settled, onClose]);
   return (
     <OperationConfirmModal briefKind={spec.briefKind} action={spec.action} title={spec.title} detail={spec.detail}
       amplifies={spec.amplify} coverage={coverage} edit={spec.edit} businessForm={spec.businessForm}
       facts={spec.facts} content={spec.content} statedBrief={spec.statedBrief} effect={spec.effect} icon={spec.icon} className={spec.dialogClassName}
       completionCopy={spec.completionCopy} coverageCheck={spec.coverageCheck} coverageLead={spec.coverageLead}
       confirmTone={spec.confirmTone} confirmLabel={spec.confirmLabel ?? "提交审批"} reasonPlaceholder="例如：工单号、调整依据"
+      getPendingBusinessValue={() => spec.initial}
       getPendingReason={() => {
-        const original = ctx.f2ProposalRecord(spec.slot);
+        const original = saved();
         return original && !original.ticket ? original.spec.reason : undefined;
       }}
       blockedReason={recovering ? undefined : ctx.f2WriteBlocked(spec.slot)}
-      inlineApproval={{
-        resolve: () => undefined,
-        pending: recovering,
-        initialRecovery: original?.canRetry ? "retry" : "lookup",
-        queryOnly: recovering && !original.canRetry,
-        expired: recovering && original.expiresAt <= Date.now(),
-        expiredRequestRecovery: recovering && original.expiresAt <= Date.now() ? "query" : undefined,
-        recover: async () => {
-          if (!ctx.f2ProposalRecord(spec.slot)?.canQuery) throw new Error("当前账号没有查询原结果的权限。");
+      getPendingRecovery={() => {
+        const record = saved();
+        return record && fConfirmRecovery(f2Recovery, record, record.canQuery ? async () => {
           const ticket = await ctx.queryF2Proposal(spec.slot);
-          if (ticket) onClose();
-          return !!ticket;
-        },
-        retry: async () => { await ctx.retryF2Proposal(spec.slot); onClose(); },
+          if (!ticket) return;
+          if (ticket.status !== "pending") toast(fProposalEndText(ticket.status));
+          onClose();
+        } : undefined);
       }}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {
         try {
-          await spec.submit(reason, newValue, businessValue);
+          if (command.current) {
+            if (!saved()) throw new Error("PENDING_REPLAY_BLOCKED");
+            await ctx.retryF2Proposal(spec.slot);
+            onClose();
+            return;
+          }
+          try { await ctx.runFContinuation(spec.draft?.commandKey, () => spec.submit(reason, newValue, businessValue)); }
+          finally { command.current = ctx.f2ProposalRecord(spec.slot)?.commandKey; }
         } catch (error) {
           if (isA2OutcomeUncertainError(error)) throw new Error("申请结果未知，请先查询原结果。");
           // Keep the reviewed input and the actual rejection on this F2 surface.

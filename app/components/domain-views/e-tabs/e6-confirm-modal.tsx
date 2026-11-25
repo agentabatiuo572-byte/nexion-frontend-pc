@@ -1,10 +1,11 @@
 "use client";
-import { useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { compareEditDecimals, OperationConfirmModal } from "../design-kit";
 import { RotateCcw } from "lucide-react";
 import { Button, Notice } from "@/app/components/rd";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { isE6VerifiedDraft } from "@/lib/admin/e6-command";
 import { useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 
 /** E6 owns its funding explanation and persisted-command recovery feedback. */
@@ -21,6 +22,21 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
   // 首次提交被明确拒绝、没留原记录：同一份输入再点也会被拒，按钮停住，给「返回修改」。
   const [refused, setRefused] = useState<string>();
   const record = m.pending.find(r => r.scope === scope);
+  const originalKey = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const key = originalKey.current;
+    const settlement = key && m.settledByKey[key];
+    if (settlement) {
+      originalKey.current = undefined;
+      if (settlement.result && onRecovered) void onRecovered(settlement.result);
+      else props.onClose();
+    } else if (key && m.records.some(item => item.commandKey === key && isE6VerifiedDraft(item))) {
+      originalKey.current = undefined;
+      props.onClose();
+    } else if (record && !key) {
+      originalKey.current = record.commandKey;
+    }
+  }, [record, m.records, m.settledByKey, props.onClose, onRecovered]);
   const rejected = !!record && m.rejected.includes(record.commandKey);
   const refusalMessage = refusal?.message ?? refused;
   const blockedReason = props.blockedReason ?? (rejected ? "按原请求重试被明确拒绝，请关闭窗口，核对后解除这条记录。"
@@ -43,14 +59,25 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
   };
   return <OperationConfirmModal {...props} facts={facts} amplifies={false}
     edit={props.edit ? { ...props.edit, amplifiesWhen: undefined } : undefined}
+    getPendingRecovery={() => {
+      if (!record) return;
+      const state = m.recovery.state(record);
+      return { state, expiresAt: state.expiresAt, subscribe: m.recovery.subscribe, getRevision: m.recovery.getRevision,
+        query: async () => { if (record.payload.kind === "proposal") await m.check(record.commandKey); else await m.checkDirect(record); } };
+    }}
     getPendingReason={props.getPendingReason ?? (() => m.pendingReason(scope))}
     blockedReason={blockedReason} confirmLabel={unknown ? "按原请求重试" : props.confirmLabel}
     onConfirm={async (...args) => {
+      if (originalKey.current && m.settledByKey[originalKey.current]) return;
       setUnknown(false);
       try {
         if (unknown && record && onRecovered) {
+          originalKey.current = record.commandKey;
           const result = await m.send(record, true);
-          await onRecovered(result);
+          if (originalKey.current === record.commandKey) {
+            originalKey.current = undefined;
+            await onRecovered(result);
+          }
         } else await props.onConfirm(...args);
       }
       catch (failure) {

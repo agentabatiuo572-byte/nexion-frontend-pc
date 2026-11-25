@@ -6,7 +6,7 @@ import { E6ConfirmModal } from "./e6-confirm-modal";
 import type { EViewCtx } from "./types";
 import { Activity, Cpu, Gauge, Send, Smartphone } from "lucide-react";
 import { BlockState, Button, Conclusion, DiffList, Explain, Decision, Field, Fold, Input, Modal, Notice, NumberInput, Panel, ScaleBar, Segments, Select, Stat, StatBand, Table, Td, Th, Tr, Textarea, Facts, Fact } from "@/app/components/rd";
-import { E6PendingNotice, useE6Mutations } from "./e6-mutations";
+import { E6PendingNotice, useE6DraftEditor, useE6Mutations } from "./e6-mutations";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -87,6 +87,19 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
   const dirty = !!snapshot && (baseline !== JSON.stringify({thresholds:proposal.thresholds,androidRules,iosRules,removals}) || !!effective);
   // 硬件规则的副题只看硬件这部分有没有改，只改分界时不算（BUG-419 E6-15）。
   const hardwareDirty = !!snapshot && JSON.stringify([publishedPolicy?.androidSocRules??[],publishedPolicy?.iosModelRules??[],publishedPolicy?publishedPolicy.androidPresetRemovals:NO_REMOVALS]) !== JSON.stringify([androidRules,iosRules,removals]);
+  useE6DraftEditor(["e6_phone_calibration"], !!confirm, record => {
+    if (!editing || dirty || record.scope !== "calibration" || record.payload.kind !== "proposal") return false;
+    const saved = record.payload.input.command.params as unknown as PhonePolicyProposal;
+    if (phoneProposalError(saved)) return false;
+    const scheduled = saved.effectiveAt ? new Date(saved.effectiveAt) : null;
+    setThresholds(saved.thresholds.map(String));
+    setThresholdTouched([false, false, false, false]);
+    setAndroidRules(saved.androidSocRules);
+    setIosRules(saved.iosModelRules);
+    setRemovals(saved.androidPresetRemovals ?? NO_REMOVALS);
+    setEffective(scheduled ? new Date(scheduled.getTime() - scheduled.getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : "");
+    return true;
+  });
   const thresholdError = proposal.thresholds.some((v,i)=>!Number.isFinite(v)||v<=0||i>0&&v<=proposal.thresholds[i-1]);
   const axisMax = Math.max(...[snapshot?.policy.current,snapshot?.policy.scheduled].flatMap(p=>p?[p.thresholds[3]]:[]),!thresholdError?proposal.thresholds[3]:1);
   const axisText = (values:number[])=>`T1 < ${values[0]}；T2 [${values[0]}, ${values[1]})；T3 [${values[1]}, ${values[2]})；T4 [${values[2]}, ${values[3]})；T5 ≥ ${values[3]}。平台算力值`;
@@ -135,7 +148,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
   const summary = !snapshot ? busy ? "正在读取手机校准规则" : "等校准规则读取成功后可用" : `${snapshot.policy.current?`校准第 ${snapshot.policy.current.version} 版`:"尚未发布手机校准规则"}${snapshot.policy.scheduled?`；第 ${snapshot.policy.scheduled.version} 版预约于 ${time(snapshot.policy.scheduled.effectiveAt)}（${Intl.DateTimeFormat().resolvedOptions().timeZone}）生效`:""}${!publishedPolicy?.androidSocRules.length?"；Android 0 档待补":""}${snapshot.pendingHardware.length?`；${snapshot.pendingHardware.length} 组硬件待核验`:""}`;
 
   return <div className="e6-tab">
-    <E6PendingNotice section="calibration" toast={ctx.toast} onRead={()=>{void refresh();void ctx.refreshE6();}}/>
+    <E6PendingNotice section="calibration" toast={ctx.toast} onRead={()=>{if(!dirty && !confirm)void refresh();void ctx.refreshE6();}}/>
     {snapshot?.policy.scheduled?<Notice tone="progress">{summary}</Notice>:<Conclusion state={snapshot&&(!publishedPolicy?.androidSocRules.length||snapshot.pendingHardware.length)?"warn":"neutral"} icon={Gauge}>{summary}</Conclusion>}
     <Panel id="section-rules" title="档位分界" icon={Gauge} tone="role-4" data-proof="phone-calibration-panel"
       explain="平台算力值用于后续校准分档，不代表硬件物理 TOPS；等于分界进入高一档，不修改历史结算。预约期间草稿只读，到点须刷新核对实际版本。" actions={snapshot?<Button size="sm" disabled={busy||!!confirm} onClick={()=>dirty?setDiscard(true):void refresh()}>刷新</Button>:undefined}>

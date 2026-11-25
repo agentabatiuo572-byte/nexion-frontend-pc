@@ -2,7 +2,10 @@
 
 import { B5OutcomeUnknownError, B5RequestError, fetchB5Inbox, fetchB5Radar, fetchB5Subscription, normalizeB5Radar, normalizeB5Subscription, sendB5StoredWrite, type B5InboxItem, type B5Radar, type B5Subscription } from "./b5-client";
 import { isBCommandRejection } from "./b-command-rejection";
-import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type SlotAttemptRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type SlotAttemptRecord } from "./pending-mutation-store";
+
+import { explicitRejectionCode } from "./explicit-rejection";
+import { currentRecoveryActor } from "./abe-recovery-access";
 
 export type B5ThresholdFacts = Pick<B5Radar["bankrun"], "yellowPct" | "redPct" | "version" | "ratio24h" | "light">;
 export type B5Signal = B5Radar["recentAlerts"][number];
@@ -58,6 +61,18 @@ export const b5Commands = createPendingMutationStore<Saved>({
   },
 });
 
+export const b5Recovery = createPendingRecovery(b5Commands, {
+  capability: record => isB5Original(record) ? "replay" : "readback",
+  explicitRejectionCode,
+  canReplay: record => {
+    if (!isB5Original(record)) return false;
+    const rights = currentRecoveryActor(record.adminId)?.authorities ?? [];
+    const write = record.kind === "threshold" ? "overview_b5_threshold_write"
+      : record.kind === "subscription" ? "overview_b5_subscribe" : "overview_b5_triage";
+    return rights.includes("overview_b5_read") && rights.includes(write);
+  },
+});
+
 export function pendingB5Commands(adminId: string) {
   return b5Commands.list().filter(record => isB5Original(record) ? record.adminId === adminId
     : !record.fingerprint.startsWith("triage|") && hasPersistedPendingCommandOwner(adminId));
@@ -77,7 +92,7 @@ export function rememberB5Command(adminId: string, slot: string, prefix: string,
 }
 
 /** Only matching receipts resolve an original write. A replay is never current data. */
-export async function executeB5Command(record: B5PendingWrite, retry = true) {
+async function sendOriginal(record: B5PendingWrite, retry: boolean) {
   if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
   if (!b5Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
     throw new Error("浏览器无法保存这次操作的记录，没有提交。请允许浏览器存储后重试。");
@@ -105,9 +120,9 @@ export async function executeB5Command(record: B5PendingWrite, retry = true) {
         : receipt.deliveryId === record.facts.id && receipt.acknowledged === true;
     }
     if (!matches) throw new B5OutcomeUnknownError(record.commandKey);
-    b5Commands.forget(record.fingerprint, record.commandKey);
+    b5Recovery.settleAcknowledged(record);
   } catch (error) {
-    if (isBCommandRejection(error, retry)) b5Commands.forget(record.fingerprint, record.commandKey);
+    if (isBCommandRejection(error, retry)) { if (!retry) b5Commands.forget(record.fingerprint, record.commandKey); }
     else if (error instanceof B5RequestError) throw new B5OutcomeUnknownError(record.commandKey, error.message);
     throw error;
   }
@@ -118,4 +133,11 @@ export async function inspectB5Command(record: B5PendingWrite) {
   return record.kind === "subscription" ? { kind: "subscription" as const, data: await fetchB5Subscription() }
     : record.kind === "ack" ? { kind: "ack" as const, data: await fetchB5Inbox() }
       : { kind: "radar" as const, data: await fetchB5Radar() };
+}
+
+export function executeB5Command(record: B5PendingWrite, retry = true) {
+  return retry ? b5Recovery.replay(record, original => {
+    if (!isB5Original(original)) throw new Error("PENDING_REPLAY_BLOCKED");
+    return sendOriginal(original, true);
+  }) : sendOriginal(record, false);
 }

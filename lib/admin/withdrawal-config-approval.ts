@@ -7,10 +7,11 @@ import {
   isA2OutcomeUncertainError,
   type A2OperationRow,
 } from "./a2-client";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { isPermissionDenied } from "./operation-confirm-error";
 import { isBCommandRejection } from "./b-command-rejection";
-import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
+import { currentRecoveryActor, sendRecoveredDraft } from "./abe-recovery-access";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
@@ -38,6 +39,7 @@ export const configApprovalAttempts = createPendingMutationStore<PendingMutation
   b5Facts?: B5ThresholdFacts;
   b5Ticket?: A2OperationRow;
   b5NotFound?: true;
+  bVerifiedNotExecuted?: true;
 }>({
   storageKey: "nexion-admin-withdrawal-config-proposals",
   retainExpiredRecords: true,
@@ -112,9 +114,24 @@ type ThresholdApprovalValues = {
   B5: { expectedVersion: number; yellowPct: number; redPct: number };
 };
 
+type ConfigAttempt = ReturnType<typeof attempts.list>[number];
 export function pendingThresholdConfigApproval<T extends keyof ThresholdApprovalValues>(source: T, adminId: string | number) {
-  const record = pendingConfigApproval(source, adminId);
-  if (!record) return undefined;
+  const slot = approvalSlot(source, adminId);
+  const record = attempts.list().find(row => row.fingerprint === slot && !row.bVerifiedNotExecuted);
+  return record && readThresholdAttempt(source, record);
+}
+
+export function thresholdRecoveryDrafts<T extends keyof ThresholdApprovalValues>(source: T, adminId: number) {
+  const slot = approvalSlot(source, adminId);
+  return attempts.list().filter(row => row.fingerprint === slot && row.bVerifiedNotExecuted).map(row => readThresholdAttempt(source, row));
+}
+
+export function discardThresholdRecoveryDraft(source: "B1" | "B5", adminId: number, commandKey: string) {
+  const draft = thresholdRecoveryDrafts(source, adminId).find(row => row.commandKey === commandKey);
+  if (draft) attempts.forget(draft.fingerprint, draft.commandKey);
+}
+
+function readThresholdAttempt<T extends keyof ThresholdApprovalValues>(source: T, record: ConfigAttempt) {
   const input: unknown = JSON.parse(record.input);
   const fields = source === "B1" ? ["expectedVersion", "redlinePct", "healthyPct"] : ["expectedVersion", "yellowPct", "redPct"];
   if (!Array.isArray(input) || typeof input[1] !== "string" || !input[0] || typeof input[0] !== "object"
@@ -157,179 +174,117 @@ export function pendingThresholdConfigApproval<T extends keyof ThresholdApproval
   return { ...record, values: input[0] as ThresholdApprovalValues[T], reason: input[1] };
 }
 
-/** B5 uses the shared proposal store but never treats a creation replay as live pending status. */
-export async function submitB5ThresholdApproval<T>(
+const thresholdReadAuthority = { B1: "overview_b1_read", B5: "overview_b5_read" } as const;
+const thresholdWriteAuthority = { B1: "overview_b1_redline_write", B5: "overview_b5_threshold_write" } as const;
+
+export const bThresholdRecovery = createPendingRecovery(attempts, {
+  capability: () => "receipt",
+  explicitRejectionCode,
+  canReplay: record => {
+    const [id, source] = record.fingerprint.split(":");
+    if (source !== "B1" && source !== "B5") return false;
+    const rights = currentRecoveryActor(id)?.authorities ?? [];
+    const original = pendingThresholdConfigApproval(source, id);
+    const request = source === "B1" ? original?.b1Request : original?.b5Request;
+    return !!request && original?.commandKey === record.commandKey && !original.received
+      && !original.b1Ticket && !original.b5Ticket && rights.includes(thresholdReadAuthority[source])
+      && rights.includes(thresholdWriteAuthority[source]);
+  },
+});
+
+async function submitThresholdApproval<T, S extends "B1" | "B5">(
+  source: S,
   session: AdminSession,
-  values: ThresholdApprovalValues["B5"],
+  values: ThresholdApprovalValues[S],
   reason: string,
   readActive: () => Promise<T>,
   mode: "new" | "query" | "retry",
-  facts?: B5ThresholdFacts,
+  facts?: B1CommandFacts | B5ThresholdFacts,
+  draftKey?: string,
 ) {
-  const slot = approvalSlot("B5", session.adminId);
-  const previous = pendingThresholdConfigApproval("B5", session.adminId);
+  const slot = approvalSlot(source, session.adminId);
+  const previous = pendingThresholdConfigApproval(source, session.adminId);
   if (mode !== "new" && !previous) return null;
   if (mode === "new" && previous) throw new A2OutcomeUncertainError("请先查询原审批单。", previous.commandKey);
-  const key = previous?.commandKey ?? createA2CommandKey("b5_bankrun_thresholds");
-  const input = previous?.input ?? JSON.stringify([values, reason]);
-  const request = previous ? previous.b5Request : {
-    action: "提高提现压力红线", obj: "current", beforeValue: "—", afterValue: "—",
-    operator: session.operator || session.username, operatorRole: roleLabel(session.role),
-    type: "fund" as const, amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain: "B5",
-    command: { domain: "B", op: "b5_bankrun_thresholds", params: { values } },
-    target: { domain: "B", type: "bankrun_thresholds", id: "current" },
-  };
-  const extra = { ...previous, input, b5Request: request, b5Facts: previous?.b5Facts ?? facts, b5NotFound: undefined };
-  attempts.remember(slot, key, extra);
-  if (!attempts.isDurablyStored(slot, key)) {
-    if (!previous) attempts.forget(slot, key);
-    throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
-  }
-  const queryOriginal = async () => {
-    try {
-      const ticket = await fetchA2ProposalByKey(key, true, "metadata");
-      // 111e00cd OpsAuditCenterService.ticketMetadata emits command.op for B5 too.
-      if (ticket && (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== "提高提现压力红线"
-        || ticket.operationCode !== "b5_bankrun_thresholds")) {
-        throw new A2OutcomeUncertainError("查到的审批单和原申请对不上，请继续核对。", key);
-      }
-      if (!ticket && (extra.received || extra.b5Ticket)) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
-      attempts.remember(slot, key, { ...extra, ...(ticket ? { b5Ticket: ticket, received: true }
-        : previous && previous.expiresAt <= Date.now() ? { b5NotFound: true as const } : {}) });
-      return ticket;
-    } catch {
-      attempts.remember(slot, key, extra);
+  const spec = commands[source];
+  const key = previous?.commandKey ?? createA2CommandKey(spec.op);
+  const read = (original: NonNullable<ReturnType<typeof pendingConfigApproval>>) => bThresholdRecovery.query(original, async saved => {
+    const ticket = await fetchA2ProposalByKey(key, true, source === "B5" ? "metadata" : false);
+    if (ticket && (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== spec.action
+      || ticket.operationCode !== spec.op || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.status))) {
+      throw new A2OutcomeUncertainError("查到的审批单和原申请对不上，请继续核对。", key);
+    }
+    if (!ticket && (saved.received || saved.b1Ticket || saved.b5Ticket)) {
       throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
     }
-  };
-  let ticket = previous ? await queryOriginal() : null;
-  if (!ticket) {
-    if (mode === "query") return null;
-    if (previous && (previous.expiresAt <= Date.now() || previous.received || previous.b5Ticket || !request)) {
-      throw new A2OutcomeUncertainError("原审批暂未查到，请继续查询，不能重新提交。", key);
+    return { ticket, conclusion: !ticket ? "not-found" : ticket.status === "pending" ? "unknown"
+      : ticket.status === "approved" ? "succeeded" : "rejected" } as const;
+  });
+  let original = previous;
+  if (!original) {
+    const rights = currentRecoveryActor(session.adminId)?.authorities ?? [];
+    if (!rights.includes(thresholdReadAuthority[source]) || !rights.includes(thresholdWriteAuthority[source])) throw new Error("FORBIDDEN");
+    const request = {
+      action: spec.action, obj: "current", beforeValue: "—", afterValue: "—",
+      operator: session.operator || session.username, operatorRole: roleLabel(session.role),
+      type: "fund" as const, amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain: source,
+      command: { domain: "B", op: spec.op, params: { values } },
+      target: { domain: "B", type: spec.type, id: "current" },
+    };
+    attempts.remember(slot, key, source === "B1"
+      ? { input: JSON.stringify([values, reason]), b1Request: request, b1Facts: facts as B1CommandFacts | undefined }
+      : { input: JSON.stringify([values, reason]), b5Request: request, b5Facts: facts as B5ThresholdFacts | undefined });
+    original = pendingThresholdConfigApproval(source, session.adminId);
+    if (original?.commandKey !== key || !attempts.isDurablyStored(slot, key)) {
+      attempts.forget(slot, key);
+      throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
-    if (!session.authorities.includes("overview_b5_threshold_write")) throw new Error("当前账号缺少调整黄线红线的权限。");
-    try {
-      await createA2OperationProposal(request!, key, true);
-    } catch (error) {
-      if (isBCommandRejection(error, !!previous)) attempts.forget(slot, key);
-      throw error;
-    }
-    extra.received = true;
-    attempts.remember(slot, key, extra);
-    ticket = await queryOriginal();
-    if (!ticket) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
   }
+  if (mode !== "query") {
+    const post = (saved: ConfigAttempt) => {
+      const request = source === "B1" ? saved.b1Request : saved.b5Request;
+      if (!request) throw new Error("原审批内容不完整，请到操作记录核对。");
+      return createA2OperationProposal(request, saved.commandKey, true);
+    };
+    if (mode === "retry" && (original.received || original.b1Ticket || original.b5Ticket)) {
+      mode = "query";
+    } else {
+      const saved = original;
+      await sendRecoveredDraft(async () => {
+        try {
+          await (mode === "retry" ? bThresholdRecovery.replay(saved, post) : post(saved));
+        } catch (error) {
+          if (mode === "new" && isBCommandRejection(error, false)) attempts.forget(slot, key);
+          throw error;
+        }
+      }, () => attempts.isDurablyStored(slot, key), mode === "new" && draftKey
+        ? () => discardThresholdRecoveryDraft(source, session.adminId, draftKey) : undefined);
+      attempts.remember(slot, key, { ...original, received: true });
+    }
+  }
+  const result = await read(original);
+  if (!result?.ticket) return null;
+  const { ticket } = result;
+  attempts.remember(slot, key, { ...original, received: true, ...(source === "B1" ? { b1Ticket: ticket } : { b5Ticket: ticket }),
+    bVerifiedNotExecuted: result.conclusion === "rejected" ? true : undefined });
   let active: T | null = null;
   let activeReadFailed = false;
   try { active = await readActive(); }
   catch { activeReadFailed = true; }
-  if (ticket.status !== "pending") attempts.forget(slot, key);
-  // 读取失败时页面上已有待审批条和读取失败块，这里只补一句短的，不重复「等批准」。
+  if (!activeReadFailed && result.conclusion === "succeeded") bThresholdRecovery.settleFromQuery(original, "succeeded");
   return { active, activeReadFailed, ticket, acknowledgement: ticket.status === "pending"
     ? `已提交审批 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : " · 等待另一位超级管理员批准"}`
     : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果${activeReadFailed ? "；数据没读到，暂不能再改" : ""}` };
 }
 
-/** Call only after the existing confirmation UI confirms R1-提案过期 release. */
-async function releaseExpiredThresholdApproval(source: "B1" | "B5", adminId: string | number, commandKey: string) {
-  const record = pendingThresholdConfigApproval(source, adminId);
-  const ticketField = source === "B1" ? "b1Ticket" : "b5Ticket";
-  const missingField = source === "B1" ? "b1NotFound" : "b5NotFound";
-  if (!record || record.commandKey !== commandKey || record.expiresAt > Date.now() || !record[missingField] || record.received || record[ticketField]) return false;
-  const slot = approvalSlot(source, adminId);
-  attempts.remember(slot, commandKey, { ...record, [missingField]: undefined });
-  const ticket = await fetchA2ProposalByKey(commandKey, true, "metadata");
-  if (ticket) {
-    const action = source === "B1" ? "降低兑付覆盖率红线" : "提高提现压力红线";
-    if (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== action || ticket.operationCode !== commands[source].op) {
-      throw new A2OutcomeUncertainError("查到的审批单和原申请对不上，请继续核对。", commandKey);
-    }
-    attempts.remember(slot, commandKey, { ...record, received: true, [ticketField]: ticket, [missingField]: undefined });
-    return false;
-  }
-  attempts.forget(slot, commandKey);
-  return true;
+export function submitB1ThresholdApproval<T>(session: AdminSession, values: ThresholdApprovalValues["B1"], reason: string,
+  readActive: () => Promise<T>, mode: "new" | "query" | "retry", facts?: B1CommandFacts, draftKey?: string) {
+  return submitThresholdApproval("B1", session, values, reason, readActive, mode, facts, draftKey);
 }
 
-export const releaseExpiredB5ThresholdApproval = (adminId: string | number, commandKey: string) => releaseExpiredThresholdApproval("B5", adminId, commandKey);
-export const releaseExpiredB1ThresholdApproval = (adminId: string | number, commandKey: string) => releaseExpiredThresholdApproval("B1", adminId, commandKey);
-
-/** B1 keeps the complete request and queries the live ticket after any replay. */
-export async function submitB1ThresholdApproval<T>(
-  session: AdminSession,
-  values: ThresholdApprovalValues["B1"],
-  reason: string,
-  readActive: () => Promise<T>,
-  mode: "new" | "query" | "retry",
-  facts?: B1CommandFacts,
-) {
-  const slot = approvalSlot("B1", session.adminId);
-  const previous = pendingThresholdConfigApproval("B1", session.adminId);
-  if (mode !== "new" && !previous) return null;
-  if (mode === "new" && previous) throw new A2OutcomeUncertainError("请先查询原审批单。", previous.commandKey);
-  const input = previous?.input ?? JSON.stringify([values, reason]);
-  const key = previous?.commandKey ?? createA2CommandKey("b1_coverage_thresholds");
-  const request = previous ? previous.b1Request : {
-    action: "降低兑付覆盖率红线", obj: "current", beforeValue: "—", afterValue: "—",
-    operator: session.operator || session.username, operatorRole: roleLabel(session.role),
-    type: "fund" as const, amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain: "B1",
-    command: { domain: "B", op: "b1_coverage_thresholds", params: { values } },
-    target: { domain: "B", type: "coverage_thresholds", id: "current" },
-  };
-  const extra = { ...previous, input, b1Request: request, b1Facts: previous?.b1Facts ?? facts, b1NotFound: undefined };
-  attempts.remember(slot, key, extra);
-  if (!attempts.isDurablyStored(slot, key)) {
-    if (!previous) attempts.forget(slot, key);
-    throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
-  }
-  const queryOriginal = async () => {
-    try {
-      const ticket = await fetchA2ProposalByKey(key, true);
-      // 111e00cd ticketMetadata now returns command.op for B1, including history.
-      if (ticket && (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== "降低兑付覆盖率红线"
-        || ticket.operationCode !== "b1_coverage_thresholds")) {
-        throw new A2OutcomeUncertainError("查到的审批单和原申请对不上，请继续核对。", key);
-      }
-      if (!ticket && (extra.received || extra.b1Ticket)) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
-      attempts.remember(slot, key, { ...extra, ...(ticket ? { b1Ticket: ticket, received: true } : { b1NotFound: true as const }) });
-      return ticket;
-    } catch {
-      // A saved creation receipt is not the current approval status.
-      attempts.remember(slot, key, extra);
-      throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
-    }
-  };
-  let ticket = previous ? await queryOriginal() : null;
-  if (!ticket) {
-    if (mode === "query") return null;
-    if (previous && (previous.expiresAt <= Date.now() || previous.received || previous.b1Ticket || !request)) {
-      throw new A2OutcomeUncertainError("原审批暂未查到，请继续查询，不能重新提交。", key);
-    }
-    if (!session.authorities.includes("overview_b1_redline_write")) throw new Error("当前账号缺少设置兑付覆盖率阈值的权限。");
-    attempts.remember(slot, key, extra);
-    if (!attempts.isDurablyStored(slot, key)) throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
-    try {
-      await createA2OperationProposal(request!, key, true);
-    } catch (error) {
-      if (isBCommandRejection(error, !!previous)) attempts.forget(slot, key);
-      throw error;
-    }
-    extra.received = true;
-    attempts.remember(slot, key, extra);
-    ticket = await queryOriginal();
-    if (!ticket) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
-  }
-  // Re-read current data. A successful replay must never publish its old snapshot.
-  let active: T | null = null;
-  let activeReadFailed = false;
-  try { active = await readActive(); }
-  catch { activeReadFailed = true; }
-  if (ticket.status !== "pending") attempts.forget(slot, key);
-  // 读取失败时页面上已有待审批条和读取失败块，这里只补一句短的，不重复「等批准」。
-  return { active, activeReadFailed, ticket, acknowledgement: ticket.status === "pending"
-    ? `已提交审批 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : " · 等待另一位超级管理员批准"}`
-    : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果${activeReadFailed ? "；数据没读到，暂不能再改" : ""}` };
+export function submitB5ThresholdApproval<T>(session: AdminSession, values: ThresholdApprovalValues["B5"], reason: string,
+  readActive: () => Promise<T>, mode: "new" | "query" | "retry", facts?: B5ThresholdFacts, draftKey?: string) {
+  return submitThresholdApproval("B5", session, values, reason, readActive, mode, facts, draftKey);
 }
 
 export function configApprovalOriginalInput(sourceDomain: "H8", input: string): H8ConfigApprovalInput;
