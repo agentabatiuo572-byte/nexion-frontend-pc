@@ -744,9 +744,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     {recoveryNotice}
     {savedUnreadNotice}
     {staleNotice}
-    <BlockState state="error" title="新人礼与邀请奖励读取失败"
-      detail={<>页面不显示任何旧数据。<Explain label="失败原因" content={error ?? "没有收到数据。"} /></>}
-      retryLabel="重新加载" onRetry={() => void load()} />
+    <BlockState state="error" title="新人礼与邀请奖励加载失败" detail={error ?? "没有收到数据。"} onRetry={() => void load()} />
     {confirmModal}
   </div>;
 
