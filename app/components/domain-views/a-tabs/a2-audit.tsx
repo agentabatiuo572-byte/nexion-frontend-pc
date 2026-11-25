@@ -1644,7 +1644,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     ? { coverageRatio: bDomain.ledger.coverageRatio, redlinePct: bDomain.ledger.redlinePct, healthyPct: bDomain.ledger.healthyPct }
     : undefined;
   const canWrite = canAccessA2Write(principal.authorities);
-  const canWithdraw = principal.authorities.includes("platform_a2_proposal_create");
+  const canPropose = principal.authorities.includes("platform_a2_proposal_create");
+  const canMakeV8 = canWrite && ["network_f1_read", "network_f1_promote_user"].every((code) => principal.authorities.includes(code));
+  /** V8 晋升单按发起它要的权限撤回（B88-BE-03），其余单要通用发起权限。 */
+  const canWithdraw = (w?: A2OperationRow) => w && isV8PromotionTicket(w) ? canMakeV8 : canPropose;
   const isMine = (w: A2OperationRow) => isCurrentOperator(w, session?.username);
   const zone = businessZone().label;
 
@@ -2116,7 +2119,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /** 重试也是写操作，按这个账号现在的权限判断，和原入口一样（OP-124）。读回核对不受影响。 */
   const canRetry = (record: A2PendingCommand) => {
     if (!isPendingCommandOwnedBy(record)) return false;
-    if (record.kind === "withdraw") return canWithdraw;
+    if (record.kind === "withdraw") return canWithdraw(recordTicket(record));
     if (record.kind === "approve" && oldPayoutTickets.current.has(record.target)) return false;
     if (record.kind === "param" || record.kind === "retention") return canWrite;
     if (record.kind === "export") return canExport;
@@ -2269,7 +2272,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (submitting) return SUBMITTING;
     if (pendingTicketIds.has(w.id)) return PENDING_LOCK;
     if (mainLoading) return RELOADING;
-    if (kind === "withdraw") return canWithdraw ? undefined : NO_WITHDRAW;
+    if (kind === "withdraw") return canWithdraw(w) ? undefined : NO_WITHDRAW;
     if (isMine(w)) return OWN_TICKET_REASON;
     if (kind === "approve" && oldPayoutTickets.current.has(w.id)) return F4_PAYOUT_REVIEW_REQUIRED;
     if (kind === "approve" && w.retiredOperation) return RETIRED_OPERATION_COPY;
@@ -3278,7 +3281,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   // 已批准的券冲正：和历史表同一份总览里的审批单按单号对上，读批准时记下的结果（F1-BE-19）。
   const voucherResult = a2VoucherReversalResult(shownHistory, records?.operationQueue ?? []);
 
-  const readOnly = canApprove ? undefined : canWithdraw ? "你不能批准，只能看进度和撤回自己发起的申请。" : "你不能批准审批单，只能查看。";
+  const readOnly = canApprove ? undefined : canPropose || canMakeV8 ? "你不能批准，只能看进度和撤回自己发起的申请。" : "你不能批准审批单，只能查看。";
 
   return (
     <>

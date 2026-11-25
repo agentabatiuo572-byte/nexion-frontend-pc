@@ -92,8 +92,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const canApproveV8 = useAdminAuth(({ session }) => !!session
     && session.authorities.includes("network_f1_promote_user")
     && session.authorities.includes("platform_a2_write"));
-  const canWithdrawV8 = useAdminAuth(({ session }) => !!session
-    && session.authorities.includes("platform_a2_proposal_create")
+  const canWithdrawV8 = useAdminAuth(({ session }) => !!session && canApproveV8
     && canAccessResolvedPath(resolveVisibleDomains(session), "/platform/audit"));
   const salaryPresent = ctx.f1SalaryFieldPresent === true;
   const salaryTabAvailable = ctx.f1SalaryFieldPresent !== false;
