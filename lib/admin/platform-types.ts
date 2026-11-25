@@ -81,6 +81,8 @@ export interface OpsSku {
   shareYieldMax?: number;
   baseRate?: string;
   sold?: number;
+  displaySoldBase?: number;
+  liveActivityVisible?: boolean;
   /** 服务端已有商品属性；编辑表单不开放修改，但全量保存须保留。 */
   rating?: number;
   reviews?: number;
