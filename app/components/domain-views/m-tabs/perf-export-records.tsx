@@ -295,7 +295,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
           </Tr></thead><tbody>{rows.map(task => {
             const status = exportStatus(task);
             const reviewing = view === "APPROVALS" && task.state === "PENDING_APPROVAL";
-            return <Tr key={task.taskId} selected={openId === task.taskId} onOpen={() => setOpenId(task.taskId)}>
+            return <Tr key={task.taskId} selected={openId === task.taskId} onOpen={refreshing ? undefined : () => setOpenId(task.taskId)}>
               {/* 申请人单独一行，范围列只写范围；任务编号写成「编号 40」，不和行数挨着。 */}
               <Td><Cell main={EXPORT_LABEL[task.type]} sub={view === "APPROVALS" ? task.mine && !task.hasRequesterName ? "你提交的" : `申请人 ${task.requester}${task.mine ? "（你提交的）" : ""}` : <span data-mono="">编号 {task.taskId}</span>} /></Td>
               <Td>{task.scopeLost ? "—" : <Cell main={task.scope ?? "—"} sub={task.month ?? "—"} />}</Td>
@@ -304,8 +304,8 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
               <Td align="right"><Cell num main={task.rows === null ? "—" : String(task.rows)} /></Td>
               <Td sticky="end" fit>{task.state === "READY"
                 ? <Button size="sm" disabledReason={task.canDownload ? refreshing ? REFRESHING : undefined : "你现在不能下载"} onClick={() => download(task)}>下载</Button>
-                : reviewing ? <Button size="sm" disabledReason={task.mine ? "你发起的，要另一位有审批权的管理员处理" : undefined} onClick={() => setOpenId(task.taskId)}>审批</Button>
-                : <Button size="sm" onClick={() => setOpenId(task.taskId)}>查看</Button>}</Td>
+                : reviewing ? <Button size="sm" disabledReason={task.mine ? "你发起的，要另一位有审批权的管理员处理" : refreshing ? REFRESHING : undefined} onClick={() => setOpenId(task.taskId)}>审批</Button>
+                : <Button size="sm" disabledReason={refreshing ? REFRESHING : undefined} onClick={() => setOpenId(task.taskId)}>查看</Button>}</Td>
             </Tr>;
           })}</tbody></Table>
           <Pager label="导出记录" sizeLabel="导出记录每页条数" total={total} page={page} pageSize={pageSize} sizes={[10]} onPage={setPage} onPageSize={size => { setPageSize(size); setPage(1); }} />

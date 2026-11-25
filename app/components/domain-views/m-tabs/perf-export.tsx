@@ -60,6 +60,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   const [lookupText, setLookupText] = useState<string | null>(null);
   const [querying, setQuerying] = useState(false);
   const [found, setFound] = useState(false);
+  const [hiddenSettled, setHiddenSettled] = useState(false);
   const [preview, setPreview] = useState<"checking" | "ready" | "failed">("checking");
   const checkGeneration = useRef(0);
   const editedConditions = useRef(false);
@@ -201,6 +202,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   });
   const blockedReason = !data ? undefined
     : original?.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT
+    : hiddenSettled ? "这次提交没有执行"
     : unknown ? "提交后没收到结果，原来的选择和理由已保存。先查询原操作，不要再点提交。"
     : data.blocked;
   // 空、没勾选、正在检查、勾着的项没加载出来：那一项自己在内容区写清楚，这里只写进确认按钮的灰色原因，不另出提示条（VS-107，一件事只说一处）。
@@ -237,6 +239,8 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           }
           if (outcome.kind === "missing") { setLookupText("找不到本标签页保存的原操作。"); return; }
           if (outcome.kind === "cleared") {
+            // 原范围已经不能选：只说结论，不把原来的月份、范围和理由铺回表单（和导出记录的待确认区一样）。
+            if (originalHidden) { setHiddenSettled(true); return; }
             restoreDraft(outcome.draft.reason);
             return;
           }
@@ -249,7 +253,8 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
         }).finally(() => setQuerying(false));
       }}>查询原操作</Button>{lookupText && lookupText !== RETRY_EXPIRED_TEXT && <span role="status">{lookupText}</span>}{expired && <span role="status">{RETRY_EXPIRED_TEXT} <ExportAuditLink /></span>}</div>;
   const content = !data && unknown ? recovery
-    : originalHidden ? <><Notice tone="neutral">原来那次导出的范围你现在看不到，月份、范围和理由不再显示。可以查询原操作的结果。</Notice>{recovery}</>
+    : originalHidden ? hiddenSettled ? <Notice tone="done">这次提交没有执行。</Notice>
+      : <><Notice tone="neutral">原来那次导出用的范围你现在不能选，月份、范围和理由不再显示。可以查询原操作的结果。</Notice>{recovery}</>
     : loadError
     ? <Notice tone="danger" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。{loadError}</Notice>
     // 没有已发布的一版：不是失败，写原因，给「刷新」重新读目录。

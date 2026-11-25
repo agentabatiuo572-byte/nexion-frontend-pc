@@ -783,10 +783,10 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   );
 
   const ownApprovalNotice = <>
-    {ownPending && <Notice tone="warn">{ownStale
+    {ownPending && (!config || !queue.rows.some(row => row.id === ownPending.id)) && <Notice tone="warn">{ownStale
       ? `放宽单 ${ownPending.id} 的最新状态没读到，先按等批准处理，点「刷新」再读。`
       : `放宽单 ${ownPending.id} 已提交，等另一位超级管理员批准，批准前参数不变。${canReadQueue ? "" : "点「刷新」看最新状态。"}`}</Notice>}
-    {ownSettled && <Notice tone="neutral">放宽单 {ownSettled.id} {withdrawalApprovalStatusText(ownSettled)}{ownSettled.status === "approved" ? "，当前值以这页读到的为准。" : "，参数没有变。"}</Notice>}
+    {ownSettled && <Notice tone="neutral">放宽单 {ownSettled.id} {withdrawalApprovalStatusText(ownSettled)}{ownSettled.status === "approved" ? "，当前值以这页读到的为准。" : "，这张单没有生效。"}</Notice>}
   </>;
 
   if (!config) {

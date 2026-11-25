@@ -483,7 +483,10 @@ function exportPorts(operator: Operator, views: View[], invalidateAccess: () => 
         } else choices.set(scope.kind, { scope: { kind: scope.kind }, label: scopeLabels[scope.kind], types });
       }
       const original = mySubmit();
-      const draft = draftsFor(operator)?.submit;
+      const drafts = draftsFor(operator);
+      // 一个范围都选不了时，留着的草稿用不上，也不再回显原范围和理由。
+      if (!choices.size && drafts) delete drafts.submit;
+      const draft = drafts?.submit;
       const saved = original?.action === "SUBMIT" ? original.selection : draft?.query;
       const originalHidden = original?.action === "SUBMIT" && !choices.has(original.selection.scope);
       const differences: ExportConditionDifference[] = [];
