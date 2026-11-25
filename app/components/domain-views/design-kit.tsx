@@ -4016,7 +4016,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const showEditError = !surface || attempted || editLeft;
   const reasonShort = visibleLength < reasonMin ? `还差 ${reasonMin - visibleLength} 字` : `操作理由不能超过 ${reasonMax} 字。`;
   // 按钮灰着时缺什么写在按钮的提示里（OP-126）。
-  const missing: ReactNode[] = canConfirm || submitting ? [] : blockedReason ? [blockedReason] : readConflict ? [readConflict.review ? "请先读取最新" : displayAdminReadError(readConflict)] : pendingRecovery?.blockedReason ? [pendingRecovery.blockedReason] : [
+  const missing: ReactNode[] = canConfirm || submitting ? [] : blockedReason ? [blockedReason] : readConflict ? [readConflict.review ? readConflict.review.disabledReason ?? "请先读取最新" : displayAdminReadError(readConflict)] : pendingRecovery?.blockedReason ? [pendingRecovery.blockedReason] : [
     !reasonPolicyReady && (reasonPolicyError ?? "正在加载"),
     covBlocked && coverageBlockText,
     approval?.disabledReason,

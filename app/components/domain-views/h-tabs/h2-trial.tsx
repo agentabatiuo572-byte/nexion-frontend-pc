@@ -18,21 +18,29 @@ import {
   createH2CommandKey,
   fetchH2Trials,
   isH2OutcomeUnknown,
+  updateH2TrialBuyList,
   updateH2TrialParam,
 } from "@/lib/admin/h-client";
+import { fetchA8PermissionDetail } from "@/lib/admin/a8-client";
+import { currentAdminSession } from "@/lib/admin/auth-client";
+import { buyProductReason, H2_BUY_LIST_ACTION, H2_BUY_LIST_OBJECT, isBuyListVersion, nonBlank, readH2SessionProducts, readH2TrialPurchase, type BuyList, type BuyListWrite, type TrialTarget } from "@/lib/admin/h2-trial-purchase";
 import { usePropose } from "@/lib/admin/use-propose";
 import { canRetryH2Cancellation, releaseRejectedH2Cancellation, finishRetiredH2TrialChargeLookup, H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { ADVANCED_TRIAL_GROUPS, COMMON_TRIAL_PARAMS, TRIAL_PARAM_HELP, TRIAL_STATE_HELP } from "@/lib/admin/config-help/h2-trial";
+import { ADVANCED_TRIAL_GROUPS, COMMON_TRIAL_PARAMS, TRIAL_PARAM_HELP, TRIAL_STATE_HELP, trialParamHelp } from "@/lib/admin/config-help/h2-trial";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { getH2PageGuide } from "@/lib/admin/page-guides";
+import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useReach } from "@/lib/nav/use-reach";
 import type { EditSpec } from "../design-kit";
+import { AlertTriangle } from "lucide-react";
+import { BUY_CONFLICT, BUY_LOCKED, BUY_READ_INVALID, BuyListPendingNotice, BuySection, type BuyListDraft, type BuyListPending, type BuyListSubmitResult } from "./h2-trial-buy";
 import type { HCtx } from "./types";
 
 /** 整页读取失败后按「重试」读到了：焦点落在第一块的标题，不落到整页外框（BUG-710）。 */
@@ -84,7 +92,7 @@ type TrialProduct = {
 };
 
 // 候选商品都是限量库存，库存一定有数；万一没给，写「—」不写成 0。
-const stockText = (product: TrialProduct) => product.stock === null || product.stock === undefined || product.stock === ""
+const stockText = (product: Pick<TrialProduct, "stock">) => product.stock === null || product.stock === undefined || product.stock === ""
   ? "库存 —"
   : `库存 ${product.stock}`;
 
@@ -99,7 +107,14 @@ type H2Model = {
   modelA?: Record<string, any>;
   serverOnlyFields?: string[];
   sessionsPage?: { total: number; pageNum: number; pageSize: number };
+  buyList?: BuyList | "invalid";
+  trialTarget?: TrialTarget | "invalid";
+  writePermissionName?: string;
 };
+
+const H2_WRITE_PERMISSION = "growth_h2_write";
+/** 试用目标商品的商城状态；没列的状态只看上架判定，不显示原始值。 */
+const TARGET_STATUS: Record<string, string | undefined> = { ON_SALE: "在售", ACTIVE: "在售", PENDING: "草稿", OFF_SALE: "已下架" };
 
 /** 系统或别处决定的值：只读，不给修改入口（PCM-36）。 */
 const READ_ONLY_KEYS = ["phaseOpen", "trialPriceUSD", "chargeFailRate"];
@@ -139,6 +154,32 @@ const pendingCommands = createPendingMutationStore<PendingCommand>({
     return record.kind === "param" && filled(record.paramKey, record.name) && typeof record.value === "string";
   },
 });
+
+const pendingBuyLists = createPendingMutationStore<BuyListPending>({
+  storageKey: "nexion-admin-h2-buy-list-commands-v2",
+  retainExpiredRecords: true,
+  isValidRecord: (record) => record.fingerprint === H2_BUY_LIST_OBJECT
+    && record.requestNo === record.commandKey && record.confirmedActorId === record.commandOwnerId
+    && isBuyListVersion(record.version) && nonBlank(record.reason)
+    && (record.retryRejection === undefined || nonBlank(record.retryRejection))
+    && [record.productNos, record.added, record.removed, record.nextNames]
+      .every((values) => Array.isArray(values) && values.every(nonBlank)),
+});
+
+function buyListWrite({ productNos, version, reason, requestNo, confirmedActorId }: BuyListPending): BuyListWrite {
+  return { productNos, version, reason, requestNo, confirmedActorId };
+}
+
+async function checkBuyListOwner(ownerId: number) {
+  const auth = await currentAdminSession();
+  if (!auth) return "unauthenticated";
+  const local = useAdminAuth.getState();
+  if (auth.session.adminId !== ownerId || local.session?.adminId !== ownerId) return "mismatch";
+  const { role, authorities, passwordChangeRequired } = auth.session;
+  if (!local.isAuthenticated || local.logoutPending || local.logoutUnknown || passwordChangeRequired
+    || (role !== "superadmin" && role !== "super" && !authorities.includes(H2_WRITE_PERMISSION))) return "forbidden";
+  return "ready";
+}
 
 const commandScope = (item: TrialCommand) => item.kind === "param" ? `param|${item.paramKey}` : `${item.kind}|${item.sid}`;
 const isProposal = (item: TrialCommand): item is TrialProposal => item.kind === "cancel" || item.kind === "charge";
@@ -194,8 +235,9 @@ function shortSid(sid: string) {
 }
 
 /** 接口给「USDT 数 + UVT 数 UVT」，前一个数补上单位。 */
+/** 金额有几位写几位，不补零（TX-20）。 */
 function shadowText(value: string) {
-  return operatorCopyText(text(value)).replace(/^([\d.,]+) \+ /, "$1 USDT + ");
+  return operatorCopyText(text(value)).replace(/^([\d.,]+) \+ /, "$1 USDT + ").replace(/(\.\d*?)0+(?=\D|$)/g, "$1").replace(/\.(?=\D|$)/g, "");
 }
 
 function stateTone(state: TrialState | undefined): StateTone {
@@ -222,7 +264,7 @@ function usdt(value: unknown) {
   return `${Number(value).toLocaleString("en-US", { maximumFractionDigits: 6 })} USDT`;
 }
 
-function paramValue(param: TrialParam, product: TrialProduct | undefined) {
+function paramValue(param: TrialParam, product: { name: string | null } | undefined) {
   const unit = TRIAL_PARAM_HELP[param.key]?.input?.unit;
   if (param.key === "trialOffsetCapUSD" && text(param.cur, "").trim() === "") return "不设上限";
   if (param.key === "trialProductId") return product?.name ?? text(param.cur);
@@ -232,24 +274,31 @@ function paramValue(param: TrialParam, product: TrialProduct | undefined) {
   return unit ? `${paramInput(param)} ${unit}` : text(param.cur);
 }
 
-function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }: {
+function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked, seatsLeft, buyListNos, hasBuyList }: {
   ctx: HCtx;
   param: TrialParam;
   trialProducts: TrialProduct[];
+  trialTarget?: TrialTarget | "invalid";
   send: (item: TrialCommand) => Promise<void>;
   reach: ReturnType<typeof useReach>;
   blocked?: string;
   /** 今日实际剩余。修改框盖住了页面，不能让人回头看，直接写数字。 */
   seatsLeft?: string;
+  /** 「其他可购买设备」的商品编号；读到了才传。换试用目标商品时，旧目标不在里面要提醒一句。 */
+  buyListNos?: string[];
+  hasBuyList: boolean;
 }) {
   const { openActionConfirm } = ctx;
-  const help = TRIAL_PARAM_HELP[param.key];
+  const help = trialParamHelp(param.key, hasBuyList);
   const name = paramName(param);
   const isOffsetCap = param.key === "trialOffsetCapUSD";
   const isProduct = param.key === "trialProductId";
   const current = paramInput(param);
   const currentProduct = isProduct ? trialProducts.find((product) => product.productNo === current) : undefined;
-  const displayCurrent = paramValue(param, currentProduct);
+  const currentTarget = isProduct && trialTarget !== "invalid" && trialTarget?.productNo === current ? trialTarget : undefined;
+  const targetStatusUnknown = isProduct && trialTarget !== undefined && !currentTarget;
+  const currentDisplayProduct = currentTarget ?? currentProduct;
+  const displayCurrent = paramValue(param, currentDisplayProduct);
   const when = help?.when ?? (param.section === "newonly" ? "立即生效，只影响新试用" : "立即生效");
   const productHref = `/devices/pricing?sku=${encodeURIComponent(current)}`;
 
@@ -318,6 +367,16 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }
           <RecordList label="可选商品编号" records={trialProducts.map((product) => ({ id: product.productNo, value: product.name, reference: product.productNo }))} />
         </>} /></Fact>
       </Facts> : undefined,
+      ...(isProduct && buyListNos && !buyListNos.includes(current) ? { facts: <>
+        <Facts>
+          <Fact k="现在">{currentProduct?.name ?? (current || "未设置")}{productMissing && "，不在可选列表"}<Explain label="可选条件和商品编号" content={<>
+            <p>{help?.howMore}</p>
+            <RecordList label="可选商品编号" records={trialProducts.map((product) => ({ id: product.productNo, value: product.name, reference: product.productNo }))} />
+          </>} /></Fact>
+        </Facts>
+        <p className="h2-target-note"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>换掉后，{currentProduct?.name ?? current} 不在其他可购买设备里，新领取的用户不能用试用抵扣金买它</span></p>
+      </> } : {}),
+      ...(isProduct && hasBuyList ? { reasonPlaceholder: "写清调整原因和依据" } : {}),
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认修改，立即生效",
       // 标题行写影响谁（OP-48）。这是什么和显示位置在标题旁的提示图标里。
@@ -326,9 +385,15 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }
     });
   };
 
+  const targetStatus = currentTarget?.status ? TARGET_STATUS[currentTarget.status] : undefined;
+  const statusExplainsBlock = currentTarget?.unavailableReason === "PRODUCT_NOT_AVAILABLE"
+    && (currentTarget.status === "PENDING" || currentTarget.status === "OFF_SALE");
   // 名称这一列只放名称和提示图标（PG-46）；库存、阻断原因和入口是值的补充，排在值后面。
+  const listingBlocked = currentTarget?.listingAllowed === false;
   const productLine = [
-    currentProduct && stockText(currentProduct),
+    targetStatusUnknown ? "商城状态暂时无法判断" : typeof targetStatus === "string" && (!listingBlocked || statusExplainsBlock) && targetStatus,
+    !targetStatusUnknown && !listingBlocked && currentDisplayProduct && stockText(currentDisplayProduct),
+    listingBlocked && !statusExplainsBlock && buyProductReason(currentTarget.unavailableReason, currentTarget.status),
     productMissing && "不在可选列表",
     // 阻断原因要看得见，不只放在灰按钮的提示里（OP-126）。
     deadEndLead,
@@ -341,7 +406,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }
       what={help?.what ?? operatorCopyText(param.sub ?? "")}
       when={when}
       where={help?.where}
-      note={[currentProduct && `商品编号 ${currentProduct.productNo}`, productDeadEnd].filter(Boolean).join("。") || undefined}
+      note={[currentDisplayProduct && `商品编号 ${currentDisplayProduct.productNo}`, productDeadEnd].filter(Boolean).join("。") || undefined}
       value={displayCurrent}
       sub={productLine || productLink ? <>{productLine}{productLine && productLink && " · "}{productLink}</> : undefined}
       action={ctx.can("growth_h2_write") ? (describedBy) => <Button size="sm" aria-label={`调整 ${name}`} aria-describedby={describedBy} disabledReason={blocked ?? productDeadEnd} onClick={open}>调整</Button> : undefined}
@@ -356,7 +421,8 @@ function ReadOnlyRow({ param, action }: { param: TrialParam; action?: ReactNode 
 
 export function H2Trial({ ctx }: { ctx: HCtx }) {
   const { toast, openActionConfirm } = ctx;
-  const canWrite = ctx.can("growth_h2_write");
+  const canWrite = ctx.can(H2_WRITE_PERMISSION);
+  const canReadPermissionName = ctx.can("platform_a8_read");
   const canCancel = ctx.can("growth_h2_session_cancel");
   const canCharge = ctx.can("growth_h2_session_charge");
   const adminSession = useAdminAuth((state) => state.session);
@@ -380,24 +446,73 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const [retiredCharge, setRetiredCharge] = useState<RetiredCharge | null>(null);
   const [chargeLookup, setChargeLookup] = useState<{ missing?: boolean; ticket?: A2OperationRow; error?: string }>({});
   const [chargeLookupBusy, setChargeLookupBusy] = useState(false);
+  const [pendingBuyList, setPendingBuyList] = useState<BuyListPending>();
+  const [retryingBuyList, setRetryingBuyList] = useState(false);
+  const [buyRetryDenied, setBuyRetryDenied] = useState<string>();
+  const [releasingBuyList, setReleasingBuyList] = useState<string>();
+  const [buyReplayConflict, setBuyReplayConflict] = useState(false);
+  const [buyReadError, setBuyReadError] = useState<string>();
+  const [buyLoading, setBuyLoading] = useState(false);
+  const [catalogWritePermissionName, setCatalogWritePermissionName] = useState<string>();
+  const buyPending = adminSession && isPendingCommandOwnedBy(pendingBuyList, adminSession.adminId) ? pendingBuyList : undefined;
+  const syncBuyPending = useCallback(() => setPendingBuyList(pendingBuyLists.list()[0]), []);
   const reloadEpochRef = useRef(0);
+  const buyLeaveGuard = useRef<((next: () => void) => void) | null>(null);
+  const fullReadInProgress = useRef(true);
+  const buyReadEpochRef = useRef(0);
+  const readsAllowBuyWrite = useRef(false);
   const syncPending = useCallback(() => setPending(pendingCommands.list()), []);
   const notePending = (record: PendingCommand, note: string) => setPendingNotes((current) => ({ ...current, [record.commandKey]: note }));
 
   const reload = useCallback(async () => {
     const requestEpoch = ++reloadEpochRef.current;
+    ++buyReadEpochRef.current;
+    fullReadInProgress.current = true;
+    readsAllowBuyWrite.current = false;
+    setBuyLoading(false);
     setLoading(true);
     try {
-      const nextModel = (await fetchH2Trials(sessionPage, sessionPageSize)) as H2Model;
+      const raw = await fetchH2Trials(sessionPage, sessionPageSize);
       if (requestEpoch !== reloadEpochRef.current) return;
+      const nextModel = { ...raw, ...readH2TrialPurchase(raw) } as H2Model;
+      readsAllowBuyWrite.current = !!nextModel.buyList && nextModel.buyList !== "invalid";
+      setBuyReadError(undefined);
+      if (readsAllowBuyWrite.current) setBuyReplayConflict(false);
       setModel(nextModel);
       setReadAt(businessClock(Date.now()));
       setError(null);
+      return nextModel;
     } catch (err) {
       if (requestEpoch !== reloadEpochRef.current) return;
       setError(displayAdminReadError(err));
     } finally {
-      if (requestEpoch === reloadEpochRef.current) setLoading(false);
+      if (requestEpoch === reloadEpochRef.current) {
+        fullReadInProgress.current = false;
+        setLoading(false);
+      }
+    }
+  }, [sessionPage, sessionPageSize]);
+
+  const reloadBuyList = useCallback(async (requireList = false) => {
+    if (fullReadInProgress.current) throw new Error(READING);
+    const attempt = ++buyReadEpochRef.current;
+    readsAllowBuyWrite.current = false;
+    setBuyLoading(true);
+    try {
+      const raw = await fetchH2Trials(sessionPage, sessionPageSize);
+      if (attempt !== buyReadEpochRef.current) throw new Error(READING);
+      const { buyList } = readH2TrialPurchase(raw);
+      if (buyList === "invalid" || (requireList && !buyList)) throw new Error(BUY_READ_INVALID);
+      setModel((previous) => previous && { ...previous, buyList });
+      readsAllowBuyWrite.current = !!buyList;
+      setBuyReadError(undefined);
+      setBuyReplayConflict(false);
+      return buyList;
+    } catch (cause) {
+      if (attempt === buyReadEpochRef.current) setBuyReadError(displayAdminReadError(cause));
+      throw cause;
+    } finally {
+      if (attempt === buyReadEpochRef.current) setBuyLoading(false);
     }
   }, [sessionPage, sessionPageSize]);
 
@@ -405,7 +520,21 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     void reload();
   }, [reload]);
   useEffect(() => syncPending(), [syncPending]);
+  useEffect(() => syncBuyPending(), [adminSession?.adminId, syncBuyPending]);
   useEffect(() => { setLegacyApprovals(adminSession ? pendingH2TrialApprovals(adminSession.adminId) : []); }, [adminSession]);
+  const showBuySection = model?.buyList !== undefined;
+  useEffect(() => {
+    setCatalogWritePermissionName(undefined);
+    if (!showBuySection || model?.writePermissionName || canWrite || !canReadPermissionName) return;
+    let active = true;
+    void fetchA8PermissionDetail(H2_WRITE_PERMISSION).then((permission) => {
+      if (active && permission?.permissionCode === H2_WRITE_PERMISSION && nonBlank(permission.permissionName)) {
+        setCatalogWritePermissionName(permission.permissionName);
+      }
+    }).catch(() => { /* H2's existing read-only sentence is the fallback. */ });
+    return () => { active = false; };
+  }, [adminSession?.adminId, showBuySection, model?.writePermissionName, canWrite, canReadPermissionName]);
+  const writePermissionName = model?.writePermissionName ?? (showBuySection && canReadPermissionName ? catalogWritePermissionName : undefined);
 
   // 后端仍返回旧邀请配置和延长参数，先过滤再分区，避免展示、计数或进入保存流程。
   const params = useMemo(() => (model?.params ?? []).filter((param) => param.key !== "autoChargeAtEnd" && ![
@@ -428,6 +557,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const phaseClosed = paramOf("phaseOpen")?.cur === "关闭";
   // 找不到也算不可用：商品退出「允许试用」后不在候选列表里，用户开始试用会被拒（REV2-03）。
   const productBlocked = !product || !product.selectable;
+  const target = model?.trialTarget;
+  // 目标在候选里可选，但没过上架条件时，开始试用同样会被拒。
+  const blockedTarget = !productBlocked && target && target !== "invalid" && target.productNo === productNo && !target.listingAllowed ? target : undefined;
   const j1Closed = model?.j1TrialGate?.enabled === false;
 
   const commonParams = COMMON_TRIAL_PARAMS.flatMap((key) => paramOf(key) ?? []);
@@ -438,15 +570,23 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   ].filter((group) => group.params.length > 0);
   const advancedCount = advancedGroups.reduce((sum, group) => sum + group.params.length, 0);
 
+  // 读取结果里没有这块数据时整块不显示，导航也没有这一项。
+  const buyRead = model?.buyList;
+  const buyList = buyRead === "invalid" ? undefined : buyRead;
+  const buyInvalid = buyRead === "invalid" || !!buyReadError;
+  const buyBlock = loading || buyLoading ? READING : buyPending ? BUY_LOCKED : buyReplayConflict || buyReadError ? "请先读取最新" : undefined;
+  const sessionsRead = model?.sessions ?? [];
+  const sessionsInvalid = sessionsRead.some((session) => readH2SessionProducts(session) === "invalid");
   const sections: SectionNavItem[] = [
-    { id: "common", label: "常改参数", alert: productBlocked },
+    { id: "common", label: "常改参数", alert: productBlocked || !!blockedTarget },
+    ...(showBuySection ? [{ id: "buy", label: "可购买设备", alert: buyInvalid || !!buyPending || buyReplayConflict }] : []),
     { id: "advanced", label: "高级设置" },
     { id: "readonly", label: "只读项", alert: phaseClosed },
-    { id: "records", label: "试用记录", alert: pending.length > 0 },
+    { id: "records", label: "试用记录", alert: pending.length > 0 || sessionsInvalid },
   ];
   const nav = useSectionNav(sections, { ready: !!model, onReveal: (id) => setFolds((current) => ({ ...current, [id]: true })) });
 
-  const sessions = model?.sessions ?? [];
+  const sessions = sessionsInvalid ? [] : sessionsRead;
   const currentIndex = sessions.findIndex((session) => session.sid === currentSid);
   const current = currentIndex >= 0 ? sessions[currentIndex] : null;
 
@@ -486,6 +626,115 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     }
     await reload();
     toast(`${item.name} 已更新`, "success");
+  };
+
+  const handleBuySessionStop = (kind: "unauthenticated" | "forbidden" | "mismatch", ownerId: number) => {
+    if (kind === "unauthenticated") {
+      const auth = useAdminAuth.getState();
+      if (auth.session?.adminId === ownerId) auth.signOut();
+    } else {
+      announcePermissionDenied();
+      if (kind === "mismatch") toast("当前登录账号已变更，这次没有发送。", "warn");
+    }
+  };
+
+  const recordBuyRejection = (record: BuyListPending, ownerId: number, reason: string) => {
+    if (isPendingCommandOwnedBy(record, ownerId)) {
+      pendingBuyLists.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: reason });
+    }
+  };
+
+  const submitBuyList = async (draft: BuyListDraft): Promise<BuyListSubmitResult> => {
+    const ownerId = adminSession?.adminId;
+    if (!ownerId || !canWrite) throw new Error("ADMIN_PERMISSION_DENIED");
+    const session = await checkBuyListOwner(ownerId);
+    if (session !== "ready") {
+      handleBuySessionStop(session, ownerId);
+      return { kind: "stopped" };
+    }
+    if (!readsAllowBuyWrite.current) throw new Error(READING);
+    if (pendingBuyLists.get(H2_BUY_LIST_OBJECT)) {
+      syncBuyPending();
+      throw new Error(BUY_LOCKED);
+    }
+    const commandKey = createH2CommandKey("h2-buy-list");
+    pendingBuyLists.remember(H2_BUY_LIST_OBJECT, commandKey, { ...draft, requestNo: commandKey, confirmedActorId: ownerId });
+    const record = pendingBuyLists.list().find((item) => item.commandKey === commandKey);
+    if (!record || record.commandOwnerId !== ownerId || !pendingBuyLists.isDurablyStored(H2_BUY_LIST_OBJECT, commandKey)) {
+      pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
+      throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
+    }
+    try {
+      const outcome = await updateH2TrialBuyList(buyListWrite(record));
+      if (outcome.kind !== "unknown") pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
+      // 首发就被账号核对拒绝：后端没有执行，不留待确认。
+      if (outcome.kind === "accountMismatch") {
+        toast("确认账号与当前登录账号不符，这次没有保存。", "warn");
+        announcePermissionDenied();
+        return { kind: "stopped" };
+      }
+      if (outcome.kind === "forbidden" || outcome.kind === "unauthenticated") {
+        handleBuySessionStop(outcome.kind, ownerId);
+        return { kind: "stopped" };
+      }
+      return outcome;
+    } finally {
+      syncBuyPending();
+    }
+  };
+
+  const retryBuyList = async (record: BuyListPending) => {
+    if (isRetryExpired(record)) { syncBuyPending(); return; }
+    const ownerId = record.commandOwnerId;
+    if (!ownerId || !canWrite || retryingBuyList || record.retryRejection || buyRetryDenied === record.commandKey
+      || !isPendingCommandOwnedBy(record, adminSession?.adminId)) return;
+    if (!pendingBuyLists.isDurablyStored(record.fingerprint, record.commandKey)) {
+      toast("浏览器里读不到原操作，这次没有发送。记录继续保留，请到操作记录与审批核对。", "warn");
+      return;
+    }
+    setRetryingBuyList(true);
+    try {
+      const session = await checkBuyListOwner(ownerId);
+      if (session !== "ready") {
+        if (session === "forbidden") setBuyRetryDenied(record.commandKey);
+        handleBuySessionStop(session, ownerId);
+        return;
+      }
+      if (isRetryExpired(record)) return;
+      const outcome = await updateH2TrialBuyList(buyListWrite(record));
+      switch (outcome.kind) {
+        case "saved":
+          pendingBuyLists.forget(record.fingerprint, record.commandKey);
+          await reloadBuyList().catch(() => undefined);
+          toast("其他可购买设备 已更新", "success");
+          break;
+        case "conflict":
+          pendingBuyLists.forget(record.fingerprint, record.commandKey);
+          readsAllowBuyWrite.current = false;
+          setBuyReplayConflict(true);
+          break;
+        case "rejected":
+          recordBuyRejection(record, ownerId, outcome.message);
+          break;
+        // A refusal about who is asking says nothing about the original operation: the record stays, with no release.
+        case "accountMismatch":
+        case "forbidden":
+          setBuyRetryDenied(record.commandKey);
+          handleBuySessionStop("forbidden", ownerId);
+          break;
+        case "unauthenticated":
+          handleBuySessionStop(outcome.kind, ownerId);
+          break;
+        case "unknown":
+          toast("结果未知，不要重复操作，到页面上方处理。", "warn");
+          break;
+      }
+    } catch (cause) {
+      toast(`重试没有成功：${displayAdminError(cause)} 原操作结果仍未知，记录继续保留。`, "warn");
+    } finally {
+      syncBuyPending();
+      setRetryingBuyList(false);
+    }
   };
 
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。 */
@@ -610,11 +859,12 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       title="免费试用设置"
       summary="设置试用商品、时长和优惠，查看试用记录。"
       guideExtra={guideExtra}
+      guideContent={getH2PageGuide(showBuySection, canWrite, canCancel)}
       meta={model ? <span className="rd-toolbar">
         <span>{readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新</span>
-        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button>
+        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} data-h2-editor-leave onClick={() => { const refresh = () => void reload(); if (buyLeaveGuard.current) buyLeaveGuard.current(refresh); else refresh(); }}>刷新</Button>
       </span> : undefined}
-      readOnly={model && !canWrite ? "你只能查看；修改试用设置要有这页的修改权限。" : undefined}
+      readOnly={model && !canWrite ? (writePermissionName ? `你只能查看；修改需要「${writePermissionName}」权限` : "你只能查看；修改试用设置要有这页的修改权限。") : undefined}
     />
   );
 
@@ -693,7 +943,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         <Fact k="原试用记录">{retiredCharge.source === "legacy" ? retiredCharge.record.obj : `${retiredCharge.record.owner} · ${retiredCharge.record.sid}`}</Fact>
         <Fact k="原操作理由"><span className="rd-pre">{retiredCharge.record.reason}</span></Fact>
       </Facts>
-      <p>强制扣款已停用，这里只查原申请，不会新建或执行扣款。<Explain label="技术信息" content={`原请求编号 ${retiredCharge.record.commandKey}`} /></p>
+      <p>强制扣款已停用，这里只查原申请，不会新建或执行扣款。<Explain label="技术信息" content={`操作编号 ${retiredCharge.record.commandKey}`} /></p>
       {chargeLookup.error && <p role="alert" className="rd-form-error">{chargeLookup.error}</p>}
       {chargeLookup.missing && <p role="status">没找到原申请，旧扣款入口已停用，不能重新提交。可以结束这条核对，后台记录不会删除。</p>}
       {chargeLookup.ticket && <p role="status">已找到原审批单 {chargeLookup.ticket.id} · {{ pending: "待审批，已停用，不会执行", approved: "历史已执行", rejected: "历史已取消", withdrawn: "历史已撤回", expired: "已过期" }[chargeLookup.ticket.status]}。处理结果到操作记录看。</p>}
@@ -713,9 +963,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         {canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void recoverLegacy(record, "lookup")}>查询原结果</Button>}
         {record.expiresAt > Date.now() && <Button size="sm" disabled={!!recovering}
           disabledReason={!canRetryH2Cancellation(adminSession?.authorities ?? []) ? NO_WRITE : record.replayRejection ? "重试已被拒绝，请核实后解除" : !queryMissing.includes(record.commandKey) ? "先查询原结果，查不到才能重试" : undefined}
-          onClick={() => void recoverLegacy(record, "retry")}>按原请求重试</Button>}
+          onClick={() => void recoverLegacy(record, "retry")}>按原操作重试</Button>}
         {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setLegacyReleaseKey(record.commandKey)}>解除原操作记录</Button>}
-      </>}>试用记录 {record.obj}，原理由 {record.reason}。查询和重试都按原请求，不会重复提交；有结果前这条试用不能再操作。{record.expiresAt <= Date.now() && "已超过 24 小时，只能核对原审批单。"}{record.replayRejection && <p>重试没有成功：{displayAdminError(new Error(record.replayRejection))} {APPROVAL_REPLAY_RELEASE}</p>}</Notice>),
+      </>}>试用记录 {record.obj}，原理由 {record.reason}。查询和重试都按原操作，不会重复提交；有结果前这条试用不能再操作。{record.expiresAt <= Date.now() && "已超过 24 小时，只能核对原审批单。"}{record.replayRejection && <p>重试没有成功：{displayAdminError(new Error(record.replayRejection))} {APPROVAL_REPLAY_RELEASE}</p>}</Notice>),
     ...pending.map((record) => {
     if (record.kind === "charge") return (
       <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未知`}
@@ -734,19 +984,42 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     return (
       <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未知`} action={<>
         {proposal && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void checkPending(record)}>查询原结果</Button>}
-        {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryBlock} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+        {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryBlock} onClick={() => void retryPending(record)}>按原操作重试</Button>}
         {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>}>
         {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，
         <KeepText text={proposal ? "审批可能已经提交，批准前不会执行；有结果前这条记录不能再操作。" : "可能已经生效，有结果前这项不能再改。"} />
         {proposal && !canQuery ? " 这个账号查不了原审批单，请能看操作记录的同事核查。" : ""}
-        <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原结果，查不到再按原请求重试。" : " 按原请求重试不会重复执行。"} />
+        <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原结果，查不到再按原操作重试。" : " 按原操作重试不会重复执行。"} />
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(object)}`} prefetch={false}>到操作记录与审批核对</Link></>}
-        <Explain label="技术信息" content={`原请求编号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
+        <Explain label="技术信息" content={`操作编号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
         {(!expired || record.replayRejection) && pendingNotes[record.commandKey] && <div><KeepText text={pendingNotes[record.commandKey]} /></div>}
       </Notice>
     );
   })];
+  const canRecoverBuyList = canWrite && !!buyPending && buyRetryDenied !== buyPending.commandKey;
+  if (buyPending) pendingNotices.push(
+    <BuyListPendingNotice key={buyPending.commandKey} record={buyPending} canWrite={canRecoverBuyList} retrying={retryingBuyList}
+      onRetry={() => void retryBuyList(buyPending)}
+      onRelease={() => setReleasingBuyList(buyPending.commandKey)}
+      auditLink={reach(auditHref, "platform_a2_read") && <Link className="rd-link" href={`${auditHref}?${new URLSearchParams({ domain: "H", action: H2_BUY_LIST_ACTION, object: buyPending.requestNo })}`} prefetch={false}>到操作记录与审批核对</Link>} />,
+  );
+  if (buyReplayConflict) pendingNotices.push(
+    <Notice key="buy-list-conflict" tone="warn" title={BUY_CONFLICT}
+      action={<Button size="sm" disabled={loading || buyLoading} onClick={() => void reloadBuyList(true).catch(() => undefined)}>读取最新</Button>}>
+      请读取最新清单后再调整。
+    </Notice>,
+  );
+  const releaseBuyListModal = canRecoverBuyList && buyPending?.retryRejection && releasingBuyList === buyPending.commandKey && (
+    <ReleaseModal label="调整其他可购买设备" onCancel={() => setReleasingBuyList(undefined)}
+      explain="这次解除只删除本地记录，不写入操作记录。"
+      onConfirm={() => {
+        pendingBuyLists.forget(buyPending.fingerprint, buyPending.commandKey);
+        setReleasingBuyList(undefined);
+        syncBuyPending();
+        toast("已解除原操作记录，后台的结果和锁定不变", "success");
+      }} />
+  );
   const legacyReleasing = legacyApprovals.find(record => record.commandKey === legacyReleaseKey);
   const releaseModal = releasing ? (
     <ReleaseModal label={commandTitle(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
@@ -760,11 +1033,11 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     }} />;
 
   if (loading && !model) {
-    return <>{header()}{pendingNotices}<BlockState state="loading" title="正在加载试用数据…" />{releaseModal}{retiredChargeModal}</>;
+    return <>{header()}{pendingNotices}<BlockState state="loading" title="正在加载试用数据…" />{releaseModal}{releaseBuyListModal}{retiredChargeModal}</>;
   }
 
   if (error || !model) {
-    return <>{header()}{pendingNotices}<BlockState state="error" title="试用数据加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班人员。"} onRetry={() => void reload()} retrying={loading} afterRetryFocus={H2_FIRST_SECTION} />{releaseModal}{retiredChargeModal}</>;
+    return <>{header()}{pendingNotices}<BlockState state="error" title="试用数据加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班人员。"} onRetry={() => void reload()} retrying={loading} afterRetryFocus={H2_FIRST_SECTION} />{releaseModal}{releaseBuyListModal}{retiredChargeModal}</>;
   }
 
   const phaseHref = "/growth/phase";
@@ -775,6 +1048,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   if (productBlocked) issues.push({ key: "product", tone: "danger", title: "试用目标商品不可用", body: product
     ? <>{stockText(product)} · {trialProductReason(product.unavailableReason)}</>
     : <>商品编号 {productNo || "未设置"} 不在可选列表，用户现在不能开始试用。{reach(pricingHref) && <Link className="rd-link" href={pricingHref} prefetch={false}>到商品管理与上架条件核对「允许试用」</Link>}</> });
+  if (blockedTarget) issues.push({ key: "product", tone: "danger", title: "试用目标商品不可用", body: <>{buyProductReason(blockedTarget.unavailableReason, blockedTarget.status)}，用户现在不能开始试用。{reach(pricingHref) && <Link className="rd-link" href={pricingHref} prefetch={false}>到商品管理与上架条件查看</Link>}</> });
   if (phaseClosed) issues.push({ key: "phase", tone: "warn", title: "当前运营阶段不开放试用", body: <>用户现在不能开始试用。{reach(phaseHref) && <Link className="rd-link" href={phaseHref} prefetch={false}>去运营阶段设置</Link>}</> });
   if (!seatsKnown) issues.push({ key: "seats", tone: "warn", title: "今日实际剩余名额读不到", body: "请稍后刷新；读到之前，不能按这里判断用户今天还能不能领。" });
   else if (Number(seats?.cur) === 0 && Number(paramOf("seatsLeftToday")?.cur) === 0) issues.push({ key: "seats", tone: "warn", title: "每日免费名额上限是 0", body: `用户不能开始试用，次日也不会恢复。${canWrite ? "要开放试用，调高「每日免费名额上限」。" : ""}` });
@@ -788,6 +1062,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     return { session, state, label: state?.label ?? session.state, tone: stateTone(state), terminal: TERMINAL_STATES.includes(session.state), owner: knownTrialOwner(session) };
   });
   const currentRow = current ? rows[currentIndex] : null;
+  const sessionProducts = readH2SessionProducts(current);
   const sessionButtons = (row: (typeof rows)[number], variant: "row" | "drawer") => {
     const reason = row.session.pendingApproval ? "这条试用已有待审批操作，审批结束后才能再次处理" : lockedSids.has(row.session.sid) ? LOCKED : loading ? READING : row.owner ? undefined : "用户信息暂不可用";
     return {
@@ -806,6 +1081,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       {/* 一切正常时一句话、不放大，和其他页的结论条一个样子（VS-23）；有异常时下面的提示条就是结论。 */}
       {loading
         ? <Conclusion state="unknown">{READING}</Conclusion>
+        : issues.length === 0 && pending.length === 0 && legacyApprovals.length === 0 && (buyInvalid || buyPending || buyReplayConflict)
+          ? <Conclusion state="unknown">{buyInvalid ? "试用正常开放；其他可购买设备暂时无法判断" : buyPending ? "试用正常开放；其他可购买设备有一次修改结果未知" : "试用正常开放；其他可购买设备要读取最新后再调整"}</Conclusion>
         : issues.length === 0 && pending.length === 0 && legacyApprovals.length === 0 && <Conclusion state="ok">{Number(stats.activeSessions) > 0 ? "试用正常开放，进行中的试用由系统自动结束，没有要处理的事" : "试用正常开放，没有要处理的事"}</Conclusion>}
 
       {issues.map((issue) => <Notice key={issue.key} tone={issue.tone} title={issue.title}>{issue.body}</Notice>)}
@@ -835,13 +1112,23 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               <Panel title={<span tabIndex={-1} data-section-focus="">常改参数</span>} explainLabel="常改参数" icon={SlidersHorizontal} tone="role-4"
                 explain={<>
                   <p>每项是什么、显示在哪、什么时候生效，看名称旁的提示；改一项存一项。</p>
-                  <p>三种优惠可以叠加：实付 = 售价 − 购买减价 − 试用收益抵扣 − 提前购买立减，最低 0。提前购买立减只在试用期内有，在高级设置里改。</p>
+                  {showBuySection ? <>
+                    <p>三种优惠可以叠加：实付 = 售价 − 购买减价 − 试用抵扣金 − 提前购买立减，最低 0。售价指用户所选设备的售价。</p>
+                    <p>提前购买立减只在试用期内有，在高级设置里改。</p>
+                  </> : <p>三种优惠可以叠加：实付 = 售价 − 购买减价 − 试用收益抵扣 − 提前购买立减，最低 0。提前购买立减只在试用期内有，在高级设置里改。</p>}
                 </>}>
                 <ConfigList>
-                  {commonParams.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} seatsLeft={seatsKnown ? seats?.cur : undefined} />)}
+                  {commonParams.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} trialTarget={model.trialTarget} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} seatsLeft={seatsKnown ? seats?.cur : undefined} buyListNos={buyList?.items.map((item) => item.productNo)} hasBuyList={showBuySection} />)}
                 </ConfigList>
               </Panel>
             </div>
+
+            {showBuySection && (
+              <div id={nav.anchor("buy")}>
+                <BuySection ctx={ctx} list={buyList} readError={buyReadError} trialTargetNo={productNo} reach={reach}
+                  blocked={buyBlock} reading={buyLoading} leaveGuard={buyLeaveGuard} onReload={reloadBuyList} onSubmit={submitBuyList} />
+              </div>
+            )}
 
             <div id={nav.anchor("advanced")}>
               <Fold title="高级设置" icon={Settings2} tone="role-other" summary={`${advancedCount} 项：${advancedGroups.map((group) => group.title).join("、")}`} open={!!folds.advanced} onOpenChange={(open) => setFolds((state) => ({ ...state, advanced: open }))}>
@@ -849,7 +1136,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                   <div className="rd-config-group" key={group.title}>
                     <h3 className="rd-config-group-title">{group.title}</h3>
                     <ConfigList>
-                      {group.params.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} />)}
+                      {group.params.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} hasBuyList={showBuySection} />)}
                     </ConfigList>
                   </div>
                 ))}
@@ -871,9 +1158,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             </div>
 
             <div id={nav.anchor("records")}>
-              <Fold title="试用记录" icon={History} tone="role-3" summary={`共 ${total} 条，平时不用处理`} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}
+              <Fold title="试用记录" icon={History} tone="role-3" summary={sessionsInvalid ? "试用记录加载失败" : `共 ${total} 条，平时不用处理`} alert={sessionsInvalid} open={!!folds.records} onOpenChange={(open) => setFolds((state) => ({ ...state, records: open }))}
                 explain={<>宽限中是正常状态：到期系统自动结束，不扣款，不用处理。{canHandle && "强制取消只在怀疑刷试用时用，要提交审批。强制扣款已停用。"}</>}>
                 {canCharge && <Notice tone="neutral">{CHARGE_RESULT}。</Notice>}
+                {sessionsInvalid ? <BlockState state="error" title="试用记录加载失败" detail={BUY_READ_INVALID} retrying={loading} onRetry={() => void reload()} /> : <>
                 <Table label="试用记录">
                   <thead>
                     <tr>
@@ -903,6 +1191,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                     onPage={(next) => { reloadEpochRef.current += 1; setCurrentSid(null); setSessionPage(next); }}
                     onPageSize={(next) => { reloadEpochRef.current += 1; setCurrentSid(null); setSessionPage(1); setSessionPageSize(next); }} />
                 )}
+                </>}
               </Fold>
             </div>
           </div>
@@ -915,7 +1204,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         footer={currentRow && !currentRow.terminal && canHandle ? (
           <Decision explain="强制取消只在怀疑刷试用时用，要提交审批，超级管理员批准后才执行。强制扣款已停用，用户要购买只能自己确认。" others={sessionButtons(currentRow, "drawer").cancel} />
         ) : undefined}>
-        {currentRow && (
+        {currentRow && sessionProducts !== "invalid" && (
           <>
             <JudgmentPoints rows={[
               { label: "状态", value: <StatusTag tone={currentRow.tone}>{currentRow.label}</StatusTag>, reason: TRIAL_STATE_HELP[currentRow.session.state] },
@@ -925,6 +1214,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               { label: "能不能处理", reason: canCharge && !currentRow.terminal ? `${CHARGE_RESULT}。` : undefined, value: currentRow.session.pendingApproval ? "等待审批结果，审批结束后才能再次处理" : currentRow.terminal ? "已结束，不能再取消" : lockedSids.has(currentRow.session.sid) ? LOCKED : !currentRow.owner ? "用户信息暂不可用，不能取消" : canCancel ? "平时不用处理，确要干预才提交强制取消审批" : "这个账号只能查看" },
             ]} />
             <Facts>
+              {sessionProducts.trialProductName !== undefined && <Fact k="试用设备">{sessionProducts.trialProductName}</Fact>}
+              {sessionProducts.purchasedProductName !== undefined && <Fact k="购买设备">{sessionProducts.purchasedProductName}</Fact>}
               <Fact k="开始时间">{sessionTime(currentRow.session.claimedAt, true)}</Fact>
               <Fact k="到期时间">{sessionTime(currentRow.session.expiresAt, !currentRow.session.claimedAt)}</Fact>
             </Facts>
@@ -933,6 +1224,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       </Drawer>
 
       {releaseModal}
+      {releaseBuyListModal}
       {retiredChargeModal}
     </>
   );

@@ -1,5 +1,5 @@
 import { growthRequest, validH4AppRewardPresentation, type H4AppRewardPresentation } from "./h-client";
-import { h4CommandRequest, markH4Read, type H4ApprovalReceipt } from "./h4-mutations";
+import { h4CommandRequest, type H4ApprovalReceipt } from "./h4-mutations";
 
 // Backend 04d11022: H4EventRuleService.CODES (lines 28–30), used by
 // OpsGrowthService.supportsH4EventRules. Fallback for older reads without capability flags.
@@ -43,12 +43,9 @@ export function parseEventRule(value: unknown): EventRuleView {
   return row;
 }
 export async function fetchEventRules(): Promise<EventRuleView[]> {
-  markH4Read("rules", false);
   const result = await growthRequest<{ rules: unknown[] }>("/event-rules");
   if (!Array.isArray(result?.rules)) throw new Error("活动规则读取失败，请刷新后重试。");
-  const rows = result.rules.map(parseEventRule);
-  markH4Read("rules", true);
-  return rows;
+  return result.rules.map(parseEventRule);
 }
 export async function fetchEventVouchers(): Promise<EventVoucherOption[]> {
   const result = await growthRequest<{ vouchers: Record<string, unknown>[] }>("/vouchers");

@@ -32,6 +32,8 @@ export class ConfirmReadConflict extends Error {
     readLatest: () => Promise<boolean | void>;
     renderNotice: (readLatest: () => void) => ReactNode;
     preserveReason?: boolean;
+    /** 确认按钮灰着时的原因；不传写「请先读取最新」。 */
+    disabledReason?: string;
   }, message = "H4_REFRESH_REQUIRED", /** 对象状态变了或已不在：框里只留提示和「取消」，不再显示过期的改动和理由框。 */ public readonly final = false) {
     super(message);
   }
