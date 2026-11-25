@@ -270,19 +270,21 @@ const F2_LIMIT_APPROVE_COPY = "App 最多读到合计 25%，批准后会读不�
 function F2LayerLimitNotice({ level, after }: { level: string; after: string }) {
   const readerId = useAdminAuth((s) => s.session?.authorities.includes("network_f2_read") ? s.session.adminId : undefined);
   const [read, setRead] = useState<{ readerId: number; known: boolean; issue?: string }>();
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (readerId === undefined) return;
     let active = true;
     void fetchF2RatesOverview().then((overview) => {
       if (!active) return;
       const rates = overview.unilevel, next = after.trim().replace(/%$/, "").trim();
-      const known = rates.length === 7 && next !== "" && Number.isFinite(Number(next));
-      setRead({ readerId, known, issue: known ? f2AppLimitIssue(rates.map((row) => row.l === level ? next : row.usdtText ?? "0")) : undefined });
+      const known = rates.length === 7 && rates.every((row) => row.usdtText) && next !== "" && Number.isFinite(Number(next));
+      setRead({ readerId, known, issue: known ? f2AppLimitIssue(rates.map((row) => row.l === level ? next : row.usdtText!)) : undefined });
     }).catch(() => { if (active) setRead({ readerId, known: false }); });
     return () => { active = false; };
-  }, [readerId, level, after]);
+  }, [readerId, level, after, attempt]);
   if (readerId !== undefined && read?.readerId !== readerId) return <Notice tone="neutral" title="正在加载七层现在的比例…" />;
-  if (readerId === undefined || !read?.known) return <Notice tone="neutral" title="没读到七层现在的比例，看不出批准后会不会超过 App 读取上限 25%" />;
+  if (readerId === undefined || !read?.known) return <Notice tone="neutral" title="没读到七层现在的比例，看不出批准后会不会超过 App 读取上限 25%"
+    action={readerId !== undefined ? <Button size="sm" onClick={() => { setRead(undefined); setAttempt((n) => n + 1); }}>重试</Button> : undefined} />;
   return read.issue ? <Notice tone="warn" title={read.issue}>{F2_LIMIT_APPROVE_COPY}</Notice> : null;
 }
 

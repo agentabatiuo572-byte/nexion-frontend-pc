@@ -116,7 +116,7 @@ function f2LayerEditors(ctx: FViewCtx) {
       slot: `f-config:F.unilevel.${level}`,
       action: `调整 ${level} USDT 奖励比例`, title: `调整 ${level}（${LAYER_WHO[level]}）的 USDT 比例`, briefKind: "config", amplify: true, dialogClassName: "f2-confirm",
       effect: effectTag,
-      edit: { kind: "number", current, min: 0, unit: "%", amplifiesWhen: "increase", disallowCurrent: true,
+      edit: { kind: "number", current, min: 0, max: 100, unit: "%", amplifiesWhen: "increase", disallowCurrent: true,
         validate: (next) => (next.trim().split(".")[1]?.replace(/0+$/, "").length ?? 0) > 4 ? "最多 4 位小数（末尾的 0 不算），多了不能提交" : undefined,
         hint: "填百分数：0.5 就是 0.5%，最多 4 位小数",
         preview: (next) => <>
