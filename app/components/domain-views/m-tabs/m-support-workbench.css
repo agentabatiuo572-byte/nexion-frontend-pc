@@ -148,6 +148,6 @@
 .rd-modal .ui-support-contact-picker .ui-bulk-contact-list .ui-contact-identity small:first-of-type { font-family: var(--font-mono, ui-monospace); }
 /* Light theme: text boxes look like the selects next to them (white with a line), not a grey fill. */
 :root[data-theme="light"] .rd-modal.rd-modal .ui-support-workflow :is(input.rd-input, textarea.rd-textarea):not(:disabled) { background: var(--rd-panel); box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
-/* Footer: leaving the flow stays on the left, back and next sit together on the right. */
+/* Footer: leaving the flow stays on the left, back and next sit together on the right. A button on its own keeps the right line (D1-right). */
 .rd-modal .rd-modal-foot .m-admin-toolbar { justify-content: flex-end; }
-.rd-modal .rd-modal-foot .m-admin-toolbar > :first-child { margin-right: auto; }
+.rd-modal .rd-modal-foot .m-admin-toolbar > :first-child:not(:only-child) { margin-right: auto; }

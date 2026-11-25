@@ -833,13 +833,13 @@ export async function readSupportPoolCustomer(customerId: string, groupId?: numb
   return current;
 }
 
-export async function verifySupportTransfer(input: Parameters<typeof supportClient.transfer>[0], status: "SUCCEEDED" | "FAILED", groupId?: number): Promise<void> {
+export async function verifySupportTransfer(input: Parameters<typeof supportClient.transfer>[0], status: "SUCCEEDED" | "FAILED", groupId?: number, signal?: AbortSignal): Promise<void> {
   for (const expected of input.customers) {
     if (status === "FAILED" && expected.expectedAssignmentId === null) {
       const current = await readSupportPoolCustomer(expected.id, groupId);
       if (current.version !== expected.expectedVersion) throw new Error("SUPPORT_RECOVERY_FACTS_CHANGED");
     } else {
-      const current = await supportClient.customerDetail(expected.id);
+      const current = await supportClient.customerDetail(expected.id, signal);
       const matches = status === "SUCCEEDED"
         ? current.customerId === expected.id && current.agentAdminId === input.targetAgentAdminId && current.assignmentId !== null && current.assignmentId !== expected.expectedAssignmentId
         : current.customerId === expected.id && current.assignmentId === expected.expectedAssignmentId && current.assignmentVersion === expected.expectedVersion;

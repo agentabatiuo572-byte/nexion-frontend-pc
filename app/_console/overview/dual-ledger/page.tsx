@@ -114,9 +114,11 @@ function PendingCommands({ items, auditReachable }: { items: readonly B1PendingC
   const recoveryInstruction = items.some(item => item.queryLabel)
     ? "请按各条提示核对。"
     : "先查询原结果；";
+  // 只剩旧的储备注入记录时这页只能查询，不写「按原请求重试」（OP-95）。
+  const retryNote = items.some(item => item.onRetry) ? "24 小时内只能按原请求重试，不能改值。" : "";
   return (
     <RecoveryPanel title={recoveryTitle(items.length - waiting, waiting)} tone="warn" explainLabel="结果未知怎么处理"
-      explain={`这些操作发出后没收到明确结果，可能已经生效。${recoveryInstruction}24 小时内只能按原请求重试，不能改值。有结果前，红线和健康线不能再提交。`}
+      explain={`这些操作发出后没收到明确结果，可能已经生效。${recoveryInstruction}${retryNote}有结果前，红线和健康线不能再提交。`}
       foot={auditReachable ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : undefined}
       items={items.map((item): RecoveryItem => ({
         key: item.commandKey, object: item.object, tag: <StatusTag tone={item.tag.tone}>{item.tag.label}</StatusTag>, line: item.line,
@@ -150,6 +152,8 @@ export default function DualLedgerPage() {
   const [toastNode, setToast] = useToast();
   const discardRecovery = useRecoveryDraftDiscard();
   const [injectionNotes, setInjectionNotes] = useState<Record<string, string>>({});
+  /** 查到没有登记的旧注入：记录已结案，原输入留在这页供核对，关掉才收起。 */
+  const [unregistered, setUnregistered] = useState<{ record: B1PendingWrite; why: string }[]>([]);
   const [mc, setActionConfirm] = useState<Mc | null>(null);
   const [, setPendingRevision] = useState(0);
   const [needsRead, setNeedsRead] = useState(false);
@@ -518,16 +522,29 @@ export default function DualLedgerPage() {
     const show = (note: string) => setInjectionNotes(current => ({ ...current, [record.commandKey]: note }));
     show("正在查询原结果…");
     try {
-      const result = await queryB1InjectionReceipt(record);
+      const receipt = await queryB1InjectionReceipt(record), result = receipt.state;
       if (result === "SUCCEEDED") {
         setToast("查到原结果：已登记储备注入。");
         await refreshB1();
+      } else if (result === "REJECTED" || result === "NOT_EXECUTED") {
+        const reason = receipt.state === "REJECTED" && receipt.businessMessage ? displayAdminError(new Error(receipt.businessMessage)) : "";
+        setUnregistered(rows => [...rows, { record, why: receipt.state === "REJECTED" ? `后台拒绝了这次登记。${reason}` : "核查确认没有执行。" }]);
       } else show(result === "NOT_FOUND" ? "没查到原回执，原记录继续保留。"
         : result === "PROCESSING" ? "原操作仍在处理，稍后再查。"
           : "这次查询没有确认已登记，原记录继续保留。");
     } catch (error) { show(displayAdminReadError(error)); }
     finally { syncPending(); }
   };
+  const unregisteredNotices = unregistered.map(({ record, why }) => <Notice key={record.commandKey} tone="warn" title="没有登记储备注入" actionBelow
+    action={<>{reach("/finance/pool") && <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link>}
+      <Button size="sm" variant="ghost" onClick={() => setUnregistered(rows => rows.filter(row => row.record.commandKey !== record.commandKey))}>知道了</Button></>}>
+    <p>{why}要登记的，到资金储备与应付款重新登记。</p>
+    <Facts>
+      <Fact k="金额">{money(Number(record.form.amount))}</Fact>
+      <Fact k={record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"}><span data-mono>{record.form.voucher}</span></Fact>
+      <Fact k="理由">{(JSON.parse(record.body) as { reason: string }).reason}</Fact>
+    </Facts>
+  </Notice>);
   const pendingItems: B1PendingCommand[] = pendingWrites.map(record => {
     const expired = record.expiresAt <= Date.now();
     const recovery = b1Recovery.state(record);
@@ -538,7 +555,7 @@ export default function DualLedgerPage() {
       commandKey: record.commandKey,
       object: record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理",
       tag: { tone: "warn", label: expired ? "已过期" : "结果未知" },
-      line: record.kind === "injection" ? injectionNotes[record.commandKey] ?? "原记录继续保留，可核对储备注入。"
+      line: record.kind === "injection" ? `${expired ? RETRY_EXPIRED_TEXT : ""}${injectionNotes[record.commandKey] ?? (expired ? "" : canReadInjectionReceipt ? "可能已经登记，先查询原结果。" : "这个账号查不了原结果，请有权限的同事核对。")}`
         : recovery.replayRejection ? "按原请求重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经生效，先查询原结果。",
       body: `${record.kind === "threshold" ? [["红线", record.facts.redlinePct, Number(record.form.redlinePct)], ["健康线", record.facts.healthyPct, Number(record.form.healthyPct)]]
         .map(([name, from, to]) => `${name} ${from === to ? `${fmtConfigPct(Number(to))}（不变）` : `${fmtConfigPct(Number(from))} → ${fmtConfigPct(Number(to))}`}`).join(" · ") : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"} ${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
@@ -549,7 +566,7 @@ export default function DualLedgerPage() {
       onRelease: record.kind !== "injection" && recovery.replayRejection ? () => setReleasing(record) : undefined,
       queryLabel: record.kind !== "injection" && expired ? READ_CURRENT_VALUE : undefined,
       queryHref: injectionPage ? "/finance/pool" : undefined,
-      queryHrefLabel: canReadInjectionReceipt ? "到储备注入核对" : "资金储备与应付款",
+      queryHrefLabel: "去资金储备与应付款 →",
       onQuery: injection ? canReadInjectionReceipt ? () => void queryInjection(record) : undefined
         : () => void readCurrentForWrite(record),
     };
@@ -593,7 +610,7 @@ export default function DualLedgerPage() {
   // ---------- 结论 ----------
   const alertActive = valuationReliable && zone !== "success";
   const withdrawalsLink = reach("/finance/withdrawals") && !alertAcked && (
-    <Link href="/finance/withdrawals" prefetch={false} className="rd-btn" data-variant={zone === "danger" ? "danger-outline" : "secondary"} data-size="md"><span className="rd-btn-face">去提现审核</span></Link>
+    <Link href="/finance/withdrawals" prefetch={false} className="rd-btn" data-variant={zone === "danger" ? "danger-outline" : "secondary"} data-size="md"><span className="rd-btn-face">去提现审核 →</span></Link>
   );
   const ackButton = alertActive && !alertAcked && canAcknowledge && (
     <Button disabledReason={newWriteBlocked || pendingWrites.some(record => record.kind === "ack") ? "请先重新读取并核对原操作，再发起新修改。" : undefined} onClick={() => setActionConfirm(command("ack"))}>标记已处理</Button>
@@ -720,8 +737,11 @@ export default function DualLedgerPage() {
             value: <span className="b1-kv-value">{linked("/risk/scoring", scoreLink, "提现风险评分均值，去风险评分", `${avgRiskScore} / 100`)}</span>,
           },
         ]} />
+        {reserveLink && (
+          <nav className="rd-links" aria-label="储备注入"><span>储备注入</span><Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link></nav>
+        )}
         {reach("/emergency/kill-switch") && (
-          <nav className="rd-links" aria-label="紧急处理"><span>紧急处理</span><Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关</Link></nav>
+          <nav className="rd-links" aria-label="紧急处理"><span>紧急处理</span><Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关 →</Link></nav>
         )}
       </div>
     </Panel>
@@ -999,7 +1019,7 @@ export default function DualLedgerPage() {
           ? <BlockState state="loading" title="正在读取储备、应付款和覆盖率…" />
           : <BlockState state="error" title="资金数据读取失败，不显示旧数据" detail={bDomain.error ? displayAdminReadError(bDomain.error) : undefined} onRetry={refreshB1} retryLabel="重新读取" />}
         {discardRecovery.dialog}
-        <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
+        <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />{unregisteredNotices}
         {dialog}
         {releaseDialog}
         {toastNode}
@@ -1018,7 +1038,7 @@ export default function DualLedgerPage() {
           detail={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "九类应付款一项都没读到。重读一次；仍是空的请联系值班人员核对账本。" : "覆盖率走势少于 2 个点。重读一次；仍不足请联系值班人员。"}
           onRetry={refreshB1} retryLabel="重新读取" />
         {discardRecovery.dialog}
-        <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
+        <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />{unregisteredNotices}
         {dialog}
         {releaseDialog}
         {toastNode}
@@ -1030,7 +1050,7 @@ export default function DualLedgerPage() {
       {header(<>数据时间 {timeText(generatedAt)} · 打开页面和写入后读取<Explain label="数据时间说明" content="上面的储备、应付款、覆盖率和告警是同一次读取。差额走势是另一次读取，时间写在那一块里；写入后两块都会重读。" /></>, headerActions, readOnly)}
       {warningNotice}
       {discardRecovery.dialog}
-      <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
+      <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />{unregisteredNotices}
       {conclusion}
       {stats}
       <div className="rd-split" data-even="">

@@ -99,7 +99,7 @@ export function f1PolicyInputError(editor: F1PolicyEditor, form: F1PolicyForm, v
       return undefined;
     }
     if (editor.field === "legRank") {
-      if (value !== "NONE" && (!/^V[0-8]$/.test(value) || Number(value.slice(1)) >= Number(editor.row.v.slice(1)))) return "分支等级须低于当前等级。";
+      if (value !== "NONE" && (!/^V[0-8]$/.test(value) || Number(value.slice(1)) >= Number(editor.row.v.slice(1)))) return "下级领导者最低等级须低于当前等级。";
     } else {
       const max = editor.field === "selfBuy" || editor.field === "teamGv" ? BigInt("9007199254740991") : BigInt("2147483647");
       if (!/^(0|[1-9]\d*)$/.test(value)) return "请填不小于 0 的整数。";
