@@ -28,6 +28,7 @@ import { updatePrivacyPolicyAdmin, type PublishedContentDocument } from "@/lib/a
 import { usePropose } from "@/lib/admin/use-propose";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ICtx } from "./types";
+import type { LegacyHistoryCursor } from "@/lib/nav/legacy-history";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled, type ECommandEvidence } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { queryOriginalCommand, type OriginalCommandRoute } from "@/lib/admin/original-command-query";
@@ -170,10 +171,13 @@ export function MergeNotice({ report, name, title = "已读取最新内容，你
   );
 }
 
+let confirmationSequence = 0;
+
 /** 确认框里被冲突拒绝时框不关、理由留着，写「这项刚被别人改过。」和「读取最新」。 */
 export function withConflict(ctx: Pick<ICtx, "openActionConfirm" | "closeActionConfirm">, request: ActionConfirmReq, readLatest: () => void): ActionConfirmReq {
   const wrapped: ActionConfirmReq = {
     ...request,
+    formKey: request.formKey ?? ++confirmationSequence,
     run: async (...args) => {
       try {
         return await request.run(...args);
@@ -190,13 +194,14 @@ export function withConflict(ctx: Pick<ICtx, "openActionConfirm" | "closeActionC
 /** 列表和详情的入口通过它换编辑对象，先过编辑器的未保存保护。 */
 export type EditorSwitch = { attempt: (next: () => void) => void };
 
-type HistoryEntry = { key: string };
+type HistoryEntry = { key: string; index: number; sameDocument: boolean };
 type HistoryTraversal = Event & {
   navigationType: string;
   destination: HistoryEntry & { sameDocument: boolean };
 };
 type BrowserNavigation = EventTarget & {
   currentEntry: HistoryEntry | null;
+  entries: () => HistoryEntry[];
   traverseTo: (key: string) => { finished: Promise<unknown> };
 };
 type HistorySave = { blocked?: string; run: (saved: () => void) => void };
@@ -215,6 +220,61 @@ type HistoryEditor = {
 const historyEditors = new Set<HistoryEditor>();
 let stopHistoryGuard: (() => void) | undefined;
 
+function askHistoryBack(resume: () => void) {
+  if (document.querySelector('.rd-modal[data-state="open"]')) return;
+  const editors = [...historyEditors];
+  const editor = editors.pop();
+  if (!editor) return;
+  const saves = editors.flatMap(other => other.getSave?.() ?? []);
+  const saveNext = (index: number, saved: () => void) => {
+    const save = saves[index];
+    if (save) save.run(() => saveNext(index + 1, saved));
+    else saved();
+  };
+  editor.ask({
+    resume,
+    discardOthers: () => editors.forEach(other => other.discard?.()),
+    saveOthers: saved => saveNext(0, saved),
+    saveBlocked: saves.find(save => save.blocked)?.blocked,
+  });
+}
+
+type HistoryBridge = { base: string; extra: string; active: boolean };
+let historyBridge: HistoryBridge | undefined;
+let resumingDocumentBack = false;
+
+export function warnAboutUnsavedChanges(event: BeforeUnloadEvent) {
+  if (resumingDocumentBack) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+function armDocumentBack(navigation: BrowserNavigation): HistoryBridge | undefined {
+  const entry = navigation.currentEntry;
+  if (!entry) return;
+  const entries = navigation.entries();
+  const previous = entries[entry.index - 1];
+  const forward = entries[entry.index + 1];
+  if (!previous || previous.sameDocument) return;
+  if (historyBridge?.base === entry.key && forward?.key === historyBridge.extra) return historyBridge;
+  if (forward) return;
+
+  // A real cross-document Back cannot be canceled. Add a same-document step
+  // only at the end of the visible history, with no Forward entry to replace.
+  window.history.pushState(window.history.state, "", window.location.href);
+  const extra = navigation.currentEntry;
+  if (!extra || extra.key === entry.key) return;
+  const bridge = { base: entry.key, extra: extra.key, active: false };
+  historyBridge = bridge;
+  const skipDormant = (event: PopStateEvent) => {
+    if (bridge.active || navigation.currentEntry?.key !== bridge.extra) return;
+    event.stopImmediatePropagation();
+    window.history.back();
+  };
+  window.addEventListener("popstate", skipDormant, true);
+  return bridge;
+}
+
 function guardHistory(navigation: BrowserNavigation) {
   let restoring: { key: string; ask: () => void } | undefined;
   let allowed: string | undefined;
@@ -222,34 +282,72 @@ function guardHistory(navigation: BrowserNavigation) {
   const traverse = (key: string, onError: () => void) => {
     void navigation.traverseTo(key).finished.catch(onError);
   };
+
+  const bridge = armDocumentBack(navigation);
+  let releasingBridge = false;
+  let leaveAfterBridge = false;
+  if (bridge) {
+    bridge.active = true;
+    if (navigation.currentEntry?.key !== bridge.extra) {
+      const url = window.location.href;
+      const state = window.history.state;
+      restoring = { key: bridge.extra, ask: () => window.history.replaceState(state, "", url) };
+      traverse(bridge.extra, () => { restoring = undefined; });
+    }
+  }
+  const leaveFromBase = () => {
+    resumingDocumentBack = true;
+    window.addEventListener("pageshow", () => { resumingDocumentBack = false; }, { once: true });
+    window.history.back();
+  };
+  const releaseBridge = (leave: boolean) => {
+    if (!bridge) return;
+    // A save may close the editor before its readback finishes and calls resume.
+    if (leave && navigation.currentEntry?.key === bridge.base && !bridge.active) {
+      leaveFromBase();
+      return;
+    }
+    leaveAfterBridge ||= leave;
+    if (releasingBridge) return;
+    if (navigation.currentEntry?.key !== bridge.extra) {
+      bridge.active = false;
+      return;
+    }
+    releasingBridge = true;
+    const url = window.location.href;
+    const state = window.history.state;
+    const returnToBase = (event: PopStateEvent) => {
+      if (navigation.currentEntry?.key !== bridge.base) return;
+      event.stopImmediatePropagation();
+      window.removeEventListener("popstate", returnToBase, true);
+      bridge.active = false;
+      window.history.replaceState(state, "", url);
+      if (leaveAfterBridge) leaveFromBase();
+    };
+    window.addEventListener("popstate", returnToBase, true);
+    allowed = bridge.base;
+    traverse(bridge.base, () => {
+      window.removeEventListener("popstate", returnToBase, true);
+      bridge.active = false;
+    });
+  };
+
   const onNavigate = (event: Event) => {
     const { navigationType, destination } = event as HistoryTraversal;
     if (navigationType !== "traverse" || !destination.sameDocument) return;
     if (allowed === destination.key) { allowed = undefined; return; }
     if (restoring?.key === destination.key) return;
     const origin = navigation.currentEntry;
-    const editors = [...historyEditors];
-    const editor = editors.pop();
-    if (!origin || !editor) return;
+    if (!origin || historyEditors.size === 0) return;
 
-    const ask = () => {
-      if (document.querySelector('.rd-modal[data-state="open"]')) return;
-      const saves = editors.flatMap(other => other.getSave?.() ?? []);
-      const saveNext = (index: number, saved: () => void) => {
-        const save = saves[index];
-        if (save) save.run(() => saveNext(index + 1, saved));
-        else saved();
-      };
-      editor.ask({
-        resume: () => {
-          allowed = destination.key;
-          traverse(destination.key, () => { if (allowed === destination.key) allowed = undefined; });
-        },
-        discardOthers: () => editors.forEach(other => other.discard?.()),
-        saveOthers: saved => saveNext(0, saved),
-        saveBlocked: saves.find(save => save.blocked)?.blocked,
-      });
-    };
+    const ask = () => askHistoryBack(() => {
+      if (bridge?.extra === origin.key && bridge.base === destination.key) {
+        releaseBridge(true);
+        return;
+      }
+      allowed = destination.key;
+      traverse(destination.key, () => { if (allowed === destination.key) allowed = undefined; });
+    });
 
     if (event.cancelable) {
       event.preventDefault();
@@ -276,24 +374,49 @@ function guardHistory(navigation: BrowserNavigation) {
   return () => {
     navigation.removeEventListener("navigate", onNavigate);
     window.removeEventListener("popstate", onPop, true);
+    releaseBridge(false);
   };
 }
 
-/** Observe real history entries. Editing and closing a draft never creates or rewrites an entry. */
+function guardLegacyHistory(cursor: LegacyHistoryCursor) {
+  let restoring: { origin: number; destination: number } | undefined;
+  let allowed: number | undefined;
+  cursor.onTraverse = (event, origin, destination) => {
+    if (allowed === destination) { allowed = undefined; return; }
+    if (restoring && destination === restoring.origin) {
+      event.stopImmediatePropagation();
+      const { destination: target } = restoring;
+      restoring = undefined;
+      askHistoryBack(() => {
+        allowed = target;
+        window.history.go(target - destination);
+      });
+    } else if (destination !== origin) {
+      event.stopImmediatePropagation();
+      restoring = { origin, destination };
+      window.history.go(origin - destination);
+    }
+  };
+  return () => { cursor.onTraverse = undefined; };
+}
+
+/** Share one history decision across the drafts registered on this page. */
 export function useHistoryBackGuard(active: boolean, onBack: (resume: () => void, back: HistoryBack) => void, options?: Pick<HistoryEditor, "discard" | "getSave">) {
   const latest = useRef({ onBack, options });
   latest.current = { onBack, options };
   useEffect(() => {
     if (!active) return;
-    const navigation = (window as Window & { navigation?: BrowserNavigation }).navigation;
-    if (!navigation) return;
+    const { navigation, nexionHistoryCursor } = window as Window & {
+      navigation?: BrowserNavigation;
+      nexionHistoryCursor?: LegacyHistoryCursor;
+    };
     const editor: HistoryEditor = {
       ask: back => latest.current.onBack(back.resume, back),
       discard: () => latest.current.options?.discard?.(),
       getSave: () => latest.current.options?.getSave?.(),
     };
     historyEditors.add(editor);
-    stopHistoryGuard ??= guardHistory(navigation);
+    stopHistoryGuard ??= navigation ? guardHistory(navigation) : nexionHistoryCursor && guardLegacyHistory(nexionHistoryCursor);
     return () => {
       historyEditors.delete(editor);
       if (historyEditors.size === 0) {
@@ -328,7 +451,7 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
   }, [dirty, close, switcher]);
   useEffect(() => {
     if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
     const intercept = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
