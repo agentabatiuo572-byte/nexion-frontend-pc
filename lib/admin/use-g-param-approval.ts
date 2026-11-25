@@ -1,6 +1,6 @@
 "use client";
 
-import { useReducer } from "react";
+import { useReducer, useRef } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
@@ -116,7 +116,18 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
   const session = useAdminAuth((s) => s.session);
   const adminId = session?.adminId;
   const [, changed] = useReducer((value: number) => value + 1, 0);
+  // Query evidence belongs to the current page. Reopening the page requires a new read of the original.
+  const missingOriginals = useRef(new Set<string>());
   const record = (key: string) => pending.list().find(r => r.adminId === adminId && r.page === page && r.request.obj === key);
+  const canRetry = (original: PendingGParam) => {
+    const auth = useAdminAuth.getState();
+    return missingOriginals.current.has(original.commandKey) && !original.ticket && !isRetryExpired(original)
+      && auth.isAuthenticated && !auth.logoutPending && !!auth.session && auth.session.adminId === original.adminId
+      && canProposeGParam(page, original.request.obj, auth.session.authorities);
+  };
+  const clearMissing = (original: PendingGParam) => {
+    if (missingOriginals.current.delete(original.commandKey)) changed();
+  };
   const requireActor = (key: string, proposing: boolean) => {
     const auth = useAdminAuth.getState();
     if (!auth.isAuthenticated || auth.logoutPending || !auth.session || auth.session.adminId !== adminId || !adminId
@@ -157,21 +168,31 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     }
     return ticket;
   };
-  const query = async (original: PendingGParam, reread = page === "G4") => {
+  const readOriginal = async (original: PendingGParam, reread = page === "G4") => {
     onRecoveryStart?.();
     const ticket = await fetchA2ProposalByKey(original.commandKey, true);
     return ticket ? acceptTicket(original, ticket, reread) : undefined;
+  };
+  const query = async (original: PendingGParam) => {
+    clearMissing(original);
+    const ticket = await readOriginal(original);
+    // The strict lookup only resolves without a ticket on A2_PROPOSAL_NOT_FOUND.
+    if (!ticket && !original.ticket) {
+      missingOriginals.current.add(original.commandKey);
+      changed();
+    }
+    return ticket;
   };
   const send = async (original: PendingGParam, recovering = true) => {
     // POST idempotency receipts can retain their historical pending status on all
     // three pages. Recovery uses the current ticket, then the current overview.
     if (recovering) {
-      const ticket = await query(original, true);
+      if (isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
+      if (!canRetry(original)) throw new Error("请先查询原操作。明确查不到原审批单且仍有发起权限，才可按原操作重试。");
+      clearMissing(original);
+      const ticket = await readOriginal(original, true);
       if (ticket) return ticket;
-      if (original.ticket || isRetryExpired(original)) {
-        throw new Error(original.ticket
-          ? "暂时查不到已收录的原审批单，原记录继续保留，不能重新提案。" : RETRY_EXPIRED_TEXT);
-      }
+      if (isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
     }
     requireActor(original.request.obj, true);
     if (!pending.isDurablyStored(original.fingerprint, original.commandKey)) {
@@ -190,7 +211,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     }
     if (recovering) {
       checkTicket(original, result);
-      const ticket = await query(original, true);
+      const ticket = await readOriginal(original, true);
       if (!ticket) throw new Error("暂时查不到已收录的原审批单，原记录继续保留，不能重新提案。");
       return ticket;
     }
@@ -201,11 +222,9 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     list: (): GParamRecovery[] => pending.list().filter(r => r.adminId === adminId && r.page === page).map(r => {
       const retryExpired = isRetryExpired(r);
       const terminal = !!r.ticket && r.ticket.status !== "pending";
-      const auth = useAdminAuth.getState();
       return { ...r, status: terminal ? r.ticket!.status : retryExpired ? "expired" : r.ticket ? "pending" : "unknown",
         retryExpired, canQuery: true, canRelease: terminal,
-        canRetry: !terminal && !retryExpired && auth.isAuthenticated && !auth.logoutPending && !!auth.session && auth.session.adminId === adminId
-          && canProposeGParam(page, r.request.obj, auth.session.authorities) };
+        canRetry: canRetry(r) };
     }),
     query: (key: string) => {
       const original = record(key);
@@ -229,20 +248,17 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
       const original = record(key);
       if (!original) return undefined;
       try {
-        const ticket = await query(original);
-        if (ticket && ticket.status !== "pending") return false as const;
+        if (await query(original)) return false as const;
       } catch (error) {
         showError(displayAdminError(error));
+        return false as const;
       }
-      // Expired commands and confirmed terminal receipts cannot be submitted again,
-      // even when the current read or the original-ticket lookup is unavailable.
       const current = record(key);
       if (isRetryExpired(original)) {
         showError(RETRY_EXPIRED_TEXT);
         return false as const;
       }
-      if (current?.ticket && current.ticket.status !== "pending") return false as const;
-      return current;
+      return current && canRetry(current) ? current : false as const;
     },
     getPendingReason: (key: string) => record(key)?.request.reason,
     getPendingBusinessValue: (key: string) => {

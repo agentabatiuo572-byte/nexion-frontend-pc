@@ -1,3 +1,5 @@
+import { G_PARAM_APPROVAL_RECOVERY, G_PARAM_RECOVERY } from "../operator-copy";
+
 /**
  * 「这页怎么用」的内容，按页面编号取（CP-89，TX-37）。
  * 只写现有功能，步骤里的按钮名和页面一致，写不准的标「待确认」（DP-33）。
@@ -17,7 +19,6 @@ export interface PageGuideContent {
 }
 
 const EXPORT_RECORDS_PURPOSE = "看自己提交的业绩导出，或审批别人的明细申请。";
-const G4_G7_RECOVERY = "审批申请先点「查询原操作」。明确查不到原申请、未超过 24 小时且仍有发起权限，才可「按原操作重试」。直接修改点「读取当前配置」核对，有原操作权限且未超过 24 小时才可重试。";
 const MY_EXPORTS_TASK = {
   title: "看自己提交的",
   steps: ["在「我的申请」点一条看内容和进度", "等审批的可以撤回；生成后按页面显示下载，没了原范围的只能看编号和状态"],
@@ -102,7 +103,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
       { name: "放宽", text: "让平台可能多付 USDT 的方向：调高两个日额度、调低手续费率或最低手续费、从拒绝改成排队；要另一位超级管理员批准。" },
       { name: "收紧", text: "反方向的修改，确认后立即生效；和现在一样时没有改动，不保存。" },
       { name: "排队", text: "超过日额度、用户又选了超额时排队的兑换；已预占来源币种，等人点「处理排队」。" },
-      { name: "原申请", text: "提交过、还没有结论的参数修改，只能查询或按原操作重试。" },
+      { name: "原申请", text: G_PARAM_APPROVAL_RECOVERY },
       { name: "兑换开关", text: "「紧急停用开关」里的兑换一项，管用户能不能发起兑换、能不能处理排队。没有设置或设置有误时，兑换按关闭处理，用户不能发起。" },
       { name: "风险披露闸门", text: "在「法律条款与风险披露」管。兑换纳入受限后，新兑换和处理排队都会被拒绝，排队单仍在队列，已有批次仍可查原结果。" },
     ],
@@ -121,7 +122,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
       { name: "系列当前价", text: "现有持仓每日分红的计价。有价格档位时一级购买按档位报价，分红仍按它算。" },
       { name: "收紧", text: "反方向的修改，确认后立即生效。" },
       { name: "只是说明", text: "空投占比、收益发放曲线、锁仓天数和收益计算基数，只保存这段说明，不按它发放或计算；改动都要批准。" },
-      { name: "原申请", text: G4_G7_RECOVERY },
+      { name: "原申请", text: G_PARAM_RECOVERY },
     ],
     more: "G4 /finance-products/genesis。读接口 GET /api/admin/market/nex/genesis?page&pageSize 和 /operations，打开时读一次，不自动刷新，写入后重新读取。参数 PATCH /params/{key}；放宽方向和首次比例、真实补发 POST /api/admin/platform/audit/operations 提交审批。紧急暂停 PATCH /market-status（只能暂停，恢复在紧急停用开关）；市场开闭 PATCH /market-open-state；档位 POST、PATCH、DELETE /tiers；发布系列 POST /series/initialize；补发 POST /dividend-batches/{批次}/rerun；认购设置 PATCH /operations/config/{key}；模拟 POST、DELETE /operations/simulations。",
   },
@@ -137,7 +138,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
       { name: "提前解锁", text: "到期前解锁：扣锁定金额的一部分，不发奖励，这一单没用的抽奖券作废。这页不能替用户操作。" },
       { name: "让平台多付", text: "调高年奖励率、调低提前解锁扣款会让平台多付钱；调高好友升级奖励倍率按规则也算这一方向（目前只记倍率、不发好友奖励）。要另一位超级管理员批准，批准前参数不变。" },
       { name: "审批锁", text: "一项有待批的申请时，这一项调高调低都改不了，直到批准、驳回或撤回；其他参数照常可改。" },
-      { name: "原申请", text: G4_G7_RECOVERY },
+      { name: "原申请", text: G_PARAM_RECOVERY },
     ],
     more: "G7 /finance-products/repurchase。读接口 GET /api/admin/market/nex/repurchase 和 /nex/repurchase/orders，打开时读一次，不自动刷新，直接修改成功后用返回的结果刷新，订单不重读；按原操作重试、查询原操作或读取当前配置后重新读取。直接修改 PUT /nex/repurchase/config/{参数}。让平台多付的方向 POST /api/admin/platform/audit/operations 提交审批，批准时后端再走同一个修改接口。订单每次读 20 单，从新到旧，加载更多只带游标。",
   },

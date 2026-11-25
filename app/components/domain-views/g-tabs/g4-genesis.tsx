@@ -698,9 +698,7 @@ function G4GenesisPage() {
             {original && <Fact k="原申请"><Change from={currentText} to={originalValue === undefined ? "—" : g4ParamValueText(param.key, originalValue)} /></Fact>}
             {pendingRaise && <Fact k="原调高申请" tone="warn"><Change from={currentText} to={pendingRaiseValue === undefined ? "—" : g4ParamValueText("dividend", pendingRaiseValue)} /> 待审批{pendingRaise.ticket ? `（${pendingRaise.ticket.id}）` : ""}</Fact>}
             <Fact k="什么时候生效" tone={dir === "loose" ? "warn" : undefined}>{original
-              ? original.ticket?.status === "pending"
-                ? "审批单在等另一位超级管理员批准；批准前参数不变"
-                : "原申请结果未知：24 小时内可以按原操作重试，不会重复建单"
+              ? "已查不到原审批单，确认后按保存的原申请重试。"
               : tighteningDividend
                 ? "这次只能调低或保持不变，确认后立即生效；原调高申请还在，但比例变了，批准时会被拒绝，不会覆盖这次的值"
                 : dir === "loose"
