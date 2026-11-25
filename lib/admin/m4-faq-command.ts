@@ -1,7 +1,8 @@
 import type { SupportFaq } from "../../app/components/domain-views/m-tabs/data";
-import { fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
+import { fundCommandOrigin, fundCommandResult, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
 import { isOriginalCommandOrigin, queryOriginalCommand } from "./original-command-query";
-import type { PendingMutationRecord } from "./pending-mutation-store";
+import type { PendingMutationRecord, PendingRecoveryConclusion } from "./pending-mutation-store";
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 
 export type M4FaqCommand = {
   commandOrigin?: FundCommandOrigin;
@@ -30,6 +31,13 @@ export function isM4FaqCommand(value: unknown): value is M4FaqCommand {
     || !faq(command.row) || (command.kind === "create" ? command.before !== null : !faq(command.before))
     || !command.request || typeof command.request.body !== "string") return false;
   const path = `/knowledge/faqs${command.kind === "create" ? "" : `/${encodeURIComponent(command.row.id)}`}`;
+  try {
+    const body = JSON.parse(command.request.body);
+    if (!body || typeof body.reason !== "string" || (command.before
+      && (command.before.id !== command.row.id || body.expectedVersion !== command.before.version || body.expectedStatus !== command.before.status))) return false;
+  } catch {
+    return false;
+  }
   if (!isOriginalCommandOrigin(command.commandOrigin, { originalMethod: command.request.method, originalPath: `/api/admin/content${command.request.path}`, readAuthority: "service_m4_read" })
     || command.commandOrigin && command.commandOrigin.originalAdminId !== String(command.actorId)) return false;
   return command.kind === "create" ? command.request.method === "POST" && command.request.path === path
@@ -48,4 +56,22 @@ export async function queryM4FaqCommand(record: PendingMutationRecord & { faq?: 
     originalMethod: command.request.method, originalPath: `/api/admin/content${command.request.path}`, readAuthority: "service_m4_read",
   }, String(command.actorId), evidence);
   return { receipt, settled: fundCommandSettled(receipt) };
+}
+
+export async function readM4FaqRecovery(record: PendingMutationRecord & { faq?: M4FaqCommand }, evidence?: FundCommandEvidence) {
+  const result = await queryM4FaqCommand(record, evidence);
+  let conclusion: PendingRecoveryConclusion = "unknown";
+  const verdict = fundCommandResult(result.receipt);
+  if (result.settled && verdict === "SUCCEEDED") conclusion = "succeeded";
+  if (result.settled && verdict === "NOT_EXECUTED") conclusion = "not-executed";
+  if (result.settled && verdict === "REJECTED") conclusion = "rejected";
+  const command = record.faq;
+  if (!result.receipt && command) {
+    // Discovery omits older or unattributed rows. Only the exact scope lookup can prove absence.
+    const scope = command.request.method === "POST" ? "M4_SUPPORT_FAQ_CREATE"
+      : `M4_SUPPORT_FAQ_${command.request.method === "DELETE" ? "DELETE" : command.request.path.endsWith("/status") ? "STATUS" : "UPDATE"}:${command.row.id}`;
+    const normalizedScope = scope.trim().toUpperCase().replace(/[^A-Z0-9_.:-]/g, "_");
+    if (await fetchDirectCommandReceipt(normalizedScope, record.commandKey, command.actorId) === "NOT_FOUND") conclusion = "not-found";
+  }
+  return { ...result, conclusion };
 }

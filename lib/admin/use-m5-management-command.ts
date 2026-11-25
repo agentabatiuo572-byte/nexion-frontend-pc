@@ -1,14 +1,30 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "./error-messages";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
 import { SupportClientError } from "./m-support-client";
-import { isRetryExpired, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
+import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
 
 export type M5ManagementRecord<T, B> = PendingMutationRecord & { actorId: number; payload: T; before?: B; denied?: boolean };
+
+export function createM5ManagementRecovery<T, B>(store: PendingMutationStore<M5ManagementRecord<T, B>>) {
+  return createPendingRecovery(store, {
+    capability: () => "receipt",
+    canReplay(record) {
+      const auth = useAdminAuth.getState(), session = auth.session;
+      return auth.isAuthenticated && !auth.logoutPending && !auth.logoutUnknown && session?.adminId === record.actorId
+        && !session.passwordChangeRequired && ["super", "superadmin"].includes(session.role)
+        && session.authorities.includes("service_m1_read") && session.authorities.includes("service_m1_write");
+    },
+    explicitRejectionCode,
+  });
+}
+
+const noRecoverySubscription = () => () => {};
+const noRecoveryRevision = () => 0;
 
 /** M5 direct writes: restoration depends on the saved request, never on a successful overview read. */
 export function useM5ManagementCommand<T, B, R>(options: {
@@ -17,6 +33,12 @@ export function useM5ManagementCommand<T, B, R>(options: {
   canWrite: boolean;
   legacySlot?: string;
   requireMissingReceipt?: boolean;
+  receiptRecovery?: {
+    controller: ReturnType<typeof createM5ManagementRecovery<T, B>>;
+    expiry: "after-missing" | "load-latest";
+    readAfterExpiry: (record: M5ManagementRecord<T, B>) => Promise<() => void>;
+    onLocalRelease: () => void;
+  };
   fingerprint: (payload: T) => string;
   write: (payload: T, key: string) => Promise<R>;
   query: (key: string, payload: T) => Promise<{ status: "SUCCEEDED"; result: R } | { status: "FAILED" | "UNKNOWN" | "PROCESSING" | "PENDING" }>;
@@ -31,6 +53,9 @@ export function useM5ManagementCommand<T, B, R>(options: {
   const [receiptMissing, setReceiptMissing] = useState(false);
   const [, setDeadline] = useState(0);
   const running = useRef(false);
+  const recovery = options.receiptRecovery;
+  useSyncExternalStore(recovery?.controller.subscribe ?? noRecoverySubscription,
+    recovery?.controller.getRevision ?? noRecoveryRevision, noRecoveryRevision);
   useEffect(() => {
     setPending(options.store.list().find(row => row.actorId === actorId || row.actorId === undefined && row.fingerprint === options.legacySlot));
     setMessage("");
@@ -40,11 +65,13 @@ export function useM5ManagementCommand<T, B, R>(options: {
     const timer = window.setTimeout(() => setDeadline(Date.now()), pending.expiresAt - Date.now());
     return () => window.clearTimeout(timer);
   }, [pending]);
+  const recoveryState = pending && recovery?.controller.state(pending);
   const canReplay = options.canWrite && !!pending && !isRetryExpired(pending)
-    && (!options.requireMissingReceipt || receiptMissing && !pending.denied);
+    && (recoveryState ? !recoveryState.replayBlock : !options.requireMissingReceipt || receiptMissing && !pending.denied);
 
-  async function run(action: "submit" | "replay" | "query", payload?: T, before?: B) {
-    if (running.current || !actorId || (action === "query" ? !options.canQuery : !options.canWrite)) return;
+  async function run(action: "submit" | "replay" | "query" | "load-latest", payload?: T, before?: B) {
+    const read = action === "query" || action === "load-latest";
+    if (running.current || !actorId || (read ? !options.canQuery : !options.canWrite)) return;
     if (actorId !== useAdminAuth.getState().session?.adminId || epoch !== useAdminAuth.getState().authEpoch) return;
     const { store } = options;
     let record = store.list().find(row => row.actorId === actorId || row.actorId === undefined && row.fingerprint === options.legacySlot);
@@ -60,12 +87,14 @@ export function useM5ManagementCommand<T, B, R>(options: {
       record = store.list().find(row => row.commandKey === key);
     }
     if (!record) return;
+    if (action === "load-latest" && (recovery?.expiry !== "load-latest" || !isRetryExpired(record))) return;
+    if (action === "replay" && recovery?.controller.state(record).replayBlock) return;
     if (action === "replay" && options.requireMissingReceipt && !canReplay) return;
     if (action === "replay" && isRetryExpired(record)) {
       setMessage("原请求已超过 24 小时，不能再重试，只能查询原结果；请核对最新规则。");
       return;
     }
-    if (action !== "query" && !store.isDurablyStored(record.fingerprint, record.commandKey)) {
+    if (!read && !store.isDurablyStored(record.fingerprint, record.commandKey)) {
       setMessage(action === "replay" ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
       return;
     }
@@ -74,6 +103,49 @@ export function useM5ManagementCommand<T, B, R>(options: {
     if (action !== "query") setPending(record);
     let querying = action === "query";
     try {
+      if (recovery) {
+        const saved = record;
+        const loadLatest = async () => {
+          const applyLatest = await recovery.readAfterExpiry(saved);
+          if (!current()) return;
+          // The two OP-153 exceptions settle from a successful fresh content read.
+          store.forget(saved.fingerprint, saved.commandKey);
+          setPending(undefined);
+          applyLatest();
+        };
+        if (action === "load-latest") {
+          await loadLatest();
+        } else if (action === "query") {
+          const verdict = await recovery.controller.query(saved, async original => {
+            try {
+              const receipt = await options.query(original.commandKey, original.payload);
+              return { conclusion: receipt.status === "SUCCEEDED" ? "succeeded" : "unknown" };
+            } catch (error) {
+              if (error instanceof SupportClientError && error.status === 404 && error.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") {
+                return { conclusion: "not-found" };
+              }
+              throw error;
+            }
+          });
+          if (!current() || !verdict) return;
+          if (verdict.conclusion === "succeeded" && recovery.controller.settleFromQuery(saved, "succeeded")) {
+            setPending(undefined);
+            options.onSuccess();
+          } else if (verdict.conclusion === "not-found") {
+            if (recovery.expiry === "after-missing" && isRetryExpired(saved)) await loadLatest();
+            else setMessage(isRetryExpired(saved) ? RETRY_EXPIRED_TEXT : "还没查到原操作的结果，原请求已保留。");
+          } else setMessage("原操作结果未知，请稍后再查询原结果。");
+        } else {
+          if (action === "replay") {
+            await recovery.controller.replay(saved, original => options.write(original.payload, original.commandKey));
+          } else await options.write(saved.payload, saved.commandKey);
+          if (!current()) return;
+          recovery.controller.settleAcknowledged(saved);
+          setPending(undefined);
+          options.onSuccess();
+        }
+        return;
+      }
       if (!querying) {
         try {
           await options.write(record.payload, record.commandKey);
@@ -97,6 +169,14 @@ export function useM5ManagementCommand<T, B, R>(options: {
       } else options.onSuccess();
     } catch (error) {
       if (!current()) return;
+      if (recovery && action !== "submit") {
+        setPending(record);
+        setMessage(action === "load-latest" ? displayAdminError(error)
+          : recovery.controller.state(record).replayRejection ? `重试被拒绝，原操作已保留。\n${displayAdminError(error)}`
+            : action === "query" ? `暂时查不到原结果；你填的内容和原请求都还在。${displayAdminError(error)}`
+              : `结果未知：请查询原结果。${displayAdminError(error)}`);
+        return;
+      }
       const rejected = action === "submit" && error instanceof SupportClientError
           && !error.backendMessage?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(error.status, error.apiCode);
       if (rejected) {
@@ -119,5 +199,14 @@ export function useM5ManagementCommand<T, B, R>(options: {
       if (current()) setBusy(false);
     }
   }
-  return { pending, busy, message, canReplay, run };
+  /** Call after the operator verifies the original outcome. The release itself is local. */
+  function releaseRejectedReplay() {
+    if (!pending || !recovery || running.current || !options.canQuery || epoch !== useAdminAuth.getState().authEpoch
+      || actorId !== useAdminAuth.getState().session?.adminId || !recovery.controller.releaseRejectedReplay(pending)) return false;
+    setPending(undefined);
+    setMessage("");
+    recovery.onLocalRelease();
+    return true;
+  }
+  return { pending, busy, message, canReplay, recoveryState, releaseRejectedReplay, run };
 }

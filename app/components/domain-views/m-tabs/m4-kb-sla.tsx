@@ -1,19 +1,19 @@
 "use client";
 
 /** M4 help center content. Retired ticket configuration remains stored on the server. */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { BookOpenText, CheckCircle2, FilePen, Pencil, Plus, Trash2, Upload, Archive } from "lucide-react";
 import { buildM4FaqCommand, sendM4FaqCommand } from "@/lib/admin/m-client";
 import { mCommands, type MCommandRecord } from "@/lib/admin/m-pending-commands";
 import type { M4FaqCommand } from "@/lib/admin/m4-faq-command";
-import { queryM4FaqCommand } from "@/lib/admin/m4-faq-command";
+import { queryM4FaqCommand, readM4FaqRecovery } from "@/lib/admin/m4-faq-command";
 import { canInvestigateECommand, eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
 import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
 import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 import { businessZone } from "@/lib/admin/business-time";
@@ -32,6 +32,7 @@ import {
   FaqPreview, FaqStatusTag, M4FaqDrawer, M4PendingWrites, M4StatusConfirm, M4_LANGUAGES, ReachList, audienceSub, languageName, reachesUsers, surfaceName,
 } from "./m4-kb-views";
 import type { MCtx } from "./types";
+import { usePendingReplayDeadline, type PendingConfirmRecovery } from "../design-kit";
 
 const FAQ_KEY = "I.support.faqs";
 
@@ -40,6 +41,8 @@ const FAQ_CATEGORY_OPTIONS: SupportFaq["category"][] = ["general", ...CATEGORY_O
 const SURFACES: SupportFaq["surface"][] = ["Help Center", "Nova"];
 const FAQ_PAGE_SIZE = 5;
 const DEFAULT_FAQ_LANGUAGE = "en-US";
+
+type FaqRecoveryBindings = PendingConfirmRecovery & { releaseRejectedReplay: () => boolean };
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
   if (!raw) return fallback;
@@ -57,6 +60,32 @@ function nextFaqId(): string {
 }
 const minReason = (r: string) => r.trim().length >= 8 && r.trim().length <= 200;
 
+function faqSession(actorId?: number) {
+  const auth = useAdminAuth.getState();
+  const session = auth.session;
+  return auth.isAuthenticated && !auth.logoutPending && !auth.logoutUnknown && session?.adminId === actorId
+    && !session?.passwordChangeRequired ? session : null;
+}
+
+export const m4FaqRecovery = createPendingRecovery(mCommands, {
+  capability: record => record.faq ? "receipt" : "readback",
+  canReplay: record => {
+    const session = faqSession(record.faq?.actorId);
+    return Boolean(record.faq && session?.authorities.includes("service_m4_read") && session.authorities.includes("service_m4_write"));
+  },
+  explicitRejectionCode: error => explicitRejectionCode(error instanceof MContentReadError && error.status === 200 && error.apiCode
+    ? { status: error.apiCode, backendMessage: error.backendMessage } : error),
+});
+
+function faqWriteReadBack(command: M4FaqCommand, rows: SupportFaq[]) {
+  if (command.kind === "delete") return !rows.some(row => row.id === command.row.id);
+  const expected = command.row;
+  return rows.some(row => (command.kind === "create" || row.id === expected.id && row.version > command.before!.version)
+    && (command.before && row.version > command.before.version + 1 || row.status === expected.status
+      && row.question === expected.question && row.answer === expected.answer && row.language === expected.language
+      && row.category === expected.category && row.surface === expected.surface && row.sortOrder === expected.sortOrder));
+}
+
 type FaqForm = { category: SupportFaq["category"]; surface: SupportFaq["surface"]; language: string; sortOrder: string; question: string; answer: string; status: SupportFaq["status"]; reason: string };
 
 export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: string; summary: string; loadError: string | null }) {
@@ -67,10 +96,13 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closing, setClosing] = useState<MCommandRecord | null>(null);
   const [recovery, setRecovery] = useState<MCommandRecord | null>(null);
+  const [recoveredDraft, setRecoveredDraft] = useState<SupportFaq | null>(null);
+  const recoveryRevision = useSyncExternalStore(m4FaqRecovery.subscribe, m4FaqRecovery.getRevision, () => 0);
+  usePendingReplayDeadline(pendingCommands.reduce<number | undefined>((first, row) =>
+    !isRetryExpired(row) && (first === undefined || row.expiresAt < first) ? row.expiresAt : first, undefined));
+  const canQueryM4 = Boolean(faqSession(actorId)?.authorities.includes("service_m4_read"));
   const authorities = useAdminAuth((state) => state.session?.authorities);
-  const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
-  const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
-  const canWriteM4 = isSuperAdmin || Boolean(authorities?.includes("service_m4_write"));
+  const canWriteM4 = Boolean(authorities?.includes("service_m4_write"));
   // Undefined is the initial loading state. Writes stay fail-closed until the
   // strict M4 response validator explicitly publishes a successful "1".
   const knowledgeAvailable = pget("I.support.knowledgeAvailable") === "1" && !needsRead;
@@ -95,6 +127,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const [pageSize, setPageSize] = useState(FAQ_PAGE_SIZE);
   const [openId, setOpenId] = useState<string | null>(null);
   const [statusTarget, setStatusTarget] = useState<SupportFaq | null>(null);
+  const deleteFormKey = useRef(0);
   const deleteConfirmation = useRef<{ faq: SupportFaq; request: Parameters<MCtx["openActionConfirm"]>[0] } | null>(null);
   const [statusFailure, setStatusFailure] = useState<Error | null>(null);
   const [writePending, setWritePending] = useState(false);
@@ -123,72 +156,79 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
 
   const syncPending = useCallback(() => setPendingCommands(mCommands.list().filter((record) => record.faq?.actorId === actorId
     || record.fingerprint.startsWith("cmd|I.support.faq"))), [actorId]);
-  useEffect(syncPending, [syncPending]);
-  const blocked = (id?: string) => pendingCommands.some((record) => !record.faq || (id ? record.faq.row.id === id : record.faq.kind === "create"));
-  const closeWriteDialogs = () => { setRecovery(null); setEditFaq(null); setShowAddFaq(false); setStatusTarget(null); };
+  useEffect(syncPending, [syncPending, recoveryRevision]);
+  const blocked = (id?: string, records = pendingCommands) => records.some(record => record.faq
+    ? record.faq.row.id === id || (id === undefined && record.faq.kind === "create")
+    : record.fingerprint.startsWith("cmd|I.support.faq"));
+  const closeWriteDialogs = () => { setRecoveredDraft(null); setRecovery(null); setEditFaq(null); setShowAddFaq(false); setStatusTarget(null); };
   useEffect(() => { closeWriteDialogs(); }, [actorId]);
   const readCurrent = async () => {
+    const epoch = useAdminAuth.getState().authEpoch;
     try {
-      await ctx.refreshKnowledge();
+      const rows = await ctx.refreshKnowledge();
+      if (epoch !== useAdminAuth.getState().authEpoch) return;
       setNeedsRead(false);
-      return true;
+      return rows;
     } catch (error) {
+      if (epoch !== useAdminAuth.getState().authEpoch) return;
       setNeedsRead(true);
       toast(displayAdminError(error), "warn");
-      return false;
     }
   };
   const commitM4Write = async (command: M4FaqCommand, successMessage: string, onFailure?: (error: Error) => void, original?: MCommandRecord): Promise<boolean> => {
-    const currentSession = useAdminAuth.getState().session;
-    if (writeInFlight.current || !currentSession || command.actorId !== currentSession.adminId
-      || !(currentSession.role === "super" || currentSession.role === "superadmin" || currentSession.authorities.includes("service_m4_write"))) return false;
-    if (!original && (!canEdit || blocked(command.before?.id))) return false;
-    if (original && isRetryExpired(original)) { onFailure?.(new Error(RETRY_EXPIRED_TEXT)); toast(RETRY_EXPIRED_TEXT, "warn"); return false; }
+    const currentSession = faqSession(command.actorId);
+    const epoch = useAdminAuth.getState().authEpoch;
+    if (writeInFlight.current || !currentSession?.authorities.includes("service_m4_write")) return false;
+    if (original ? m4FaqRecovery.state(original).replayBlock : !canEdit || blocked(command.before?.id, mCommands.list())) return false;
     const commandKey = original?.commandKey ?? `m4-${crypto.randomUUID()}`;
     const fingerprint = original?.fingerprint ?? `m4|${command.kind === "create" ? "create" : command.row.id}`;
-    mCommands.remember(fingerprint, commandKey, { faq: command });
-    syncPending();
+    if (!original) mCommands.remember(fingerprint, commandKey, { faq: command });
     if (!mCommands.isDurablyStored(fingerprint, commandKey)) {
       const failure = "原操作未能保存，暂未提交。请恢复浏览器存储后按原请求重试。";
-      if (!original) {
-        // No request was sent. Keep the draft editable rather than inventing an unknown outcome.
-        mCommands.forget(fingerprint, commandKey);
-        syncPending();
-      }
+      if (!original) mCommands.forget(fingerprint, commandKey);
       onFailure?.(new Error(failure)); toast(failure, "warn"); return false;
     }
+    const record = original ?? mCommands.list().find(row => row.commandKey === commandKey);
+    if (!record) return false;
+    syncPending();
     writeInFlight.current = true;
     setWritePending(true);
+    let acknowledged = false;
+    const stillCurrent = () => epoch === useAdminAuth.getState().authEpoch && Boolean(faqSession(command.actorId));
     try {
-      await sendM4FaqCommand(command, commandKey);
-      mCommands.forget(fingerprint, commandKey);
+      if (original) await m4FaqRecovery.replay(original, saved => sendM4FaqCommand(saved.faq!, saved.commandKey));
+      else await sendM4FaqCommand(command, commandKey);
+      acknowledged = true;
+      if (!stillCurrent()) return false;
+      setNeedsRead(true);
+      const latest = await readCurrent();
+      if (!stillCurrent()) return false;
+      // The write response has verified the command's target and result. An overview
+      // may already contain a later edit, so an acknowledgment only needs a fresh read.
+      if (!latest) {
+        setRecovery(record);
+        return false;
+      }
+      m4FaqRecovery.settleAcknowledged(record);
       syncPending();
       closeWriteDialogs();
       if (command.kind === "delete") ctx.closeActionConfirm?.();
-      setNeedsRead(true);
-      // An idempotency replay is an old receipt. Only the next overview can enable new edits.
-      await readCurrent();
       toast(successMessage);
       return true;
     } catch (error) {
-      const verdict = error instanceof MContentReadError && error.status === 200 && error.apiCode
-        ? { status: error.apiCode, backendMessage: error.backendMessage } : error;
-      const rejected = original ? isExplicitRejection(verdict)
-        : error instanceof MContentReadError && !error.backendMessage?.startsWith("IDEMPOTENCY_")
-          && isDeterministicRejection(error.status, error.apiCode);
+      if (!stillCurrent()) return false;
+      const rejected = !original && !acknowledged && error instanceof MContentReadError && !error.backendMessage?.startsWith("IDEMPOTENCY_")
+        && isDeterministicRejection(error.status, error.apiCode);
       if (rejected) {
         mCommands.forget(fingerprint, commandKey);
         syncPending();
-        if (original) {
-          closeWriteDialogs();
-          if (command.kind === "delete") ctx.closeActionConfirm?.();
-        }
         setNeedsRead(true);
         await readCurrent();
-      }
-      if (!rejected) setRecovery(mCommands.list().find((record) => record.commandKey === commandKey) ?? null);
-      const failure = `${rejected ? "后台拒绝了这次操作" : "结果未知"} · ${displayAdminError(error)}`;
-      if (onFailure && (!rejected || !original)) onFailure(rejected ? new Error(failure, { cause: error }) : new OutcomeUnknownError(failure, { cause: error })); else toast(failure, rejected ? "error" : "warn");
+      } else setRecovery(record);
+      const refusedReplay = original && m4FaqRecovery.state(original).replayRejection;
+      const failure = `${rejected || refusedReplay ? "后台拒绝了这次操作" : "结果未知"} · ${displayAdminError(error)}`;
+      if (onFailure) onFailure(rejected ? new Error(failure, { cause: error }) : new OutcomeUnknownError(failure, { cause: error }));
+      else toast(failure, rejected ? "error" : "warn");
       return false;
     } finally {
       writeInFlight.current = false;
@@ -252,8 +292,11 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       status === "published" ? `${id} 已发布` : `${id} 已下架为草稿`, onFailure);
   };
   const requestDeleteFaq = (faq: SupportFaq, original?: MCommandRecord) => {
+    const savedCommand = () => mCommands.list().find(record => record.faq?.kind === "delete"
+      && record.faq.actorId === actorId && record.faq.row.id === faq.id);
     const published = faq.status === "published";
     const request: Parameters<MCtx["openActionConfirm"]>[0] = {
+      formKey: ++deleteFormKey.current,
       action: <>删除常见问答 <span className="mono">{faq.id}</span></>,
       title: "删除这条问答",
       effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>本页不能恢复</IrreversibleTag></>,
@@ -264,7 +307,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         impact: published ? "删除后所有位置都不再读到这条问答，本页也找不回来；账号和资金不受影响。" : "这是草稿，用户本来就看不到；删除后本页找不回来，账号和资金不受影响。",
         check: "核对问题和回答，确认不再需要。只想先不让用户看到，用「下架」，以后还能重新发布。",
       },
-      facts: <>{original && <Notice tone="warn" title="结果未知">{isRetryExpired(original) ? "原请求超过 24 小时，不能再重试，只能查询原结果。" : "可能已经删除。按原请求重试不会重复执行。"}</Notice>}<Facts>
+      facts: () => <>{original && <Notice tone="warn" title="结果未知">{isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "可能已经删除。按原请求重试不会重复执行。"}</Notice>}<Facts>
         <Fact k="问题"><span className="m4-fact-text">{faq.question}</span></Fact>
         <Fact k="给谁看">{surfaceName(faq.surface)} · {languageName(faq.language)}</Fact>
         <Fact k="状态">{published ? "已发布，删除后几分钟内从 App 消失" : "草稿"}</Fact>
@@ -273,20 +316,23 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       reasonPlaceholder: "例如：内容已过时，已由新问答替代",
       reasonMin: 8,
       getPendingReason: () => {
-        const saved = mCommands.list().find((record) => record.faq?.actorId === actorId && record.faq?.row.id === faq.id);
+        const saved = savedCommand();
         return saved?.faq ? JSON.parse(saved.faq.request.body).reason : undefined;
       },
+      getPendingRecovery: () => {
+        const saved = savedCommand();
+        return saved ? faqRecoveryBindings(saved) : undefined;
+      },
       initialReason: original?.faq ? JSON.parse(original.faq.request.body).reason : undefined,
-      blockedReason: !canWriteM4 ? "当前账号没有知识库编辑权限" : original && isRetryExpired(original) ? RETRY_EXPIRED_TEXT : undefined,
+      blockedReason: !canWriteM4 ? "当前账号没有知识库编辑权限" : undefined,
       run: async (reason) => {
-        const saved = mCommands.list().find((record) => record.faq?.actorId === actorId && record.faq?.row.id === faq.id);
-        const current = faqs.find((row) => row.id === faq.id);
+        const saved = savedCommand();
         if (saved) return retryOriginal(saved);
-        if (!actorId || !current || current.version !== faq.version || current.status !== faq.status) return false;
+        if (!actorId || blocked(faq.id, mCommands.list())) return false;
         return commitM4Write(buildM4FaqCommand("delete", faq, faq, reason, actorId), `${faq.id} 已删除`);
       },
     };
-    deleteConfirmation.current = original ? null : { faq, request };
+    deleteConfirmation.current = { faq, request };
     openActionConfirm(request);
   };
   useEffect(() => {
@@ -298,15 +344,15 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       return fresh?.status === current.status ? fresh : null;
     });
     const current = deleteConfirmation.current;
-    if (!current || ctx.actionConfirm !== current.request) return;
+    if (!current || ctx.actionConfirm !== current.request || mCommands.list().some(row => row.faq?.row.id === current.faq.id)) return;
     const fresh = faqs.find(row => row.id === current.faq.id);
     if (!fresh) { deleteConfirmation.current = null; ctx.closeActionConfirm?.(); return; }
     if (fresh.version !== current.faq.version || fresh.status !== current.faq.status) requestDeleteFaq(fresh);
   }, [faqs, recovery, knowledgeAvailable]);
 
-  const openCreate = () => { setRecovery(null); createFaqTempId.current = nextFaqId(); setEditFaq(null); setShowAddFaq(true); };
-  const openEdit = (faq: SupportFaq) => { setRecovery(null); createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(faq); };
-  const openStatus = (faq: SupportFaq) => { setRecovery(null); setStatusFailure(null); setStatusTarget(faq); };
+  const openCreate = () => { setRecoveredDraft(null); setRecovery(null); createFaqTempId.current = nextFaqId(); setEditFaq(null); setShowAddFaq(true); };
+  const openEdit = (faq: SupportFaq) => { setRecoveredDraft(null); setRecovery(null); createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(faq); };
+  const openStatus = (faq: SupportFaq) => { setRecoveredDraft(null); setRecovery(null); setStatusFailure(null); setStatusTarget(faq); };
 
   const restore = (record: MCommandRecord) => {
     if (!record.faq) return;
@@ -320,38 +366,93 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       setEditFaq(record.faq.before); setShowAddFaq(record.faq.kind === "create");
     }
   };
-  const queryOriginal = async (record: MCommandRecord) => {
-    let result = null;
+  async function applyFaqConclusion(record: MCommandRecord, conclusion: "succeeded" | "not-executed" | "rejected") {
+    const command = record.faq;
+    if (!command) return;
+    const epoch = useAdminAuth.getState().authEpoch;
+    setNeedsRead(true);
+    const latest = await readCurrent();
+    if (!latest || epoch !== useAdminAuth.getState().authEpoch || !faqSession(command.actorId)) return;
+    if (conclusion === "succeeded" && !faqWriteReadBack(command, latest)) return;
+    if (!m4FaqRecovery.settleFromQuery(record, conclusion)) return;
+    syncPending();
+    const opened = recovery?.commandKey === record.commandKey;
+    const fresh = latest.find(row => row.id === command.row.id);
+    if (conclusion === "succeeded") {
+      if (opened) closeWriteDialogs();
+      if (command.kind === "delete" && deleteConfirmation.current?.faq.id === command.row.id) ctx.closeActionConfirm?.();
+      return;
+    }
+    // Restore proposed business fields with the fresh base version, never the old reason.
+    closeWriteDialogs();
+    if (command.kind === "create" || command.kind === "edit") {
+      setRecoveredDraft(command.row);
+      createFaqTempId.current = command.kind === "create" ? nextFaqId() : null;
+      setEditFaq(command.kind === "edit" ? fresh ?? command.before : null);
+      setShowAddFaq(command.kind === "create");
+    } else if (command.kind === "delete") {
+      if (fresh) requestDeleteFaq(fresh);
+      else if (opened) ctx.closeActionConfirm?.();
+    } else {
+      setStatusFailure(null);
+      if (fresh && fresh.status === command.before?.status) setStatusTarget(fresh);
+    }
+  }
+
+  async function queryOriginal(record: MCommandRecord, evidence?: Parameters<typeof queryM4FaqCommand>[1]) {
+    const command = record.faq;
+    if (!command || !faqSession(command.actorId)?.authorities.includes("service_m4_read") || m4FaqRecovery.state(record).busy) return;
+    const epoch = useAdminAuth.getState().authEpoch;
+    const current = () => epoch === useAdminAuth.getState().authEpoch && Boolean(faqSession(command.actorId));
     try {
-      const next = await queryM4FaqCommand(record);
-      result = next;
-      if (actorId !== useAdminAuth.getState().session?.adminId) return;
+      setOutcomes(all => ({ ...all, [record.commandKey]: { receipt: null } }));
+      const next = await m4FaqRecovery.query(record, saved => readM4FaqRecovery(saved, evidence));
+      if (!next || !current()) return;
       setOutcomes(all => ({ ...all, [record.commandKey]: { receipt: next.receipt } }));
+      if (next.conclusion === "succeeded" || next.conclusion === "not-executed" || next.conclusion === "rejected") {
+        await applyFaqConclusion(record, next.conclusion);
+        if (current() && next.receipt && !mCommands.list().some(row => row.commandKey === record.commandKey)) {
+          ctx.toast(settledText({ status: next.receipt.originalStatus }), "success");
+        }
+      } else if (evidence) ctx.toast(CLOSURE_KEPT_TEXT, "warn");
     } catch (error) {
-      if (actorId !== useAdminAuth.getState().session?.adminId) return;
-      setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(error) } }));
+      if (current()) setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(error) } }));
+      if (evidence) throw error;
     }
-    if (actorId !== useAdminAuth.getState().session?.adminId) return;
-    if (result?.settled) {
-      ctx.toast(settledText({ status: result.receipt!.originalStatus }), "success");
-      mCommands.forget(record.fingerprint, record.commandKey); syncPending();
-      closeWriteDialogs(); ctx.closeActionConfirm?.(); setNeedsRead(true);
-    }
-    await readCurrent();
-  };
+  }
+
+  function faqRecoveryBindings(record: MCommandRecord): FaqRecoveryBindings {
+    const state = m4FaqRecovery.state(record);
+    return {
+      state, expiresAt: state.expiresAt, blockedReason: state.expired ? RETRY_EXPIRED_TEXT : undefined,
+      subscribe: m4FaqRecovery.subscribe, getRevision: m4FaqRecovery.getRevision,
+      query: canQueryM4 ? () => queryOriginal(record) : undefined,
+      releaseRejectedReplay: () => {
+        const session = faqSession(record.faq?.actorId);
+        if (!session?.authorities.includes("service_m4_read") || !m4FaqRecovery.releaseRejectedReplay(record)) return false;
+        if (recovery?.commandKey === record.commandKey) closeWriteDialogs();
+        if (record.faq?.kind === "delete" && deleteConfirmation.current?.faq.id === record.faq.row.id) ctx.closeActionConfirm?.();
+        syncPending();
+        return true;
+      },
+    };
+  }
+
+  const activeRecovery = recovery ? faqRecoveryBindings(recovery) : undefined;
   const pendingRows = pendingCommands.map((record) => {
+    const state = m4FaqRecovery.state(record);
     const outcome = outcomes[record.commandKey];
-    const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canClose: canInvestigateECommand("service_m4_read"),
-      canRetry: !!record.faq && canWriteM4 && !isRetryExpired(record) });
+    const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: canQueryM4, canClose: canInvestigateECommand("service_m4_read"),
+      canRetry: !state.replayBlock });
     return { key: record.commandKey,
     question: record.faq?.row.question ?? "常见问答", change: record.faq ? ({ create: "新建", edit: "编辑", publish: "发布", unpublish: "下架", delete: "删除" }[record.faq.kind]) : "结果未知",
     submittedAt: record.createdAt, expired: isRetryExpired(record),
     status: { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) },
-    note: <>{shown.line} <TechInfo commandKey={record.commandKey} receipt={receiptOf(outcome)} /></>,
+    note: <>{state.expired ? RETRY_EXPIRED_TEXT : shown.line} <TechInfo commandKey={record.commandKey} receipt={receiptOf(outcome)} /></>,
     actions: <>
-      <Button size="sm" disabled={writePending} onClick={() => void queryOriginal(record)}>查询原结果</Button>
-      {canInvestigateECommand("service_m4_read") && eCommandClosureOffer(outcomes[record.commandKey], isRetryExpired(record)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={writePending} onClick={() => setClosing(record)}>核查结案</Button>}
-      {record.faq && canWriteM4 && !isRetryExpired(record) && <Button size="sm" disabled={writePending} onClick={() => restore(record)}>按原请求重试</Button>}
+      <Button size="sm" disabled={writePending || !canQueryM4 || Boolean(state.busy)} onClick={() => void queryOriginal(record)}>查询原结果</Button>
+      {canInvestigateECommand("service_m4_read") && eCommandClosureOffer(outcomes[record.commandKey], isRetryExpired(record)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={writePending || Boolean(state.busy)} onClick={() => setClosing(record)}>核查结案</Button>}
+      {record.faq && canWriteM4 && !isRetryExpired(record) && <Button size="sm" disabled={writePending || Boolean(state.replayBlock)} onClick={() => restore(record)}>按原请求重试</Button>}
     </> };
   });
 
@@ -395,17 +496,8 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
         facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(outcomes[closing.commandKey]), "记录保留")}</Fact>}
         onClose={() => setClosing(null)} onSubmit={async evidence => {
-          const record = closing;
-          const result = await queryM4FaqCommand(record, evidence);
-          if (actorId !== useAdminAuth.getState().session?.adminId) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
-          setOutcomes(all => ({ ...all, [record.commandKey]: { receipt: result.receipt } }));
+          await queryOriginal(closing, evidence);
           setClosing(null);
-          if (result.settled) {
-            ctx.toast(settledText({ status: result.receipt!.originalStatus }), "success");
-            mCommands.forget(record.fingerprint, record.commandKey); syncPending();
-            closeWriteDialogs(); ctx.closeActionConfirm?.(); setNeedsRead(true);
-            await readCurrent();
-          } else ctx.toast(CLOSURE_KEPT_TEXT, "warn");
         }} />}
 
 
@@ -508,36 +600,40 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       <M4FaqDrawer faq={current} author={current ? authorOf(current.id) : undefined} nav={drawerNav} busy={writePending} canWrite={canEdit && !blocked(current?.id)}
         onClose={() => setOpenId(null)} onEdit={() => current && openEdit(current)} onStatus={() => current && openStatus(current)} onDelete={() => current && requestDeleteFaq(current)} />
 
-      {statusTarget && <M4StatusConfirm faq={statusTarget} busy={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} failure={statusFailure} retry={recovery ? { expired: isRetryExpired(recovery) } : undefined}
+      {statusTarget && <M4StatusConfirm faq={statusTarget} busy={writePending || Boolean(activeRecovery?.state?.busy)} disabled={activeRecovery ? Boolean(activeRecovery.state?.replayBlock) : !canEdit} failure={statusFailure} retry={activeRecovery}
         onCancel={() => { setRecovery(null); setStatusTarget(null); }}
         onConfirm={async () => {
           setStatusFailure(null);
           if (await changeFaqStatus(statusTarget.id, statusTarget.status === "draft" ? "published" : "draft", setStatusFailure)) setStatusTarget(null);
         }} />}
 
-      {(showAddFaq || editFaq) && <FaqModal key={recovery?.commandKey ?? editFaq?.id ?? "new"} row={editFaq} authorOf={authorOf} recovery={recovery} pending={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} onClose={() => { createFaqTempId.current = null; setRecovery(null); setShowAddFaq(false); setEditFaq(null); }} onSave={saveFaq} />}
+      {(showAddFaq || editFaq) && <FaqModal key={recovery?.commandKey ?? editFaq?.id ?? "new"} row={editFaq} draft={recoveredDraft} authorOf={authorOf} recovery={recovery} recoveryBindings={activeRecovery} pending={writePending || Boolean(activeRecovery?.state?.busy)} disabled={activeRecovery ? Boolean(activeRecovery.state?.replayBlock) : !canEdit} onClose={() => { createFaqTempId.current = null; setRecoveredDraft(null); setRecovery(null); setShowAddFaq(false); setEditFaq(null); }} onSave={saveFaq} />}
     </>
   );
 }
 
 function FaqModal({
   row,
+  draft,
   authorOf,
   pending,
   recovery,
+  recoveryBindings,
   disabled,
   onClose,
   onSave,
 }: {
   row: SupportFaq | null;
+  draft: SupportFaq | null;
   authorOf: (id: string) => string | null | undefined;
   pending: boolean;
   recovery: MCommandRecord | null;
+  recoveryBindings?: FaqRecoveryBindings;
   disabled: boolean;
   onClose: () => void;
   onSave: (form: FaqForm, onFailure: (error: Error) => void) => Promise<boolean>;
 }) {
-  const initial = recovery?.faq?.row ?? row;
+  const initial = recovery?.faq?.row ?? draft ?? row;
   const [category, setCategory] = useState<SupportFaq["category"]>(initial?.category ?? "general");
   const [surface, setSurface] = useState<SupportFaq["surface"]>(initial?.surface ?? "Help Center");
   const [language, setLanguage] = useState<string>(initial?.language ?? DEFAULT_FAQ_LANGUAGE);
@@ -579,7 +675,7 @@ function FaqModal({
   const save = () => {
     setTried(true);
     setFailure(null);
-    if (blocking) return;
+    if (!recovery && blocking) return;
     void onSave({ category, surface, language, sortOrder, question, answer, status, reason }, setFailure);
   };
   return (
@@ -609,7 +705,7 @@ function FaqModal({
         {latestChanges.length > 0 && <ul className="m5-plain-list">{latestChanges.map((line) => <li key={line}>{line}</li>)}</ul>}
       </Notice>}
       {(unknown || recovery) && <Notice tone="warn" title="结果未知">
-        <p>{recovery && isRetryExpired(recovery) ? "原请求超过 24 小时，不能再重试，只能查询原结果。" : "可能已经保存。内容已锁定为原请求，按原请求重试不会重复执行。"}</p>
+        <p>{recoveryBindings?.state?.expired ? RETRY_EXPIRED_TEXT : "可能已经保存。内容已锁定为原请求，按原请求重试不会重复执行。"}</p>
       </Notice>}
       <div className="m4-form">
         <div className="m4-form-fields">

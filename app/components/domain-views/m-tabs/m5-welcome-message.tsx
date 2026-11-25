@@ -8,21 +8,21 @@ import { businessStamp, businessZone, formatBusinessTime } from "../../../../lib
 import { MessageCircleHeart, Save } from "lucide-react";
 import { BlockState, Button, Explain, Fact, Facts, Field, LocaleTabs, Modal, Notice, Panel, StatusTag, Textarea } from "@/app/components/rd";
 import { M5PendingWrites, type M5WelcomeSummary } from "./m5-views";
-import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../../../../lib/admin/pending-mutation-store";
+import { createPendingMutationStore, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { isM5ManagementPayload } from "@/lib/admin/m5-management-record";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use-m5-management-command";
+import { createM5ManagementRecovery, useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use-m5-management-command";
 import type { MSupportPermission } from "./m5-service-rules";
 
 type WelcomePayload = Parameters<typeof supportWelcomeMessageClient.update>[0];
 type WelcomeBefore = SupportWelcomeMessage & { editedTexts?: Partial<SupportWelcomeTexts> };
 type WelcomePendingRecord = M5ManagementRecord<WelcomePayload, WelcomeBefore>;
 const welcomeCommands = createPendingMutationStore<WelcomePendingRecord>({ storageKey: "nexion-admin-m-support-welcome-v1", retainExpiredRecords: true, isValidRecord: (row) => Number.isSafeInteger(row.actorId) && isM5ManagementPayload("welcome", row.payload) && (row.before === undefined || isM5ManagementPayload("welcome", row.before, true)) });
+const welcomeRecovery = createM5ManagementRecovery(welcomeCommands);
 const LANGUAGES: Array<{ key: SupportWelcomeLanguage; label: string }> = [{ key: "zh", label: "中文" }, { key: "en", label: "英语" }, { key: "vi", label: "越南语" }];
 const MAX = 500;
-const EXPIRED = "原请求已超过 24 小时，不能再重试，只能查询原结果；原记录保留。";
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 const fingerprintOf = (payload: WelcomePayload) => `support-welcome:${payload.expectedVersion}`;
 // Same count as the backend: Unicode code points after trim. UTF-16 length counts 𠮷 twice.
@@ -65,6 +65,21 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const command = useM5ManagementCommand({
     store: welcomeCommands, canQuery: Boolean(authorities?.includes("service_m1_read")), canWrite,
     fingerprint: fingerprintOf, write: m5ManagementClient.welcome, query: m5ManagementClient.welcomeCommand,
+    receiptRecovery: {
+      controller: welcomeRecovery,
+      expiry: "load-latest",
+      onLocalRelease: () => { setReason(""); setConfirm(false); setError(""); },
+      readAfterExpiry: async record => {
+        const value = await supportWelcomeMessageClient.read();
+        return () => {
+          refused.current = undefined;
+          setCurrent(value);
+          setDraft({ ...record.payload.texts, ...record.before?.editedTexts });
+          setReason(""); setLatest(null); setSaved(false); setConflict(false);
+          setReadUnavailable(false); setConfirm(false); setError("");
+        };
+      },
+    },
     onSuccess: () => { refused.current = undefined; setConfirm(false); setLoading(true); setReadUnavailable(true); setSaved(true); setReason(""); setReload(n => n + 1); },
     onRefusal: (cause, recovered, payload, before) => {
       setError(errorText(cause));
@@ -148,19 +163,14 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   }
 
   const checkPending = () => command.run("query");
-  // Loading current content is a read-only comparison; it cannot settle an expired direct write.
-  async function reloadAfterExpiry() {
-    const actor = actorStamp();
-    try { const value = await supportWelcomeMessageClient.read(); if (actor === actorStamp()) { setCurrent(value); setReadUnavailable(false); } }
-    catch (cause) { if (actor === actorStamp()) setError(errorText(cause)); }
-  }
+  const reloadAfterExpiry = () => command.run("load-latest");
   const restore = () => {
     if (!retry) return;
     setDraft(retry.payload.texts); setReason(retry.payload.reason); setError(""); setConfirm(true);
   };
   const original = retry?.before ?? (retry ? { version: retry.payload.expectedVersion, texts: retry.payload.texts, updatedAt: null, updatedBy: null, reason: null } : current);
 
-  const retryExpired = retry !== null && Date.now() >= retry.expiresAt;
+  const retryExpired = Boolean(command.recoveryState?.expired);
   useEffect(() => {
     onSummary?.({ state: loading ? "loading" : readUnavailable ? "failed" : current ? "ready" : "failed", updatedAt: current?.updatedAt ?? null, pending: Boolean(retry) });
   }, [onSummary, current, loading, command.pending, readUnavailable]);
@@ -177,7 +187,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         change: `改了${(retry.before ? changedLanguages(retry.before.texts, retry.payload.texts) : LANGUAGES.map(item => item.key)).map((key) => LANGUAGES.find((item) => item.key === key)?.label).join("、") || "内容"}`,
         actions: <>
           <Button size="sm" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void checkPending()}>查询原结果</Button>
-          {!retryExpired && <Button size="sm" variant="primary" disabled={saving || !canWrite} onClick={restore}>按原请求重试</Button>}
+          {!retryExpired && <Button size="sm" variant="primary" disabled={saving || !command.canReplay} onClick={restore}>按原请求重试</Button>}
         </>,
       }]} />}
       <Panel icon={MessageCircleHeart} tone="role-3" title="新用户欢迎语" sub={current && !readUnavailable ? `第 ${current.version} 版` : undefined}
@@ -237,8 +247,8 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
         footer={<>
           <Button disabled={saving} onClick={() => setConfirm(false)}>返回</Button>
-          {retry && retryExpired && <Button disabled={saving} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>}
-          <Button variant="primary" loading={saving} disabled={!canWrite || (!canConfirm && !retry) || retryExpired || saving} disabledReason={saving ? undefined : retryExpired ? "原请求超过 24 小时，只能查询原结果" : !retry && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>
+          {retry && retryExpired && <Button disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>}
+          <Button variant="primary" loading={saving} disabled={!canWrite || (retry ? !command.canReplay : !canConfirm) || saving} disabledReason={saving ? undefined : retryExpired ? RETRY_EXPIRED_TEXT : !retry && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>
         </>}>
         <div className="m5-wdiff">
           {(retry ? retry.before ? changedLanguages(retry.before.texts, retry.payload.texts) : LANGUAGES.map(item => item.key) : changed).map((key) => <div key={key} className="m5-wdiff-row">
@@ -252,7 +262,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           <Fact k="不变的">已经注册的用户不会再收到；已发出的欢迎语不改</Fact>
         </Facts>
         {retry && <Notice tone="warn" title="结果未知" action={<Button size="sm" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void checkPending()}>查询原结果</Button>}>
-          {retryExpired ? EXPIRED : `上次保存在 ${businessStamp(submittedAt)}（${businessZone().label}）提交，可能已经生效。先查询原结果，或按原请求重试，不会重复执行。`}
+          {retryExpired ? RETRY_EXPIRED_TEXT : `上次保存在 ${businessStamp(submittedAt)}（${businessZone().label}）提交，可能已经生效。先查询原结果，或按原请求重试，不会重复执行。`}
         </Notice>}
         <Field label="操作理由" required hint="8–200 字">
           {(control) => <Textarea {...control} rows={3} value={reason} maxLength={200} disabled={saving || Boolean(retry)} count={`${reason.trim().length}/200`} placeholder="例如：活动期间欢迎语加上新手指引" onChange={(event) => setReason(event.target.value)} />}

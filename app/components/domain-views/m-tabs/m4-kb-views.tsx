@@ -9,6 +9,7 @@ import { Bot, BookOpenText, CheckCircle2, CircleHelp, EyeOff, FilePen, Headset, 
 import { Button, Change, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Modal, Notice, StatusTag, type DrawerNav, type StateTone } from "@/app/components/rd";
 import { OPEN_RESULT_LABELS } from "../recovery-panel";
 import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { SupportFaq } from "./data";
@@ -164,7 +165,7 @@ export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel,
   failure: Error | null;
   disabled?: boolean;
   /** 从结果未知恢复：确认就是按原请求重试。expired 时只能读回核对。 */
-  retry?: { expired: boolean };
+  retry?: import("../design-kit").PendingConfirmRecovery;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -192,7 +193,7 @@ export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel,
       <p className="m4-confirm-note">操作记录会记下这次{publish ? "发布" : "下架"}，理由固定写「{publish ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档"}」。</p>
       {failure && !unknown && <Notice tone="danger" title="没有成功"><p>{failure?.message}</p></Notice>}
       {(unknown || retry) && <Notice tone="warn" title="结果未知">
-        <p>{retry?.expired ? `原请求超过 24 小时，不能再重试，只能查询原结果。` : `可能已经${action}。按原请求重试不会重复执行。`}</p>
+        <p>{retry?.state?.expired ? RETRY_EXPIRED_TEXT : `可能已经${action}。按原请求重试不会重复执行。`}</p>
       </Notice>}
     </Modal>
   );

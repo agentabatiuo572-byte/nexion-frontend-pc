@@ -204,6 +204,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const refreshKnowledge = useCallback(async () => {
     const next = await readSupportKnowledge();
     if (currentAuthEpoch.current === authEpoch) setMData((previous) => previous && { ...previous, ...next });
+    return next.faqs;
   }, [authEpoch]);
 
   const refreshTemplates = useCallback(async () => {
@@ -733,8 +734,10 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {mc && (
         <OperationConfirmModal
+          key={tab === "M4" ? mc.formKey : undefined}
           action={mc.action}
           getPendingReason={tab === "M4" || tab === "M5" ? mc.getPendingReason : undefined}
+          getPendingRecovery={tab === "M4" ? mc.getPendingRecovery : undefined}
           initialReason={tab === "M4" || tab === "M5" ? mc.initialReason : undefined}
           title={mc.title}
           detail={mc.detail}

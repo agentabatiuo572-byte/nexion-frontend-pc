@@ -6,13 +6,13 @@ import { Route, Save, Tags } from "lucide-react";
 import { BlockState, Button, DiffList, Fact, Facts, Field, Modal, Notice, NumberInput, Panel, Segments, StatusTag, Textarea } from "@/app/components/rd";
 import { supportClient, m5ManagementClient, SupportClientError, type SupportRules } from "../../../../lib/admin/m-support-client";
 import { businessStamp, businessZone } from "../../../../lib/admin/business-time";
-import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../../../../lib/admin/pending-mutation-store";
+import { createPendingMutationStore, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { isM5ManagementPayload } from "@/lib/admin/m5-management-record";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
 import "./m-support-admin.css";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use-m5-management-command";
+import { createM5ManagementRecovery, useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use-m5-management-command";
 import { M5PendingWrites, type M5RulesSummary } from "./m5-views";
 
 export type MSupportPermission = "superadmin" | "supervisor" | "agent";
@@ -21,12 +21,12 @@ type Field = keyof RuleDraft;
 type RulePayload = Parameters<typeof supportClient.updateRules>[0];
 type RulePendingRecord = M5ManagementRecord<RulePayload, SupportRules>;
 const ruleCommands = createPendingMutationStore<RulePendingRecord>({ storageKey: "nexion-admin-m-support-rules-v1", retainExpiredRecords: true, isValidRecord: (row) => Number.isSafeInteger(row.actorId) && isM5ManagementPayload("rules", row.payload) && (row.before === undefined || isM5ManagementPayload("rules", row.before, true)) });
+const ruleRecovery = createM5ManagementRecovery(ruleCommands);
 const LABELS: Record<Field, string> = {
   unboundAssignmentMode: "无专属客服客户分配方式",
   dormantDays: "沉睡判定天数", maintenanceDays: "主动维护间隔天数", activityWindowDays: "活跃统计窗口天数", inheritanceMode: "自动继承方式", maxInheritanceDepth: "自动继承的邀请次数上限",
 };
 const dayFields = ["dormantDays", "maintenanceDays", "activityWindowDays"] as const;
-const RETRY_EXPIRED = "原请求已超过 24 小时，不能再重试，只能查询原结果；请核对最新规则。";
 const isIndeterminateText = (text: string) => /结果未知|还在处理|查不到|读不到最新|24 小时/.test(text);
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 
@@ -91,6 +91,19 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     store: ruleCommands, canQuery: Boolean(authorities?.includes("service_m1_read")), canWrite,
     fingerprint: (payload: RulePayload) => `support-rules:${payload.expectedVersion}`,
     write: m5ManagementClient.rules, query: m5ManagementClient.rulesCommand,
+    receiptRecovery: {
+      controller: ruleRecovery,
+      expiry: "after-missing",
+      onLocalRelease: () => { setReason(""); setConfirm(false); setError(""); },
+      readAfterExpiry: async () => {
+        const value = await supportClient.rules();
+        return () => {
+          preserveDraft.current = false;
+          setCurrent(value); setDraft(toDraft(value)); setReason(""); setLatest(null);
+          setSaved(false); setConflict(false); setReadUnavailable(false); setConfirm(false); setError("");
+        };
+      },
+    },
     onSuccess: () => { preserveDraft.current = false; setConfirm(false); setSaved(true); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); setReason(""); },
     onRefusal: (cause, recovered, payload) => {
       setError(errorText(cause));
@@ -123,7 +136,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const editable = canWrite && Boolean(current) && !loading && !readUnavailable && !saving && !conflict && !retry;
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
   const canConfirm = editable && parsed && changed.length > 0 && reasonOk;
-  const retryExpired = Boolean(retry && Date.now() >= retry.expiresAt);
+  const retryExpired = Boolean(command.recoveryState?.expired);
   const setField = (field: Field, value: string) => setDraft((old) => old ? { ...old, [field]: value } : old);
 
   async function save() {
@@ -197,7 +210,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         key: retry.key, name: "服务规则", change: changeText || "规则保存", submittedAt, expired: retryExpired,
         actions: <>
           <Button size="sm" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void checkPending()}>查询原结果</Button>
-          {!retryExpired && <Button size="sm" variant="primary" disabled={saving || !canWrite} onClick={restore}>按原请求重试</Button>}
+          {!retryExpired && <Button size="sm" variant="primary" disabled={saving || !command.canReplay} onClick={restore}>按原请求重试</Button>}
         </>,
       }]} />}
       <Panel icon={Route} tone="role-3" title="分配与继承规则" sub={current && !readUnavailable ? `第 ${current.version} 版` : undefined}
@@ -251,8 +264,8 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
         footer={<>
           <Button disabled={saving} onClick={() => setConfirm(false)}>返回</Button>
-          <Button variant="primary" loading={saving} disabled={!canWrite || (!canConfirm && !retry) || saving || (!retry && Boolean(latest)) || retryExpired}
-            disabledReason={saving ? undefined : retryExpired ? "原请求超过 24 小时，只能查询原结果" : !retry && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>
+          <Button variant="primary" loading={saving} disabled={!canWrite || (retry ? !command.canReplay : !canConfirm || Boolean(latest)) || saving}
+            disabledReason={saving ? undefined : retryExpired ? RETRY_EXPIRED_TEXT : !retry && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>
         </>}>
         <DiffList rows={confirmedChanges.map((field) => ({ key: field, label: LABELS[field], before: beforeLabel(field), after: labelValue(field, confirmed[field]) }))} />
         <Facts>
@@ -260,7 +273,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
           <Fact k="不变的">已有的绑定；改天数不补记维护</Fact>
         </Facts>
         {retry && <Notice tone="warn" title="结果未知" action={<Button size="sm" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void checkPending()}>查询原结果</Button>}>
-          {retryExpired ? RETRY_EXPIRED : `上次保存在 ${businessStamp(submittedAt)}（${businessZone().label}）提交，可能已经生效。先查询原结果，或按原请求重试，不会重复执行。`}
+          {retryExpired ? RETRY_EXPIRED_TEXT : `上次保存在 ${businessStamp(submittedAt)}（${businessZone().label}）提交，可能已经生效。先查询原结果，或按原请求重试，不会重复执行。`}
         </Notice>}
         <Field label="操作理由" required hint="8–200 字">
           {(control) => <Textarea {...control} rows={3} value={reason} maxLength={200} disabled={saving || Boolean(retry)} count={`${reason.trim().length}/200`} placeholder="例如：客服人手调整，新客户改为主管分配" onChange={(event) => setReason(event.target.value)} />}
