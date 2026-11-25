@@ -119,7 +119,7 @@ export default function H4Promotions({ ctx, legacy }: {
     const acknowledgeUpload = (record: H4Command) => { void acknowledgeH4Upload(record).catch(cause => setNotice(displayAdminError(cause))); };
     const heading = screen === 'list' ? ['活动中心', '管理促销与邀请推广活动，跟进配置、投放及未完成奖励。'] : screen === 'edit' ? [`配置活动 · ${['基本信息', '参与资格', '购机赠奖', '预算与叠加'][editStep]}`, '设置参与条件、逐设备奖励与预算政策。'] : screen === 'review' ? ['试算、审核与发布', '先试算确认没有问题，再分别审核和发布。'] : screen === 'detail' ? [activity?.name || '活动详情', '已发布规则与改版草稿分开呈现，旧订单继续按原版本履行。'] : screen === 'rewards' ? ['奖励台账', '逐项核对奖励承诺与发放凭证；结果未知时先核账。'] : ['活动效果', '查看同一次统计的成交、退款与奖励成本。'];
     const listTab: ListTab = old ? `legacy-${legacySection}` : tab;
-    const chooseTab = (next: ListTab) => edit.attempt(() => { if (next.startsWith('legacy-')) { setLegacySection(next.slice(7) as LegacySection); setOld(true); return; } setTab(next as typeof tab); setOld(false); });
+    const chooseTab = (next: ListTab) => next !== listTab && edit.attempt(() => { if (next.startsWith('legacy-')) { setLegacySection(next.slice(7) as LegacySection); setOld(true); return; } setTab(next as typeof tab); setOld(false); });
     const tabItems: PageTabItem<ListTab>[] = [
         { value: 'promotions', label: '促销活动', count: list.data ? list.data.total : undefined },
         { value: 'rewards', label: '奖励台账', count: list.data ? list.data.summary.unresolved : undefined },

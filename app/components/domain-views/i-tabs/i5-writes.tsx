@@ -228,6 +228,8 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
         afterRelease?.();
       } else if (phase === "restoring") {
         phase = "armed";
+        // 上面还开着确认框（填理由、提交中）或离开框：后退先留在这里，由那个框处理完再走。
+        if (document.querySelector('.rd-modal[data-state="open"]')) return;
         nextAction.current = () => window.history.back();
         setAsking(true);
       } else {

@@ -3,7 +3,8 @@
 /**
  * H4 页面一级的离开守卫（OP-29）：切页签、切旧版子页签、打开另一个抽屉、站内链接、后退、刷新，都先处理正在改的抽屉；
  * 同一时间只有一个抽屉在改，只有一个离开框。
- * 抽屉用 useH4Editor 登记自己；要换去别处的入口用 attempt 包一层，关抽屉用 askClose。
+ * 抽屉用 useH4Editor 登记自己；要换去别处的入口用 attempt 包一层，关抽屉用 askClose。有改动时抽屉传 keepOnControls，
+ * 点外面的控件由控件自己的 attempt 先问，不另当作关抽屉。
  */
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
@@ -60,17 +61,6 @@ export function useH4EditHost(confirmOpen: boolean): H4EditGuard & { provide: (c
     }, 350);
     return () => window.clearTimeout(timer);
   }, [confirmOpen]);
-  // 点到外面的控件时，这一下的动作由控件自己处理（页签、链接先问再去）；点空白处才当作关抽屉。
-  const onControl = useRef(false);
-  useEffect(() => {
-    const mark = (event: PointerEvent) => {
-      onControl.current = event.target instanceof Element && event.target.closest(".rd-drawer, .rd-modal") === null
-        && event.target.closest('button, a[href], [role="tab"], input, select, textarea, label, summary') !== null;
-      window.setTimeout(() => { onControl.current = false; }, 0);
-    };
-    document.addEventListener("pointerdown", mark, true);
-    return () => document.removeEventListener("pointerdown", mark, true);
-  }, []);
   const report = useCallback((id: string, editor: H4Editor | null) => {
     const before = editors.current.get(id);
     if (editor) editors.current.set(id, editor); else editors.current.delete(id);
@@ -78,10 +68,7 @@ export function useH4EditHost(confirmOpen: boolean): H4EditGuard & { provide: (c
   }, []);
   const value = useMemo<H4EditGuard>(() => ({
     report,
-    askClose: () => {
-      if (onControl.current && [...editors.current.values()].some((editor) => editor.dirty)) return;
-      latest.current.askClose();
-    },
+    askClose: () => latest.current.askClose(),
     attempt: (next) => { if (switcher.current) switcher.current.attempt(next); else next(); },
     otherDirty: (scope) => [...editors.current.values()].some((editor) => editor.dirty && editor.scope !== scope),
   }), [report]);

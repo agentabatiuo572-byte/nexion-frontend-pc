@@ -955,7 +955,7 @@ export function D3Treasury() {
       {closing && <FundClosureModal label={closing.label} createdAt={closing.investigationRecord.createdAt} offer={eCommandClosureOffer(investigationResults[closing.commandKey], isRetryExpired(closing.investigationRecord))} facts={closing.rows.filter(row => row.key !== "reason").map(row => <Fact key={row.key} k={row.label}>{row.value}{row.unit ? ` ${row.unit}` : ""}</Fact>)}
         onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
 
-      <LeaveDialog guard={leave} saveLabel="保存预测设置" saveBlocked={loading ? "正在刷新，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined} onSave={(saved) => void saveConfig(saved)} />
+      <LeaveDialog guard={leave} saveLabel="保存预测设置" saveBlocked={loading ? "正在刷新，稍等" : previewLoading ? "正在核对影响，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined} onSave={(saved) => void saveConfig(saved)} />
 
       {refreshAsk && (
         <Modal
