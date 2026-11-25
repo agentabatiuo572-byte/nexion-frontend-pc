@@ -213,7 +213,9 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     : notReady ? notReady.check.state === "checking" ? "正在检查…" : notReady.check.state === "failed" ? `${EXPORT_LABEL[notReady.type]}没加载出来，先重试或取消这一项` : `${EXPORT_LABEL[notReady.type]}这次不能导出，先取消这一项`
     : (!chosen.length || chosen.length !== selected.length) ? "还没勾选导出内容" : chosen.some(item => item.check.state === "ok" && item.check.rows === null) ? "行数暂时无法确认" : undefined;
   // 没有能提交的项时不要求填理由，也不显示理由框（5f、5g）。
-  const requireReason = unknown || !data || (!data.blocked && (selectable.length > 0 || notReady?.check.state === "failed" || notReady?.check.state === "checking"));
+  /** 原操作的范围现在看不到了：原来的月份、范围、内容和理由都收起，只留「查询原操作」。 */
+  const originalHidden = unknown && !!data?.originalHidden;
+  const requireReason = !originalHidden && (unknown || !data || (!data.blocked && (selectable.length > 0 || notReady?.check.state === "failed" || notReady?.check.state === "checking")));
   const scopeLabel = data?.scopes.find(row => row.value === scope)?.label ?? "—";
 
   const recovery = unknown && <div className="m1-export-recover"><Button size="sm" loading={querying} loadingText="正在查询…" onClick={() => {
@@ -246,7 +248,9 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           setLookupText(original?.acceptedRequestId ? "这次查询没连上，暂时无法核对当前可见结果。" : "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
         }).finally(() => setQuerying(false));
       }}>查询原操作</Button>{lookupText && lookupText !== RETRY_EXPIRED_TEXT && <span role="status">{lookupText}</span>}{expired && <span role="status">{RETRY_EXPIRED_TEXT} <ExportAuditLink /></span>}</div>;
-  const content = !data && unknown ? recovery : loadError
+  const content = !data && unknown ? recovery
+    : originalHidden ? <><Notice tone="neutral">原来那次导出的范围你现在看不到，月份、范围和理由不再显示。可以查询原操作的结果。</Notice>{recovery}</>
+    : loadError
     ? <Notice tone="danger" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。{loadError}</Notice>
     // 没有已发布的一版：不是失败，写原因，给「刷新」重新读目录。
     : !unknown && data?.catalogState === "no-months"
@@ -307,7 +311,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     </div>;
 
   const effect = hasSummary || hasDetail ? <>{hasSummary && <StatusTag tone="progress" filled>汇总立即生成</StatusTag>}{hasDetail && <StatusTag tone="progress" filled>明细批准后生成</StatusTag>}</> : undefined;
-  return <OperationConfirmModal key={confirmationRevision} briefKind="export" title="导出业绩" action="导出客服业绩" detail={`${month} · ${scopeLabel}`}
+  return <OperationConfirmModal key={confirmationRevision} briefKind="export" title="导出业绩" action="导出客服业绩" detail={originalHidden ? "原操作" : `${month} · ${scopeLabel}`}
     effect={effect} content={content} initialReason={originalReason} reasonReadOnly={unknown} reasonMin={data?.minReasonChars} reasonMax={data?.maxReasonChars} confirmLabel={confirmLabel} blockedReason={blockedReason} requireReason={requireReason}
     // 共用框没有「只灰按钮、不出提示条」的属性：借多字段表单的跨字段校验，field 指向页面自己画的「导出内容」，
     // 共用框不在别处再写这句，只把它放进确认按钮的灰色原因。表单本身没有字段，页面样式里收起（m1-export.css）。

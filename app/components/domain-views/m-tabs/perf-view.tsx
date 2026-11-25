@@ -130,6 +130,8 @@ export type ExportDialogData = {
   selected: ExportType[];
   /** 整框暂时不能申请的原因（页面那一版刷新没成功、数据升级中）。 */
   blocked?: string;
+  /** 结果未知的原操作用的范围现在不在可选范围里：月份、范围、内容和理由都不回显，只留查询（OP-132）。 */
+  originalHidden?: boolean;
   catalogState: "ready" | "no-months";
   restoration?: { kind: "conditions-changed"; differences: ExportConditionDifference[] };
   minReasonChars: number; maxReasonChars: number;

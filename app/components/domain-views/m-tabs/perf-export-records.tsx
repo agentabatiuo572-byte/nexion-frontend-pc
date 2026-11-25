@@ -134,6 +134,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
     return () => { controller.abort(); onRefreshingChange?.(false); };
   }, [canReadList, listQuery, refresh, refreshKey, onRefreshingChange]);
 
+  // 页头「刷新」（refreshKey）也重读打开着的这条：列表换成新的，抽屉不留旧内容（ST-36）。
   useEffect(() => {
     setDetail(null); setDetailStatus(null);
     if (!openId || recoveryOnly) return;
@@ -148,7 +149,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
       setDetailStatus("error");
     });
     return () => { active = false; };
-  }, [openId, ports.task, taskRefresh, recoveryOnly]);
+  }, [openId, ports.task, taskRefresh, refreshKey, recoveryOnly]);
 
   const put = (task: ExportTask) => {
     if (task.taskId === openId) setDetail(task);
@@ -219,9 +220,12 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
       if (found.kind === "matched") {
         setSettled(list => [{ key, label: "提交导出", text: exportReceiptSummary(found.rows), mine: true }, ...list]);
         setRefresh(value => value + 1);
+        // 只有待确认区的页面（没有负责组）：查到申请后重读一次能看什么，页面换成「我的申请」。
+        if (recoveryOnly) ports.invalidateAccess();
       } else if (found.kind === "partial") {
         setAnswers(map => ({ ...map, [key]: { tag: acceptedTag, line: EXPORT_PARTIAL_RECEIPT + exportVisibleReceiptSummary(found.rows) } }));
         setRefresh(value => value + 1);
+        if (recoveryOnly && found.rows.length) ports.invalidateAccess();
       } else if (found.kind === "check-failed" || found.kind === "pending" && original.acceptedRequestId) {
         const line = (found.kind === "check-failed" ? "这次查询失败。" : "这次没查到看得到的结果。") + exportPreviousReceipt(found.previous);
         if (original.acceptedRequestId) setAnswers(map => ({ ...map, [key]: { tag: acceptedTag, line: EXPORT_PARTIAL_RECEIPT + line } }));

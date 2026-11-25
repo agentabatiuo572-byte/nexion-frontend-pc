@@ -72,21 +72,30 @@ type ApprovalScope = { objectId: string; field: string };
 export type H8ConfigApprovalInput = [{ key: string; value: string; expectedVersion: number }, string];
 export type G4ConfigApprovalInput = [{ paramKey: "dividend"; value: string; decisionRef: string; expectedRevision: string }, string];
 
-export type WithdrawalApprovalReceipt = { commandKey: string; ticket: A2OperationRow };
+/** unverified：这次按原号没读到最新状态，ticket 还是上次读到的样子，不能当成现在的事实（ST-36）。 */
+export type WithdrawalApprovalReceipt = { commandKey: string; ticket: A2OperationRow; unverified?: true };
+const TICKET_STATUS_TEXT = { pending: "等另一位超级管理员批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" } as const;
+export const withdrawalApprovalStatusText = (ticket: A2OperationRow) => TICKET_STATUS_TEXT[ticket.status];
 export const WITHDRAWAL_CONFIG_READ_FAILED = "当前配置暂时没读到，点「刷新」再看";
 
-async function fetchOwnWithdrawalApproval(source: WithdrawalApprovalSource, commandKey: string) {
-  const ticket = await fetchA2ProposalByKey(commandKey, true, "a");
+/** 建单回包和按原号查到的单用同一条规则认：本人发起、对象和动作都是这张放宽单。 */
+function requireOwnWithdrawalTicket(source: WithdrawalApprovalSource, ticket: A2OperationRow, commandKey: string) {
   const { action, op } = commands[source];
-  if (ticket && (!ticket.mine || ticket.obj !== "current" || ticket.action !== action || ticket.operationCode && ticket.operationCode !== op)) {
+  if (!ticket.mine || ticket.obj !== "current" || ticket.action !== action || ticket.operationCode && ticket.operationCode !== op) {
     throw new A2OutcomeUncertainError("查到的审批单和原申请对不上，请继续核对。", commandKey);
   }
   return ticket;
 }
 
-export async function refreshWithdrawalApprovalReceipt(source: WithdrawalApprovalSource, receipt: WithdrawalApprovalReceipt) {
+async function fetchOwnWithdrawalApproval(source: WithdrawalApprovalSource, commandKey: string) {
+  const ticket = await fetchA2ProposalByKey(commandKey, true, "a");
+  return ticket && requireOwnWithdrawalTicket(source, ticket, commandKey);
+}
+
+/** 按原号重读这张单：读到就换成最新状态（含已批准、已驳回、已撤回、已过期）；没读到只标「未核实」。 */
+export async function refreshWithdrawalApprovalReceipt(source: WithdrawalApprovalSource, receipt: WithdrawalApprovalReceipt): Promise<WithdrawalApprovalReceipt> {
   const ticket = await fetchOwnWithdrawalApproval(source, receipt.commandKey).catch(() => null);
-  return ticket?.id === receipt.ticket.id ? { ...receipt, ticket } : receipt;
+  return ticket?.id === receipt.ticket.id ? { commandKey: receipt.commandKey, ticket } : { ...receipt, unverified: true };
 }
 
 function approvalSlot(sourceDomain: keyof typeof commands, adminId: string | number, scope?: ApprovalScope) {
@@ -430,7 +439,9 @@ async function submitConfigApprovalTicket(
           if (block) throw new A2OutcomeUncertainError(block, key);
         }
       }
-      ticket = await createA2OperationProposal(proposal, key, true);
+      // 放宽单的回包缺本人、对象、动作或状态时不算建单成功：原命令留着，按原号再查（ST-37）。
+      ticket = await createA2OperationProposal(proposal, key, true, withdrawalApproval);
+      if (withdrawalApproval) requireOwnWithdrawalTicket(sourceDomain, ticket, key);
     }
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
@@ -465,7 +476,10 @@ async function submitConfigApprovalTicket(
   return {
     ticket,
     commandKey: key,
-    acknowledgement: previous && lookupOnly && (domain === "F" || withdrawalApproval)
+    // 放宽单的发起人不一定看得到操作记录，查到的状态直接写出来。
+    acknowledgement: previous && lookupOnly && withdrawalApproval
+      ? `已找到原审批单 ${ticket.id} · ${TICKET_STATUS_TEXT[ticket.status]}`
+      : previous && lookupOnly && domain === "F"
       ? `已找到原审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位超管批准" : " · 请在操作记录查看处理结果"}`
       : previous && previous.input !== input
       ? `已找到原审批单 ${ticket.id}，本次输入未提交。请核对当前配置后重新操作。`

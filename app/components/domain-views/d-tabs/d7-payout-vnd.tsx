@@ -37,7 +37,7 @@ import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { RecoveryPanel, recoveryTitle } from "../recovery-panel";
 import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
-import { canManageD7Approval, configApprovalOriginalInput, pendingConfigApproval, refreshWithdrawalApprovalReceipt, releaseConfigApproval, releaseRejectedWithdrawalApproval, submitWithdrawalConfigApproval, withdrawalApprovalDisabledReason, WITHDRAWAL_CONFIG_READ_FAILED, type WithdrawalApprovalReceipt } from "@/lib/admin/withdrawal-config-approval";
+import { canManageD7Approval, configApprovalOriginalInput, pendingConfigApproval, refreshWithdrawalApprovalReceipt, withdrawalApprovalStatusText, releaseConfigApproval, releaseRejectedWithdrawalApproval, submitWithdrawalConfigApproval, withdrawalApprovalDisabledReason, WITHDRAWAL_CONFIG_READ_FAILED, type WithdrawalApprovalReceipt } from "@/lib/admin/withdrawal-config-approval";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { ActionConfirmReq, DCtx } from "./types";
@@ -228,7 +228,13 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const [releasing, setReleasing] = useState<{ kind: "direct"; record: DirectRecord } | { kind: "approval"; commandKey: string } | null>(null);
   // 这次会话刚登记的放宽单。看不到审批列表的账号（财务主管）靠它知道单还在等批准（F2）。
   const [ownApproval, setOwnApproval] = useState<WithdrawalApprovalReceipt | null>(null);
-  const ownPending = ownApproval?.ticket.status === "pending" ? ownApproval.ticket : null;
+  // 「没有要处理的事」只在待批单读到了、读完了才说；看不到审批列表、读取中、读取失败都不下这个结论（F2）。
+  const queueKnown = canReadQueue && queue.loaded && !queue.loading && !queue.failed;
+  // 待批列表读到了就以列表为准；读不到才用这次会话登记的单。
+  const ownPending = !queueKnown && ownApproval?.ticket.status === "pending" ? ownApproval.ticket : null;
+  /** 这张单按原号重读没读到：还按等批准挡放宽，但不说它现在一定在等（ST-36）。 */
+  const ownStale = !!ownPending && !!ownApproval?.unverified;
+  const ownSettled = ownApproval && ownApproval.ticket.status !== "pending" ? ownApproval.ticket : null;
   const [rereading, setRereading] = useState(false);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [leaving, setLeaving] = useState<{ then?: () => void } | null>(null);
@@ -319,7 +325,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       : errorCount > 0 ? `有 ${errorCount} 项要修改`
       : undefined;
     const approvalReason = amplifies
-      ? approvalBlocked ?? (pendingTicket ? "已有放宽单在等批准，审批完或发起人撤回后才能再提交放宽。" : coverageLow ? "兑付覆盖率低于红线，放宽提交不了。" : undefined)
+      ? approvalBlocked ?? (pendingTicket ? ownStale ? "放宽单的最新状态没读到，点「刷新」读到后再提交放宽。" : "已有放宽单在等批准，审批完或发起人撤回后才能再提交放宽。" : coverageLow ? "兑付覆盖率低于红线，放宽提交不了。" : undefined)
       : undefined;
     const submitBlock = shared ?? (inverted ? (canForce ? "价格倒挂，默认不能保存" : "价格倒挂，默认不能保存。强制保存只有超级管理员能做") : approvalReason);
     const forceBlock = shared ?? approvalReason;
@@ -416,7 +422,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       </>,
       facts: <div className="rd-stack">
         <DiffList rows={rows} />
-        {pendingTicket && !amplifies && <Notice tone="warn">保存后，在等批准的放宽单 {pendingTicket.id} 批准时会被拒，要重新发起。</Notice>}
+        {pendingTicket && !amplifies && <Notice tone="warn">{ownStale ? `放宽单 ${pendingTicket.id} 如果还在等批准，保存后它批准时会被拒，要重新发起。` : `保存后，在等批准的放宽单 ${pendingTicket.id} 批准时会被拒，要重新发起。`}</Notice>}
       </div>,
       amplifies,
       coverage: amplifies ? coverage : undefined,
@@ -776,9 +782,12 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     />
   );
 
-  const ownApprovalNotice = ownPending && (!config || !queue.rows.some(row => row.id === ownPending.id)) && (
-    <Notice tone="warn">放宽单 {ownPending.id} 已提交，等另一位超级管理员批准，批准前参数不变。{!canReadQueue && "这个账号看不到后续进度，结果请问超级管理员。"}</Notice>
-  );
+  const ownApprovalNotice = <>
+    {ownPending && <Notice tone="warn">{ownStale
+      ? `放宽单 ${ownPending.id} 的最新状态没读到，先按等批准处理，点「刷新」再读。`
+      : `放宽单 ${ownPending.id} 已提交，等另一位超级管理员批准，批准前参数不变。${canReadQueue ? "" : "点「刷新」看最新状态。"}`}</Notice>}
+    {ownSettled && <Notice tone="neutral">放宽单 {ownSettled.id} {withdrawalApprovalStatusText(ownSettled)}{ownSettled.status === "approved" ? "，当前值以这页读到的为准。" : "，参数没有变。"}</Notice>}
+  </>;
 
   if (!config) {
     return <>
@@ -801,8 +810,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const live = derivePayoutVndRates(config);
   const liveInverted = isPayoutVndInverted(config.buySpreadPct, config.sellSpreadPct);
   const editBlock = direct.length > 0 || approval ? LOCKED : loading ? READING : undefined;
-  // 「没有要处理的事」只在待批单读到了、读完了才说；看不到审批列表、读取中、读取失败都不下这个结论（F2）。
-  const queueKnown = canReadQueue && queue.loaded && !queue.loading && !queue.failed;
   const nothingToDo = queueKnown && direct.length === 0 && !approval && queue.rows.length === 0 && !ownPending;
   const fxLink = canReachFx && <Link className="rd-link" href="/finance/fx-rate" prefetch={false} onClick={guard("/finance/fx-rate")}>去修改</Link>;
 

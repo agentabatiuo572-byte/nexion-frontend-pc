@@ -2224,8 +2224,9 @@ export async function fetchD1TopupFlows(params: { status?: string; userId?: numb
   return requireD1FlowsPage(await apiRequest<PageResult<D1DepositFlow>>("finance", `/topup/flows${buildQuery(params)}`));
 }
 
-export async function fetchD1BankOrders(params: { paymentRail?: string; status?: string; settlementStatus?: string; keyword?: string; pageNum?: number; pageSize?: number }, bankManualAuthEpoch = adminAuthLifecycleEpoch()) {
-  const page = requireD1BankOrdersPage(await apiRequest<unknown>("finance", `/vietqr/orders${buildQuery(params)}`, { bankManualAuthEpoch, localBankReadAuth: true }));
+/** localReadAuth 只给人工入账的结果核对用：登录失效时就地退出、保留待确认记录。普通列表和计数走统一退出（ST-47）。 */
+export async function fetchD1BankOrders(params: { paymentRail?: string; status?: string; settlementStatus?: string; keyword?: string; pageNum?: number; pageSize?: number }, bankManualAuthEpoch = adminAuthLifecycleEpoch(), localReadAuth = false) {
+  const page = requireD1BankOrdersPage(await apiRequest<unknown>("finance", `/vietqr/orders${buildQuery(params)}`, { bankManualAuthEpoch, localBankReadAuth: localReadAuth }));
   assertD1BankManualAuthEpoch(bankManualAuthEpoch);
   return page;
 }
@@ -2263,7 +2264,7 @@ async function submitD1BankManualCredit(path: string, body: string, commandKey?:
   const retainedKey = pendingMutations.get(fingerprint) ?? commandKey;
   try {
     const intentNo = path.split("/")[3];
-    const latest = await fetchD1BankOrders({ keyword: intentNo, pageNum: 1, pageSize: 20 }, authEpoch);
+    const latest = await fetchD1BankOrders({ keyword: intentNo, pageNum: 1, pageSize: 20 }, authEpoch, true);
     assertD1BankManualAuthEpoch(authEpoch);
     const order = latest.records.find(value => value.intentNo === intentNo);
     if (!order || order.status !== "CREDITED" || order.creditedUsdt <= 0) throw new Error("人工入账结果未知");

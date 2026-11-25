@@ -485,6 +485,7 @@ function exportPorts(operator: Operator, views: View[], invalidateAccess: () => 
       const original = mySubmit();
       const draft = draftsFor(operator)?.submit;
       const saved = original?.action === "SUBMIT" ? original.selection : draft?.query;
+      const originalHidden = original?.action === "SUBMIT" && !choices.has(original.selection.scope);
       const differences: ExportConditionDifference[] = [];
       if (!original && draft) {
         const approved = choices.get(draft.query.scope);
@@ -505,10 +506,10 @@ function exportPorts(operator: Operator, views: View[], invalidateAccess: () => 
       }
       const defaultMonth = options.months.find(month => month.value === initial?.month)?.value ?? months[0] ?? "";
       const defaultScope = initial?.scope && choices.has(initial.scope) ? initial.scope : choices.keys().next().value ?? "";
-      const month = differences.some(diff => diff.field === "month") ? "" : draft && !original ? draft.selection.month : saved?.month ?? defaultMonth;
-      const scope = differences.some(diff => diff.field === "scope") ? "" : saved?.scope ?? defaultScope;
+      const month = originalHidden || differences.some(diff => diff.field === "month") ? "" : draft && !original ? draft.selection.month : saved?.month ?? defaultMonth;
+      const scope = originalHidden || differences.some(diff => diff.field === "scope") ? "" : saved?.scope ?? defaultScope;
       const types = choices.get(scope)?.types ?? [];
-      const selected = differences.some(diff => diff.field === "types") ? []
+      const selected = originalHidden || differences.some(diff => diff.field === "types") ? []
         : original?.action === "SUBMIT" ? original.body.types : draft?.selection.types
           ?? (types.includes("SUMMARY") ? ["SUMMARY" as const] : []);
       const preview = !original && !restoration && month && scope && types.length ? await requestPreview({ month, scope, types: selected }, true) : undefined;
@@ -516,7 +517,7 @@ function exportPorts(operator: Operator, views: View[], invalidateAccess: () => 
         months: options.months, month, since: options.months.length ? `自 ${businessStamp(Date.parse(options.months.at(-1)!.from))} 起` : "", scopes: Array.from(choices, ([value, item]) => ({ value, label: item.label, types: item.types })), scope,
         asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", downloader: operator.name, items: preview?.items ?? (restoration ? uncheckedItems(types) : []),
         selected: saved ? selected : selected.filter(type => preview?.items.some(item => item.type === type && !["empty", "stale", "unavailable"].includes(item.check.state))),
-        blocked: previewBlocked(preview), restoration,
+        blocked: previewBlocked(preview), restoration, originalHidden,
         catalogState: months.length ? "ready" : "no-months",
         minReasonChars: options.minReasonChars, maxReasonChars: options.maxReasonChars,
       };

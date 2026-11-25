@@ -71,6 +71,7 @@ import {
   configApprovalOriginalInput,
   pendingConfigApproval,
   refreshWithdrawalApprovalReceipt,
+  withdrawalApprovalStatusText,
   releaseConfigApproval,
   releaseRejectedWithdrawalApproval,
   submitWithdrawalConfigApproval,
@@ -668,6 +669,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const [readAt, setReadAt] = useState("");
   const requestId = useRef(0);
   const [approvals, setApprovals] = useState<{ state: "loading" | "ready" | "failed"; rows: A2OperationRow[] }>({ state: "loading", rows: [] });
+  const approvalsRequestId = useRef(0);
   const [ownApproval, setOwnApproval] = useState<WithdrawalApprovalReceipt | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [leaveAsk, setLeaveAsk] = useState<false | "close" | "refresh">(false);
@@ -716,12 +718,14 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   /** 有没有放宽在等批准。读不到时不说「没有」（决定 5）。审批单的 operationCode 是空的，按动作名认。 */
   const loadApprovals = useCallback(async () => {
     if (!canQuery) return;
+    const id = ++approvalsRequestId.current;
     setApprovals((current) => ({ ...current, state: "loading" }));
     try {
       const overview = await fetchA2Overview({ domain: "D" });
+      if (id !== approvalsRequestId.current) return;
       setApprovals({ state: "ready", rows: overview.operationQueue.filter((row) => row.status === "pending" && row.action === "放宽提现参数") });
     } catch {
-      setApprovals({ state: "failed", rows: [] });
+      if (id === approvalsRequestId.current) setApprovals({ state: "failed", rows: [] });
     }
   }, [canQuery]);
 
@@ -755,13 +759,17 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     : params.coverageRatio < params.redlinePct
       ? `放宽已暂停：兑付覆盖率 ${pct(params.coverageRatio)}，低于红线 ${fmtConfigPct(params.redlinePct)}`
       : undefined);
-  const ownPending = ownApproval?.ticket.status === "pending" ? ownApproval.ticket : null;
-  const queuePending = approvals.state === "ready" ? approvals.rows : [];
-  const pendingApproval = ownPending && !queuePending.some(row => row.id === ownPending.id) ? [ownPending, ...queuePending] : queuePending;
+  // 待批列表读到了就以列表为准；读不到（没权限、读取中、读取失败）才用这次会话登记的单。
+  const ownPending = approvals.state !== "ready" && ownApproval?.ticket.status === "pending" ? ownApproval.ticket : null;
+  /** 这张单按原号重读没读到：还按等批准挡放宽，但不说它现在一定在等（ST-36）。 */
+  const ownStale = !!ownPending && !!ownApproval?.unverified;
+  const ownSettled = ownApproval && ownApproval.ticket.status !== "pending" ? ownApproval.ticket : null;
+  const pendingApproval = approvals.state === "ready" ? approvals.rows : ownPending ? [ownPending] : [];
+  const pendingTitle = ownStale ? "放宽单的最新状态没读到，先按等批准处理" : `有 ${pendingApproval.length} 项放宽等批准`;
   /** 放宽现在为什么提交不了，从上往下取第一条。 */
   const loosenBlock = proposeBlock
     ?? (loosenPending ? "上一次放宽的结果未知，先到上方查询原结果" : undefined)
-    ?? (pendingApproval.length ? "已有放宽等批准，批准、驳回或撤回后才能再提交" : undefined)
+    ?? (ownStale ? "放宽单的最新状态没读到，点「刷新」读到后再提交" : pendingApproval.length ? "已有放宽等批准，批准、驳回或撤回后才能再提交" : undefined)
     ?? coverageBlock
     ?? undefined;
 
@@ -858,7 +866,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       // 等批准的提醒跟在前后值后面，同一块里看（有放宽在等时才有）。
       facts: <>
         <DiffList rows={evaluation.rows} restTitle="没改的项" />
-        {!loosens && pendingApproval.length > 0 && <Notice tone="warn">有放宽在等批准，收紧后那张审批单要重新发起。</Notice>}
+        {!loosens && pendingApproval.length > 0 && <Notice tone="warn">{ownStale ? "放宽单如果还在等批准，收紧后要重新发起。" : "有放宽在等批准，收紧后那张审批单要重新发起。"}</Notice>}
       </>,
       amplifies: loosens,
       coverage: p.coverageReliable ? { coverageRatio: p.coverageRatio, redlinePct: p.redlinePct } : undefined,
@@ -1118,7 +1126,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   ];
   const pendingNotices = <>
     <FundRecoveryPanel rows={pendingRows} link={auditLink || undefined} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
-    {!params && ownPending && <Notice tone="warn">放宽单 {ownPending.id} 已提交，等另一位超级管理员批准，批准前参数不变。</Notice>}
+    {!params && ownPending && <Notice tone="warn">{ownStale ? `放宽单 ${ownPending.id} 的最新状态没读到，先按等批准处理。` : `放宽单 ${ownPending.id} 已提交，等另一位超级管理员批准，批准前参数不变。`}</Notice>}
+    {ownSettled && <Notice tone="neutral">放宽单 {ownSettled.id} {withdrawalApprovalStatusText(ownSettled)}{ownSettled.status === "approved" ? "，当前值以这页读到的为准。" : "，参数没有变。"}</Notice>}
     {closing && loosenRecord && <FundClosureModal label="放宽提现参数" createdAt={loosenRecord.createdAt} offer={eCommandClosureOffer(investigationResults[loosenRecord.commandKey], isRetryExpired(loosenRecord))} facts={loosenRecord.values ? <Fact k="改动">{describeChanges(loosenRecord.values)}</Fact> : undefined}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(loosenRecord, evidence); setClosing(false); }} />}
     {directClosing && <CommandClosureModal label={editTitle(directClosing.label.replace(/^调整提现参数 · /, ""))} commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
@@ -1224,7 +1233,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       ? <Conclusion state="warn" lead hint={<>{networks.outage}。{outageNext} {coverageLine}</>} explain={NETWORK_RULE}>App、H5 用户现在不能发起 USDT 提现</Conclusion>
       : pendingApproval.length
         ? <Conclusion state="warn" hint={<>{pendingApproval.map(approvalLine).join("；")}。{reach(auditHref, "platform_a2_read") && <><Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批查看</Link> </>}{coverageLine}</>} explain={APPROVAL_NOTE}>
-          有 {pendingApproval.length} 项放宽等批准，批准前当前值不变
+          {ownStale ? pendingTitle : `${pendingTitle}，批准前当前值不变`}
         </Conclusion>
         : networks.unknown.length > 0
           ? <Conclusion state="warn" hint={<>配置照常显示，实际状态未知的网络请到「网络和费用」核对原因。{coverageLine}</>} explain={NETWORK_RULE}>部分提现网络的实际状态暂未知</Conclusion>
@@ -1237,7 +1246,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <Notice tone="warn" title="App、H5 用户现在不能发起 USDT 提现">{networks.outage}。{outageNext}</Notice>
     )}
     {pendingApproval.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || networks.outage) && (
-      <Notice tone="warn" title={`有 ${pendingApproval.length} 项放宽等批准`}>{pendingApproval.map(approvalLine).join("；")}。批准前当前值不变。{auditLink && <> {auditLink}</>}</Notice>
+      <Notice tone="warn" title={pendingTitle}>{pendingApproval.map(approvalLine).join("；")}。{ownStale ? "点「刷新」再读。" : "批准前当前值不变。"}{auditLink && <> {auditLink}</>}</Notice>
     )}
     {networks.unknown.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || pendingApproval.length > 0) && (
       <Notice tone="warn" title="部分提现网络的实际状态暂未知">配置照常显示，请到「网络和费用」核对原因。</Notice>
