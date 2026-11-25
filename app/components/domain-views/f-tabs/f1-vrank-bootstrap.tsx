@@ -44,7 +44,7 @@ export function F1VrankBootstrap({ ctx, openConfirm, continuation }: { ctx: FVie
         effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后，九级一次建好；批准前这页仍是空的。`}>批准后生效</StatusTag>,
         coverageLead: "首次配置会让以后的晋升按这些条件发生",
         coverageCheck: "首次配置不带奖励；以后给各级加资金奖励时再单独检查兑付覆盖率。",
-        facts: <Facts><Fact k="要建立">V0–V8 共 9 级</Fact><Fact k="升级奖励">不在这里配；等级建立后逐级添加</Fact></Facts>,
+        facts: <Facts><Fact k="要建立">V0–V8 共 9 级</Fact><Fact k="晋级奖励">不在这里配；等级建立后逐级添加</Fact></Facts>,
         content: <div className="rd-impact">
           <div className="rd-impact-title">九级的晋升条件</div>
           <Table label="九级的晋升条件">
@@ -58,8 +58,8 @@ export function F1VrankBootstrap({ ctx, openConfirm, continuation }: { ctx: FVie
             </tr>)}</tbody>
           </Table>
         </div>,
-        statedBrief: { impact: "批准后一次建好 V0–V8 九级的晋升条件、团队购买奖励范围、同级奖比例和票数；只在等级和奖励两张表都是空的时候能建，已经有任何一级就会被拒。", check: "逐级核对上表；升级奖励等等级建好后再加。" },
-        detail: "将创建完整的 V0–V8 晋升条件、团队购买奖励范围、同级奖比例和票数。另一位超级管理员批准后生效；晋升奖励请在等级建立后单独配置。",
+        statedBrief: { impact: "批准后一次建好 V0–V8 九级的晋升条件、团队购买奖励范围、同级奖比例和票数；只在等级和奖励两张表都是空的时候能建，已经有任何一级就会被拒。", check: "逐级核对上表；晋级奖励等等级建好后再加。" },
+        detail: "将创建完整的 V0–V8 晋升条件、团队购买奖励范围、同级奖比例和票数。另一位超级管理员批准后生效；晋级奖励请在等级建立后单独配置。",
         submit: async (reason) => {
           await ctx.proposeVRankBootstrap(ranks, reason);
           setSubmitted(true);
@@ -89,7 +89,7 @@ export function F1VrankBootstrap({ ctx, openConfirm, continuation }: { ctx: FVie
   return <>
     <Conclusion state="neutral" icon={Layers3} hint="逐级填好 V0–V8，最后一起提交审批。">还没有建立会员等级</Conclusion>
     <Panel title="首次配置会员等级" icon={ListChecks} tone="role-4" sub={editing ? `已填 ${done}/9 级` : undefined}
-      explain="九级要一次建好，另一位超级管理员批准后才出现。没有门槛或比例的项填 0；V1–V8 每级至少一项晋升条件大于 0。升级奖励在等级建好后逐级添加。已经提交过的申请在「操作记录与审批」里看，不要重复提交。">
+      explain="九级要一次建好，另一位超级管理员批准后才出现。没有门槛或比例的项填 0；V1–V8 每级至少一项晋升条件大于 0。晋级奖励在等级建好后逐级添加。已经提交过的申请在「操作记录与审批」里看，不要重复提交。">
       {!editing ? <div className="f1-boot-start">
         <ol className="f1-boot-preview" aria-label="要建立的九级">{bootstrapRankCodes.map((code) => <li key={code}>{code}</li>)}</ol>
         <p>填完九级后一起提交审批。</p>
