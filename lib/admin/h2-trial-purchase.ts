@@ -30,6 +30,8 @@ export function isBuyListVersion(value: unknown): value is BuyListVersion {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+export const LISTING_BLOCKED = "没通过上架条件";
+
 export function buyProductReason(reason: unknown, status?: string | null): string {
   switch (reason) {
     case "PRODUCT_NOT_AVAILABLE":
@@ -39,7 +41,7 @@ export function buyProductReason(reason: unknown, status?: string | null): strin
     case "PRODUCT_PRICE_INVALID": return "没有售价";
     case "PRODUCT_TYPE_UNSUPPORTED": return "这个类型不能用试用抵扣金购买";
     case "PRODUCT_CODE_MISMATCH": return "商品编号对不上";
-    default: return "没通过上架条件，商城里也不显示";
+    default: return LISTING_BLOCKED;
   }
 }
 

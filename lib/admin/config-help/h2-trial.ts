@@ -174,7 +174,7 @@ export const ADVANCED_TRIAL_GROUPS = [
 export const TRIAL_STATE_HELP: Record<string, string> = {
   idle: "用户还没开始这次试用。",
   active: "试用进行中，收益在累积，用户可以提前购买或取消。",
-  grace: "试用期已到，设备停止产出；宽限期内用户还能用抵扣金购买。这是正常状态，到期系统自动结束，不扣款，不用处理。",
+  grace: "试用期已到，设备停止产出；宽限期内用户还能用试用抵扣金购买。这是正常状态，到期系统自动结束，不扣款，不用处理。",
   extended: "这条试用延长过，到期时间以这条记录为准，不用处理。",
   cancelled: "已结束，没有转成购买。再次试用要等冷却期过去。",
   redeemed: "已结束，用户买下了设备。",

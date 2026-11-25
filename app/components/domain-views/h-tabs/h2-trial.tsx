@@ -231,8 +231,9 @@ function shortSid(sid: string) {
 }
 
 /** 接口给「USDT 数 + UVT 数 UVT」，前一个数补上单位。 */
+/** 金额有几位写几位，不补零（TX-20）。 */
 function shadowText(value: string) {
-  return operatorCopyText(text(value)).replace(/^([\d.,]+) \+ /, "$1 USDT + ");
+  return operatorCopyText(text(value)).replace(/^([\d.,]+) \+ /, "$1 USDT + ").replace(/(\.\d*?)0+(?=\D|$)/g, "$1").replace(/\.(?=\D|$)/g, "");
 }
 
 function stateTone(state: TrialState | undefined): StateTone {
@@ -384,10 +385,11 @@ function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked
   const statusExplainsBlock = currentTarget?.unavailableReason === "PRODUCT_NOT_AVAILABLE"
     && (currentTarget.status === "PENDING" || currentTarget.status === "OFF_SALE");
   // 名称这一列只放名称和提示图标（PG-46）；库存、阻断原因和入口是值的补充，排在值后面。
+  const listingBlocked = currentTarget?.listingAllowed === false;
   const productLine = [
-    targetStatusUnknown ? "商城状态暂时无法判断" : typeof targetStatus === "string" && targetStatus,
-    !targetStatusUnknown && currentDisplayProduct && stockText(currentDisplayProduct),
-    currentTarget?.listingAllowed === false && !statusExplainsBlock && buyProductReason(currentTarget.unavailableReason, currentTarget.status),
+    targetStatusUnknown ? "商城状态暂时无法判断" : typeof targetStatus === "string" && (!listingBlocked || statusExplainsBlock) && targetStatus,
+    !targetStatusUnknown && !listingBlocked && currentDisplayProduct && stockText(currentDisplayProduct),
+    listingBlocked && !statusExplainsBlock && buyProductReason(currentTarget.unavailableReason, currentTarget.status),
     productMissing && "不在可选列表",
     // 阻断原因要看得见，不只放在灰按钮的提示里（OP-126）。
     deadEndLead,
@@ -551,6 +553,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const phaseClosed = paramOf("phaseOpen")?.cur === "关闭";
   // 找不到也算不可用：商品退出「允许试用」后不在候选列表里，用户开始试用会被拒（REV2-03）。
   const productBlocked = !product || !product.selectable;
+  const target = model?.trialTarget;
+  // 目标在候选里可选，但没过上架条件时，开始试用同样会被拒。
+  const blockedTarget = !productBlocked && target && target !== "invalid" && target.productNo === productNo && !target.listingAllowed ? target : undefined;
   const j1Closed = model?.j1TrialGate?.enabled === false;
 
   const commonParams = COMMON_TRIAL_PARAMS.flatMap((key) => paramOf(key) ?? []);
@@ -569,7 +574,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const sessionsRead = model?.sessions ?? [];
   const sessionsInvalid = sessionsRead.some((session) => readH2SessionProducts(session) === "invalid");
   const sections: SectionNavItem[] = [
-    { id: "common", label: "常改参数", alert: productBlocked },
+    { id: "common", label: "常改参数", alert: productBlocked || !!blockedTarget },
     ...(showBuySection ? [{ id: "buy", label: "可购买设备", alert: buyInvalid || !!buyPending || buyReplayConflict }] : []),
     { id: "advanced", label: "高级设置" },
     { id: "readonly", label: "只读项", alert: phaseClosed },
@@ -1009,6 +1014,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   if (productBlocked) issues.push({ key: "product", tone: "danger", title: "试用目标商品不可用", body: product
     ? <>{stockText(product)} · {trialProductReason(product.unavailableReason)}</>
     : <>商品编号 {productNo || "未设置"} 不在可选列表，用户现在不能开始试用。{reach(pricingHref) && <Link className="rd-link" href={pricingHref} prefetch={false}>到商品管理与上架条件核对「允许试用」</Link>}</> });
+  if (blockedTarget) issues.push({ key: "product", tone: "danger", title: "试用目标商品不可用", body: <>{buyProductReason(blockedTarget.unavailableReason, blockedTarget.status)}，用户现在不能开始试用。{reach(pricingHref) && <Link className="rd-link" href={pricingHref} prefetch={false}>到商品管理与上架条件查看</Link>}</> });
   if (phaseClosed) issues.push({ key: "phase", tone: "warn", title: "当前运营阶段不开放试用", body: <>用户现在不能开始试用。{reach(phaseHref) && <Link className="rd-link" href={phaseHref} prefetch={false}>去运营阶段设置</Link>}</> });
   if (!seatsKnown) issues.push({ key: "seats", tone: "warn", title: "今日实际剩余名额读不到", body: "请稍后刷新；读到之前，不能按这里判断用户今天还能不能领。" });
   else if (Number(seats?.cur) === 0 && Number(paramOf("seatsLeftToday")?.cur) === 0) issues.push({ key: "seats", tone: "warn", title: "每日免费名额上限是 0", body: `用户不能开始试用，次日也不会恢复。${canWrite ? "要开放试用，调高「每日免费名额上限」。" : ""}` });

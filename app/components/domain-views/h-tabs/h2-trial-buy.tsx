@@ -12,7 +12,7 @@ import { BlockState, Button, Cell, Check, CheckGroup, ConfigList, ConfigRow, Dec
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import type { updateH2TrialBuyList } from "@/lib/admin/h-client";
-import { buyProductReason, type BuyDevice, type BuyList, type BuyListWrite } from "@/lib/admin/h2-trial-purchase";
+import { buyProductReason, LISTING_BLOCKED, type BuyDevice, type BuyList, type BuyListWrite } from "@/lib/admin/h2-trial-purchase";
 import { isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
@@ -51,12 +51,12 @@ const typeText = (device: BuyDevice) => device.productType === "SHARE" ? "云份
 const stockText = (device: BuyDevice) => device.inventoryMode === "UNLIMITED" ? "不限"
   : device.stock === null ? "—" : device.stock.toLocaleString("en-US");
 const hiddenText = (device: BuyDevice) => buyProductReason(device.unavailableReason, device.status);
-const retainedRecovery = (device: BuyDevice) => {
-  if (device.unavailableReason === "PRODUCT_NOT_AVAILABLE") {
-    if (device.status === "PENDING") return "上架";
-    if (device.status === "OFF_SALE") return "重新上架";
-  }
-  return "符合条件";
+const retainedHint = (device: BuyDevice) => {
+  const reason = `${hiddenText(device).replace(/^商城/, "")}，App 不显示；`;
+  if (device.unavailableReason === "PRODUCT_TYPE_UNSUPPORTED") return `${reason}不会再显示，可以移除`;
+  const when = device.unavailableReason !== "PRODUCT_NOT_AVAILABLE" ? hiddenText(device) === LISTING_BLOCKED ? "通过" : "符合条件"
+    : device.status === "PENDING" ? "上架" : device.status === "OFF_SALE" ? "重新上架" : "符合条件";
+  return `${reason}可以保留，${when}后自动显示`;
 };
 const productName = (device: BuyDevice) => device.name || device.productNo;
 
@@ -109,6 +109,15 @@ export function BuyListPendingNotice({ record, canWrite, onRetry, onRelease, ret
       {rejection && <div><KeepText text={`重试没有成功：${rejection} 原操作结果仍未知，记录继续保留。`} /></div>}
     </Notice>
   );
+}
+
+/** 版本冲突读到最新后，别人改了什么写在同一个框里（OP-97）。 */
+function changedByOthers(before: BuyList, latest: BuyList) {
+  const names = (from: BuyList, against: BuyList) => from.items
+    .filter((item) => !against.items.some((other) => other.productNo === item.productNo)).map(productName).join("、");
+  const added = names(latest, before);
+  const removed = names(before, latest);
+  return added || removed ? `别人已改：${[added && `新增 ${added}`, removed && `移除 ${removed}`].filter(Boolean).join("，")}` : undefined;
 }
 
 function buyChoices(list: BuyList | undefined) {
@@ -204,7 +213,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   }, [dirty, leaveGuard, router]);
   const toggle = (no: string, on: boolean) => setPicked((current) => on ? [...current, no] : current.filter((item) => item !== no));
 
-  const showConfirm = (base: BuyList, selection: string[], initialReason: string, initialRejected?: string) => {
+  const showConfirm = (base: BuyList, selection: string[], initialReason: string, initialRejected?: string, othersNote?: string) => {
     const { items, candidates } = buyChoices(base);
     const selected = new Set(selection);
     const current = new Set(items.map((item) => item.productNo));
@@ -263,9 +272,9 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         throw new ConfirmReadConflict({
           preserveReason: true,
           readLatest: async () => {
-            const { base, selection } = await readReview();
+            const { base: latest, selection } = await readReview();
             setLastReason("");
-            if (!showConfirm(base, selection, "")) ctx.openActionConfirm(null);
+            if (!showConfirm(latest, selection, "", undefined, changedByOthers(base, latest))) ctx.openActionConfirm(null);
             return false;
           },
           renderNotice: (readLatest) => (
@@ -277,8 +286,12 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         });
       }
       if (outcome.kind === "rejected") {
-        setRejected(outcome.message);
-        throw rejection(outcome.message);
+        const refused = outcome.productNo === undefined ? undefined
+          : [...base.candidates, ...base.items].find((item) => item.productNo === outcome.productNo);
+        const message = refused && outcome.productNo !== undefined
+          ? `没有保存：${productName(refused)}${buyProductReason(outcome.reason, refused.status)}，不能新增。` : outcome.message;
+        setRejected(message);
+        throw rejection(message);
       }
       if (outcome.kind === "unknown") {
         closeDrawer();
@@ -300,9 +313,10 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       detail: "",
       amplifies: false,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      statedBrief: { impact: "之后发起的购买按新清单，进行中的试用也一样", check: "核对新增和移除，理由写清调整原因和依据。" },
+      statedBrief: { impact: "之后发起的购买按新清单，进行中的试用也一样", check: "前后清单记入操作记录；改错了再点「调整」改回。" },
       facts: (
         <div className="rd-stack">
+          {othersNote && <Notice tone="neutral">{othersNote}</Notice>}
           <DiffList rows={rows} restTitle="其余设备" named />
           <Facts><Fact k="改后共">{after.value === "未添加" ? "0 款" : after.value}{after.sub && <> · {after.sub}</>}</Fact></Facts>
           {added.length > 0 && <div className="h2-money-note"><Notice tone="neutral">{MONEY_LINE}</Notice></div>}
@@ -395,8 +409,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
                 const disabled = unavailable && !on;
                 const mark = on && !listed ? "新增" : !on && listed ? "移除" : "";
                 const reason = listed && candidate.appState === "hidden"
-                  ? `${hiddenText(candidate)}，App 不显示；可以保留，${retainedRecovery(candidate)}后自动显示`
-                  : unavailable ? <>不能选：{hiddenText(candidate)}{reach(pricingHref(candidate.productNo)) && <> <Link className="rd-link" href={pricingHref(candidate.productNo)} prefetch={false}>到商品管理与上架条件查看</Link></>}</> : undefined;
+                  ? retainedHint(candidate)
+                  : unavailable ? <>不能选：{hiddenText(candidate)}{hiddenText(candidate) === LISTING_BLOCKED && "，商城里也不显示"}{reach(pricingHref(candidate.productNo)) && <> <Link className="rd-link" href={pricingHref(candidate.productNo)} prefetch={false}>到商品管理与上架条件查看</Link></>}</> : undefined;
                 return (
                   <div className="h2-buy-check" data-disabled={disabled ? "" : undefined} key={candidate.productNo}>
                     <Check checked={on} disabled={disabled} onChange={(event) => toggle(candidate.productNo, event.currentTarget.checked)}

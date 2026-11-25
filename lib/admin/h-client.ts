@@ -364,10 +364,10 @@ export async function updateH2TrialBuyList(input: BuyListWrite) {
     if (error.apiMessage === "TRIAL_OPTIONS_VERSION_CONFLICT") return { kind: "conflict" } as const;
     if (error.apiMessage === "TRIAL_OPTIONS_PRODUCT_UNAVAILABLE") {
       const { productNo, reason } = error.details ?? {};
-      const product = typeof productNo === "string" && input.productNos.includes(productNo) ? `${productNo}：` : "";
-      return { kind: "rejected", message: `${product}${buyProductReason(reason)}` } as const;
+      const refused = typeof productNo === "string" && input.productNos.includes(productNo) ? productNo : undefined;
+      return { kind: "rejected", message: `没有保存：${refused ?? "有一款设备"}${buyProductReason(reason)}，不能新增。`, productNo: refused, reason } as const;
     }
-    return { kind: "rejected", message: displayAdminError(error) } as const;
+    return { kind: "rejected", message: displayAdminError(error), productNo: undefined, reason: undefined } as const;
   }
 }
 
