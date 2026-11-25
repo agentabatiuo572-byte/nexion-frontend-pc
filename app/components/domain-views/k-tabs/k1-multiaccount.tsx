@@ -1805,7 +1805,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           const approval = record.approval;
           const note = pendingNotes[record.kind === "cluster" ? record.commandKey : record.fingerprint];
           const absent = k1Recovery.state(record).conclusion === "not-found";
-          const rejected = !!k1Recovery.state(record).replayRejection;
+          // 审批单已经建了的（待审批、已建单），结果看审批单，不给解除。
+          const rejected = !!k1Recovery.state(record).replayRejection && !record.clusterReceipt && !approval?.pendingTicketId && !approval?.acknowledged;
           // 已建单的放行金额用审批单快照，收益列表只用于告知当前读取状态。
           const observed = record.kind === "entry" ? entryApprovalDisplay(record) : undefined;
           const title = approvalTitle(record);

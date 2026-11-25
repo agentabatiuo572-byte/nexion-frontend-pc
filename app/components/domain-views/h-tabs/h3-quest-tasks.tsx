@@ -1015,7 +1015,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       actions: <><Button size="sm" onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>查询原结果</Button>
         {!original.ticket && !original.acknowledged && !isRetryExpired(original) && !releasable(original)
           && <Button size="sm" disabledReason={mutations.retryBlocked(original)} onClick={() => openRecovery(original)}>按原请求重试</Button>}
-        {releasable(original) && <VerifiedReleaseButton onClick={() => release.ask({ operation: original.change.action, target: changeOf(original.change), targetLabel: "改动",
+        {rejected && <VerifiedReleaseButton onClick={() => release.ask({ operation: original.change.action, target: changeOf(original.change), targetLabel: "改动",
           createdAt: original.createdAt, release: () => mutations.releaseRejected(original) })} />}</>,
     };
   });

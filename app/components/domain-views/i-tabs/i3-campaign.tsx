@@ -1067,7 +1067,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button>
         {!isRetryExpired(row) && !row.receiptKnown && !capRejected(row) && <Button size="sm" disabledReason={capRetryProblem(row)} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原请求重试</Button>}
-        {capRejected(row) && <VerifiedReleaseButton disabled={!!recovering} onClick={() => release.ask({ operation: "调整通知保留数量", target: `${TIER[row.tier as TierK].label}优先级 · ${row.before} → ${row.after} 条`, createdAt: row.createdAt,
+        {capRejected(row) && !row.receiptKnown && <VerifiedReleaseButton disabled={!!recovering} onClick={() => release.ask({ operation: "调整通知保留数量", target: `${TIER[row.tier as TierK].label}优先级 · ${row.before} → ${row.after} 条`, createdAt: row.createdAt,
           release: () => { const released = i3CapRecovery.releaseRejectedReplay(row); syncPending(); return released; } })} />}
       </> })),
   ];

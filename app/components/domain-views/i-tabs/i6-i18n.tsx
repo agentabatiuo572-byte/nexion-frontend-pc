@@ -1639,7 +1639,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   recoveryConfirm.current = { commandKey: () => record.commandKey, finish: () => ctx.closeActionConfirm(confirmation) };
                   openActionConfirm(confirmation);
                 }}>按原请求重试</Button>}
-                {replayRejected && <VerifiedReleaseButton disabled={!!lookupKey} onClick={() => release.ask({ operation: label, target: change(record), targetLabel: "改动", createdAt: record.createdAt,
+                {replayRejected && !record.receiptKnown && record.ticketStatus !== "pending" && <VerifiedReleaseButton disabled={!!lookupKey} onClick={() => release.ask({ operation: label, target: change(record), targetLabel: "改动", createdAt: record.createdAt,
                   release: () => { try { releaseRejectedI6Course(record); } finally { updateRecovery(value => value + 1); } } })} />}
                 </span>
                 {approvalQuery.errors[record.commandKey] && <span className="i6-pending-note">{approvalQuery.errors[record.commandKey]}</span>}

@@ -511,7 +511,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         actions: <>
           <Button size="sm" onClick={() => openDisposition(record, "lookup")}>查询原结果</Button>
           {!expired && !record.ticket && !record.acknowledged && !releasable(record) && <Button size="sm" disabledReason={replayReadProblem(record.voucherId) ?? (!canWrite || !canRetryH7VoucherApproval(record) ? "请查询原结果" : undefined)} onClick={() => openDisposition(record, "retry")}>按原请求重试</Button>}
-          {releasable(record) && <VerifiedReleaseButton onClick={() => release.ask({ operation: H7_VOUCHER_ACTIONS[record.op], target: <>「{record.voucherName}」{approvalChange(record)}</>,
+          {rejected && <VerifiedReleaseButton onClick={() => release.ask({ operation: H7_VOUCHER_ACTIONS[record.op], target: <>「{record.voucherName}」{approvalChange(record)}</>,
             createdAt: record.createdAt, release: () => { try { releaseRejectedH7VoucherApproval(record); } finally { syncPending(); } } })} />}
         </>,
       };

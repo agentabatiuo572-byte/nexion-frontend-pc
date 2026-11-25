@@ -1008,7 +1008,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         actions: <><Button size="sm" loading={recovering === record.commandKey} onClick={() => void recoverSection(record)}>查询原结果</Button>
           {!record.receiptKnown && !pending && !releasable && <Button size="sm" disabledReason={sectionRetryBlocked(record)}
             onClick={() => restoreSection(record)}>按原请求重试</Button>}
-          {releasable && <VerifiedReleaseButton disabled={!!recovering} onClick={() => release.ask({ operation: SECTION_OPERATION[record.action], target: `${sectionName(record.sectionKey)} · ${approvalChange(record)}`,
+          {rejected && <VerifiedReleaseButton disabled={!!recovering} onClick={() => release.ask({ operation: SECTION_OPERATION[record.action], target: `${sectionName(record.sectionKey)} · ${approvalChange(record)}`,
             createdAt: record.createdAt, release: () => { try { releaseRejectedI4Section(record); } finally { syncCommands(); } } })} />}</> };
     }),
   ];

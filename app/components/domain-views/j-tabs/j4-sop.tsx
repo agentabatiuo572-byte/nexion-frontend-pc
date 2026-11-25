@@ -351,7 +351,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       actions: <>
         <Button size="sm" disabled={busy} onClick={() => void queryProposal(record)}>查询原结果</Button>
         {!expired && !record.sopProposal.accepted && !rejected && <Button size="sm" disabled={busy} disabledReason={retryReadReason(record.sopProposal.context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreProposal(record)}>按原请求重试</Button>}
-        {rejected && <VerifiedReleaseButton disabled={busy} onClick={() => askRelease(record, operationNames.execute, contextName(record.sopProposal.context))} />}
+        {rejected && !record.sopProposal.accepted && <VerifiedReleaseButton disabled={busy} onClick={() => askRelease(record, operationNames.execute, contextName(record.sopProposal.context))} />}
       </>,
       detail: <>
         <p>{`${record.sopProposal.context.emergency ? "应急通道" : "常规通道"} · ${record.sopProposal.context.fields.triggerBasis} · ${record.sopProposal.context.playbook.seq.length} 步`}</p>
