@@ -402,17 +402,24 @@ function fBatchLogItems(log: { obj: string; delta: string }): FBatchItem[] | und
   return items && (F_BATCH_DIGEST.test(log.obj) || log.obj === items.map((item) => item.key).join(",")) ? items : undefined;
 }
 /**
- * E1 商品提案的操作记录：前后值是提案时冻结的两份商品快照（JSON 原文，后端 createProposalOnce 写入）。拆回两份，按审批单详情同一套行写；
- * 拆不出两份商品快照时照原文显示。
+ * E1 商品提案的操作记录：拆出冻结的前后值，按审批单详情展示。提案日志没有操作码，B97 新建的前侧只冻结两项展示默认值。
  */
-function e1SkuLogSides(log: { delta: string }): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
+function e1SkuLogSides(log: Pick<A2AuditLogRow, "action" | "domain" | "delta">): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
   const isSku = (text: string) => {
     try { const value: unknown = JSON.parse(text); return isRecord(value) && typeof value.skuId === "string"; } catch { return false; }
   };
   if (log.delta.startsWith("— → ") && isSku(log.delta.slice(4))) return { before: "", after: log.delta.slice(4), operationCode: "e1_sku_create" };
   for (let at = log.delta.indexOf("} → {"); at >= 0; at = log.delta.indexOf("} → {", at + 1)) {
     const before = log.delta.slice(0, at + 1), after = log.delta.slice(at + 4);
-    if (isSku(before) && isSku(after)) return { before, after, operationCode: "e1_sku_update" };
+    if (!isSku(after)) continue;
+    if (isSku(before)) return { before, after, operationCode: "e1_sku_update" };
+    if (log.action === "A2_OPERATION_PROPOSED" && log.domain === "E") {
+      const defaults = parseReview(before);
+      if (defaults?.kind === "object" && Object.keys(defaults.value).length === 2
+        && defaults.value.displaySoldBase === 0 && defaults.value.liveActivityVisible === true) {
+        return { before, after, operationCode: "e1_sku_create" };
+      }
+    }
   }
   return undefined;
 }
@@ -1235,7 +1242,10 @@ function reviewPair(before: string, after: string, operationCode?: string) {
   const original = { b, a, labels, evidenceKeys: [] as string[] };
   // E1 商品：后端冻结的是代码值（系列、档位、商城状态、生命周期、库存模式），这里换成和商品页一样的名称，价格带币种。新建没有前值；旧票没有这一项时不补。
   if (operationCode === "e1_sku_create" || operationCode === "e1_sku_update") {
-    const previous = b?.kind === "object" && isSkuTaglineTranslations(b.value.taglineTranslations) ? b.value.taglineTranslations : undefined;
+    const creating = operationCode === "e1_sku_create";
+    // 新建的结构化前值是默认设置。更早的文字摘要沿用原显示。
+    const skuBefore = creating && b?.kind === "object" ? null : b;
+    const previous = skuBefore?.kind === "object" && isSkuTaglineTranslations(skuBefore.value.taglineTranslations) ? skuBefore.value.taglineTranslations : undefined;
     const next = a?.kind === "object" && isSkuTaglineTranslations(a.value.taglineTranslations) ? a.value.taglineTranslations : previous;
     // 语言按中文、越南语、其他语言的固定顺序列（TX-35），不随服务器快照里键的先后变。
     const languages = (Object.keys(SKU_TAGLINE_LABELS) as (keyof SkuTaglineTranslations)[]).filter(language => language in { ...previous, ...next });
@@ -1250,6 +1260,7 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       delete value.taglineTranslations;
       for (const language of languages) value[`taglineTranslations.${language}`] = translations?.[language] ?? null;
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
+      if (creating && typeof value.liveActivityVisible === "boolean") value.liveActivityVisible = e1Value(value.liveActivityVisible);
       for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
       if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${String(value.price).trim()} USD`;
       const derivedDaily = "baseRate" in value ? e1MonthlyBaseRate(value.baseRate, value.monthlyTargetUsdt) : undefined;
@@ -1260,9 +1271,9 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       return { kind: "object", value };
     };
     // 新建只列填了的项，没填的不逐行写「未设置」（和商品页确认框一致）。
-    const filled = (review: Review | null): Review | null => b || review?.kind !== "object" ? review
+    const filled = (review: Review | null): Review | null => skuBefore || review?.kind !== "object" ? review
       : { kind: "object", value: Object.fromEntries(Object.entries(review.value).filter(([, item]) => item !== null && item !== "" && !(Array.isArray(item) && !item.length))) };
-    return { b: named(b, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
+    return { b: named(skuBefore, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
   }
   // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
   if (operationCode === "h4_legacy_event_reward_update" && b?.kind === "object" && a?.kind === "object" && "eventCode" in b.value) {
