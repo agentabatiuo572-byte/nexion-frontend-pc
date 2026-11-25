@@ -29,7 +29,8 @@
  * - 抽屉上最多再叠一层弹窗，弹窗上不再叠弹窗（PG-38）；错误写在最上层。
  *
  * Modal 用法同旧 Modal。RdPage 里的旧 Modal、OperationConfirmModal 会自动走这个组件，不用改调用。
- * 框里打过字后点空白不关；按 Esc 先在底栏左边轻提示「再按一次 Esc 关闭」，再按一次才关，免得手滑丢了填的内容。
+ * 框里填过内容后点空白和 Esc 都不关，按 Esc 只在底栏左边轻提示要关请点 ×，免得手滑丢了填的内容（OP-46）；提交中照旧不响应。
+ * 文字框按现在有没有字算，删空了照常关；勾选、下拉、日期、分段这类点选选过一次就一直算填过。
  * ×、取消照常关。只靠点选的表单传 dirty，搜索框不算填内容。
  *
  * 弹窗里的文字分四层（VS-100～VS-108）：
@@ -47,6 +48,7 @@
 import { Children, Fragment, isValidElement, useEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, ShieldCheck, X, type LucideIcon } from "lucide-react";
+import { focusFrame } from "./block-state";
 import { Button, IconButton, TipSide } from "./button";
 import { Explain } from "./explain";
 import { Fact, Facts } from "./facts";
@@ -91,6 +93,12 @@ function tabOutOfDrawer(event: KeyboardEvent<HTMLDivElement>, opener: HTMLElemen
 
 /** 每个开过的弹窗、抽屉关掉后焦点该回哪。从另一个框里打开的框，原按钮跟着那个框一起没了时（离开框里点「…后继续」打开的保存确认），接着问那个框（BUG-710）。 */
 const handoffs = new WeakMap<Element, () => HTMLElement | null>();
+/** 不是原生控件的点选（rd 下拉的选项、分段、开关、搜索选择的候选）：它们不发 input 事件，按点中、回车选中来认。 */
+const PICK_ROLES = '[role="option"], [role="radio"], [role="switch"], [role="menuitemradio"]';
+/** 能打字的输入框类型；其余（勾选、单选、日期、文件等）算点选。 */
+const TEXT_INPUT = /^(text|search|email|tel|url|password|number)$/;
+/** 打开者那一行已经不在时接焦点的稳定外框：表格外框、面板、页签面板，以及有名字的区块（卡片墙这类 section）。 */
+const STABLE_FRAME = '.rd-table-scroll, .rd-panel, [role=tabpanel], section[aria-label], [role="region"][aria-label]';
 /** 最上层还开着的弹窗或抽屉，不含正在关的这个。 */
 const openOverlay = (except: Element | null) => [...document.querySelectorAll<HTMLElement>('.rd-modal[data-state="open"], .rd-drawer[data-state="open"]')].filter((node) => node !== except).at(-1) ?? null;
 
@@ -153,12 +161,32 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
       // 关掉的时候焦点已经在另一个还开着的框里（旧抽屉退出动画还没完，新抽屉已经打开并接了焦点）：不动它。
       const holder = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>(".rd-modal, .rd-drawer") : null;
       if (holder && holder !== self && holder.getAttribute("data-state") === "open") return;
+      // 关掉的时候焦点已经在页面上别的控件里（抽屉开着时 Tab 到页面，在那里按 Esc）：留在那里，不拉回原来那一行（ST-56）。
+      const elsewhere = document.activeElement;
+      if (elsewhere instanceof HTMLElement && elsewhere !== document.body && elsewhere.isConnected && !holder) return;
       const top = openOverlay(self);
       // 都找不到时回到还开着的最上层框，不落到页面上。
       const next = latest.current() ?? top;
       // 这时上面还开着另一个弹窗（离开框收起、保存确认打开）：焦点留在那个弹窗里，不拉出去。
       if (top?.matches(".rd-modal") && !(next && top.contains(next))) { if (!top.contains(document.activeElement)) top.focus(); return; }
+      // 原按钮还在但提交后变成了原生 disabled，接不到焦点：当作没有去处，往下找外框。
       next?.focus();
+      if (next && document.activeElement === next) return;
+      // 打开者那一行处理完已经移出列表（A2 撤回成功）：不找别的记录的同名按钮，交给还挂着的最近一层稳定外框；
+      // 接不到焦点再往外一层，到整页外框为止，不落到整页外框和页面上（BUG-710 补记三）。焦点已经在页面别处时不动。
+      const active = document.activeElement;
+      if (active && active !== document.body && active.isConnected && !self?.contains(active)) return;
+      for (const frame of chain.current) {
+        if (frame.matches(".rd-page")) break;
+        if (!frame.isConnected || !frame.matches(STABLE_FRAME) || !focusFrame(frame)) continue;
+        // 这是临时落点：带 data-retry-landing，页面自己「焦点没去处才补位」的逻辑把它当成还没去处，照样放回原卡（h4-legacy-parts）。
+        // 原本就能 Tab 到的外框（表格滚动区）只在停留期间带这个标记，离开就撤掉，不影响它平时的焦点框。
+        if (!frame.hasAttribute("data-retry-landing")) {
+          frame.setAttribute("data-retry-landing", "");
+          frame.addEventListener("blur", () => frame.removeAttribute("data-retry-landing"), { once: true });
+        }
+        return;
+      }
     },
   };
 }
@@ -310,12 +338,21 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
   const focus = useFocusHandoff(true, returnFocus);
   const feedbackId = useDialogFeedback();
   const typed = useRef(false);
+  /** 点选类控件（勾选、下拉、日期）动过。 */
+  const picked = useRef(false);
   // 失焦时校验提示换掉帮助文字（删了节点），Radix 的焦点圈在焦点换手途中看到删除，会把焦点拉回外框（BUG-536）；记下本来要去的控件，送过去。
   const focusTarget = useRef<HTMLElement | null>(null);
-  // 填过内容后第一次按 Esc 只提示，第二次才关；接着打字就收起提示，重新算。
-  const [escArmed, setEscArmed] = useState(false);
+  // 填过内容后按 Esc 一直不关，只提示要关请点 ×（OP-46）；接着打字就收起提示。
+  const [escHinted, setEscHinted] = useState(false);
   const close = () => { if (!busy) onClose(); };
-  const escText = "再按一次 Esc 关闭，已填的内容不保留";
+  const escText = "填过内容，按 Esc 不会关闭；要放弃请点右上角 ×";
+  // rd 下拉、分段这类点选选中过一次，和原生勾选一样一直算填过内容（下拉弹层挂在框外，事件按组件树传到这里）。
+  const notePick = (target: EventTarget | null) => {
+    const pick = target instanceof Element ? target.closest(PICK_ROLES) : null;
+    if (!pick || pick.matches('[aria-disabled="true"], [data-disabled]')) return;
+    picked.current = typed.current = true;
+    setEscHinted(false);
+  };
   return (
     <Dialog.Root open onOpenChange={(next) => { if (!next) close(); }}>
       <Dialog.Portal container={surface?.container ?? undefined}>
@@ -330,8 +367,23 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           aria-describedby={undefined}
           onInput={(event) => {
             if (event.target instanceof Element && event.target.matches(SEARCH_INPUT)) return;
-            typed.current = true;
-            setEscArmed(false);
+            // 勾选、下拉、日期这类点选动过一次就一直算填过内容；文字框按现在有没有字算，删空了 Esc 和点空白照常关（OP-46「Esc 关闭空框」）。
+            if (!(event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement && TEXT_INPUT.test(event.target.type))) picked.current = true;
+            typed.current = picked.current || [...event.currentTarget.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")]
+              .some((field) => !field.matches(SEARCH_INPUT) && !field.readOnly && !field.disabled && (field instanceof HTMLTextAreaElement || TEXT_INPUT.test(field.type)) && field.value.trim() !== "");
+            setEscHinted(false);
+          }}
+          onPointerUp={(event) => notePick(event.target)}
+          onKeyDown={(event) => {
+            // 回车、空格选中；分段用方向键、Home、End 直接选中，下拉里的方向键只是移动高亮，不算。
+            const target = event.target instanceof Element ? event.target : null;
+            if (event.key === "Enter" || event.key === " " || (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") && target?.closest('[role="radio"]')) notePick(target);
+            // 这两种选中不落在选项上：搜索选择在输入框里按回车选中高亮的候选；收起的下拉按字母直接换值。
+            if (event.key === "Enter" && target?.matches('input[role="combobox"][aria-expanded="true"]')
+              || event.key.length === 1 && event.key !== " " && !event.ctrlKey && !event.metaKey && !event.altKey && target?.matches('button[role="combobox"]')) {
+              picked.current = typed.current = true;
+              setEscHinted(false);
+            }
           }}
           onBlur={(event) => { focusTarget.current = event.relatedTarget instanceof HTMLElement ? event.relatedTarget : null; }}
           onFocus={(event) => {
@@ -340,9 +392,9 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
             if (event.target === event.currentTarget && next && next !== event.currentTarget && event.currentTarget.contains(next)) next.focus();
           }}
           onEscapeKeyDown={(event) => {
-            if (busy || !(dirty || typed.current) || escArmed) return;
+            if (busy || !(dirty || typed.current)) return;
             event.preventDefault();
-            setEscArmed(true);
+            setEscHinted(true);
           }}
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={focus.onCloseAutoFocus}
@@ -361,9 +413,9 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           </div>
           <ToastHost dialogId={feedbackId} />
           <div className="rd-modal-body">{children}</div>
-          {/* 读屏用的状态区一直在，有字时才读出来；看得见的提示只在按过一次 Esc 后排进底栏，平时不占位。 */}
-          <span className="rd-sr-only" role="status">{escArmed ? escText : ""}</span>
-          {(footer || escArmed) && <div className="rd-modal-foot">{escArmed && <p className="rd-modal-esc" aria-hidden><KeepText text={escText} /></p>}<TipSide side="top">{footer}</TipSide></div>}
+          {/* 读屏用的状态区一直在，有字时才读出来；看得见的提示只在按过 Esc 后排进底栏，平时不占位。 */}
+          <span className="rd-sr-only" role="status">{escHinted ? escText : ""}</span>
+          {(footer || escHinted) && <div className="rd-modal-foot">{escHinted && <p className="rd-modal-esc" aria-hidden><KeepText text={escText} /></p>}<TipSide side="top">{footer}</TipSide></div>}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

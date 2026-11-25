@@ -781,7 +781,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
           toast(released ? recoveryInfo(releasing).gone ? `已解除这条记录。${GONE_TEXT}` : M_RELEASED_TEXT : "这条记录刚有变化，没有解除，请看最新状态。", released ? "success" : "warn");
         }} />}
 
-      {loading ? <Conclusion state="unknown">正在读取问答…</Conclusion>
+      {loading ? <Conclusion state="unknown">正在加载问答…</Conclusion>
         : failed ? <div className="m4-health" data-module-health-state="error"><Conclusion state="unknown" action={<Button size="sm" onClick={() => void readCurrent()}>重试</Button>}
             hint={<>{knowledgeRead.kind === "failed" ? knowledgeRead.reason : pget("I.support.knowledgeError")} 暂时不能新建和修改。{loadError && "客服中心的其他数据也没同步成功。"}</>}
             explain="问答和旧的工单处理时限数据是一起读的，其中一份读不全，问答就显示不了。点「重试」只重读知识库。">问答加载失败</Conclusion></div>

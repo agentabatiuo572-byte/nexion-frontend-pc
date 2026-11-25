@@ -755,8 +755,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   };
 
   const content = <>
-    {!sessionTemplatesAvailable && (ctx.contentLoading ? <BlockState state="loading" title="正在读取话术与模板…" />
-      : <BlockState state="error" title="话术与模板读不到，暂时不能修改" onRetry={() => void readCurrent()} retryLabel="重新读取" />)}
+    {!sessionTemplatesAvailable && (ctx.contentLoading ? <BlockState state="loading" title="正在加载话术与模板…" />
+      : <BlockState state="error" title="话术与模板加载失败" detail="暂时不能修改。" onRetry={() => void readCurrent()} />)}
     {sessionTemplatesAvailable && !canManageM5Content && <Notice tone="neutral">{isSupportM5Supervisor ? "你只能查看；新建、发布和归档还需要服务规则与话术的修改权限。" : "你只能查看；新建、发布和归档要超级管理员、内容运营或客服主管。"}</Notice>}
     <PageTabs level={2} label="话术与模板分类" ids={contentIds} value={contentView} onChange={setContentView} items={[
       { value: "scripts", label: "专属客服话术" },
@@ -835,8 +835,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       } : undefined} />
   );
   const channels = <>
-    {!sessionTemplatesAvailable && (ctx.contentLoading ? <BlockState state="loading" title="正在读取会话类别和推送设置…" />
-      : <BlockState state="error" title="会话类别和推送设置读不到，暂时不能修改" onRetry={() => void readCurrent()} retryLabel="重新读取" />)}
+    {!sessionTemplatesAvailable && (ctx.contentLoading ? <BlockState state="loading" title="正在加载会话类别和推送设置…" />
+      : <BlockState state="error" title="会话类别和推送设置加载失败" detail="暂时不能修改。" onRetry={() => void readCurrent()} />)}
     <Panel icon={MessagesSquare} tone="role-3" title="会话类别"
       explain="用户在 App 客服入口能新建哪几类会话。这里只管专属客服会话；Nova 智能问答已在 App 下线。停用全部客服能力到全局运营开关。">
       <ConfigList label="会话类别">

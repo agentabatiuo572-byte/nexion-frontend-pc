@@ -57,6 +57,8 @@ type TimeoutInput = { warnMinutes: number; closeMinutes: number; sessionEndMinut
 type TimeoutCommand = { key: string; input: TimeoutInput; policy: ConversationTimeoutPolicy; operator: string };
 
 const CONVO_KEY = "I.session.convos";
+/** 会话列表重读到之后焦点落在「会话收件箱」标题上，不落到整页外框（BUG-710）。 */
+const INBOX_TITLE = { get current() { return document.querySelector<HTMLElement>(".m3s-inbox-title h2"); } };
 const newKey = () => `m3-${crypto.randomUUID()}`;
 const ticketLinksKey = (adminId: number) => `nexion-m3-converted-tickets-v1:${adminId}`;
 const pendingTimeoutPolicies = createPendingMutationStore<StoredMessage>({ storageKey: "nexion-admin-m3-timeout-pending-v1", retainExpiredRecords: true, isValidRecord: (row) => typeof row.payload === "string" });
@@ -2116,7 +2118,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     {streamLost && !reconnectExhausted && <Notice tone="warn">连接已断开，正在重连；下面是最近一次的数据</Notice>}
     {readDenied ? <BlockState state="denied" title="当前账号看不到客户会话" detail="这页只给客服、客服主管和超级管理员用。需要查看会话，请联系管理员调整账号。" />
       : !conversationsAvailable
-      ? ctx.contentLoading && !convRetrying ? <Conclusion state="unknown">正在加载会话…</Conclusion> : <Panel><BlockState state="error" title="会话加载失败" detail={convError || ctx.pget("I.session.conversationsError") || serviceStatus} onRetry={() => void retryConversations()} retrying={convRetrying} /></Panel>
+      ? ctx.contentLoading && !convRetrying ? <Conclusion state="unknown">正在加载会话…</Conclusion> : <Panel><BlockState state="error" title="会话加载失败" detail={convError || ctx.pget("I.session.conversationsError") || serviceStatus} onRetry={() => void retryConversations()} retrying={convRetrying} afterRetryFocus={INBOX_TITLE} /></Panel>
       : reviewScopeError
         ? <Panel><BlockState state="error" title="当前可见范围加载失败" detail={reviewScopeError} onRetry={() => { setReviewScopeError(""); setScopeRetry(value => value + 1); }} /></Panel>
         : qualificationUnknown

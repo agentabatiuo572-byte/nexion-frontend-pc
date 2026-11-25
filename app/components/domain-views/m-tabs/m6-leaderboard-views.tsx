@@ -247,7 +247,6 @@ export function PerformanceBody({ row, board, month, perf, stale, refreshFailed 
       <Fact k="首充人数" unit={countShown(row.firstPayment) === "—" ? undefined : "人"}>{countShown(row.firstPayment)}</Fact>
       <Fact k="当前绑定客户" unit={countShown(row.customers) === "—" ? undefined : "人"}>{countShown(row.customers)}</Fact>
     </Facts>
-    {gaps.length > 0 && <Notice tone="done" title={board === "netContribution" ? "这位客服的成绩还没核完" : "部分成绩还没核完"}>{gaps.join("、")}。缺的数写「—」，不是 0。</Notice>}
-    {(stale || refreshFailed) && <Notice tone="warn">显示的是上次发布的结果{refreshFailed ? "；榜单更新暂未成功，请稍后读取最新结果" : ""}。</Notice>}
+    {gaps.length > 0 && <Notice tone="done" title={board === "netContribution" ? "这位客服的成绩还没核完" : "部分成绩还没核完"}>{gaps.join("、")}。</Notice>}
   </>;
 }

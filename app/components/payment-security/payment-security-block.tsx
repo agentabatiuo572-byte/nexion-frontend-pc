@@ -27,7 +27,7 @@ function stateTag(record: PaymentSecurityRecord) {
   return <StatusTag tone={record.state === "RELEASED" ? "ok" : "done"}>{stateText(record)}</StatusTag>;
 }
 
-export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canRelease, retryMissingRelease, writeBlockedReason, onWriteBusy, onState }: {
+export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canRelease, retryMissingRelease, writeBlockedReason, onWriteBusy, onState, onRetry }: {
   port: PaymentSecurityPort;
   userLabel: string;
   /** 页面刷新时变，这一块跟着重读。 */
@@ -38,6 +38,8 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   writeBlockedReason?: string;
   onWriteBusy?: (busy: boolean) => void;
   onState?: (state: PaymentSecurityState, pending: boolean) => void;
+  /** 点了失败卡的「重试」：页面可以让这一块所在的折叠组读到后也保持展开。 */
+  onRetry?: () => void;
 }) {
   const session = useAdminAuth((state) => state.session), epoch = useAdminAuth((state) => state.authEpoch);
   const [summary, setSummary] = useState<PaymentSecuritySummary | null>(null);
@@ -50,14 +52,16 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   const owner = session?.adminId ?? 0;
   const load = useCallback(async () => {
     const id = ++generation.current;
-    setSummary(null); setError(""); setLoading(true); setPending(!!pendingPaymentRelease(owner, port.userId));
+    // 失败卡在重读期间留着写「重试中…」，结果回来再换：先清掉错误会卸下失败卡，焦点掉到页面上（BUG-710）。
+    setSummary(null); setLoading(true); setPending(!!pendingPaymentRelease(owner, port.userId));
     try {
       const next = await port.summary();
-      if (id === generation.current) { setSummary(next); setDenied(false); }
+      if (id === generation.current) { setSummary(next); setError(""); setDenied(false); }
     } catch (failure) {
       if (id === generation.current) {
         if (failure instanceof PaymentPasswordApiError && failure.status === 403) {
           setSelected(null);
+          setError("");
           setDenied(true);
         } else setError(message(failure));
       }
@@ -77,14 +81,15 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   const showPending = pending && !denied;
   useEffect(() => { onState?.(state, showPending); }, [onState, state, showPending]);
   if (!session) return null;
-  const line = error ? "加载失败" : denied ? "· 无权限" : loading ? "正在读取…" : record ? stateText(record) : "支付密码无异常";
+  // 重试在途只有「重试中…」一种状态，摘要先不写「加载失败」（ST-30、ST-31）。
+  const line = error ? loading ? "" : "加载失败" : denied ? "· 无权限" : loading ? "正在加载…" : record ? stateText(record) : "支付密码无异常";
   return (
     <>
       <Fold inset title="支付安全" alert={state === "exception" || state === "failed" || showPending} alertTone={error ? "danger" : "warn"} summary={line}
         explain={<><p>支付密码仅用于钱包余额付款。HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受此锁定影响。</p>{record && <p>解除只处理本条支付密码异常，登录状态不受影响。</p>}</>}
         actions={!denied && !error && <Button size="sm" aria-label="刷新支付安全" icon={<RefreshCcw size={13} aria-hidden />} loading={loading} onClick={() => void load()}>刷新</Button>}>
         <div className="rd-detail-block">
-          {error ? <BlockState retryKey="payment-security-block-87" state="error" compact title={error} onRetry={() => void load()} /> : denied && <BlockState state="denied" compact title="无权限" />}
+          {error ? <BlockState retryKey="payment-security-block-87" state="error" compact title={loading ? "正在重新加载支付安全…" : "支付安全加载失败"} detail={loading ? undefined : error} onRetry={() => { onRetry?.(); void load(); }} retrying={loading} /> : denied && <BlockState state="denied" compact title="无权限" />}
           {record && <>
             <Facts>
               <Fact k="当前状态">{stateTag(record)}</Fact>

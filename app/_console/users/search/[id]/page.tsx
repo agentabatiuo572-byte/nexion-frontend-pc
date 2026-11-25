@@ -74,6 +74,10 @@ import { inviterDetailView, referralCountsView } from "@/app/components/invitati
 const STALE_PROFILE_WRITE_BLOCK = "资料没有刷新成功，刷新成功后再操作";
 /** 同一次重读在途时，各写入口的原因都用这一句；读失败后才换成上面那句（R30）。 */
 const PROFILE_REREAD_BLOCK = "正在重新读取，读完再操作";
+/** 整页读取重试读到后，焦点落在页头下面第一块内容（结论句，或第一块面板的标题），不落到整页外框（BUG-710）。 */
+const PROFILE_FIRST_BLOCK = { get current() { return document.querySelector<HTMLElement>(".rd-page .rd-conclusion, .rd-page .rd-panel-title"); } };
+/** 和整页同一次读取的区块没有单独的读取，失败卡的按钮写实「刷新整页」（ST-35、OP-09、BUG-710 N05）。 */
+const WHOLE_PAGE_RETRY = { onRetry: () => window.location.reload(), label: "刷新整页" };
 /** 结果未知面板在资料没刷新成功时的常显原因：只点名这时真被挡住的按钮，说清什么时候能点、查询不受影响（OP-126）。 */
 const recoveryStaleNote = (buttons: readonly string[]) => `资料没有刷新成功，刷新成功后再${buttons.map((name) => `「${name}」`).join("或")}；「查询原结果」照常可用。`;
 
@@ -565,15 +569,17 @@ function RecordTable({ label, rows, columns, empty = "暂无记录", selected, o
 }
 
 /** 折叠组里的一小块：缺的不显示，读取失败只替换这一块（C1-V02、C1-S04）。同组块头一个样子，都是收起的一行（重复）；里面有事时摘要写清是哪件事（DP-04）。 */
-function Block({ id, title, sub, explain, section, actions, failure, sectionRetry, issue, issueTone = "warn", summary, disclosure, reloading, live, children }: {
+function Block({ id, title, sub, explain, section, actions, failure, failureRetry, sectionRetry, issue, issueTone = "warn", summary, disclosure, reloading, live, children }: {
   id?: string;
   title: string;
   sub?: ReactNode;
   explain?: ReactNode;
   section: User360Section | null | undefined;
   actions?: ReactNode;
-  /** 这块单独读取、读失败有自己的原因时传，不走整页刷新。 */
+  /** 这块单独读取、读失败有自己的原因时传，不走整页刷新：失败卡标题写「{title}加载失败」，这里写原因。 */
   failure?: ReactNode;
+  /** failure 的「重试」：这块有自己的读取就接上，只重读这一块；和整页同一次读取的写「刷新整页」（ST-35、BUG-710 N05）。 */
+  failureRetry?: { onRetry: () => void; retrying?: boolean; label?: string };
   sectionRetry?: { detail: string; onRetry: () => void; retrying: boolean };
   /** 这块里有要处理的事：写进摘要并上色，不用点开才知道（DP-04）。 */
   issue?: string;
@@ -590,7 +596,7 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
   if (!section) return null;
   const failed = !!failure || sectionFailed(section);
   const body = failure
-    ? <BlockState state="error" compact title={failure} />
+    ? <BlockState state="error" compact title={`${title}加载失败`} detail={failure} onRetry={failureRetry?.onRetry} retrying={failureRetry?.retrying} retryLabel={failureRetry?.label} />
     : sectionFailed(section)
       ? sectionRetry
         // 这块能自己重读：在途时只有一种状态，失败标题和原因先收起，新回包仍失败才放回来（ST-30、ST-31）。
@@ -600,7 +606,7 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
             <CountsRetryButton onRetry={sectionRetry.onRetry} retrying={sectionRetry.retrying} rereading={reloading} />
           </div>
         // 这几块和整页同一次读取，没有单独重读这一块的入口：按钮写实「刷新整页」，不叫「重试」（ST-35、OP-09、BUG-710）。
-        : <BlockState state="error" compact title={`${title}加载失败`} onRetry={() => window.location.reload()} retryLabel="刷新整页" />
+        : <BlockState state="error" compact title={`${title}加载失败`} onRetry={WHOLE_PAGE_RETRY.onRetry} retryLabel={WHOLE_PAGE_RETRY.label} />
       : <div className="rd-detail-block">{children}</div>;
   return (
     <div id={id} className="rd-detail-block" aria-busy={reloading || undefined}>
@@ -951,7 +957,7 @@ export default function UserDetailPage() {
       }
     };
     const [listed, scanned] = await Promise.allSettled([fetchUserPaymentMethods(userId, includeUnbound, paymentPage, 10), scan()]);
-    if (listed.status === "fulfilled") { setPaymentMethods(listed.value); setPaymentError(null); } else setPaymentError(displayAdminError(listed.reason));
+    if (listed.status === "fulfilled") { setPaymentMethods(listed.value); setPaymentError(null); } else setPaymentError(displayAdminReadError(listed.reason));
     setRevokeScan(scanned.status === "fulfilled" ? scanned.value : null);
     setRevokeScanFailed(scanned.status === "rejected");
     setPaymentLoading(false);
@@ -1294,6 +1300,8 @@ export default function UserDetailPage() {
     const scroller = heading?.closest("main");
     if (heading && scroller) scroller.scrollTop += heading.getBoundingClientRect().top - previousTop;
   }, [detail]);
+  // 在一组里点过「重试」：读到后这组不因为异常消失就自动收起，焦点不跟着藏起来（BUG-710）。
+  const keepFoldOpen = (group: string) => setOpenFolds((current) => current[group] === undefined ? { ...current, [group]: true } : current);
   const foldProps = (group: string, alert: boolean) => ({
     alert,
     open: openFolds[group] ?? alert,
@@ -1314,7 +1322,8 @@ export default function UserDetailPage() {
     return (
       <RdPage>
         <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
-        <BlockState state="loading" title="正在加载…" />
+        {/* 和下面失败时同一个 key：重试时这一块不卸下重挂，焦点留在这一块（BUG-710）。 */}
+        <BlockState key="profile-read" state="loading" title="正在加载…" />
         {writeResultNotice}
       </RdPage>
     );
@@ -1327,7 +1336,7 @@ export default function UserDetailPage() {
         {writeResultNotice}
         {denied
           ? <BlockState state="denied" title="无权限访问" detail={error} />
-          : <BlockState retryKey="page-1330" state="error" title={`${supportScope ? "客户资料" : "用户详情"}加载失败：${error}`} onRetry={() => void load()} />}
+          : <BlockState key="profile-read" retryKey="page-1330" state="error" title={`${supportScope ? "客户资料" : "用户详情"}加载失败`} detail={error} onRetry={() => void load()} afterRetryFocus={PROFILE_FIRST_BLOCK} />}
       </RdPage>
     );
   }
@@ -1622,7 +1631,7 @@ export default function UserDetailPage() {
       : joined([
         detail.sessions && `在线登录设备 ${numberLabel(summary.activeSessionCount)}`,
         detail.sessions && `两步验证${summary.twoFactorEnabled ? "开启" : "关闭"}`,
-        paymentSecurity.state === "clear" ? "支付密码无异常" : paymentSecurity.state === "loading" && "正在读取…",
+        paymentSecurity.state === "clear" ? "支付密码无异常" : paymentSecurity.state === "loading" && "正在加载…",
         !supportScope && paymentCount !== null && `支付方式 ${paymentCount} 张`,
       ]);
   const fundsIssue = joined([withdrawalExceptions > 0 && `${withdrawalExceptions} 笔提现异常`, withdrawalsWaiting > 0 && `${withdrawalsWaiting} 笔提现等待处理`]);
@@ -1752,9 +1761,9 @@ export default function UserDetailPage() {
             </Block>}
             {paymentSecurityPort && <div className="rd-detail-block">
               <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick} canRelease={canReleasePayment} writeBlockedReason={profileWriteBlockedReason} onWriteBusy={setPaymentWriteBusy}
-                onState={onPaymentSecurity} />
+                onState={onPaymentSecurity} onRetry={() => keepFoldOpen("security")} />
             </div>}
-            {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError && `支付方式加载失败：${paymentError}`}
+            {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError} failureRetry={{ onRetry: () => { keepFoldOpen("security"); void loadPaymentMethods(); }, retrying: paymentLoading }}
               sub={paymentMethods && paymentMethods.total > 0 ? `${paymentMethods.total} 条` : undefined}
               issue={unfinishedRevokes.length > 0 ? `${unfinishedRevokes.length} 张卡仍可能被扣款` : undefined} issueTone="danger"
               actions={<Button size="sm" aria-label="刷新支付方式" icon={<RefreshCcw size={13} aria-hidden />} loading={paymentLoading} onClick={() => void loadPaymentMethods()}>刷新</Button>}>
@@ -1790,7 +1799,7 @@ export default function UserDetailPage() {
                 ["需重置密码", securityValue(summary.passwordResetRequired)],
               ]} />
             </Block>
-            <Block title="兑换记录" {...listProps("exchange")} section={detail.financial} failure={ledgerUnread && "账单流水读不到，兑换记录暂时无法确认，不是没有记录。"} sub={Array.isArray(detail.financial?.stakingLedgerRows) ? `质押记录 ${numberLabel(detail.financial.stakingLedgerRows.length)} 条` : undefined}
+            <Block title="兑换记录" {...listProps("exchange")} section={detail.financial} failure={ledgerUnread && "账单流水读不到，兑换记录暂时无法确认，不是没有记录。"} failureRetry={WHOLE_PAGE_RETRY} sub={Array.isArray(detail.financial?.stakingLedgerRows) ? `质押记录 ${numberLabel(detail.financial.stakingLedgerRows.length)} 条` : undefined}
               explain={`钱包 USDT ${amountText(wallet?.usdt)}，钱包 UVT ${amountText(wallet?.nex, "UVT")}。`}>
               <RecordTable label="兑换记录" rows={exchanges} columns={EXCHANGE_COLUMNS} empty="暂无兑换记录" {...recordProps("exchange")} />
             </Block>
@@ -1808,7 +1817,7 @@ export default function UserDetailPage() {
               ]} />
               <RecordTable label="设备明细" rows={devices} columns={deviceColumns} {...recordProps("device")} />
             </Block>
-            <Block title="收益明细" {...listProps("earning")} section={detail.earnings ? { sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined} failure={ledgerUnread && "账单流水读不到，收益暂时无法确认，不是没有收益。"} sub={`共 ${numberLabel(detail.earnings?.total)} 条`}
+            <Block title="收益明细" {...listProps("earning")} section={detail.earnings ? { sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined} failure={ledgerUnread && "账单流水读不到，收益暂时无法确认，不是没有收益。"} failureRetry={WHOLE_PAGE_RETRY} sub={`共 ${numberLabel(detail.earnings?.total)} 条`}
               explain="收益合计按这次读到的账单流水算，不承诺是全部历史。">
               <Values rows={[
                 ["收益合计", `${amountText(detail.earnings?.totalUsdt)} · ${amountText(detail.earnings?.totalNex, "UVT")}`],
