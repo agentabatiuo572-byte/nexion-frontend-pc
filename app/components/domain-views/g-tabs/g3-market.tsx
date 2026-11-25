@@ -1021,7 +1021,7 @@ function G3MarketEditor() {
         <Notice tone="warn"
           title={`${rereadPending ? "操作已完成。" : ""}以下是 ${businessStamp(overviewReadAt)}（${businessZone().label}）的概览，刷新失败`}
           action={<Button size="sm" loading={overviewReading} onClick={() => { overviewRetryFocus.current = true; void readOverview(); }}>重试</Button>}>
-          {overviewError} 读到最新概览后才能修改。
+          {overviewError}读到最新概览后才能修改。
         </Notice>
       ) : rereadPending && overviewReading && (
         <Notice tone="progress" title="操作已完成，正在加载最新 UVT 价格">读到之前表里的修改先不可用；有原记录的那一项照样能打开。</Notice>

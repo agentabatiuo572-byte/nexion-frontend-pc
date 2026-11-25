@@ -307,12 +307,13 @@ export function H7VoucherForm({ voucher, baseline, value, dirty, readFailed, con
               {readFailed.detail}{readFailed.detail ? " " : ""}填的内容还在。
             </Notice>}
             <MergeNotice report={mergeReport ?? null} name={([key]) =>
-              key === "type" && mergeReport?.latestType ? `类型（对方改成${mergeReport.latestType}）` : FIELD_LABEL[key] ?? null}>
+              key === "type" && mergeReport?.latestType ? `类型（对方改成${mergeReport.latestType}）`
+                : mergeReport?.latestType && (key === "amountUSD" || key === "percent") ? null : FIELD_LABEL[key] ?? null}>
               {/* 类型被对方改掉后用不上的输入：写清是哪一项、填的多少、现在按什么算（05 TX-05，不写字段名和等号）。 */}
               {mergeReport?.dropped.map(({ key, value: mine }) => {
                 const was = key === "amountUSD" ? `面额 ${displayValue("amountUSD", { amountUSD: mine }, skuLabels, toMs)}` : `减 ${mine || "—"}%`;
                 const now = baseline.type === "percent" ? `减 ${displayValue("percent", baseline, skuLabels, toMs)}` : `面额 ${displayValue("amountUSD", baseline, skuLabels, toMs)}`;
-                return <p key={key}>对方把类型改成了{mergeReport.latestType}，你填的{was}用不上，没有带过来；现在是{now}。</p>;
+                return <p key={key}>你填的{was}{mergeReport.latestType}用不上，没有带过来；现在是{now}。</p>;
               })}
             </MergeNotice>
             <section className="h7-form-section" inert={locked} aria-labelledby="h7-f-face">
