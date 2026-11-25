@@ -165,8 +165,8 @@ export type H5RecoveryRow = {
 
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
-    ? "提交时没收到确定结果，可能已经生效。可以查询原操作；24 小时内也可以按原操作重试，不会重复执行。"
-    : "提交时没收到确定结果，可能已经建了审批单。可以查询原操作；24 小时内也可以按原操作重试，不会建第二张。"}>结果未知</StatusTag>;
+    ? "提交时没收到确定结果，可能已经生效。可读取当前配置核对；仍有修改权限且未超过 24 小时，也可按原操作重试。"
+    : "提交时没收到确定结果，可能已经建了审批单。先查询原操作，明确查无、仍有修改权限且未超过 24 小时才可按原操作重试。"}>结果未知</StatusTag>;
 }
 
 export function pendingTag(approver: string, note = "批准前仍按现在的值；审批结束前这页不能再改这一项。") {
@@ -180,7 +180,7 @@ export function acknowledgedTag() {
 
 export function expiredTag(kind: "direct" | "approval") {
   return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "direct"
-    ? "已超过 24 小时，不能再重试，只能查询。查询读到的是现在的值，不能据此认定原操作成没成。"
+    ? "已超过 24 小时，不能再重试。可读取当前配置核对，现值不能证明原操作成没成。"
     : "原申请超过 24 小时，不能再重试，只能查询原审批单。查不到时保留原申请和同项修改锁，请到操作记录与审批核对。"}>已过期</StatusTag>;
 }
 

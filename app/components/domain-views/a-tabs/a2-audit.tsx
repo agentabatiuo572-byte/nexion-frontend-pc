@@ -93,7 +93,7 @@ import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, ty
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { D5_APPROVAL_OP, D5_DIFF_UNREADABLE, d5Trc20ApprovalBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL, TRC20_REPLAY_UNVERIFIED } from "@/lib/admin/trc20-closed";
-import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
+import { H7_VOUCHER_APPROVER, H7_VOUCHER_APPROVAL_PERMISSIONS, isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, UNMAPPED_ADMIN_ERROR_TEXT } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -214,6 +214,7 @@ const F4_OLD_PAYOUT_TICKETS = "nexion-admin-a2-old-f4-payout-tickets";
 const F4_PAYOUT_REVIEW_REQUIRED = "这张单按旧规则提交。请先撤回或驳回，再查看新预览并重新提交。";
 
 function approvalExecutorLabel(w: A2OperationRow) {
+  if (isH7VoucherApproval(w.operationCode)) return `${H7_VOUCHER_APPROVER}（需要${H7_VOUCHER_APPROVAL_PERMISSIONS}）`;
   if (w.operationCode === "f_vrank_override") return "发起人以外、同时有 A2 批准权限和人工调级权限的管理员";
   if (ticketPermissionText(w)) return "另一位超级管理员";
   if (w.operationCode === "h1_phase_dial") return "另一位有审批批准权限和运营阶段修改权限的超级管理员";
@@ -3117,7 +3118,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）`} /></Td>
+                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
                       <Td><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td fit={!showActions}><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
