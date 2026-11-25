@@ -195,7 +195,7 @@ export type EditorSwitch = { attempt: (next: () => void) => void };
  * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。
  * 有草稿时加一条同地址历史记录，后退先回到编辑器再询问；离开前退回原记录，继续原导航。
  */
-export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>) {
+export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>, hasUnsavedAfterSave?: () => boolean) {
   const router = useRouter();
   const [asking, setAsking] = useState(false);
   const nextAction = useRef<(() => void) | null>(null);
@@ -279,7 +279,12 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
       const next = nextAction.current;
       nextAction.current = null;
       setAsking(false);
-      return () => leave(next, false);
+      return () => {
+        if (hasUnsavedAfterSave?.()) {
+          nextAction.current = next;
+          setAsking(true);
+        } else leave(next, false);
+      };
     },
   };
 }

@@ -82,13 +82,22 @@ function referenceFields(value: ContentDocument) {
   } else {
     for (const [key, entry] of Object.entries(value.contents)) {
       const page = PAGE_LABELS[key] ?? key;
-      fields.push([`${page} · 本页版本`, entry.version]);
+      for (const [field, content] of Object.entries(entry)) {
+        if (field !== "locales") fields.push([`${page} · ${field === "version" ? "本页版本" : field}`, content]);
+      }
       for (const [language, locale] of Object.entries(row(entry.locales))) {
-        blocks(row(locale).blocks).forEach((block, i) => {
-          const label = `${page} · ${localeName(language)} · 内容块 ${i + 1}`;
-          const names: Record<string, string> = { id: "块标识", kind: "类型", title: "标题", body: "正文", items: "列表项", ref: "规则引用" };
-          for (const [key, content] of Object.entries(block)) fields.push([`${label} · ${names[key] ?? key}`, content]);
-        });
+        const prefix = `${page} · ${localeName(language)}`;
+        for (const [field, content] of Object.entries(row(locale))) {
+          if (field !== "blocks" || !Array.isArray(content) || !content.length) {
+            fields.push([`${prefix} · ${field}`, content]);
+            continue;
+          }
+          content.forEach((block, i) => {
+            const label = `${prefix} · 内容块 ${i + 1}`;
+            const names: Record<string, string> = { id: "块标识", kind: "类型", title: "标题", body: "正文", items: "列表项", ref: "规则引用" };
+            for (const [key, value] of Object.entries(row(block))) fields.push([`${label} · ${names[key] ?? key}`, value]);
+          });
+        }
       }
     }
   }
@@ -102,17 +111,21 @@ function ReferenceValue({ value }: { value: unknown }) {
   return <Fold inset title="展开完整值" summary=""><pre className="a3-json">{full}</pre></Fold>;
 }
 
-function ReferenceNotice({ latest, input, discard, error }: { latest: ContentDocument; input: ContentDocument; discard: () => void; error?: string | null }) {
-  const current = referenceFields(latest);
+function ReferenceNotice({ baseline, input, discard, error, readReady, readError }: {
+  baseline: ContentDocument; input: ContentDocument; discard: () => void; error?: string | null; readReady: boolean; readError?: string | null;
+}) {
+  const current = referenceFields(baseline);
   const previous = referenceFields(input);
   const labels = new Set([...current.keys(), ...previous.keys()]);
-  return <Notice tone="warn" title="你上次的修改没有保存成功，最新版本已被别人改过"
+  return <Notice tone="warn" title={readReady ? "你上次的修改没有保存成功，最新版本已被别人改过"
+    : readError ? "你上次的修改没有保存成功，最新版本暂时读不到" : "你上次的修改没有保存成功，正在读取最新版本"}
     action={<Button size="sm" onClick={discard}>放弃我上次的内容</Button>}>
-    <p>编辑器里是最新版本（修订 {latest.revision}）。你上次的内容在下面，对照后可以在最新版本上重新修改。</p>
-    {error && <p>{error}</p>}
+    <p>{readReady ? `编辑器里是最新版本（修订 ${baseline.revision}）。你上次的内容在下面，对照后可以在最新版本上重新修改。`
+      : `下面的对照基于上次读取的修订 ${baseline.revision}。`}</p>
+    {(readError || error) && <p>{readError && `${readError} 请点「刷新」重新读取。`} {error}</p>}
     <Fold inset defaultOpen title="你上次的内容（只读）" summary="">
       <Table label="你上次的内容（只读）">
-        <thead><tr><Th>字段</Th><Th>最新</Th><Th>我上次</Th></tr></thead>
+        <thead><tr><Th>字段</Th><Th>{readReady ? "最新" : "上次读取"}</Th><Th>我上次</Th></tr></thead>
         <tbody>{[...labels].map(label => <Tr key={label}><Td>{label}</Td><Td><ReferenceValue value={current.get(label)} /></Td>
           <Td><ReferenceValue value={previous.get(label)} /></Td></Tr>)}</tbody>
       </Table>
@@ -122,7 +135,8 @@ function ReferenceNotice({ latest, input, discard, error }: { latest: ContentDoc
 
 function ContentNotices<D extends ContentDocument>({ editor }: { editor: ReturnType<typeof useContentEditor<D>> }) {
   const { reference, referenceError, baseline, mode, direct, readReady, readbackError, compareError, error, notice, remainingIntent, dirty, loading, refresh, discardReference } = editor;
-  if (reference && baseline) return <ReferenceNotice latest={baseline} input={reference.input} discard={discardReference} error={compareError} />;
+  if (reference && baseline) return <ReferenceNotice baseline={baseline} input={reference.input} discard={discardReference}
+    error={compareError} readReady={readReady} readError={readReady ? null : error} />;
   if (direct) return <Notice tone="warn" title={readReady ? "上次的内容对照未保存" : CONFLICT_READ_FAILED}
     action={<Button size="sm" loading={loading} onClick={() => void refresh()}>{readReady ? "重试" : "重新读取最新版本"}</Button>}>{compareError}</Notice>;
   if (readbackError) return <Notice tone="warn" title={READBACK_FAILED}
@@ -155,7 +169,7 @@ export function A3Content({ commands, recovery, onRecovered, toast, onSummary, c
   const drafts = useRef<Partial<Record<"docs" | "how", DraftControls>>>({});
   const switcher = useRef<EditorSwitch | null>(null);
   const discard = useCallback(() => { Object.values(drafts.current).forEach(draft => { if (draft?.dirty) draft.discard(); }); }, []);
-  const leave = useLeaveGuard(dirty.docs || dirty.how, discard, switcher);
+  const leave = useLeaveGuard(dirty.docs || dirty.how, discard, switcher, () => Object.values(drafts.current).some(draft => draft.dirty));
   const active = dirty[tab] ? tab : dirty.docs ? "docs" : "how";
   const markDocs = useCallback((value: boolean) => setDirty((current) => current.docs === value ? current : { ...current, docs: value }), []);
   const markHow = useCallback((value: boolean) => setDirty((current) => current.how === value ? current : { ...current, how: value }), []);

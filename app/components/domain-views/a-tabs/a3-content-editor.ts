@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
 import { a3ContentVersionConflict, isA3ContentCommand, type A3Command, type A3ContentOriginal, type A3RecoveryProps } from "@/lib/admin/a3-mutations";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { parseDeveloperDocs, parseHowContent } from "@/lib/admin/published-content-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -16,6 +17,7 @@ export type A3ContentRead = {
   failed?: { record: ContentCommand; reason: string; closed?: boolean };
   onApplied?: () => void;
   onFailed?: (reason: string) => void;
+  onExpired?: () => void;
 };
 export type A3ContentReads = Partial<Record<Kind, A3ContentRead>> & { selected?: Kind };
 export type Row = Record<string, unknown>;
@@ -50,6 +52,10 @@ function storeReference(original: ContentCommand, owner: number) {
   window.sessionStorage.setItem(key, encoded);
   if (window.sessionStorage.getItem(key) !== encoded) throw new Error(referenceWriteError);
   return reference;
+}
+
+function handoffExpired(failed: A3ContentRead["failed"]) {
+  return failed && !failed.closed && isRetryExpired(failed.record);
 }
 
 export function useDraftRefresh(dirty: boolean, refresh: () => void) {
@@ -88,8 +94,9 @@ export function useContentEditor<D extends ContentDocument>({
   const [intent, setIntent] = useState<Mode | null>(null);
   const [readbackError, setReadbackError] = useState<string | null>(null);
   const [compareError, setCompareError] = useState<string | null>(null);
-  const [delivered, setDelivered] = useState<{ read: A3ContentRead; error?: string }>();
+  const [delivered, setDelivered] = useState<{ read: A3ContentRead; error?: string; reference?: ContentCommand }>();
   const [directDelivered, setDirectDelivered] = useState<ContentCommand>();
+  const [readbackContinuation, setReadbackContinuation] = useState<(() => void) | null>(null);
   const readInFlight = useRef(false);
   const afterSave = useRef<(() => void) | null>(null);
   const afterReadback = useRef<(() => void) | null>(null);
@@ -119,7 +126,7 @@ export function useContentEditor<D extends ContentDocument>({
 
   const install = useCallback((value: D, failed?: A3ContentRead["failed"]) => {
     if (failed && (!owner || failed.record.commandOwnerId !== owner || !currentRecoveryActor(owner))) {
-      return "当前账号无法接收原操作内容。";
+      return { error: "当前账号无法接收原操作内容。" };
     }
     const input = failed?.record.original.document;
     const canRestore = input && matches(input) && !failed.record.directContentConflict
@@ -130,30 +137,47 @@ export function useContentEditor<D extends ContentDocument>({
     setIntent(canRestore ? failed.record.original.mode : null);
     setNotice(canRestore ? failed.reason : null);
     setReadReady(true);
-    if (failed && !canRestore) {
-      try {
-        if (!owner) throw new Error(referenceWriteError);
-        setReferenceState({ owner, value: storeReference(failed.record, owner) });
-      } catch (cause) {
-        if (cause instanceof Error && cause.message.startsWith("请先处理")) return cause.message;
-        if (cause instanceof DOMException && cause.name === "QuotaExceededError") return `此标签页存储空间不足。${referenceWriteError}`;
-        return referenceWriteError;
-      }
-    }
+    return { reference: failed && !canRestore ? failed.record : undefined };
   }, [matches, owner]);
 
-  useEffect(() => {
+  const saveReference = useCallback((reference?: ContentCommand) => {
+    if (!reference) return;
+    try {
+      if (!owner) throw new Error(referenceWriteError);
+      setReferenceState({ owner, value: storeReference(reference, owner) });
+    } catch (cause) {
+      if (cause instanceof Error && cause.message.startsWith("请先处理")) return cause.message;
+      if (cause instanceof DOMException && cause.name === "QuotaExceededError") return `此标签页存储空间不足。${referenceWriteError}`;
+      return referenceWriteError;
+    }
+  }, [owner]);
+
+  useLayoutEffect(() => {
     if (!incoming || delivered?.read === incoming || loading || saving || !canRead || !matches(incoming.value)) return;
-    setDelivered({ read: incoming, error: install(incoming.value, incoming.failed) });
+    if (handoffExpired(incoming.failed)) { incoming.onExpired?.(); return; }
+    setDelivered({ read: incoming, ...install(incoming.value, incoming.failed) });
   }, [incoming, delivered, loading, saving, canRead, matches, install]);
-  useEffect(() => {
-    if (delivered?.read !== incoming || !delivered) return;
-    if (delivered.error) incoming?.onFailed?.(delivered.error);
-    else incoming?.onApplied?.();
-  }, [delivered, incoming]);
+  useLayoutEffect(() => {
+    if (!incoming || delivered?.read !== incoming || !matches(incoming.value)) return;
+    // Recheck after the editor commits. A comparison is only persisted from this step.
+    if (handoffExpired(incoming.failed)) {
+      if (!delivered.error) install(incoming.value);
+      incoming.onExpired?.();
+      return;
+    }
+    const failure = delivered.error ?? saveReference(delivered.reference);
+    if (failure) incoming.onFailed?.(failure);
+    else incoming.onApplied?.();
+  }, [delivered, incoming, install, matches, saveReference]);
   useEffect(() => {
     if (directDelivered) latestCommands.current.settleContent(directDelivered);
   }, [directDelivered]);
+  useEffect(() => {
+    if (!readbackContinuation) return;
+    // The leave guard can now see the draft state committed by both editors.
+    setReadbackContinuation(null);
+    readbackContinuation();
+  }, [readbackContinuation]);
 
   const refresh = useCallback(async (knownConflict?: ContentCommand) => {
     if (!canRead || readInFlight.current) return false;
@@ -164,7 +188,8 @@ export function useContentEditor<D extends ContentDocument>({
     try {
       const value = conflict ? await latestCommands.current.readPendingContent(conflict) : await readLatest();
       if (!matches(value)) return false;
-      const failure = install(value, conflict && { record: conflict, reason: CONFLICT_READ_FAILED });
+      const installed = install(value, conflict && { record: conflict, reason: CONFLICT_READ_FAILED });
+      const failure = installed.error ?? saveReference(installed.reference);
       setCompareError(failure ?? null);
       if (failure) return false;
       if (conflict) setDirectDelivered(conflict);
@@ -172,7 +197,7 @@ export function useContentEditor<D extends ContentDocument>({
       awaitingReadback.current = false;
       const proceed = afterReadback.current;
       afterReadback.current = null;
-      proceed?.();
+      if (proceed) setReadbackContinuation(() => proceed);
       return true;
     } catch (cause) {
       const message = displayAdminReadError(cause);
@@ -184,7 +209,7 @@ export function useContentEditor<D extends ContentDocument>({
       readInFlight.current = false;
       setLoading(false);
     }
-  }, [canRead, kind, readLatest, matches, install]);
+  }, [canRead, kind, readLatest, matches, install, saveReference]);
   useEffect(() => { void refresh(); }, [refresh]);
 
   const body = (value: D) => "locales" in value ? value.locales : value.contents;

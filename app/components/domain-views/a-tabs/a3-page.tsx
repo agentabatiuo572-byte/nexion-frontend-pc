@@ -173,12 +173,15 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   const onRecovered = useCallback(() => setRecovery(null), []);
   const showCurrentContent = (kind: "docs" | "how", value: A3ContentRead["value"], failed?: A3ContentRead["failed"], afterApply?: () => void) => {
     const key = failed?.record.commandKey;
-    const applied = () => {
-      setContentReads(current => current[kind]?.onApplied === applied ? { ...current, [kind]: undefined } : current);
+    const clearHandoff = () => {
+      setContentReads(current => current[kind]?.onExpired === clearHandoff ? { ...current, [kind]: undefined } : current);
       if (key) setHandoffErrors(current => ({ ...current, [key]: undefined }));
+    };
+    const applied = () => {
+      clearHandoff();
       afterApply?.();
     };
-    const read: A3ContentRead = { value, failed, onApplied: applied,
+    const read: A3ContentRead = { value, failed, onApplied: applied, onExpired: clearHandoff,
       onFailed: key ? reason => setHandoffErrors(current => ({ ...current, [key]: reason })) : undefined };
     setContentReads(current => ({ ...current, [kind]: read, selected: kind }));
   };
@@ -411,6 +414,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     const status = result.receipt?.originalStatus;
     const failure = result.restoreDraft ? { record, reason: contentReadFailure(result),
       closed: status === "CONFIRMED_NOT_EXECUTED" || status === "CONFIRMED_REJECTED" } : undefined;
+    if (failure && !failure.closed && isRetryExpired(record)) return;
     showCurrentContent(record.original.kind, result.current, failure, () => {
       if (commands.settleContent(record) && !failure) notify.success(record.name, "原操作已执行，记录已解除。");
     });
