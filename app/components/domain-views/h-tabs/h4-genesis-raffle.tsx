@@ -10,7 +10,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 import { Plus, Ticket, Trash2, Trophy } from "lucide-react";
 import type { HCtx } from "./types";
 import { fetchAdminRaffle, fetchAdminRaffles, parseAdminRaffle, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, RAFFLE_SAVE_PENDING, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, h4TicketResult, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -96,7 +96,7 @@ export function useH4RaffleReadback(ctx: HCtx) {
   return { read, operator, rows, loading, readError, load, isActive };
 }
 
-export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, reopenRejected, readSaved }: { ctx: HCtx; readback: ReturnType<typeof useH4RaffleReadback>; onApprovalCompleted?: () => Promise<void>; reopenRejected: RefObject<H4ReopenRejected | null>; readSaved: RefObject<((scopes: readonly string[]) => Promise<boolean>) | null> }) {
+export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, reopenRejected, readSaved }: { ctx: HCtx; readback: ReturnType<typeof useH4RaffleReadback>; onApprovalCompleted?: () => Promise<void>; reopenRejected: RefObject<H4ReopenRejected | null>; readSaved: RefObject<((shouldClose: (scope: string) => boolean) => Promise<boolean>) | null> }) {
   const { read, operator, rows, loading, readError, load, isActive } = readback;
   const [error, setError] = useState("");
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
@@ -215,7 +215,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
             await onApprovalCompleted?.();
             if (!isActive()) return;
             setDraft(null); setBase(null);
-            ctx.toast(result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+            ctx.toast(h4TicketResult(result.ticket));
           }
           // A refresh started before the write response may have missed its receipt.
           if (await load(!approval)) close();
@@ -259,7 +259,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
   };
   useLayoutEffect(() => {
     reopenRejected.current = async (record, rejection) => {
-      if (!write || "proposal" in record.request) return;
+      if ("proposal" in record.request) return;
       const body = JSON.parse(record.request.body) as RaffleDraft & { enabled?: boolean; expectedRevision?: number };
       const { id } = body;
       const creating = record.request.method === "POST";
@@ -268,6 +268,9 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
       const current = latest.rows.find(row => row.id === id) ?? await fetchAdminRaffle(id);
       if (!isActive()) return;
       if (!creating && !current) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL, true);
+      if (rejection.reasonCode === "RAFFLE_NOT_FOUND") throw new ConfirmReadConflict(undefined, current
+        ? "这一期已被别人改过，原来的操作现在不能再做；你填的内容没有提交，请按最新状态重新操作。" : H4_MISSING_ORIGINAL, true);
+      if (!ctx.can("growth_h4_write")) return;
       const previous = record.opened ? parseAdminRaffle(record.opened) : creating ? null : current;
       if (creating ? record.opened !== null : !previous || previous.id !== id || previous.revision !== body.expectedRevision) {
         return () => { choose(current); setError(H4_OLD_RECORD_REJECTED); };
@@ -380,16 +383,16 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
   const openScope = useRef(scope);
   useLayoutEffect(() => {
     openScope.current = scope;
-    readSaved.current = async scopes => {
+    readSaved.current = async shouldClose => {
       const result = await load();
-      if (result && scopes.includes(openScope.current)) close();
+      if (result && shouldClose(openScope.current)) close();
       return !!result;
     };
     return () => { readSaved.current = null; };
   });
   const draftOnly = !enabled && (!base || base.status === "DRAFT");
   const saveLabel = draftOnly ? "保存草稿" : "保存配置";
-  const saveReason = !write ? "没有修改创世抽奖的权限" : savedUnread ? needsVerification ? "保存结果待核对；关掉后点「刷新」。" : "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : draft ? h4ApprovalLockedReason(scope) ?? (pendingSave ? H4_UNKNOWN_SAVE : unchanged ? "没有改动" : undefined) : undefined;
+  const saveReason = !write ? "没有修改创世抽奖的权限" : savedUnread ? needsVerification ? "保存结果待核对；关掉后点「刷新」。" : "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : h4ReadVersion("raffles") === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : review ? "先在上面选一种继续" : draft ? h4ApprovalLockedReason(scope) ?? (pendingSave ? H4_UNKNOWN_SAVE : unchanged ? "没有改动" : undefined) : undefined;
   // 保存动作按真实路径命名（OP-29）：开放走审批，关闭报名立即生效，其余存成草稿。
   useH4Editor(draft ? {
     scope, dirty, saveReason, close,

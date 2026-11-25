@@ -1,3 +1,4 @@
+import { RETRY_REJECTED_TEXT } from "./retry-rejected";
 import { HApprovalRequired } from "./h-approval-required";
 import { PendingConfirmRejected } from "./h-conflict-review";
 import { isHGrowthReadConflict } from "./h-write-conflict";
@@ -31,6 +32,8 @@ export type H4UploadRestoration = { canAutoRestore: boolean; restored: boolean; 
 export type H4Command = H4StoredCommand & {
   store: keyof typeof h4CommandStores; owner: number; scope: string; action: string; reason: string;
   request: Direct | { proposal: Proposal }; acknowledged?: boolean;
+  rejectedReceipt?: DirectCommandReceipt;
+  approvalTicket?: Pick<A2OperationRow, "id" | "status">;
   raffleReceipt?: { id: string; revision: number | null };
   raffleReadback?: { id: string; minimumRevision: number; hasMatchingReceipt: boolean };
   asset?: UploadedAsset;
@@ -57,7 +60,8 @@ export function h4ReadVersion(resource: Resource) { const v = fresh.get(`${useAd
 export function markH4Read(resource: Resource, success: boolean) {
   const key = `${useAdminAuth.getState().session?.adminId}:${resource}`;
   fresh.set(key, (Math.abs(fresh.get(key) ?? 0) + 1) * (success ? 1 : -1));
-  if (success && resource !== "raffles") pendingH4Commands().filter(r => !r.scope.includes("/h4_media/") && r.acknowledged && !("proposal" in r.request) && h4CommandResource(r.scope) === resource).forEach(forget);
+  if (success) pendingH4Commands().filter(r => h4CommandResource(r.scope) === resource && r.acknowledged
+    && (r.approvalTicket ? r.approvalTicket.status !== "pending" : resource !== "raffles" && !r.scope.includes("/h4_media/") && !("proposal" in r.request))).forEach(forget);
   notify();
 }
 export function assertH4Fresh(resource: Resource, version: number | undefined) {
@@ -160,9 +164,27 @@ const h4Recovery = createPendingRecovery<H4Command>({
 });
 
 export function settleH4RejectedCommand(record: H4Command) {
+  const current = originalFor(record.fingerprint, record.commandKey);
+  if (current?.rejectedReceipt && h4ReceiptRejection(current.rejectedReceipt)) {
+    h4Recovery.settleAcknowledged(current);
+    return true;
+  }
   const conclusion = h4Recovery.state(record).conclusion;
   return (conclusion === "rejected" || conclusion === "not-executed") && h4Recovery.settleFromQuery(record, conclusion);
 }
+export function h4ReleaseSnapshot(record: H4Command) {
+  const current = originalFor(record.fingerprint, record.commandKey);
+  if (current?.replayRejection && !current.acknowledged && !current.rejectedReceipt && !current.approvalTicket
+    && !h4CommandHasPendingTicket(current.commandKey) && !h4ApprovalPending(current.scope) && !h4Recovery.state(current).busy) {
+    return JSON.stringify([current.commandKey, current.replayRejection, h4CommandLookupState(current)]);
+  }
+}
+export const releaseH4RejectedReplay = (record: H4Command) =>
+  h4ReleaseSnapshot(record) !== undefined && h4Recovery.releaseRejectedReplay(record);
+
+export const h4TicketResult = (ticket: Pick<A2OperationRow, "id" | "status">) =>
+  `审批单 ${ticket.id} · ${({ pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" })[ticket.status]}`;
+
 /** Validated direct successes awaiting a current read, never unknown outcomes. */
 export const confirmedH4Saves = () => pendingH4Commands().filter(r => r.acknowledged && !r.asset && !("proposal" in r.request));
 export const confirmedH4RaffleSaves = () => confirmedH4Saves().filter(record => h4CommandResource(record.scope) === "raffles");
@@ -326,7 +348,8 @@ export async function queryH4Command(r: H4Command, explicit = false, deferReject
         retain({ ...original, acknowledged: true });
       } else if (state === "REJECTED" || state === "NOT_EXECUTED") {
         if (state === "REJECTED" && isHGrowthReadConflict(h4ReceiptRejection(receipt))) markH4Read(h4CommandResource(original.scope), false);
-        if (!deferRejection) settleH4RejectedCommand(original);
+        if (deferRejection) retain({ ...original, rejectedReceipt: receipt });
+        else settleH4RejectedCommand(original);
       }
       return { receipt };
     }
@@ -338,14 +361,15 @@ export async function queryH4Command(r: H4Command, explicit = false, deferReject
   }
   const ticket = await fetchA2ProposalByKey(r.commandKey, true);
   requireActor(r.owner, false, r.scope);
+  if (!originalFor(r.fingerprint, r.commandKey)) return;
   if (ticket) {
     checkTicket(r, ticket);
     receiptStates.delete(r.commandKey);
     observations.delete(r.commandKey);
     for (const [key, old] of observations) if (old.obj === ticket.obj && old.operationCode === ticket.operationCode) observations.delete(key);
     if (ticket.status !== "pending") markH4Read(h4CommandResource(r.scope), false);
-    if (ticket.status === "pending") { retain({ ...r, acknowledged: true }); observations.set(r.commandKey, ticket); }
-    else forget(r);
+    retain({ ...r, acknowledged: true, approvalTicket: { id: ticket.id, status: ticket.status } });
+    if (ticket.status === "pending") observations.set(r.commandKey, ticket);
     notify();
   } else if (explicit) {
     receiptStates.set(r.commandKey, "NOT_FOUND");
@@ -371,7 +395,8 @@ export function h4WheelGuardAmplifies(key: string, value: string, expectedValue?
 }
 
 export function h4RetryBlockedReason(r: H4Command): string | undefined {
-  if (r.replayRejection) return H4_REPLAY_REJECTED;
+  if (r.rejectedReceipt) return h4ReceiptRejection(r.rejectedReceipt)?.message;
+  if (r.replayRejection) return RETRY_REJECTED_TEXT;
   if (isRetryExpired(r)) return RETRY_EXPIRED_TEXT;
   if (r.acknowledged) return "请查询原结果";
   try { requireActor(r.owner, true, r.scope); } catch { return "没有这项修改的权限"; }
@@ -384,8 +409,6 @@ export function h4RetryBlockedReason(r: H4Command): string | undefined {
     : state === "UNKNOWN" ? "系统也没有结果，重试也拿不到新结果"
     : "先查询原结果，明确查不到后才能重试";
 }
-
-export const H4_REPLAY_REJECTED = "重试被拒不代表原操作没生效，先查询原结果。";
 
 export function h4PendingConfirmRecovery(record: H4Command | undefined, onSucceeded: () => Promise<void>, onRejected?: (error: PendingConfirmRejected) => Error) {
   if (!record) return;

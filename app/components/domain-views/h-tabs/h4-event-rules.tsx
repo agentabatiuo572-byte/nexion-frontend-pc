@@ -13,7 +13,7 @@ import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, h4TicketResult, confirmedH4Saves, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useH4EditGuard, useH4Editor } from "./h4-edit-guard";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
@@ -77,7 +77,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   onApprovalCompleted?: () => Promise<void>;
   onRowsChange?: (rows: EventRuleView[] | null) => void;
   reopenRejected: RefObject<H4ReopenRejected | null>;
-  readSaved: RefObject<((scopes: readonly string[]) => Promise<boolean>) | null>;
+  readSaved: RefObject<((shouldClose: (scope: string) => boolean) => Promise<boolean>) | null>;
 }) {
   const [ruleRows, setRuleRows] = useState<EventRuleView[] | null>(null);
   const rows = ruleRows ?? [];
@@ -269,7 +269,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
           if (isH4ApprovalReceipt(result)) await onApprovalCompleted?.();
           await load();
           if (isH4ApprovalReceipt(result)) { setSelected(null); setDraft(null); }
-          finished(isH4ApprovalReceipt(result) ? result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "活动规则已保存");
+          finished(isH4ApprovalReceipt(result) ? h4TicketResult(result.ticket) : "活动规则已保存");
         };
         try {
           const original = originalKey ? pendingH4Commands().find(r => r.commandKey === originalKey) : undefined;
@@ -314,14 +314,17 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   };
   useLayoutEffect(() => {
     reopenRejected.current = async (record, rejection) => {
-      if (!canWrite || "proposal" in record.request) return;
+      if ("proposal" in record.request) return;
       const code = decodeURIComponent(record.request.path.split("/")[2]);
       const body = JSON.parse(record.request.body) as EventRuleChange & { expectedRevision: number };
       const values = await load(true);
       if (!values) throw new ConfirmReadConflict(undefined, "玩法规则加载失败");
       const latest = values.find(row => row.eventCode === code);
       if (!latest) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL, true);
-      if (operator !== currentAdminOperator()) return;
+      if (rejection.reasonCode === "EVENT_RULE_NOT_FOUND" || rejection.reasonCode === "EVENT_NOT_FOUND") {
+        throw new ConfirmReadConflict(undefined, "这个玩法已被别人改过，原来的操作现在不能再做；你填的内容没有提交，请按最新状态重新操作。", true);
+      }
+      if (!ctx.can("growth_h4_write") || operator !== currentAdminOperator()) return;
       const base = record.opened ? parseEventRule(record.opened) : latest;
       if (!base || base.eventCode !== code || base.revision !== body.expectedRevision) {
         return () => { choose(latest); setError(H4_OLD_RECORD_REJECTED); };
@@ -376,9 +379,9 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   const openScope = useRef(scope);
   useLayoutEffect(() => {
     openScope.current = scope;
-    readSaved.current = async scopes => {
+    readSaved.current = async shouldClose => {
       const rows = await load(true);
-      if (rows && scopes.includes(openScope.current)) close();
+      if (rows && shouldClose(openScope.current)) close();
       return !!rows;
     };
     return () => { readSaved.current = null; };
@@ -387,7 +390,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   // 没开过、这次也不开：只存草稿。
   const draftOnly = !!selected && !!draft && !selected.enabled && !draft.enabled;
   const saveLabel = draftOnly ? "保存草稿" : "保存配置";
-  const saveReason = !canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : review ? "先在上面选一种继续"
+  const saveReason = !canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : h4ReadVersion("rules") === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : review ? "先在上面选一种继续"
     : selected ? h4ApprovalLockedReason(scope) ?? (h4PendingFor(scope) ? H4_UNKNOWN_SAVE : unchanged ? "没有改动" : undefined) : undefined;
   const dirty = !!selected && !!draft && !savedUnread && unchanged === false;
   useH4Editor(selected && draft ? {
