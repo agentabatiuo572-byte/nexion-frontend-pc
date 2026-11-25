@@ -114,9 +114,11 @@ function PendingCommands({ items, auditReachable }: { items: readonly B1PendingC
   const recoveryInstruction = items.some(item => item.queryLabel)
     ? "请按各条提示核对。"
     : "先查询原结果；";
+  // 只剩旧的储备注入记录时这页只能查询，不写「按原请求重试」（OP-95）。
+  const retryNote = items.some(item => item.onRetry) ? "24 小时内只能按原请求重试，不能改值。" : "";
   return (
     <RecoveryPanel title={recoveryTitle(items.length - waiting, waiting)} tone="warn" explainLabel="结果未知怎么处理"
-      explain={`这些操作发出后没收到明确结果，可能已经生效。${recoveryInstruction}24 小时内只能按原请求重试，不能改值。有结果前，红线和健康线不能再提交。`}
+      explain={`这些操作发出后没收到明确结果，可能已经生效。${recoveryInstruction}${retryNote}有结果前，红线和健康线不能再提交。`}
       foot={auditReachable ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : undefined}
       items={items.map((item): RecoveryItem => ({
         key: item.commandKey, object: item.object, tag: <StatusTag tone={item.tag.tone}>{item.tag.label}</StatusTag>, line: item.line,
