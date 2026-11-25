@@ -10,7 +10,7 @@ import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-erro
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { datacenterNameText } from "@/lib/admin/brand-copy";
 import { businessClock, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, inspectE1StoreDisplayControls, type E1CatalogSnapshot, type E1BundleDiscount, type E1GenerationGateData } from "@/lib/admin/e1-client";
+import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, inspectE1StoreDisplayControls, type E1BundleDiscount, type E1GenerationGateData } from "@/lib/admin/e1-client";
 import { fetchE3Snapshot } from "@/lib/admin/e3-client";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
@@ -26,6 +26,7 @@ import type { OpsSku } from "@/lib/admin/platform-types";
 import type { McSpec } from "./types";
 import { E1_CURRENT_PHASE_UNVERIFIED, e1CurrentPhase, e1SkuOpening, resolveE1PhaseId, skuToForm } from "./data";
 import { E1Catalog, E1_MISSING_SERIES_REASON, type E1CatalogContext } from "./e1-catalog";
+import { useCatalogSource, type CatalogReadOptions, type CatalogSource } from "./e1-catalog-read";
 import { E1Editor, type E1EditRequest, type E1SkuReview } from "./e1-editor";
 import { PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
 import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1MediaHasOwner, e1PendingMediaFor, E1_PENDING_MEDIA, e1Number, e1Decimal, e1Amount, e1TargetPrecision, e1Object, e1ShownDiff, e1SkuDiff, e1Value, e1DisplayEffect, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
@@ -47,37 +48,31 @@ const recoveryFor = (original: E1Pending) => original.fingerprint.startsWith("sk
 
 type Confirmation = McSpec & Partial<E1SkuReview> & { initialBusinessValues?: Record<string, string>; gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
 type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; reading?: boolean; readError?: string };
-type E1Readback = Pick<E1Receipt, "commandKey" | "object">;
-type CatalogReadResult = { skus?: OpsSku[]; snapshot?: E1CatalogSnapshot; earlyRead: boolean };
-type CatalogReadRequest = {
-  readback?: E1Readback;
-  conflict?: boolean;
-  resolve: (result: CatalogReadResult) => void;
-};
-type CatalogReadRound = { requests: CatalogReadRequest[]; canReadE3: boolean };
+const E1_SOURCES: readonly CatalogSource[] = ["products", "gates", "discount"];
+const ALL_SOURCES: readonly CatalogSource[] = [...E1_SOURCES, "early"];
+const SKU_EDIT_SOURCES: readonly CatalogSource[] = ["products", "gates"];
 
-async function readSource<T>(request: Promise<T>) {
-  try { return { value: await request, error: null }; }
-  catch (failure) { return { value: null, error: displayAdminReadError(failure) }; }
-}
-
-function proposalNeedsCatalog({ before, command: { op, params } }: ProposeSpec): boolean {
+function proposalSources({ before, command: { op, params } }: ProposeSpec): readonly CatalogSource[] {
   switch (op) {
+    case "e1_bundle_discount": return ["discount"];
+    case "e1_early_access_update": return ["early"];
+    case "e1_sku_delete": return ["products"];
+    case "e1_sku_status": return params.status === "on" ? SKU_EDIT_SOURCES : ["products"];
     case "e1_sku_create":
     case "e1_sku_update":
-    case "e1_sku_delete":
-    case "e1_sku_status":
     case "e1_gate_create":
     case "e1_gate_patch":
-    case "e1_phase_archive": return true;
-    case "e1_gate_field": return typeof params.key === "string" && params.key.endsWith(".forceUnlock") && params.value === "true";
-    case "e1_phase_patch": {
-      if (params.status !== "archived") return false;
-      // 已归档阶段只改资料时，原操作不涉及归档。
-      try { return (JSON.parse(before) as { status?: string } | null)?.status !== "archived"; }
-      catch { return true; }
-    }
-    default: return false;
+    case "e1_phase_archive": return SKU_EDIT_SOURCES;
+    case "e1_gate_field":
+      return typeof params.key === "string" && params.key.endsWith(".forceUnlock") && params.value === "true" ? SKU_EDIT_SOURCES : ["gates"];
+    case "e1_phase_patch":
+      if (params.status !== "archived") return ["gates"];
+      // Editing the description of an already archived phase does not archive it again.
+      try { return (JSON.parse(before) as { status?: string } | null)?.status === "archived" ? ["gates"] : SKU_EDIT_SOURCES; }
+      catch { return SKU_EDIT_SOURCES; }
+    case "e1_phase_create":
+    case "e1_gate_archive": return ["gates"];
+    default: return ALL_SOURCES;
   }
 }
 
@@ -114,25 +109,14 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const reach = useReach();
   const canOpenAudit = reach("/platform/audit", "platform_a2_read");
   const forceUnlock = authorities.includes("device_e1_generation_gate_force_unlock"), forceLock = authorities.includes("device_e1_generation_gate_force_lock");
-  const [products, setProducts] = useState<Pick<E1CatalogSnapshot, "skus" | "invalidSkus"> | null>(null);
-  const [gates, setGates] = useState<E1GenerationGateData | null>(null);
-  const { skus, invalidSkus: invalid } = useMemo(() => inspectE1StoreDisplayControls(products ?? { skus: [], invalidSkus: [] }, gates), [products, gates]);
-  const [discount, setDiscount] = useState<E1BundleDiscount | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [readAt, setReadAt] = useState("");
   const [receipts, setReceipts] = useState<E1Receipt[]>([]);
   const [receiptDetailId, setReceiptDetailId] = useState<string | null>(null);
   const receiptDetail = receipts.find(row => row.id === receiptDetailId);
   const receipt = receipts.at(-1);
   const [businessValues, setBusinessValues] = useState<Record<string, string>>({});
   const [mediaSending, setMediaSending] = useState("");
-  const [gatesError, setGatesError] = useState<string | null>(null);
-  const [discountError, setDiscountError] = useState<string | null>(null);
-  const [early, setEarly] = useState<Record<string, string>>({});
-  const [earlyError, setEarlyError] = useState<string | null>(null);
   const [edit, setEdit] = useState<E1EditRequest | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
-  const [reads, setReads] = useState<{ active: CatalogReadRound | null; queued: CatalogReadRequest[] }>({ active: null, queued: [] });
   const [checkingReceipts, setCheckingReceipts] = useState(false);
   const [pending, setPending] = useState<E1Pending[]>([]);
   const [verifiedDrafts, setVerifiedDrafts] = useState<E1Pending[]>([]);
@@ -143,14 +127,42 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   usePendingReplayDeadline(nextRecoveryDeadline([...pending, ...media]));
   const [busy, setBusy] = useState("");
   const sending = useRef("");
+  const policy = { allowed: canRead, checkingReceipts, confirming: !!confirmation, sending, busy };
+  const productRead = useCatalogSource(fetchE1Products, policy);
+  const gateRead = useCatalogSource(fetchE1GenerationGates, policy);
+  const discountRead = useCatalogSource(fetchE1Discount, policy);
+  const earlyRead = useCatalogSource(fetchE3Snapshot, { ...policy, allowed: canRead && canReadE3 });
+  const { request: readProducts, value: products, error, loading } = productRead;
+  const { request: readGates, value: gates, error: gatesError } = gateRead;
+  const { request: readDiscount, value: discount, error: discountError } = discountRead;
+  const { request: readEarly } = earlyRead;
+  const reloadCatalog = useCallback(async (sources: readonly CatalogSource[], options: CatalogReadOptions = {}) => {
+    // Only this caller waits for the selected sources. Each source publishes its own result.
+    const [products, gates, discount, early] = await Promise.all([
+      sources.includes("products") ? readProducts(options) : undefined,
+      sources.includes("gates") ? readGates(options) : undefined,
+      sources.includes("discount") ? readDiscount(options) : undefined,
+      sources.includes("early") ? (canReadE3 ? readEarly(options) : null) : undefined,
+    ]);
+    return { products, gates, discount, early, ok: ![products, gates, discount, early].includes(null) };
+  }, [readProducts, readGates, readDiscount, readEarly, canReadE3]);
+  const pageSources = canReadE3 ? ALL_SOURCES : E1_SOURCES;
+  useEffect(() => { if (canRead) void reloadCatalog(pageSources); }, [canRead, pageSources, reloadCatalog]);
+
+  const readAt = productRead.readAt && businessClock(productRead.readAt);
+  const { skus, invalidSkus: invalid } = useMemo(() => inspectE1StoreDisplayControls(products ?? { skus: [], invalidSkus: [] }, gates), [products, gates]);
+  const early = canReadE3 ? earlyRead.value?.params ?? {} : {};
+  const earlyError = canReadE3 ? earlyRead.error : "当前账号没有抢先购关联设置的读取权限";
+  const earlyReady = canReadE3 && !earlyError && ["开", "关"].includes(early["E.release.earlyAccess.enabled"]) && ["7", "14", "30", "60", "90"].includes(early["E.release.earlyAccess.leadDays"]);
+  const gatesLoading = gateRead.loading && !gates, discountLoading = discountRead.loading && !discount, earlyLoading = earlyRead.loading && !earlyReady;
   const [notes, setNotes] = useState<Record<string, string>>({});
   useSyncExternalStore(catalogRecovery.subscribe, catalogRecovery.getRevision, () => 0);
   useSyncExternalStore(monthlyRecovery.subscribe, monthlyRecovery.getRevision, () => 0);
   const [release, setRelease] = useState<E1Pending | null>(null);
-  const [conflict, setConflict] = useState(false);
+  const [conflict, setConflict] = useState<readonly CatalogSource[] | null>(null);
   // 首次提交被后端明确拒绝：同一份输入再点也会被拒，按钮停住，给「返回修改」（只管这个框的界面状态）。
   const [refused, setRefused] = useState<{ on: Confirmation; text: string } | null>(null);
-  const [conflictLatest, setConflictLatest] = useState<E1CatalogSnapshot | null>(null);
+  const [conflictLatest, setConflictLatest] = useState<Pick<Confirmation, "sku" | "gates" | "discount" | "early"> | null>(null);
   const [skuConflict, setSkuConflict] = useState<{ nonce: number; latest?: OpsSku | null } | null>(null);
   const draftConflict = skuConflict?.nonce === edit?.nonce ? skuConflict : null;
   const currentSku = edit?.sku ? skus.find(sku => sku.id === edit.sku?.id) : undefined;
@@ -174,60 +186,15 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   }, [actor]);
   const storeFor = (record: E1Pending) => record.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
   useEffect(syncPending, [syncPending]);
-  const reloadCatalog = useCallback((options: Pick<CatalogReadRequest, "readback" | "conflict"> = {}) =>
-    new Promise<CatalogReadResult>(resolve => {
-      const request = { ...options, resolve };
-      setReads(current => ({ ...current, queued: [...current.queued, request] }));
-    }), []);
-  useEffect(() => { if (canRead) void reloadCatalog(); }, [canRead, canReadE3, reloadCatalog]);
-
-  // Receipt checks from one header click join its batch. Only an explicit conflict
-  // read can run inside the confirmation that needs the new version (OP-97).
-  const readyToRead = reads.queued.length > 0 && !checkingReceipts
-    && (!confirmation || reads.queued.some(request => request.conflict));
-  useEffect(() => {
-    if (!canRead || reads.active || !readyToRead) return;
-    if (reads.queued.some(request => request.readback?.commandKey === sending.current)) return;
-    setReads(current => current === reads
-      ? { active: { requests: current.queued, canReadE3 }, queued: [] }
-      : current);
-  }, [canRead, canReadE3, reads, readyToRead, busy]);
-
-  const round = reads.active;
-  useEffect(() => {
-    if (!round) return;
-    async function readBatch(batch: CatalogReadRound) {
-      setError(null); setGatesError(null); setDiscountError(null); setEarlyError(null);
-      const [products, gates, discount, early] = await Promise.all([
-        readSource(fetchE1Products()), readSource(fetchE1GenerationGates()), readSource(fetchE1Discount()),
-        batch.canReadE3 ? readSource(fetchE3Snapshot()) : { value: null, error: "当前账号没有抢先购关联设置的读取权限" },
-      ]);
-      setProducts(products.value); setError(products.error);
-      setGates(gates.value); setGatesError(gates.error);
-      setDiscount(discount.value); setDiscountError(discount.error);
-      setEarly(early.value?.params ?? {}); setEarlyError(early.error);
-      if (products.value) setReadAt(businessClock(Date.now()));
-
-      const catalog = products.value && inspectE1StoreDisplayControls(products.value, gates.value);
-      const snapshot = catalog && gates.value && discount.value
-        ? { ...catalog, gates: gates.value, bundleDiscount: discount.value } : undefined;
-      const result = { skus: catalog?.skus, snapshot, earlyRead: !batch.canReadE3 || !!early.value };
-      setReads(current => ({ ...current, active: null }));
-      batch.requests.forEach(request => request.resolve(result));
-    }
-    void readBatch(round);
-  }, [round]);
-
-  const loading = !!round || readyToRead || (!products && !error);
-  const readbacks = [...(round?.requests ?? []), ...reads.queued].flatMap(request => request.readback ?? []);
-  const earlyReady = canReadE3 && !earlyError && ["开", "关"].includes(early["E.release.earlyAccess.enabled"]) && ["7", "14", "30", "60", "90"].includes(early["E.release.earlyAccess.leadDays"]);
-  const gatesLoading = loading && !gates, discountLoading = loading && !discount, earlyLoading = loading && !earlyReady;
   const catalogIncomplete = !error && skus.length === 0 && invalid.length > 0;
   const catalogReadBlock = loading || error || catalogIncomplete ? CATALOG_READ_BLOCK : undefined;
-  const skuReadbackPending = (id?: string) => !!id && readbacks.some(row => row.object === `device_sku|${id}` || row.object === `device_generation_gate|${id}`);
+  const hasSkuReadback = (readbacks: typeof productRead.readbacks, id?: string) => !!id && readbacks.some(row =>
+    row.object === `device_sku|${id}` || row.object === `device_generation_gate|${id}`);
+  const skuReadbackPending = (id?: string) => hasSkuReadback(productRead.readbacks, id);
   const skuCatalogReadBlock = (id?: string) => catalogReadBlock ?? (skuReadbackPending(id) ? CATALOG_READ_BLOCK : undefined);
-  const gatesReadBlock = gatesLoading || gatesError || !gates ? "开放阶段读取成功前不能提交修改" : undefined;
-  const discountReadBlock = discountLoading || discountError || !discount ? "组合购折扣读取成功前不能提交修改" : undefined;
+  const gatesReadBlock = gateRead.loading || gatesError || !gates ? "开放阶段读取成功前不能提交修改" : undefined;
+  const discountReadBlock = discountRead.loading || discountError || !discount ? "组合购折扣读取成功前不能提交修改" : undefined;
+  const earlyReadBlock = earlyRead.loading ? CATALOG_READ_BLOCK : !earlyReady ? "当前设置未读取，请先重新读取抢先购设置" : undefined;
   const currentPhase = e1CurrentPhase(gates);
   const phaseBlock = currentPhase.phaseId ? undefined : `${E1_CURRENT_PHASE_UNVERIFIED}，暂不能提交`;
   const phaseArchiveBlock = (phaseId?: string) => {
@@ -242,7 +209,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const skuMediaBlock = (skuId?: string, draftId?: string) =>
     actor && e1PendingMediaFor(actor, skuId, draftId) ? E1_PENDING_MEDIA : undefined;
   const readBlock: E1CatalogContext["writeBlockedReason"] = (input, values) => {
-    if (loading) return CATALOG_READ_BLOCK;
+    if ((input.op === "sku-save" || input.op === "sku-status" && input.status === "on") && hasSkuReadback(gateRead.readbacks, input.target)) return CATALOG_READ_BLOCK;
     switch (input.op) {
       case "sku-save": return skuCatalogReadBlock(input.target) ?? (gatesReadBlock ? "商品编辑需要开放阶段和审核契约，请先读取开放阶段" : edit?.unlock ? phaseBlock : undefined);
       case "sku-delete": return skuCatalogReadBlock(input.target) ?? skuMediaBlock(input.target);
@@ -277,8 +244,8 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       case "generation-gate-archive": return gatesReadBlock;
       case "bundle-discount": return discountReadBlock;
       case "early-access":
-        if (readbacks.some(row => row.object === "device_release_early_access|trade-in")) return CATALOG_READ_BLOCK;
-        return earlyReady ? undefined : "当前设置未读取，请先重新读取抢先购设置";
+        if (earlyRead.readbacks.some(row => row.object === "device_release_early_access|trade-in")) return CATALOG_READ_BLOCK;
+        return earlyReadBlock;
       default: return undefined;
     }
   };
@@ -296,7 +263,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       if (!result || result.id !== receipt.id) throw new Error("没有查到这张审批单的进度，请稍后再查，或到操作记录与审批核对");
       setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row, status: result.status } : row));
       if (result.status !== "pending" && receipt.status === "pending") {
-        void reloadCatalog({ readback: receipt });
+        void reloadCatalog(proposalSources(receipt), { readback: receipt });
         toast(endToast(receipt.action, receipt.id, result.status));
       }
     } catch (failure) {
@@ -310,9 +277,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     setCheckingReceipts(true);
     try { await Promise.all(waitingReceipts.map(refreshReceipt)); }
     finally { setCheckingReceipts(false); }
-    return reloadCatalog();
+    return reloadCatalog(pageSources);
   };
-  const refreshInProgress = loading || checkingReceipts;
+  const refreshInProgress = checkingReceipts || loading || gateRead.loading || discountRead.loading || earlyRead.loading;
   const openReceipt = (id: string) => {
     const receipt = receipts.find(row => row.id === id);
     if (!receipt) return;
@@ -366,7 +333,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   };
   const openConfirm = (input: McSpec) => {
     if (!canWrite || readBlock(input) || edit || confirmation) return;
-    setConflict(false); setConflictLatest(null); setAttemptKey("");
+    setConflict(null); setConflictLatest(null); setAttemptKey("");
     const saved = draftFor(input);
     draftKey.current = saved?.commandKey;
     const params = saved?.spec.command.params;
@@ -381,8 +348,13 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       sku: skus.find(s => s.id === input.target), gates, discount, early: { ...early } });
   };
   const retryReadBlock = (record: E1Pending) => {
-    if (loading || readbacks.some(row => row.object === e1Object(record.spec))) return CATALOG_READ_BLOCK;
-    if (catalogReadBlock && proposalNeedsCatalog(record.spec)) return catalogReadBlock;
+    const object = e1Object(record.spec);
+    const blocks = { products: catalogReadBlock, gates: gatesReadBlock, discount: discountReadBlock, early: earlyReadBlock };
+    const reads = { products: productRead, gates: gateRead, discount: discountRead, early: earlyRead };
+    for (const source of proposalSources(record.spec)) {
+      if (reads[source].readbacks.some(row => row.object === object)) return CATALOG_READ_BLOCK;
+      if (blocks[source]) return blocks[source];
+    }
     const { params } = record.spec.command;
     if (gates?.storeDisplayControlsSupported !== true && params && ("displaySoldBase" in params || "liveActivityVisible" in params)) {
       return "当前服务未声明支持展示基础销量和购买动态，暂不能按原操作重试，可查询原操作。";
@@ -440,13 +412,13 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       }
       if (!retry && (code ?? response.message)?.includes("VERSION_CONFLICT")) {
         if (skuReview?.beforeSku && edit) setSkuConflict({ nonce: edit.nonce });
-        else setConflict(true);
+        else setConflict(proposalSources(record.spec));
       }
       // Throw the original error so OperationConfirmModal keeps reason and fields.
       throw failure;
     } finally { sending.current = ""; setBusy(""); syncPending(); }
-    const latest = await reloadCatalog();
-    if (!latest.snapshot || !latest.earlyRead) toast("申请已提交，部分目录或关联设置未读取完整");
+    const latest = await reloadCatalog(proposalSources(record.spec));
+    if (!latest.ok) toast("申请已提交，部分目录或关联设置未读取完整");
   };
   const submit = async (spec: ProposeSpec) => {
     if (!canWrite || !actor || sending.current) throw new Error("正在提交或账号没有提交权限，本次没有提交");
@@ -488,7 +460,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       if (full) {
         const spec = full.spec;
         const object = e1Object(spec);
-        if (row.status !== "pending" && readback) void reloadCatalog({ readback: { commandKey: full.commandKey, object } });
+        if (row.status !== "pending" && readback) void reloadCatalog(proposalSources(spec), { readback: { commandKey: full.commandKey, object } });
         setReceipts(rows => [...rows.filter(receipt => receipt.object !== object), { ...spec, id: row.id, commandKey: record.commandKey, object, status: row.status }]);
         if (row.status === "pending") storeFor(full).remember(full.fingerprint, full.commandKey, { ...full, receivedTicketId: row.id, ticket: { id: row.id, status: "pending" } });
         else if (result?.conclusion === "rejected") storeFor(full).remember(full.fingerprint, full.commandKey, { ...full, ticket: undefined, verifiedNotExecuted: true });
@@ -583,17 +555,18 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const mc = confirmation;
   const reviewingSku = mc?.op === "sku-save";
   const conflictRead = reviewingSku ? draftConflict?.latest !== undefined : !!conflictLatest;
-  const latestConflictSku = reviewingSku ? draftConflict?.latest : conflictLatest?.skus.find(sku => sku.id === mc?.sku?.id);
+  const latestConflictSku = reviewingSku ? draftConflict?.latest : conflictLatest?.sku;
   const canAcceptRevision = reviewingSku ? !!latestConflictSku?.updatedAt && latestConflictSku.updatedAt !== mc?.beforeSku?.updatedAt
     : !mc?.sku || !!latestConflictSku;
   const readConflict = async () => {
-    const latest = await reloadCatalog({ conflict: true });
+    if (!mc) return;
+    const latest = await reloadCatalog(reviewingSku ? SKU_EDIT_SOURCES : conflict ?? ALL_SOURCES, { conflict: true });
+    if (!latest.ok) throw new Error("目录暂时读不到");
+    const latestSku = latest.products && inspectE1StoreDisplayControls(latest.products, latest.gates ?? gates).skus.find(sku => sku.id === mc.sku?.id);
     if (reviewingSku && edit) {
-      if (!latest.skus) throw new Error("目录暂时读不到");
-      setSkuConflict({ nonce: edit.nonce, latest: latest.skus.find(sku => sku.id === mc.sku?.id) ?? null });
+      setSkuConflict({ nonce: edit.nonce, latest: latestSku ?? null });
     } else {
-      if (!latest.snapshot) throw new Error("目录暂时读不到");
-      setConflictLatest(latest.snapshot);
+      setConflictLatest({ sku: latestSku ?? undefined, gates: latest.gates, discount: latest.discount, early: latest.early?.params });
     }
   };
   const acceptConflictRevision = () => {
@@ -601,8 +574,8 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     if (reviewingSku && latestConflictSku) {
       if (!mc.acceptRevision?.(latestConflictSku)) setConfirmation(null);
     } else if (conflictLatest) {
-      setConfirmation(c => c ? { ...c, discount: conflictLatest.bundleDiscount, gates: conflictLatest.gates, sku: latestConflictSku ?? c.sku } : c);
-      setConflict(false); setConflictLatest(null); setAttemptKey("");
+      setConfirmation(c => c ? { ...c, discount: conflictLatest.discount ?? c.discount, gates: conflictLatest.gates ?? c.gates, early: conflictLatest.early ?? c.early, sku: latestConflictSku ?? c.sku } : c);
+      setConflict(null); setConflictLatest(null); setAttemptKey("");
     }
   };
   // 只用于显示：开放阶段写阶段名，不写阶段编号。
@@ -635,7 +608,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (mc.sku ? e1Object(r.spec) === `device_sku|${mc.sku.id}` : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
   const ctx: E1CatalogContext = {
     skus, canWriteE1: canWrite, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, catalogIncomplete, e1InitialLoading: loading && (!products || catalogIncomplete), skuReadbackPending,
-    e1Gates: gates, e1BundleDiscount: discount, currentPhase, refreshE1: () => reloadCatalog(),
+    e1Gates: gates, e1BundleDiscount: discount, currentPhase, refreshE1: source => reloadCatalog([source]),
     pE: k => early[k] ?? "—", earlyReady, earlyLoading, earlyError,
     gatesLoading, gatesError, discountLoading, discountError, writeBlockedReason: readBlock,
     pendingProposal: id => receipts.find(row => row.status === "pending" && ["device_sku", "device_generation_gate"].some(type => row.object === `${type}|${id}`)),
@@ -697,7 +670,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       detail: <><p>{sent(record.createdAt)}；升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
     ...media.filter(record => record.commandKey !== mediaSending).map(record => ({ key: record.commandKey, object: record.fileName, createdAt: record.createdAt,
       tag: <StatusTag tone="warn">上传结果未知</StatusTag>, line: isRetryExpired(record) ? RECOVERY_LINE.expired : "重新打开商品、选同一个文件，可以原样重试。",
-      actions: e1MediaHasOwner(record) ? <Button size="sm" disabledReason={skuCatalogReadBlock(record.skuId)} onClick={() => openSku(record.skuId || undefined, undefined, undefined, record)}>核对媒体上传</Button>
+      actions: e1MediaHasOwner(record) ? <Button size="sm" disabledReason={readBlock({ op: "sku-save", target: record.skuId })} onClick={() => openSku(record.skuId || undefined, undefined, undefined, record)}>核对媒体上传</Button>
         : canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined,
       detail: <p>{sent(record.createdAt)}；原文件摘要和原请求已保留。</p> })),
   ];
@@ -727,7 +700,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       blockedReason={currentPending && currentPending.commandKey !== busy ? "这个对象有一次结果未知的提交，先在页面上方查询原操作" : (reviewingSku ? hasSkuVersionConflict(mc) : conflict) ? <>
         <ConflictBar message="商品或配置已被别人改过，你填的内容还在；读取最新后重新核对。" onRead={readConflict} />
         {conflictRead && <Notice tone="warn" title="核对别人改了什么，再决定是否保留你的修改">
-          {mc.op === "bundle-discount" && conflictLatest ? <DiffList rows={[{ key: "two", label: "2件折扣", before: `${mc.discount?.twoItemsPct}%`, after: `${conflictLatest.bundleDiscount.twoItemsPct}%` }, { key: "three", label: "3件折扣", before: `${mc.discount?.threeItemsPct}%`, after: `${conflictLatest.bundleDiscount.threeItemsPct}%` }, { key: "four", label: "4+件折扣", before: `${mc.discount?.fourPlusItemsPct}%`, after: `${conflictLatest.bundleDiscount.fourPlusItemsPct}%` }]} /> : mc.sku && latestConflictSku ? <DiffList rows={e1ShownDiff(e1SkuDiff(mc.beforeSku ?? mc.sku, latestConflictSku), mc.beforeSku ?? mc.sku, latestConflictSku)} /> : <p>原对象未读取到，请保留草稿并核查。</p>}
+          {mc.op === "bundle-discount" && conflictLatest?.discount ? <DiffList rows={[{ key: "two", label: "2件折扣", before: `${mc.discount?.twoItemsPct}%`, after: `${conflictLatest.discount.twoItemsPct}%` }, { key: "three", label: "3件折扣", before: `${mc.discount?.threeItemsPct}%`, after: `${conflictLatest.discount.threeItemsPct}%` }, { key: "four", label: "4+件折扣", before: `${mc.discount?.fourPlusItemsPct}%`, after: `${conflictLatest.discount.fourPlusItemsPct}%` }]} /> : mc.sku && latestConflictSku ? <DiffList rows={e1ShownDiff(e1SkuDiff(mc.beforeSku ?? mc.sku, latestConflictSku), mc.beforeSku ?? mc.sku, latestConflictSku)} /> : <p>原对象未读取到，请保留草稿并核查。</p>}
           <Button disabledReason={canAcceptRevision ? undefined : "原对象未读取到"} onClick={acceptConflictRevision}>已核对，保留我的修改</Button>
         </Notice>}
       </> : refused?.on === mc ? <span className="rd-toolbar"><span>{refused.text}</span><Button size="sm" icon={<RotateCcw size={14} aria-hidden />} onClick={() => { setRefused(null); if (reviewingSku) setConfirmation(null); }}>返回修改</Button></span>
