@@ -36,6 +36,7 @@ import {
 } from "./m4-kb-views";
 import type { MCtx } from "./types";
 import type { M4PendingRow } from "./m4-kb-views";
+import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { usePendingReplayDeadline, type PendingConfirmRecovery } from "../design-kit";
 import { useMOperationReason } from "./m-operation-reason";
 
@@ -128,6 +129,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
   const [recovery, setRecovery] = useState<MCommandRecord | null>(null);
   const [recoveredDraft, setRecoveredDraft] = useState<RecoveredFaqDraft | null>(null);
   const [draftRevision, setDraftRevision] = useState(0);
+  const discardDraft = useRecoveryDraftDiscard();
   const [reconfirmations, setReconfirmations] = useState<MCommandRecord[]>([]);
   const continuedCommand = useRef<string | null>(null);
   const recoveryRevision = useSyncExternalStore(m4FaqRecovery.subscribe, m4FaqRecovery.getRevision, () => 0);
@@ -429,11 +431,13 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
         const fresh = currentFaq();
         const saved = savedCommand();
         const shown = shownFaq();
+        const now = saved && currentRecoveryInfo.current(saved).currentFact;
         return <>{deleteRecoveryNotice(saved)}<Facts>
           <Fact k="问题"><span className="m4-fact-text">{shown.question}</span></Fact>
           <Fact k="给谁看">{surfaceName(shown.surface)} · {languageName(shown.language)}</Fact>
           <Fact k="状态">{!saved && liveKnowledge.current.available && !fresh ? GONE_TEXT
             : shown.status === "published" ? "已发布，删除后几分钟内从 App 消失" : "草稿"}</Fact>
+          {now && <Fact k="现在" tone="warn">{now}</Fact>}
         </Facts></>;
       },
       detail: <>删除后要再用，只能重新新建这条问答。</>,
@@ -691,26 +695,17 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
       : factsAvailable && fresh && (command.kind === "publish" || command.kind === "unpublish") && fresh.status !== command.before?.status
         ? `这条问答现在已是${fresh.status === "published" ? "已发布" : "草稿"}，不用再${KIND_NAME[command.kind]}。` : undefined;
     const reason = occupied ? "这条问答有一个结果未知的操作，先处理它。" : ended;
-    const dismiss = !occupied && Boolean(ended) && !draft;
     const editing = draft && continuedCommand.current === record.commandKey && Boolean(showAddFaq || editFaq);
-    const discard = {
-      label: draft ? "放弃这份草稿" : "不再处理",
-      requiresConfirmation: draft,
-      disabled: occupied || editing,
-      run: () => {
-        if (!occupied && !editing) setReconfirmations(rows => rows.filter(row => row.commandKey !== record.commandKey));
-      },
-    };
+    const dismiss = () => setReconfirmations(rows => rows.filter(row => row.commandKey !== record.commandKey));
     return [{
-      discard,
       key: record.commandKey, question: command.row.question, change: KIND_NAME[command.kind], submittedAt: record.createdAt, expired: false,
       status: { tone: "done" as const, label: draft ? "可继续修改" : "可重新确认" },
       note: reason ?? "原操作已有结论，核对最新问答后重新确认。",
-      actions: <Button size="sm" disabled={!dismiss && (!canEdit || writePending || Boolean(reason))}
-        disabledReason={dismiss ? undefined : reason} onClick={() => {
-          if (dismiss) discard.run();
-          else if (!reason && canEdit && !writePending) continueFaq(record, faqs);
-        }}>{dismiss ? discard.label : action}</Button>,
+      actions: <>
+        {!ended && <Button size="sm" disabled={!canEdit || writePending} disabledReason={reason} onClick={() => continueFaq(record, faqs)}>{action}</Button>}
+        <Button size="sm" variant="ghost" disabledReason={occupied ? reason : editing ? "正在编辑这份草稿" : undefined}
+          onClick={() => draft ? discardDraft.ask(dismiss) : dismiss()}>{draft ? "放弃这份草稿" : "不再处理"}</Button>
+      </>,
     }];
   });
 
@@ -750,6 +745,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
         readOnly={knowledgeAvailable && !canWriteM4 ? "你只能查看；新建、编辑、发布、下架和删除问答需要知识库编辑权限" : undefined} />
 
       <M4PendingWrites rows={[...pendingRows, ...draftRows]} />
+      {discardDraft.dialog}
       {closing && <FundClosureModal label={closing.faq?.row.question ?? "常见问答"} createdAt={closing.createdAt}
         offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
         facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(outcomes[closing.commandKey]), "记录保留")}</Fact>}
@@ -773,7 +769,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
       {loading ? <Conclusion state="unknown">正在读取问答…</Conclusion>
         : failed ? <div className="m4-health" data-module-health-state="error"><Conclusion state="unknown" action={<Button size="sm" onClick={() => void readCurrent()}>重试</Button>}
             hint={<>{knowledgeRead.kind === "failed" ? knowledgeRead.reason : pget("I.support.knowledgeError")} 暂时不能新建和修改。{loadError && "客服中心的其他数据也没同步成功。"}</>}
-            explain="问答和旧的工单处理时限数据是一起读的，其中一份读不全，问答就显示不了。点「重试」只重读知识库。">问答读不到，现在不知道线上有哪些</Conclusion></div>
+            explain="问答和旧的工单处理时限数据是一起读的，其中一份读不全，问答就显示不了。点「重试」只重读知识库。">问答加载失败</Conclusion></div>
           : visibleFaqs.length === 0 ? <Conclusion state="neutral" icon={BookOpenText} hint={canEdit ? "点右上角「新建问答」写第一条。" : undefined}>还没有问答</Conclusion>
             : unreachable.length > 0
               ? <Conclusion state="warn" hint="可以筛「显示位置」和「语言」找到它们。"

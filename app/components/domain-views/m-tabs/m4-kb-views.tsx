@@ -211,7 +211,6 @@ export function M4StatusConfirm({ faq, busy, disabled, disabledReason, failure, 
 
 export type M4PendingRow = { key: string; question: string; change: ReactNode; submittedAt: number; expired: boolean;
   /** 这一行的标签和结论（共用 fundRecoveryStatus 的叫法）；note 是结论句和技术信息。 */
-  discard?: { label: string; requiresConfirmation: boolean; disabled: boolean; run: () => void };
   status: { tone: StateTone; label: string; more?: string }; note: ReactNode; actions: ReactNode };
 
 /**
