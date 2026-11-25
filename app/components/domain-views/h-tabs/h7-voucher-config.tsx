@@ -44,6 +44,9 @@ import {
 } from "./h7-voucher-parts";
 import { H7VoucherForm, SPLIT_RETIRED_HELP, changedRows, initialForm, type H7FormValue } from "./h7-voucher-form";
 
+/** 读取失败后按「重试」读到了：焦点落在「代金券」标题（外层 .h7-page 是 display: contents，接不到焦点，BUG-710）。 */
+const VOUCHER_TITLE = { get current() { return document.querySelector<HTMLElement>('[data-proof="h7-voucher-config"] .rd-panel-title'); } };
+
 type OpsVoucher = H7Voucher;
 
 /** businessValue → OpsVoucher(逗号串拆 SKU/入口 · 日期转 ms · 数值清洗)。 */
@@ -571,13 +574,13 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     onClose={closeForm}
     onReview={(bv) => (form.voucher ? reviewEdit(form.voucher, form.before ?? form.initial, bv) : reviewAdd(bv))} />;
 
-  if (loading && !readAt) return <div className="h7-page">{header}{recovery}{release.dialog}<BlockState state="loading" title="代金券读取中…" /></div>;
+  if (loading && !readAt) return <div className="h7-page">{header}{recovery}{release.dialog}<BlockState state="loading" title="正在加载代金券…" /></div>;
   if (error) return (
     <div className="h7-page">
       {header}
       {recovery}
       {release.dialog}
-      <BlockState state="error" title="代金券读取失败" detail={`${error} · 为避免误操作，读到之前不能新增、编辑和处置。`} onRetry={() => void reload()} />
+      <BlockState state="error" title="代金券加载失败" detail={`${error} · 为避免误操作，读到之前不能新增、编辑和处置。`} onRetry={() => void reload()} retrying={loading} afterRetryFocus={VOUCHER_TITLE} />
       {formDrawer}
     </div>
   );

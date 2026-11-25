@@ -342,12 +342,12 @@ export function FlowFold({ blocks, period, summary, summaryError, summaryLoading
     <>
       {summary ? <PeriodDetail period={period} summary={summary} />
         : (blocks.deposits || blocks.withdrawals) && (summaryError
-          ? <BlockState compact state="error" title="入金和提现明细读取失败" detail={summaryError} onRetry={onRetrySummary} retrying={summaryLoading} />
+          ? <BlockState retryKey="folds-345" compact state="error" title="入金和提现明细读取失败" detail={summaryError} onRetry={onRetrySummary} retrying={summaryLoading} />
           : <BlockState compact state="loading" title="正在读取…" />)}
       {blocks.topup && (
         <section aria-label="今日充值">
           <h3 className="cc-sub">今日充值</h3>
-          {topup.error ? <BlockState compact state="error" title="今日充值读取失败" detail={topup.error} onRetry={topup.reload} retrying={topup.loading} />
+          {topup.error ? <BlockState retryKey="folds-350" compact state="error" title="今日充值读取失败" detail={topup.error} onRetry={topup.reload} retrying={topup.loading} />
             : !topup.data ? <BlockState compact state="loading" title="正在读取…" />
               : (
                 <>
@@ -367,7 +367,7 @@ export function FlowFold({ blocks, period, summary, summaryError, summaryLoading
       {blocks.redemption && (
         <section aria-label="今日提现">
           <h3 className="cc-sub">今日提现申请</h3>
-          {redemption.error ? <BlockState compact state="error" title="今日提现读取失败" detail={redemption.error} onRetry={redemption.reload} retrying={redemption.loading} />
+          {redemption.error ? <BlockState retryKey="folds-370" compact state="error" title="今日提现读取失败" detail={redemption.error} onRetry={redemption.reload} retrying={redemption.loading} />
             : !redemption.data ? <BlockState compact state="loading" title="正在读取…" />
               : <p className="cc-line">提交 {fmtNum(redemption.data.submitted)} 笔，完成 {fmtNum(redemption.data.confirmed)} 笔，拒绝 {fmtNum(redemption.data.rejected)} 笔{redemption.data.averageLatencyHours == null ? "" : `，平均到账 ${redemption.data.averageLatencyHours} 小时`}</p>}
         </section>
@@ -384,7 +384,7 @@ export function FlowFold({ blocks, period, summary, summaryError, summaryLoading
       <div className="cc-cols">
         {blocks.netFlow && !quiet && (
           <section aria-label="近 8 天资金进出">
-            {historyError ? <BlockState compact state="error" title="资金进出读取失败" detail={historyError} onRetry={onRetryHistory} retrying={historyRetrying} />
+            {historyError ? <BlockState retryKey="folds-387" compact state="error" title="资金进出读取失败" detail={historyError} onRetry={onRetryHistory} retrying={historyRetrying} />
               : !history ? <BlockState compact state="loading" title="正在读取…" />
                 : <Bars label="近 8 天每天流入和流出" series={[{ name: "流入", slot: 2 }, { name: "流出", slot: 4 }]} rows={history.flowWindows.map((item) => ({ label: item.label, values: [item.inflowWan * 10_000, item.outflowWan * 10_000] }))} format={usdt} height={96} />}
             {todayFlow && <p className="cc-line">今日流入 {usdt(todayFlow.inflowWan * 10_000)}，流出 {usdt(todayFlow.outflowWan * 10_000)}</p>}

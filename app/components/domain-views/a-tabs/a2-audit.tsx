@@ -3195,7 +3195,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const orderedParams = [...mechanismParams].sort((a, b) => (PARAM_ORDER.indexOf(a.key) + 1 || 99) - (PARAM_ORDER.indexOf(b.key) + 1 || 99));
   const schemaNow = schemaVersion(mechanismParams.find((p) => p.key === "schema")?.value);
   const settingsTab = mainError && !main ? (
-    <BlockState state="error" title="机制设置读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
+    <BlockState retryKey="a2-audit-3198" state="error" title="机制设置读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
   ) : !main ? (
     <BlockState state="loading" title="正在读取机制设置…" />
   ) : (
@@ -3228,7 +3228,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         explain="到期记录先长期归档，再从在线列表移除，不能撤销。后台默认每天定时清理一次；每次最多处理 2,000 条，可清理超过 2,000 条时要再清一次。"
         actions={canWrite ? <Button size="sm" variant="danger-outline" disabledReason={retentionBlock} onClick={confirmRetention}>立即清理</Button> : undefined}>
         {retentionPreviewError ? (
-          <BlockState compact state="error" title={`清理范围加载失败，暂不能清理：${retentionPreviewError}`} onRetry={() => void refreshRetentionPreview()} retrying={retentionLoading} />
+          <BlockState retryKey="a2-audit-3231" compact state="error" title={`清理范围加载失败，暂不能清理：${retentionPreviewError}`} onRetry={() => void refreshRetentionPreview()} retrying={retentionLoading} />
         ) : !retentionPreview ? (
           <BlockState compact state="loading" title="正在加载清理范围" />
         ) : (

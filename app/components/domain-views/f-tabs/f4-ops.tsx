@@ -226,7 +226,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
   }
   const recoveryNotice = <>
     <F4RecoveryNotice rows={recoveryRows} />
-    {ctx.f4PolicyAppliedUnread && <BlockState state="error" title="大使规则已写入，最新规则暂时读不到"
+    {ctx.f4PolicyAppliedUnread && <BlockState retryKey="f4-ops-229" state="error" title="大使规则已写入，最新规则暂时读不到"
       detail="这不是没有规则：规则暂时没加载出来，调整入口也先收起。" onRetry={() => void ctx.retryF4AmbassadorPolicy()} retrying={ctx.f4PolicyLoading} />}
   </>;
   const activeQuota = quotaOriginal ?? quotaDraft;
@@ -257,7 +257,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       </> : ctx.f4Error ? <>
         <Conclusion state="unknown" hint="点「重试」；加载成功前不显示旧数字，也不能发起新修改。">这页的数据没加载出来，暂时无法判断</Conclusion>
         {recoveryNotice}
-        <BlockState state="error" title="奖励池、名额与排行榜加载失败" detail={ctx.f4Error} onRetry={() => void ctx.refreshF4()} />
+        <BlockState retryKey="f4-ops-260" state="error" title="奖励池、名额与排行榜加载失败" detail={ctx.f4Error} onRetry={() => void ctx.refreshF4()} />
       </> : <>
         <Conclusion state="unknown">还没有读到数据</Conclusion>
         {recoveryNotice}

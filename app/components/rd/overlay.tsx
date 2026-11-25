@@ -67,36 +67,76 @@ function dismissesDrawer(target: EventTarget | null) {
   return target instanceof Element && target.closest("main, aside, header") !== null && target.closest("tr[data-clickable]") === null;
 }
 
+/** 每个开过的弹窗、抽屉关掉后焦点该回哪。从另一个框里打开的框，原按钮跟着那个框一起没了时（离开框里点「…后继续」打开的保存确认），接着问那个框（BUG-710）。 */
+const handoffs = new WeakMap<Element, () => HTMLElement | null>();
+/** 最上层还开着的弹窗或抽屉，不含正在关的这个。 */
+const openOverlay = (except: Element | null) => [...document.querySelectorAll<HTMLElement>('.rd-modal[data-state="open"], .rd-drawer[data-state="open"]')].filter((node) => node !== except).at(-1) ?? null;
+
 /** 打开时聚焦容器，关闭后回到打开前的元素。Dialog 没有 Trigger 时要自己记。 */
 function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) {
   const previous = useRef<HTMLElement | null>(null);
   /** 打开者所在的行、面板或页签：原按钮被重画时只在这里面找同名的。 */
   const area = useRef<Element | null>(null);
+  /** 打开者往外的各层：按钮换了节点（带上、去掉不可用原因时外面多一层提示）后，先在还挂着的最近一层里找同名的。 */
+  const chain = useRef<HTMLElement[]>([]);
+  /** 打开者所在的另一个框，和那个框自己关掉后焦点的去处。 */
+  const host = useRef<HTMLElement | null>(null);
+  const hostHandoff = useRef<(() => HTMLElement | null) | null>(null);
   const wasOpen = useRef(false);
   const content = useRef<HTMLDivElement>(null);
-  if (open && !wasOpen.current && document.activeElement instanceof HTMLElement) {
-    previous.current = document.activeElement;
-    area.current = document.activeElement.closest("tr, section, [role=tabpanel]");
+  if (open && !wasOpen.current) {
+    // 焦点在页面上（body）不算打开者，关掉时按下面的顺序另找。
+    const active = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    previous.current = active;
+    area.current = active?.closest("tr, section, [role=tabpanel]") ?? null;
+    chain.current = [];
+    for (let node = active?.parentElement; node && node !== document.body; node = node.parentElement) chain.current.push(node);
+    host.current = active?.closest<HTMLElement>(".rd-modal, .rd-drawer") ?? null;
+    hostHandoff.current = host.current ? handoffs.get(host.current) ?? null : null;
   }
   wasOpen.current = open;
+  const target = (): HTMLElement | null => {
+    const opener = returnFocus?.() ?? previous.current;
+    if (opener?.isConnected) return opener;
+    // 提交时按钮可能重画过（变灰、转圈后换了节点，BUG-536）：原节点不在了，就在它原来那一行、那块面板里找看得见的同名那一个。
+    // 那一行、那块面板自己已经不在了（整行被删掉）就不找，免得落到别的记录的同名按钮上。
+    // 先在还挂着的最近一层（同一张卡、同一行）里找：一页有好几个同名按钮（每张卡一个「配置」）时，只在大的面板里找会找到好几个（BUG-710：H4 玩法抽屉放弃后落到 body）。
+    if (opener && area.current?.isConnected) for (const scope of [chain.current.find((node) => node.isConnected && area.current?.contains(node)), area.current]) {
+      if (!scope?.isConnected) continue;
+      const name = opener.getAttribute("aria-label") ?? opener.textContent;
+      const same = [...scope.querySelectorAll<HTMLElement>(opener.tagName)].filter((element) => element.getClientRects().length > 0 && (element.getAttribute("aria-label") ?? element.textContent) === name);
+      if (same.length === 1) return same[0];
+    }
+    // 打开者所在的框还开着（抽屉里点开的确认框）：回到那个框；那个框已经关了（离开框）：用那个框关掉时的去处。
+    if (host.current?.isConnected) return host.current;
+    const inherited = hostHandoff.current?.() ?? null;
+    // 那个框的去处不在最上层还开着的抽屉里（离开框是点侧栏链接、切页签打开的，或去处在被盖住的下一层抽屉里）：留在最上层抽屉，不跳出去（BUG-710）。
+    // 抽屉都挂在同一个容器里，后打开的排在后面，最后一个就是最上层（详情抽屉上再开编辑抽屉时是编辑抽屉）。
+    const drawer = [...document.querySelectorAll<HTMLElement>('.rd-drawer[data-state="open"]')].at(-1);
+    return drawer && !(inherited && drawer.contains(inherited)) ? drawer : inherited;
+  };
+  const latest = useRef(target);
+  latest.current = target;
   return {
     ref: content,
     previous,
     onOpenAutoFocus: (event: Event) => {
       event.preventDefault();
+      if (content.current) handoffs.set(content.current, () => latest.current());
       content.current?.focus();
     },
     onCloseAutoFocus: (event: Event) => {
       event.preventDefault();
-      const opener = returnFocus?.() ?? previous.current;
-      if (opener?.isConnected) opener.focus();
-      // 提交时按钮可能重画过（变灰、转圈后换了节点，BUG-536）：原节点不在了，就在它原来那一行、那块面板里找看得见的同名那一个；
-      // 同名不止一个、或那一块也不在了，焦点不动。
-      else if (opener && area.current?.isConnected) {
-        const name = opener.getAttribute("aria-label") ?? opener.textContent;
-        const same = [...area.current.querySelectorAll<HTMLElement>(opener.tagName)].filter((element) => element.getClientRects().length > 0 && (element.getAttribute("aria-label") ?? element.textContent) === name);
-        if (same.length === 1) same[0].focus();
-      }
+      const self = content.current;
+      // 关掉的时候焦点已经在另一个还开着的框里（旧抽屉退出动画还没完，新抽屉已经打开并接了焦点）：不动它。
+      const holder = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>(".rd-modal, .rd-drawer") : null;
+      if (holder && holder !== self && holder.getAttribute("data-state") === "open") return;
+      const top = openOverlay(self);
+      // 都找不到时回到还开着的最上层框，不落到页面上。
+      const next = latest.current() ?? top;
+      // 这时上面还开着另一个弹窗（离开框收起、保存确认打开）：焦点留在那个弹窗里，不拉出去。
+      if (top?.matches(".rd-modal") && !(next && top.contains(next))) { if (!top.contains(document.activeElement)) top.focus(); return; }
+      next?.focus();
     },
   };
 }
@@ -128,6 +168,8 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
   const surface = useRdSurface();
   const focus = useFocusHandoff(open);
   const closedByOutsideClick = useRef(false);
+  const stillOpen = useRef(open);
+  stillOpen.current = open;
   const close = () => { if (!busy) onClose(); };
   // 切过条再关时回到当前高亮行，不跳回最早点开的那行。
   useEffect(() => {
@@ -154,7 +196,11 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
           onPointerDownOutside={(event) => {
             const target = event.detail.originalEvent.target;
             if (busy || !dismissesDrawer(target) || keepOnControls && onPageControl(target)) event.preventDefault();
-            else closedByOutsideClick.current = true;
+            else {
+              closedByOutsideClick.current = true;
+              // 页面没关（有没保存的改动，先弹离开框）：撤掉记号，之后用 × 或取消关时照常把焦点交回去（BUG-710）。
+              window.setTimeout(() => { if (stillOpen.current) closedByOutsideClick.current = false; });
+            }
           }}
           onFocusOutside={(event) => event.preventDefault()}
         >
