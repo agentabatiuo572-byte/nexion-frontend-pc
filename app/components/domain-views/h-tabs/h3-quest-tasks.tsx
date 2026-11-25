@@ -341,8 +341,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       void region.reload();
       const results = await mutations.refreshTickets();
       await tasks;
-      // 查到原申请已被拒、撤回或过期：首读时的待批状态作废，再读一次任务。
-      if (results.some(result => result.status === "fulfilled" && result.value && ["rejected", "expired", "withdrawn"].includes(result.value.status))) await reload();
+      // 查到原申请已被拒、撤回或过期：首读时的待批状态作废，任务和地区再读一次。
+      if (results.some(result => result.status === "fulfilled" && result.value && ["rejected", "expired", "withdrawn"].includes(result.value.status))) { void region.reload(); await reload(); }
       for (const result of results) if (result.status === "rejected") toast(displayAdminError(result.reason));
     } finally {
       refreshInFlight.current = false;
