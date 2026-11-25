@@ -6,7 +6,7 @@ import type { E2OnboardingYieldConfig, E2PhoneTier, E2YieldComparison } from "@/
 import type { useE3Proposals } from "./e3-proposals";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E4OrderDetail, E4PendingApproval } from "@/lib/admin/e4-client";
-import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import type { PendingMutationRecord, PendingRecoveryState } from "@/lib/admin/pending-mutation-store";
 import type { FundCommandOrigin, FundCommandEvidence, FundCommandInvestigation, FundInvestigationAccess, FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { createA2OperationProposal } from "@/lib/admin/a2-client";
@@ -97,7 +97,7 @@ export interface McSpec {
 export type Mc = McSpec | null;
 
 /** E4 结果未确认的提案。原内容、理由和命令号一起存，重试只能原样发（OP-94）。 */
-export type E4PendingCommand = PendingMutationRecord & { label: string; orderNo: string; spec: ProposeSpec; commandOrigin?: FundCommandOrigin; request?: Parameters<typeof createA2OperationProposal>[0]; receivedTicketId?: string; creationConfirmed?: boolean; proposalStatus?: "pending" | "approved" | "rejected" | "withdrawn" | "expired" };
+export type E4PendingCommand = PendingMutationRecord & { label: string; orderNo: string; spec: ProposeSpec; commandOrigin?: FundCommandOrigin; request?: Parameters<typeof createA2OperationProposal>[0]; receivedTicketId?: string; creationConfirmed?: boolean; verifiedNotExecuted?: true; proposalStatus?: "pending" | "approved" | "rejected" | "withdrawn" | "expired" };
 
 /** 订单行(队列 / 状态机派生)。 */
 export interface EOrder {
@@ -142,7 +142,7 @@ export interface EViewCtx {
   e2Loading: boolean;
   e2Error: string | null;
   e2TaskCatalogReady: boolean;
-  refreshE2: () => Promise<E2OnboardingYieldConfig | undefined>;
+  refreshE2: () => Promise<{ taskCatalogReady: boolean; phone?: E2OnboardingYieldConfig }>;
   openAddTask: () => void;
   openEditTask: (t: OpsTask) => void;        // 编辑任务全字段(预填抽屉)
   // E3 生命周期 & Trade-in(配置/指标/tx 监控均走后端 API)
@@ -161,6 +161,7 @@ export interface EViewCtx {
   e4Loading: boolean;
   e4Error: string | null;
   e4ReadBlock?: string;
+  e4OrderWriteBlock: (operation: string) => string | undefined;
   e4Total: number;
   e4Query: E4Query;
   e4KeywordInput: string;
@@ -179,14 +180,11 @@ export interface EViewCtx {
   e4InvestigationResults: Record<string, FundInvestigationOutcome>;
   e4InvestigationAccess: (record: E4PendingCommand) => FundInvestigationAccess;
   checkE4Investigation: (record: E4PendingCommand, evidence?: FundCommandEvidence) => Promise<FundCommandInvestigation | null>;
-  e4RetryRejected: string[];
+  e4RecoveryState: (record: E4PendingCommand) => PendingRecoveryState;
   e4Retrying: string;
   retryE4Pending: (record: E4PendingCommand) => Promise<void>;
   checkE4Pending: (record: E4PendingCommand) => Promise<void>;
   canQueryE4: boolean;
-  /** 查过且明确查不到的命令号，只有这些才开放重试（OP-93）。 */
-  e4QueryMissing: string[];
-  e4ExpiredNotFound: string[];
   releaseE4Pending: (record: E4PendingCommand) => void;
   selOrder: EOrder | null;
   e4Detail: E4OrderDetail | null;
@@ -221,7 +219,7 @@ export interface EViewCtx {
   setE5ProductFilter: (value: string) => void;
   setE5Page: (page: number) => void;
   setE5PageSize: (pageSize: number) => void;
-  refreshE5: () => Promise<void>;
+  refreshE5: () => Promise<boolean>;
   // E6 算力与设备配置(开关/系数/显卡映射/下载内容均走后端 config API,聚合视图)
   canReadE6: boolean;
   canWriteE6: boolean;
@@ -229,5 +227,5 @@ export interface EViewCtx {
   e6Config: E6ComputeConfigView | null;
   e6Loading: boolean;
   e6Error: string | null;
-  refreshE6: () => Promise<void>;
+  refreshE6: () => Promise<boolean>;
 }

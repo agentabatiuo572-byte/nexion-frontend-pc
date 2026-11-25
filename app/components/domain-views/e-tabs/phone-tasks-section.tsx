@@ -16,7 +16,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsTask } from "@/lib/admin/platform-types";
 import type { E2PhoneTier } from "@/lib/admin/e2-client";
 import type { EViewCtx } from "./types";
-import { E6PendingNotice, useE6Mutations } from "./e6-mutations";
+import { E6PendingNotice, useE6DraftEditor, useE6Mutations } from "./e6-mutations";
 import { E6Amount, E6OriginalValues } from "./e6-amount";
 import { E6YieldComparisonPanel } from "./e6-yield-comparison";
 
@@ -53,10 +53,30 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
   },[ctx.tasks]);
   useEffect(()=>{ if(!ready) {setForm(null); if(!confirm || !m.locked(confirm.scope))setConfirm(null);} },[ready]);
   useEffect(()=>{if(!m.busy&&m.locked(task?`task:${task.id}`:"task:create"))setForm(null);},[m.pending,m.legacy,m.busy,task]);
-  const open = (current: OpsTask | null) => {
+  const open = (current: OpsTask | null, saved?: Partial<typeof initialTask>) => {
     setTask(current); setFormError("");
-    setForm(current ? { n:current.n, taskClass:current.taskClass!,durationMinutes:String(current.simulation!.durationMinutes),baseReward:String(current.simulation!.baseReward),asset:current.simulation!.asset,enabled:current.simulation!.enabled,version:current.simulation!.version } : {...initialTask});
+    const defaults = current ? { n:current.n, taskClass:current.taskClass!,durationMinutes:String(current.simulation!.durationMinutes),baseReward:String(current.simulation!.baseReward),asset:current.simulation!.asset,enabled:current.simulation!.enabled,version:current.simulation!.version } : initialTask;
+    setForm({ ...defaults, ...saved });
   };
+  const openStatus = (t: OpsTask) => { const def=findHighOp("e2_task_status")!,params={taskId:t.id,status:t.simulation!.enabled?"inactive":"active"};setConfirm({scope:`task:${t.id}`,action:`${t.simulation!.enabled?"停用":"启用"}手机任务 · ${t.n}`,op:def.op,params,before:`${t.simulation!.enabled?"已启用":"已停用"} · ${t.simulation!.durationMinutes} 分钟 · ${t.simulation!.baseReward} ${t.simulation!.asset}/任务`,after:!t.simulation!.enabled?"已启用":"已停用",version:t.simulation!.version,diff:[{key:"state",label:"状态",before:t.simulation!.enabled?"已启用":"已停用",after:t.simulation!.enabled?"已停用":"已启用"}],basis:`任务由已停用改为已启用；每任务奖励 ${t.simulation!.baseReward} ${t.simulation!.asset}，固定时长 ${t.simulation!.durationMinutes} 分钟。`,amplifies:!t.simulation!.enabled,target:def.buildTarget(params)}); };
+  useE6DraftEditor(["e2_task_create", "e2_task_update", "e2_task_status"], !!form || !!confirm, record => {
+    if (!ready || !canWrite || record.payload.kind !== "proposal") return false;
+    const { op, params } = record.payload.input.command;
+    const current = op === "e2_task_create" ? null : ctx.tasks.find(item => item.id === params.taskId);
+    if (current === undefined || record.scope !== (current ? `task:${current.id}` : "task:create")) return false;
+    if (op === "e2_task_status") {
+      if (!current || params.status !== (current.simulation!.enabled ? "inactive" : "active")) return false;
+      openStatus(current);
+      return true;
+    }
+    const simulation = params.simulation as { durationMinutes?: number; baseReward?: string | number; asset?: string; enabled?: boolean } | undefined;
+    if (typeof params.name !== "string" || typeof params.taskClass !== "string" || !simulation
+      || !Number.isInteger(simulation.durationMinutes) || simulation.baseReward == null
+      || typeof simulation.asset !== "string" || typeof simulation.enabled !== "boolean") return false;
+    open(current, { n: params.name, taskClass: params.taskClass, durationMinutes: String(simulation.durationMinutes),
+      baseReward: String(simulation.baseReward), asset: simulation.asset, enabled: current?.simulation?.enabled ?? simulation.enabled });
+    return true;
+  });
   const describe = (f: typeof initialTask) => `${f.n} · ${TASK_CLASS_LABELS[f.taskClass as TaskClass]} · ${f.durationMinutes} 分钟 · ${f.baseReward} ${f.asset}/任务 · ${f.enabled ? "已启用" : "已停用"} · 版本 ${f.version || "待创建"}`;
   const formUnchanged = !!form && !!task && form.n.trim() === task.n && form.taskClass === task.taskClass && Number(form.durationMinutes) === task.simulation!.durationMinutes && form.asset === task.simulation!.asset && positiveAmount.test(form.baseReward.trim()) && compareE6Decimal(form.baseReward.trim(), String(task.simulation!.baseReward)) === 0;
   function submitForm() {
@@ -94,7 +114,7 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
       <Table label="手机任务" className="e6-tasks-table" data-tight><thead><tr><Th>任务名称</Th><Th>类型</Th><Th align="right">时长</Th><Th align="right">每任务奖励</Th><Th>状态</Th>{canWrite&&<Th sticky="end">操作</Th>}</tr></thead><tbody>
         {ctx.e2Loading ? <TableLoading columns={canWrite?6:5}/> : !ready ? <TableMessage columns={canWrite?6:5} role="alert">手机任务加载失败 <Button size="sm" onClick={()=>void ctx.refreshE2()}>重试</Button></TableMessage> : !ctx.tasks.length ? <TableMessage columns={canWrite?6:5}>暂无手机任务</TableMessage> : ctx.tasks.slice((currentPage-1)*size,currentPage*size).map(t=><Tr key={t.id}>
           <Td grow><Cell main={<E6OriginalValues original={t.n}><span className="e6-end-text">{t.n}</span></E6OriginalValues>} sub={`版本 ${t.simulation!.version}`}/></Td><Td><TaskClassTag taskClass={t.taskClass as TaskClass}/></Td><Td align="right" data-num="">{t.simulation!.durationMinutes} 分钟</Td><Td align="right" data-num=""><span className="e6-task-reward"><strong><E6Amount raw={String(t.simulation!.baseReward)} precision={rewardPrecision} currency={t.simulation!.asset}/></strong><span>{t.simulation!.asset}</span></span></Td><Td><StatusTag tone={t.simulation!.enabled?"ok":"done"}>{t.simulation!.enabled?"已启用":"已停用"}</StatusTag></Td>
-          {canWrite&&<Td sticky="end"><MoreMenu label={`操作 ${t.n}`} items={[{key:"edit",label:"编辑",disabledReason:m.locked(`task:${t.id}`)?"这个任务有结果未知的原提案":undefined,onSelect:()=>open(t)},{key:"status",label:t.simulation!.enabled?"停用":"启用",danger:t.simulation!.enabled,disabledReason:m.locked(`task:${t.id}`)?"这个任务有结果未知的原提案":undefined,onSelect:()=>{const def=findHighOp("e2_task_status")!,params={taskId:t.id,status:t.simulation!.enabled?"inactive":"active"};setConfirm({scope:`task:${t.id}`,action:`${t.simulation!.enabled?"停用":"启用"}手机任务 · ${t.n}`,op:def.op,params,before:`${t.simulation!.enabled?"已启用":"已停用"} · ${t.simulation!.durationMinutes} 分钟 · ${t.simulation!.baseReward} ${t.simulation!.asset}/任务`,after:!t.simulation!.enabled?"已启用":"已停用",version:t.simulation!.version,diff:[{key:"state",label:"状态",before:t.simulation!.enabled?"已启用":"已停用",after:t.simulation!.enabled?"已停用":"已启用"}],basis:`任务由已停用改为已启用；每任务奖励 ${t.simulation!.baseReward} ${t.simulation!.asset}，固定时长 ${t.simulation!.durationMinutes} 分钟。`,amplifies:!t.simulation!.enabled,target:def.buildTarget(params)});}}]}/></Td>}
+          {canWrite&&<Td sticky="end"><MoreMenu label={`操作 ${t.n}`} items={[{key:"edit",label:"编辑",disabledReason:m.locked(`task:${t.id}`)?"这个任务有结果未知的原提案":undefined,onSelect:()=>open(t)},{key:"status",label:t.simulation!.enabled?"停用":"启用",danger:t.simulation!.enabled,disabledReason:m.locked(`task:${t.id}`)?"这个任务有结果未知的原提案":undefined,onSelect:()=>openStatus(t)}]}/></Td>}
         </Tr>)}
       </tbody></Table>
       {!!ctx.tasks.length && ready && <Pager label="手机任务" page={currentPage} pageSize={size} total={ctx.tasks.length} sizes={[10,20,50]} onPage={p=>{setPage(p);replaceQuery({taskPage:p});}} onPageSize={s=>{setSize(s);setPage(1);replaceQuery({taskPage:1,taskPageSize:s});}}/>}
@@ -124,11 +144,21 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
 
 export function PhoneTiersSection({ctx}:{ctx:EViewCtx}) {
   const m=useE6Mutations(), rights=useAdminAuth(s=>s.session!.authorities);
-  const [edit,setEdit]=useState<{tier:E2PhoneTier;field:"dailyUsdt"|"dailyNex"}|null>(null);
+  const [edit,setEdit]=useState<{tier:E2PhoneTier;field:"dailyUsdt"|"dailyNex";initialValue?:string}|null>(null);
   const ready=!ctx.e2Loading && ctx.phoneTiers.length===5;
   const text=(tier:E2PhoneTier,field:"dailyUsdt"|"dailyNex")=>tier[field==="dailyUsdt"?"dailyUsdtText":"dailyNexText"];
   const tierUsdtPrecision=e6AmountPrecision(ctx.phoneTiers.map(t=>text(t,"dailyUsdt"))), tierUvtPrecision=e6AmountPrecision(ctx.phoneTiers.map(t=>text(t,"dailyNex")));
   const canEdit=(field:"dailyUsdt"|"dailyNex")=>ctx.canWriteE2&&m.canPropose&&rights.includes(field==="dailyUsdt"?"device_e2_phone_tier_usdt":"device_e2_phone_tier_nex");
+  useE6DraftEditor(["e2_phone_tier"], !!edit, record => {
+    if (!ready || record.payload.kind !== "proposal") return false;
+    const params = record.payload.input.command.params;
+    const tier = ctx.phoneTiers.find(item => String(item.tier) === String(params.tier) && record.scope === `tier:${item.tier}`);
+    const fields = (["dailyUsdt", "dailyNex"] as const).filter(field => params[field] != null);
+    if (!tier || fields.length !== 1 || !canEdit(fields[0])) return false;
+    const field = fields[0];
+    setEdit({ tier, field, initialValue: String(params[field]) });
+    return true;
+  });
   const currency=edit?.field==="dailyUsdt"?"USDT":"UVT", scope=edit?`tier:${edit.tier.tier}`:"";
   const index=edit?ctx.phoneTiers.findIndex(t=>t.tier===edit.tier.tier):-1;
   const lower=index>0?ctx.phoneTiers[index-1]:undefined, upper=index>=0?ctx.phoneTiers[index+1]:undefined;
@@ -139,7 +169,7 @@ export function PhoneTiersSection({ctx}:{ctx:EViewCtx}) {
       {ctx.e2Loading?<StepBar label="手机五档收益" items={[]} unit="USDT/天" max={1} state="loading"/>:!ready?<BlockState state="error" title={ctx.e2Error?"档位收益读取失败":"档位收益数据不完整，暂不能调整"} detail={ctx.e2Error} onRetry={()=>void ctx.refreshE2()}/>:<E6OriginalValues group original={<table className="e6-original-tiers"><thead><tr><th>档位</th><th>USDT/天</th><th>UVT/天</th></tr></thead><tbody>{ctx.phoneTiers.map(t=><tr key={t.tier}><td>T{t.tier}</td><td>{text(t,"dailyUsdt")}</td><td>{text(t,"dailyNex")}</td></tr>)}</tbody></table>}><StepBar label="手机五档 USDT 日收益" unit="USDT/天" max={Math.max(...ctx.phoneTiers.map(t=>t.dailyUsdt))} items={ctx.phoneTiers.map(t=>({key:String(t.tier),label:`T${t.tier}`,name:operatorCopyText(t.name).replace(/\s/g,"")===`第${t.tier}档`?undefined:operatorCopyText(t.name),value:t.dailyUsdt,valueText:formatE6Amount(text(t,"dailyUsdt"),tierUsdtPrecision),secondary:<>{formatE6Amount(text(t,"dailyNex"),tierUvtPrecision)} UVT/天 {t.note&&<Explain label={`T${t.tier}的说明`} content={operatorCopyText(t.note)}/>}</>,mark:t.tier===3?"当前引导档":undefined,actions:<>{(["dailyUsdt","dailyNex"] as const).filter(canEdit).map(field=><Button key={field} size="sm" disabledReason={m.locked(`tier:${t.tier}`)?"这个档位有结果未知的原提案":undefined} onClick={()=>setEdit({tier:t,field})}>调 {field==="dailyUsdt"?"USDT":"UVT"}</Button>)}</>}))}/></E6OriginalValues>}
     </Panel>
     <E6YieldComparisonPanel ctx={ctx} ready={ready} />
-    {edit&&<E6ConfirmModal scope={scope} amplificationBasis={value=>`T${edit.tier.tier} ${currency} 日收益由 ${text(edit.tier,edit.field)} 增加至 ${value} ${currency}/天。`} briefKind="config" statedBrief={{impact:"只调整当前档位的一个币种，批准后更新配置；已发收益不变。",check:"核对单币金额与相邻档位，批准时检查兑付覆盖率。"}} action={`调整手机 T${edit.tier.tier} 每日收益（${currency}）`} reasonMin={8} reasonMax={200} detail="只调整这个币种；五档同币种收益须非递减。批准后更新档位配置，供后续校准与引导展示使用；不改变已派任务的奖励快照。" completionCopy="由另一位具备批准权和对应业务权限的管理员复核。" coverageCheck="批准时检查兑付覆盖率。" edit={{kind:"number",current:text(edit.tier,edit.field),unit:`${currency}/天`,min:0.000001,step:0.000001,maxDecimals:6,disallowCurrent:true,amplifiesWhen:"increase",hint:range,validate:value=>!positiveAmount.test(value)?"收益最多 12 位整数、6 位小数。":lower&&compareE6Decimal(value,text(lower,edit.field))<0||upper&&compareE6Decimal(value,text(upper,edit.field))>0?`五档同币种收益须非递减：${range}`:undefined}}
+    {edit&&<E6ConfirmModal scope={scope} amplificationBasis={value=>`T${edit.tier.tier} ${currency} 日收益由 ${text(edit.tier,edit.field)} 增加至 ${value} ${currency}/天。`} briefKind="config" statedBrief={{impact:"只调整当前档位的一个币种，批准后更新配置；已发收益不变。",check:"核对单币金额与相邻档位，批准时检查兑付覆盖率。"}} action={`调整手机 T${edit.tier.tier} 每日收益（${currency}）`} reasonMin={8} reasonMax={200} detail="只调整这个币种；五档同币种收益须非递减。批准后更新档位配置，供后续校准与引导展示使用；不改变已派任务的奖励快照。" completionCopy="由另一位具备批准权和对应业务权限的管理员复核。" coverageCheck="批准时检查兑付覆盖率。" edit={{kind:"number",current:text(edit.tier,edit.field),initialValue:edit.initialValue,unit:`${currency}/天`,min:0.000001,step:0.000001,maxDecimals:6,disallowCurrent:true,amplifiesWhen:"increase",hint:range,validate:value=>!positiveAmount.test(value)?"收益最多 12 位整数、6 位小数。":lower&&compareE6Decimal(value,text(lower,edit.field))<0||upper&&compareE6Decimal(value,text(upper,edit.field))>0?`五档同币种收益须非递减：${range}`:undefined}}
       facts={<Facts><Fact k="档位">{`T${edit.tier.tier} · ${operatorCopyText(edit.tier.name)}`}</Fact></Facts>} content={<Fold inset title="技术信息" summary="提交时核对有没有被别人改过"><Facts><Fact k="修改序号">{String(edit.tier.revision)}</Fact></Facts></Fold>} getPendingReason={()=>m.pendingReason(scope)} onClose={()=>setEdit(null)} onConfirm={async(reason,value)=>{
         const original=m.pending.find(r=>r.scope===scope);if(original) await m.send(original,true);else {
           if(!value||!positiveAmount.test(value)||compareE6Decimal(value,"0")<=0)throw new Error("收益须为正数，最多 12 位整数、6 位小数。");

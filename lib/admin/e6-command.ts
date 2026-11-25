@@ -6,8 +6,13 @@ export type E6Section = "tasks" | "tiers" | "phones" | "calibration";
 export type E6Proposal = Parameters<typeof createA2OperationProposal>[0];
 export type E6DeviceInput = { before: string; serial: string; deviceId: number; userId: number; action: "activate" | "deactivate" | "pause" | "resume"; reason: string; operator: string };
 export type E6Payload = { kind: "proposal"; input: E6Proposal; evidence?: unknown } | { kind: "device"; input: E6DeviceInput } | { kind: "risk"; revision: number; input: PhoneRiskUpdate; receiptVersion?: 1 };
-export type E6Pending = PendingMutationRecord & { owner: number; epoch: number; label: string; section: E6Section; scope: string; payload: E6Payload; body: string; ticketId?: string; terminal?: string; absent?: boolean; retryRejection?: string;
+export type E6Pending = PendingMutationRecord & { owner: number; epoch: number; label: string; section: E6Section; scope: string; payload: E6Payload; body: string; ticketId?: string; terminal?: string; verifiedNotExecuted?: true; absent?: boolean; retryRejection?: string;
   proposalReceipt?: Pick<Awaited<ReturnType<typeof createA2OperationProposal>>, "type" | "amplifies"> };
+
+export const isE6VerifiedDraft = (record: E6Pending) => record.verifiedNotExecuted === true
+  || record.terminal === "rejected" || record.terminal === "withdrawn" || record.terminal === "expired";
+
+export const isE6ActiveRecord = (record: E6Pending) => !isE6VerifiedDraft(record) && record.terminal !== "approved";
 
 /** One instance also lets E5 read the phone/user locks without a second storage mirror. */
 export const e6Commands = createPendingMutationStore<E6Pending>({ storageKey: "nexion-admin-e6-commands-v2", retainExpiredRecords: true,
