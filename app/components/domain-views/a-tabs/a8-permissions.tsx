@@ -3,17 +3,19 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import "../a-domain.css";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check as CheckIcon, Coins, Eye, KeyRound, PenLine, ShieldAlert, Users } from "lucide-react";
+import { Check as CheckIcon, Coins, Eye, KeyRound, PenLine, RefreshCw, ShieldAlert, Users } from "lucide-react";
 import { fetchA8Permissions, fetchA8PermissionDetail, type A8Permission, type A8PermissionPage } from "@/lib/admin/a8-client";
 import { fetchA6RolesOverview, fetchA6RoleDetail, type A6RoleSummary } from "@/lib/admin/a6-client";
 import {
   BlockState, Button, Cell, Conclusion, Drawer, Explain, Fact, Facts, FilterBar, FilterField, InlineRetry, Input, JudgmentPoints, Notice,
   PageHeader, Pager, Panel, RdPage, Segments, Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
+import { focusFrame } from "@/app/components/rd/block-state";
 import { CONSOLE_NAV } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { PlatformReadError } from "@/lib/admin/platform-contracts";
+import { getA8PageGuide } from "@/lib/admin/page-guides";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const DOMAINS = [{ code: "ALL", label: "全部" }, ...CONSOLE_NAV.map((d) => ({ code: d.code, label: `${d.code} ${d.name}` })), { code: "UNMAPPED", label: "未归类" }];
@@ -48,6 +50,18 @@ async function readRoleGrants(role: A6RoleSummary): Promise<RoleGrants> {
   }
 }
 
+function activeRoleRetry(roleId: number) {
+  const active = document.activeElement;
+  return active instanceof HTMLButtonElement && active.classList.contains("rd-inline-retry")
+    && active.closest<HTMLElement>("[data-a8-role-id]")?.dataset.a8RoleId === String(roleId) ? active : null;
+}
+
+function focusMatrixHeading(button: HTMLButtonElement | null) {
+  if (!button || document.activeElement !== button) return;
+  const heading = button.closest(".rd-panel")?.querySelector<HTMLElement>(".rd-panel-title");
+  if (heading) focusFrame(heading);
+}
+
 function TypeTag({ type }: { type: string }) {
   const Icon = ICON_BY_TYPE[type as keyof typeof ICON_BY_TYPE];
   return <StatusTag tone={type === "HIGH" ? "warn" : "neutral"} icon={Icon}>{LABEL_BY_TYPE[type] || "未知类型"}</StatusTag>;
@@ -68,6 +82,8 @@ export default function A8Permissions() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [refreshingQuery, setRefreshingQuery] = useState<string | null>(null);
+  const queryKey = JSON.stringify([pageNum, pageSize, keyword, domain, permType]);
   const [detail, setDetail] = useState<A8Permission | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailFailure, setDetailFailure] = useState<ReadFailure | null>(null);
@@ -90,6 +106,7 @@ export default function A8Permissions() {
     let cancelled = false;
     setLoading(true);
     setLoadError(null);
+    setRefreshingQuery((query) => query === queryKey ? query : null);
     // 翻页、换筛选时不先清上一份：表格换成占位，分页条留着上一份的总数、翻页禁用（ST-13、ST-32）。读失败才清。
     fetchA8Permissions({ pageNum, pageSize, keyword, domain, permType })
       .then((data) => {
@@ -101,6 +118,7 @@ export default function A8Permissions() {
         }
         setResult(data);
         setLoading(false);
+        setRefreshingQuery(null);
       }, (err) => {
         // 失败只写在列表那一块的失败卡里，不再弹提示条（ST-34、ST-57）。
         if (!cancelled) {
@@ -109,10 +127,11 @@ export default function A8Permissions() {
           setResult(null);
           setLoadError(displayAdminReadError(err));
           setLoading(false);
+          setRefreshingQuery(null);
         }
       });
     return () => { cancelled = true; };
-  }, [pageNum, pageSize, keyword, domain, permType, reloadKey]);
+  }, [pageNum, pageSize, keyword, domain, permType, queryKey, reloadKey]);
 
   useLayoutEffect(() => {
     const panel = failFocus.current;
@@ -129,32 +148,50 @@ export default function A8Permissions() {
 
   // 矩阵按需拉:每个角色的授权明细要单独一次请求,不开矩阵就不发。
   useEffect(() => {
-    if (!matrixOpen) return;
+    if (!matrixOpen) {
+      setGrants(null);
+      return;
+    }
     let cancelled = false;
     setMatrixLoading(true);
     setMatrixError(null);
-    setGrants(null);
     fetchA6RolesOverview()
       .then((overview) => cancelled ? [] : Promise.all(overview.roles.map(readRoleGrants)))
       .then((rows) => { if (!cancelled) setGrants(rows); })
       .catch((err) => {
-        if (!cancelled) setMatrixError(readFailure(err, MATRIX_DENIED));
+        if (!cancelled) {
+          setGrants(null);
+          setMatrixError(readFailure(err, MATRIX_DENIED));
+        }
       })
       .finally(() => { if (!cancelled) setMatrixLoading(false); });
     return () => { cancelled = true; matrixVersion.current += 1; };
   }, [matrixOpen, matrixReloadKey]);
 
-  const reloadRoles = () => setMatrixReloadKey((value) => value + 1);
+  const reloadPermissions = () => setReloadKey((value) => value + 1);
+  const reloadRoleSnapshot = () => setMatrixReloadKey((value) => value + 1);
+  const reloadRoles = () => {
+    setGrants(null);
+    reloadRoleSnapshot();
+  };
+  const refreshPage = () => {
+    setRefreshingQuery(queryKey);
+    reloadPermissions();
+    if (matrixOpen) reloadRoleSnapshot();
+  };
   const retryRole = (role: A6RoleSummary) => {
+    const retryButton = activeRoleRetry(role.id);
     const version = matrixVersion.current;
     setGrants((rows) => rows?.map((row) => row.role.id === role.id ? { ...row, retrying: true } : row) ?? null);
     readRoleGrants(role).then((result) => {
       if (version === matrixVersion.current) {
+        if (!result.failure || result.failure.kind === "missing") focusMatrixHeading(retryButton);
         setGrants((rows) => rows?.map((row) => row.role.id === role.id ? result : row) ?? null);
       }
     }, () => {
       // 角色目录和授权明细使用同一读取权限。
       if (version === matrixVersion.current) {
+        focusMatrixHeading(retryButton);
         setGrants(null);
         setMatrixError({ kind: "denied", message: MATRIX_DENIED });
       }
@@ -203,8 +240,9 @@ export default function A8Permissions() {
     setDetailCode(null);
   };
 
-  // 加载中表格是占位：上一份的行不显示，也不给抽屉的上一条、下一条用。
-  const records = loading ? [] : result?.records ?? [];
+  // 同条件的页头刷新保留结果；翻页或换筛选时显示占位。
+  const replacingRows = loading && refreshingQuery !== queryKey;
+  const records = replacingRows ? [] : result?.records ?? [];
   const total = result?.total ?? 0;
   const filtered = keyword !== "" || keywordInput.trim() !== "" || domain !== "ALL" || permType !== "ALL";
   const clearFilters = () => {
@@ -214,7 +252,7 @@ export default function A8Permissions() {
     setPermType("ALL");
     setPageNum(1);
   };
-  const rolesReady = matrixOpen && !matrixLoading && !matrixError && grants !== null;
+  const rolesReady = matrixOpen && !matrixError && grants !== null;
   const unreadableRoles = rolesReady ? grants.filter(({ failure }) => failure !== null) : [];
   const current = detailCode;
   const currentIndex = current ? records.findIndex((p) => p.permissionCode === current) : -1;
@@ -230,7 +268,7 @@ export default function A8Permissions() {
   };
 
   const rolesCell = (p: A8Permission) => {
-    if (matrixOpen && matrixLoading) return <span className="rd-skeleton a8-role-skel" aria-label="正在加载角色" />;
+    if (matrixOpen && matrixLoading && !rolesReady) return <span className="rd-skeleton a8-role-skel" aria-label="正在加载角色" />;
     if (!rolesReady) {
       return <Cell num main={<span className={p.boundRoleCount === 0 ? "a8-muted" : undefined}>{p.boundRoleCount} 个角色</span>}
         sub={matrixOpen && matrixError ? matrixError.kind === "denied" ? MATRIX_DENIED : "角色名没读到" : undefined} />;
@@ -262,6 +300,9 @@ export default function A8Permissions() {
   return (
     <RdPage className="a8-page">
       <PageHeader pageId="A8" title="权限清单" summary="查一个权限管什么、风险多大、哪些角色有它。"
+        guideContent={getA8PageGuide(canReadRoles)}
+        actions={result && <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />}
+          loading={loading || (matrixOpen && matrixLoading)} onClick={refreshPage}>刷新</Button>}
         readOnly="这页只能查看；登记和授权在别的页面" />
       {conclusion}
 
@@ -282,9 +323,9 @@ export default function A8Permissions() {
       {view === "matrix" && matrixOpen ? (
         <Panel flush icon={Users} title="角色权限对照表"
           sub={rolesReady && records.length > 0 && grants.length > 0 ? `本页 ${records.length} 项权限 × ${grants.length} 个角色` : countText}
-          explain={`横向是角色，纵向是列表当前页的${!loading && !loadError ? ` ${records.length} 项` : ""}权限，打勾表示该角色有这项权限。包括已停用的角色。翻页只换行，角色的授权不重新读取；要最新的就收起再展开。`}>
-          {loading ? <BlockState state="loading" title="正在加载…" /> : loadError ? <BlockState state="error" title="权限列表加载失败" detail={loadError} retryKey="a8-records" onRetry={() => setReloadKey((value) => value + 1)} /> : <>
-          {matrixLoading ? (
+          explain={`横向是角色，纵向是列表当前页的${!loading && !loadError ? ` ${records.length} 项` : ""}权限，打勾表示该角色有这项权限。包括已停用的角色。翻页只换行，角色的授权不重新读取；点页头「刷新」重读权限和角色授权。`}>
+          {replacingRows ? <BlockState state="loading" title="正在加载…" /> : loadError ? <BlockState state="error" title="权限列表加载失败" detail={loadError} retryKey="a8-records" onRetry={reloadPermissions} /> : <>
+          {matrixLoading && !grants ? (
               <BlockState state="loading" title="正在加载…" detail="要逐个读取每个角色的授权，角色多时要等几秒。" />
             ) : matrixError?.kind === "denied" ? (
               <BlockState state="denied" title={matrixError.message} />
@@ -306,19 +347,22 @@ export default function A8Permissions() {
                     标「?」的列表示授权没读到。可在列标题下重试，角色已删除时可重新读取角色目录。
                   </Notice>
                 )}
-                <Table label="角色权限对照表" className="a8-matrix">
+                <Table label="角色权限对照表" aria-busy={loading || matrixLoading} className="a8-matrix">
                   <thead><tr>
                     <Th sticky="start">权限</Th>
                     {grants.map(({ role, failure, retrying }) => (
-                      <Th key={role.id} className="a8-matrix-role">
+                      <Th key={role.id} className="a8-matrix-role" data-a8-role-id={role.id}>
                         <span className="a8-matrix-head">
                           <span>{role.roleName}</span>
                           <span className="a8-matrix-code">{role.roleCode}</span>
                           {role.status === 0 && <span className="a8-role-off">已停用</span>}
                           {failure?.kind === "missing" ? (
-                            <><span className="a8-matrix-fail">{failure.message}</span><InlineRetry onRetry={reloadRoles} label="重新读取角色目录" /></>
+                            <><span className="a8-matrix-fail">{failure.message}</span><InlineRetry blocked={loading || matrixLoading} onRetry={() => {
+                              focusMatrixHeading(activeRoleRetry(role.id));
+                              reloadRoles();
+                            }} label="重新读取角色目录" /></>
                           ) : failure && (
-                            <>{!retrying && <span className="a8-matrix-fail" title={failure.message}>加载失败</span>}<InlineRetry onRetry={() => retryRole(role)} retrying={retrying} /></>
+                            <>{!retrying && <span className="a8-matrix-fail" title={failure.message}>加载失败</span>}<InlineRetry blocked={loading || matrixLoading} onRetry={() => retryRole(role)} retrying={retrying} /></>
                           )}
                         </span>
                       </Th>
@@ -355,7 +399,7 @@ export default function A8Permissions() {
             ? "点一行看这项权限的详情。哪些角色有它：先显示绑定的角色数，点右上「展开对照表」读出每个角色后显示角色名。"
             : "点一行看这项权限的详情。哪些角色有它：显示绑定的角色数。"}>
         {/* 读取失败用共用失败卡，不写在表格行里：重试中焦点留在这一块，仍失败回到「重试」，读到落在这块面板（ST-34、ST-35、BUG-710）。 */}
-        {loadError && !loading ? <BlockState state="error" title="权限列表加载失败" detail={loadError} retryKey="a8-records" onRetry={() => setReloadKey((value) => value + 1)} /> : (
+        {loadError && !loading ? <BlockState state="error" title="权限列表加载失败" detail={loadError} retryKey="a8-records" onRetry={reloadPermissions} /> : (
         <Table label="权限清单" aria-busy={loading} className="a8-table">
           <thead><tr>
             <Th>权限</Th>
@@ -368,14 +412,14 @@ export default function A8Permissions() {
             <Th><Explain label="角色数怎么算" content="角色数只算启用中的角色。对照表里也列出已停用的角色，所以打勾的角色可能更多。">哪些角色有</Explain></Th>
           </tr></thead>
           <tbody>
-            {loading ? <TableLoading columns={4} rows={Math.min(pageSize, 10)} />
+            {replacingRows ? <TableLoading columns={4} rows={Math.min(pageSize, 10)} />
                 : records.length === 0 ? <TableMessage columns={4} role="status">
                   {filtered ? <>没有符合条件的权限 <Button size="sm" onClick={clearFilters}>清除筛选</Button></> : "暂无已登记的权限；在运营账号与权限登记后会显示在这里。"}
                 </TableMessage>
                   : records.map((p) => (
-                    <Tr key={p.permissionCode} selected={p.permissionCode === current} onOpen={() => openDetail(p.permissionCode)}>
+                    <Tr key={p.permissionCode} selected={p.permissionCode === current} onOpen={loading ? undefined : () => openDetail(p.permissionCode)}>
                       <Td><Cell title={`${operatorCopyText(p.permissionName || p.permissionCode)}\n${p.permissionCode}`}
-                        main={<button type="button" className="rd-cell-link" aria-label={`查看权限详情 ${p.permissionCode}`} aria-haspopup="dialog"
+                        main={<button type="button" className="rd-cell-link" aria-label={`查看权限详情 ${p.permissionCode}`} aria-haspopup="dialog" disabled={loading}
                           onClick={(event) => { event.stopPropagation(); openDetail(p.permissionCode); }}>{operatorCopyText(p.permissionName || "—")}</button>}
                         sub={<span data-mono>{p.permissionCode}</span>} /></Td>
                       <Td><Cell main={<TypeTag type={p.permType} />} sub={operatorCopyText(p.menuCodePath)} title={operatorCopyText(p.menuCodePath)} /></Td>
@@ -409,7 +453,7 @@ export default function A8Permissions() {
           : detailFailure ? <BlockState state="error" title="权限详情加载失败" detail={detailFailure.message}
             retryKey="a8-detail" retrying={detailLoading}
             onRetry={detailFailure.kind === "error" && current ? () => openDetail(current, true) : undefined} />
-          : detailLoading || !detail ? <JudgmentPoints loading rows={[]} /> : (
+          : detailLoading || !detail ? <BlockState state="loading" title="正在加载权限详情…" /> : (
           <>
             <JudgmentPoints rows={[
               { label: "允许做什么", value: <span className="a8-allow"><TypeTag type={detail.permType} />{operatorCopyText(detail.description ?? detail.menuCodePath)}</span> },

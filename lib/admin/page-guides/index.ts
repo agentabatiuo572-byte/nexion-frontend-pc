@@ -359,7 +359,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
       { name: "角色数", text: "只算启用中的角色；对照表也列出已停用的角色。" },
       { name: "?", text: "这个角色的授权没读到，不代表没有这项权限。" },
     ],
-    more: "列表只收录启用中的权限。数量跟着搜索和筛选变，读取失败时写没读到，不写 0。对照表要逐个读取每个角色，打开时才读，翻页只换行不重新读取角色。看对照表要有角色管理的查看权限，没有时对照表读取失败，列表照常能用。对照表的勾是角色里存的授权，不代表某个账号现在一定能进那一页。",
+    more: "列表只收录启用中的权限。数量跟着搜索和筛选变，读取失败时写没读到，不写 0。对照表要逐个读取每个角色，展开时读取，翻页只换行不重新读取角色。没有角色读取权限时不显示对照表。对照表的勾是角色里存的授权，不代表某个账号现在一定能进那一页。",
   },
   A9: {
     purpose: "审批外部开发者使用开发者接口的申请。",
@@ -1392,6 +1392,20 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
 
 export function getPageGuide(pageId: string): PageGuideContent | undefined {
   return PAGE_GUIDES[pageId];
+}
+
+export function getA8PageGuide(canReadRoles: boolean): PageGuideContent {
+  const guide = PAGE_GUIDES.A8;
+  if (canReadRoles) return guide;
+  const [permission, roles, registration] = guide.tasks;
+  return {
+    ...guide,
+    tasks: [
+      permission,
+      { ...roles, steps: ["角色对照表需要角色读取权限（A6），当前账号没有，只能看每项权限绑定了几个角色"] },
+      registration,
+    ],
+  };
 }
 
 export function getH2PageGuide(hasBuyList: boolean, canWrite: boolean, canCancel: boolean): PageGuideContent {
