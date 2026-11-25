@@ -18,12 +18,11 @@ import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { a3Deduplicates, a3HasOriginalReceipt, useA3Commands, type A3Command, type A3ContentComparison } from "@/lib/admin/a3-mutations";
+import { a3Deduplicates, a3HasOriginalReceipt, isA3ContentCommand, useA3Commands, type A3Command, type A3ContentComparison } from "@/lib/admin/a3-mutations";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { fetchPlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { toast as notify } from "@/lib/store/ui";
-import { fetchDeveloperDocsAdmin, fetchHowContentAdmin } from "@/lib/admin/published-content-client";
 import {
   fetchA3Overview,
   type A3FeatureFlag,
@@ -34,7 +33,7 @@ import {
 } from "@/lib/admin/a3-client";
 import { GRecoveryNotice, expiredTag, unknownTag, type GRecoveryRow } from "../g-tabs/g-recovery";
 import { FundClosureModal, fundRecoveryStatus } from "../fund-command-check";
-import { SETTLED_REJECTED, foundReceiptNext, pendingReplayReason, receiptFact } from "../recovery-panel";
+import { SETTLED_REJECTED, foundReceiptNext, pendingReplayReason, receiptCodeTech, receiptFact, receiptOf, receiptRejected } from "../recovery-panel";
 import { canInvestigateECommand } from "@/lib/admin/e-command-investigation";
 import type { FundCommandEvidence, FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import type { ACtx } from "./types";
@@ -44,6 +43,7 @@ import { AppVersionManager } from "./app-version-manager";
 import { A3Content, type A3ContentRead, type A3ContentSummary } from "./a3-content";
 
 type TabKey = "switches" | "calendar" | "experience" | "content" | "status";
+type OriginalOutcome = FundInvestigationOutcome & { rejectionReason?: string; readError?: string };
 
 const RATE_KEY = "platform.global_rate_limit_per_minute";
 const THRESHOLD_KEY = "withdrawal.strong_review_threshold_usdt";
@@ -149,13 +149,18 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   const [readNonce, setReadNonce] = useState({ experience: 0, docs: 0, how: 0 });
   const [querying, setQuerying] = useState<string | null>(null);
   /** 最近一次原回执查询结果，也用于过期后的核查结案。 */
-  const [originalOutcomes, setOriginalOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [originalOutcomes, setOriginalOutcomes] = useState<Record<string, OriginalOutcome>>({});
   const [originalClosing, setOriginalClosing] = useState<A3Command | null>(null);
   const [checks, setChecks] = useState<Record<string, A3ContentComparison>>({});
   const [contentRead, setContentRead] = useState<A3ContentRead>();
   const verifiedRelease = useVerifiedRelease(toast);
   const dropCheck = (key: string) => setChecks(({ [key]: _, ...rest }) => rest);
   const onRecovered = useCallback(() => setRecovery(null), []);
+  const showCurrentContent = (kind: "docs" | "how", value: A3ContentRead["value"]) => {
+    const nonce = readNonce[kind] + 1;
+    setReadNonce(previous => ({ ...previous, [kind]: nonce }));
+    setContentRead({ nonce, value });
+  };
   const overviewReady = useRef(false);
   const current = useRef({ overview, session });
   current.current = { overview, session };
@@ -326,11 +331,23 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
 
   /** 按原号查到的结论：和资金页同一组标签和句子。 */
   const canCloseOriginal = (record: A3Command, outcome?: FundInvestigationOutcome) =>
-    !!record.commandOrigin && canInvestigateECommand("platform_a3_read") && eCommandClosureOffer(outcome, isRetryExpired(record)).conclusions.length > 0;
-  const originalShown = (record: A3Command, outcome: FundInvestigationOutcome) => {
+    (isA3ContentCommand(record) ? a3HasOriginalReceipt(record) && isRetryExpired(record) : !!record.commandOrigin)
+    && canInvestigateECommand("platform_a3_read") && eCommandClosureOffer(outcome, isRetryExpired(record)).conclusions.length > 0;
+  const originalShown = (record: A3Command, outcome: OriginalOutcome) => {
     const shown = fundRecoveryStatus({ record: record.commandOrigin ? record : undefined, outcome, expired: isRetryExpired(record), canQuery: true,
-      canRetry: !commands.recoveryState(record).replayBlock });
-    const next = foundReceiptNext("receipt" in outcome ? outcome.receipt : null, canCloseOriginal(record, outcome));
+      canRetry: !commands.recoveryState(record).replayBlock, canClose: canCloseOriginal(record, outcome) });
+    const receipt = receiptOf(outcome);
+    if (isA3ContentCommand(record)) {
+      if (outcome.readError) return { tone: "danger" as const, label: "最新内容加载失败",
+        line: `${receipt?.originalStatus.startsWith("CONFIRMED_") ? "原操作已结案" : "原操作已执行"}。${outcome.readError} 请再次查询原操作。` };
+      if ("error" in outcome) return { ...shown, more: outcome.error };
+      if (receipt?.originalStatus === "PROCESSING" && !isRetryExpired(record)) return { ...shown, label: "还在处理" };
+      if (receiptRejected(receipt) && !isRetryExpired(record)) return { ...shown,
+        line: "后台拒绝了原操作。核实结果后可以解除记录。", more: outcome.rejectionReason && displayAdminError(outcome.rejectionReason) };
+      if (receiptRejected(receipt) && outcome.rejectionReason) return { ...shown, more: displayAdminError(outcome.rejectionReason) };
+      return shown;
+    }
+    const next = foundReceiptNext(receipt, canCloseOriginal(record, outcome));
     return next ? { ...shown, line: next } : shown;
   };
   const originalLine = (record: A3Command, outcome: FundInvestigationOutcome) => {
@@ -360,17 +377,21 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         }
         case "schedule": case "cancel": await fetchBusinessCalendar(); setCalendarNonce(value => value + 1); break;
         case "docs": case "how": {
-          dropCheck(record.commandKey);
-          const result = await commands.queryContent(record);
-          const kind = record.original.kind;
-          const nonce = readNonce[kind] + 1;
-          setReadNonce(value => ({ ...value, [kind]: nonce }));
-          setContentRead({ nonce, value: result.current });
-          if (result.matched) {
-            setRecovery(null);
-            toast(record.original.mode === "PUBLISHED" ? record.original.kind === "docs" ? "开发者接口文档已发布" : "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
+          if (a3HasOriginalReceipt(record)) {
+            const result = await commands.queryOriginal(record).catch(error => ({ error: displayAdminReadError(error) } as const));
+            setOriginalOutcomes(value => ({ ...value, [record.commandKey]: result }));
+            if (!("error" in result) && result.current) {
+              showCurrentContent(record.original.kind, result.current);
+              setRecovery(null);
+              const status = result.receipt?.originalStatus;
+              notify.success(record.name, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+                : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "原操作已执行，记录已解除。");
+            }
             return;
           }
+          dropCheck(record.commandKey);
+          const result = await commands.queryContent(record);
+          showCurrentContent(record.original.kind, result.current);
           setChecks(value => ({ ...value, [record.commandKey]: result.comparison }));
           pickTab("content");
           toast("已读取当前内容，原操作记录和修改锁保留。", "warn");
@@ -387,12 +408,11 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     const original = record.original;
     setMutating(record.commandKey);
     try {
-      await commands.send(record, true);
+      const current = await commands.send(record, true);
       setRecovery(null); dropCheck(record.commandKey);
-      setReadNonce(value => ({ ...value, [original.kind]: value[original.kind] + 1 }));
+      if (current) showCurrentContent(original.kind, current);
       // A retry of a save that already landed replays its success; a later save by someone else is then what the page shows.
       // The original save made revision + 1, so a higher current revision means the content was changed after it.
-      const current = await (original.kind === "docs" ? fetchDeveloperDocsAdmin() : fetchHowContentAdmin()).catch(() => null);
       toast(current && current.revision > original.document.revision + 1
         ? `原提交当时已经${original.mode === "PUBLISHED" ? "发布" : "保存"}；之后内容又被改过，页面显示的是现在的最新内容。`
         : original.mode === "PUBLISHED" ? original.kind === "docs" ? "开发者接口文档已发布" : "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
@@ -408,28 +428,29 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         : displayAdminError(error), "error");
     } finally { setMutating(null); }
   };
-  const contentRetry = (record: A3Command) => a3Deduplicates(record) && !isRetryExpired(record)
-    ? { disabledReason: mutating ? "正在提交" : pendingReplayReason(commands.recoveryState(record), "当前不能重试原操作。"), busy: mutating === record.commandKey, run: () => void retryContent(record) }
+  const contentRetry = (record: A3Command) => a3HasOriginalReceipt(record) && !isRetryExpired(record)
+    ? { disabledReason: mutating ? "正在提交" : pendingReplayReason(commands.recoveryState(record), "当前不能重试原操作。"),
+      busy: mutating === record.commandKey, run: () => void retryContent(record) }
     : undefined;
   const recoverOriginal = async (record: A3Command) => {
     if (record.original.kind === "flag") flagChg(record.original.row, record);
     else if (record.original.kind === "param") paramChg(record.original.row, record);
     else setRecovery(record);
   };
-  const isContent = (record: A3Command) => record.original.kind === "docs" || record.original.kind === "how";
-  const contentTag = (record: A3Command) => isRetryExpired(record)
+  const legacyContentTag = (record: A3Command) => isRetryExpired(record)
     ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时，不能再重试。可用「读取当前内容」核对现值，原操作记录和修改锁保留。">已过期</StatusTag>
-    : <StatusTag tone="warn" icon={CircleHelp} explain={a3Deduplicates(record)
-      ? "提交时没收到确定结果，可能已经保存。24 小时内可以按原操作重试，不会重复保存；「读取当前内容」可核对现值。"
-      : "提交时没收到确定结果，可能已经保存。可用「读取当前内容」核对现值。对不上时保留原操作记录和修改锁，请到操作记录与审批核对。"}>结果未知</StatusTag>;
+    : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经保存。可用「读取当前内容」核对现值。原操作记录和修改锁保留，请到操作记录与审批核对。">结果未知</StatusTag>;
   const recoveryRows: GRecoveryRow[] = commands.pending.map(record => {
     const outcome = originalOutcomes[record.commandKey];
     const shown = outcome && originalShown(record, outcome);
     const hasReceiptLookup = a3HasOriginalReceipt(record);
     const isCalendar = record.original.kind === "schedule" || record.original.kind === "cancel";
     const state = commands.recoveryState(record);
-    const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
+    const receipt = receiptOf(outcome);
+    const contentCommand = isA3ContentCommand(record);
+    const expired = isRetryExpired(record);
     const closable = canCloseOriginal(record, outcome);
+    const releaseCheckedRejection = contentCommand && !expired && state.conclusion === "rejected";
     const retryReason = mutating ? "正在提交" : querying === record.commandKey ? "正在查询原操作"
       : state.replayBlock === "replay-rejected" ? `重试被拒：${displayAdminError(new Error(state.replayRejection!))}`
       : state.replayBlock === "needs-not-found" ? receipt ? shown?.line ?? "已查到原回执，请到操作记录与审批核对。"
@@ -437,18 +458,21 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       : pendingReplayReason(state, "当前不能重试原操作。");
     return {
     // 说明内容的版本号带种子前缀 default-，写给人看时去掉（和编辑区同一规则）。
-    key: record.commandKey, name: record.name, change: isContent(record) ? record.change.replace(" · default-", " · ") : record.change, submittedAt: record.createdAt,
+    key: record.commandKey, name: record.name, change: contentCommand ? record.change.replace(" · default-", " · ") : record.change, submittedAt: record.createdAt,
     tag: shown ? <StatusTag tone={shown.tone} explain={[shown.line, shown.more].filter(Boolean).join(" ")}>{shown.label}</StatusTag>
-      : isContent(record) ? contentTag(record) : isRetryExpired(record) ? isCalendar ? expiredTag("direct")
+      : contentCommand && !hasReceiptLookup ? legacyContentTag(record) : expired ? isCalendar ? expiredTag("direct")
         : <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时，不能再重试。先查询原操作；查到的，按证据核查结案。">已过期</StatusTag>
         : hasReceiptLookup ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果。先查询原操作，明确查无后才能重试。">结果未知</StatusTag> : unknownTag("direct"),
     actions: <>
-      <Button size="sm" loading={querying === record.commandKey} disabled={!!mutating} onClick={() => void queryOriginal(record)}>{isContent(record) ? "读取当前内容" : isCalendar ? "读取当前日历" : "查询原操作"}</Button>
+      <Button size="sm" loading={querying === record.commandKey} disabled={!!mutating} onClick={() => void queryOriginal(record)}>{contentCommand && !hasReceiptLookup ? "读取当前内容" : isCalendar ? "读取当前日历" : "查询原操作"}</Button>
       {closable && <Button size="sm" variant="danger-outline" disabled={!!querying} onClick={() => setOriginalClosing(record)}>核查结案</Button>}
-      {state.replayRejection && !receipt && <VerifiedReleaseButton disabled={!!querying || !!mutating} onClick={() => verifiedRelease.ask({ operation: record.name, target: record.change, createdAt: record.createdAt, getSnapshot: commands.releaseSnapshot(record), release: () => { const released = commands.releaseRejected(record); if (released) dropCheck(record.commandKey); commands.sync(); return released; } })} />}
-      {a3Deduplicates(record) && !isRetryExpired(record) && <Button size="sm" disabledReason={retryReason}
+      {(releaseCheckedRejection || state.replayRejection && !receipt) && <VerifiedReleaseButton disabled={!!querying || !!mutating} onClick={() => verifiedRelease.ask({ operation: record.name, target: record.change, createdAt: record.createdAt, getSnapshot: commands.releaseSnapshot(record), release: () => { const released = commands.releaseRejected(record); if (released) dropCheck(record.commandKey); commands.sync(); return released; } })} />}
+      {a3Deduplicates(record) && !expired && <Button size="sm" disabledReason={retryReason}
         onClick={() => void recoverOriginal(record)}>按原操作重试</Button>}
-      {(hasReceiptLookup && !isRetryExpired(record) || state.replayRejection) && retryReason && <span className="rd-note">{retryReason}</span>}
+      {contentCommand && hasReceiptLookup && (expired || outcome)
+        ? <span className="rd-note">{shown?.line ?? "已超过 24 小时，不能再重试。请查询原操作。"} {shown?.more}
+          {expired && !canInvestigateECommand("platform_a3_read") && " 请联系有调查权限的超级管理员核查结案。"}</span>
+        : (hasReceiptLookup && !expired || state.replayRejection) && retryReason && <span className="rd-note">{retryReason}</span>}
     </>,
   }; });
 
@@ -610,16 +634,18 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   );
 
   const calendarValue = calendar?.zone ?? (calendar?.failed ? "—" : "…");
-  const contentLead = commands.pending.filter(isContent).map(record => {
+  const contentLead = commands.pending.filter(isA3ContentCommand).map(record => {
     const check = checks[record.commandKey];
     const docs = record.original.kind === "docs";
+    const code = receiptCodeTech(receiptOf(originalOutcomes[record.commandKey]));
     const audit = new URLSearchParams({ tab: "records", object: docs ? "developer.docs.published" : "how-it-works.published",
       action: docs ? "DEVELOPER_DOCS_PUBLISHED_CONTENT_CHANGED" : "HOW_CONTENT_PUBLISHED_CHANGED" });
     return <span key={record.commandKey} className="a3-check-line">{record.name}：{check
       ? `当前版本 ${check.version.current}，${SAVE_AS[check.status.current]}，修订号 ${check.revision.current}，${check.contentMatches ? "内容与原提交一致" : "内容与原提交不同"}。`
-      : isRetryExpired(record) ? "已超过 24 小时，记录和修改锁保留。" : "可读取当前内容核对。"}
+      : a3HasOriginalReceipt(record) ? "可查询原操作。" : "可读取当前内容核对。"}
       {reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href={`/platform/audit?${audit}`} prefetch={false}>去操作记录与审批 →</Link> : "请有权限的管理员到操作记录与审批核对。"}
       <Explain label="技术信息" content={a3Deduplicates(record) ? <>操作编号 <span data-mono>{record.commandKey}</span>
+        {code && ` ｜ ${code}`}
         <IconButton aria-label="复制操作编号" onClick={() => void navigator.clipboard.writeText(record.commandKey).then(() => toast("已复制操作编号"), () => toast("复制失败，请手动复制", "warn"))}><Copy size={14} /></IconButton></>
         : <>原操作没有可查询的操作编号。按发起时间、操作人和对应内容核对。</>} />
     </span>;
@@ -635,7 +661,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void refreshOverview(); setCalendarNonce((value) => value + 1); }}>刷新</Button>} />
 
       <GRecoveryNotice title="有原操作结果未知" rows={recoveryRows}
-        explain={<><p>平台参数、功能开关和体验配置先点「查询原操作」，明确查无、仍有修改权限且未超过 24 小时，才可「按原操作重试」。营业日历点「读取当前日历」看现在的排期，有效期内也可按原操作重试。</p><p>说明内容和开发者文档点「读取当前内容」核对现值。旧无编号记录对不上时仍保留修改锁。过期后保留原操作记录和修改锁，到操作记录与审批核对。</p></>}
+        explain={<><p>平台参数、功能开关、体验配置和有编号的说明内容先点「查询原操作」，明确查无、仍有修改权限且未超过 24 小时，才可「按原操作重试」。营业日历点「读取当前日历」看现在的排期，有效期内也可按原操作重试。</p><p>说明内容的旧无编号记录可读取当前内容核对，修改锁继续保留。有编号的记录过期后不能再重试，由有调查权限的超级管理员按回执和证据核查结案。</p></>}
         lead={contentLead.length ? contentLead : undefined} />
 
       {verifiedRelease.dialog}
@@ -646,14 +672,15 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         onSubmit={async (evidence: FundCommandEvidence) => {
           const record = originalClosing;
           const result = await commands.queryOriginal(record, evidence);
-          setOriginalOutcomes(value => ({ ...value, [record.commandKey]: { receipt: result.receipt } }));
+          setOriginalOutcomes(value => ({ ...value, [record.commandKey]: result }));
           setOriginalClosing(null);
           if (!result.settled) return;
           const status = result.receipt?.originalStatus;
           notify.success(record.name, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
             : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "核查确认已执行，记录已解除，不要再做一次。");
           ctx.closeActionConfirm?.();
-          if (record.original.kind === "experience") setReadNonce(value => ({ ...value, experience: value.experience + 1 }));
+          if (isA3ContentCommand(record) && result.current) showCurrentContent(record.original.kind, result.current);
+          else if (record.original.kind === "experience") setReadNonce(value => ({ ...value, experience: value.experience + 1 }));
           else await refreshOverview(true);
         }} />}
 

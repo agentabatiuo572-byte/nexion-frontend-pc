@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -10,7 +10,8 @@ import { isOperatingLanguageList, matchesSavedDownload, parsePlatformExperienceC
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, parseDeveloperDocs, parseHowContent, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { FundCommandOrigin, FundCommandEvidence } from "./fund-command-investigation";
-import { a3ParamCommandOrigin, a3ParamCommandRoutes, queryA3ParamCommand, queryA3ConfigCommand } from "./a3-command-query";
+import { a3ParamCommandOrigin, a3ParamCommandRoutes, queryA3ParamCommand, queryA3ConfigCommand, queryA3ContentCommand } from "./a3-command-query";
+import { A3_CONTENT_COMMANDS } from "./e-command-investigation";
 import { isOriginalCommandOrigin } from "./original-command-query";
 import { currentRecoveryActor } from "./abe-recovery-access";
 
@@ -22,6 +23,7 @@ export type A3Original =
   | { kind: "experience"; config: PlatformExperienceConfig; baseline: PlatformExperienceConfig }
   | { kind: "docs"; document: PublishedContentDocument; baseline: PublishedContentDocument; mode: "DRAFT" | "PUBLISHED" }
   | { kind: "how"; document: PublishedHowContentDocument; baseline: PublishedHowContentDocument; mode: "DRAFT" | "PUBLISHED" };
+export type A3ContentOriginal = Extract<A3Original, { kind: "docs" | "how" }>;
 export type A3Command = PendingMutationRecord & {
   commandOrigin?: FundCommandOrigin;
   original: A3Original;
@@ -37,11 +39,14 @@ export type A3Command = PendingMutationRecord & {
 const PATHS: Record<A3Original["kind"], string> = {
   flag: "/api/admin/platform/config", param: "/api/admin/platform/config",
   schedule: "/api/admin/platform/business-calendar", cancel: "/api/admin/platform/business-calendar/cancel",
-  experience: "/api/admin/platform/config/experience", docs: "/api/admin/developer/docs", how: "/api/admin/content/how-it-works",
+  experience: "/api/admin/platform/config/experience", docs: A3_CONTENT_COMMANDS.docs.path, how: A3_CONTENT_COMMANDS.how.path,
 };
+export const isA3ContentCommand = (record: A3Command): record is A3Command & { original: A3ContentOriginal } =>
+  record.original.kind === "docs" || record.original.kind === "how";
 export const a3Deduplicates = (record: Pick<A3Command, "original" | "contentCommandActor">) => record.original.kind !== "docs" && record.original.kind !== "how"
   || record.contentCommandActor !== undefined;
-export const a3HasOriginalReceipt = (record: A3Command) => ["param", "flag", "experience"].includes(record.original.kind);
+export const a3HasOriginalReceipt = (record: A3Command) => isA3ContentCommand(record) ? a3Deduplicates(record) : ["param", "flag", "experience"].includes(record.original.kind);
+const readContent = (kind: A3ContentOriginal["kind"]) => kind === "docs" ? fetchDeveloperDocsAdmin() : fetchHowContentAdmin();
 export type A3ContentComparison = {
   revision: { submitted: number; expected: number; current: number; matches: boolean };
   version: { submitted: string; current: string; matches: boolean };
@@ -101,7 +106,8 @@ const commands = createPendingMutationStore<A3Command>({
     try {
       return validOriginal(record.original) && record.path === PATHS[record.original.kind]
         && (record.contentCommandActor === undefined || ["docs", "how"].includes(record.original.kind)
-          && Number.isSafeInteger(record.contentCommandActor) && record.contentCommandActor > 0)
+          && Number.isSafeInteger(record.contentCommandActor) && record.contentCommandActor > 0
+          && record.contentCommandActor === record.commandOwnerId)
         && record.method === (record.original.kind === "cancel" ? "POST" : "PUT")
         && typeof record.body === "string" && object(JSON.parse(record.body)) && typeof record.reason === "string"
         && typeof record.name === "string" && typeof record.change === "string"
@@ -159,24 +165,32 @@ export function useA3Commands() {
   };
   const queryOriginal = async (record: A3Command, evidence?: FundCommandEvidence) => {
     const original = record.original;
-    if (original.kind !== "param" && original.kind !== "flag" && original.kind !== "experience"
+    if (!a3HasOriginalReceipt(record) || evidence && isA3ContentCommand(record) && !isRetryExpired(record)
       || find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
     const read = async () => {
+      if (original.kind === "docs" || original.kind === "how") {
+        const result = await queryA3ContentCommand(record, original.kind, String(actorId), evidence);
+        const conclusion = result.rejected ? "rejected" : result.receipt ? "unknown" : "not-found";
+        if (!result.settled) return { ...result, conclusion, current: undefined } as const;
+        const details = await readContent(original.kind).then(current => ({ current }), error => ({ current: undefined, readError: displayAdminReadError(error) }));
+        return { ...result, ...details, settled: Boolean(details.current), conclusion } as const;
+      }
+      if (original.kind === "schedule" || original.kind === "cancel") throw new Error("A3_ORIGINAL_UNRESOLVED");
       const result = original.kind === "param"
         ? await queryA3ParamCommand(record, "A3", String(actorId), original.row.key, evidence)
         : await queryA3ConfigCommand(record, original, String(actorId), evidence);
-      return { ...result, conclusion: result.receipt ? "unknown" : "not-found" } as const;
+      return { ...result, current: undefined, conclusion: result.receipt ? "unknown" : "not-found" } as const;
     };
     const result = evidence ? await read() : await recovery.query(record, read);
-    if (!result) throw new Error("A3_ORIGINAL_UNRESOLVED");
-    if (result.settled) { commands.forget(record.fingerprint, record.commandKey); sync(); }
+    if (!result || find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
+    if (result.settled) { recovery.settleAcknowledged(record); sync(); }
     return result;
   };
   const queryContent = async (record: A3Command) => {
     const original = record.original;
-    if (original.kind !== "docs" && original.kind !== "how" || find(record.fingerprint)?.commandKey !== record.commandKey)
+    if (original.kind !== "docs" && original.kind !== "how" || a3HasOriginalReceipt(record) || find(record.fingerprint)?.commandKey !== record.commandKey)
       throw new Error("A3_ORIGINAL_UNRESOLVED");
-    const current = original.kind === "docs" ? await fetchDeveloperDocsAdmin() : await fetchHowContentAdmin();
+    const current = await readContent(original.kind);
     if (find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
     const comparison: A3ContentComparison = {
       revision: { submitted: original.document.revision, expected: original.document.revision + 1, current: current.revision, matches: current.revision === original.document.revision + 1 },
@@ -185,10 +199,7 @@ export function useA3Commands() {
       contentMatches: contentJSON("locales" in current ? current.locales : current.contents)
         === contentJSON(original.kind === "docs" ? original.document.locales : original.document.contents),
     };
-    // An expired record needs evidence about the original operation, beyond a current-value comparison.
-    const matched = !isRetryExpired(record) && comparison.revision.matches && comparison.version.matches && comparison.status.matches && comparison.contentMatches;
-    if (matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
-    return { current, comparison, matched };
+    return { current, comparison };
   };
   const send = async (record: A3Command, retry = false) => {
     try {
@@ -261,15 +272,25 @@ export function useA3Commands() {
           break;
         }
       }
+      const current = retry && isA3ContentCommand(record) ? await readContent(record.original.kind).catch(error => {
+        throw new OutcomeUnknownError(`原操作已执行，最新内容加载失败。请查询原操作。 ${displayAdminReadError(error)}`);
+      }) : undefined;
+      if (!isPendingCommandOwnedBy(record)) throw new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN");
       commands.forget(record.fingerprint, record.commandKey); sync();
+      return current;
     } catch (error) {
       sync();
       if ((retry && explicitRejectionCode(error)) || !commands.list().some(item => item.commandKey === record.commandKey)) throw error;
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN", { cause: error });
     }
   };
-  return { pending, find, capture, send, queryOriginal, queryContent, sync, recoveryState: recovery.state, releaseSnapshot: recovery.releaseSnapshot,
-    releaseRejected: (record: A3Command) => !!currentRecoveryActor(record.commandOwnerId) && recovery.releaseRejectedReplay(record) };
+  const canReleaseReceipt = (record: A3Command) => isA3ContentCommand(record) && !isRetryExpired(record)
+    && recovery.state(record).conclusion === "rejected";
+  return { pending, find, capture, send, queryOriginal, queryContent, sync, recoveryState: recovery.state,
+    releaseSnapshot: (record: A3Command) => () => canReleaseReceipt(record)
+      ? JSON.stringify(find(record.fingerprint)) : recovery.releaseSnapshot(record)(),
+    releaseRejected: (record: A3Command) => !!currentRecoveryActor(record.commandOwnerId)
+      && (canReleaseReceipt(record) ? recovery.settleFromQuery(record, "rejected") : recovery.releaseRejectedReplay(record)) };
 }
 export type A3Commands = ReturnType<typeof useA3Commands>;
 export type A3RecoveryProps = { commands: A3Commands; recovery: A3Command | null; onRecovered: () => void; nonce: number };
