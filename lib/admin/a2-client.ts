@@ -41,6 +41,7 @@ interface ApiResult<T> {
 }
 
 export class A2OutcomeUncertainError extends Error {
+  readonly queryMessage: string;
   constructor(message: string, public readonly commandKey: string) {
     // 命令号只留在 commandKey 上，不进句子（全站-标识外露）；机器码细节换成表里的中文，表里没有就不显示；
     // 网络、服务不可用这类说明本身就在说「结果未知／未确认」，不再重复一遍。
@@ -48,6 +49,7 @@ export class A2OutcomeUncertainError extends Error {
     const shown = /[一-鿿]/.test(raw) ? raw : ADMIN_ERROR_MESSAGES[raw] ?? "";
     const detail = /结果未知|未确认|是否已生效/.test(shown) ? "" : shown;
     super(`结果未知，可能已经提交。不要重新填写；查询原结果或按原请求重试，都不会重复提交。${detail ? `（${detail}）` : ""}`);
+    this.queryMessage = `结果未知，可能已经提交。不要重新填写，请查询原结果。${detail ? `（${detail}）` : ""}`;
     this.name = "A2OutcomeUncertainError";
   }
 }

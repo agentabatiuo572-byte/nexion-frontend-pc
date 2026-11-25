@@ -397,7 +397,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         catch (error) {
           const retained = saved();
           if (retained) throw new OutcomeUnknownError("request" in retained && retained.receiptKnown
-            ? "申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。" : "结果未知，请查询原结果或按原请求重试。");
+            ? "申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。" : "结果未知，请查询原结果。");
           if (await reviewConflict(error, { sectionKey: key, reason, value, form })) ctx.closeActionConfirm();
           throw new Error(`提交失败：${displayAdminError(error)}`);
         }

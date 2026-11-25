@@ -313,7 +313,7 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
     response = await guardedFetch(`/api/admin/content${command.original!.path}`, { method: command.original!.method,
       body: command.original!.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
     payload = parseI6Json(await response.text()) as ApiResult<unknown>;
-  } catch { throw uncertain("结果未知，请查询原结果或按原请求重试。"); }
+  } catch { throw uncertain("结果未知，请查询原结果。"); }
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isInteger(payload.code)
     || payload.message !== undefined && typeof payload.message !== "string") throw uncertain("原操作的返回内容无法核实，请保留记录并查询原结果。");
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message);
@@ -528,7 +528,7 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
     response = await guardedFetch(`/api/admin/content${command.original.path}`, { method: command.original.method,
       body: command.original.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
     payload = await response.json();
-  } catch { throw new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"); }
+  } catch { throw new OutcomeUnknownError("结果未知，请查询原结果。"); }
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isInteger(payload.code)
     || payload.message !== undefined && typeof payload.message !== "string") throw new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。");
   if (!response.ok || payload.code !== 0 || response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
@@ -729,7 +729,7 @@ export function i3RetryPermission(command: I3Command): string | undefined {
 }
 
 /** 结果未知时确认框里的那一句，和 H4 同一种写法：不说「不要重复提交」，按框里的按钮说怎么做。 */
-const I3_RESULT_UNKNOWN = "结果未知，可能已经生效：先查询原结果，查不到再按原请求重试。";
+const I3_RESULT_UNKNOWN = "结果未知，可能已经生效，请先查询原结果。";
 
 async function sendI3Command(command: I3Command, retry: boolean): Promise<void> {
   if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
@@ -986,7 +986,7 @@ async function sendI2Command(command: I2Command, retry: boolean): Promise<unknow
       body: command.original.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
     payload = await response.json() as ApiResult<unknown>;
   } catch {
-    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原结果。"), { commandKey: command.commandKey });
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || typeof payload.code !== "number"
     || payload.message !== undefined && typeof payload.message !== "string") {

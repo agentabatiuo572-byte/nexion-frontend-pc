@@ -17,7 +17,8 @@ import { Archive, BadgeCheck, BookOpen, CircleSlash, CodeXml, Eye, EyeOff, FileP
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { fetchI6LearningOverview, i6Recovery, i6RetryBlockedReason, pendingI6Commands, queryI6Receipt, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningQuizQuestionView, type LearningCourseVersionView, type LearningCourseView } from "@/lib/admin/i-client";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
-import { PaginationExemptionList } from "../design-kit";
+import { nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
+import { PaginationExemptionList, usePendingReplayDeadline } from "../design-kit";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues, i6HasCopyText } from "@/lib/admin/i6-copy-quality";
@@ -53,7 +54,8 @@ const ticketText = (ticket: A2OperationRow) => ({
   expired: "原审批单已过期，没有执行",
 } as Record<string, string>)[ticket.status] ?? "已查到原审批单，结果到操作记录与审批查看";
 /** 结果未知不是失败，不加「操作失败」。 */
-const failText = (error: unknown) => isOutcomeUnknownError(error) || isA2OutcomeUncertainError(error) ? displayAdminError(error) : `操作失败：${displayAdminError(error)}`;
+const failText = (error: unknown) => isA2OutcomeUncertainError(error) ? error.queryMessage ?? displayAdminError(error)
+  : isOutcomeUnknownError(error) ? displayAdminError(error) : `操作失败：${displayAdminError(error)}`;
 
 const COURSE_APPROVAL_OPS = new Set(["i7_course_first_publish", "i7_course_version_publish", "i7_course_version_rollback", "i7_course_reward_adjust"]);
 /** 有奖励的课程激活和调奖：后端要另一位超级管理员，并有审批批准权限（A:124、G:717）。 */
@@ -236,7 +238,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const conflictView = useIConflictView(conflictReview.review);
   /** 核对冲突后重开确认框时带回的理由和新值，只用一次。 */
   const prefill = useRef<{ scope: string; reason: string; value?: string } | null>(null);
-  const readReady = useRef(false);
+  const invalidatedOverview = useRef<ICtx["content"]["i18nLearning"]>(undefined);
   const [, updateRecovery] = useState(0);
   const session = useAdminAuth((state) => state.session);
   const reach = useReach();
@@ -255,6 +257,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const release = useVerifiedRelease(toast);
   const discardRecovery = useRecoveryDraftDiscard();
   const [ordinaryBusy, setOrdinaryBusy] = useState("");
+  const currentOrdinaryBusy = useRef(ordinaryBusy);
+  currentOrdinaryBusy.current = ordinaryBusy;
   const approvalQuery = useRecoveryQueryErrors();
   const courseDrafts = useTerminalDrafts<TerminalDraft<CourseForm> & { revision?: number }>();
   const newCourseDrafts = useTerminalDrafts<CourseForm>();
@@ -318,7 +322,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     }
     const closedCommands = results.flatMap((result, index) => result.status === "fulfilled" && result.value && result.value.status !== "pending" ? [records[index].commandKey] : []);
     if (closedCommands.length) {
-      readReady.current = false;
+      invalidatedOverview.current = latest.current.content.i18nLearning;
       const confirmation = recoveryConfirm.current;
       if (confirmation && closedCommands.includes(confirmation.commandKey() ?? "")) confirmation.finish();
       await actions.reloadIContent();
@@ -367,12 +371,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const listRef = useRef<HTMLDivElement>(null);
   const courseTabIds = useTabIds();
   const data = content.i18nLearning;
-  useEffect(() => { readReady.current = !!data && !contentLoading && !ctx.contentError; }, [data, contentLoading, ctx.contentError]);
+  const freshOverview = () => {
+    const { content, contentLoading, contentError } = latest.current;
+    if (!contentLoading && !contentError && content.i18nLearning !== invalidatedOverview.current) return content.i18nLearning;
+  };
 
   const newWriteProblem = (scope: string) => {
-    const current = latest.current;
     if (conflictReview.blockedReason()) return conflictReview.blockedReason();
-    if (!readReady.current || current.contentLoading || current.contentError || !current.content.i18nLearning) return "请先成功重新读取数据，再发起新的修改。";
+    if (!freshOverview()) return "请先成功重新读取数据，再发起新的修改。";
     if (pendingI6Commands().some(record => record.scope === "unknown" || record.scope === scope)) return "此对象有结果未知的原操作，请先查询原结果。";
     const proposal = scope.startsWith("course:") ? pendingHIRewardCommands().find(record => record.payload.kind === "proposal"
       && record.payload.input.command.domain === "I" && record.payload.input.obj === scope.slice(7) && record.ticketStatus !== "pending") : undefined;
@@ -380,7 +386,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     return undefined;
   };
   const finishRecovery = async (commandKey?: string, finish?: () => void, message = "原操作结果已核对") => {
-    readReady.current = false;
+    invalidatedOverview.current = latest.current.content.i18nLearning;
     if (finish) finish();
     else {
       const confirmation = recoveryConfirm.current;
@@ -392,8 +398,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     updateRecovery(value => value + 1);
   };
   const recoveryReadProblem = (record: HIRewardCommand | I6Command) => {
-    const state = latest.current, data = state.content.i18nLearning;
-    if (!readReady.current || !data || state.contentLoading || state.contentError) return "请先成功重新读取数据，再按原请求重试。";
+    const data = freshOverview();
+    if (!data) return "请先成功重新读取数据，再按原请求重试。";
     if ("payload" in record) {
       const target = record.payload.kind === "proposal" ? record.payload.input.obj : undefined;
       if (target && !data.courses.some(course => course.id === target))
@@ -401,7 +407,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     } else if (record.scope.startsWith("course:") && record.operation !== "course-create" && !data.courses.some(course => course.id === record.target)
       || record.scope.startsWith("message:") && !data.messages.some(message => message.messageKey === record.target)) return "请先读到原操作对象的当前数据。";
   };
-  const ordinaryRetryProblem = (record: I6Command) => recoveryReadProblem(record) ?? i6RetryBlockedReason(record);
+  const ordinaryRetryProblem = (record: I6Command) => {
+    if (isRetryExpired(record)) return RETRY_EXPIRED_TEXT;
+    if (currentOrdinaryBusy.current) return "正在处理另一项";
+    return recoveryReadProblem(record) ?? i6RetryBlockedReason(record);
+  };
   const courseRetryBlocked = (record: HIRewardCommand) => {
     const state = i6CourseRecovery.state(record);
     if (state.replayRejection) return RETRY_REJECTED_TEXT;
@@ -1496,6 +1506,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   /* 普通写（文案、课程草稿、下架、换推荐）结果未知：刷新后也列出来，读不到概览时同样显示。 */
   const ordinaryRecords = pendingI6Commands().filter((record) => record.scope === "unknown"
     || (view === "i18n" ? record.scope === "rescan" || record.scope.startsWith("message:") : record.scope === "featured" || record.scope.startsWith("course:")));
+  usePendingReplayDeadline(nextRecoveryDeadline([...ordinaryRecords, ...courseRecords]));
   const ordinaryChange = (record: I6Command) => {
     const from = String(record.input.expectedVersion ?? "");
     switch (record.operation) {
@@ -1524,6 +1535,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       before: before && { zh: before.zh, en: before.en, vi: before.vi }, version: String(expectedVersion) });
   };
   const queryOrdinary = async (record: I6Command) => {
+    invalidatedOverview.current = latest.current.content.i18nLearning;
     setOrdinaryBusy(record.commandKey);
     try {
       let outcome: FundInvestigationOutcome;
@@ -1581,7 +1593,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       <span className="i6-pending-act">
         <Button size="sm" disabled={!!ordinaryBusy && ordinaryBusy !== record.commandKey} loading={ordinaryBusy === record.commandKey} onClick={() => void queryOrdinary(record)}>查询原结果</Button>
         {canInvestigateECommand(record.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") && eCommandClosureOffer(ordinaryOutcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ordinaryBusy} onClick={() => setClosingOrdinary(record)}>核查结案</Button>}
-        {!i6Recovery.state(record).replayRejection && <Button size="sm" variant="primary" disabledReason={ordinaryBusy ? "正在处理另一项" : ordinaryRetryProblem(record)}
+        {!i6Recovery.state(record).replayRejection && <Button size="sm" variant="primary" disabledReason={ordinaryRetryProblem(record)}
           onClick={() => void retryOrdinary(record)}>按原请求重试</Button>}
         {i6Recovery.state(record).replayRejection && <VerifiedReleaseButton disabled={!!ordinaryBusy || !!i6Recovery.state(record).busy} onClick={() => release.ask({ operation: record.label,
           target: <>{record.target && <>{courseOf(record) ? nexGridBrandText(courseOf(record)!.titleZh || courseOf(record)!.title) : <span className="i6-mono">{record.target}</span>} </>}{ordinaryChange(record)}</>,

@@ -8,6 +8,7 @@
  * 统一来源:后端 /content/campaigns/overview;空库时以后端初始化结果为准。
  * critical 档锁定 = 不渲染调整按钮。amplifies = false(I3 通知体系不动钱,不碰 B1 红线)。
  */
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { englishCopyHint, isEnglishCopy, mapContentTitleBody, type LocalizedTitleBody } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -426,7 +427,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           if (draftAttempt && key) setDrawerPendingKey(key);
           if (await reviewConflict(error, { ...draftAttempt, reason, value, business })) ctx.closeActionConfirm();
           syncPending();
-          throw new Error(displayAdminError(error));
+          throw new Error(key && isA2OutcomeUncertainError(error) ? error.queryMessage ?? displayAdminError(error) : displayAdminError(error));
         }
       },
     };

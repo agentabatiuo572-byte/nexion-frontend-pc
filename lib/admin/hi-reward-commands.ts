@@ -118,7 +118,7 @@ async function sendI6CourseProposal(saved: HIRewardCommand, retry: boolean) {
     response = await guardedFetch("/api/admin/platform/audit/operations", { method: "POST", cache: "no-store",
       headers: { "Content-Type": "application/json", "Idempotency-Key": record.commandKey }, body: record.body });
     envelope = await response.json();
-  } catch { throw uncertain("结果未知，请查询原结果或按原请求重试。"); }
+  } catch { throw uncertain("结果未知，请查询原结果。"); }
   if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || !Number.isInteger(envelope.code)
     || envelope.message !== undefined && typeof envelope.message !== "string") throw uncertain("原申请的返回内容无法核实，请保留原记录并查询原结果。");
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(envelope.message);

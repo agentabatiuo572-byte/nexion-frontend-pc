@@ -20,7 +20,7 @@ import {
   fetchH7Vouchers, type H7Overview,
 } from "@/lib/admin/h-client";
 import {
-  H7_VOUCHER_ACTIONS, canRetryH7VoucherApproval,
+  H7_VOUCHER_ACTIONS, type H7VoucherApprovalAttempt,
   pendingH7VoucherApprovals,
   releaseRejectedH7VoucherApproval, h7ApprovalRecovery,
   submitH7VoucherApproval,
@@ -377,6 +377,12 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     });
   };
 
+  const approvalRetryReason = (record: H7VoucherApprovalAttempt) => {
+    const state = h7ApprovalRecovery.state(record);
+    if (state.expired) return RETRY_EXPIRED_TEXT;
+    if (state.replayRejection) return RETRY_REJECTED_TEXT;
+    return replayReadProblem(record.voucherId) ?? (state.replayBlock ? "请查询原结果" : undefined);
+  };
   const openDisposition = (input: H7VoucherApprovalInput, initialRecovery?: "lookup" | "retry") => {
     if (!session) return;
     const original = () => pendingH7VoucherApprovals(session.adminId)
@@ -450,7 +456,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         const saved = original();
         if (!saved) return;
         const state = h7ApprovalRecovery.state(saved);
-        return { state, expiresAt: state.expiresAt, blockedReason: replayReadProblem(input.voucherId) ?? (state.expired ? RETRY_EXPIRED_TEXT : state.replayRejection ? RETRY_REJECTED_TEXT : state.replayBlock ? "请查询原结果" : undefined),
+        return { state, expiresAt: state.expiresAt, blockedReason: approvalRetryReason(saved),
           statusText: state.expired && state.replayRejection && !saved.acknowledged ? `${RETRY_EXPIRED_TEXT} ${RETRY_REJECTED_NEXT}` : undefined,
           subscribe: h7ApprovalRecovery.subscribe, getRevision: h7ApprovalRecovery.getRevision };
       },
@@ -460,7 +466,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         get expiredRequestRecovery() { const saved = original(); return saved && isRetryExpired(saved) ? "query" : undefined; },
         get disabledReason() {
           const saved = original();
-          return replayReadProblem(input.voucherId) ?? (!useAdminAuth.getState().session?.authorities.includes("growth_h7_write") || saved && !canRetryH7VoucherApproval(saved) ? "请查询原结果" : undefined);
+          return saved ? approvalRetryReason(saved) : replayReadProblem(input.voucherId) ?? (!useAdminAuth.getState().session?.authorities.includes("growth_h7_write") ? "请查询原结果" : undefined);
         },
         initialRecovery: pending ? initialRecovery : undefined,
         resolve: () => ({
@@ -512,7 +518,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         ticket: record.ticket?.id,
         actions: <>
           <Button size="sm" onClick={() => openDisposition(record, "lookup")}>查询原结果</Button>
-          {!expired && !record.ticket && !record.acknowledged && !releasable(record) && <Button size="sm" disabledReason={replayReadProblem(record.voucherId) ?? (!canWrite || !canRetryH7VoucherApproval(record) ? "请查询原结果" : undefined)} onClick={() => openDisposition(record, "retry")}>按原请求重试</Button>}
+          {!expired && !record.ticket && !record.acknowledged && !releasable(record) && <Button size="sm" disabledReason={approvalRetryReason(record)} onClick={() => openDisposition(record, "retry")}>按原请求重试</Button>}
           {rejected && <VerifiedReleaseButton disabled={!!h7ApprovalRecovery.state(record).busy} onClick={() => release.ask({ operation: H7_VOUCHER_ACTIONS[record.op], target: <>「{record.voucherName}」{approvalChange(record)}</>,
             getSnapshot: h7ApprovalRecovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => { try { releaseRejectedH7VoucherApproval(record); } finally { syncPending(); } } })} />}
         </>,

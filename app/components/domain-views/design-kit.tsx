@@ -4104,11 +4104,14 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
       if ((approval || retryApproval) && isA2OutcomeUncertainError(error)) {
         setApprovalRecovery(recoverApproval ? "lookup" : "retry");
-        setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原结果；查不到再按原请求重试，" : "按原请求重试，"}不会建第二张。命令号：${error.commandKey}`);
+        const message = getPendingRecovery?.() && error.queryMessage || (inlineApproval ? error.message
+          : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原结果；查不到再按原请求重试，" : "按原请求重试，"}不会建第二张。`);
+        setSubmitError(`${message} 命令号：${error.commandKey}`);
       } else {
         setApprovalRecovery(inlineApproval?.initialRecovery && getPendingReason?.() !== undefined ? inlineApproval.initialRecovery : null);
         setSubmitUnknown(error instanceof Error && /Outcome(Uncertain|Unknown)Error$/.test(error.name) || getPendingReason?.() !== undefined);
-        setSubmitError(operationConfirmErrorMessage(error));
+        setSubmitError(getPendingRecovery?.() && isA2OutcomeUncertainError(error) && error.queryMessage
+          ? `${error.queryMessage} 命令号：${error.commandKey}` : operationConfirmErrorMessage(error));
       }
     } finally {
       setPendingReason(getPendingReason?.());
@@ -4137,12 +4140,12 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     try {
       if (!await recoverApproval(reason.trim())) {
         setApprovalRecovery("retry");
-        setSubmitError(inlineApproval?.expired || inlineApproval?.queryOnly ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。");
+        setSubmitError(getPendingRecovery?.() || inlineApproval?.expired || inlineApproval?.queryOnly ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。");
       } else if (inlineApproval?.recoverLabel) {
         setSubmitError(null);
       }
     } catch (error) {
-      setSubmitError(isA2OutcomeUncertainError(error) ? error.message : operationConfirmErrorMessage(error));
+      setSubmitError(isA2OutcomeUncertainError(error) ? (getPendingRecovery?.() && error.queryMessage || error.message) : operationConfirmErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
