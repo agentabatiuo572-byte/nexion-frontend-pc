@@ -40,7 +40,7 @@ export interface E2TaskEditorState {
   step: "form" | "leaving" | "confirm";
   reason: string;
   touched: Record<E2TaskField | "reason", boolean>;
-  /** 本次提交的请求编号（idempotencyKey），开框时生成一次。 */
+  /** 本次提交的操作编号（idempotencyKey），开框时生成一次。 */
   key: string;
   saving: boolean;
   outcome: E2TaskOutcome;
@@ -299,9 +299,9 @@ export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule,
         {(outcome.kind === "rejected" && !outcome.field && !reasonRejected || outcome.kind === "conflict") && outcome.message && <Notice tone="danger">{outcome.message}</Notice>}
         <Fold title="执行摘要" summary="立即生效，不经审批"><p>{mode === "update" ? "每次修改都会留下记录。两人同时改同一条时，后提交的会被拒，要读取最新后再改。"
           : "每级最多启用 200 个、共 300 个任务（含停用）。同一等级里任务名称不能重名。"}</p></Fold>
-        <Fold title="技术信息" summary="任务池与请求编号"><Facts><Fact k="任务池">{pool.code}</Fact>
-          <Fact k="请求编号"><span data-mono className="e2-request-key">{state.key}</span><Button size="sm" variant="ghost"
-            onClick={() => { void navigator.clipboard.writeText(state.key).then(() => toast("请求编号已复制"), () => toast("复制失败，请选中完整编号复制。")); }}>复制编号</Button></Fact>
+        <Fold title="技术信息" summary="任务池与操作编号"><Facts><Fact k="任务池">{pool.code}</Fact>
+          <Fact k="操作编号"><span data-mono className="e2-request-key">{state.key}</span><Button size="sm" variant="ghost"
+            onClick={() => { void navigator.clipboard.writeText(state.key).then(() => toast("操作编号已复制"), () => toast("复制失败，请选中完整编号复制。")); }}>复制编号</Button></Fact>
           {outcome.kind === "rejected" && outcome.code && <Fact k="原错误码">{outcome.code}</Fact>}</Facts>
           <p>权重参考值：每分钟 0.001，向量计算、语音处理、图像生成、大模型推理、模型微调、视频生成依次乘 1.0、1.1、1.2、1.3、1.4、1.5。</p></Fold>
       </div>

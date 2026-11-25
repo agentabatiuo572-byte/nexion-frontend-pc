@@ -746,7 +746,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           {dialogError && !reasonRejected && <Notice tone="danger">{dialogError}</Notice>}
           {dialog.kind === "status" && <Fold title="本次任务" summary={`${dialog.tasks.length} 个任务，展开核对完整名单`}><ul className="e2-command-tasks">{dialog.tasks.map(task => <li key={task.taskTypeId}>{task.name}</li>)}</ul></Fold>}
           <Fold title="执行摘要" summary="立即生效，不经审批"><p>{TASK_RULES}</p></Fold>
-          <Fold title="技术信息" summary="任务池与请求编号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="请求编号"><span data-mono className="e2-request-key">{dialog.key}</span><Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("请求编号已复制"), () => setDialogError("复制失败，请选中完整编号复制。")); }}>复制编号</Button></Fact>{dialogErrorCode && <Fact k="原错误码">{dialogErrorCode}</Fact>}</Facts><p><KeepText text={GENERATION} /></p></Fold>
+          <Fold title="技术信息" summary="任务池与操作编号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="操作编号"><span data-mono className="e2-request-key">{dialog.key}</span><Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("操作编号已复制"), () => setDialogError("复制失败，请选中完整编号复制。")); }}>复制编号</Button></Fact>{dialogErrorCode && <Fact k="原错误码">{dialogErrorCode}</Fact>}</Facts><p><KeepText text={GENERATION} /></p></Fold>
         </div>
     </Modal>}
   </>;
