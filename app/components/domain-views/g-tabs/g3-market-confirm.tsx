@@ -21,6 +21,7 @@ export const G3_TUNING_FORBIDDEN = "当前环境不允许人工改现价和上�
  */
 export const G3_TUNING_FORBIDDEN_REJECTED = "没有执行：当前环境不允许人工改现价和上涨概率，这不是账号权限问题，换账号也一样。要调价请改七天计划的目标价。";
 export const G3_EXPIRED_DIRECT_READ = "原操作已过期，不能重发。请读取当前配置核对，原记录会保留。";
+export const G3_READBACK_NOTE = "已读到当前配置。仅凭现值不能确认原操作结果，原记录继续保留。";
 
 function price(value: number) {
   return amountDisplay(value, 8);
@@ -203,7 +204,8 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
         };
       },
       recoverLabel: expiredRecovery === "reload" || pending?.request.kind === "direct" ? "读取当前配置" : undefined,
-      recover: expiredRecovery === "reload" ? readCurrent : () => execute("lookup"),
+      readbackNote: pending?.request.kind === "direct" ? G3_READBACK_NOTE : undefined,
+      recover: pending?.request.kind === "direct" ? readCurrent : () => execute("lookup"),
       retry: () => execute("retry").then(() => undefined),
     }}
     onClose={onClose}

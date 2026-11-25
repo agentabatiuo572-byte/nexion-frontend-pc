@@ -38,12 +38,13 @@ import {
   executeG3MarketChange, canWriteG3MarketChange, g3MarketCommandExpired, g3MarketFailureCode, g3MarketObjectKey,
   g3MarketObjectReadState, g3MarketReadBlockedCode, g3RuntimeApproval,
   G3_ENVIRONMENT_FORBIDDEN, listG3MarketCommands, pendingG3MarketCommand, refreshG3MarketApprovals,
-  G3ReplayRejectedError, g3ReplayRejection, g3ReleaseSnapshot, releaseG3RejectedCommand,
+  G3ReplayRejectedError, g3ApprovalAcknowledgement, g3ReplayRejection, g3ReleaseSnapshot, g3WeeklyWriteBlock, releaseG3RejectedCommand,
   type G3MarketChange, type G3DirectChange, type G3ReviewedChange, type G3PendingCommand, type G3CommandResult,
 } from "@/lib/admin/g3-market-command";
-import { OperationConfirmModal, useToast, type EditSpec, type OperatorBriefKind } from "../design-kit";
-import { G3_EXPIRED_DIRECT_READ, G3MarketConfirm, G3_TUNING_FORBIDDEN } from "./g3-market-confirm";
+import { OperationConfirmModal, usePendingReplayDeadline, useToast, type EditSpec, type OperatorBriefKind } from "../design-kit";
+import { G3_EXPIRED_DIRECT_READ, G3_READBACK_NOTE, G3MarketConfirm, G3_TUNING_FORBIDDEN } from "./g3-market-confirm";
 import { G3ScheduleResult } from "./g3-schedule-result";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { TechInfo } from "../recovery-panel";
 import { rejectedTag, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 
@@ -377,6 +378,8 @@ function G3MarketEditor() {
   const [MANUAL_TUNING, setManualTuning] = useState<"unknown" | "forbidden" | "allowed">("unknown");
   const [overview, setOverviewState] = useState<G3Overview | null>(null);
   const commandRows = useMemo(() => session ? listG3MarketCommands(session.adminId) : [], [session, commandVersion]);
+  const nextRejectionDeadline = Math.min(...commandRows.filter(row => !row.ticketId && row.replayRejection && row.expiresAt > Date.now()).map(row => row.expiresAt));
+  usePendingReplayDeadline(Number.isFinite(nextRejectionDeadline) ? nextRejectionDeadline : undefined);
   const OBJECT_STATES = { ...observedStates };
   for (const row of commandRows) {
     OBJECT_STATES[g3MarketObjectKey(row.change)] = row.ticketId
@@ -422,14 +425,6 @@ function G3MarketEditor() {
     syncCommands();
   };
   const adminId = session?.adminId;
-  const refreshKnownApprovals = useCallback(async () => {
-    if (adminId === undefined) return;
-    setVerifiedApprovals({});
-    const pending = await refreshG3MarketApprovals(adminId);
-    setVerifiedApprovals(Object.fromEntries(pending.map(key => [key, Date.now()])));
-    syncCommands();
-  }, [adminId, syncCommands]);
-  useEffect(() => { void refreshKnownApprovals(); }, [refreshKnownApprovals]);
   const authorities = session?.authorities ?? [];
   const isSuper = session?.role === "super" || session?.role === "superadmin";
   const allowed = (authority: string) => isSuper || authorities.includes(authority);
@@ -493,6 +488,19 @@ function G3MarketEditor() {
     }
   }, [showRead]);
 
+  const refreshKnownApprovals = useCallback(async (commandKey?: string) => {
+    if (adminId === undefined) return;
+    setVerifiedApprovals(previous => commandKey ? Object.fromEntries(Object.entries(previous).filter(([key]) => key !== commandKey)) : {});
+    const results = await refreshG3MarketApprovals(adminId, commandKey);
+    const pending = results.filter(({ ticket }) => ticket.status === "pending");
+    setVerifiedApprovals(previous => ({ ...previous, ...Object.fromEntries(pending.map(({ key }) => [key, Date.now()])) }));
+    const notices = results.filter(({ ticket }) => commandKey || ticket.status !== "pending");
+    if (notices.length) toast(notices.map(({ ticket }) => g3ApprovalAcknowledgement(ticket)).join(" "));
+    syncCommands();
+    if (commandKey && notices.some(({ ticket }) => ticket.status !== "pending")) void readOverview();
+  }, [adminId, readOverview, syncCommands, toast]);
+  useEffect(() => { void refreshKnownApprovals(); }, [refreshKnownApprovals]);
+
   // 旧概览提示里的「重试」读到后提示条卸下：焦点交给价格摘要，不掉到页面上（ST-56）；仍失败时焦点留在「重试」上。
   const overviewRetryFocus = useRef(false);
   useLayoutEffect(() => {
@@ -523,9 +531,8 @@ function G3MarketEditor() {
     if (!staleMarket && !staleDirect) return;
     if (staleMarket) setMarketConfirm(null);
     if (staleDirect) openActionConfirm(null);
-    toast("原操作已完成，正在重新读取 UVT 价格；读取成功后再发起新修改。");
     // commandVersion：原记录被了结（明确拒绝或成功）后要重新判断，恢复框不能留成一个按旧概览画的新修改框。
-  }, [rereadPending, session, marketConfirm, confirm, toast, commandVersion]);
+  }, [rereadPending, session, marketConfirm, confirm, commandVersion]);
 
   useEffect(() => {
     void readOverview();
@@ -578,7 +585,7 @@ function G3MarketEditor() {
     openActionConfirm(directConfirmation((original?.change ?? requested) as G3DirectChange, original?.value ?? value, overview, !gaps.coverage, original));
   };
   const openSavedCommand = (row: G3PendingCommand) => {
-    if (row.ticketId) { void refreshKnownApprovals(); return; }
+    if (row.ticketId) { void refreshKnownApprovals(row.commandKey); return; }
     const change = row.change;
     if (change.action === "curve-cell" && change.field === "volatilityPct" || change.action === "control" || change.action === "override") {
       openDirect(change as G3DirectChange, row.value);
@@ -606,7 +613,7 @@ function G3MarketEditor() {
       key: row.commandKey, name, submittedAt: row.createdAt, ticket: row.ticketId ?? undefined,
       state: row.ticketId ? verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "approval" : rejection ? "replay-rejected" : "unknown",
       change: <><Change from={show(change.current)} to={show(row.value)} />
-        {rejection && <span className="rd-note"> · {rejection} <TechInfo commandKey={row.commandKey} /></span>}</>,
+        {rejection && <span className="rd-note"> · {rejection}{Date.now() >= row.expiresAt && ` ${RETRY_EXPIRED_TEXT}`} <TechInfo commandKey={row.commandKey} /></span>}</>,
       tag: row.ticketId
         ? verifiedApprovals[row.commandKey] === undefined
           ? <ObjectTag state={{ kind: "approval", verification: "last-observation", observedAt: row.createdAt,
@@ -615,7 +622,7 @@ function G3MarketEditor() {
         : rejection ? rejectedTag() : g3MarketCommandExpired(row) ? expiredTag(row.request.kind)
           : unknownTag(row.request.kind === "approval" ? "approval" : "direct"),
       actions: row.ticketId
-        ? <Button size="sm" aria-label={`查询${name}的原操作`} onClick={() => void refreshKnownApprovals()}>查询原操作</Button>
+        ? <Button size="sm" aria-label={`查询${name}的原操作`} onClick={() => void refreshKnownApprovals(row.commandKey)}>查询原操作</Button>
         : <>
           <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>{row.request.kind === "direct" ? "查看原操作" : rejection || g3MarketCommandExpired(row) ? "查询原操作" : "查询或重试"}</Button>
           {rejection && session && <VerifiedReleaseButton disabled={!!busyKey} onClick={() => verifiedRelease.ask({
@@ -638,26 +645,35 @@ function G3MarketEditor() {
         ? "重试被拒的记录继续保留。核实原操作的结果后，可以解除这条记录。"
         : "点「查询原操作」或「查看原操作」核对；没有审批单的原操作 24 小时内也可以按原操作重试。有结论之前不要换个值重新提交。"}
     explain={<>
-      <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的提高申请，和直接保存但没收到结果的修改。原操作只能查询或按原操作重试，不能改值。</p>
+      <p>这里列本标签页尚未确认的申请和修改。用每条记录的按钮核对，原值和理由会保留。{commandRows.some(row => !row.ticketId && !row.replayRejection && !g3MarketCommandExpired(row)) && "符合条件的记录可以按原操作重试。"}</p>
       <p>表里同一项也带着标记。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
     </>} />;
   const pendingDirect = confirm && session ? pendingG3MarketCommand(session.adminId, confirm.change) : undefined;
   const directPastDeadline = pendingDirect && Date.now() >= pendingDirect.expiresAt;
   const pendingRuntimeApproval = pendingDirect?.request.kind === "approval";
   const readCurrent = async () => {
-    const current = await fetchG3MarketReadOverview();
-    const auth = useAdminAuth.getState();
-    if (!auth.isAuthenticated || auth.session?.adminId !== session?.adminId || auth.authEpoch !== epoch) {
-      throw new Error("登录身份或权限已变化，请关闭弹窗后重新操作。");
+    try {
+      const current = await fetchG3MarketReadOverview();
+      const auth = useAdminAuth.getState();
+      if (!auth.isAuthenticated || auth.session?.adminId !== session?.adminId || auth.authEpoch !== epoch) {
+        throw new Error("登录身份或权限已变化，请关闭弹窗后重新操作。");
+      }
+      showRead(current);
+      setRereadPending(false);
+      return true;
+    } catch (cause) {
+      const message = displayAdminReadError(cause);
+      setOverviewError(message);
+      throw new Error(`当前配置加载失败。 ${message}`);
     }
-    showRead(current);
-    return true;
   };
   const staleWriteReason = overviewError ? "最新 UVT 价格加载失败，请重试后再修改。"
     : overviewReading ? "正在加载最新 UVT 价格，加载完才能修改。" : undefined;
   const newWriteBlockedReason = !overview ? "UVT 价格加载失败"
-    : staleWriteReason ?? (rereadPending ? "操作已完成，最新 UVT 价格还没加载到，请先刷新" : undefined);
+    : staleWriteReason ?? (rereadPending ? "最新 UVT 价格还没加载到，请先刷新" : undefined);
   const readBlockedReason = (change: G3MarketChange, value?: string, forceApproval = false) => {
+    const weeklyBlock = g3WeeklyWriteBlock(commandRows, g3MarketObjectKey(change));
+    if (weeklyBlock) return weeklyBlock;
     const code = overview ? g3MarketReadBlockedCode(overview, change, value, forceApproval) : undefined;
     const ticket = (code === "OBJECT_ALREADY_PENDING" || code === "OBJECT_LOCKED_BY_A2") && overview
       ? g3MarketObjectReadState(overview, g3MarketObjectKey(change))?.pendingOperationId : undefined;
@@ -700,7 +716,7 @@ function G3MarketEditor() {
           // The write receipt may have unavailable readings; reload the editor baseline separately.
           setRereadPending(true);
           if (result.ticketKey) setVerifiedApprovals(keys => ({ ...keys, [result.ticketKey!]: Date.now() }));
-          toast(result.recovered ? REREAD_TEXT : result.acknowledgement);
+          toast(result.active && result.recovered ? REREAD_TEXT : result.acknowledgement);
           void reload(true);
         }} />}
       {confirm && (
@@ -749,10 +765,8 @@ function G3MarketEditor() {
               };
             },
             recoverLabel: pendingDirect && !pendingRuntimeApproval ? "读取当前配置" : undefined,
-            recover: pendingRuntimeApproval ? () => executeConfirmedChange("lookup") : directPastDeadline ? readCurrent : async () => {
-              if (session) await executeG3MarketChange(session, confirm.change, "", "", "lookup");
-              return false;
-            },
+            readbackNote: pendingDirect && !pendingRuntimeApproval ? G3_READBACK_NOTE : undefined,
+            recover: pendingRuntimeApproval ? () => executeConfirmedChange("lookup") : readCurrent,
             retry: pendingRuntimeApproval ? () => executeConfirmedChange("retry").then(() => undefined) : undefined,
           }}
           onClose={() => openActionConfirm(null)}
@@ -841,8 +855,8 @@ function G3MarketEditor() {
   const busy = !!busyKey;
   const busyReason = busy ? "正在保存上一项，稍候再改" : undefined;
   // 原操作重试成功后在重读：新修改先不可用，带着原因；还有原记录的那一项照样能打开。
-  const rereadReason = rereadPending ? "操作已完成，正在加载最新 UVT 价格，加载完再改" : undefined;
-  const lockReason = (key: string) => busyReason ?? (hasRecovery(key) ? undefined : staleWriteReason ?? rereadReason
+  const rereadReason = rereadPending ? "正在加载最新 UVT 价格，加载完再改" : undefined;
+  const lockReason = (key: string) => busyReason ?? (hasRecovery(key) ? undefined : g3WeeklyWriteBlock(commandRows, key) ?? staleWriteReason ?? rereadReason
     ?? (g3MarketObjectReadState(overview, key)?.locked
       ? g3MarketObjectReadState(overview, key)?.pendingOperationId
         ? `审批单 ${g3MarketObjectReadState(overview, key)?.pendingOperationId} 在等批准，有结论前不能改。`
@@ -1040,12 +1054,12 @@ function G3MarketEditor() {
       {error && !confirm && !UNKNOWN_TEXT.test(error) && <Notice tone="warn">{error}</Notice>}
       {overviewError && overviewReadAt !== undefined ? (
         <Notice tone="warn"
-          title={`${rereadPending ? "操作已完成。" : ""}以下是 ${businessStamp(overviewReadAt)}（${businessZone().label}）的概览，刷新失败`}
+          title={`以下是 ${businessStamp(overviewReadAt)}（${businessZone().label}）的概览，刷新失败`}
           action={<Button size="sm" loading={overviewReading} onClick={() => { overviewRetryFocus.current = true; void readOverview(); }}>重试</Button>}>
           {overviewError}读到最新概览后才能修改。
         </Notice>
       ) : rereadPending && overviewReading && (
-        <Notice tone="progress" title="操作已完成，正在加载最新 UVT 价格">读到之前表里的修改先不可用；有原记录的那一项照样能打开。</Notice>
+        <Notice tone="progress" title="正在加载最新 UVT 价格">读到之前表里的修改先不可用；有原记录的那一项照样能打开。</Notice>
       )}
       {conclusion}
 

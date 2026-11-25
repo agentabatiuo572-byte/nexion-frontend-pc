@@ -28,6 +28,9 @@ import type { ACtx, ConfirmReq, A4ActionConfirmReq } from "./a-tabs/types";
 import { fetchA1Overview } from "@/lib/admin/a1-client";
 import { fetchA3Overview } from "@/lib/admin/a3-client";
 import { fetchA4Overview } from "@/lib/admin/a4-client";
+import { useBDomainDashboard } from "@/lib/admin/b-client";
+import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const FOLD: Record<string, string> = { A1: "A1", A2: "A2", A3: "A3", A4: "A4", A9: "A9" };
 /** 已改版的页：包 RdPage，页头和统计由页面自己写，这里不再另读一次（A2-H06）。 */
@@ -40,6 +43,14 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
   const [live, setLive] = useState("");
   const [actionConfirmReq, setActionConfirm] = useState<A4ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
+  const session = useAdminAuth(state => state.session);
+  const bDomain = useBDomainDashboard(tab === "A2" && B_DASHBOARD_READ_AUTHORITIES.every(authority => session?.authorities.includes(authority)));
+  const coverage = bDomain.hasData && !bDomain.error && bDomain.ledger.valuationReliable
+    ? { coverageRatio: bDomain.ledger.coverageRatio, redlinePct: bDomain.ledger.redlinePct, healthyPct: bDomain.ledger.healthyPct }
+    : undefined;
+  const h5CoverageBlock = bDomain.loading || !coverage || coverage.coverageRatio <= 0 || coverage.redlinePct <= 0
+    ? "兑付覆盖率还没读到，刷新后才能批准。"
+    : coverage.coverageRatio < coverage.redlinePct ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined;
 
   const ctx: ACtx = {
     toast: setToast,
@@ -93,7 +104,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
       {!REDESIGNED.includes(tab) && <DomainHeader {...meta} right={right} />}
 
       {tab === "A1" && <A1Accounts ctx={ctx} />}
-      {tab === "A2" && <A2Audit ctx={ctx} />}
+      {tab === "A2" && <A2Audit ctx={ctx} coverage={coverage} h5CoverageBlock={h5CoverageBlock} refreshCoverage={bDomain.reload} />}
       {tab === "A3" && <A3Page ctx={ctx} />}
       {tab === "A4" && <A4Events ctx={ctx} />}
       {tab === "A9" && <A9DeveloperAccess />}
@@ -107,7 +118,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
           detail={actionConfirmReq.detail}
           content={actionConfirmReq.content}
           amplifies={actionConfirmReq.amplifies}
-          coverage={actionConfirmReq.coverage}
+          coverage={actionConfirmReq.requiresH5ApprovalCoverage ? h5CoverageBlock ? undefined : coverage : actionConfirmReq.coverage}
           coverageLead={actionConfirmReq.coverageLead}
           coverageCheck={actionConfirmReq.coverageCheck}
           edit={actionConfirmReq.edit}
@@ -119,7 +130,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
           confirmTone={actionConfirmReq.confirmTone}
           statedBrief={actionConfirmReq.statedBrief}
           facts={actionConfirmReq.facts}
-          blockedReason={actionConfirmReq.blockedReason}
+          blockedReason={actionConfirmReq.blockedReason ?? (actionConfirmReq.requiresH5ApprovalCoverage ? h5CoverageBlock : undefined)}
           initialReason={actionConfirmReq.initialReason}
           getPendingReason={actionConfirmReq.getPendingReason}
           getPendingRecovery={actionConfirmReq.getPendingRecovery}
