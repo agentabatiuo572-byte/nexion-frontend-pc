@@ -78,9 +78,9 @@ export const h4OpeningReadFailure = (cause: unknown, readLatest: () => Promise<b
       action={<Button size="sm" onClick={retry}>重试</Button>}>{displayAdminReadError(cause)}</Notice> });
 
 /** 真实冲突（别人先改过）后的提示：拟改值留着、现在值换成最新的、旧理由清空，要重新填理由才能提交。结果未知的原请求恢复用原理由，是另一句提示。 */
-export function H4StaleNote({ readLatest }: { readLatest?: () => void }) {
+export function H4StaleNote({ readLatest, reading }: { readLatest?: () => void; reading?: boolean }) {
   return <Notice tone="warn" title="别人先改过，这次没有保存"
-    action={readLatest && <Button size="sm" onClick={readLatest}>读取最新</Button>}>
+    action={readLatest && <Button size="sm" loading={reading} onClick={readLatest}>读取最新</Button>}>
     {readLatest ? <>读取最新值后再核对；<span className="rd-keep">你填的还在，理由要重填。</span></>
       : <>现在值已换成最新的；<span className="rd-keep">你填的内容还在，请重新填写操作理由。</span></>}
   </Notice>;
