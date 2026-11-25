@@ -168,14 +168,16 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
         });
         if(["QUEUED","RUNNING"].includes(currentBatch.state))timer=setTimeout(()=>void read(),3000);
       }else failure=batch.status==="rejected"?displayAdminError(batch.reason):"批次资料与当前查询不一致，请重新读取。";
-      if(items.status==="fulfilled"){
+      // 同一轮里任一读取被权限拒绝（无权、对象不可见）：逐客行和总数都清掉，同轮另一项读到的逐客行也不用（RR02，两次读取各自按当时的权限查）。
+      const readDenied=(reason:unknown)=>reason instanceof SupportClientError&&[401,403,404].includes(reason.status);
+      const denied=batch.status==="rejected"&&readDenied(batch.reason)||items.status==="rejected"&&readDenied(items.reason);
+      if(items.status==="fulfilled"&&!denied){
         recipientsScope.current=recipientKey;
         setRecipients(items.value.records);setRecipientTotal(items.value.total);
       }else{
-        // 批次读回说可见范围收窄了（客户转绑、内容受限），或逐客读取被明确拒绝：旧的逐客行不再留（RR02）。暂时读失败且范围没变才沿用。
-        const readDenied=(reason:unknown)=>reason instanceof SupportClientError&&[401,403,404].includes(reason.status);
-        if(!keepRecipients||currentBatch?.contentRestricted||readDenied(items.reason)||batch.status==="rejected"&&readDenied(batch.reason))setRecipients(null);
-        failure ||= displayAdminError(items.reason);
+        // 批次读回说可见范围收窄了（客户转绑、内容受限），或读取被拒绝：旧的逐客行不再留。暂时读失败且范围没变才沿用。
+        if(!keepRecipients||currentBatch?.contentRestricted||denied){setRecipients(null);if(denied)setRecipientTotal(0);}
+        if(items.status==="rejected")failure ||= displayAdminError(items.reason);
       }
       if(currentBatch)keepRecipients=false;
       setResultError(failure);
