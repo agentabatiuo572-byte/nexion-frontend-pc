@@ -581,7 +581,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       draft, initial, proposalSlot,
       action: "手动调整会员等级",
       title: "人工调整等级",
-      briefKind: (value) => !skipsOverrideCoverage(value) && value.direction !== "rollback" && (ctx.rewards[value.targetV] ?? []).some((reward) => reward.type === "usdt" || reward.type === "uvt") ? "funds" : "config",
+      briefKind: (value) => !skipsOverrideCoverage(value) && value.direction === "promote" && !rankIssue(value) && (ctx.rewards[value.targetV] ?? []).some((reward) => reward.type === "usdt" || reward.type === "uvt") ? "funds" : "config",
       amplify: true,
       confirmLabel: "提交审批",
       effect: <StatusTag tone="progress" filled explain={`${VRANK_APPROVER}（还要有审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
@@ -593,15 +593,17 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           impact: "先选调整方向和目标等级，选好后这里写批准后会怎样。",
           check: "先在「晋升记录」查这位用户上次的等级变化，确认现在的等级再选。",
         };
+        const issue = rankIssue(value);
+        if (issue) return { impact: `这样选不能提交：${issue}`, check: "先在「晋升记录」查这位用户上次的等级变化，确认现在的等级再选。" };
         const user = value.userId?.trim() ? `用户 ${value.userId.trim()}` : "这位用户";
-        const target = value.targetV || "目标等级";
+        const target = value.targetV;
         if (value.direction === "rollback") return {
           impact: `批准后 ${user} 降到 ${target}：不收回已发的奖励，不受不降级保护限制。目标等级必须低于当时的等级，否则批准时被拒。`,
           check: "先在「晋升记录」查这位用户上次的等级变化，确认现在的等级再选。",
         };
-        const rewards = value.targetV ? (ctx.rewards[value.targetV] ?? []).map((item) => rewardLine(item, ctx)) : [];
+        const rewards = (ctx.rewards[value.targetV] ?? []).map((item) => rewardLine(item, ctx));
         return {
-          impact: `批准后 ${user} 升到 ${target}：只发 ${target} 这一级的奖励模板${value.targetV ? `（${rewards.length ? rewards.join("、") : "现在没有奖励"}）` : ""}，中间跳过的等级不补发。目标等级必须高于当时的等级，否则批准时被拒。`,
+          impact: `批准后 ${user} 升到 ${target}：只发 ${target} 这一级的奖励模板（${rewards.length ? rewards.join("、") : "现在没有奖励"}），中间跳过的等级不补发。目标等级必须高于当时的等级，否则批准时被拒。`,
           check: "先在「晋升记录」查这位用户上次的等级变化，确认现在的等级再选。",
         };
       },
@@ -612,7 +614,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           const issue = rankIssue(values);
           return issue ? { invalid: true, field: "targetV", live: true, message: issue } : { invalid: false, message: "" };
         },
-        amplifies: (values) => values.direction === "promote" && !!values.targetV && !skipsOverrideCoverage(values),
+        amplifies: (values) => values.direction === "promote" && !!values.targetV && !skipsOverrideCoverage(values) && !rankIssue(values),
         onFieldChange: (field, next) => {
           if (field === "userId" && fixedUser) return { ...next, userId: fixedUser };
           if (field === "direction" && fixedDirection) return { ...next, direction: fixedDirection };
