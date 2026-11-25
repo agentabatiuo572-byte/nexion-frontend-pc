@@ -1,7 +1,5 @@
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { adminAuthLifecycleEpoch } from "@/lib/admin/auth-lifecycle";
-import { resetAdminSession } from "@/lib/admin/auth-session";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createPendingMutationStore, createPendingRecovery, createSlotAttemptStore, isRetryExpired, ORIGINAL_UNKNOWN_TEXT, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -515,7 +513,6 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
     }
   }
   let res: Response;
-  const requestEpoch = adminAuthLifecycleEpoch();
   try {
     res = await guardedFetch(`/api/admin/emergency${path}`, {
       ...init,
@@ -560,7 +557,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       : !error.unknownOutcome && !isIdempotencyOutcomeOpen(payload.message)
         && isDeterministicRejection(res.status, payload.code));
     if (res.status !== 401 && (payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED")) {
-      resetAdminSession(requestEpoch);
+      useAdminAuth.getState().signOut();
     }
     if (rejected) {
       if (!isOriginalRetry) emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
@@ -582,7 +579,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
   if (requestFailed) {
     if (isWrite) emergencyAttempts.forget(writeSlot);
     if (isWrite && res.status !== 401 && (payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED")) {
-      resetAdminSession(requestEpoch);
+      useAdminAuth.getState().signOut();
     }
     const status = isJ1AutoRuleWrite && res.ok ? payload.code ?? res.status : res.status;
     throw Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), { status, reasonCode: payload.message });

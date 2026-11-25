@@ -1,4 +1,4 @@
-import { adminAuthActivityAllowed, adminAuthLifecycleEpoch, beginAdminLogout } from "./auth-lifecycle.ts";
+import { beginAdminLogout } from "./auth-lifecycle.ts";
 import { withAdminAuthCookieWrite } from "./auth-cookie-lane.ts";
 
 type LogoutFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -8,8 +8,6 @@ type LogoutRequestOptions = {
   timeoutMs?: number;
   signal?: AbortSignal;
 };
-
-type ExpiryConfirmation = { epoch: number; onExpired: () => void };
 
 type LogoutEnvelope = {
   code?: unknown;
@@ -35,7 +33,7 @@ async function performAdminLogout({
   fetchImpl = fetch,
   timeoutMs = DEFAULT_LOGOUT_TIMEOUT_MS,
   signal,
-}: LogoutRequestOptions, expiry?: ExpiryConfirmation): Promise<void> {
+}: LogoutRequestOptions): Promise<void> {
   const timeoutController = new AbortController();
   const timeout = setTimeout(() => timeoutController.abort(), timeoutMs);
   const signals = signal ? [signal, timeoutController.signal] : [timeoutController.signal];
@@ -44,14 +42,6 @@ async function performAdminLogout({
     await withAdminAuthCookieWrite(async () => {
       const combinedSignal = signals.length === 1 ? signals[0] : AbortSignal.any(signals);
       if (combinedSignal.aborted) throw combinedSignal.reason;
-      if (expiry) {
-        const stillCurrent = () => expiry.epoch === adminAuthLifecycleEpoch() && adminAuthActivityAllowed();
-        if (!stillCurrent()) return;
-        // Check the cookie used now, inside the same lane as login and revocation.
-        const session = await fetchImpl("/api/admin/auth/session", { cache: "no-store", signal: combinedSignal });
-        if (session.status !== 401 || !stillCurrent() || combinedSignal.aborted) return;
-        expiry.onExpired();
-      }
       const response = await fetchImpl("/api/admin/auth/logout", {
         method: "POST",
         cache: "no-store",
@@ -66,10 +56,6 @@ async function performAdminLogout({
   } finally {
     clearTimeout(timeout);
   }
-}
-
-export function requestAdminLogoutIfExpired(epoch: number, onExpired: () => void) {
-  return performAdminLogout({}, { epoch, onExpired });
 }
 
 /**

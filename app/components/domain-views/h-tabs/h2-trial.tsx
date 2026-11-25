@@ -24,8 +24,6 @@ import {
 } from "@/lib/admin/h-client";
 import { fetchA8PermissionDetail } from "@/lib/admin/a8-client";
 import { currentAdminSession } from "@/lib/admin/auth-client";
-import { adminAuthLifecycleEpoch } from "@/lib/admin/auth-lifecycle";
-import { adminSessionExpiryPending, resetAdminSession } from "@/lib/admin/auth-session";
 import { buyProductReason, H2_BUY_LIST_ACTION, H2_BUY_LIST_OBJECT, isBuyListVersion, nonBlank, readH2SessionProducts, readH2TrialPurchase, type BuyList, type BuyListWrite, type TrialTarget } from "@/lib/admin/h2-trial-purchase";
 import { usePropose } from "@/lib/admin/use-propose";
 import { canRetryH2Cancellation, releaseRejectedH2Cancellation, finishRetiredH2TrialChargeLookup, H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
@@ -711,12 +709,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     toast(`${item.name} 已更新`, "success");
   };
 
-  const handleBuySessionStop = (kind: "unauthenticated" | "forbidden" | "mismatch", ownerId: number, writeEpoch?: number) => {
+  const handleBuySessionStop = (kind: "unauthenticated" | "forbidden" | "mismatch", ownerId: number) => {
     if (kind === "unauthenticated") {
       const auth = useAdminAuth.getState();
-      if (auth.session?.adminId !== ownerId) return;
-      if (writeEpoch !== undefined) resetAdminSession(writeEpoch);
-      else if (!auth.logoutPending && !adminSessionExpiryPending()) auth.signOut();
+      if (auth.session?.adminId === ownerId) auth.signOut();
     } else {
       announcePermissionDenied();
       if (kind === "mismatch") toast("当前登录账号已变更，这次没有发送。", "warn");
@@ -746,7 +742,6 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       throw new Error(NOT_STORED);
     }
     try {
-      const writeEpoch = adminAuthLifecycleEpoch();
       const outcome = await updateH2TrialBuyList(buyListWrite(record));
       if (outcome.kind !== "unknown") pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
       // 首发就被账号核对拒绝：后端没有执行，不留待确认。
@@ -756,7 +751,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         return { kind: "stopped" };
       }
       if (outcome.kind === "forbidden" || outcome.kind === "unauthenticated") {
-        handleBuySessionStop(outcome.kind, ownerId, writeEpoch);
+        handleBuySessionStop(outcome.kind, ownerId);
         return { kind: "stopped" };
       }
       return outcome;
@@ -783,7 +778,6 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         return;
       }
       if (isRetryExpired(record)) return;
-      const writeEpoch = adminAuthLifecycleEpoch();
       const outcome = await updateH2TrialBuyList(buyListWrite(record));
       switch (outcome.kind) {
         case "saved":
@@ -806,7 +800,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           handleBuySessionStop("forbidden", ownerId);
           break;
         case "unauthenticated":
-          handleBuySessionStop(outcome.kind, ownerId, writeEpoch);
+          handleBuySessionStop(outcome.kind, ownerId);
           break;
         case "unknown":
           toast(UNKNOWN_TOAST, "warn");
