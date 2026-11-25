@@ -842,7 +842,9 @@ App 不展示试用邀请弹窗，也没有申请或接受延长的入口。PC �
 | `cooldownDays`(再次试用冷却) | 以当前值为准，**≠ D5 withdrawCooldownDays** | 之后结束的试用使用新值，已有冷却截止不重算 | H2 |
 | `phaseOpen` | true(Phase 派发只读) | 实时全量 | H1 调度 |
 | `seatsLeftToday`(每日免费名额上限；APP 接收当日剩余) | 47 | 实时全量 | H2 |
-| 其他可购买设备（整份清单，带版本） | 初始为空 | 立即生效，进行中的试用也按新清单 | H2；候选取 E1 在售且通过上架条件的实体设备与云份额，不按「允许试用」过滤（v1 H2③(c)） |
+| 其他可购买设备（整份清单，带版本） | 初始为空，版本为 0 | 立即生效，进行中的试用也按新清单 | H2；候选取 E1 目录中类型为 `DEVICE/SERVER/SHARE` 的商品，可选性以接口为准（v1 H2③(c)） |
+
+B90 读取通过 `GET /api/admin/growth/trials` 返回 `currentTrialProduct`、`writePermissionName`、`purchaseOptionsVersion`、`otherPurchaseProducts`、`purchaseCandidates`。保存通过 `PUT /api/admin/growth/trials/purchase-options` 发送 `{productNos, version, reason, requestNo, confirmedActorId}`，成功返回 `{productNos, version}`。结果未知时以原请求体重试。版本冲突读取最新，商品不可加按回包中的 `productNo/reason` 处理。
 
 ### 4.7 域 K — 风控与反作弊
 

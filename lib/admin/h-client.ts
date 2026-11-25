@@ -11,7 +11,7 @@ import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/ad
 import { validateH1DialValue } from "@/lib/admin/h1-dial-validation";
 import { depositPolicyUnits } from "@/lib/admin/cregis-deposit-policy";
 import { validateH7VoucherMoneyPrecision } from "./h7-voucher-money";
-import { H2_BUY_LIST_PATH, type BuyListWrite } from "./h2-trial-purchase";
+import { buyProductReason, H2_BUY_LIST_PATH, isBuyListReceipt, type BuyListWrite } from "./h2-trial-purchase";
 
 interface ApiResult<T> {
   code: number;
@@ -344,29 +344,30 @@ export async function updateH2TrialParam(key: string, value: string, reason: str
   );
 }
 
-export async function updateH2TrialBuyList(input: BuyListWrite, commandKey: string) {
+export async function updateH2TrialBuyList(input: BuyListWrite) {
   try {
-    await growthRequest<unknown>(H2_BUY_LIST_PATH, {
-      method: "PUT", body: JSON.stringify(input), headers: { "Idempotency-Key": commandKey },
+    const receipt = await growthRequest<unknown>(H2_BUY_LIST_PATH, {
+      method: "PUT", body: JSON.stringify(input),
     }, undefined, true);
+    if (!isBuyListReceipt(receipt, input)) return { kind: "unknown" } as const;
     return { kind: "saved" } as const;
   } catch (cause) {
-    const error = cause as Error & { status?: number; apiCode?: number; apiMessage?: string; details?: { reason?: unknown }; unknownOutcome?: boolean };
+    const error = cause as Error & { status?: number; apiCode?: number; apiMessage?: string; details?: { productNo?: unknown; reason?: unknown }; unknownOutcome?: boolean };
     if (error.unknownOutcome || !Number.isInteger(error.apiCode)
       || [408, 425, 429].some((status) => status === error.status || status === error.apiCode)
       || error.apiMessage?.startsWith("IDEMPOTENCY_") || isH2OutcomeUnknown(error)) return { kind: "unknown" } as const;
     if (isAdminAuthFailure(error.status ?? 0, error.apiMessage) || error.apiCode === 401) return { kind: "unauthenticated" } as const;
-    if (error.apiMessage === "TRIAL_BUY_LIST_ACCOUNT_MISMATCH") {
-      const reason = error.details?.reason;
-      return { kind: "accountMismatch", message: displayAdminError(
-        typeof reason === "string" && reason.trim() ? reason : "确认账号与当前登录账号不符，这次没有保存。",
-      ) } as const;
+    if (error.apiMessage === "TRIAL_OPTIONS_ACTOR_MISMATCH") {
+      return { kind: "accountMismatch", message: displayAdminError(error) } as const;
     }
     if (error.status === 403 || error.apiCode === 403) return { kind: "forbidden" } as const;
-    if (error.apiMessage === "TRIAL_BUY_LIST_VERSION_CONFLICT") return { kind: "conflict" } as const;
-    const message = displayAdminError(typeof error.details?.reason === "string" && error.details.reason.trim()
-      ? error.details.reason : error);
-    return { kind: "rejected", message } as const;
+    if (error.apiMessage === "TRIAL_OPTIONS_VERSION_CONFLICT") return { kind: "conflict" } as const;
+    if (error.apiMessage === "TRIAL_OPTIONS_PRODUCT_UNAVAILABLE") {
+      const { productNo, reason } = error.details ?? {};
+      const product = typeof productNo === "string" && input.productNos.includes(productNo) ? `${productNo}：` : "";
+      return { kind: "rejected", message: `${product}${buyProductReason(reason)}` } as const;
+    }
+    return { kind: "rejected", message: displayAdminError(error) } as const;
   }
 }
 

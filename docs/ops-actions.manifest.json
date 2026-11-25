@@ -1411,7 +1411,7 @@
       "view": "h-tabs/h2-trial.tsx",
       "batch": "P1",
       "restAction": "updateH2TrialBuyList",
-      "note": "B90-BE-01：前端按临时接口接线；无清单字段时隐藏入口。直接生效，结果未知时按原命令重试。"
+      "note": "B90-BE-01：GET /trials 读取 currentTrialProduct、writePermissionName、purchaseOptionsVersion、otherPurchaseProducts、purchaseCandidates。PUT /trials/purchase-options 发送 productNos、version、reason、requestNo、confirmedActorId，回执为 productNos、version。直接生效，结果未知时按原请求重试。"
     },
     {
       "id": "OPS-H-05",

@@ -1,30 +1,23 @@
-// B90-BE-01 / BE-08: provisional wire fields until the backend contract lands.
-export type BuyListVersion = string | number;
-type StoreStatus = "on" | "off" | "pending";
+export type BuyListVersion = number;
+type StoreStatus = "ON_SALE" | "ACTIVE" | "PENDING" | "OFF_SALE";
 
 export type BuyDevice = {
   productNo: string;
-  name: string;
-  productType: "DEVICE" | "SERVER" | "SHARE";
-  inventoryMode: "FINITE" | "UNLIMITED";
-  priceUsdt: number | string;
-  stock: number | string | null;
-  status: StoreStatus;
+  name: string | null;
+  productType: string | null;
+  inventoryMode: string | null;
+  priceUsdt: string | null;
+  stock: number | null;
+  status: StoreStatus | null;
+  listingAllowed: boolean;
+  visibleToUser: boolean;
+  selectable: boolean;
+  unavailableReason: string | null;
   appState: "shown" | "hidden" | "soldOut";
-  hiddenReason?: string;
 };
 
-export type BuyCandidate = BuyDevice & { selectable: boolean; unavailableReason?: string };
-export type BuyList = { version: BuyListVersion; items: BuyDevice[]; candidates: BuyCandidate[] };
-
-export type TrialTarget = {
-  productNo: string;
-  name: string;
-  status: StoreStatus;
-  stock: number | string;
-  appVisible: boolean;
-  hiddenReason?: string;
-};
+export type BuyList = { version: BuyListVersion; items: BuyDevice[]; candidates: BuyDevice[] };
+export type TrialTarget = Pick<BuyDevice, "productNo" | "name" | "status" | "stock" | "listingAllowed" | "unavailableReason">;
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -35,57 +28,51 @@ export function nonBlank(value: unknown): value is string {
 }
 
 export function isBuyListVersion(value: unknown): value is BuyListVersion {
-  return nonBlank(value) || typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
-function decimal(value: unknown): value is number | string {
-  return (typeof value === "number" || typeof value === "string" && /^\d+(?:\.\d+)?$/.test(value))
-    && Number.isFinite(Number(value)) && Number(value) >= 0;
-}
-
-function stockCount(value: unknown): value is number | string {
-  return decimal(value) && Number.isSafeInteger(Number(value));
+export function buyProductReason(reason: unknown): string {
+  switch (reason) {
+    case "PRODUCT_NOT_AVAILABLE": return "商城已下架";
+    case "PRODUCT_PRICE_INVALID": return "没有售价";
+    case "PRODUCT_TYPE_UNSUPPORTED": return "这个类型不能用试用抵扣金购买";
+    case "PRODUCT_CODE_MISMATCH": return "商品编号对不上";
+    default: return "没通过上架条件，商城里也不显示";
+  }
 }
 
 function isStoreStatus(value: unknown): value is StoreStatus {
-  return value === "on" || value === "off" || value === "pending";
+  return value === "ON_SALE" || value === "ACTIVE" || value === "PENDING" || value === "OFF_SALE";
+}
+
+function nullableText(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
 }
 
 function readDevice(raw: unknown): BuyDevice | undefined {
   const row = object(raw);
   if (!row) return;
-  const { productNo, name, productType, inventoryMode, priceUsdt, stock, status, appVisible, hiddenReason } = row;
-  if (!nonBlank(productNo) || !nonBlank(name) || !isStoreStatus(status)
-    || (productType !== "DEVICE" && productType !== "SERVER" && productType !== "SHARE")
-    || (inventoryMode !== "FINITE" && inventoryMode !== "UNLIMITED") || !decimal(priceUsdt)
-    || (productType === "SHARE" ? inventoryMode !== "UNLIMITED" : inventoryMode !== "FINITE")
-    || !(stockCount(stock) || inventoryMode === "UNLIMITED" && stock === null)
-    || (hiddenReason != null && typeof hiddenReason !== "string")
-    || typeof appVisible !== "boolean" || (appVisible ? status !== "on" : !nonBlank(hiddenReason))) return;
+  const { productNo, name, productType, inventoryMode, priceUsdt, stock, status, listingAllowed,
+    visibleToUser, selectable, unavailableReason } = row;
+  if (typeof productNo !== "string" || !nullableText(name) || !nullableText(productType) || !nullableText(inventoryMode)
+    || !(priceUsdt === null || typeof priceUsdt === "string" && /^-?\d+\.\d{6}$/.test(priceUsdt))
+    || !(stock === null || typeof stock === "number" && Number.isInteger(stock))
+    || !(status === null || isStoreStatus(status))
+    || typeof listingAllowed !== "boolean" || typeof visibleToUser !== "boolean" || typeof selectable !== "boolean"
+    || !nullableText(unavailableReason)) return;
   return {
-    productNo, name, productType, inventoryMode, priceUsdt, stock, status,
-    appState: !appVisible ? "hidden" : inventoryMode === "FINITE" && Number(stock) === 0 ? "soldOut" : "shown",
-    hiddenReason: nonBlank(hiddenReason) ? hiddenReason : undefined,
+    productNo, name, productType, inventoryMode, priceUsdt, stock, status, listingAllowed, visibleToUser, selectable, unavailableReason,
+    appState: !visibleToUser ? "hidden" : inventoryMode === "FINITE" && stock === 0 ? "soldOut" : "shown",
   };
 }
 
-function readCandidate(raw: unknown): BuyCandidate | undefined {
-  const row = object(raw);
-  const device = readDevice(row);
-  if (!device || !row || typeof row.selectable !== "boolean") return;
-  const { selectable, unavailableReason } = row;
-  if (!selectable && !nonBlank(unavailableReason)) return;
-  if (selectable && (device.appState === "hidden" || Number(device.priceUsdt) <= 0)) return;
-  return { ...device, selectable, unavailableReason: nonBlank(unavailableReason) ? unavailableReason : undefined };
-}
-
-function readRows<T extends BuyDevice>(raw: unknown, parse: (row: unknown) => T | undefined): T[] | undefined {
+function readRows(raw: unknown): BuyDevice[] | undefined {
   if (!Array.isArray(raw)) return;
-  const rows: T[] = [];
+  const rows: BuyDevice[] = [];
   const ids = new Set<string>();
   for (const value of raw) {
-    const row = parse(value);
-    if (!row || ids.has(row.productNo)) return;
+    const row = readDevice(value);
+    if (!row || !nonBlank(row.productNo) || ids.has(row.productNo)) return;
     ids.add(row.productNo);
     rows.push(row);
   }
@@ -95,65 +82,71 @@ function readRows<T extends BuyDevice>(raw: unknown, parse: (row: unknown) => T 
 function sameDevice(left: BuyDevice, right: BuyDevice) {
   return left.name === right.name && left.productType === right.productType
     && left.inventoryMode === right.inventoryMode && left.status === right.status
-    && Number(left.priceUsdt) === Number(right.priceUsdt)
-    && (left.stock === null || right.stock === null ? left.stock === right.stock : Number(left.stock) === Number(right.stock))
-    && left.appState === right.appState && left.hiddenReason === right.hiddenReason;
+    && left.priceUsdt === right.priceUsdt && left.stock === right.stock
+    && left.listingAllowed === right.listingAllowed && left.visibleToUser === right.visibleToUser
+    && left.selectable === right.selectable && left.unavailableReason === right.unavailableReason;
 }
 
-function readTrialTarget(raw: unknown): TrialTarget | "invalid" {
-  const target = object(raw);
-  if (!target) return "invalid";
-  const { productNo, name, status, stock, appVisible, hiddenReason } = target;
-  if (!nonBlank(productNo) || !nonBlank(name) || !isStoreStatus(status) || !stockCount(stock)) return "invalid";
-  if (typeof appVisible !== "boolean" || (hiddenReason != null && typeof hiddenReason !== "string")
-    || (appVisible ? status !== "on" : !nonBlank(hiddenReason))) return "invalid";
-  return { productNo, name, status, stock, appVisible, hiddenReason: nonBlank(hiddenReason) ? hiddenReason : undefined };
+function isBuyType(type: string | null) {
+  return type === "DEVICE" || type === "SERVER" || type === "SHARE";
 }
 
 export function readH2TrialPurchase(raw: Record<string, unknown>) {
-  const extra = raw.extraPurchase;
-  const list = object(extra);
-  const items = readRows(list?.items, readDevice);
-  const candidates = readRows(list?.candidates, readCandidate);
+  const { currentTrialProduct, writePermissionName, purchaseOptionsVersion, otherPurchaseProducts, purchaseCandidates } = raw;
+  if ([currentTrialProduct, writePermissionName, purchaseOptionsVersion, otherPurchaseProducts, purchaseCandidates]
+    .every((value) => value === undefined)) return {};
+
+  const target = readDevice(currentTrialProduct);
+  const items = readRows(otherPurchaseProducts);
+  const candidates = readRows(purchaseCandidates);
   const byProductNo = new Map(candidates?.map((candidate) => [candidate.productNo, candidate]));
   const consistent = items?.every((item) => {
     const candidate = byProductNo.get(item.productNo);
     return !candidate || sameDevice(item, candidate);
   });
-  const buyList: BuyList | "invalid" | undefined = extra === undefined ? undefined
-    : isBuyListVersion(list?.version) && items && candidates && consistent ? { version: list.version, items, candidates }
+  const buyList: BuyList | "invalid" = isBuyListVersion(purchaseOptionsVersion) && nonBlank(writePermissionName)
+    && (target || currentTrialProduct === null) && items && candidates && consistent
+    ? { version: purchaseOptionsVersion, items, candidates: candidates.filter((candidate) => isBuyType(candidate.productType)) }
     : "invalid";
 
   return {
     buyList,
-    trialTarget: buyList === undefined ? undefined : readTrialTarget(raw.trialTargetProduct),
-    writePermissionName: nonBlank(raw.writePermissionName) ? raw.writePermissionName : undefined,
+    trialTarget: target && nonBlank(target.productNo) ? target : "invalid" as const,
+    writePermissionName: nonBlank(writePermissionName) ? writePermissionName : undefined,
   };
 }
 
 export function readH2SessionProducts(value: unknown) {
   const raw = object(value) ?? {};
-  const { state, trialProductName, purchasedProductName, convertible } = raw;
-  if ((trialProductName !== undefined && trialProductName !== null && !nonBlank(trialProductName))
-    || (purchasedProductName !== undefined && purchasedProductName !== null && !nonBlank(purchasedProductName))
-    || (convertible !== undefined && typeof convertible !== "boolean")
-    || (state === "redeemed" && purchasedProductName === null)
-    || (convertible === true && (state === "redeemed" || nonBlank(purchasedProductName)))) return "invalid";
+  const { state, trialProductNo, trialProductName, purchasedProductNo, purchasedProductName, canConvert } = raw;
+  if ([trialProductNo, trialProductName, purchasedProductNo, purchasedProductName].some((field) => field != null && !nonBlank(field))
+    || (canConvert !== undefined && canConvert !== 0 && canConvert !== 1 && typeof canConvert !== "boolean")) return "invalid";
+  const trial = [trialProductName, trialProductNo].find(nonBlank);
+  const purchased = [purchasedProductName, purchasedProductNo].find(nonBlank);
+  const convertible = canConvert === true || canConvert === 1;
+  if (convertible && (purchased || state === "redeemed")) return "invalid";
   return {
-    trialProductName: nonBlank(trialProductName) ? trialProductName : undefined,
-    purchasedProductName: purchasedProductName === null
-      ? (typeof convertible === "boolean" ? (convertible ? "尚未购买" : "没有购买") : undefined)
-      : purchasedProductName,
+    trialProductName: trial,
+    purchasedProductName: purchased ?? (state === "redeemed" || canConvert === undefined
+      ? undefined : convertible ? "尚未购买" : "没有购买"),
   };
 }
 
 export const H2_BUY_LIST_PATH = "/trials/purchase-options";
-export const H2_BUY_LIST_OBJECT = "buyList";
+export const H2_BUY_LIST_OBJECT = "purchase-options";
+export const H2_BUY_LIST_ACTION = "H2_TRIAL_PURCHASE_OPTIONS_CHANGED";
 
 export type BuyListWrite = {
   productNos: string[];
-  expectedVersion: BuyListVersion;
+  version: BuyListVersion;
   reason: string;
-  operator: string;
-  confirmedByAdminId: number;
+  requestNo: string;
+  confirmedActorId: number;
 };
+
+export function isBuyListReceipt(value: unknown, input: BuyListWrite): value is { productNos: string[]; version: BuyListVersion } {
+  const { version, productNos } = object(value) ?? {};
+  return isBuyListVersion(version) && version === input.version + 1
+    && Array.isArray(productNos) && productNos.length === input.productNos.length
+    && input.productNos.every((no, index) => no === productNos[index]);
+}

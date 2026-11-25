@@ -12,18 +12,20 @@ import { BlockState, Button, Cell, Check, CheckGroup, ConfigList, ConfigRow, Dec
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import type { updateH2TrialBuyList } from "@/lib/admin/h-client";
-import type { BuyCandidate, BuyDevice, BuyList, BuyListWrite } from "@/lib/admin/h2-trial-purchase";
+import { buyProductReason, type BuyDevice, type BuyList, type BuyListWrite } from "@/lib/admin/h2-trial-purchase";
 import { isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
 
-export type BuyListDraft = Omit<BuyListWrite, "operator" | "confirmedByAdminId"> & {
+export type BuyListDraft = Omit<BuyListWrite, "requestNo" | "confirmedActorId"> & {
   added: string[];
   removed: string[];
   nextNames: string[];
 };
 
-export type BuyListPending = PendingMutationRecord & BuyListDraft & { operator: string; retryRejection?: string };
+export type BuyListPending = PendingMutationRecord & BuyListDraft & Pick<BuyListWrite, "requestNo" | "confirmedActorId"> & {
+  retryRejection?: string;
+};
 export type BuyListSubmitResult = Exclude<Awaited<ReturnType<typeof updateH2TrialBuyList>>, { kind: "unauthenticated" | "forbidden" | "accountMismatch" }>
   | { kind: "stopped" };
 
@@ -43,11 +45,13 @@ const TARGET_TIP = "勾上后，领了别款的用户也能用试用抵扣金买
 const priceNumber = (device: BuyDevice) => Number(device.priceUsdt ?? 0);
 const byPrice = <T extends BuyDevice>(list: readonly T[]) => [...list].sort((a, b) => priceNumber(a) - priceNumber(b));
 /** 金额带千分位，不舍入，不补零（TX-20）。 */
-const price = (device: BuyDevice) => device.priceUsdt == null || device.priceUsdt === "" ? "—" : Number(device.priceUsdt).toLocaleString("en-US", { maximumFractionDigits: 6 });
-const typeText = (device: BuyDevice) => device.productType === "SHARE" ? "云份额" : "实体设备";
+const price = (device: BuyDevice) => device.priceUsdt === null ? "—" : Number(device.priceUsdt).toLocaleString("en-US", { maximumFractionDigits: 6 });
+const typeText = (device: BuyDevice) => device.productType === "SHARE" ? "云份额"
+  : device.productType === "DEVICE" || device.productType === "SERVER" ? "实体设备" : "—";
 const stockText = (device: BuyDevice) => device.inventoryMode === "UNLIMITED" ? "不限"
-  : device.stock == null || device.stock === "" ? "—" : Number(device.stock).toLocaleString("en-US");
-const hiddenText = (device: BuyDevice) => device.hiddenReason ?? "商城已下架";
+  : device.stock === null ? "—" : device.stock.toLocaleString("en-US");
+const hiddenText = (device: BuyDevice) => buyProductReason(device.unavailableReason);
+const productName = (device: BuyDevice) => device.name || device.productNo;
 
 /** 配置行的值：数量写正文，不用处理的状态写次文字（PLAN R7）。 */
 function listValue(items: readonly BuyDevice[]) {
@@ -106,16 +110,17 @@ function buyChoices(list: BuyList | undefined) {
     ...list.candidates,
     // Keep configured products that the catalogue no longer offers for addition.
     ...items.filter((item) => !list.candidates.some((candidate) => candidate.productNo === item.productNo))
-      .map((item): BuyCandidate => ({ ...item, selectable: false })),
+      .map((item) => ({ ...item, selectable: false })),
   ]) : [];
   return { items, candidates };
 }
 
-function rebaseSelection(latest: BuyList, added: BuyCandidate[], removed: BuyDevice[]) {
+function rebaseSelection(latest: BuyList, added: BuyDevice[], removed: BuyDevice[]) {
   const removedNos = new Set(removed.map((item) => item.productNo));
   const selection = new Set(latest.items.filter((item) => !removedNos.has(item.productNo)).map((item) => item.productNo));
   const known = new Set([...latest.items, ...latest.candidates].map((item) => item.productNo));
-  const missing = added.filter((item) => !known.has(item.productNo)).map((item) => ({ ...item, selectable: false, unavailableReason: undefined }));
+  const missing = added.filter((item) => !known.has(item.productNo))
+    .map((item) => ({ ...item, selectable: false, unavailableReason: "PRODUCT_NOT_AVAILABLE" }));
   const base = { ...latest, candidates: [...latest.candidates, ...missing] };
   for (const item of added) selection.add(item.productNo);
   return { base, selection: [...selection] };
@@ -203,7 +208,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     if (added.some((item) => !item.selectable) || (!added.length && !removed.length)) return false;
     const named = [...added, ...removed, ...kept];
     // 同名商品带上编号才分得清。
-    const label = (item: BuyDevice) => named.filter((other) => other.name === item.name).length > 1 ? `${item.name}（${item.productNo}）` : item.name;
+    const label = (item: BuyDevice) => named.filter((other) => productName(other) === productName(item)).length > 1
+      ? `${productName(item)}（${item.productNo}）` : productName(item);
     const rows: DiffRow[] = [
       ...added.map((item) => ({ key: item.productNo, label: label(item), before: "不在清单", after: "新增" })),
       ...removed.map((item) => item.appState === "hidden"
@@ -239,11 +245,11 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       setLastReason(reason);
       const outcome = await onSubmit({
         productNos: next.map((item) => item.productNo),
-        expectedVersion: base.version,
+        version: base.version,
         reason,
-        added: added.map((item) => item.name),
-        removed: removed.map((item) => item.name),
-        nextNames: next.map((item) => item.name),
+        added: added.map(productName),
+        removed: removed.map(productName),
+        nextNames: next.map(productName),
       });
       if (outcome.kind === "stopped") { closeDrawer(); return; }
       if (outcome.kind === "conflict") {
@@ -342,7 +348,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
                 <tbody>
                   {items.map((item) => (
                     <tr key={item.productNo}>
-                      <Td><Cell main={item.name} sub={<span data-mono="">{item.productNo}</span>} /></Td>
+                      <Td><Cell main={item.name || "—"} sub={<span data-mono="">{item.productNo}</span>} /></Td>
                       <Td><AppState device={item} /></Td>
                       <Td><Cell main={typeText(item)} /></Td>
                       <Td align="right"><Cell num main={price(item)} /></Td>
@@ -383,12 +389,12 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
                 const mark = on && !listed ? "新增" : !on && listed ? "移除" : "";
                 const reason = listed && candidate.appState === "hidden"
                   ? `${hiddenText(candidate).replace(/^商城/, "")}，App 不显示；可以保留，重新上架后自动显示`
-                  : unavailable ? <>不能选：{candidate.unavailableReason ?? "不符合添加条件"}{reach(pricingHref(candidate.productNo)) && <> <Link className="rd-link" href={pricingHref(candidate.productNo)} prefetch={false}>到商品管理与上架条件查看</Link></>}</> : undefined;
+                  : unavailable ? <>不能选：{buyProductReason(candidate.unavailableReason)}{reach(pricingHref(candidate.productNo)) && <> <Link className="rd-link" href={pricingHref(candidate.productNo)} prefetch={false}>到商品管理与上架条件查看</Link></>}</> : undefined;
                 return (
                   <div className="h2-buy-check" data-disabled={disabled ? "" : undefined} key={candidate.productNo}>
                     <Check checked={on} disabled={disabled} onChange={(event) => toggle(candidate.productNo, event.currentTarget.checked)}
                       label={<>
-                        {candidate.name}
+                        {candidate.name || "—"}
                         {candidate.productNo === trialTargetNo && <StatusTag tone="neutral" icon={CircleDot} explain={TARGET_TIP}>试用目标商品</StatusTag>}
                         {mark && <span data-change=""><StatusTag tone="progress" icon={mark === "新增" ? Plus : X}>{mark}</StatusTag></span>}
                       </>}

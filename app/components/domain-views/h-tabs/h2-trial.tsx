@@ -22,8 +22,7 @@ import {
 } from "@/lib/admin/h-client";
 import { fetchA8PermissionDetail } from "@/lib/admin/a8-client";
 import { currentAdminSession } from "@/lib/admin/auth-client";
-import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { H2_BUY_LIST_OBJECT, isBuyListVersion, nonBlank, readH2SessionProducts, readH2TrialPurchase, type BuyList, type BuyListWrite, type TrialTarget } from "@/lib/admin/h2-trial-purchase";
+import { buyProductReason, H2_BUY_LIST_ACTION, H2_BUY_LIST_OBJECT, isBuyListVersion, nonBlank, readH2SessionProducts, readH2TrialPurchase, type BuyList, type BuyListWrite, type TrialTarget } from "@/lib/admin/h2-trial-purchase";
 import { usePropose } from "@/lib/admin/use-propose";
 import { finishRetiredH2TrialChargeLookup, H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -40,7 +39,6 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useReach } from "@/lib/nav/use-reach";
 import type { EditSpec } from "../design-kit";
 import { AlertTriangle } from "lucide-react";
-import { e1Value } from "../e-tabs/e1-state";
 import { BUY_CONFLICT, BUY_LOCKED, BUY_READ_INVALID, BuyListPendingNotice, BuySection, type BuyListDraft, type BuyListPending, type BuyListSubmitResult } from "./h2-trial-buy";
 import type { HCtx } from "./types";
 
@@ -152,17 +150,18 @@ const pendingCommands = createPendingMutationStore<PendingCommand>({
 });
 
 const pendingBuyLists = createPendingMutationStore<BuyListPending>({
-  storageKey: "nexion-admin-h2-buy-list-commands-v1",
+  storageKey: "nexion-admin-h2-buy-list-commands-v2",
   retainExpiredRecords: true,
   isValidRecord: (record) => record.fingerprint === H2_BUY_LIST_OBJECT
-    && isBuyListVersion(record.expectedVersion) && nonBlank(record.reason) && nonBlank(record.operator)
+    && record.requestNo === record.commandKey && record.confirmedActorId === record.commandOwnerId
+    && isBuyListVersion(record.version) && nonBlank(record.reason)
     && (record.retryRejection === undefined || nonBlank(record.retryRejection))
     && [record.productNos, record.added, record.removed, record.nextNames]
       .every((values) => Array.isArray(values) && values.every(nonBlank)),
 });
 
-function buyListWrite({ productNos, expectedVersion, reason, operator }: BuyListPending, confirmedByAdminId: number): BuyListWrite {
-  return { productNos, expectedVersion, reason, operator, confirmedByAdminId };
+function buyListWrite({ productNos, version, reason, requestNo, confirmedActorId }: BuyListPending): BuyListWrite {
+  return { productNos, version, reason, requestNo, confirmedActorId };
 }
 
 async function checkBuyListOwner(ownerId: number) {
@@ -258,7 +257,7 @@ function usdt(value: unknown) {
   return `${Number(value).toLocaleString("en-US", { maximumFractionDigits: 6 })} USDT`;
 }
 
-function paramValue(param: TrialParam, product: Pick<TrialProduct, "name"> | undefined) {
+function paramValue(param: TrialParam, product: { name: string | null } | undefined) {
   const unit = TRIAL_PARAM_HELP[param.key]?.input?.unit;
   if (param.key === "trialOffsetCapUSD" && text(param.cur, "").trim() === "") return "不设上限";
   if (param.key === "trialProductId") return product?.name ?? text(param.cur);
@@ -381,9 +380,11 @@ function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked
 
   // 名称这一列只放名称和提示图标（PG-46）；库存、阻断原因和入口是值的补充，排在值后面。
   const productLine = [
-    targetStatusUnknown ? "商城状态暂时无法判断" : currentTarget && e1Value(currentTarget.status),
+    targetStatusUnknown ? "商城状态暂时无法判断" : currentTarget?.status && ({
+      ON_SALE: "在售", ACTIVE: "在售", PENDING: "草稿", OFF_SALE: "已下架",
+    })[currentTarget.status],
     !targetStatusUnknown && currentDisplayProduct && stockText(currentDisplayProduct),
-    currentTarget?.appVisible === false && trialProductReason(currentTarget.hiddenReason),
+    currentTarget?.listingAllowed === false && buyProductReason(currentTarget.unavailableReason),
     productMissing && "不在可选列表",
     // 阻断原因要看得见，不只放在灰按钮的提示里（OP-126）。
     deadEndLead,
@@ -645,14 +646,14 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       throw new Error(BUY_LOCKED);
     }
     const commandKey = createH2CommandKey("h2-buy-list");
-    pendingBuyLists.remember(H2_BUY_LIST_OBJECT, commandKey, { ...draft, operator: currentAdminOperator() });
+    pendingBuyLists.remember(H2_BUY_LIST_OBJECT, commandKey, { ...draft, requestNo: commandKey, confirmedActorId: ownerId });
     const record = pendingBuyLists.list().find((item) => item.commandKey === commandKey);
     if (!record || record.commandOwnerId !== ownerId || !pendingBuyLists.isDurablyStored(H2_BUY_LIST_OBJECT, commandKey)) {
       pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
     try {
-      const outcome = await updateH2TrialBuyList(buyListWrite(record, record.commandOwnerId), commandKey);
+      const outcome = await updateH2TrialBuyList(buyListWrite(record));
       if (outcome.kind === "accountMismatch") {
         recordBuyRejection(record, ownerId, outcome.message);
         announcePermissionDenied();
@@ -687,7 +688,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         return;
       }
       if (isRetryExpired(record)) return;
-      const outcome = await updateH2TrialBuyList(buyListWrite(record, ownerId), record.commandKey);
+      const outcome = await updateH2TrialBuyList(buyListWrite(record));
       switch (outcome.kind) {
         case "saved":
           pendingBuyLists.forget(record.fingerprint, record.commandKey);
@@ -967,7 +968,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     <BuyListPendingNotice key={buyPending.commandKey} record={buyPending} canWrite={canRecoverBuyList} retrying={retryingBuyList}
       onRetry={() => void retryBuyList(buyPending)}
       onRelease={() => setReleasingBuyList(buyPending.commandKey)}
-      auditLink={reach(auditHref, "platform_a2_read") && <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(H2_BUY_LIST_OBJECT)}`} prefetch={false}>到操作记录与审批核对</Link>} />,
+      auditLink={reach(auditHref, "platform_a2_read") && <Link className="rd-link" href={`${auditHref}?${new URLSearchParams({ domain: "H", action: H2_BUY_LIST_ACTION, object: buyPending.requestNo })}`} prefetch={false}>到操作记录与审批核对</Link>} />,
   );
   if (buyReplayConflict) pendingNotices.push(
     <Notice key="buy-list-conflict" tone="warn" title={BUY_CONFLICT}
