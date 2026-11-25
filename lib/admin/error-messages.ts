@@ -1357,8 +1357,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ADMIN_COOKIE_NAMESPACE_INVALID: "后台登录配置有误，暂时无法使用。请联系维护人员检查服务配置后重试。",
   AUTH_REQUIRED: "登录已失效,请重新登录。",
   AUTH_TOKEN_INVALID: "登录凭证无效,请重新登录。",
-  // 会话真失效时外壳接手退出，页面看不到这句；能看到时是旧请求被拒、当前登录仍有效（另一标签页重新登录过）。
-  ADMIN_AUTH_REQUIRED: "提交这次请求时登录已失效，这次没有执行。当前登录有效，请核对后重新操作。",
+  ADMIN_AUTH_REQUIRED: "登录已失效，系统已退出当前会话，请重新登录后再查看应急控制状态。",
   ADMIN_SUBJECT_REQUIRED: "无法确认当前登录账号，请重新登录后再操作。",
   ADMIN_PERMISSION_DENIED: "当前账号没有查看或操作此功能的权限，请联系管理员核对菜单和操作权限。",
   FORBIDDEN: "当前账号没有查看或操作此功能的权限，请联系管理员核对菜单和操作权限。",
