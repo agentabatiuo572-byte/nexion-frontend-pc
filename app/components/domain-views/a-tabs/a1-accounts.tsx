@@ -127,6 +127,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const canChangeStatus = authorities.includes("platform_a1_account_disable") && canPropose;
   const canRegisterPermission = authorities.includes("platform_a1_rbac_grants_update");
   const [overview, setOverview] = useState<A1Overview | null>(null);
+  /** 上次读成总览的时间：刷新失败、显示旧数据时写出来（ST-36）。 */
+  const [overviewAt, setOverviewAt] = useState<number | null>(null);
   const [permissionCodesByRole, setPermissionCodesByRole] = useState<Record<string, string[]>>({});
   const [permissionDiffReady, setPermissionDiffReady] = useState(false);
   const [permissionDiffError, setPermissionDiffError] = useState<string | null>(null);
@@ -199,6 +201,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       const data = await fetchA1Overview();
       if (useAdminAuth.getState().session?.adminId !== actorId) return null;
       setOverview(data);
+      setOverviewAt(Date.now());
       freshOverview.current = data;
       setOverviewReady(true);
       setDetailAccount(current => current ? data.operators.find(op => op.id === current.id) ?? null : null);
@@ -1524,7 +1527,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   return (
     <div className="a1-page">
       {header}
-      {loadError && <Notice tone="danger" title="刷新失败，下面是上次读到的数据" action={<Button size="sm" onClick={() => void refreshOverview()}>重试</Button>}>{loadError}</Notice>}
+      {loadError && <Notice tone="danger" title={overviewAt ? `刷新失败，下面是 ${businessStamp(overviewAt)}（${businessZone().label}）读到的数据` : "刷新失败，下面是上次读到的数据"} action={<Button size="sm" onClick={() => void refreshOverview()}>重试</Button>}>{loadError}</Notice>}
       {mutatingAction && <Notice tone="progress">正在提交：{mutatingAction}</Notice>}
       {recovery}
       <Conclusion state={conclusion.state} icon={ShieldCheck} hint={conclusion.hint}

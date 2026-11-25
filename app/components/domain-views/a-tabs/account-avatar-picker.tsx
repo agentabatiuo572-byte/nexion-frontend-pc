@@ -220,6 +220,8 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
           {!cancellationState?.replayRejection && <button type="button" className="l-btn" disabled={!!cancellationState?.replayBlock} onClick={() => void clear()}>重试取消头像</button>}</>
         : <button type="button" className="l-btn" disabled={expired || Boolean(!draft.asset && avatarDrafts.list().some(row => row.commandKey === draft.commandKey))} onClick={() => void clear()}>{draft.cancelKey ? "重试取消头像" : "取消新头像"}</button>}
       {draft.kind === "UPLOAD" && !file && !draft.asset && <p>上传结果未知，请选择首次上传的同一张图片后重试。</p>}
+      {/* 乙档：没有原号回执，只能同号原样重发（OP-95）。 */}
+      {!draft.asset && draft.commandOwnerId && !replayBlock && <p>按原请求重试会重新发送一次。</p>}
       {draft.asset && <small>新头像有效期至 {businessStamp(new Date(draft.asset.expiresAt).getTime())}（{businessZone().label}）</small>}
       {(cancellationState?.expired ?? expired) && <p role="alert">{scope === "admin" ? RETRY_EXPIRED_TEXT : "重试期限已过，请联系管理员核对结果。"}</p>}
       {assetExpired && !(cancellationState?.expired ?? expired) && <p role="alert">新头像已过期，请取消后重新选择。</p>}</div>}
