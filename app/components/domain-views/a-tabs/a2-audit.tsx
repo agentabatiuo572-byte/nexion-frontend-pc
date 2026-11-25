@@ -227,9 +227,13 @@ function approvalExecutorLabel(w: A2OperationRow) {
   return w.roleGate === "超管" ? "另一位超级管理员" : w.roleGate === "门槛者" ? "另一位有审批批准权限和对应业务权限的管理员" : w.roleGate;
 }
 
+/** F1 写入的动作后缀区分晋升和降级（可以选「降级」和 V8），只有晋升才免覆盖率、按发起权限撤回。 */
+function isV8PromotionAction(operationCode: string | null | undefined, action: string) {
+  return operationCode === "f_vrank_override" && action.endsWith(" · 晋升至 V8");
+}
+
 function isV8PromotionTicket(w: A2OperationRow) {
-  // F1 写入的动作后缀区分晋升和降级（可以选「降级」和 V8），只有晋升才免覆盖率。
-  return w.operationCode === "f_vrank_override" && w.after.trim() === "V8" && w.action.endsWith(" · 晋升至 V8");
+  return isV8PromotionAction(w.operationCode, w.action) && w.after.trim() === "V8";
 }
 
 function approvalCoverageMode(w: A2OperationRow) {
@@ -1647,7 +1651,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const canPropose = principal.authorities.includes("platform_a2_proposal_create");
   const canMakeV8 = canWrite && ["network_f1_read", "network_f1_promote_user"].every((code) => principal.authorities.includes(code));
   /** V8 晋升单按发起它要的权限撤回（B88-BE-03），其余单要通用发起权限。 */
-  const canWithdraw = (w?: A2OperationRow) => w && isV8PromotionTicket(w) ? canMakeV8 : canPropose;
+  const canWithdraw = (w: A2OperationRow) => isV8PromotionTicket(w) ? canMakeV8 : canPropose;
   const isMine = (w: A2OperationRow) => isCurrentOperator(w, session?.username);
   const zone = businessZone().label;
 
@@ -2119,7 +2123,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /** 重试也是写操作，按这个账号现在的权限判断，和原入口一样（OP-124）。读回核对不受影响。 */
   const canRetry = (record: A2PendingCommand) => {
     if (!isPendingCommandOwnedBy(record)) return false;
-    if (record.kind === "withdraw") return canWithdraw(recordTicket(record));
+    if (record.kind === "withdraw") {
+      const queued = recordTicket(record);
+      if (queued) return canWithdraw(queued);
+      // 单子不在队列里时按保存的动作认；旧记录没存动作的改级单分不清是不是 V8 晋升，先查询，读回后再重试。
+      if (record.operationCode !== "f_vrank_override") return canPropose;
+      return !!record.action && (isV8PromotionAction(record.operationCode, record.action) ? canMakeV8 : canPropose);
+    }
     if (record.kind === "approve" && oldPayoutTickets.current.has(record.target)) return false;
     if (record.kind === "param" || record.kind === "retention") return canWrite;
     if (record.kind === "export") return canExport;
@@ -2943,9 +2953,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /* 待审批：行内按钮都是小号次按钮，点了只开确认框（D2 新手测试）。整屏主按钮只有抽屉里的「批准」（DP-40）。
      没有这张单的业务权限时不显示批准、驳回（OP-124）；整页一行都没有可做的事时不画「操作」列（建议 3）。 */
-  const rowCanAct = (w: A2OperationRow) => isMine(w) || canDecide(w, "reject") || (!w.retiredOperation && canDecide(w, "approve"));
+  const rowCanAct = (w: A2OperationRow) => isMine(w) ? canWithdraw(w) : canDecide(w, "reject") || (!w.retiredOperation && canDecide(w, "approve"));
   const rowActions = (w: A2OperationRow) => {
-    if (isMine(w)) return <Button size="sm" disabledReason={decideBlock(w, "withdraw")} onClick={() => confirmDecision(w, "withdraw")}>撤回我的申请</Button>;
+    if (isMine(w) && canWithdraw(w)) return <Button size="sm" disabledReason={decideBlock(w, "withdraw")} onClick={() => confirmDecision(w, "withdraw")}>撤回我的申请</Button>;
     if (!rowCanAct(w)) return <Cell main={<span className="rd-weak">{WAIT_OTHERS}</span>} />;
     return <>
       {canDecide(w, "reject") && <Button size="sm" disabledReason={decideBlock(w, "reject")} onClick={() => confirmDecision(w, "reject")}>驳回</Button>}
@@ -3256,11 +3266,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         : enablesAutoPayout(shownFund) && shownCover ? `${shownCover.lead}。${shownCover.check}`
         : `会让平台多付钱。${shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。`}`;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
-  const ticketFooter = shown && (shownOwn || shownCanApprove || shownCanReject ? (
+  const shownCanWithdraw = !!shown && shownOwn && canWithdraw(shown);
+  const ticketFooter = shown && (shownCanWithdraw || shownCanApprove || shownCanReject ? (
     <Decision
       explain={shownCanApprove && !shownOwn && !shown.retiredOperation ? approvalTiming(shown).drawer : undefined}
       danger={shownCanReject ? <Button disabledReason={decideBlock(shown, "reject")} onClick={() => confirmDecision(shown, "reject")}>驳回</Button> : undefined}
-      others={shownOwn ? <Button disabledReason={decideBlock(shown, "withdraw")} onClick={() => confirmDecision(shown, "withdraw")}>撤回我的申请</Button> : undefined}
+      others={shownCanWithdraw ? <Button disabledReason={decideBlock(shown, "withdraw")} onClick={() => confirmDecision(shown, "withdraw")}>撤回我的申请</Button> : undefined}
       primary={shownCanApprove ? <Button variant="primary" disabledReason={decideBlock(shown, "approve")} onClick={() => confirmDecision(shown, "approve")}>批准</Button> : undefined} />
   ) : <Decision note={WAIT_OTHERS} />);
 
@@ -3281,7 +3292,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   // 已批准的券冲正：和历史表同一份总览里的审批单按单号对上，读批准时记下的结果（F1-BE-19）。
   const voucherResult = a2VoucherReversalResult(shownHistory, records?.operationQueue ?? []);
 
-  const readOnly = canApprove ? undefined : canPropose || canMakeV8 ? "你不能批准，只能看进度和撤回自己发起的申请。" : "你不能批准审批单，只能查看。";
+  const readOnly = canApprove ? undefined : canPropose ? "你不能批准，只能看进度和撤回自己发起的申请。" : canMakeV8 ? "你不能批准，只能看进度和撤回自己发起的 V8 晋升申请。" : "你不能批准审批单，只能查看。";
 
   return (
     <>
