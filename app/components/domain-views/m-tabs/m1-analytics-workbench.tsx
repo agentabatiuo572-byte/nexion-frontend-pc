@@ -518,7 +518,11 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     if (scope?.scopeSummary.mode !== "PERSONAL" || !monthCalendar?.some(month => month.month === queryState.month)) return () => controller.abort();
     void analytics.query({ view: "OVERVIEW", basis: "PERIOD_EVENT", ...analyticsMonthWindow(queryState.month, monthCalendar), currency: queryState.currency ?? "USDT", pageSize: 1, signal: controller.signal }, scope.generation)
       .then(next => { if (!controller.signal.aborted && next.scopeSummary.mode === "PERSONAL") setPersonalPeriod(next); })
-      .catch(cause => { if (!controller.signal.aborted && !isSupportSessionExpired(cause)) setPersonalPeriodError(analyticsErrorText(cause)); });
+      .catch(cause => {
+        if (controller.signal.aborted || isSupportSessionExpired(cause)) return;
+        if (cause instanceof SupportClientError && analyticsResponseStatus(cause) === 403) { setScope(null); setScopeDenied(true); }
+        else setPersonalPeriodError(analyticsErrorText(cause));
+      });
     return () => controller.abort();
   }, [scope, queryState.month, queryState.currency, monthCalendar, personalPeriodRetry]);
   useEffect(() => {
@@ -633,7 +637,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         setEventsOpen(false); setFundMetric(null); setProfileId(null);
         if (queryState.expectedVersion) setQueryState(previous => changeAnalyticsQuery(previous, {}));
       }
-      if (cause instanceof SupportClientError && cause.status === 403) { setScope(null); setScopeError(analyticsErrorText(cause)); }
+      // 已经进来以后查看权限被收回：和首次读取一样显示无权限，不说成加载失败（ST-38）。
+      if (cause instanceof SupportClientError && analyticsResponseStatus(cause) === 403) { setScope(null); setScopeDenied(true); }
     }).finally(() => { if (!controller.signal.aborted && current === generation.current) setLoading(false); });
     return () => { controller.abort(); generation.current++; };
   }, [showStatistics, queryState, retry, scope?.scopeSummary.mode, scope?.generation, statisticsCalendar]);
