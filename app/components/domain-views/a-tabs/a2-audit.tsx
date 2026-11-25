@@ -93,7 +93,7 @@ import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, ty
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { D5_APPROVAL_OP, D5_DIFF_UNREADABLE, d5Trc20ApprovalBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL, TRC20_REPLAY_UNVERIFIED } from "@/lib/admin/trc20-closed";
-import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
+import { H7_VOUCHER_APPROVER, H7_VOUCHER_APPROVAL_PERMISSIONS, isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, UNMAPPED_ADMIN_ERROR_TEXT } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -104,7 +104,7 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { ORDER_STATES, orderAmount, stateLabel } from "../e-tabs/data";
-import { e1DisplayEffect, e1GateText, e1Value } from "../e-tabs/e1-state";
+import { e1DisplayEffect, e1GateText, e1NumericReviewValue, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount, rewardText } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
@@ -214,6 +214,7 @@ const F4_OLD_PAYOUT_TICKETS = "nexion-admin-a2-old-f4-payout-tickets";
 const F4_PAYOUT_REVIEW_REQUIRED = "这张单按旧规则提交。请先撤回或驳回，再查看新预览并重新提交。";
 
 function approvalExecutorLabel(w: A2OperationRow) {
+  if (isH7VoucherApproval(w.operationCode)) return `${H7_VOUCHER_APPROVER}（需要${H7_VOUCHER_APPROVAL_PERMISSIONS}）`;
   if (w.operationCode === "f_vrank_override") return "发起人以外、同时有 A2 批准权限和人工调级权限的管理员";
   if (ticketPermissionText(w)) return "另一位超级管理员";
   if (w.operationCode === "h1_phase_dial") return "另一位有审批批准权限和运营阶段修改权限的超级管理员";
@@ -648,11 +649,16 @@ function phoneScheduledAt(w: A2OperationRow) {
 }
 
 /** 批准后什么时候生效、会怎样：标题下的标签、执行摘要的影响、抽屉底部说明用同一份（M3、M6）。 */
-/** 审批对照里比较前后值用：空值、空字符串、缺这个键算同一个值，数字和数字字符串按数值比（显示规则 6）。 */
-const e1ReviewValue = (value: unknown): unknown => value === undefined || value === null || value === "" ? null
-  : typeof value === "string" && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value)
-    : Array.isArray(value) ? value.map(e1ReviewValue)
-      : isRecord(value) ? Object.fromEntries(Object.keys(value).sort().map(key => [key, e1ReviewValue(value[key])])) : value;
+/** 空值、空串和缺键等价。只在数值字段里忽略数字的书写差异。 */
+function e1ReviewValue(key: string, value: unknown): unknown {
+  if (value == null || value === "") return null;
+  // reviewPair 为售价加了币种后缀。
+  const numeric = e1NumericReviewValue(key, key === "price" && typeof value === "string" ? value.replace(/ USD$/, "") : value);
+  if (numeric !== undefined) return numeric;
+  if (Array.isArray(value)) return value.map(item => e1ReviewValue(key, item));
+  if (isRecord(value)) return Object.fromEntries(Object.keys(value).sort().map(field => [field, e1ReviewValue(field, value[field])]));
+  return value;
+}
 
 /** 商品编辑单改了展示基础销量、购买动态时的实际效果，句子和商品页送审确认框同一个函数（e1DisplayEffect）。冻结的前值不含累计销量，所以写「累计销量 + 基础值」；后端在后侧写入的 sold 不算改动。 */
 function e1DisplayChange(w: Pick<A2OperationRow, "operationCode" | "before" | "after">) {
@@ -660,8 +666,8 @@ function e1DisplayChange(w: Pick<A2OperationRow, "operationCode" | "before" | "a
   const { b, a } = reviewPair(w.before, w.after, w.operationCode);
   if (b?.kind !== "object" || a?.kind !== "object") return "";
   const changed = [...new Set([...Object.keys(b.value), ...Object.keys(a.value)])]
-    .filter(key => key !== "sold" && !same(e1ReviewValue(b.value[key]), e1ReviewValue(a.value[key])));
-  const base = changed.includes("displaySoldBase") ? Number(e1ReviewValue(a.value.displaySoldBase) ?? 0) : undefined;
+    .filter(key => key !== "sold" && !same(e1ReviewValue(key, b.value[key]), e1ReviewValue(key, a.value[key])));
+  const base = changed.includes("displaySoldBase") ? Number(e1ReviewValue("displaySoldBase", a.value.displaySoldBase) ?? 0) : undefined;
   const live = changed.includes("liveActivityVisible") && typeof a.value.liveActivityVisible === "boolean" ? a.value.liveActivityVisible : undefined;
   const raw = parseReview(w.after);
   const status = raw?.kind === "object" ? raw.value.status : undefined;
@@ -677,7 +683,7 @@ function monthlyTargetChange(w: Pick<A2OperationRow, "action" | "before" | "afte
   if (after?.kind !== "object") return null;
   const was = before?.kind === "object" ? before.value : {};
   if (after.value.clearMonthlyTarget === true) return "close";
-  return ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => e1Update ? !same(e1ReviewValue(was[key]), e1ReviewValue(after.value[key])) : !same(was[key] ?? null, after.value[key] ?? null)) ? "target" : null;
+  return ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => e1Update ? !same(e1ReviewValue(key, was[key]), e1ReviewValue(key, after.value[key])) : !same(was[key] ?? null, after.value[key] ?? null)) ? "target" : null;
 }
 
 function approvalTiming(w: A2OperationRow) {
@@ -3112,7 +3118,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）`} /></Td>
+                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
                       <Td><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td fit={!showActions}><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>

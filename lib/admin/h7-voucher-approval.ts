@@ -14,6 +14,8 @@ export const H7_VOUCHER_ACTIONS = {
   h7_voucher_delete: "删除代金券",
   h7_voucher_revoke_available: "作废未使用的代金券",
 } as const;
+export const H7_VOUCHER_APPROVER = "另一位超级管理员";
+export const H7_VOUCHER_APPROVAL_PERMISSIONS = "审批批准权和代金券操作权限";
 
 export type H7VoucherApprovalInput = {
   op: keyof typeof H7_VOUCHER_ACTIONS;

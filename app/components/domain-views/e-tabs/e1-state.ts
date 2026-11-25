@@ -24,6 +24,26 @@ export function e1Number(value: number | string | null | undefined): string {
   return `${negative ? "-" : ""}${integer.replace(/\B(?=(\d{3})+$)/g, ",")}${decimal === undefined ? "" : `.${decimal}`}`;
 }
 
+const E1_NUMERIC_REVIEW_FIELDS = new Set([
+  "price", "computePoints", "displaySoldBase", "monthlyTargetUsdt", "monthlyTargetBandPct", "stock",
+  "dailyEarn", "dailyEarnNEX", "dailyEarnNex", "phoneDailyEarn", "phoneDailyEarnNEX", "phoneDailyEarnNex", "shareYieldMin", "shareYieldMax",
+  "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins",
+  "rating", "reviews", "generation", "tradeinDiscount", "derivedDaily",
+]);
+
+/** E1 and A2 compare numeric fields as decimals without rounding 64-bit input strings. */
+export function e1NumericReviewValue(key: string, value: unknown): string | undefined {
+  if (!E1_NUMERIC_REVIEW_FIELDS.has(key)) return;
+  const text = typeof value === "number" && Number.isFinite(value) ? e1Number(value).replaceAll(",", "")
+    : typeof value === "string" ? value.trim() : "";
+  const parts = /^(-?)(\d*)(?:\.(\d*))?$/.exec(text);
+  if (!parts || !(parts[2] || parts[3])) return;
+  const integer = parts[2].replace(/^0+/, "") || "0";
+  const fraction = parts[3]?.replace(/0+$/, "");
+  const sign = integer === "0" && !fraction ? "" : parts[1];
+  return `${sign}${integer}${fraction ? `.${fraction}` : ""}`;
+}
+
 /** 只读金额按全站写法（amountDisplay，PRD §5A）：去掉末尾 0、整数不写小数点、不补零。e1Decimal 的写法留给审批前后值和「有没有改动」的判断，不动。 */
 export function e1Amount(value: number | string | null | undefined): string {
   const raw = e1Number(value);
@@ -219,8 +239,9 @@ export function e1ShownDiff<Row extends { key: string; before?: string; after?: 
   });
 }
 
-/** shown：确认框里给人看的前后值，金额按 e1Amount 写；不传时是提交审批和判断「有没有改动」用的原文，逐字节不变。 */
-export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuForm, shown = false) {
+/** proposal 保留送审用的原文，display 用只读金额格式。页面对照和判断改动按字段语义比较。 */
+export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuForm, mode: "review" | "display" | "proposal" = "review") {
+  const shown = mode === "display";
   const target = (sku: OpsSku) => shown ? e1Amount(sku.monthlyTargetUsdt) : e1Decimal(sku.monthlyTargetUsdt, e1TargetPrecision(sku));
   const numericInputs = ["price", "computePoints", "displaySoldBase", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins", ...(after.monthlyTargetUsdt == null ? ["dailyEarn", "shareYieldMin", "shareYieldMax"] : [])];
   // Editor drafts contain only the translation update. Catalogue reads contain the stored map.
@@ -234,9 +255,13 @@ export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuFo
     const input = raw && numericInputs.includes(key)
       ? key === "displaySoldBase" ? after.displaySoldBase?.toString() : raw[key as keyof SkuForm]
       : undefined;
-    const next = key === "monthlyTargetUsdt" && after.monthlyTargetUsdt != null ? `${target(after)} ${unit}` : typeof input === "string" && input.trim() ? `${unit && unit !== "%" ? shown ? e1Amount(input) : e1Decimal(input) : e1Number(input)}${unit ? ` ${unit}` : ""}` : value(after);
+    const typed = typeof input === "string" && input.trim() ? input : undefined;
+    const next = key === "monthlyTargetUsdt" && after.monthlyTargetUsdt != null ? `${target(after)} ${unit}` : typed !== undefined ? `${unit && unit !== "%" ? shown ? e1Amount(typed) : e1Decimal(typed) : e1Number(typed)}${unit ? ` ${unit}` : ""}` : value(after);
     if (key === "seriesCode") return { key, label, before: before ? skuSeriesText(before.seriesCode) : "未创建", after: skuSeriesText(after.seriesCode), note: undefined };
-    return { key, label, before: before ? key === "monthlyTargetUsdt" && before.monthlyTargetUsdt != null ? `${target(before)} ${unit}` : value(before) : "未创建", after: !before && raw && numericInputs.includes(key) && input === "" ? "未填写" : next,
+    const previous = before ? key === "monthlyTargetUsdt" && before.monthlyTargetUsdt != null ? `${target(before)} ${unit}` : value(before) : "未创建";
+    const previousNumeric = mode !== "proposal" && before ? e1NumericReviewValue(key, before[key]) : undefined;
+    const sameNumber = previousNumeric !== undefined && previousNumeric === e1NumericReviewValue(key, typed ?? after[key]);
+    return { key, label, before: previous, after: sameNumber ? previous : !before && raw && numericInputs.includes(key) && input === "" ? "未填写" : next,
       note: key === "monthlyTargetUsdt" && after.clearMonthlyTarget ? "关闭月目标，改用兼容展示值" : undefined };
   });
 }
