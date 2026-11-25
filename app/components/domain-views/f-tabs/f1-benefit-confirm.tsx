@@ -77,8 +77,8 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
       ? `${SUPER_APPROVER}批准后，之后付款的订单按新比例算；批准前仍按 ${shown(field, current)}，已经算好的不变。`
       : "确认后，之后付款的订单按新比例算；已经算好的不变。";
     return up
-      ? `${SUPER_APPROVER}批准后，之后升到 ${row.v} 的人按新金额锁定；已经锁定的仍按 ${shown(field, current)}，下个月起全部 ${row.v} 按新金额。`
-      : `确认后，之后升到 ${row.v} 的人按新金额锁定；已经锁定的仍按 ${shown(field, current)}，下个月起全部 ${row.v} 按新金额。`;
+      ? `${SUPER_APPROVER}批准后，之后升到 ${row.v} 的人按新金额锁定；已经锁定的按锁定时的金额，下个月起全部 ${row.v} 按新金额。`
+      : `确认后，之后升到 ${row.v} 的人按新金额锁定；已经锁定的按锁定时的金额，下个月起全部 ${row.v} 按新金额。`;
   };
   const note = (value: string) => {
     const text = value.trim();
@@ -87,9 +87,9 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
       const per100 = text.replace(/^0+(?=\d)/, "");
       return `改成 ${text}%：${field === "purchaseL1Rate" ? "一级好友" : "二级好友（好友的好友）"}每付款 100 USDT 买设备，${row.v} 用户按基础比例算的奖励从 ${current} 变成 ${per100} USDT 等值；实际发多少还看结算时的暂停、拆分和上限。`;
     }
-    if (Number(text) === 0) return `改成 0：之后升到 ${row.v} 的人，次日起当月最高可领等级是 ${row.v}、月薪为 0，当月还没领的就领不了；已按原金额锁定的照常领。`;
+    if (Number(text) === 0) return `改成 0：之后本月首次升到 ${row.v}、且这是本月最高等级的人，次日起按 ${row.v} 算、月薪为 0，还没领的就领不了；已经锁定金额的照常领。`;
     if (prevSalary !== undefined && compareDecimal(text, prevSalary) === -1) {
-      return `改成 ${amountDisplay(text)}：比 ${rows[index - 1].v} 的 ${amountDisplay(prevSalary)} 还低。之后从 ${rows[index - 1].v} 升到 ${row.v} 的人，次日起当月最高可领等级是 ${row.v}，当月还没领的按 ${amountDisplay(text)} USDT 领。`;
+      return `改成 ${amountDisplay(text)}：比 ${rows[index - 1].v} 的 ${amountDisplay(prevSalary)} 还低。之后本月首次从 ${rows[index - 1].v} 升到 ${row.v}、且这是本月最高等级的人，次日起按 ${amountDisplay(text)} USDT 领；已经锁定金额的照常领。`;
     }
     return undefined;
   };
