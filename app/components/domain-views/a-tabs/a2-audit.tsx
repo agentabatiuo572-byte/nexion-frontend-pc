@@ -2566,7 +2566,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const i5Publish = w.operationCode === "i5_disclosure_publish" || w.operationCode === "i4_disclosure_publish";
     // 一行放得下（必须改 14）；时点只写在「生效时间」一处（建议 8）。
     // 摘要标题行只放得下 20 字左右，长了会折出孤字（D10）；细节写在「说明」和事实区。
-    const impact = v8Promotion ? "立即升到 V8，奖励按批准时的配置发。"
+    const impact = v8Promotion ? "立即升到 V8，首次到达按配置发奖。"
       : scheduled || monthlyTargetChange(w) ? timing.impact
       : j4 ? "逐步执行，失败时可能只执行了一部分。"
         : coverageMode === "onApproval" ? "先查兑付覆盖率，够了才执行，不够不动。"
