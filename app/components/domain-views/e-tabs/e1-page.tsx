@@ -1,9 +1,9 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { RefreshCw, RotateCcw, SearchCheck, Server } from "lucide-react";
 import { BlockState, Button, Change, ConflictBar, DiffList, Explain, Facts, Fact, Fold, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
-import { OperationConfirmModal, useToast } from "../design-kit";
+import { OperationConfirmModal, useToast, usePendingReplayDeadline } from "../design-kit";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { datacenterNameText } from "@/lib/admin/brand-copy";
@@ -14,9 +14,9 @@ import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal,
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { supportsDeviceMonthlyTarget } from "@/lib/admin/device-monthly-target";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
@@ -25,8 +25,23 @@ import type { McSpec } from "./types";
 import { E1_CURRENT_PHASE_UNVERIFIED, e1CurrentPhase, e1SkuOpening, resolveE1PhaseId } from "./data";
 import { E1Catalog, E1_MISSING_SERIES_REASON, type E1CatalogContext } from "./e1-catalog";
 import { E1Editor, type E1EditRequest, type E1SkuReview } from "./e1-editor";
-import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
+import { PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
 import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1Number, e1Decimal, e1Amount, e1TargetPrecision, e1Object, e1ShownDiff, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
+
+import { nextRecoveryDeadline, currentRecoveryActor, canCreateRecoveryProposal } from "@/lib/admin/abe-recovery-access";
+
+const recoveryOptions = {
+  capability: () => "receipt" as const,
+  explicitRejectionCode,
+  canReplay: (original: E1Pending) => {
+    const rights = currentRecoveryActor(original.actorId)?.authorities ?? [];
+    return !original.receivedTicketId && !original.retryRejection && !!original.operator && !!original.operatorRole
+      && rights.includes("device_e1_read") && rights.includes("device_e1_write") && canCreateRecoveryProposal(rights);
+  },
+};
+const catalogRecovery = createPendingRecovery(e1Commands, recoveryOptions);
+const monthlyRecovery = createPendingRecovery(e1MonthlyCommands, recoveryOptions);
+const recoveryFor = (original: E1Pending) => original.fingerprint.startsWith("sku|") ? monthlyRecovery : catalogRecovery;
 
 type Confirmation = McSpec & Partial<E1SkuReview> & { gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
 type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; reading?: boolean; readError?: string };
@@ -82,11 +97,12 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const [pending, setPending] = useState<E1Pending[]>([]);
   const [legacy, setLegacy] = useState<E1Legacy[]>([]);
   const [media, setMedia] = useState<E1MediaPending[]>([]);
+  usePendingReplayDeadline(nextRecoveryDeadline([...pending, ...media]));
   const [busy, setBusy] = useState("");
   const sending = useRef(false);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [rejected, setRejected] = useState<string[]>([]);
-  const [absent, setAbsent] = useState<string[]>([]);
+  useSyncExternalStore(catalogRecovery.subscribe, catalogRecovery.getRevision, () => 0);
+  useSyncExternalStore(monthlyRecovery.subscribe, monthlyRecovery.getRevision, () => 0);
   const [release, setRelease] = useState<E1Pending | null>(null);
   const [conflict, setConflict] = useState(false);
   // 首次提交被后端明确拒绝：同一份输入再点也会被拒，按钮停住，给「返回修改」（只管这个框的界面状态）。
@@ -98,7 +114,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const hasSkuVersionConflict = (review: Confirmation) => review.op === "sku-save" && !!review.beforeSku
     && (!!draftConflict || currentSku?.updatedAt !== review.beforeSku.updatedAt);
   const [attemptKey, setAttemptKey] = useState("");
-  const syncPending = useCallback(() => { const records = e1Pending(actor); setPending(records); setAbsent(records.filter(r => r.absent && !r.receivedTicketId).map(r => r.commandKey)); setRejected(records.filter(r => r.retryRejection).map(r => r.commandKey)); setLegacy(e1LegacyCommands(actor)); setMedia(e1MediaCommands.list().filter(r => r.actorId === actor)); }, [actor]);
+  const syncPending = useCallback(() => { const records = e1Pending(actor); setPending(records); setLegacy(e1LegacyCommands(actor)); setMedia(e1MediaCommands.list().filter(r => r.actorId === actor)); }, [actor]);
   useEffect(syncPending, [syncPending]);
   const refreshProducts = useCallback(async () => {
     setLoading(true); setError(null);
@@ -214,24 +230,22 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   };
   const send = async (record: E1Pending, retry: boolean) => {
     if (!canWrite || !actor || record.actorId !== actor || sending.current) throw new Error("账号、权限或提交状态不允许重试，请先核对原操作");
-    if (retry) {
-      const original = e1Pending(actor).find(row => row.commandKey === record.commandKey);
-      if (!original?.absent || original.receivedTicketId) throw new Error(RETRY_REQUIRES_LOOKUP);
-      record = original;
-    }
+    const recovery = recoveryFor(record);
     if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
     const store = record.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
-    record = { ...record, retryRejection: undefined, absent: false };
-    store.remember(record.fingerprint, record.commandKey, record);
     if (!store.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器无法保存原操作，本次没有发送；原记录和对象锁仍保留。");
-    sending.current = true; setBusy(record.commandKey); setRejected(keys => keys.filter(k => k !== record.commandKey));
+    sending.current = true; setBusy(record.commandKey);
     try {
       const spec = record.spec;
-      const result = await createA2OperationProposal({ action: spec.action, obj: spec.obj, beforeValue: spec.before, afterValue: spec.after,
-        operator: session?.operator || session?.username || "", operatorRole: roleLabel(session!.role), type: spec.type,
-        amplifies: !!spec.amplifies, sos: !!spec.sos, roleGate: spec.gateLabel, reason: spec.reason, sourceDomain: spec.sourceDomain,
-        command: spec.command, target: spec.target, targets: spec.targets,
-      }, record.commandKey, true);
+      const post = (original: E1Pending) => {
+        const spec = original.spec;
+        return createA2OperationProposal({ action: spec.action, obj: spec.obj, beforeValue: spec.before, afterValue: spec.after,
+          operator: original.operator!, operatorRole: original.operatorRole!, type: spec.type,
+          amplifies: !!spec.amplifies, sos: !!spec.sos, roleGate: spec.gateLabel, reason: spec.reason, sourceDomain: spec.sourceDomain,
+          command: spec.command, target: spec.target, targets: spec.targets,
+        }, original.commandKey, true);
+      };
+      const result = await (retry ? recovery.replay(record, post) : post(record));
       record = { ...record, receivedTicketId: result.id };
       store.remember(record.fingerprint, record.commandKey, record);
       if (retry) {
@@ -249,10 +263,6 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       const firstRejection = !record.receivedTicketId && !retry && !isA2OutcomeUncertainError(failure) && response.httpStatus !== undefined
         && isDeterministicRejection(response.httpStatus, response.apiCode);
       if (firstRejection) forgetE1(record);
-      else if (!record.receivedTicketId && retry && isExplicitRejection(failure)) {
-        store.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: e1Error(failure) });
-        setRejected(keys => [...keys, record.commandKey]);
-      }
       const shown = record.receivedTicketId ? TICKET_UNREAD : e1Error(failure);
       setNotes(n => ({ ...n, [record.commandKey]: shown }));
       if (!firstRejection && !isExplicitRejection(failure)) { setConfirmation(null); setEdit(null); }
@@ -275,7 +285,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     if (e1Pending(actor).some(r => e1Object(r.spec) === object) || locked(object.split("|")[0], object.split("|").slice(1).join("|"))) throw new Error("此对象有待审批或待核对的操作，请先核对原操作");
     const commandKey = createA2CommandKey("e1-proposal"), fingerprint = `${actor}|${object}`;
     const savedSpec = JSON.parse(JSON.stringify(spec)) as ProposeSpec;
-    e1Commands.remember(fingerprint, commandKey, { actorId: actor, spec: savedSpec });
+    e1Commands.remember(fingerprint, commandKey, { actorId: actor, spec: savedSpec, operator: session!.operator || session!.username, operatorRole: roleLabel(session!.role) });
     if (!e1Commands.isDurablyStored(fingerprint, commandKey)) { e1Commands.forget(fingerprint, commandKey); throw new Error("浏览器无法保存原操作，本次没有提交。请检查浏览器设置后重试。"); }
     syncPending();
     setAttemptKey(commandKey);
@@ -283,13 +293,17 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   };
   const check = async (record: { commandKey: string }, propagate = false) => {
     const full = e1Pending(actor).find(r => r.commandKey === record.commandKey);
-    const store = full?.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
-    if (full) { store.remember(full.fingerprint, full.commandKey, { ...full, absent: false }); syncPending(); }
     try {
-      const row = await fetchA2ProposalByKey(record.commandKey, true, "f");
-      if (row && full && (!row.mine || row.obj !== full.spec.obj || full.receivedTicketId && row.id !== full.receivedTicketId)) throw new A2OutcomeUncertainError("查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。", record.commandKey);
-      if (!row && full?.receivedTicketId) throw new A2OutcomeUncertainError(TICKET_UNREAD, record.commandKey);
-      if (!row && full) { store.remember(full.fingerprint, full.commandKey, { ...full, absent: true }); syncPending(); }
+      const result = full ? await recoveryFor(full).query(full, async original => {
+        const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
+        if (ticket && (!ticket.mine || ticket.obj !== original.spec.obj || original.receivedTicketId && ticket.id !== original.receivedTicketId
+          || ticket.operationCode && ticket.operationCode !== original.spec.command.op)) throw new A2OutcomeUncertainError("查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。", original.commandKey);
+        if (!ticket && original.receivedTicketId) throw new A2OutcomeUncertainError(TICKET_UNREAD, original.commandKey);
+        return { ticket, conclusion: !ticket ? "not-found" : ticket.status === "pending" ? "unknown"
+          : ticket.status === "approved" ? "succeeded" : "rejected" } as const;
+      }) : undefined;
+      if (full && !result) return;
+      const row = full ? result!.ticket : await fetchA2ProposalByKey(record.commandKey, true, "f");
       if (!row) { setNotes(n => ({ ...n, [record.commandKey]: full ? "刚查过：没有这张审批单。" : "按原请求没有查到审批单。旧记录不能重试或解除，请到操作记录与审批核对。" })); return; }
       setNotes(n => ({ ...n, [record.commandKey]: `审批单 ${row.id} · ${RECEIPT_STATUS[row.status] ?? "状态待核实"}` }));
       toast(row.status === "pending" ? `查到了审批单 ${row.id}，还在等批准` : endToast(full?.spec.action ?? "原操作", row.id, row.status));
@@ -304,14 +318,6 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       setNotes(n => ({ ...n, [record.commandKey]: message }));
       if (propagate) throw failure;
     }
-  };
-
-  const releaseMissing = async (record: E1Pending) => {
-    if (String(useAdminAuth.getState().session?.adminId ?? "") !== record.actorId || !isRetryExpired(record) || record.receivedTicketId) return;
-    await check(record, true);
-    const current = e1Pending(record.actorId).find(r => r.commandKey === record.commandKey);
-    if (current?.absent && !current.receivedTicketId) { forgetE1(current); syncPending(); return true; }
-    return false;
   };
 
   const confirm = async (reason: string, value?: string, business?: Record<string, string>) => {
@@ -445,20 +451,20 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       actions: <Button size="sm" disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重新查询" : "查看审批状态"}</Button>,
       detail: <p>审批单 {row.id}；批准前目录不变，这个对象暂停新修改。</p> })),
     ...pending.filter(record => record.commandKey !== busy).map(record => {
-      const expired = isRetryExpired(record), canRelease = rejected.includes(record.commandKey) && !expired || absent.includes(record.commandKey) && expired;
+      const recovery = recoveryFor(record).state(record);
+      const canRelease = !!recovery.replayRejection && !record.receivedTicketId;
       const retryDisabledReason = !canWrite ? "当前账号不能重试"
         : busy ? "正在提交原操作"
-          : expired ? "超过 24 小时不能再重试"
+          : recovery.expired ? RETRY_EXPIRED_TEXT
             : record.receivedTicketId ? "审批单已经建了，只能查询"
-              : !absent.includes(record.commandKey) ? RETRY_REQUIRES_LOOKUP : undefined;
+              : recovery.replayBlock ? RETRY_REQUIRES_LOOKUP : undefined;
       const state = record.receivedTicketId ? { tag: "进度没读到", line: RECOVERY_LINE.created, more: "点「查询原结果」再查。" }
-        : rejected.includes(record.commandKey) && !expired ? { tag: "重试被拒绝", line: RECOVERY_LINE.refused, more: "解除前先核对原操作有没有生效。" }
-          : absent.includes(record.commandKey) ? expired ? { tag: "没有建成", line: RECOVERY_LINE.missing, more: "确认解除时会再查一次。" }
-            : { tag: "结果未知", line: RECOVERY_LINE.absent, more: "重试不会重复建单。" }
-            : expired ? { tag: "结果未知", line: RECOVERY_LINE.expired, more: "查不到这张审批单时可以确认解除。" }
+        : canRelease ? { tag: "重试被拒绝", line: RECOVERY_LINE.refused, more: "解除前先核对原操作有没有生效。" }
+          : recovery.expired ? { tag: "结果未知", line: RETRY_EXPIRED_TEXT, more: "原记录继续保留。" }
+            : recovery.conclusion === "not-found" ? { tag: "结果未知", line: RECOVERY_LINE.absent, more: "重试不会重复建单。" }
               : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "重试只发原内容和原理由。" };
       return { key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
-        tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? record.retryRejection,
+        tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? recovery.replayRejection ?? record.retryRejection,
         actions: <>
           {canQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void check(record)}>查询原结果</Button>}
           {<Button size="sm" disabledReason={retryDisabledReason} onClick={() => { void send(record, true).catch(failure => toast(e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原请求重试</Button>}
@@ -513,9 +519,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         }
       }} />}
     {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在读取…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? APPROVAL : "审批已结束，这张审批单不再锁住商品；请按现在的目录重新核对后编辑。"}</p></Drawer>}
-    {release && (isRetryExpired(release)
-      ? <MissingProposalReleaseModal label={release.spec.action} createdAt={release.createdAt} onCancel={() => setRelease(null)} onConfirm={async () => { const released = await releaseMissing(release); setRelease(null); if (released) toast("已解除这条记录，可以重新提交", "success"); else if (released === false) toast("查到了这张审批单，没有解除", "warn"); }} />
-      : <ReleaseModal label={release.spec.action} onCancel={() => setRelease(null)} onConfirm={() => { forgetE1(release); syncPending(); setRelease(null); toast("已解除这条记录", "success"); }} />)}
+    {release && <ReleaseModal label={release.spec.action} onCancel={() => setRelease(null)} onConfirm={() => {
+      if (recoveryFor(release).releaseRejectedReplay(release)) { syncPending(); setRelease(null); toast("已解除这条记录", "success"); }
+    }} />}
     {toastNode}
   </RdPage>;
 }

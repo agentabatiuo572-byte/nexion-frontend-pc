@@ -5,7 +5,10 @@ import { isAdminAuthFailure, resetAdminSession } from "./auth-session";
 import { DOutcomeUnknownError, DRequestError } from "./d-client";
 import { formatAdminApiError, guardedFetch } from "./error-messages";
 import { isBCommandRejection } from "./b-command-rejection";
-import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+
+import { explicitRejectionCode } from "./explicit-rejection";
+import { currentRecoveryActor } from "./abe-recovery-access";
 
 export type B1CommandFacts = Pick<BLedger, "reserveUsd" | "valuationReliable" | "redlineBreached" | "coverageRatio" | "redlinePct" | "healthyPct" | "thresholdVersion"> & { generatedAt?: string };
 export interface B1PendingWrite extends PendingMutationRecord {
@@ -39,8 +42,19 @@ export const b1Commands = createPendingMutationStore<B1PendingWrite>({
   },
 });
 
+export const b1Recovery = createPendingRecovery(b1Commands, {
+  capability: () => "replay",
+  explicitRejectionCode,
+  canReplay: record => {
+    const rights = currentRecoveryActor(record.adminId)?.authorities ?? [];
+    const write = record.kind === "threshold" ? "overview_b1_redline_write"
+      : record.kind === "injection" ? "finance_d3_injection_create" : "overview_b1_write";
+    return rights.includes("overview_b1_read") && rights.includes(write);
+  },
+});
+
 /** Sends the persisted bytes, never a new form draft or a replayed overview. */
-export async function executeB1Command(record: B1PendingWrite, retry = true) {
+async function sendOriginal(record: B1PendingWrite, retry: boolean) {
   if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
   if (!b1Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
     throw new Error("浏览器无法保存这次操作的记录，没有提交。请允许浏览器存储后重试。");
@@ -79,9 +93,13 @@ export async function executeB1Command(record: B1PendingWrite, retry = true) {
         : data?.alertAck?.alertId !== "coverage-redline" || data.alertAck.acknowledged !== true) {
       throw new DOutcomeUnknownError(record.commandKey);
     }
-    b1Commands.forget(record.fingerprint, record.commandKey);
+    b1Recovery.settleAcknowledged(record);
   } catch (error) {
-    if (isBCommandRejection(error, retry)) b1Commands.forget(record.fingerprint, record.commandKey);
+    if (!retry && isBCommandRejection(error, false)) b1Commands.forget(record.fingerprint, record.commandKey);
     throw error;
   }
+}
+
+export function executeB1Command(record: B1PendingWrite, retry = true) {
+  return retry ? b1Recovery.replay(record, original => sendOriginal(original, true)) : sendOriginal(record, false);
 }

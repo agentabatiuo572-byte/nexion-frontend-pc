@@ -2,9 +2,10 @@ import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session"
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { normalizeOutboxDeadLetters, normalizeOutboxDiagnostics, nullableA4UserNo, outboxDiagnosticsQuery, type OutboxFilters } from "./a4-outbox-diagnostics";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "./a2-client";
-import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
 import type { AdminSession } from "@/lib/store/admin-auth";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
+import { currentRecoveryActor, canCreateRecoveryProposal } from "./abe-recovery-access";
 import { OutcomeUnknownError } from "./outcome-classification";
 
 interface ApiResult<T> {
@@ -413,6 +414,16 @@ const registryAttempts = createPendingMutationStore<A4RegistryAttempt>({
   },
 });
 
+export const a4RegistryRecovery = createPendingRecovery(registryAttempts, {
+  capability: () => "receipt",
+  explicitRejectionCode,
+  canReplay: attempt => {
+    const rights = currentRecoveryActor(attempt.fingerprint)?.authorities ?? [];
+    return !attempt.received && rights.includes("platform_a4_read") && rights.includes("platform_a4_write")
+      && canCreateRecoveryProposal(rights);
+  },
+});
+
 export function pendingA4RegistryProposal(adminId: number) {
   return registryAttempts.list().find((row) => row.fingerprint === String(adminId));
 }
@@ -429,7 +440,8 @@ async function postRegistryProposal(attempt: A4RegistryAttempt, retry = false) {
   if (!registryAttempts.isDurablyStored(attempt.fingerprint, attempt.commandKey)) throw new Error("A4_ORIGINAL_STORAGE_FAILED");
   let created = false;
   try {
-    const receipt = await createA2OperationProposal(attempt.input, attempt.commandKey, true, true);
+    const post = (original: A4RegistryAttempt) => createA2OperationProposal(original.input, original.commandKey, true, true);
+    const receipt = await (retry ? a4RegistryRecovery.replay(attempt, post) : post(attempt));
     created = true;
     registryAttempts.remember(attempt.fingerprint, attempt.commandKey, { ...attempt, received: true });
     const ticket = validateRegistryTicket(receipt, attempt);
@@ -437,13 +449,13 @@ async function postRegistryProposal(attempt: A4RegistryAttempt, retry = false) {
     const current = retry ? await fetchA2ProposalByKey(attempt.commandKey, true, "a") : ticket;
     if (!current) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
     validateRegistryTicket(current, attempt);
-    registryAttempts.forget(attempt.fingerprint, attempt.commandKey);
+    a4RegistryRecovery.settleAcknowledged(attempt);
     return { ...current, a4CommandKey: attempt.commandKey };
   } catch (error) {
     const failure = error as { status?: number; backendMessage?: string };
     // The shared A2 client already applies isDeterministicRejection to first sends;
     // only its non-uncertain backend rejection can discard a new proposal here.
-    if (!created && (retry ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
+    if (!created && !retry && (!isA2OutcomeUncertainError(error)
         && typeof failure.backendMessage === "string" && !failure.backendMessage.startsWith("IDEMPOTENCY_")
         && failure.status !== undefined)) {
       registryAttempts.forget(attempt.fingerprint, attempt.commandKey);
@@ -457,31 +469,16 @@ async function postRegistryProposal(attempt: A4RegistryAttempt, retry = false) {
 export async function recoverA4RegistryProposal(adminId: number, retryOriginal = false) {
   const attempt = pendingA4RegistryProposal(adminId);
   if (!attempt) return null;
-  const ticket = await fetchA2ProposalByKey(attempt.commandKey, true, "a");
-  if (ticket) {
-    validateRegistryTicket(ticket, attempt);
-    registryAttempts.forget(attempt.fingerprint, attempt.commandKey);
-    return { ...ticket, a4CommandKey: attempt.commandKey };
-  }
-  if (attempt.received) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
-  if (!retryOriginal) return null;
-  if (Date.now() >= attempt.expiresAt) {
-    throw new OutcomeUnknownError("A4_ORIGINAL_QUERY_ONLY");
-  }
-  return postRegistryProposal(attempt, true);
-}
-
-/** Call only after the operator confirms clearing an expired, authoritatively absent proposal. */
-export async function releaseExpiredA4RegistryProposal(adminId: number, commandKey: string) {
-  const attempt = pendingA4RegistryProposal(adminId);
-  if (!attempt || attempt.received || attempt.commandKey !== commandKey || Date.now() < attempt.expiresAt) throw new Error("A4_ORIGINAL_UNRESOLVED");
-  const ticket = await fetchA2ProposalByKey(commandKey, true, "a");
-  if (ticket) {
-    validateRegistryTicket(ticket, attempt);
-    registryAttempts.remember(attempt.fingerprint, commandKey, { ...attempt, received: true });
-    throw new Error("A4_ORIGINAL_UNRESOLVED");
-  }
-  registryAttempts.forget(attempt.fingerprint, commandKey);
+  if (retryOriginal) return postRegistryProposal(attempt, true);
+  const result = await a4RegistryRecovery.query(attempt, async original => {
+    const ticket = await fetchA2ProposalByKey(original.commandKey, true, "a");
+    if (ticket) validateRegistryTicket(ticket, original);
+    else if (original.received) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
+    return { ticket, conclusion: ticket ? "succeeded" : "not-found" } as const;
+  });
+  if (!result?.ticket) return null;
+  a4RegistryRecovery.settleFromQuery(attempt, result.conclusion);
+  return { ...result.ticket, a4CommandKey: attempt.commandKey };
 }
 
 async function submitRegistryProposal(actor: A4RegistryActor, action: string, op: string, type: string,

@@ -1,8 +1,10 @@
 import { A2OutcomeUncertainError, fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
-import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
 import { guardedFetch, formatAdminApiError } from "./error-messages";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "./outcome-classification";
+import { canCreateRecoveryProposal, currentRecoveryActor, recoveryQueryConclusion } from "./abe-recovery-access";
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { E5Device } from "./e5-client";
 import type { LegacyUnknownCandidate } from "./legacy-unknown-resolution";
@@ -38,6 +40,25 @@ export const e5Commands = createPendingMutationStore<E5Command>({
     && !!row.device && Number.isSafeInteger(row.device.deviceId) && typeof row.device.userId === "string",
 });
 
+const isProposal = (record: E5Command) => ["force-activate", "unbind", "legacy"].includes(record.intent);
+
+export function canSendE5Command(record: E5Command) {
+  const session = currentRecoveryActor(record.actorId);
+  const rights = session?.authorities ?? [];
+  if (!rights.includes("device_e5_read")) return false;
+  if (record.intent === "legacy") return rights.includes("device_e5_write") && rights.includes("platform_a2_proposal_create");
+  if (isProposal(record)) return canCreateRecoveryProposal(rights)
+    && (rights.includes(record.intent === "unbind" ? "device_e5_device_unbind" : "device_e5_device_force_activate")
+      || session?.role === "growth" && rights.includes("platform_a2_proposal_create"));
+  return rights.includes("device_e5_write");
+}
+
+export const e5Recovery = createPendingRecovery(e5Commands, {
+  capability: () => "receipt",
+  explicitRejectionCode,
+  canReplay: record => !record.receivedTicketId && !record.retryRejection && canSendE5Command(record),
+});
+
 /** Read the two old tables without pruning evidence or touching E1/E4 records. */
 export function e5LegacyCommands(): { commandKey: string; fingerprint: string }[] {
   if (typeof window === "undefined") return [];
@@ -69,48 +90,42 @@ export class E5CommandError extends Error {
 
 export async function checkE5Command(record: E5Command, evidence?: ECommandEvidence) {
   if (!["activate", "deactivate", "pause", "resume"].includes(record.intent)) return null;
-  const locator = { commandKey: record.commandKey, originalMethod: record.method, originalPath: record.path, originalAdminId: record.actorId };
-  const receipt = evidence ? await investigateECommand(record, locator, evidence) : await discoverECommand(locator);
-  if (eCommandSettled(receipt)) e5Commands.forget(record.fingerprint, record.commandKey);
-  return receipt;
+  const result = await e5Recovery.query(record, async original => {
+    const locator = { commandKey: original.commandKey, originalMethod: original.method, originalPath: original.path, originalAdminId: original.actorId };
+    if (!evidence) {
+      const scope = `E5_DEVICE_${["pause", "resume"].includes(original.intent) ? "BATCH_" : ""}${original.intent.toUpperCase()}`;
+      const state = await fetchDirectCommandReceipt(scope, original.commandKey, Number(original.actorId));
+      if (state === "NOT_FOUND") return { receipt: null, conclusion: "not-found" } as const;
+    }
+    const receipt = evidence ? await investigateECommand(original, locator, evidence) : await discoverECommand(locator);
+    return { receipt, conclusion: receipt && eCommandSettled(receipt) ? recoveryQueryConclusion(receipt.originalStatus) : "unknown" } as const;
+  });
+  if (!result) return null;
+  e5Recovery.settleFromQuery(record, result.conclusion);
+  return result.receipt;
 }
 
 /** The POST receipt is creation evidence; only this lookup establishes current approval status. */
 export async function queryE5Proposal(record: E5Command) {
-  if (String(useAdminAuth.getState().session?.adminId ?? "") !== record.actorId
-      || !["force-activate", "unbind", "legacy"].includes(record.intent)) throw new Error("管理员会话已变化，请重新进入设备页面。");
-  e5Commands.remember(record.fingerprint, record.commandKey, { ...record, proposalAbsent: false });
-  const ticket = await fetchA2ProposalByKey(record.commandKey, true, "f");
-  if (!ticket) {
-    if (record.receivedTicketId) throw new A2OutcomeUncertainError("提案缺少有效票号", record.commandKey);
-    e5Commands.remember(record.fingerprint, record.commandKey, { ...record, proposalAbsent: true });
-    return null;
-  }
-  if (!ticket.mine || ticket.obj !== String(record.device.deviceId) || record.receivedTicketId && record.receivedTicketId !== ticket.id)
-    throw new A2OutcomeUncertainError("提案缺少有效票号", record.commandKey);
-  if (ticket.status === "pending") e5Commands.remember(record.fingerprint, record.commandKey, { ...record, receivedTicketId: ticket.id, proposalStatus: ticket.status, proposalAbsent: false, retryRejection: undefined });
-  else e5Commands.forget(record.fingerprint, record.commandKey);
-  return ticket;
-}
-
-/** Visual handoff: invoke only after the original operator confirms release. Direct writes never qualify. */
-export async function releaseMissingE5Proposal(record: E5Command) {
-  if (!isRetryExpired(record) || record.receivedTicketId || record.proposalStatus)
-    throw new Error("已超过 24 小时，只能读回核对，原操作仍保留。");
-  const ticket = await queryE5Proposal(record);
-  if (!ticket) e5Commands.forget(record.fingerprint, record.commandKey);
+  if (!currentRecoveryActor(record.actorId) || !isProposal(record)) throw new Error("管理员会话已变化，请重新进入设备页面。");
+  const result = await e5Recovery.query(record, async original => {
+    const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
+    if (!ticket && original.receivedTicketId || ticket && (!ticket.mine || ticket.obj !== String(original.device.deviceId)
+      || original.receivedTicketId && original.receivedTicketId !== ticket.id)) throw new A2OutcomeUncertainError("提案缺少有效票号", original.commandKey);
+    return { ticket, conclusion: !ticket ? "not-found" : ticket.status === "pending" ? "unknown"
+      : ticket.status === "approved" ? "succeeded" : "rejected" } as const;
+  });
+  if (!result?.ticket) return null;
+  const { ticket } = result;
+  if (ticket.status === "pending") e5Commands.remember(record.fingerprint, record.commandKey, { ...record, receivedTicketId: ticket.id, proposalStatus: ticket.status, proposalAbsent: false });
+  else e5Recovery.settleFromQuery(record, result.conclusion);
   return ticket;
 }
 
 /** Only this saved envelope is sent, including on retries after a refresh. */
-export async function sendE5Command(record: E5Command, retry: boolean) {
+async function sendOriginal(record: E5Command, retry: boolean) {
   const auth = useAdminAuth.getState();
   if (String(auth.session?.adminId ?? "") !== record.actorId || !retry && auth.authEpoch !== record.authEpoch) throw new Error("管理员会话已变化，请重新进入设备页面。");
-  if (retry && record.receivedTicketId) {
-    const ticket = await queryE5Proposal(record);
-    if (!ticket) throw new A2OutcomeUncertainError("提案缺少有效票号", record.commandKey);
-    return { ...ticket } as Record<string, unknown>;
-  }
   if (isRetryExpired(record)) throw new Error("已超过 24 小时，只能读回核对，原操作仍保留。");
   record = { ...record, retryRejection: undefined, proposalAbsent: false };
   e5Commands.remember(record.fingerprint, record.commandKey, record);
@@ -145,16 +160,24 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
   } catch (cause) {
     if (!retry && cause instanceof E5CommandError && !cause.unknownOutcome && cause.httpStatus !== undefined
         && isDeterministicRejection(cause.httpStatus, cause.apiCode)) e5Commands.forget(record.fingerprint, record.commandKey);
-    else if (retry && isExplicitRejection(cause)) e5Commands.forget(record.fingerprint, record.commandKey);
     throw cause;
   }
-  if (["force-activate", "unbind", "legacy"].includes(record.intent) && retry) {
-    record = { ...record, receivedTicketId: String(data.id), retryRejection: undefined };
-    e5Commands.remember(record.fingerprint, record.commandKey, record);
+  if (retry && isProposal(record)) {
+    e5Commands.remember(record.fingerprint, record.commandKey, { ...record, receivedTicketId: String(data.id) });
+  } else {
+    e5Recovery.settleAcknowledged(record);
+  }
+  return data;
+}
+
+
+export async function sendE5Command(record: E5Command, retry: boolean) {
+  if (!retry) return sendOriginal(record, false);
+  const data = await e5Recovery.replay(record, original => sendOriginal(original, true));
+  if (isProposal(record)) {
     const ticket = await queryE5Proposal(record);
     if (!ticket) throw new A2OutcomeUncertainError("提案缺少有效票号", record.commandKey);
     return { ...ticket } as Record<string, unknown>;
   }
-  e5Commands.forget(record.fingerprint, record.commandKey);
   return data;
 }

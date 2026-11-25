@@ -1,23 +1,23 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ArrowRightLeft } from "lucide-react";
 import { BlockState, Button, Check, ConfigList, ConfigRow, Decision, DiffList, Drawer, Fact, Facts, Field, Fold, Input, Modal, Notice, NumberInput, Panel, Select, ReleaseModal } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { currentRecoveryActor, canCreateRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fetchE6ComputeConfig } from "@/lib/admin/e6-client";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { fetchPhoneOperation, PhoneApiError } from "@/lib/admin/phone-replacement-client";
 import { canReadPolicyReceipt, parsePhonePolicy, phoneDraftError, phonePolicyValues, phoneConflictMessage, record, type PhonePolicy, type PhoneReceipt } from "@/lib/admin/phone-replacement-contract";
 import { PhoneFacts, PhoneReceiptView } from "../phone-replacement-receipt";
-import { MissingProposalReleaseModal, PROPOSAL_END } from "./e-command-check";
+import { PROPOSAL_END } from "./e-command-check";
 type ProposalInput = Parameters<typeof createA2OperationProposal>[0];
 interface SavedProposal extends PendingMutationRecord {
     owner: number;
@@ -28,6 +28,15 @@ interface SavedProposal extends PendingMutationRecord {
 }
 const proposals = createPendingMutationStore<SavedProposal>({ storageKey: "nexion-admin-phone-policy-proposals-v1", retainExpiredRecords: true,
     isValidRecord: r => (r.absent === undefined || typeof r.absent === "boolean") && Number.isSafeInteger(r.owner) && record(r.input) && record(r.input.command) });
+const policyRecovery = createPendingRecovery(proposals, {
+    capability: () => "receipt",
+    explicitRejectionCode,
+    canReplay: original => {
+        const rights = currentRecoveryActor(original.owner)?.authorities ?? [];
+        return !original.ticketId && !original.terminal && rights.includes("device_e6_read")
+            && rights.includes("device_e6_write") && rights.includes("device_e6_flag_toggle") && canCreateRecoveryProposal(rights);
+    },
+});
 export function PhoneReplacementPolicyPanel({configReadFailed=false}:{configReadFailed?:boolean}) {
     const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
     if (!session?.authorities.includes("device_e6_read"))
@@ -41,8 +50,9 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
     configReadFailed: boolean;
 }) {
     const canWrite = rights.includes("device_e6_write") && rights.includes("device_e6_flag_toggle") && rights.some(r=>["platform_a2_write","platform_a2_proposal_create"].includes(r));
-    const [editor,setEditor]=useState(false),[releaseKey,setReleaseKey]=useState<string|null>(null),[retryRejectedKey,setRetryRejectedKey]=useState<string|null>(null),[discard,setDiscard]=useState(false);
+    const [editor,setEditor]=useState(false),[releaseKey,setReleaseKey]=useState<string|null>(null),[discard,setDiscard]=useState(false);
     const canRecover = canReadPolicyReceipt(rights);
+    const canQueryProposal = rights.includes("platform_a2_read") || rights.includes("platform_a2_proposal_create");
     const [policy, setPolicy] = useState<PhonePolicy | null>(null), [values, setValues] = useState(["", "", ""]), [allow, setAllow] = useState(false);
     const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState(""), [message, setMessage] = useState("");
     const [confirm, setConfirm] = useState<{
@@ -56,7 +66,15 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
     const [denied, setDenied] = useState(false);
     const live = useRef(true), generation = useRef(0), mutation = useRef(false);
     const syncPending = () => setPending(proposals.list().find(r => r.owner === owner) ?? null);
-    useEffect(() => { setRetryRejectedKey(null); setReleaseKey(null); setMessage(""); }, [pending?.commandKey]);
+    useSyncExternalStore(policyRecovery.subscribe, policyRecovery.getRevision, () => 0);
+    const recoveryState = pending ? policyRecovery.state(pending) : undefined;
+    const retryRejectedKey = recoveryState?.replayRejection ? pending?.commandKey : undefined;
+    useEffect(() => { setReleaseKey(null); setMessage(""); }, [pending?.commandKey]);
+    useEffect(() => {
+        if (!recoveryState || recoveryState.expired) return;
+        const timer = window.setTimeout(syncPending, recoveryState.expiresAt - Date.now());
+        return () => window.clearTimeout(timer);
+    }, [recoveryState?.expiresAt]);
     async function refresh(preserveDraft = false) {
         const keepDraft = preserveDraft && values.some(v => v !== "");
         const id = ++generation.current;
@@ -75,6 +93,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
                 setAllow(next.allowReplacement === true);
                 setValues([next.minReplacementIntervalDays, next.replacementWindowDays, next.maxReplacementsInWindow].map(v => v == null ? "" : String(v)));
             }
+            return next;
         }
         catch (failure) {
             if (live.current && id === generation.current) {
@@ -159,27 +178,30 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
         }
     }
     async function checkProposal(propagate = false) {
-        if (!pending || !canRecover || mutation.current)
+        if (!pending || !canQueryProposal || mutation.current)
             return;
         if (useAdminAuth.getState().session?.adminId !== pending.owner) throw new Error("审批记录查询失败，请重试或前往审批页面；原提案仍保留。");
         mutation.current = true;
         setBusy(true);
         setError("");
-        proposals.remember(pending.fingerprint, pending.commandKey, { ...pending, absent: false }); syncPending();
         try {
-            const original = await fetchA2ProposalByKey(pending.commandKey, true, "f");
-            if (!live.current)
-                return;
-            if (!original && pending.ticketId || original && (!original.mine || original.obj !== pending.input.obj || pending.ticketId && original.id !== pending.ticketId)) throw new Error("审批记录查询失败，请重试或前往审批页面；原提案仍保留。");
-            if (!original) {
-                proposals.remember(pending.fingerprint, pending.commandKey, { ...pending, absent: true }); syncPending();
-                setMessage(isRetryExpired(pending) ? "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "按原请求查不到这张审批单，现在还没建成；可以按原请求重试，不会重复建单。");
+            const result = await policyRecovery.query(pending, async saved => {
+                const ticket = await fetchA2ProposalByKey(saved.commandKey, true, "f");
+                if (!ticket && saved.ticketId || ticket && (!ticket.mine || ticket.obj !== saved.input.obj
+                    || saved.ticketId && ticket.id !== saved.ticketId || ticket.operationCode && ticket.operationCode !== saved.input.command.op)) {
+                    throw new Error("审批记录查询失败，请重试或前往审批页面；原提案仍保留。");
+                }
+                return { ticket, conclusion: !ticket ? "not-found" : ticket.status === "pending" ? "unknown"
+                    : ticket.status === "approved" ? "succeeded" : "rejected" } as const;
+            });
+            if (!live.current || !result) return;
+            if (!result.ticket) {
+                setMessage(policyRecovery.state(pending).expired ? RETRY_EXPIRED_TEXT : "按原请求查不到这张审批单，可以按原请求重试。");
                 return;
             }
-            const id = original.id, status = original.status;
-            const terminal = ["approved", "rejected", "withdrawn", "expired"].includes(status.toLowerCase()) ? status.toLowerCase() : undefined;
-            if (terminal) setRetryRejectedKey(null);
-            proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, ticketId: id, terminal });
+            const { id, status } = result.ticket;
+            const terminal = ["approved", "rejected", "withdrawn", "expired"].includes(status) ? status : undefined;
+            proposals.remember(pending.fingerprint, pending.commandKey, { ...pending, ticketId: id, terminal });
             syncPending();
             setMessage(terminal === "approved" ? "审批已通过。请刷新当前策略；发布结果由批准人在「查询原发布结果」里查。" : terminal ? PROPOSAL_END[terminal].text : "还在等批准，没有发布。");
         }
@@ -235,42 +257,44 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
         }
     }
     async function retryOriginal() {
-      if(!pending||mutation.current||isRetryExpired(pending)||!canWrite)return;
-      proposals.remember(pending.fingerprint,pending.commandKey,{...pending,absent:false});syncPending();setMessage("");
-      if(!proposals.isDurablyStored(pending.fingerprint,pending.commandKey)){setError("浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。");return;}
-      mutation.current=true;setBusy(true);setError("");
-      let checking = true;
-      try {
-        const original=await fetchA2ProposalByKey(pending.commandKey,true,"f");
-        if(original&&(!original.mine||original.obj!==pending.input.obj))throw new Error("审批记录查询失败，请重试或前往审批页面；原提案仍保留。");
-        if(original){await checkTicket(original.id,original.status);return;}
-        checking = false;
-        const ticket=await createA2OperationProposal(pending.input,pending.commandKey,true);
-        if(live.current){proposals.remember(pending.fingerprint,pending.commandKey,{owner,input:pending.input,ticketId:ticket.id});syncPending();setMessage("已找回原审批提案，请等待另一位审批人核对。");}
-      } catch(failure){if(live.current){setError(failure instanceof Error?displayAdminError(failure):"原操作结果未知，请稍后再查询原结果。");if(!checking&&isExplicitRejection(failure))setRetryRejectedKey(pending.commandKey);}}
-      finally{mutation.current=false;if(live.current)setBusy(false);}
+        if (!pending || mutation.current || policyRecovery.state(pending).replayBlock) return;
+        mutation.current = true; setBusy(true); setError(""); setMessage("");
+        try {
+            const ticket = await policyRecovery.replay(pending, original => createA2OperationProposal(original.input, original.commandKey, true));
+            if (live.current) {
+                proposals.remember(pending.fingerprint, pending.commandKey, { ...pending, ticketId: ticket.id });
+                syncPending();
+                setMessage("已找回原审批提案，请等待另一位审批人核对。");
+            }
+        } catch (failure) {
+            if (live.current) setError(displayAdminError(failure));
+        } finally {
+            mutation.current = false;
+            if (live.current) { setBusy(false); syncPending(); }
+        }
     }
-    async function releaseMissing() {
-      if (!pending || !isRetryExpired(pending) || pending.ticketId || !canRecover || mutation.current) return;
-      await checkProposal(true);
-      const current = proposals.list().find(r => r.owner === owner && r.commandKey === pending.commandKey);
-      if (current?.absent && !current.ticketId) { proposals.forget(current.fingerprint,current.commandKey); syncPending(); }
-      setReleaseKey(null);
-    }
-    async function checkTicket(id:string,status:string){
-      if(!pending||!live.current)return;
-      const terminal=["approved","rejected","withdrawn","expired"].includes(status.toLowerCase())?status.toLowerCase():undefined;
-      if(terminal)setRetryRejectedKey(null);
-      proposals.remember(pending.fingerprint,pending.commandKey,{owner,input:pending.input,ticketId:id,terminal});syncPending();
-      setMessage(terminal?PROPOSAL_END[terminal].text:"还在等批准，没有发布。");
+    async function prepareNewChange(original: SavedProposal) {
+        const latest = await refresh();
+        const saved = proposals.list().find(row => row.commandKey === original.commandKey);
+        if (!latest || !saved?.terminal || saved.terminal !== original.terminal) return;
+        if (saved.terminal !== "approved") {
+            const draft = saved.input.command.params.values;
+            if (record(draft)) {
+                setAllow(draft["E.compute.phoneBinding.allowReplacement"] === "on");
+                setValues(["minReplacementIntervalDays", "replacementWindowDays", "maxReplacementsInWindow"]
+                    .map(field => String(draft[`E.compute.phoneBinding.${field}`] ?? "")));
+            }
+        }
+        proposals.forget(saved.fingerprint, saved.commandKey);
+        syncPending();
     }
     // 原提交的提醒和按钮：编辑抽屉开着时放进抽屉顶上，运营不用关抽屉找；抽屉关着时放在面板里。只放一处。
     const inDrawer=editor&&!!policy;
     const recovery=pending&&<>
       {pending&&!canRecover&&<Notice tone="warn">有一次换机规则提交还没有结论，恢复处置权限后才能查看；暂不能发起新提案。</Notice>}
-      {pending&&canRecover&&pending.ticketId&&!pending.terminal&&<Notice tone="warn" action={<Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查询审批结果</Button>}><p>手机换机规则的变更已提交，等待审批 · <span data-mono>{pending.ticketId}</span></p>{error&&<p role="status">{error}</p>}{message&&!error&&<p role="status">{message}</p>}</Notice>}
-      {pending&&canRecover&&(!pending.ticketId||pending.terminal)&&<Notice tone={pending.terminal?"done":"warn"} title={pending.terminal?`换机规则审批${PROPOSAL_END[pending.terminal]?.tag ?? "已结束"}`:retryRejectedKey===pending.commandKey?"按原请求重试被拒绝":pending.absent&&isRetryExpired(pending)?"换机规则申请没有建成":"换机规则提交结果未知"} actionBelow action={<>{!pending.terminal&&<Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查询原结果</Button>}{!pending.ticketId&&!isRetryExpired(pending)&&canWrite&&retryRejectedKey!==pending.commandKey&&<Button size="sm" disabled={busy} onClick={()=>void retryOriginal()}>按原请求重试</Button>}{(retryRejectedKey===pending.commandKey||pending.absent&&!pending.ticketId&&isRetryExpired(pending))&&<Button variant="primary" size="sm" onClick={()=>setReleaseKey(pending.commandKey)}>{retryRejectedKey===pending.commandKey?"解除原操作记录":"确认解除"}</Button>}{pending.terminal&&<Button size="sm" disabled={busy} onClick={()=>{proposals.forget(pending.fingerprint,pending.commandKey);syncPending();void refresh();}}>准备新变更</Button>}</>}>
-      {retryRejectedKey===pending.commandKey&&!pending.terminal?<><p>拒绝原因：{error||"后台没有给出原因"}</p><p>核对后可以解除这条记录。</p></>:<><p>{pending.terminal?"刷新当前策略核对后，再准备新变更。":isRetryExpired(pending)?"原内容和理由都已保存。已超过 24 小时，不能再重试；先查询原结果。":"原内容和理由都已保存。不知道审批单建没建成，可以查询原结果，或按原请求重试，不会重复建单。"}</p>{error&&<p role="status">{error}</p>}</>}{message&&<p>{message}</p>}<p>提交：{formatBusinessTimeCompact(new Date(pending.createdAt).toISOString(),"—")}（{businessZone().label}）{pending.ticketId&&<> · 审批单：<span data-mono>{pending.ticketId}</span></>}</p><p>原值：{pending.input.beforeValue}</p><p>目标：{pending.input.afterValue}</p>
+      {pending&&(canQueryProposal || canWrite)&&pending.ticketId&&!pending.terminal&&<Notice tone="warn" action={<Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查询审批结果</Button>}><p>手机换机规则的变更已提交，等待审批 · <span data-mono>{pending.ticketId}</span></p>{error&&<p role="status">{error}</p>}{message&&!error&&<p role="status">{message}</p>}</Notice>}
+      {pending&&(canQueryProposal || canWrite)&&(!pending.ticketId||pending.terminal)&&<Notice tone={pending.terminal?"done":"warn"} title={pending.terminal?`换机规则审批${PROPOSAL_END[pending.terminal]?.tag ?? "已结束"}`:retryRejectedKey===pending.commandKey?"按原请求重试被拒绝":"换机规则提交结果未知"} actionBelow action={<>{!pending.terminal&&canQueryProposal&&<Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查询原结果</Button>}{!pending.ticketId&&!recoveryState?.expired&&canWrite&&retryRejectedKey!==pending.commandKey&&<Button size="sm" disabled={busy || !!recoveryState?.replayBlock} onClick={()=>void retryOriginal()}>按原请求重试</Button>}{(retryRejectedKey===pending.commandKey&&!pending.ticketId)&&<Button variant="primary" size="sm" onClick={()=>setReleaseKey(pending.commandKey)}>解除原操作记录</Button>}{pending.terminal&&<Button size="sm" disabled={busy} onClick={()=>void prepareNewChange(pending)}>准备新变更</Button>}</>}>
+      {retryRejectedKey===pending.commandKey&&!pending.terminal?<><p>拒绝原因：{error||recoveryState?.replayRejection}</p><p>核对后可以解除这条记录。</p></>:<><p>{pending.terminal?"刷新当前策略核对后，再准备新变更。":recoveryState?.expired?RETRY_EXPIRED_TEXT:"原内容和理由都已保存。不知道审批单建没建成，可以查询原结果，或按原请求重试，不会重复建单。"}</p>{error&&<p role="status">{error}</p>}</>}{message&&<p>{message}</p>}<p>提交：{formatBusinessTimeCompact(new Date(pending.createdAt).toISOString(),"—")}（{businessZone().label}）{pending.ticketId&&<> · 审批单：<span data-mono>{pending.ticketId}</span></>}</p><p>原值：{pending.input.beforeValue}</p><p>目标：{pending.input.afterValue}</p>
       <Fold title="原策略与目标策略技术记录" summary="原请求编号与原文" inset><div className="e6-fold-content"><p>理由：{pending.input.reason}</p><p>原请求编号：<code>{pending.commandKey}</code></p><pre className="e6-json">{JSON.stringify(pending.input,null,2)}</pre></div></Fold>
       </Notice>}
     </>;
@@ -301,8 +325,9 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
         {canRecover&&<Fold title="查询原发布结果" summary="按发布操作号或批准时的原标识查询" inset><div className="e6-fold-content"><p>提交提案的标识不能代替批准标识。原发布结果与当前策略分别显示。</p><div className="e6-form-grid"><Field label="查询方式"><Select aria-label="查询方式" value={mode} onChange={setMode} options={[{value:"id",label:"发布操作号"},{value:"key",label:"批准操作的原标识"}]}/></Field>{mode==="key"&&<Field label="发布类型"><Select aria-label="发布类型" value={type} onChange={setType} options={[{value:"PHONE_POLICY_PUBLISH",label:"整组手机策略"},{value:"PHONE_POLICY_PARAM_PUBLISH",label:"单项手机策略"}]}/></Field>}<Field label={mode==="id"?"发布操作号":"当前审批人的批准操作标识"}><Input maxLength={128} value={lookup} onChange={e=>setLookup(e.target.value)}/></Field></div><Button size="sm" disabled={busy||!lookup.trim()} onClick={()=>void query()}>只读查询原发布</Button>{queryMessage&&<Notice tone="neutral">{queryMessage}</Notice>}{queryError&&<Notice tone="warn">{queryError}</Notice>}{receipt&&<PhoneReceiptView receipt={receipt}/>}</div></Fold>}
         {rights.includes("platform_a2_read")&&<Link href="/platform/audit?domain=E">查看审批记录</Link>}
       </>}
-      {releaseKey&&pending&&releaseKey===pending.commandKey&&pending.absent&&!pending.ticketId&&isRetryExpired(pending)&&<MissingProposalReleaseModal label="手机换机规则的变更申请" createdAt={pending.createdAt} onCancel={()=>setReleaseKey(null)} onConfirm={async()=>{try{await releaseMissing();}catch{throw new Error("这次没查到审批记录，请稍后再查或到审批页面核对；原请求保留。");}}}/>}
-      {releaseKey&&pending&&!(releaseKey===pending.commandKey&&pending.absent&&!pending.ticketId&&isRetryExpired(pending))&&<ReleaseModal label="原手机换机策略提案" onCancel={()=>setReleaseKey(null)} onConfirm={()=>{if(releaseKey!==pending.commandKey||retryRejectedKey!==pending.commandKey){setReleaseKey(null);return;}proposals.forget(pending.fingerprint,pending.commandKey);setRetryRejectedKey(null);syncPending();setReleaseKey(null);void refresh();}}/>}
+      {releaseKey&&pending&&releaseKey===pending.commandKey&&<ReleaseModal label="原手机换机策略提案" onCancel={()=>setReleaseKey(null)} onConfirm={()=>{
+        if (policyRecovery.releaseRejectedReplay(pending)) { syncPending(); setReleaseKey(null); }
+      }}/>}
       {discard&&<Modal title="刷新会放弃未提交草稿" onClose={()=>setDiscard(false)} footer={<Decision danger={<Button variant="danger-outline" onClick={()=>{setDiscard(false);void refresh();}}>放弃草稿并刷新</Button>} others={<Button onClick={()=>setDiscard(false)}>继续编辑</Button>}/> }><p>将放弃换机规则普通草稿；原提案和原操作记录继续保留。</p></Modal>}
     </Panel>;
 }

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, OutcomeUnknownError } from "./outcome-classification";
-import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
+import { currentRecoveryActor, recoveryQueryConclusion } from "./abe-recovery-access";
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
 import { isOriginalCommandOrigin, queryOriginalCommand } from "./original-command-query";
@@ -57,6 +59,30 @@ const commands = createPendingMutationStore<A4Command>({
     && typeof record.reason === "string" && typeof record.name === "string" && typeof record.change === "string",
 });
 
+export const a4DirectRecovery = createPendingRecovery(commands, {
+  capability: () => "receipt",
+  explicitRejectionCode: error => {
+    const code = explicitRejectionCode(error);
+    return code && !/^REASON_TOO_SHORT_MIN_[1-9][0-9]*$/.test(code) ? code : undefined;
+  },
+  canReplay: record => {
+    const rights = currentRecoveryActor(record.commandOwnerId)?.authorities ?? [];
+    return rights.includes("platform_a4_read") && rights.includes("platform_a4_write")
+      && (!["retention", "redrive"].includes(record.original.kind) || rights.includes("platform_a2_write"));
+  },
+});
+
+async function originalA4Status(record: A4Command) {
+  const original = record.original;
+  const scope = original.kind === "retention" ? "A4_EVENT_RETENTION_RUN"
+    : original.kind === "param" ? `A4_PARAM:${original.param.key}`
+      : original.kind === "lifecycle" ? `A4_EVENT_LIFECYCLE:${original.schema.eventName.trim().toLowerCase()}`
+        : `A4_H3_OUTBOX_REDRIVE:${original.snapshot.eventId}`;
+  const actor = currentRecoveryActor(record.commandOwnerId);
+  if (!actor) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+  return fetchDirectCommandReceipt(scope, record.commandKey, actor.adminId);
+}
+
 /** Only the original retention command can settle its record; current cleanup statistics cannot. */
 export async function queryA4RetentionCommand(record: A4Command, evidence?: ECommandEvidence) {
   const saved = commands.list().find(row => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
@@ -65,16 +91,19 @@ export async function queryA4RetentionCommand(record: A4Command, evidence?: ECom
   if (!session?.authorities.includes("platform_a4_read")) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
   const locator = { commandKey: saved.commandKey, originalMethod: "POST" as const,
     originalPath: "/api/admin/platform/events/retention-runs", originalAdminId: String(session.adminId) };
-  let receipt;
-  try {
-    receipt = evidence ? await investigateECommand(saved, locator, evidence, "platform_a4_read") : await discoverECommand(locator);
-  } catch (error) {
-    // Older backends reject unsupported scopes; retain the existing current-data readback.
-    if (!evidence && (error as { status?: number }).status === 422) return null;
-    throw error;
-  }
-  if (eCommandSettled(receipt)) commands.forget(saved.fingerprint, saved.commandKey);
-  return receipt;
+  const result = await a4DirectRecovery.query(saved, async original => {
+    try {
+      if (!evidence && await originalA4Status(original) === "NOT_FOUND") return { receipt: null, conclusion: "not-found" } as const;
+      const receipt = evidence ? await investigateECommand(original, locator, evidence, "platform_a4_read") : await discoverECommand(locator);
+      return { receipt, conclusion: receipt && eCommandSettled(receipt) ? recoveryQueryConclusion(receipt.originalStatus) : "unknown" } as const;
+    } catch (error) {
+      if (!evidence && (error as { status?: number }).status === 422) return { receipt: null, conclusion: "unknown" } as const;
+      throw error;
+    }
+  });
+  if (!result) return null;
+  a4DirectRecovery.settleFromQuery(saved, result.conclusion);
+  return result.receipt;
 }
 
 /** The cleanup command has a separate integration; these are the three other direct A4 writers. */
@@ -84,11 +113,13 @@ export async function queryA4DirectCommand(record: A4Command, evidence?: FundCom
   const route = directCommandRoute(saved.original);
   if (!route) throw new Error("INVESTIGATION_SCOPE_UNSUPPORTED");
   const owner = saved.commandOrigin?.originalAdminId ?? String(useAdminAuth.getState().session?.adminId ?? "");
-  const query = () => queryOriginalCommand(saved, route, owner, evidence);
-  const receipt = evidence ? await query() : await query().catch(() => null);
-  const settled = fundCommandSettled(receipt);
-  if (settled) commands.forget(saved.fingerprint, saved.commandKey);
-  return { receipt, settled };
+  const result = await a4DirectRecovery.query(saved, async original => {
+    if (!evidence && await originalA4Status(original) === "NOT_FOUND") return { receipt: null, conclusion: "not-found" } as const;
+    const receipt = await queryOriginalCommand(original, route, owner, evidence);
+    return { receipt, conclusion: receipt && fundCommandSettled(receipt) ? recoveryQueryConclusion(receipt.originalStatus) : "unknown" } as const;
+  });
+  if (!result) return { receipt: null, settled: false };
+  return { receipt: result.receipt, settled: a4DirectRecovery.settleFromQuery(saved, result.conclusion) };
 }
 
 export function useA4Commands() {
@@ -115,7 +146,7 @@ export function useA4Commands() {
     sync();
     return commands.list().find(record => record.commandKey === key)!;
   };
-  const send = async (record: A4Command, retry = false) => {
+  const sendOriginal = async (record: A4Command, retry: boolean) => {
     if (isRetryExpired(record)) throw new Error("A4_ORIGINAL_QUERY_ONLY");
     if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("A4_ORIGINAL_STORAGE_FAILED");
     try {
@@ -134,7 +165,7 @@ export function useA4Commands() {
           break;
         }
       }
-      commands.forget(record.fingerprint, record.commandKey); sync();
+      a4DirectRecovery.settleAcknowledged(record); sync();
       return result;
     } catch (error) {
       const failure = error as { status?: number; httpStatus?: number; apiCode?: number; reasonCode?: string };
@@ -148,12 +179,16 @@ export function useA4Commands() {
       const rejected = retry ? isExplicitRejection(error) : !failure.reasonCode?.startsWith("IDEMPOTENCY_")
         && isDeterministicRejection(failure.httpStatus ?? failure.status ?? 0, failure.apiCode);
       if (rejected) {
-        commands.forget(record.fingerprint, record.commandKey); sync();
+        if (!retry) commands.forget(record.fingerprint, record.commandKey);
+        sync();
         throw error;
       }
       sync();
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("A4_MUTATION_OUTCOME_UNKNOWN", { cause: error });
     }
   };
+  const send = (record: A4Command, retry = false) => retry
+    ? a4DirectRecovery.replay(record, original => sendOriginal(original, true)).finally(sync)
+    : sendOriginal(record, false);
   return { pending, find, capture, send, sync };
 }

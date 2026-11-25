@@ -11,7 +11,7 @@ import { A4DeadLetterSummary, A4OutboxDiagnostics, A4_USER_NOTE, a4UserCell, use
  * 读取独立收敛；直接写与登记审批均保存完整原请求，只允许原样恢复。
  * 三类登记提交审批；参数、上线进度、清理、重新排队直接执行。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Activity, BookOpen, Boxes, CircleHelp, Clock3, FilePlus2, Hourglass, Inbox, Layers, ListTree, Puzzle, Lock, RefreshCw, RotateCcw, ServerCog, SlidersHorizontal, Trash2 } from "lucide-react";
 import { OperationConfirmModal, type BusinessFormValue } from "../design-kit";
@@ -28,7 +28,7 @@ import {
   fetchH3DeadOutboxRedrivePreview,
   pendingA4RegistryProposal,
   recoverA4RegistryProposal,
-  releaseExpiredA4RegistryProposal,
+  a4RegistryRecovery,
   registerA4DomainExtension,
   registerA4Schema,
   type A4DomainExtensionBatch,
@@ -38,12 +38,12 @@ import {
   type A4Overview,
   type A4RetentionExecution,
 } from "@/lib/admin/a4-client";
-import { a4Slot, queryA4DirectCommand, queryA4RetentionCommand, useA4Commands, type A4Command, type A4Original } from "@/lib/admin/a4-mutations";
+import { a4DirectRecovery, a4Slot, queryA4DirectCommand, queryA4RetentionCommand, useA4Commands, type A4Command, type A4Original } from "@/lib/admin/a4-mutations";
 import { canInvestigateECommand, eCommandResult, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundClosureModal, closureKnown } from "../fund-command-check";
 import { SETTLED_REJECTED, SettledLine, receiptExplain, receiptFact, receiptRejected, rejectedStatus } from "../recovery-panel";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
 import { fetchA2ProposalByKey, fetchA2ReasonPolicy, type A2OperationRow } from "@/lib/admin/a2-client";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
@@ -293,6 +293,10 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
     </Facts>
   );
 
+  useSyncExternalStore(a4RegistryRecovery.subscribe, a4RegistryRecovery.getRevision, () => 0);
+  const registryRecoveryState = pendingRegistry ? a4RegistryRecovery.state(pendingRegistry) : undefined;
+  const registryRetryBlock = !canWrite ? "你只有查看权限" : registryRecoveryState?.expired ? RETRY_EXPIRED_TEXT
+    : registryRecoveryState?.replayBlock ? "先查询原结果，查不到才能重试" : undefined;
   const openRegistryRecovery = (retry = false) => {
     if (!pendingRegistry) return false;
     openRegistryConfirm({
@@ -316,13 +320,12 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
     return true;
   };
 
-  /** 决定表「R1-提案过期」：过期并且按原请求明确查不到审批单，确认后只解除这条记录。 */
-  const releaseExpiredRegistry = (commandKey: string) => ctx.openConfirm({
+  const releaseRejectedRegistry = (commandKey: string) => ctx.openConfirm({
     briefKind: "record", action: "解除原操作记录", title: "解除原登记记录", reason: false,
-    detail: "原申请已超过 24 小时，不能再按原请求重试。",
+    detail: "按原请求重试被明确拒绝。",
     statedBrief: {
-      impact: "确认后先按原请求再查一次审批单：明确没有这张单才解除这条记录，原登记不会执行；查到了就不解除，请点「查询原结果」。",
-      check: "只解除这个标签页里的记录，不发登记请求。",
+      impact: "核对原操作结果后，只解除这条本地记录。",
+      check: "只解除这个标签页里的记录，不发请求，也不进操作记录。",
     },
     content: pendingRegistry ? <Facts>
       <Fact k="原申请">{REGISTRY_OP_TEXT[pendingRegistry.input.command.op] ?? "登记"}</Fact>
@@ -330,9 +333,9 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
       <Fact k="提交时间">{`${businessStamp(pendingRegistry.createdAt)}（${businessZone().label}）`}</Fact>
     </Facts> : undefined,
     run: async () => {
-      await releaseExpiredA4RegistryProposal(currentRegistryActor(false).adminId, commandKey);
+      const original = pendingA4RegistryProposal(currentRegistryActor(false).adminId);
+      if (!original || original.commandKey !== commandKey || !a4RegistryRecovery.releaseRejectedReplay(original)) throw new Error("A4_ORIGINAL_UNRESOLVED");
       setRegistryRevision(value => value + 1);
-      await refreshOverview(true);
     },
   });
 
@@ -389,6 +392,14 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     if (!overviewReady.current) throw new Error("A4_ORIGINAL_READ_REQUIRED");
   };
 
+  useSyncExternalStore(a4DirectRecovery.subscribe, a4DirectRecovery.getRevision, () => 0);
+  const directRecovery = (slot: string) => () => {
+    const original = commands.find(slot);
+    if (!original) return;
+    const state = a4DirectRecovery.state(original);
+    return { state, expiresAt: state.expiresAt, subscribe: a4DirectRecovery.subscribe, getRevision: a4DirectRecovery.getRevision,
+      query: () => queryOriginal(original) };
+  };
   const runDirect = async (original: A4Original, reason: string, name: string, change: string, success?: string) => {
     currentRegistryActor(true, original.kind === "retention" || original.kind === "redrive");
     const retained = commands.find(a4Slot(original));
@@ -460,6 +471,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       amplifies: false,
       initialReason: original?.reason,
       getPendingReason: () => commands.find("param:day0")?.reason,
+      getPendingRecovery: directRecovery("param:day0"),
       edit: { kind: "text", current: cur, initialValue: saved?.value, unit: "", hint: "30–600 的整数，单位秒，例如 120",
         preview: (value) => {
           const seconds = firstInt(value);
@@ -499,6 +511,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       amplifies: false,
       initialReason: original?.reason,
       getPendingReason: () => commands.find("param:event_retention")?.reason,
+      getPendingRecovery: directRecovery("param:event_retention"),
       edit: { kind: "text", current: cur, initialValue: saved?.value, unit: "", hint: "13–60 的整数，单位月，例如 18",
         preview: (value) => {
           const months = firstInt(value);
@@ -538,6 +551,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       amplifies: false,
       initialReason: original?.reason,
       getPendingReason: () => commands.find("param:sampling")?.reason,
+      getPendingRecovery: directRecovery("param:sampling"),
       edit: { kind: "text", current: cur, initialValue: saved?.value, unit: "", hint: "填浏览和会话类的百分比，0–100 的整数，例如 20",
         preview: (value) => {
           const percent = Number.parseInt(value.match(/\d{1,3}/)?.[0] || "", 10);
@@ -790,6 +804,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       reasonMax: 200,
       initialReason: original?.reason,
       getPendingReason: () => commands.find("retention")?.reason,
+      getPendingRecovery: directRecovery("retention"),
       run: (reason) => runDirect(saved ?? { kind: "retention", months: reviewedMonths, cutoff: reviewedCutoff, expectedRetentionMonths: firstInt(reviewedMonths) },
         reason, "立即清理到期的事件记录", `${reviewedMonths} · ${reviewedCutoff ?? "—"}`),
     });
@@ -878,6 +893,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       reasonMax: 200,
       initialReason: original?.reason,
       getPendingReason: () => commands.find(`redrive:${snapshot.eventId}`)?.reason,
+      getPendingRecovery: directRecovery(`redrive:${snapshot.eventId}`),
       run: (reason) => runDirect(saved ?? { kind: "redrive", snapshot: commandSnapshot }, reason, "重新排队任务事件", snapshot.eventId),
     });
   };
@@ -921,6 +937,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       reasonMax: 200,
       initialReason: original?.reason,
       getPendingReason: () => commands.find(`lifecycle:${schema.eventName}`)?.reason,
+      getPendingRecovery: directRecovery(`lifecycle:${schema.eventName}`),
       blockedReason: !original && NEXT_LIFECYCLE[schema.lifecycleState] !== next ? displayAdminError(new Error("A4_EVENT_LIFECYCLE_TRANSITION_INVALID")) : undefined,
       run: async (reason) => {
         if (!original && NEXT_LIFECYCLE[schema.lifecycleState] !== next) throw new Error("A4_EVENT_LIFECYCLE_TRANSITION_INVALID");
@@ -954,12 +971,16 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           reasonMin={a2ReasonMin}
           reasonMax={200}
           getPendingReason={() => pendingA4RegistryProposal(registryConfirm.adminId)?.input.reason}
+          getPendingRecovery={() => pendingRegistry ? {
+            state: a4RegistryRecovery.state(pendingRegistry), expiresAt: pendingRegistry.expiresAt, blockedReason: registryRetryBlock,
+            subscribe: a4RegistryRecovery.subscribe, getRevision: a4RegistryRecovery.getRevision,
+          } : undefined}
           inlineApproval={{
             pending: !!pendingRegistry,
             expired: !!pendingRegistry && Date.now() >= pendingRegistry.expiresAt,
             expiredRequestRecovery: pendingRegistry && Date.now() >= pendingRegistry.expiresAt ? "query" : undefined,
             initialRecovery: registryConfirm.retry ? "retry" : "lookup",
-            disabledReason: registryConfirm.retry && !canWrite ? "你只有查看权限" : undefined,
+            disabledReason: registryConfirm.retry ? registryRetryBlock : undefined,
             resolve: () => ({
               heading: "要另一位超级管理员批准（需有审批批准权限），你自己不能批",
               completionCopy: registryConfirm.completion ?? "批准前，事件目录、字段和扩展批次均保持原状。",
@@ -1006,13 +1027,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       change: <span data-mono>{pendingRegistry.input.obj}</span>,
       submittedAt: pendingRegistry.createdAt,
       tag: expired
-        ? <StatusTag tone="neutral" icon={Hourglass} explain="原申请超过 24 小时，不能再重试，只能查询原审批单。按原请求明确查不到这张单时，可以解除这条记录。">已过期</StatusTag>
+        ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>,
       actions: <>
         <Button size="sm" onClick={() => openRegistryRecovery()}>查询原结果</Button>
-        {expired
-          ? !pendingRegistry.received && <Button size="sm" onClick={() => releaseExpiredRegistry(pendingRegistry.commandKey)}>解除原操作记录</Button>
-          : !pendingRegistry.received && <Button size="sm" disabledReason={!canWrite ? "你只有查看权限" : undefined} onClick={() => openRegistryRecovery(true)}>按原请求重试</Button>}
+        {!expired && !pendingRegistry.received && <Button size="sm" disabledReason={registryRetryBlock} onClick={() => openRegistryRecovery(true)}>按原请求重试</Button>}
+        {registryRecoveryState?.replayRejection && !pendingRegistry.received && <Button size="sm" onClick={() => releaseRejectedRegistry(pendingRegistry.commandKey)}>解除原操作记录</Button>}
       </>,
     });
   }
@@ -1121,7 +1141,16 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       : expired ? "系统也没有结果；已过 24 小时，请核查结案。" : "系统也没有结果，重试也一样，请按证据核查结案。" };
     return undefined;
   };
+  const releaseDirect = (record: A4Command) => ctx.openConfirm({
+    briefKind: "record", action: "解除原操作记录", reason: false,
+    detail: "核对原操作结果后，只解除这条本地记录，不发请求，也不进操作记录。",
+    run: async () => {
+      if (!a4DirectRecovery.releaseRejectedReplay(record)) throw new Error("A4_ORIGINAL_UNRESOLVED");
+      commands.sync();
+    },
+  });
   recoveryRows.push(...commands.pending.map((record): A4RecoveryRow => {
+    const recovery = a4DirectRecovery.state(record);
     const shown = retentionShown(record);
     const outcome = retentionOutcomes[record.commandKey];
     const status = outcome && "receipt" in outcome ? outcome.receipt?.originalStatus : undefined;
@@ -1132,17 +1161,17 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         ? <><span data-mono>{record.original.snapshot.eventId}</span> · 理由「{record.reason}」</> : record.change,
       submittedAt: record.createdAt,
       tag: shown ? <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag> : isRetryExpired(record)
-        ? <StatusTag tone="neutral" icon={Hourglass} explain={record.original.kind === "retention" || record.commandOrigin
-          ? "超过 24 小时不能再重试。先查询这次清理的原结果；查到的，按证据核查结案。" : "原操作超过 24 小时，不能再重试，只能查询当前数据核对。"}>已过期</StatusTag>
+        ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain={record.original.kind === "redrive"
           ? "提交时没收到确定结果，可能已经重新排队。先查询原结果，核对这条事件现在的状态；按原请求重试不会再排一次。" : undefined}>结果未知</StatusTag>,
-      line: shown?.line,
+      line: recovery.replayRejection ? "按原请求重试被明确拒绝" : recovery.expired ? RETRY_EXPIRED_TEXT : shown?.line,
       actions: <>
         <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
         {closable && <Button size="sm" variant="danger-outline" disabled={!!querying} onClick={() => setRetentionClosing(record)}>核查结案</Button>}
-        <Button size="sm" disabledReason={isRetryExpired(record) ? "原操作超过 24 小时，不能再重试，只能查询"
-          : !(record.original.kind === "retention" ? canRunRetention : record.original.kind === "redrive" ? canRedriveH3Dead : canWrite) ? "你只有查看权限" : undefined}
+        <Button size="sm" disabledReason={recovery.expired ? RETRY_EXPIRED_TEXT
+          : recovery.replayBlock ? "先查询原结果，查不到才能重试" : undefined}
           onClick={() => recoverOriginal(record)}>按原请求重试</Button>
+        {recovery.replayRejection && <Button size="sm" onClick={() => releaseDirect(record)}>解除原操作记录</Button>}
       </>,
     };
   }));

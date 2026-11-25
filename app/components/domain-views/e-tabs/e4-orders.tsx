@@ -16,6 +16,7 @@ import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { e4RefundAmountError } from "@/lib/admin/e4-refund-amount";
 import { useReach } from "@/lib/nav/use-reach";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { FundClosureModal, FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import type { E4PendingCommand, EViewCtx } from "./types";
 import { E4_PAGE_SIZES, ORDER_FINAL_STATES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, orderAmount, stateLabel, type E4Query } from "./data";
@@ -188,31 +189,33 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         actions: ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Receipt(record)}>查询原结果</Button>,
         tech: `原请求编号 ${record.commandKey}` })),
       ...ctx.e4Pending.map((record): FundRecoveryRow => {
-        const expired = record.expiresAt <= Date.now();
+        const recovery = ctx.e4RecoveryState(record);
+        const expired = recovery.expired;
         // 能查原提案就先查，明确查不到才重试；重试要当前还有这项写权（OP-93）。
         const canRetry = record.spec.command.op === "e4_order_refund" ? ctx.canRefundE4 : ctx.canWriteE4;
         const created = !!record.receivedTicketId || record.creationConfirmed === true;
-        const needQuery = ctx.canQueryE4 && !ctx.e4QueryMissing.includes(record.commandKey);
+        const needQuery = !!recovery.replayBlock;
         const retryBlock = expired ? undefined : !canRetry ? "这个账号已没有这项权限，请有权限的同事处理" : needQuery ? "先查询原结果，明确查不到才能重试" : undefined;
         const waiting = record.proposalStatus === "pending";
         const outcome = ctx.e4InvestigationResults[record.commandKey];
         const access = ctx.e4InvestigationAccess(record);
         const ticket = record.receivedTicketId ? `审批单 ${record.receivedTicketId}` : "审批单";
-        const expiredMissing = expired && ctx.e4ExpiredNotFound.includes(record.commandKey);
-        return { key: record.fingerprint, title: record.label, record: created ? undefined : record, outcome, createdAt: record.createdAt, expired, canRetry: !expired && canRetry,
+        const replayRejected = !!recovery.replayRejection;
+        return { key: record.fingerprint, title: record.label, record: created ? undefined : record, outcome, createdAt: record.createdAt, expired, canRetry: !recovery.replayBlock && canRetry,
           canQuery: ctx.canQueryE4, copy: { missingOrigin: expired ? "这条记录早于执行核查，查询原结果只查审批单。超过 24 小时不能再重试。" : "这条记录早于执行核查，查询原结果只查审批单。" },
           status: waiting ? { tone: "warn", label: "待审批", line: `${ticket}已建好，在等另一位超级管理员批准。` }
             : created ? { tone: "warn", label: "进度没读到", line: `${ticket}已建好，审批进度没读到，再查一次，不要重新提交。` }
-              : expiredMissing ? { tone: "neutral", label: "没有建成", line: "查询确认申请没有建成，也没有审批单，可以解除。" } : undefined,
+              : replayRejected ? { tone: "warn", label: "重试被拒绝", line: "核对原操作的结果后可以解除这条记录。" }
+                : expired ? { tone: "neutral", label: "已过期", line: RETRY_EXPIRED_TEXT } : undefined,
           actions: <>
             {ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint && created} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>{waiting ? "刷新审批进度" : "查询原结果"}</Button>}
             {!created && access.canSubmit && eCommandClosureOffer(outcome, expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ctx.e4Retrying} onClick={() => setClosing(record)}>核查结案</Button>}
             {!expired && !created && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原请求重试</Button>}
-            {expiredMissing && !created && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+            {replayRejected && !created && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
           </>,
           detail: <>
             <p>{waiting ? "批准前这单不能再操作。" : created ? "点「查询原结果」再读一次审批进度。"
-              : expiredMissing ? "已过 24 小时。系统里没有这次申请，或申请失败已整体撤销，也查不到审批单。解除时会再查一次。"
+              : expired ? RETRY_EXPIRED_TEXT
               : `可能已经提交，有结果前这单不能再操作。${!expired && !canRetry ? "这个账号已没有这项权限，不能重试。" : ""}`}</p>
             {ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "记录继续保留"]} /></p>}
           </>,
@@ -317,7 +320,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     <E4OrderDrawer ctx={ctx} />
 
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => { ctx.releaseE4Pending(releasing); setReleasing(null); }}
-      explain="已超过 24 小时，查询确认这次申请没有建成：系统里没有它，或它失败后已整体撤销，也查不到审批单。确认时会再查一次，结果有变或查到审批单就不解除。解除后这单可以重新处理，系统按这单现在的状态校验。" />}
+      />}
     {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} facts={<Fact k="订单">{closing.orderNo}</Fact>}
       offer={eCommandClosureOffer(ctx.e4InvestigationResults[closing.commandKey], closing.expiresAt <= Date.now())}
       onClose={() => setClosing(null)} onSubmit={async evidence => { await ctx.checkE4Investigation(closing, evidence); setClosing(null); }} />}

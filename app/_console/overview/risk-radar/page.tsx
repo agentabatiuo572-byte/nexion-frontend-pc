@@ -1,4 +1,5 @@
 "use client";
+import { nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
 
 /**
  * B5 风险提醒。先答「现在哪一项在报警、有多严重、去哪页处理」：一句结论，有事的项展开成卡片排在前面，
@@ -7,7 +8,7 @@
  */
 import "./risk-radar.css";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowUpRight, BellRing, CheckCheck, Eye, FileText, LockOpen, Lock, Power, ShieldQuestion, SlidersHorizontal } from "lucide-react";
 import {
@@ -15,7 +16,7 @@ import {
   PageHeader, PageTabs, Panel, RdPage, ReleaseModal, StatusTag, Textarea, useTabIds,
 } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
-import { useToast } from "@/app/components/domain-views/design-kit";
+import { useToast, usePendingReplayDeadline } from "@/app/components/domain-views/design-kit";
 import {
   fetchB5Radar,
   fetchB5Inbox,
@@ -29,11 +30,11 @@ import {
   type B5InboxItem,
 } from "@/lib/admin/b5-client";
 import { formatB5RiskLight } from "@/lib/admin/b5-display-labels";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
-import { b5Commands, executeB5Command, inspectB5Command, isB5Original, pendingB5Commands, rememberB5Command, type B5PendingWrite, type B5ThresholdFacts } from "@/lib/admin/b5-commands";
-import { pendingThresholdConfigApproval, releaseExpiredB5ThresholdApproval, submitB5ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
+import { b5Commands, b5Recovery, executeB5Command, inspectB5Command, isB5Original, pendingB5Commands, rememberB5Command, type B5PendingWrite, type B5ThresholdFacts } from "@/lib/admin/b5-commands";
+import { bThresholdRecovery, pendingThresholdConfigApproval, submitB5ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
@@ -95,6 +96,7 @@ interface B5PendingCommand {
   body: ReactNode;
   expired: boolean;
   onRetry?: () => void;
+  onRelease?: () => void;
   onQuery?: () => void;
 }
 
@@ -107,10 +109,11 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
           action={<span className="b5-row-actions">
             {item.onQuery && <Button size="sm" onClick={item.onQuery}>查询原结果</Button>}
             {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原请求重试</Button>}
+            {item.onRelease && <Button size="sm" onClick={item.onRelease}>解除原操作记录</Button>}
             {auditReachable && <Link className="rd-link" href="/platform/audit" prefetch={false}>到「操作记录与审批」核对</Link>}
           </span>}>
           <p>{item.body}</p>
-          <p>{item.expired ? "已超过 24 小时，不能重试，只能查询；查到的是现在的值，说明不了原操作成没成。" : "24 小时内只能按原请求重试，不能改值。"}</p>
+          <p>{item.expired ? RETRY_EXPIRED_TEXT : "24 小时内只能按原请求重试，不能改值。"}</p>
         </Notice>
       ))}
     </>
@@ -177,7 +180,11 @@ export default function RiskRadarPage() {
   const [subscriptionNeedsRead, setSubscriptionNeedsRead] = useState(false);
   const [inboxNeedsRead, setInboxNeedsRead] = useState(false);
   const [approvalVerifiedKey, setApprovalVerifiedKey] = useState<string | null>(null);
+  const [verifiedDraft, setVerifiedDraft] = useState<{ yellowPct: number; redPct: number }>();
   const [releasingApproval, setReleasingApproval] = useState(false);
+  const [releasingWrite, setReleasingWrite] = useState<B5PendingWrite | null>(null);
+  useSyncExternalStore(bThresholdRecovery.subscribe, bThresholdRecovery.getRevision, () => 0);
+  useSyncExternalStore(b5Recovery.subscribe, b5Recovery.getRevision, () => 0);
   const pendingWrites = session ? pendingB5Commands(String(session.adminId)) : [];
   const newWriteBlocked = needsFreshRadar || !!radar.error || !radar.data;
   useEffect(() => {
@@ -227,6 +234,8 @@ export default function RiskRadarPage() {
     && Number.isFinite(redPct) && redPct >= 10 && redPct <= 80 && redPct > yellowPct;
   const reasonValid = reason.trim().length >= 8 && reason.trim().length <= 200;
   const pendingApproval = session && pendingThresholdConfigApproval("B5", session.adminId);
+  usePendingReplayDeadline(nextRecoveryDeadline(pendingApproval ? [...pendingWrites, pendingApproval] : pendingWrites));
+  const approvalRecoveryState = pendingApproval ? bThresholdRecovery.state(pendingApproval) : undefined;
   const requiresApproval = !thresholdOriginal && (!!pendingApproval || !!threshold && redPct > threshold.redPct);
   const staleThreshold = !thresholdOriginal && !approvalRecovery && !!threshold && radar.data?.bankrun.version !== threshold.version;
   useEffect(() => {
@@ -244,8 +253,8 @@ export default function RiskRadarPage() {
   const lookupOnly = approvalRecovery === "lookup" || !!(pendingApproval && pendingApproval.expiresAt <= Date.now()) || !!(thresholdOriginal && isRetryExpired(thresholdOriginal));
   const thresholdLocked = savingThreshold || !!thresholdOriginal || !!approvalRecovery || lookupOnly;
   const canSubmitThreshold = canThreshold && !!session && !savingThreshold && !lookupOnly && (thresholdOriginal
-    ? !isRetryExpired(thresholdOriginal)
-    : approvalRecovery === "retry" ? !!pendingApproval?.b5Request
+    ? !b5Recovery.state(thresholdOriginal).replayBlock
+    : approvalRecovery === "retry" ? !!approvalRecoveryState && !approvalRecoveryState.replayBlock
       : !newWriteBlocked && !pendingApproval && !pendingWrites.some(record => record.fingerprint === THRESHOLD_SLOT) && reasonValid && previewReady);
 
   useEffect(() => {
@@ -258,6 +267,7 @@ export default function RiskRadarPage() {
         // 待审批条和读取失败块都在页面上，自动核对不再弹提示。
         if (alive && result?.activeReadFailed) setNeedsFreshRadar(true);
         if (alive && result && result.ticket.status !== "pending") {
+          if (!result.activeReadFailed && ["rejected", "withdrawn", "expired"].includes(result.ticket.status)) setVerifiedDraft(pendingApproval.values);
           setThreshold(null); setApprovalRecovery(null); setNeedsFreshRadar(true); void radar.reload();
         }
       })
@@ -344,7 +354,7 @@ export default function RiskRadarPage() {
         await radar.reload();
         shownInDialog = true;
       }
-      else if (isExplicitRejection(cause)) { await refreshAfterWrite(); setStatusUnknown(false); }
+      else if (isExplicitRejection(cause)) { setStatusUnknown(true); }
       else setStatusUnknown(!!original);
       setStatusError(displayAdminError(cause));
       if (!shownInDialog) setToast(displayAdminError(cause));
@@ -425,8 +435,9 @@ export default function RiskRadarPage() {
       const saved = pendingWrites.find(record => record.fingerprint === THRESHOLD_SLOT);
       if (saved) { recoverWrite(saved); return; }
       if (!canThreshold || newWriteBlocked || !data) return;
-      setYellowInput(String(data.bankrun.yellowPct));
-      setRedInput(String(data.bankrun.redPct));
+      setYellowInput(String(verifiedDraft?.yellowPct ?? data.bankrun.yellowPct));
+      setRedInput(String(verifiedDraft?.redPct ?? data.bankrun.redPct));
+      setVerifiedDraft(undefined);
       setReason("");
       setApprovalRecovery(null);
       setThresholdOriginal(null);
@@ -441,7 +452,10 @@ export default function RiskRadarPage() {
       const result = await submitB5ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, fetchB5Radar, "query");
       setApprovalVerifiedKey(result?.ticket.status === "pending" ? pendingApproval.commandKey : null);
       setToast(result?.acknowledgement ?? "暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
-      if (result) { setThreshold(null); setNeedsFreshRadar(true); await radar.reload(); }
+      if (result) {
+        if (!result.activeReadFailed && ["rejected", "withdrawn", "expired"].includes(result.ticket.status)) setVerifiedDraft(pendingApproval.values);
+        setThreshold(null); setNeedsFreshRadar(true); await radar.reload();
+      }
       else setApprovalRecovery("retry");
     } catch (cause) { setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause)); }
     finally { syncPending(value => value + 1); }
@@ -564,8 +578,10 @@ export default function RiskRadarPage() {
       : original?.kind === "signal" ? `信号 ${original.facts.signalNo} · ${HANDLING[original.facts.handlingStatus].text} → ${STATUS_TEXT[input.targetStatus as "handled" | "resolved"]}`
         : original?.kind === "ack" ? `信号 ${original.facts.signalNo}` : original?.kind === "subscription" ? subscriptionChannels(JSON.parse(original.body)) : "原记录不完整，到「操作记录与审批」核对";
     const name = original?.kind === "threshold" ? "调整黄线和红线" : original?.kind === "signal" ? `标记${STATUS_TEXT[input.targetStatus as "handled" | "resolved"]}` : original?.kind === "ack" ? "确认站内告警已读" : original?.kind === "subscription" ? "保存告警订阅" : "原操作";
-    return { commandKey: record.commandKey, title: `${name} · 结果未知`, body: `${body} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
-      expired: isRetryExpired(record), onRetry: () => recoverWrite(record), onQuery: () => void queryWrite(record) };
+    const recovery = b5Recovery.state(record);
+    return { onRelease: original && recovery.replayRejection ? () => setReleasingWrite(original) : undefined,
+      commandKey: record.commandKey, title: `${name} · 结果未知`, body: `${body} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
+      expired: isRetryExpired(record), onRetry: recovery.replayBlock ? undefined : () => recoverWrite(record), onQuery: () => void queryWrite(record) };
   });
 
   // ---------- 五项 ----------
@@ -579,18 +595,12 @@ export default function RiskRadarPage() {
     ? <Button key="threshold" variant="ghost" size={size} icon={<SlidersHorizontal size={14} aria-hidden />} onClick={openThreshold}>调整黄线 / 红线</Button>
     : null;
   const approvalPending = pendingApproval?.commandKey === approvalVerifiedKey && pendingApproval?.b5Ticket?.status === "pending" ? { redPct: pendingApproval.values.redPct, ticketId: pendingApproval.b5Ticket.id } : null;
-  // 过期、并且过期后按原请求查询明确没有这张单，才可以解除（决定 R1-提案过期；判断在 releaseExpiredB5ThresholdApproval 里再核一次）。
-  const approvalReleasable = !!pendingApproval && pendingApproval.expiresAt <= Date.now() && !!pendingApproval.b5NotFound && !pendingApproval.received && !pendingApproval.b5Ticket;
-  const releaseApproval = async () => {
-    if (!session || !pendingApproval) return;
-    try {
-      const released = await releaseExpiredB5ThresholdApproval(session.adminId, pendingApproval.commandKey);
-      setReleasingApproval(false);
-      if (!released) { setToast("这条记录现在不能解除，请先查询原结果。"); return; }
-      setThreshold(null); setApprovalRecovery(null); setNeedsFreshRadar(true); void radar.reload();
-      setToast("已解除本页的原操作记录");
-    } catch (error) { setToast(displayAdminError(error)); }
-    finally { syncPending(value => value + 1); }
+  const approvalReleasable = !!approvalRecoveryState?.replayRejection && !pendingApproval?.received && !pendingApproval?.b5Ticket;
+  const releaseApproval = () => {
+    if (!pendingApproval || !bThresholdRecovery.releaseRejectedReplay(pendingApproval)) return;
+    setReleasingApproval(false); setThreshold(null); setApprovalRecovery(null);
+    syncPending(value => value + 1);
+    setToast("已解除本页的原操作记录");
   };
   const approvalTag = approvalPending
     ? <StatusTag tone="warn" explain={`审批单 ${approvalPending.ticketId}。另一位超级管理员批准前，红线不变。`}>红线提高到 {fmtConfigPct(approvalPending.redPct)} 待审批</StatusTag>
@@ -659,8 +669,8 @@ export default function RiskRadarPage() {
             </span>}>
             <p>黄线 {fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 {fmtConfigPct(pendingApproval.values.redPct)} · {timeText(new Date(pendingApproval.createdAt).toISOString())}提交</p>
             <p>{approvalPending ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
-              : approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除原操作记录。"
-                : pendingApproval.expiresAt <= Date.now() ? "已超过 24 小时，不能重试，只能查询原审批单。"
+              : approvalReleasable ? "按原请求重试被拒绝，核对结果后可以解除原操作记录。"
+                : pendingApproval.expiresAt <= Date.now() ? RETRY_EXPIRED_TEXT
                   : "先查原审批单；查不到时 24 小时内可以按原请求重试，不会建第二张单。"}</p>
           </Notice>
         )}
@@ -754,9 +764,9 @@ export default function RiskRadarPage() {
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
               {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
               {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
-                ? approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除原操作记录。" : "可能已经建了审批单。先点「查询原结果」；查不到时 24 小时内可以按原请求重试，不会建第二张单。"
+                ? approvalReleasable ? "按原请求重试被拒绝，核对结果后可以解除原操作记录。" : "可能已经建了审批单。先点「查询原结果」；查不到时 24 小时内可以按原请求重试，不会建第二张单。"
                 : thresholdUnknown ? "可能已经生效。可以按原请求重试，不会重复执行；也可以关掉后点「查询原结果」。" : thresholdError}</Notice>}
-              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="审批单结果未知">{approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除原操作记录。" : "先点「查询原结果」查原审批单；查到了就不用再提交。"}</Notice>}
+              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="审批单结果未知">{approvalReleasable ? "按原请求重试被拒绝，核对结果后可以解除原操作记录。" : "先点「查询原结果」查原审批单；查到了就不用再提交。"}</Notice>}
               <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} beforeLabel={recovering ? "提交时" : undefined} label="黄线改成" hint="5%–50%" state={yellowDirection}
                 note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>
                 {(control) => <NumberInput {...control} aria-label="黄线（5%–50%）" unit="%" min={5} max={50} value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} />}
@@ -807,7 +817,7 @@ export default function RiskRadarPage() {
           footer={<>
             <Button disabled={savingSubscription} onClick={() => setSubscriptionOpen(false)}>取消</Button>
             <Button variant="primary" loading={savingSubscription} loadingText="保存中…"
-              disabledReason={!canSubscribe ? "需要告警订阅权限才能保存" : subscriptionOriginal ? isRetryExpired(subscriptionOriginal) ? "已超过 24 小时，只能核对，不能重试。" : undefined : subscriptionNeedsRead || subscriptionLoading ? "正在读取现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
+              disabledReason={!canSubscribe ? "需要告警订阅权限才能保存" : subscriptionOriginal ? b5Recovery.state(subscriptionOriginal).expired ? RETRY_EXPIRED_TEXT : b5Recovery.state(subscriptionOriginal).replayBlock ? "原请求不能重试" : undefined : subscriptionNeedsRead || subscriptionLoading ? "正在读取现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
               onClick={() => void saveSubscription()}>{subscriptionOriginal ? "按原请求重试" : "保存订阅"}</Button>
           </>}>
           <div className="b5-dialog">
@@ -874,7 +884,7 @@ export default function RiskRadarPage() {
             onClose={() => setStatusDialog(null)}
             footer={<>
               <Button disabled={busy} onClick={() => setStatusDialog(null)}>取消</Button>
-              <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={!canTriage ? "你只能查看；分诊、调整黄线红线和告警订阅需要对应权限。" : statusOriginal && isRetryExpired(statusOriginal) ? "已超过 24 小时，只能核对，不能重试。" : valid ? undefined : "理由要写 8–200 个字"}
+              <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={!canTriage ? "你只能查看；分诊、调整黄线红线和告警订阅需要对应权限。" : statusOriginal && b5Recovery.state(statusOriginal).replayBlock ? b5Recovery.state(statusOriginal).expired ? RETRY_EXPIRED_TEXT : "原请求不能重试" : valid ? undefined : "理由要写 8–200 个字"}
                 onClick={() => void changeSignalStatus(alert, target, statusReason)}>{statusUnknown ? "按原请求重试" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
             </>}>
             <div className="b5-dialog">
@@ -897,10 +907,14 @@ export default function RiskRadarPage() {
           </Modal>
         );
       })()}
+      {releasingWrite && <ReleaseModal label="原风险提醒操作" onCancel={() => setReleasingWrite(null)} onConfirm={() => {
+        if (!b5Recovery.releaseRejectedReplay(releasingWrite)) return;
+        setReleasingWrite(null); syncPending(value => value + 1); setToast("已解除本页的原操作记录");
+      }} />}
       {releasingApproval && pendingApproval && (
         <ReleaseModal onCancel={() => setReleasingApproval(false)} onConfirm={releaseApproval}
           label={`提高红线的审批 · 黄线 ${fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 ${fmtConfigPct(pendingApproval.values.redPct)} · ${timeText(new Date(pendingApproval.createdAt).toISOString())}提交`}
-          explain="原申请已超过 24 小时，查不到这张审批单，说明没有建成，之后也不会再建成。解除后可以重新调整黄线和红线。" />
+          />
       )}
       {toastNode}
     </RdPage>

@@ -77,7 +77,7 @@ export function e1Object(spec: ProposeSpec): string {
   return target ? `${target.type}|${target.id}` : `${spec.command.op}|${spec.obj}`;
 }
 
-export type E1Pending = PendingMutationRecord & { actorId: string; spec: ProposeSpec; receivedTicketId?: string; absent?: boolean; retryRejection?: string };
+export type E1Pending = PendingMutationRecord & { actorId: string; spec: ProposeSpec; operator?: string; operatorRole?: string; receivedTicketId?: string; absent?: boolean; retryRejection?: string };
 const validProposal = (row: E1Pending) => typeof row.actorId === "string" && !!row.actorId
   && typeof row.spec?.reason === "string" && row.spec.sourceDomain === "E1"
   && typeof row.spec?.obj === "string" && typeof row.spec?.command?.op === "string"

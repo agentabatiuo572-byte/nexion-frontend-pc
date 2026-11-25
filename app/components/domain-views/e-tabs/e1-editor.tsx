@@ -12,12 +12,13 @@ import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import { ADMIN_ERROR_MESSAGES, guardedFetch, displayAdminError } from "@/lib/admin/error-messages";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, containsHan, trimStoredContent } from "@/lib/admin/content-language-rules";
 import { SKU_BADGE_OPTIONS, SKU_CUSTOM_BADGE_MAX_LENGTH, SKU_TAGLINE_LABELS, SKU_TAGLINE_TRANSLATION_MAX_LENGTH, SKU_TAGLINE_VI_HAN_ERROR, skuBadgeKind, skuBadgeValue } from "@/lib/admin/e1-product-copy";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { SKU_SERIES_NAMES, skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSeries, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
+import { currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
 import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
 
@@ -107,6 +108,15 @@ function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media): Op
   return draft;
 }
 
+const mediaRecovery = createPendingRecovery(e1MediaCommands, {
+  capability: () => "replay",
+  explicitRejectionCode,
+  canReplay: record => {
+    const rights = currentRecoveryActor(record.actorId)?.authorities ?? [];
+    return rights.includes("device_e1_read") && rights.includes("device_e1_write");
+  },
+});
+
 export function E1Editor({ request, gates, currentPhaseId, writable, currentSku, onClose, onReview, onRevisionAccepted, busy, toast, onMediaChange, writeBlockedReason }: {
   request: E1EditRequest | null; gates: E1GenerationGateData | null; currentPhaseId: string; writable: boolean; currentSku?: OpsSku;
   onClose: () => void; onReview: (review: E1SkuReview) => void; onRevisionAccepted: () => void;
@@ -123,7 +133,6 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const [mediaBusy, setMediaBusy] = useState(false);
   const [mediaError, setMediaError] = useState("");
   const [mediaPending, setMediaPending] = useState<E1MediaPending | null>(null);
-  const [mediaRejected, setMediaRejected] = useState(false);
   const [mediaRelease, setMediaRelease] = useState(false);
   const [drag, setDrag] = useState(false);
   const fileRef = useRef<File | null>(null);
@@ -182,26 +191,29 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (!writable || uploadBusy.current || record.actorId !== actor || isRetryExpired(record)) throw new Error(isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "没有上传权限、原文件正在上传或账号不符");
     e1MediaCommands.remember(record.fingerprint, record.commandKey, record);
     if (!e1MediaCommands.isDurablyStored(record.fingerprint, record.commandKey)) { setMediaError("浏览器无法保存原上传，本次没有发送；请保留原文件核对。"); return; }
-    uploadBusy.current = true; setMediaBusy(true); onMediaChange(record.commandKey); setMediaRejected(false); setMediaError("");
+    uploadBusy.current = true; setMediaBusy(true); onMediaChange(record.commandKey); setMediaError("");
     try {
-      const body = new FormData(); body.append("file", file);
-      const response = await guardedFetch(`/api/admin/media/uploads?${new URLSearchParams(record.params)}`, { method: "POST", body, headers: { "Idempotency-Key": record.commandKey }, cache: "no-store" });
-      const raw: unknown = await response.json().catch(() => null);
-      const result = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
-      const data = result?.data && typeof result.data === "object" && !Array.isArray(result.data) ? result.data as Record<string, unknown> : null;
-      const message = typeof result?.message === "string" ? result.message : "";
-      const upstreamUnknown = response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown";
-      if (upstreamUnknown || !response.ok || result?.code !== 0 || !data || typeof data.assetId !== "string" || !data.assetId.trim() || typeof data.objectKey !== "string" || !data.objectKey.trim()
-        || data.sizeBytes != null && (typeof data.sizeBytes !== "number" || !Number.isFinite(data.sizeBytes) || data.sizeBytes < 0)) {
-        throw Object.assign(new Error(message || "上传结果未知，请保留原文件核对"), { status: response.status, apiCode: result?.code, backendMessage: message, unknownOutcome: upstreamUnknown || result?.unknownOutcome === true || !Number.isInteger(result?.code) || result?.code === 0 || Number(result?.code) >= 500 || response.status >= 500 || isIdempotencyOutcomeOpen(message) || response.status === 409 && (!message || message === "MEDIA_REQUEST_FAILED") });
-      }
-      const assetId = data.assetId, objectKey = data.objectKey, size = data.sizeBytes == null ? record.size : data.sizeBytes as number;
+      const send = async (record: E1MediaPending) => {
+        const body = new FormData(); body.append("file", file);
+        const response = await guardedFetch(`/api/admin/media/uploads?${new URLSearchParams(record.params)}`, { method: "POST", body, headers: { "Idempotency-Key": record.commandKey }, cache: "no-store" });
+        const raw: unknown = await response.json().catch(() => null);
+        const result = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
+        const data = result?.data && typeof result.data === "object" && !Array.isArray(result.data) ? result.data as Record<string, unknown> : null;
+        const message = typeof result?.message === "string" ? result.message : "";
+        const upstreamUnknown = response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown";
+        if (upstreamUnknown || !response.ok || result?.code !== 0 || !data || typeof data.assetId !== "string" || !data.assetId.trim() || typeof data.objectKey !== "string" || !data.objectKey.trim()
+          || data.sizeBytes != null && (typeof data.sizeBytes !== "number" || !Number.isFinite(data.sizeBytes) || data.sizeBytes < 0)) {
+          throw Object.assign(new Error(message || "上传结果未知，请保留原文件核对"), { status: response.status, apiCode: result?.code, backendMessage: message, unknownOutcome: upstreamUnknown || result?.unknownOutcome === true || !Number.isInteger(result?.code) || result?.code === 0 || Number(result?.code) >= 500 || response.status >= 500 || isIdempotencyOutcomeOpen(message) || response.status === 409 && (!message || message === "MEDIA_REQUEST_FAILED") });
+        }
+        return { assetId: data.assetId, objectKey: data.objectKey, size: data.sizeBytes == null ? record.size : data.sizeBytes as number };
+      };
+      const { assetId, objectKey, size } = await (retry ? mediaRecovery.replay(record, send) : send(record));
       setMedia(m => ({ kind: record.kind, src: `/api/admin/media/uploads/${encodeURIComponent(assetId)}/content`, name: record.fileName, size, w: m?.w, h: m?.h, duration: m?.duration, assetId, objectKey }));
-      e1MediaCommands.forget(record.fingerprint, record.commandKey); setMediaPending(null); fileRef.current = null; onMediaChange(); toast("已上传；商品关联仍需提交审批");
+      mediaRecovery.settleAcknowledged(record); setMediaPending(null); fileRef.current = null; onMediaChange(); toast("已上传；商品关联仍需提交审批");
     } catch (error) {
       const response = error as { status?: number; apiCode?: number; unknownOutcome?: boolean };
       if (!retry && !response.unknownOutcome && response.status !== undefined && isDeterministicRejection(response.status, response.apiCode)) { e1MediaCommands.forget(record.fingerprint, record.commandKey); setMediaPending(null); fileRef.current = null; }
-      else { setMediaPending(record); if (retry && isExplicitRejection(error)) setMediaRejected(true); }
+      else setMediaPending(record);
       setMediaError(displayAdminError(error)); onMediaChange();
     } finally { uploadBusy.current = false; setMediaBusy(false); onMediaChange(); }
   };
@@ -412,7 +424,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
             <div className="e1-table-actions">{media.assetId && <Button size="sm" onClick={() => void refreshPreview(media.assetId!)}>重新加载图片</Button>}{media.kind === "image" && media.w && media.h && Math.abs(media.w - media.h) > Math.max(media.w, media.h) * 0.02 && <Button size="sm" disabledReason={mediaBusy || mediaPending ? "先核对上传结果" : undefined} onClick={() => void crop()}>裁剪为 1:1</Button>}<Button size="sm" disabledReason={mediaBusy || mediaPending ? "先核对上传结果" : undefined} onClick={() => setMedia(null)}>移除</Button></div>
           </div>}
           {mediaError && !mediaBusy && <Notice tone="warn" title={mediaError} />}
-          {mediaPending && !mediaBusy && <Notice tone="warn" title="媒体上传结果未知" actionBelow action={<><Button disabledReason={mediaBusy ? "正在上传" : isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : !fileRef.current ? "请重新选择原文件核对摘要" : undefined} onClick={() => fileRef.current && void upload(mediaPending, fileRef.current, true)}>按原文件重试</Button>{mediaRejected && !isRetryExpired(mediaPending) && <Button onClick={() => setMediaRelease(true)}>解除原操作记录</Button>}</>}><p>{isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : "只能用原文件按原请求重试；换新文件不能代替原操作。"}</p><p>如果上传的是裁剪图，它是页面生成的图片，刷新后无法用原图原样重试。请到商品详情核对图片是否已更新；已更新时，按本页现有条件解除原操作记录；未更新或无法解除时，请联系技术核查。</p><Fold inset title="原上传与技术信息" summary={mediaPending.fileName}><pre className="e1-raw">{JSON.stringify(mediaPending, null, 2)}</pre></Fold></Notice>}
+          {mediaPending && !mediaBusy && <Notice tone="warn" title="媒体上传结果未知" actionBelow action={<><Button disabledReason={mediaBusy ? "正在上传" : isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : !fileRef.current ? "请重新选择原文件核对摘要" : mediaRecovery.state(mediaPending).replayBlock ? "原上传不能重试" : undefined} onClick={() => fileRef.current && void upload(mediaPending, fileRef.current, true)}>按原文件重试</Button>{mediaRecovery.state(mediaPending).replayRejection && <Button onClick={() => setMediaRelease(true)}>解除原操作记录</Button>}</>}><p>{isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : "只能用原文件按原请求重试；换新文件不能代替原操作。"}</p><p>如果上传的是裁剪图，它是页面生成的图片，刷新后无法用原图原样重试。请到商品详情核对图片是否已更新；已更新时，按本页现有条件解除原操作记录；未更新或无法解除时，请联系技术核查。</p><Fold inset title="原上传与技术信息" summary={mediaPending.fileName}><pre className="e1-raw">{JSON.stringify(mediaPending, null, 2)}</pre></Fold></Notice>}
         </EditorSection>
         <EditorSection id="e1-earnings" title="收益与任务">
           <div className="rd-form-grid">{field("price", "售价(USD)", { number: true, unit: "USD", min: 0, required: true, explain: "购买一件商品的目录价，批准后影响新交易；原订单快照不回写。" })}{field("computePoints", "每件算力点", { number: true, min: 0, step: 1, help: editId ? "留空保留原值；0 为真实零" : "留空按售价 × 10", explain: "购买一件计入团队的点数，最多18位非负整数，只影响之后的新订单快照；App为0时当前隐藏。" })}</div>
@@ -467,6 +479,6 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
       </div></div></div>
     </Drawer>
     {leave && <Modal title="商品改动尚未提交" onClose={() => setLeave(false)} footer={<><Button onClick={() => setLeave(false)}>继续编辑</Button><Button variant="danger-outline" onClick={() => { setLeave(false); onClose(); }}>放弃改动并返回</Button><Button variant="primary" disabledReason={blocked} onClick={review}>提交审批后继续</Button></>}><p>商品改动还没有提交审批。放弃后关闭本地草稿，已上传的媒体资源不删除。</p></Modal>}
-    {mediaRelease && mediaPending && <ReleaseModal label={`${mediaPending.fileName} · 媒体上传`} onCancel={() => setMediaRelease(false)} onConfirm={() => { e1MediaCommands.forget(mediaPending.fingerprint, mediaPending.commandKey); setMediaPending(null); fileRef.current = null; setMediaRelease(false); onMediaChange(); }} />}
+    {mediaRelease && mediaPending && <ReleaseModal label={`${mediaPending.fileName} · 媒体上传`} onCancel={() => setMediaRelease(false)} onConfirm={() => { if (!mediaRecovery.releaseRejectedReplay(mediaPending)) return; setMediaPending(null); fileRef.current = null; setMediaRelease(false); onMediaChange(); }} />}
   </>;
 }

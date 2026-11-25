@@ -43,6 +43,12 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
   };
   return <OperationConfirmModal {...props} facts={facts} amplifies={false}
     edit={props.edit ? { ...props.edit, amplifiesWhen: undefined } : undefined}
+    getPendingRecovery={() => {
+      if (!record) return;
+      const state = m.recovery.state(record);
+      return { state, expiresAt: state.expiresAt, subscribe: m.recovery.subscribe, getRevision: m.recovery.getRevision,
+        query: async () => { if (record.payload.kind === "proposal") await m.check(record.commandKey); else await m.checkDirect(record); } };
+    }}
     getPendingReason={props.getPendingReason ?? (() => m.pendingReason(scope))}
     blockedReason={blockedReason} confirmLabel={unknown ? "按原请求重试" : props.confirmLabel}
     onConfirm={async (...args) => {

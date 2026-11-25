@@ -6,7 +6,7 @@ import type { E2OnboardingYieldConfig, E2PhoneTier, E2YieldComparison } from "@/
 import type { useE3Proposals } from "./e3-proposals";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E4OrderDetail, E4PendingApproval } from "@/lib/admin/e4-client";
-import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import type { PendingMutationRecord, PendingRecoveryState } from "@/lib/admin/pending-mutation-store";
 import type { FundCommandOrigin, FundCommandEvidence, FundCommandInvestigation, FundInvestigationAccess, FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { createA2OperationProposal } from "@/lib/admin/a2-client";
@@ -179,14 +179,11 @@ export interface EViewCtx {
   e4InvestigationResults: Record<string, FundInvestigationOutcome>;
   e4InvestigationAccess: (record: E4PendingCommand) => FundInvestigationAccess;
   checkE4Investigation: (record: E4PendingCommand, evidence?: FundCommandEvidence) => Promise<FundCommandInvestigation | null>;
-  e4RetryRejected: string[];
+  e4RecoveryState: (record: E4PendingCommand) => PendingRecoveryState;
   e4Retrying: string;
   retryE4Pending: (record: E4PendingCommand) => Promise<void>;
   checkE4Pending: (record: E4PendingCommand) => Promise<void>;
   canQueryE4: boolean;
-  /** 查过且明确查不到的命令号，只有这些才开放重试（OP-93）。 */
-  e4QueryMissing: string[];
-  e4ExpiredNotFound: string[];
   releaseE4Pending: (record: E4PendingCommand) => void;
   selOrder: EOrder | null;
   e4Detail: E4OrderDetail | null;

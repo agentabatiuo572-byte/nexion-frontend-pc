@@ -2,16 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
-import { fetchA6RoleDetail, newA6IdempotencyKey, type A6GrantsPayload, type A6GrantsSnapshot, type A6RoleCreateInput, type A6RoleDetail, type A6RoleUpdateInput } from "./a6-client";
+import { newA6IdempotencyKey, type A6GrantsPayload, type A6GrantsSnapshot, type A6RoleCreateInput, type A6RoleDetail, type A6RoleUpdateInput } from "./a6-client";
 import { newA7IdempotencyKey, type A7MenuCreateInput, type A7MenuTreeNode, type A7MenuUpdateInput } from "./a7-client";
 import type { A8Permission } from "./a8-client";
 import { isAdminAuthFailure, resetAdminSession } from "./auth-session";
 import { guardedFetch } from "./error-messages";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError } from "./outcome-classification";
-import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
 import { normalizeA6Detail, normalizeA8Permission } from "./rbac-contracts";
 import { useAdminAuth } from "../store/admin-auth";
+import { currentRecoveryActor } from "./abe-recovery-access";
 import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 import { discoverECommand, investigateECommand, type ECommandEvidence, type ECommandLocator } from "./e-command-investigation";
 
@@ -126,6 +127,21 @@ function validRecord(record: RbacCommand) {
 const a6Commands = createPendingMutationStore<RbacCommand>({ storageKey: "nexion-admin-a6-pending-commands-v1", retainExpiredRecords: true, isValidRecord: validRecord });
 const a7Commands = createPendingMutationStore<RbacCommand>({ storageKey: "nexion-admin-a7-pending-commands-v1", retainExpiredRecords: true, isValidRecord: validRecord });
 
+export const a6Recovery = createPendingRecovery(a6Commands, {
+  capability: () => "receipt",
+  explicitRejectionCode: error => {
+    const code = explicitRejectionCode(error);
+    return code && !/^REASON_TOO_SHORT_MIN_[1-9][0-9]*$/.test(code) ? code : undefined;
+  },
+  canReplay: record => {
+    const rights = currentRecoveryActor(record.actorId)?.authorities ?? [];
+    return !record.ticket && !record.receipt && !record.directRejection && rights.includes("platform_a6_read")
+      && rights.includes(rbacAuthority(record.original))
+      && (record.original.kind !== "a6-grants" || Array.isArray(record.original.input.expectedPermissionCodes)
+        && Array.isArray(record.original.input.expectedMenuIds));
+  },
+});
+
 function checkTicket(original: Original, value: unknown): asserts value is RbacTicket {
   if (!rbacProposal(original) || !("role" in original) || !object(value)) throw new Error("A6_PROPOSAL_RECEIPT_MISMATCH");
   const op = original.kind === "a6-status" ? "a6_role_status_update" : original.kind === "a6-delete" ? "a6_role_delete" : "a6_role_grants_update";
@@ -222,20 +238,7 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
       proposalNotFound: !ticket && !current.ticket && !current.receipt && !current.directRejection });
     sync();
   };
-  const releaseExpiredProposal = async (record: RbacCommand, confirmed: boolean) => {
-    const current = saved(record.commandKey);
-    if (!confirmed || !current || !rbacProposal(current.original) || !isRetryExpired(current) || !current.proposalNotFound || current.ticket || current.receipt || current.directRejection) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
-    if (await queryProposal(current)) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
-    // A status PATCH can also return a direct no-op when the target status already matches.
-    // Missing the proposal alone cannot settle that union: confirm the requested status too.
-    if (current.original.kind === "a6-status") {
-      const role = await fetchA6RoleDetail(current.original.role.id);
-      requireOriginalActor(current);
-      if (role.status !== current.original.status) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
-    }
-    forget(current);
-  };
-  const send = async (record: RbacCommand, retry: boolean) => {
+  const sendOriginal = async (record: RbacCommand, retry: boolean) => {
     const current = saved(record.commandKey);
     requireOriginalActor(record, true);
     if (isRetryExpired(record) || current?.ticket || current?.receipt) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
@@ -287,10 +290,13 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
       const reasonRecheck = retry && /^REASON_TOO_SHORT_MIN_[1-9][0-9]*$/.test(failure.reasonCode ?? "");
       const rejected = retry ? !reasonRecheck && isExplicitRejection(error)
         : !isIdempotencyOutcomeOpen(failure.reasonCode) && isDeterministicRejection(failure.status ?? 0, failure.apiCode);
-      if (rejected) { forget(record); throw error; }
+      if (rejected) { if (!retry || domain !== "a6") forget(record); throw error; }
       sync();
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("RBAC_MUTATION_OUTCOME_UNKNOWN", { cause: error });
     }
   };
-  return { records, sync, saved, blocked, capture, send, queryProposal, queryReceipt, queryInvestigation, forget, observe, releaseExpiredProposal };
+  const send = (record: RbacCommand, retry: boolean) => retry && domain === "a6"
+    ? a6Recovery.replay(record, original => sendOriginal(original, true)).finally(sync)
+    : sendOriginal(record, retry);
+  return { records, sync, saved, blocked, capture, send, queryProposal, queryReceipt, queryInvestigation, forget, observe };
 }

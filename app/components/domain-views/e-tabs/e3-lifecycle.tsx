@@ -1,4 +1,6 @@
 "use client";
+import { nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
+import { usePendingReplayDeadline } from "../design-kit";
 /**
  * E3 设备使用与升级置换（改版）。配置页：结论、四个数、产能曲线和最近 24 小时，再往下是两套规则和「已停用的设置」（后端还返回旧值时才显示）。
  * 两套规则就是旧页的「任务产能节奏」（产能随月龄下降、参与任务递减的商品）和「升级置换阶梯」（分档界线、各档抵扣比例）。
@@ -11,14 +13,14 @@ import { ArrowLeftRight, BookOpen, CircleSlash, Clock3, Gauge, Hourglass, Info, 
 import { useReach } from "@/lib/nav/use-reach";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { e3ConfigAmplifies } from "@/lib/admin/e3-outflow";
 import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Explain, Fact, Facts, Fold, PageHeader, Panel,
-  Modal, ReleaseBody, ScaleBar, SegmentBar, Stat, StatBand, StatusTag, StepBar, Table, TableMessage, Td, Th, Tr, TrendLines } from "@/app/components/rd";
+  Modal, ReleaseModal, ScaleBar, SegmentBar, Stat, StatBand, StatusTag, StepBar, Table, TableMessage, Td, Th, Tr, TrendLines } from "@/app/components/rd";
 import type { EViewCtx, McSpec } from "./types";
 import { E3Manual } from "./e3-manual";
-import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
+import { PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
 import { amountDisplay } from "@/lib/format";
 
 /** 批准资格的真实路径（后端 A2：不同于发起人、有批准权、能访问 E 域；单项另要 E3 读权）。 */
@@ -128,6 +130,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const reach = useReach();
   const [manualOpen, setManualOpen] = useState(false);
   const { pE, e3Loading, e3Error, e3Ready, e3Stats, e3Operations, e3Proposals } = ctx;
+  usePendingReplayDeadline(nextRecoveryDeadline(e3Proposals.records));
   const E3_PROPOSALS = e3Proposals.records.map(p => ({ ...p, original: p, id: p.commandKey, reason: p.input.reason,
     state: p.state === "unknown" && isRetryExpired(p) ? "expired" as const : p.state,
     at: businessStamp(p.createdAt) }));
@@ -144,7 +147,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     lookup: e3Proposals.canQuery ? async (p: Shown) => {
       try {
         const ticket = await e3Proposals.lookup(p.original);
-        if (!ticket) { ctx.toast(isRetryExpired(p.original) ? "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "按原请求查不到这张审批单，现在还没建成；可以按原请求重试，不会重复建单。"); return; }
+        if (!ticket) { ctx.toast(isRetryExpired(p.original) ? RETRY_EXPIRED_TEXT : RECOVERY_LINE.absent); return; }
         ctx.toast(ticket.status === "pending" ? "查到了审批单，还在等批准；批准或驳回后这条自动更新。" : endText(ticket.status));
         await ctx.refreshE3();
       } catch (error) { ctx.toast(lookupError(error, !!p.original.ticketId)); }
@@ -162,11 +165,9 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       } catch (error) { ctx.toast(lookupError(error, false)); }
     } : undefined,
     release: async (p: Shown) => {
-      let released: boolean;
-      try { released = await e3Proposals.releaseMissing(p.original); }
-      catch (error) { throw new Error(lookupError(error, false)); }
+      const released = e3Proposals.releaseRejected(p.original);
       setReleasing(null);
-      ctx.toast(released ? "已解除这条记录，这几项可以重新提交。" : "这次查到了审批单或没有确认查不到，记录继续保留。", released ? "success" : "warn");
+      if (released) ctx.toast("已解除这条记录，这几项可以重新提交。", "success");
     },
   };
   const zone = businessZone().label;
@@ -177,17 +178,17 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const pendingList = E3_PROPOSALS.filter(p => p.state === "pending");
   const items: RecoveryItem[] = [
     ...E3_PROPOSALS.map(p => {
+      const recoveryState = e3Proposals.recoveryState(p.original);
       const state = p.state === "pending" ? { tag: "待审批", tone: "warn" as const, line: "等另一位管理员批准，批准前按现在的规则执行。" }
         : p.state === "unknown" ? { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.unknown }
           : p.state === "submitted" ? { tag: "进度没读到", tone: "warn" as const, line: RECOVERY_LINE.created }
-            : p.state === "expired" ? e3Proposals.missing.includes(p.commandKey) ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing }
-              : { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.expired }
+            : p.state === "expired" ? { tag: "结果未知", tone: "warn" as const, line: RETRY_EXPIRED_TEXT }
               : { tag: "已驳回", tone: "neutral" as const, line: "规则没有变化，要改请重新提交。" };
       return { key: p.state === "pending" ? `waiting:${p.id}` : p.id, object: what(p), createdAt: p.createdAt, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line,
         actions: p.state === "rejected" ? undefined : <>
           {query(p, p.state === "pending" ? "查询审批结果" : "查询原结果")}
-          {p.state === "unknown" && e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={busy} onClick={() => void E3_RECOVERY.retry(p)}>按原请求重试</Button>}
-          {p.state === "expired" && e3Proposals.missing.includes(p.commandKey) && <Button size="sm" disabled={busy} onClick={() => setReleasing(p)}>解除原操作记录</Button>}
+          {p.state === "unknown" && e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={busy || !!recoveryState.replayBlock} onClick={() => void E3_RECOVERY.retry(p)}>按原请求重试</Button>}
+          {recoveryState.replayRejection && !p.original.ticketId && <Button size="sm" disabled={busy} onClick={() => setReleasing(p)}>解除原操作记录</Button>}
         </>,
         detail: changed(p) };
     }),
@@ -202,7 +203,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const recovery = <>
     <RecoveryPanel title={recoveryTitle(items.length - E3_PROPOSALS.filter(p => p.state === "pending" || p.state === "rejected").length, E3_PROPOSALS.filter(p => p.state === "pending").length, E3_PROPOSALS.filter(p => p.state === "rejected").length)} tone="warn"
       explain={`有结论前，这几项不能再改。点行首的箭头看改了什么、提交时间（${zone}）和理由。`} items={items} />
-    {releasing && <MissingProposalReleaseModal label={changeText(releasing)} createdAt={releasing.createdAt} onCancel={() => setReleasing(null)} onConfirm={() => E3_RECOVERY.release(releasing)} />}
+    {releasing && <ReleaseModal label={changeText(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => E3_RECOVERY.release(releasing)} />}
   </>;
   const missing = REQUIRED_E3_KEYS.filter((key) => pE(key) === "—");
   const ready = e3Ready && missing.length === 0;
@@ -262,7 +263,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     title: string; detail: string; impact: string; hint?: string; preview?: (value: string) => ReactNode; coverageLead?: string; facts: ReactNode };
   const single = (s: Single) => open({
     briefKind: "config", name: `${s.label} 调整`, title: s.title, op: "param", paramKey: s.key, amplify: s.amplify ?? false,
-    edit: { kind: s.editKind ?? "number", label: "改后", current: pE(s.key), unit: s.unit, options: s.options, optionLabels: s.optionLabels, disallowCurrent: true,
+    edit: { kind: s.editKind ?? "number", label: "改后", current: pE(s.key), initialValue: e3Proposals.draft([s.key])?.[s.key], unit: s.unit, options: s.options, optionLabels: s.optionLabels, disallowCurrent: true,
       amplifiesWhen: (value) => e3ConfigAmplifies(policy, { [s.key]: value }), hint: s.hint, preview: s.preview, ...(s.editKind === "select" ? {} : numericBounds(s.key)) },
     detail: `批准后生效。${s.detail}`, effect: effect(false), facts: s.facts, coverageLead: s.coverageLead,
     statedBrief: { impact: s.impact, check: "核对改的是哪一项、现在和改后的值，理由写清依据或工单号。" },
