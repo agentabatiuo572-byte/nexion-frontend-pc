@@ -76,6 +76,7 @@ export default function A8Permissions() {
   const [keyword, setKeyword] = useState("");
   const [keywordInput, setKeywordInput] = useState("");
   const keywordInputRef = useRef<HTMLInputElement>(null);
+  const refreshButtonRef = useRef<HTMLButtonElement>(null);
   const [domain, setDomain] = useState("ALL");
   const [permType, setPermType] = useState("ALL");
   const [result, setResult] = useState<A8PermissionPage | null>(null);
@@ -99,7 +100,7 @@ export default function A8Permissions() {
   const [detailCode, setDetailCode] = useState<string | null>(null);
   const [view, setView] = useState<"list" | "matrix">("list");
   const reach = useReach();
-  /** 读失败时焦点还在分页条上（键盘翻页）：分页条跟着失败摘掉，记下它所在的面板，失败卡挂上后把焦点交给「重试」（ST-56，BUG-746 F04）。 */
+  /** 读取失败会摘掉分页条和页头刷新按钮，记下结果面板，等失败卡挂上后把焦点交给「重试」（ST-56）。 */
   const failFocus = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -123,7 +124,10 @@ export default function A8Permissions() {
         // 失败只写在列表那一块的失败卡里，不再弹提示条（ST-34、ST-57）。
         if (!cancelled) {
           const active = document.activeElement;
-          failFocus.current = active instanceof HTMLElement ? active.closest<HTMLElement>("[data-list-pager]")?.closest<HTMLElement>(".rd-panel") ?? null : null;
+          const panel = active === refreshButtonRef.current
+            ? active?.closest(".a8-page")?.querySelector<HTMLElement>(".rd-panel")
+            : active?.closest("[data-list-pager]")?.closest<HTMLElement>(".rd-panel");
+          failFocus.current = panel ?? null;
           setResult(null);
           setLoadError(displayAdminReadError(err));
           setLoading(false);
@@ -137,7 +141,7 @@ export default function A8Permissions() {
     const panel = failFocus.current;
     if (!panel) return;
     if (!loadError) { failFocus.current = null; return; }
-    // 失败卡和分页条摘掉不一定在同一次提交里（加载状态后一步才收）：等失败卡挂上再交。焦点已经去了别处就不动。
+    // 等失败卡挂上再交。焦点已经去了别处就不动。
     const card = panel.isConnected ? panel.querySelector<HTMLElement>('.rd-block-state[data-state="error"]') : null;
     if (!card) return;
     failFocus.current = null;
@@ -301,7 +305,7 @@ export default function A8Permissions() {
     <RdPage className="a8-page">
       <PageHeader pageId="A8" title="权限清单" summary="查一个权限管什么、风险多大、哪些角色有它。"
         guideContent={getA8PageGuide(canReadRoles)}
-        actions={result && <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />}
+        actions={result && <Button ref={refreshButtonRef} variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />}
           loading={loading || (matrixOpen && matrixLoading)} onClick={refreshPage}>刷新</Button>}
         readOnly="这页只能查看；登记和授权在别的页面" />
       {conclusion}
