@@ -1388,7 +1388,7 @@
       "status": "built",
       "view": "h-view.tsx",
       "batch": "P1",
-      "restAction": "updateH2TrialParam"
+      "restActions": ["updateH2TrialParam", "fetchH2TrialParamReceipt"]
     },
     {
       "id": "OPS-H-04",

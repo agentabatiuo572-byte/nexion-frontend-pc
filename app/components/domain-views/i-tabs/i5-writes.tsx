@@ -28,6 +28,7 @@ import { updatePrivacyPolicyAdmin, type PublishedContentDocument } from "@/lib/a
 import { usePropose } from "@/lib/admin/use-propose";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ICtx } from "./types";
+import type { LegacyHistoryCursor } from "@/lib/nav/legacy-history";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled, type ECommandEvidence } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { queryOriginalCommand, type OriginalCommandRoute } from "@/lib/admin/original-command-query";
@@ -170,10 +171,13 @@ export function MergeNotice({ report, name, title = "已读取最新内容，你
   );
 }
 
+let confirmationSequence = 0;
+
 /** 确认框里被冲突拒绝时框不关、理由留着，写「这项刚被别人改过。」和「读取最新」。 */
 export function withConflict(ctx: Pick<ICtx, "openActionConfirm" | "closeActionConfirm">, request: ActionConfirmReq, readLatest: () => void): ActionConfirmReq {
   const wrapped: ActionConfirmReq = {
     ...request,
+    formKey: request.formKey ?? ++confirmationSequence,
     run: async (...args) => {
       try {
         return await request.run(...args);
@@ -190,56 +194,264 @@ export function withConflict(ctx: Pick<ICtx, "openActionConfirm" | "closeActionC
 /** 列表和详情的入口通过它换编辑对象，先过编辑器的未保存保护。 */
 export type EditorSwitch = { attempt: (next: () => void) => void };
 
+type HistoryEntry = { key: string; index: number; sameDocument: boolean };
+type HistoryTraversal = Event & {
+  navigationType: string;
+  destination: HistoryEntry & { sameDocument: boolean };
+};
+type BrowserNavigation = EventTarget & {
+  currentEntry: HistoryEntry | null;
+  entries: () => HistoryEntry[];
+  traverseTo: (key: string) => { finished: Promise<unknown> };
+};
+type HistorySave = { blocked?: string; run: (saved: () => void) => void };
+type HistoryBack = {
+  resume: () => void;
+  discardOthers: () => void;
+  saveOthers: (saved: () => void) => void;
+  saveBlocked?: string;
+};
+type HistoryEditor = {
+  ask: (back: HistoryBack) => void;
+  discard?: () => void;
+  getSave?: () => HistorySave | undefined;
+};
+
+const historyEditors = new Set<HistoryEditor>();
+let stopHistoryGuard: (() => void) | undefined;
+
+function askHistoryBack(resume: () => void) {
+  if (document.querySelector('.rd-modal[data-state="open"]')) return;
+  const editors = [...historyEditors];
+  const editor = editors.pop();
+  if (!editor) return;
+  const saves = editors.flatMap(other => other.getSave?.() ?? []);
+  const saveNext = (index: number, saved: () => void) => {
+    const save = saves[index];
+    if (save) save.run(() => saveNext(index + 1, saved));
+    else saved();
+  };
+  editor.ask({
+    resume,
+    discardOthers: () => editors.forEach(other => other.discard?.()),
+    saveOthers: saved => saveNext(0, saved),
+    saveBlocked: saves.find(save => save.blocked)?.blocked,
+  });
+}
+
+type HistoryBridge = { base: string; extra: string; active: boolean };
+let historyBridge: HistoryBridge | undefined;
+let resumingDocumentBack = false;
+
+export function warnAboutUnsavedChanges(event: BeforeUnloadEvent) {
+  if (resumingDocumentBack) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+function armDocumentBack(navigation: BrowserNavigation): HistoryBridge | undefined {
+  const entry = navigation.currentEntry;
+  if (!entry) return;
+  const entries = navigation.entries();
+  const previous = entries[entry.index - 1];
+  const forward = entries[entry.index + 1];
+  if (!previous || previous.sameDocument) return;
+  if (historyBridge?.base === entry.key && forward?.key === historyBridge.extra) return historyBridge;
+  if (forward) return;
+
+  // A real cross-document Back cannot be canceled. Add a same-document step
+  // only at the end of the visible history, with no Forward entry to replace.
+  window.history.pushState(window.history.state, "", window.location.href);
+  const extra = navigation.currentEntry;
+  if (!extra || extra.key === entry.key) return;
+  const bridge = { base: entry.key, extra: extra.key, active: false };
+  historyBridge = bridge;
+  const skipDormant = (event: PopStateEvent) => {
+    if (bridge.active || navigation.currentEntry?.key !== bridge.extra) return;
+    event.stopImmediatePropagation();
+    window.history.back();
+  };
+  window.addEventListener("popstate", skipDormant, true);
+  return bridge;
+}
+
+function guardHistory(navigation: BrowserNavigation) {
+  let restoring: { key: string; ask: () => void } | undefined;
+  let allowed: string | undefined;
+
+  const traverse = (key: string, onError: () => void) => {
+    void navigation.traverseTo(key).finished.catch(onError);
+  };
+
+  const bridge = armDocumentBack(navigation);
+  let releasingBridge = false;
+  let leaveAfterBridge = false;
+  if (bridge) {
+    bridge.active = true;
+    if (navigation.currentEntry?.key !== bridge.extra) {
+      const url = window.location.href;
+      const state = window.history.state;
+      restoring = { key: bridge.extra, ask: () => window.history.replaceState(state, "", url) };
+      traverse(bridge.extra, () => { restoring = undefined; });
+    }
+  }
+  const leaveFromBase = () => {
+    resumingDocumentBack = true;
+    window.addEventListener("pageshow", () => { resumingDocumentBack = false; }, { once: true });
+    window.history.back();
+  };
+  const releaseBridge = (leave: boolean) => {
+    if (!bridge) return;
+    // A save may close the editor before its readback finishes and calls resume.
+    if (leave && navigation.currentEntry?.key === bridge.base && !bridge.active) {
+      leaveFromBase();
+      return;
+    }
+    leaveAfterBridge ||= leave;
+    if (releasingBridge) return;
+    if (navigation.currentEntry?.key !== bridge.extra) {
+      bridge.active = false;
+      return;
+    }
+    releasingBridge = true;
+    const url = window.location.href;
+    const state = window.history.state;
+    const returnToBase = (event: PopStateEvent) => {
+      if (navigation.currentEntry?.key !== bridge.base) return;
+      event.stopImmediatePropagation();
+      window.removeEventListener("popstate", returnToBase, true);
+      bridge.active = false;
+      window.history.replaceState(state, "", url);
+      if (leaveAfterBridge) leaveFromBase();
+    };
+    window.addEventListener("popstate", returnToBase, true);
+    allowed = bridge.base;
+    traverse(bridge.base, () => {
+      window.removeEventListener("popstate", returnToBase, true);
+      bridge.active = false;
+    });
+  };
+
+  const onNavigate = (event: Event) => {
+    const { navigationType, destination } = event as HistoryTraversal;
+    if (navigationType !== "traverse" || !destination.sameDocument) return;
+    if (allowed === destination.key) { allowed = undefined; return; }
+    if (restoring?.key === destination.key) return;
+    const origin = navigation.currentEntry;
+    if (!origin || historyEditors.size === 0) return;
+
+    const ask = () => askHistoryBack(() => {
+      if (bridge?.extra === origin.key && bridge.base === destination.key) {
+        releaseBridge(true);
+        return;
+      }
+      allowed = destination.key;
+      traverse(destination.key, () => { if (allowed === destination.key) allowed = undefined; });
+    });
+
+    if (event.cancelable) {
+      event.preventDefault();
+      ask();
+    } else {
+      // Browser Back may commit before it can be intercepted. Hide both popstates
+      // from the app router and return to the exact entry with the open editor.
+      restoring = { key: origin.key, ask };
+    }
+  };
+  const onPop = (event: PopStateEvent) => {
+    if (!restoring) return;
+    event.stopImmediatePropagation();
+    const pending = restoring;
+    if (navigation.currentEntry?.key === pending.key) {
+      restoring = undefined;
+      pending.ask();
+    } else {
+      traverse(pending.key, () => { if (restoring === pending) restoring = undefined; });
+    }
+  };
+  navigation.addEventListener("navigate", onNavigate);
+  window.addEventListener("popstate", onPop, true);
+  return () => {
+    navigation.removeEventListener("navigate", onNavigate);
+    window.removeEventListener("popstate", onPop, true);
+    releaseBridge(false);
+  };
+}
+
+function guardLegacyHistory(cursor: LegacyHistoryCursor) {
+  let restoring: { origin: number; destination: number } | undefined;
+  let allowed: number | undefined;
+  cursor.onTraverse = (event, origin, destination) => {
+    if (allowed === destination) { allowed = undefined; return; }
+    if (restoring && destination === restoring.origin) {
+      event.stopImmediatePropagation();
+      const { destination: target } = restoring;
+      restoring = undefined;
+      askHistoryBack(() => {
+        allowed = target;
+        window.history.go(target - destination);
+      });
+    } else if (destination !== origin) {
+      event.stopImmediatePropagation();
+      restoring = { origin, destination };
+      window.history.go(origin - destination);
+    }
+  };
+  return () => { cursor.onTraverse = undefined; };
+}
+
+/** Share one history decision across the drafts registered on this page. */
+export function useHistoryBackGuard(active: boolean, onBack: (resume: () => void, back: HistoryBack) => void, options?: Pick<HistoryEditor, "discard" | "getSave">) {
+  const latest = useRef({ onBack, options });
+  latest.current = { onBack, options };
+  useEffect(() => {
+    if (!active) return;
+    const { navigation, nexionHistoryCursor } = window as Window & {
+      navigation?: BrowserNavigation;
+      nexionHistoryCursor?: LegacyHistoryCursor;
+    };
+    const editor: HistoryEditor = {
+      ask: back => latest.current.onBack(back.resume, back),
+      discard: () => latest.current.options?.discard?.(),
+      getSave: () => latest.current.options?.getSave?.(),
+    };
+    historyEditors.add(editor);
+    stopHistoryGuard ??= navigation ? guardHistory(navigation) : nexionHistoryCursor && guardLegacyHistory(nexionHistoryCursor);
+    return () => {
+      historyEditors.delete(editor);
+      if (historyEditors.size === 0) {
+        stopHistoryGuard?.();
+        stopHistoryGuard = undefined;
+      }
+    };
+  }, [active]);
+}
+
 /**
  * 有未保存内容时拦离开（OP-29）：侧栏、面包屑、命令面板都是链接，抓在捕获阶段；关窗口走浏览器提示；
- * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。
- * 有草稿时加一条同地址历史记录，后退先回到编辑器再询问；离开前退回原记录，继续原导航。
+ * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。浏览器后退走 useHistoryBackGuard。
  */
 export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>) {
   const router = useRouter();
   const [asking, setAsking] = useState(false);
   const nextAction = useRef<(() => void) | null>(null);
-  const releaseHistory = useRef<((next?: () => void) => void) | null>(null);
+  const historyBack = useRef<HistoryBack | null>(null);
+  const save = useRef<HistorySave | undefined>(undefined);
+  useHistoryBackGuard(dirty, (resume, back) => {
+    historyBack.current = back;
+    nextAction.current = resume;
+    setAsking(true);
+  }, { discard: close, getSave: () => save.current });
   useEffect(() => {
     switcher.current = { attempt: (next) => {
-      if (dirty) { nextAction.current = next; setAsking(true); }
+      if (dirty) { historyBack.current = null; nextAction.current = next; setAsking(true); }
       else { close(); next(); }
     } };
     return () => { switcher.current = null; };
   }, [dirty, close, switcher]);
   useEffect(() => {
     if (!dirty) return;
-    let phase: "armed" | "restoring" | "releasing" = "armed";
-    let afterRelease: (() => void) | undefined;
-    // 保留 Next 的路由状态；副本只用来先拦住后退，不改 URL 和编辑器内容。
-    window.history.pushState(window.history.state, "", window.location.href);
-    const release = (next?: () => void) => {
-      if (next) afterRelease = next;
-      if (phase === "releasing") return;
-      phase = "releasing";
-      window.history.back();
-    };
-    releaseHistory.current = release;
-    const back = (event: PopStateEvent) => {
-      // Next 的 popstate 在冒泡阶段恢复路由；先截住，避免编辑器被卸载。
-      event.stopImmediatePropagation();
-      if (phase === "releasing") {
-        window.removeEventListener("popstate", back, true);
-        if (releaseHistory.current === release) releaseHistory.current = null;
-        afterRelease?.();
-      } else if (phase === "restoring") {
-        phase = "armed";
-        // 上面还开着确认框（填理由、提交中）或离开框：后退先留在这里，由那个框处理完再走。
-        if (document.querySelector('.rd-modal[data-state="open"]')) return;
-        nextAction.current = () => window.history.back();
-        setAsking(true);
-      } else {
-        phase = "restoring";
-        window.history.forward();
-      }
-    };
-    window.addEventListener("popstate", back, true);
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
     const intercept = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
@@ -247,6 +459,7 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
       if (link.pathname === window.location.pathname && link.search === window.location.search) return;
       event.preventDefault();
       event.stopPropagation();
+      historyBack.current = null;
       nextAction.current = () => router.push(`${link.pathname}${link.search}${link.hash}`);
       setAsking(true);
     };
@@ -255,40 +468,48 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
     return () => {
       window.removeEventListener("beforeunload", warn);
       document.removeEventListener("click", intercept, true);
-      release();
     };
   }, [dirty, router]);
-  const leave = (next: (() => void) | null, discard: boolean) => {
+  const stay = () => {
+    historyBack.current = null;
     nextAction.current = null;
     setAsking(false);
-    const go = () => { if (discard) close(); next?.(); };
-    if (releaseHistory.current) releaseHistory.current(go);
-    else go();
   };
   return {
     asking,
+    historySaveBlocked: historyBack.current?.saveBlocked,
+    registerSave: (action: HistorySave) => { save.current = action; },
     /** 普通关闭：只关这个编辑器，不带上次要去的地方。 */
-    askClose: () => { nextAction.current = null; if (dirty) setAsking(true); else close(); },
-    stay: () => { setAsking(false); nextAction.current = null; },
-    discard: () => leave(nextAction.current, true),
-    /**
-     * 去确认框保存：这个框先收起。要去的地方只属于这一次保存，返回的函数在这次保存成功后调，接着去那里；
-     * 理由框取消、被拒、结果未知都不调，去处作废。
-     */
+    askClose: () => { stay(); if (dirty) setAsking(true); else close(); },
+    stay,
+    discard: () => {
+      const next = nextAction.current;
+      historyBack.current?.discardOthers();
+      stay();
+      close();
+      next?.();
+    },
+    /** 只有保存有了确定的成功结果，才继续这次导航。 */
     startSave: () => {
       const next = nextAction.current;
-      nextAction.current = null;
-      setAsking(false);
-      return () => leave(next, false);
+      const back = historyBack.current;
+      stay();
+      return () => {
+        if (back) back.saveOthers(back.resume);
+        else next?.();
+      };
     },
   };
 }
 
 /** saveName 是保存按钮的完整名字（「保存并立即生效」这类不带「后继续」的，OP-29）；不传时是「{saveLabel}后继续」。 */
 export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继续`, saveBlocked, onSave }: {
-  guard: Pick<ReturnType<typeof useLeaveGuard>, "asking" | "stay" | "discard" | "startSave">;
+  guard: Pick<ReturnType<typeof useLeaveGuard>, "asking" | "stay" | "discard" | "startSave">
+    & Partial<Pick<ReturnType<typeof useLeaveGuard>, "historySaveBlocked" | "registerSave">>;
   saveLabel?: string; saveName?: string; saveBlocked?: string; onSave: (saved: () => void) => void;
 }) {
+  guard.registerSave?.({ blocked: saveBlocked, run: onSave });
+  saveBlocked ??= guard.historySaveBlocked;
   const stayButton = useRef<HTMLButtonElement>(null);
   const saveButton = useRef<HTMLButtonElement>(null);
   // 弹窗先聚焦外框，等它聚焦完再落到保存按钮；现在不能保存时落到「继续编辑」（CP-69）。

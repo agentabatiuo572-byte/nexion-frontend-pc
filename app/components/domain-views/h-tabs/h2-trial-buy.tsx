@@ -13,28 +13,35 @@ import { TipSide } from "@/app/components/rd/button";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import type { updateH2TrialBuyList } from "@/lib/admin/h-client";
-import { buyProductReason, LISTING_BLOCKED, type BuyDevice, type BuyList, type BuyListWrite } from "@/lib/admin/h2-trial-purchase";
+import { buyProductReason, LISTING_BLOCKED, readH2BuyDevices, type BuyDevice, type BuyList, type BuyListWrite } from "@/lib/admin/h2-trial-purchase";
 import { isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
+import { useHistoryBackGuard, warnAboutUnsavedChanges } from "../i-tabs/i5-writes";
 
 export type BuyListDraft = Omit<BuyListWrite, "requestNo" | "confirmedActorId"> & {
   added: string[];
   removed: string[];
   nextNames: string[];
+  // Local-only baseline for reviewing a rejected replay. Older pending writes lack it.
+  review?: { before: BuyDevice[]; added: BuyDevice[] };
 };
 
-export type BuyListPending = PendingMutationRecord & BuyListDraft & Pick<BuyListWrite, "requestNo" | "confirmedActorId"> & {
-  retryRejection?: string;
-};
+export type BuyListPending = PendingMutationRecord & BuyListDraft & Pick<BuyListWrite, "requestNo" | "confirmedActorId">;
 export type BuyListSubmitResult = Exclude<Awaited<ReturnType<typeof updateH2TrialBuyList>>, { kind: "unauthenticated" | "forbidden" | "accountMismatch" }>
   | { kind: "stopped" };
 
 export const BUY_INTRO = "用户领的那台试用设备自动在他的清单里，不用添加；这里添加其他可以用试用抵扣金购买的设备。";
 const MONEY_LINE = "减价后的价格低于试用抵扣金时，抵不完的购后到账给用户。";
-const BUY_LOCKED = "这项有一次修改结果未知，先到页面上方处理";
+/** 这一项（清单或参数）有一次修改结果未知时，「调整」和提交的禁用原因。 */
+export const EDIT_LOCKED = "这项有一次修改结果未知，先到页面上方处理";
+export const UNKNOWN_TOAST = "结果未知，不要重复操作，到页面上方处理。";
+export const BUY_SAVED = "其他可购买设备 已更新";
+const NO_CHANGES = "勾选和现在一样，没有要保存的改动";
+const INVALID_PICKED = "请先取消不能新增的设备";
 export const BUY_CONFLICT = "这份清单刚被别人改过，这次没有保存";
 export const BUY_READ_INVALID = "收到的数据不完整，已停止显示。";
+export const BUY_READ_FIRST = "请先读取最新";
 const ROW_HELP = {
   what: "用户还能用试用抵扣金买的设备，每次试用限购一款",
   where: "App 试用详情 ›「专享限时折扣设备」",
@@ -90,7 +97,7 @@ export function BuyListPendingNotice({ record, canWrite, onRetry, onRelease, ret
     const timer = setTimeout(() => refreshDeadline((current) => current + 1), Math.max(1, record.expiresAt - Date.now()));
     return () => clearTimeout(timer);
   }, [expired, record.expiresAt]);
-  const rejection = record.retryRejection;
+  const rejection = record.replayRejection;
   const op = [record.added.length > 0 && `新增 ${record.added.join("、")}`, record.removed.length > 0 && `移除 ${record.removed.join("、")}`].filter(Boolean).join(" · ");
   return (
     <Notice tone="warn" title="调整其他可购买设备 · 结果未知"
@@ -118,9 +125,9 @@ function refocusDrawer() {
 }
 
 /** 版本冲突读到最新后，别人改了什么写在同一个框里（OP-97）。 */
-function changedByOthers(before: BuyList, latest: BuyList) {
-  const names = (from: BuyList, against: BuyList) => from.items
-    .filter((item) => !against.items.some((other) => other.productNo === item.productNo)).map(productName).join("、");
+function changedByOthers(before: BuyDevice[], latest: BuyDevice[]) {
+  const names = (from: BuyDevice[], against: BuyDevice[]) => from
+    .filter((item) => !against.some((other) => other.productNo === item.productNo)).map(productName).join("、");
   const added = names(latest, before);
   const removed = names(before, latest);
   return added || removed ? `别人已改：${[added && `新增 ${added}`, removed && `移除 ${removed}`].filter(Boolean).join("，")}` : undefined;
@@ -148,7 +155,17 @@ function rebaseSelection(latest: BuyList, added: BuyDevice[], removed: BuyDevice
   return { base, selection: [...selection] };
 }
 
-export function BuySection({ ctx, list, readError, trialTargetNo, blocked, reading, reach, leaveGuard, onReload, onSubmit }: {
+export function buyReplayEdits(record: BuyListPending) {
+  const before = readH2BuyDevices(record.review?.before);
+  const added = readH2BuyDevices(record.review?.added);
+  if (!before || !added) return;
+  const removed = before.filter(item => !record.productNos.includes(item.productNo));
+  return { before, added, removed };
+}
+
+export type ReviewBuyReplay = (edits: NonNullable<ReturnType<typeof buyReplayEdits>>, latest: BuyList) => void;
+
+export function BuySection({ ctx, list, readError, trialTargetNo, blocked, reading, reach, leaveGuard, replayReview, onReload, onSubmit }: {
   ctx: HCtx;
   list?: BuyList;
   /** 收到了这块数据但形状不对：显示区块错误卡，不显示成空清单（ST-34）。 */
@@ -161,6 +178,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   reach: ReturnType<typeof useReach>;
   /** 抽屉里有没保存的改动时是一个「先问再做」，页头刷新走它（OP-30）；没有改动时是 null。 */
   leaveGuard: RefObject<((next: () => void) => void) | null>;
+  replayReview: RefObject<ReviewBuyReplay | null>;
   onReload: (requireList?: boolean) => Promise<BuyList | undefined>;
   onSubmit: (input: BuyListDraft) => Promise<BuyListSubmitResult>;
 }) {
@@ -181,9 +199,11 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const removed = draftItems.filter((item) => !picked.includes(item.productNo));
   const changed = added.length + removed.length > 0;
   const invalidPicked = candidates.some((item) => !item.selectable && added.includes(item.productNo));
-  const draftBlock = blocked ?? (invalidPicked ? "请先取消不能新增的设备" : changed ? undefined : "勾选和现在一样，没有要保存的改动");
+  const draftBlock = blocked ?? (invalidPicked ? INVALID_PICKED : changed ? undefined : NO_CHANGES);
 
   const dirty = !!draftBase && changed;
+  // 浏览器后退和换页一样先问（OP-29）。
+  useHistoryBackGuard(dirty, (resume) => { afterLeave.current = resume; setLeaving(true); });
   const openDrawer = () => {
     // 抽屉开着时「调整」仍可用键盘点到：有改动先问，不重置勾选。
     if (dirty) { afterLeave.current = undefined; setLeaving(true); return; }
@@ -198,7 +218,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     if (!dirty) return;
     const leaveThen = (next: () => void) => { afterLeave.current = next; setLeaving(true); };
     leaveGuard.current = leaveThen;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
     // 侧栏、面包屑和抽屉里的链接会换页：先问，放弃后再去。
     const intercept = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -221,7 +241,12 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   useEffect(refocusDrawer, [leaving]);
   const toggle = (no: string, on: boolean) => setPicked((current) => on ? [...current, no] : current.filter((item) => item !== no));
 
-  const showConfirm = (base: BuyList, selection: string[], initialReason: string, initialRejected?: string, othersNote?: string) => {
+  const showConfirm = (base: BuyList, selection: string[], { initialReason, initialRejected, othersNote, readFresh }: {
+    initialReason?: string;
+    initialRejected?: string;
+    othersNote?: string;
+    readFresh?: boolean;
+  } = {}) => {
     const { items, candidates } = buyChoices(base);
     const selected = new Set(selection);
     const current = new Set(items.map((item) => item.productNo));
@@ -275,6 +300,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         added: added.map(productName),
         removed: removed.map(productName),
         nextNames: next.map(productName),
+        review: { before: base.items, added },
       });
       if (outcome.kind === "stopped") { closeDrawer(); return; }
       if (outcome.kind === "conflict") {
@@ -283,7 +309,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
           readLatest: async () => {
             const { base: latest, selection } = await readReview();
             setLastReason("");
-            if (!showConfirm(latest, selection, "", undefined, changedByOthers(base, latest))) ctx.openActionConfirm(null);
+            if (!showConfirm(latest, selection, { othersNote: changedByOthers(base.items, latest.items), readFresh: true })) ctx.openActionConfirm(null);
             return false;
           },
           renderNotice: (readLatest) => (
@@ -304,15 +330,17 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       }
       if (outcome.kind === "unknown") {
         closeDrawer();
-        ctx.toast("结果未知，不要重复操作，到页面上方处理。", "warn");
+        ctx.toast(UNKNOWN_TOAST, "warn");
         return;
       }
       // 从「还没保存」里选了保存：存好后接着做原来要做的（换页，或整页刷新，刷新自带读回）。
       const proceed = afterLeave.current;
-      closeDrawer();
-      if (proceed) proceed();
-      else await onReload().catch(() => undefined);
-      ctx.toast("其他可购买设备 已更新", "success");
+      if (proceed) { closeDrawer(); proceed(); }
+      else {
+        closeDrawer();
+        await onReload().catch(() => undefined);
+      }
+      ctx.toast(BUY_SAVED, "success");
     };
     ctx.openActionConfirm({
       formKey: ++formSequence.current,
@@ -334,7 +362,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       content: added.length > 0 ? <div className="h2-money-note"><Notice tone="neutral">{MONEY_LINE}</Notice></div> : undefined,
       initialReason: initialReason || undefined,
       initialRejection: initialRejected === undefined ? undefined : rejection(initialRejected),
-      blockedReason: blocked,
+      blockedReason: readFresh ? undefined : blocked,
       reasonPlaceholder: "写清调整原因和依据",
       confirmLabel: "确认修改，立即生效",
       run: send,
@@ -342,15 +370,31 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     return true;
   };
 
+  replayReview.current = ({ before, added, removed }, latest) => {
+    const review = rebaseSelection(latest, added, removed);
+    afterLeave.current = undefined;
+    setLeaving(false);
+    setLastReason("");
+    setRejected(undefined);
+    setDraftBase(review.base);
+    setPicked(review.selection);
+    const selected = new Set(review.selection);
+    if (selected.size === latest.items.length && latest.items.every(item => selected.has(item.productNo))) {
+      ctx.toast(NO_CHANGES, "info");
+    } else {
+      showConfirm(review.base, review.selection, { othersNote: changedByOthers(before, latest.items), readFresh: true });
+    }
+  };
+
   const openConfirm = () => {
     if (!canWrite || !draftBase || draftBlock) return;
     if (!leaving) afterLeave.current = undefined;
     setLeaving(false);
-    showConfirm(draftBase, picked, lastReason, rejected);
+    showConfirm(draftBase, picked, { initialReason: lastReason, initialRejected: rejected });
   };
 
   const pricingHref = (no: string) => `/devices/pricing?sku=${encodeURIComponent(no)}`;
-  const note = invalidPicked ? "请先取消不能新增的设备" : [`改后共 ${picked.length} 款`, added.length > 0 && `新增 ${added.length} 款`, removed.length > 0 && `移除 ${removed.length} 款`].filter(Boolean).join(" · ");
+  const note = invalidPicked ? INVALID_PICKED : [`改后共 ${picked.length} 款`, added.length > 0 && `新增 ${added.length} 款`, removed.length > 0 && `移除 ${removed.length} 款`].filter(Boolean).join(" · ");
 
   return (
     <>
@@ -451,5 +495,3 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     </>
   );
 }
-
-export { BUY_LOCKED };
