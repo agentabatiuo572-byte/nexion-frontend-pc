@@ -53,7 +53,7 @@ import { expiredTag, GRejectedRelease, GReplayRejectionNote, unknownTag } from "
 import { rejectedTag } from "../verified-release";
 import { replayRejectionText } from "@/lib/admin/retry-rejected";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { G4_PARAM_NAME, G4RecoveryNotice, g4Amount, g4ParamValueText, g4Plain, g4RecoveryTag, type G4ExtraRecovery } from "./g4-recovery";
+import { G4_FIRST_DIVIDEND_TICKET_STATUS, G4_PARAM_NAME, G4RecoveryNotice, g4Amount, g4ParamValueText, g4Plain, g4RecoveryTag, type G4ExtraRecovery } from "./g4-recovery";
 
 /** 系列当前价的名字：名称列窄时在括号前折行，不把「计价）」单独留在一行。 */
 const PRICE_NAME = <>系列当前价<span>（分红计价）</span></>;
@@ -512,6 +512,7 @@ function G4GenesisPage() {
     } finally { setBusyKey(null); }
   }
   const pendingFirstDividend = session && pendingConfigApproval("G4", session.adminId);
+  const firstDividendTicket = pendingFirstDividend?.g4Ticket;
   const firstDividendRecovery: G4ExtraRecovery[] = [];
   if (session && pendingFirstDividend) {
     const name = "每日收益比例";
@@ -519,10 +520,17 @@ function G4GenesisPage() {
     const { commandKey } = pendingFirstDividend;
     const getSnapshot = () => g4FirstDividendRejectionSnapshot(session.adminId, commandKey);
     const rejected = !!getSnapshot();
+    let proposedRate: string | undefined;
+    if (firstDividendTicket) {
+      try { proposedRate = configApprovalOriginalInput("G4", pendingFirstDividend.input)[0].value; }
+      catch { /* 已知的审批单仍可核对，原记录不可读时不猜拟设比例。 */ }
+    }
     firstDividendRecovery.push({
-      key: commandKey, name, submittedAt: pendingFirstDividend.createdAt,
-      change: <>{change}{rejected && <GReplayRejectionNote record={pendingFirstDividend} />}</>,
-      tag: rejected ? rejectedTag() : <StatusTag tone="warn" icon={Clock3} explain="首次配置每日收益比例要另一位超级管理员批准，批准前每日收益比例仍为未配置。点「查询原操作」核对原审批单。">结果未知</StatusTag>,
+      key: commandKey, name, submittedAt: pendingFirstDividend.createdAt, ticket: firstDividendTicket,
+      change: <>{firstDividendTicket ? `拟设比例 ${g4ParamValueText("dividend", proposedRate)}` : change}{rejected && <GReplayRejectionNote record={pendingFirstDividend} />}</>,
+      tag: firstDividendTicket
+        ? <StatusTag tone={firstDividendTicket.status === "pending" ? "warn" : "done"} explain="这是最近一次核对的审批状态。点「查询原操作」读取最新结果。">{G4_FIRST_DIVIDEND_TICKET_STATUS[firstDividendTicket.status]}</StatusTag>
+        : rejected ? rejectedTag() : <StatusTag tone="warn" icon={Clock3} explain="首次配置每日收益比例要另一位超级管理员批准。提交原申请时尚未配置。点「查询原操作」核对原审批单。">结果未知</StatusTag>,
       action: <>
         <Button size="sm" disabled={!!busyKey} aria-label="查询原日分红审批" onClick={() => {
           const [original] = configApprovalOriginalInput("G4", pendingFirstDividend.input);
@@ -570,11 +578,11 @@ function G4GenesisPage() {
       />}
       {firstDividend && session && firstDividend.epoch === epoch && <G4FirstDividendConfirm
         session={session} epoch={epoch} expectedRevision={firstDividend.expectedRevision}
+        readbackRate={overview?.params.find(row => row.key === "dividend")?.value}
         canStartNew={() => canStartNew("finprod_g4_dividend_rate_write")
           && Number(latest.current.overview!.params.find(row => row.key === "dividend")?.value) === 0}
-        readActive={() => readCurrentOverview()}
+        readActive={() => readCurrentOverview(true)}
         onRecoveryStart={invalidateOverview}
-        onReplayRejected={() => readCurrentOverview(true)}
         onClose={() => setFirstDividend(null)}
         onDone={(active, acknowledgement) => {
           setOverview(active);
@@ -1424,7 +1432,9 @@ function G4GenesisPage() {
                   <span className="g4x-value">
                     <span className="g4x-value-num">{dividendRateText}</span>
                     {dividendRecord && (() => { const row = records.find((item) => item.commandKey === dividendRecord.commandKey); return row && g4RecoveryTag(row, false, "dividend"); })()}
-                    {pendingFirstDividend && <StatusTag tone="warn" icon={Clock3}>首次配置待确认</StatusTag>}
+                    {pendingFirstDividend && <StatusTag tone={firstDividendTicket && firstDividendTicket.status !== "pending" ? "done" : "warn"} icon={Clock3}>
+                      {firstDividendTicket ? G4_FIRST_DIVIDEND_TICKET_STATUS[firstDividendTicket.status] : "首次配置待确认"}
+                    </StatusTag>}
                   </span>
                   <span className="g4x-dir">基准 0.1%/日</span>
                 </span>}

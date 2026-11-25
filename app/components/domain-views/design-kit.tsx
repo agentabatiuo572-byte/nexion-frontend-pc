@@ -3863,6 +3863,7 @@ export type InlineOperationApproval = {
   readbackNote?: string;
   retry?: () => Promise<void>;
   pending?: boolean;
+  pendingNotice?: string;
   /** Saved direct commands can expose the existing query and retry actions together. */
   initialRecovery?: "lookup" | "retry";
   expired?: boolean;
@@ -4275,8 +4276,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">{inlineApproval.disabledReason}</RdNotice></div>
         : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>)}
       {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (surface
-        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">上次提交结果未知，可能已经建了审批单，先查询原操作。</RdNotice></div>
-        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上次提交结果未知，可能已经建了审批单，先查询原操作。</div>
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">{inlineApproval.pendingNotice ?? "上次提交结果未知，可能已经建了审批单，先查询原操作。"}</RdNotice></div>
+        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.pendingNotice ?? "上次提交结果未知，可能已经建了审批单，先查询原操作。"}</div>
       )}
       {!reasonPolicyReady && !retryApproval && (!surface || reasonPolicyError) && (surface
         ? <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><RdNotice tone="warn">{reasonPolicyError ?? "正在加载，稍候即可提交。"}</RdNotice></div>
