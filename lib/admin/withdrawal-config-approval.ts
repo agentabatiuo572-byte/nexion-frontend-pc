@@ -11,7 +11,7 @@ import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection
 import { isPermissionDenied } from "./operation-confirm-error";
 import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
-import { currentRecoveryActor, sendRecoveredDraft } from "./abe-recovery-access";
+import { canCreateRecoveryProposal, canReadOwnRecoveryProposal, currentRecoveryActor, sendRecoveredDraft } from "./abe-recovery-access";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
@@ -65,20 +65,52 @@ export type TeamFundApprovalValues = {
   F4: F4AmbassadorPolicyUpdate;
 };
 type ApprovalSource = keyof typeof commands;
+type WithdrawalApprovalSource = "D5" | "D7";
 type ApprovalValues = TeamFundApprovalValues[keyof TeamFundApprovalValues]
   | (Record<string, unknown> & ({ expectedVersion: number } | { expectedRevision: string }));
 type ApprovalScope = { objectId: string; field: string };
 export type H8ConfigApprovalInput = [{ key: string; value: string; expectedVersion: number }, string];
 export type G4ConfigApprovalInput = [{ paramKey: "dividend"; value: string; decisionRef: string; expectedRevision: string }, string];
 
+/** unverified：这次按原号没读到最新状态，ticket 还是上次读到的样子，不能当成现在的事实（ST-36）。 */
+export type WithdrawalApprovalReceipt = { commandKey: string; ticket: A2OperationRow; unverified?: true };
+const TICKET_STATUS_TEXT = { pending: "等另一位超级管理员批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" } as const;
+export const withdrawalApprovalStatusText = (ticket: A2OperationRow) => TICKET_STATUS_TEXT[ticket.status];
+export const WITHDRAWAL_CONFIG_READ_FAILED = "当前配置暂时没读到，点「刷新」再看";
+
+/** 建单回包和按原号查到的单用同一条规则认：本人发起、对象和动作都是这张放宽单。 */
+function requireOwnWithdrawalTicket(source: WithdrawalApprovalSource, ticket: A2OperationRow, commandKey: string) {
+  const { action, op } = commands[source];
+  if (!ticket.mine || ticket.obj !== "current" || ticket.action !== action || ticket.operationCode && ticket.operationCode !== op) {
+    throw new A2OutcomeUncertainError("查到的审批单和原申请对不上，请继续核对。", commandKey);
+  }
+  return ticket;
+}
+
+async function fetchOwnWithdrawalApproval(source: WithdrawalApprovalSource, commandKey: string) {
+  const ticket = await fetchA2ProposalByKey(commandKey, true, "a");
+  return ticket && requireOwnWithdrawalTicket(source, ticket, commandKey);
+}
+
+/** 按原号重读这张单：读到就换成最新状态（含已批准、已驳回、已撤回、已过期）；没读到只标「未核实」。 */
+export async function refreshWithdrawalApprovalReceipt(source: WithdrawalApprovalSource, receipt: WithdrawalApprovalReceipt): Promise<WithdrawalApprovalReceipt> {
+  const ticket = await fetchOwnWithdrawalApproval(source, receipt.commandKey).catch(() => null);
+  return ticket?.id === receipt.ticket.id ? { commandKey: receipt.commandKey, ticket } : { ...receipt, unverified: true };
+}
+
 function approvalSlot(sourceDomain: keyof typeof commands, adminId: string | number, scope?: ApprovalScope) {
   return scope ? `${adminId}:${sourceDomain}:${scope.objectId}:${scope.field}` : `${adminId}:${sourceDomain}`;
 }
 
 export function withdrawalApprovalDisabledReason(authorities: readonly string[]) {
-  if (!authorities.includes("platform_a2_proposal_create") && !authorities.includes("platform_a2_write")) {
+  if (!canCreateRecoveryProposal(authorities)) {
     return "当前账号缺少发起审批的权限。";
   }
+}
+
+export function canManageD7Approval(authorities: readonly string[], values: ApprovalValues) {
+  return authorities.includes("finance_d7_manage")
+    && (!("forceInverted" in values) || values.forceInverted !== true || authorities.includes("finance_d7_force_inverted"));
 }
 
 export function pendingConfigApproval(sourceDomain: keyof typeof commands, adminId: string | number, scope?: ApprovalScope) {
@@ -89,6 +121,13 @@ export function pendingConfigApproval(sourceDomain: keyof typeof commands, admin
 /** 按原操作重试被明确拒绝、人核实过结果后解除本页的锁。不发请求，只删这一条原命令（OP-153）。 */
 export function releaseConfigApproval(sourceDomain: keyof typeof commands, adminId: string | number, commandKey: string, scope?: ApprovalScope) {
   attempts.forget(approvalSlot(sourceDomain, adminId, scope), commandKey);
+}
+
+export function releaseRejectedWithdrawalApproval(sourceDomain: WithdrawalApprovalSource, adminId: number, commandKey: string) {
+  const record = pendingConfigApproval(sourceDomain, adminId);
+  if (record?.commandKey !== commandKey || !record.replayRejection) return false;
+  releaseConfigApproval(sourceDomain, adminId, commandKey);
+  return true;
 }
 
 /** H8 uses this existing store instance so other domains' in-flight approvals stay intact. */
@@ -307,12 +346,11 @@ export function configApprovalOriginalInput(sourceDomain: ApprovalSource, input:
   return original as [ApprovalValues, string];
 }
 
-export async function submitConfigApproval<T>(
+async function submitConfigApprovalTicket(
   sourceDomain: ApprovalSource,
   session: AdminSession,
   values: ApprovalValues | null,
   reason: string,
-  readActive: () => Promise<T>,
   mode: boolean | "retry-original" = false,
   scope?: ApprovalScope,
 ) {
@@ -324,6 +362,7 @@ export async function submitConfigApproval<T>(
   if (lookupOnly && !previous) return null;
   if (mode === "retry-original") {
     if (!previous) throw new Error("原审批申请已处理，请刷新页面后重新操作。");
+    if (withdrawalApproval && previous.replayRejection) throw new Error("重试已被拒绝，请核实后解除。");
     [values, reason] = configApprovalOriginalInput(sourceDomain, previous.input);
   }
   const input = JSON.stringify([values, reason]);
@@ -362,10 +401,10 @@ export async function submitConfigApproval<T>(
   try {
     // 发起人也能按命令号查自己发起的单（后端 A2AccessPolicy.requireProposalReader、WithdrawalConfigApproval.canReadOwnProposal）。
     if (previous && (domain === "B" || domain === "F" || sourceDomain === "E2" || sourceDomain === "G4" || sourceDomain === "H8"
-      || session.authorities.includes("platform_a2_read") || session.authorities.includes("platform_a2_proposal_create"))) {
+      || canReadOwnRecoveryProposal(session.authorities))) {
       try {
         // 只有 A2_PROPOSAL_NOT_FOUND 才算没有原单；OPERATION_RESULT_UNKNOWN 这类 404 说明不了，按查询失败保留原命令。
-        ticket = await fetchA2ProposalByKey(key, true);
+        ticket = await (withdrawalApproval ? fetchOwnWithdrawalApproval(sourceDomain, key) : fetchA2ProposalByKey(key, true));
       } catch {
         throw new A2OutcomeUncertainError("暂时无法查询原审批单。", key);
       }
@@ -381,6 +420,13 @@ export async function submitConfigApproval<T>(
     }
     if (!ticket) {
       if (!proposal) throw new Error("请填写完整后提交。");
+      if (withdrawalApproval && previous) {
+        const actor = currentRecoveryActor(session.adminId);
+        if (!actor || !canCreateRecoveryProposal(actor.authorities)
+          || sourceDomain === "D7" && (!values || !canManageD7Approval(actor.authorities, values)) || !canClearOnRejection) {
+          throw new Error("当前不能重试，请核对发起权限和原审批单。");
+        }
+      }
       if (sourceDomain === "D5" && previous) {
         const original = proposal.command.params.values;
         if (!original || typeof original !== "object" || JSON.stringify([original, proposal.reason]) !== previous.input) {
@@ -393,7 +439,9 @@ export async function submitConfigApproval<T>(
           if (block) throw new A2OutcomeUncertainError(block, key);
         }
       }
-      ticket = await createA2OperationProposal(proposal, key, true);
+      // 放宽单的回包缺本人、对象、动作或状态时不算建单成功：原命令留着，按原号再查（ST-37）。
+      ticket = await createA2OperationProposal(proposal, key, true, withdrawalApproval);
+      if (withdrawalApproval) requireOwnWithdrawalTicket(sourceDomain, ticket, key);
     }
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
@@ -401,7 +449,11 @@ export async function submitConfigApproval<T>(
       throw new A2OutcomeUncertainError("原请求还没有结果，请稍后查询。", key);
     }
     if (withdrawalApproval) {
-      if (isExplicitRejection(error)) attempts.forget(slot, key);
+      const rejection = explicitRejectionCode(error);
+      if (rejection) {
+        if (previous) attempts.markReplayRejected(slot, key, rejection);
+        else attempts.forget(slot, key);
+      }
       else if (!previous && !isA2OutcomeUncertainError(error) && !isPermissionDenied(error)) {
         throw new A2OutcomeUncertainError("提交结果未知，请到操作记录里核对。", key);
       }
@@ -420,17 +472,14 @@ export async function submitConfigApproval<T>(
     }
     attempts.remember(slot, key, { input: previous?.input ?? input, g4Ticket: ticket, g4Request: proposal });
   }
-  let active;
-  try {
-    active = await readActive();
-  } catch {
-    throw new A2OutcomeUncertainError(`审批单 ${ticket.id} 已登记，当前配置回读失败。请保持当前输入并重试核对。`, key);
-  }
-  if (sourceDomain !== "G4" || ticket.status !== "pending") attempts.forget(slot, key);
+  if (withdrawalApproval) attempts.forget(slot, key);
   return {
-    active,
     ticket,
-    acknowledgement: previous && lookupOnly && domain === "F"
+    commandKey: key,
+    // 放宽单的发起人不一定看得到操作记录，查到的状态直接写出来。
+    acknowledgement: previous && lookupOnly && withdrawalApproval
+      ? `已找到原审批单 ${ticket.id} · ${TICKET_STATUS_TEXT[ticket.status]}`
+      : previous && lookupOnly && domain === "F"
       ? `已找到原审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位超管批准" : " · 请在操作记录查看处理结果"}`
       : previous && previous.input !== input
       ? `已找到原审批单 ${ticket.id}，本次输入未提交。请核对当前配置后重新操作。`
@@ -440,4 +489,27 @@ export async function submitConfigApproval<T>(
   };
 }
 
-export const submitWithdrawalConfigApproval = submitConfigApproval;
+export async function submitConfigApproval<T>(
+  source: Exclude<ApprovalSource, WithdrawalApprovalSource>, session: AdminSession, values: ApprovalValues | null, reason: string,
+  readActive: () => Promise<T>, mode: boolean | "retry-original" = false, scope?: ApprovalScope,
+) {
+  const result = await submitConfigApprovalTicket(source, session, values, reason, mode, scope);
+  if (!result) return null;
+  let active: T;
+  try {
+    active = await readActive();
+  } catch {
+    throw new A2OutcomeUncertainError(`审批单 ${result.ticket.id} 已登记，当前配置回读失败。请保持当前输入并重试核对。`, result.commandKey);
+  }
+  if (source !== "G4" || result.ticket.status !== "pending") {
+    attempts.forget(approvalSlot(source, session.adminId, scope), result.commandKey);
+  }
+  return { ...result, active };
+}
+
+/** An authoritative ticket settles the original before the page reads its current configuration. */
+export function submitWithdrawalConfigApproval(
+  source: WithdrawalApprovalSource, session: AdminSession, values: ApprovalValues | null, reason: string, mode: boolean | "retry-original" = false,
+) {
+  return submitConfigApprovalTicket(source, session, values, reason, mode);
+}
