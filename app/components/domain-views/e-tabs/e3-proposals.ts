@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { eDomainLegacyCommands } from "@/lib/admin/e-domain-commands";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
+import { fetchE3Snapshot } from "@/lib/admin/e3-client";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 
@@ -22,6 +24,7 @@ export type E3Proposal = PendingMutationRecord & {
   input: Input;
   state: "unknown" | "submitted" | "pending" | "rejected";
   ticketId?: string;
+  terminalStatus?: "rejected" | "withdrawn" | "expired";
 };
 
 /** One durable envelope for an entire proposal, including unchanged members of a batch. */
@@ -52,6 +55,19 @@ const commands = createPendingMutationStore<E3Proposal>({
   },
 });
 
+const recovery = createPendingRecovery(commands, {
+  capability: () => "receipt",
+  explicitRejectionCode,
+  canReplay: record => {
+    const auth = useAdminAuth.getState(), session = auth.session;
+    return auth.isAuthenticated && !auth.logoutPending && !auth.logoutUnknown && !!session
+      && !session.passwordChangeRequired && String(session.adminId) === record.owner
+      && session.authorities.includes("device_e3_read") && session.authorities.includes("device_e3_write")
+      && session.authorities.some(right => ["platform_a2_write", "platform_a2_proposal_create"].includes(right))
+      && record.state === "unknown" && !record.ticketId;
+  },
+});
+
 export function useE3Proposals() {
   const session = useAdminAuth(s => s.session);
   const owner = String(session?.adminId ?? "");
@@ -59,8 +75,8 @@ export function useE3Proposals() {
   const [records, setRecords] = useState<E3Proposal[]>([]);
   const [legacy, setLegacy] = useState<ReturnType<typeof eDomainLegacyCommands.list>>([]);
   const [busy, setBusy] = useState("");
-  const [queryErrors, setQueryErrors] = useState<string[]>([]);
-  const [missing, setMissing] = useState<string[]>([]);
+  const [queryErrorsByKey, setQueryErrorsByKey] = useState<Record<string, string>>({});
+  useSyncExternalStore(recovery.subscribe, recovery.getRevision, () => 0);
   const sending = useRef(false);
   const canQuery = rights.some(r => ["platform_a2_read", "platform_a2_proposal_create"].includes(r));
   // Every allowed E3 batch key has the same business authority as a single-key proposal.
@@ -74,32 +90,53 @@ export function useE3Proposals() {
   const locked = (keys: readonly string[]) => commands.list().some(r => r.owner === owner && r.state !== "rejected" && r.keys.some(k => keys.includes(k)))
     || eDomainLegacyCommands.list().some(r => /^e3_config(?:_batch)?\|/.test(r.fingerprint) && r.fingerprint.split("|")[1].split(",").some(k => keys.includes(k)));
 
-  async function lookup(record: E3Proposal) {
+  async function readOriginal(record: E3Proposal) {
     if (!canQuery) throw new Error("A2_PROPOSAL_READ_FORBIDDEN");
-    setMissing(keys => keys.filter(key => key !== record.commandKey));
-    const ticket = await fetchA2ProposalByKey(record.commandKey, true);
-    if (!ticket) {
-      if (record.ticketId) throw new Error("OPERATION_RESULT_UNKNOWN");
-      if (isRetryExpired(record)) setMissing(keys => [...new Set([...keys, record.commandKey])]);
-      return false;
+    const result = await recovery.query(record, async original => {
+      const ticket = await fetchA2ProposalByKey(original.commandKey, true);
+      if (!ticket) {
+        if (original.ticketId) throw new Error("OPERATION_RESULT_UNKNOWN");
+        return { conclusion: "not-found", ticket: null } as const;
+      }
+      if (!ticket.mine || ticket.obj !== original.input.obj.slice(0, 255)
+        || original.ticketId && ticket.id !== original.ticketId
+        || ticket.operationCode && ticket.operationCode !== original.input.command.op) throw new Error("A2_BUSINESS_CONTEXT_MISMATCH");
+      if (!["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.status)) throw new Error("OPERATION_RESULT_UNKNOWN");
+      if (ticket.status !== "pending") await fetchE3Snapshot();
+      return { conclusion: ticket.status === "pending" ? "unknown" : ticket.status === "approved" ? "succeeded" : "rejected", ticket } as const;
+    });
+    if (!result?.ticket) return false;
+    const { ticket } = result;
+    if (ticket.status === "pending" || result.conclusion === "rejected") {
+      commands.remember(record.fingerprint, record.commandKey, { ...record,
+        state: ticket.status === "pending" ? "pending" : "rejected", ticketId: ticket.id,
+        terminalStatus: ticket.status === "withdrawn" || ticket.status === "expired" || ticket.status === "rejected" ? ticket.status : undefined });
+    } else {
+      recovery.settleFromQuery(record, result.conclusion);
     }
-    // E3 has no operationCode/version metadata. A09's object is normalized to 255 characters by A2.
-    if (!ticket.mine || ticket.obj !== record.input.obj.slice(0, 255)) throw new Error("A2_BUSINESS_CONTEXT_MISMATCH");
-    if (ticket.status === "pending" || ticket.status === "rejected") {
-      commands.remember(record.fingerprint, record.commandKey, { ...record, state: ticket.status, ticketId: ticket.id });
-    } else if (["approved", "withdrawn", "expired"].includes(ticket.status)) {
-      commands.forget(record.fingerprint, record.commandKey);
-    } else throw new Error("OPERATION_RESULT_UNKNOWN");
     sync();
     return ticket;
+  }
+  async function lookup(record: E3Proposal) {
+    try {
+      const result = await readOriginal(record);
+      setQueryErrorsByKey(errors => {
+        const next = { ...errors };
+        delete next[record.commandKey];
+        return next;
+      });
+      return result;
+    } catch (error) {
+      setQueryErrorsByKey(errors => ({ ...errors, [record.commandKey]: displayAdminReadError(error) }));
+      throw error;
+    }
   }
   async function reconcile() {
     sync();
     if (!canQuery) return [];
-    // A failed query cannot revoke an earlier authoritative observation or release an unknown request.
     const results = await Promise.allSettled(commands.list().filter(r => r.owner === owner && r.state !== "rejected").map(lookup));
     const errors = results.flatMap(result => result.status === "rejected" ? [displayAdminReadError(result.reason)] : []);
-    setQueryErrors(errors); sync();
+    sync();
     return errors;
   }
   async function send(record: E3Proposal, retry = true) {
@@ -108,7 +145,8 @@ export function useE3Proposals() {
     if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error(retry ? "E3_PROPOSAL_RETRY_STORAGE_UNAVAILABLE" : "E3_PROPOSAL_STORAGE_UNAVAILABLE");
     sending.current = true; setBusy(record.commandKey);
     try {
-      const ticket = await createA2OperationProposal(record.input, record.commandKey, true);
+      const post = (original: E3Proposal) => createA2OperationProposal(original.input, original.commandKey, true);
+      const ticket = await (retry ? recovery.replay(record, post) : post(record));
       // E3 replays the creation receipt. Only a current-ticket GET can establish pending after retry.
       commands.remember(record.fingerprint, record.commandKey, { ...record, state: retry ? "submitted" : "pending", ticketId: ticket.id });
     } catch (error) {
@@ -117,10 +155,10 @@ export function useE3Proposals() {
         // 763729e6 changes direct single-key replay, not this A2 proposal path.
         // Keep old-backend/retired-command recovery tied to the original ticket.
         try { if (await lookup(record)) return; }
-        catch (queryError) { setQueryErrors([displayAdminReadError(queryError)]); }
+        catch { /* lookup records the failure on this original command. */ }
       }
       // A2 performs object-lock checks inside command deduplication. A lock refusal is a verdict on this command.
-      if (retry ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error) && response.httpStatus !== undefined
+      if (!retry && !isA2OutcomeUncertainError(error) && response.httpStatus !== undefined
           && isDeterministicRejection(response.httpStatus, response.apiCode)) commands.forget(record.fingerprint, record.commandKey);
       throw error;
     } finally { sending.current = false; setBusy(""); sync(); }
@@ -144,14 +182,10 @@ export function useE3Proposals() {
     const record = commands.list().find(r => r.commandKey === key)!;
     sync(); await send(record, false);
   }
-  /** Visual handoff: only an explicit operator action may release expired, authoritatively absent proposals. */
-  async function releaseMissing(record: E3Proposal) {
-    const current = commands.list().find(r => r.commandKey === record.commandKey && r.owner === owner);
-    if (!current || current.ticketId || !isRetryExpired(current) || !canQuery) return false;
-    if (await lookup(current)) return false;
-    commands.forget(current.fingerprint, current.commandKey);
-    setMissing(keys => keys.filter(key => key !== current.commandKey));
-    sync(); return true;
+  function releaseRejected(record: E3Proposal) {
+    const released = recovery.releaseRejectedReplay(record);
+    sync();
+    return released;
   }
   async function lookupLegacy(record: typeof legacy[number]) {
     const ticket = await fetchA2ProposalByKey(record.commandKey, true);
@@ -160,6 +194,19 @@ export function useE3Proposals() {
     if (["approved", "rejected", "withdrawn", "expired"].includes(ticket.status)) eDomainLegacyCommands.forget(record.fingerprint, record.commandKey);
     sync(); return ticket;
   }
-  return { records, legacy, busy, canQuery, queryErrors, missing, releaseMissing, allowed, locked, sync, reconcile, lookup, lookupLegacy, submit, send,
+  const draft = (keys: readonly string[]) => records.find(original => original.state === "rejected"
+    && keys.length > 0 && original.keys.length === keys.length && keys.every(key => original.keys.includes(key)))?.after;
+  return { records, legacy, busy, draft, canQuery, queryErrorsByKey, recoveryState: recovery.state,
+    confirmRecovery: (record: E3Proposal) => {
+      const state = recovery.state(record);
+      return { state, expiresAt: state.expiresAt, subscribe: recovery.subscribe, getRevision: recovery.getRevision,
+        query: async () => {
+          const ticket = await lookup(record);
+          if (ticket && ["rejected", "withdrawn", "expired"].includes(ticket.status)) {
+            throw new PendingConfirmRejected("原申请没有执行，核对拟改的内容后重新确认。");
+          }
+        } };
+    },
+    releaseRejected, allowed, locked, sync, reconcile, lookup, lookupLegacy, submit, send,
     pendingReason: (keys: string[]) => commands.list().find(r => r.owner === owner && r.state === "unknown" && r.keys.some(k => keys.includes(k)))?.input.reason };
 }

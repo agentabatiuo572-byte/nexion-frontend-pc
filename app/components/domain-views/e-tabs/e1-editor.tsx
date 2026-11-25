@@ -12,16 +12,18 @@ import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import { ADMIN_ERROR_MESSAGES, guardedFetch, displayAdminError } from "@/lib/admin/error-messages";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, containsHan, trimStoredContent } from "@/lib/admin/content-language-rules";
 import { SKU_BADGE_OPTIONS, SKU_CUSTOM_BADGE_MAX_LENGTH, SKU_TAGLINE_LABELS, SKU_TAGLINE_TRANSLATION_MAX_LENGTH, SKU_TAGLINE_VI_HAN_ERROR, skuBadgeKind, skuBadgeValue } from "@/lib/admin/e1-product-copy";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { SKU_SERIES_NAMES, skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSeries, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
-import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
+import { currentRecoveryActor, rebaseRecoveryFields } from "@/lib/admin/abe-recovery-access";
+import { e1MediaCommands, e1MediaHasOwner, e1PendingMediaFor, E1_PENDING_MEDIA, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
 
-export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number };
+export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number; draftId?: string; mediaCommandKey?: string; mediaDraftForm?: SkuForm;
+  recovered?: { form: SkuForm; mediaSku: OpsSku; baseline?: OpsSku } };
 export type E1SkuReview = {
   sku: OpsSku;
   beforeSku?: OpsSku;
@@ -84,6 +86,25 @@ function skuMedia(sku?: OpsSku): Media {
   return sku?.imageAssetId && sku.imageObjectKey ? { kind: /\.(mp4|webm|mov)$/i.test(sku.imageObjectKey) ? "video" : "image", src: "", name: sku.imageObjectKey.split("/").pop() ?? "商品媒体", assetId: sku.imageAssetId, objectKey: sku.imageObjectKey } : null;
 }
 
+function mergeSkuRevision(previousSku: OpsSku, nextSku: OpsSku, form: SkuForm, media: Media) {
+  const previous = skuToForm(previousSku), latest = skuToForm(nextSku);
+  const merged = rebaseRecoveryFields(previous, { ...form, badge: previous.badge, badgeKind: previous.badgeKind, badgeKindChanged: false }, latest);
+  if (form.badgeKindChanged || form.badgeKind === "custom" && form.badge !== previous.badge) {
+    merged.badgeKind = form.badgeKind;
+    merged.badge = form.badge;
+    merged.badgeKindChanged = true;
+  }
+  const latestMedia = skuMedia(nextSku);
+  const mergedMedia = imageIdentity(media) === imageIdentity(skuMedia(previousSku))
+    && imageIdentity(media) !== imageIdentity(latestMedia) ? latestMedia : media;
+  return { merged, latest, latestMedia, mergedMedia };
+}
+
+function ownsMedia(record: E1MediaPending, request?: E1EditRequest | null) {
+  return !!request && e1MediaHasOwner(record)
+    && (record.skuId ? record.skuId === request.sku?.id : record.draftId === request.draftId && !request.sku);
+}
+
 function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media): OpsSku {
   const draft: OpsSku = { ...original, ...formToSku(form, original), imageAssetId: media?.assetId, imageObjectKey: media?.objectKey, imagePreviewUrl: undefined };
   if (original) {
@@ -107,6 +128,15 @@ function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media): Op
   return draft;
 }
 
+const mediaRecovery = createPendingRecovery(e1MediaCommands, {
+  capability: () => "replay",
+  explicitRejectionCode,
+  canReplay: record => {
+    const rights = currentRecoveryActor(record.actorId)?.authorities ?? [];
+    return e1MediaHasOwner(record) && rights.includes("device_e1_read") && rights.includes("device_e1_write");
+  },
+});
+
 export function E1Editor({ request, gates, currentPhaseId, writable, currentSku, onClose, onReview, onRevisionAccepted, busy, toast, onMediaChange, writeBlockedReason }: {
   request: E1EditRequest | null; gates: E1GenerationGateData | null; currentPhaseId: string; writable: boolean; currentSku?: OpsSku;
   onClose: () => void; onReview: (review: E1SkuReview) => void; onRevisionAccepted: () => void;
@@ -123,10 +153,11 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const [mediaBusy, setMediaBusy] = useState(false);
   const [mediaError, setMediaError] = useState("");
   const [mediaPending, setMediaPending] = useState<E1MediaPending | null>(null);
-  const [mediaRejected, setMediaRejected] = useState(false);
   const [mediaRelease, setMediaRelease] = useState(false);
   const [drag, setDrag] = useState(false);
   const fileRef = useRef<File | null>(null);
+  const requestRef = useRef(request);
+  requestRef.current = request;
   const uploadBusy = useRef(false);
   const [pools, setPools] = useState<TaskPool[]>([]);
   const [labels, setLabels] = useState<string[]>([]);
@@ -135,6 +166,9 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
   const editId = original?.id;
+  const pendingMediaForEditor = () => request && e1PendingMediaFor(actor, request.sku?.id, request.draftId);
+  const mediaBlocked = !!pendingMediaForEditor();
+  const mediaRecoveryOnly = mediaBlocked && (!mediaPending || mediaPending.commandKey !== request?.mediaCommandKey);
   const seriesLocked = original?.seriesLocked === true;
   const seriesChoices = skuSeriesChoices(form.tier, original);
   const nav = useSectionNav(SECTIONS, { ready: !!request });
@@ -154,10 +188,14 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (!request) return;
     const sku = request.sku, next = sku ? skuToForm(sku) : { ...EMPTY_SKU_FORM, allowedPoolCodes: [], unlock: gates?.phaseOrder[0] ?? "" };
     if (request.unlock !== undefined) next.unlock = request.unlock;
-    const m = skuMedia(sku);
-    setOriginal(sku); setForm(next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
-    setMedia(m); setInitialMedia(imageIdentity(m)); setErrors({}); setTouched(new Set()); setLeave(false); setMediaError("");
-    setMediaPending(e1MediaCommands.list().find(r => r.actorId === actor) ?? null);
+    const originalMedia = skuMedia(sku);
+    const restored = request.recovered;
+    const merge = restored?.baseline && sku ? mergeSkuRevision(restored.baseline, sku, restored.form, skuMedia(restored.mediaSku)) : null;
+    const m = merge ? merge.mergedMedia : restored ? skuMedia(restored.mediaSku) : originalMedia;
+    setOriginal(sku); setForm(merge?.merged ?? restored?.form ?? request.mediaDraftForm ?? next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
+    setMedia(m); setInitialMedia(imageIdentity(originalMedia)); setErrors({}); setTouched(new Set()); setLeave(false); setMediaError("");
+    fileRef.current = null;
+    setMediaPending(e1MediaCommands.list().find(r => r.commandKey === request.mediaCommandKey && r.actorId === actor && ownsMedia(r, request)) ?? null);
     if (m?.assetId) void refreshPreview(m.assetId);
     void Promise.allSettled([canReadE2 ? fetchTaskPools() : Promise.resolve([]), fetchSkuDatacenterLabels()]).then(([p, l]) => {
       setPools(p.status === "fulfilled" ? p.value : []);
@@ -179,34 +217,45 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   }, [media?.src]);
 
   const upload = async (record: E1MediaPending, file: File, retry: boolean) => {
-    if (!writable || uploadBusy.current || record.actorId !== actor || isRetryExpired(record)) throw new Error(isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "没有上传权限、原文件正在上传或账号不符");
+    const editor = requestRef.current;
+    if (!ownsMedia(record, editor) || retry && record.commandKey !== mediaPending?.commandKey || !writable || uploadBusy.current || record.actorId !== actor || isRetryExpired(record)) throw new Error(isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "没有上传权限、原文件正在上传或账号不符");
     e1MediaCommands.remember(record.fingerprint, record.commandKey, record);
     if (!e1MediaCommands.isDurablyStored(record.fingerprint, record.commandKey)) { setMediaError("浏览器无法保存原上传，本次没有发送；请保留原文件核对。"); return; }
-    uploadBusy.current = true; setMediaBusy(true); onMediaChange(record.commandKey); setMediaRejected(false); setMediaError("");
+    uploadBusy.current = true; setMediaBusy(true); onMediaChange(record.commandKey); setMediaError("");
     try {
-      const body = new FormData(); body.append("file", file);
-      const response = await guardedFetch(`/api/admin/media/uploads?${new URLSearchParams(record.params)}`, { method: "POST", body, headers: { "Idempotency-Key": record.commandKey }, cache: "no-store" });
-      const raw: unknown = await response.json().catch(() => null);
-      const result = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
-      const data = result?.data && typeof result.data === "object" && !Array.isArray(result.data) ? result.data as Record<string, unknown> : null;
-      const message = typeof result?.message === "string" ? result.message : "";
-      const upstreamUnknown = response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown";
-      if (upstreamUnknown || !response.ok || result?.code !== 0 || !data || typeof data.assetId !== "string" || !data.assetId.trim() || typeof data.objectKey !== "string" || !data.objectKey.trim()
-        || data.sizeBytes != null && (typeof data.sizeBytes !== "number" || !Number.isFinite(data.sizeBytes) || data.sizeBytes < 0)) {
-        throw Object.assign(new Error(message || "上传结果未知，请保留原文件核对"), { status: response.status, apiCode: result?.code, backendMessage: message, unknownOutcome: upstreamUnknown || result?.unknownOutcome === true || !Number.isInteger(result?.code) || result?.code === 0 || Number(result?.code) >= 500 || response.status >= 500 || isIdempotencyOutcomeOpen(message) || response.status === 409 && (!message || message === "MEDIA_REQUEST_FAILED") });
-      }
-      const assetId = data.assetId, objectKey = data.objectKey, size = data.sizeBytes == null ? record.size : data.sizeBytes as number;
+      const send = async (record: E1MediaPending) => {
+        const body = new FormData(); body.append("file", file);
+        const response = await guardedFetch(`/api/admin/media/uploads?${new URLSearchParams(record.params)}`, { method: "POST", body, headers: { "Idempotency-Key": record.commandKey }, cache: "no-store" });
+        const raw: unknown = await response.json().catch(() => null);
+        const result = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
+        const data = result?.data && typeof result.data === "object" && !Array.isArray(result.data) ? result.data as Record<string, unknown> : null;
+        const message = typeof result?.message === "string" ? result.message : "";
+        const upstreamUnknown = response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown";
+        if (upstreamUnknown || !response.ok || result?.code !== 0 || !data || typeof data.assetId !== "string" || !data.assetId.trim() || typeof data.objectKey !== "string" || !data.objectKey.trim()
+          || data.sizeBytes != null && (typeof data.sizeBytes !== "number" || !Number.isFinite(data.sizeBytes) || data.sizeBytes < 0)) {
+          throw Object.assign(new Error(message || "上传结果未知，请保留原文件核对"), { status: response.status, apiCode: result?.code, backendMessage: message, unknownOutcome: upstreamUnknown || result?.unknownOutcome === true || !Number.isInteger(result?.code) || result?.code === 0 || Number(result?.code) >= 500 || response.status >= 500 || isIdempotencyOutcomeOpen(message) || response.status === 409 && (!message || message === "MEDIA_REQUEST_FAILED") });
+        }
+        return { assetId: data.assetId, objectKey: data.objectKey, size: data.sizeBytes == null ? record.size : data.sizeBytes as number };
+      };
+      const { assetId, objectKey, size } = await (retry ? mediaRecovery.replay(record, send) : send(record));
+      if (requestRef.current?.nonce !== editor?.nonce || !ownsMedia(record, requestRef.current)) return;
       setMedia(m => ({ kind: record.kind, src: `/api/admin/media/uploads/${encodeURIComponent(assetId)}/content`, name: record.fileName, size, w: m?.w, h: m?.h, duration: m?.duration, assetId, objectKey }));
-      e1MediaCommands.forget(record.fingerprint, record.commandKey); setMediaPending(null); fileRef.current = null; onMediaChange(); toast("已上传；商品关联仍需提交审批");
+      mediaRecovery.settleAcknowledged(record); setMediaPending(null); fileRef.current = null; onMediaChange(); toast("已上传；商品关联仍需提交审批");
     } catch (error) {
+      if (requestRef.current?.nonce !== editor?.nonce) return;
       const response = error as { status?: number; apiCode?: number; unknownOutcome?: boolean };
       if (!retry && !response.unknownOutcome && response.status !== undefined && isDeterministicRejection(response.status, response.apiCode)) { e1MediaCommands.forget(record.fingerprint, record.commandKey); setMediaPending(null); fileRef.current = null; }
-      else { setMediaPending(record); if (retry && isExplicitRejection(error)) setMediaRejected(true); }
+      else setMediaPending(record);
       setMediaError(displayAdminError(error)); onMediaChange();
     } finally { uploadBusy.current = false; setMediaBusy(false); onMediaChange(); }
   };
   const pickMedia = async (file?: File) => {
-    if (!file || uploadBusy.current || !writable) return;
+    if (!file || !request || uploadBusy.current || !writable) return;
+    if (mediaPending && mediaPending.commandKey !== request.mediaCommandKey) return;
+    if (!mediaPending && pendingMediaForEditor()) {
+      setMediaError(E1_PENDING_MEDIA);
+      return;
+    }
     const ext = file.name.split(".").pop()?.toLowerCase(), mime = file.type.toLowerCase();
     const kinds: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime" };
     if (!ext || !kinds[ext] || mime && mime !== kinds[ext]) { setMediaError("请上传匹配扩展名与类型的 JPG / PNG / WebP / GIF / MP4 / WebM / MOV"); return; }
@@ -216,12 +265,14 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     let record = mediaPending;
     try {
       const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())), b => b.toString(16).padStart(2, "0")).join("");
+      if (requestRef.current?.nonce !== request.nonce) return;
       if (record) {
+        if (!ownsMedia(record, request)) return;
         if (record.fileName !== file.name || record.size !== file.size || record.mime !== file.type || record.digest !== digest) { setMediaError("与原文件名称、类型、大小或摘要不一致；只能重新选择原文件核对"); return; }
       } else {
         const key = createA2CommandKey("e1-media"), fingerprint = `media|${actor}`;
-        const params = { domain: "E", usage: kind === "video" ? "sku-video" : "sku-image", entityType: "SKU", entityId: form.id.trim() || form.name.trim() || editId || "draft-sku", operator };
-        e1MediaCommands.remember(fingerprint, key, { actorId: actor, skuId: editId ?? "", fileName: file.name, mime: file.type, size: file.size, digest, params, kind });
+        const params = { domain: "E", usage: kind === "video" ? "sku-video" : "sku-image", entityType: "SKU", entityId: editId || form.id.trim() || form.name.trim() || "draft-sku", operator };
+        e1MediaCommands.remember(fingerprint, key, { actorId: actor, skuId: editId ?? "", draftId: request.draftId, draftForm: editId ? undefined : form, fileName: file.name, mime: file.type, size: file.size, digest, params, kind });
         if (!e1MediaCommands.isDurablyStored(fingerprint, key)) { e1MediaCommands.forget(fingerprint, key); throw new Error("浏览器无法保存原操作，本次没有上传"); }
         record = e1MediaCommands.list().find(r => r.commandKey === key)!;
       }
@@ -241,7 +292,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     finally { setMediaBusy(false); }
   };
   const crop = async () => {
-    if (!media || media.kind !== "image" || mediaPending || mediaBusy || !writable) return;
+    if (!media || media.kind !== "image" || pendingMediaForEditor() || mediaPending || mediaBusy || !writable) return;
     setMediaBusy(true);
     try {
       const image = new Image(); image.crossOrigin = "anonymous";
@@ -255,21 +306,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   };
 
   const adoptRevision = (latest: OpsSku, form: SkuForm, original: OpsSku, media: Media) => {
-    const previous = skuToForm(original);
-    const latestForm = skuToForm(latest);
-    const merged = { ...latestForm };
-    for (const key of Object.keys(previous) as (keyof SkuForm)[]) {
-      if (key === "badge" || key === "badgeKind" || key === "badgeKindChanged") continue;
-      if (JSON.stringify(form[key]) !== JSON.stringify(previous[key])) Object.assign(merged, { [key]: form[key] });
-    }
-    if (form.badgeKindChanged || form.badgeKind === "custom" && form.badge !== previous.badge) {
-      merged.badgeKind = form.badgeKind;
-      merged.badge = form.badge;
-      merged.badgeKindChanged = true;
-    }
-    const latestMedia = skuMedia(latest);
-    const mergedMedia = imageIdentity(media) === imageIdentity(skuMedia(original))
-      && imageIdentity(media) !== imageIdentity(latestMedia) ? latestMedia : media;
+    const { merged, latest: latestForm, latestMedia, mergedMedia } = mergeSkuRevision(original, latest, form, media);
     setOriginal(latest);
     setInitialForm(JSON.stringify(latestForm));
     setForm(merged);
@@ -318,7 +355,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (gateError) e[/阶段/.test(gateError) ? "unlock" : /周期/.test(gateError) ? "gateQuotaPeriod" : /会员/.test(gateError) ? "gateRankMin" : /直接/.test(gateError) ? "gateActiveDirectMin" : /算力点/.test(gateError) ? "gateTeamComputePointsMin" : "gateQuotaCap"] = gateError;
     if (gates?.skuReviewContractVersion !== 1) e.form = "商品审核暂时不可用，请刷新后重试；已填写的内容会保留";
     if (!writable) e.form = "当前不能提交，请核对权限和目录读取状态";
-    if (mediaBusy || mediaPending || media && !media.assetId) e.media = "媒体上传尚未确认，请先核对原文件";
+    if (pendingMediaForEditor() || mediaBusy || mediaPending || media && !media.assetId) e.media = E1_PENDING_MEDIA;
     if (!acceptedRevision && latestChanged) e.form = "商品已被别人改过，请先核对别人改了什么";
     for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
       const error = appVisibleTextError(form[key], label);
@@ -364,19 +401,24 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: ReactNode; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={shownError(key)} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
     {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={key === "warranty" && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? "" : String(form[key])} onChange={e => update(key, e.target.value)} onBlur={() => touch(key)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} onBlur={() => touch(key)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
   </Field>;
-  const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未知" : Object.values(copyErrors)[0] ?? (!dirty || original && !changes.length ? "没有修改" : undefined);
+  const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaBlocked || mediaPending ? E1_PENDING_MEDIA : Object.values(copyErrors)[0] ?? (!dirty || original && !changes.length ? "没有修改" : undefined);
   const sectionItems = SECTIONS.map((s, index) => {
     const keys = index === 0 ? BASIC_FIELDS : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? ["inventoryMode", "stock", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"] : ["gpu", "gpuCount", "power", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
     const invalid = keys.some(key => !!shownError(key));
     const state = invalid ? "有错误" : index === 0 ? form.name && form.tier && form.seriesCode && form.lifecycle ? "已填" : "待填" : index === 1 ? form.price && (!form.allowedPoolCodes.length || form.monthlyTargetUsdt) ? "已填" : "待填" : index === 2 ? form.inventoryMode === "UNLIMITED" || form.stock !== "" ? "已填" : "待填" : "选填";
     return { ...s, label: invalid ? s.label : `${s.label} · ${state}`, alert: invalid };
   });
+  const recoveryBaseline = request?.recovered?.baseline;
+  const comparisonBefore = latestChanged ? original : recoveryBaseline;
+  const comparisonAfter = latestChanged ? currentSku : original;
+  const othersChanges = comparisonBefore && comparisonAfter && comparisonBefore.updatedAt !== comparisonAfter.updatedAt
+    ? e1ShownDiff(e1SkuDiff(comparisonBefore, comparisonAfter), comparisonBefore, comparisonAfter) : [];
   const hasTarget = form.monthlyTargetUsdt.trim() !== "";
   const canClear = original?.monthlyTargetUsdt != null && original.status !== "on" && !form.allowedPoolCodes.length;
   return <>
     <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onBlockedClick={() => setTouched(new Set([...touched, ...Object.keys(appTextErrors)]))} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
       {errors.form && <Notice tone="warn" title={errors.form} />}
-      {latestChanged && <Notice tone="warn" title="商品已被别人改过，你填的内容还在" action={currentSku ? <Button size="sm" onClick={() => adoptRevision(currentSku, form, original, media)}>已核对，保留我的修改</Button> : undefined}><Facts><Fact k="别人保存于">{formatBusinessTimeCompact(currentSku?.updatedAt, "—")}（{businessZone().label}）</Fact></Facts>{currentSku && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={e1ShownDiff(e1SkuDiff(original, currentSku), original, currentSku)} /></Fold>}</Notice>}
+      {(latestChanged || othersChanges.length > 0) && <Notice tone="warn" title="商品已被别人改过，你填的内容还在" action={latestChanged && currentSku ? <Button size="sm" onClick={() => adoptRevision(currentSku, form, original, media)}>已核对，保留我的修改</Button> : undefined}><Facts><Fact k="别人保存于">{formatBusinessTimeCompact(comparisonAfter?.updatedAt, "—")}（{businessZone().label}）</Fact></Facts>{comparisonAfter && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={othersChanges} /></Fold>}</Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
         <EditorSection id="e1-basic" title="基本信息">
           <div className="rd-form-grid">{field("name", "型号名称", { required: true, placeholder: "UVELBox Pro v3", explain: APP_VISIBLE_TEXT_HINT })}{field("id", "商品编号", { disabled: !!editId, help: editId ? "创建后不能修改" : "只做唯一标识，留空按型号名称生成" })}
@@ -402,17 +444,18 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           </div>
           <Field label="产品图 / 视频" error={errors.media} explain="图片≤10 MiB；视频≤200 MiB。直接上传不经审批；关联商品由商品提案批准，移除不删除原资源。">
             <label className="e1-upload" data-drag={drag ? "" : undefined} onDragOver={e => { e.preventDefault(); if (!mediaBusy) setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={e => { e.preventDefault(); setDrag(false); void pickMedia(e.dataTransfer.files[0]); }}>
-              <input type="file" aria-label={mediaBusy ? "媒体上传中" : mediaPending ? "重新选择原文件" : "上传商品图片或视频"} accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" disabled={!writable || mediaBusy || busy} onChange={e => { void pickMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+              <input type="file" aria-label={mediaBusy ? "媒体上传中" : mediaPending ? "重新选择原文件" : "上传商品图片或视频"} accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" disabled={!writable || mediaBusy || busy || mediaRecoveryOnly} onChange={e => { void pickMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
               <ImageIcon size={24} aria-hidden /><span>{mediaBusy ? "上传中…" : drag ? "松开即上传" : mediaPending ? "重新选择原文件核对" : "点击或拖拽图片/视频到此"}</span>
             </label>
           </Field>
           {mediaBusy && <Notice tone="neutral" title="媒体上传中"><progress className="e1-upload-progress" aria-label="媒体上传进度" /><p>正在处理文件并确认上传结果，请等待。</p></Notice>}
           {media && <div className="e1-editor-media">{media.src ? media.kind === "video" ? <video src={media.src} controls muted playsInline preload="metadata" onLoadedMetadata={e => { const v = e.currentTarget; setMedia(m => m ? { ...m, w: v.videoWidth, h: v.videoHeight, duration: Number.isFinite(v.duration) ? v.duration : undefined } : m); }} onError={() => setMediaError(media.assetId ? "视频已保存，预览暂时显示不了" : "视频暂时无法预览，请核对上传结果")} /> : <img src={media.src} alt="商品媒体预览" onLoad={e => { const i = e.currentTarget; setMedia(m => m ? { ...m, w: i.naturalWidth, h: i.naturalHeight } : m); }} onError={() => setMediaError(media.assetId ? "图片已保存，预览暂时显示不了" : "图片暂时无法预览，请核对上传结果")} /> : <BlockState compact state="error" title="图片已保存，预览暂时显示不了" />}
             <div className="e1-muted">{media.name} · {media.size == null ? "大小未读取" : `${e1Number(media.size)} 字节`} · {media.w && media.h ? `${media.w}×${media.h}px` : "尺寸未读取"}{media.kind === "video" && ` · ${media.duration == null ? "时长未读取" : `${e1Number(media.duration)} 秒`}`}</div>
-            <div className="e1-table-actions">{media.assetId && <Button size="sm" onClick={() => void refreshPreview(media.assetId!)}>重新加载图片</Button>}{media.kind === "image" && media.w && media.h && Math.abs(media.w - media.h) > Math.max(media.w, media.h) * 0.02 && <Button size="sm" disabledReason={mediaBusy || mediaPending ? "先核对上传结果" : undefined} onClick={() => void crop()}>裁剪为 1:1</Button>}<Button size="sm" disabledReason={mediaBusy || mediaPending ? "先核对上传结果" : undefined} onClick={() => setMedia(null)}>移除</Button></div>
+            <div className="e1-table-actions">{media.assetId && <Button size="sm" onClick={() => void refreshPreview(media.assetId!)}>重新加载图片</Button>}{media.kind === "image" && media.w && media.h && Math.abs(media.w - media.h) > Math.max(media.w, media.h) * 0.02 && <Button size="sm" disabledReason={mediaBusy || mediaBlocked || mediaPending ? "先核对上传结果" : undefined} onClick={() => void crop()}>裁剪为 1:1</Button>}<Button size="sm" disabledReason={mediaBusy || mediaBlocked || mediaPending ? "先核对上传结果" : undefined} onClick={() => { if (!pendingMediaForEditor()) setMedia(null); }}>移除</Button></div>
           </div>}
+          {mediaRecoveryOnly && <Notice tone="warn" title={E1_PENDING_MEDIA} />}
           {mediaError && !mediaBusy && <Notice tone="warn" title={mediaError} />}
-          {mediaPending && !mediaBusy && <Notice tone="warn" title="媒体上传结果未知" actionBelow action={<><Button disabledReason={mediaBusy ? "正在上传" : isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : !fileRef.current ? "请重新选择原文件核对摘要" : undefined} onClick={() => fileRef.current && void upload(mediaPending, fileRef.current, true)}>按原文件重试</Button>{mediaRejected && !isRetryExpired(mediaPending) && <Button onClick={() => setMediaRelease(true)}>解除原操作记录</Button>}</>}><p>{isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : "只能用原文件按原请求重试；换新文件不能代替原操作。"}</p><p>如果上传的是裁剪图，它是页面生成的图片，刷新后无法用原图原样重试。请到商品详情核对图片是否已更新；已更新时，按本页现有条件解除原操作记录；未更新或无法解除时，请联系技术核查。</p><Fold inset title="原上传与技术信息" summary={mediaPending.fileName}><pre className="e1-raw">{JSON.stringify(mediaPending, null, 2)}</pre></Fold></Notice>}
+          {mediaPending && !mediaRecoveryOnly && !mediaBusy && <Notice tone="warn" title="媒体上传结果未知" actionBelow action={<><Button disabledReason={mediaBusy ? "正在上传" : isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : !fileRef.current ? "请重新选择原文件核对摘要" : mediaRecovery.state(mediaPending).replayBlock ? "原上传不能重试" : undefined} onClick={() => fileRef.current && void upload(mediaPending, fileRef.current, true)}>按原文件重试</Button>{mediaRecovery.state(mediaPending).replayRejection && <Button onClick={() => setMediaRelease(true)}>解除原操作记录</Button>}</>}><p>{isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : "只能用原文件按原请求重试；换新文件不能代替原操作。"}</p><p>如果上传的是裁剪图，它是页面生成的图片，刷新后无法用原图原样重试。请到商品详情核对图片是否已更新；已更新时，按本页现有条件解除原操作记录；未更新或无法解除时，请联系技术核查。</p><Fold inset title="原上传与技术信息" summary={mediaPending.fileName}><pre className="e1-raw">{JSON.stringify(mediaPending, null, 2)}</pre></Fold></Notice>}
         </EditorSection>
         <EditorSection id="e1-earnings" title="收益与任务">
           <div className="rd-form-grid">{field("price", "售价(USD)", { number: true, unit: "USD", min: 0, required: true, explain: "购买一件商品的目录价，批准后影响新交易；原订单快照不回写。" })}{field("computePoints", "每件算力点", { number: true, min: 0, step: 1, help: editId ? "留空保留原值；0 为真实零" : "留空按售价 × 10", explain: "购买一件计入团队的点数，最多18位非负整数，只影响之后的新订单快照；App为0时当前隐藏。" })}</div>
@@ -467,6 +510,6 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
       </div></div></div>
     </Drawer>
     {leave && <Modal title="商品改动尚未提交" onClose={() => setLeave(false)} footer={<><Button onClick={() => setLeave(false)}>继续编辑</Button><Button variant="danger-outline" onClick={() => { setLeave(false); onClose(); }}>放弃改动并返回</Button><Button variant="primary" disabledReason={blocked} onClick={review}>提交审批后继续</Button></>}><p>商品改动还没有提交审批。放弃后关闭本地草稿，已上传的媒体资源不删除。</p></Modal>}
-    {mediaRelease && mediaPending && <ReleaseModal label={`${mediaPending.fileName} · 媒体上传`} onCancel={() => setMediaRelease(false)} onConfirm={() => { e1MediaCommands.forget(mediaPending.fingerprint, mediaPending.commandKey); setMediaPending(null); fileRef.current = null; setMediaRelease(false); onMediaChange(); }} />}
+    {mediaRelease && mediaPending && <ReleaseModal label={`${mediaPending.fileName} · 媒体上传`} onCancel={() => setMediaRelease(false)} onConfirm={() => { if (!mediaRecovery.releaseRejectedReplay(mediaPending)) return; setMediaPending(null); fileRef.current = null; setMediaRelease(false); onMediaChange(); }} />}
   </>;
 }

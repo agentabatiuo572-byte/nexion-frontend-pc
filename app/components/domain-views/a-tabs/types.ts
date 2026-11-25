@@ -19,4 +19,9 @@ import type { DCtx } from "../d-tabs/types";
 
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
-export type ACtx = DCtx & { closeActionConfirm?: () => void };
+export type A4ActionConfirmReq = Parameters<DCtx["openActionConfirm"]>[0] & { recoverySlot?: string };
+export type ACtx = Omit<DCtx, "openActionConfirm"> & {
+  openActionConfirm: (request: A4ActionConfirmReq) => void;
+  closeActionConfirm?: (slot?: string) => void;
+  actionConfirmOpen?: boolean;
+};

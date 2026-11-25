@@ -1,27 +1,29 @@
 "use client";
+import { nextRecoveryDeadline, sendRecoveredDraft } from "@/lib/admin/abe-recovery-access";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { MoreHorizontal, SearchCheck } from "lucide-react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { RETRY_EXPIRED_TEXT, isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { roleLabel } from "@/lib/nav/console-nav";
-import { canActivateE5Device, canResumeE5UserDevicesFrom, fetchLegacyUnknownCandidate, type E5Device } from "@/lib/admin/e5-client";
+import { canActivateE5Device, canResumeE5UserDevicesFrom, fetchE5Devices, fetchLegacyUnknownCandidate, type E5Device } from "@/lib/admin/e5-client";
 import { sameLegacyUnknownProof, type LegacyUnknownCandidate } from "@/lib/admin/legacy-unknown-resolution";
-import { e5Commands, e5LegacyCommands, e5CommandBlocks, checkE5Command, queryE5Proposal, releaseMissingE5Proposal, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
+import { canSendE5Command, e5Commands, e5Recovery, e5LegacyCommands, e5CommandBlocks, checkE5Command, queryE5Proposal, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
 import { canInvestigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
-import { e6Commands, type E6Pending } from "@/lib/admin/e6-command";
+import { e6Commands, isE6ActiveRecord, type E6Pending } from "@/lib/admin/e6-command";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { BlockState, Button, Change, Check, Decision, Fact as RdFact, Facts, Fold, IconButton, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
-import { OperationConfirmModal } from "../design-kit";
+import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
+import { usePendingReplayDeadline, OperationConfirmModal } from "../design-kit";
 import { E5_STATES, e5StateNote } from "./e5-device-state";
-import { CommandClosureModal, CommandOutcomeLine, commandOutcomeSummary, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
+import { CommandClosureModal, CommandOutcomeLine, commandOutcomeSummary, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
 import { SETTLED_REJECTED, businessCodeOf } from "../recovery-panel";
 import type { EViewCtx } from "./types";
 
@@ -53,6 +55,9 @@ interface ActionsState {
   execute: (record: E5Command, retry: boolean) => Promise<void>;
   check: (record: E5Command, evidence?: ECommandEvidence) => Promise<ECommandInvestigation | null>;
   canInvestigate: boolean;
+  setEditorOpen: (editor: symbol, open: boolean) => void;
+  forgetDraft: (record: E5Command) => void;
+  writeBlock?: string;
   refresh: () => Promise<void>;
   toast: (message: string) => void;
 }
@@ -67,18 +72,27 @@ const proposalQueryError = (record: E5Command, cause: unknown) => record.receive
   : cause instanceof Error && cause.message === "提案缺少有效票号" ? "查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。" : eReadError(cause);
 export const useE5Commands = () => useContext(CommandsContext)!;
 
-export function E5CommandScope({ children, refresh, readBack, toast }: { children: ReactNode; refresh: (successMessage?: string) => Promise<void>; readBack?: (record: E5Command) => Promise<string>; toast: (message: string) => void }) {
+export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeBlock }: { children: ReactNode; ctx: EViewCtx; refresh: (successMessage?: string) => Promise<void>; readBack?: (record: E5Command) => Promise<string>; toast: (message: string) => void; writeBlock?: string }) {
   const actorId = useAdminAuth(s => String(s.session?.adminId ?? ""));
   const authorities = useAdminAuth(s => s.session?.authorities ?? []);
   const role = useAdminAuth(s => s.session?.role);
   const epoch = useAdminAuth(s => s.authEpoch);
   const [records, setRecords] = useState<E5Command[]>([]);
+  const [drafts, setDrafts] = useState<E5Command[]>([]);
+  const discardRecovery = useRecoveryDraftDiscard();
+  const [restoring, setRestoring] = useState<{ record: E5Command; device: E5Device } | null>(null);
+  const openEditors = useRef(new Set<symbol>());
+  const setEditorOpen = useCallback((editor: symbol, open: boolean) => {
+    if (open) openEditors.current.add(editor);
+    else openEditors.current.delete(editor);
+  }, []);
+  usePendingReplayDeadline(nextRecoveryDeadline(records));
   const [phonePending, setPhonePending] = useState<E6Pending[]>([]);
   const [old, setOld] = useState<{ commandKey: string; fingerprint: string }[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [readResults, setReadResults] = useState<Record<string, string>>({});
-  const [rejected, setRejected] = useState<Record<string, string>>({});
+  useSyncExternalStore(e5Recovery.subscribe, e5Recovery.getRevision, () => 0);
   const [releaseChecked, setReleaseChecked] = useState(false);
   const [release, setRelease] = useState<E5Command | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, CommandOutcome>>({});
@@ -88,29 +102,24 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const settleEnd = (record: E5Command, id: string, status: string) => setSettled(list => [...list.filter(item => item.key !== record.commandKey),
     { key: record.commandKey, label: `${record.label} · ${record.device.serial}`, text: `审批单 ${id} ${PROPOSAL_END[status]?.tag ?? "状态待核实"}${PROPOSAL_END[status] ? `：${PROPOSAL_END[status].text}` : "。"}` }]);
   const [closing, setClosing] = useState<E5Command | null>(null);
-  const [missing, setMissing] = useState<E5Command | null>(null);
   const [queryNotes, setQueryNotes] = useState<Record<string, string>>({});
   const [errorKey, setErrorKey] = useState("");
   const sync = useCallback(() => {
     const saved = e5Commands.list().filter(r => r.actorId === actorId);
-    setRecords(saved);
-    setRejected(Object.fromEntries(saved.filter(r => r.retryRejection).map(r => [r.commandKey, r.retryRejection!])));
-    setPhonePending(e6Commands.list().filter(r => String(r.owner) === actorId && r.section === "phones"));
+    setRecords(saved.filter(record => !record.verifiedNotExecuted));
+    setDrafts(saved.filter(record => record.verifiedNotExecuted));
+    setPhonePending(e6Commands.list().filter(r => String(r.owner) === actorId && r.section === "phones" && isE6ActiveRecord(r)));
   }, [actorId]);
   const phoneBlocks = (device: E5Device, intent?: E5Intent) => phonePending.some(r => r.scope === `user:${device.userId}`
     || r.scope === `phone:${device.deviceId}:${device.userId}`
     || (intent === "pause" || intent === "resume") && r.scope.startsWith("phone:") && r.scope.split(":")[2] === device.userId);
   useEffect(() => {
-    sync(); setRelease(null); setReadResults({}); setOutcomes({}); setSettled([]); setClosing(null); setMissing(null); setQueryNotes({});
+    sync(); setRestoring(null); setRelease(null); setReadResults({}); setOutcomes({}); setSettled([]); setClosing(null); setQueryNotes({});
     try { setOld(e5LegacyCommands()); } catch (cause) { setError(`旧操作记录无法读取：${displayAdminError(cause)}`); }
   }, [sync, epoch]);
-  const allowed = (r: E5Command) => {
-    const platform = authorities.some(a => ["platform_a2_write", "platform_a2_proposal_create"].includes(a));
-    if (r.intent === "legacy") return authorities.includes("device_e5_write") && authorities.includes("platform_a2_proposal_create");
-    if (r.intent === "force-activate" || r.intent === "unbind") return platform && (authorities.includes(`device_e5_device_${r.intent === "unbind" ? "unbind" : "force_activate"}`) || role === "growth" && authorities.includes("platform_a2_proposal_create"));
-    return authorities.includes("device_e5_write");
-  };
+  const allowed = canSendE5Command;
   const execute = async (record: E5Command, retry: boolean) => {
+    if (writeBlock) throw new Error(writeBlock);
     if (busy) throw new Error("另一个设备操作正在提交，请稍后核对。");
     if (!allowed(record)) throw new Error("当前账号缺少原操作所需权限，请核对授权。");
     setBusy(record.commandKey); setError(""); setErrorKey(record.commandKey);
@@ -123,12 +132,10 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
         ? result.pendingDeactivate ? "已申请停用，当前任务结束后自动停用" : "设备已取消激活"
         : record.intent === "pause" ? `暂停成功 · ${result.changedCount} 台设备` : record.intent === "resume" ? `已恢复 ${result.changedCount} 台运营暂停的设备` : "设备已激活";
       if (!submitted || !retry || result.status === "pending") { toast(message); await refresh(message); }
-      else { settleEnd(record, String(result.id), String(result.status)); await refresh(); }
+      else { settleEnd(record, String(result.id), String(result.status)); await refresh(message); }
     } catch (cause) {
       if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied();
       sync();
-      if (retry && isExplicitRejection(cause)) toast(`原操作被拒绝，记录已解除：${displayAdminError(cause)}`);
-      if (retry && !e5Commands.list().find(r => r.commandKey === record.commandKey)?.receivedTicketId && isExplicitRejection(cause)) setRejected(rows => ({ ...rows, [record.commandKey]: displayAdminError(cause) }));
       const pausedGone = cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "PAUSED_USER_DEVICES_NOT_FOUND" && !retry && !e5Commands.get(record.fingerprint);
       const saved = e5Commands.list().find(r => r.commandKey === record.commandKey);
       // A first-submit "nothing to resume" closes the dialog and is told by a toast, so it leaves no notice behind.
@@ -146,7 +153,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
         try { ticket = await queryE5Proposal(record); }
         catch (cause) { setQueryNotes(values => ({ ...values, [record.commandKey]: proposalQueryError(record, cause) })); throw cause; }
         setQueryNotes(values => ({ ...values, [record.commandKey]: !ticket ? "刚查过：没有这张审批单。" : "刚查过：还在等批准。" }));
-        if (ticket && ticket.status !== "pending") { settleEnd(record, ticket.id, ticket.status); await refresh(); }
+        if (ticket && ticket.status !== "pending") settleEnd(record, ticket.id, ticket.status);
         return null;
       }
       return await checkE5Command(record, evidence);
@@ -171,6 +178,17 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
       setReadResults(values => ({ ...values, [record.commandKey]: result }));
     } catch (cause) { setReadResults(values => ({ ...values, [record.commandKey]: displayAdminReadError(cause) })); }
   };
+  const prepareDraft = async (record: E5Command) => {
+    if (writeBlock || busy || openEditors.current.size || !allowed(record)) return;
+    try {
+      const list = await fetchE5Devices({ keyword: record.device.serial, userId: record.device.userId, pageNum: 1, pageSize: 10 });
+      if (openEditors.current.size || !allowed(record)) return;
+      const device = list.records.find(row => row.deviceId === record.device.deviceId && row.userId === record.device.userId && row.serial === record.device.serial);
+      if (!device) throw new Error("原设备状态或归属已变化，请重新核对。");
+      setRestoring({ record, device });
+    } catch (error) { toast(displayAdminReadError(error)); }
+  };
+  const forgetDraft = (record: E5Command) => { e5Commands.forget(record.fingerprint, record.commandKey); sync(); };
   const items: RecoveryItem[] = [
     ...phonePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">待核对</StatusTag>,
       line: "原操作在手机算力配置，到那里查询和处理。",
@@ -180,17 +198,22 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
       line: "旧记录缺原请求，不能重试；到操作记录与审批核对。",
       actions: <Button size="sm" disabled={!!busy} onClick={() => void refresh()}>刷新设备列表</Button>,
       detail: <Facts><Fact label="原请求编号" value={row.commandKey} mono copy /></Facts> })),
+    ...drafts.map(record => ({
+      key: record.commandKey, object: `${record.label} · ${record.device.serial}`, createdAt: record.createdAt,
+      tag: <StatusTag tone="neutral">未执行</StatusTag>, line: "可以重新确认原操作。",
+      actions: <>{allowed(record) && <Button size="sm" disabledReason={writeBlock} disabled={!!busy} onClick={() => void prepareDraft(record)}>重新确认</Button>}
+        <Button size="sm" onClick={() => discardRecovery.ask(() => forgetDraft(record))}>放弃这份草稿</Button></>,
+    })),
     ...records.map(record => {
-      const expired = isRetryExpired(record), proposal = PROPOSALS.includes(record.intent), refused = rejected[record.commandKey];
+      const recovery = e5Recovery.state(record);
+      const expired = recovery.expired, proposal = PROPOSALS.includes(record.intent), refused = recovery.replayRejection;
       const state = refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对原操作的结果后，可以解除这条记录。" }
         : proposal && record.proposalStatus === "pending" ? { tag: "待审批", tone: "warn" as const, line: RECOVERY_LINE.pending, more: `审批单 ${record.receivedTicketId ?? ""}；批准前设备状态不变。` }
           : proposal && record.receivedTicketId ? { tag: "进度没读到", tone: "warn" as const, line: RECOVERY_LINE.created, more: "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" }
-            : proposal && record.proposalAbsent ? expired ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing, more: "按原请求查不到这张审批单，说明没建成；确认解除时会再查一次。" }
-              : { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
-              : expired ? { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.expired, more: proposal ? "已超过 24 小时，不能再重试；查不到这张审批单时可以确认解除。" : "已超过 24 小时，不能再重试；现在的设备状态不代表原操作的结果。" }
-                : { tag: "结果未知", tone: "warn" as const, line: proposal ? RECOVERY_LINE.unknown : RECOVERY_LINE.direct, more: proposal ? "可以查询原结果，或按原请求重试；重试用原来的请求，不会重复建单。" : "可以查询原结果，或按原请求重试；重试用原来的请求，不会重复执行。" };
-      const releasable = proposal && expired && record.proposalAbsent && !record.receivedTicketId && !record.proposalStatus;
-      const retryable = !refused && !expired && !(proposal && record.receivedTicketId);
+            : expired ? { tag: "结果未知", tone: "warn" as const, line: RETRY_EXPIRED_TEXT, more: "原记录继续保留。" }
+              : { tag: "结果未知", tone: "warn" as const, line: recovery.conclusion === "not-found" ? RECOVERY_LINE.absent : proposal ? RECOVERY_LINE.unknown : RECOVERY_LINE.direct,
+                more: "重试用原来的请求。" };
+      const retryable = !recovery.replayBlock;
       const note = busy === record.commandKey && !retryable ? "正在查询…" : direct(record)
         ? <>{outcomes[record.commandKey] ? <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={expired} summarized={!refused} canClose={canInvestigate} /> : readResults[record.commandKey]}{errorKey === record.commandKey && error && error !== E5_UNKNOWN && <span role="alert">{error}</span>}</>
         : errorKey === record.commandKey && error && error !== E5_UNKNOWN ? error : queryNotes[record.commandKey];
@@ -201,16 +224,16 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
         actions: <>
           {<Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void queryRow(record)}>{proposal && record.proposalStatus === "pending" ? "查询审批结果" : "查询原结果"}</Button>}
           {direct(record) && canInvestigate && closureOpen(outcomes[record.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!busy} onClick={() => setClosing(record)}>核查结案</Button>}
-          {!(proposal && record.proposalStatus === "pending") && <Button size="sm" loading={busy === record.commandKey} disabledReason={expired ? "超过 24 小时不能再重试" : proposal && record.receivedTicketId ? "审批单已经建了，只能查询" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The record row displays this failure. */ }); }}>按原请求重试</Button>}
-          {refused && !releasable && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除原操作记录</Button>}
-          {releasable && <Button size="sm" disabled={!!busy} onClick={() => setMissing(record)}>解除原操作记录</Button>}
+          {!(proposal && record.proposalStatus === "pending") && <Button size="sm" loading={busy === record.commandKey} disabledReason={writeBlock ?? (expired ? RETRY_EXPIRED_TEXT : proposal && record.receivedTicketId ? "审批单已经建了，只能查询" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : recovery.replayBlock ? "先查询原结果，查不到才能重试" : undefined)} onClick={() => { void execute(record, true).catch(() => { /* The record row displays this failure. */ }); }}>按原请求重试</Button>}
+          {refused && !record.receivedTicketId && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除原操作记录</Button>}
         </>,
         detail: <>
           <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString())} 提交 · {record.device.user} · 理由：{record.reason}</p>
           <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="原请求编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />{businessCodeOf(outcomes[record.commandKey]) !== undefined && <Fact label="业务码" value={String(businessCodeOf(outcomes[record.commandKey]))} mono />}</Facts></Fold> };
     }),
   ];
-  return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, check, canInvestigate, refresh, toast }}>
+  return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, check, canInvestigate, setEditorOpen, forgetDraft, refresh, toast, writeBlock }}>
+    {discardRecovery.dialog}
     {settled.map(item => <SettledLine key={item.key} label={item.label} text={item.text} onDismiss={() => setSettled(list => list.filter(other => other.key !== item.key))} />)}
     <RecoveryPanel title={recoveryTitle(items.filter(item => !item.key.startsWith("waiting:")).length, items.filter(item => item.key.startsWith("waiting:")).length)} tone="warn"
       explain="有结论前，相关设备或用户不能做新操作。点行首的箭头看提交时间、说明和原请求。" items={items} />
@@ -224,26 +247,17 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
         if (eCommandSettled(receipt)) await refresh();
         else toast("核查结论已记录；原操作仍记为结果未知，继续锁定。");
       }} />}
-    {missing && <MissingProposalReleaseModal label={`${missing.label} · ${missing.device.serial}`} createdAt={missing.createdAt} onCancel={() => setMissing(null)} onConfirm={async () => {
-      setBusy(missing.commandKey);
-      try {
-        const ticket = await releaseMissingE5Proposal(missing);
-        setMissing(null);
-        if (!ticket) toast("已解除这条记录，可以重新提交");
-        else if (ticket.status === "pending") { setQueryNotes(values => ({ ...values, [missing.commandKey]: `审批单 ${ticket.id} 还在等批准` })); toast(`查到了审批单 ${ticket.id}，还在等批准，没有解除`); }
-        else { settleEnd(missing, ticket.id, ticket.status); await refresh(); }
-      } catch (cause) { const shown = proposalQueryError(missing, cause); setQueryNotes(values => ({ ...values, [missing.commandKey]: shown })); throw new Error(shown); }
-      finally { sync(); setBusy(""); }
-    }} />}
     {release && <Modal title="解除原操作记录" onClose={() => setRelease(null)} footer={<><Button onClick={() => setRelease(null)}>取消</Button><Button variant="primary" disabledReason={!releaseChecked ? "请先核对原操作的结果并勾选确认" : undefined} onClick={() => {
-      e5Commands.forget(release.fingerprint, release.commandKey); sync(); setRelease(null); setError(""); toast("已解除这条记录");
+      if (releaseChecked && e5Recovery.releaseRejectedReplay(release)) { sync(); setRestoring(null); setRelease(null); setError(""); toast("已解除这条记录"); }
     }}>确认解除</Button></>}>
       <ReleaseBody label={`${release.label} · ${release.device.serial}`} />
       <Facts><Fact label="原操作时间" value={formatBusinessTimeCompact(new Date(release.createdAt).toISOString())} /><Fact label="原请求编号" value={release.commandKey} mono copy /></Facts>
-      <Notice tone="danger" title="按原请求重试被拒绝">{rejected[release.commandKey]}</Notice>
+      <Notice tone="danger" title="按原请求重试被拒绝">{e5Recovery.state(release).replayRejection}</Notice>
       <Check label="已核对原操作的结果，确认只解除本页这条记录" checked={releaseChecked} onChange={event => setReleaseChecked(event.target.checked)} />
     </Modal>}
     {children}
+    {restoring && <E5DeviceActions key={restoring.record.commandKey} device={restoring.device} ctx={ctx}
+      recovered={restoring.record} onRecoveryClose={() => setRestoring(null)} />}
   </CommandsContext.Provider>;
 }
 
@@ -258,7 +272,9 @@ export function E5Slots({ device: d, phones = false }: { device: E5Device; phone
 }
 
 /** E5 rows, detail footer and E6 phone mode all use these same state/authority/command checks. */
-export function E5DeviceActions({ device: d, ctx, phones = false, inline = false }: { device: E5Device; ctx: EViewCtx; phones?: boolean; inline?: boolean }) {
+export function E5DeviceActions({ device: d, ctx, phones = false, inline = false, recovered, onRecoveryClose }: {
+  device: E5Device; ctx: EViewCtx; phones?: boolean; inline?: boolean; recovered?: E5Command; onRecoveryClose?: () => void;
+}) {
   const state = useContext(CommandsContext)!;
   const session = useAdminAuth(s => s.session);
   const epoch = useAdminAuth(s => s.authEpoch);
@@ -267,7 +283,18 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   const [candidate, setCandidate] = useState<LegacyUnknownCandidate | null>(null);
   const [candidateError, setCandidateError] = useState("");
   const [reading, setReading] = useState(false);
-  useEffect(() => { setAction(null); setCandidateOpen(false); setCandidate(null); setCandidateError(""); }, [d.deviceId, d.userId, d.serial, epoch]);
+  const editor = useRef(Symbol("device editor"));
+  const restoreAction = useRef<() => void>(() => {});
+  const registerEditor = state?.setEditorOpen;
+  useEffect(() => {
+    const token = editor.current;
+    registerEditor?.(token, !!action || candidateOpen);
+    return () => registerEditor?.(token, false);
+  }, [registerEditor, action, candidateOpen]);
+  useEffect(() => {
+    setAction(null); setCandidateOpen(false); setCandidate(null); setCandidateError("");
+    if (recovered) restoreAction.current();
+  }, [d.deviceId, d.userId, d.serial, epoch, recovered?.commandKey]);
   if (!session || !state) return null;
   const readOnly = !phones && d.simState === "SIM_OFF";
   // Shared by rows and the detail footer; do not infer ownership from raw status alone.
@@ -276,7 +303,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   const deactivatable = phones ? ["active", "busy", "offline", "abnormal", "unknown"].includes(d.state) : ["WAITING_INIT", "LEGACY_PENDING", "RUNNING", "WAITING_CONFIG", "PAUSED", "ERROR"].includes(d.simState ?? "");
   const platform = session.authorities.some(a => ["platform_a2_write", "platform_a2_proposal_create"].includes(a));
   const full = d.activeDevicesForUser >= d.maxDevicesPerUser;
-  const locked = (intent: E5Intent) => state.legacyBlocked ? "旧操作缺少原请求，请先核查" : state.busy ? "设备操作正在提交" : state.records.some(r => e5CommandBlocks(r, d, intent)) || state.phoneBlocks(d, intent) ? "这个设备或用户有结果未知的操作，请先核对原操作" : intent === "activate" && !activatable || intent === "force-activate" && !forceActivatable ? formatAdminApiError("INVALID_STATE_TRANSITION", "INVALID_STATE_TRANSITION") : undefined;
+  const locked = (intent: E5Intent) => state.writeBlock ?? (state.legacyBlocked ? "旧操作缺少原请求，请先核查" : state.busy ? "设备操作正在提交" : state.records.some(r => e5CommandBlocks(r, d, intent)) || state.phoneBlocks(d, intent) ? "这个设备或用户有结果未知的操作，请先核对原操作" : intent === "activate" && !activatable || intent === "force-activate" && !forceActivatable ? formatAdminApiError("INVALID_STATE_TRANSITION", "INVALID_STATE_TRANSITION") : undefined);
   const options: MoreMenuItem[] = [];
   const add = (intent: E5Intent, label: string, extra?: string) => options.push({ key: intent, label, danger: intent === "unbind" || intent === "pause", disabledReason: locked(intent) ?? extra, onSelect: () => setAction(intent) });
   if (!readOnly) {
@@ -298,17 +325,25 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
     } catch (cause) { setCandidateError(displayAdminReadError(cause)); }
     finally { setReading(false); }
   }
+  restoreAction.current = () => {
+    if (!recovered) return;
+    const option = options.find(item => item.key === (recovered.intent === "legacy" ? "legacy-check" : recovered.intent));
+    if (!option || option.disabledReason) {
+      state.toast(typeof option?.disabledReason === "string" ? option.disabledReason : "当前设备状态不能继续原操作。");
+      onRecoveryClose?.();
+    } else option.onSelect?.();
+  };
   const proposal = action === "force-activate" || action === "unbind" || action === "legacy";
   return <>
-    {options.length ? inline ? <div className="rd-toolbar">{options.map(option => <Button key={option.key} size="sm" variant={option.danger ? "danger-outline" : "secondary"} disabledReason={option.disabledReason} onClick={option.onSelect}>{option.label}</Button>)}</div> : <MoreMenu label={`操作 ${d.serial}`} items={options} /> : phones ? <span className="rd-muted" title="当前权限或状态没有可执行的操作">{!ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5 ? "只读" : "—"}</span> : d.simState === "CLOSING" ? inline ? <span className="rd-muted">停用中，当前任务结束后自动停用，暂时没有可做的操作。</span> : <IconButton aria-label={`操作 ${d.serial}`} disabledReason="停用中，结算后自动停用，暂时没有可做的操作"><MoreHorizontal size={16} aria-hidden /></IconButton> : inline ? <span className="rd-muted">{readOnly ? "任务已关闭，仅可查看设备事实。" : "当前账号或设备状态没有可执行的操作。"}</span> : null}
-    {candidateOpen && <Modal title="旧任务终结资格" onClose={() => setCandidateOpen(false)} busy={reading} footer={<Decision
+    {!recovered && (options.length ? inline ? <div className="rd-toolbar">{options.map(option => <Button key={option.key} size="sm" variant={option.danger ? "danger-outline" : "secondary"} disabledReason={option.disabledReason} onClick={option.onSelect}>{option.label}</Button>)}</div> : <MoreMenu label={`操作 ${d.serial}`} items={options} /> : phones ? <span className="rd-muted" title="当前权限或状态没有可执行的操作">{!ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5 ? "只读" : "—"}</span> : d.simState === "CLOSING" ? inline ? <span className="rd-muted">停用中，当前任务结束后自动停用，暂时没有可做的操作。</span> : <IconButton aria-label={`操作 ${d.serial}`} disabledReason="停用中，结算后自动停用，暂时没有可做的操作"><MoreHorizontal size={16} aria-hidden /></IconButton> : inline ? <span className="rd-muted">{readOnly ? "任务已关闭，仅可查看设备事实。" : "当前账号或设备状态没有可执行的操作。"}</span> : null)}
+    {candidateOpen && <Modal title="旧任务终结资格" onClose={() => { setCandidateOpen(false); onRecoveryClose?.(); }} busy={reading} footer={<Decision
       danger={candidate?.eligible && !reading && <Button variant="danger" disabledReason={locked("legacy")} onClick={async () => {
           setReading(true); setCandidateError("");
           try { const fresh = await fetchLegacyUnknownCandidate(d.deviceId); if (!sameLegacyUnknownProof(candidate, fresh)) throw new Error("退出证据或设备状态已更新，请重新核对。"); setCandidate(fresh); setCandidateOpen(false); setAction("legacy"); }
           catch (cause) { setCandidate(null); setCandidateError(displayAdminReadError(cause)); }
           finally { setReading(false); }
         }}>结束未确认任务（不计收益）</Button>}
-      others={<>{candidate && !reading && <Button onClick={() => void readCandidate()}>重新核对</Button>}<Button onClick={() => setCandidateOpen(false)}>关闭</Button></>} />}>
+      others={<>{candidate && !reading && <Button onClick={() => void readCandidate()}>重新核对</Button>}<Button onClick={() => { setCandidateOpen(false); onRecoveryClose?.(); }}>关闭</Button></>} />}>
       <Facts><Fact label="设备" value={d.serial} /><Fact label="用户" value={d.user} /></Facts>
       {reading ? <BlockState state="loading" title="正在核对终结资格…" /> : candidateError ? <BlockState state="error" title="终结资格读取失败" detail={candidateError} onRetry={() => void readCandidate()} /> : candidate && <>
         <Notice tone={candidate.eligible ? "progress" : "neutral"} title={!candidate.caseId ? "无可终结的未确认旧任务" : candidate.resolution ? "已取消 · 不计收益" : candidate.status === "QUIESCENCE_REQUIRED" ? "等待有效退出证明" : candidate.eligible ? "可申请终结" : "终结条件未满足"}>{candidate.reason && <p>{displayAdminError(new Error(candidate.reason))}</p>}</Notice>
@@ -326,7 +361,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
       </Facts></>}
       blockedReason={locked(action) ?? ((action === "activate" || action === "force-activate") && full ? "已达 6 台激活上限（含手机）" : undefined)}
       detail={proposal ? "审批进度到「操作记录与审批」看。" : action === "resume" ? "一次最多恢复 200 台，实际恢复几台看提交结果。" : "提交后页面会显示结果。"}
-      onClose={() => setAction(null)} onConfirm={async reason => {
+      onClose={() => { setAction(null); onRecoveryClose?.(); }} onConfirm={async reason => {
         if (locked(action)) throw new Error(String(locked(action)));
         const auth = useAdminAuth.getState();
         if (auth.authEpoch !== epoch || auth.session?.adminId !== session.adminId) throw new Error("管理员会话已变化，请重新进入设备页面。");
@@ -350,9 +385,13 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
         e5Commands.remember(fingerprint, commandKey, { actorId: String(session.adminId), authEpoch: epoch, intent: action, label: LABELS[action], device: d, reason: normalized, path, method: "POST", body: JSON.stringify(body), ...(action === "legacy" && candidate ? { proof: candidate } : {}) });
         if (!e5Commands.isDurablyStored(fingerprint, commandKey)) { e5Commands.forget(fingerprint, commandKey); throw new Error("原操作无法保存，暂不能提交。"); }
         const record = e5Commands.list().find(row => row.commandKey === commandKey)!;
-        try { await state.execute(record, false); setAction(null); }
+        try {
+          await sendRecoveredDraft(() => state.execute(record, false),
+            () => e5Commands.isDurablyStored(fingerprint, commandKey), recovered && (() => state.forgetDraft(recovered)));
+          setAction(null); onRecoveryClose?.();
+        }
         catch (cause) {
-          if (e5Commands.get(fingerprint)) setAction(null);
+          if (e5Commands.isDurablyStored(fingerprint, commandKey)) { setAction(null); onRecoveryClose?.(); }
           // Nothing is left to resume: the list was reread, so close the dialog instead of offering the same 404 again.
           else if (cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "PAUSED_USER_DEVICES_NOT_FOUND") { setAction(null); state.toast(displayAdminError(cause)); return; }
           throw cause;
