@@ -118,7 +118,7 @@ function TimeText({ value }: { value: string }) {
 export function PlatformParamsRegistry() {
   const [overview, setOverview] = useState<A5RegistryOverview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [errorKind, setErrorKind] = useState<A5LoadErrorKind | null>(null);
+  const [errorKind, setErrorKind] = useState<A5LoadErrorKind | "emergency" | null>(null);
   const [query, setQuery] = useState("");
   const [domain, setDomain] = useState("ALL");
   const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(new Set());
@@ -128,7 +128,12 @@ export function PlatformParamsRegistry() {
     setLoading(true);
     setErrorKind(null);
     try {
-      setOverview(await fetchA5Registry());
+      const next = await fetchA5Registry();
+      // The registry reports failed J1/J2 reads on the emergency source.
+      // Unregistered config owners are reported separately on the config source.
+      const emergencyFailed = next.sources.some((source) => source.key === "emergency" && source.status === "PARTIAL");
+      setOverview(emergencyFailed ? null : next);
+      if (emergencyFailed) setErrorKind("emergency");
     } catch (error) {
       setOverview(null);
       setErrorKind(error instanceof A5LoadError ? error.kind : "unavailable");
@@ -188,7 +193,9 @@ export function PlatformParamsRegistry() {
   }
 
   if (errorKind || !overview) {
-    const copy = ERROR_COPY[errorKind ?? "unavailable"];
+    const copy = errorKind === "emergency"
+      ? { title: "平台参数加载失败", detail: "紧急停用开关或地区访问限制没读到，已停止显示本批参数。请重试。" }
+      : ERROR_COPY[errorKind ?? "unavailable"];
     return (
       <RdPage className="a5-page">
         {header}
@@ -206,10 +213,6 @@ export function PlatformParamsRegistry() {
   const rows = overview.rows;
   const gates = rows.filter((row) => row.canonicalKey.startsWith("emergency.gate."));
   const geo = rows.find((row) => row.canonicalKey === "emergency.geo-block");
-  const emergencySource = overview.sources.find((source) => source.key === "emergency");
-  const emergencyPartial = emergencySource?.status === "PARTIAL";
-  const gatesMissing = emergencyPartial && gates.length === 0;
-  const geoMissing = emergencyPartial && !geo;
   const stopped = gates.filter((row) => row.currentValue === "disabled");
   const geoLimited = geo && geo.currentValue !== "没有限制" ? geo : null;
   const filtered = query.trim() !== "" || domain !== "ALL";
@@ -226,7 +229,7 @@ export function PlatformParamsRegistry() {
     </Conclusion>
   ) : partialSources.length > 0 ? (
     <Conclusion state="warn" icon={SlidersHorizontal} hint="已读到的参数照常显示；哪一类不完整、为什么，见下方提示"
-      explain="紧急开关、地区访问限制和系统健康分开读取，其中一类没读到不影响其他参数；系统参数本身读不到时整页读不到。没读到的值不会显示成正常或 0。">
+      explain="未登记所属页面的参数不会显示。紧急开关或地区访问限制读取失败时，停止显示本批参数。">
       有 {partialSources.length} 个来源不完整，已读到 {stats.registeredCount} 项
     </Conclusion>
   ) : (
@@ -300,7 +303,7 @@ export function PlatformParamsRegistry() {
 
   const emergencyRows = grouped.find(([code]) => code === "J")?.[1] ?? [];
   const otherGroups = grouped.filter(([code]) => code !== "J");
-  const emergencyShown = emergencyRows.length > 0 || (!filtered && emergencyPartial) || (domain === "J" && emergencyPartial);
+  const emergencyShown = emergencyRows.length > 0;
   const orderedEmergency = [...emergencyRows].sort((a, b) => Number(a.currentValue !== "disabled") - Number(b.currentValue !== "disabled"));
 
   return (
@@ -311,7 +314,7 @@ export function PlatformParamsRegistry() {
 
       {partialSources.length > 0 && (
         <Notice tone="warn" title="有的来源不完整">
-          {partialSources.map((source) => <p key={source.key}>{source.label}：{source.key === "emergency" && emergencyShown ? "具体是哪一类没读到，见下方「紧急开关」" : operatorCopyText(source.detail)}</p>)}
+          {partialSources.map((source) => <p key={source.key}>{source.label}：{operatorCopyText(source.detail)}</p>)}
         </Notice>
       )}
 
@@ -350,13 +353,8 @@ export function PlatformParamsRegistry() {
             <div className="a5-groups">
               {emergencyShown && (
                 <Panel icon={Siren} tone="role-3" title="紧急开关"
-                  sub={`${gatesMissing ? "业务开关没读到" : `${gates.length} 个业务开关`}${geo ? " · 地区访问限制" : ""}`}
+                  sub={`${gates.length} 个业务开关${geo ? " · 地区访问限制" : ""}`}
                   explain="紧急停用开关和地区访问限制的当前状态。这里只读，关停和恢复在各自的页面操作。">
-                  {(gatesMissing || geoMissing) && (
-                    <Notice tone="warn" title={gatesMissing && geoMissing ? "紧急开关和地区访问限制都没读到" : gatesMissing ? "紧急停用开关没读到" : "地区访问限制没读到"}>
-                      未知状态不会显示成在线，请到对应页面查看。
-                    </Notice>
-                  )}
                   {orderedEmergency.length > 0 && <ControlGrid label="紧急开关">{orderedEmergency.map(emergencyCard)}</ControlGrid>}
                 </Panel>
               )}

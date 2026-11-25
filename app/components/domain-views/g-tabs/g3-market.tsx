@@ -1,9 +1,9 @@
 "use client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { fmtConfigPct, amountDisplay } from "@/lib/format";
-import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRecoveryNotice, pendingTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 /**
  * G3 UVT 价格管理（改版，RdPage）。数据来自后端 /api/admin/market/nex/curve 与 /curve/history。
@@ -436,8 +436,12 @@ function G3MarketEditor() {
   // 排程实际结果只有页面自己的读取带；写入回来的概览不带，保留上次读到的。
   const [scheduleRead, setScheduleRead] = useState<G3ScheduleExecutionRead>();
   // 写入和确认框回来的是完整读数（价格、覆盖率都读到了）；页面自己的读取可能缺其中一样或两样。
+  const [overviewReadAt, setOverviewReadAt] = useState<number>();
+  const [overviewError, setOverviewError] = useState("");
   const showRead = useCallback((read: G3ReadOverview) => {
     const next = readBaseline(read); setOverviewState(next.overview); setGaps(next.gaps);
+    setOverviewReadAt(Date.now());
+    setOverviewError("");
     if (read.scheduleExecutionRead) setScheduleRead(read.scheduleExecutionRead);
     if (read.environmentWriteState) setManualTuning(read.environmentWriteState.manualTuningAllowedByEnvironment ? "allowed" : "forbidden");
   }, []);
@@ -452,31 +456,44 @@ function G3MarketEditor() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [overviewReading, setOverviewReading] = useState(true);
+
+  const readHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const result = await fetchG3MarketHistory();
+      setHistory(result.points);
+      setHistoryError("");
+    } catch (cause) {
+      setHistory([]);
+      setHistoryError(displayAdminReadError(cause));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const readOverview = useCallback(async () => {
+    setOverviewReading(true);
+    try {
+      const result = await fetchG3MarketReadOverview();
+      showRead(result);
+      setRereadPending(false);
+    } catch (cause) {
+      setOverviewError(displayAdminReadError(cause));
+    } finally {
+      setOverviewReading(false);
+      setLoading(false);
+    }
+  }, [showRead]);
+
   const reload = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError("");
-    setHistoryError("");
     setObservedStates(states => Object.fromEntries(Object.entries(states).map(([key, state]) =>
       [key, state && { ...state, verification: "last-observation" as const }])));
-    const [overviewResult, historyResult] = await Promise.allSettled([
-      fetchG3MarketReadOverview(),
-      fetchG3MarketHistory(),
-      refreshKnownApprovals(),
-    ]);
-    if (overviewResult.status === "fulfilled") {
-      showRead(overviewResult.value);
-      setRereadPending(false);
-    } else {
-      setError(messageOf(overviewResult.reason));
-    }
-    if (historyResult.status === "fulfilled") {
-      setHistory(historyResult.value.points);
-    } else {
-      setHistory([]);
-      setHistoryError(messageOf(historyResult.reason));
-    }
-    if (!silent) setLoading(false);
-  }, [refreshKnownApprovals, showRead]);
+    await Promise.allSettled([readOverview(), readHistory(), refreshKnownApprovals()]);
+  }, [readOverview, readHistory, refreshKnownApprovals]);
 
   // 重读成功之前不留着按旧概览画出来的新修改确认框：它的事实和基准不会随重读更新。
   // 属于已保存原记录的恢复框不受影响。
@@ -492,34 +509,9 @@ function G3MarketEditor() {
   }, [rereadPending, session, marketConfirm, confirm, toast, commandVersion]);
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError("");
-      setHistoryError("");
-      const [overviewResult, historyResult] = await Promise.allSettled([
-        fetchG3MarketReadOverview(),
-        fetchG3MarketHistory(),
-      ]);
-      if (cancelled) return;
-      if (overviewResult.status === "fulfilled") {
-        showRead(overviewResult.value);
-      } else {
-        setError(messageOf(overviewResult.reason));
-      }
-      if (historyResult.status === "fulfilled") {
-        setHistory(historyResult.value.points);
-      } else {
-        setHistory([]);
-        setHistoryError(messageOf(historyResult.reason));
-      }
-      setLoading(false);
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [showRead]);
+    void readOverview();
+    void readHistory();
+  }, [readOverview, readHistory]);
 
   const mutate = useCallback(async (change: G3MarketChange, action: () => Promise<G3CommandResult | null>, success: string, recovered = false) => {
     setBusyKey(g3MarketObjectKey(change));
@@ -538,15 +530,6 @@ function G3MarketEditor() {
       // 按原请求恢复时，后端回放的是当时保存的回包，不是现在的读取：不拿它当当前概览，改为重读；
       // 重读失败只报读取失败，新修改继续不可用，原操作照常算完成。
       // The write receipt is not applied as the current reading; the page rereads it.
-      // 写入成功后回读历史属于附加刷新:历史面失败不能把已成功的写入报成失败。
-      const [historyResult] = await Promise.allSettled([fetchG3MarketHistory()]);
-      if (historyResult.status === "fulfilled") {
-        setHistory(historyResult.value.points);
-        setHistoryError("");
-      } else {
-        setHistory([]);
-        setHistoryError(messageOf(historyResult.reason));
-      }
       openActionConfirm(null);
       toast(recovered ? REREAD_TEXT : success);
       setRereadPending(true); void reload(true);
@@ -638,8 +621,10 @@ function G3MarketEditor() {
     showRead(current);
     return true;
   };
+  const staleWriteReason = overviewError ? "最新 UVT 价格读取失败，请重试后再修改。"
+    : overviewReading ? "正在读取最新 UVT 价格，读到后才能修改。" : undefined;
   const newWriteBlockedReason = !overview ? "UVT 价格读取失败"
-    : rereadPending ? "原操作已完成，但 UVT 价格还没有重新读取成功，请先刷新" : undefined;
+    : staleWriteReason ?? (rereadPending ? "原操作已完成，但 UVT 价格还没有重新读取成功，请先刷新" : undefined);
   const readBlockedReason = (change: G3MarketChange, value?: string, forceApproval = false) => {
     const code = overview ? g3MarketReadBlockedCode(overview, change, value, forceApproval) : undefined;
     const ticket = (code === "OBJECT_ALREADY_PENDING" || code === "OBJECT_LOCKED_BY_A2") && overview
@@ -771,7 +756,7 @@ function G3MarketEditor() {
         {recoveryNotice}
         {toastNode}
         <BlockState retryKey="g3-market-773" state="error" title="UVT 价格读取失败"
-          detail={<>页面不显示任何旧价格。点「重新加载」；一直失败请联系值班同事。{error && <Explain label="失败原因" content={error} />}</>}
+          detail={<>页面不显示任何旧价格。点「重新加载」；一直失败请联系值班同事。{overviewError && <Explain label="失败原因" content={overviewError} />}</>}
           retryLabel="重新加载" onRetry={() => void reload()} />
       </>
     );
@@ -781,7 +766,7 @@ function G3MarketEditor() {
   const busyReason = busy ? "正在保存上一项，稍候再改" : undefined;
   // 原操作重试成功后在重读：新修改先不可用，带着原因；还有原记录的那一项照样能打开。
   const rereadReason = rereadPending ? "原操作已完成，正在重新读取 UVT 价格；读取成功后再改" : undefined;
-  const lockReason = (key: string) => busyReason ?? (hasRecovery(key) ? undefined : rereadReason
+  const lockReason = (key: string) => busyReason ?? (hasRecovery(key) ? undefined : staleWriteReason ?? rereadReason
     ?? (g3MarketObjectReadState(overview, key)?.locked
       ? g3MarketObjectReadState(overview, key)?.pendingOperationId
         ? `审批单 ${g3MarketObjectReadState(overview, key)?.pendingOperationId} 在等批准，有结论前不能改。`
@@ -983,6 +968,11 @@ function G3MarketEditor() {
       {confirmationPanels}
 
       {error && !confirm && !UNKNOWN_TEXT.test(error) && <Notice tone="warn">{error}</Notice>}
+      {overviewError && overviewReadAt !== undefined && <Notice tone="warn"
+        title={`刷新失败，以下概览读取于 ${businessStamp(overviewReadAt)}（${businessZone().label}）`}
+        action={<Button size="sm" loading={overviewReading} onClick={() => void readOverview()}>重试</Button>}>
+        {overviewError} 最新概览读到后才能修改。
+      </Notice>}
       {conclusion}
       {rereadPending && <Notice tone="progress" title={REREAD_TEXT} action={<Button size="sm" loading={refreshing} onClick={() => void refresh()}>重新读取</Button>}>读到最新价格之前，表里的修改先不可用；还有原记录的那一项照样能打开。</Notice>}
 
@@ -1044,11 +1034,11 @@ function G3MarketEditor() {
           ) : (
             <div data-proof="g3-history-empty">
               {/* 重读价格历史时先显示加载中，不在结果回来前闪成「没有价格记录」（ST-31、BUG-710）。 */}
-              {refreshing && !historyPoints.length
+              {historyLoading && !historyError && !historyPoints.length
                 ? <BlockState state="loading" compact title="正在加载最近 24 小时价格…" />
                 : historyError
-                ? <BlockState retryKey="g3-market-1050" state="error" compact title="最近 24 小时价格加载失败" detail={<>这次没读到价格历史，不影响现价和七天计划；点「重试」再读一次。<Explain label="失败原因" content={historyError} /></>} onRetry={() => void refresh()} retrying={refreshing} />
-                : <BlockState state="empty" compact title="最近 24 小时没有价格记录" detail={paused ? "价格暂停期间不记录。" : "至少要有两个采样点才画走势。"} onRetry={() => void refresh()} retryLabel="刷新" />}
+                ? <BlockState retryKey="g3-market-1050" state="error" compact title="最近 24 小时价格加载失败" detail={<>这次没读到价格历史，不影响现价和七天计划；点「重试」再读一次。<Explain label="失败原因" content={historyError} /></>} onRetry={() => void readHistory()} retrying={historyLoading} />
+                : <BlockState state="empty" compact title="最近 24 小时没有价格记录" detail={paused ? "价格暂停期间不记录。" : "至少要有两个采样点才画走势。"} onRetry={() => void readHistory()} retryLabel="刷新" />}
             </div>
           )}
         </Panel>
