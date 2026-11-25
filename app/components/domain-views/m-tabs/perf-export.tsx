@@ -269,8 +269,11 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           setLookupText(original?.acceptedRequestId ? "这次查询没连上，暂时无法核对当前可见结果。" : "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
         }).finally(() => setQuerying(false));
       }}>查询原操作</Button>{lookupText && lookupText !== RETRY_EXPIRED_TEXT && <span role="status">{lookupText}</span>}{expired && <span role="status">{RETRY_EXPIRED_TEXT} <ExportAuditLink /></span>}</div>;
-  const content = hiddenSettled ? <Notice tone="done">这次提交没有执行。</Notice>
-    : unknown && (!data || querying) ? recovery
+  // 读取失败要说出来并给重试，不让「未执行」的结论或「查询原操作」把它盖住（ST-34、ST-35）。
+  const loadRetry = <Button size="sm" onClick={retryLoad} loading={preview === "checking"}>重试</Button>;
+  const content = hiddenSettled ? <><Notice tone="done">这次提交没有执行。</Notice>
+      {loadError && <Notice tone="danger" action={loadRetry}>原来填的内容没读回来，读到后才能重新确认。{loadError}</Notice>}</>
+    : unknown && (!data || querying) ? <>{loadError && !querying && <Notice tone="danger" action={loadRetry}>原来的导出范围没读到，原填写内容先不显示。{loadError}</Notice>}{recovery}</>
     : originalHidden ? <><Notice tone="neutral">暂时无法确认你仍能查看原来的导出范围。可以查询原操作的结果。</Notice>{recovery}</>
     : loadError
     ? <Notice tone="danger" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>重试</Button>}>导出内容没加载出来，月份、范围和已填的理由都还在。{loadError}</Notice>
