@@ -74,8 +74,8 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
   const impact = (values: BusinessFormValue) => {
     const up = direction(values.value ?? "") === 1;
     if (isRate(field)) return up
-      ? `${SUPER_APPROVER}批准后，之后付款的订单按新比例算；批准前仍按 ${shown(field, current)}，已经算好的不变。`
-      : "确认后，之后付款的订单按新比例算；已经算好的不变。";
+      ? `${SUPER_APPROVER}批准后，之后才算奖励的订单按新比例；批准前仍按 ${shown(field, current)}，已经算好的不变。`
+      : "确认后，之后才算奖励的订单按新比例；已经算好的不变。";
     return up
       ? `${SUPER_APPROVER}批准后，之后升到 ${row.v} 的人按新金额锁定；已经锁定的按锁定时的金额，下个月起全部 ${row.v} 按新金额。`
       : `确认后，之后升到 ${row.v} 的人按新金额锁定；已经锁定的按锁定时的金额，下个月起全部 ${row.v} 按新金额。`;

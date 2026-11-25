@@ -210,7 +210,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
           : <ScaleBar label="七层合计占订单" max={axisMax} value={rawSumNumber} fill tone={overAppLimit ? "role-other" : "role-4"}
             ticks={[{ value: 0, text: "0%" }, { value: F2_APP_TOTAL_LIMIT, text: "App 上限 25%" }, ...(cap !== null && cap <= axisMax && cap !== F2_APP_TOTAL_LIMIT ? [{ value: cap, text: `总额上限 ${num(cap)}%` }] : []), { value: axisMax, text: `${axisMax}%` }]}
             valueText={`${filledAll ? "七层合计" : "已填的层合计"} ${num(rawSum)}%`} />}
-          {ranked && <p className="f2-sum-cap">{`上限 ${num(settlementCap)}%：${num(SAMPLE_ORDER)} USDT 订单最多分 ${num(f2SampleUsdt(String(settlementCap)))} USDT`}<Explain label="上限怎么用" content="结算超过上限时从 L1 往下分，分完为止。App 另查七层原始比例，第 1、2 层按 0% 检查。" /></p>}
+          {ranked && <p className="f2-sum-cap">{`上限 ${num(settlementCap)}%：${num(SAMPLE_ORDER)} USDT 订单最多分 ${num(f2SampleUsdt(String(settlementCap)))} USDT`}<Explain label="上限怎么用" content="结算超过上限时从 L1 往下分，分完为止。App 能不能读到配置另按填写的原始比例判断，第 1、2 层按 0% 算。" /></p>}
         </div>}>
         {ranked ? <dl className="f2-sum">
           <div><dt>{filledAll ? "七层合计" : "已填的层合计"}</dt>{sumRange ? <dd><strong>{rangeText(pctSample(sumRange.low), pctSample(sumRange.high), "USDT").replace(/ USDT$/, "")}</strong> USDT<span>占订单 {rangeText(sumRange.low, sumRange.high)}</span></dd> : <dd data-empty="">—</dd>}</div>

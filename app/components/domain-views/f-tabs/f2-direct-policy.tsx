@@ -179,7 +179,7 @@ export function F2DirectPolicy({ ctx, openConfirm, continuation }: { ctx: FViewC
                   </div>
                 </div>
                 {draft.purchaseSplit.enabled ? share("purchaseSplit", "好友购买奖励拆分")
-                  : <p className="f2-split-off">{Number.isFinite(draft.purchaseSplit.usdtSharePct) ? `启用后按 USDT ${num(draft.purchaseSplit.usdtSharePct)}%、UVT ${num(100 - draft.purchaseSplit.usdtSharePct)}% 拆；现在全发 USDT` : "启用后按填的比例拆；现在全发 USDT"}</p>}
+                  : <p className="f2-split-off">{Number.isFinite(draft.purchaseSplit.usdtSharePct) ? `启用后按 USDT ${num(draft.purchaseSplit.usdtSharePct)}%、UVT ${num(100 - draft.purchaseSplit.usdtSharePct)}% 拆；现在基础奖励全发 USDT，另按原系数加发 UVT` : "启用后按填的比例拆；现在基础奖励全发 USDT，另按原系数加发 UVT"}</p>}
               </fieldset>
               <fieldset className="f2-policy-card" disabled={lock}>
                 <legend><Smartphone size={16} aria-hidden />好友设备收益奖励</legend>
