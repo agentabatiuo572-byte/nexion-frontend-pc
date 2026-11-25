@@ -14,7 +14,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
-  ArrowLeftRight, Banknote, CalendarClock, CircleHelp, Clock3, Coins, Database, Eye, Gift, Layers, ListOrdered, PauseCircle, Lock, CircleDot, Store, Users,
+  ArrowLeftRight, Banknote, CalendarClock, CircleHelp, Clock3, Coins, Database, Eye, Gift, Layers, ListOrdered, PauseCircle, Lock, CircleDot, Store, Users, RefreshCw,
 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, KeepText, ConfigList, ConfigRow, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, Notice,
@@ -377,7 +377,8 @@ function G4GenesisPage() {
         const directUncertain = err instanceof G4DividendRerunOutcomeUncertainError;
         const message = directUncertain ? err.confirmCopy : approvalMessage ?? messageOf(err);
         setError(message);
-        toast(approvalMessage ?? (uncertain || directUncertain ? message : `操作失败 · ${message}`));
+        // 补发的结果未知写在原框里（outcomeMessage），不再弹同一句提示条（ST-57）。
+        if (!directUncertain) toast(approvalMessage ?? (uncertain ? message : `操作失败 · ${message}`));
       }
       throw err;
     } finally {
@@ -506,7 +507,8 @@ function G4GenesisPage() {
       if (command.path.includes("/operations/")) { await fetchG4AdminOperations(); setOperationsRefresh(value => value + 1); }
       if (!retry) toast("已读到现在的数据，但不能据此确认原操作的结果；原记录继续保留，可以到「操作记录与审批」核对。");
     } catch (failure) {
-      toast(failure instanceof G4DividendRerunOutcomeUncertainError ? failure.confirmCopy : messageOf(failure));
+      // 补发重试的结果（未知或被拒）原框里常显，不再弹同一句提示条（ST-57）。
+      if (!(retry && dividendRerun)) toast(failure instanceof G4DividendRerunOutcomeUncertainError ? failure.confirmCopy : messageOf(failure));
       throw failure;
     } finally { setBusyKey(null); }
   }
@@ -625,7 +627,11 @@ function G4GenesisPage() {
   const header = (
     <PageHeader pageId="G4" title="创世节点销售与收益"
       summary="管创世节点的总量、档位价、每日分红和展示开关。"
-      actions={headerAction || undefined}
+      actions={overview ? <>
+        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />}
+          disabledReason={busyKey ? "正在处理上一项，稍候再刷新" : undefined} onClick={() => void reload()}>刷新</Button>
+        {headerAction}
+      </> : undefined}
       meta={overview ? "不自动刷新" : undefined}
       readOnly={overview && !anyWrite ? "你只能查看，这个账号没有修改权限。" : undefined} />
   );
