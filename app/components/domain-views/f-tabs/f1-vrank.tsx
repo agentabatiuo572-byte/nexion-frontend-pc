@@ -255,7 +255,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       dialogClassName: "f1-policy-confirm f1-v8-confirm",
       detail: "人工把这位用户升到 V8，提交后需在「操作记录与审批」批准才执行。",
       submit: async (reason) => {
-        try { await ctx.proposeVRankOverride(candidate.userId, "V8", "promote", reason); }
+        try { await ctx.proposeVRankOverride(candidate.userId, "V8", "promote", reason, "V7"); }
         catch (error) {
           if ((error as { backendMessage?: string }).backendMessage === "OBJECT_ALREADY_PENDING") {
             throw new Error("没有提交：这位用户已有一张改级单在等审批，处理完再提交。");
@@ -600,7 +600,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           : draft && values.targetV && values.targetV === currentRank
             ? { invalid: true, field: "targetV", live: true, message: "这位用户已达到所选等级，无需提交。" }
             : { invalid: false, message: "" },
-        amplifies: (values) => !skipsOverrideCoverage(values),
+        amplifies: (values) => values.direction !== "rollback" && !skipsOverrideCoverage(values),
         onFieldChange: (field, next) => {
           if (field === "userId" && fixedUser) return { ...next, userId: fixedUser };
           if (field === "direction" && fixedDirection) return { ...next, direction: fixedDirection };
@@ -625,7 +625,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         if (!/^[1-9]\d*$/.test(userId) || !Number.isSafeInteger(Number(userId))) throw new Error("用户编号须为正整数");
         if (!rows.some((row) => row.v === targetV)) throw new Error("目标等级无效");
         overrideRead.current += 1;
-        await ctx.proposeVRankOverride(userId, targetV, direction, reason);
+        await ctx.proposeVRankOverride(userId, targetV, direction, reason, currentRank);
       },
     });
     if (initial) void readUserRank(initial);
