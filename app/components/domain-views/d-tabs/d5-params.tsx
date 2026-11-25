@@ -1076,9 +1076,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       return { key, title: "放宽提现参数", record: loosenRecord, outcome, createdAt: loosenRecord.createdAt, expired, canRetry: !expired && !retryDisabled && !confirmed,
         canQuery: canLookupOwn, copy,
         status: confirmed ? WITHDRAWAL_SUBMISSION_CONFIRMED
-          : outcome && "error" in outcome ? { tone: "danger", label: expired ? "已过期" : "查询失败", line: withdrawalReplayReadError(outcome.error) }
-          : processing ? WITHDRAWAL_COMMAND_PROCESSING : loosenReplayBlock && !expired
+          // TRC20 确认费的限制排在查询失败前面：查询再成功也解不开它，要一直看得到（OP-126）。
+          : loosenReplayBlock && !expired && !processing
           ? queryOnlyStatus(loosenReplayBlock, fundRecoveryStatus({ record: loosenRecord, outcome: investigationResults[key], expired, canRetry: false, canQuery: canLookupOwn, copy }), canLookupOwn, queryMissing.includes(key))
+          : outcome && "error" in outcome ? { tone: "danger", label: expired ? "已过期" : "查询失败", line: withdrawalReplayReadError(outcome.error) }
+          : processing ? WITHDRAWAL_COMMAND_PROCESSING
           : !expired && !canLookupOwn ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，请有权限的同事核对。" }
           : !expired && !outcome && retryDisabled ? { tone: "warn", label: "结果未知", line: retryDisabled } : undefined,
         actions: <>
@@ -1116,7 +1118,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       const shown = replayReason && !expired ? fundRecoveryStatus({ record: target, outcome, expired, canRetry: false }) : undefined;
       return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), record: target, outcome,
         createdAt: record.createdAt, expired, canRetry: !expired && !retryDisabled && !processing,
-        status: status ?? (replayReason && shown ? queryOnlyStatus(replayReason, shown, !fundReadBlock(target)) : undefined),
+        status: !processing && replayReason && shown ? queryOnlyStatus(replayReason, shown, !fundReadBlock(target)) : status,
         actions: <>
           <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
             onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
