@@ -197,7 +197,10 @@ function normalizeScope(scope: string) {
   return scope.trim().toUpperCase().replace(/[^A-Z0-9_.:-]/g, "_");
 }
 
-function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvestigation {
+/** acceptA2ProposalCreated：只给 D5、D7 放宽单的核查用，其他调用方仍把这种回执当读不懂（origin/test 行为）。 */
+export type ECommandParseOptions = { acceptA2ProposalCreated?: boolean };
+
+function parseReceipt(value: unknown, locator: ECommandLocator, options: ECommandParseOptions = {}): ECommandInvestigation {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   const row = value as Record<string, unknown>;
   const d1Topup = locator.originalPath.match(/^\/api\/admin\/finance\/topup\/(?:channels\/([^/]+)\/(enabled|fee|min-amount|max-amount)|reconciliation\/([^/]+)\/writeoff)$/);
@@ -369,10 +372,14 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     && (!Number.isInteger(row.businessCode) || Number(row.businessCode) < -2147483648 || Number(row.businessCode) > 2147483647)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   if (row.localTransactionRollbackConfirmed !== undefined && typeof row.localTransactionRollbackConfirmed !== "boolean")
     throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  // An A2 proposal create stores the ticket body, which has no top-level code; the backend reports that
+  // completed command as SUCCEEDED (AdminCommandInvestigationService.receiptState). Only this exact origin may omit the zero code.
+  const a2ProposalCreated = options.acceptA2ProposalCreated === true && row.scope === "A2_COMMAND" && locator.originalMethod === "POST"
+    && locator.originalPath === "/api/admin/platform/audit/operations" && row.businessCode === null;
   if (row.businessState !== undefined) {
     if (typeof row.businessState !== "string" || !["PROCESSING", "FAILED", "SUCCEEDED", "REJECTED", "UNKNOWN"].includes(row.businessState)
       || row.businessCode === undefined
-      || row.businessState === "SUCCEEDED" && (row.businessCode !== 0 || !["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(String(row.originalStatus)))
+      || row.businessState === "SUCCEEDED" && (row.businessCode !== 0 && !a2ProposalCreated || !["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(String(row.originalStatus)))
       || row.businessState === "REJECTED" && (row.businessCode === null || row.businessCode === 0 || !["FAILED", "SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus)))
       || row.businessState === "PROCESSING" && row.originalStatus !== "PROCESSING"
       || row.businessState === "FAILED" && row.originalStatus !== "FAILED") throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
@@ -425,22 +432,22 @@ async function request(path: string, body?: object): Promise<unknown> {
 }
 
 /** The backend discovers scope/hash/targets. No client reproduction of a business hash is used. */
-export async function discoverECommand(locator: ECommandLocator): Promise<ECommandInvestigation | null> {
+export async function discoverECommand(locator: ECommandLocator, options?: ECommandParseOptions): Promise<ECommandInvestigation | null> {
   const params = new URLSearchParams({ commandKey: locator.commandKey, originalMethod: locator.originalMethod, originalPath: locator.originalPath });
   const result = await request(`/by-command-key?${params}`);
   if (!Array.isArray(result) || result.length > 1) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
-  return result.length ? parseReceipt(result[0], locator) : null;
+  return result.length ? parseReceipt(result[0], locator, options) : null;
 }
 
 /** Missing receipts, forbidden reads, processing writers and insufficient evidence never release a local record. */
-export async function investigateECommand(record: PendingMutationRecord, locator: ECommandLocator, evidence: ECommandEvidence, readAuthority?: string) {
+export async function investigateECommand(record: PendingMutationRecord, locator: ECommandLocator, evidence: ECommandEvidence, readAuthority?: string, options?: ECommandParseOptions) {
   const authority = readAuthority ?? (locator.originalPath === "/api/admin/config/phone-calibration/risk" ? "device_e6_read"
     : locator.originalPath.startsWith("/api/admin/finance/withdrawals/") ? "finance_d2_read"
       : locator.originalPath.startsWith("/api/admin/treasury/") ? "finance_d3_read"
         : locator.originalPath === "/api/admin/platform/audit/operations" || locator.originalPath.startsWith("/api/admin/devices/orders/") ? "device_e4_read"
     : locator.originalPath.includes("/task-pools/") ? "device_e2_read" : "device_e5_read");
   if (!canInvestigateECommand(authority)) throw Object.assign(new Error("COMMAND_INVESTIGATION_FORBIDDEN"), { status: 403, backendMessage: "COMMAND_INVESTIGATION_FORBIDDEN" });
-  const original = await discoverECommand(locator);
+  const original = await discoverECommand(locator, options);
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
   if (evidence.conclusion === "REJECTED" && original.originalStatus !== "CONFIRMED_REJECTED" && !eCommandCanConcludeRejected(original))
     throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
@@ -467,5 +474,5 @@ export async function investigateECommand(record: PendingMutationRecord, locator
     scope: original.scope, commandKey: original.commandKey, requestHash: original.requestHash,
     conclusion: evidence.conclusion, evidenceReference: evidence.evidenceReference,
     ...(evidence.evidenceAuditId === undefined ? {} : { evidenceAuditId: evidence.evidenceAuditId }),
-  }), locator);
+  }), locator, options);
 }

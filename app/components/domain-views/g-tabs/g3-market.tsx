@@ -777,7 +777,7 @@ function G3MarketEditor() {
               {historyLoading && !historyError && !historyPoints.length
                 ? <BlockState state="loading" compact title="正在加载最近 24 小时价格…" />
                 : historyError
-                ? <BlockState retryKey="g3-market-1050" state="error" compact title="最近 24 小时价格加载失败" detail={<>这次没读到价格历史，不影响现价和七天计划；点「重试」再读一次。<Explain label="失败原因" content={historyError} /></>} onRetry={() => void readHistory()} retrying={historyLoading} />
+                ? <BlockState retryKey="g3-market-1050" state="error" compact title="最近 24 小时价格加载失败" detail={`${historyError.replace(/[。！]+$/, "")}。现价和七天计划不受影响。`} onRetry={() => void readHistory()} retrying={historyLoading} />
                 : <BlockState state="empty" compact title={historyPoints.length === 1 ? "数据不足，暂时无法显示走势" : "最近 24 小时没有价格记录"}
                   detail={historyPoints.length === 1 ? "只有 1 个采样点，至少 2 个才画走势。" : plan?.paused ? "价格暂停期间不记录。" : "暂停或没有价格时不记录。"} onRetry={() => void readHistory()} retryLabel="刷新" />}
             </div>

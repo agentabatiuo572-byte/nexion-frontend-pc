@@ -1,5 +1,5 @@
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { discoverECommand, investigateECommand, type ECommandEvidence, type ECommandInvestigation, type ECommandLocator } from "./e-command-investigation";
+import { discoverECommand, investigateECommand, type ECommandEvidence, type ECommandInvestigation, type ECommandLocator, type ECommandParseOptions } from "./e-command-investigation";
 import { formatAdminApiError } from "./error-messages";
 import type { PendingMutationRecord } from "./pending-mutation-store";
 
@@ -37,7 +37,7 @@ export function fundInvestigationAccess(record: FundCommandRecord): FundInvestig
 }
 
 /** Server-owned scope/hash/targets are discovered from the saved original locator. */
-export async function checkFundCommand(record: FundCommandRecord, evidence?: ECommandEvidence): Promise<ECommandInvestigation | null> {
+export async function checkFundCommand(record: FundCommandRecord, evidence?: ECommandEvidence, options?: ECommandParseOptions): Promise<ECommandInvestigation | null> {
   const access = fundInvestigationAccess(record);
   if (access.unavailableReason) throw new Error(formatAdminApiError(access.unavailableReason === "MISSING_ORIGIN"
     ? "INVESTIGATION_LEGACY_ORIGIN_UNPROVEN_REMAINS_LOCKED" : "INVESTIGATION_SCOPE_UNSUPPORTED", "INVESTIGATION_RECEIPT_UNREADABLE"));
@@ -47,8 +47,8 @@ export async function checkFundCommand(record: FundCommandRecord, evidence?: ECo
     || typeof origin.originalPath !== "string" || !origin.originalPath.startsWith("/api/admin/")) throw new Error(formatAdminApiError("INVESTIGATION_ORIGINAL_LOCATOR_INVALID", "INVESTIGATION_RECEIPT_UNREADABLE"));
   if (evidence ? !access.canSubmit : !access.canRead) throw new Error(formatAdminApiError("COMMAND_INVESTIGATION_FORBIDDEN", "COMMAND_INVESTIGATION_FORBIDDEN"));
   const locator = { ...origin, commandKey: record.commandKey };
-  if (evidence) return investigateECommand(record, locator, evidence, origin.readAuthority);
-  return discoverECommand(locator);
+  if (evidence) return investigateECommand(record, locator, evidence, origin.readAuthority, options);
+  return discoverECommand(locator, options);
 }
 
 export { eCommandSettled as fundCommandSettled, eCommandResult as fundCommandResult,

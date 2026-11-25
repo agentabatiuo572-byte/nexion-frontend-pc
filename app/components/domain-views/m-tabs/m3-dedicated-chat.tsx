@@ -706,6 +706,9 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     ?? (requestedCustomerId ? firstEntry ?? replyEntry : replyEntry ?? firstEntry);
   const activeKey = activeEntry?.row.commandKey;
   const canRetryActiveSend = !activeEntry?.dock && selected?.writeState?.canReply !== false;
+  // 「按原操作重试」只在查询过、明确查不到原消息后开放（OP-93 第 7 项）；按命令号记，重发时清掉。
+  const [sendQueriedMissing, setSendQueriedMissing] = useState<ReadonlySet<string>>(() => new Set());
+  const sendRetryQueryBlock = activeKey && !sendQueriedMissing.has(activeKey) ? "先查询原操作，确认查不到原消息后才能重试。" : undefined;
   const sendError = sendFeedback?.customer === targetCustomer
     && (sendFeedback.firstContactIdentity
       ? sendFeedback.firstContactIdentity === identityRef.current && (!sendFeedback.conversationId || sendFeedback.conversationId === selectedConversationId)
@@ -1376,7 +1379,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     }
   };
   const send = (kind: Pending["kind"], recovery?: "query" | "retry") => {
-    if (!targetCustomer || Boolean(recovery) !== Boolean(activeEntry) || recovery === "retry" && !canRetryActiveSend) return;
+    if (!targetCustomer || Boolean(recovery) !== Boolean(activeEntry) || recovery === "retry" && (!canRetryActiveSend || sendRetryQueryBlock)) return;
     return runCustomerCommand(targetCustomer, activeKey, flight => sendMessage(kind, recovery, flight));
   };
   const sendMessage = async (kind: Pending["kind"], recovery: "query" | "retry" | undefined, flight: SendFlight) => {
@@ -1391,6 +1394,14 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     flight.newSubmission = !recovery;
     if (activeEntry && recovery) {
       setSendError("");
+      const forgetQueriedMissing = () => setSendQueriedMissing(current => {
+        if (!current.has(activeEntry.row.commandKey)) return current;
+        const next = new Set(current);
+        next.delete(activeEntry.row.commandKey);
+        return next;
+      });
+      // 每次查询都重新判断：这次没明确查无，重试就不开放。
+      forgetQueriedMissing();
       try {
         const result = await querySavedSend(activeEntry);
         if (identityRef.current !== identity || !mounted.current) return;
@@ -1434,6 +1445,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       } catch (cause) {
         if (identityRef.current !== identity || !mounted.current) return;
         const notFound = cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND";
+        if (notFound) setSendQueriedMissing(current => new Set(current).add(activeEntry.row.commandKey));
         if (!notFound || recovery !== "retry" || isRetryExpired(activeEntry.row)) {
           setSendError(notFound
             ? !canRetryActiveSend ? "没查到这条消息，记录继续保留，没有重新发送。"
@@ -1456,6 +1468,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         setSendError("没查到原消息；先刷新会话、核对归属，再按原操作重试。");
         return;
       }
+      // 这次就要重发：重发后结果仍未知时要重新查询，才能再重试。
+      forgetQueriedMissing();
     }
     if (!conversationsAvailable || !recovery && recoveryBlocksTarget) return;
     const text = retryFirst?.body ?? retry?.body ?? draft.trim();
@@ -2315,7 +2329,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             actionBelow={!busy && Boolean(pending || firstPending)} title={!busy && activeEntry && (pending || firstPending) ? <>这条消息发送结果未知<span className="m3s-notice-meta">{businessStamp(activeEntry.row.createdAt)} 发出 · {zoneLabel}</span></> : undefined}
             action={<>{sendError.startsWith("消息已发送") && <Button size="sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</Button>}
               {(pending || firstPending) && <Button size="sm" disabled={busy} onClick={() => void send(pending?.kind ?? "TEXT", "query")}>查询原结果</Button>}
-              {(pending || firstPending) && canRetryActiveSend && <Button size="sm" disabled={busy} disabledReason={sendRetryExpired ? RETRY_EXPIRED_TEXT : undefined} onClick={() => void send(pending?.kind ?? "TEXT", "retry")}>按原操作重试</Button>}
+              {(pending || firstPending) && canRetryActiveSend && <Button size="sm" disabled={busy} disabledReason={sendRetryExpired ? RETRY_EXPIRED_TEXT : sendRetryQueryBlock} onClick={() => void send(pending?.kind ?? "TEXT", "retry")}>按原操作重试</Button>}
             </>}>
             {!busy && (pending || firstPending) && (!sendError || sendError === MESSAGE_UNKNOWN)
               ? !canRetryActiveSend ? "只能查询结果" : sendRetryExpired ? "超过 24 小时不能再重试，先查询原结果。" : MESSAGE_UNKNOWN_NEXT
