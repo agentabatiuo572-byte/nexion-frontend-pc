@@ -180,7 +180,7 @@ export function acknowledgedTag() {
 
 export function expiredTag(kind: "direct" | "approval") {
   return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "direct"
-    ? "原请求超过 24 小时，不能再重试，只能查询。查询读到的是现在的值，不能据此认定原操作成没成。"
+    ? "已超过 24 小时，不能再重试，只能查询。查询读到的是现在的值，不能据此认定原操作成没成。"
     : "原申请超过 24 小时，不能再重试，只能查询原审批单。查不到时保留原申请和同项修改锁，请到操作记录与审批核对。"}>已过期</StatusTag>;
 }
 

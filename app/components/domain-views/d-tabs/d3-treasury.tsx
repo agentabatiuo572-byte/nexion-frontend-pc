@@ -811,8 +811,8 @@ export function D3Treasury() {
             detail: <>
               <p>{found === "FAILED" ? "" : `${item.title}。`}{item.body}{expired ? "" : item.hint}</p>
               {pendingNotes[item.commandKey] && <p><KeepText text={pendingNotes[item.commandKey]} /></p>}
-              <Fold inset title="原操作完整内容" summary="原请求编号、完整内容和提交时间">
-                <p className="rd-note d3-raw" data-mono>原请求编号 {item.commandKey}</p>
+              <Fold inset title="原操作完整内容" summary="操作编号、完整内容和提交时间">
+                <p className="rd-note d3-raw" data-mono>操作编号 {item.commandKey}</p>
                 <pre className="rd-note d3-raw">{JSON.stringify(item.record, null, 2)}</pre>
                 <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(JSON.stringify(item.record, null, 2)).then(() => toast("已复制原操作记录", "success"), () => toast("复制失败，请手动选择原操作记录", "error"))}>复制原操作记录</Button>
               </Fold>

@@ -2047,7 +2047,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url);
     }
   };
-  const sendTech = (key: string) => <Fold inset title="技术信息" summary="原请求编号"><Facts><Fact k="原请求编号"><span data-mono>{key}</span></Fact></Facts></Fold>;
+  const sendTech = (key: string) => <Fold inset title="技术信息" summary="操作编号"><Facts><Fact k="操作编号"><span data-mono>{key}</span></Fact></Facts></Fold>;
   const isRedacted = (entry: SavedSend) => entry.dock?.readOnlyRecovery || entry.row.fingerprint === recoveryKey(adminId, entry.row.commandKey);
   const lookupReason = scopeDenied ? "当前账号看不到客户会话。" : qualificationUnknown ? "当前可见范围没读到，请重试。" : "读不到会话。";
   const pendingHelp = [
@@ -2244,7 +2244,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
                 tag: rejected ? <StatusTag tone="warn">被拒绝</StatusTag> : isRetryExpired(record) ? <StatusTag tone="done" icon={TimerOff}>已过期</StatusTag> : <StatusTag tone="neutral" icon={Search}>只能查询</StatusTag>,
                 line: rejected ? "结束被拒绝，核实后可以解除这条记录。" : isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}` : "结果未知，只能查原结果。",
                 detail: <p>发出时间：{businessStamp(record.createdAt)}</p>,
-                tech: <Fold inset title="技术信息" summary="原请求编号"><Facts><Fact k="原请求编号"><span data-mono>{record.commandKey}</span></Fact></Facts></Fold>,
+                tech: <Fold inset title="技术信息" summary="操作编号"><Facts><Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact></Facts></Fold>,
                 actions: <><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原操作</Button>{rejected && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</> };
             })} />}
           {serviceStatus && conversationsAvailable && <Notice tone="danger">{serviceStatus}</Notice>}

@@ -404,10 +404,10 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         footer={leaving
           ? <Decision note={note}
             others={<><Button size="md" onClick={continueEditing}>继续编辑</Button><Button variant="danger-outline" size="md" onClick={discard}>放弃改动并返回</Button></>}
-            primary={<TipSide side="top"><Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>保存并立即生效</Button></TipSide>} />
+            primary={<TipSide side="top" align="end"><Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>保存并立即生效</Button></TipSide>} />
           : <Decision note={note}
             others={<Button size="md" onClick={leaveDrawer}>取消</Button>}
-            primary={<TipSide side="top"><Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>下一步：核对并保存</Button></TipSide>} />}>
+            primary={<TipSide side="top" align="end"><Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>下一步：核对并保存</Button></TipSide>} />}>
         {leaving ? <div className="rd-stack">
           <p>放弃后，这次的勾选不保存，清单保持原样。</p>
           <Facts>

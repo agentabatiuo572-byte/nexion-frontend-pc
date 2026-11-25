@@ -231,7 +231,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
               {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除原操作记录</Button>}
             </>,
             detail: <p>{businessStamp(item.createdAt)}（{zoneLabel()}）<KeepText text="发出，可能已经生效。" />{typeof hint === "string" ? <KeepText text={/[。；]$/.test(hint) ? hint : `${hint}。`} /> : hint}</p>,
-            tech: <p><Explain label="技术信息" content={`原请求编号 ${item.key}`}>技术信息</Explain></p>,
+            tech: <p><Explain label="技术信息" content={`操作编号 ${item.key}`}>技术信息</Explain></p>,
           };
         })} />
       {releasing && (

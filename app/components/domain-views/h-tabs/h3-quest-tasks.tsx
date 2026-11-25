@@ -1073,7 +1073,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const c = original.change;
     const saved = () => originalFor({ target: c.target, commandKey: original.commandKey });
     const request: H3ActionConfirmReq = { briefKind: "config", action: c.action, title: c.title, detail: changeOf(c),
-      facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原请求">{changeOf(c)}</Fact></Facts>,
+      facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原改动">{changeOf(c)}</Fact></Facts>,
       initialReason: c.reason, getPendingReason: () => saved()?.change.reason,
       getPendingRecovery: () => recoveryFor(saved()),
       run: async () => { await mutations.retry(original); },

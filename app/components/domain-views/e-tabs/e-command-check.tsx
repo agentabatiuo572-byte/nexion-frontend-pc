@@ -88,7 +88,7 @@ export function CommandOutcomeLine({ outcome, expired, summarized, canClose = tr
 
 /** Someone without investigation rights is told who can close the original command. */
 export function ClosureContact() {
-  return <p className="e-check-contact">需要结案时，请把原请求编号发给有调查权限的超级管理员，由其按证据核查结案。</p>;
+  return <p className="e-check-contact">需要结案时，请把操作编号发给有调查权限的超级管理员，由其按证据核查结案。</p>;
 }
 
 /** Settled commands leave the pending list; this keeps the authoritative outcome visible until dismissed. */
@@ -154,7 +154,7 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, known
       <Facts>
         <Fact k="原操作">{label}</Fact>
         {facts}
-        <Fact k="首次提交">{closureTime(createdAt)}<Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{commandKey}</span></>} /></Fact>
+        <Fact k="首次提交">{closureTime(createdAt)}<Explain label="技术信息" content={<>操作编号 <span data-mono className="rd-keep">{commandKey}</span></>} /></Fact>
         {fixed && <Fact k="核查结论">{CONCLUSION_TEXT[fixed]}</Fact>}
       </Facts>
       <Notice tone="warn">{offer ? offerNotice(offer) : basis?.rejected ? "后台当时拒绝了这次操作，可以按「后台拒绝」结案；其他结论要证据对得上，对不上会退回，记录保留。"

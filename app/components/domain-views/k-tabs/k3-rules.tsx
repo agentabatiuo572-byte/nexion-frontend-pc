@@ -670,7 +670,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     {inspecting && <Modal title="原操作技术信息" onClose={() => setInspecting(null)} footer={<><Button onClick={() => setInspecting(null)}>关闭</Button>
       <Button onClick={() => void navigator.clipboard.writeText(JSON.stringify(isSavedCommand(inspecting) ? { commandKey: inspecting.commandKey, ...inspecting.request } : inspecting, null, 2)).then(() => ctx.toast("原请求技术信息已复制", "success")).catch(() => ctx.toast("复制失败，请手动复制", "error"))}>复制技术信息</Button></>}>
       <pre className="k3-request">{JSON.stringify(isSavedCommand(inspecting) ? { commandKey: inspecting.commandKey, ...inspecting.request } : inspecting, null, 2)}</pre>
-      <p>保留这次实际使用的方法、路径、原请求内容与原请求编号。本地记录属于本标签页，不提供跨设备恢复。</p>
+      <p>保留这次实际使用的方法、路径、原请求内容与操作编号。本地记录属于本标签页，不提供跨设备恢复。</p>
       {reach("/platform/audit") ? <p><Link className="rd-link" href="/platform/audit">操作记录与审批</Link></p> : <p>请有权限的风控或超级管理员核对原操作。</p>}
     </Modal>}
     {releasing && <Modal title="解除原操作记录" icon={ShieldCheck} onClose={() => setReleasing(null)} dirty={releaseVerified}
@@ -679,7 +679,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); setReleasing(null); ctx.toast("已解除本页的原操作记录，请继续到操作记录核对原操作", "info");
       }}>确认解除</Button></>}>
       <ReleaseBody label={releasing.label} />
-      <Facts><Fact k="原对象">{targetLabel(releasing.target)}</Fact><Fact k="原请求编号"><span data-mono="">{releasing.commandKey}</span></Fact><Fact k="原操作理由">{releasing.reason}</Fact></Facts>
+      <Facts><Fact k="原对象">{targetLabel(releasing.target)}</Fact><Fact k="操作编号"><span data-mono="">{releasing.commandKey}</span></Fact><Fact k="原操作理由">{releasing.reason}</Fact></Facts>
       <Fold title="原请求技术信息" summary="方法、路径、原内容与版本" inset><pre className="k3-request">{JSON.stringify({ request: releasing.request, original: releasing.original }, null, 2)}</pre></Fold>
       <Check label="我已核实原操作的对象、请求和结果" checked={releaseVerified} onChange={(event) => setReleaseVerified(event.target.checked)} />
     </Modal>}

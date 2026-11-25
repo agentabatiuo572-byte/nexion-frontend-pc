@@ -162,13 +162,13 @@ export function useH3Mutations(
   const forget = (r: H3PendingCommand) => { h3CommandStorage.forget(r.store, r); confirmedTickets.current.delete(r.commandKey); update(); };
   const retain = (r: H3PendingCommand) => {
     h3CommandStorage.remember(r.store, r); update();
-    if (!h3CommandStorage.durable(r.store, r)) throw new Error("浏览器存不下完整原请求，本次没有发送。请保留原记录并查询原操作。");
+    if (!h3CommandStorage.durable(r.store, r)) throw new Error("浏览器存不下这次操作的完整内容，本次没有发送。请保留原记录并查询原操作。");
   };
   const checkTicket = (r: H3PendingCommand, ticket: A2OperationRow) => {
     // 111e00cd OpsAuditCenterService.ticketMetadata includes persisted command.op.
     const op = r.request.kind === "approval" ? r.request.body.command.op : "h3_weekly_region_policy";
     if (!ticket.mine || ticket.obj !== r.change.target || ticket.operationCode !== op
-      || !["pending", "approved", "rejected", "expired", "withdrawn"].includes(ticket.status)) throw new OutcomeUnknownError("审批单与保存的原申请不符，原请求继续保留，请查询原操作。");
+      || !["pending", "approved", "rejected", "expired", "withdrawn"].includes(ticket.status)) throw new OutcomeUnknownError("审批单与保存的原申请不符，原操作继续保留，请查询原操作。");
   };
   const settleApproved = async (approved: H3PendingCommand[], refresh = false) => {
     const request = Symbol();
@@ -215,7 +215,7 @@ export function useH3Mutations(
         await settled();
         return { conclusion: "unknown" };
       });
-      if (!refresh) toast("已重新读取；当前值不能证明原操作是否执行，原请求继续保留，请到操作记录与审批核对。");
+      if (!refresh) toast("已重新读取；当前值不能证明原操作是否执行，记录继续保留，请到操作记录与审批核对。");
       return undefined;
     }
     // Keep known ticket status while a fresh query is in flight.
@@ -229,7 +229,7 @@ export function useH3Mutations(
     }));
     if (!result) return undefined;
     const { ticket } = result;
-    if (!ticket) { if (!refresh) toast("暂未查到原审批单，原请求继续保留。"); return null; }
+    if (!ticket) { if (!refresh) toast("暂未查到原审批单，原操作继续保留。"); return null; }
     if (ticket.status === "pending" || ticket.status === "approved") {
       const saved = { ...current, acknowledged: true, ticketStatus: ticket.status, ticket: undefined } as const;
       retain(saved);
@@ -277,7 +277,7 @@ export function useH3Mutations(
         if (result?.domain !== "H3" || !updated || (r.store === "config" ? updated.key !== body.key
           : r.store === "binding" ? updated.bindingCode !== code || updated.action !== expectedAction
             : (r.request.path === "/quest-events/missions" ? updated.missionCode !== body.missionCode || updated.missionType !== body.missionType : updated.taskCode !== code || updated.taskKind !== body.taskKind && !r.request.path.endsWith("/presentation")) || updated.action !== expectedAction)) {
-          throw new OutcomeUnknownError("保存后返回的内容和原修改对不上，原请求继续保留，请查询原操作。");
+          throw new OutcomeUnknownError("保存后返回的内容和原修改对不上，原操作继续保留，请查询原操作。");
         }
       }
     } catch (error) {
@@ -304,7 +304,7 @@ export function useH3Mutations(
   const readSubmitted = async (record: H3PendingCommand) => {
     const saved = currentH3Commands().find(row => row.commandKey === record.commandKey);
     const current = saved && await query(saved);
-    if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原操作，原请求继续保留。");
+    if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原操作，原操作继续保留。");
     if (current.status === "pending") await settled(record.commandKey);
   };
   const run = async (write: H3Write, reason: string, approvalConfirmed = false, onCommand?: (commandKey: string) => void) => {

@@ -1494,7 +1494,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   /** 结果未知的记录收成一个面板：每条一行，通用说明只在标题问号里说一次；按钮和可用条件照旧。 */
   const techRows = (record: { commandKey: string; operator: string; reason: string }) => <p><Explain label="这次操作的技术信息" rows={[
-    { k: "原请求编号", v: <span data-mono>{record.commandKey}</span> },
+    { k: "操作编号", v: <span data-mono>{record.commandKey}</span> },
     { k: "操作人", v: record.operator },
     { k: "理由", v: record.reason },
   ]}>技术信息</Explain></p>;

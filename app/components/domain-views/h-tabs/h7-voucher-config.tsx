@@ -458,7 +458,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           <Fact k="有效期" tone={next === "active" && voucherPhase(v, Date.now()) === "expired" ? "warn" : undefined}>{next === "active" && voucherPhase(v, Date.now()) === "expired"
             ? `${periodText(v)}，已过期，不能投放；先编辑有效期` : periodText(v)}</Fact>
           <Fact k="还没用">{`${countText(v.availableCount)} 张`}</Fact>
-          {othersChanged && <Fact k="别人改了">{othersChanged.length ? <DiffList rows={othersChanged} /> : "没有别的内容变化，只有版本变了。"}</Fact>}
+          {othersChanged && <Fact k="别人改了">{othersChanged.length ? <DiffList rows={othersChanged} named /> : "没有别的内容变化，只有版本变了。"}</Fact>}
         </Facts>
       ),
       confirmLabel: `确认${label}`,

@@ -75,14 +75,14 @@ export function rejectedStatus({ expired, canRetry, canClose, legacy }: { expire
 }
 
 /** 过期的「记为失败」能结案的唯一一种：要这次的成功记录。资金面板、设备面板、用户详情、H1 共用。 */
-export const FAILED_EXPIRED_LINE = "有这次的成功记录才能结案；没有就把原请求编号交给技术同事。";
+export const FAILED_EXPIRED_LINE = "有这次的成功记录才能结案；没有就把操作编号交给技术同事。";
 
 /**
  * 记为失败（过期）、仍未知这一行的下一步：按数据层给的可选结论（eCommandClosureRequests）选一句，和结案框的选项对得上。
  * 「未执行」：后台已确认撤销（localTransactionRollbackConfirmed）才说确定；旧后端没有这项、只能申请的，说「核实已撤销才收」。
  * none：一个结论都不能选时的那句（行上没有技术信息的页面换成看得到的东西）。返回 undefined 时沿用调用处原来的句子（仍未知还能按成功记录结案）。
  */
-export function closureLine(offer: ClosureOffer, receipt: ECommandInvestigation | null | undefined, canClose: boolean, none = "这条结不了案；请把技术信息里的原请求编号交给技术同事。") {
+export function closureLine(offer: ClosureOffer, receipt: ECommandInvestigation | null | undefined, canClose: boolean, none = "这条结不了案；请把技术信息里的操作编号交给技术同事。") {
   const has = (value: ECommandEvidence["conclusion"]) => offer.conclusions.includes(value);
   if (has("NOT_EXECUTED")) return receipt?.localTransactionRollbackConfirmed
     ? canClose ? "这次操作已确认没有生效，可按「未执行」结案后重新做。" : "这次操作已确认没有生效，请有调查权限的超级管理员按「未执行」结案。"
@@ -134,12 +134,12 @@ export function receiptOf(outcome: { receipt: ECommandInvestigation | null } | {
 }
 
 /**
- * 行上的「技术信息」：原请求编号（和查到的业务码），收在一个文字触发的气泡里。
- * 「结不了案」「没有就把原请求编号交给技术同事」这两句指向它，行上没有展开详情的页面放在那句话后面。
+ * 行上的「技术信息」：操作编号（和查到的业务码），收在一个文字触发的气泡里。
+ * 「结不了案」「没有就把操作编号交给技术同事」这两句指向它，行上没有展开详情的页面放在那句话后面。
  */
 export function TechInfo({ commandKey, receipt }: { commandKey: string; receipt?: ECommandInvestigation | null }) {
   const code = receiptCodeTech(receipt);
-  return <Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{commandKey}</span>{code && ` ｜ ${code}`}</>}>技术信息</Explain>;
+  return <Explain label="技术信息" content={<>操作编号 <span data-mono className="rd-keep">{commandKey}</span>{code && ` ｜ ${code}`}</>}>技术信息</Explain>;
 }
 
 /** 结案框里「系统记录」一行：按查到的原结果写，held 是记录现在的样子（例如「原修改还锁着」）。 */
@@ -191,7 +191,7 @@ export function offerNotice(offer: ClosureOffer) {
   if (has("NOT_EXECUTED")) return `后台核实这次修改已整个回滚，才会按「未执行」结案；收不收提交后才知道。${has("STILL_UNKNOWN") ? "也可以选「仍未知」，只留一条核查记录。" : ""}`;
   if (has("REJECTED")) return "后台当时拒绝了这次操作，可以按「后台拒绝」结案。";
   if (has("SUCCEEDED")) return offer.success === "audit" ? "成功记录对得上才解除，对不上会退回，记录保留。" : "后台按这次操作自己的处理记录核对：对得上才解除，对不上会退回，记录保留。";
-  return has("STILL_UNKNOWN") ? "后台没有能对上的结论，现在只能记为「仍未知」。" : "这条现在结不了案：后台没有能对上的结论，记录继续保留。请把原请求编号交给技术同事核对。";
+  return has("STILL_UNKNOWN") ? "后台没有能对上的结论，现在只能记为「仍未知」。" : "这条现在结不了案：后台没有能对上的结论，记录继续保留。请把操作编号交给技术同事核对。";
 }
 
 /** 核查确认是后台拒绝之后的一句：记录解除了，但不等于没执行，也不能重发原来那一次。 */
@@ -242,7 +242,7 @@ export type RecoveryItem = {
   actions?: ReactNode;
   /** 展开后显示：发出时间、较长的说明。 */
   detail?: ReactNode;
-  /** 原请求和原请求编号，放在展开内容的最后。 */
+  /** 原请求和操作编号，放在展开内容的最后。 */
   tech?: ReactNode;
 };
 

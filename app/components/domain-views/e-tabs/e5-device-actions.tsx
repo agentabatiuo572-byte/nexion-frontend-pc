@@ -197,7 +197,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
     ...old.map(row => ({ key: row.commandKey, object: "升级前的设备操作", tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
       line: "旧记录缺原请求，不能重试；到操作记录与审批核对。",
       actions: <Button size="sm" disabled={!!busy} onClick={() => void refresh()}>刷新设备列表</Button>,
-      detail: <Facts><Fact label="原请求编号" value={row.commandKey} mono copy /></Facts> })),
+      detail: <Facts><Fact label="操作编号" value={row.commandKey} mono copy /></Facts> })),
     ...drafts.map(record => ({
       key: record.commandKey, object: `${record.label} · ${record.device.serial}`, createdAt: record.createdAt,
       tag: <StatusTag tone="neutral">未执行</StatusTag>, line: "可以重新确认原操作。",
@@ -229,7 +229,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
         </>,
         detail: <>
           <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString())} 提交 · {record.device.user} · 理由：{record.reason}</p>
-          <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="原请求编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />{businessCodeOf(outcomes[record.commandKey]) !== undefined && <Fact label="业务码" value={String(businessCodeOf(outcomes[record.commandKey]))} mono />}</Facts></Fold> };
+          <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="操作编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />{businessCodeOf(outcomes[record.commandKey]) !== undefined && <Fact label="业务码" value={String(businessCodeOf(outcomes[record.commandKey]))} mono />}</Facts></Fold> };
     }),
   ];
   return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, check, canInvestigate, setEditorOpen, forgetDraft, refresh, toast, writeBlock }}>
@@ -251,7 +251,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
       if (releaseChecked && e5Recovery.releaseRejectedReplay(release)) { sync(); setRestoring(null); setRelease(null); setError(""); toast("已解除这条记录"); }
     }}>确认解除</Button></>}>
       <ReleaseBody label={`${release.label} · ${release.device.serial}`} />
-      <Facts><Fact label="原操作时间" value={formatBusinessTimeCompact(new Date(release.createdAt).toISOString())} /><Fact label="原请求编号" value={release.commandKey} mono copy /></Facts>
+      <Facts><Fact label="原操作时间" value={formatBusinessTimeCompact(new Date(release.createdAt).toISOString())} /><Fact label="操作编号" value={release.commandKey} mono copy /></Facts>
       <Notice tone="danger" title="按原操作重试被拒绝">{e5Recovery.state(release).replayRejection}</Notice>
       <Check label="已核对原操作的结果，确认只解除本页这条记录" checked={releaseChecked} onChange={event => setReleaseChecked(event.target.checked)} />
     </Modal>}

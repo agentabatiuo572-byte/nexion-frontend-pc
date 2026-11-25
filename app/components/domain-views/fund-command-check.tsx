@@ -140,7 +140,7 @@ function RecoveryRow({ row }: { row: FundRecoveryRow }) {
   const error = row.outcome && "error" in row.outcome ? row.outcome.error : "";
   const last = receipt?.investigation;
   const origin = row.record?.commandOrigin;
-  const tech = [row.record ? `原请求编号 ${row.record.commandKey}` : "", origin ? `${origin.originalMethod} ${origin.originalPath}` : "", receiptCodeTech(receipt), row.tech ?? ""].filter(Boolean).join(" ｜ ");
+  const tech = [row.record ? `操作编号 ${row.record.commandKey}` : "", origin ? `${origin.originalMethod} ${origin.originalPath}` : "", receiptCodeTech(receipt), row.tech ?? ""].filter(Boolean).join(" ｜ ");
   const id = `fund-row-${row.key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
   return <li className="fund-row">
     <div className="fund-row-line">
@@ -276,7 +276,7 @@ export function FundClosureModal({ label, createdAt, facts, known, offer, blocke
   const block = !choices.length ? "这条现在结不了案" : !conclusion ? "请选择核查结论" : !length ? "请写明核查依据" : length > 512 ? "核查依据最多 512 字"
     : needsAudit && !auditId.trim() ? "选「已执行」要填成功记录编号" : needsAudit && !auditValid ? "成功记录编号须为正整数" : !acknowledged ? "请先勾选确认" : undefined;
   const notice = offer ? offerNotice(offer) : !basis ? "系统按你给的依据核对：证据够才记为「已执行」并解除这条记录；不够时记为「仍未知」，继续锁着。这类操作现在不能按「没有执行」结案。"
-    : !choices.length ? "这条现在结不了案：后台没有能对上的结论，记录继续保留。请把原请求编号交给技术同事核对。"
+    : !choices.length ? "这条现在结不了案：后台没有能对上的结论，记录继续保留。请把操作编号交给技术同事核对。"
     : basis.rejected ? choices.length > 1 ? "后台当时拒绝了这次操作，按「后台拒绝」结案即可解除。操作记录里确有这次的成功记录时，才选「已执行」。" : "后台当时拒绝了这次操作，可以按「后台拒绝」结案。"
     : basis.success === "receipt" ? "后台按这次操作自己的处理记录核对：对得上才解除，对不上会退回，记录保留。"
     : "成功记录对得上才解除，对不上会退回，记录保留。操作记录里没有这次成功记录的，现在结不了案。";

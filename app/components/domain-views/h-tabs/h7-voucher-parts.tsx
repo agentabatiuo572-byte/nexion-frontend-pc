@@ -226,9 +226,9 @@ export function H7RecoveryNotice({ title, explain, rows, link }: { title: ReactN
             {/* 原理由是要核对的事实，常显；编号只在查证时用，收进技术信息（OP-93、OP-154）。 */}
             {row.original && <span className="h7-rec-reason"><span>原理由</span>{row.original.reason}</span>}
             {row.note && <span className="h7-rec-note">{row.note}</span>}
-            {row.original && <div className="h7-rec-tech"><Fold title="技术信息" summary="原请求编号" tone="role-4" inset>
+            {row.original && <div className="h7-rec-tech"><Fold title="技术信息" summary="操作编号" tone="role-4" inset>
               <Facts>
-                <Fact k="原请求编号"><span data-mono="">{row.original.commandKey}</span></Fact>
+                <Fact k="操作编号"><span data-mono="">{row.original.commandKey}</span></Fact>
               </Facts>
             </Fold></div>}
           </li>

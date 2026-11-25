@@ -135,7 +135,7 @@ export function unknownTag(kind: "direct" | "approval") {
 
 export function expiredTag(kind: "direct" | "approval") {
   return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "direct"
-    ? "原请求超过 24 小时，不能再重试，只能到「操作记录与审批」核对。"
+    ? "已超过 24 小时，不能再重试，只能到「操作记录与审批」核对。"
     : "过了 24 小时只能查询、不能再重试；重试被明确拒绝的，核实后可以解除。"}>已过期</StatusTag>;
 }
 

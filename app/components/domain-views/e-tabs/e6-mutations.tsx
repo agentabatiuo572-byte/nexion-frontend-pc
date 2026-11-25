@@ -489,7 +489,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
   };
   const noteOf = (r: E6Pending) => m.notes[r.commandKey] && m.notes[r.commandKey] !== answered[r.commandKey] && !GENERIC_NOTES.includes(m.notes[r.commandKey]) ? m.notes[r.commandKey]
     : m.recovery.state(r).replayRejection ?? r.retryRejection;
-  const technical = (r: E6Pending) => <div className="e6-fold-content"><p>原请求编号：<code>{r.commandKey}</code></p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}{businessCodeOf(outcomes[r.commandKey]) !== undefined && <p>业务码：<code>{businessCodeOf(outcomes[r.commandKey])}</code></p>}<pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div>;
+  const technical = (r: E6Pending) => <div className="e6-fold-content"><p>操作编号：<code>{r.commandKey}</code></p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}{businessCodeOf(outcomes[r.commandKey]) !== undefined && <p>业务码：<code>{businessCodeOf(outcomes[r.commandKey])}</code></p>}<pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div>;
   const items: RecoveryItem[] = [
     ...(section === "phones" ? m.devicePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">待核对</StatusTag>,
       line: "原操作在设备管理，到那里查询和处理。", actions: <Link className="rd-link" href="/devices/ops">设备管理</Link>,
@@ -551,7 +551,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
     ...m.legacy.filter(r => section === "tasks" ? r.fingerprint.startsWith("e2_task_") : section === "tiers" ? r.fingerprint.startsWith("e2_phone_tier") : section === "phones" ? r.fingerprint.startsWith("e5") : r.fingerprint.startsWith("e6_")).map(r => ({
       key: r.commandKey, object: "升级前的原提案", tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
       line: "旧记录缺原请求，不能重试或解除；到操作记录与审批核对。",
-      detail: <p>原请求编号：<code>{r.commandKey}</code></p> })),
+      detail: <p>操作编号：<code>{r.commandKey}</code></p> })),
   ];
   const release = m.release?.section === section ? m.release : null;
   return <>

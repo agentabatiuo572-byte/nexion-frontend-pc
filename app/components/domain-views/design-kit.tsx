@@ -690,13 +690,13 @@ type CopyExperimentVersionOption = {
 type CopyExperimentCopyOption = { value: string; label: string; versions: CopyExperimentVersionOption[] };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
-/** 提示末尾的「命令号：xxx」「请求号：xxx」不常显：收进句尾的「技术信息」问号，写成「原请求编号」（全站-结果未知叫法）。前面的话不变。 */
+/** 提示末尾的「命令号：xxx」「请求号：xxx」不常显：收进句尾的「技术信息」问号，写成「操作编号」（全站-结果未知叫法）。前面的话不变。 */
 function keepCommandKey(text: ReactNode): ReactNode {
   if (typeof text !== "string") return text;
   const at = Math.max(text.lastIndexOf("命令号："), text.lastIndexOf("请求号："));
   const key = at < 0 ? null : text.slice(at + 4).match(/^[\w.:-]+/)?.[0];
   if (!key) return text;
-  return <>{text.slice(0, at).replace(/[\s·]+$/, "")}{text.slice(at + 4 + key.length)}<Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{key}</span></>} /></>;
+  return <>{text.slice(0, at).replace(/[\s·]+$/, "")}{text.slice(at + 4 + key.length)}<Explain label="技术信息" content={<>操作编号 <span data-mono className="rd-keep">{key}</span></>} /></>;
 }
 
 function initEditValue(spec?: EditSpec | null): string {

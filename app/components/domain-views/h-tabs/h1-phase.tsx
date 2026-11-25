@@ -285,7 +285,7 @@ export default function H1Phase({ ctx,
       boolean>>({});
   const [deepLink,
     setDeepLink] = useState<{ phase: string; dial: string } | null>(null);
-  /** 上次「查询原操作」查到的每个原请求（按原请求编号），决定这一步给不给「核查结案」。 */
+  /** 上次「查询原操作」查到的每个原请求（按操作编号），决定这一步给不给「核查结案」。 */
   const [receipts,
     setReceipts] = useState<Record<string, ECommandInvestigation | null>>({});
   const [closing,
@@ -1160,9 +1160,9 @@ export default function H1Phase({ ctx,
           <Fact k="发起人">{detail.operator}</Fact>
           <Fact k="提交时间">{formatBusinessTimeCompact(new Date(detail.createdAt).toISOString())}（{businessZone().label}）</Fact>
         </Facts>
-        <Fold inset title="技术信息" summary={`${detail.requests.length} 个原请求`}>
+        <Fold inset title="技术信息" summary={`${detail.requests.length} 个操作编号`}>
           <div className="h1-request-list">{detail.requests.map((request) => <Facts key={request.commandKey}>
-            <Fact k="原请求编号">
+            <Fact k="操作编号">
               <span data-mono>{request.commandKey}</span>
             </Fact>
             <Fact k="请求">{request.method} /api/admin{request.kind === "patch" ? "/growth" : ""}{request.path}</Fact>

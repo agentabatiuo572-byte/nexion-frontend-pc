@@ -1463,11 +1463,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       action: `核对原操作 · ${subject}`, title: "按原操作重试",
       statedBrief: { impact: approval
         ? expired ? "原申请已超过 24 小时，只查询原审批单，不会重发。" : "先按原申请查审批单；查不到才原样重发，不会建第二张单。理由沿用原操作。"
-        : "按原操作原样重发，不会重复执行。理由沿用原操作。", check: "核对原操作和提交时间；内容和理由不能改。" },
+        : "原样重发，不会重复执行。理由沿用原操作。", check: "核对原操作和提交时间；内容和理由不能改。" },
       detail: approval
         ? expired ? <>原申请已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原申请查审批单；查不到才原样重发，不会建第二张单。理由沿用原操作。</>
-        : <>按原操作原样重发，不会重复执行。理由沿用原操作。</>,
-      facts: <Facts><Fact k="原操作">{subject}</Fact>{change && <Fact k="原改动">{change}</Fact>}<Fact k="提交时间">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}（北京时间）</Fact><Fact k="原请求">内容和理由锁住，原样重发</Fact></Facts>,
+        : <>原样重发，不会重复执行。理由沿用原操作。</>,
+      facts: <Facts><Fact k="原操作">{subject}</Fact>{change && <Fact k="原改动">{change}</Fact>}<Fact k="提交时间">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}（北京时间）</Fact><Fact k="重发内容">内容和理由锁住，原样重发</Fact></Facts>,
       confirmLabel: "按原操作重试",
       getPendingReason: () => pendingH4Commands().some(r => r.commandKey === record.commandKey) ? record.reason : undefined,
       getPendingRecovery: () => {

@@ -394,7 +394,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const closureFacts = closing && <>
     {closing.change && <Fact k={closing.kind === "cancel" || closing.kind === "resume" || closing.kind === "rollback" ? "执行" : "内容"}>{closing.change}</Fact>}
     <Fact k="系统记录">{receiptFact(closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null, "原操作还锁着")}</Fact>
-    {closingBasis && !closingBasis.rejected && closingBasis.success === "never" && !closingResumeCanClose && <Fact k="原请求编号"><span data-mono="">{closing.record.commandKey}</span></Fact>}
+    {closingBasis && !closingBasis.rejected && closingBasis.success === "never" && !closingResumeCanClose && <Fact k="操作编号"><span data-mono="">{closing.record.commandKey}</span></Fact>}
     {closingLast && <Fact k="上次核查">{formatBusinessTimeCompact(closingLast.investigatedAt, "—")}，记为「{closingLast.conclusion === "SUCCEEDED" ? "已执行" : closingLast.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>}
   </>;
   const recovery = <>

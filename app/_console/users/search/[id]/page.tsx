@@ -1536,7 +1536,7 @@ export default function UserDetailPage() {
           {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
         </>,
         detail: <><p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出{found === "FAILED" ? "。" : "，可能已经生效，不要重复操作。"}{nextStep}</p>{more && <p>{more}</p>}</>,
-        tech: <p><Explain label="技术信息" content={command.legacy ? `原请求编号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `原请求编号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
+        tech: <p><Explain label="技术信息" content={command.legacy ? `操作编号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `操作编号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
       };
     }),
     ...corrections.map((command): RecoveryItem => {
@@ -1548,7 +1548,7 @@ export default function UserDetailPage() {
         line: expired ? "超过 24 小时不能再重试，打开时间证据核对。" : "可能已经生效，在时间证据里按原操作重试。",
         actions: canReadNotificationEvidence && <Button size="sm" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>打开时间证据</Button>,
         detail: <p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{expired ? `${EXPIRED_TEXT}。` : ""}</p>,
-        tech: <p><Explain label="技术信息" content={`原请求编号 ${command.commandKey} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
+        tech: <p><Explain label="技术信息" content={`操作编号 ${command.commandKey} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
       };
     }),
   ];

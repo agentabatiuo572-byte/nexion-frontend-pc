@@ -2989,11 +2989,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         {record.kind === "approve" && recordRule(record).backendChecks && <p>{BACKEND_CHECKS_NOTE}。</p>}
         <p><Button size="sm" variant="ghost" onClick={() => showInRecords(record)}>在操作记录里查看</Button></p>
       </>,
-      tech: <p className="rd-note">技术信息：原请求编号 <span data-mono>{record.commandKey}</span> ｜ 操作人 {record.operator}</p>,
+      tech: <p className="rd-note">技术信息：操作编号 <span data-mono>{record.commandKey}</span> ｜ 操作人 {record.operator}</p>,
     };
   });
   const pendingNotices = <RecoveryPanel title={recoveryTitle(pendingItems.length)} items={pendingItems}
-    explain="有结论前不要重复处理这几张单。点行首的箭头看发出时间、理由和原请求编号。" />;
+    explain="有结论前不要重复处理这几张单。点行首的箭头看发出时间、理由和操作编号。" />;
 
   /* 待审批：行内按钮都是小号次按钮，点了只开确认框（D2 新手测试）。整屏主按钮只有抽屉里的「批准」（DP-40）。
      没有这张单的业务权限时不显示批准、驳回（OP-124）；整页一行都没有可做的事时不画「操作」列（建议 3）。 */

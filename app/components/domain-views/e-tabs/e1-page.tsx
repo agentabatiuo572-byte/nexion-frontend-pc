@@ -533,7 +533,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     forceUnlock, forceLock, locked, openSku, openActionConfirm: openConfirm, toast,
     delSku: (id, name) => openConfirm({ briefKind: "config", name: `删除商品 · ${name}`, op: "sku-delete", target: id, detail: "从商城移除后用户无法再购买，已售设备和原订单不受影响。", businessForm: { kind: "destructive-reason", target: name, impact: "从商城移除，用户无法再购买；已售设备和原订单不受影响。" } }),
   };
-  const copy = (text: string, done: string) => { void navigator.clipboard.writeText(text).then(() => toast(done), () => toast("复制失败，请手动选择原请求编号")); };
+  const copy = (text: string, done: string) => { void navigator.clipboard.writeText(text).then(() => toast(done), () => toast("复制失败，请手动选择操作编号")); };
   const sent = (at: number) => `${formatBusinessTimeCompact(new Date(at).toISOString(), "—")} 提交`;
   const recovery: RecoveryItem[] = [
     ...receipts.filter(row => row.status === "pending").map(row => ({ key: `receipt:${row.id}`, object: row.action,
@@ -565,7 +565,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         detail: <>
           <p>{sent(record.createdAt)}，理由：{record.spec.reason}</p>
           <p>{state.more}</p>
-          {!canOpenAudit && <p>请把原请求编号发给能查看操作记录与审批的管理员核对。</p>}</>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="原请求编号"><span data-mono>{record.commandKey}</span></Fact></Facts><div className="e1-table-actions"><Button size="sm" onClick={() => copy(JSON.stringify(record.spec, null, 2), "已复制完整原请求")}>复制完整原请求</Button><Button size="sm" onClick={() => copy(record.commandKey, "已复制原请求编号")}>复制原请求编号</Button></div></Fold> };
+          {!canOpenAudit && <p>请把操作编号发给能查看操作记录与审批的管理员核对。</p>}</>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact></Facts><div className="e1-table-actions"><Button size="sm" onClick={() => copy(JSON.stringify(record.spec, null, 2), "已复制完整原请求")}>复制完整原请求</Button><Button size="sm" onClick={() => copy(record.commandKey, "已复制操作编号")}>复制操作编号</Button></div></Fold> };
     }),
     ...verifiedDrafts.map(record => ({
       key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,

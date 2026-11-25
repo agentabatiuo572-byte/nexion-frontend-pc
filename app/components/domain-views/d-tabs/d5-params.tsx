@@ -1093,7 +1093,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         : loosenRecord.replayRejection ? "重试已被拒绝，请核实后解除"
           : processing ? WITHDRAWAL_COMMAND_PROCESSING.line : loosenReplayBlock ?? queryBlock;
       const expiredNote = expired && !investigationResults[key] ? canLookupOwn ? expiredNext(loosenRecord) : EXPIRED_NO_QUERY : "";
-      const copy = { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" };
+      const copy = { missingOrigin: "只能按操作编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" };
       return { key, title: "放宽提现参数", record: loosenRecord, outcome, createdAt: loosenRecord.createdAt, expired, canRetry: !expired && !retryDisabled && !confirmed,
         canQuery: canLookupOwn, copy,
         status: confirmed ? withdrawalApprovalLookupStatus(proposalLookups[key], undefined, expired, true)

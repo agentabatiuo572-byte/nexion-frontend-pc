@@ -32,7 +32,7 @@ export class DRequestError extends Error {
  * **该不该丢号** —— 确定性拒绝要丢(否则运营改完输入重提会撞载荷不符,那笔单子 24h 无法处置),
  * 结果未知不能丢(否则重试铸新号 = 重复出金)。只有一句文案时,组件唯一能做的就是不判断,
  * 于是先前 D2 / D3 的 catch 里一个 forget 都没有,两种情形一视同仁地保号。
- * 原请求编号只留在 commandKey 上，句子里不出现；没有地方按文案判断。
+ * 操作编号只留在 commandKey 上，句子里不出现；没有地方按文案判断。
  */
 export class DOutcomeUnknownError extends Error {
   constructor(public readonly commandKey: string, message = "结果未知，可能已经生效。不要重复操作，到页面上方查询原操作，或按原操作重试。") {
