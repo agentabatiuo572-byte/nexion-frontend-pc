@@ -171,15 +171,21 @@ export function useA3Commands() {
       if (original.kind === "docs" || original.kind === "how") {
         const result = await queryA3ContentCommand(record, original.kind, String(actorId), evidence);
         const conclusion = result.rejected ? "rejected" : result.receipt ? "unknown" : "not-found";
-        if (!result.settled) return { ...result, conclusion, current: undefined } as const;
+        const status = result.receipt?.originalStatus;
+        const restoreDraft = !evidence && !isRetryExpired(record) && (
+          (result.rejected && !recovery.state(record).replayRejection)
+          || status === "CONFIRMED_NOT_EXECUTED" || status === "CONFIRMED_REJECTED"
+        );
+        // B101 still fences new writes for FAILED, even with a rollback marker.
+        if (!result.settled && !restoreDraft) return { ...result, conclusion, current: undefined, restoreDraft } as const;
         const details = await readContent(original.kind).then(current => ({ current }), error => ({ current: undefined, readError: displayAdminReadError(error) }));
-        return { ...result, ...details, settled: Boolean(details.current), conclusion } as const;
+        return { ...result, ...details, settled: Boolean(details.current), conclusion, restoreDraft } as const;
       }
       if (original.kind === "schedule" || original.kind === "cancel") throw new Error("A3_ORIGINAL_UNRESOLVED");
       const result = original.kind === "param"
         ? await queryA3ParamCommand(record, "A3", String(actorId), original.row.key, evidence)
         : await queryA3ConfigCommand(record, original, String(actorId), evidence);
-      return { ...result, current: undefined, conclusion: result.receipt ? "unknown" : "not-found" } as const;
+      return { ...result, current: undefined, restoreDraft: false, conclusion: result.receipt ? "unknown" : "not-found" } as const;
     };
     const result = evidence ? await read() : await recovery.query(record, read);
     if (!result || find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
@@ -284,13 +290,9 @@ export function useA3Commands() {
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN", { cause: error });
     }
   };
-  const canReleaseReceipt = (record: A3Command) => isA3ContentCommand(record) && !isRetryExpired(record)
-    && recovery.state(record).conclusion === "rejected";
   return { pending, find, capture, send, queryOriginal, queryContent, sync, recoveryState: recovery.state,
-    releaseSnapshot: (record: A3Command) => () => canReleaseReceipt(record)
-      ? JSON.stringify(find(record.fingerprint)) : recovery.releaseSnapshot(record)(),
-    releaseRejected: (record: A3Command) => !!currentRecoveryActor(record.commandOwnerId)
-      && (canReleaseReceipt(record) ? recovery.settleFromQuery(record, "rejected") : recovery.releaseRejectedReplay(record)) };
+    releaseSnapshot: recovery.releaseSnapshot,
+    releaseRejected: (record: A3Command) => !!currentRecoveryActor(record.commandOwnerId) && recovery.releaseRejectedReplay(record) };
 }
 export type A3Commands = ReturnType<typeof useA3Commands>;
 export type A3RecoveryProps = { commands: A3Commands; recovery: A3Command | null; onRecovered: () => void; nonce: number };

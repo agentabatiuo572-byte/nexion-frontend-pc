@@ -10,14 +10,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, BookOpenText, Code2, FileText, Plus, RefreshCw, Smartphone, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Change, DiffList, Explain, Fact, Facts, Field, Fold, IconButton, Input, KeepText, Modal, MoreMenu, Notice, PageTabs, Panel, Segments, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
-import { a3HasOriginalReceipt, type A3Command, type A3RecoveryProps } from "@/lib/admin/a3-mutations";
+import { a3HasOriginalReceipt, type A3Command, type A3ContentOriginal, type A3RecoveryProps } from "@/lib/admin/a3-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 
 export type A3ContentSummary = { unsaved: number };
-export type A3ContentRead = { nonce: number; value: PublishedContentDocument | PublishedHowContentDocument };
+type FailedContentDraft = { original: A3ContentOriginal; reason: string };
+export type A3ContentRead = { nonce: number; value: PublishedContentDocument | PublishedHowContentDocument; failed?: FailedContentDraft };
 type ContentRetry = { disabledReason?: string; busy: boolean; run: () => void };
 type ContentRecoveryProps = { retry: (record: A3Command) => ContentRetry | undefined };
 type Mode = "DRAFT" | "PUBLISHED";
@@ -32,6 +33,22 @@ const LANGUAGE_LABELS: Record<string, string> = { zh: "中文", "zh-cn": "简体
 const localeName = (key: string) => LANGUAGE_LABELS[key] ?? key;
 const STATUS_NAME: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "已发布", UNPUBLISHED: "已撤下公开版本" };
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const contentMap = (value: unknown): value is Row => !!value && typeof value === "object" && !Array.isArray(value);
+
+/** Apply the operator's edits to fresh content. Ordered lists stay together as edited fields. */
+function rebaseContent(latest: Row, submitted: Row, baseline: Row): Row {
+  const rebased = { ...latest };
+  for (const key of new Set([...Object.keys(submitted), ...Object.keys(baseline)])) {
+    const draft = submitted[key];
+    const before = baseline[key];
+    const current = latest[key];
+    if (same(draft, before)) continue;
+    if (!Object.hasOwn(submitted, key)) delete rebased[key];
+    else rebased[key] = contentMap(draft) && contentMap(before) && contentMap(current)
+      ? rebaseContent(current, draft, before) : draft;
+  }
+  return rebased;
+}
 /** 一种语言里哪几部分和最新版本不同；只在一边有就直说。 */
 function localeParts(mine: unknown, latest: unknown, parts: Array<[string, (value: Row) => unknown]>) {
   if (mine === undefined) return "最新版本有，你这边删掉了";
@@ -41,10 +58,10 @@ function localeParts(mine: unknown, latest: unknown, parts: Array<[string, (valu
 const DOC_PARTS: Array<[string, (value: Row) => unknown]> = [["请求示例", (v) => row(v.example).request], ["响应示例", (v) => row(v.example).response], ["接口列表", (v) => v.endpoints], ["事件列表", (v) => v.events]];
 
 /** 版本冲突后的提示：你留着的修改和刚读到的最新版本差在哪，重读和重新提交在哪。 */
-function ConflictNotice({ ready, latestRevision, rows, error, loading, onReread, submitHint }: {
-  ready: boolean; latestRevision?: number; rows: Array<{ key: string; label: string; text: ReactNode }>; error: string | null; loading: boolean; onReread: () => void; submitHint: string;
+function ConflictNotice({ ready, latestRevision, rows, error, loading, onReread, submitHint, originalFailure }: {
+  ready: boolean; latestRevision?: number; rows: Array<{ key: string; label: string; text: ReactNode }>; error: string | null; loading: boolean; onReread: () => void; submitHint: string; originalFailure?: string | null;
 }) {
-  return <Notice tone="warn" title="别人刚保存过，你的修改没有保存" action={<Button size="sm" loading={loading} onClick={onReread}>重新读取</Button>}>
+  return <Notice tone="warn" title={originalFailure ?? "别人刚保存过，你的修改没有保存"} action={<Button size="sm" loading={loading} onClick={onReread}>重新读取</Button>}>
     {ready
       ? <>已读到最新版本，你改的都还在。{rows.length ? `和最新版本不同的有 ${rows.length} 处，核对后${submitHint}：` : "你改的和最新版本一样，不用再提交。"}
         {rows.length > 0 && <div className="a3-conflict-diff"><Facts>{rows.map((item) => <Fact key={item.key} k={item.label}>{item.text}</Fact>)}</Facts></div>}</>
@@ -77,8 +94,8 @@ export function A3Content({ commands, recovery, onRecovered, nonce, docsNonce, t
       { value: "how", label: "业务说明（6 页）", count: dirty.how ? "未保存" : undefined },
       { value: "docs", label: "开发者接口文档", count: dirty.docs ? "未保存" : undefined },
     ]} />
-    <div {...ids.panel("how")} hidden={tab !== "how"}><HowContent commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={nonce} current={howRead} toast={toast} onDirty={markHow} {...release} /></div>
-    <div {...ids.panel("docs")} hidden={tab !== "docs"}><DeveloperDocs commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={docsNonce} current={docsRead} toast={toast} onDirty={markDocs} {...release} /></div>
+    <div {...ids.panel("how")} hidden={tab !== "how"}><HowContent commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={nonce} current={howRead} failed={howRead ? contentRead?.failed : undefined} toast={toast} onDirty={markHow} {...release} /></div>
+    <div {...ids.panel("docs")} hidden={tab !== "docs"}><DeveloperDocs commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={docsNonce} current={docsRead} failed={docsRead ? contentRead?.failed : undefined} toast={toast} onDirty={markDocs} {...release} /></div>
   </div>;
 }
 
@@ -125,7 +142,7 @@ function Preview({ title, children }: { title: string; children: ReactNode }) {
 
 /* ────────────────── 开发者接口文档（W06） ────────────────── */
 
-function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: currentRead, toast, onDirty, retry }: A3RecoveryProps & ContentRecoveryProps & { current?: PublishedContentDocument; toast: Toast; onDirty: (value: boolean) => void }) {
+function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: currentRead, failed, toast, onDirty, retry }: A3RecoveryProps & ContentRecoveryProps & { current?: PublishedContentDocument; failed?: FailedContentDraft; toast: Toast; onDirty: (value: boolean) => void }) {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
@@ -140,6 +157,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<Mode | null>(null);
   const [readReady, setReadReady] = useState(false);
+  const [originalFailure, setOriginalFailure] = useState<string | null>(null);
   const conflictDraft = useRef(false);
   const original = commands.find("docs");
   const savedForm = original?.original.kind === "docs" ? original.original : null;
@@ -149,7 +167,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
     if (recovery?.original.kind !== "docs") return;
     setReason(recovery.reason); setMode(recovery.original.mode); setError(null); onRecovered();
   }, [recovery, onRecovered]);
-  const refresh = useCallback(async (current?: PublishedContentDocument) => {
+  const refresh = useCallback(async (current?: PublishedContentDocument, failure?: FailedContentDraft) => {
     if (!canRead) return;
     setReadReady(false); setLoading(true);
     if (!commands.find("docs")) setMode(null);
@@ -157,8 +175,20 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
     try {
       const value = current ?? await fetchDeveloperDocsAdmin();
       if (!commands.find("docs")) setMode(null);
-      setDocument(draft => conflictDraft.current && draft ? { ...draft, revision: value.revision } : value);
+      const rejected = failure?.original.kind === "docs" ? failure.original : null;
+      if (current) {
+        conflictDraft.current = Boolean(rejected);
+        setOriginalFailure(rejected ? failure!.reason : null);
+        setReason(""); setError(null);
+      }
+      const restored: PublishedContentDocument | null = rejected && {
+        ...value,
+        version: same(rejected.document.version, rejected.baseline.version) ? value.version : rejected.document.version,
+        locales: rebaseContent(value.locales, rejected.document.locales, rejected.baseline.locales) as PublishedContentDocument["locales"],
+      };
+      setDocument(draft => restored ?? (conflictDraft.current && draft ? { ...draft, revision: value.revision } : value));
       setBaseline(value);
+      if (restored) setLocale(previous => Object.hasOwn(restored.locales, previous) ? previous : Object.keys(restored.locales)[0] ?? "en");
       if (!conflictDraft.current) { setLocale(Object.keys(value.locales)[0] ?? "en"); setReason(""); }
       setReadReady(true);
     } catch (cause) {
@@ -167,7 +197,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
     }
     finally { setLoading(false); }
   }, [canRead]);
-  useEffect(() => { void refresh(currentRead); }, [refresh, nonce]);
+  useEffect(() => { void refresh(currentRead, failed); }, [refresh, nonce]);
   const hasChanges = useMemo(() => JSON.stringify(document) !== JSON.stringify(baseline), [document, baseline]);
   useEffect(() => { onDirty(hasChanges); }, [hasChanges, onDirty]);
   if (!canRead) return <BlockState state="denied" title="没有查看开发者接口文档的权限" />;
@@ -204,12 +234,14 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
         reason: reason.trim(), name: "开发者接口文档", change: `${STATUS_NAME[baseline!.status]} → ${STATUS_NAME[target]} · ${document.version}` });
       await commands.send(record);
       conflictDraft.current = false;
+      setOriginalFailure(null);
       setReadReady(false); setReason(""); setMode(null);
       toast(target === "PUBLISHED" ? "开发者接口文档已发布" : "草稿已保存，App 读到的不变", "success");
       await refresh();
     } catch (cause) {
       setError(displayAdminError(cause));
       if ((cause as { reasonCode?: string }).reasonCode === "DEVELOPER_DOCS_VERSION_CONFLICT" && !commands.find("docs")) {
+        setOriginalFailure(null);
         conflictDraft.current = true; setReadReady(false); setMode(null);
         await refresh();
       }
@@ -224,6 +256,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
   const setExample = (key: string, next: string) => updateLocale({ ...current, example: { ...example, [key]: next } });
   const changedLocales = baseline ? [...new Set([...Object.keys(document.locales), ...Object.keys(baseline.locales)])].filter((key) => JSON.stringify(document.locales[key]) !== JSON.stringify(baseline.locales[key])) : [];
   const empties = [endpoints.length === 0 && "接口列表是空的", events.filter((item) => item.trim()).length === 0 && "事件列表没有内容", (!text(example.request).trim() || !text(example.response).trim()) && "请求或响应示例是空的"].filter(Boolean) as string[];
+  const savedContent = originalFailure && baseline ? baseline : document;
 
   return <div className="rd-tab-stack" data-testid="published-content-developerDocs">
     {canWrite && <div className="rd-toolbar a3-savebar" data-end="">
@@ -232,14 +265,14 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
       <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在加载" : saving ? "正在保存" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
     {conflictDraft.current && !mode
-      ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh()} submitHint="点上方「保存草稿…」或「发布…」重新提交"
+      ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh()} submitHint="点上方「保存草稿…」或「发布…」重新提交" originalFailure={originalFailure}
         rows={baseline ? [
           ...(document.version !== baseline.version ? [{ key: "version", label: "正文版本", text: <Change from={baseline.version || "空"} to={document.version || "空"} /> }] : []),
           ...[...new Set([...Object.keys(baseline.locales), ...localeKeys])].filter((key) => !same(document.locales[key], baseline.locales[key]))
             .map((key) => ({ key, label: localeName(key), text: localeParts(document.locales[key], baseline.locales[key], DOC_PARTS) })),
         ] : []} />
       : error && !mode && <Notice tone="danger">{error}</Notice>}
-    <Panel title="开发者接口文档" icon={Code2} tone="role-2" sub={`${publicLine(document)} · 正文版本 ${versionName(document.version)}`}
+    <Panel title="开发者接口文档" icon={Code2} tone="role-2" sub={`${publicLine(savedContent)} · 正文版本 ${versionName(savedContent.version)}`}
       explain={<>
         <p>App 开发者页读取的接口示例、接口列表和事件。保存草稿不改 App 读到的内容，发布后才替换。</p>
         <p>还没发布过自己的版本时，App 读的是系统自带的默认文档。</p>
@@ -343,7 +376,7 @@ function previewText(page: string, value: string): ReactNode {
 const hasAppToken = (blocks: Row[]) => blocks.some((block) => [block.title, block.body, ...list(block.items)].some((value) => /\{[A-Za-z]+\}/.test(text(value))));
 const refBlocksOf = (entry: unknown) => Object.values(row(row(entry).locales)).flatMap((locale) => blocks(row(locale).blocks)).filter((block) => block.kind === "ruleRef");
 
-function HowContent({ commands, recovery, onRecovered, nonce, current: currentRead, toast, onDirty, retry }: A3RecoveryProps & ContentRecoveryProps & { current?: PublishedHowContentDocument; toast: Toast; onDirty: (value: boolean) => void }) {
+function HowContent({ commands, recovery, onRecovered, nonce, current: currentRead, failed, toast, onDirty, retry }: A3RecoveryProps & ContentRecoveryProps & { current?: PublishedHowContentDocument; failed?: FailedContentDraft; toast: Toast; onDirty: (value: boolean) => void }) {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
@@ -359,6 +392,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<Mode | null>(null);
   const [readReady, setReadReady] = useState(false);
+  const [originalFailure, setOriginalFailure] = useState<string | null>(null);
   const conflictDraft = useRef(false);
   const original = commands.find("how");
   const savedForm = original?.original.kind === "how" ? original.original : null;
@@ -374,7 +408,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
   const contentHeading = useRef<HTMLHeadingElement | null>(null);
   const stateRef = useRef({ document, baseline, key, locale });
   stateRef.current = { document, baseline, key, locale };
-  const refresh = useCallback(async (confirmDiscard = true, current?: PublishedHowContentDocument) => {
+  const refresh = useCallback(async (confirmDiscard = true, current?: PublishedHowContentDocument, failure?: FailedContentDraft) => {
     if (!canRead || busyRef.current) return;
     const previous = stateRef.current;
     if (!conflictDraft.current && confirmDiscard && JSON.stringify(previous.document) !== JSON.stringify(previous.baseline)
@@ -386,11 +420,23 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
       const value = current ?? await fetchHowContentAdmin();
       if (!commands.find("how")) setMode(null);
       const next = Object.keys(value.contents).length ? value : { ...initialDocument(), ...value, contents: initialDocument().contents };
-      const nextKey = next.contents[previous.key] ? previous.key : KEYS.find(item => next.contents[item]) ?? KEYS[0];
-      const locales = row(row(next.contents[nextKey]).locales);
-      setDocument(draft => conflictDraft.current && draft ? { ...draft, revision: next.revision } : next);
+      const rejected = failure?.original.kind === "how" ? failure.original : null;
+      if (current) {
+        conflictDraft.current = Boolean(rejected);
+        setOriginalFailure(rejected ? failure!.reason : null);
+        setReason(""); setError(null);
+      }
+      const restored: PublishedHowContentDocument | null = rejected && {
+        ...next,
+        version: same(rejected.document.version, rejected.baseline.version) ? next.version : rejected.document.version,
+        contents: rebaseContent(next.contents, rejected.document.contents, rejected.baseline.contents) as PublishedHowContentDocument["contents"],
+      };
+      const editable = restored ?? next;
+      const nextKey = editable.contents[previous.key] ? previous.key : KEYS.find(item => editable.contents[item]) ?? KEYS[0];
+      const locales = row(row(editable.contents[nextKey]).locales);
+      setDocument(draft => restored ?? (conflictDraft.current && draft ? { ...draft, revision: next.revision } : next));
       setBaseline(next); setReadReady(true);
-      if (!conflictDraft.current) {
+      if (restored || !conflictDraft.current) {
         setKey(nextKey);
         setLocale(locales[previous.locale] ? previous.locale : Object.keys(locales)[0] ?? "en");
       }
@@ -398,7 +444,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
     catch (cause) { setError(previous => conflictDraft.current && previous ? `${previous}；${displayAdminError(cause)}` : displayAdminError(cause)); }
     finally { busyRef.current = false; setLoading(false); }
   }, [canRead]);
-  useEffect(() => { void refresh(false, currentRead); }, [refresh, nonce]);
+  useEffect(() => { void refresh(false, currentRead, failed); }, [refresh, nonce]);
   const current = row(row(document?.contents[key]).locales)[locale];
   const currentBlocks = blocks(row(current).blocks);
   const hasChanges = useMemo(() => JSON.stringify(document) !== JSON.stringify(baseline), [document, baseline]);
@@ -468,6 +514,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
         reason: reason.trim(), name: "业务说明", change: `${STATUS_NAME[baseline!.status]} → ${STATUS_NAME[target]} · ${document.version}` });
       await commands.send(record);
       conflictDraft.current = false;
+      setOriginalFailure(null);
       setReadReady(false); setReason(""); setMode(null);
       toast(target === "PUBLISHED" ? "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
       busyRef.current = false;
@@ -475,6 +522,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
     }
     catch (cause) {
       if ((cause as { reasonCode?: string }).reasonCode === "HOW_CONTENT_VERSION_CONFLICT" && !commands.find("how")) {
+        setOriginalFailure(null);
         setError(displayAdminError(cause));
         conflictDraft.current = true; setReadReady(false); setMode(null); busyRef.current = false;
         await refresh(false);
@@ -499,6 +547,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
   const localeKeys = Object.keys(row(entry.locales));
   const entryVersion = text(entry.version);
 
+  const savedContent = originalFailure && baseline ? baseline : document;
   return <div className="rd-tab-stack" data-testid="published-content-how">
     {canWrite && <div className="rd-toolbar a3-savebar" data-end="">
       <span className="rd-toolbar-note" data-tone={hasChanges ? "warn" : undefined}>{hasChanges ? `有未保存的修改：${changedPages.map((item) => PAGE_LABELS[item]).join("、") || "文档版本或状态"}` : "没有未保存的修改"}</span>
@@ -506,7 +555,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
       <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在加载或保存" : publishBlockedReasons.length ? "还有没替换的占位符，不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
     {conflictDraft.current && !mode
-      ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh(false)} submitHint="点上方「保存草稿…」或「发布…」重新提交"
+      ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh(false)} submitHint="点上方「保存草稿…」或「发布…」重新提交" originalFailure={originalFailure}
         rows={baseline ? [
           ...(document.version !== baseline.version ? [{ key: "version", label: "文档版本", text: <Change from={baseline.version || "空"} to={document.version || "空"} /> }] : []),
           ...changedPages.map((item) => {
@@ -522,7 +571,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
       {spotsMore > 0 && <span className="a3-check-line">还有 {spotsMore} 处</span>}
       <span className="a3-check-line">把占位符（如 {"{value}"}）换成实际文字，或删掉那一块，再发布；保存草稿不受影响。</span>
     </Notice>}
-    <Panel title="业务说明内容" icon={BookOpenText} tone="role-4" sub={`6 页 · ${publicLine(document)} · 文档版本 ${versionName(document.version)}`}
+    <Panel title="业务说明内容" icon={BookOpenText} tone="role-4" sub={`6 页 · ${publicLine(savedContent)} · 文档版本 ${versionName(savedContent.version)}`}
       explain={<>
         <p>App 的「怎么玩」「规则说明」读这六页内容；锁定计划说明的入口已退役，内容仍一起维护。六页一起保存、一起发布，发布时六页都要有内容。</p>
         <p>还没发布过自己的版本时，App 读的是系统自带的默认说明。</p>

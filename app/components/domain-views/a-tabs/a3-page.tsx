@@ -45,6 +45,13 @@ import { A3Content, type A3ContentRead, type A3ContentSummary } from "./a3-conte
 type TabKey = "switches" | "calendar" | "experience" | "content" | "status";
 type OriginalOutcome = FundInvestigationOutcome & { rejectionReason?: string; readError?: string };
 
+function contentFailure(reason?: string) {
+  if (reason === "DEVELOPER_DOCS_VERSION_CONFLICT" || reason === "HOW_CONTENT_VERSION_CONFLICT") {
+    return "原操作没有保存：内容版本已变，请按最新内容重新修改。";
+  }
+  return reason ? `原操作没有保存。${displayAdminError(reason)}` : "原操作没有保存，请核对最新内容后重新确认。";
+}
+
 const RATE_KEY = "platform.global_rate_limit_per_minute";
 const THRESHOLD_KEY = "withdrawal.strong_review_threshold_usdt";
 /** 页面上的叫法：限流和 D5 的「强审门槛」统一；后端登记名进技术信息。 */
@@ -156,10 +163,10 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   const verifiedRelease = useVerifiedRelease(toast);
   const dropCheck = (key: string) => setChecks(({ [key]: _, ...rest }) => rest);
   const onRecovered = useCallback(() => setRecovery(null), []);
-  const showCurrentContent = (kind: "docs" | "how", value: A3ContentRead["value"]) => {
+  const showCurrentContent = (kind: "docs" | "how", value: A3ContentRead["value"], failed?: A3ContentRead["failed"]) => {
     const nonce = readNonce[kind] + 1;
     setReadNonce(previous => ({ ...previous, [kind]: nonce }));
-    setContentRead({ nonce, value });
+    setContentRead({ nonce, value, failed });
   };
   const overviewReady = useRef(false);
   const current = useRef({ overview, session });
@@ -338,12 +345,18 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       canRetry: !commands.recoveryState(record).replayBlock, canClose: canCloseOriginal(record, outcome) });
     const receipt = receiptOf(outcome);
     if (isA3ContentCommand(record)) {
-      if (outcome.readError) return { tone: "danger" as const, label: "最新内容加载失败",
-        line: `${receipt?.originalStatus.startsWith("CONFIRMED_") ? "原操作已结案" : "原操作已执行"}。${outcome.readError} 请再次查询原操作。` };
+      if (outcome.readError) {
+        const result = receipt?.originalStatus.startsWith("CONFIRMED_") ? "原操作已结案。"
+          : receiptRejected(receipt) ? contentFailure(outcome.rejectionReason) : "原操作已执行。";
+        return { tone: "danger" as const, label: "最新内容加载失败",
+          line: `${result}${outcome.readError} 记录和修改锁保留，请再次查询原操作。` };
+      }
       if ("error" in outcome) return { ...shown, more: outcome.error };
       if (receipt?.originalStatus === "PROCESSING" && !isRetryExpired(record)) return { ...shown, label: "还在处理" };
-      if (receiptRejected(receipt) && !isRetryExpired(record)) return { ...shown,
+      if (receiptRejected(receipt) && !isRetryExpired(record) && commands.recoveryState(record).replayRejection) return { ...shown,
         line: "后台拒绝了原操作。核实结果后可以解除记录。", more: outcome.rejectionReason && displayAdminError(outcome.rejectionReason) };
+      if (!isRetryExpired(record) && receipt?.locked && receipt.localTransactionRollbackConfirmed) return { ...shown,
+        line: "后台已确认回滚，写入仍锁定。请有调查权限的超级管理员核查。" };
       if (receiptRejected(receipt) && outcome.rejectionReason) return { ...shown, more: displayAdminError(outcome.rejectionReason) };
       return shown;
     }
@@ -381,8 +394,13 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
             const result = await commands.queryOriginal(record).catch(error => ({ error: displayAdminReadError(error) } as const));
             setOriginalOutcomes(value => ({ ...value, [record.commandKey]: result }));
             if (!("error" in result) && result.current) {
-              showCurrentContent(record.original.kind, result.current);
+              const failure = result.restoreDraft ? {
+                original: record.original, reason: result.receipt?.originalStatus === "CONFIRMED_NOT_EXECUTED"
+                  ? "原操作已确认未执行，请核对最新内容后重新确认。" : contentFailure("rejectionReason" in result ? result.rejectionReason : undefined),
+              } : undefined;
+              showCurrentContent(record.original.kind, result.current, failure);
               setRecovery(null);
+              if (failure) { pickTab("content"); return; }
               const status = result.receipt?.originalStatus;
               notify.success(record.name, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
                 : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "原操作已执行，记录已解除。");
@@ -450,7 +468,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     const contentCommand = isA3ContentCommand(record);
     const expired = isRetryExpired(record);
     const closable = canCloseOriginal(record, outcome);
-    const releaseCheckedRejection = contentCommand && !expired && state.conclusion === "rejected";
+    const releaseReplayRejection = state.replayRejection && (!receipt || contentCommand && !expired && receiptRejected(receipt));
     const retryReason = mutating ? "正在提交" : querying === record.commandKey ? "正在查询原操作"
       : state.replayBlock === "replay-rejected" ? `重试被拒：${displayAdminError(new Error(state.replayRejection!))}`
       : state.replayBlock === "needs-not-found" ? receipt ? shown?.line ?? "已查到原回执，请到操作记录与审批核对。"
@@ -466,7 +484,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     actions: <>
       <Button size="sm" loading={querying === record.commandKey} disabled={!!mutating} onClick={() => void queryOriginal(record)}>{contentCommand && !hasReceiptLookup ? "读取当前内容" : isCalendar ? "读取当前日历" : "查询原操作"}</Button>
       {closable && <Button size="sm" variant="danger-outline" disabled={!!querying} onClick={() => setOriginalClosing(record)}>核查结案</Button>}
-      {(releaseCheckedRejection || state.replayRejection && !receipt) && <VerifiedReleaseButton disabled={!!querying || !!mutating} onClick={() => verifiedRelease.ask({ operation: record.name, target: record.change, createdAt: record.createdAt, getSnapshot: commands.releaseSnapshot(record), release: () => { const released = commands.releaseRejected(record); if (released) dropCheck(record.commandKey); commands.sync(); return released; } })} />}
+      {releaseReplayRejection && <VerifiedReleaseButton disabled={!!querying || !!mutating} onClick={() => verifiedRelease.ask({ operation: record.name, target: record.change, createdAt: record.createdAt, getSnapshot: commands.releaseSnapshot(record), release: () => { const released = commands.releaseRejected(record); if (released) dropCheck(record.commandKey); commands.sync(); return released; } })} />}
       {a3Deduplicates(record) && !expired && <Button size="sm" disabledReason={retryReason}
         onClick={() => void recoverOriginal(record)}>按原操作重试</Button>}
       {contentCommand && hasReceiptLookup && (expired || outcome)
