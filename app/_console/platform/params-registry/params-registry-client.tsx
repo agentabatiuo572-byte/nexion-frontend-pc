@@ -226,7 +226,7 @@ export function PlatformParamsRegistry() {
         {header}
         <div className="a5-body">
           <Conclusion state="unknown" icon={SlidersHorizontal}>平台参数：暂时无法判断</Conclusion>
-          {searchBar}
+          {errorKind !== "forbidden" && errorKind !== "auth" && searchBar}
           <Panel title="平台参数">
             <BlockState state={errorKind === "forbidden" ? "denied" : "error"} title={copy.title} detail={copy.detail} retryKey="a5-registry"
               onRetry={errorKind === "auth" ? undefined : () => void load()} />

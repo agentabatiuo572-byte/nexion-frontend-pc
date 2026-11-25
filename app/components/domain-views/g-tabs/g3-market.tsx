@@ -75,7 +75,7 @@ const FIELD_NAME: Record<G3CurveField, string> = { targetPrice: "目标价", pum
 const RETIRED_OVERRIDE_NAME = { volatilityPct: "当前波动幅度", oracle: "价格来源", deviationPct: "偏离告警阈值" } as const;
 const CONTROL_ORDER = ["pin", "schedule", "loop"];
 /** 按原请求重试成功后的提示：原操作已完成，页面在重读，读到之前不能发起新修改。 */
-const REREAD_TEXT = "原操作已完成，正在重新读取 UVT 价格";
+const REREAD_TEXT = "原操作已完成，正在加载最新 UVT 价格";
 const RUNTIME_PRICE_UNAVAILABLE = "现价暂不可用，无法判断是否提价，请刷新后再试。";
 /** 结果未知的那句：原操作提醒里已经有一行，不再用「操作失败」或页面提示条重复。 */
 // 只剩字符串时（页面上的 error）按开头认结果未知：A2 发起申请丢回包的句子以「结果未知，可能已经提交」开头。
@@ -637,8 +637,8 @@ function G3MarketEditor() {
   };
   const staleWriteReason = overviewError ? "最新 UVT 价格加载失败，请重试后再修改。"
     : overviewReading ? "正在加载最新 UVT 价格，加载完才能修改。" : undefined;
-  const newWriteBlockedReason = !overview ? "UVT 价格读取失败"
-    : staleWriteReason ?? (rereadPending ? "原操作已完成，但 UVT 价格还没有重新读取成功，请先刷新" : undefined);
+  const newWriteBlockedReason = !overview ? "UVT 价格加载失败"
+    : staleWriteReason ?? (rereadPending ? "操作已完成，最新 UVT 价格还没加载到，请先刷新" : undefined);
   const readBlockedReason = (change: G3MarketChange, value?: string, forceApproval = false) => {
     const code = overview ? g3MarketReadBlockedCode(overview, change, value, forceApproval) : undefined;
     const ticket = (code === "OBJECT_ALREADY_PENDING" || code === "OBJECT_LOCKED_BY_A2") && overview
@@ -820,7 +820,7 @@ function G3MarketEditor() {
   const busy = !!busyKey;
   const busyReason = busy ? "正在保存上一项，稍候再改" : undefined;
   // 原操作重试成功后在重读：新修改先不可用，带着原因；还有原记录的那一项照样能打开。
-  const rereadReason = rereadPending ? "原操作已完成，正在重新读取 UVT 价格；读取成功后再改" : undefined;
+  const rereadReason = rereadPending ? "操作已完成，正在加载最新 UVT 价格，加载完再改" : undefined;
   const lockReason = (key: string) => busyReason ?? (hasRecovery(key) ? undefined : staleWriteReason ?? rereadReason
     ?? (g3MarketObjectReadState(overview, key)?.locked
       ? g3MarketObjectReadState(overview, key)?.pendingOperationId

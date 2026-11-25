@@ -712,7 +712,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     <div className="h7-page">
       {header}
       {recovery}
-      {statusConflict && <Notice tone="warn" title={`「${statusConflict.name}」刚被别人改过，这次没有${statusConflict.label}`}>请核对最新内容后重新操作。</Notice>}
+      {statusConflict && <Notice tone="warn" title={`「${statusConflict.name}」刚被别人改过，这次没有${statusConflict.label}`}
+        action={<Button size="sm" variant="ghost" onClick={() => setStatusConflict(null)}>知道了</Button>}>请核对最新内容后重新操作。</Notice>}
       {release.dialog}
       <BlockState state="error" title="代金券加载失败"
         detail={savedContinuation ? `已保存，读到最新代金券后再继续刚才的操作。${error}` : `${error} · 为避免误操作，读到之前不能新增、编辑和处置。`}
@@ -757,7 +758,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     <div className="h7-page">
       {header}
       {recovery}
-      {statusConflict && <Notice tone="warn" title={`「${statusConflict.name}」刚被别人改过，这次没有${statusConflict.label}`}>请核对最新内容后重新操作。</Notice>}
+      {statusConflict && <Notice tone="warn" title={`「${statusConflict.name}」刚被别人改过，这次没有${statusConflict.label}`}
+        action={<Button size="sm" variant="ghost" onClick={() => setStatusConflict(null)}>知道了</Button>}>请核对最新内容后重新操作。</Notice>}
       {release.dialog}
       {conclusion}
 
