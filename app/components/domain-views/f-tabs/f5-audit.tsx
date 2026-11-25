@@ -39,6 +39,8 @@ import { F5AnomalyList, F5HistoryList, F5PendingList, F5SuspensionList } from ".
 const F5_DISPOSAL_CODES = ["f_commission_status", "f5_commission_reverse", "f5_commission_reissue", "f5_commission_suspension"];
 const STATUS_ORDER = ["cooling", "unlocked", "withdrawn", "frozen", "reversed", "recovery_pending", "rejected"];
 const SETTLED = ["reversed", "withdrawn", "rejected", "recovery_pending"];
+const REISSUE_MAX = 100;
+const reissueLimitReason = (count: number) => count > REISSUE_MAX ? `每批最多补发 ${REISSUE_MAX} 笔` : undefined;
 
 export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const canExport = useAdminAuth(({ session }) => session?.authorities.includes("network_f5_export") ?? false);
@@ -321,6 +323,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   };
 
   const reissue = (rows = selectedRows, policy = data?.coolingPolicy, recovery?: F5Recovery) => {
+    const limitReason = reissueLimitReason(rows.length);
+    if (!recovery && limitReason) {
+      ctx.toast(limitReason);
+      return;
+    }
     if (rows.some(row => isFriend(row) || row.reversalRecorded || row.status !== "reversed")) {
       ctx.toast("好友奖励、已退款或待追回的记录不能补发。");
       return;
@@ -622,6 +629,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       } else {
         const ids = snapshot.rows?.map(row => row.id) ?? (snapshot.row ? [snapshot.row.id] : []);
         if (!ids.length) { ctx.toast("原操作的奖励编号不完整，请核对。"); return; }
+        const limitReason = action === "reissue" ? reissueLimitReason(ids.length) : undefined;
+        if (limitReason) {
+          setDraftReadNotes(current => ({ ...current, [original.commandKey]: [limitReason] }));
+          return;
+        }
         const actor = useAdminAuth.getState().session?.adminId;
         setDraftReading(original.commandKey);
         const reads = await Promise.allSettled(ids.map(fetchF5CommissionByBusinessId));
@@ -760,7 +772,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         {reissueAvailable && selectedRows.length > 0 && (
           <BatchBar summary={`已勾选 ${selectedRows.length} 笔已冲正的记录`} hint="只能勾选这一批里已冲正、不是好友奖励、来源没有退款的记录；改筛选会清掉勾选。">
             <Button size="sm" onClick={() => setSelected([])}>取消勾选</Button>
-            <Button size="sm" variant="primary" disabledReason={selectedRows.map(blockedRecord).find(Boolean)} onClick={() => reissue()}>批量补发</Button>
+            <Button size="sm" variant="primary" disabledReason={reissueLimitReason(selectedRows.length) ?? selectedRows.map(blockedRecord).find(Boolean)} onClick={() => reissue()}>批量补发</Button>
           </BatchBar>
         )}
           <Table label="奖励流水" className="f5-table f5-record-table" aria-busy={loading} data-select={canReissue ? "" : undefined} data-actions={rowWrite ? "" : undefined}>

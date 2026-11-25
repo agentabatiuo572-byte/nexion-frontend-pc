@@ -3,7 +3,7 @@
 /**
  * F1 的「App 等级说明」：左边编辑、右边看 App 上的样子；草稿和已发布分开写。
  * 读、写、校验和共用的 PublishedContentEditor（kind="rankHow"）一样：GET/PUT /api/admin/teams/rank-policy，
- * 正文、状态、语言、理由的规则和提交内容逐字不变。共用编辑器别的页面还在用，这里只换 F1 的样子。
+ * F1 发布前额外检查旧规则变量，草稿仍可保存。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenText, CircleHelp, Plus, RefreshCw, Smartphone, Trash2 } from "lucide-react";
@@ -27,17 +27,33 @@ const CONFLICT = "版本已变化，草稿已保留，请核对后再保存。";
 
 /** 发布内容只收中文、英语、越南语（A3「发布必填」的三个语言位）；其余语言只用于显示已有内容的名字。 */
 const PUBLISH_LOCALES = ["zh", "en", "vi"];
+const LEGACY_REFERRAL_SLOT = "referralThreshold";
 /** 正文里的规则占位：预览里画成灰底小块、写中文名，App 上按实时等级数据替换；没登记的占位显示原名。 */
 const SLOT_NAMES: Record<string, string> = {
   firstRank: "最低等级", lastRank: "最高等级", rankCount: "等级数", fromRank: "当前等级", toRank: "下一等级",
-  referralThreshold: "好友自购要求", selfComputePoints: "自购算力点要求", teamComputePoints: "团队算力点要求", directRefs: "达标好友要求",
+  [LEGACY_REFERRAL_SLOT]: "好友自购要求（旧变量）", selfComputePoints: "自购算力点要求", teamComputePoints: "团队算力点要求", directRefs: "达标好友要求",
   peerRate: "同级奖励比例", votes: "票数", leadershipStatus: "激励池状态", cultivation: "好友升级奖励合计", protection: "等级保护状态",
 };
 function slots(value: string) {
   return value.split(/(\{[A-Za-z]+\})/).map((part, index) => {
     const key = /^\{([A-Za-z]+)\}$/.exec(part)?.[1];
-    return key ? <span key={index} className="f1-how-slot" title={`App 上换成实时数据：${SLOT_NAMES[key] ?? key}`}>{SLOT_NAMES[key] ?? key}</span> : part;
+    return key ? <span key={index} className="f1-how-slot" title={key === LEGACY_REFERRAL_SLOT ? "旧变量，发布前请移除" : `App 上换成实时数据：${SLOT_NAMES[key] ?? key}`}>{SLOT_NAMES[key] ?? key}</span> : part;
   });
+}
+
+function rankHowPublishIssue(document: PublishedContentDocument | null) {
+  if (document?.status !== "PUBLISHED") return;
+  const token = `{${LEGACY_REFERRAL_SLOT}}`;
+  for (const [code, raw] of Object.entries(document.locales)) {
+    const label = LOCALE_NAMES[code] ?? code;
+    const policy = row(raw);
+    if (text(policy.hero).includes(token)) return `${label}主说明含旧变量 ${token}，请移除后再发布。`;
+    for (const [index, rawSection] of list(policy.sections).entries()) {
+      const section = row(rawSection);
+      const fields = [text(section.title).includes(token) ? "标题" : "", text(section.body).includes(token) ? "正文" : ""].filter(Boolean);
+      if (fields.length) return `${label}第 ${index + 1} 段${fields.join("和")}含旧变量 ${token}，请移除后再发布。`;
+    }
+  }
 }
 
 /** 版本冲突后：运营的草稿和刚读到的最新内容逐项比，只写哪里不同，不贴原文。 */
@@ -132,6 +148,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
     finally { setLoading(false); onPendingChange(); }
   };
   const locked = saving || unknown || loading;
+  const publishIssue = rankHowPublishIssue(document);
   const updateLocale = (value: Row) => document && setDocument({ ...document, locales: { ...document.locales, [locale]: value } });
   const addLocale = () => {
     if (!document) return;
@@ -148,7 +165,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
     setDocument({ ...document, locales: next }); setLocale(nextLocale);
   };
   const save = async () => {
-    if (!document || !canWrite || !session || locked) return;
+    if (!document || !canWrite || !session || locked || publishIssue) return;
     if (baselineStale.current) { await refresh(); return; }
     if (reason.trim().length < 8 || reason.trim().length > 500) { setError("变更理由需为 8–500 个字符。"); return; }
     if (!hasChanges) { setError("内容没有变化，无需提交。"); return; }
@@ -289,7 +306,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
               </div>
               <div className="rd-toolbar" data-end="">
                 <span className="rd-toolbar-note">{status === "PUBLISHED" ? "发布后替换 App 正在读的版本" : "草稿不替换 App 正在读的版本"}</span>
-                <Button variant="primary" loading={saving} disabledReason={unknown ? "保存结果未知，请先重新读取核对" : loading ? "正在读取" : !hasChanges ? "内容没有变化" : undefined} onClick={() => void save()}>{status === "PUBLISHED" ? "保存并发布" : "保存草稿"}</Button>
+                <Button variant="primary" loading={saving} disabledReason={unknown ? "保存结果未知，请先重新读取核对" : loading ? "正在读取" : publishIssue ?? (!hasChanges ? "内容没有变化" : undefined)} onClick={() => void save()}>{status === "PUBLISHED" ? "保存并发布" : "保存草稿"}</Button>
               </div>
             </div>}
           </>}
