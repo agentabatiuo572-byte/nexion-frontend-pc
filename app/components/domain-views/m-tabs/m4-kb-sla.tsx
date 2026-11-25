@@ -56,6 +56,18 @@ const DELETE_READ_BLOCK = "问答正在读取或没读到，读到后再删除�
 const STATUS_CHANGED = "这条问答的状态刚变过，请关闭后看最新状态。";
 const REVIEW_LATEST = "这条问答刚被别人改过，已换成最新内容，核对后重新确认。";
 const GONE_TEXT = "这条问答已不在列表里。";
+/** 别人改了哪些项：编辑框和发布、下架确认框共用。 */
+function faqChangeLines(opened: SupportFaq, latest: SupportFaq) {
+  return [
+    opened.question !== latest.question && `问题（最新）：${latest.question}`,
+    opened.answer !== latest.answer && `回答（最新）：${latest.answer}`,
+    opened.surface !== latest.surface && `显示位置：${surfaceName(opened.surface)} → ${surfaceName(latest.surface)}`,
+    opened.language !== latest.language && `语言：${languageName(opened.language)} → ${languageName(latest.language)}`,
+    opened.category !== latest.category && `分类：${catCN(opened.category)} → ${catCN(latest.category)}`,
+    opened.sortOrder !== latest.sortOrder && `排序：${opened.sortOrder} → ${latest.sortOrder}`,
+    opened.status !== latest.status && `发布状态：${opened.status === "published" ? "已发布" : "草稿"} → ${latest.status === "published" ? "已发布" : "草稿"}`,
+  ].filter((line): line is string => Boolean(line));
+}
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
   if (!raw) return fallback;
@@ -380,11 +392,14 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
     if (recovery) return retryOriginal(recovery, onFailure);
     const before = faqs.find((faq) => faq.id === id);
     if (!actorId || !statusTarget) return false;
+    const target = statusTarget;
     function reviewStatus(latest?: SupportFaq) {
       if (!latest || latest.status === status) onFailure(new Error(latest ? STATUS_CHANGED : GONE_TEXT));
       else {
+        // 换成最新内容的同时写出别人改了什么（OP-97 第 2 步）。
+        const changes = faqChangeLines(target, latest);
         setStatusTarget(latest);
-        onFailure(new Error(REVIEW_LATEST));
+        onFailure(new Error(`${REVIEW_LATEST}现在是第 ${latest.version} 版，你确认的是第 ${target.version} 版。${changes.length ? `别人改了：${changes.join("；")}。` : ""}`));
       }
     }
     if (!factsAvailable) return false;
@@ -922,15 +937,7 @@ function FaqModal({
   // 只管界面：记住打开时的版本，重读后版本变了就把别人改的项列出来，和框里你填的对照。
   const [opened] = useState(draft?.before ?? row);
   const latest = !recovery && row && opened && (row.version !== opened.version || row.status !== opened.status) ? row : null;
-  const latestChanges = latest && opened ? [
-    opened.question !== latest.question && `问题（最新）：${latest.question}`,
-    opened.answer !== latest.answer && `回答（最新）：${latest.answer}`,
-    opened.surface !== latest.surface && `显示位置：${surfaceName(opened.surface)} → ${surfaceName(latest.surface)}`,
-    opened.language !== latest.language && `语言：${languageName(opened.language)} → ${languageName(latest.language)}`,
-    opened.category !== latest.category && `分类：${catCN(opened.category)} → ${catCN(latest.category)}`,
-    opened.sortOrder !== latest.sortOrder && `排序：${opened.sortOrder} → ${latest.sortOrder}`,
-    opened.status !== latest.status && `发布状态：${opened.status === "published" ? "已发布" : "草稿"} → ${latest.status === "published" ? "已发布" : "草稿"}`,
-  ].filter((line): line is string => Boolean(line)) : [];
+  const latestChanges = latest && opened ? faqChangeLines(opened, latest) : [];
   // 和 saveFaq 同一套规则，只用来把错写在对应的框下面；真正挡写入的仍是 saveFaq。
   const sortValue = Number(sortOrder);
   const errors = {
@@ -938,7 +945,9 @@ function FaqModal({
     answer: !answer.trim() ? "请写回答" : answer.trim().length > 4000 ? `超出 ${answer.trim().length - 4000} 字，后台最多收 4000 字` : "",
     sort: !Number.isInteger(sortValue) || sortValue < 0 || sortValue > 999999 ? "填 0–999999 的整数" : "",
   };
-  const blocking = Boolean(errors.question || errors.answer || errors.sort || !reasonRule.ok);
+  // 后端按去掉首尾空白后的长度（含中间的空格）最多 200 收，前端取更严的一边（OP-16）。
+  const reasonTooLong = reason.trim().length > 200 ? `理由连同中间的空格最多 200 个字符，现在 ${reason.trim().length} 个` : undefined;
+  const blocking = Boolean(errors.question || errors.answer || errors.sort || !reasonRule.ok || reasonTooLong);
   const show = (key: keyof typeof errors) => (tried ? errors[key] : "") || undefined;
   const live = row?.status === "published" || status === "published";
   const unknown = isOutcomeUnknownError(failure);
@@ -977,7 +986,7 @@ function FaqModal({
             onClick={() => { setFailure(null); void recoveryBindings?.query?.(); }}>查询原结果</Button>}
           {gone ? null : info?.rejected ? <Button onClick={info.release}>核实后解除</Button>
             : <Button variant={recovery && recoveryBindings?.state?.replayBlock ? "secondary" : "primary"} data-proof="support-faq-save" loading={pending && !querying} loadingText="提交中…" disabled={disabled}
-              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : disabled ? "问答正在读取或没读到，读到后再保存" : reasonRule.blocked} onClick={save}>{recovery ? "按原请求重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
+              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : disabled ? "问答正在读取或没读到，读到后再保存" : reasonRule.blocked ?? reasonTooLong} onClick={save}>{recovery ? "按原请求重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
         </>
       }
     >
@@ -1027,7 +1036,7 @@ function FaqModal({
               <Segments label="发布状态" value={status} onChange={setStatus} items={[{ value: "published", label: "已发布", disabled: pending || Boolean(recovery) || gone }, { value: "draft", label: "草稿", disabled: pending || Boolean(recovery) || gone }]} />
             </Field>
           </div>
-          {!gone && <Field label="操作理由" required hint={recovery ? undefined : reasonRule.hint} error={!recovery && (tried || reason) ? reasonRule.fieldError : undefined}>
+          {!gone && <Field label="操作理由" required hint={recovery ? undefined : reasonRule.hint} error={!recovery && (tried || reason) ? reasonRule.fieldError ?? reasonTooLong : undefined}>
             {(control) => <Textarea disabled={pending || Boolean(recovery)} readOnly={gone} {...control} data-proof="support-faq-reason" rows={2} value={reason} count={reasonRule.count} onChange={(e) => setReason(e.target.value)} placeholder="例如：帮助中心提现板块补齐" />}
           </Field>}
         </div>
