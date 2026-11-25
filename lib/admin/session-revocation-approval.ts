@@ -1,7 +1,7 @@
-import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey } from "./a2-client";
-import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
-import { displayAdminError } from "./error-messages";
-import { isExplicitRejection } from "./explicit-rejection";
+import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
+import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
+import { canCreateRecoveryProposal, canReadOwnRecoveryProposal, currentRecoveryActor } from "./abe-recovery-access";
+import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 
@@ -11,12 +11,14 @@ type Attempt = PendingMutationRecord & {
   operator: string;
   operatorRole: string;
   label: string;
+  ticketId?: string;
 };
 
 const attempts = createPendingMutationStore<Attempt>({
   storageKey: "nexion-admin-session-revocation-proposals",
   retainExpiredRecords: true,
-  isValidRecord: (record) => [record.userId, record.reason, record.operator, record.operatorRole, record.label].every((value) => typeof value === "string"),
+  isValidRecord: (record) => [record.userId, record.reason, record.operator, record.operatorRole, record.label].every((value) => typeof value === "string")
+    && (record.ticketId === undefined || typeof record.ticketId === "string" && !!record.ticketId),
 });
 
 export function pendingSessionRevocationApproval(adminId: number, userId: number | string) {
@@ -28,6 +30,60 @@ export function listSessionRevocationApprovals(adminId: number) {
   return attempts.list().filter((record) => record.fingerprint.startsWith(`${adminId}:`));
 }
 
+export function canProposeSessionRevocation(rights: readonly string[]) {
+  return rights.some(code => code === "user_c2_session_revoke_all" || code === "user_c5_session_revoke_all")
+    && canCreateRecoveryProposal(rights);
+}
+
+const recovery = createPendingRecovery(attempts, {
+  capability: () => "receipt",
+  canReplay: record => !record.ticketId && canProposeSessionRevocation(currentRecoveryActor(record.commandOwnerId)?.authorities ?? []),
+  hasApproval: record => !!record.ticketId,
+  explicitRejectionCode,
+});
+
+function verifyTicket(original: Pick<Attempt, "userId">, key: string, ticket: A2OperationRow) {
+  if (!ticket.mine || ticket.obj !== original.userId
+      || (ticket.operationCode && ticket.operationCode !== "c2_session_revoke_all")) {
+    throw new A2OutcomeUncertainError("审批单和原操作对不上，请到操作记录核对。", key);
+  }
+}
+
+async function readOriginal(original: Attempt) {
+  const ticket = await fetchA2ProposalByKey(original.commandKey, true, "a");
+  if (ticket) verifyTicket(original, original.commandKey, ticket);
+  return ticket;
+}
+
+export const sessionRevocationStatus = { pending: "待审批，批准后生效", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
+
+function recordTicket(original: Attempt, ticket: A2OperationRow) {
+  if (ticket.status === "pending") attempts.remember(original.fingerprint, original.commandKey, { ...original, ticketId: ticket.id });
+  else recovery.settleAcknowledged(original);
+}
+
+export const sessionRevocationRecovery = {
+  release: (record: Attempt) => !!currentRecoveryActor(record.commandOwnerId) && recovery.releaseRejectedReplay(record),
+  releaseSnapshot: recovery.releaseSnapshot,
+  state: recovery.state,
+  async query(session: AdminSession, record: Attempt) {
+    const result = await recovery.query(record, async original => {
+      const actor = currentRecoveryActor(session.adminId);
+      if (!actor || !canReadOwnRecoveryProposal(actor.authorities)) throw new Error("当前账号无法查询原审批单");
+      const ticket = await readOriginal(original);
+      if (!ticket && original.ticketId) throw new Error("暂未读到已提交的审批单，保留上次读到的状态。");
+      const conclusion = !ticket ? "not-found" : ticket.status === "pending" ? "unknown" : ticket.status === "approved" ? "succeeded" : "not-executed";
+      return { ticket, conclusion } as const;
+    });
+    if (result?.ticket?.status === "pending") recordTicket(record, result.ticket);
+    else if (result?.ticket) recovery.settleFromQuery(record, result.conclusion);
+    return result;
+  },
+  retry(record: Attempt) {
+    return recovery.replay(record, original => submit(original, true));
+  },
+};
+
 export async function proposeSessionRevocation(
   session: AdminSession,
   userId: number | string,
@@ -35,34 +91,27 @@ export async function proposeSessionRevocation(
   reason: string,
 ) {
   const previous = pendingSessionRevocationApproval(session.adminId, userId);
-  const original = previous ?? {
+  if (previous) throw new A2OutcomeUncertainError("请先查询原操作。", previous.commandKey);
+  const slot = `${session.adminId}:${userId}`;
+  const key = createA2CommandKey("c2_session_revoke_all");
+  attempts.remember(slot, key, {
     userId: String(userId), label, reason,
     operator: session.operator || session.username,
     operatorRole: roleLabel(session.role),
-  };
-  const slot = `${session.adminId}:${userId}`;
-  const key = previous?.commandKey ?? createA2CommandKey("c2_session_revoke_all");
-  if (!previous) {
-    attempts.remember(slot, key, original);
-    if (!attempts.isDurablyStored(slot, key)) {
-      attempts.forget(slot, key);
-      throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
-    }
+  });
+  const original = pendingSessionRevocationApproval(session.adminId, userId);
+  if (!original || !attempts.isDurablyStored(slot, key)) {
+    attempts.forget(slot, key);
+    throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
+  return submit(original, false);
+}
 
+async function submit(original: Attempt, retry: boolean) {
+  const { fingerprint: slot, commandKey: key } = original;
   let ticket;
-  if (previous) {
-    try {
-      ticket = await fetchA2ProposalByKey(key);
-    } catch (error) {
-      throw new Error(`原操作结果未知，暂时查不到审批单。${displayAdminError(error)} 请稍后再查。`);
-    }
-    if (!ticket && previous.expiresAt <= Date.now()) {
-      throw new A2OutcomeUncertainError("原请求已过期，还没查到审批单。请继续核对原操作。", key);
-    }
-  }
   try {
-    ticket ??= await createA2OperationProposal({
+    ticket = await createA2OperationProposal({
       action: `强制登出 · ${original.label}`,
       obj: original.userId,
       beforeValue: "以执行时在线设备为准",
@@ -80,18 +129,10 @@ export async function proposeSessionRevocation(
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
       throw new A2OutcomeUncertainError("原审批申请还没有结果，请按原操作重试。", key);
     }
-    // 新提交被确定拒绝时丢号；重试的是保留下来的原命令时，只有后端明确拒绝（isExplicitRejection，且不是 404）才清，
-    // 限流、超时、幂等层要求核查这些都说明不了原命令的结果，记录和对象锁留着（R3）。安全与登录设备也用这里，只会更严。
-    const forget = previous
-      ? isExplicitRejection(error) && !(error instanceof Error && "status" in error && Number(error.status) === 404)
-      : isExplicitRejection(error);
-    if (forget) attempts.forget(slot, key);
+    if (!retry && isExplicitRejection(error)) attempts.forget(slot, key);
     throw error;
   }
-  if (!ticket.mine || ticket.obj !== original.userId
-      || (ticket.operationCode && ticket.operationCode !== "c2_session_revoke_all")) {
-    throw new A2OutcomeUncertainError("审批单和原操作对不上，请到操作记录核对。", key);
-  }
-  attempts.forget(slot, key);
+  verifyTicket(original, key, ticket);
+  recordTicket(original, ticket);
   return ticket;
 }

@@ -10,6 +10,7 @@ import { Button, Explain, Fact, Facts, Fold, Notice, SegmentBar, StatusTag } fro
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 import type { H7PendingApproval, H7Voucher } from "@/lib/admin/h-client";
+import { H7_VOUCHER_APPROVER, H7_VOUCHER_APPROVAL_PERMISSIONS } from "@/lib/admin/h7-voucher-approval";
 import { h7DateFacts, h7Stamp, isH7VoucherExpired } from "@/lib/admin/h7-voucher-time";
 import { amountDisplay } from "@/lib/format";
 export type { H7Voucher } from "@/lib/admin/h-client";
@@ -197,7 +198,7 @@ export function pendingTag(pending?: H7PendingApproval | null) {
   }
   // 卡片上只写动作：「删除代金券」→ 删除，「作废未使用的代金券」→ 作废；全名在说明里。
   const short = pending?.action?.replace(/未使用的代金券$|代金券$/, "");
-  return <StatusTag tone="warn" icon={Clock3} explain={`${pending?.action ? `${pending.action}：` : ""}等另一位超级管理员在「操作记录与审批」批准。${facts ? `${facts}。` : ""}批准前券模板和已发出的券都不变，这张券也不能编辑、暂停或投放。`}>{short ? `${short}待审批` : "待审批"}</StatusTag>;
+  return <StatusTag tone="warn" icon={Clock3} explain={`${pending?.action ? `${pending.action}：` : ""}等${H7_VOUCHER_APPROVER}在「操作记录与审批」批准（需要${H7_VOUCHER_APPROVAL_PERMISSIONS}）。${facts ? `${facts}。` : ""}批准前券模板和已发出的券都不变，这张券也不能编辑、暂停或投放。`}>{short ? `${short}待审批` : "待审批"}</StatusTag>;
 }
 
 /** 申请已建单，但这次没查到审批进度：只能查询，不会重发。 */

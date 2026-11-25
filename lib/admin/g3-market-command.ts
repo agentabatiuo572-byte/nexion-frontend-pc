@@ -1,11 +1,12 @@
 import {
   A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal,
-  fetchA2ProposalByKey,
+  fetchA2ProposalByKey, type A2OperationRow,
 } from "./a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
+import { displayAdminError } from "./error-messages";
 import {
-  fetchG3MarketReadOverview, g3LegacyCommands, g3OverrideWriteRefusal, submitG3MarketCommand,
+  g3LegacyCommands, g3OverrideWriteRefusal, submitG3MarketCommand,
   type G3CurveField, type G3ReadOverview, type G3OverrideKey, type serializeG3Frames,
 } from "./g3-client";
 import { roleLabel } from "@/lib/nav/console-nav";
@@ -36,6 +37,19 @@ export type G3PendingCommand = PendingMutationRecord & CommandPayload & { legacy
 /** `recovered`: the reply belongs to a saved original request, so `active` is that request's stored reply, not a current read. */
 export type G3CommandResult = { active?: G3ReadOverview; acknowledgement: string; ticketKey?: string; recovered?: boolean };
 export const G3_ENVIRONMENT_FORBIDDEN = "G3_MANUAL_TUNING_FORBIDDEN_IN_PRODUCTION";
+
+type G3ApprovalTicket = Pick<A2OperationRow, "id" | "status">;
+
+export function g3ApprovalAcknowledgement(ticket: G3ApprovalTicket) {
+  const status = {
+    pending: "待审批，已提交，等待审批后执行。",
+    approved: "已批准，请核对最新配置和生效时间。",
+    rejected: "已驳回，申请的改动未生效。",
+    withdrawn: "已撤回，申请的改动未生效。",
+    expired: "已过期，申请的改动未生效。",
+  };
+  return `审批单 ${ticket.id} · ${status[ticket.status]}`;
+}
 
 const commands = createPendingMutationStore<PendingMutationRecord & { input: string }>({
   storageKey: "nexion-admin-g3-confirmed-market-commands-v1",
@@ -126,6 +140,45 @@ export function pendingG3MarketCommand(adminId: number, change: G3MarketChange) 
   return listG3MarketCommands(adminId).find(row => !row.ticketId && g3MarketObjectKey(row.change) === g3MarketObjectKey(change));
 }
 
+/** Every curve cell writes the same server object. Keep independent slots for replaying existing records. */
+export function g3WeeklyWriteBlock(rows: G3PendingCommand[], key: string) {
+  if (!key.startsWith("weekly:")) return undefined;
+  const weekly = rows.filter(row => row.change.action === "curve-cell");
+  if (weekly.some(row => !row.ticketId && g3MarketObjectKey(row.change) === key)) return undefined;
+  if (weekly.some(row => !row.ticketId)) return "七天计划有一项原操作结果待核对。核实前暂不能修改七天计划。";
+  const ticket = weekly[0]?.ticketId;
+  return ticket ? `审批单 ${ticket} 在等批准，有结论前不能修改七天计划。` : undefined;
+}
+
+export function g3ReplayRejection(command?: G3PendingCommand) {
+  if (command?.ticketId || !command?.replayRejection) return undefined;
+  const reason = displayAdminError(new Error(command.replayRejection)).replace(/^没有执行：/, "");
+  return `重试被拒绝：${reason} 请核实原操作的结果。`;
+}
+
+export class G3ReplayRejectedError extends Error {
+  constructor(command: G3PendingCommand, readonly code: string) {
+    super(g3ReplayRejection({ ...command, replayRejection: code }));
+  }
+}
+
+function currentRejectedCommand(adminId: number, original: G3PendingCommand) {
+  const row = pendingG3MarketCommand(adminId, original.change);
+  return row?.commandKey === original.commandKey && row.replayRejection ? row : undefined;
+}
+
+export function g3ReleaseSnapshot(adminId: number, original: G3PendingCommand) {
+  const row = currentRejectedCommand(adminId, original);
+  return row ? JSON.stringify(row) : undefined;
+}
+
+export function releaseG3RejectedCommand(adminId: number, original: G3PendingCommand) {
+  const row = currentRejectedCommand(adminId, original);
+  if (!row) return false;
+  (row.legacy ? g3LegacyCommands : commands).forget(row.fingerprint, row.commandKey);
+  return !currentRejectedCommand(adminId, original);
+}
+
 export function g3MarketCommandExpired(command: PendingMutationRecord) {
   return Date.now() < command.createdAt || Date.now() >= command.expiresAt;
 }
@@ -168,16 +221,17 @@ export function canWriteG3MarketChange(session: AdminSession, change: G3MarketCh
 }
 
 export function g3MarketFailureCode(error: unknown): string {
+  if (error instanceof G3ReplayRejectedError) return error.code;
   return error && typeof error === "object" && "backendMessage" in error ? String(error.backendMessage ?? "") : "";
 }
 
 /** Refresh the original maker's saved tickets; object locks come separately from the GET projection. */
-export async function refreshG3MarketApprovals(adminId: number) {
-  const rows = listG3MarketCommands(adminId).filter(row => row.ticketId);
+export async function refreshG3MarketApprovals(adminId: number, commandKey?: string) {
+  const rows = listG3MarketCommands(adminId).filter(row => row.ticketId && (!commandKey || row.commandKey === commandKey));
   const results = await Promise.allSettled(rows.map(async row => {
-    const ticket = await fetchA2ProposalByKey(row.commandKey, true);
+    const ticket = await fetchA2ProposalByKey(row.commandKey, true, "a");
     if (ticket && ticket.status !== "pending") commands.forget(row.fingerprint, row.commandKey);
-    return ticket?.status === "pending" ? row.commandKey : undefined;
+    return ticket ? { key: row.commandKey, ticket } : undefined;
   }));
   return results.flatMap(result => result.status === "fulfilled" && result.value ? [result.value] : []);
 }
@@ -206,12 +260,16 @@ export async function executeG3MarketChange(
   }
   ensureOwner(mode !== "lookup");
   if (mode !== "submit" && !previous) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
+  const replayRejection = g3ReplayRejection(previous);
+  if (mode !== "lookup" && replayRejection) throw new Error(replayRejection);
   if (previous && mode === "submit" && (previous.value !== value.trim() || previous.reason !== reason.trim())) {
     throw new A2OutcomeUncertainError("请查询原操作，或使用原配置和原理由重试。", previous.commandKey);
   }
   const fingerprint = slot(session.adminId, change);
   let command = previous;
   if (!command) {
+    const weeklyBlock = g3WeeklyWriteBlock(listG3MarketCommands(session.adminId), g3MarketObjectKey(change));
+    if (weeklyBlock) throw new Error(weeklyBlock);
     const refusal = g3MarketWriteRefusal(change);
     if (refusal) throw new Error(refusal);
     value = value.trim();
@@ -277,26 +335,21 @@ export async function executeG3MarketChange(
   const runtimeProposal = command.request.kind === "approval" && (change.action === "control" || change.action === "override");
   const store = command.legacy ? g3LegacyCommands : commands;
   const forget = () => store.forget(command.fingerprint, key);
-  const acknowledgeTicket = (ticket: { id: string; status: string }) => {
+  const acknowledgeTicket = (ticket: G3ApprovalTicket) => {
     if (ticket.status === "pending") {
       const { change, value, reason, request } = command;
       commands.remember(fingerprint, key, { input: JSON.stringify({ change, value, reason, request, ticketId: ticket.id }) });
     } else forget();
-    return { acknowledgement: `已找到原审批单 ${ticket.id} · ${ticket.status === "pending" ? "等另一位超级管理员批准，尚未生效" : "请核对审批记录及当前配置"}`,
+    return { acknowledgement: g3ApprovalAcknowledgement(ticket),
       ticketKey: ticket.status === "pending" ? key : undefined };
   };
   if (command.request.kind === "approval" && previous) {
     // Only A2_PROPOSAL_NOT_FOUND permits replay. OPERATION_RESULT_UNKNOWN is not absence.
-    const ticket = await fetchA2ProposalByKey(key, true, runtimeProposal ? "a" : false);
+    const ticket = await fetchA2ProposalByKey(key, true, "a");
     ensureOwner(false);
     if (ticket) return acknowledgeTicket(ticket);
   }
-  if (mode === "lookup") {
-    if (command.request.kind === "approval") return null;
-    await fetchG3MarketReadOverview();
-    ensureOwner(false);
-    throw new Error("已读到现在的配置，但不能据此确认原操作的结果。原记录继续保留，可以到「操作记录与审批」核对。");
-  }
+  if (mode === "lookup") return null;
   if (g3MarketCommandExpired(command)) throw new A2OutcomeUncertainError("原请求已过期或本机时间不对，只能继续核对，不能重试，也不能重新发起。", key);
   if (!store.isDurablyStored(command.fingerprint, key)) throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原操作。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   try {
@@ -304,18 +357,19 @@ export async function executeG3MarketChange(
     if (command.request.kind === "approval") {
       const ticket = await createA2OperationProposal(command.request.input, key, true, runtimeProposal);
       ensureOwner(false);
-      const result = acknowledgeTicket(ticket);
-      if (ticket.status !== "pending") return result;
-      return { acknowledgement: runtimeProposal
-        ? "已提交审批，这次申请批准前不改价"
-        : `已提交审批 · ${ticket.id} · 等另一位超级管理员批准，尚未生效`, ticketKey: key };
+      return acknowledgeTicket(ticket);
     }
     const active = await submitG3MarketCommand(command.request.path, command.request.method, command.request.body, key);
     ensureOwner(false);
     forget();
     return { active, acknowledgement: command.change.action === "curve-cell" ? "价格计划已保存，当前价格不变；后续推进到该日生效" : command.change.action === "current-price" ? "当前价格已立即发布，下次自动切换仍按计划执行" : "运行时间已保存，后续按排程推进，本次不当场修改价格" };
   } catch (failure) {
-    if (isExplicitRejection(failure)) {
+    const rejection = explicitRejectionCode(failure);
+    if (rejection) {
+      if (previous) {
+        store.markReplayRejected(command.fingerprint, key, rejection);
+        throw new G3ReplayRejectedError(command, rejection);
+      }
       forget();
       throw failure;
     }

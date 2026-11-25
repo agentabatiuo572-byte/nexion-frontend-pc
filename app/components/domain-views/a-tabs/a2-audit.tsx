@@ -93,21 +93,20 @@ import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, ty
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { D5_APPROVAL_OP, D5_DIFF_UNREADABLE, d5Trc20ApprovalBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL, TRC20_REPLAY_UNVERIFIED } from "@/lib/admin/trc20-closed";
-import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
+import { H7_VOUCHER_APPROVER, H7_VOUCHER_APPROVAL_PERMISSIONS, isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, UNMAPPED_ADMIN_ERROR_TEXT } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { useBDomainDashboard } from "@/lib/admin/b-client";
-import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
+import type { CoverageSnapshot } from "../design-kit";
 import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { ORDER_STATES, orderAmount, stateLabel } from "../e-tabs/data";
-import { e1DisplayEffect, e1GateText, e1Value } from "../e-tabs/e1-state";
+import { e1DisplayEffect, e1GateText, e1NumericReviewValue, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount, rewardText } from "../f-tabs/f1-shared";
-import type { ActionConfirmReq, ACtx } from "./types";
+import type { A4ActionConfirmReq, ActionConfirmReq, ACtx } from "./types";
 
 /* ────────────────── 名字和规则 ────────────────── */
 
@@ -214,6 +213,7 @@ const F4_OLD_PAYOUT_TICKETS = "nexion-admin-a2-old-f4-payout-tickets";
 const F4_PAYOUT_REVIEW_REQUIRED = "这张单按旧规则提交。请先撤回或驳回，再查看新预览并重新提交。";
 
 function approvalExecutorLabel(w: A2OperationRow) {
+  if (isH7VoucherApproval(w.operationCode)) return `${H7_VOUCHER_APPROVER}（需要${H7_VOUCHER_APPROVAL_PERMISSIONS}）`;
   if (w.operationCode === "f_vrank_override") return "发起人以外、同时有 A2 批准权限和人工调级权限的管理员";
   if (ticketPermissionText(w)) return "另一位超级管理员";
   if (w.operationCode === "h1_phase_dial") return "另一位有审批批准权限和运营阶段修改权限的超级管理员";
@@ -246,9 +246,30 @@ function isV8PromotionTicket(w: A2OperationRow) {
   return isV8PromotionAction(w.operationCode, w.action) && w.after.trim() === "V8";
 }
 
+/** H5 的服务端前后值摘要有三种格式，分别来自 B72-BE-02 前后及签到倍率。 */
+function h5PowerUpAmplifies(w: A2OperationRow) {
+  const read = (text: string) => {
+    const match = /^连签 ([1-9]\d{0,2}) 天(?:；(?:签到倍率：([0-9]+(?:\.[0-9]{1,4})?)|备注：[\s\S]*))?$/.exec(text);
+    if (!match || Number(match[1]) > 365) return undefined;
+    const multiplier = match[2] === undefined ? undefined : Number(match[2]);
+    if (multiplier !== undefined && (multiplier <= 0 || multiplier >= 100000000)) return undefined;
+    return { day: Number(match[1]), multiplier };
+  };
+  const before = read(w.before);
+  const after = read(w.after);
+  if (!before || !after) return undefined;
+  if (before.multiplier === undefined && after.multiplier === undefined) return false;
+  if (before.multiplier === undefined || after.multiplier === undefined) return undefined;
+  return after.day < before.day || after.multiplier > before.multiplier;
+}
+
 function approvalCoverageMode(w: A2OperationRow) {
   // 旧票在 V8 晋升时也标记为放大，回放时仍免查覆盖率。
   if (isV8PromotionTicket(w)) return undefined;
+  if (w.operationCode === "h5_power_up_config") {
+    const amplifies = h5PowerUpAmplifies(w);
+    if (amplifies !== undefined) return amplifies ? "amplifies" : undefined;
+  }
   if (w.coverageCheckOnApproval) return "onApproval";
   if (w.amplifies) return "amplifies";
 }
@@ -648,11 +669,16 @@ function phoneScheduledAt(w: A2OperationRow) {
 }
 
 /** 批准后什么时候生效、会怎样：标题下的标签、执行摘要的影响、抽屉底部说明用同一份（M3、M6）。 */
-/** 审批对照里比较前后值用：空值、空字符串、缺这个键算同一个值，数字和数字字符串按数值比（显示规则 6）。 */
-const e1ReviewValue = (value: unknown): unknown => value === undefined || value === null || value === "" ? null
-  : typeof value === "string" && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value)
-    : Array.isArray(value) ? value.map(e1ReviewValue)
-      : isRecord(value) ? Object.fromEntries(Object.keys(value).sort().map(key => [key, e1ReviewValue(value[key])])) : value;
+/** 空值、空串和缺键等价。只在数值字段里忽略数字的书写差异。 */
+function e1ReviewValue(key: string, value: unknown): unknown {
+  if (value == null || value === "") return null;
+  // reviewPair 为售价加了币种后缀。
+  const numeric = e1NumericReviewValue(key, key === "price" && typeof value === "string" ? value.replace(/ USD$/, "") : value);
+  if (numeric !== undefined) return numeric;
+  if (Array.isArray(value)) return value.map(item => e1ReviewValue(key, item));
+  if (isRecord(value)) return Object.fromEntries(Object.keys(value).sort().map(field => [field, e1ReviewValue(field, value[field])]));
+  return value;
+}
 
 /** 商品编辑单改了展示基础销量、购买动态时的实际效果，句子和商品页送审确认框同一个函数（e1DisplayEffect）。冻结的前值不含累计销量，所以写「累计销量 + 基础值」；后端在后侧写入的 sold 不算改动。 */
 function e1DisplayChange(w: Pick<A2OperationRow, "operationCode" | "before" | "after">) {
@@ -660,8 +686,8 @@ function e1DisplayChange(w: Pick<A2OperationRow, "operationCode" | "before" | "a
   const { b, a } = reviewPair(w.before, w.after, w.operationCode);
   if (b?.kind !== "object" || a?.kind !== "object") return "";
   const changed = [...new Set([...Object.keys(b.value), ...Object.keys(a.value)])]
-    .filter(key => key !== "sold" && !same(e1ReviewValue(b.value[key]), e1ReviewValue(a.value[key])));
-  const base = changed.includes("displaySoldBase") ? Number(e1ReviewValue(a.value.displaySoldBase) ?? 0) : undefined;
+    .filter(key => key !== "sold" && !same(e1ReviewValue(key, b.value[key]), e1ReviewValue(key, a.value[key])));
+  const base = changed.includes("displaySoldBase") ? Number(e1ReviewValue("displaySoldBase", a.value.displaySoldBase) ?? 0) : undefined;
   const live = changed.includes("liveActivityVisible") && typeof a.value.liveActivityVisible === "boolean" ? a.value.liveActivityVisible : undefined;
   const raw = parseReview(w.after);
   const status = raw?.kind === "object" ? raw.value.status : undefined;
@@ -677,7 +703,7 @@ function monthlyTargetChange(w: Pick<A2OperationRow, "action" | "before" | "afte
   if (after?.kind !== "object") return null;
   const was = before?.kind === "object" ? before.value : {};
   if (after.value.clearMonthlyTarget === true) return "close";
-  return ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => e1Update ? !same(e1ReviewValue(was[key]), e1ReviewValue(after.value[key])) : !same(was[key] ?? null, after.value[key] ?? null)) ? "target" : null;
+  return ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => e1Update ? !same(e1ReviewValue(key, was[key]), e1ReviewValue(key, after.value[key])) : !same(was[key] ?? null, after.value[key] ?? null)) ? "target" : null;
 }
 
 function approvalTiming(w: A2OperationRow) {
@@ -1689,7 +1715,12 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, amount
 
 /* ────────────────── 页面 ────────────────── */
 
-export function A2Audit({ ctx }: { ctx: ACtx }) {
+export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
+  ctx: ACtx;
+  coverage?: CoverageSnapshot;
+  h5CoverageBlock?: string;
+  refreshCoverage: () => Promise<unknown>;
+}) {
   const { toast, openActionConfirm } = ctx;
   const oldPayoutTickets = useRef(new Set<string>());
   const [, redrawPayoutBlocks] = useState(0);
@@ -1726,11 +1757,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return canApprove && qualified === true;
   };
   const canExport = canAccessA2Export(principal.authorities);
-  // 和顶栏同一份兑付覆盖率；读不到时批准框写「暂时读不到」，批准时后端再查。
-  const bDomain = useBDomainDashboard(B_DASHBOARD_READ_AUTHORITIES.every((authority) => principal.authorities.includes(authority)));
-  const coverage = bDomain.hasData && !bDomain.error && bDomain.ledger.valuationReliable
-    ? { coverageRatio: bDomain.ledger.coverageRatio, redlinePct: bDomain.ledger.redlinePct, healthyPct: bDomain.ledger.healthyPct }
-    : undefined;
+  const h5ApproveBlock = (w: A2OperationRow) =>
+    w.operationCode === "h5_power_up_config" && approvalCoverageMode(w) ? h5CoverageBlock : undefined;
   const canWrite = canAccessA2Write(principal.authorities);
   const canPropose = principal.authorities.includes("platform_a2_proposal_create");
   const canMakeV8 = canWrite && ["network_f1_read", "network_f1_promote_user"].every((code) => principal.authorities.includes(code));
@@ -1875,6 +1903,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return Promise.all([
       loadMain().catch(() => undefined),
       loadFiltered(appliedRef.current),
+      refreshCoverage(),
       refreshRetentionPreview(),
       refreshRetentionRun(),
     ]);
@@ -2380,7 +2409,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const amount = kind === "approve" ? refundAmount(w) : undefined;
     if (amount?.state === "loading") return "正在加载退款金额，读完再批准";
     if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
-    return undefined;
+    return kind === "approve" ? h5ApproveBlock(w) : undefined;
   };
 
   /** 已被别人处理（终态、状态变了）：框留着，写最新状态，确认按钮禁用（OP-97）。 */
@@ -2594,10 +2623,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return undefined;
   };
 
-  const approveRequest = (w: A2OperationRow): ActionConfirmReq => {
+  const approveRequest = (w: A2OperationRow): A4ActionConfirmReq => {
     const v8Promotion = isV8PromotionTicket(w);
     const coverageMode = approvalCoverageMode(w);
     const amplifies = coverageMode === "amplifies";
+    const requiresH5ApprovalCoverage = w.operationCode === "h5_power_up_config" && !!coverageMode;
     const isRefund = w.fundEffect === "ORDER_REFUND";
     const isFunds = w.type === "fund" || isRefund || w.fundEffect === "REWARD_SUSPENSION" || w.fundEffect === "REWARD_RESUMPTION";
     const briefKind = isFunds ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config";
@@ -2619,6 +2649,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : i5Publish ? "用户看到的版本不变，生效版本另行审批。"
             // F1 奖励发放按奖励类型影响不同（商品、自定义奖励不动钱），实际影响写在改动里。
             : w.operationCode === "f_reward_payout_action" ? "立即执行，影响见改动；失败不改原值。"
+            : w.operationCode === "h5_power_up_config" && h5PowerUpAmplifies(w) === false ? "立即执行，改成长权益设置；失败不改原值。"
             : isFunds ? "立即执行，改资金或账目；失败不改原值。"
               : w.type === "acct" ? "立即执行，改账号或权限；失败不改原值。"
                 : w.type === "sos" ? "立即执行，停用或恢复业务；失败不改原值。"
@@ -2666,7 +2697,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" ranked={rankedBootstrap ? null : undefined} limitCopy={F2_LIMIT_APPROVE_COPY} />,
     };
     const fund = fundSpec(w) ?? k1Spec ?? bootSpec;
-    const belowRedline = !!coverage && coverage.coverageRatio < coverage.redlinePct;
+    const belowRedline = !!coverage && (coverage.redlineBreached === true || coverage.coverageRatio < coverage.redlinePct);
     return {
       briefKind,
       title: "批准审批单",
@@ -2702,7 +2733,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       coverageLead: amplifies && belowRedline ? <span className="a2-coverage-unknown">兑付覆盖率 {fmtPct(coverage.coverageRatio)}，低于红线 {fmtConfigPct(coverage.redlinePct)}</span>
         : amplifies && !coverage ? <span className="a2-coverage-unknown">{fund?.coverageUnknown ?? "会让平台多付钱，兑付覆盖率暂时读不到"}</span> : fund?.coverageLead,
       coverageCheck: v8Promotion ? undefined : fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
-      blockedReason: oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : amplifies && belowRedline ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined,
+      requiresH5ApprovalCoverage,
+      blockedReason: oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : !requiresH5ApprovalCoverage && amplifies && belowRedline ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined,
       reasonMin,
       reasonMax: 200,
       confirmLabel: "确认批准",
@@ -3057,12 +3089,15 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /** 有结果未确认的操作时这一行也标出来，滚下去看不到上方的待确认条也知道（建议 4）。 */
   const markers = (w: A2OperationRow) => {
+    const amplifies = (w.operationCode === "h5_power_up_config" ? h5PowerUpAmplifies(w) : undefined) ?? w.amplifies;
     const tags = <>
       {pendingTicketIds.has(w.id) && <StatusTag tone="warn" explain={PENDING_LOCK}>结果未知</StatusTag>}
       {w.sos && <StatusTag tone="danger" icon={Siren}>应急</StatusTag>}
-      {w.amplifies && (enablesAutoPayout(fundTicket(w)) ? <StatusTag tone="warn" icon={Coins}>批准时查覆盖率</StatusTag> : <StatusTag tone="warn" icon={Flame}>多付钱</StatusTag>)}
+      {amplifies && (enablesAutoPayout(fundTicket(w)) ? <StatusTag tone="warn" icon={Coins}>批准时查覆盖率</StatusTag> : <StatusTag tone="warn" icon={Flame}>多付钱</StatusTag>)}
+      {/* 覆盖率挡住批准：行里标「暂不能批准」，完整原因和下一步常显在列表上方（OP-126）。 */}
+      {canDecide(w, "approve") && h5ApproveBlock(w) && <StatusTag tone="warn">暂不能批准</StatusTag>}
     </>;
-    return w.sos || w.amplifies || pendingTicketIds.has(w.id) ? <span className="rd-row-actions">{tags}</span> : TYPE_NAME[w.type];
+    return w.sos || amplifies || pendingTicketIds.has(w.id) ? <span className="rd-row-actions">{tags}</span> : TYPE_NAME[w.type];
   };
 
   // 重试读到后焦点落在这一块的标题「待审批」页签上（BUG-677）。
@@ -3086,6 +3121,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <FilterBar scope={<Segments label="审批单类型" value={qType} items={TYPE_ITEMS} onChange={(value) => { setQType(value); setQPage(1); }} />}
           sort={<FilterField><Select aria-label="发起人" value={qOperator} onChange={(value) => { setQOperator(value as QOperator); setQPage(1); }} options={OPERATOR_OPTIONS} /></FilterField>} />
 
+        {h5CoverageBlock && qPageRows.some(w => canDecide(w, "approve") && h5ApproveBlock(w)) && <Notice tone="warn">签到倍率提前解锁或调高倍率的单：{h5CoverageBlock}</Notice>}
         <Panel flush icon={ClipboardList} tone="role-3" title="待审批的操作" explain="应急在前，资金类其次，其余按提交时间从新到旧。">
           {/* 1024 也要放下：对象多是系统键，名字里通常已经带着，列表不单列，抽屉和确认框里常显（DP-13）。 */}
           <Table label="待审批的操作" className="a2-queue" data-tight="">
@@ -3112,7 +3148,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）`} /></Td>
+                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
                       <Td><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td fit={!showActions}><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
@@ -3322,7 +3358,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     : shown.retiredOperation ? RETIRED_OPERATION_COPY
       : shown.phoneCalibrationError ?? shown.ambassadorMaterialError
         ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? shown.approveDeniedMessage ?? NO_DECIDE
-          : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : shownD5Block));
+          : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : shownD5Block ?? h5ApproveBlock(shown)));
   const shownK1 = shown ? k1TicketView(shown) : undefined;
   const shownBoot = shown?.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(shown.after) : undefined;
   const judgment: JudgmentRow[] = shown ? [

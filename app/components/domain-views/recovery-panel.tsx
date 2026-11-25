@@ -67,6 +67,13 @@ export function receiptRejected(receipt: ECommandInvestigation | null | undefine
   return receipt?.originalStatus === "SUCCEEDED" && eCommandResult(receipt) === "REJECTED";
 }
 
+/** Next step for pages that only allow replay after an explicit miss. */
+export function foundReceiptNext(receipt: ECommandInvestigation | null | undefined, canClose: boolean, where = "操作记录与审批") {
+  const next = canClose ? "可以核查结案。" : `请到${where}核对。`;
+  if (receiptRejected(receipt)) return `已查到原回执，后台当时拒绝了。${next}`;
+  if (receipt?.originalStatus === "SUCCEEDED") return `已查到原回执，后台已处理，业务结果待核对。${next}`;
+}
+
 /** 后台拒绝、记录还保留时这一行怎么说：后台当时拒绝了，但不保证没有改动；原因要按原操作重试拿回，过期后核查结案。 */
 export function rejectedStatus({ expired, canRetry, canClose, legacy }: { expired: boolean; canRetry: boolean; canClose: boolean; legacy?: boolean }): { tone: StateTone; label: string; line: string } {
   return { tone: "warn", label: "后台拒绝", line: `后台拒绝了，不保证没有改动；${!expired && canRetry ? "按原操作重试可看原因，不会重复执行。"
