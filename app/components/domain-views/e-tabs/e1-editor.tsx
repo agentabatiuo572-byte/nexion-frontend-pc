@@ -505,9 +505,9 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           </div>
           <div className="rd-form-grid">
             <Field label="累计销量" explain={<><p>已付款订单累计的真实销量，系统自动统计，这里不能改。</p><p>销量统计、库存和销售配额只按它算。</p></>}><Input aria-label="累计销量" value={original?.sold == null ? original ? "— · 未读取" : "0" : e1Number(original.sold)} readOnly /></Field>
-            {field("displaySoldBase", "展示基础销量", { number: true, unit: "件", min: 0, max: E1_DISPLAY_SOLD_BASE_MAX, step: 1, disabled: !displayControlsSupported, hint: "0–9,999,999",
+            {field("displaySoldBase", "展示基础销量", { number: true, unit: "件", min: 0, max: E1_DISPLAY_SOLD_BASE_MAX, step: 1, disabled: !displayControlsSupported, required: displayControlsSupported, hint: "0–9,999,999",
               help: displayControlsSupported && !displaySoldBaseError && (!original || original.sold != null) ? `批准后，App / H5 Lite「累计已售」按 ${e1Number((original?.sold ?? 0) + Number(form.displaySoldBase))} 件计` : undefined,
-              explain: <><p>「累计已售」= 累计销量 + 这个数。只用于展示，不计入销量统计、库存和配额；0 表示不加。</p><p>显示位置：App / H5 Lite 商城 › 商品详情，价格下方；商品图左下角的「在看」「24h 售出」「30 分钟售出」也按这个合计推算。</p><p>满 100 件后 App 按档位显示，如 3,014 显示为 3.0K+。</p><p>随这次修改提交审批，批准后生效。</p></> })}
+              explain: <><p>「累计已售」= 累计销量 + 这个数。只用于展示，不计入销量统计、库存和配额。填整数，0 表示不加。</p><p>显示位置：App / H5 Lite 商城 › 商品详情，价格下方；商品图左下角的「在看」「24h 售出」「30 分钟售出」也按这个合计推算。</p><p>满 100 件后 App 按档位显示，如 3,014 显示为 3.0K+。</p><p>随这次修改提交审批，批准后生效。</p></> })}
           </div>
           <Check label="显示购买动态" checked={displayControlsSupported ? form.liveActivityVisible === "true" : true} disabled={!displayControlsSupported || busy} onChange={e => update("liveActivityVisible", String(e.target.checked))}
             help={displayControlsSupported ? undefined : "展示基础销量和购买动态目前还不支持，暂时不能改"}
