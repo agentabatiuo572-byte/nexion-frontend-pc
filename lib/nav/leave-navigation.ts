@@ -14,6 +14,11 @@ export function isPageNavigationBlockedByModal() {
   return guard?.modalBlocksNavigation() ?? false;
 }
 
+/** 命令面板不开在打开着的弹窗上，焦点留在弹窗里（02 OP-46）；有草稿守卫时沿用它的放行条件（H4 限额子框）。 */
+export function isCommandPaletteBlockedByModal() {
+  return guard ? guard.modalBlocksNavigation() : !!document.querySelector('.rd-modal[data-state="open"]');
+}
+
 export function pageNavigation(router: PageRouter, path: string): PageNavigation {
   return (replace) => {
     if (replace) router.replace(path);

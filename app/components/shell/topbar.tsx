@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Gauge, Headset, LogOut, Search, UserRound, UserRoundPen } from "lucide-react";
 import dynamic from "next/dynamic";
 import { roleLabel, type AdminRole, type NavDomain } from "@/lib/nav/console-nav";
-import { isPageNavigationBlockedByModal } from "@/lib/nav/leave-navigation";
+import { isCommandPaletteBlockedByModal } from "@/lib/nav/leave-navigation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Breadcrumb } from "./breadcrumb";
 import { UtcClock } from "./utc-clock";
@@ -200,7 +200,7 @@ function SearchBox({ domains, showHome }: { domains: NavDomain[]; showHome: bool
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        if (isPageNavigationBlockedByModal()) return;
+        if (isCommandPaletteBlockedByModal()) return;
         setOpen((o) => !o);
       }
     };
