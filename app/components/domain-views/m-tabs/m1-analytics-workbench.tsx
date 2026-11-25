@@ -497,7 +497,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const readModes = authSession?.supportReadModes;
   const canMine = scope?.scopeSummary.mode === "MANAGED" && Boolean(readModes?.includes("PERSONAL"));
   const noScopedContent = scope?.scopeSummary.mode === "MANAGED" && scope.scopeSummary.groups.length === 0 && !canMine;
-  const exportViews = statisticsUnavailable ? exportsPorts?.persona.verifiedViews : exportsPorts?.persona.views;
+  // 只剩导出记录的两种情况（没有统计资格、没有负责组）都只露读成功的视图；没读成的等页头「刷新」重探到了再出现。
+  const exportViews = statisticsUnavailable || noScopedContent ? exportsPorts?.persona.verifiedViews : exportsPorts?.persona.views;
   const hasMyExports = exportViews?.includes("MINE");
   const hasExportApprovals = exportViews?.includes("APPROVALS");
   const exportsOnly = statisticsUnavailable ? !!exportViews?.length

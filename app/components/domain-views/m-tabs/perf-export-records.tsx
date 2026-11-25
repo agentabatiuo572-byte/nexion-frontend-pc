@@ -63,8 +63,12 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
   const [downloadFailed, setDownloadFailed] = useState<{ taskId: string; outcome: Exclude<ExportDownload, { kind: "downloaded" }> } | null>(null);
   // 待确认面板：本标签页存着的原操作（提交导出、批准、驳回、撤回），审批成功但回包丢了、任务已不在列表里时也能从这里查。
   const [pendingSubmit, setPendingSubmit] = useState(() => ports.pendingSubmit());
+  /** 原范围这次没读到：遮着的同时要说出来，并给重读（ST-34、ST-35）。 */
+  const [visibilityFailed, setVisibilityFailed] = useState(false);
+  const [visibilityRetry, setVisibilityRetry] = useState(0);
   const visibilityRead = useMemo(() => pendingSubmit && { selection: pendingSubmit.selection, read: ports.canShowOriginalSubmit },
-    [pendingSubmit, ports.canShowOriginalSubmit, refreshKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pendingSubmit, ports.canShowOriginalSubmit, refreshKey, visibilityRetry]);
   const [visibleSubmit, setVisibleSubmit] = useState<typeof visibilityRead>();
   const [receiptVisibility, setReceiptVisibility] = useState<{ key: string; refreshKey: number; visible: boolean }>();
   const [answers, setAnswers] = useState<Record<string, { tag: ReactNode; line: string }>>({});
@@ -80,8 +84,10 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
     if (!visibilityRead) return;
     const controller = new AbortController();
     void visibilityRead.read(visibilityRead.selection, controller.signal).then(visible => {
-      if (visible && !controller.signal.aborted) setVisibleSubmit(visibilityRead);
-    }, () => { /* 未读到当前权限时，继续遮蔽原操作内容。 */ });
+      if (controller.signal.aborted) return;
+      setVisibilityFailed(false);
+      if (visible) setVisibleSubmit(visibilityRead);
+    }, () => { if (!controller.signal.aborted) setVisibilityFailed(true); /* 没读到当前权限：继续遮着原操作内容。 */ });
     return () => controller.abort();
   }, [visibilityRead]);
 
@@ -275,9 +281,9 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
     ...(pendingSubmit ? [{
       key: pendingSubmit.operationId, createdAt: pendingSubmit.createdAt, object: hidePendingScope ? "提交导出" : `提交导出 · ${pendingSubmit.query.month} · ${pendingSubmit.query.types.map(type => EXPORT_LABEL[type]).join("、")}`,
       tag: pendingSubmit.acceptedRequestId ? acceptedTag : unknownTag,
-      line: pendingSubmit.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT : `${businessStamp(pendingSubmit.createdAt)} 发出后没收到结果；先查询原结果，不要再点提交。`,
+      line: `${pendingSubmit.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT : `${businessStamp(pendingSubmit.createdAt)} 发出后没收到结果；先查询原结果，不要再点提交。`}${visibilityFailed ? "原来的导出范围没读到，原填写内容先不显示。" : ""}`,
       result: !pendingSubmit.acceptedRequestId && now >= pendingSubmit.expiresAt ? expiredResult(businessStamp(pendingSubmit.createdAt), answers[pendingSubmit.operationId]) : answers[pendingSubmit.operationId],
-      actions: queryButton(pendingSubmit.operationId, () => querySubmit(pendingSubmit)),
+      actions: <>{queryButton(pendingSubmit.operationId, () => querySubmit(pendingSubmit))}{visibilityFailed && <Button size="sm" onClick={() => setVisibilityRetry(value => value + 1)}>重读原范围</Button>}</>,
       detail: !hidePendingScope && <p>理由：{pendingSubmit.reason}</p>, tech: <TechInfo commandKey={pendingSubmit.operationId} />,
     }] : []),
     ...pending.map(p => ({
