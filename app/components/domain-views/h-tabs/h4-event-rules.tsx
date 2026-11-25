@@ -1,7 +1,7 @@
 "use client";
 
 import { fetchOperatingLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
-import { ConfirmReadConflict, hConflictFields, type HConflictField, type PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
+import { ConfirmReadConflict, PendingConfirmRejected, hConflictFields, type HConflictField } from "@/lib/admin/h-conflict-review";
 import { isH4ReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
@@ -69,7 +69,7 @@ function rawParams(row: Pick<EventRuleView, "kind" | "rules">): Array<[string, s
   }
 }
 
-export default function H4EventRules({ ctx, eventContent, requiredLanguages = OPERATING_LANGUAGE_CODES, contentRefresh, onRowsChange, onApprovalCompleted, reopenRejected }: {
+export default function H4EventRules({ ctx, eventContent, requiredLanguages = OPERATING_LANGUAGE_CODES, contentRefresh, onRowsChange, onApprovalCompleted, reopenRejected, readSaved }: {
   ctx: HCtx;
   eventContent?: Record<string, EventLocalizedContent>;
   requiredLanguages?: readonly OperatingLanguageCode[];
@@ -77,6 +77,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   onApprovalCompleted?: () => Promise<void>;
   onRowsChange?: (rows: EventRuleView[] | null) => void;
   reopenRejected: RefObject<H4ReopenRejected | null>;
+  readSaved: RefObject<((scopes: readonly string[]) => Promise<boolean>) | null>;
 }) {
   const [ruleRows, setRuleRows] = useState<EventRuleView[] | null>(null);
   const rows = ruleRows ?? [];
@@ -84,7 +85,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   const [draft, setDraft] = useState<EventRuleChange | null>(null), [regions, setRegions] = useState("");
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
   const [vouchers, setVouchers] = useState<EventVoucherOption[]>([]), [voucherLoading, setVoucherLoading] = useState(false), [voucherError, setVoucherError] = useState(""), [voucherRetry, setVoucherRetry] = useState(0);
-  const [readFailed, setReadFailed] = useState(false);
+  const [readError, setReadError] = useState("");
   const generation = useRef(0);
   const canRead = ctx.can("growth_h4_read"), canWrite = ctx.can("growth_h4_write");
   const canReadVouchers = ctx.can("growth_h7_read");
@@ -98,22 +99,22 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   /** 合并后回到表单：放回了几项自己改的。只决定显示。 */
   const [merged, setMerged] = useState(0);
   const load = async (preserve = false) => {
-    const own = ++generation.current; setLoading(true); setError("");
-    try { const values = await fetchEventRules(); if (own === generation.current) { setRuleRows(values); setReadFailed(false); if (!preserve) { setSelected(null); setDraft(null); } return values; } return null; }
-    catch (cause) { if (own === generation.current) { setReadFailed(true); setError(displayAdminReadError(cause)); } return null; }
+    const own = ++generation.current; setLoading(true); setReadError("");
+    try { const values = await fetchEventRules(); if (own === generation.current) { setRuleRows(values); if (!preserve) close(); return values; } return null; }
+    catch (cause) { if (own === generation.current) setReadError(displayAdminReadError(cause)); return null; }
     finally { if (own === generation.current) setLoading(false); }
   };
   useEffect(() => {
     if (!canRead || previousOperator.current !== operator) {
       setRuleRows(null);
-      setReadFailed(false);
+      setReadError("");
     }
     previousOperator.current = operator;
     setSaving(false); setError(""); setSelected(null); setDraft(null);
     if (canRead) void load(); else setLoading(false);
     return () => { generation.current += 1; };
   }, [canRead, operator, contentRefresh]);
-  useEffect(() => { onRowsChange?.(readFailed || !canRead ? null : ruleRows); }, [ruleRows, canRead, readFailed]);
+  useEffect(() => { onRowsChange?.(readError || !canRead ? null : ruleRows); }, [ruleRows, canRead, readError]);
   useEffect(() => {
     let alive = true; setVouchers([]); setVoucherError(""); setVoucherLoading(false);
     if (selected?.kind !== "seasonal" || !canRead || !canReadVouchers) return;
@@ -125,15 +126,8 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   }, [selected?.eventCode, selected?.kind, canRead, canReadVouchers, operator, voucherRetry]);
   useEffect(() => {
     const changed = () => pendingChanged(v => v + 1);
-    const readback = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail.rules) setRuleRows(detail.rules);
-      setReadFailed(Boolean(detail.ruleError));
-      setSelected(null); setDraft(null); setError(detail.ruleError);
-    };
     window.addEventListener("admin-h4-pending-changed", changed);
-    window.addEventListener("admin-h4-readback", readback);
-    return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
+    return () => { window.removeEventListener("admin-h4-pending-changed", changed); };
   }, []);
   const patchRule = (key: string, value: unknown) => setDraft(current => current ? { ...current, rules: { ...current.rules, [key]: value } } : current);
   const save = (restored?: { base: EventRuleView; draft: EventRuleChange; rejection: PendingConfirmRejected }, after?: () => void) => {
@@ -172,7 +166,10 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     // 要去的地方只属于这一次保存：被拒、结果未知就作废，之后的普通关闭只关这个抽屉。
     let onward = after;
     /** 有了确定的成功，发出去成功和查到原结果走同一个后续。 */
-    const finished = (message: string) => { ctx.toast(message); onward?.(); };
+    const finished = (message: string) => {
+      ctx.toast(message);
+      if (onward) { close(); onward(); }
+    };
     let readVersion = h4ReadVersion("rules");
     let verifiedVersion: number | undefined;
     const missingRule = () => new ConfirmReadConflict({
@@ -316,27 +313,25 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     });
   };
   useLayoutEffect(() => {
-    reopenRejected.current = async (record, rejection, closeRetry) => {
-      if (!canWrite || "proposal" in record.request) return false;
+    reopenRejected.current = async (record, rejection) => {
+      if (!canWrite || "proposal" in record.request) return;
       const code = decodeURIComponent(record.request.path.split("/")[2]);
       const body = JSON.parse(record.request.body) as EventRuleChange & { expectedRevision: number };
-      const base = record.opened ? parseEventRule(record.opened) : undefined;
+      const values = await load(true);
+      if (!values) throw new ConfirmReadConflict(undefined, "玩法规则加载失败");
+      const latest = values.find(row => row.eventCode === code);
+      if (!latest) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL, true);
+      if (operator !== currentAdminOperator()) return;
+      const base = record.opened ? parseEventRule(record.opened) : latest;
       if (!base || base.eventCode !== code || base.revision !== body.expectedRevision) {
-        const values = await load(true);
-        if (!values) throw new ConfirmReadConflict(undefined, "玩法规则加载失败");
-        const latest = values.find(row => row.eventCode === code);
-        if (operator !== currentAdminOperator()) return false;
-        if (!latest) throw new ConfirmReadConflict(undefined, H4_MISSING_ORIGINAL, true);
-        closeRetry();
-        choose(latest); setError(H4_OLD_RECORD_REJECTED);
-        return true;
+        return () => { choose(latest); setError(H4_OLD_RECORD_REJECTED); };
       }
-      if (operator !== currentAdminOperator()) return false;
       const draft = { enabled: body.enabled, startsAt: body.startsAt, endsAt: body.endsAt, rules: body.rules };
-      closeRetry();
-      choose(base); setDraft(draft); setRegions(eventRegionText(draft.rules.regions));
-      save({ base, draft, rejection });
-      return true;
+      const error = base.revision === latest.revision || isH4ReadConflict(rejection) ? rejection : new PendingConfirmRejected("H4_REFRESH_REQUIRED");
+      return () => {
+        choose(base); setDraft(draft); setRegions(eventRegionText(draft.rules.regions));
+        save({ base, draft, rejection: error });
+      };
     };
     return () => { reopenRejected.current = null; };
   });
@@ -378,6 +373,16 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   const focus = useH4DrawerFocus(!!selected && !!draft, "h4l-plays");
   const leave = useH4EditGuard();
   const scope = selected ? `H/h4_event_rule/${selected.eventCode}` : "";
+  const openScope = useRef(scope);
+  useLayoutEffect(() => {
+    openScope.current = scope;
+    readSaved.current = async scopes => {
+      const rows = await load(true);
+      if (rows && scopes.includes(openScope.current)) close();
+      return !!rows;
+    };
+    return () => { readSaved.current = null; };
+  });
   const opening = !!selected && !!draft?.enabled && !selected.enabled && !selected.rulesLocked;
   // 没开过、这次也不开：只存草稿。
   const draftOnly = !!selected && !!draft && !selected.enabled && !draft.enabled;
@@ -411,7 +416,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   const editor = selected && draft && (() => {
     const saved = savedUnread;
     const lockedForm = !canWrite || saving || saved || h4Blocked(`H/h4_event_rule/${selected.eventCode}`) || !!review;
-    const showSaved = saved && (!error || readFailed);
+    const showSaved = saved && (!error || !!readError);
     const unknown = !!h4PendingFor(scope) && !h4PendingFor(scope)?.acknowledged;
     const readiness = eventRuleReadiness(selected, eventContent, requiredLanguages);
     const enableBlocked = !readiness.ready ? `还没就绪，${readinessGapParts(readiness).join("；")}` : selected.rulesLocked && !selected.enabled ? "开过又关了的玩法不能再开" : undefined;
@@ -481,7 +486,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     explain={<><p>每个内置活动背后是一类玩法：规则参数、开关、开放时间。先保存完整配置，就绪后再开启。</p><p>第一次开启要另一位超级管理员批准；开启后玩法和时间固定，只能关闭，关闭后不能再开。玩法开着没有，和「既有活动」卡上的状态是两件事，分别看。</p><p>App 支持的活动，「既有活动」里写的奖励只是展示文字，实际按这里的规则发。</p></>}
     actions={<Button disabledReason={loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的配置" : undefined} onClick={() => void load()}>刷新</Button>}>
     {loading ? <BlockState state="loading" title="正在加载活动规则" />
-      : !rows.length && error ? <BlockState state="error" title="玩法规则加载失败" detail={error} onRetry={() => void load()} />
+      : readError ? <BlockState state="error" title="玩法规则加载失败" detail={readError} onRetry={() => void load(true)} />
       : !rows.length ? <BlockState state="empty" title="暂无活动规则" />
       : <div className="h4-cards">{rows.map(row => {
         const supported = !!EVENT_KIND_LABELS[row.kind];
@@ -508,7 +513,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     {rows.length > 0 && error && !selected && <Notice tone="danger" title="玩法规则没有读到最新的">{error}</Notice>}
     {stale && !selected && <Notice tone="warn" title={`没有保存：${stale} 已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale("")}>知道了</Button>}>{error ? "你这次改的没有提交。" : "已读到最新配置。你这次改的没有提交，关掉时已丢弃；要改就重新打开。"}</Notice>}
     {!loading && <p className="h4l-note">时间为北京时间</p>}
-    <Drawer open={!!editor} onClose={leave.askClose} keepOnControls={dirty} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}${/[A-Za-z0-9]$/.test(EVENT_KIND_LABELS[selected.kind] ?? "") ? " " : ""}的配置` : "玩法配置"} sub={selected?.eventCode} icon={Sparkles} tone="role-4"
+    <Drawer open={!!editor} onClose={dirty ? leave.askClose : close} keepOnControls={dirty} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}${/[A-Za-z0-9]$/.test(EVENT_KIND_LABELS[selected.kind] ?? "") ? " " : ""}的配置` : "玩法配置"} sub={selected?.eventCode} icon={Sparkles} tone="role-4"
       explain="先保存完整配置，再开启活动。没保存的改动，关闭时会先问。"
       footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={leave.askClose}>取消</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={saveReason} onClick={() => save()}>{saveLabel}</Button>} />}>
       {editor}

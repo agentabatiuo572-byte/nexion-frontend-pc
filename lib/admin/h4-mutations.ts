@@ -11,9 +11,9 @@ import { trimStoredContent } from "./content-language-rules";
 import { parseAdminRaffle, RAFFLE_LANGUAGES, type AdminRaffle } from "./genesis-raffle-client";
 import { h4CommandStores, type H4StoredCommand } from "./h4-command-store";
 import { findHighOp } from "./high-ops-registry";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
-import { hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT } from "./pending-mutation-store";
+import { createPendingRecovery, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT } from "./pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { promotionRead } from "./promotion-client";
@@ -39,7 +39,7 @@ export type H4Command = H4StoredCommand & {
   commandOrigin?: FundCommandOrigin;
   opened?: unknown;
 };
-export type H4ReopenRejected = (record: H4Command, cause: PendingConfirmRejected, closeRetry: () => void) => Promise<boolean>;
+export type H4ReopenRejected = (record: H4Command, cause: PendingConfirmRejected) => Promise<(() => void) | undefined>;
 export type H4ApprovalReceipt = { h4Approval: true; ticket: A2OperationRow };
 export const isH4ApprovalReceipt = (value: unknown): value is H4ApprovalReceipt => !!(value as H4ApprovalReceipt | null)?.h4Approval;
 export const H4_APPROVAL_OPS = new Set([
@@ -51,13 +51,13 @@ const fresh = new Map<string, number>();
 const observations = new Map<string, A2OperationRow>();
 const receiptStates = new Map<string, DirectCommandReceiptState>();
 let observationOwner: number | undefined;
-const resourceOf = (scope: string): Resource => scope.includes("/h4_event_rule/") ? "rules" : scope.includes("/h4_genesis_raffle/") ? "raffles" : "overview";
+export const h4CommandResource = (scope: string): Resource => scope.includes("/h4_event_rule/") ? "rules" : scope.includes("/h4_genesis_raffle/") ? "raffles" : "overview";
 const notify = () => { if (typeof window !== "undefined") window.dispatchEvent(new Event("admin-h4-pending-changed")); };
 export function h4ReadVersion(resource: Resource) { const v = fresh.get(`${useAdminAuth.getState().session?.adminId}:${resource}`); return v && v > 0 ? v : undefined; }
 export function markH4Read(resource: Resource, success: boolean) {
   const key = `${useAdminAuth.getState().session?.adminId}:${resource}`;
   fresh.set(key, (Math.abs(fresh.get(key) ?? 0) + 1) * (success ? 1 : -1));
-  if (success && resource !== "raffles") pendingH4Commands().filter(r => !r.scope.includes("/h4_media/") && r.acknowledged && !("proposal" in r.request) && resourceOf(r.scope) === resource).forEach(forget);
+  if (success && resource !== "raffles") pendingH4Commands().filter(r => !r.scope.includes("/h4_media/") && r.acknowledged && !("proposal" in r.request) && h4CommandResource(r.scope) === resource).forEach(forget);
   notify();
 }
 export function assertH4Fresh(resource: Resource, version: number | undefined) {
@@ -137,11 +137,37 @@ export function pendingH4Commands(): H4Command[] {
   }));
 }
 export const h4PendingFor = (scope: string) => pendingH4Commands().find(r => r.scope === scope && !r.asset && (!r.acknowledged || "proposal" in r.request));
+const originalFor = (fingerprint: string, key: string) =>
+  pendingH4Commands().find(record => record.fingerprint === fingerprint && record.commandKey === key);
+const h4Recovery = createPendingRecovery<H4Command>({
+  list: pendingH4Commands,
+  forget(fingerprint, key) {
+    const record = key && originalFor(fingerprint, key);
+    if (record) forget(record);
+  },
+  isDurablyStored(fingerprint, key) {
+    const record = originalFor(fingerprint, key);
+    return !!record && h4CommandStores[record.store].isDurablyStored(fingerprint, key);
+  },
+  markReplayRejected(fingerprint, key, code) {
+    const record = originalFor(fingerprint, key);
+    if (record) h4CommandStores[record.store].markReplayRejected(fingerprint, key, code);
+  },
+}, {
+  capability: record => "proposal" in record.request ? "replay" : "receipt",
+  canReplay: record => !h4RetryBlockedReason(record),
+  explicitRejectionCode,
+});
+
+export function settleH4RejectedCommand(record: H4Command) {
+  const conclusion = h4Recovery.state(record).conclusion;
+  return (conclusion === "rejected" || conclusion === "not-executed") && h4Recovery.settleFromQuery(record, conclusion);
+}
 /** Validated direct successes awaiting a current read, never unknown outcomes. */
 export const confirmedH4Saves = () => pendingH4Commands().filter(r => r.acknowledged && !r.asset && !("proposal" in r.request));
-export const confirmedH4RaffleSaves = () => confirmedH4Saves().filter(record => resourceOf(record.scope) === "raffles");
+export const confirmedH4RaffleSaves = () => confirmedH4Saves().filter(record => h4CommandResource(record.scope) === "raffles");
 export const h4RaffleSaveNeedsVerification = (record: H4Command) =>
-  resourceOf(record.scope) === "raffles" && !record.raffleReadback?.hasMatchingReceipt;
+  h4CommandResource(record.scope) === "raffles" && !record.raffleReadback?.hasMatchingReceipt;
 export function confirmH4RaffleReadback(records: H4Command[], details: ReadonlyMap<string, AdminRaffle | null>) {
   const unconfirmed = records.some(({ raffleReadback }) => {
     // A record that cannot be read back (an older one without a valid revision) or whose draw is gone has
@@ -233,7 +259,7 @@ function rejected(error: unknown, recovery: boolean) {
   const e = error as { status?: number; apiCode?: number; reasonCode?: string; backendMessage?: string; unknownOutcome?: boolean; bodyUnreadable?: boolean };
   if (!e || e.unknownOutcome || e.bodyUnreadable || (e.apiCode ?? 0) >= 500 || (e.reasonCode ?? e.backendMessage ?? "").startsWith("IDEMPOTENCY_")) return false;
   if (e.status && e.status >= 200 && e.status < 300 && e.apiCode && e.apiCode >= 400 && e.apiCode < 500) e.status = e.apiCode;
-  return recovery ? isExplicitRejection(error) : isDeterministicRejection(e.status ?? 0, e.apiCode);
+  return recovery ? !!explicitRejectionCode(error) : isDeterministicRejection(e.status ?? 0, e.apiCode);
 }
 function checkTicket(r: H4Command, ticket: A2OperationRow) {
   if (!("proposal" in r.request) || !ticket.mine || ticket.obj !== r.request.proposal.obj || ticket.operationCode !== r.request.proposal.command.op
@@ -274,7 +300,7 @@ function h4DirectReceiptScope(request: Direct) {
 
 export const isH4MediaCommand = (r: H4Command) => !("proposal" in r.request) && r.request.path.startsWith("/media/uploads?");
 
-export async function queryH4Command(r: H4Command, explicit = false): Promise<{ receipt: DirectCommandReceipt } | { ticket: A2OperationRow | null } | undefined> {
+export async function queryH4Command(r: H4Command, explicit = false, deferRejection = false): Promise<{ receipt: DirectCommandReceipt } | { ticket: A2OperationRow | null } | undefined> {
   requireActor(r.owner, false, r.scope);
   h4TicketObservations();
   if (!("proposal" in r.request)) {
@@ -283,17 +309,24 @@ export async function queryH4Command(r: H4Command, explicit = false): Promise<{ 
     receiptStates.delete(r.commandKey);
     notify();
     try {
-      const receipt = await fetchDirectCommandReceiptDetails(directScope, r.commandKey, r.owner);
+      const result = await h4Recovery.query(r, async record => {
+        const receipt = await fetchDirectCommandReceiptDetails(directScope, record.commandKey, record.owner);
+        const conclusion = receipt.state === "NOT_FOUND" ? "not-found" : receipt.state === "SUCCEEDED" ? "succeeded"
+          : receipt.state === "REJECTED" ? "rejected" : receipt.state === "NOT_EXECUTED" ? "not-executed" : "unknown";
+        return { receipt, conclusion } as const;
+      });
+      if (!result) return;
+      const { receipt } = result;
       const { state } = receipt;
       const original = pendingH4Commands().find(row => row.commandKey === r.commandKey);
       if (!original) return undefined;
       receiptStates.set(r.commandKey, state);
       if (state === "SUCCEEDED") {
-        markH4Read(resourceOf(original.scope), false);
+        markH4Read(h4CommandResource(original.scope), false);
         retain({ ...original, acknowledged: true });
       } else if (state === "REJECTED" || state === "NOT_EXECUTED") {
-        if (state === "REJECTED" && isHGrowthReadConflict(h4ReceiptRejection(receipt))) markH4Read(resourceOf(original.scope), false);
-        forget(original);
+        if (state === "REJECTED" && isHGrowthReadConflict(h4ReceiptRejection(receipt))) markH4Read(h4CommandResource(original.scope), false);
+        if (!deferRejection) settleH4RejectedCommand(original);
       }
       return { receipt };
     }
@@ -310,7 +343,7 @@ export async function queryH4Command(r: H4Command, explicit = false): Promise<{ 
     receiptStates.delete(r.commandKey);
     observations.delete(r.commandKey);
     for (const [key, old] of observations) if (old.obj === ticket.obj && old.operationCode === ticket.operationCode) observations.delete(key);
-    if (ticket.status !== "pending") markH4Read(resourceOf(r.scope), false);
+    if (ticket.status !== "pending") markH4Read(h4CommandResource(r.scope), false);
     if (ticket.status === "pending") { retain({ ...r, acknowledged: true }); observations.set(r.commandKey, ticket); }
     else forget(r);
     notify();
@@ -338,6 +371,7 @@ export function h4WheelGuardAmplifies(key: string, value: string, expectedValue?
 }
 
 export function h4RetryBlockedReason(r: H4Command): string | undefined {
+  if (r.replayRejection) return H4_REPLAY_REJECTED;
   if (isRetryExpired(r)) return RETRY_EXPIRED_TEXT;
   if (r.acknowledged) return "请查询原结果";
   try { requireActor(r.owner, true, r.scope); } catch { return "没有这项修改的权限"; }
@@ -350,6 +384,8 @@ export function h4RetryBlockedReason(r: H4Command): string | undefined {
     : state === "UNKNOWN" ? "系统也没有结果，重试也拿不到新结果"
     : "先查询原结果，明确查不到后才能重试";
 }
+
+export const H4_REPLAY_REJECTED = "重试被拒不代表原操作没生效，先查询原结果。";
 
 export function h4PendingConfirmRecovery(record: H4Command | undefined, onSucceeded: () => Promise<void>, onRejected?: (error: PendingConfirmRejected) => Error) {
   if (!record) return;
@@ -424,9 +460,9 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
     }
   } catch (error) {
     if (rejected(error, recovery)) {
-      forget(r);
-      if (r.scope.includes("/h4_media/")) await deleteH4UploadFile(r.commandKey);
-      if (recovery || isHGrowthReadConflict(error)) markH4Read(resourceOf(r.scope), false);
+      if (!recovery || media) forget(r);
+      if (media) await deleteH4UploadFile(r.commandKey);
+      if (recovery || isHGrowthReadConflict(error)) markH4Read(h4CommandResource(r.scope), false);
       throw error;
     }
     throw new OutcomeUnknownError("proposal" in r.request ? "H4_PROPOSAL_RESULT_UNKNOWN" : "H4_RESULT_UNKNOWN");
@@ -439,7 +475,7 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
     if (!recovery) forget(r);
     return result;
   }
-  markH4Read(resourceOf(r.scope), false);
+  markH4Read(h4CommandResource(r.scope), false);
   if ("proposal" in r.request) {
     const result = await queryH4Command({ ...r, acknowledged: true });
     if (!result || !("ticket" in result) || !result.ticket) throw new OutcomeUnknownError("H4_APPROVAL_STATUS_UNKNOWN");
@@ -452,18 +488,23 @@ export async function retryH4Command(original: H4Command) {
   if (!r) throw new Error("H4_ORIGINAL_RESOLVED");
   const blocked = h4RetryBlockedReason(r);
   if (blocked) throw new Error(blocked);
-  receiptStates.delete(r.commandKey);
-  notify();
+  if (isH4MediaCommand(r)) return send(r, true);
   if ("proposal" in r.request) {
     const result = await queryH4Command(r);
     if (result && "ticket" in result && result.ticket) return { h4Approval: true, ticket: result.ticket } as H4ApprovalReceipt;
   }
-  return send(r, true);
+  const replay = h4Recovery.replay(r, async record => {
+    receiptStates.delete(record.commandKey);
+    notify();
+    return send(record, true);
+  });
+  try { return await replay; }
+  finally { notify(); }
 }
 export async function submitH4Proposal(scope: string, proposal: Proposal, form?: Record<string, string>, editValue?: string) {
   const actor = useAdminAuth.getState().session;
   if (!actor) throw new Error("ADMIN_AUTH_REQUIRED");
-  requireActor(actor.adminId, true, scope); assertH4Fresh(resourceOf(scope), h4ReadVersion(resourceOf(scope)));
+  requireActor(actor.adminId, true, scope); assertH4Fresh(h4CommandResource(scope), h4ReadVersion(h4CommandResource(scope)));
   if (h4ApprovalPending(scope)) throw new Error("OBJECT_LOCKED_BY_A2");
   if (h4Blocked(scope)) throw new Error("H4_ORIGINAL_UNRESOLVED");
   return send({ store: "hi", owner: actor.adminId, scope, fingerprint: `${actor.adminId}:${scope}`, commandKey: createA2CommandKey(proposal.command.op),
@@ -477,7 +518,7 @@ export async function h4CommandRequest(path: string, init: Omit<Direct, "path">,
   const actor = useAdminAuth.getState().session;
   if (!actor) throw new Error("ADMIN_AUTH_REQUIRED");
   const body = JSON.parse(init.body), scope = h4Scope(path, body), parts = path.split("/").map(decodeURIComponent);
-  requireActor(actor.adminId, true, scope); assertH4Fresh(resourceOf(scope), h4ReadVersion(resourceOf(scope)));
+  requireActor(actor.adminId, true, scope); assertH4Fresh(h4CommandResource(scope), h4ReadVersion(h4CommandResource(scope)));
   if (h4ApprovalPending(scope)) throw new Error("OBJECT_LOCKED_BY_A2");
   if (h4Blocked(scope)) throw new Error("H4_ORIGINAL_UNRESOLVED");
   let op: string | undefined, values: Record<string, unknown> = {};
