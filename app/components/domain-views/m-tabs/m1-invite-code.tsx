@@ -92,7 +92,7 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
     }
     try {
       const current = await supportGroupClient.selfInviteCode(actorId, signal);
-      if (accountChecked) return useAdminAuth.getState().session?.adminId === actorId ? current : null;
+      // Also after the read: the code request carries whatever account the cookie holds by then (B106 pending).
       return await checkReadSession(actorId, signal) ? current : null;
     } catch (cause) {
       if (!isSupportSelfAccountMismatch(cause)) throw cause;
