@@ -945,6 +945,7 @@
 .e1-product-actions > .rd-iconbtn { margin-inline-start: auto; }
 .e1-status-action { display: flex; align-items: baseline; gap: var(--rd-space-2); min-width: 0; flex: 1; }
 .e1-status-action > .rd-btn { flex: none; }
+.e1-invalid-list { margin: var(--rd-space-2) 0 0; padding-left: 20px; text-align: left; }
 .e1-action-reason { display: block; max-width: 24em; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: normal; }
 .e1-table-stack { display: flex; flex-direction: column; align-items: flex-start; gap: var(--rd-space-1); white-space: normal; }
 .e1-table-stack > :is(strong, [data-mono]) { width: 100%; min-width: 0; }

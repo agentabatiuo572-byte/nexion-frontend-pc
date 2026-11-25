@@ -51,9 +51,17 @@ export class A2OutcomeUncertainError extends Error {
     const raw = message.trim();
     const shown = /[一-鿿]/.test(raw) ? raw : ADMIN_ERROR_MESSAGES[raw] ?? "";
     const detail = /结果未知|未确认|是否已生效/.test(shown) ? "" : shown;
-    super(`结果未知，可能已经提交。不要重新填写；查询原结果或按原操作重试，都不会重复提交。${detail ? `（${detail}）` : ""}`);
-    this.queryMessage = `结果未知，可能已经提交。不要重新填写，请查询原结果。${detail ? `（${detail}）` : ""}`;
+    super(`结果未知，可能已经提交。不要重新填写；查询原操作或按原操作重试，都不会重复提交。${detail ? `（${detail}）` : ""}`);
+    this.queryMessage = `结果未知，可能已经提交。不要重新填写，请查询原操作。${detail ? `（${detail}）` : ""}`;
     this.name = "A2OutcomeUncertainError";
+  }
+}
+
+/** 按原号查到的审批单缺字段：调用方按类型认，不比对显示文字。 */
+export class A2ProposalReceiptIncompleteError extends Error {
+  constructor() {
+    super("提交结果不完整，请稍后再查。");
+    this.name = "A2ProposalReceiptIncompleteError";
   }
 }
 
@@ -1053,13 +1061,13 @@ function hasProposalTicketFacts(row: BackendTicket) {
 export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: false | "a" | "f" | "metadata" | "h8" = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
-    if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("提交结果不完整，请稍后再查。");
+    if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new A2ProposalReceiptIncompleteError();
     // A requires raw action; F does not. B5 additionally requires operation metadata and normalizes status.
     if (strictTicket && strictTicket !== "h8" && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
       || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(strictTicket === "metadata" ? row.status.trim().toLowerCase() : row.status)
       || strictTicket !== "f" && typeof row.action !== "string"
       || strictTicket === "metadata" && typeof row.operationCode !== "string")) {
-      throw new Error("提交结果不完整，请稍后再查。");
+      throw new A2ProposalReceiptIncompleteError();
     }
     if (strictTicket === "h8" && !validH8CommandTicket(row)) throw new Error("H8_PROPOSAL_RECEIPT_INVALID");
     return (await withRoleGrantsNames([fromTicket(row)]))[0];

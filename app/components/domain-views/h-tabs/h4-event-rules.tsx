@@ -459,7 +459,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
           {eventRuleFields({ kind: selected.kind, rules: draft.rules }).map((field): ReactNode => {
             if (field.type === "voucher") {
               const current = String(draft.rules[field.key] ?? "");
-              const help = !canReadVouchers ? "需要代金券查看权限才能选择优惠券。" : voucherLoading ? "正在读取优惠券…" : voucherError ? undefined : !vouchers.length ? "暂无百分比券，请先在代金券页配置。" : "选覆盖活动期限的全场八折券；券状态和使用条件在代金券页维护，每账号领取一次、单笔使用。";
+              const help = !canReadVouchers ? "需要代金券查看权限才能选择优惠券。" : voucherLoading ? "正在加载优惠券…" : voucherError ? undefined : !vouchers.length ? "暂无百分比券，请先在代金券页配置。" : "选覆盖活动期限的全场八折券；券状态和使用条件在代金券页维护，每账号领取一次、单笔使用。";
               return <div key={field.key} className="h4-field" data-wide="">
                 <Field label={field.label} help={help} error={voucherError || undefined}>
                   <Select aria-label={field.label} disabled={lockedForm || selected.rulesLocked || !canReadVouchers || voucherLoading || !!voucherError} value={current} onChange={v => patchRule(field.key, v)} options={[
@@ -496,7 +496,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
 
   return <Panel id="h4l-plays" title="七类玩法" icon={Sparkles} tone="role-4" sub={loading ? undefined : `共 ${rows.length} 条规则`}
     explain={<><p>每个内置活动背后是一类玩法：规则参数、开关、开放时间。先保存完整配置，就绪后再开启。</p><p>第一次开启要另一位超级管理员批准；开启后玩法和时间固定，只能关闭，关闭后不能再开。玩法开着没有，和「既有活动」卡上的状态是两件事，分别看。</p><p>App 支持的活动，「既有活动」里写的奖励只是展示文字，实际按这里的规则发。</p></>}
-    actions={<Button disabledReason={loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的配置" : undefined} onClick={() => void load()}>刷新</Button>}>
+    actions={<Button disabledReason={loading ? "正在加载" : saving ? "正在保存" : draft ? "先关掉正在改的配置" : undefined} onClick={() => void load()}>刷新</Button>}>
     {loading ? <BlockState state="loading" title="正在加载活动规则" />
       : readError ? <BlockState state="error" title="玩法规则加载失败" detail={readError} onRetry={() => void load(true)} />
       : !rows.length ? <BlockState state="empty" title="暂无活动规则" />

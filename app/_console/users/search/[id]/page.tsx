@@ -79,7 +79,7 @@ const PROFILE_FIRST_BLOCK = { get current() { return document.querySelector<HTML
 /** 和整页同一次读取的区块没有单独的读取，失败卡的按钮写实「刷新整页」（ST-35、OP-09、BUG-710 N05）。 */
 const WHOLE_PAGE_RETRY = { onRetry: () => window.location.reload(), label: "刷新整页" };
 /** 结果未知面板在资料没刷新成功时的常显原因：只点名这时真被挡住的按钮，说清什么时候能点、查询不受影响（OP-126）。 */
-const recoveryStaleNote = (buttons: readonly string[]) => `资料没有刷新成功，刷新成功后再${buttons.map((name) => `「${name}」`).join("或")}；「查询原结果」照常可用。`;
+const recoveryStaleNote = (buttons: readonly string[]) => `资料没有刷新成功，刷新成功后再${buttons.map((name) => `「${name}」`).join("或")}；「查询原操作」照常可用。`;
 
 /**
  * C1 用户详情的写动作（昵称重置、支付方式解绑、换绑通知、回收并记录置换和回收）共用一张表，槽位分命名空间。
@@ -219,7 +219,7 @@ const DEPOSIT_STATUS: Record<string, string> = {
 };
 const DIRECTION: Record<string, string> = { IN: "收入", OUT: "支出" };
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
-const CHECK_RESULT_FIRST = "请先查询原结果";
+const CHECK_RESULT_FIRST = "请先查询原操作";
 const isDeviceCommand = (command: C1Command) => command.kind === "replace" || command.kind === "recycle";
 const withdrawalTone = (row: JsonRecord) => WITHDRAWAL_TONE[asText(row.status, "").toUpperCase()];
 const withdrawalLabel = (row: JsonRecord) => withdrawalRecordLabel({ status: asText(row.status, ""), chain: asText(row.chain, "") });
@@ -738,7 +738,7 @@ export default function UserDetailPage() {
   const [record, setRecord] = useState<{ kind: RecordKind; index: number; latest?: boolean } | null>(null);
   const [pendingCommands, setPendingCommands] = useState<C1Command[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
-  /** 最近一次查询原结果查到的结论，收起时就写在这一行（RecoveryItem.result）。 */
+  /** 最近一次查询原操作查到的结论，收起时就写在这一行（RecoveryItem.result）。 */
   const [pendingFound, setPendingFound] = useState<Partial<Record<string, "checking" | "error" | "none" | "PROCESSING" | "FAILED" | "UNKNOWN" | "REJECTED" | "PROCESSED">>>({});
   const [, refreshDeviceRetryWindow] = useState(0);
   /** 最近一次查到的原回包：结案框按它给结论（closureKnown）。 */
@@ -1016,7 +1016,7 @@ export default function UserDetailPage() {
     const { identity } = deviceLabel(command);
     return identity === "—" || identity.includes("尾号 ") || command.legacy ? identity : `尾号 ${identity.slice(-6)}`;
   };
-  /** 查询原结果、核查结案的结论提示用的对象：设备操作写「动作 · 设备名 · 尾号」，旧记录也不露完整编号；其余照存的标签。 */
+  /** 查询原操作、核查结案的结论提示用的对象：设备操作写「动作 · 设备名 · 尾号」，旧记录也不露完整编号；其余照存的标签。 */
   const resultLabel = (command: C1CommandInput) => command.kind === "replace" || command.kind === "recycle" ? `${deviceLabel(command).action} · ${deviceResult(command)}` : command.label;
   const execute = async (command: C1CommandInput) => {
     if (String(useAdminAuth.getState().session?.adminId) !== command.adminKey) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
@@ -1045,7 +1045,7 @@ export default function UserDetailPage() {
         if (!unknown && !retained) c1UserCommands.forget(slot, commandKey);
         syncPending();
         if (unknown) {
-          toast.warn("结果未知，不要重复操作", "到页面上方查询原结果，或按原操作重试。");
+          toast.warn("结果未知，不要重复操作", "到页面上方查询原操作，或按原操作重试。");
           return;
         }
         if (isPermissionDenied(cause)) throw cause;
@@ -1079,7 +1079,7 @@ export default function UserDetailPage() {
     if (isExplicitRejection(command.rejection)) return "重试被明确拒绝";
     const result = pendingFound[command.commandKey];
     // 已经查到的说清是哪种情况，不把「查到了别的结论」说成「还没查」。
-    return result === undefined ? CHECK_RESULT_FIRST : result === "checking" ? "正在查询原结果" : result === "error" ? "查询失败，稍后再查"
+    return result === undefined ? CHECK_RESULT_FIRST : result === "checking" ? "正在查询原操作" : result === "error" ? "查询失败，稍后再查"
       : result === "PROCESSING" ? "原操作还在执行，稍后再查" : result === "none" ? undefined : "已查到原结果，按这一行的说明处理";
   };
   const clearPendingFound = (commandKey: string) => {
@@ -1167,7 +1167,7 @@ export default function UserDetailPage() {
   const nicknameBlock = pendingCommands.some((command) => command.kind === "nickname") ? "重置昵称的结果未知，先到页面上方核对" : busyReason ?? staleWriteReason;
   const methodBlock = (method: UserPaymentMethod) => pendingCommands.some((command) => command.methodId === method.id)
     ? "这张卡有结果未知的操作，先到页面上方核对"
-    : paymentLoading ? "正在读取支付方式，读完再操作" : busyReason;
+    : paymentLoading ? "正在加载支付方式，读完再操作" : busyReason;
   const deviceBlock = (deviceId: number) => pendingCommands.some((command) => command.deviceId === deviceId) ? "这台设备有结果未知的操作，先到页面上方核对" : busyReason ?? staleWriteReason;
 
   const openNicknameReset = () => setActionConfirm({ briefKind: "record",
@@ -1435,10 +1435,10 @@ export default function UserDetailPage() {
   const firstIssue = issues.find((issue) => issue.go);
   const firstGo = firstIssue?.go;
   const c2Link = canReadC2 && !supportScope
-    ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">去账户操作</span></Link>
+    ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: "/users/actions", query: { userCode: userNo, source: "C1", returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">去账户操作 →</span></Link>
     : undefined;
   const k4Link = canReadK4 && !supportScope
-    ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: "/risk/scoring", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">去风险评分规则</span></Link>
+    ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: "/risk/scoring", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}><span className="rd-btn-face">去风险评分规则 →</span></Link>
     : undefined;
   const unreadText = unreadable.length > 0 ? `${unreadable.join("、")}暂时无法确认` : "";
   const unreadCount = unreadable.length > 0 ? `${unreadable.length} 组资料加载失败` : "";
@@ -1526,10 +1526,10 @@ export default function UserDetailPage() {
         key: command.fingerprint, object: device ? <span title={fullNo ? `设备编号 ${fullNo}` : undefined}>{deviceResult(command)}</span> : identity, createdAt: command.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
         result: shown && { tag: <StatusTag tone={shown.tone}>{shown.label}</StatusTag>, line: said(shown.line) },
-        line: said(refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。"),
+        line: said(refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原操作。" : command.legacy ? "升级前的记录不能重试，先查询原操作。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原操作或重试。" : "可能已经生效，这个账号只能查询原操作。" : "可能已经生效，先查询原操作。"),
         note: pendingNotes[command.fingerprint],
         actions: <>
-          <Button size="sm" disabled={!!busyReason || checkingResult} onClick={() => void verifyPending(command)}>查询原结果</Button>
+          <Button size="sm" disabled={!!busyReason || checkingResult} onClick={() => void verifyPending(command)}>查询原操作</Button>
           {closable && <Button size="sm" variant="danger-outline" disabled={!!busyReason} disabledReason={busyReason ? undefined : staleWriteReason} onClick={() => setClosingCommand(command)}>核查结案</Button>}
           {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason ?? retryBlock ?? staleWriteReason} onClick={() => void retryPending(command)}>按原操作重试</Button>}
           {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
@@ -1557,7 +1557,7 @@ export default function UserDetailPage() {
   const staleBlocked = ["按原操作重试", "核查结案"].filter((name) => staleButtons.has(name));
   const recoveryNote = staleBlocked.length && (staleWriteReason || referralRetrying) ? loading || referralRetrying ? PROFILE_REREAD_BLOCK : recoveryStaleNote(staleBlocked) : undefined;
   const recoveryPanel = <RecoveryPanel title={recoveryTitle(recoveryItems.length - openCount, 0, 0, openCount)} explainLabel="结果未知怎么处理" note={recoveryNote}
-    explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原操作重试不会重复执行。有结果前，相关对象不能再操作。"
+    explain="这些操作发出后没收到明确结果，可能已经生效。先查询原操作；按原操作重试不会重复执行。有结果前，相关对象不能再操作。"
     foot={canReadA2 ? <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录与审批核对</Link> : undefined}
     items={recoveryItems} />;
 
@@ -1567,10 +1567,10 @@ export default function UserDetailPage() {
   const currentNotificationId = record?.kind === "notification" && current ? Number(current.notificationId) : 0;
   const conclusionOf = record && current ? recordConclusion(record.kind, current) : undefined;
   // 写了「请到…核对」就要走得到（DT-06、DT-23）：没有那页权限时只留这句话。
-  const goTarget = record?.kind === "withdrawal" && current && canReadD2 && withdrawalTone(current) !== "ok" ? { label: "去提现审核", pathname: "/finance/withdrawals", query: { group: "all", q: asText(current.withdrawalNo, ""), returnTo: selfHref } }
-    : record?.kind === "device" && current && deviceAbnormal(current) && reach("/devices/ops") ? { label: "去设备运行管理", pathname: "/devices/ops", query: { returnTo: selfHref } }
-    : record?.kind === "order" && current && orderTone(current) === "danger" && reach("/devices/orders") ? { label: "去订单进度", pathname: "/devices/orders", query: { returnTo: selfHref } }
-    : (record?.kind === "deposit" || record?.kind === "topup") && current && depositTone(current) === "danger" && reach("/finance/recon") ? { label: "去充值与收款对账", pathname: "/finance/recon", query: { returnTo: selfHref } }
+  const goTarget = record?.kind === "withdrawal" && current && canReadD2 && withdrawalTone(current) !== "ok" ? { label: "去提现审核 →", pathname: "/finance/withdrawals", query: { group: "all", q: asText(current.withdrawalNo, ""), returnTo: selfHref } }
+    : record?.kind === "device" && current && deviceAbnormal(current) && reach("/devices/ops") ? { label: "去设备运行管理 →", pathname: "/devices/ops", query: { returnTo: selfHref } }
+    : record?.kind === "order" && current && orderTone(current) === "danger" && reach("/devices/orders") ? { label: "去订单进度 →", pathname: "/devices/orders", query: { returnTo: selfHref } }
+    : (record?.kind === "deposit" || record?.kind === "topup") && current && depositTone(current) === "danger" && reach("/finance/recon") ? { label: "去充值与收款对账 →", pathname: "/finance/recon", query: { returnTo: selfHref } }
     : undefined;
   const goLink = goTarget && <Link className="rd-btn" data-variant="secondary" data-size="md" href={{ pathname: goTarget.pathname, query: goTarget.query }} prefetch={false}><span className="rd-btn-face">{goTarget.label}</span></Link>;
   const recordProps = (kind: RecordKind) => ({ selected: record?.kind === kind && !record.latest ? record.index : undefined, onOpen: (index: number) => setRecord({ kind, index }) });
@@ -1688,7 +1688,7 @@ export default function UserDetailPage() {
       <PageHeader pageId={supportScope ? "C1S" : "C1D"} title={displayNickname}
         summary={supportScope ? "这个客户的资料、资金、设备和记录。" : "这个用户的资料、资金、设备和记录。"}
         back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>}
-        actions={<Button icon={<RefreshCcw size={14} aria-hidden />} loading={loading} loadingText="读取中…" onClick={() => void load()}>刷新</Button>}
+        actions={<Button icon={<RefreshCcw size={14} aria-hidden />} loading={loading} loadingText="正在加载…" onClick={() => void load()}>刷新</Button>}
         status={<StatusTag tone={statusTone(status)} icon={STATUS_ICON[status]} filled>{statusLabel(status)}</StatusTag>}
         level={`用户分层 ${asText(profile.userLevel)} · 团队等级 ${asText(profile.vRank)}`}
         facts={[
@@ -1776,7 +1776,7 @@ export default function UserDetailPage() {
                   <Explain label="撤销详情" content={[method.revokeCommandNo && `命令 ${method.revokeCommandNo}`, method.revokeAttempts && `已重试 ${method.revokeAttempts} 次`, method.revokeLastError].filter(Boolean).join(" · ") || "暂无更多信息"} />
                 </Notice>
               ))}
-              <RecordTable label="支付方式" rows={methods} columns={paymentColumns} empty={paymentLoading ? "正在读取支付方式…" : "该用户暂无支付方式"} {...recordProps("payment")} />
+              <RecordTable label="支付方式" rows={methods} columns={paymentColumns} empty={paymentLoading ? "正在加载支付方式…" : "该用户暂无支付方式"} {...recordProps("payment")} />
               {!!paymentMethods && paymentMethods.total > paymentMethods.pageSize && <Pager label="支付方式" total={paymentMethods.total} page={paymentMethods.page} pageSize={paymentMethods.pageSize} sizes={[paymentMethods.pageSize]} loading={paymentLoading} onPage={(page) => { setRecord(null); setPaymentPage(page); }} onPageSize={() => undefined} />}
             </Block>}
           </Fold>

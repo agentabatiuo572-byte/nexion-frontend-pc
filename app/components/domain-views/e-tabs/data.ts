@@ -6,6 +6,7 @@
 import { warrantyMonths } from "@/lib/admin/warranty-months";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
+import { isE1DisplaySoldBase } from "@/lib/admin/e1-overview-contract";
 import type { StateTone } from "@/app/components/rd";
 import { SKU_SERIES_CODES, supportsDeviceMonthlyTarget, type SkuSeriesCode } from "@/lib/admin/device-monthly-target";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
@@ -118,7 +119,7 @@ export const EMPTY_SKU_FORM = {
   price: "", computePoints: "",
   dailyEarn: "", dailyEarnNEX: "", shareYieldMin: "", shareYieldMax: "",
   monthlyTargetUsdt: "", monthlyTargetBandPct: "",
-  inventoryMode: "FINITE", stock: "", trialEligible: "false",
+  inventoryMode: "FINITE", stock: "", displaySoldBase: "0", liveActivityVisible: "true", trialEligible: "false",
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
   features: "",
   lifecycle: "", unlock: "", tag: "",
@@ -129,6 +130,15 @@ export const EMPTY_SKU_FORM = {
   gateQuotaCap: "", gateQuotaSold: "", gateQuotaPeriod: "lifetime", gateEnforce: "true",
 };
 export type SkuForm = typeof EMPTY_SKU_FORM;
+
+function parseSkuDisplaySoldBase(input: string): number | undefined {
+  const value = Number(input);
+  return /^\d+$/.test(input.trim()) && isE1DisplaySoldBase(value) ? value : undefined;
+}
+
+export function validateSkuDisplaySoldBase(input: string): string | undefined {
+  return parseSkuDisplaySoldBase(input) === undefined ? "展示基础销量须为 0–9,999,999 的整数" : undefined;
+}
 
 type SkuSeriesError = "SKU_SERIES_REQUIRED" | "SKU_SERIES_INVALID" | "SKU_SERIES_TYPE_MISMATCH" | "SKU_SERIES_LOCKED";
 
@@ -214,7 +224,10 @@ export function skuToForm(s: OpsSku): SkuForm {
     dailyEarn: s.monthlyTargetUsdt == null ? str(s.dailyEarn) : "", dailyEarnNEX: str(s.dailyEarnNEX ?? undefined),
     shareYieldMin: s.monthlyTargetUsdt == null ? str(s.shareYieldMin) : "", shareYieldMax: s.monthlyTargetUsdt == null ? str(s.shareYieldMax) : "",
     monthlyTargetUsdt: str(s.monthlyTargetUsdt), monthlyTargetBandPct: str(s.monthlyTargetBandPct),
-    inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock), trialEligible: s.trialEligible ? "true" : "false",
+    inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock),
+    displaySoldBase: str(s.displaySoldBase),
+    liveActivityVisible: s.liveActivityVisible === undefined ? "" : String(s.liveActivityVisible),
+    trialEligible: s.trialEligible ? "true" : "false",
     aiImageGenPerMin: str(s.aiImageGenPerMin), aiLlmTokensPerSec: str(s.aiLlmTokensPerSec), aiVideoMinPerHour: str(s.aiVideoMinPerHour), aiFineTuneMins: str(s.aiFineTuneMins), aiUnlocks: s.aiUnlocks ?? "",
     features: (s.features ?? []).join("\n"),
     lifecycle: s.lifecycle ?? "", unlock: s.unlock ?? "", tag: s.tag ?? "",
@@ -415,7 +428,7 @@ export function validateGateForm(f: SkuForm): string | null {
 }
 
 // 表单 → OpsSku(提交:string 转结构化双币 + 合成 baseRate 兼容串;上下架 status 沿用既有/新建 pending)。
-export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
+export function formToSku(f: SkuForm, existing?: OpsSku, displayControlsSupported = false): OpsSku {
   const monthlyTargetUsdt = skuNumU(f.monthlyTargetUsdt);
   const monthlyTargetBandPct = monthlyTargetUsdt != null ? skuNumU(f.monthlyTargetBandPct) : undefined;
   const dailyEarn = monthlyTargetUsdt != null ? Number((monthlyTargetUsdt / 30).toFixed(6)) : skuNum(f.dailyEarn);
@@ -465,6 +478,10 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     rating: existing?.rating, reviews: existing?.reviews, generation: existing?.generation,
     supersededBy: existing?.supersededBy, tradeinDiscount: existing?.tradeinDiscount,
     stock: inventoryMode === "UNLIMITED" ? undefined : (skuNumU(stockTrim) ?? stockTrim),
+    ...(displayControlsSupported ? {
+      displaySoldBase: parseSkuDisplaySoldBase(f.displaySoldBase),
+      liveActivityVisible: f.liveActivityVisible === "true" ? true : f.liveActivityVisible === "false" ? false : undefined,
+    } : {}),
     trialEligible: f.trialEligible === "true",
     aiImageGenPerMin: skuNumU(f.aiImageGenPerMin), aiLlmTokensPerSec: skuNumU(f.aiLlmTokensPerSec), aiVideoMinPerHour: skuNumU(f.aiVideoMinPerHour), aiFineTuneMins: skuNumU(f.aiFineTuneMins), aiUnlocks: f.aiUnlocks.trim() || undefined,
     features: features.length ? features : undefined,

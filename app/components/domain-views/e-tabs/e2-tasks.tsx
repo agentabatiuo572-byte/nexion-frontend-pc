@@ -38,7 +38,7 @@ const PRODUCT_STATES = { PUBLISHED: "已发布", DRAFT: "草稿", DELISTED_WITH_
 const MINUTES = [{ value: 0, text: "0" }, { value: 60, text: "60" }, { value: 120, text: "120" }];
 const TASK_RULES = "等级只决定跑什么任务，收益由商品的月收益目标决定。当前任务保持原配置，修改只影响之后的新任务。每级最多 200 个启用任务、300 个任务（含停用）。";
 const GENERATION = "系统生成同池唯一的英文名称，时长为 5 分钟整数倍：向量计算 30–60 分钟，语音处理 45–90 分钟，图像生成和大模型推理 60–120 分钟，模型微调和视频生成 90–120 分钟。新任务立即启用。";
-const RETRY_HELP = "先查询原结果。查不到时可重新发送保存的原请求，系统认得出是同一次提交，不会重复执行。";
+const RETRY_HELP = "先查询原操作。查不到时可重新发送保存的原请求，系统认得出是同一次提交，不会重复执行。";
 const MISSING_TASK_WEIGHT = "这条任务还没有权重，暂时不能编辑";
 const READ_BACK_ERRORS: Record<ReadScope, string> = {
   all: "最新任务等级摘要和任务列表暂时读不到。",
@@ -67,9 +67,9 @@ function editRejection(code: string, create: boolean, data: unknown) {
 /** 冻结框（结果未知的原操作）只放一条提示，随状态变（OP-93）：没查过先查；查过写查询结论；按原操作重试被明确拒绝写原因。 */
 function FrozenNotice({ expired, rejected, outcome, canClose }: { expired: boolean; rejected?: string; outcome?: CommandOutcome; canClose: boolean }) {
   return <Notice tone="warn" title={expired ? "已超过 24 小时，不能再重试" : rejected !== undefined ? "按原操作重试被明确拒绝" : "结果未知，原操作已冻结"}>
-    {!expired && rejected !== undefined ? <>{rejected && <p>{rejected}</p>}<p>先查询原结果核实，再决定是否解除原操作记录。</p></>
+    {!expired && rejected !== undefined ? <>{rejected && <p>{rejected}</p>}<p>先查询原操作核实，再决定是否解除原操作记录。</p></>
       : outcome ? <CommandOutcomeLine outcome={outcome} expired={expired} canClose={canClose} retryOnMissingOnly />
-        : <p>{expired ? "原请求继续保留，这个等级仍暂停新操作。先查询原结果，再到操作记录与审批核对。" : "先查询原结果；查不到再按原操作重试，不会重复执行。"}</p>}
+        : <p>{expired ? "原请求继续保留，这个等级仍暂停新操作。先查询原操作，再到操作记录与审批核对。" : "先查询原操作；查不到再按原操作重试，不会重复执行。"}</p>}
   </Notice>;
 }
 
@@ -81,9 +81,9 @@ function FrozenActions({ expired, rejected, outcome, retryBlock, saving, queryin
   const missing = !!outcome && "receipt" in outcome && outcome.receipt === null;
   const retryable = !expired && !rejected;
   const queryFirst = !(rejected && !expired) && !(retryable && missing);
-  const query = <Button variant={queryFirst ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabledReason={saving ? "正在提交" : undefined} onClick={onQuery}>查询原结果</Button>;
+  const query = <Button variant={queryFirst ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabledReason={saving ? "正在提交" : undefined} onClick={onQuery}>查询原操作</Button>;
   const next = rejected && !expired ? <Button variant="primary" disabledReason={saving || querying ? "正在处理" : undefined} onClick={onRelease}>解除原操作记录</Button>
-    : retryable && <Button variant={missing ? "primary" : "secondary"} loading={saving} loadingText="提交中…" disabledReason={saving ? undefined : querying ? "正在查询原结果" : retryBlock} onClick={onRetry}>按原操作重试</Button>;
+    : retryable && <Button variant={missing ? "primary" : "secondary"} loading={saving} loadingText="提交中…" disabledReason={saving ? undefined : querying ? "正在查询原操作" : retryBlock} onClick={onRetry}>按原操作重试</Button>;
   return <>
     {closure && <Button variant="danger-outline" disabled={saving || querying} onClick={onClosure}>核查结案</Button>}
     <Button disabled={saving} onClick={onClose}>收起</Button>
@@ -353,7 +353,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const noCandidates = [...referenced.values()].filter(levels => levels.every(level => level.enabledCount === 0)).length;
   const emptyNames = emptyLevels.map(level => `${level.code} ${level.name}`).join("、");
   const onlineEmpty = emptyLevels.some(level => level.referencedBy.some(product => product.state !== "DRAFT"));
-  const conclusion = pools.state !== "ready" ? pools.state === "loading" ? "正在读取任务等级…" : "任务等级暂时读不到，无法判断哪些等级需要补任务"
+  const conclusion = pools.state !== "ready" ? pools.state === "loading" ? "正在加载任务等级…" : "任务等级暂时读不到，无法判断哪些等级需要补任务"
     : !emptyLevels.length ? "四个等级都有启用的任务"
       : emptyLevels.length === FIXED_DEVICE_LEVELS.length ? `四个等级都没有启用的任务${noCandidates > 0 ? `，${noCandidates} 个商品的设备之后接不到新任务` : "，当前没有商品因此失去候选任务"}`
       : noCandidates > 0 ? `${emptyNames}没有启用的任务，${noCandidates} 个商品的设备之后接不到新任务`
@@ -602,7 +602,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   if (!ctx.canReadE2 || denied) return <><BlockState state="denied" title="无权限访问" detail="这个账号没有任务池读取权限，请从侧栏返回有权查看的页面。" /><Button onClick={() => window.history.back()}>返回</Button></>;
   return <>
     <PageHeader pageId="E2" title={<>任务池<Explain label="任务池的说明" content="补充和修改商城任务，查看等级和停用影响。" /></>}
-      meta={pools.state === "loading" || readingTasks ? "正在读取…" : readAt ? `${businessClock(readAt)} 读取 · ${businessZoneText()}` : `尚未成功读取 · ${businessZoneText()}`}
+      meta={pools.state === "loading" || readingTasks ? "正在加载…" : readAt ? `${businessClock(readAt)} 读取 · ${businessZoneText()}` : `尚未成功读取 · ${businessZoneText()}`}
       readOnly={!ctx.canWriteE2 ? "只读，你只能查看任务池" : undefined}
       actions={<Button icon={<RefreshCw size={16} />} loading={pools.state === "loading" || tasks.state === "loading"} data-e2-editor-leave
         onClick={() => { if (editorDirty) leaveEditorThen(() => void refresh(query)); else void refresh(query); }}>刷新</Button>} />
@@ -612,7 +612,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     {query.reset && <Notice tone="warn" action={<Button size="sm" onClick={() => setQuery(old => ({ ...old, reset: false }))}>知道了</Button>}>网址里无效的查询条件已重置。</Notice>}
     {receipt && <Notice tone={receipt.includes("读不到") ? "warn" : "ok"} action={<Button size="sm" onClick={retryFailedRead}>刷新</Button>}>{receipt}</Notice>}
     {pending.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}，结果未知`}
-      actionBelow action={<><Button size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => void queryOriginal(record))}>查询原结果</Button>
+      actionBelow action={<><Button size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => void queryOriginal(record))}>查询原操作</Button>
         {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} data-e2-editor-leave onClick={() => leaveEditorThen(() => { viewOriginal(record); void send(record, true); })}>按原操作重试</Button>}
         <Button size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => viewOriginal(record))}>查看原操作</Button>
         {canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <Button size="sm" variant="danger-outline" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => setClosing(record))}>核查结案</Button>}
@@ -621,7 +621,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       <p>首次提交 {businessStamp(record.createdAt)} · {businessZoneText()}</p>
       {rejected.includes(record.commandKey) && rejectReasons[record.commandKey] && <p>按原操作重试被明确拒绝：{rejectReasons[record.commandKey]}</p>}
       {/* 过期后下一步只说一处：查过的由下面的结论句说（含核查结案），没查过的先查询。 */}
-      {!(isRetryExpired(record) && outcomes[record.commandKey]) && <p>{isRetryExpired(record) ? "超过 24 小时不能再重试，先查询原结果。" : "原对象、内容和理由已保留。这个等级暂停新操作。"}</p>}
+      {!(isRetryExpired(record) && outcomes[record.commandKey]) && <p>{isRetryExpired(record) ? "超过 24 小时不能再重试，先查询原操作。" : "原对象、内容和理由已保留。这个等级暂停新操作。"}</p>}
       {pendingNote && !outcomes[record.commandKey] && <p>{pendingNote}</p>}
       <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} canClose={canInvestigate} retryOnMissingOnly />
       {outcomes[record.commandKey] && <p><TechInfo commandKey={record.commandKey} receipt={receiptOf(outcomes[record.commandKey])} /></p>}
@@ -649,11 +649,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           openLabel={`${card.code} ${card.name}，启用 ${loaded ? level.enabledCount : "未知"} 个，共 ${loaded ? level.taskCount : "未知"} 个${current ? "，当前等级" : ""}`}
           role="tab" id={tabIds.tab(card.code)} aria-selected={current} aria-controls="e2-current-tasks" tabIndex={current || !query.code && index === 0 ? 0 : -1}
           onKeyDown={event => { const next = nextTabValue(pools.data.map(item => item.code), query.code, event.key); if (next === null) return; event.preventDefault(); selectPool(next, true); }}>
-          <div className="e2-card-ratio">{!loaded ? <RatioBar state="loading" label="启用占比" value={0} total={1} valueText="正在读取" />
+          <div className="e2-card-ratio">{!loaded ? <RatioBar state="loading" label="启用占比" value={0} total={1} valueText="正在加载" />
             : level.enabledCount === 0 ? <StatusTag tone="warn" icon={TriangleAlert}>{level.taskCount === 0 ? "还没有任务" : "没有启用的任务"}</StatusTag>
               : <RatioBar label="启用占比" value={level.enabledCount} total={level.taskCount} valueText={level.enabledCount === level.taskCount ? `全部启用，共 ${level.taskCount} 个` : `启用 ${level.enabledCount} 个，共 ${level.taskCount} 个`} tone="role-2" />}</div>
           <dl className="rd-stat-rows e2-card-metrics"><div className="rd-stat-row"><dt>平均时长{loaded && <Explain label={`${card.code}平均时长的口径`} content={level.enabledCount === 0 ? "没有启用任务，无法计算。" : "本级启用任务时长的平均值；0–120 分钟是四级共同标尺。"} />}</dt><dd data-empty={!loaded || level.avgDurationMinutes === null ? "" : undefined}>{!loaded ? <span className="rd-skeleton">　　　</span> : level.avgDurationMinutes === null ? "—" : `${level.avgDurationMinutes} 分钟`}</dd></div>
-            <div className="e2-card-scale">{!loaded ? <ScaleBar state="loading" label="平均时长" max={120} valueText="正在读取" /> : level.avgDurationMinutes !== null && <ScaleBar quiet label="平均时长" max={120} value={Number(level.avgDurationMinutes)} ticks={MINUTES} valueText={`平均 ${level.avgDurationMinutes} 分钟，刻度 0 到 120 分钟`} tone="role-2" />}</div>
+            <div className="e2-card-scale">{!loaded ? <ScaleBar state="loading" label="平均时长" max={120} valueText="正在加载" /> : level.avgDurationMinutes !== null && <ScaleBar quiet label="平均时长" max={120} value={Number(level.avgDurationMinutes)} ticks={MINUTES} valueText={`平均 ${level.avgDurationMinutes} 分钟，刻度 0 到 120 分钟`} tone="role-2" />}</div>
             <div className="rd-stat-row"><dt>约每天单数{loaded && <Explain label={`${card.code}约每天单数的口径`} content="连续运行时的理论节奏，来自本级启用任务的均值；不承诺某商品的实际单量或收益。没有启用任务，无法计算。" />}</dt><dd data-empty={!loaded || level.estTasksPerDevicePerDay === null ? "" : undefined}>{!loaded ? <span className="rd-skeleton">　　　</span> : level.estTasksPerDevicePerDay === null ? "—" : `约 ${level.estTasksPerDevicePerDay} 单/台/天`}</dd></div></dl>
           <dl className="rd-stat-rows"><div className="rd-stat-row" data-stack=""><dt>使用它的商品{loaded && <Explain label={`查看使用${card.code}的商品`} content={ready ? <div className="rd-stack e2-product-list" tabIndex={0} aria-label={`${card.code}使用它的商品完整名单`}>{level.referencedBy.length ? Object.entries(PRODUCT_STATES).map(([state, label]) => <div key={state}><strong>{label}</strong>{level.referencedBy.filter(item => item.state === state).map(item => <p key={item.productKey}>{item.productName}</p>)}{!level.referencedBy.some(item => item.state === state) && <p>无</p>}</div>) : "还没有商品使用"}</div> : "使用它的商品暂不可用，请重新读取任务等级。"} />}</dt>
             <dd className="e2-product-counts" data-empty={!loaded || !level.referencedBy.length ? "" : undefined}>{!loaded ? <span className="rd-skeleton">　　　　　　</span> : level.referencedBy.length ? Object.entries(PRODUCT_STATES).map(([state, label], index) => {
@@ -678,7 +678,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           <Th control><Checkbox aria-label="选择本页全部任务" disabled={!!writeBlock || !rows.length} checked={rows.length > 0 && selected.length === rows.length} indeterminate={selected.length > 0 && selected.length < rows.length}
             onChange={event => setSelected(event.target.checked ? rows.map(row => row.taskTypeId) : [])} /></Th>
           <Th>任务名称</Th><Th>类型</Th><Th align="right">时长</Th><Th align="right" className="e2-gap"><Explain label="权重的说明" content="不是每单的钱。派单时，这条任务和设备当时能接的其他启用任务按权重比例分收益，权重越高分得越多。">权重</Explain></Th><Th className="e2-gap">状态<Explain label="任务启用状态的说明" content="已启用的任务可参加新派单；停用的不再参加新派单，停用不会取消当前单。" /></Th>{ctx.canWriteE2 && <Th sticky="end" fit>操作</Th>}
-        </tr></thead><tbody>{readingTasks ? <TableLoading columns={columns} /> : tasks.state === "error" ? <TableMessage columns={columns} role="alert"><BlockState retryKey="e2-tasks-679" state="error" title="任务读取失败" detail={tasks.error} onRetry={() => void refresh(query, "tasks")} /></TableMessage>
+        </tr></thead><tbody>{readingTasks ? <TableLoading columns={columns} /> : tasks.state === "error" ? <TableMessage columns={columns} role="alert"><BlockState retryKey="e2-tasks-679" state="error" title="任务加载失败" detail={tasks.error} onRetry={() => void refresh(query, "tasks")} /></TableMessage>
           : !query.code && pools.state === "error" ? <TableMessage columns={columns}>任务等级读取成功后，再读取任务列表。</TableMessage>
           : rows.length ? rows.map(row => <Tr key={row.taskTypeId} selected={selected.includes(row.taskTypeId)}><Td><Checkbox aria-label={`选择 ${row.name}`} title={writeBlock} disabled={!!writeBlock} checked={selected.includes(row.taskTypeId)} onChange={event => setSelected(event.target.checked ? [...selected, row.taskTypeId] : selected.filter(id => id !== row.taskTypeId))} /></Td>
             <Td><Cell full main={row.name} title={row.name} /></Td><Td><TaskClassTag taskClass={row.taskClass} /></Td>
@@ -731,7 +731,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           </Facts>
           {!dialog.original && (dialog.kind === "random" || dialog.enabled) && <Notice tone="neutral">{dialog.kind === "random" ? "生成后立即加入当前等级，仅影响之后新派的任务；整批一起生效，有一个加不了就都不加。" : "只影响之后新派的任务，不改当前单。"}</Notice>}
           {dialog.kind === "status" && !dialog.enabled && <>{impactLoading ? <BlockState state="loading" title="正在计算停用影响…" />
-            : impactError ? <BlockState state="error" title="停用影响读取失败" detail={impactError} onRetry={() => void readImpact(dialog)} retryLabel="重新计算影响" />
+            : impactError ? <BlockState state="error" title="停用影响加载失败" detail={impactError} onRetry={() => void readImpact(dialog)} retryLabel="重新计算影响" />
               : impact && <>{dialog.original && <p className="rd-aux">首次读取的影响 · {impactAt ? businessStamp(impactAt) : "—"} · {businessZoneText()}</p>}
                 {impact.productsLosingAllTasks.length > 0 ? <Notice tone="warn" title="以下商品将没有可用任务"><ul className="e2-command-tasks">{impact.productsLosingAllTasks.map(item => <li key={item.productKey}>{item.productName}</li>)}</ul>
                   <Facts><Fact lead tone="warn" k="影响设备" unit={<>台<Explain label="影响设备的口径" content="按商品全部已发布等级判断候选。设备数统计已激活且未停用、状态合格的非手机生产设备；正在完成当前单的设备也计入，停用不会取消当前单。不等于设备管理列表总数。影响按读取时算，提交时设备数可能变化。" /></>}>{impact.devicesAffected}</Fact></Facts><p>停用不会取消当前单，当前单结束后等待配置；停跑期间不计收益、不补发。<Explain label="当前单什么时候不会完成" content="历史截止时间之前开始、还没入账的旧单例外：会被取消，不发收益。这和停用无关。" /></p>

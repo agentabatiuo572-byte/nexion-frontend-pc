@@ -93,7 +93,7 @@ import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, ty
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { D5_APPROVAL_OP, D5_DIFF_UNREADABLE, d5Trc20ApprovalBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL, TRC20_REPLAY_UNVERIFIED } from "@/lib/admin/trc20-closed";
-import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
+import { H7_VOUCHER_APPROVER, H7_VOUCHER_APPROVAL_PERMISSIONS, isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, UNMAPPED_ADMIN_ERROR_TEXT } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -104,7 +104,7 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { ORDER_STATES, orderAmount, stateLabel } from "../e-tabs/data";
-import { e1GateText, e1Value } from "../e-tabs/e1-state";
+import { e1DisplayEffect, e1GateText, e1NumericReviewValue, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount, rewardText } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
@@ -172,7 +172,7 @@ const NO_DECIDE = "这个账号没有处理这张单的权限";
 /** 页面判断不了这张单要哪项业务权限或附加条件时，入口照常放出，写这一句（协调人第五轮定）。 */
 const BACKEND_CHECKS_NOTE = "批准时系统再核对业务权限，没有权限会被拒绝并写明原因";
 const WAIT_OTHERS = "等待有权限的人处理";
-const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果，或按原操作重试。";
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原操作，或按原操作重试。";
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请在「操作记录」里按单号核对。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请在「操作记录」里按单号核对";
 
@@ -214,6 +214,7 @@ const F4_OLD_PAYOUT_TICKETS = "nexion-admin-a2-old-f4-payout-tickets";
 const F4_PAYOUT_REVIEW_REQUIRED = "这张单按旧规则提交。请先撤回或驳回，再查看新预览并重新提交。";
 
 function approvalExecutorLabel(w: A2OperationRow) {
+  if (isH7VoucherApproval(w.operationCode)) return `${H7_VOUCHER_APPROVER}（需要${H7_VOUCHER_APPROVAL_PERMISSIONS}）`;
   if (w.operationCode === "f_vrank_override") return "发起人以外、同时有 A2 批准权限和人工调级权限的管理员";
   if (ticketPermissionText(w)) return "另一位超级管理员";
   if (w.operationCode === "h1_phase_dial") return "另一位有审批批准权限和运营阶段修改权限的超级管理员";
@@ -410,17 +411,30 @@ function fBatchLogItems(log: { obj: string; delta: string }): FBatchItem[] | und
   return items && (F_BATCH_DIGEST.test(log.obj) || log.obj === items.map((item) => item.key).join(",")) ? items : undefined;
 }
 /**
- * E1 商品提案的操作记录：前后值是提案时冻结的两份商品快照（JSON 原文，后端 createProposalOnce 写入）。拆回两份，按审批单详情同一套行写；
- * 拆不出两份商品快照时照原文显示。
+ * E1 商品提案的操作记录：拆出冻结的前后值，按审批单详情展示。日志没有商品操作码，B97 新建的前侧只冻结两项展示默认值。
  */
-function e1SkuLogSides(log: { delta: string }): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
+function e1SkuLogSides(log: Pick<A2AuditLogRow, "action" | "domain" | "resourceType" | "delta">): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
   const isSku = (text: string) => {
     try { const value: unknown = JSON.parse(text); return isRecord(value) && typeof value.skuId === "string"; } catch { return false; }
   };
   if (log.delta.startsWith("— → ") && isSku(log.delta.slice(4))) return { before: "", after: log.delta.slice(4), operationCode: "e1_sku_create" };
-  for (let at = log.delta.indexOf("} → {"); at >= 0; at = log.delta.indexOf("} → {", at + 1)) {
-    const before = log.delta.slice(0, at + 1), after = log.delta.slice(at + 4);
-    if (isSku(before) && isSku(after)) return { before, after, operationCode: "e1_sku_update" };
+  const proposal = log.action === "A2_OPERATION_PROPOSED" && log.domain === "E";
+  // 后端的决定记录直接提供 " -> "，域可能由动作和对象推断。
+  const decision = log.resourceType === "A2_OPERATION"
+    && ["A2_OPERATION_APPROVED", "A2_OPERATION_REJECTED", "A2_OPERATION_WITHDRAWN"].includes(log.action);
+  for (const boundary of log.delta.matchAll(/\} (→|->) \{/g)) {
+    const arrow = boundary[1] === "→";
+    if (!arrow && !decision) continue;
+    const before = log.delta.slice(0, boundary.index + 1), after = log.delta.slice(boundary.index + boundary[0].length - 1);
+    if (!isSku(after)) continue;
+    if (arrow && isSku(before)) return { before, after, operationCode: "e1_sku_update" };
+    if (proposal || decision) {
+      const defaults = parseReview(before);
+      if (defaults?.kind === "object" && Object.keys(defaults.value).length === 2
+        && defaults.value.displaySoldBase === 0 && defaults.value.liveActivityVisible === true) {
+        return { before, after, operationCode: "e1_sku_create" };
+      }
+    }
   }
   return undefined;
 }
@@ -635,13 +649,41 @@ function phoneScheduledAt(w: A2OperationRow) {
 }
 
 /** 批准后什么时候生效、会怎样：标题下的标签、执行摘要的影响、抽屉底部说明用同一份（M3、M6）。 */
-function monthlyTargetChange(w: Pick<A2OperationRow, "action" | "before" | "after">) {
-  if (w.action !== "调整设备型号") return null;
+/** 空值、空串和缺键等价。只在数值字段里忽略数字的书写差异。 */
+function e1ReviewValue(key: string, value: unknown): unknown {
+  if (value == null || value === "") return null;
+  // reviewPair 为售价加了币种后缀。
+  const numeric = e1NumericReviewValue(key, key === "price" && typeof value === "string" ? value.replace(/ USD$/, "") : value);
+  if (numeric !== undefined) return numeric;
+  if (Array.isArray(value)) return value.map(item => e1ReviewValue(key, item));
+  if (isRecord(value)) return Object.fromEntries(Object.keys(value).sort().map(field => [field, e1ReviewValue(field, value[field])]));
+  return value;
+}
+
+/** 商品编辑单改了展示基础销量、购买动态时的实际效果，句子和商品页送审确认框同一个函数（e1DisplayEffect）。冻结的前值不含累计销量，所以写「累计销量 + 基础值」；后端在后侧写入的 sold 不算改动。 */
+function e1DisplayChange(w: Pick<A2OperationRow, "operationCode" | "before" | "after">) {
+  if (w.operationCode !== "e1_sku_update") return "";
+  const { b, a } = reviewPair(w.before, w.after, w.operationCode);
+  if (b?.kind !== "object" || a?.kind !== "object") return "";
+  const changed = [...new Set([...Object.keys(b.value), ...Object.keys(a.value)])]
+    .filter(key => key !== "sold" && !same(e1ReviewValue(key, b.value[key]), e1ReviewValue(key, a.value[key])));
+  const base = changed.includes("displaySoldBase") ? Number(e1ReviewValue("displaySoldBase", a.value.displaySoldBase) ?? 0) : undefined;
+  const live = changed.includes("liveActivityVisible") && typeof a.value.liveActivityVisible === "boolean" ? a.value.liveActivityVisible : undefined;
+  const raw = parseReview(w.after);
+  const status = raw?.kind === "object" ? raw.value.status : undefined;
+  return e1DisplayEffect({ base, live, liveAfter: a.value.liveActivityVisible !== false, listed: status === undefined || status === null || status === "on" },
+    changed.every(key => key === "displaySoldBase" || key === "liveActivityVisible"));
+}
+
+function monthlyTargetChange(w: Pick<A2OperationRow, "action" | "before" | "after" | "operationCode">) {
+  // B97 起商品编辑单叫「编辑商品 · 名称」，按操作类型和月目标前后值认（显示规则 7）。
+  const e1Update = w.operationCode === "e1_sku_update";
+  if (w.action !== "调整设备型号" && !e1Update) return null;
   const before = parseReview(w.before), after = parseReview(w.after);
   if (after?.kind !== "object") return null;
   const was = before?.kind === "object" ? before.value : {};
   if (after.value.clearMonthlyTarget === true) return "close";
-  return ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => !same(was[key] ?? null, after.value[key] ?? null)) ? "target" : null;
+  return ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => e1Update ? !same(e1ReviewValue(key, was[key]), e1ReviewValue(key, after.value[key])) : !same(was[key] ?? null, after.value[key] ?? null)) ? "target" : null;
 }
 
 function approvalTiming(w: A2OperationRow) {
@@ -912,8 +954,8 @@ const RECOVERY_HINT: Record<A2CommandKind, string> = {
   approve: "可以查询这次批准的结果，或按原操作重试，不会重复执行。",
   reject: "可以查询这次驳回的结果，或按原操作重试，不会重复执行。",
   withdraw: "可以查询这次撤回的结果，或按原操作重试，不会重复执行。",
-  param: "查询只能看到现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
-  retention: "查询只能看到最近一次手动清理。可以按原操作重试，不会重复清理。",
+  param: "读到的是现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
+  retention: "「读取最近清理」只能看到最近一次手动清理，证明不了这次清理成没成。可以按原操作重试，不会重复清理。",
   export: "查询只能看到有没有这次的导出记录。可以按原操作重试，按当时的条件重新下载。",
 };
 /**
@@ -1007,7 +1049,7 @@ const CHANGE_LABELS: Record<string, string> = {
   warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格", computePoints: "每件算力点",
   dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
   monthlyTargetUsdt: "月收益目标", monthlyTargetBandPct: "允许波动", clearMonthlyTarget: "关闭月收益目标",
-  baseRate: "收益说明", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
+  baseRate: "收益说明", sold: "累计销量", displaySoldBase: "展示基础销量", liveActivityVisible: "显示购买动态", stock: "库存", rating: "评分", reviews: "评价数",
   aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
   aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
   lifecycle: "生命周期", supersededBy: "后继商品", tradeinDiscount: "换新折扣", unlockPhase: "解锁阶段",
@@ -1178,6 +1220,8 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
     return "未设置";
   }
   if (key?.startsWith("taglineTranslations.")) return String(value);
+  // 「显示购买动态」和商品页确认框一样写开／关；其他布尔项照旧写是／否。
+  if (key === "liveActivityVisible" && typeof value === "boolean") return value ? "开" : "关";
   if (typeof value === "boolean") return value ? "是" : "否";
   if (key === "monthlyTargetUsdt") return `${grouped(String(value))} USDT`;
   if (key === "monthlyTargetBandPct") return `±${grouped(String(value))}%`;
@@ -1243,7 +1287,10 @@ function reviewPair(before: string, after: string, operationCode?: string) {
   const original = { b, a, labels, evidenceKeys: [] as string[] };
   // E1 商品：后端冻结的是代码值（系列、档位、商城状态、生命周期、库存模式），这里换成和商品页一样的名称，价格带币种。新建没有前值；旧票没有这一项时不补。
   if (operationCode === "e1_sku_create" || operationCode === "e1_sku_update") {
-    const previous = b?.kind === "object" && isSkuTaglineTranslations(b.value.taglineTranslations) ? b.value.taglineTranslations : undefined;
+    const creating = operationCode === "e1_sku_create";
+    // 新建的结构化前值是默认设置。更早的文字摘要沿用原显示。
+    const skuBefore = creating && b?.kind === "object" ? null : b;
+    const previous = skuBefore?.kind === "object" && isSkuTaglineTranslations(skuBefore.value.taglineTranslations) ? skuBefore.value.taglineTranslations : undefined;
     const next = a?.kind === "object" && isSkuTaglineTranslations(a.value.taglineTranslations) ? a.value.taglineTranslations : previous;
     // 语言按中文、越南语、其他语言的固定顺序列（TX-35），不随服务器快照里键的先后变。
     const languages = (Object.keys(SKU_TAGLINE_LABELS) as (keyof SkuTaglineTranslations)[]).filter(language => language in { ...previous, ...next });
@@ -1258,6 +1305,7 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       delete value.taglineTranslations;
       for (const language of languages) value[`taglineTranslations.${language}`] = translations?.[language] ?? null;
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
+      if (creating && typeof value.liveActivityVisible === "boolean") value.liveActivityVisible = e1Value(value.liveActivityVisible);
       for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
       if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${String(value.price).trim()} USD`;
       const derivedDaily = "baseRate" in value ? e1MonthlyBaseRate(value.baseRate, value.monthlyTargetUsdt) : undefined;
@@ -1268,9 +1316,9 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       return { kind: "object", value };
     };
     // 新建只列填了的项，没填的不逐行写「未设置」（和商品页确认框一致）。
-    const filled = (review: Review | null): Review | null => b || review?.kind !== "object" ? review
+    const filled = (review: Review | null): Review | null => skuBefore || review?.kind !== "object" ? review
       : { kind: "object", value: Object.fromEntries(Object.entries(review.value).filter(([, item]) => item !== null && item !== "" && !(Array.isArray(item) && !item.length))) };
-    return { b: named(b, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
+    return { b: named(skuBefore, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
   }
   // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
   if (operationCode === "h4_legacy_event_reward_update" && b?.kind === "object" && a?.kind === "object" && "eventCode" in b.value) {
@@ -1936,7 +1984,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       : { state: "error", message: "退款金额未读取" }
     : undefined;
   const refundAmountText = (amount: RefundAmount) => amount.state === "ok" ? `${orderAmount(amount.amount)} USDT`
-    : amount.state === "loading" ? "正在读取" : "退款金额未读取";
+    : amount.state === "loading" ? "正在加载" : "退款金额未读取";
 
   // 已应用的条件后端查过了，以后端的结果为准；对象还会命中详情里的命令号这类字段，前端再按窄的字段筛会把查到的记录删掉（M4）。
   const logRows = records?.recentLogs ?? [];
@@ -2200,7 +2248,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const d5Block = d5RetryBlock(record);
     if (d5Block) return d5Block;
     const amount = retryAmount(record);
-    if (amount?.state === "loading") return "正在读取退款金额，读完再重试";
+    if (amount?.state === "loading") return "正在加载退款金额，读完再重试";
     if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
     return undefined;
   };
@@ -2319,7 +2367,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /** 框标题只写「批准审批单」，动作名放在标题下面一行，长了省略、悬停看全文（设计偏差二选一的第一种）。 */
   const subject = (w: A2OperationRow) => <span className="a2-confirm-subject" title={actionName(w)}>{shortCodes(actionName(w))}</span>;
 
-  /** 本人、已退役、解析不了、有未确认操作、正在读取、读不到退款金额：入口先禁用并写原因（第五节）。没有业务权限的入口不显示（OP-124），这里只兜底。 */
+  /** 本人、已退役、解析不了、有未确认操作、正在加载、读不到退款金额：入口先禁用并写原因（第五节）。没有业务权限的入口不显示（OP-124），这里只兜底。 */
   const decideBlock = (w: A2OperationRow, kind: "approve" | "reject" | "withdraw") => {
     if (submitting) return SUBMITTING;
     if (pendingTicketIds.has(w.id)) return PENDING_LOCK;
@@ -2336,7 +2384,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
     // 读不到退款金额时不能批准（协调人定，同 C3 读不到详情）；驳回不受影响。
     const amount = kind === "approve" ? refundAmount(w) : undefined;
-    if (amount?.state === "loading") return "正在读取退款金额，读完再批准";
+    if (amount?.state === "loading") return "正在加载退款金额，读完再批准";
     if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
     return undefined;
   };
@@ -2569,6 +2617,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const impact = v8Promotion ? "立即升到 V8，首次到达按配置发奖。"
       : scheduled || monthlyTargetChange(w) ? timing.impact
       : j4 ? "逐步执行，失败时可能只执行了一部分。"
+        // 新增商品批准后只是草稿（显示规则 5）；覆盖率检查提示另在事实区。
+        : w.operationCode === "e1_sku_create" ? "批准后创建商品草稿，上架前 App / H5 Lite 上看不到。"
         : coverageMode === "onApproval" ? "先查兑付覆盖率，够了才执行，不够不动。"
           : g3 ? "按生效时间执行，改线上配置。"
             // 发布只封存这一版，用户看哪版由 I5 的生效版本决定（i5-disclosures 发布框同一说法）。
@@ -2579,6 +2629,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               : w.type === "acct" ? "立即执行，改账号或权限；失败不改原值。"
                 : w.type === "sos" ? "立即执行，停用或恢复业务；失败不改原值。"
                   : "立即执行，改线上配置；失败不改原值。";
+    const e1Display = scheduled ? "" : e1DisplayChange(w);
+    const shownImpact = !e1Display ? impact : e1Display.endsWith("设备不变。") ? e1Display : `${impact}${e1Display}`;
     const check = isRefund ? "核对退款金额、订单和发起理由，理由写清依据或工单号。"
       : isFunds ? "核对对象、变更前后和发起理由，理由写清依据或工单号。"
         : w.type === "acct" ? "核对目标账号、申请的角色和发起理由，理由写清依据或工单号。"
@@ -2648,7 +2700,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {isRefund && w.refundOrderNo && <PromotionRefundImpact orderNo={w.refundOrderNo} />}
         </div>
       ),
-      statedBrief: fund ? { impact: fund.impact, check: fund.check } : { impact, check },
+      statedBrief: fund ? { impact: fund.impact, check: fund.check } : { impact: shownImpact, check },
       amplifies,
       // 有覆盖率时事实区写「兑付覆盖率 X，红线 Y」，多付钱和检查时点进问号；读不到时橙黄写出来，不是一句白字（必须改 12）。
       // 低于红线时共用框写的是发起人的话（「暂时不能提交」）：这里不把读数交给共用框，自己写读数和批准人的话，按钮照样禁用。
@@ -2972,12 +3024,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return {
       key: record.fingerprint, object: record.label, createdAt: record.createdAt,
       tag: <StatusTag tone="warn">结果未知</StatusTag>,
-      line: `${sealed ? "这版可能已经封存" : "可能已经生效"}。${expired ? RETRY_EXPIRED : d5Block ? `${d5Block}。点「查询原结果」看这次批准执行没有，或点「在操作记录里查看」。` : RECOVERY_HINT[record.kind]}`,
+      line: `${sealed ? "这版可能已经封存" : "可能已经生效"}。${expired ? RETRY_EXPIRED : d5Block ? `${d5Block}。点「查询原操作」看这次批准执行没有，或点「在操作记录里查看」。` : RECOVERY_HINT[record.kind]}`,
       result: note ? { tag: check ? <StatusTag tone={check.tone} icon={check.icon}>{check.label}</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>, line: note.text } : undefined,
       // 查询的回答已在 result 里替换这一行的结论；noteKey 只让回答变了时自动展开，不在展开内容里再写一遍。
       noteKey: note?.text,
       actions: <>
-        <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
+        <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>{record.kind === "param" ? "读取当前值" : record.kind === "retention" ? "读取最近清理" : "查询原操作"}</Button>
         <Button size="sm" disabled={!!submitting} disabledReason={retryBlock(record)} onClick={() => void retryPending(record)}>按原操作重试</Button>
         {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>,
@@ -3024,7 +3076,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const pendingTab = (
     <>
       {mainError && !main ? (
-        <BlockState state="error" title="审批单读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} afterRetryFocus={pendingTitle} />
+        <BlockState state="error" title="审批单加载失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} afterRetryFocus={pendingTitle} />
       ) : <>
         {/* 待审批是数量不是状态，按角色色；应急、资金类只给图标底上色，数字正文色（必须改 4，同提现审核）。 */}
         <StatBand label="待审批汇总" fit>
@@ -3066,7 +3118,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）`} /></Td>
+                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
                       <Td><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td fit={!showActions}><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
@@ -3204,9 +3256,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const orderedParams = [...mechanismParams].sort((a, b) => (PARAM_ORDER.indexOf(a.key) + 1 || 99) - (PARAM_ORDER.indexOf(b.key) + 1 || 99));
   const schemaNow = schemaVersion(mechanismParams.find((p) => p.key === "schema")?.value);
   const settingsTab = mainError && !main ? (
-    <BlockState retryKey="a2-audit-3198" state="error" title="机制设置读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
+    <BlockState retryKey="a2-audit-3198" state="error" title="机制设置加载失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
   ) : !main ? (
-    <BlockState state="loading" title="正在读取机制设置…" />
+    <BlockState state="loading" title="正在加载机制设置…" />
   ) : (
     <>
       <Panel icon={SlidersHorizontal} tone="role-4" title="审批与记录规则">
@@ -3377,7 +3429,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         nav={{ hasPrev: Boolean(prevTicket), hasNext: Boolean(nextTicket), onPrev: () => { if (prevTicket) setTicketId(prevTicket.id); }, onNext: () => { if (nextTicket) setTicketId(nextTicket.id); } }}
         footer={ticketFooter}>
         {shown && <>
-          {pendingTicketIds.has(shown.id) && <Notice tone="warn">这张单有一次决定结果未知，先到页面上方「查询原结果」，查清前不要重复处理。</Notice>}
+          {pendingTicketIds.has(shown.id) && <Notice tone="warn">这张单有一次决定结果未知，先到页面上方「查询原操作」，查清前不要重复处理。</Notice>}
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={judgment} />
           {shownCoverageMode === "onApproval" && <Notice tone="warn">{approvalCoverageCopy(shown)}</Notice>}
           {shownCoverageMode === "amplifies" && <Notice tone="warn">{shownFundCheck}</Notice>}

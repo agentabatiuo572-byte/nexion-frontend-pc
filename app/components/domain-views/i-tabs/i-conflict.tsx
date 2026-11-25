@@ -61,7 +61,7 @@ export function IConflictModal({ review, subject, lead = "别人先改了，这�
   onDiscard: () => void;
   onClose: () => void;
 }) {
-  const waiting = review.reading ? "正在读取最新的" : review.readError ? "最新的没读到，重新读取后再继续" : undefined;
+  const waiting = review.reading ? "正在加载最新的" : review.readError ? "最新的没读到，重新读取后再继续" : undefined;
   const shown = rows.filter((row) => row.changed);
   const same = rows.length - shown.length;
   const grouped = new Set(shown.map((row) => row.group)).size > 1;
@@ -77,7 +77,7 @@ export function IConflictModal({ review, subject, lead = "别人先改了，这�
       <div className="rd-stack i-conflict">
         <p><b>{subject}</b>：{lead}</p>
         {review.reading
-          ? <BlockState state="loading" title="正在读取最新的…" />
+          ? <BlockState state="loading" title="正在加载最新的…" />
           : review.readError
             ? <Notice tone="danger" title="最新的没读到" action={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={onReread}>重新读取</Button>}>{review.readError}</Notice>
             : gone

@@ -24,6 +24,26 @@ export function e1Number(value: number | string | null | undefined): string {
   return `${negative ? "-" : ""}${integer.replace(/\B(?=(\d{3})+$)/g, ",")}${decimal === undefined ? "" : `.${decimal}`}`;
 }
 
+const E1_NUMERIC_REVIEW_FIELDS = new Set([
+  "price", "computePoints", "displaySoldBase", "monthlyTargetUsdt", "monthlyTargetBandPct", "stock",
+  "dailyEarn", "dailyEarnNEX", "dailyEarnNex", "phoneDailyEarn", "phoneDailyEarnNEX", "phoneDailyEarnNex", "shareYieldMin", "shareYieldMax",
+  "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins",
+  "rating", "reviews", "generation", "tradeinDiscount", "derivedDaily",
+]);
+
+/** E1 and A2 compare numeric fields as decimals without rounding 64-bit input strings. */
+export function e1NumericReviewValue(key: string, value: unknown): string | undefined {
+  if (!E1_NUMERIC_REVIEW_FIELDS.has(key)) return;
+  const text = typeof value === "number" && Number.isFinite(value) ? e1Number(value).replaceAll(",", "")
+    : typeof value === "string" ? value.trim() : "";
+  const parts = /^(-?)(\d*)(?:\.(\d*))?$/.exec(text);
+  if (!parts || !(parts[2] || parts[3])) return;
+  const integer = parts[2].replace(/^0+/, "") || "0";
+  const fraction = parts[3]?.replace(/0+$/, "");
+  const sign = integer === "0" && !fraction ? "" : parts[1];
+  return `${sign}${integer}${fraction ? `.${fraction}` : ""}`;
+}
+
 /** 只读金额按全站写法（amountDisplay，PRD §5A）：去掉末尾 0、整数不写小数点、不补零。e1Decimal 的写法留给审批前后值和「有没有改动」的判断，不动。 */
 export function e1Amount(value: number | string | null | undefined): string {
   const raw = e1Number(value);
@@ -165,7 +185,8 @@ export const E1_SKU_FIELDS: readonly { key: keyof OpsSku; label: string; unit?: 
   { key: "dailyEarn", label: "兼容日收益", unit: "USDT/天" }, { key: "dailyEarnNEX", label: "每日收益", unit: "UVT/天" },
   { key: "phoneDailyEarn", label: "手机每日收益 USDT", unit: "USDT/天" }, { key: "phoneDailyEarnNEX", label: "手机每日收益 UVT", unit: "UVT/天" },
   { key: "shareYieldMin", label: "Share参考年奖励率下限", unit: "%" }, { key: "shareYieldMax", label: "Share参考年奖励率上限", unit: "%" },
-  { key: "inventoryMode", label: "库存模式" }, { key: "stock", label: "剩余库存" }, { key: "trialEligible", label: "允许试用" },
+  { key: "inventoryMode", label: "库存模式" }, { key: "stock", label: "剩余库存" },
+  { key: "displaySoldBase", label: "展示基础销量" }, { key: "liveActivityVisible", label: "显示购买动态" }, { key: "trialEligible", label: "允许试用" },
   { key: "unlock", label: "开放阶段" }, { key: "purchaseGate", label: "购买条件与配额" },
   { key: "gpu", label: "GPU" }, { key: "vram", label: "显存" }, { key: "hashRate", label: "算力" },
   { key: "power", label: "功耗 / 功率说明" }, { key: "uptime", label: "在线率" }, { key: "warranty", label: "质保期限" },
@@ -218,21 +239,45 @@ export function e1ShownDiff<Row extends { key: string; before?: string; after?: 
   });
 }
 
-/** shown：确认框里给人看的前后值，金额按 e1Amount 写；不传时是提交审批和判断「有没有改动」用的原文，逐字节不变。 */
-export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuForm, shown = false) {
+/** proposal 保留送审用的原文，display 用只读金额格式。页面对照和判断改动按字段语义比较。 */
+export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuForm, mode: "review" | "display" | "proposal" = "review") {
+  const shown = mode === "display";
   const target = (sku: OpsSku) => shown ? e1Amount(sku.monthlyTargetUsdt) : e1Decimal(sku.monthlyTargetUsdt, e1TargetPrecision(sku));
-  const numericInputs = ["price", "computePoints", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins", ...(after.monthlyTargetUsdt == null ? ["dailyEarn", "shareYieldMin", "shareYieldMax"] : [])];
+  const numericInputs = ["price", "computePoints", "displaySoldBase", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins", ...(after.monthlyTargetUsdt == null ? ["dailyEarn", "shareYieldMin", "shareYieldMax"] : [])];
   // Editor drafts contain only the translation update. Catalogue reads contain the stored map.
   const nextTranslations = after.taglineTranslations ?? (raw ? before?.taglineTranslations : undefined);
   const translationRows = skuTaglineReviewRows(before?.taglineTranslations, nextTranslations, !before);
-  return [...E1_SKU_FIELDS, ...translationRows].map(field => {
+  const fields = E1_SKU_FIELDS.filter(({ key }) => (key !== "displaySoldBase" && key !== "liveActivityVisible") || after[key] !== undefined);
+  return [...fields, ...translationRows].map(field => {
     if ("before" in field) return field;
     const { key, label, unit } = field;
     const value = (sku: OpsSku) => e1Value(key === "badge" ? skuBadgeReviewText(sku.badge) : sku[key], unit, shown);
-    const input = raw && numericInputs.includes(key) ? raw[key as keyof SkuForm] : undefined;
-    const next = key === "monthlyTargetUsdt" && after.monthlyTargetUsdt != null ? `${target(after)} ${unit}` : typeof input === "string" && input.trim() ? `${unit && unit !== "%" ? shown ? e1Amount(input) : e1Decimal(input) : e1Number(input)}${unit ? ` ${unit}` : ""}` : value(after);
+    const input = raw && numericInputs.includes(key)
+      ? key === "displaySoldBase" ? after.displaySoldBase?.toString() : raw[key as keyof SkuForm]
+      : undefined;
+    const typed = typeof input === "string" && input.trim() ? input : undefined;
+    const next = key === "monthlyTargetUsdt" && after.monthlyTargetUsdt != null ? `${target(after)} ${unit}` : typed !== undefined ? `${unit && unit !== "%" ? shown ? e1Amount(typed) : e1Decimal(typed) : e1Number(typed)}${unit ? ` ${unit}` : ""}` : value(after);
     if (key === "seriesCode") return { key, label, before: before ? skuSeriesText(before.seriesCode) : "未创建", after: skuSeriesText(after.seriesCode), note: undefined };
-    return { key, label, before: before ? key === "monthlyTargetUsdt" && before.monthlyTargetUsdt != null ? `${target(before)} ${unit}` : value(before) : "未创建", after: !before && raw && numericInputs.includes(key) && input === "" ? "未填写" : next,
+    const previous = before ? key === "monthlyTargetUsdt" && before.monthlyTargetUsdt != null ? `${target(before)} ${unit}` : value(before) : "未创建";
+    const previousNumeric = mode !== "proposal" && before ? e1NumericReviewValue(key, before[key]) : undefined;
+    const sameNumber = previousNumeric !== undefined && previousNumeric === e1NumericReviewValue(key, typed ?? after[key]);
+    return { key, label, before: previous, after: sameNumber ? previous : !before && raw && numericInputs.includes(key) && input === "" ? "未填写" : next,
       note: key === "monthlyTargetUsdt" && after.clearMonthlyTarget ? "关闭月目标，改用兼容展示值" : undefined };
   });
+}
+
+/**
+ * 展示基础销量、购买动态改了以后在 App / H5 Lite 上的实际效果；送审确认框和审批批准框共用这一个函数（显示规则 1–4）。
+ * base：改后的展示基础销量（改了才传）；sold：累计销量，读不到时写「累计销量 + 基础值」；live：改后的开关（改了才传）；
+ * liveAfter：批准后购买动态开不开；listed：商品在售（status 为 on）。onlyDisplay：只改了这两项，末尾补「不变」那句。
+ */
+export function e1DisplayEffect(change: { base?: number; sold?: number; live?: boolean; liveAfter: boolean; listed: boolean }, onlyDisplay: boolean): string {
+  if (change.base === undefined && change.live === undefined) return "";
+  const total = change.base === undefined ? "" : change.sold === undefined ? `累计销量 + ${e1Number(change.base)}` : e1Number(change.sold + change.base);
+  return [
+    change.listed ? "批准后，" : "批准后保存，商品上架后，",
+    change.base !== undefined && `App / H5 Lite 商品详情的「累计已售」按 ${total} 件计${change.liveAfter ? "，商品图左下角的购买动态按同一个数推算" : ""}。`,
+    change.live !== undefined && `这件商品${change.live ? "显示" : "不显示"}商品图左下角的购买动态。`,
+    onlyDisplay && "售价、任务、已有订单和设备不变。",
+  ].filter(Boolean).join("");
 }

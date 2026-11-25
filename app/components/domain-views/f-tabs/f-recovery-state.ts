@@ -21,7 +21,7 @@ export function fConfirmRecovery<T extends PendingMutationRecord>(source: Recove
     query: query && (async () => { await query(); }),
     blockedReason: state.replayBlock === "expired" ? RETRY_EXPIRED_TEXT
       : state.replayBlock === "replay-rejected" ? "原请求重试已被拒绝，请核实原操作结果。"
-        : state.replayBlock === "needs-not-found" ? "请先查询原结果，明确查不到后才能按原操作重试。"
+        : state.replayBlock === "needs-not-found" ? "请先查询原操作，明确查不到后才能按原操作重试。"
           : state.replayBlock === "unavailable" ? "当前权限或原操作记录不足，暂时不能重试。" : undefined,
   };
 }

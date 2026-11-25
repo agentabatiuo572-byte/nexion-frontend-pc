@@ -5,6 +5,7 @@ import { Boxes, ImageIcon } from "lucide-react";
 import { BlockState, Button, Check, CheckGroup, Decision, DiffList, Drawer, Explain, Facts, Fact, Field, Fold, Input, LevelStrip, Modal, Notice, NumberInput, ReleaseModal, SectionNav, Select, Textarea, useSectionNav } from "@/app/components/rd";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
+import { E1_DISPLAY_SOLD_BASE_MAX } from "@/lib/admin/e1-overview-contract";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fetchSkuDatacenterLabels, fetchTaskPools, type TaskPool } from "@/lib/admin/task-pool-client";
@@ -17,7 +18,7 @@ import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { SKU_SERIES_NAMES, skuSeriesText } from "@/lib/admin/device-monthly-target";
-import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSeries, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
+import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSeries, validateSkuSpecs, validateSkuDisplaySoldBase, validateGateForm, type SkuForm } from "./data";
 import { currentRecoveryActor, rebaseRecoveryFields } from "@/lib/admin/abe-recovery-access";
 import { e1MediaCommands, e1MediaHasOwner, e1PendingMediaFor, E1_PENDING_MEDIA, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
@@ -34,6 +35,7 @@ export type E1SkuReview = {
 type Media = { kind: "image" | "video"; src: string; name: string; size?: number; w?: number; h?: number; duration?: number; assetId?: string; objectKey?: string } | null;
 const SECTIONS = [{ id: "e1-basic", label: "基本信息" }, { id: "e1-earnings", label: "收益与任务" }, { id: "e1-stock", label: "库存与购买条件" }, { id: "e1-specs", label: "规格与资料" }];
 const BASIC_FIELDS = ["name", "id", "tier", "seriesCode", "lifecycle", "badge", "tagline", "taglineZh", "taglineVi", "media"];
+const STOCK_FIELDS = ["inventoryMode", "stock", "displaySoldBase", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"];
 const SKU_NAME_MAX_LENGTH = 128;
 const CUSTOM_BADGE_REQUIRED = "请填写自定义角标";
 
@@ -105,8 +107,8 @@ function ownsMedia(record: E1MediaPending, request?: E1EditRequest | null) {
     && (record.skuId ? record.skuId === request.sku?.id : record.draftId === request.draftId && !request.sku);
 }
 
-function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media): OpsSku {
-  const draft: OpsSku = { ...original, ...formToSku(form, original), imageAssetId: media?.assetId, imageObjectKey: media?.objectKey, imagePreviewUrl: undefined };
+function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media, displayControlsSupported: boolean): OpsSku {
+  const draft: OpsSku = { ...original, ...formToSku(form, original, displayControlsSupported), imageAssetId: media?.assetId, imageObjectKey: media?.objectKey, imagePreviewUrl: undefined };
   if (original) {
     const opened = skuToForm(original);
     // A complete snapshot must retain untouched values, including legacy formatting.
@@ -124,6 +126,10 @@ function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media): Op
       draft.baseRate = original.baseRate; draft.derivedDailyEarnUsdt = original.derivedDailyEarnUsdt;
       draft.derivedShareYieldMinPct = original.derivedShareYieldMinPct; draft.derivedShareYieldMaxPct = original.derivedShareYieldMaxPct;
     }
+  }
+  if (!displayControlsSupported) {
+    delete draft.displaySoldBase;
+    delete draft.liveActivityVisible;
   }
   return draft;
 }
@@ -172,7 +178,8 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const seriesLocked = original?.seriesLocked === true;
   const seriesChoices = skuSeriesChoices(form.tier, original);
   const nav = useSectionNav(SECTIONS, { ready: !!request });
-  const draft = skuDraft(form, original, media);
+  const displayControlsSupported = gates?.storeDisplayControlsSupported === true;
+  const draft = skuDraft(form, original, media, displayControlsSupported);
   const dirty = !!request && (JSON.stringify({ ...form, badgeKindChanged: false }) !== initialForm || form.badgeKindChanged && draft.badge !== original?.badge || imageIdentity(media) !== initialMedia);
   const latestChanged = !!original && !!currentSku?.updatedAt && original.updatedAt !== currentSku.updatedAt;
   // Untouched drafts count no change, even when a Chinese legacy preset would be saved in English (d191bf189).
@@ -187,12 +194,27 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   useEffect(() => {
     if (!request) return;
     const sku = request.sku, next = sku ? skuToForm(sku) : { ...EMPTY_SKU_FORM, allowedPoolCodes: [], unlock: gates?.phaseOrder[0] ?? "" };
+    if (!sku && !displayControlsSupported) {
+      next.displaySoldBase = "";
+      next.liveActivityVisible = "";
+    }
     if (request.unlock !== undefined) next.unlock = request.unlock;
     const originalMedia = skuMedia(sku);
     const restored = request.recovered;
-    const merge = restored?.baseline && sku ? mergeSkuRevision(restored.baseline, sku, restored.form, skuMedia(restored.mediaSku)) : null;
+    const restoredForm = restored && {
+      ...next, ...restored.form,
+      displaySoldBase: restored.mediaSku.displaySoldBase === undefined ? next.displaySoldBase : restored.form.displaySoldBase ?? String(restored.mediaSku.displaySoldBase),
+      liveActivityVisible: restored.mediaSku.liveActivityVisible === undefined ? next.liveActivityVisible : restored.form.liveActivityVisible ?? String(restored.mediaSku.liveActivityVisible),
+    };
+    const mediaDraftForm = request.mediaDraftForm && { ...next, ...request.mediaDraftForm };
+    if (!sku && displayControlsSupported && mediaDraftForm?.displaySoldBase === "" && mediaDraftForm.liveActivityVisible === "") {
+      // 旧服务停用两项时都留空。有开关值的草稿仍按原输入恢复。
+      mediaDraftForm.displaySoldBase = next.displaySoldBase;
+      mediaDraftForm.liveActivityVisible = next.liveActivityVisible;
+    }
+    const merge = restored?.baseline && restoredForm && sku ? mergeSkuRevision(restored.baseline, sku, restoredForm, skuMedia(restored.mediaSku)) : null;
     const m = merge ? merge.mergedMedia : restored ? skuMedia(restored.mediaSku) : originalMedia;
-    setOriginal(sku); setForm(merge?.merged ?? restored?.form ?? request.mediaDraftForm ?? next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
+    setOriginal(sku); setForm(merge?.merged ?? restoredForm ?? mediaDraftForm ?? next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
     setMedia(m); setInitialMedia(imageIdentity(originalMedia)); setErrors({}); setTouched(new Set()); setLeave(false); setMediaError("");
     fileRef.current = null;
     setMediaPending(e1MediaCommands.list().find(r => r.commandKey === request.mediaCommandKey && r.actorId === actor && ownsMedia(r, request)) ?? null);
@@ -345,6 +367,10 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (invalidWarranty) e.warranty = invalidWarranty;
     if (form.inventoryMode === "FINITE" && (!/^\d+$/.test(form.stock) || Number(form.stock) > 2147483647)) e.stock = "库存须为 0～2147483647 的整数";
     if (form.tier !== "Share" && form.inventoryMode === "UNLIMITED") e.inventoryMode = "仅共享份额可用不限库存";
+    if (displayControlsSupported) {
+      const displaySoldBaseError = validateSkuDisplaySoldBase(form.displaySoldBase);
+      if (displaySoldBaseError) e.displaySoldBase = displaySoldBaseError;
+    }
     const specError = validateSkuSpecs(form, original);
     if (specError) {
       const key = /GPU/.test(specError) ? "gpuCount" : /算力点/.test(specError) ? "computePoints" : /资料|HTTPS/.test(specError) ? "specDocumentUrl" : /波动/.test(specError) ? "monthlyTargetBandPct" : /托管/.test(specError) ? "datacenter" : /年奖励率/.test(specError) ? "shareYieldMin" : /每日收益/.test(specError) ? "dailyEarn" : "monthlyTargetUsdt";
@@ -366,12 +392,12 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
         e[key] = error;
       }
     }
-    const sku = skuDraft(form, original, media);
+    const sku = skuDraft(form, original, media, displayControlsSupported);
     Object.assign(e, productCopyErrors(form, sku));
     setErrors(e);
     if (Object.keys(e).length) {
       const first = Object.keys(e)[0];
-      const section = BASIC_FIELDS.includes(first) ? "e1-basic" : ["stock", "unlock", "inventoryMode", "gateQuotaPeriod", "gateQuotaCap", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin"].includes(first) ? "e1-stock" : ["gpu", "gpuCount", "power", "specDocumentTitle", "specDocumentUrl", "uptime", "warranty"].includes(first) || first.startsWith("ai") ? "e1-specs" : "e1-earnings";
+      const section = BASIC_FIELDS.includes(first) ? "e1-basic" : STOCK_FIELDS.includes(first) ? "e1-stock" : ["gpu", "gpuCount", "power", "specDocumentTitle", "specDocumentUrl", "uptime", "warranty"].includes(first) || first.startsWith("ai") ? "e1-specs" : "e1-earnings";
       nav.select(section); return false;
     }
     if (original && !e1SkuDiff(original, sku, form).some(row => row.before !== row.after)) { toast("没有任何修改，无需提交"); return false; }
@@ -390,22 +416,25 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const review = () => { reviewDraft(form, original, media); };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
   const copyErrors = productCopyErrors(form, draft);
-  const appTextErrors: Record<string, string> = { ...copyErrors, warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
+  const displaySoldBaseError = displayControlsSupported ? validateSkuDisplaySoldBase(form.displaySoldBase) : undefined;
+  const inlineErrors: Record<string, string> = { ...copyErrors, warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
+  if (displaySoldBaseError) inlineErrors.displaySoldBase = displaySoldBaseError;
   for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
     const error = appVisibleTextError(form[key], label);
-    if (error && !(key === "power" && form.tier === "Share")) appTextErrors[key] ??= error;
+    if (error && !(key === "power" && form.tier === "Share")) inlineErrors[key] ??= error;
   }
   // 字段错误离开字段或点过保存后才写在字段下（OP-15、VS-107）；字数和保存按钮的禁用原因照旧即时。
   const touch = (key: string) => setTouched(current => current.has(key) ? current : new Set(current).add(key));
-  const shownError = (key: string) => errors[key] || (touched.has(key) ? appTextErrors[key] : undefined);
+  const shownError = (key: string) => errors[key] || (touched.has(key) ? inlineErrors[key] : undefined);
   const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: ReactNode; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={shownError(key)} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
     {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={key === "warranty" && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? "" : String(form[key])} onChange={e => update(key, e.target.value)} onBlur={() => touch(key)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} onBlur={() => touch(key)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
   </Field>;
-  const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaBlocked || mediaPending ? E1_PENDING_MEDIA : Object.values(copyErrors)[0] ?? (!dirty || original && !changes.length ? "没有修改" : undefined);
+  const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaBlocked || mediaPending ? E1_PENDING_MEDIA : Object.values(copyErrors)[0] ?? displaySoldBaseError ?? (!dirty || original && !changes.length ? "没有修改" : undefined);
+  const stockFilled = (form.inventoryMode === "UNLIMITED" || form.stock !== "") && (!displayControlsSupported || form.displaySoldBase !== "");
   const sectionItems = SECTIONS.map((s, index) => {
-    const keys = index === 0 ? BASIC_FIELDS : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? ["inventoryMode", "stock", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"] : ["gpu", "gpuCount", "power", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
+    const keys = index === 0 ? BASIC_FIELDS : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? STOCK_FIELDS : ["gpu", "gpuCount", "power", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
     const invalid = keys.some(key => !!shownError(key));
-    const state = invalid ? "有错误" : index === 0 ? form.name && form.tier && form.seriesCode && form.lifecycle ? "已填" : "待填" : index === 1 ? form.price && (!form.allowedPoolCodes.length || form.monthlyTargetUsdt) ? "已填" : "待填" : index === 2 ? form.inventoryMode === "UNLIMITED" || form.stock !== "" ? "已填" : "待填" : "选填";
+    const state = invalid ? "有错误" : index === 0 ? form.name && form.tier && form.seriesCode && form.lifecycle ? "已填" : "待填" : index === 1 ? form.price && (!form.allowedPoolCodes.length || form.monthlyTargetUsdt) ? "已填" : "待填" : index === 2 ? stockFilled ? "已填" : "待填" : "选填";
     return { ...s, label: invalid ? s.label : `${s.label} · ${state}`, alert: invalid };
   });
   const recoveryBaseline = request?.recovered?.baseline;
@@ -416,7 +445,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const hasTarget = form.monthlyTargetUsdt.trim() !== "";
   const canClear = original?.monthlyTargetUsdt != null && original.status !== "on" && !form.allowedPoolCodes.length;
   return <>
-    <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onBlockedClick={() => setTouched(new Set([...touched, ...Object.keys(appTextErrors)]))} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
+    <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onBlockedClick={() => setTouched(new Set([...touched, ...Object.keys(inlineErrors)]))} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
       {errors.form && <Notice tone="warn" title={errors.form} />}
       {(latestChanged || othersChanges.length > 0) && <Notice tone="warn" title="商品已被别人改过，你填的内容还在" action={latestChanged && currentSku ? <Button size="sm" onClick={() => adoptRevision(currentSku, form, original, media)}>已核对，保留我的修改</Button> : undefined}><Facts><Fact k="别人保存于">{formatBusinessTimeCompact(comparisonAfter?.updatedAt, "—")}（{businessZone().label}）</Fact></Facts>{comparisonAfter && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={othersChanges} /></Fold>}</Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
@@ -480,8 +509,16 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
             <Field label="库存模式" error={errors.inventoryMode} explain="库存是当前剩余量；不限库存仅适用于非实物共享份额，销量仍累计。">{form.tier === "Share" ? <Select aria-label="库存模式" value={form.inventoryMode} onChange={v => setForm(f => ({ ...f, inventoryMode: v, stock: v === "UNLIMITED" ? "" : f.stock }))} options={[{ value: "FINITE", label: "有限库存（卖一件少一件）" }, { value: "UNLIMITED", label: "不限库存（非实物份额）" }]} /> : <Input aria-label="库存模式" value="有限库存（卖一件少一件）" readOnly />}</Field>
             {form.inventoryMode !== "UNLIMITED" && field("stock", "库存", { number: true, min: 0, max: 2147483647, step: 1, required: true, help: "0 表示售罄，不会自动下架" })}
           </div>
-          <Field label="累计销量" explain="按已付款订单累计，新商品从0开始；这里不能修改。"><Input aria-label="累计销量" value={original?.sold == null ? original ? "— · 未读取" : "0" : e1Number(original.sold)} readOnly /></Field>
-          <Check label="允许试用" checked={form.trialEligible === "true"} onChange={e => update("trialEligible", String(e.target.checked))} explain="批准后供免费试用设置选择，仍须满足DEVICE/SERVER与有限库存等资格；不自动开始试用，不改存量试用快照。" />
+          <div className="rd-form-grid">
+            <Field label="累计销量" explain={<><p>已付款订单等交易累计的真实销量，系统自动维护，这里不能改。</p><p>展示基础销量只改 App / H5 Lite 上看到的数，销量统计、库存和配额各按原来的算法，不受它影响。</p></>}><Input aria-label="累计销量" value={original?.sold == null ? original ? "— · 未读取" : "0" : e1Number(original.sold)} readOnly /></Field>
+            {field("displaySoldBase", "展示基础销量", { number: true, unit: "件", min: 0, max: E1_DISPLAY_SOLD_BASE_MAX, step: 1, disabled: !displayControlsSupported, required: displayControlsSupported, hint: "0–9,999,999",
+              help: displayControlsSupported && !displaySoldBaseError && (!original || original.sold != null) ? `批准后，App / H5 Lite「累计已售」按 ${e1Number((original?.sold ?? 0) + Number(form.displaySoldBase))} 件计` : undefined,
+              explain: <><p>「累计已售」= 累计销量 + 这个数。只用于展示，不计入销量统计、库存和配额。填整数，0 表示不加。</p><p>显示位置：App / H5 Lite 商城 › 商品详情，价格下方；商品图左下角的「在看」「24h 售出」「30 分钟售出」也按这个合计推算。</p><p>满 100 件后 App 按档位显示，如 3,014 显示为 3.0K+。</p><p>随这次修改提交审批，批准后生效。</p></> })}
+          </div>
+          <Check label="显示购买动态" checked={displayControlsSupported ? form.liveActivityVisible === "true" : true} disabled={!displayControlsSupported || busy} onChange={e => update("liveActivityVisible", String(e.target.checked))}
+            help={displayControlsSupported ? undefined : "展示基础销量和购买动态目前还不支持，暂时不能改"}
+            explain={<><p>商品图左下角滚动的「在看」「24h 售出」「30 分钟售出」。关掉后这件商品不显示这一块，「累计已售」照常显示。</p><p>显示位置：App / H5 Lite 商城 › 商品详情，商品图左下角。</p><p>随这次修改提交审批，批准后生效；不影响销量统计和购买。</p></>} />
+          <Check label="允许试用" checked={form.trialEligible === "true"} onChange={e => update("trialEligible", String(e.target.checked))} explain="批准后，「免费试用设置」可以选这件商品。只有有限库存的硬件设备能选，共享份额不行。勾上不会自动开始试用，也不改已有的试用。" />
           {form.tier !== "Share" && <Field label="开放阶段" required error={errors.unlock} explain="商品允许开放的阶段，须与上架规则一致。不能在此推进平台阶段。">{gates?.phaseOrder.length === 1 ? control => <div className="e1-table-actions"><Input {...control} aria-label="开放阶段" readOnly value={form.unlock ? gates.phases.find(p => p.p === form.unlock)?.label || form.unlock : "尚未选择开放阶段"} /><Button size="sm" onClick={() => update("unlock", gates.phaseOrder[0])}>选择 {gates.phases.find(p => p.p === gates.phaseOrder[0])?.label || gates.phaseOrder[0]}</Button></div> : <Select aria-label="开放阶段" required value={form.unlock} disabled={!gates?.phaseOrder.length} onChange={v => update("unlock", v)} placeholder={gates?.phaseOrder.length ? "请选择开放阶段" : "请先配置阶段"} options={gates?.phaseOrder.map(id => ({ value: id, label: `${gates.phases.find(p => p.p === id)?.label || id}${id === currentPhaseId ? " · 当前阶段" : ""}` })) ?? []} />}</Field>}
           <Field label="购买条件类型" explain="限制哪些用户可购买；无用户条件仍可独立设置销售配额。"><Select aria-label="购买条件类型" value={form.gateType} onChange={v => update("gateType", v)} options={[{ value: "none", label: "无用户条件" }, { value: "activeDirect", label: "活跃直接邀请人数" }, { value: "rank", label: "最低会员等级" }, { value: "combo", label: "组合条件（会员等级 / 直接邀请 / 团队算力点）" }]} /></Field>
           <div className="rd-form-grid">{(form.gateType === "rank" || form.gateType === "combo") && field("gateRankMin", "最低会员等级", { number: true, min: 0, max: 8, step: 1, help: "0～8；0 为不设条件" })}{(form.gateType === "activeDirect" || form.gateType === "combo") && field("gateActiveDirectMin", "活跃直接邀请人数", { number: true, min: 0, max: 1000000, step: 1, help: "0～1,000,000 的整数" })}{form.gateType === "combo" && field("gateTeamComputePointsMin", "团队算力点", { number: true, min: 0, step: 1, help: "非负整数，0 为不设条件" })}

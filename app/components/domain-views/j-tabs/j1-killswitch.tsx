@@ -68,8 +68,8 @@ function ruleModeText(rule: AutoRuleRow) {
 /** 阈值在别的页设置，这里只引用（J1-S03）。 */
 const RULE_SOURCE: Record<string, string> = { withdrawSurge: "/overview/risk-radar", tamperCluster: "/emergency/tamper" };
 const EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
-const READING = "正在读取最新状态，读完再操作";
-const LOCKED = "这项有结果未知的操作，先到页面上方查询原结果";
+const READING = "正在加载最新状态，读完再操作";
+const LOCKED = "这项有结果未知的操作，先到页面上方查询原操作";
 /** 查到的原恢复申请已经有结论时怎么说。 */
 const TICKET_DONE: Record<string, string> = { approved: "已批准", rejected: "已被驳回", withdrawn: "已撤回", expired: "已过期" };
 const BLOCKED_RESUME = "系统现在不允许恢复资金业务，暂不能申请。到「资金储备与应付款」核对覆盖率和估值，系统允许后再申请。";
@@ -259,7 +259,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         syncPending();
         await actions.reloadJEmergency().catch(() => undefined);
         if (unknown) {
-          toast("结果未知，不要重复操作。到页面上方查询原结果，或按原操作重试。", "warn");
+          toast("结果未知，不要重复操作。到页面上方查询原操作，或按原操作重试。", "warn");
           return;
         }
         // 确认框留着时原因写在框里，重试的原因写在待确认条上，都不再弹同一句；权限层的 403 由确认框提示并关框（OP-132）。
@@ -588,7 +588,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           await submitRestore(gate, reason);
         } catch (error) {
           if (!isA2OutcomeUncertainError(error)) throw error;
-          toast("恢复申请结果未知。批准前业务保持关停，到页面上方查询原结果。", "warn");
+          toast("恢复申请结果未知。批准前业务保持关停，到页面上方查询原操作。", "warn");
         }
       },
     });
@@ -739,7 +739,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const backfill = backfillOf(gate.key);
     if (backfill) return canKill ? <Button disabledReason={block} onClick={() => confirmAutoTrigger(backfill)}>补录结论</Button> : undefined;
     if (!canResume) return undefined;
-    if (approvalsLoading || approvalsError) return <Button disabledReason={approvalsLoading ? "正在读取恢复审批状态，读完再操作" : approvalsError}>提交恢复审批</Button>;
+    if (approvalsLoading || approvalsError) return <Button disabledReason={approvalsLoading ? "正在加载恢复审批状态，读完再操作" : approvalsError}>提交恢复审批</Button>;
     // 按钮写动作，状态写在标签上（DT-20）。
     if (gate.coveragePrecheckRequired && !covPass) return <Button disabledReason={recoveryBlock}>提交恢复审批</Button>;
     return <Button disabledReason={block} onClick={() => resumeGate(gate)}>提交恢复审批</Button>;
@@ -896,7 +896,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
               when={row.id === "recoverGate" ? "只读，跟随备付金红线" : "保存后立即生效，只影响之后的自动关停"}
               value={row.id === "recoverGate" ? "跟随红线" : unitText(row.v, row.unit)}
               action={row.id === "recoverGate"
-                ? (reach("/overview/dual-ledger") ? <Link className="rd-link" href="/overview/dual-ledger" prefetch={false} title="恢复门槛跟随备付金红线，如需调整请前往备付金页面">去看红线</Link> : undefined)
+                ? (reach("/overview/dual-ledger") ? <Link className="rd-link" href="/overview/dual-ledger" prefetch={false} title="恢复门槛跟随备付金红线，如需调整请前往备付金页面">去看红线 →</Link> : undefined)
                 : canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={blockOf(`sla:${row.id}`)} onClick={() => adjEmer(row)}>调整</Button> : undefined} />
           ))}
         </ConfigList>
@@ -922,7 +922,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
                   : rule.thresholdSource === "DEFAULT" ? <>{ruleValue(rule)} <StatusTag tone="neutral" explain="这条阈值还没保存过，现在按系统默认值判断；第一次保存后按你存的值。">默认值</StatusTag></> : ruleValue(rule)}
                 action={rule.adjustable && canWrite
                   ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={blockOf(`rule:${rule.id}`)} onClick={() => adjRule(rule)}>调整</Button>
-                  : source && reach(source) ? <Link className="rd-link" href={source} prefetch={false} title={rule.refTitle}>去设置</Link> : undefined} />
+                  : source && reach(source) ? <Link className="rd-link" href={source} prefetch={false} title={rule.refTitle}>去设置 →</Link> : undefined} />
             );
           })}
         </ConfigList>

@@ -135,7 +135,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
       if (owns()) { setBusy(false); onChanged(); await refresh(); }
     }
   };
-  const readBlock = loading ? "正在读取最新数据" : busy ? "正在提交" : undefined;
+  const readBlock = loading ? "正在加载最新数据" : busy ? "正在提交" : undefined;
   const approval = <StatusTag tone="progress" filled>另一位管理员复核后生效</StatusTag>;
   const confirm = (spec: { kind: OperatorBriefKind; action: string; title: string; path: string; body: ExceptionRecord; detail: string; confirmLabel: string; danger?: boolean; review?: boolean; facts?: React.ReactNode; completion?: string }) => {
     const held = d1PendingObjectReason(`/cregis${spec.path}`, spec.body);
@@ -259,12 +259,12 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
       {caseFold("reorg", FileCheck2)}
       {!policy ? <Fold title="退款手续费" icon={Receipt} tone="role-4" alert alertTone="danger" summary="读取失败" defaultOpen
         explain="异常入金原路退款时扣多少费用。读不到时原路退款先不能提交，认领照常。">
-        <BlockState state="error" compact title="退款手续费读取失败" detail={errors.fee} onRetry={() => void refresh()} />
+        <BlockState state="error" compact title="退款手续费加载失败" detail={errors.fee} onRetry={() => void refresh()} />
       </Fold> : <Fold title="退款手续费" icon={Receipt} tone="role-4" alert={policy.mode === "UNCONFIGURED" || policyWaiting.length > 0 || !!errors.feeCases} defaultOpen={policyWaiting.length > 0}
         summary={`${MODE[String(policy.mode)]}${policy.mode === "FIXED_USDT" ? ` ${amount(policy.feeUsdt)} USDT` : ""}${policyWaiting.length ? `，${policyWaiting.length} 个提案待复核` : ""}`}
         explain="异常入金原路退款时扣多少费用。另一位管理员复核后生效，只对新工单；待配置时不能退款。">
         <div className="rd-stack">
-          {errors.feeCases && <BlockState state="error" compact title="费用规则提案读取失败" detail={errors.feeCases} onRetry={() => void refresh()} />}
+          {errors.feeCases && <BlockState state="error" compact title="费用规则提案加载失败" detail={errors.feeCases} onRetry={() => void refresh()} />}
           <ConfigList label="退款手续费">
             <ConfigRow name="退款手续费" what="异常退款时扣多少费用" when="另一位管理员复核后生效，只对新工单" effect="待配置时不能退款"
               value={`${MODE[String(policy.mode)]}${policy.mode === "FIXED_USDT" ? ` ${amount(policy.feeUsdt)} USDT` : ""}`} sub={`版本 ${label(policy.version)}`}

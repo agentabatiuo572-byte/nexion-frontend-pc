@@ -1152,7 +1152,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         // 状态被别人改了：单笔审核的框留着，刷新成最新状态（D2-C89）；其余操作关框，列表已是最新（BUG-291）。重试的原命令继续走待确认。
         // 框留着时原因写在框里，不再弹同一句盖住标题；框关了才提示。
         if (unknown || (moved && !retained && extra.kind !== "review")) {
-          toast(unknown ? "结果未知，不要重复操作。到页面上方查询原结果，或按原操作重试。" : "提现已被他人或系统处理，已刷新列表，请核对最新状态。", "warn");
+          toast(unknown ? "结果未知，不要重复操作。到页面上方查询原操作，或按原操作重试。" : "提现已被他人或系统处理，已刷新列表，请核对最新状态。", "warn");
           return;
         }
         throw cause;
@@ -1578,7 +1578,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   /** 现在不能做的原因，写给人看（OP-126）。没有权限的动作不走这里，直接隐藏（OP-124）。 */
   function blockedReason(row: D2Withdrawal, action?: D2ReviewAction) {
     if (action === "REFUND" && erc20ConfirmationLost(row)) return "这笔 ERC20 提现已丢失链上确认，保持冻结并继续占提现额度，不能退款；原操作记录继续保留，请核对链上结果";
-    if (pendingNos.has(row.withdrawalNo)) return "这笔有结果未知的操作，先到页面上方查询原结果";
+    if (pendingNos.has(row.withdrawalNo)) return "这笔有结果未知的操作，先到页面上方查询原操作";
     if (loading) return "正在刷新列表";
     if (!writesEnabled) return "列表读取失败，已暂停操作，请先重试";
     if (roleBlock(action)) return roleBlock(action);
@@ -1590,7 +1590,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   }
 
   function detailBlockedReason(row: D2Withdrawal, action?: D2ReviewAction) {
-    if (detailLoading) return "正在读取详情";
+    if (detailLoading) return "正在加载详情";
     if (detailError) return "为避免按旧数据操作，已暂停处理";
     const blocked = blockedReason(row, action);
     if (blocked) return blocked;
@@ -1724,12 +1724,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       readOnly={canWriteAny ? undefined : "你只能查看；处理提现需要对应的审核权限"} />
 
     {withdrawGate === "closed" && <Notice tone="warn" title={<>提现已关停<Explain label="关停提现的范围" content="关停后，还没交给打款方的提现暂停打款；已交给打款方的继续跟进到账，不因关停退款。恢复后符合条件的继续打款。" /></>}
-      action={reach("/emergency/kill-switch", "emergency_j1_read") ? <Link className="rd-link" href="/emergency/kill-switch">去紧急停用开关</Link> : undefined}>
+      action={reach("/emergency/kill-switch", "emergency_j1_read") ? <Link className="rd-link" href="/emergency/kill-switch">去紧急停用开关 →</Link> : undefined}>
       用户现在不能提交新提现；放行会被系统拒绝，单子和钱都不动。拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
     {withdrawGate === "unknown" && <Notice tone="warn">提现开关状态暂时读不到。放行时系统会再查，已关停时不会放行。</Notice>}
     {coverageBelow && d5 && hasAuthority(ACTION_AUTHORITY.APPROVE) && <Notice tone="danger" title="兑付覆盖率低于红线，放行已暂停"
-      action={reach("/finance/pool", "finance_d3_read") ? <Link className="rd-link" href="/finance/pool">去资金储备与应付款</Link> : undefined}>
+      action={reach("/finance/pool", "finance_d3_read") ? <Link className="rd-link" href="/finance/pool">去资金储备与应付款 →</Link> : undefined}>
       现在 {fmtPct(d5.coverageRatio)}，红线 {fmtConfigPct(d5.redlinePct)}。补足储备后再放行。拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
     <FundRecoveryPanel rows={pendingRows} link={auditLink} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
@@ -1874,7 +1874,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           {(["UNFREEZE", "APPROVE"] as const).filter((action) => detailActions.includes(action)).map((action) => decisionButton(shown, action))}
         </>} />}>
       {shown && <>
-        {pendingCommands.some((record) => record.nos.includes(shown.withdrawalNo)) && <Notice tone="warn">这笔有结果未知的操作，不要重复处理。状态变了也不算有了结果。到页面上方查询原结果。</Notice>}
+        {pendingCommands.some((record) => record.nos.includes(shown.withdrawalNo)) && <Notice tone="warn">这笔有结果未知的操作，不要重复处理。状态变了也不算有了结果。到页面上方查询原操作。</Notice>}
         {detailError && <Notice tone="danger" title="详情读取失败" action={<Button size="sm" onClick={() => void openDetail(shown)}>重试</Button>}>{detailError}</Notice>}
         <JudgmentPoints title={`判断要点 · 时间均为${businessZone().label}`} loading={detailLoading} rows={judgment} />
         <Fold inset title="风险规则" summary={ruleCount ? `${ruleCount} 条命中` : "没有命中"} alert={ruleCount > 0} icon={Shield} tone="risk">

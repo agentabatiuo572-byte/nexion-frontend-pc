@@ -233,7 +233,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
         stillUnknown(key, "当前无法查看这条申请，原操作继续保留。");
         return;
       }
-      stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。");
+      stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
     }).finally(() => setQuerying(null));
   };
   const querySubmit = (original: PendingSubmit) => {
@@ -268,10 +268,10 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
     }, error => {
       if (isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
-      if (!original.acceptedRequestId) stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原结果」。");
+      if (!original.acceptedRequestId) stillUnknown(key, "这次查询没连上，原操作还没确定。稍后再点「查询原操作」。");
     }).finally(() => setQuerying(null));
   };
-  const queryButton = (key: string, onClick: () => void) => <Button size="sm" loading={querying === key} loadingText="正在查询…" disabledReason={querying && querying !== key ? "等上一条查完" : undefined} onClick={onClick}>查询原结果</Button>;
+  const queryButton = (key: string, onClick: () => void) => <Button size="sm" loading={querying === key} loadingText="正在查询…" disabledReason={querying && querying !== key ? "等上一条查完" : undefined} onClick={onClick}>查询原操作</Button>;
   const unknownTag = <StatusTag tone="warn">结果未知</StatusTag>;
   const acceptedTag = <StatusTag tone="progress">已受理</StatusTag>;
   // 过期后发出时间照样写着，原操作和查询入口都留着（OP-153）。
@@ -283,7 +283,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
     ...(pendingSubmit ? [{
       key: pendingSubmit.operationId, createdAt: pendingSubmit.createdAt, object: hidePendingScope ? "提交导出" : `提交导出 · ${pendingSubmit.query.month} · ${pendingSubmit.query.types.map(type => EXPORT_LABEL[type]).join("、")}`,
       tag: pendingSubmit.acceptedRequestId ? acceptedTag : unknownTag,
-      line: `${pendingSubmit.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT : `${businessStamp(pendingSubmit.createdAt)} 发出后没收到结果；先查询原结果，不要再点提交。`}${visibilityFailed ? "原来的导出范围没读到，原填写内容先不显示。" : ""}`,
+      line: `${pendingSubmit.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT : `${businessStamp(pendingSubmit.createdAt)} 发出后没收到结果；先查询原操作，不要再点提交。`}${visibilityFailed ? "原来的导出范围没读到，原填写内容先不显示。" : ""}`,
       // 有查询结果时面板只显示结果那一行：原范围没读到的说明跟过去，不被盖掉。
       result: scopeNoted(!pendingSubmit.acceptedRequestId && now >= pendingSubmit.expiresAt ? expiredResult(businessStamp(pendingSubmit.createdAt), answers[pendingSubmit.operationId]) : answers[pendingSubmit.operationId]),
       actions: <>{queryButton(pendingSubmit.operationId, () => querySubmit(pendingSubmit))}{visibilityFailed && <Button size="sm" onClick={() => setVisibilityRetry(value => value + 1)}>重读原范围</Button>}</>,
@@ -291,7 +291,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
     }] : []),
     ...pending.map(p => ({
       key: p.operationId, createdAt: p.createdAt, object: p.objectHidden ? "导出操作" : `${VERB[p.decision]}导出申请 ${p.taskId}`,
-      tag: unknownTag, line: p.objectHidden ? `${p.at} 发出；现在看不到这条申请，可以再查询。` : `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`,
+      tag: unknownTag, line: p.objectHidden ? `${p.at} 发出；现在看不到这条申请，可以再查询。` : `${p.at} 发出后没收到结果；先查询原操作，不要再点${VERB[p.decision]}。`,
       // 查询反馈不含申请内容，遮住时也照写（看不到、仍未知、这次没连上要分得清）。
       result: now >= p.expiresAt ? expiredResult(p.at, answers[p.operationId]) : answers[p.operationId],
       actions: queryButton(p.operationId, () => queryOriginal(p)), detail: p.reason && <p>理由：{p.reason}</p>, tech: <TechInfo commandKey={p.operationId} />,

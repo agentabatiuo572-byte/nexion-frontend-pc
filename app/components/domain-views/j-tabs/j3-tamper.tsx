@@ -119,7 +119,7 @@ function investigationRecord(command: J3PendingCommand, adminId: string): FundCo
 
 type J3Settled = { key: string; label: string; status: string };
 
-/** 修改框里「查询原结果」没有结论时的一句。 */
+/** 修改框里「查询原操作」没有结论时的一句。 */
 function outcomeText(outcome: FundInvestigationOutcome) {
   if ("error" in outcome) return `原结果没查到：${outcome.error}`;
   const status = outcome.receipt?.originalStatus;
@@ -363,7 +363,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       : { tone: "warn", label: "结果未知", line: outcome && "error" in outcome ? outcome.error : "改版前的旧记录可核对原号和现在的设置。" }
       : replayRejectedStatus(rejected, outcome)),
     actions: <>
-      <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
+      <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原操作</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}
       {canConfigure && !expired && !!command && !rejected && <Button size="sm" disabled={checking} disabledReason={readBlocked ?? jEmergencyRetryBlocked(command)} onClick={() => setConfigOpen({ original: saved })}>按原操作重试</Button>}
       {command && rejected && <VerifiedReleaseButton disabled={checking || !!jEmergencyRecovery.state(command).busy} onClick={() => release.ask({ operation: "修改告警设置", target: savedChange(saved), targetLabel: "改动", getSnapshot: jEmergencyRecovery.releaseSnapshot(command), createdAt: command.createdAt,
@@ -442,7 +442,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       {header}
       {savedNotice}
       {ctx.contentLoading
-        ? <BlockState state="loading" title="篡改防御数据加载中" detail="正在读取拦截统计和告警账户" />
+        ? <BlockState state="loading" title="篡改防御数据加载中" detail="正在加载拦截统计和告警账户" />
         : <BlockState state="empty" title="暂无篡改防御数据" detail="请稍后点「刷新」。" />}
       {modal}
     </div>;
@@ -693,10 +693,10 @@ function J3AccountRow({ account: a, feedK4, zone, userRef, pathName, canViewK1, 
       <Td sticky="end">
         <span className="j3-next">
           {canFreezeC2 && alerting
-            ? <Link className="rd-link" href={{ pathname: "/users/actions", query: { userCode: a.userCode, source: "J3" } }} title={`${a.userCode} · 去账户操作冻结或解冻`}>去账户操作处理</Link>
+            ? <Link className="rd-link" href={{ pathname: "/users/actions", query: { userCode: a.userCode, source: "J3" } }} title={`${a.userCode} · 去账户操作冻结或解冻`}>去账户操作处理 →</Link>
             : <span className="j3-off" aria-disabled="true" title="这个账号没有账户操作的冻结权限">去账户操作处理</span>}
           {a.cluster && (canViewK1 && alerting
-            ? <Link className="rd-link" href={{ pathname: "/risk/multi-account", query: { focusClusterId: a.cluster, source: "J3" } }} title={`${a.cluster} · 查看关联账户组`}>去多账户排查</Link>
+            ? <Link className="rd-link" href={{ pathname: "/risk/multi-account", query: { focusClusterId: a.cluster, source: "J3" } }} title={`${a.cluster} · 查看关联账户组`}>去多账户排查 →</Link>
             : <span className="j3-off" aria-disabled="true" title="这个账号没有多账户风险排查的权限">去多账户排查</span>)}
         </span>
       </Td>
@@ -777,7 +777,7 @@ function J3ConfigModal({ ctx, original, context, draft, readBlocked, receiptStat
     }
   };
   const queryOriginal = async () => {
-    setReadBack("正在读取…");
+    setReadBack("正在加载…");
     let found = "";
     if (pending) {
       try {
@@ -820,7 +820,7 @@ function J3ConfigModal({ ctx, original, context, draft, readBlocked, receiptStat
       onClose={() => { if (!submitting) onClose(); }}
       footer={unknownAt !== null ? <>
         <Button disabled={submitting} onClick={onClose}>取消</Button>
-        <Button disabled={submitting} onClick={queryOriginal}>查询原结果</Button>
+        <Button disabled={submitting} onClick={queryOriginal}>查询原操作</Button>
         <Button variant="primary" loading={submitting} loadingText="提交中…" disabledReason={blocked} onClick={() => { setTouched(true); void submit(); }}>按原操作重试</Button>
       </> : <>
         <Button disabled={submitting} onClick={onClose}>取消</Button>

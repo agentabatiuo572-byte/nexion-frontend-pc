@@ -122,7 +122,7 @@ const TERMINAL_STATES = ["cancelled", "redeemed", "failed"];
 const STATE_TONE: Record<string, StateTone> = { dim: "done", ok: "ok", warn: "warn", bad: "danger" };
 
 /** 读取中不能依据旧数据写入（ST-32）。 */
-const READING = "正在读取最新数据，读完再操作";
+const READING = "正在加载最新数据，读完再操作";
 const LOCKED = "这条记录有一次操作结果未知，先到页面上方处理";
 const APPROVAL_SENT = "已提交审批，超级管理员批准后执行，进度到「操作记录与审批」看。";
 // 后端的强制扣款走已退役的入口，固定回 410 TRIAL_EXPLICIT_PURCHASE_REQUIRED（AppTrialLifecycleService.redeemOnce）。
@@ -957,9 +957,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       </Notice>
     ) : <Notice key={record.commandKey} tone="warn" title={`${H2_TRIAL_ACTIONS[record.op]} · ${record.sid} · 结果未知`}
       action={<>
-        {canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void recoverLegacy(record, "lookup")}>查询原结果</Button>}
+        {canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void recoverLegacy(record, "lookup")}>查询原操作</Button>}
         {record.expiresAt > Date.now() && <Button size="sm" disabled={!!recovering}
-          disabledReason={!canRetryH2Cancellation(adminSession?.authorities ?? []) ? NO_WRITE : record.replayRejection ? "重试已被拒绝，请核实后解除" : !queryMissing.includes(record.commandKey) ? "先查询原结果，查不到才能重试" : undefined}
+          disabledReason={!canRetryH2Cancellation(adminSession?.authorities ?? []) ? NO_WRITE : record.replayRejection ? "重试已被拒绝，请核实后解除" : !queryMissing.includes(record.commandKey) ? "先查询原操作，查不到才能重试" : undefined}
           onClick={() => void recoverLegacy(record, "retry")}>按原操作重试</Button>}
         {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setLegacyReleaseKey(record.commandKey)}>解除原操作记录</Button>}
       </>}>试用记录 {record.obj}，原理由 {record.reason}。查询和重试都按原操作，不会重复提交；有结果前这条试用不能再操作。{record.expiresAt <= Date.now() && "已超过 24 小时，只能核对原审批单。"}{record.replayRejection && <p>重试没有成功：{displayAdminError(new Error(record.replayRejection))} {APPROVAL_REPLAY_RELEASE}</p>}</Notice>),
@@ -977,17 +977,17 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     const canRetry = record.kind === "cancel" ? canRetryH2Cancellation(adminSession?.authorities ?? []) : canWrite;
     const needQuery = proposal && !queryMissing.includes(record.commandKey);
     const retryBlock = !canRetry ? NO_WRITE : record.replayRejection ? "重试已被拒绝，请核实后解除"
-      : proposal && !canQuery ? "这个账号查不了原审批单" : needQuery ? "先查询原结果，查不到才能重试" : undefined;
+      : proposal && !canQuery ? "这个账号查不了原审批单" : needQuery ? "先查询原操作，查不到才能重试" : undefined;
     return (
       <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未知`} action={<>
-        {proposal && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void checkPending(record)}>查询原结果</Button>}
+        {proposal && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void checkPending(record)}>查询原操作</Button>}
         {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryBlock} onClick={() => void retryPending(record)}>按原操作重试</Button>}
         {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>}>
         {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，
         <KeepText text={proposal ? "审批可能已经提交，批准前不会执行；有结果前这条记录不能再操作。" : "可能已经生效，有结果前这项不能再改。"} />
         {proposal && !canQuery ? " 这个账号查不了原审批单，请能看操作记录的同事核查。" : ""}
-        <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原结果，查不到再按原操作重试。" : " 按原操作重试不会重复执行。"} />
+        <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原操作，查不到再按原操作重试。" : " 按原操作重试不会重复执行。"} />
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(object)}`} prefetch={false}>到操作记录与审批核对</Link></>}
         <Explain label="技术信息" content={`操作编号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
         {(!expired || record.replayRejection) && pendingNotes[record.commandKey] && <div><KeepText text={pendingNotes[record.commandKey]} /></div>}
@@ -1041,12 +1041,12 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const pricingHref = `/devices/pricing?sku=${encodeURIComponent(productNo ?? "")}`;
   const j1Href = "/emergency/kill-switch";
   const issues: Array<{ key: string; tone: StateTone; title: string; body: ReactNode }> = [];
-  if (j1Closed) issues.push({ key: "j1", tone: "danger", title: "试用已被紧急停用开关关闭", body: <>用户现在不能开始试用。{reach(j1Href) && <Link className="rd-link" href={j1Href} prefetch={false}>去紧急停用开关</Link>}</> });
+  if (j1Closed) issues.push({ key: "j1", tone: "danger", title: "试用已被紧急停用开关关闭", body: <>用户现在不能开始试用。{reach(j1Href) && <Link className="rd-link" href={j1Href} prefetch={false}>去紧急停用开关 →</Link>}</> });
   if (productBlocked) issues.push({ key: "product", tone: "danger", title: "试用目标商品不可用", body: product
     ? <>{stockText(product)} · {trialProductReason(product.unavailableReason)}</>
     : <>商品编号 {productNo || "未设置"} 不在可选列表，用户现在不能开始试用。{reach(pricingHref) && <Link className="rd-link" href={pricingHref} prefetch={false}>到商品管理与上架条件核对「允许试用」</Link>}</> });
   if (blockedTarget) issues.push({ key: "product", tone: "danger", title: "试用目标商品不可用", body: <>{buyProductReason(blockedTarget.unavailableReason, blockedTarget.status)}，用户现在不能开始试用。{reach(pricingHref) && <Link className="rd-link" href={pricingHref} prefetch={false}>到商品管理与上架条件查看</Link>}</> });
-  if (phaseClosed) issues.push({ key: "phase", tone: "warn", title: "当前运营阶段不开放试用", body: <>用户现在不能开始试用。{reach(phaseHref) && <Link className="rd-link" href={phaseHref} prefetch={false}>去运营阶段设置</Link>}</> });
+  if (phaseClosed) issues.push({ key: "phase", tone: "warn", title: "当前运营阶段不开放试用", body: <>用户现在不能开始试用。{reach(phaseHref) && <Link className="rd-link" href={phaseHref} prefetch={false}>去运营阶段设置 →</Link>}</> });
   if (!seatsKnown) issues.push({ key: "seats", tone: "warn", title: "今日实际剩余名额读不到", body: "请稍后刷新；读到之前，不能按这里判断用户今天还能不能领。" });
   else if (Number(seats?.cur) === 0 && Number(paramOf("seatsLeftToday")?.cur) === 0) issues.push({ key: "seats", tone: "warn", title: "每日免费名额上限是 0", body: `用户不能开始试用，次日也不会恢复。${canWrite ? "要开放试用，调高「每日免费名额上限」。" : ""}` });
   else if (Number(seats?.cur) === 0) issues.push({ key: "seats", tone: "warn", title: "今日免费名额已用完", body: `用户今天不能开始试用，次日恢复。${canWrite ? "要今天多放名额，调高「每日免费名额上限」。" : ""}` });
@@ -1145,8 +1145,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                 <ConfigList>
                   {readOnlyParams.map((param) => (
                     <ReadOnlyRow key={param.key} param={param} action={
-                      param.key === "phaseOpen" ? (reach(phaseHref) ? <Link className="rd-link" href={phaseHref} prefetch={false}>去修改</Link> : undefined)
-                        : param.key === "trialPriceUSD" ? (reach(pricingHref) ? <Link className="rd-link" href={pricingHref} prefetch={false}>去修改</Link> : undefined)
+                      param.key === "phaseOpen" ? (reach(phaseHref) ? <Link className="rd-link" href={phaseHref} prefetch={false}>去修改 →</Link> : undefined)
+                        : param.key === "trialPriceUSD" ? (reach(pricingHref) ? <Link className="rd-link" href={pricingHref} prefetch={false}>去修改 →</Link> : undefined)
                           : param.key === "chargeFailRate" ? "系统只读" : undefined
                     } />
                   ))}

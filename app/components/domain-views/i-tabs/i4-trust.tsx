@@ -287,7 +287,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     if (!current.data || current.contentLoading || current.errorText || current.mustRead) return "请先成功重新读取最新内容后再修改。";
     const sectionCommand = pendingI4SectionCommands().find(row => row.sectionKey === key);
     if (sectionCommand?.ticketStatus === "approved") return APPROVED_READBACK_REQUIRED;
-    if (sectionCommand || pendingI4DraftCommands().some(row => row.sectionKey === key)) return "此对象有原操作尚未核清，请先查询原结果。";
+    if (sectionCommand || pendingI4DraftCommands().some(row => row.sectionKey === key)) return "此对象有原操作尚未核清，请先查询原操作。";
     if (current.data.pendingTrustSectionKeys.includes(key)) return PENDING_REASON;
     const section = current.data.trustSections.find(row => row.key === key);
     if (!section) return "版块内容已被修改，请刷新后重试";
@@ -338,7 +338,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     if (state.replayRejection) return RETRY_REJECTED_TEXT;
     if (state.expired) return RETRY_EXPIRED_TEXT;
     if (!record.request || !record.snapshot) return "原操作记录不完整，只能查询核对，不能重试。";
-    return replayReadProblem(record) ?? i4SectionPermission(record.sectionKey, record.snapshot.section.highSensitivity) ?? (state.replayBlock ? "请查询原结果" : undefined);
+    return replayReadProblem(record) ?? i4SectionPermission(record.sectionKey, record.snapshot.section.highSensitivity) ?? (state.replayBlock ? "请查询原操作" : undefined);
   };
   const openTrustConfirm = (req: ActionConfirmReq, key: string, original?: I4SectionCommand | I4DraftCommand) => {
     let originalKey = original?.commandKey;
@@ -397,7 +397,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         catch (error) {
           const retained = saved();
           if (retained) throw new OutcomeUnknownError("request" in retained && retained.receiptKnown
-            ? "申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。" : "结果未知，请查询原结果。");
+            ? "申请已提交，当前审批结果还没查到，请保留原记录并查询原操作。" : "结果未知，请查询原操作。");
           if (await reviewConflict(error, { sectionKey: key, reason, value, form })) ctx.closeActionConfirm();
           throw new Error(`提交失败：${displayAdminError(error)}`);
         }
@@ -968,13 +968,13 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         change: upload && file ? <span title={`SHA256 ${file.sha256}`}>{`原文件 ${file.name} · ${docSize(file.size)} · 指纹 ${shortSha(file.sha256)}`}</span>
           : <span title={`SHA256 ${record.document.sha256}`}>{`换下 ${record.document.fileName} · 指纹 ${shortSha(record.document.sha256)}`}</span>,
         submittedAt: timeText(new Date(record.createdAt).toISOString()), tag: materialRejected(record) ? rejectedTag() : unknownTag("document"),
-        note: materialQuery.errors[record.commandKey] ?? (upload ? "这页不能重发这次上传。原上传成功的话后台留着结果，点「查询原结果」查到就解除记录；查不到就对照现在用的文件指纹和上传时间。"
-          : materialRejected(record) ? RETRY_REJECTED_NEXT : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "先点「查询原结果」；明确查不到，再到这份资料的「恢复默认」里按原操作重试。"),
+        note: materialQuery.errors[record.commandKey] ?? (upload ? "这页不能重发这次上传。原上传成功的话后台留着结果，点「查询原操作」查到就解除记录；查不到就对照现在用的文件指纹和上传时间。"
+          : materialRejected(record) ? RETRY_REJECTED_NEXT : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "先点「查询原操作」；明确查不到，再到这份资料的「恢复默认」里按原操作重试。"),
         actions: <><Button size="sm" onClick={() => {
           void readMaterialOriginal(record).then(result => {
             setDocumentRecovery({ kind: "lookup", key: record.commandKey, settled: result.settled, observation: result.current, error: result.error });
           }, () => undefined);
-        }}>查询原结果</Button>
+        }}>查询原操作</Button>
           {materialRejected(record) && <VerifiedReleaseButton disabled={materialReads.current.has(record.commandKey) || !!i4DocumentRecovery.state(record).busy}
             onClick={() => {
               const snapshot = i4DocumentRecovery.releaseSnapshot(record);
@@ -994,7 +994,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       change: record.version, submittedAt: timeText(new Date(record.createdAt).toISOString()),
       tag: <StatusTag tone={draftStatus(record, draftOutcomes[record.commandKey]).tone} explain={draftStatus(record, draftOutcomes[record.commandKey]).more}>{draftStatus(record, draftOutcomes[record.commandKey]).label}</StatusTag>,
       note: <>{draftStatus(record, draftOutcomes[record.commandKey]).line} <TechInfo commandKey={record.commandKey} receipt={receiptOf(draftOutcomes[record.commandKey])} /></>,
-      actions: <><Button size="sm" loading={recovering === record.commandKey} onClick={() => void recoverDraft(record, false)}>查询原结果</Button>
+      actions: <><Button size="sm" loading={recovering === record.commandKey} onClick={() => void recoverDraft(record, false)}>查询原操作</Button>
         {canInvestigateECommand("content_i4_read") && eCommandClosureOffer(draftOutcomes[record.commandKey], isRetryExpired(record)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosingDraft(record)}>核查结案</Button>}
         {!draftRejected(record) && <Button size="sm" disabledReason={draftRetryProblem(record)}
           onClick={() => {
@@ -1023,9 +1023,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       return { key: record.commandKey, kind: pending ? "pending" as const : record.receiptKnown ? "submitted" as const : "unknown" as const,
         name: approvalName(record), change: approvalChange(record), submittedAt: timeText(new Date(record.createdAt).toISOString()),
         tag: pending ? <StatusTag tone="progress" icon={Hourglass}>等另一位批准</StatusTag> : record.receiptKnown ? <StatusTag tone="neutral" icon={Hourglass}>已提交，状态未查到</StatusTag> : rejected ? rejectedTag() : unknownTag("approval"),
-        note: pending || record.receiptKnown ? ["审批单已经建了，点「查询原结果」看状态。", approvalQuery.errors[record.commandKey]].filter(Boolean).join(" ")
+        note: pending || record.receiptKnown ? ["审批单已经建了，点「查询原操作」看状态。", approvalQuery.errors[record.commandKey]].filter(Boolean).join(" ")
           : approvalQuery.errors[record.commandKey] ?? (rejected ? RETRY_REJECTED_NEXT : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : undefined),
-        actions: <><Button size="sm" loading={recovering === record.commandKey} onClick={() => void recoverSection(record)}>查询原结果</Button>
+        actions: <><Button size="sm" loading={recovering === record.commandKey} onClick={() => void recoverSection(record)}>查询原操作</Button>
           {!record.receiptKnown && !pending && !releasable && <Button size="sm" disabledReason={sectionRetryBlocked(record)}
             onClick={() => restoreSection(record)}>按原操作重试</Button>}
           {rejected && <VerifiedReleaseButton disabled={!!recovering || !!i4SectionRecovery.state(record).busy} onClick={() => release.ask({ operation: SECTION_OPERATION[record.action], target: `${sectionName(record.sectionKey)} · ${approvalChange(record)}`,
@@ -1162,10 +1162,10 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   };
   // 公司资料在三种状态里带同一个 key、都是根片段的直接子元素：读取结束换分支时不重新挂载，抽屉里填到一半的内容、文件和理由留着。
   if (contentLoading && !data) {
-    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="loading" title="信任中心数据加载中…" /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} {...materialDraftProps} /></>;
+    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="loading" title="正在加载信任中心数据…" /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} {...materialDraftProps} /></>;
   }
   if (!data) {
-    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="error" title="信任中心读取失败" detail={errorText ?? "暂无信任中心数据"} onRetry={refresh} retrying={refreshing} /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} {...materialDraftProps} /></>;
+    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="error" title="信任中心加载失败" detail={errorText ?? "暂无信任中心数据"} onRetry={refresh} retrying={refreshing} /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} {...materialDraftProps} /></>;
   }
 
   // ---------- 首屏结论 ----------
@@ -1297,7 +1297,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     { label: "用户现在看到", value: isArchivedStatus(liveTrustStatus(sec)) ? `已下架（${sec.v}），App 上这一块收起` : isPublished(sec.status) ? `${sec.v} 公开中` : `${sec.v}（${statusZh(liveTrustStatus(sec))}），App 上这一块收起`, state: secProblems.length ? "danger" : undefined, reason: secProblems.length ? secProblems.join("；") : undefined },
     { label: "App 实际给出", ...(() => {
       const view = snapshot.view, row = snapshotSection(sec.key), cleared = row?.fields.filter((field) => field.cleared).length ?? 0;
-      if (!view) return { value: snapshot.error ? "没读到，按后台版本推断" : "正在读取…", reason: snapshot.error || undefined };
+      if (!view) return { value: snapshot.error ? "没读到，按后台版本推断" : "正在加载…", reason: snapshot.error || undefined };
       if (!view.available) return { value: "整页打不开", state: "danger" as const, reason: snapshotReasonText(view.reason) };
       if (view.sourceEnvironment === "SANDBOX") return { value: "测试环境的演示内容" };
       if (!row) return { value: "—" };
@@ -1468,7 +1468,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         footer={draftEditor && <Decision
           note={editorUnchanged ? NO_DRAFT_CHANGES : editorMissing.length ? `还缺：${editorMissing.join("、")}` : undefined}
           others={<Button disabled={savingDraft} onClick={() => { setDraftEditor(null); setEditorCommandKey(null); }}>取消</Button>}
-          primary={<Button variant="primary" data-trust-draft-editor="direct-save" loading={savingDraft} disabledReason={editorCommandKey ? (() => { const record = draftCommands.find(row => row.commandKey === editorCommandKey); return record ? draftRetryProblem(record) : "请查询原结果"; })() : newSectionReason(draftEditor.sectionKey) ?? (editorUnchanged ? NO_DRAFT_CHANGES : undefined)} onClick={() => void saveSectionDraft()}>{editorCommandKey ? "按原操作重试" : "保存草稿"}</Button>} />}>
+          primary={<Button variant="primary" data-trust-draft-editor="direct-save" loading={savingDraft} disabledReason={editorCommandKey ? (() => { const record = draftCommands.find(row => row.commandKey === editorCommandKey); return record ? draftRetryProblem(record) : "请查询原操作"; })() : newSectionReason(draftEditor.sectionKey) ?? (editorUnchanged ? NO_DRAFT_CHANGES : undefined)} onClick={() => void saveSectionDraft()}>{editorCommandKey ? "按原操作重试" : "保存草稿"}</Button>} />}>
         {draftEditor && <>
           <div className="i4-doc-effect"><StatusTag tone="neutral" filled explain="保存草稿直接写，不走审批；用户看到的内容不变，提交发布并批准后才公开。">不改公开内容</StatusTag></div>
           <DraftEditorBody editor={draftEditor} requiredLanguages={requiredLanguages} frozen={savingDraft || !!editorCommandKey} onChange={setDraftEditor}

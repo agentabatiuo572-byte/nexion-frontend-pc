@@ -116,7 +116,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       pending: record.kind === "proposal" && record.original.ticket?.status === "pending",
       expired: isRetryExpired(original),
       tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>
-        : record.kind === "proposal" && record.original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
+        : record.kind === "proposal" && record.original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原操作，不要重新提交。">已建单，未查到</StatusTag>
           : isRetryExpired(original) ? <StatusTag tone="neutral" icon={Hourglass}>已过期</StatusTag>
             : unknownTag(record.kind === "proposal" ? "approval" : "direct"),
       actions: <>
@@ -125,7 +125,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           else if (confirm && original.f4Snapshot) {
             ctx.openActionConfirm({ ...confirm, edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
           } else void ctx.recoverF4(record, "query").catch(() => undefined); // 查询失败的原因已写在这一行
-        }}>查询原结果</Button>
+        }}>查询原操作</Button>
         {retryable && (quota || confirm) && <Button size="sm" onClick={() => {
           if (quota && record.kind === "proposal") setQuotaOriginal(record.original);
           else if (confirm && original.f4Snapshot) ctx.openActionConfirm({ ...confirm,
@@ -239,10 +239,10 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       readOnly={readOnly ? "当前账号只能查看这页" : undefined}
       meta={readAt ? <span className="rd-toolbar">
         <span>{`${businessClock(readAt)} 读取（${businessZone().label}）`}</span>
-        <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="读取中…" onClick={() => void ctx.refreshF4()}>刷新</Button>
+        <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="正在加载…" onClick={() => void ctx.refreshF4()}>刷新</Button>
       </span> : undefined}
       actions={<>
-        {!readAt && <Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="读取中…" onClick={() => void ctx.refreshF4()}>刷新</Button>}
+        {!readAt && <Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="正在加载…" onClick={() => void ctx.refreshF4()}>刷新</Button>}
         <Button icon={<ArrowRight size={14} aria-hidden />} onClick={onOpenCommissions}>奖励记录核对</Button>
       </>} />
   );

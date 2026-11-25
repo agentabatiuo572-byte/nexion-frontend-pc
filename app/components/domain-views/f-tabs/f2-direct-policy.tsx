@@ -112,7 +112,7 @@ export function F2DirectPolicy({ ctx, openConfirm, continuation }: { ctx: FViewC
   const numberOf = (raw: string) => raw === "" ? NaN : Number(raw);
   const lock = disabled || submitted;
   const lockReason = ctx.f2WriteBlocked("f-direct-referral-policy") ?? (!allowed ? "只能查看：改好友奖励政策需有「团队奖励比例」权限"
-    : busy ? "正在读取" : ctx.f2DirectPolicyError ? "政策没读到，先刷新" : !policy?.sevenLayerEnabled ? "整体结算启用后才能改"
+    : busy ? "正在加载" : ctx.f2DirectPolicyError ? "政策没读到，先刷新" : !policy?.sevenLayerEnabled ? "整体结算启用后才能改"
       : stale ? "政策刚被别人改过，先放弃修改并刷新" : submitted ? "已提交，等另一位超级管理员批准" : invalid ?? (!changed ? "还没有改动" : undefined));
 
   const share = (key: "purchaseSplit" | "deviceEarning", label: string) => draft && <>
@@ -129,7 +129,7 @@ export function F2DirectPolicy({ ctx, openConfirm, continuation }: { ctx: FViewC
     {Number.isFinite(draft[key].usdtSharePct) && draft[key].usdtSharePct >= 0 && draft[key].usdtSharePct <= 100 &&
       <RatioBar label={`${label}币种比例`} value={draft[key].usdtSharePct} total={100} tone="role-2" valueText={`USDT ${num(draft[key].usdtSharePct)}%，UVT ${num(100 - draft[key].usdtSharePct)}%`} quiet />}
   </>;
-  const f1Link = canOpenF1 ? <Link className="rd-link" href="/network/v-rank" prefetch={false}>去团队等级晋升 →</Link> : null;
+  const f1Link = canOpenF1 ? <Link className="rd-link" href="/network/v-rank" prefetch={false}>去团队等级晋升 →</Link> : null;
 
   return (
     <Panel id="f2-friend" aria-label="好友奖励设置" title="好友奖励政策" icon={HandCoins} tone="role-2"
@@ -148,7 +148,7 @@ export function F2DirectPolicy({ ctx, openConfirm, continuation }: { ctx: FViewC
               {policy?.nexUsdtPrice === null && <Notice tone="warn" title="UVT 价格读不到">开了拆分的奖励，USDT 和 UVT 会一起等价格恢复后再算，不会先发 USDT。</Notice>}
               {stale && <Notice tone="warn" title="政策刚被别人改过">你填的内容还在。点「放弃修改并刷新」读最新的政策后重新填写。</Notice>}
               {submitted && <Notice tone="warn" title={<>已提交，等另一位超级管理员批准<StatusTag tone="warn" icon={Clock3}>待审批</StatusTag></>}
-                action={ctx.can("platform_a2_read") ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
+                action={ctx.can("platform_a2_read") ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看 →</Link> : undefined}>
                 批准前仍按原政策执行，批准后点页头「刷新」看新政策。这组在批准前锁住。
               </Notice>}
             </div>

@@ -52,7 +52,7 @@ type FaqRecoveryBindings = PendingConfirmRecovery & { releaseRejectedReplay: () 
 /** 原框和行共用的一份：这条原操作现在怎样、问答还在不在列表里。 */
 export type FaqRecoveryInfo = { view: MRecoveryView; currentFact?: string; gone: boolean; audit: boolean; rejected: boolean; release: () => void };
 const KIND_NAME = { create: "新建", edit: "编辑", publish: "发布", unpublish: "下架", delete: "删除" } as const;
-const DELETE_READ_BLOCK = "问答正在读取或没读到，读到后再删除。";
+const DELETE_READ_BLOCK = "问答正在加载或没读到，读到后再删除。";
 const STATUS_CHANGED = "这条问答的状态刚变过，请关闭后看最新状态。";
 const REVIEW_LATEST = "这条问答刚被别人改过，已换成最新内容，核对后重新确认。";
 const GONE_TEXT = "这条问答已不在列表里。";
@@ -679,7 +679,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
   const activeRecovery = recovery ? faqRecoveryBindings(recovery) : undefined;
   const activeInfo = recovery ? recoveryInfo(recovery) : undefined;
   const currentStatusFaq = statusTarget && faqs.find(row => row.id === statusTarget.id);
-  const statusBlock = !canEdit ? "问答正在读取或没读到，读到后再操作。"
+  const statusBlock = !canEdit ? "问答正在加载或没读到，读到后再操作。"
     : !currentStatusFaq ? GONE_TEXT : currentStatusFaq.status !== statusTarget?.status ? STATUS_CHANGED : undefined;
   const pendingRows = pendingCommands.map((record) => {
     const state = m4FaqRecovery.state(record);
@@ -692,7 +692,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
     note: <>{gone && goneText(record)}{view.line} {audit && <><MAuditLink /> </>}<TechInfo commandKey={record.commandKey} receipt={receiptOf(outcome)} /></>,
     actions: submittingKey !== record.commandKey && <>
       {record.faq && <Button size="sm" loading={state.busy === "query"} loadingText="查询中…" disabled={writePending || state.busy === "replay"}
-        disabledReason={canQueryM4 ? undefined : "当前账号没有知识库查看权限"} onClick={() => void queryOriginal(record)}>查询原结果</Button>}
+        disabledReason={canQueryM4 ? undefined : "当前账号没有知识库查看权限"} onClick={() => void queryOriginal(record)}>查询原操作</Button>}
       {canInvestigateECommand("service_m4_read") && eCommandClosureOffer(outcomes[record.commandKey], isRetryExpired(record)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={writePending || Boolean(state.busy)} onClick={() => setClosing(record)}>核查结案</Button>}
       {record.faq && canWriteM4 && !state.expired && !state.replayRejection && <Button size="sm" disabled={writePending}
         disabledReason={writePending ? undefined : faqRecoveryBindings(record).blockedReason} onClick={() => restore(record)}>按原操作重试</Button>}
@@ -981,10 +981,10 @@ function FaqModal({
         <>
           <Button disabled={pending} onClick={onClose}>{gone ? "关闭" : "取消"}</Button>
           {recovery && <Button variant={recoveryBindings?.state?.replayBlock && !info?.rejected ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={pending} disabledReason={recoveryBindings?.query ? undefined : "当前账号没有知识库查看权限"}
-            onClick={() => { setFailure(null); void recoveryBindings?.query?.(); }}>查询原结果</Button>}
+            onClick={() => { setFailure(null); void recoveryBindings?.query?.(); }}>查询原操作</Button>}
           {gone ? null : info?.rejected ? <Button onClick={info.release}>核实后解除</Button>
             : <Button variant={recovery && recoveryBindings?.state?.replayBlock ? "secondary" : "primary"} data-proof="support-faq-save" loading={pending && !querying} loadingText="提交中…" disabled={disabled}
-              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : disabled ? "问答正在读取或没读到，读到后再保存" : reasonRule.blocked} onClick={save}>{recovery ? "按原操作重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
+              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : disabled ? "问答正在加载或没读到，读到后再保存" : reasonRule.blocked} onClick={save}>{recovery ? "按原操作重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
         </>
       }
     >

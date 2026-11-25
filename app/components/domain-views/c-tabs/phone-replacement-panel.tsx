@@ -261,7 +261,7 @@ function AccountPhonePanel({ userId, userLabel, userCode, active, owner, rights,
     const blocked = busy || loading || denied || !!confirm || pendingRows.length > 0;
     const usableRequest = !!selection && selection.status === "PENDING" && !!overview && selection.expiresAt > overview.eligibility.serverNow;
     const activeGrant = overview?.eligibility.grant ?? overview?.pendingRequest?.grant;
-    const grantBlock = blocked ? "先完成当前操作或查询原结果" : !usableRequest ? "请选择有效的待处理申请" : verification?.requestId !== selected ? "先核实本申请的关联客服记录" : !(waiveCount || waiveInterval) ? "至少选择一项豁免" : !overview?.eligibility.historyComplete && !waiveCount ? "历史次数未知，须选择次数豁免" : overview.eligibility.binding?.changedAt == null && !waiveInterval ? "绑定时间未知，须选择间隔豁免" : activeGrant?.status === "ACTIVE" ? "已有有效特批，不能叠加" : undefined;
+    const grantBlock = blocked ? "先完成当前操作或查询原操作" : !usableRequest ? "请选择有效的待处理申请" : verification?.requestId !== selected ? "先核实本申请的关联客服记录" : !(waiveCount || waiveInterval) ? "至少选择一项豁免" : !overview?.eligibility.historyComplete && !waiveCount ? "历史次数未知，须选择次数豁免" : overview.eligibility.binding?.changedAt == null && !waiveInterval ? "绑定时间未知，须选择间隔豁免" : activeGrant?.status === "ACTIVE" ? "已有有效特批，不能叠加" : undefined;
     const confirmLabel = confirm?.type === "PHONE_VERIFY" ? "确认核实关联记录" : confirm?.type === "PHONE_REQUEST_CLOSE" ? "不予授予并关闭申请" : confirm?.type === "PHONE_GRANT_REVOKE" ? "确认撤销授权" : "确认一次授权";
     return <div className="c5-phone-workspace" data-proof="c5-phone-replacement" aria-label="手机绑定与一次性特批">
       {error && <Notice tone="warn">{error}</Notice>}
@@ -272,7 +272,7 @@ function AccountPhonePanel({ userId, userLabel, userCode, active, owner, rights,
       </Notice>}
       {detail !== "models" && modelRecords.length > 0 && <Notice tone="warn" title={modelRecords.some(row => !row.rejection) ? "机型锁解除结果未知" : "机型锁解除已拒绝"} action={<Button size="sm" onClick={() => setDetail("models")}>查看原解除记录</Button>}>原解除记录已保留，请展开核对原解除结果。</Notice>}
       <Panel title="手机绑定与换机条件" icon={Smartphone} explain="处理更换手机设备的申请，与更改登录手机号分开统计。特批只放宽次数或间隔，仍由用户回 App 主动确认。" actions={<IconButton aria-label="刷新手机绑定与换机申请" disabled={busy || loading || !!confirm || denied} onClick={() => { void load(); void loadHistory(); }}><RefreshCw size={16} /></IconButton>}>
-        {denied ? <BlockState state="denied" title="暂时无法查看此用户" detail="请重新选择用户或登录后再试。" /> : loading ? <BlockState state="loading" title="正在读取手机与申请状态" /> : !overview ? <BlockState state="error" title="手机信息未能加载" onRetry={() => void load()} retryLabel="刷新" /> : <>
+        {denied ? <BlockState state="denied" title="暂时无法查看此用户" detail="请重新选择用户或登录后再试。" /> : loading ? <BlockState state="loading" title="正在加载手机与申请状态" /> : !overview ? <BlockState state="error" title="手机信息未能加载" onRetry={() => void load()} /> : <>
           <div className="c5-phone-summary">
             <Facts><Fact k="手机绑定">{overview.eligibility.binding ? "已绑定" : "未绑定"}</Fact><Fact k="绑定安装"><span data-mono>{overview.eligibility.binding?.installationId ?? "尚未绑定手机"}</span></Fact><Fact k="最近绑定时间">{phoneTime(overview.eligibility.binding?.changedAt)}</Fact></Facts>
             <Facts><Fact k="换机资格"><StatusTag tone={overview.eligibility.canReplace ? "ok" : "warn"}>{overview.eligibility.canReplace ? "可更换" : "暂不能更换"}</StatusTag></Fact><Fact k="统计期内已换机">{overview.eligibility.usedCount ?? "待核实"} 次</Fact><Fact k="剩余可换次数">{overview.eligibility.remainingCount ?? "待核实"} 次</Fact><Fact k="最早可更换时间">{phoneTime(overview.eligibility.nextAllowedAt)}</Fact></Facts>

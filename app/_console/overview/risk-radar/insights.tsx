@@ -338,7 +338,7 @@ export function InboxTable({ state, items, error, onRetry, canTriage, acknowledg
   onAcknowledge: (item: B5InboxItem) => void;
 }) {
   if (state === "error") {
-    return <BlockState state="error" title="站内告警读取失败，不是没有告警" detail={error} onRetry={onRetry} />;
+    return <BlockState state="error" title="站内告警加载失败，不是没有告警" detail={error} onRetry={onRetry} />;
   }
   return (
       <Table label="我的站内告警" className="b5-inbox">

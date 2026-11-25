@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandOrigin, type FundInvestigationOutcome } from "./fund-command-investigation";
 import {
   A2OutcomeUncertainError,
+  A2ProposalReceiptIncompleteError,
   createA2CommandKey,
   createA2OperationProposal,
   fetchA2Overview,
@@ -22,6 +23,7 @@ import type { FDomainAttempt } from "./f2-approval";
 import type { B1CommandFacts } from "./b1-commands";
 import type { B5ThresholdFacts } from "./b5-commands";
 import { fetchD5WithdrawalParams } from "./d-client";
+import { displayAdminReadError } from "./error-messages";
 import { d5Trc20ReplayBlock } from "./trc20-closed";
 
 export type WithdrawalReplayObservation = { withdrawalStillProcessing?: true };
@@ -113,6 +115,8 @@ type WithdrawalApprovalQueue = {
   state: "loading" | "ready" | "failed";
   rows: A2OperationRow[];
   retrying?: boolean;
+  /** 读取失败的原因：回包缺字段时写数据不完整（ST-37），其余按读取口吻（ST-34）。 */
+  error?: string;
 };
 type PendingWithdrawalRow = Pick<A2OperationRow, "id"> & Partial<Pick<A2OperationRow, "operator" | "ts" | "rawTs">>;
 const EMPTY_WITHDRAWAL_QUEUE: WithdrawalApprovalQueue = { readId: 0, state: "loading", rows: [] };
@@ -158,22 +162,22 @@ function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWith
   const hasPending = pendingRows.length > 0;
   const queueRowStale = (id: string) => !queueKnown && (id !== ticket?.id || !!terminal);
   const staleRows = rows.some(row => queueRowStale(row.id));
-  const pendingTitle = checking ? "正在读取放宽单状态…"
+  const pendingTitle = checking ? "正在加载放宽单状态…"
     : stale ? "放宽单的最新状态没读到，先按等批准处理"
       : staleRows ? "待批列表正在刷新，部分记录来自上次读取" : `有 ${pendingRows.length} 项放宽等批准`;
   const ownNotice = terminal
     ? `放宽单 ${terminal.id} ${TICKET_STATUS_TEXT[terminal.status]}${terminal.status === "approved" ? "，当前值以这页读到的为准。" : "，这张单没有生效。"}`
     : ownId && (listed || pendingRows.some(row => row.id === ownId))
-      ? checking ? `正在读取放宽单 ${ownId} 的状态…`
+      ? checking ? `正在加载放宽单 ${ownId} 的状态…`
         : stale ? `放宽单 ${ownId} 的最新状态没读到，先按等批准处理，点「刷新」再读。`
           : `放宽单 ${ownId} 已提交，${WITHDRAWAL_APPROVAL_PENDING}${queueKnown ? "" : "点「刷新」看最新状态。"}`
       : null;
   const pendingBlock = "已有放宽等批准，批准、驳回或撤回后才能再提交";
   const blockReason = ticket?.status === "pending" ? pendingBlock
-    : own?.checking ? "正在读取放宽单状态，读到后再提交放宽"
+    : own?.checking ? "正在加载放宽单状态，读到后再提交放宽"
       : stale ? "放宽单的最新状态没读到，点「刷新」读到后再提交"
         : canReadQueue && !queueKnown
-          ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在读取待批列表，读到后再提交放宽"
+          ? queue.state === "failed" ? "待批列表加载失败，重试后再提交放宽" : "正在加载待批列表，读到后再提交放宽"
           : hasPending ? pendingBlock : undefined;
   const pendingOnTighten = pendingRows[0];
   return {
@@ -203,14 +207,18 @@ export function useWithdrawalApprovals(source: WithdrawalApprovalSource, adminId
       adminId, readId: seq, state: "loading",
       rows: source === "D7" && current.adminId === adminId ? current.rows : [],
       retrying: current.adminId === adminId && (current.state === "failed" || current.retrying),
+      error: current.adminId === adminId && (current.state === "failed" || current.retrying) ? current.error : undefined,
     }));
     try {
       const overview = await fetchA2Overview({ domain: "D" }, true);
       if (overview.operationQueueInvalidCount) throw new Error("A2_APPROVAL_QUEUE_INCOMPLETE");
       if (seq !== queueSeq.current) return;
       setQueue({ adminId, readId: seq, state: "ready", rows: overview.operationQueue.filter(row => row.status === "pending" && matchesWithdrawalTicket(source, row)) });
-    } catch {
-      if (seq === queueSeq.current) setQueue({ adminId, readId: seq, state: "failed", rows: [] });
+    } catch (cause) {
+      // F2_APPROVAL_RESPONSE_INVALID：回包没有待批列表；A2_APPROVAL_QUEUE_INCOMPLETE：有的行缺字段。
+      const incomplete = cause instanceof Error && ["A2_APPROVAL_QUEUE_INCOMPLETE", "F2_APPROVAL_RESPONSE_INVALID"].includes(cause.message);
+      if (seq === queueSeq.current) setQueue({ adminId, readId: seq, state: "failed", rows: [],
+        error: incomplete ? "收到的数据不完整，已停止显示。" : displayAdminReadError(cause) });
     }
   }, [adminId, canReadQueue, source]);
 
@@ -250,7 +258,7 @@ export function useWithdrawalApprovals(source: WithdrawalApprovalSource, adminId
   };
   const visibleQueue = canReadQueue && queue.adminId === adminId ? queue : EMPTY_WITHDRAWAL_QUEUE;
   return {
-    ...resolveWithdrawalApprovals(visibleQueue, own, canReadQueue), queueState: visibleQueue.state, queueRetrying: !!visibleQueue.retrying,
+    ...resolveWithdrawalApprovals(visibleQueue, own, canReadQueue), queueState: visibleQueue.state, queueRetrying: !!visibleQueue.retrying, queueError: visibleQueue.error,
     loadQueue, registerReceipt, refreshApprovals,
   };
 }
@@ -322,15 +330,15 @@ export function rememberWithdrawalProcessing<T extends PendingMutationRecord & W
 }
 
 export const WITHDRAWAL_COMMAND_PROCESSING = {
-  tone: "progress", label: "还在执行", line: "上次查询显示仍在处理，请稍后查询原结果。",
+  tone: "progress", label: "还在执行", line: "上次查询显示仍在处理，请稍后查询原操作。",
 } as const;
 export const WITHDRAWAL_SUBMISSION_CONFIRMED = {
   tone: "progress",
   label: "审批已提交",
-  line: "审批单号暂时没读到。继续查询原结果，核对审批单号和状态。",
+  line: "审批单号暂时没读到。继续查询原操作，核对审批单号和状态。",
 } as const;
 
-export const WITHDRAWAL_REPLAY_QUERY_REQUIRED = "先查询原结果，查到结论后才能决定是否按原操作重试。";
+export const WITHDRAWAL_REPLAY_QUERY_REQUIRED = "先查询原操作，查到结论后才能决定是否按原操作重试。";
 export const WITHDRAWAL_REPLAY_RESEND = "按原操作重试会重发原内容，已成功的不会重复执行。";
 
 /** 直接写只在尚未查询或查询失败时阻止重试，查到的回执按原有规则处理。 */
@@ -343,13 +351,13 @@ export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | u
 /** 放宽须先按原号明确查不到审批单；能读命令回执的账号还要先查过一次（读失败不算）。查到回执后不另外挡：已建单、处理中由各自的标记挡，其余按原号重试取回当时的结果。 */
 export function withdrawalApprovalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean, proposalMissing: boolean) {
   if (!proposalMissing && !(canInvestigate && outcome && "error" in outcome)) {
-    return "先查询原结果，确认查不到原审批单后才能按原操作重试。";
+    return "先查询原操作，确认查不到原审批单后才能按原操作重试。";
   }
   return withdrawalReplayQueryBlock(outcome, canInvestigate);
 }
 
 export function withdrawalReplayReadError(error: string) {
-  return `查询没有成功：${error.replace(/[。！]+$/, "")}。请再点「查询原结果」。`;
+  return `查询没有成功：${error.replace(/[。！]+$/, "")}。请再点「查询原操作」。`;
 }
 
 /** 有回执时交给通用状态显示；没有回执时说明当前的查询或重试路径。 */
@@ -371,9 +379,46 @@ export function withdrawalDirectRecoveryStatus(outcome: FundInvestigationOutcome
   }
 }
 
+/** 「查询原操作」里按原号查审批单这一路的结论，和通用核查分开记：查无，或没查成（带原因）。 */
+export type WithdrawalProposalLookup = { state: "missing" } | { state: "failed"; reason: string };
+
+/** 只读：按原号查本人的放宽单。查到就解除本页记录；查无、读取失败、回包不完整或对不上原申请都留着记录，没查成的原因交给页面常显（ST-34、ST-37）。 */
+export async function lookupWithdrawalApproval(source: WithdrawalApprovalSource, session: AdminSession) {
+  const previous = pendingConfigApproval(source, session.adminId);
+  if (!previous) return null;
+  if (!canReadOwnRecoveryProposal(session.authorities)) return { state: "failed", reason: "这个账号查不了原审批单" } as const;
+  let ticket: A2OperationRow | null;
+  try {
+    ticket = await fetchOwnWithdrawalApproval(source, previous.commandKey);
+  } catch (cause) {
+    // fetchA2ProposalByKey 对缺字段的单抛「提交结果不完整」；对不上本人、对象或动作时抛结果未知。
+    const reason = isA2OutcomeUncertainError(cause) ? "查到的审批单和原申请对不上"
+      : cause instanceof A2ProposalReceiptIncompleteError ? "收到的数据不完整"
+        : displayAdminReadError(cause).replace(/[。！]+$/, "");
+    return { state: "failed", reason } as const;
+  }
+  if (!ticket) return { state: "missing" } as const;
+  attempts.forget(previous.fingerprint, previous.commandKey);
+  return { state: "found", result: { ticket, commandKey: previous.commandKey, acknowledgement: `已找到原审批单 ${ticket.id} · ${TICKET_STATUS_TEXT[ticket.status]}` } } as const;
+}
+
+/** 放宽行查询后的结论：按原号查单没查成时常显这一路的失败和下一步，不因为通用核查查无就写没有查到；两路都查无才交给共用面板的「没有查到」。过期时主句先写不能重试（OP-93、OP-153）。 */
+export function withdrawalApprovalLookupStatus(proposal: WithdrawalProposalLookup | undefined, outcome: FundInvestigationOutcome | undefined, expired: boolean, submitted?: boolean) {
+  // 通用核查已证实建单：「审批已提交」是已知事实，这次查单没成的原因同时常显，两路谁也不盖谁。
+  if (submitted) {
+    const lookupFailed = proposal?.state === "failed" ? `查审批单没有成功：${proposal.reason}。请再点「查询原操作」。` : "";
+    return { ...WITHDRAWAL_SUBMISSION_CONFIRMED,
+      line: `${lookupFailed && expired ? "已超过 24 小时，不能再重试。" : ""}${WITHDRAWAL_SUBMISSION_CONFIRMED.line}${lookupFailed}` };
+  }
+  const failure = proposal?.state === "failed" ? `查审批单没有成功：${proposal.reason}。请再点「查询原操作」。`
+    : outcome && "error" in outcome ? withdrawalReplayReadError(outcome.error) : undefined;
+  if (failure) return { tone: "danger" as const, label: expired ? "已过期" : "查询失败", line: `${expired ? "已超过 24 小时，不能再重试。" : ""}${failure}` };
+}
+
 /** 通用命令回执证明已建单时，仍须用原号查审批单本身。 */
 export async function checkWithdrawalApprovalCommand(record: ConfigAttempt, evidence?: FundCommandEvidence) {
-  const receipt = await checkFundCommand(record, evidence);
+  // 只有放宽单核查认「审批建单成功、回执没有业务码」这一种回执（后端 A2 建单只存审批单本体）。
+  const receipt = await checkFundCommand(record, evidence, { acceptA2ProposalCreated: true });
   const submitted = record.withdrawalSubmissionConfirmed || fundCommandResult(receipt) === "SUCCEEDED";
   if (submitted && !record.withdrawalSubmissionConfirmed) {
     attempts.remember(record.fingerprint, record.commandKey, { ...record, withdrawalSubmissionConfirmed: true });
@@ -541,7 +586,7 @@ async function submitThresholdApproval<T, S extends "B1" | "B5">(
   catch { activeReadFailed = true; }
   if (!activeReadFailed && result.conclusion === "succeeded") bThresholdRecovery.settleFromQuery(original, "succeeded");
   return { active, activeReadFailed, ticket, acknowledgement: ticket.status === "pending"
-    ? `已提交审批 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : " · 等待另一位超级管理员批准"}`
+    ? `已提交，等待审批后执行 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : ""}`
     : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果${activeReadFailed ? "；数据没读到，暂不能再改" : ""}` };
 }
 
@@ -592,7 +637,7 @@ async function submitConfigApprovalTicket(
   if (mode === "retry-original") {
     if (!previous) throw new Error("原审批申请已处理，请刷新页面后重新操作。");
     if (withdrawalApproval && previous.withdrawalSubmissionConfirmed) throw new Error("审批已提交，请继续查询原审批单。");
-    if (withdrawalApproval && previous.withdrawalStillProcessing) throw new Error("原请求仍在处理，请继续查询原结果。");
+    if (withdrawalApproval && previous.withdrawalStillProcessing) throw new Error("原请求仍在处理，请继续查询原操作。");
     if (withdrawalApproval && previous.replayRejection) throw new Error("重试已被拒绝，请核实后解除。");
     [values, reason] = configApprovalOriginalInput(sourceDomain, previous.input);
   }
@@ -711,11 +756,11 @@ async function submitConfigApprovalTicket(
     acknowledgement: previous && lookupOnly && withdrawalApproval
       ? `已找到原审批单 ${ticket.id} · ${TICKET_STATUS_TEXT[ticket.status]}`
       : previous && lookupOnly && domain === "F"
-      ? `已找到原审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位超管批准" : " · 请在操作记录查看处理结果"}`
+      ? `已找到原审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位超级管理员批准" : " · 请在操作记录查看处理结果"}`
       : previous && previous.input !== input
       ? `已找到原审批单 ${ticket.id}，本次输入未提交。请核对当前配置后重新操作。`
       : ticket.status === "pending"
-        ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超管批准`
+        ? `已提交，等待审批后执行 · 审批单 ${ticket.id}`
         : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果`,
   };
 }

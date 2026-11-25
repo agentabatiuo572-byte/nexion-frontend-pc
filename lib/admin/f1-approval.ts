@@ -41,7 +41,7 @@ export function canSendF1Proposal(spec: ProposeSpec, authorities: readonly strin
       || !isV8Promotion(spec) && authorities.includes("platform_a2_proposal_create"));
 }
 
-export const F1_PROPOSAL_LOOKUP_FIRST = "结果未知，可能已经建了审批单。请先查询原结果。";
+export const F1_PROPOSAL_LOOKUP_FIRST = "结果未知，可能已经建了审批单。请先查询原操作。";
 
 export function withF1ProposalLookupCopy(error: A2OutcomeUncertainError, copy = F1_PROPOSAL_LOOKUP_FIRST) {
   return Object.assign(error, { message: copy, confirmCopy: copy });
@@ -107,7 +107,7 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
     if (!latest) throw f1ProposalLookupError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
     return latest;
   }
-  if (isRetryExpired(original)) throw f1ProposalLookupError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
+  if (isRetryExpired(original)) throw f1ProposalLookupError("原操作已超过 24 小时，只能查询原操作。", original.commandKey);
   if (!original.request || !fCommands.isDurablyStored(slot, original.commandKey)) throw new Error("原操作没有完整的持久记录，请到操作记录核对。");
   let ticket: A2OperationRow;
   try {

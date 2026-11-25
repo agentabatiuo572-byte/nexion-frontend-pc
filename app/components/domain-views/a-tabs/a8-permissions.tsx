@@ -327,8 +327,8 @@ export default function A8Permissions() {
               <Fact k="登记的资源路径"><span data-mono>{detail.resourcePath || "—"}</span></Fact>
             </Facts>
             <nav className="rd-links" aria-label="去别的页面">
-              {rolesHref && <Link className="rd-link" href={rolesHref} prefetch={false}>去角色管理看各角色的授权</Link>}
-              {reach("/platform/rbac") && <Link className="rd-link" href="/platform/rbac" prefetch={false}>去运营账号与权限登记权限</Link>}
+              {rolesHref && <Link className="rd-link" href={rolesHref} prefetch={false}>去角色管理看各角色的授权 →</Link>}
+              {reach("/platform/rbac") && <Link className="rd-link" href="/platform/rbac" prefetch={false}>去运营账号与权限登记权限 →</Link>}
             </nav>
           </>
         )}

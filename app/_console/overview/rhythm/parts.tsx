@@ -271,7 +271,7 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
                           event.preventDefault();
                           onJump(dial.key);
                         }}>
-                        {jumping === dial.key ? "正在打开…" : "去调整"}
+                        {jumping === dial.key ? "正在打开…" : "去调整 →"}
                       </a>
                     )}
                   </Td>

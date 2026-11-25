@@ -345,10 +345,10 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
   const proposalTag = (original: FDomainAttempt, approver: string) => original.ticket?.status === "pending"
     ? <StatusTag tone="warn" icon={Clock3} explain={`等${approver}在「操作记录与审批」批准；批准前不生效。`}>待审批</StatusTag>
-    : original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
+    : original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原操作，不要重新提交。">已建单，未查到</StatusTag>
       : original.expiresAt <= Date.now()
         ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
-        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原操作重试，不会建第二张。">结果未知</StatusTag>;
+        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原操作；24 小时内也可以按原操作重试，不会建第二张。">结果未知</StatusTag>;
   const release = (original: FDomainAttempt, label: ReactNode) => original.replayRejection
     ? <FReleaseButton label={label} toast={ctx.toast} onRelease={() => ctx.recoverF3(original, "release")} /> : null;
   const payoutDirects = F3_PAYOUT_KEYS.flatMap((key) => ctx.getF3PayoutControlPending(key).directWrite ?? []);
@@ -415,7 +415,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   };
   const recovery = recoveryCount + draftCount > 0 && (
     <Notice tone="warn" title={<>{draftCount ? recoveryCount ? "原操作与草稿" : "原操作未执行的草稿" : recoveryOpen ? `有 ${recoveryCount} 项原操作还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原操作怎么处理" content={<>
-      <p>原内容和理由只存在这个浏览器标签页，关掉标签页就没了。先查询原结果；24 小时内可以按原操作重试，不会建第二张审批单。</p>
+      <p>原内容和理由只存在这个浏览器标签页，关掉标签页就没了。先查询原操作；24 小时内可以按原操作重试，不会建第二张审批单。</p>
       <p>查到审批单只说明申请登记了，不等于已经发钱。关闭自动发放、调低全平台封顶比例和成员分组是直接生效的，查询看原操作有没有执行。</p>
     </>} /></>}>
       <ul className="f3-recovery" aria-label="还没有结论的原操作">
@@ -424,21 +424,21 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="f3-recovery-change">{settleOriginal ? <>邀请人 {settleOriginal.ownerUserId} · <span className="rd-keep">结算日 {settleOriginal.settlementDate}</span></> : "原申请内容不完整，请到「操作记录与审批」核对"}</span>
           <span className="f3-recovery-time">{businessStamp(settlePending.createdAt)} 提交</span>
           <span className="f3-recovery-state">{proposalTag(settlePending, SETTLE_APPROVER)}</span>
-          <span className="f3-recovery-actions"><Button size="sm" onClick={() => openSettlement()}>查询原结果</Button>{release(settlePending, "手动结算")}</span>
+          <span className="f3-recovery-actions"><Button size="sm" onClick={() => openSettlement()}>查询原操作</Button>{release(settlePending, "手动结算")}</span>
         </li>}
         {configProposals.map(original => <li key={original.commandKey}>
           <span className="f3-recovery-name">{configName(original)}</span>
           <span className="f3-recovery-change">{configChange(original)}</span>
           <span className="f3-recovery-time">{businessStamp(original.createdAt)} 提交</span>
           <span className="f3-recovery-state">{proposalTag(original, payoutKey(original) ? SETTLE_APPROVER : CONFIG_APPROVER)}</span>
-          <span className="f3-recovery-actions"><Button size="sm" onClick={() => payoutKey(original) ? setPayout({ key: payoutKey(original)!, original }) : openConfig(original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec?.obj ?? original.fingerprint.replace(/^f-config:/, ""), original)}>查询原结果</Button>{release(original, configName(original))}</span>
+          <span className="f3-recovery-actions"><Button size="sm" onClick={() => payoutKey(original) ? setPayout({ key: payoutKey(original)!, original }) : openConfig(original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec?.obj ?? original.fingerprint.replace(/^f-config:/, ""), original)}>查询原操作</Button>{release(original, configName(original))}</span>
         </li>)}
         {payoutDirects.map(direct => { const line = payoutDirectLine(direct); return <li key={direct.commandKey}>
           <span className="f3-recovery-name">{line.name}</span>
           <span className="f3-recovery-change">{line.change}</span>
           <span className="f3-recovery-time">{businessStamp(direct.createdAt)} 提交</span>
           <span className="f3-recovery-state">{line.tag}</span>
-          <span className="f3-recovery-actions"><Button size="sm" onClick={() => setPayout({ key: direct.f3Request!.key, direct })}>查询原结果</Button>{direct.replayRejection && <FReleaseButton label={line.name} toast={ctx.toast} onRelease={() => ctx.recoverF3PayoutControl(direct.f3Request!.key, "release")} />}</span>
+          <span className="f3-recovery-actions"><Button size="sm" onClick={() => setPayout({ key: direct.f3Request!.key, direct })}>查询原操作</Button>{direct.replayRejection && <FReleaseButton label={line.name} toast={ctx.toast} onRelease={() => ctx.recoverF3PayoutControl(direct.f3Request!.key, "release")} />}</span>
         </li>; })}
         {proposalDrafts.map(({ original }) => {
           const edit = draftEditor(original);
@@ -469,7 +469,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="f3-recovery-change">邀请人 {placementOriginal.intent.ownerUserId} · 成员 {placementOriginal.intent.memberUserId} → {placementOriginal.intent.leg} 组</span>
           <span className="f3-recovery-time">{businessStamp(placementOriginal.createdAt)} 提交</span>
           <span className="f3-recovery-state"><StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经分好组。查询只读取现在的分组，有结论前不要换个组重分。">结果未知</StatusTag></span>
-          <span className="f3-recovery-actions"><Button size="sm" disabled={placementChecking} onClick={() => void checkPlacement()}>查询原结果</Button></span>
+          <span className="f3-recovery-actions"><Button size="sm" disabled={placementChecking} onClick={() => void checkPlacement()}>读取当前分组</Button></span>
         </li>}
       </ul>
       <p className="f3-recovery-zone">提交时间为{businessZone().label}</p>
@@ -495,7 +495,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         : <Conclusion state="neutral" icon={Scale} explain="结算记录在结算后才有；这一期会发多少，要到结算时按当时的订单额、比例和上限算。">
             团队平衡奖励在发放，{PERIOD_TEXT[periodEff]?.when ?? "按周期结算"}；还没有结算记录</Conclusion>;
 
-  const capAction = <button type="button" className="rd-link f3-nowrap" onClick={() => ctx.nav("H")}>去运营阶段设置</button>;
+  const capAction = <button type="button" className="rd-link f3-nowrap" onClick={() => ctx.nav("H")}>去运营阶段设置 →</button>;
 
   return (
     <div className="f3-page">
@@ -504,8 +504,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       {recovery}
       {showReadState ? <>
         {ctx.f3Loading
-          ? <BlockState state="loading" title="正在读取团队平衡奖励…" />
-          : <BlockState state="error" title="团队平衡奖励数据加载失败" detail={ctx.f3Error ?? undefined} onRetry={() => void ctx.refreshF3()} retryLabel="重新加载" />}
+          ? <BlockState state="loading" title="正在加载团队平衡奖励…" />
+          : <BlockState state="error" title="团队平衡奖励数据加载失败" detail={ctx.f3Error ?? undefined} onRetry={() => void ctx.refreshF3()} />}
       </> : <>
       {ctx.f3Error && <Notice tone="warn" title="团队平衡奖励数据刷新失败">{ctx.f3Error}</Notice>}
       {ctx.f3ApprovalReadError && <Notice tone="warn" title="审批队列读取失败"
@@ -550,7 +550,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <p>点一行看这一期结算后剩下的订单额、结算方式、发起人和批准人，审批单可以直接点过去。</p>
         </>}
         actions={<>
-          <Link className="rd-link" href="/network/commissions" prefetch={false}>去补发 / 冲正</Link>
+          <Link className="rd-link" href="/network/commissions" prefetch={false}>去补发 / 冲正 →</Link>
           {(canSettle || settlePending) && <Button size="sm" variant="primary" onClick={() => openSettlement()}>{settlePending ? "查看原手动结算" : "手动结算"}</Button>}
         </>}>
         <FilterBar

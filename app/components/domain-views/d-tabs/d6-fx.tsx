@@ -1,5 +1,5 @@
 "use client";
-import { APPROVAL_REPLAY_RELEASE, canCreateRecoveryProposal, canReadOwnRecoveryProposal, currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
+import { APPROVAL_REPLAY_RELEASE, canCreateRecoveryProposal, canReadOwnRecoveryProposal, currentRecoveryActor, recoveryQueryConclusion } from "@/lib/admin/abe-recovery-access";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
@@ -20,11 +20,12 @@ import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundRecoveryStatus, type FundSettled } from "../fund-command-check";
+import { foundReceiptNext, pendingReplayReason } from "../recovery-panel";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
   d6QuoteRate,
   DRequestError,
@@ -87,7 +88,7 @@ const PARAMS = [
 type Param = (typeof PARAMS)[number];
 const paramOf = (key: ParamKey) => PARAMS.find((param) => param.key === key)!;
 
-const READING = "正在读取最新数据，读完再操作";
+const READING = "正在加载最新数据，读完再操作";
 const LOCKED = "先处理上方结果未知的修改，再调整";
 const NO_WRITE = "这个账号现在没有调整权限，不能重试，请在调整历史里核对";
 const RETRY_AGAIN = "原操作已被拒绝，再重试结果一样";
@@ -144,12 +145,19 @@ const pendingFx = createPendingMutationStore<PendingFx>({
     && (record.proposal !== undefined || isDConfigCommandOrigin(record.commandOrigin, "D6")),
 });
 
-export async function queryD6DirectCommand(record: PendingFx, evidence?: FundCommandEvidence) {
+const fxRecovery = createPendingRecovery(pendingFx, {
+  capability: () => "receipt",
+  canReplay: record => {
+    const rights = currentRecoveryActor(record.commandOwnerId)?.authorities ?? [];
+    return rights.includes("finance_d6_manage") && (!record.proposal || canCreateRecoveryProposal(rights));
+  },
+  explicitRejectionCode,
+});
+
+async function queryD6DirectCommand(record: PendingFx, evidence?: FundCommandEvidence) {
   const saved = pendingFx.list().find(row => row.commandKey === record.commandKey && !row.proposal);
   if (!saved) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
-  const result = await queryDConfigCommand(saved, "D6", evidence);
-  if (result.settled) pendingFx.forget(saved.fingerprint, saved.commandKey);
-  return result;
+  return queryDConfigCommand(saved, "D6", evidence);
 }
 
 function fxCommandKey() {
@@ -185,7 +193,6 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const [readAt, setReadAt] = useState("");
   const [pending, setPending] = useState<PendingFx | null>(null);
   const [retrying, setRetrying] = useState(false);
-  const [proposalNotFound, setProposalNotFound] = useState<string>();
   const [pendingNote, setPendingNote] = useState("");
   const [releasing, setReleasing] = useState(false);
   const [currentId, setCurrentId] = useState<number | null>(null);
@@ -275,33 +282,21 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
 
   /** 按原操作重试：同命令号、同内容、同理由、同版本号，不接受新输入（OP-94）。 */
   const retryPending = async (record: PendingFx) => {
-    if (record.expiresAt <= Date.now() || !canManage || record.replayRejection) return;
-    if (record.proposal) {
-      const actor = currentRecoveryActor(session?.adminId);
-      if (!actor?.authorities.includes("finance_d6_manage") || !canCreateRecoveryProposal(actor.authorities)
-        || proposalNotFound !== record.commandKey) return;
-      setProposalNotFound(undefined);
-    }
-    if (!pendingFx.isDurablyStored(record.fingerprint, record.commandKey)) {
-      setPendingNote("浏览器里查不到这条记录，本次没有发送。记录继续保留，请在调整历史里核对。");
-      return;
-    }
+    if (fxRecovery.state(record).replayBlock) return;
     setPendingNote("");
     setRetrying(true);
     try {
-      await sendCommand(record, record);
+      await fxRecovery.replay(record, original => sendCommand(original, original));
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      const rejection = explicitRejectionCode(cause);
-      if (rejection) {
-        pendingFx.markReplayRejected(record.fingerprint, record.commandKey, rejection);
-        syncPending();
-      } else setPendingNote(`这次没能确认结果：${retryRejectedReason(cause)}原操作继续保留。`);
+      if (explicitRejectionCode(cause)) syncPending();
+      else setPendingNote(`这次没能确认结果：${retryRejectedReason(cause)}原操作继续保留。`);
     } finally {
       setRetrying(false);
     }
   };
 
+  const [proposalReadErrors, setProposalReadErrors] = useState<Record<string, string>>({});
   const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closing, setClosing] = useState(false);
   const [settled, setSettled] = useState<FundSettled[]>([]);
@@ -325,6 +320,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   };
   /** 直接修改：按原请求查原结果，业务上确认成功或核查确认才解除；查到的结论写在这一行。 */
   const settleDirect = async (record: PendingFx, status: FundSettled["status"]) => {
+    pendingFx.forget(record.fingerprint, record.commandKey);
     setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: `把${paramOf(record.param).label}改成 ${valueText(record.param, record.after)}`, status }]);
     syncPending(); setPendingNote("");
     await load();
@@ -332,11 +328,16 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const lookupDirect = async (record: PendingFx) => {
     setRetrying(true);
     try {
-      const { receipt, settled: done } = await queryD6DirectCommand(record);
+      const result = await fxRecovery.query(record, async original => {
+        const result = await queryD6DirectCommand(original);
+        return { ...result, conclusion: recoveryQueryConclusion(result.receipt?.originalStatus ?? "NOT_FOUND") };
+      });
+      if (!result) return;
+      const { receipt, settled: done } = result;
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
     } catch (cause) {
-      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminReadError(cause) } }));
     } finally { setRetrying(false); }
   };
   const releasePending = (record: PendingFx) => {
@@ -348,28 +349,53 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     toast(record.proposal ? "已解除本页这条原操作记录；已经建的审批单不受影响" : "已解除本页这条原操作记录；原操作没有结案时系统仍会阻止新提交", "success");
   };
 
-  /** 查原审批单只收尾这次提交的未知结果，不把待批当成已生效。 */
-  const queryOriginal = async (record: PendingFx) => {
+  /** 只有能读取的两路都明确查无，才可重发原审批申请。 */
+  const lookupProposal = async (record: PendingFx) => {
     setRetrying(true);
-    setProposalNotFound(undefined);
+    setPendingNote("");
     try {
-      const ticket = await fetchA2ProposalByKey(record.commandKey, true);
-      if (!ticket) { setProposalNotFound(record.commandKey); setPendingNote("暂未查到原审批单，结果仍未知，记录继续保留。"); return; }
-      pendingFx.forget(record.fingerprint, record.commandKey);
+      const result = await fxRecovery.query(record, async original => {
+        let ticket: A2OperationRow | null = null;
+        let ticketError = "";
+        try {
+          ticket = await fetchA2ProposalByKey(original.commandKey, true, "a");
+          if (ticket && (!ticket.mine || ticket.obj !== original.proposal?.obj
+            || (ticket.operationCode && ticket.operationCode !== original.proposal?.command.op))) {
+            ticket = null;
+            throw new Error("查到的审批单和原申请对不上。");
+          }
+        } catch (cause) { ticketError = displayAdminReadError(cause); }
+        if (ticket) return { ticket, ticketError, outcome: undefined, conclusion: "unknown" } as const;
+        const outcome: FundInvestigationOutcome = await (async () => {
+          if (!original.commandOrigin) return { receipt: null };
+          try { return { receipt: await checkFundCommand(original) }; }
+          catch (cause) { return { error: displayAdminReadError(cause) }; }
+        })();
+        return { ticket, ticketError, outcome, conclusion: ticketError || "error" in outcome || outcome.receipt ? "unknown" : "not-found" } as const;
+      });
+      if (!result) return;
+      setProposalReadErrors(current => ({ ...current, [record.commandKey]: result.ticketError }));
+      if (result.outcome) {
+        setInvestigationResults(current => ({ ...current, [record.commandKey]: result.outcome! }));
+        const receipt = "receipt" in result.outcome ? result.outcome.receipt : null;
+        if (fundCommandSettled(receipt)) {
+          fxRecovery.settleAcknowledged(record);
+          setSettled(current => [...current.filter(item => item.key !== record.commandKey), {
+            key: record.commandKey, label: `把${paramOf(record.param).label}改成 ${valueText(record.param, record.after)}`, status: receipt!.originalStatus, proposal: true,
+          }]);
+          syncPending();
+          await load();
+        }
+        return;
+      }
+      if (!result.ticket) return;
+      fxRecovery.settleAcknowledged(record);
       syncPending();
       await load();
-      toast(`已找回原审批单 ${ticket.id}，请核对审批进度；当前值以本页回读为准`, "success");
+      toast(`已找回原审批单 ${result.ticket.id}，请核对审批进度；当前值以本页回读为准`, "success");
     } catch (cause) {
-      setPendingNote(`查询没有成功：${displayAdminReadError(cause)}。记录继续保留。`);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminReadError(cause) } }));
     } finally { setRetrying(false); }
-  };
-  /** 查询原结果：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
-  const lookupProposal = async (record: PendingFx) => {
-    await queryOriginal(record);
-    const left = pendingFx.list()[0];
-    if (left?.commandKey !== record.commandKey || fundInvestigationAccess(left).unavailableReason) return;
-    // 查到原请求的执行记录后，这一行按它写结论；审批单查询留下的「没找到、仍未知」会和结论打架，清掉。
-    if (await checkProposalInvestigation(left).catch(() => undefined)) setPendingNote("");
   };
 
   /** 先填新值再进入共用确认框，方向和按钮始终一致；输入框不随方向跳动。 */
@@ -481,21 +507,37 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const expired = pending.expiresAt <= Date.now();
     const what = `把${param.label}改成 ${valueText(pending.param, pending.after)}`;
     const retryRejected = pending.replayRejection ? retryRejectedReason(new Error(pending.replayRejection)) : undefined;
-    const retryBlock = expired ? "已超过 24 小时，不能再重试" : !canManage ? NO_WRITE : retryRejected ? RETRY_AGAIN
-      : pending.proposal ? proposalBlocked ?? (proposalNotFound !== pending.commandKey ? "先查询原结果，查不到才能重试" : undefined) : undefined;
+    const outcome = investigationResults[pending.commandKey];
+    const ticketError = proposalReadErrors[pending.commandKey];
+    const receipt = outcome && "receipt" in outcome ? outcome.receipt : undefined;
+    const receiptError = outcome && "error" in outcome ? outcome.error : undefined;
+    const readFailure = [ticketError && `原审批单加载失败。${ticketError}`, receiptError && `原操作回执加载失败。${receiptError}`].filter(Boolean).join(" ");
     // 改版前没存出处的直接修改按当前账号查，queryD6DirectCommand 再核原操作人。
     const target = pending.proposal ? pending : { ...pending, commandOrigin: pending.commandOrigin ?? dConfigCommandOrigin("D6") };
+    const canClose = eCommandClosureOffer(outcome, expired).conclusions.length > 0 && fundInvestigationAccess(target).canSubmit;
+    const receiptNext = foundReceiptNext(receipt, canClose);
+    const recoveryState = fxRecovery.state(pending);
+    const retryBlock = pendingReplayReason(recoveryState, pending.proposal ? proposalBlocked ?? NO_WRITE : NO_WRITE);
+    const blockedReason = recoveryState.replayBlock === "needs-not-found"
+      ? receipt ? receiptNext ?? "已查到原回执，请到操作记录与审批核对。" : readFailure ? "查询未成功，请重新查询原操作。" : "先查询原操作，明确查无后才能重试。"
+      : retryRejected ? RETRY_AGAIN : retryBlock;
     // 查到记为失败时，「可能已经提交」不再写。
-    const outcome = investigationResults[pending.commandKey];
     const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
-    return { key: pending.commandKey, title: what, record: target, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !retryBlock,
+    const receiptStatus = receipt ? fundRecoveryStatus({ record: target, outcome, expired, canRetry: false }) : undefined;
+    const status = receiptStatus ? receiptNext || readFailure
+      ? { ...receiptStatus, line: [receiptNext ?? receiptStatus.line, readFailure].filter(Boolean).join(" ") } : undefined
+      : readFailure ? { tone: "danger" as const, label: ticketError ? "原审批单加载失败" : "原操作回执加载失败", line: `${readFailure} 可再次查询原操作。` }
+        : recoveryState.conclusion === "not-found" && !target.commandOrigin
+          ? { tone: "warn" as const, label: "没有查到", line: expired ? "没有查到原审批单，记录保留。" : "没有查到原审批单，可在有效期内按原操作重试。" }
+          : undefined;
+    return { key: pending.commandKey, title: what, record: target, outcome, createdAt: pending.createdAt, expired, canRetry: !blockedReason, status,
       canQuery: pending.proposal ? canQueryOriginal : undefined, copy: { where: "调整历史", missingOrigin: "只能按操作编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
       actions: <>
         {pending.proposal && canQueryOriginal && <FundCheckButtons record={pending} lookupWithoutOrigin outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupProposal(pending)} onClose={() => setClosing(true)} />}
         {!pending.proposal && <FundCheckButtons record={target} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupDirect(pending)} onClose={() => setClosing(true)} />}
-        {!expired && <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原操作重试</Button>}
+        {!expired && <Button size="sm" loading={retrying} disabledReason={blockedReason} onClick={() => void retryPending(pending)}>按原操作重试</Button>}
         {retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>,
       detail: <>
@@ -508,7 +550,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       tech: `原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}` };
   })();
   const pendingNotice = <FundRecoveryPanel rows={pendingRow ? [pendingRow] : []} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
-    link={canAudit && <Link className="rd-link" href="/platform/audit?domain=D&object=VND_USDT" prefetch={false}>到操作记录与审批核对</Link>} />;
+    link={canAudit && <Link className="rd-link" href="/platform/audit?domain=D&object=VND_USDT" prefetch={false}>去操作记录与审批 →</Link>} />;
   const releaseModal = <>
     {pending && releasing && <ReleaseModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} onCancel={() => setReleasing(false)} onConfirm={() => releasePending(pending)} />}
     {pending && closing && !pending.proposal && <CommandClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} commandKey={pending.commandKey} createdAt={pending.createdAt}
@@ -530,7 +572,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         {header}
         {pendingNotice}
         {loading
-          ? <BlockState state="loading" title="正在读取汇率设置…" />
+          ? <BlockState state="loading" title="正在加载汇率设置…" />
           : <BlockState state="error" title="汇率设置加载失败"
             detail={<>读不到汇率设置，页面不显示任何旧值。点「重试」；一直失败请联系财务值班人员。{error && <Explain label="失败原因" content={error} />}</>}
             onRetry={() => void load()} />}
@@ -584,7 +626,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
           {data.approval.status === "pending" && (approvalValues ? <>
             <Fact k="待批买入价" unit="₫/USDT">{vnd(d6QuoteRate(approvalValues.baseRateVndPerUsdt, approvalValues.buySpreadPct))}<span className="rd-fact-unit">尚未生效</span></Fact>
             {PARAMS.map((param) => <Fact key={param.key} k={`待批${param.label}`}>{valueText(param.key, approvalValues[param.key])}</Fact>)}
-          </> : <Fact k="待批新值">{approvalReadError || "正在读取原审批单…"}</Fact>)}
+          </> : <Fact k="待批新值">{approvalReadError || "正在加载原审批单…"}</Fact>)}
           {data.approval.applied && <Fact k="生效记录">这张单已批准，当前配置以本页当前值为准<Explain label="批准状态和当前值" content="批准状态只表示这张单已批准，之后可能又有直接调整，不能把原单新值当成当前值。" /></Fact>}
         </Facts>
       </Panel>}

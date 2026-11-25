@@ -127,7 +127,7 @@ export function TransferPendingNotes({ onOpen }: { onOpen: (customerId: string) 
       tag: <StatusTag tone={view.tone}>{view.label}</StatusTag>,
       line: view.line,
       actions: !submitting && <>
-        <Button type="button" size="sm" icon={<SearchCheck size={14} aria-hidden />} data-transfer-customer={record.payload.customers[0].id} onClick={() => onOpen(record.payload.customers[0].id)}>查询原结果</Button>
+        <Button type="button" size="sm" icon={<SearchCheck size={14} aria-hidden />} data-transfer-customer={record.payload.customers[0].id} onClick={() => onOpen(record.payload.customers[0].id)}>查询原操作</Button>
         {state.replayRejection && canQuery && <Button type="button" size="sm" variant="ghost" disabled={Boolean(state.busy)} onClick={event => { releaseOpener.current = event.currentTarget; setReleasing(record); }}>核实后解除</Button>}
       </>,
       detail: <>
@@ -291,7 +291,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
   const view = pending && transferView(pending);
   const footer = pending && recoveryState
     ? <><Button type="button" disabled={saving} onClick={onClose}>取消</Button>
-      <Button type="button" variant={recoveryState.replayBlock && !recoveryState.replayRejection ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={saving} disabledReason={canQuery ? undefined : "当前账号没有客服工作台查看权限"} onClick={() => void check()}>查询原结果</Button>
+      <Button type="button" variant={recoveryState.replayBlock && !recoveryState.replayRejection ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={saving} disabledReason={canQuery ? undefined : "当前账号没有客服工作台查看权限"} onClick={() => void check()}>查询原操作</Button>
       {recoveryState.replayRejection ? canQuery && <Button type="button" disabled={saving} onClick={() => setReleasing(true)}>核实后解除</Button>
         : <Button type="button" variant={recoveryState.replayBlock ? "secondary" : "primary"} loading={recoveryState.busy === "replay"} loadingText="提交中…" disabled={saving} disabledReason={saving ? undefined : pendingReplayReason(recoveryState, "当前账号没有办理转绑的权限，不能重试。")} onClick={() => void send(pending, true)}>按原操作重试</Button>}</>
     : <><Button type="button" disabled={saving} onClick={onClose}>取消</Button>{onOpenOwn && denied && detail?.agentAdminId === adminId && <Button type="button" onClick={onOpenOwn}>查看我的客户资料</Button>}{targets && <Button type="button" variant="primary" disabled={saving} loading={saving} loadingText="提交中…" disabledReason={!chosen ? "请选择目标专属客服" : reasonRule.blocked} onClick={() => void submit()}>确认正式转绑</Button>}</>;

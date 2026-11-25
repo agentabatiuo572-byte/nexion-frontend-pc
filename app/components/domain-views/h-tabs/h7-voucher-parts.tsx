@@ -10,6 +10,7 @@ import { Button, Explain, Fact, Facts, Fold, Notice, SegmentBar, StatusTag } fro
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 import type { H7PendingApproval, H7Voucher } from "@/lib/admin/h-client";
+import { H7_VOUCHER_APPROVER, H7_VOUCHER_APPROVAL_PERMISSIONS } from "@/lib/admin/h7-voucher-approval";
 import { h7DateFacts, h7Stamp, isH7VoucherExpired } from "@/lib/admin/h7-voucher-time";
 import { amountDisplay } from "@/lib/format";
 export type { H7Voucher } from "@/lib/admin/h-client";
@@ -180,7 +181,7 @@ export const H7_DIRECT_RETRY_COPY = "按原操作重试会用原编号、原内�
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
     ? "提交时没收到确定结果，可能已经生效。可读取当前配置供核对，24 小时内可按原操作重试。"
-    : "提交时没收到确定结果，可能已经建了审批单。先查询原结果；明确查不到、没过 24 小时才能按原操作重试，不会建第二张。"}>结果未知</StatusTag>;
+    : "提交时没收到确定结果，可能已经建了审批单。先查询原操作；明确查不到、没过 24 小时才能按原操作重试，不会建第二张。"}>结果未知</StatusTag>;
 }
 
 /** 后端读到的审批锁：读得出单子就写是哪张、谁什么时候提交的；四项都是空的只说明有锁。 */
@@ -197,12 +198,12 @@ export function pendingTag(pending?: H7PendingApproval | null) {
   }
   // 卡片上只写动作：「删除代金券」→ 删除，「作废未使用的代金券」→ 作废；全名在说明里。
   const short = pending?.action?.replace(/未使用的代金券$|代金券$/, "");
-  return <StatusTag tone="warn" icon={Clock3} explain={`${pending?.action ? `${pending.action}：` : ""}等另一位管理员在「操作记录与审批」批准。${facts ? `${facts}。` : ""}批准前券模板和已发出的券都不变，这张券也不能编辑、暂停或投放。`}>{short ? `${short}待审批` : "待审批"}</StatusTag>;
+  return <StatusTag tone="warn" icon={Clock3} explain={`${pending?.action ? `${pending.action}：` : ""}等${H7_VOUCHER_APPROVER}在「操作记录与审批」批准（需要${H7_VOUCHER_APPROVAL_PERMISSIONS}）。${facts ? `${facts}。` : ""}批准前券模板和已发出的券都不变，这张券也不能编辑、暂停或投放。`}>{short ? `${short}待审批` : "待审批"}</StatusTag>;
 }
 
 /** 申请已建单，但这次没查到审批进度：只能查询，不会重发。 */
 export function acknowledgedTag() {
-  return <StatusTag tone="neutral" icon={Clock3} explain="申请已建单，这次没查到审批进度。点「查询原结果」再查；不会重发。">已建单</StatusTag>;
+  return <StatusTag tone="neutral" icon={Clock3} explain="申请已建单，这次没查到审批进度。点「查询原操作」再查；不会重发。">已建单</StatusTag>;
 }
 
 export function expiredTag() {

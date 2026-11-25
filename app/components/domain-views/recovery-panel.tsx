@@ -13,7 +13,7 @@ export function pendingReplayReason(state: PendingRecoveryState, unavailable: st
     case "expired": return RETRY_EXPIRED_TEXT;
     case "missing":
     case "unavailable": return unavailable;
-    case "needs-not-found": return "请先查询原结果，确认查不到后才可重试。";
+    case "needs-not-found": return "请先查询原操作，确认查不到后才可重试。";
     case "readback-only": return "请核对当前资料及操作记录与审批。";
     case "replay-rejected": return "后台已拒绝重试，请先核实原操作。";
   }
@@ -65,6 +65,13 @@ export function closureKnown(outcome?: { receipt: ECommandInvestigation | null }
 /** 查到原回包是后台拒绝、记录还保留（不含核查结案后的「后台拒绝」）。 */
 export function receiptRejected(receipt: ECommandInvestigation | null | undefined) {
   return receipt?.originalStatus === "SUCCEEDED" && eCommandResult(receipt) === "REJECTED";
+}
+
+/** Next step for pages that only allow replay after an explicit miss. */
+export function foundReceiptNext(receipt: ECommandInvestigation | null | undefined, canClose: boolean, where = "操作记录与审批") {
+  const next = canClose ? "可以核查结案。" : `请到${where}核对。`;
+  if (receiptRejected(receipt)) return `已查到原回执，后台当时拒绝了。${next}`;
+  if (receipt?.originalStatus === "SUCCEEDED") return `已查到原回执，后台已处理，业务结果待核对。${next}`;
 }
 
 /** 后台拒绝、记录还保留时这一行怎么说：后台当时拒绝了，但不保证没有改动；原因要按原操作重试拿回，过期后核查结案。 */
@@ -157,10 +164,10 @@ export function receiptFact(receipt: ECommandInvestigation | null | undefined, h
 export function closureConflict(conclusion: ECommandEvidence["conclusion"], { audit, canAudit, rollback, stillUnknown }: { audit: boolean; canAudit: boolean; rollback?: boolean; stillUnknown?: boolean }) {
   if (conclusion === "NOT_EXECUTED" && rollback) return `没有结案：${ROLLBACK_REFUSED}${stillUnknown ? "可以改选「仍未知」，只留一条核查记录。" : "请到操作记录与审批核对。"}`;
   const why = conclusion === "SUCCEEDED" ? audit ? "成功记录编号对不上这次操作，记录继续保留。核对编号后再提交。"
-    : canAudit ? "没有成功记录编号，证明不了已执行，记录继续保留。填上编号后再提交。" : "后台的处理记录证明不了已执行，记录继续保留。重新查询原结果后再处理。"
-    : conclusion === "REJECTED" ? "后台的记录不支持「后台拒绝」，记录继续保留。重新查询原结果，按查到的结论再结案。"
+    : canAudit ? "没有成功记录编号，证明不了已执行，记录继续保留。填上编号后再提交。" : "后台的处理记录证明不了已执行，记录继续保留。重新查询原操作后再处理。"
+    : conclusion === "REJECTED" ? "后台的记录不支持「后台拒绝」，记录继续保留。重新查询原操作，按查到的结论再结案。"
       : conclusion === "NOT_EXECUTED" ? "后台证明不了这次没有执行，记录继续保留。换一个有证据的结论再提交。"
-        : "这条原操作已经有结果，记录继续保留。重新查询原结果，按查到的结论再结案。";
+        : "这条原操作已经有结果，记录继续保留。重新查询原操作，按查到的结论再结案。";
   return `没有结案：${why}`;
 }
 
@@ -172,7 +179,7 @@ export function closureTime(createdAt: number) {
 /** 没选结论时的示例占位：不给某一个结论专用的例子。 */
 export const CLOSURE_PLACEHOLDER = "写明核对了什么、在哪看到的";
 export const CLOSURE_PLACEHOLDER_BY: Partial<Record<ECommandEvidence["conclusion"], string>> = {
-  REJECTED: "写明核对了什么，例如：查询原结果是后台拒绝，操作记录里没有这次的成功记录",
+  REJECTED: "写明核对了什么，例如：查询原操作是后台拒绝，操作记录里没有这次的成功记录",
   SUCCEEDED: "写明核对了什么、在哪看到的，例如：操作记录里 10:42 这次操作的成功记录",
 };
 export const CLOSURE_ACK = "我已核对依据，知道提交后不能撤销或改结论";

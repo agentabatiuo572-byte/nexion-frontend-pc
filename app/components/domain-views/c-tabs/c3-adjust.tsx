@@ -84,7 +84,7 @@ const ACCOUNT_STATUS: Record<string, string> = { ACTIVE: "正常", FROZEN: "冻�
 const C01_FLOW = "提交后余额不会马上变，需由另一位同事复核批准后才生效。";
 const C01_RULE = "余额调整只用于纠错和补偿。调错了用「冲正」抵消，原记录会保留。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
-const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果或按原操作重试。";
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原操作或按原操作重试。";
 const LOCKED_ROW = "这张单有结果未知的操作，先到页面上方核对";
 const LOCKED_USER = "这个用户有一笔结果未知的提交，先到页面上方核对";
 const MINE = "这是你发起的，需要另一位管理员处理";
@@ -679,7 +679,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
             : formCoverageBlock === "unreliable" ? "兑付覆盖率暂时算不出来，暂不能加余额"
               : formCoverageBlock === "below" ? "加完后兑付覆盖率会低于红线"
                 : largeAdjustment && isFinance ? "超过 500 USDT 等值只能由财务主管或超级管理员发起" : "";
-  const submitBlock = contextReading ? "正在读取…"
+  const submitBlock = contextReading ? "正在加载…"
     : !contextAccount ? "请先选择账户"
       : businessBlock || amountIssue || reasonIssue || evidenceIssue || (submitting ? "正在提交" : "");
 
@@ -826,7 +826,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     }
     if (upper(row.direction) !== "CREDIT") return undefined;
     const coverage = latest ? coverageOf(latest.coverage) : overviewCoverage;
-    if (!latest && overview.loading && !overview.data) return "正在读取…";
+    if (!latest && overview.loading && !overview.data) return "正在加载…";
     if (!latest && overview.error) return "兑付覆盖率暂时读不到，刷新后再批准增加余额";
     const block = creditCoverageBlock(coverage, Number(row.amountUsd ?? row.amount));
     if (block === "unreliable") return "兑付覆盖率暂时算不出来，现在不能批准增加余额。";
@@ -1179,7 +1179,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         ? <BlockState compact state="error" title="没有读到网址里的用户" detail={focusError} retrying={context.loading} onRetry={() => setFocusRetry((count) => count + 1)} />
         : <BlockState compact state="error" title={focusError} />)}
       {selectedUser && context.error && <BlockState compact state="error" title="没有读到这个用户的余额" detail={context.error} onRetry={() => void loadContext(selectedUserId, contextGeneration.current)} />}
-      {context.loading && !contextAccount && <BlockState state="loading" title="正在读取这个用户的余额…" compact />}
+      {context.loading && !contextAccount && <BlockState state="loading" title="正在加载这个用户的余额…" compact />}
       {targetCard}
       <div className="rd-form-grid">
         <Field label="资产"><Segments label="资产" value={asset} onChange={setAsset} items={ASSETS.map((item) => ({ value: item, label: nexGridBrandText(item) }))} /></Field>
@@ -1301,7 +1301,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const latestSubmitted = historyPage === 1 ? historyRows[0] : undefined;
   // 已批准总数只看概览自己读没读到，历史为空、读取失败时照样写（R2-N04）；历史失败时它不跟着上红色。
   const historyAssetPrefix = historyAsset ? `${nexGridBrandText(historyAsset)} ` : "";
-  const historyLead = history.loading && !history.data ? "正在读取…"
+  const historyLead = history.loading && !history.data ? "正在加载…"
     : history.error ? "读取失败"
       : !history.data?.total ? `${historyAssetPrefix}暂无调整历史`
         : `${historyAssetPrefix}共 ${history.data.total.toLocaleString("en-US")} 笔`;
@@ -1375,7 +1375,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const shownCoverage = detail ? coverageOf(detail.coverage) : null;
   const shownCredit = upper(shown?.direction) === "CREDIT";
   const shownMine = shown ? isMine(shown) : false;
-  const shownApproveBlock = shown && shownPending && canApprove && !shownMine ? (detailLoading ? "正在读取…" : detailError || !detail ? "先读到详情才能批准" : approveBlock(shown, detail)) : undefined;
+  const shownApproveBlock = shown && shownPending && canApprove && !shownMine ? (detailLoading ? "正在加载…" : detailError || !detail ? "先读到详情才能批准" : approveBlock(shown, detail)) : undefined;
   const shownCoverageAfter = shownCoverage?.reliable ? projectedCoverage(shownCoverage, "CREDIT", Number(shown?.amountUsd ?? shown?.amount)) : undefined;
   const coverageReviewReason = text(shown?.reviewReason, "");
   const reviewReasonText = coverageReviewReason.startsWith("COVERAGE_BELOW_REDLINE:")
@@ -1387,14 +1387,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     { label: "用户", icon: User, tone: "users", value: userText(shown), state: detail?.user && upper(detail.user.status) !== "ACTIVE" ? "warn" : undefined, reason: detail?.user ? `账户${ACCOUNT_STATUS[upper(detail.user.status)] ?? "状态未知"}` : undefined },
     shownPending
       ? { label: "余额",
-        value: detailLoading ? "正在读取…" : !shownBalance ? <span className="rd-weak">读不到</span>
+        value: detailLoading ? "正在加载…" : !shownBalance ? <span className="rd-weak">读不到</span>
           : <><Change from={money(shownBalance.now)} to={`批准后约 ${money(shownBalance.after)}`} tone={isNegative(shownBalance.after) ? "warn" : undefined} /> {shownUnit}</> }
       : { label: "执行后余额", value: shown.balanceAfter == null ? "—" : `${moneyOf(shown.balanceAfter)} ${shownUnit}` },
     ...(shownPending && shownCredit ? [{
       label: "兑付覆盖率",
       // 算不出来是「要注意」，和页面上同一个原因同色；低于红线才用红（DT-13、VS-107）。
       state: detailLoading || !detail ? undefined : !shownCoverage?.reliable ? "warn" as const : shownCoverageAfter != null && shownCoverageAfter < shownCoverage.redline ? "danger" as const : undefined,
-      value: detailLoading ? "正在读取…" : !detail ? <span className="rd-weak">读不到</span> : !shownCoverage?.reliable ? "算不出来"
+      value: detailLoading ? "正在加载…" : !detail ? <span className="rd-weak">读不到</span> : !shownCoverage?.reliable ? "算不出来"
         : <><Change from={pct(shownCoverage.ratio)} to={`批准后约 ${shownCoverageAfter == null ? "应付款为 0" : pct(shownCoverageAfter)}`} /> · 红线 {fmtConfigPct(shownCoverage.redline)}</>,
     }] : []),
     { label: "提交人", value: text(shown.maker), reason: <span title={formatBusinessTimeFull(shown.createdAt, "") || undefined}>{formatBusinessTimeCompact(shown.createdAt, "—")}</span> },
@@ -1415,7 +1415,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const drawerBusy = Boolean(submitting) || Boolean(opening);
   const drawerFooter = shown && (shownPending ? (
     <Decision note={drawerNote}
-      danger={canApprove ? <Button disabled={drawerBusy} disabledReason={shownMine ? MINE : rowBlock(shown, "reject") ?? (detailLoading ? "正在读取…" : undefined)} onClick={() => void confirmDecision(shown, "reject")}>驳回</Button> : undefined}
+      danger={canApprove ? <Button disabled={drawerBusy} disabledReason={shownMine ? MINE : rowBlock(shown, "reject") ?? (detailLoading ? "正在加载…" : undefined)} onClick={() => void confirmDecision(shown, "reject")}>驳回</Button> : undefined}
       others={shownMine && canCreate ? <Button disabled={drawerBusy} disabledReason={rowBlock(shown, "withdraw")} onClick={() => void confirmDecision(shown, "withdraw")}>撤回</Button> : undefined}
       primary={canApprove ? <Button variant="primary" disabled={drawerBusy} disabledReason={shownMine ? MINE : shownApproveBlock} onClick={() => void confirmDecision(shown, "approve")}>批准</Button> : undefined} />
   ) : (canReverse && !reversibleReason(shown)) || (shown.ledgerId != null && shown.ledgerId !== "" && canReadLedger) || shownLocked ? (
@@ -1426,7 +1426,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
   /* ── 结果未知：收成一个面板，每条一行，默认露三条（提示不把正事挤出首屏） ── */
   const pendingNotices = <RecoveryPanel title={recoveryTitle(pending.length)} explainLabel="结果未知怎么处理"
-    explain="提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内按原操作重试不会多建单，也不会重复入账。"
+    explain="提交时没收到确定结果，可能已经生效。先查询原操作；24 小时内按原操作重试不会多建单，也不会重复入账。"
     items={pending.map((record) => {
       const expired = isRetryExpired(record);
       // 重试被明确拒绝后，和账户操作、用户详情同一个说法：标签换成「重试被拒绝」，这句说可以解除。
@@ -1436,10 +1436,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         object: record.label,
         createdAt: record.createdAt,
         tag: refused ? <StatusTag tone="danger">重试被拒绝</StatusTag> : expired ? <StatusTag tone="warn" icon={Hourglass}>已过期</StatusTag> : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>,
-        line: refused ? "重试被明确拒绝；查询原结果核对后，可以解除。" : record.kind === "large" ? "旧入口已停用，不能重试。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。",
+        line: refused ? "重试被明确拒绝；查询原操作核对后，可以解除。" : record.kind === "large" ? "旧入口已停用，不能重试。" : expired ? "超过 24 小时不能再重试，先查询原操作。" : "可能已经生效，先查询原操作。",
         note: pendingNotes[record.fingerprint],
         actions: <>
-          <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
+          <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原操作</Button>
           {record.kind !== "large" && <Button size="sm" disabled={!!submitting} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>}
           {refused && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
         </>,
@@ -1460,7 +1460,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     <PageHeader pageId="C3" title="余额与资产调整" summary={<AutoGloss>补偿或纠错时增减用户余额，另一位同事批准后才入账。</AutoGloss>}
       back={back ? <Link className="rd-link" href={back.href} prefetch={false}>{back.label}</Link> : undefined}
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${businessClock(readAt)} 读取（${zone}）` : overview.loading || queue.loading || history.loading ? "正在读取" : "这页的数据都没读到"}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
+        <span>{readAt ? `${businessClock(readAt)} 读取（${zone}）` : overview.loading || queue.loading || history.loading ? "正在加载" : "这页的数据都没读到"}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={overview.loading || queue.loading || history.loading} onClick={() => void refreshAll()}>刷新</Button>
       </span>}
       readOnly={canWriteAny ? undefined : "你只能查看；发起、批准和冲正要有对应权限的同事办。"}
@@ -1468,15 +1468,15 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
     {pendingNotices}
     {(canCreate || canApprove) && coverageBelow && overviewCoverage && <Notice tone="danger" title={`兑付覆盖率 ${pct(overviewCoverage.ratio)}，低于红线 ${fmtConfigPct(overviewCoverage.redline)}`}
-      action={canReadPool ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款</Link> : undefined}>
+      action={canReadPool ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link> : undefined}>
       增加余额的提交和批准都已停用，扣减照常。
     </Notice>}
     {(canCreate || canApprove) && coverageUnknown && <Notice tone="warn"
-      action={canReadPool ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款</Link> : undefined}>
+      action={canReadPool ? <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link> : undefined}>
       兑付覆盖率暂时算不出来，现在不能增加用户余额。扣减照常。
     </Notice>}
 
-    {overview.loading && !overview.data ? <Conclusion state="unknown">正在读取…</Conclusion>
+    {overview.loading && !overview.data ? <Conclusion state="unknown">正在加载…</Conclusion>
       : overview.error || pendingCount === null || !Number.isFinite(pendingCount) ? <Conclusion state="unknown" action={<InlineRetry onRetry={() => void loadOverview()} />}>暂时读不到待审批的数量</Conclusion>
         // 没有批准权的账号：这件事不归他处理，中性色、数字不放大（协调人 2026-11-08 定，VS-22）。
         : pendingCount > 0 ? <Conclusion state={canApprove ? "warn" : "neutral"} lead={canApprove} icon={Inbox} explain="只算待审批的单。批准、驳回和撤回在下面的队列里做。"
@@ -1538,6 +1538,6 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     </Drawer>
 
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain={`重试被拒说明不了原操作的结果。先查询原结果，或${canReadAudit ? "到操作记录与审批按单号核对" : AUDIT_ELSEWHERE}。解除后原操作不再重试，系统仍按这张单现在的状态校验。`} />}
+      explain={`重试被拒说明不了原操作的结果。先查询原操作，或${canReadAudit ? "到操作记录与审批按单号核对" : AUDIT_ELSEWHERE}。解除后原操作不再重试，系统仍按这张单现在的状态校验。`} />}
   </>;
 }

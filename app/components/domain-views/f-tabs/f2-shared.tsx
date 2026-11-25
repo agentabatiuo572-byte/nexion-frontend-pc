@@ -211,7 +211,7 @@ export function F2ConfirmModal({ spec, ctx, coverage, onClose, toast }: { spec: 
           try { await ctx.runFContinuation(spec.draft?.commandKey, () => spec.submit(reason, newValue, businessValue)); }
           finally { command.current = ctx.f2ProposalRecord(spec.slot)?.commandKey; }
         } catch (error) {
-          if (isA2OutcomeUncertainError(error)) throw new Error("申请结果未知，请先查询原结果。");
+          if (isA2OutcomeUncertainError(error)) throw new Error("申请结果未知，请先查询原操作。");
           // Keep the reviewed input and the actual rejection on this F2 surface.
           if (isPermissionDenied(error)) throw new Error(`提交失败：${displayAdminError(error)}`);
           throw error;

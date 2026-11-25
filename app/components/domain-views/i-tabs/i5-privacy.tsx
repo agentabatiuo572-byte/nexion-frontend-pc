@@ -58,7 +58,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
   useEffect(() => { onHead("privacy", { readAt, busy: loading, disabled: editing, failed: !doc || !!error, refresh: () => void refresh() }); }, [onHead, readAt, loading, editing, doc, error, refresh]);
 
   const locales = doc ? Object.keys(doc.locales) : [];
-  const writeBlocked = loading ? "正在读取最新数据，读完再操作" : error ? "最新内容没读到，重新读取后再操作" : writes.isLocked("privacy") ? WRITE_LOCKED : undefined;
+  const writeBlocked = loading ? "正在加载最新数据，读完再操作" : error ? "最新内容没读到，重新读取后再操作" : writes.isLocked("privacy") ? WRITE_LOCKED : undefined;
 
   const save = (form: Doc, after?: () => void) => {
     const baseline = doc!;

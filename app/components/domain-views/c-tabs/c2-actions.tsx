@@ -18,19 +18,21 @@ import {
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
+import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 import { fetchAccountDeletion, fetchAccountDeletions, updateAccountDeletion, AccountDeletionRequestError, type AccountDeletionRequest, type AccountDeletionStatus } from "@/lib/admin/account-deletion-client";
 import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { nexGridBrandText, operatorNicknameText, platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
 import { businessClock, businessDay, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { formatAccountStatus, formatC1DeviceStatus, formatC1RiskBand, formatC1SessionStatus, riskBandFromScore, riskBandTone } from "@/lib/admin/c1-detail-display";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { canReadOwnRecoveryProposal, nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { listSessionRevocationApprovals, pendingSessionRevocationApproval, proposeSessionRevocation } from "@/lib/admin/session-revocation-approval";
+import { canProposeSessionRevocation, listSessionRevocationApprovals, pendingSessionRevocationApproval, proposeSessionRevocation, sessionRevocationRecovery, sessionRevocationStatus } from "@/lib/admin/session-revocation-approval";
 import {
   fetchImpersonationReadonlyView,
   fetchUserAccountActionAccount,
@@ -103,9 +105,9 @@ const MIRROR_PAGES = [
 const K1_BLOCK = "这个账户是随多账户风险排查的账户组冻结的，要在那里解除，这里不能恢复。";
 /** 系统不会自己解冻：要在充值异常处置里单独提交解冻，另一位同事复核（后端 CregisReorgResolutionService 的 UNFREEZE）。 */
 const CREGIS_BLOCK = "这个账户因 USDT 充值异常冻结，这里不能恢复，需要单独解冻处置：异常和欠款处理完后，在「充值与收款对账」提交解冻，另一位同事复核后解除。";
-const LOCKED_USER = "这个账户有一次操作结果未知，先到页面上方查询原结果";
-const LOCKED_LIST = "这个用户的名单有一次操作结果未知，先到页面上方查询原结果";
-const LOCKED_VIEW = "这次查看有一次操作结果未知，先到页面上方查询原结果";
+const LOCKED_USER = "这个账户有一次操作结果未知，先到页面上方查询原操作";
+const LOCKED_LIST = "这个用户的名单有一次操作结果未知，先到页面上方查询原操作";
+const LOCKED_VIEW = "这次查看有一次操作结果未知，先到页面上方查询原操作";
 const SUBMITTING = "正在提交，稍候";
 const REFRESHING = "正在刷新，稍候";
 const STALE = "账户数据没刷新成功，先重试读取";
@@ -115,7 +117,7 @@ const NO_SESSION_TO_REVOKE = "没有在线设备，不用退出";
 const VIEW_NEEDS_ACTIVE = "只有正常账户能打开用户数据只读视图";
 const VIEW_ALREADY_OPEN = "这个用户已有进行中的只读视图，先结束它";
 const STORE_FAILED = "浏览器存不下这次操作，没有提交。换一个窗口再试。";
-const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果，或按原操作重试。";
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原操作，或按原操作重试。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
 const PERMISSION_DENIED_CODES = ["无权限访问", "ADMIN_PERMISSION_DENIED", "ACCESS_DENIED"];
 const REASON_CODES = ["RISK_HIT", "AML_REVIEW", "USER_APPEAL", "JUDICIAL_ASSISTANCE", "OTHER"];
@@ -502,8 +504,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const canFreeze = authorities.includes("user_c2_account_freeze");
   const canUnfreeze = authorities.includes("user_c2_account_unfreeze");
   // 退出全部设备是审批：C2 或 C5 的退出码都认，加审批提交权（后端 AuditReplayBusinessPermissionGuard、A2AccessPolicy 同样）。
-  const canRevoke = authorities.some((authority) => ["user_c2_session_revoke_all", "user_c5_session_revoke_all"].includes(authority))
-    && authorities.some((authority) => ["platform_a2_write", "platform_a2_proposal_create"].includes(authority));
+  const canRevoke = canProposeSessionRevocation(authorities);
   const canStartImpersonation = authorities.includes("user_c2_impersonate_start");
   const canTerminateImpersonation = authorities.includes("user_c2_impersonate_terminate");
   const canManageLists = authorities.includes("user_c2_blocklist_add");
@@ -663,6 +664,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const [submitting, setSubmitting] = useState("");
   const [opening, setOpening] = useState("");
   const [pending, setPending] = useState<C2Pending[]>([]);
+  const revocationRelease = useVerifiedRelease(toast);
   const [revocations, setRevocations] = useState<RevocationRecord[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
@@ -672,6 +674,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     setRevocations(session ? listSessionRevocationApprovals(session.adminId) : []);
   }, [session]);
   useEffect(() => { syncPending(); }, [syncPending, authEpoch]);
+  useEffect(() => {
+    const next = nextRecoveryDeadline(revocations);
+    if (next === undefined) return;
+    const timer = window.setTimeout(syncPending, Math.max(1, next - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [revocations, syncPending]);
   const notePending = (fingerprint: string, note: string) => setPendingNotes((notes) => ({ ...notes, [fingerprint]: `${businessClock(Date.now())} ${note}` }));
   const locked = useMemo(() => {
     const scopes = new Set(pending.map((record) => record.fingerprint));
@@ -773,7 +781,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const scope = scopeOf(record.kind, record.target);
     const retained = c2Commands.get(scope);
     if (!retry && (retained || locked.has(scope))) {
-      throw new Error(scope.startsWith("list|") ? LOCKED_LIST : scope.startsWith("view|") ? LOCKED_VIEW : scope.startsWith("deletion|") ? "这张申请有一次操作结果未知，先到页面上方查询原结果" : LOCKED_USER);
+      throw new Error(scope.startsWith("list|") ? LOCKED_LIST : scope.startsWith("view|") ? LOCKED_VIEW : scope.startsWith("deletion|") ? "这张申请有一次操作结果未知，先到页面上方查询原操作" : LOCKED_USER);
     }
     const key = retained ?? newCommandKey(record.kind);
     c2Commands.remember(scope, key, record);
@@ -1028,6 +1036,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const display = displayAccount(account);
     const activeCount = count(latest.activeSessions) ?? 0;
     const pendingRevoke = session ? pendingSessionRevocationApproval(session.adminId, id) : undefined;
+    if (pendingRevoke) return;
     openActionConfirm({
       briefKind: "security",
       action: `强制登出 · ${display}`,
@@ -1039,14 +1048,13 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         <Fact k="退出范围">批准时在线的全部设备</Fact>
       </Facts>,
       // 没有未决记录时说明和影响是一件事，只写影响（VS-105）。
-      detail: pendingRevoke ? "审批提交结果未知，按原操作重试会用原理由，不会重复提交。" : "批准后这个用户的全部设备立即退出登录，要重新登录才能用。",
+      detail: "批准后这个用户的全部设备立即退出登录，要重新登录才能用。",
       amplifies: false,
       statedBrief: { impact: "批准后这个用户的全部设备立即退出登录，要重新登录才能用。", check: "核对用户和在线设备数，理由写清工单号和处理依据。" },
       confirmLabel: "提交审批",
       reasonMin: 8,
       reasonMax: 200,
       reasonPlaceholder: "例如：工单 20261108-003，疑似盗号，退出全部设备",
-      getPendingReason: () => session ? pendingSessionRevocationApproval(session.adminId, id)?.reason : undefined,
       run: async (reason) => {
         if (!session) throw new Error("请登录后再提交");
         setSubmitting(`user|${id}`);
@@ -1054,7 +1062,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           await proposeSessionRevocation(session, id, display, reason);
           toast("已提交退出全部设备的审批，批准后生效", "success");
         } catch (cause) {
-          if (isA2OutcomeUncertainError(cause)) { toast(UNKNOWN_TOAST, "warn"); return; }
+          if (pendingSessionRevocationApproval(session.adminId, id)) { toast(UNKNOWN_TOAST, "warn"); return; }
           throw cause;
         } finally {
           setSubmitting("");
@@ -1431,17 +1439,17 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     toast("已解除原操作记录，可以重新处理", "success");
   };
 
-  /** 退出全部设备的未决记录：按原命令号先查审批单，查不到再按原内容提交（甲档，现有逻辑）。 */
-  const retryRevocation = async (record: RevocationRecord) => {
-    if (!session) return;
-    const fingerprint = `revoke|${record.userId}`;
+  const recoverRevocation = async (record: RevocationRecord, retry: boolean) => {
+    if (!session || submitting) return;
     setSubmitting(`user|${record.userId}`);
     try {
-      await proposeSessionRevocation(session, record.userId, record.label, record.reason);
-      toast("已提交退出全部设备的审批，批准后生效", "success");
+      const ticket = retry ? await sessionRevocationRecovery.retry(record) : (await sessionRevocationRecovery.query(session, record))?.ticket;
+      if (ticket) {
+        toast(`审批单 ${ticket.id} · ${sessionRevocationStatus[ticket.status]}`, "success");
+        notePending(record.commandKey, sessionRevocationStatus[ticket.status]);
+      } else if (ticket === null) notePending(record.commandKey, "没有查到原审批单，原操作记录保留。");
     } catch (cause) {
-      notePending(fingerprint, isA2OutcomeUncertainError(cause) ? "重试的结果仍然未知，原记录继续保留。" : `重试没有成功：${errorMessage(cause)}`);
-      // 共用库只在明确拒绝后清掉原命令，其他情况记录照旧留着（F04）。
+      notePending(record.commandKey, retry ? `重试没有确认结果：${errorMessage(cause)}` : `原审批单加载失败。${displayAdminReadError(cause)}`);
     } finally {
       setSubmitting("");
       syncPending();
@@ -1504,10 +1512,10 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       return {
         key: record.fingerprint, object: record.label, createdAt: record.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
-        line: refused ? "重试被明确拒绝；查询原结果核对后，可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。",
+        line: refused ? "重试被明确拒绝；查询原操作核对后，可以解除。" : expired ? "超过 24 小时不能再重试，先查询原操作。" : "可能已经生效，先查询原操作。",
         note: pendingNotes[record.fingerprint],
         actions: <>
-          <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={busy} onClick={() => void verifyPending(record)}>查询原结果</Button>
+          <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={busy} onClick={() => void verifyPending(record)}>查询原操作</Button>
           <Button size="sm" disabled={busy} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>
           {refused && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
         </>,
@@ -1516,21 +1524,30 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       };
     }),
     ...revocations.map((record) => {
-      const fingerprint = `revoke|${record.userId}`;
+      const state = sessionRevocationRecovery.state(record);
+      const reason = record.ticketId ? "审批单已提交，继续查询审批进度。"
+        : state.replayRejection ? `重试被拒：${displayAdminError(new Error(state.replayRejection))}`
+        : state.expired ? "已超过 24 小时，不能再重试。"
+        : !canRevoke ? RETRY_NO_PERMISSION
+        : state.replayBlock ? "先查询原操作，明确查无后才能重试。" : undefined;
       return {
         key: record.fingerprint, object: `退出全部设备 · ${record.label}`, createdAt: record.createdAt,
-        tag: <StatusTag tone="warn">结果未知</StatusTag>,
-        line: "审批可能已经提交；重试会先查原审批单，不会重复提交。",
-        note: pendingNotes[fingerprint],
-        actions: <Button size="sm" disabled={busy} loading={submitting === `user|${record.userId}`} disabledReason={canRevoke ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryRevocation(record)}>按原操作重试</Button>,
-        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）提交审批。按原操作重试会先查原审批单，查不到再用原理由提交。</p>,
+        tag: <StatusTag tone="warn">{record.ticketId ? "待审批" : state.replayRejection ? "重试被拒" : "结果未知"}</StatusTag>,
+        line: record.ticketId ? `审批单 ${record.ticketId} · ${reason}` : reason ?? "没有查到原审批单，可以按原操作重试。",
+        note: pendingNotes[record.commandKey],
+        actions: <>
+          <Button size="sm" disabled={busy || !canReadOwnRecoveryProposal(authorities)} onClick={() => void recoverRevocation(record, false)}>查询原操作</Button>
+          <Button size="sm" disabled={busy} disabledReason={reason} onClick={() => void recoverRevocation(record, true)}>按原操作重试</Button>
+          {state.replayRejection && !record.ticketId && <VerifiedReleaseButton disabled={busy} onClick={() => revocationRelease.ask({ operation: "退出全部设备", target: record.label, createdAt: record.createdAt, getSnapshot: sessionRevocationRecovery.releaseSnapshot(record), release: () => { const released = sessionRevocationRecovery.release(record); syncPending(); return released; } })} />}
+        </>,
+        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）提交审批。重试使用原操作编号和原理由。</p>,
         tech: techRows(record),
       };
     }),
   ];
   const pendingNotices = <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理"
-    explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原操作重试只发原内容，不会重复执行。有结果前，相关账户、名单或申请不能再操作。"
-    foot={canReadAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : <span>请有操作记录读权限的同事核对。</span>}
+    explain="这些操作发出后没收到明确结果，可能已经生效。先查询原操作；按原操作重试只发原内容，不会重复执行。有结果前，相关账户、名单或申请不能再操作。"
+    foot={canReadAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批 →</Link> : <span>请有操作记录读权限的同事核对。</span>}
     items={recoveryItems} />;
 
   const focusNotice = focusUserCode && canReadC2 && (
@@ -1546,12 +1563,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   const conclusionExplain = "待审核和审核中的注销申请都要人处理。已拒绝的申请可以重新审核或取消；用户也可以在 App 取消。";
   const conclusion = !canReadDeletions ? null
-    : deletionCounts.loading && !deletionCounts.data ? <Conclusion state="unknown">正在读取…</Conclusion>
+    : deletionCounts.loading && !deletionCounts.data ? <Conclusion state="unknown">正在加载…</Conclusion>
       : deletionCounts.error || pendingDeletions === null ? <Conclusion state="unknown" action={<InlineRetry onRetry={() => void loadDeletionCounts()} />}>暂时读不到注销申请的数量</Conclusion>
         : pendingDeletions > 0 ? (
           <Conclusion state="warn" lead icon={Inbox} explain={conclusionExplain}
             hint={[deletionCounts.data!.requested > 0 ? `${deletionCounts.data!.requested} 个待审核` : "", deletionCounts.data!.inReview > 0 ? `${deletionCounts.data!.inReview} 个审核中` : ""].filter(Boolean).join("、") + "。"}
-            action={<button type="button" className="rd-link rd-link-button" onClick={goDeletions}>去处理</button>}>
+            action={<button type="button" className="rd-link rd-link-button" onClick={goDeletions}>去处理 →</button>}>
             <b>{pendingDeletions.toLocaleString("en-US")}</b> 个注销申请等处理
           </Conclusion>
         ) : <Conclusion state="neutral" icon={Info} explain={conclusionExplain}>没有等处理的注销申请</Conclusion>;
@@ -1778,11 +1795,11 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const prevAccount = accountIndex > 0 ? accountRows[accountIndex - 1] : undefined;
   const nextAccount = accountIndex >= 0 ? accountRows[accountIndex + 1] : undefined;
 
-  const drawerBase = !ctxData ? (context.loading ? "正在读取…" : NO_CONTEXT) : locked.has(`user|${shownId}`) ? LOCKED_USER : submitting ? SUBMITTING : undefined;
+  const drawerBase = !ctxData ? (context.loading ? "正在加载…" : NO_CONTEXT) : locked.has(`user|${shownId}`) ? LOCKED_USER : submitting ? SUBMITTING : undefined;
   const unfreezeBlock = drawerBase ?? (sourceCode === "K1_MULTI_ACCOUNT_CLUSTER" ? K1_BLOCK : sourceCode === "CREGIS_DEPOSIT_INCIDENT" ? CREGIS_BLOCK : undefined);
   const revokeBlock = drawerBase ?? (!pendingRevoke && (shownActiveCount ?? 0) <= 0 ? NO_SESSION_TO_REVOKE : undefined);
   const viewBlock = drawerBase ?? (shownStatus !== "ACTIVE" ? VIEW_NEEDS_ACTIVE : shownActiveView ? VIEW_ALREADY_OPEN : undefined);
-  const listBase = !ctxData ? (context.loading ? "正在读取…" : NO_CONTEXT) : locked.has(`list|${shownId}`) ? LOCKED_LIST : submitting ? SUBMITTING : undefined;
+  const listBase = !ctxData ? (context.loading ? "正在加载…" : NO_CONTEXT) : locked.has(`list|${shownId}`) ? LOCKED_LIST : submitting ? SUBMITTING : undefined;
 
   const moreItems: MoreMenuItem[] = !shown ? [] : [
     ...(canStartImpersonation ? [{ key: "view", label: "查看这个用户的数据", disabledReason: viewBlock, onSelect: () => startView(shown) }] : []),
@@ -1796,7 +1813,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const drawerNote = context.loading && !ctxData ? undefined : primaryBlock ?? (canRevoke ? revokeBlock : undefined);
   const hasFooter = Boolean(primaryKind) || canRevoke || moreItems.length > 0;
   const accountFooter = shown && hasFooter && (
-    <Decision note={drawerNote ? <>{drawerNote}{primaryBlock === K1_BLOCK && canOpenK1 && <> <Link className="rd-link" href={K1_PATH} prefetch={false}>去多账户风险排查</Link></>}{primaryBlock === CREGIS_BLOCK && canOpenD1 && <> <Link className="rd-link" href={D1_PATH} prefetch={false}>去充值与收款对账</Link></>}</> : undefined}
+    <Decision note={drawerNote ? <>{drawerNote}{primaryBlock === K1_BLOCK && canOpenK1 && <> <Link className="rd-link" href={K1_PATH} prefetch={false}>去多账户风险排查 →</Link></>}{primaryBlock === CREGIS_BLOCK && canOpenD1 && <> <Link className="rd-link" href={D1_PATH} prefetch={false}>去充值与收款对账 →</Link></>}</> : undefined}
       others={<>
         {canRevoke && <Button icon={<LogOut size={14} aria-hidden />} disabled={busy} disabledReason={revokeBlock} onClick={() => ctxData && revokeAll(ctxData)}>退出全部设备</Button>}
         {moreItems.length > 0 && <MoreMenu label="更多操作" items={moreItems} disabled={busy} />}
@@ -1931,7 +1948,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         </Notice>
         <Segments label="用户数据只读视图页面" value={mirrorPage} onChange={(page) => void switchMirror(page)}
           items={MIRROR_PAGES.map((item) => ({ ...item, disabled: mirrorLoading || busy }))} />
-        {mirrorLoading ? <BlockState state="loading" title="正在读取…" /> : <ImpersonationUserScreen screen={jsonRecord(mirror.screen)} />}
+        {mirrorLoading ? <BlockState state="loading" title="正在加载…" /> : <ImpersonationUserScreen screen={jsonRecord(mirror.screen)} />}
       </div>}
     </Drawer>
   );
@@ -1975,7 +1992,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     {accountDrawer}
     {traceDrawer}
     {mirrorDrawer}
+    {revocationRelease.dialog}
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒证明不了原操作的结果，先查询原结果或到操作记录核对。解除只清掉本页这条记录，不撤销后台的操作。" />}
+      explain="重试被拒证明不了原操作的结果，先查询原操作或到操作记录核对。解除只清掉本页这条记录，不撤销后台的操作。" />}
   </>;
 }

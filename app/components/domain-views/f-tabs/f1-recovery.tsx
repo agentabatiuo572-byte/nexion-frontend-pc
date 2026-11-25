@@ -35,10 +35,10 @@ const thresholdText = (field: string, raw: string | undefined) => raw === undefi
 function stateTag(state: State, direct: boolean, canRetryProposal: boolean) {
   if (state === "settled") return <StatusTag tone="neutral">原操作未执行</StatusTag>;
   if (state === "pending") return <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>;
-  if (state === "received") return <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>;
+  if (state === "received") return <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原操作，不要重新提交。">已建单，未查到</StatusTag>;
   if (state === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
   return <StatusTag tone="warn" icon={CircleHelp} explain={direct
-    ? "提交时没收到确定结果，可能已经保存。先查询原结果；有结论前不要换个办法重做。"
+    ? "提交时没收到确定结果，可能已经保存。先查询原操作；有结论前不要换个办法重做。"
     : canRetryProposal ? "没查到原审批单，可以按原内容和理由重试。" : F1_PROPOSAL_LOOKUP_FIRST}>结果未知</StatusTag>;
 }
 
@@ -47,17 +47,17 @@ function ordinaryLabel(original: FDomainAttempt): { name: string; change: ReactN
   const slot = original.fingerprint;
   const spec = original.spec;
   const id = slot.slice(slot.indexOf(":") + 1);
-  if (slot === "f-config:F.vrank.permanent") return { name: "不降级保护", change: spec ? `改为${spec.after === "on" ? "开启" : spec.after === "off" ? "关闭" : spec.after}` : "原请求不完整，只能查询原结果" };
-  if (slot === "f-config:F.prize.name") return { name: "奖品名称", change: spec ? `改为「${spec.after}」` : "原请求不完整，只能查询原结果" };
+  if (slot === "f-config:F.vrank.permanent") return { name: "不降级保护", change: spec ? `改为${spec.after === "on" ? "开启" : spec.after === "off" ? "关闭" : spec.after}` : "原请求不完整，只能查询原操作" };
+  if (slot === "f-config:F.prize.name") return { name: "奖品名称", change: spec ? `改为「${spec.after}」` : "原请求不完整，只能查询原操作" };
   if (slot === "f-config:F.vrank.titles") {
     let count = 0;
     try { count = Object.keys(JSON.parse(spec?.after ?? "{}") as object).length; } catch { /* 坏的原内容只显示不完整 */ }
-    return { name: "各级头衔", change: spec && count ? `设置 ${count} 级头衔` : "原请求不完整，只能查询原结果" };
+    return { name: "各级头衔", change: spec && count ? `设置 ${count} 级头衔` : "原请求不完整，只能查询原操作" };
   }
   if (slot.startsWith("f-vrank-override:")) {
     const { direction, targetV } = spec?.command.params ?? {};
     const valid = (direction === "promote" || direction === "rollback") && typeof targetV === "string" && /^V[0-8]$/.test(targetV);
-    return { name: `人工调整等级 · 用户 ${id}`, change: valid ? `${direction === "promote" ? "升级" : "降级"}到 ${targetV}` : "原请求不完整，只能查询原结果" };
+    return { name: `人工调整等级 · 用户 ${id}`, change: valid ? `${direction === "promote" ? "升级" : "降级"}到 ${targetV}` : "原请求不完整，只能查询原操作" };
   }
   if (isF1PayoutSlot(slot)) {
     const action = spec?.command.params.action;
@@ -67,11 +67,11 @@ function ordinaryLabel(original: FDomainAttempt): { name: string; change: ReactN
     const to = reissue ? "已重发" : typeof clawback === "boolean" ? `已冲正 · 已用券${clawback ? "扣回" : "不扣回"}` : "已冲正";
     return {
       name: `${reissue ? "重发奖励" : reverse ? "冲正奖励" : "处理奖励"} · 发放单 ${id}`,
-      change: reissue || reverse ? <Change from={reissue ? "已冲正" : "现在的状态"} to={to} /> : "原请求不完整，只能查询原结果",
+      change: reissue || reverse ? <Change from={reissue ? "已冲正" : "现在的状态"} to={to} /> : "原请求不完整，只能查询原操作",
     };
   }
-  if (slot.startsWith("f-vrank-bootstrap:")) return { name: "首次配置九级", change: spec ? <Change from="还没有会员等级" to="九级门槛" /> : "原请求不完整，只能查询原结果" };
-  return { name: "等级设置的原申请", change: "原请求不完整，只能查询原结果" };
+  if (slot.startsWith("f-vrank-bootstrap:")) return { name: "首次配置九级", change: spec ? <Change from="还没有会员等级" to="九级门槛" /> : "原请求不完整，只能查询原操作" };
+  return { name: "等级设置的原申请", change: "原请求不完整，只能查询原操作" };
 }
 
 function rewardLabel(reward: F1PolicyReward | undefined, ctx: FViewCtx) {
@@ -102,7 +102,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked, continue
     rows.push({
       key: original.commandKey, name, change, submittedAt: original.createdAt, state, canRetryProposal: canRetry,
       actions: <>
-        <Button size="sm" onClick={() => void ctx.recoverF1(original.fingerprint, "query").catch((error) => toast(displayAdminError(error)))}>查询原结果</Button>
+        <Button size="sm" onClick={() => void ctx.recoverF1(original.fingerprint, "query").catch((error) => toast(displayAdminError(error)))}>查询原操作</Button>
         {canRetry && <Button size="sm" onClick={() => { setRetryError(null); setRetrying({ original, name, change }); }}>按原操作重试</Button>}
         {original.replayRejection && <FReleaseButton label={name} toast={toast} onRelease={() => ctx.recoverF1(original.fingerprint, "release")} />}
       </>,
@@ -132,7 +132,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked, continue
             ? <Button size="sm" onClick={() => void queryF1PolicyOperation(owner, record.commandKey).then((result) => {
               if (result) toast(result.acknowledgement);
               if (result?.active) ctx.acceptF1PolicyOverview(result.active); else void ctx.refreshF1();
-            }, (error) => toast(displayAdminError(error)))}>查询原结果</Button>
+            }, (error) => toast(displayAdminError(error)))}>查询原操作</Button>
             : <Button size="sm" onClick={() => onOpenPolicy({ ...editor, recoveryCommandKey: record.commandKey })}>查看原操作</Button>}
           {record.replayRejection && <FReleaseButton label={name} toast={toast}
             onRelease={async () => { await releaseF1PolicyProposal(owner, record.commandKey); await ctx.refreshF1(); }} />}

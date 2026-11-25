@@ -448,7 +448,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       },
     });
   };
-  const exportBlocked = ctx.biLoading ? "正在读取，读完再导出"
+  const exportBlocked = ctx.biLoading ? "正在加载，读完再导出"
     : ctx.l2SliceExportable === false ? "这次筛选的结果不能导出：正在查询、查询失败或没有注册用户。点「清空」或重新查询后再导出"
       : !exportable ? "暂无可导出的数据" : undefined;
   const exportPageLink = (text: string) => (canOpenExportPage
@@ -545,12 +545,12 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     <BlockState state="error" title="收到的转化、留存或对比数据不完整，已停止显示" detail="页面不显示不可靠的数字，也不能导出。请把这页的情况告诉技术同事。" />
   </>);
   if (!FUNNEL.length || !FUNNEL_EXT.length || !COHORTS.length) return page(<>
-    <Conclusion state="unknown">{ctx.biLoading ? "用户转化：正在读取" : ctx.biError ? "用户转化：读取失败，暂时无法判断" : "用户转化：没有读到数据"}</Conclusion>
+    <Conclusion state="unknown">{ctx.biLoading ? "用户转化：正在加载" : ctx.biError ? "用户转化：读取失败，暂时无法判断" : "用户转化：没有读到数据"}</Conclusion>
     {ctx.biLoading
-      ? <BlockState state="loading" title="正在读取这批用户的转化…" />
+      ? <BlockState state="loading" title="正在加载这批用户的转化…" />
       : ctx.biError
-        ? <BlockState state="error" title="转化数据读取失败，不显示旧数据" detail={`${ctx.biError} 请先重新加载；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
-        : <BlockState state="empty" title="这次没有读到转化数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+        ? <BlockState state="error" title="转化数据加载失败，不显示旧数据" detail={`${ctx.biError} 请先重新加载；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
+        : <BlockState state="empty" title="这次没有读到转化数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />}
   </>);
 
   const safeStage = Math.min(selStage, FUNNEL.length - 1);
@@ -784,7 +784,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
             }} />
           ))}
         </div>
-        <span className="rd-toolbar-note l2-toolbar-end" role="status">{queryLoading ? "读取中…" : "改分组只换显示，改天数会重新读取"}</span>
+        <span className="rd-toolbar-note l2-toolbar-end" role="status">{queryLoading ? "正在加载…" : "改分组只换显示，改天数会重新读取"}</span>
       </div>
       <div className="rd-split" data-detail="">
         <Panel title={`按注册${cohortKind}的留存`} icon={CalendarRange} tone="role-3" sub={`最近 ${COHORTS.length} 个注册${cohortKind} · ${scope}`}
@@ -824,7 +824,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Segments<"cvr" | "ret" | "trial"> label="看哪项指标" value={metric}
           items={(["cvr", "ret", "trial"] as const).map((value) => ({ value, label: METRIC_NAME[value] }))}
           onChange={(value) => { if (!queryLoading) void loadCrossMetric(value); }} />
-        <span className="rd-toolbar-note l2-toolbar-end" role="status">{queryLoading ? "读取中…" : "换指标会重新读取 · 行列固定，不能排序"}</span>
+        <span className="rd-toolbar-note l2-toolbar-end" role="status">{queryLoading ? "正在加载…" : "换指标会重新读取 · 行列固定，不能排序"}</span>
       </div>
       <Panel title={`各渠道、语言的${METRIC_NAME[metric]}`} icon={Languages} tone="role-3" sub={`按注册时的渠道、阶段和语言 · ${scope}`}
         explain={<>

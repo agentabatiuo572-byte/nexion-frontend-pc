@@ -90,7 +90,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
   const projectionState = projection.status === "ready" ? null
     : projection.status === "denied" ? <BlockState compact state="denied" title="没有查看每票值的权限" />
       : projection.status === "error" ? <BlockState compact state="error" title="每票值加载失败" detail="请稍后重试；一直加载不出来请联系值班人员。" onRetry={() => void ctx.refreshF4VoteProjection()} />
-        : <BlockState compact state="loading" title="正在读取每票值…" />;
+        : <BlockState compact state="loading" title="正在加载每票值…" />;
   const rankShare = (rank: string) => {
     if (projection.status !== "ready" || !projection.data.estimate.available) return undefined;
     const row = byRank.get(rank);

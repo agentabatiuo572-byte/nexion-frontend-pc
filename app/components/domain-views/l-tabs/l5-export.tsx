@@ -471,7 +471,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       submittedAt: record.createdAt, expired,
       actions: <>
         <Button size="sm" loading={busyTask === record.task.id} disabledReason={!canRead ? formatAdminApiError("L5_TASK_QUERY_PERMISSION", "L5_TASK_QUERY_PERMISSION") : undefined}
-          onClick={() => void queryTask(record)}>查询原结果</Button>
+          onClick={() => void queryTask(record)}>查询原操作</Button>
         {!expired && <Button size="sm" disabledReason={!canWrite ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : undefined}
           onClick={() => record.action === "approve" ? requestApproveTask(record.task, record.requester, record)
             : void sendTaskAction(record.task, record.action, record.requester, record.request.reason, record).catch(error => toast(displayAdminError(error), "error"))}>按原操作重试</Button>}
@@ -485,12 +485,12 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       {header}
       {outcomeNotice}
       <L5RecoveryNotice rows={recoveryRows} />
-      <Conclusion state="unknown" icon={ShieldQuestion}>{ctx.biLoading ? "导出任务：正在读取" : ctx.biError ? "导出任务：读取失败，暂时无法判断有没有等你放行的" : "导出任务：没有读到数据"}</Conclusion>
+      <Conclusion state="unknown" icon={ShieldQuestion}>{ctx.biLoading ? "导出任务：正在加载" : ctx.biError ? "导出任务：读取失败，暂时无法判断有没有等你放行的" : "导出任务：没有读到数据"}</Conclusion>
       {ctx.biLoading
-        ? <BlockState state="loading" title="正在读取导出任务、统计和规则…" />
+        ? <BlockState state="loading" title="正在加载导出任务、统计和规则…" />
         : ctx.biError
-          ? <BlockState state="error" title="导出数据读取失败" detail={`${ctx.biError} 创建、放行和下载先关着。请重新加载；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
-          : <BlockState state="empty" title="这次没有读到导出数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+          ? <BlockState state="error" title="导出数据加载失败" detail={`${ctx.biError} 创建、放行和下载先关着。请重新加载；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
+          : <BlockState state="empty" title="这次没有读到导出数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />}
     </>
   );
 
@@ -780,7 +780,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     const approvalBlocked = !canApproveTask(t) ? isNetworkTree(t) ? networkApprovalHint : "你没有放行权限，要有导出任务审批权的管理员放行"
       : t.approvalEligibility === "SELF" ? "这是你申请的，要另一位管理员放行"
       : t.approvalEligibility === "ELIGIBLE" ? null : "暂时不能放行：系统核对不了申请人，请找技术同事";
-    if (recoveryIds.has(t.id)) return <span className="rd-toolbar-note">结果未知，先在页面上方查询原结果</span>;
+    if (recoveryIds.has(t.id)) return <span className="rd-toolbar-note">结果未知，先在页面上方查询原操作</span>;
     return approvalBlocked
       ? <span className="rd-toolbar-note" data-tone={t.approvalEligibility === "MAKER_UNVERIFIED" ? "warn" : undefined}>{approvalBlocked}</span>
       : <Button variant="primary" icon={<ShieldCheck size={14} aria-hidden />} onClick={() => requestApproveTask(t, requesterText(t))}>放行…</Button>;
@@ -803,7 +803,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     );
     if (acts.includes("retry") && canAccessTask) out.push(
       <Button key="retry" size="sm" icon={<RotateCcw size={14} aria-hidden />} loading={busy} loadingText="正在发起…"
-        disabledReason={recoveryIds.has(t.id) ? "结果未知，先在页面上方查询原结果" : undefined}
+        disabledReason={recoveryIds.has(t.id) ? "结果未知，先在页面上方查询原操作" : undefined}
         onClick={() => { setBusyTask(t.id); void retryTask(t).catch((error) => toast(error instanceof Error ? displayAdminError(error) : "重新发起失败")).finally(() => setBusyTask(null)); }}>重新发起</Button>,
     );
     if (out.length === 0) out.push(<span key="none" className="l5-weak">—</span>);
@@ -823,7 +823,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <div className="l5-list-tools">
           <Segments<number> label="导出任务状态筛选" value={filter} items={segItems} onChange={selectFilter} />
         </div>
-        {taskError && <BlockState state="error" title="导出任务读取失败，不显示旧列表" detail={`${taskError} 可以换个状态再读，或点页头「刷新」。`} />}
+        {taskError && <BlockState state="error" title="导出任务加载失败，不显示旧列表" detail={`${taskError} 可以换个状态再读，或点页头「刷新」。`} />}
         {!taskError && pendingTasks.length > 0 && (
           <section className="l5-pending" aria-label="等待放行">
             <h3 className="l5-sub-title">等待放行 <span className="l5-weak">这一页 {pendingTasks.length} 份{pending > pendingTasks.length ? `，共 ${pending} 份` : ""} · 时间为{businessZone().label}</span></h3>
@@ -877,11 +877,11 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   /* ---------------- 新建导出：三种去向不同的出口 ---------------- */
   const exportBlocked = !ctx.canExport ? "你没有汇总数据的导出权限"
     : exportTypes.length === 0 ? "你没有可导出的汇总类型"
-    : ctx.biLoading ? "正在读取，读完再导出"
+    : ctx.biLoading ? "正在加载，读完再导出"
     : ctx.biError || !ctx.biData?.l5 ? "数据加载失败，暂时不能导出" : undefined;
   const disclosures = regulatoryOptions?.disclosures ?? [];
   const regulatoryBlocked = !ctx.canGenerateRegulatory ? "你没有生成当前披露快照的权限"
-    : regulatoryLoading ? "正在读取可用的披露版本"
+    : regulatoryLoading ? "正在加载可用的披露版本"
     : regulatoryError ? "披露版本读取失败，暂时不能生成"
     : disclosures.length === 0 ? `「${i5Name}」里还没有 7 章齐全的当前版本` : undefined;
   const linkTo = (path: string, fallback: string) => reach(path)
@@ -901,8 +901,8 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
           <article className="l5-create-card" aria-labelledby="l5-create-reg">
             <div className="l5-create-head"><IconTile tone="role-3" icon={ScrollText} size={28} /><h3 id="l5-create-reg">当前披露快照</h3><Explain label="当前披露快照是什么" content={`按「${i5Name}」当前生效的版本，生成给监管看的汇总报告，不含单个用户明细。`} /></div>
             <RouteFacts rows={[["进任务列表", "进"], ["要放行", "不用"], ["拿到文件", "生成后在任务列表下载", true]]} />
-            {regulatoryLoading && <BlockState compact state="loading" title="正在读取可用的地区和版本…" />}
-            {!regulatoryLoading && regulatoryError && <BlockState compact state="error" title="披露版本读取失败" detail={regulatoryError} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+            {regulatoryLoading && <BlockState compact state="loading" title="正在加载可用的地区和版本…" />}
+            {!regulatoryLoading && regulatoryError && <BlockState compact state="error" title="披露版本加载失败" detail={regulatoryError} onRetry={() => void ctx.reloadBi?.()} />}
             {!regulatoryLoading && !regulatoryError && disclosures.length === 0 && <p className="l5-create-types">还没有 7 章齐全的当前版本，到「{i5Name}」发布后再来</p>}
             {!regulatoryLoading && !regulatoryError && disclosures.length > 0 && (
               <Fold inset title="可用地区" summary={`${disclosures.length} 个`}>

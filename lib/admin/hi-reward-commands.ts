@@ -50,7 +50,7 @@ export function i6CourseProposalPermission(record: HIRewardCommand): string | un
   const grants = session.authorities;
   if (!grants.includes("content_i7_course_reward_adjust") || (op === "i7_course_reward_adjust"
     ? !grants.some(grant => ["platform_a2_write", "platform_a2_proposal_create"].includes(grant))
-    : !grants.includes("content_i7_write"))) return "当前账号没有原操作所需权限，请查询原结果。";
+    : !grants.includes("content_i7_write"))) return "当前账号没有原操作所需权限，请查询原操作。";
   return undefined;
 }
 
@@ -90,13 +90,13 @@ export async function queryI6CourseProposal(saved: HIRewardCommand): Promise<A2O
   const result = await i6CourseRecovery.query(record, async () => {
     const ticket = await fetchA2ProposalByKey(record.commandKey, true);
     if (!ticket) {
-      if (record.receiptKnown || record.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
+      if (record.receiptKnown || record.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原操作。");
       return { conclusion: "not-found", ticket } as const;
     }
     // 24972948 ticketMetadata returns the persisted operationCode for all command-backed I6 tickets.
     if (!ticket.mine || ticket.obj !== input.obj || ticket.operationCode !== input.command.op
       || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.rawStatus ?? "")) {
-      throw new Error("查到的审批单和原操作对不上，请保留原记录并查询原结果。");
+      throw new Error("查到的审批单和原操作对不上，请保留原记录并查询原操作。");
     }
     return { conclusion: ticket.status === "pending" ? "unknown" : ticket.status === "approved" ? "succeeded" : "not-executed", ticket } as const;
   });
@@ -118,9 +118,9 @@ async function sendI6CourseProposal(saved: HIRewardCommand, retry: boolean) {
     response = await guardedFetch("/api/admin/platform/audit/operations", { method: "POST", cache: "no-store",
       headers: { "Content-Type": "application/json", "Idempotency-Key": record.commandKey }, body: record.body });
     envelope = await response.json();
-  } catch { throw uncertain("结果未知，请查询原结果。"); }
+  } catch { throw uncertain("结果未知，请查询原操作。"); }
   if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || !Number.isInteger(envelope.code)
-    || envelope.message !== undefined && typeof envelope.message !== "string") throw uncertain("原申请的返回内容无法核实，请保留原记录并查询原结果。");
+    || envelope.message !== undefined && typeof envelope.message !== "string") throw uncertain("原申请的返回内容无法核实，请保留原记录并查询原操作。");
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(envelope.message);
   if (!response.ok || envelope.code !== 0 || unknown) {
     const status = response.ok && envelope.code >= 400 && envelope.code < 500 ? envelope.code : response.status;
@@ -129,7 +129,7 @@ async function sendI6CourseProposal(saved: HIRewardCommand, retry: boolean) {
     if (rejected && !unknown) { if (!retry) commands.forget(record.fingerprint, record.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : record }); }
     throw uncertain(failure.message);
   }
-  if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw uncertain("原申请的返回内容无法核实，请保留原记录并查询原结果。");
+  if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw uncertain("原申请的返回内容无法核实，请保留原记录并查询原操作。");
   commands.remember(record.fingerprint, record.commandKey, { ...record, receiptKnown: true });
 }
 
@@ -138,8 +138,8 @@ async function readSubmittedI6Course(record: HIRewardCommand, observe?: (record:
   try {
     const ticket = await queryI6CourseProposal(record);
     if (ticket) { observe?.(record, ticket); return ticket; }
-  } catch (error) { throw uncertain(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原结果"}`); }
-  throw uncertain("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
+  } catch (error) { throw uncertain(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原操作"}`); }
+  throw uncertain("申请已提交，当前审批结果还没查到，请保留原记录并查询原操作。");
 }
 
 export async function retryI6CourseProposal(record: HIRewardCommand) {
@@ -148,7 +148,7 @@ export async function retryI6CourseProposal(record: HIRewardCommand) {
 }
 
 export function releaseRejectedI6Course(record: HIRewardCommand) {
-  if (!i6CourseRecovery.releaseRejectedReplay(record)) throw new Error("原操作记录继续保留，请查询原结果。");
+  if (!i6CourseRecovery.releaseRejectedReplay(record)) throw new Error("原操作记录继续保留，请查询原操作。");
 }
 
 /** The complete envelope is saved before dispatch; an unresolved scope can only replay its original envelope. */
@@ -157,7 +157,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
   if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
   const previous = pendingHIRewardCommand(scope);
   if (payload.kind === "proposal" && payload.input.command.domain === "I") {
-    if (previous) throw new Error("此对象有原操作尚未核清，请先查询原结果。");
+    if (previous) throw new Error("此对象有原操作尚未核清，请先查询原操作。");
     const key = createA2CommandKey(payload.input.command.op), fingerprint = `${session.adminId}:${scope}`;
     const draft: HIRewardCommand = { owner: session.adminId, scope, payload, body: JSON.stringify(payload.input), form, editValue, snapshot,
       fingerprint, commandKey: key, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 };
@@ -228,7 +228,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
 export async function retireH4PointsTier(tierName: string, expectedSignature: string, reason: string) {
   const pending = pendingHIRewardCommand(HI_WHEEL_SCOPE);
   if (pending && (pending.payload.kind !== "retire" || pending.payload.tierName !== tierName))
-    throw new Error("奖池还有一条结果未知的原操作，请先查询它的原结果。");
+    throw new Error("奖池还有一条结果未知的原操作，请先查询原操作。");
   const session = useAdminAuth.getState().session;
   if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
   return submitHIRewardCommand(HI_WHEEL_SCOPE, { kind: "retire", tierName,

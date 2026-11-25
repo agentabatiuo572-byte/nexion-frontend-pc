@@ -113,7 +113,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const readBarrier = useRef(data);
   const latestRead = useRef(data);
   latestRead.current = data;
-  const newMutationReason = conflictReview.blockedReason() ?? (!data ? "读到数据后才能新增" : contentError || contentLoading || requiresReload ? "最新数据没读到" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined);
+  const newMutationReason = conflictReview.blockedReason() ?? (!data ? "读到数据后才能新增" : contentError || contentLoading || requiresReload ? "最新数据没读到" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原操作。" : undefined);
   const newMutationBlocked = useRef(newMutationReason);
   newMutationBlocked.current = newMutationReason;
   const syncPending = () => setPending(pendingI2Commands());
@@ -477,7 +477,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       confirmLabel: prev ? "确认保存" : "确认新增",
       run: async (reason) => {
         if (drawerInFlight.current) return false;
-        if (lockReason(prev ? `channel:${key}` : `channel-name:${name}`)) throw new Error("请查询原结果");
+        if (lockReason(prev ? `channel:${key}` : `channel-name:${name}`)) throw new Error("请查询原操作");
         drawerInFlight.current = true;
         setDrawerSubmitting(true);
         try {
@@ -1073,7 +1073,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       actions: <>
         {target ? <FundCheckButtons record={target} outcome={outcomes[row.commandKey]} expired={expired} busy={!!checking || !!recovering} checking={checking === row.commandKey}
           onCheck={query} onClose={() => setClosing(row)} />
-          : <Button size="sm" loading={checking === row.commandKey} disabled={!!checking} disabledReason={!canReadI2 ? "当前账号没有读取权限" : recovering ? "等当前操作完成" : undefined} onClick={query}>查询原结果</Button>}
+          : <Button size="sm" loading={checking === row.commandKey} disabled={!!checking} disabledReason={!canReadI2 ? "当前账号没有读取权限" : recovering ? "等当前操作完成" : undefined} onClick={query}>查询原操作</Button>}
         {!expired && !rejected && <Button size="sm" disabled={!!checking} disabledReason={retryBlocked} onClick={() => void restore(row)}>按原操作重试</Button>}
         {rejected && <VerifiedReleaseButton disabled={!!checking || !!recovering || !!busy} onClick={() => release.ask({ operation: row.action, target: <>{unknownObject(row)}{unknownChange(row) && ` · ${unknownChange(row)}`}</>,
           getSnapshot: i2Recovery.releaseSnapshot(row), createdAt: row.createdAt, release: () => {
@@ -1127,11 +1127,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   </>;
 
   if (contentLoading && !data) {
-    return <>{header}{unknownNotice}{conflictUi}<BlockState state="loading" title="正在读取推送数据…" /></>;
+    return <>{header}{unknownNotice}{conflictUi}<BlockState state="loading" title="正在加载推送数据…" /></>;
   }
   if (!data) {
     return <>{header}{unknownNotice}{conflictUi}{contentError
-      ? <BlockState state="error" title="推送数据读取失败" detail={contentError} onRetry={() => void actions.reloadIContent()} retryLabel="重新加载" />
+      ? <BlockState state="error" title="推送数据加载失败" detail={contentError} onRetry={() => void actions.reloadIContent()} />
       : <BlockState state="empty" title="暂无推送数据" />}</>;
   }
 
@@ -1516,7 +1516,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       {novaDrawer && (
         <ChannelDrawer editing={!!editNovaKey} form={form} setForm={setForm} cadenceError={cadenceError} sources={RUNTIME_SOURCE_OPTIONS}
           locked={drawerSubmitting || !!drawerPendingKey} saving={drawerSubmitting} retry={!!drawerPendingKey} error={drawerPendingKey ? null : drawerError}
-          blocked={drawerPendingKey ? (() => { const row = pending.find((item) => item.commandKey === drawerPendingKey); return row ? retryReason(row) : "请查询原结果"; })() : lockReason(editNovaKey ? `channel:${editNovaKey}` : `channel-name:${form.name.trim()}`)}
+          blocked={drawerPendingKey ? (() => { const row = pending.find((item) => item.commandKey === drawerPendingKey); return row ? retryReason(row) : "请查询原操作"; })() : lockReason(editNovaKey ? `channel:${editNovaKey}` : `channel-name:${form.name.trim()}`)}
           fixedSource={editNovaKey && !form.runtimeSource ? (() => {
             const prev = drawerSource.current?.channels.find((x) => x.key === editNovaKey);
             if (!prev) return "";

@@ -168,7 +168,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
       });
     };
     return <Modal title={`已提交 ${result.length} 项导出`} onClose={onClose}
-      footer={<Decision others={onRecords && <Button onClick={onRecords}>去导出记录</Button>} primary={<Button variant="primary" onClick={onClose}>知道了</Button>} />}>
+      footer={<Decision others={onRecords && <Button onClick={onRecords}>去导出记录 →</Button>} primary={<Button variant="primary" onClick={onClose}>知道了</Button>} />}>
       <Facts>
         <Fact k="范围">{resultScopeLabel}</Fact>
         <Fact k="月份">{resultMonth}</Fact>
@@ -282,7 +282,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     // 没有已发布的一版：不是失败，写原因，给「刷新」重新读目录。
     : !unknown && data?.catalogState === "no-months"
     ? <Notice tone="done" title="暂无可导出月份" action={<Button size="sm" onClick={retryLoad} loading={preview === "checking"}>刷新</Button>}>业绩数据还没发布第一版，发布后才能导出。</Notice>
-    : !data ? <p className="m1-export-loading" role="status">正在读取导出内容…</p>
+    : !data ? <p className="m1-export-loading" role="status">正在加载导出内容…</p>
     : <div className="m1-export">
       {recovery}
       {differences?.length ? <Notice tone="warn" title="原来的条件和现在不同，请重新选择"><dl className="m1-export-diff">{differences.map(row => <div key={row.k}><dt>{row.k}</dt><dd>{row.v}</dd></div>)}</dl></Notice>

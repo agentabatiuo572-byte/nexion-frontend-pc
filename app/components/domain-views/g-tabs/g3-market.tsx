@@ -228,7 +228,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
         <Fact k="现在用不用">已停用，不影响价格和兑换</Fact>
         <Fact k="按原操作重试">执行过就给出原结果，没执行过会被拒绝</Fact>
       </Facts>,
-      statedBrief: { impact: "只查询或重试原请求，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
+      statedBrief: { impact: "只核对或按原操作重试，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
       amplifies: false,
       confirmLabel: "按原操作重试",
       edit: { kind: "number", current, min: 0, max: 20, step: 0.01, disallowCurrent: true, unit: "%", hint: "0–20，最多两位小数" },
@@ -288,7 +288,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
         <Fact k="现在用不用">已停用，不影响价格和兑换</Fact>
         <Fact k="按原操作重试">执行过就给出原结果，没执行过会被拒绝</Fact>
       </Facts>,
-      statedBrief: { impact: "只查询或重试原请求，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
+      statedBrief: { impact: "只核对或按原操作重试，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
       confirmLabel: "按原操作重试",
       edit: change.key === "oracle"
         ? { kind: "select", current, options: ["内部做市", "外部喂价"], optionLabels: { "内部做市": "内部定价", "外部喂价": "外部价格来源" }, disallowCurrent: true }
@@ -379,8 +379,8 @@ function G3MarketEditor() {
       ? { kind: "approval", detail: `原审批单 ${row.ticketId} 在等另一位超级管理员批准，批准前不生效。`,
         verification: verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "current", observedAt: verifiedApprovals[row.commandKey] ?? row.createdAt }
       : { kind: "unknown", detail: row.request.kind === "approval"
-        ? "提交时没收到确定结果，可能已提交审批。打开这一项查询原结果，24 小时内也可以按原操作重试。"
-        : "提交时没收到确定结果，可能已经生效。打开这一项查询原结果，24 小时内也可以按原操作重试。", verification: "current", observedAt: row.createdAt };
+        ? "提交时没收到确定结果，可能已提交审批。打开这一项查询原操作，24 小时内也可以按原操作重试。"
+        : "提交时没收到确定结果，可能已经生效。点「查看原操作」读取当前配置核对，24 小时内也可以按原操作重试。", verification: "current", observedAt: row.createdAt };
   }
   for (const state of overview?.objectStates ?? []) {
     const keys = state.target.type === "nex_market_curve"
@@ -610,17 +610,17 @@ function G3MarketEditor() {
         : g3MarketCommandExpired(row) ? expiredTag(row.request.kind === "approval" ? "approval" : "direct")
           : unknownTag(row.request.kind === "approval" ? "approval" : "direct"),
       actions: row.ticketId
-        ? <Button size="sm" aria-label={`查询${name}的原结果`} onClick={() => void refreshKnownApprovals()}>查询原结果</Button>
-        : <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>{g3MarketCommandExpired(row) ? "查询原结果" : "查询或重试"}</Button>,
+        ? <Button size="sm" aria-label={`查询${name}的原操作`} onClick={() => void refreshKnownApprovals()}>查询原操作</Button>
+        : <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>{row.request.kind === "direct" ? "查看原操作" : g3MarketCommandExpired(row) ? "查询原操作" : "查询或重试"}</Button>,
     };
   });
   const recoveryNotice = <GRecoveryNotice label="价格的原操作" rows={recoveryRows}
     title={`价格的原操作 · ${recoveryRows.length} 项`}
     lead={commandRows.every((row) => row.ticketId)
-      ? "这些申请在等另一位超级管理员审批：点「查询原结果」看结论；有结论之前不要换个值重新提交。"
-      : "点「查询原结果」或打开那一项核对；没有审批单的原操作 24 小时内也可以按原操作重试。有结论之前不要换个值重新提交。"}
+      ? "这些申请在等另一位超级管理员审批：点「查询原操作」看结论；有结论之前不要换个值重新提交。"
+      : "点「查询原操作」或「查看原操作」核对；没有审批单的原操作 24 小时内也可以按原操作重试。有结论之前不要换个值重新提交。"}
     explain={<>
-      <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的提高申请，和直接保存但没收到结果的修改。原操作只能查询或按原内容重试，不能改值。</p>
+      <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的提高申请，和直接保存但没收到结果的修改。原操作只能查询或按原操作重试，不能改值。</p>
       <p>表里同一项也带着标记。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
     </>} />;
   const pendingDirect = confirm && session ? pendingG3MarketCommand(session.adminId, confirm.change) : undefined;
@@ -728,7 +728,7 @@ function G3MarketEditor() {
                   : approval && session && !canWriteG3MarketChange(session, confirm.change, value, true) ? "你没有修改这一项的权限。" : undefined,
               };
             },
-            recoverLabel: directPastDeadline && !pendingRuntimeApproval ? "读取当前配置" : undefined,
+            recoverLabel: pendingDirect && !pendingRuntimeApproval ? "读取当前配置" : undefined,
             recover: pendingRuntimeApproval ? () => executeConfirmedChange("lookup") : directPastDeadline ? readCurrent : async () => {
               if (session) await executeG3MarketChange(session, confirm.change, "", "", "lookup");
               return false;
@@ -777,7 +777,7 @@ function G3MarketEditor() {
               {historyLoading && !historyError && !historyPoints.length
                 ? <BlockState state="loading" compact title="正在加载最近 24 小时价格…" />
                 : historyError
-                ? <BlockState retryKey="g3-market-1050" state="error" compact title="最近 24 小时价格加载失败" detail={<>这次没读到价格历史，不影响现价和七天计划；点「重试」再读一次。<Explain label="失败原因" content={historyError} /></>} onRetry={() => void readHistory()} retrying={historyLoading} />
+                ? <BlockState retryKey="g3-market-1050" state="error" compact title="最近 24 小时价格加载失败" detail={`${historyError.replace(/[。！]+$/, "")}。现价和七天计划不受影响。`} onRetry={() => void readHistory()} retrying={historyLoading} />
                 : <BlockState state="empty" compact title={historyPoints.length === 1 ? "数据不足，暂时无法显示走势" : "最近 24 小时没有价格记录"}
                   detail={historyPoints.length === 1 ? "只有 1 个采样点，至少 2 个才画走势。" : plan?.paused ? "价格暂停期间不记录。" : "暂停或没有价格时不记录。"} onRetry={() => void readHistory()} retryLabel="刷新" />}
             </div>
